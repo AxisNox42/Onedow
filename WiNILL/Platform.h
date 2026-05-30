@@ -18,6 +18,12 @@
   #include <unistd.h>
   #include <libgen.h>
   #include <string>
+  #include <cwchar>
+  // MSVC 전용 swprintf_s → 표준 swprintf 매핑 (고정 크기 배열 버퍼 전용)
+  //   swprintf_s(buf, fmt, ...) → swprintf(buf, 배열원소수, fmt, ...)
+  #ifndef swprintf_s
+    #define swprintf_s(buf, ...) swprintf((buf), sizeof(buf)/sizeof((buf)[0]), __VA_ARGS__)
+  #endif
   inline void PlatformTimerBegin() {}
   inline void PlatformTimerEnd()   {}
   inline void PlatformSleepMs(unsigned ms) {

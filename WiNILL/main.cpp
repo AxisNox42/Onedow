@@ -2469,11 +2469,11 @@ int main() {
 
                 // 결과 — 도달 레벨 / 처치 수 / 최종 점수
                 wchar_t lvBuf[64], killBuf[64], scoreBuf[64];
-                swprintf_s(lvBuf,    L"%s   Lv. %d", T(StrId::REACHED_LEVEL),
+                swprintf_s(lvBuf,    L"%ls   Lv. %d", T(StrId::REACHED_LEVEL),
                            g_GameManager.playerLevel);
-                swprintf_s(killBuf,  L"%s   %lld",   T(StrId::KILL_COUNT),
+                swprintf_s(killBuf,  L"%ls   %lld",   T(StrId::KILL_COUNT),
                            g_Stats.killCount);
-                swprintf_s(scoreBuf, L"%s   %lld",   T(StrId::FINAL_SCORE),
+                swprintf_s(scoreBuf, L"%ls   %lld",   T(StrId::FINAL_SCORE),
                            g_GameManager.score);
 
                 g_TextL.Draw(scoreBuf, cx(scoreBuf, g_TextL, 1.2f), sh*0.44f, 1.2f,
@@ -2697,9 +2697,9 @@ int main() {
 
                     wchar_t line[96];
                     if (counts[i] > 1)
-                        swprintf_s(line, L"· %s  ×%d", def.krName, counts[i]);
+                        swprintf_s(line, L"· %ls  ×%d", def.krName, counts[i]);
                     else
-                        swprintf_s(line, L"· %s", def.krName);
+                        swprintf_s(line, L"· %ls", def.krName);
                     g_TextS.Draw(line, PX, py, 0.85f, cr, cg, cb, 0.9f);
                     py += ROW_H;
                 }
@@ -2773,21 +2773,21 @@ int main() {
                 // 좌상단: Lv. / XP
                 long long need = g_ExpSystem.Required(g_GameManager.playerLevel);
                 wchar_t xpBuf[64];
-                swprintf_s(xpBuf, L"%s%d   %lld / %lld",
+                swprintf_s(xpBuf, L"%ls%d   %lld / %lld",
                            T(StrId::LV_PREFIX), g_GameManager.playerLevel,
                            g_GameManager.xp, need);
                 g_TextS.Draw(xpBuf, 12.0f, 8.0f, 0.85f, 0.7f,1.0f,0.7f,0.9f);
 
                 // 상단 중앙: Score
                 wchar_t scoreBuf[64];
-                swprintf_s(scoreBuf, L"%s  %lld", T(StrId::SCORE), g_GameManager.score);
+                swprintf_s(scoreBuf, L"%ls  %lld", T(StrId::SCORE), g_GameManager.score);
                 float scoreW = g_TextS.Width(scoreBuf, 1.0f);
                 g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, 8.0f, 1.0f,
                              1.0f, 1.0f, 1.0f, 0.95f);
 
                 // 우상단: FPS
                 wchar_t fpsBuf[32];
-                swprintf_s(fpsBuf, L"%s  %d", T(StrId::FPS), g_CurrentFPS);
+                swprintf_s(fpsBuf, L"%ls  %d", T(StrId::FPS), g_CurrentFPS);
                 float fpsW = g_TextS.Width(fpsBuf, 0.85f);
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, 8.0f, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
