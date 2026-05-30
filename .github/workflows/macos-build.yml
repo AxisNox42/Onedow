@@ -8,17 +8,18 @@ on:
 
 jobs:
   build:
-    # macos-13 = Intel(x86_64) 러너 → 결과 바이너리는 Intel 네이티브 +
-    # Apple Silicon 에서는 Rosetta 2 로 실행됨 (= 가장 폭넓게 호환되는 단일 빌드)
-    runs-on: macos-13
+    # macos-latest = Apple Silicon(arm64) 러너 → 줄이 짧음.
+    # 여기서 universal(arm64 + x86_64) 로 빌드하면
+    # Intel 맥·M칩 맥 모두 네이티브 실행 (Rosetta 불필요) = 단일 파일로 전부 호환
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── GLFW 를 정적(static)으로 직접 빌드 ──
+      # ── GLFW 를 정적(static) · 유니버설로 직접 빌드 ──
       #    → 최종 바이너리가 GLFW dylib 에 의존하지 않아 어디서나 실행 가능
-      - name: Build GLFW (static)
+      - name: Build GLFW (static, universal)
         run: |
           git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git glfw-src
           cmake -S glfw-src -B glfw-src/build \
@@ -27,33 +28,35 @@ jobs:
             -DGLFW_BUILD_TESTS=OFF \
             -DGLFW_BUILD_DOCS=OFF \
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/glfw-install" \
-            -DCMAKE_OSX_ARCHITECTURES=x86_64
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           cmake --build glfw-src/build --config Release
           cmake --install glfw-src/build
 
-      # ── 게임 빌드 ──
-      - name: Configure & build WiNILL
+      # ── 게임 빌드 (universal) ──
+      - name: Configure & build Onedow
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/glfw-install" \
-            -DCMAKE_OSX_ARCHITECTURES=x86_64
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
           cmake --build build --config Release
 
       # ── 패키징 (바이너리 + 폰트) ──
       - name: Package
         run: |
-          mkdir -p dist/WiNILL
-          cp build/WiNILL dist/WiNILL/WiNILL
-          cp -R WiNILL/Resource dist/WiNILL/Resource
+          mkdir -p dist/Onedow
+          cp build/WiNILL dist/Onedow/Onedow
+          cp -R WiNILL/Resource dist/Onedow/Resource
           # 임시(ad-hoc) 서명 — Apple Silicon 에서 "손상됨" 강제종료 방지에 도움
-          codesign --force --deep --sign - dist/WiNILL/WiNILL || true
-          chmod +x dist/WiNILL/WiNILL
-          cd dist && zip -r WiNILL-macOS.zip WiNILL
+          codesign --force --deep --sign - dist/Onedow/Onedow || true
+          chmod +x dist/Onedow/Onedow
+          cd dist && zip -r Onedow-macOS.zip Onedow
+          # 확인용: 어떤 아키텍처가 들어갔는지 로그 출력
+          echo "=== lipo info ===" && lipo -info Onedow/Onedow || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WiNILL-macOS
-          path: dist/WiNILL-macOS.zip
+          name: Onedow-macOS
+          path: dist/Onedow-macOS.zip
           if-no-files-found: error
