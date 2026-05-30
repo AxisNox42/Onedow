@@ -1,0 +1,26 @@
+# ── 빌드 산출물 ──
+x64/
+Debug/
+Release/
+build/
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.idb
+
+# ── Visual Studio ──
+.vs/
+*.user
+*.suo
+
+# ── CMake ──
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
+# ── macOS ──
+.DS_Store
+
+# ── 런타임 로그 ──
+transparency_debug.txt

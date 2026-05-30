@@ -1,0 +1,59 @@
+name: macOS Build
+
+# 수동 실행(Actions 탭의 "Run workflow") + main 푸시 시 자동 빌드
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # macos-13 = Intel(x86_64) 러너 → 결과 바이너리는 Intel 네이티브 +
+    # Apple Silicon 에서는 Rosetta 2 로 실행됨 (= 가장 폭넓게 호환되는 단일 빌드)
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── GLFW 를 정적(static)으로 직접 빌드 ──
+      #    → 최종 바이너리가 GLFW dylib 에 의존하지 않아 어디서나 실행 가능
+      - name: Build GLFW (static)
+        run: |
+          git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git glfw-src
+          cmake -S glfw-src -B glfw-src/build \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DGLFW_BUILD_EXAMPLES=OFF \
+            -DGLFW_BUILD_TESTS=OFF \
+            -DGLFW_BUILD_DOCS=OFF \
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/glfw-install" \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64
+          cmake --build glfw-src/build --config Release
+          cmake --install glfw-src/build
+
+      # ── 게임 빌드 ──
+      - name: Configure & build WiNILL
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/glfw-install" \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64
+          cmake --build build --config Release
+
+      # ── 패키징 (바이너리 + 폰트) ──
+      - name: Package
+        run: |
+          mkdir -p dist/WiNILL
+          cp build/WiNILL dist/WiNILL/WiNILL
+          cp -R WiNILL/Resource dist/WiNILL/Resource
+          # 임시(ad-hoc) 서명 — Apple Silicon 에서 "손상됨" 강제종료 방지에 도움
+          codesign --force --deep --sign - dist/WiNILL/WiNILL || true
+          chmod +x dist/WiNILL/WiNILL
+          cd dist && zip -r WiNILL-macOS.zip WiNILL
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WiNILL-macOS
+          path: dist/WiNILL-macOS.zip
+          if-no-files-found: error

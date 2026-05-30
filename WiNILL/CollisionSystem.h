@@ -1,0 +1,272 @@
+#pragma once
+#include <vector>
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <glm/glm.hpp>
+#include "MonsterManager.h"
+#include "Bullet.h"
+#include "PlayerStats.h"
+
+class CollisionSystem {
+public:
+    // 반환값: 이번 프레임에 플레이어가 피해를 받았는지 (LIGHT_STEP 타이머용)
+    static bool Update(float playerCX, float playerCY,
+                       MonsterManager& mm, std::vector<Bullet>& bullets,
+                       float& playerHP, float& scoreAccum, long long& score,
+                       PlayerStats& stats, long long& xp)
+    {
+        bool playerHit = false;
+
+        for (auto& b : bullets) {
+            if (!b.active) continue;
+
+            if (b.isEnemy) {
+                // 적 총알 → 플레이어
+                float dist = glm::distance(glm::vec2(b.x, b.y),
+                                           glm::vec2(playerCX, playerCY));
+                if (dist < 20.0f) {
+                    playerHP -= 10.0f * stats.rmobDmgMult;
+                    b.active  = false;
+                    playerHit = true;
+                }
+                continue;
+            }
+
+            // 플레이어 총알 vs 잡몹
+            bool consumed = false;
+            for (auto m : mm.monsters) {
+                if (!m->alive) continue;
+                float d = glm::distance(glm::vec2(b.x, b.y),
+                                        glm::vec2(m->worldX, m->worldY));
+                if (d < 15.0f) {
+                    float pd = glm::distance(glm::vec2(playerCX, playerCY),
+                                             glm::vec2(m->worldX, m->worldY));
+                    // CANNON 모드: b.remainingDmg 사용. 그 외: 일반 계산
+                    float baseDealt;
+                    if (b.remainingDmg > 0.0f) {
+                        baseDealt = b.remainingDmg;
+                    } else {
+                        baseDealt = stats.GetBaseDamage()
+                                  * stats.GetDamageMultiplier(pd)
+                                  * b.dmgMult;
+                    }
+                    float dealtThisHit = (baseDealt < m->hp) ? baseDealt : m->hp;
+                    m->hp -= dealtThisHit;
+                    if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+
+                    if (m->hp <= 0.0f) {
+                        m->alive = false;
+                        float gained = (1.0f + (float)stats.meleeXpBonus)
+                                     * stats.xpMult;
+                        xp              += (long long)gained;
+                        stats.killCount += 1;
+                        scoreAccum      += 100.0f;
+                        score = (long long)scoreAccum;
+                        if (stats.vampire) {
+                            ++stats.vampireKillStreak;
+                            if (stats.vampireKillStreak >= 10) {
+                                stats.vampireKillStreak = 0;
+                                playerHP += 1.0f;
+                                if (playerHP > stats.maxHP)
+                                    playerHP = stats.maxHP;
+                            }
+                        }
+                    }
+
+                    // 관통 판정: cannon 잔존 데미지 OR pierce 30%
+                    bool keepAlive = false;
+                    if (b.remainingDmg > 0.001f) keepAlive = true;
+                    if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                    if (!keepAlive) b.active = false;
+                    consumed = true;
+                    break;
+                }
+            }
+
+            // 플레이어 총알 vs 자폭병
+            if (!consumed) {
+                for (auto bm : mm.bombers) {
+                    if (!bm->alive) continue;
+                    float d = glm::distance(glm::vec2(b.x, b.y),
+                                            glm::vec2(bm->worldX, bm->worldY));
+                    if (d < 18.0f) {
+                        float pd = glm::distance(glm::vec2(playerCX, playerCY),
+                                                 glm::vec2(bm->worldX, bm->worldY));
+                        float baseDealt;
+                        if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
+                        else baseDealt = stats.GetBaseDamage()
+                                       * stats.GetDamageMultiplier(pd)
+                                       * b.dmgMult;
+                        float dealtThisHit = (baseDealt < bm->hp) ? baseDealt : bm->hp;
+                        bm->hp -= dealtThisHit;
+                        if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+                        if (bm->hp <= 0.0f) {
+                            bm->alive = false;
+                            float gained = (25.0f + (float)stats.meleeXpBonus)
+                                         * stats.xpMult;
+                            xp              += (long long)gained;
+                            stats.killCount += 1;
+                            scoreAccum      += 200.0f;
+                            score = (long long)scoreAccum;
+                            if (stats.vampire) {
+                                ++stats.vampireKillStreak;
+                                if (stats.vampireKillStreak >= 10) {
+                                    stats.vampireKillStreak = 0;
+                                    playerHP += 1.0f;
+                                    if (playerHP > stats.maxHP)
+                                        playerHP = stats.maxHP;
+                                }
+                            }
+                            // HACK_BOMBER: 20% 확률 폭발 (적에게만 피해, VFX는 main.cpp 에서)
+                            if (stats.hackBomber && (rand() % 100) < 20) {
+                                bm->hackBlastPending = true;  // main.cpp 에서 폭발 VFX spawn
+                                float hackDmg = stats.GetBaseDamage()
+                                              * stats.GetDamageMultiplier(0.0f) * 1.5f;
+                                float hackR   = 150.0f;
+                                float hcx = bm->worldX, hcy = bm->worldY;
+                                for (auto m2 : mm.monsters) {
+                                    if (!m2->alive) continue;
+                                    float ddx = m2->worldX - hcx, ddy = m2->worldY - hcy;
+                                    if (ddx*ddx + ddy*ddy < hackR * hackR) {
+                                        m2->hp -= hackDmg;
+                                        if (m2->hp <= 0) m2->alive = false;
+                                    }
+                                }
+                                for (auto r2 : mm.rangedMobs) {
+                                    if (!r2->alive) continue;
+                                    float ddx = r2->worldX - hcx, ddy = r2->worldY - hcy;
+                                    if (ddx*ddx + ddy*ddy < hackR * hackR) {
+                                        r2->hp -= hackDmg;
+                                        if (r2->hp <= 0) r2->alive = false;
+                                    }
+                                }
+                                for (auto bm2 : mm.bombers) {
+                                    if (!bm2->alive || bm2 == bm) continue;
+                                    float ddx = bm2->worldX - hcx, ddy = bm2->worldY - hcy;
+                                    if (ddx*ddx + ddy*ddy < hackR * hackR) {
+                                        bm2->hp -= hackDmg;
+                                        if (bm2->hp <= 0) bm2->alive = false;
+                                    }
+                                }
+                                if (mm.boss && mm.boss->alive) {
+                                    float ddx = mm.boss->worldX - hcx, ddy = mm.boss->worldY - hcy;
+                                    if (ddx*ddx + ddy*ddy < hackR * hackR) {
+                                        mm.boss->hp -= hackDmg;
+                                        if (mm.boss->hp <= 0) mm.boss->alive = false;
+                                    }
+                                }
+                            }
+                        }
+                        bool keepAlive = false;
+                        if (b.remainingDmg > 0.001f) keepAlive = true;
+                        if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                        if (!keepAlive) b.active = false;
+                        consumed = true;
+                        break;
+                    }
+                }
+            }
+
+            // 플레이어 총알 vs 보스
+            if (!consumed && mm.boss && mm.boss->alive) {
+                auto* bs = mm.boss;
+                float d = glm::distance(glm::vec2(b.x, b.y),
+                                        glm::vec2(bs->worldX, bs->worldY));
+                if (d < Boss::BODY_SIZE * 0.65f) {
+                    float pd = glm::distance(glm::vec2(playerCX, playerCY),
+                                             glm::vec2(bs->worldX, bs->worldY));
+                    float baseDealt;
+                    if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
+                    else baseDealt = stats.GetBaseDamage()
+                                   * stats.GetDamageMultiplier(pd)
+                                   * b.dmgMult;
+                    float dealtThisHit = (baseDealt < bs->hp) ? baseDealt : bs->hp;
+                    bs->hp -= dealtThisHit;
+                    if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+                    if (bs->hp <= 0.0f) {
+                        bs->alive = false; // 보상은 main 에서 처리
+                    }
+                    bool keepAlive = false;
+                    if (b.remainingDmg > 0.001f) keepAlive = true;
+                    if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                    if (!keepAlive) b.active = false;
+                    consumed = true;
+                }
+            }
+
+            // 플레이어 총알 vs 원거리 몹 — cannon 잔존 데미지 / pierce 모두 적용
+            if (!consumed) {
+                for (auto r : mm.rangedMobs) {
+                    if (!r->alive) continue;
+                    float d = glm::distance(glm::vec2(b.x, b.y),
+                                            glm::vec2(r->worldX, r->worldY));
+                    if (d < 20.0f) {
+                        float pd = glm::distance(glm::vec2(playerCX, playerCY),
+                                                 glm::vec2(r->worldX, r->worldY));
+                        float baseDealt;
+                        if (b.remainingDmg > 0.0f) {
+                            baseDealt = b.remainingDmg;
+                        } else {
+                            baseDealt = stats.GetBaseDamage()
+                                      * stats.GetDamageMultiplier(pd)
+                                      * b.dmgMult;
+                        }
+                        float dealtThisHit = (baseDealt < r->hp) ? baseDealt : r->hp;
+                        r->hp -= dealtThisHit;
+                        if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+
+                        if (r->hp <= 0.0f) {
+                            r->alive = false;
+                            float gained = (25.0f + (float)stats.rangedXpBonus)
+                                         * stats.xpMult;
+                            xp              += (long long)gained;
+                            stats.killCount += 1;
+                            scoreAccum      += 300.0f;
+                            score = (long long)scoreAccum;
+                            if (stats.vampire) {
+                                ++stats.vampireKillStreak;
+                                if (stats.vampireKillStreak >= 10) {
+                                    stats.vampireKillStreak = 0;
+                                    playerHP += 1.0f;
+                                    if (playerHP > stats.maxHP)
+                                        playerHP = stats.maxHP;
+                                }
+                            }
+                            // HACK_RANGED: 20% 확률 유도탄 5발 (적에게만 피해 — player bullet)
+                            if (stats.hackRanged && (rand() % 100) < 20) {
+                                const int N = 5;
+                                for (int k = 0; k < N; k++) {
+                                    float a = (float)k / (float)N * 6.2831853f
+                                            + ((float)(rand() % 100) - 50.0f) * 0.01f;
+                                    Bullet nb(r->worldX, r->worldY,
+                                              r->worldX + cosf(a) * 100.0f,
+                                              r->worldY + sinf(a) * 100.0f);
+                                    nb.speed      = stats.bulletSpeed * 0.9f;
+                                    nb.homing     = true;
+                                    nb.homingTurn = 5.5f;
+                                    nb.dmgMult    = 0.6f;
+                                    nb.color      = glm::vec3(0.2f, 1.0f, 0.6f);
+                                    bullets.push_back(nb);
+                                }
+                            }
+                        }
+
+                        bool keepAlive = false;
+                        if (b.remainingDmg > 0.001f) keepAlive = true;
+                        if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                        if (!keepAlive) b.active = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        bullets.erase(
+            std::remove_if(bullets.begin(), bullets.end(),
+                [](const Bullet& b){ return !b.active; }),
+            bullets.end());
+
+        return playerHit;
+    }
+};

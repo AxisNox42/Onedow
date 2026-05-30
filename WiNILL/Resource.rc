@@ -1,0 +1,14 @@
+// ─────────────────────────────────────────────────────────────
+// WiNILL 임베디드 리소스
+//   exe 안에 폰트(이미지·오디오 등)를 직접 포함시켜 단일 파일 배포
+//   런타임에 FindResource/LoadResource/LockResource 로 접근
+// ─────────────────────────────────────────────────────────────
+
+// 한국어 폰트 — TextRenderer 가 AddFontMemResourceEx 로 GDI 에 등록
+DONGLE_FONT     RCDATA      "Resource\\Font\\Dongle-Regular.ttf"
+// 라틴/키릴 (영어/스페인/포르투갈/독일/러시아) — variable font
+OSWALD_FONT     RCDATA      "Resource\\Font\\Oswald-VariableFont_wght.ttf"
+
+// (추후 추가 예: 픽토그램·BGM 등)
+// AUG_DMG_ICON    RCDATA      "Resource\\Image\\dmg.png"
+// BGM_TITLE       RCDATA      "Resource\\Audio\\title.ogg"
