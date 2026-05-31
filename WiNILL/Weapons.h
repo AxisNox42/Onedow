@@ -11,18 +11,33 @@ enum class StartWeapon {
 };
 
 struct WeaponDef {
-    const wchar_t* krName;
-    const wchar_t* krDesc;
+    const wchar_t* locName[LANG_COUNT];   // [KR, EN, JP]
+    const wchar_t* locDesc[LANG_COUNT];   // [KR, EN, JP]
 };
 
 inline const WeaponDef ALL_WEAPONS[] = {
-    /* SMG      */ { L"기관단총", L"연사 ×2  /  공격력 -50%  /  탄 흩어짐" },
-    /* SNIPER   */ { L"저격총",   L"공격력 ×2  /  탄속 ×1.8  /  관통 40%  /  연사 -33%" },
-    /* RIFLE    */ { L"소총",     L"균형형  /  약간 흩어짐" },
-    /* SHOTGUN  */ { L"샷건",     L"한 번에 5발  /  사거리 700  /  연사 -33%" },
-    /* CANNON   */ { L"대포",     L"연사 1초 고정  /  공격력 ×10  /  큰 탄  /  [조합] 드론II = 포탑" },
-    /* REVOLVER */ { L"리볼버",   L"공격력 ×1.4  /  연사 -29%  /  정확" },
+    /* SMG */ {
+      { L"기관단총", L"SMG", L"サブマシンガン" },
+      { L"연사 ×2  /  공격력 -50%  /  탄 흩어짐", L"Fire rate ×2  /  Attack -50%  /  spread", L"連射 ×2  /  攻撃力 -50%  /  弾ばらつき" } },
+    /* SNIPER */ {
+      { L"저격총", L"Sniper", L"スナイパー" },
+      { L"공격력 ×2  /  탄속 ×1.8  /  관통 40%  /  연사 -33%", L"Attack ×2  /  speed ×1.8  /  40% pierce  /  rate -33%", L"攻撃力 ×2  /  弾速 ×1.8  /  貫通40%  /  連射 -33%" } },
+    /* RIFLE */ {
+      { L"소총", L"Rifle", L"ライフル" },
+      { L"균형형  /  약간 흩어짐", L"Balanced  /  slight spread", L"バランス型  /  わずかにばらつき" } },
+    /* SHOTGUN */ {
+      { L"샷건", L"Shotgun", L"ショットガン" },
+      { L"한 번에 5발  /  사거리 700  /  연사 -33%", L"5 pellets at once  /  range 700  /  rate -33%", L"一度に5発  /  射程700  /  連射 -33%" } },
+    /* CANNON */ {
+      { L"대포", L"Cannon", L"大砲" },
+      { L"연사 1초 고정  /  공격력 ×10  /  큰 탄  /  [조합] 드론II = 포탑", L"fixed 1s interval  /  Attack ×10  /  big shells  /  [combo] Drone II = turret", L"連射1秒固定  /  攻撃力 ×10  /  大きな弾  /  [組合] ドローンII = 砲台" } },
+    /* REVOLVER */ {
+      { L"리볼버", L"Revolver", L"リボルバー" },
+      { L"공격력 ×1.4  /  연사 -29%  /  정확", L"Attack ×1.4  /  rate -29%  /  accurate", L"攻撃力 ×1.4  /  連射 -29%  /  正確" } },
 };
+
+inline const wchar_t* WeaponName(const WeaponDef& w) { return w.locName[CurLangIdx()]; }
+inline const wchar_t* WeaponDesc(const WeaponDef& w) { return w.locDesc[CurLangIdx()]; }
 
 inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
     switch (w) {

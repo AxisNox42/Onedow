@@ -346,6 +346,10 @@ int main() {
 #ifdef __APPLE__
     // macOS 는 3.2+ Core 에서 forward-compatible 컨텍스트 필수
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+    // 레티나(HiDPI) 2× 백버퍼 끄기 → 프레임버퍼 = 창 크기(점) 1:1
+    //   좌표/스크issor/마우스가 전부 점 단위로 일치 → Windows 와 동일하게 동작
+    //   (안 끄면 게임이 화면 좌하단 1/4 에만 그려지고 클릭 위치가 어긋남)
+    glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 #endif
     glfwWindowHint(GLFW_DECORATED,             GLFW_FALSE);
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
@@ -2233,7 +2237,7 @@ int main() {
                     float cardX = baseX + i * (CARD_W + GAP);
 
                     // 카드 = 큰 버튼
-                    if (UIButton(cardX, baseY, CARD_W, CARD_H, w.krName,
+                    if (UIButton(cardX, baseY, CARD_W, CARD_H, WeaponName(w),
                                  mx, my, lmb, g_LmbPrev)) {
                         // #109: 변환 카드 undo 기준점 저장 (무기 적용 전 fireInterval)
                         g_Stats.baseFireInterval = g_Stats.fireInterval;
@@ -2250,7 +2254,7 @@ int main() {
                     // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
                     BindMainShader();
                     float dY = baseY + CARD_H * 0.55f;
-                    const wchar_t* d = w.krDesc;
+                    const wchar_t* d = WeaponDesc(w);
                     // '/' 로 split → 줄 단위
                     std::vector<std::wstring> lines;
                     std::wstring cur;
@@ -2538,7 +2542,7 @@ int main() {
                     const wchar_t* topLabel;
                     if (i < 3) {
                         const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
-                        cardName = def.krName;
+                        cardName = AugName(def);
                         GetRarityColor(def.rarity, tr, tg, tb);
                         tr = std::min(1.0f, tr * 1.4f + 0.25f);
                         tg = std::min(1.0f, tg * 1.4f + 0.25f);
@@ -2546,7 +2550,7 @@ int main() {
                         topLabel = GetRarityKR(def.rarity);
                     } else {
                         cardName = (g_ConversionWeapon >= 0)
-                                 ? ALL_WEAPONS[g_ConversionWeapon].krName : L"?";
+                                 ? WeaponName(ALL_WEAPONS[g_ConversionWeapon]) : L"?";
                         tr = 1.0f; tg = 0.9f; tb = 0.3f;
                         topLabel = L"변환";
                     }
@@ -2583,11 +2587,11 @@ int main() {
                         int hIdx = g_GameManager.augChoices[g_HoveredAug];
                         if (hIdx < 0) hIdx = 0;
                         const AugDef& hDef = ALL_AUGS[hIdx];
-                        hDesc = hDef.krDesc;
+                        hDesc = AugDesc(hDef);
                         GetRarityColor(hDef.rarity, hr, hg, hb);
                     } else {
                         hDesc = (g_ConversionWeapon >= 0)
-                              ? ALL_WEAPONS[g_ConversionWeapon].krDesc
+                              ? WeaponDesc(ALL_WEAPONS[g_ConversionWeapon])
                               : L"기존 무기 효과 제거 후 새 무기로 전환";
                         hr = 1.0f; hg = 0.78f; hb = 0.10f;  // 변환 = 금색
                     }
@@ -2693,9 +2697,9 @@ int main() {
 
                     wchar_t line[96];
                     if (counts[i] > 1)
-                        swprintf_s(line, L"· %ls  ×%d", def.krName, counts[i]);
+                        swprintf_s(line, L"· %ls  ×%d", AugName(def), counts[i]);
                     else
-                        swprintf_s(line, L"· %ls", def.krName);
+                        swprintf_s(line, L"· %ls", AugName(def));
                     g_TextS.Draw(line, PX, py, 0.85f, cr, cg, cb, 0.9f);
                     py += ROW_H;
                 }
@@ -2729,16 +2733,16 @@ int main() {
 
                     // 증강 이름 (대) — BY+46 부터 (구분선 아래 8px)
                     float nSc = 1.1f;
-                    while (nSc > 0.65f && g_TextL.Width(sd.krName, nSc) > BW - 20.0f)
+                    while (nSc > 0.65f && g_TextL.Width(AugName(sd), nSc) > BW - 20.0f)
                         nSc -= 0.05f;
-                    float nLw = g_TextL.Width(sd.krName, nSc);
-                    g_TextL.Draw(sd.krName, BX + (BW - nLw) * 0.5f, BY + 46.0f, nSc,
+                    float nLw = g_TextL.Width(AugName(sd), nSc);
+                    g_TextL.Draw(AugName(sd), BX + (BW - nLw) * 0.5f, BY + 46.0f, nSc,
                                  1.0f, 1.0f, 1.0f, 0.98f);
 
                     // 설명 ('/' 분리) — BY+92 부터 (이름 아래 여유)
                     std::vector<std::wstring> dlines;
                     std::wstring cur2;
-                    for (const wchar_t* p = sd.krDesc; *p; ++p) {
+                    for (const wchar_t* p = AugDesc(sd); *p; ++p) {
                         if (*p == L'/') { if (!cur2.empty()) dlines.push_back(cur2); cur2.clear(); }
                         else cur2 += *p;
                     }
