@@ -8,31 +8,33 @@
 //   양수 = 해당 FPS 로 캡
 inline int g_FpsCap = 0;
 
-// 언어
-enum class Language { KR, EN, ZH, RU, ES, PT, DE };
+// 언어 (한국어 / 영어 / 일본어)
+enum class Language { KR, EN, JP };
 inline Language g_Language = Language::KR;
+inline constexpr int LANG_COUNT = 3;
 
 // 크로스헤어 표시 (기본 ON)
 inline bool g_ShowCrosshair = true;
 
 // 모든 언어 공통 폰트 — Microsoft YaHei UI (Win10+ 기본 탑재)
-//   한글 / 한자 / 키릴 / 라틴 모두 단일 폰트로 커버 → 언어 선택 화면에서도
-//   모든 라벨이 정상 표시  (Windows 전용 — GDI face 이름)
+//   한글/라틴은 GDI 폰트 링크(자동 폴백)로, 일본어 가나·한자도 시스템 폴백으로 표시
+//   (Windows 전용 — GDI face 이름)
 inline const char* LanguageFace(Language /*lang*/) {
     return "Microsoft YaHei UI";
 }
 
 // 비-Windows(macOS/Linux): 언어별 폰트 폴백 체인 (TTF 파일 경로)
-//   앞쪽이 주 폰트, 없는 글리프는 다음 폰트로 폴백 → 다국어 커버
-//   반환 = 채워진 경로 개수 (out 은 최소 3칸)
+//   앞쪽이 주 폰트, 없는 글리프는 다음 폰트로 폴백
+//   ※ 일본어(가나)를 맥에서 표시하려면 Resource/Font/NotoSansJP-Regular.ttf 가 필요.
+//     (없으면 그 슬롯은 자동 스킵 — 빌드/실행엔 문제없고 일본어만 안 보임)
 inline int LanguageFontChain(Language lang, const char* out[3]) {
-    static const char* KR  = "Resource/Font/Dongle-Regular.ttf";                 // 한글
-    static const char* ZH  = "Resource/Font/ZCOOLQingKeHuangYou-Regular.ttf";    // 한자
-    static const char* LAT = "Resource/Font/Oswald-VariableFont_wght.ttf";       // 라틴/키릴
+    static const char* KR  = "Resource/Font/Dongle-Regular.ttf";            // 한글
+    static const char* JP  = "Resource/Font/NotoSansJP-Regular.ttf";        // 일본어 (별도 추가 필요)
+    static const char* LAT = "Resource/Font/Oswald-VariableFont_wght.ttf";  // 라틴
     switch (lang) {
-    case Language::KR: out[0] = KR;  out[1] = ZH; out[2] = LAT; return 3;
-    case Language::ZH: out[0] = ZH;  out[1] = KR; out[2] = LAT; return 3;
-    default:           out[0] = LAT; out[1] = KR; out[2] = ZH;  return 3;
+    case Language::KR: out[0] = KR;  out[1] = JP;  out[2] = LAT; return 3;
+    case Language::JP: out[0] = JP;  out[1] = KR;  out[2] = LAT; return 3;
+    default:           out[0] = LAT; out[1] = KR;  out[2] = JP;  return 3; // EN
     }
 }
 

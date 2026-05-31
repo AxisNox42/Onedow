@@ -2375,16 +2375,12 @@ int main() {
                 lineY = sh * 0.42f;
                 g_TextS.Draw(T(StrId::SET_LANG), 60.0f, lineY, 1.0f, 1,1,1,0.9f);
                 struct LangOpt { const wchar_t* label; Language lang; };
-                LangOpt langOpts[7] = {
+                LangOpt langOpts[LANG_COUNT] = {
                     { L"한국어",  Language::KR },
                     { L"English", Language::EN },
-                    { L"中文",    Language::ZH },
-                    { L"Русский", Language::RU },
-                    { L"Español", Language::ES },
-                    { L"Portug.", Language::PT },
-                    { L"Deutsch", Language::DE },
+                    { L"日本語",  Language::JP },
                 };
-                for (int i = 0; i < 7; i++) {
+                for (int i = 0; i < LANG_COUNT; i++) {
                     float bx = 300.0f + (i % 4) * 200.0f;
                     float by = lineY - 14.0f + (i / 4) * 70.0f;
                     bool sel = (g_Language == langOpts[i].lang);
