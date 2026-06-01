@@ -34,6 +34,7 @@
 #include "MonsterManager.h"
 #include "GlitchBoss.h"
 #include "ReloadRunnerBoss.h"
+#include "PolymorphBoss.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -61,6 +62,20 @@
 // --- 전역 ---
 int   screenWidth  = 0;
 int   screenHeight = 0;
+
+// 화면 줌 (보스 페이즈2 "화면 2배 확장" 등). 1.0=기본, 0.5=2배 확장(전체 절반 크기).
+//   중심 = 화면 중앙. 줌=1 일 때 모든 헬퍼가 항등(identity)이라 기존 동작 그대로.
+float g_ViewZoom       = 1.0f;
+float g_ViewZoomTarget = 1.0f;
+// 월드 좌표 → 화면 픽셀 (줌 적용)
+inline float W2SX(float wx) { return screenWidth  * 0.5f + (wx - screenWidth  * 0.5f) * g_ViewZoom; }
+inline float W2SY(float wy) { return screenHeight * 0.5f + (wy - screenHeight * 0.5f) * g_ViewZoom; }
+// 가짜창 scissor — 월드 사각형을 줌 적용해 픽셀 scissor 로 (줌=1 이면 기존과 동일)
+inline void WorldScissor(float wx, float wy, float ww, float wh) {
+    float sx = W2SX(wx), sy = W2SY(wy);
+    float sw = ww * g_ViewZoom, sh = wh * g_ViewZoom;
+    glScissor((GLint)sx, (GLint)(screenHeight - (sy + sh)), (GLint)sw, (GLint)sh);
+}
 bool  keys[1024]   = {};
 
 GameManager    g_GameManager;
@@ -182,6 +197,8 @@ bool g_BossSpawnedThisRun  = false;
 GlitchBoss* g_GlitchBoss = nullptr;
 // 리로드 러너 보스 (무기 교체형) — 별도 관리
 ReloadRunnerBoss* g_RRBoss = nullptr;
+// 폴리모프 보스 (희귀, 폼 변환 + 페이즈2 화면 확장) — 별도 관리
+PolymorphBoss* g_PolyBoss = nullptr;
 
 // HUD: 현재 측정 FPS (상단 우측 표시)
 int    g_CurrentFPS  = 0;
@@ -560,10 +577,15 @@ int main() {
 
         glfwPollEvents();
 
-        // 마우스 상태
+        // 줌 부드럽게 보간 (페이즈2 화면 확장 등)
+        g_ViewZoom += (g_ViewZoomTarget - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
+
+        // 마우스 상태 (mx,my = 화면 픽셀 / wmx,wmy = 줌 보정한 월드 좌표 = 조준용)
         double mx, my;
         glfwGetCursorPos(window, &mx, &my);
         bool lmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        float wmx = screenWidth  * 0.5f + ((float)mx - screenWidth  * 0.5f) / g_ViewZoom;
+        float wmy = screenHeight * 0.5f + ((float)my - screenHeight * 0.5f) / g_ViewZoom;
 
         // --- 입력 처리 ---
         GameState prevState = g_GameManager.currentState;
@@ -599,6 +621,8 @@ int main() {
             g_BossRewardPicksLeft = 0;
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
+            if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
+            g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
             for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
@@ -1125,6 +1149,12 @@ int main() {
                 if (g_RRBoss && g_RRBoss->alive)
                     g_RRBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
+                // 폴리모프 업데이트 (폼 변환 + 세모/레이저/차크람) + 페이즈2 화면 확장
+                if (g_PolyBoss && g_PolyBoss->alive) {
+                    g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    g_ViewZoomTarget = g_PolyBoss->phase2 ? 0.5f : 1.0f;
+                }
+
                 // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
                 bool hit = CollisionSystem::Update(pCX, pCY,
                     g_MonsterManager, g_Bullets,
@@ -1187,6 +1217,72 @@ int main() {
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (rb->hp <= 0.0f) rb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // 폴리모프 보스 vs 플레이어 총알 (차크람 / 본체 반사·방어막 / 세모 EXP)
+                if (g_PolyBoss && g_PolyBoss->alive) {
+                    auto* pb = g_PolyBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                 glm::vec2(pb->worldX, pb->worldY));
+                        float dmg;
+                        if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                        else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                        else dmg = g_Stats.GetBaseDamage()
+                                 * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+
+                        // 1) 세모 무리 — 격파 시 EXP 2
+                        bool consumed = false;
+                        for (auto& s : pb->swarm) {
+                            if (!s.alive) continue;
+                            if (SegDist(s.x, s.y, b.prevX, b.prevY, b.x, b.y) < 13.0f) {
+                                s.alive = false;
+                                g_GameManager.xp += 2;
+                                g_GameManager.scoreAccum += 10.0f;
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+
+                        // 2) 차크람 (페이즈2 방어막)
+                        for (auto& c : pb->chakrams) {
+                            if (!c.alive) continue;
+                            float cx = pb->worldX + cosf(c.angle) * 150.0f;
+                            float cy = pb->worldY + sinf(c.angle) * 150.0f;
+                            if (SegDist(cx, cy, b.prevX, b.prevY, b.x, b.y) < 26.0f) {
+                                c.hp -= dmg;
+                                if (c.hp <= 0.0f) c.alive = false;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dmg;
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+
+                        // 3) 본체
+                        if (SegDist(pb->worldX, pb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < PolymorphBoss::BODY * 0.55f) {
+                            if (pb->reflecting()) {
+                                // 다이아몬드 폼: 반사 — 원래 위력 그대로 적 총알로
+                                b.dirX = -b.dirX; b.dirY = -b.dirY;
+                                b.prevX = b.x;    b.prevY = b.y;
+                                b.isEnemy  = true;
+                                b.enemyDmg = dmg;          // 플레이어 위력 그대로
+                                b.color    = glm::vec3(0.8f, 0.3f, 1.0f);
+                            } else if (pb->shielded()) {
+                                // 차크람 남음 → 무적 (총알만 소모)
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                            } else {
+                                float dealt = (dmg < pb->hp) ? dmg : pb->hp;
+                                pb->hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (pb->hp <= 0.0f) pb->alive = false;
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                            }
                         }
                     }
                 }
@@ -1263,6 +1359,25 @@ int main() {
                     delete rb;
                     g_RRBoss = nullptr;
                     g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
+                // 폴리모프 사망 → 화면 원복 + 증강 3개 + 점수 50% 추가
+                if (g_PolyBoss && !g_PolyBoss->alive && !g_PolyBoss->exploded) {
+                    auto* pb = g_PolyBoss;
+                    SpawnEnemyExplosion(pb->worldX, pb->worldY, 0.6f, 0.2f, 0.9f, true);
+                    SpawnEnemyExplosion(pb->worldX, pb->worldY, 0.9f, 0.3f, 1.0f, true);
+                    SpawnShockWave(pb->worldX, pb->worldY, 450.0f, 0.8f, 0.7f, 0.3f, 1.0f);
+                    g_ShakeTime = 0.6f; g_ShakeMag = 24.0f;
+                    pb->exploded = true;
+                    g_ViewZoomTarget = 1.0f;               // 화면 정상화
+                    g_GameManager.scoreAccum += 30000.0f;  // 다른 보스 +50%
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete pb;
+                    g_PolyBoss = nullptr;
+                    g_BossRewardPicksLeft = 3;             // 증강 1개 더
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
                     g_GameManager.currentState = GameState::AUG_SELECT;
@@ -1431,25 +1546,33 @@ int main() {
             if (!g_BossSpawnedThisRun &&
                 g_GameManager.score >= 100000 &&
                 g_MonsterManager.boss == nullptr &&
-                g_GlitchBoss == nullptr && g_RRBoss == nullptr) {
+                g_GlitchBoss == nullptr && g_RRBoss == nullptr &&
+                g_PolyBoss == nullptr) {
                 g_BossSpawnedThisRun = true;
                 float bsx = screenWidth * 0.5f
                           + ((float)(rand() % 200) - 100.0f);
                 float bsy = screenHeight * 0.5f
                           + ((float)(rand() % 200) - 100.0f);
                 float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
+                if (rand() % 100 < 12) {
+                    // 폴리모프 보스 (희귀 ~12%) — 자체 HP (이지10k/노말30k/하드75k)
+                    float pHp = (g_Difficulty == Difficulty::EASY) ? 10000.0f
+                              : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
+                    g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, pHp);
+                } else {
                 int pick = rand() % 3;
                 if (pick == 0) {
                     // 슬라임 보스
                     g_MonsterManager.boss =
                         new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
                 } else if (pick == 1) {
-                    // 글리치 보스 (전조 → 세모 떼 → 버스트)
-                    g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight);
+                    // 글리치 보스 (전조 → 세모 떼 → 버스트) — 회피형이라 HP 0.7×
+                    g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, bossHp * 0.7f);
                 } else {
                     // 리로드 러너 (무기 교체형)
                     g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHp);
                 }
+                }  // 폴리모프 아닌 경우(else) 끝
                 // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
                 g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
                 SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
@@ -1770,7 +1893,7 @@ int main() {
                     }
                 } else {
                     if (lmb && fireTimer >= effInterval) {
-                        float tx = (float)mx, ty = (float)my;
+                        float tx = wmx, ty = wmy;   // 줌 보정한 월드 조준점
                         if (g_DrunkActive) {
                             float a = (float)(rand() % 628) * 0.01f;
                             tx = pCX + cosf(a) * 200.0f;
@@ -1800,9 +1923,17 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shader);
-        // 화면 흔들기 적용 — game world 만 흔들리고 HUD/text 는 안 흔들림
+        // 화면 흔들기 + 줌 적용 — game world 만, HUD/text(별도 ortho)는 영향 없음
         float orthoShake[16];
         memcpy(orthoShake, ortho, sizeof(ortho));
+        // 줌(중심=화면 중앙). z=1 이면 base ortho 와 동일(identity)
+        {
+            float z = g_ViewZoom;
+            orthoShake[0]  =  2.0f * z / (float)screenWidth;
+            orthoShake[5]  = -2.0f * z / (float)screenHeight;
+            orthoShake[12] = -z;
+            orthoShake[13] =  z;
+        }
         if (g_ShakeTime > 0.0f) {
             float intensity = g_ShakeMag * (g_ShakeTime / 0.6f);
             if (intensity > g_ShakeMag) intensity = g_ShakeMag;
@@ -1912,12 +2043,7 @@ int main() {
             float rW  = RFW_W * sc, rH = RFW_H * sc;
             float rwx = r->worldX - rW * 0.5f;
             float rwy = r->worldY - rH * 0.5f;
-            glScissor(
-                (GLint) rwx,
-                (GLint)(screenHeight - (rwy + rH)),
-                (GLint) rW,
-                (GLint) rH
-            );
+            WorldScissor(rwx, rwy, rW, rH);
             // 잡몹 (보스 소환물은 더 큼)
             for (auto m : g_MonsterManager.monsters) {
                 if (!m->alive) continue;
@@ -1959,12 +2085,7 @@ int main() {
             for (auto& t : g_Turrets) {
                 float twx = t.x - TURRET_WIN_W * 0.5f;
                 float twy = t.y - TURRET_WIN_H * 0.5f;
-                glScissor(
-                    (GLint) twx,
-                    (GLint)(screenHeight - (twy + TURRET_WIN_H)),
-                    (GLint) TURRET_WIN_W,
-                    (GLint) TURRET_WIN_H
-                );
+                WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive) continue;
                     float sz = m->summoned ? 28.0f : 18.0f;
@@ -1994,12 +2115,7 @@ int main() {
             auto* bs = g_MonsterManager.boss;
             float bwx = bs->worldX - Boss::WIN_W * 0.5f;
             float bwy = bs->worldY - Boss::WIN_H * 0.5f;
-            glScissor(
-                (GLint) bwx,
-                (GLint)(screenHeight - (bwy + Boss::WIN_H)),
-                (GLint) Boss::WIN_W,
-                (GLint) Boss::WIN_H
-            );
+            WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
             for (auto m : g_MonsterManager.monsters) {
                 if (!m->alive) continue;
                 float sz = m->summoned ? 28.0f : 18.0f;
@@ -2084,12 +2200,7 @@ int main() {
 
         // (e) 플레이어 창 내부 컨텐츠 — scissor (가장 위 레이어)
         glEnable(GL_SCISSOR_TEST);
-        glScissor(
-            (GLint) playerWin.x,
-            (GLint)(screenHeight - (playerWin.y + playerWin.height)),
-            (GLint) playerWin.width,
-            (GLint) playerWin.height
-        );
+        WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
         // 잡몹 (보스 소환물은 더 큼)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive) continue;
@@ -2134,12 +2245,7 @@ int main() {
             float rW  = RFW_W * sc, rH = RFW_H * sc;
             float rwx = r->worldX - rW * 0.5f;
             float rwy = r->worldY - rH * 0.5f;
-            glScissor(
-                (GLint) rwx,
-                (GLint)(screenHeight - (rwy + rH)),
-                (GLint) rW,
-                (GLint) rH
-            );
+            WorldScissor(rwx, rwy, rW, rH);
             // 죽은 몹은 다이아몬드도 축소 + 페이드
             float dSize = 32.0f * sc;
             float dAlpha = sc;
@@ -2154,12 +2260,7 @@ int main() {
             for (auto& t : g_Turrets) {
                 float twx = t.x - TURRET_WIN_W * 0.5f;
                 float twy = t.y - TURRET_WIN_H * 0.5f;
-                glScissor(
-                    (GLint) twx,
-                    (GLint)(screenHeight - (twy + TURRET_WIN_H)),
-                    (GLint) TURRET_WIN_W,
-                    (GLint) TURRET_WIN_H
-                );
+                WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 // 포탑 본체 — 십자형 (중앙 사각형 + 4방향 돌출)
                 float tc = 12.0f;
                 drawRect(t.x - tc, t.y - 4, tc*2, 8, 0.1f, 1.0f, 0.55f, 1.0f);
@@ -2216,12 +2317,7 @@ int main() {
             glEnable(GL_SCISSOR_TEST);
             float bwx = bs->worldX - Boss::WIN_W * 0.5f;
             float bwy = bs->worldY - Boss::WIN_H * 0.5f;
-            glScissor(
-                (GLint) bwx,
-                (GLint)(screenHeight - (bwy + Boss::WIN_H)),
-                (GLint) Boss::WIN_W,
-                (GLint) Boss::WIN_H
-            );
+            WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
 
             // 본체 — Mercedes 로고
             float bodyColR = (bs->skill == Boss::Skill::TELEGRAPH) ? 1.0f : 0.95f;
@@ -2254,7 +2350,7 @@ int main() {
             (g_GameManager.currentState == GameState::RUNNING ||
              g_GameManager.currentState == GameState::PAUSED  ||
              g_GameManager.currentState == GameState::DYING)) {
-            float ax = (float)mx, ay = (float)my;
+            float ax = wmx, ay = wmy;   // 줌 보정 → 줌 적용된 ortho 에서 커서 위치에 표시
             // 외곽 어두운 원 + 중앙 십자
             drawCircle(ax, ay, 12.0f, 0.0f, 0.0f, 0.0f, 0.6f);
             drawCircle(ax, ay, 10.0f, 1.0f, 0.95f, 0.3f, 0.9f);
@@ -2397,6 +2493,67 @@ int main() {
                              rb->worldY - ReloadRunnerBoss::BODY - 46.0f, 0.8f,
                              1.0f, 0.9f, 0.3f, 0.95f);
             }
+        }
+
+        // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            auto* pb = g_PolyBoss;
+            BindMainShader();
+            const float PUR_R = 0.6f, PUR_G = 0.2f, PUR_B = 0.95f;
+            // 마커 예고 (보라 원, 카운트다운으로 밝아짐 + 방향선)
+            for (auto& m : pb->markers) {
+                float a = 0.15f + 0.32f * (1.0f - m.timer / 3.0f);
+                drawCircle(m.x, m.y, 26.0f, PUR_R, PUR_G, PUR_B, a);
+                drawRect(m.x - 2, m.y - 2, 4.0f + m.dirX * 40.0f, 4.0f, PUR_R, PUR_G, PUR_B, a + 0.2f);
+            }
+            // 세모 무리
+            for (auto& s : pb->swarm)
+                drawTriangle(s.x, s.y, 11.0f, 0.7f, 0.3f, 1.0f, 1.0f);
+            // 레이저 (RHOMBUS) — 어두운 시야 밴드 + 밝은 코어
+            if (pb->laserActive) {
+                float ex = pb->laserX + pb->laserDirX * (float)(screenWidth + screenHeight);
+                float ey = pb->laserY + pb->laserDirY * (float)(screenWidth + screenHeight);
+                float pxx = -pb->laserDirY, pyy = pb->laserDirX;
+                for (int pass = 0; pass < 2; pass++) {
+                    float th = (pass == 0) ? pb->laserHalf : 5.0f;
+                    float cr = (pass == 0) ? 0.0f : 1.0f;
+                    float cg = (pass == 0) ? 0.0f : 0.4f;
+                    float cb = (pass == 0) ? 0.0f : 1.0f;
+                    float ca = (pass == 0) ? 0.82f : 0.95f;
+                    float p1x=pb->laserX+pxx*th, p1y=pb->laserY+pyy*th;
+                    float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
+                    float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
+                    float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                    glUniform4f(g_colorLoc, cr, cg, cb, ca);
+                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
+            // 본체 — 폼별 모양 (큼)
+            float bsz = PolymorphBoss::BODY;
+            if (pb->form == PForm::TRIANGLE)
+                drawTriangle(pb->worldX, pb->worldY, bsz, PUR_R, PUR_G, PUR_B, 1.0f);
+            else
+                drawDiamond(pb->worldX, pb->worldY, bsz, PUR_R, PUR_G, PUR_B, 1.0f);
+            if (pb->reflecting())  // 반사 오라
+                drawCircle(pb->worldX, pb->worldY, bsz * 0.95f, 1.0f, 1.0f, 1.0f, 0.18f);
+            // 차크람 (다이아몬드 방어막)
+            for (auto& c : pb->chakrams) {
+                if (!c.alive) continue;
+                float cx = pb->worldX + cosf(c.angle) * 150.0f;
+                float cy = pb->worldY + sinf(c.angle) * 150.0f;
+                drawDiamond(cx, cy, 30.0f, 0.7f, 0.3f, 1.0f, 1.0f);
+                float cf = c.hp / 1000.0f; if (cf < 0) cf = 0;
+                drawRect(cx - 18, cy - 34, 36.0f, 4.0f, 0.2f, 0.1f, 0.2f, 0.8f);
+                drawRect(cx - 18, cy - 34, 36.0f * cf, 4.0f, 0.8f, 0.4f, 1.0f, 0.9f);
+            }
+            // HP 바
+            float hpFrac = pb->hp / pb->maxHp; if (hpFrac<0)hpFrac=0; if(hpFrac>1)hpFrac=1;
+            float hbW = 200.0f, hbH = 10.0f;
+            float hbX = pb->worldX - hbW * 0.5f, hbY = pb->worldY - bsz - 22.0f;
+            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.2f, 0.85f);
+            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.7f, 0.3f, 1.0f, 0.95f);
         }
 
         // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)

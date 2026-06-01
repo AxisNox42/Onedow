@@ -29,7 +29,7 @@ struct MiniTri {
 class GlitchBoss {
 public:
     float worldX, worldY;          // 본체 (화면 구석에 숨음)
-    float hp = 4500.0f, maxHp = 4500.0f;
+    float hp = 9000.0f, maxHp = 9000.0f;
     bool  alive    = true;
     bool  exploded = false;
     int   screenW, screenH;
@@ -62,7 +62,8 @@ public:
     static constexpr float MINI_DMG         = 6.0f;     // 접촉 1회 (일반 몹의 약 절반)
     static constexpr float MINI_HIT_R       = 16.0f;
 
-    GlitchBoss(int sw, int sh) : screenW(sw), screenH(sh) {
+    GlitchBoss(int sw, int sh, float hpInit = 9000.0f) : screenW(sw), screenH(sh) {
+        hp = maxHp = hpInit;
         worldX = sw * 0.85f; worldY = sh * 0.15f;
     }
 

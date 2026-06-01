@@ -24,6 +24,8 @@ public:
     float sizeScale = 1.0f;
     // 포탑 전용 고정 데미지 (>0 이면 이 값으로 피해. 소총 기준 능력치)
     float turretDmg = 0.0f;
+    // 적 총알 데미지 (>0 이면 플레이어 피격 시 이 값. 0 = 기본 10). 반사 총알용.
+    float enemyDmg = 0.0f;
     // 직전 프레임 위치 — 스윕(레이캐스트) 충돌 판정용
     float prevX = 0.0f, prevY = 0.0f;
 

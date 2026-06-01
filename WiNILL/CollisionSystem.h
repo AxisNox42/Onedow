@@ -40,7 +40,8 @@ public:
                 // 적 총알 → 플레이어 (스윕 판정)
                 float dist = SegDist(playerCX, playerCY, b.prevX, b.prevY, b.x, b.y);
                 if (dist < 20.0f) {
-                    playerHP -= 10.0f * stats.rmobDmgMult;
+                    float ed = (b.enemyDmg > 0.0f) ? b.enemyDmg : 10.0f;
+                    playerHP -= ed * stats.rmobDmgMult;
                     b.active  = false;
                     playerHit = true;
                 }

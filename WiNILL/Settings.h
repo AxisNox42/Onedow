@@ -56,13 +56,13 @@ struct DifficultyParams {
 inline DifficultyParams GetDifficultyParams(Difficulty d) {
     switch (d) {
     case Difficulty::EASY:
-        return { -5.0f, 5.0f, 2,   1e9f,  1e9f,  3000.0f };  // 자폭병 X
+        return { -5.0f, 5.0f, 2,   1e9f,  1e9f,  6000.0f };  // 자폭병 X · 보스 스펙업
     case Difficulty::NORMAL:
-        return {  0.0f, 5.0f, 5,   30.0f, 5.0f,  7000.0f };
+        return {  0.0f, 5.0f, 5,   30.0f, 5.0f, 15000.0f };
     case Difficulty::HARD:
-        return {  4.9f, 2.5f, 8,   20.0f, 4.0f, 10000.0f };
+        return {  4.9f, 2.5f, 8,   20.0f, 4.0f, 24000.0f };
     }
-    return { 0.0f, 5.0f, 5, 1e9f, 1e9f, 7000.0f };
+    return { 0.0f, 5.0f, 5, 1e9f, 1e9f, 15000.0f };
 }
 
 // 크리에이티브 모드 (난이도 선택 화면에서 토글)

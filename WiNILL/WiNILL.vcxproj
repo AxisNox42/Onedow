@@ -184,6 +184,7 @@
     <ClInclude Include="MonsterManager.h" />
     <ClInclude Include="Platform.h" />
     <ClInclude Include="PlayerStats.h" />
+    <ClInclude Include="PolymorphBoss.h" />
     <ClInclude Include="RangedMob.h" />
     <ClInclude Include="ReloadRunnerBoss.h" />
     <ClInclude Include="Settings.h" />
