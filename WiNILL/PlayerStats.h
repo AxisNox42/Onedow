@@ -24,7 +24,7 @@ struct PlayerStats {
     int   mobCapBonus      = 0;      // 잡몹 동시 존재 한도 추가
 
     // ── 카운터/락 ───────────────────────────────────────
-    int  visionStacks   = 0;          // 최대 4 (총 +200)
+    int  visionStacks   = 0;          // 최대 5 (총 +350)
     int  totalAugs      = 0;
     bool sizeAugTaken   = false;
     bool distAugTaken   = false;
@@ -96,18 +96,18 @@ struct PlayerStats {
     void Apply(AugType t) {
         ++totalAugs;
         switch (t) {
-        // ── 일반 ──
-        case AugType::DMG_UP:    damageMultiplier *= 1.04f; break;
-        case AugType::RATE_UP:   fireInterval     /= 1.015f; break; // 너프: 3% → 1.5%
-        case AugType::SPD_UP:    bulletSpeed      += 10.0f; break;
-        case AugType::MOVE_UP:   moveSpeedMult    *= 1.02f; break;
+        // ── 일반 (버프: QA 피드백 — 일반 증강이 너무 약함) ──
+        case AugType::DMG_UP:    damageMultiplier *= 1.08f; break;  // +4% → +8%
+        case AugType::RATE_UP:   fireInterval     /= 1.04f; break;  // +1.5% → +4%
+        case AugType::SPD_UP:    bulletSpeed      += 30.0f; break;  // +10 → +30
+        case AugType::MOVE_UP:   moveSpeedMult    *= 1.05f; break;  // +2% → +5%
         case AugType::VISION_UP:
-            if (visionStacks < 4) {
-                windowSize += 50.0f;
+            if (visionStacks < 5) {                                 // 4 → 5중첩
+                windowSize += 70.0f;                                // +50 → +70 (최대 +350)
                 ++visionStacks;
             }
             break;
-        case AugType::REGEN_UP:  regenPerSec += 0.2f; break;  // 5초당 HP 1
+        case AugType::REGEN_UP:  regenPerSec += 0.34f; break;  // 5초당 1 → 약 3초당 1
         case AugType::XP_UP:     xpMult       *= 1.05f; break;
 
         // ── 희귀 ──
