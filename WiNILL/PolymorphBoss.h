@@ -9,17 +9,17 @@
 // ─────────────────────────────────────────────────────────────
 // 폴리모프 보스 (보라색 · 큼 · 희귀 등장) — 폼 변환형
 //   폼: TRIANGLE / RHOMBUS / DIAMOND 를 일정 시간마다 무작위 전환
-//     TRIANGLE : 맵 곳곳에 예고 마커 → 3초 뒤 한 방향으로 이동하는 세모 무리
-//                (잡을 수 있음, 마리당 EXP, 플레이어를 쫓지 않음)
-//     RHOMBUS  : 랜덤 방향에서 레이저(주변 어두운 시야 밴드) — 닿으면 피해
-//     DIAMOND  : 총알 반사(무적). 반사탄은 플레이어 원래 위력 그대로 → 쏠지 고민
+//     TRIANGLE : 화면 한쪽 끝 → 반대쪽 끝으로 가로지르는 '고속 세모 쇄도'
+//                먼저 시작 모서리에 경고 표시(텔레그래프) → 이후 3초간 매우 빠른
+//                세모들이 줄줄이 쏟아져 구역을 가득 채우며 이동 (잡으면 EXP, 추적 X)
+//     RHOMBUS  : 랜덤 방향 레이저 — 먼저 경고선 표시 후 발사. 주변 어두운 시야 밴드.
+//     DIAMOND  : 총알 반사(무적). 반사탄은 플레이어 원래 위력 그대로.
 //   페이즈2 (HP 50% 이하): 화면 2배 확장(main 이 g_ViewZoom 처리) + 폼 강화 +
 //     주변 차크람 3개(각 1000HP, 제거 전까지 본체 무적)
 // ─────────────────────────────────────────────────────────────
 
 enum class PForm { TRIANGLE, RHOMBUS, DIAMOND };
 
-struct PMarker { float x, y, dirX, dirY; float timer; bool fired; };
 struct PSwarm  { float x, y, vx, vy; float life; bool alive; };
 struct PChakram{ float angle; float hp; bool alive; };
 
@@ -38,13 +38,20 @@ public:
     // wander
     float targetX, targetY, wanderTimer = 0.0f;
 
-    // TRIANGLE
-    std::vector<PMarker> markers;
-    std::vector<PSwarm>  swarm;
-    float markerAccum = 0.0f;
+    // TRIANGLE — 끝에서 끝으로 가로지르는 고속 쇄도
+    std::vector<PSwarm> swarm;
+    bool  triWarn   = false;   // 경고(텔레그래프) 중
+    bool  triActive = false;   // 쇄도 진행 중
+    float triWarnTimer = 0.0f;
+    float triTimer     = 0.0f; // 쇄도 경과 (3초)
+    float triCd        = 0.4f; // 쇄도 사이 쿨다운
+    float triSpawnAccum = 0.0f;
+    float triDirX = 1.0f, triDirY = 0.0f;  // 진행 방향 (상하/좌우)
 
     // RHOMBUS (laser)
     bool  laserActive = false;
+    bool  laserWarn   = false;   // 발사 전 경고선
+    float laserWarnTimer = 0.0f;
     float laserX = 0, laserY = 0, laserDirX = 1, laserDirY = 0;
     float laserTimer = 0.0f, laserCd = 0.0f;
     float laserHalf = 20.0f;     // 시야 밴드 반폭 (페이즈2 +10)
@@ -78,15 +85,17 @@ public:
         PForm prev = form;
         do { form = (PForm)(rand() % 3); } while (!first && form == prev);
         formTimer = 0.0f;
-        markerAccum = 0.0f;
+        // 폼 상태 초기화
+        triWarn = triActive = false;
+        triCd = 0.4f; triSpawnAccum = 0.0f; triTimer = 0.0f;
+        laserActive = laserWarn = false;
         laserCd = 0.6f;
-        laserActive = false;
     }
 
     void enterPhase2() {
         phase2 = true;
         laserHalf = 30.0f;                 // 마름모 범위 +10
-        formDuration = 5.0f;               // 삼각형 등 재사용 쿨 감소
+        formDuration = 5.0f;               // 폼 재사용 쿨 감소
         chakrams.clear();
         for (int i = 0; i < 3; i++) {
             PChakram c; c.angle = (float)i / 3.0f * 6.2831853f;
@@ -95,38 +104,39 @@ public:
         }
     }
 
-    void spawnMarker(float px, float py) {
-        // 맵 임의 위치 + 임의 직선 방향
-        PMarker m;
-        float mar = 100.0f;
-        m.x = mar + (float)(rand() % std::max(1, screenW - 2*(int)mar));
-        m.y = mar + (float)(rand() % std::max(1, screenH - 2*(int)mar));
-        float a = (float)(rand() % 628) * 0.01f;
-        m.dirX = cosf(a); m.dirY = sinf(a);
-        m.timer = 3.0f;   // 3초 뒤 발생
-        m.fired = false;
-        markers.push_back(m);
+    // ── TRIANGLE: 끝에서 끝으로 가로지르는 쇄도 ──
+    void startTriWarn() {
+        triWarn = true;
+        triWarnTimer = phase2 ? 0.8f : 1.0f;   // 경고 시간
+        switch (rand() % 4) {
+        case 0: triDirX =  1; triDirY =  0; break;   // 좌 → 우
+        case 1: triDirX = -1; triDirY =  0; break;   // 우 → 좌
+        case 2: triDirX =  0; triDirY =  1; break;   // 상 → 하
+        default:triDirX =  0; triDirY = -1; break;   // 하 → 상
+        }
     }
 
-    void fireSwarm(const PMarker& m) {
-        // 마커 위치에서 한 방향으로 이동하는 세모 무리 (범위 = 마커 주변)
-        int n = phase2 ? 14 : 9;
-        float span = phase2 ? 220.0f : 150.0f;   // 페이즈2 범위 증가
-        float perpX = -m.dirY, perpY = m.dirX;
-        for (int i = 0; i < n; i++) {
-            float t = (n > 1) ? ((float)i / (n - 1) - 0.5f) : 0.0f;
-            PSwarm s;
-            s.x = m.x + perpX * t * span;
-            s.y = m.y + perpY * t * span;
-            float sp = 360.0f + (float)(rand() % 120);
-            s.vx = m.dirX * sp;  s.vy = m.dirY * sp;
-            s.life = 4.0f; s.alive = true;
+    void spawnTriRow() {
+        // 시작 모서리 전체에 걸쳐 무작위로 한 줄 분량 spawn (고속, 직선 이동)
+        float sp = (phase2 ? 920.0f : 800.0f) + (float)(rand() % 160);  // 개빠름
+        int perRow = phase2 ? 4 : 3;
+        for (int i = 0; i < perRow; i++) {
+            PSwarm s; s.life = 3.5f; s.alive = true;
+            if (triDirX != 0.0f) {                    // 가로 이동
+                s.x  = (triDirX > 0) ? -20.0f : (float)screenW + 20.0f;
+                s.y  = (float)(rand() % std::max(1, screenH));
+                s.vx = triDirX * sp; s.vy = 0.0f;
+            } else {                                  // 세로 이동
+                s.x  = (float)(rand() % std::max(1, screenW));
+                s.y  = (triDirY > 0) ? -20.0f : (float)screenH + 20.0f;
+                s.vx = 0.0f; s.vy = triDirY * sp;
+            }
             swarm.push_back(s);
         }
     }
 
-    void fireLaser(float px, float py) {
-        // 랜덤 화면 가장자리에서 시작 → 플레이어 근처 가로지르는 직선
+    // ── RHOMBUS: 경고선 조준만(발사 X) ──
+    void aimLaser(float px, float py) {
         float m = 20.0f;
         switch (rand() % 4) {
         case 0: laserX = (float)(rand()%screenW); laserY = -m;          break;
@@ -137,7 +147,6 @@ public:
         float dx = px - laserX, dy = py - laserY;
         float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
         laserDirX = dx/d; laserDirY = dy/d;
-        laserActive = true; laserTimer = 0.0f;
     }
 
     static float segDist(float px, float py, float ax, float ay, float bx, float by) {
@@ -165,47 +174,72 @@ public:
         chakrams.erase(std::remove_if(chakrams.begin(), chakrams.end(),
             [](const PChakram& c){ return !c.alive; }), chakrams.end());
 
-        // 폼 전환
+        // 폼 전환 (쇄도/레이저 진행 중에는 끊지 않음)
         formTimer += dt;
-        if (formTimer >= formDuration) pickForm(false);
+        if (formTimer >= formDuration && !triActive && !triWarn &&
+            !laserActive && !laserWarn)
+            pickForm(false);
 
         // ── 폼별 행동 ──
         switch (form) {
         case PForm::TRIANGLE: {
-            markerAccum += dt;
-            float interval = phase2 ? 1.4f : 2.0f;
-            if (markerAccum >= interval) {
-                markerAccum = 0.0f;
-                int cnt = phase2 ? 2 : 1;   // 페이즈2 한번에 2개
-                for (int i = 0; i < cnt; i++) spawnMarker(px, py);
+            if (!triActive && !triWarn) {
+                triCd -= dt;
+                if (triCd <= 0.0f) startTriWarn();
+            }
+            if (triWarn) {
+                triWarnTimer -= dt;
+                if (triWarnTimer <= 0.0f) {
+                    triWarn = false; triActive = true;
+                    triTimer = 0.0f; triSpawnAccum = 0.0f;
+                }
+            }
+            if (triActive) {
+                triTimer += dt;
+                triSpawnAccum += dt;
+                float rowInterval = phase2 ? 0.09f : 0.13f;
+                if (triSpawnAccum >= rowInterval) {
+                    triSpawnAccum = 0.0f;
+                    spawnTriRow();
+                }
+                if (triTimer >= 3.0f) {           // 3초간 쇄도
+                    triActive = false;
+                    triCd = phase2 ? 1.0f : 1.8f;
+                }
             }
             break;
         }
         case PForm::RHOMBUS: {
-            laserCd -= dt;
-            if (!laserActive && laserCd <= 0.0f) { fireLaser(px, py); laserCd = phase2 ? 1.4f : 2.0f; }
+            if (!laserActive && !laserWarn) {
+                laserCd -= dt;
+                if (laserCd <= 0.0f) {
+                    aimLaser(px, py);
+                    laserWarn = true;
+                    laserWarnTimer = phase2 ? 0.7f : 0.9f;
+                }
+            }
+            if (laserWarn) {
+                laserWarnTimer -= dt;
+                if (laserWarnTimer <= 0.0f) {
+                    laserWarn = false; laserActive = true; laserTimer = 0.0f;
+                }
+            }
             if (laserActive) {
                 laserTimer += dt;
                 float ex = laserX + laserDirX * (float)(screenW + screenH);
                 float ey = laserY + laserDirY * (float)(screenW + screenH);
                 if (segDist(px, py, laserX, laserY, ex, ey) < 14.0f)
                     playerHP -= LASER_DPS * dt;
-                if (laserTimer >= 1.4f) laserActive = false;
+                if (laserTimer >= 1.4f) {
+                    laserActive = false;
+                    laserCd = phase2 ? 1.2f : 1.8f;
+                }
             }
             break;
         }
         case PForm::DIAMOND:
             break;  // 반사는 main 충돌에서 처리
         }
-
-        // 마커 카운트다운 → 세모 무리
-        for (auto& m : markers) {
-            if (m.fired) continue;
-            m.timer -= dt;
-            if (m.timer <= 0.0f) { fireSwarm(m); m.fired = true; }
-        }
-        markers.erase(std::remove_if(markers.begin(), markers.end(),
-            [](const PMarker& m){ return m.fired; }), markers.end());
 
         // 세모 무리 (직선 이동, 추적 안 함)
         for (auto& s : swarm) {

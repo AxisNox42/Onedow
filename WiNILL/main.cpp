@@ -2500,15 +2500,44 @@ int main() {
             auto* pb = g_PolyBoss;
             BindMainShader();
             const float PUR_R = 0.6f, PUR_G = 0.2f, PUR_B = 0.95f;
-            // 마커 예고 (보라 원, 카운트다운으로 밝아짐 + 방향선)
-            for (auto& m : pb->markers) {
-                float a = 0.15f + 0.32f * (1.0f - m.timer / 3.0f);
-                drawCircle(m.x, m.y, 26.0f, PUR_R, PUR_G, PUR_B, a);
-                drawRect(m.x - 2, m.y - 2, 4.0f + m.dirX * 40.0f, 4.0f, PUR_R, PUR_G, PUR_B, a + 0.2f);
+            // 세모 쇄도 경고 (텔레그래프) — 시작 모서리 전체에 깜빡이는 화살표/띠
+            if (pb->triWarn) {
+                float blink = 0.35f + 0.35f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 16.0f));
+                int arrows = 14;
+                for (int i = 0; i < arrows; i++) {
+                    float t = (arrows > 1) ? (float)i / (arrows - 1) : 0.5f;
+                    float ax, ay;
+                    if (pb->triDirX != 0.0f) {   // 가로 이동 → 좌/우 모서리에 세로 배열
+                        ax = (pb->triDirX > 0) ? 24.0f : (float)screenWidth - 24.0f;
+                        ay = t * (float)screenHeight;
+                    } else {                     // 세로 이동 → 상/하 모서리에 가로 배열
+                        ax = t * (float)screenWidth;
+                        ay = (pb->triDirY > 0) ? 24.0f : (float)screenHeight - 24.0f;
+                    }
+                    // 진행 방향을 가리키는 작은 세모
+                    drawTriangle(ax + pb->triDirX * 6.0f, ay + pb->triDirY * 6.0f,
+                                 14.0f, 1.0f, 0.4f, 1.0f, blink);
+                }
             }
             // 세모 무리
             for (auto& s : pb->swarm)
                 drawTriangle(s.x, s.y, 11.0f, 0.7f, 0.3f, 1.0f, 1.0f);
+            // 레이저 경고선 (발사 전) — 얇은 보라 점멸선
+            if (pb->laserWarn) {
+                float ex = pb->laserX + pb->laserDirX * (float)(screenWidth + screenHeight);
+                float ey = pb->laserY + pb->laserDirY * (float)(screenWidth + screenHeight);
+                float pxx = -pb->laserDirY, pyy = pb->laserDirX;
+                float th = 3.0f;
+                float warnA = 0.4f + 0.4f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f));
+                float p1x=pb->laserX+pxx*th, p1y=pb->laserY+pyy*th;
+                float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
+                float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
+                float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                glUniform4f(g_colorLoc, 1.0f, 0.3f, 1.0f, warnA);
+                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+            }
             // 레이저 (RHOMBUS) — 어두운 시야 밴드 + 밝은 코어
             if (pb->laserActive) {
                 float ex = pb->laserX + pb->laserDirX * (float)(screenWidth + screenHeight);
