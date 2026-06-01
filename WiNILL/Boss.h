@@ -53,8 +53,11 @@ public:
 
     // ── 소환 ──
     float summonTimer = 0.0f;
+    bool  summonPending = false;                     // 소환 직전 경고(텔레그래프) 중
     static constexpr float SUMMON_INTERVAL = 3.0f;   // 버프: 4 → 3초마다
+    static constexpr float SUMMON_WARN     = 0.7f;   // 소환 0.7초 전부터 경고 링 표시
     static constexpr int   SUMMON_COUNT    = 7;      // 버프: 5 → 7마리
+    static constexpr float SUMMON_RING_R   = 70.0f;  // 소환 반경(경고/스폰 일치)
 
     int screenW, screenH;
 
@@ -85,15 +88,17 @@ public:
     {
         if (!alive) return;
 
-        // ── 소환 타이머 (스킬과 독립적으로) ──
+        // ── 소환 타이머 (스킬과 독립적으로) — 0.7초 경고 후 소환 ──
         summonTimer += dt;
+        if (!summonPending && summonTimer >= SUMMON_INTERVAL - SUMMON_WARN)
+            summonPending = true;                 // 경고 링 표시 시작 (main 이 렌더)
         if (summonTimer >= SUMMON_INTERVAL) {
-            summonTimer = 0.0f;
+            summonTimer   = 0.0f;
+            summonPending = false;
             for (int i = 0; i < SUMMON_COUNT; i++) {
                 float ang = (float)i / SUMMON_COUNT * 6.2831853f;
-                float r   = 70.0f;
-                float sx  = worldX + cosf(ang) * r;
-                float sy  = worldY + sinf(ang) * r;
+                float sx  = worldX + cosf(ang) * SUMMON_RING_R;
+                float sy  = worldY + sinf(ang) * SUMMON_RING_R;
                 outSummons.push_back(new Monster(sx, sy, 2.0f, 0.8f, /*summoned=*/true));
             }
         }

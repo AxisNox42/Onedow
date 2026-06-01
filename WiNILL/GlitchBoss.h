@@ -42,7 +42,9 @@ public:
 
     // 레이저 (BURST 동안 활성)
     bool  laserActive = false;
+    bool  laserWarn   = false;   // 발사 전 경고선 (SPAWN_MINI 막바지)
     float laserDirX = 1.0f, laserDirY = 0.0f;
+    static constexpr float LASER_WARN_LEAD = 0.8f;   // 발사 0.8초 전부터 경고
 
     // 효과 신호 (0~1) — main.cpp 가 읽어서 화면 연출
     float glitchAmount = 0.0f;   // 화면 좌우 찢김 강도
@@ -130,16 +132,21 @@ public:
                 spawnAccum = 0.0f;
                 for (int i = 0; i < 2; i++) spawnMini(playerCX, playerCY);
             }
+            // 발사 0.8초 전: 레이저 방향 락 + 경고선 표시 (조준선 == 실제 발사선)
+            if (!laserWarn && stateTimer >= T_SPAWN - LASER_WARN_LEAD) {
+                float dx = playerCX - worldX, dy = playerCY - worldY;
+                float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
+                laserDirX = dx / d; laserDirY = dy / d;
+                laserWarn = true;
+            }
             if (stateTimer >= T_SPAWN) {
-                // ── "펑!" BURST 돌입 (레이저 발사) ──
+                // ── "펑!" BURST 돌입 (락된 방향으로 레이저 발사) ──
                 state = BossState::BURST_ATTACK; stateTimer = 0.0f;
                 burstFlash = 1.0f; textNoise = 1.0f;
                 glitchAmount = 0.5f;                          // 레이저 쏠 때 글리치 재발동
                 for (auto& t : minis) t.homing = true;       // 전부 유도 가속
-                float dx = playerCX - worldX, dy = playerCY - worldY;
-                float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
-                laserDirX = dx / d; laserDirY = dy / d;
-                laserActive = true;
+                laserWarn   = false;
+                laserActive = true;                          // 방향은 경고 때 락된 값 사용
             }
             break;
 

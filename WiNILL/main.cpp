@@ -199,6 +199,7 @@ GlitchBoss* g_GlitchBoss = nullptr;
 ReloadRunnerBoss* g_RRBoss = nullptr;
 // 폴리모프 보스 (희귀, 폼 변환 + 페이즈2 화면 확장) — 별도 관리
 PolymorphBoss* g_PolyBoss = nullptr;
+int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
 
 // HUD: 현재 측정 FPS (상단 우측 표시)
 int    g_CurrentFPS  = 0;
@@ -622,6 +623,7 @@ int main() {
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
+            g_PolyPrevForm = -1;
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
@@ -1153,6 +1155,19 @@ int main() {
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
                     g_ViewZoomTarget = g_PolyBoss->phase2 ? 0.5f : 1.0f;
+                    // 폼 변환 순간 — 보라 파티클 분출 + 링
+                    int curForm = (int)g_PolyBoss->form;
+                    if (curForm != g_PolyPrevForm) {
+                        if (g_PolyPrevForm != -1) {   // 최초 동기화는 연출 생략
+                            SpawnEnemyExplosion(g_PolyBoss->worldX, g_PolyBoss->worldY,
+                                                0.7f, 0.3f, 1.0f, true);
+                            SpawnEnemyExplosion(g_PolyBoss->worldX, g_PolyBoss->worldY,
+                                                0.95f, 0.6f, 1.0f, true);
+                            SpawnShockWave(g_PolyBoss->worldX, g_PolyBoss->worldY,
+                                           170.0f, 0.45f, 0.7f, 0.3f, 1.0f);
+                        }
+                        g_PolyPrevForm = curForm;
+                    }
                 }
 
                 // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
@@ -1377,6 +1392,7 @@ int main() {
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
                     delete pb;
                     g_PolyBoss = nullptr;
+                    g_PolyPrevForm = -1;
                     g_BossRewardPicksLeft = 3;             // 증강 1개 더
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
@@ -1559,6 +1575,7 @@ int main() {
                     float pHp = (g_Difficulty == Difficulty::EASY) ? 10000.0f
                               : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
                     g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, pHp);
+                    g_PolyPrevForm = -1;
                 } else {
                 int pick = rand() % 3;
                 if (pick == 0) {
@@ -2307,6 +2324,18 @@ int main() {
                 glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
                 glDrawArrays(GL_TRIANGLES, 0, 6);
             }
+            // 소환 경고 — 잡몹이 나올 자리에 점멸 링 (소환 0.7초 전부터)
+            if (bs->summonPending) {
+                BindMainShader();
+                float blink = 0.30f + 0.30f * (0.5f + 0.5f *
+                              sinf((float)glfwGetTime() * 16.0f));
+                for (int i = 0; i < Boss::SUMMON_COUNT; i++) {
+                    float ang = (float)i / Boss::SUMMON_COUNT * 6.2831853f;
+                    float sx  = bs->worldX + cosf(ang) * Boss::SUMMON_RING_R;
+                    float sy  = bs->worldY + sinf(ang) * Boss::SUMMON_RING_R;
+                    drawCircle(sx, sy, 14.0f, 1.0f, 0.55f, 0.2f, blink);
+                }
+            }
         }
 
         // (e3) 보스 본체 (Mercedes 모양) + HP 바
@@ -2380,6 +2409,21 @@ int main() {
         if (g_GlitchBoss && g_GlitchBoss->alive) {
             auto* gb = g_GlitchBoss;
             BindMainShader();
+            // 레이저 경고선 (발사 전 0.8초) — 얇은 점멸선
+            if (gb->laserWarn) {
+                float ex = gb->worldX + gb->laserDirX * (float)(screenWidth + screenHeight);
+                float ey = gb->worldY + gb->laserDirY * (float)(screenWidth + screenHeight);
+                float pxx = -gb->laserDirY, pyy = gb->laserDirX, th = 3.0f;
+                float wa = 0.4f + 0.4f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f));
+                float p1x=gb->worldX+pxx*th, p1y=gb->worldY+pyy*th;
+                float p2x=gb->worldX-pxx*th, p2y=gb->worldY-pyy*th;
+                float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
+                float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                glUniform4f(g_colorLoc, 1.0f, 0.3f, 0.7f, wa);
+                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+            }
             // 레이저 (BURST 동안 화면 가로지르는 직선)
             if (gb->laserActive) {
                 float ex = gb->worldX + gb->laserDirX * (float)(screenWidth + screenHeight);
@@ -2467,6 +2511,30 @@ int main() {
                 }
             }
 
+            // SHOTGUN 부채꼴 사거리 예고 (사정거리 진입 시 플레이어 방향 옅은 콘)
+            if (rb->state == RRState::ACTIVE && rb->weapon == RRWeapon::SHOTGUN) {
+                float adx = pCX - rb->worldX, ady = pCY - rb->worldY;
+                float ad  = sqrtf(adx*adx + ady*ady) + 1e-3f;
+                if (ad < ReloadRunnerBoss::SG_RANGE) {
+                    float base = atan2f(ady, adx);
+                    float ha   = ReloadRunnerBoss::SG_SPREAD * 0.5f;
+                    float a0 = base - ha, a1 = base + ha;
+                    float L  = ReloadRunnerBoss::SG_RANGE;
+                    const int SEG = 12;
+                    for (int s = 0; s < SEG; s++) {
+                        float aa = a0 + (a1 - a0) * (float)s / SEG;
+                        float ab = a0 + (a1 - a0) * (float)(s + 1) / SEG;
+                        float v[6] = { rb->worldX, rb->worldY,
+                                       rb->worldX + cosf(aa)*L, rb->worldY + sinf(aa)*L,
+                                       rb->worldX + cosf(ab)*L, rb->worldY + sinf(ab)*L };
+                        glUniform4f(g_colorLoc, 1.0f, 0.5f, 0.15f, 0.10f);
+                        glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                        glDrawArrays(GL_TRIANGLES, 0, 3);
+                    }
+                }
+            }
+
             // 본체 — 상태/무기색 다이아몬드
             float br = 0.9f, bg = 0.9f, bb = 0.95f;
             if      (rb->state  == RRState::RELOAD_SPRINT) { br=1.0f; bg=0.9f;  bb=0.3f; }
@@ -2517,6 +2585,21 @@ int main() {
                     // 진행 방향을 가리키는 작은 세모
                     drawTriangle(ax + pb->triDirX * 6.0f, ay + pb->triDirY * 6.0f,
                                  14.0f, 1.0f, 0.4f, 1.0f, blink);
+                }
+                // 뒷배경에 옅게 깔리는 대형 방향 화살표(쉐브론) — 진행 경로 안내
+                float bgA = 0.08f + 0.05f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 8.0f));
+                for (int c = 0; c < 4; c++) {
+                    float u = (c + 0.5f) / 4.0f;   // 진행축 방향 위치 비율
+                    float cx, cy;
+                    if (pb->triDirX != 0.0f) {     // 가로 이동 → 화면 폭을 따라 배치
+                        cx = (pb->triDirX > 0) ? u * screenWidth : (1.0f - u) * screenWidth;
+                        cy = screenHeight * 0.5f;
+                    } else {                       // 세로 이동
+                        cx = screenWidth * 0.5f;
+                        cy = (pb->triDirY > 0) ? u * screenHeight : (1.0f - u) * screenHeight;
+                    }
+                    drawTriangle(cx + pb->triDirX * 30.0f, cy + pb->triDirY * 30.0f,
+                                 80.0f, 0.8f, 0.4f, 1.0f, bgA);
                 }
             }
             // 세모 무리
