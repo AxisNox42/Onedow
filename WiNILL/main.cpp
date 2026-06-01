@@ -366,7 +366,7 @@ int main() {
     // ★ screenHeight 가 이미 mode->height-1 (위에서 DirectFlip 회피용)
     //   화면 정확히 같은 크기로 생성하면 DWM 이 DirectFlip 으로 컴포지팅 우회
     GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight,
-                                          "WiNILL FakeWindow", NULL, NULL);
+                                          "Onedow", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
 
     glfwSetWindowPos(window, 0, 0);
@@ -517,7 +517,7 @@ int main() {
     g_MainVAO = VAO;
 
     // --- 게임 오브젝트 초기화 ---
-    FakeWindow playerWin(0, "WiNILL",
+    FakeWindow playerWin(0, "Onedow",
         (screenWidth  - g_Stats.windowSize) * 0.5f,
         (screenHeight - g_Stats.windowSize) * 0.5f,
         g_Stats.windowSize, g_Stats.windowSize);
@@ -2330,7 +2330,7 @@ int main() {
                       1.0f, 0.4f, 0.4f },
                 };
 
-                const float BW = 340.0f, BH = 90.0f, BG = 30.0f;
+                const float BW = 520.0f, BH = 90.0f, BG = 30.0f;
                 float totalH = 3 * BH + 2 * BG;
                 float bx = (sw - BW) * 0.5f;
                 float by = (sh - totalH) * 0.5f;
@@ -2355,8 +2355,8 @@ int main() {
                 // 크리에이티브 모드 토글 버튼
                 {
                     const wchar_t* CLBL = g_CreativeMode
-                        ? L"★ 크리에이티브  [ON]"
-                        : L"☆ 크리에이티브  [OFF]";
+                        ? T(StrId::CREATIVE_ON)
+                        : T(StrId::CREATIVE_OFF);
                     float cby = by + 3 * (BH + BG) + 20.0f;
                     float cbw = BW, cbh = 52.0f;
                     float cbx = (sw - cbw) * 0.5f;
@@ -2366,8 +2366,8 @@ int main() {
                     }
                     // 설명 한 줄
                     const wchar_t* CDESC = g_CreativeMode
-                        ? L"시작 시 10만점 · F키로 증강 획득 · 디버프 없음"
-                        : L"10만점부터 시작 (보스 즉시) + F키 증강";
+                        ? T(StrId::CREATIVE_DESC_ON)
+                        : T(StrId::CREATIVE_DESC_OFF);
                     float cdw = g_TextS.Width(CDESC, 0.78f);
                     g_TextS.Draw(CDESC, cbx + (cbw - cdw) * 0.5f,
                                  cby + cbh - 20.0f, 0.78f,

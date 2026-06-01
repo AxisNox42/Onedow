@@ -54,6 +54,12 @@ enum class StrId {
     OPT_ON,
     OPT_OFF,
 
+    // ── 크리에이티브 모드 ──
+    CREATIVE_ON,
+    CREATIVE_OFF,
+    CREATIVE_DESC_ON,
+    CREATIVE_DESC_OFF,
+
     _COUNT
 };
 
@@ -147,7 +153,7 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"最終スコア",
     },
     /* GAME_TITLE */ {
-        L"WiNILL", L"WiNILL", L"WiNILL",
+        L"Onedow", L"Onedow", L"Onedow",
     },
     /* BTN_START */ {
         L"시작", L"Start", L"スタート",
@@ -223,6 +229,22 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
     },
     /* OPT_OFF */ {
         L"끄기", L"OFF", L"オフ",
+    },
+    /* CREATIVE_ON */ {
+        L"★ 크리에이티브  [ON]", L"★ Creative  [ON]", L"★ クリエイティブ  [ON]",
+    },
+    /* CREATIVE_OFF */ {
+        L"☆ 크리에이티브  [OFF]", L"☆ Creative  [OFF]", L"☆ クリエイティブ  [OFF]",
+    },
+    /* CREATIVE_DESC_ON */ {
+        L"시작 시 10만점 · F키로 증강 획득 · 디버프 없음",
+        L"Start at 100k · F to grab augments · no debuffs",
+        L"開始時10万点 · Fキーで強化獲得 · デバフ無し",
+    },
+    /* CREATIVE_DESC_OFF */ {
+        L"10만점부터 시작 (보스 즉시) + F키 증강",
+        L"Start at 100k (boss now) + F-key augments",
+        L"10万点開始 (ボス即時) + Fキー強化",
     },
 };
 

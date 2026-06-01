@@ -338,7 +338,7 @@ void GameManager::UpdateTitle(GLFWwindow* window) {
     frames++;
     if (now - lastTime >= 1.0) {
         fps = frames; frames = 0; lastTime += 1.0;
-        std::string t = "WiNILL | FPS:" + std::to_string(fps)
+        std::string t = "Onedow | FPS:" + std::to_string(fps)
             + " | HP:" + std::to_string((int)playerHP)
             + " | XP:" + std::to_string(xp)
             + " | Score:" + std::to_string(score);
