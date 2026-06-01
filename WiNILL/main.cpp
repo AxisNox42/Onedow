@@ -208,6 +208,21 @@ int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1
 float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
 glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
 
+// 슬라임 분열체 (원본 사망 시 2마리 → 각자 또 1번 분열, 총 2세대) — main 이 직접 관리
+std::vector<Boss*> g_Slimelings;
+bool g_SlimeEncounter = false;   // 분열 인카운터 진행 중 (끝나면 보상)
+// 분열체 생성 (체력 반토막·크기 0.75배·돌진만)
+static Boss* MakeSlimeling(float x, float y, float maxHp, float scale, int gen,
+                           int sw, int sh) {
+    Boss* c = new Boss(x, y, sw, sh, maxHp);
+    c->sizeScale  = scale;
+    c->splitGen   = gen;
+    c->chargeOnly = true;
+    c->idleCooldown = 2.2f;                        // 돌진만 하니 자주
+    c->color = glm::vec3(0.55f, 0.95f, 0.60f);     // 분열체 = 초록빛 슬라임
+    return c;
+}
+
 // HUD: 현재 측정 FPS (상단 우측 표시)
 int    g_CurrentFPS  = 0;
 double g_FpsLastTime = 0.0;
@@ -631,6 +646,10 @@ int main() {
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
             g_PolyPrevForm = -1;
+            for (auto* c : g_Slimelings) delete c;   // 분열체 정리
+            g_Slimelings.clear();
+            g_SlimeEncounter = false;
+            g_BossTintT = 0.0f;
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
@@ -1177,6 +1196,15 @@ int main() {
                     }
                 }
 
+                // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기
+                if (!g_Slimelings.empty()) {
+                    std::vector<Monster*> sink;
+                    for (auto* c : g_Slimelings)
+                        if (c->alive)
+                            c->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, sink);
+                    for (auto* m : sink) delete m;   // chargeOnly 라 보통 비어있음
+                }
+
                 // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
                 bool hit = CollisionSystem::Update(pCX, pCY,
                     g_MonsterManager, g_Bullets,
@@ -1309,6 +1337,34 @@ int main() {
                     }
                 }
 
+                // 슬라임 분열체 vs 플레이어 총알 (수동 충돌)
+                if (!g_Slimelings.empty()) {
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        for (auto* c : g_Slimelings) {
+                            if (!c->alive) continue;
+                            float bodyR = Boss::BODY_SIZE * c->sizeScale * 0.65f;
+                            if (SegDist(c->worldX, c->worldY, b.prevX, b.prevY, b.x, b.y) < bodyR) {
+                                float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                         glm::vec2(c->worldX, c->worldY));
+                                float dmg;
+                                if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                                else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                                else dmg = g_Stats.GetBaseDamage()
+                                         * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                                float dealt = (dmg < c->hp) ? dmg : c->hp;
+                                c->hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (c->hp <= 0.0f) c->alive = false;
+                                bool keep = (b.remainingDmg > 0.001f) ||
+                                            (g_Stats.pierce && (rand()%100) < g_Stats.pierceChance);
+                                if (!keep) b.active = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 // 사망 폭발 spawn (다음 UpdateAll 이 실제 erase 하기 전에 위치 캡처)
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive && !m->exploded) {
@@ -1330,24 +1386,63 @@ int main() {
                 if (g_MonsterManager.boss && !g_MonsterManager.boss->alive &&
                     !g_MonsterManager.boss->exploded) {
                     Boss* bs = g_MonsterManager.boss;
-                    // 큰 폭발 + 충격파 + 화면 흔들기
-                    SpawnEnemyExplosion(bs->worldX, bs->worldY, 1.0f, 0.5f, 0.9f, true);
-                    SpawnEnemyExplosion(bs->worldX, bs->worldY, 0.9f, 0.4f, 1.0f, true);
+                    // 분열 폭발 + 충격파 + 화면 흔들기
+                    SpawnEnemyExplosion(bs->worldX, bs->worldY, 0.6f, 0.95f, 0.6f, true);
+                    SpawnEnemyExplosion(bs->worldX, bs->worldY, 0.4f, 0.9f, 0.4f, true);
                     SpawnShockWave(bs->worldX, bs->worldY, 350.0f, 0.7f,
-                                   0.9f, 0.5f, 1.0f);
+                                   0.5f, 0.95f, 0.5f);
                     g_ShakeTime = 0.5f; g_ShakeMag = 18.0f;
                     bs->exploded = true;
-                    // 점수 보상
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    // 보스 객체 정리
+                    // 슬라임이니까 죽으면 분할 — 절반 체력·0.75배 크기 분열체 2마리 (1세대)
+                    float childHp = bs->maxHp * 0.5f;
+                    g_Slimelings.push_back(MakeSlimeling(bs->worldX - 40, bs->worldY,
+                                           childHp, 0.75f, 1, screenWidth, screenHeight));
+                    g_Slimelings.push_back(MakeSlimeling(bs->worldX + 40, bs->worldY,
+                                           childHp, 0.75f, 1, screenWidth, screenHeight));
+                    g_SlimeEncounter = true;          // 분열 인카운터 시작 (보상은 전멸 시)
+                    // 원본 보스 객체 정리 (아직 보상 X)
                     delete bs;
                     g_MonsterManager.boss = nullptr;
-                    // 버프 2개 픽 (디버프 없이)
-                    g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
+                // 슬라임 분열체 사망 처리 — 1세대는 또 분열, 2세대는 최종 사망
+                if (!g_Slimelings.empty()) {
+                    std::vector<Boss*> born;       // 이번 프레임 새로 분열된 자식 (반복 중 push 금지)
+                    for (auto* c : g_Slimelings) {
+                        if (c->alive || c->exploded) continue;
+                        c->exploded = true;
+                        SpawnEnemyExplosion(c->worldX, c->worldY, 0.5f, 0.95f, 0.6f, true);
+                        SpawnShockWave(c->worldX, c->worldY, 180.0f, 0.4f, 0.5f, 0.95f, 0.5f);
+                        if (c->splitGen < 2) {     // 총 2세대까지만 분열
+                            float hp2 = c->maxHp * 0.5f;
+                            float sc2 = c->sizeScale * 0.75f;
+                            born.push_back(MakeSlimeling(c->worldX - 28, c->worldY,
+                                           hp2, sc2, c->splitGen + 1, screenWidth, screenHeight));
+                            born.push_back(MakeSlimeling(c->worldX + 28, c->worldY,
+                                           hp2, sc2, c->splitGen + 1, screenWidth, screenHeight));
+                        } else {
+                            g_GameManager.scoreAccum += 4000.0f;   // 최종 분열체 처치 보너스
+                            g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                        }
+                    }
+                    // 죽은 분열체 제거
+                    for (auto it = g_Slimelings.begin(); it != g_Slimelings.end(); ) {
+                        if (!(*it)->alive) { delete *it; it = g_Slimelings.erase(it); }
+                        else ++it;
+                    }
+                    // 새 자식 합류
+                    for (auto* nc : born) g_Slimelings.push_back(nc);
+
+                    // 전멸 → 인카운터 종료 + 보상 (점수 + 버프 2개)
+                    if (g_SlimeEncounter && g_Slimelings.empty()) {
+                        g_SlimeEncounter = false;
+                        g_GameManager.scoreAccum += 20000.0f;
+                        g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                        g_BossRewardPicksLeft = 2;
+                        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                     g_Stats.distAugTaken);
+                        g_GameManager.currentState = GameState::AUG_SELECT;
+                    }
                 }
 
                 // 글리치 보스 사망 → 보상 (슬라임과 동일)
@@ -2072,6 +2167,13 @@ int main() {
             drawRect(g_PolyBoss->worldX - w*0.5f, g_PolyBoss->worldY - w*0.5f,
                      w, w, 0.09f, 0.06f, 0.11f, 1.0f);
         }
+        // 슬라임 분열체 — 각자 개인 창 (크기 비례)
+        for (auto* c : g_Slimelings) {
+            if (!c->alive) continue;
+            float w = Boss::WIN_W * c->sizeScale;
+            drawRect(c->worldX - w*0.5f, c->worldY - w*0.5f, w, w,
+                     0.07f, 0.10f, 0.07f, 1.0f);
+        }
         glEnable(GL_BLEND);  // 이후는 일반 알파 블렌딩
 
         // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
@@ -2388,6 +2490,52 @@ int main() {
             drawRect(hbX, hbY, hbW * hpFrac, hbH,
                      0.95f, 0.3f, 0.4f, 0.95f);
 
+            glDisable(GL_SCISSOR_TEST);
+        }
+
+        // (e3.5) 슬라임 분열체 — 돌진 경고(전체화면) + 본체/HP/총알(개인 창)
+        for (auto* c : g_Slimelings) {
+            if (!c->alive) continue;
+            float scale = c->sizeScale;
+            float body  = Boss::BODY_SIZE * scale;
+            float win   = Boss::WIN_W * scale;
+            // 돌진 텔레그래프 (전체 화면, 붉은 띠)
+            if (c->skill == Boss::Skill::TELEGRAPH) {
+                BindMainShader();
+                float prog = c->skillTimer / Boss::TELEGRAPH_TIME;
+                if (prog < 0) prog = 0; if (prog > 1) prog = 1;
+                float len   = ((float)screenWidth + (float)screenHeight) * prog;
+                float thick = (50.0f + 14.0f * prog) * scale;
+                float ex = c->worldX + c->chargeDirX * len;
+                float ey = c->worldY + c->chargeDirY * len;
+                float perpX = -c->chargeDirY, perpY = c->chargeDirX;
+                float p1x=c->worldX+perpX*thick*0.5f, p1y=c->worldY+perpY*thick*0.5f;
+                float p2x=c->worldX-perpX*thick*0.5f, p2y=c->worldY-perpY*thick*0.5f;
+                float p3x=ex+perpX*thick*0.5f, p3y=ey+perpY*thick*0.5f;
+                float p4x=ex-perpX*thick*0.5f, p4y=ey-perpY*thick*0.5f;
+                float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                glUniform4f(g_colorLoc, 1.0f, 0.2f, 0.5f, 0.10f + 0.26f * prog);
+                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+            }
+            // 본체 + HP + 총알 — 개인 창 클리핑
+            glEnable(GL_SCISSOR_TEST);
+            WorldScissor(c->worldX - win*0.5f, c->worldY - win*0.5f, win, win);
+            for (auto& b : g_Bullets) {
+                if (!b.active) continue;
+                drawCircle(b.x, b.y, 6.0f*b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+            }
+            bool tel = (c->skill == Boss::Skill::TELEGRAPH);
+            drawMercedes(c->worldX, c->worldY, body,
+                         tel ? 1.0f : c->color.r,
+                         tel ? 0.4f : c->color.g,
+                         tel ? 0.4f : c->color.b, 1.0f);
+            float hpFrac = c->hp / c->maxHp; if(hpFrac<0)hpFrac=0; if(hpFrac>1)hpFrac=1;
+            float hbW = 120.0f * scale, hbH = 7.0f;
+            float hbX = c->worldX - hbW*0.5f, hbY = c->worldY - body - 14.0f;
+            drawRect(hbX, hbY, hbW, hbH, 0.12f, 0.18f, 0.12f, 0.85f);
+            drawRect(hbX, hbY, hbW*hpFrac, hbH, 0.4f, 0.95f, 0.5f, 0.95f);
             glDisable(GL_SCISSOR_TEST);
         }
 
@@ -2767,8 +2915,9 @@ int main() {
         {
             bool bossAlive = false;
             glm::vec3 tc(0.6f, 0.3f, 1.0f);
-            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                bossAlive = true; tc = glm::vec3(0.55f, 0.55f, 0.95f); }   // 슬라임: 연보라
+            if ((g_MonsterManager.boss && g_MonsterManager.boss->alive) ||
+                !g_Slimelings.empty()) {
+                bossAlive = true; tc = glm::vec3(0.55f, 0.55f, 0.95f); }   // 슬라임/분열체: 연보라
             else if (g_GlitchBoss && g_GlitchBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.95f, 0.2f, 0.6f); }     // 글리치: 마젠타
             else if (g_RRBoss && g_RRBoss->alive) {

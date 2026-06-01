@@ -29,6 +29,11 @@ public:
 
     glm::vec3 color = glm::vec3(0.9f, 0.85f, 0.95f);
 
+    // ── 분열(슬라임) ──
+    float sizeScale  = 1.0f;     // 본체/창 크기 배율 (분열할수록 작아짐)
+    int   splitGen   = 0;        // 0 = 원본, 1~2 = 분열체
+    bool  chargeOnly = false;    // 분열체: 소환 없이 돌진만
+
     // ── Wander ──
     float targetX, targetY;
     float wanderTimer  = 0.0f;
@@ -89,17 +94,20 @@ public:
         if (!alive) return;
 
         // ── 소환 타이머 (스킬과 독립적으로) — 0.7초 경고 후 소환 ──
-        summonTimer += dt;
-        if (!summonPending && summonTimer >= SUMMON_INTERVAL - SUMMON_WARN)
-            summonPending = true;                 // 경고 링 표시 시작 (main 이 렌더)
-        if (summonTimer >= SUMMON_INTERVAL) {
-            summonTimer   = 0.0f;
-            summonPending = false;
-            for (int i = 0; i < SUMMON_COUNT; i++) {
-                float ang = (float)i / SUMMON_COUNT * 6.2831853f;
-                float sx  = worldX + cosf(ang) * SUMMON_RING_R;
-                float sy  = worldY + sinf(ang) * SUMMON_RING_R;
-                outSummons.push_back(new Monster(sx, sy, 2.0f, 0.8f, /*summoned=*/true));
+        // 분열체(chargeOnly)는 소환 안 함 (돌진만)
+        if (!chargeOnly) {
+            summonTimer += dt;
+            if (!summonPending && summonTimer >= SUMMON_INTERVAL - SUMMON_WARN)
+                summonPending = true;             // 경고 링 표시 시작 (main 이 렌더)
+            if (summonTimer >= SUMMON_INTERVAL) {
+                summonTimer   = 0.0f;
+                summonPending = false;
+                for (int i = 0; i < SUMMON_COUNT; i++) {
+                    float ang = (float)i / SUMMON_COUNT * 6.2831853f;
+                    float sx  = worldX + cosf(ang) * SUMMON_RING_R;
+                    float sy  = worldY + sinf(ang) * SUMMON_RING_R;
+                    outSummons.push_back(new Monster(sx, sy, 2.0f, 0.8f, /*summoned=*/true));
+                }
             }
         }
 
@@ -174,6 +182,8 @@ public:
             if (bounced) {
                 ++bounceCount;
                 // 카타리나 궁극기 스타일: 충돌 지점에서 방사형 강화 잡몹 소환
+                // (분열체는 소환 없이 튕기기만)
+                if (!chargeOnly)
                 for (int i = 0; i < IMPACT_SUMMON_COUNT; i++) {
                     float ang = (float)i / (float)IMPACT_SUMMON_COUNT * 6.2831853f;
                     float r   = 45.0f;
