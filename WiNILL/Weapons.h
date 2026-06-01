@@ -30,7 +30,7 @@ inline const WeaponDef ALL_WEAPONS[] = {
       { L"한 번에 5발  /  사거리 700  /  연사 -33%", L"5 pellets at once  /  range 700  /  rate -33%", L"一度に5発  /  射程700  /  連射 -33%" } },
     /* CANNON */ {
       { L"대포", L"Cannon", L"大砲" },
-      { L"연사 1초 고정  /  공격력 ×10  /  큰 탄  /  [조합] 드론II = 포탑", L"fixed 1s interval  /  Attack ×10  /  big shells  /  [combo] Drone II = turret", L"連射1秒固定  /  攻撃力 ×10  /  大きな弾  /  [組合] ドローンII = 砲台" } },
+      { L"연사 1초 고정  /  공격력 ×5  /  연사 1%당 공격력 +2%  /  큰 탄  /  [조합] 드론II = 포탑", L"fixed 1s interval  /  Attack ×5  /  +2% dmg per 1% fire rate  /  big shells  /  [combo] Drone II = turret", L"連射1秒固定  /  攻撃力 ×5  /  連射1%毎に攻撃+2%  /  大きな弾  /  [組合] ドローンII = 砲台" } },
     /* REVOLVER */ {
       { L"리볼버", L"Revolver", L"リボルバー" },
       { L"공격력 ×1.4  /  연사 -29%  /  정확", L"Attack ×1.4  /  rate -29%  /  accurate", L"攻撃力 ×1.4  /  連射 -29%  /  正確" } },
@@ -47,7 +47,7 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
         s.bulletSpread      = 0.18f;
         break;
     case StartWeapon::SNIPER:
-        s.fireInterval     *= 1.50f;
+        s.fireInterval     *= 1.90f;   // 연사 너프 (1.5 → 1.9)
         s.damageMultiplier *= 2.0f;
         s.bulletSpeed      *= 1.8f;
         s.pierce           = true;
@@ -60,13 +60,13 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
     case StartWeapon::SHOTGUN:
         s.shotgun          = true;
         s.distAugTaken     = true;   // 거리 카테고리 점유
-        s.fireInterval    *= 1.5f;
+        s.fireInterval    *= 3.0f;   // 연사 대폭 너프 (1.5 → 3.0)
         s.bulletSpread     = 0.0f;
         break;
     case StartWeapon::CANNON:
         s.cannon           = true;
         s.fireInterval     = 1.0f;
-        s.damageMultiplier *= 10.0f;
+        s.damageMultiplier *= 5.0f;  // 자체 공격력 ×10 → ×5
         break;
     case StartWeapon::REVOLVER:
         s.fireInterval     *= 1.4f;

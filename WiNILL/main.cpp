@@ -98,12 +98,14 @@ DroneState g_Drones[MAX_DRONES] = {};
 // 포탑 (CANNON + DRONE_2 조합) — 플레이어 위치에 배치, 5초 수명
 struct TurretState {
     float x = 0.0f, y = 0.0f;
-    float lifeTimer  = 0.0f;   // 0→MAX_LIFE
-    float fireTimer  = 0.0f;
-    bool  active     = false;
-    static constexpr float WIN_W    = 250.0f;
-    static constexpr float WIN_H    = 250.0f;
-    static constexpr float MAX_LIFE = 5.0f;
+    float lifeTimer   = 0.0f;   // 0→MAX_LIFE (활성 동안)
+    float spawnTimer  = 1.0f;   // 만료 후 재배치 대기 (SPAWN_DELAY). 초기값=즉시 배치
+    float fireTimer   = 0.0f;
+    bool  active      = false;
+    static constexpr float WIN_W      = 250.0f;
+    static constexpr float WIN_H      = 250.0f;
+    static constexpr float MAX_LIFE   = 5.0f;   // 포탑 지속 5초
+    static constexpr float SPAWN_DELAY= 1.0f;   // 만료 후 재생성 딜레이 1초
 };
 TurretState g_Turret = {};
 
@@ -1414,17 +1416,26 @@ int main() {
             //   - 대포 연사속도로 소총 발사 (remainingDmg 없음 = 일반 데미지)
             //   - 250×250 FakeWindow (렌더에서 처리)
             if (g_Stats.turretMode) {
-                // 미배치 또는 만료 → 플레이어 위치에 재배치
-                if (!g_Turret.active || g_Turret.lifeTimer >= TurretState::MAX_LIFE) {
-                    g_Turret.x = pCX;
-                    g_Turret.y = pCY;
-                    g_Turret.lifeTimer = 0.0f;
-                    g_Turret.fireTimer = 0.0f;
-                    g_Turret.active    = true;
+                // 수명/재생성 관리 — 5초 지속, 만료 후 1초 딜레이 뒤 재배치
+                if (g_Turret.active) {
+                    g_Turret.lifeTimer += delta;
+                    if (g_Turret.lifeTimer >= TurretState::MAX_LIFE) {
+                        g_Turret.active     = false;
+                        g_Turret.spawnTimer = 0.0f;   // 1초 대기 시작
+                    }
+                } else {
+                    g_Turret.spawnTimer += delta;
+                    if (g_Turret.spawnTimer >= TurretState::SPAWN_DELAY) {
+                        g_Turret.x = pCX;
+                        g_Turret.y = pCY;
+                        g_Turret.lifeTimer = 0.0f;
+                        g_Turret.fireTimer = 0.0f;
+                        g_Turret.active    = true;
+                    }
                 }
-                g_Turret.lifeTimer += delta;
 
-                // 가장 가까운 적에게 소총 발사 (cannon fireInterval 사용)
+                // 발사는 활성 상태에서만 — 플레이어 연사속도로 소총 발사
+                if (g_Turret.active) {
                 float turretInterval = g_Stats.fireInterval
                                      * g_Stats.GetFireIntervalMult();
                 g_Turret.fireTimer += delta;
@@ -1464,6 +1475,7 @@ int main() {
                         g_Bullets.push_back(nb);
                     }
                 }
+                }  // if (g_Turret.active)
             }
 
             // 차크람: 공전 + 잡몹 즉사 + 적 총알 충돌 + 재생성 (n 개)
@@ -1549,6 +1561,8 @@ int main() {
             // 총알 발사 (영혼수확/미니화 보너스, Twin 2발, Cannon 잔존 데미지 캐싱)
             // 포탑 모드: 플레이어 수동 발사 비활성 (포탑이 대신 발사)
             float effInterval = g_Stats.fireInterval * g_Stats.GetFireIntervalMult();
+            // 대포: 연사 %는 공격력으로만 환산되고, 실제 발사는 1초 고정
+            if (g_Stats.cannon) effInterval = 1.0f;
             float effSpeed    = g_Stats.bulletSpeed   + g_Stats.GetBulletSpeedBonus();
             if (!g_Stats.turretMode) fireTimer += delta;
 

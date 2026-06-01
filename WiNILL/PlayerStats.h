@@ -346,11 +346,11 @@ struct PlayerStats {
             m *= (1.0f + bonus);
         }
 
-        // 대포: 추가 연사 1%당 공격력 +10%
+        // 대포: 추가 연사 1%당 공격력 +2% (연사력은 발사에 반영 안 되고 전부 공격력으로)
         if (cannon) {
             float fireRateMult = 1.0f / std::max(0.001f, fireInterval);
             float extraPct     = fireRateMult - 1.0f;  // 0% = 연사 1초 기준
-            if (extraPct > 0.0f) m *= (1.0f + extraPct * 10.0f);
+            if (extraPct > 0.0f) m *= (1.0f + extraPct * 2.0f);
         }
 
         return m;
