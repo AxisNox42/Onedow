@@ -8,6 +8,21 @@
 #include "Bullet.h"
 #include "PlayerStats.h"
 
+// 점 P 와 선분 AB(이전위치→현재위치) 사이 최단 거리 — 스윕(레이캐스트) 충돌 판정
+//   탄속이 빨라 프레임 사이에 적을 지나쳐도, 경로 선분으로 판정해 명중 처리
+static inline float SegDist(float px, float py, float ax, float ay, float bx, float by) {
+    float abx = bx - ax, aby = by - ay;
+    float len2 = abx*abx + aby*aby;
+    float t = 0.0f;
+    if (len2 > 1e-6f) {
+        t = ((px - ax)*abx + (py - ay)*aby) / len2;
+        if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
+    }
+    float cx = ax + abx*t, cy = ay + aby*t;
+    float dx = px - cx, dy = py - cy;
+    return std::sqrt(dx*dx + dy*dy);
+}
+
 class CollisionSystem {
 public:
     // 반환값: 이번 프레임에 플레이어가 피해를 받았는지 (LIGHT_STEP 타이머용)
@@ -22,9 +37,8 @@ public:
             if (!b.active) continue;
 
             if (b.isEnemy) {
-                // 적 총알 → 플레이어
-                float dist = glm::distance(glm::vec2(b.x, b.y),
-                                           glm::vec2(playerCX, playerCY));
+                // 적 총알 → 플레이어 (스윕 판정)
+                float dist = SegDist(playerCX, playerCY, b.prevX, b.prevY, b.x, b.y);
                 if (dist < 20.0f) {
                     playerHP -= 10.0f * stats.rmobDmgMult;
                     b.active  = false;
@@ -37,15 +51,16 @@ public:
             bool consumed = false;
             for (auto m : mm.monsters) {
                 if (!m->alive) continue;
-                float d = glm::distance(glm::vec2(b.x, b.y),
-                                        glm::vec2(m->worldX, m->worldY));
+                float d = SegDist(m->worldX, m->worldY, b.prevX, b.prevY, b.x, b.y);
                 if (d < 15.0f) {
                     float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                              glm::vec2(m->worldX, m->worldY));
-                    // CANNON 모드: b.remainingDmg 사용. 그 외: 일반 계산
+                    // CANNON: remainingDmg / 포탑: turretDmg / 그 외: 일반 계산
                     float baseDealt;
                     if (b.remainingDmg > 0.0f) {
                         baseDealt = b.remainingDmg;
+                    } else if (b.turretDmg > 0.0f) {
+                        baseDealt = b.turretDmg;
                     } else {
                         baseDealt = stats.GetBaseDamage()
                                   * stats.GetDamageMultiplier(pd)
@@ -88,13 +103,13 @@ public:
             if (!consumed) {
                 for (auto bm : mm.bombers) {
                     if (!bm->alive) continue;
-                    float d = glm::distance(glm::vec2(b.x, b.y),
-                                            glm::vec2(bm->worldX, bm->worldY));
+                    float d = SegDist(bm->worldX, bm->worldY, b.prevX, b.prevY, b.x, b.y);
                     if (d < 18.0f) {
                         float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                                  glm::vec2(bm->worldX, bm->worldY));
                         float baseDealt;
                         if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
+                        else if (b.turretDmg > 0.0f) baseDealt = b.turretDmg;
                         else baseDealt = stats.GetBaseDamage()
                                        * stats.GetDamageMultiplier(pd)
                                        * b.dmgMult;
@@ -171,13 +186,13 @@ public:
             // 플레이어 총알 vs 보스
             if (!consumed && mm.boss && mm.boss->alive) {
                 auto* bs = mm.boss;
-                float d = glm::distance(glm::vec2(b.x, b.y),
-                                        glm::vec2(bs->worldX, bs->worldY));
+                float d = SegDist(bs->worldX, bs->worldY, b.prevX, b.prevY, b.x, b.y);
                 if (d < Boss::BODY_SIZE * 0.65f) {
                     float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                              glm::vec2(bs->worldX, bs->worldY));
                     float baseDealt;
                     if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
+                    else if (b.turretDmg > 0.0f) baseDealt = b.turretDmg;
                     else baseDealt = stats.GetBaseDamage()
                                    * stats.GetDamageMultiplier(pd)
                                    * b.dmgMult;
@@ -199,14 +214,15 @@ public:
             if (!consumed) {
                 for (auto r : mm.rangedMobs) {
                     if (!r->alive) continue;
-                    float d = glm::distance(glm::vec2(b.x, b.y),
-                                            glm::vec2(r->worldX, r->worldY));
+                    float d = SegDist(r->worldX, r->worldY, b.prevX, b.prevY, b.x, b.y);
                     if (d < 20.0f) {
                         float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                                  glm::vec2(r->worldX, r->worldY));
                         float baseDealt;
                         if (b.remainingDmg > 0.0f) {
                             baseDealt = b.remainingDmg;
+                        } else if (b.turretDmg > 0.0f) {
+                            baseDealt = b.turretDmg;
                         } else {
                             baseDealt = stats.GetBaseDamage()
                                       * stats.GetDamageMultiplier(pd)

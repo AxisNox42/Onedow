@@ -95,19 +95,22 @@ struct DroneState {
 static const int MAX_DRONES = 2;
 DroneState g_Drones[MAX_DRONES] = {};
 
-// 포탑 (CANNON + DRONE_2 조합) — 플레이어 위치에 배치, 5초 수명
-struct TurretState {
+// 포탑 (CANNON + DRONE_2 조합)
+//   1초마다 플레이어 위치에 1개씩 배치, 각 5초 지속 → 맵에 ~5개 상시
+//   능력치는 '대포'가 아니라 '소총' 기준(g_TurretStats)으로 계산
+struct Turret {
     float x = 0.0f, y = 0.0f;
-    float lifeTimer   = 0.0f;   // 0→MAX_LIFE (활성 동안)
-    float spawnTimer  = 1.0f;   // 만료 후 재배치 대기 (SPAWN_DELAY). 초기값=즉시 배치
-    float fireTimer   = 0.0f;
-    bool  active      = false;
-    static constexpr float WIN_W      = 250.0f;
-    static constexpr float WIN_H      = 250.0f;
-    static constexpr float MAX_LIFE   = 5.0f;   // 포탑 지속 5초
-    static constexpr float SPAWN_DELAY= 1.0f;   // 만료 후 재생성 딜레이 1초
+    float lifeTimer = 0.0f;   // 0→TURRET_LIFE
+    float fireTimer = 0.0f;
 };
-TurretState g_Turret = {};
+static const int MAX_TURRETS = 8;                 // 안전 상한
+static constexpr float TURRET_WIN_W  = 250.0f;
+static constexpr float TURRET_WIN_H  = 250.0f;
+static constexpr float TURRET_LIFE   = 5.0f;      // 포탑 지속 5초
+static constexpr float TURRET_DEPLOY = 1.0f;      // 1초마다 배치 (대포 공속 고정)
+std::vector<Turret> g_Turrets;
+float       g_TurretDeployTimer = 0.0f;
+PlayerStats g_TurretStats;                        // 소총 기준 능력치
 
 // 차크람 (에픽+) — 주변 공전 + 잡몹 즉사 + HP. 최대 3개
 struct ChakramState {
@@ -567,7 +570,9 @@ int main() {
             g_ApproachOrbs.clear();
             for (int d = 0; d < MAX_DRONES;   d++) g_Drones[d]   = DroneState{};
             for (int c = 0; c < MAX_CHAKRAMS; c++) g_Chakrams[c] = ChakramState{};
-            g_Turret = TurretState{};
+            g_Turrets.clear();
+            g_TurretDeployTimer = 0.0f;
+            g_TurretStats = PlayerStats();
             g_BulletRainTimer = 0.0f;
             g_DrunkCycle      = 0.0f;
             g_DrunkActive     = false;
@@ -805,7 +810,8 @@ int main() {
                 if (g_Stats.cannon && g_Stats.drone && g_Stats.droneCount >= 2
                     && !g_Stats.turretMode) {
                     g_Stats.turretMode = true;
-                    g_Turret = TurretState{};  // 즉시 배치 대기
+                    g_Turrets.clear();
+                    g_TurretDeployTimer = TURRET_DEPLOY;  // 즉시 첫 포탑 배치
                 }
 
                 // 한 번만 뽑힐 증강 표시:
@@ -906,7 +912,7 @@ int main() {
 
                 // 포탑 조합 재판정
                 if (g_Stats.cannon && g_Stats.drone && g_Stats.droneCount >= 2) {
-                    if (!savedTurret) g_Turret = TurretState{};
+                    if (!savedTurret) { g_Turrets.clear(); g_TurretDeployTimer = TURRET_DEPLOY; }
                     g_Stats.turretMode = true;
                 }
 
@@ -1412,70 +1418,78 @@ int main() {
             }
 
             // 포탑 배치 (CANNON + DRONE_2 조합)
-            //   - 플레이어 위치에 TurretState 배치 → 5초 수명
-            //   - 대포 연사속도로 소총 발사 (remainingDmg 없음 = 일반 데미지)
-            //   - 250×250 FakeWindow (렌더에서 처리)
+            //   1초마다 플레이어 위치에 포탑 1개 배치, 각 5초 지속 → 맵에 ~5개 상시
+            //   능력치는 '소총' 기준(g_TurretStats) — 대포 ×5/1초고정 미적용
             if (g_Stats.turretMode) {
-                // 수명/재생성 관리 — 5초 지속, 만료 후 1초 딜레이 뒤 재배치
-                if (g_Turret.active) {
-                    g_Turret.lifeTimer += delta;
-                    if (g_Turret.lifeTimer >= TurretState::MAX_LIFE) {
-                        g_Turret.active     = false;
-                        g_Turret.spawnTimer = 0.0f;   // 1초 대기 시작
-                    }
-                } else {
-                    g_Turret.spawnTimer += delta;
-                    if (g_Turret.spawnTimer >= TurretState::SPAWN_DELAY) {
-                        g_Turret.x = pCX;
-                        g_Turret.y = pCY;
-                        g_Turret.lifeTimer = 0.0f;
-                        g_Turret.fireTimer = 0.0f;
-                        g_Turret.active    = true;
+                // 소총 기준 능력치 재계산 (보유 증강 개수 변할 때만)
+                static size_t s_lastTurretAugCount = (size_t)-1;
+                if (g_OwnedAugs.size() != s_lastTurretAugCount) {
+                    s_lastTurretAugCount = g_OwnedAugs.size();
+                    g_TurretStats = PlayerStats();
+                    ApplyWeapon(g_TurretStats, StartWeapon::RIFLE);
+                    for (int oi : g_OwnedAugs) g_TurretStats.Apply(ALL_AUGS[oi].type);
+                }
+
+                // 1초마다 새 포탑 배치 (플레이어 위치)
+                g_TurretDeployTimer += delta;
+                if (g_TurretDeployTimer >= TURRET_DEPLOY) {
+                    g_TurretDeployTimer -= TURRET_DEPLOY;
+                    if ((int)g_Turrets.size() < MAX_TURRETS) {
+                        Turret t; t.x = pCX; t.y = pCY;
+                        g_Turrets.push_back(t);
                     }
                 }
 
-                // 발사는 활성 상태에서만 — 플레이어 연사속도로 소총 발사
-                if (g_Turret.active) {
-                float turretInterval = g_Stats.fireInterval
-                                     * g_Stats.GetFireIntervalMult();
-                g_Turret.fireTimer += delta;
-                if (g_Turret.fireTimer >= turretInterval) {
-                    g_Turret.fireTimer = 0.0f;
-                    float nd2 = 1e9f, ttx = 0.0f, tty = 0.0f;
-                    for (auto m : g_MonsterManager.monsters) {
-                        if (!m->alive) continue;
-                        float ddx = m->worldX - g_Turret.x, ddy = m->worldY - g_Turret.y;
-                        float ds  = ddx*ddx + ddy*ddy;
-                        if (ds < nd2) { nd2 = ds; ttx = m->worldX; tty = m->worldY; }
-                    }
-                    for (auto r2 : g_MonsterManager.rangedMobs) {
-                        if (!r2->alive) continue;
-                        float ddx = r2->worldX - g_Turret.x, ddy = r2->worldY - g_Turret.y;
-                        float ds  = ddx*ddx + ddy*ddy;
-                        if (ds < nd2) { nd2 = ds; ttx = r2->worldX; tty = r2->worldY; }
-                    }
-                    for (auto bm2 : g_MonsterManager.bombers) {
-                        if (!bm2->alive) continue;
-                        float ddx = bm2->worldX - g_Turret.x, ddy = bm2->worldY - g_Turret.y;
-                        float ds  = ddx*ddx + ddy*ddy;
-                        if (ds < nd2) { nd2 = ds; ttx = bm2->worldX; tty = bm2->worldY; }
-                    }
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                        auto* bs2 = g_MonsterManager.boss;
-                        float ddx = bs2->worldX - g_Turret.x, ddy = bs2->worldY - g_Turret.y;
-                        float ds  = ddx*ddx + ddy*ddy;
-                        if (ds < nd2) { nd2 = ds; ttx = bs2->worldX; tty = bs2->worldY; }
-                    }
-                    if (nd2 < 1e8f) {
-                        float effSpd = g_Stats.bulletSpeed + g_Stats.GetBulletSpeedBonus();
-                        Bullet nb(g_Turret.x, g_Turret.y, ttx, tty);
-                        nb.speed = effSpd;
-                        nb.color = glm::vec3(0.1f, 1.0f, 0.55f);  // 청록 (포탑 고유색)
-                        // remainingDmg 설정 안 함 → 일반 데미지 공식 사용
-                        g_Bullets.push_back(nb);
+                // 각 포탑: 수명 + 소총 발사
+                float tInterval = g_TurretStats.fireInterval * g_TurretStats.GetFireIntervalMult();
+                float tSpeed    = g_TurretStats.bulletSpeed   + g_TurretStats.GetBulletSpeedBonus();
+                for (auto& t : g_Turrets) {
+                    t.lifeTimer += delta;
+                    t.fireTimer += delta;
+                    if (t.fireTimer >= tInterval) {
+                        t.fireTimer = 0.0f;
+                        float nd2 = 1e9f, ttx = 0.0f, tty = 0.0f;
+                        for (auto m : g_MonsterManager.monsters) {
+                            if (!m->alive) continue;
+                            float ddx = m->worldX - t.x, ddy = m->worldY - t.y;
+                            float ds  = ddx*ddx + ddy*ddy;
+                            if (ds < nd2) { nd2 = ds; ttx = m->worldX; tty = m->worldY; }
+                        }
+                        for (auto r2 : g_MonsterManager.rangedMobs) {
+                            if (!r2->alive) continue;
+                            float ddx = r2->worldX - t.x, ddy = r2->worldY - t.y;
+                            float ds  = ddx*ddx + ddy*ddy;
+                            if (ds < nd2) { nd2 = ds; ttx = r2->worldX; tty = r2->worldY; }
+                        }
+                        for (auto bm2 : g_MonsterManager.bombers) {
+                            if (!bm2->alive) continue;
+                            float ddx = bm2->worldX - t.x, ddy = bm2->worldY - t.y;
+                            float ds  = ddx*ddx + ddy*ddy;
+                            if (ds < nd2) { nd2 = ds; ttx = bm2->worldX; tty = bm2->worldY; }
+                        }
+                        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                            auto* bs2 = g_MonsterManager.boss;
+                            float ddx = bs2->worldX - t.x, ddy = bs2->worldY - t.y;
+                            float ds  = ddx*ddx + ddy*ddy;
+                            if (ds < nd2) { nd2 = ds; ttx = bs2->worldX; tty = bs2->worldY; }
+                        }
+                        if (nd2 < 1e8f) {
+                            float dist = sqrtf(nd2);
+                            Bullet nb(t.x, t.y, ttx, tty);
+                            nb.speed     = tSpeed;
+                            nb.color     = glm::vec3(0.1f, 1.0f, 0.55f);  // 청록 (포탑 고유색)
+                            nb.turretDmg = g_TurretStats.GetBaseDamage()
+                                         * g_TurretStats.GetDamageMultiplier(dist);
+                            if (nb.turretDmg < 1.0f) nb.turretDmg = 1.0f;
+                            g_Bullets.push_back(nb);
+                        }
                     }
                 }
-                }  // if (g_Turret.active)
+                // 만료된 포탑 제거
+                g_Turrets.erase(
+                    std::remove_if(g_Turrets.begin(), g_Turrets.end(),
+                        [](const Turret& t){ return t.lifeTimer >= TURRET_LIFE; }),
+                    g_Turrets.end());
             }
 
             // 차크람: 공전 + 잡몹 즉사 + 적 총알 충돌 + 재생성 (n 개)
@@ -1741,12 +1755,14 @@ int main() {
 
         // (a) 원거리 몹 + 포탑 + 보스 FakeWindow 배경 — 블렌드 OFF 로 직접 덮어쓰기
         //     겹쳐서 또 그려도 같은 색이 그대로 쓰여 누적 없음.
-        // 포탑 250×250 창 배경
-        if (g_Stats.turretMode && g_Turret.active) {
-            float twx = g_Turret.x - TurretState::WIN_W * 0.5f;
-            float twy = g_Turret.y - TurretState::WIN_H * 0.5f;
-            drawRect(twx, twy, TurretState::WIN_W, TurretState::WIN_H,
-                     0.06f, 0.08f, 0.10f, 1.0f);
+        // 포탑 250×250 창 배경 (다수)
+        if (g_Stats.turretMode) {
+            for (auto& t : g_Turrets) {
+                float twx = t.x - TURRET_WIN_W * 0.5f;
+                float twy = t.y - TURRET_WIN_H * 0.5f;
+                drawRect(twx, twy, TURRET_WIN_W, TURRET_WIN_H,
+                         0.06f, 0.08f, 0.10f, 1.0f);
+            }
         }
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
@@ -1817,36 +1833,38 @@ int main() {
                 drawRect(orb.x - 14, orb.y - 14, 28, 28, 0.95f, 0.05f, 0.05f, 1.0f);
             }
         }
-        // (b'') 포탑 창 안 컨텐츠
-        if (g_Stats.turretMode && g_Turret.active) {
-            float twx = g_Turret.x - TurretState::WIN_W * 0.5f;
-            float twy = g_Turret.y - TurretState::WIN_H * 0.5f;
-            glScissor(
-                (GLint) twx,
-                (GLint)(screenHeight - (twy + TurretState::WIN_H)),
-                (GLint) TurretState::WIN_W,
-                (GLint) TurretState::WIN_H
-            );
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive) continue;
-                float sz = m->summoned ? 28.0f : 18.0f;
-                drawTriangle(m->worldX, m->worldY, sz,
-                             m->color.r, m->color.g, m->color.b, 1.0f);
-            }
-            for (auto bm : g_MonsterManager.bombers) {
-                if (!bm->alive) continue;
-                drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
-                             bm->color.r, bm->color.g, bm->color.b, 1.0f);
-            }
-            for (auto& b : g_Bullets) {
-                if (!b.active) continue;
-                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
-            }
-            for (auto& p : g_EnemyParts) {
-                if (!p.active) continue;
-                float a  = p.life / p.maxLife;
-                float hs = p.size * 0.5f;
-                drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
+        // (b'') 포탑 창 안 컨텐츠 (다수)
+        if (g_Stats.turretMode) {
+            for (auto& t : g_Turrets) {
+                float twx = t.x - TURRET_WIN_W * 0.5f;
+                float twy = t.y - TURRET_WIN_H * 0.5f;
+                glScissor(
+                    (GLint) twx,
+                    (GLint)(screenHeight - (twy + TURRET_WIN_H)),
+                    (GLint) TURRET_WIN_W,
+                    (GLint) TURRET_WIN_H
+                );
+                for (auto m : g_MonsterManager.monsters) {
+                    if (!m->alive) continue;
+                    float sz = m->summoned ? 28.0f : 18.0f;
+                    drawTriangle(m->worldX, m->worldY, sz,
+                                 m->color.r, m->color.g, m->color.b, 1.0f);
+                }
+                for (auto bm : g_MonsterManager.bombers) {
+                    if (!bm->alive) continue;
+                    drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
+                                 bm->color.r, bm->color.g, bm->color.b, 1.0f);
+                }
+                for (auto& b : g_Bullets) {
+                    if (!b.active) continue;
+                    drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                }
+                for (auto& p : g_EnemyParts) {
+                    if (!p.active) continue;
+                    float a  = p.life / p.maxLife;
+                    float hs = p.size * 0.5f;
+                    drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
+                }
             }
         }
 
@@ -2009,31 +2027,31 @@ int main() {
         }
         glDisable(GL_SCISSOR_TEST);
 
-        // (e2.1) 포탑 아이콘 + 수명바 — 창 영역 scissor 내에서만 표시
-        if (g_Stats.turretMode && g_Turret.active) {
-            float twx = g_Turret.x - TurretState::WIN_W * 0.5f;
-            float twy = g_Turret.y - TurretState::WIN_H * 0.5f;
+        // (e2.1) 포탑 아이콘 + 수명바 (다수) — 각 창 영역 scissor 내에서 표시
+        if (g_Stats.turretMode) {
             glEnable(GL_SCISSOR_TEST);
-            glScissor(
-                (GLint) twx,
-                (GLint)(screenHeight - (twy + TurretState::WIN_H)),
-                (GLint) TurretState::WIN_W,
-                (GLint) TurretState::WIN_H
-            );
-            // 포탑 본체 — 십자형 (중앙 사각형 + 4방향 돌출)
-            float tc = 12.0f;
-            drawRect(g_Turret.x - tc, g_Turret.y - 4, tc*2, 8,
-                     0.1f, 1.0f, 0.55f, 1.0f);
-            drawRect(g_Turret.x - 4, g_Turret.y - tc, 8, tc*2,
-                     0.1f, 1.0f, 0.55f, 1.0f);
-            // 수명 바 (창 상단)
-            float lifeRem = 1.0f - g_Turret.lifeTimer / TurretState::MAX_LIFE;
-            if (lifeRem < 0.0f) lifeRem = 0.0f;
-            float barW = TurretState::WIN_W - 24.0f;
-            drawRect(twx + 12.0f, twy + 8.0f, barW, 5.0f,
-                     0.12f, 0.12f, 0.18f, 0.7f);
-            drawRect(twx + 12.0f, twy + 8.0f, barW * lifeRem, 5.0f,
-                     0.1f, 1.0f, 0.55f, 0.9f);
+            for (auto& t : g_Turrets) {
+                float twx = t.x - TURRET_WIN_W * 0.5f;
+                float twy = t.y - TURRET_WIN_H * 0.5f;
+                glScissor(
+                    (GLint) twx,
+                    (GLint)(screenHeight - (twy + TURRET_WIN_H)),
+                    (GLint) TURRET_WIN_W,
+                    (GLint) TURRET_WIN_H
+                );
+                // 포탑 본체 — 십자형 (중앙 사각형 + 4방향 돌출)
+                float tc = 12.0f;
+                drawRect(t.x - tc, t.y - 4, tc*2, 8, 0.1f, 1.0f, 0.55f, 1.0f);
+                drawRect(t.x - 4, t.y - tc, 8, tc*2, 0.1f, 1.0f, 0.55f, 1.0f);
+                // 수명 바 (창 상단)
+                float lifeRem = 1.0f - t.lifeTimer / TURRET_LIFE;
+                if (lifeRem < 0.0f) lifeRem = 0.0f;
+                float barW = TURRET_WIN_W - 24.0f;
+                drawRect(twx + 12.0f, twy + 8.0f, barW, 5.0f,
+                         0.12f, 0.12f, 0.18f, 0.7f);
+                drawRect(twx + 12.0f, twy + 8.0f, barW * lifeRem, 5.0f,
+                         0.1f, 1.0f, 0.55f, 0.9f);
+            }
             glDisable(GL_SCISSOR_TEST);
         }
 

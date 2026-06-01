@@ -22,11 +22,16 @@ public:
     float traveled  = 0.0f;
     // 렌더 크기 배율 (CANNON 총알 5배 등)
     float sizeScale = 1.0f;
+    // 포탑 전용 고정 데미지 (>0 이면 이 값으로 피해. 소총 기준 능력치)
+    float turretDmg = 0.0f;
+    // 직전 프레임 위치 — 스윕(레이캐스트) 충돌 판정용
+    float prevX = 0.0f, prevY = 0.0f;
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 
     Bullet(float startX, float startY, float targetX, float targetY) {
         x = startX; y = startY;
+        prevX = startX; prevY = startY;
         float dx = targetX - startX;
         float dy = targetY - startY;
         float dist = std::sqrt(dx * dx + dy * dy);
@@ -35,6 +40,7 @@ public:
     }
 
     void Update(float dt) {
+        prevX = x;  prevY = y;          // 이동 전 위치 저장 (스윕 판정)
         float step = speed * dt;
         x += dirX * step;
         y += dirY * step;
