@@ -650,6 +650,7 @@ int main() {
             g_Slimelings.clear();
             g_SlimeEncounter = false;
             g_BossTintT = 0.0f;
+            ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱 초기화
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
@@ -742,6 +743,8 @@ int main() {
                 SpawnShockWave(pCX, pCY, blastRad * 1.4f, 0.55f,
                                1.0f, 0.85f, 0.3f);
                 g_ShakeTime = 0.45f; g_ShakeMag = 22.0f;
+                TriggerFlash(1.0f, 0.9f, 0.4f, 0.8f);   // 부활 — 강한 번쩍
+                TriggerHitStop(0.14f);                  // 임팩트 정지
 
                 // 부활 — 능력치 페널티 없이 풀 HP 로 (디버프 없음)
                 g_GameManager.maxHP    = g_Stats.maxHP;
@@ -1087,9 +1090,13 @@ int main() {
             }
         }
 
-        // --- Fixed timestep (DYING = 0.15× 슬로우 모션) ---
+        // --- 히트스톱: 큰 이벤트 직후 잠깐 시뮬레이션 정지 (렌더는 계속) ---
+        if (g_HitStopTimer > 0.0f) g_HitStopTimer -= delta;
+
+        // --- Fixed timestep (DYING = 0.15× 슬로우 모션, 히트스톱 = 완전 정지) ---
         float physDelta = (g_GameManager.currentState == GameState::DYING)
                           ? delta * 0.15f : delta;
+        if (g_HitStopTimer > 0.0f) physDelta = 0.0f;   // 누적 안 함 → 스텝 미실행
         accumulator += physDelta;
         while (accumulator >= FIXED_DT) {
             if (g_GameManager.ShouldUpdate()) {
@@ -1296,6 +1303,7 @@ int main() {
                             if (!s.alive) continue;
                             if (SegDist(s.x, s.y, b.prevX, b.prevY, b.x, b.y) < 13.0f) {
                                 s.alive = false;
+                                AddKillCombo();
                                 g_GameManager.xp += 2;
                                 g_GameManager.scoreAccum += 10.0f;
                                 if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
@@ -1336,6 +1344,7 @@ int main() {
                                 float dealt = (dmg < pb->hp) ? dmg : pb->hp;
                                 pb->hp -= dealt;
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                SpawnDamageNumber(pb->worldX, pb->worldY, dealt, true);
                                 if (pb->hp <= 0.0f) pb->alive = false;
                                 if (b.remainingDmg <= 0.001f) b.active = false;
                             }
@@ -1361,7 +1370,8 @@ int main() {
                                 float dealt = (dmg < c->hp) ? dmg : c->hp;
                                 c->hp -= dealt;
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                                if (c->hp <= 0.0f) c->alive = false;
+                                SpawnDamageNumber(c->worldX, c->worldY, dealt, dealt >= 40.0f);
+                                if (c->hp <= 0.0f) { c->alive = false; AddKillCombo(); }
                                 bool keep = (b.remainingDmg > 0.001f) ||
                                             (g_Stats.pierce && (rand()%100) < g_Stats.pierceChance);
                                 if (!keep) b.active = false;
@@ -1398,6 +1408,7 @@ int main() {
                     SpawnShockWave(bs->worldX, bs->worldY, 350.0f, 0.7f,
                                    0.5f, 0.95f, 0.5f);
                     g_ShakeTime = 0.5f; g_ShakeMag = 18.0f;
+                    TriggerFlash(0.5f, 1.0f, 0.6f, 0.5f); TriggerHitStop(0.08f);
                     bs->exploded = true;
                     // 슬라임이니까 죽으면 분할 — 절반 체력·0.75배 크기 분열체 2마리 (1세대)
                     float childHp = bs->maxHp * 0.5f;
@@ -1458,6 +1469,7 @@ int main() {
                     SpawnEnemyExplosion(gb->worldX, gb->worldY, 1.0f, 0.3f, 0.3f, true);
                     SpawnShockWave(gb->worldX, gb->worldY, 380.0f, 0.7f, 0.3f, 1.0f, 0.6f);
                     g_ShakeTime = 0.5f; g_ShakeMag = 20.0f;
+                    TriggerFlash(0.95f, 0.3f, 0.7f, 0.6f); TriggerHitStop(0.10f);
                     gb->exploded = true;
                     g_GameManager.scoreAccum += 20000.0f;
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -1476,6 +1488,7 @@ int main() {
                     SpawnEnemyExplosion(rb->worldX, rb->worldY, 0.3f, 0.9f, 1.0f, true);
                     SpawnShockWave(rb->worldX, rb->worldY, 360.0f, 0.7f, 1.0f, 0.7f, 0.2f);
                     g_ShakeTime = 0.5f; g_ShakeMag = 20.0f;
+                    TriggerFlash(1.0f, 0.6f, 0.2f, 0.6f); TriggerHitStop(0.10f);
                     rb->exploded = true;
                     g_GameManager.scoreAccum += 20000.0f;
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -1494,6 +1507,7 @@ int main() {
                     SpawnEnemyExplosion(pb->worldX, pb->worldY, 0.9f, 0.3f, 1.0f, true);
                     SpawnShockWave(pb->worldX, pb->worldY, 450.0f, 0.8f, 0.7f, 0.3f, 1.0f);
                     g_ShakeTime = 0.6f; g_ShakeMag = 24.0f;
+                    TriggerFlash(0.7f, 0.3f, 1.0f, 0.7f); TriggerHitStop(0.13f);
                     pb->exploded = true;
                     g_ViewZoomTarget = 1.0f;               // 화면 정상화
                     g_GameManager.scoreAccum += 30000.0f;  // 다른 보스 +50%
@@ -1554,6 +1568,7 @@ int main() {
                     if (g_GameManager.xp >= need) {
                         g_GameManager.xp -= need;
                         ++g_GameManager.playerLevel;
+                        TriggerFlash(0.5f, 1.0f, 0.7f, 0.45f);  // 레벨업 번쩍 (연녹)
                         g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                      g_Stats.distAugTaken);
 
@@ -1575,6 +1590,29 @@ int main() {
                 g_GameManager.AddScore(FIXED_DT * 100.0f);
             }
             accumulator -= FIXED_DT;
+        }
+
+        // ── 손맛: 데미지 숫자 / 콤보 / 플래시 매 프레임 갱신 (게임 진행 중에만 감쇠) ──
+        if (g_GameManager.currentState == GameState::RUNNING ||
+            g_GameManager.currentState == GameState::DYING) {
+            for (auto& d : g_DmgNumbers) {
+                d.x  += d.vx * delta;
+                d.y  += d.vy * delta;
+                d.vy += 70.0f * delta;        // 약한 중력 (솟구쳤다 처짐)
+                d.life -= delta;
+            }
+            g_DmgNumbers.erase(std::remove_if(g_DmgNumbers.begin(), g_DmgNumbers.end(),
+                [](const DamageNumber& d){ return d.life <= 0.0f; }), g_DmgNumbers.end());
+            if (g_ComboTimer > 0.0f) {
+                g_ComboTimer -= delta;
+                if (g_ComboTimer <= 0.0f) g_Combo = 0;
+            }
+            g_ComboPulse -= delta * 4.0f;
+            if (g_ComboPulse < 0.0f) g_ComboPulse = 0.0f;
+        }
+        if (g_FlashIntensity > 0.0f) {
+            g_FlashIntensity -= delta * 3.5f;
+            if (g_FlashIntensity < 0.0f) g_FlashIntensity = 0.0f;
         }
 
         if (g_GameManager.currentState == GameState::RUNNING) {
@@ -2941,10 +2979,21 @@ int main() {
             }
             if (g_BossTintT > 0.001f) {
                 BindMainShader();
-                drawRect(0, 0, (float)screenWidth, (float)screenHeight,
+                // 줌(폴리모프 2페이즈)에서도 전체를 덮도록 넉넉히 (3배 영역)
+                drawRect(-(float)screenWidth, -(float)screenHeight,
+                         (float)screenWidth * 3.0f, (float)screenHeight * 3.0f,
                          g_BossTintCol.r, g_BossTintCol.g, g_BossTintCol.b,
                          g_BossTintT * 0.06f);
             }
+        }
+
+        // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍 (줌 무관 전체 덮기)
+        if (g_FlashIntensity > 0.001f) {
+            BindMainShader();
+            float a = g_FlashIntensity; if (a > 0.85f) a = 0.85f;
+            drawRect(-(float)screenWidth, -(float)screenHeight,
+                     (float)screenWidth * 3.0f, (float)screenHeight * 3.0f,
+                     g_FlashColor.r, g_FlashColor.g, g_FlashColor.b, a);
         }
 
         // (i) 취함 상태 표시 (화면 가장자리 자홍색 비네트)
@@ -3589,6 +3638,33 @@ int main() {
                 float fpsW = g_TextS.Width(fpsBuf, 0.85f);
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
+            }
+
+            // ── 손맛: 데미지 숫자 팝업 + 콤보 카운터 ──────────────────
+            if (st == GameState::RUNNING || st == GameState::DYING ||
+                st == GameState::PAUSED) {
+                // 데미지 숫자 (월드 → 스크린 변환 후 텍스트)
+                for (auto& d : g_DmgNumbers) {
+                    float t  = d.life / d.maxLife;                   // 1 → 0
+                    float sx = W2SX(d.x), sy = W2SY(d.y);
+                    wchar_t nb[16]; swprintf_s(nb, L"%d", d.amount);
+                    float sc = (d.crit ? 1.05f : 0.72f) * g_ViewZoom * (0.7f + 0.3f * t);
+                    float a  = (t > 0.55f) ? 1.0f : (t / 0.55f);
+                    float w  = g_TextS.Width(nb, sc);
+                    if (d.crit) g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 0.85f, 0.2f, a);
+                    else        g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 1.0f, 1.0f, a*0.9f);
+                }
+                // 콤보 카운터 (5콤보 이상부터, 색이 콤보에 따라 강해짐)
+                if (st == GameState::RUNNING && g_Combo >= 5) {
+                    wchar_t cb[32]; swprintf_s(cb, L"%d COMBO", g_Combo);
+                    float sc = (1.05f + (g_Combo > 30 ? 0.3f : 0.0f)) * (1.0f + g_ComboPulse * 0.4f);
+                    float cr = 1.0f, cg = 1.0f, cbl = 1.0f;
+                    if      (g_Combo >= 50) { cg = 0.25f; cbl = 0.2f; }
+                    else if (g_Combo >= 25) { cg = 0.55f; cbl = 0.15f; }
+                    else if (g_Combo >= 12) { cg = 0.9f;  cbl = 0.3f; }
+                    float w = g_TextS.Width(cb, sc);
+                    g_TextS.Draw(cb, (sw - w) * 0.5f, sh * 0.115f, sc, cr, cg, cbl, 0.95f);
+                }
             }
 
             // ── 액티브/패시브 쿨다운 UI (좌하단) ─────────────────────

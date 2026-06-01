@@ -7,6 +7,7 @@
 #include "MonsterManager.h"
 #include "Bullet.h"
 #include "PlayerStats.h"
+#include "Juice.h"
 
 // 점 P 와 선분 AB(이전위치→현재위치) 사이 최단 거리 — 스윕(레이캐스트) 충돌 판정
 //   탄속이 빨라 프레임 사이에 적을 지나쳐도, 경로 선분으로 판정해 명중 처리
@@ -70,9 +71,11 @@ public:
                     float dealtThisHit = (baseDealt < m->hp) ? baseDealt : m->hp;
                     m->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+                    SpawnDamageNumber(m->worldX, m->worldY, dealtThisHit, dealtThisHit >= 40.0f);
 
                     if (m->hp <= 0.0f) {
                         m->alive = false;
+                        AddKillCombo();
                         float gained = (1.0f + (float)stats.meleeXpBonus)
                                      * stats.xpMult;
                         xp              += (long long)gained;
@@ -117,8 +120,11 @@ public:
                         float dealtThisHit = (baseDealt < bm->hp) ? baseDealt : bm->hp;
                         bm->hp -= dealtThisHit;
                         if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+                        SpawnDamageNumber(bm->worldX, bm->worldY, dealtThisHit, dealtThisHit >= 40.0f);
                         if (bm->hp <= 0.0f) {
                             bm->alive = false;
+                            AddKillCombo();
+                            TriggerHitStop(0.03f);   // 자폭병 처치 — 짧은 크런치
                             float gained = (25.0f + (float)stats.meleeXpBonus)
                                          * stats.xpMult;
                             xp              += (long long)gained;
@@ -200,8 +206,9 @@ public:
                     float dealtThisHit = (baseDealt < bs->hp) ? baseDealt : bs->hp;
                     bs->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+                    SpawnDamageNumber(bs->worldX, bs->worldY, dealtThisHit, dealtThisHit >= 40.0f);
                     if (bs->hp <= 0.0f) {
-                        bs->alive = false; // 보상은 main 에서 처리
+                        bs->alive = false; // 보상/연출은 main 에서 처리
                     }
                     bool keepAlive = false;
                     if (b.remainingDmg > 0.001f) keepAlive = true;
@@ -232,9 +239,12 @@ public:
                         float dealtThisHit = (baseDealt < r->hp) ? baseDealt : r->hp;
                         r->hp -= dealtThisHit;
                         if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
+                        SpawnDamageNumber(r->worldX, r->worldY, dealtThisHit, dealtThisHit >= 40.0f);
 
                         if (r->hp <= 0.0f) {
                             r->alive = false;
+                            AddKillCombo();
+                            TriggerHitStop(0.03f);   // 원거리 몹 처치 — 짧은 크런치
                             float gained = (25.0f + (float)stats.rangedXpBonus)
                                          * stats.xpMult;
                             xp              += (long long)gained;

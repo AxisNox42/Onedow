@@ -183,6 +183,7 @@
     <ClInclude Include="Monster.h" />
     <ClInclude Include="MonsterManager.h" />
     <ClInclude Include="Platform.h" />
+    <ClInclude Include="Juice.h" />
     <ClInclude Include="PlayerStats.h" />
     <ClInclude Include="PolymorphBoss.h" />
     <ClInclude Include="RangedMob.h" />
