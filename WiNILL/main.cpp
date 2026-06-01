@@ -2770,26 +2770,32 @@ int main() {
 
             // 상단 HUD (RUNNING / PAUSED / DYING / AUG_SELECT 모두 노출)
             if (st != GameState::READY && st != GameState::GAMEOVER) {
+                // macOS: 상단 메뉴바(~25px)가 화면 맨 위를 가리므로 HUD 를 아래로
+#ifdef __APPLE__
+                const float hudTopY = 8.0f + 30.0f;
+#else
+                const float hudTopY = 8.0f;
+#endif
                 // 좌상단: Lv. / XP
                 long long need = g_ExpSystem.Required(g_GameManager.playerLevel);
                 wchar_t xpBuf[64];
                 swprintf_s(xpBuf, L"%ls%d   %lld / %lld",
                            T(StrId::LV_PREFIX), g_GameManager.playerLevel,
                            g_GameManager.xp, need);
-                g_TextS.Draw(xpBuf, 12.0f, 8.0f, 0.85f, 0.7f,1.0f,0.7f,0.9f);
+                g_TextS.Draw(xpBuf, 12.0f, hudTopY, 0.85f, 0.7f,1.0f,0.7f,0.9f);
 
                 // 상단 중앙: Score
                 wchar_t scoreBuf[64];
                 swprintf_s(scoreBuf, L"%ls  %lld", T(StrId::SCORE), g_GameManager.score);
                 float scoreW = g_TextS.Width(scoreBuf, 1.0f);
-                g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, 8.0f, 1.0f,
+                g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, hudTopY, 1.0f,
                              1.0f, 1.0f, 1.0f, 0.95f);
 
                 // 우상단: FPS
                 wchar_t fpsBuf[32];
                 swprintf_s(fpsBuf, L"%ls  %d", T(StrId::FPS), g_CurrentFPS);
                 float fpsW = g_TextS.Width(fpsBuf, 0.85f);
-                g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, 8.0f, 0.85f,
+                g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
             }
 
