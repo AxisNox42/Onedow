@@ -2744,7 +2744,7 @@ int main() {
                     const float BX = 220.0f;
                     const float BY = 60.0f;
                     const float BW = std::min(420.0f, sw - BX - 20.0f);
-                    const float BH = 230.0f;
+                    const float BH = 270.0f;
 
                     // 배경 + 등급 색 띠
                     BindMainShader();
@@ -2763,13 +2763,15 @@ int main() {
                     drawRect(BX + 10.0f, BY + 38.0f, BW - 20.0f, 1.0f,
                              0.3f, 0.3f, 0.4f, 0.5f);
 
-                    // 증강 이름 (대) — BY+46 부터 (구분선 아래 8px)
-                    float nSc = 1.1f;
+                    // 증강 이름 (대) — 구분선 아래
+                    float nSc = 1.05f;
                     while (nSc > 0.65f && g_TextL.Width(AugName(sd), nSc) > BW - 20.0f)
                         nSc -= 0.05f;
-                    float nLw = g_TextL.Width(AugName(sd), nSc);
-                    g_TextL.Draw(AugName(sd), BX + (BW - nLw) * 0.5f, BY + 46.0f, nSc,
+                    float nLw   = g_TextL.Width(AugName(sd), nSc);
+                    float nameY = BY + 48.0f;
+                    g_TextL.Draw(AugName(sd), BX + (BW - nLw) * 0.5f, nameY, nSc,
                                  1.0f, 1.0f, 1.0f, 0.98f);
+                    float nameH = g_TextL.Height(AugName(sd), nSc);
 
                     // 설명 ('/' 분리) — BY+92 부터 (이름 아래 여유)
                     std::vector<std::wstring> dlines;
@@ -2785,7 +2787,7 @@ int main() {
                     }
                     int nd = (int)dlines.size(); if (nd < 1) nd = 1;
                     float dLineH = 26.0f;
-                    float dStartY = BY + 92.0f;
+                    float dStartY = nameY + nameH + 8.0f;   // 이름 실제 높이 아래에서 시작
                     for (int li = 0; li < nd; li++) {
                         const wchar_t* ds = dlines[li].c_str();
                         float dsc = 0.9f;
