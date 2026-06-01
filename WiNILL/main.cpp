@@ -123,6 +123,10 @@ struct Turret {
 static const int MAX_TURRETS = 8;                 // 안전 상한
 static constexpr float TURRET_WIN_W  = 250.0f;
 static constexpr float TURRET_WIN_H  = 250.0f;
+// 신규 보스 개인 창 크기 (본체/HP 를 가두는 따라다니는 창)
+static constexpr float GLITCH_WIN_W = 620.0f;
+static constexpr float RR_WIN_W     = 600.0f;
+static constexpr float POLY_WIN_W   = 840.0f;
 static constexpr float TURRET_LIFE   = 5.0f;      // 포탑 지속 5초
 static constexpr float TURRET_DEPLOY = 1.0f;      // 1초마다 배치 (대포 공속 고정)
 std::vector<Turret> g_Turrets;
@@ -2049,6 +2053,22 @@ int main() {
             drawRect(bwx, bwy, Boss::WIN_W, Boss::WIN_H,
                      0.08f, 0.08f, 0.10f, 1.0f);
         }
+        // 신규 보스 — 각자 개인 창 배경 (본체가 맨 배경에 떠 보이지 않도록)
+        if (g_GlitchBoss && g_GlitchBoss->alive) {
+            float w = GLITCH_WIN_W;
+            drawRect(g_GlitchBoss->worldX - w*0.5f, g_GlitchBoss->worldY - w*0.5f,
+                     w, w, 0.07f, 0.06f, 0.10f, 1.0f);
+        }
+        if (g_RRBoss && g_RRBoss->alive) {
+            float w = RR_WIN_W;
+            drawRect(g_RRBoss->worldX - w*0.5f, g_RRBoss->worldY - w*0.5f,
+                     w, w, 0.10f, 0.07f, 0.06f, 1.0f);
+        }
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            float w = POLY_WIN_W;
+            drawRect(g_PolyBoss->worldX - w*0.5f, g_PolyBoss->worldY - w*0.5f,
+                     w, w, 0.09f, 0.06f, 0.11f, 1.0f);
+        }
         glEnable(GL_BLEND);  // 이후는 일반 알파 블렌딩
 
         // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
@@ -2451,6 +2471,10 @@ int main() {
                 if (t.homing) drawTriangle(t.x, t.y, 11.0f, 1.0f, 0.2f, 0.2f, 1.0f);
                 else          drawTriangle(t.x, t.y, 9.0f,  0.9f, 0.3f, 0.95f, 1.0f);
             }
+            // 본체 + HP — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
+            glEnable(GL_SCISSOR_TEST);
+            WorldScissor(gb->worldX - GLITCH_WIN_W*0.5f, gb->worldY - GLITCH_WIN_W*0.5f,
+                         GLITCH_WIN_W, GLITCH_WIN_W);
             // 본체 — RGB 분리된 글리치 다이아몬드
             drawDiamond(gb->worldX + 3, gb->worldY, GlitchBoss::BODY, 1.0f, 0.1f, 0.4f, 0.55f);
             drawDiamond(gb->worldX - 3, gb->worldY, GlitchBoss::BODY, 0.1f, 0.9f, 1.0f, 0.55f);
@@ -2463,6 +2487,7 @@ int main() {
             float hbY = gb->worldY - GlitchBoss::BODY - 18.0f;
             drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.15f, 0.85f);
             drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.25f, 0.55f, 0.95f);
+            glDisable(GL_SCISSOR_TEST);
         }
 
         // (g4) 리로드 러너 — 무기 전조(저격선/MG 부채꼴) + 본체 + HP + [RELOADING]
@@ -2535,6 +2560,10 @@ int main() {
                 }
             }
 
+            // 본체 + HP — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
+            glEnable(GL_SCISSOR_TEST);
+            WorldScissor(rb->worldX - RR_WIN_W*0.5f, rb->worldY - RR_WIN_W*0.5f,
+                         RR_WIN_W, RR_WIN_W);
             // 본체 — 상태/무기색 다이아몬드
             float br = 0.9f, bg = 0.9f, bb = 0.95f;
             if      (rb->state  == RRState::RELOAD_SPRINT) { br=1.0f; bg=0.9f;  bb=0.3f; }
@@ -2551,6 +2580,7 @@ int main() {
             float hbY = rb->worldY - ReloadRunnerBoss::BODY - 18.0f;
             drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.12f, 0.1f, 0.85f);
             drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.6f, 0.2f, 0.95f);
+            glDisable(GL_SCISSOR_TEST);
 
             // [RELOADING...] 깜빡 텍스트
             if (rb->state == RRState::RELOAD_SPRINT &&
@@ -2642,6 +2672,10 @@ int main() {
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
             }
+            // 본체 + 차크람 + HP — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
+            glEnable(GL_SCISSOR_TEST);
+            WorldScissor(pb->worldX - POLY_WIN_W*0.5f, pb->worldY - POLY_WIN_W*0.5f,
+                         POLY_WIN_W, POLY_WIN_W);
             // 본체 — 폼별 모양 (큼)
             float bsz = PolymorphBoss::BODY;
             if (pb->form == PForm::TRIANGLE)
@@ -2666,6 +2700,13 @@ int main() {
             float hbX = pb->worldX - hbW * 0.5f, hbY = pb->worldY - bsz - 22.0f;
             drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.2f, 0.85f);
             drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.7f, 0.3f, 1.0f, 0.95f);
+            // 폼 변환 파티클 — 보스 개인 창 안에서도 보이도록 (창 밖 데스크톱엔 안 뜸)
+            for (auto& p : g_EnemyParts) {
+                if (!p.active) continue;
+                float a = p.life / p.maxLife, hs = p.size * 0.5f;
+                drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
+            }
+            glDisable(GL_SCISSOR_TEST);
         }
 
         // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)
