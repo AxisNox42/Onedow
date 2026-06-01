@@ -33,6 +33,7 @@
 #include "Bullet.h"
 #include "MonsterManager.h"
 #include "GlitchBoss.h"
+#include "ReloadRunnerBoss.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -179,6 +180,8 @@ int  g_BossRewardPicksLeft = 0;
 bool g_BossSpawnedThisRun  = false;
 // 글리치 보스 (슬라임과 양자택일로 등장) — 슬라임과 별도 관리
 GlitchBoss* g_GlitchBoss = nullptr;
+// 리로드 러너 보스 (무기 교체형) — 별도 관리
+ReloadRunnerBoss* g_RRBoss = nullptr;
 
 // HUD: 현재 측정 FPS (상단 우측 표시)
 int    g_CurrentFPS  = 0;
@@ -595,6 +598,7 @@ int main() {
             g_BossSpawnedThisRun  = false;
             g_BossRewardPicksLeft = 0;
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
+            if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
             for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
@@ -1117,6 +1121,10 @@ int main() {
                 if (g_GlitchBoss && g_GlitchBoss->alive)
                     g_GlitchBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP);
 
+                // 리로드 러너 업데이트 (무기 상태머신 + 장전 질주, 적 총알 push)
+                if (g_RRBoss && g_RRBoss->alive)
+                    g_RRBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+
                 // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
                 bool hit = CollisionSystem::Update(pCX, pCY,
                     g_MonsterManager, g_Bullets,
@@ -1155,6 +1163,29 @@ int main() {
                             gb->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (gb->hp <= 0.0f) gb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // 리로드 러너 본체 vs 플레이어 총알 (스윕 판정)
+                if (g_RRBoss && g_RRBoss->alive) {
+                    auto* rb = g_RRBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (SegDist(rb->worldX, rb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < ReloadRunnerBoss::BODY * 0.7f) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(rb->worldX, rb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dealt = (dmg < rb->hp) ? dmg : rb->hp;
+                            rb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (rb->hp <= 0.0f) rb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
@@ -1213,6 +1244,24 @@ int main() {
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
                     delete gb;
                     g_GlitchBoss = nullptr;
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
+                // 리로드 러너 사망 → 보상
+                if (g_RRBoss && !g_RRBoss->alive && !g_RRBoss->exploded) {
+                    auto* rb = g_RRBoss;
+                    SpawnEnemyExplosion(rb->worldX, rb->worldY, 1.0f, 0.6f, 0.2f, true);
+                    SpawnEnemyExplosion(rb->worldX, rb->worldY, 0.3f, 0.9f, 1.0f, true);
+                    SpawnShockWave(rb->worldX, rb->worldY, 360.0f, 0.7f, 1.0f, 0.7f, 0.2f);
+                    g_ShakeTime = 0.5f; g_ShakeMag = 20.0f;
+                    rb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete rb;
+                    g_RRBoss = nullptr;
                     g_BossRewardPicksLeft = 2;
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
@@ -1381,20 +1430,25 @@ int main() {
             // 보스 스폰 — 한 라운드 1회, score 10만 도달 시. 슬라임/글리치 랜덤
             if (!g_BossSpawnedThisRun &&
                 g_GameManager.score >= 100000 &&
-                g_MonsterManager.boss == nullptr && g_GlitchBoss == nullptr) {
+                g_MonsterManager.boss == nullptr &&
+                g_GlitchBoss == nullptr && g_RRBoss == nullptr) {
                 g_BossSpawnedThisRun = true;
                 float bsx = screenWidth * 0.5f
                           + ((float)(rand() % 200) - 100.0f);
                 float bsy = screenHeight * 0.5f
                           + ((float)(rand() % 200) - 100.0f);
-                if (rand() % 2 == 0) {
+                float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
+                int pick = rand() % 3;
+                if (pick == 0) {
                     // 슬라임 보스
-                    float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
                     g_MonsterManager.boss =
                         new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
-                } else {
+                } else if (pick == 1) {
                     // 글리치 보스 (전조 → 세모 떼 → 버스트)
                     g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight);
+                } else {
+                    // 리로드 러너 (무기 교체형)
+                    g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHp);
                 }
                 // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
                 g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
@@ -2269,6 +2323,80 @@ int main() {
             float hbY = gb->worldY - GlitchBoss::BODY - 18.0f;
             drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.15f, 0.85f);
             drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.25f, 0.55f, 0.95f);
+        }
+
+        // (g4) 리로드 러너 — 무기 전조(저격선/MG 부채꼴) + 본체 + HP + [RELOADING]
+        if (g_RRBoss && g_RRBoss->alive) {
+            auto* rb = g_RRBoss;
+            float pCX = playerWin.x + playerWin.width  * 0.5f;
+            float pCY = playerWin.y + playerWin.height * 0.5f;
+            BindMainShader();
+
+            // SNIPER 정지 조준선 (보스 → 플레이어, 깜빡)
+            if (rb->aiming) {
+                float adx = pCX - rb->worldX, ady = pCY - rb->worldY;
+                float ad = sqrtf(adx*adx + ady*ady) + 1e-3f;
+                float dxn = adx/ad, dyn = ady/ad;
+                float ex = rb->worldX + dxn * (float)(screenWidth + screenHeight);
+                float ey = rb->worldY + dyn * (float)(screenWidth + screenHeight);
+                float pxx = -dyn, pyy = dxn, th = 3.0f;
+                float v[12] = {
+                    rb->worldX+pxx*th, rb->worldY+pyy*th, rb->worldX-pxx*th, rb->worldY-pyy*th, ex+pxx*th, ey+pyy*th,
+                    rb->worldX-pxx*th, rb->worldY-pyy*th, ex-pxx*th, ey-pyy*th,                   ex+pxx*th, ey+pyy*th };
+                float a = 0.55f + 0.35f * sinf((float)glfwGetTime() * 30.0f);
+                glUniform4f(g_colorLoc, 0.4f, 1.0f, 1.0f, a);
+                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+            }
+
+            // MACHINEGUN 부채꼴 범위 예고 (삼각 부채로 채움)
+            if (rb->mgTelegraph) {
+                float base = atan2f(rb->zoneDirY, rb->zoneDirX);
+                float a0 = base - rb->zoneHalfAngle, a1 = base + rb->zoneHalfAngle;
+                float prog  = rb->warmUpTimer / ReloadRunnerBoss::MG_WARMUP;
+                float alpha = 0.10f + 0.28f * prog;
+                const int SEG = 18;
+                for (int s = 0; s < SEG; s++) {
+                    float aa = a0 + (a1 - a0) * (float)s / SEG;
+                    float ab = a0 + (a1 - a0) * (float)(s + 1) / SEG;
+                    float L  = rb->zoneLen;
+                    float v[6] = { rb->worldX, rb->worldY,
+                                   rb->worldX + cosf(aa)*L, rb->worldY + sinf(aa)*L,
+                                   rb->worldX + cosf(ab)*L, rb->worldY + sinf(ab)*L };
+                    glUniform4f(g_colorLoc, 1.0f, 0.85f, 0.2f, alpha);
+                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                }
+            }
+
+            // 본체 — 상태/무기색 다이아몬드
+            float br = 0.9f, bg = 0.9f, bb = 0.95f;
+            if      (rb->state  == RRState::RELOAD_SPRINT) { br=1.0f; bg=0.9f;  bb=0.3f; }
+            else if (rb->weapon == RRWeapon::SHOTGUN)      { br=1.0f; bg=0.5f;  bb=0.2f; }
+            else if (rb->weapon == RRWeapon::SNIPER)       { br=0.3f; bg=1.0f;  bb=1.0f; }
+            else                                           { br=1.0f; bg=0.85f; bb=0.2f; }
+            drawDiamond(rb->worldX, rb->worldY, ReloadRunnerBoss::BODY, br, bg, bb, 1.0f);
+
+            // HP 바
+            float hpFrac = rb->hp / rb->maxHp;
+            if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
+            float hbW = 160.0f, hbH = 8.0f;
+            float hbX = rb->worldX - hbW * 0.5f;
+            float hbY = rb->worldY - ReloadRunnerBoss::BODY - 18.0f;
+            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.12f, 0.1f, 0.85f);
+            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.6f, 0.2f, 0.95f);
+
+            // [RELOADING...] 깜빡 텍스트
+            if (rb->state == RRState::RELOAD_SPRINT &&
+                ((int)(glfwGetTime() * 5.0) % 2 == 0)) {
+                const wchar_t* rl = L"[ RELOADING... ]";
+                float rw = g_TextS.Width(rl, 0.8f);
+                g_TextS.Draw(rl, rb->worldX - rw * 0.5f,
+                             rb->worldY - ReloadRunnerBoss::BODY - 46.0f, 0.8f,
+                             1.0f, 0.9f, 0.3f, 0.95f);
+            }
         }
 
         // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)

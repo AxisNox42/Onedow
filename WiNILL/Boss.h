@@ -39,22 +39,22 @@ public:
     enum class Skill { IDLE, TELEGRAPH, CHARGING };
     Skill skill = Skill::IDLE;
     float skillTimer    = 0.0f;
-    float idleCooldown  = 7.0f;
-    static constexpr float TELEGRAPH_TIME = 1.5f;
+    float idleCooldown  = 5.0f;                       // 버프: 7 → 5 (돌진 더 자주)
+    static constexpr float TELEGRAPH_TIME = 1.2f;     // 버프: 1.5 → 1.2 (반응 시간 단축)
     float chargeDirX = 0.0f, chargeDirY = 0.0f;
-    static constexpr float CHARGE_SPEED   = 1400.0f;
-    static constexpr float CHARGE_DAMAGE  = 35.0f;
-    static constexpr float CHARGE_RADIUS  = 50.0f;
+    static constexpr float CHARGE_SPEED   = 1650.0f;  // 버프: 1400 → 1650
+    static constexpr float CHARGE_DAMAGE  = 50.0f;    // 버프: 35 → 50
+    static constexpr float CHARGE_RADIUS  = 55.0f;    // 버프: 50 → 55
 
     // ── 바운스 ──
     int   bounceCount = 0;
-    static constexpr int   BOUNCE_MAX          = 3;  // 3회 바운스 후 IDLE 복귀
-    static constexpr int   IMPACT_SUMMON_COUNT = 3;  // 바운스 시 소환 수
+    static constexpr int   BOUNCE_MAX          = 4;  // 버프: 3 → 4회 바운스
+    static constexpr int   IMPACT_SUMMON_COUNT = 4;  // 버프: 바운스 소환 3 → 4
 
     // ── 소환 ──
     float summonTimer = 0.0f;
-    static constexpr float SUMMON_INTERVAL = 4.0f;
-    static constexpr int   SUMMON_COUNT    = 5;
+    static constexpr float SUMMON_INTERVAL = 3.0f;   // 버프: 4 → 3초마다
+    static constexpr int   SUMMON_COUNT    = 7;      // 버프: 5 → 7마리
 
     int screenW, screenH;
 
@@ -181,7 +181,7 @@ public:
                     // 바운스 MAX 도달 → IDLE 복귀
                     skill        = Skill::IDLE;
                     skillTimer   = 0.0f;
-                    idleCooldown = 5.0f;
+                    idleCooldown = 4.0f;   // 버프: 5 → 4 (이후 돌진 더 빨라짐)
                     bounceCount  = 0;
                     pickNewTarget();
                 }
