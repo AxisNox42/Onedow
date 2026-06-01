@@ -61,7 +61,7 @@ public:
 
     static constexpr float BODY = 70.0f;          // 큼
     static constexpr float SWARM_DMG = 4.0f;      // 세모 접촉(잡몹 절반급)
-    static constexpr float LASER_DPS = 50.0f;
+    static constexpr float LASER_DPS = 12.0f;     // 루시드식: 자주 쏘되 딜은 아주 낮게
 
     PolymorphBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -210,12 +210,13 @@ public:
             break;
         }
         case PForm::RHOMBUS: {
+            // 루시드식: 짧은 경고 → 짧은 빔 → 짧은 쿨 을 빠르게 반복
             if (!laserActive && !laserWarn) {
                 laserCd -= dt;
                 if (laserCd <= 0.0f) {
                     aimLaser(px, py);
                     laserWarn = true;
-                    laserWarnTimer = phase2 ? 0.7f : 0.9f;
+                    laserWarnTimer = phase2 ? 0.35f : 0.45f;
                 }
             }
             if (laserWarn) {
@@ -230,9 +231,9 @@ public:
                 float ey = laserY + laserDirY * (float)(screenW + screenH);
                 if (segDist(px, py, laserX, laserY, ex, ey) < 14.0f)
                     playerHP -= LASER_DPS * dt;
-                if (laserTimer >= 1.4f) {
+                if (laserTimer >= 0.7f) {            // 빔 지속 짧게
                     laserActive = false;
-                    laserCd = phase2 ? 1.2f : 1.8f;
+                    laserCd = phase2 ? 0.35f : 0.6f;  // 다음 빔까지 쿨 짧게
                 }
             }
             break;

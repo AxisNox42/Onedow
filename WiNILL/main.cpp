@@ -204,6 +204,9 @@ ReloadRunnerBoss* g_RRBoss = nullptr;
 // 폴리모프 보스 (희귀, 폼 변환 + 페이즈2 화면 확장) — 별도 관리
 PolymorphBoss* g_PolyBoss = nullptr;
 int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
+// 보스 생존 동안 화면 전체를 보스 고유색으로 점점 물들이는 연출
+float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
+glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
 
 // HUD: 현재 측정 FPS (상단 우측 표시)
 int    g_CurrentFPS  = 0;
@@ -2471,10 +2474,15 @@ int main() {
                 if (t.homing) drawTriangle(t.x, t.y, 11.0f, 1.0f, 0.2f, 0.2f, 1.0f);
                 else          drawTriangle(t.x, t.y, 9.0f,  0.9f, 0.3f, 0.95f, 1.0f);
             }
-            // 본체 + HP — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
+            // 본체 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
             glEnable(GL_SCISSOR_TEST);
             WorldScissor(gb->worldX - GLITCH_WIN_W*0.5f, gb->worldY - GLITCH_WIN_W*0.5f,
                          GLITCH_WIN_W, GLITCH_WIN_W);
+            // 총알 (이 창 안에서도 보이도록)
+            for (auto& b : g_Bullets) {
+                if (!b.active) continue;
+                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+            }
             // 본체 — RGB 분리된 글리치 다이아몬드
             drawDiamond(gb->worldX + 3, gb->worldY, GlitchBoss::BODY, 1.0f, 0.1f, 0.4f, 0.55f);
             drawDiamond(gb->worldX - 3, gb->worldY, GlitchBoss::BODY, 0.1f, 0.9f, 1.0f, 0.55f);
@@ -2560,10 +2568,15 @@ int main() {
                 }
             }
 
-            // 본체 + HP — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
+            // 본체 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
             glEnable(GL_SCISSOR_TEST);
             WorldScissor(rb->worldX - RR_WIN_W*0.5f, rb->worldY - RR_WIN_W*0.5f,
                          RR_WIN_W, RR_WIN_W);
+            // 총알 (이 창 안에서도 보이도록 — 리로드 러너 탄막 가시성 버그 fix)
+            for (auto& b : g_Bullets) {
+                if (!b.active) continue;
+                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+            }
             // 본체 — 상태/무기색 다이아몬드
             float br = 0.9f, bg = 0.9f, bb = 0.95f;
             if      (rb->state  == RRState::RELOAD_SPRINT) { br=1.0f; bg=0.9f;  bb=0.3f; }
@@ -2672,10 +2685,15 @@ int main() {
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
             }
-            // 본체 + 차크람 + HP — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
+            // 본체 + 차크람 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
             glEnable(GL_SCISSOR_TEST);
             WorldScissor(pb->worldX - POLY_WIN_W*0.5f, pb->worldY - POLY_WIN_W*0.5f,
                          POLY_WIN_W, POLY_WIN_W);
+            // 총알 (이 창 안에서도 보이도록)
+            for (auto& b : g_Bullets) {
+                if (!b.active) continue;
+                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+            }
             // 본체 — 폼별 모양 (큼)
             float bsz = PolymorphBoss::BODY;
             if (pb->form == PForm::TRIANGLE)
@@ -2742,6 +2760,35 @@ int main() {
                 drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28, 3, 0.2f, 0.2f, 0.2f, 0.7f);
                 drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28 * hpFrac, 3,
                          1.0f, 0.7f, 0.0f, 0.95f);
+            }
+        }
+
+        // (h2) 보스 고유색 화면 물들이기 — 보스 생존 중 서서히 차오르고, 처치 후 사라짐
+        {
+            bool bossAlive = false;
+            glm::vec3 tc(0.6f, 0.3f, 1.0f);
+            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                bossAlive = true; tc = glm::vec3(0.55f, 0.55f, 0.95f); }   // 슬라임: 연보라
+            else if (g_GlitchBoss && g_GlitchBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.95f, 0.2f, 0.6f); }     // 글리치: 마젠타
+            else if (g_RRBoss && g_RRBoss->alive) {
+                bossAlive = true; tc = glm::vec3(1.0f, 0.55f, 0.2f); }     // 리로드러너: 주황
+            else if (g_PolyBoss && g_PolyBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.6f, 0.25f, 1.0f); }     // 폴리모프: 보라
+
+            if (bossAlive) {
+                g_BossTintCol = tc;
+                g_BossTintT  += delta * 0.07f;          // ~14초에 최대
+                if (g_BossTintT > 1.0f) g_BossTintT = 1.0f;
+            } else {
+                g_BossTintT  -= delta * 0.6f;           // 처치 후 빠르게 원복
+                if (g_BossTintT < 0.0f) g_BossTintT = 0.0f;
+            }
+            if (g_BossTintT > 0.001f) {
+                BindMainShader();
+                drawRect(0, 0, (float)screenWidth, (float)screenHeight,
+                         g_BossTintCol.r, g_BossTintCol.g, g_BossTintCol.b,
+                         g_BossTintT * 0.06f);
             }
         }
 
