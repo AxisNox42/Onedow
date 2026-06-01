@@ -3214,6 +3214,9 @@ int main() {
                 g_TextS.Draw(T2, cx(T2, g_TextS, 1.0f), sh*0.53f, 1.0f, 0.8f,0.8f,0.8f,0.8f);
             }
             else if (st == GameState::PAUSED) {
+                // 전체 화면 딤 — 보스 창/엔티티가 메뉴 뒤로 비치지 않게
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.86f);
                 const wchar_t* T1 = T(StrId::PAUSED);
                 g_TextL.Draw(T1, cx(T1, g_TextL, 1.4f), sh*0.22f, 1.4f, 1,1,1,0.95f);
 
@@ -3241,6 +3244,9 @@ int main() {
                 }
             }
             else if (st == GameState::GAMEOVER) {
+                // 전체 화면 딤 — 보스 창/엔티티가 결과창 뒤로 비치지 않게
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f);
                 const wchar_t* T1 = T(StrId::GAMEOVER);
                 g_TextL.Draw(T1, cx(T1, g_TextL, 1.6f), sh*0.30f, 1.6f,
                              1, 0.25f, 0.25f, 0.95f);
