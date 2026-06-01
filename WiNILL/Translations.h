@@ -51,6 +51,8 @@ enum class StrId {
     SET_DISPLAY,
     SET_UNLIMITED,
     SET_CROSSHAIR,
+    SET_DMGNUM,
+    SET_COMBO,
     OPT_ON,
     OPT_OFF,
 
@@ -223,6 +225,12 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
     },
     /* SET_CROSSHAIR */ {
         L"크로스헤어", L"Crosshair", L"照準",
+    },
+    /* SET_DMGNUM */ {
+        L"데미지 숫자(딜 계산)", L"Damage Numbers", L"ダメージ表示",
+    },
+    /* SET_COMBO */ {
+        L"콤보 표시", L"Combo Counter", L"コンボ表示",
     },
     /* OPT_ON */ {
         L"켜기", L"ON", L"オン",

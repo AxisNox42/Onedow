@@ -71,4 +71,8 @@ inline DifficultyParams GetDifficultyParams(Difficulty d) {
 //       DEBUFF_SELECT 항상 스킵
 inline bool g_CreativeMode = false;
 
+// 손맛 표시 토글 (설정에서 ON/OFF)
+inline bool g_ShowDamageNumbers = true;   // 데미지 숫자(딜 계산) 표시
+inline bool g_ShowCombo         = true;   // 콤보 카운터 표시
+
 // (추후 확장: 마스터 볼륨, 마우스 감도 등)

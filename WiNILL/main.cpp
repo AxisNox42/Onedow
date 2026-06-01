@@ -2955,6 +2955,11 @@ int main() {
             }
         }
 
+        // ── 여기부터 UI/오버레이: 줌·흔들기 무시하고 화면 고정 좌표(base ortho)로 ──
+        //    (폴리모프 2페이즈 줌 0.5 에서 쿨다운칸·메뉴딤·비네트·플래시가 찌그러지던 버그 fix)
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, ortho);
+        memcpy(g_MainOrtho, ortho, sizeof(ortho));
+
         // (h2) 보스 고유색 화면 물들이기 — 보스 생존 중 서서히 차오르고, 처치 후 사라짐
         {
             bool bossAlive = false;
@@ -2979,20 +2984,17 @@ int main() {
             }
             if (g_BossTintT > 0.001f) {
                 BindMainShader();
-                // 줌(폴리모프 2페이즈)에서도 전체를 덮도록 넉넉히 (3배 영역)
-                drawRect(-(float)screenWidth, -(float)screenHeight,
-                         (float)screenWidth * 3.0f, (float)screenHeight * 3.0f,
+                drawRect(0, 0, (float)screenWidth, (float)screenHeight,
                          g_BossTintCol.r, g_BossTintCol.g, g_BossTintCol.b,
                          g_BossTintT * 0.06f);
             }
         }
 
-        // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍 (줌 무관 전체 덮기)
+        // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍
         if (g_FlashIntensity > 0.001f) {
             BindMainShader();
             float a = g_FlashIntensity; if (a > 0.85f) a = 0.85f;
-            drawRect(-(float)screenWidth, -(float)screenHeight,
-                     (float)screenWidth * 3.0f, (float)screenHeight * 3.0f,
+            drawRect(0, 0, (float)screenWidth, (float)screenHeight,
                      g_FlashColor.r, g_FlashColor.g, g_FlashColor.b, a);
         }
 
@@ -3242,19 +3244,21 @@ int main() {
                     }
                 }
 
-                // 크로스헤어 토글
-                lineY = sh * 0.62f;
-                g_TextS.Draw(T(StrId::SET_CROSSHAIR), 60.0f, lineY, 1.0f, 1,1,1,0.9f);
-                if (UIButton(300.0f, lineY - 14.0f, 180.0f, 54.0f,
-                             T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev,
-                             g_ShowCrosshair)) {
-                    g_ShowCrosshair = true;
-                }
-                if (UIButton(500.0f, lineY - 14.0f, 180.0f, 54.0f,
-                             T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev,
-                             !g_ShowCrosshair)) {
-                    g_ShowCrosshair = false;
-                }
+                // ON/OFF 토글 한 줄 그리는 헬퍼 (참조로 bool 토글)
+                auto toggleRow = [&](float ly, StrId label, bool& val) {
+                    g_TextS.Draw(T(label), 60.0f, ly, 1.0f, 1,1,1,0.9f);
+                    if (UIButton(420.0f, ly - 14.0f, 160.0f, 54.0f,
+                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, val))
+                        val = true;
+                    if (UIButton(600.0f, ly - 14.0f, 160.0f, 54.0f,
+                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !val))
+                        val = false;
+                };
+
+                // 크로스헤어 / 데미지 숫자 / 콤보 토글
+                toggleRow(sh * 0.56f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
+                toggleRow(sh * 0.66f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
+                toggleRow(sh * 0.76f, StrId::SET_COMBO,     g_ShowCombo);
 
                 // 뒤로 버튼 — 진입 시점의 상태로 복귀 (MAIN_MENU 또는 PAUSED)
                 if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
@@ -3643,7 +3647,8 @@ int main() {
             // ── 손맛: 데미지 숫자 팝업 + 콤보 카운터 ──────────────────
             if (st == GameState::RUNNING || st == GameState::DYING ||
                 st == GameState::PAUSED) {
-                // 데미지 숫자 (월드 → 스크린 변환 후 텍스트)
+                // 데미지 숫자 (월드 → 스크린 변환 후 텍스트) — 설정 토글
+                if (g_ShowDamageNumbers)
                 for (auto& d : g_DmgNumbers) {
                     float t  = d.life / d.maxLife;                   // 1 → 0
                     float sx = W2SX(d.x), sy = W2SY(d.y);
@@ -3654,8 +3659,8 @@ int main() {
                     if (d.crit) g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 0.85f, 0.2f, a);
                     else        g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 1.0f, 1.0f, a*0.9f);
                 }
-                // 콤보 카운터 (5콤보 이상부터, 색이 콤보에 따라 강해짐)
-                if (st == GameState::RUNNING && g_Combo >= 5) {
+                // 콤보 카운터 (5콤보 이상부터, 색이 콤보에 따라 강해짐) — 설정 토글
+                if (g_ShowCombo && st == GameState::RUNNING && g_Combo >= 5) {
                     wchar_t cb[32]; swprintf_s(cb, L"%d COMBO", g_Combo);
                     float sc = (1.05f + (g_Combo > 30 ? 0.3f : 0.0f)) * (1.0f + g_ComboPulse * 0.4f);
                     float cr = 1.0f, cg = 1.0f, cbl = 1.0f;
