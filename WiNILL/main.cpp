@@ -1108,14 +1108,20 @@ int main() {
                     playerWin.y += mvY * curMove * FIXED_DT;
                 }
 
-                // 플레이어 캐릭터(창 중앙)가 화면 밖으로 나가지 못하게 클램프
-                // 창 자체는 화면 밖으로 일부 나갈 수 있음
+                // 플레이어 캐릭터(창 중앙)가 보이는 영역 밖으로 나가지 못하게 클램프.
+                // 줌아웃(폴리모프 2페이즈)되면 보이는 월드가 넓어지므로 이동 구역도 같이 확장.
+                // (zoom=1 이면 정확히 [0, screen] — 기존과 동일)
+                float zoomNow = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
+                float halfW = (float)screenWidth  * 0.5f / zoomNow;
+                float halfH = (float)screenHeight * 0.5f / zoomNow;
+                float ccX   = (float)screenWidth  * 0.5f;
+                float ccY   = (float)screenHeight * 0.5f;
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
-                if (pCX < 0)                   pCX = 0;
-                if (pCY < 0)                   pCY = 0;
-                if (pCX > (float)screenWidth)  pCX = (float)screenWidth;
-                if (pCY > (float)screenHeight) pCY = (float)screenHeight;
+                if (pCX < ccX - halfW) pCX = ccX - halfW;
+                if (pCX > ccX + halfW) pCX = ccX + halfW;
+                if (pCY < ccY - halfH) pCY = ccY - halfH;
+                if (pCY > ccY + halfH) pCY = ccY + halfH;
                 playerWin.x = pCX - playerWin.width  * 0.5f;
                 playerWin.y = pCY - playerWin.height * 0.5f;
 
