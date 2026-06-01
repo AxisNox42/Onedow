@@ -32,6 +32,7 @@
 #include "Bomber.h"
 #include "Bullet.h"
 #include "MonsterManager.h"
+#include "GlitchBoss.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -176,6 +177,8 @@ float g_ShakeMag  = 0.0f;
 int  g_BossRewardPicksLeft = 0;
 // 보스 스폰 1회 트리거 플래그 (같은 라운드에 중복 스폰 방지)
 bool g_BossSpawnedThisRun  = false;
+// 글리치 보스 (슬라임과 양자택일로 등장) — 슬라임과 별도 관리
+GlitchBoss* g_GlitchBoss = nullptr;
 
 // HUD: 현재 측정 FPS (상단 우측 표시)
 int    g_CurrentFPS  = 0;
@@ -591,6 +594,7 @@ int main() {
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
             g_BossSpawnedThisRun  = false;
             g_BossRewardPicksLeft = 0;
+            if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
             for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
@@ -1109,12 +1113,52 @@ int main() {
                                            g_GameManager.playerHP, g_Bullets,
                                            g_Stats.mobSpeedMult, rmobMoveMult);
 
+                // 글리치 보스 업데이트 (페이즈 머신 + 세모 떼 + 레이저)
+                if (g_GlitchBoss && g_GlitchBoss->alive)
+                    g_GlitchBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP);
+
                 // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
                 bool hit = CollisionSystem::Update(pCX, pCY,
                     g_MonsterManager, g_Bullets,
                     g_GameManager.playerHP,
                     g_GameManager.scoreAccum, g_GameManager.score,
                     g_Stats, g_GameManager.xp);
+
+                // 글리치 보스 + 미니 세모 vs 플레이어 총알 (스윕 판정)
+                if (g_GlitchBoss && g_GlitchBoss->alive) {
+                    auto* gb = g_GlitchBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        // 미니 세모 (1히트 소멸 + 약간의 점수)
+                        for (auto& t : gb->minis) {
+                            if (!t.alive) continue;
+                            if (SegDist(t.x, t.y, b.prevX, b.prevY, b.x, b.y) < 14.0f) {
+                                t.alive = false;
+                                g_GameManager.scoreAccum += 20.0f;
+                                g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                                break;
+                            }
+                        }
+                        if (!b.active) continue;
+                        // 본체
+                        if (SegDist(gb->worldX, gb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < GlitchBoss::BODY * 0.7f) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(gb->worldX, gb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)      dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f)    dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dealt = (dmg < gb->hp) ? dmg : gb->hp;
+                            gb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (gb->hp <= 0.0f) gb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
 
                 // 사망 폭발 spawn (다음 UpdateAll 이 실제 erase 하기 전에 위치 캡처)
                 for (auto m : g_MonsterManager.monsters) {
@@ -1151,6 +1195,24 @@ int main() {
                     delete bs;
                     g_MonsterManager.boss = nullptr;
                     // 버프 2개 픽 (디버프 없이)
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
+                // 글리치 보스 사망 → 보상 (슬라임과 동일)
+                if (g_GlitchBoss && !g_GlitchBoss->alive && !g_GlitchBoss->exploded) {
+                    auto* gb = g_GlitchBoss;
+                    SpawnEnemyExplosion(gb->worldX, gb->worldY, 0.4f, 1.0f, 0.6f, true);
+                    SpawnEnemyExplosion(gb->worldX, gb->worldY, 1.0f, 0.3f, 0.3f, true);
+                    SpawnShockWave(gb->worldX, gb->worldY, 380.0f, 0.7f, 0.3f, 1.0f, 0.6f);
+                    g_ShakeTime = 0.5f; g_ShakeMag = 20.0f;
+                    gb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete gb;
+                    g_GlitchBoss = nullptr;
                     g_BossRewardPicksLeft = 2;
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
@@ -1316,20 +1378,25 @@ int main() {
             // 게임 시간 카운트
             g_GameTime += delta;
 
-            // 보스 (슬라임) 스폰 — 한 라운드 1회, score 10만 도달 시
+            // 보스 스폰 — 한 라운드 1회, score 10만 도달 시. 슬라임/글리치 랜덤
             if (!g_BossSpawnedThisRun &&
                 g_GameManager.score >= 100000 &&
-                g_MonsterManager.boss == nullptr) {
+                g_MonsterManager.boss == nullptr && g_GlitchBoss == nullptr) {
                 g_BossSpawnedThisRun = true;
-                // 화면 중앙 근처에서 등장
                 float bsx = screenWidth * 0.5f
                           + ((float)(rand() % 200) - 100.0f);
                 float bsy = screenHeight * 0.5f
                           + ((float)(rand() % 200) - 100.0f);
-                float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
-                g_MonsterManager.boss =
-                    new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
-                // 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
+                if (rand() % 2 == 0) {
+                    // 슬라임 보스
+                    float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
+                    g_MonsterManager.boss =
+                        new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
+                } else {
+                    // 글리치 보스 (전조 → 세모 떼 → 버스트)
+                    g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight);
+                }
+                // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
                 g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
                 SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
                 SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
@@ -2159,6 +2226,51 @@ int main() {
             drawCircle(sw.x, sw.y, radius, sw.r, sw.g, sw.b, alpha);
         }
 
+        // (g3) 글리치 보스 — 레이저 + 미니 세모 + 본체 + HP 바 (스크린 좌표 최상단)
+        if (g_GlitchBoss && g_GlitchBoss->alive) {
+            auto* gb = g_GlitchBoss;
+            BindMainShader();
+            // 레이저 (BURST 동안 화면 가로지르는 직선)
+            if (gb->laserActive) {
+                float ex = gb->worldX + gb->laserDirX * (float)(screenWidth + screenHeight);
+                float ey = gb->worldY + gb->laserDirY * (float)(screenWidth + screenHeight);
+                float pxx = -gb->laserDirY, pyy = gb->laserDirX;
+                for (int pass = 0; pass < 2; pass++) {
+                    float th = (pass == 0) ? 30.0f : 10.0f;
+                    float lr = (pass == 0) ? 1.0f : 1.0f;
+                    float lg = (pass == 0) ? 0.2f : 0.8f;
+                    float lb = (pass == 0) ? 0.5f : 0.9f;
+                    float la = (pass == 0) ? 0.45f : 0.95f;
+                    float p1x=gb->worldX+pxx*th, p1y=gb->worldY+pyy*th;
+                    float p2x=gb->worldX-pxx*th, p2y=gb->worldY-pyy*th;
+                    float p3x=ex+pxx*th, p3y=ey+pyy*th;
+                    float p4x=ex-pxx*th, p4y=ey-pyy*th;
+                    float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                    glUniform4f(g_colorLoc, lr, lg, lb, la);
+                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
+            // 미니 세모 (작고 빠름 — 유도 중엔 빨강)
+            for (auto& t : gb->minis) {
+                if (t.homing) drawTriangle(t.x, t.y, 11.0f, 1.0f, 0.2f, 0.2f, 1.0f);
+                else          drawTriangle(t.x, t.y, 9.0f,  0.9f, 0.3f, 0.95f, 1.0f);
+            }
+            // 본체 — RGB 분리된 글리치 다이아몬드
+            drawDiamond(gb->worldX + 3, gb->worldY, GlitchBoss::BODY, 1.0f, 0.1f, 0.4f, 0.55f);
+            drawDiamond(gb->worldX - 3, gb->worldY, GlitchBoss::BODY, 0.1f, 0.9f, 1.0f, 0.55f);
+            drawDiamond(gb->worldX, gb->worldY, GlitchBoss::BODY, 0.92f, 0.92f, 0.98f, 1.0f);
+            // HP 바
+            float hpFrac = gb->hp / gb->maxHp;
+            if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
+            float hbW = 160.0f, hbH = 8.0f;
+            float hbX = gb->worldX - hbW * 0.5f;
+            float hbY = gb->worldY - GlitchBoss::BODY - 18.0f;
+            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.15f, 0.85f);
+            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.25f, 0.55f, 0.95f);
+        }
+
         // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)
         if (g_Stats.drone && !g_Stats.turretMode &&
             g_GameManager.currentState != GameState::GAMEOVER) {
@@ -2919,6 +3031,40 @@ int main() {
                     g_TextL.Draw(buf, x + (SLOT_W - tw) * 0.5f,
                                  baseY2 + SLOT_H * 0.40f, 0.9f, 1,1,1,0.95f);
                     ++slot;
+                }
+            }
+        }
+
+        // ── 글리치 보스 화면 연출 (리소스 없이, 최상단) ──
+        //   1) 글리치 가로 찢김(시안/마젠타 바)  2) "펑!" 화이트아웃  3) 텍스트 노이즈
+        if (g_GlitchBoss && g_GlitchBoss->alive) {
+            auto* gb = g_GlitchBoss;
+            BindMainShader();
+            // 1) 글리치 가로 찢김
+            if (gb->glitchAmount > 0.02f) {
+                for (int i = 0; i < 7; i++) {
+                    float by  = (float)(rand() % screenHeight);
+                    float bh  = 2.0f + (float)(rand() % 9);
+                    float off = (float)(rand() % 40 - 20) * gb->glitchAmount;
+                    float a   = gb->glitchAmount * 0.45f;
+                    drawRect(off,  by,      (float)screenWidth, bh, 0.0f, 1.0f, 1.0f, a);
+                    drawRect(-off, by + bh, (float)screenWidth, bh, 1.0f, 0.0f, 1.0f, a);
+                }
+            }
+            // 2) "펑!" 화이트아웃 깜빡임
+            if (gb->burstFlash > 0.01f) {
+                drawRect(0, 0, (float)screenWidth, (float)screenHeight,
+                         1.0f, 1.0f, 1.0f, gb->burstFlash * 0.85f);
+            }
+            // 3) 텍스트 노이즈 — 외계어 에러 깜빡
+            if (gb->textNoise > 0.3f && (rand() % 2 == 0)) {
+                static const wchar_t* errs[4] =
+                    { L"Err_0x7B", L"SYS_FAULT", L"0xDEADBEEF", L"SEGFAULT" };
+                for (int i = 0; i < 4; i++) {
+                    float ex = (float)(rand() % screenWidth);
+                    float ey = (float)(rand() % screenHeight);
+                    g_TextL.Draw(errs[rand() % 4], ex, ey, 0.75f,
+                                 1.0f, 0.1f, 0.3f, gb->textNoise * 0.85f);
                 }
             }
         }

@@ -179,6 +179,7 @@
     <ClInclude Include="ExpSystem.h" />
     <ClInclude Include="FakeWindow.h" />
     <ClInclude Include="GameManager.h" />
+    <ClInclude Include="GlitchBoss.h" />
     <ClInclude Include="Monster.h" />
     <ClInclude Include="MonsterManager.h" />
     <ClInclude Include="Platform.h" />
