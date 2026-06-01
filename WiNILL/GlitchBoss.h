@@ -74,16 +74,22 @@ public:
     }
 
     void spawnMini(float px, float py) {
-        float ang = (float)(rand() % 628) * 0.01f;
-        float r   = 130.0f + (float)(rand() % 260);
+        // 화면 '밖' 가장자리에서 등장 → 플레이어 방향으로 진입
+        float m = 60.0f;   // 화면 밖 여유
+        float sx, sy;
+        switch (rand() % 4) {
+        case 0:  sx = (float)(rand() % screenW); sy = -m;             break; // 위
+        case 1:  sx = (float)(rand() % screenW); sy = screenH + m;    break; // 아래
+        case 2:  sx = -m;            sy = (float)(rand() % screenH);  break; // 왼
+        default: sx = screenW + m;   sy = (float)(rand() % screenH);  break; // 오른
+        }
         MiniTri t;
-        t.x = px + cosf(ang) * r;
-        t.y = py + sinf(ang) * r;
-        float dx = px - t.x, dy = py - t.y;
+        t.x = sx;  t.y = sy;
+        float dx = px - sx, dy = py - sy;
         float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
         float sp = MINI_SPEED * (0.6f + (float)(rand() % 60) * 0.01f);
         t.vx = dx / d * sp;  t.vy = dy / d * sp;
-        t.angle = ang;
+        t.angle = atan2f(dy, dx);
         minis.push_back(t);
     }
 
@@ -119,14 +125,15 @@ public:
         case BossState::SPAWN_MINI:
             glitchAmount = 0.05f;
             spawnAccum += dt;
-            if (spawnAccum >= 0.32f) {            // '뚝뚝' 끊기듯 묶음 스폰
+            if (spawnAccum >= 0.8f) {             // '뚝뚝' 끊기듯 소량 스폰 (양 대폭 감소)
                 spawnAccum = 0.0f;
-                for (int i = 0; i < 4; i++) spawnMini(playerCX, playerCY);
+                for (int i = 0; i < 2; i++) spawnMini(playerCX, playerCY);
             }
             if (stateTimer >= T_SPAWN) {
-                // ── "펑!" BURST 돌입 ──
+                // ── "펑!" BURST 돌입 (레이저 발사) ──
                 state = BossState::BURST_ATTACK; stateTimer = 0.0f;
                 burstFlash = 1.0f; textNoise = 1.0f;
+                glitchAmount = 0.5f;                          // 레이저 쏠 때 글리치 재발동
                 for (auto& t : minis) t.homing = true;       // 전부 유도 가속
                 float dx = playerCX - worldX, dy = playerCY - worldY;
                 float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
@@ -136,7 +143,8 @@ public:
             break;
 
         case BossState::BURST_ATTACK:
-            glitchAmount = 0.20f * (1.0f - stateTimer / T_BURST);
+            // 레이저 발사 동안 약한 글리치가 서서히 잦아듦
+            glitchAmount = 0.5f * (1.0f - stateTimer / T_BURST);
             if (stateTimer >= T_BURST) {
                 state = BossState::COOLDOWN; stateTimer = 0.0f;
                 laserActive = false;
