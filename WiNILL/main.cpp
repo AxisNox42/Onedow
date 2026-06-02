@@ -45,6 +45,7 @@
 #include "WindowFx.h"
 #include "Translations.h"
 #include "Weapons.h"
+#include "SaveSystem.h"
 
 #ifdef _MSC_VER
 #pragma comment(lib, "opengl32.lib")
@@ -226,6 +227,7 @@ PolymorphBoss* g_PolyBoss = nullptr;
 int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
 float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
 bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
+bool  g_LastRunRecord   = false;  // 직전 판이 신기록이었는지 (GAMEOVER 표시용)
 // 보스 생존 동안 화면 전체를 보스 고유색으로 점점 물들이는 연출
 float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
 glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
@@ -403,6 +405,7 @@ int main() {
     // 실행 파일 폴더로 작업 디렉터리 이동 (Resource/ 상대경로 로드 보장)
     //   Windows 는 임베디드 폰트라 no-op, macOS/Linux 는 더블클릭 실행 대응
     PlatformChdirToExeDir();
+    LoadGame();   // 저장된 설정/기록 불러오기 (없으면 기본값 유지)
 
     if (!glfwInit()) return -1;
     // Sleep 해상도 1ms 로 (FPS 캡 정밀도용). Windows 만 의미 있음
@@ -820,6 +823,10 @@ int main() {
             if (g_DyingTimer <= 0.0f) {
                 g_GameManager.currentState = GameState::GAMEOVER;
                 g_DyingTimer = 0.0f;
+                // 기록 저장 — 난이도별 최고점/누적 통계 갱신 (신기록이면 표시)
+                g_LastRunRecord = RecordRunResult((int)g_Difficulty,
+                                                  g_GameManager.score,
+                                                  g_Stats.killCount);
             }
         }
 
@@ -3436,6 +3443,7 @@ int main() {
                 // 뒤로 버튼 — 진입 시점의 상태로 복귀 (MAIN_MENU 또는 PAUSED)
                 if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
+                    SaveGame();   // 설정(언어/FPS/토글) 영구 저장
                     g_GameManager.currentState = g_SettingsReturnTo;
                 }
             }
@@ -3498,6 +3506,18 @@ int main() {
                              0.85f, 0.95f, 0.85f, 0.95f);
                 g_TextS.Draw(killBuf,  cx(killBuf,  g_TextS, 1.1f), sh*0.57f, 1.1f,
                              0.85f, 0.95f, 0.85f, 0.95f);
+
+                // 최고 점수 (난이도별) + 신기록 표시
+                wchar_t bestBuf[64];
+                swprintf_s(bestBuf, L"BEST   %lld", g_BestScore[(int)g_Difficulty]);
+                g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.62f, 1.1f,
+                             1.0f, 0.85f, 0.4f, 0.95f);
+                if (g_LastRunRecord) {
+                    const wchar_t* rec = L"★ NEW RECORD ★";
+                    float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
+                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.66f, 1.0f,
+                                 1.0f, 0.9f, 0.2f, blink);
+                }
 
                 // 버튼 3개: 다시하기 / 메뉴로 / 종료
                 const float BW = 240.0f, BH = 56.0f, BG = 16.0f;

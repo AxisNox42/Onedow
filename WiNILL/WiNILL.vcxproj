@@ -188,6 +188,7 @@
     <ClInclude Include="PolymorphBoss.h" />
     <ClInclude Include="RangedMob.h" />
     <ClInclude Include="ReloadRunnerBoss.h" />
+    <ClInclude Include="SaveSystem.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="TextRenderer.h" />
     <ClInclude Include="Translations.h" />
