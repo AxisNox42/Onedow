@@ -16,44 +16,45 @@ public:
 
     ~MonsterManager() { Clear(); }
 
-    void SpawnMob(int screenW, int screenH, int cap = 100, float hpMul = 1.0f) {
-        if ((int)monsters.size() >= cap) return;
+    // 스폰 영역의 모서리에서 무작위 한 점 (aX,aY = 영역 원점 / aW,aH = 영역 크기)
+    //   폴리모프 2페이즈처럼 줌아웃되면 확장된 영역 모서리에서 스폰하도록 영역을 넘김
+    static void EdgePoint(float aX, float aY, int aW, int aH, float& sx, float& sy) {
+        if (aW < 1) aW = 1; if (aH < 1) aH = 1;
         float padding = 150.0f;
-        float sx, sy;
-        int edge = rand() % 4;
-        if      (edge == 0) { sx = (float)(rand() % screenW); sy = -padding; }
-        else if (edge == 1) { sx = (float)(rand() % screenW); sy = screenH + padding; }
-        else if (edge == 2) { sx = -padding;                  sy = (float)(rand() % screenH); }
-        else                { sx = screenW + padding;         sy = (float)(rand() % screenH); }
+        switch (rand() % 4) {
+        case 0:  sx = aX + (float)(rand() % aW); sy = aY - padding;             break;
+        case 1:  sx = aX + (float)(rand() % aW); sy = aY + aH + padding;        break;
+        case 2:  sx = aX - padding;              sy = aY + (float)(rand() % aH);break;
+        default: sx = aX + aW + padding;         sy = aY + (float)(rand() % aH);break;
+        }
+    }
+
+    void SpawnMob(int screenW, int screenH, int cap = 100, float hpMul = 1.0f,
+                  float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
+        if ((int)monsters.size() >= cap) return;
+        if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
+        float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         monsters.push_back(new Monster(sx, sy, hpMul));
     }
 
-    // hpMult: 원거리 몹 HP 배율 (디버프). maxCount: 최대 동시 존재량 (기본 5, 디버프 시 +2 까지)
+    // hpMult: 원거리 몹 HP 배율 (디버프). maxCount: 최대 동시 존재량
     void SpawnRangedMob(int screenW, int screenH,
-                        float hpMult = 1.0f, int maxCount = 5) {
+                        float hpMult = 1.0f, int maxCount = 5,
+                        float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
         if ((int)rangedMobs.size() >= maxCount) return;
-        float padding = 150.0f;
-        float sx, sy;
-        int edge = rand() % 4;
-        if      (edge == 0) { sx = (float)(rand() % screenW); sy = -padding; }
-        else if (edge == 1) { sx = (float)(rand() % screenW); sy = screenH + padding; }
-        else if (edge == 2) { sx = -padding;                  sy = (float)(rand() % screenH); }
-        else                { sx = screenW + padding;         sy = (float)(rand() % screenH); }
+        if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
+        float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         RangedMob* rm = new RangedMob(sx, sy, screenW, screenH);
         rm->hp *= hpMult;
         rangedMobs.push_back(rm);
     }
 
-    // 자폭병 — 화면 가장자리에서 spawn (디버프 mult 전달)
+    // 자폭병 — 영역 가장자리에서 spawn (디버프 mult 전달)
     void SpawnBomber(int screenW, int screenH,
-                     float hpMul = 1.0f, float speedMul = 1.0f, float blastMul = 1.0f) {
-        float padding = 150.0f;
-        float sx, sy;
-        int edge = rand() % 4;
-        if      (edge == 0) { sx = (float)(rand() % screenW); sy = -padding; }
-        else if (edge == 1) { sx = (float)(rand() % screenW); sy = screenH + padding; }
-        else if (edge == 2) { sx = -padding;                  sy = (float)(rand() % screenH); }
-        else                { sx = screenW + padding;         sy = (float)(rand() % screenH); }
+                     float hpMul = 1.0f, float speedMul = 1.0f, float blastMul = 1.0f,
+                     float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
+        if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
+        float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         bombers.push_back(new Bomber(sx, sy, hpMul, speedMul, blastMul));
     }
 

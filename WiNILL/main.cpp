@@ -1749,13 +1749,25 @@ int main() {
             bool  polyP2  = (g_PolyBoss && g_PolyBoss->phase2);
             float p2mult  = polyP2 ? 3.0f : 1.0f;
 
+            // 스폰 영역 — 2페이즈 줌아웃 시 확장된(보이는) 영역 모서리에서 스폰.
+            //   player 이동 클램프와 동일한 [화면/줌] 범위 사용 → 일관됨
+            float saX = 0.0f, saY = 0.0f;
+            int   saW = screenWidth, saH = screenHeight;
+            if (polyP2) {
+                float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
+                saW = (int)((float)screenWidth  / zb);
+                saH = (int)((float)screenHeight / zb);
+                saX = (float)screenWidth  * 0.5f - saW * 0.5f;
+                saY = (float)screenHeight * 0.5f - saH * 0.5f;
+            }
+
             // 잡몹 스폰 (D_MOB_SPAWN → 더 자주 + cap +200, D_MOB_HP → HP+)
             spawnTimer += delta;
             float spawnInterval = 0.3f * g_Stats.mobSpawnMult / p2mult;
             if (spawnTimer > spawnInterval) {
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                           (int)((100 + g_Stats.mobCapBonus) * p2mult),
-                                          g_Stats.monsterHpMult);
+                                          g_Stats.monsterHpMult, saX, saY, saW, saH);
                 spawnTimer = 0.0f;
             }
 
@@ -1835,7 +1847,8 @@ int main() {
                     g_MonsterManager.SpawnBomber(screenWidth, screenHeight,
                                                  g_Stats.bomberHpMult,
                                                  g_Stats.bomberSpeedMult,
-                                                 g_Stats.bomberBlastMult);
+                                                 g_Stats.bomberBlastMult,
+                                                 saX, saY, saW, saH);
                     g_BomberSpawnTimer = 0.0f;
                 }
             }
@@ -1848,7 +1861,7 @@ int main() {
             int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult);
             if (rangedSpawnTimer > rangedInterval) {
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
-                    g_Stats.rmobHpMult, rangedMax);
+                    g_Stats.rmobHpMult, rangedMax, saX, saY, saW, saH);
                 rangedSpawnTimer = 0.0f;
             }
 
@@ -3293,20 +3306,20 @@ int main() {
                         ? T(StrId::CREATIVE_ON)
                         : T(StrId::CREATIVE_OFF);
                     float cby = by + 3 * (BH + BG) + 20.0f;
-                    float cbw = BW, cbh = 52.0f;
+                    float cbw = BW, cbh = 72.0f;     // 세로 키움 (라벨/설명 겹침 방지)
                     float cbx = (sw - cbw) * 0.5f;
                     if (UIButton(cbx, cby, cbw, cbh, CLBL,
                                  mx, my, lmb, g_LmbPrev, g_CreativeMode)) {
                         g_CreativeMode = !g_CreativeMode;
                     }
-                    // 설명 한 줄
+                    // 설명 — 버튼 아래쪽에 (버튼 안과 겹치지 않게)
                     const wchar_t* CDESC = g_CreativeMode
                         ? T(StrId::CREATIVE_DESC_ON)
                         : T(StrId::CREATIVE_DESC_OFF);
                     float cdw = g_TextS.Width(CDESC, 0.78f);
                     g_TextS.Draw(CDESC, cbx + (cbw - cdw) * 0.5f,
-                                 cby + cbh - 20.0f, 0.78f,
-                                 0.85f, 0.95f, 0.6f, 0.80f);
+                                 cby + cbh + 10.0f, 0.78f,
+                                 0.85f, 0.95f, 0.6f, 0.85f);
                 }
 
                 // 뒤로 버튼

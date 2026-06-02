@@ -59,7 +59,7 @@ public:
     // CHAKRAM (phase2 방어막)
     std::vector<PChakram> chakrams;
 
-    static constexpr float BODY = 70.0f;          // 큼
+    static constexpr float BODY = 105.0f;         // 큼 (1.5배)
     static constexpr float SWARM_DMG = 4.0f;      // 세모 접촉(잡몹 절반급)
     static constexpr float LASER_DPS = 12.0f;     // 루시드식: 자주 쏘되 딜은 아주 낮게
 
