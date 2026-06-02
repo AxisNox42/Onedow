@@ -15,10 +15,12 @@ enum class AugType {
     BULLET_RAIN_2, CHAKRAM_2,
     DRONE,                 // 희귀 → 에픽
     MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
+    PROB_CHAIN,            // 확률적 연쇄 작용 (30% 3튕김)
     // ── 전설 ──
     RANDOM_AUG, SOUL_HARVEST,
     BULLET_RAIN_3, DRONE_2, CHAKRAM_3,
     MK2, HACK_BOMBER,                  // 신규
+    CHAIN,                 // 연쇄 작용 (무조건 2튕김, -30% 데미지)
     // ── 디버프 ──
     D_RMOB_MAX, D_RMOB_HP, D_RMOB_DELAY,
     D_MOB_SPAWN, D_APPROACH, D_MOB_SPEED,
@@ -164,6 +166,11 @@ static const AugDef ALL_AUGS[] = {
       { L"원거리 몹 처치 시 20% 확률로 유도탄 5발  (적에게만 피해)",
         L"On ranged-mob kill, 20% chance: 5 homing shots  (enemy-only dmg)",
         L"遠距離敵 撃破時20%で誘導弾5発  (敵のみ)" } },
+    { AugType::PROB_CHAIN,    AugRarity::EPIC,      AugUnique::NONE, "PROBCHAIN",
+      { L"확률적 연쇄 작용", L"Chance Ricochet", L"確率的連鎖" },
+      { L"명중 시 30% 확률로 가까운 적에게 튕김  (최대 3회 · 뮤탈 글레이브)",
+        L"On hit, 30% chance to ricochet to nearest enemy  (up to 3x)",
+        L"命中時30%で近い敵に跳弾  (最大3回)" } },
 
     // ── 전설 ───────────────────────────────────────────
     { AugType::RANDOM_AUG,    AugRarity::LEGENDARY, AugUnique::NONE, "RANDOM",
@@ -186,6 +193,11 @@ static const AugDef ALL_AUGS[] = {
       { L"자폭병 처치 시 20% 확률로 폭발  (적에게만 피해)",
         L"On bomber kill, 20% chance to explode  (enemy-only dmg)",
         L"自爆兵 撃破時20%で爆発  (敵のみ)" } },
+    { AugType::CHAIN,         AugRarity::LEGENDARY, AugUnique::NONE, "CHAIN",
+      { L"연쇄 작용", L"Chain Reaction", L"連鎖反応" },
+      { L"모든 총알이 무조건 2회 튕김  /  총알 공격력 -30%",
+        L"All bullets always ricochet 2x  /  bullet damage -30%",
+        L"全弾が必ず2回跳弾  /  弾ダメージ -30%" } },
     { AugType::BULLET_RAIN_3, AugRarity::LEGENDARY, AugUnique::NONE, "BULLETRAIN III",
       { L"탄환 세례 III", L"Bullet Rain III", L"弾幕の雨 III" },
       { L"탄환 세례 쿨다운 10초 → 5초  (요구: 탄환 세례 II)",
@@ -275,7 +287,7 @@ static const AugDef ALL_AUGS[] = {
       { L"버프 3개 + 디버프 2개 즉시 획득", L"Instantly gain 3 buffs + 2 debuffs", L"バフ3個 + デバフ2個を即獲得" } },
 };
 
-static constexpr int AUG_TOTAL = 47;  // XP_UP·CANNON·SNIPER·SHOTGUN 제거
+static constexpr int AUG_TOTAL = 49;  // +확률적연쇄·연쇄
 
 // 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {

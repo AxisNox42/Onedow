@@ -28,6 +28,9 @@ public:
     float enemyDmg = 0.0f;
     // 직전 프레임 위치 — 스윕(레이캐스트) 충돌 판정용
     float prevX = 0.0f, prevY = 0.0f;
+    // 연쇄 작용(리코셰) — 남은 튕김 횟수 + 튕긴 후 고정 데미지(>0 이면 거리 재계산 안 함)
+    int   bouncesLeft = 0;
+    float lockedDmg   = 0.0f;
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 

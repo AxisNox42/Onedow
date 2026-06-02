@@ -2100,6 +2100,11 @@ int main() {
                                     * g_Stats.GetDamageMultiplier(0.0f);
                     nb.sizeScale    = 3.0f;  // 대포 총알 크기 3배
                 }
+                // 연쇄 작용(리코셰) — 튕김 횟수 + 데미지 배율(-30%) 적용
+                if (g_Stats.ricochetMax > 0) {
+                    nb.bouncesLeft = g_Stats.ricochetMax;
+                    nb.dmgMult    *= g_Stats.ricochetDmgMult;
+                }
                 g_Bullets.push_back(nb);
             };
 
@@ -2124,6 +2129,10 @@ int main() {
                             nb.remainingDmg = g_Stats.GetBaseDamage()
                                             * g_Stats.GetDamageMultiplier(0.0f);
                             nb.sizeScale    = 5.0f;
+                        }
+                        if (g_Stats.ricochetMax > 0) {     // 연쇄 작용 — 샷건 펠릿도
+                            nb.bouncesLeft = g_Stats.ricochetMax;
+                            nb.dmgMult    *= g_Stats.ricochetDmgMult;
                         }
                         g_Bullets.push_back(nb);
                     }

@@ -24,6 +24,28 @@ static inline float SegDist(float px, float py, float ax, float ay, float bx, fl
     return std::sqrt(dx*dx + dy*dy);
 }
 
+// 연쇄 작용(리코셰) — 적중 지점에서 가장 가까운 '다른' 적으로 총알 방향 전환.
+//   성공 시 true. (적중한 적은 fromX/fromY 와 동일 위치라 d²≈0 으로 제외됨)
+static inline bool RicochetTo(Bullet& b, float fromX, float fromY, MonsterManager& mm) {
+    float bestD2 = 1e18f, bx = 0, by = 0; bool found = false;
+    auto consider = [&](float ex, float ey) {
+        float dx = ex - fromX, dy = ey - fromY;
+        float d2 = dx*dx + dy*dy;
+        if (d2 > 4.0f && d2 < bestD2) { bestD2 = d2; bx = ex; by = ey; found = true; }
+    };
+    for (auto m  : mm.monsters)   if (m->alive)  consider(m->worldX,  m->worldY);
+    for (auto r  : mm.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY);
+    for (auto bm : mm.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY);
+    if (mm.boss && mm.boss->alive) consider(mm.boss->worldX, mm.boss->worldY);
+    if (!found) return false;
+    float dx = bx - b.x, dy = by - b.y;
+    float d = std::sqrt(dx*dx + dy*dy);
+    if (d < 1.0f) return false;
+    b.dirX = dx / d; b.dirY = dy / d;
+    b.prevX = b.x;   b.prevY = b.y;     // 스윕 판정 리셋
+    return true;
+}
+
 class CollisionSystem {
 public:
     // 반환값: 이번 프레임에 플레이어가 피해를 받았는지 (LIGHT_STEP 타이머용)
@@ -63,6 +85,8 @@ public:
                         baseDealt = b.remainingDmg;
                     } else if (b.turretDmg > 0.0f) {
                         baseDealt = b.turretDmg;
+                    } else if (b.lockedDmg > 0.0f) {
+                        baseDealt = b.lockedDmg;       // 튕긴 총알 — 거리 재계산 안 함
                     } else {
                         baseDealt = stats.GetBaseDamage()
                                   * stats.GetDamageMultiplier(pd)
@@ -97,6 +121,14 @@ public:
                     bool keepAlive = false;
                     if (b.remainingDmg > 0.001f) keepAlive = true;
                     if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                    // 연쇄 작용(리코셰) — 가까운 다른 적으로 튕김
+                    if (!keepAlive && b.bouncesLeft > 0 &&
+                        (rand() % 100) < stats.ricochetChance &&
+                        RicochetTo(b, m->worldX, m->worldY, mm)) {
+                        if (b.lockedDmg <= 0.0f) b.lockedDmg = baseDealt;
+                        --b.bouncesLeft;
+                        keepAlive = true;
+                    }
                     if (!keepAlive) b.active = false;
                     consumed = true;
                     break;
@@ -114,6 +146,7 @@ public:
                         float baseDealt;
                         if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
                         else if (b.turretDmg > 0.0f) baseDealt = b.turretDmg;
+                        else if (b.lockedDmg > 0.0f) baseDealt = b.lockedDmg;
                         else baseDealt = stats.GetBaseDamage()
                                        * stats.GetDamageMultiplier(pd)
                                        * b.dmgMult;
@@ -183,6 +216,13 @@ public:
                         bool keepAlive = false;
                         if (b.remainingDmg > 0.001f) keepAlive = true;
                         if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                        if (!keepAlive && b.bouncesLeft > 0 &&
+                            (rand() % 100) < stats.ricochetChance &&
+                            RicochetTo(b, bm->worldX, bm->worldY, mm)) {
+                            if (b.lockedDmg <= 0.0f) b.lockedDmg = baseDealt;
+                            --b.bouncesLeft;
+                            keepAlive = true;
+                        }
                         if (!keepAlive) b.active = false;
                         consumed = true;
                         break;
@@ -200,6 +240,7 @@ public:
                     float baseDealt;
                     if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
                     else if (b.turretDmg > 0.0f) baseDealt = b.turretDmg;
+                    else if (b.lockedDmg > 0.0f) baseDealt = b.lockedDmg;
                     else baseDealt = stats.GetBaseDamage()
                                    * stats.GetDamageMultiplier(pd)
                                    * b.dmgMult;
@@ -213,6 +254,13 @@ public:
                     bool keepAlive = false;
                     if (b.remainingDmg > 0.001f) keepAlive = true;
                     if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                    if (!keepAlive && b.bouncesLeft > 0 &&
+                        (rand() % 100) < stats.ricochetChance &&
+                        RicochetTo(b, bs->worldX, bs->worldY, mm)) {
+                        if (b.lockedDmg <= 0.0f) b.lockedDmg = baseDealt;
+                        --b.bouncesLeft;
+                        keepAlive = true;
+                    }
                     if (!keepAlive) b.active = false;
                     consumed = true;
                 }
@@ -231,6 +279,8 @@ public:
                             baseDealt = b.remainingDmg;
                         } else if (b.turretDmg > 0.0f) {
                             baseDealt = b.turretDmg;
+                        } else if (b.lockedDmg > 0.0f) {
+                            baseDealt = b.lockedDmg;       // 튕긴 총알 — 거리 재계산 안 함
                         } else {
                             baseDealt = stats.GetBaseDamage()
                                       * stats.GetDamageMultiplier(pd)
@@ -282,6 +332,13 @@ public:
                         bool keepAlive = false;
                         if (b.remainingDmg > 0.001f) keepAlive = true;
                         if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                        if (!keepAlive && b.bouncesLeft > 0 &&
+                            (rand() % 100) < stats.ricochetChance &&
+                            RicochetTo(b, r->worldX, r->worldY, mm)) {
+                            if (b.lockedDmg <= 0.0f) b.lockedDmg = baseDealt;
+                            --b.bouncesLeft;
+                            keepAlive = true;
+                        }
                         if (!keepAlive) b.active = false;
                         break;
                     }

@@ -47,6 +47,10 @@ struct PlayerStats {
     bool  pierce      = false;   // 매 hit 30% 확률 관통
     bool  twin        = false;   // 한 번에 2발 발사
     bool  chakram     = false;   // 주변 도는 차크람 1개
+    // 연쇄 작용 (리코셰) — 명중 시 가까운 적으로 튕김
+    int   ricochetMax    = 0;        // 튕김 최대 횟수 (0 = 없음)
+    int   ricochetChance = 0;        // 튕김 확률 (%) — 100 = 무조건
+    float ricochetDmgMult= 1.0f;     // 튕김 가능 총알의 데미지 배율 (연쇄 작용 0.7)
     // 신규 (에픽/전설)
     bool  mk2          = false;  // 사망 시 1회 부활
     bool  mk2Used      = false;
@@ -187,6 +191,17 @@ struct PlayerStats {
             if (pierceChance < 20) pierceChance = 20;  // 미니건 관통 20%
             break;
         case AugType::HACK_RANGED: hackRanged = true; break;
+        // 확률적 연쇄 작용 — 30% 확률, 최대 3튕김
+        case AugType::PROB_CHAIN:
+            if (ricochetMax < 3) ricochetMax = 3;
+            if (ricochetChance < 30) ricochetChance = 30;
+            break;
+        // 연쇄 작용 — 무조건(100%) 2튕김, 총알 데미지 -30%
+        case AugType::CHAIN:
+            if (ricochetMax < 2) ricochetMax = 2;
+            ricochetChance = 100;
+            ricochetDmgMult *= 0.70f;
+            break;
         case AugType::SHOTGUN:
             shotgun      = true;
             distAugTaken = true;
