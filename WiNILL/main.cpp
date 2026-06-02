@@ -76,6 +76,24 @@ inline void WorldScissor(float wx, float wy, float ww, float wh) {
     float sw = ww * g_ViewZoom, sh = wh * g_ViewZoom;
     glScissor((GLint)sx, (GLint)(screenHeight - (sy + sh)), (GLint)sw, (GLint)sh);
 }
+// 총알 그리기 — 플레이어 탄은 탄속 비례 잔상(streak) + 머리 원, 적 탄은 원만
+inline void drawBullet(const Bullet& b) {
+    float r = 6.0f * b.sizeScale;
+    if (!b.isEnemy) {
+        float trailLen = b.speed * 0.020f;          // 탄속 빠를수록 잔상 김
+        if (trailLen > 5.0f) {
+            float tx = b.x - b.dirX * trailLen;
+            float ty = b.y - b.dirY * trailLen;
+            float px = -b.dirY * r, py = b.dirX * r;  // 머리 폭(진행방향 수직)
+            float v[6] = { b.x + px, b.y + py, b.x - px, b.y - py, tx, ty };
+            glUniform4f(g_colorLoc, b.color.r, b.color.g, b.color.b, 0.38f);
+            glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+        }
+    }
+    drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
+}
 bool  keys[1024]   = {};
 
 GameManager    g_GameManager;
@@ -195,8 +213,9 @@ float g_ShakeMag  = 0.0f;
 
 // 보스 보상 — 남은 버프 픽 수 (디버프 페이지 skip)
 int  g_BossRewardPicksLeft = 0;
-// 보스 스폰 1회 트리거 플래그 (같은 라운드에 중복 스폰 방지)
-bool g_BossSpawnedThisRun  = false;
+// 보스 스폰 — 일반 보스는 20만점마다, 폴리모프는 50만점 고정(1회)
+long long g_NextBossScore  = 200000;   // 다음 일반 보스 점수 (도달 시 +20만)
+bool      g_PolySpawned    = false;    // 폴리모프(50만 고정) 등장 여부
 // 글리치 보스 (슬라임과 양자택일로 등장) — 슬라임과 별도 관리
 GlitchBoss* g_GlitchBoss = nullptr;
 // 리로드 러너 보스 (무기 교체형) — 별도 관리
@@ -640,7 +659,8 @@ int main() {
             g_BomberSpawnTimer = 0.0f;
             for (int i = 0; i < MAX_SHOCKS; i++) g_ShockWaves[i].active = false;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
-            g_BossSpawnedThisRun  = false;
+            g_NextBossScore = 200000;
+            g_PolySpawned   = false;
             g_BossRewardPicksLeft = 0;
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
@@ -669,8 +689,8 @@ int main() {
             g_GameManager.score       = 0;
             g_GameManager.scoreAccum  = 0.0f;
             if (g_CreativeMode) {
-                g_GameManager.score      = 100000;
-                g_GameManager.scoreAccum = 100000.0f;
+                g_GameManager.score      = 200000;   // 보스 즉시 등장 (20만 임계)
+                g_GameManager.scoreAccum = 200000.0f;
             }
             g_GameManager.xp          = 0;
             g_GameManager.playerLevel = 1;
@@ -1704,46 +1724,52 @@ int main() {
             // 게임 시간 카운트
             g_GameTime += delta;
 
-            // 보스 스폰 — 한 라운드 1회, score 10만 도달 시. 슬라임/글리치 랜덤
-            if (!g_BossSpawnedThisRun &&
-                g_GameManager.score >= 100000 &&
-                g_MonsterManager.boss == nullptr &&
-                g_GlitchBoss == nullptr && g_RRBoss == nullptr &&
-                g_PolyBoss == nullptr) {
-                g_BossSpawnedThisRun = true;
-                float bsx = screenWidth * 0.5f
-                          + ((float)(rand() % 200) - 100.0f);
-                float bsy = screenHeight * 0.5f
-                          + ((float)(rand() % 200) - 100.0f);
-                float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
-                if (rand() % 100 < 12) {
-                    // 폴리모프 보스 (희귀 ~12%) — 자체 HP (이지10k/노말30k/하드75k)
+            // 보스 스폰 — 일반 보스 20만점마다 / 폴리모프 50만점 고정.
+            //   (어떤 보스든 살아있으면 대기 = 동시 스폰 방지)
+            {
+                bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
+                                  g_RRBoss || g_PolyBoss || !g_Slimelings.empty();
+                bool spawnedNow = false;
+                float bsx = screenWidth  * 0.5f + ((float)(rand() % 200) - 100.0f);
+                float bsy = screenHeight * 0.5f + ((float)(rand() % 200) - 100.0f);
+
+                if (!bossActive && !g_PolySpawned &&
+                    g_GameManager.score >= 500000) {
+                    // 폴리모프 — 50만점 고정 (1회) · 자체 HP (이지10k/노말30k/하드75k)
+                    g_PolySpawned = true;
                     float pHp = (g_Difficulty == Difficulty::EASY) ? 10000.0f
                               : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
                     g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, pHp);
                     g_PolyPrevForm = -1;
-                } else {
-                int pick = rand() % 3;
-                if (pick == 0) {
-                    // 슬라임 보스
-                    g_MonsterManager.boss =
-                        new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
-                } else if (pick == 1) {
-                    // 글리치 보스 (전조 → 세모 떼 → 버스트) — 회피형이라 HP 0.7×
-                    g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, bossHp * 0.7f);
-                } else {
-                    // 리로드 러너 (무기 교체형)
-                    g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHp);
+                    spawnedNow = true;
                 }
-                }  // 폴리모프 아닌 경우(else) 끝
-                // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
-                g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
-                SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
-                SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
-                for (int k = 0; k < 3; k++) {
-                    SpawnEnemyExplosion(bsx + (rand()%200 - 100),
-                                        bsy + (rand()%200 - 100),
-                                        1.0f, 0.3f, 0.3f, true);
+                else if (!bossActive &&
+                         g_GameManager.score >= g_NextBossScore) {
+                    // 일반 보스 (슬라임/글리치/리로드 랜덤) — 다음 임계 +20만
+                    g_NextBossScore += 200000;
+                    float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
+                    int pick = rand() % 3;
+                    if (pick == 0) {
+                        g_MonsterManager.boss =
+                            new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
+                    } else if (pick == 1) {
+                        g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, bossHp * 0.7f);
+                    } else {
+                        g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHp);
+                    }
+                    spawnedNow = true;
+                }
+
+                if (spawnedNow) {
+                    // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
+                    g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
+                    SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
+                    SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
+                    for (int k = 0; k < 3; k++) {
+                        SpawnEnemyExplosion(bsx + (rand()%200 - 100),
+                                            bsy + (rand()%200 - 100),
+                                            1.0f, 0.3f, 0.3f, true);
+                    }
                 }
             }
 
@@ -2251,7 +2277,7 @@ int main() {
             // 총알
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
-                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                drawBullet(b);
             }
             // 사망 파티클
             for (auto& p : g_EnemyParts) {
@@ -2285,7 +2311,7 @@ int main() {
                 }
                 for (auto& b : g_Bullets) {
                     if (!b.active) continue;
-                    drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                    drawBullet(b);
                 }
                 for (auto& p : g_EnemyParts) {
                     if (!p.active) continue;
@@ -2315,7 +2341,7 @@ int main() {
             }
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
-                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                drawBullet(b);
             }
             for (auto& orb : g_ApproachOrbs) {
                 drawRect(orb.x - 18, orb.y - 18, 36, 36, 0.95f, 0.0f, 0.0f, 0.30f);
@@ -2407,7 +2433,7 @@ int main() {
         // 총알
         for (auto& b : g_Bullets) {
             if (!b.active) continue;
-            drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+            drawBullet(b);
         }
         // 사망 파티클
         for (auto& p : g_EnemyParts) {
@@ -2568,7 +2594,7 @@ int main() {
             WorldScissor(c->worldX - win*0.5f, c->worldY - win*0.5f, win, win);
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
-                drawCircle(b.x, b.y, 6.0f*b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                drawBullet(b);
             }
             bool tel = (c->skill == Boss::Skill::TELEGRAPH);
             drawMercedes(c->worldX, c->worldY, body,
@@ -2673,7 +2699,7 @@ int main() {
             // 총알 (이 창 안에서도 보이도록)
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
-                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                drawBullet(b);
             }
             // 본체 — RGB 분리된 글리치 다이아몬드
             drawDiamond(gb->worldX + 3, gb->worldY, GlitchBoss::BODY, 1.0f, 0.1f, 0.4f, 0.55f);
@@ -2767,7 +2793,7 @@ int main() {
             // 총알 (이 창 안에서도 보이도록 — 리로드 러너 탄막 가시성 버그 fix)
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
-                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                drawBullet(b);
             }
             // 본체 — 상태/무기색 다이아몬드
             float br = 0.9f, bg = 0.9f, bb = 0.95f;
@@ -2884,7 +2910,7 @@ int main() {
             // 총알 (이 창 안에서도 보이도록)
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
-                drawCircle(b.x, b.y, 6.0f * b.sizeScale, b.color.r, b.color.g, b.color.b, 1.0f);
+                drawBullet(b);
             }
             // 본체 — 폼별 모양 (큼)
             float bsz = PolymorphBoss::BODY;
