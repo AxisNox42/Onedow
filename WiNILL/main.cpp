@@ -216,6 +216,7 @@ int  g_BossRewardPicksLeft = 0;
 // 보스 스폰 — 일반 보스는 20만점마다, 폴리모프는 50만점 고정(1회)
 long long g_NextBossScore  = 200000;   // 다음 일반 보스 점수 (도달 시 +20만)
 bool      g_PolySpawned    = false;    // 폴리모프(50만 고정) 등장 여부
+bool      g_CreativeBossPending = false;  // 크리에이티브: 선택 보스 즉시 스폰 대기
 // 글리치 보스 (슬라임과 양자택일로 등장) — 슬라임과 별도 관리
 GlitchBoss* g_GlitchBoss = nullptr;
 // 리로드 러너 보스 (무기 교체형) — 별도 관리
@@ -691,8 +692,14 @@ int main() {
             g_GameManager.score       = 0;
             g_GameManager.scoreAccum  = 0.0f;
             if (g_CreativeMode) {
-                g_GameManager.score      = 200000;   // 보스 즉시 등장 (20만 임계)
-                g_GameManager.scoreAccum = 200000.0f;
+                g_GameManager.score      = g_CreativeStartScore;
+                g_GameManager.scoreAccum = (float)g_CreativeStartScore;
+                // 시작 점수보다 위 첫 20만 배수부터 일반 보스 (한꺼번에 쏟아짐 방지)
+                g_NextBossScore = ((g_CreativeStartScore / 200000) + 1) * 200000;
+                // 이미 50만 이상에서 시작하면 폴리모프 자동등장 생략 (보스선택으로 소환)
+                g_PolySpawned   = (g_CreativeStartScore >= 500000);
+                // 선택 보스 즉시 스폰 예약 (점수 무관)
+                g_CreativeBossPending = (g_CreativeBossPick >= 0);
             }
             g_GameManager.xp          = 0;
             g_GameManager.playerLevel = 1;
@@ -1745,8 +1752,24 @@ int main() {
                 bool spawnedNow = false;
                 float bsx = screenWidth  * 0.5f + ((float)(rand() % 200) - 100.0f);
                 float bsy = screenHeight * 0.5f + ((float)(rand() % 200) - 100.0f);
+                float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
+                float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
+                              : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
 
-                if (!bossActive && !g_PolySpawned &&
+                if (g_CreativeBossPending && !bossActive) {
+                    // 크리에이티브: 선택한 보스 즉시 소환 (점수 무관, 1회)
+                    g_CreativeBossPending = false;
+                    switch (g_CreativeBossPick) {
+                    case 0: g_MonsterManager.boss =
+                                new Boss(bsx, bsy, screenWidth, screenHeight, bossHpC); break;
+                    case 1: g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, bossHpC * 0.7f); break;
+                    case 2: g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHpC); break;
+                    default: g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, polyHpC);
+                             g_PolyPrevForm = -1; break;
+                    }
+                    spawnedNow = true;
+                }
+                else if (!bossActive && !g_PolySpawned &&
                     g_GameManager.score >= 500000) {
                     // 폴리모프 — 50만점 고정 (1회) · 자체 HP (이지10k/노말30k/하드75k)
                     g_PolySpawned = true;
@@ -3152,7 +3175,15 @@ int main() {
                         g_GameManager.maxHP    = g_Stats.maxHP;
                         g_GameManager.playerHP = g_Stats.maxHP;
                         g_PrevHP               = g_Stats.maxHP;
-                        g_GameManager.currentState = GameState::READY;
+                        // 크리에이티브: 시작 증강 픽이 있으면 곧바로 증강 선택을 열기
+                        if (g_CreativeMode && g_CreativeStartAugs > 0) {
+                            g_BossRewardPicksLeft = g_CreativeStartAugs;
+                            g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                         g_Stats.distAugTaken);
+                            g_GameManager.currentState = GameState::AUG_SELECT;
+                        } else {
+                            g_GameManager.currentState = GameState::READY;
+                        }
                     }
 
                     // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
@@ -3213,9 +3244,14 @@ int main() {
                     if (UIButton(bx, y, BW, BH, T(btns[i].label),
                                  mx, my, lmb, g_LmbPrev, sel)) {
                         g_Difficulty = btns[i].d;
-                        ResetForNewGame();
-                        PickRandomWeapons(g_WeaponChoices);
-                        g_GameManager.currentState = GameState::WEAPON_SELECT;
+                        if (g_CreativeMode) {
+                            // 크리에이티브: 설정 화면으로 (시작/보스/증강 조정)
+                            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+                        } else {
+                            ResetForNewGame();
+                            PickRandomWeapons(g_WeaponChoices);
+                            g_GameManager.currentState = GameState::WEAPON_SELECT;
+                        }
                     }
                     // 버튼 아래 설명
                     const wchar_t* desc = T(btns[i].desc);
@@ -3250,6 +3286,68 @@ int main() {
                 if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::MAIN_MENU;
+                }
+            }
+            // ── 크리에이티브 설정 (시작점수 / 보스 / 시작증강) ──────
+            else if (st == GameState::CREATIVE_CONFIG) {
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+
+                const wchar_t* TIT = L"CREATIVE";
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.08f, 1.6f,
+                             0.85f, 0.95f, 0.6f, 1.0f);
+
+                const float OBW = 150.0f, OBH = 50.0f, OBG = 14.0f;
+
+                // 시작 점수
+                g_TextS.Draw(L"Start Score", 60.0f, sh*0.22f, 1.0f, 1,1,1,0.9f);
+                struct ScoreOpt { const wchar_t* l; long long v; };
+                ScoreOpt sOpts[4] = { {L"0",0},{L"200k",200000},{L"400k",400000},{L"500k",500000} };
+                for (int i = 0; i < 4; i++) {
+                    float ox = 60.0f + i * (OBW + OBG);
+                    bool sel = (g_CreativeStartScore == sOpts[i].v);
+                    if (UIButton(ox, sh*0.22f + 28.0f, OBW, OBH, sOpts[i].l,
+                                 mx, my, lmb, g_LmbPrev, sel))
+                        g_CreativeStartScore = sOpts[i].v;
+                }
+
+                // 보스 선택
+                g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
+                struct BossOpt { const wchar_t* l; int v; };
+                BossOpt bOpts[5] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
+                                     {L"Reload",2},{L"Polymorph",3} };
+                for (int i = 0; i < 5; i++) {
+                    float ox = 60.0f + i * (OBW + OBG);
+                    bool sel = (g_CreativeBossPick == bOpts[i].v);
+                    if (UIButton(ox, sh*0.40f + 28.0f, OBW, OBH, bOpts[i].l,
+                                 mx, my, lmb, g_LmbPrev, sel))
+                        g_CreativeBossPick = bOpts[i].v;
+                }
+
+                // 시작 증강 픽 횟수
+                g_TextS.Draw(L"Start Augments", 60.0f, sh*0.58f, 1.0f, 1,1,1,0.9f);
+                int aOpts[4] = { 0, 3, 5, 10 };
+                for (int i = 0; i < 4; i++) {
+                    float ox = 60.0f + i * (OBW + OBG);
+                    wchar_t lb[8]; swprintf_s(lb, L"%d", aOpts[i]);
+                    bool sel = (g_CreativeStartAugs == aOpts[i]);
+                    if (UIButton(ox, sh*0.58f + 28.0f, OBW, OBH, lb,
+                                 mx, my, lmb, g_LmbPrev, sel))
+                        g_CreativeStartAugs = aOpts[i];
+                }
+
+                // 시작 버튼
+                if (UIButton((sw - 300.0f) * 0.5f, sh*0.78f, 300.0f, 64.0f,
+                             L"START", mx, my, lmb, g_LmbPrev)) {
+                    ResetForNewGame();
+                    PickRandomWeapons(g_WeaponChoices);
+                    g_GameManager.currentState = GameState::WEAPON_SELECT;
+                }
+
+                // 뒤로 버튼 — 난이도 선택으로
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
                 }
             }
             // ── 설정 ──────────────────────────────────────────────

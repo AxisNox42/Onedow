@@ -70,6 +70,10 @@ inline DifficultyParams GetDifficultyParams(Difficulty d) {
 //       RUNNING 중 F 키로 AUG_SELECT 즉시 열기
 //       DEBUFF_SELECT 항상 스킵
 inline bool g_CreativeMode = false;
+// 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
+inline long long g_CreativeStartScore = 0;       // 시작 점수
+inline int       g_CreativeBossPick   = -1;      // -1=없음, 0슬라임 1글리치 2리로드 3폴리모프
+inline int       g_CreativeStartAugs  = 0;       // 시작 시 무료 증강 픽 횟수
 
 // 손맛 표시 토글 (설정에서 ON/OFF)
 inline bool g_ShowDamageNumbers = true;   // 데미지 숫자(딜 계산) 표시
