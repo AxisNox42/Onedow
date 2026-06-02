@@ -95,6 +95,25 @@ inline void drawBullet(const Bullet& b) {
     }
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
+
+// 잡몹 그리기 — 종류별 모양 (일반=세모 / 분열체=초록 원 / 점멸체=점멸 다이아)
+inline void drawMob(const Monster* m) {
+    float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
+    if (m->kind == MobKind::SPLITTER) {
+        drawCircle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawCircle(m->worldX, m->worldY, base*0.42f, 0.05f, 0.22f, 0.08f, 0.9f); // 분할 코어
+    } else if (m->kind == MobKind::BLINKER) {
+        if (m->blinkWarn) {   // 점멸 목표 위치 잔상 (경고)
+            float a = 0.18f + 0.22f * (m->blinkWarnT / Monster::BLINK_WARN);
+            drawDiamond(m->blinkTargetX, m->blinkTargetY, base*1.15f,
+                        m->color.r, m->color.g, m->color.b, a);
+        }
+        drawDiamond(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawDiamond(m->worldX, m->worldY, base*0.4f, 1.0f, 1.0f, 1.0f, 0.9f);
+    } else {
+        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
+    }
+}
 bool  keys[1024]   = {};
 
 GameManager    g_GameManager;
@@ -1435,14 +1454,26 @@ int main() {
                 }
 
                 // 사망 폭발 spawn (다음 UpdateAll 이 실제 erase 하기 전에 위치 캡처)
+                //   + 분열체 사망 시 작은 자식 2마리 (총 2세대까지)
+                std::vector<Monster*> mobBorn;
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive && !m->exploded) {
                         SpawnEnemyExplosion(m->worldX, m->worldY,
                                             m->color.r, m->color.g, m->color.b,
                                             /*big=*/false);
                         m->exploded = true;
+                        if (m->kind == MobKind::SPLITTER && m->splitGen < 2) {
+                            for (int c = 0; c < 2; c++) {
+                                Monster* ch = new Monster(m->worldX + (c?28:-28), m->worldY,
+                                                          1.0f, 1.0f, false);
+                                ch->MakeKind(MobKind::SPLITTER, m->splitGen + 1,
+                                             m->sizeScale * 0.7f);
+                                mobBorn.push_back(ch);
+                            }
+                        }
                     }
                 }
+                for (auto* nb : mobBorn) g_MonsterManager.monsters.push_back(nb);
                 for (auto r : g_MonsterManager.rangedMobs) {
                     if (!r->alive && !r->exploded) {
                         SpawnEnemyExplosion(r->worldX, r->worldY,
@@ -1765,9 +1796,18 @@ int main() {
             spawnTimer += delta;
             float spawnInterval = 0.3f * g_Stats.mobSpawnMult / p2mult;
             if (spawnTimer > spawnInterval) {
+                size_t mbefore = g_MonsterManager.monsters.size();
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                           (int)((100 + g_Stats.mobCapBonus) * p2mult),
                                           g_Stats.monsterHpMult, saX, saY, saW, saH);
+                // 디버프 보유 시 일부 몹을 분열체/점멸체로 (독립 확률)
+                if (g_MonsterManager.monsters.size() > mbefore) {
+                    Monster* nm = g_MonsterManager.monsters.back();
+                    if (g_Stats.splitterMobs && (rand() % 100) < 25)
+                        nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
+                    else if (g_Stats.blinkerMobs && (rand() % 100) < 25)
+                        nm->MakeKind(MobKind::BLINKER);
+                }
                 spawnTimer = 0.0f;
             }
 
@@ -2365,9 +2405,7 @@ int main() {
             // 잡몹 (보스 소환물은 더 큼)
             for (auto m : g_MonsterManager.monsters) {
                 if (!m->alive) continue;
-                float sz = m->summoned ? 28.0f : 18.0f;
-                drawTriangle(m->worldX, m->worldY, sz,
-                             m->color.r, m->color.g, m->color.b, 1.0f);
+                drawMob(m);
             }
             // 자폭병 (5각형)
             for (auto bm : g_MonsterManager.bombers) {
@@ -2406,9 +2444,7 @@ int main() {
                 WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive) continue;
-                    float sz = m->summoned ? 28.0f : 18.0f;
-                    drawTriangle(m->worldX, m->worldY, sz,
-                                 m->color.r, m->color.g, m->color.b, 1.0f);
+                    drawMob(m);
                 }
                 for (auto bm : g_MonsterManager.bombers) {
                     if (!bm->alive) continue;
@@ -2436,9 +2472,7 @@ int main() {
             WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
             for (auto m : g_MonsterManager.monsters) {
                 if (!m->alive) continue;
-                float sz = m->summoned ? 28.0f : 18.0f;
-                drawTriangle(m->worldX, m->worldY, sz,
-                             m->color.r, m->color.g, m->color.b, 1.0f);
+                drawMob(m);
             }
             for (auto bm : g_MonsterManager.bombers) {
                 if (!bm->alive) continue;
@@ -2522,9 +2556,7 @@ int main() {
         // 잡몹 (보스 소환물은 더 큼)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive) continue;
-            float sz = m->summoned ? 28.0f : 18.0f;
-            drawTriangle(m->worldX, m->worldY, sz,
-                         m->color.r, m->color.g, m->color.b, 1.0f);
+            drawMob(m);
         }
         // 자폭병
         for (auto bm : g_MonsterManager.bombers) {

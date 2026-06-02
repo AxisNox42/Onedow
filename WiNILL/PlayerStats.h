@@ -80,6 +80,8 @@ struct PlayerStats {
     float rmobDmgMult   = 1.0f;
     float rmobDelayMult = 1.0f;  // <1.0 = 더 빠름
     float mobSpawnMult  = 1.0f;  // <1.0 = 더 자주
+    bool  splitterMobs  = false; // 분열체(죽으면 분열) 등장 (디버프)
+    bool  blinkerMobs   = false; // 점멸체(순간이동) 등장 (디버프)
     float mobSpeedMult  = 1.0f;
     bool  approachingDeath = false;
     int   approachStacks   = 0;   // D_APPROACH 누적 횟수 (속도 +20%/스택)
@@ -272,6 +274,14 @@ struct PlayerStats {
             mobSpawnMult   *= 0.70f;
             mobCapBonus    += 200;
             meleeXpBonus   += 1;
+            break;
+        case AugType::D_SPLITTER:    // 분열체 출현 (죽으면 쪼개짐) · 처치 EXP +3
+            splitterMobs   = true;
+            meleeXpBonus   += 3;
+            break;
+        case AugType::D_BLINKER:     // 점멸체 출현 (순간이동 추격) · 처치 EXP +6
+            blinkerMobs    = true;
+            meleeXpBonus   += 6;
             break;
         case AugType::D_APPROACH:
             approachingDeath = true;

@@ -27,6 +27,7 @@ enum class AugType {
     D_GLASS_HEART, D_BULLET_STUCK, D_DRUNK,
     D_BOMBER_BLAST, D_BOMBER_BUFF, D_BOMBER_SPEED,   // 신규
     D_MOB_HP, D_SLOW_MOVE,                            // 신규
+    D_SPLITTER, D_BLINKER,                            // 신규 적 — 분열체 / 점멸체
     // ── 특수 (2) ──────────────────────────────
     S_CHAOS, S_PANDORA,
     // ── deprecated (ALL_AUGS 에서 제외, 코드는 남음) ──
@@ -275,6 +276,16 @@ static const AugDef ALL_AUGS[] = {
     { AugType::D_SLOW_MOVE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_SLOWMV",
       { L"이동속도 너프", L"Heavy Legs", L"鈍足" },
       { L"플레이어 이동 속도 -5% · 전체 EXP +10%", L"Player move speed -5% · all EXP +10%", L"プレイヤー移動 -5%・全EXP +10%" } },
+    { AugType::D_SPLITTER,    AugRarity::DEBUFF,    AugUnique::NONE, "D_SPLITTER",
+      { L"분열체 출현", L"Splitters", L"分裂体出現" },
+      { L"일부 잡몹이 분열체로 등장 (처치 시 작은 2마리로 쪼개짐, 2세대까지) · 처치 EXP +3",
+        L"Some mobs become splitters (split into 2 on death, up to 2 gens) · kill EXP +3",
+        L"一部の雑魚が分裂体に (撃破で2体に分裂・2世代まで)・撃破EXP +3" } },
+    { AugType::D_BLINKER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_BLINKER",
+      { L"점멸체 출현", L"Blinkers", L"点滅体出現" },
+      { L"일부 잡몹이 점멸체로 등장 (잔상 경고 후 플레이어 쪽으로 순간이동) · 처치 EXP +6",
+        L"Some mobs become blinkers (teleport toward you after a ghost telegraph) · kill EXP +6",
+        L"一部の雑魚が点滅体に (残像予告後プレイヤーへ瞬間移動)・撃破EXP +6" } },
 
     // ── 특수 ───────────────────────────────────────────
     { AugType::S_CHAOS,       AugRarity::SPECIAL,   AugUnique::NONE, "CHAOS",
@@ -287,7 +298,7 @@ static const AugDef ALL_AUGS[] = {
       { L"버프 3개 + 디버프 2개 즉시 획득", L"Instantly gain 3 buffs + 2 debuffs", L"バフ3個 + デバフ2個を即獲得" } },
 };
 
-static constexpr int AUG_TOTAL = 49;  // +확률적연쇄·연쇄
+static constexpr int AUG_TOTAL = 51;  // +확률적연쇄·연쇄·분열체·점멸체
 
 // 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {

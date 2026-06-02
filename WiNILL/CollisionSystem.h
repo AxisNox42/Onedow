@@ -76,7 +76,7 @@ public:
             for (auto m : mm.monsters) {
                 if (!m->alive) continue;
                 float d = SegDist(m->worldX, m->worldY, b.prevX, b.prevY, b.x, b.y);
-                if (d < 15.0f) {
+                if (d < 15.0f * m->sizeScale) {   // 분열체 등 큰 몹은 히트박스도 큼
                     float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                              glm::vec2(m->worldX, m->worldY));
                     // CANNON: remainingDmg / 포탑: turretDmg / 그 외: 일반 계산
@@ -100,11 +100,18 @@ public:
                     if (m->hp <= 0.0f) {
                         m->alive = false;
                         AddKillCombo();
-                        float gained = (1.0f + (float)stats.meleeXpBonus)
+                        // 종류별 기본 EXP/점수 (분열체 자식은 낮게, 점멸체는 높게)
+                        float baseXp = 1.0f, baseScore = 100.0f;
+                        if (m->kind == MobKind::SPLITTER) {
+                            baseXp = (m->splitGen >= 2) ? 1.0f : 2.0f; baseScore = 120.0f;
+                        } else if (m->kind == MobKind::BLINKER) {
+                            baseXp = 6.0f; baseScore = 250.0f;
+                        }
+                        float gained = (baseXp + (float)stats.meleeXpBonus)
                                      * stats.xpMult;
                         xp              += (long long)gained;
                         stats.killCount += 1;
-                        scoreAccum      += 100.0f;
+                        scoreAccum      += baseScore;
                         score = (long long)scoreAccum;
                         if (stats.vampire) {
                             ++stats.vampireKillStreak;
