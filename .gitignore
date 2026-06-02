@@ -24,3 +24,7 @@ cmake_install.cmake
 
 # ── 런타임 로그 ──
 transparency_debug.txt
+
+# 런타임 저장 파일
+onedow_save.cfg
+*.cfg
