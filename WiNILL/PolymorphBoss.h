@@ -118,17 +118,25 @@ public:
 
     void spawnTriRow() {
         // 시작 모서리 전체에 걸쳐 무작위로 한 줄 분량 spawn (고속, 직선 이동)
+        // 페이즈2: 화면이 2배로 확장되므로 확장된 영역 전체를 덮도록 spawn 범위/수량 증가
         float sp = (phase2 ? 920.0f : 800.0f) + (float)(rand() % 160);  // 개빠름
-        int perRow = phase2 ? 4 : 3;
+        int   perRow = phase2 ? 6 : 3;
+        float life   = phase2 ? 5.5f : 3.5f;          // 더 넓은 영역 가로질러야 함
+        float exX = phase2 ? (float)screenW * 0.5f : 0.0f;   // 각 변 확장량
+        float exY = phase2 ? (float)screenH * 0.5f : 0.0f;
+        float minX = -exX, maxX = (float)screenW + exX;
+        float minY = -exY, maxY = (float)screenH + exY;
+        int   spanX = std::max(1, (int)(maxX - minX));
+        int   spanY = std::max(1, (int)(maxY - minY));
         for (int i = 0; i < perRow; i++) {
-            PSwarm s; s.life = 3.5f; s.alive = true;
+            PSwarm s; s.life = life; s.alive = true;
             if (triDirX != 0.0f) {                    // 가로 이동
-                s.x  = (triDirX > 0) ? -20.0f : (float)screenW + 20.0f;
-                s.y  = (float)(rand() % std::max(1, screenH));
+                s.x  = (triDirX > 0) ? minX - 20.0f : maxX + 20.0f;
+                s.y  = minY + (float)(rand() % spanY);
                 s.vx = triDirX * sp; s.vy = 0.0f;
             } else {                                  // 세로 이동
-                s.x  = (float)(rand() % std::max(1, screenW));
-                s.y  = (triDirY > 0) ? -20.0f : (float)screenH + 20.0f;
+                s.x  = minX + (float)(rand() % spanX);
+                s.y  = (triDirY > 0) ? minY - 20.0f : maxY + 20.0f;
                 s.vx = 0.0f; s.vy = triDirY * sp;
             }
             swarm.push_back(s);
@@ -249,8 +257,12 @@ public:
             s.life -= dt;
             float dx = px - s.x, dy = py - s.y;
             if (dx*dx + dy*dy < 15.0f*15.0f) { playerHP -= SWARM_DMG; s.alive = false; }
+            // 페이즈2 확장 영역까지 가로질러야 하므로 despawn 경계도 확장
+            float mxB = (phase2 ? (float)screenW * 0.5f : 0.0f) + 160.0f;
+            float myB = (phase2 ? (float)screenH * 0.5f : 0.0f) + 160.0f;
             if (s.life <= 0.0f ||
-                s.x < -120 || s.x > screenW+120 || s.y < -120 || s.y > screenH+120)
+                s.x < -mxB || s.x > screenW + mxB ||
+                s.y < -myB || s.y > screenH + myB)
                 s.alive = false;
         }
         swarm.erase(std::remove_if(swarm.begin(), swarm.end(),

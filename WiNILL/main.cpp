@@ -223,6 +223,7 @@ ReloadRunnerBoss* g_RRBoss = nullptr;
 // 폴리모프 보스 (희귀, 폼 변환 + 페이즈2 화면 확장) — 별도 관리
 PolymorphBoss* g_PolyBoss = nullptr;
 int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
+float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
 // 보스 생존 동안 화면 전체를 보스 고유색으로 점점 물들이는 연출
 float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
 glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
@@ -666,6 +667,7 @@ int main() {
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
             g_PolyPrevForm = -1;
+            g_PolySummonTimer = 0.0f;
             for (auto* c : g_Slimelings) delete c;   // 분열체 정리
             g_Slimelings.clear();
             g_SlimeEncounter = false;
@@ -1191,9 +1193,16 @@ int main() {
                         }
                     }
                     b.Update(FIXED_DT);
-                    if (b.x < -200 || b.x > screenWidth  + 200 ||
-                        b.y < -200 || b.y > screenHeight + 200)
-                        b.active = false;
+                    // 화면 밖 비활성화 — 줌아웃(폴리모프 2페이즈)되면 보이는 영역이
+                    // 넓어지므로 경계도 같이 확장 (안 그러면 확장 구역에서 탄이 즉시 사라짐)
+                    {
+                        float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
+                        float mX = screenWidth  * 0.5f * (1.0f / zb - 1.0f) + 200.0f;
+                        float mY = screenHeight * 0.5f * (1.0f / zb - 1.0f) + 200.0f;
+                        if (b.x < -mX || b.x > screenWidth  + mX ||
+                            b.y < -mY || b.y > screenHeight + mY)
+                            b.active = false;
+                    }
                 }
 
                 // 몬스터 업데이트 (디버프 multiplier 적용)
@@ -1711,12 +1720,16 @@ int main() {
                 }
             }
 
+            // 폴리모프 2페이즈 = 진짜 최종보스: 모든 적 소환 3배 (보스 죽으면 1배 복귀)
+            bool  polyP2  = (g_PolyBoss && g_PolyBoss->phase2);
+            float p2mult  = polyP2 ? 3.0f : 1.0f;
+
             // 잡몹 스폰 (D_MOB_SPAWN → 더 자주 + cap +200, D_MOB_HP → HP+)
             spawnTimer += delta;
-            float spawnInterval = 0.3f * g_Stats.mobSpawnMult;
+            float spawnInterval = 0.3f * g_Stats.mobSpawnMult / p2mult;
             if (spawnTimer > spawnInterval) {
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
-                                          100 + g_Stats.mobCapBonus,
+                                          (int)((100 + g_Stats.mobCapBonus) * p2mult),
                                           g_Stats.monsterHpMult);
                 spawnTimer = 0.0f;
             }
@@ -1777,7 +1790,7 @@ int main() {
             DifficultyParams dp = GetDifficultyParams(g_Difficulty);
             if (g_GameTime >= dp.bomberStartTime) {
                 g_BomberSpawnTimer += delta;
-                if (g_BomberSpawnTimer >= dp.bomberInterval) {
+                if (g_BomberSpawnTimer >= dp.bomberInterval / p2mult) {
                     g_MonsterManager.SpawnBomber(screenWidth, screenHeight,
                                                  g_Stats.bomberHpMult,
                                                  g_Stats.bomberSpeedMult,
@@ -1790,11 +1803,41 @@ int main() {
             rangedSpawnTimer += delta;
             float rangedInterval = dp.rangedSpawnInterval - g_Stats.rmobSpawnDelayBonus;
             if (rangedInterval < 1.0f) rangedInterval = 1.0f;   // 최소 1초
-            int rangedMax = dp.rangedMaxBase + g_Stats.rmobMaxBonus;
+            rangedInterval /= p2mult;                            // 2페이즈 3배
+            int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult);
             if (rangedSpawnTimer > rangedInterval) {
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
                     g_Stats.rmobHpMult, rangedMax);
                 rangedSpawnTimer = 0.0f;
+            }
+
+            // 폴리모프 2페이즈 전용 — 7초마다 플레이어 주변에 원거리/자폭병 5마리
+            //   (스폰 제한 무시 — 벡터에 직접 push)
+            if (polyP2) {
+                g_PolySummonTimer += delta;
+                if (g_PolySummonTimer >= 7.0f) {
+                    g_PolySummonTimer = 0.0f;
+                    float pCX = playerWin.x + playerWin.width  * 0.5f;
+                    float pCY = playerWin.y + playerWin.height * 0.5f;
+                    for (int k = 0; k < 5; k++) {
+                        float ang = (float)k / 5.0f * 6.2831853f
+                                  + (float)(rand() % 100) * 0.01f;
+                        float rad = 280.0f + (float)(rand() % 160);
+                        float sx = pCX + cosf(ang) * rad;
+                        float sy = pCY + sinf(ang) * rad;
+                        if (rand() % 2 == 0) {
+                            RangedMob* rm = new RangedMob(sx, sy, screenWidth, screenHeight);
+                            rm->hp *= g_Stats.rmobHpMult;
+                            g_MonsterManager.rangedMobs.push_back(rm);
+                        } else {
+                            g_MonsterManager.bombers.push_back(
+                                new Bomber(sx, sy, g_Stats.bomberHpMult,
+                                           g_Stats.bomberSpeedMult, g_Stats.bomberBlastMult));
+                        }
+                    }
+                    // 소환 연출
+                    SpawnShockWave(pCX, pCY, 320.0f, 0.5f, 0.7f, 0.3f, 1.0f);
+                }
             }
 
             // 다가오는 죽음: 모든 오브 영원히 추격 + 접촉 데미지
