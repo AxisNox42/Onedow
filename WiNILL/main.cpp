@@ -225,6 +225,7 @@ ReloadRunnerBoss* g_RRBoss = nullptr;
 PolymorphBoss* g_PolyBoss = nullptr;
 int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
 float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
+bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
 // 보스 생존 동안 화면 전체를 보스 고유색으로 점점 물들이는 연출
 float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
 glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
@@ -669,6 +670,7 @@ int main() {
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
             g_PolyPrevForm = -1;
             g_PolySummonTimer = 0.0f;
+            g_PolyWasPhase2 = false;
             for (auto* c : g_Slimelings) delete c;   // 분열체 정리
             g_Slimelings.clear();
             g_SlimeEncounter = false;
@@ -854,7 +856,8 @@ int main() {
                 // 특수: 디스패치만 수행하고 Apply 호출 X
                 if (atype == AugType::S_CHAOS) {
                     // 대혼란: 보유 증강 잊고, 같은 개수 랜덤. 약 60% 버프 / 40% 디버프
-                    int prevAugs = g_Stats.totalAugs;
+                    // 실제 보유 목록(중첩 포함) 기준으로 카운트 — 공격력 증가×4 같은 중첩도 모두 포함
+                    int prevAugs = (int)g_OwnedAugs.size();
                     g_Stats = PlayerStats();
                     g_OwnedAugs.clear();
                     memset(g_GameManager.takenOnce, 0,
@@ -862,10 +865,10 @@ int main() {
                     g_GameManager.maxHP = g_Stats.maxHP;
                     if (g_GameManager.playerHP > g_Stats.maxHP)
                         g_GameManager.playerHP = g_Stats.maxHP;
-                    if (prevAugs > 16) prevAugs = 16;
-                    int nDebuffs = prevAugs * 2 / 5;       // 40%
+                    if (prevAugs > 24) prevAugs = 24;       // 배열/풀 상한
+                    int nDebuffs = prevAugs * 2 / 5;        // 40%
                     int nBuffs   = prevAugs - nDebuffs;
-                    int buffs[16], debuffs[16];
+                    int buffs[24], debuffs[24];
                     g_GameManager.PickRandomAugIndices(buffs, nBuffs,
                         false, false, true, false, /*allowDebuff=*/false);
                     g_GameManager.PickRandomDebuffIndices(debuffs, nDebuffs);
@@ -1230,6 +1233,22 @@ int main() {
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
                     g_ViewZoomTarget = g_PolyBoss->phase2 ? 0.5f : 1.0f;
+                    // ── 2페이즈 진입 연출 — 보스 포효 + 다중 충격파 (1회) ──
+                    if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
+                        g_PolyWasPhase2 = true;
+                        float bx = g_PolyBoss->worldX, by = g_PolyBoss->worldY;
+                        g_ShakeTime = 1.0f; g_ShakeMag = 42.0f;        // 강한 흔들림
+                        TriggerFlash(0.6f, 0.25f, 1.0f, 0.85f);        // 보라 화이트아웃
+                        TriggerHitStop(0.20f);                         // 임팩트 정지
+                        // 퍼져나가는 보라 충격파 3겹 (포효)
+                        SpawnShockWave(bx, by, 760.0f, 1.1f, 0.7f, 0.3f, 1.0f);
+                        SpawnShockWave(bx, by, 500.0f, 0.9f, 0.85f, 0.45f, 1.0f);
+                        SpawnShockWave(bx, by, 280.0f, 0.7f, 1.0f, 0.8f, 1.0f);
+                        for (int k = 0; k < 6; k++)
+                            SpawnEnemyExplosion(bx + (rand()%320 - 160),
+                                                by + (rand()%320 - 160),
+                                                0.7f, 0.3f, 1.0f, true);
+                    }
                     // 폼 변환 순간 — 보라 파티클 분출 + 링
                     int curForm = (int)g_PolyBoss->form;
                     if (curForm != g_PolyPrevForm) {
@@ -1551,6 +1570,7 @@ int main() {
                     delete pb;
                     g_PolyBoss = nullptr;
                     g_PolyPrevForm = -1;
+                    g_PolyWasPhase2 = false;
                     g_BossRewardPicksLeft = 3;             // 증강 1개 더
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
