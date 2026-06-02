@@ -445,36 +445,27 @@ int main() {
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
 
-    // 폰트 초기화
+    // 폰트 초기화 — Jua(한글)/KosugiMaru(일본어)/Oswald(라틴) 폴백 체인.
+    //   세 폰트를 항상 동시 로드 → 언어와 무관하게 모든 글리프(한/일/영) 표시.
 #ifdef _WIN32
-    // Windows: EXE 임베디드 TTF (Resource.rc 의 RCDATA) 로 GDI 에 등록 후 시스템 face 사용
-    auto loadRcFont = [&](const char* resName) -> HANDLE {
+    // EXE 임베디드 RCDATA 바이트를 stb_truetype 으로 직접 래스터화
+    auto loadRc = [&](const char* resName, int& outSize) -> const unsigned char* {
         HMODULE hMod = GetModuleHandleA(nullptr);
         HRSRC   hRes = FindResourceA(hMod, resName, (LPCSTR)RT_RCDATA);
-        if (!hRes) return nullptr;
-        DWORD   sz    = SizeofResource(hMod, hRes);
+        if (!hRes) { outSize = 0; return nullptr; }
+        outSize = (int)SizeofResource(hMod, hRes);
         HGLOBAL hData = LoadResource(hMod, hRes);
-        void*   pData = LockResource(hData);
-        if (!pData || sz == 0) return nullptr;
-        DWORD numFonts = 0;
-        return AddFontMemResourceEx(pData, sz, nullptr, &numFonts);
+        return (const unsigned char*)LockResource(hData);
     };
-    g_FontMemHandle   = loadRcFont("DONGLE_FONT");
-    g_OswaldMemHandle = loadRcFont("OSWALD_FONT");
-
-    const char* face = LanguageFace(g_Language);
-    if (g_FontMemHandle || g_OswaldMemHandle) {
-        g_TextL.InitWithFace(face, 36, screenWidth, screenHeight);
-        g_TextS.InitWithFace(face, 22, screenWidth, screenHeight);
-    } else {
-        const char* fp = (g_Language == Language::KR)
-                         ? "Resource/Font/Dongle-Regular.ttf"
-                         : "Resource/Font/Oswald-VariableFont_wght.ttf";
-        g_TextL.Init(fp, face, 36, screenWidth, screenHeight);
-        g_TextS.Init(fp, face, 22, screenWidth, screenHeight);
-    }
+    int szJ = 0, szK = 0, szO = 0;
+    const unsigned char* datas[3] = {
+        loadRc("JUA_FONT", szJ), loadRc("KOSUGI_FONT", szK), loadRc("OSWALD_FONT", szO)
+    };
+    int sizes[3] = { szJ, szK, szO };
+    g_TextL.InitFromMemory(datas, sizes, 3, 36, screenWidth, screenHeight);
+    g_TextS.InitFromMemory(datas, sizes, 3, 22, screenWidth, screenHeight);
 #else
-    // macOS/Linux: 디스크의 TTF 폴백 체인을 stb_truetype 으로 직접 래스터화
+    // macOS/Linux: 디스크의 TTF 폴백 체인
     {
         const char* chain[3];
         int nc = LanguageFontChain(g_Language, chain);
@@ -3421,22 +3412,8 @@ int main() {
                     bool sel = (g_Language == langOpts[i].lang);
                     if (UIButton(bx, by, 180.0f, 54.0f, langOpts[i].label,
                                  mx, my, lmb, g_LmbPrev, sel)) {
-                        if (g_Language != langOpts[i].lang) {
-                            g_Language = langOpts[i].lang;
-                            // 폰트 재설정 (캐시도 갈아엎음)
-                            g_TextL.Cleanup();
-                            g_TextS.Cleanup();
-#ifdef _WIN32
-                            const char* nf = LanguageFace(g_Language);
-                            g_TextL.InitWithFace(nf, 36, screenWidth, screenHeight);
-                            g_TextS.InitWithFace(nf, 22, screenWidth, screenHeight);
-#else
-                            const char* chain[3];
-                            int nc = LanguageFontChain(g_Language, chain);
-                            g_TextL.InitFromFiles(chain, nc, 36, screenWidth, screenHeight);
-                            g_TextS.InitFromFiles(chain, nc, 22, screenWidth, screenHeight);
-#endif
-                        }
+                        // 폰트는 한/일/영 항상 동시 로드라 언어만 바꾸면 됨 (재로드 불필요)
+                        g_Language = langOpts[i].lang;
                     }
                 }
 

@@ -4,10 +4,11 @@
 //   런타임에 FindResource/LoadResource/LockResource 로 접근
 // ─────────────────────────────────────────────────────────────
 
-// 한국어 폰트 — TextRenderer 가 AddFontMemResourceEx 로 GDI 에 등록
-DONGLE_FONT     RCDATA      "Resource\\Font\\Dongle-Regular.ttf"
-// 라틴/키릴 (영어/스페인/포르투갈/독일/러시아) — variable font
+// 폰트 폴백 체인 — stb_truetype 으로 직접 래스터화 (InitFromMemory).
+//   라틴=Oswald / 한글=Jua / 일본어=KosugiMaru, 항상 동시 로드 → 모든 언어 표시
 OSWALD_FONT     RCDATA      "Resource\\Font\\Oswald-VariableFont_wght.ttf"
+JUA_FONT        RCDATA      "Font\\Jua-Regular.ttf"
+KOSUGI_FONT     RCDATA      "Font\\KosugiMaru-Regular.ttf"
 
 // (추후 추가 예: 픽토그램·BGM 등)
 // AUG_DMG_ICON    RCDATA      "Resource\\Image\\dmg.png"

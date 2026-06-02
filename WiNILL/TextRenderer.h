@@ -1,12 +1,10 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
-// 텍스트 렌더러 (OpenGL 텍스처 방식)
-//   Windows : GDI 로 문자열 단위 래스터화 (기존 검증된 경로) + 캐시 상한
-//   그 외(macOS/Linux) : stb_truetype 글리프 아틀라스 (글자 단위 1회 캐싱)
-//                        + 다중 폰트 폴백 체인
-//
-//   stb 경로가 글자 단위 캐싱이라 점수처럼 매 프레임 바뀌는 문자열도
-//   추가 비용 0 (글리프는 이미 캐싱됨) → 누수/렉 없음.
+// 텍스트 렌더러 — stb_truetype 글리프 아틀라스 (글자 단위 1회 캐싱)
+//   + 다중 폰트 폴백 체인 (라틴 / 한글 / 일본어 등 항상 동시 로드)
+//   글자 단위 캐싱이라 점수처럼 매 프레임 바뀌는 문자열도 추가 비용 0.
+//   Windows 는 임베디드 RCDATA(InitFromMemory), macOS/Linux 는 디스크
+//   TTF(InitFromFiles) — 양쪽 다 동일한 글리프 폴백 렌더링.
 // ─────────────────────────────────────────────────────────────
 
 #include <glad/glad.h>
@@ -15,27 +13,18 @@
 #include <vector>
 #include <cstring>
 #include <cstdint>
-#include <utility>
-
-#ifdef _WIN32
-  #include <windows.h>
-#else
-  #include <cstdio>
-  #include <cmath>
-  #include "stb_truetype.h"   // 선언부. 구현은 stb_impl.cpp 에서 STB_TRUETYPE_IMPLEMENTATION
-#endif
+#include <cstdio>
+#include <cmath>
+#include "stb_truetype.h"   // 선언부. 구현은 stb_impl.cpp 의 STB_TRUETYPE_IMPLEMENTATION
 
 class TextRenderer {
 public:
-#ifdef _WIN32
-    bool Init(const char* fontPath, const char* faceName, int ptSize,
-              int screenW, int screenH);
-    bool InitWithFace(const char* faceName, int ptSize,
-                      int screenW, int screenH);
-#endif
-    // 크로스플랫폼: TTF 파일 폴백 체인 (앞쪽 우선, 없는 글리프는 다음 폰트)
+    // 디스크 TTF 폴백 체인 (앞쪽 우선, 없는 글리프는 다음 폰트)
     bool InitFromFiles(const char* const* ttfPaths, int nPaths, int ptSize,
                        int screenW, int screenH);
+    // 메모리 폰트 폴백 체인 (Windows 임베디드 RCDATA 등)
+    bool InitFromMemory(const unsigned char* const* datas, const int* sizes,
+                        int nFonts, int ptSize, int screenW, int screenH);
 
     void Cleanup();
     ~TextRenderer() { Cleanup(); }
@@ -49,19 +38,10 @@ public:
               float r, float g, float b, float a = 1.0f);
 
 private:
-    int   screenW_ = 0, screenH_ = 0;
+    int    screenW_ = 0, screenH_ = 0;
     GLuint prog_ = 0, VAO_ = 0, VBO_ = 0;
     GLint  uProj_ = -1, uCol_ = -1;
 
-#ifdef _WIN32
-    struct Entry { GLuint tex; int w, h; };
-    HFONT hFont_ = nullptr;
-    char  fontPath_[MAX_PATH] = {};
-    std::unordered_map<std::wstring, Entry> cache_;
-    Entry&  Cache(const std::wstring& ws);
-    void    Issue(const Entry& e, float x, float y, float scale,
-                  float r, float g, float b, float a);
-#else
     struct FontFace {
         std::vector<unsigned char> data;
         stbtt_fontinfo info;
@@ -74,19 +54,18 @@ private:
     };
     std::vector<FontFace> faces_;
     std::unordered_map<int, Glyph> glyphs_;   // 코드포인트 → 글리프 (영구 캐싱)
-    float emPx_        = 24.0f;   // em → 픽셀 매핑 크기
-    float ascentPx_    = 0.0f;    // 주 폰트 ascent (픽셀)
-    float lineHeightPx_= 0.0f;    // 줄 높이 (픽셀)
+    float  emPx_        = 24.0f;
+    float  ascentPx_    = 0.0f;
+    float  lineHeightPx_= 0.0f;
+
     int    FaceForCodepoint(int cp) const;
     Glyph& GetGlyph(int cp);
-#endif
-
-    GLuint  Compile(GLenum type, const char* src);
-    bool    InitGLPipeline();
+    bool   FinishInit(int ptSize, int sw, int sh);
+    GLuint Compile(GLenum type, const char* src);
+    bool   InitGLPipeline();
 };
 
-// ═══════════════════════ 공통 GL 파이프라인 ════════════════════════════════════
-
+// ═══════════════════════ GL 파이프라인 ════════════════════════════════════
 inline bool TextRenderer::InitGLPipeline()
 {
     static const char* VS =
@@ -96,7 +75,6 @@ inline bool TextRenderer::InitGLPipeline()
         "uniform mat4 proj;\n"
         "out vec2 uv;\n"
         "void main(){ gl_Position=proj*vec4(aPos,0,1); uv=aUV; }\n";
-
     static const char* FS =
         "#version 330 core\n"
         "in vec2 uv;\n"
@@ -142,176 +120,36 @@ inline GLuint TextRenderer::Compile(GLenum type, const char* src)
     return s;
 }
 
-// ═══════════════════════ Windows (GDI) ═════════════════════════════════════════
-#ifdef _WIN32
-
-inline void TextRenderer::Issue(const Entry& e,
-                                float x, float y, float scale,
-                                float r, float g, float b, float a)
-{
-    float w = e.w * scale, h = e.h * scale;
-    float P[16] = {
-         2.0f / screenW_,  0,               0, 0,
-         0,               -2.0f / screenH_, 0, 0,
-         0,                0,              -1, 0,
-        -1,                1,               0, 1
-    };
-    float v[24] = {
-        x,   y,   0, 0,   x+w, y,   1, 0,   x+w, y+h, 1, 1,
-        x,   y,   0, 0,   x+w, y+h, 1, 1,   x,   y+h, 0, 1,
-    };
-    glEnable(GL_BLEND);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(prog_);
-    glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
-    glUniform4f(uCol_, r, g, b, a);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, e.tex);
-    glBindVertexArray(VAO_);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
-    glUseProgram(0);
-}
-
-inline float TextRenderer::Width(const wchar_t* text, float scale)  { return Cache(std::wstring(text)).w * scale; }
-inline float TextRenderer::Height(const wchar_t* text, float scale) { return Cache(std::wstring(text)).h * scale; }
-inline void  TextRenderer::Draw(const wchar_t* text, float x, float y, float scale,
-                                float r, float g, float b, float a)
-{ Issue(Cache(std::wstring(text)), x, y, scale, r, g, b, a); }
-
-inline bool TextRenderer::InitWithFace(const char* faceName, int ptSize, int sw, int sh)
+// ═══════════════════════ 초기화 ════════════════════════════════════════════
+inline bool TextRenderer::FinishInit(int ptSize, int sw, int sh)
 {
     screenW_ = sw;  screenH_ = sh;
-    fontPath_[0] = '\0';
-    HDC hdc = GetDC(nullptr);
-    LOGFONTA lf = {};
-    lf.lfHeight  = -MulDiv(ptSize, GetDeviceCaps(hdc, LOGPIXELSY), 72);
-    lf.lfWeight  = FW_NORMAL;
-    lf.lfCharSet = DEFAULT_CHARSET;
-    lf.lfQuality = ANTIALIASED_QUALITY;
-    strncpy_s(lf.lfFaceName, faceName, LF_FACESIZE - 1);
-    ReleaseDC(nullptr, hdc);
-    hFont_ = CreateFontIndirectA(&lf);
-    if (!hFont_) return false;
+    // GDI 의 점→픽셀 변환(pt × 96/72)에 맞춰 em 매핑 크기 보정
+    emPx_ = (float)ptSize * (96.0f / 72.0f);
+    if (faces_.empty()) return false;
+    float s0 = stbtt_ScaleForMappingEmToPixels(&faces_[0].info, emPx_);
+    int asc = 0, desc = 0, gap = 0;
+    stbtt_GetFontVMetrics(&faces_[0].info, &asc, &desc, &gap);
+    ascentPx_     = asc * s0;
+    lineHeightPx_ = (asc - desc) * s0;
     return InitGLPipeline();
 }
-
-inline bool TextRenderer::Init(const char* fontPath, const char* faceName,
-                               int ptSize, int sw, int sh)
-{
-    screenW_ = sw;  screenH_ = sh;
-    strncpy_s(fontPath_, fontPath, MAX_PATH - 1);
-    if (AddFontResourceExA(fontPath, FR_PRIVATE, nullptr) == 0) {
-        char abs[MAX_PATH];
-        GetFullPathNameA(fontPath, MAX_PATH, abs, nullptr);
-        AddFontResourceExA(abs, FR_PRIVATE, nullptr);
-        strncpy_s(fontPath_, abs, MAX_PATH - 1);
-    }
-    HDC hdc = GetDC(nullptr);
-    LOGFONTA lf = {};
-    lf.lfHeight  = -MulDiv(ptSize, GetDeviceCaps(hdc, LOGPIXELSY), 72);
-    lf.lfWeight  = FW_NORMAL;
-    lf.lfCharSet = DEFAULT_CHARSET;
-    lf.lfQuality = ANTIALIASED_QUALITY;
-    strncpy_s(lf.lfFaceName, faceName, LF_FACESIZE - 1);
-    ReleaseDC(nullptr, hdc);
-    hFont_ = CreateFontIndirectA(&lf);
-    if (!hFont_) return false;
-    return InitGLPipeline();
-}
-
-inline void TextRenderer::Cleanup() {
-    for (auto& p : cache_) glDeleteTextures(1, &p.second.tex);
-    cache_.clear();
-    if (VAO_)  { glDeleteVertexArrays(1, &VAO_); VAO_ = 0; }
-    if (VBO_)  { glDeleteBuffers(1, &VBO_);       VBO_ = 0; }
-    if (prog_) { glDeleteProgram(prog_);           prog_ = 0; }
-    if (hFont_){ DeleteObject(hFont_);             hFont_ = nullptr; }
-    if (fontPath_[0] != '\0')
-        RemoveFontResourceExA(fontPath_, FR_PRIVATE, nullptr);
-}
-
-inline TextRenderer::Entry& TextRenderer::Cache(const std::wstring& ws)
-{
-    auto it = cache_.find(ws);
-    if (it != cache_.end()) return it->second;
-
-    // 캐시 상한 — 점수처럼 매번 바뀌는 문자열의 무한 누적 방지
-    if (cache_.size() > 512) {
-        for (auto& p : cache_) glDeleteTextures(1, &p.second.tex);
-        cache_.clear();
-    }
-
-    HDC dc = CreateCompatibleDC(nullptr);
-    SelectObject(dc, hFont_);
-    SetMapMode(dc, MM_TEXT);
-    SIZE sz = {};
-    GetTextExtentPoint32W(dc, ws.c_str(), (int)ws.size(), &sz);
-    int w = (sz.cx > 0) ? sz.cx : 1;
-    int h = (sz.cy > 0) ? sz.cy : 1;
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth       = w;
-    bmi.bmiHeader.biHeight      = -h;
-    bmi.bmiHeader.biPlanes      = 1;
-    bmi.bmiHeader.biBitCount    = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-    void*   bits = nullptr;
-    HBITMAP bmp  = CreateDIBSection(dc, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
-    SelectObject(dc, bmp);
-    SelectObject(dc, hFont_);
-    SetBkMode(dc,   OPAQUE);
-    SetBkColor(dc,  RGB(0,   0,   0));
-    SetTextColor(dc, RGB(255, 255, 255));
-    TextOutW(dc, 0, 0, ws.c_str(), (int)ws.size());
-    GdiFlush();
-    std::vector<uint8_t> red(w * h);
-    auto* src = reinterpret_cast<uint8_t*>(bits);
-    for (int i = 0; i < w * h; i++) red[i] = src[i * 4 + 2];
-    GLuint tex = 0;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, red.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    DeleteObject(bmp);
-    DeleteDC(dc);
-    return cache_[ws] = Entry{tex, w, h};
-}
-
-inline void TextRenderer::Draw(const char* utf8, float x, float y, float scale,
-                               float r, float g, float b, float a)
-{
-    int n = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
-    std::wstring ws(n, 0);
-    MultiByteToWideChar(CP_UTF8, 0, utf8, -1, ws.data(), n);
-    if (!ws.empty() && ws.back() == L'\0') ws.pop_back();
-    Issue(Cache(ws), x, y, scale, r, g, b, a);
-}
-
-// Windows 빌드에서는 미사용 (InitWithFace 사용)
-inline bool TextRenderer::InitFromFiles(const char* const*, int, int, int sw, int sh)
-{ screenW_ = sw; screenH_ = sh; return InitGLPipeline(); }
-
-// ═══════════════════════ macOS / Linux (stb 글리프 아틀라스) ════════════════════
-#else
 
 inline bool TextRenderer::InitFromFiles(const char* const* ttfPaths, int nPaths,
                                         int ptSize, int sw, int sh)
 {
-    screenW_ = sw;  screenH_ = sh;
-    // GDI 의 점→픽셀 변환(pt × 96/72)에 맞춰 em 매핑 크기 보정 (한글 크기 일치)
-    emPx_ = (float)ptSize * (96.0f / 72.0f);
-
+    faces_.clear();
     faces_.reserve(nPaths);
     for (int i = 0; i < nPaths; i++) {
         FontFace face;
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable:4996)   // fopen (이 경로는 비-Windows 에서만 사용)
+#endif
         FILE* fp = std::fopen(ttfPaths[i], "rb");
+#ifdef _MSC_VER
+#  pragma warning(pop)
+#endif
         if (!fp) continue;
         std::fseek(fp, 0, SEEK_END);
         long len = std::ftell(fp);
@@ -329,15 +167,26 @@ inline bool TextRenderer::InitFromFiles(const char* const* ttfPaths, int nPaths,
             faces_.push_back(std::move(face));
         }
     }
-    if (faces_.empty()) return false;
+    return FinishInit(ptSize, sw, sh);
+}
 
-    // 주 폰트 기준 베이스라인/줄높이
-    float s0 = stbtt_ScaleForMappingEmToPixels(&faces_[0].info, emPx_);
-    int asc = 0, desc = 0, gap = 0;
-    stbtt_GetFontVMetrics(&faces_[0].info, &asc, &desc, &gap);
-    ascentPx_     = asc * s0;
-    lineHeightPx_ = (asc - desc) * s0;
-    return InitGLPipeline();
+inline bool TextRenderer::InitFromMemory(const unsigned char* const* datas,
+                                         const int* sizes, int nFonts,
+                                         int ptSize, int sw, int sh)
+{
+    faces_.clear();
+    faces_.reserve(nFonts);
+    for (int i = 0; i < nFonts; i++) {
+        if (!datas[i] || sizes[i] <= 0) continue;
+        FontFace face;
+        face.data.assign(datas[i], datas[i] + sizes[i]);   // 복사 (RCDATA 는 읽기전용)
+        int off = stbtt_GetFontOffsetForIndex(face.data.data(), 0);
+        if (stbtt_InitFont(&face.info, face.data.data(), off)) {
+            face.ok = true;
+            faces_.push_back(std::move(face));
+        }
+    }
+    return FinishInit(ptSize, sw, sh);
 }
 
 inline int TextRenderer::FaceForCodepoint(int cp) const
@@ -422,7 +271,7 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);
 
     float penX     = x;
-    float baseline = y + ascentPx_ * scale;   // y = 텍스트 상단 (GDI 와 동일 기준)
+    float baseline = y + ascentPx_ * scale;   // y = 텍스트 상단
     for (const wchar_t* p = text; *p; ++p) {
         Glyph& gph = GetGlyph((int)*p);
         if (gph.tex) {
@@ -468,5 +317,3 @@ inline void TextRenderer::Draw(const char* utf8, float x, float y, float scale,
     }
     Draw(ws.c_str(), x, y, scale, r, g, b, a);
 }
-
-#endif // _WIN32
