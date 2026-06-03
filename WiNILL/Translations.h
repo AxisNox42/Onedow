@@ -30,6 +30,7 @@ enum class StrId {
     GAME_TITLE,
     BTN_START,
     BTN_SETTINGS,
+    BTN_SHOP,
     BTN_QUIT,
     BTN_RESUME,
     BTN_RESTART,
@@ -162,6 +163,9 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
     },
     /* BTN_SETTINGS */ {
         L"설정", L"Settings", L"設定",
+    },
+    /* BTN_SHOP */ {
+        L"상점", L"Shop", L"ショップ",
     },
     /* BTN_QUIT */ {
         L"종료", L"Quit", L"終了",

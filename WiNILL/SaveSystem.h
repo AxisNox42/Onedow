@@ -5,12 +5,15 @@
 // ─────────────────────────────────────────────────────────────
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include "Settings.h"
+#include "Meta.h"
 
 // 영구 데이터 (설정은 Settings.h 전역을 그대로 직렬화)
 inline long long g_BestScore[3] = { 0, 0, 0 };   // 난이도별 최고 점수 (EASY/NORMAL/HARD)
 inline long long g_TotalKills   = 0;             // 누적 처치 수
 inline long long g_TotalGames   = 0;             // 누적 플레이 횟수
+inline long long g_LastRunCoins = 0;             // 직전 판 획득 코인 (GAMEOVER 표시용)
 
 inline const char* SaveFilePath() { return "onedow_save.cfg"; }
 
@@ -34,6 +37,9 @@ inline void SaveGame() {
     std::fprintf(f, "best_hard=%lld\n",   g_BestScore[2]);
     std::fprintf(f, "kills=%lld\n",   g_TotalKills);
     std::fprintf(f, "games=%lld\n",   g_TotalGames);
+    std::fprintf(f, "coins=%lld\n",   g_Coins);
+    for (int i = 0; i < META_COUNT; i++)
+        std::fprintf(f, "meta%d=%d\n", i, g_MetaLv[i]);
     std::fclose(f);
 }
 
@@ -69,6 +75,11 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val;
         else if (!std::strcmp(key, "kills"))       g_TotalKills        = val;
         else if (!std::strcmp(key, "games"))       g_TotalGames        = val;
+        else if (!std::strcmp(key, "coins"))       g_Coins             = val;
+        else if (!std::strncmp(key, "meta", 4)) {
+            int mi = atoi(key + 4);
+            if (mi >= 0 && mi < META_COUNT) g_MetaLv[mi] = (int)val;
+        }
     }
     std::fclose(f);
 }
@@ -80,6 +91,11 @@ inline bool RecordRunResult(int difficultyIdx, long long score, long long kills)
     if (isRecord) g_BestScore[difficultyIdx] = score;
     g_TotalKills += kills;
     g_TotalGames += 1;
+    // 코인 적립 — 점수/1000 + 처치/2 (난이도 보너스: 보통×1.2, 어려움×1.5)
+    float diffMul = (difficultyIdx == 2) ? 1.5f : (difficultyIdx == 1) ? 1.2f : 1.0f;
+    long long earned = (long long)((score / 1000 + kills / 2) * diffMul);
+    g_Coins += earned;
+    g_LastRunCoins = earned;
     SaveGame();
     return isRecord;
 }

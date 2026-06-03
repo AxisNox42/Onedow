@@ -247,6 +247,7 @@ int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1
 float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
 bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
 bool  g_LastRunRecord   = false;  // 직전 판이 신기록이었는지 (GAMEOVER 표시용)
+int   g_MetaStartAugs   = 0;      // 메타 해금: 시작 무료 증강 픽 횟수
 
 // ── 피격 시 창(시야) 축소 기믹 ── 체력 비율에 따라 창 크기 변동 + 피격 펀치
 float g_WindowSizeCur = 0.0f;     // 현재 애니메이션 창 크기 (0 = 미초기화)
@@ -698,6 +699,7 @@ int main() {
         // 새 게임 리셋 람다 (GAMEOVER → READY, 난이도 선택 후, 다시하기 버튼 등에서 호출)
         auto ResetForNewGame = [&]() {
             g_Stats        = PlayerStats();
+            g_MetaStartAugs = ApplyMeta(g_Stats);    // 메타 영구 업그레이드 적용
             g_Orb          = BrokenSightOrb{};
             g_ApproachOrbs.clear();
             for (int d = 0; d < MAX_DRONES;   d++) g_Drones[d]   = DroneState{};
@@ -3393,23 +3395,67 @@ int main() {
                 g_TextL.Draw(TIT, cx(TIT, g_TextL, 2.4f), sh*0.18f, 2.4f,
                              0.9f, 0.95f, 1.0f, 1.0f);
 
-                // 버튼 3개
-                const float BW = 320.0f, BH = 70.0f, BG = 20.0f;
+                // 버튼 4개 (시작 / 상점 / 설정 / 종료)
+                const float BW = 320.0f, BH = 64.0f, BG = 16.0f;
                 float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.40f;
+                float by = sh * 0.38f;
 
                 if (UIButton(bx, by, BW, BH, T(StrId::BTN_START),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
                 }
-                if (UIButton(bx, by + (BH+BG), BW, BH, T(StrId::BTN_SETTINGS),
+                if (UIButton(bx, by + (BH+BG), BW, BH, T(StrId::BTN_SHOP),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::SHOP;
+                }
+                if (UIButton(bx, by + (BH+BG)*2, BW, BH, T(StrId::BTN_SETTINGS),
                              mx, my, lmb, g_LmbPrev)) {
                     g_SettingsReturnTo = GameState::MAIN_MENU;
                     g_GameManager.currentState = GameState::SETTINGS;
                 }
-                if (UIButton(bx, by + (BH+BG)*2, BW, BH, T(StrId::BTN_QUIT),
+                if (UIButton(bx, by + (BH+BG)*3, BW, BH, T(StrId::BTN_QUIT),
                              mx, my, lmb, g_LmbPrev)) {
                     glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
+            }
+            // ── 메타 상점 (코인 → 영구 업그레이드) ──────────────────
+            else if (st == GameState::SHOP) {
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
+                const wchar_t* TIT = T(StrId::BTN_SHOP);
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.08f, 1.6f, 1,1,1,1);
+                // 보유 코인
+                wchar_t cbuf[48]; swprintf_s(cbuf, L"COIN  %lld", g_Coins);
+                g_TextL.Draw(cbuf, cx(cbuf, g_TextL, 1.1f), sh*0.16f, 1.1f, 1.0f, 0.9f, 0.3f, 1.0f);
+
+                const float RW = 640.0f, RH = 58.0f, RG = 12.0f;
+                float rx = (sw - RW) * 0.5f, ry0 = sh * 0.26f;
+                for (int i = 0; i < META_COUNT; i++) {
+                    float ry = ry0 + i * (RH + RG);
+                    drawRect(rx, ry, RW, RH, 0.07f, 0.07f, 0.11f, 0.9f);
+                    // 이름 + 레벨
+                    wchar_t nm[96];
+                    swprintf_s(nm, L"%ls   Lv %d/%d", MetaName(i), g_MetaLv[i], META_DEFS[i].maxLv);
+                    g_TextS.Draw(nm, rx + 16.0f, ry + 16.0f, 0.95f, 0.9f, 0.95f, 1.0f, 1.0f);
+                    // 구매 버튼
+                    long long cost = MetaNextCost(i);
+                    float btX = rx + RW - 170.0f;
+                    if (cost < 0) {
+                        g_TextS.Draw(L"MAX", btX + 50.0f, ry + 16.0f, 0.9f, 0.6f, 1.0f, 0.6f, 1.0f);
+                    } else {
+                        wchar_t bb[32]; swprintf_s(bb, L"%lld", cost);
+                        bool can = (g_Coins >= cost);
+                        if (UIButton(btX, ry + 6.0f, 154.0f, RH - 12.0f, bb,
+                                     mx, my, lmb, g_LmbPrev, false) && can) {
+                            g_Coins -= cost;
+                            g_MetaLv[i]++;
+                            SaveGame();
+                        }
+                    }
+                }
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::MAIN_MENU;
                 }
             }
             // ── 무기 선택 (시작 시 랜덤 3개) ──────────────────────
@@ -3445,9 +3491,11 @@ int main() {
                         g_GameManager.maxHP    = g_Stats.maxHP;
                         g_GameManager.playerHP = g_Stats.maxHP;
                         g_PrevHP               = g_Stats.maxHP;
-                        // 크리에이티브: 시작 증강 픽이 있으면 곧바로 증강 선택을 열기
-                        if (g_CreativeMode && g_CreativeStartAugs > 0) {
-                            g_BossRewardPicksLeft = g_CreativeStartAugs;
+                        // 시작 증강 픽 (메타 해금 + 크리에이티브) 있으면 증강 선택 열기
+                        int startAugs = g_MetaStartAugs +
+                                        ((g_CreativeMode) ? g_CreativeStartAugs : 0);
+                        if (startAugs > 0) {
+                            g_BossRewardPicksLeft = startAugs;
                             g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                          g_Stats.distAugTaken);
                             g_GameManager.currentState = GameState::AUG_SELECT;
@@ -3750,15 +3798,18 @@ int main() {
                 g_TextS.Draw(killBuf,  cx(killBuf,  g_TextS, 1.1f), sh*0.57f, 1.1f,
                              0.85f, 0.95f, 0.85f, 0.95f);
 
-                // 최고 점수 (난이도별) + 신기록 표시
-                wchar_t bestBuf[64];
+                // 최고 점수 (난이도별) + 신기록 + 획득 코인
+                wchar_t bestBuf[64], coinBuf[64];
                 swprintf_s(bestBuf, L"BEST   %lld", g_BestScore[(int)g_Difficulty]);
                 g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.62f, 1.1f,
                              1.0f, 0.85f, 0.4f, 0.95f);
+                swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
+                g_TextS.Draw(coinBuf, cx(coinBuf, g_TextS, 1.0f), sh*0.665f, 1.0f,
+                             1.0f, 0.9f, 0.3f, 0.95f);
                 if (g_LastRunRecord) {
                     const wchar_t* rec = L"★ NEW RECORD ★";
                     float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
-                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.66f, 1.0f,
+                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.37f, 1.0f,
                                  1.0f, 0.9f, 0.2f, blink);
                 }
 
