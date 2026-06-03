@@ -3432,6 +3432,7 @@ int main() {
                 float rx = (sw - RW) * 0.5f, ry0 = sh * 0.26f;
                 for (int i = 0; i < META_COUNT; i++) {
                     float ry = ry0 + i * (RH + RG);
+                    BindMainShader();   // 직전 행의 텍스트 셰이더 뒤 → 사각형 셰이더 복원
                     drawRect(rx, ry, RW, RH, 0.07f, 0.07f, 0.11f, 0.9f);
                     // 이름 + 레벨
                     wchar_t nm[96];
@@ -3445,11 +3446,20 @@ int main() {
                     } else {
                         wchar_t bb[32]; swprintf_s(bb, L"%lld", cost);
                         bool can = (g_Coins >= cost);
-                        if (UIButton(btX, ry + 6.0f, 154.0f, RH - 12.0f, bb,
-                                     mx, my, lmb, g_LmbPrev, false) && can) {
-                            g_Coins -= cost;
-                            g_MetaLv[i]++;
-                            SaveGame();
+                        if (can) {
+                            if (UIButton(btX, ry + 6.0f, 154.0f, RH - 12.0f, bb,
+                                         mx, my, lmb, g_LmbPrev, false)) {
+                                g_Coins -= cost;
+                                g_MetaLv[i]++;
+                                SaveGame();
+                            }
+                        } else {
+                            // 코인 부족 — 빨간 비활성 박스 (클릭 불가)
+                            BindMainShader();
+                            drawRect(btX, ry + 6.0f, 154.0f, RH - 12.0f, 0.18f, 0.06f, 0.06f, 0.9f);
+                            float tw = g_TextS.Width(bb, 0.9f);
+                            g_TextS.Draw(bb, btX + (154.0f - tw) * 0.5f, ry + 18.0f, 0.9f,
+                                         0.95f, 0.4f, 0.4f, 1.0f);
                         }
                     }
                 }
@@ -3741,8 +3751,13 @@ int main() {
             else if (st == GameState::READY) {
                 const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
                 const wchar_t* T2 = T(StrId::ESC_QUIT);
-                g_TextL.Draw(T1, cx(T1, g_TextL, 1.0f), sh*0.45f, 1.0f, 1,1,1,0.95f);
-                g_TextS.Draw(T2, cx(T2, g_TextS, 1.0f), sh*0.53f, 1.0f, 0.8f,0.8f,0.8f,0.8f);
+                g_TextL.Draw(T1, cx(T1, g_TextL, 1.0f), sh*0.42f, 1.0f, 1,1,1,0.95f);
+                g_TextS.Draw(T2, cx(T2, g_TextS, 1.0f), sh*0.50f, 1.0f, 0.8f,0.8f,0.8f,0.8f);
+                // 조작 안내 (키는 언어 무관 — 새 플레이어가 스킬/대시 존재를 알게)
+                const wchar_t* CTRL =
+                    L"WASD Move    Mouse Fire    SHIFT Dash    Q/E/R Skills    ESC Pause";
+                g_TextS.Draw(CTRL, cx(CTRL, g_TextS, 0.9f), sh*0.62f, 0.9f,
+                             0.55f, 0.85f, 1.0f, 0.95f);
             }
             else if (st == GameState::PAUSED) {
                 // 전체 화면 딤 — 보스 창/엔티티가 메뉴 뒤로 비치지 않게
