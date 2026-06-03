@@ -58,6 +58,12 @@ struct PlayerStats {
     bool  hackBomber   = false;  // 자폭병 처치 20% 폭발
     bool  hackRanged   = false;  // 원거리 처치 20% 유도탄 5
     bool  shotgun      = false;  // 5발 산탄 / 사거리 700
+    // ── 핵앤슬래쉬 ──
+    int   critChance   = 0;       // 치명타 확률 (%) — 25%/스택
+    float critMult     = 2.5f;    // 치명타 데미지 배율
+    float lifestealPerKill = 0.0f;// 처치당 회복 HP (흡혈탄)
+    bool  berserk      = false;   // 체력 낮을수록 공격력 ↑ (최대 +60%)
+    bool  deathBlast   = false;   // 적 사망 시 주변 폭발
 
     // ── 희귀/전설 (티어드) ───────────────────────────────
     bool  drone        = false;
@@ -94,6 +100,8 @@ struct PlayerStats {
     float bomberBlastMult = 1.0f;
     // 잡몹 HP 디버프
     float monsterHpMult   = 1.0f;
+    // 핵앤슬래쉬 디버프
+    float bleedPerSec     = 0.0f;  // 초당 HP 감소 (출혈)
 
     // ── 런타임 ──────────────────────────────────────────
     float siegeBonus    = 0.0f;  // 시즈탱크 누적 보너스 (외부에서 갱신)
@@ -217,6 +225,22 @@ struct PlayerStats {
         case AugType::MK2:         mk2        = true; break;
         case AugType::HACK_BOMBER: hackBomber = true; break;
 
+        // ── 핵앤슬래쉬 (희귀) ──
+        case AugType::CRIT:
+            critChance = std::min(100, critChance + 25);  // 25%/스택, 최대 100%
+            critMult   = 2.5f;
+            break;
+        case AugType::LIFESTEAL:
+            lifestealPerKill += 0.5f;   // 처치당 HP +0.5
+            break;
+        case AugType::BERSERK:
+            berserk = true;             // 체력 낮을수록 공격력 ↑ (발사 시 반영)
+            break;
+        // ── 핵앤슬래쉬 (에픽) ──
+        case AugType::DEATH_BLAST:
+            deathBlast = true;          // 적 사망 시 주변 폭발
+            break;
+
         // ── 희귀: 탄환세례 / 드론 ──
         case AugType::BULLET_RAIN:
             bulletRain          = true;
@@ -337,6 +361,15 @@ struct PlayerStats {
         case AugType::D_SLOW_MOVE:
             moveSpeedMult   *= 0.95f;
             xpMult          *= 1.10f;      // (너프: 20% → 10%)
+            break;
+        // ── 핵앤슬래쉬 디버프 ──
+        case AugType::D_BLEED:
+            bleedPerSec     += 0.8f;       // 초당 HP -0.8
+            xpMult          *= 1.12f;
+            break;
+        case AugType::D_WEAKEN:
+            damageMultiplier *= 0.88f;     // 공격력 -12%
+            xpMult           *= 1.10f;
             break;
 
         // ── 특수 ──

@@ -892,10 +892,16 @@ int main() {
             if (g_DyingTimer <= 0.0f) {
                 g_GameManager.currentState = GameState::GAMEOVER;
                 g_DyingTimer = 0.0f;
-                // 기록 저장 — 난이도별 최고점/누적 통계 갱신 (신기록이면 표시)
-                g_LastRunRecord = RecordRunResult((int)g_Difficulty,
-                                                  g_GameManager.score,
-                                                  g_Stats.killCount);
+                // 기록 저장 — 난이도별 최고점/누적/코인 갱신 (신기록이면 표시)
+                //   크리에이티브 모드(샌드박스)는 코인·기록 제외 (파밍 방지)
+                if (!g_CreativeMode) {
+                    g_LastRunRecord = RecordRunResult((int)g_Difficulty,
+                                                      g_GameManager.score,
+                                                      g_Stats.killCount);
+                } else {
+                    g_LastRunRecord = false;
+                    g_LastRunCoins  = 0;
+                }
             }
         }
 
@@ -1596,6 +1602,45 @@ int main() {
                                             m->color.r, m->color.g, m->color.b,
                                             /*big=*/false);
                         m->exploded = true;
+                        // 연쇄 폭발(DEATH_BLAST) — 사망 위치에서 주변 적에게 AoE
+                        //   (죽은 적은 이 루프 후반에서 다시 폭발 → 연쇄 반응)
+                        if (g_Stats.deathBlast) {
+                            float blastDmg = g_Stats.GetBaseDamage()
+                                           * g_Stats.GetDamageMultiplier(0.0f) * 0.8f;
+                            float blastR = 140.0f;
+                            float bx = m->worldX, by = m->worldY;
+                            SpawnShockWave(bx, by, blastR, 0.35f, 1.0f, 0.55f, 0.15f);
+                            for (auto m2 : g_MonsterManager.monsters) {
+                                if (!m2->alive || m2 == m) continue;
+                                float ddx = m2->worldX - bx, ddy = m2->worldY - by;
+                                if (ddx*ddx + ddy*ddy < blastR*blastR) {
+                                    m2->hp -= blastDmg;
+                                    if (m2->hp <= 0.0f) m2->alive = false;
+                                }
+                            }
+                            for (auto r2 : g_MonsterManager.rangedMobs) {
+                                if (!r2->alive) continue;
+                                float ddx = r2->worldX - bx, ddy = r2->worldY - by;
+                                if (ddx*ddx + ddy*ddy < blastR*blastR) {
+                                    r2->hp -= blastDmg;
+                                    if (r2->hp <= 0.0f) r2->alive = false;
+                                }
+                            }
+                            for (auto bm2 : g_MonsterManager.bombers) {
+                                if (!bm2->alive) continue;
+                                float ddx = bm2->worldX - bx, ddy = bm2->worldY - by;
+                                if (ddx*ddx + ddy*ddy < blastR*blastR) {
+                                    bm2->hp -= blastDmg;
+                                    if (bm2->hp <= 0.0f) bm2->alive = false;
+                                }
+                            }
+                            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                                float ddx = g_MonsterManager.boss->worldX - bx;
+                                float ddy = g_MonsterManager.boss->worldY - by;
+                                if (ddx*ddx + ddy*ddy < blastR*blastR)
+                                    g_MonsterManager.boss->hp -= blastDmg;
+                            }
+                        }
                         if (m->kind == MobKind::SPLITTER && m->splitGen < 2) {
                             for (int c = 0; c < 2; c++) {
                                 Monster* ch = new Monster(m->worldX + (c?28:-28), m->worldY,
@@ -1884,6 +1929,11 @@ int main() {
                 g_GameManager.playerHP += g_Stats.regenPerSec * delta;
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
+            }
+            // 출혈(D_BLEED) — 초당 HP 감소 (재생으로 상쇄 가능, 죽지는 않음 하한 1)
+            if (g_Stats.bleedPerSec > 0.0f && g_GameManager.playerHP > 1.0f) {
+                g_GameManager.playerHP -= g_Stats.bleedPerSec * delta;
+                if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
             }
 
             // 적 사망 파티클 업데이트 (drag + 수명)
@@ -2350,6 +2400,14 @@ int main() {
                     nb.dmgMult *= 1.5f;
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
                 }
+                if (g_Stats.berserk) {             // 광전사 — 체력 낮을수록 최대 +60%
+                    float hpFrac = g_Stats.maxHP > 0.0f
+                                 ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                    if (hpFrac < 0.0f) hpFrac = 0.0f; else if (hpFrac > 1.0f) hpFrac = 1.0f;
+                    float bMult = 1.0f + (1.0f - hpFrac) * 0.6f;
+                    nb.dmgMult *= bMult;
+                    if (nb.remainingDmg > 0.0f) nb.remainingDmg *= bMult;
+                }
                 g_Bullets.push_back(nb);
             };
 
@@ -2382,6 +2440,14 @@ int main() {
                         if (g_OverclockTimer > 0.0f) {     // 과부하 +50%
                             nb.dmgMult *= 1.5f;
                             if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
+                        }
+                        if (g_Stats.berserk) {             // 광전사 — 체력 낮을수록 최대 +60%
+                            float hpFrac = g_Stats.maxHP > 0.0f
+                                         ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                            if (hpFrac < 0.0f) hpFrac = 0.0f; else if (hpFrac > 1.0f) hpFrac = 1.0f;
+                            float bMult = 1.0f + (1.0f - hpFrac) * 0.6f;
+                            nb.dmgMult *= bMult;
+                            if (nb.remainingDmg > 0.0f) nb.remainingDmg *= bMult;
                         }
                         g_Bullets.push_back(nb);
                     }

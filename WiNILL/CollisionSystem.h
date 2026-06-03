@@ -46,6 +46,14 @@ static inline bool RicochetTo(Bullet& b, float fromX, float fromY, MonsterManage
     return true;
 }
 
+// 치명타 굴림 — 갓 계산된(fresh) 데미지에만 적용. 성공 시 critMult, 실패 시 1.0
+static inline float CritRoll(const PlayerStats& stats, bool& isCrit) {
+    if (stats.critChance > 0 && (rand() % 100) < stats.critChance) {
+        isCrit = true;  return stats.critMult;
+    }
+    isCrit = false; return 1.0f;
+}
+
 class CollisionSystem {
 public:
     // 반환값: 이번 프레임에 플레이어가 피해를 받았는지 (LIGHT_STEP 타이머용)
@@ -81,6 +89,7 @@ public:
                                              glm::vec2(m->worldX, m->worldY));
                     // CANNON: remainingDmg / 포탑: turretDmg / 그 외: 일반 계산
                     float baseDealt;
+                    bool  isCrit = false;
                     if (b.remainingDmg > 0.0f) {
                         baseDealt = b.remainingDmg;
                     } else if (b.turretDmg > 0.0f) {
@@ -90,12 +99,12 @@ public:
                     } else {
                         baseDealt = stats.GetBaseDamage()
                                   * stats.GetDamageMultiplier(pd)
-                                  * b.dmgMult;
+                                  * b.dmgMult * CritRoll(stats, isCrit);
                     }
                     float dealtThisHit = (baseDealt < m->hp) ? baseDealt : m->hp;
                     m->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
-                    SpawnDamageNumber(m->worldX, m->worldY, dealtThisHit, dealtThisHit >= 40.0f);
+                    SpawnDamageNumber(m->worldX, m->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
 
                     if (m->hp <= 0.0f) {
                         m->alive = false;
@@ -121,6 +130,10 @@ public:
                                 if (playerHP > stats.maxHP)
                                     playerHP = stats.maxHP;
                             }
+                        }
+                        if (stats.lifestealPerKill > 0.0f) {
+                            playerHP += stats.lifestealPerKill;
+                            if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                         }
                     }
 
@@ -151,16 +164,17 @@ public:
                         float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                                  glm::vec2(bm->worldX, bm->worldY));
                         float baseDealt;
+                        bool  isCrit = false;
                         if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
                         else if (b.turretDmg > 0.0f) baseDealt = b.turretDmg;
                         else if (b.lockedDmg > 0.0f) baseDealt = b.lockedDmg;
                         else baseDealt = stats.GetBaseDamage()
                                        * stats.GetDamageMultiplier(pd)
-                                       * b.dmgMult;
+                                       * b.dmgMult * CritRoll(stats, isCrit);
                         float dealtThisHit = (baseDealt < bm->hp) ? baseDealt : bm->hp;
                         bm->hp -= dealtThisHit;
                         if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
-                        SpawnDamageNumber(bm->worldX, bm->worldY, dealtThisHit, dealtThisHit >= 40.0f);
+                        SpawnDamageNumber(bm->worldX, bm->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
                         if (bm->hp <= 0.0f) {
                             bm->alive = false;
                             AddKillCombo();
@@ -179,6 +193,10 @@ public:
                                     if (playerHP > stats.maxHP)
                                         playerHP = stats.maxHP;
                                 }
+                            }
+                            if (stats.lifestealPerKill > 0.0f) {
+                                playerHP += stats.lifestealPerKill;
+                                if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                             }
                             // HACK_BOMBER: 20% 확률 폭발 (적에게만 피해, VFX는 main.cpp 에서)
                             if (stats.hackBomber && (rand() % 100) < 20) {
@@ -245,16 +263,17 @@ public:
                     float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                              glm::vec2(bs->worldX, bs->worldY));
                     float baseDealt;
+                    bool  isCrit = false;
                     if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
                     else if (b.turretDmg > 0.0f) baseDealt = b.turretDmg;
                     else if (b.lockedDmg > 0.0f) baseDealt = b.lockedDmg;
                     else baseDealt = stats.GetBaseDamage()
                                    * stats.GetDamageMultiplier(pd)
-                                   * b.dmgMult;
+                                   * b.dmgMult * CritRoll(stats, isCrit);
                     float dealtThisHit = (baseDealt < bs->hp) ? baseDealt : bs->hp;
                     bs->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
-                    SpawnDamageNumber(bs->worldX, bs->worldY, dealtThisHit, dealtThisHit >= 40.0f);
+                    SpawnDamageNumber(bs->worldX, bs->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
                     if (bs->hp <= 0.0f) {
                         bs->alive = false; // 보상/연출은 main 에서 처리
                     }
@@ -282,6 +301,7 @@ public:
                         float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                                  glm::vec2(r->worldX, r->worldY));
                         float baseDealt;
+                        bool  isCrit = false;
                         if (b.remainingDmg > 0.0f) {
                             baseDealt = b.remainingDmg;
                         } else if (b.turretDmg > 0.0f) {
@@ -291,12 +311,12 @@ public:
                         } else {
                             baseDealt = stats.GetBaseDamage()
                                       * stats.GetDamageMultiplier(pd)
-                                      * b.dmgMult;
+                                      * b.dmgMult * CritRoll(stats, isCrit);
                         }
                         float dealtThisHit = (baseDealt < r->hp) ? baseDealt : r->hp;
                         r->hp -= dealtThisHit;
                         if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
-                        SpawnDamageNumber(r->worldX, r->worldY, dealtThisHit, dealtThisHit >= 40.0f);
+                        SpawnDamageNumber(r->worldX, r->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
 
                         if (r->hp <= 0.0f) {
                             r->alive = false;
@@ -316,6 +336,10 @@ public:
                                     if (playerHP > stats.maxHP)
                                         playerHP = stats.maxHP;
                                 }
+                            }
+                            if (stats.lifestealPerKill > 0.0f) {
+                                playerHP += stats.lifestealPerKill;
+                                if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                             }
                             // HACK_RANGED: 20% 확률 유도탄 5발 (적에게만 피해 — player bullet)
                             if (stats.hackRanged && (rand() % 100) < 20) {

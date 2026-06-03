@@ -9,6 +9,7 @@ enum class AugType {
     GLASS_CANNON, LIGHT_AMMO, LIGHT_STEP, GUN_RUNNER,
     BULLET_RAIN,
     CANNON,                // 전설 → 희귀
+    CRIT, LIFESTEAL, BERSERK,   // 핵앤슬래쉬 (치명타/흡혈/광전사)
     // ── 에픽 ──
     VAMPIRE, BROKEN_SIGHT, SNIPER, BAYONET,
     MINIATURIZE, GIGANTIFY, PIERCE, TWIN, CHAKRAM,
@@ -16,6 +17,7 @@ enum class AugType {
     DRONE,                 // 희귀 → 에픽
     MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
     PROB_CHAIN,            // 확률적 연쇄 작용 (30% 3튕김)
+    DEATH_BLAST,           // 연쇄 폭발 (적 사망 시 폭발)
     SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 과부하)
     // ── 전설 ──
     RANDOM_AUG, SOUL_HARVEST,
@@ -30,6 +32,7 @@ enum class AugType {
     D_BOMBER_BLAST, D_BOMBER_BUFF, D_BOMBER_SPEED,   // 신규
     D_MOB_HP, D_SLOW_MOVE,                            // 신규
     D_SPLITTER, D_BLINKER,                            // 신규 적 — 분열체 / 점멸체
+    D_BLEED, D_WEAKEN,                                // 출혈 / 약화
     // ── 특수 (2) ──────────────────────────────
     S_CHAOS, S_PANDORA,
     // ── deprecated (ALL_AUGS 에서 제외, 코드는 남음) ──
@@ -108,6 +111,21 @@ static const AugDef ALL_AUGS[] = {
       { L"15초마다 유도탄 20발 일제 발사  /  발당 데미지 50%",
         L"Every 15s fire 20 homing shots  /  50% dmg each",
         L"15秒ごとに誘導弾20発  /  1発50%ダメージ" } },
+    { AugType::CRIT,          AugRarity::RARE,      AugUnique::NONE, "CRIT",
+      { L"치명타", L"Critical Strike", L"クリティカル" },
+      { L"25% 확률로 치명타 (피해 ×2.5)  (중첩 시 확률 +25%)",
+        L"25% chance to crit (×2.5 dmg)  (stacks +25%)",
+        L"25%でクリティカル (×2.5)  (重複で+25%)" } },
+    { AugType::LIFESTEAL,     AugRarity::RARE,      AugUnique::NONE, "LIFESTEAL",
+      { L"흡혈탄", L"Lifesteal", L"吸血弾" },
+      { L"적 처치마다 체력 0.5 회복  (중첩 가능)",
+        L"Heal 0.5 HP per kill  (stackable)",
+        L"撃破毎に体力0.5回復  (重複可)" } },
+    { AugType::BERSERK,       AugRarity::RARE,      AugUnique::NONE, "BERSERK",
+      { L"광전사", L"Berserker", L"バーサーカー" },
+      { L"체력이 낮을수록 공격력 증가  (최대 +60% · 빈사 시)",
+        L"Lower HP = more attack  (up to +60% near death)",
+        L"低HPほど攻撃力上昇  (瀕死時 最大+60%)" } },
 
     // ── 에픽 ───────────────────────────────────────────
     { AugType::VAMPIRE,       AugRarity::EPIC,      AugUnique::NONE, "VAMPIRE",
@@ -174,6 +192,11 @@ static const AugDef ALL_AUGS[] = {
       { L"명중 시 30% 확률로 가까운 적에게 튕김  (최대 3회 · 뮤탈 글레이브)",
         L"On hit, 30% chance to ricochet to nearest enemy  (up to 3x)",
         L"命中時30%で近い敵に跳弾  (最大3回)" } },
+    { AugType::DEATH_BLAST,   AugRarity::EPIC,      AugUnique::NONE, "DEATHBLAST",
+      { L"연쇄 폭발", L"Death Blast", L"連鎖爆発" },
+      { L"적 처치 시 폭발 — 주변 적에게 공격력 비례 피해 (디아블로식 청소)",
+        L"On kill, explode — ATK-scaled damage to nearby enemies",
+        L"撃破時に爆発 — 周囲の敵に攻撃力比例ダメージ" } },
     { AugType::SKILL_CLOSE,   AugRarity::EPIC,      AugUnique::NONE, "SKILL_CLOSE",
       { L"[스킬] 창 닫기", L"[Skill] Close Window", L"[スキル] ウィンドウを閉じる" },
       { L"액티브 스킬 획득 — 플레이어 중심 대폭발(넉백+피해)  (쿨 16초)",
@@ -303,6 +326,14 @@ static const AugDef ALL_AUGS[] = {
       { L"일부 잡몹이 점멸체로 등장 (잔상 경고 후 플레이어 쪽으로 순간이동) · 처치 EXP +6",
         L"Some mobs become blinkers (teleport toward you after a ghost telegraph) · kill EXP +6",
         L"一部の雑魚が点滅体に (残像予告後プレイヤーへ瞬間移動)・撃破EXP +6" } },
+    { AugType::D_BLEED,       AugRarity::DEBUFF,    AugUnique::NONE, "D_BLEED",
+      { L"출혈", L"Bleed", L"出血" },
+      { L"초당 체력 0.8 감소 (회복으로 상쇄 가능) · 전체 EXP +12%",
+        L"Lose 0.8 HP/s (regen can offset) · all EXP +12%",
+        L"毎秒 体力0.8減少 (回復で相殺可)・全EXP +12%" } },
+    { AugType::D_WEAKEN,      AugRarity::DEBUFF,    AugUnique::NONE, "D_WEAKEN",
+      { L"약화", L"Weaken", L"弱体化" },
+      { L"공격력 -12% · 전체 EXP +10%", L"Attack -12% · all EXP +10%", L"攻撃力 -12%・全EXP +10%" } },
 
     // ── 특수 ───────────────────────────────────────────
     { AugType::S_CHAOS,       AugRarity::SPECIAL,   AugUnique::NONE, "CHAOS",
@@ -315,7 +346,7 @@ static const AugDef ALL_AUGS[] = {
       { L"버프 3개 + 디버프 2개 즉시 획득", L"Instantly gain 3 buffs + 2 debuffs", L"バフ3個 + デバフ2個を即獲得" } },
 };
 
-static constexpr int AUG_TOTAL = 54;  // +연쇄x2·분열체·점멸체·스킬3
+static constexpr int AUG_TOTAL = 60;  // +연쇄x2·분열체·점멸체·스킬3·핵앤슬래쉬6
 
 // 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
