@@ -204,6 +204,11 @@ struct PlayerStats {
             ricochetChance = 100;
             ricochetDmgMult *= 0.70f;
             break;
+        // 액티브 스킬 — 장착은 main.cpp(EquipSkill)에서 처리, 스탯 변화 없음
+        case AugType::SKILL_CLOSE:
+        case AugType::SKILL_OVERCLOCK:
+        case AugType::SKILL_TIMESTOP:
+            break;
         case AugType::SHOTGUN:
             shotgun      = true;
             distAugTaken = true;

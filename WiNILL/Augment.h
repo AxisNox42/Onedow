@@ -16,11 +16,13 @@ enum class AugType {
     DRONE,                 // 희귀 → 에픽
     MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
     PROB_CHAIN,            // 확률적 연쇄 작용 (30% 3튕김)
+    SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 과부하)
     // ── 전설 ──
     RANDOM_AUG, SOUL_HARVEST,
     BULLET_RAIN_3, DRONE_2, CHAKRAM_3,
     MK2, HACK_BOMBER,                  // 신규
     CHAIN,                 // 연쇄 작용 (무조건 2튕김, -30% 데미지)
+    SKILL_TIMESTOP,        // 액티브 스킬 (시간 정지)
     // ── 디버프 ──
     D_RMOB_MAX, D_RMOB_HP, D_RMOB_DELAY,
     D_MOB_SPAWN, D_APPROACH, D_MOB_SPEED,
@@ -172,6 +174,16 @@ static const AugDef ALL_AUGS[] = {
       { L"명중 시 30% 확률로 가까운 적에게 튕김  (최대 3회 · 뮤탈 글레이브)",
         L"On hit, 30% chance to ricochet to nearest enemy  (up to 3x)",
         L"命中時30%で近い敵に跳弾  (最大3回)" } },
+    { AugType::SKILL_CLOSE,   AugRarity::EPIC,      AugUnique::NONE, "SKILL_CLOSE",
+      { L"[스킬] 창 닫기", L"[Skill] Close Window", L"[スキル] ウィンドウを閉じる" },
+      { L"액티브 스킬 획득 — 플레이어 중심 대폭발(넉백+피해)  (쿨 16초)",
+        L"Active skill — explosion at the player (knockback+dmg)  (16s CD)",
+        L"アクティブスキル — 自分中心の大爆発(ノックバック+ダメージ)  (CD16秒)" } },
+    { AugType::SKILL_OVERCLOCK,AugRarity::EPIC,     AugUnique::NONE, "SKILL_OVCLK",
+      { L"[스킬] 과부하", L"[Skill] Overclock", L"[スキル] オーバークロック" },
+      { L"액티브 스킬 획득 — 5초간 연사 ×2 · 공격력 +50%  (쿨 20초)",
+        L"Active skill — 5s: fire rate x2, attack +50%  (20s CD)",
+        L"アクティブスキル — 5秒間 連射×2・攻撃+50%  (CD20秒)" } },
 
     // ── 전설 ───────────────────────────────────────────
     { AugType::RANDOM_AUG,    AugRarity::LEGENDARY, AugUnique::NONE, "RANDOM",
@@ -199,6 +211,11 @@ static const AugDef ALL_AUGS[] = {
       { L"모든 총알이 무조건 2회 튕김  /  총알 공격력 -30%",
         L"All bullets always ricochet 2x  /  bullet damage -30%",
         L"全弾が必ず2回跳弾  /  弾ダメージ -30%" } },
+    { AugType::SKILL_TIMESTOP,AugRarity::LEGENDARY, AugUnique::NONE, "SKILL_TSTOP",
+      { L"[스킬] 시간 정지", L"[Skill] Time Stop", L"[スキル] 時間停止" },
+      { L"액티브 스킬 획득 — 1.5초간 적·적탄막 정지 (나는 계속 행동)  (쿨 28초)",
+        L"Active skill — freeze enemies & enemy bullets 1.5s  (28s CD)",
+        L"アクティブスキル — 1.5秒 敵と敵弾を停止  (CD28秒)" } },
     { AugType::BULLET_RAIN_3, AugRarity::LEGENDARY, AugUnique::NONE, "BULLETRAIN III",
       { L"탄환 세례 III", L"Bullet Rain III", L"弾幕の雨 III" },
       { L"탄환 세례 쿨다운 10초 → 5초  (요구: 탄환 세례 II)",
@@ -298,7 +315,7 @@ static const AugDef ALL_AUGS[] = {
       { L"버프 3개 + 디버프 2개 즉시 획득", L"Instantly gain 3 buffs + 2 debuffs", L"バフ3個 + デバフ2個を即獲得" } },
 };
 
-static constexpr int AUG_TOTAL = 51;  // +확률적연쇄·연쇄·분열체·점멸체
+static constexpr int AUG_TOTAL = 54;  // +연쇄x2·분열체·점멸체·스킬3
 
 // 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {

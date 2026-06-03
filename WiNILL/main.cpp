@@ -247,6 +247,47 @@ int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1
 float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
 bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
 bool  g_LastRunRecord   = false;  // 직전 판이 신기록이었는지 (GAMEOVER 표시용)
+
+// ── 액티브 스킬 시스템 — 대시(기본) + 슬롯 3개(증강 획득, 꽉 차면 교체) ──
+enum class SkillType { NONE, CLOSE_WINDOW, OVERCLOCK, TIME_STOP };
+struct SkillSlot { SkillType type = SkillType::NONE; float cd = 0.0f; }; // cd = 남은 쿨다운
+SkillSlot g_Skills[3];
+int   g_SkillReplaceIdx = 0;       // 슬롯 꽉 찼을 때 교체할 슬롯(순환)
+float g_DashCd        = 0.0f;      // 대시 쿨다운
+float g_DashInvuln    = 0.0f;      // 대시 무적 잔여
+float g_TimeStopTimer = 0.0f;      // >0 = 적·적탄 정지 중
+float g_OverclockTimer= 0.0f;      // >0 = 연사/공격력 버프 중
+
+static constexpr float DASH_CD = 3.5f, DASH_DIST = 300.0f, DASH_INVULN = 0.25f;
+static constexpr float TIMESTOP_DUR = 1.5f, OVERCLOCK_DUR = 5.0f;
+
+static float SkillCooldownMax(SkillType t) {
+    switch (t) {
+    case SkillType::CLOSE_WINDOW: return 16.0f;
+    case SkillType::OVERCLOCK:    return 20.0f;
+    case SkillType::TIME_STOP:    return 28.0f;
+    default:                      return 0.0f;
+    }
+}
+static SkillType SkillForAug(AugType a) {
+    if (a == AugType::SKILL_CLOSE)     return SkillType::CLOSE_WINDOW;
+    if (a == AugType::SKILL_OVERCLOCK) return SkillType::OVERCLOCK;
+    if (a == AugType::SKILL_TIMESTOP)  return SkillType::TIME_STOP;
+    return SkillType::NONE;
+}
+static void EquipSkill(SkillType t) {
+    if (t == SkillType::NONE) return;
+    for (int i = 0; i < 3; i++) if (g_Skills[i].type == t) return;      // 이미 보유
+    for (int i = 0; i < 3; i++) if (g_Skills[i].type == SkillType::NONE) {
+        g_Skills[i] = { t, 0.0f }; return; }
+    g_Skills[g_SkillReplaceIdx] = { t, 0.0f };                          // 꽉 참 → 순환 교체
+    g_SkillReplaceIdx = (g_SkillReplaceIdx + 1) % 3;
+}
+static void ResetSkills() {
+    for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
+    g_SkillReplaceIdx = 0; g_DashCd = 0; g_DashInvuln = 0;
+    g_TimeStopTimer = 0; g_OverclockTimer = 0;
+}
 // 보스 생존 동안 화면 전체를 보스 고유색으로 점점 물들이는 연출
 float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
 glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
@@ -689,6 +730,7 @@ int main() {
             g_SlimeEncounter = false;
             g_BossTintT = 0.0f;
             ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱 초기화
+            ResetSkills();                           // 액티브 스킬/대시 초기화
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
@@ -917,6 +959,8 @@ int main() {
 
                 g_Stats.Apply(atype);
                 g_OwnedAugs.push_back(idx);
+                // 액티브 스킬 증강이면 슬롯에 장착 (꽉 차면 순환 교체)
+                EquipSkill(SkillForAug(atype));
 
                 // 조합: CANNON + DRONE_2 → 포탑 배치 (드론 공전 대체)
                 if (g_Stats.cannon && g_Stats.drone && g_Stats.droneCount >= 2
@@ -1181,6 +1225,74 @@ int main() {
                 playerWin.x = pCX - playerWin.width  * 0.5f;
                 playerWin.y = pCY - playerWin.height * 0.5f;
 
+                // ── 액티브 스킬 — 쿨다운/지속 갱신 + 입력(Shift 대시 / Q·E·R 슬롯) ──
+                if (g_DashCd > 0.0f)        g_DashCd        -= FIXED_DT;
+                if (g_DashInvuln > 0.0f)    g_DashInvuln    -= FIXED_DT;
+                if (g_TimeStopTimer > 0.0f) g_TimeStopTimer -= FIXED_DT;
+                if (g_OverclockTimer > 0.0f)g_OverclockTimer-= FIXED_DT;
+                for (int i = 0; i < 3; i++) if (g_Skills[i].cd > 0.0f) g_Skills[i].cd -= FIXED_DT;
+
+                // 창 닫기 — 플레이어 중심 폭발 (넉백 + 피해)
+                auto closeWindowBlast = [&](float cx, float cy) {
+                    float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 8.0f;
+                    float rad = 380.0f, r2 = rad * rad, knock = 130.0f;
+                    auto hitKB = [&](float& ex, float& ey, float& hp, bool& al) {
+                        float dx = ex - cx, dy = ey - cy, d2 = dx*dx + dy*dy;
+                        if (d2 < r2) { hp -= dmg; float d = std::sqrt(d2)+1e-3f;
+                            ex += dx/d*knock; ey += dy/d*knock; if (hp <= 0) al = false; }
+                    };
+                    for (auto m  : g_MonsterManager.monsters)   if (m->alive)  hitKB(m->worldX,  m->worldY,  m->hp,  m->alive);
+                    for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  hitKB(r->worldX,  r->worldY,  r->hp,  r->alive);
+                    for (auto bm : g_MonsterManager.bombers)    if (bm->alive) hitKB(bm->worldX, bm->worldY, bm->hp, bm->alive);
+                    for (auto* c : g_Slimelings)                if (c->alive) { float dx=c->worldX-cx,dy=c->worldY-cy; if(dx*dx+dy*dy<r2){c->hp-=dmg; if(c->hp<=0)c->alive=false;} }
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) { float dx=g_MonsterManager.boss->worldX-cx,dy=g_MonsterManager.boss->worldY-cy; if(dx*dx+dy*dy<r2){g_MonsterManager.boss->hp-=dmg; if(g_MonsterManager.boss->hp<=0)g_MonsterManager.boss->alive=false;} }
+                    if (g_GlitchBoss && g_GlitchBoss->alive) { float dx=g_GlitchBoss->worldX-cx,dy=g_GlitchBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_GlitchBoss->hp-=dmg; if(g_GlitchBoss->hp<=0)g_GlitchBoss->alive=false;} }
+                    if (g_RRBoss && g_RRBoss->alive) { float dx=g_RRBoss->worldX-cx,dy=g_RRBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_RRBoss->hp-=dmg; if(g_RRBoss->hp<=0)g_RRBoss->alive=false;} }
+                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) { float dx=g_PolyBoss->worldX-cx,dy=g_PolyBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_PolyBoss->hp-=dmg; if(g_PolyBoss->hp<=0)g_PolyBoss->alive=false;} }
+                    SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
+                    SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
+                    g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
+                    TriggerFlash(0.5f, 0.8f, 1.0f, 0.45f); TriggerHitStop(0.07f);
+                };
+
+                // 슬롯 스킬 발동 헬퍼
+                auto useSkill = [&](int slot) {
+                    if (slot < 0 || slot >= 3) return;
+                    SkillSlot& s = g_Skills[slot];
+                    if (s.type == SkillType::NONE || s.cd > 0.0f) return;
+                    switch (s.type) {
+                    case SkillType::CLOSE_WINDOW: closeWindowBlast(pCX, pCY); break;
+                    case SkillType::OVERCLOCK:    g_OverclockTimer = OVERCLOCK_DUR; break;
+                    case SkillType::TIME_STOP:    g_TimeStopTimer  = TIMESTOP_DUR;
+                                                  TriggerFlash(0.4f,0.9f,1.0f,0.4f); break;
+                    default: break;
+                    }
+                    s.cd = SkillCooldownMax(s.type);
+                };
+
+                // 입력 (엣지 검출)
+                static bool pDash=false, pQ=false, pE=false, pR=false;
+                bool cDash = keys[GLFW_KEY_LEFT_SHIFT] || keys[GLFW_KEY_RIGHT_SHIFT];
+                if (cDash && !pDash && g_DashCd <= 0.0f) {
+                    float ddx = mvX, ddy = mvY;
+                    if (mlen <= 0.001f) {              // 안 움직이면 조준 방향으로
+                        float ax = wmx - pCX, ay = wmy - pCY;
+                        float al = std::sqrt(ax*ax+ay*ay)+1e-3f; ddx = ax/al; ddy = ay/al;
+                    }
+                    float ox = pCX, oy = pCY;
+                    pCX += ddx * DASH_DIST; pCY += ddy * DASH_DIST;
+                    if (pCX < ccX-halfW) pCX = ccX-halfW; if (pCX > ccX+halfW) pCX = ccX+halfW;
+                    if (pCY < ccY-halfH) pCY = ccY-halfH; if (pCY > ccY+halfH) pCY = ccY+halfH;
+                    playerWin.x = pCX - playerWin.width*0.5f;
+                    playerWin.y = pCY - playerWin.height*0.5f;
+                    g_DashInvuln = DASH_INVULN; g_DashCd = DASH_CD;
+                    SpawnShockWave(ox, oy, 70.0f, 0.25f, 0.4f, 1.0f, 1.0f);
+                }
+                pDash = cDash;
+                bool cQ = keys[GLFW_KEY_Q]; if (cQ && !pQ) useSkill(0); pQ = cQ;
+                bool cE = keys[GLFW_KEY_E]; if (cE && !pE) useSkill(1); pE = cE;
+                bool cR = keys[GLFW_KEY_R]; if (cR && !pR) useSkill(2); pR = cR;
+
                 // 총알 이동 + 화면 밖 비활성화 (+ 유도탄 보정)
                 for (auto& b : g_Bullets) {
                     // 유도탄: 가장 가까운 적을 향해 점진적 방향 보정
@@ -1219,7 +1331,8 @@ int main() {
                             }
                         }
                     }
-                    b.Update(FIXED_DT);
+                    // 시간 정지: 적 총알은 멈춤 (플레이어 총알은 계속 이동)
+                    if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(FIXED_DT);
                     // 화면 밖 비활성화 — 줌아웃(폴리모프 2페이즈)되면 보이는 영역이
                     // 넓어지므로 경계도 같이 확장 (안 그러면 확장 구역에서 탄이 즉시 사라짐)
                     {
@@ -1232,22 +1345,28 @@ int main() {
                     }
                 }
 
-                // 몬스터 업데이트 (디버프 multiplier 적용)
+                // 대시 무적 — 이번 스텝 시작 HP 저장 (적 피해는 무효, 회복은 유지)
+                float hpAtStep = g_GameManager.playerHP;
+                bool  timeStopped = (g_TimeStopTimer > 0.0f);
+
+                // 몬스터 업데이트 (디버프 multiplier 적용) — 시간 정지 중엔 적 멈춤
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 → 더 빠름
-                g_MonsterManager.UpdateAll(pCX, pCY, FIXED_DT,
-                                           g_GameManager.playerHP, g_Bullets,
-                                           g_Stats.mobSpeedMult, rmobMoveMult);
+                if (!timeStopped)
+                    g_MonsterManager.UpdateAll(pCX, pCY, FIXED_DT,
+                                               g_GameManager.playerHP, g_Bullets,
+                                               g_Stats.mobSpeedMult, rmobMoveMult);
 
                 // 글리치 보스 업데이트 (페이즈 머신 + 세모 떼 + 레이저)
-                if (g_GlitchBoss && g_GlitchBoss->alive)
+                if (!timeStopped && g_GlitchBoss && g_GlitchBoss->alive)
                     g_GlitchBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP);
 
                 // 리로드 러너 업데이트 (무기 상태머신 + 장전 질주, 적 총알 push)
-                if (g_RRBoss && g_RRBoss->alive)
+                if (!timeStopped && g_RRBoss && g_RRBoss->alive)
                     g_RRBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
                 // 폴리모프 업데이트 (폼 변환 + 세모/레이저/차크람) + 페이즈2 화면 확장
                 if (g_PolyBoss && g_PolyBoss->alive) {
+                    if (!timeStopped)
                     g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
                     g_ViewZoomTarget = g_PolyBoss->phase2 ? 0.5f : 1.0f;
                     // ── 2페이즈 진입 연출 — 보스 포효 + 다중 충격파 (1회) ──
@@ -1285,7 +1404,7 @@ int main() {
                 if (!g_Slimelings.empty()) {
                     std::vector<Monster*> sink;
                     for (auto* c : g_Slimelings)
-                        if (c->alive)
+                        if (c->alive && !timeStopped)
                             c->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, sink);
                     for (auto* m : sink) delete m;   // chargeOnly 라 보통 비어있음
                 }
@@ -1296,6 +1415,9 @@ int main() {
                     g_GameManager.playerHP,
                     g_GameManager.scoreAccum, g_GameManager.score,
                     g_Stats, g_GameManager.xp);
+                // 대시 무적 — 이번 스텝의 적 피해 무효 (회복은 유지)
+                if (g_DashInvuln > 0.0f && g_GameManager.playerHP < hpAtStep)
+                    g_GameManager.playerHP = hpAtStep;
 
                 // 글리치 보스 + 미니 세모 vs 플레이어 총알 (스윕 판정)
                 if (g_GlitchBoss && g_GlitchBoss->alive) {
@@ -2147,6 +2269,8 @@ int main() {
             float effInterval = g_Stats.fireInterval * g_Stats.GetFireIntervalMult();
             // 대포: 연사 %는 공격력으로만 환산되고, 실제 발사는 1초 고정
             if (g_Stats.cannon) effInterval = 1.0f;
+            // 과부하 — 연사 ×2 (발사 간격 절반)
+            if (g_OverclockTimer > 0.0f) effInterval *= 0.5f;
             float effSpeed    = g_Stats.bulletSpeed   + g_Stats.GetBulletSpeedBonus();
             if (!g_Stats.turretMode) fireTimer += delta;
 
@@ -2176,6 +2300,10 @@ int main() {
                     nb.bouncesLeft = g_Stats.ricochetMax;
                     nb.dmgMult    *= g_Stats.ricochetDmgMult;
                 }
+                if (g_OverclockTimer > 0.0f) {     // 과부하 — 공격력 +50%
+                    nb.dmgMult *= 1.5f;
+                    if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
+                }
                 g_Bullets.push_back(nb);
             };
 
@@ -2204,6 +2332,10 @@ int main() {
                         if (g_Stats.ricochetMax > 0) {     // 연쇄 작용 — 샷건 펠릿도
                             nb.bouncesLeft = g_Stats.ricochetMax;
                             nb.dmgMult    *= g_Stats.ricochetDmgMult;
+                        }
+                        if (g_OverclockTimer > 0.0f) {     // 과부하 +50%
+                            nb.dmgMult *= 1.5f;
+                            if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
                         }
                         g_Bullets.push_back(nb);
                     }
@@ -3162,6 +3294,17 @@ int main() {
                      g_FlashColor.r, g_FlashColor.g, g_FlashColor.b, a);
         }
 
+        // (h4) 시간 정지 — 화면 가장자리 시안 비네트 (정지 연출)
+        if (g_TimeStopTimer > 0.0f) {
+            BindMainShader();
+            float a = 0.10f + 0.05f * sinf((float)glfwGetTime() * 10.0f);
+            float bw = 18.0f;
+            drawRect(0, 0, (float)screenWidth, bw, 0.3f, 0.9f, 1.0f, a);
+            drawRect(0, (float)screenHeight - bw, (float)screenWidth, bw, 0.3f, 0.9f, 1.0f, a);
+            drawRect(0, 0, bw, (float)screenHeight, 0.3f, 0.9f, 1.0f, a);
+            drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.3f, 0.9f, 1.0f, a);
+        }
+
         // (i) 취함 상태 표시 (화면 가장자리 자홍색 비네트)
         if (g_DrunkActive) {
             // 가장자리 4겹 사각 테두리 — alpha 빠르게 누적되며 비네트
@@ -3907,6 +4050,40 @@ int main() {
                     else if (g_Combo >= 12) { cg = 0.9f;  cbl = 0.3f; }
                     float w = g_TextS.Width(cb, sc);
                     g_TextS.Draw(cb, (sw - w) * 0.5f, sh * 0.115f, sc, cr, cg, cbl, 0.95f);
+                }
+            }
+
+            // ── 액티브 스킬 슬롯 (좌하단, 패시브 쿨다운 위 행) ──
+            if (st == GameState::RUNNING || st == GameState::PAUSED) {
+                const float KW = 54.0f, KH = 54.0f, KG = 8.0f;
+                float kx0 = 16.0f, ky0 = sh - KH - 40.0f - (56.0f + 8.0f);
+                auto skillBox = [&](int idx, const wchar_t* key, const wchar_t* tag,
+                                    float cd, float r, float g, float b) {
+                    float x = kx0 + idx * (KW + KG), y = ky0;
+                    bool ready = (cd <= 0.0f);
+                    drawRect(x, y, KW, KH, 0.05f, 0.05f, 0.08f, 0.88f);
+                    if (!ready) drawRect(x, y, KW, KH, 0.0f, 0.0f, 0.0f, 0.55f);
+                    drawRect(x, y, KW, 4.0f, r, g, b, ready ? 1.0f : 0.45f);
+                    g_TextS.Draw(key, x + 4.0f, y + 4.0f, 0.55f, 1, 1, 1, 0.9f);
+                    g_TextS.Draw(tag, x + 4.0f, y + KH - 17.0f, 0.5f, r, g, b, ready ? 1.0f : 0.5f);
+                    if (!ready) {
+                        wchar_t bf[8]; swprintf_s(bf, L"%d", (int)(cd + 0.99f));
+                        float tw = g_TextL.Width(bf, 0.85f);
+                        g_TextL.Draw(bf, x + (KW - tw) * 0.5f, y + KH * 0.34f, 0.85f, 1,1,1,0.95f);
+                    }
+                };
+                skillBox(0, L"SHIFT", L"DASH", g_DashCd, 0.4f, 1.0f, 1.0f);
+                const wchar_t* keys3[3] = { L"Q", L"E", L"R" };
+                for (int i = 0; i < 3; i++) {
+                    if (g_Skills[i].type == SkillType::NONE) continue;
+                    const wchar_t* tag = L""; float r = 1, g = 1, b = 1;
+                    switch (g_Skills[i].type) {
+                    case SkillType::CLOSE_WINDOW: tag = L"CLOSE"; r=0.5f; g=0.8f; b=1.0f; break;
+                    case SkillType::OVERCLOCK:    tag = L"OVCLK"; r=1.0f; g=0.6f; b=0.2f; break;
+                    case SkillType::TIME_STOP:    tag = L"TIME";  r=0.4f; g=0.9f; b=1.0f; break;
+                    default: break;
+                    }
+                    skillBox(i + 1, keys3[i], tag, g_Skills[i].cd, r, g, b);
                 }
             }
 
