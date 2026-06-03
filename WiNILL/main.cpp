@@ -1617,11 +1617,42 @@ int main() {
                     }
                 }
 
+                // 처치 보상 정산 — 총알/근접이 아닌 모든 죽음(연쇄폭발·스킬·MK2·해킹 폭발 등)
+                //   도 여기서 한 번씩 EXP/점수/콤보/흡혈을 받는다 (scored 플래그로 중복 방지).
+                auto creditKill = [&](float xpBase, float scoreBase) {
+                    AddKillCombo();
+                    g_GameManager.xp        += (long long)(xpBase * g_Stats.xpMult);
+                    g_Stats.killCount       += 1;
+                    g_GameManager.scoreAccum += scoreBase;
+                    g_GameManager.score      = (long long)g_GameManager.scoreAccum;
+                    if (g_Stats.lifestealPerKill > 0.0f) {
+                        g_GameManager.playerHP += g_Stats.lifestealPerKill;
+                        if (g_GameManager.playerHP > g_Stats.maxHP)
+                            g_GameManager.playerHP = g_Stats.maxHP;
+                    }
+                    if (g_Stats.vampire && ++g_Stats.vampireKillStreak >= 10) {
+                        g_Stats.vampireKillStreak = 0;
+                        g_GameManager.playerHP += 1.0f;
+                        if (g_GameManager.playerHP > g_Stats.maxHP)
+                            g_GameManager.playerHP = g_Stats.maxHP;
+                    }
+                };
+
                 // 사망 폭발 spawn (다음 UpdateAll 이 실제 erase 하기 전에 위치 캡처)
                 //   + 분열체 사망 시 작은 자식 2마리 (총 2세대까지)
                 std::vector<Monster*> mobBorn;
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive && !m->exploded) {
+                        if (!m->scored) {       // 아직 보상 안 받은 죽음 → 정산
+                            m->scored = true;
+                            float xpB = 1.0f, scB = 100.0f;
+                            if (m->kind == MobKind::SPLITTER) {
+                                xpB = (m->splitGen >= 2) ? 1.0f : 2.0f; scB = 120.0f;
+                            } else if (m->kind == MobKind::BLINKER) {
+                                xpB = 6.0f; scB = 250.0f;
+                            }
+                            creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
+                        }
                         SpawnEnemyExplosion(m->worldX, m->worldY,
                                             m->color.r, m->color.g, m->color.b,
                                             /*big=*/false);
@@ -1679,6 +1710,10 @@ int main() {
                 for (auto* nb : mobBorn) g_MonsterManager.monsters.push_back(nb);
                 for (auto r : g_MonsterManager.rangedMobs) {
                     if (!r->alive && !r->exploded) {
+                        if (!r->scored) {
+                            r->scored = true;
+                            creditKill(25.0f + (float)g_Stats.rangedXpBonus, 300.0f);
+                        }
                         SpawnEnemyExplosion(r->worldX, r->worldY,
                                             r->color.r, r->color.g, r->color.b,
                                             /*big=*/true);
@@ -1826,6 +1861,12 @@ int main() {
                 for (auto bm : g_MonsterManager.bombers) {
                     if (!bm->alive && !bm->exploded) {
                         bool blast = bm->arming;
+                        // 자폭(blast)은 보상 없음. 플레이어가 죽인 경우(!blast)만,
+                        //   그리고 아직 정산 안 됐으면(광역 처치 등) 보상 지급.
+                        if (!bm->scored && !blast) {
+                            bm->scored = true;
+                            creditKill(25.0f + (float)g_Stats.meleeXpBonus, 200.0f);
+                        }
                         if (blast) {
                             // 자폭: 플레이어 죽음급 폭발 (다발 + 이중 충격파)
                             for (int k = 0; k < 5; k++) {
@@ -2576,7 +2617,7 @@ int main() {
                     float dealt = (dmg < m->hp) ? dmg : m->hp; m->hp -= dealt;
                     SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
                     if (m->hp <= 0.0f) {
-                        m->alive = false; AddKillCombo();
+                        m->alive = false; m->scored = true; AddKillCombo();
                         float bx = 1.0f, bs = 100.0f;
                         if (m->kind == MobKind::SPLITTER) { bx = (m->splitGen >= 2) ? 1.0f : 2.0f; bs = 120.0f; }
                         else if (m->kind == MobKind::BLINKER) { bx = 6.0f; bs = 250.0f; }
@@ -2591,7 +2632,7 @@ int main() {
                     float dealt = (dmg < rr->hp) ? dmg : rr->hp; rr->hp -= dealt;
                     SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || crit);
                     if (rr->hp <= 0.0f) {
-                        rr->alive = false; AddKillCombo();
+                        rr->alive = false; rr->scored = true; AddKillCombo();
                         g_GameManager.xp += (long long)((25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -2603,7 +2644,7 @@ int main() {
                     float dealt = (dmg < bm->hp) ? dmg : bm->hp; bm->hp -= dealt;
                     SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || crit);
                     if (bm->hp <= 0.0f) {
-                        bm->alive = false; AddKillCombo();
+                        bm->alive = false; bm->scored = true; AddKillCombo();
                         g_GameManager.xp += (long long)((25.0f + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += 200.0f;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;

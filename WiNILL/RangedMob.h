@@ -12,6 +12,7 @@ public:
     float hp         = 150.0f;
     bool  alive      = true;
     bool  exploded   = false;   // 사망 폭발 이펙트 1회만 spawn
+    bool  scored     = false;   // 처치 보상 지급 완료 플래그
     float deathScale = 1.0f;    // 사망 애니메이션: 1→0 으로 줄어듦
     glm::vec3 color = glm::vec3(0.8f, 0.0f, 0.8f);
 

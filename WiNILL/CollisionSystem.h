@@ -108,6 +108,7 @@ public:
 
                     if (m->hp <= 0.0f) {
                         m->alive = false;
+                        m->scored = true;   // 총알 처치 — 보상 지급 완료 표시
                         AddKillCombo();
                         // 종류별 기본 EXP/점수 (분열체 자식은 낮게, 점멸체는 높게)
                         float baseXp = 1.0f, baseScore = 100.0f;
@@ -177,6 +178,7 @@ public:
                         SpawnDamageNumber(bm->worldX, bm->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
                         if (bm->hp <= 0.0f) {
                             bm->alive = false;
+                            bm->scored = true;       // 총알 처치 — 보상 지급 완료 표시
                             AddKillCombo();
                             TriggerHitStop(0.03f);   // 자폭병 처치 — 짧은 크런치
                             float gained = (25.0f + (float)stats.meleeXpBonus)
@@ -320,6 +322,7 @@ public:
 
                         if (r->hp <= 0.0f) {
                             r->alive = false;
+                            r->scored = true;        // 총알 처치 — 보상 지급 완료 표시
                             AddKillCombo();
                             TriggerHitStop(0.03f);   // 원거리 몹 처치 — 짧은 크런치
                             float gained = (25.0f + (float)stats.rangedXpBonus)

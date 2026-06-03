@@ -17,6 +17,7 @@ public:
     float hp    = 150.0f;          // 리밸런스: 75 → 150 (잡몹의 3배)
     bool  alive              = true;
     bool  exploded           = false;  // 파티클 스폰 1회 플래그
+    bool  scored             = false;  // 처치 보상 지급 완료 플래그
     bool  hackBlastPending   = false;  // HACK_BOMBER 시각효과 트리거 (CollisionSystem → main)
 
     // 점화 / 폭발 상태
