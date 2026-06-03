@@ -184,6 +184,7 @@
     <ClInclude Include="MonsterManager.h" />
     <ClInclude Include="Platform.h" />
     <ClInclude Include="Achievements.h" />
+    <ClInclude Include="IconSystem.h" />
     <ClInclude Include="Juice.h" />
     <ClInclude Include="Meta.h" />
     <ClInclude Include="PlayerStats.h" />

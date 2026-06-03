@@ -46,6 +46,7 @@
 #include "Translations.h"
 #include "Weapons.h"
 #include "SaveSystem.h"
+#include "IconSystem.h"
 
 #ifdef _MSC_VER
 #pragma comment(lib, "opengl32.lib")
@@ -563,6 +564,10 @@ int main() {
     // RGB: 표준 알파블렌딩 / Alpha: 프레임버퍼 알파값 올바르게 누적
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                         GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
+
+    // 아이콘(픽토그램) 텍스처 파이프라인 + 증강 아이콘 로드
+    InitIconGL();
+    LoadIcons();
 
     EnableWindowTransparency(window);
 
@@ -4265,6 +4270,14 @@ int main() {
                         tg = std::min(1.0f, tg * 1.4f + 0.25f);
                         tb = std::min(1.0f, tb * 1.4f + 0.25f);
                         topLabel = GetRarityKR(def.rarity);
+                        // 픽토그램 (있으면) — 카드 상단 중앙, 흰색
+                        GLuint icon = IconFor(def.type);
+                        if (icon) {
+                            float isz = 110.0f;
+                            DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
+                                     baseY + yOff + CARD_H * 0.12f, isz, isz,
+                                     1.0f, 1.0f, 1.0f, 0.97f);
+                        }
                     } else {
                         cardName = (g_ConversionWeapon >= 0)
                                  ? WeaponName(ALL_WEAPONS[g_ConversionWeapon]) : L"?";
