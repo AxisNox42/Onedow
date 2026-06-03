@@ -227,6 +227,22 @@ static void SpawnShockWave(float x, float y, float maxR, float life,
     }
 }
 
+// 검객 근접 스윙 잔상 (조준 방향 호)
+struct SlashFx {
+    float x, y, ang, range, life, maxLife;
+    bool  active = false;
+};
+static const int MAX_SLASH = 8;
+SlashFx g_Slashes[MAX_SLASH] = {};
+static void SpawnSlash(float x, float y, float ang, float range) {
+    for (int i = 0; i < MAX_SLASH; i++) {
+        if (!g_Slashes[i].active) {
+            g_Slashes[i] = { x, y, ang, range, 0.18f, 0.18f, true };
+            return;
+        }
+    }
+}
+
 // 화면 흔들기 (보스 스폰, 충격파)
 float g_ShakeTime = 0.0f;
 float g_ShakeMag  = 0.0f;
@@ -722,6 +738,7 @@ int main() {
             g_GameTime         = 0.0f;
             g_BomberSpawnTimer = 0.0f;
             for (int i = 0; i < MAX_SHOCKS; i++) g_ShockWaves[i].active = false;
+            for (int i = 0; i < MAX_SLASH; i++) g_Slashes[i].active = false;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
             g_NextBossScore = 200000;
             g_PolySpawned   = false;
@@ -1723,6 +1740,7 @@ int main() {
                         g_TotalBossKills++;
                         TryUnlockAch(ACH_FIRST_BOSS);
                         if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                        if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
                         g_BossRewardPicksLeft = 2;
                         g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                      g_Stats.distAugTaken);
@@ -1955,6 +1973,7 @@ int main() {
                 long long runScore = g_GameManager.score;
                 long long runKills = g_Stats.killCount;
                 if (runScore >= 300000)  TryUnlockAch(ACH_SCORE_300K);
+                if (runScore >= 500000)  TryUnlockAch(ACH_SCORE_500K);
                 if (runScore >= 1000000) TryUnlockAch(ACH_SCORE_1M);
                 if (runKills >= 500)     TryUnlockAch(ACH_KILLS_500);
                 if (g_Stats.critChance > 0 && runScore >= 200000)
@@ -1983,6 +2002,13 @@ int main() {
                 if (!sw.active) continue;
                 sw.life -= delta;
                 if (sw.life <= 0.0f) sw.active = false;
+            }
+
+            // 검객 스윙 잔상 업데이트
+            for (auto& sl : g_Slashes) {
+                if (!sl.active) continue;
+                sl.life -= delta;
+                if (sl.life <= 0.0f) sl.active = false;
             }
 
             // 화면 흔들기 카운트다운
@@ -2439,6 +2465,10 @@ int main() {
                     nb.dmgMult *= bMult;
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= bMult;
                 }
+                if (g_Stats.bowWeapon) {           // 궁수 — 화살 비주얼 (길쭉·갈색녹)
+                    nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
+                    nb.sizeScale = 1.7f;
+                }
                 g_Bullets.push_back(nb);
             };
 
@@ -2480,6 +2510,10 @@ int main() {
                             nb.dmgMult *= bMult;
                             if (nb.remainingDmg > 0.0f) nb.remainingDmg *= bMult;
                         }
+                        if (g_Stats.bowWeapon) {
+                            nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
+                            nb.sizeScale = 1.7f;
+                        }
                         g_Bullets.push_back(nb);
                     }
                 } else if (g_Stats.twin) {
@@ -2494,9 +2528,115 @@ int main() {
                 }
             };
 
+            // 검객 근접 스윙 — 조준 방향 호(arc) 안의 모든 적에게 즉시 피해
+            auto meleeSwing = [&](float ang) {
+                float range = 190.0f * g_Stats.playerSizeMult;
+                float r2 = range * range, halfArc = 1.15f;  // ±~66° (약 130° 호)
+                bool crit = false; float critMult = 1.0f;
+                if (g_Stats.critChance > 0 && (rand() % 100) < g_Stats.critChance) {
+                    crit = true; critMult = g_Stats.critMult;
+                }
+                float bMult = 1.0f;
+                if (g_Stats.berserk) {
+                    float hf = g_Stats.maxHP > 0.0f
+                             ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                    if (hf < 0.0f) hf = 0.0f; else if (hf > 1.0f) hf = 1.0f;
+                    bMult = 1.0f + (1.0f - hf) * 0.6f;
+                }
+                float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
+                          * 1.8f * critMult * bMult;       // 근접 보너스 ×1.8
+                auto inCone = [&](float ex, float ey) -> bool {
+                    float dx = ex - pCX, dy = ey - pCY, d2 = dx*dx + dy*dy;
+                    if (d2 > r2) return false;
+                    float diff = atan2f(dy, dx) - ang;
+                    while (diff >  3.14159265f) diff -= 6.2831853f;
+                    while (diff < -3.14159265f) diff += 6.2831853f;
+                    return fabsf(diff) <= halfArc;
+                };
+                auto onKill = [&]() {   // 흡혈탄/흡혈마 공통 처리
+                    if (g_Stats.lifestealPerKill > 0.0f) {
+                        g_GameManager.playerHP += g_Stats.lifestealPerKill;
+                        if (g_GameManager.playerHP > g_Stats.maxHP)
+                            g_GameManager.playerHP = g_Stats.maxHP;
+                    }
+                    if (g_Stats.vampire && ++g_Stats.vampireKillStreak >= 10) {
+                        g_Stats.vampireKillStreak = 0;
+                        g_GameManager.playerHP += 1.0f;
+                        if (g_GameManager.playerHP > g_Stats.maxHP)
+                            g_GameManager.playerHP = g_Stats.maxHP;
+                    }
+                };
+                for (auto m : g_MonsterManager.monsters) {        // 잡몹
+                    if (!m->alive || !inCone(m->worldX, m->worldY)) continue;
+                    float dealt = (dmg < m->hp) ? dmg : m->hp; m->hp -= dealt;
+                    SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
+                    if (m->hp <= 0.0f) {
+                        m->alive = false; AddKillCombo();
+                        float bx = 1.0f, bs = 100.0f;
+                        if (m->kind == MobKind::SPLITTER) { bx = (m->splitGen >= 2) ? 1.0f : 2.0f; bs = 120.0f; }
+                        else if (m->kind == MobKind::BLINKER) { bx = 6.0f; bs = 250.0f; }
+                        g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                        g_Stats.killCount++; g_GameManager.scoreAccum += bs;
+                        g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                        onKill();
+                    }
+                }
+                for (auto rr : g_MonsterManager.rangedMobs) {     // 원거리
+                    if (!rr->alive || !inCone(rr->worldX, rr->worldY)) continue;
+                    float dealt = (dmg < rr->hp) ? dmg : rr->hp; rr->hp -= dealt;
+                    SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || crit);
+                    if (rr->hp <= 0.0f) {
+                        rr->alive = false; AddKillCombo();
+                        g_GameManager.xp += (long long)((25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                        g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
+                        g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                        onKill();
+                    }
+                }
+                for (auto bm : g_MonsterManager.bombers) {        // 자폭병
+                    if (!bm->alive || !inCone(bm->worldX, bm->worldY)) continue;
+                    float dealt = (dmg < bm->hp) ? dmg : bm->hp; bm->hp -= dealt;
+                    SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || crit);
+                    if (bm->hp <= 0.0f) {
+                        bm->alive = false; AddKillCombo();
+                        g_GameManager.xp += (long long)((25.0f + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                        g_Stats.killCount++; g_GameManager.scoreAccum += 200.0f;
+                        g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                        onKill();
+                    }
+                }
+                // 보스류 — hp만 감소 (보상/연출은 각 사망 블록이 담당)
+                auto hitB = [&](float ex, float ey, float& hp, bool& al) {
+                    if (!inCone(ex, ey)) return;
+                    float dealt = (dmg < hp) ? dmg : hp; hp -= dealt;
+                    SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || crit);
+                    if (hp <= 0.0f) al = false;
+                };
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                    hitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
+                         g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
+                for (auto* c : g_Slimelings) if (c->alive)
+                    hitB(c->worldX, c->worldY, c->hp, c->alive);
+                if (g_GlitchBoss && g_GlitchBoss->alive)
+                    hitB(g_GlitchBoss->worldX, g_GlitchBoss->worldY, g_GlitchBoss->hp, g_GlitchBoss->alive);
+                if (g_RRBoss && g_RRBoss->alive)
+                    hitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
+                if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
+                    hitB(g_PolyBoss->worldX, g_PolyBoss->worldY, g_PolyBoss->hp, g_PolyBoss->alive);
+                SpawnSlash(pCX, pCY, ang, range);
+                TriggerHitStop(0.015f);
+            };
+
             // 포탑 모드에서는 플레이어가 발사하지 않음
             if (!g_Stats.turretMode) {
-                if (g_Stats.brokenSight) {
+                if (g_Stats.meleeWeapon) {       // 검객 — 근접 스윙 (총알 없음)
+                    if (lmb && fireTimer >= effInterval) {
+                        float ang = atan2f(wmy - pCY, wmx - pCX);
+                        meleeSwing(ang);
+                        fireTimer = 0.0f;
+                    }
+                    if (!lmb) fireTimer = effInterval;
+                } else if (g_Stats.brokenSight) {
                     if (fireTimer >= effInterval && g_Orb.active) {
                         spawnAimed(g_Orb.x, g_Orb.y);
                         fireTimer = 0.0f;
@@ -3059,6 +3199,16 @@ int main() {
             drawCircle(sw.x, sw.y, radius, sw.r, sw.g, sw.b, alpha);
         }
 
+        // (g2b) 검객 스윙 잔상 — 조준 방향 부채꼴
+        for (auto& sl : g_Slashes) {
+            if (!sl.active) continue;
+            float t   = 1.0f - sl.life / sl.maxLife;       // 0 → 1
+            float rad = sl.range * (0.72f + 0.28f * t);
+            float alpha   = (1.0f - t) * 0.5f;
+            float halfArc = 1.15f * (1.0f - 0.15f * t);
+            drawConeFan(sl.x, sl.y, rad, sl.ang, halfArc, 0.85f, 0.95f, 1.0f, alpha);
+        }
+
         // (g3) 글리치 보스 — 레이저 + 미니 세모 + 본체 + HP 바 (스크린 좌표 최상단)
         if (g_GlitchBoss && g_GlitchBoss->alive) {
             auto* gb = g_GlitchBoss;
@@ -3588,11 +3738,11 @@ int main() {
                     float ay0 = ry0 + META_COUNT * (RH + RG) + 24.0f;
                     BindMainShader();
                     g_TextS.Draw(ATIT[li3], rx, ay0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
-                    float colW = RW * 0.5f;
+                    float colW = RW / 3.0f;
                     float rowH = 30.0f;
                     for (int i = 0; i < ACH_COUNT; i++) {
                         bool got = g_AchUnlocked[i];
-                        int  col = i / 5, row = i % 5;
+                        int  col = i / 4, row = i % 4;
                         float ax = rx + col * colW;
                         float ay = ay0 + 34.0f + row * rowH;
                         wchar_t ab[96];
@@ -3624,9 +3774,9 @@ int main() {
                 const wchar_t* HN = JHINT[li];
                 g_TextS.Draw(HN, cx(HN, g_TextS, 0.9f), sh*0.16f, 0.9f, 0.7f,0.8f,0.9f,0.9f);
 
-                const float BW = 600.0f, BH = 76.0f, BG = 14.0f;
+                const float BW = 600.0f, BH = 60.0f, BG = 11.0f;
                 float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.22f;
+                float by = sh * 0.20f;
                 for (int j = 0; j < JOB_COUNT; j++) {
                     float y = by + j * (BH + BG);
                     bool unlocked = JobUnlocked(j);
@@ -3705,6 +3855,21 @@ int main() {
                                 g_OwnedAugs.push_back(ji);
                                 EquipSkill(SkillForAug(jd.startAugs[a]));
                             }
+                            // 직업 무기 모드 (검객/궁수 — 선택한 총 효과 위에 덮어씀)
+                            if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
+                                g_Stats.meleeWeapon  = true;
+                                g_Stats.fireInterval = 0.26f;   // 스윙 주기 (고정)
+                                g_Stats.baseFireInterval = g_Stats.fireInterval;
+                            } else if (jd.weaponMode == 2) {    // 궁수: 관통 화살
+                                g_Stats.bowWeapon     = true;
+                                g_Stats.pierce        = true;
+                                g_Stats.pierceChance  = 100;    // 전탄 관통
+                                g_Stats.fireInterval *= 1.9f;   // 느린 연사
+                                g_Stats.baseFireInterval = g_Stats.fireInterval;
+                                g_Stats.damageMultiplier *= 2.2f; // 강한 화살
+                                g_Stats.bulletSpeed      *= 1.3f;
+                            }
+                            fireTimer = g_Stats.fireInterval;
                         }
                         g_GameManager.maxHP    = g_Stats.maxHP;
                         g_GameManager.playerHP = g_Stats.maxHP;

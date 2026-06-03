@@ -72,6 +72,26 @@ inline void drawCircle(float cx, float cy, float radius,
     glDrawArrays(GL_TRIANGLE_FAN, 0, SEG + 2);
 }
 
+// 부채꼴(파이 슬라이스) — 검객 스윙 잔상 등. angCenter±halfArc 범위
+inline void drawConeFan(float cx, float cy, float radius,
+                        float angCenter, float halfArc,
+                        float r, float g, float b, float a) {
+    const int SEG = 18;
+    float v[(SEG + 2) * 2];
+    int i = 0;
+    v[i++] = cx; v[i++] = cy;
+    for (int s = 0; s <= SEG; s++) {
+        float t  = (float)s / SEG;
+        float th = angCenter - halfArc + 2.0f * halfArc * t;
+        v[i++] = cx + radius * cosf(th);
+        v[i++] = cy + radius * sinf(th);
+    }
+    glUniform4f(g_colorLoc, r, g, b, a);
+    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, SEG + 2);
+}
+
 // Mercedes-Benz 로고 — 외곽 원 + 안에 3-pointed star (위·좌하·우하)
 // size = 외곽 원 반지름
 inline void drawMercedes(float cx, float cy, float size,

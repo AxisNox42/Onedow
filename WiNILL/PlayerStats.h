@@ -64,6 +64,9 @@ struct PlayerStats {
     float lifestealPerKill = 0.0f;// 처치당 회복 HP (흡혈탄)
     bool  berserk      = false;   // 체력 낮을수록 공격력 ↑ (최대 +60%)
     bool  deathBlast   = false;   // 적 사망 시 주변 폭발
+    // ── 직업 무기 모드 (검객/궁수) ──
+    bool  meleeWeapon  = false;   // 검객 — 총알 대신 근접 호 스윙
+    bool  bowWeapon    = false;   // 궁수 — 관통 화살 (느리고 강함)
 
     // ── 희귀/전설 (티어드) ───────────────────────────────
     bool  drone        = false;

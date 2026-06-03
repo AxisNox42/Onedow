@@ -15,6 +15,8 @@ enum JobId {
     JOB_BERSERKER,   // 광전사 — 광전사 + 유리대포
     JOB_BOMBARDIER,  // 폭격수 — 연쇄 폭발
     JOB_VAMPIRE,     // 흡혈귀 — 흡혈탄 + 흡혈마
+    JOB_SWORDSMAN,   // 검객 — 근접 호 스윙 (총 대신 칼)
+    JOB_ARCHER,      // 궁수 — 관통 화살 (총 대신 활)
     JOB_COUNT
 };
 
@@ -29,6 +31,8 @@ enum AchId {
     ACH_DEATHBLAST_KILLS,  // 연쇄폭발 보유 + 한 판 300 처치 → 폭격수 해금
     ACH_DEBUFF_5,          // 디버프 5개 동시 보유
     ACH_GAMES_10,          // 누적 10판 플레이
+    ACH_SCORE_500K,        // 한 판 50만 점 → 검객 해금
+    ACH_BOSS_10,           // 보스 10마리 처치 (누적) → 궁수 해금
     ACH_COUNT
 };
 
@@ -83,6 +87,18 @@ inline const AchDef ACH_DEFS[ACH_COUNT] = {
         { L"단골", L"Regular", L"常連" },
         { L"누적 10판 플레이", L"Play 10 runs total", L"累計10ランプレイ" },
         200, -1 },
+    /* ACH_SCORE_500K */ {
+        { L"베테랑", L"Veteran", L"ベテラン" },
+        { L"한 판에 50만 점 달성  ·  검객 해금",
+          L"Reach 500k in one run  ·  unlocks Swordsman",
+          L"1ランで50万点  ·  剣士解放" },
+        600, JOB_SWORDSMAN },
+    /* ACH_BOSS_10 */ {
+        { L"보스 학살자", L"Boss Slayer", L"ボススレイヤー" },
+        { L"보스 누적 10마리 처치  ·  궁수 해금",
+          L"Defeat 10 bosses total  ·  unlocks Archer",
+          L"ボス累計10体撃破  ·  弓兵解放" },
+        600, JOB_ARCHER },
 };
 
 struct JobDef {
@@ -91,31 +107,44 @@ struct JobDef {
     int            unlockAch;          // AchId or -1 (항상 해금)
     AugType        startAugs[4];
     int            startAugCount;
+    int            weaponMode;         // 0=총(기본) 1=근접(검) 2=관통화살(활)
 };
 inline const JobDef JOB_DEFS[JOB_COUNT] = {
     /* JOB_NONE */ {
         { L"방랑자", L"Wanderer", L"放浪者" },
         { L"보너스 없음 — 순수 실력", L"No bonus — pure skill", L"ボーナス無し — 実力勝負" },
-        -1, {}, 0 },
+        -1, {}, 0, 0 },
     /* JOB_ASSASSIN */ {
         { L"암살자", L"Assassin", L"アサシン" },
         { L"치명타 보유 시작", L"Start with Critical Strike", L"クリティカル所持で開始" },
-        ACH_CRIT_SCORE, { AugType::CRIT }, 1 },
+        ACH_CRIT_SCORE, { AugType::CRIT }, 1, 0 },
     /* JOB_BERSERKER */ {
         { L"광전사", L"Berserker", L"バーサーカー" },
         { L"광전사 + 유리대포 보유 시작 (고위험·고화력)",
           L"Start with Berserk + Glass Cannon (high risk/reward)",
           L"バーサーク + ガラスの大砲で開始 (高リスク)" },
-        ACH_KILLS_500, { AugType::BERSERK, AugType::GLASS_CANNON }, 2 },
+        ACH_KILLS_500, { AugType::BERSERK, AugType::GLASS_CANNON }, 2, 0 },
     /* JOB_BOMBARDIER */ {
         { L"폭격수", L"Bombardier", L"ボンバー" },
         { L"연쇄 폭발 보유 시작", L"Start with Death Blast", L"連鎖爆発所持で開始" },
-        ACH_DEATHBLAST_KILLS, { AugType::DEATH_BLAST }, 1 },
+        ACH_DEATHBLAST_KILLS, { AugType::DEATH_BLAST }, 1, 0 },
     /* JOB_VAMPIRE */ {
         { L"흡혈귀", L"Vampire", L"吸血鬼" },
         { L"흡혈탄 + 흡혈마 보유 시작", L"Start with Lifesteal + Vampire",
           L"吸血弾 + 吸血鬼で開始" },
-        ACH_BOSS_3, { AugType::LIFESTEAL, AugType::VAMPIRE }, 2 },
+        ACH_BOSS_3, { AugType::LIFESTEAL, AugType::VAMPIRE }, 2, 0 },
+    /* JOB_SWORDSMAN */ {
+        { L"검객", L"Swordsman", L"剣士" },
+        { L"총 대신 근접 칼 — 조준 방향 호 스윙 (근거리 고화력)",
+          L"Melee blade instead of gun — arc swing (high close-range DPS)",
+          L"銃の代わりに近接剣 — 扇状の斬撃 (近距離高火力)" },
+        ACH_SCORE_500K, {}, 0, 1 },
+    /* JOB_ARCHER */ {
+        { L"궁수", L"Archer", L"弓兵" },
+        { L"총 대신 활 — 모든 적을 관통하는 강한 화살 (느린 연사)",
+          L"Bow instead of gun — piercing arrows (slow, hard-hitting)",
+          L"銃の代わりに弓 — 全貫通の強い矢 (低速)" },
+        ACH_BOSS_10, {}, 0, 2 },
 };
 
 // ── 영구/런타임 상태 ────────────────────────────────
