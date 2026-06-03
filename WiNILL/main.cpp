@@ -248,6 +248,11 @@ float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/
 bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
 bool  g_LastRunRecord   = false;  // 직전 판이 신기록이었는지 (GAMEOVER 표시용)
 
+// ── 피격 시 창(시야) 축소 기믹 ── 체력 비율에 따라 창 크기 변동 + 피격 펀치
+float g_WindowSizeCur = 0.0f;     // 현재 애니메이션 창 크기 (0 = 미초기화)
+float g_WinPrevHP     = -1.0f;    // 창 축소용 HP 추적
+float g_HurtVignette  = 0.0f;     // 피격 빨간 비네트 잔여
+
 // ── 액티브 스킬 시스템 — 대시(기본) + 슬롯 3개(증강 획득, 꽉 차면 교체) ──
 enum class SkillType { NONE, CLOSE_WINDOW, OVERCLOCK, TIME_STOP };
 struct SkillSlot { SkillType type = SkillType::NONE; float cd = 0.0f; }; // cd = 남은 쿨다운
@@ -731,6 +736,7 @@ int main() {
             g_BossTintT = 0.0f;
             ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱 초기화
             ResetSkills();                           // 액티브 스킬/대시 초기화
+            g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; // 창 시야 기믹
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
@@ -1831,6 +1837,31 @@ int main() {
             float pCY = playerWin.y + playerWin.height * 0.5f;
             bool  moving = keys[GLFW_KEY_W] || keys[GLFW_KEY_S] ||
                            keys[GLFW_KEY_A] || keys[GLFW_KEY_D];
+
+            // ── 피격 시 창(시야) 축소 — HP 비율에 따라 창 크기 변동 + 피격 펀치 ──
+            {
+                float baseSize = g_Stats.windowSize;
+                float hpFrac = (g_GameManager.maxHP > 0.0f)
+                             ? g_GameManager.playerHP / g_GameManager.maxHP : 1.0f;
+                if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
+                float target = baseSize * (0.55f + 0.45f * hpFrac);   // 풀피=full, 0%=55%
+                if (g_WindowSizeCur <= 0.0f) g_WindowSizeCur = target; // 초기화
+                if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
+                float lost = g_WinPrevHP - g_GameManager.playerHP;
+                if (lost > 0.5f) {            // 피격 — 즉시 추가 축소 + 빨간 비네트
+                    g_WindowSizeCur -= lost * 3.0f;
+                    g_HurtVignette = 0.5f;
+                }
+                g_WinPrevHP = g_GameManager.playerHP;
+                // 부드럽게 target 으로 복귀
+                g_WindowSizeCur += (target - g_WindowSizeCur) * (delta * 5.0f > 1.0f ? 1.0f : delta * 5.0f);
+                if (g_WindowSizeCur < 180.0f) g_WindowSizeCur = 180.0f;  // 최소 시야
+                // 적용 (플레이어 중심 고정)
+                playerWin.width = playerWin.height = g_WindowSizeCur;
+                playerWin.x = pCX - g_WindowSizeCur * 0.5f;
+                playerWin.y = pCY - g_WindowSizeCur * 0.5f;
+            }
+            if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
 
             // 시즈탱크: 정지 시 매 1초 stack +1 (최대 5)
             if (g_Stats.siegeTank) {
@@ -3316,6 +3347,17 @@ int main() {
             drawRect(0, (float)screenHeight - bw, (float)screenWidth, bw, 0.3f, 0.9f, 1.0f, a);
             drawRect(0, 0, bw, (float)screenHeight, 0.3f, 0.9f, 1.0f, a);
             drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.3f, 0.9f, 1.0f, a);
+        }
+
+        // (h5) 피격 — 빨간 가장자리 비네트 (피격 펀치)
+        if (g_HurtVignette > 0.001f) {
+            BindMainShader();
+            float a = g_HurtVignette * 0.55f;
+            float bw = 60.0f * g_HurtVignette + 14.0f;
+            drawRect(0, 0, (float)screenWidth, bw, 0.95f, 0.1f, 0.1f, a);
+            drawRect(0, (float)screenHeight - bw, (float)screenWidth, bw, 0.95f, 0.1f, 0.1f, a);
+            drawRect(0, 0, bw, (float)screenHeight, 0.95f, 0.1f, 0.1f, a);
+            drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.95f, 0.1f, 0.1f, a);
         }
 
         // (i) 취함 상태 표시 (화면 가장자리 자홍색 비네트)
