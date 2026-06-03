@@ -1351,10 +1351,14 @@ int main() {
 
                 // 몬스터 업데이트 (디버프 multiplier 적용) — 시간 정지 중엔 적 멈춤
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 → 더 빠름
+                // 점수 기반 속도 램프 (지루함 방지)
+                float si = (float)g_GameManager.score / 100000.0f; if (si > 6.0f) si = 6.0f;
+                float mobSpdRamp = 1.0f + si * 0.09f;
                 if (!timeStopped)
                     g_MonsterManager.UpdateAll(pCX, pCY, FIXED_DT,
                                                g_GameManager.playerHP, g_Bullets,
-                                               g_Stats.mobSpeedMult, rmobMoveMult);
+                                               g_Stats.mobSpeedMult * mobSpdRamp,
+                                               rmobMoveMult * mobSpdRamp);
 
                 // 글리치 보스 업데이트 (페이즈 머신 + 세모 떼 + 레이저)
                 if (!timeStopped && g_GlitchBoss && g_GlitchBoss->alive)
@@ -1902,6 +1906,14 @@ int main() {
             bool  polyP2  = (g_PolyBoss && g_PolyBoss->phase2);
             float p2mult  = polyP2 ? 3.0f : 1.0f;
 
+            // 점수 기반 난이도 램프 — 점수 오를수록 스폰↑·체력↑·속도↑ (중후반 지루함 방지)
+            //   intensity: 10만점=1, 20만점=2 ... 상한 6 (60만점)
+            float intensity = (float)g_GameManager.score / 100000.0f;
+            if (intensity > 6.0f) intensity = 6.0f;
+            float rampSpawn = 1.0f + intensity * 0.55f;   // 스폰 빈도 (×1.55 @10만 … ×4.3 @60만)
+            float rampHp    = 1.0f + intensity * 0.35f;   // 몹 체력
+            float rampSpd   = 1.0f + intensity * 0.09f;   // 몹 속도
+
             // 스폰 영역 — 2페이즈 줌아웃 시 확장된(보이는) 영역 모서리에서 스폰.
             //   player 이동 클램프와 동일한 [화면/줌] 범위 사용 → 일관됨
             float saX = 0.0f, saY = 0.0f;
@@ -1914,14 +1926,14 @@ int main() {
                 saY = (float)screenHeight * 0.5f - saH * 0.5f;
             }
 
-            // 잡몹 스폰 (D_MOB_SPAWN → 더 자주 + cap +200, D_MOB_HP → HP+)
+            // 잡몹 스폰 (D_MOB_SPAWN → 더 자주 + cap +200, D_MOB_HP → HP+, 점수 램프)
             spawnTimer += delta;
-            float spawnInterval = 0.3f * g_Stats.mobSpawnMult / p2mult;
+            float spawnInterval = 0.3f * g_Stats.mobSpawnMult / (p2mult * rampSpawn);
             if (spawnTimer > spawnInterval) {
                 size_t mbefore = g_MonsterManager.monsters.size();
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
-                                          (int)((100 + g_Stats.mobCapBonus) * p2mult),
-                                          g_Stats.monsterHpMult, saX, saY, saW, saH);
+                                          (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn),
+                                          g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH);
                 // 디버프 보유 시 일부 몹을 분열체/점멸체로 (독립 확률)
                 if (g_MonsterManager.monsters.size() > mbefore) {
                     Monster* nm = g_MonsterManager.monsters.back();
@@ -2005,9 +2017,9 @@ int main() {
             DifficultyParams dp = GetDifficultyParams(g_Difficulty);
             if (g_GameTime >= dp.bomberStartTime) {
                 g_BomberSpawnTimer += delta;
-                if (g_BomberSpawnTimer >= dp.bomberInterval / p2mult) {
+                if (g_BomberSpawnTimer >= dp.bomberInterval / (p2mult * rampSpawn)) {
                     g_MonsterManager.SpawnBomber(screenWidth, screenHeight,
-                                                 g_Stats.bomberHpMult,
+                                                 g_Stats.bomberHpMult * rampHp,
                                                  g_Stats.bomberSpeedMult,
                                                  g_Stats.bomberBlastMult,
                                                  saX, saY, saW, saH);
@@ -2019,11 +2031,12 @@ int main() {
             rangedSpawnTimer += delta;
             float rangedInterval = dp.rangedSpawnInterval - g_Stats.rmobSpawnDelayBonus;
             if (rangedInterval < 1.0f) rangedInterval = 1.0f;   // 최소 1초
-            rangedInterval /= p2mult;                            // 2페이즈 3배
-            int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult);
+            rangedInterval /= (p2mult * rampSpawn);              // 2페이즈 + 점수 램프
+            int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult
+                                  + intensity * 2.0f);           // 점수당 동시 +2
             if (rangedSpawnTimer > rangedInterval) {
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
-                    g_Stats.rmobHpMult, rangedMax, saX, saY, saW, saH);
+                    g_Stats.rmobHpMult * rampHp, rangedMax, saX, saY, saW, saH);
                 rangedSpawnTimer = 0.0f;
             }
 
