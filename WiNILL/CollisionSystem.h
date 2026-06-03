@@ -105,6 +105,9 @@ public:
                     m->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
                     SpawnDamageNumber(m->worldX, m->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
+                    SpawnSparks(b.x, b.y, isCrit ? 6 : 3,
+                                isCrit ? 1.0f : b.color.r, isCrit ? 0.85f : b.color.g,
+                                isCrit ? 0.3f : b.color.b);   // 명중 스파크
 
                     if (m->hp <= 0.0f) {
                         m->alive = false;
@@ -176,6 +179,9 @@ public:
                         bm->hp -= dealtThisHit;
                         if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
                         SpawnDamageNumber(bm->worldX, bm->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
+                        SpawnSparks(b.x, b.y, isCrit ? 6 : 3,
+                                    isCrit ? 1.0f : b.color.r, isCrit ? 0.85f : b.color.g,
+                                    isCrit ? 0.3f : b.color.b);
                         if (bm->hp <= 0.0f) {
                             bm->alive = false;
                             bm->scored = true;       // 총알 처치 — 보상 지급 완료 표시
@@ -319,6 +325,9 @@ public:
                         r->hp -= dealtThisHit;
                         if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
                         SpawnDamageNumber(r->worldX, r->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
+                        SpawnSparks(b.x, b.y, isCrit ? 6 : 3,
+                                    isCrit ? 1.0f : b.color.r, isCrit ? 0.85f : b.color.g,
+                                    isCrit ? 0.3f : b.color.b);
 
                         if (r->hp <= 0.0f) {
                             r->alive = false;

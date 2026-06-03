@@ -32,6 +32,29 @@ inline void SpawnDamageNumber(float x, float y, float amount, bool crit) {
     g_DmgNumbers.push_back(d);
 }
 
+// ── 타격 스파크 (명중/피격 불꽃) ──
+struct Spark {
+    float x, y, vx, vy;
+    float life, maxLife, size;
+    float r, g, b;
+};
+inline std::vector<Spark> g_Sparks;
+inline void SpawnSparks(float x, float y, int n,
+                        float r, float g, float b, float speed = 300.0f) {
+    if ((int)g_Sparks.size() > 500) return;          // 풀 상한
+    for (int i = 0; i < n; i++) {
+        float a = (float)(rand() % 628) * 0.01f;
+        float s = speed * (0.35f + (rand() % 100) * 0.01f);
+        Spark sp;
+        sp.x = x; sp.y = y;
+        sp.vx = cosf(a) * s; sp.vy = sinf(a) * s;
+        sp.maxLife = sp.life = 0.16f + (rand() % 80) * 0.001f;
+        sp.size = 2.5f + (float)(rand() % 3);
+        sp.r = r; sp.g = g; sp.b = b;
+        g_Sparks.push_back(sp);
+    }
+}
+
 // ── 콤보 / 킬스트릭 ──
 inline int   g_Combo      = 0;
 inline float g_ComboTimer = 0.0f;     // 남은 유지 시간
@@ -60,6 +83,7 @@ inline void TriggerFlash(float r, float g, float b, float intensity) {
 // 새 게임/리셋 시 호출
 inline void ResetJuice() {
     g_DmgNumbers.clear();
+    g_Sparks.clear();
     g_Combo = 0; g_ComboTimer = 0.0f; g_ComboPulse = 0.0f;
     g_HitStopTimer = 0.0f;
     g_FlashIntensity = 0.0f;

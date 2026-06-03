@@ -94,6 +94,11 @@ inline void drawBullet(const Bullet& b) {
             glDrawArrays(GL_TRIANGLES, 0, 3);
         }
     }
+    if (!b.isEnemy) {
+        // 글로우 헤일로 (소프트) — 탄환이 더 빛나 보이게
+        drawCircle(b.x, b.y, r * 2.6f, b.color.r, b.color.g, b.color.b, 0.14f);
+        drawCircle(b.x, b.y, r * 1.7f, b.color.r, b.color.g, b.color.b, 0.22f);
+    }
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
 
@@ -235,6 +240,12 @@ struct SlashFx {
 };
 static const int MAX_SLASH = 8;
 SlashFx g_Slashes[MAX_SLASH] = {};
+
+// 머즐 플래시 (발사 순간 총구 섬광)
+float g_MuzzleX = 0.0f, g_MuzzleY = 0.0f, g_MuzzleAng = 0.0f, g_MuzzleTimer = 0.0f;
+inline void TriggerMuzzle(float x, float y, float ang) {
+    g_MuzzleX = x; g_MuzzleY = y; g_MuzzleAng = ang; g_MuzzleTimer = 0.05f;
+}
 static void SpawnSlash(float x, float y, float ang, float range) {
     for (int i = 0; i < MAX_SLASH; i++) {
         if (!g_Slashes[i].active) {
@@ -416,7 +427,9 @@ EnemyParticle g_EnemyParts[MAX_ENEMY_PARTS] = {};
 // 폭발 spawn — big=true 면 원거리 몹용 (더 큰 폭발)
 static void SpawnEnemyExplosion(float ex, float ey,
                                 float cr, float cg, float cb, bool big) {
-    int count   = big ? 14 : 6;
+    // 흰 핫코어 스파크 — 폭발 순간 번쩍이는 밝은 알갱이
+    SpawnSparks(ex, ey, big ? 8 : 4, 1.0f, 0.95f, 0.7f, big ? 420.0f : 320.0f);
+    int count   = big ? 20 : 10;
     float baseS = big ? 200.0f : 100.0f;
     float varS  = big ? 250.0f : 150.0f;
     float lifeT = big ? 0.45f  : 0.30f;
@@ -744,6 +757,7 @@ int main() {
             g_BomberSpawnTimer = 0.0f;
             for (int i = 0; i < MAX_SHOCKS; i++) g_ShockWaves[i].active = false;
             for (int i = 0; i < MAX_SLASH; i++) g_Slashes[i].active = false;
+            g_MuzzleTimer = 0.0f;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
             g_NextBossScore = 200000;
             g_PolySpawned   = false;
@@ -2057,6 +2071,19 @@ int main() {
                 if (sl.life <= 0.0f) sl.active = false;
             }
 
+            // 타격 스파크 업데이트 (이동 + 감속 + 수명)
+            for (auto& sp : g_Sparks) {
+                sp.x += sp.vx * delta;
+                sp.y += sp.vy * delta;
+                float drag = std::max(0.0f, 1.0f - 6.0f * delta);
+                sp.vx *= drag; sp.vy *= drag;
+                sp.life -= delta;
+            }
+            g_Sparks.erase(std::remove_if(g_Sparks.begin(), g_Sparks.end(),
+                [](const Spark& s){ return s.life <= 0.0f; }), g_Sparks.end());
+            // 머즐 플래시 카운트다운
+            if (g_MuzzleTimer > 0.0f) g_MuzzleTimer -= delta;
+
             // 화면 흔들기 카운트다운
             if (g_ShakeTime > 0.0f) g_ShakeTime -= delta;
 
@@ -2520,6 +2547,7 @@ int main() {
 
             // Twin: ±5도 2발 / Shotgun: 5발 산탄 (사거리 700)
             auto spawnAimed = [&](float tx, float ty) {
+                TriggerMuzzle(pCX, pCY, atan2f(ty - pCY, tx - pCX));  // 총구 섬광
                 if (g_Stats.shotgun) {
                     float dx = tx - pCX, dy = ty - pCY;
                     float ang = atan2f(dy, dx);
@@ -3253,6 +3281,26 @@ int main() {
             float alpha   = (1.0f - t) * 0.5f;
             float halfArc = 1.15f * (1.0f - 0.15f * t);
             drawConeFan(sl.x, sl.y, rad, sl.ang, halfArc, 0.85f, 0.95f, 1.0f, alpha);
+        }
+
+        // (g2c) 타격 스파크 + 머즐 플래시 — 가산(additive) 블렌딩으로 밝게
+        if (!g_Sparks.empty() || g_MuzzleTimer > 0.0f) {
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);     // additive
+            for (auto& sp : g_Sparks) {
+                float t = sp.life / sp.maxLife;    // 1 → 0
+                drawCircle(sp.x, sp.y, sp.size * (0.5f + 0.5f * t),
+                           sp.r, sp.g, sp.b, t);
+            }
+            if (g_MuzzleTimer > 0.0f) {
+                float mt = g_MuzzleTimer / 0.05f;  // 1 → 0
+                float mx2 = g_MuzzleX + cosf(g_MuzzleAng) * 26.0f;
+                float my2 = g_MuzzleY + sinf(g_MuzzleAng) * 26.0f;
+                drawCircle(mx2, my2, 22.0f * mt + 6.0f, 1.0f, 0.92f, 0.55f, mt * 0.9f);
+                drawCircle(mx2, my2, 11.0f * mt + 3.0f, 1.0f, 1.0f, 0.9f, mt);
+            }
+            // 기본 분리 블렌딩 복원
+            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
         }
 
         // (g3) 글리치 보스 — 레이저 + 미니 세모 + 본체 + HP 바 (스크린 좌표 최상단)
