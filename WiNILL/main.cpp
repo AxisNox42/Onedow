@@ -3799,10 +3799,23 @@ int main() {
                         float dw = g_TextS.Width(d, 0.8f);
                         g_TextS.Draw(d, bx + (BW - dw) * 0.5f, y + BH - 24.0f, 0.8f,
                                      0.85f, 0.95f, 1.0f, 0.9f);
+                        // 직업 아이콘 (좌측, 흰색)
+                        GLuint ji = JobIcon(j);
+                        if (ji) {
+                            float isz = BH - 14.0f;
+                            DrawIcon(ji, bx + 10.0f, y + (BH - isz) * 0.5f, isz, isz,
+                                     1.0f, 1.0f, 1.0f, 0.97f);
+                        }
                     } else {
                         // 잠긴 직업 — 비활성 박스 + 해금 조건
                         BindMainShader();
                         drawRect(bx, y, BW, BH, 0.08f, 0.06f, 0.06f, 0.9f);
+                        GLuint ji = JobIcon(j);
+                        if (ji) {
+                            float isz = BH - 14.0f;
+                            DrawIcon(ji, bx + 10.0f, y + (BH - isz) * 0.5f, isz, isz,
+                                     0.45f, 0.45f, 0.5f, 0.9f);  // 잠김 = 회색
+                        }
                         float nw = g_TextS.Width(JobName(j), 0.95f);
                         g_TextS.Draw(JobName(j), bx + (BW - nw) * 0.5f, y + 14.0f, 0.95f,
                                      0.5f, 0.5f, 0.55f, 0.95f);

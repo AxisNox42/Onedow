@@ -189,7 +189,16 @@ inline void ResolveIconDir() {
     }
 }
 
-// 모든 증강 아이콘 로드 (없는 파일은 그냥 0 → 폴백/미표시)
+// 직업 아이콘 — 인덱스 = JobId 순서 (Achievements.h 의 enum 과 동일 순서로 유지)
+//   0:NONE(없음) 1:ASSASSIN 2:BERSERKER 3:BOMBARDIER 4:VAMPIRE 5:SWORDSMAN 6:ARCHER
+inline GLuint g_JobIconTex[8] = { 0 };
+inline const char* const g_JobIconNames[7] = {
+    "",                // JOB_NONE — 아이콘 없음
+    "JOB_ASSASSIN", "JOB_BERSERKER", "JOB_BOMBARDIER",
+    "JOB_VAMPIRE", "JOB_SWORDSMAN", "JOB_ARCHER"
+};
+
+// 모든 증강/직업 아이콘 로드 (없는 파일은 그냥 0 → 폴백/미표시)
 inline void LoadIcons() {
     ResolveIconDir();
     for (int i = 0; i < AUG_TOTAL; i++) {
@@ -203,6 +212,16 @@ inline void LoadIcons() {
         std::snprintf(path, sizeof(path), "%s/%s.png", g_IconBaseDir, nm);
         g_IconTex[idx] = IconLoadPNG(path);
     }
+    for (int j = 1; j < 7; j++) {
+        char path[320];
+        std::snprintf(path, sizeof(path), "%s/%s.png", g_IconBaseDir, g_JobIconNames[j]);
+        g_JobIconTex[j] = IconLoadPNG(path);
+    }
+}
+
+inline GLuint JobIcon(int jobId) {
+    if (jobId <= 0 || jobId >= 8) return 0;
+    return g_JobIconTex[jobId];
 }
 
 // AugType 텍스처 (없으면 티어 폴백)
