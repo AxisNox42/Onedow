@@ -898,6 +898,8 @@ int main() {
                     g_LastRunRecord = RecordRunResult((int)g_Difficulty,
                                                       g_GameManager.score,
                                                       g_Stats.killCount);
+                    if (g_TotalGames >= 10) TryUnlockAch(ACH_GAMES_10);
+                    if (g_AchSaveNeeded) { SaveGame(); g_AchSaveNeeded = false; }
                 } else {
                     g_LastRunRecord = false;
                     g_LastRunCoins  = 0;
@@ -1718,6 +1720,9 @@ int main() {
                         g_SlimeEncounter = false;
                         g_GameManager.scoreAccum += 20000.0f;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                        g_TotalBossKills++;
+                        TryUnlockAch(ACH_FIRST_BOSS);
+                        if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                         g_BossRewardPicksLeft = 2;
                         g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                      g_Stats.distAugTaken);
@@ -1738,6 +1743,9 @@ int main() {
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
                     delete gb;
                     g_GlitchBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_BossRewardPicksLeft = 2;
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
@@ -1757,6 +1765,9 @@ int main() {
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
                     delete rb;
                     g_RRBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_BossRewardPicksLeft = 2;
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
@@ -1779,6 +1790,9 @@ int main() {
                     g_PolyBoss = nullptr;
                     g_PolyPrevForm = -1;
                     g_PolyWasPhase2 = false;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_BossRewardPicksLeft = 3;             // 증강 1개 더
                     g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                  g_Stats.distAugTaken);
@@ -1934,6 +1948,23 @@ int main() {
             if (g_Stats.bleedPerSec > 0.0f && g_GameManager.playerHP > 1.0f) {
                 g_GameManager.playerHP -= g_Stats.bleedPerSec * delta;
                 if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
+            }
+
+            // 업적 조건 체크 (런 점수/킬/보유 증강 기준 — 보스 업적은 처치 시점에서 처리)
+            {
+                long long runScore = g_GameManager.score;
+                long long runKills = g_Stats.killCount;
+                if (runScore >= 300000)  TryUnlockAch(ACH_SCORE_300K);
+                if (runScore >= 1000000) TryUnlockAch(ACH_SCORE_1M);
+                if (runKills >= 500)     TryUnlockAch(ACH_KILLS_500);
+                if (g_Stats.critChance > 0 && runScore >= 200000)
+                    TryUnlockAch(ACH_CRIT_SCORE);
+                if (g_Stats.deathBlast && runKills >= 300)
+                    TryUnlockAch(ACH_DEATHBLAST_KILLS);
+                int debuffCnt = 0;
+                for (int oi : g_OwnedAugs)
+                    if (ALL_AUGS[oi].rarity == AugRarity::DEBUFF) ++debuffCnt;
+                if (debuffCnt >= 5) TryUnlockAch(ACH_DEBUFF_5);
             }
 
             // 적 사망 파티클 업데이트 (drag + 수명)
@@ -3451,6 +3482,26 @@ int main() {
                 return (sw - tr.Width(t, scale)) * 0.5f;
             };
 
+            // ── 업적 해금 토스트 (상단 중앙 배너, 4초 표시 후 페이드) ──
+            if (g_AchToastTimer > 0.0f && g_AchToastId >= 0 &&
+                g_AchToastId < ACH_COUNT) {
+                g_AchToastTimer -= delta;
+                float a = g_AchToastTimer > 3.0f ? (4.0f - g_AchToastTimer) // 페이드인
+                        : std::min(1.0f, g_AchToastTimer);                 // 페이드아웃
+                if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
+                int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
+                const wchar_t* LBL[3] = { L"업적 달성!", L"Achievement!", L"実績解除!" };
+                wchar_t tb[160];
+                swprintf_s(tb, L"%ls  %ls  (+%lld)", LBL[li2],
+                           AchName(g_AchToastId), ACH_DEFS[g_AchToastId].coinReward);
+                float bw = g_TextS.Width(tb, 1.0f) + 48.0f;
+                float bx0 = (sw - bw) * 0.5f, by0 = sh * 0.10f;
+                BindMainShader();
+                drawRect(bx0, by0, bw, 52.0f, 0.12f, 0.10f, 0.02f, 0.85f * a);
+                drawRect(bx0, by0, bw, 4.0f, 1.0f, 0.85f, 0.25f, 0.95f * a);
+                g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, 1.0f, 1.0f, 0.9f, 0.4f, a);
+            }
+
             // ── 메인 메뉴 ─────────────────────────────────────────
             if (st == GameState::MAIN_MENU) {
                 BindMainShader();
@@ -3529,9 +3580,89 @@ int main() {
                         }
                     }
                 }
+
+                // ── 업적 목록 (메타 행 아래, 2열) ──
+                {
+                    int li3 = (int)g_Language; if (li3 < 0 || li3 >= LANG_COUNT) li3 = 0;
+                    const wchar_t* ATIT[3] = { L"업적", L"Achievements", L"実績" };
+                    float ay0 = ry0 + META_COUNT * (RH + RG) + 24.0f;
+                    BindMainShader();
+                    g_TextS.Draw(ATIT[li3], rx, ay0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
+                    float colW = RW * 0.5f;
+                    float rowH = 30.0f;
+                    for (int i = 0; i < ACH_COUNT; i++) {
+                        bool got = g_AchUnlocked[i];
+                        int  col = i / 5, row = i % 5;
+                        float ax = rx + col * colW;
+                        float ay = ay0 + 34.0f + row * rowH;
+                        wchar_t ab[96];
+                        swprintf_s(ab, L"%ls %ls", got ? L"★" : L"☆", AchName(i));
+                        if (got) g_TextS.Draw(ab, ax, ay, 0.78f, 0.5f, 0.95f, 0.55f, 1.0f);
+                        else     g_TextS.Draw(ab, ax, ay, 0.78f, 0.55f, 0.55f, 0.6f, 0.9f);
+                    }
+                }
+
                 if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::MAIN_MENU;
+                }
+            }
+            // ── 직업(클래스) 선택 ─────────────────────────────────
+            else if (st == GameState::JOB_SELECT) {
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
+
+                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
+                const wchar_t* JTIT[3] = { L"직업 선택", L"Choose a Class", L"職業を選択" };
+                const wchar_t* JHINT[3] = {
+                    L"업적을 달성하면 새 직업이 해금됩니다",
+                    L"Complete achievements to unlock more classes",
+                    L"実績達成で新しい職業が解放されます" };
+                const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
+                const wchar_t* TIT = JTIT[li];
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.5f), sh*0.10f, 1.5f, 1,1,1,1);
+                const wchar_t* HN = JHINT[li];
+                g_TextS.Draw(HN, cx(HN, g_TextS, 0.9f), sh*0.16f, 0.9f, 0.7f,0.8f,0.9f,0.9f);
+
+                const float BW = 600.0f, BH = 76.0f, BG = 14.0f;
+                float bx = (sw - BW) * 0.5f;
+                float by = sh * 0.22f;
+                for (int j = 0; j < JOB_COUNT; j++) {
+                    float y = by + j * (BH + BG);
+                    bool unlocked = JobUnlocked(j);
+                    bool sel = (g_SelectedJob == j);
+                    if (unlocked) {
+                        if (UIButton(bx, y, BW, BH, JobName(j),
+                                     mx, my, lmb, g_LmbPrev, sel)) {
+                            g_SelectedJob = j;
+                            ResetForNewGame();
+                            PickRandomWeapons(g_WeaponChoices);
+                            g_GameManager.currentState = GameState::WEAPON_SELECT;
+                        }
+                        BindMainShader();
+                        const wchar_t* d = JobDesc(j);
+                        float dw = g_TextS.Width(d, 0.8f);
+                        g_TextS.Draw(d, bx + (BW - dw) * 0.5f, y + BH - 24.0f, 0.8f,
+                                     0.85f, 0.95f, 1.0f, 0.9f);
+                    } else {
+                        // 잠긴 직업 — 비활성 박스 + 해금 조건
+                        BindMainShader();
+                        drawRect(bx, y, BW, BH, 0.08f, 0.06f, 0.06f, 0.9f);
+                        float nw = g_TextS.Width(JobName(j), 0.95f);
+                        g_TextS.Draw(JobName(j), bx + (BW - nw) * 0.5f, y + 14.0f, 0.95f,
+                                     0.5f, 0.5f, 0.55f, 0.95f);
+                        int a = JOB_DEFS[j].unlockAch;
+                        wchar_t lk[160];
+                        swprintf_s(lk, L"%ls%ls", LOCKED[li],
+                                   (a >= 0 && a < ACH_COUNT) ? AchName(a) : L"???");
+                        float lw = g_TextS.Width(lk, 0.78f);
+                        g_TextS.Draw(lk, bx + (BW - lw) * 0.5f, y + BH - 24.0f, 0.78f,
+                                     0.85f, 0.45f, 0.45f, 0.95f);
+                    }
+                }
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
                 }
             }
             // ── 무기 선택 (시작 시 랜덤 3개) ──────────────────────
@@ -3564,6 +3695,17 @@ int main() {
                         g_CurrentWeapon = idx;  // 현재 무기 기록 (변환 카드용)
                         // 발사 타이머 / HUD HP 갱신
                         fireTimer = g_Stats.fireInterval;
+                        // 직업 시작 증강 적용 (무기 적용 직후 — 보유 목록에 추가)
+                        if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
+                            const JobDef& jd = JOB_DEFS[g_SelectedJob];
+                            for (int a = 0; a < jd.startAugCount; a++) {
+                                int ji = AugIndexOf(jd.startAugs[a]);
+                                if (ji < 0) continue;
+                                g_Stats.Apply(jd.startAugs[a]);
+                                g_OwnedAugs.push_back(ji);
+                                EquipSkill(SkillForAug(jd.startAugs[a]));
+                            }
+                        }
                         g_GameManager.maxHP    = g_Stats.maxHP;
                         g_GameManager.playerHP = g_Stats.maxHP;
                         g_PrevHP               = g_Stats.maxHP;
@@ -3642,9 +3784,8 @@ int main() {
                             // 크리에이티브: 설정 화면으로 (시작/보스/증강 조정)
                             g_GameManager.currentState = GameState::CREATIVE_CONFIG;
                         } else {
-                            ResetForNewGame();
-                            PickRandomWeapons(g_WeaponChoices);
-                            g_GameManager.currentState = GameState::WEAPON_SELECT;
+                            // 직업 선택 화면으로 (해금된 직업 선택 후 무기 선택)
+                            g_GameManager.currentState = GameState::JOB_SELECT;
                         }
                     }
                     // 버튼 아래 설명
@@ -4400,6 +4541,9 @@ int main() {
 
         // 마우스 click edge 감지용 — 이번 프레임 상태를 저장
         g_LmbPrev = lmb;
+
+        // 업적 해금 발생 시 저장 (게임 중 해금 즉시 영구화)
+        if (g_AchSaveNeeded) { SaveGame(); g_AchSaveNeeded = false; }
 
         glfwSwapBuffers(window);
 

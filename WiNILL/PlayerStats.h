@@ -231,7 +231,7 @@ struct PlayerStats {
             critMult   = 2.5f;
             break;
         case AugType::LIFESTEAL:
-            lifestealPerKill += 0.5f;   // 처치당 HP +0.5
+            lifestealPerKill += 0.25f;  // 처치당 HP +0.25 (너프: 0.5 → 0.25)
             break;
         case AugType::BERSERK:
             berserk = true;             // 체력 낮을수록 공격력 ↑ (발사 시 반영)

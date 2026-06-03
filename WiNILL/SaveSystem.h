@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include "Settings.h"
 #include "Meta.h"
+#include "Achievements.h"
 
 // 영구 데이터 (설정은 Settings.h 전역을 그대로 직렬화)
 inline long long g_BestScore[3] = { 0, 0, 0 };   // 난이도별 최고 점수 (EASY/NORMAL/HARD)
@@ -40,6 +41,9 @@ inline void SaveGame() {
     std::fprintf(f, "coins=%lld\n",   g_Coins);
     for (int i = 0; i < META_COUNT; i++)
         std::fprintf(f, "meta%d=%d\n", i, g_MetaLv[i]);
+    std::fprintf(f, "bosskills=%lld\n", g_TotalBossKills);
+    for (int i = 0; i < ACH_COUNT; i++)
+        std::fprintf(f, "ach%d=%d\n", i, g_AchUnlocked[i] ? 1 : 0);
     std::fclose(f);
 }
 
@@ -76,9 +80,14 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "kills"))       g_TotalKills        = val;
         else if (!std::strcmp(key, "games"))       g_TotalGames        = val;
         else if (!std::strcmp(key, "coins"))       g_Coins             = val;
+        else if (!std::strcmp(key, "bosskills")) g_TotalBossKills = val;
         else if (!std::strncmp(key, "meta", 4)) {
             int mi = atoi(key + 4);
             if (mi >= 0 && mi < META_COUNT) g_MetaLv[mi] = (int)val;
+        }
+        else if (!std::strncmp(key, "ach", 3)) {
+            int ai = atoi(key + 3);
+            if (ai >= 0 && ai < ACH_COUNT) g_AchUnlocked[ai] = (val != 0);
         }
     }
     std::fclose(f);
