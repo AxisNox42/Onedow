@@ -4182,57 +4182,62 @@ int main() {
                     L"実績達成で新しい職業が解放されます" };
                 const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
                 const wchar_t* TIT = JTIT[li];
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.5f), sh*0.10f, 1.5f, 1,1,1,1);
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.3f), sh*0.045f, 1.3f, 1,1,1,1);
                 const wchar_t* HN = JHINT[li];
-                g_TextS.Draw(HN, cx(HN, g_TextS, 0.9f), sh*0.16f, 0.9f, 0.7f,0.8f,0.9f,0.9f);
+                g_TextS.Draw(HN, cx(HN, g_TextS, 0.85f), sh*0.115f, 0.85f, 0.7f,0.8f,0.9f,0.9f);
 
-                const float BW = 660.0f, BH = 72.0f, BG = 16.0f;
+                const float BW = 660.0f, BH = 70.0f, BG = 13.0f;
                 float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.17f;
+                float by = sh * 0.185f;
                 for (int j = 0; j < JOB_COUNT; j++) {
                     float y = by + j * (BH + BG);
                     bool unlocked = JobUnlocked(j);
                     bool sel = (g_SelectedJob == j);
+                    bool clicked = false;
                     if (unlocked) {
-                        if (UIButton(bx, y, BW, BH, JobName(j),
-                                     mx, my, lmb, g_LmbPrev, sel)) {
-                            g_SelectedJob = j;
-                            ResetForNewGame();
-                            PickRandomWeapons(g_WeaponChoices);
-                            g_GameManager.currentState = GameState::WEAPON_SELECT;
-                        }
-                        BindMainShader();
-                        const wchar_t* d = JobDesc(j);
-                        float dw = g_TextS.Width(d, 0.8f);
-                        g_TextS.Draw(d, bx + (BW - dw) * 0.5f, y + BH - 24.0f, 0.8f,
-                                     0.85f, 0.95f, 1.0f, 0.9f);
-                        // 직업 아이콘 (좌측, 흰색)
-                        GLuint ji = JobIcon(j);
-                        if (ji) {
-                            float isz = BH - 14.0f;
-                            DrawIcon(ji, bx + 10.0f, y + (BH - isz) * 0.5f, isz, isz,
-                                     1.0f, 1.0f, 1.0f, 0.97f);
-                        }
+                        // 박스만 (라벨은 직접 — 이름 상단 / 설명 하단 분리)
+                        clicked = UIButton(bx, y, BW, BH, L"", mx, my, lmb, g_LmbPrev, sel);
                     } else {
-                        // 잠긴 직업 — 비활성 박스 + 해금 조건
                         BindMainShader();
                         drawRect(bx, y, BW, BH, 0.08f, 0.06f, 0.06f, 0.9f);
-                        GLuint ji = JobIcon(j);
-                        if (ji) {
-                            float isz = BH - 14.0f;
-                            DrawIcon(ji, bx + 10.0f, y + (BH - isz) * 0.5f, isz, isz,
-                                     0.45f, 0.45f, 0.5f, 0.9f);  // 잠김 = 회색
-                        }
-                        float nw = g_TextS.Width(JobName(j), 0.95f);
-                        g_TextS.Draw(JobName(j), bx + (BW - nw) * 0.5f, y + 14.0f, 0.95f,
-                                     0.5f, 0.5f, 0.55f, 0.95f);
+                        drawRect(bx, y, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
+                        drawRect(bx, y+BH-2, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
+                    }
+                    // 아이콘 (좌측)
+                    GLuint ji = JobIcon(j);
+                    if (ji) {
+                        float isz = BH - 20.0f;
+                        DrawIcon(ji, bx + 14.0f, y + (BH - isz)*0.5f, isz, isz,
+                                 unlocked?1.0f:0.45f, unlocked?1.0f:0.45f, unlocked?1.0f:0.5f, 0.95f);
+                    }
+                    BindMainShader();
+                    // 이름 (상단, 너비 맞춤)
+                    float nsc = 0.78f;
+                    while (nsc > 0.5f && g_TextL.Width(JobName(j), nsc) > BW - 130.0f) nsc -= 0.05f;
+                    float nw = g_TextL.Width(JobName(j), nsc);
+                    g_TextL.Draw(JobName(j), bx + (BW - nw)*0.5f, y + 7.0f, nsc,
+                                 unlocked?1.0f:0.55f, unlocked?1.0f:0.55f, unlocked?1.0f:0.6f, 0.98f);
+                    // 설명 / 잠금조건 (하단, 너비 맞춤)
+                    wchar_t line[200];
+                    float lr=0.85f, lg=0.95f, lb=1.0f;
+                    if (unlocked) {
+                        swprintf_s(line, L"%ls", JobDesc(j));
+                    } else {
                         int a = JOB_DEFS[j].unlockAch;
-                        wchar_t lk[160];
-                        swprintf_s(lk, L"%ls%ls", LOCKED[li],
-                                   (a >= 0 && a < ACH_COUNT) ? AchName(a) : L"???");
-                        float lw = g_TextS.Width(lk, 0.78f);
-                        g_TextS.Draw(lk, bx + (BW - lw) * 0.5f, y + BH - 24.0f, 0.78f,
-                                     0.85f, 0.45f, 0.45f, 0.95f);
+                        swprintf_s(line, L"%ls%ls", LOCKED[li],
+                                   (a>=0 && a<ACH_COUNT) ? AchName(a) : L"???");
+                        lr=0.9f; lg=0.45f; lb=0.45f;
+                    }
+                    float dsc = 0.72f;
+                    while (dsc > 0.45f && g_TextS.Width(line, dsc) > BW - 120.0f) dsc -= 0.04f;
+                    float dw = g_TextS.Width(line, dsc);
+                    g_TextS.Draw(line, bx + (BW - dw)*0.5f, y + BH - 25.0f, dsc, lr, lg, lb, 0.92f);
+
+                    if (clicked) {
+                        g_SelectedJob = j;
+                        ResetForNewGame();
+                        PickRandomWeapons(g_WeaponChoices);
+                        g_GameManager.currentState = GameState::WEAPON_SELECT;
                     }
                 }
                 if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),

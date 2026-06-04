@@ -120,9 +120,9 @@ inline const JobDef JOB_DEFS[JOB_COUNT] = {
         ACH_CRIT_SCORE, { AugType::CRIT }, 1, 0 },
     /* JOB_BERSERKER */ {
         { L"광전사", L"Berserker", L"バーサーカー" },
-        { L"광전사 + 유리대포 보유 시작 (고위험·고화력)",
-          L"Start with Berserk + Glass Cannon (high risk/reward)",
-          L"バーサーク + ガラスの大砲で開始 (高リスク)" },
+        { L"광전사 + 유리대포 (고위험·고화력)",
+          L"Berserk + Glass Cannon (high risk/reward)",
+          L"バーサーク + ガラスの大砲 (高リスク)" },
         ACH_KILLS_500, { AugType::BERSERK, AugType::GLASS_CANNON }, 2, 0 },
     /* JOB_BOMBARDIER */ {
         { L"폭격수", L"Bombardier", L"ボンバー" },
@@ -135,15 +135,15 @@ inline const JobDef JOB_DEFS[JOB_COUNT] = {
         ACH_BOSS_3, { AugType::LIFESTEAL, AugType::VAMPIRE }, 2, 0 },
     /* JOB_SWORDSMAN */ {
         { L"검객", L"Swordsman", L"剣士" },
-        { L"총 대신 근접 칼 — 조준 방향 호 스윙 (근거리 고화력)",
-          L"Melee blade instead of gun — arc swing (high close-range DPS)",
-          L"銃の代わりに近接剣 — 扇状の斬撃 (近距離高火力)" },
+        { L"근접 칼 — 조준 방향 호 스윙 (근거리 고화력)",
+          L"Melee blade — arc swing (high close-range DPS)",
+          L"近接剣 — 扇状の斬撃 (近距離高火力)" },
         ACH_SCORE_500K, {}, 0, 1 },
     /* JOB_ARCHER */ {
         { L"궁수", L"Archer", L"弓兵" },
-        { L"총 대신 활 — 클릭을 길게 누를수록 강해지는 차징 관통 화살 (대포식 관통, 크기 최대 4배)",
-          L"Bow — hold to charge: stronger piercing arrow (cannon-style pierce, up to 4x size)",
-          L"弓 — 長押しでチャージ: 強い貫通矢 (大砲式貫通・最大4倍)" },
+        { L"활 — 누른 만큼 강해지는 차징 관통 화살 (크기 최대 4배)",
+          L"Bow — charge for a stronger piercing arrow (up to 4x size)",
+          L"弓 — チャージで強い貫通矢 (最大4倍)" },
         ACH_BOSS_10, {}, 0, 2 },
 };
 
