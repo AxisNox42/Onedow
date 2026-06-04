@@ -32,7 +32,7 @@ public:
     // varietyPct: 특수 잡몹(돌진/회피/거대) 으로 스폰될 확률(%). 점수 비례로 main 이 전달.
     void SpawnMob(int screenW, int screenH, int cap = 100, float hpMul = 1.0f,
                   float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1,
-                  int varietyPct = 0) {
+                  int varietyPct = 0, int elitePct = 0) {
         if ((int)monsters.size() >= cap) return;
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
@@ -44,6 +44,9 @@ public:
                                 : MobKind::BRUTE;
             nm->MakeKind(k);
         }
+        // 엘리트 변종 (드물게) — 신속/강인/폭발성
+        if (elitePct > 0 && (rand() % 100) < elitePct)
+            nm->MakeElite(1 + rand() % 3);
         monsters.push_back(nm);
     }
 

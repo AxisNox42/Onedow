@@ -14,8 +14,11 @@ enum class MobKind {
     ORBITER, SPAWNER, SHIELDED
 };
 
-// 종류별 처치 보상 — 총알/근접/광역 처치 모두 같은 값 쓰도록 공용화
-inline void MobKillReward(MobKind k, int splitGen,
+// 엘리트 변종 — 0 없음 / 1 신속 / 2 강인 / 3 폭발성. 어떤 잡몹에든 드물게 부여.
+enum class EliteMod { NONE = 0, SWIFT = 1, TANKY = 2, VOLATILE = 3 };
+
+// 종류별 처치 보상 — 총알/근접/광역 처치 모두 같은 값 쓰도록 공용화 (엘리트면 ×2.5)
+inline void MobKillReward(MobKind k, int splitGen, int elite,
                           float& xpBase, float& scoreBase) {
     xpBase = 1.0f; scoreBase = 100.0f;
     switch (k) {
@@ -29,6 +32,7 @@ inline void MobKillReward(MobKind k, int splitGen,
     case MobKind::SHIELDED: xpBase = 5.0f; scoreBase = 220.0f; break;
     default: break;
     }
+    if (elite) { xpBase *= 2.5f; scoreBase *= 2.5f; }
 }
 
 class Monster {
@@ -41,6 +45,7 @@ public:
     bool  scored   = false;  // 처치 보상(EXP/점수/콤보) 지급 완료 플래그
     bool  noBlast  = false;  // 연쇄폭발에 죽은 몹 → 또 폭발하지 않음 (무한 연쇄 방지)
     bool  summoned = false;  // 보스 소환물 (더 크게)
+    int   elite    = 0;      // 엘리트 변종 (0 없음 / 1 신속 / 2 강인 / 3 폭발성)
     glm::vec3 color;
 
     // ── 종류별 ──
@@ -125,6 +130,14 @@ public:
             speed *= 0.85f;
             shieldActive = true; shieldTimer = 0.0f;
         }
+    }
+
+    // 엘리트 변종 부여 — 종류 지정(MakeKind) 뒤에 호출
+    void MakeElite(int e) {
+        elite = e;
+        if (e == 1)      { speed *= 1.6f; }                          // 신속
+        else if (e == 2) { hp *= 2.2f; sizeScale *= 1.35f; speed *= 0.85f; } // 강인
+        else if (e == 3) { hp *= 1.3f; }                            // 폭발성(죽을 때 터짐)
     }
 
     void Update(float playerCX, float playerCY, float deltaTime,

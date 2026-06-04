@@ -113,6 +113,17 @@ static inline bool inWin(float x, float y, float rx, float ry, float rw, float r
 inline void drawMob(const Monster* m) {
     MarkMobSeen(m->kind);   // 도감 발견 (화면에 그려진 적)
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
+    // 엘리트 오라 (신속=시안 / 강인=금색 / 폭발성=빨강 맥동)
+    if (m->elite) {
+        float gr, gg, gb;
+        if (m->elite == 1)      { gr = 0.35f; gg = 0.9f;  gb = 1.0f; }
+        else if (m->elite == 2) { gr = 1.0f;  gg = 0.85f; gb = 0.2f; }
+        else                    { gr = 1.0f;  gg = 0.3f;  gb = 0.1f; }
+        float pulse = (m->elite == 3)
+                    ? (0.5f + 0.5f * sinf((float)glfwGetTime() * 10.0f)) : 0.55f;
+        drawCircle(m->worldX, m->worldY, base * 1.85f, gr, gg, gb, 0.10f + 0.16f * pulse);
+        drawCircle(m->worldX, m->worldY, base * 1.35f, gr, gg, gb, 0.14f + 0.14f * pulse);
+    }
     if (m->kind == MobKind::SPLITTER) {
         drawCircle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
         drawCircle(m->worldX, m->worldY, base*0.42f, 0.05f, 0.22f, 0.08f, 0.9f); // 분할 코어
@@ -1742,13 +1753,23 @@ int main() {
                     if (!m->alive && !m->exploded) {
                         if (!m->scored) {       // 아직 보상 안 받은 죽음 → 정산
                             m->scored = true;
-                            float xpB, scB; MobKillReward(m->kind, m->splitGen, xpB, scB);
+                            float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB);
                             creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
                         }
                         SpawnEnemyExplosion(m->worldX, m->worldY,
                                             m->color.r, m->color.g, m->color.b,
                                             /*big=*/false);
                         m->exploded = true;
+                        // 폭발성 엘리트 — 죽을 때 터져 플레이어에게 광역 피해
+                        if (m->elite == 3) {
+                            float vbx = m->worldX, vby = m->worldY, vr = 120.0f;
+                            SpawnEnemyExplosion(vbx, vby, 1.0f, 0.4f, 0.1f, true);
+                            SpawnShockWave(vbx, vby, vr * 1.5f, 0.45f, 1.0f, 0.4f, 0.1f, true);
+                            float ppx = playerWin.x + playerWin.width  * 0.5f;
+                            float ppy = playerWin.y + playerWin.height * 0.5f;
+                            float dpx = ppx - vbx, dpy = ppy - vby;
+                            if (dpx*dpx + dpy*dpy < vr*vr) g_GameManager.playerHP -= 20.0f;
+                        }
                         // 연쇄 폭발(DEATH_BLAST) — 사망 위치에서 주변 적에게 AoE
                         //   너프: 데미지 0.8→0.3 + 폭발로 죽은 몹은 다시 안 터짐(무한연쇄 차단)
                         if (g_Stats.deathBlast && !m->noBlast) {
@@ -2211,6 +2232,8 @@ int main() {
             float rampSpd   = 1.0f + intensity * 0.09f;   // 몹 속도
             // 특수 잡몹(돌진/회피/거대) 출현 확률 — 점수 비례 (초반 0 → 약 13.5만점에 45% 상한)
             int   varietyPct = (int)std::min(45.0f, (float)g_GameManager.score / 3000.0f);
+            // 엘리트 변종 확률 — 점수 비례 (초반 0 → 약 14만점에 12% 상한)
+            int   elitePct   = (int)std::min(12.0f, (float)g_GameManager.score / 12000.0f);
 
             // 스폰 영역 — 2페이즈 줌아웃 시 확장된(보이는) 영역 모서리에서 스폰.
             //   player 이동 클램프와 동일한 [화면/줌] 범위 사용 → 일관됨
@@ -2235,7 +2258,7 @@ int main() {
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                           effCap,
                                           g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH,
-                                          varietyPct);
+                                          varietyPct, elitePct);
                 // 디버프 보유 시 일부 몹을 분열체/점멸체로 (특수 잡몹 안 된 경우만 — 중복 변환 방지)
                 if (g_MonsterManager.monsters.size() > mbefore) {
                     Monster* nm = g_MonsterManager.monsters.back();
@@ -2761,7 +2784,7 @@ int main() {
                     SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
                     if (m->hp <= 0.0f) {
                         m->alive = false; m->scored = true; AddKillCombo();
-                        float bx, bs; MobKillReward(m->kind, m->splitGen, bx, bs);
+                        float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs);
                         g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;

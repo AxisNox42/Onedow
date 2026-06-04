@@ -115,9 +115,9 @@ public:
                         m->alive = false;
                         m->scored = true;   // 총알 처치 — 보상 지급 완료 표시
                         AddKillCombo();
-                        // 종류별 기본 EXP/점수 (공용 테이블)
+                        // 종류별 기본 EXP/점수 (공용 테이블, 엘리트 ×2.5)
                         float baseXp, baseScore;
-                        MobKillReward(m->kind, m->splitGen, baseXp, baseScore);
+                        MobKillReward(m->kind, m->splitGen, m->elite, baseXp, baseScore);
                         float gained = (baseXp + (float)stats.meleeXpBonus)
                                      * stats.xpMult;
                         xp              += (long long)gained;
