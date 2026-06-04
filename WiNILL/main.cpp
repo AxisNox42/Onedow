@@ -529,8 +529,11 @@ static void SpawnEnemyExplosion(float ex, float ey,
     }
 }
 
-// DYING 슬로우 모션 상태
-float g_DyingTimer = 0.0f;
+// DYING 사망 연출 상태
+float g_DyingTimer    = 0.0f;
+bool  g_DeathBoomDone = false;   // 화면 수축 후 대폭발 1회 트리거
+static const float DYING_DUR    = 1.6f;   // 전체 사망 연출 시간
+static const float DYING_SHRINK = 0.30f;  // 0~이 구간: 화면 수축 (이후 폭발)
 
 // 사망 파편 파티클
 struct DeathParticle {
@@ -861,6 +864,7 @@ int main() {
             spawnTimer        = 0.0f;
             for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
             g_DyingTimer      = 0.0f;
+            g_DeathBoomDone   = false;
             g_DeathFlash      = 0.0f;
             for (int i = 0; i < MAX_DEBRIS; i++) g_Debris[i].active = false;
             fireTimer = g_Stats.fireInterval;
@@ -969,50 +973,83 @@ int main() {
                 g_PrevHP               = g_GameManager.playerHP;
                 // RUNNING 상태 유지 (DYING 전이 X)
             } else {
-                // 일반 사망
+                // 일반 사망 — 연출: 화면 수축 → 플레이어 기점 대폭발(모든 적 터짐) → 메뉴
                 g_GameManager.currentState = GameState::DYING;
                 g_GameManager.playerHP     = 0.0f;
-            g_DyingTimer = 1.0f;
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            g_DeathCX = pCX; g_DeathCY = pCY;
-            g_DeathFlash = 1.0f;
-            for (int i = 0; i < MAX_DEBRIS; i++) {
-                // 방사형 + 약간의 무작위 각도 흔들림
-                float angle = (float)i / (float)MAX_DEBRIS * 2.0f * (float)M_PI
-                            + ((float)(rand() % 100) - 50.0f) * 0.01f;
-                float spd   = 350.0f + (float)(rand() % 500);   // 350~850 (이전 80~200)
-                float sz    = 8.0f   + (float)(rand() % 22);    // 8~30 px
-                // 색상: 시안 베이스에 흰색·노란색 일부 섞기
-                int   tint  = rand() % 10;
-                float cr, cg, cb;
-                if      (tint < 5) { cr = 0.10f; cg = 0.85f; cb = 1.00f; } // cyan
-                else if (tint < 8) { cr = 1.00f; cg = 1.00f; cb = 1.00f; } // white core
-                else               { cr = 1.00f; cg = 0.85f; cb = 0.20f; } // yellow spark
-                g_Debris[i] = {
-                    pCX, pCY,
-                    cosf(angle)*spd, sinf(angle)*spd,
-                    sz, cr, cg, cb, true
-                };
-            }
+                float pCX = playerWin.x + playerWin.width  * 0.5f;
+                float pCY = playerWin.y + playerWin.height * 0.5f;
+                g_DeathCX = pCX; g_DeathCY = pCY;
+                g_DyingTimer    = DYING_DUR;
+                g_DeathBoomDone = false;
+                g_DeathFlash    = 0.0f;   // 폭발은 수축 후에 (boom 에서 번쩍)
             }   // close else (MK2 분기 외)
         }       // close outer if (HP <= 0)
 
-        // DYING 타이머 (실시간) + 파편 이동 (슬로우) + GAMEOVER 전환
+        // DYING 사망 연출 — 화면 수축 → 플레이어 기점 대폭발(모든 적 터짐) → GAMEOVER
         if (g_GameManager.currentState == GameState::DYING) {
             g_DyingTimer -= delta;
-            g_DeathFlash -= delta * 4.0f; // 0.25초 안에 섬광 사라짐
+            float prog = 1.0f - g_DyingTimer / DYING_DUR;   // 0 → 1
+            g_DeathFlash -= delta * 4.0f;
             if (g_DeathFlash < 0.0f) g_DeathFlash = 0.0f;
-            float sd = delta * 0.15f;
+
+            if (prog < DYING_SHRINK) {
+                // 1) 화면 수축 — 줌을 빠르게 줄여 화면이 작아짐
+                float t = prog / DYING_SHRINK;             // 0 → 1
+                g_ViewZoom = 1.0f - 0.45f * t;             // 1.0 → 0.55
+            } else if (!g_DeathBoomDone) {
+                // 2) 대폭발 — 플레이어 기점, 모든 적이 터짐
+                g_DeathBoomDone = true;
+                g_ViewZoom = 1.18f;                        // 펀치 아웃
+                float pCX = g_DeathCX, pCY = g_DeathCY;
+                // 모든 적 폭발시키며 제거 (scored/noBlast 표시 → 점수/연쇄 정산 안 함)
+                for (auto m : g_MonsterManager.monsters) if (m->alive) {
+                    SpawnEnemyExplosion(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b, true);
+                    m->alive = false; m->scored = true; m->noBlast = true;
+                }
+                for (auto r : g_MonsterManager.rangedMobs) if (r->alive) {
+                    SpawnEnemyExplosion(r->worldX, r->worldY, r->color.r, r->color.g, r->color.b, true);
+                    r->alive = false; r->scored = true;
+                }
+                for (auto bm : g_MonsterManager.bombers) if (bm->alive) {
+                    SpawnEnemyExplosion(bm->worldX, bm->worldY, bm->color.r, bm->color.g, bm->color.b, true);
+                    bm->alive = false; bm->scored = true;
+                }
+                // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
+                for (int k = 0; k < 4; k++)
+                    SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
+                SpawnShockWave(pCX, pCY, 900.0f, 0.7f, 0.4f, 0.9f, 1.0f);
+                SpawnShockWave(pCX, pCY, 560.0f, 0.55f, 1.0f, 0.9f, 0.4f);
+                g_DeathFlash = 1.0f;
+                g_ShakeTime = 0.5f; g_ShakeMag = 30.0f;
+                TriggerFlash(0.6f, 0.85f, 1.0f, 0.8f);
+                for (int i = 0; i < MAX_DEBRIS; i++) {
+                    float angle = (float)i / (float)MAX_DEBRIS * 2.0f * (float)M_PI
+                                + ((float)(rand() % 100) - 50.0f) * 0.01f;
+                    float spd = 450.0f + (float)(rand() % 650);
+                    float sz  = 8.0f + (float)(rand() % 24);
+                    int   tint = rand() % 10;
+                    float cr, cg, cb;
+                    if      (tint < 5) { cr = 0.10f; cg = 0.85f; cb = 1.00f; }
+                    else if (tint < 8) { cr = 1.00f; cg = 1.00f; cb = 1.00f; }
+                    else               { cr = 1.00f; cg = 0.85f; cb = 0.20f; }
+                    g_Debris[i] = { pCX, pCY, cosf(angle)*spd, sinf(angle)*spd, sz, cr, cg, cb, true };
+                }
+            } else {
+                // 3) 정착 — 줌 원복
+                g_ViewZoom += (1.0f - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
+            }
+
+            // 파편 이동 — 폭발 전엔 거의 정지, 폭발 후엔 실시간으로 날아감
+            float sd = g_DeathBoomDone ? delta : delta * 0.1f;
             for (int i = 0; i < MAX_DEBRIS; i++) {
                 if (!g_Debris[i].active) continue;
                 g_Debris[i].x  += g_Debris[i].vx * sd;
                 g_Debris[i].y  += g_Debris[i].vy * sd;
-                // 감속 (드래그)
-                g_Debris[i].vx *= (1.0f - 1.2f * sd);
-                g_Debris[i].vy *= (1.0f - 1.2f * sd);
+                g_Debris[i].vx *= (1.0f - 1.6f * sd);
+                g_Debris[i].vy *= (1.0f - 1.6f * sd);
             }
             if (g_DyingTimer <= 0.0f) {
+                g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복 (메뉴 정상화)
                 g_GameManager.currentState = GameState::GAMEOVER;
                 g_DyingTimer = 0.0f;
                 // 기록 저장 — 난이도별 최고점/누적/코인 갱신 (신기록이면 표시)
