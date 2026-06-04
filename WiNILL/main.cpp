@@ -3063,6 +3063,16 @@ int main() {
             orthoShake[12] = -z;
             orthoShake[13] =  z;
         }
+        // 게임플레이/사망연출 외 상태(메뉴·게임오버 등)에선 화면 흔들림 잔여 제거
+        //   — 사망 후 시작창으로 갔을 때 화면이 계속 떨리던 문제 방지
+        {
+            GameState gs = g_GameManager.currentState;
+            if (gs != GameState::RUNNING && gs != GameState::DYING &&
+                gs != GameState::PAUSED && gs != GameState::AUG_SELECT &&
+                gs != GameState::DEBUFF_SELECT) {
+                g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
+            }
+        }
         if (g_ShakeTime > 0.0f) {
             float intensity = g_ShakeMag * (g_ShakeTime / 0.6f);
             if (intensity > g_ShakeMag) intensity = g_ShakeMag;
@@ -4280,6 +4290,18 @@ int main() {
                 const wchar_t* CODEX_LBL[3] = { L"도감", L"Codex", L"図鑑" };
                 (void)CODEX_LBL;
                 float ix0 = 56.0f, iy0 = 70.0f, istep = 120.0f;
+                // 독(dock) 패널 — 실제 바탕화면에 아이콘이 많아도 Onedow 아이콘이
+                //   파묻히지 않도록 반투명 패널 위에 모아 보여준다.
+                {
+                    BindMainShader();
+                    float dX = ix0 - 16.0f, dW = 122.0f + 32.0f;
+                    float dY = iy0 - 16.0f, dH = istep * 4 + 104.0f + 40.0f;
+                    drawRect(dX, dY, dW, dH, 0.03f, 0.05f, 0.09f, 0.74f);    // 독 배경
+                    drawRect(dX, dY, dW, 3.0f, 0.30f, 0.62f, 1.0f, 0.95f);   // 상단 강조
+                    drawRect(dX, dY, 1.5f, dH, 0.3f, 0.5f, 0.8f, 0.4f);      // 테두리
+                    drawRect(dX+dW-1.5f, dY, 1.5f, dH, 0.3f, 0.5f, 0.8f, 0.4f);
+                    drawRect(dX, dY+dH-1.5f, dW, 1.5f, 0.3f, 0.5f, 0.8f, 0.4f);
+                }
                 if (desktopIcon(ix0, iy0 + istep*0, L"onedow.exe", L">",
                                 0.30f, 0.80f, 1.00f)) {
                     LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
