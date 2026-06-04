@@ -10,6 +10,15 @@
 #include "stb_image.h"
 #include "Augment.h"
 #include "DrawPrim.h"   // g_MainOrtho
+#ifdef _WIN32
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>   // 리소스(RCDATA)에서 아이콘 로드
+#endif
 
 // ── AugType → 파일명(이넘명) ──────────────────────────────
 inline const char* IconNameForAug(AugType t) {
@@ -148,10 +157,8 @@ inline void InitIconGL() {
     glBindVertexArray(0);
 }
 
-inline GLuint IconLoadPNG(const char* path) {
-    int w, h, n;
-    unsigned char* d = stbi_load(path, &w, &h, &n, 4);
-    if (!d) return 0;
+// RGBA8 픽셀 → GL 텍스처
+inline GLuint IconTexFromRGBA(unsigned char* d, int w, int h) {
     GLuint t = 0;
     glGenTextures(1, &t);
     glBindTexture(GL_TEXTURE_2D, t);
@@ -161,8 +168,51 @@ inline GLuint IconLoadPNG(const char* path) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindTexture(GL_TEXTURE_2D, 0);
+    return t;
+}
+inline GLuint IconLoadMem(const unsigned char* buf, int len) {
+    int w, h, n;
+    unsigned char* d = stbi_load_from_memory(buf, len, &w, &h, &n, 4);
+    if (!d) return 0;
+    GLuint t = IconTexFromRGBA(d, w, h);
     stbi_image_free(d);
     return t;
+}
+inline GLuint IconLoadFile(const char* path) {
+    int w, h, n;
+    unsigned char* d = stbi_load(path, &w, &h, &n, 4);
+    if (!d) return 0;
+    GLuint t = IconTexFromRGBA(d, w, h);
+    stbi_image_free(d);
+    return t;
+}
+#ifdef _WIN32
+// 임베디드 리소스 "ICON_<name>" (RCDATA) → 텍스처
+inline GLuint IconLoadResourceName(const char* resName) {
+    HMODULE hm = GetModuleHandleW(NULL);
+    HRSRC   hr = FindResourceA(hm, resName, MAKEINTRESOURCEA(10));  // 10 = RT_RCDATA
+    if (!hr) return 0;
+    HGLOBAL hg = LoadResource(hm, hr);
+    if (!hg) return 0;
+    const void* p = LockResource(hg);
+    DWORD sz = SizeofResource(hm, hr);
+    if (!p || sz == 0) return 0;
+    return IconLoadMem((const unsigned char*)p, (int)sz);
+}
+#endif
+
+// 이넘명("DMG_UP") → 텍스처. 리소스 우선, 없으면 파일(Icons/) 폴백.
+inline GLuint IconLoad(const char* name) {
+    if (!name || !name[0]) return 0;
+#ifdef _WIN32
+    char res[96];
+    std::snprintf(res, sizeof(res), "ICON_%s", name);
+    GLuint t = IconLoadResourceName(res);
+    if (t) return t;
+#endif
+    char path[320];
+    std::snprintf(path, sizeof(path), "%s/%s.png", g_IconBaseDir, name);
+    return IconLoadFile(path);
 }
 
 // 아이콘 폴더 확정 — 실행 위치(exe) 기준 후보 경로 중 DMG_UP.png 가 있는 곳
@@ -206,9 +256,9 @@ inline const char* const g_JobIconNames[7] = {
     "JOB_VAMPIRE", "JOB_SWORDSMAN", "JOB_ARCHER"
 };
 
-// 모든 증강/직업 아이콘 로드 (없는 파일은 그냥 0 → 폴백/미표시)
+// 모든 증강/직업 아이콘 로드 — 임베디드 리소스 우선(파일 폴백). 없으면 0 → 미표시.
 inline void LoadIcons() {
-    ResolveIconDir();
+    ResolveIconDir();   // 파일 폴백 경로 확정 (리소스 없을 때만 사용)
     for (int i = 0; i < AUG_TOTAL; i++) {
         AugType t = ALL_AUGS[i].type;
         const char* nm = IconNameForAug(t);
@@ -216,15 +266,10 @@ inline void LoadIcons() {
         int idx = (int)t;
         if (idx < 0 || idx >= 96) continue;
         if (g_IconTex[idx]) continue;
-        char path[320];
-        std::snprintf(path, sizeof(path), "%s/%s.png", g_IconBaseDir, nm);
-        g_IconTex[idx] = IconLoadPNG(path);
+        g_IconTex[idx] = IconLoad(nm);
     }
-    for (int j = 1; j < 7; j++) {
-        char path[320];
-        std::snprintf(path, sizeof(path), "%s/%s.png", g_IconBaseDir, g_JobIconNames[j]);
-        g_JobIconTex[j] = IconLoadPNG(path);
-    }
+    for (int j = 1; j < 7; j++)
+        g_JobIconTex[j] = IconLoad(g_JobIconNames[j]);
 }
 
 inline GLuint JobIcon(int jobId) {

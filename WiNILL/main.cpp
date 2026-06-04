@@ -303,6 +303,10 @@ struct SlashFx {
 static const int MAX_SLASH = 8;
 SlashFx g_Slashes[MAX_SLASH] = {};
 
+// 궁수 차징 (0~1) — LMB 누른 만큼 충전, 떼면 발사
+float g_ArcherCharge = 0.0f;
+static const float BOW_CHARGE_TIME = 0.9f;   // 완충까지 초
+
 // 머즐 플래시 (발사 순간 총구 섬광)
 float g_MuzzleX = 0.0f, g_MuzzleY = 0.0f, g_MuzzleAng = 0.0f, g_MuzzleTimer = 0.0f;
 inline void TriggerMuzzle(float x, float y, float ang) {
@@ -823,6 +827,7 @@ int main() {
             for (int i = 0; i < MAX_SHOCKS; i++) g_ShockWaves[i].active = false;
             for (int i = 0; i < MAX_SLASH; i++) g_Slashes[i].active = false;
             g_MuzzleTimer = 0.0f;
+            g_ArcherCharge = 0.0f;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
             g_NextBossScore = 200000;
             g_PolySpawned   = false;
@@ -1291,9 +1296,10 @@ int main() {
                 g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                              g_Stats.distAugTaken, /*allowDebuff=*/true);
                 g_CreativeFreeGrab = true;   // 이 픽 뒤엔 디버프 페이지 강제 X
-                // 변환 카드 — 25% 확률, 현재 무기와 다른 StartWeapon 으로 전환
+                // 변환 카드 — 25% 확률 (검객/궁수 제외)
                 g_ConversionWeapon = -1;
-                if ((rand() % 100) < 25 && g_CurrentWeapon >= 0) {
+                if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
+                    (rand() % 100) < 25 && g_CurrentWeapon >= 0) {
                     int wc = (int)StartWeapon::_COUNT;
                     int pick = rand() % wc;
                     if (pick == g_CurrentWeapon) pick = (pick + 1) % wc;
@@ -2001,9 +2007,10 @@ int main() {
                                                      g_Stats.distAugTaken);
 
                         // 변환 카드 — 25% 확률, 현재 무기와 다른 StartWeapon 으로 전환
-                        //   (기존 무기 효과 제거 후 새 무기로 변환)
+                        //   검객/궁수는 총을 안 쓰므로 변환 카드 제외
                         g_ConversionWeapon = -1;
-                        if ((rand() % 100) < 25 && g_CurrentWeapon >= 0) {
+                        if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
+                            (rand() % 100) < 25 && g_CurrentWeapon >= 0) {
                             int wc = (int)StartWeapon::_COUNT;
                             int pick = rand() % wc;
                             if (pick == g_CurrentWeapon) pick = (pick + 1) % wc;
@@ -2816,6 +2823,36 @@ int main() {
                         fireTimer = 0.0f;
                     }
                     if (!lmb) fireTimer = effInterval;
+                } else if (g_Stats.bowWeapon) {  // 궁수 — 누른 만큼 차징 후 발사
+                    if (lmb) {
+                        g_ArcherCharge += delta / BOW_CHARGE_TIME;
+                        if (g_ArcherCharge > 1.0f) g_ArcherCharge = 1.0f;
+                    } else if (g_ArcherCharge > 0.001f) {
+                        float charge = g_ArcherCharge;
+                        float ang = atan2f(wmy - pCY, wmx - pCX);
+                        Bullet nb(pCX, pCY, pCX + cosf(ang) * 200.0f, pCY + sinf(ang) * 200.0f);
+                        nb.speed   = effSpeed;
+                        nb.maxRange = 1500.0f;
+                        // 대포식 관통: remainingDmg 풀이 적을 관통하며 소진
+                        //   미차징 0.4배 → 완충 3.0배
+                        float chMult = 0.4f + charge * 2.6f;
+                        nb.remainingDmg = g_Stats.GetBaseDamage()
+                                        * g_Stats.GetDamageMultiplier(0.0f) * chMult;
+                        nb.sizeScale = 1.0f + charge * 3.0f;     // 최대 4배 크기
+                        nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
+                        if (g_OverclockTimer > 0.0f) nb.remainingDmg *= 1.5f;
+                        if (g_Stats.berserk) {
+                            float hf = g_Stats.maxHP > 0.0f
+                                     ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                            if (hf < 0.0f) hf = 0.0f; else if (hf > 1.0f) hf = 1.0f;
+                            nb.remainingDmg *= (1.0f + (1.0f - hf) * 0.6f);
+                        }
+                        g_Bullets.push_back(nb);
+                        TriggerMuzzle(pCX, pCY, ang);
+                        SpawnSparks(pCX + cosf(ang)*26.0f, pCY + sinf(ang)*26.0f,
+                                    2 + (int)(charge*4), 0.8f, 1.0f, 0.5f);
+                        g_ArcherCharge = 0.0f;
+                    }
                 } else if (g_Stats.brokenSight) {
                     if (fireTimer >= effInterval && g_Orb.active) {
                         spawnAimed(g_Orb.x, g_Orb.y);
@@ -3102,6 +3139,16 @@ int main() {
             // 총검: 200px 이내 표시 (희미한 시안 원)
             if (g_Stats.bayonet)
                 drawCircle(pCX, pCY, 200.0f, 0.4f, 1.0f, 0.9f, 0.10f);
+
+            // 궁수 차징 게이지 (플레이어 위 바) — 완충 시 흰색 번쩍
+            if (g_Stats.bowWeapon && g_ArcherCharge > 0.001f) {
+                float bw = 60.0f, bh = 7.0f;
+                float bxp = pCX - bw * 0.5f, byp = pCY - 44.0f;
+                drawRect(bxp - 1, byp - 1, bw + 2, bh + 2, 0.0f, 0.0f, 0.0f, 0.7f);
+                bool full = (g_ArcherCharge >= 0.999f);
+                float cr = full ? 1.0f : 0.6f, cg = 1.0f, cb = full ? 0.7f : 0.3f;
+                drawRect(bxp, byp, bw * g_ArcherCharge, bh, cr, cg, cb, 0.95f);
+            }
 
             if (g_GameManager.currentState == GameState::DYING) {
                 float fade = (g_DyingTimer > 0) ? g_DyingTimer : 0.0f;
@@ -4238,14 +4285,9 @@ int main() {
                                 g_Stats.meleeWeapon  = true;
                                 g_Stats.fireInterval = 0.26f;   // 스윙 주기 (고정)
                                 g_Stats.baseFireInterval = g_Stats.fireInterval;
-                            } else if (jd.weaponMode == 2) {    // 궁수: 관통 화살
-                                g_Stats.bowWeapon     = true;
-                                g_Stats.pierce        = true;
-                                g_Stats.pierceChance  = 100;    // 전탄 관통
-                                g_Stats.fireInterval *= 1.9f;   // 느린 연사
-                                g_Stats.baseFireInterval = g_Stats.fireInterval;
-                                g_Stats.damageMultiplier *= 2.2f; // 강한 화살
-                                g_Stats.bulletSpeed      *= 1.3f;
+                            } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
+                                g_Stats.bowWeapon    = true;    // 누른 만큼 강해짐 (관통=대포식)
+                                g_Stats.bulletSpeed *= 1.4f;
                             }
                             fireTimer = g_Stats.fireInterval;
                         }

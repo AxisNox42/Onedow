@@ -141,9 +141,9 @@ inline const JobDef JOB_DEFS[JOB_COUNT] = {
         ACH_SCORE_500K, {}, 0, 1 },
     /* JOB_ARCHER */ {
         { L"궁수", L"Archer", L"弓兵" },
-        { L"총 대신 활 — 모든 적을 관통하는 강한 화살 (느린 연사)",
-          L"Bow instead of gun — piercing arrows (slow, hard-hitting)",
-          L"銃の代わりに弓 — 全貫通の強い矢 (低速)" },
+        { L"총 대신 활 — 클릭을 길게 누를수록 강해지는 차징 관통 화살 (대포식 관통, 크기 최대 4배)",
+          L"Bow — hold to charge: stronger piercing arrow (cannon-style pierce, up to 4x size)",
+          L"弓 — 長押しでチャージ: 強い貫通矢 (大砲式貫通・最大4倍)" },
         ACH_BOSS_10, {}, 0, 2 },
 };
 
