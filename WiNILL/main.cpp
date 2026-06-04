@@ -3818,6 +3818,68 @@ int main() {
             }
         }
 
+        // ── (h3) 가짜 OS 창 크롬 — 타이틀바 + [X] 닫기 (데스크톱 세계관) ──
+        //    "적 = 프로세스, 창을 닫아 종료한다" 정체성. 월드 좌표(줌 반영)로 그림.
+        {
+            GameState gst = g_GameManager.currentState;
+            bool inGame = (gst == GameState::RUNNING || gst == GameState::PAUSED ||
+                           gst == GameState::DYING || gst == GameState::AUG_SELECT ||
+                           gst == GameState::DEBUFF_SELECT);
+            if (inGame) {
+                auto winChrome = [&](float x, float y, float w, float h,
+                                     const wchar_t* title, float tr, float tg, float tb) {
+                    BindMainShader();
+                    const float TB = 22.0f;
+                    drawRect(x, y, w, TB, tr*0.45f, tg*0.45f, tb*0.55f, 1.0f);   // 타이틀바
+                    drawRect(x, y, w, 2.0f, tr, tg, tb, 1.0f);                   // 상단 강조선
+                    drawRect(x, y+h-1.5f, w, 1.5f, tr, tg, tb, 0.55f);           // 테두리
+                    drawRect(x, y, 1.5f, h, tr, tg, tb, 0.55f);
+                    drawRect(x+w-1.5f, y, 1.5f, h, tr, tg, tb, 0.55f);
+                    // 창 컨트롤 (─ □ X) 우측
+                    float bs = 13.0f, byc = y + (TB-bs)*0.5f, bxc = x + w - 19.0f;
+                    drawRect(bxc - 2*(bs+5), byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // ─
+                    drawRect(bxc - (bs+5),   byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // □
+                    drawRect(bxc, byc, bs, bs, 0.85f, 0.2f, 0.2f, 0.95f);          // X = 빨강
+                    g_TextS.Draw(L"X", bxc + 3.0f, byc - 2.0f, 0.5f, 1,1,1, 0.95f);
+                    g_TextS.Draw(title, x + 8.0f, y + 3.0f, 0.55f, 0.92f,0.96f,1.0f, 0.95f);
+                };
+                int li2 = (int)g_Language; if (li2<0||li2>=LANG_COUNT) li2=0;
+                const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
+                winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
+                          PNAME, 0.3f, 0.8f, 1.0f);
+                for (auto r : g_MonsterManager.rangedMobs) {
+                    if (r->deathScale <= 0.0f) continue;
+                    float sc=r->deathScale, rW=RFW_W*sc, rH=RFW_H*sc;
+                    winChrome(r->worldX-rW*0.5f, r->worldY-rH*0.5f, rW, rH,
+                              L"popup.exe", 0.9f, 0.3f, 0.7f);
+                }
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                    auto* bs=g_MonsterManager.boss;
+                    winChrome(bs->worldX-Boss::WIN_W*0.5f, bs->worldY-Boss::WIN_H*0.5f,
+                              Boss::WIN_W, Boss::WIN_H, L"SLIME.worm", 0.5f,0.95f,0.5f);
+                }
+                for (auto* c : g_Slimelings) if (c->alive) {
+                    float w=Boss::WIN_W*c->sizeScale;
+                    winChrome(c->worldX-w*0.5f, c->worldY-w*0.5f, w, w, L"slime.worm", 0.5f,0.95f,0.5f);
+                }
+                if (g_GlitchBoss && g_GlitchBoss->alive) {
+                    float w=GLITCH_WIN_W;
+                    winChrome(g_GlitchBoss->worldX-w*0.5f, g_GlitchBoss->worldY-w*0.5f, w, w,
+                              L"GLITCH.sys", 0.95f,0.2f,0.6f);
+                }
+                if (g_RRBoss && g_RRBoss->alive) {
+                    float w=RR_WIN_W;
+                    winChrome(g_RRBoss->worldX-w*0.5f, g_RRBoss->worldY-w*0.5f, w, w,
+                              L"RELOADER.exe", 1.0f,0.55f,0.2f);
+                }
+                if (g_PolyBoss && g_PolyBoss->alive) {
+                    float w=POLY_WIN_W;
+                    winChrome(g_PolyBoss->worldX-w*0.5f, g_PolyBoss->worldY-w*0.5f, w, w,
+                              L"POLYMORPH.vir", 0.6f,0.25f,1.0f);
+                }
+            }
+        }
+
         // ── 여기부터 UI/오버레이: 줌·흔들기 무시하고 화면 고정 좌표(base ortho)로 ──
         //    (폴리모프 2페이즈 줌 0.5 에서 쿨다운칸·메뉴딤·비네트·플래시가 찌그러지던 버그 fix)
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, ortho);
