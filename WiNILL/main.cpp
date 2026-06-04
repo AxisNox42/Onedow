@@ -811,6 +811,8 @@ int main() {
             g_XpTimeAccum     = 0.0f;
             g_OwnedAugs.clear();
             memset(g_TypeOwned, 0, sizeof(g_TypeOwned));  // 조합 레시피 보유 초기화
+            g_CreativeGodmode  = false;   // 무적 토글 초기화
+            g_CreativeFreeGrab = false;
             g_HoveredAug       = -1;
             g_EnterReleased    = true;
             g_ConversionWeapon = -1;
@@ -885,6 +887,12 @@ int main() {
             g_PauseSelectedAug = -1;
         }
         g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
+
+        // 크리에이티브 무적 — 매 프레임 체력 풀 고정 (절대 죽지 않음)
+        if (g_CreativeGodmode && g_CreativeMode &&
+            g_GameManager.currentState == GameState::RUNNING) {
+            g_GameManager.playerHP = g_Stats.maxHP;
+        }
 
         // HP 0 → MK2 부활 OR DYING (1초 슬로우 모션 → GAMEOVER)
         if (g_GameManager.playerHP <= 0.0f &&
@@ -1213,13 +1221,15 @@ int main() {
                         --g_BossRewardPicksLeft;
                         if (g_BossRewardPicksLeft > 0) {
                             g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                         g_Stats.distAugTaken);
+                                                         g_Stats.distAugTaken, g_CreativeMode);
                             g_GameManager.currentState = GameState::AUG_SELECT;
                         } else {
                             g_GameManager.currentState = GameState::RUNNING;
                         }
-                    } else if (g_Stats.mk2SkipDebuff || g_CreativeMode) {
-                        // MK2 부활 후 / 크리에이티브 모드: DEBUFF_SELECT 스킵
+                    } else if (g_Stats.mk2SkipDebuff || g_CreativeFreeGrab) {
+                        // MK2 부활 후 / 크리에이티브 F 그랩: DEBUFF_SELECT 스킵
+                        //   (크리에이티브라도 레벨업은 정상 디버프 페이지 = "디버프도 뜨는 게임")
+                        g_CreativeFreeGrab = false;
                         g_GameManager.currentState = GameState::RUNNING;
                     } else {
                         // 일반: 버프 → 디버프 강제 선택 페이지
@@ -1279,15 +1289,17 @@ int main() {
             }
         }
 
-        // --- 크리에이티브 모드: RUNNING 중 F 키 → AUG_SELECT 즉시 열기 ---
+        // --- 크리에이티브 모드: F = 증강 그랩(디버프 포함 샌드박스), G = 무적 토글 ---
         if (g_CreativeMode) {
             static bool s_fkeyReleased = true;
             int kF = glfwGetKey(window, GLFW_KEY_F);
             if (kF == GLFW_RELEASE) s_fkeyReleased = true;
             if (kF == GLFW_PRESS && s_fkeyReleased &&
                 g_GameManager.currentState == GameState::RUNNING) {
+                // 샌드박스: 디버프도 카드 풀에 섞어서 무엇이든 집을 수 있게
                 g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                             g_Stats.distAugTaken);
+                                             g_Stats.distAugTaken, /*allowDebuff=*/true);
+                g_CreativeFreeGrab = true;   // 이 픽 뒤엔 디버프 페이지 강제 X
                 // 변환 카드 — 25% 확률, 현재 무기와 다른 StartWeapon 으로 전환
                 g_ConversionWeapon = -1;
                 if ((rand() % 100) < 25 && g_CurrentWeapon >= 0) {
@@ -1298,6 +1310,14 @@ int main() {
                 }
                 g_GameManager.currentState = GameState::AUG_SELECT;
                 s_fkeyReleased = false;
+            }
+            // G — 무적 ON/OFF 토글
+            static bool s_gkeyReleased = true;
+            int kG = glfwGetKey(window, GLFW_KEY_G);
+            if (kG == GLFW_RELEASE) s_gkeyReleased = true;
+            if (kG == GLFW_PRESS && s_gkeyReleased) {
+                g_CreativeGodmode = !g_CreativeGodmode;
+                s_gkeyReleased = false;
             }
         }
 
@@ -3832,6 +3852,23 @@ int main() {
                 g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, 1.0f, 1.0f, 0.9f, 0.4f, a);
             }
 
+            // ── 크리에이티브 HUD (게임 중) — F:증강  G:무적 ──
+            if (g_CreativeMode &&
+                (st == GameState::RUNNING || st == GameState::READY ||
+                 st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
+                int li3 = (int)g_Language; if (li3 < 0 || li3 >= LANG_COUNT) li3 = 0;
+                const wchar_t* CH[3] = {
+                    L"CREATIVE   F: 증강(디버프 포함)   G: 무적",
+                    L"CREATIVE   F: Augment(+debuff)   G: Godmode",
+                    L"CREATIVE   F: 強化(デバフ含)   G: 無敵" };
+                g_TextS.Draw(CH[li3], 20.0f, sh - 36.0f, 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
+                if (g_CreativeGodmode) {
+                    const wchar_t* GOD[3] = { L"● 무적 ON", L"● GODMODE ON", L"● 無敵 ON" };
+                    float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
+                    g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f, 1.0f, 0.85f, 0.2f, blink);
+                }
+            }
+
             // ── 메인 메뉴 ─────────────────────────────────────────
             if (st == GameState::MAIN_MENU) {
                 BindMainShader();
@@ -4208,8 +4245,9 @@ int main() {
                                         ((g_CreativeMode) ? g_CreativeStartAugs : 0);
                         if (startAugs > 0) {
                             g_BossRewardPicksLeft = startAugs;
+                            // 크리에이티브: 시작 증강에도 디버프 포함 (샌드박스)
                             g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                         g_Stats.distAugTaken);
+                                                         g_Stats.distAugTaken, g_CreativeMode);
                             g_GameManager.currentState = GameState::AUG_SELECT;
                         } else {
                             g_GameManager.currentState = GameState::READY;

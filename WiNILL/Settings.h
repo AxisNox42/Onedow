@@ -71,6 +71,8 @@ inline bool g_CreativeMode = false;
 inline long long g_CreativeStartScore = 0;       // 시작 점수
 inline int       g_CreativeBossPick   = -1;      // -1=없음, 0슬라임 1글리치 2리로드 3폴리모프
 inline int       g_CreativeStartAugs  = 0;       // 시작 시 무료 증강 픽 횟수
+inline bool      g_CreativeGodmode    = false;   // G 키 무적 토글 (런타임)
+inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤엔 디버프 페이지 스킵
 
 // 손맛 표시 토글 (설정에서 ON/OFF)
 inline bool g_ShowDamageNumbers = true;   // 데미지 숫자(딜 계산) 표시

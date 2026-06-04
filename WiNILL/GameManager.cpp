@@ -232,14 +232,15 @@ static int RollOneDebuff() {
     return pool[rand() % poolSize];
 }
 
-void GameManager::PickAugChoices(bool sizeTaken, bool distTaken) {
-    // 3장 — 같은 카드 안 나오게 중복 방지, SPECIAL 포함, DEBUFF 제외
+void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuff) {
+    // 3장 — 같은 카드 안 나오게 중복 방지, SPECIAL 포함
+    //   allowDebuff (크리에이티브 샌드박스) 면 디버프도 카드 풀에 섞임
     bool used[AUG_TOTAL] = {};
     for (int i = 0; i < 3; i++) {
         int idx = 0;
         for (int attempt = 0; attempt < 50; attempt++) {
             idx = RollOneAug(takenOnce, sizeTaken, distTaken,
-                             /*allowSpecial=*/true, /*allowDebuff=*/false);
+                             /*allowSpecial=*/true, allowDebuff);
             if (!used[idx]) break;
         }
         used[idx] = true;

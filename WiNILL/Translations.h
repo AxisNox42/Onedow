@@ -249,9 +249,9 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"☆ 크리에이티브  [OFF]", L"☆ Creative  [OFF]", L"☆ クリエイティブ  [OFF]",
     },
     /* CREATIVE_DESC_ON */ {
-        L"시작 시 10만점 · F키로 증강 획득 · 디버프 없음",
-        L"Start at 100k · F to grab augments · no debuffs",
-        L"開始時10万点 · Fキーで強化獲得 · デバフ無し",
+        L"샌드박스 · F키 증강(디버프 포함) · G키 무적 · 코인/기록 제외",
+        L"Sandbox · F augment(+debuff) · G godmode · no coins/records",
+        L"サンドボックス · F強化(デバフ含) · G無敵 · コイン/記録なし",
     },
     /* CREATIVE_DESC_OFF */ {
         L"10만점부터 시작 (보스 즉시) + F키 증강",
