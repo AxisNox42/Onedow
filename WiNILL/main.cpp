@@ -589,6 +589,10 @@ const wchar_t* g_BootName   = L"onedow.exe";         // 실행 중인 앱 파일
 float          g_BootAr = 0.30f, g_BootAg = 0.80f, g_BootAb = 1.00f;  // 강조색
 static const float BOOT_DUR = 1.15f;                 // 실행 연출 길이
 
+// ── 앱 창 열림 애니메이션 — 크기 0 → 지정 크기로 커짐 ──
+float g_AppOpen = 1.0f;                               // 0=닫힘 1=완전히 열림
+static const float APP_OPEN_DUR = 0.22f;
+
 // 앱 실행 시작 — 부팅 스플래시 띄우고 끝나면 target 으로 전이
 inline void LaunchApp(GameState target, const wchar_t* name,
                       float ar, float ag, float ab) {
@@ -4129,8 +4133,25 @@ int main() {
                                  float ar, float ag, float ab,
                                  float& outX, float& outY) {
                 float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
+                outX = wx; outY = wy;
+                // 열림 애니메이션 — 크기 0 → 지정 크기 (중앙 기준, smoothstep)
+                float op = g_AppOpen; if (op < 0.0f) op = 0.0f; if (op > 1.0f) op = 1.0f;
+                float e  = op * op * (3.0f - 2.0f * op);
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.40f);        // 데스크톱 딤
+                drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.40f * e);    // 데스크톱 딤(서서히)
+                if (e < 0.999f) {
+                    // 여는 중 — 0에서 커지는 빈 패널만 (콘텐츠는 호출부에서 생략)
+                    float dw = WW * e, dh = WH * e;
+                    float dx = sw*0.5f - dw*0.5f, dy = sh*0.5f - dh*0.5f;
+                    drawRect(dx+5, dy+6, dw, dh, 0.0f,0.0f,0.0f, 0.30f);     // 그림자
+                    drawRect(dx, dy, dw, dh, 0.07f, 0.08f, 0.11f, 0.99f);    // 본체
+                    drawRect(dx, dy, dw, 4.0f, ar, ag, ab, 1.0f);           // 강조 띠
+                    drawRect(dx, dy, dw, 1.5f, ar,ag,ab,0.5f);              // 테두리
+                    drawRect(dx, dy+dh-1.5f, dw, 1.5f, ar,ag,ab,0.5f);
+                    drawRect(dx, dy, 1.5f, dh, ar,ag,ab,0.5f);
+                    drawRect(dx+dw-1.5f, dy, 1.5f, dh, ar,ag,ab,0.5f);
+                    return;
+                }
                 drawRect(wx+7, wy+9, WW, WH, 0.0f, 0.0f, 0.0f, 0.35f);  // 그림자
                 drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, 0.99f);   // 창 본체
                 const float TB = 30.0f;
@@ -4148,6 +4169,21 @@ int main() {
                 outX = wx; outY = wy;
             };
             (void)appWindow;
+
+            // 앱 창(shop/codex/config) 진입 시 열림 애니메이션 시작 — 매 프레임 진행
+            {
+                static GameState s_prevWinSt = GameState::MAIN_MENU;
+                bool isApp = (st == GameState::SHOP || st == GameState::CODEX ||
+                              st == GameState::SETTINGS);
+                if (st != s_prevWinSt) {
+                    if (isApp) g_AppOpen = 0.0f;   // 새 창 → 크기 0에서 열기
+                    s_prevWinSt = st;
+                }
+                if (isApp && g_AppOpen < 1.0f) {
+                    g_AppOpen += delta / APP_OPEN_DUR;
+                    if (g_AppOpen > 1.0f) g_AppOpen = 1.0f;
+                }
+            }
 
             // ── 업적 해금 토스트 (상단 중앙 배너, 4초 표시 후 페이드) ──
             if (g_AchToastTimer > 0.0f && g_AchToastId >= 0 &&
@@ -4292,8 +4328,8 @@ int main() {
                     float ease = prog < 0.25f ? (prog / 0.25f) : 1.0f; // 창 열림 0~25%
                     float ar = g_BootAr, ag = g_BootAg, ab = g_BootAb;
                     float WW = 520.0f, WH = 300.0f;
-                    float cw = WW * (0.35f + 0.65f * ease);
-                    float chh= WH * (0.35f + 0.65f * ease);
+                    float cw = WW * ease;              // 크기 0 → 지정 크기
+                    float chh= WH * ease;
                     float wx = sw * 0.5f - cw * 0.5f;
                     float wy = sh * 0.5f - chh * 0.5f;
                     BindMainShader();
@@ -4340,6 +4376,7 @@ int main() {
                 const float WW = 720.0f, WH = 700.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"shop.exe", 1.0f, 0.80f, 0.20f, wx, wy);
+                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
 
                 const wchar_t* TIT = T(StrId::BTN_SHOP);
                 float tw0 = g_TextL.Width(TIT, 1.3f);
@@ -4406,6 +4443,7 @@ int main() {
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::MAIN_MENU;
                 }
+                }   // close: g_AppOpen open guard
             }
             // ── 도감 (적 / 증강) ──────────────────────────────────
             else if (st == GameState::CODEX) {
@@ -4413,6 +4451,7 @@ int main() {
                 const float WW = 1240.0f, WH = 800.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"codex.db", 0.40f, 0.90f, 0.50f, wx, wy);
+                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
                 int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
 
                 // 백스페이스 (검색어 편집)
@@ -4580,6 +4619,7 @@ int main() {
                     CodexSearchClear();
                     g_GameManager.currentState = GameState::MAIN_MENU;
                 }
+                }   // close: g_AppOpen open guard
             }
             // ── 직업(클래스) 선택 ─────────────────────────────────
             else if (st == GameState::JOB_SELECT) {
@@ -4897,6 +4937,7 @@ int main() {
                 const float WW = 860.0f, WH = 600.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
+                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
                 float lx = wx + 40.0f;     // 라벨 열
                 float bx0 = wx + 250.0f;   // 옵션 버튼 시작 열
                 const float OW = 120.0f, OH = 46.0f, OG = 8.0f;
@@ -4960,6 +5001,7 @@ int main() {
                     SaveGame();
                     g_GameManager.currentState = g_SettingsReturnTo;
                 }
+                }   // close: g_AppOpen open guard
             }
             else if (st == GameState::READY) {
                 const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
