@@ -529,6 +529,43 @@ static void SpawnEnemyExplosion(float ex, float ey,
     }
 }
 
+// ── 처치 연출 — "프로세스 종료" 플로팅 태그 (데스크톱 세계관) ──
+//    적 = 프로세스. 처치 시 위로 떠오르며 사라지는 작은 라벨 (terminated 등).
+//    잡몹 떼죽음 과밀 방지 위해 일반 처치는 쿨다운으로 솎아냄. 강적은 항상 표시.
+struct KillTag {
+    float x, y;            // 월드 좌표 (zoom 반영해 화면에 그림)
+    float life, maxLife;
+    float r, g, b;
+    float scale;
+    wchar_t text[24];
+    bool  active = false;
+};
+static const int MAX_KILLTAGS = 24;
+KillTag g_KillTags[MAX_KILLTAGS] = {};
+float   g_KillTagCD = 0.0f;        // 일반 처치 스폰 쓰로틀
+
+static void SpawnKillTag(float x, float y, float r, float g, float b,
+                         const wchar_t* word, bool notable) {
+    if (!notable && g_KillTagCD > 0.0f) return;     // 잡몹은 쿨다운 시 생략
+    for (int i = 0; i < MAX_KILLTAGS; i++) {
+        if (g_KillTags[i].active) continue;
+        KillTag& t = g_KillTags[i];
+        t.x = x; t.y = y - 14.0f;
+        t.maxLife = t.life = notable ? 0.9f : 0.6f;
+        t.r = r; t.g = g; t.b = b;
+        t.scale = notable ? 0.8f : 0.58f;
+        wcsncpy_s(t.text, word, _TRUNCATE);
+        t.active = true;
+        if (!notable) g_KillTagCD = 0.05f;
+        return;
+    }
+}
+
+// ── 프로그램 실행 연출 — 메뉴(바탕화면)에서 onedow.exe 더블클릭 후 부팅 ──
+float     g_BootAnim   = 0.0f;                       // >0 동안 실행 스플래시
+GameState g_BootTarget = GameState::DIFFICULTY_SELECT;
+static const float BOOT_DUR = 1.15f;                 // 실행 연출 길이
+
 // DYING 사망 연출 상태
 float g_DyingTimer    = 0.0f;
 bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
@@ -866,6 +903,8 @@ int main() {
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
             for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
+            for (int i = 0; i < MAX_KILLTAGS; i++) g_KillTags[i].active = false;
+            g_KillTagCD       = 0.0f;
             g_DyingTimer      = 0.0f;
             g_DeathBoomDone   = false;
             g_GameOverFade    = 0.0f;
@@ -1799,6 +1838,18 @@ int main() {
                                             m->color.r, m->color.g, m->color.b,
                                             /*big=*/false);
                         m->exploded = true;
+                        // 처치 연출 — 프로세스 종료 태그 (강적은 항상 강조)
+                        {
+                            static const wchar_t* W[5] =
+                                { L"terminated", L"killed", L"ended", L"exited", L"0x1B" };
+                            bool notable = (m->elite != 0 || m->kind == MobKind::BRUTE);
+                            if (notable)
+                                SpawnKillTag(m->worldX, m->worldY, 1.0f, 0.55f, 0.3f,
+                                             L"TERMINATED", true);
+                            else
+                                SpawnKillTag(m->worldX, m->worldY, 0.85f, 0.95f, 1.0f,
+                                             W[rand() % 5], false);
+                        }
                         // 폭발성 엘리트 — 죽을 때 터져 플레이어에게 광역 피해
                         if (m->elite == 3) {
                             float vbx = m->worldX, vby = m->worldY, vr = 120.0f;
@@ -1870,6 +1921,8 @@ int main() {
                                             r->color.r, r->color.g, r->color.b,
                                             /*big=*/true);
                         r->exploded = true;
+                        SpawnKillTag(r->worldX, r->worldY, 1.0f, 0.55f, 0.9f,
+                                     L"popup closed", true);
                     }
                 }
                 // 보스 사망 → 보상 (score +20000, 버프 2개 픽 / 디버프 없이)
@@ -2032,9 +2085,11 @@ int main() {
                                            bm->blastRadius * 1.2f, 0.35f,
                                            1.0f, 0.95f, 0.4f, /*needsBg=*/true);
                         } else {
-                            // 총알 격파: 평범한 폭발 파티클
+                            // 총알 격파: 평범한 폭발 파티클 + 종료 태그
                             SpawnEnemyExplosion(bm->worldX, bm->worldY,
                                                 0.9f, 0.4f, 0.4f, true);
+                            SpawnKillTag(bm->worldX, bm->worldY, 1.0f, 0.5f, 0.45f,
+                                         L"ransomware purged", true);
                         }
                         // HACK_BOMBER: 해킹 폭발 VFX (CollisionSystem 에서 플래그 설정됨)
                         if (bm->hackBlastPending) {
@@ -2198,6 +2253,15 @@ int main() {
                 p.y  += p.vy * delta;
                 p.vx *= (1.0f - 2.5f * delta);
                 p.vy *= (1.0f - 2.5f * delta);
+            }
+
+            // 처치 태그(프로세스 종료) 업데이트 — 위로 떠오르며 소멸
+            g_KillTagCD -= delta; if (g_KillTagCD < 0.0f) g_KillTagCD = 0.0f;
+            for (auto& t : g_KillTags) {
+                if (!t.active) continue;
+                t.life -= delta;
+                if (t.life <= 0.0f) { t.active = false; continue; }
+                t.y -= 42.0f * delta;
             }
 
             // 충격파 업데이트
@@ -4027,6 +4091,20 @@ int main() {
                 g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, 1.0f, 1.0f, 0.9f, 0.4f, a);
             }
 
+            // ── 처치 연출 — 프로세스 종료 플로팅 태그 (게임 진행 중) ──
+            if (st == GameState::RUNNING || st == GameState::DYING ||
+                st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
+                for (auto& t : g_KillTags) {
+                    if (!t.active) continue;
+                    float fr = t.life / t.maxLife;            // 1→0
+                    float a  = fr < 0.5f ? (fr / 0.5f) : 1.0f; // 후반 페이드아웃
+                    float sx = W2SX(t.x), sy = W2SY(t.y);
+                    float tw = g_TextS.Width(t.text, t.scale);
+                    g_TextS.Draw(t.text, sx - tw * 0.5f, sy, t.scale,
+                                 t.r, t.g, t.b, a * 0.95f);
+                }
+            }
+
             // ── 크리에이티브 HUD (게임 중) — F:증강  G:무적 ──
             if (g_CreativeMode &&
                 (st == GameState::RUNNING || st == GameState::READY ||
@@ -4044,45 +4122,137 @@ int main() {
                 }
             }
 
-            // ── 메인 메뉴 ─────────────────────────────────────────
+            // ── 메인 메뉴 = 바탕화면(데스크톱) ────────────────────────
+            //    아이콘 = 실행 파일. onedow.exe 실행 → 부팅 스플래시 → 게임.
             if (st == GameState::MAIN_MENU) {
+                int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
+                bool booting = (g_BootAnim > 0.0f);
+
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-
-                // 타이틀
-                const wchar_t* TIT = T(StrId::GAME_TITLE);
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 2.4f), sh*0.18f, 2.4f,
-                             0.9f, 0.95f, 1.0f, 1.0f);
-
-                // 버튼 4개 (시작 / 상점 / 설정 / 종료)
-                const float BW = 320.0f, BH = 64.0f, BG = 16.0f;
-                float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.38f;
-
-                if (UIButton(bx, by, BW, BH, T(StrId::BTN_START),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
-                }
-                if (UIButton(bx, by + (BH+BG), BW, BH, T(StrId::BTN_SHOP),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::SHOP;
-                }
+                // 바탕화면 그라데이션 (위 짙은 청록 → 아래 남보라)
                 {
-                    int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
-                    const wchar_t* CODEX_LBL[3] = { L"도감", L"Codex", L"図鑑" };
-                    if (UIButton(bx, by + (BH+BG)*2, BW, BH, CODEX_LBL[li2],
-                                 mx, my, lmb, g_LmbPrev)) {
-                        g_GameManager.currentState = GameState::CODEX;
+                    int bands = 10;
+                    for (int b = 0; b < bands; b++) {
+                        float f0 = (float)b / bands;
+                        float r = 0.04f + 0.02f * f0;
+                        float g = 0.07f + 0.06f * (1.0f - f0);
+                        float bl= 0.12f + 0.05f * (1.0f - f0);
+                        drawRect(0, sh * f0, sw, sh / bands + 1.0f, r, g, bl, 1.0f);
                     }
                 }
-                if (UIButton(bx, by + (BH+BG)*3, BW, BH, T(StrId::BTN_SETTINGS),
-                             mx, my, lmb, g_LmbPrev)) {
+                // 타이틀 워터마크 (바탕화면 브랜딩, 흐릿하게 중앙)
+                {
+                    const wchar_t* TIT = T(StrId::GAME_TITLE);
+                    g_TextL.Draw(TIT, cx(TIT, g_TextL, 3.0f), sh*0.40f, 3.0f,
+                                 0.5f, 0.62f, 0.78f, 0.22f);
+                    const wchar_t* SUB[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
+                    float sw2 = g_TextS.Width(SUB[li2], 0.9f);
+                    g_TextS.Draw(SUB[li2], (sw - sw2)*0.5f, sh*0.40f + 70.0f, 0.9f,
+                                 0.45f, 0.55f, 0.7f, 0.30f);
+                }
+
+                // 데스크톱 아이콘 헬퍼 — 미니 앱 창 + 파일명, 클릭(릴리즈) 반환
+                auto desktopIcon = [&](float x, float y, const wchar_t* fname,
+                                       const wchar_t* glyph,
+                                       float ar, float ag, float ab) -> bool {
+                    const float TW = 122.0f, TH = 104.0f;
+                    bool hover = (mx>=x && mx<=x+TW && my>=y && my<=y+TH);
+                    BindMainShader();
+                    if (hover) drawRect(x, y, TW, TH, 0.35f, 0.55f, 0.85f, 0.28f);
+                    float iw = 58.0f, ih = 52.0f;
+                    float ix = x + (TW-iw)*0.5f, iy = y + 12.0f;
+                    drawRect(ix, iy, iw, ih, 0.93f, 0.95f, 0.99f, 1.0f);   // 창 본체
+                    drawRect(ix, iy, iw, 14.0f, ar, ag, ab, 1.0f);         // 타이틀바
+                    drawRect(ix+iw-11, iy+3, 7, 7, 0.95f,0.95f,0.97f,0.9f);// 닫기 점
+                    float gw = g_TextL.Width(glyph, 1.1f);
+                    g_TextL.Draw(glyph, ix + (iw-gw)*0.5f, iy + 18.0f, 1.1f,
+                                 ar*0.55f, ag*0.55f, ab*0.6f, 1.0f);
+                    float lw = g_TextS.Width(fname, 0.62f);
+                    g_TextS.Draw(fname, x + (TW-lw)*0.5f, iy+ih+8.0f, 0.62f,
+                                 0.95f, 0.97f, 1.0f, 0.98f);
+                    return hover && g_LmbPrev && !lmb && !booting;
+                };
+
+                // 좌측 아이콘 열
+                const wchar_t* CODEX_LBL[3] = { L"도감", L"Codex", L"図鑑" };
+                (void)CODEX_LBL;
+                float ix0 = 56.0f, iy0 = 70.0f, istep = 120.0f;
+                if (desktopIcon(ix0, iy0 + istep*0, L"onedow.exe", L">",
+                                0.30f, 0.80f, 1.00f)) {
+                    g_BootAnim   = BOOT_DUR;                 // 실행 연출 시작
+                    g_BootTarget = GameState::DIFFICULTY_SELECT;
+                }
+                if (desktopIcon(ix0, iy0 + istep*1, L"shop.exe", L"$",
+                                1.00f, 0.80f, 0.20f) && !booting) {
+                    g_GameManager.currentState = GameState::SHOP;
+                }
+                if (desktopIcon(ix0, iy0 + istep*2, L"codex.db", L"i",
+                                0.40f, 0.90f, 0.50f) && !booting) {
+                    g_GameManager.currentState = GameState::CODEX;
+                }
+                if (desktopIcon(ix0, iy0 + istep*3, L"config.sys", L"=",
+                                0.70f, 0.75f, 0.88f) && !booting) {
                     g_SettingsReturnTo = GameState::MAIN_MENU;
                     g_GameManager.currentState = GameState::SETTINGS;
                 }
-                if (UIButton(bx, by + (BH+BG)*4, BW, BH, T(StrId::BTN_QUIT),
-                             mx, my, lmb, g_LmbPrev)) {
+                if (desktopIcon(ix0, iy0 + istep*4, L"exit.bat", L"x",
+                                0.95f, 0.35f, 0.30f) && !booting) {
                     glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
+
+                // ── 작업표시줄 (하단) — 시작 오브 + 시계 ──
+                {
+                    BindMainShader();
+                    float tbH = 42.0f, tbY = sh - tbH;
+                    drawRect(0, tbY, sw, tbH, 0.01f, 0.015f, 0.03f, 1.0f);
+                    drawRect(0, tbY, sw, 2.0f, 0.35f, 0.62f, 1.0f, 0.95f);
+                    // 시작 오브
+                    drawRect(10.0f, tbY + 7.0f, 28.0f, 28.0f, 0.30f, 0.8f, 1.0f, 0.95f);
+                    g_TextS.Draw(L"onedow", 48.0f, tbY + 12.0f, 0.85f, 0.9f, 0.96f, 1.0f, 1.0f);
+                    // 시계 (우측)
+                    time_t tt = time(nullptr); struct tm lt; localtime_s(&lt, &tt);
+                    wchar_t clk[24];
+                    swprintf_s(clk, L"%02d:%02d", lt.tm_hour, lt.tm_min);
+                    float clw = g_TextS.Width(clk, 0.85f);
+                    g_TextS.Draw(clk, sw - clw - 22.0f, tbY + 12.0f, 0.85f,
+                                 0.85f, 0.92f, 1.0f, 1.0f);
+                }
+
+                // ── 실행(부팅) 스플래시 — onedow.exe 더블클릭 시 창이 열리며 로딩 ──
+                if (g_BootAnim > 0.0f) {
+                    g_BootAnim -= delta;
+                    float prog = 1.0f - g_BootAnim / BOOT_DUR;        // 0→1
+                    if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
+                    float ease = prog < 0.30f ? (prog / 0.30f) : 1.0f; // 창 열림 0~30%
+                    float WW = 480.0f, WH = 250.0f;
+                    float cw = WW * (0.35f + 0.65f * ease);
+                    float chh= WH * (0.35f + 0.65f * ease);
+                    float wx = sw * 0.5f - cw * 0.5f;
+                    float wy = sh * 0.5f - chh * 0.5f;
+                    BindMainShader();
+                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.5f * ease);   // 배경 딤
+                    drawRect(wx, wy, cw, chh, 0.08f, 0.09f, 0.13f, 0.99f);   // 창 본체
+                    drawRect(wx, wy, cw, 28.0f, 0.30f, 0.80f, 1.0f, 1.0f);   // 타이틀바
+                    drawRect(wx+cw-22, wy+8, 12, 12, 0.9f, 0.25f, 0.25f, 0.95f); // [X]
+                    if (ease > 0.85f) {
+                        float barW = cw - 64.0f, barX = wx + 32.0f, barY = wy + chh - 54.0f;
+                        // 타이틀바 파일명
+                        g_TextS.Draw(L"onedow.exe", wx + 12.0f, wy + 6.0f, 0.6f,
+                                     0.05f, 0.1f, 0.15f, 1.0f);
+                        const wchar_t* LOAD[3] = { L"실행 중…", L"Launching…", L"起動中…" };
+                        g_TextL.Draw(LOAD[li2], wx + 32.0f, wy + 52.0f, 1.0f,
+                                     0.85f, 0.95f, 1.0f, 1.0f);
+                        // 진행 바
+                        BindMainShader();
+                        drawRect(barX, barY, barW, 16.0f, 0.14f, 0.16f, 0.22f, 1.0f);
+                        drawRect(barX, barY, barW * prog, 16.0f, 0.30f, 0.85f, 1.0f, 1.0f);
+                        wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(prog * 100.0f));
+                        g_TextS.Draw(pct, barX, barY - 26.0f, 0.7f, 0.8f, 0.9f, 1.0f, 1.0f);
+                    }
+                    if (g_BootAnim <= 0.0f) {
+                        g_BootAnim = 0.0f;
+                        g_GameManager.currentState = g_BootTarget;
+                    }
                 }
             }
             // ── 메타 상점 (코인 → 영구 업그레이드) ──────────────────
