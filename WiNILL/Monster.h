@@ -4,7 +4,22 @@
 #include <cstdlib>
 
 // 잡몹 종류 — 같은 monsters 벡터에서 kind 로 분기 (충돌/렌더 재사용)
-enum class MobKind { NORMAL, SPLITTER, BLINKER };
+//   NORMAL/SPLITTER/BLINKER 외 CHARGER/WEAVER/BRUTE 는 점수 비례 자연 스폰
+enum class MobKind { NORMAL, SPLITTER, BLINKER, CHARGER, WEAVER, BRUTE };
+
+// 종류별 처치 보상 — 총알/근접/광역 처치 모두 같은 값 쓰도록 공용화
+inline void MobKillReward(MobKind k, int splitGen,
+                          float& xpBase, float& scoreBase) {
+    xpBase = 1.0f; scoreBase = 100.0f;
+    switch (k) {
+    case MobKind::SPLITTER: xpBase = (splitGen >= 2) ? 1.0f : 2.0f; scoreBase = 120.0f; break;
+    case MobKind::BLINKER:  xpBase = 6.0f; scoreBase = 250.0f; break;
+    case MobKind::CHARGER:  xpBase = 3.0f; scoreBase = 180.0f; break;
+    case MobKind::WEAVER:   xpBase = 3.0f; scoreBase = 160.0f; break;
+    case MobKind::BRUTE:    xpBase = 8.0f; scoreBase = 400.0f; break;
+    default: break;
+    }
+}
 
 class Monster {
 public:
@@ -26,6 +41,11 @@ public:
     float   blinkWarnT  = 0.0f;
     bool    blinkWarn   = false;
     float   blinkTargetX = 0.0f, blinkTargetY = 0.0f;
+    // 돌진체(CHARGER) / 회피체(WEAVER)
+    float   chargeTimer = 0.0f;
+    int     chargeState = 0;     // 0 접근 / 1 준비(텔레그래프) / 2 돌진
+    float   dashDirX = 0.0f, dashDirY = 0.0f;
+    float   weavePhase = 0.0f;
 
     static constexpr float BLINK_INTERVAL = 1.8f;   // 점멸 주기
     static constexpr float BLINK_WARN      = 0.40f; // 점멸 전 잔상 경고
@@ -57,6 +77,21 @@ public:
             color = glm::vec3(0.7f, 0.4f, 1.0f);        // 보라/점멸
             hp   *= 0.55f;                              // 약하지만 잡기 까다로움
             blinkTimer = (float)(rand() % 100) * 0.01f; // 위상 분산
+        } else if (k == MobKind::CHARGER) {
+            color = glm::vec3(1.0f, 0.55f, 0.15f);      // 주황 — 돌진 전 텔레그래프
+            hp   *= 1.1f;
+            speed *= 0.8f;                              // 평소 느림, 돌진 시 폭발적
+            chargeTimer = (float)(rand() % 100) * 0.01f;
+        } else if (k == MobKind::WEAVER) {
+            color = glm::vec3(0.2f, 0.9f, 1.0f);        // 시안 — 좌우로 흔들며 접근
+            hp   *= 0.7f;
+            speed *= 1.15f;
+            weavePhase = (float)(rand() % 628) * 0.01f;
+        } else if (k == MobKind::BRUTE) {
+            color = glm::vec3(0.65f, 0.12f, 0.15f);     // 짙은 적 — 크고 단단함
+            hp   *= 4.5f;
+            speed *= 0.55f;
+            sizeScale = scale * 2.2f;
         }
     }
 
@@ -90,7 +125,44 @@ public:
             return;
         }
 
-        // NORMAL / SPLITTER — 플레이어 추격
+        if (kind == MobKind::CHARGER) {
+            // 돌진체 — 접근 → 멈춰서 준비(텔레그래프) → 플레이어 쪽으로 폭발 돌진
+            if (chargeState == 0) {                     // 접근
+                if (dist > 5.0f) {
+                    worldX += (dx / dist) * speed * speedMult * deltaTime;
+                    worldY += (dy / dist) * speed * speedMult * deltaTime;
+                }
+                chargeTimer += deltaTime;
+                if (chargeTimer >= 1.8f && dist < 480.0f) { chargeState = 1; chargeTimer = 0.0f; }
+            } else if (chargeState == 1) {              // 준비 (멈춤 + 조준)
+                dashDirX = dx / dist; dashDirY = dy / dist;
+                chargeTimer += deltaTime;
+                if (chargeTimer >= 0.5f) { chargeState = 2; chargeTimer = 0.0f; }
+            } else {                                    // 돌진
+                worldX += dashDirX * speed * 4.0f * speedMult * deltaTime;
+                worldY += dashDirY * speed * 4.0f * speedMult * deltaTime;
+                chargeTimer += deltaTime;
+                if (chargeTimer >= 0.35f) { chargeState = 0; chargeTimer = 0.0f; }
+            }
+            if (dist < 20.0f * sizeScale) playerHP -= 6.0f * deltaTime;
+            return;
+        }
+
+        if (kind == MobKind::WEAVER) {
+            // 회피체 — 전진하면서 좌우로 지그재그 (조준 까다로움)
+            weavePhase += deltaTime * 6.5f;
+            if (dist > 5.0f) {
+                float fX = dx / dist, fY = dy / dist;
+                float pX = -fY, pY = fX;               // 진행방향 수직
+                float w  = sinf(weavePhase) * 0.85f;
+                worldX += (fX * speed + pX * speed * w) * speedMult * deltaTime;
+                worldY += (fY * speed + pY * speed * w) * speedMult * deltaTime;
+            }
+            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            return;
+        }
+
+        // NORMAL / SPLITTER / BRUTE — 플레이어 추격
         if (dist > 5.0f) {
             worldX += (dx / dist) * speed * speedMult * deltaTime;
             worldY += (dy / dist) * speed * speedMult * deltaTime;

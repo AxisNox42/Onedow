@@ -113,13 +113,9 @@ public:
                         m->alive = false;
                         m->scored = true;   // 총알 처치 — 보상 지급 완료 표시
                         AddKillCombo();
-                        // 종류별 기본 EXP/점수 (분열체 자식은 낮게, 점멸체는 높게)
-                        float baseXp = 1.0f, baseScore = 100.0f;
-                        if (m->kind == MobKind::SPLITTER) {
-                            baseXp = (m->splitGen >= 2) ? 1.0f : 2.0f; baseScore = 120.0f;
-                        } else if (m->kind == MobKind::BLINKER) {
-                            baseXp = 6.0f; baseScore = 250.0f;
-                        }
+                        // 종류별 기본 EXP/점수 (공용 테이블)
+                        float baseXp, baseScore;
+                        MobKillReward(m->kind, m->splitGen, baseXp, baseScore);
                         float gained = (baseXp + (float)stats.meleeXpBonus)
                                      * stats.xpMult;
                         xp              += (long long)gained;

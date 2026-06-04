@@ -29,12 +29,22 @@ public:
         }
     }
 
+    // varietyPct: 특수 잡몹(돌진/회피/거대) 으로 스폰될 확률(%). 점수 비례로 main 이 전달.
     void SpawnMob(int screenW, int screenH, int cap = 100, float hpMul = 1.0f,
-                  float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
+                  float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1,
+                  int varietyPct = 0) {
         if ((int)monsters.size() >= cap) return;
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
-        monsters.push_back(new Monster(sx, sy, hpMul));
+        Monster* nm = new Monster(sx, sy, hpMul);
+        if (varietyPct > 0 && (rand() % 100) < varietyPct) {
+            int r = rand() % 10;                       // 40% 돌진 / 40% 회피 / 20% 거대
+            MobKind k = (r < 4) ? MobKind::CHARGER
+                      : (r < 8) ? MobKind::WEAVER
+                                : MobKind::BRUTE;
+            nm->MakeKind(k);
+        }
+        monsters.push_back(nm);
     }
 
     // hpMult: 원거리 몹 HP 배율 (디버프). maxCount: 최대 동시 존재량

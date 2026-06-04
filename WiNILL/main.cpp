@@ -116,6 +116,25 @@ inline void drawMob(const Monster* m) {
         }
         drawDiamond(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
         drawDiamond(m->worldX, m->worldY, base*0.4f, 1.0f, 1.0f, 1.0f, 0.9f);
+    } else if (m->kind == MobKind::CHARGER) {
+        // 준비(텔레그래프) 중엔 깜빡이는 큰 외곽 + 조준선 느낌
+        if (m->chargeState == 1) {
+            float p = 0.5f + 0.5f * sinf((float)glfwGetTime() * 28.0f);
+            drawTriangle(m->worldX, m->worldY, base * (1.5f + 0.4f * p),
+                         1.0f, 0.85f, 0.25f, 0.35f);
+        } else if (m->chargeState == 2) {   // 돌진 중 잔열
+            drawCircle(m->worldX, m->worldY, base * 1.2f, 1.0f, 0.5f, 0.1f, 0.35f);
+        }
+        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawTriangle(m->worldX, m->worldY, base*0.4f, 1.0f, 0.95f, 0.7f, 0.9f);
+    } else if (m->kind == MobKind::WEAVER) {
+        drawDiamond(m->worldX, m->worldY, base*0.95f, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawDiamond(m->worldX, m->worldY, base*0.35f, 1.0f, 1.0f, 1.0f, 0.85f);
+    } else if (m->kind == MobKind::BRUTE) {
+        drawCircle(m->worldX, m->worldY, base*1.1f,
+                   m->color.r*0.5f, m->color.g*0.5f, m->color.b*0.5f, 0.85f);
+        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawTriangle(m->worldX, m->worldY, base*0.5f, 1.0f, 0.6f, 0.5f, 0.8f);
     } else {
         drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
     }
@@ -1659,12 +1678,7 @@ int main() {
                     if (!m->alive && !m->exploded) {
                         if (!m->scored) {       // 아직 보상 안 받은 죽음 → 정산
                             m->scored = true;
-                            float xpB = 1.0f, scB = 100.0f;
-                            if (m->kind == MobKind::SPLITTER) {
-                                xpB = (m->splitGen >= 2) ? 1.0f : 2.0f; scB = 120.0f;
-                            } else if (m->kind == MobKind::BLINKER) {
-                                xpB = 6.0f; scB = 250.0f;
-                            }
+                            float xpB, scB; MobKillReward(m->kind, m->splitGen, xpB, scB);
                             creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
                         }
                         SpawnEnemyExplosion(m->worldX, m->worldY,
@@ -2126,6 +2140,8 @@ int main() {
             float rampSpawn = 1.0f + intensity * 0.55f;   // 스폰 빈도 (×1.55 @10만 … ×4.3 @60만)
             float rampHp    = 1.0f + intensity * 0.35f;   // 몹 체력
             float rampSpd   = 1.0f + intensity * 0.09f;   // 몹 속도
+            // 특수 잡몹(돌진/회피/거대) 출현 확률 — 점수 비례 (초반 0 → 약 13.5만점에 45% 상한)
+            int   varietyPct = (int)std::min(45.0f, (float)g_GameManager.score / 3000.0f);
 
             // 스폰 영역 — 2페이즈 줌아웃 시 확장된(보이는) 영역 모서리에서 스폰.
             //   player 이동 클램프와 동일한 [화면/줌] 범위 사용 → 일관됨
@@ -2146,14 +2162,17 @@ int main() {
                 size_t mbefore = g_MonsterManager.monsters.size();
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                           (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn),
-                                          g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH);
-                // 디버프 보유 시 일부 몹을 분열체/점멸체로 (독립 확률)
+                                          g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH,
+                                          varietyPct);
+                // 디버프 보유 시 일부 몹을 분열체/점멸체로 (특수 잡몹 안 된 경우만 — 중복 변환 방지)
                 if (g_MonsterManager.monsters.size() > mbefore) {
                     Monster* nm = g_MonsterManager.monsters.back();
-                    if (g_Stats.splitterMobs && (rand() % 100) < 25)
-                        nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
-                    else if (g_Stats.blinkerMobs && (rand() % 100) < 25)
-                        nm->MakeKind(MobKind::BLINKER);
+                    if (nm->kind == MobKind::NORMAL) {
+                        if (g_Stats.splitterMobs && (rand() % 100) < 25)
+                            nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
+                        else if (g_Stats.blinkerMobs && (rand() % 100) < 25)
+                            nm->MakeKind(MobKind::BLINKER);
+                    }
                 }
                 spawnTimer = 0.0f;
             }
@@ -2646,9 +2665,7 @@ int main() {
                     SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
                     if (m->hp <= 0.0f) {
                         m->alive = false; m->scored = true; AddKillCombo();
-                        float bx = 1.0f, bs = 100.0f;
-                        if (m->kind == MobKind::SPLITTER) { bx = (m->splitGen >= 2) ? 1.0f : 2.0f; bs = 120.0f; }
-                        else if (m->kind == MobKind::BLINKER) { bx = 6.0f; bs = 250.0f; }
+                        float bx, bs; MobKillReward(m->kind, m->splitGen, bx, bs);
                         g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -2727,8 +2744,9 @@ int main() {
                         fireTimer = 0.0f;
                     }
                     // 클릭 release 시 타이머 리셋 — 다음 클릭에 즉시 발사 가능 (일반 무기 UX)
-                    // CANNON 은 연사 1초 고정이라 클릭 연타로 우회되면 안 됨 → 리셋 스킵
-                    if (!lmb && !g_Stats.cannon) fireTimer = effInterval;
+                    // 단발 고화력 무기(대포·샷건·저격)는 연타로 연사 우회 방지 → 리셋 스킵
+                    if (!lmb && !g_Stats.cannon && !g_Stats.shotgun && !g_Stats.sniper)
+                        fireTimer = effInterval;
                 }
             }
         }
