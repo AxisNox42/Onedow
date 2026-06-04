@@ -561,10 +561,19 @@ static void SpawnKillTag(float x, float y, float r, float g, float b,
     }
 }
 
-// ── 프로그램 실행 연출 — 메뉴(바탕화면)에서 onedow.exe 더블클릭 후 부팅 ──
-float     g_BootAnim   = 0.0f;                       // >0 동안 실행 스플래시
-GameState g_BootTarget = GameState::DIFFICULTY_SELECT;
+// ── 프로그램 실행 연출 — 메뉴(바탕화면)에서 앱 아이콘 더블클릭 후 부팅 ──
+float          g_BootAnim   = 0.0f;                  // >0 동안 실행 스플래시
+GameState      g_BootTarget = GameState::DIFFICULTY_SELECT;
+const wchar_t* g_BootName   = L"onedow.exe";         // 실행 중인 앱 파일명
+float          g_BootAr = 0.30f, g_BootAg = 0.80f, g_BootAb = 1.00f;  // 강조색
 static const float BOOT_DUR = 1.15f;                 // 실행 연출 길이
+
+// 앱 실행 시작 — 부팅 스플래시 띄우고 끝나면 target 으로 전이
+inline void LaunchApp(GameState target, const wchar_t* name,
+                      float ar, float ag, float ab) {
+    g_BootAnim = BOOT_DUR; g_BootTarget = target;
+    g_BootName = name; g_BootAr = ar; g_BootAg = ag; g_BootAb = ab;
+}
 
 // DYING 사망 연출 상태
 float g_DyingTimer    = 0.0f;
@@ -4188,21 +4197,20 @@ int main() {
                 float ix0 = 56.0f, iy0 = 70.0f, istep = 120.0f;
                 if (desktopIcon(ix0, iy0 + istep*0, L"onedow.exe", L">",
                                 0.30f, 0.80f, 1.00f)) {
-                    g_BootAnim   = BOOT_DUR;                 // 실행 연출 시작
-                    g_BootTarget = GameState::DIFFICULTY_SELECT;
+                    LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
                 }
                 if (desktopIcon(ix0, iy0 + istep*1, L"shop.exe", L"$",
-                                1.00f, 0.80f, 0.20f) && !booting) {
-                    g_GameManager.currentState = GameState::SHOP;
+                                1.00f, 0.80f, 0.20f)) {
+                    LaunchApp(GameState::SHOP, L"shop.exe", 1.00f, 0.80f, 0.20f);
                 }
                 if (desktopIcon(ix0, iy0 + istep*2, L"codex.db", L"i",
-                                0.40f, 0.90f, 0.50f) && !booting) {
-                    g_GameManager.currentState = GameState::CODEX;
+                                0.40f, 0.90f, 0.50f)) {
+                    LaunchApp(GameState::CODEX, L"codex.db", 0.40f, 0.90f, 0.50f);
                 }
                 if (desktopIcon(ix0, iy0 + istep*3, L"config.sys", L"=",
-                                0.70f, 0.75f, 0.88f) && !booting) {
+                                0.70f, 0.75f, 0.88f)) {
                     g_SettingsReturnTo = GameState::MAIN_MENU;
-                    g_GameManager.currentState = GameState::SETTINGS;
+                    LaunchApp(GameState::SETTINGS, L"config.sys", 0.70f, 0.75f, 0.88f);
                 }
                 if (desktopIcon(ix0, iy0 + istep*4, L"exit.bat", L"x",
                                 0.95f, 0.35f, 0.30f) && !booting) {
@@ -4227,36 +4235,50 @@ int main() {
                                  0.85f, 0.92f, 1.0f, 1.0f);
                 }
 
-                // ── 실행(부팅) 스플래시 — onedow.exe 더블클릭 시 창이 열리며 로딩 ──
+                // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
                 if (g_BootAnim > 0.0f) {
                     g_BootAnim -= delta;
                     float prog = 1.0f - g_BootAnim / BOOT_DUR;        // 0→1
                     if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
-                    float ease = prog < 0.30f ? (prog / 0.30f) : 1.0f; // 창 열림 0~30%
-                    float WW = 480.0f, WH = 250.0f;
+                    float ease = prog < 0.25f ? (prog / 0.25f) : 1.0f; // 창 열림 0~25%
+                    float ar = g_BootAr, ag = g_BootAg, ab = g_BootAb;
+                    float WW = 520.0f, WH = 300.0f;
                     float cw = WW * (0.35f + 0.65f * ease);
                     float chh= WH * (0.35f + 0.65f * ease);
                     float wx = sw * 0.5f - cw * 0.5f;
                     float wy = sh * 0.5f - chh * 0.5f;
                     BindMainShader();
-                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.5f * ease);   // 배경 딤
-                    drawRect(wx, wy, cw, chh, 0.08f, 0.09f, 0.13f, 0.99f);   // 창 본체
-                    drawRect(wx, wy, cw, 28.0f, 0.30f, 0.80f, 1.0f, 1.0f);   // 타이틀바
+                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease);  // 배경 딤
+                    drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
+                    drawRect(wx, wy, cw, 28.0f, ar*0.55f, ag*0.55f, ab*0.6f, 1.0f); // 타이틀바
+                    drawRect(wx, wy+28.0f, cw, 2.0f, ar, ag, ab, 0.9f);      // 강조 라인
                     drawRect(wx+cw-22, wy+8, 12, 12, 0.9f, 0.25f, 0.25f, 0.95f); // [X]
-                    if (ease > 0.85f) {
-                        float barW = cw - 64.0f, barX = wx + 32.0f, barY = wy + chh - 54.0f;
-                        // 타이틀바 파일명
-                        g_TextS.Draw(L"onedow.exe", wx + 12.0f, wy + 6.0f, 0.6f,
-                                     0.05f, 0.1f, 0.15f, 1.0f);
-                        const wchar_t* LOAD[3] = { L"실행 중…", L"Launching…", L"起動中…" };
-                        g_TextL.Draw(LOAD[li2], wx + 32.0f, wy + 52.0f, 1.0f,
-                                     0.85f, 0.95f, 1.0f, 1.0f);
-                        // 진행 바
+                    if (ease > 0.9f) {
+                        g_TextS.Draw(g_BootName, wx + 12.0f, wy + 6.0f, 0.6f,
+                                     0.95f, 0.97f, 1.0f, 1.0f);
+                        // 부팅 로그 — 진행도에 따라 한 줄씩 나타남
+                        static const wchar_t* LOG[6] = {
+                            L"> mounting modules ...",
+                            L"> loading assets        [ OK ]",
+                            L"> init renderer         [ OK ]",
+                            L"> linking onedow.dll    [ OK ]",
+                            L"> verify save data      [ OK ]",
+                            L"> ready." };
+                        int shown = (int)(prog * 6.5f); if (shown > 6) shown = 6;
+                        for (int i = 0; i < shown; i++) {
+                            bool last = (i == 5);
+                            g_TextS.Draw(LOG[i], wx + 22.0f, wy + 44.0f + i * 24.0f, 0.6f,
+                                         last ? ag : 0.65f, last ? 1.0f : 0.78f,
+                                         last ? ag : 0.7f, 0.95f);
+                        }
+                        // 진행 바 (창 하단)
+                        float barW = cw - 44.0f, barX = wx + 22.0f, barY = wy + chh - 30.0f;
                         BindMainShader();
-                        drawRect(barX, barY, barW, 16.0f, 0.14f, 0.16f, 0.22f, 1.0f);
-                        drawRect(barX, barY, barW * prog, 16.0f, 0.30f, 0.85f, 1.0f, 1.0f);
+                        drawRect(barX, barY, barW, 14.0f, 0.12f, 0.14f, 0.20f, 1.0f);
+                        drawRect(barX, barY, barW * prog, 14.0f, ar, ag, ab, 1.0f);
                         wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(prog * 100.0f));
-                        g_TextS.Draw(pct, barX, barY - 26.0f, 0.7f, 0.8f, 0.9f, 1.0f, 1.0f);
+                        g_TextS.Draw(pct, barX + barW - 44.0f, barY - 22.0f, 0.6f,
+                                     0.8f, 0.9f, 1.0f, 1.0f);
                     }
                     if (g_BootAnim <= 0.0f) {
                         g_BootAnim = 0.0f;
