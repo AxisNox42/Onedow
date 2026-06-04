@@ -91,6 +91,9 @@ struct PlayerStats {
     float mobSpawnMult  = 1.0f;  // <1.0 = 더 자주
     bool  splitterMobs  = false; // 분열체(죽으면 분열) 등장 (디버프)
     bool  blinkerMobs   = false; // 점멸체(순간이동) 등장 (디버프)
+    bool  orbiterMobs   = false; // 공전체(스파이럴 인) 등장 (디버프)
+    bool  spawnerMobs   = false; // 소환체(잡몹 소환) 등장 (디버프)
+    bool  shieldedMobs  = false; // 보호막체(주기 방패) 등장 (디버프)
     float mobSpeedMult  = 1.0f;
     bool  approachingDeath = false;
     int   approachStacks   = 0;   // D_APPROACH 누적 횟수 (속도 +20%/스택)
@@ -314,6 +317,18 @@ struct PlayerStats {
         case AugType::D_BLINKER:     // 점멸체 출현 (순간이동 추격) · 처치 EXP +6
             blinkerMobs    = true;
             meleeXpBonus   += 6;
+            break;
+        case AugType::D_ORBITER:     // 공전체 출현 (스파이럴 인) · 처치 EXP +5
+            orbiterMobs    = true;
+            meleeXpBonus   += 5;
+            break;
+        case AugType::D_SPAWNER:     // 소환체 출현 (잡몹 소환) · 처치 EXP +7
+            spawnerMobs    = true;
+            meleeXpBonus   += 7;
+            break;
+        case AugType::D_SHIELDED:    // 보호막체 출현 (주기 방패) · 처치 EXP +5
+            shieldedMobs   = true;
+            meleeXpBonus   += 5;
             break;
         case AugType::D_APPROACH:
             approachingDeath = true;

@@ -76,6 +76,25 @@ public:
         for (auto m : monsters)
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult);
 
+        // ── 소환체(SPAWNER) — 주기마다 작은 잡몹 2마리 (전체 몹 수 제한) ──
+        {
+            std::vector<Monster*> born;
+            int total = (int)monsters.size();
+            for (auto m : monsters) {
+                if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+                m->spawnTimer -= dt;
+                if (m->spawnTimer <= 0.0f && total + (int)born.size() < 140) {
+                    m->spawnTimer = 3.0f;
+                    for (int s = 0; s < 2; s++) {
+                        float a = (float)(rand() % 628) * 0.01f;
+                        born.push_back(new Monster(m->worldX + cosf(a) * 32.0f,
+                                                   m->worldY + sinf(a) * 32.0f, 0.5f));
+                    }
+                }
+            }
+            for (auto* b : born) monsters.push_back(b);
+        }
+
         // ── 소프트 콜리전 (잡몹 간) ──
         //   너무 가까우면 서로 밀어내고, 4명 이상에게 밀리면 압사 데미지
         //   summoned 몹은 더 큰 반경 (소환물 더 큼)

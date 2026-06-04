@@ -101,6 +101,8 @@ public:
                                   * stats.GetDamageMultiplier(pd)
                                   * b.dmgMult * CritRoll(stats, isCrit);
                     }
+                    // 보호막체: 방패 ON 동안 피해 85% 감소 (광역 공격은 우회)
+                    if (m->kind == MobKind::SHIELDED && m->shieldActive) baseDealt *= 0.15f;
                     float dealtThisHit = (baseDealt < m->hp) ? baseDealt : m->hp;
                     m->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;

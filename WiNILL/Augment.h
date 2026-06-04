@@ -32,6 +32,7 @@ enum class AugType {
     D_BOMBER_BLAST, D_BOMBER_BUFF, D_BOMBER_SPEED,   // 신규
     D_MOB_HP, D_SLOW_MOVE,                            // 신규
     D_SPLITTER, D_BLINKER,                            // 신규 적 — 분열체 / 점멸체
+    D_ORBITER, D_SPAWNER, D_SHIELDED,                 // 신규 적 — 공전체 / 소환체 / 보호막체
     D_BLEED, D_WEAKEN,                                // 출혈 / 약화
     // ── 특수 (2) ──────────────────────────────
     S_CHAOS, S_PANDORA,
@@ -326,6 +327,21 @@ static const AugDef ALL_AUGS[] = {
       { L"일부 잡몹이 점멸체로 등장 (잔상 경고 후 플레이어 쪽으로 순간이동) · 처치 EXP +6",
         L"Some mobs become blinkers (teleport toward you after a ghost telegraph) · kill EXP +6",
         L"一部の雑魚が点滅体に (残像予告後プレイヤーへ瞬間移動)・撃破EXP +6" } },
+    { AugType::D_ORBITER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_ORBITER",
+      { L"공전체 출현", L"Orbiters", L"公転体出現" },
+      { L"일부 잡몹이 공전체로 등장 (플레이어 주위를 돌며 서서히 좁혀옴) · 처치 EXP +5",
+        L"Some mobs become orbiters (circle you, spiraling inward) · kill EXP +5",
+        L"一部の雑魚が公転体に (周囲を回り徐々に接近)・撃破EXP +5" } },
+    { AugType::D_SPAWNER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_SPAWNER",
+      { L"소환체 출현", L"Spawners", L"召喚体出現" },
+      { L"일부 잡몹이 소환체로 등장 (느리지만 작은 잡몹을 계속 소환) · 처치 EXP +7",
+        L"Some mobs become spawners (slow, keep summoning small mobs) · kill EXP +7",
+        L"一部の雑魚が召喚体に (低速・小雑魚を召喚し続ける)・撃破EXP +7" } },
+    { AugType::D_SHIELDED,    AugRarity::DEBUFF,    AugUnique::NONE, "D_SHIELDED",
+      { L"보호막체 출현", L"Shielded", L"防御体出現" },
+      { L"일부 잡몹이 보호막체로 등장 (방패 ON 동안 피해 대폭 감소, 주기적으로 OFF) · 처치 EXP +5",
+        L"Some mobs become shielded (huge damage cut while shield is up, cycles off) · kill EXP +5",
+        L"一部の雑魚が防御体に (盾ON中は被害激減・周期的にOFF)・撃破EXP +5" } },
     { AugType::D_BLEED,       AugRarity::DEBUFF,    AugUnique::NONE, "D_BLEED",
       { L"출혈", L"Bleed", L"出血" },
       { L"초당 체력 0.8 감소 (회복으로 상쇄 가능) · 전체 EXP +12%",
@@ -346,7 +362,7 @@ static const AugDef ALL_AUGS[] = {
       { L"버프 3개 + 디버프 2개 즉시 획득", L"Instantly gain 3 buffs + 2 debuffs", L"バフ3個 + デバフ2個を即獲得" } },
 };
 
-static constexpr int AUG_TOTAL = 60;  // +연쇄x2·분열체·점멸체·스킬3·핵앤슬래쉬6
+static constexpr int AUG_TOTAL = 63;  // +공전체·소환체·보호막체 디버프3
 
 // 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {

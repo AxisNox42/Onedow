@@ -75,6 +75,9 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::D_SLOW_MOVE:   return "D_SLOW_MOVE";
     case AugType::D_SPLITTER:    return "D_SPLITTER";
     case AugType::D_BLINKER:     return "D_BLINKER";
+    case AugType::D_ORBITER:     return "D_ORBITER";
+    case AugType::D_SPAWNER:     return "D_SPAWNER";
+    case AugType::D_SHIELDED:    return "D_SHIELDED";
     case AugType::D_BLEED:       return "D_BLEED";
     case AugType::D_WEAKEN:      return "D_WEAKEN";
     // 특수

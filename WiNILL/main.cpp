@@ -128,13 +128,48 @@ inline void drawMob(const Monster* m) {
         drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
         drawTriangle(m->worldX, m->worldY, base*0.4f, 1.0f, 0.95f, 0.7f, 0.9f);
     } else if (m->kind == MobKind::WEAVER) {
+        // 회피체 — 시안 다이아 (좌우로 흔들림)
         drawDiamond(m->worldX, m->worldY, base*0.95f, m->color.r, m->color.g, m->color.b, 1.0f);
         drawDiamond(m->worldX, m->worldY, base*0.35f, 1.0f, 1.0f, 1.0f, 0.85f);
     } else if (m->kind == MobKind::BRUTE) {
-        drawCircle(m->worldX, m->worldY, base*1.1f,
-                   m->color.r*0.5f, m->color.g*0.5f, m->color.b*0.5f, 0.85f);
-        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawTriangle(m->worldX, m->worldY, base*0.5f, 1.0f, 0.6f, 0.5f, 0.8f);
+        // 거대체 — 겹친 다이아(보석/장갑) + 네 모서리 장갑 스터드 (원형 바디 없음)
+        float x = m->worldX, y = m->worldY;
+        drawDiamond(x, y, base*1.15f, m->color.r*0.55f, m->color.g*0.55f, m->color.b*0.55f, 1.0f);
+        drawDiamond(x, y, base*0.85f, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawDiamond(x, y, base*0.40f, 1.0f, 0.6f, 0.45f, 0.95f);
+        float s = base*0.28f, o = base*0.50f;
+        drawRect(x - o - s*0.5f, y - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
+        drawRect(x + o - s*0.5f, y - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
+        drawRect(x - s*0.5f, y - o - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
+        drawRect(x - s*0.5f, y + o - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
+    } else if (m->kind == MobKind::ORBITER) {
+        // 공전체 — 노란 십자(위성) + 중심 다이아
+        float x = m->worldX, y = m->worldY;
+        float bw = base*1.7f, th = base*0.42f;
+        drawRect(x - bw*0.5f, y - th*0.5f, bw, th, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawRect(x - th*0.5f, y - bw*0.5f, th, bw, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawDiamond(x, y, base*0.6f, 1.0f, 1.0f, 0.85f, 0.95f);
+    } else if (m->kind == MobKind::SPAWNER) {
+        // 소환체 — 청록 다이아 둥지 + 주위를 도는 작은 세모(알) 3개
+        float x = m->worldX, y = m->worldY;
+        float ph = (float)glfwGetTime() * 1.2f;
+        for (int k = 0; k < 3; k++) {
+            float a = ph + (float)k * 2.0944f;
+            drawTriangle(x + cosf(a) * base*1.35f, y + sinf(a) * base*1.35f,
+                         base*0.45f, m->color.r*1.3f, m->color.g*1.2f, m->color.b*1.2f, 0.95f);
+        }
+        drawDiamond(x, y, base*1.05f, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawDiamond(x, y, base*0.5f, 0.04f, 0.18f, 0.13f, 0.95f);
+    } else if (m->kind == MobKind::SHIELDED) {
+        // 보호막체 — 파란 다이아 + 방패 ON 동안 플레이어 방향 부채꼴 실드
+        float x = m->worldX, y = m->worldY;
+        if (m->shieldActive) {
+            float ang = atan2f(m->dashDirY, m->dashDirX);
+            float pulse = 0.4f + 0.15f * sinf((float)glfwGetTime() * 8.0f);
+            drawConeFan(x, y, base*2.0f, ang, 1.0f, 0.35f, 0.75f, 1.0f, pulse);
+        }
+        drawDiamond(x, y, base, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawDiamond(x, y, base*0.4f, 1.0f, 1.0f, 1.0f, 0.85f);
     } else {
         drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
     }
@@ -2172,6 +2207,12 @@ int main() {
                             nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
                         else if (g_Stats.blinkerMobs && (rand() % 100) < 25)
                             nm->MakeKind(MobKind::BLINKER);
+                        else if (g_Stats.orbiterMobs && (rand() % 100) < 22)
+                            nm->MakeKind(MobKind::ORBITER);
+                        else if (g_Stats.spawnerMobs && (rand() % 100) < 14)
+                            nm->MakeKind(MobKind::SPAWNER);
+                        else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
+                            nm->MakeKind(MobKind::SHIELDED);
                     }
                 }
                 spawnTimer = 0.0f;
@@ -2661,7 +2702,9 @@ int main() {
                 };
                 for (auto m : g_MonsterManager.monsters) {        // 잡몹
                     if (!m->alive || !inCone(m->worldX, m->worldY)) continue;
-                    float dealt = (dmg < m->hp) ? dmg : m->hp; m->hp -= dealt;
+                    float dmgM = dmg;
+                    if (m->kind == MobKind::SHIELDED && m->shieldActive) dmgM *= 0.15f;
+                    float dealt = (dmgM < m->hp) ? dmgM : m->hp; m->hp -= dealt;
                     SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
                     if (m->hp <= 0.0f) {
                         m->alive = false; m->scored = true; AddKillCombo();

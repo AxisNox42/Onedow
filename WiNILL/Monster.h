@@ -2,10 +2,17 @@
 #include <glm/glm.hpp>
 #include <cmath>
 #include <cstdlib>
+#include <algorithm>
 
 // 잡몹 종류 — 같은 monsters 벡터에서 kind 로 분기 (충돌/렌더 재사용)
-//   NORMAL/SPLITTER/BLINKER 외 CHARGER/WEAVER/BRUTE 는 점수 비례 자연 스폰
-enum class MobKind { NORMAL, SPLITTER, BLINKER, CHARGER, WEAVER, BRUTE };
+//   NORMAL/SPLITTER/BLINKER 외:
+//   - CHARGER/WEAVER/BRUTE : 점수 비례 자연 스폰
+//   - ORBITER/SPAWNER/SHIELDED : 디버프 보유 시 등장
+enum class MobKind {
+    NORMAL, SPLITTER, BLINKER,
+    CHARGER, WEAVER, BRUTE,
+    ORBITER, SPAWNER, SHIELDED
+};
 
 // 종류별 처치 보상 — 총알/근접/광역 처치 모두 같은 값 쓰도록 공용화
 inline void MobKillReward(MobKind k, int splitGen,
@@ -17,6 +24,9 @@ inline void MobKillReward(MobKind k, int splitGen,
     case MobKind::CHARGER:  xpBase = 3.0f; scoreBase = 180.0f; break;
     case MobKind::WEAVER:   xpBase = 3.0f; scoreBase = 160.0f; break;
     case MobKind::BRUTE:    xpBase = 8.0f; scoreBase = 400.0f; break;
+    case MobKind::ORBITER:  xpBase = 5.0f; scoreBase = 200.0f; break;
+    case MobKind::SPAWNER:  xpBase = 7.0f; scoreBase = 300.0f; break;
+    case MobKind::SHIELDED: xpBase = 5.0f; scoreBase = 220.0f; break;
     default: break;
     }
 }
@@ -44,8 +54,14 @@ public:
     // 돌진체(CHARGER) / 회피체(WEAVER)
     float   chargeTimer = 0.0f;
     int     chargeState = 0;     // 0 접근 / 1 준비(텔레그래프) / 2 돌진
-    float   dashDirX = 0.0f, dashDirY = 0.0f;
+    float   dashDirX = 0.0f, dashDirY = 0.0f;   // SHIELDED 도 재사용(플레이어 방향 = 방패 정면)
     float   weavePhase = 0.0f;
+    // 공전체(ORBITER) / 소환체(SPAWNER) / 보호막체(SHIELDED)
+    float   orbitAngle  = 0.0f;
+    float   orbitRadius = 0.0f;
+    float   spawnTimer  = 0.0f;
+    bool    shieldActive = true;
+    float   shieldTimer  = 0.0f;
 
     static constexpr float BLINK_INTERVAL = 1.8f;   // 점멸 주기
     static constexpr float BLINK_WARN      = 0.40f; // 점멸 전 잔상 경고
@@ -92,6 +108,21 @@ public:
             hp   *= 4.5f;
             speed *= 0.55f;
             sizeScale = scale * 2.2f;
+        } else if (k == MobKind::ORBITER) {
+            color = glm::vec3(1.0f, 0.85f, 0.2f);       // 노랑 — 공전하며 스파이럴 인
+            hp   *= 0.6f;
+            speed *= 1.2f;
+            orbitRadius = 270.0f + (float)(rand() % 90);
+            orbitAngle  = (float)(rand() % 628) * 0.01f;
+        } else if (k == MobKind::SPAWNER) {
+            color = glm::vec3(0.2f, 0.75f, 0.55f);      // 청록 — 작은 잡몹 소환
+            hp   *= 2.4f;
+            speed *= 0.5f;
+            spawnTimer = 2.5f;
+        } else if (k == MobKind::SHIELDED) {
+            color = glm::vec3(0.3f, 0.5f, 1.0f);        // 파랑 — 주기적 보호막
+            speed *= 0.85f;
+            shieldActive = true; shieldTimer = 0.0f;
         }
     }
 
@@ -162,7 +193,35 @@ public:
             return;
         }
 
-        // NORMAL / SPLITTER / BRUTE — 플레이어 추격
+        if (kind == MobKind::ORBITER) {
+            // 공전 위성 — 플레이어 주위를 돌며 반경을 서서히 줄여 스파이럴 인
+            orbitAngle  += deltaTime * 1.7f * speedMult;
+            orbitRadius -= 24.0f * deltaTime;
+            if (orbitRadius < 14.0f) orbitRadius = 14.0f;
+            float tx = playerCX + cosf(orbitAngle) * orbitRadius;
+            float ty = playerCY + sinf(orbitAngle) * orbitRadius;
+            float k = std::min(1.0f, 7.0f * deltaTime);
+            worldX += (tx - worldX) * k;
+            worldY += (ty - worldY) * k;
+            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            return;
+        }
+
+        if (kind == MobKind::SHIELDED) {
+            // 보호막체 — 평소 접근. 주기적으로 방패 ON(2s)/OFF(1.6s). OFF 일 때만 약점.
+            dashDirX = dx / dist; dashDirY = dy / dist;   // 방패 정면 = 플레이어 방향
+            shieldTimer += deltaTime;
+            if (shieldActive && shieldTimer >= 2.0f)      { shieldActive = false; shieldTimer = 0.0f; }
+            else if (!shieldActive && shieldTimer >= 1.6f){ shieldActive = true;  shieldTimer = 0.0f; }
+            if (dist > 5.0f) {
+                worldX += (dx / dist) * speed * speedMult * deltaTime;
+                worldY += (dy / dist) * speed * speedMult * deltaTime;
+            }
+            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            return;
+        }
+
+        // NORMAL / SPLITTER / BRUTE / SPAWNER — 플레이어 추격 (SPAWNER 는 느림)
         if (dist > 5.0f) {
             worldX += (dx / dist) * speed * speedMult * deltaTime;
             worldY += (dy / dist) * speed * speedMult * deltaTime;
