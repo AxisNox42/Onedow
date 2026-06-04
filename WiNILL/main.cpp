@@ -95,14 +95,21 @@ inline void drawBullet(const Bullet& b) {
         }
     }
     if (!b.isEnemy) {
-        // 글로우 헤일로 (소프트) — 탄환이 더 빛나 보이게
-        drawCircle(b.x, b.y, r * 2.6f, b.color.r, b.color.g, b.color.b, 0.14f);
-        drawCircle(b.x, b.y, r * 1.7f, b.color.r, b.color.g, b.color.b, 0.22f);
+        // 글로우 헤일로 (소프트) — 탄환이 더 빛나 보이게 (1겹: 후반 탄막 성능)
+        drawCircle(b.x, b.y, r * 1.9f, b.color.r, b.color.g, b.color.b, 0.20f);
     }
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
 
 // 잡몹 그리기 — 종류별 모양 (일반=세모 / 분열체=초록 원 / 점멸체=점멸 다이아)
+// 사각 윈도우(스크린/월드 좌표 동일) 안에 점이 들어오는지 — 창별 컬링용
+//   각 가짜 창 scissor 패스에서 창 밖 엔티티의 draw call 자체를 건너뛴다.
+static inline bool inWin(float x, float y, float rx, float ry, float rw, float rh,
+                         float margin = 48.0f) {
+    return x >= rx - margin && x <= rx + rw + margin &&
+           y >= ry - margin && y <= ry + rh + margin;
+}
+
 inline void drawMob(const Monster* m) {
     MarkMobSeen(m->kind);   // 도감 발견 (화면에 그려진 적)
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
@@ -2204,8 +2211,11 @@ int main() {
             float spawnInterval = 0.3f * g_Stats.mobSpawnMult / (p2mult * rampSpawn);
             if (spawnTimer > spawnInterval) {
                 size_t mbefore = g_MonsterManager.monsters.size();
+                // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
+                int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
+                if (effCap > 240) effCap = 240;
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
-                                          (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn),
+                                          effCap,
                                           g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH,
                                           varietyPct);
                 // 디버프 보유 시 일부 몹을 분열체/점멸체로 (특수 잡몹 안 된 경우만 — 중복 변환 방지)
@@ -2316,6 +2326,7 @@ int main() {
             rangedInterval /= (p2mult * rampSpawn);              // 2페이즈 + 점수 램프
             int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult
                                   + intensity * 2.0f);           // 점수당 동시 +2
+            if (rangedMax > 16) rangedMax = 16;   // 창 개수 = scissor 패스 수 → 상한 (성능)
             if (rangedSpawnTimer > rangedInterval) {
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
                     g_Stats.rmobHpMult * rampHp, rangedMax, saX, saY, saW, saH);
@@ -2337,10 +2348,12 @@ int main() {
                         float sx = pCX + cosf(ang) * rad;
                         float sy = pCY + sinf(ang) * rad;
                         if (rand() % 2 == 0) {
+                            if ((int)g_MonsterManager.rangedMobs.size() >= 16) continue;
                             RangedMob* rm = new RangedMob(sx, sy, screenWidth, screenHeight);
                             rm->hp *= g_Stats.rmobHpMult;
                             g_MonsterManager.rangedMobs.push_back(rm);
                         } else {
+                            if ((int)g_MonsterManager.bombers.size() >= 30) continue;
                             g_MonsterManager.bombers.push_back(
                                 new Bomber(sx, sy, g_Stats.bomberHpMult,
                                            g_Stats.bomberSpeedMult, g_Stats.bomberBlastMult));
@@ -2961,14 +2974,14 @@ int main() {
             float rwx = r->worldX - rW * 0.5f;
             float rwy = r->worldY - rH * 0.5f;
             WorldScissor(rwx, rwy, rW, rH);
-            // 잡몹 (보스 소환물은 더 큼)
+            // 잡몹 (보스 소환물은 더 큼) — 창 밖은 컬링
             for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive) continue;
+                if (!m->alive || !inWin(m->worldX, m->worldY, rwx, rwy, rW, rH)) continue;
                 drawMob(m);
             }
             // 자폭병 (5각형)
             for (auto bm : g_MonsterManager.bombers) {
-                if (!bm->alive) continue;
+                if (!bm->alive || !inWin(bm->worldX, bm->worldY, rwx, rwy, rW, rH)) continue;
                 drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
                              bm->color.r, bm->color.g, bm->color.b, 1.0f);
                 // 점화 중 — 트리거/폭발 반경 표시
@@ -2979,12 +2992,12 @@ int main() {
             }
             // 총알
             for (auto& b : g_Bullets) {
-                if (!b.active) continue;
+                if (!b.active || !inWin(b.x, b.y, rwx, rwy, rW, rH)) continue;
                 drawBullet(b);
             }
             // 사망 파티클
             for (auto& p : g_EnemyParts) {
-                if (!p.active) continue;
+                if (!p.active || !inWin(p.x, p.y, rwx, rwy, rW, rH)) continue;
                 float a  = p.life / p.maxLife;
                 float hs = p.size * 0.5f;
                 drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
@@ -3002,20 +3015,20 @@ int main() {
                 float twy = t.y - TURRET_WIN_H * 0.5f;
                 WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 for (auto m : g_MonsterManager.monsters) {
-                    if (!m->alive) continue;
+                    if (!m->alive || !inWin(m->worldX, m->worldY, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
                     drawMob(m);
                 }
                 for (auto bm : g_MonsterManager.bombers) {
-                    if (!bm->alive) continue;
+                    if (!bm->alive || !inWin(bm->worldX, bm->worldY, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
                     drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
                                  bm->color.r, bm->color.g, bm->color.b, 1.0f);
                 }
                 for (auto& b : g_Bullets) {
-                    if (!b.active) continue;
+                    if (!b.active || !inWin(b.x, b.y, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
                     drawBullet(b);
                 }
                 for (auto& p : g_EnemyParts) {
-                    if (!p.active) continue;
+                    if (!p.active || !inWin(p.x, p.y, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
                     float a  = p.life / p.maxLife;
                     float hs = p.size * 0.5f;
                     drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
@@ -3030,16 +3043,16 @@ int main() {
             float bwy = bs->worldY - Boss::WIN_H * 0.5f;
             WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
             for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive) continue;
+                if (!m->alive || !inWin(m->worldX, m->worldY, bwx, bwy, Boss::WIN_W, Boss::WIN_H)) continue;
                 drawMob(m);
             }
             for (auto bm : g_MonsterManager.bombers) {
-                if (!bm->alive) continue;
+                if (!bm->alive || !inWin(bm->worldX, bm->worldY, bwx, bwy, Boss::WIN_W, Boss::WIN_H)) continue;
                 drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
                              bm->color.r, bm->color.g, bm->color.b, 1.0f);
             }
             for (auto& b : g_Bullets) {
-                if (!b.active) continue;
+                if (!b.active || !inWin(b.x, b.y, bwx, bwy, Boss::WIN_W, Boss::WIN_H)) continue;
                 drawBullet(b);
             }
             for (auto& orb : g_ApproachOrbs) {
@@ -3112,14 +3125,16 @@ int main() {
         // (e) 플레이어 창 내부 컨텐츠 — scissor (가장 위 레이어)
         glEnable(GL_SCISSOR_TEST);
         WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-        // 잡몹 (보스 소환물은 더 큼)
+        {
+        float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
+        // 잡몹 (보스 소환물은 더 큼) — 창 밖 컬링
         for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive) continue;
+            if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
             drawMob(m);
         }
         // 자폭병
         for (auto bm : g_MonsterManager.bombers) {
-            if (!bm->alive) continue;
+            if (!bm->alive || !inWin(bm->worldX, bm->worldY, pwx, pwy, pww, pwh)) continue;
             drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
                          bm->color.r, bm->color.g, bm->color.b, 1.0f);
             if (bm->arming) {
@@ -3129,15 +3144,16 @@ int main() {
         }
         // 총알
         for (auto& b : g_Bullets) {
-            if (!b.active) continue;
+            if (!b.active || !inWin(b.x, b.y, pwx, pwy, pww, pwh)) continue;
             drawBullet(b);
         }
         // 사망 파티클
         for (auto& p : g_EnemyParts) {
-            if (!p.active) continue;
+            if (!p.active || !inWin(p.x, p.y, pwx, pwy, pww, pwh)) continue;
             float a  = p.life / p.maxLife;
             float hs = p.size * 0.5f;
             drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
+        }
         }
         // 다가오는 죽음 오브 (플레이어 창 안에서만)
         for (auto& orb : g_ApproachOrbs) {

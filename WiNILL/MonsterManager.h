@@ -59,10 +59,12 @@ public:
         rangedMobs.push_back(rm);
     }
 
-    // 자폭병 — 영역 가장자리에서 spawn (디버프 mult 전달)
+    // 자폭병 — 영역 가장자리에서 spawn (디버프 mult 전달). cap: 동시 존재 상한
     void SpawnBomber(int screenW, int screenH,
                      float hpMul = 1.0f, float speedMul = 1.0f, float blastMul = 1.0f,
-                     float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
+                     float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1,
+                     int cap = 30) {
+        if ((int)bombers.size() >= cap) return;
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         bombers.push_back(new Bomber(sx, sy, hpMul, speedMul, blastMul));
