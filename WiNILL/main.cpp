@@ -4071,6 +4071,26 @@ int main() {
                 return (sw - tr.Width(t, scale)) * 0.5f;
             };
 
+            // 데스크톱 세계관 — 전체화면 메뉴를 "최대화된 앱 창"처럼 보이게.
+            //   상단 제목 표시줄(파일명 + ─ □ X) + 화면 테두리. 배경 칠 이후 호출.
+            auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+                BindMainShader();
+                const float TB = 30.0f;
+                drawRect(0, 0, sw, TB, ar*0.5f, ag*0.5f, ab*0.5f, 0.96f);   // 제목 표시줄
+                drawRect(0, TB, sw, 2.0f, ar, ag, ab, 0.9f);               // 강조 라인
+                // 외곽 테두리 (앱 창 느낌)
+                drawRect(0, 0, sw, 1.5f, ar, ag, ab, 0.5f);
+                drawRect(0, sh-1.5f, sw, 1.5f, ar, ag, ab, 0.5f);
+                drawRect(0, 0, 1.5f, sh, ar, ag, ab, 0.5f);
+                drawRect(sw-1.5f, 0, 1.5f, sh, ar, ag, ab, 0.5f);
+                // 창 컨트롤 (─ □ X)
+                float bs = 14.0f, byc = (TB-bs)*0.5f, bxc = sw - 24.0f;
+                drawRect(bxc - 2*(bs+8), byc, bs, bs, 1,1,1, 0.25f);
+                drawRect(bxc - (bs+8),   byc, bs, bs, 1,1,1, 0.25f);
+                drawRect(bxc, byc, bs, bs, 0.9f, 0.25f, 0.25f, 0.9f);       // X = 빨강
+                g_TextS.Draw(fname, 14.0f, 5.0f, 0.62f, 0.95f, 0.97f, 1.0f, 1.0f);
+            };
+
             // ── 업적 해금 토스트 (상단 중앙 배너, 4초 표시 후 페이드) ──
             if (g_AchToastTimer > 0.0f && g_AchToastId >= 0 &&
                 g_AchToastId < ACH_COUNT) {
@@ -4128,28 +4148,12 @@ int main() {
                 int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
                 bool booting = (g_BootAnim > 0.0f);
 
+                // 배경을 칠하지 않음 → 투명 프레임버퍼라 "진짜 윈도우 바탕화면"이
+                //   그대로 비친다 (Wallpaper Engine 등 라이브 배경도 그대로 보임).
+                //   가독성을 위해 아주 옅은 상/하단 비네트만 깐다.
                 BindMainShader();
-                // 바탕화면 그라데이션 (위 짙은 청록 → 아래 남보라)
-                {
-                    int bands = 10;
-                    for (int b = 0; b < bands; b++) {
-                        float f0 = (float)b / bands;
-                        float r = 0.04f + 0.02f * f0;
-                        float g = 0.07f + 0.06f * (1.0f - f0);
-                        float bl= 0.12f + 0.05f * (1.0f - f0);
-                        drawRect(0, sh * f0, sw, sh / bands + 1.0f, r, g, bl, 1.0f);
-                    }
-                }
-                // 타이틀 워터마크 (바탕화면 브랜딩, 흐릿하게 중앙)
-                {
-                    const wchar_t* TIT = T(StrId::GAME_TITLE);
-                    g_TextL.Draw(TIT, cx(TIT, g_TextL, 3.0f), sh*0.40f, 3.0f,
-                                 0.5f, 0.62f, 0.78f, 0.22f);
-                    const wchar_t* SUB[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
-                    float sw2 = g_TextS.Width(SUB[li2], 0.9f);
-                    g_TextS.Draw(SUB[li2], (sw - sw2)*0.5f, sh*0.40f + 70.0f, 0.9f,
-                                 0.45f, 0.55f, 0.7f, 0.30f);
-                }
+                drawRect(0, 0, sw, 130.0f, 0.0f, 0.0f, 0.0f, 0.18f);
+                drawRect(0, sh - 150.0f, sw, 150.0f, 0.0f, 0.0f, 0.0f, 0.22f);
 
                 // 데스크톱 아이콘 헬퍼 — 미니 앱 창 + 파일명, 클릭(릴리즈) 반환
                 auto desktopIcon = [&](float x, float y, const wchar_t* fname,
@@ -4167,9 +4171,14 @@ int main() {
                     float gw = g_TextL.Width(glyph, 1.1f);
                     g_TextL.Draw(glyph, ix + (iw-gw)*0.5f, iy + 18.0f, 1.1f,
                                  ar*0.55f, ag*0.55f, ab*0.6f, 1.0f);
+                    // 파일명 — 바탕화면 위 가독성 위해 어두운 라벨 칩 배경
                     float lw = g_TextS.Width(fname, 0.62f);
-                    g_TextS.Draw(fname, x + (TW-lw)*0.5f, iy+ih+8.0f, 0.62f,
-                                 0.95f, 0.97f, 1.0f, 0.98f);
+                    float chipX = x + (TW-lw)*0.5f, chipY = iy+ih+6.0f;
+                    BindMainShader();
+                    drawRect(chipX - 6.0f, chipY - 2.0f, lw + 12.0f, 20.0f,
+                             0.04f, 0.05f, 0.08f, hover ? 0.85f : 0.6f);
+                    g_TextS.Draw(fname, chipX, chipY + 2.0f, 0.62f,
+                                 0.95f, 0.97f, 1.0f, 1.0f);
                     return hover && g_LmbPrev && !lmb && !booting;
                 };
 
@@ -4259,6 +4268,7 @@ int main() {
             else if (st == GameState::SHOP) {
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
+                deskWindow(L"shop.exe", 1.0f, 0.80f, 0.20f);
                 const wchar_t* TIT = T(StrId::BTN_SHOP);
                 g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.08f, 1.6f, 1,1,1,1);
                 // 보유 코인
@@ -4331,6 +4341,7 @@ int main() {
             else if (st == GameState::CODEX) {
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.96f);
+                deskWindow(L"codex.db", 0.40f, 0.90f, 0.50f);
                 int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
                 const wchar_t* CTIT[3] = { L"도감", L"Codex", L"図鑑" };
                 g_TextL.Draw(CTIT[li], cx(CTIT[li], g_TextL, 1.5f), sh*0.06f, 1.5f, 1,1,1,1);
@@ -4467,6 +4478,7 @@ int main() {
             else if (st == GameState::JOB_SELECT) {
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
+                deskWindow(L"career.exe", 0.55f, 0.7f, 1.0f);
 
                 int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
                 const wchar_t* JTIT[3] = { L"직업 선택", L"Choose a Class", L"職業を選択" };
@@ -4543,6 +4555,7 @@ int main() {
             else if (st == GameState::WEAPON_SELECT) {
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+                deskWindow(L"loadout.exe", 0.4f, 0.85f, 1.0f);
 
                 const wchar_t* TIT = L"시작 무기를 선택하세요";
                 g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.4f), sh*0.14f, 1.4f,
@@ -4639,6 +4652,7 @@ int main() {
             else if (st == GameState::DIFFICULTY_SELECT) {
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+                deskWindow(L"newgame.exe", 0.30f, 0.8f, 1.0f);
 
                 const wchar_t* TIT = T(StrId::DIFF_TITLE);
                 g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.20f, 1.6f,
@@ -4712,6 +4726,7 @@ int main() {
             else if (st == GameState::CREATIVE_CONFIG) {
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+                deskWindow(L"sandbox.cfg", 0.6f, 0.95f, 0.4f);
 
                 const wchar_t* TIT = L"CREATIVE";
                 g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.08f, 1.6f,
@@ -4774,6 +4789,7 @@ int main() {
             else if (st == GameState::SETTINGS) {
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+                deskWindow(L"config.sys", 0.70f, 0.75f, 0.88f);
 
                 const wchar_t* TIT = T(StrId::SET_TITLE);
                 g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.12f, 1.6f,

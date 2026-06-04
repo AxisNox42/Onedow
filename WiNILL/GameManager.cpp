@@ -362,9 +362,10 @@ void GameManager::Render() {
     int colorLoc = glGetUniformLocation(shaderProgram, "color");
 
     // --- 상태별 전체화면 어두운 오버레이 ---
-    //   GAMEOVER 는 main.cpp 가 직접 페이드인 딤을 그리므로 여기선 제외
+    //   GAMEOVER 는 main.cpp 가 페이드인 딤을 직접 그림.
+    //   MAIN_MENU 는 "진짜 바탕화면"을 비추기 위해 어둡게 덮지 않음.
     if (currentState != GameState::RUNNING && currentState != GameState::DYING &&
-        currentState != GameState::GAMEOVER) {
+        currentState != GameState::GAMEOVER && currentState != GameState::MAIN_MENU) {
         float identity[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, identity);
 
