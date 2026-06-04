@@ -531,9 +531,10 @@ static void SpawnEnemyExplosion(float ex, float ey,
 
 // DYING 사망 연출 상태
 float g_DyingTimer    = 0.0f;
-bool  g_DeathBoomDone = false;   // 화면 수축 후 대폭발 1회 트리거
-static const float DYING_DUR    = 1.6f;   // 전체 사망 연출 시간
-static const float DYING_SHRINK = 0.30f;  // 0~이 구간: 화면 수축 (이후 폭발)
+bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
+float g_DeathWinW0    = 0.0f;    // 사망 시점 플레이어 창 크기 (수축 기준)
+static const float DYING_DUR    = 1.4f;   // 전체 사망 연출 시간 (수축+폭발+여운)
+static const float DYING_SHRINK = 0.25f;  // 0~이 구간: 플레이어 창 50%로 수축
 
 // 사망 파편 파티클
 struct DeathParticle {
@@ -979,6 +980,7 @@ int main() {
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
                 g_DeathCX = pCX; g_DeathCY = pCY;
+                g_DeathWinW0    = playerWin.width;   // 수축 기준 = 사망 시점 창 크기
                 g_DyingTimer    = DYING_DUR;
                 g_DeathBoomDone = false;
                 g_DeathFlash    = 0.0f;   // 폭발은 수축 후에 (boom 에서 번쩍)
@@ -993,13 +995,15 @@ int main() {
             if (g_DeathFlash < 0.0f) g_DeathFlash = 0.0f;
 
             if (prog < DYING_SHRINK) {
-                // 1) 화면 수축 — 줌을 빠르게 줄여 화면이 작아짐
+                // 1) 플레이어 창이 50%로 쪼그라듦 (줌 아님 — 창 자체가 작아짐)
                 float t = prog / DYING_SHRINK;             // 0 → 1
-                g_ViewZoom = 1.0f - 0.45f * t;             // 1.0 → 0.55
+                float w = g_DeathWinW0 * (1.0f - 0.5f * t);// W0 → 0.5*W0
+                playerWin.width = playerWin.height = w;
+                playerWin.x = g_DeathCX - w * 0.5f;
+                playerWin.y = g_DeathCY - w * 0.5f;
             } else if (!g_DeathBoomDone) {
                 // 2) 대폭발 — 플레이어 기점, 모든 적이 터짐
                 g_DeathBoomDone = true;
-                g_ViewZoom = 1.18f;                        // 펀치 아웃
                 float pCX = g_DeathCX, pCY = g_DeathCY;
                 // 모든 적 폭발시키며 제거 (scored/noBlast 표시 → 점수/연쇄 정산 안 함)
                 for (auto m : g_MonsterManager.monsters) if (m->alive) {
@@ -1035,8 +1039,12 @@ int main() {
                     g_Debris[i] = { pCX, pCY, cosf(angle)*spd, sinf(angle)*spd, sz, cr, cg, cb, true };
                 }
             } else {
-                // 3) 정착 — 줌 원복
-                g_ViewZoom += (1.0f - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
+                // 3) 여운 — 창이 부드럽게 닫힘 (작게 수렴) → 곧 게임오버
+                float w = playerWin.width;
+                w += (24.0f - w) * std::min(1.0f, delta * 6.0f);
+                playerWin.width = playerWin.height = w;
+                playerWin.x = g_DeathCX - w * 0.5f;
+                playerWin.y = g_DeathCY - w * 0.5f;
             }
 
             // 파편 이동 — 폭발 전엔 거의 정지, 폭발 후엔 실시간으로 날아감
