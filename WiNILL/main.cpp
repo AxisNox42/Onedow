@@ -533,8 +533,10 @@ static void SpawnEnemyExplosion(float ex, float ey,
 float g_DyingTimer    = 0.0f;
 bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
 float g_DeathWinW0    = 0.0f;    // 사망 시점 플레이어 창 크기 (수축 기준)
-static const float DYING_DUR    = 1.2f;   // 전체 사망 연출 (수축→폭발→풀스크린 팽창)
-static const float DYING_SHRINK = 0.28f;  // 0~이 구간: 플레이어 창 50%로 수축
+float g_GameOverFade  = 0.0f;    // 게임오버 메뉴 페이드인 (0→1, 풀스크린 후 2.5초)
+static const float DYING_DUR      = 0.8f;   // 수축→폭발→풀스크린 팽창 (페이드 전까지)
+static const float DYING_SHRINK   = 0.35f;  // 0~이 구간: 플레이어 창 50%로 수축
+static const float GAMEOVER_FADE  = 2.5f;   // 풀스크린 후 메뉴 100% 까지 걸리는 시간
 
 // 사망 파편 파티클
 struct DeathParticle {
@@ -866,6 +868,7 @@ int main() {
             for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
             g_DyingTimer      = 0.0f;
             g_DeathBoomDone   = false;
+            g_GameOverFade    = 0.0f;
             g_DeathFlash      = 0.0f;
             for (int i = 0; i < MAX_DEBRIS; i++) g_Debris[i].active = false;
             fireTimer = g_Stats.fireInterval;
@@ -1063,6 +1066,7 @@ int main() {
                 g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복 (메뉴 정상화)
                 g_GameManager.currentState = GameState::GAMEOVER;
                 g_DyingTimer = 0.0f;
+                g_GameOverFade = 0.0f;   // 풀스크린 창 → 메뉴 페이드인 시작 (2.5초)
                 // 기록 저장 — 난이도별 최고점/누적/코인 갱신 (신기록이면 표시)
                 //   크리에이티브 모드(샌드박스)는 코인·기록 제외 (파밍 방지)
                 if (!g_CreativeMode) {
@@ -1076,6 +1080,12 @@ int main() {
                     g_LastRunCoins  = 0;
                 }
             }
+        }
+
+        // GAMEOVER 메뉴 페이드인 — 풀스크린 도달 후 0→1 까지 2.5초에 걸쳐 차오름
+        if (g_GameManager.currentState == GameState::GAMEOVER && g_GameOverFade < 1.0f) {
+            g_GameOverFade += delta / GAMEOVER_FADE;
+            if (g_GameOverFade > 1.0f) g_GameOverFade = 1.0f;
         }
 
         // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 키로 선택 ---
@@ -4721,12 +4731,17 @@ int main() {
                 }
             }
             else if (st == GameState::GAMEOVER) {
-                // 전체 화면 딤 — 보스 창/엔티티가 결과창 뒤로 비치지 않게
+                // ── 메뉴 페이드인: 풀스크린 창 → 결과 메뉴 (0→1, 2.5초) ──
+                //   불투명도가 차오르며 풀스크린 플레이어 창 위로 결과창이 자연스럽게 겹침
+                float gof = g_GameOverFade;          // 0..1
+                float ge  = gof * gof * (3.0f - 2.0f * gof);  // smoothstep (부드럽게)
+
+                // 전체 화면 딤 — 보스 창/엔티티가 결과창 뒤로 비치지 않게 (페이드)
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f);
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f * ge);
                 const wchar_t* T1 = T(StrId::GAMEOVER);
                 g_TextL.Draw(T1, cx(T1, g_TextL, 1.6f), sh*0.30f, 1.6f,
-                             1, 0.25f, 0.25f, 0.95f);
+                             1, 0.25f, 0.25f, 0.95f * ge);
 
                 // 결과 — 도달 레벨 / 처치 수 / 최종 점수
                 wchar_t lvBuf[64], killBuf[64], scoreBuf[64];
@@ -4738,46 +4753,48 @@ int main() {
                            g_GameManager.score);
 
                 g_TextL.Draw(scoreBuf, cx(scoreBuf, g_TextL, 1.2f), sh*0.44f, 1.2f,
-                             1.0f, 1.0f, 0.7f, 0.95f);
+                             1.0f, 1.0f, 0.7f, 0.95f * ge);
                 g_TextS.Draw(lvBuf,    cx(lvBuf,    g_TextS, 1.1f), sh*0.52f, 1.1f,
-                             0.85f, 0.95f, 0.85f, 0.95f);
+                             0.85f, 0.95f, 0.85f, 0.95f * ge);
                 g_TextS.Draw(killBuf,  cx(killBuf,  g_TextS, 1.1f), sh*0.57f, 1.1f,
-                             0.85f, 0.95f, 0.85f, 0.95f);
+                             0.85f, 0.95f, 0.85f, 0.95f * ge);
 
                 // 최고 점수 (난이도별) + 신기록 + 획득 코인
                 wchar_t bestBuf[64], coinBuf[64];
                 swprintf_s(bestBuf, L"BEST   %lld", g_BestScore[(int)g_Difficulty]);
                 g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.62f, 1.1f,
-                             1.0f, 0.85f, 0.4f, 0.95f);
+                             1.0f, 0.85f, 0.4f, 0.95f * ge);
                 swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
                 g_TextS.Draw(coinBuf, cx(coinBuf, g_TextS, 1.0f), sh*0.665f, 1.0f,
-                             1.0f, 0.9f, 0.3f, 0.95f);
+                             1.0f, 0.9f, 0.3f, 0.95f * ge);
                 if (g_LastRunRecord) {
                     const wchar_t* rec = L"★ NEW RECORD ★";
                     float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
                     g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.37f, 1.0f,
-                                 1.0f, 0.9f, 0.2f, blink);
+                                 1.0f, 0.9f, 0.2f, blink * ge);
                 }
 
-                // 버튼 3개: 다시하기 / 메뉴로 / 종료
-                const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
-                float totalW = 3 * BW + 2 * BG;
-                float bx = (sw - totalW) * 0.5f;
-                float by = sh * 0.72f;
+                // 버튼 3개: 다시하기 / 메뉴로 / 종료 — 페이드 완료 후에만 표시/활성
+                if (gof >= 0.999f) {
+                    const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
+                    float totalW = 3 * BW + 2 * BG;
+                    float bx = (sw - totalW) * 0.5f;
+                    float by = sh * 0.72f;
 
-                if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
-                             mx, my, lmb, g_LmbPrev)) {
-                    ResetForNewGame();
-                    PickRandomWeapons(g_WeaponChoices);
-                    g_GameManager.currentState = GameState::WEAPON_SELECT;
-                }
-                if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
-                             mx, my, lmb, g_LmbPrev)) {
-                    glfwSetWindowShouldClose(window, GLFW_TRUE);
+                    if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
+                                 mx, my, lmb, g_LmbPrev)) {
+                        ResetForNewGame();
+                        PickRandomWeapons(g_WeaponChoices);
+                        g_GameManager.currentState = GameState::WEAPON_SELECT;
+                    }
+                    if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
+                                 mx, my, lmb, g_LmbPrev)) {
+                        g_GameManager.currentState = GameState::MAIN_MENU;
+                    }
+                    if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
+                                 mx, my, lmb, g_LmbPrev)) {
+                        glfwSetWindowShouldClose(window, GLFW_TRUE);
+                    }
                 }
             }
             else if (st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
