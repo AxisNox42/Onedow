@@ -39,6 +39,7 @@ public:
     bool  alive    = true;
     bool  exploded = false;  // 사망 폭발/분열 1회만 처리하는 플래그
     bool  scored   = false;  // 처치 보상(EXP/점수/콤보) 지급 완료 플래그
+    bool  noBlast  = false;  // 연쇄폭발에 죽은 몹 → 또 폭발하지 않음 (무한 연쇄 방지)
     bool  summoned = false;  // 보스 소환물 (더 크게)
     glm::vec3 color;
 

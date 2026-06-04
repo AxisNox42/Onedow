@@ -237,7 +237,7 @@ struct PlayerStats {
             critMult   = 2.5f;
             break;
         case AugType::LIFESTEAL:
-            lifestealPerKill += 0.25f;  // 처치당 HP +0.25 (너프: 0.5 → 0.25)
+            lifestealPerKill += 0.12f;  // 처치당 HP +0.12 (너프: 0.5 → 0.25 → 0.12)
             break;
         case AugType::BERSERK:
             berserk = true;             // 체력 낮을수록 공격력 ↑ (발사 시 반영)
@@ -253,15 +253,15 @@ struct PlayerStats {
             critMult  += 1.5f;
             damageMultiplier *= 1.20f;
             break;
-        case AugType::CB_BLOODLORD:     // 흡혈탄 + 흡혈마
-            lifestealPerKill += 1.0f;
-            maxHP            += 40.0f;
-            regenPerSec      += 0.5f;
+        case AugType::CB_BLOODLORD:     // 흡혈탄 + 흡혈마 (너프)
+            lifestealPerKill += 0.30f;
+            maxHP            += 25.0f;
+            regenPerSec      += 0.3f;
             break;
-        case AugType::CB_PIERCE_TWIN:   // 더블 + 관통
+        case AugType::CB_PIERCE_TWIN:   // 더블 + 관통 (너프: 100%→60%)
             pierce       = true;
-            pierceChance = 100;
-            damageMultiplier *= 1.60f;
+            if (pierceChance < 60) pierceChance = 60;
+            damageMultiplier *= 1.40f;
             break;
         case AugType::CB_STORMCALLER:   // 탄환세례 + 드론
             bulletRain         = true;

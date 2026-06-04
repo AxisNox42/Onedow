@@ -1733,11 +1733,11 @@ int main() {
                                             /*big=*/false);
                         m->exploded = true;
                         // 연쇄 폭발(DEATH_BLAST) — 사망 위치에서 주변 적에게 AoE
-                        //   (죽은 적은 이 루프 후반에서 다시 폭발 → 연쇄 반응)
-                        if (g_Stats.deathBlast) {
+                        //   너프: 데미지 0.8→0.3 + 폭발로 죽은 몹은 다시 안 터짐(무한연쇄 차단)
+                        if (g_Stats.deathBlast && !m->noBlast) {
                             float blastDmg = g_Stats.GetBaseDamage()
-                                           * g_Stats.GetDamageMultiplier(0.0f) * 0.8f;
-                            float blastR = 140.0f;
+                                           * g_Stats.GetDamageMultiplier(0.0f) * 0.3f;
+                            float blastR = 130.0f;
                             float bx = m->worldX, by = m->worldY;
                             SpawnShockWave(bx, by, blastR, 0.35f, 1.0f, 0.55f, 0.15f);
                             for (auto m2 : g_MonsterManager.monsters) {
@@ -1745,7 +1745,7 @@ int main() {
                                 float ddx = m2->worldX - bx, ddy = m2->worldY - by;
                                 if (ddx*ddx + ddy*ddy < blastR*blastR) {
                                     m2->hp -= blastDmg;
-                                    if (m2->hp <= 0.0f) m2->alive = false;
+                                    if (m2->hp <= 0.0f) { m2->alive = false; m2->noBlast = true; }
                                 }
                             }
                             for (auto r2 : g_MonsterManager.rangedMobs) {
