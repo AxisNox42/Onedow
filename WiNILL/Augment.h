@@ -169,9 +169,9 @@ static const AugDef ALL_AUGS[] = {
       { L"한 번에 2발 발사  /  공격력 -40%", L"Fire 2 shots at once  /  Attack -40%", L"一度に2発発射  /  攻撃力 -40%" } },
     { AugType::CHAKRAM,       AugRarity::EPIC,      AugUnique::NONE, "CHAKRAM",
       { L"차크람", L"Chakram", L"チャクラム" },
-      { L"주위를 도는 차크람 1개  /  닿은 잡몹 즉사  /  파괴 시 10초 후 재생성",
-        L"1 orbiting chakram  /  instakills mobs on touch  /  respawns 10s after destroyed",
-        L"周囲を回るチャクラム1個  /  接触した雑魚は即死  /  破壊後10秒で再生成" } },
+      { L"넓게 공전하는 차크람 1개  /  닿은 잡몹·자폭병 즉사, 원거리 큰 피해·적탄 막기 (공전체 카운터)  /  파괴 시 6초 후 재생성",
+        L"1 wide-orbiting chakram  /  instakills mobs/bombers, big dmg to gunners, blocks bullets (orbiter counter)  /  respawns 6s",
+        L"広く公転するチャクラム1個  /  雑魚・自爆兵即死, 遠距離に大ダメージ・敵弾を防ぐ (公転体対策)  /  破壊後6秒で再生成" } },
     { AugType::BULLET_RAIN_2, AugRarity::EPIC,      AugUnique::NONE, "BULLETRAIN II",
       { L"탄환 세례 II", L"Bullet Rain II", L"弾幕の雨 II" },
       { L"탄환 세례 쿨다운 15초 → 10초  (요구: 탄환 세례)",
@@ -415,6 +415,26 @@ inline int AugIndexOfType(AugType t) {
 // 현재 런에서 해당 AugType 을 보유 중인지 ((int)AugType 인덱스). 조합 레시피 판정용.
 //   main 의 applyByIdx 가 갱신, ResetForNewGame 이 초기화.
 inline bool g_TypeOwned[128] = { false };
+
+// 한 번만 등장해야 하는 증강/디버프 (스택 불가 플래그형) — 픽 풀에서 takenOnce 로 제외
+inline bool AugOnceOnly(AugType t, AugRarity r) {
+    if (r == AugRarity::EPIC || r == AugRarity::LEGENDARY || r == AugRarity::COMBO)
+        return true;
+    switch (t) {
+    // 티어드 (등급 무관 1회씩)
+    case AugType::BULLET_RAIN: case AugType::BULLET_RAIN_2: case AugType::BULLET_RAIN_3:
+    case AugType::DRONE:       case AugType::DRONE_2:
+    case AugType::CHAKRAM:     case AugType::CHAKRAM_2:     case AugType::CHAKRAM_3:
+    // 희귀 불리언 (중첩 의미 없음)
+    case AugType::LIGHT_STEP:  case AugType::GUN_RUNNER:    case AugType::BERSERK:
+    // 적 출현형 디버프 (플래그 1개 — 재등장 불필요)
+    case AugType::D_SPLITTER:  case AugType::D_BLINKER:
+    case AugType::D_ORBITER:   case AugType::D_SPAWNER:     case AugType::D_SHIELDED:
+        return true;
+    default:
+        return false;
+    }
+}
 
 // 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {

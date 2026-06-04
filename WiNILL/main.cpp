@@ -242,15 +242,15 @@ PlayerStats g_TurretStats;                        // 소총 기준 능력치
 // 차크람 (에픽+) — 주변 공전 + 잡몹 즉사 + HP. 최대 3개
 struct ChakramState {
     float angle        = 0.0f;
-    float hp           = 100.0f;
-    float maxHp        = 100.0f;
+    float hp           = 150.0f;
+    float maxHp        = 150.0f;
     bool  alive        = false;
     float respawnTimer = 0.0f;
 };
 static const int   MAX_CHAKRAMS    = 3;
 ChakramState g_Chakrams[MAX_CHAKRAMS] = {};
-static const float CHAKRAM_RADIUS = 70.0f;
-static const float CHAKRAM_SIZE   = 22.0f;
+static const float CHAKRAM_RADIUS = 130.0f;   // 버프: 넓은 공전 (공전체 요격)
+static const float CHAKRAM_SIZE   = 30.0f;    // 버프: 큰 칼날
 
 // 탄환 세례 (전설) — 20초 쿨다운
 float g_BulletRainTimer = 0.0f;
@@ -1098,17 +1098,8 @@ int main() {
                 // 한 번만 뽑힐 증강 표시:
                 //   - EPIC/LEGENDARY 전체
                 //   - 티어드 증강 (탄환세례/드론/차크람) — 등급 무관 1회씩
-                AugRarity r = ALL_AUGS[idx].rarity;
-                bool onceOnly = (r == AugRarity::EPIC || r == AugRarity::LEGENDARY ||
-                                 r == AugRarity::COMBO);
-                if (atype == AugType::BULLET_RAIN   || atype == AugType::BULLET_RAIN_2 ||
-                    atype == AugType::BULLET_RAIN_3 ||
-                    atype == AugType::DRONE         || atype == AugType::DRONE_2 ||
-                    atype == AugType::CHAKRAM       || atype == AugType::CHAKRAM_2 ||
-                    atype == AugType::CHAKRAM_3) {
-                    onceOnly = true;
-                }
-                if (onceOnly) g_GameManager.takenOnce[idx] = true;
+                if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
+                    g_GameManager.takenOnce[idx] = true;
 
                 // 흡혈마: 현재 HP -20%
                 if (atype == AugType::VAMPIRE)
@@ -1125,8 +1116,8 @@ int main() {
                     for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
                         if (!g_Chakrams[c].alive && g_Chakrams[c].respawnTimer <= 0) {
                             g_Chakrams[c].alive        = true;
-                            g_Chakrams[c].hp           = 100.0f;
-                            g_Chakrams[c].maxHp        = 100.0f;
+                            g_Chakrams[c].hp           = 150.0f;
+                            g_Chakrams[c].maxHp        = 150.0f;
                             g_Chakrams[c].respawnTimer = 0.0f;
                         }
                         // 균등 각도 배치
@@ -2517,30 +2508,43 @@ int main() {
                 for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
                     auto& ch = g_Chakrams[c];
                     if (ch.alive) {
-                        ch.angle += 5.0f * delta;   // 회전 속도 ×2 버프
+                        ch.angle += 5.5f * delta;
                         float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                         float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
-                        // 잡몹 접촉 — 즉사 + 차크람 hp -5
+                        float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;   // 버프: 큰 히트박스
+                        // 잡몹 접촉 — 즉사 (hp 소모 -2 로 완화 → 오래 버팀)
                         for (auto m : g_MonsterManager.monsters) {
                             if (!m->alive) continue;
                             float ddx = m->worldX - chx, ddy = m->worldY - chy;
-                            if (ddx*ddx + ddy*ddy < (CHAKRAM_SIZE*0.6f) * (CHAKRAM_SIZE*0.6f)) {
+                            if (ddx*ddx + ddy*ddy < hitR2) {
                                 m->alive = false;
-                                ch.hp -= 5.0f;
+                                ch.hp -= 2.0f;
                             }
                         }
-                        // 적 총알 충돌
+                        // 자폭병 접촉 — 즉사(자폭 전 처리)
+                        for (auto bm : g_MonsterManager.bombers) {
+                            if (!bm->alive) continue;
+                            float ddx = bm->worldX - chx, ddy = bm->worldY - chy;
+                            if (ddx*ddx + ddy*ddy < hitR2) { bm->hp = 0.0f; bm->alive = false; ch.hp -= 3.0f; }
+                        }
+                        // 원거리 몹 접촉 — 큰 피해
+                        for (auto rr : g_MonsterManager.rangedMobs) {
+                            if (!rr->alive) continue;
+                            float ddx = rr->worldX - chx, ddy = rr->worldY - chy;
+                            if (ddx*ddx + ddy*ddy < hitR2) { rr->hp -= 120.0f; if (rr->hp <= 0) rr->alive = false; ch.hp -= 3.0f; }
+                        }
+                        // 적 총알 막기
                         for (auto& bb : g_Bullets) {
                             if (!bb.active || !bb.isEnemy) continue;
                             float ddx = bb.x - chx, ddy = bb.y - chy;
-                            if (ddx*ddx + ddy*ddy < (CHAKRAM_SIZE*0.6f) * (CHAKRAM_SIZE*0.6f)) {
-                                ch.hp -= 10.0f;
+                            if (ddx*ddx + ddy*ddy < hitR2) {
+                                ch.hp -= 6.0f;
                                 bb.active = false;
                             }
                         }
                         if (ch.hp <= 0.0f) {
                             ch.alive = false;
-                            ch.respawnTimer = 10.0f;
+                            ch.respawnTimer = 6.0f;   // 버프: 재생성 10 → 6초
                         }
                     } else {
                         ch.respawnTimer -= delta;
@@ -4032,7 +4036,8 @@ int main() {
                             g_TextS.Draw(nm, cxp + (cw - nw)*0.5f, cyp + cw - 34.0f, 0.8f,
                                          0.9f, 0.95f, 1.0f, 0.95f);
                         } else {
-                            g_TextL.Draw(L"?", ccx - 9.0f, ccy - 12.0f, 1.3f,
+                            float qw = g_TextL.Width(L"?", 1.3f);
+                            g_TextL.Draw(L"?", ccx - qw*0.5f, ccy - 22.0f, 1.3f,
                                          0.4f, 0.4f, 0.45f, 0.9f);
                         }
                     }
@@ -4042,9 +4047,14 @@ int main() {
                                      0.85f, 0.95f, 1.0f, 0.95f);
                     }
                 } else {
-                    // 증강 그리드
+                    // 증강 그리드 — 사용 가능 영역에 수직 중앙 정렬
                     const int COLS = 12; const float CELL = 80.0f;
-                    float gx = (sw - COLS*CELL) * 0.5f, gy = sh * 0.22f;
+                    int   rows = (AUG_TOTAL + COLS - 1) / COLS;
+                    float gridH = rows * CELL;
+                    float availTop = sh * 0.20f, availBot = sh - 185.0f;
+                    float gx = (sw - COLS*CELL) * 0.5f;
+                    float gy = availTop + (availBot - availTop - gridH) * 0.5f;
+                    if (gy < availTop) gy = availTop;
                     for (int i = 0; i < AUG_TOTAL; i++) {
                         float cxp = gx + (i % COLS) * CELL, cyp = gy + (i / COLS) * CELL;
                         float cw = CELL - 8.0f;
@@ -4057,14 +4067,16 @@ int main() {
                         else      drawRect(cxp, cyp, cw, cw, 0.06f, 0.06f, 0.08f, 0.95f);
                         if (seen) {
                             GLuint ic = IconFor(ALL_AUGS[i].type);
-                            if (ic) DrawIcon(ic, cxp + (cw-46.0f)*0.5f, cyp + 5.0f, 46.0f, 46.0f,
-                                             1,1,1, 0.97f);
+                            float isz = 48.0f;
+                            if (ic) DrawIcon(ic, cxp + (cw-isz)*0.5f, cyp + (cw-isz)*0.5f,
+                                             isz, isz, 1,1,1, 0.97f);
                             else {
                                 BindMainShader();
                                 drawRect(cxp + cw*0.3f, cyp + cw*0.3f, cw*0.4f, cw*0.4f, rr, rg, rb, 0.9f);
                             }
                         } else {
-                            g_TextL.Draw(L"?", cxp + cw*0.5f - 7.0f, cyp + cw*0.5f - 14.0f, 1.0f,
+                            float qw = g_TextL.Width(L"?", 1.0f);
+                            g_TextL.Draw(L"?", cxp + (cw - qw)*0.5f, cyp + cw*0.5f - 18.0f, 1.0f,
                                          0.4f, 0.4f, 0.45f, 0.9f);
                         }
                     }
@@ -4127,9 +4139,9 @@ int main() {
                 const wchar_t* HN = JHINT[li];
                 g_TextS.Draw(HN, cx(HN, g_TextS, 0.9f), sh*0.16f, 0.9f, 0.7f,0.8f,0.9f,0.9f);
 
-                const float BW = 600.0f, BH = 60.0f, BG = 11.0f;
+                const float BW = 660.0f, BH = 72.0f, BG = 16.0f;
                 float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.20f;
+                float by = sh * 0.17f;
                 for (int j = 0; j < JOB_COUNT; j++) {
                     float y = by + j * (BH + BG);
                     bool unlocked = JobUnlocked(j);
@@ -4862,8 +4874,10 @@ int main() {
                 }
             }
 
-            // 상단 HUD (RUNNING / PAUSED / DYING / AUG_SELECT 모두 노출)
-            if (st != GameState::READY && st != GameState::GAMEOVER) {
+            // 상단 HUD — 실제 게임 진행 상태에서만 (메뉴/도감/상점엔 안 뜨게)
+            if (st == GameState::RUNNING || st == GameState::PAUSED ||
+                st == GameState::DYING   || st == GameState::AUG_SELECT ||
+                st == GameState::DEBUFF_SELECT) {
                 // macOS: 상단 메뉴바(~25px)가 화면 맨 위를 가리므로 HUD 를 아래로
 #ifdef __APPLE__
                 const float hudTopY = 8.0f + 30.0f;
@@ -4891,6 +4905,27 @@ int main() {
                 float fpsW = g_TextS.Width(fpsBuf, 0.85f);
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
+
+                // 하단 HP 바 위 — "HP 현재/최대" 숫자 (바는 GameManager::Render 가 그림)
+                {
+                    int hpCur = (int)(g_GameManager.playerHP + 0.5f);
+                    int hpMax = (int)(g_Stats.maxHP + 0.5f);
+                    wchar_t hpBuf[48]; swprintf_s(hpBuf, L"HP  %d / %d", hpCur, hpMax);
+                    float hw = g_TextS.Width(hpBuf, 0.85f);
+                    g_TextS.Draw(hpBuf, (sw - hw) * 0.5f, sh - 38.0f, 0.85f,
+                                 1.0f, 1.0f, 1.0f, 0.95f);
+                }
+                // 하단 조작 안내 (희미하게 항상) — 새 플레이어가 HP/스킬 위치를 알게
+                if (st == GameState::RUNNING) {
+                    const wchar_t* CTRL =
+                        L"WASD 이동   마우스 발사   SHIFT 대시   Q/E/R 스킬   ESC 일시정지";
+                    const wchar_t* CTRL_EN =
+                        L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
+                    const wchar_t* c = (g_Language == Language::KR) ? CTRL : CTRL_EN;
+                    float cw = g_TextS.Width(c, 0.7f);
+                    g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 66.0f, 0.7f,
+                                 0.6f, 0.7f, 0.8f, 0.55f);
+                }
             }
 
             // ── 손맛: 데미지 숫자 팝업 + 콤보 카운터 ──────────────────

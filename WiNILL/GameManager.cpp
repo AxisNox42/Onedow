@@ -176,19 +176,8 @@ static int RollOneAug(const bool* takenOnce,
         for (int i = 0; i < AUG_TOTAL; i++) {
             if (ALL_AUGS[i].rarity != chosen) continue;
             AugType t = ALL_AUGS[i].type;
-            // 한 번만 뽑힐 증강:
-            //   EPIC/LEGENDARY 전체
-            //   + 티어드 (탄환세례/드론/차크람) — RARE 도 포함
-            bool tieredOnce =
-                (t == AugType::BULLET_RAIN   || t == AugType::BULLET_RAIN_2 ||
-                 t == AugType::BULLET_RAIN_3 ||
-                 t == AugType::DRONE         || t == AugType::DRONE_2 ||
-                 t == AugType::CHAKRAM       || t == AugType::CHAKRAM_2 ||
-                 t == AugType::CHAKRAM_3);
-            if (chosen == AugRarity::EPIC || chosen == AugRarity::LEGENDARY ||
-                tieredOnce) {
-                if (takenOnce[i]) continue;
-            }
+            // 한 번만 뽑힐 증강 (EPIC/LEG/COMBO·티어드·불리언 플래그·적출현 디버프)
+            if (AugOnceOnly(t, ALL_AUGS[i].rarity) && takenOnce[i]) continue;
             // 고유 카테고리 잠금 (SIZE/DISTANCE)
             AugUnique u = ALL_AUGS[i].unique;
             if (u == AugUnique::SIZE     && sizeTaken) continue;
@@ -216,11 +205,13 @@ static int RollOneAug(const bool* takenOnce,
 }
 
 // 디버프 등급 한 장 추첨 (디버프 등급 내에서만 무작위)
-static int RollOneDebuff() {
+static int RollOneDebuff(const bool* takenOnce = nullptr) {
     int pool[AUG_TOTAL]; int poolSize = 0;
     for (int i = 0; i < AUG_TOTAL; i++) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
+        // 한 번만 뜨는 디버프(적 출현형)는 이미 보유 시 제외
+        if (takenOnce && AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
         // 쉬움: 자폭병 디버프 제외 (#107)
         if (g_Difficulty == Difficulty::EASY &&
             (t == AugType::D_BOMBER_BLAST ||
@@ -295,7 +286,7 @@ void GameManager::PickDebuffChoices() {
     for (int i = 0; i < 3; i++) {
         int idx = 0;
         for (int attempt = 0; attempt < 50; attempt++) {
-            idx = RollOneDebuff();
+            idx = RollOneDebuff(takenOnce);
             if (!used[idx]) break;
         }
         used[idx] = true;
@@ -434,17 +425,23 @@ void GameManager::Render() {
     // --- 픽셀 좌표계 UI ---
     setOrtho(projLoc);
 
-    // HP 바 (화면 하단)
-    float barW = screenW * 0.6f;
-    float barX = (screenW - barW) / 2.0f;
-    float barY = (float)screenH - 22.0f;
-    drawQuad(barX, barY, barW, 10, 0.25f, 0.25f, 0.25f, 0.8f);
-    float hpFrac = (maxHP > 0.0f) ? (playerHP / maxHP) : 0.0f;
-    if (hpFrac < 0.0f) hpFrac = 0.0f;
-    if (hpFrac > 1.0f) hpFrac = 1.0f;
-    float hpR = (hpFrac > 0.5f) ? 0.0f : 1.0f;
-    float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
-    drawQuad(barX, barY, barW * hpFrac, 10, hpR, hpG, 0.0f, 0.9f);
+    // HP 바 (화면 하단) — 게임 진행 상태에서만, 크고 눈에 띄게 (테두리 + 두꺼운 바)
+    if (currentState == GameState::RUNNING || currentState == GameState::PAUSED ||
+        currentState == GameState::DYING   || currentState == GameState::AUG_SELECT ||
+        currentState == GameState::DEBUFF_SELECT) {
+        float barW = screenW * 0.46f;
+        float barH = 24.0f;
+        float barX = (screenW - barW) / 2.0f;
+        float barY = (float)screenH - 40.0f;
+        drawQuad(barX - 3, barY - 3, barW + 6, barH + 6, 0.0f, 0.0f, 0.0f, 0.7f);  // 테두리
+        drawQuad(barX, barY, barW, barH, 0.18f, 0.05f, 0.05f, 0.9f);               // 빈 바(어두운 적)
+        float hpFrac = (maxHP > 0.0f) ? (playerHP / maxHP) : 0.0f;
+        if (hpFrac < 0.0f) hpFrac = 0.0f;
+        if (hpFrac > 1.0f) hpFrac = 1.0f;
+        float hpR = (hpFrac > 0.5f) ? 0.1f : 1.0f;
+        float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
+        drawQuad(barX, barY, barW * hpFrac, barH, hpR, hpG, 0.1f, 0.95f);
+    }
 
     // (GAMEOVER 표시는 main.cpp [7] 텍스트 블록의 한국어 라벨이 담당)
 
