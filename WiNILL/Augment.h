@@ -36,11 +36,16 @@ enum class AugType {
     D_BLEED, D_WEAKEN,                                // 출혈 / 약화
     // ── 특수 (2) ──────────────────────────────
     S_CHAOS, S_PANDORA,
+    // ── 조합 (COMBO) — 레시피 충족 시에만 등장. 일반 추첨 X ──
+    CB_EXECUTIONER,   // 치명타 + 광전사
+    CB_BLOODLORD,     // 흡혈탄 + 흡혈마
+    CB_PIERCE_TWIN,   // 더블 + 관통
+    CB_STORMCALLER,   // 탄환세례 + 드론
     // ── deprecated (ALL_AUGS 에서 제외, 코드는 남음) ──
     SIEGE_TANK, D_RMOB_DMG, XP_UP
 };
 
-enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL };
+enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO };
 
 // 고유 카테고리 — 같은 카테고리 내에서 1개만 선택 가능
 enum class AugUnique { NONE, SIZE, DISTANCE };
@@ -360,9 +365,56 @@ static const AugDef ALL_AUGS[] = {
     { AugType::S_PANDORA,     AugRarity::SPECIAL,   AugUnique::NONE, "PANDORA",
       { L"판도라의 상자", L"Pandora's Box", L"パンドラの箱" },
       { L"버프 3개 + 디버프 2개 즉시 획득", L"Instantly gain 3 buffs + 2 debuffs", L"バフ3個 + デバフ2個を即獲得" } },
+
+    // ── 조합 (COMBO) — 레시피 충족 시에만 카드로 등장 ───────
+    { AugType::CB_EXECUTIONER, AugRarity::COMBO,    AugUnique::NONE, "CB_EXEC",
+      { L"처형자", L"Executioner", L"処刑者" },
+      { L"[조합] 치명타 확률 +35% · 치명타 배율 +1.5 · 공격력 +20%",
+        L"[Combo] Crit chance +35% · crit mult +1.5 · attack +20%",
+        L"[組合] クリ率+35%・クリ倍率+1.5・攻撃+20%" } },
+    { AugType::CB_BLOODLORD,   AugRarity::COMBO,    AugUnique::NONE, "CB_BLOOD",
+      { L"피의 군주", L"Bloodlord", L"血の君主" },
+      { L"[조합] 처치당 회복 +1.0 · 최대 체력 +40 · 초당 재생 ↑",
+        L"[Combo] Heal +1.0/kill · Max HP +40 · regen up",
+        L"[組合] 撃破毎+1.0回復・最大HP+40・再生↑" } },
+    { AugType::CB_PIERCE_TWIN, AugRarity::COMBO,    AugUnique::NONE, "CB_PTWIN",
+      { L"관통 쌍둥이", L"Piercing Twins", L"貫通の双子" },
+      { L"[조합] 모든 탄 항상 관통 · 공격력 +60% (더블 패널티 상쇄)",
+        L"[Combo] All shots always pierce · attack +60%",
+        L"[組合] 全弾常に貫通・攻撃+60%" } },
+    { AugType::CB_STORMCALLER, AugRarity::COMBO,    AugUnique::NONE, "CB_STORM",
+      { L"폭풍 소환사", L"Stormcaller", L"嵐の召喚士" },
+      { L"[조합] 탄환 세례 쿨다운 4초 · 드론 +1 · 연사 +15%",
+        L"[Combo] Bullet Rain CD 4s · +1 drone · fire rate +15%",
+        L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 63;  // +공전체·소환체·보호막체 디버프3
+static constexpr int AUG_TOTAL = 67;  // +조합4
+
+// ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
+struct ComboDef {
+    AugType result;
+    AugType reqs[3];
+    int     reqCount;
+};
+inline const ComboDef COMBO_DEFS[] = {
+    { AugType::CB_EXECUTIONER, { AugType::CRIT,        AugType::BERSERK }, 2 },
+    { AugType::CB_BLOODLORD,   { AugType::LIFESTEAL,   AugType::VAMPIRE }, 2 },
+    { AugType::CB_PIERCE_TWIN, { AugType::TWIN,        AugType::PIERCE  }, 2 },
+    { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN, AugType::DRONE   }, 2 },
+};
+inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
+
+// ALL_AUGS 에서 특정 AugType 의 인덱스 (없으면 -1)
+inline int AugIndexOfType(AugType t) {
+    for (int i = 0; i < AUG_TOTAL; i++)
+        if (ALL_AUGS[i].type == t) return i;
+    return -1;
+}
+
+// 현재 런에서 해당 AugType 을 보유 중인지 ((int)AugType 인덱스). 조합 레시피 판정용.
+//   main 의 applyByIdx 가 갱신, ResetForNewGame 이 초기화.
+inline bool g_TypeOwned[128] = { false };
 
 // 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
@@ -373,6 +425,7 @@ inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
     case AugRarity::LEGENDARY: cr = 0.95f; cg = 0.70f; cb = 0.10f; break; // 금
     case AugRarity::DEBUFF:    cr = 0.55f; cg = 0.10f; cb = 0.10f; break; // 어두운 빨강
     case AugRarity::SPECIAL:   cr = 0.85f; cg = 0.10f; cb = 0.55f; break; // 마젠타
+    case AugRarity::COMBO:     cr = 0.10f; cg = 0.85f; cb = 0.80f; break; // 청록(시안)
     }
 }
 
@@ -386,6 +439,7 @@ inline const wchar_t* GetRarityKR(AugRarity r) {
     case AugRarity::LEGENDARY: { static const wchar_t* s[3]={L"전설",L"Legendary",L"レジェンド"}; return s[li]; }
     case AugRarity::DEBUFF:    { static const wchar_t* s[3]={L"디버프",L"Debuff",L"デバフ"};      return s[li]; }
     case AugRarity::SPECIAL:   { static const wchar_t* s[3]={L"특수",L"Special",L"スペシャル"};   return s[li]; }
+    case AugRarity::COMBO:     { static const wchar_t* s[3]={L"조합",L"Combo",L"組合"};           return s[li]; }
     }
     return L"?";
 }

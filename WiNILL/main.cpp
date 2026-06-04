@@ -104,6 +104,7 @@ inline void drawBullet(const Bullet& b) {
 
 // 잡몹 그리기 — 종류별 모양 (일반=세모 / 분열체=초록 원 / 점멸체=점멸 다이아)
 inline void drawMob(const Monster* m) {
+    MarkMobSeen(m->kind);   // 도감 발견 (화면에 그려진 적)
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     if (m->kind == MobKind::SPLITTER) {
         drawCircle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
@@ -802,6 +803,7 @@ int main() {
             g_PrevHP          = g_Stats.maxHP;
             g_XpTimeAccum     = 0.0f;
             g_OwnedAugs.clear();
+            memset(g_TypeOwned, 0, sizeof(g_TypeOwned));  // 조합 레시피 보유 초기화
             g_HoveredAug       = -1;
             g_EnterReleased    = true;
             g_ConversionWeapon = -1;
@@ -1065,6 +1067,8 @@ int main() {
 
                 g_Stats.Apply(atype);
                 g_OwnedAugs.push_back(idx);
+                g_TypeOwned[(int)atype] = true;   // 조합 레시피 판정용
+                MarkAugSeen(idx);                 // 도감 발견
                 // 액티브 스킬 증강이면 슬롯에 장착 (꽉 차면 순환 교체)
                 EquipSkill(SkillForAug(atype));
 
@@ -1080,7 +1084,8 @@ int main() {
                 //   - EPIC/LEGENDARY 전체
                 //   - 티어드 증강 (탄환세례/드론/차크람) — 등급 무관 1회씩
                 AugRarity r = ALL_AUGS[idx].rarity;
-                bool onceOnly = (r == AugRarity::EPIC || r == AugRarity::LEGENDARY);
+                bool onceOnly = (r == AugRarity::EPIC || r == AugRarity::LEGENDARY ||
+                                 r == AugRarity::COMBO);
                 if (atype == AugType::BULLET_RAIN   || atype == AugType::BULLET_RAIN_2 ||
                     atype == AugType::BULLET_RAIN_3 ||
                     atype == AugType::DRONE         || atype == AugType::DRONE_2 ||
@@ -2076,6 +2081,10 @@ int main() {
                 g_GameManager.playerHP -= g_Stats.bleedPerSec * delta;
                 if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
             }
+
+            // 도감 발견 — 원거리/자폭병 (존재하면 발견 처리)
+            if (!g_MonsterManager.rangedMobs.empty()) MarkMobSeenId(CM_RANGED);
+            if (!g_MonsterManager.bombers.empty())    MarkMobSeenId(CM_BOMBER);
 
             // 업적 조건 체크 (런 점수/킬/보유 증강 기준 — 보스 업적은 처치 시점에서 처리)
             {
@@ -3830,12 +3839,20 @@ int main() {
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::SHOP;
                 }
-                if (UIButton(bx, by + (BH+BG)*2, BW, BH, T(StrId::BTN_SETTINGS),
+                {
+                    int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
+                    const wchar_t* CODEX_LBL[3] = { L"도감", L"Codex", L"図鑑" };
+                    if (UIButton(bx, by + (BH+BG)*2, BW, BH, CODEX_LBL[li2],
+                                 mx, my, lmb, g_LmbPrev)) {
+                        g_GameManager.currentState = GameState::CODEX;
+                    }
+                }
+                if (UIButton(bx, by + (BH+BG)*3, BW, BH, T(StrId::BTN_SETTINGS),
                              mx, my, lmb, g_LmbPrev)) {
                     g_SettingsReturnTo = GameState::MAIN_MENU;
                     g_GameManager.currentState = GameState::SETTINGS;
                 }
-                if (UIButton(bx, by + (BH+BG)*3, BW, BH, T(StrId::BTN_QUIT),
+                if (UIButton(bx, by + (BH+BG)*4, BW, BH, T(StrId::BTN_QUIT),
                              mx, my, lmb, g_LmbPrev)) {
                     glfwSetWindowShouldClose(window, GLFW_TRUE);
                 }
@@ -3904,6 +3921,134 @@ int main() {
                         swprintf_s(ab, L"%ls %ls", got ? L"★" : L"☆", AchName(i));
                         if (got) g_TextS.Draw(ab, ax, ay, 0.78f, 0.5f, 0.95f, 0.55f, 1.0f);
                         else     g_TextS.Draw(ab, ax, ay, 0.78f, 0.55f, 0.55f, 0.6f, 0.9f);
+                    }
+                }
+
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::MAIN_MENU;
+                }
+            }
+            // ── 도감 (적 / 증강) ──────────────────────────────────
+            else if (st == GameState::CODEX) {
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.96f);
+                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
+                const wchar_t* CTIT[3] = { L"도감", L"Codex", L"図鑑" };
+                g_TextL.Draw(CTIT[li], cx(CTIT[li], g_TextL, 1.5f), sh*0.06f, 1.5f, 1,1,1,1);
+
+                static int s_tab = 0;   // 0 적 / 1 증강
+                const wchar_t* TAB_MOB[3] = { L"적", L"Enemies", L"敵" };
+                const wchar_t* TAB_AUG[3] = { L"증강", L"Augments", L"強化" };
+                if (UIButton(sw*0.5f - 220.0f, sh*0.12f, 200.0f, 48.0f, TAB_MOB[li],
+                             mx, my, lmb, g_LmbPrev, s_tab == 0)) s_tab = 0;
+                if (UIButton(sw*0.5f + 20.0f,  sh*0.12f, 200.0f, 48.0f, TAB_AUG[li],
+                             mx, my, lmb, g_LmbPrev, s_tab == 1)) s_tab = 1;
+
+                int hover = -1;
+                if (s_tab == 0) {
+                    // 적 그리드
+                    const int COLS = 6; const float CELL = 130.0f;
+                    float gx = (sw - COLS*CELL) * 0.5f, gy = sh * 0.24f;
+                    for (int i = 0; i < CM_COUNT; i++) {
+                        float cxp = gx + (i % COLS) * CELL, cyp = gy + (i / COLS) * CELL;
+                        float cw = CELL - 12.0f;
+                        bool seen = g_MobSeen[i];
+                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
+                        if (hv) hover = i;
+                        BindMainShader();
+                        drawRect(cxp, cyp, cw, cw, hv?0.13f:0.06f, 0.10f, 0.15f, 0.95f);
+                        float ccx = cxp + cw*0.5f, ccy = cyp + cw*0.42f;
+                        if (seen) {
+                            if (i <= CM_SHIELDED) {
+                                Monster pm(ccx, ccy);
+                                if (i > 0) pm.MakeKind((MobKind)i);
+                                pm.worldX = ccx; pm.worldY = ccy;
+                                if (i == 0) pm.color = glm::vec3(0.75f,0.75f,0.8f);
+                                pm.sizeScale = (i == (int)MobKind::BRUTE) ? 1.3f : 1.7f;
+                                drawMob(&pm);
+                            } else if (i == CM_RANGED) {
+                                drawDiamond(ccx, ccy, 28.0f, 0.85f, 0.0f, 0.85f, 1.0f);
+                                drawDiamond(ccx, ccy, 11.0f, 1,1,1, 0.9f);
+                            } else { // BOMBER
+                                drawPentagon(ccx, ccy, 32.0f, 1.0f, 0.5f, 0.1f, 1.0f);
+                            }
+                            BindMainShader();
+                            const wchar_t* nm = MobName(i);
+                            float nw = g_TextS.Width(nm, 0.8f);
+                            g_TextS.Draw(nm, cxp + (cw - nw)*0.5f, cyp + cw - 34.0f, 0.8f,
+                                         0.9f, 0.95f, 1.0f, 0.95f);
+                        } else {
+                            g_TextL.Draw(L"?", ccx - 9.0f, ccy - 12.0f, 1.3f,
+                                         0.4f, 0.4f, 0.45f, 0.9f);
+                        }
+                    }
+                    if (hover >= 0 && g_MobSeen[hover]) {
+                        const wchar_t* d = MobDesc(hover);
+                        g_TextS.Draw(d, cx(d, g_TextS, 1.0f), sh - 120.0f, 1.0f,
+                                     0.85f, 0.95f, 1.0f, 0.95f);
+                    }
+                } else {
+                    // 증강 그리드
+                    const int COLS = 12; const float CELL = 80.0f;
+                    float gx = (sw - COLS*CELL) * 0.5f, gy = sh * 0.22f;
+                    for (int i = 0; i < AUG_TOTAL; i++) {
+                        float cxp = gx + (i % COLS) * CELL, cyp = gy + (i / COLS) * CELL;
+                        float cw = CELL - 8.0f;
+                        bool seen = g_AugSeen[i];
+                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
+                        if (hv) hover = i;
+                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
+                        BindMainShader();
+                        if (seen) drawRect(cxp, cyp, cw, cw, rr*0.35f, rg*0.35f, rb*0.35f, 0.95f);
+                        else      drawRect(cxp, cyp, cw, cw, 0.06f, 0.06f, 0.08f, 0.95f);
+                        if (seen) {
+                            GLuint ic = IconFor(ALL_AUGS[i].type);
+                            if (ic) DrawIcon(ic, cxp + (cw-46.0f)*0.5f, cyp + 5.0f, 46.0f, 46.0f,
+                                             1,1,1, 0.97f);
+                            else {
+                                BindMainShader();
+                                drawRect(cxp + cw*0.3f, cyp + cw*0.3f, cw*0.4f, cw*0.4f, rr, rg, rb, 0.9f);
+                            }
+                        } else {
+                            g_TextL.Draw(L"?", cxp + cw*0.5f - 7.0f, cyp + cw*0.5f - 14.0f, 1.0f,
+                                         0.4f, 0.4f, 0.45f, 0.9f);
+                        }
+                    }
+                    // 상세 패널
+                    BindMainShader();
+                    float py = sh - 160.0f;
+                    if (hover >= 0 && g_AugSeen[hover]) {
+                        const AugDef& d = ALL_AUGS[hover];
+                        float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
+                        wchar_t hd[96];
+                        swprintf_s(hd, L"[%ls] %ls", GetRarityKR(d.rarity), AugName(d));
+                        g_TextL.Draw(hd, cx(hd, g_TextL, 0.9f), py, 0.9f,
+                                     std::min(1.0f, rr*1.4f+0.3f), std::min(1.0f, rg*1.4f+0.3f),
+                                     std::min(1.0f, rb*1.4f+0.3f), 1.0f);
+                        const wchar_t* ds = AugDesc(d);
+                        g_TextS.Draw(ds, cx(ds, g_TextS, 0.85f), py + 42.0f, 0.85f,
+                                     0.85f, 0.92f, 1.0f, 0.95f);
+                        if (d.rarity == AugRarity::COMBO) {  // 발견했으니 레시피 공개
+                            for (int c = 0; c < COMBO_COUNT; c++)
+                                if (COMBO_DEFS[c].result == d.type) {
+                                    int ia = AugIndexOfType(COMBO_DEFS[c].reqs[0]);
+                                    int ib = AugIndexOfType(COMBO_DEFS[c].reqs[1]);
+                                    wchar_t rc[128];
+                                    swprintf_s(rc, L"%ls + %ls",
+                                               ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
+                                               ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
+                                    g_TextS.Draw(rc, cx(rc, g_TextS, 0.85f), py + 74.0f, 0.85f,
+                                                 0.1f, 0.85f, 0.8f, 0.95f);
+                                    break;
+                                }
+                        }
+                    } else if (hover >= 0) {
+                        const wchar_t* q[3] = { L"??? — 미발견 (획득 시 공개)",
+                                                L"??? — Undiscovered (unlock by acquiring)",
+                                                L"??? — 未発見 (取得で公開)" };
+                        g_TextL.Draw(q[li], cx(q[li], g_TextL, 0.9f), py, 0.9f,
+                                     0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 }
 
@@ -4883,8 +5028,10 @@ int main() {
         // 마우스 click edge 감지용 — 이번 프레임 상태를 저장
         g_LmbPrev = lmb;
 
-        // 업적 해금 발생 시 저장 (게임 중 해금 즉시 영구화)
-        if (g_AchSaveNeeded) { SaveGame(); g_AchSaveNeeded = false; }
+        // 업적 해금 / 도감 발견 발생 시 저장 (게임 중 즉시 영구화)
+        if (g_AchSaveNeeded || g_CodexDirty) {
+            SaveGame(); g_AchSaveNeeded = false; g_CodexDirty = false;
+        }
 
         glfwSwapBuffers(window);
 

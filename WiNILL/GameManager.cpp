@@ -245,6 +245,19 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken) {
         used[idx] = true;
         augChoices[i] = idx;
     }
+
+    // 조합 증강 주입 — 레시피(모든 재료 보유) 충족 + 미획득이면 한 칸을 조합으로 교체
+    for (int c = 0; c < COMBO_COUNT; c++) {
+        AugType res = COMBO_DEFS[c].result;
+        if (g_TypeOwned[(int)res]) continue;        // 이미 획득
+        bool met = true;
+        for (int r = 0; r < COMBO_DEFS[c].reqCount; r++)
+            if (!g_TypeOwned[(int)COMBO_DEFS[c].reqs[r]]) { met = false; break; }
+        if (met) {
+            int ridx = AugIndexOfType(res);
+            if (ridx >= 0) { augChoices[rand() % 3] = ridx; break; }
+        }
+    }
 }
 
 void GameManager::PickRandomDebuffIndices(int* outArr, int n) {

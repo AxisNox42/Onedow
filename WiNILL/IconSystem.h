@@ -83,6 +83,11 @@ inline const char* IconNameForAug(AugType t) {
     // 특수
     case AugType::S_CHAOS:       return "S_CHAOS";
     case AugType::S_PANDORA:     return "S_PANDORA";
+    // 조합
+    case AugType::CB_EXECUTIONER: return "CB_EXECUTIONER";
+    case AugType::CB_BLOODLORD:   return "CB_BLOODLORD";
+    case AugType::CB_PIERCE_TWIN: return "CB_PIERCE_TWIN";
+    case AugType::CB_STORMCALLER: return "CB_STORMCALLER";
     default:                     return nullptr;
     }
 }

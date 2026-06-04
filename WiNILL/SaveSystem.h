@@ -9,6 +9,7 @@
 #include "Settings.h"
 #include "Meta.h"
 #include "Achievements.h"
+#include "Codex.h"
 
 // 영구 데이터 (설정은 Settings.h 전역을 그대로 직렬화)
 inline long long g_BestScore[3] = { 0, 0, 0 };   // 난이도별 최고 점수 (EASY/NORMAL/HARD)
@@ -44,6 +45,11 @@ inline void SaveGame() {
     std::fprintf(f, "bosskills=%lld\n", g_TotalBossKills);
     for (int i = 0; i < ACH_COUNT; i++)
         std::fprintf(f, "ach%d=%d\n", i, g_AchUnlocked[i] ? 1 : 0);
+    // 도감 발견 — 발견된 것만 기록
+    for (int i = 0; i < AUG_TOTAL; i++)
+        if (g_AugSeen[i]) std::fprintf(f, "augseen%d=1\n", i);
+    for (int i = 0; i < CM_COUNT; i++)
+        if (g_MobSeen[i]) std::fprintf(f, "mobseen%d=1\n", i);
     std::fclose(f);
 }
 
@@ -88,6 +94,14 @@ inline void LoadGame() {
         else if (!std::strncmp(key, "ach", 3)) {
             int ai = atoi(key + 3);
             if (ai >= 0 && ai < ACH_COUNT) g_AchUnlocked[ai] = (val != 0);
+        }
+        else if (!std::strncmp(key, "augseen", 7)) {
+            int ai = atoi(key + 7);
+            if (ai >= 0 && ai < 96) g_AugSeen[ai] = (val != 0);
+        }
+        else if (!std::strncmp(key, "mobseen", 7)) {
+            int mi = atoi(key + 7);
+            if (mi >= 0 && mi < CM_COUNT) g_MobSeen[mi] = (val != 0);
         }
     }
     std::fclose(f);

@@ -247,6 +247,30 @@ struct PlayerStats {
             deathBlast = true;          // 적 사망 시 주변 폭발
             break;
 
+        // ── 조합 (COMBO) — 레시피 충족 시에만 등장 ──
+        case AugType::CB_EXECUTIONER:   // 치명타 + 광전사
+            critChance = std::min(100, critChance + 35);
+            critMult  += 1.5f;
+            damageMultiplier *= 1.20f;
+            break;
+        case AugType::CB_BLOODLORD:     // 흡혈탄 + 흡혈마
+            lifestealPerKill += 1.0f;
+            maxHP            += 40.0f;
+            regenPerSec      += 0.5f;
+            break;
+        case AugType::CB_PIERCE_TWIN:   // 더블 + 관통
+            pierce       = true;
+            pierceChance = 100;
+            damageMultiplier *= 1.60f;
+            break;
+        case AugType::CB_STORMCALLER:   // 탄환세례 + 드론
+            bulletRain         = true;
+            bulletRainCooldown = 4.0f;
+            drone              = true;
+            if (droneCount < 3) ++droneCount;
+            fireInterval      /= 1.15f;
+            break;
+
         // ── 희귀: 탄환세례 / 드론 ──
         case AugType::BULLET_RAIN:
             bulletRain          = true;
