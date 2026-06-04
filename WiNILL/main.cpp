@@ -4286,6 +4286,97 @@ int main() {
                     return hover && g_LmbPrev && !lmb && !booting;
                 };
 
+                // ── 자동 플레이 데모 (어트랙트 모드) ──────────────────────
+                //   메뉴 중앙 영역에서 게임이 스스로 돌아간다. 자동 이동/조준/사격,
+                //   주기적 "증강" 연출, 죽으면 잠깐 뒤 자동 재시작. (자체 완결형 미니 시뮬)
+                {
+                    struct DE { float x, y, hp; bool alive; int kind; };
+                    struct DB { float x, y, dx, dy; bool act; };
+                    static bool  d_init = false;
+                    static float d_pX, d_pY, d_hp, d_fireT, d_wanderT, d_tgtX, d_tgtY;
+                    static float d_respT, d_spawnT, d_buffT;
+                    static int   d_kills;
+                    static std::vector<DE> d_es;
+                    static std::vector<DB> d_bs;
+                    // 플레이 영역 (좌측 독을 피해 중앙~우측)
+                    float rx0 = 280.0f, ry0 = 110.0f, rx1 = sw - 90.0f, ry1 = sh - 80.0f;
+                    float ccx = (rx0+rx1)*0.5f, ccy = (ry0+ry1)*0.5f;
+                    if (!d_init) { d_init = true; d_pX=ccx; d_pY=ccy; d_hp=5; d_tgtX=ccx; d_tgtY=ccy;
+                                   d_fireT=d_wanderT=d_respT=d_spawnT=d_buffT=0; d_kills=0; }
+                    float dt = delta; if (dt > 0.05f) dt = 0.05f;
+                    int rw = (int)(rx1-rx0), rh = (int)(ry1-ry0); if (rw<1) rw=1; if (rh<1) rh=1;
+
+                    if (d_respT > 0.0f) {
+                        d_respT -= dt;
+                        if (d_respT <= 0.0f) { d_pX=ccx; d_pY=ccy; d_hp=5; d_es.clear(); d_bs.clear(); }
+                    } else {
+                        d_wanderT -= dt;
+                        if (d_wanderT <= 0.0f) { d_wanderT = 1.4f + (rand()%100)*0.02f;
+                            d_tgtX = rx0 + (rand()%rw); d_tgtY = ry0 + (rand()%rh); }
+                        float ax = d_tgtX-d_pX, ay = d_tgtY-d_pY;
+                        float al = std::sqrt(ax*ax+ay*ay)+0.001f; ax/=al; ay/=al;
+                        float nd = 1e9f, nx=0, ny=0;
+                        for (auto& e : d_es) if (e.alive) { float dx=d_pX-e.x, dy=d_pY-e.y, d=dx*dx+dy*dy;
+                            if (d<nd){nd=d;nx=dx;ny=dy;} }
+                        if (nd < 130*130) { float l=std::sqrt(nd)+0.001f; ax+=nx/l*1.6f; ay+=ny/l*1.6f; }
+                        float ml = std::sqrt(ax*ax+ay*ay)+0.001f; ax/=ml; ay/=ml;
+                        d_pX += ax*185*dt; d_pY += ay*185*dt;
+                        d_pX = d_pX<rx0?rx0:(d_pX>rx1?rx1:d_pX);
+                        d_pY = d_pY<ry0?ry0:(d_pY>ry1?ry1:d_pY);
+                        d_spawnT -= dt;
+                        if (d_spawnT<=0.0f && (int)d_es.size()<8) { d_spawnT=0.55f; DE e; int s=rand()%4;
+                            if(s==0){e.x=rx0;e.y=ry0+rand()%rh;} else if(s==1){e.x=rx1;e.y=ry0+rand()%rh;}
+                            else if(s==2){e.x=rx0+rand()%rw;e.y=ry0;} else {e.x=rx0+rand()%rw;e.y=ry1;}
+                            e.hp=2; e.alive=true; e.kind=rand()%3; d_es.push_back(e); }
+                        for (auto& e : d_es) if (e.alive) { float dx=d_pX-e.x, dy=d_pY-e.y;
+                            float l=std::sqrt(dx*dx+dy*dy)+0.001f; e.x+=dx/l*72*dt; e.y+=dy/l*72*dt;
+                            if (l<22){ d_hp-=1; e.alive=false; SpawnEnemyExplosion(e.x,e.y,1.0f,0.4f,0.3f,false); } }
+                        d_fireT -= dt;
+                        if (d_fireT<=0.0f) { float bd=1e9f; DE* tg=nullptr;
+                            for (auto& e : d_es) if (e.alive){ float dx=e.x-d_pX,dy=e.y-d_pY,d=dx*dx+dy*dy; if(d<bd){bd=d;tg=&e;} }
+                            if (tg){ d_fireT=0.17f; float dx=tg->x-d_pX,dy=tg->y-d_pY,l=std::sqrt(dx*dx+dy*dy)+0.001f;
+                                DB b; b.x=d_pX;b.y=d_pY;b.dx=dx/l*640;b.dy=dy/l*640;b.act=true; d_bs.push_back(b); } }
+                        for (auto& b : d_bs) if (b.act){ b.x+=b.dx*dt; b.y+=b.dy*dt;
+                            if(b.x<rx0-40||b.x>rx1+40||b.y<ry0-40||b.y>ry1+40) b.act=false;
+                            for (auto& e : d_es) if (e.alive){ float dx=b.x-e.x,dy=b.y-e.y;
+                                if(dx*dx+dy*dy<16*16){ e.hp-=1; b.act=false;
+                                    if(e.hp<=0){e.alive=false; d_kills++; SpawnEnemyExplosion(e.x,e.y,0.4f,0.9f,1.0f,false);
+                                        if(d_kills%8==0) d_buffT=1.3f; } break; } } }
+                        d_es.erase(std::remove_if(d_es.begin(),d_es.end(),[](const DE&e){return !e.alive;}),d_es.end());
+                        d_bs.erase(std::remove_if(d_bs.begin(),d_bs.end(),[](const DB&b){return !b.act;}),d_bs.end());
+                        if (d_hp<=0.0f){ d_respT=1.6f;
+                            SpawnEnemyExplosion(d_pX,d_pY,0.3f,0.8f,1.0f,true);
+                            SpawnEnemyExplosion(d_pX,d_pY,1.0f,0.9f,0.4f,true); }
+                        if (d_buffT>0.0f) d_buffT-=dt;
+                    }
+                    // 폭발 파티클 업데이트 (메뉴에서도)
+                    for (auto& p : g_EnemyParts) { if(!p.active) continue; p.life-=dt;
+                        if(p.life<=0.0f){p.active=false;continue;} p.x+=p.vx*dt; p.y+=p.vy*dt;
+                        p.vx*=(1.0f-2.5f*dt); p.vy*=(1.0f-2.5f*dt); }
+
+                    // ── 렌더 (아이콘/독보다 먼저 = 배경) ──
+                    BindMainShader();
+                    for (auto& e : d_es) if (e.alive) {
+                        if (e.kind==0) drawTriangle(e.x,e.y,14.0f,0.9f,0.3f,0.3f,1.0f);
+                        else if (e.kind==1) drawDiamond(e.x,e.y,13.0f,0.8f,0.5f,1.0f,1.0f);
+                        else drawTriangle(e.x,e.y,16.0f,1.0f,0.6f,0.2f,1.0f);
+                    }
+                    for (auto& b : d_bs) if (b.act) drawCircle(b.x,b.y,5.0f,0.4f,0.95f,1.0f,1.0f);
+                    for (auto& p : g_EnemyParts) if (p.active) { float a=p.life/p.maxLife;
+                        drawRect(p.x-p.size*0.5f,p.y-p.size*0.5f,p.size,p.size,p.r,p.g,p.b,a); }
+                    if (d_respT<=0.0f) {
+                        drawCircle(d_pX,d_pY,16.0f,0.2f,0.9f,1.0f,0.28f);
+                        drawTriangle(d_pX,d_pY,13.0f,0.4f,0.95f,1.0f,1.0f);
+                        drawCircle(d_pX,d_pY,5.0f,1.0f,1.0f,1.0f,1.0f);
+                    }
+                    const wchar_t* DEMO[3] = { L"● 자동 시연", L"● AUTO DEMO", L"● 自動デモ" };
+                    g_TextS.Draw(DEMO[li2], rx0, ry0 - 30.0f, 0.7f, 0.55f, 0.8f, 1.0f, 0.55f);
+                    if (d_buffT>0.0f) {
+                        const wchar_t* AB = L"+ AUGMENT";
+                        g_TextL.Draw(AB, d_pX - 42.0f, d_pY - 52.0f, 0.8f, 0.3f, 1.0f, 0.6f, d_buffT);
+                    }
+                }
+
                 // 좌측 아이콘 열
                 const wchar_t* CODEX_LBL[3] = { L"도감", L"Codex", L"図鑑" };
                 (void)CODEX_LBL;
