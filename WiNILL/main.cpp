@@ -977,35 +977,26 @@ int main() {
                 g_PrevHP               = g_GameManager.playerHP;
                 // RUNNING 상태 유지 (DYING 전이 X)
             } else {
-                // 일반 사망 — 연출: 화면 수축 → 플레이어 기점 대폭발(모든 적 터짐) → 메뉴
+                // 일반 사망 — 플레이어 기점 대폭발(모든 적 터짐) 후 메뉴 페이드인
                 g_GameManager.currentState = GameState::DYING;
                 g_GameManager.playerHP     = 0.0f;
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
                 g_DeathCX = pCX; g_DeathCY = pCY;
-                g_DeathWinW0    = playerWin.width;   // 수축 기준 = 사망 시점 창 크기
                 g_DyingTimer    = DYING_DUR;
                 g_DeathBoomDone = false;
-                g_DeathFlash    = 0.0f;   // 폭발은 수축 후에 (boom 에서 번쩍)
+                g_DeathFlash    = 0.0f;
             }   // close else (MK2 분기 외)
         }       // close outer if (HP <= 0)
 
-        // DYING 사망 연출 — 화면 수축 → 플레이어 기점 대폭발(모든 적 터짐) → GAMEOVER
+        // DYING 사망 연출 — 플레이어 기점 대폭발(모든 적 터짐) → GAMEOVER (창 변형 없음)
         if (g_GameManager.currentState == GameState::DYING) {
             g_DyingTimer -= delta;
-            float prog = 1.0f - g_DyingTimer / DYING_DUR;   // 0 → 1
             g_DeathFlash -= delta * 4.0f;
             if (g_DeathFlash < 0.0f) g_DeathFlash = 0.0f;
 
-            if (prog < DYING_SHRINK) {
-                // 1) 플레이어 창이 50%로 쪼그라듦 (줌 아님 — 창 자체가 작아짐)
-                float t = prog / DYING_SHRINK;             // 0 → 1
-                float w = g_DeathWinW0 * (1.0f - 0.5f * t);// W0 → 0.5*W0
-                playerWin.width = playerWin.height = w;
-                playerWin.x = g_DeathCX - w * 0.5f;
-                playerWin.y = g_DeathCY - w * 0.5f;
-            } else if (!g_DeathBoomDone) {
-                // 2) 대폭발 — 플레이어 기점, 모든 적이 터짐
+            if (!g_DeathBoomDone) {
+                // 대폭발 — 플레이어 기점, 모든 적이 터짐 (즉시)
                 g_DeathBoomDone = true;
                 float pCX = g_DeathCX, pCY = g_DeathCY;
                 // 모든 적 폭발시키며 제거 (scored/noBlast 표시 → 점수/연쇄 정산 안 함)
@@ -1041,20 +1032,10 @@ int main() {
                     else               { cr = 1.00f; cg = 0.85f; cb = 0.20f; }
                     g_Debris[i] = { pCX, pCY, cosf(angle)*spd, sinf(angle)*spd, sz, cr, cg, cb, true };
                 }
-            } else {
-                // 3) 폭발 여파 — 플레이어 창이 전체 화면을 뒤엎으며 강하게 팽창
-                //    → 그 풀스크린 창이 곧 게임오버(메뉴) 창이 됨
-                float tw = (float)screenWidth  * 1.06f;   // 살짝 오버슈트(전체 덮음)
-                float th = (float)screenHeight * 1.06f;
-                float k  = std::min(1.0f, delta * 8.0f);
-                playerWin.width  += (tw - playerWin.width)  * k;
-                playerWin.height += (th - playerWin.height) * k;
-                playerWin.x = (float)screenWidth  * 0.5f - playerWin.width  * 0.5f;
-                playerWin.y = (float)screenHeight * 0.5f - playerWin.height * 0.5f;
             }
 
-            // 파편 이동 — 폭발 전엔 거의 정지, 폭발 후엔 실시간으로 날아감
-            float sd = g_DeathBoomDone ? delta : delta * 0.1f;
+            // 파편 이동 — 폭발과 함께 실시간으로 날아감
+            float sd = delta;
             for (int i = 0; i < MAX_DEBRIS; i++) {
                 if (!g_Debris[i].active) continue;
                 g_Debris[i].x  += g_Debris[i].vx * sd;
@@ -1066,7 +1047,7 @@ int main() {
                 g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복 (메뉴 정상화)
                 g_GameManager.currentState = GameState::GAMEOVER;
                 g_DyingTimer = 0.0f;
-                g_GameOverFade = 0.0f;   // 풀스크린 창 → 메뉴 페이드인 시작 (2.5초)
+                g_GameOverFade = 0.0f;   // 결과 메뉴 페이드인 시작 (2.5초)
                 // 기록 저장 — 난이도별 최고점/누적/코인 갱신 (신기록이면 표시)
                 //   크리에이티브 모드(샌드박스)는 코인·기록 제외 (파밍 방지)
                 if (!g_CreativeMode) {
@@ -1082,7 +1063,7 @@ int main() {
             }
         }
 
-        // GAMEOVER 메뉴 페이드인 — 풀스크린 도달 후 0→1 까지 2.5초에 걸쳐 차오름
+        // GAMEOVER 메뉴 페이드인 — 폭발 후 0→1 까지 2.5초에 걸쳐 차오름
         if (g_GameManager.currentState == GameState::GAMEOVER && g_GameOverFade < 1.0f) {
             g_GameOverFade += delta / GAMEOVER_FADE;
             if (g_GameOverFade > 1.0f) g_GameOverFade = 1.0f;
@@ -4731,8 +4712,7 @@ int main() {
                 }
             }
             else if (st == GameState::GAMEOVER) {
-                // ── 메뉴 페이드인: 풀스크린 창 → 결과 메뉴 (0→1, 2.5초) ──
-                //   불투명도가 차오르며 풀스크린 플레이어 창 위로 결과창이 자연스럽게 겹침
+                // ── 메뉴 페이드인: 폭발 직후 결과 메뉴가 서서히 떠오름 (0→1, 2.5초) ──
                 float gof = g_GameOverFade;          // 0..1
                 float ge  = gof * gof * (3.0f - 2.0f * gof);  // smoothstep (부드럽게)
 
