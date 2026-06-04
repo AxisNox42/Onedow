@@ -533,8 +533,8 @@ static void SpawnEnemyExplosion(float ex, float ey,
 float g_DyingTimer    = 0.0f;
 bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
 float g_DeathWinW0    = 0.0f;    // 사망 시점 플레이어 창 크기 (수축 기준)
-static const float DYING_DUR    = 1.4f;   // 전체 사망 연출 시간 (수축+폭발+여운)
-static const float DYING_SHRINK = 0.25f;  // 0~이 구간: 플레이어 창 50%로 수축
+static const float DYING_DUR    = 1.2f;   // 전체 사망 연출 (수축→폭발→풀스크린 팽창)
+static const float DYING_SHRINK = 0.28f;  // 0~이 구간: 플레이어 창 50%로 수축
 
 // 사망 파편 파티클
 struct DeathParticle {
@@ -1039,12 +1039,15 @@ int main() {
                     g_Debris[i] = { pCX, pCY, cosf(angle)*spd, sinf(angle)*spd, sz, cr, cg, cb, true };
                 }
             } else {
-                // 3) 여운 — 창이 부드럽게 닫힘 (작게 수렴) → 곧 게임오버
-                float w = playerWin.width;
-                w += (24.0f - w) * std::min(1.0f, delta * 6.0f);
-                playerWin.width = playerWin.height = w;
-                playerWin.x = g_DeathCX - w * 0.5f;
-                playerWin.y = g_DeathCY - w * 0.5f;
+                // 3) 폭발 여파 — 플레이어 창이 전체 화면을 뒤엎으며 강하게 팽창
+                //    → 그 풀스크린 창이 곧 게임오버(메뉴) 창이 됨
+                float tw = (float)screenWidth  * 1.06f;   // 살짝 오버슈트(전체 덮음)
+                float th = (float)screenHeight * 1.06f;
+                float k  = std::min(1.0f, delta * 8.0f);
+                playerWin.width  += (tw - playerWin.width)  * k;
+                playerWin.height += (th - playerWin.height) * k;
+                playerWin.x = (float)screenWidth  * 0.5f - playerWin.width  * 0.5f;
+                playerWin.y = (float)screenHeight * 0.5f - playerWin.height * 0.5f;
             }
 
             // 파편 이동 — 폭발 전엔 거의 정지, 폭발 후엔 실시간으로 날아감
