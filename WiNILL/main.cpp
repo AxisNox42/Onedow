@@ -3086,6 +3086,17 @@ int main() {
         memcpy(g_MainOrtho, orthoShake, sizeof(orthoShake));
         glBindVertexArray(VAO);
 
+        // 월드/엔티티 렌더는 게임플레이 상태에서만 그린다 — 메뉴(시작창 등)에
+        //   직전 게임의 플레이어 창·잔여 엔티티가 정지 상태로 비치던 문제 방지.
+        //   (g_MainOrtho 는 위에서 이미 갱신했으므로 메뉴 텍스트/데모 렌더는 정상)
+        {
+        GameState wgs = g_GameManager.currentState;
+        bool inWorldRender = (wgs == GameState::RUNNING || wgs == GameState::DYING ||
+                              wgs == GameState::PAUSED  || wgs == GameState::READY  ||
+                              wgs == GameState::AUG_SELECT || wgs == GameState::DEBUFF_SELECT ||
+                              wgs == GameState::GAMEOVER);
+        if (inWorldRender) {
+
         // 원거리 몹 FakeWindow 크기 상수 (렌더·클리핑 공용)
         const float RFW_W = 500.0f;
         const float RFW_H = 500.0f;
@@ -4103,6 +4114,9 @@ int main() {
             drawRect((float)screenWidth - 12, 0, 12.0f, (float)screenHeight, 0.9f, 0.1f, 0.6f, a);
         }
 
+        }   // if (inWorldRender)
+        }   // 월드 렌더 게이트 블록
+
         // [6] HUD 오버레이 (HP바, 상태 표시)
         g_GameManager.Render();
 
@@ -4292,12 +4306,14 @@ int main() {
                 {
                     struct DE { float x, y, hp; bool alive; int kind; };
                     struct DB { float x, y, dx, dy; bool act; };
+                    struct DP { float x, y, vx, vy, life, maxLife, size, r, g, b; bool act; };
                     static bool  d_init = false;
                     static float d_pX, d_pY, d_hp, d_fireT, d_wanderT, d_tgtX, d_tgtY;
                     static float d_respT, d_spawnT, d_buffT;
                     static int   d_kills;
                     static std::vector<DE> d_es;
                     static std::vector<DB> d_bs;
+                    static DP    d_parts[120] = {};          // 데모 전용 파티클 풀 (게임과 분리)
                     // 플레이 영역 (좌측 독을 피해 중앙~우측)
                     float rx0 = 280.0f, ry0 = 110.0f, rx1 = sw - 90.0f, ry1 = sh - 80.0f;
                     float ccx = (rx0+rx1)*0.5f, ccy = (ry0+ry1)*0.5f;
@@ -4305,6 +4321,15 @@ int main() {
                                    d_fireT=d_wanderT=d_respT=d_spawnT=d_buffT=0; d_kills=0; }
                     float dt = delta; if (dt > 0.05f) dt = 0.05f;
                     int rw = (int)(rx1-rx0), rh = (int)(ry1-ry0); if (rw<1) rw=1; if (rh<1) rh=1;
+                    // 데모 폭발 — 전용 파티클 풀에 spawn
+                    auto dBoom = [&](float x, float y, float r, float g, float b, int n, float spd) {
+                        int placed = 0;
+                        for (int i = 0; i < 120 && placed < n; i++) { if (d_parts[i].act) continue;
+                            float a = (float)placed/n*6.2831853f + (rand()%100-50)*0.012f;
+                            float s = spd*0.4f + (rand()% (int)spd);
+                            d_parts[i] = { x, y, cosf(a)*s, sinf(a)*s, 0.35f, 0.35f,
+                                           3.0f+(rand()%5), r, g, b, true }; placed++; }
+                    };
 
                     if (d_respT > 0.0f) {
                         d_respT -= dt;
@@ -4330,7 +4355,7 @@ int main() {
                             e.hp=2; e.alive=true; e.kind=rand()%3; d_es.push_back(e); }
                         for (auto& e : d_es) if (e.alive) { float dx=d_pX-e.x, dy=d_pY-e.y;
                             float l=std::sqrt(dx*dx+dy*dy)+0.001f; e.x+=dx/l*72*dt; e.y+=dy/l*72*dt;
-                            if (l<22){ d_hp-=1; e.alive=false; SpawnEnemyExplosion(e.x,e.y,1.0f,0.4f,0.3f,false); } }
+                            if (l<22){ d_hp-=1; e.alive=false; dBoom(e.x,e.y,1.0f,0.4f,0.3f,8,200.0f); } }
                         d_fireT -= dt;
                         if (d_fireT<=0.0f) { float bd=1e9f; DE* tg=nullptr;
                             for (auto& e : d_es) if (e.alive){ float dx=e.x-d_pX,dy=e.y-d_pY,d=dx*dx+dy*dy; if(d<bd){bd=d;tg=&e;} }
@@ -4340,29 +4365,39 @@ int main() {
                             if(b.x<rx0-40||b.x>rx1+40||b.y<ry0-40||b.y>ry1+40) b.act=false;
                             for (auto& e : d_es) if (e.alive){ float dx=b.x-e.x,dy=b.y-e.y;
                                 if(dx*dx+dy*dy<16*16){ e.hp-=1; b.act=false;
-                                    if(e.hp<=0){e.alive=false; d_kills++; SpawnEnemyExplosion(e.x,e.y,0.4f,0.9f,1.0f,false);
+                                    if(e.hp<=0){e.alive=false; d_kills++; dBoom(e.x,e.y,0.4f,0.9f,1.0f,8,220.0f);
                                         if(d_kills%8==0) d_buffT=1.3f; } break; } } }
                         d_es.erase(std::remove_if(d_es.begin(),d_es.end(),[](const DE&e){return !e.alive;}),d_es.end());
                         d_bs.erase(std::remove_if(d_bs.begin(),d_bs.end(),[](const DB&b){return !b.act;}),d_bs.end());
                         if (d_hp<=0.0f){ d_respT=1.6f;
-                            SpawnEnemyExplosion(d_pX,d_pY,0.3f,0.8f,1.0f,true);
-                            SpawnEnemyExplosion(d_pX,d_pY,1.0f,0.9f,0.4f,true); }
+                            dBoom(d_pX,d_pY,0.3f,0.8f,1.0f,18,360.0f);
+                            dBoom(d_pX,d_pY,1.0f,0.9f,0.4f,16,300.0f); }
                         if (d_buffT>0.0f) d_buffT-=dt;
                     }
-                    // 폭발 파티클 업데이트 (메뉴에서도)
-                    for (auto& p : g_EnemyParts) { if(!p.active) continue; p.life-=dt;
-                        if(p.life<=0.0f){p.active=false;continue;} p.x+=p.vx*dt; p.y+=p.vy*dt;
+                    // 데모 파티클 업데이트 (사망/respawn 중에도 계속) — 적 처치 시 멈추던 문제 해결
+                    for (auto& p : d_parts) { if(!p.act) continue; p.life-=dt;
+                        if(p.life<=0.0f){p.act=false;continue;} p.x+=p.vx*dt; p.y+=p.vy*dt;
                         p.vx*=(1.0f-2.5f*dt); p.vy*=(1.0f-2.5f*dt); }
 
                     // ── 렌더 (아이콘/독보다 먼저 = 배경) ──
                     BindMainShader();
+                    // 데모 플레이어 가짜창 — "Onedow_demo.exe" (진짜 게임 창처럼)
+                    if (d_respT <= 0.0f) {
+                        float WW = 132.0f, hpf = d_hp/5.0f; if(hpf<0.35f)hpf=0.35f;
+                        float ww = WW*hpf, wxr = d_pX-ww*0.5f, wyr = d_pY-ww*0.5f;
+                        drawRect(wxr, wyr, ww, ww, 0.07f, 0.09f, 0.12f, 0.92f);   // 창 본체
+                        drawRect(wxr, wyr, ww, 16.0f, 0.20f, 0.55f, 0.85f, 1.0f); // 타이틀바
+                        drawRect(wxr+ww-12, wyr+4, 8, 8, 0.85f, 0.25f, 0.25f, 0.95f); // [X]
+                        g_TextS.Draw(L"Onedow_demo.exe", wxr+5.0f, wyr+1.0f, 0.42f,
+                                     0.9f, 0.96f, 1.0f, 0.95f);
+                    }
                     for (auto& e : d_es) if (e.alive) {
                         if (e.kind==0) drawTriangle(e.x,e.y,14.0f,0.9f,0.3f,0.3f,1.0f);
                         else if (e.kind==1) drawDiamond(e.x,e.y,13.0f,0.8f,0.5f,1.0f,1.0f);
                         else drawTriangle(e.x,e.y,16.0f,1.0f,0.6f,0.2f,1.0f);
                     }
                     for (auto& b : d_bs) if (b.act) drawCircle(b.x,b.y,5.0f,0.4f,0.95f,1.0f,1.0f);
-                    for (auto& p : g_EnemyParts) if (p.active) { float a=p.life/p.maxLife;
+                    for (auto& p : d_parts) if (p.act) { float a=p.life/p.maxLife;
                         drawRect(p.x-p.size*0.5f,p.y-p.size*0.5f,p.size,p.size,p.r,p.g,p.b,a); }
                     if (d_respT<=0.0f) {
                         drawCircle(d_pX,d_pY,16.0f,0.2f,0.9f,1.0f,0.28f);
@@ -4373,7 +4408,7 @@ int main() {
                     g_TextS.Draw(DEMO[li2], rx0, ry0 - 30.0f, 0.7f, 0.55f, 0.8f, 1.0f, 0.55f);
                     if (d_buffT>0.0f) {
                         const wchar_t* AB = L"+ AUGMENT";
-                        g_TextL.Draw(AB, d_pX - 42.0f, d_pY - 52.0f, 0.8f, 0.3f, 1.0f, 0.6f, d_buffT);
+                        g_TextL.Draw(AB, d_pX - 42.0f, d_pY - 60.0f, 0.8f, 0.3f, 1.0f, 0.6f, d_buffT);
                     }
                 }
 
