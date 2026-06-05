@@ -2512,8 +2512,12 @@ int main() {
             float intensity = (float)g_GameManager.score / 100000.0f;
             if (intensity > 6.0f) intensity = 6.0f;
             float rampSpawn = 1.0f + intensity * 0.55f;   // 스폰 빈도 (×1.55 @10만 … ×4.3 @60만)
-            float rampHp    = 1.0f + intensity * 0.35f;   // 몹 체력
             float rampSpd   = 1.0f + intensity * 0.09f;   // 몹 속도
+            // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
+            //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
+            float hpIntensity = (float)g_GameManager.score / 100000.0f;
+            if (hpIntensity > 14.0f) hpIntensity = 14.0f;
+            float rampHp    = 1.0f + hpIntensity * 0.35f; // 몹 체력 (×3.1 @60만 … ×5.9 @140만)
             // 특수 잡몹(돌진/회피/거대) 출현 확률 — 점수 비례 (초반 0 → 약 13.5만점에 45% 상한)
             int   varietyPct = (int)std::min(45.0f, (float)g_GameManager.score / 3000.0f);
             // 엘리트 변종 확률 — 점수 비례 (초반 0 → 약 14만점에 12% 상한)
@@ -2604,7 +2608,11 @@ int main() {
                          g_GameManager.score >= g_NextBossScore) {
                     // 일반 보스 (슬라임/글리치/리로드/스팸 랜덤) — 다음 임계 +20만
                     g_NextBossScore += 200000;
-                    float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
+                    // 점수 비례 체력 스케일 — 후반 보스가 치명타에 즉사하지 않도록
+                    //   30만=×2, 60만=×3, 90만=×4 … (상한 ×8 = 210만점)
+                    float bossHpScale = 1.0f + (float)g_GameManager.score / 300000.0f;
+                    if (bossHpScale > 8.0f) bossHpScale = 8.0f;
+                    float bossHp = GetDifficultyParams(g_Difficulty).bossHp * bossHpScale;
                     int pick = rand() % 4;
                     if (pick == 0) {
                         g_MonsterManager.boss =
@@ -2964,6 +2972,10 @@ int main() {
                     nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
                     nb.sizeScale = 1.7f;
                 }
+                if (g_DrunkActive) {               // 취함 활성 — 조준 흐트러짐 + 데미지 -40%
+                    nb.dmgMult *= 0.6f;
+                    if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 0.6f;
+                }
                 g_Bullets.push_back(nb);
             };
 
@@ -3009,6 +3021,10 @@ int main() {
                         if (g_Stats.bowWeapon) {
                             nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
                             nb.sizeScale = 1.7f;
+                        }
+                        if (g_DrunkActive) {               // 취함 활성 — 데미지 -40%
+                            nb.dmgMult *= 0.6f;
+                            if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 0.6f;
                         }
                         g_Bullets.push_back(nb);
                     }
@@ -3478,23 +3494,34 @@ int main() {
             g_GameManager.currentState == GameState::DYING) {
             float pad = 12.0f, bx = playerWin.x + pad;
             float bw = playerWin.width - pad * 2.0f;
-            float hpH = 10.0f, xpH = 6.0f, gap = 3.0f;
-            float hpY = playerWin.y + playerWin.height - 16.0f - hpH;   // 하단 안쪽
+            float hpH = 14.0f, xpH = 8.0f, gap = 3.0f;   // 두껍게 (가시성)
+            float hpY = playerWin.y + playerWin.height - 18.0f - hpH;   // 하단 안쪽
             float xpY = hpY - gap - xpH;
+            // 공통 불투명 패널 — 탄막/적과 겹쳐도 바가 묻히지 않도록
+            drawRect(bx - 5, xpY - 5, bw + 10, (hpY + hpH) - (xpY) + 10, 0.03f, 0.03f, 0.05f, 0.96f);
             // HP
             float hpFrac = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
             if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
             float hpR = (hpFrac > 0.5f) ? 0.1f : 1.0f;
             float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
-            drawRect(bx - 2, xpY - 2, bw + 4, (hpY + hpH) - (xpY) + 4, 0.0f, 0.0f, 0.0f, 0.55f); // 공통 테두리
-            drawRect(bx, hpY, bw, hpH, 0.2f, 0.05f, 0.05f, 0.95f);
-            drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 0.97f);
+            drawRect(bx, hpY, bw, hpH, 0.22f, 0.04f, 0.04f, 1.0f);
+            drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 1.0f);
+            // HP 수치 (바 중앙)
+            {
+                wchar_t hps[24];
+                swprintf_s(hps, L"%d / %d", (int)(g_GameManager.playerHP + 0.5f),
+                           (int)(g_Stats.maxHP + 0.5f));
+                float hs = 0.55f;
+                float hw = g_TextS.Width(hps, hs);
+                g_TextS.Draw(hps, bx + bw * 0.5f - hw * 0.5f, hpY + (hpH - 11.0f) * 0.5f,
+                             hs, 1.0f, 1.0f, 1.0f, 0.95f);
+            }
             // XP
             long long needX = g_ExpSystem.Required(g_GameManager.playerLevel);
             float xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
             if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
-            drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 0.95f);
-            drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 0.97f);
+            drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 1.0f);
+            drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
         }
 
         // (d) 플레이어 캐릭터 + 증강 이펙트 + 사망 파편
@@ -3699,15 +3726,7 @@ int main() {
             drawMercedes(bs->worldX, bs->worldY, Boss::BODY_SIZE,
                          bodyColR, bodyColG, bodyColB, 1.0f);
 
-            // HP 바 (본체 위)
-            float hpFrac = bs->hp / bs->maxHp;
-            if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
-            float hbW = 140.0f, hbH = 8.0f;
-            float hbX = bs->worldX - hbW * 0.5f;
-            float hbY = bs->worldY - Boss::BODY_SIZE - 18.0f;
-            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.15f, 0.2f, 0.85f);
-            drawRect(hbX, hbY, hbW * hpFrac, hbH,
-                     0.95f, 0.3f, 0.4f, 0.95f);
+            // (HP 바는 화면 상단 고정 보스 바로 이동 — 후반 가시성)
 
             glDisable(GL_SCISSOR_TEST);
         }
@@ -3884,14 +3903,7 @@ int main() {
             drawDiamond(gb->worldX + 3, gb->worldY, GlitchBoss::BODY, 1.0f, 0.1f, 0.4f, 0.55f);
             drawDiamond(gb->worldX - 3, gb->worldY, GlitchBoss::BODY, 0.1f, 0.9f, 1.0f, 0.55f);
             drawDiamond(gb->worldX, gb->worldY, GlitchBoss::BODY, 0.92f, 0.92f, 0.98f, 1.0f);
-            // HP 바
-            float hpFrac = gb->hp / gb->maxHp;
-            if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
-            float hbW = 160.0f, hbH = 8.0f;
-            float hbX = gb->worldX - hbW * 0.5f;
-            float hbY = gb->worldY - GlitchBoss::BODY - 18.0f;
-            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.15f, 0.85f);
-            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.25f, 0.55f, 0.95f);
+            // (HP 바는 화면 상단 고정 보스 바로 이동)
             glDisable(GL_SCISSOR_TEST);
         }
 
@@ -3982,14 +3994,7 @@ int main() {
             else                                           { br=1.0f; bg=0.85f; bb=0.2f; }
             drawDiamond(rb->worldX, rb->worldY, ReloadRunnerBoss::BODY, br, bg, bb, 1.0f);
 
-            // HP 바
-            float hpFrac = rb->hp / rb->maxHp;
-            if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
-            float hbW = 160.0f, hbH = 8.0f;
-            float hbX = rb->worldX - hbW * 0.5f;
-            float hbY = rb->worldY - ReloadRunnerBoss::BODY - 18.0f;
-            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.12f, 0.1f, 0.85f);
-            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.6f, 0.2f, 0.95f);
+            // (HP 바는 화면 상단 고정 보스 바로 이동)
             glDisable(GL_SCISSOR_TEST);
 
             // [RELOADING...] 깜빡 텍스트
@@ -4025,14 +4030,7 @@ int main() {
                         1.0f, 0.35f + 0.25f * pulse, 0.8f, 1.0f);
             drawDiamond(sb->worldX, sb->worldY, SpamBoss::BODY * 0.5f,
                         1.0f, 0.85f, 0.95f, 1.0f);
-            // HP 바
-            float hpFrac = sb->hp / sb->maxHp;
-            if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
-            float hbW = 170.0f, hbH = 8.0f;
-            float hbX = sb->worldX - hbW * 0.5f;
-            float hbY = sb->worldY - SpamBoss::BODY - 18.0f;
-            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.13f, 0.85f);
-            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.4f, 0.8f, 0.95f);
+            // (HP 바는 화면 상단 고정 보스 바로 이동)
             glDisable(GL_SCISSOR_TEST);
         }
 
@@ -4142,12 +4140,7 @@ int main() {
                 drawRect(cx - 18, cy - 34, 36.0f, 4.0f, 0.2f, 0.1f, 0.2f, 0.8f);
                 drawRect(cx - 18, cy - 34, 36.0f * cf, 4.0f, 0.8f, 0.4f, 1.0f, 0.9f);
             }
-            // HP 바
-            float hpFrac = pb->hp / pb->maxHp; if (hpFrac<0)hpFrac=0; if(hpFrac>1)hpFrac=1;
-            float hbW = 200.0f, hbH = 10.0f;
-            float hbX = pb->worldX - hbW * 0.5f, hbY = pb->worldY - bsz - 22.0f;
-            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.2f, 0.85f);
-            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.7f, 0.3f, 1.0f, 0.95f);
+            // (HP 바는 화면 상단 고정 보스 바로 이동)
             // 폼 변환 파티클 — 보스 개인 창 안에서도 보이도록 (창 밖 데스크톱엔 안 뜸)
             for (auto& p : g_EnemyParts) {
                 if (!p.active) continue;
@@ -4294,6 +4287,56 @@ int main() {
                 drawRect(0, 0, (float)screenWidth, (float)screenHeight,
                          g_BossTintCol.r, g_BossTintCol.g, g_BossTintCol.b,
                          g_BossTintT * 0.06f);
+            }
+        }
+
+        // (h2b) 보스 레이드 HP 바 — 화면 상단 고정. 몸체 밑 작은 바는 후반 탄막에
+        //   묻혀 안 보이므로, 활성 보스의 체력을 상단에 크게 표시한다 (이름 + %).
+        {
+            const wchar_t* bn = nullptr;
+            float bhf = 0.0f; glm::vec3 bc(1.0f, 1.0f, 1.0f);
+            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                bn = L"SLIME.worm";    bhf = g_MonsterManager.boss->hp / g_MonsterManager.boss->maxHp;
+                bc = glm::vec3(0.55f, 0.9f, 0.55f);
+            } else if (g_GlitchBoss && g_GlitchBoss->alive) {
+                bn = L"GLITCH.sys";    bhf = g_GlitchBoss->hp / g_GlitchBoss->maxHp;
+                bc = glm::vec3(0.95f, 0.2f, 0.6f);
+            } else if (g_RRBoss && g_RRBoss->alive) {
+                bn = L"RELOADER.exe";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
+                bc = glm::vec3(1.0f, 0.55f, 0.2f);
+            } else if (g_PolyBoss && g_PolyBoss->alive) {
+                bn = L"POLYMORPH.vir"; bhf = g_PolyBoss->hp / g_PolyBoss->maxHp;
+                bc = glm::vec3(0.6f, 0.25f, 1.0f);
+            } else if (g_SpamBoss && g_SpamBoss->alive) {
+                bn = L"SPAM.dll";      bhf = g_SpamBoss->hp / g_SpamBoss->maxHp;
+                bc = glm::vec3(1.0f, 0.4f, 0.8f);
+            }
+            GameState st = g_GameManager.currentState;
+            bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
+                           st == GameState::DYING   || st == GameState::AUG_SELECT ||
+                           st == GameState::DEBUFF_SELECT);
+            if (bn && inGame) {
+                if (bhf < 0.0f) bhf = 0.0f; if (bhf > 1.0f) bhf = 1.0f;
+                BindMainShader();
+                float bw = (float)screenWidth * 0.42f; if (bw > 820.0f) bw = 820.0f;
+                float bh = 22.0f;
+                float bx = ((float)screenWidth - bw) * 0.5f;
+                float by = 78.0f;
+                drawRect(bx - 3.0f, by - 3.0f, bw + 6.0f, bh + 6.0f, 0.05f, 0.05f, 0.07f, 0.88f);
+                drawRect(bx, by, bw, bh, 0.18f, 0.16f, 0.20f, 0.92f);
+                // 체력 — 낮을수록 어두워지는 보스 고유색
+                float lit = 0.5f + 0.5f * bhf;
+                drawRect(bx, by, bw * bhf, bh, bc.r * lit, bc.g * lit, bc.b * lit, 0.96f);
+                // 이름 (바 위 중앙)
+                float ns = 0.85f;
+                float nw = g_TextS.Width(bn, ns);
+                g_TextS.Draw(bn, ((float)screenWidth - nw) * 0.5f, by - 28.0f, ns,
+                             bc.r, bc.g, bc.b, 1.0f);
+                // % (바 우측 끝 안쪽)
+                wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(bhf * 100.0f + 0.5f));
+                float ps = 0.7f;
+                float pw = g_TextS.Width(pct, ps);
+                g_TextS.Draw(pct, bx + bw - pw - 8.0f, by + 3.0f, ps, 1.0f, 1.0f, 1.0f, 0.95f);
             }
         }
 

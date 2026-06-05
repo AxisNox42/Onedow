@@ -233,8 +233,8 @@ struct PlayerStats {
 
         // ── 핵앤슬래쉬 (희귀) ──
         case AugType::CRIT:
-            critChance = std::min(100, critChance + 25);  // 25%/스택, 최대 100%
-            critMult   = 2.5f;
+            critChance = std::min(75, critChance + 20);   // 20%/스택, 최대 75% (너프: 25%/100%)
+            critMult   = 2.0f;                            // 배율 너프: 2.5 → 2.0
             break;
         case AugType::LIFESTEAL:
             lifestealPerKill += 0.12f;  // 처치당 HP +0.12 (너프: 0.5 → 0.25 → 0.12)
@@ -249,8 +249,8 @@ struct PlayerStats {
 
         // ── 조합 (COMBO) — 레시피 충족 시에만 등장 ──
         case AugType::CB_EXECUTIONER:   // 치명타 + 광전사
-            critChance = std::min(100, critChance + 35);
-            critMult  += 1.5f;
+            critChance = std::min(90, critChance + 30);   // 너프: 35/100 → 30/90
+            critMult  += 1.2f;                            // 너프: +1.5 → +1.2
             damageMultiplier *= 1.20f;
             break;
         case AugType::CB_BLOODLORD:     // 흡혈탄 + 흡혈마 (너프)
@@ -380,7 +380,7 @@ struct PlayerStats {
                 drunkActiveDuration += 1.0f;
                 drunkCooldown = std::max(4.0f, drunkCooldown - 2.0f);
             }
-            xpMult *= 1.10f;              // (너프: 20% → 10%)
+            xpMult *= 1.05f;              // (너프: 20% → 10% → 5%; 활성 중 데미지 -40% 페널티 추가)
             break;
         // ── 자폭병 디버프 ──
         case AugType::D_BOMBER_BLAST:
