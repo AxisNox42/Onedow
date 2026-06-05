@@ -896,6 +896,18 @@ int main() {
         if (delta > 0.1f) delta = 0.1f; // 스파이크 클램프
         lastFrame = now;
 
+        // 창 포커스를 잃으면(다른 앱으로 전환) 자동 일시정지 —
+        //   오버레이라 포커스 없어도 루프가 계속 도므로, 안 막으면 게임이
+        //   백그라운드에서 계속 진행됨(콤보 3초 창이 흘러가 리셋되는 버그 등).
+        {
+            static bool s_wasFocused = true;
+            bool focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+            if (!focused && s_wasFocused &&
+                g_GameManager.currentState == GameState::RUNNING)
+                g_GameManager.currentState = GameState::PAUSED;
+            s_wasFocused = focused;
+        }
+
         // FPS 측정 (1초 단위)
         ++g_FpsFrames;
         if (now - g_FpsLastTime >= 1.0f) {
@@ -4513,9 +4525,9 @@ int main() {
                 g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, 1.0f, 1.0f, 0.9f, 0.4f, a);
             }
 
-            // ── 처치 연출 — 프로세스 종료 플로팅 태그 (게임 진행 중) ──
-            if (st == GameState::RUNNING || st == GameState::DYING ||
-                st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
+            // ── 처치 연출 — 프로세스 종료 플로팅 태그 (실제 플레이 중에만) ──
+            //    메뉴(증강/디버프 선택·일시정지)에선 숨김 — 텍스트가 메뉴 위에 남던 버그 fix
+            if (st == GameState::RUNNING || st == GameState::DYING) {
                 for (auto& t : g_KillTags) {
                     if (!t.active) continue;
                     float fr = t.life / t.maxLife;            // 1→0
@@ -5834,9 +5846,9 @@ int main() {
                 }
             }
 
-            // ── 손맛: 데미지 숫자 팝업 + 콤보 카운터 ──────────────────
-            if (st == GameState::RUNNING || st == GameState::DYING ||
-                st == GameState::PAUSED) {
+            // ── 손맛: 데미지 숫자 팝업 + 콤보 카운터 (실제 플레이 중에만) ──
+            //    메뉴/일시정지에선 숨김 — 텍스트가 메뉴 위에 남던 버그 fix
+            if (st == GameState::RUNNING || st == GameState::DYING) {
                 // 데미지 숫자 (월드 → 스크린 변환 후 텍스트) — 설정 토글
                 if (g_ShowDamageNumbers)
                 for (auto& d : g_DmgNumbers) {
