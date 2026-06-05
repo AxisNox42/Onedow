@@ -5584,16 +5584,6 @@ int main() {
                            T(StrId::LV_PREFIX), g_GameManager.playerLevel,
                            g_GameManager.xp, need);
                 g_TextS.Draw(xpBuf, 12.0f, hudTopY, 0.85f, 0.7f,1.0f,0.7f,0.9f);
-                // XP 진행 바 (다음 레벨까지 — 한눈에 보이게)
-                {
-                    float frac = (need > 0) ? (float)g_GameManager.xp / (float)need : 0.0f;
-                    if (frac < 0.0f) frac = 0.0f; if (frac > 1.0f) frac = 1.0f;
-                    float bx = 12.0f, by = hudTopY + 24.0f, bw = 240.0f, bh = 6.0f;
-                    BindMainShader();
-                    drawRect(bx - 1, by - 1, bw + 2, bh + 2, 0.0f, 0.0f, 0.0f, 0.6f); // 테두리
-                    drawRect(bx, by, bw, bh, 0.07f, 0.12f, 0.08f, 0.85f);             // 빈 바
-                    drawRect(bx, by, bw * frac, bh, 0.4f, 1.0f, 0.55f, 0.95f);        // 채움
-                }
 
                 // 상단 중앙: Score
                 wchar_t scoreBuf[64];
@@ -5609,14 +5599,29 @@ int main() {
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
 
-                // 하단 HP 바 위 — "HP 현재/최대" 숫자 (바는 GameManager::Render 가 그림)
+                // ── 하단 중앙: XP 바(위) + HP 바(아래, GameManager) + 숫자 — 한 곳에 모음 ──
                 {
+                    float barW = sw * 0.46f, barH = 24.0f;
+                    float barX = (sw - barW) * 0.5f;
+                    float barY = sh - 40.0f - (float)g_TaskbarH;   // GameManager HP 바와 동일 위치
+                    // XP 바 (HP 바 바로 위)
+                    float xpH = 8.0f, xpY = barY - 6.0f - xpH;
+                    float frac = (need > 0) ? (float)g_GameManager.xp / (float)need : 0.0f;
+                    if (frac < 0.0f) frac = 0.0f; if (frac > 1.0f) frac = 1.0f;
+                    BindMainShader();
+                    drawRect(barX - 3, xpY - 3, barW + 6, xpH + 6, 0.0f, 0.0f, 0.0f, 0.7f); // 테두리
+                    drawRect(barX, xpY, barW, xpH, 0.06f, 0.10f, 0.07f, 0.9f);              // 빈 바
+                    drawRect(barX, xpY, barW * frac, xpH, 0.4f, 1.0f, 0.55f, 0.95f);        // 채움
+                    // Lv 라벨 (XP 바 좌측 위)
+                    wchar_t lvb[24]; swprintf_s(lvb, L"%ls%d", T(StrId::LV_PREFIX),
+                                                g_GameManager.playerLevel);
+                    g_TextS.Draw(lvb, barX, xpY - 20.0f, 0.7f, 0.7f, 1.0f, 0.75f, 0.95f);
+                    // HP 숫자 (HP 바 위 중앙)
                     int hpCur = (int)(g_GameManager.playerHP + 0.5f);
                     int hpMax = (int)(g_Stats.maxHP + 0.5f);
                     wchar_t hpBuf[48]; swprintf_s(hpBuf, L"HP  %d / %d", hpCur, hpMax);
-                    float hw = g_TextS.Width(hpBuf, 0.85f);
-                    g_TextS.Draw(hpBuf, (sw - hw) * 0.5f, sh - 38.0f - (float)g_TaskbarH, 0.85f,
-                                 1.0f, 1.0f, 1.0f, 0.95f);
+                    float hw = g_TextS.Width(hpBuf, 0.8f);
+                    g_TextS.Draw(hpBuf, (sw - hw) * 0.5f, barY + 3.0f, 0.8f, 1, 1, 1, 0.95f);
                 }
                 // 하단 조작 안내 (희미하게 항상) — 새 플레이어가 HP/스킬 위치를 알게
                 if (st == GameState::RUNNING) {
