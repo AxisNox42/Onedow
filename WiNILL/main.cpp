@@ -380,6 +380,17 @@ ReloadRunnerBoss* g_RRBoss = nullptr;
 PolymorphBoss* g_PolyBoss = nullptr;
 // SPAM.dll 보스 (탄막/불릿헬 — 회전 나선탄 + 방사 버스트) — 별도 관리
 SpamBoss* g_SpamBoss = nullptr;
+
+// ── 보스 등장 전조(증상) ──────────────────────────────────────
+//   보스 스폰을 "결정 → 2.5초 전조(테마 증상 + 경고 배너) → 실제 생성" 으로 분리.
+//   전조 동안 게임플레이는 계속(텔레그래프). 만료 시 결정된 보스를 실제로 생성.
+float          g_BossWarnTimer = 0.0f;          // >0 이면 전조 진행 중 (남은 시간)
+constexpr float BOSS_WARN_DUR  = 2.5f;
+int            g_BossWarnPick   = -1;           // 0슬라임 1글리치 2리로드 3스팸 4폴리 (통일 인덱스)
+const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
+float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
+// 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
+bool g_SlimeWasP2 = false, g_GlitchWasP2 = false, g_RRWasP2 = false, g_SpamWasP2 = false;
 int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
 float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
 bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
@@ -969,6 +980,8 @@ int main() {
             g_NextBossScore = 200000;
             g_PolySpawned   = false;
             g_BossRewardPicksLeft = 0;
+            g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
+            g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
@@ -1172,6 +1185,8 @@ int main() {
                 g_Slimelings.clear();
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
+                g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
+                g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
                     SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
@@ -2585,70 +2600,88 @@ int main() {
             //   (어떤 보스든 살아있으면 대기 = 동시 스폰 방지)
             {
                 bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
-                                  g_RRBoss || g_PolyBoss || g_SpamBoss || !g_Slimelings.empty();
-                bool spawnedNow = false;
-                float bsx = screenWidth  * 0.5f + ((float)(rand() % 200) - 100.0f);
-                float bsy = screenHeight * 0.5f + ((float)(rand() % 200) - 100.0f);
+                                  g_RRBoss || g_PolyBoss || g_SpamBoss ||
+                                  !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
                 float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
                 float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
                               : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
 
-                if (g_CreativeBossPending && !bossActive) {
-                    // 크리에이티브: 선택한 보스 즉시 소환 (점수 무관, 1회)
-                    g_CreativeBossPending = false;
-                    switch (g_CreativeBossPick) {
-                    case 0: g_MonsterManager.boss =
-                                new Boss(bsx, bsy, screenWidth, screenHeight, bossHpC); break;
-                    case 1: g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, bossHpC * 0.7f); break;
-                    case 2: g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHpC); break;
-                    default: g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, polyHpC);
-                             g_PolyPrevForm = -1; break;
+                // 전조 시작 — pick·이름·HP 확정 후 2.5초 경고. 실제 생성은 만료 시.
+                auto startWarn = [&](int pick, const wchar_t* name, float hp) {
+                    g_BossWarnPick = pick; g_BossWarnName = name;
+                    g_BossWarnHp = hp;     g_BossWarnTimer = BOSS_WARN_DUR;
+                };
+
+                if (!bossActive) {
+                    if (g_CreativeBossPending) {
+                        // 크리에이티브: 선택한 보스 (점수 무관, 1회)
+                        g_CreativeBossPending = false;
+                        switch (g_CreativeBossPick) {
+                        case 0:  startWarn(0, L"SLIME.worm",    bossHpC);        break;
+                        case 1:  startWarn(1, L"GLITCH.sys",    bossHpC * 0.7f); break;
+                        case 2:  startWarn(2, L"RELOADER.exe",  bossHpC);        break;
+                        default: startWarn(4, L"POLYMORPH.vir", polyHpC);        break;
+                        }
                     }
-                    spawnedNow = true;
-                }
-                else if (!bossActive && !g_PolySpawned &&
-                    g_GameManager.score >= 500000) {
-                    // 폴리모프 — 50만점 고정 (1회) · 자체 HP (이지10k/노말30k/하드75k)
-                    g_PolySpawned = true;
-                    float pHp = (g_Difficulty == Difficulty::EASY) ? 10000.0f
-                              : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
-                    g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, pHp);
-                    g_PolyPrevForm = -1;
-                    spawnedNow = true;
-                }
-                else if (!bossActive &&
-                         g_GameManager.score >= g_NextBossScore) {
-                    // 일반 보스 (슬라임/글리치/리로드/스팸 랜덤) — 다음 임계 +20만
-                    g_NextBossScore += 200000;
-                    // 점수 비례 체력 스케일 — 후반 보스가 치명타에 즉사하지 않도록
-                    //   30만=×2, 60만=×3, 90만=×4 … (상한 ×8 = 210만점)
-                    float bossHpScale = 1.0f + (float)g_GameManager.score / 300000.0f;
-                    if (bossHpScale > 8.0f) bossHpScale = 8.0f;
-                    float bossHp = GetDifficultyParams(g_Difficulty).bossHp * bossHpScale;
-                    int pick = rand() % 4;
-                    if (pick == 0) {
-                        g_MonsterManager.boss =
-                            new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
-                    } else if (pick == 1) {
-                        g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, bossHp * 0.7f);
-                    } else if (pick == 2) {
-                        g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHp);
-                    } else {
-                        // 탄막형이라 접근이 어려워 처치 시간이 길다 → HP 더 낮게 (너프: 0.85)
-                        g_SpamBoss = new SpamBoss(screenWidth, screenHeight, bossHp * 0.65f);
+                    else if (!g_PolySpawned && g_GameManager.score >= 500000) {
+                        // 폴리모프 — 50만점 고정 (1회)
+                        g_PolySpawned = true;
+                        startWarn(4, L"POLYMORPH.vir", polyHpC);
                     }
-                    spawnedNow = true;
+                    else if (g_GameManager.score >= g_NextBossScore) {
+                        // 일반 보스 (슬라임/글리치/리로드/스팸 랜덤) — 다음 임계 +20만
+                        g_NextBossScore += 200000;
+                        // 점수 비례 체력 스케일 (30만=×2 … 상한 ×8 = 210만점)
+                        float sc = 1.0f + (float)g_GameManager.score / 300000.0f;
+                        if (sc > 8.0f) sc = 8.0f;
+                        float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
+                        switch (rand() % 4) {
+                        case 0:  startWarn(0, L"SLIME.worm",   bossHp);         break;
+                        case 1:  startWarn(1, L"GLITCH.sys",   bossHp * 0.7f);  break;
+                        case 2:  startWarn(2, L"RELOADER.exe", bossHp);         break;
+                        default: startWarn(3, L"SPAM.dll",     bossHp * 0.65f); break;
+                        }
+                    }
                 }
 
-                if (spawnedNow) {
-                    // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
-                    g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
-                    SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
-                    SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
-                    for (int k = 0; k < 3; k++) {
-                        SpawnEnemyExplosion(bsx + (rand()%200 - 100),
-                                            bsy + (rand()%200 - 100),
-                                            1.0f, 0.3f, 0.3f, true);
+                // 전조 진행 → 만료 시 실제 보스 생성 + 등장 연출
+                if (g_BossWarnTimer > 0.0f) {
+                    g_BossWarnTimer -= delta;
+                    if (g_BossWarnTimer <= 0.0f) {
+                        g_BossWarnTimer = 0.0f;
+                        float bsx = screenWidth  * 0.5f + ((float)(rand() % 200) - 100.0f);
+                        float bsy = screenHeight * 0.5f + ((float)(rand() % 200) - 100.0f);
+                        switch (g_BossWarnPick) {
+                        case 0:
+                            g_MonsterManager.boss =
+                                new Boss(bsx, bsy, screenWidth, screenHeight, g_BossWarnHp);
+                            break;
+                        case 1:
+                            g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            // 글로벌 전조가 글리치 테마를 덮으므로 내부 GLITCH_WARNING 스킵
+                            g_GlitchBoss->state = BossState::SPAWN_MINI;
+                            g_GlitchBoss->stateTimer = 0.0f;
+                            break;
+                        case 2:
+                            g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            break;
+                        case 3:
+                            g_SpamBoss = new SpamBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            break;
+                        default:
+                            g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_PolyPrevForm = -1;
+                            break;
+                        }
+                        // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
+                        g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
+                        SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
+                        SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
+                        for (int k = 0; k < 3; k++) {
+                            SpawnEnemyExplosion(bsx + (rand()%200 - 100),
+                                                bsy + (rand()%200 - 100),
+                                                1.0f, 0.3f, 0.3f, true);
+                        }
                     }
                 }
             }
@@ -4370,6 +4403,106 @@ int main() {
                 float pw = g_TextS.Width(pct, ps);
                 g_TextS.Draw(pct, bx + bw - pw - 8.0f, by + 3.0f, ps, 1.0f, 1.0f, 1.0f, 0.95f);
             }
+        }
+
+        // (h2c) 보스 등장 전조(증상) — 스폰 2.5초 전 테마 연출 + 경고 배너
+        if (g_BossWarnTimer > 0.0f &&
+            (g_GameManager.currentState == GameState::RUNNING ||
+             g_GameManager.currentState == GameState::PAUSED)) {
+            float prog = 1.0f - g_BossWarnTimer / BOSS_WARN_DUR;   // 0→1
+            if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
+            float t = (float)glfwGetTime();
+            float blink = 0.5f + 0.5f * sinf(t * 9.0f);
+            // 보스 고유색
+            glm::vec3 wc(1,1,1);
+            switch (g_BossWarnPick) {
+            case 0: wc = glm::vec3(0.55f, 0.9f, 0.55f); break;  // 슬라임 연두
+            case 1: wc = glm::vec3(0.95f, 0.2f, 0.6f);  break;  // 글리치 마젠타
+            case 2: wc = glm::vec3(1.0f, 0.55f, 0.2f);  break;  // 리로더 주황
+            case 3: wc = glm::vec3(1.0f, 0.4f, 0.8f);   break;  // 스팸 분홍
+            default: wc = glm::vec3(0.6f, 0.25f, 1.0f); break;  // 폴리 보라
+            }
+            BindMainShader();
+            float sw2 = (float)screenWidth, sh2 = (float)screenHeight;
+            // 공통: 가장자리 비네트 (보스색, progress 비례로 짙어짐)
+            float ea = (0.05f + 0.13f * prog) * (0.6f + 0.4f * blink);
+            float eb = 70.0f;
+            drawRect(0, 0, sw2, eb, wc.r, wc.g, wc.b, ea);
+            drawRect(0, sh2 - eb, sw2, eb, wc.r, wc.g, wc.b, ea);
+            drawRect(0, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
+            drawRect(sw2 - eb, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
+
+            // 보스별 증상 테마
+            switch (g_BossWarnPick) {
+            case 0: {  // SLIME — 하단에서 차오르는 연두 점액 + 방울
+                float rise = (40.0f + 150.0f * prog);
+                drawRect(0, sh2 - rise, sw2, rise, 0.3f, 0.8f, 0.3f, 0.12f + 0.1f * prog);
+                for (int i = 0; i < 7; i++) {
+                    float dx = (float)(rand() % (int)sw2);
+                    float dh = 20.0f + (float)(rand() % 80) * prog;
+                    drawRect(dx, sh2 - rise - dh, 10.0f, dh, 0.35f, 0.85f, 0.35f, 0.18f);
+                }
+            } break;
+            case 1: {  // GLITCH — 무작위 가로 찢김 바
+                int bars = 4 + (int)(prog * 5);
+                for (int i = 0; i < bars; i++) {
+                    float by2 = (float)(rand() % (int)sh2);
+                    float bh2 = 4.0f + (float)(rand() % 16);
+                    float off = (float)((rand() % 60) - 30);
+                    drawRect(off, by2, sw2, bh2, wc.r, wc.g, wc.b, 0.10f + 0.20f * blink);
+                }
+            } break;
+            case 2: {  // RELOADER — 가장자리 주황 머즐 플래시 점멸
+                for (int i = 0; i < 6; i++) {
+                    float fx = (rand() % 2) ? (float)(rand() % 40) : sw2 - (float)(rand() % 40);
+                    float fy = (float)(rand() % (int)sh2);
+                    if (rand() % 2) { fy = (rand() % 2) ? (float)(rand()%40) : sh2-(float)(rand()%40);
+                                      fx = (float)(rand() % (int)sw2); }
+                    drawCircle(fx, fy, 8.0f + (float)(rand()%14), 1.0f, 0.6f, 0.2f, 0.5f * blink);
+                }
+            } break;
+            case 3: {  // SPAM — 분홍 popup.exe 창들이 깜빡이며 증식
+                int pops = 3 + (int)(prog * 8);
+                for (int i = 0; i < pops; i++) {
+                    float pw2 = 70.0f + (float)(rand() % 90);
+                    float ph2 = 50.0f + (float)(rand() % 60);
+                    float px2 = (float)(rand() % (int)(sw2 - pw2));
+                    float py2 = (float)(rand() % (int)(sh2 - ph2));
+                    drawRect(px2, py2, pw2, ph2, 0.10f, 0.06f, 0.09f, 0.5f);
+                    drawRect(px2, py2, pw2, 12.0f, 1.0f, 0.4f, 0.8f, 0.7f);  // 타이틀바
+                }
+            } break;
+            default: {  // POLYMORPH — 중앙에서 퍼지는 보라 맥동 링
+                for (int i = 0; i < 3; i++) {
+                    float r = (80.0f + i * 120.0f) + prog * 200.0f;
+                    drawCircle(sw2 * 0.5f, sh2 * 0.5f, r, wc.r, wc.g, wc.b,
+                               (0.05f + 0.05f * blink) * (1.0f - (float)i * 0.25f));
+                }
+            } break;
+            }
+
+            // 공통 경고 배너 (중앙 상단쪽)
+            float by3 = sh2 * 0.30f;
+            // 이름 (대)
+            wchar_t banner[64]; swprintf_s(banner, L"⚠  %ls  ⚠", g_BossWarnName);
+            float nsc = 1.5f;
+            float nw2 = g_TextL.Width(banner, nsc);
+            g_TextL.Draw(banner, (sw2 - nw2) * 0.5f, by3, nsc,
+                         wc.r, wc.g, wc.b, 0.7f + 0.3f * blink);
+            // 부제
+            const wchar_t* SUB[3] = { L"위협 프로세스 감지 — 실행 중...",
+                                       L"THREAT PROCESS DETECTED — launching...",
+                                       L"脅威プロセス検出 — 実行中..." };
+            int li5 = (int)g_Language; if (li5 < 0 || li5 >= LANG_COUNT) li5 = 0;
+            float ssc = 0.7f;
+            float sw3 = g_TextS.Width(SUB[li5], ssc);
+            g_TextS.Draw(SUB[li5], (sw2 - sw3) * 0.5f, by3 + 44.0f, ssc, 1.0f, 1.0f, 1.0f, 0.85f);
+            // 진행 게이지
+            float gw = 320.0f, gh = 8.0f, gx = (sw2 - gw) * 0.5f, gy = by3 + 74.0f;
+            BindMainShader();
+            drawRect(gx - 2, gy - 2, gw + 4, gh + 4, 0.0f, 0.0f, 0.0f, 0.6f);
+            drawRect(gx, gy, gw, gh, 0.15f, 0.15f, 0.18f, 0.9f);
+            drawRect(gx, gy, gw * prog, gh, wc.r, wc.g, wc.b, 0.95f);
         }
 
         // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍
