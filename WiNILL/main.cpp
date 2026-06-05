@@ -2306,25 +2306,14 @@ int main() {
             bool  moving = keys[GLFW_KEY_W] || keys[GLFW_KEY_S] ||
                            keys[GLFW_KEY_A] || keys[GLFW_KEY_D];
 
-            // ── 피격 시 창(시야) 축소 — HP 비율에 따라 창 크기 변동 + 피격 펀치 ──
+            // ── 피격 펀치 — HP 감소 시 빨간 비네트만 (시야 변동 제거, 창 크기 고정) ──
             {
-                float baseSize = g_Stats.windowSize;
-                float hpFrac = (g_GameManager.maxHP > 0.0f)
-                             ? g_GameManager.playerHP / g_GameManager.maxHP : 1.0f;
-                if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
-                float target = baseSize * (0.55f + 0.45f * hpFrac);   // 풀피=full, 0%=55%
-                if (g_WindowSizeCur <= 0.0f) g_WindowSizeCur = target; // 초기화
                 if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
-                if (lost > 0.5f) {            // 피격 — 즉시 추가 축소 + 빨간 비네트
-                    g_WindowSizeCur -= lost * 3.0f;
-                    g_HurtVignette = 0.5f;
-                }
+                if (lost > 0.5f) g_HurtVignette = 0.5f;   // 피격 비네트
                 g_WinPrevHP = g_GameManager.playerHP;
-                // 부드럽게 target 으로 복귀
-                g_WindowSizeCur += (target - g_WindowSizeCur) * (delta * 5.0f > 1.0f ? 1.0f : delta * 5.0f);
-                if (g_WindowSizeCur < 180.0f) g_WindowSizeCur = 180.0f;  // 최소 시야
-                // 적용 (플레이어 중심 고정)
+                // 창 크기는 g_Stats.windowSize 로 고정 (HP 와 무관)
+                g_WindowSizeCur = g_Stats.windowSize;
                 playerWin.width = playerWin.height = g_WindowSizeCur;
                 playerWin.x = pCX - g_WindowSizeCur * 0.5f;
                 playerWin.y = pCY - g_WindowSizeCur * 0.5f;
@@ -3414,6 +3403,33 @@ int main() {
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                  0.08f, 0.08f, 0.10f, 1.0f);
         glEnable(GL_BLEND);
+
+        // (c2) HP/EXP 바 — 플레이어 창 하단 안쪽에 부착 (창과 함께 이동) ──
+        if (g_GameManager.currentState == GameState::RUNNING ||
+            g_GameManager.currentState == GameState::PAUSED ||
+            g_GameManager.currentState == GameState::AUG_SELECT ||
+            g_GameManager.currentState == GameState::DEBUFF_SELECT ||
+            g_GameManager.currentState == GameState::DYING) {
+            float pad = 12.0f, bx = playerWin.x + pad;
+            float bw = playerWin.width - pad * 2.0f;
+            float hpH = 10.0f, xpH = 6.0f, gap = 3.0f;
+            float hpY = playerWin.y + playerWin.height - 16.0f - hpH;   // 하단 안쪽
+            float xpY = hpY - gap - xpH;
+            // HP
+            float hpFrac = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
+            if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
+            float hpR = (hpFrac > 0.5f) ? 0.1f : 1.0f;
+            float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
+            drawRect(bx - 2, xpY - 2, bw + 4, (hpY + hpH) - (xpY) + 4, 0.0f, 0.0f, 0.0f, 0.55f); // 공통 테두리
+            drawRect(bx, hpY, bw, hpH, 0.2f, 0.05f, 0.05f, 0.95f);
+            drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 0.97f);
+            // XP
+            long long needX = g_ExpSystem.Required(g_GameManager.playerLevel);
+            float xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
+            if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
+            drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 0.95f);
+            drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 0.97f);
+        }
 
         // (d) 플레이어 캐릭터 + 증강 이펙트 + 사망 파편
         {
@@ -5618,13 +5634,15 @@ int main() {
 #else
                 const float hudTopY = 8.0f;
 #endif
-                // 좌상단: Lv. / XP + 진행 바
-                long long need = g_ExpSystem.Required(g_GameManager.playerLevel);
-                wchar_t xpBuf[64];
-                swprintf_s(xpBuf, L"%ls%d   %lld / %lld",
-                           T(StrId::LV_PREFIX), g_GameManager.playerLevel,
-                           g_GameManager.xp, need);
-                g_TextS.Draw(xpBuf, 12.0f, hudTopY, 0.85f, 0.7f,1.0f,0.7f,0.9f);
+                // 좌상단: Lv. + HP 숫자 (시각 바는 플레이어 창에 부착됨)
+                {
+                    int hpCur = (int)(g_GameManager.playerHP + 0.5f);
+                    int hpMax = (int)(g_Stats.maxHP + 0.5f);
+                    wchar_t lvBuf2[64];
+                    swprintf_s(lvBuf2, L"%ls%d    HP %d/%d",
+                               T(StrId::LV_PREFIX), g_GameManager.playerLevel, hpCur, hpMax);
+                    g_TextS.Draw(lvBuf2, 12.0f, hudTopY, 0.85f, 0.7f, 1.0f, 0.7f, 0.9f);
+                }
 
                 // 상단 중앙: Score
                 wchar_t scoreBuf[64];
@@ -5640,30 +5658,7 @@ int main() {
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
 
-                // ── 하단 중앙: XP 바(위) + HP 바(아래, GameManager) + 숫자 — 한 곳에 모음 ──
-                {
-                    float barW = sw * 0.46f, barH = 24.0f;
-                    float barX = (sw - barW) * 0.5f;
-                    float barY = sh - 40.0f - (float)g_TaskbarH - g_GameBarH;   // GameManager HP 바와 동일 위치
-                    // XP 바 (HP 바 바로 위)
-                    float xpH = 8.0f, xpY = barY - 6.0f - xpH;
-                    float frac = (need > 0) ? (float)g_GameManager.xp / (float)need : 0.0f;
-                    if (frac < 0.0f) frac = 0.0f; if (frac > 1.0f) frac = 1.0f;
-                    BindMainShader();
-                    drawRect(barX - 3, xpY - 3, barW + 6, xpH + 6, 0.0f, 0.0f, 0.0f, 0.7f); // 테두리
-                    drawRect(barX, xpY, barW, xpH, 0.06f, 0.10f, 0.07f, 0.9f);              // 빈 바
-                    drawRect(barX, xpY, barW * frac, xpH, 0.4f, 1.0f, 0.55f, 0.95f);        // 채움
-                    // Lv 라벨 (XP 바 좌측 위)
-                    wchar_t lvb[24]; swprintf_s(lvb, L"%ls%d", T(StrId::LV_PREFIX),
-                                                g_GameManager.playerLevel);
-                    g_TextS.Draw(lvb, barX, xpY - 20.0f, 0.7f, 0.7f, 1.0f, 0.75f, 0.95f);
-                    // HP 숫자 (HP 바 위 중앙)
-                    int hpCur = (int)(g_GameManager.playerHP + 0.5f);
-                    int hpMax = (int)(g_Stats.maxHP + 0.5f);
-                    wchar_t hpBuf[48]; swprintf_s(hpBuf, L"HP  %d / %d", hpCur, hpMax);
-                    float hw = g_TextS.Width(hpBuf, 0.8f);
-                    g_TextS.Draw(hpBuf, (sw - hw) * 0.5f, barY + 3.0f, 0.8f, 1, 1, 1, 0.95f);
-                }
+                // (HP/EXP 시각 바는 플레이어 창 하단에 부착됨 — 위 (c2) 참고)
                 // 하단 조작 안내 (희미하게 항상) — 새 플레이어가 HP/스킬 위치를 알게
                 if (st == GameState::RUNNING) {
                     const wchar_t* CTRL =

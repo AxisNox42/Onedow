@@ -429,23 +429,7 @@ void GameManager::Render() {
     // --- 픽셀 좌표계 UI ---
     setOrtho(projLoc);
 
-    // HP 바 (화면 하단) — 게임 진행 상태에서만, 크고 눈에 띄게 (테두리 + 두꺼운 바)
-    if (currentState == GameState::RUNNING || currentState == GameState::PAUSED ||
-        currentState == GameState::DYING   || currentState == GameState::AUG_SELECT ||
-        currentState == GameState::DEBUFF_SELECT) {
-        float barW = screenW * 0.46f;
-        float barH = 24.0f;
-        float barX = (screenW - barW) / 2.0f;
-        float barY = (float)screenH - 40.0f - (float)g_TaskbarH - g_GameBarH; // 인게임 작업표시줄 위로
-        drawQuad(barX - 3, barY - 3, barW + 6, barH + 6, 0.0f, 0.0f, 0.0f, 0.7f);  // 테두리
-        drawQuad(barX, barY, barW, barH, 0.18f, 0.05f, 0.05f, 0.9f);               // 빈 바(어두운 적)
-        float hpFrac = (maxHP > 0.0f) ? (playerHP / maxHP) : 0.0f;
-        if (hpFrac < 0.0f) hpFrac = 0.0f;
-        if (hpFrac > 1.0f) hpFrac = 1.0f;
-        float hpR = (hpFrac > 0.5f) ? 0.1f : 1.0f;
-        float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
-        drawQuad(barX, barY, barW * hpFrac, barH, hpR, hpG, 0.1f, 0.95f);
-    }
+    // (HP 바는 이제 플레이어 창 하단에 부착됨 — main.cpp 의 (c2) 참고. 여기선 안 그림)
 
     // (GAMEOVER 표시는 main.cpp [7] 텍스트 블록의 한국어 라벨이 담당)
 
