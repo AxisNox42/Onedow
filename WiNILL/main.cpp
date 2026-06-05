@@ -3506,16 +3506,8 @@ int main() {
             float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
             drawRect(bx, hpY, bw, hpH, 0.22f, 0.04f, 0.04f, 1.0f);
             drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 1.0f);
-            // HP 수치 (바 중앙)
-            {
-                wchar_t hps[24];
-                swprintf_s(hps, L"%d / %d", (int)(g_GameManager.playerHP + 0.5f),
-                           (int)(g_Stats.maxHP + 0.5f));
-                float hs = 0.55f;
-                float hw = g_TextS.Width(hps, hs);
-                g_TextS.Draw(hps, bx + bw * 0.5f - hw * 0.5f, hpY + (hpH - 11.0f) * 0.5f,
-                             hs, 1.0f, 1.0f, 1.0f, 0.95f);
-            }
+            // (HP 수치는 좌상단 HUD 에 표시 — 월드 섹션에서 텍스트를 그리면
+            //  TextRenderer 가 셰이더/VAO 를 언바인드해 이후 엔티티 렌더가 깨지므로 금지)
             // XP
             long long needX = g_ExpSystem.Required(g_GameManager.playerLevel);
             float xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
