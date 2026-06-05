@@ -69,8 +69,10 @@ public:
 
             if (b.isEnemy) {
                 // 적 총알 → 플레이어 (스윕 판정)
+                //   탄막(불릿헬) 회피 가독성 — 피격 판정을 비주얼보다 작은
+                //   '중심 코어' 크기로 축소 (기존 20 → 10, 면적 1/4)
                 float dist = SegDist(playerCX, playerCY, b.prevX, b.prevY, b.x, b.y);
-                if (dist < 20.0f) {
+                if (dist < 10.0f * stats.playerSizeMult) {
                     float ed = (b.enemyDmg > 0.0f) ? b.enemyDmg : 10.0f;
                     playerHP -= ed * stats.rmobDmgMult;
                     b.active  = false;

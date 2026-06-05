@@ -2634,7 +2634,8 @@ int main() {
                     } else if (pick == 2) {
                         g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHp);
                     } else {
-                        g_SpamBoss = new SpamBoss(screenWidth, screenHeight, bossHp * 0.85f);
+                        // 탄막형이라 접근이 어려워 처치 시간이 길다 → HP 더 낮게 (너프: 0.85)
+                        g_SpamBoss = new SpamBoss(screenWidth, screenHeight, bossHp * 0.65f);
                     }
                     spawnedNow = true;
                 }
@@ -3586,6 +3587,33 @@ int main() {
                 float core = sz * 0.35f;
                 drawRect(pCX - core * 0.5f, pCY - core * 0.5f, core, core,
                          1.0f, 1.0f, 1.0f, 1.0f);
+
+                // ── 위치 강조 표시 (혼잡한 탄막 속에서 플레이어를 쉽게 찾도록) ──
+                //   + 자형 레티클(중심 비움) + 옅은 헤일로. HP 낮을수록 강해지고 붉어짐.
+                if (g_GameManager.currentState == GameState::RUNNING) {
+                    float hpFrac = (g_Stats.maxHP > 0.0f)
+                                 ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                    if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
+                    bool low = hpFrac < 0.3f;
+                    float spd   = low ? 9.0f : 3.5f;
+                    float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * spd);
+                    float a = (low ? (0.45f + 0.4f * pulse) : (0.22f + 0.12f * pulse));
+                    // 색: 평상시 시안, 위험 시 붉게
+                    float rr = low ? 1.0f : 0.4f;
+                    float gg = low ? 0.35f : 1.0f;
+                    float bb = low ? 0.35f : 1.0f;
+                    // 옅은 헤일로(채워진 원) — 멀리서도 위치가 보이도록
+                    drawCircle(pCX, pCY, hs + 22.0f * g_Stats.playerSizeMult,
+                               rr, gg, bb, a * 0.18f);
+                    // + 자형 레티클 (중심은 비워서 본체를 가리지 않음)
+                    float gap = hs + 6.0f;
+                    float L   = 16.0f * g_Stats.playerSizeMult;
+                    float t   = 3.0f;
+                    drawRect(pCX - t*0.5f, pCY - gap - L, t, L, rr, gg, bb, a);  // 위
+                    drawRect(pCX - t*0.5f, pCY + gap,     t, L, rr, gg, bb, a);  // 아래
+                    drawRect(pCX - gap - L, pCY - t*0.5f, L, t, rr, gg, bb, a);  // 좌
+                    drawRect(pCX + gap,     pCY - t*0.5f, L, t, rr, gg, bb, a);  // 우
+                }
             }
         }
 

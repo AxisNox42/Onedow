@@ -25,13 +25,13 @@ public:
     float driftT      = 0.0f;
 
     static constexpr float BODY        = 46.0f;
-    static constexpr float SPIN        = 1.7f;     // 나선 회전 (rad/s)
-    static constexpr int   ARMS        = 4;        // 나선 팔 개수
-    static constexpr float FIRE_INT    = 0.06f;    // 나선탄 발사 간격
-    static constexpr float BSPEED      = 300.0f;   // 느린 나선탄 (피할 수 있게)
-    static constexpr float BURST_INT   = 4.5f;     // 방사 버스트 주기
-    static constexpr int   BURST_N     = 26;       // 버스트 탄 수
-    static constexpr float BURST_SPEED = 430.0f;
+    static constexpr float SPIN        = 1.3f;     // 나선 회전 (rad/s) — 너프: 1.7
+    static constexpr int   ARMS        = 3;        // 나선 팔 개수 — 너프: 4
+    static constexpr float FIRE_INT    = 0.11f;    // 나선탄 발사 간격 — 너프: 0.06 (발사율 절반)
+    static constexpr float BSPEED      = 260.0f;   // 느린 나선탄 — 너프: 300
+    static constexpr float BURST_INT   = 6.5f;     // 방사 버스트 주기 — 너프: 4.5 (덜 자주)
+    static constexpr int   BURST_N     = 18;       // 버스트 탄 수 — 너프: 26
+    static constexpr float BURST_SPEED = 380.0f;   // 너프: 430
 
     SpamBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -51,9 +51,9 @@ public:
         driftT += dt;
         worldX = baseX + cosf(driftT * 0.5f) * (screenW * 0.13f);
         worldY = baseY + sinf(driftT * 0.8f) * (screenH * 0.10f);
-        // 본체 접촉 데미지
+        // 본체 접촉 데미지 (너프: 14 → 10)
         float dx = px - worldX, dy = py - worldY;
-        if (dx*dx + dy*dy < BODY * BODY) playerHP -= 14.0f * dt;
+        if (dx*dx + dy*dy < BODY * BODY) playerHP -= 10.0f * dt;
         // 회전 나선탄 (여러 팔)
         spiralAngle += SPIN * dt;
         fireTimer += dt;
