@@ -5577,13 +5577,23 @@ int main() {
 #else
                 const float hudTopY = 8.0f;
 #endif
-                // 좌상단: Lv. / XP
+                // 좌상단: Lv. / XP + 진행 바
                 long long need = g_ExpSystem.Required(g_GameManager.playerLevel);
                 wchar_t xpBuf[64];
                 swprintf_s(xpBuf, L"%ls%d   %lld / %lld",
                            T(StrId::LV_PREFIX), g_GameManager.playerLevel,
                            g_GameManager.xp, need);
                 g_TextS.Draw(xpBuf, 12.0f, hudTopY, 0.85f, 0.7f,1.0f,0.7f,0.9f);
+                // XP 진행 바 (다음 레벨까지 — 한눈에 보이게)
+                {
+                    float frac = (need > 0) ? (float)g_GameManager.xp / (float)need : 0.0f;
+                    if (frac < 0.0f) frac = 0.0f; if (frac > 1.0f) frac = 1.0f;
+                    float bx = 12.0f, by = hudTopY + 24.0f, bw = 240.0f, bh = 6.0f;
+                    BindMainShader();
+                    drawRect(bx - 1, by - 1, bw + 2, bh + 2, 0.0f, 0.0f, 0.0f, 0.6f); // 테두리
+                    drawRect(bx, by, bw, bh, 0.07f, 0.12f, 0.08f, 0.85f);             // 빈 바
+                    drawRect(bx, by, bw * frac, bh, 0.4f, 1.0f, 0.55f, 0.95f);        // 채움
+                }
 
                 // 상단 중앙: Score
                 wchar_t scoreBuf[64];
@@ -5618,6 +5628,27 @@ int main() {
                     float cw = g_TextS.Width(c, 0.7f);
                     g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 66.0f - (float)g_TaskbarH, 0.7f,
                                  0.6f, 0.7f, 0.8f, 0.55f);
+                }
+                // ── 저체력 경고 — HP 25% 이하 시 가장자리 부드러운 적색 펄스 + 텍스트 ──
+                if (st == GameState::RUNNING || st == GameState::PAUSED) {
+                    float hpFrac = (g_Stats.maxHP > 0.0f)
+                                 ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                    if (hpFrac > 0.0f && hpFrac < 0.25f) {
+                        float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 6.0f);
+                        float sev   = 1.0f - hpFrac / 0.25f;            // 낮을수록 강하게
+                        float a     = (0.08f + 0.13f * pulse) * (0.5f + 0.5f * sev);
+                        BindMainShader();
+                        float bw = 64.0f;
+                        drawRect(0, 0, sw, bw, 0.9f, 0.15f, 0.15f, a);
+                        drawRect(0, sh - bw, sw, bw, 0.9f, 0.15f, 0.15f, a);
+                        drawRect(0, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
+                        drawRect(sw - bw, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
+                        const wchar_t* LOW[3] = { L"● 위험", L"● LOW HP", L"● 危険" };
+                        int li4 = (int)g_Language; if (li4 < 0 || li4 >= LANG_COUNT) li4 = 0;
+                        float lw = g_TextS.Width(LOW[li4], 0.9f);
+                        g_TextS.Draw(LOW[li4], (sw - lw) * 0.5f, sh - 94.0f - (float)g_TaskbarH,
+                                     0.9f, 1.0f, 0.4f, 0.4f, 0.55f + 0.45f * pulse);
+                    }
                 }
             }
 
