@@ -4310,6 +4310,32 @@ int main() {
                 }
             }
 
+            // ── 인게임 작업표시줄 — 메뉴와 동일한 OS 프레임 유지 (데스크톱 방어 일관성) ──
+            if (st == GameState::RUNNING || st == GameState::PAUSED || st == GameState::DYING ||
+                st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
+                int li5 = (int)g_Language; if (li5 < 0 || li5 >= LANG_COUNT) li5 = 0;
+                BindMainShader();
+                float tbH = g_GameBarH, tbY = sh - (float)g_TaskbarH - tbH;
+                drawRect(0, tbY, sw, tbH, 0.01f, 0.015f, 0.03f, 0.94f);          // 본체
+                drawRect(0, tbY, sw, 2.0f, 0.35f, 0.62f, 1.0f, 0.9f);            // 상단 강조
+                drawRect(9.0f, tbY + (tbH-22.0f)*0.5f, 22.0f, 22.0f, 0.30f, 0.8f, 1.0f, 0.95f); // 시작 오브
+                g_TextS.Draw(L"onedow.exe", 40.0f, tbY + (tbH-15.0f)*0.5f, 0.68f,
+                             0.9f, 0.96f, 1.0f, 1.0f);
+                // 중앙: 상태 (방어 중 / 일시정지)
+                const wchar_t* STAT_RUN[3] = { L"● 데스크톱 방어 중", L"● Defending desktop", L"● デスクトップ防衛中" };
+                const wchar_t* STAT_PAU[3] = { L"❚❚ 일시정지", L"❚❚ Paused", L"❚❚ 一時停止" };
+                const wchar_t* STAT = (st == GameState::PAUSED) ? STAT_PAU[li5] : STAT_RUN[li5];
+                float stw = g_TextS.Width(STAT, 0.66f);
+                g_TextS.Draw(STAT, (sw - stw) * 0.5f, tbY + (tbH-14.0f)*0.5f, 0.66f,
+                             0.6f, 0.85f, 1.0f, 0.9f);
+                // 우측: 시계
+                time_t tt = time(nullptr); struct tm lt; localtime_s(&lt, &tt);
+                wchar_t clk[16]; swprintf_s(clk, L"%02d:%02d", lt.tm_hour, lt.tm_min);
+                float clw = g_TextS.Width(clk, 0.72f);
+                g_TextS.Draw(clk, sw - clw - 16.0f, tbY + (tbH-15.0f)*0.5f, 0.72f,
+                             0.85f, 0.92f, 1.0f, 1.0f);
+            }
+
             // ── 업적 해금 토스트 (상단 중앙 배너, 4초 표시 후 페이드) ──
             if (g_AchToastTimer > 0.0f && g_AchToastId >= 0 &&
                 g_AchToastId < ACH_COUNT) {
@@ -4354,7 +4380,7 @@ int main() {
                     L"CREATIVE   F: 증강(디버프 포함)   G: 무적",
                     L"CREATIVE   F: Augment(+debuff)   G: Godmode",
                     L"CREATIVE   F: 強化(デバフ含)   G: 無敵" };
-                g_TextS.Draw(CH[li3], 20.0f, sh - 36.0f - (float)g_TaskbarH, 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
+                g_TextS.Draw(CH[li3], 20.0f, sh - 36.0f - (float)g_TaskbarH - g_GameBarH, 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
                     const wchar_t* GOD[3] = { L"● 무적 ON", L"● GODMODE ON", L"● 無敵 ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
@@ -4498,7 +4524,7 @@ int main() {
                 // ── 작업표시줄 (하단) — 시작 오브 + 시계 ──
                 {
                     BindMainShader();
-                    float tbH = 42.0f, tbY = sh - tbH;
+                    float tbH = 42.0f, tbY = sh - tbH - (float)g_TaskbarH;  // 실제 작업표시줄 위로
                     drawRect(0, tbY, sw, tbH, 0.01f, 0.015f, 0.03f, 1.0f);
                     drawRect(0, tbY, sw, 2.0f, 0.35f, 0.62f, 1.0f, 0.95f);
                     // 시작 오브
@@ -5618,7 +5644,7 @@ int main() {
                 {
                     float barW = sw * 0.46f, barH = 24.0f;
                     float barX = (sw - barW) * 0.5f;
-                    float barY = sh - 40.0f - (float)g_TaskbarH;   // GameManager HP 바와 동일 위치
+                    float barY = sh - 40.0f - (float)g_TaskbarH - g_GameBarH;   // GameManager HP 바와 동일 위치
                     // XP 바 (HP 바 바로 위)
                     float xpH = 8.0f, xpY = barY - 6.0f - xpH;
                     float frac = (need > 0) ? (float)g_GameManager.xp / (float)need : 0.0f;
@@ -5646,8 +5672,8 @@ int main() {
                         L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
                     const wchar_t* c = (g_Language == Language::KR) ? CTRL : CTRL_EN;
                     float cw = g_TextS.Width(c, 0.7f);
-                    g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 66.0f - (float)g_TaskbarH, 0.7f,
-                                 0.6f, 0.7f, 0.8f, 0.55f);
+                    g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 106.0f - (float)g_TaskbarH - g_GameBarH, 0.7f,
+                                 0.6f, 0.7f, 0.8f, 0.5f);
                 }
                 // ── 저체력 경고 — HP 25% 이하 시 가장자리 부드러운 적색 펄스 + 텍스트 ──
                 if (st == GameState::RUNNING || st == GameState::PAUSED) {
@@ -5666,7 +5692,7 @@ int main() {
                         const wchar_t* LOW[3] = { L"● 위험", L"● LOW HP", L"● 危険" };
                         int li4 = (int)g_Language; if (li4 < 0 || li4 >= LANG_COUNT) li4 = 0;
                         float lw = g_TextS.Width(LOW[li4], 0.9f);
-                        g_TextS.Draw(LOW[li4], (sw - lw) * 0.5f, sh - 94.0f - (float)g_TaskbarH,
+                        g_TextS.Draw(LOW[li4], (sw - lw) * 0.5f, sh - 94.0f - (float)g_TaskbarH - g_GameBarH,
                                      0.9f, 1.0f, 0.4f, 0.4f, 0.55f + 0.45f * pulse);
                     }
                 }
@@ -5703,7 +5729,7 @@ int main() {
             // ── 액티브 스킬 슬롯 (좌하단, 패시브 쿨다운 위 행) ──
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float KW = 54.0f, KH = 54.0f, KG = 8.0f;
-                float kx0 = 16.0f, ky0 = sh - KH - 40.0f - (56.0f + 8.0f) - (float)g_TaskbarH;
+                float kx0 = 16.0f, ky0 = sh - KH - 40.0f - (56.0f + 8.0f) - (float)g_TaskbarH - g_GameBarH;
                 auto skillBox = [&](int idx, const wchar_t* key, const wchar_t* tag,
                                     float cd, float r, float g, float b) {
                     float x = kx0 + idx * (KW + KG), y = ky0;
@@ -5739,7 +5765,7 @@ int main() {
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float SLOT_W = 56.0f, SLOT_H = 56.0f, SLOT_GAP = 8.0f;
                 float baseX  = 16.0f;
-                float baseY2 = sh - SLOT_H - 40.0f - (float)g_TaskbarH;   // HP 바 위쪽(작업표시줄 위)
+                float baseY2 = sh - SLOT_H - 40.0f - (float)g_TaskbarH - g_GameBarH;   // HP 바 위쪽(작업표시줄 위)
                 int   slot   = 0;
 
                 auto drawSlot = [&](const wchar_t* tag, float remain,

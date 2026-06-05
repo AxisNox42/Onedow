@@ -26,6 +26,10 @@ inline int g_TaskbarH = 0;
 inline float g_Scale = 1.0f;
 inline constexpr float SCALE_REF_H = 2000.0f;   // 이 높이에서 g_Scale=1.0 (값↑일수록 전체적으로 작아짐)
 
+// 인게임 작업표시줄 높이(px) — 메뉴와 동일한 작업표시줄을 게임 중에도 유지(데스크톱 일관성).
+//   하단 HUD(체력/경험치 바 등)는 이 작업표시줄 위로 올라가도록 함께 오프셋.
+inline constexpr float g_GameBarH = 34.0f;
+
 // 모든 언어 공통 폰트 — Microsoft YaHei UI (Win10+ 기본 탑재)
 //   한글/라틴은 GDI 폰트 링크(자동 폴백)로, 일본어 가나·한자도 시스템 폴백으로 표시
 //   (Windows 전용 — GDI face 이름)

@@ -436,7 +436,7 @@ void GameManager::Render() {
         float barW = screenW * 0.46f;
         float barH = 24.0f;
         float barX = (screenW - barW) / 2.0f;
-        float barY = (float)screenH - 40.0f - (float)g_TaskbarH;   // 작업표시줄 위로
+        float barY = (float)screenH - 40.0f - (float)g_TaskbarH - g_GameBarH; // 인게임 작업표시줄 위로
         drawQuad(barX - 3, barY - 3, barW + 6, barH + 6, 0.0f, 0.0f, 0.0f, 0.7f);  // 테두리
         drawQuad(barX, barY, barW, barH, 0.18f, 0.05f, 0.05f, 0.9f);               // 빈 바(어두운 적)
         float hpFrac = (maxHP > 0.0f) ? (playerHP / maxHP) : 0.0f;
