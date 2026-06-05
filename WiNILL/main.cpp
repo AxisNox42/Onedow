@@ -4363,11 +4363,17 @@ int main() {
                             if (rand()%100 < 12) m->MakeElite(1 + rand()%3);
                             d_mons.push_back(m);
                         }
-                        // 진짜 Monster::Update (돌진/지그재그/점멸 등 실제 행동) — 영역 살짝 클램프
+                        // 진짜 Monster::Update (돌진/지그재그/점멸 등 실제 행동) — 영역 살짝 클램프.
+                        //   접촉 데미지는 더미 HP 로 받고(실제 게임 수치는 너무 셈), 데모는
+                        //   자체적으로 완만하게 깎아 플레이어가 살아서 싸우게 한다.
+                        float dummyHP = 1000.0f;
                         for (auto m : d_mons) if (m->alive) {
-                            m->Update(d_pX, d_pY, dt, d_hp, 1.0f);
+                            m->Update(d_pX, d_pY, dt, dummyHP, 1.0f);
                             m->worldX = m->worldX<rx0-30?rx0-30:(m->worldX>rx1+30?rx1+30:m->worldX);
                             m->worldY = m->worldY<ry0-30?ry0-30:(m->worldY>ry1+30?ry1+30:m->worldY);
+                            float dxp=d_pX-m->worldX, dyp=d_pY-m->worldY;
+                            float crad=(m->summoned?28.0f:18.0f)*m->sizeScale + 14.0f;
+                            if (dxp*dxp+dyp*dyp < crad*crad) d_hp -= 2.5f*dt;   // 완만한 접촉 피해
                         }
                         // 무기별 발사 패턴 (라이플/샷건/미니건/대포)
                         d_fireT -= dt;
