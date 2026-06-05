@@ -20,6 +20,12 @@ inline bool g_ShowCrosshair = true;
 //   체력바 등 하단 UI 가 가려지지 않도록 이만큼 위로 올린다. main 이 시작 시 계산.
 inline int g_TaskbarH = 0;
 
+// 화면 스케일 — 창/엔티티 크기를 해상도에 비례하게. 기준 높이(SCALE_REF_H) 대비.
+//   작은 화면일수록 g_Scale<1 → 플레이어 창·원거리 몹 창 등이 비례 축소됨.
+//   main 이 시작 시 화면 높이로 계산. (1.0 = 기준, 상한 1.0 / 하한 0.5)
+inline float g_Scale = 1.0f;
+inline constexpr float SCALE_REF_H = 2000.0f;   // 이 높이에서 g_Scale=1.0 (값↑일수록 전체적으로 작아짐)
+
 // 모든 언어 공통 폰트 — Microsoft YaHei UI (Win10+ 기본 탑재)
 //   한글/라틴은 GDI 폰트 링크(자동 폴백)로, 일본어 가나·한자도 시스템 폴백으로 표시
 //   (Windows 전용 — GDI face 이름)

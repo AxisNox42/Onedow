@@ -23,9 +23,10 @@ public:
     bool  alive = true;
     bool  exploded = false;
 
-    static constexpr float WIN_W = 700.0f;
-    static constexpr float WIN_H = 700.0f;
-    static constexpr float BODY_SIZE = 50.0f;  // 플레이어(25) 2배
+    // g_Scale 로 시작 시 일괄 축소 가능하도록 런타임 값 (constexpr → inline static)
+    static inline float WIN_W = 700.0f;
+    static inline float WIN_H = 700.0f;
+    static inline float BODY_SIZE = 50.0f;  // 플레이어(25) 2배
 
     glm::vec3 color = glm::vec3(0.9f, 0.85f, 0.95f);
 

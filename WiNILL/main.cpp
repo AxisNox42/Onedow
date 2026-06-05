@@ -263,12 +263,15 @@ struct Turret {
     float fireTimer = 0.0f;
 };
 static const int MAX_TURRETS = 8;                 // 안전 상한
-static constexpr float TURRET_WIN_W  = 250.0f;
-static constexpr float TURRET_WIN_H  = 250.0f;
+// 창 크기 — g_Scale 로 시작 시 일괄 축소 가능하도록 런타임 값 (constexpr → 변수)
+float TURRET_WIN_W  = 250.0f;
+float TURRET_WIN_H  = 250.0f;
 // 신규 보스 개인 창 크기 (본체/HP 를 가두는 따라다니는 창)
-static constexpr float GLITCH_WIN_W = 620.0f;
-static constexpr float RR_WIN_W     = 600.0f;
-static constexpr float POLY_WIN_W   = 840.0f;
+float GLITCH_WIN_W = 620.0f;
+float RR_WIN_W     = 600.0f;
+float POLY_WIN_W   = 840.0f;
+// 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
+float g_RfwW = 500.0f, g_RfwH = 500.0f;
 static constexpr float TURRET_LIFE   = 5.0f;      // 포탑 지속 5초
 static constexpr float TURRET_DEPLOY = 1.0f;      // 1초마다 배치 (대포 공속 고정)
 std::vector<Turret> g_Turrets;
@@ -709,6 +712,16 @@ int main() {
         }
     }
 #endif
+
+    // 해상도 기준 스케일 — 작은 화면에서 창/엔티티가 비례 축소되도록 계산 후 일괄 적용.
+    //   (절대 픽셀이라 작은 화면일수록 상대적으로 컸던 문제 해결 + 전체적으로 창 축소)
+    g_Scale = (float)screenHeight / SCALE_REF_H;
+    if (g_Scale > 1.0f) g_Scale = 1.0f;
+    if (g_Scale < 0.5f) g_Scale = 0.5f;
+    Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
+    TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
+    GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale;
+    g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
     glfwSetCharCallback(window, CodexCharCallback);   // codex.db 검색창 입력
@@ -907,6 +920,7 @@ int main() {
         auto ResetForNewGame = [&]() {
             g_Stats        = PlayerStats();
             g_MetaStartAugs = ApplyMeta(g_Stats);    // 메타 영구 업그레이드 적용
+            g_Stats.windowSize *= g_Scale;           // 플레이어 창 — 해상도 비례 축소
             g_Orb          = BrokenSightOrb{};
             g_ApproachOrbs.clear();
             for (int d = 0; d < MAX_DRONES;   d++) g_Drones[d]   = DroneState{};
@@ -1255,6 +1269,7 @@ int main() {
                     // 실제 보유 목록(중첩 포함) 기준으로 카운트 — 공격력 증가×4 같은 중첩도 모두 포함
                     int prevAugs = (int)g_OwnedAugs.size();
                     g_Stats = PlayerStats();
+                    g_Stats.windowSize *= g_Scale;          // 창 — 해상도 비례 유지
                     g_OwnedAugs.clear();
                     memset(g_GameManager.takenOnce, 0,
                            sizeof(g_GameManager.takenOnce));
@@ -3184,8 +3199,8 @@ int main() {
         if (inWorldRender) {
 
         // 원거리 몹 FakeWindow 크기 상수 (렌더·클리핑 공용)
-        const float RFW_W = 500.0f;
-        const float RFW_H = 500.0f;
+        const float RFW_W = g_RfwW;
+        const float RFW_H = g_RfwH;
 
         // ============================================================
         // 렌더 z-order (아래→위)
