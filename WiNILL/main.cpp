@@ -5730,6 +5730,43 @@ int main() {
                                  1.0f, 0.9f, 0.2f, blink * ge);
                 }
 
+                // ── 사망 시점 보유 증강 + 시작 무기 (좌측 패널) — 빌드 분석용 ──
+                {
+                    int gcounts[AUG_TOTAL] = {};
+                    for (int idx : g_OwnedAugs) gcounts[idx]++;
+
+                    const float panelX = 24.0f, colW = 256.0f, ROW_H = 26.0f;
+                    const float listTop = sh * 0.16f;
+                    const float yLimit  = sh - 30.0f;
+                    g_TextS.Draw(T(StrId::OWNED_AUGS), panelX, listTop, 1.0f,
+                                 1.0f, 1.0f, 1.0f, 0.95f * ge);
+                    // 시작 무기 (저격총 등 — "사기 무기" 추적용)
+                    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT) {
+                        wchar_t wb[80];
+                        swprintf_s(wb, L"[ %ls ]", WeaponName(ALL_WEAPONS[g_CurrentWeapon]));
+                        g_TextS.Draw(wb, panelX, listTop + 30.0f, 0.95f,
+                                     1.0f, 0.85f, 0.35f, 0.95f * ge);
+                    }
+                    float colX = panelX, py = listTop + 70.0f;
+                    for (int i = 0; i < AUG_TOTAL; i++) {
+                        if (gcounts[i] == 0) continue;
+                        if (py > yLimit) { colX += colW; py = listTop + 70.0f; }  // 다음 열로 래핑
+                        const AugDef& def = ALL_AUGS[i];
+                        float cr, cg, cb;
+                        GetRarityColor(def.rarity, cr, cg, cb);
+                        cr = std::min(1.0f, cr * 1.3f + 0.25f);
+                        cg = std::min(1.0f, cg * 1.3f + 0.25f);
+                        cb = std::min(1.0f, cb * 1.3f + 0.25f);
+                        wchar_t line[96];
+                        if (gcounts[i] > 1)
+                            swprintf_s(line, L"· %ls  ×%d", AugName(def), gcounts[i]);
+                        else
+                            swprintf_s(line, L"· %ls", AugName(def));
+                        g_TextS.Draw(line, colX, py, 0.8f, cr, cg, cb, 0.92f * ge);
+                        py += ROW_H;
+                    }
+                }
+
                 // 버튼 3개: 다시하기 / 메뉴로 / 종료 — 페이드 완료 후에만 표시/활성
                 if (gof >= 0.999f) {
                     const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
