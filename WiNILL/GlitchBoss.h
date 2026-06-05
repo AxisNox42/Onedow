@@ -44,7 +44,11 @@ public:
     bool  laserActive = false;
     bool  laserWarn   = false;   // 발사 전 경고선 (SPAWN_MINI 막바지)
     float laserDirX = 1.0f, laserDirY = 0.0f;
+    float laser2DirX = 0.0f, laser2DirY = 1.0f;   // 페이즈2: 직교 두 번째 레이저(X자)
     static constexpr float LASER_WARN_LEAD = 0.8f;   // 발사 0.8초 전부터 경고
+
+    // 페이즈2 (HP 50% 이하) — 듀얼 레이저 + 과밀 스웜 + 상시 글리치
+    bool  phase2 = false;
 
     // 효과 신호 (0~1) — main.cpp 가 읽어서 화면 연출
     float glitchAmount = 0.0f;   // 화면 좌우 찢김 강도
@@ -110,6 +114,9 @@ public:
         if (!alive) return;
         stateTimer += dt;
 
+        // 페이즈2 진입 (HP 50% 이하)
+        if (!phase2 && hp <= maxHp * 0.5f) phase2 = true;
+
         // 효과 자연 감쇠
         burstFlash = std::max(0.0f, burstFlash - dt * 3.5f);
         textNoise  = std::max(0.0f, textNoise  - dt * 2.0f);
@@ -126,11 +133,12 @@ public:
             break;
 
         case BossState::SPAWN_MINI:
-            glitchAmount = 0.05f;
+            glitchAmount = phase2 ? 0.14f : 0.05f;   // 페이즈2: 상시 글리치 강화
             spawnAccum += dt;
-            if (spawnAccum >= 0.8f) {             // '뚝뚝' 끊기듯 소량 스폰 (양 대폭 감소)
+            if (spawnAccum >= (phase2 ? 0.6f : 0.8f)) {  // 페이즈2: 더 자주·더 많이
                 spawnAccum = 0.0f;
-                for (int i = 0; i < 2; i++) spawnMini(playerCX, playerCY);
+                int n = phase2 ? 4 : 2;
+                for (int i = 0; i < n; i++) spawnMini(playerCX, playerCY);
             }
             // 발사 0.8초 전: 레이저 방향 락 + 경고선 표시 (조준선 == 실제 발사선)
             if (!laserWarn && stateTimer >= T_SPAWN - LASER_WARN_LEAD) {
@@ -147,6 +155,8 @@ public:
                 for (auto& t : minis) t.homing = true;       // 전부 유도 가속
                 laserWarn   = false;
                 laserActive = true;                          // 방향은 경고 때 락된 값 사용
+                // 페이즈2: 직교 두 번째 레이저(X자 십자포화)
+                laser2DirX = -laserDirY; laser2DirY = laserDirX;
             }
             break;
 
@@ -160,8 +170,8 @@ public:
             break;
 
         case BossState::COOLDOWN:
-            glitchAmount = 0.0f;
-            if (stateTimer >= T_COOL) {
+            glitchAmount = phase2 ? 0.08f : 0.0f;
+            if (stateTimer >= (phase2 ? T_COOL * 0.5f : T_COOL)) {  // 페이즈2: 회복 짧게
                 for (auto& t : minis) t.homing = false;
                 state = BossState::SPAWN_MINI; stateTimer = 0.0f;
             }
@@ -194,12 +204,19 @@ public:
                 [](const MiniTri& t){ return !t.alive; }),
             minis.end());
 
-        // ── 레이저 포격 (BURST 동안) ──
+        // ── 레이저 포격 (BURST 동안) ── 페이즈2 는 직교 두 번째 레이저까지
         if (laserActive) {
-            float ex = worldX + laserDirX * (float)(screenW + screenH);
-            float ey = worldY + laserDirY * (float)(screenW + screenH);
+            float reach = (float)(screenW + screenH);
+            float ex = worldX + laserDirX * reach, ey = worldY + laserDirY * reach;
             if (segDist(playerCX, playerCY, worldX, worldY, ex, ey) < 32.0f)
                 playerHP -= 45.0f * dt;
+            if (phase2) {
+                float ex2 = worldX + laser2DirX * reach, ey2 = worldY + laser2DirY * reach;
+                // 직교 레이저는 양방향(본체 기준 ±) — X자가 되도록
+                float bx2 = worldX - laser2DirX * reach, by2 = worldY - laser2DirY * reach;
+                if (segDist(playerCX, playerCY, bx2, by2, ex2, ey2) < 30.0f)
+                    playerHP -= 40.0f * dt;
+            }
         }
     }
 };

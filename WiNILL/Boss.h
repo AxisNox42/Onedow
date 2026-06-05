@@ -35,6 +35,9 @@ public:
     int   splitGen   = 0;        // 0 = 원본, 1~2 = 분열체
     bool  chargeOnly = false;    // 분열체: 소환 없이 돌진만
 
+    // ── 페이즈2 (HP 50% 이하) — 분열(main 이 분열체 2기 스폰) + 자체 광폭화 ──
+    bool  phase2 = false;
+
     // ── Wander ──
     float targetX, targetY;
     float wanderTimer  = 0.0f;
@@ -94,10 +97,19 @@ public:
     {
         if (!alive) return;
 
+        // ── 페이즈2 진입 (HP 50% 이하) — 광폭화: 돌진 쿨↓·소환↑·이동↑ ──
+        //   (분열체 2기 스폰은 main 이 상승엣지에서 처리)
+        if (!phase2 && !chargeOnly && hp <= maxHp * 0.5f) {
+            phase2 = true;
+            idleCooldown = 2.5f;   // 돌진 더 자주
+        }
+        float p2move = phase2 ? 1.7f : 1.0f;   // 이동/추격 가속
+        float p2sum  = phase2 ? 1.6f : 1.0f;   // 소환 가속
+
         // ── 소환 타이머 (스킬과 독립적으로) — 0.7초 경고 후 소환 ──
         // 분열체(chargeOnly)는 소환 안 함 (돌진만)
         if (!chargeOnly) {
-            summonTimer += dt;
+            summonTimer += dt * p2sum;
             if (!summonPending && summonTimer >= SUMMON_INTERVAL - SUMMON_WARN)
                 summonPending = true;             // 경고 링 표시 시작 (main 이 렌더)
             if (summonTimer >= SUMMON_INTERVAL) {
@@ -122,7 +134,7 @@ public:
                 pickNewTarget();
                 wanderTimer = 0.0f;
             }
-            worldX += (targetX - worldX) * WANDER_SPEED * dt;
+            worldX += (targetX - worldX) * WANDER_SPEED * p2move * dt;
             worldY += (targetY - worldY) * WANDER_SPEED * dt;
 
             if (skillTimer >= idleCooldown) {

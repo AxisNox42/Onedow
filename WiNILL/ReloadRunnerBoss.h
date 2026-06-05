@@ -72,6 +72,13 @@ public:
     static constexpr float RELOAD_TIME = 1.5f;
     static constexpr float SPRINT_MULT = 3.5f;
 
+    // 페이즈2 (HP 50% 이하) — 오버클럭(장전 가속) + 주기적 스팸클릭 방사 난사
+    bool  phase2    = false;
+    float spamTimer = 0.0f;
+    static constexpr float SPAM_INT   = 1.8f;   // 스팸클릭 버스트 주기
+    static constexpr int   SPAM_N     = 9;      // 방사 탄 수
+    static constexpr float SPAM_BSPEED= 360.0f;
+
     ReloadRunnerBoss(int sw, int sh, float hpInit)
         : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -116,12 +123,29 @@ public:
                 std::vector<Bullet>& bullets) {
         if (!alive) return;
 
+        // 페이즈2 진입 (HP 50% 이하)
+        if (!phase2 && hp <= maxHp * 0.5f) phase2 = true;
+
         float dx = px - worldX, dy = py - worldY;
         float dist = std::sqrt(dx*dx + dy*dy) + 1e-3f;
         float nx = dx / dist, ny = dy / dist;
 
         // 본체 접촉 약한 데미지
         if (dist < BODY) playerHP -= 12.0f * dt;
+
+        // 페이즈2 — 무기 상태와 무관하게 주기적 "스팸클릭" 방사 난사 (신규 패턴)
+        if (phase2) {
+            spamTimer += dt;
+            if (spamTimer >= SPAM_INT) {
+                spamTimer = 0.0f;
+                float off = (float)(rand() % 100) * 0.01f;   // 매번 살짝 회전
+                for (int i = 0; i < SPAM_N; i++) {
+                    float a = (off + (float)i / (float)SPAM_N) * 6.2831853f;
+                    fireDir(bullets, cosf(a), sinf(a), SPAM_BSPEED,
+                            glm::vec3(1.0f, 0.75f, 0.2f));
+                }
+            }
+        }
 
         // ── 장전 질주 ──
         if (state == RRState::RELOAD_SPRINT) {
@@ -130,7 +154,7 @@ public:
             worldY -= ny * sp * dt;
             clampToScreen();
             reloadTimer += dt;
-            if (reloadTimer >= RELOAD_TIME)
+            if (reloadTimer >= (phase2 ? RELOAD_TIME * 0.5f : RELOAD_TIME))  // 페이즈2: 장전 가속
                 equip((RRWeapon)(rand() % 3));   // 무작위 교체
             return;
         }

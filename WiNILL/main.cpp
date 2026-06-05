@@ -391,6 +391,9 @@ const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스
 float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
 // 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
 bool g_SlimeWasP2 = false, g_GlitchWasP2 = false, g_RRWasP2 = false, g_SpamWasP2 = false;
+// 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
+float     g_P2ToastTimer = 0.0f;
+glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
 int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
 float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
 bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
@@ -1811,6 +1814,53 @@ int main() {
                     for (auto* m : sink) delete m;   // chargeOnly 라 보통 비어있음
                 }
 
+                // ── 보스 페이즈2 진입 (상승엣지) — 통일 연출 + 보스별 처리 ──
+                auto p2enter = [&](float bx, float by, glm::vec3 col) {
+                    g_ShakeTime = 0.55f; g_ShakeMag = 26.0f;
+                    TriggerFlash(col.r, col.g, col.b, 0.55f);
+                    TriggerHitStop(0.12f);
+                    SpawnShockWave(bx, by, 520.0f, 0.9f, col.r, col.g, col.b);
+                    SpawnShockWave(bx, by, 300.0f, 0.7f, col.r, col.g, col.b);
+                    for (int k = 0; k < 4; k++)
+                        SpawnEnemyExplosion(bx + (rand()%200 - 100), by + (rand()%200 - 100),
+                                            col.r, col.g, col.b, true);
+                    g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
+                };
+                // SLIME — 분열(약한 chargeOnly 2기) + 광폭화 연출
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                    auto* b = g_MonsterManager.boss;
+                    if (b->phase2 && !g_SlimeWasP2) {
+                        g_SlimeWasP2 = true;
+                        p2enter(b->worldX, b->worldY, glm::vec3(0.55f, 0.9f, 0.55f));
+                        float aHp = b->maxHp * 0.15f;
+                        g_Slimelings.push_back(MakeSlimeling(b->worldX - 55, b->worldY,
+                                               aHp, 0.5f, 1, screenWidth, screenHeight));
+                        g_Slimelings.push_back(MakeSlimeling(b->worldX + 55, b->worldY,
+                                               aHp, 0.5f, 1, screenWidth, screenHeight));
+                    }
+                } else g_SlimeWasP2 = false;
+                // GLITCH — 듀얼 레이저 + 과밀
+                if (g_GlitchBoss && g_GlitchBoss->alive) {
+                    if (g_GlitchBoss->phase2 && !g_GlitchWasP2) {
+                        g_GlitchWasP2 = true;
+                        p2enter(g_GlitchBoss->worldX, g_GlitchBoss->worldY, glm::vec3(0.95f, 0.2f, 0.6f));
+                    }
+                } else g_GlitchWasP2 = false;
+                // RELOADER — 오버클럭 + 스팸클릭
+                if (g_RRBoss && g_RRBoss->alive) {
+                    if (g_RRBoss->phase2 && !g_RRWasP2) {
+                        g_RRWasP2 = true;
+                        p2enter(g_RRBoss->worldX, g_RRBoss->worldY, glm::vec3(1.0f, 0.55f, 0.2f));
+                    }
+                } else g_RRWasP2 = false;
+                // SPAM — 역회전 이중 나선 + 조준 버스트
+                if (g_SpamBoss && g_SpamBoss->alive) {
+                    if (g_SpamBoss->phase2 && !g_SpamWasP2) {
+                        g_SpamWasP2 = true;
+                        p2enter(g_SpamBoss->worldX, g_SpamBoss->worldY, glm::vec3(1.0f, 0.4f, 0.8f));
+                    }
+                } else g_SpamWasP2 = false;
+
                 // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
                 bool hit = CollisionSystem::Update(pCX, pCY,
                     g_MonsterManager, g_Bullets,
@@ -2378,6 +2428,7 @@ int main() {
             }
             g_ComboPulse -= delta * 4.0f;
             if (g_ComboPulse < 0.0f) g_ComboPulse = 0.0f;
+            if (g_P2ToastTimer > 0.0f) g_P2ToastTimer -= delta;   // 페이즈2 토스트
         }
         if (g_FlashIntensity > 0.0f) {
             g_FlashIntensity -= delta * 3.5f;
@@ -3950,6 +4001,27 @@ int main() {
                     glDrawArrays(GL_TRIANGLES, 0, 6);
                 }
             }
+            // 페이즈2: 직교 두 번째 레이저(X자, 본체 기준 양방향)
+            if (gb->laserActive && gb->phase2) {
+                float reach = (float)(screenWidth + screenHeight);
+                float d2x = gb->laser2DirX, d2y = gb->laser2DirY;
+                float ax = gb->worldX - d2x*reach, ay = gb->worldY - d2y*reach;
+                float bx = gb->worldX + d2x*reach, by = gb->worldY + d2y*reach;
+                float pxx = -d2y, pyy = d2x;
+                for (int pass = 0; pass < 2; pass++) {
+                    float th = (pass == 0) ? 28.0f : 9.0f;
+                    float lg = (pass == 0) ? 0.2f : 0.8f;
+                    float lb = (pass == 0) ? 0.5f : 0.9f;
+                    float la = (pass == 0) ? 0.40f : 0.90f;
+                    float p1x=ax+pxx*th,p1y=ay+pyy*th, p2x=ax-pxx*th,p2y=ay-pyy*th;
+                    float p3x=bx+pxx*th,p3y=by+pyy*th, p4x=bx-pxx*th,p4y=by-pyy*th;
+                    float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                    glUniform4f(g_colorLoc, 1.0f, lg, lb, la);
+                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
             // 미니 세모 (작고 빠름 — 유도 중엔 빨강)
             for (auto& t : gb->minis) {
                 if (t.homing) drawTriangle(t.x, t.y, 11.0f, 1.0f, 0.2f, 0.2f, 1.0f);
@@ -4503,6 +4575,23 @@ int main() {
             drawRect(gx - 2, gy - 2, gw + 4, gh + 4, 0.0f, 0.0f, 0.0f, 0.6f);
             drawRect(gx, gy, gw, gh, 0.15f, 0.15f, 0.18f, 0.9f);
             drawRect(gx, gy, gw * prog, gh, wc.r, wc.g, wc.b, 0.95f);
+        }
+
+        // (h2d) 페이즈2 진입 토스트 — "■ 과부하 — PHASE 2" (1.8초 페이드)
+        if (g_P2ToastTimer > 0.0f &&
+            (g_GameManager.currentState == GameState::RUNNING ||
+             g_GameManager.currentState == GameState::DYING)) {
+            float a = (g_P2ToastTimer > 1.4f) ? (1.8f - g_P2ToastTimer) / 0.4f
+                                              : (g_P2ToastTimer / 1.4f);
+            if (a > 1.0f) a = 1.0f; if (a < 0.0f) a = 0.0f;
+            const wchar_t* P2[3] = { L"■ 과부하 — PHASE 2", L"■ OVERLOAD — PHASE 2",
+                                      L"■ 過負荷 — PHASE 2" };
+            int li6 = (int)g_Language; if (li6 < 0 || li6 >= LANG_COUNT) li6 = 0;
+            float psc = 1.2f;
+            float pw3 = g_TextL.Width(P2[li6], psc);
+            glm::vec3& pc = g_P2ToastCol;
+            g_TextL.Draw(P2[li6], ((float)screenWidth - pw3) * 0.5f,
+                         (float)screenHeight * 0.22f, psc, pc.r, pc.g, pc.b, a);
         }
 
         // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍
