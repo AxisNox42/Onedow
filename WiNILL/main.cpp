@@ -1086,6 +1086,18 @@ int main() {
                     SpawnEnemyExplosion(bm->worldX, bm->worldY, bm->color.r, bm->color.g, bm->color.b, true);
                     bm->alive = false; bm->scored = true;
                 }
+                // 모든 적·보스·분열체·총알·포탑을 즉시 완전 삭제 — UpdateAll(RUNNING 전용)에
+                //   맡기면 DYING/GAMEOVER 동안 원거리 몹 창 등이 정지 상태로 남으므로 여기서 제거.
+                g_MonsterManager.Clear();   // monsters/ranged/bombers/boss 전부 delete + clear
+                g_Bullets.clear();
+                if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
+                if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
+                if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
+                for (auto* c : g_Slimelings) delete c;
+                g_Slimelings.clear();
+                g_Turrets.clear();
+                g_PolyWasPhase2  = false;
+                g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 폴리모프 줌 원복
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
                     SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
