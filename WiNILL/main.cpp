@@ -4300,175 +4300,59 @@ int main() {
                     return hover && g_LmbPrev && !lmb && !booting;
                 };
 
-                // ── 자동 플레이 데모 (어트랙트 모드) ──────────────────────
-                //   메뉴 중앙 영역에서 게임이 스스로 돌아간다. 자동 이동/조준/사격,
-                //   주기적 "증강" 연출, 죽으면 잠깐 뒤 자동 재시작. (자체 완결형 미니 시뮬)
+                // ── 배경 장식 (앰비언트) — 잔잔히 떠다니는 흐릿한 창 + 빛 입자 ──
+                //   데모 대신, 실제 바탕화면 위에 은은한 분위기만 더한다 (저알파).
                 {
-                    struct DP { float x, y, vx, vy, life, maxLife, size, r, g, b; bool act; };
-                    static bool  d_init = false;
-                    static float d_pX, d_pY, d_hp, d_fireT, d_wanderT, d_tgtX, d_tgtY;
-                    static float d_respT, d_spawnT, d_buffT;
-                    static int   d_kills, d_weapon;          // 무기 종류(라이프마다 랜덤)
-                    static std::vector<Monster*> d_mons;     // 진짜 Monster (모양·행동 그대로)
-                    static std::vector<Bullet>   d_bs;       // 진짜 Bullet (잔상/글로우)
-                    static DP    d_parts[140] = {};          // 데모 전용 파티클 풀
-                    const float D_MAXHP = 6.0f;
-                    // 플레이 영역 (좌측 독을 피해 중앙~우측)
-                    float rx0 = 300.0f, ry0 = 120.0f, rx1 = sw - 90.0f, ry1 = sh - 80.0f;
-                    float ccx = (rx0+rx1)*0.5f, ccy = (ry0+ry1)*0.5f;
-                    if (!d_init) { d_init = true; d_pX=ccx; d_pY=ccy; d_hp=D_MAXHP; d_tgtX=ccx; d_tgtY=ccy;
-                                   d_fireT=d_wanderT=d_respT=d_spawnT=d_buffT=0; d_kills=0; d_weapon=rand()%4; }
                     float dt = delta; if (dt > 0.05f) dt = 0.05f;
-                    int rw = (int)(rx1-rx0), rh = (int)(ry1-ry0); if (rw<1) rw=1; if (rh<1) rh=1;
-                    auto dBoom = [&](float x, float y, float r, float g, float b, int n, float spd) {
-                        int placed = 0;
-                        for (int i = 0; i < 140 && placed < n; i++) { if (d_parts[i].act) continue;
-                            float a = (float)placed/n*6.2831853f + (rand()%100-50)*0.012f;
-                            float s = spd*0.4f + (rand()% (int)spd);
-                            d_parts[i] = { x, y, cosf(a)*s, sinf(a)*s, 0.4f, 0.4f,
-                                           3.0f+(rand()%5), r, g, b, true }; placed++; }
-                    };
-                    auto dClear = [&]() { for (auto m : d_mons) delete m; d_mons.clear(); d_bs.clear(); };
-
-                    if (d_respT > 0.0f) {
-                        d_respT -= dt;
-                        if (d_respT <= 0.0f) { dClear(); d_pX=ccx; d_pY=ccy; d_hp=D_MAXHP; d_weapon=rand()%4; }
-                    } else {
-                        // 배회 + 가장 가까운 적 회피
-                        d_wanderT -= dt;
-                        if (d_wanderT <= 0.0f) { d_wanderT = 1.3f + (rand()%100)*0.02f;
-                            d_tgtX = rx0 + (rand()%rw); d_tgtY = ry0 + (rand()%rh); }
-                        float ax = d_tgtX-d_pX, ay = d_tgtY-d_pY;
-                        float al = std::sqrt(ax*ax+ay*ay)+0.001f; ax/=al; ay/=al;
-                        float nd = 1e9f, nx=0, ny=0;
-                        for (auto m : d_mons) if (m->alive) { float dx=d_pX-m->worldX, dy=d_pY-m->worldY, d=dx*dx+dy*dy;
-                            if (d<nd){nd=d;nx=dx;ny=dy;} }
-                        if (nd < 140*140) { float l=std::sqrt(nd)+0.001f; ax+=nx/l*1.7f; ay+=ny/l*1.7f; }
-                        float ml = std::sqrt(ax*ax+ay*ay)+0.001f; ax/=ml; ay/=ml;
-                        d_pX += ax*190*dt; d_pY += ay*190*dt;
-                        d_pX = d_pX<rx0?rx0:(d_pX>rx1?rx1:d_pX);
-                        d_pY = d_pY<ry0?ry0:(d_pY>ry1?ry1:d_pY);
-                        // 진짜 몹 스폰 (보스 제외, 종류 다양 + 가끔 엘리트)
-                        d_spawnT -= dt;
-                        if (d_spawnT<=0.0f && (int)d_mons.size()<10) { d_spawnT=0.5f;
-                            float ex, ey; int s=rand()%4;
-                            if(s==0){ex=rx0;ey=ry0+rand()%rh;} else if(s==1){ex=rx1;ey=ry0+rand()%rh;}
-                            else if(s==2){ex=rx0+rand()%rw;ey=ry0;} else {ex=rx0+rand()%rw;ey=ry1;}
-                            Monster* m = new Monster(ex, ey, 0.6f);
-                            int kr = rand()%10;
-                            MobKind k = kr<3 ? MobKind::NORMAL : kr<4 ? MobKind::SPLITTER
-                                      : kr<6 ? MobKind::WEAVER : kr<8 ? MobKind::CHARGER
-                                      : kr<9 ? MobKind::BLINKER : MobKind::BRUTE;
-                            if (k != MobKind::NORMAL) m->MakeKind(k);
-                            if (rand()%100 < 12) m->MakeElite(1 + rand()%3);
-                            d_mons.push_back(m);
-                        }
-                        // 진짜 Monster::Update (돌진/지그재그/점멸 등 실제 행동) — 영역 살짝 클램프.
-                        //   접촉 데미지는 더미 HP 로 받고(실제 게임 수치는 너무 셈), 데모는
-                        //   자체적으로 완만하게 깎아 플레이어가 살아서 싸우게 한다.
-                        float dummyHP = 1000.0f;
-                        for (auto m : d_mons) if (m->alive) {
-                            m->Update(d_pX, d_pY, dt, dummyHP, 1.0f);
-                            m->worldX = m->worldX<rx0-30?rx0-30:(m->worldX>rx1+30?rx1+30:m->worldX);
-                            m->worldY = m->worldY<ry0-30?ry0-30:(m->worldY>ry1+30?ry1+30:m->worldY);
-                            float dxp=d_pX-m->worldX, dyp=d_pY-m->worldY;
-                            float crad=(m->summoned?28.0f:18.0f)*m->sizeScale + 14.0f;
-                            if (dxp*dxp+dyp*dyp < crad*crad) d_hp -= 2.5f*dt;   // 완만한 접촉 피해
-                        }
-                        // 무기별 발사 패턴 (라이플/샷건/미니건/대포)
-                        d_fireT -= dt;
-                        if (d_fireT<=0.0f) {
-                            float bd=1e9f; Monster* tg=nullptr;
-                            for (auto m : d_mons) if (m->alive){ float dx=m->worldX-d_pX,dy=m->worldY-d_pY,d=dx*dx+dy*dy; if(d<bd){bd=d;tg=m;} }
-                            if (tg) {
-                                float tgx=tg->worldX, tgy=tg->worldY;
-                                auto shoot=[&](float angOff,float spd,float size,float r,float g,float b){
-                                    float dx=tgx-d_pX,dy=tgy-d_pY,l=std::sqrt(dx*dx+dy*dy)+0.001f; dx/=l;dy/=l;
-                                    float ca=cosf(angOff),sa=sinf(angOff);
-                                    float rdx=dx*ca-dy*sa, rdy=dx*sa+dy*ca;
-                                    Bullet bb(d_pX,d_pY,d_pX+rdx*100.0f,d_pY+rdy*100.0f);
-                                    bb.speed=spd; bb.sizeScale=size; bb.color=glm::vec3(r,g,b);
-                                    d_bs.push_back(bb);
-                                };
-                                if (d_weapon==0){ d_fireT=0.16f; shoot(0,720,1.0f,0.4f,0.95f,1.0f); }            // 라이플
-                                else if (d_weapon==1){ d_fireT=0.55f; for(int s2=-2;s2<=2;s2++) shoot(s2*0.16f,640,0.95f,1.0f,0.7f,0.2f); } // 샷건
-                                else if (d_weapon==2){ d_fireT=0.07f; shoot((rand()%100-50)*0.003f,820,0.7f,1.0f,0.95f,0.4f); }          // 미니건
-                                else { d_fireT=0.7f; shoot(0,520,2.4f,1.0f,0.45f,0.3f); }                       // 대포
-                            }
-                        }
-                        // 탄환 이동 + 충돌
-                        for (auto& b : d_bs) if (b.active) { b.Update(dt);
-                            if(b.x<rx0-70||b.x>rx1+70||b.y<ry0-70||b.y>ry1+70) b.active=false;
-                            for (auto m : d_mons) if (m->alive) { float dx=b.x-m->worldX, dy=b.y-m->worldY;
-                                float rad=(m->summoned?28.0f:18.0f)*m->sizeScale+6.0f;
-                                if(dx*dx+dy*dy<rad*rad){ m->hp-=2.0f*b.sizeScale; if(b.sizeScale<2.0f) b.active=false;
-                                    if(m->hp<=0.0f){ m->alive=false; d_kills++;
-                                        dBoom(m->worldX,m->worldY,0.4f,0.9f,1.0f,9,230.0f);
-                                        if(d_kills%8==0) d_buffT=1.3f; } break; } } }
-                        // 죽은 몹 폭발 + 삭제
-                        for (auto m : d_mons) if (!m->alive) dBoom(m->worldX,m->worldY,1.0f,0.5f,0.4f,5,150.0f);
-                        d_mons.erase(std::remove_if(d_mons.begin(),d_mons.end(),
-                            [](Monster* m){ if(!m->alive){delete m; return true;} return false; }), d_mons.end());
-                        d_bs.erase(std::remove_if(d_bs.begin(),d_bs.end(),
-                            [](const Bullet& b){return !b.active;}), d_bs.end());
-                        if (d_hp<=0.0f){ d_respT=1.6f;
-                            dBoom(d_pX,d_pY,0.3f,0.8f,1.0f,20,380.0f);
-                            dBoom(d_pX,d_pY,1.0f,0.9f,0.4f,18,320.0f); }
-                        if (d_buffT>0.0f) d_buffT-=dt;
-                    }
-                    // 데모 파티클 업데이트 (사망/respawn 중에도 계속)
-                    for (auto& p : d_parts) { if(!p.act) continue; p.life-=dt;
-                        if(p.life<=0.0f){p.act=false;continue;} p.x+=p.vx*dt; p.y+=p.vy*dt;
-                        p.vx*=(1.0f-2.5f*dt); p.vy*=(1.0f-2.5f*dt); }
-
-                    // ── 렌더 (아이콘/독보다 먼저 = 배경) ──
                     BindMainShader();
-                    // (1) 적 몹 — 각자 작은 가짜창(프로세스 팝업) + 본체. 데스크톱 세계관.
-                    for (auto m : d_mons) if (m->alive) {
-                        float ms = (m->summoned?28.0f:18.0f) * m->sizeScale;
-                        float ew = ms*2.4f + 26.0f;
-                        float ewx = m->worldX - ew*0.5f, ewy = m->worldY - ew*0.5f + 7.0f;
-                        float ar,ag,ab;
-                        switch (m->kind) {
-                            case MobKind::SPLITTER: ar=0.4f;ag=0.9f;ab=0.5f; break;
-                            case MobKind::WEAVER:   ar=0.3f;ag=0.85f;ab=1.0f; break;
-                            case MobKind::CHARGER:  ar=1.0f;ag=0.6f;ab=0.2f; break;
-                            case MobKind::BLINKER:  ar=0.7f;ag=0.4f;ab=1.0f; break;
-                            case MobKind::BRUTE:    ar=1.0f;ag=0.35f;ab=0.3f; break;
-                            default:                ar=0.55f;ag=0.6f;ab=0.7f; break;
+                    // (1) 흐릿하게 떠다니는 미니 창 — 데스크톱 분위기
+                    struct AW { float x, y, vx, vy, w, r, g, b; };
+                    static AW a_ws[6]; static bool aw_init = false;
+                    if (!aw_init) { aw_init = true;
+                        static const float cols[4][3] = {
+                            {0.3f,0.7f,1.0f}, {1.0f,0.72f,0.3f}, {0.4f,0.9f,0.6f}, {0.7f,0.5f,1.0f} };
+                        for (int i = 0; i < 6; i++) {
+                            a_ws[i].x = (float)(rand()%(int)sw); a_ws[i].y = (float)(rand()%(int)sh);
+                            float ang = (rand()%628)*0.01f, spd = 4.0f + (rand()%8);
+                            a_ws[i].vx = cosf(ang)*spd; a_ws[i].vy = sinf(ang)*spd;
+                            a_ws[i].w = 70.0f + (rand()%90);
+                            int c = rand()%4; a_ws[i].r=cols[c][0]; a_ws[i].g=cols[c][1]; a_ws[i].b=cols[c][2];
                         }
-                        drawRect(ewx, ewy, ew, ew, 0.08f, 0.07f, 0.10f, 0.9f);     // 창 본체
-                        drawRect(ewx, ewy, ew, 11.0f, ar, ag, ab, 0.95f);          // 타이틀 띠
-                        drawRect(ewx+ew-8.0f, ewy+2.0f, 6.0f, 6.0f, 0.9f,0.3f,0.3f,0.9f); // [x]
                     }
-                    g_SuppressMobSeen = true;                 // 도감 발견 카운트 안 함
-                    for (auto m : d_mons) if (m->alive) drawMob(m);
-                    g_SuppressMobSeen = false;
-                    // (2) 데모 플레이어 가짜창 "Onedow_demo.exe" (크게, HP 비례) + 캐릭터
-                    if (d_respT <= 0.0f) {
-                        float WW = 210.0f, hpf = d_hp/D_MAXHP; if(hpf<0.4f)hpf=0.4f;
-                        float ww = WW*(0.55f+0.45f*hpf), wxr = d_pX-ww*0.5f, wyr = d_pY-ww*0.5f;
-                        drawRect(wxr, wyr, ww, ww, 0.07f, 0.09f, 0.12f, 0.9f);        // 창 본체
-                        drawRect(wxr, wyr, ww, 18.0f, 0.20f, 0.55f, 0.85f, 1.0f);     // 타이틀바
-                        drawRect(wxr, wyr+18.0f, ww, 2.0f, 0.3f, 0.7f, 1.0f, 0.9f);   // 강조
-                        drawRect(wxr+ww-14.0f, wyr+4.0f, 9.0f, 9.0f, 0.9f,0.25f,0.25f,0.95f); // [X]
-                        g_TextS.Draw(L"Onedow_demo.exe", wxr+6.0f, wyr+2.0f, 0.45f,
-                                     0.9f, 0.96f, 1.0f, 0.95f);
-                        // 플레이어 캐릭터 — 창 중앙, 크고 밝게 (창 직후 그려 항상 보임)
-                        drawCircle(d_pX, d_pY, 22.0f, 0.2f, 0.9f, 1.0f, 0.25f);
-                        drawTriangle(d_pX, d_pY, 18.0f, 0.45f, 0.95f, 1.0f, 1.0f);
-                        drawTriangle(d_pX, d_pY, 8.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+                    for (int i = 0; i < 6; i++) { AW& w = a_ws[i];
+                        w.x += w.vx*dt; w.y += w.vy*dt;
+                        if (w.x < -w.w) w.x = sw; if (w.x > sw) w.x = -w.w;
+                        if (w.y < -w.w) w.y = sh; if (w.y > sh) w.y = -w.w;
+                        float wh = w.w*0.72f;
+                        drawRect(w.x, w.y, w.w, wh, 0.10f, 0.11f, 0.14f, 0.20f);   // 본체
+                        drawRect(w.x, w.y, w.w, 9.0f, w.r, w.g, w.b, 0.26f);       // 타이틀 띠
+                        drawRect(w.x+w.w-7.0f, w.y+2.0f, 5.0f, 5.0f, 0.9f,0.3f,0.3f,0.25f); // [x]
                     }
-                    // (3) 진짜 탄환 (잔상/글로우) + 파티클 — 맨 위
-                    for (auto& b : d_bs) if (b.active) drawBullet(b);
-                    for (auto& p : d_parts) if (p.act) { float a=p.life/p.maxLife;
-                        drawRect(p.x-p.size*0.5f,p.y-p.size*0.5f,p.size,p.size,p.r,p.g,p.b,a); }
-                    const wchar_t* DEMO[3] = { L"● 자동 시연", L"● AUTO DEMO", L"● 自動デモ" };
-                    g_TextS.Draw(DEMO[li2], rx0, ry0 - 30.0f, 0.7f, 0.55f, 0.8f, 1.0f, 0.55f);
-                    if (d_buffT>0.0f) {
-                        const wchar_t* AB = L"+ AUGMENT";
-                        g_TextL.Draw(AB, d_pX - 42.0f, d_pY - 78.0f, 0.8f, 0.3f, 1.0f, 0.6f, d_buffT);
+                    // (2) 떠다니며 반짝이는 빛 입자
+                    struct AP { float x, y, vx, vy, sz, tw; };
+                    static AP a_ps[55]; static bool ap_init = false;
+                    if (!ap_init) { ap_init = true;
+                        for (int i = 0; i < 55; i++) {
+                            a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
+                            float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
+                            a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
+                            a_ps[i].sz = 1.2f + (rand()%26)*0.1f; a_ps[i].tw = (rand()%628)*0.01f;
+                        }
                     }
+                    for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
+                        p.x += p.vx*dt; p.y += p.vy*dt;
+                        if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
+                        if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
+                        p.tw += dt*1.6f;
+                        float a = 0.10f + 0.10f*sinf(p.tw);
+                        drawCircle(p.x, p.y, p.sz, 0.55f, 0.78f, 1.0f, a);
+                    }
+                    // (3) 흐릿한 브랜딩 워터마크
+                    const wchar_t* WM = T(StrId::GAME_TITLE);
+                    g_TextL.Draw(WM, cx(WM, g_TextL, 2.6f), sh*0.46f, 2.6f, 0.5f, 0.65f, 0.85f, 0.16f);
+                    const wchar_t* SUB[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
+                    float subw = g_TextS.Width(SUB[li2], 0.85f);
+                    g_TextS.Draw(SUB[li2], (sw-subw)*0.5f, sh*0.46f + 60.0f, 0.85f, 0.45f, 0.55f, 0.7f, 0.20f);
                 }
 
                 // 좌측 아이콘 열
