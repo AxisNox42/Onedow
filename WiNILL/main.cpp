@@ -4417,36 +4417,51 @@ int main() {
 
                     // ── 렌더 (아이콘/독보다 먼저 = 배경) ──
                     BindMainShader();
-                    // 데모 플레이어 가짜창 — "Onedow_demo.exe" (HP 비례 크기)
-                    if (d_respT <= 0.0f) {
-                        float WW = 140.0f, hpf = d_hp/D_MAXHP; if(hpf<0.35f)hpf=0.35f;
-                        float ww = WW*hpf, wxr = d_pX-ww*0.5f, wyr = d_pY-ww*0.5f;
-                        drawRect(wxr, wyr, ww, ww, 0.07f, 0.09f, 0.12f, 0.92f);
-                        drawRect(wxr, wyr, ww, 16.0f, 0.20f, 0.55f, 0.85f, 1.0f);
-                        drawRect(wxr+ww-12, wyr+4, 8, 8, 0.85f, 0.25f, 0.25f, 0.95f);
-                        g_TextS.Draw(L"Onedow_demo.exe", wxr+5.0f, wyr+1.0f, 0.42f,
-                                     0.9f, 0.96f, 1.0f, 0.95f);
+                    // (1) 적 몹 — 각자 작은 가짜창(프로세스 팝업) + 본체. 데스크톱 세계관.
+                    for (auto m : d_mons) if (m->alive) {
+                        float ms = (m->summoned?28.0f:18.0f) * m->sizeScale;
+                        float ew = ms*2.4f + 26.0f;
+                        float ewx = m->worldX - ew*0.5f, ewy = m->worldY - ew*0.5f + 7.0f;
+                        float ar,ag,ab;
+                        switch (m->kind) {
+                            case MobKind::SPLITTER: ar=0.4f;ag=0.9f;ab=0.5f; break;
+                            case MobKind::WEAVER:   ar=0.3f;ag=0.85f;ab=1.0f; break;
+                            case MobKind::CHARGER:  ar=1.0f;ag=0.6f;ab=0.2f; break;
+                            case MobKind::BLINKER:  ar=0.7f;ag=0.4f;ab=1.0f; break;
+                            case MobKind::BRUTE:    ar=1.0f;ag=0.35f;ab=0.3f; break;
+                            default:                ar=0.55f;ag=0.6f;ab=0.7f; break;
+                        }
+                        drawRect(ewx, ewy, ew, ew, 0.08f, 0.07f, 0.10f, 0.9f);     // 창 본체
+                        drawRect(ewx, ewy, ew, 11.0f, ar, ag, ab, 0.95f);          // 타이틀 띠
+                        drawRect(ewx+ew-8.0f, ewy+2.0f, 6.0f, 6.0f, 0.9f,0.3f,0.3f,0.9f); // [x]
                     }
-                    // 진짜 몹 모양 (drawMob) — 단, 도감 발견엔 카운트 안 함
-                    g_SuppressMobSeen = true;
+                    g_SuppressMobSeen = true;                 // 도감 발견 카운트 안 함
                     for (auto m : d_mons) if (m->alive) drawMob(m);
                     g_SuppressMobSeen = false;
-                    // 진짜 탄환 (잔상/글로우)
+                    // (2) 데모 플레이어 가짜창 "Onedow_demo.exe" (크게, HP 비례) + 캐릭터
+                    if (d_respT <= 0.0f) {
+                        float WW = 210.0f, hpf = d_hp/D_MAXHP; if(hpf<0.4f)hpf=0.4f;
+                        float ww = WW*(0.55f+0.45f*hpf), wxr = d_pX-ww*0.5f, wyr = d_pY-ww*0.5f;
+                        drawRect(wxr, wyr, ww, ww, 0.07f, 0.09f, 0.12f, 0.9f);        // 창 본체
+                        drawRect(wxr, wyr, ww, 18.0f, 0.20f, 0.55f, 0.85f, 1.0f);     // 타이틀바
+                        drawRect(wxr, wyr+18.0f, ww, 2.0f, 0.3f, 0.7f, 1.0f, 0.9f);   // 강조
+                        drawRect(wxr+ww-14.0f, wyr+4.0f, 9.0f, 9.0f, 0.9f,0.25f,0.25f,0.95f); // [X]
+                        g_TextS.Draw(L"Onedow_demo.exe", wxr+6.0f, wyr+2.0f, 0.45f,
+                                     0.9f, 0.96f, 1.0f, 0.95f);
+                        // 플레이어 캐릭터 — 창 중앙, 크고 밝게 (창 직후 그려 항상 보임)
+                        drawCircle(d_pX, d_pY, 22.0f, 0.2f, 0.9f, 1.0f, 0.25f);
+                        drawTriangle(d_pX, d_pY, 18.0f, 0.45f, 0.95f, 1.0f, 1.0f);
+                        drawTriangle(d_pX, d_pY, 8.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+                    }
+                    // (3) 진짜 탄환 (잔상/글로우) + 파티클 — 맨 위
                     for (auto& b : d_bs) if (b.active) drawBullet(b);
-                    // 파티클
                     for (auto& p : d_parts) if (p.act) { float a=p.life/p.maxLife;
                         drawRect(p.x-p.size*0.5f,p.y-p.size*0.5f,p.size,p.size,p.r,p.g,p.b,a); }
-                    // 데모 플레이어 캐릭터
-                    if (d_respT<=0.0f) {
-                        drawCircle(d_pX,d_pY,16.0f,0.2f,0.9f,1.0f,0.28f);
-                        drawTriangle(d_pX,d_pY,13.0f,0.4f,0.95f,1.0f,1.0f);
-                        drawCircle(d_pX,d_pY,5.0f,1.0f,1.0f,1.0f,1.0f);
-                    }
                     const wchar_t* DEMO[3] = { L"● 자동 시연", L"● AUTO DEMO", L"● 自動デモ" };
                     g_TextS.Draw(DEMO[li2], rx0, ry0 - 30.0f, 0.7f, 0.55f, 0.8f, 1.0f, 0.55f);
                     if (d_buffT>0.0f) {
                         const wchar_t* AB = L"+ AUGMENT";
-                        g_TextL.Draw(AB, d_pX - 42.0f, d_pY - 60.0f, 0.8f, 0.3f, 1.0f, 0.6f, d_buffT);
+                        g_TextL.Draw(AB, d_pX - 42.0f, d_pY - 78.0f, 0.8f, 0.3f, 1.0f, 0.6f, d_buffT);
                     }
                 }
 
