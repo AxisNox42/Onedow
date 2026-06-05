@@ -194,6 +194,7 @@
     <ClInclude Include="ReloadRunnerBoss.h" />
     <ClInclude Include="SaveSystem.h" />
     <ClInclude Include="Settings.h" />
+    <ClInclude Include="SpamBoss.h" />
     <ClInclude Include="TextRenderer.h" />
     <ClInclude Include="Translations.h" />
     <ClInclude Include="Weapons.h" />

@@ -36,6 +36,7 @@
 #include "GlitchBoss.h"
 #include "ReloadRunnerBoss.h"
 #include "PolymorphBoss.h"
+#include "SpamBoss.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -270,6 +271,7 @@ float TURRET_WIN_H  = 250.0f;
 float GLITCH_WIN_W = 620.0f;
 float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
+float SPAM_WIN_W   = 660.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
 float g_RfwW = 500.0f, g_RfwH = 500.0f;
 static constexpr float TURRET_LIFE   = 5.0f;      // 포탑 지속 5초
@@ -376,6 +378,8 @@ GlitchBoss* g_GlitchBoss = nullptr;
 ReloadRunnerBoss* g_RRBoss = nullptr;
 // 폴리모프 보스 (희귀, 폼 변환 + 페이즈2 화면 확장) — 별도 관리
 PolymorphBoss* g_PolyBoss = nullptr;
+// SPAM.dll 보스 (탄막/불릿헬 — 회전 나선탄 + 방사 버스트) — 별도 관리
+SpamBoss* g_SpamBoss = nullptr;
 int g_PolyPrevForm = -1;   // 폼 변환 감지용 (변할 때 파티클) — -1 = 미초기화
 float g_PolySummonTimer = 0.0f;   // 2페이즈: 7초마다 주변에 원거리/자폭병 5마리
 bool  g_PolyWasPhase2   = false;  // 2페이즈 진입 연출 1회용
@@ -720,7 +724,7 @@ int main() {
     if (g_Scale < 0.5f) g_Scale = 0.5f;
     Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
-    GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale;
+    GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
@@ -956,6 +960,7 @@ int main() {
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
+            if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
             g_PolyPrevForm = -1;
             g_PolySummonTimer = 0.0f;
             g_PolyWasPhase2 = false;
@@ -1110,6 +1115,7 @@ int main() {
                     if (g_GlitchBoss && g_GlitchBoss->alive) consider(g_GlitchBoss->worldX, g_GlitchBoss->worldY, L"GLITCH.sys");
                     if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"RELOADER.exe");
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
+                    if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
                     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
                     const wchar_t* FMT[3] = { L"%ls 에 의해 종료됨", L"Terminated by %ls", L"%ls により終了" };
                     const wchar_t* UNK[3] = { L"알 수 없는 오류로 종료됨", L"Terminated by unknown error", L"不明なエラーで終了" };
@@ -1149,6 +1155,7 @@ int main() {
                 if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
                 if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
                 if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
+                if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
                 for (auto* c : g_Slimelings) delete c;
                 g_Slimelings.clear();
                 g_Turrets.clear();
@@ -1608,6 +1615,7 @@ int main() {
                     if (g_GlitchBoss && g_GlitchBoss->alive) { float dx=g_GlitchBoss->worldX-cx,dy=g_GlitchBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_GlitchBoss->hp-=dmg; if(g_GlitchBoss->hp<=0)g_GlitchBoss->alive=false;} }
                     if (g_RRBoss && g_RRBoss->alive) { float dx=g_RRBoss->worldX-cx,dy=g_RRBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_RRBoss->hp-=dmg; if(g_RRBoss->hp<=0)g_RRBoss->alive=false;} }
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) { float dx=g_PolyBoss->worldX-cx,dy=g_PolyBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_PolyBoss->hp-=dmg; if(g_PolyBoss->hp<=0)g_PolyBoss->alive=false;} }
+                    if (g_SpamBoss && g_SpamBoss->alive) { float dx=g_SpamBoss->worldX-cx,dy=g_SpamBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_SpamBoss->hp-=dmg; if(g_SpamBoss->hp<=0)g_SpamBoss->alive=false;} }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -1763,6 +1771,10 @@ int main() {
                     }
                 }
 
+                // SPAM.dll 업데이트 (회전 나선탄 + 방사 버스트, 적 총알 push)
+                if (!timeStopped && g_SpamBoss && g_SpamBoss->alive)
+                    g_SpamBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+
                 // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기
                 if (!g_Slimelings.empty()) {
                     std::vector<Monster*> sink;
@@ -1836,6 +1848,29 @@ int main() {
                             rb->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (rb->hp <= 0.0f) rb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // SPAM.dll 본체 vs 플레이어 총알 (스윕 판정)
+                if (g_SpamBoss && g_SpamBoss->alive) {
+                    auto* sb = g_SpamBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (SegDist(sb->worldX, sb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < SpamBoss::BODY * 0.8f) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(sb->worldX, sb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dealt = (dmg < sb->hp) ? dmg : sb->hp;
+                            sb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (sb->hp <= 0.0f) sb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
@@ -2163,6 +2198,28 @@ int main() {
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
                     delete rb;
                     g_RRBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
+                // SPAM.dll 사망 → 보상
+                if (g_SpamBoss && !g_SpamBoss->alive && !g_SpamBoss->exploded) {
+                    auto* sb = g_SpamBoss;
+                    SpawnEnemyExplosion(sb->worldX, sb->worldY, 1.0f, 0.4f, 0.85f, true);
+                    SpawnEnemyExplosion(sb->worldX, sb->worldY, 1.0f, 0.8f, 0.3f, true);
+                    SpawnShockWave(sb->worldX, sb->worldY, 380.0f, 0.7f, 1.0f, 0.4f, 0.85f);
+                    g_ShakeTime = 0.5f; g_ShakeMag = 22.0f;
+                    TriggerFlash(1.0f, 0.5f, 0.9f, 0.6f); TriggerHitStop(0.10f);
+                    sb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete sb;
+                    g_SpamBoss = nullptr;
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
@@ -2512,7 +2569,7 @@ int main() {
             //   (어떤 보스든 살아있으면 대기 = 동시 스폰 방지)
             {
                 bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
-                                  g_RRBoss || g_PolyBoss || !g_Slimelings.empty();
+                                  g_RRBoss || g_PolyBoss || g_SpamBoss || !g_Slimelings.empty();
                 bool spawnedNow = false;
                 float bsx = screenWidth  * 0.5f + ((float)(rand() % 200) - 100.0f);
                 float bsy = screenHeight * 0.5f + ((float)(rand() % 200) - 100.0f);
@@ -2545,17 +2602,19 @@ int main() {
                 }
                 else if (!bossActive &&
                          g_GameManager.score >= g_NextBossScore) {
-                    // 일반 보스 (슬라임/글리치/리로드 랜덤) — 다음 임계 +20만
+                    // 일반 보스 (슬라임/글리치/리로드/스팸 랜덤) — 다음 임계 +20만
                     g_NextBossScore += 200000;
                     float bossHp = GetDifficultyParams(g_Difficulty).bossHp;
-                    int pick = rand() % 3;
+                    int pick = rand() % 4;
                     if (pick == 0) {
                         g_MonsterManager.boss =
                             new Boss(bsx, bsy, screenWidth, screenHeight, bossHp);
                     } else if (pick == 1) {
                         g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, bossHp * 0.7f);
-                    } else {
+                    } else if (pick == 2) {
                         g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, bossHp);
+                    } else {
+                        g_SpamBoss = new SpamBoss(screenWidth, screenHeight, bossHp * 0.85f);
                     }
                     spawnedNow = true;
                 }
@@ -3060,6 +3119,8 @@ int main() {
                     hitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
                 if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
                     hitB(g_PolyBoss->worldX, g_PolyBoss->worldY, g_PolyBoss->hp, g_PolyBoss->alive);
+                if (g_SpamBoss && g_SpamBoss->alive)
+                    hitB(g_SpamBoss->worldX, g_SpamBoss->worldY, g_SpamBoss->hp, g_SpamBoss->alive);
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
             };
@@ -3287,6 +3348,11 @@ int main() {
             float w = POLY_WIN_W;
             drawRect(g_PolyBoss->worldX - w*0.5f, g_PolyBoss->worldY - w*0.5f,
                      w, w, 0.09f, 0.06f, 0.11f, 1.0f);
+        }
+        if (g_SpamBoss && g_SpamBoss->alive) {
+            float w = SPAM_WIN_W;
+            drawRect(g_SpamBoss->worldX - w*0.5f, g_SpamBoss->worldY - w*0.5f,
+                     w, w, 0.10f, 0.06f, 0.09f, 1.0f);
         }
         // 슬라임 분열체 — 각자 개인 창 (크기 비례)
         for (auto* c : g_Slimelings) {
@@ -3937,6 +4003,39 @@ int main() {
             }
         }
 
+        // (g4b) SPAM.dll — 회전 나선포 본체 + 탄막(개인 창 클리핑) + HP
+        if (g_SpamBoss && g_SpamBoss->alive) {
+            auto* sb = g_SpamBoss;
+            BindMainShader();
+            glEnable(GL_SCISSOR_TEST);
+            WorldScissor(sb->worldX - SPAM_WIN_W*0.5f, sb->worldY - SPAM_WIN_W*0.5f,
+                         SPAM_WIN_W, SPAM_WIN_W);
+            // 탄막이 창 안에서도 보이도록
+            for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
+            // 회전하는 나선 팔(발사구) — 본체 둘레에서 뻗는 작은 핑크 다이아
+            for (int a = 0; a < SpamBoss::ARMS; a++) {
+                float ang = sb->spiralAngle + (float)a * (6.2831853f / (float)SpamBoss::ARMS);
+                float ox = sb->worldX + cosf(ang) * (SpamBoss::BODY * 1.15f);
+                float oy = sb->worldY + sinf(ang) * (SpamBoss::BODY * 1.15f);
+                drawDiamond(ox, oy, SpamBoss::BODY * 0.32f, 1.0f, 0.45f, 0.85f, 0.95f);
+            }
+            // 본체 — 펄스하는 핑크/마젠타 다이아
+            float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 6.0f);
+            drawDiamond(sb->worldX, sb->worldY, SpamBoss::BODY,
+                        1.0f, 0.35f + 0.25f * pulse, 0.8f, 1.0f);
+            drawDiamond(sb->worldX, sb->worldY, SpamBoss::BODY * 0.5f,
+                        1.0f, 0.85f, 0.95f, 1.0f);
+            // HP 바
+            float hpFrac = sb->hp / sb->maxHp;
+            if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
+            float hbW = 170.0f, hbH = 8.0f;
+            float hbX = sb->worldX - hbW * 0.5f;
+            float hbY = sb->worldY - SpamBoss::BODY - 18.0f;
+            drawRect(hbX, hbY, hbW, hbH, 0.15f, 0.1f, 0.13f, 0.85f);
+            drawRect(hbX, hbY, hbW * hpFrac, hbH, 0.95f, 0.4f, 0.8f, 0.95f);
+            glDisable(GL_SCISSOR_TEST);
+        }
+
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
@@ -4153,6 +4252,11 @@ int main() {
                     winChrome(g_PolyBoss->worldX-w*0.5f, g_PolyBoss->worldY-w*0.5f, w, w,
                               L"POLYMORPH.vir", 0.6f,0.25f,1.0f);
                 }
+                if (g_SpamBoss && g_SpamBoss->alive) {
+                    float w=SPAM_WIN_W;
+                    winChrome(g_SpamBoss->worldX-w*0.5f, g_SpamBoss->worldY-w*0.5f, w, w,
+                              L"SPAM.dll", 1.0f,0.4f,0.8f);
+                }
             }
         }
 
@@ -4174,6 +4278,8 @@ int main() {
                 bossAlive = true; tc = glm::vec3(1.0f, 0.55f, 0.2f); }     // 리로드러너: 주황
             else if (g_PolyBoss && g_PolyBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.6f, 0.25f, 1.0f); }     // 폴리모프: 보라
+            else if (g_SpamBoss && g_SpamBoss->alive) {
+                bossAlive = true; tc = glm::vec3(1.0f, 0.4f, 0.8f); }      // 스팸: 핑크
 
             if (bossAlive) {
                 g_BossTintCol = tc;
