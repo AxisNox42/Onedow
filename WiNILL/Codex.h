@@ -25,8 +25,11 @@ enum CodexMobId {
     CM_COUNT
 };
 inline bool g_MobSeen[CM_COUNT] = { false };
+// 시작창 자동 데모처럼 "발견으로 치면 안 되는" 렌더 중엔 true (drawMob 의 MarkMobSeen 무시)
+inline bool g_SuppressMobSeen = false;
 
 inline void MarkMobSeen(MobKind k) {
+    if (g_SuppressMobSeen) return;
     int i = (int)k;
     if (i < 0 || i >= 9) return;
     if (!g_MobSeen[i]) { g_MobSeen[i] = true; g_CodexDirty = true; }
