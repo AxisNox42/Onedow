@@ -1143,6 +1143,37 @@ int main() {
             if (g_GameOverFade > 1.0f) g_GameOverFade = 1.0f;
         }
 
+        // 사망 폭발 잔여물(파티클·파편·충격파·스파크)이 게임오버 화면에 굳어버리지 않도록
+        //   DYING/GAMEOVER 동안에도 계속 갱신해 자연스럽게 사라지게 한다.
+        {
+            GameState gvs = g_GameManager.currentState;
+            if (gvs == GameState::DYING || gvs == GameState::GAMEOVER) {
+                for (auto& p : g_EnemyParts) {
+                    if (!p.active) continue;
+                    p.life -= delta;
+                    if (p.life <= 0.0f) { p.active = false; continue; }
+                    p.x += p.vx * delta; p.y += p.vy * delta;
+                    p.vx *= (1.0f - 2.5f * delta); p.vy *= (1.0f - 2.5f * delta);
+                }
+                for (auto& sw : g_ShockWaves) { if (!sw.active) continue; sw.life -= delta; if (sw.life <= 0.0f) sw.active = false; }
+                for (auto& sl : g_Slashes)    { if (!sl.active) continue; sl.life -= delta; if (sl.life <= 0.0f) sl.active = false; }
+                for (auto& sp : g_Sparks) {
+                    sp.x += sp.vx * delta; sp.y += sp.vy * delta;
+                    float drag = std::max(0.0f, 1.0f - 6.0f * delta);
+                    sp.vx *= drag; sp.vy *= drag; sp.life -= delta;
+                }
+                g_Sparks.erase(std::remove_if(g_Sparks.begin(), g_Sparks.end(),
+                    [](const Spark& s){ return s.life <= 0.0f; }), g_Sparks.end());
+                // 파편은 DYING 블록이 이미 갱신 → GAMEOVER 에서만 추가로 굴린다
+                if (gvs == GameState::GAMEOVER) {
+                    for (int i = 0; i < MAX_DEBRIS; i++) { if (!g_Debris[i].active) continue;
+                        g_Debris[i].x += g_Debris[i].vx * delta; g_Debris[i].y += g_Debris[i].vy * delta;
+                        g_Debris[i].vx *= (1.0f - 1.6f * delta); g_Debris[i].vy *= (1.0f - 1.6f * delta);
+                    }
+                }
+            }
+        }
+
         // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 키로 선택 ---
         // s_augSpaceReleased: 블록 바깥에서도 release 감지하도록 static 선언
         static bool s_augSpaceReleased = true;
