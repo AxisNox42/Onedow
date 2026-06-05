@@ -609,11 +609,8 @@ float g_DyingTimer    = 0.0f;
 bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
 float g_DeathWinW0    = 0.0f;    // 사망 시점 플레이어 창 크기 (수축 기준)
 float g_GameOverFade  = 0.0f;    // 게임오버 메뉴 페이드인 (0→1, 풀스크린 후 2.5초)
-// 사망 연출 = 줌인(DEATH_ZOOM_DUR) → 폭발 + 여파(나머지) → GAMEOVER (순차)
-static const float DEATH_ZOOM_DUR = 0.5f;   // 1단계: 플레이어 창으로 줌인
-static const float DEATH_ZOOM_MAX = 2.7f;   // 줌 최대 배율
-static const float DYING_DUR      = 1.3f;   // 전체 (줌 0.5 + 폭발 여파 0.8)
-static const float DYING_SHRINK   = 0.35f;  // (미사용)
+// 사망 연출 = 즉시 대폭발(파티클) → 폭발 여파 → GAMEOVER (줌/시네마틱 없음, 단순)
+static const float DYING_DUR      = 0.8f;   // 폭발 여파가 재생되는 시간 (페이드 전까지)
 static const float GAMEOVER_FADE  = 2.5f;   // 메뉴 100% 까지 걸리는 시간
 
 // 사망 파편 파티클
@@ -1082,10 +1079,10 @@ int main() {
                 g_DyingTimer    = DYING_DUR;
                 g_DeathBoomDone = false;
                 g_DeathFlash    = 0.0f;
-                // 사망 연출 — 플레이어 창을 기준으로 줌인 시작 (폴리모프 줌도 원복)
-                g_ZoomCX = pCX; g_ZoomCY = pCY;
+                // 폴리모프 등 줌 원복 (사망 연출엔 줌 없음)
+                g_ZoomCX = g_ZoomCY = 0.0f;
                 g_ViewZoom = 1.0f; g_ViewZoomTarget = 1.0f;
-                // 사망 원인 — 엔티티 삭제 전, 가장 가까운 위협(프로세스)을 기록
+                // 사망 원인 — 엔티티 삭제 전, 가장 가까운 위협(프로세스)을 기록 (결과창에 표시용)
                 {
                     float best = 1e18f; const wchar_t* nm = nullptr;
                     auto consider = [&](float ex, float ey, const wchar_t* n) {
@@ -1114,19 +1111,8 @@ int main() {
             g_DeathFlash -= delta * 4.0f;
             if (g_DeathFlash < 0.0f) g_DeathFlash = 0.0f;
 
-            float elapsed = DYING_DUR - g_DyingTimer;
-
-            // ── 1단계: 플레이어 창으로 줌인 (이게 끝나야 폭발) ──
-            if (elapsed < DEATH_ZOOM_DUR) {
-                float zp = elapsed / DEATH_ZOOM_DUR;        // 0→1
-                g_ViewZoom = 1.0f + (DEATH_ZOOM_MAX - 1.0f) * (zp * zp);  // ease-in
-            } else {
-                g_ViewZoom = DEATH_ZOOM_MAX;                // 줌 완료 후 고정
-            }
-
-            // ── 2단계: 줌 완료 후 대폭발 (1회) ──
-            if (elapsed >= DEATH_ZOOM_DUR && !g_DeathBoomDone) {
-                // 대폭발 — 플레이어 기점, 모든 적이 터짐
+            // 대폭발 — 플레이어 기점, 모든 적이 터짐 (즉시, 줌/시네마틱 없음)
+            if (!g_DeathBoomDone) {
                 g_DeathBoomDone = true;
                 float pCX = g_DeathCX, pCY = g_DeathCY;
                 // 모든 적 폭발시키며 제거 (scored/noBlast 표시 → 점수/연쇄 정산 안 함)
@@ -4343,16 +4329,6 @@ int main() {
                 }
             }
 
-            // 사망 연출 — 줌인 중 화면에 사망 원인을 드라마틱하게 표시
-            if (st == GameState::DYING && g_DeathReason[0]) {
-                float prog = 1.0f - g_DyingTimer / DYING_DUR;
-                if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
-                float a  = prog < 0.3f ? (prog / 0.3f) : 1.0f;   // 빠른 페이드인
-                float sc = 1.05f + 0.25f * prog;
-                float tw = g_TextL.Width(g_DeathReason, sc);
-                g_TextL.Draw(g_DeathReason, (sw - tw) * 0.5f, sh * 0.68f, sc,
-                             1.0f, 0.38f, 0.32f, a);
-            }
 
             // ── 크리에이티브 HUD (게임 중) — F:증강  G:무적 ──
             if (g_CreativeMode &&
