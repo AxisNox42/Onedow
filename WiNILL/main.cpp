@@ -70,9 +70,13 @@ int   screenHeight = 0;
 //   중심 = 화면 중앙. 줌=1 일 때 모든 헬퍼가 항등(identity)이라 기존 동작 그대로.
 float g_ViewZoom       = 1.0f;
 float g_ViewZoomTarget = 1.0f;
-// 월드 좌표 → 화면 픽셀 (줌 적용)
-inline float W2SX(float wx) { return screenWidth  * 0.5f + (wx - screenWidth  * 0.5f) * g_ViewZoom; }
-inline float W2SY(float wy) { return screenHeight * 0.5f + (wy - screenHeight * 0.5f) * g_ViewZoom; }
+// 줌 중심(픽셀). <=0 이면 화면 중앙. 사망 연출에서 플레이어 창 기준으로 줌인.
+float g_ZoomCX = 0.0f, g_ZoomCY = 0.0f;
+inline float ZCX() { return g_ZoomCX > 0.0f ? g_ZoomCX : screenWidth  * 0.5f; }
+inline float ZCY() { return g_ZoomCY > 0.0f ? g_ZoomCY : screenHeight * 0.5f; }
+// 월드 좌표 → 화면 픽셀 (줌 적용, 줌 중심 기준)
+inline float W2SX(float wx) { return ZCX() + (wx - ZCX()) * g_ViewZoom; }
+inline float W2SY(float wy) { return ZCY() + (wy - ZCY()) * g_ViewZoom; }
 // 가짜창 scissor — 월드 사각형을 줌 적용해 픽셀 scissor 로 (줌=1 이면 기존과 동일)
 inline void WorldScissor(float wx, float wy, float ww, float wh) {
     float sx = W2SX(wx), sy = W2SY(wy);
@@ -620,6 +624,7 @@ static const int MAX_DEBRIS = 48;
 DeathParticle g_Debris[MAX_DEBRIS] = {};
 float g_DeathCX = 0, g_DeathCY = 0;
 float g_DeathFlash = 0.0f; // 폭발 섬광 (1.0 → 0.0)
+wchar_t g_DeathReason[96] = {0};   // 사망 원인 ("○○ 에 의해 종료됨")
 
 // --- 셰이더 소스 ---
 static const char* vertSrc =
@@ -935,6 +940,7 @@ int main() {
             ResetSkills();                           // 액티브 스킬/대시 초기화
             g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; // 창 시야 기믹
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
+            g_ZoomCX = g_ZoomCY = 0.0f;
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
             for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
@@ -1060,6 +1066,29 @@ int main() {
                 g_DyingTimer    = DYING_DUR;
                 g_DeathBoomDone = false;
                 g_DeathFlash    = 0.0f;
+                // 사망 연출 — 플레이어 창을 기준으로 줌인 시작 (폴리모프 줌도 원복)
+                g_ZoomCX = pCX; g_ZoomCY = pCY;
+                g_ViewZoom = 1.0f; g_ViewZoomTarget = 1.0f;
+                // 사망 원인 — 엔티티 삭제 전, 가장 가까운 위협(프로세스)을 기록
+                {
+                    float best = 1e18f; const wchar_t* nm = nullptr;
+                    auto consider = [&](float ex, float ey, const wchar_t* n) {
+                        float dx = ex-pCX, dy = ey-pCY, d = dx*dx+dy*dy;
+                        if (d < best) { best = d; nm = n; }
+                    };
+                    for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName((int)m->kind));
+                    for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_RANGED));
+                    for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, L"SLIME.worm");
+                    if (g_GlitchBoss && g_GlitchBoss->alive) consider(g_GlitchBoss->worldX, g_GlitchBoss->worldY, L"GLITCH.sys");
+                    if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"RELOADER.exe");
+                    if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
+                    int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
+                    const wchar_t* FMT[3] = { L"%ls 에 의해 종료됨", L"Terminated by %ls", L"%ls により終了" };
+                    const wchar_t* UNK[3] = { L"알 수 없는 오류로 종료됨", L"Terminated by unknown error", L"不明なエラーで終了" };
+                    if (nm) swprintf_s(g_DeathReason, FMT[li], nm);
+                    else    wcscpy_s(g_DeathReason, UNK[li]);
+                }
             }   // close else (MK2 분기 외)
         }       // close outer if (HP <= 0)
 
@@ -1068,6 +1097,13 @@ int main() {
             g_DyingTimer -= delta;
             g_DeathFlash -= delta * 4.0f;
             if (g_DeathFlash < 0.0f) g_DeathFlash = 0.0f;
+
+            // 플레이어 창으로 줌인 — ease-in(가속)으로 빨려들 듯 (g_ZoomCX/CY 기준)
+            {
+                float prog = 1.0f - g_DyingTimer / DYING_DUR;
+                if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
+                g_ViewZoom = 1.0f + 1.7f * (prog * prog);   // 1 → 2.7
+            }
 
             if (!g_DeathBoomDone) {
                 // 대폭발 — 플레이어 기점, 모든 적이 터짐 (즉시)
@@ -1097,7 +1133,6 @@ int main() {
                 g_Slimelings.clear();
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
-                g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 폴리모프 줌 원복
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
                     SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
@@ -1131,6 +1166,7 @@ int main() {
             }
             if (g_DyingTimer <= 0.0f) {
                 g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복 (메뉴 정상화)
+                g_ZoomCX = g_ZoomCY = 0.0f;             // 줌 중심 화면 중앙으로
                 g_GameManager.currentState = GameState::GAMEOVER;
                 g_DyingTimer = 0.0f;
                 g_GameOverFade = 0.0f;   // 결과 메뉴 페이드인 시작 (2.5초)
@@ -3098,13 +3134,14 @@ int main() {
         // 화면 흔들기 + 줌 적용 — game world 만, HUD/text(별도 ortho)는 영향 없음
         float orthoShake[16];
         memcpy(orthoShake, ortho, sizeof(ortho));
-        // 줌(중심=화면 중앙). z=1 이면 base ortho 와 동일(identity)
+        // 줌(중심 = ZCX/ZCY, 기본 화면 중앙). z=1 이면 base ortho 와 동일(identity)
         {
             float z = g_ViewZoom;
+            float zcx = ZCX(), zcy = ZCY();
             orthoShake[0]  =  2.0f * z / (float)screenWidth;
             orthoShake[5]  = -2.0f * z / (float)screenHeight;
-            orthoShake[12] = -z;
-            orthoShake[13] =  z;
+            orthoShake[12] =  2.0f * zcx * (1.0f - z) / (float)screenWidth  - 1.0f;
+            orthoShake[13] =  1.0f - 2.0f * zcy * (1.0f - z) / (float)screenHeight;
         }
         // 게임플레이/사망연출 외 상태(메뉴·게임오버 등)에선 화면 흔들림 잔여 제거
         //   — 사망 후 시작창으로 갔을 때 화면이 계속 떨리던 문제 방지
@@ -4286,6 +4323,17 @@ int main() {
                 }
             }
 
+            // 사망 연출 — 줌인 중 화면에 사망 원인을 드라마틱하게 표시
+            if (st == GameState::DYING && g_DeathReason[0]) {
+                float prog = 1.0f - g_DyingTimer / DYING_DUR;
+                if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
+                float a  = prog < 0.3f ? (prog / 0.3f) : 1.0f;   // 빠른 페이드인
+                float sc = 1.05f + 0.25f * prog;
+                float tw = g_TextL.Width(g_DeathReason, sc);
+                g_TextL.Draw(g_DeathReason, (sw - tw) * 0.5f, sh * 0.68f, sc,
+                             1.0f, 0.38f, 0.32f, a);
+            }
+
             // ── 크리에이티브 HUD (게임 중) — F:증강  G:무적 ──
             if (g_CreativeMode &&
                 (st == GameState::RUNNING || st == GameState::READY ||
@@ -5189,6 +5237,11 @@ int main() {
                 const wchar_t* T1 = T(StrId::GAMEOVER);
                 g_TextL.Draw(T1, cx(T1, g_TextL, 1.6f), sh*0.30f, 1.6f,
                              1, 0.25f, 0.25f, 0.95f * ge);
+                // 사망 원인 (프로세스 종료 사유)
+                if (g_DeathReason[0]) {
+                    g_TextS.Draw(g_DeathReason, cx(g_DeathReason, g_TextS, 1.0f), sh*0.385f, 1.0f,
+                                 1.0f, 0.55f, 0.45f, 0.92f * ge);
+                }
 
                 // 결과 — 도달 레벨 / 처치 수 / 최종 점수
                 wchar_t lvBuf[64], killBuf[64], scoreBuf[64];
