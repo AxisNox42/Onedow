@@ -137,7 +137,7 @@ public:
             spawnAccum += dt;
             if (spawnAccum >= (phase2 ? 0.6f : 0.8f)) {  // 페이즈2: 더 자주·더 많이
                 spawnAccum = 0.0f;
-                int n = phase2 ? 4 : 2;
+                int n = phase2 ? 5 : 2;
                 for (int i = 0; i < n; i++) spawnMini(playerCX, playerCY);
             }
             // 발사 0.8초 전: 레이저 방향 락 + 경고선 표시 (조준선 == 실제 발사선)
@@ -155,8 +155,12 @@ public:
                 for (auto& t : minis) t.homing = true;       // 전부 유도 가속
                 laserWarn   = false;
                 laserActive = true;                          // 방향은 경고 때 락된 값 사용
-                // 페이즈2: 직교 두 번째 레이저(X자 십자포화)
-                laser2DirX = -laserDirY; laser2DirY = laserDirX;
+                // 페이즈2: 두 번째 레이저 — 본체에서 +28° 벌어진 트윈 빔(플레이어 쪽으로)
+                {
+                    float c = cosf(0.49f), s = sinf(0.49f);
+                    laser2DirX = laserDirX * c - laserDirY * s;
+                    laser2DirY = laserDirX * s + laserDirY * c;
+                }
             }
             break;
 
@@ -211,10 +215,9 @@ public:
             if (segDist(playerCX, playerCY, worldX, worldY, ex, ey) < 32.0f)
                 playerHP -= 45.0f * dt;
             if (phase2) {
+                // 본체에서 바깥으로 나가는 단방향 트윈 빔 (관통 십자 X)
                 float ex2 = worldX + laser2DirX * reach, ey2 = worldY + laser2DirY * reach;
-                // 직교 레이저는 양방향(본체 기준 ±) — X자가 되도록
-                float bx2 = worldX - laser2DirX * reach, by2 = worldY - laser2DirY * reach;
-                if (segDist(playerCX, playerCY, bx2, by2, ex2, ey2) < 30.0f)
+                if (segDist(playerCX, playerCY, worldX, worldY, ex2, ey2) < 30.0f)
                     playerHP -= 40.0f * dt;
             }
         }

@@ -1765,11 +1765,12 @@ int main() {
                 if (!timeStopped && g_RRBoss && g_RRBoss->alive)
                     g_RRBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
-                // 폴리모프 업데이트 (폼 변환 + 세모/레이저/차크람) + 페이즈2 화면 확장
+                // 폴리모프 업데이트 (폼 변환 + 세모/레이저/차크람)
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     if (!timeStopped)
                     g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
-                    g_ViewZoomTarget = g_PolyBoss->phase2 ? 0.5f : 1.0f;
+                    // 페이즈2 줌아웃 제거 — 창 이름/메뉴 UI 가 줌 좌표로 어긋나던 버그 fix
+                    g_ViewZoomTarget = 1.0f;
                     // ── 2페이즈 진입 연출 — 보스 포효 + 다중 충격파 (1회) ──
                     if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
                         g_PolyWasPhase2 = true;
@@ -4005,7 +4006,7 @@ int main() {
             if (gb->laserActive && gb->phase2) {
                 float reach = (float)(screenWidth + screenHeight);
                 float d2x = gb->laser2DirX, d2y = gb->laser2DirY;
-                float ax = gb->worldX - d2x*reach, ay = gb->worldY - d2y*reach;
+                float ax = gb->worldX, ay = gb->worldY;                    // 본체에서 출발
                 float bx = gb->worldX + d2x*reach, by = gb->worldY + d2y*reach;
                 float pxx = -d2y, pyy = d2x;
                 for (int pass = 0; pass < 2; pass++) {

@@ -30,8 +30,8 @@ public:
     RRState  state  = RRState::ACTIVE;
     RRWeapon weapon = RRWeapon::SHOTGUN;
 
-    float moveSpeed = 140.0f;
-    int   ammo = 3;
+    float moveSpeed = 175.0f;   // 버프: 140
+    int   ammo = 4;
 
     // ── AI 타이머 ──
     float fireTimer   = 0.0f;   // 발사 간격
@@ -51,25 +51,28 @@ public:
 
     static constexpr float BODY = 42.0f;
 
-    // 무기별 상수
+    // 무기별 상수 (전체 버프: 더 공격적·아프게)
     static constexpr float SG_RANGE    = 360.0f;
-    static constexpr float SG_INTERVAL = 0.42f;
-    static constexpr int   SG_AMMO     = 3;
+    static constexpr float SG_INTERVAL = 0.34f;   // 버프: 0.42
+    static constexpr int   SG_AMMO     = 4;       // 버프: 3
     static constexpr int   SG_PELLETS  = 7;
     static constexpr float SG_SPREAD   = 0.62f;
     static constexpr float SG_BSPEED   = 640.0f;
+    static constexpr float SG_DMG      = 9.0f;    // 펠릿당
 
     static constexpr float SN_KITE_RANGE = 560.0f;  // 이보다 가까우면 도망
-    static constexpr float SN_AIM_DELAY  = 0.9f;    // 조준 시작 전 이동 시간
-    static constexpr float SN_FREEZE     = 1.0f;    // 정지 조준 1초
+    static constexpr float SN_AIM_DELAY  = 0.65f;   // 버프: 0.9
+    static constexpr float SN_FREEZE     = 0.7f;    // 버프: 1.0
     static constexpr float SN_BSPEED     = 1600.0f; // 고속 저격탄
+    static constexpr float SN_DMG        = 24.0f;   // 저격 — 한 방 큼
 
     static constexpr float MG_WARMUP   = 2.0f;
-    static constexpr int   MG_AMMO     = 30;
-    static constexpr float MG_INTERVAL = 0.065f;
+    static constexpr int   MG_AMMO     = 38;      // 버프: 30
+    static constexpr float MG_INTERVAL = 0.055f;  // 버프: 0.065
     static constexpr float MG_BSPEED   = 580.0f;
+    static constexpr float MG_DMG      = 7.0f;
 
-    static constexpr float RELOAD_TIME = 1.5f;
+    static constexpr float RELOAD_TIME = 1.05f;   // 버프: 1.5 (다운타임 ↓)
     static constexpr float SPRINT_MULT = 3.5f;
 
     // 페이즈2 (HP 50% 이하) — 오버클럭(장전 가속) + 주기적 스팸클릭 방사 난사
@@ -111,11 +114,12 @@ public:
     }
 
     void fireDir(std::vector<Bullet>& bullets, float dirX, float dirY,
-                 float speed, glm::vec3 col) {
+                 float speed, glm::vec3 col, float dmg = 0.0f) {
         Bullet b(worldX, worldY, worldX + dirX * 100.0f, worldY + dirY * 100.0f);
         b.isEnemy = true;
         b.speed   = speed;
         b.color   = col;
+        if (dmg > 0.0f) b.enemyDmg = dmg;
         bullets.push_back(b);
     }
 
@@ -142,7 +146,7 @@ public:
                 for (int i = 0; i < SPAM_N; i++) {
                     float a = (off + (float)i / (float)SPAM_N) * 6.2831853f;
                     fireDir(bullets, cosf(a), sinf(a), SPAM_BSPEED,
-                            glm::vec3(1.0f, 0.75f, 0.2f));
+                            glm::vec3(1.0f, 0.75f, 0.2f), 8.0f);
                 }
             }
         }
@@ -176,7 +180,7 @@ public:
                         float t = (SG_PELLETS > 1) ? (float)i / (SG_PELLETS - 1) : 0.5f;
                         float a = base + (t - 0.5f) * SG_SPREAD;
                         fireDir(bullets, cosf(a), sinf(a), SG_BSPEED,
-                                glm::vec3(1.0f, 0.5f, 0.1f));
+                                glm::vec3(1.0f, 0.5f, 0.1f), SG_DMG);
                     }
                     if (--ammo <= 0) enterReload();
                 }
@@ -198,7 +202,7 @@ public:
                 // 완전 정지 조준 1초 → 발사 (현재 플레이어 추적해 발사)
                 stopTimer += dt;
                 if (stopTimer >= SN_FREEZE) {
-                    fireDir(bullets, nx, ny, SN_BSPEED, glm::vec3(0.3f, 1.0f, 1.0f));
+                    fireDir(bullets, nx, ny, SN_BSPEED, glm::vec3(0.3f, 1.0f, 1.0f), SN_DMG);
                     aiming = false; aimDelay = 0.0f;
                     if (--ammo <= 0) enterReload();
                 }
@@ -221,7 +225,7 @@ public:
                     float r    = (float)(rand() % 200 - 100) / 100.0f;  // -1..1
                     float a    = base + r * zoneHalfAngle;
                     fireDir(bullets, cosf(a), sinf(a), MG_BSPEED,
-                            glm::vec3(1.0f, 0.85f, 0.2f));
+                            glm::vec3(1.0f, 0.85f, 0.2f), MG_DMG);
                     if (--ammo <= 0) { mgFiring = false; enterReload(); }
                 }
             }
