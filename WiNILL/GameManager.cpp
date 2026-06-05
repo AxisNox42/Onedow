@@ -369,11 +369,12 @@ void GameManager::Render() {
         float identity[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, identity);
 
-        float overlayR = 0.0f, overlayA = 0.5f;
-        if (currentState == GameState::GAMEOVER)     { overlayR = 0.0f;  overlayA = 0.60f; }
-        if (currentState == GameState::AUG_SELECT)   { overlayR = 0.0f;  overlayA = 0.75f; }
-        if (currentState == GameState::DEBUFF_SELECT){ overlayR = 0.30f; overlayA = 0.80f; }
-        glUniform4f(colorLoc, overlayR, 0.0f, 0.0f, overlayA);
+        float oR = 0.0f, oG = 0.0f, oB = 0.0f, overlayA = 0.5f;
+        if (currentState == GameState::GAMEOVER)     { overlayA = 0.60f; }
+        if (currentState == GameState::AUG_SELECT)   { overlayA = 0.75f; }
+        // 디버프 — 기존엔 진한 채도 빨강이라 눈이 아팠음 → 어두운 적갈색으로 완화
+        if (currentState == GameState::DEBUFF_SELECT){ oR = 0.14f; oG = 0.035f; oB = 0.045f; overlayA = 0.80f; }
+        glUniform4f(colorLoc, oR, oG, oB, overlayA);
         glBindVertexArray(overlayVAO);
         glDrawArrays(GL_TRIANGLES, 0, 6);
     }
@@ -435,7 +436,7 @@ void GameManager::Render() {
         float barW = screenW * 0.46f;
         float barH = 24.0f;
         float barX = (screenW - barW) / 2.0f;
-        float barY = (float)screenH - 40.0f;
+        float barY = (float)screenH - 40.0f - (float)g_TaskbarH;   // 작업표시줄 위로
         drawQuad(barX - 3, barY - 3, barW + 6, barH + 6, 0.0f, 0.0f, 0.0f, 0.7f);  // 테두리
         drawQuad(barX, barY, barW, barH, 0.18f, 0.05f, 0.05f, 0.9f);               // 빈 바(어두운 적)
         float hpFrac = (maxHP > 0.0f) ? (playerHP / maxHP) : 0.0f;

@@ -609,9 +609,12 @@ float g_DyingTimer    = 0.0f;
 bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
 float g_DeathWinW0    = 0.0f;    // 사망 시점 플레이어 창 크기 (수축 기준)
 float g_GameOverFade  = 0.0f;    // 게임오버 메뉴 페이드인 (0→1, 풀스크린 후 2.5초)
-static const float DYING_DUR      = 0.8f;   // 수축→폭발→풀스크린 팽창 (페이드 전까지)
-static const float DYING_SHRINK   = 0.35f;  // 0~이 구간: 플레이어 창 50%로 수축
-static const float GAMEOVER_FADE  = 2.5f;   // 풀스크린 후 메뉴 100% 까지 걸리는 시간
+// 사망 연출 = 줌인(DEATH_ZOOM_DUR) → 폭발 + 여파(나머지) → GAMEOVER (순차)
+static const float DEATH_ZOOM_DUR = 0.5f;   // 1단계: 플레이어 창으로 줌인
+static const float DEATH_ZOOM_MAX = 2.7f;   // 줌 최대 배율
+static const float DYING_DUR      = 1.3f;   // 전체 (줌 0.5 + 폭발 여파 0.8)
+static const float DYING_SHRINK   = 0.35f;  // (미사용)
+static const float GAMEOVER_FADE  = 2.5f;   // 메뉴 100% 까지 걸리는 시간
 
 // 사망 파편 파티클
 struct DeathParticle {
@@ -696,6 +699,19 @@ int main() {
     if (!window) { glfwTerminate(); return -1; }
 
     glfwSetWindowPos(window, 0, 0);
+
+    // 하단 작업표시줄 높이 계산 — 풀스크린 위에 떠 있는 작업표시줄에 하단 UI 가
+    //   가려지지 않도록. (작업 영역이 화면보다 작으면 그 차이가 작업표시줄 높이)
+#ifdef _WIN32
+    {
+        int fullH = GetSystemMetrics(SM_CYSCREEN);
+        RECT wa;
+        if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) {
+            int bottomGap = fullH - (int)wa.bottom;   // 하단 작업표시줄 높이 (그 외 위치면 0)
+            if (bottomGap > 0 && bottomGap < 120) g_TaskbarH = bottomGap;
+        }
+    }
+#endif
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
     glfwSetCharCallback(window, CodexCharCallback);   // codex.db 검색창 입력
@@ -1098,15 +1114,19 @@ int main() {
             g_DeathFlash -= delta * 4.0f;
             if (g_DeathFlash < 0.0f) g_DeathFlash = 0.0f;
 
-            // 플레이어 창으로 줌인 — ease-in(가속)으로 빨려들 듯 (g_ZoomCX/CY 기준)
-            {
-                float prog = 1.0f - g_DyingTimer / DYING_DUR;
-                if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
-                g_ViewZoom = 1.0f + 1.7f * (prog * prog);   // 1 → 2.7
+            float elapsed = DYING_DUR - g_DyingTimer;
+
+            // ── 1단계: 플레이어 창으로 줌인 (이게 끝나야 폭발) ──
+            if (elapsed < DEATH_ZOOM_DUR) {
+                float zp = elapsed / DEATH_ZOOM_DUR;        // 0→1
+                g_ViewZoom = 1.0f + (DEATH_ZOOM_MAX - 1.0f) * (zp * zp);  // ease-in
+            } else {
+                g_ViewZoom = DEATH_ZOOM_MAX;                // 줌 완료 후 고정
             }
 
-            if (!g_DeathBoomDone) {
-                // 대폭발 — 플레이어 기점, 모든 적이 터짐 (즉시)
+            // ── 2단계: 줌 완료 후 대폭발 (1회) ──
+            if (elapsed >= DEATH_ZOOM_DUR && !g_DeathBoomDone) {
+                // 대폭발 — 플레이어 기점, 모든 적이 터짐
                 g_DeathBoomDone = true;
                 float pCX = g_DeathCX, pCY = g_DeathCY;
                 // 모든 적 폭발시키며 제거 (scored/noBlast 표시 → 점수/연쇄 정산 안 함)
@@ -4343,7 +4363,7 @@ int main() {
                     L"CREATIVE   F: 증강(디버프 포함)   G: 무적",
                     L"CREATIVE   F: Augment(+debuff)   G: Godmode",
                     L"CREATIVE   F: 強化(デバフ含)   G: 無敵" };
-                g_TextS.Draw(CH[li3], 20.0f, sh - 36.0f, 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
+                g_TextS.Draw(CH[li3], 20.0f, sh - 36.0f - (float)g_TaskbarH, 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
                     const wchar_t* GOD[3] = { L"● 무적 ON", L"● GODMODE ON", L"● 無敵 ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
@@ -5609,7 +5629,7 @@ int main() {
                     int hpMax = (int)(g_Stats.maxHP + 0.5f);
                     wchar_t hpBuf[48]; swprintf_s(hpBuf, L"HP  %d / %d", hpCur, hpMax);
                     float hw = g_TextS.Width(hpBuf, 0.85f);
-                    g_TextS.Draw(hpBuf, (sw - hw) * 0.5f, sh - 38.0f, 0.85f,
+                    g_TextS.Draw(hpBuf, (sw - hw) * 0.5f, sh - 38.0f - (float)g_TaskbarH, 0.85f,
                                  1.0f, 1.0f, 1.0f, 0.95f);
                 }
                 // 하단 조작 안내 (희미하게 항상) — 새 플레이어가 HP/스킬 위치를 알게
@@ -5620,7 +5640,7 @@ int main() {
                         L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
                     const wchar_t* c = (g_Language == Language::KR) ? CTRL : CTRL_EN;
                     float cw = g_TextS.Width(c, 0.7f);
-                    g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 66.0f, 0.7f,
+                    g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 66.0f - (float)g_TaskbarH, 0.7f,
                                  0.6f, 0.7f, 0.8f, 0.55f);
                 }
             }
@@ -5656,7 +5676,7 @@ int main() {
             // ── 액티브 스킬 슬롯 (좌하단, 패시브 쿨다운 위 행) ──
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float KW = 54.0f, KH = 54.0f, KG = 8.0f;
-                float kx0 = 16.0f, ky0 = sh - KH - 40.0f - (56.0f + 8.0f);
+                float kx0 = 16.0f, ky0 = sh - KH - 40.0f - (56.0f + 8.0f) - (float)g_TaskbarH;
                 auto skillBox = [&](int idx, const wchar_t* key, const wchar_t* tag,
                                     float cd, float r, float g, float b) {
                     float x = kx0 + idx * (KW + KG), y = ky0;
@@ -5692,7 +5712,7 @@ int main() {
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float SLOT_W = 56.0f, SLOT_H = 56.0f, SLOT_GAP = 8.0f;
                 float baseX  = 16.0f;
-                float baseY2 = sh - SLOT_H - 40.0f;   // HP 바 위쪽
+                float baseY2 = sh - SLOT_H - 40.0f - (float)g_TaskbarH;   // HP 바 위쪽(작업표시줄 위)
                 int   slot   = 0;
 
                 auto drawSlot = [&](const wchar_t* tag, float remain,

@@ -16,6 +16,10 @@ inline constexpr int LANG_COUNT = 3;
 // 크로스헤어 표시 (기본 ON)
 inline bool g_ShowCrosshair = true;
 
+// 하단 작업표시줄 높이(px) — 풀스크린 오버레이 위에 작업표시줄이 떠 있을 때
+//   체력바 등 하단 UI 가 가려지지 않도록 이만큼 위로 올린다. main 이 시작 시 계산.
+inline int g_TaskbarH = 0;
+
 // 모든 언어 공통 폰트 — Microsoft YaHei UI (Win10+ 기본 탑재)
 //   한글/라틴은 GDI 폰트 링크(자동 폴백)로, 일본어 가나·한자도 시스템 폴백으로 표시
 //   (Windows 전용 — GDI face 이름)
