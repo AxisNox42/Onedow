@@ -4909,13 +4909,14 @@ int main() {
                     const wchar_t* SHOPL[3] = { L"상점", L"Shop",  L"ショップ" };
                     const wchar_t* CODL [3] = { L"도감", L"Codex", L"図鑑" };
                     const wchar_t* CFGL [3] = { L"설정", L"Config", L"設定" };
+                    // 서브창(상점/도감/설정)은 부팅 로딩 없이 즉시 — 창 열림 애니메이션만
                     if (UIButton(bx2 + 0*(bw2+gap2), by2, bw2, bh2, SHOPL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        LaunchApp(GameState::SHOP, L"shop.exe", 1.00f, 0.80f, 0.20f);
+                        g_GameManager.currentState = GameState::SHOP;
                     if (UIButton(bx2 + 1*(bw2+gap2), by2, bw2, bh2, CODL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        LaunchApp(GameState::CODEX, L"codex.db", 0.40f, 0.90f, 0.50f);
+                        g_GameManager.currentState = GameState::CODEX;
                     if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
                         g_SettingsReturnTo = GameState::MAIN_MENU;
-                        LaunchApp(GameState::SETTINGS, L"config.sys", 0.70f, 0.75f, 0.88f);
+                        g_GameManager.currentState = GameState::SETTINGS;
                     }
                     if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
                         glfwSetWindowShouldClose(window, GLFW_TRUE);
