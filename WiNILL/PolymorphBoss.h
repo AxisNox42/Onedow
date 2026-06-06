@@ -118,12 +118,14 @@ public:
 
     void spawnTriRow() {
         // 시작 모서리 전체에 걸쳐 무작위로 한 줄 분량 spawn (고속, 직선 이동)
-        // (줌아웃 제거됨 → 일반 화면 범위. 페이즈2 는 수량/속도만 강화)
-        float sp = (phase2 ? 860.0f : 800.0f) + (float)(rand() % 160);  // 개빠름
-        int   perRow = phase2 ? 4 : 3;
-        float life   = 3.5f;
-        float minX = 0.0f, maxX = (float)screenW;
-        float minY = 0.0f, maxY = (float)screenH;
+        // 페이즈2: 화면이 2배로 확장되므로 확장된 영역 전체를 덮도록 spawn 범위/수량 증가
+        float sp = (phase2 ? 920.0f : 800.0f) + (float)(rand() % 160);  // 개빠름
+        int   perRow = phase2 ? 6 : 3;
+        float life   = phase2 ? 5.5f : 3.5f;          // 더 넓은 영역 가로질러야 함
+        float exX = phase2 ? (float)screenW * 0.5f : 0.0f;   // 각 변 확장량
+        float exY = phase2 ? (float)screenH * 0.5f : 0.0f;
+        float minX = -exX, maxX = (float)screenW + exX;
+        float minY = -exY, maxY = (float)screenH + exY;
         int   spanX = std::max(1, (int)(maxX - minX));
         int   spanY = std::max(1, (int)(maxY - minY));
         for (int i = 0; i < perRow; i++) {

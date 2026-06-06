@@ -933,6 +933,13 @@ int main() {
         glfwPollEvents();
 
         // 줌 부드럽게 보간 (페이즈2 화면 확장 등)
+        //   메뉴/일시정지/증강선택 등 비전투 상태에선 줌 즉시 해제 — 메뉴 UI·창 이름이
+        //   줌 좌표로 어긋나 보이던 버그 fix. RUNNING 복귀 시 폴리 Update 가 다시 줌 설정.
+        {
+            GameState zs = g_GameManager.currentState;
+            if (zs != GameState::RUNNING && zs != GameState::DYING)
+                g_ViewZoom = g_ViewZoomTarget = 1.0f;
+        }
         g_ViewZoom += (g_ViewZoomTarget - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
 
         // 마우스 상태 (mx,my = 화면 픽셀 / wmx,wmy = 줌 보정한 월드 좌표 = 조준용)
@@ -1765,12 +1772,12 @@ int main() {
                 if (!timeStopped && g_RRBoss && g_RRBoss->alive)
                     g_RRBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
-                // 폴리모프 업데이트 (폼 변환 + 세모/레이저/차크람)
+                // 폴리모프 업데이트 (폼 변환 + 세모/레이저/차크람) + 페이즈2 화면 확장
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     if (!timeStopped)
                     g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
-                    // 페이즈2 줌아웃 제거 — 창 이름/메뉴 UI 가 줌 좌표로 어긋나던 버그 fix
-                    g_ViewZoomTarget = 1.0f;
+                    // 페이즈2 = 상위 보스: 화면 줌아웃으로 더 넓은 구간에서 싸움 (의도된 기능)
+                    g_ViewZoomTarget = g_PolyBoss->phase2 ? 0.5f : 1.0f;
                     // ── 2페이즈 진입 연출 — 보스 포효 + 다중 충격파 (1회) ──
                     if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
                         g_PolyWasPhase2 = true;
@@ -4346,8 +4353,12 @@ int main() {
                     drawRect(bxc - 2*(bs+5), byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // ─
                     drawRect(bxc - (bs+5),   byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // □
                     drawRect(bxc, byc, bs, bs, 0.85f, 0.2f, 0.2f, 0.95f);          // X = 빨강
-                    g_TextS.Draw(L"X", bxc + 3.0f, byc - 2.0f, 0.5f, 1,1,1, 0.95f);
-                    g_TextS.Draw(title, x + 8.0f, y + 3.0f, 0.55f, 0.92f,0.96f,1.0f, 0.95f);
+                    // 텍스트는 TextRenderer 자체 스크린 ortho(줌 무시)라, 월드 좌표를
+                    //   W2SX/W2SY 로 변환 + g_ViewZoom 스케일 → 줌된 창에 정확히 붙음
+                    g_TextS.Draw(L"X", W2SX(bxc + 3.0f), W2SY(byc - 2.0f),
+                                 0.5f * g_ViewZoom, 1,1,1, 0.95f);
+                    g_TextS.Draw(title, W2SX(x + 8.0f), W2SY(y + 3.0f),
+                                 0.55f * g_ViewZoom, 0.92f,0.96f,1.0f, 0.95f);
                 };
                 int li2 = (int)g_Language; if (li2<0||li2>=LANG_COUNT) li2=0;
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
