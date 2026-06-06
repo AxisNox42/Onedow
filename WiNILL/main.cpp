@@ -382,6 +382,12 @@ PolymorphBoss* g_PolyBoss = nullptr;
 // SPAM.dll 보스 (탄막/불릿헬 — 회전 나선탄 + 방사 버스트) — 별도 관리
 SpamBoss* g_SpamBoss = nullptr;
 
+// ── 스캔 레이저 (증강) — 주기적 관통 빔 + 페이드 비주얼 ──
+struct LaserBeam { float ox, oy, ex, ey, life, maxLife; };
+std::vector<LaserBeam> g_LaserBeams;
+float          g_LaserTimer = 0.0f;
+constexpr float LASER_INT   = 0.7f;   // 발사 주기(초)
+
 // ── 보스 등장 전조(증상) ──────────────────────────────────────
 //   보스 스폰을 "결정 → 2.5초 전조(테마 증상 + 경고 배너) → 실제 생성" 으로 분리.
 //   전조 동안 게임플레이는 계속(텔레그래프). 만료 시 결정된 보스를 실제로 생성.
@@ -1004,6 +1010,7 @@ int main() {
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
             g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
+            g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
@@ -1209,6 +1216,7 @@ int main() {
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
                 g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
+                g_LaserBeams.clear();   // 스캔 레이저 빔 정리
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
                     SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
@@ -2557,6 +2565,11 @@ int main() {
                 if (sl.life <= 0.0f) sl.active = false;
             }
 
+            // 스캔 레이저 빔 페이드
+            for (auto& lb : g_LaserBeams) lb.life -= delta;
+            g_LaserBeams.erase(std::remove_if(g_LaserBeams.begin(), g_LaserBeams.end(),
+                [](const LaserBeam& b){ return b.life <= 0.0f; }), g_LaserBeams.end());
+
             // 타격 스파크 업데이트 (이동 + 감속 + 수명)
             for (auto& sp : g_Sparks) {
                 sp.x += sp.vx * delta;
@@ -2609,8 +2622,12 @@ int main() {
             //   intensity: 10만점=1, 20만점=2 ... 상한 6 (60만점)
             float intensity = (float)g_GameManager.score / 100000.0f;
             if (intensity > 6.0f) intensity = 6.0f;
-            float rampSpawn = 1.0f + intensity * 0.55f;   // 스폰 빈도 (×1.55 @10만 … ×4.3 @60만)
+            float rampSpawn = 1.0f + intensity * 0.40f;   // 스폰 빈도 (너프: 0.55 → 0.40, ×3.4 @60만)
             float rampSpd   = 1.0f + intensity * 0.09f;   // 몹 속도
+            // 보스전 중(전조 포함)엔 트래시를 대폭 줄여 보스에 집중 가능하게
+            bool  bossNow = g_MonsterManager.boss || g_GlitchBoss || g_RRBoss ||
+                            g_PolyBoss || g_SpamBoss || !g_Slimelings.empty() ||
+                            g_BossWarnTimer > 0.0f;
             // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
             //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
@@ -2636,11 +2653,12 @@ int main() {
             // 잡몹 스폰 (D_MOB_SPAWN → 더 자주 + cap +200, D_MOB_HP → HP+, 점수 램프)
             spawnTimer += delta;
             float spawnInterval = 0.3f * g_Stats.mobSpawnMult / (p2mult * rampSpawn);
+            if (bossNow) spawnInterval *= 2.5f;   // 보스전: 트래시 스폰 대폭 감소
             if (spawnTimer > spawnInterval) {
                 size_t mbefore = g_MonsterManager.monsters.size();
                 // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
                 int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
-                if (effCap > 240) effCap = 240;
+                if (effCap > 180) effCap = 180;
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                           effCap,
                                           g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH,
@@ -2761,7 +2779,9 @@ int main() {
             DifficultyParams dp = GetDifficultyParams(g_Difficulty);
             if (g_GameTime >= dp.bomberStartTime) {
                 g_BomberSpawnTimer += delta;
-                if (g_BomberSpawnTimer >= dp.bomberInterval / (p2mult * rampSpawn)) {
+                float bomberInt = dp.bomberInterval / (p2mult * rampSpawn);
+                if (bossNow) bomberInt *= 2.0f;   // 보스전: 자폭병도 덜 나오게
+                if (g_BomberSpawnTimer >= bomberInt) {
                     g_MonsterManager.SpawnBomber(screenWidth, screenHeight,
                                                  g_Stats.bomberHpMult * rampHp,
                                                  g_Stats.bomberSpeedMult,
@@ -2776,6 +2796,7 @@ int main() {
             float rangedInterval = dp.rangedSpawnInterval - g_Stats.rmobSpawnDelayBonus;
             if (rangedInterval < 1.0f) rangedInterval = 1.0f;   // 최소 1초
             rangedInterval /= (p2mult * rampSpawn);              // 2페이즈 + 점수 램프
+            if (bossNow) rangedInterval *= 2.0f;                 // 보스전: 원거리몹도 덜
             int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult
                                   + intensity * 2.0f);           // 점수당 동시 +2
             if (rangedMax > 16) rangedMax = 16;   // 창 개수 = scissor 패스 수 → 상한 (성능)
@@ -3258,6 +3279,100 @@ int main() {
                 TriggerHitStop(0.015f);
             };
 
+            // ── 스캔 레이저 (증강) — 0.7초마다 조준 방향 관통 빔 (군중제어) ──
+            //   meleeSwing 의 데미지/처치보상 루프를 '직선 판정(SegDist)' 버전으로 재사용.
+            if (g_Stats.laser) {
+                g_LaserTimer += delta;
+                if (g_LaserTimer >= LASER_INT) {
+                    g_LaserTimer -= LASER_INT;
+                    float lang  = atan2f(wmy - pCY, wmx - pCX);
+                    float reach = (float)(screenWidth + screenHeight);
+                    float lex = pCX + cosf(lang) * reach, ley = pCY + sinf(lang) * reach;
+                    const float BEAM_HALF = 26.0f;
+                    bool lcrit = false; float lcm = 1.0f;
+                    if (g_Stats.critChance > 0 && (rand()%100) < g_Stats.critChance) { lcrit = true; lcm = g_Stats.critMult; }
+                    float lbm = 1.0f;
+                    if (g_Stats.berserk) {
+                        float hf = g_Stats.maxHP > 0.0f ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                        if (hf < 0.0f) hf = 0.0f; else if (hf > 1.0f) hf = 1.0f;
+                        lbm = 1.0f + (1.0f - hf) * 0.6f;
+                    }
+                    float ldmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
+                               * 2.5f * lcm * lbm;   // 관통 — 잡몹 즉사, 보스엔 칩
+                    auto lOnKill = [&]() {
+                        if (g_Stats.lifestealPerKill > 0.0f) {
+                            g_GameManager.playerHP += g_Stats.lifestealPerKill;
+                            if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
+                        }
+                        if (g_Stats.vampire && ++g_Stats.vampireKillStreak >= 10) {
+                            g_Stats.vampireKillStreak = 0;
+                            g_GameManager.playerHP += 1.0f;
+                            if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
+                        }
+                    };
+                    auto inLine = [&](float qx, float qy) -> bool {
+                        return SegDist(qx, qy, pCX, pCY, lex, ley) < BEAM_HALF;
+                    };
+                    for (auto m : g_MonsterManager.monsters) {
+                        if (!m->alive || !inLine(m->worldX, m->worldY)) continue;
+                        float d = ldmg;
+                        if (m->kind == MobKind::SHIELDED && m->shieldActive) d *= 0.15f;
+                        float dealt = (d < m->hp) ? d : m->hp; m->hp -= dealt;
+                        SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || lcrit);
+                        if (m->hp <= 0.0f) {
+                            m->alive = false; m->scored = true; AddKillCombo();
+                            float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs);
+                            g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                            g_Stats.killCount++; g_GameManager.scoreAccum += bs;
+                            g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
+                        }
+                    }
+                    for (auto rr : g_MonsterManager.rangedMobs) {
+                        if (!rr->alive || !inLine(rr->worldX, rr->worldY)) continue;
+                        float dealt = (ldmg < rr->hp) ? ldmg : rr->hp; rr->hp -= dealt;
+                        SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || lcrit);
+                        if (rr->hp <= 0.0f) {
+                            rr->alive = false; rr->scored = true; AddKillCombo();
+                            g_GameManager.xp += (long long)((25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                            g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
+                            g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
+                        }
+                    }
+                    for (auto bm : g_MonsterManager.bombers) {
+                        if (!bm->alive || !inLine(bm->worldX, bm->worldY)) continue;
+                        float dealt = (ldmg < bm->hp) ? ldmg : bm->hp; bm->hp -= dealt;
+                        SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || lcrit);
+                        if (bm->hp <= 0.0f) {
+                            bm->alive = false; bm->scored = true; AddKillCombo();
+                            g_GameManager.xp += (long long)((25.0f + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                            g_Stats.killCount++; g_GameManager.scoreAccum += 200.0f;
+                            g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
+                        }
+                    }
+                    auto lhitB = [&](float ex, float ey, float& hp, bool& al) {
+                        if (!inLine(ex, ey)) return;
+                        float dealt = (ldmg < hp) ? ldmg : hp; hp -= dealt;
+                        SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || lcrit);
+                        if (hp <= 0.0f) al = false;
+                    };
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                        lhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
+                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
+                    for (auto* c : g_Slimelings) if (c->alive)
+                        lhitB(c->worldX, c->worldY, c->hp, c->alive);
+                    if (g_GlitchBoss && g_GlitchBoss->alive)
+                        lhitB(g_GlitchBoss->worldX, g_GlitchBoss->worldY, g_GlitchBoss->hp, g_GlitchBoss->alive);
+                    if (g_RRBoss && g_RRBoss->alive)
+                        lhitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
+                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
+                        lhitB(g_PolyBoss->worldX, g_PolyBoss->worldY, g_PolyBoss->hp, g_PolyBoss->alive);
+                    if (g_SpamBoss && g_SpamBoss->alive)
+                        lhitB(g_SpamBoss->worldX, g_SpamBoss->worldY, g_SpamBoss->hp, g_SpamBoss->alive);
+                    g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f });
+                    TriggerMuzzle(pCX, pCY, lang);
+                }
+            }
+
             // 포탑 모드에서는 플레이어가 발사하지 않음
             if (!g_Stats.turretMode) {
                 if (g_Stats.meleeWeapon) {       // 검객 — 근접 스윙 (총알 없음)
@@ -3631,6 +3746,33 @@ int main() {
             if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
             drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 1.0f);
             drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
+        }
+
+        // (c3) 스캔 레이저 빔 — 페이드되는 청록 관통 빔 (보스 레이저 쿼드 패턴)
+        if (!g_LaserBeams.empty()) {
+            BindMainShader();
+            for (auto& lb : g_LaserBeams) {
+                float fr = lb.life / lb.maxLife; if (fr < 0) fr = 0; if (fr > 1) fr = 1;
+                float dx = lb.ex - lb.ox, dy = lb.ey - lb.oy;
+                float dl = sqrtf(dx*dx + dy*dy) + 1e-3f;
+                float pxx = -dy/dl, pyy = dx/dl;
+                for (int pass = 0; pass < 2; pass++) {
+                    float th = (pass == 0) ? 26.0f * fr + 6.0f : 7.0f * fr + 2.0f;
+                    float cr = (pass == 0) ? 0.3f : 0.8f;
+                    float cg = 1.0f;
+                    float cb = (pass == 0) ? 0.9f : 1.0f;
+                    float ca = (pass == 0) ? 0.35f * fr : 0.95f * fr;
+                    float p1x=lb.ox+pxx*th, p1y=lb.oy+pyy*th;
+                    float p2x=lb.ox-pxx*th, p2y=lb.oy-pyy*th;
+                    float p3x=lb.ex+pxx*th, p3y=lb.ey+pyy*th;
+                    float p4x=lb.ex-pxx*th, p4y=lb.ey-pyy*th;
+                    float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                    glUniform4f(g_colorLoc, cr, cg, cb, ca);
+                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                }
+            }
         }
 
         // (d) 플레이어 캐릭터 + 증강 이펙트 + 사망 파편

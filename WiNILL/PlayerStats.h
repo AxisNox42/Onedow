@@ -71,6 +71,7 @@ struct PlayerStats {
     // ── 희귀/전설 (티어드) ───────────────────────────────
     bool  drone        = false;
     int   droneCount   = 0;       // 1 = DRONE (RARE), 2 = DRONE_2 (LEGENDARY)
+    bool  laser        = false;   // 스캔 레이저 — 주기적 관통 빔 (군중제어)
     bool  bulletRain   = false;
     float bulletRainCooldown = 15.0f; // 15 → 10 (II) → 5 (III)
     int   chakramCount = 0;       // 1, 2, 3 — CHAKRAM / II / III
@@ -279,6 +280,9 @@ struct PlayerStats {
         case AugType::DRONE:
             drone      = true;
             droneCount = 1;
+            break;
+        case AugType::LASER:
+            laser = true;
             break;
         // ── 에픽 강화 ──
         case AugType::BULLET_RAIN_2:

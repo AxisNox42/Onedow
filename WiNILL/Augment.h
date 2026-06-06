@@ -16,6 +16,7 @@ enum class AugType {
     BULLET_RAIN_2, CHAKRAM_2,
     DRONE,                 // 희귀 → 에픽
     MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
+    LASER,                 // 스캔 레이저 (주기적 관통 빔 — 군중제어)
     PROB_CHAIN,            // 확률적 연쇄 작용 (30% 3튕김)
     DEATH_BLAST,           // 연쇄 폭발 (적 사망 시 폭발)
     SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 과부하)
@@ -185,6 +186,11 @@ static const AugDef ALL_AUGS[] = {
       { L"자동 조준 드론 1기 소환  /  연사·탄속 50%",
         L"Summon 1 auto-aim drone  /  50% fire rate·speed",
         L"自動照準ドローン1機  /  連射・弾速50%" } },
+    { AugType::LASER,         AugRarity::EPIC,      AugUnique::NONE, "LASER",
+      { L"스캔 레이저", L"Scan Laser", L"スキャンレーザー" },
+      { L"0.7초마다 조준 방향으로 관통 레이저 — 직선상 모든 적 타격 (군중 제어)",
+        L"Every 0.7s, a piercing laser along your aim — hits all enemies in a line (crowd control)",
+        L"0.7秒毎に照準方向へ貫通レーザー — 直線上の敵を一掃 (群衆制御)" } },
     { AugType::MINIGUN,       AugRarity::EPIC,      AugUnique::NONE, "MINIGUN",
       { L"미니건", L"Minigun", L"ミニガン" },
       { L"연사 ×2  /  공격력 -30%  /  20% 확률 관통", L"Fire rate ×2  /  Attack -30%  /  20% pierce", L"連射 ×2  /  攻撃力 -30%  /  20%貫通" } },
@@ -389,7 +395,7 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 67;  // +조합4
+static constexpr int AUG_TOTAL = 68;  // +조합4, +레이저
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {

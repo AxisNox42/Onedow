@@ -58,14 +58,14 @@ public:
     // ── 바운스 ──
     int   bounceCount = 0;
     static constexpr int   BOUNCE_MAX          = 4;  // 버프: 3 → 4회 바운스
-    static constexpr int   IMPACT_SUMMON_COUNT = 4;  // 버프: 바운스 소환 3 → 4
+    static constexpr int   IMPACT_SUMMON_COUNT = 3;  // 너프: 4 → 3 (보스전 과밀 완화)
 
     // ── 소환 ──
     float summonTimer = 0.0f;
     bool  summonPending = false;                     // 소환 직전 경고(텔레그래프) 중
     static constexpr float SUMMON_INTERVAL = 3.0f;   // 버프: 4 → 3초마다
     static constexpr float SUMMON_WARN     = 0.7f;   // 소환 0.7초 전부터 경고 링 표시
-    static constexpr int   SUMMON_COUNT    = 7;      // 버프: 5 → 7마리
+    static constexpr int   SUMMON_COUNT    = 5;      // 너프: 7 → 5 (보스전 과밀 완화)
     static constexpr float SUMMON_RING_R   = 70.0f;  // 소환 반경(경고/스폰 일치)
 
     int screenW, screenH;
