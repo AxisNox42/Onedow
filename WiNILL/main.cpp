@@ -682,6 +682,93 @@ static GLuint compileShader(GLenum type, const char* src) {
 }
 
 // ============================================================
+//  UI 씬(메뉴) 분리 — 컨텍스트 + 헬퍼 + 전방 선언 (Phase 1a)
+//  메뉴/창 상태 렌더·입력을 main 의 거대 if/else 체인에서 떼어냄.
+// ============================================================
+struct SceneCtx {
+    float  sw, sh;
+    double mx, my;
+    bool   lmb;
+    float  delta;
+    GLFWwindow* window;
+    float* fireTimer;               // WEAPON_SELECT 에서 갱신
+    std::function<void()> reset;    // ResetForNewGame
+};
+
+// deskWindow/appWindow 람다 → 자유함수 (sw/sh 명시 인자)
+static void SceneDeskWindow(float sw, float sh, const wchar_t* fname,
+                            float ar, float ag, float ab) {
+                BindMainShader();
+                const float TB = 30.0f;
+                drawRect(0, 0, sw, TB, ar*0.5f, ag*0.5f, ab*0.5f, 0.96f);   // 제목 표시줄
+                drawRect(0, TB, sw, 2.0f, ar, ag, ab, 0.9f);               // 강조 라인
+                // 외곽 테두리 (앱 창 느낌)
+                drawRect(0, 0, sw, 1.5f, ar, ag, ab, 0.5f);
+                drawRect(0, sh-1.5f, sw, 1.5f, ar, ag, ab, 0.5f);
+                drawRect(0, 0, 1.5f, sh, ar, ag, ab, 0.5f);
+                drawRect(sw-1.5f, 0, 1.5f, sh, ar, ag, ab, 0.5f);
+                // 창 컨트롤 (─ □ X)
+                float bs = 14.0f, byc = (TB-bs)*0.5f, bxc = sw - 24.0f;
+                drawRect(bxc - 2*(bs+8), byc, bs, bs, 1,1,1, 0.25f);
+                drawRect(bxc - (bs+8),   byc, bs, bs, 1,1,1, 0.25f);
+                drawRect(bxc, byc, bs, bs, 0.9f, 0.25f, 0.25f, 0.9f);       // X = 빨강
+                g_TextS.Draw(fname, 14.0f, 5.0f, 0.62f, 0.95f, 0.97f, 1.0f, 1.0f);
+}
+static void SceneAppWindow(float sw, float sh, float WW, float WH,
+                           const wchar_t* fname, float ar, float ag, float ab,
+                           float& outX, float& outY) {
+                float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
+                outX = wx; outY = wy;
+                // 열림 애니메이션 — 크기 0 → 지정 크기 (중앙 기준, smoothstep)
+                float op = g_AppOpen; if (op < 0.0f) op = 0.0f; if (op > 1.0f) op = 1.0f;
+                float e  = op * op * (3.0f - 2.0f * op);
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.40f * e);    // 데스크톱 딤(서서히)
+                if (e < 0.999f) {
+                    // 여는 중 — 0에서 커지는 빈 패널만 (콘텐츠는 호출부에서 생략)
+                    float dw = WW * e, dh = WH * e;
+                    float dx = sw*0.5f - dw*0.5f, dy = sh*0.5f - dh*0.5f;
+                    drawRect(dx+5, dy+6, dw, dh, 0.0f,0.0f,0.0f, 0.30f);     // 그림자
+                    drawRect(dx, dy, dw, dh, 0.07f, 0.08f, 0.11f, 0.99f);    // 본체
+                    drawRect(dx, dy, dw, 4.0f, ar, ag, ab, 1.0f);           // 강조 띠
+                    drawRect(dx, dy, dw, 1.5f, ar,ag,ab,0.5f);              // 테두리
+                    drawRect(dx, dy+dh-1.5f, dw, 1.5f, ar,ag,ab,0.5f);
+                    drawRect(dx, dy, 1.5f, dh, ar,ag,ab,0.5f);
+                    drawRect(dx+dw-1.5f, dy, 1.5f, dh, ar,ag,ab,0.5f);
+                    return;
+                }
+                drawRect(wx+7, wy+9, WW, WH, 0.0f, 0.0f, 0.0f, 0.35f);  // 그림자
+                drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, 0.99f);   // 창 본체
+                const float TB = 30.0f;
+                drawRect(wx, wy, WW, TB, ar*0.5f, ag*0.5f, ab*0.55f, 1.0f); // 제목줄
+                drawRect(wx, wy+TB, WW, 2.0f, ar, ag, ab, 0.9f);           // 강조 라인
+                float bs=13.0f, byc=wy+(TB-bs)*0.5f, bxc=wx+WW-22.0f;       // ─ □ X
+                drawRect(bxc-2*(bs+7), byc, bs,bs, 1,1,1,0.25f);
+                drawRect(bxc-(bs+7),   byc, bs,bs, 1,1,1,0.25f);
+                drawRect(bxc, byc, bs,bs, 0.9f,0.25f,0.25f,0.9f);
+                drawRect(wx, wy, WW, 1.5f, ar,ag,ab,0.5f);                 // 테두리
+                drawRect(wx, wy+WH-1.5f, WW, 1.5f, ar,ag,ab,0.5f);
+                drawRect(wx, wy, 1.5f, WH, ar,ag,ab,0.5f);
+                drawRect(wx+WW-1.5f, wy, 1.5f, WH, ar,ag,ab,0.5f);
+                g_TextS.Draw(fname, wx+12.0f, wy+5.0f, 0.6f, 0.95f,0.97f,1.0f,1.0f);
+                outX = wx; outY = wy;
+}
+
+// UI 씬 함수 전방 선언 (정의는 main 뒤)
+static void Scene_MainMenu(const SceneCtx& c);
+static void Scene_Shop(const SceneCtx& c);
+static void Scene_Codex(const SceneCtx& c);
+static void Scene_JobSelect(const SceneCtx& c);
+static void Scene_WeaponSelect(const SceneCtx& c);
+static void Scene_DifficultySelect(const SceneCtx& c);
+static void Scene_CreativeConfig(const SceneCtx& c);
+static void Scene_Settings(const SceneCtx& c);
+static void Scene_Ready(const SceneCtx& c);
+static void Scene_Paused(const SceneCtx& c);
+static void Scene_GameOver(const SceneCtx& c);
+static void Scene_AugSelect(const SceneCtx& c);
+static void Scene_OwnedAugPanel(const SceneCtx& c);
+// ============================================================
 int main() {
     srand((unsigned)time(NULL));
 
@@ -4847,74 +4934,6 @@ int main() {
             float sw = (float)screenWidth, sh = (float)screenHeight;
             auto  st = g_GameManager.currentState;
 
-            // 중앙 X 정렬 헬퍼
-            auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale) -> float {
-                return (sw - tr.Width(t, scale)) * 0.5f;
-            };
-
-            // 데스크톱 세계관 — 전체화면 메뉴를 "최대화된 앱 창"처럼 보이게.
-            //   상단 제목 표시줄(파일명 + ─ □ X) + 화면 테두리. 배경 칠 이후 호출.
-            auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-                BindMainShader();
-                const float TB = 30.0f;
-                drawRect(0, 0, sw, TB, ar*0.5f, ag*0.5f, ab*0.5f, 0.96f);   // 제목 표시줄
-                drawRect(0, TB, sw, 2.0f, ar, ag, ab, 0.9f);               // 강조 라인
-                // 외곽 테두리 (앱 창 느낌)
-                drawRect(0, 0, sw, 1.5f, ar, ag, ab, 0.5f);
-                drawRect(0, sh-1.5f, sw, 1.5f, ar, ag, ab, 0.5f);
-                drawRect(0, 0, 1.5f, sh, ar, ag, ab, 0.5f);
-                drawRect(sw-1.5f, 0, 1.5f, sh, ar, ag, ab, 0.5f);
-                // 창 컨트롤 (─ □ X)
-                float bs = 14.0f, byc = (TB-bs)*0.5f, bxc = sw - 24.0f;
-                drawRect(bxc - 2*(bs+8), byc, bs, bs, 1,1,1, 0.25f);
-                drawRect(bxc - (bs+8),   byc, bs, bs, 1,1,1, 0.25f);
-                drawRect(bxc, byc, bs, bs, 0.9f, 0.25f, 0.25f, 0.9f);       // X = 빨강
-                g_TextS.Draw(fname, 14.0f, 5.0f, 0.62f, 0.95f, 0.97f, 1.0f, 1.0f);
-            };
-
-            // 데스크톱 위에 "실제 앱 창"을 그린다 — 배경 딤 + 중앙 정렬 창 패널 +
-            //   제목 표시줄(파일명 + ─ □ X) + 테두리. 내부 좌상단(wx,wy)을 돌려줘
-            //   각 화면이 창 기준으로 콘텐츠를 배치한다. (TB=30 제목줄)
-            auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                                 float ar, float ag, float ab,
-                                 float& outX, float& outY) {
-                float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
-                outX = wx; outY = wy;
-                // 열림 애니메이션 — 크기 0 → 지정 크기 (중앙 기준, smoothstep)
-                float op = g_AppOpen; if (op < 0.0f) op = 0.0f; if (op > 1.0f) op = 1.0f;
-                float e  = op * op * (3.0f - 2.0f * op);
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.40f * e);    // 데스크톱 딤(서서히)
-                if (e < 0.999f) {
-                    // 여는 중 — 0에서 커지는 빈 패널만 (콘텐츠는 호출부에서 생략)
-                    float dw = WW * e, dh = WH * e;
-                    float dx = sw*0.5f - dw*0.5f, dy = sh*0.5f - dh*0.5f;
-                    drawRect(dx+5, dy+6, dw, dh, 0.0f,0.0f,0.0f, 0.30f);     // 그림자
-                    drawRect(dx, dy, dw, dh, 0.07f, 0.08f, 0.11f, 0.99f);    // 본체
-                    drawRect(dx, dy, dw, 4.0f, ar, ag, ab, 1.0f);           // 강조 띠
-                    drawRect(dx, dy, dw, 1.5f, ar,ag,ab,0.5f);              // 테두리
-                    drawRect(dx, dy+dh-1.5f, dw, 1.5f, ar,ag,ab,0.5f);
-                    drawRect(dx, dy, 1.5f, dh, ar,ag,ab,0.5f);
-                    drawRect(dx+dw-1.5f, dy, 1.5f, dh, ar,ag,ab,0.5f);
-                    return;
-                }
-                drawRect(wx+7, wy+9, WW, WH, 0.0f, 0.0f, 0.0f, 0.35f);  // 그림자
-                drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, 0.99f);   // 창 본체
-                const float TB = 30.0f;
-                drawRect(wx, wy, WW, TB, ar*0.5f, ag*0.5f, ab*0.55f, 1.0f); // 제목줄
-                drawRect(wx, wy+TB, WW, 2.0f, ar, ag, ab, 0.9f);           // 강조 라인
-                float bs=13.0f, byc=wy+(TB-bs)*0.5f, bxc=wx+WW-22.0f;       // ─ □ X
-                drawRect(bxc-2*(bs+7), byc, bs,bs, 1,1,1,0.25f);
-                drawRect(bxc-(bs+7),   byc, bs,bs, 1,1,1,0.25f);
-                drawRect(bxc, byc, bs,bs, 0.9f,0.25f,0.25f,0.9f);
-                drawRect(wx, wy, WW, 1.5f, ar,ag,ab,0.5f);                 // 테두리
-                drawRect(wx, wy+WH-1.5f, WW, 1.5f, ar,ag,ab,0.5f);
-                drawRect(wx, wy, 1.5f, WH, ar,ag,ab,0.5f);
-                drawRect(wx+WW-1.5f, wy, 1.5f, WH, ar,ag,ab,0.5f);
-                g_TextS.Draw(fname, wx+12.0f, wy+5.0f, 0.6f, 0.95f,0.97f,1.0f,1.0f);
-                outX = wx; outY = wy;
-            };
-            (void)appWindow;
 
             // 앱 창(shop/codex/config) 진입 시 열림 애니메이션 시작 — 매 프레임 진행
             {
@@ -5009,1207 +5028,30 @@ int main() {
                 }
             }
 
-            // ── 메인 메뉴 = 바탕화면(데스크톱) ────────────────────────
-            //    아이콘 = 실행 파일. onedow.exe 실행 → 부팅 스플래시 → 게임.
-            if (st == GameState::MAIN_MENU) {
-                int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
-                bool booting = (g_BootAnim > 0.0f);
-
-                // 배경을 칠하지 않음 → 투명 프레임버퍼라 "진짜 윈도우 바탕화면"이
-                //   그대로 비친다 (Wallpaper Engine 등 라이브 배경도 그대로 보임).
-                //   가독성을 위해 아주 옅은 상/하단 비네트만 깐다.
-                BindMainShader();
-                drawRect(0, 0, sw, 130.0f, 0.0f, 0.0f, 0.0f, 0.18f);
-                drawRect(0, sh - 150.0f, sw, 150.0f, 0.0f, 0.0f, 0.0f, 0.22f);
-
-                // ── 앰비언트 — 은은한 빛 입자 + 스캔라인 (진짜 바탕화면 위) ──
-                {
-                    float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
-                    BindMainShader();
-                    struct AP { float x, y, vx, vy, sz, tw; };
-                    static AP a_ps[55]; static bool ap_init = false;
-                    if (!ap_init) { ap_init = true;
-                        for (int i = 0; i < 55; i++) {
-                            a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
-                            float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
-                            a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
-                            a_ps[i].sz = 1.2f + (rand()%26)*0.1f; a_ps[i].tw = (rand()%628)*0.01f;
-                        }
-                    }
-                    for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
-                        p.x += p.vx*dtp; p.y += p.vy*dtp;
-                        if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
-                        if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
-                        p.tw += dtp*1.6f;
-                        float a = 0.10f + 0.10f*sinf(p.tw);
-                        drawCircle(p.x, p.y, p.sz, 0.55f, 0.78f, 1.0f, a);
-                    }
-                    // 스캔라인 (시네마틱) — 옅은 가로줄
-                    for (float yy = 0.0f; yy < sh; yy += 4.0f)
-                        drawRect(0.0f, yy, sw, 1.0f, 0.40f, 0.70f, 1.0f, 0.025f);
+            // ── [7b] UI 씬 디스패치 — 메뉴/창 상태는 Scene_* 함수로 분리 ──
+            //    RUNNING/DYING(순수 인게임)엔 씬이 없으니 컨텍스트 구성 자체를 건너뜀.
+            if (st != GameState::RUNNING && st != GameState::DYING) {
+                std::function<void()> resetFn = ResetForNewGame;
+                SceneCtx ctx{ sw, sh, mx, my, lmb, delta, window, &fireTimer, resetFn };
+                switch (st) {
+                case GameState::MAIN_MENU:         Scene_MainMenu(ctx);         break;
+                case GameState::SHOP:              Scene_Shop(ctx);             break;
+                case GameState::CODEX:             Scene_Codex(ctx);            break;
+                case GameState::JOB_SELECT:        Scene_JobSelect(ctx);        break;
+                case GameState::WEAPON_SELECT:     Scene_WeaponSelect(ctx);     break;
+                case GameState::DIFFICULTY_SELECT: Scene_DifficultySelect(ctx); break;
+                case GameState::CREATIVE_CONFIG:   Scene_CreativeConfig(ctx);   break;
+                case GameState::SETTINGS:          Scene_Settings(ctx);         break;
+                case GameState::READY:             Scene_Ready(ctx);            break;
+                case GameState::PAUSED:            Scene_Paused(ctx);           break;
+                case GameState::GAMEOVER:          Scene_GameOver(ctx);         break;
+                case GameState::AUG_SELECT:
+                case GameState::DEBUFF_SELECT:     Scene_AugSelect(ctx);        break;
+                default: break;
                 }
-
-                // ── 중앙 로고 + 부제 ──
-                const wchar_t* TITLE = T(StrId::GAME_TITLE);
-                float logoY = sh * 0.28f;
-                // 로고는 고해상도 전용 렌더러(g_TextXL, 100px)로 — 기존 g_TextL 3배
-                //   확대 시 비트맵이 뭉개지던 화질 문제 fix.
-                g_TextXL.Draw(TITLE, cx(TITLE, g_TextXL, 1.05f), logoY, 1.05f,
-                              0.6f, 0.85f, 1.0f, 0.96f);
-                {
-                    const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
-                    float subw = g_TextS.Width(SUBT[li2], 1.05f);
-                    g_TextS.Draw(SUBT[li2], (sw - subw) * 0.5f, logoY + 92.0f, 1.05f,
-                                 0.5f, 0.68f, 0.9f, 0.8f);
-                }
-
-                // ── PLAY 버튼 (맥동 글로우) → onedow.exe 부팅 → 난이도 선택 ──
-                {
-                    float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 2.5f);
-                    const float PW = 320.0f, PH = 76.0f;
-                    float px = (sw - PW) * 0.5f, py = sh * 0.49f;
-                    BindMainShader();
-                    drawRect(px - 7, py - 7, PW + 14, PH + 14,
-                             0.30f, 0.70f, 1.0f, 0.08f + 0.10f * pulse);   // 글로우
-                    const wchar_t* PLAYL[3] = { L"실행", L"PLAY", L"実行" };
-                    if (UIButton(px, py, PW, PH, PLAYL[li2], mx, my, lmb, g_LmbPrev) && !booting) {
-                        LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
-                    }
-                }
-
-                // ── 보조 버튼 행: 상점 · 도감 · 설정 · 종료 ──
-                {
-                    const float bw2 = 158.0f, bh2 = 48.0f, gap2 = 14.0f;
-                    float totalW = bw2 * 4 + gap2 * 3;
-                    float bx2 = (sw - totalW) * 0.5f, by2 = sh * 0.49f + 100.0f;
-                    const wchar_t* SHOPL[3] = { L"상점", L"Shop",  L"ショップ" };
-                    const wchar_t* CODL [3] = { L"도감", L"Codex", L"図鑑" };
-                    const wchar_t* CFGL [3] = { L"설정", L"Config", L"設定" };
-                    // 서브창(상점/도감/설정)은 부팅 로딩 없이 즉시 — 창 열림 애니메이션만
-                    if (UIButton(bx2 + 0*(bw2+gap2), by2, bw2, bh2, SHOPL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        g_GameManager.currentState = GameState::SHOP;
-                    if (UIButton(bx2 + 1*(bw2+gap2), by2, bw2, bh2, CODL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        g_GameManager.currentState = GameState::CODEX;
-                    if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
-                        g_SettingsReturnTo = GameState::MAIN_MENU;
-                        g_GameManager.currentState = GameState::SETTINGS;
-                    }
-                    if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
-                        glfwSetWindowShouldClose(window, GLFW_TRUE);
-                }
-
-                // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
-                if (g_BootAnim > 0.0f) {
-                    g_BootAnim -= delta;
-                    float prog = 1.0f - g_BootAnim / BOOT_DUR;        // 0→1
-                    if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
-                    float ease = prog < 0.25f ? (prog / 0.25f) : 1.0f; // 창 열림 0~25%
-                    float ar = g_BootAr, ag = g_BootAg, ab = g_BootAb;
-                    float WW = 520.0f, WH = 300.0f;
-                    float cw = WW * ease;              // 크기 0 → 지정 크기
-                    float chh= WH * ease;
-                    float wx = sw * 0.5f - cw * 0.5f;
-                    float wy = sh * 0.5f - chh * 0.5f;
-                    BindMainShader();
-                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease);  // 배경 딤
-                    // 시네마틱 — 아래로 훑는 스캔 스윕 라인 (화이트 플래시는 눈 아파서 제거)
-                    {
-                        float sweepY = fmodf(prog * 1.3f, 1.0f) * sh;
-                        drawRect(0, sweepY, sw, 2.0f, ar, ag, ab, 0.30f * ease);
-                        drawRect(0, sweepY - 40.0f, sw, 40.0f, ar, ag, ab, 0.05f * ease);
-                    }
-                    drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
-                    drawRect(wx, wy, cw, 28.0f, ar*0.55f, ag*0.55f, ab*0.6f, 1.0f); // 타이틀바
-                    drawRect(wx, wy+28.0f, cw, 2.0f, ar, ag, ab, 0.9f);      // 강조 라인
-                    drawRect(wx+cw-22, wy+8, 12, 12, 0.9f, 0.25f, 0.25f, 0.95f); // [X]
-                    if (ease > 0.9f) {
-                        g_TextS.Draw(g_BootName, wx + 12.0f, wy + 6.0f, 0.6f,
-                                     0.95f, 0.97f, 1.0f, 1.0f);
-                        // 부팅 로그 — 진행도에 따라 한 줄씩 나타남
-                        static const wchar_t* LOG[6] = {
-                            L"> mounting modules ...",
-                            L"> loading assets        [ OK ]",
-                            L"> init renderer         [ OK ]",
-                            L"> linking onedow.dll    [ OK ]",
-                            L"> verify save data      [ OK ]",
-                            L"> ready." };
-                        int shown = (int)(prog * 6.5f); if (shown > 6) shown = 6;
-                        for (int i = 0; i < shown; i++) {
-                            bool last = (i == 5);
-                            g_TextS.Draw(LOG[i], wx + 22.0f, wy + 44.0f + i * 24.0f, 0.6f,
-                                         last ? ag : 0.65f, last ? 1.0f : 0.78f,
-                                         last ? ag : 0.7f, 0.95f);
-                        }
-                        // 진행 바 (창 하단)
-                        float barW = cw - 44.0f, barX = wx + 22.0f, barY = wy + chh - 30.0f;
-                        BindMainShader();
-                        drawRect(barX, barY, barW, 14.0f, 0.12f, 0.14f, 0.20f, 1.0f);
-                        drawRect(barX, barY, barW * prog, 14.0f, ar, ag, ab, 1.0f);
-                        wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(prog * 100.0f));
-                        g_TextS.Draw(pct, barX + barW - 44.0f, barY - 22.0f, 0.6f,
-                                     0.8f, 0.9f, 1.0f, 1.0f);
-                    }
-                    if (g_BootAnim <= 0.0f) {
-                        g_BootAnim = 0.0f;
-                        g_GameManager.currentState = g_BootTarget;
-                    }
-                }
-            }
-            // ── 메타 상점 = shop.exe 앱 창 ─────────────────────────────
-            else if (st == GameState::SHOP) {
-                const float WW = 720.0f, WH = 700.0f;
-                float wx, wy;
-                appWindow(WW, WH, L"shop.exe", 1.0f, 0.80f, 0.20f, wx, wy);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-
-                const wchar_t* TIT = T(StrId::BTN_SHOP);
-                float tw0 = g_TextL.Width(TIT, 1.3f);
-                g_TextL.Draw(TIT, wx + (WW-tw0)*0.5f, wy + 44.0f, 1.3f, 1,1,1,1);
-                wchar_t cbuf[48]; swprintf_s(cbuf, L"COIN  %lld", g_Coins);
-                float cw0 = g_TextL.Width(cbuf, 1.0f);
-                g_TextL.Draw(cbuf, wx + (WW-cw0)*0.5f, wy + 86.0f, 1.0f, 1.0f, 0.9f, 0.3f, 1.0f);
-
-                const float RW = 640.0f, RH = 56.0f, RG = 10.0f;
-                float rx = wx + (WW - RW) * 0.5f, ry0 = wy + 128.0f;
-                for (int i = 0; i < META_COUNT; i++) {
-                    float ry = ry0 + i * (RH + RG);
-                    BindMainShader();
-                    drawRect(rx, ry, RW, RH, 0.07f, 0.07f, 0.11f, 0.9f);
-                    wchar_t nm[96];
-                    swprintf_s(nm, L"%ls   Lv %d/%d", MetaName(i), g_MetaLv[i], META_DEFS[i].maxLv);
-                    g_TextS.Draw(nm, rx + 16.0f, ry + 16.0f, 0.95f, 0.9f, 0.95f, 1.0f, 1.0f);
-                    long long cost = MetaNextCost(i);
-                    float btX = rx + RW - 170.0f;
-                    if (cost < 0) {
-                        g_TextS.Draw(L"MAX", btX + 50.0f, ry + 16.0f, 0.9f, 0.6f, 1.0f, 0.6f, 1.0f);
-                    } else {
-                        wchar_t bb[32]; swprintf_s(bb, L"%lld", cost);
-                        bool can = (g_Coins >= cost);
-                        if (can) {
-                            if (UIButton(btX, ry + 6.0f, 154.0f, RH - 12.0f, bb,
-                                         mx, my, lmb, g_LmbPrev, false)) {
-                                g_Coins -= cost;
-                                g_MetaLv[i]++;
-                                SaveGame();
-                            }
-                        } else {
-                            BindMainShader();
-                            drawRect(btX, ry + 6.0f, 154.0f, RH - 12.0f, 0.18f, 0.06f, 0.06f, 0.9f);
-                            float tw = g_TextS.Width(bb, 0.9f);
-                            g_TextS.Draw(bb, btX + (154.0f - tw) * 0.5f, ry + 18.0f, 0.9f,
-                                         0.95f, 0.4f, 0.4f, 1.0f);
-                        }
-                    }
-                }
-
-                // ── 업적 목록 (메타 행 아래, 3열) ──
-                {
-                    int li3 = (int)g_Language; if (li3 < 0 || li3 >= LANG_COUNT) li3 = 0;
-                    const wchar_t* ATIT[3] = { L"업적", L"Achievements", L"実績" };
-                    float ay0 = ry0 + META_COUNT * (RH + RG) + 18.0f;
-                    BindMainShader();
-                    g_TextS.Draw(ATIT[li3], rx, ay0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
-                    float colW = RW / 3.0f;
-                    float rowH = 28.0f;
-                    for (int i = 0; i < ACH_COUNT; i++) {
-                        bool got = g_AchUnlocked[i];
-                        int  col = i / 4, row = i % 4;
-                        float ax = rx + col * colW;
-                        float ay = ay0 + 32.0f + row * rowH;
-                        wchar_t ab[96];
-                        swprintf_s(ab, L"%ls %ls", got ? L"★" : L"☆", AchName(i));
-                        if (got) g_TextS.Draw(ab, ax, ay, 0.72f, 0.5f, 0.95f, 0.55f, 1.0f);
-                        else     g_TextS.Draw(ab, ax, ay, 0.72f, 0.55f, 0.55f, 0.6f, 0.9f);
-                    }
-                }
-
-                if (UIButton(wx + 40.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                }   // close: g_AppOpen open guard
-            }
-            // ── 도감 (적 / 증강) ──────────────────────────────────
-            else if (st == GameState::CODEX) {
-                // codex.db = 검색 가능한 위키 스타일 앱 창
-                const float WW = 1240.0f, WH = 800.0f;
-                float wx, wy;
-                appWindow(WW, WH, L"codex.db", 0.40f, 0.90f, 0.50f, wx, wy);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-
-                // 백스페이스 (검색어 편집)
-                {
-                    static bool s_bsPrev = false;
-                    bool bs = (glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS);
-                    if (bs && !s_bsPrev && g_CodexSearchLen > 0)
-                        g_CodexSearch[--g_CodexSearchLen] = 0;
-                    s_bsPrev = bs;
-                }
-
-                // 검색창 (위키 느낌) — 항상 입력 활성
-                float searchX = wx + 40.0f, searchY = wy + 46.0f, searchW = 460.0f, searchH = 40.0f;
-                BindMainShader();
-                drawRect(searchX, searchY, searchW, searchH, 0.12f, 0.14f, 0.18f, 1.0f);
-                drawRect(searchX, searchY, searchW, 2.0f, 0.4f, 0.9f, 0.5f, 0.9f);
-                if (g_CodexSearchLen > 0) {
-                    g_TextS.Draw(g_CodexSearch, searchX + 14.0f, searchY + 10.0f, 0.85f,
-                                 1.0f, 1.0f, 1.0f, 1.0f);
-                } else {
-                    const wchar_t* PH[3] = { L"검색…", L"Search…", L"検索…" };
-                    g_TextS.Draw(PH[li], searchX + 14.0f, searchY + 10.0f, 0.85f,
-                                 0.5f, 0.55f, 0.6f, 0.9f);
-                }
-                // 깜빡이는 캐럿
-                if (((int)(glfwGetTime() * 2.0) & 1) == 0) {
-                    float cwid = g_CodexSearchLen ? g_TextS.Width(g_CodexSearch, 0.85f) : 0.0f;
-                    BindMainShader();
-                    drawRect(searchX + 14.0f + cwid + 2.0f, searchY + 8.0f, 2.0f, 24.0f,
-                             0.9f, 0.95f, 1.0f, 0.9f);
-                }
-
-                static int s_tab = 0;   // 0 적 / 1 증강
-                const wchar_t* TAB_MOB[3] = { L"적", L"Enemies", L"敵" };
-                const wchar_t* TAB_AUG[3] = { L"증강", L"Augments", L"強化" };
-                if (UIButton(wx + 530.0f, searchY, 150.0f, searchH, TAB_MOB[li],
-                             mx, my, lmb, g_LmbPrev, s_tab == 0)) s_tab = 0;
-                if (UIButton(wx + 690.0f, searchY, 150.0f, searchH, TAB_AUG[li],
-                             mx, my, lmb, g_LmbPrev, s_tab == 1)) s_tab = 1;
-
-                float gTop = wy + 110.0f;          // 그리드 상단
-                float detailY = wy + WH - 150.0f;  // 상세(article) 영역
-                int hoverItem = -1;                // 실제 데이터 인덱스
-
-                if (s_tab == 0) {
-                    // 적 — 검색 필터링 후 재배치
-                    const int COLS = 6; const float CELL = 150.0f;
-                    int vis[CM_COUNT], nv = 0;
-                    for (int i = 0; i < CM_COUNT; i++)
-                        if (g_CodexSearchLen == 0 || (g_MobSeen[i] && CodexMatch(MobName(i))))
-                            vis[nv++] = i;
-                    float gx = wx + (WW - COLS*CELL) * 0.5f;
-                    for (int k = 0; k < nv; k++) {
-                        int i = vis[k];
-                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
-                        float cw = CELL - 14.0f;
-                        bool seen = g_MobSeen[i];
-                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        if (hv) hoverItem = i;
-                        BindMainShader();
-                        drawRect(cxp, cyp, cw, cw, hv?0.13f:0.06f, 0.10f, 0.15f, 0.95f);
-                        float ccx = cxp + cw*0.5f, ccy = cyp + cw*0.42f;
-                        if (seen) {
-                            if (i <= CM_SHIELDED) {
-                                Monster pm(ccx, ccy);
-                                if (i > 0) pm.MakeKind((MobKind)i);
-                                pm.worldX = ccx; pm.worldY = ccy;
-                                if (i == 0) pm.color = glm::vec3(0.75f,0.75f,0.8f);
-                                pm.sizeScale = (i == (int)MobKind::BRUTE) ? 1.3f : 1.7f;
-                                drawMob(&pm);
-                            } else if (i == CM_RANGED) {
-                                drawDiamond(ccx, ccy, 28.0f, 0.85f, 0.0f, 0.85f, 1.0f);
-                                drawDiamond(ccx, ccy, 11.0f, 1,1,1, 0.9f);
-                            } else {
-                                drawPentagon(ccx, ccy, 32.0f, 1.0f, 0.5f, 0.1f, 1.0f);
-                            }
-                            BindMainShader();
-                            const wchar_t* nm = MobName(i);
-                            float nw = g_TextS.Width(nm, 0.8f);
-                            g_TextS.Draw(nm, cxp + (cw - nw)*0.5f, cyp + cw - 34.0f, 0.8f,
-                                         0.9f, 0.95f, 1.0f, 0.95f);
-                        } else {
-                            float qw = g_TextL.Width(L"?", 1.3f);
-                            g_TextL.Draw(L"?", ccx - qw*0.5f, ccy - 22.0f, 1.3f,
-                                         0.4f, 0.4f, 0.45f, 0.9f);
-                        }
-                    }
-                    if (hoverItem >= 0 && g_MobSeen[hoverItem]) {
-                        const wchar_t* nm = MobName(hoverItem);
-                        const wchar_t* d  = MobDesc(hoverItem);
-                        g_TextL.Draw(nm, wx + 40.0f, detailY, 1.0f, 0.6f, 0.95f, 0.7f, 1.0f);
-                        g_TextS.Draw(d,  wx + 40.0f, detailY + 40.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
-                    }
-                } else {
-                    // 증강 — 검색 필터링 후 재배치
-                    const int COLS = 12; const float CELL = 84.0f;
-                    int vis[AUG_TOTAL], nv = 0;
-                    for (int i = 0; i < AUG_TOTAL; i++)
-                        if (g_CodexSearchLen == 0 || (g_AugSeen[i] && CodexMatch(AugName(ALL_AUGS[i]))))
-                            vis[nv++] = i;
-                    float gx = wx + (WW - COLS*CELL) * 0.5f;
-                    for (int k = 0; k < nv; k++) {
-                        int i = vis[k];
-                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
-                        float cw = CELL - 8.0f;
-                        bool seen = g_AugSeen[i];
-                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        if (hv) hoverItem = i;
-                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
-                        BindMainShader();
-                        if (seen) drawRect(cxp, cyp, cw, cw, rr*0.35f, rg*0.35f, rb*0.35f, 0.95f);
-                        else      drawRect(cxp, cyp, cw, cw, 0.06f, 0.06f, 0.08f, 0.95f);
-                        if (seen) {
-                            GLuint ic = IconFor(ALL_AUGS[i].type);
-                            float isz = 48.0f;
-                            if (ic) DrawIcon(ic, cxp + (cw-isz)*0.5f, cyp + (cw-isz)*0.5f,
-                                             isz, isz, 1,1,1, 0.97f);
-                            else {
-                                BindMainShader();
-                                drawRect(cxp + cw*0.3f, cyp + cw*0.3f, cw*0.4f, cw*0.4f, rr, rg, rb, 0.9f);
-                            }
-                        } else {
-                            float qw = g_TextL.Width(L"?", 1.0f);
-                            g_TextL.Draw(L"?", cxp + (cw - qw)*0.5f, cyp + cw*0.5f - 18.0f, 1.0f,
-                                         0.4f, 0.4f, 0.45f, 0.9f);
-                        }
-                    }
-                    // 상세(article)
-                    BindMainShader();
-                    if (hoverItem >= 0 && g_AugSeen[hoverItem]) {
-                        const AugDef& d = ALL_AUGS[hoverItem];
-                        float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
-                        wchar_t hd[96];
-                        swprintf_s(hd, L"[%ls] %ls", GetRarityKR(d.rarity), AugName(d));
-                        g_TextL.Draw(hd, wx + 40.0f, detailY, 0.95f,
-                                     std::min(1.0f, rr*1.4f+0.3f), std::min(1.0f, rg*1.4f+0.3f),
-                                     std::min(1.0f, rb*1.4f+0.3f), 1.0f);
-                        const wchar_t* ds = AugDesc(d);
-                        g_TextS.Draw(ds, wx + 40.0f, detailY + 40.0f, 0.85f,
-                                     0.85f, 0.92f, 1.0f, 0.95f);
-                        if (d.rarity == AugRarity::COMBO) {
-                            for (int c = 0; c < COMBO_COUNT; c++)
-                                if (COMBO_DEFS[c].result == d.type) {
-                                    int ia = AugIndexOfType(COMBO_DEFS[c].reqs[0]);
-                                    int ib = AugIndexOfType(COMBO_DEFS[c].reqs[1]);
-                                    wchar_t rc[128];
-                                    swprintf_s(rc, L"%ls + %ls",
-                                               ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
-                                               ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
-                                    g_TextS.Draw(rc, wx + 40.0f, detailY + 72.0f, 0.85f,
-                                                 0.1f, 0.85f, 0.8f, 0.95f);
-                                    break;
-                                }
-                        }
-                    } else if (hoverItem >= 0) {
-                        const wchar_t* q[3] = { L"??? — 미발견 (획득 시 공개)",
-                                                L"??? — Undiscovered (unlock by acquiring)",
-                                                L"??? — 未発見 (取得で公開)" };
-                        g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
-                    }
-                }
-
-                if (UIButton(wx + WW - 220.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    CodexSearchClear();
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                }   // close: g_AppOpen open guard
-            }
-            // ── 직업(클래스) 선택 ─────────────────────────────────
-            else if (st == GameState::JOB_SELECT) {
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
-                deskWindow(L"career.exe", 0.55f, 0.7f, 1.0f);
-
-                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-                const wchar_t* JTIT[3] = { L"직업 선택", L"Choose a Class", L"職業を選択" };
-                const wchar_t* JHINT[3] = {
-                    L"업적을 달성하면 새 직업이 해금됩니다",
-                    L"Complete achievements to unlock more classes",
-                    L"実績達成で新しい職業が解放されます" };
-                const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
-                const wchar_t* TIT = JTIT[li];
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.3f), sh*0.045f, 1.3f, 1,1,1,1);
-                const wchar_t* HN = JHINT[li];
-                g_TextS.Draw(HN, cx(HN, g_TextS, 0.85f), sh*0.115f, 0.85f, 0.7f,0.8f,0.9f,0.9f);
-
-                const float BW = 660.0f, BH = 70.0f, BG = 13.0f;
-                float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.185f;
-                for (int j = 0; j < JOB_COUNT; j++) {
-                    float y = by + j * (BH + BG);
-                    bool unlocked = JobUnlocked(j);
-                    bool sel = (g_SelectedJob == j);
-                    bool clicked = false;
-                    if (unlocked) {
-                        // 박스만 (라벨은 직접 — 이름 상단 / 설명 하단 분리)
-                        clicked = UIButton(bx, y, BW, BH, L"", mx, my, lmb, g_LmbPrev, sel);
-                    } else {
-                        BindMainShader();
-                        drawRect(bx, y, BW, BH, 0.08f, 0.06f, 0.06f, 0.9f);
-                        drawRect(bx, y, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
-                        drawRect(bx, y+BH-2, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
-                    }
-                    // 아이콘 (좌측)
-                    GLuint ji = JobIcon(j);
-                    if (ji) {
-                        float isz = BH - 20.0f;
-                        DrawIcon(ji, bx + 14.0f, y + (BH - isz)*0.5f, isz, isz,
-                                 unlocked?1.0f:0.45f, unlocked?1.0f:0.45f, unlocked?1.0f:0.5f, 0.95f);
-                    }
-                    BindMainShader();
-                    // 이름 (상단, 너비 맞춤)
-                    float nsc = 0.78f;
-                    while (nsc > 0.5f && g_TextL.Width(JobName(j), nsc) > BW - 130.0f) nsc -= 0.05f;
-                    float nw = g_TextL.Width(JobName(j), nsc);
-                    g_TextL.Draw(JobName(j), bx + (BW - nw)*0.5f, y + 7.0f, nsc,
-                                 unlocked?1.0f:0.55f, unlocked?1.0f:0.55f, unlocked?1.0f:0.6f, 0.98f);
-                    // 설명 / 잠금조건 (하단, 너비 맞춤)
-                    wchar_t line[200];
-                    float lr=0.85f, lg=0.95f, lb=1.0f;
-                    if (unlocked) {
-                        swprintf_s(line, L"%ls", JobDesc(j));
-                    } else {
-                        int a = JOB_DEFS[j].unlockAch;
-                        swprintf_s(line, L"%ls%ls", LOCKED[li],
-                                   (a>=0 && a<ACH_COUNT) ? AchName(a) : L"???");
-                        lr=0.9f; lg=0.45f; lb=0.45f;
-                    }
-                    float dsc = 0.72f;
-                    while (dsc > 0.45f && g_TextS.Width(line, dsc) > BW - 120.0f) dsc -= 0.04f;
-                    float dw = g_TextS.Width(line, dsc);
-                    g_TextS.Draw(line, bx + (BW - dw)*0.5f, y + BH - 25.0f, dsc, lr, lg, lb, 0.92f);
-
-                    if (clicked) {
-                        g_SelectedJob = j;
-                        ResetForNewGame();
-                        PickRandomWeapons(g_WeaponChoices);
-                        g_GameManager.currentState = GameState::WEAPON_SELECT;
-                    }
-                }
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
-                }
-            }
-            // ── 무기 선택 (시작 시 랜덤 3개) ──────────────────────
-            else if (st == GameState::WEAPON_SELECT) {
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                deskWindow(L"loadout.exe", 0.4f, 0.85f, 1.0f);
-
-                const wchar_t* TIT = L"시작 무기를 선택하세요";
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.4f), sh*0.14f, 1.4f,
-                             1, 1, 1, 0.98f);
-
-                // 3 카드 — 가로 배치 (DIFFICULTY 와 비슷)
-                const float CARD_W = 320.0f, CARD_H = 260.0f, GAP = 32.0f;
-                const float TOTAL_W = 3*CARD_W + 2*GAP;
-                float baseX = (sw - TOTAL_W) * 0.5f;
-                float baseY = sh * 0.30f;
-
-                for (int i = 0; i < 3; i++) {
-                    int idx = g_WeaponChoices[i];
-                    if (idx < 0 || idx >= (int)StartWeapon::_COUNT) continue;
-                    const WeaponDef& w = ALL_WEAPONS[idx];
-                    float cardX = baseX + i * (CARD_W + GAP);
-
-                    // 카드 = 큰 버튼
-                    if (UIButton(cardX, baseY, CARD_W, CARD_H, WeaponName(w),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        // #109: 변환 카드 undo 기준점 저장 (무기 적용 전 fireInterval)
-                        g_Stats.baseFireInterval = g_Stats.fireInterval;
-                        ApplyWeapon(g_Stats, (StartWeapon)idx);
-                        g_CurrentWeapon = idx;  // 현재 무기 기록 (변환 카드용)
-                        // 발사 타이머 / HUD HP 갱신
-                        fireTimer = g_Stats.fireInterval;
-                        // 직업 시작 증강 적용 (무기 적용 직후 — 보유 목록에 추가)
-                        if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
-                            const JobDef& jd = JOB_DEFS[g_SelectedJob];
-                            for (int a = 0; a < jd.startAugCount; a++) {
-                                int ji = AugIndexOf(jd.startAugs[a]);
-                                if (ji < 0) continue;
-                                g_Stats.Apply(jd.startAugs[a]);
-                                g_OwnedAugs.push_back(ji);
-                                EquipSkill(SkillForAug(jd.startAugs[a]));
-                            }
-                            // 직업 무기 모드 (검객/궁수 — 선택한 총 효과 위에 덮어씀)
-                            if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
-                                g_Stats.meleeWeapon  = true;
-                                g_Stats.fireInterval = 0.26f;   // 스윙 주기 (고정)
-                                g_Stats.baseFireInterval = g_Stats.fireInterval;
-                                g_RunMelee = true;              // 검객 전용 증강 게이팅
-                            } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
-                                g_Stats.bowWeapon    = true;    // 누른 만큼 강해짐 (관통=대포식)
-                                g_Stats.bulletSpeed *= 1.4f;
-                                g_RunBow = true;                // 궁수 전용 증강 게이팅
-                            }
-                            fireTimer = g_Stats.fireInterval;
-                        }
-                        g_GameManager.maxHP    = g_Stats.maxHP;
-                        g_GameManager.playerHP = g_Stats.maxHP;
-                        g_PrevHP               = g_Stats.maxHP;
-                        // 시작 증강 픽 (메타 해금 + 크리에이티브) 있으면 증강 선택 열기
-                        int startAugs = g_MetaStartAugs +
-                                        ((g_CreativeMode) ? g_CreativeStartAugs : 0);
-                        if (startAugs > 0) {
-                            g_BossRewardPicksLeft = startAugs;
-                            // 크리에이티브: 시작 증강에도 디버프 포함 (샌드박스)
-                            g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                         g_Stats.distAugTaken, g_CreativeMode);
-                            g_GameManager.currentState = GameState::AUG_SELECT;
-                        } else {
-                            g_GameManager.currentState = GameState::READY;
-                        }
-                    }
-
-                    // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
-                    BindMainShader();
-                    float dY = baseY + CARD_H * 0.55f;
-                    const wchar_t* d = WeaponDesc(w);
-                    // '/' 로 split → 줄 단위
-                    std::vector<std::wstring> lines;
-                    std::wstring cur;
-                    for (const wchar_t* p = d; *p; ++p) {
-                        if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
-                        else cur += *p;
-                    }
-                    if (!cur.empty()) lines.push_back(cur);
-                    for (auto& s : lines) {
-                        while (!s.empty() && s.front() == L' ') s.erase(0, 1);
-                        while (!s.empty() && s.back() == L' ') s.pop_back();
-                    }
-                    float lineH = 26.0f;
-                    for (int li = 0; li < (int)lines.size(); li++) {
-                        const wchar_t* s = lines[li].c_str();
-                        float sc = 0.85f;
-                        while (sc > 0.55f &&
-                               g_TextS.Width(s, sc) > CARD_W - 24.0f) sc -= 0.05f;
-                        float lw = g_TextS.Width(s, sc);
-                        g_TextS.Draw(s, cardX + (CARD_W - lw) * 0.5f,
-                                     dY + li * lineH, sc, 0.88f, 0.95f, 1.0f, 0.95f);
-                    }
-                }
-            }
-            // ── 난이도 선택 ───────────────────────────────────────
-            else if (st == GameState::DIFFICULTY_SELECT) {
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                deskWindow(L"newgame.exe", 0.30f, 0.8f, 1.0f);
-
-                const wchar_t* TIT = T(StrId::DIFF_TITLE);
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.20f, 1.6f,
-                             1.0f, 1.0f, 1.0f, 1.0f);
-
-                struct DiffBtn { Difficulty d; StrId label; StrId desc; float r, g, b; };
-                DiffBtn btns[3] = {
-                    { Difficulty::EASY,   StrId::DIFF_EASY,   StrId::DIFF_EASY_DESC,
-                      0.3f, 0.85f, 0.4f },
-                    { Difficulty::NORMAL, StrId::DIFF_NORMAL, StrId::DIFF_NORMAL_DESC,
-                      0.4f, 0.6f, 1.0f },
-                    { Difficulty::HARD,   StrId::DIFF_HARD,   StrId::DIFF_HARD_DESC,
-                      1.0f, 0.4f, 0.4f },
-                };
-
-                const float BW = 520.0f, BH = 90.0f, BG = 30.0f;
-                float totalH = 3 * BH + 2 * BG;
-                float bx = (sw - BW) * 0.5f;
-                float by = (sh - totalH) * 0.5f;
-
-                for (int i = 0; i < 3; i++) {
-                    float y = by + i * (BH + BG);
-                    bool sel = (g_Difficulty == btns[i].d);
-                    if (UIButton(bx, y, BW, BH, T(btns[i].label),
-                                 mx, my, lmb, g_LmbPrev, sel)) {
-                        g_Difficulty = btns[i].d;
-                        if (g_CreativeMode) {
-                            // 크리에이티브: 설정 화면으로 (시작/보스/증강 조정)
-                            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
-                        } else {
-                            // 직업 선택 화면으로 (해금된 직업 선택 후 무기 선택)
-                            g_GameManager.currentState = GameState::JOB_SELECT;
-                        }
-                    }
-                    // 버튼 아래 설명
-                    const wchar_t* desc = T(btns[i].desc);
-                    float dw = g_TextS.Width(desc, 0.85f);
-                    g_TextS.Draw(desc, bx + (BW - dw) * 0.5f, y + BH - 28.0f, 0.85f,
-                                 btns[i].r, btns[i].g, btns[i].b, 0.85f);
-                }
-
-                // 크리에이티브 모드 토글 버튼
-                {
-                    const wchar_t* CLBL = g_CreativeMode
-                        ? T(StrId::CREATIVE_ON)
-                        : T(StrId::CREATIVE_OFF);
-                    float cby = by + 3 * (BH + BG) + 20.0f;
-                    float cbw = BW, cbh = 72.0f;     // 세로 키움 (라벨/설명 겹침 방지)
-                    float cbx = (sw - cbw) * 0.5f;
-                    if (UIButton(cbx, cby, cbw, cbh, CLBL,
-                                 mx, my, lmb, g_LmbPrev, g_CreativeMode)) {
-                        g_CreativeMode = !g_CreativeMode;
-                    }
-                    // 설명 — 버튼 아래쪽에 (버튼 안과 겹치지 않게)
-                    const wchar_t* CDESC = g_CreativeMode
-                        ? T(StrId::CREATIVE_DESC_ON)
-                        : T(StrId::CREATIVE_DESC_OFF);
-                    float cdw = g_TextS.Width(CDESC, 0.78f);
-                    g_TextS.Draw(CDESC, cbx + (cbw - cdw) * 0.5f,
-                                 cby + cbh + 10.0f, 0.78f,
-                                 0.85f, 0.95f, 0.6f, 0.85f);
-                }
-
-                // 뒤로 버튼
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-            }
-            // ── 크리에이티브 설정 (시작점수 / 보스 / 시작증강) ──────
-            else if (st == GameState::CREATIVE_CONFIG) {
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                deskWindow(L"sandbox.cfg", 0.6f, 0.95f, 0.4f);
-
-                const wchar_t* TIT = L"CREATIVE";
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.08f, 1.6f,
-                             0.85f, 0.95f, 0.6f, 1.0f);
-
-                const float OBW = 150.0f, OBH = 50.0f, OBG = 14.0f;
-
-                // 시작 점수
-                g_TextS.Draw(L"Start Score", 60.0f, sh*0.22f, 1.0f, 1,1,1,0.9f);
-                struct ScoreOpt { const wchar_t* l; long long v; };
-                ScoreOpt sOpts[4] = { {L"0",0},{L"200k",200000},{L"400k",400000},{L"500k",500000} };
-                for (int i = 0; i < 4; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
-                    bool sel = (g_CreativeStartScore == sOpts[i].v);
-                    if (UIButton(ox, sh*0.22f + 28.0f, OBW, OBH, sOpts[i].l,
-                                 mx, my, lmb, g_LmbPrev, sel))
-                        g_CreativeStartScore = sOpts[i].v;
-                }
-
-                // 보스 선택
-                g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
-                struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[5] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
-                                     {L"Reload",2},{L"Polymorph",3} };
-                for (int i = 0; i < 5; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
-                    bool sel = (g_CreativeBossPick == bOpts[i].v);
-                    if (UIButton(ox, sh*0.40f + 28.0f, OBW, OBH, bOpts[i].l,
-                                 mx, my, lmb, g_LmbPrev, sel))
-                        g_CreativeBossPick = bOpts[i].v;
-                }
-
-                // 시작 증강 픽 횟수
-                g_TextS.Draw(L"Start Augments", 60.0f, sh*0.58f, 1.0f, 1,1,1,0.9f);
-                int aOpts[4] = { 0, 3, 5, 10 };
-                for (int i = 0; i < 4; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
-                    wchar_t lb[8]; swprintf_s(lb, L"%d", aOpts[i]);
-                    bool sel = (g_CreativeStartAugs == aOpts[i]);
-                    if (UIButton(ox, sh*0.58f + 28.0f, OBW, OBH, lb,
-                                 mx, my, lmb, g_LmbPrev, sel))
-                        g_CreativeStartAugs = aOpts[i];
-                }
-
-                // 시작 버튼
-                if (UIButton((sw - 300.0f) * 0.5f, sh*0.78f, 300.0f, 64.0f,
-                             L"START", mx, my, lmb, g_LmbPrev)) {
-                    ResetForNewGame();
-                    PickRandomWeapons(g_WeaponChoices);
-                    g_GameManager.currentState = GameState::WEAPON_SELECT;
-                }
-
-                // 뒤로 버튼 — 난이도 선택으로
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
-                }
-            }
-            // ── 설정 = config.sys 앱 창 ───────────────────────────────
-            else if (st == GameState::SETTINGS) {
-                const float WW = 860.0f, WH = 600.0f;
-                float wx, wy;
-                appWindow(WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-                float lx = wx + 40.0f;     // 라벨 열
-                float bx0 = wx + 250.0f;   // 옵션 버튼 시작 열
-                const float OW = 120.0f, OH = 46.0f, OG = 8.0f;
-
-                // 헤딩
-                g_TextL.Draw(T(StrId::SET_TITLE), lx, wy + 48.0f, 1.0f, 1,1,1,1);
-
-                // FPS 라인
-                float lineY = wy + 110.0f;
-                g_TextS.Draw(T(StrId::SET_FPS), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
-                struct FpsOpt { const wchar_t* label; int val; };
-                FpsOpt fpsOpts[4] = {
-                    { L"30", 30 }, { L"60", 60 }, { L"144", 144 },
-                    { T(StrId::SET_UNLIMITED), -1 }
-                };
-                for (int i = 0; i < 4; i++) {
-                    float bx = bx0 + i * (OW + OG);
-                    bool sel = (g_FpsCap == fpsOpts[i].val);
-                    if (UIButton(bx, lineY, OW, OH, fpsOpts[i].label,
-                                 mx, my, lmb, g_LmbPrev, sel)) {
-                        g_FpsCap = fpsOpts[i].val;
-                        glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
-                    }
-                }
-
-                // 언어 라인
-                lineY = wy + 180.0f;
-                g_TextS.Draw(T(StrId::SET_LANG), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
-                struct LangOpt { const wchar_t* label; Language lang; };
-                LangOpt langOpts[LANG_COUNT] = {
-                    { L"한국어",  Language::KR },
-                    { L"English", Language::EN },
-                    { L"日本語",  Language::JP },
-                };
-                for (int i = 0; i < LANG_COUNT; i++) {
-                    float bx = bx0 + i * (OW + OG);
-                    bool sel = (g_Language == langOpts[i].lang);
-                    if (UIButton(bx, lineY, OW, OH, langOpts[i].label,
-                                 mx, my, lmb, g_LmbPrev, sel)) {
-                        g_Language = langOpts[i].lang;
-                    }
-                }
-
-                // ON/OFF 토글 한 줄 헬퍼 (창 기준)
-                auto toggleRow = [&](float ly, StrId label, bool& val) {
-                    g_TextS.Draw(T(label), lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
-                    if (UIButton(bx0, ly, OW, OH,
-                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, val))
-                        val = true;
-                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
-                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !val))
-                        val = false;
-                };
-                toggleRow(wy + 260.0f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
-                toggleRow(wy + 330.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
-                toggleRow(wy + 400.0f, StrId::SET_COMBO,     g_ShowCombo);
-
-                // 뒤로(저장 후 닫기) — 창 하단
-                if (UIButton(lx, wy + WH - 64.0f, 180.0f, 48.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    SaveGame();
-                    g_GameManager.currentState = g_SettingsReturnTo;
-                }
-                }   // close: g_AppOpen open guard
-            }
-            else if (st == GameState::READY) {
-                const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
-                const wchar_t* T2 = T(StrId::ESC_QUIT);
-                g_TextL.Draw(T1, cx(T1, g_TextL, 1.0f), sh*0.42f, 1.0f, 1,1,1,0.95f);
-                g_TextS.Draw(T2, cx(T2, g_TextS, 1.0f), sh*0.50f, 1.0f, 0.8f,0.8f,0.8f,0.8f);
-                // 조작 안내 (키는 언어 무관 — 새 플레이어가 스킬/대시 존재를 알게)
-                const wchar_t* CTRL =
-                    L"WASD Move    Mouse Fire    SHIFT Dash    Q/E/R Skills    ESC Pause";
-                g_TextS.Draw(CTRL, cx(CTRL, g_TextS, 0.9f), sh*0.62f, 0.9f,
-                             0.55f, 0.85f, 1.0f, 0.95f);
-            }
-            else if (st == GameState::PAUSED) {
-                // 전체 화면 딤 — 보스 창/엔티티가 메뉴 뒤로 비치지 않게
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.86f);
-                const wchar_t* T1 = T(StrId::PAUSED);
-                g_TextL.Draw(T1, cx(T1, g_TextL, 1.4f), sh*0.22f, 1.4f, 1,1,1,0.95f);
-
-                // 버튼 4개: 재개 / 설정 / 메뉴로 / 종료
-                const float BW = 280.0f, BH = 64.0f, BG = 16.0f;
-                float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.36f;
-
-                if (UIButton(bx, by + 0*(BH+BG), BW, BH, T(StrId::BTN_RESUME),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::RUNNING;
-                }
-                if (UIButton(bx, by + 1*(BH+BG), BW, BH, T(StrId::BTN_SETTINGS),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_SettingsReturnTo = GameState::PAUSED;
-                    g_GameManager.currentState = GameState::SETTINGS;
-                }
-                if (UIButton(bx, by + 2*(BH+BG), BW, BH, T(StrId::BTN_MAIN_MENU),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                if (UIButton(bx, by + 3*(BH+BG), BW, BH, T(StrId::BTN_QUIT),
-                             mx, my, lmb, g_LmbPrev)) {
-                    glfwSetWindowShouldClose(window, GLFW_TRUE);
-                }
-            }
-            else if (st == GameState::GAMEOVER) {
-                // ── 메뉴 페이드인: 폭발 직후 결과 메뉴가 서서히 떠오름 (0→1, 2.5초) ──
-                float gof = g_GameOverFade;          // 0..1
-                float ge  = gof * gof * (3.0f - 2.0f * gof);  // smoothstep (부드럽게)
-
-                // 전체 화면 딤 — 보스 창/엔티티가 결과창 뒤로 비치지 않게 (페이드)
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f * ge);
-                const wchar_t* T1 = T(StrId::GAMEOVER);
-                g_TextL.Draw(T1, cx(T1, g_TextL, 1.6f), sh*0.30f, 1.6f,
-                             1, 0.25f, 0.25f, 0.95f * ge);
-                // 사망 원인 (프로세스 종료 사유)
-                if (g_DeathReason[0]) {
-                    g_TextS.Draw(g_DeathReason, cx(g_DeathReason, g_TextS, 1.0f), sh*0.385f, 1.0f,
-                                 1.0f, 0.55f, 0.45f, 0.92f * ge);
-                }
-
-                // 결과 — 도달 레벨 / 처치 수 / 최종 점수
-                wchar_t lvBuf[64], killBuf[64], scoreBuf[64];
-                swprintf_s(lvBuf,    L"%ls   Lv. %d", T(StrId::REACHED_LEVEL),
-                           g_GameManager.playerLevel);
-                swprintf_s(killBuf,  L"%ls   %lld",   T(StrId::KILL_COUNT),
-                           g_Stats.killCount);
-                swprintf_s(scoreBuf, L"%ls   %lld",   T(StrId::FINAL_SCORE),
-                           g_GameManager.score);
-
-                g_TextL.Draw(scoreBuf, cx(scoreBuf, g_TextL, 1.2f), sh*0.44f, 1.2f,
-                             1.0f, 1.0f, 0.7f, 0.95f * ge);
-                g_TextS.Draw(lvBuf,    cx(lvBuf,    g_TextS, 1.1f), sh*0.52f, 1.1f,
-                             0.85f, 0.95f, 0.85f, 0.95f * ge);
-                g_TextS.Draw(killBuf,  cx(killBuf,  g_TextS, 1.1f), sh*0.57f, 1.1f,
-                             0.85f, 0.95f, 0.85f, 0.95f * ge);
-
-                // 최고 점수 (난이도별) + 신기록 + 획득 코인
-                wchar_t bestBuf[64], coinBuf[64];
-                swprintf_s(bestBuf, L"BEST   %lld", g_BestScore[(int)g_Difficulty]);
-                g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.62f, 1.1f,
-                             1.0f, 0.85f, 0.4f, 0.95f * ge);
-                swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
-                g_TextS.Draw(coinBuf, cx(coinBuf, g_TextS, 1.0f), sh*0.665f, 1.0f,
-                             1.0f, 0.9f, 0.3f, 0.95f * ge);
-                if (g_LastRunRecord) {
-                    const wchar_t* rec = L"★ NEW RECORD ★";
-                    float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
-                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.37f, 1.0f,
-                                 1.0f, 0.9f, 0.2f, blink * ge);
-                }
-
-                // ── 사망 시점 보유 증강 + 시작 무기 (좌측 패널) — 빌드 분석용 ──
-                {
-                    int gcounts[AUG_TOTAL] = {};
-                    for (int idx : g_OwnedAugs) gcounts[idx]++;
-
-                    const float panelX = 24.0f, colW = 256.0f, ROW_H = 26.0f;
-                    const float listTop = sh * 0.16f;
-                    const float yLimit  = sh - 30.0f;
-                    g_TextS.Draw(T(StrId::OWNED_AUGS), panelX, listTop, 1.0f,
-                                 1.0f, 1.0f, 1.0f, 0.95f * ge);
-                    // 시작 무기 (저격총 등 — "사기 무기" 추적용)
-                    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT) {
-                        wchar_t wb[80];
-                        swprintf_s(wb, L"[ %ls ]", WeaponName(ALL_WEAPONS[g_CurrentWeapon]));
-                        g_TextS.Draw(wb, panelX, listTop + 30.0f, 0.95f,
-                                     1.0f, 0.85f, 0.35f, 0.95f * ge);
-                    }
-                    float colX = panelX, py = listTop + 70.0f;
-                    for (int i = 0; i < AUG_TOTAL; i++) {
-                        if (gcounts[i] == 0) continue;
-                        if (py > yLimit) { colX += colW; py = listTop + 70.0f; }  // 다음 열로 래핑
-                        const AugDef& def = ALL_AUGS[i];
-                        float cr, cg, cb;
-                        GetRarityColor(def.rarity, cr, cg, cb);
-                        cr = std::min(1.0f, cr * 1.3f + 0.25f);
-                        cg = std::min(1.0f, cg * 1.3f + 0.25f);
-                        cb = std::min(1.0f, cb * 1.3f + 0.25f);
-                        wchar_t line[96];
-                        if (gcounts[i] > 1)
-                            swprintf_s(line, L"· %ls  ×%d", AugName(def), gcounts[i]);
-                        else
-                            swprintf_s(line, L"· %ls", AugName(def));
-                        g_TextS.Draw(line, colX, py, 0.8f, cr, cg, cb, 0.92f * ge);
-                        py += ROW_H;
-                    }
-                }
-
-                // 버튼 3개: 다시하기 / 메뉴로 / 종료 — 페이드 완료 후에만 표시/활성
-                if (gof >= 0.999f) {
-                    const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
-                    float totalW = 3 * BW + 2 * BG;
-                    float bx = (sw - totalW) * 0.5f;
-                    float by = sh * 0.72f;
-
-                    if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        ResetForNewGame();
-                        PickRandomWeapons(g_WeaponChoices);
-                        g_GameManager.currentState = GameState::WEAPON_SELECT;
-                    }
-                    if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        g_GameManager.currentState = GameState::MAIN_MENU;
-                    }
-                    if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        glfwSetWindowShouldClose(window, GLFW_TRUE);
-                    }
-                }
-            }
-            else if (st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
-                // ── 카드 레이아웃 (GameManager::Render 와 동기화) ──
-                bool hasConv = (g_ConversionWeapon >= 0 && st == GameState::AUG_SELECT);
-                int  nCards  = hasConv ? 4 : 3;
-                const float CARD_W = hasConv ? 240.0f : 280.0f;
-                const float CARD_H = 400.0f;
-                const float GAP    = hasConv ? 32.0f : 48.0f;
-                const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
-                float baseX = (sw - TOTAL_W) * 0.5f;
-                float baseY = (sh - CARD_H)  * 0.4f;
-
-                // 타이틀
-                const wchar_t* TIT = (st == GameState::DEBUFF_SELECT)
-                                     ? T(StrId::CHOOSE_DEBUFF)
-                                     : T(StrId::CHOOSE_AUG);
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.0f), baseY - 56.0f, 1.0f,
-                             1,1,1,0.95f);
-
-                // 키 힌트
-                const wchar_t* HINT = (g_HoveredAug < 0)
-                                      ? T(StrId::KEY_HINT_NO_HOVER)
-                                      : T(StrId::KEY_HINT_HOVER);
-                g_TextS.Draw(HINT, cx(HINT, g_TextS, 0.85f),
-                             baseY + CARD_H + 200.0f,
-                             0.85f, 0.75f,0.75f,0.75f,0.8f);
-
-                // 각 카드: 등급 라벨 + 이름만 (4번째는 변환 카드)
-                static const wchar_t* KEY_LABELS[4] = {L"[ 1 ]", L"[ 2 ]", L"[ 3 ]", L"[ 4 ]"};
-                for (int i = 0; i < nCards; i++) {
-                    float cardX = baseX + i * (CARD_W + GAP);
-                    float yOff  = (g_HoveredAug == i) ? -16.0f : 0.0f;
-
-                    // 카드 이름 — 3개는 증강, 4번째는 변환 무기
-                    const wchar_t* cardName;
-                    float tr, tg, tb;
-                    const wchar_t* topLabel;
-                    if (i < 3) {
-                        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
-                        cardName = AugName(def);
-                        GetRarityColor(def.rarity, tr, tg, tb);
-                        tr = std::min(1.0f, tr * 1.4f + 0.25f);
-                        tg = std::min(1.0f, tg * 1.4f + 0.25f);
-                        tb = std::min(1.0f, tb * 1.4f + 0.25f);
-                        topLabel = GetRarityKR(def.rarity);
-                        // 픽토그램 (있으면) — 카드 상단 중앙, 흰색
-                        GLuint icon = IconFor(def.type);
-                        if (icon) {
-                            float isz = 110.0f;
-                            DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
-                                     baseY + yOff + CARD_H * 0.12f, isz, isz,
-                                     1.0f, 1.0f, 1.0f, 0.97f);
-                        }
-                    } else {
-                        cardName = (g_ConversionWeapon >= 0)
-                                 ? WeaponName(ALL_WEAPONS[g_ConversionWeapon]) : L"?";
-                        tr = 1.0f; tg = 0.9f; tb = 0.3f;
-                        topLabel = L"변환";
-                    }
-                    float rw = g_TextS.Width(topLabel, 1.0f);
-                    g_TextS.Draw(topLabel,
-                                 cardX + (CARD_W - rw) * 0.5f,
-                                 baseY + yOff + 22.0f, 1.0f, tr, tg, tb, 0.95f);
-
-                    // 증강/무기 이름
-                    float nameSc = 1.2f;
-                    while (nameSc > 0.7f &&
-                           g_TextL.Width(cardName, nameSc) > CARD_W - 20.0f)
-                        nameSc -= 0.05f;
-                    float nw = g_TextL.Width(cardName, nameSc);
-                    g_TextL.Draw(cardName,
-                                 cardX + (CARD_W - nw) * 0.5f,
-                                 baseY + yOff + CARD_H * 0.40f, nameSc,
-                                 1,1,1,0.95f);
-
-                    // 키 힌트 (카드 하단)
-                    float kw = g_TextS.Width(KEY_LABELS[i], 1.0f);
-                    g_TextS.Draw(KEY_LABELS[i],
-                                 cardX + (CARD_W - kw) * 0.5f,
-                                 baseY + yOff + CARD_H - 50.0f, 1.0f,
-                                 tr, tg, tb, 0.95f);
-                }
-
-                // ── 하단 상세 설명 박스 (호버 카드의 전체 설명) ──
-                if (g_HoveredAug >= 0) {
-                    // 호버 카드 설명 + 상단 띠 색상 (3개는 증강, 4번째는 변환 무기)
-                    const wchar_t* hDesc;
-                    float hr, hg, hb;
-                    if (g_HoveredAug < 3) {
-                        int hIdx = g_GameManager.augChoices[g_HoveredAug];
-                        if (hIdx < 0) hIdx = 0;
-                        const AugDef& hDef = ALL_AUGS[hIdx];
-                        hDesc = AugDesc(hDef);
-                        GetRarityColor(hDef.rarity, hr, hg, hb);
-                    } else {
-                        hDesc = (g_ConversionWeapon >= 0)
-                              ? WeaponDesc(ALL_WEAPONS[g_ConversionWeapon])
-                              : L"기존 무기 효과 제거 후 새 무기로 전환";
-                        hr = 1.0f; hg = 0.78f; hb = 0.10f;  // 변환 = 금색
-                    }
-                    float boxY = baseY + CARD_H + 24.0f;
-                    float boxW = TOTAL_W;
-                    float boxH = 150.0f;
-                    float boxX = (sw - boxW) * 0.5f;
-
-                    // 박스 배경 (어두운 반투명)
-                    drawRect(boxX, boxY, boxW, boxH, 0.03f, 0.03f, 0.05f, 0.85f);
-
-                    // 상단 띠
-                    drawRect(boxX, boxY, boxW, 4.0f, hr, hg, hb, 1.0f);
-
-                    // 설명 ('/' 분리, 각 줄 fit)
-                    std::vector<std::wstring> lines;
-                    std::wstring cur;
-                    for (const wchar_t* p = hDesc; *p; ++p) {
-                        if (*p == L'/') {
-                            if (!cur.empty()) lines.push_back(cur);
-                            cur.clear();
-                        } else cur += *p;
-                    }
-                    if (!cur.empty()) lines.push_back(cur);
-                    for (auto& s : lines) {
-                        while (!s.empty() && (s.front() == L' ' || s.front() == L'\t'))
-                            s.erase(0, 1);
-                        while (!s.empty() && (s.back() == L' ' || s.back() == L'\t'))
-                            s.pop_back();
-                    }
-
-                    int n = (int)lines.size();
-                    if (n < 1) n = 1;
-                    float lineH = 32.0f;
-                    float startY = boxY + 22.0f + (boxH - 22.0f - lineH * n) * 0.5f;
-                    for (int li = 0; li < n; li++) {
-                        const wchar_t* s = lines[li].c_str();
-                        // 일부러 안 줄임 — 박스가 카드 3장 폭이라 충분
-                        float sc = 1.0f;
-                        float lw = g_TextS.Width(s, sc);
-                        if (lw > boxW - 40.0f) {
-                            // 박스 폭도 안 되면 그때만 축소
-                            while (sc > 0.7f && g_TextS.Width(s, sc) > boxW - 40.0f)
-                                sc -= 0.05f;
-                            lw = g_TextS.Width(s, sc);
-                        }
-                        g_TextS.Draw(s, boxX + (boxW - lw) * 0.5f,
-                                     startY + lineH * (float)li, sc,
-                                     1.0f, 1.0f, 1.0f, 0.95f);
-                    }
-                }
-            }
-
-            // 보유 증강 패널 (PAUSED / AUG_SELECT / DEBUFF_SELECT 에서 좌측)
-            if (st == GameState::PAUSED ||
-                st == GameState::AUG_SELECT ||
-                st == GameState::DEBUFF_SELECT) {
-                // 같은 인덱스 카운트 (스택)
-                int counts[AUG_TOTAL] = {};
-                for (int idx : g_OwnedAugs) counts[idx]++;
-
-                const float PX  = 16.0f;
-                const float ROW_H = 30.0f;
-                float       py  = 60.0f;
-                const wchar_t* TITLE = T(StrId::OWNED_AUGS);
-                g_TextS.Draw(TITLE, PX, py, 1.1f, 1, 1, 1, 0.95f);
-                if (st == GameState::PAUSED) {
-                    g_TextS.Draw(L"(클릭 → 설명)", PX + 2.0f, py + 30.0f, 0.70f,
-                                 0.6f, 0.7f, 0.9f, 0.7f);
-                }
-                py += 50.0f;
-
-                for (int i = 0; i < AUG_TOTAL; i++) {
-                    if (counts[i] == 0) continue;
-                    if (py > sh - 80.0f) break;
-                    const AugDef& def = ALL_AUGS[i];
-                    float cr, cg, cb;
-                    GetRarityColor(def.rarity, cr, cg, cb);
-                    cr = std::min(1.0f, cr * 1.3f + 0.25f);
-                    cg = std::min(1.0f, cg * 1.3f + 0.25f);
-                    cb = std::min(1.0f, cb * 1.3f + 0.25f);
-
-                    // PAUSED: 클릭으로 설명 선택. 선택된 항목은 배경 강조
-                    if (st == GameState::PAUSED) {
-                        bool rowHover = (mx >= 0 && mx <= 240.0f &&
-                                        my >= py - 4.0f && my <= py + ROW_H - 6.0f);
-                        if (rowHover) {
-                            // 호버 배경
-                            BindMainShader();
-                            drawRect(0, py - 4.0f, 240.0f, ROW_H, 0.15f, 0.15f, 0.25f, 0.55f);
-                        }
-                        if (g_PauseSelectedAug == i) {
-                            // 선택 배경
-                            BindMainShader();
-                            drawRect(0, py - 4.0f, 240.0f, ROW_H, 0.12f, 0.20f, 0.35f, 0.75f);
-                            drawRect(0, py - 4.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
-                        }
-                        // 클릭 처리
-                        if (lmb && !g_LmbPrev && rowHover) {
-                            g_PauseSelectedAug = (g_PauseSelectedAug == i) ? -1 : i;
-                        }
-                    }
-
-                    wchar_t line[96];
-                    if (counts[i] > 1)
-                        swprintf_s(line, L"· %ls  ×%d", AugName(def), counts[i]);
-                    else
-                        swprintf_s(line, L"· %ls", AugName(def));
-                    g_TextS.Draw(line, PX, py, 0.85f, cr, cg, cb, 0.9f);
-                    py += ROW_H;
-                }
-
-                // PAUSED: 선택된 증강 설명 박스
-                if (st == GameState::PAUSED && g_PauseSelectedAug >= 0 &&
-                    g_PauseSelectedAug < AUG_TOTAL) {
-                    const AugDef& sd = ALL_AUGS[g_PauseSelectedAug];
-                    // 원래 위치 (BX=220, BY=60) 복원
-                    const float BX = 220.0f;
-                    const float BY = 60.0f;
-                    const float BW = std::min(420.0f, sw - BX - 20.0f);
-                    const float BH = 270.0f;
-
-                    // 배경 + 등급 색 띠
-                    BindMainShader();
-                    drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.92f);
-                    float hr, hg, hb;
-                    GetRarityColor(sd.rarity, hr, hg, hb);
-                    drawRect(BX, BY, BW, 5.0f, hr, hg, hb, 1.0f);
-
-                    // 등급 라벨 (소)
-                    const wchar_t* rLabel = GetRarityKR(sd.rarity);
-                    g_TextS.Draw(rLabel, BX + 12.0f, BY + 12.0f, 0.9f,
-                                 hr, hg, hb, 0.95f);
-
-                    // 가로 구분선
-                    BindMainShader();
-                    drawRect(BX + 10.0f, BY + 38.0f, BW - 20.0f, 1.0f,
-                             0.3f, 0.3f, 0.4f, 0.5f);
-
-                    // 증강 이름 (대) — 구분선 아래
-                    float nSc = 1.05f;
-                    while (nSc > 0.65f && g_TextL.Width(AugName(sd), nSc) > BW - 20.0f)
-                        nSc -= 0.05f;
-                    float nLw   = g_TextL.Width(AugName(sd), nSc);
-                    float nameY = BY + 48.0f;
-                    g_TextL.Draw(AugName(sd), BX + (BW - nLw) * 0.5f, nameY, nSc,
-                                 1.0f, 1.0f, 1.0f, 0.98f);
-                    float nameH = g_TextL.Height(AugName(sd), nSc);
-
-                    // 설명 ('/' 분리) — BY+92 부터 (이름 아래 여유)
-                    std::vector<std::wstring> dlines;
-                    std::wstring cur2;
-                    for (const wchar_t* p = AugDesc(sd); *p; ++p) {
-                        if (*p == L'/') { if (!cur2.empty()) dlines.push_back(cur2); cur2.clear(); }
-                        else cur2 += *p;
-                    }
-                    if (!cur2.empty()) dlines.push_back(cur2);
-                    for (auto& s2 : dlines) {
-                        while (!s2.empty() && (s2.front()==L' '||s2.front()==L'\t')) s2.erase(0,1);
-                        while (!s2.empty() && (s2.back() ==L' '||s2.back() ==L'\t')) s2.pop_back();
-                    }
-                    int nd = (int)dlines.size(); if (nd < 1) nd = 1;
-                    float dLineH = 26.0f;
-                    float dStartY = nameY + nameH + 8.0f;   // 이름 실제 높이 아래에서 시작
-                    for (int li = 0; li < nd; li++) {
-                        const wchar_t* ds = dlines[li].c_str();
-                        float dsc = 0.9f;
-                        while (dsc > 0.65f && g_TextS.Width(ds, dsc) > BW - 24.0f)
-                            dsc -= 0.05f;
-                        float dlw = g_TextS.Width(ds, dsc);
-                        g_TextS.Draw(ds, BX + (BW - dlw) * 0.5f,
-                                     dStartY + dLineH * (float)li, dsc,
-                                     1.0f, 1.0f, 0.95f, 0.9f);
-                        if (dStartY + dLineH * (float)(li+1) > BY + BH - 10.0f) break;
-                    }
-                }
+                if (st == GameState::PAUSED || st == GameState::AUG_SELECT ||
+                    st == GameState::DEBUFF_SELECT)
+                    Scene_OwnedAugPanel(ctx);
             }
 
             // 상단 HUD — 실제 게임 진행 상태에서만 (메뉴/도감/상점엔 안 뜨게)
@@ -6512,3 +5354,1431 @@ int main() {
     glfwTerminate();
     return 0;
 }
+
+
+// ============================================================
+//  UI 씬(메뉴) 함수 정의 (Phase 1a: 같은 파일 내 추출)
+// ============================================================
+static void Scene_MainMenu(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
+                bool booting = (g_BootAnim > 0.0f);
+
+                // 배경을 칠하지 않음 → 투명 프레임버퍼라 "진짜 윈도우 바탕화면"이
+                //   그대로 비친다 (Wallpaper Engine 등 라이브 배경도 그대로 보임).
+                //   가독성을 위해 아주 옅은 상/하단 비네트만 깐다.
+                BindMainShader();
+                drawRect(0, 0, sw, 130.0f, 0.0f, 0.0f, 0.0f, 0.18f);
+                drawRect(0, sh - 150.0f, sw, 150.0f, 0.0f, 0.0f, 0.0f, 0.22f);
+
+                // ── 앰비언트 — 은은한 빛 입자 + 스캔라인 (진짜 바탕화면 위) ──
+                {
+                    float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
+                    BindMainShader();
+                    struct AP { float x, y, vx, vy, sz, tw; };
+                    static AP a_ps[55]; static bool ap_init = false;
+                    if (!ap_init) { ap_init = true;
+                        for (int i = 0; i < 55; i++) {
+                            a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
+                            float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
+                            a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
+                            a_ps[i].sz = 1.2f + (rand()%26)*0.1f; a_ps[i].tw = (rand()%628)*0.01f;
+                        }
+                    }
+                    for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
+                        p.x += p.vx*dtp; p.y += p.vy*dtp;
+                        if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
+                        if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
+                        p.tw += dtp*1.6f;
+                        float a = 0.10f + 0.10f*sinf(p.tw);
+                        drawCircle(p.x, p.y, p.sz, 0.55f, 0.78f, 1.0f, a);
+                    }
+                    // 스캔라인 (시네마틱) — 옅은 가로줄
+                    for (float yy = 0.0f; yy < sh; yy += 4.0f)
+                        drawRect(0.0f, yy, sw, 1.0f, 0.40f, 0.70f, 1.0f, 0.025f);
+                }
+
+                // ── 중앙 로고 + 부제 ──
+                const wchar_t* TITLE = T(StrId::GAME_TITLE);
+                float logoY = sh * 0.28f;
+                // 로고는 고해상도 전용 렌더러(g_TextXL, 100px)로 — 기존 g_TextL 3배
+                //   확대 시 비트맵이 뭉개지던 화질 문제 fix.
+                g_TextXL.Draw(TITLE, cx(TITLE, g_TextXL, 1.05f), logoY, 1.05f,
+                              0.6f, 0.85f, 1.0f, 0.96f);
+                {
+                    const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
+                    float subw = g_TextS.Width(SUBT[li2], 1.05f);
+                    g_TextS.Draw(SUBT[li2], (sw - subw) * 0.5f, logoY + 92.0f, 1.05f,
+                                 0.5f, 0.68f, 0.9f, 0.8f);
+                }
+
+                // ── PLAY 버튼 (맥동 글로우) → onedow.exe 부팅 → 난이도 선택 ──
+                {
+                    float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 2.5f);
+                    const float PW = 320.0f, PH = 76.0f;
+                    float px = (sw - PW) * 0.5f, py = sh * 0.49f;
+                    BindMainShader();
+                    drawRect(px - 7, py - 7, PW + 14, PH + 14,
+                             0.30f, 0.70f, 1.0f, 0.08f + 0.10f * pulse);   // 글로우
+                    const wchar_t* PLAYL[3] = { L"실행", L"PLAY", L"実行" };
+                    if (UIButton(px, py, PW, PH, PLAYL[li2], mx, my, lmb, g_LmbPrev) && !booting) {
+                        LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
+                    }
+                }
+
+                // ── 보조 버튼 행: 상점 · 도감 · 설정 · 종료 ──
+                {
+                    const float bw2 = 158.0f, bh2 = 48.0f, gap2 = 14.0f;
+                    float totalW = bw2 * 4 + gap2 * 3;
+                    float bx2 = (sw - totalW) * 0.5f, by2 = sh * 0.49f + 100.0f;
+                    const wchar_t* SHOPL[3] = { L"상점", L"Shop",  L"ショップ" };
+                    const wchar_t* CODL [3] = { L"도감", L"Codex", L"図鑑" };
+                    const wchar_t* CFGL [3] = { L"설정", L"Config", L"設定" };
+                    // 서브창(상점/도감/설정)은 부팅 로딩 없이 즉시 — 창 열림 애니메이션만
+                    if (UIButton(bx2 + 0*(bw2+gap2), by2, bw2, bh2, SHOPL[li2], mx,my,lmb,g_LmbPrev) && !booting)
+                        g_GameManager.currentState = GameState::SHOP;
+                    if (UIButton(bx2 + 1*(bw2+gap2), by2, bw2, bh2, CODL[li2], mx,my,lmb,g_LmbPrev) && !booting)
+                        g_GameManager.currentState = GameState::CODEX;
+                    if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
+                        g_SettingsReturnTo = GameState::MAIN_MENU;
+                        g_GameManager.currentState = GameState::SETTINGS;
+                    }
+                    if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
+                        glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
+
+                // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
+                if (g_BootAnim > 0.0f) {
+                    g_BootAnim -= delta;
+                    float prog = 1.0f - g_BootAnim / BOOT_DUR;        // 0→1
+                    if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
+                    float ease = prog < 0.25f ? (prog / 0.25f) : 1.0f; // 창 열림 0~25%
+                    float ar = g_BootAr, ag = g_BootAg, ab = g_BootAb;
+                    float WW = 520.0f, WH = 300.0f;
+                    float cw = WW * ease;              // 크기 0 → 지정 크기
+                    float chh= WH * ease;
+                    float wx = sw * 0.5f - cw * 0.5f;
+                    float wy = sh * 0.5f - chh * 0.5f;
+                    BindMainShader();
+                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease);  // 배경 딤
+                    // 시네마틱 — 아래로 훑는 스캔 스윕 라인 (화이트 플래시는 눈 아파서 제거)
+                    {
+                        float sweepY = fmodf(prog * 1.3f, 1.0f) * sh;
+                        drawRect(0, sweepY, sw, 2.0f, ar, ag, ab, 0.30f * ease);
+                        drawRect(0, sweepY - 40.0f, sw, 40.0f, ar, ag, ab, 0.05f * ease);
+                    }
+                    drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
+                    drawRect(wx, wy, cw, 28.0f, ar*0.55f, ag*0.55f, ab*0.6f, 1.0f); // 타이틀바
+                    drawRect(wx, wy+28.0f, cw, 2.0f, ar, ag, ab, 0.9f);      // 강조 라인
+                    drawRect(wx+cw-22, wy+8, 12, 12, 0.9f, 0.25f, 0.25f, 0.95f); // [X]
+                    if (ease > 0.9f) {
+                        g_TextS.Draw(g_BootName, wx + 12.0f, wy + 6.0f, 0.6f,
+                                     0.95f, 0.97f, 1.0f, 1.0f);
+                        // 부팅 로그 — 진행도에 따라 한 줄씩 나타남
+                        static const wchar_t* LOG[6] = {
+                            L"> mounting modules ...",
+                            L"> loading assets        [ OK ]",
+                            L"> init renderer         [ OK ]",
+                            L"> linking onedow.dll    [ OK ]",
+                            L"> verify save data      [ OK ]",
+                            L"> ready." };
+                        int shown = (int)(prog * 6.5f); if (shown > 6) shown = 6;
+                        for (int i = 0; i < shown; i++) {
+                            bool last = (i == 5);
+                            g_TextS.Draw(LOG[i], wx + 22.0f, wy + 44.0f + i * 24.0f, 0.6f,
+                                         last ? ag : 0.65f, last ? 1.0f : 0.78f,
+                                         last ? ag : 0.7f, 0.95f);
+                        }
+                        // 진행 바 (창 하단)
+                        float barW = cw - 44.0f, barX = wx + 22.0f, barY = wy + chh - 30.0f;
+                        BindMainShader();
+                        drawRect(barX, barY, barW, 14.0f, 0.12f, 0.14f, 0.20f, 1.0f);
+                        drawRect(barX, barY, barW * prog, 14.0f, ar, ag, ab, 1.0f);
+                        wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(prog * 100.0f));
+                        g_TextS.Draw(pct, barX + barW - 44.0f, barY - 22.0f, 0.6f,
+                                     0.8f, 0.9f, 1.0f, 1.0f);
+                    }
+                    if (g_BootAnim <= 0.0f) {
+                        g_BootAnim = 0.0f;
+                        g_GameManager.currentState = g_BootTarget;
+                    }
+                }
+}
+
+static void Scene_Shop(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                const float WW = 720.0f, WH = 700.0f;
+                float wx, wy;
+                appWindow(WW, WH, L"shop.exe", 1.0f, 0.80f, 0.20f, wx, wy);
+                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
+
+                const wchar_t* TIT = T(StrId::BTN_SHOP);
+                float tw0 = g_TextL.Width(TIT, 1.3f);
+                g_TextL.Draw(TIT, wx + (WW-tw0)*0.5f, wy + 44.0f, 1.3f, 1,1,1,1);
+                wchar_t cbuf[48]; swprintf_s(cbuf, L"COIN  %lld", g_Coins);
+                float cw0 = g_TextL.Width(cbuf, 1.0f);
+                g_TextL.Draw(cbuf, wx + (WW-cw0)*0.5f, wy + 86.0f, 1.0f, 1.0f, 0.9f, 0.3f, 1.0f);
+
+                const float RW = 640.0f, RH = 56.0f, RG = 10.0f;
+                float rx = wx + (WW - RW) * 0.5f, ry0 = wy + 128.0f;
+                for (int i = 0; i < META_COUNT; i++) {
+                    float ry = ry0 + i * (RH + RG);
+                    BindMainShader();
+                    drawRect(rx, ry, RW, RH, 0.07f, 0.07f, 0.11f, 0.9f);
+                    wchar_t nm[96];
+                    swprintf_s(nm, L"%ls   Lv %d/%d", MetaName(i), g_MetaLv[i], META_DEFS[i].maxLv);
+                    g_TextS.Draw(nm, rx + 16.0f, ry + 16.0f, 0.95f, 0.9f, 0.95f, 1.0f, 1.0f);
+                    long long cost = MetaNextCost(i);
+                    float btX = rx + RW - 170.0f;
+                    if (cost < 0) {
+                        g_TextS.Draw(L"MAX", btX + 50.0f, ry + 16.0f, 0.9f, 0.6f, 1.0f, 0.6f, 1.0f);
+                    } else {
+                        wchar_t bb[32]; swprintf_s(bb, L"%lld", cost);
+                        bool can = (g_Coins >= cost);
+                        if (can) {
+                            if (UIButton(btX, ry + 6.0f, 154.0f, RH - 12.0f, bb,
+                                         mx, my, lmb, g_LmbPrev, false)) {
+                                g_Coins -= cost;
+                                g_MetaLv[i]++;
+                                SaveGame();
+                            }
+                        } else {
+                            BindMainShader();
+                            drawRect(btX, ry + 6.0f, 154.0f, RH - 12.0f, 0.18f, 0.06f, 0.06f, 0.9f);
+                            float tw = g_TextS.Width(bb, 0.9f);
+                            g_TextS.Draw(bb, btX + (154.0f - tw) * 0.5f, ry + 18.0f, 0.9f,
+                                         0.95f, 0.4f, 0.4f, 1.0f);
+                        }
+                    }
+                }
+
+                // ── 업적 목록 (메타 행 아래, 3열) ──
+                {
+                    int li3 = (int)g_Language; if (li3 < 0 || li3 >= LANG_COUNT) li3 = 0;
+                    const wchar_t* ATIT[3] = { L"업적", L"Achievements", L"実績" };
+                    float ay0 = ry0 + META_COUNT * (RH + RG) + 18.0f;
+                    BindMainShader();
+                    g_TextS.Draw(ATIT[li3], rx, ay0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
+                    float colW = RW / 3.0f;
+                    float rowH = 28.0f;
+                    for (int i = 0; i < ACH_COUNT; i++) {
+                        bool got = g_AchUnlocked[i];
+                        int  col = i / 4, row = i % 4;
+                        float ax = rx + col * colW;
+                        float ay = ay0 + 32.0f + row * rowH;
+                        wchar_t ab[96];
+                        swprintf_s(ab, L"%ls %ls", got ? L"★" : L"☆", AchName(i));
+                        if (got) g_TextS.Draw(ab, ax, ay, 0.72f, 0.5f, 0.95f, 0.55f, 1.0f);
+                        else     g_TextS.Draw(ab, ax, ay, 0.72f, 0.55f, 0.55f, 0.6f, 0.9f);
+                    }
+                }
+
+                if (UIButton(wx + 40.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::MAIN_MENU;
+                }
+                }   // close: g_AppOpen open guard
+}
+
+static void Scene_Codex(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                // codex.db = 검색 가능한 위키 스타일 앱 창
+                const float WW = 1240.0f, WH = 800.0f;
+                float wx, wy;
+                appWindow(WW, WH, L"codex.db", 0.40f, 0.90f, 0.50f, wx, wy);
+                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
+                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
+
+                // 백스페이스 (검색어 편집)
+                {
+                    static bool s_bsPrev = false;
+                    bool bs = (glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS);
+                    if (bs && !s_bsPrev && g_CodexSearchLen > 0)
+                        g_CodexSearch[--g_CodexSearchLen] = 0;
+                    s_bsPrev = bs;
+                }
+
+                // 검색창 (위키 느낌) — 항상 입력 활성
+                float searchX = wx + 40.0f, searchY = wy + 46.0f, searchW = 460.0f, searchH = 40.0f;
+                BindMainShader();
+                drawRect(searchX, searchY, searchW, searchH, 0.12f, 0.14f, 0.18f, 1.0f);
+                drawRect(searchX, searchY, searchW, 2.0f, 0.4f, 0.9f, 0.5f, 0.9f);
+                if (g_CodexSearchLen > 0) {
+                    g_TextS.Draw(g_CodexSearch, searchX + 14.0f, searchY + 10.0f, 0.85f,
+                                 1.0f, 1.0f, 1.0f, 1.0f);
+                } else {
+                    const wchar_t* PH[3] = { L"검색…", L"Search…", L"検索…" };
+                    g_TextS.Draw(PH[li], searchX + 14.0f, searchY + 10.0f, 0.85f,
+                                 0.5f, 0.55f, 0.6f, 0.9f);
+                }
+                // 깜빡이는 캐럿
+                if (((int)(glfwGetTime() * 2.0) & 1) == 0) {
+                    float cwid = g_CodexSearchLen ? g_TextS.Width(g_CodexSearch, 0.85f) : 0.0f;
+                    BindMainShader();
+                    drawRect(searchX + 14.0f + cwid + 2.0f, searchY + 8.0f, 2.0f, 24.0f,
+                             0.9f, 0.95f, 1.0f, 0.9f);
+                }
+
+                static int s_tab = 0;   // 0 적 / 1 증강
+                const wchar_t* TAB_MOB[3] = { L"적", L"Enemies", L"敵" };
+                const wchar_t* TAB_AUG[3] = { L"증강", L"Augments", L"強化" };
+                if (UIButton(wx + 530.0f, searchY, 150.0f, searchH, TAB_MOB[li],
+                             mx, my, lmb, g_LmbPrev, s_tab == 0)) s_tab = 0;
+                if (UIButton(wx + 690.0f, searchY, 150.0f, searchH, TAB_AUG[li],
+                             mx, my, lmb, g_LmbPrev, s_tab == 1)) s_tab = 1;
+
+                float gTop = wy + 110.0f;          // 그리드 상단
+                float detailY = wy + WH - 150.0f;  // 상세(article) 영역
+                int hoverItem = -1;                // 실제 데이터 인덱스
+
+                if (s_tab == 0) {
+                    // 적 — 검색 필터링 후 재배치
+                    const int COLS = 6; const float CELL = 150.0f;
+                    int vis[CM_COUNT], nv = 0;
+                    for (int i = 0; i < CM_COUNT; i++)
+                        if (g_CodexSearchLen == 0 || (g_MobSeen[i] && CodexMatch(MobName(i))))
+                            vis[nv++] = i;
+                    float gx = wx + (WW - COLS*CELL) * 0.5f;
+                    for (int k = 0; k < nv; k++) {
+                        int i = vis[k];
+                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
+                        float cw = CELL - 14.0f;
+                        bool seen = g_MobSeen[i];
+                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
+                        if (hv) hoverItem = i;
+                        BindMainShader();
+                        drawRect(cxp, cyp, cw, cw, hv?0.13f:0.06f, 0.10f, 0.15f, 0.95f);
+                        float ccx = cxp + cw*0.5f, ccy = cyp + cw*0.42f;
+                        if (seen) {
+                            if (i <= CM_SHIELDED) {
+                                Monster pm(ccx, ccy);
+                                if (i > 0) pm.MakeKind((MobKind)i);
+                                pm.worldX = ccx; pm.worldY = ccy;
+                                if (i == 0) pm.color = glm::vec3(0.75f,0.75f,0.8f);
+                                pm.sizeScale = (i == (int)MobKind::BRUTE) ? 1.3f : 1.7f;
+                                drawMob(&pm);
+                            } else if (i == CM_RANGED) {
+                                drawDiamond(ccx, ccy, 28.0f, 0.85f, 0.0f, 0.85f, 1.0f);
+                                drawDiamond(ccx, ccy, 11.0f, 1,1,1, 0.9f);
+                            } else {
+                                drawPentagon(ccx, ccy, 32.0f, 1.0f, 0.5f, 0.1f, 1.0f);
+                            }
+                            BindMainShader();
+                            const wchar_t* nm = MobName(i);
+                            float nw = g_TextS.Width(nm, 0.8f);
+                            g_TextS.Draw(nm, cxp + (cw - nw)*0.5f, cyp + cw - 34.0f, 0.8f,
+                                         0.9f, 0.95f, 1.0f, 0.95f);
+                        } else {
+                            float qw = g_TextL.Width(L"?", 1.3f);
+                            g_TextL.Draw(L"?", ccx - qw*0.5f, ccy - 22.0f, 1.3f,
+                                         0.4f, 0.4f, 0.45f, 0.9f);
+                        }
+                    }
+                    if (hoverItem >= 0 && g_MobSeen[hoverItem]) {
+                        const wchar_t* nm = MobName(hoverItem);
+                        const wchar_t* d  = MobDesc(hoverItem);
+                        g_TextL.Draw(nm, wx + 40.0f, detailY, 1.0f, 0.6f, 0.95f, 0.7f, 1.0f);
+                        g_TextS.Draw(d,  wx + 40.0f, detailY + 40.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
+                    }
+                } else {
+                    // 증강 — 검색 필터링 후 재배치
+                    const int COLS = 12; const float CELL = 84.0f;
+                    int vis[AUG_TOTAL], nv = 0;
+                    for (int i = 0; i < AUG_TOTAL; i++)
+                        if (g_CodexSearchLen == 0 || (g_AugSeen[i] && CodexMatch(AugName(ALL_AUGS[i]))))
+                            vis[nv++] = i;
+                    float gx = wx + (WW - COLS*CELL) * 0.5f;
+                    for (int k = 0; k < nv; k++) {
+                        int i = vis[k];
+                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
+                        float cw = CELL - 8.0f;
+                        bool seen = g_AugSeen[i];
+                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
+                        if (hv) hoverItem = i;
+                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
+                        BindMainShader();
+                        if (seen) drawRect(cxp, cyp, cw, cw, rr*0.35f, rg*0.35f, rb*0.35f, 0.95f);
+                        else      drawRect(cxp, cyp, cw, cw, 0.06f, 0.06f, 0.08f, 0.95f);
+                        if (seen) {
+                            GLuint ic = IconFor(ALL_AUGS[i].type);
+                            float isz = 48.0f;
+                            if (ic) DrawIcon(ic, cxp + (cw-isz)*0.5f, cyp + (cw-isz)*0.5f,
+                                             isz, isz, 1,1,1, 0.97f);
+                            else {
+                                BindMainShader();
+                                drawRect(cxp + cw*0.3f, cyp + cw*0.3f, cw*0.4f, cw*0.4f, rr, rg, rb, 0.9f);
+                            }
+                        } else {
+                            float qw = g_TextL.Width(L"?", 1.0f);
+                            g_TextL.Draw(L"?", cxp + (cw - qw)*0.5f, cyp + cw*0.5f - 18.0f, 1.0f,
+                                         0.4f, 0.4f, 0.45f, 0.9f);
+                        }
+                    }
+                    // 상세(article)
+                    BindMainShader();
+                    if (hoverItem >= 0 && g_AugSeen[hoverItem]) {
+                        const AugDef& d = ALL_AUGS[hoverItem];
+                        float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
+                        wchar_t hd[96];
+                        swprintf_s(hd, L"[%ls] %ls", GetRarityKR(d.rarity), AugName(d));
+                        g_TextL.Draw(hd, wx + 40.0f, detailY, 0.95f,
+                                     std::min(1.0f, rr*1.4f+0.3f), std::min(1.0f, rg*1.4f+0.3f),
+                                     std::min(1.0f, rb*1.4f+0.3f), 1.0f);
+                        const wchar_t* ds = AugDesc(d);
+                        g_TextS.Draw(ds, wx + 40.0f, detailY + 40.0f, 0.85f,
+                                     0.85f, 0.92f, 1.0f, 0.95f);
+                        if (d.rarity == AugRarity::COMBO) {
+                            for (int c = 0; c < COMBO_COUNT; c++)
+                                if (COMBO_DEFS[c].result == d.type) {
+                                    int ia = AugIndexOfType(COMBO_DEFS[c].reqs[0]);
+                                    int ib = AugIndexOfType(COMBO_DEFS[c].reqs[1]);
+                                    wchar_t rc[128];
+                                    swprintf_s(rc, L"%ls + %ls",
+                                               ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
+                                               ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
+                                    g_TextS.Draw(rc, wx + 40.0f, detailY + 72.0f, 0.85f,
+                                                 0.1f, 0.85f, 0.8f, 0.95f);
+                                    break;
+                                }
+                        }
+                    } else if (hoverItem >= 0) {
+                        const wchar_t* q[3] = { L"??? — 미발견 (획득 시 공개)",
+                                                L"??? — Undiscovered (unlock by acquiring)",
+                                                L"??? — 未発見 (取得で公開)" };
+                        g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
+                    }
+                }
+
+                if (UIButton(wx + WW - 220.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    CodexSearchClear();
+                    g_GameManager.currentState = GameState::MAIN_MENU;
+                }
+                }   // close: g_AppOpen open guard
+}
+
+static void Scene_JobSelect(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
+                deskWindow(L"career.exe", 0.55f, 0.7f, 1.0f);
+
+                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
+                const wchar_t* JTIT[3] = { L"직업 선택", L"Choose a Class", L"職業を選択" };
+                const wchar_t* JHINT[3] = {
+                    L"업적을 달성하면 새 직업이 해금됩니다",
+                    L"Complete achievements to unlock more classes",
+                    L"実績達成で新しい職業が解放されます" };
+                const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
+                const wchar_t* TIT = JTIT[li];
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.3f), sh*0.045f, 1.3f, 1,1,1,1);
+                const wchar_t* HN = JHINT[li];
+                g_TextS.Draw(HN, cx(HN, g_TextS, 0.85f), sh*0.115f, 0.85f, 0.7f,0.8f,0.9f,0.9f);
+
+                const float BW = 660.0f, BH = 70.0f, BG = 13.0f;
+                float bx = (sw - BW) * 0.5f;
+                float by = sh * 0.185f;
+                for (int j = 0; j < JOB_COUNT; j++) {
+                    float y = by + j * (BH + BG);
+                    bool unlocked = JobUnlocked(j);
+                    bool sel = (g_SelectedJob == j);
+                    bool clicked = false;
+                    if (unlocked) {
+                        // 박스만 (라벨은 직접 — 이름 상단 / 설명 하단 분리)
+                        clicked = UIButton(bx, y, BW, BH, L"", mx, my, lmb, g_LmbPrev, sel);
+                    } else {
+                        BindMainShader();
+                        drawRect(bx, y, BW, BH, 0.08f, 0.06f, 0.06f, 0.9f);
+                        drawRect(bx, y, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
+                        drawRect(bx, y+BH-2, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
+                    }
+                    // 아이콘 (좌측)
+                    GLuint ji = JobIcon(j);
+                    if (ji) {
+                        float isz = BH - 20.0f;
+                        DrawIcon(ji, bx + 14.0f, y + (BH - isz)*0.5f, isz, isz,
+                                 unlocked?1.0f:0.45f, unlocked?1.0f:0.45f, unlocked?1.0f:0.5f, 0.95f);
+                    }
+                    BindMainShader();
+                    // 이름 (상단, 너비 맞춤)
+                    float nsc = 0.78f;
+                    while (nsc > 0.5f && g_TextL.Width(JobName(j), nsc) > BW - 130.0f) nsc -= 0.05f;
+                    float nw = g_TextL.Width(JobName(j), nsc);
+                    g_TextL.Draw(JobName(j), bx + (BW - nw)*0.5f, y + 7.0f, nsc,
+                                 unlocked?1.0f:0.55f, unlocked?1.0f:0.55f, unlocked?1.0f:0.6f, 0.98f);
+                    // 설명 / 잠금조건 (하단, 너비 맞춤)
+                    wchar_t line[200];
+                    float lr=0.85f, lg=0.95f, lb=1.0f;
+                    if (unlocked) {
+                        swprintf_s(line, L"%ls", JobDesc(j));
+                    } else {
+                        int a = JOB_DEFS[j].unlockAch;
+                        swprintf_s(line, L"%ls%ls", LOCKED[li],
+                                   (a>=0 && a<ACH_COUNT) ? AchName(a) : L"???");
+                        lr=0.9f; lg=0.45f; lb=0.45f;
+                    }
+                    float dsc = 0.72f;
+                    while (dsc > 0.45f && g_TextS.Width(line, dsc) > BW - 120.0f) dsc -= 0.04f;
+                    float dw = g_TextS.Width(line, dsc);
+                    g_TextS.Draw(line, bx + (BW - dw)*0.5f, y + BH - 25.0f, dsc, lr, lg, lb, 0.92f);
+
+                    if (clicked) {
+                        g_SelectedJob = j;
+                        ResetForNewGame();
+                        PickRandomWeapons(g_WeaponChoices);
+                        g_GameManager.currentState = GameState::WEAPON_SELECT;
+                    }
+                }
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
+                }
+}
+
+static void Scene_WeaponSelect(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+                deskWindow(L"loadout.exe", 0.4f, 0.85f, 1.0f);
+
+                const wchar_t* TIT = L"시작 무기를 선택하세요";
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.4f), sh*0.14f, 1.4f,
+                             1, 1, 1, 0.98f);
+
+                // 3 카드 — 가로 배치 (DIFFICULTY 와 비슷)
+                const float CARD_W = 320.0f, CARD_H = 260.0f, GAP = 32.0f;
+                const float TOTAL_W = 3*CARD_W + 2*GAP;
+                float baseX = (sw - TOTAL_W) * 0.5f;
+                float baseY = sh * 0.30f;
+
+                for (int i = 0; i < 3; i++) {
+                    int idx = g_WeaponChoices[i];
+                    if (idx < 0 || idx >= (int)StartWeapon::_COUNT) continue;
+                    const WeaponDef& w = ALL_WEAPONS[idx];
+                    float cardX = baseX + i * (CARD_W + GAP);
+
+                    // 카드 = 큰 버튼
+                    if (UIButton(cardX, baseY, CARD_W, CARD_H, WeaponName(w),
+                                 mx, my, lmb, g_LmbPrev)) {
+                        // #109: 변환 카드 undo 기준점 저장 (무기 적용 전 fireInterval)
+                        g_Stats.baseFireInterval = g_Stats.fireInterval;
+                        ApplyWeapon(g_Stats, (StartWeapon)idx);
+                        g_CurrentWeapon = idx;  // 현재 무기 기록 (변환 카드용)
+                        // 발사 타이머 / HUD HP 갱신
+                        fireTimer = g_Stats.fireInterval;
+                        // 직업 시작 증강 적용 (무기 적용 직후 — 보유 목록에 추가)
+                        if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
+                            const JobDef& jd = JOB_DEFS[g_SelectedJob];
+                            for (int a = 0; a < jd.startAugCount; a++) {
+                                int ji = AugIndexOf(jd.startAugs[a]);
+                                if (ji < 0) continue;
+                                g_Stats.Apply(jd.startAugs[a]);
+                                g_OwnedAugs.push_back(ji);
+                                EquipSkill(SkillForAug(jd.startAugs[a]));
+                            }
+                            // 직업 무기 모드 (검객/궁수 — 선택한 총 효과 위에 덮어씀)
+                            if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
+                                g_Stats.meleeWeapon  = true;
+                                g_Stats.fireInterval = 0.26f;   // 스윙 주기 (고정)
+                                g_Stats.baseFireInterval = g_Stats.fireInterval;
+                                g_RunMelee = true;              // 검객 전용 증강 게이팅
+                            } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
+                                g_Stats.bowWeapon    = true;    // 누른 만큼 강해짐 (관통=대포식)
+                                g_Stats.bulletSpeed *= 1.4f;
+                                g_RunBow = true;                // 궁수 전용 증강 게이팅
+                            }
+                            fireTimer = g_Stats.fireInterval;
+                        }
+                        g_GameManager.maxHP    = g_Stats.maxHP;
+                        g_GameManager.playerHP = g_Stats.maxHP;
+                        g_PrevHP               = g_Stats.maxHP;
+                        // 시작 증강 픽 (메타 해금 + 크리에이티브) 있으면 증강 선택 열기
+                        int startAugs = g_MetaStartAugs +
+                                        ((g_CreativeMode) ? g_CreativeStartAugs : 0);
+                        if (startAugs > 0) {
+                            g_BossRewardPicksLeft = startAugs;
+                            // 크리에이티브: 시작 증강에도 디버프 포함 (샌드박스)
+                            g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                         g_Stats.distAugTaken, g_CreativeMode);
+                            g_GameManager.currentState = GameState::AUG_SELECT;
+                        } else {
+                            g_GameManager.currentState = GameState::READY;
+                        }
+                    }
+
+                    // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
+                    BindMainShader();
+                    float dY = baseY + CARD_H * 0.55f;
+                    const wchar_t* d = WeaponDesc(w);
+                    // '/' 로 split → 줄 단위
+                    std::vector<std::wstring> lines;
+                    std::wstring cur;
+                    for (const wchar_t* p = d; *p; ++p) {
+                        if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
+                        else cur += *p;
+                    }
+                    if (!cur.empty()) lines.push_back(cur);
+                    for (auto& s : lines) {
+                        while (!s.empty() && s.front() == L' ') s.erase(0, 1);
+                        while (!s.empty() && s.back() == L' ') s.pop_back();
+                    }
+                    float lineH = 26.0f;
+                    for (int li = 0; li < (int)lines.size(); li++) {
+                        const wchar_t* s = lines[li].c_str();
+                        float sc = 0.85f;
+                        while (sc > 0.55f &&
+                               g_TextS.Width(s, sc) > CARD_W - 24.0f) sc -= 0.05f;
+                        float lw = g_TextS.Width(s, sc);
+                        g_TextS.Draw(s, cardX + (CARD_W - lw) * 0.5f,
+                                     dY + li * lineH, sc, 0.88f, 0.95f, 1.0f, 0.95f);
+                    }
+                }
+}
+
+static void Scene_DifficultySelect(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+                deskWindow(L"newgame.exe", 0.30f, 0.8f, 1.0f);
+
+                const wchar_t* TIT = T(StrId::DIFF_TITLE);
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.20f, 1.6f,
+                             1.0f, 1.0f, 1.0f, 1.0f);
+
+                struct DiffBtn { Difficulty d; StrId label; StrId desc; float r, g, b; };
+                DiffBtn btns[3] = {
+                    { Difficulty::EASY,   StrId::DIFF_EASY,   StrId::DIFF_EASY_DESC,
+                      0.3f, 0.85f, 0.4f },
+                    { Difficulty::NORMAL, StrId::DIFF_NORMAL, StrId::DIFF_NORMAL_DESC,
+                      0.4f, 0.6f, 1.0f },
+                    { Difficulty::HARD,   StrId::DIFF_HARD,   StrId::DIFF_HARD_DESC,
+                      1.0f, 0.4f, 0.4f },
+                };
+
+                const float BW = 520.0f, BH = 90.0f, BG = 30.0f;
+                float totalH = 3 * BH + 2 * BG;
+                float bx = (sw - BW) * 0.5f;
+                float by = (sh - totalH) * 0.5f;
+
+                for (int i = 0; i < 3; i++) {
+                    float y = by + i * (BH + BG);
+                    bool sel = (g_Difficulty == btns[i].d);
+                    if (UIButton(bx, y, BW, BH, T(btns[i].label),
+                                 mx, my, lmb, g_LmbPrev, sel)) {
+                        g_Difficulty = btns[i].d;
+                        if (g_CreativeMode) {
+                            // 크리에이티브: 설정 화면으로 (시작/보스/증강 조정)
+                            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+                        } else {
+                            // 직업 선택 화면으로 (해금된 직업 선택 후 무기 선택)
+                            g_GameManager.currentState = GameState::JOB_SELECT;
+                        }
+                    }
+                    // 버튼 아래 설명
+                    const wchar_t* desc = T(btns[i].desc);
+                    float dw = g_TextS.Width(desc, 0.85f);
+                    g_TextS.Draw(desc, bx + (BW - dw) * 0.5f, y + BH - 28.0f, 0.85f,
+                                 btns[i].r, btns[i].g, btns[i].b, 0.85f);
+                }
+
+                // 크리에이티브 모드 토글 버튼
+                {
+                    const wchar_t* CLBL = g_CreativeMode
+                        ? T(StrId::CREATIVE_ON)
+                        : T(StrId::CREATIVE_OFF);
+                    float cby = by + 3 * (BH + BG) + 20.0f;
+                    float cbw = BW, cbh = 72.0f;     // 세로 키움 (라벨/설명 겹침 방지)
+                    float cbx = (sw - cbw) * 0.5f;
+                    if (UIButton(cbx, cby, cbw, cbh, CLBL,
+                                 mx, my, lmb, g_LmbPrev, g_CreativeMode)) {
+                        g_CreativeMode = !g_CreativeMode;
+                    }
+                    // 설명 — 버튼 아래쪽에 (버튼 안과 겹치지 않게)
+                    const wchar_t* CDESC = g_CreativeMode
+                        ? T(StrId::CREATIVE_DESC_ON)
+                        : T(StrId::CREATIVE_DESC_OFF);
+                    float cdw = g_TextS.Width(CDESC, 0.78f);
+                    g_TextS.Draw(CDESC, cbx + (cbw - cdw) * 0.5f,
+                                 cby + cbh + 10.0f, 0.78f,
+                                 0.85f, 0.95f, 0.6f, 0.85f);
+                }
+
+                // 뒤로 버튼
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::MAIN_MENU;
+                }
+}
+
+static void Scene_CreativeConfig(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
+                deskWindow(L"sandbox.cfg", 0.6f, 0.95f, 0.4f);
+
+                const wchar_t* TIT = L"CREATIVE";
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.08f, 1.6f,
+                             0.85f, 0.95f, 0.6f, 1.0f);
+
+                const float OBW = 150.0f, OBH = 50.0f, OBG = 14.0f;
+
+                // 시작 점수
+                g_TextS.Draw(L"Start Score", 60.0f, sh*0.22f, 1.0f, 1,1,1,0.9f);
+                struct ScoreOpt { const wchar_t* l; long long v; };
+                ScoreOpt sOpts[4] = { {L"0",0},{L"200k",200000},{L"400k",400000},{L"500k",500000} };
+                for (int i = 0; i < 4; i++) {
+                    float ox = 60.0f + i * (OBW + OBG);
+                    bool sel = (g_CreativeStartScore == sOpts[i].v);
+                    if (UIButton(ox, sh*0.22f + 28.0f, OBW, OBH, sOpts[i].l,
+                                 mx, my, lmb, g_LmbPrev, sel))
+                        g_CreativeStartScore = sOpts[i].v;
+                }
+
+                // 보스 선택
+                g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
+                struct BossOpt { const wchar_t* l; int v; };
+                BossOpt bOpts[5] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
+                                     {L"Reload",2},{L"Polymorph",3} };
+                for (int i = 0; i < 5; i++) {
+                    float ox = 60.0f + i * (OBW + OBG);
+                    bool sel = (g_CreativeBossPick == bOpts[i].v);
+                    if (UIButton(ox, sh*0.40f + 28.0f, OBW, OBH, bOpts[i].l,
+                                 mx, my, lmb, g_LmbPrev, sel))
+                        g_CreativeBossPick = bOpts[i].v;
+                }
+
+                // 시작 증강 픽 횟수
+                g_TextS.Draw(L"Start Augments", 60.0f, sh*0.58f, 1.0f, 1,1,1,0.9f);
+                int aOpts[4] = { 0, 3, 5, 10 };
+                for (int i = 0; i < 4; i++) {
+                    float ox = 60.0f + i * (OBW + OBG);
+                    wchar_t lb[8]; swprintf_s(lb, L"%d", aOpts[i]);
+                    bool sel = (g_CreativeStartAugs == aOpts[i]);
+                    if (UIButton(ox, sh*0.58f + 28.0f, OBW, OBH, lb,
+                                 mx, my, lmb, g_LmbPrev, sel))
+                        g_CreativeStartAugs = aOpts[i];
+                }
+
+                // 시작 버튼
+                if (UIButton((sw - 300.0f) * 0.5f, sh*0.78f, 300.0f, 64.0f,
+                             L"START", mx, my, lmb, g_LmbPrev)) {
+                    ResetForNewGame();
+                    PickRandomWeapons(g_WeaponChoices);
+                    g_GameManager.currentState = GameState::WEAPON_SELECT;
+                }
+
+                // 뒤로 버튼 — 난이도 선택으로
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
+                }
+}
+
+static void Scene_Settings(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                const float WW = 860.0f, WH = 600.0f;
+                float wx, wy;
+                appWindow(WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
+                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
+                float lx = wx + 40.0f;     // 라벨 열
+                float bx0 = wx + 250.0f;   // 옵션 버튼 시작 열
+                const float OW = 120.0f, OH = 46.0f, OG = 8.0f;
+
+                // 헤딩
+                g_TextL.Draw(T(StrId::SET_TITLE), lx, wy + 48.0f, 1.0f, 1,1,1,1);
+
+                // FPS 라인
+                float lineY = wy + 110.0f;
+                g_TextS.Draw(T(StrId::SET_FPS), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
+                struct FpsOpt { const wchar_t* label; int val; };
+                FpsOpt fpsOpts[4] = {
+                    { L"30", 30 }, { L"60", 60 }, { L"144", 144 },
+                    { T(StrId::SET_UNLIMITED), -1 }
+                };
+                for (int i = 0; i < 4; i++) {
+                    float bx = bx0 + i * (OW + OG);
+                    bool sel = (g_FpsCap == fpsOpts[i].val);
+                    if (UIButton(bx, lineY, OW, OH, fpsOpts[i].label,
+                                 mx, my, lmb, g_LmbPrev, sel)) {
+                        g_FpsCap = fpsOpts[i].val;
+                        glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
+                    }
+                }
+
+                // 언어 라인
+                lineY = wy + 180.0f;
+                g_TextS.Draw(T(StrId::SET_LANG), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
+                struct LangOpt { const wchar_t* label; Language lang; };
+                LangOpt langOpts[LANG_COUNT] = {
+                    { L"한국어",  Language::KR },
+                    { L"English", Language::EN },
+                    { L"日本語",  Language::JP },
+                };
+                for (int i = 0; i < LANG_COUNT; i++) {
+                    float bx = bx0 + i * (OW + OG);
+                    bool sel = (g_Language == langOpts[i].lang);
+                    if (UIButton(bx, lineY, OW, OH, langOpts[i].label,
+                                 mx, my, lmb, g_LmbPrev, sel)) {
+                        g_Language = langOpts[i].lang;
+                    }
+                }
+
+                // ON/OFF 토글 한 줄 헬퍼 (창 기준)
+                auto toggleRow = [&](float ly, StrId label, bool& val) {
+                    g_TextS.Draw(T(label), lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
+                    if (UIButton(bx0, ly, OW, OH,
+                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, val))
+                        val = true;
+                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
+                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !val))
+                        val = false;
+                };
+                toggleRow(wy + 260.0f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
+                toggleRow(wy + 330.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
+                toggleRow(wy + 400.0f, StrId::SET_COMBO,     g_ShowCombo);
+
+                // 뒤로(저장 후 닫기) — 창 하단
+                if (UIButton(lx, wy + WH - 64.0f, 180.0f, 48.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    SaveGame();
+                    g_GameManager.currentState = g_SettingsReturnTo;
+                }
+                }   // close: g_AppOpen open guard
+}
+
+static void Scene_Ready(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
+                const wchar_t* T2 = T(StrId::ESC_QUIT);
+                g_TextL.Draw(T1, cx(T1, g_TextL, 1.0f), sh*0.42f, 1.0f, 1,1,1,0.95f);
+                g_TextS.Draw(T2, cx(T2, g_TextS, 1.0f), sh*0.50f, 1.0f, 0.8f,0.8f,0.8f,0.8f);
+                // 조작 안내 (키는 언어 무관 — 새 플레이어가 스킬/대시 존재를 알게)
+                const wchar_t* CTRL =
+                    L"WASD Move    Mouse Fire    SHIFT Dash    Q/E/R Skills    ESC Pause";
+                g_TextS.Draw(CTRL, cx(CTRL, g_TextS, 0.9f), sh*0.62f, 0.9f,
+                             0.55f, 0.85f, 1.0f, 0.95f);
+}
+
+static void Scene_Paused(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                // 전체 화면 딤 — 보스 창/엔티티가 메뉴 뒤로 비치지 않게
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.86f);
+                const wchar_t* T1 = T(StrId::PAUSED);
+                g_TextL.Draw(T1, cx(T1, g_TextL, 1.4f), sh*0.22f, 1.4f, 1,1,1,0.95f);
+
+                // 버튼 4개: 재개 / 설정 / 메뉴로 / 종료
+                const float BW = 280.0f, BH = 64.0f, BG = 16.0f;
+                float bx = (sw - BW) * 0.5f;
+                float by = sh * 0.36f;
+
+                if (UIButton(bx, by + 0*(BH+BG), BW, BH, T(StrId::BTN_RESUME),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::RUNNING;
+                }
+                if (UIButton(bx, by + 1*(BH+BG), BW, BH, T(StrId::BTN_SETTINGS),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_SettingsReturnTo = GameState::PAUSED;
+                    g_GameManager.currentState = GameState::SETTINGS;
+                }
+                if (UIButton(bx, by + 2*(BH+BG), BW, BH, T(StrId::BTN_MAIN_MENU),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::MAIN_MENU;
+                }
+                if (UIButton(bx, by + 3*(BH+BG), BW, BH, T(StrId::BTN_QUIT),
+                             mx, my, lmb, g_LmbPrev)) {
+                    glfwSetWindowShouldClose(window, GLFW_TRUE);
+                }
+}
+
+static void Scene_GameOver(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                // ── 메뉴 페이드인: 폭발 직후 결과 메뉴가 서서히 떠오름 (0→1, 2.5초) ──
+                float gof = g_GameOverFade;          // 0..1
+                float ge  = gof * gof * (3.0f - 2.0f * gof);  // smoothstep (부드럽게)
+
+                // 전체 화면 딤 — 보스 창/엔티티가 결과창 뒤로 비치지 않게 (페이드)
+                BindMainShader();
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f * ge);
+                const wchar_t* T1 = T(StrId::GAMEOVER);
+                g_TextL.Draw(T1, cx(T1, g_TextL, 1.6f), sh*0.30f, 1.6f,
+                             1, 0.25f, 0.25f, 0.95f * ge);
+                // 사망 원인 (프로세스 종료 사유)
+                if (g_DeathReason[0]) {
+                    g_TextS.Draw(g_DeathReason, cx(g_DeathReason, g_TextS, 1.0f), sh*0.385f, 1.0f,
+                                 1.0f, 0.55f, 0.45f, 0.92f * ge);
+                }
+
+                // 결과 — 도달 레벨 / 처치 수 / 최종 점수
+                wchar_t lvBuf[64], killBuf[64], scoreBuf[64];
+                swprintf_s(lvBuf,    L"%ls   Lv. %d", T(StrId::REACHED_LEVEL),
+                           g_GameManager.playerLevel);
+                swprintf_s(killBuf,  L"%ls   %lld",   T(StrId::KILL_COUNT),
+                           g_Stats.killCount);
+                swprintf_s(scoreBuf, L"%ls   %lld",   T(StrId::FINAL_SCORE),
+                           g_GameManager.score);
+
+                g_TextL.Draw(scoreBuf, cx(scoreBuf, g_TextL, 1.2f), sh*0.44f, 1.2f,
+                             1.0f, 1.0f, 0.7f, 0.95f * ge);
+                g_TextS.Draw(lvBuf,    cx(lvBuf,    g_TextS, 1.1f), sh*0.52f, 1.1f,
+                             0.85f, 0.95f, 0.85f, 0.95f * ge);
+                g_TextS.Draw(killBuf,  cx(killBuf,  g_TextS, 1.1f), sh*0.57f, 1.1f,
+                             0.85f, 0.95f, 0.85f, 0.95f * ge);
+
+                // 최고 점수 (난이도별) + 신기록 + 획득 코인
+                wchar_t bestBuf[64], coinBuf[64];
+                swprintf_s(bestBuf, L"BEST   %lld", g_BestScore[(int)g_Difficulty]);
+                g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.62f, 1.1f,
+                             1.0f, 0.85f, 0.4f, 0.95f * ge);
+                swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
+                g_TextS.Draw(coinBuf, cx(coinBuf, g_TextS, 1.0f), sh*0.665f, 1.0f,
+                             1.0f, 0.9f, 0.3f, 0.95f * ge);
+                if (g_LastRunRecord) {
+                    const wchar_t* rec = L"★ NEW RECORD ★";
+                    float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
+                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.37f, 1.0f,
+                                 1.0f, 0.9f, 0.2f, blink * ge);
+                }
+
+                // ── 사망 시점 보유 증강 + 시작 무기 (좌측 패널) — 빌드 분석용 ──
+                {
+                    int gcounts[AUG_TOTAL] = {};
+                    for (int idx : g_OwnedAugs) gcounts[idx]++;
+
+                    const float panelX = 24.0f, colW = 256.0f, ROW_H = 26.0f;
+                    const float listTop = sh * 0.16f;
+                    const float yLimit  = sh - 30.0f;
+                    g_TextS.Draw(T(StrId::OWNED_AUGS), panelX, listTop, 1.0f,
+                                 1.0f, 1.0f, 1.0f, 0.95f * ge);
+                    // 시작 무기 (저격총 등 — "사기 무기" 추적용)
+                    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT) {
+                        wchar_t wb[80];
+                        swprintf_s(wb, L"[ %ls ]", WeaponName(ALL_WEAPONS[g_CurrentWeapon]));
+                        g_TextS.Draw(wb, panelX, listTop + 30.0f, 0.95f,
+                                     1.0f, 0.85f, 0.35f, 0.95f * ge);
+                    }
+                    float colX = panelX, py = listTop + 70.0f;
+                    for (int i = 0; i < AUG_TOTAL; i++) {
+                        if (gcounts[i] == 0) continue;
+                        if (py > yLimit) { colX += colW; py = listTop + 70.0f; }  // 다음 열로 래핑
+                        const AugDef& def = ALL_AUGS[i];
+                        float cr, cg, cb;
+                        GetRarityColor(def.rarity, cr, cg, cb);
+                        cr = std::min(1.0f, cr * 1.3f + 0.25f);
+                        cg = std::min(1.0f, cg * 1.3f + 0.25f);
+                        cb = std::min(1.0f, cb * 1.3f + 0.25f);
+                        wchar_t line[96];
+                        if (gcounts[i] > 1)
+                            swprintf_s(line, L"· %ls  ×%d", AugName(def), gcounts[i]);
+                        else
+                            swprintf_s(line, L"· %ls", AugName(def));
+                        g_TextS.Draw(line, colX, py, 0.8f, cr, cg, cb, 0.92f * ge);
+                        py += ROW_H;
+                    }
+                }
+
+                // 버튼 3개: 다시하기 / 메뉴로 / 종료 — 페이드 완료 후에만 표시/활성
+                if (gof >= 0.999f) {
+                    const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
+                    float totalW = 3 * BW + 2 * BG;
+                    float bx = (sw - totalW) * 0.5f;
+                    float by = sh * 0.72f;
+
+                    if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
+                                 mx, my, lmb, g_LmbPrev)) {
+                        ResetForNewGame();
+                        PickRandomWeapons(g_WeaponChoices);
+                        g_GameManager.currentState = GameState::WEAPON_SELECT;
+                    }
+                    if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
+                                 mx, my, lmb, g_LmbPrev)) {
+                        g_GameManager.currentState = GameState::MAIN_MENU;
+                    }
+                    if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
+                                 mx, my, lmb, g_LmbPrev)) {
+                        glfwSetWindowShouldClose(window, GLFW_TRUE);
+                    }
+                }
+}
+
+static void Scene_AugSelect(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                // ── 카드 레이아웃 (GameManager::Render 와 동기화) ──
+                bool hasConv = (g_ConversionWeapon >= 0 && st == GameState::AUG_SELECT);
+                int  nCards  = hasConv ? 4 : 3;
+                const float CARD_W = hasConv ? 240.0f : 280.0f;
+                const float CARD_H = 400.0f;
+                const float GAP    = hasConv ? 32.0f : 48.0f;
+                const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
+                float baseX = (sw - TOTAL_W) * 0.5f;
+                float baseY = (sh - CARD_H)  * 0.4f;
+
+                // 타이틀
+                const wchar_t* TIT = (st == GameState::DEBUFF_SELECT)
+                                     ? T(StrId::CHOOSE_DEBUFF)
+                                     : T(StrId::CHOOSE_AUG);
+                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.0f), baseY - 56.0f, 1.0f,
+                             1,1,1,0.95f);
+
+                // 키 힌트
+                const wchar_t* HINT = (g_HoveredAug < 0)
+                                      ? T(StrId::KEY_HINT_NO_HOVER)
+                                      : T(StrId::KEY_HINT_HOVER);
+                g_TextS.Draw(HINT, cx(HINT, g_TextS, 0.85f),
+                             baseY + CARD_H + 200.0f,
+                             0.85f, 0.75f,0.75f,0.75f,0.8f);
+
+                // 각 카드: 등급 라벨 + 이름만 (4번째는 변환 카드)
+                static const wchar_t* KEY_LABELS[4] = {L"[ 1 ]", L"[ 2 ]", L"[ 3 ]", L"[ 4 ]"};
+                for (int i = 0; i < nCards; i++) {
+                    float cardX = baseX + i * (CARD_W + GAP);
+                    float yOff  = (g_HoveredAug == i) ? -16.0f : 0.0f;
+
+                    // 카드 이름 — 3개는 증강, 4번째는 변환 무기
+                    const wchar_t* cardName;
+                    float tr, tg, tb;
+                    const wchar_t* topLabel;
+                    if (i < 3) {
+                        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
+                        cardName = AugName(def);
+                        GetRarityColor(def.rarity, tr, tg, tb);
+                        tr = std::min(1.0f, tr * 1.4f + 0.25f);
+                        tg = std::min(1.0f, tg * 1.4f + 0.25f);
+                        tb = std::min(1.0f, tb * 1.4f + 0.25f);
+                        topLabel = GetRarityKR(def.rarity);
+                        // 픽토그램 (있으면) — 카드 상단 중앙, 흰색
+                        GLuint icon = IconFor(def.type);
+                        if (icon) {
+                            float isz = 110.0f;
+                            DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
+                                     baseY + yOff + CARD_H * 0.12f, isz, isz,
+                                     1.0f, 1.0f, 1.0f, 0.97f);
+                        }
+                    } else {
+                        cardName = (g_ConversionWeapon >= 0)
+                                 ? WeaponName(ALL_WEAPONS[g_ConversionWeapon]) : L"?";
+                        tr = 1.0f; tg = 0.9f; tb = 0.3f;
+                        topLabel = L"변환";
+                    }
+                    float rw = g_TextS.Width(topLabel, 1.0f);
+                    g_TextS.Draw(topLabel,
+                                 cardX + (CARD_W - rw) * 0.5f,
+                                 baseY + yOff + 22.0f, 1.0f, tr, tg, tb, 0.95f);
+
+                    // 증강/무기 이름
+                    float nameSc = 1.2f;
+                    while (nameSc > 0.7f &&
+                           g_TextL.Width(cardName, nameSc) > CARD_W - 20.0f)
+                        nameSc -= 0.05f;
+                    float nw = g_TextL.Width(cardName, nameSc);
+                    g_TextL.Draw(cardName,
+                                 cardX + (CARD_W - nw) * 0.5f,
+                                 baseY + yOff + CARD_H * 0.40f, nameSc,
+                                 1,1,1,0.95f);
+
+                    // 키 힌트 (카드 하단)
+                    float kw = g_TextS.Width(KEY_LABELS[i], 1.0f);
+                    g_TextS.Draw(KEY_LABELS[i],
+                                 cardX + (CARD_W - kw) * 0.5f,
+                                 baseY + yOff + CARD_H - 50.0f, 1.0f,
+                                 tr, tg, tb, 0.95f);
+                }
+
+                // ── 하단 상세 설명 박스 (호버 카드의 전체 설명) ──
+                if (g_HoveredAug >= 0) {
+                    // 호버 카드 설명 + 상단 띠 색상 (3개는 증강, 4번째는 변환 무기)
+                    const wchar_t* hDesc;
+                    float hr, hg, hb;
+                    if (g_HoveredAug < 3) {
+                        int hIdx = g_GameManager.augChoices[g_HoveredAug];
+                        if (hIdx < 0) hIdx = 0;
+                        const AugDef& hDef = ALL_AUGS[hIdx];
+                        hDesc = AugDesc(hDef);
+                        GetRarityColor(hDef.rarity, hr, hg, hb);
+                    } else {
+                        hDesc = (g_ConversionWeapon >= 0)
+                              ? WeaponDesc(ALL_WEAPONS[g_ConversionWeapon])
+                              : L"기존 무기 효과 제거 후 새 무기로 전환";
+                        hr = 1.0f; hg = 0.78f; hb = 0.10f;  // 변환 = 금색
+                    }
+                    float boxY = baseY + CARD_H + 24.0f;
+                    float boxW = TOTAL_W;
+                    float boxH = 150.0f;
+                    float boxX = (sw - boxW) * 0.5f;
+
+                    // 박스 배경 (어두운 반투명)
+                    drawRect(boxX, boxY, boxW, boxH, 0.03f, 0.03f, 0.05f, 0.85f);
+
+                    // 상단 띠
+                    drawRect(boxX, boxY, boxW, 4.0f, hr, hg, hb, 1.0f);
+
+                    // 설명 ('/' 분리, 각 줄 fit)
+                    std::vector<std::wstring> lines;
+                    std::wstring cur;
+                    for (const wchar_t* p = hDesc; *p; ++p) {
+                        if (*p == L'/') {
+                            if (!cur.empty()) lines.push_back(cur);
+                            cur.clear();
+                        } else cur += *p;
+                    }
+                    if (!cur.empty()) lines.push_back(cur);
+                    for (auto& s : lines) {
+                        while (!s.empty() && (s.front() == L' ' || s.front() == L'\t'))
+                            s.erase(0, 1);
+                        while (!s.empty() && (s.back() == L' ' || s.back() == L'\t'))
+                            s.pop_back();
+                    }
+
+                    int n = (int)lines.size();
+                    if (n < 1) n = 1;
+                    float lineH = 32.0f;
+                    float startY = boxY + 22.0f + (boxH - 22.0f - lineH * n) * 0.5f;
+                    for (int li = 0; li < n; li++) {
+                        const wchar_t* s = lines[li].c_str();
+                        // 일부러 안 줄임 — 박스가 카드 3장 폭이라 충분
+                        float sc = 1.0f;
+                        float lw = g_TextS.Width(s, sc);
+                        if (lw > boxW - 40.0f) {
+                            // 박스 폭도 안 되면 그때만 축소
+                            while (sc > 0.7f && g_TextS.Width(s, sc) > boxW - 40.0f)
+                                sc -= 0.05f;
+                            lw = g_TextS.Width(s, sc);
+                        }
+                        g_TextS.Draw(s, boxX + (boxW - lw) * 0.5f,
+                                     startY + lineH * (float)li, sc,
+                                     1.0f, 1.0f, 1.0f, 0.95f);
+                    }
+                }
+}
+
+static void Scene_OwnedAugPanel(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    float& fireTimer = *c.fireTimer;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
+        return (sw - tr.Width(t, scale)) * 0.5f; };
+    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
+        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
+    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
+                         float ar, float ag, float ab, float& ox, float& oy) {
+        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
+    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
+    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                // 같은 인덱스 카운트 (스택)
+                int counts[AUG_TOTAL] = {};
+                for (int idx : g_OwnedAugs) counts[idx]++;
+
+                const float PX  = 16.0f;
+                const float ROW_H = 30.0f;
+                float       py  = 60.0f;
+                const wchar_t* TITLE = T(StrId::OWNED_AUGS);
+                g_TextS.Draw(TITLE, PX, py, 1.1f, 1, 1, 1, 0.95f);
+                if (st == GameState::PAUSED) {
+                    g_TextS.Draw(L"(클릭 → 설명)", PX + 2.0f, py + 30.0f, 0.70f,
+                                 0.6f, 0.7f, 0.9f, 0.7f);
+                }
+                py += 50.0f;
+
+                for (int i = 0; i < AUG_TOTAL; i++) {
+                    if (counts[i] == 0) continue;
+                    if (py > sh - 80.0f) break;
+                    const AugDef& def = ALL_AUGS[i];
+                    float cr, cg, cb;
+                    GetRarityColor(def.rarity, cr, cg, cb);
+                    cr = std::min(1.0f, cr * 1.3f + 0.25f);
+                    cg = std::min(1.0f, cg * 1.3f + 0.25f);
+                    cb = std::min(1.0f, cb * 1.3f + 0.25f);
+
+                    // PAUSED: 클릭으로 설명 선택. 선택된 항목은 배경 강조
+                    if (st == GameState::PAUSED) {
+                        bool rowHover = (mx >= 0 && mx <= 240.0f &&
+                                        my >= py - 4.0f && my <= py + ROW_H - 6.0f);
+                        if (rowHover) {
+                            // 호버 배경
+                            BindMainShader();
+                            drawRect(0, py - 4.0f, 240.0f, ROW_H, 0.15f, 0.15f, 0.25f, 0.55f);
+                        }
+                        if (g_PauseSelectedAug == i) {
+                            // 선택 배경
+                            BindMainShader();
+                            drawRect(0, py - 4.0f, 240.0f, ROW_H, 0.12f, 0.20f, 0.35f, 0.75f);
+                            drawRect(0, py - 4.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
+                        }
+                        // 클릭 처리
+                        if (lmb && !g_LmbPrev && rowHover) {
+                            g_PauseSelectedAug = (g_PauseSelectedAug == i) ? -1 : i;
+                        }
+                    }
+
+                    wchar_t line[96];
+                    if (counts[i] > 1)
+                        swprintf_s(line, L"· %ls  ×%d", AugName(def), counts[i]);
+                    else
+                        swprintf_s(line, L"· %ls", AugName(def));
+                    g_TextS.Draw(line, PX, py, 0.85f, cr, cg, cb, 0.9f);
+                    py += ROW_H;
+                }
+
+                // PAUSED: 선택된 증강 설명 박스
+                if (st == GameState::PAUSED && g_PauseSelectedAug >= 0 &&
+                    g_PauseSelectedAug < AUG_TOTAL) {
+                    const AugDef& sd = ALL_AUGS[g_PauseSelectedAug];
+                    // 원래 위치 (BX=220, BY=60) 복원
+                    const float BX = 220.0f;
+                    const float BY = 60.0f;
+                    const float BW = std::min(420.0f, sw - BX - 20.0f);
+                    const float BH = 270.0f;
+
+                    // 배경 + 등급 색 띠
+                    BindMainShader();
+                    drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.92f);
+                    float hr, hg, hb;
+                    GetRarityColor(sd.rarity, hr, hg, hb);
+                    drawRect(BX, BY, BW, 5.0f, hr, hg, hb, 1.0f);
+
+                    // 등급 라벨 (소)
+                    const wchar_t* rLabel = GetRarityKR(sd.rarity);
+                    g_TextS.Draw(rLabel, BX + 12.0f, BY + 12.0f, 0.9f,
+                                 hr, hg, hb, 0.95f);
+
+                    // 가로 구분선
+                    BindMainShader();
+                    drawRect(BX + 10.0f, BY + 38.0f, BW - 20.0f, 1.0f,
+                             0.3f, 0.3f, 0.4f, 0.5f);
+
+                    // 증강 이름 (대) — 구분선 아래
+                    float nSc = 1.05f;
+                    while (nSc > 0.65f && g_TextL.Width(AugName(sd), nSc) > BW - 20.0f)
+                        nSc -= 0.05f;
+                    float nLw   = g_TextL.Width(AugName(sd), nSc);
+                    float nameY = BY + 48.0f;
+                    g_TextL.Draw(AugName(sd), BX + (BW - nLw) * 0.5f, nameY, nSc,
+                                 1.0f, 1.0f, 1.0f, 0.98f);
+                    float nameH = g_TextL.Height(AugName(sd), nSc);
+
+                    // 설명 ('/' 분리) — BY+92 부터 (이름 아래 여유)
+                    std::vector<std::wstring> dlines;
+                    std::wstring cur2;
+                    for (const wchar_t* p = AugDesc(sd); *p; ++p) {
+                        if (*p == L'/') { if (!cur2.empty()) dlines.push_back(cur2); cur2.clear(); }
+                        else cur2 += *p;
+                    }
+                    if (!cur2.empty()) dlines.push_back(cur2);
+                    for (auto& s2 : dlines) {
+                        while (!s2.empty() && (s2.front()==L' '||s2.front()==L'\t')) s2.erase(0,1);
+                        while (!s2.empty() && (s2.back() ==L' '||s2.back() ==L'\t')) s2.pop_back();
+                    }
+                    int nd = (int)dlines.size(); if (nd < 1) nd = 1;
+                    float dLineH = 26.0f;
+                    float dStartY = nameY + nameH + 8.0f;   // 이름 실제 높이 아래에서 시작
+                    for (int li = 0; li < nd; li++) {
+                        const wchar_t* ds = dlines[li].c_str();
+                        float dsc = 0.9f;
+                        while (dsc > 0.65f && g_TextS.Width(ds, dsc) > BW - 24.0f)
+                            dsc -= 0.05f;
+                        float dlw = g_TextS.Width(ds, dsc);
+                        g_TextS.Draw(ds, BX + (BW - dlw) * 0.5f,
+                                     dStartY + dLineH * (float)li, dsc,
+                                     1.0f, 1.0f, 0.95f, 0.9f);
+                        if (dStartY + dLineH * (float)(li+1) > BY + BH - 10.0f) break;
+                    }
+                }
+}
+
