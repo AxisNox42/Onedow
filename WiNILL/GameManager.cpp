@@ -194,6 +194,12 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::DRONE_2       && !hasOwnedType(AugType::DRONE))         continue;
             if (t == AugType::CHAKRAM_2     && !hasOwnedType(AugType::CHAKRAM))       continue;
             if (t == AugType::CHAKRAM_3     && !hasOwnedType(AugType::CHAKRAM_2))     continue;
+            if (t == AugType::LASER_2       && !hasOwnedType(AugType::LASER))         continue;
+            if (t == AugType::PIERCE_2      && !hasOwnedType(AugType::PIERCE))        continue;
+            if (t == AugType::TWIN_2        && !hasOwnedType(AugType::TWIN))          continue;
+            // 클래스 전용 — 해당 클래스 런에서만 등장
+            if ((t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND) && !g_RunMelee) continue;
+            if ((t == AugType::POWER_DRAW || t == AugType::MULTISHOT)  && !g_RunBow)   continue;
             // 변환 전용 증강 — 일반 픽 제외 (4번째 변환 카드 슬롯에서만 등장)
             // BAYONET 은 일반 에픽으로 복원
             if (t == AugType::CANNON || t == AugType::SNIPER ||

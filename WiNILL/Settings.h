@@ -35,6 +35,11 @@ inline constexpr float g_GameBarH = 34.0f;
 inline float g_ArenaExX = 0.0f;
 inline float g_ArenaExY = 0.0f;
 
+// 현재 런의 클래스(검객/궁수) 여부 — 클래스 전용 증강 추첨 게이팅용.
+//   직업 적용 시 main 이 세팅, ResetForNewGame 이 false. (RollOneAug 가 읽음)
+inline bool g_RunMelee = false;   // 검객 (근접 스윙)
+inline bool g_RunBow   = false;   // 궁수 (차징 화살)
+
 // 모든 언어 공통 폰트 — Microsoft YaHei UI (Win10+ 기본 탑재)
 //   한글/라틴은 GDI 폰트 링크(자동 폴백)로, 일본어 가나·한자도 시스템 폴백으로 표시
 //   (Windows 전용 — GDI face 이름)

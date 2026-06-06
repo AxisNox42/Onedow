@@ -17,6 +17,9 @@ enum class AugType {
     DRONE,                 // 희귀 → 에픽
     MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
     LASER,                 // 스캔 레이저 (주기적 관통 빔 — 군중제어)
+    MELEE_WIDE, BLADE_WIND,           // 검객 전용 (광폭 베기 / 칼바람)
+    POWER_DRAW, MULTISHOT,            // 궁수 전용 (강궁 / 다중 사격)
+    LASER_2, PIERCE_2, TWIN_2,        // 티어 연장 (레이저II / 관통II / 트리플)
     PROB_CHAIN,            // 확률적 연쇄 작용 (30% 3튕김)
     DEATH_BLAST,           // 연쇄 폭발 (적 사망 시 폭발)
     SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 과부하)
@@ -191,6 +194,37 @@ static const AugDef ALL_AUGS[] = {
       { L"0.85초마다 조준 방향으로 중거리 관통 레이저 — 직선상 적 일소 (군중 제어)",
         L"Every 0.85s, a mid-range piercing laser along your aim — clears enemies in a line",
         L"0.85秒毎に照準方向へ中距離貫通レーザー — 直線上の敵を一掃 (群衆制御)" } },
+    { AugType::LASER_2,       AugRarity::LEGENDARY, AugUnique::NONE, "LASER II",
+      { L"스캔 레이저 II", L"Scan Laser II", L"スキャンレーザー II" },
+      { L"레이저 발사 0.85→0.55초 · 사거리 560→760  (요구: 스캔 레이저)",
+        L"Laser interval 0.85→0.55s · range 560→760  (req: Scan Laser)",
+        L"レーザー 0.85→0.55秒・射程 560→760  (要: スキャンレーザー)" } },
+    { AugType::PIERCE_2,      AugRarity::LEGENDARY, AugUnique::NONE, "PIERCE II",
+      { L"관통 II", L"Pierce II", L"貫通 II" },
+      { L"관통 확률 +30%  (요구: 관통)", L"Pierce chance +30%  (req: Pierce)", L"貫通確率 +30%  (要: 貫通)" } },
+    { AugType::TWIN_2,        AugRarity::LEGENDARY, AugUnique::NONE, "TRIPLE",
+      { L"트리플 샷", L"Triple Shot", L"トリプルショット" },
+      { L"한 번에 2발 → 3발  (요구: 더블)", L"2 → 3 shots at once  (req: Twin)", L"一度に2発 → 3発  (要: ダブル)" } },
+    { AugType::MELEE_WIDE,    AugRarity::EPIC,      AugUnique::NONE, "MELEE_WIDE",
+      { L"광폭 베기", L"Wide Slash", L"広薙ぎ" },
+      { L"[검객] 스윙 범위(호)·사거리 확대",
+        L"[Swordsman] wider swing arc & longer reach",
+        L"[剣士] 斬撃の扇・射程拡大" } },
+    { AugType::BLADE_WIND,    AugRarity::EPIC,      AugUnique::NONE, "BLADE_WIND",
+      { L"칼바람", L"Blade Wind", L"剣風" },
+      { L"[검객] 스윙마다 전방으로 관통 칼바람 발사 (원거리 견제)",
+        L"[Swordsman] each swing launches a piercing blade-wind forward",
+        L"[剣士] 斬撃毎に前方へ貫通する剣風を放つ" } },
+    { AugType::POWER_DRAW,    AugRarity::EPIC,      AugUnique::NONE, "POWER_DRAW",
+      { L"강궁", L"Power Draw", L"剛弓" },
+      { L"[궁수] 차징 40% 빠름 · 완충 위력 증가",
+        L"[Archer] charge 40% faster · higher full-draw power",
+        L"[弓兵] チャージ40%高速・満タン威力増加" } },
+    { AugType::MULTISHOT,     AugRarity::EPIC,      AugUnique::NONE, "MULTISHOT",
+      { L"다중 사격", L"Multishot", L"多重射撃" },
+      { L"[궁수] 완충 발사 시 3발 부채꼴",
+        L"[Archer] full-charge shot fires 3 arrows in a fan",
+        L"[弓兵] 満タン発射で3本の扇状射撃" } },
     { AugType::MINIGUN,       AugRarity::EPIC,      AugUnique::NONE, "MINIGUN",
       { L"미니건", L"Minigun", L"ミニガン" },
       { L"연사 ×2  /  공격력 -30%  /  20% 확률 관통", L"Fire rate ×2  /  Attack -30%  /  20% pierce", L"連射 ×2  /  攻撃力 -30%  /  20%貫通" } },
@@ -395,7 +429,7 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 68;  // +조합4, +레이저
+static constexpr int AUG_TOTAL = 75;  // +조합4, +레이저, +티어3, +클래스4
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {

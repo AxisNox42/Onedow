@@ -1011,6 +1011,7 @@ int main() {
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
             g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
+            g_RunMelee = false; g_RunBow = false;          // 클래스 게이팅 초기화
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
@@ -3171,8 +3172,13 @@ int main() {
                     float ang = atan2f(dy, dx);
                     float off = 0.087f;
                     float r = 200.0f;
-                    spawnOne(pCX + cosf(ang + off) * r, pCY + sinf(ang + off) * r);
-                    spawnOne(pCX + cosf(ang - off) * r, pCY + sinf(ang - off) * r);
+                    int   n = (g_Stats.twinCount < 2) ? 2 : g_Stats.twinCount;  // 2발(더블)/3발(트리플)
+                    for (int s = 0; s < n; s++) {
+                        // 중심 기준 대칭 부채꼴 (-off … +off)
+                        float a = (n > 1) ? ang + (((float)s / (float)(n - 1)) - 0.5f) * (2.0f * off)
+                                          : ang;
+                        spawnOne(pCX + cosf(a) * r, pCY + sinf(a) * r);
+                    }
                 } else {
                     spawnOne(tx, ty);
                 }
@@ -3180,8 +3186,9 @@ int main() {
 
             // 검객 근접 스윙 — 조준 방향 호(arc) 안의 모든 적에게 즉시 피해
             auto meleeSwing = [&](float ang) {
-                float range = 190.0f * g_Stats.playerSizeMult;
-                float r2 = range * range, halfArc = 1.15f;  // ±~66° (약 130° 호)
+                float range = 190.0f * g_Stats.playerSizeMult * (g_Stats.meleeWide ? 1.25f : 1.0f);
+                float r2 = range * range;
+                float halfArc = g_Stats.meleeWide ? 1.5f : 1.15f;  // 광폭 베기: 호 확대
                 bool crit = false; float critMult = 1.0f;
                 if (g_Stats.critChance > 0 && (rand() % 100) < g_Stats.critChance) {
                     crit = true; critMult = g_Stats.critMult;
@@ -3277,16 +3284,27 @@ int main() {
                     hitB(g_SpamBoss->worldX, g_SpamBoss->worldY, g_SpamBoss->hp, g_SpamBoss->alive);
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
+                // 칼바람 — 스윙마다 전방으로 관통 투사체 (근접의 원거리 견제)
+                if (g_Stats.bladeWind) {
+                    Bullet bw(pCX, pCY, pCX + cosf(ang)*200.0f, pCY + sinf(ang)*200.0f);
+                    bw.speed       = 900.0f;
+                    bw.maxRange    = 700.0f;
+                    bw.sizeScale   = 2.2f;
+                    bw.color       = glm::vec3(0.7f, 0.95f, 1.0f);
+                    bw.remainingDmg = dmg * 0.6f;   // 관통(대포식) — 근접 데미지의 60%
+                    g_Bullets.push_back(bw);
+                }
             };
 
             // ── 스캔 레이저 (증강) — 0.7초마다 조준 방향 관통 빔 (군중제어) ──
             //   meleeSwing 의 데미지/처치보상 루프를 '직선 판정(SegDist)' 버전으로 재사용.
             if (g_Stats.laser) {
+                float laserInt = (g_Stats.laserTier >= 2) ? 0.55f : LASER_INT;  // II: 더 자주
                 g_LaserTimer += delta;
-                if (g_LaserTimer >= LASER_INT) {
-                    g_LaserTimer -= LASER_INT;
+                if (g_LaserTimer >= laserInt) {
+                    g_LaserTimer -= laserInt;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);
-                    const float LASER_RANGE = 560.0f;   // 너프: 풀스크린 → 근처 줄만 (사거리 제한)
+                    float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;  // II: 더 길게
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
                     const float BEAM_HALF = 24.0f;
                     bool lcrit = false; float lcm = 1.0f;
@@ -3384,29 +3402,40 @@ int main() {
                     if (!lmb) fireTimer = effInterval;
                 } else if (g_Stats.bowWeapon) {  // 궁수 — 누른 만큼 차징 후 발사
                     if (lmb) {
-                        g_ArcherCharge += delta / BOW_CHARGE_TIME;
+                        // 강궁: 차징 40% 빠름
+                        g_ArcherCharge += delta / (BOW_CHARGE_TIME * (g_Stats.powerDraw ? 0.6f : 1.0f));
                         if (g_ArcherCharge > 1.0f) g_ArcherCharge = 1.0f;
                     } else if (g_ArcherCharge > 0.001f) {
                         float charge = g_ArcherCharge;
                         float ang = atan2f(wmy - pCY, wmx - pCX);
-                        Bullet nb(pCX, pCY, pCX + cosf(ang) * 200.0f, pCY + sinf(ang) * 200.0f);
-                        nb.speed   = effSpeed;
-                        nb.maxRange = 1500.0f;
-                        // 대포식 관통: remainingDmg 풀이 적을 관통하며 소진
-                        //   미차징 0.4배 → 완충 3.0배
-                        float chMult = 0.4f + charge * 2.6f;
-                        nb.remainingDmg = g_Stats.GetBaseDamage()
-                                        * g_Stats.GetDamageMultiplier(0.0f) * chMult;
-                        nb.sizeScale = 1.0f + charge * 3.0f;     // 최대 4배 크기
-                        nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
-                        if (g_OverclockTimer > 0.0f) nb.remainingDmg *= 1.5f;
+                        // 강궁: 완충 위력 2.6 → 3.4
+                        float chMult = 0.4f + charge * (g_Stats.powerDraw ? 3.4f : 2.6f);
+                        float arrowDmg = g_Stats.GetBaseDamage()
+                                       * g_Stats.GetDamageMultiplier(0.0f) * chMult;
+                        if (g_OverclockTimer > 0.0f) arrowDmg *= 1.5f;
                         if (g_Stats.berserk) {
                             float hf = g_Stats.maxHP > 0.0f
                                      ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                             if (hf < 0.0f) hf = 0.0f; else if (hf > 1.0f) hf = 1.0f;
-                            nb.remainingDmg *= (1.0f + (1.0f - hf) * 0.6f);
+                            arrowDmg *= (1.0f + (1.0f - hf) * 0.6f);
                         }
-                        g_Bullets.push_back(nb);
+                        auto fireArrow = [&](float a) {
+                            Bullet nb(pCX, pCY, pCX + cosf(a) * 200.0f, pCY + sinf(a) * 200.0f);
+                            nb.speed       = effSpeed;
+                            nb.maxRange    = 1500.0f;
+                            nb.remainingDmg= arrowDmg;
+                            nb.sizeScale   = 1.0f + charge * 3.0f;     // 최대 4배 크기
+                            nb.color       = glm::vec3(0.75f, 0.95f, 0.45f);
+                            g_Bullets.push_back(nb);
+                        };
+                        // 다중 사격: 완충(>0.85) 발사 시 3발 부채꼴
+                        if (g_Stats.multishot && charge > 0.85f) {
+                            fireArrow(ang);
+                            fireArrow(ang + 0.16f);
+                            fireArrow(ang - 0.16f);
+                        } else {
+                            fireArrow(ang);
+                        }
                         TriggerMuzzle(pCX, pCY, ang);
                         SpawnSparks(pCX + cosf(ang)*26.0f, pCY + sinf(ang)*26.0f,
                                     2 + (int)(charge*4), 0.8f, 1.0f, 0.5f);
@@ -5499,9 +5528,11 @@ int main() {
                                 g_Stats.meleeWeapon  = true;
                                 g_Stats.fireInterval = 0.26f;   // 스윙 주기 (고정)
                                 g_Stats.baseFireInterval = g_Stats.fireInterval;
+                                g_RunMelee = true;              // 검객 전용 증강 게이팅
                             } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
                                 g_Stats.bowWeapon    = true;    // 누른 만큼 강해짐 (관통=대포식)
                                 g_Stats.bulletSpeed *= 1.4f;
+                                g_RunBow = true;                // 궁수 전용 증강 게이팅
                             }
                             fireTimer = g_Stats.fireInterval;
                         }

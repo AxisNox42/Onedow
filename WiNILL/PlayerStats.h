@@ -46,6 +46,7 @@ struct PlayerStats {
     bool  gigantify   = false;
     bool  pierce      = false;   // 매 hit 30% 확률 관통
     bool  twin        = false;   // 한 번에 2발 발사
+    int   twinCount   = 2;       // TWIN=2, TWIN_2(트리플)=3
     bool  chakram     = false;   // 주변 도는 차크람 1개
     // 연쇄 작용 (리코셰) — 명중 시 가까운 적으로 튕김
     int   ricochetMax    = 0;        // 튕김 최대 횟수 (0 = 없음)
@@ -67,11 +68,17 @@ struct PlayerStats {
     // ── 직업 무기 모드 (검객/궁수) ──
     bool  meleeWeapon  = false;   // 검객 — 총알 대신 근접 호 스윙
     bool  bowWeapon    = false;   // 궁수 — 관통 화살 (느리고 강함)
+    // 클래스 전용 증강
+    bool  meleeWide    = false;   // [검객] 광폭 베기 — 호·사거리 확대
+    bool  bladeWind    = false;   // [검객] 칼바람 — 스윙마다 전방 관통탄
+    bool  powerDraw    = false;   // [궁수] 강궁 — 차징 빠름·완충 위력↑
+    bool  multishot    = false;   // [궁수] 다중 사격 — 완충 3발 부채꼴
 
     // ── 희귀/전설 (티어드) ───────────────────────────────
     bool  drone        = false;
     int   droneCount   = 0;       // 1 = DRONE (RARE), 2 = DRONE_2 (LEGENDARY)
     bool  laser        = false;   // 스캔 레이저 — 주기적 관통 빔 (군중제어)
+    int   laserTier    = 1;       // 1 = LASER, 2 = LASER_2 (간격↓·사거리↑)
     bool  bulletRain   = false;
     float bulletRainCooldown = 15.0f; // 15 → 10 (II) → 5 (III)
     int   chakramCount = 0;       // 1, 2, 3 — CHAKRAM / II / III
@@ -284,6 +291,22 @@ struct PlayerStats {
         case AugType::LASER:
             laser = true;
             break;
+        // ── 티어 연장 ──
+        case AugType::LASER_2:
+            laser = true;  laserTier = 2;   // 발사 간격↓·사거리↑ (main 이 tier 분기)
+            break;
+        case AugType::PIERCE_2:
+            pierce = true;
+            pierceChance = std::min(100, pierceChance + 30);
+            break;
+        case AugType::TWIN_2:
+            twin = true;  twinCount = 3;     // 트리플 샷
+            break;
+        // ── 클래스 전용 (검객/궁수) ──
+        case AugType::MELEE_WIDE:  meleeWide = true; break;
+        case AugType::BLADE_WIND:  bladeWind = true; break;
+        case AugType::POWER_DRAW:  powerDraw = true; break;
+        case AugType::MULTISHOT:   multishot = true; break;
         // ── 에픽 강화 ──
         case AugType::BULLET_RAIN_2:
             bulletRain         = true;          // 안전망 (선행 조건 우회 대비)
