@@ -4935,13 +4935,11 @@ int main() {
                     float wy = sh * 0.5f - chh * 0.5f;
                     BindMainShader();
                     drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease);  // 배경 딤
-                    // 시네마틱 — 아래로 훑는 스캔 스윕 라인 + 막판 화이트 플래시
+                    // 시네마틱 — 아래로 훑는 스캔 스윕 라인 (화이트 플래시는 눈 아파서 제거)
                     {
                         float sweepY = fmodf(prog * 1.3f, 1.0f) * sh;
-                        drawRect(0, sweepY, sw, 2.0f, ar, ag, ab, 0.35f * ease);
+                        drawRect(0, sweepY, sw, 2.0f, ar, ag, ab, 0.30f * ease);
                         drawRect(0, sweepY - 40.0f, sw, 40.0f, ar, ag, ab, 0.05f * ease);
-                        if (prog > 0.92f)
-                            drawRect(0, 0, sw, sh, 1.0f, 1.0f, 1.0f, (prog - 0.92f) / 0.08f * 0.5f);
                     }
                     drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
                     drawRect(wx, wy, cw, 28.0f, ar*0.55f, ag*0.55f, ab*0.6f, 1.0f); // 타이틀바
