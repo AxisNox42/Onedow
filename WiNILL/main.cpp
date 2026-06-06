@@ -4848,62 +4848,10 @@ int main() {
                 drawRect(0, 0, sw, 130.0f, 0.0f, 0.0f, 0.0f, 0.18f);
                 drawRect(0, sh - 150.0f, sw, 150.0f, 0.0f, 0.0f, 0.0f, 0.22f);
 
-                // 데스크톱 아이콘 헬퍼 — 미니 앱 창 + 파일명, 클릭(릴리즈) 반환
-                auto desktopIcon = [&](float x, float y, const wchar_t* fname,
-                                       const wchar_t* glyph,
-                                       float ar, float ag, float ab) -> bool {
-                    const float TW = 122.0f, TH = 104.0f;
-                    bool hover = (mx>=x && mx<=x+TW && my>=y && my<=y+TH);
-                    BindMainShader();
-                    if (hover) drawRect(x, y, TW, TH, 0.35f, 0.55f, 0.85f, 0.28f);
-                    float iw = 58.0f, ih = 52.0f;
-                    float ix = x + (TW-iw)*0.5f, iy = y + 12.0f;
-                    drawRect(ix, iy, iw, ih, 0.93f, 0.95f, 0.99f, 1.0f);   // 창 본체
-                    drawRect(ix, iy, iw, 14.0f, ar, ag, ab, 1.0f);         // 타이틀바
-                    drawRect(ix+iw-11, iy+3, 7, 7, 0.95f,0.95f,0.97f,0.9f);// 닫기 점
-                    float gw = g_TextL.Width(glyph, 1.1f);
-                    g_TextL.Draw(glyph, ix + (iw-gw)*0.5f, iy + 18.0f, 1.1f,
-                                 ar*0.55f, ag*0.55f, ab*0.6f, 1.0f);
-                    // 파일명 — 바탕화면 위 가독성 위해 어두운 라벨 칩 배경
-                    float lw = g_TextS.Width(fname, 0.62f);
-                    float chipX = x + (TW-lw)*0.5f, chipY = iy+ih+6.0f;
-                    BindMainShader();
-                    drawRect(chipX - 6.0f, chipY - 2.0f, lw + 12.0f, 20.0f,
-                             0.04f, 0.05f, 0.08f, hover ? 0.85f : 0.6f);
-                    g_TextS.Draw(fname, chipX, chipY + 2.0f, 0.62f,
-                                 0.95f, 0.97f, 1.0f, 1.0f);
-                    return hover && g_LmbPrev && !lmb && !booting;
-                };
-
-                // ── 배경 장식 (앰비언트) — 잔잔히 떠다니는 흐릿한 창 + 빛 입자 ──
-                //   데모 대신, 실제 바탕화면 위에 은은한 분위기만 더한다 (저알파).
+                // ── 앰비언트 — 은은한 빛 입자 + 스캔라인 (진짜 바탕화면 위) ──
                 {
-                    float dt = delta; if (dt > 0.05f) dt = 0.05f;
+                    float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
                     BindMainShader();
-                    // (1) 흐릿하게 떠다니는 미니 창 — 데스크톱 분위기
-                    struct AW { float x, y, vx, vy, w, r, g, b; };
-                    static AW a_ws[6]; static bool aw_init = false;
-                    if (!aw_init) { aw_init = true;
-                        static const float cols[4][3] = {
-                            {0.3f,0.7f,1.0f}, {1.0f,0.72f,0.3f}, {0.4f,0.9f,0.6f}, {0.7f,0.5f,1.0f} };
-                        for (int i = 0; i < 6; i++) {
-                            a_ws[i].x = (float)(rand()%(int)sw); a_ws[i].y = (float)(rand()%(int)sh);
-                            float ang = (rand()%628)*0.01f, spd = 4.0f + (rand()%8);
-                            a_ws[i].vx = cosf(ang)*spd; a_ws[i].vy = sinf(ang)*spd;
-                            a_ws[i].w = 70.0f + (rand()%90);
-                            int c = rand()%4; a_ws[i].r=cols[c][0]; a_ws[i].g=cols[c][1]; a_ws[i].b=cols[c][2];
-                        }
-                    }
-                    for (int i = 0; i < 6; i++) { AW& w = a_ws[i];
-                        w.x += w.vx*dt; w.y += w.vy*dt;
-                        if (w.x < -w.w) w.x = sw; if (w.x > sw) w.x = -w.w;
-                        if (w.y < -w.w) w.y = sh; if (w.y > sh) w.y = -w.w;
-                        float wh = w.w*0.72f;
-                        drawRect(w.x, w.y, w.w, wh, 0.10f, 0.11f, 0.14f, 0.20f);   // 본체
-                        drawRect(w.x, w.y, w.w, 9.0f, w.r, w.g, w.b, 0.26f);       // 타이틀 띠
-                        drawRect(w.x+w.w-7.0f, w.y+2.0f, 5.0f, 5.0f, 0.9f,0.3f,0.3f,0.25f); // [x]
-                    }
-                    // (2) 떠다니며 반짝이는 빛 입자
                     struct AP { float x, y, vx, vy, sz, tw; };
                     static AP a_ps[55]; static bool ap_init = false;
                     if (!ap_init) { ap_init = true;
@@ -4915,75 +4863,62 @@ int main() {
                         }
                     }
                     for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
-                        p.x += p.vx*dt; p.y += p.vy*dt;
+                        p.x += p.vx*dtp; p.y += p.vy*dtp;
                         if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
                         if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
-                        p.tw += dt*1.6f;
+                        p.tw += dtp*1.6f;
                         float a = 0.10f + 0.10f*sinf(p.tw);
                         drawCircle(p.x, p.y, p.sz, 0.55f, 0.78f, 1.0f, a);
                     }
-                    // (3) 흐릿한 브랜딩 워터마크
-                    const wchar_t* WM = T(StrId::GAME_TITLE);
-                    g_TextL.Draw(WM, cx(WM, g_TextL, 2.6f), sh*0.46f, 2.6f, 0.5f, 0.65f, 0.85f, 0.16f);
-                    const wchar_t* SUB[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
-                    float subw = g_TextS.Width(SUB[li2], 0.85f);
-                    g_TextS.Draw(SUB[li2], (sw-subw)*0.5f, sh*0.46f + 60.0f, 0.85f, 0.45f, 0.55f, 0.7f, 0.20f);
+                    // 스캔라인 (시네마틱) — 옅은 가로줄
+                    for (float yy = 0.0f; yy < sh; yy += 4.0f)
+                        drawRect(0.0f, yy, sw, 1.0f, 0.40f, 0.70f, 1.0f, 0.025f);
                 }
 
-                // 좌측 아이콘 열
-                const wchar_t* CODEX_LBL[3] = { L"도감", L"Codex", L"図鑑" };
-                (void)CODEX_LBL;
-                float ix0 = 56.0f, iy0 = 70.0f, istep = 120.0f;
-                // 독(dock) 패널 — 실제 바탕화면에 아이콘이 많아도 Onedow 아이콘이
-                //   파묻히지 않도록 반투명 패널 위에 모아 보여준다.
+                // ── 중앙 로고 + 부제 ──
+                const wchar_t* TITLE = T(StrId::GAME_TITLE);
+                float logoY = sh * 0.28f;
+                g_TextL.Draw(TITLE, cx(TITLE, g_TextL, 3.0f), logoY, 3.0f,
+                             0.6f, 0.85f, 1.0f, 0.96f);
                 {
-                    BindMainShader();
-                    float dX = ix0 - 16.0f, dW = 122.0f + 32.0f;
-                    float dY = iy0 - 16.0f, dH = istep * 4 + 104.0f + 40.0f;
-                    drawRect(dX, dY, dW, dH, 0.03f, 0.05f, 0.09f, 0.74f);    // 독 배경
-                    drawRect(dX, dY, dW, 3.0f, 0.30f, 0.62f, 1.0f, 0.95f);   // 상단 강조
-                    drawRect(dX, dY, 1.5f, dH, 0.3f, 0.5f, 0.8f, 0.4f);      // 테두리
-                    drawRect(dX+dW-1.5f, dY, 1.5f, dH, 0.3f, 0.5f, 0.8f, 0.4f);
-                    drawRect(dX, dY+dH-1.5f, dW, 1.5f, 0.3f, 0.5f, 0.8f, 0.4f);
-                }
-                if (desktopIcon(ix0, iy0 + istep*0, L"onedow.exe", L">",
-                                0.30f, 0.80f, 1.00f)) {
-                    LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
-                }
-                if (desktopIcon(ix0, iy0 + istep*1, L"shop.exe", L"$",
-                                1.00f, 0.80f, 0.20f)) {
-                    LaunchApp(GameState::SHOP, L"shop.exe", 1.00f, 0.80f, 0.20f);
-                }
-                if (desktopIcon(ix0, iy0 + istep*2, L"codex.db", L"i",
-                                0.40f, 0.90f, 0.50f)) {
-                    LaunchApp(GameState::CODEX, L"codex.db", 0.40f, 0.90f, 0.50f);
-                }
-                if (desktopIcon(ix0, iy0 + istep*3, L"config.sys", L"=",
-                                0.70f, 0.75f, 0.88f)) {
-                    g_SettingsReturnTo = GameState::MAIN_MENU;
-                    LaunchApp(GameState::SETTINGS, L"config.sys", 0.70f, 0.75f, 0.88f);
-                }
-                if (desktopIcon(ix0, iy0 + istep*4, L"exit.bat", L"x",
-                                0.95f, 0.35f, 0.30f) && !booting) {
-                    glfwSetWindowShouldClose(window, GLFW_TRUE);
+                    const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
+                    float subw = g_TextS.Width(SUBT[li2], 1.05f);
+                    g_TextS.Draw(SUBT[li2], (sw - subw) * 0.5f, logoY + 92.0f, 1.05f,
+                                 0.5f, 0.68f, 0.9f, 0.8f);
                 }
 
-                // ── 작업표시줄 (하단) — 시작 오브 + 시계 ──
+                // ── PLAY 버튼 (맥동 글로우) → onedow.exe 부팅 → 난이도 선택 ──
                 {
+                    float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 2.5f);
+                    const float PW = 320.0f, PH = 76.0f;
+                    float px = (sw - PW) * 0.5f, py = sh * 0.49f;
                     BindMainShader();
-                    float tbH = 42.0f, tbY = sh - tbH - (float)g_TaskbarH;  // 실제 작업표시줄 위로
-                    drawRect(0, tbY, sw, tbH, 0.01f, 0.015f, 0.03f, 1.0f);
-                    drawRect(0, tbY, sw, 2.0f, 0.35f, 0.62f, 1.0f, 0.95f);
-                    // 시작 오브
-                    drawRect(10.0f, tbY + 7.0f, 28.0f, 28.0f, 0.30f, 0.8f, 1.0f, 0.95f);
-                    g_TextS.Draw(L"onedow", 48.0f, tbY + 12.0f, 0.85f, 0.9f, 0.96f, 1.0f, 1.0f);
-                    // 시계 (우측)
-                    time_t tt = time(nullptr); struct tm lt; localtime_s(&lt, &tt);
-                    wchar_t clk[24];
-                    swprintf_s(clk, L"%02d:%02d", lt.tm_hour, lt.tm_min);
-                    float clw = g_TextS.Width(clk, 0.85f);
-                    g_TextS.Draw(clk, sw - clw - 22.0f, tbY + 12.0f, 0.85f,
-                                 0.85f, 0.92f, 1.0f, 1.0f);
+                    drawRect(px - 7, py - 7, PW + 14, PH + 14,
+                             0.30f, 0.70f, 1.0f, 0.08f + 0.10f * pulse);   // 글로우
+                    const wchar_t* PLAYL[3] = { L"실행", L"PLAY", L"実行" };
+                    if (UIButton(px, py, PW, PH, PLAYL[li2], mx, my, lmb, g_LmbPrev) && !booting) {
+                        LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
+                    }
+                }
+
+                // ── 보조 버튼 행: 상점 · 도감 · 설정 · 종료 ──
+                {
+                    const float bw2 = 158.0f, bh2 = 48.0f, gap2 = 14.0f;
+                    float totalW = bw2 * 4 + gap2 * 3;
+                    float bx2 = (sw - totalW) * 0.5f, by2 = sh * 0.49f + 100.0f;
+                    const wchar_t* SHOPL[3] = { L"상점", L"Shop",  L"ショップ" };
+                    const wchar_t* CODL [3] = { L"도감", L"Codex", L"図鑑" };
+                    const wchar_t* CFGL [3] = { L"설정", L"Config", L"設定" };
+                    if (UIButton(bx2 + 0*(bw2+gap2), by2, bw2, bh2, SHOPL[li2], mx,my,lmb,g_LmbPrev) && !booting)
+                        LaunchApp(GameState::SHOP, L"shop.exe", 1.00f, 0.80f, 0.20f);
+                    if (UIButton(bx2 + 1*(bw2+gap2), by2, bw2, bh2, CODL[li2], mx,my,lmb,g_LmbPrev) && !booting)
+                        LaunchApp(GameState::CODEX, L"codex.db", 0.40f, 0.90f, 0.50f);
+                    if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
+                        g_SettingsReturnTo = GameState::MAIN_MENU;
+                        LaunchApp(GameState::SETTINGS, L"config.sys", 0.70f, 0.75f, 0.88f);
+                    }
+                    if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
+                        glfwSetWindowShouldClose(window, GLFW_TRUE);
                 }
 
                 // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
@@ -5000,6 +4935,14 @@ int main() {
                     float wy = sh * 0.5f - chh * 0.5f;
                     BindMainShader();
                     drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease);  // 배경 딤
+                    // 시네마틱 — 아래로 훑는 스캔 스윕 라인 + 막판 화이트 플래시
+                    {
+                        float sweepY = fmodf(prog * 1.3f, 1.0f) * sh;
+                        drawRect(0, sweepY, sw, 2.0f, ar, ag, ab, 0.35f * ease);
+                        drawRect(0, sweepY - 40.0f, sw, 40.0f, ar, ag, ab, 0.05f * ease);
+                        if (prog > 0.92f)
+                            drawRect(0, 0, sw, sh, 1.0f, 1.0f, 1.0f, (prog - 0.92f) / 0.08f * 0.5f);
+                    }
                     drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
                     drawRect(wx, wy, cw, 28.0f, ar*0.55f, ag*0.55f, ab*0.6f, 1.0f); // 타이틀바
                     drawRect(wx, wy+28.0f, cw, 2.0f, ar, ag, ab, 0.9f);      // 강조 라인
