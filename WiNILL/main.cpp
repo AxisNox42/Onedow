@@ -386,7 +386,7 @@ SpamBoss* g_SpamBoss = nullptr;
 struct LaserBeam { float ox, oy, ex, ey, life, maxLife; };
 std::vector<LaserBeam> g_LaserBeams;
 float          g_LaserTimer = 0.0f;
-constexpr float LASER_INT   = 0.7f;   // 발사 주기(초)
+constexpr float LASER_INT   = 0.85f;  // 발사 주기(초) — 너프: 0.7
 
 // ── 보스 등장 전조(증상) ──────────────────────────────────────
 //   보스 스폰을 "결정 → 2.5초 전조(테마 증상 + 경고 배너) → 실제 생성" 으로 분리.
@@ -3286,9 +3286,9 @@ int main() {
                 if (g_LaserTimer >= LASER_INT) {
                     g_LaserTimer -= LASER_INT;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);
-                    float reach = (float)(screenWidth + screenHeight);
-                    float lex = pCX + cosf(lang) * reach, ley = pCY + sinf(lang) * reach;
-                    const float BEAM_HALF = 26.0f;
+                    const float LASER_RANGE = 560.0f;   // 너프: 풀스크린 → 근처 줄만 (사거리 제한)
+                    float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
+                    const float BEAM_HALF = 24.0f;
                     bool lcrit = false; float lcm = 1.0f;
                     if (g_Stats.critChance > 0 && (rand()%100) < g_Stats.critChance) { lcrit = true; lcm = g_Stats.critMult; }
                     float lbm = 1.0f;
@@ -3298,7 +3298,7 @@ int main() {
                         lbm = 1.0f + (1.0f - hf) * 0.6f;
                     }
                     float ldmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
-                               * 2.5f * lcm * lbm;   // 관통 — 잡몹 즉사, 보스엔 칩
+                               * 1.4f * lcm * lbm;   // 너프: 2.5 → 1.4 (잡몹 정리용, 보스 칩 최소)
                     auto lOnKill = [&]() {
                         if (g_Stats.lifestealPerKill > 0.0f) {
                             g_GameManager.playerHP += g_Stats.lifestealPerKill;
