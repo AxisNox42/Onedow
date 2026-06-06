@@ -30,6 +30,11 @@ inline constexpr float SCALE_REF_H = 2000.0f;   // 이 높이에서 g_Scale=1.0 
 //   하단 HUD(체력/경험치 바 등)는 이 작업표시줄 위로 올라가도록 함께 오프셋.
 inline constexpr float g_GameBarH = 34.0f;
 
+// 플레이 영역 확장량(px, 각 변) — 폴리모프 페이즈2 줌아웃 시 보이는 영역이 넓어지므로
+//   원거리 몹 등이 확장된 구역까지 돌아다니도록 main 이 매 프레임 설정. 0 = 확장 없음.
+inline float g_ArenaExX = 0.0f;
+inline float g_ArenaExY = 0.0f;
+
 // 모든 언어 공통 폰트 — Microsoft YaHei UI (Win10+ 기본 탑재)
 //   한글/라틴은 GDI 폰트 링크(자동 폴백)로, 일본어 가나·한자도 시스템 폴백으로 표시
 //   (Windows 전용 — GDI face 이름)

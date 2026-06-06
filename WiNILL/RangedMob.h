@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <vector>
 #include "Bullet.h"
+#include "Settings.h"   // g_ArenaExX/Y (폴리모프 페이즈2 확장 아레나)
 
 class RangedMob {
 public:
@@ -35,12 +36,14 @@ public:
 
     void pickNewTarget() {
         float margin = 80.0f;
-        float rw = (float)(screenW - (int)(2.0f * margin));
-        float rh = (float)(screenH - (int)(2.0f * margin));
+        // 확장 아레나(폴리모프 페이즈2)면 보이는 영역 끝까지 배회
+        float minX = -g_ArenaExX + margin, maxX = (float)screenW + g_ArenaExX - margin;
+        float minY = -g_ArenaExY + margin, maxY = (float)screenH + g_ArenaExY - margin;
+        float rw = maxX - minX, rh = maxY - minY;
         if (rw < 1.0f) rw = 1.0f;
         if (rh < 1.0f) rh = 1.0f;
-        targetX = margin + (float)(rand() % (int)rw);
-        targetY = margin + (float)(rand() % (int)rh);
+        targetX = minX + (float)(rand() % (int)rw);
+        targetY = minY + (float)(rand() % (int)rh);
     }
 
     void Update(float playerCX, float playerCY, float dt,

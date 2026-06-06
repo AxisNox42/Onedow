@@ -143,14 +143,22 @@ public:
         }
     }
 
-    // ── RHOMBUS: 경고선 조준만(발사 X) ──
+    // 페이즈2 화면 확장(줌아웃 0.5)에 맞춘 각 변 확장량 — 보이는 영역 전체를 덮도록
+    float arenaExX() const { return phase2 ? (float)screenW * 0.5f : 0.0f; }
+    float arenaExY() const { return phase2 ? (float)screenH * 0.5f : 0.0f; }
+    // 레이저가 확장 영역 끝까지 닿도록 충분히 긴 길이
+    float laserReach() const { return (phase2 ? 2.2f : 1.0f) * (float)(screenW + screenH); }
+
+    // ── RHOMBUS: 경고선 조준만(발사 X) ── 확장된 모서리에서 시작
     void aimLaser(float px, float py) {
-        float m = 20.0f;
+        float exX = arenaExX(), exY = arenaExY(), m = 20.0f;
+        int spanX = std::max(1, (int)(screenW + 2*exX));
+        int spanY = std::max(1, (int)(screenH + 2*exY));
         switch (rand() % 4) {
-        case 0: laserX = (float)(rand()%screenW); laserY = -m;          break;
-        case 1: laserX = (float)(rand()%screenW); laserY = screenH + m; break;
-        case 2: laserX = -m;            laserY = (float)(rand()%screenH);break;
-        default:laserX = screenW + m;   laserY = (float)(rand()%screenH);break;
+        case 0: laserX = -exX + (float)(rand()%spanX); laserY = -exY - m;            break; // 위
+        case 1: laserX = -exX + (float)(rand()%spanX); laserY = screenH + exY + m;   break; // 아래
+        case 2: laserX = -exX - m;            laserY = -exY + (float)(rand()%spanY); break; // 왼
+        default:laserX = screenW + exX + m;   laserY = -exY + (float)(rand()%spanY); break; // 오른
         }
         float dx = px - laserX, dy = py - laserY;
         float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
@@ -235,8 +243,8 @@ public:
             }
             if (laserActive) {
                 laserTimer += dt;
-                float ex = laserX + laserDirX * (float)(screenW + screenH);
-                float ey = laserY + laserDirY * (float)(screenW + screenH);
+                float ex = laserX + laserDirX * laserReach();
+                float ey = laserY + laserDirY * laserReach();
                 if (segDist(px, py, laserX, laserY, ex, ey) < 14.0f)
                     playerHP -= LASER_DPS * dt;
                 if (laserTimer >= 0.7f) {            // 빔 지속 짧게

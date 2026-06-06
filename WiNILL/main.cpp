@@ -933,14 +933,23 @@ int main() {
         glfwPollEvents();
 
         // 줌 부드럽게 보간 (페이즈2 화면 확장 등)
-        //   메뉴/일시정지/증강선택 등 비전투 상태에선 줌 즉시 해제 — 메뉴 UI·창 이름이
-        //   줌 좌표로 어긋나 보이던 버그 fix. RUNNING 복귀 시 폴리 Update 가 다시 줌 설정.
+        //   전투/전투오버레이(RUNNING/DYING/PAUSED/증강·디버프 선택)에선 줌 유지 —
+        //   일시정지 시 줌인되는 게 부자연스럽다는 피드백. 줌 해제는 시작창 등
+        //   '진짜 메뉴'로 나갈 때만(보스 처치 시엔 polyDeath 가 target=1 로 부드럽게 복원).
         {
             GameState zs = g_GameManager.currentState;
-            if (zs != GameState::RUNNING && zs != GameState::DYING)
-                g_ViewZoom = g_ViewZoomTarget = 1.0f;
+            bool inFight = (zs == GameState::RUNNING || zs == GameState::DYING ||
+                            zs == GameState::PAUSED  || zs == GameState::AUG_SELECT ||
+                            zs == GameState::DEBUFF_SELECT);
+            if (!inFight) g_ViewZoom = g_ViewZoomTarget = 1.0f;
         }
         g_ViewZoom += (g_ViewZoomTarget - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
+
+        // 폴리모프 페이즈2 = 확장 아레나 → 원거리 몹 등이 확장된 구역까지 배회
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->phase2) {
+            g_ArenaExX = (float)screenWidth  * 0.5f;
+            g_ArenaExY = (float)screenHeight * 0.5f;
+        } else { g_ArenaExX = 0.0f; g_ArenaExY = 0.0f; }
 
         // 마우스 상태 (mx,my = 화면 픽셀 / wmx,wmy = 줌 보정한 월드 좌표 = 조준용)
         double mx, my;
@@ -4186,17 +4195,22 @@ int main() {
             const float PUR_R = 0.6f, PUR_G = 0.2f, PUR_B = 0.95f;
             // 세모 쇄도 경고 (텔레그래프) — 시작 모서리 전체에 깜빡이는 화살표/띠
             if (pb->triWarn) {
+                // 페이즈2 줌아웃 확장 영역에 맞춰 경고를 '보이는' 끝까지 확장
+                float exX = pb->arenaExX(), exY = pb->arenaExY();
+                float fullW = (float)screenWidth + 2*exX, fullH = (float)screenHeight + 2*exY;
                 float blink = 0.35f + 0.35f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 16.0f));
                 int arrows = 14;
                 for (int i = 0; i < arrows; i++) {
                     float t = (arrows > 1) ? (float)i / (arrows - 1) : 0.5f;
                     float ax, ay;
-                    if (pb->triDirX != 0.0f) {   // 가로 이동 → 좌/우 모서리에 세로 배열
-                        ax = (pb->triDirX > 0) ? 24.0f : (float)screenWidth - 24.0f;
-                        ay = t * (float)screenHeight;
-                    } else {                     // 세로 이동 → 상/하 모서리에 가로 배열
-                        ax = t * (float)screenWidth;
-                        ay = (pb->triDirY > 0) ? 24.0f : (float)screenHeight - 24.0f;
+                    if (pb->triDirX != 0.0f) {   // 가로 이동 → 좌/우 (확장)모서리에 세로 배열
+                        ax = (pb->triDirX > 0) ? -exX + 24.0f
+                                               : (float)screenWidth + exX - 24.0f;
+                        ay = -exY + t * fullH;
+                    } else {                     // 세로 이동 → 상/하 (확장)모서리에 가로 배열
+                        ax = -exX + t * fullW;
+                        ay = (pb->triDirY > 0) ? -exY + 24.0f
+                                               : (float)screenHeight + exY - 24.0f;
                     }
                     // 진행 방향을 가리키는 작은 세모
                     drawTriangle(ax + pb->triDirX * 6.0f, ay + pb->triDirY * 6.0f,
@@ -4207,12 +4221,14 @@ int main() {
                 for (int c = 0; c < 4; c++) {
                     float u = (c + 0.5f) / 4.0f;   // 진행축 방향 위치 비율
                     float cx, cy;
-                    if (pb->triDirX != 0.0f) {     // 가로 이동 → 화면 폭을 따라 배치
-                        cx = (pb->triDirX > 0) ? u * screenWidth : (1.0f - u) * screenWidth;
+                    if (pb->triDirX != 0.0f) {     // 가로 이동 → 확장 폭을 따라 배치
+                        cx = (pb->triDirX > 0) ? -exX + u * fullW
+                                               : (float)screenWidth + exX - u * fullW;
                         cy = screenHeight * 0.5f;
                     } else {                       // 세로 이동
                         cx = screenWidth * 0.5f;
-                        cy = (pb->triDirY > 0) ? u * screenHeight : (1.0f - u) * screenHeight;
+                        cy = (pb->triDirY > 0) ? -exY + u * fullH
+                                               : (float)screenHeight + exY - u * fullH;
                     }
                     drawTriangle(cx + pb->triDirX * 30.0f, cy + pb->triDirY * 30.0f,
                                  80.0f, 0.8f, 0.4f, 1.0f, bgA);
@@ -4223,8 +4239,8 @@ int main() {
                 drawTriangle(s.x, s.y, 11.0f, 0.7f, 0.3f, 1.0f, 1.0f);
             // 레이저 경고선 (발사 전) — 얇은 보라 점멸선
             if (pb->laserWarn) {
-                float ex = pb->laserX + pb->laserDirX * (float)(screenWidth + screenHeight);
-                float ey = pb->laserY + pb->laserDirY * (float)(screenWidth + screenHeight);
+                float ex = pb->laserX + pb->laserDirX * pb->laserReach();
+                float ey = pb->laserY + pb->laserDirY * pb->laserReach();
                 float pxx = -pb->laserDirY, pyy = pb->laserDirX;
                 float th = 3.0f;
                 float warnA = 0.4f + 0.4f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f));
@@ -4239,8 +4255,8 @@ int main() {
             }
             // 레이저 (RHOMBUS) — 어두운 시야 밴드 + 밝은 코어
             if (pb->laserActive) {
-                float ex = pb->laserX + pb->laserDirX * (float)(screenWidth + screenHeight);
-                float ey = pb->laserY + pb->laserDirY * (float)(screenWidth + screenHeight);
+                float ex = pb->laserX + pb->laserDirX * pb->laserReach();
+                float ey = pb->laserY + pb->laserDirY * pb->laserReach();
                 float pxx = -pb->laserDirY, pyy = pb->laserDirX;
                 for (int pass = 0; pass < 2; pass++) {
                     float th = (pass == 0) ? pb->laserHalf : 5.0f;
