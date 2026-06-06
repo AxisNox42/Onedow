@@ -1,6 +1,7 @@
 #include "GameManager.h"
 #include "Settings.h"
 #include <string>
+#include <algorithm>   // std::min (등급 가중치 게이팅)
 
 static const char* gm_vert =
     "#version 330 core\n"
@@ -129,29 +130,34 @@ void GameManager::UpdateStateSystem(MonsterManager& mm, std::vector<Bullet>& bul
     lastState = currentState;
 }
 
-// 등급별 가중치 (총합 = 100)
-static const int RARITY_WEIGHT[6] = {
-    50,  // COMMON
-    25,  // RARE
-    12,  // EPIC
-    5,   // LEGENDARY
-    6,   // DEBUFF
-    2    // SPECIAL
-};
+// 등급별 가중치 — 플레이어 레벨에 비례(진행도 게이팅).
+//   초반(저레벨)엔 COMMON/RARE 위주, 에픽 L3+, 전설 L8+ 부터 서서히 열림.
+//   → 시작부터 전설 뜨는 극단 운빨 완화.
+static int RarityWeight(int rarity, int level) {
+    switch ((AugRarity)rarity) {
+    case AugRarity::COMMON:    return 50;
+    case AugRarity::RARE:      return 25;
+    case AugRarity::EPIC:      return level < 3 ? 0 : std::min(12, (level - 2) * 3);  // L3=3 … L6+=12
+    case AugRarity::LEGENDARY: return level < 8 ? 0 : std::min(5,  level - 7);        // L8=1 … L12+=5
+    case AugRarity::DEBUFF:    return 6;                                              // 샌드박스(allowDebuff)
+    case AugRarity::SPECIAL:   return level < 5 ? 0 : 2;                              // 카오스/판도라도 초반 차단
+    default:                   return 0;
+    }
+}
 
 // 후보 한 장 추첨: rarity 가중 → 해당 등급 내 무작위 (takenOnce 및 고유 카테고리 잠금 적용)
 // allowDebuff=false 면 DEBUFF 등급 제외 (버프 페이지용)
 static int RollOneAug(const bool* takenOnce,
                       bool sizeTaken, bool distTaken,
-                      bool allowSpecial,
+                      bool allowSpecial, int level,
                       bool allowDebuff = false) {
     for (int attempt = 0; attempt < 200; attempt++) {
-        // 등급 추첨
+        // 등급 추첨 (레벨 비례 가중치)
         int total = 0;
         for (int r = 0; r < 6; r++) {
             if (!allowSpecial && r == (int)AugRarity::SPECIAL) continue;
             if (!allowDebuff  && r == (int)AugRarity::DEBUFF)  continue;
-            total += RARITY_WEIGHT[r];
+            total += RarityWeight(r, level);
         }
         if (total <= 0) return 0;
         int roll = rand() % total;
@@ -160,7 +166,7 @@ static int RollOneAug(const bool* takenOnce,
         for (int r = 0; r < 6; r++) {
             if (!allowSpecial && r == (int)AugRarity::SPECIAL) continue;
             if (!allowDebuff  && r == (int)AugRarity::DEBUFF)  continue;
-            acc += RARITY_WEIGHT[r];
+            acc += RarityWeight(r, level);
             if (roll < acc) { chosen = (AugRarity)r; break; }
         }
         // 보유 여부 체크 헬퍼 — 티어드 증강 선행 조건용
@@ -231,7 +237,7 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
         int idx = 0;
         for (int attempt = 0; attempt < 50; attempt++) {
             idx = RollOneAug(takenOnce, sizeTaken, distTaken,
-                             /*allowSpecial=*/true, allowDebuff);
+                             /*allowSpecial=*/true, playerLevel, allowDebuff);
             if (!used[idx]) break;
         }
         used[idx] = true;
@@ -305,7 +311,7 @@ void GameManager::PickRandomAugIndices(int* outArr, int n,
             idx = RollOneAug(takenOnce,
                              allowUnique ? sizeTaken : true,
                              allowUnique ? distTaken : true,
-                             allowSpecial,
+                             allowSpecial, playerLevel,
                              allowDebuff);
             // RANDOM_AUG 자기 자신 제외
             if (ALL_AUGS[idx].type == AugType::RANDOM_AUG) continue;
