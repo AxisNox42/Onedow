@@ -228,6 +228,7 @@ PlayerStats    g_Stats;
 bool g_aug1Released = true, g_aug2Released = true, g_aug3Released = true;
 TextRenderer   g_TextL;   // 큰 글자 (증강 이름, 상태 타이틀)
 TextRenderer   g_TextS;   // 작은 글자 (설명, 힌트)
+TextRenderer   g_TextXL;  // 초대형 타이틀(시작창 로고) 전용 — 고해상도 래스터
 #ifdef _WIN32
 HANDLE         g_FontMemHandle   = nullptr; // Dongle (한국어)
 HANDLE         g_OswaldMemHandle = nullptr; // Oswald (라틴/키릴)
@@ -767,6 +768,7 @@ int main() {
     int sizes[3] = { szJ, szK, szO };
     g_TextL.InitFromMemory(datas, sizes, 3, 36, screenWidth, screenHeight);
     g_TextS.InitFromMemory(datas, sizes, 3, 22, screenWidth, screenHeight);
+    g_TextXL.InitFromMemory(datas, sizes, 3, 100, screenWidth, screenHeight);  // 로고 고해상도
 #else
     // macOS/Linux: 디스크의 TTF 폴백 체인
     {
@@ -774,6 +776,7 @@ int main() {
         int nc = LanguageFontChain(g_Language, chain);
         g_TextL.InitFromFiles(chain, nc, 36, screenWidth, screenHeight);
         g_TextS.InitFromFiles(chain, nc, 22, screenWidth, screenHeight);
+        g_TextXL.InitFromFiles(chain, nc, 100, screenWidth, screenHeight);  // 로고 고해상도
     }
 #endif
 
@@ -4878,8 +4881,10 @@ int main() {
                 // ── 중앙 로고 + 부제 ──
                 const wchar_t* TITLE = T(StrId::GAME_TITLE);
                 float logoY = sh * 0.28f;
-                g_TextL.Draw(TITLE, cx(TITLE, g_TextL, 3.0f), logoY, 3.0f,
-                             0.6f, 0.85f, 1.0f, 0.96f);
+                // 로고는 고해상도 전용 렌더러(g_TextXL, 100px)로 — 기존 g_TextL 3배
+                //   확대 시 비트맵이 뭉개지던 화질 문제 fix.
+                g_TextXL.Draw(TITLE, cx(TITLE, g_TextXL, 1.05f), logoY, 1.05f,
+                              0.6f, 0.85f, 1.0f, 0.96f);
                 {
                     const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
                     float subw = g_TextS.Width(SUBT[li2], 1.05f);
