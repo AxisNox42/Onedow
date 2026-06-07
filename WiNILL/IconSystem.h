@@ -97,6 +97,12 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::CB_BLOODLORD:   return "CB_BLOODLORD";
     case AugType::CB_PIERCE_TWIN: return "CB_PIERCE_TWIN";
     case AugType::CB_STORMCALLER: return "CB_STORMCALLER";
+    case AugType::LASER:         return "LASER_1";
+    case AugType::LASER_2:       return "LASER_2";
+    case AugType::MELEE_WIDE:    return "MELEE_WIDE";
+    case AugType::BLADE_WIND:    return "BLADE_WIND";
+    case AugType::POWER_DRAW:    return "POWER_DRAW";
+    case AugType::MULTISHOT:     return "MULTISHOT";
     default:                     return nullptr;
     }
 }
@@ -287,10 +293,9 @@ inline GLuint IconFor(AugType t) {
     case AugType::CHAKRAM_2:
     case AugType::CHAKRAM_3:     return g_IconTex[(int)AugType::CHAKRAM];
     case AugType::DRONE_2:       return g_IconTex[(int)AugType::DRONE];
-    // 신규 티어 II → 기본 티어 그림 재사용 (별도 아이콘 불필요)
+    // 티어 II → 기본 티어 그림 재사용 (별도 아이콘 없는 것만)
     case AugType::PIERCE_2:      return g_IconTex[(int)AugType::PIERCE];
     case AugType::TWIN_2:        return g_IconTex[(int)AugType::TWIN];
-    case AugType::LASER_2:       return g_IconTex[(int)AugType::LASER];
     default:                     return 0;
     }
 }
