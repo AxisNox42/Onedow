@@ -151,6 +151,44 @@ public:
 
         for (auto b : bombers)
             b->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult);
+
+        // ── 자폭병 소프트 콜리전 — 자폭병끼리 + 잡몹과도 분리 ──
+        //   예전엔 자폭병이 서로 겹쳐 쌓여 "한 마리"처럼 보였고, 들어갔다가
+        //   겹친 다수가 동시 폭발 → 즉사하던 버그. 잡몹처럼 서로 밀어내 개체 구분.
+        {
+            const float BOMB_GAP = Bomber::SIZE_PX * 0.95f;
+            for (size_t i = 0; i < bombers.size(); i++) {
+                if (!bombers[i]->alive) continue;
+                // 자폭병끼리 (서로 균등하게 밀어냄)
+                for (size_t j = i + 1; j < bombers.size(); j++) {
+                    if (!bombers[j]->alive) continue;
+                    float dx = bombers[j]->worldX - bombers[i]->worldX;
+                    float dy = bombers[j]->worldY - bombers[i]->worldY;
+                    float d2 = dx*dx + dy*dy;
+                    if (d2 > 0.0001f && d2 < BOMB_GAP * BOMB_GAP) {
+                        float d = std::sqrt(d2);
+                        float push = (BOMB_GAP - d) * 0.5f;
+                        float nx = dx / d, ny = dy / d;
+                        bombers[i]->worldX -= nx * push; bombers[i]->worldY -= ny * push;
+                        bombers[j]->worldX += nx * push; bombers[j]->worldY += ny * push;
+                    }
+                }
+                // 자폭병 vs 잡몹 (자폭병만 비켜남 — 잡몹 추격 흐름은 유지)
+                float minDM = (BOMB_GAP + MIN_GAP_NORM) * 0.5f;
+                for (size_t j = 0; j < monsters.size(); j++) {
+                    if (!monsters[j]->alive) continue;
+                    float dx = monsters[j]->worldX - bombers[i]->worldX;
+                    float dy = monsters[j]->worldY - bombers[i]->worldY;
+                    float d2 = dx*dx + dy*dy;
+                    if (d2 > 0.0001f && d2 < minDM * minDM) {
+                        float d = std::sqrt(d2);
+                        float push = (minDM - d);
+                        bombers[i]->worldX -= (dx / d) * push;
+                        bombers[i]->worldY -= (dy / d) * push;
+                    }
+                }
+            }
+        }
         // 죽은 자폭병은 여기서 삭제하지 않음 — main.cpp 의 VFX 체크 후 ClearDeadBombers() 호출
 
         // 보스 (단일) — 소환물은 monsters 에 그대로 push
