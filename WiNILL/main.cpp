@@ -208,12 +208,28 @@ std::vector<Bullet> g_Bullets;
 // ── codex.db 검색창 입력 버퍼 (위키 스타일 앱) ──
 wchar_t g_CodexSearch[32] = {0};
 int     g_CodexSearchLen  = 0;
+// ── 개발자(크리에이티브) 모드 — 도감 검색창 이스터에그로만 해금 ──
+//    출시 빌드엔 크리에이티브 진입점이 숨겨져 있고, 도감 검색에 시크릿 코드를
+//    입력하면 해금되어 난이도 화면에 토글이 등장한다. (일반 플레이어는 못 켬)
+bool    g_DevUnlocked   = false;
+float   g_DevToastTimer = 0.0f;            // 해금 확인 토스트 (초)
+static const wchar_t* DEV_CODE = L"develop_mod";
 // GLFW 문자 입력 콜백 — CODEX 상태에서만 검색어에 누적
 void CodexCharCallback(GLFWwindow*, unsigned int cp) {
     if (g_GameManager.currentState != GameState::CODEX) return;
     if (cp >= 32 && g_CodexSearchLen < 31) {
         g_CodexSearch[g_CodexSearchLen++] = (wchar_t)cp;
         g_CodexSearch[g_CodexSearchLen]   = 0;
+        // 이스터에그 — 시크릿 코드 입력 시 개발(크리에이티브) 모드 해금
+        if (!g_DevUnlocked) {
+            std::wstring s(g_CodexSearch);
+            for (auto& ch : s) if (ch < 128) ch = (wchar_t)towlower(ch);
+            if (s == DEV_CODE) {
+                g_DevUnlocked   = true;
+                g_DevToastTimer = 3.0f;
+                g_CodexSearch[0] = 0; g_CodexSearchLen = 0;   // 검색어 비움
+            }
+        }
     }
 }
 inline void CodexSearchClear() { g_CodexSearch[0] = 0; g_CodexSearchLen = 0; }
@@ -5666,6 +5682,16 @@ static void Scene_Codex(const SceneCtx& c) {
                     drawRect(searchX + 14.0f + cwid + 2.0f, searchY + 8.0f, 2.0f, 24.0f,
                              0.9f, 0.95f, 1.0f, 0.9f);
                 }
+                // 개발 모드 해금 토스트 (이스터에그) — 검색창 아래 잠깐 표시
+                if (g_DevToastTimer > 0.0f) {
+                    g_DevToastTimer -= delta;
+                    float a = g_DevToastTimer > 2.5f ? (3.0f - g_DevToastTimer) / 0.5f
+                                                     : (g_DevToastTimer > 1.0f ? 1.0f : g_DevToastTimer);
+                    if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
+                    g_TextS.Draw(L"● DEV MODE UNLOCKED — 난이도 화면에서 크리에이티브 활성",
+                                 searchX, searchY + searchH + 8.0f, 0.8f,
+                                 0.4f, 1.0f, 0.55f, a);
+                }
 
                 static int s_tab = 0;   // 0 적 / 1 증강
                 const wchar_t* TAB_MOB[3] = { L"적", L"Enemies", L"敵" };
@@ -6077,8 +6103,8 @@ static void Scene_DifficultySelect(const SceneCtx& c) {
                                  btns[i].r, btns[i].g, btns[i].b, 0.85f);
                 }
 
-                // 크리에이티브 모드 토글 버튼
-                {
+                // 크리에이티브(개발) 모드 토글 — 도감 시크릿 코드로 해금 시에만 노출
+                if (g_DevUnlocked) {
                     const wchar_t* CLBL = g_CreativeMode
                         ? T(StrId::CREATIVE_ON)
                         : T(StrId::CREATIVE_OFF);
