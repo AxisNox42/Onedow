@@ -209,8 +209,18 @@ int     g_CodexSearchLen  = 0;
 bool    g_DevUnlocked   = false;
 float   g_DevToastTimer = 0.0f;            // 해금 확인 토스트 (초)
 static const wchar_t* DEV_CODE = L"develop_mod";
-// GLFW 문자 입력 콜백 — CODEX 상태에서만 검색어에 누적
+// 설정창 볼륨 숫자 직접입력 상태
+bool    g_VolEdit = false;
+wchar_t g_VolBuf[8] = {0};
+int     g_VolLen = 0;
+// GLFW 문자 입력 콜백 — CODEX 검색어 / 설정 볼륨 숫자입력에 누적
 void CodexCharCallback(GLFWwindow*, unsigned int cp) {
+    if (g_VolEdit && g_GameManager.currentState == GameState::SETTINGS) {
+        if (cp >= L'0' && cp <= L'9' && g_VolLen < 3) {   // 0~9, 최대 3자리
+            g_VolBuf[g_VolLen++] = (wchar_t)cp; g_VolBuf[g_VolLen] = 0;
+        }
+        return;
+    }
     if (g_GameManager.currentState != GameState::CODEX) return;
     if (cp >= 32 && g_CodexSearchLen < 31) {
         g_CodexSearch[g_CodexSearchLen++] = (wchar_t)cp;
@@ -6292,7 +6302,7 @@ static void Scene_Settings(const SceneCtx& c) {
         SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
     (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
     (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                const float WW = 860.0f, WH = 600.0f;
+                const float WW = 940.0f, WH = 680.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
@@ -6353,19 +6363,63 @@ static void Scene_Settings(const SceneCtx& c) {
                 toggleRow(wy + 330.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
                 toggleRow(wy + 400.0f, StrId::SET_COMBO,     g_ShowCombo);
 
-                // 사운드 볼륨 — 끄기 / 30 / 60 / 100
+                // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
                 {
                     float vy = wy + 470.0f;
                     g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
-                    struct VolOpt { const wchar_t* l; int v; };
-                    VolOpt vOpts[4] = { { T(StrId::OPT_OFF), 0 }, { L"30%", 30 },
-                                        { L"60%", 60 }, { L"100%", 100 } };
-                    for (int i = 0; i < 4; i++) {
-                        float bx = bx0 + i * (OW + OG);
-                        bool sel = (g_SoundVol == vOpts[i].v);
-                        if (UIButton(bx, vy, OW, OH, vOpts[i].l, mx, my, lmb, g_LmbPrev, sel))
-                            g_SoundVol = vOpts[i].v;
+                    auto clampVol = [](int v){ return v < 0 ? 0 : (v > 100 ? 100 : v); };
+
+                    // [−]
+                    if (UIButton(bx0, vy, 44.0f, OH, L"−", mx, my, lmb, g_LmbPrev)) {
+                        g_VolEdit = false; g_SoundVol = clampVol(g_SoundVol - 5);
                     }
+                    // 게이지바 (클릭/드래그로 직접 설정)
+                    float barX = bx0 + 56.0f, barW = 300.0f;
+                    drawRect(barX, vy, barW, OH, 0.10f, 0.12f, 0.16f, 1.0f);
+                    drawRect(barX, vy, barW * (g_SoundVol / 100.0f), OH, 0.35f, 0.75f, 1.0f, 0.95f);
+                    drawRect(barX, vy, barW, 2.0f, 0.4f, 0.7f, 1.0f, 0.7f);
+                    bool barHover = (mx >= barX && mx <= barX + barW && my >= vy && my <= vy + OH);
+                    if (lmb && barHover) {   // 누르는 동안(드래그) 마우스 X 로 값 설정
+                        g_VolEdit = false;
+                        g_SoundVol = clampVol((int)((float)(mx - barX) / barW * 100.0f + 0.5f));
+                    }
+                    // [+]
+                    float plusX = barX + barW + 8.0f;
+                    if (UIButton(plusX, vy, 44.0f, OH, L"+", mx, my, lmb, g_LmbPrev)) {
+                        g_VolEdit = false; g_SoundVol = clampVol(g_SoundVol + 5);
+                    }
+                    // 숫자 직접입력 필드
+                    float fldX = plusX + 44.0f + 14.0f, fldW = 92.0f;
+                    bool fldHover = (mx >= fldX && mx <= fldX + fldW && my >= vy && my <= vy + OH);
+                    BindMainShader();
+                    drawRect(fldX, vy, fldW, OH, g_VolEdit ? 0.16f : 0.09f,
+                             g_VolEdit ? 0.18f : 0.10f, 0.22f, 1.0f);
+                    drawRect(fldX, vy, fldW, 2.0f, 0.4f, 0.9f, 0.6f, 0.8f);
+                    auto commitVol = [&]() {
+                        int v = 0; for (int i = 0; i < g_VolLen; i++) v = v*10 + (g_VolBuf[i]-L'0');
+                        if (g_VolLen > 0) g_SoundVol = clampVol(v);
+                        g_VolEdit = false;
+                    };
+                    if (lmb && !g_LmbPrev) {
+                        if (fldHover) { g_VolEdit = true; g_VolLen = 0; g_VolBuf[0] = 0; }
+                        else if (g_VolEdit) commitVol();   // 다른 곳 클릭 = 확정
+                    }
+                    // 백스페이스 / 엔터 (엣지 감지)
+                    {
+                        static bool bsPrev = false, enPrev = false;
+                        bool bs = (glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS);
+                        if (g_VolEdit && bs && !bsPrev && g_VolLen > 0) g_VolBuf[--g_VolLen] = 0;
+                        bsPrev = bs;
+                        bool en = (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS);
+                        if (g_VolEdit && en && !enPrev) commitVol();
+                        enPrev = en;
+                    }
+                    wchar_t shown[16];
+                    if (g_VolEdit) {
+                        bool caret = (((int)(glfwGetTime()*2.0)) & 1) == 0;
+                        swprintf_s(shown, L"%ls%ls", g_VolLen ? g_VolBuf : L"", caret ? L"|" : L"");
+                    } else swprintf_s(shown, L"%d", g_SoundVol);
+                    g_TextS.Draw(shown, fldX + 12.0f, vy + 12.0f, 0.9f, 1,1,1,0.95f);
                 }
 
                 // 뒤로(저장 후 닫기) — 창 하단
