@@ -1438,6 +1438,13 @@ int main() {
                     int prevAugs = (int)g_OwnedAugs.size();
                     g_Stats = PlayerStats();
                     g_Stats.windowSize *= g_Scale;          // 창 — 해상도 비례 유지
+                    // 무기/직업 정체성은 유지 — CHAOS 는 증강만 재추첨한다.
+                    //   (검객/궁수가 기본 총으로 바뀌던 버그 fix. 증강은 이 아래서 위에 덮임)
+                    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
+                        ApplyWeapon(g_Stats, (StartWeapon)g_CurrentWeapon);
+                    if (g_RunMelee)    { g_Stats.meleeWeapon = true; g_Stats.fireInterval = 0.26f; }
+                    else if (g_RunBow) { g_Stats.bowWeapon = true;  g_Stats.bulletSpeed *= 1.4f; }
+                    g_Stats.baseFireInterval = g_Stats.fireInterval;
                     g_OwnedAugs.clear();
                     memset(g_GameManager.takenOnce, 0,
                            sizeof(g_GameManager.takenOnce));
@@ -3512,8 +3519,8 @@ int main() {
                     } else if (g_ArcherCharge > 0.001f) {
                         float charge = g_ArcherCharge;
                         float ang = atan2f(wmy - pCY, wmx - pCX);
-                        // 강궁: 완충 위력 2.6 → 3.4
-                        float chMult = 0.4f + charge * (g_Stats.powerDraw ? 3.4f : 2.6f);
+                        // 완충 위력 버프 (3.0×→4.1× / 강궁 3.8×→5.1×)
+                        float chMult = 0.5f + charge * (g_Stats.powerDraw ? 4.6f : 3.6f);
                         float arrowDmg = g_Stats.GetBaseDamage()
                                        * g_Stats.GetDamageMultiplier(0.0f) * chMult;
                         if (g_OverclockTimer > 0.0f) arrowDmg *= 1.5f;
@@ -5944,6 +5951,55 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
         SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
     (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
     (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
+                // 무기 확정 → 직업 시작증강/무기모드 적용 → 시작증강 or READY 로 전이
+                auto finalizeLoadout = [&](int wIdx) {
+                    g_Stats.baseFireInterval = g_Stats.fireInterval;
+                    ApplyWeapon(g_Stats, (StartWeapon)wIdx);
+                    g_CurrentWeapon = wIdx;
+                    fireTimer = g_Stats.fireInterval;
+                    bool classJob = false;
+                    if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
+                        const JobDef& jd = JOB_DEFS[g_SelectedJob];
+                        for (int a = 0; a < jd.startAugCount; a++) {
+                            int ji = AugIndexOf(jd.startAugs[a]);
+                            if (ji < 0) continue;
+                            g_Stats.Apply(jd.startAugs[a]);
+                            g_OwnedAugs.push_back(ji);
+                            EquipSkill(SkillForAug(jd.startAugs[a]));
+                        }
+                        if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
+                            g_Stats.meleeWeapon  = true;
+                            g_Stats.fireInterval = 0.26f;
+                            g_Stats.baseFireInterval = g_Stats.fireInterval;
+                            g_RunMelee = true; classJob = true;
+                        } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
+                            g_Stats.bowWeapon    = true;
+                            g_Stats.bulletSpeed *= 1.4f;
+                            g_RunBow = true; classJob = true;
+                        }
+                        fireTimer = g_Stats.fireInterval;
+                    }
+                    // 검객/궁수는 총기 표기가 무의미 → 변환/게임오버 표시용 무기 제거
+                    if (classJob) g_CurrentWeapon = -1;
+                    g_GameManager.maxHP    = g_Stats.maxHP;
+                    g_GameManager.playerHP = g_Stats.maxHP;
+                    g_PrevHP               = g_Stats.maxHP;
+                    int startAugs = g_MetaStartAugs + ((g_CreativeMode) ? g_CreativeStartAugs : 0);
+                    if (startAugs > 0) {
+                        g_BossRewardPicksLeft = startAugs;
+                        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                     g_Stats.distAugTaken, g_CreativeMode);
+                        g_GameManager.currentState = GameState::AUG_SELECT;
+                    } else {
+                        g_GameManager.currentState = GameState::READY;
+                    }
+                };
+                // 검객/궁수 — 총기 선택이 무의미(무기모드가 덮어씀) → 페이지 건너뛰고 기본 무기로 확정
+                if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
+                    int wm = JOB_DEFS[g_SelectedJob].weaponMode;
+                    if (wm == 1 || wm == 2) { finalizeLoadout((int)StartWeapon::RIFLE); return; }
+                }
+
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
                 deskWindow(L"loadout.exe", 0.4f, 0.85f, 1.0f);
@@ -5967,50 +6023,7 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                     // 카드 = 큰 버튼
                     if (UIButton(cardX, baseY, CARD_W, CARD_H, WeaponName(w),
                                  mx, my, lmb, g_LmbPrev)) {
-                        // #109: 변환 카드 undo 기준점 저장 (무기 적용 전 fireInterval)
-                        g_Stats.baseFireInterval = g_Stats.fireInterval;
-                        ApplyWeapon(g_Stats, (StartWeapon)idx);
-                        g_CurrentWeapon = idx;  // 현재 무기 기록 (변환 카드용)
-                        // 발사 타이머 / HUD HP 갱신
-                        fireTimer = g_Stats.fireInterval;
-                        // 직업 시작 증강 적용 (무기 적용 직후 — 보유 목록에 추가)
-                        if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
-                            const JobDef& jd = JOB_DEFS[g_SelectedJob];
-                            for (int a = 0; a < jd.startAugCount; a++) {
-                                int ji = AugIndexOf(jd.startAugs[a]);
-                                if (ji < 0) continue;
-                                g_Stats.Apply(jd.startAugs[a]);
-                                g_OwnedAugs.push_back(ji);
-                                EquipSkill(SkillForAug(jd.startAugs[a]));
-                            }
-                            // 직업 무기 모드 (검객/궁수 — 선택한 총 효과 위에 덮어씀)
-                            if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
-                                g_Stats.meleeWeapon  = true;
-                                g_Stats.fireInterval = 0.26f;   // 스윙 주기 (고정)
-                                g_Stats.baseFireInterval = g_Stats.fireInterval;
-                                g_RunMelee = true;              // 검객 전용 증강 게이팅
-                            } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
-                                g_Stats.bowWeapon    = true;    // 누른 만큼 강해짐 (관통=대포식)
-                                g_Stats.bulletSpeed *= 1.4f;
-                                g_RunBow = true;                // 궁수 전용 증강 게이팅
-                            }
-                            fireTimer = g_Stats.fireInterval;
-                        }
-                        g_GameManager.maxHP    = g_Stats.maxHP;
-                        g_GameManager.playerHP = g_Stats.maxHP;
-                        g_PrevHP               = g_Stats.maxHP;
-                        // 시작 증강 픽 (메타 해금 + 크리에이티브) 있으면 증강 선택 열기
-                        int startAugs = g_MetaStartAugs +
-                                        ((g_CreativeMode) ? g_CreativeStartAugs : 0);
-                        if (startAugs > 0) {
-                            g_BossRewardPicksLeft = startAugs;
-                            // 크리에이티브: 시작 증강에도 디버프 포함 (샌드박스)
-                            g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                         g_Stats.distAugTaken, g_CreativeMode);
-                            g_GameManager.currentState = GameState::AUG_SELECT;
-                        } else {
-                            g_GameManager.currentState = GameState::READY;
-                        }
+                        finalizeLoadout(idx);
                     }
 
                     // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)

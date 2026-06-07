@@ -467,6 +467,8 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::CHAKRAM:     case AugType::CHAKRAM_2:     case AugType::CHAKRAM_3:
     // 희귀 불리언 (중첩 의미 없음)
     case AugType::LIGHT_STEP:  case AugType::GUN_RUNNER:    case AugType::BERSERK:
+    // 유리대포 — 중첩 시 데미지 1.5^n 폭주 + 흡혈로 체력 패널티 무력화 → 1회 제한
+    case AugType::GLASS_CANNON:
     // 적 출현형 디버프 (플래그 1개 — 재등장 불필요)
     case AugType::D_SPLITTER:  case AugType::D_BLINKER:
     case AugType::D_ORBITER:   case AugType::D_SPAWNER:     case AugType::D_SHIELDED:
