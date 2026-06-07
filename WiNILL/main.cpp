@@ -2810,10 +2810,11 @@ int main() {
                         // 크리에이티브: 선택한 보스 (점수 무관, 1회)
                         g_CreativeBossPending = false;
                         switch (g_CreativeBossPick) {
-                        case 0:  startWarn(0, L"SLIME.worm",    bossHpC);        break;
-                        case 1:  startWarn(1, L"GLITCH.sys",    bossHpC * 0.7f); break;
-                        case 2:  startWarn(2, L"RELOADER.exe",  bossHpC);        break;
-                        default: startWarn(4, L"POLYMORPH.vir", polyHpC);        break;
+                        case 0:  startWarn(0, L"SLIME.worm",    bossHpC);         break;
+                        case 1:  startWarn(1, L"GLITCH.sys",    bossHpC * 0.7f);  break;
+                        case 2:  startWarn(2, L"RELOADER.exe",  bossHpC);         break;
+                        case 3:  startWarn(3, L"SPAM.dll",      bossHpC * 0.65f); break;
+                        default: startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
                         }
                     }
                     else if (!g_PolySpawned && g_GameManager.score >= 500000) {
@@ -6175,9 +6176,9 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
                 // 보스 선택
                 g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[5] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
-                                     {L"Reload",2},{L"Polymorph",3} };
-                for (int i = 0; i < 5; i++) {
+                BossOpt bOpts[6] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
+                                     {L"Reload",2},{L"Spam",3},{L"Polymorph",4} };
+                for (int i = 0; i < 6; i++) {
                     float ox = 60.0f + i * (OBW + OBG);
                     bool sel = (g_CreativeBossPick == bOpts[i].v);
                     if (UIButton(ox, sh*0.40f + 28.0f, OBW, OBH, bOpts[i].l,
