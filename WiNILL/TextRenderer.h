@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cmath>
 #include "stb_truetype.h"   // 선언부. 구현은 stb_impl.cpp 의 STB_TRUETYPE_IMPLEMENTATION
+#include "DrawPrim.h"        // BatchFlush — 텍스트 그리기 전 메인 배치를 비움
 
 class TextRenderer {
 public:
@@ -255,6 +256,7 @@ inline float TextRenderer::Height(const wchar_t* /*text*/, float scale)
 inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scale,
                                float r, float g, float b, float a)
 {
+    BatchFlush();   // 메인 셰이더로 쌓인 도형을 먼저 그린 뒤 텍스트 셰이더로 전환
     float P[16] = {
          2.0f / screenW_,  0,               0, 0,
          0,               -2.0f / screenH_, 0, 0,

@@ -80,6 +80,7 @@ inline float W2SX(float wx) { return ZCX() + (wx - ZCX()) * g_ViewZoom; }
 inline float W2SY(float wy) { return ZCY() + (wy - ZCY()) * g_ViewZoom; }
 // 가짜창 scissor — 월드 사각형을 줌 적용해 픽셀 scissor 로 (줌=1 이면 기존과 동일)
 inline void WorldScissor(float wx, float wy, float ww, float wh) {
+    BatchFlush();   // 스카이저 바꾸기 전 — 이전 영역 도형 먼저 그림
     float sx = W2SX(wx), sy = W2SY(wy);
     float sw = ww * g_ViewZoom, sh = wh * g_ViewZoom;
     glScissor((GLint)sx, (GLint)(screenHeight - (sy + sh)), (GLint)sw, (GLint)sh);
@@ -94,10 +95,7 @@ inline void drawBullet(const Bullet& b) {
             float ty = b.y - b.dirY * trailLen;
             float px = -b.dirY * r, py = b.dirX * r;  // 머리 폭(진행방향 수직)
             float v[6] = { b.x + px, b.y + py, b.x - px, b.y - py, tx, ty };
-            glUniform4f(g_colorLoc, b.color.r, b.color.g, b.color.b, 0.38f);
-            glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            BatchVerts(v, 3, b.color.r, b.color.g, b.color.b, 0.38f);
         }
     }
     // (글로우 헤일로 제거 — 후반 탄막에서 탄환당 추가 드로콜이 가장 큰 부하라 성능 위해 뺌)
@@ -671,13 +669,15 @@ wchar_t g_DeathReason[96] = {0};   // 사망 원인 ("○○ 에 의해 종료�
 static const char* vertSrc =
     "#version 330 core\n"
     "layout (location = 0) in vec2 aPos;\n"
+    "layout (location = 1) in vec4 aColor;\n"
     "uniform mat4 projection;\n"
-    "void main() { gl_Position = projection * vec4(aPos, 0.0, 1.0); }\n";
+    "out vec4 vColor;\n"
+    "void main() { vColor = aColor; gl_Position = projection * vec4(aPos, 0.0, 1.0); }\n";
 static const char* fragSrc =
     "#version 330 core\n"
+    "in vec4 vColor;\n"
     "out vec4 FragColor;\n"
-    "uniform vec4 color;\n"
-    "void main() { FragColor = color; }\n";
+    "void main() { FragColor = vColor; }\n";
 
 // --- 콜백 ---
 void key_callback(GLFWwindow*, int key, int, int action, int) {
@@ -886,7 +886,7 @@ int main() {
     }
 #endif
 
-    glEnable(GL_BLEND);
+    BatchFlush(); glEnable(GL_BLEND);
     // RGB: 표준 알파블렌딩 / Alpha: 프레임버퍼 알파값 올바르게 누적
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                         GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
@@ -976,9 +976,12 @@ int main() {
     glGenBuffers(1, &g_VBO);
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-    glBufferData(GL_ARRAY_BUFFER, 4096 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glBufferData(GL_ARRAY_BUFFER, 65536 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+    // 배칭: 정점당 [pos.xy, color.rgba] = 6 float (stride 24바이트)
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 
     // --- 오르토 행렬 (픽셀 좌표계, Y 아래) ---
     float ortho[16] = {
@@ -3637,6 +3640,7 @@ int main() {
             orthoShake[12] -= 2.0f * sx / (float)screenWidth;
             orthoShake[13] += 2.0f * sy / (float)screenHeight;
         }
+        BatchFlush();   // ortho(줌) 바꾸기 전 — 이전 매트릭스로 쌓인 도형 먼저 그림
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, orthoShake);
         // 글로벌에도 동기화 — BindMainShader() 가 이 값 사용
         memcpy(g_MainOrtho, orthoShake, sizeof(orthoShake));
@@ -3670,7 +3674,7 @@ int main() {
         // (a0) 투명 배경 가리기 — 충격파 배경 + 텔레그래프 배경
         //      glDisable(GL_BLEND) + 불투명 어두운 도형 → 이후 FakeWindow 로 덮어씀
         //      투명 영역에만 남아 VFX / 텔레그래프가 데스크톱 위에 뜨지 않게 함
-        glDisable(GL_BLEND);
+        BatchFlush(); glDisable(GL_BLEND);
         BindMainShader();
 
         // (a0-1) 자폭병 충격파 배경 — needsBg 플래그가 설정된 충격파에 한해
@@ -3704,10 +3708,7 @@ int main() {
                 float q4x = ex0 - px0 * thick0 * 0.5f, q4y = ey0 - py0 * thick0 * 0.5f;
                 float vt[12] = { q1x, q1y, q2x, q2y, q3x, q3y,
                                  q2x, q2y, q4x, q4y, q3x, q3y };
-                glUniform4f(g_colorLoc, 0.08f, 0.08f, 0.10f, 1.0f);
-                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vt), vt);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
+                BatchVerts(vt, 6, 0.08f, 0.08f, 0.10f, 1.0f);
             }
         }
 
@@ -3766,7 +3767,7 @@ int main() {
             drawRect(c->worldX - w*0.5f, c->worldY - w*0.5f, w, w,
                      0.07f, 0.10f, 0.07f, 1.0f);
         }
-        glEnable(GL_BLEND);  // 이후는 일반 알파 블렌딩
+        BatchFlush(); glEnable(GL_BLEND);  // 이후는 일반 알파 블렌딩
 
         // ── 사이버펑크 네온 터미널 — 각 가짜 창에 네온 보더 + 코너 브래킷 ──
         //    창 색상은 적/보스 고유색에 맞춰 네온화 (터미널 프레임 느낌)
@@ -3805,7 +3806,7 @@ int main() {
 
         // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
         //     각 창마다 scissor 패스. 다이아몬드/본체는 (e2)/(e3) 에서 별도로 그림
-        glEnable(GL_SCISSOR_TEST);
+        BatchFlush(); glEnable(GL_SCISSOR_TEST);
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
             float sc  = r->deathScale;
@@ -3899,16 +3900,16 @@ int main() {
                 drawRect(orb.x - 14, orb.y - 14, 28, 28, 0.95f, 0.05f, 0.05f, 1.0f);
             }
         }
-        glDisable(GL_SCISSOR_TEST);
+        BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
         // (c) 플레이어 FakeWindow 배경 — 블렌드 OFF 로 직접 덮어쓰기
         //     원거리 몹 창과 겹친 영역도 player 색으로 깔끔하게 덮임 (누적 없음)
         //     ranged 컨텐츠 (b) 가 player 영역에 그려졌으면 여기서 덮여 사라짐
         //     = "원거리 몹 창이 플레이어 창 안에 들어가면 가려짐" 원래 의도 그대로
-        glDisable(GL_BLEND);
+        BatchFlush(); glDisable(GL_BLEND);
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                  0.05f, 0.06f, 0.09f, 1.0f);
-        glEnable(GL_BLEND);
+        BatchFlush(); glEnable(GL_BLEND);
         // 사이버펑크 네온 터미널 — 플레이어 창 시안 네온 보더
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        0.30f, 1.0f, 1.0f);
@@ -3962,10 +3963,7 @@ int main() {
                     float p3x=lb.ex+pxx*th, p3y=lb.ey+pyy*th;
                     float p4x=lb.ex-pxx*th, p4y=lb.ey-pyy*th;
                     float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                    glUniform4f(g_colorLoc, cr, cg, cb, ca);
-                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    BatchVerts(v, 6, cr, cg, cb, ca);
                 }
             }
         }
@@ -4059,7 +4057,7 @@ int main() {
         }
 
         // (e) 플레이어 창 내부 컨텐츠 — scissor (가장 위 레이어)
-        glEnable(GL_SCISSOR_TEST);
+        BatchFlush(); glEnable(GL_SCISSOR_TEST);
         WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
         {
         float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
@@ -4096,10 +4094,10 @@ int main() {
             drawRect(orb.x - 18, orb.y - 18, 36, 36, 0.95f, 0.0f, 0.0f, 0.30f);
             drawRect(orb.x - 14, orb.y - 14, 28, 28, 0.95f, 0.05f, 0.05f, 1.0f);
         }
-        glDisable(GL_SCISSOR_TEST);
+        BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
         // (e2) 원거리 몹 다이아몬드 — 각 원거리 몹 창 영역에서 항상 위에 그림
-        glEnable(GL_SCISSOR_TEST);
+        BatchFlush(); glEnable(GL_SCISSOR_TEST);
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
             float sc  = r->deathScale;
@@ -4113,11 +4111,11 @@ int main() {
             drawDiamond(r->worldX, r->worldY, dSize,
                         r->color.r, r->color.g, r->color.b, dAlpha);
         }
-        glDisable(GL_SCISSOR_TEST);
+        BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
         // (e2.1) 포탑 아이콘 + 수명바 (다수) — 각 창 영역 scissor 내에서 표시
         if (g_Stats.turretMode) {
-            glEnable(GL_SCISSOR_TEST);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             for (auto& t : g_Turrets) {
                 float twx = t.x - TURRET_WIN_W * 0.5f;
                 float twy = t.y - TURRET_WIN_H * 0.5f;
@@ -4135,7 +4133,7 @@ int main() {
                 drawRect(twx + 12.0f, twy + 8.0f, barW * lifeRem, 5.0f,
                          0.1f, 1.0f, 0.55f, 0.9f);
             }
-            glDisable(GL_SCISSOR_TEST);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
         // (e2.5) 보스 텔레그래프 — scissor 없이 전체 화면에 표시
@@ -4163,10 +4161,7 @@ int main() {
                 float v[12] = { p1x, p1y, p2x, p2y, p3x, p3y,
                                 p2x, p2y, p4x, p4y, p3x, p3y };
                 BindMainShader();
-                glUniform4f(g_colorLoc, 1.0f, 0.08f, 0.08f, alpha);
-                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
+                BatchVerts(v, 6, 1.0f, 0.08f, 0.08f, alpha);
             }
             // 소환 경고 — 잡몹이 나올 자리에 점멸 링 (소환 0.7초 전부터)
             if (bs->summonPending) {
@@ -4187,7 +4182,7 @@ int main() {
             auto* bs = g_MonsterManager.boss;
 
             // 보스 창 영역 scissor (플레이어 창 위에 가려도 보임)
-            glEnable(GL_SCISSOR_TEST);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             float bwx = bs->worldX - Boss::WIN_W * 0.5f;
             float bwy = bs->worldY - Boss::WIN_H * 0.5f;
             WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
@@ -4201,7 +4196,7 @@ int main() {
 
             // (HP 바는 화면 상단 고정 보스 바로 이동 — 후반 가시성)
 
-            glDisable(GL_SCISSOR_TEST);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
         // (e3.5) 슬라임 분열체 — 돌진 경고(전체화면) + 본체/HP/총알(개인 창)
@@ -4225,13 +4220,10 @@ int main() {
                 float p3x=ex+perpX*thick*0.5f, p3y=ey+perpY*thick*0.5f;
                 float p4x=ex-perpX*thick*0.5f, p4y=ey-perpY*thick*0.5f;
                 float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                glUniform4f(g_colorLoc, 1.0f, 0.2f, 0.5f, 0.10f + 0.26f * prog);
-                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
+                BatchVerts(v, 6, 1.0f, 0.2f, 0.5f, 0.10f + 0.26f * prog);
             }
             // 본체 + HP + 총알 — 개인 창 클리핑
-            glEnable(GL_SCISSOR_TEST);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(c->worldX - win*0.5f, c->worldY - win*0.5f, win, win);
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
@@ -4247,7 +4239,7 @@ int main() {
             float hbX = c->worldX - hbW*0.5f, hbY = c->worldY - body - 14.0f;
             drawRect(hbX, hbY, hbW, hbH, 0.12f, 0.18f, 0.12f, 0.85f);
             drawRect(hbX, hbY, hbW*hpFrac, hbH, 0.4f, 0.95f, 0.5f, 0.95f);
-            glDisable(GL_SCISSOR_TEST);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
         // (f) BrokenSight 오브 — 항상 표시 (클리핑 없음, 무적)
@@ -4331,10 +4323,7 @@ int main() {
                 float p2x=gb->worldX-pxx*th, p2y=gb->worldY-pyy*th;
                 float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
                 float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                glUniform4f(g_colorLoc, 1.0f, 0.3f, 0.7f, wa);
-                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
+                BatchVerts(v, 6, 1.0f, 0.3f, 0.7f, wa);
             }
             // 레이저 (BURST 동안 화면 가로지르는 직선)
             if (gb->laserActive) {
@@ -4352,10 +4341,7 @@ int main() {
                     float p3x=ex+pxx*th, p3y=ey+pyy*th;
                     float p4x=ex-pxx*th, p4y=ey-pyy*th;
                     float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                    glUniform4f(g_colorLoc, lr, lg, lb, la);
-                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    BatchVerts(v, 6, lr, lg, lb, la);
                 }
             }
             // 페이즈2: 직교 두 번째 레이저(X자, 본체 기준 양방향)
@@ -4373,10 +4359,7 @@ int main() {
                     float p1x=ax+pxx*th,p1y=ay+pyy*th, p2x=ax-pxx*th,p2y=ay-pyy*th;
                     float p3x=bx+pxx*th,p3y=by+pyy*th, p4x=bx-pxx*th,p4y=by-pyy*th;
                     float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                    glUniform4f(g_colorLoc, 1.0f, lg, lb, la);
-                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    BatchVerts(v, 6, 1.0f, lg, lb, la);
                 }
             }
             // 미니 세모 (작고 빠름 — 유도 중엔 빨강)
@@ -4385,7 +4368,7 @@ int main() {
                 else          drawTriangle(t.x, t.y, 9.0f,  0.9f, 0.3f, 0.95f, 1.0f);
             }
             // 본체 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
-            glEnable(GL_SCISSOR_TEST);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(gb->worldX - GLITCH_WIN_W*0.5f, gb->worldY - GLITCH_WIN_W*0.5f,
                          GLITCH_WIN_W, GLITCH_WIN_W);
             // 총알 (이 창 안에서도 보이도록)
@@ -4398,7 +4381,7 @@ int main() {
             drawDiamond(gb->worldX - 3, gb->worldY, GlitchBoss::BODY, 0.1f, 0.9f, 1.0f, 0.55f);
             drawDiamond(gb->worldX, gb->worldY, GlitchBoss::BODY, 0.92f, 0.92f, 0.98f, 1.0f);
             // (HP 바는 화면 상단 고정 보스 바로 이동)
-            glDisable(GL_SCISSOR_TEST);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
         // (g4) 리로드 러너 — 무기 전조(저격선/MG 부채꼴) + 본체 + HP + [RELOADING]
@@ -4420,10 +4403,7 @@ int main() {
                     rb->worldX+pxx*th, rb->worldY+pyy*th, rb->worldX-pxx*th, rb->worldY-pyy*th, ex+pxx*th, ey+pyy*th,
                     rb->worldX-pxx*th, rb->worldY-pyy*th, ex-pxx*th, ey-pyy*th,                   ex+pxx*th, ey+pyy*th };
                 float a = 0.55f + 0.35f * sinf((float)glfwGetTime() * 30.0f);
-                glUniform4f(g_colorLoc, 0.4f, 1.0f, 1.0f, a);
-                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
+                BatchVerts(v, 6, 0.4f, 1.0f, 1.0f, a);
             }
 
             // MACHINEGUN 부채꼴 범위 예고 (삼각 부채로 채움)
@@ -4440,10 +4420,7 @@ int main() {
                     float v[6] = { rb->worldX, rb->worldY,
                                    rb->worldX + cosf(aa)*L, rb->worldY + sinf(aa)*L,
                                    rb->worldX + cosf(ab)*L, rb->worldY + sinf(ab)*L };
-                    glUniform4f(g_colorLoc, 1.0f, 0.85f, 0.2f, alpha);
-                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                    glDrawArrays(GL_TRIANGLES, 0, 3);
+                    BatchVerts(v, 3, 1.0f, 0.85f, 0.2f, alpha);
                 }
             }
 
@@ -4463,16 +4440,13 @@ int main() {
                         float v[6] = { rb->worldX, rb->worldY,
                                        rb->worldX + cosf(aa)*L, rb->worldY + sinf(aa)*L,
                                        rb->worldX + cosf(ab)*L, rb->worldY + sinf(ab)*L };
-                        glUniform4f(g_colorLoc, 1.0f, 0.5f, 0.15f, 0.10f);
-                        glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                        glDrawArrays(GL_TRIANGLES, 0, 3);
+                        BatchVerts(v, 3, 1.0f, 0.5f, 0.15f, 0.10f);
                     }
                 }
             }
 
             // 본체 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
-            glEnable(GL_SCISSOR_TEST);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(rb->worldX - RR_WIN_W*0.5f, rb->worldY - RR_WIN_W*0.5f,
                          RR_WIN_W, RR_WIN_W);
             // 총알 (이 창 안에서도 보이도록 — 리로드 러너 탄막 가시성 버그 fix)
@@ -4489,7 +4463,7 @@ int main() {
             drawDiamond(rb->worldX, rb->worldY, ReloadRunnerBoss::BODY, br, bg, bb, 1.0f);
 
             // (HP 바는 화면 상단 고정 보스 바로 이동)
-            glDisable(GL_SCISSOR_TEST);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
             // [RELOADING...] 깜빡 텍스트
             if (rb->state == RRState::RELOAD_SPRINT &&
@@ -4506,7 +4480,7 @@ int main() {
         if (g_SpamBoss && g_SpamBoss->alive) {
             auto* sb = g_SpamBoss;
             BindMainShader();
-            glEnable(GL_SCISSOR_TEST);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(sb->worldX - SPAM_WIN_W*0.5f, sb->worldY - SPAM_WIN_W*0.5f,
                          SPAM_WIN_W, SPAM_WIN_W);
             // 탄막이 창 안에서도 보이도록
@@ -4525,7 +4499,7 @@ int main() {
             drawDiamond(sb->worldX, sb->worldY, SpamBoss::BODY * 0.5f,
                         1.0f, 0.85f, 0.95f, 1.0f);
             // (HP 바는 화면 상단 고정 보스 바로 이동)
-            glDisable(GL_SCISSOR_TEST);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
@@ -4588,10 +4562,7 @@ int main() {
                 float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
                 float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
                 float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                glUniform4f(g_colorLoc, 1.0f, 0.3f, 1.0f, warnA);
-                glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
+                BatchVerts(v, 6, 1.0f, 0.3f, 1.0f, warnA);
             }
             // 레이저 (RHOMBUS) — 어두운 시야 밴드 + 밝은 코어
             if (pb->laserActive) {
@@ -4608,14 +4579,11 @@ int main() {
                     float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
                     float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
                     float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                    glUniform4f(g_colorLoc, cr, cg, cb, ca);
-                    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    BatchVerts(v, 6, cr, cg, cb, ca);
                 }
             }
             // 본체 + 차크람 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
-            glEnable(GL_SCISSOR_TEST);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(pb->worldX - POLY_WIN_W*0.5f, pb->worldY - POLY_WIN_W*0.5f,
                          POLY_WIN_W, POLY_WIN_W);
             // 총알 (이 창 안에서도 보이도록)
@@ -4648,7 +4616,7 @@ int main() {
                 float a = p.life / p.maxLife, hs = p.size * 0.5f;
                 drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
             }
-            glDisable(GL_SCISSOR_TEST);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
         // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)
@@ -4760,6 +4728,7 @@ int main() {
 
         // ── 여기부터 UI/오버레이: 줌·흔들기 무시하고 화면 고정 좌표(base ortho)로 ──
         //    (폴리모프 2페이즈 줌 0.5 에서 쿨다운칸·메뉴딤·비네트·플래시가 찌그러지던 버그 fix)
+        BatchFlush();   // 월드(줌 ortho) 도형 전부 그린 뒤 base ortho 로 전환
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, ortho);
         memcpy(g_MainOrtho, ortho, sizeof(ortho));
 
@@ -5396,6 +5365,7 @@ int main() {
             SaveGame(); g_AchSaveNeeded = false; g_CodexDirty = false;
         }
 
+        BatchFlush();   // 프레임 마지막 — 남은 도형 모두 그림
         glfwSwapBuffers(window);
 
         // ── FPS 캡 (g_FpsCap > 0 일 때만) ─────────────────────────────
