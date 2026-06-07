@@ -3505,22 +3505,26 @@ int main() {
             // 포탑 모드에서는 플레이어가 발사하지 않음
             if (!g_Stats.turretMode) {
                 if (g_Stats.meleeWeapon) {       // 검객 — 근접 스윙 (총알 없음)
+                    // 단타 방지: 쿨다운(effInterval)은 클릭/홀드 무관 항상 적용.
+                    //   (예전엔 버튼 떼면 fireTimer 를 즉시 준비 상태로 돌려 광클로
+                    //    스윙 속도를 무한히 올릴 수 있었음 — 그 리셋을 제거)
                     if (lmb && fireTimer >= effInterval) {
                         float ang = atan2f(wmy - pCY, wmx - pCX);
                         meleeSwing(ang);
                         fireTimer = 0.0f;
                     }
-                    if (!lmb) fireTimer = effInterval;
                 } else if (g_Stats.bowWeapon) {  // 궁수 — 누른 만큼 차징 후 발사
                     if (lmb) {
-                        // 강궁: 차징 40% 빠름
-                        g_ArcherCharge += delta / (BOW_CHARGE_TIME * (g_Stats.powerDraw ? 0.6f : 1.0f));
+                        // 강궁(40% 빠름) + 연사증강 변환(bowChargeRateMult)
+                        g_ArcherCharge += delta / (BOW_CHARGE_TIME * (g_Stats.powerDraw ? 0.6f : 1.0f))
+                                          * g_Stats.bowChargeRateMult;
                         if (g_ArcherCharge > 1.0f) g_ArcherCharge = 1.0f;
                     } else if (g_ArcherCharge > 0.001f) {
                         float charge = g_ArcherCharge;
                         float ang = atan2f(wmy - pCY, wmx - pCX);
-                        // 완충 위력 버프 (3.0×→4.1× / 강궁 3.8×→5.1×)
-                        float chMult = 0.5f + charge * (g_Stats.powerDraw ? 4.6f : 3.6f);
+                        // 완충 위력 (기본 4.1× / 강궁 5.1×) + 공격력증강 변환(bowChargeCapBonus)
+                        float chMult = 0.5f + charge *
+                                       ((g_Stats.powerDraw ? 4.6f : 3.6f) + g_Stats.bowChargeCapBonus);
                         float arrowDmg = g_Stats.GetBaseDamage()
                                        * g_Stats.GetDamageMultiplier(0.0f) * chMult;
                         if (g_OverclockTimer > 0.0f) arrowDmg *= 1.5f;
@@ -5929,7 +5933,9 @@ static void Scene_JobSelect(const SceneCtx& c) {
                 }
                 if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
+                    // 크리에이티브면 설정창으로, 아니면 난이도로
+                    g_GameManager.currentState = g_CreativeMode
+                        ? GameState::CREATIVE_CONFIG : GameState::DIFFICULTY_SELECT;
                 }
 }
 
@@ -6214,9 +6220,8 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
                 // 시작 버튼
                 if (UIButton((sw - 300.0f) * 0.5f, sh*0.78f, 300.0f, 64.0f,
                              L"START", mx, my, lmb, g_LmbPrev)) {
-                    ResetForNewGame();
-                    PickRandomWeapons(g_WeaponChoices);
-                    g_GameManager.currentState = GameState::WEAPON_SELECT;
+                    // 크리에이티브도 직업 선택을 거친다 (리셋/무기뽑기는 직업 확정 시)
+                    g_GameManager.currentState = GameState::JOB_SELECT;
                 }
 
                 // 뒤로 버튼 — 난이도 선택으로

@@ -73,6 +73,9 @@ struct PlayerStats {
     bool  bladeWind    = false;   // [검객] 칼바람 — 스윙마다 전방 관통탄
     bool  powerDraw    = false;   // [궁수] 강궁 — 차징 빠름·완충 위력↑
     bool  multishot    = false;   // [궁수] 다중 사격 — 완충 3발 부채꼴
+    // 클래스 증강 변환 누적치 (검객/궁수에서 무의미한 스탯 증강을 재해석)
+    float bowChargeRateMult = 1.0f;   // [궁수] 연사 증강 → 차징 속도 배수
+    float bowChargeCapBonus = 0.0f;   // [궁수] 공격력 증강 → 풀차징 위력 한도 가산
 
     // ── 희귀/전설 (티어드) ───────────────────────────────
     bool  drone        = false;
@@ -125,9 +128,24 @@ struct PlayerStats {
         ++totalAugs;
         switch (t) {
         // ── 일반 (버프: QA 피드백 — 일반 증강이 너무 약함) ──
-        case AugType::DMG_UP:    damageMultiplier *= 1.08f; break;  // +4% → +8%
-        case AugType::RATE_UP:   fireInterval     /= 1.04f; break;  // +1.5% → +4%
-        case AugType::SPD_UP:    bulletSpeed      += 30.0f; break;  // +10 → +30
+        //   ※ 검객/궁수 변환: 무의미한 스탯 증강을 클래스에 맞게 재해석
+        case AugType::DMG_UP:
+            if (bowWeapon) {                              // 궁수: 공격력 → 풀차징 한도↑ + 약간의 자체 공격력
+                bowChargeCapBonus += 0.30f;
+                damageMultiplier  *= 1.02f;
+            } else {
+                damageMultiplier  *= 1.08f;              // 그 외(검객 포함): 공격력 +8%
+            }
+            break;
+        case AugType::RATE_UP:
+            if (meleeWeapon)      damageMultiplier  *= 1.04f;   // 검객: 연사 무의미 → 공격력 +4%
+            else if (bowWeapon)   bowChargeRateMult *= 1.06f;   // 궁수: 연사 → 차징 6% 빠름
+            else                  fireInterval      /= 1.04f;   // 총기: 연사 +4%
+            break;
+        case AugType::SPD_UP:
+            if (meleeWeapon)      damageMultiplier *= 1.04f;    // 검객: 탄속 무의미 → 공격력 +4%
+            else                  bulletSpeed      += 30.0f;    // 총기/궁수: 탄속 +30
+            break;
         case AugType::MOVE_UP:   moveSpeedMult    *= 1.05f; break;  // +2% → +5%
         case AugType::VISION_UP:
             if (visionStacks < 5) {                                 // 4 → 5중첩
