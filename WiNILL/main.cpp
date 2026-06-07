@@ -100,10 +100,7 @@ inline void drawBullet(const Bullet& b) {
             glDrawArrays(GL_TRIANGLES, 0, 3);
         }
     }
-    if (!b.isEnemy) {
-        // 글로우 헤일로 (소프트) — 탄환이 더 빛나 보이게 (1겹: 후반 탄막 성능)
-        drawCircle(b.x, b.y, r * 1.9f, b.color.r, b.color.g, b.color.b, 0.20f);
-    }
+    // (글로우 헤일로 제거 — 후반 탄막에서 탄환당 추가 드로콜이 가장 큰 부하라 성능 위해 뺌)
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
 

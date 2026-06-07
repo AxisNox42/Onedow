@@ -258,8 +258,11 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
         for (int r = 0; r < COMBO_DEFS[c].reqCount; r++)
             if (!g_TypeOwned[(int)COMBO_DEFS[c].reqs[r]]) { met = false; break; }
         if (met) {
+            // 조합은 확률적으로만 제시 — 예전엔 재료 모이면 매 픽 100% 강제라 너무 자주 떴음
             int ridx = AugIndexOfType(res);
-            if (ridx >= 0) { augChoices[rand() % 3] = ridx; break; }
+            if (ridx >= 0 && (rand() % 100) < 18)   // 18% 확률
+                augChoices[rand() % 3] = ridx;
+            break;   // 한 번에 조합 후보 1개만 고려 (실패해도 다른 조합 안 봄)
         }
     }
 }

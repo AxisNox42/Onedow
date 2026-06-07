@@ -57,7 +57,7 @@ inline void drawTriangle(float cx, float cy, float size,
 
 inline void drawCircle(float cx, float cy, float radius,
                        float r, float g, float b, float a) {
-    const int SEG = 20;
+    const int SEG = 12;   // 20→12 (작은 원 다수 — 정점수 줄여 성능)
     float v[(SEG + 2) * 2];
     int i = 0;
     v[i++] = cx; v[i++] = cy;
@@ -151,11 +151,7 @@ inline void drawPentagon(float cx, float cy, float size,
 //   코너 브래킷). 블렌드 ON 상태에서 호출. nr/ng/nb = 네온 색.
 inline void drawNeonBorder(float x, float y, float w, float h,
                            float nr, float ng, float nb) {
-    // 바깥 옅은 글로우 (살짝만 — 소프트 번짐 아님, 라인 강조용)
-    drawRect(x-2, y-2,     w+4, 4.0f, nr, ng, nb, 0.16f);   // 상
-    drawRect(x-2, y+h-2,   w+4, 4.0f, nr, ng, nb, 0.16f);   // 하
-    drawRect(x-2, y-2,     4.0f, h+4, nr, ng, nb, 0.16f);   // 좌
-    drawRect(x+w-2, y-2,   4.0f, h+4, nr, ng, nb, 0.16f);   // 우
+    // (글로우 4겹 제거 — 후반 다수 창에서 알파 오버드로 부하. 또렷한 라인만으로도 충분)
     // 또렷한 네온 라인
     const float t = 1.5f;
     drawRect(x, y,       w, t, nr, ng, nb, 0.92f);
