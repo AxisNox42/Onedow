@@ -24,5 +24,6 @@ void PlayBgmBoss();       // bgm_boss.mp3 루프
 void StopBgm();
 void SetEnabled(bool on); // 마스터 ON/OFF (OFF 시 BGM 정지)
 bool IsEnabled();
+void SetVolume(float v);  // 마스터 볼륨 0.0~1.0
 
 } // namespace Audio

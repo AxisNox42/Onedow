@@ -1186,7 +1186,8 @@ int main() {
 
         // ── BGM — 게임플레이 중엔 메인 루프, 메뉴에선 정지 (보스 BGM 은 파일 생기면 확장) ──
         {
-            Audio::SetEnabled(g_SoundOn);   // 설정값 동기화 (OFF 면 SFX/BGM 무음)
+            Audio::SetEnabled(g_SoundVol > 0);            // 0 = 끄기
+            Audio::SetVolume(g_SoundVol / 100.0f);        // 마스터 볼륨
             GameState cs = g_GameManager.currentState;
             bool bgmOn = (cs == GameState::RUNNING || cs == GameState::PAUSED ||
                           cs == GameState::AUG_SELECT || cs == GameState::DEBUFF_SELECT ||
@@ -6384,8 +6385,21 @@ static void Scene_Settings(const SceneCtx& c) {
                 toggleRow(wy + 260.0f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
                 toggleRow(wy + 330.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
                 toggleRow(wy + 400.0f, StrId::SET_COMBO,     g_ShowCombo);
-                toggleRow(wy + 470.0f, StrId::SET_SOUND,     g_SoundOn);
-                Audio::SetEnabled(g_SoundOn);   // 토글 즉시 반영
+
+                // 사운드 볼륨 — 끄기 / 30 / 60 / 100
+                {
+                    float vy = wy + 470.0f;
+                    g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
+                    struct VolOpt { const wchar_t* l; int v; };
+                    VolOpt vOpts[4] = { { T(StrId::OPT_OFF), 0 }, { L"30%", 30 },
+                                        { L"60%", 60 }, { L"100%", 100 } };
+                    for (int i = 0; i < 4; i++) {
+                        float bx = bx0 + i * (OW + OG);
+                        bool sel = (g_SoundVol == vOpts[i].v);
+                        if (UIButton(bx, vy, OW, OH, vOpts[i].l, mx, my, lmb, g_LmbPrev, sel))
+                            g_SoundVol = vOpts[i].v;
+                    }
+                }
 
                 // 뒤로(저장 후 닫기) — 창 하단
                 if (UIButton(lx, wy + WH - 64.0f, 180.0f, 48.0f, T(StrId::BTN_BACK),

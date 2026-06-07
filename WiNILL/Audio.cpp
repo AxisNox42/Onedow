@@ -128,3 +128,9 @@ void Audio::StopBgm() {
 
 void Audio::SetEnabled(bool on) { g_enabled = on; if (!on) StopBgm(); }
 bool Audio::IsEnabled() { return g_enabled; }
+
+void Audio::SetVolume(float v) {
+    if (!g_inited) return;
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    ma_engine_set_volume(&g_engine, v);
+}

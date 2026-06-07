@@ -34,7 +34,7 @@ inline void SaveGame() {
     std::fprintf(f, "crosshair=%d\n", g_ShowCrosshair      ? 1 : 0);
     std::fprintf(f, "dmgnum=%d\n",    g_ShowDamageNumbers  ? 1 : 0);
     std::fprintf(f, "combo=%d\n",     g_ShowCombo          ? 1 : 0);
-    std::fprintf(f, "sound=%d\n",     g_SoundOn            ? 1 : 0);
+    std::fprintf(f, "soundvol=%d\n",  g_SoundVol);
     std::fprintf(f, "best_easy=%lld\n",   g_BestScore[0]);
     std::fprintf(f, "best_normal=%lld\n", g_BestScore[1]);
     std::fprintf(f, "best_hard=%lld\n",   g_BestScore[2]);
@@ -81,7 +81,7 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "crosshair"))   g_ShowCrosshair     = (val != 0);
         else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = (val != 0);
         else if (!std::strcmp(key, "combo"))       g_ShowCombo         = (val != 0);
-        else if (!std::strcmp(key, "sound"))       g_SoundOn           = (val != 0);
+        else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
         else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val;
         else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val;
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val;
