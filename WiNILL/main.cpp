@@ -1186,6 +1186,7 @@ int main() {
 
         // ── BGM — 게임플레이 중엔 메인 루프, 메뉴에선 정지 (보스 BGM 은 파일 생기면 확장) ──
         {
+            Audio::SetEnabled(g_SoundOn);   // 설정값 동기화 (OFF 면 SFX/BGM 무음)
             GameState cs = g_GameManager.currentState;
             bool bgmOn = (cs == GameState::RUNNING || cs == GameState::PAUSED ||
                           cs == GameState::AUG_SELECT || cs == GameState::DEBUFF_SELECT ||
@@ -6080,10 +6081,20 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                     const WeaponDef& w = ALL_WEAPONS[idx];
                     float cardX = baseX + i * (CARD_W + GAP);
 
-                    // 카드 = 큰 버튼
-                    if (UIButton(cardX, baseY, CARD_W, CARD_H, WeaponName(w),
+                    // 카드 = 큰 버튼 (라벨 비움 — 이름은 위쪽에 따로 그려 설명과 겹침 방지)
+                    if (UIButton(cardX, baseY, CARD_W, CARD_H, L"",
                                  mx, my, lmb, g_LmbPrev)) {
                         finalizeLoadout(idx);
+                    }
+
+                    // 무기 이름 — 카드 상단쪽 (설명과 분리)
+                    {
+                        const wchar_t* nm = WeaponName(w);
+                        float nsc = 1.3f;
+                        while (nsc > 0.7f && g_TextL.Width(nm, nsc) > CARD_W - 24.0f) nsc -= 0.05f;
+                        float nw = g_TextL.Width(nm, nsc);
+                        g_TextL.Draw(nm, cardX + (CARD_W - nw) * 0.5f,
+                                     baseY + CARD_H * 0.20f, nsc, 1, 1, 1, 0.98f);
                     }
 
                     // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
@@ -6102,7 +6113,7 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                         while (!s.empty() && s.back() == L' ') s.pop_back();
                     }
                     // 설명을 카드 안에 가둔다 — 줄 많은 무기(대포 등)는 줄간격/글자 압축
-                    float descTop = baseY + CARD_H * 0.50f;
+                    float descTop = baseY + CARD_H * 0.44f;
                     float descBot = baseY + CARD_H - 14.0f;
                     int   nL = (int)lines.size(); if (nL < 1) nL = 1;
                     float lineH = 26.0f;
@@ -6117,6 +6128,12 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                         g_TextS.Draw(s, cardX + (CARD_W - lw) * 0.5f,
                                      descTop + li * lineH, sc, 0.88f, 0.95f, 1.0f, 0.95f);
                     }
+                }
+
+                // 뒤로 — 직업 선택으로
+                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                             mx, my, lmb, g_LmbPrev)) {
+                    g_GameManager.currentState = GameState::JOB_SELECT;
                 }
 }
 
@@ -6368,6 +6385,8 @@ static void Scene_Settings(const SceneCtx& c) {
                 toggleRow(wy + 260.0f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
                 toggleRow(wy + 330.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
                 toggleRow(wy + 400.0f, StrId::SET_COMBO,     g_ShowCombo);
+                toggleRow(wy + 470.0f, StrId::SET_SOUND,     g_SoundOn);
+                Audio::SetEnabled(g_SoundOn);   // 토글 즉시 반영
 
                 // 뒤로(저장 후 닫기) — 창 하단
                 if (UIButton(lx, wy + WH - 64.0f, 180.0f, 48.0f, T(StrId::BTN_BACK),

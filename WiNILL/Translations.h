@@ -54,6 +54,7 @@ enum class StrId {
     SET_CROSSHAIR,
     SET_DMGNUM,
     SET_COMBO,
+    SET_SOUND,
     OPT_ON,
     OPT_OFF,
 
@@ -235,6 +236,9 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
     },
     /* SET_COMBO */ {
         L"콤보 표시", L"Combo Counter", L"コンボ表示",
+    },
+    /* SET_SOUND */ {
+        L"사운드", L"Sound", L"サウンド",
     },
     /* OPT_ON */ {
         L"켜기", L"ON", L"オン",

@@ -101,5 +101,6 @@ inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤
 // 손맛 표시 토글 (설정에서 ON/OFF)
 inline bool g_ShowDamageNumbers = true;   // 데미지 숫자(딜 계산) 표시
 inline bool g_ShowCombo         = true;   // 콤보 카운터 표시
+inline bool g_SoundOn           = true;   // 사운드 마스터 ON/OFF
 
 // (추후 확장: 마스터 볼륨, 마우스 감도 등)
