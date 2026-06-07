@@ -1978,7 +1978,6 @@ int main() {
                         SpawnEnemyExplosion(bx + (rand()%200 - 100), by + (rand()%200 - 100),
                                             col.r, col.g, col.b, true);
                     g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
-                    Audio::PlaySfx(Audio::Sfx::Phase2);   // 페이즈2 글리치음
                 };
                 // SLIME — 분열(약한 chargeOnly 2기) + 광폭화 연출
                 if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {

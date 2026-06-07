@@ -9,6 +9,7 @@
 #include "miniaudio.h"
 #include "Audio.h"
 #include <cstring>
+#include <cstdlib>
 #include <string>
 #ifdef _WIN32
 #  include <windows.h>
@@ -37,15 +38,18 @@ namespace {
     struct SfxSlot { ma_sound snd; bool ok = false; };
     SfxSlot g_sfx[(int)Audio::Sfx::COUNT];
 
-    struct SfxDef { const char* path; float vol; };
-    // 게인 테이블 — 체감 보고 코드에서 조절 (파일 볼륨 안 건드림)
+    struct SfxDef { const char* path; float vol; unsigned minMs; bool pitchVary; };
+    // 게인/쓰로틀/피치 테이블 — 도배·기계감 방지 (파일 볼륨 안 건드림)
+    //   minMs   : 최소 재생 간격(ms). 도배 방지 (연사/대량처치)
+    //   pitchVary: 매번 피치 ±10% 랜덤 → 반복돼도 기계 같지 않게
     const SfxDef SFX_DEFS[(int)Audio::Sfx::COUNT] = {
-        { "Resource/Audio/sfx_shoot.wav",         0.30f },  // 자주 나니 작게
-        { "Resource/Audio/sfx_kill.wav",          0.45f },
-        { "Resource/Audio/sfx_hurt.wav",          0.55f },
-        { "Resource/Audio/sfx_death.wav",         0.85f },
-        { "Resource/Audio/sfx_glitch_phase2.wav", 0.70f },
+        { "Resource/Audio/sfx_shoot.wav",         0.20f, 25,  true  },  // 발사 — 작게+피치변주+25ms 쓰로틀
+        { "Resource/Audio/sfx_kill.wav",          0.30f, 55,  true  },  // 처치 — 대량처치 도배 방지(55ms)
+        { "Resource/Audio/sfx_hurt.wav",          0.55f, 80,  false },
+        { "Resource/Audio/sfx_death.wav",         0.85f, 0,   false },
+        { "Resource/Audio/sfx_glitch_phase2.wav", 0.70f, 0,   false },
     };
+    unsigned long long g_sfxLastMs[(int)Audio::Sfx::COUNT] = {0};
 
     ma_sound g_bgm;
     bool     g_bgmActive = false;
@@ -96,6 +100,21 @@ void Audio::PlaySfx(Sfx s) {
     if (!g_inited || !g_enabled) return;
     int i = (int)s;
     if (i < 0 || i >= (int)Sfx::COUNT || !g_sfx[i].ok) return;
+    // 쓰로틀 — 도배 방지 (연사/대량처치)
+    if (SFX_DEFS[i].minMs > 0) {
+#ifdef _WIN32
+        unsigned long long now = GetTickCount64();
+#else
+        unsigned long long now = 0;
+#endif
+        if (now - g_sfxLastMs[i] < SFX_DEFS[i].minMs) return;
+        g_sfxLastMs[i] = now;
+    }
+    // 피치 ±10% 랜덤 — 반복돼도 기계 같지 않게
+    if (SFX_DEFS[i].pitchVary) {
+        float p = 0.90f + (float)(std::rand() % 21) * 0.01f;   // 0.90~1.10
+        ma_sound_set_pitch(&g_sfx[i].snd, p);
+    }
     ma_sound_seek_to_pcm_frame(&g_sfx[i].snd, 0);   // 재트리거 = 처음부터
     ma_sound_start(&g_sfx[i].snd);
 }
