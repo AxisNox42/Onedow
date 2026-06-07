@@ -287,6 +287,10 @@ inline GLuint IconFor(AugType t) {
     case AugType::CHAKRAM_2:
     case AugType::CHAKRAM_3:     return g_IconTex[(int)AugType::CHAKRAM];
     case AugType::DRONE_2:       return g_IconTex[(int)AugType::DRONE];
+    // 신규 티어 II → 기본 티어 그림 재사용 (별도 아이콘 불필요)
+    case AugType::PIERCE_2:      return g_IconTex[(int)AugType::PIERCE];
+    case AugType::TWIN_2:        return g_IconTex[(int)AugType::TWIN];
+    case AugType::LASER_2:       return g_IconTex[(int)AugType::LASER];
     default:                     return 0;
     }
 }
