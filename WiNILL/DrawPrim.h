@@ -147,6 +147,29 @@ inline void drawPentagon(float cx, float cy, float size,
     glDrawArrays(GL_TRIANGLE_FAN, 0, N + 2);
 }
 
+// 사이버펑크 네온 터미널 보더 — 가짜 창 테두리(또렷한 네온 라인 + 옅은 글로우 +
+//   코너 브래킷). 블렌드 ON 상태에서 호출. nr/ng/nb = 네온 색.
+inline void drawNeonBorder(float x, float y, float w, float h,
+                           float nr, float ng, float nb) {
+    // 바깥 옅은 글로우 (살짝만 — 소프트 번짐 아님, 라인 강조용)
+    drawRect(x-2, y-2,     w+4, 4.0f, nr, ng, nb, 0.16f);   // 상
+    drawRect(x-2, y+h-2,   w+4, 4.0f, nr, ng, nb, 0.16f);   // 하
+    drawRect(x-2, y-2,     4.0f, h+4, nr, ng, nb, 0.16f);   // 좌
+    drawRect(x+w-2, y-2,   4.0f, h+4, nr, ng, nb, 0.16f);   // 우
+    // 또렷한 네온 라인
+    const float t = 1.5f;
+    drawRect(x, y,       w, t, nr, ng, nb, 0.92f);
+    drawRect(x, y+h-t,   w, t, nr, ng, nb, 0.92f);
+    drawRect(x, y,       t, h, nr, ng, nb, 0.92f);
+    drawRect(x+w-t, y,   t, h, nr, ng, nb, 0.92f);
+    // 코너 브래킷 (사이버펑크 시그니처 — 모서리만 굵게)
+    const float cl = 14.0f, ct = 2.5f;
+    drawRect(x, y,            cl, ct, nr, ng, nb, 1.0f);  drawRect(x, y,            ct, cl, nr, ng, nb, 1.0f);
+    drawRect(x+w-cl, y,       cl, ct, nr, ng, nb, 1.0f);  drawRect(x+w-ct, y,       ct, cl, nr, ng, nb, 1.0f);
+    drawRect(x, y+h-ct,       cl, ct, nr, ng, nb, 1.0f);  drawRect(x, y+h-cl,       ct, cl, nr, ng, nb, 1.0f);
+    drawRect(x+w-cl, y+h-ct,  cl, ct, nr, ng, nb, 1.0f);  drawRect(x+w-ct, y+h-cl,  ct, cl, nr, ng, nb, 1.0f);
+}
+
 inline void drawDiamond(float cx, float cy, float size,
                         float r, float g, float b, float a) {
     float hs = size * 0.5f;

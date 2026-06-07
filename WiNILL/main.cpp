@@ -1013,6 +1013,8 @@ int main() {
     float accumulator      = 0.0f;
     const float FIXED_DT = 1.0f / 60.0f;
 
+    Audio::Init();   // 사운드 시스템 (Sounds/ 폴더, 파일 없으면 무음)
+
     // ============================================================
     // 메인 루프
     // ============================================================
@@ -1182,6 +1184,15 @@ int main() {
         }
         g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
 
+        // ── BGM — 게임플레이 중엔 메인 루프, 메뉴에선 정지 (보스 BGM 은 파일 생기면 확장) ──
+        {
+            GameState cs = g_GameManager.currentState;
+            bool bgmOn = (cs == GameState::RUNNING || cs == GameState::PAUSED ||
+                          cs == GameState::AUG_SELECT || cs == GameState::DEBUFF_SELECT ||
+                          cs == GameState::READY);
+            if (bgmOn) Audio::PlayBgmMain(); else Audio::StopBgm();
+        }
+
         // 크리에이티브 무적 — 매 프레임 체력 풀 고정 (절대 죽지 않음)
         if (g_CreativeGodmode && g_CreativeMode &&
             g_GameManager.currentState == GameState::RUNNING) {
@@ -1250,6 +1261,8 @@ int main() {
                 // 일반 사망 — 플레이어 기점 대폭발(모든 적 터짐) 후 메뉴 페이드인
                 g_GameManager.currentState = GameState::DYING;
                 g_GameManager.playerHP     = 0.0f;
+                Audio::PlaySfx(Audio::Sfx::Death);   // 플레이어 사망음
+                Audio::StopBgm();
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
                 g_DeathCX = pCX; g_DeathCY = pCY;
@@ -1964,6 +1977,7 @@ int main() {
                         SpawnEnemyExplosion(bx + (rand()%200 - 100), by + (rand()%200 - 100),
                                             col.r, col.g, col.b, true);
                     g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
+                    Audio::PlaySfx(Audio::Sfx::Phase2);   // 페이즈2 글리치음
                 };
                 // SLIME — 분열(약한 chargeOnly 2기) + 광폭화 연출
                 if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
@@ -2584,7 +2598,7 @@ int main() {
             {
                 if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
-                if (lost > 0.5f) g_HurtVignette = 0.5f;   // 피격 비네트
+                if (lost > 0.5f) { g_HurtVignette = 0.5f; Audio::PlaySfx(Audio::Sfx::Hurt); }   // 피격 비네트 + 피격음
                 g_WinPrevHP = g_GameManager.playerHP;
                 // 창 크기는 g_Stats.windowSize 로 고정 (HP 와 무관)
                 g_WindowSizeCur = g_Stats.windowSize;
@@ -3232,6 +3246,7 @@ int main() {
             // Twin: ±5도 2발 / Shotgun: 5발 산탄 (사거리 700)
             auto spawnAimed = [&](float tx, float ty) {
                 TriggerMuzzle(pCX, pCY, atan2f(ty - pCY, tx - pCX));  // 총구 섬광
+                Audio::PlaySfx(Audio::Sfx::Shoot);                    // 발사음
                 if (g_Stats.shotgun) {
                     float dx = tx - pCX, dy = ty - pCY;
                     float ang = atan2f(dy, dx);
@@ -3755,6 +3770,41 @@ int main() {
         }
         glEnable(GL_BLEND);  // 이후는 일반 알파 블렌딩
 
+        // ── 사이버펑크 네온 터미널 — 각 가짜 창에 네온 보더 + 코너 브래킷 ──
+        //    창 색상은 적/보스 고유색에 맞춰 네온화 (터미널 프레임 느낌)
+        if (g_Stats.turretMode)
+            for (auto& t : g_Turrets)
+                drawNeonBorder(t.x - TURRET_WIN_W*0.5f, t.y - TURRET_WIN_H*0.5f,
+                               TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
+        for (auto r : g_MonsterManager.rangedMobs) {
+            if (r->deathScale <= 0.0f) continue;
+            float sc = r->deathScale, rW = RFW_W*sc, rH = RFW_H*sc;
+            drawNeonBorder(r->worldX - rW*0.5f, r->worldY - rH*0.5f, rW, rH,
+                           0.85f, 0.20f, 0.95f);   // 원거리 몹 = 네온 마젠타
+        }
+        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+            auto* bs = g_MonsterManager.boss;
+            drawNeonBorder(bs->worldX - Boss::WIN_W*0.5f, bs->worldY - Boss::WIN_H*0.5f,
+                           Boss::WIN_W, Boss::WIN_H, 0.40f, 1.0f, 0.55f);   // 슬라임 = 연두
+        }
+        if (g_GlitchBoss && g_GlitchBoss->alive)
+            drawNeonBorder(g_GlitchBoss->worldX - GLITCH_WIN_W*0.5f, g_GlitchBoss->worldY - GLITCH_WIN_W*0.5f,
+                           GLITCH_WIN_W, GLITCH_WIN_W, 0.95f, 0.20f, 0.60f);
+        if (g_RRBoss && g_RRBoss->alive)
+            drawNeonBorder(g_RRBoss->worldX - RR_WIN_W*0.5f, g_RRBoss->worldY - RR_WIN_W*0.5f,
+                           RR_WIN_W, RR_WIN_W, 1.0f, 0.55f, 0.20f);
+        if (g_PolyBoss && g_PolyBoss->alive)
+            drawNeonBorder(g_PolyBoss->worldX - POLY_WIN_W*0.5f, g_PolyBoss->worldY - POLY_WIN_W*0.5f,
+                           POLY_WIN_W, POLY_WIN_W, 0.60f, 0.30f, 1.0f);
+        if (g_SpamBoss && g_SpamBoss->alive)
+            drawNeonBorder(g_SpamBoss->worldX - SPAM_WIN_W*0.5f, g_SpamBoss->worldY - SPAM_WIN_W*0.5f,
+                           SPAM_WIN_W, SPAM_WIN_W, 1.0f, 0.40f, 0.80f);
+        for (auto* c : g_Slimelings) {
+            if (!c->alive) continue;
+            float w = Boss::WIN_W * c->sizeScale;
+            drawNeonBorder(c->worldX - w*0.5f, c->worldY - w*0.5f, w, w, 0.40f, 1.0f, 0.55f);
+        }
+
         // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
         //     각 창마다 scissor 패스. 다이아몬드/본체는 (e2)/(e3) 에서 별도로 그림
         glEnable(GL_SCISSOR_TEST);
@@ -3859,8 +3909,11 @@ int main() {
         //     = "원거리 몹 창이 플레이어 창 안에 들어가면 가려짐" 원래 의도 그대로
         glDisable(GL_BLEND);
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                 0.08f, 0.08f, 0.10f, 1.0f);
+                 0.05f, 0.06f, 0.09f, 1.0f);
         glEnable(GL_BLEND);
+        // 사이버펑크 네온 터미널 — 플레이어 창 시안 네온 보더
+        drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
+                       0.30f, 1.0f, 1.0f);
 
         // (c2) HP/EXP 바 — 플레이어 창 하단 안쪽에 부착 (창과 함께 이동) ──
         if (g_GameManager.currentState == GameState::RUNNING ||
@@ -5378,6 +5431,7 @@ int main() {
         g_OswaldMemHandle = nullptr;
     }
 #endif
+    Audio::Shutdown();
     PlatformTimerEnd();
     glfwTerminate();
     return 0;
@@ -6034,7 +6088,6 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
 
                     // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
                     BindMainShader();
-                    float dY = baseY + CARD_H * 0.55f;
                     const wchar_t* d = WeaponDesc(w);
                     // '/' 로 split → 줄 단위
                     std::vector<std::wstring> lines;
@@ -6048,15 +6101,21 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                         while (!s.empty() && s.front() == L' ') s.erase(0, 1);
                         while (!s.empty() && s.back() == L' ') s.pop_back();
                     }
+                    // 설명을 카드 안에 가둔다 — 줄 많은 무기(대포 등)는 줄간격/글자 압축
+                    float descTop = baseY + CARD_H * 0.50f;
+                    float descBot = baseY + CARD_H - 14.0f;
+                    int   nL = (int)lines.size(); if (nL < 1) nL = 1;
                     float lineH = 26.0f;
+                    if (descTop + nL * lineH > descBot)
+                        lineH = (descBot - descTop) / nL;
                     for (int li = 0; li < (int)lines.size(); li++) {
                         const wchar_t* s = lines[li].c_str();
-                        float sc = 0.85f;
-                        while (sc > 0.55f &&
+                        float sc = (lineH < 24.0f) ? 0.78f : 0.85f;
+                        while (sc > 0.52f &&
                                g_TextS.Width(s, sc) > CARD_W - 24.0f) sc -= 0.05f;
                         float lw = g_TextS.Width(s, sc);
                         g_TextS.Draw(s, cardX + (CARD_W - lw) * 0.5f,
-                                     dY + li * lineH, sc, 0.88f, 0.95f, 1.0f, 0.95f);
+                                     descTop + li * lineH, sc, 0.88f, 0.95f, 1.0f, 0.95f);
                     }
                 }
 }

@@ -160,6 +160,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\glad.c" />
+    <ClCompile Include="Audio.cpp" />
     <ClCompile Include="FakeWindow.cpp" />
     <ClCompile Include="GameManager.cpp" />
     <ClCompile Include="main.cpp" />
@@ -170,8 +171,10 @@
     <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Audio.h" />
     <ClInclude Include="Augment.h" />
     <ClInclude Include="Bomber.h" />
+    <ClInclude Include="miniaudio.h" />
     <ClInclude Include="Boss.h" />
     <ClInclude Include="Bullet.h" />
     <ClInclude Include="CollisionSystem.h" />
@@ -203,4 +206,13 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <!-- 사운드 파일을 빌드 출력 폴더로 복사 (실행파일 기준 Resource\Audio\ 에서 로드) -->
+  <Target Name="CopyAudioAssets" AfterTargets="Build">
+    <ItemGroup>
+      <AudioAssets Include="$(ProjectDir)Resource\Audio\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AudioAssets)"
+          DestinationFolder="$(OutDir)Resource\Audio\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

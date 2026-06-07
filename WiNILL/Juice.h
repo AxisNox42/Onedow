@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <glm/glm.hpp>
+#include "Audio.h"
 
 // ─────────────────────────────────────────────────────────────
 // 손맛(juice) 공용 시스템 — 데미지 숫자 / 콤보 / 히트스톱 / 화면 플래시
@@ -64,6 +65,7 @@ inline void AddKillCombo() {
     ++g_Combo;
     g_ComboTimer = COMBO_WINDOW;
     g_ComboPulse = 1.0f;
+    Audio::PlaySfx(Audio::Sfx::Kill);   // 적 처치음
 }
 
 // ── 히트스톱 (큰 이벤트 때 잠깐 정지) ──
