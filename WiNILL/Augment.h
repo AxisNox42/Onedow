@@ -441,7 +441,7 @@ inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_EXECUTIONER, { AugType::CRIT,        AugType::BERSERK }, 2 },
     { AugType::CB_BLOODLORD,   { AugType::LIFESTEAL,   AugType::VAMPIRE }, 2 },
     { AugType::CB_PIERCE_TWIN, { AugType::TWIN,        AugType::PIERCE  }, 2 },
-    { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN, AugType::DRONE   }, 2 },
+    { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN_3, AugType::DRONE }, 2 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 

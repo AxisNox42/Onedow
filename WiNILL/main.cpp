@@ -5681,7 +5681,7 @@ static void Scene_Codex(const SceneCtx& c) {
     (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
     (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
                 // codex.db = 검색 가능한 위키 스타일 앱 창
-                const float WW = 1240.0f, WH = 800.0f;
+                const float WW = 1240.0f, WH = 860.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"codex.db", 0.40f, 0.90f, 0.50f, wx, wy);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
@@ -5736,7 +5736,7 @@ static void Scene_Codex(const SceneCtx& c) {
                              mx, my, lmb, g_LmbPrev, s_tab == 1)) s_tab = 1;
 
                 float gTop = wy + 110.0f;          // 그리드 상단
-                float detailY = wy + WH - 150.0f;  // 상세(article) 영역
+                float detailY = wy + WH - 170.0f;  // 상세(article) 영역
                 int hoverItem = -1;                // 실제 데이터 인덱스
 
                 if (s_tab == 0) {
@@ -5786,7 +5786,7 @@ static void Scene_Codex(const SceneCtx& c) {
                         const wchar_t* nm = MobName(hoverItem);
                         const wchar_t* d  = MobDesc(hoverItem);
                         g_TextL.Draw(nm, wx + 40.0f, detailY, 1.0f, 0.6f, 0.95f, 0.7f, 1.0f);
-                        g_TextS.Draw(d,  wx + 40.0f, detailY + 40.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
+                        g_TextS.Draw(d,  wx + 40.0f, detailY + 54.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
                     }
                 } else {
                     // 증강 — 검색 필터링 후 재배치
@@ -5833,7 +5833,7 @@ static void Scene_Codex(const SceneCtx& c) {
                                      std::min(1.0f, rr*1.4f+0.3f), std::min(1.0f, rg*1.4f+0.3f),
                                      std::min(1.0f, rb*1.4f+0.3f), 1.0f);
                         const wchar_t* ds = AugDesc(d);
-                        g_TextS.Draw(ds, wx + 40.0f, detailY + 40.0f, 0.85f,
+                        g_TextS.Draw(ds, wx + 40.0f, detailY + 54.0f, 0.85f,
                                      0.85f, 0.92f, 1.0f, 0.95f);
                         if (d.rarity == AugRarity::COMBO) {
                             for (int c = 0; c < COMBO_COUNT; c++)
@@ -5844,7 +5844,7 @@ static void Scene_Codex(const SceneCtx& c) {
                                     swprintf_s(rc, L"%ls + %ls",
                                                ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
                                                ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
-                                    g_TextS.Draw(rc, wx + 40.0f, detailY + 72.0f, 0.85f,
+                                    g_TextS.Draw(rc, wx + 40.0f, detailY + 92.0f, 0.85f,
                                                  0.1f, 0.85f, 0.8f, 0.95f);
                                     break;
                                 }
@@ -6057,8 +6057,8 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                     // 무기 이름 — 카드 상단쪽 (설명과 분리)
                     {
                         const wchar_t* nm = WeaponName(w);
-                        float nsc = 1.3f;
-                        while (nsc > 0.7f && g_TextL.Width(nm, nsc) > CARD_W - 24.0f) nsc -= 0.05f;
+                        float nsc = 1.05f;
+                        while (nsc > 0.6f && g_TextL.Width(nm, nsc) > CARD_W - 24.0f) nsc -= 0.05f;
                         float nw = g_TextL.Width(nm, nsc);
                         g_TextL.Draw(nm, cardX + (CARD_W - nw) * 0.5f,
                                      baseY + CARD_H * 0.20f, nsc, 1, 1, 1, 0.98f);

@@ -296,8 +296,13 @@ inline GLuint IconFor(AugType t) {
     // 티어 II → 기본 티어 그림 재사용 (별도 아이콘 없는 것만)
     case AugType::PIERCE_2:      return g_IconTex[(int)AugType::PIERCE];
     case AugType::TWIN_2:        return g_IconTex[(int)AugType::TWIN];
-    default:                     return 0;
+    default:                     break;
     }
+    // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용
+    for (int c = 0; c < COMBO_COUNT; c++)
+        if (COMBO_DEFS[c].result == t)
+            return IconFor(COMBO_DEFS[c].reqs[0]);
+    return 0;
 }
 
 // 화면(y-down ortho) 좌표에 틴트 적용해 아이콘 그리기
