@@ -66,6 +66,7 @@ public:
     float   orbitAngle  = 0.0f;
     float   orbitRadius = 0.0f;
     float   spawnTimer  = 0.0f;
+    bool    anchored    = false;   // SPAWNER(봇넷 노드) — 사정거리 도달 후 고정(추격 X)
     bool    shieldActive = true;
     float   shieldTimer  = 0.0f;
 
@@ -235,7 +236,23 @@ public:
             return;
         }
 
-        // NORMAL / SPLITTER / BRUTE / SPAWNER — 플레이어 추격 (SPAWNER 는 느림)
+        // SPAWNER(봇넷 노드) — 사정거리까지만 진입 후 제자리 고정. 플레이어를 추격하지 않음.
+        //   (소환사가 끝까지 쫓아오는 게 이상해서 변경. 잡몹 소환은 그대로, 총알은 안 쏨.)
+        if (kind == MobKind::SPAWNER) {
+            const float ANCHOR = 360.0f;
+            if (!anchored) {
+                if (dist > ANCHOR) {
+                    worldX += (dx / dist) * speed * speedMult * deltaTime;
+                    worldY += (dy / dist) * speed * speedMult * deltaTime;
+                } else {
+                    anchored = true;   // 배치 완료 → 이후 영구 고정
+                }
+            }
+            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            return;
+        }
+
+        // NORMAL / SPLITTER / BRUTE — 플레이어 추격
         if (dist > 5.0f) {
             worldX += (dx / dist) * speed * speedMult * deltaTime;
             worldY += (dy / dist) * speed * speedMult * deltaTime;
