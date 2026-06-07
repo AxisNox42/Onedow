@@ -6373,11 +6373,14 @@ static void Scene_Settings(const SceneCtx& c) {
                     if (UIButton(bx0, vy, 44.0f, OH, L"−", mx, my, lmb, g_LmbPrev)) {
                         g_VolEdit = false; g_SoundVol = clampVol(g_SoundVol - 5);
                     }
-                    // 게이지바 (클릭/드래그로 직접 설정)
+                    // 슬라이더 (트랙 + 손잡이) — 클릭/드래그로 직접 설정
                     float barX = bx0 + 56.0f, barW = 300.0f;
-                    drawRect(barX, vy, barW, OH, 0.10f, 0.12f, 0.16f, 1.0f);
-                    drawRect(barX, vy, barW * (g_SoundVol / 100.0f), OH, 0.35f, 0.75f, 1.0f, 0.95f);
-                    drawRect(barX, vy, barW, 2.0f, 0.4f, 0.7f, 1.0f, 0.7f);
+                    float trackY = vy + OH * 0.5f, trackH = 6.0f;
+                    float kx = barX + barW * (g_SoundVol / 100.0f);
+                    drawRect(barX, trackY - trackH*0.5f, barW, trackH, 0.10f, 0.12f, 0.16f, 1.0f);     // 트랙
+                    drawRect(barX, trackY - trackH*0.5f, kx - barX, trackH, 0.35f, 0.75f, 1.0f, 0.95f); // 채움
+                    drawCircle(kx, trackY, 11.0f, 0.35f, 0.8f, 1.0f, 1.0f);    // 손잡이 외곽
+                    drawCircle(kx, trackY,  6.0f, 0.95f, 0.98f, 1.0f, 1.0f);   // 손잡이 코어
                     bool barHover = (mx >= barX && mx <= barX + barW && my >= vy && my <= vy + OH);
                     if (lmb && barHover) {   // 누르는 동안(드래그) 마우스 X 로 값 설정
                         g_VolEdit = false;

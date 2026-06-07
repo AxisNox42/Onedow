@@ -6,7 +6,7 @@
 //   0  = VSync (모니터 주사율)
 //   -1 = 무제한
 //   양수 = 해당 FPS 로 캡
-inline int g_FpsCap = 0;
+inline int g_FpsCap = 60;   // 첫 실행 기본 60fps (세이브 있으면 덮어씀)
 
 // 언어 (한국어 / 영어 / 일본어)
 enum class Language { KR, EN, JP };
