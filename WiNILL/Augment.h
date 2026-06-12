@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdlib>
+#include <cstdio>       // swprintf_s
 #include "Settings.h"   // g_Language, LANG_COUNT
 
 enum class AugType {
@@ -10,9 +11,9 @@ enum class AugType {
     BULLET_RAIN,
     CANNON,                // 전설 → 희귀
     CRIT, LIFESTEAL, BERSERK,   // 핵앤슬래쉬 (치명타/흡혈/광전사)
-    OVERDRIVE,                  // 곱연산 데미지 ×1.18 (후반 스케일러)
+    OVERDRIVE,                  // 희귀 공격력 +10 (가산)
     // ── 에픽 ──
-    CORE_OVERLOAD,              // 곱연산 데미지 ×1.30 (후반 스케일러)
+    CORE_OVERLOAD,              // 에픽 공격력 +20 (가산)
     VAMPIRE, BROKEN_SIGHT, SNIPER, BAYONET,
     MINIATURIZE, GIGANTIFY, PIERCE, TWIN, CHAKRAM,
     BULLET_RAIN_2, CHAKRAM_2,
@@ -26,6 +27,7 @@ enum class AugType {
     DEATH_BLAST,           // 연쇄 폭발 (적 사망 시 폭발)
     SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 과부하)
     // ── 전설 ──
+    POWER_SURGE,                // 전설 공격력 ×1.05 (유일 곱연산 스케일러)
     RANDOM_AUG, SOUL_HARVEST,
     BULLET_RAIN_3, DRONE_2, CHAKRAM_3,
     MK2, HACK_BOMBER,                  // 신규
@@ -76,9 +78,9 @@ inline const wchar_t* AugDesc(const AugDef& d) { return d.locDesc[CurLangIdx()];
 
 static const AugDef ALL_AUGS[] = {
     // ── 일반 ───────────────────────────────────────────
-    { AugType::DMG_UP,        AugRarity::COMMON,    AugUnique::NONE, "DMG+8%",
+    { AugType::DMG_UP,        AugRarity::COMMON,    AugUnique::NONE, "DMG+5",
       { L"공격력 증가", L"Attack Up", L"攻撃力アップ" },
-      { L"공격력 +8%  (곱연산 누적)", L"Attack +8%  (multiplicative)", L"攻撃力 +8%  (乗算で累積)" } },
+      { L"공격력 +5  (고정 가산)", L"Attack +5  (flat)", L"攻撃力 +5  (固定)" } },
     { AugType::RATE_UP,       AugRarity::COMMON,    AugUnique::NONE, "RATE+4%",
       { L"연사 속도 증가", L"Fire Rate Up", L"連射速度アップ" },
       { L"연사 속도 +4%", L"Fire rate +4%", L"連射速度 +4%" } },
@@ -140,16 +142,12 @@ static const AugDef ALL_AUGS[] = {
         L"低HPほど攻撃力上昇  (瀕死時 最大+60%)" } },
     { AugType::OVERDRIVE,     AugRarity::RARE,      AugUnique::NONE, "OVERDRIVE",
       { L"오버드라이브", L"Overdrive", L"オーバードライブ" },
-      { L"공격력 ×1.18 (곱연산 · 중첩)  /  후반 핵심 스케일러",
-        L"Attack ×1.18 (multiplicative · stacks)  /  late-game scaler",
-        L"攻撃力 ×1.18 (乗算・重複)  /  後半の主力スケーラー" } },
+      { L"공격력 +10  (고정 가산)", L"Attack +10  (flat)", L"攻撃力 +10  (固定)" } },
 
     // ── 에픽 ───────────────────────────────────────────
     { AugType::CORE_OVERLOAD, AugRarity::EPIC,      AugUnique::NONE, "CORE_OVERLOAD",
       { L"코어 과부하", L"Core Overload", L"コア過負荷" },
-      { L"공격력 ×1.30 (곱연산 · 중첩)  /  후반 핵심 스케일러",
-        L"Attack ×1.30 (multiplicative · stacks)  /  late-game scaler",
-        L"攻撃力 ×1.30 (乗算・重複)  /  後半の主力スケーラー" } },
+      { L"공격력 +20  (고정 가산)", L"Attack +20  (flat)", L"攻撃力 +20  (固定)" } },
     { AugType::VAMPIRE,       AugRarity::EPIC,      AugUnique::NONE, "VAMPIRE",
       { L"흡혈마", L"Vampire", L"吸血鬼" },
       { L"10킬마다 체력 +1  /  최대 체력 -10%  /  획득 즉시 현재 체력 -20%",
@@ -162,19 +160,19 @@ static const AugDef ALL_AUGS[] = {
         L"マウス無視・金色オーブへ自動射撃  /  攻撃力 +250%" } },
     { AugType::BAYONET,       AugRarity::EPIC,      AugUnique::DISTANCE, "BAYONET",
       { L"총검", L"Bayonet", L"銃剣" },
-      { L"200px 이내의 적에게 피해 +50%  (고유 · 거리)",
-        L"+50% dmg to enemies within 200px  (unique · range)",
-        L"200px以内の敵にダメージ +50%  (固有・距離)" } },
+      { L"200px 이내의 적에게 피해 +50%",
+        L"+50% dmg to enemies within 200px",
+        L"200px以内の敵にダメージ +50%" } },
     { AugType::MINIATURIZE,   AugRarity::EPIC,      AugUnique::SIZE, "MINI",
       { L"축소화", L"Miniaturize", L"小型化" },
-      { L"최대 체력 10 고정  /  보유 증강당 공격력 +10·연사 +2%  /  이속 +20%  /  크기 -20%  (고유 · 크기)  [원거리 한 방에 사망 주의]",
-        L"Max HP fixed 10  /  per aug: ATK +10·rate +2%  /  move +20%  /  size -20%  (unique · size)  [one ranged hit can kill]",
-        L"最大体力10固定  /  強化1つ毎 攻撃+10・連射+2%  /  移動+20%  /  サイズ-20%  (固有・サイズ)  [遠距離一撃死注意]" } },
+      { L"최대 체력 10 고정  /  보유 증강당 공격력 +10·연사 +2%  /  이속 +20%  /  크기 -20%",
+        L"Max HP fixed 10  /  per aug: ATK +10·rate +2%  /  move +20%  /  size -20%",
+        L"最大体力10固定  /  強化1つ毎 攻撃+10・連射+2%  /  移動+20%  /  サイズ-20%" } },
     { AugType::GIGANTIFY,     AugRarity::EPIC,      AugUnique::SIZE, "GIGA",
       { L"거대화", L"Gigantify", L"巨大化" },
-      { L"최대 체력 ×2  /  초당 체력 약 1.3 회복  /  이속 -40%  /  크기 +50%  (고유 · 크기)",
-        L"Max HP ×2  /  ~1.3 HP/s regen  /  move -40%  /  size +50%  (unique · size)",
-        L"最大体力 ×2  /  毎秒 約1.3回復  /  移動 -40%  /  サイズ +50%  (固有・サイズ)" } },
+      { L"최대 체력 ×2  /  초당 체력 약 1.3 회복  /  이속 -40%  /  크기 +50%",
+        L"Max HP ×2  /  ~1.3 HP/s regen  /  move -40%  /  size +50%",
+        L"最大体力 ×2  /  毎秒 約1.3回復  /  移動 -40%  /  サイズ +50%" } },
     { AugType::PIERCE,        AugRarity::EPIC,      AugUnique::NONE, "PIERCE",
       { L"관통", L"Pierce", L"貫通" },
       { L"명중 시 30% 확률로 적·장애물 관통",
@@ -185,9 +183,9 @@ static const AugDef ALL_AUGS[] = {
       { L"한 번에 2발 발사  /  공격력 -40%", L"Fire 2 shots at once  /  Attack -40%", L"一度に2発発射  /  攻撃力 -40%" } },
     { AugType::CHAKRAM,       AugRarity::EPIC,      AugUnique::NONE, "CHAKRAM",
       { L"차크람", L"Chakram", L"チャクラム" },
-      { L"넓게 공전하는 차크람 1개  /  닿은 잡몹·자폭병 즉사, 원거리 큰 피해·적탄 막기 (공전체 카운터)  /  파괴 시 6초 후 재생성",
-        L"1 wide-orbiting chakram  /  instakills mobs/bombers, big dmg to gunners, blocks bullets (orbiter counter)  /  respawns 6s",
-        L"広く公転するチャクラム1個  /  雑魚・自爆兵即死, 遠距離に大ダメージ・敵弾を防ぐ (公転体対策)  /  破壊後6秒で再生成" } },
+      { L"넓게 공전하는 차크람 1개  /  닿은 잡몹·자폭병 즉사, 원거리 큰 피해·적탄 막기  /  파괴 시 6초 후 재생성",
+        L"1 wide-orbiting chakram  /  instakills mobs/bombers, big dmg to gunners, blocks bullets  /  respawns 6s",
+        L"広く公転するチャクラム1個  /  雑魚・自爆兵即死, 遠距離に大ダメージ・敵弾を防ぐ  /  破壊後6秒で再生成" } },
     { AugType::BULLET_RAIN_2, AugRarity::EPIC,      AugUnique::NONE, "BULLETRAIN II",
       { L"탄환 세례 II", L"Bullet Rain II", L"弾幕の雨 II" },
       { L"탄환 세례 쿨다운 15초 → 10초  (요구: 탄환 세례)",
@@ -267,6 +265,11 @@ static const AugDef ALL_AUGS[] = {
         L"アクティブスキル — 5秒間 連射×2・攻撃+50%  (CD20秒)" } },
 
     // ── 전설 ───────────────────────────────────────────
+    { AugType::POWER_SURGE,   AugRarity::LEGENDARY, AugUnique::NONE, "POWER_SURGE",
+      { L"전력 증폭", L"Power Surge", L"パワーサージ" },
+      { L"공격력 ×1.05  (곱연산 · 중첩 · 후반 스케일)",
+        L"Attack ×1.05  (multiplicative · stacks · late scaling)",
+        L"攻撃力 ×1.05  (乗算・重複・後半スケール)" } },
     { AugType::RANDOM_AUG,    AugRarity::LEGENDARY, AugUnique::NONE, "RANDOM",
       { L"랜덤 증강", L"Random Augment", L"ランダム強化" },
       { L"등급 무관 랜덤 버프 3개 즉시 획득  (디버프 없음)",
@@ -441,7 +444,7 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 77;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하
+static constexpr int AUG_TOTAL = 78;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -518,4 +521,26 @@ inline const wchar_t* GetRarityKR(AugRarity r) {
     case AugRarity::COMBO:     { static const wchar_t* s[3]={L"조합",L"Combo",L"組合"};           return s[li]; }
     }
     return L"?";
+}
+
+// 카테고리 태그 (고유-거리/크기, 스킬) — 없으면 nullptr
+inline const wchar_t* GetAugTag(const AugDef& a) {
+    int li = CurLangIdx();
+    if (a.unique == AugUnique::DISTANCE) { static const wchar_t* s[3]={L"거리",L"Range",L"距離"};  return s[li]; }
+    if (a.unique == AugUnique::SIZE)     { static const wchar_t* s[3]={L"크기",L"Size",L"サイズ"}; return s[li]; }
+    if (a.type == AugType::SKILL_CLOSE || a.type == AugType::SKILL_OVERCLOCK ||
+        a.type == AugType::SKILL_TIMESTOP)
+        { static const wchar_t* s[3]={L"스킬",L"Skill",L"スキル"}; return s[li]; }
+    return nullptr;
+}
+
+// 등급 + 카테고리 배지 — "희귀|거리" / "에픽|스킬" 식. 태그 없으면 등급만.
+//   (단일 정적 버퍼 — UI 단일 스레드 1회 사용 가정)
+inline const wchar_t* GetAugBadge(const AugDef& a) {
+    static wchar_t buf[48];
+    const wchar_t* rar = GetRarityKR(a.rarity);
+    const wchar_t* tag = GetAugTag(a);
+    if (tag) swprintf_s(buf, L"%ls|%ls", rar, tag);
+    else     swprintf_s(buf, L"%ls", rar);
+    return buf;
 }

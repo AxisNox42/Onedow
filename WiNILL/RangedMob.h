@@ -71,8 +71,8 @@ public:
             Bullet b(worldX, worldY, playerCX, playerCY);
             b.speed   = 600.0f;
             b.isEnemy = true;
-            b.homing     = true;     // B12: 플레이어 쪽으로 아주 약한 유도
-            b.homingTurn = 0.9f;     // rad/s — 미세 (회피 가능하되 칼피 압박)
+            b.homing     = true;     // 플레이어 쪽으로 아주 약한 유도 (공전 방지: 미세)
+            b.homingTurn = 0.35f;    // rad/s — 극미세. 발사 직후 잠깐만 보정(공전 X)
             b.color   = glm::vec3(0.8f, 0.1f, 0.1f);
             bullets.push_back(b);
             fireTimer = 0.0f;

@@ -9,7 +9,7 @@ struct PlayerStats {
     float baseDamage       = 50.0f;
     float maxHP            = 100.0f;
     float bulletSpeed      = 1200.0f;
-    float fireInterval     = 0.15f;
+    float fireInterval     = 0.20f;   // 기본 연사력 하향 (0.15 → 0.20, 더 느리게)
     float windowSize       = 800.0f;
     float moveSpeedMult    = 1.0f;
     float regenPerSec      = 1.0f / 3.0f;  // 기본 3초당 HP 1 회복
@@ -162,9 +162,10 @@ struct PlayerStats {
         case AugType::REGEN_UP:  regenPerSec += 0.34f; break;  // 5초당 1 → 약 3초당 1
         case AugType::XP_UP:     xpMult       *= 1.05f; break;
 
-        // ── 희귀/에픽 곱연산 스케일러 (후반용) ──
-        case AugType::OVERDRIVE:      damageMultiplier *= 1.18f; break;
-        case AugType::CORE_OVERLOAD:  damageMultiplier *= 1.30f; break;
+        // ── 등급별 공격력 (가산) — 초반 강세. 곱연산 폭주 제거 ──
+        case AugType::OVERDRIVE:      flatDamageBonus += 10.0f; break;  // 희귀 +10
+        case AugType::CORE_OVERLOAD:  flatDamageBonus += 20.0f; break;  // 에픽 +20
+        case AugType::POWER_SURGE:    damageMultiplier *= 1.05f; break; // 전설 +5%(유일 곱연산)
 
         // ── 희귀 ──
         case AugType::GLASS_CANNON:

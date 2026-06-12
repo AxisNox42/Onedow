@@ -1975,13 +1975,15 @@ int main() {
                             }
                         }
                     }
-                    // 적 유도탄(원거리몹 탄): 플레이어 쪽으로 아주 약하게 방향 보정 (B12)
+                    // 적 유도탄(원거리몹 탄): 플레이어 쪽으로 아주 약하게 방향 보정.
+                    //   단, 플레이어 근처(<300px)에선 유도 중단 → 빗나간 탄이 공전하지 않고
+                    //   그대로 지나감(이전 0.9 rad/s 가 플레이어 주위를 도는 문제 수정).
                     if (b.homing && b.isEnemy && b.active && g_TimeStopTimer <= 0.0f) {
                         float pCX = playerWin.x + playerWin.width  * 0.5f;
                         float pCY = playerWin.y + playerWin.height * 0.5f;
                         float wx = pCX - b.x, wy = pCY - b.y;
                         float wl = sqrtf(wx*wx + wy*wy);
-                        if (wl > 0.001f) {
+                        if (wl > 300.0f) {
                             float curA  = atan2f(b.dirY, b.dirX);
                             float wantA = atan2f(wy / wl, wx / wl);
                             float diff  = wantA - curA;
@@ -3836,8 +3838,7 @@ int main() {
                 g_LaserTimer += delta;
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
-                    float ltx, lty; if (!aimTarget(ltx, lty)) { ltx = wmx; lty = wmy; }
-                    float lang  = atan2f(lty - pCY, ltx - pCX);
+                    float lang  = atan2f(wmy - pCY, wmx - pCX);   // 레이저는 항상 커서 방향
                     float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;  // II: 더 길게
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
                     const float BEAM_HALF = 24.0f;
@@ -6532,7 +6533,7 @@ static void Scene_Codex(const SceneCtx& c) {
                         const AugDef& d = ALL_AUGS[hoverItem];
                         float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
                         wchar_t hd[96];
-                        swprintf_s(hd, L"[%ls] %ls", GetRarityKR(d.rarity), AugName(d));
+                        swprintf_s(hd, L"[%ls] %ls", GetAugBadge(d), AugName(d));
                         g_TextL.Draw(hd, wx + 40.0f, detailY, 0.95f,
                                      std::min(1.0f, rr*1.4f+0.3f), std::min(1.0f, rg*1.4f+0.3f),
                                      std::min(1.0f, rb*1.4f+0.3f), 1.0f);
@@ -7406,7 +7407,7 @@ static void Scene_AugSelect(const SceneCtx& c) {
                         tr = std::min(1.0f, tr * 1.4f + 0.25f);
                         tg = std::min(1.0f, tg * 1.4f + 0.25f);
                         tb = std::min(1.0f, tb * 1.4f + 0.25f);
-                        topLabel = GetRarityKR(def.rarity);
+                        topLabel = GetAugBadge(def);
                         // 픽토그램 (있으면) — 카드 상단 중앙, 흰색
                         GLuint icon = IconFor(def.type);
                         if (icon) {
@@ -7604,7 +7605,7 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                     drawRect(BX, BY, BW, 5.0f, hr, hg, hb, 1.0f);
 
                     // 등급 라벨 (소)
-                    const wchar_t* rLabel = GetRarityKR(sd.rarity);
+                    const wchar_t* rLabel = GetAugBadge(sd);
                     g_TextS.Draw(rLabel, BX + 12.0f, BY + 12.0f, 0.9f,
                                  hr, hg, hb, 0.95f);
 
