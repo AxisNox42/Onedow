@@ -3808,9 +3808,16 @@ int main() {
                     float ddx = ex - fx, ddy = ey - fy; float ds = ddx*ddx + ddy*ddy;
                     if (ds < nd) { nd = ds; tx = ex; ty = ey; found = true; }
                 };
-                for (auto m  : g_MonsterManager.monsters)  if (m->alive)  consider(m->worldX, m->worldY);
+                // 잡몹/자폭병(자기 창 없는 적)은 플레이어 창 안(=화면에 보이는)일 때만 타깃.
+                //   → 자동발사가 창 밖 안 보이는 잡몹을 미리 죽여 "뭘 했는지 모르게" 되는 문제 방지.
+                //   (원거리몹·보스는 자기 가짜 창이 있어 항상 보이므로 거리 무관 타깃)
+                auto vis = [&](float ex, float ey) {
+                    return ex >= playerWin.x && ex <= playerWin.x + playerWin.width &&
+                           ey >= playerWin.y && ey <= playerWin.y + playerWin.height;
+                };
+                for (auto m  : g_MonsterManager.monsters)  if (m->alive  && vis(m->worldX, m->worldY))  consider(m->worldX, m->worldY);
                 for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX, r->worldY);
-                for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY);
+                for (auto bm : g_MonsterManager.bombers)    if (bm->alive && vis(bm->worldX, bm->worldY)) consider(bm->worldX, bm->worldY);
                 if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
                     consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY);
                 for (auto* c : g_Slimelings) if (c->alive) consider(c->worldX, c->worldY);
