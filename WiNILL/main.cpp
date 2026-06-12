@@ -39,6 +39,7 @@
 #include "SpamBoss.h"
 #include "KernelBoss.h"
 #include "FirewallBoss.h"
+#include "BotnetBoss.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -302,6 +303,7 @@ float POLY_WIN_W   = 840.0f;
 float SPAM_WIN_W   = 660.0f;
 float KERNEL_WIN_W = 760.0f;   // 커널: 거대 코어 (큰 창)
 float FIREWALL_WIN_W = 720.0f; // 방화벽: 본체+회전 보호막
+float BOTNET_WIN_W = 680.0f;   // 봇넷: 본체+공전 프로세스
 // 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
 float SPAWNER_WIN_W = 300.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
@@ -416,6 +418,8 @@ SpamBoss* g_SpamBoss = nullptr;
 KernelBoss* g_KernelBoss = nullptr;
 // FIREWALL.sys 보스 (방어형 — 회전 보호막, 가변속도) — 별도 관리
 FirewallBoss* g_FirewallBoss = nullptr;
+// BOTNET.exe 보스 (물량형 — 공전 프로세스 투척) — 별도 관리
+BotnetBoss* g_BotnetBoss = nullptr;
 
 // ── 스캔 레이저 (증강) — 주기적 관통 빔 + 페이드 비주얼 ──
 struct LaserBeam { float ox, oy, ex, ey, life, maxLife; };
@@ -883,7 +887,7 @@ int main() {
     Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
     GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
-    KERNEL_WIN_W *= g_Scale; FIREWALL_WIN_W *= g_Scale;
+    KERNEL_WIN_W *= g_Scale; FIREWALL_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
@@ -1182,6 +1186,7 @@ int main() {
             if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
             if (g_KernelBoss) { delete g_KernelBoss; g_KernelBoss = nullptr; }
             if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
+            if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
             g_PolyPrevForm = -1;
             g_PolySummonTimer = 0.0f;
             g_PolyWasPhase2 = false;
@@ -1352,6 +1357,7 @@ int main() {
                     if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
                     if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY, L"KERNEL.sys");
                     if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY, L"FIREWALL.sys");
+                    if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"BOTNET.exe");
                     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
                     const wchar_t* FMT[3] = { L"%ls 에 의해 종료됨", L"Terminated by %ls", L"%ls により終了" };
                     const wchar_t* UNK[3] = { L"알 수 없는 오류로 종료됨", L"Terminated by unknown error", L"不明なエラーで終了" };
@@ -1394,6 +1400,7 @@ int main() {
                 if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
                 if (g_KernelBoss) { delete g_KernelBoss; g_KernelBoss = nullptr; }
                 if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
+                if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
                 for (auto* c : g_Slimelings) delete c;
                 g_Slimelings.clear();
                 g_Turrets.clear();
@@ -1876,6 +1883,7 @@ int main() {
                     if (g_SpamBoss && g_SpamBoss->alive) { float dx=g_SpamBoss->worldX-cx,dy=g_SpamBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_SpamBoss->hp-=dmg; if(g_SpamBoss->hp<=0)g_SpamBoss->alive=false;} }
                     if (g_KernelBoss && g_KernelBoss->alive) { float dx=g_KernelBoss->worldX-cx,dy=g_KernelBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_KernelBoss->hp-=dmg; if(g_KernelBoss->hp<=0)g_KernelBoss->alive=false;} }
                     if (g_FirewallBoss && g_FirewallBoss->alive) { float dx=g_FirewallBoss->worldX-cx,dy=g_FirewallBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_FirewallBoss->hp-=dmg; if(g_FirewallBoss->hp<=0)g_FirewallBoss->alive=false;} }
+                    if (g_BotnetBoss && g_BotnetBoss->alive) { float dx=g_BotnetBoss->worldX-cx,dy=g_BotnetBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_BotnetBoss->hp-=dmg; if(g_BotnetBoss->hp<=0)g_BotnetBoss->alive=false;} }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -2062,6 +2070,10 @@ int main() {
                 // FIREWALL.sys 업데이트 (회전 보호막 가변속도 + 견제 사격)
                 if (!timeStopped && g_FirewallBoss && g_FirewallBoss->alive)
                     g_FirewallBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+
+                // BOTNET.exe 업데이트 (공전 프로세스 투척 + 페이즈2 중앙집결)
+                if (!timeStopped && g_BotnetBoss && g_BotnetBoss->alive)
+                    g_BotnetBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
                 // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기
                 if (!g_Slimelings.empty()) {
@@ -2266,6 +2278,29 @@ int main() {
                             fb->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (fb->hp <= 0.0f) fb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // BOTNET.exe 본체 vs 플레이어 총알 (스윕 판정)
+                if (g_BotnetBoss && g_BotnetBoss->alive) {
+                    auto* nb2 = g_BotnetBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (SegDist(nb2->worldX, nb2->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < BotnetBoss::BODY * 0.95f) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(nb2->worldX, nb2->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dealt = (dmg < nb2->hp) ? dmg : nb2->hp;
+                            nb2->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (nb2->hp <= 0.0f) nb2->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
@@ -2668,6 +2703,28 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
+                // BOTNET.exe 사망 → 보상
+                if (g_BotnetBoss && !g_BotnetBoss->alive && !g_BotnetBoss->exploded) {
+                    auto* nb2 = g_BotnetBoss;
+                    SpawnEnemyExplosion(nb2->worldX, nb2->worldY, 1.0f, 0.3f, 0.9f, true);
+                    SpawnEnemyExplosion(nb2->worldX, nb2->worldY, 1.0f, 0.5f, 1.0f, true);
+                    SpawnShockWave(nb2->worldX, nb2->worldY, 430.0f, 0.8f, 0.3f, 0.7f, 1.0f);
+                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
+                    TriggerFlash(0.4f, 0.6f, 1.0f, 0.6f); TriggerHitStop(0.11f);
+                    nb2->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete nb2;
+                    g_BotnetBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
                 // 폴리모프 사망 → 화면 원복 + 증강 3개 + 점수 50% 추가
                 if (g_PolyBoss && !g_PolyBoss->alive && !g_PolyBoss->exploded) {
                     auto* pb = g_PolyBoss;
@@ -2962,7 +3019,7 @@ int main() {
             // 보스전 중(전조 포함)엔 트래시를 대폭 줄여 보스에 집중 가능하게
             bool  bossNow = g_MonsterManager.boss || g_GlitchBoss || g_RRBoss ||
                             g_PolyBoss || g_SpamBoss || g_KernelBoss || g_FirewallBoss ||
-                            !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
+                            g_BotnetBoss || !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
             // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
             //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
@@ -3025,7 +3082,7 @@ int main() {
             {
                 bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
                                   g_RRBoss || g_PolyBoss || g_SpamBoss || g_KernelBoss ||
-                                  g_FirewallBoss ||
+                                  g_FirewallBoss || g_BotnetBoss ||
                                   !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
                 // 라운드2 — 보스 눈덩이 차단: 보스를 잡아 완전히 정리되는 순간(활성→비활성),
                 //   다음 보스 임계값을 현재 점수+20만으로 리베이스 → 최소 20만점 휴식 보장
@@ -3072,13 +3129,14 @@ int main() {
                         // 라운드2: 플레이어 레벨 비례 추가 스케일 — 후반 원펀맨이라도 보스는 위협 유지
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
-                        switch (rand() % 6) {
+                        switch (rand() % 7) {
                         case 0:  startWarn(0, L"SLIME.worm",   bossHp);         break;
                         case 1:  startWarn(1, L"GLITCH.sys",   bossHp * 0.7f);  break;
                         case 2:  startWarn(2, L"RELOADER.exe", bossHp);         break;
                         case 3:  startWarn(3, L"SPAM.dll",     bossHp * 0.65f); break;
                         case 4:  startWarn(5, L"KERNEL.sys",   bossHp * 0.8f);  break;  // 커널 (DPS체크·자가붕괴)
-                        default: startWarn(6, L"FIREWALL.sys", bossHp * 0.7f);  break;  // 방화벽 (보호막 방어형)
+                        case 5:  startWarn(6, L"FIREWALL.sys", bossHp * 0.7f);  break;  // 방화벽 (보호막 방어형)
+                        default: startWarn(7, L"BOTNET.exe",   bossHp * 0.75f); break;  // 봇넷 (물량형 투척)
                         }
                     }
                 }
@@ -3123,6 +3181,10 @@ int main() {
                         case 6:
                             g_FirewallBoss = new FirewallBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_FirewallBoss->worldX = bsx; g_FirewallBoss->worldY = bsy;
+                            break;
+                        case 7:
+                            g_BotnetBoss = new BotnetBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_BotnetBoss->worldX = bsx; g_BotnetBoss->worldY = bsy;
                             break;
                         default:
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -3654,6 +3716,8 @@ int main() {
                     hitB(g_KernelBoss->worldX, g_KernelBoss->worldY, g_KernelBoss->hp, g_KernelBoss->alive);
                 if (g_FirewallBoss && g_FirewallBoss->alive)
                     hitB(g_FirewallBoss->worldX, g_FirewallBoss->worldY, g_FirewallBoss->hp, g_FirewallBoss->alive);
+                if (g_BotnetBoss && g_BotnetBoss->alive)
+                    hitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
                 // 칼바람 — 스윙마다 전방으로 관통 투사체 (근접의 원거리 견제)
@@ -3689,6 +3753,7 @@ int main() {
                 if (g_SpamBoss && g_SpamBoss->alive)     consider(g_SpamBoss->worldX, g_SpamBoss->worldY);
                 if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY);
                 if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY);
+                if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY);
                 return found;
             };
             // 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
@@ -3792,6 +3857,8 @@ int main() {
                         lhitB(g_KernelBoss->worldX, g_KernelBoss->worldY, g_KernelBoss->hp, g_KernelBoss->alive);
                     if (g_FirewallBoss && g_FirewallBoss->alive)
                         lhitB(g_FirewallBoss->worldX, g_FirewallBoss->worldY, g_FirewallBoss->hp, g_FirewallBoss->alive);
+                    if (g_BotnetBoss && g_BotnetBoss->alive)
+                        lhitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
@@ -4069,6 +4136,11 @@ int main() {
             drawRect(g_FirewallBoss->worldX - w*0.5f, g_FirewallBoss->worldY - w*0.5f,
                      w, w, 0.10f, 0.06f, 0.05f, 1.0f);
         }
+        if (g_BotnetBoss && g_BotnetBoss->alive) {
+            float w = BOTNET_WIN_W;
+            drawRect(g_BotnetBoss->worldX - w*0.5f, g_BotnetBoss->worldY - w*0.5f,
+                     w, w, 0.06f, 0.07f, 0.11f, 1.0f);
+        }
         // 슬라임 분열체 — 각자 개인 창 (크기 비례)
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
@@ -4113,6 +4185,9 @@ int main() {
         if (g_FirewallBoss && g_FirewallBoss->alive)
             drawNeonBorder(g_FirewallBoss->worldX - FIREWALL_WIN_W*0.5f, g_FirewallBoss->worldY - FIREWALL_WIN_W*0.5f,
                            FIREWALL_WIN_W, FIREWALL_WIN_W, 1.0f, 0.45f, 0.2f);   // 방화벽 = 주황
+        if (g_BotnetBoss && g_BotnetBoss->alive)
+            drawNeonBorder(g_BotnetBoss->worldX - BOTNET_WIN_W*0.5f, g_BotnetBoss->worldY - BOTNET_WIN_W*0.5f,
+                           BOTNET_WIN_W, BOTNET_WIN_W, 0.3f, 0.55f, 1.0f);   // 봇넷 = 파랑
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
             float w = Boss::WIN_W * c->sizeScale;
@@ -4252,6 +4327,9 @@ int main() {
         if (g_FirewallBoss && g_FirewallBoss->alive)
             drawBossWinContent(g_FirewallBoss->worldX - FIREWALL_WIN_W * 0.5f,
                                g_FirewallBoss->worldY - FIREWALL_WIN_W * 0.5f, FIREWALL_WIN_W, FIREWALL_WIN_W);
+        if (g_BotnetBoss && g_BotnetBoss->alive)
+            drawBossWinContent(g_BotnetBoss->worldX - BOTNET_WIN_W * 0.5f,
+                               g_BotnetBoss->worldY - BOTNET_WIN_W * 0.5f, BOTNET_WIN_W, BOTNET_WIN_W);
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
             float w = Boss::WIN_W * c->sizeScale;
@@ -4943,6 +5021,35 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
+        // (g4e) BOTNET.exe — 본체 + 공전/투척 프로세스 5개
+        if (g_BotnetBoss && g_BotnetBoss->alive) {
+            auto* nb2 = g_BotnetBoss;
+            BindMainShader();
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(nb2->worldX - BOTNET_WIN_W*0.5f, nb2->worldY - BOTNET_WIN_W*0.5f,
+                         BOTNET_WIN_W, BOTNET_WIN_W);
+            for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
+            // 프로세스 — 공전(파랑)/투척(빨강) 작은 사각
+            for (int i = 0; i < BotnetBoss::NPROC; i++) {
+                auto& p = nb2->procs[i];
+                float sz = BotnetBoss::PROC_SIZE;
+                if (p.state == 1) {   // 투척 — 빨강 + 경고
+                    drawRect(p.x - sz*0.5f, p.y - sz*0.5f, sz, sz, 1.0f, 0.25f, 0.2f, 1.0f);
+                    drawCircle(p.x, p.y, sz*0.9f, 1.0f, 0.3f, 0.2f, 0.25f);
+                } else {
+                    drawRect(p.x - sz*0.5f, p.y - sz*0.5f, sz, sz, 0.3f, 0.6f, 1.0f, 1.0f);
+                }
+            }
+            // 본체 — 파란 사각 노드 (펄스)
+            float bp = 0.5f + 0.5f * sinf((float)glfwGetTime() * 5.0f);
+            float bb2 = BotnetBoss::BODY;
+            drawRect(nb2->worldX - bb2, nb2->worldY - bb2, bb2*2, bb2*2,
+                     0.2f, 0.45f + 0.2f*bp, 0.95f, 1.0f);
+            drawRect(nb2->worldX - bb2*0.5f, nb2->worldY - bb2*0.5f, bb2, bb2,
+                     0.6f, 0.85f, 1.0f, 1.0f);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
+
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
@@ -5175,6 +5282,11 @@ int main() {
                     winChrome(g_FirewallBoss->worldX-w*0.5f, g_FirewallBoss->worldY-w*0.5f, w, w,
                               L"FIREWALL.sys", 1.0f,0.45f,0.2f);
                 }
+                if (g_BotnetBoss && g_BotnetBoss->alive) {
+                    float w=BOTNET_WIN_W;
+                    winChrome(g_BotnetBoss->worldX-w*0.5f, g_BotnetBoss->worldY-w*0.5f, w, w,
+                              L"BOTNET.exe", 0.3f,0.55f,1.0f);
+                }
             }
         }
 
@@ -5242,6 +5354,9 @@ int main() {
             } else if (g_FirewallBoss && g_FirewallBoss->alive) {
                 bn = L"FIREWALL.sys";  bhf = g_FirewallBoss->hp / g_FirewallBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.45f, 0.2f);
+            } else if (g_BotnetBoss && g_BotnetBoss->alive) {
+                bn = L"BOTNET.exe";    bhf = g_BotnetBoss->hp / g_BotnetBoss->maxHp;
+                bc = glm::vec3(0.3f, 0.55f, 1.0f);
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
