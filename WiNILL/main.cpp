@@ -37,6 +37,7 @@
 #include "ReloadRunnerBoss.h"
 #include "PolymorphBoss.h"
 #include "SpamBoss.h"
+#include "KernelBoss.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -298,6 +299,7 @@ float GLITCH_WIN_W = 620.0f;
 float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float SPAM_WIN_W   = 660.0f;
+float KERNEL_WIN_W = 760.0f;   // 커널: 거대 코어 (큰 창)
 // 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
 float SPAWNER_WIN_W = 300.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
@@ -408,6 +410,8 @@ ReloadRunnerBoss* g_RRBoss = nullptr;
 PolymorphBoss* g_PolyBoss = nullptr;
 // SPAM.dll 보스 (탄막/불릿헬 — 회전 나선탄 + 방사 버스트) — 별도 관리
 SpamBoss* g_SpamBoss = nullptr;
+// KERNEL.sys 보스 (고정형 DPS 체크 — 자가붕괴 + 팽창/수축) — 별도 관리
+KernelBoss* g_KernelBoss = nullptr;
 
 // ── 스캔 레이저 (증강) — 주기적 관통 빔 + 페이드 비주얼 ──
 struct LaserBeam { float ox, oy, ex, ey, life, maxLife; };
@@ -875,6 +879,7 @@ int main() {
     Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
     GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
+    KERNEL_WIN_W *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
@@ -1171,6 +1176,7 @@ int main() {
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
             if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
+            if (g_KernelBoss) { delete g_KernelBoss; g_KernelBoss = nullptr; }
             g_PolyPrevForm = -1;
             g_PolySummonTimer = 0.0f;
             g_PolyWasPhase2 = false;
@@ -1339,6 +1345,7 @@ int main() {
                     if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"RELOADER.exe");
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
                     if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
+                    if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY, L"KERNEL.sys");
                     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
                     const wchar_t* FMT[3] = { L"%ls 에 의해 종료됨", L"Terminated by %ls", L"%ls により終了" };
                     const wchar_t* UNK[3] = { L"알 수 없는 오류로 종료됨", L"Terminated by unknown error", L"不明なエラーで終了" };
@@ -1379,6 +1386,7 @@ int main() {
                 if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
                 if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
                 if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
+                if (g_KernelBoss) { delete g_KernelBoss; g_KernelBoss = nullptr; }
                 for (auto* c : g_Slimelings) delete c;
                 g_Slimelings.clear();
                 g_Turrets.clear();
@@ -1859,6 +1867,7 @@ int main() {
                     if (g_RRBoss && g_RRBoss->alive) { float dx=g_RRBoss->worldX-cx,dy=g_RRBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_RRBoss->hp-=dmg; if(g_RRBoss->hp<=0)g_RRBoss->alive=false;} }
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) { float dx=g_PolyBoss->worldX-cx,dy=g_PolyBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_PolyBoss->hp-=dmg; if(g_PolyBoss->hp<=0)g_PolyBoss->alive=false;} }
                     if (g_SpamBoss && g_SpamBoss->alive) { float dx=g_SpamBoss->worldX-cx,dy=g_SpamBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_SpamBoss->hp-=dmg; if(g_SpamBoss->hp<=0)g_SpamBoss->alive=false;} }
+                    if (g_KernelBoss && g_KernelBoss->alive) { float dx=g_KernelBoss->worldX-cx,dy=g_KernelBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_KernelBoss->hp-=dmg; if(g_KernelBoss->hp<=0)g_KernelBoss->alive=false;} }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -2038,6 +2047,10 @@ int main() {
                 if (!timeStopped && g_SpamBoss && g_SpamBoss->alive)
                     g_SpamBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
+                // KERNEL.sys 업데이트 (자가붕괴 + 팽창/수축)
+                if (!timeStopped && g_KernelBoss && g_KernelBoss->alive)
+                    g_KernelBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+
                 // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기
                 if (!g_Slimelings.empty()) {
                     std::vector<Monster*> sink;
@@ -2182,6 +2195,29 @@ int main() {
                             sb->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (sb->hp <= 0.0f) sb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // KERNEL.sys 본체 vs 플레이어 총알 (스윕 판정) — 큰 코어
+                if (g_KernelBoss && g_KernelBoss->alive) {
+                    auto* kb = g_KernelBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (SegDist(kb->worldX, kb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < KernelBoss::BODY * 0.95f) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(kb->worldX, kb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dealt = (dmg < kb->hp) ? dmg : kb->hp;
+                            kb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (kb->hp <= 0.0f) kb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
@@ -2540,6 +2576,28 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
+                // KERNEL.sys 사망 → 보상
+                if (g_KernelBoss && !g_KernelBoss->alive && !g_KernelBoss->exploded) {
+                    auto* kb = g_KernelBoss;
+                    SpawnEnemyExplosion(kb->worldX, kb->worldY, 1.0f, 0.6f, 0.3f, true);
+                    SpawnEnemyExplosion(kb->worldX, kb->worldY, 1.0f, 1.0f, 0.6f, true);
+                    SpawnShockWave(kb->worldX, kb->worldY, 460.0f, 0.8f, 1.0f, 0.6f, 0.25f);
+                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
+                    TriggerFlash(1.0f, 0.7f, 0.3f, 0.6f); TriggerHitStop(0.11f);
+                    kb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete kb;
+                    g_KernelBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
                 // 폴리모프 사망 → 화면 원복 + 증강 3개 + 점수 50% 추가
                 if (g_PolyBoss && !g_PolyBoss->alive && !g_PolyBoss->exploded) {
                     auto* pb = g_PolyBoss;
@@ -2833,8 +2891,8 @@ int main() {
             float rampSpd   = 1.0f + intensity * 0.09f;   // 몹 속도
             // 보스전 중(전조 포함)엔 트래시를 대폭 줄여 보스에 집중 가능하게
             bool  bossNow = g_MonsterManager.boss || g_GlitchBoss || g_RRBoss ||
-                            g_PolyBoss || g_SpamBoss || !g_Slimelings.empty() ||
-                            g_BossWarnTimer > 0.0f;
+                            g_PolyBoss || g_SpamBoss || g_KernelBoss ||
+                            !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
             // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
             //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
@@ -2896,7 +2954,7 @@ int main() {
             //   (어떤 보스든 살아있으면 대기 = 동시 스폰 방지)
             {
                 bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
-                                  g_RRBoss || g_PolyBoss || g_SpamBoss ||
+                                  g_RRBoss || g_PolyBoss || g_SpamBoss || g_KernelBoss ||
                                   !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
                 // 라운드2 — 보스 눈덩이 차단: 보스를 잡아 완전히 정리되는 순간(활성→비활성),
                 //   다음 보스 임계값을 현재 점수+20만으로 리베이스 → 최소 20만점 휴식 보장
@@ -2943,11 +3001,12 @@ int main() {
                         // 라운드2: 플레이어 레벨 비례 추가 스케일 — 후반 원펀맨이라도 보스는 위협 유지
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
-                        switch (rand() % 4) {
+                        switch (rand() % 5) {
                         case 0:  startWarn(0, L"SLIME.worm",   bossHp);         break;
                         case 1:  startWarn(1, L"GLITCH.sys",   bossHp * 0.7f);  break;
                         case 2:  startWarn(2, L"RELOADER.exe", bossHp);         break;
-                        default: startWarn(3, L"SPAM.dll",     bossHp * 0.65f); break;
+                        case 3:  startWarn(3, L"SPAM.dll",     bossHp * 0.65f); break;
+                        default: startWarn(5, L"KERNEL.sys",   bossHp * 0.8f);  break;  // 커널 (DPS체크·자가붕괴)
                         }
                     }
                 }
@@ -2984,6 +3043,10 @@ int main() {
                             g_SpamBoss = new SpamBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_SpamBoss->worldX = g_SpamBoss->baseX = bsx;
                             g_SpamBoss->worldY = g_SpamBoss->baseY = bsy;
+                            break;
+                        case 5:
+                            g_KernelBoss = new KernelBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_KernelBoss->worldX = bsx; g_KernelBoss->worldY = bsy;
                             break;
                         default:
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -3511,6 +3574,8 @@ int main() {
                     hitB(g_PolyBoss->worldX, g_PolyBoss->worldY, g_PolyBoss->hp, g_PolyBoss->alive);
                 if (g_SpamBoss && g_SpamBoss->alive)
                     hitB(g_SpamBoss->worldX, g_SpamBoss->worldY, g_SpamBoss->hp, g_SpamBoss->alive);
+                if (g_KernelBoss && g_KernelBoss->alive)
+                    hitB(g_KernelBoss->worldX, g_KernelBoss->worldY, g_KernelBoss->hp, g_KernelBoss->alive);
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
                 // 칼바람 — 스윙마다 전방으로 관통 투사체 (근접의 원거리 견제)
@@ -3544,6 +3609,7 @@ int main() {
                 if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
                     consider(g_PolyBoss->worldX, g_PolyBoss->worldY);
                 if (g_SpamBoss && g_SpamBoss->alive)     consider(g_SpamBoss->worldX, g_SpamBoss->worldY);
+                if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY);
                 return found;
             };
             // 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
@@ -3643,6 +3709,8 @@ int main() {
                         lhitB(g_PolyBoss->worldX, g_PolyBoss->worldY, g_PolyBoss->hp, g_PolyBoss->alive);
                     if (g_SpamBoss && g_SpamBoss->alive)
                         lhitB(g_SpamBoss->worldX, g_SpamBoss->worldY, g_SpamBoss->hp, g_SpamBoss->alive);
+                    if (g_KernelBoss && g_KernelBoss->alive)
+                        lhitB(g_KernelBoss->worldX, g_KernelBoss->worldY, g_KernelBoss->hp, g_KernelBoss->alive);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
@@ -3910,6 +3978,11 @@ int main() {
             drawRect(g_SpamBoss->worldX - w*0.5f, g_SpamBoss->worldY - w*0.5f,
                      w, w, 0.10f, 0.06f, 0.09f, 1.0f);
         }
+        if (g_KernelBoss && g_KernelBoss->alive) {
+            float w = KERNEL_WIN_W;
+            drawRect(g_KernelBoss->worldX - w*0.5f, g_KernelBoss->worldY - w*0.5f,
+                     w, w, 0.10f, 0.07f, 0.05f, 1.0f);
+        }
         // 슬라임 분열체 — 각자 개인 창 (크기 비례)
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
@@ -3948,6 +4021,9 @@ int main() {
         if (g_SpamBoss && g_SpamBoss->alive)
             drawNeonBorder(g_SpamBoss->worldX - SPAM_WIN_W*0.5f, g_SpamBoss->worldY - SPAM_WIN_W*0.5f,
                            SPAM_WIN_W, SPAM_WIN_W, 1.0f, 0.40f, 0.80f);
+        if (g_KernelBoss && g_KernelBoss->alive)
+            drawNeonBorder(g_KernelBoss->worldX - KERNEL_WIN_W*0.5f, g_KernelBoss->worldY - KERNEL_WIN_W*0.5f,
+                           KERNEL_WIN_W, KERNEL_WIN_W, 1.0f, 0.65f, 0.25f);   // 커널 = 호박색
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
             float w = Boss::WIN_W * c->sizeScale;
@@ -4081,6 +4157,9 @@ int main() {
         if (g_SpamBoss && g_SpamBoss->alive)
             drawBossWinContent(g_SpamBoss->worldX - SPAM_WIN_W * 0.5f,
                                g_SpamBoss->worldY - SPAM_WIN_W * 0.5f, SPAM_WIN_W, SPAM_WIN_W);
+        if (g_KernelBoss && g_KernelBoss->alive)
+            drawBossWinContent(g_KernelBoss->worldX - KERNEL_WIN_W * 0.5f,
+                               g_KernelBoss->worldY - KERNEL_WIN_W * 0.5f, KERNEL_WIN_W, KERNEL_WIN_W);
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
             float w = Boss::WIN_W * c->sizeScale;
@@ -4714,6 +4793,37 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
+        // (g4c) KERNEL.sys — 고정형 거대 코어 + 팽창 예고 링 + 자가붕괴 비주얼
+        if (g_KernelBoss && g_KernelBoss->alive) {
+            auto* kb = g_KernelBoss;
+            BindMainShader();
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(kb->worldX - KERNEL_WIN_W*0.5f, kb->worldY - KERNEL_WIN_W*0.5f,
+                         KERNEL_WIN_W, KERNEL_WIN_W);
+            for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
+            // 팽창 예고 — 곧 뿜을 링을 미리 옅게(자라나는 호박 디스크)
+            if (kb->telegraphing()) {
+                float tp = kb->telegraphProg();
+                drawCircle(kb->worldX, kb->worldY, KernelBoss::BODY * (1.2f + tp * 2.2f),
+                           1.0f, 0.55f, 0.2f, 0.10f + 0.10f * tp);
+            }
+            // 본체 — 펄스하는 코어 (호박/주황 네스티드 + 회전 십자 프로세스)
+            float kp = 0.5f + 0.5f * sinf(kb->pulse * 3.0f);
+            float br = KernelBoss::BODY * (0.96f + 0.06f * kp);
+            drawCircle(kb->worldX, kb->worldY, br,            0.85f, 0.45f, 0.12f, 1.0f);
+            drawCircle(kb->worldX, kb->worldY, br * 0.66f,    1.0f,  0.65f, 0.2f,  1.0f);
+            drawCircle(kb->worldX, kb->worldY, br * 0.34f,    1.0f,  0.9f,  0.55f, 1.0f);
+            // 회전 프로세스 바 (십자)
+            float ra = kb->pulse * 0.8f;
+            for (int s = 0; s < 4; s++) {
+                float a = ra + (float)s * 1.5707963f;
+                float ox = kb->worldX + cosf(a) * br * 1.18f;
+                float oy = kb->worldY + sinf(a) * br * 1.18f;
+                drawRect(ox - 9.0f, oy - 9.0f, 18.0f, 18.0f, 0.95f, 0.55f, 0.15f, 0.95f);
+            }
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
+
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
@@ -4936,6 +5046,11 @@ int main() {
                     winChrome(g_SpamBoss->worldX-w*0.5f, g_SpamBoss->worldY-w*0.5f, w, w,
                               L"SPAM.dll", 1.0f,0.4f,0.8f);
                 }
+                if (g_KernelBoss && g_KernelBoss->alive) {
+                    float w=KERNEL_WIN_W;
+                    winChrome(g_KernelBoss->worldX-w*0.5f, g_KernelBoss->worldY-w*0.5f, w, w,
+                              L"KERNEL.sys", 1.0f,0.65f,0.25f);
+                }
             }
         }
 
@@ -4997,6 +5112,9 @@ int main() {
             } else if (g_SpamBoss && g_SpamBoss->alive) {
                 bn = L"SPAM.dll";      bhf = g_SpamBoss->hp / g_SpamBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.4f, 0.8f);
+            } else if (g_KernelBoss && g_KernelBoss->alive) {
+                bn = L"KERNEL.sys";    bhf = g_KernelBoss->hp / g_KernelBoss->maxHp;
+                bc = glm::vec3(1.0f, 0.65f, 0.25f);
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
