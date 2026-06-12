@@ -24,6 +24,8 @@ public:
     bool  phase2     = false;
     float orbitRot   = 0.0f;
     float throwTimer  = 0.0f;
+    float heading     = 0.0f;   // 배회 진행 방향(rad) — 플레이어 추격 X
+    float wanderTimer = 0.0f;
 
     struct Proc {
         float angle;        // 공전 슬롯 각도(고정 오프셋)
@@ -41,13 +43,16 @@ public:
     static constexpr float P2_ORBIT_R = 70.0f;     // 페이즈2: 중앙 근접
     static constexpr float P2_SPD     = 0.7f;      // 페이즈2: 느린 회전
     static constexpr float PROC_SIZE  = 26.0f;
-    static constexpr float THROW_INT  = 2.4f;
+    static constexpr float THROW_INT  = 4.2f;      // 소환율 ↓ (2.4 → 4.2)
     static constexpr float THROW_SPD  = 560.0f;
     static constexpr float THROW_LIFE = 1.0f;      // 돌진 지속 → 이후 복귀
+    static constexpr float WANDER_SPD = 150.0f;    // 배회 이동 속도 (플레이어 추격 X)
+    static constexpr float TURN_INT   = 0.6f;      // 지그재그 방향 전환 주기
 
     BotnetBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
         worldX = sw * 0.5f; worldY = sh * 0.45f;   // main 이 스폰 시 덮어씀
+        heading = (float)(rand() % 628) * 0.01f;
         for (int i = 0; i < NPROC; i++)
             procs[i].angle = (float)i * (6.2831853f / (float)NPROC);
     }
@@ -59,6 +64,24 @@ public:
         float spd  = phase2 ? P2_SPD : ORBIT_SPD;
         float oR   = phase2 ? P2_ORBIT_R : ORBIT_R;
         orbitRot += spd * dt;
+
+        // ── 본체 배회 (플레이어 추격 X, 지네형처럼 맵을 그냥 돌아다님) ──
+        wanderTimer += dt;
+        if (wanderTimer >= TURN_INT) {
+            wanderTimer = 0.0f;
+            heading += ((rand() % 2) ? 1.0f : -1.0f) * 0.6f;   // 지그재그
+        }
+        // 가장자리 근처면 중앙으로 부드럽게 선회
+        float m = 160.0f;
+        if (worldX < m || worldX > screenW - m || worldY < m || worldY > screenH - m) {
+            float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
+            float d = toC - heading;
+            while (d >  3.14159265f) d -= 6.2831853f;
+            while (d < -3.14159265f) d += 6.2831853f;
+            heading += d * 2.0f * dt;
+        }
+        worldX += cosf(heading) * WANDER_SPD * dt;
+        worldY += sinf(heading) * WANDER_SPD * dt;
 
         // 본체 접촉 데미지
         float bdx = px - worldX, bdy = py - worldY;

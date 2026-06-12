@@ -5365,15 +5365,22 @@ int main() {
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
                 // 가짜창 레이어 우선순위 (겹침 시 위로): 봇넷 < 원거리 < 보스 < 플레이어
                 //   → 그리는 순서: 봇넷 노드 → 원거리 → 보스들 → 플레이어(마지막=최상단)
-                // 봇넷 노드(SPAWNER) 타이틀바 (최하단)
+                // 작은 적 창이 플레이어 창 '안'에 들어오면 그 타이틀바는 가려져야(안 그림).
+                auto occByPlayer = [&](float ecx, float ecy) {
+                    return ecx >= playerWin.x && ecx <= playerWin.x + playerWin.width &&
+                           ecy >= playerWin.y && ecy <= playerWin.y + playerWin.height;
+                };
+                // 봇넷 노드(SPAWNER) 타이틀바 (최하단) — 플레이어 창 안이면 숨김
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+                    if (occByPlayer(m->worldX, m->worldY)) continue;
                     float w = SPAWNER_WIN_W * m->sizeScale;
                     winChrome(m->worldX-w*0.5f, m->worldY-w*0.5f, w, w,
                               L"botnet.node", 0.2f, 0.85f, 0.65f);
                 }
                 for (auto r : g_MonsterManager.rangedMobs) {
                     if (r->deathScale <= 0.0f) continue;
+                    if (occByPlayer(r->worldX, r->worldY)) continue;   // 플레이어 창 안이면 숨김
                     float sc=r->deathScale, rW=RFW_W*sc, rH=RFW_H*sc;
                     winChrome(r->worldX-rW*0.5f, r->worldY-rH*0.5f, rW, rH,
                               L"popup.exe", 0.9f, 0.3f, 0.7f);
