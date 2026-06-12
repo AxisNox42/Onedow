@@ -1930,6 +1930,25 @@ int main() {
                             }
                         }
                     }
+                    // 적 유도탄(원거리몹 탄): 플레이어 쪽으로 아주 약하게 방향 보정 (B12)
+                    if (b.homing && b.isEnemy && b.active && g_TimeStopTimer <= 0.0f) {
+                        float pCX = playerWin.x + playerWin.width  * 0.5f;
+                        float pCY = playerWin.y + playerWin.height * 0.5f;
+                        float wx = pCX - b.x, wy = pCY - b.y;
+                        float wl = sqrtf(wx*wx + wy*wy);
+                        if (wl > 0.001f) {
+                            float curA  = atan2f(b.dirY, b.dirX);
+                            float wantA = atan2f(wy / wl, wx / wl);
+                            float diff  = wantA - curA;
+                            while (diff >  3.14159265f) diff -= 6.2831853f;
+                            while (diff < -3.14159265f) diff += 6.2831853f;
+                            float maxStep = b.homingTurn * FIXED_DT;   // 작은 turn rate
+                            if (diff >  maxStep) diff =  maxStep;
+                            if (diff < -maxStep) diff = -maxStep;
+                            float newA = curA + diff;
+                            b.dirX = cosf(newA); b.dirY = sinf(newA);
+                        }
+                    }
                     // 시간 정지: 적 총알은 멈춤 (플레이어 총알은 계속 이동)
                     if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(FIXED_DT);
                     // 화면 밖 비활성화 — 줌아웃(폴리모프 2페이즈)되면 보이는 영역이

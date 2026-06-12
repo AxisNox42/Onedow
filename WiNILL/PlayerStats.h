@@ -123,25 +123,35 @@ struct PlayerStats {
     // ── 런타임 ──────────────────────────────────────────
     float siegeBonus    = 0.0f;  // 시즈탱크 누적 보너스 (외부에서 갱신)
 
+    // 일반 %증강 체감 감쇠 카운터 (B9) — 곱연산 폭주 방지.
+    //   n번째 픽의 증가폭 = 기본증가 × 0.90^(n-1) → 증가폭이 점점 작아져
+    //   무한히 먹어도 총 배율이 소프트 상한에 수렴 (초반 픽은 그대로 강력).
+    int dmgUpCount  = 0;
+    int rateUpCount = 0;
+
     // ─────────────────────────────────────────────────────
     void Apply(AugType t) {
         ++totalAugs;
         switch (t) {
         // ── 일반 (버프: QA 피드백 — 일반 증강이 너무 약함) ──
         //   ※ 검객/궁수 변환: 무의미한 스탯 증강을 클래스에 맞게 재해석
-        case AugType::DMG_UP:
+        case AugType::DMG_UP: {
+            float inc = 0.08f * std::pow(0.90f, (float)dmgUpCount);  // 8% → 7.2% → 6.5% …
+            ++dmgUpCount;
             if (bowWeapon) {                              // 궁수: 공격력 → 풀차징 한도↑ + 약간의 자체 공격력
                 bowChargeCapBonus += 0.30f;
-                damageMultiplier  *= 1.02f;
+                damageMultiplier  *= 1.0f + inc * 0.25f;
             } else {
-                damageMultiplier  *= 1.08f;              // 그 외(검객 포함): 공격력 +8%
+                damageMultiplier  *= 1.0f + inc;          // 그 외(검객 포함): 감쇠 적용 공격력↑
             }
-            break;
-        case AugType::RATE_UP:
-            if (meleeWeapon)      damageMultiplier  *= 1.04f;   // 검객: 연사 무의미 → 공격력 +4%
-            else if (bowWeapon)   bowChargeRateMult *= 1.06f;   // 궁수: 연사 → 차징 6% 빠름
-            else                  fireInterval      /= 1.04f;   // 총기: 연사 +4%
-            break;
+        } break;
+        case AugType::RATE_UP: {
+            float inc = 0.04f * std::pow(0.90f, (float)rateUpCount);  // 4% → 3.6% → 3.24% …
+            ++rateUpCount;
+            if (meleeWeapon)      damageMultiplier  *= 1.0f + inc;        // 검객: 연사 무의미 → 공격력
+            else if (bowWeapon)   bowChargeRateMult *= 1.0f + inc * 1.5f; // 궁수: 연사 → 차징 빠름
+            else                  fireInterval      /= 1.0f + inc;        // 총기: 연사↑
+        } break;
         case AugType::SPD_UP:
             if (meleeWeapon)      damageMultiplier *= 1.04f;    // 검객: 탄속 무의미 → 공격력 +4%
             else                  bulletSpeed      += 30.0f;    // 총기/궁수: 탄속 +30

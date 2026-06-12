@@ -30,7 +30,7 @@ public:
     RRState  state  = RRState::ACTIVE;
     RRWeapon weapon = RRWeapon::SHOTGUN;
 
-    float moveSpeed = 175.0f;   // 버프: 140
+    float moveSpeed = 210.0f;   // 버프 2차(B11): 175 → 210 (기본 이속↑)
     int   ammo = 4;
 
     // ── AI 타이머 ──
@@ -72,8 +72,12 @@ public:
     static constexpr float MG_BSPEED   = 580.0f;
     static constexpr float MG_DMG      = 7.0f;
 
-    static constexpr float RELOAD_TIME = 1.05f;   // 버프: 1.5 (다운타임 ↓)
+    static constexpr float RELOAD_TIME = 0.78f;   // 버프 2차(B11): 1.05 → 0.78 (다운타임 더 ↓)
     static constexpr float SPRINT_MULT = 3.5f;
+    // 장전 질주 중 견제 사격 — 장전 타임이 더 이상 무료 딜 윈도우가 아니게 (B11)
+    float sprintFireTimer = 0.0f;
+    static constexpr float SPRINT_FIRE_INT = 0.30f;   // 견제탄 주기
+    static constexpr float SPRINT_BSPEED   = 520.0f;
 
     // 페이즈2 (HP 50% 이하) — 오버클럭(장전 가속) + 주기적 스팸클릭 방사 난사
     bool  phase2    = false;
@@ -157,6 +161,17 @@ public:
             worldX -= nx * sp * dt;       // 플레이어 반대 방향
             worldY -= ny * sp * dt;
             clampToScreen();
+            // 견제 사격 — 도주하면서 플레이어 쪽으로 산발탄을 흘려 무료 딜 윈도우 제거 (B11)
+            sprintFireTimer += dt;
+            if (sprintFireTimer >= SPRINT_FIRE_INT) {
+                sprintFireTimer = 0.0f;
+                float base = atan2f(ny, nx);
+                for (int i = -1; i <= 1; i++) {
+                    float a = base + (float)i * 0.20f;
+                    fireDir(bullets, cosf(a), sinf(a), SPRINT_BSPEED,
+                            glm::vec3(1.0f, 0.4f, 0.3f), 7.0f);
+                }
+            }
             reloadTimer += dt;
             if (reloadTimer >= (phase2 ? RELOAD_TIME * 0.5f : RELOAD_TIME))  // 페이즈2: 장전 가속
                 equip((RRWeapon)(rand() % 3));   // 무작위 교체
