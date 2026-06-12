@@ -5377,9 +5377,9 @@ int main() {
                     const float TB = 22.0f;
                     drawRect(x, y, w, TB, tr*0.45f, tg*0.45f, tb*0.55f, 1.0f);   // 타이틀바
                     drawRect(x, y, w, 2.0f, tr, tg, tb, 1.0f);                   // 상단 강조선
-                    drawRect(x, y+h-1.5f, w, 1.5f, tr, tg, tb, 0.55f);           // 테두리
-                    drawRect(x, y, 1.5f, h, tr, tg, tb, 0.55f);
-                    drawRect(x+w-1.5f, y, 1.5f, h, tr, tg, tb, 0.55f);
+                    // (창 외곽선 = 아래/좌/우 테두리선 제거 — 창 끝에서 그려 플레이어 창 위로
+                    //  삐져나오던 문제. 외곽 프레임은 drawNeonBorder(플레이어 배경보다 먼저
+                    //  그려져 겹친 부분이 올바르게 가려짐)가 담당.)
                     // 창 컨트롤 (─ □ X) 우측
                     float bs = 13.0f, byc = y + (TB-bs)*0.5f, bxc = x + w - 19.0f;
                     drawRect(bxc - 2*(bs+5), byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // ─
