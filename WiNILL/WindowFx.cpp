@@ -2,19 +2,10 @@
 #include <cstdio>
 #include <cstdarg>
 
-// --- 디버그 로그 (transparency_debug.txt 에 기록) — 크로스플랫폼 ---
-void TransparencyLog(const char* fmt, ...) {
-    static bool first = true;
-    FILE* f = nullptr;
-#ifdef _WIN32
-    fopen_s(&f, "transparency_debug.txt", first ? "w" : "a");
-#else
-    f = std::fopen("transparency_debug.txt", first ? "w" : "a");
-#endif
-    if (!f) return;
-    first = false;
-    va_list a; va_start(a, fmt); vfprintf(f, fmt, a); va_end(a);
-    fclose(f);
+// --- 디버그 로그 — 비활성화(no-op). 과거 transparency_debug.txt 를 만들던 기능 제거.
+//     (F26: 배포본에 디버그 파일이 생기지 않도록. 호출부는 그대로 두고 함수만 비움.)
+void TransparencyLog(const char* /*fmt*/, ...) {
+    // intentionally empty
 }
 
 #ifdef _WIN32

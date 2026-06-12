@@ -431,6 +431,15 @@ std::vector<LaserBeam> g_LaserBeams;
 float          g_LaserTimer = 0.0f;
 constexpr float LASER_INT   = 0.85f;  // 발사 주기(초) — 너프: 0.7
 
+// ── 부메랑 (증강) — 주기적으로 조준 방향으로 던져 나갔다 돌아오며 관통 타격 ──
+struct Boomerang { float x, y, dx, dy, spin, traveled; bool returning; bool active; };
+std::vector<Boomerang> g_Booms;
+float          g_BoomTimer  = 0.0f;
+constexpr float BOOM_INT    = 2.2f;    // 던지는 주기(초)
+constexpr float BOOM_SPD    = 720.0f;  // 비행 속도
+constexpr float BOOM_RANGE  = 520.0f;  // 나가는 최대 사거리
+constexpr float BOOM_HITR   = 46.0f;   // 타격 반경
+
 // ── 보스 등장 전조(증상) ──────────────────────────────────────
 //   보스 스폰을 "결정 → 2.5초 전조(테마 증상 + 경고 배너) → 실제 생성" 으로 분리.
 //   전조 동안 게임플레이는 계속(텔레그래프). 만료 시 결정된 보스를 실제로 생성.
@@ -1194,6 +1203,7 @@ int main() {
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
             g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
+            g_Booms.clear(); g_BoomTimer = 0.0f;           // 부메랑 초기화
             g_RunMelee = false; g_RunBow = false;          // 클래스 게이팅 초기화
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
@@ -1426,6 +1436,7 @@ int main() {
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
                 g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
+                g_Booms.clear(); g_BoomTimer = 0.0f;   // 부메랑 정리
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
                     SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
@@ -1956,6 +1967,8 @@ int main() {
                 bool cQ = keys[GLFW_KEY_Q]; if (cQ && !pQ) useSkill(0); pQ = cQ;
                 bool cE = keys[GLFW_KEY_E]; if (cE && !pE) useSkill(1); pE = cE;
                 bool cR = keys[GLFW_KEY_R]; if (cR && !pR) useSkill(2); pR = cR;
+                // C16: 액티브 스킬 자동 사용 — 쿨다운 끝난 슬롯을 자동 발동
+                if (g_AutoSkill) for (int i = 0; i < 3; i++) useSkill(i);
 
                 // 총알 이동 + 화면 밖 비활성화 (+ 유도탄 보정)
                 for (auto& b : g_Bullets) {
@@ -3966,6 +3979,101 @@ int main() {
                 }
             }
 
+            // ── 부메랑 (증강) — 조준 방향으로 던져 나갔다 돌아오며 관통 타격 ──
+            if (g_Stats.boomerang > 0) {
+                g_BoomTimer += delta;
+                if (g_BoomTimer >= BOOM_INT && (int)g_Booms.size() < g_Stats.boomerang) {
+                    g_BoomTimer = 0.0f;
+                    float ang = atan2f(wmy - pCY, wmx - pCX);
+                    int idx = (int)g_Booms.size();
+                    float spread = (g_Stats.boomerang > 1)
+                                 ? ((float)idx - (g_Stats.boomerang - 1) * 0.5f) * 0.28f : 0.0f;
+                    Boomerang bm; bm.x = pCX; bm.y = pCY;
+                    bm.dx = cosf(ang + spread); bm.dy = sinf(ang + spread);
+                    bm.spin = 0.0f; bm.traveled = 0.0f; bm.returning = false; bm.active = true;
+                    g_Booms.push_back(bm);
+                }
+                float bdmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 1.4f;
+                auto bOnKill = [&]() {
+                    if (g_Stats.lifestealPerKill > 0.0f) {
+                        g_GameManager.playerHP += g_Stats.lifestealPerKill;
+                        if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
+                    }
+                };
+                const float hr2 = BOOM_HITR * BOOM_HITR;
+                for (auto& bm : g_Booms) {
+                    if (!bm.active) continue;
+                    bm.spin += delta * 20.0f;
+                    if (!bm.returning) {
+                        bm.x += bm.dx * BOOM_SPD * delta; bm.y += bm.dy * BOOM_SPD * delta;
+                        bm.traveled += BOOM_SPD * delta;
+                        if (bm.traveled >= BOOM_RANGE) bm.returning = true;
+                    } else {
+                        float rx = pCX - bm.x, ry = pCY - bm.y; float rl = sqrtf(rx*rx+ry*ry)+1e-3f;
+                        bm.x += rx/rl * BOOM_SPD * delta; bm.y += ry/rl * BOOM_SPD * delta;
+                        if (rl < 44.0f) bm.active = false;   // 플레이어 회수
+                    }
+                    // 잡몹 — 접촉 즉사급
+                    for (auto m : g_MonsterManager.monsters) {
+                        if (!m->alive) continue;
+                        float dx=m->worldX-bm.x, dy=m->worldY-bm.y;
+                        if (dx*dx+dy*dy < hr2) {
+                            m->hp -= bdmg;
+                            if (m->hp <= 0.0f && !m->scored) {
+                                m->alive=false; m->scored=true; AddKillCombo();
+                                float bx,bs; MobKillReward(m->kind,m->splitGen,m->elite,bx,bs);
+                                g_GameManager.xp += (long long)((bx+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
+                                g_Stats.killCount++; g_GameManager.scoreAccum += bs;
+                                g_GameManager.score=(long long)g_GameManager.scoreAccum; bOnKill();
+                            }
+                        }
+                    }
+                    for (auto bmb : g_MonsterManager.bombers) {
+                        if (!bmb->alive) continue;
+                        float dx=bmb->worldX-bm.x, dy=bmb->worldY-bm.y;
+                        if (dx*dx+dy*dy < hr2) {
+                            bmb->hp -= bdmg;
+                            if (bmb->hp<=0.0f && !bmb->scored){ bmb->alive=false; bmb->scored=true; AddKillCombo();
+                                g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
+                                g_Stats.killCount++; g_GameManager.scoreAccum+=200.0f;
+                                g_GameManager.score=(long long)g_GameManager.scoreAccum; bOnKill(); }
+                        }
+                    }
+                    for (auto r : g_MonsterManager.rangedMobs) {
+                        if (!r->alive) continue;
+                        float dx=r->worldX-bm.x, dy=r->worldY-bm.y;
+                        if (dx*dx+dy*dy < hr2) {
+                            r->hp -= bdmg;
+                            if (r->hp<=0.0f && !r->scored){ r->alive=false; r->scored=true; AddKillCombo();
+                                g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.rangedXpBonus)*g_Stats.xpMult);
+                                g_Stats.killCount++; g_GameManager.scoreAccum+=300.0f;
+                                g_GameManager.score=(long long)g_GameManager.scoreAccum; bOnKill(); }
+                        }
+                    }
+                    // 보스 — 칩(프레임당 소량, 보스에 머무를 때 폭주 방지)
+                    auto bhitB = [&](float ex, float ey, float& hp, bool& al) {
+                        float dx=ex-bm.x, dy=ey-bm.y;
+                        if (dx*dx+dy*dy < (BOOM_HITR+60.0f)*(BOOM_HITR+60.0f)) {
+                            hp -= bdmg * delta * 6.0f; if (hp <= 0.0f) al = false;
+                        }
+                    };
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                        bhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
+                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
+                    for (auto* c : g_Slimelings) if (c->alive) bhitB(c->worldX,c->worldY,c->hp,c->alive);
+                    if (g_GlitchBoss && g_GlitchBoss->alive) bhitB(g_GlitchBoss->worldX,g_GlitchBoss->worldY,g_GlitchBoss->hp,g_GlitchBoss->alive);
+                    if (g_RRBoss && g_RRBoss->alive) bhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
+                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) bhitB(g_PolyBoss->worldX,g_PolyBoss->worldY,g_PolyBoss->hp,g_PolyBoss->alive);
+                    if (g_SpamBoss && g_SpamBoss->alive) bhitB(g_SpamBoss->worldX,g_SpamBoss->worldY,g_SpamBoss->hp,g_SpamBoss->alive);
+                    if (g_KernelBoss && g_KernelBoss->alive) bhitB(g_KernelBoss->worldX,g_KernelBoss->worldY,g_KernelBoss->hp,g_KernelBoss->alive);
+                    if (g_FirewallBoss && g_FirewallBoss->alive) bhitB(g_FirewallBoss->worldX,g_FirewallBoss->worldY,g_FirewallBoss->hp,g_FirewallBoss->alive);
+                    if (g_BotnetBoss && g_BotnetBoss->alive) bhitB(g_BotnetBoss->worldX,g_BotnetBoss->worldY,g_BotnetBoss->hp,g_BotnetBoss->alive);
+                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) bhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
+                }
+                g_Booms.erase(std::remove_if(g_Booms.begin(), g_Booms.end(),
+                    [](const Boomerang& b){ return !b.active; }), g_Booms.end());
+            }
+
             // 포탑 모드에서는 플레이어가 발사하지 않음
             if (!g_Stats.turretMode) {
                 // C13 자동 발사: 기본 ON 이면 좌클릭 없이도 조준 방향으로 자동 발사.
@@ -4520,6 +4628,28 @@ int main() {
                     float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
                     BatchVerts(v, 6, cr, cg, cb, ca);
                 }
+            }
+        }
+
+        // (c4) 부메랑 — 회전하는 노란 십자(부메랑) 모양
+        if (!g_Booms.empty()) {
+            BindMainShader();
+            for (auto& bm : g_Booms) {
+                if (!bm.active) continue;
+                float a = bm.spin;
+                float ca2 = cosf(a), sa = sinf(a);
+                // 두 날개(가로/세로 막대) 회전
+                for (int k = 0; k < 2; k++) {
+                    float bw = (k==0) ? 40.0f : 14.0f, bh = (k==0) ? 14.0f : 40.0f;
+                    float hx = bw*0.5f, hy = bh*0.5f;
+                    float c1x=-hx,c1y=-hy, c2x=hx,c2y=-hy, c3x=hx,c3y=hy, c4x=-hx,c4y=hy;
+                    auto rot=[&](float x,float y,float&ox,float&oy){ ox=bm.x+x*ca2-y*sa; oy=bm.y+x*sa+y*ca2; };
+                    float q1x,q1y,q2x,q2y,q3x,q3y,q4x,q4y;
+                    rot(c1x,c1y,q1x,q1y); rot(c2x,c2y,q2x,q2y); rot(c3x,c3y,q3x,q3y); rot(c4x,c4y,q4x,q4y);
+                    float v[12]={q1x,q1y,q2x,q2y,q3x,q3y, q1x,q1y,q3x,q3y,q4x,q4y};
+                    BatchVerts(v, 6, 1.0f, 0.85f, 0.2f, 1.0f);
+                }
+                drawCircle(bm.x, bm.y, 7.0f, 1.0f, 1.0f, 0.6f, 1.0f);
             }
         }
 
@@ -7133,10 +7263,24 @@ static void Scene_Settings(const SceneCtx& c) {
                                  T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_AutoFire))
                         g_AutoFire = false;
                 }
+                // 액티브 스킬 자동 사용 토글 (C16)
+                {
+                    const wchar_t* asLabel =
+                        (g_Language == Language::EN) ? L"Auto-Skill" :
+                        (g_Language == Language::JP) ? L"自動スキル" : L"자동 스킬";
+                    float ly = wy + 488.0f;
+                    g_TextS.Draw(asLabel, lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
+                    if (UIButton(bx0, ly, OW, OH,
+                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, g_AutoSkill))
+                        g_AutoSkill = true;
+                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
+                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_AutoSkill))
+                        g_AutoSkill = false;
+                }
 
                 // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
                 {
-                    float vy = wy + 500.0f;
+                    float vy = wy + 552.0f;
                     g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
                     auto clampVol = [](int v){ return v < 0 ? 0 : (v > 100 ? 100 : v); };
 

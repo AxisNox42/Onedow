@@ -20,6 +20,7 @@ enum class AugType {
     DRONE,                 // 희귀 → 에픽
     MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
     LASER,                 // 스캔 레이저 (주기적 관통 빔 — 군중제어)
+    BOOMERANG,             // 부메랑 (주기적 던지기 — 나갔다 돌아오며 관통)
     MELEE_WIDE, BLADE_WIND,           // 검객 전용 (광폭 베기 / 칼바람)
     POWER_DRAW, MULTISHOT,            // 궁수 전용 (강궁 / 다중 사격)
     LASER_2, PIERCE_2, TWIN_2,        // 티어 연장 (레이저II / 관통II / 트리플)
@@ -204,6 +205,11 @@ static const AugDef ALL_AUGS[] = {
       { L"0.85초마다 조준 방향으로 중거리 관통 레이저 — 직선상 적 일소 (군중 제어)",
         L"Every 0.85s, a mid-range piercing laser along your aim — clears enemies in a line",
         L"0.85秒毎に照準方向へ中距離貫通レーザー — 直線上の敵を一掃 (群衆制御)" } },
+    { AugType::BOOMERANG,     AugRarity::EPIC,      AugUnique::NONE, "BOOMERANG",
+      { L"부메랑", L"Boomerang", L"ブーメラン" },
+      { L"2.2초마다 조준 방향으로 부메랑 — 나갔다 돌아오며 경로상 적 관통 타격  (중첩 시 추가)",
+        L"Every 2.2s throw a boomerang — flies out & back, piercing enemies on its path  (stacks)",
+        L"2.2秒毎に照準方向へブーメラン — 往復しながら経路上の敵を貫通  (重複可)" } },
     { AugType::LASER_2,       AugRarity::LEGENDARY, AugUnique::NONE, "LASER II",
       { L"스캔 레이저 II", L"Scan Laser II", L"スキャンレーザー II" },
       { L"레이저 발사 0.85→0.55초 · 사거리 560→760  (요구: 스캔 레이저)",
@@ -444,7 +450,7 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 78;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭
+static constexpr int AUG_TOTAL = 79;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {

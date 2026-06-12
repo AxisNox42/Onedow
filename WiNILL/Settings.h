@@ -108,4 +108,8 @@ inline int  g_SoundVol          = 100;    // 사운드 마스터 볼륨 (0=끄�
 //   OFF 면 기존처럼 좌클릭 홀드로 발사. 설정에서 토글.
 inline bool g_AutoFire          = true;
 
+// 액티브 스킬 자동 사용 (C16) — ON 시 Q/E/R 스킬을 쿨다운 끝날 때마다 자동 발동.
+//   기본 OFF(수동). 설정에서 토글.
+inline bool g_AutoSkill         = false;
+
 // (추후 확장: 마스터 볼륨, 마우스 감도 등)
