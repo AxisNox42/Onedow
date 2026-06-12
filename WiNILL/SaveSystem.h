@@ -35,6 +35,7 @@ inline void SaveGame() {
     std::fprintf(f, "dmgnum=%d\n",    g_ShowDamageNumbers  ? 1 : 0);
     std::fprintf(f, "combo=%d\n",     g_ShowCombo          ? 1 : 0);
     std::fprintf(f, "soundvol=%d\n",  g_SoundVol);
+    std::fprintf(f, "autofire=%d\n",  g_AutoFire ? 1 : 0);
     std::fprintf(f, "best_easy=%lld\n",   g_BestScore[0]);
     std::fprintf(f, "best_normal=%lld\n", g_BestScore[1]);
     std::fprintf(f, "best_hard=%lld\n",   g_BestScore[2]);
@@ -82,6 +83,7 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = (val != 0);
         else if (!std::strcmp(key, "combo"))       g_ShowCombo         = (val != 0);
         else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
+        else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);
         else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val;
         else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val;
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val;

@@ -103,4 +103,9 @@ inline bool g_ShowDamageNumbers = true;   // 데미지 숫자(딜 계산) 표시
 inline bool g_ShowCombo         = true;   // 콤보 카운터 표시
 inline int  g_SoundVol          = 100;    // 사운드 마스터 볼륨 (0=끄기 ~ 100)
 
+// 자동 발사 (C13) — 기본 ON: 마우스로 조준만, 발사는 자동.
+//   "피하면서 쏘는 게 어렵다" 피드백 → 이동(WASD)+조준(마우스)에 집중.
+//   OFF 면 기존처럼 좌클릭 홀드로 발사. 설정에서 토글.
+inline bool g_AutoFire          = true;
+
 // (추후 확장: 마스터 볼륨, 마우스 감도 등)

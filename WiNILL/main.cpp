@@ -3611,17 +3611,23 @@ int main() {
 
             // 포탑 모드에서는 플레이어가 발사하지 않음
             if (!g_Stats.turretMode) {
+                // C13 자동 발사: 기본 ON 이면 좌클릭 없이도 조준 방향으로 자동 발사.
+                //   C14 유예 중에는 발사 억제(오발 방지). 수동 모드면 좌클릭 홀드.
+                bool fireHeld = (g_AutoFire || lmb) && (g_PostPickGrace <= 0.0f);
                 if (g_Stats.meleeWeapon) {       // 검객 — 근접 스윙 (총알 없음)
                     // 단타 방지: 쿨다운(effInterval)은 클릭/홀드 무관 항상 적용.
                     //   (예전엔 버튼 떼면 fireTimer 를 즉시 준비 상태로 돌려 광클로
                     //    스윙 속도를 무한히 올릴 수 있었음 — 그 리셋을 제거)
-                    if (lmb && fireTimer >= effInterval) {
+                    if (fireHeld && fireTimer >= effInterval) {
                         float ang = atan2f(wmy - pCY, wmx - pCX);
                         meleeSwing(ang);
                         fireTimer = 0.0f;
                     }
                 } else if (g_Stats.bowWeapon) {  // 궁수 — 누른 만큼 차징 후 발사
-                    if (lmb) {
+                    // 자동: 풀차징까지 자동 충전 → 완충되면 자동 발사(차지 사이클 반복).
+                    bool bowHold = g_AutoFire ? (g_ArcherCharge < 1.0f && g_PostPickGrace <= 0.0f)
+                                              : lmb;
+                    if (bowHold) {
                         // 강궁(40% 빠름) + 연사증강 변환(bowChargeRateMult)
                         g_ArcherCharge += delta / (BOW_CHARGE_TIME * (g_Stats.powerDraw ? 0.6f : 1.0f))
                                           * g_Stats.bowChargeRateMult;
@@ -3669,7 +3675,7 @@ int main() {
                         fireTimer = 0.0f;
                     }
                 } else {
-                    if (lmb && fireTimer >= effInterval) {
+                    if (fireHeld && fireTimer >= effInterval) {
                         float tx = wmx, ty = wmy;   // 줌 보정한 월드 조준점
                         if (g_DrunkActive) {
                             float a = (float)(rand() % 628) * 0.01f;
@@ -3681,7 +3687,8 @@ int main() {
                     }
                     // 클릭 release 시 타이머 리셋 — 다음 클릭에 즉시 발사 가능 (일반 무기 UX)
                     // 단발 고화력 무기(대포·샷건·저격)는 연타로 연사 우회 방지 → 리셋 스킵
-                    if (!lmb && !g_Stats.cannon && !g_Stats.shotgun && !g_Stats.sniper)
+                    // (자동발사 모드면 항상 발사 중이라 리셋 안 함)
+                    if (!fireHeld && !g_Stats.cannon && !g_Stats.shotgun && !g_Stats.sniper)
                         fireTimer = effInterval;
                 }
             }
@@ -6513,13 +6520,28 @@ static void Scene_Settings(const SceneCtx& c) {
                                  T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !val))
                         val = false;
                 };
-                toggleRow(wy + 260.0f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
-                toggleRow(wy + 330.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
-                toggleRow(wy + 400.0f, StrId::SET_COMBO,     g_ShowCombo);
+                toggleRow(wy + 250.0f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
+                toggleRow(wy + 312.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
+                toggleRow(wy + 374.0f, StrId::SET_COMBO,     g_ShowCombo);
+
+                // 자동 발사 토글 (C13) — i18n 테이블 손대지 않게 언어별 라벨 인라인
+                {
+                    const wchar_t* afLabel =
+                        (g_Language == Language::EN) ? L"Auto-Fire" :
+                        (g_Language == Language::JP) ? L"自動発射"   : L"자동 발사";
+                    float ly = wy + 436.0f;
+                    g_TextS.Draw(afLabel, lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
+                    if (UIButton(bx0, ly, OW, OH,
+                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, g_AutoFire))
+                        g_AutoFire = true;
+                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
+                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_AutoFire))
+                        g_AutoFire = false;
+                }
 
                 // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
                 {
-                    float vy = wy + 470.0f;
+                    float vy = wy + 500.0f;
                     g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
                     auto clampVol = [](int v){ return v < 0 ? 0 : (v > 100 ? 100 : v); };
 
