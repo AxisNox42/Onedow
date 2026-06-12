@@ -447,6 +447,7 @@ SkillSlot g_Skills[3];
 int   g_SkillReplaceIdx = 0;       // 슬롯 꽉 찼을 때 교체할 슬롯(순환)
 float g_DashCd        = 0.0f;      // 대시 쿨다운
 float g_DashInvuln    = 0.0f;      // 대시 무적 잔여
+float g_PostPickGrace = 0.0f;      // C14: 증강 픽 후 짧은 유예(무적+발사억제)로 복귀 텀
 float g_TimeStopTimer = 0.0f;      // >0 = 적·적탄 정지 중
 float g_OverclockTimer= 0.0f;      // >0 = 연사/공격력 버프 중
 
@@ -1699,6 +1700,9 @@ int main() {
                     // 디버프 픽 끝 → 게임 재개
                     g_GameManager.currentState = GameState::RUNNING;
                 }
+                // C14: 인게임 복귀 시 짧은 유예(무적+발사억제) — "틱" 텀을 줘 즉사/오발 방지
+                if (g_GameManager.currentState == GameState::RUNNING)
+                    g_PostPickGrace = 0.4f;
             };
 
             // 1/2/3/4 = hover (선택 후보 변경만, 적용 X). 4는 변환 카드 (있을 때만)
@@ -1819,13 +1823,20 @@ int main() {
                 if (pCX < ccX - halfW) pCX = ccX - halfW;
                 if (pCX > ccX + halfW) pCX = ccX + halfW;
                 if (pCY < ccY - halfH) pCY = ccY - halfH;
-                if (pCY > ccY + halfH) pCY = ccY + halfH;
+                // C17: 하단 작업표시줄(인게임 가짜 바 + 실제 OS 작업표시줄) 침범 방지 —
+                //   플레이어가 바 안으로 못 들어가게 하단 한계를 그만큼 위로.
+                float bottomLimit = ccY + halfH;
+                float barTotal    = g_GameBarH + (float)g_TaskbarH;
+                if (bottomLimit > (float)screenHeight - barTotal)
+                    bottomLimit = (float)screenHeight - barTotal;
+                if (pCY > bottomLimit) pCY = bottomLimit;
                 playerWin.x = pCX - playerWin.width  * 0.5f;
                 playerWin.y = pCY - playerWin.height * 0.5f;
 
                 // ── 액티브 스킬 — 쿨다운/지속 갱신 + 입력(Shift 대시 / Q·E·R 슬롯) ──
                 if (g_DashCd > 0.0f)        g_DashCd        -= FIXED_DT;
                 if (g_DashInvuln > 0.0f)    g_DashInvuln    -= FIXED_DT;
+                if (g_PostPickGrace > 0.0f) g_PostPickGrace -= FIXED_DT;  // C14
                 if (g_TimeStopTimer > 0.0f) g_TimeStopTimer -= FIXED_DT;
                 if (g_OverclockTimer > 0.0f)g_OverclockTimer-= FIXED_DT;
                 for (int i = 0; i < 3; i++) if (g_Skills[i].cd > 0.0f) g_Skills[i].cd -= FIXED_DT;
@@ -2089,8 +2100,9 @@ int main() {
                     g_GameManager.playerHP,
                     g_GameManager.scoreAccum, g_GameManager.score,
                     g_Stats, g_GameManager.xp);
-                // 대시 무적 — 이번 스텝의 적 피해 무효 (회복은 유지)
-                if (g_DashInvuln > 0.0f && g_GameManager.playerHP < hpAtStep)
+                // 대시 무적 / 증강픽 유예(C14) — 이번 스텝의 적 피해 무효 (회복은 유지)
+                if ((g_DashInvuln > 0.0f || g_PostPickGrace > 0.0f) &&
+                    g_GameManager.playerHP < hpAtStep)
                     g_GameManager.playerHP = hpAtStep;
 
                 // 글리치 보스 + 미니 세모 vs 플레이어 총알 (스윕 판정)
@@ -2934,8 +2946,13 @@ int main() {
                     g_BossWarnTimer -= delta;
                     if (g_BossWarnTimer <= 0.0f) {
                         g_BossWarnTimer = 0.0f;
-                        float bsx = screenWidth  * 0.5f + ((float)(rand() % 200) - 100.0f);
-                        float bsy = screenHeight * 0.5f + ((float)(rand() % 200) - 100.0f);
+                        // C15: 소환 위치 랜덤화 — 항상 중앙 근처라 거기서 캠핑/샷건 파훼되던 문제.
+                        //   화면 안쪽(가장자리 마진 제외) 전 영역에서 무작위 위치.
+                        float bMargin = 340.0f * g_Scale;
+                        float bRangeX = std::max(1.0f, (float)screenWidth  - 2.0f * bMargin);
+                        float bRangeY = std::max(1.0f, (float)screenHeight - 2.0f * bMargin);
+                        float bsx = bMargin + (float)(rand() % (int)bRangeX);
+                        float bsy = bMargin + (float)(rand() % (int)bRangeY);
                         switch (g_BossWarnPick) {
                         case 0:
                             g_MonsterManager.boss =
@@ -2944,17 +2961,22 @@ int main() {
                         case 1:
                             g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
                             // 글로벌 전조가 글리치 테마를 덮으므로 내부 GLITCH_WARNING 스킵
+                            // (글리치는 설계상 화면 구석에 숨는 보스라 위치 랜덤화 제외)
                             g_GlitchBoss->state = BossState::SPAWN_MINI;
                             g_GlitchBoss->stateTimer = 0.0f;
                             break;
                         case 2:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
                             break;
                         case 3:
                             g_SpamBoss = new SpamBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_SpamBoss->worldX = g_SpamBoss->baseX = bsx;
+                            g_SpamBoss->worldY = g_SpamBoss->baseY = bsy;
                             break;
                         default:
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_PolyBoss->worldX = bsx; g_PolyBoss->worldY = bsy;
                             g_PolyPrevForm = -1;
                             break;
                         }
@@ -5508,8 +5530,10 @@ int main() {
 
         // ── FPS 캡 (g_FpsCap > 0 일 때만) ─────────────────────────────
         // timeBeginPeriod(1) 로 Sleep 해상도 1ms. 마지막 ~1ms 는 busy-wait
-        if (g_FpsCap > 0) {
-            double target = 1.0 / (double)g_FpsCap;
+        // C18: 과거 '무제한'(-1) 세이브는 300 으로 클램프 (진짜 무제한 제거).
+        int capFps = (g_FpsCap < 0) ? 300 : g_FpsCap;
+        if (capFps > 0) {
+            double target = 1.0 / (double)capFps;
             double frameStart = (double)now;
             double remain = target - (glfwGetTime() - frameStart);
             if (remain > 0.001) {
@@ -6449,7 +6473,7 @@ static void Scene_Settings(const SceneCtx& c) {
                 struct FpsOpt { const wchar_t* label; int val; };
                 FpsOpt fpsOpts[4] = {
                     { L"30", 30 }, { L"60", 60 }, { L"144", 144 },
-                    { T(StrId::SET_UNLIMITED), -1 }
+                    { L"300", 300 }   // C18: '무제한' 제거 → 300 상한
                 };
                 for (int i = 0; i < 4; i++) {
                     float bx = bx0 + i * (OW + OG);
