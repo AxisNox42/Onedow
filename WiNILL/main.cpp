@@ -4153,6 +4153,13 @@ int main() {
                          0.06f, 0.08f, 0.10f, 1.0f);
             }
         }
+        // 레이어 우선순위(낮음→높음): 봇넷 < 원거리 < 보스. 배경도 같은 순서로 덮어쓰기.
+        // 봇넷 노드(SPAWNER) 개인 창 배경 — 최하단 (E21)
+        for (auto m : g_MonsterManager.monsters) {
+            if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+            float w = SPAWNER_WIN_W * m->sizeScale;
+            drawRect(m->worldX - w*0.5f, m->worldY - w*0.5f, w, w, 0.06f, 0.10f, 0.09f, 1.0f);
+        }
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
             float sc  = r->deathScale;
@@ -4161,12 +4168,6 @@ int main() {
             float rwy = r->worldY - rH * 0.5f;
             drawRect(rwx, rwy, rW, rH,
                      0.08f, 0.08f, 0.10f, 1.0f);
-        }
-        // 봇넷 노드(SPAWNER) 개인 창 배경 — 고정된 노드마다 작은 가짜 창 (E21)
-        for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive || m->kind != MobKind::SPAWNER) continue;
-            float w = SPAWNER_WIN_W * m->sizeScale;
-            drawRect(m->worldX - w*0.5f, m->worldY - w*0.5f, w, w, 0.06f, 0.10f, 0.09f, 1.0f);
         }
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
@@ -5355,8 +5356,15 @@ int main() {
                 };
                 int li2 = (int)g_Language; if (li2<0||li2>=LANG_COUNT) li2=0;
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
-                winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                          PNAME, 0.3f, 0.8f, 1.0f);
+                // 가짜창 레이어 우선순위 (겹침 시 위로): 봇넷 < 원거리 < 보스 < 플레이어
+                //   → 그리는 순서: 봇넷 노드 → 원거리 → 보스들 → 플레이어(마지막=최상단)
+                // 봇넷 노드(SPAWNER) 타이틀바 (최하단)
+                for (auto m : g_MonsterManager.monsters) {
+                    if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+                    float w = SPAWNER_WIN_W * m->sizeScale;
+                    winChrome(m->worldX-w*0.5f, m->worldY-w*0.5f, w, w,
+                              L"botnet.node", 0.2f, 0.85f, 0.65f);
+                }
                 for (auto r : g_MonsterManager.rangedMobs) {
                     if (r->deathScale <= 0.0f) continue;
                     float sc=r->deathScale, rW=RFW_W*sc, rH=RFW_H*sc;
@@ -5412,6 +5420,9 @@ int main() {
                     winChrome(g_CentiBoss->worldX-w*0.5f, g_CentiBoss->worldY-w*0.5f, w, w,
                               L"BUG.proc", 0.7f,1.0f,0.3f);
                 }
+                // 플레이어 창 — 마지막에 그려 항상 최상단
+                winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
+                          PNAME, 0.3f, 0.8f, 1.0f);
             }
         }
 
