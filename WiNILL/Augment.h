@@ -83,7 +83,7 @@ static const AugDef ALL_AUGS[] = {
       { L"공격력 +5  (고정 가산)", L"Attack +5  (flat)", L"攻撃力 +5  (固定)" } },
     { AugType::RATE_UP,       AugRarity::COMMON,    AugUnique::NONE, "RATE+4%",
       { L"연사 속도 증가", L"Fire Rate Up", L"連射速度アップ" },
-      { L"연사 속도 +4%", L"Fire rate +4%", L"連射速度 +4%" } },
+      { L"연사 속도 +7%  (백분율 누적)", L"Fire rate +7%  (percent)", L"連射速度 +7%  (%累積)" } },
     { AugType::SPD_UP,        AugRarity::COMMON,    AugUnique::NONE, "BSPD+30",
       { L"탄속 증가", L"Bullet Speed Up", L"弾速アップ" },
       { L"탄환 속도 +30", L"Bullet speed +30", L"弾速 +30" } },

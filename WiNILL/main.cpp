@@ -1556,10 +1556,11 @@ int main() {
                     g_GameManager.maxHP = g_Stats.maxHP;
                     if (g_GameManager.playerHP > g_Stats.maxHP)
                         g_GameManager.playerHP = g_Stats.maxHP;
-                    if (prevAugs > 24) prevAugs = 24;       // 배열/풀 상한
-                    int nDebuffs = prevAugs * 2 / 5;        // 40%
+                    // 보유 개수 보존 — 이전엔 24로 캡해서 40개 보유 시 반토막 나던 버그 수정.
+                    if (prevAugs > 60) prevAugs = 60;       // 배열 상한(여유)
+                    int nDebuffs = prevAugs / 3;            // 40% → 33% (덜 가혹하게)
                     int nBuffs   = prevAugs - nDebuffs;
-                    int buffs[24], debuffs[24];
+                    int buffs[64], debuffs[64];
                     g_GameManager.PickRandomAugIndices(buffs, nBuffs,
                         false, false, true, false, /*allowDebuff=*/false);
                     g_GameManager.PickRandomDebuffIndices(debuffs, nDebuffs);
@@ -1848,6 +1849,15 @@ int main() {
                     float curMove  = MOVE_SPEED * moveMult;
                     playerWin.x += mvX * curMove * FIXED_DT;
                     playerWin.y += mvY * curMove * FIXED_DT;
+                    // 이동 잔상(afterimage) — 일정 간격으로 플레이어 중심에 옅은 시안 잔상
+                    static float s_trailAcc = 0.0f;
+                    s_trailAcc += FIXED_DT;
+                    if (s_trailAcc >= 0.028f) {
+                        s_trailAcc = 0.0f;
+                        SpawnTrail(playerWin.x + playerWin.width  * 0.5f,
+                                   playerWin.y + playerWin.height * 0.5f,
+                                   24.0f, 0.35f, 0.85f, 1.0f);
+                    }
                 }
 
                 // 플레이어 캐릭터(창 중앙)가 보이는 영역 밖으로 나가지 못하게 클램프.
@@ -2876,7 +2886,7 @@ int main() {
                     if (g_GameManager.xp >= need) {
                         g_GameManager.xp -= need;
                         ++g_GameManager.playerLevel;
-                        TriggerFlash(0.5f, 1.0f, 0.7f, 0.45f);  // 레벨업 번쩍 (연녹)
+                        // (레벨업 풀스크린 플래시 제거 — 눈부심. AUG_SELECT 카드로 충분히 안내)
                         g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                      g_Stats.distAugTaken);
 
@@ -3043,6 +3053,10 @@ int main() {
             }
             g_Sparks.erase(std::remove_if(g_Sparks.begin(), g_Sparks.end(),
                 [](const Spark& s){ return s.life <= 0.0f; }), g_Sparks.end());
+            // 이동 잔상 수명 갱신
+            for (auto& tr : g_Trail) tr.life -= delta;
+            g_Trail.erase(std::remove_if(g_Trail.begin(), g_Trail.end(),
+                [](const Trail& t){ return t.life <= 0.0f; }), g_Trail.end());
             // 머즐 플래시 카운트다운
             if (g_MuzzleTimer > 0.0f) g_MuzzleTimer -= delta;
 
@@ -4555,6 +4569,12 @@ int main() {
                              g_Debris[i].r, g_Debris[i].g, g_Debris[i].b, fade);
                 }
             } else if (g_GameManager.currentState != GameState::GAMEOVER) {
+                // 이동 잔상 — 플레이어 뒤(먼저 그려 아래에 깔림), 수명 비례 페이드+축소
+                for (auto& tr : g_Trail) {
+                    float f = tr.life / tr.maxLife;        // 1→0
+                    float s = tr.size * (0.4f + 0.6f * f);
+                    drawRect(tr.x - s*0.5f, tr.y - s*0.5f, s, s, tr.r, tr.g, tr.b, 0.28f * f);
+                }
                 float sz = PLAYER_SIZE * g_Stats.playerSizeMult;
                 float hs = sz * 0.5f;
                 // 외곽: 어두운 테두리 (대비)
@@ -5375,75 +5395,80 @@ int main() {
                 int li2 = (int)g_Language; if (li2<0||li2>=LANG_COUNT) li2=0;
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
                 // 가짜창 레이어 우선순위 (겹침 시 위로): 봇넷 < 원거리 < 보스 < 플레이어
-                //   → 그리는 순서: 봇넷 노드 → 원거리 → 보스들 → 플레이어(마지막=최상단)
-                // 작은 적 창이 플레이어 창 '안'에 들어오면 그 타이틀바는 가려져야(안 그림).
-                auto occByPlayer = [&](float ecx, float ecy) {
-                    return ecx >= playerWin.x && ecx <= playerWin.x + playerWin.width &&
-                           ecy >= playerWin.y && ecy <= playerWin.y + playerWin.height;
+                //   플레이어 창이 항상 최상단 — 적 창 타이틀바가 플레이어 창과 겹치면
+                //   숨겨서 '플레이어 창이 덮는' 연출 (사진처럼). 타이틀바 밴드(상단 22px)가
+                //   플레이어 창 사각형과 겹치는지로 판정.
+                auto occByPlayer = [&](float wx, float wy, float ww) {
+                    const float TB = 22.0f;
+                    float px0 = playerWin.x, py0 = playerWin.y;
+                    float px1 = px0 + playerWin.width, py1 = py0 + playerWin.height;
+                    return (wx < px1 && wx + ww > px0 && wy < py1 && wy + TB > py0);
                 };
-                // 봇넷 노드(SPAWNER) 타이틀바 (최하단) — 플레이어 창 안이면 숨김
+                // 적 창 타이틀바 — wx,wy,ww 의 타이틀바가 플레이어 창과 겹치면 숨김
+                auto enemyChrome = [&](float wx, float wy, float ww, float wh,
+                                       const wchar_t* nm, float cr, float cg, float cb) {
+                    if (occByPlayer(wx, wy, ww)) return;
+                    winChrome(wx, wy, ww, wh, nm, cr, cg, cb);
+                };
+                // 봇넷 노드(SPAWNER) (최하단)
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive || m->kind != MobKind::SPAWNER) continue;
-                    if (occByPlayer(m->worldX, m->worldY)) continue;
                     float w = SPAWNER_WIN_W * m->sizeScale;
-                    winChrome(m->worldX-w*0.5f, m->worldY-w*0.5f, w, w,
-                              L"botnet.node", 0.2f, 0.85f, 0.65f);
+                    enemyChrome(m->worldX-w*0.5f, m->worldY-w*0.5f, w, w, L"botnet.node", 0.2f,0.85f,0.65f);
                 }
                 for (auto r : g_MonsterManager.rangedMobs) {
                     if (r->deathScale <= 0.0f) continue;
-                    if (occByPlayer(r->worldX, r->worldY)) continue;   // 플레이어 창 안이면 숨김
                     float sc=r->deathScale, rW=RFW_W*sc, rH=RFW_H*sc;
-                    winChrome(r->worldX-rW*0.5f, r->worldY-rH*0.5f, rW, rH,
-                              L"popup.exe", 0.9f, 0.3f, 0.7f);
+                    enemyChrome(r->worldX-rW*0.5f, r->worldY-rH*0.5f, rW, rH, L"popup.exe", 0.9f,0.3f,0.7f);
                 }
                 if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
                     auto* bs=g_MonsterManager.boss;
-                    winChrome(bs->worldX-Boss::WIN_W*0.5f, bs->worldY-Boss::WIN_H*0.5f,
-                              Boss::WIN_W, Boss::WIN_H, L"SLIME.worm", 0.5f,0.95f,0.5f);
+                    enemyChrome(bs->worldX-Boss::WIN_W*0.5f, bs->worldY-Boss::WIN_H*0.5f,
+                                Boss::WIN_W, Boss::WIN_H, L"SLIME.worm", 0.5f,0.95f,0.5f);
                 }
                 for (auto* c : g_Slimelings) if (c->alive) {
                     float w=Boss::WIN_W*c->sizeScale;
-                    winChrome(c->worldX-w*0.5f, c->worldY-w*0.5f, w, w, L"slime.worm", 0.5f,0.95f,0.5f);
+                    enemyChrome(c->worldX-w*0.5f, c->worldY-w*0.5f, w, w, L"slime.worm", 0.5f,0.95f,0.5f);
                 }
                 if (g_GlitchBoss && g_GlitchBoss->alive) {
                     float w=GLITCH_WIN_W;
-                    winChrome(g_GlitchBoss->worldX-w*0.5f, g_GlitchBoss->worldY-w*0.5f, w, w,
-                              L"GLITCH.sys", 0.95f,0.2f,0.6f);
+                    enemyChrome(g_GlitchBoss->worldX-w*0.5f, g_GlitchBoss->worldY-w*0.5f, w, w,
+                                L"GLITCH.sys", 0.95f,0.2f,0.6f);
                 }
                 if (g_RRBoss && g_RRBoss->alive) {
                     float w=RR_WIN_W;
-                    winChrome(g_RRBoss->worldX-w*0.5f, g_RRBoss->worldY-w*0.5f, w, w,
-                              L"RELOADER.exe", 1.0f,0.55f,0.2f);
+                    enemyChrome(g_RRBoss->worldX-w*0.5f, g_RRBoss->worldY-w*0.5f, w, w,
+                                L"RELOADER.exe", 1.0f,0.55f,0.2f);
                 }
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     float w=POLY_WIN_W;
-                    winChrome(g_PolyBoss->worldX-w*0.5f, g_PolyBoss->worldY-w*0.5f, w, w,
-                              L"POLYMORPH.vir", 0.6f,0.25f,1.0f);
+                    enemyChrome(g_PolyBoss->worldX-w*0.5f, g_PolyBoss->worldY-w*0.5f, w, w,
+                                L"POLYMORPH.vir", 0.6f,0.25f,1.0f);
                 }
                 if (g_SpamBoss && g_SpamBoss->alive) {
                     float w=SPAM_WIN_W;
-                    winChrome(g_SpamBoss->worldX-w*0.5f, g_SpamBoss->worldY-w*0.5f, w, w,
-                              L"SPAM.dll", 1.0f,0.4f,0.8f);
+                    enemyChrome(g_SpamBoss->worldX-w*0.5f, g_SpamBoss->worldY-w*0.5f, w, w,
+                                L"SPAM.dll", 1.0f,0.4f,0.8f);
                 }
                 if (g_KernelBoss && g_KernelBoss->alive) {
                     float w=KERNEL_WIN_W;
-                    winChrome(g_KernelBoss->worldX-w*0.5f, g_KernelBoss->worldY-w*0.5f, w, w,
-                              L"KERNEL.sys", 1.0f,0.65f,0.25f);
+                    enemyChrome(g_KernelBoss->worldX-w*0.5f, g_KernelBoss->worldY-w*0.5f, w, w,
+                                L"KERNEL.sys", 1.0f,0.65f,0.25f);
                 }
                 if (g_FirewallBoss && g_FirewallBoss->alive) {
                     float w=FIREWALL_WIN_W;
-                    winChrome(g_FirewallBoss->worldX-w*0.5f, g_FirewallBoss->worldY-w*0.5f, w, w,
-                              L"FIREWALL.sys", 1.0f,0.45f,0.2f);
+                    enemyChrome(g_FirewallBoss->worldX-w*0.5f, g_FirewallBoss->worldY-w*0.5f, w, w,
+                                L"FIREWALL.sys", 1.0f,0.45f,0.2f);
                 }
                 if (g_BotnetBoss && g_BotnetBoss->alive) {
                     float w=BOTNET_WIN_W;
-                    winChrome(g_BotnetBoss->worldX-w*0.5f, g_BotnetBoss->worldY-w*0.5f, w, w,
-                              L"BOTNET.exe", 0.3f,0.55f,1.0f);
+                    enemyChrome(g_BotnetBoss->worldX-w*0.5f, g_BotnetBoss->worldY-w*0.5f, w, w,
+                                L"BOTNET.exe", 0.3f,0.55f,1.0f);
                 }
                 if (g_CentiBoss && g_CentiBoss->alive) {
                     float w=CENTI_WIN_W;
-                    winChrome(g_CentiBoss->worldX-w*0.5f, g_CentiBoss->worldY-w*0.5f, w, w,
-                              L"BUG.proc", 0.7f,1.0f,0.3f);
+                    enemyChrome(g_CentiBoss->worldX-w*0.5f, g_CentiBoss->worldY-w*0.5f, w, w,
+                                L"BUG.proc", 0.7f,1.0f,0.3f);
                 }
                 // 플레이어 창 — 마지막에 그려 항상 최상단
                 winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,

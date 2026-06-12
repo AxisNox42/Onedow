@@ -126,8 +126,7 @@ struct PlayerStats {
     // 일반(COMMON) 증강 = 가산(flat) — 곱연산 복리 폭주(원펀맨) 방지.
     //   초반엔 baseDamage 대비 큰 비중, 후반엔 큰 base 대비 상대값 자동 감소.
     //   후반 스케일링은 희귀/에픽의 곱연산 증강(damageMultiplier)이 담당.
-    float flatDamageBonus = 0.0f;   // DMG_UP 누적 가산 데미지
-    int   fireRateLevel   = 0;      // RATE_UP 누적 (연사 가산 — GetFireIntervalMult 에서 반영)
+    float flatDamageBonus = 0.0f;   // DMG_UP 누적 가산 데미지 (일반 증강 = 고정값)
 
     // ─────────────────────────────────────────────────────
     void Apply(AugType t) {
@@ -145,8 +144,8 @@ struct PlayerStats {
             break;
         case AugType::RATE_UP:
             if (meleeWeapon)      flatDamageBonus   += 5.0f;   // 검객: 연사 무의미 → 가산 공격력
-            else if (bowWeapon)   bowChargeRateMult *= 1.06f;  // 궁수: 연사 → 차징 빠름(유지)
-            else                  ++fireRateLevel;             // 총기: 연사 가산(레벨)
+            else if (bowWeapon)   bowChargeRateMult *= 1.07f;  // 궁수: 연사 → 차징 빠름
+            else                  fireInterval      /= 1.07f;  // 총기: 연사 +7% (백분율 곱연산)
             break;
         case AugType::SPD_UP:
             if (meleeWeapon)      damageMultiplier *= 1.04f;    // 검객: 탄속 무의미 → 공격력 +4%
@@ -175,7 +174,7 @@ struct PlayerStats {
         case AugType::LIGHT_AMMO:
             fireInterval     /= 1.10f;   // 연사 +10%
             bulletSpeed      *= 1.30f;
-            damageMultiplier *= 0.90f;   // 공격력 -10% (너프: -20% → -10%)
+            damageMultiplier *= 0.80f;   // 공격력 -20% (롤백: -10% → -20%)
             break;
         case AugType::LIGHT_STEP:
             lightStep      = true;
@@ -520,8 +519,6 @@ struct PlayerStats {
     // 영혼 수확 연사·탄속 보너스 (외부에서 조회)
     float GetFireIntervalMult() const {
         float mult = 1.0f;
-        if (fireRateLevel > 0)                           // RATE_UP 가산 연사
-            mult /= (1.0f + 0.04f * (float)fireRateLevel);
         if (soulHarvest) {
             float bonus = (float)(killCount / 100) * 0.02f;  // 너프: 5% → 2%
             mult /= (1.0f + bonus);

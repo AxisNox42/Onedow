@@ -40,6 +40,16 @@ struct Spark {
     float r, g, b;
 };
 inline std::vector<Spark> g_Sparks;
+
+// ── 플레이어 이동 잔상(afterimage) — 이동 시 과거 위치에 옅게 남았다 사라짐 ──
+struct Trail { float x, y, life, maxLife, size, r, g, b; };
+inline std::vector<Trail> g_Trail;
+inline void SpawnTrail(float x, float y, float size, float r, float g, float b) {
+    if ((int)g_Trail.size() > 120) return;
+    Trail t; t.x = x; t.y = y; t.maxLife = t.life = 0.30f;
+    t.size = size; t.r = r; t.g = g; t.b = b;
+    g_Trail.push_back(t);
+}
 inline void SpawnSparks(float x, float y, int n,
                         float r, float g, float b, float speed = 300.0f) {
     if ((int)g_Sparks.size() > 500) return;          // 풀 상한
@@ -86,6 +96,7 @@ inline void TriggerFlash(float r, float g, float b, float intensity) {
 inline void ResetJuice() {
     g_DmgNumbers.clear();
     g_Sparks.clear();
+    g_Trail.clear();
     g_Combo = 0; g_ComboTimer = 0.0f; g_ComboPulse = 0.0f;
     g_HitStopTimer = 0.0f;
     g_FlashIntensity = 0.0f;
