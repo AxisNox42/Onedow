@@ -201,6 +201,7 @@
     <ClInclude Include="KernelBoss.h" />
     <ClInclude Include="FirewallBoss.h" />
     <ClInclude Include="BotnetBoss.h" />
+    <ClInclude Include="CentipedeBoss.h" />
     <ClInclude Include="TextRenderer.h" />
     <ClInclude Include="Translations.h" />
     <ClInclude Include="Weapons.h" />
