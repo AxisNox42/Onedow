@@ -30,7 +30,7 @@ inline const WeaponDef ALL_WEAPONS[] = {
       { L"한 번에 5발  /  사거리 700  /  연사 -33%", L"5 pellets at once  /  range 700  /  rate -33%", L"一度に5発  /  射程700  /  連射 -33%" } },
     /* CANNON */ {
       { L"대포", L"Cannon", L"大砲" },
-      { L"연사 1초 고정  /  공격력 ×5  /  연사 1%당 공격력 +2%  /  큰 탄  /  [조합] 드론II = 포탑", L"fixed 1s interval  /  Attack ×5  /  +2% dmg per 1% fire rate  /  big shells  /  [combo] Drone II = turret", L"連射1秒固定  /  攻撃力 ×5  /  連射1%毎に攻撃+2%  /  大きな弾  /  [組合] ドローンII = 砲台" } },
+      { L"연사 1초 고정  /  공격력 ×5  /  연사 1%당 공격력 +2%  /  큰 탄", L"fixed 1s interval  /  Attack ×5  /  +2% dmg per 1% fire rate  /  big shells", L"連射1秒固定  /  攻撃力 ×5  /  連射1%毎に攻撃+2%  /  大きな弾" } },
     /* REVOLVER */ {
       { L"리볼버", L"Revolver", L"リボルバー" },
       { L"공격력 ×1.4  /  연사 -29%  /  정확", L"Attack ×1.4  /  rate -29%  /  accurate", L"攻撃力 ×1.4  /  連射 -29%  /  正確" } },

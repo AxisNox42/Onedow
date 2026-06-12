@@ -123,11 +123,11 @@ struct PlayerStats {
     // ── 런타임 ──────────────────────────────────────────
     float siegeBonus    = 0.0f;  // 시즈탱크 누적 보너스 (외부에서 갱신)
 
-    // 일반 %증강 체감 감쇠 카운터 (B9) — 곱연산 폭주 방지.
-    //   n번째 픽의 증가폭 = 기본증가 × 0.90^(n-1) → 증가폭이 점점 작아져
-    //   무한히 먹어도 총 배율이 소프트 상한에 수렴 (초반 픽은 그대로 강력).
-    int dmgUpCount  = 0;
-    int rateUpCount = 0;
+    // 일반(COMMON) 증강 = 가산(flat) — 곱연산 복리 폭주(원펀맨) 방지.
+    //   초반엔 baseDamage 대비 큰 비중, 후반엔 큰 base 대비 상대값 자동 감소.
+    //   후반 스케일링은 희귀/에픽의 곱연산 증강(damageMultiplier)이 담당.
+    float flatDamageBonus = 0.0f;   // DMG_UP 누적 가산 데미지
+    int   fireRateLevel   = 0;      // RATE_UP 누적 (연사 가산 — GetFireIntervalMult 에서 반영)
 
     // ─────────────────────────────────────────────────────
     void Apply(AugType t) {
@@ -135,23 +135,19 @@ struct PlayerStats {
         switch (t) {
         // ── 일반 (버프: QA 피드백 — 일반 증강이 너무 약함) ──
         //   ※ 검객/궁수 변환: 무의미한 스탯 증강을 클래스에 맞게 재해석
-        case AugType::DMG_UP: {
-            float inc = 0.08f * std::pow(0.90f, (float)dmgUpCount);  // 8% → 7.2% → 6.5% …
-            ++dmgUpCount;
-            if (bowWeapon) {                              // 궁수: 공격력 → 풀차징 한도↑ + 약간의 자체 공격력
+        case AugType::DMG_UP:
+            if (bowWeapon) {                              // 궁수: 공격력 → 풀차징 한도↑
                 bowChargeCapBonus += 0.30f;
-                damageMultiplier  *= 1.0f + inc * 0.25f;
+                flatDamageBonus   += 3.0f;
             } else {
-                damageMultiplier  *= 1.0f + inc;          // 그 외(검객 포함): 감쇠 적용 공격력↑
+                flatDamageBonus   += 10.0f;               // 그 외(검객 포함): 가산 공격력 +10
             }
-        } break;
-        case AugType::RATE_UP: {
-            float inc = 0.04f * std::pow(0.90f, (float)rateUpCount);  // 4% → 3.6% → 3.24% …
-            ++rateUpCount;
-            if (meleeWeapon)      damageMultiplier  *= 1.0f + inc;        // 검객: 연사 무의미 → 공격력
-            else if (bowWeapon)   bowChargeRateMult *= 1.0f + inc * 1.5f; // 궁수: 연사 → 차징 빠름
-            else                  fireInterval      /= 1.0f + inc;        // 총기: 연사↑
-        } break;
+            break;
+        case AugType::RATE_UP:
+            if (meleeWeapon)      flatDamageBonus   += 5.0f;   // 검객: 연사 무의미 → 가산 공격력
+            else if (bowWeapon)   bowChargeRateMult *= 1.06f;  // 궁수: 연사 → 차징 빠름(유지)
+            else                  ++fireRateLevel;             // 총기: 연사 가산(레벨)
+            break;
         case AugType::SPD_UP:
             if (meleeWeapon)      damageMultiplier *= 1.04f;    // 검객: 탄속 무의미 → 공격력 +4%
             else                  bulletSpeed      += 30.0f;    // 총기/궁수: 탄속 +30
@@ -165,6 +161,10 @@ struct PlayerStats {
             break;
         case AugType::REGEN_UP:  regenPerSec += 0.34f; break;  // 5초당 1 → 약 3초당 1
         case AugType::XP_UP:     xpMult       *= 1.05f; break;
+
+        // ── 희귀/에픽 곱연산 스케일러 (후반용) ──
+        case AugType::OVERDRIVE:      damageMultiplier *= 1.18f; break;
+        case AugType::CORE_OVERLOAD:  damageMultiplier *= 1.30f; break;
 
         // ── 희귀 ──
         case AugType::GLASS_CANNON:
@@ -477,7 +477,7 @@ struct PlayerStats {
 
     // 최종 베이스 피해량 (미니화·대포 포함)
     float GetBaseDamage() const {
-        float base = baseDamage;
+        float base = baseDamage + flatDamageBonus;   // 일반 증강 가산 데미지
         if (miniaturize) base += 10.0f * (float)totalAugs;
         return base;
     }
@@ -519,6 +519,8 @@ struct PlayerStats {
     // 영혼 수확 연사·탄속 보너스 (외부에서 조회)
     float GetFireIntervalMult() const {
         float mult = 1.0f;
+        if (fireRateLevel > 0)                           // RATE_UP 가산 연사
+            mult /= (1.0f + 0.04f * (float)fireRateLevel);
         if (soulHarvest) {
             float bonus = (float)(killCount / 100) * 0.02f;  // 너프: 5% → 2%
             mult /= (1.0f + bonus);

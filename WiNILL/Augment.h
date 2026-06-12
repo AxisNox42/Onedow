@@ -10,7 +10,9 @@ enum class AugType {
     BULLET_RAIN,
     CANNON,                // 전설 → 희귀
     CRIT, LIFESTEAL, BERSERK,   // 핵앤슬래쉬 (치명타/흡혈/광전사)
+    OVERDRIVE,                  // 곱연산 데미지 ×1.18 (후반 스케일러)
     // ── 에픽 ──
+    CORE_OVERLOAD,              // 곱연산 데미지 ×1.30 (후반 스케일러)
     VAMPIRE, BROKEN_SIGHT, SNIPER, BAYONET,
     MINIATURIZE, GIGANTIFY, PIERCE, TWIN, CHAKRAM,
     BULLET_RAIN_2, CHAKRAM_2,
@@ -136,8 +138,18 @@ static const AugDef ALL_AUGS[] = {
       { L"체력이 낮을수록 공격력 증가  (최대 +60% · 빈사 시)",
         L"Lower HP = more attack  (up to +60% near death)",
         L"低HPほど攻撃力上昇  (瀕死時 最大+60%)" } },
+    { AugType::OVERDRIVE,     AugRarity::RARE,      AugUnique::NONE, "OVERDRIVE",
+      { L"오버드라이브", L"Overdrive", L"オーバードライブ" },
+      { L"공격력 ×1.18 (곱연산 · 중첩)  /  후반 핵심 스케일러",
+        L"Attack ×1.18 (multiplicative · stacks)  /  late-game scaler",
+        L"攻撃力 ×1.18 (乗算・重複)  /  後半の主力スケーラー" } },
 
     // ── 에픽 ───────────────────────────────────────────
+    { AugType::CORE_OVERLOAD, AugRarity::EPIC,      AugUnique::NONE, "CORE_OVERLOAD",
+      { L"코어 과부하", L"Core Overload", L"コア過負荷" },
+      { L"공격력 ×1.30 (곱연산 · 중첩)  /  후반 핵심 스케일러",
+        L"Attack ×1.30 (multiplicative · stacks)  /  late-game scaler",
+        L"攻撃力 ×1.30 (乗算・重複)  /  後半の主力スケーラー" } },
     { AugType::VAMPIRE,       AugRarity::EPIC,      AugUnique::NONE, "VAMPIRE",
       { L"흡혈마", L"Vampire", L"吸血鬼" },
       { L"10킬마다 체력 +1  /  최대 체력 -10%  /  획득 즉시 현재 체력 -20%",
@@ -429,7 +441,7 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 75;  // +조합4, +레이저, +티어3, +클래스4
+static constexpr int AUG_TOTAL = 77;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {

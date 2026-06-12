@@ -2898,6 +2898,15 @@ int main() {
                 bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
                                   g_RRBoss || g_PolyBoss || g_SpamBoss ||
                                   !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
+                // 라운드2 — 보스 눈덩이 차단: 보스를 잡아 완전히 정리되는 순간(활성→비활성),
+                //   다음 보스 임계값을 현재 점수+20만으로 리베이스 → 최소 20만점 휴식 보장
+                //   (보스전 중 쌓인 점수로 잡자마자 또 보스 뜨던 악순환 제거).
+                static bool s_prevBossActive = false;
+                if (s_prevBossActive && !bossActive) {
+                    long long rebase = (long long)g_GameManager.score + 200000;
+                    if (g_NextBossScore < rebase) g_NextBossScore = rebase;
+                }
+                s_prevBossActive = bossActive;
                 float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
                 float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
                               : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
@@ -2931,6 +2940,8 @@ int main() {
                         // 점수 비례 체력 스케일 (30만=×2 … 상한 ×8 = 210만점)
                         float sc = 1.0f + (float)g_GameManager.score / 300000.0f;
                         if (sc > 8.0f) sc = 8.0f;
+                        // 라운드2: 플레이어 레벨 비례 추가 스케일 — 후반 원펀맨이라도 보스는 위협 유지
+                        sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
                         switch (rand() % 4) {
                         case 0:  startWarn(0, L"SLIME.worm",   bossHp);         break;
@@ -3514,6 +3525,33 @@ int main() {
                 }
             };
 
+            // ── 최근접 적 좌표 (자동발사·자동조준 공용) — 드론/포탑 스캔과 동일 철학 ──
+            //   monsters/rangedMobs/bombers/보스(슬라임·글리치·RR·폴리·스팸)·슬라임분열체 중 최근접.
+            auto nearestEnemy = [&](float fx, float fy, float& tx, float& ty) -> bool {
+                float nd = 1e18f; bool found = false;
+                auto consider = [&](float ex, float ey) {
+                    float ddx = ex - fx, ddy = ey - fy; float ds = ddx*ddx + ddy*ddy;
+                    if (ds < nd) { nd = ds; tx = ex; ty = ey; found = true; }
+                };
+                for (auto m  : g_MonsterManager.monsters)  if (m->alive)  consider(m->worldX, m->worldY);
+                for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX, r->worldY);
+                for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY);
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                    consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY);
+                for (auto* c : g_Slimelings) if (c->alive) consider(c->worldX, c->worldY);
+                if (g_GlitchBoss && g_GlitchBoss->alive) consider(g_GlitchBoss->worldX, g_GlitchBoss->worldY);
+                if (g_RRBoss && g_RRBoss->alive)         consider(g_RRBoss->worldX, g_RRBoss->worldY);
+                if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
+                    consider(g_PolyBoss->worldX, g_PolyBoss->worldY);
+                if (g_SpamBoss && g_SpamBoss->alive)     consider(g_SpamBoss->worldX, g_SpamBoss->worldY);
+                return found;
+            };
+            // 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
+            auto aimTarget = [&](float& tx, float& ty) -> bool {
+                if (lmb) { tx = wmx; ty = wmy; return true; }       // 일점사
+                return nearestEnemy(pCX, pCY, tx, ty);              // 드론식 자동조준
+            };
+
             // ── 스캔 레이저 (증강) — 0.7초마다 조준 방향 관통 빔 (군중제어) ──
             //   meleeSwing 의 데미지/처치보상 루프를 '직선 판정(SegDist)' 버전으로 재사용.
             if (g_Stats.laser) {
@@ -3521,7 +3559,8 @@ int main() {
                 g_LaserTimer += delta;
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
-                    float lang  = atan2f(wmy - pCY, wmx - pCX);
+                    float ltx, lty; if (!aimTarget(ltx, lty)) { ltx = wmx; lty = wmy; }
+                    float lang  = atan2f(lty - pCY, ltx - pCX);
                     float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;  // II: 더 길게
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
                     const float BEAM_HALF = 24.0f;
@@ -3619,9 +3658,11 @@ int main() {
                     //   (예전엔 버튼 떼면 fireTimer 를 즉시 준비 상태로 돌려 광클로
                     //    스윙 속도를 무한히 올릴 수 있었음 — 그 리셋을 제거)
                     if (fireHeld && fireTimer >= effInterval) {
-                        float ang = atan2f(wmy - pCY, wmx - pCX);
-                        meleeSwing(ang);
-                        fireTimer = 0.0f;
+                        float tx, ty;
+                        if (aimTarget(tx, ty)) {   // 자동: 최근접 적 / 클릭: 커서
+                            meleeSwing(atan2f(ty - pCY, tx - pCX));
+                            fireTimer = 0.0f;
+                        }
                     }
                 } else if (g_Stats.bowWeapon) {  // 궁수 — 누른 만큼 차징 후 발사
                     // 자동: 풀차징까지 자동 충전 → 완충되면 자동 발사(차지 사이클 반복).
@@ -3634,7 +3675,8 @@ int main() {
                         if (g_ArcherCharge > 1.0f) g_ArcherCharge = 1.0f;
                     } else if (g_ArcherCharge > 0.001f) {
                         float charge = g_ArcherCharge;
-                        float ang = atan2f(wmy - pCY, wmx - pCX);
+                        float atx, aty; if (!aimTarget(atx, aty)) { atx = wmx; aty = wmy; }
+                        float ang = atan2f(aty - pCY, atx - pCX);
                         // 완충 위력 (기본 4.1× / 강궁 5.1×) + 공격력증강 변환(bowChargeCapBonus)
                         float chMult = 0.5f + charge *
                                        ((g_Stats.powerDraw ? 4.6f : 3.6f) + g_Stats.bowChargeCapBonus);
@@ -3676,14 +3718,18 @@ int main() {
                     }
                 } else {
                     if (fireHeld && fireTimer >= effInterval) {
-                        float tx = wmx, ty = wmy;   // 줌 보정한 월드 조준점
-                        if (g_DrunkActive) {
+                        float tx, ty;
+                        bool haveTarget = aimTarget(tx, ty);   // 클릭=커서 일점사 / 자동=최근접 적
+                        if (g_DrunkActive) {                    // 취함: 조준 무작위 (적 없어도 발사)
                             float a = (float)(rand() % 628) * 0.01f;
                             tx = pCX + cosf(a) * 200.0f;
                             ty = pCY + sinf(a) * 200.0f;
+                            haveTarget = true;
                         }
-                        spawnAimed(tx, ty);
-                        fireTimer = 0.0f;
+                        if (haveTarget) {                       // 자동인데 적 없으면 발사 안 함
+                            spawnAimed(tx, ty);
+                            fireTimer = 0.0f;
+                        }
                     }
                     // 클릭 release 시 타이머 리셋 — 다음 클릭에 즉시 발사 가능 (일반 무기 UX)
                     // 단발 고화력 무기(대포·샷건·저격)는 연타로 연사 우회 방지 → 리셋 스킵
@@ -7060,8 +7106,8 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                     // 원래 위치 (BX=220, BY=60) 복원
                     const float BX = 220.0f;
                     const float BY = 60.0f;
-                    const float BW = std::min(420.0f, sw - BX - 20.0f);
-                    const float BH = 270.0f;
+                    const float BW = std::min(460.0f, sw - BX - 20.0f);
+                    const float BH = 310.0f;
 
                     // 배경 + 등급 색 띠
                     BindMainShader();
@@ -7102,17 +7148,35 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                         while (!s2.empty() && (s2.front()==L' '||s2.front()==L'\t')) s2.erase(0,1);
                         while (!s2.empty() && (s2.back() ==L' '||s2.back() ==L'\t')) s2.pop_back();
                     }
-                    int nd = (int)dlines.size(); if (nd < 1) nd = 1;
-                    // 모든 줄 같은 폰트 크기 — 가장 긴 줄 기준 한 번만 스케일
-                    float dmax = 1.0f;
-                    for (auto& ln : dlines) { float w = g_TextS.Width(ln.c_str(), 1.0f); if (w>dmax) dmax=w; }
-                    float dsc = 0.9f;
-                    if (dmax * dsc > BW - 24.0f) dsc = (BW - 24.0f) / dmax;
-                    if (dsc < 0.6f) dsc = 0.6f;
-                    float dLineH = 26.0f;
+                    // 모든 증강 동일 폰트 크기 — 고정 스케일 + 폭 초과 줄은 공백 단위 워드랩
+                    //   (가변 축소 제거 → 증강마다 폰트 다르던 문제 해결)
+                    const float dsc   = 0.8f;
+                    const float dWmax = BW - 24.0f;
+                    std::vector<std::wstring> wrapped;
+                    for (auto& ln : dlines) {
+                        if (g_TextS.Width(ln.c_str(), dsc) <= dWmax) { wrapped.push_back(ln); continue; }
+                        // 공백 단위로 잘라 박스 폭에 맞춤
+                        std::wstring acc;
+                        std::wstring word;
+                        auto flushWord = [&]() {
+                            if (word.empty()) return;
+                            std::wstring trial = acc.empty() ? word : acc + L" " + word;
+                            if (g_TextS.Width(trial.c_str(), dsc) > dWmax && !acc.empty()) {
+                                wrapped.push_back(acc); acc = word;
+                            } else acc = trial;
+                            word.clear();
+                        };
+                        for (const wchar_t ch : ln) {
+                            if (ch == L' ') flushWord(); else word += ch;
+                        }
+                        flushWord();
+                        if (!acc.empty()) wrapped.push_back(acc);
+                    }
+                    int nd = (int)wrapped.size(); if (nd < 1) nd = 1;
+                    float dLineH  = 24.0f;
                     float dStartY = nameY + nameH + 8.0f;   // 이름 실제 높이 아래에서 시작
-                    for (int li = 0; li < nd; li++) {
-                        const wchar_t* ds = dlines[li].c_str();
+                    for (int li = 0; li < (int)wrapped.size(); li++) {
+                        const wchar_t* ds = wrapped[li].c_str();
                         float dlw = g_TextS.Width(ds, dsc);
                         g_TextS.Draw(ds, BX + (BW - dlw) * 0.5f,
                                      dStartY + dLineH * (float)li, dsc,
