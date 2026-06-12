@@ -298,6 +298,8 @@ float GLITCH_WIN_W = 620.0f;
 float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float SPAM_WIN_W   = 660.0f;
+// 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
+float SPAWNER_WIN_W = 300.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
 float g_RfwW = 500.0f, g_RfwH = 500.0f;
 static constexpr float TURRET_LIFE   = 5.0f;      // 포탑 지속 5초
@@ -706,6 +708,17 @@ static GLuint compileShader(GLenum type, const char* src) {
     GLuint s = glCreateShader(type);
     glShaderSource(s, 1, &src, NULL);
     glCompileShader(s);
+    // 컴파일 에러 체크 — AMD 등 엄격한 드라이버에서 실패 시 원인 파악(검은화면 디버그)
+    GLint ok = 0;
+    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[1024] = {0};
+        glGetShaderInfoLog(s, sizeof(log), NULL, log);
+        std::fprintf(stderr, "[SHADER COMPILE FAIL] %s\n", log);
+#ifdef _WIN32
+        MessageBoxA(NULL, log, "Shader compile failed", MB_OK | MB_ICONERROR);
+#endif
+    }
     return s;
 }
 
@@ -861,6 +874,7 @@ int main() {
     Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
     GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
+    SPAWNER_WIN_W *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
@@ -928,6 +942,17 @@ int main() {
             GL_FRAMEBUFFER_ATTACHMENT_BLUE_SIZE,  &bBits);
         const char* renderer = (const char*)glGetString(GL_RENDERER);
         const char* glVer    = (const char*)glGetString(GL_VERSION);
+        const char* vendor   = (const char*)glGetString(GL_VENDOR);
+        // AMD/ATI 감지 — AMD 드라이버는 GLSL 컴파일이 더 엄격하고 투명 FBO 처리가
+        //   NVIDIA 와 달라, 벤더를 로그로 남겨 검은화면/투명실패 원인 추적에 사용.
+        bool isAMD = false;
+        if (vendor) {
+            std::string vlow = vendor;
+            for (auto& ch : vlow) ch = (char)tolower((unsigned char)ch);
+            isAMD = (vlow.find("amd") != std::string::npos) ||
+                    (vlow.find("ati") != std::string::npos) ||
+                    (vlow.find("advanced micro") != std::string::npos);
+        }
 
         // Windows 투명도 효과 설정 (레지스트리)
         DWORD enableTrans = 1; // 기본값: 켜진 것으로 가정
@@ -947,6 +972,8 @@ int main() {
         int  trans = glfwGetWindowAttrib(window, GLFW_TRANSPARENT_FRAMEBUFFER);
 
         DBG("=== 종합 진단 ===\n");
+        DBG("  [GL] Vendor           : %s%s\n", vendor ? vendor : "NULL",
+            isAMD ? "  (AMD 감지 — 엄격 GLSL/투명 FBO 경로)" : "");
         DBG("  [GL] Renderer         : %s\n", renderer ? renderer : "NULL");
         DBG("  [GL] Version          : %s\n", glVer    ? glVer    : "NULL");
         DBG("  [GL] Framebuffer bits : R=%d G=%d B=%d A=%d\n",
@@ -976,6 +1003,13 @@ int main() {
     GLuint shader = glCreateProgram();
     glAttachShader(shader, vs); glAttachShader(shader, fs);
     glLinkProgram(shader);
+    { GLint lok = 0; glGetProgramiv(shader, GL_LINK_STATUS, &lok);
+      if (!lok) { char log[1024]={0}; glGetProgramInfoLog(shader, sizeof(log), NULL, log);
+                  std::fprintf(stderr, "[SHADER LINK FAIL] %s\n", log);
+#ifdef _WIN32
+                  MessageBoxA(NULL, log, "Shader link failed", MB_OK | MB_ICONERROR);
+#endif
+      } }
     glDeleteShader(vs); glDeleteShader(fs);
 
     GLint projLoc  = glGetUniformLocation(shader, "projection");
@@ -3748,6 +3782,12 @@ int main() {
             drawRect(rwx, rwy, rW, rH,
                      0.08f, 0.08f, 0.10f, 1.0f);
         }
+        // 봇넷 노드(SPAWNER) 개인 창 배경 — 고정된 노드마다 작은 가짜 창 (E21)
+        for (auto m : g_MonsterManager.monsters) {
+            if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+            float w = SPAWNER_WIN_W * m->sizeScale;
+            drawRect(m->worldX - w*0.5f, m->worldY - w*0.5f, w, w, 0.06f, 0.10f, 0.09f, 1.0f);
+        }
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
             float bwx = bs->worldX - Boss::WIN_W * 0.5f;
@@ -3818,6 +3858,12 @@ int main() {
             if (!c->alive) continue;
             float w = Boss::WIN_W * c->sizeScale;
             drawNeonBorder(c->worldX - w*0.5f, c->worldY - w*0.5f, w, w, 0.40f, 1.0f, 0.55f);
+        }
+        // 봇넷 노드(SPAWNER) 창 네온 보더 — 청록 (E21)
+        for (auto m : g_MonsterManager.monsters) {
+            if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+            float w = SPAWNER_WIN_W * m->sizeScale;
+            drawNeonBorder(m->worldX - w*0.5f, m->worldY - w*0.5f, w, w, 0.20f, 0.85f, 0.65f);
         }
 
         // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
@@ -3893,28 +3939,64 @@ int main() {
         }
 
         // (b') 보스 창 안 컨텐츠 — 같은 잡몹/자폭병/총알을 보스 창 영역으로도 노출
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-            auto* bs = g_MonsterManager.boss;
-            float bwx = bs->worldX - Boss::WIN_W * 0.5f;
-            float bwy = bs->worldY - Boss::WIN_H * 0.5f;
-            WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
+        //     모든 보스 종류(슬라임/글리치/리로드/폴리/스팸/슬라임분열체) 공통 처리.
+        //     E22: 이전엔 슬라임 보스(g_MonsterManager.boss)만 노출돼 다른 보스 창에선
+        //          잡몹/탄이 컬링되어 안 보였음 → 보스별 창 영역마다 scissor 패스 추가.
+        auto drawBossWinContent = [&](float bwx, float bwy, float ww, float wh) {
+            WorldScissor(bwx, bwy, ww, wh);
             for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || !inWin(m->worldX, m->worldY, bwx, bwy, Boss::WIN_W, Boss::WIN_H)) continue;
+                if (!m->alive || !inWin(m->worldX, m->worldY, bwx, bwy, ww, wh)) continue;
                 drawMob(m);
             }
             for (auto bm : g_MonsterManager.bombers) {
-                if (!bm->alive || !inWin(bm->worldX, bm->worldY, bwx, bwy, Boss::WIN_W, Boss::WIN_H)) continue;
+                if (!bm->alive || !inWin(bm->worldX, bm->worldY, bwx, bwy, ww, wh)) continue;
                 drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
                              bm->color.r, bm->color.g, bm->color.b, 1.0f);
+                if (bm->arming)
+                    drawCircle(bm->worldX, bm->worldY, bm->blastRadius, 1.0f, 0.2f, 0.2f, 0.10f);
             }
             for (auto& b : g_Bullets) {
-                if (!b.active || !inWin(b.x, b.y, bwx, bwy, Boss::WIN_W, Boss::WIN_H)) continue;
+                if (!b.active || !inWin(b.x, b.y, bwx, bwy, ww, wh)) continue;
                 drawBullet(b);
+            }
+            for (auto& p : g_EnemyParts) {
+                if (!p.active || !inWin(p.x, p.y, bwx, bwy, ww, wh)) continue;
+                float a  = p.life / p.maxLife;
+                float hs = p.size * 0.5f;
+                drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
             }
             for (auto& orb : g_ApproachOrbs) {
                 drawRect(orb.x - 18, orb.y - 18, 36, 36, 0.95f, 0.0f, 0.0f, 0.30f);
                 drawRect(orb.x - 14, orb.y - 14, 28, 28, 0.95f, 0.05f, 0.05f, 1.0f);
             }
+        };
+        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+            auto* bs = g_MonsterManager.boss;
+            drawBossWinContent(bs->worldX - Boss::WIN_W * 0.5f,
+                               bs->worldY - Boss::WIN_H * 0.5f, Boss::WIN_W, Boss::WIN_H);
+        }
+        if (g_GlitchBoss && g_GlitchBoss->alive)
+            drawBossWinContent(g_GlitchBoss->worldX - GLITCH_WIN_W * 0.5f,
+                               g_GlitchBoss->worldY - GLITCH_WIN_W * 0.5f, GLITCH_WIN_W, GLITCH_WIN_W);
+        if (g_RRBoss && g_RRBoss->alive)
+            drawBossWinContent(g_RRBoss->worldX - RR_WIN_W * 0.5f,
+                               g_RRBoss->worldY - RR_WIN_W * 0.5f, RR_WIN_W, RR_WIN_W);
+        if (g_PolyBoss && g_PolyBoss->alive)
+            drawBossWinContent(g_PolyBoss->worldX - POLY_WIN_W * 0.5f,
+                               g_PolyBoss->worldY - POLY_WIN_W * 0.5f, POLY_WIN_W, POLY_WIN_W);
+        if (g_SpamBoss && g_SpamBoss->alive)
+            drawBossWinContent(g_SpamBoss->worldX - SPAM_WIN_W * 0.5f,
+                               g_SpamBoss->worldY - SPAM_WIN_W * 0.5f, SPAM_WIN_W, SPAM_WIN_W);
+        for (auto* c : g_Slimelings) {
+            if (!c->alive) continue;
+            float w = Boss::WIN_W * c->sizeScale;
+            drawBossWinContent(c->worldX - w * 0.5f, c->worldY - w * 0.5f, w, w);
+        }
+        // 봇넷 노드(SPAWNER) 창 내부 컨텐츠 — 노드 본체/소환 알이 자기 창에서 보이도록 (E21)
+        for (auto m : g_MonsterManager.monsters) {
+            if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+            float w = SPAWNER_WIN_W * m->sizeScale;
+            drawBossWinContent(m->worldX - w * 0.5f, m->worldY - w * 0.5f, w, w);
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
