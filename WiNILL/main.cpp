@@ -1123,15 +1123,25 @@ int main() {
             bool inFight = (zs == GameState::RUNNING || zs == GameState::DYING ||
                             zs == GameState::PAUSED  || zs == GameState::AUG_SELECT ||
                             zs == GameState::DEBUFF_SELECT);
-            if (!inFight) g_ViewZoom = g_ViewZoomTarget = 1.0f;
+            if (!inFight) { g_ViewZoom = g_ViewZoomTarget = 1.0f; }
+            else {
+                // 점수 비례 줌아웃 — 전장이 서서히 넓어짐 (상한 1.4배 = zoom 0.714).
+                //   200만점에서 최대치 도달. 폴리모프 페이즈2(0.5)면 그쪽이 우선(min).
+                float t = std::min(1.0f, (float)g_GameManager.score / 2000000.0f);
+                float scoreZoom = 1.0f - 0.286f * t;   // 1.0 → 0.714
+                float polyZoom  = (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->phase2) ? 0.5f : 1.0f;
+                g_ViewZoomTarget = std::min(scoreZoom, polyZoom);
+            }
         }
         g_ViewZoom += (g_ViewZoomTarget - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
 
-        // 폴리모프 페이즈2 = 확장 아레나 → 원거리 몹 등이 확장된 구역까지 배회
-        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->phase2) {
-            g_ArenaExX = (float)screenWidth  * 0.5f;
-            g_ArenaExY = (float)screenHeight * 0.5f;
-        } else { g_ArenaExX = 0.0f; g_ArenaExY = 0.0f; }
+        // 확장 아레나 — 줌아웃된 만큼 보이는 영역이 넓어지므로 엔티티 배회/스폰 영역도 확장
+        //   (점수 줌아웃·폴리모프 줌아웃 공통 처리)
+        {
+            float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
+            g_ArenaExX = (float)screenWidth  * 0.5f * (1.0f / zb - 1.0f);
+            g_ArenaExY = (float)screenHeight * 0.5f * (1.0f / zb - 1.0f);
+        }
 
         // 마우스 상태 (mx,my = 화면 픽셀 / wmx,wmy = 줌 보정한 월드 좌표 = 조준용)
         double mx, my;
@@ -2038,7 +2048,8 @@ int main() {
                     if (!timeStopped)
                     g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
                     // 페이즈2 = 상위 보스: 화면 줌아웃으로 더 넓은 구간에서 싸움 (의도된 기능)
-                    g_ViewZoomTarget = g_PolyBoss->phase2 ? 0.5f : 1.0f;
+                    //   점수 줌아웃과 충돌 않게 더 줌아웃된 쪽(min) 채택. (페이즈1은 점수줌 유지)
+                    g_ViewZoomTarget = std::min(g_ViewZoomTarget, g_PolyBoss->phase2 ? 0.5f : 1.0f);
                     // ── 2페이즈 진입 연출 — 보스 포효 + 다중 충격파 (1회) ──
                     if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
                         g_PolyWasPhase2 = true;
