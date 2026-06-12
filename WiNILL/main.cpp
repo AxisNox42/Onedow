@@ -58,6 +58,10 @@
 // dwmapi.lib 은 WindowFx.cpp 에서 링크
 #endif
 
+extern "C++" {
+    __declspec(dllexport) DWORD NvOptimusEnablement = 0;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 0;
+}
 
 // 투명도 헬퍼는 WindowFx.h/cpp 로 이동
 // (EnableWindowTransparency 와 TransparencyLog 가 동일 기능)
@@ -432,6 +436,7 @@ int   g_MetaStartAugs   = 0;      // 메타 해금: 시작 무료 증강 픽 횟
 float g_WindowSizeCur = 0.0f;     // 현재 애니메이션 창 크기 (0 = 미초기화)
 float g_WinPrevHP     = -1.0f;    // 창 축소용 HP 추적
 float g_HurtVignette  = 0.0f;     // 피격 빨간 비네트 잔여
+float g_HpBarPop      = 0.0f;     // 산나비식 HP 게이지바 — 피격 시 떴다가 페이드(초)
 
 // ── 액티브 스킬 시스템 — 대시(기본) + 슬롯 3개(증강 획득, 꽉 차면 교체) ──
 enum class SkillType { NONE, CLOSE_WINDOW, OVERCLOCK, TIME_STOP };
@@ -1140,7 +1145,7 @@ int main() {
             g_BossTintT = 0.0f;
             ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱 초기화
             ResetSkills();                           // 액티브 스킬/대시 초기화
-            g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; // 창 시야 기믹
+            g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f; // 창 시야 기믹
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             g_ZoomCX = g_ZoomCY = 0.0f;
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
@@ -2609,7 +2614,7 @@ int main() {
             {
                 if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
-                if (lost > 0.5f) { g_HurtVignette = 0.5f; Audio::PlaySfx(Audio::Sfx::Hurt); }   // 피격 비네트 + 피격음
+                if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; Audio::PlaySfx(Audio::Sfx::Hurt); }   // 피격 비네트 + HP바 팝 + 피격음
                 g_WinPrevHP = g_GameManager.playerHP;
                 // 창 크기는 g_Stats.windowSize 로 고정 (HP 와 무관)
                 g_WindowSizeCur = g_Stats.windowSize;
@@ -2618,6 +2623,7 @@ int main() {
                 playerWin.y = pCY - g_WindowSizeCur * 0.5f;
             }
             if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
+            if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
 
             // 시즈탱크: 정지 시 매 1초 stack +1 (최대 5)
             if (g_Stats.siegeTank) {
@@ -4037,6 +4043,26 @@ int main() {
                 drawRect(pCX - core * 0.5f, pCY - core * 0.5f, core, core,
                          1.0f, 1.0f, 1.0f, 1.0f);
 
+                // ── 산나비식 HP 게이지바 — 피격 시 플레이어 위에 떴다 페이드, 피 낮으면 상시 ──
+                if (g_GameManager.currentState == GameState::RUNNING) {
+                    float hf = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
+                    if (hf < 0.0f) hf = 0.0f; if (hf > 1.0f) hf = 1.0f;
+                    bool low = hf < 0.40f;
+                    float vis = low ? 1.0f
+                              : (g_HpBarPop > 1.6f ? (2.2f - g_HpBarPop) / 0.6f   // 빠른 페이드인
+                                                   : g_HpBarPop / 1.6f);          // 느린 페이드아웃
+                    if (vis > 1.0f) vis = 1.0f; if (vis < 0.0f) vis = 0.0f;
+                    if (vis > 0.01f) {
+                        float bw = 66.0f * g_Stats.playerSizeMult, bh = 7.0f;
+                        float bx = pCX - bw * 0.5f, by = pCY - hs - 24.0f;
+                        drawRect(bx - 2, by - 2, bw + 4, bh + 4, 0.0f, 0.0f, 0.0f, 0.78f * vis);
+                        drawRect(bx, by, bw, bh, 0.25f, 0.05f, 0.05f, 0.85f * vis);
+                        float r = hf > 0.5f ? 0.2f : 1.0f;
+                        float g = hf > 0.5f ? 1.0f : hf * 2.0f;
+                        drawRect(bx, by, bw * hf, bh, r, g, 0.15f, 0.95f * vis);
+                    }
+                }
+
                 // ── 위치 강조 표시 (혼잡한 탄막 속에서 플레이어를 쉽게 찾도록) ──
                 //   + 자형 레티클(중심 비움) + 옅은 헤일로. HP 낮을수록 강해지고 붉어짐.
                 if (g_GameManager.currentState == GameState::RUNNING) {
@@ -4652,10 +4678,11 @@ int main() {
                 if (!ch.alive) continue;
                 float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                 float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
-                drawCircle(chx, chy, CHAKRAM_SIZE * 0.6f, 1.0f, 0.85f, 0.2f, 0.25f);
-                float hs = CHAKRAM_SIZE * 0.5f;
-                drawRect(chx - hs, chy - 3, CHAKRAM_SIZE, 6, 1.0f, 0.7f, 0.0f, 1.0f);
-                drawRect(chx - 3, chy - hs, 6, CHAKRAM_SIZE, 1.0f, 0.7f, 0.0f, 1.0f);
+                // 시안 톱날 디스크 — 스파이웨어(노란 십자)와 확실히 구분
+                drawCircle(chx, chy, CHAKRAM_SIZE * 0.62f, 0.3f, 0.9f, 1.0f, 0.28f);   // 글로우
+                drawDiamond(chx, chy, CHAKRAM_SIZE * 1.15f, 0.5f, 1.0f, 1.0f, 0.45f);  // 회전날 힌트
+                drawCircle(chx, chy, CHAKRAM_SIZE * 0.5f, 0.2f, 0.85f, 1.0f, 1.0f);    // 시안 디스크
+                drawCircle(chx, chy, CHAKRAM_SIZE * 0.22f, 0.04f, 0.12f, 0.18f, 1.0f); // 어두운 허브
                 // HP 바
                 float hpFrac = ch.hp / ch.maxHp;
                 if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
@@ -5484,7 +5511,9 @@ static void Scene_MainMenu(const SceneCtx& c) {
                 {
                     const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
                     float subw = g_TextS.Width(SUBT[li2], 1.05f);
-                    g_TextS.Draw(SUBT[li2], (sw - subw) * 0.5f, logoY + 92.0f, 1.05f,
+                    // 로고 실제 높이 아래로 — 겹침 방지
+                    float subY = logoY + g_TextXL.Height(TITLE, 1.05f) + 18.0f;
+                    g_TextS.Draw(SUBT[li2], (sw - subw) * 0.5f, subY, 1.05f,
                                  0.5f, 0.68f, 0.9f, 0.8f);
                 }
 
@@ -6545,34 +6574,34 @@ static void Scene_GameOver(const SceneCtx& c) {
                                  1.0f, 0.55f, 0.45f, 0.92f * ge);
                 }
 
-                // 결과 — 도달 레벨 / 처치 수 / 최종 점수
-                wchar_t lvBuf[64], killBuf[64], scoreBuf[64];
-                swprintf_s(lvBuf,    L"%ls   Lv. %d", T(StrId::REACHED_LEVEL),
-                           g_GameManager.playerLevel);
-                swprintf_s(killBuf,  L"%ls   %lld",   T(StrId::KILL_COUNT),
-                           g_Stats.killCount);
-                swprintf_s(scoreBuf, L"%ls   %lld",   T(StrId::FINAL_SCORE),
-                           g_GameManager.score);
+                // 결과 — 점수 카운트업(띠리릭) + Best(통계 바로 위) + 레벨/처치/코인
+                float cu = gof / 0.75f; if (cu > 1.0f) cu = 1.0f;
+                cu = cu * cu * (3.0f - 2.0f * cu);          // smoothstep → 숫자 롤업 느낌
+                long long curScore = (long long)(g_GameManager.score * cu);
+                long long bestVal  = g_BestScore[(int)g_Difficulty];
+                long long curBest  = g_LastRunRecord ? (long long)(bestVal * cu) : bestVal;  // 신기록이면 같이 롤업
 
-                g_TextL.Draw(scoreBuf, cx(scoreBuf, g_TextL, 1.2f), sh*0.44f, 1.2f,
-                             1.0f, 1.0f, 0.7f, 0.95f * ge);
-                g_TextS.Draw(lvBuf,    cx(lvBuf,    g_TextS, 1.1f), sh*0.52f, 1.1f,
-                             0.85f, 0.95f, 0.85f, 0.95f * ge);
-                g_TextS.Draw(killBuf,  cx(killBuf,  g_TextS, 1.1f), sh*0.57f, 1.1f,
-                             0.85f, 0.95f, 0.85f, 0.95f * ge);
-
-                // 최고 점수 (난이도별) + 신기록 + 획득 코인
-                wchar_t bestBuf[64], coinBuf[64];
-                swprintf_s(bestBuf, L"BEST   %lld", g_BestScore[(int)g_Difficulty]);
-                g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.62f, 1.1f,
+                wchar_t bestBuf[64], scoreBuf[64], lvBuf[64], killBuf[64], coinBuf[64];
+                // BEST — 통계(최종점수) 바로 위
+                swprintf_s(bestBuf, L"BEST   %lld", curBest);
+                g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.405f, 1.1f,
                              1.0f, 0.85f, 0.4f, 0.95f * ge);
+                // 최종 점수 (카운트업, 대)
+                swprintf_s(scoreBuf, L"%ls   %lld", T(StrId::FINAL_SCORE), curScore);
+                g_TextL.Draw(scoreBuf, cx(scoreBuf, g_TextL, 1.3f), sh*0.455f, 1.3f,
+                             1.0f, 1.0f, 0.7f, 0.95f * ge);
+                // 도달 레벨 / 처치 수
+                swprintf_s(lvBuf,   L"%ls   Lv. %d", T(StrId::REACHED_LEVEL), g_GameManager.playerLevel);
+                swprintf_s(killBuf, L"%ls   %lld",   T(StrId::KILL_COUNT),    g_Stats.killCount);
+                g_TextS.Draw(lvBuf,   cx(lvBuf,   g_TextS, 1.05f), sh*0.545f, 1.05f, 0.85f,0.95f,0.85f, 0.95f*ge);
+                g_TextS.Draw(killBuf, cx(killBuf, g_TextS, 1.05f), sh*0.59f,  1.05f, 0.85f,0.95f,0.85f, 0.95f*ge);
+                // 코인
                 swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
-                g_TextS.Draw(coinBuf, cx(coinBuf, g_TextS, 1.0f), sh*0.665f, 1.0f,
-                             1.0f, 0.9f, 0.3f, 0.95f * ge);
+                g_TextS.Draw(coinBuf, cx(coinBuf, g_TextS, 1.0f), sh*0.645f, 1.0f, 1.0f,0.9f,0.3f, 0.95f*ge);
                 if (g_LastRunRecord) {
                     const wchar_t* rec = L"★ NEW RECORD ★";
                     float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
-                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.37f, 1.0f,
+                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.355f, 1.0f,
                                  1.0f, 0.9f, 0.2f, blink * ge);
                 }
 
@@ -6701,9 +6730,9 @@ static void Scene_AugSelect(const SceneCtx& c) {
                         // 픽토그램 (있으면) — 카드 상단 중앙, 흰색
                         GLuint icon = IconFor(def.type);
                         if (icon) {
-                            float isz = 110.0f;
+                            float isz = 144.0f;   // 크게 — 유저는 그림 위주로 인지
                             DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
-                                     baseY + yOff + CARD_H * 0.12f, isz, isz,
+                                     baseY + yOff + CARD_H * 0.10f, isz, isz,
                                      1.0f, 1.0f, 1.0f, 0.97f);
                         }
                     } else {
@@ -6725,7 +6754,7 @@ static void Scene_AugSelect(const SceneCtx& c) {
                     float nw = g_TextL.Width(cardName, nameSc);
                     g_TextL.Draw(cardName,
                                  cardX + (CARD_W - nw) * 0.5f,
-                                 baseY + yOff + CARD_H * 0.40f, nameSc,
+                                 baseY + yOff + CARD_H * 0.54f, nameSc,
                                  1,1,1,0.95f);
 
                     // 키 힌트 (카드 하단)
@@ -6783,19 +6812,20 @@ static void Scene_AugSelect(const SceneCtx& c) {
 
                     int n = (int)lines.size();
                     if (n < 1) n = 1;
-                    float lineH = 32.0f;
+                    // 모든 줄을 같은 폰트 크기로 — 가장 긴 줄 기준 한 번만 스케일 결정(일정한 크기)
+                    float maxw = 1.0f;
+                    for (auto& ln : lines) {
+                        float w = g_TextS.Width(ln.c_str(), 1.0f);
+                        if (w > maxw) maxw = w;
+                    }
+                    float sc = 0.95f;
+                    if (maxw * sc > boxW - 40.0f) sc = (boxW - 40.0f) / maxw;
+                    if (sc < 0.6f) sc = 0.6f;
+                    float lineH = 34.0f * sc;
                     float startY = boxY + 22.0f + (boxH - 22.0f - lineH * n) * 0.5f;
                     for (int li = 0; li < n; li++) {
                         const wchar_t* s = lines[li].c_str();
-                        // 일부러 안 줄임 — 박스가 카드 3장 폭이라 충분
-                        float sc = 1.0f;
                         float lw = g_TextS.Width(s, sc);
-                        if (lw > boxW - 40.0f) {
-                            // 박스 폭도 안 되면 그때만 축소
-                            while (sc > 0.7f && g_TextS.Width(s, sc) > boxW - 40.0f)
-                                sc -= 0.05f;
-                            lw = g_TextS.Width(s, sc);
-                        }
                         g_TextS.Draw(s, boxX + (boxW - lw) * 0.5f,
                                      startY + lineH * (float)li, sc,
                                      1.0f, 1.0f, 1.0f, 0.95f);
@@ -6926,13 +6956,16 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                         while (!s2.empty() && (s2.back() ==L' '||s2.back() ==L'\t')) s2.pop_back();
                     }
                     int nd = (int)dlines.size(); if (nd < 1) nd = 1;
+                    // 모든 줄 같은 폰트 크기 — 가장 긴 줄 기준 한 번만 스케일
+                    float dmax = 1.0f;
+                    for (auto& ln : dlines) { float w = g_TextS.Width(ln.c_str(), 1.0f); if (w>dmax) dmax=w; }
+                    float dsc = 0.9f;
+                    if (dmax * dsc > BW - 24.0f) dsc = (BW - 24.0f) / dmax;
+                    if (dsc < 0.6f) dsc = 0.6f;
                     float dLineH = 26.0f;
                     float dStartY = nameY + nameH + 8.0f;   // 이름 실제 높이 아래에서 시작
                     for (int li = 0; li < nd; li++) {
                         const wchar_t* ds = dlines[li].c_str();
-                        float dsc = 0.9f;
-                        while (dsc > 0.65f && g_TextS.Width(ds, dsc) > BW - 24.0f)
-                            dsc -= 0.05f;
                         float dlw = g_TextS.Width(ds, dsc);
                         g_TextS.Draw(ds, BX + (BW - dlw) * 0.5f,
                                      dStartY + dLineH * (float)li, dsc,
@@ -6941,4 +6974,3 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                     }
                 }
 }
-

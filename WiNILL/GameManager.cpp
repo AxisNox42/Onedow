@@ -197,6 +197,8 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::LASER_2       && !hasOwnedType(AugType::LASER))         continue;
             if (t == AugType::PIERCE_2      && !hasOwnedType(AugType::PIERCE))        continue;
             if (t == AugType::TWIN_2        && !hasOwnedType(AugType::TWIN))          continue;
+            // 고장난 조준선 — 풀에서 제거 (요청)
+            if (t == AugType::BROKEN_SIGHT) continue;
             // 클래스 전용 — 해당 클래스 런에서만 등장
             if ((t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND) && !g_RunMelee) continue;
             if ((t == AugType::POWER_DRAW || t == AugType::MULTISHOT)  && !g_RunBow)   continue;
