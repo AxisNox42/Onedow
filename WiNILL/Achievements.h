@@ -15,10 +15,13 @@ enum JobId {
     JOB_BERSERKER,   // 광전사 — 광전사 + 유리대포
     JOB_BOMBARDIER,  // 폭격수 — 연쇄 폭발
     JOB_VAMPIRE,     // 흡혈귀 — 흡혈탄 + 흡혈마
-    JOB_SWORDSMAN,   // 검객 — 근접 호 스윙 (총 대신 칼)
-    JOB_ARCHER,      // 궁수 — 관통 화살 (총 대신 활)
+    JOB_SWORDSMAN,   // 검객 — 근접 호 스윙 (총 대신 칼)  [DLC 보류 — 선택 불가]
+    JOB_ARCHER,      // 궁수 — 관통 화살 (총 대신 활)     [DLC 보류 — 선택 불가]
     JOB_COUNT
 };
+// 현재 플레이 가능한(직업 선택창에 노출되는) 직업 수.
+//   검객/궁수는 향후 DLC 로 보류 — enum/weaponMode 코드는 그대로 두되 UI 에서만 숨김.
+inline const int JOB_PLAYABLE = JOB_SWORDSMAN;
 
 // ── 업적 ───────────────────────────────────────────
 enum AchId {
@@ -89,16 +92,12 @@ inline const AchDef ACH_DEFS[ACH_COUNT] = {
         200, -1 },
     /* ACH_SCORE_500K */ {
         { L"베테랑", L"Veteran", L"ベテラン" },
-        { L"한 판에 50만 점 달성  ·  검객 해금",
-          L"Reach 500k in one run  ·  unlocks Swordsman",
-          L"1ランで50万点  ·  剣士解放" },
-        600, JOB_SWORDSMAN },
+        { L"한 판에 50만 점 달성", L"Reach 500k in one run", L"1ランで50万点達成" },
+        600, -1 },
     /* ACH_BOSS_10 */ {
         { L"보스 학살자", L"Boss Slayer", L"ボススレイヤー" },
-        { L"보스 누적 10마리 처치  ·  궁수 해금",
-          L"Defeat 10 bosses total  ·  unlocks Archer",
-          L"ボス累計10体撃破  ·  弓兵解放" },
-        600, JOB_ARCHER },
+        { L"보스 누적 10마리 처치", L"Defeat 10 bosses total", L"ボス累計10体撃破" },
+        600, -1 },
 };
 
 struct JobDef {

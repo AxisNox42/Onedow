@@ -2145,9 +2145,14 @@ int main() {
                 if (!timeStopped && g_BotnetBoss && g_BotnetBoss->alive)
                     g_BotnetBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
-                // BUG.proc 업데이트 (지그재그 배회 + 벽 돌진)
-                if (!timeStopped && g_CentiBoss && g_CentiBoss->alive)
+                // BUG.proc 업데이트 (지그재그 배회 + 화면밖 이탈→재진입 돌진)
+                if (!timeStopped && g_CentiBoss && g_CentiBoss->alive) {
                     g_CentiBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    if (g_CentiBoss->shakePulse) {          // 화면 밖으로 나갈 때 약한 진동
+                        g_CentiBoss->shakePulse = false;
+                        g_ShakeTime = 0.35f; g_ShakeMag = 14.0f;
+                    }
+                }
 
                 // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기
                 if (!g_Slimelings.empty()) {
@@ -5250,15 +5255,15 @@ int main() {
                     drawRect(lx - 7.0f, ly - 7.0f, 14.0f, 14.0f, 1.0f, 0.3f, 0.2f, 0.25f + 0.4f * blink);
                 }
             }
-            // 세그먼트 (꼬리→머리 순, 뒤에서 앞으로) — 연두 마디
+            // 세그먼트 (꼬리→머리 순, 뒤에서 앞으로) — 연두 마디 (머리에서 멀수록 작아짐)
             for (int i = CentipedeBoss::NSEG; i >= 1; i--) {
                 glm::vec2 s = cb2->segPos(i);
-                float sz = CentipedeBoss::SEG * (1.0f - 0.04f * (float)i);
+                float sz = CentipedeBoss::segSize(i);
                 drawDiamond(s.x, s.y, sz,        0.35f, 0.7f, 0.2f, 1.0f);
                 drawDiamond(s.x, s.y, sz * 0.5f, 0.6f, 0.95f, 0.4f, 1.0f);
             }
             // 머리 — 큰 버그(빨강 눈) / 돌진 중 더 밝게
-            bool dash = (cb2->state == 2);
+            bool dash = (cb2->state == 2 || cb2->state == 3);
             float hr = dash ? 1.0f : 0.6f;
             drawDiamond(cb2->worldX, cb2->worldY, CentipedeBoss::HEAD,
                         hr, 0.85f, 0.25f, 1.0f);
@@ -6674,7 +6679,7 @@ static void Scene_JobSelect(const SceneCtx& c) {
                 const float BW = 660.0f, BH = 70.0f, BG = 13.0f;
                 float bx = (sw - BW) * 0.5f;
                 float by = sh * 0.185f;
-                for (int j = 0; j < JOB_COUNT; j++) {
+                for (int j = 0; j < JOB_PLAYABLE; j++) {   // 검객/궁수(DLC 보류)는 숨김
                     float y = by + j * (BH + BG);
                     bool unlocked = JobUnlocked(j);
                     bool sel = (g_SelectedJob == j);
