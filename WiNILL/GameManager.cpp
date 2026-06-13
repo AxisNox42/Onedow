@@ -320,12 +320,15 @@ void GameManager::PickRandomAugIndices(int* outArr, int n,
                                        bool allowUnique, bool allowSpecial,
                                        bool allowDebuff) {
     bool used[AUG_TOTAL] = {};
+    // 이번 배치에서 이미 뽑은 SIZE/DISTANCE 고유 카테고리 추적 —
+    //   대혼란이 거대화+축소화를 동시에 주던 버그 fix (상호 배타)
+    bool gotSize = sizeTaken, gotDist = distTaken;
     for (int i = 0; i < n; i++) {
         int idx = 0;
         for (int attempt = 0; attempt < 80; attempt++) {
             idx = RollOneAug(takenOnce,
-                             allowUnique ? sizeTaken : true,
-                             allowUnique ? distTaken : true,
+                             allowUnique ? gotSize : true,
+                             allowUnique ? gotDist : true,
                              allowSpecial, playerLevel,
                              allowDebuff);
             // RANDOM_AUG 자기 자신 제외
@@ -334,6 +337,10 @@ void GameManager::PickRandomAugIndices(int* outArr, int n,
         }
         used[idx] = true;
         outArr[i] = idx;
+        if (allowUnique) {
+            if (ALL_AUGS[idx].unique == AugUnique::SIZE)     gotSize = true;
+            if (ALL_AUGS[idx].unique == AugUnique::DISTANCE) gotDist = true;
+        }
     }
 }
 

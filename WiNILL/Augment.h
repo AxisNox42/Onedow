@@ -496,7 +496,7 @@ static const AugDef ALL_AUGS[] = {
         L"[Combo] +1 chakram · +1 drone · fire rate +10%",
         L"[組合] チャクラム+1・ドローン+1・連射+10%" } },
     { AugType::CB_OVERLORD,    AugRarity::COMBO,    AugUnique::NONE, "CB_OVL",
-      { L"과부하 군주", L"Overlord", L"過負荷の王" },
+      { L"오버클럭", L"Overclock", L"オーバークロック" },
       { L"[조합] 공격력 +35 (가산) · 공격력 ×1.12",
         L"[Combo] Attack +35 (flat) · attack ×1.12",
         L"[組合] 攻撃+35(加算)・攻撃×1.12" } },
@@ -518,14 +518,13 @@ struct ComboDef {
 inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_EXECUTIONER, { AugType::CRIT,        AugType::BERSERK }, 2 },
     { AugType::CB_BLOODLORD,   { AugType::LIFESTEAL,   AugType::VAMPIRE }, 2 },
-    { AugType::CB_PIERCE_TWIN, { AugType::TWIN,        AugType::PIERCE  }, 2 },
-    { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN_3, AugType::DRONE }, 2 },
-    { AugType::CB_RAILGUN,      { AugType::SNIPER,       AugType::PIERCE     }, 2 },
-    { AugType::CB_GLASS_REAPER, { AugType::GLASS_CANNON, AugType::LIFESTEAL  }, 2 },
-    { AugType::CB_WARLORD,      { AugType::BERSERK,      AugType::DEATH_BLAST }, 2 },
-    { AugType::CB_TEMPEST,      { AugType::CHAKRAM,      AugType::DRONE       }, 2 },
-    { AugType::CB_OVERLORD,     { AugType::OVERDRIVE,    AugType::CORE_OVERLOAD }, 2 },
-    { AugType::CB_HELLFIRE,     { AugType::DEATH_BLAST,  AugType::BULLET_RAIN }, 2 },
+    // 티어 증강이 재료면 최대 티어에서만 조합 성립 (요청)
+    { AugType::CB_PIERCE_TWIN, { AugType::TWIN_2,        AugType::PIERCE_2   }, 2 },
+    { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN_3, AugType::DRONE_2    }, 2 },
+    { AugType::CB_RAILGUN,      { AugType::SNIPER,        AugType::PIERCE_2   }, 2 },
+    { AugType::CB_WARLORD,      { AugType::BERSERK,       AugType::DEATH_BLAST }, 2 },
+    { AugType::CB_TEMPEST,      { AugType::CHAKRAM_3,     AugType::DRONE_2    }, 2 },
+    { AugType::CB_OVERLORD,     { AugType::POWER_SURGE,   AugType::CORE_OVERLOAD }, 2 },  // 오버클럭
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 
@@ -549,6 +548,8 @@ inline bool AugRemoved(AugType t) {
     case AugType::D_MOB_PACK:
     case AugType::D_DRUNK:
     case AugType::SOUL_HARVEST:
+    case AugType::CB_GLASS_REAPER:   // 유리 사신 삭제
+    case AugType::CB_HELLFIRE:       // 지옥불 삭제
         return true;
     default:
         return false;

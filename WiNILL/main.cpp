@@ -5977,7 +5977,7 @@ int main() {
                 default: break;
                 }
                 if (st == GameState::PAUSED || st == GameState::AUG_SELECT ||
-                    st == GameState::DEBUFF_SELECT)
+                    st == GameState::DEBUFF_SELECT || st == GameState::GAMEOVER)
                     Scene_OwnedAugPanel(ctx);
             }
 

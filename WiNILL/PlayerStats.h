@@ -55,7 +55,7 @@ struct PlayerStats {
     // 신규 (에픽/전설)
     bool  mk2          = false;  // 사망 시 1회 부활
     bool  mk2Used      = false;
-    bool  minigun      = false;  // 연사 ×2, 데미지 -30%, pierce 20%
+    bool  minigun      = false;  // 연사 ×2, 데미지 -30% (관통 없음 — 제거됨)
     bool  hackBomber   = false;  // 자폭병 처치 20% 폭발
     bool  hackRanged   = false;  // 원거리 처치 20% 유도탄 5
     bool  shotgun      = false;  // 5발 산탄 / 사거리 700
@@ -175,11 +175,11 @@ struct PlayerStats {
         case AugType::LIGHT_AMMO:
             fireInterval     /= 1.10f;   // 연사 +10%
             bulletSpeed      *= 1.30f;
-            damageMultiplier *= 0.80f;   // 공격력 -20% (롤백: -10% → -20%)
+            damageMultiplier *= 0.75f;   // 공격력 -25% (너프: -20% → -25%)
             break;
         case AugType::LIGHT_STEP:
             lightStep      = true;
-            moveSpeedMult *= 1.50f;
+            moveSpeedMult *= 1.30f;      // 이동속도 +30% (너프: +50% → +30%)
             break;
         case AugType::GUN_RUNNER:
             gunRunner = true;

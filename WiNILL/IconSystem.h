@@ -372,8 +372,12 @@ inline GLuint MakeRocketSprite(unsigned char* d, int w, int h) {
     for (int i = 0; i < w * cropH; i++) {
         unsigned char* p = d + i * 4;
         int lum = (p[0]*299 + p[1]*587 + p[2]*114) / 1000;    // 0=검정 255=흰
+        // 알파 = min(기존 알파, 255-휘도). 흰 배경/투명 배경 둘 다 안전하게 제거:
+        //   흰 불투명배경(a=255,lum255)→0, 검정로켓(a=255,lum0)→255,
+        //   투명배경(a=0)→0 (기존알파 0 우선 → 검정-투명 배경이 불투명 사각형 되던 버그 fix)
+        int na = 255 - lum; if ((int)p[3] < na) na = p[3];
         p[0] = 255; p[1] = 255; p[2] = 255;
-        p[3] = (unsigned char)(255 - lum);                    // 검정→불투명, 흰→투명
+        p[3] = (unsigned char)na;
     }
     return IconTexFromRGBA(d, w, cropH);
 }
