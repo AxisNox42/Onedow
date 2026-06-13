@@ -30,7 +30,7 @@ public:
     RRState  state  = RRState::ACTIVE;
     RRWeapon weapon = RRWeapon::SHOTGUN;
 
-    float moveSpeed = 210.0f;   // 버프 2차(B11): 175 → 210 (기본 이속↑)
+    float moveSpeed = 240.0f;   // 버프 3차: 210 → 240 (더 공격적 추격)
     int   ammo = 4;
 
     // ── AI 타이머 ──
@@ -52,19 +52,19 @@ public:
     static constexpr float BODY = 42.0f;
 
     // 무기별 상수 (전체 버프: 더 공격적·아프게)
-    static constexpr float SG_RANGE    = 360.0f;
-    static constexpr float SG_INTERVAL = 0.34f;   // 버프: 0.42
-    static constexpr int   SG_AMMO     = 4;       // 버프: 3
+    static constexpr float SG_RANGE    = 430.0f;  // 버프 3차: 360 (더 빨리 교전)
+    static constexpr float SG_INTERVAL = 0.30f;   // 버프 3차: 0.34
+    static constexpr int   SG_AMMO     = 5;       // 버프 3차: 4 (탄창 ↑ → 산탄 지속)
     static constexpr int   SG_PELLETS  = 7;
     static constexpr float SG_SPREAD   = 0.62f;
     static constexpr float SG_BSPEED   = 640.0f;
     static constexpr float SG_DMG      = 9.0f;    // 펠릿당
 
     static constexpr float SN_KITE_RANGE = 560.0f;  // 이보다 가까우면 도망
-    static constexpr float SN_AIM_DELAY  = 0.65f;   // 버프: 0.9
-    static constexpr float SN_FREEZE     = 0.7f;    // 버프: 1.0
-    static constexpr float SN_BSPEED     = 1600.0f; // 고속 저격탄
-    static constexpr float SN_DMG        = 24.0f;   // 저격 — 한 방 큼
+    static constexpr float SN_AIM_DELAY  = 0.55f;   // 버프 3차: 0.65
+    static constexpr float SN_FREEZE     = 0.60f;   // 버프 3차: 0.7 (조준→발사 빠름)
+    static constexpr float SN_BSPEED     = 1750.0f; // 고속 저격탄 (버프 3차)
+    static constexpr float SN_DMG        = 27.0f;   // 저격 — 한 방 큼 (버프 3차)
 
     static constexpr float MG_WARMUP   = 2.0f;
     static constexpr int   MG_AMMO     = 38;      // 버프: 30
@@ -72,18 +72,18 @@ public:
     static constexpr float MG_BSPEED   = 580.0f;
     static constexpr float MG_DMG      = 7.0f;
 
-    static constexpr float RELOAD_TIME = 0.78f;   // 버프 2차(B11): 1.05 → 0.78 (다운타임 더 ↓)
+    static constexpr float RELOAD_TIME = 0.70f;   // 버프 3차: 0.78 (다운타임 더 ↓)
     static constexpr float SPRINT_MULT = 3.5f;
     // 장전 질주 중 견제 사격 — 장전 타임이 더 이상 무료 딜 윈도우가 아니게 (B11)
     float sprintFireTimer = 0.0f;
-    static constexpr float SPRINT_FIRE_INT = 0.30f;   // 견제탄 주기
+    static constexpr float SPRINT_FIRE_INT = 0.22f;   // 견제탄 주기 (버프 3차: 0.30)
     static constexpr float SPRINT_BSPEED   = 520.0f;
 
     // 페이즈2 (HP 50% 이하) — 오버클럭(장전 가속) + 주기적 스팸클릭 방사 난사
     bool  phase2    = false;
     float spamTimer = 0.0f;
-    static constexpr float SPAM_INT   = 1.8f;   // 스팸클릭 버스트 주기
-    static constexpr int   SPAM_N     = 9;      // 방사 탄 수
+    static constexpr float SPAM_INT   = 1.25f;  // 스팸클릭 버스트 주기 (버프 3차: 1.8 → 더 자주)
+    static constexpr int   SPAM_N     = 12;     // 방사 탄 수 (버프 3차: 9)
     static constexpr float SPAM_BSPEED= 360.0f;
 
     ReloadRunnerBoss(int sw, int sh, float hpInit)
@@ -139,7 +139,7 @@ public:
         float nx = dx / dist, ny = dy / dist;
 
         // 본체 접촉 약한 데미지
-        if (dist < BODY) playerHP -= 12.0f * dt;
+        if (dist < BODY) playerHP -= 16.0f * dt;   // 버프 3차: 12 → 16
 
         // 페이즈2 — 무기 상태와 무관하게 주기적 "스팸클릭" 방사 난사 (신규 패턴)
         if (phase2) {
@@ -151,6 +151,12 @@ public:
                     float a = (off + (float)i / (float)SPAM_N) * 6.2831853f;
                     fireDir(bullets, cosf(a), sinf(a), SPAM_BSPEED,
                             glm::vec3(1.0f, 0.75f, 0.2f), 8.0f);
+                }
+                // 방사 + 플레이어 직격 3점사 — 제자리 캠핑 응징 (버프 3차)
+                for (int i = -1; i <= 1; i++) {
+                    float a = atan2f(ny, nx) + (float)i * 0.12f;
+                    fireDir(bullets, cosf(a), sinf(a), SPAM_BSPEED * 1.7f,
+                            glm::vec3(1.0f, 0.45f, 0.15f), 9.0f);
                 }
             }
         }
@@ -166,14 +172,14 @@ public:
             if (sprintFireTimer >= SPRINT_FIRE_INT) {
                 sprintFireTimer = 0.0f;
                 float base = atan2f(ny, nx);
-                for (int i = -1; i <= 1; i++) {
-                    float a = base + (float)i * 0.20f;
+                for (int i = -2; i <= 2; i++) {        // 버프 3차: 3발 → 5발 부채꼴
+                    float a = base + (float)i * 0.18f;
                     fireDir(bullets, cosf(a), sinf(a), SPRINT_BSPEED,
                             glm::vec3(1.0f, 0.4f, 0.3f), 7.0f);
                 }
             }
             reloadTimer += dt;
-            if (reloadTimer >= (phase2 ? RELOAD_TIME * 0.5f : RELOAD_TIME))  // 페이즈2: 장전 가속
+            if (reloadTimer >= (phase2 ? RELOAD_TIME * 0.45f : RELOAD_TIME))  // 페이즈2: 장전 가속
                 equip((RRWeapon)(rand() % 3));   // 무작위 교체
             return;
         }
