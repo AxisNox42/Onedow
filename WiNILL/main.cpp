@@ -2993,6 +2993,7 @@ int main() {
             }
             g_ComboPulse -= delta * 4.0f;
             if (g_ComboPulse < 0.0f) g_ComboPulse = 0.0f;
+            if (g_ComboMilestone > 0.0f) g_ComboMilestone -= delta;
             if (g_P2ToastTimer > 0.0f) g_P2ToastTimer -= delta;   // 페이즈2 토스트
         }
         if (g_FlashIntensity > 0.0f) {
@@ -6027,12 +6028,16 @@ int main() {
                 }
                 // 콤보 카운터 (5콤보 이상부터, 색이 콤보에 따라 강해짐) — 설정 토글
                 if (g_ShowCombo && st == GameState::RUNNING && g_Combo >= 5) {
+                    bool  ms      = (g_ComboMilestone > 0.0f);   // 마일스톤 강조 중
+                    float msBoost = ms ? (g_ComboMilestone / 0.7f) : 0.0f;  // 1→0
                     wchar_t cb[32]; swprintf_s(cb, L"%d COMBO", g_Combo);
-                    float sc = (1.05f + (g_Combo > 30 ? 0.3f : 0.0f)) * (1.0f + g_ComboPulse * 0.4f);
+                    float sc = (1.05f + (g_Combo > 30 ? 0.3f : 0.0f))
+                             * (1.0f + g_ComboPulse * 0.4f + msBoost * 0.55f);
                     float cr = 1.0f, cg = 1.0f, cbl = 1.0f;
                     if      (g_Combo >= 50) { cg = 0.25f; cbl = 0.2f; }
                     else if (g_Combo >= 25) { cg = 0.55f; cbl = 0.15f; }
                     else if (g_Combo >= 12) { cg = 0.9f;  cbl = 0.3f; }
+                    if (ms) { cr = 1.0f; cg = 0.85f; cbl = 0.30f; }   // 마일스톤 = 골드 펄스
                     float w = g_TextS.Width(cb, sc);
                     g_TextS.Draw(cb, (sw - w) * 0.5f, sh * 0.115f, sc, cr, cg, cbl, 0.95f);
                 }

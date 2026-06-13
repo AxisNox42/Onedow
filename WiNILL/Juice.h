@@ -66,18 +66,6 @@ inline void SpawnSparks(float x, float y, int n,
     }
 }
 
-// ── 콤보 / 킬스트릭 ──
-inline int   g_Combo      = 0;
-inline float g_ComboTimer = 0.0f;     // 남은 유지 시간
-inline float g_ComboPulse = 0.0f;     // 증가 시 팝 애니메이션 (0..1)
-inline constexpr float COMBO_WINDOW = 3.0f;
-inline void AddKillCombo() {
-    ++g_Combo;
-    g_ComboTimer = COMBO_WINDOW;
-    g_ComboPulse = 1.0f;
-    Audio::PlaySfx(Audio::Sfx::Kill);   // 적 처치음
-}
-
 // ── 히트스톱 (큰 이벤트 때 잠깐 정지) ──
 inline float g_HitStopTimer = 0.0f;
 inline void TriggerHitStop(float t) {
@@ -92,12 +80,36 @@ inline void TriggerFlash(float r, float g, float b, float intensity) {
     if (intensity > g_FlashIntensity) g_FlashIntensity = intensity;
 }
 
+// ── 콤보 / 킬스트릭 ──
+inline int   g_Combo      = 0;
+inline float g_ComboTimer = 0.0f;     // 남은 유지 시간
+inline float g_ComboPulse = 0.0f;     // 증가 시 팝 애니메이션 (0..1)
+inline float g_ComboMilestone = 0.0f; // 마일스톤 달성 강조 연출 잔여(초)
+inline constexpr float COMBO_WINDOW = 3.0f;
+inline bool ComboIsMilestone(int c) {
+    return c == 10 || c == 25 || c == 50 || c == 100 ||
+           (c > 100 && c % 50 == 0);
+}
+inline void AddKillCombo() {
+    ++g_Combo;
+    g_ComboTimer = COMBO_WINDOW;
+    g_ComboPulse = 1.0f;
+    Audio::PlaySfx(Audio::Sfx::Kill);   // 적 처치음
+    // 콤보 마일스톤(10/25/50/100/…) — 번쩍 + 강조 연출 + 칩 사운드
+    if (ComboIsMilestone(g_Combo)) {
+        g_ComboMilestone = 0.7f;
+        TriggerFlash(1.0f, 0.82f, 0.25f, 0.28f);   // 옅은 골드 화이트
+        Audio::PlaySfx(Audio::Sfx::Phase2);        // 마일스톤 칩(페이즈2 사운드 재사용)
+    }
+}
+
 // 새 게임/리셋 시 호출
 inline void ResetJuice() {
     g_DmgNumbers.clear();
     g_Sparks.clear();
     g_Trail.clear();
     g_Combo = 0; g_ComboTimer = 0.0f; g_ComboPulse = 0.0f;
+    g_ComboMilestone = 0.0f;
     g_HitStopTimer = 0.0f;
     g_FlashIntensity = 0.0f;
 }
