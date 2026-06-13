@@ -3645,6 +3645,9 @@ int main() {
             // 탄환 세례: 쿨다운(20/15/7.5)마다 유도탄 20발 (데미지 50%)
             if (g_Stats.bulletRain) {
                 g_BulletRainTimer += delta;
+                // 무한 세례(신화) — 처치마다 쿨다운 진행 가속(0.4s/처치). 미보유 시 처치 카운트만 비움.
+                if (g_Stats.rainKillReduce) g_BulletRainTimer += g_RainKillAccum * 0.4f;
+                g_RainKillAccum = 0.0f;
                 if (g_BulletRainTimer >= g_Stats.bulletRainCooldown) {
                     g_BulletRainTimer = 0.0f;
                     const int N = 20;

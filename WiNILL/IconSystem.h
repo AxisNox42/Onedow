@@ -289,7 +289,8 @@ inline GLuint IconFor(AugType t) {
     if (idx >= 0 && idx < 96 && g_IconTex[idx]) return g_IconTex[idx];
     switch (t) {  // 티어 II/III → 기본 티어 그림 재사용
     case AugType::BULLET_RAIN_2:
-    case AugType::BULLET_RAIN_3: return g_IconTex[(int)AugType::BULLET_RAIN];
+    case AugType::BULLET_RAIN_3:
+    case AugType::BULLET_RAIN_ETERNAL: return g_IconTex[(int)AugType::BULLET_RAIN];
     case AugType::CHAKRAM_2:
     case AugType::CHAKRAM_3:     return g_IconTex[(int)AugType::CHAKRAM];
     case AugType::DRONE_2:       return g_IconTex[(int)AugType::DRONE];

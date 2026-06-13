@@ -62,10 +62,12 @@ enum class AugType {
     CB_WARLORD,      // 광전사 + 연쇄폭발 → 전쟁군주
     CB_TEMPEST,      // 차크람 + 드론 → 난기류 (공전 오케스트라)
     CB_OVERLORD,     // 오버드라이브 + 코어과부하 → 과부하 군주
-    CB_HELLFIRE      // 연쇄폭발 + 탄환세례 → 지옥불
+    CB_HELLFIRE,     // 연쇄폭발 + 탄환세례 → 지옥불
+    // ── 신화(MYTHIC) — 전설보다 높은 등급. 티어 자체가 고유 메커니즘으로 바뀜 ──
+    BULLET_RAIN_ETERNAL  // 무한 세례 — 쿨다운↓ + 처치마다 쿨다운 감소(스노우볼)
 };
 
-enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO };
+enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
 
 // 고유 카테고리 — 같은 카테고리 내에서 1개만 선택 가능
 enum class AugUnique { NONE, SIZE, DISTANCE };
@@ -505,9 +507,15 @@ static const AugDef ALL_AUGS[] = {
       { L"[조합] 연쇄 폭발 반경 ×1.6 · 탄환 세례 쿨다운 5초",
         L"[Combo] Death blast radius ×1.6 · Bullet Rain CD 5s",
         L"[組合] 連鎖爆発範囲×1.6・弾幕の雨CD5秒" } },
+    // ── 신화(MYTHIC) ── 탄환 세례 III 선행 (티어가 고유 메커니즘으로 진화)
+    { AugType::BULLET_RAIN_ETERNAL, AugRarity::MYTHIC, AugUnique::NONE, "RAIN_ETERNAL",
+      { L"무한 세례", L"Endless Rain", L"無限の雨" },
+      { L"쿨다운 8초로 단축 · 적 처치마다 쿨다운 0.4초 감소 (몰아칠수록 더 자주)",
+        L"Cooldown to 8s · each kill cuts cooldown by 0.4s (snowball)",
+        L"クールダウン8秒 · 撃破毎にCD0.4秒短縮 (連鎖で頻発)" } },
 };
 
-static constexpr int AUG_TOTAL = 88;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3, +조합6
+static constexpr int AUG_TOTAL = 89;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3, +조합6, +신화 무한세례
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -594,6 +602,7 @@ inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
     case AugRarity::DEBUFF:    cr = 0.55f; cg = 0.10f; cb = 0.10f; break; // 어두운 빨강
     case AugRarity::SPECIAL:   cr = 0.85f; cg = 0.10f; cb = 0.55f; break; // 마젠타
     case AugRarity::COMBO:     cr = 0.10f; cg = 0.85f; cb = 0.80f; break; // 청록(시안)
+    case AugRarity::MYTHIC:    cr = 1.00f; cg = 0.25f; cb = 0.35f; break; // 신화(진홍)
     }
 }
 
@@ -608,6 +617,7 @@ inline const wchar_t* GetRarityKR(AugRarity r) {
     case AugRarity::DEBUFF:    { static const wchar_t* s[3]={L"디버프",L"Debuff",L"デバフ"};      return s[li]; }
     case AugRarity::SPECIAL:   { static const wchar_t* s[3]={L"특수",L"Special",L"スペシャル"};   return s[li]; }
     case AugRarity::COMBO:     { static const wchar_t* s[3]={L"조합",L"Combo",L"組合"};           return s[li]; }
+    case AugRarity::MYTHIC:    { static const wchar_t* s[3]={L"신화",L"Mythic",L"神話"};         return s[li]; }
     }
     return L"?";
 }

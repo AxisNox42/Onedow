@@ -86,6 +86,7 @@ struct PlayerStats {
     int   purgeNova    = 0;       // 백신 스캔 — 주기적 범위 펄스 (중첩 시 강화)
     bool  bulletRain   = false;
     float bulletRainCooldown = 15.0f; // 15 → 10 (II) → 5 (III)
+    bool  rainKillReduce = false;     // 무한 세례(신화) — 처치마다 쿨다운 감소
     int   chakramCount = 0;       // 1, 2, 3 — CHAKRAM / II / III
     bool  cannon       = false;
     bool  turretMode   = false;  // CANNON + DRONE_2 조합: 포탑 배치
@@ -175,7 +176,7 @@ struct PlayerStats {
         case AugType::LIGHT_AMMO:
             fireInterval     /= 1.10f;   // 연사 +10%
             bulletSpeed      *= 1.30f;
-            damageMultiplier *= 0.75f;   // 공격력 -25% (너프: -20% → -25%)
+            damageMultiplier *= 0.80f;   // 공격력 -20%
             break;
         case AugType::LIGHT_STEP:
             lightStep      = true;
@@ -269,7 +270,7 @@ struct PlayerStats {
 
         // ── 핵앤슬래쉬 (희귀) ──
         case AugType::CRIT:
-            critChance = std::min(75, critChance + 20);   // 20%/스택, 최대 75% (너프: 25%/100%)
+            critChance = std::min(75, critChance + 15);   // 15%/스택, 최대 75% (너프: 20%→15%)
             critMult   = 2.0f;                            // 배율 너프: 2.5 → 2.0
             break;
         case AugType::LIFESTEAL:
@@ -329,6 +330,11 @@ struct PlayerStats {
         case AugType::CB_OVERLORD:      // 오버드라이브 + 코어과부하 → 과부하 군주
             flatDamageBonus  += 35.0f;
             damageMultiplier *= 1.12f;
+            break;
+        case AugType::BULLET_RAIN_ETERNAL:   // 신화 — 무한 세례
+            bulletRain         = true;
+            bulletRainCooldown = 8.0f;
+            rainKillReduce     = true;
             break;
         case AugType::CB_HELLFIRE:      // 연쇄폭발 + 탄환세례 → 지옥불
             deathBlast        = true;

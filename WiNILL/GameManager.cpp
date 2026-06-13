@@ -144,6 +144,7 @@ static int RarityWeight(int rarity, int level) {
     case AugRarity::LEGENDARY: return level < 8 ? 0 : std::min(5,  level - 7);        // L8=1 … L12+=5
     case AugRarity::DEBUFF:    return 6;                                              // 샌드박스(allowDebuff)
     case AugRarity::SPECIAL:   return level < 5 ? 0 : 2;                              // 카오스/판도라도 초반 차단
+    case AugRarity::MYTHIC:    return level < 12 ? 0 : 3;                             // 신화 — 후반(L12+)만, 선행조건도 필요
     default:                   return 0;
     }
 }
@@ -200,6 +201,8 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::LASER_2       && !hasOwnedType(AugType::LASER))         continue;
             if (t == AugType::PIERCE_2      && !hasOwnedType(AugType::PIERCE))        continue;
             if (t == AugType::TWIN_2        && !hasOwnedType(AugType::TWIN))          continue;
+            // 신화 무한세례 — 탄환세례 III 선행 (티어 진화)
+            if (t == AugType::BULLET_RAIN_ETERNAL && !hasOwnedType(AugType::BULLET_RAIN_3)) continue;
             // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/병렬처리/취함/영혼수확/클래스)
             if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
