@@ -3155,9 +3155,13 @@ int main() {
             if (hpIntensity > 16.0f) hpIntensity = 16.0f;
             float rampHp    = 1.0f + hpIntensity * 0.55f; // 몹 체력 스케일 ↑ (초반 강화 보정용)
             // 특수 잡몹(돌진/회피/거대) 출현 확률 — 점수 비례 (초반 0 → 약 13.5만점에 45% 상한)
-            int   varietyPct = (int)std::min(45.0f, (float)g_GameManager.score / 3000.0f);
+            //   D_MOB_FRENZY 디버프 보유 시 배율 ↑ (상한도 비례 확대)
+            int   varietyPct = (int)std::min(45.0f * g_Stats.varietyChanceMult,
+                                   (float)g_GameManager.score / 3000.0f * g_Stats.varietyChanceMult);
             // 엘리트 변종 확률 — 점수 비례 (초반 0 → 약 14만점에 12% 상한)
-            int   elitePct   = (int)std::min(12.0f, (float)g_GameManager.score / 12000.0f);
+            //   D_MOB_ELITE 디버프 보유 시 배율 ↑
+            int   elitePct   = (int)std::min(40.0f,
+                                   (float)g_GameManager.score / 12000.0f * g_Stats.eliteChanceMult);
 
             // 스폰 영역 — 2페이즈 줌아웃 시 확장된(보이는) 영역 모서리에서 스폰.
             //   player 이동 클램프와 동일한 [화면/줌] 범위 사용 → 일관됨
@@ -3176,30 +3180,35 @@ int main() {
             float spawnInterval = 0.3f * g_Stats.mobSpawnMult / (p2mult * rampSpawn);
             if (bossNow) spawnInterval *= 2.5f;   // 보스전: 트래시 스폰 대폭 감소
             if (spawnTimer > spawnInterval) {
-                size_t mbefore = g_MonsterManager.monsters.size();
                 // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
                 int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
                 if (effCap > 180) effCap = 180;
-                g_MonsterManager.SpawnMob(screenWidth, screenHeight,
-                                          effCap,
-                                          g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH,
-                                          varietyPct, elitePct);
-                // 디버프 보유 시 일부 몹을 분열체/점멸체로 (특수 잡몹 안 된 경우만 — 중복 변환 방지)
-                if (g_MonsterManager.monsters.size() > mbefore) {
-                    Monster* nm = g_MonsterManager.monsters.back();
-                    if (nm->kind == MobKind::NORMAL) {
-                        if (g_Stats.splitterMobs && (rand() % 100) < 25)
-                            nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
-                        else if (g_Stats.blinkerMobs && (rand() % 100) < 25)
-                            nm->MakeKind(MobKind::BLINKER);
-                        else if (g_Stats.orbiterMobs && (rand() % 100) < 22)
-                            nm->MakeKind(MobKind::ORBITER);
-                        else if (g_Stats.spawnerMobs && (rand() % 100) < 14)
-                            nm->MakeKind(MobKind::SPAWNER);
-                        else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
-                            nm->MakeKind(MobKind::SHIELDED);
+                // 한 마리 스폰 + 디버프 변환 (D_MOB_PACK 시 군집으로 여러 번)
+                auto spawnOne = [&]() {
+                    size_t mbefore = g_MonsterManager.monsters.size();
+                    g_MonsterManager.SpawnMob(screenWidth, screenHeight,
+                                              effCap,
+                                              g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH,
+                                              varietyPct, elitePct);
+                    // 디버프 보유 시 일부 몹을 분열체/점멸체로 (특수 잡몹 안 된 경우만)
+                    if (g_MonsterManager.monsters.size() > mbefore) {
+                        Monster* nm = g_MonsterManager.monsters.back();
+                        if (nm->kind == MobKind::NORMAL) {
+                            if (g_Stats.splitterMobs && (rand() % 100) < 25)
+                                nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
+                            else if (g_Stats.blinkerMobs && (rand() % 100) < 25)
+                                nm->MakeKind(MobKind::BLINKER);
+                            else if (g_Stats.orbiterMobs && (rand() % 100) < 22)
+                                nm->MakeKind(MobKind::ORBITER);
+                            else if (g_Stats.spawnerMobs && (rand() % 100) < 14)
+                                nm->MakeKind(MobKind::SPAWNER);
+                            else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
+                                nm->MakeKind(MobKind::SHIELDED);
+                        }
                     }
-                }
+                };
+                int packN = 1 + g_Stats.mobPackBonus;       // D_MOB_PACK: 군집 스폰
+                for (int p = 0; p < packN; p++) spawnOne();
                 spawnTimer = 0.0f;
             }
 

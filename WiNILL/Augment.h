@@ -51,7 +51,11 @@ enum class AugType {
     CB_PIERCE_TWIN,   // 더블 + 관통
     CB_STORMCALLER,   // 탄환세례 + 드론
     // ── deprecated (ALL_AUGS 에서 제외, 코드는 남음) ──
-    SIEGE_TANK, D_RMOB_DMG, XP_UP
+    SIEGE_TANK, D_RMOB_DMG, XP_UP,
+    // ── 프로세스류(잡몹) 전용 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
+    D_MOB_PACK,    // 군집 스폰 (한 번에 여러 마리)
+    D_MOB_ELITE,   // 엘리트 변종 출현 확률 ↑
+    D_MOB_FRENZY   // 특수 잡몹(돌진/회피/거대) 출현 확률 ↑
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO };
@@ -416,6 +420,22 @@ static const AugDef ALL_AUGS[] = {
     { AugType::D_WEAKEN,      AugRarity::DEBUFF,    AugUnique::NONE, "D_WEAKEN",
       { L"약화", L"Weaken", L"弱体化" },
       { L"공격력 -12% · 전체 EXP +10%", L"Attack -12% · all EXP +10%", L"攻撃力 -12%・全EXP +10%" } },
+    // ── 프로세스류(잡몹) 전용 디버프 (확장, 중첩 가능) ──
+    { AugType::D_MOB_PACK,    AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBPACK",
+      { L"병렬 처리", L"Parallel Spawn", L"並列処理" },
+      { L"잡몹이 군집으로 스폰 (스폰당 +2) · 처치 EXP +6",
+        L"Mobs spawn in packs (+2 per spawn) · kill EXP +6",
+        L"雑魚が群れで出現 (出現毎+2)・撃破EXP +6" } },
+    { AugType::D_MOB_ELITE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBELITE",
+      { L"권한 상승", L"Privilege Escalation", L"権限昇格" },
+      { L"엘리트 변종(신속/강인/폭발) 출현 확률 대폭 ↑ · 처치 EXP +5",
+        L"Elite variants (swift/tanky/volatile) appear far more often · kill EXP +5",
+        L"エリート変種の出現率が大幅↑・撃破EXP +5" } },
+    { AugType::D_MOB_FRENZY,  AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBFRENZY",
+      { L"스케줄러 폭주", L"Scheduler Frenzy", L"スケジューラ暴走" },
+      { L"특수 잡몹(돌진/회피/거대) 출현 확률 ↑ · 처치 EXP +4",
+        L"Special mobs (charger/weaver/brute) appear more often · kill EXP +4",
+        L"特殊雑魚(突進/回避/巨大)の出現率↑・撃破EXP +4" } },
 
     // ── 특수 ───────────────────────────────────────────
     { AugType::S_CHAOS,       AugRarity::SPECIAL,   AugUnique::NONE, "CHAOS",
@@ -450,7 +470,7 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 79;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑
+static constexpr int AUG_TOTAL = 82;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {

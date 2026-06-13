@@ -296,6 +296,10 @@ inline GLuint IconFor(AugType t) {
     // 티어 II → 기본 티어 그림 재사용 (별도 아이콘 없는 것만)
     case AugType::PIERCE_2:      return g_IconTex[(int)AugType::PIERCE];
     case AugType::TWIN_2:        return g_IconTex[(int)AugType::TWIN];
+    // 프로세스류 디버프 확장 — 전용 아이콘 없으면 유사 디버프 아이콘 재사용
+    case AugType::D_MOB_PACK:    return g_IconTex[(int)AugType::D_MOB_SPAWN];
+    case AugType::D_MOB_ELITE:   return g_IconTex[(int)AugType::D_MOB_HP];
+    case AugType::D_MOB_FRENZY:  return g_IconTex[(int)AugType::D_MOB_SPEED];
     default:                     break;
     }
     // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용

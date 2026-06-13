@@ -118,6 +118,10 @@ struct PlayerStats {
     float bomberBlastMult = 1.0f;
     // 잡몹 HP 디버프
     float monsterHpMult   = 1.0f;
+    // 프로세스류(잡몹) 출현 디버프 (확장, 중첩 가능)
+    int   mobPackBonus    = 0;     // 스폰당 추가 마리 수 (군집)
+    float eliteChanceMult = 1.0f;  // 엘리트 변종 출현 확률 배율
+    float varietyChanceMult = 1.0f;// 특수 잡몹(돌진/회피/거대) 출현 확률 배율
     // 핵앤슬래쉬 디버프
     float bleedPerSec     = 0.0f;  // 초당 HP 감소 (출혈)
 
@@ -465,6 +469,19 @@ struct PlayerStats {
         case AugType::D_WEAKEN:
             damageMultiplier *= 0.88f;     // 공격력 -12%
             xpMult           *= 1.10f;
+            break;
+        // ── 프로세스류(잡몹) 출현 디버프 (확장) ──
+        case AugType::D_MOB_PACK:          // 군집 스폰 (스폰당 +2)
+            mobPackBonus    += 2;
+            meleeXpBonus    += 6;
+            break;
+        case AugType::D_MOB_ELITE:         // 엘리트 변종 확률 ↑
+            eliteChanceMult *= 2.2f;
+            meleeXpBonus    += 5;
+            break;
+        case AugType::D_MOB_FRENZY:        // 특수 잡몹 확률 ↑
+            varietyChanceMult *= 1.8f;
+            meleeXpBonus    += 4;
             break;
 
         // ── 특수 ──
