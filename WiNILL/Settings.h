@@ -115,4 +115,14 @@ inline bool g_AutoSkill         = false;
 // CRT 셰이더 효과 (G) — 스캔라인 + 비네트 + 네온 글로우. 기본 ON. 설정에서 토글.
 inline bool g_ShaderFx          = true;
 
+// ── 코스메틱: OS 액센트 컬러 테마 (코인 상점에서 구매/장착, 저장됨) ──
+//   플레이어 창 네온 보더/타이틀바 색을 바꾼다("데스크톱 테마" 커스터마이즈).
+//   g_ThemeOwned 는 비트마스크(비트0=기본, 항상 보유), g_ThemeSel 은 선택 인덱스.
+//   g_Accent* 는 선택 테마의 실제 RGB (ApplyAccentTheme 가 세팅, 렌더가 읽음).
+inline int   g_ThemeOwned = 1;
+inline int   g_ThemeSel   = 0;
+inline float g_AccentR    = 0.30f;
+inline float g_AccentG    = 1.0f;
+inline float g_AccentB    = 1.0f;
+
 // (추후 확장: 마스터 볼륨, 마우스 감도 등)

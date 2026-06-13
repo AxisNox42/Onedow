@@ -864,6 +864,7 @@ int main() {
     //   Windows 는 임베디드 폰트라 no-op, macOS/Linux 는 더블클릭 실행 대응
     PlatformChdirToExeDir();
     LoadGame();   // 저장된 설정/기록 불러오기 (없으면 기본값 유지)
+    ApplyAccentTheme();   // 저장된 액센트 테마 → g_Accent* 반영
 
     if (!glfwInit()) return -1;
     // Sleep 해상도 1ms 로 (FPS 캡 정밀도용). Windows 만 의미 있음
@@ -4545,9 +4546,9 @@ int main() {
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                  0.05f, 0.06f, 0.09f, 1.0f);
         BatchFlush(); glEnable(GL_BLEND);
-        // 사이버펑크 네온 터미널 — 플레이어 창 시안 네온 보더
+        // 사이버펑크 네온 터미널 — 플레이어 창 네온 보더 (액센트 테마 색)
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                       0.30f, 1.0f, 1.0f);
+                       g_AccentR, g_AccentG, g_AccentB);
 
         // (c2) HP/EXP 바 — 플레이어 창 하단 안쪽에 부착 (창과 함께 이동) ──
         if (g_GameManager.currentState == GameState::RUNNING ||
@@ -5526,7 +5527,7 @@ int main() {
                 // 플레이어 창 — 항상 최상단, 클립 없이 전체
                 glScissor(0, 0, (GLint)screenWidth, (GLint)screenHeight);
                 winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                          PNAME, 0.3f, 0.8f, 1.0f);
+                          PNAME, g_AccentR, g_AccentG, g_AccentB);
                 BatchFlush();
                 glDisable(GL_SCISSOR_TEST);
             }
@@ -6411,7 +6412,7 @@ static void Scene_Shop(const SceneCtx& c) {
         SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
     (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
     (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                const float WW = 720.0f, WH = 700.0f;
+                const float WW = 720.0f, WH = 812.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"shop.exe", 1.0f, 0.80f, 0.20f, wx, wy);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
@@ -6456,11 +6457,72 @@ static void Scene_Shop(const SceneCtx& c) {
                     }
                 }
 
-                // ── 업적 목록 (메타 행 아래, 3열) ──
+                // ── 액센트 테마 (네온 색) 코스메틱 — 스와치 행 ──
+                float themeBottom;
+                {
+                    int li4 = (int)g_Language; if (li4 < 0 || li4 >= LANG_COUNT) li4 = 0;
+                    const wchar_t* TTIT[3] = { L"테마  (창 네온 색)", L"Theme  (window neon)", L"テーマ  (窓ネオン)" };
+                    float ty0 = ry0 + META_COUNT * (RH + RG) + 16.0f;
+                    BindMainShader();
+                    g_TextS.Draw(TTIT[li4], rx, ty0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
+                    float swY = ty0 + 30.0f;
+                    float gap = 8.0f;
+                    float swW = (RW - gap * (ACCENT_COUNT - 1)) / (float)ACCENT_COUNT;
+                    float swH = 64.0f;
+                    for (int i = 0; i < ACCENT_COUNT; i++) {
+                        const AccentTheme& th = ACCENT_THEMES[i];
+                        float sx = rx + i * (swW + gap);
+                        bool owned = ThemeOwned(i);
+                        bool sel   = (g_ThemeSel == i);
+                        bool hover = (mx >= sx && mx <= sx + swW && my >= swY && my <= swY + swH);
+                        bool clicked = hover && lmb && !g_LmbPrev;
+                        BindMainShader();
+                        // 색 스와치 (미보유는 어둡게)
+                        float dim = owned ? 1.0f : 0.30f;
+                        drawRect(sx, swY, swW, swH, th.r * dim, th.g * dim, th.b * dim, 1.0f);
+                        // 테두리 — 선택=흰색 두껍게 / 호버=옅게
+                        float br = sel ? 1.0f : (hover ? 0.85f : 0.35f);
+                        float bt = sel ? 3.0f : 1.5f;
+                        drawRect(sx, swY, swW, bt, br, br, br, 1.0f);
+                        drawRect(sx, swY + swH - bt, swW, bt, br, br, br, 1.0f);
+                        drawRect(sx, swY, bt, swH, br, br, br, 1.0f);
+                        drawRect(sx + swW - bt, swY, bt, swH, br, br, br, 1.0f);
+                        // 라벨 / 비용
+                        if (owned) {
+                            if (sel) {
+                                float ew = g_TextS.Width(L"●", 0.7f);
+                                g_TextS.Draw(L"●", sx + (swW - ew) * 0.5f, swY + swH * 0.5f - 10.0f,
+                                             0.7f, 0.05f, 0.05f, 0.08f, 1.0f);
+                            }
+                        } else {
+                            wchar_t cb[24]; swprintf_s(cb, L"%lld", th.cost);
+                            float cwd = g_TextS.Width(cb, 0.62f);
+                            g_TextS.Draw(cb, sx + (swW - cwd) * 0.5f, swY + swH * 0.5f - 9.0f,
+                                         0.62f, 1.0f, 0.95f, 0.5f, 1.0f);
+                        }
+                        // 이름 (아래)
+                        float nwd = g_TextS.Width(AccentName(i), 0.55f);
+                        g_TextS.Draw(AccentName(i), sx + (swW - nwd) * 0.5f, swY + swH + 3.0f,
+                                     0.55f, 0.85f, 0.9f, 0.95f, owned ? 1.0f : 0.6f);
+                        // 클릭 처리 — 보유면 장착, 미보유면 코인 충분 시 구매+장착
+                        if (clicked) {
+                            if (owned) {
+                                g_ThemeSel = i; ApplyAccentTheme(); SaveGame();
+                            } else if (g_Coins >= th.cost) {
+                                g_Coins -= th.cost;
+                                g_ThemeOwned |= (1 << i);
+                                g_ThemeSel = i; ApplyAccentTheme(); SaveGame();
+                            }
+                        }
+                    }
+                    themeBottom = swY + swH + 22.0f;
+                }
+
+                // ── 업적 목록 (테마 행 아래, 3열) ──
                 {
                     int li3 = (int)g_Language; if (li3 < 0 || li3 >= LANG_COUNT) li3 = 0;
                     const wchar_t* ATIT[3] = { L"업적", L"Achievements", L"実績" };
-                    float ay0 = ry0 + META_COUNT * (RH + RG) + 18.0f;
+                    float ay0 = themeBottom;
                     BindMainShader();
                     g_TextS.Draw(ATIT[li3], rx, ay0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
                     float colW = RW / 3.0f;

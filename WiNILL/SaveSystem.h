@@ -54,6 +54,8 @@ inline void SaveGame() {
     add("kills=%lld\n",   g_TotalKills);
     add("games=%lld\n",   g_TotalGames);
     add("coins=%lld\n",   g_Coins);
+    add("themeowned=%lld\n", (long long)g_ThemeOwned);
+    add("themesel=%lld\n",   (long long)g_ThemeSel);
     for (int i = 0; i < META_COUNT; i++) {
         std::snprintf(ln, sizeof(ln), "meta%d=%d\n", i, g_MetaLv[i]); buf += ln;
     }
@@ -140,6 +142,8 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "kills"))       g_TotalKills        = val;
         else if (!std::strcmp(key, "games"))       g_TotalGames        = val;
         else if (!std::strcmp(key, "coins"))       g_Coins             = val;
+        else if (!std::strcmp(key, "themeowned"))  g_ThemeOwned        = (int)val | 1;
+        else if (!std::strcmp(key, "themesel"))    g_ThemeSel          = (int)val;
         else if (!std::strcmp(key, "bosskills")) g_TotalBossKills = val;
         else if (!std::strncmp(key, "meta", 4)) {
             int mi = atoi(key + 4);
