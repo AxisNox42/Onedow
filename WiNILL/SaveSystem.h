@@ -164,6 +164,20 @@ inline void LoadGame() {
     }
 }
 
+// 세이브 진행도 초기화 — 점수/코인/메타/업적/도감/테마를 전부 리셋(설정/언어는 유지).
+//   설정 화면의 "세이브 초기화" 버튼에서 호출. 즉시 파일에도 반영.
+inline void ResetSaveProgress() {
+    for (int i = 0; i < 3; i++) g_BestScore[i] = 0;
+    g_TotalKills = 0; g_TotalGames = 0; g_TotalBossKills = 0;
+    g_Coins = 0; g_LastRunCoins = 0;
+    for (int i = 0; i < META_COUNT; i++) g_MetaLv[i] = 0;
+    for (int i = 0; i < ACH_COUNT;  i++) g_AchUnlocked[i] = false;
+    for (int i = 0; i < AUG_TOTAL;  i++) g_AugSeen[i] = false;
+    for (int i = 0; i < CM_COUNT;   i++) g_MobSeen[i] = false;
+    g_ThemeOwned = 1; g_ThemeSel = 0; ApplyAccentTheme();
+    SaveGame();
+}
+
 // 한 판 종료 시 호출 — 최고점/누적 기록 갱신 후 저장. 신기록이면 true.
 inline bool RecordRunResult(int difficultyIdx, long long score, long long kills) {
     if (difficultyIdx < 0 || difficultyIdx > 2) difficultyIdx = 1;

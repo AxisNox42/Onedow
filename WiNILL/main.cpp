@@ -5286,15 +5286,14 @@ int main() {
         if (g_CentiBoss && g_CentiBoss->alive) {
             auto* cb2 = g_CentiBoss;
             BindMainShader();
-            // 돌진 예고선 (state==1) — 벽→벽 경로 깜빡이는 점선
-            if (cb2->state == 1) {
+            // 돌진 예고선 (state==2, 사라진 뒤) — 곡선(베지어) 경로 깜빡이는 점선
+            if (cb2->state == 2) {
                 float blink = 0.45f + 0.45f * sinf((float)glfwGetTime() * 18.0f);
-                float dx = cb2->dashToX - cb2->dashFromX, dy = cb2->dashToY - cb2->dashFromY;
-                int   n  = 36;
+                int   n  = 48;
                 for (int i = 0; i < n; i++) {
                     float t = (float)i / (float)(n - 1);
-                    float lx = cb2->dashFromX + dx * t, ly = cb2->dashFromY + dy * t;
-                    drawRect(lx - 7.0f, ly - 7.0f, 14.0f, 14.0f, 1.0f, 0.3f, 0.2f, 0.25f + 0.4f * blink);
+                    glm::vec2 p = cb2->bezier(t);
+                    drawRect(p.x - 7.0f, p.y - 7.0f, 14.0f, 14.0f, 1.0f, 0.3f, 0.2f, 0.25f + 0.4f * blink);
                 }
             }
             // 세그먼트 (꼬리→머리 순, 뒤에서 앞으로) — 연두 마디 (머리에서 멀수록 작아짐)
@@ -5304,8 +5303,8 @@ int main() {
                 drawDiamond(s.x, s.y, sz,        0.35f, 0.7f, 0.2f, 1.0f);
                 drawDiamond(s.x, s.y, sz * 0.5f, 0.6f, 0.95f, 0.4f, 1.0f);
             }
-            // 머리 — 큰 버그(빨강 눈) / 돌진 중 더 밝게
-            bool dash = (cb2->state == 2 || cb2->state == 3);
+            // 머리 — 큰 버그(빨강 눈) / 돌진(이탈·재진입) 중 더 밝게
+            bool dash = (cb2->state == 1 || cb2->state == 3);
             float hr = dash ? 1.0f : 0.6f;
             drawDiamond(cb2->worldX, cb2->worldY, CentipedeBoss::HEAD,
                         hr, 0.85f, 0.25f, 1.0f);
@@ -5478,6 +5477,9 @@ int main() {
                          1.0f, 0.7f, 0.0f, 0.95f);
             }
         }
+        // 드론/차크람 배치를 지금 즉시 flush — 바로 아래 타이틀바 패스가 scissor 를
+        //   재활성(직전 작은 창 rect)하면 미flush 지오메트리가 통째로 클립되던 진짜 원인.
+        BatchFlush();
 
         // ── (h3) 가짜 OS 창 크롬 — 타이틀바 + [X] 닫기 (데스크톱 세계관) ──
         //    "적 = 프로세스, 창을 닫아 종료한다" 정체성. 월드 좌표(줌 반영)로 그림.
@@ -7396,6 +7398,28 @@ static void Scene_Settings(const SceneCtx& c) {
                              mx, my, lmb, g_LmbPrev)) {
                     SaveGame();
                     g_GameManager.currentState = g_SettingsReturnTo;
+                }
+                // 세이브 초기화 (2단계 확인) — 점수/코인/메타/업적/도감/테마 전부 리셋
+                {
+                    static bool s_resetConfirm = false;
+                    const wchar_t* rl = s_resetConfirm
+                        ? ((g_Language==Language::EN)?L"Sure? (click again)":
+                           (g_Language==Language::JP)?L"本当に？(再クリック)":L"정말? (다시 클릭)")
+                        : ((g_Language==Language::EN)?L"Reset Save":
+                           (g_Language==Language::JP)?L"セーブ初期化":L"세이브 초기화");
+                    float rwid = 210.0f, rx = lx + 200.0f, ry = wy + WH - 64.0f;
+                    bool rh = (mx>=rx && mx<=rx+rwid && my>=ry && my<=ry+48.0f);
+                    BindMainShader();
+                    drawRect(rx, ry, rwid, 48.0f, s_resetConfirm?0.40f:0.18f, 0.06f, 0.06f, rh?1.0f:0.9f);
+                    drawRect(rx, ry, rwid, 2.0f, 0.95f, 0.3f, 0.3f, 0.9f);
+                    float rtw = g_TextS.Width(rl, 0.82f);
+                    g_TextS.Draw(rl, rx+(rwid-rtw)*0.5f, ry+15.0f, 0.82f, 1.0f, 0.65f, 0.6f, 1.0f);
+                    if (lmb && !g_LmbPrev) {
+                        if (rh) {
+                            if (!s_resetConfirm) s_resetConfirm = true;
+                            else { ResetSaveProgress(); s_resetConfirm = false; }
+                        } else s_resetConfirm = false;   // 딴 곳 클릭 = 확인 취소
+                    }
                 }
                 }   // close: g_AppOpen open guard
 }

@@ -9,11 +9,11 @@
 // BUG.proc — 버그 (지네형 보스)
 //   큰 머리 + 점점 작아지는 꼬리 세그먼트가 따라오는 지네. 평소엔 맵을
 //   지그재그로 배회하며 압박(이때 피격 가능 = 딜 타임).
-//   주기적으로 '벽 돌진': 0.8초 전 경로 예고선을 그린 뒤,
-//     ① 현재 위치에서 화면 밖으로 빠져나가고(나갈 때 화면 진동),
-//     ② 반대편 가장자리에서 다시 들어와 벽→벽 직선으로 고속 돌진
-//   하는 구조(이때 무적 = 지정 불가). 텔레포트 느낌 없이 자연스럽게
-//   "나갔다 돌아오는" 연출. 머리/세그먼트 접촉은 큰 피해.
+//   주기적 '곡선 돌진':
+//     ① 멈추지 않고 곧바로 화면 밖으로 빠져나감(나갈 때 화면 진동)
+//     ② 사라진 뒤에야 돌진 경로(곡선)를 예고선으로 표시
+//     ③ 반대편에서 곡선으로 고속 재진입 돌진(대각선 가능, 이때 무적)
+//   돌진을 반복할수록 기본 배회 속도가 점점 빨라진다(누적 압박).
 // ─────────────────────────────────────────────────────────────
 class CentipedeBoss {
 public:
@@ -23,30 +23,34 @@ public:
     bool  exploded = false;
     int   screenW, screenH;
 
-    // 상태: 0=배회(피격가능) / 1=돌진예고 / 2=화면밖 이탈 / 3=재진입 돌진(무적)
+    // 상태: 0=배회(피격가능) / 1=화면밖 이탈 / 2=경로 예고(화면밖) / 3=곡선 재진입 돌진
     int   state      = 0;
     float stateTimer = 0.0f;
     float wanderTimer = 0.0f;
     float heading    = 0.0f;       // 배회/이탈 진행 방향(rad)
 
-    // 돌진 경로 (렌더가 예고선으로 읽음 — 재진입 돌진의 벽→벽 직선)
+    // 돌진 곡선 경로 (2차 베지어: From → Ctrl → To). 렌더가 예고선으로 읽음.
     float dashFromX = 0, dashFromY = 0, dashToX = 0, dashToY = 0;
+    float dashCtrlX = 0, dashCtrlY = 0;
     float dashT = 0.0f;
 
     bool  wasInside  = true;       // 직전 프레임 머리가 화면 안이었는지
     bool  shakePulse = false;      // 화면 밖으로 나가는 순간 1회 — main 이 읽고 끔
+    int   dashCount  = 0;          // 완료한 돌진 횟수 (배회 속도 가속용)
 
     std::vector<glm::vec2> trail;  // 머리 궤적(세그먼트 추종용)
 
     static constexpr int   NSEG       = 9;       // 꼬리 세그먼트 수
     static constexpr int   SEG_STEP   = 6;       // 세그먼트 간 궤적 인덱스 간격
     static constexpr float HEAD       = 88.0f;   // 머리 크기(2배 — 큰 버그 머리)
-    static constexpr float SEG_NEAR   = 55.0f;   // 머리에 가장 가까운 세그먼트(머리보다 작게)
+    static constexpr float SEG_NEAR   = 55.0f;   // 머리에 가장 가까운 세그먼트
     static constexpr float SEG_FAR    = 22.0f;   // 꼬리 끝 세그먼트(가장 작음)
-    static constexpr float WANDER_SPD = 230.0f;
-    static constexpr float DASH_SPD   = 1500.0f; // 벽 돌진 속도
+    static constexpr float WANDER_SPD = 230.0f;  // 기본 배회 속도(돌진마다 가속)
+    static constexpr float WANDER_GAIN= 0.14f;   // 돌진 1회당 배회 속도 +14%
+    static constexpr float WANDER_CAP = 2.4f;    // 배회 속도 배율 상한(×2.4)
+    static constexpr float DASH_SPD   = 1500.0f; // 돌진/이탈 속도
     static constexpr float WANDER_T   = 4.5f;    // 배회 시간(딜 타임)
-    static constexpr float TELEGRAPH  = 0.8f;    // 돌진 예고
+    static constexpr float TELEGRAPH  = 0.8f;    // 경로 예고(사라진 뒤)
     static constexpr float TURN_INT   = 0.5f;    // 지그재그 방향 전환 주기
 
     CentipedeBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
@@ -58,30 +62,42 @@ public:
 
     bool vulnerable() const { return state == 0; }   // 배회 중에만 피격 가능
 
-    // 세그먼트 크기 — 머리에서 멀어질수록 선형으로 작아짐(점점 작아지는 지네)
     static float segSize(int i) {
         float t = (NSEG > 1) ? (float)(i - 1) / (float)(NSEG - 1) : 0.0f;
         return SEG_NEAR + (SEG_FAR - SEG_NEAR) * t;
     }
-
+    float wanderSpeed() const {
+        float mul = 1.0f + WANDER_GAIN * (float)dashCount;
+        if (mul > WANDER_CAP) mul = WANDER_CAP;
+        return WANDER_SPD * mul;
+    }
     bool onScreen(float x, float y) const {
         return x >= 0.0f && x <= (float)screenW && y >= 0.0f && y <= (float)screenH;
     }
 
+    // 2차 베지어 위치
+    glm::vec2 bezier(float t) const {
+        float u = 1.0f - t;
+        float bx = u*u*dashFromX + 2.0f*u*t*dashCtrlX + t*t*dashToX;
+        float by = u*u*dashFromY + 2.0f*u*t*dashCtrlY + t*t*dashToY;
+        return glm::vec2(bx, by);
+    }
+
+    // 재진입 곡선 경로 결정 — 대각선 가능 + 곡선(컨트롤점 측면 오프셋)
     void pickDash() {
-        // 재진입 돌진: 한쪽 가장자리 → 반대쪽 가장자리 직선 (수평/수직 랜덤)
-        float m = 60.0f;
-        if (rand() % 2) {   // 수평 돌진
-            float y = m + (float)(rand() % (int)std::max(1.0f, (float)screenH - 2*m));
-            bool l2r = rand() % 2;
-            dashFromX = l2r ? -m : (float)screenW + m;  dashFromY = y;
-            dashToX   = l2r ? (float)screenW + m : -m;  dashToY   = y;
-        } else {            // 수직 돌진
-            float x = m + (float)(rand() % (int)std::max(1.0f, (float)screenW - 2*m));
-            bool t2b = rand() % 2;
-            dashFromX = x; dashFromY = t2b ? -m : (float)screenH + m;
-            dashToX   = x; dashToY   = t2b ? (float)screenH + m : -m;
-        }
+        float cx = screenW * 0.5f, cy = screenH * 0.5f;
+        float R  = std::sqrt(cx*cx + cy*cy) + 140.0f;   // 화면 모서리 밖
+        float a0 = (float)(rand() % 628) * 0.01f;       // 진입 각
+        float a1 = a0 + 3.14159265f + ((float)(rand()%120 - 60)) * 0.01f; // 대략 반대(대각 가능)
+        dashFromX = cx + cosf(a0) * R;  dashFromY = cy + sinf(a0) * R;
+        dashToX   = cx + cosf(a1) * R;  dashToY   = cy + sinf(a1) * R;
+        // 컨트롤점 = 중점 + 경로 수직 방향으로 곡률 (좌/우 랜덤)
+        float mx = (dashFromX + dashToX) * 0.5f, my = (dashFromY + dashToY) * 0.5f;
+        float dx = dashToX - dashFromX, dy = dashToY - dashFromY;
+        float len = std::sqrt(dx*dx + dy*dy) + 1e-3f;
+        float pxn = -dy / len, pyn = dx / len;          // 수직 단위벡터
+        float curve = (0.35f + (rand()%50)*0.006f) * len * ((rand()%2) ? 1.0f : -1.0f);
+        dashCtrlX = mx + pxn * curve;  dashCtrlY = my + pyn * curve;
     }
 
     void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& /*bullets*/) {
@@ -92,9 +108,8 @@ public:
             wanderTimer += dt;
             if (wanderTimer >= TURN_INT) {
                 wanderTimer = 0.0f;
-                heading += ((rand() % 2) ? 1.0f : -1.0f) * 0.7f;   // 지그재그 꺾임
+                heading += ((rand() % 2) ? 1.0f : -1.0f) * 0.7f;
             }
-            // 가장자리 근처면 중앙으로 부드럽게 선회
             float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
             float m = 120.0f;
             if (worldX < m || worldX > screenW - m || worldY < m || worldY > screenH - m) {
@@ -103,53 +118,56 @@ public:
                 while (d < -3.14159265f) d += 6.2831853f;
                 heading += d * 2.0f * dt;
             }
-            worldX += cosf(heading) * WANDER_SPD * dt;
-            worldY += sinf(heading) * WANDER_SPD * dt;
-            if (stateTimer >= WANDER_T) { state = 1; stateTimer = 0.0f; pickDash(); }
-        }
-        else if (state == 1) {       // ── 돌진 예고 ──
-            if (stateTimer >= TELEGRAPH) {
-                state = 2; stateTimer = 0.0f;
-                // 현재 위치에서 화면 바깥쪽(중앙 반대편)으로 머리를 향하게 — 밖으로 이탈
+            float ws = wanderSpeed();
+            worldX += cosf(heading) * ws * dt;
+            worldY += sinf(heading) * ws * dt;
+            if (stateTimer >= WANDER_T) {
+                // 멈추지 않고 곧바로 이탈 — 현재 위치에서 화면 바깥(중앙 반대)으로
+                state = 1; stateTimer = 0.0f;
                 heading = atan2f(worldY - screenH*0.5f, worldX - screenW*0.5f);
                 wasInside = onScreen(worldX, worldY);
             }
         }
-        else if (state == 2) {       // ── 화면 밖 이탈(무적) ──
+        else if (state == 1) {       // ── 화면밖 이탈(무적) ──
             worldX += cosf(heading) * DASH_SPD * dt;
             worldY += sinf(heading) * DASH_SPD * dt;
             bool inside = onScreen(worldX, worldY);
-            if (wasInside && !inside) shakePulse = true;   // 경계를 넘는 순간 진동 1회
+            if (wasInside && !inside) shakePulse = true;   // 경계 넘는 순간 진동
             wasInside = inside;
-            // 몸 전체가 화면 밖으로 빠지면 반대편에서 재진입 돌진 시작
             float M = 200.0f;
             if (worldX < -M || worldX > screenW + M || worldY < -M || worldY > screenH + M) {
-                state = 3; stateTimer = 0.0f; dashT = 0.0f;
+                // 사라진 뒤에야 경로 결정 + 예고 시작
+                pickDash();
+                state = 2; stateTimer = 0.0f;
                 worldX = dashFromX; worldY = dashFromY;
-                // 궤적을 진입점으로 모아 화면을 가로지르는 잔상 방지(둘 다 화면 밖이라 안 보임)
-                for (auto& p : trail) p = glm::vec2(worldX, worldY);
+                for (auto& p : trail) p = glm::vec2(worldX, worldY);  // 잔상 방지(화면 밖)
             }
         }
-        else {                       // ── 재진입 돌진(무적) ──
-            float dx = dashToX - dashFromX, dy = dashToY - dashFromY;
-            float len = std::sqrt(dx*dx + dy*dy) + 1e-3f;
-            dashT += DASH_SPD * dt / len;   // 0→1
-            worldX = dashFromX + dx * dashT;
-            worldY = dashFromY + dy * dashT;
-            if (dashT >= 1.0f) { state = 0; stateTimer = 0.0f; heading = atan2f(dy, dx); }
+        else if (state == 2) {       // ── 경로 예고(화면밖, 무적) ──
+            if (stateTimer >= TELEGRAPH) { state = 3; stateTimer = 0.0f; dashT = 0.0f; }
+        }
+        else {                       // ── 곡선 재진입 돌진(무적) ──
+            float chord = std::sqrt((dashToX-dashFromX)*(dashToX-dashFromX) +
+                                    (dashToY-dashFromY)*(dashToY-dashFromY)) + 1e-3f;
+            dashT += DASH_SPD * dt / chord;   // 0→1 (대략 일정 속도)
+            glm::vec2 p = bezier(dashT);
+            worldX = p.x; worldY = p.y;
+            if (dashT >= 1.0f) {
+                state = 0; stateTimer = 0.0f; ++dashCount;     // 돌진 완료 → 배회 가속
+                glm::vec2 p2 = bezier(0.98f);
+                heading = atan2f(worldY - p2.y, worldX - p2.x);
+            }
         }
 
-        // 궤적 기록 (세그먼트 추종)
+        // 궤적 기록
         trail.insert(trail.begin(), glm::vec2(worldX, worldY));
         if ((int)trail.size() > NSEG * SEG_STEP + 8) trail.pop_back();
 
-        bool dashing = (state == 2 || state == 3);
-        // 머리 접촉 피해 (돌진 중 더 아픔)
+        bool dashing = (state == 1 || state == 3);
         float hcr = HEAD * 0.78f;
         float hdx = px - worldX, hdy = py - worldY;
         if (hdx*hdx + hdy*hdy < hcr * hcr)
             playerHP -= (dashing ? 22.0f : 12.0f) * dt;
-        // 세그먼트 접촉 피해 (각 마디 크기 기준)
         for (int i = 1; i <= NSEG; i++) {
             glm::vec2 s = segPos(i);
             float sr = segSize(i) + 4.0f;
