@@ -4917,18 +4917,19 @@ int main() {
              g_GameManager.currentState == GameState::PAUSED  ||
              g_GameManager.currentState == GameState::DYING)) {
             float ax = wmx, ay = wmy;   // 줌 보정 → 줌 적용된 ortho 에서 커서 위치에 표시
-            // 외곽 어두운 원 + 중앙 십자
+            // 외곽 어두운 원 + 중앙 십자 (링/십자는 액센트 테마 색)
+            float cr = g_AccentR, cg = g_AccentG, cb = g_AccentB;
             drawCircle(ax, ay, 12.0f, 0.0f, 0.0f, 0.0f, 0.6f);
-            drawCircle(ax, ay, 10.0f, 1.0f, 0.95f, 0.3f, 0.9f);
+            drawCircle(ax, ay, 10.0f, cr, cg, cb, 0.9f);
             drawCircle(ax, ay, 5.0f, 0.05f, 0.05f, 0.05f, 0.9f);
             // 중심 점
             drawRect(ax - 1.5f, ay - 1.5f, 3.0f, 3.0f,
                      1.0f, 1.0f, 1.0f, 1.0f);
             // 4방향 짧은 라인 (십자)
-            drawRect(ax - 14.0f, ay - 1.0f, 6.0f, 2.0f, 1.0f, 0.95f, 0.3f, 0.95f);
-            drawRect(ax + 8.0f,  ay - 1.0f, 6.0f, 2.0f, 1.0f, 0.95f, 0.3f, 0.95f);
-            drawRect(ax - 1.0f, ay - 14.0f, 2.0f, 6.0f, 1.0f, 0.95f, 0.3f, 0.95f);
-            drawRect(ax - 1.0f, ay + 8.0f,  2.0f, 6.0f, 1.0f, 0.95f, 0.3f, 0.95f);
+            drawRect(ax - 14.0f, ay - 1.0f, 6.0f, 2.0f, cr, cg, cb, 0.95f);
+            drawRect(ax + 8.0f,  ay - 1.0f, 6.0f, 2.0f, cr, cg, cb, 0.95f);
+            drawRect(ax - 1.0f, ay - 14.0f, 2.0f, 6.0f, cr, cg, cb, 0.95f);
+            drawRect(ax - 1.0f, ay + 8.0f,  2.0f, 6.0f, cr, cg, cb, 0.95f);
         }
 
         // (g) 다가오는 죽음 오브 — scissor 안에서만 표시 ((b)/(e) 패스에 위임)
