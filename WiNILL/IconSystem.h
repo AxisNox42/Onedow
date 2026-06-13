@@ -337,6 +337,64 @@ inline void DrawIcon(GLuint tex, float x, float y, float w, float h,
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+// 중심 기준 회전 텍스처 쿼드 (탄환 세례 미사일 스프라이트 등). 화면(y-down) 좌표.
+inline void DrawIconRot(GLuint tex, float cx, float cy, float halfW, float halfH,
+                        float angle, float r, float g, float b, float a) {
+    if (!tex || !g_IconProg) return;
+    BatchFlush();
+    glUseProgram(g_IconProg);
+    glUniformMatrix4fv(g_IconProjLoc, 1, GL_FALSE, g_MainOrtho);
+    glUniform4f(g_IconTintLoc, r, g, b, a);
+    float ca = std::cos(angle), sa = std::sin(angle);
+    auto rot = [&](float ox, float oy, float& X, float& Y){ X = cx + ox*ca - oy*sa; Y = cy + ox*sa + oy*ca; };
+    float x0,y0,x1,y1,x2,y2,x3,y3;
+    rot(-halfW,-halfH,x0,y0); rot(halfW,-halfH,x1,y1);
+    rot(halfW, halfH,x2,y2); rot(-halfW, halfH,x3,y3);
+    float vv[] = { x0,y0,0,0,  x1,y1,1,0,  x2,y2,1,1,   x0,y0,0,0,  x2,y2,1,1,  x3,y3,0,1 };
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindVertexArray(g_IconVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, g_IconVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vv), vv);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+// ── 탄환 세례 미사일 스프라이트 ──
+//   원본 PNG 가 흰 배경+검정 로켓+하단 출처표기라, 그대로는 못 씀.
+//   → 하단 출처표기 크롭 + 휘도 반전(흰배경 투명/검정 로켓 불투명) + RGB 흰색(틴트 가능)
+inline GLuint g_RainMissileTex = 0;
+inline GLuint MakeRocketSprite(unsigned char* d, int w, int h) {
+    int cropH = (int)(h * 0.80f); if (cropH < 1) cropH = h;   // 하단 20%(출처표기) 제거
+    for (int i = 0; i < w * cropH; i++) {
+        unsigned char* p = d + i * 4;
+        int lum = (p[0]*299 + p[1]*587 + p[2]*114) / 1000;    // 0=검정 255=흰
+        p[0] = 255; p[1] = 255; p[2] = 255;
+        p[3] = (unsigned char)(255 - lum);                    // 검정→불투명, 흰→투명
+    }
+    return IconTexFromRGBA(d, w, cropH);
+}
+inline void InitRainMissileTex() {
+#ifdef _WIN32
+    HMODULE hm = GetModuleHandleW(NULL);
+    HRSRC hr = FindResourceA(hm, "ICON_RAIN_MISSILE", MAKEINTRESOURCEA(10));
+    if (hr) {
+        HGLOBAL hg = LoadResource(hm, hr); const void* pp = LockResource(hg);
+        DWORD sz = SizeofResource(hm, hr);
+        if (pp && sz) {
+            int w,h,n; unsigned char* d = stbi_load_from_memory((const unsigned char*)pp,(int)sz,&w,&h,&n,4);
+            if (d) { g_RainMissileTex = MakeRocketSprite(d,w,h); stbi_image_free(d); return; }
+        }
+    }
+#endif
+    char path[320]; std::snprintf(path, sizeof(path), "%s/BULLET_RAIN.png", g_IconBaseDir);
+    int w,h,n; unsigned char* d = stbi_load(path,&w,&h,&n,4);
+    if (d) { g_RainMissileTex = MakeRocketSprite(d,w,h); stbi_image_free(d); }
+}
+
 inline void DrawAugIcon(AugType t, float x, float y, float sz,
                         float r, float g, float b, float a) {
     DrawIcon(IconFor(t), x, y, sz, sz, r, g, b, a);

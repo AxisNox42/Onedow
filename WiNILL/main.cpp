@@ -97,6 +97,21 @@ inline void WorldScissor(float wx, float wy, float ww, float wh) {
 // 총알 그리기 — 플레이어 탄은 탄속 비례 잔상(streak) + 머리 원, 적 탄은 원만
 inline void drawBullet(const Bullet& b) {
     float r = 6.0f * b.sizeScale;
+    // 탄환 세례 — 로켓 스프라이트(진행 방향으로 회전). 텍스처 없으면 기본 원으로 폴백.
+    if (b.rainMissile && g_RainMissileTex) {
+        float z   = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
+        float sx  = W2SX(b.x), sy = W2SY(b.y);
+        float ang = std::atan2(b.dirX, -b.dirY);   // 스프라이트 코(위)를 진행 방향에 정렬
+        float hw  = 13.0f * z, hh = 17.0f * z;
+        // 뒤쪽 옅은 화염 글로우(가시성 ↑ — 로켓이 어두워도 보이게)
+        drawCircle(b.x - b.dirX * 10.0f, b.y - b.dirY * 10.0f, r * 1.3f,
+                   1.0f, 0.6f, 0.2f, 0.5f);
+        BatchFlush();
+        DrawIconRot(g_RainMissileTex, sx, sy, hw, hh, ang,
+                    b.color.r, b.color.g, b.color.b, 1.0f);
+        BindMainShader();
+        return;
+    }
     if (!b.isEnemy) {
         float trailLen = b.speed * 0.020f;          // 탄속 빠를수록 잔상 김
         if (trailLen > 5.0f) {
@@ -982,6 +997,7 @@ int main() {
     // 아이콘(픽토그램) 텍스처 파이프라인 + 증강 아이콘 로드
     InitIconGL();
     LoadIcons();
+    InitRainMissileTex();   // 탄환 세례 로켓 스프라이트(흰배경 제거+틴트 가능)
 
     EnableWindowTransparency(window);
 
@@ -3646,6 +3662,7 @@ int main() {
                         // 지대공 미사일 발사 느낌 — 5%에서 출발해 ~0.7초에 100%로 가속
                         nb.launchRamp  = 0.05f;
                         nb.launchAccel = 1.35f;
+                        nb.rainMissile = true;   // 로켓 스프라이트로 렌더
                         g_Bullets.push_back(nb);
                     }
                 }

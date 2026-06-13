@@ -35,6 +35,7 @@ public:
     //   launchAccel(초당 증가)이 0 이면 비활성(기존 동작). launchRamp 1.0 으로 수렴.
     float launchRamp  = 1.0f;
     float launchAccel = 0.0f;
+    bool  rainMissile = false;   // 탄환 세례 — 로켓 스프라이트로 렌더
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 
