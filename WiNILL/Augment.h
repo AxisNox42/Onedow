@@ -55,7 +55,11 @@ enum class AugType {
     // ── 프로세스류(잡몹) 전용 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
     D_MOB_PACK,    // 군집 스폰 (한 번에 여러 마리)
     D_MOB_ELITE,   // 엘리트 변종 출현 확률 ↑
-    D_MOB_FRENZY   // 특수 잡몹(돌진/회피/거대) 출현 확률 ↑
+    D_MOB_FRENZY,  // 특수 잡몹(돌진/회피/거대) 출현 확률 ↑
+    // ── 조합 (COMBO) 확장 — 끝에 추가해 기존 인덱스/세이브 보존 ──
+    CB_RAILGUN,      // 저격 + 관통 → 레일건
+    CB_GLASS_REAPER, // 유리대포 + 흡혈탄 → 유리 사신
+    CB_WARLORD       // 광전사 + 연쇄폭발 → 전쟁군주
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO };
@@ -468,9 +472,24 @@ static const AugDef ALL_AUGS[] = {
       { L"[조합] 탄환 세례 쿨다운 4초 · 드론 +1 · 연사 +15%",
         L"[Combo] Bullet Rain CD 4s · +1 drone · fire rate +15%",
         L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" } },
+    { AugType::CB_RAILGUN,     AugRarity::COMBO,    AugUnique::NONE, "CB_RAIL",
+      { L"레일건", L"Railgun", L"レールガン" },
+      { L"[조합] 관통 100% · 공격력 +35% · 탄속 +40%",
+        L"[Combo] 100% pierce · attack +35% · bullet speed +40%",
+        L"[組合] 貫通100%・攻撃+35%・弾速+40%" } },
+    { AugType::CB_GLASS_REAPER, AugRarity::COMBO,   AugUnique::NONE, "CB_GREAP",
+      { L"유리 사신", L"Glass Reaper", L"硝子の死神" },
+      { L"[조합] 공격력 ×1.2 · 처치당 흡혈 +0.2 · 최대 체력 +20 (유리 리스크 완화)",
+        L"[Combo] Attack ×1.2 · lifesteal +0.2/kill · Max HP +20",
+        L"[組合] 攻撃×1.2・撃破毎吸血+0.2・最大HP+20" } },
+    { AugType::CB_WARLORD,     AugRarity::COMBO,    AugUnique::NONE, "CB_WAR",
+      { L"전쟁군주", L"Warlord", L"戦争君主" },
+      { L"[조합] 공격력 +25% · 폭발 반경 ↑ · 이동속도 +12%",
+        L"[Combo] Attack +25% · blast radius up · move speed +12%",
+        L"[組合] 攻撃+25%・爆発範囲↑・移動+12%" } },
 };
 
-static constexpr int AUG_TOTAL = 82;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3
+static constexpr int AUG_TOTAL = 85;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3, +조합3
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -483,6 +502,9 @@ inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_BLOODLORD,   { AugType::LIFESTEAL,   AugType::VAMPIRE }, 2 },
     { AugType::CB_PIERCE_TWIN, { AugType::TWIN,        AugType::PIERCE  }, 2 },
     { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN_3, AugType::DRONE }, 2 },
+    { AugType::CB_RAILGUN,      { AugType::SNIPER,       AugType::PIERCE     }, 2 },
+    { AugType::CB_GLASS_REAPER, { AugType::GLASS_CANNON, AugType::LIFESTEAL  }, 2 },
+    { AugType::CB_WARLORD,      { AugType::BERSERK,      AugType::DEATH_BLAST }, 2 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 

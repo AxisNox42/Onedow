@@ -1777,9 +1777,10 @@ int main() {
                     // 디버프 픽 끝 → 게임 재개
                     g_GameManager.currentState = GameState::RUNNING;
                 }
-                // C14: 인게임 복귀 시 짧은 유예(무적+발사억제) — "틱" 텀을 줘 즉사/오발 방지
+                // C14: 인게임 복귀 시 짧은 유예 — 앞 0.25s 는 적 정지("텀"), 전체 무적+발사억제
+                //   로 즉사/오발 방지하며 자연스러운 전이 딜레이를 준다.
                 if (g_GameManager.currentState == GameState::RUNNING)
-                    g_PostPickGrace = 0.4f;
+                    g_PostPickGrace = 0.5f;
             };
 
             // 1/2/3/4 = hover (선택 후보 변경만, 적용 X). 4는 변환 카드 (있을 때만)
@@ -2070,7 +2071,8 @@ int main() {
 
                 // 대시 무적 — 이번 스텝 시작 HP 저장 (적 피해는 무효, 회복은 유지)
                 float hpAtStep = g_GameManager.playerHP;
-                bool  timeStopped = (g_TimeStopTimer > 0.0f);
+                //   적 정지 = 시간정지 스킬 OR 증강 픽 직후 0.25s("전이 텀")
+                bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.25f);
 
                 // 몬스터 업데이트 (디버프 multiplier 적용) — 시간 정지 중엔 적 멈춤
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 → 더 빠름
@@ -2567,7 +2569,7 @@ int main() {
                         if (g_Stats.deathBlast && !m->noBlast) {
                             float blastDmg = g_Stats.GetBaseDamage()
                                            * g_Stats.GetDamageMultiplier(0.0f) * 0.3f;
-                            float blastR = 130.0f;
+                            float blastR = 130.0f * g_Stats.deathBlastMult;
                             float bx = m->worldX, by = m->worldY;
                             SpawnShockWave(bx, by, blastR, 0.35f, 1.0f, 0.55f, 0.15f);
                             for (auto m2 : g_MonsterManager.monsters) {

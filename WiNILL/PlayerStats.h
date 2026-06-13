@@ -65,6 +65,7 @@ struct PlayerStats {
     float lifestealPerKill = 0.0f;// 처치당 회복 HP (흡혈탄)
     bool  berserk      = false;   // 체력 낮을수록 공격력 ↑ (최대 +60%)
     bool  deathBlast   = false;   // 적 사망 시 주변 폭발
+    float deathBlastMult = 1.0f;  // 연쇄 폭발 반경 배율 (CB_WARLORD)
     // ── 직업 무기 모드 (검객/궁수) ──
     bool  meleeWeapon  = false;   // 검객 — 총알 대신 근접 호 스윙
     bool  bowWeapon    = false;   // 궁수 — 관통 화살 (느리고 강함)
@@ -304,6 +305,23 @@ struct PlayerStats {
             drone              = true;
             if (droneCount < 3) ++droneCount;
             fireInterval      /= 1.15f;
+            break;
+        case AugType::CB_RAILGUN:       // 저격 + 관통 → 레일건
+            pierce       = true;
+            pierceChance = 100;
+            damageMultiplier *= 1.35f;
+            bulletSpeed  *= 1.40f;
+            break;
+        case AugType::CB_GLASS_REAPER:  // 유리대포 + 흡혈탄 → 유리 사신
+            damageMultiplier *= 1.20f;
+            lifestealPerKill += 0.20f;
+            maxHP            += 20.0f;
+            break;
+        case AugType::CB_WARLORD:       // 광전사 + 연쇄폭발 → 전쟁군주
+            damageMultiplier *= 1.25f;
+            moveSpeedMult    *= 1.12f;
+            deathBlast        = true;
+            deathBlastMult   *= 1.6f;
             break;
 
         // ── 희귀: 탄환세례 / 드론 ──
