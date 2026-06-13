@@ -31,6 +31,10 @@ public:
     // 연쇄 작용(리코셰) — 남은 튕김 횟수 + 튕긴 후 고정 데미지(>0 이면 거리 재계산 안 함)
     int   bouncesLeft = 0;
     float lockedDmg   = 0.0f;
+    // 발사 가속(SAM 미사일 느낌) — launchRamp<1 이면 느리게 출발해 점점 빨라짐.
+    //   launchAccel(초당 증가)이 0 이면 비활성(기존 동작). launchRamp 1.0 으로 수렴.
+    float launchRamp  = 1.0f;
+    float launchAccel = 0.0f;
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 
@@ -46,7 +50,11 @@ public:
 
     void Update(float dt) {
         prevX = x;  prevY = y;          // 이동 전 위치 저장 (스윕 판정)
-        float step = speed * dt;
+        if (launchAccel > 0.0f && launchRamp < 1.0f) {   // SAM 미사일식 발사 가속
+            launchRamp += launchAccel * dt;
+            if (launchRamp > 1.0f) launchRamp = 1.0f;
+        }
+        float step = speed * launchRamp * dt;
         x += dirX * step;
         y += dirY * step;
         if (maxRange > 0.0f) {

@@ -3631,11 +3631,14 @@ int main() {
                         Bullet nb(pCX, pCY,
                                   pCX + cosf(a) * 100.0f,
                                   pCY + sinf(a) * 100.0f);
-                        nb.speed      = g_Stats.bulletSpeed * 0.85f;
+                        nb.speed      = g_Stats.bulletSpeed * 1.05f;  // 최고속(가속 끝) — SAM 미사일식
                         nb.color      = glm::vec3(1.0f, 0.5f, 0.2f);
                         nb.homing     = true;
-                        nb.homingTurn = 6.0f;   // rad/s — 비교적 민첩
+                        nb.homingTurn = 5.0f;   // rad/s
                         nb.dmgMult    = 0.5f;
+                        // 지대공 미사일 발사 느낌 — 5%에서 출발해 ~0.7초에 100%로 가속
+                        nb.launchRamp  = 0.05f;
+                        nb.launchAccel = 1.35f;
                         g_Bullets.push_back(nb);
                     }
                 }
@@ -5434,6 +5437,10 @@ int main() {
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
+
+        // 드론/차크람은 데스크톱 최상단(클립 없음)에 그린다 — 위쪽 보스창 scissor 패스가
+        //   poly 보스 없을 땐 안 닫혀 드론/차크람이 통째로 클립되던 버그 방지(무조건 해제).
+        BatchFlush(); glDisable(GL_SCISSOR_TEST); BindMainShader();
 
         // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)
         if (g_Stats.drone && !g_Stats.turretMode &&
