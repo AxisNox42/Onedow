@@ -227,6 +227,7 @@ static int RollOneDebuff(const bool* takenOnce = nullptr) {
     for (int i = 0; i < AUG_TOTAL; i++) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
+        if (AugRemoved(t)) continue;   // 취함/병렬처리 등 삭제된 디버프 제외 (디버프 선택 페이지)
         // 한 번만 뜨는 디버프(적 출현형)는 이미 보유 시 제외
         if (takenOnce && AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
         // 쉬움: 자폭병 디버프 제외 (#107)
