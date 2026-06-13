@@ -3273,6 +3273,11 @@ int main() {
                         case 1:  startWarn(1, L"GLITCH.sys",    bossHpC * 0.7f);  break;
                         case 2:  startWarn(2, L"RELOADER.exe",  bossHpC);         break;
                         case 3:  startWarn(3, L"SPAM.dll",      bossHpC * 0.65f); break;
+                        case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
+                        case 5:  startWarn(5, L"KERNEL.sys",    bossHpC * 0.8f);  break;
+                        case 6:  startWarn(6, L"FIREWALL.sys",  bossHpC * 0.7f);  break;
+                        case 7:  startWarn(7, L"BOTNET.exe",    bossHpC * 0.75f); break;
+                        case 8:  startWarn(8, L"BUG.proc",      bossHpC * 0.7f);  break;
                         default: startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
                         }
                     }
@@ -7145,15 +7150,19 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
                         g_CreativeStartScore = sOpts[i].v;
                 }
 
-                // 보스 선택
+                // 보스 선택 — 9종 전부 (None 포함 10개, 5개씩 2줄)
                 g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[6] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
-                                     {L"Reload",2},{L"Spam",3},{L"Polymorph",4} };
-                for (int i = 0; i < 6; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
+                BossOpt bOpts[10] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
+                                      {L"Reload",2},{L"Spam",3},{L"Polymorph",4},
+                                      {L"Kernel",5},{L"Firewall",6},{L"Botnet",7},
+                                      {L"Bug",8} };
+                for (int i = 0; i < 10; i++) {
+                    int col = i % 5, row = i / 5;
+                    float ox = 60.0f + col * (OBW + OBG);
+                    float oy = sh*0.40f + 28.0f + row * (OBH + 8.0f);
                     bool sel = (g_CreativeBossPick == bOpts[i].v);
-                    if (UIButton(ox, sh*0.40f + 28.0f, OBW, OBH, bOpts[i].l,
+                    if (UIButton(ox, oy, OBW, OBH, bOpts[i].l,
                                  mx, my, lmb, g_LmbPrev, sel))
                         g_CreativeBossPick = bOpts[i].v;
                 }

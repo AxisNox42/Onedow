@@ -95,10 +95,9 @@ inline void AddKillCombo() {
     g_ComboTimer = COMBO_WINDOW;
     g_ComboPulse = 1.0f;
     Audio::PlaySfx(Audio::Sfx::Kill);   // 적 처치음
-    // 콤보 마일스톤(10/25/50/100/…) — 번쩍 + 강조 연출 + 칩 사운드
+    // 콤보 마일스톤(10/25/50/100/…) — 카운터 강조 연출 + 칩 사운드 (전체화면 번쩍 X — 눈뽕 방지)
     if (ComboIsMilestone(g_Combo)) {
         g_ComboMilestone = 0.7f;
-        TriggerFlash(1.0f, 0.82f, 0.25f, 0.28f);   // 옅은 골드 화이트
         Audio::PlaySfx(Audio::Sfx::Phase2);        // 마일스톤 칩(페이즈2 사운드 재사용)
     }
 }

@@ -283,6 +283,7 @@ void GameManager::PickRandomDebuffIndices(int* outArr, int n) {
     for (int i = 0; i < AUG_TOTAL; i++) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
+        if (t == AugType::D_MOB_PACK) continue;   // 병렬처리 제거 — 의미 없는 경험치 셔틀이라 풀에서 뺌
         if (g_Difficulty == Difficulty::EASY &&
             (t == AugType::D_BOMBER_BLAST ||
              t == AugType::D_BOMBER_BUFF  ||
