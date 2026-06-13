@@ -4293,131 +4293,81 @@ int main() {
                          0.06f, 0.08f, 0.10f, 1.0f);
             }
         }
-        // 레이어 우선순위(낮음→높음): 봇넷 < 원거리 < 보스. 배경도 같은 순서로 덮어쓰기.
-        // 봇넷 노드(SPAWNER) 개인 창 배경 — 최하단 (E21)
+        // ── 가짜창 통합 z-리스트 (낮음→높음: 봇넷 < 원거리 < 보스/슬라임). 같은 타입은
+        //    소환(벡터) 순서 = 먼저 소환된 애가 아래. 배경+네온보더를 이 순서로 '창 단위'
+        //    로 그려, 높은 창의 불투명 배경이 낮은 창의 배경·외곽선을 자연히 덮음(우선순위 가림).
+        //    (플레이어 창은 이 뒤에 따로 그려 항상 최상단.)
+        struct FWin { float x, y, w, h; const wchar_t* name;
+                      float br, bgc, bbc, nr, ngc, nbc; };
+        std::vector<FWin> zwins;
+        auto addW = [&](float cx, float cy, float w, float h, const wchar_t* nm,
+                        float br, float bgc, float bbc, float nr, float ngc, float nbc) {
+            zwins.push_back({ cx - w*0.5f, cy - h*0.5f, w, h, nm, br,bgc,bbc, nr,ngc,nbc });
+        };
+        // 봇넷 노드 (최하단, 소환 순서)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
             float w = SPAWNER_WIN_W * m->sizeScale;
-            drawRect(m->worldX - w*0.5f, m->worldY - w*0.5f, w, w, 0.06f, 0.10f, 0.09f, 1.0f);
+            addW(m->worldX, m->worldY, w, w, L"botnet.node", 0.06f,0.10f,0.09f, 0.20f,0.85f,0.65f);
         }
+        // 원거리 몹 (소환 순서)
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
-            float sc  = r->deathScale;
-            float rW  = RFW_W * sc, rH = RFW_H * sc;
-            float rwx = r->worldX - rW * 0.5f;
-            float rwy = r->worldY - rH * 0.5f;
-            drawRect(rwx, rwy, rW, rH,
-                     0.08f, 0.08f, 0.10f, 1.0f);
+            float sc = r->deathScale;
+            addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"popup.exe", 0.08f,0.08f,0.10f, 0.85f,0.20f,0.95f);
         }
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-            auto* bs = g_MonsterManager.boss;
-            float bwx = bs->worldX - Boss::WIN_W * 0.5f;
-            float bwy = bs->worldY - Boss::WIN_H * 0.5f;
-            drawRect(bwx, bwy, Boss::WIN_W, Boss::WIN_H,
-                     0.08f, 0.08f, 0.10f, 1.0f);
-        }
-        // 신규 보스 — 각자 개인 창 배경 (본체가 맨 배경에 떠 보이지 않도록)
-        if (g_GlitchBoss && g_GlitchBoss->alive) {
-            float w = GLITCH_WIN_W;
-            drawRect(g_GlitchBoss->worldX - w*0.5f, g_GlitchBoss->worldY - w*0.5f,
-                     w, w, 0.07f, 0.06f, 0.10f, 1.0f);
-        }
-        if (g_RRBoss && g_RRBoss->alive) {
-            float w = RR_WIN_W;
-            drawRect(g_RRBoss->worldX - w*0.5f, g_RRBoss->worldY - w*0.5f,
-                     w, w, 0.10f, 0.07f, 0.06f, 1.0f);
-        }
-        if (g_PolyBoss && g_PolyBoss->alive) {
-            float w = POLY_WIN_W;
-            drawRect(g_PolyBoss->worldX - w*0.5f, g_PolyBoss->worldY - w*0.5f,
-                     w, w, 0.09f, 0.06f, 0.11f, 1.0f);
-        }
-        if (g_SpamBoss && g_SpamBoss->alive) {
-            float w = SPAM_WIN_W;
-            drawRect(g_SpamBoss->worldX - w*0.5f, g_SpamBoss->worldY - w*0.5f,
-                     w, w, 0.10f, 0.06f, 0.09f, 1.0f);
-        }
-        if (g_KernelBoss && g_KernelBoss->alive) {
-            float w = KERNEL_WIN_W;
-            drawRect(g_KernelBoss->worldX - w*0.5f, g_KernelBoss->worldY - w*0.5f,
-                     w, w, 0.10f, 0.07f, 0.05f, 1.0f);
-        }
-        if (g_FirewallBoss && g_FirewallBoss->alive) {
-            float w = FIREWALL_WIN_W;
-            drawRect(g_FirewallBoss->worldX - w*0.5f, g_FirewallBoss->worldY - w*0.5f,
-                     w, w, 0.10f, 0.06f, 0.05f, 1.0f);
-        }
-        if (g_BotnetBoss && g_BotnetBoss->alive) {
-            float w = BOTNET_WIN_W;
-            drawRect(g_BotnetBoss->worldX - w*0.5f, g_BotnetBoss->worldY - w*0.5f,
-                     w, w, 0.06f, 0.07f, 0.11f, 1.0f);
-        }
-        if (g_CentiBoss && g_CentiBoss->alive) {
-            float w = CENTI_WIN_W;
-            drawRect(g_CentiBoss->worldX - w*0.5f, g_CentiBoss->worldY - w*0.5f,
-                     w, w, 0.09f, 0.10f, 0.05f, 1.0f);
-        }
-        // 슬라임 분열체 — 각자 개인 창 (크기 비례)
-        for (auto* c : g_Slimelings) {
-            if (!c->alive) continue;
+        // 보스/분열체 (상단)
+        if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+            addW(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, Boss::WIN_W, Boss::WIN_H,
+                 L"SLIME.worm", 0.08f,0.08f,0.10f, 0.40f,1.0f,0.55f);
+        for (auto* c : g_Slimelings) if (c->alive) {
             float w = Boss::WIN_W * c->sizeScale;
-            drawRect(c->worldX - w*0.5f, c->worldY - w*0.5f, w, w,
-                     0.07f, 0.10f, 0.07f, 1.0f);
-        }
-        BatchFlush(); glEnable(GL_BLEND);  // 이후는 일반 알파 블렌딩
-
-        // ── 사이버펑크 네온 터미널 — 각 가짜 창에 네온 보더 + 코너 브래킷 ──
-        //    창 색상은 적/보스 고유색에 맞춰 네온화 (터미널 프레임 느낌)
-        if (g_Stats.turretMode)
-            for (auto& t : g_Turrets)
-                drawNeonBorder(t.x - TURRET_WIN_W*0.5f, t.y - TURRET_WIN_H*0.5f,
-                               TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
-        for (auto r : g_MonsterManager.rangedMobs) {
-            if (r->deathScale <= 0.0f) continue;
-            float sc = r->deathScale, rW = RFW_W*sc, rH = RFW_H*sc;
-            drawNeonBorder(r->worldX - rW*0.5f, r->worldY - rH*0.5f, rW, rH,
-                           0.85f, 0.20f, 0.95f);   // 원거리 몹 = 네온 마젠타
-        }
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-            auto* bs = g_MonsterManager.boss;
-            drawNeonBorder(bs->worldX - Boss::WIN_W*0.5f, bs->worldY - Boss::WIN_H*0.5f,
-                           Boss::WIN_W, Boss::WIN_H, 0.40f, 1.0f, 0.55f);   // 슬라임 = 연두
+            addW(c->worldX, c->worldY, w, w, L"slime.worm", 0.07f,0.10f,0.07f, 0.40f,1.0f,0.55f);
         }
         if (g_GlitchBoss && g_GlitchBoss->alive)
-            drawNeonBorder(g_GlitchBoss->worldX - GLITCH_WIN_W*0.5f, g_GlitchBoss->worldY - GLITCH_WIN_W*0.5f,
-                           GLITCH_WIN_W, GLITCH_WIN_W, 0.95f, 0.20f, 0.60f);
+            addW(g_GlitchBoss->worldX, g_GlitchBoss->worldY, GLITCH_WIN_W, GLITCH_WIN_W,
+                 L"GLITCH.sys", 0.07f,0.06f,0.10f, 0.95f,0.20f,0.60f);
         if (g_RRBoss && g_RRBoss->alive)
-            drawNeonBorder(g_RRBoss->worldX - RR_WIN_W*0.5f, g_RRBoss->worldY - RR_WIN_W*0.5f,
-                           RR_WIN_W, RR_WIN_W, 1.0f, 0.55f, 0.20f);
+            addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
+                 L"RELOADER.exe", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
         if (g_PolyBoss && g_PolyBoss->alive)
-            drawNeonBorder(g_PolyBoss->worldX - POLY_WIN_W*0.5f, g_PolyBoss->worldY - POLY_WIN_W*0.5f,
-                           POLY_WIN_W, POLY_WIN_W, 0.60f, 0.30f, 1.0f);
+            addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
+                 L"POLYMORPH.vir", 0.09f,0.06f,0.11f, 0.60f,0.30f,1.0f);
         if (g_SpamBoss && g_SpamBoss->alive)
-            drawNeonBorder(g_SpamBoss->worldX - SPAM_WIN_W*0.5f, g_SpamBoss->worldY - SPAM_WIN_W*0.5f,
-                           SPAM_WIN_W, SPAM_WIN_W, 1.0f, 0.40f, 0.80f);
+            addW(g_SpamBoss->worldX, g_SpamBoss->worldY, SPAM_WIN_W, SPAM_WIN_W,
+                 L"SPAM.dll", 0.10f,0.06f,0.09f, 1.0f,0.40f,0.80f);
         if (g_KernelBoss && g_KernelBoss->alive)
-            drawNeonBorder(g_KernelBoss->worldX - KERNEL_WIN_W*0.5f, g_KernelBoss->worldY - KERNEL_WIN_W*0.5f,
-                           KERNEL_WIN_W, KERNEL_WIN_W, 1.0f, 0.65f, 0.25f);   // 커널 = 호박색
+            addW(g_KernelBoss->worldX, g_KernelBoss->worldY, KERNEL_WIN_W, KERNEL_WIN_W,
+                 L"KERNEL.sys", 0.10f,0.07f,0.05f, 1.0f,0.65f,0.25f);
         if (g_FirewallBoss && g_FirewallBoss->alive)
-            drawNeonBorder(g_FirewallBoss->worldX - FIREWALL_WIN_W*0.5f, g_FirewallBoss->worldY - FIREWALL_WIN_W*0.5f,
-                           FIREWALL_WIN_W, FIREWALL_WIN_W, 1.0f, 0.45f, 0.2f);   // 방화벽 = 주황
+            addW(g_FirewallBoss->worldX, g_FirewallBoss->worldY, FIREWALL_WIN_W, FIREWALL_WIN_W,
+                 L"FIREWALL.sys", 0.10f,0.06f,0.05f, 1.0f,0.45f,0.2f);
         if (g_BotnetBoss && g_BotnetBoss->alive)
-            drawNeonBorder(g_BotnetBoss->worldX - BOTNET_WIN_W*0.5f, g_BotnetBoss->worldY - BOTNET_WIN_W*0.5f,
-                           BOTNET_WIN_W, BOTNET_WIN_W, 0.3f, 0.55f, 1.0f);   // 봇넷 = 파랑
+            addW(g_BotnetBoss->worldX, g_BotnetBoss->worldY, BOTNET_WIN_W, BOTNET_WIN_W,
+                 L"BOTNET.exe", 0.06f,0.07f,0.11f, 0.3f,0.55f,1.0f);
         if (g_CentiBoss && g_CentiBoss->alive)
-            drawNeonBorder(g_CentiBoss->worldX - CENTI_WIN_W*0.5f, g_CentiBoss->worldY - CENTI_WIN_W*0.5f,
-                           CENTI_WIN_W, CENTI_WIN_W, 0.7f, 1.0f, 0.3f);   // 지네 = 연두
-        for (auto* c : g_Slimelings) {
-            if (!c->alive) continue;
-            float w = Boss::WIN_W * c->sizeScale;
-            drawNeonBorder(c->worldX - w*0.5f, c->worldY - w*0.5f, w, w, 0.40f, 1.0f, 0.55f);
+            addW(g_CentiBoss->worldX, g_CentiBoss->worldY, CENTI_WIN_W, CENTI_WIN_W,
+                 L"BUG.proc", 0.09f,0.10f,0.05f, 0.7f,1.0f,0.3f);
+
+        // 포탑 창 배경+보더 (최하단, 플레이어 소유라 z-리스트 밖)
+        if (g_Stats.turretMode) {
+            for (auto& t : g_Turrets) {
+                BatchFlush(); glDisable(GL_BLEND);
+                drawRect(t.x - TURRET_WIN_W*0.5f, t.y - TURRET_WIN_H*0.5f,
+                         TURRET_WIN_W, TURRET_WIN_H, 0.06f, 0.08f, 0.10f, 1.0f);
+                BatchFlush(); glEnable(GL_BLEND);
+                drawNeonBorder(t.x - TURRET_WIN_W*0.5f, t.y - TURRET_WIN_H*0.5f,
+                               TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
+            }
         }
-        // 봇넷 노드(SPAWNER) 창 네온 보더 — 청록 (E21)
-        for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive || m->kind != MobKind::SPAWNER) continue;
-            float w = SPAWNER_WIN_W * m->sizeScale;
-            drawNeonBorder(m->worldX - w*0.5f, m->worldY - w*0.5f, w, w, 0.20f, 0.85f, 0.65f);
+        // z-리스트 — 창 단위로 (불투명 배경 → 네온 보더). 높은 창이 낮은 창을 자연 가림.
+        for (auto& fw : zwins) {
+            BatchFlush(); glDisable(GL_BLEND);
+            drawRect(fw.x, fw.y, fw.w, fw.h, fw.br, fw.bgc, fw.bbc, 1.0f);
+            BatchFlush(); glEnable(GL_BLEND);
+            drawNeonBorder(fw.x, fw.y, fw.w, fw.h, fw.nr, fw.ngc, fw.nbc);
         }
+        BatchFlush(); glEnable(GL_BLEND);  // 이후 일반 알파 블렌딩 보장
 
         // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
         //     각 창마다 scissor 패스. 다이아몬드/본체는 (e2)/(e3) 에서 별도로 그림
@@ -5524,81 +5474,22 @@ int main() {
                 };
                 int li2 = (int)g_Language; if (li2<0||li2>=LANG_COUNT) li2=0;
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
-                // 가짜창 레이어 우선순위 (겹침 시 위로): 봇넷 < 원거리 < 보스 < 플레이어
-                //   플레이어 창이 항상 최상단 — 적 창 타이틀바가 플레이어 창과 겹치면
-                //   숨겨서 '플레이어 창이 덮는' 연출 (사진처럼). 타이틀바 밴드(상단 22px)가
-                //   플레이어 창 사각형과 겹치는지로 판정.
-                auto occByPlayer = [&](float wx, float wy, float ww) {
-                    const float TB = 22.0f;
-                    float px0 = playerWin.x, py0 = playerWin.y;
-                    float px1 = px0 + playerWin.width, py1 = py0 + playerWin.height;
-                    return (wx < px1 && wx + ww > px0 && wy < py1 && wy + TB > py0);
+                // 가짜창 타이틀바 — 위에서 만든 z-리스트(낮음→높음) 순서로 그림.
+                //   각 창의 타이틀바가 '자기보다 높은 창' 또는 '플레이어 창'과 겹치면
+                //   숨김(우선순위 가림: 봇넷<원거리<보스<플레이어, 같은 타입은 소환순서).
+                const float TBH = 22.0f;
+                auto barOverlap = [&](float ax, float ay, float aw,
+                                      float bx, float by, float bw, float bh) {
+                    return (ax < bx+bw && ax+aw > bx && ay < by+bh && ay+TBH > by);
                 };
-                // 적 창 타이틀바 — wx,wy,ww 의 타이틀바가 플레이어 창과 겹치면 숨김
-                auto enemyChrome = [&](float wx, float wy, float ww, float wh,
-                                       const wchar_t* nm, float cr, float cg, float cb) {
-                    if (occByPlayer(wx, wy, ww)) return;
-                    winChrome(wx, wy, ww, wh, nm, cr, cg, cb);
-                };
-                // 봇넷 노드(SPAWNER) (최하단)
-                for (auto m : g_MonsterManager.monsters) {
-                    if (!m->alive || m->kind != MobKind::SPAWNER) continue;
-                    float w = SPAWNER_WIN_W * m->sizeScale;
-                    enemyChrome(m->worldX-w*0.5f, m->worldY-w*0.5f, w, w, L"botnet.node", 0.2f,0.85f,0.65f);
-                }
-                for (auto r : g_MonsterManager.rangedMobs) {
-                    if (r->deathScale <= 0.0f) continue;
-                    float sc=r->deathScale, rW=RFW_W*sc, rH=RFW_H*sc;
-                    enemyChrome(r->worldX-rW*0.5f, r->worldY-rH*0.5f, rW, rH, L"popup.exe", 0.9f,0.3f,0.7f);
-                }
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                    auto* bs=g_MonsterManager.boss;
-                    enemyChrome(bs->worldX-Boss::WIN_W*0.5f, bs->worldY-Boss::WIN_H*0.5f,
-                                Boss::WIN_W, Boss::WIN_H, L"SLIME.worm", 0.5f,0.95f,0.5f);
-                }
-                for (auto* c : g_Slimelings) if (c->alive) {
-                    float w=Boss::WIN_W*c->sizeScale;
-                    enemyChrome(c->worldX-w*0.5f, c->worldY-w*0.5f, w, w, L"slime.worm", 0.5f,0.95f,0.5f);
-                }
-                if (g_GlitchBoss && g_GlitchBoss->alive) {
-                    float w=GLITCH_WIN_W;
-                    enemyChrome(g_GlitchBoss->worldX-w*0.5f, g_GlitchBoss->worldY-w*0.5f, w, w,
-                                L"GLITCH.sys", 0.95f,0.2f,0.6f);
-                }
-                if (g_RRBoss && g_RRBoss->alive) {
-                    float w=RR_WIN_W;
-                    enemyChrome(g_RRBoss->worldX-w*0.5f, g_RRBoss->worldY-w*0.5f, w, w,
-                                L"RELOADER.exe", 1.0f,0.55f,0.2f);
-                }
-                if (g_PolyBoss && g_PolyBoss->alive) {
-                    float w=POLY_WIN_W;
-                    enemyChrome(g_PolyBoss->worldX-w*0.5f, g_PolyBoss->worldY-w*0.5f, w, w,
-                                L"POLYMORPH.vir", 0.6f,0.25f,1.0f);
-                }
-                if (g_SpamBoss && g_SpamBoss->alive) {
-                    float w=SPAM_WIN_W;
-                    enemyChrome(g_SpamBoss->worldX-w*0.5f, g_SpamBoss->worldY-w*0.5f, w, w,
-                                L"SPAM.dll", 1.0f,0.4f,0.8f);
-                }
-                if (g_KernelBoss && g_KernelBoss->alive) {
-                    float w=KERNEL_WIN_W;
-                    enemyChrome(g_KernelBoss->worldX-w*0.5f, g_KernelBoss->worldY-w*0.5f, w, w,
-                                L"KERNEL.sys", 1.0f,0.65f,0.25f);
-                }
-                if (g_FirewallBoss && g_FirewallBoss->alive) {
-                    float w=FIREWALL_WIN_W;
-                    enemyChrome(g_FirewallBoss->worldX-w*0.5f, g_FirewallBoss->worldY-w*0.5f, w, w,
-                                L"FIREWALL.sys", 1.0f,0.45f,0.2f);
-                }
-                if (g_BotnetBoss && g_BotnetBoss->alive) {
-                    float w=BOTNET_WIN_W;
-                    enemyChrome(g_BotnetBoss->worldX-w*0.5f, g_BotnetBoss->worldY-w*0.5f, w, w,
-                                L"BOTNET.exe", 0.3f,0.55f,1.0f);
-                }
-                if (g_CentiBoss && g_CentiBoss->alive) {
-                    float w=CENTI_WIN_W;
-                    enemyChrome(g_CentiBoss->worldX-w*0.5f, g_CentiBoss->worldY-w*0.5f, w, w,
-                                L"BUG.proc", 0.7f,1.0f,0.3f);
+                for (size_t i = 0; i < zwins.size(); i++) {
+                    const FWin& fw = zwins[i];
+                    bool occ = barOverlap(fw.x, fw.y, fw.w,
+                                          playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+                    for (size_t j = i + 1; j < zwins.size() && !occ; j++)
+                        occ = barOverlap(fw.x, fw.y, fw.w, zwins[j].x, zwins[j].y, zwins[j].w, zwins[j].h);
+                    if (occ) continue;
+                    winChrome(fw.x, fw.y, fw.w, fw.h, fw.name, fw.nr, fw.ngc, fw.nbc);
                 }
                 // 플레이어 창 — 마지막에 그려 항상 최상단
                 winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
