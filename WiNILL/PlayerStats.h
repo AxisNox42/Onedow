@@ -136,12 +136,7 @@ struct PlayerStats {
         // ── 일반 (버프: QA 피드백 — 일반 증강이 너무 약함) ──
         //   ※ 검객/궁수 변환: 무의미한 스탯 증강을 클래스에 맞게 재해석
         case AugType::DMG_UP:
-            if (bowWeapon) {                              // 궁수: 공격력 → 풀차징 한도↑
-                bowChargeCapBonus += 0.30f;
-                flatDamageBonus   += 3.0f;
-            } else {
-                flatDamageBonus   += 10.0f;               // 그 외(검객 포함): 가산 공격력 +10
-            }
+            flatDamageBonus   += 12.0f;                   // 일반 가산 공격력 +12 (초반 강화)
             break;
         case AugType::RATE_UP:
             if (meleeWeapon)      flatDamageBonus   += 5.0f;   // 검객: 연사 무의미 → 가산 공격력
@@ -163,9 +158,9 @@ struct PlayerStats {
         case AugType::XP_UP:     xpMult       *= 1.05f; break;
 
         // ── 등급별 공격력 (가산) — 초반 강세. 곱연산 폭주 제거 ──
-        case AugType::OVERDRIVE:      flatDamageBonus += 10.0f; break;  // 희귀 +10
-        case AugType::CORE_OVERLOAD:  flatDamageBonus += 20.0f; break;  // 에픽 +20
-        case AugType::POWER_SURGE:    damageMultiplier *= 1.05f; break; // 전설 +5%(유일 곱연산)
+        case AugType::OVERDRIVE:      flatDamageBonus += 18.0f; break;  // 희귀 +18 (버프)
+        case AugType::CORE_OVERLOAD:  flatDamageBonus += 30.0f; break;  // 에픽 +30 (버프)
+        case AugType::POWER_SURGE:    damageMultiplier *= 1.07f; break; // 전설 +7%(유일 곱연산)
 
         // ── 희귀 ──
         case AugType::GLASS_CANNON:
@@ -188,8 +183,8 @@ struct PlayerStats {
         // ── 에픽 ──
         case AugType::VAMPIRE:
             vampire = true;
-            maxHP  *= 0.90f;
-            // 현재 HP -20%는 main의 applyAug 에서 처리
+            maxHP  += 25.0f;             // 버프: 패널티(-10%) 제거 → 최대 체력 +25
+            lifestealPerKill += 0.15f;   // 버프: 처치당 소량 흡혈도 추가(흡혈탄과 경쟁)
             break;
         case AugType::BROKEN_SIGHT:
             brokenSight       = true;
@@ -240,8 +235,7 @@ struct PlayerStats {
             minigun           = true;
             fireInterval     /= 2.0f;
             damageMultiplier *= 0.70f;
-            pierce            = true;
-            if (pierceChance < 20) pierceChance = 20;  // 미니건 관통 20%
+            // (미니건 관통 제거 — 요청)
             break;
         case AugType::HACK_RANGED: hackRanged = true; break;
         // 확률적 연쇄 작용 — 30% 확률, 최대 3튕김
@@ -456,8 +450,8 @@ struct PlayerStats {
             break;
         // ── 잡몹/플레이어 디버프 ──
         case AugType::D_MOB_HP:
-            monsterHpMult   *= 1.20f;
-            meleeXpBonus    += 1;
+            monsterHpMult   *= 1.45f;        // 잡몹 체력 증가량 ↑ (1.20 → 1.45)
+            meleeXpBonus    += 2;
             break;
         case AugType::D_SLOW_MOVE:
             moveSpeedMult   *= 0.95f;

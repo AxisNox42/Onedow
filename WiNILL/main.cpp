@@ -1589,6 +1589,8 @@ int main() {
                     g_OwnedAugs.clear();
                     memset(g_GameManager.takenOnce, 0,
                            sizeof(g_GameManager.takenOnce));
+                    memset(g_TypeOwned, 0, sizeof(g_TypeOwned));   // 조합 레시피 보유도 초기화
+                    //   (없으면 더블 잃었는데 '관통 쌍둥이' 조합이 뜨던 버그)
                     g_GameManager.maxHP = g_Stats.maxHP;
                     if (g_GameManager.playerHP > g_Stats.maxHP)
                         g_GameManager.playerHP = g_Stats.maxHP;
@@ -1647,9 +1649,7 @@ int main() {
                 if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
                     g_GameManager.takenOnce[idx] = true;
 
-                // 흡혈마: 현재 HP -20%
-                if (atype == AugType::VAMPIRE)
-                    g_GameManager.playerHP *= 0.80f;
+                // (흡혈마 버프: 현재 HP -20% 패널티 제거 — 최대 체력 +25/흡혈로 변경)
 
                 // 미니화: 강제로 maxHP 10 적용 후 현재 HP cap
                 if (g_GameManager.playerHP > g_Stats.maxHP)
@@ -3147,8 +3147,8 @@ int main() {
             // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
             //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
-            if (hpIntensity > 14.0f) hpIntensity = 14.0f;
-            float rampHp    = 1.0f + hpIntensity * 0.35f; // 몹 체력 (×3.1 @60만 … ×5.9 @140만)
+            if (hpIntensity > 16.0f) hpIntensity = 16.0f;
+            float rampHp    = 1.0f + hpIntensity * 0.55f; // 몹 체력 스케일 ↑ (초반 강화 보정용)
             // 특수 잡몹(돌진/회피/거대) 출현 확률 — 점수 비례 (초반 0 → 약 13.5만점에 45% 상한)
             int   varietyPct = (int)std::min(45.0f, (float)g_GameManager.score / 3000.0f);
             // 엘리트 변종 확률 — 점수 비례 (초반 0 → 약 14만점에 12% 상한)
@@ -3247,9 +3247,9 @@ int main() {
                     else if (g_GameManager.score >= g_NextBossScore) {
                         // 일반 보스 (슬라임/글리치/리로드/스팸 랜덤) — 다음 임계 +20만
                         g_NextBossScore += 200000;
-                        // 점수 비례 체력 스케일 (30만=×2 … 상한 ×8 = 210만점)
-                        float sc = 1.0f + (float)g_GameManager.score / 300000.0f;
-                        if (sc > 8.0f) sc = 8.0f;
+                        // 점수 비례 체력 스케일 ↑ (20만=×2 … 상한 ×12) — 초반 강화 보정
+                        float sc = 1.0f + (float)g_GameManager.score / 200000.0f;
+                        if (sc > 12.0f) sc = 12.0f;
                         // 라운드2: 플레이어 레벨 비례 추가 스케일 — 후반 원펀맨이라도 보스는 위협 유지
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
@@ -6998,7 +6998,7 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
                 // 시작 점수
                 g_TextS.Draw(L"Start Score", 60.0f, sh*0.22f, 1.0f, 1,1,1,0.9f);
                 struct ScoreOpt { const wchar_t* l; long long v; };
-                ScoreOpt sOpts[4] = { {L"0",0},{L"200k",200000},{L"400k",400000},{L"500k",500000} };
+                ScoreOpt sOpts[5] = { {L"0",0},{L"200k",200000},{L"400k",400000},{L"500k",500000} };
                 for (int i = 0; i < 4; i++) {
                     float ox = 60.0f + i * (OBW + OBG);
                     bool sel = (g_CreativeStartScore == sOpts[i].v);

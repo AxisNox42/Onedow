@@ -1,7 +1,10 @@
 #include "GameManager.h"
 #include "Settings.h"
+#include "PlayerStats.h"
 #include <string>
 #include <algorithm>   // std::min (등급 가중치 게이팅)
+
+extern PlayerStats g_Stats;   // 최대치 도달 증강 게이팅용 (main.cpp 정의)
 
 static const char* gm_vert =
     "#version 330 core\n"
@@ -199,9 +202,14 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::TWIN_2        && !hasOwnedType(AugType::TWIN))          continue;
             // 고장난 조준선 — 풀에서 제거 (요청)
             if (t == AugType::BROKEN_SIGHT) continue;
-            // 클래스 전용 — 해당 클래스 런에서만 등장
-            if ((t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND) && !g_RunMelee) continue;
-            if ((t == AugType::POWER_DRAW || t == AugType::MULTISHOT)  && !g_RunBow)   continue;
+            // 클래스 전용 — 검객/궁수 클래스 제거(DLC 보류) → 항상 제외
+            if (t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND ||
+                t == AugType::POWER_DRAW || t == AugType::MULTISHOT) continue;
+            // 제거된 증강 — 백신 스캔(쓰레기), 건 앤 러너
+            if (t == AugType::PURGE_NOVA || t == AugType::GUN_RUNNER) continue;
+            // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
+            if (t == AugType::VISION_UP && g_Stats.visionStacks >= 5) continue;
+            if (t == AugType::CRIT      && g_Stats.critChance   >= 75) continue;
             // 변환 전용 증강 — 일반 픽 제외 (4번째 변환 카드 슬롯에서만 등장)
             // BAYONET 은 일반 에픽으로 복원
             if (t == AugType::CANNON || t == AugType::SNIPER ||

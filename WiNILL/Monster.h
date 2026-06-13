@@ -138,7 +138,7 @@ public:
         elite = e;
         if (e == 1)      { speed *= 1.6f; }                          // 신속
         else if (e == 2) { hp *= 2.2f; sizeScale *= 1.35f; speed *= 0.85f; } // 강인
-        else if (e == 3) { hp *= 1.3f; }                            // 폭발성(죽을 때 터짐)
+        else if (e == 3) { hp *= 1.3f; speed *= 0.65f; }            // 폭발성(빨강) — 무거워 느리게
     }
 
     void Update(float playerCX, float playerCY, float deltaTime,
