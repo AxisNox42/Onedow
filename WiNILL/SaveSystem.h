@@ -6,10 +6,23 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <string>
 #include "Settings.h"
 #include "Meta.h"
 #include "Achievements.h"
 #include "Codex.h"
+
+// ── 세이브 난독화(F25) — 평문 편집 방지. 롤링 XOR(키는 exe 내장 상수).
+//   강한 암호는 아니지만 일반 사용자가 메모장으로 점수/코인 조작 못 하게 함.
+//   XOR 은 자기역원이라 같은 함수로 암·복호화. (자기 자신 호출)
+inline void OdwCrypt(std::string& s) {
+    static const char KEY[] = "0n3d0w-d3sktop-d3f3ns3-x0r-k3y-2026";
+    const int kl = (int)sizeof(KEY) - 1;
+    for (size_t i = 0; i < s.size(); i++)
+        s[i] = (char)((unsigned char)s[i] ^ (unsigned char)KEY[i % kl]
+                      ^ (unsigned char)((i * 31u + 7u) & 0xFF));
+}
+inline const char ODW_MAGIC[4] = { 'O','D','W','1' };
 
 // 영구 데이터 (설정은 Settings.h 전역을 그대로 직렬화)
 inline long long g_BestScore[3] = { 0, 0, 0 };   // 난이도별 최고 점수 (EASY/NORMAL/HARD)
@@ -20,39 +33,51 @@ inline long long g_LastRunCoins = 0;             // 직전 판 획득 코인 (GA
 inline const char* SaveFilePath() { return "onedow_save.cfg"; }
 
 inline void SaveGame() {
+    // 1) 평문(key=value) 을 문자열로 빌드
+    std::string buf;
+    char ln[96];
+    auto add = [&](const char* fmt, long long v) {
+        std::snprintf(ln, sizeof(ln), fmt, v); buf += ln;
+    };
+    add("lang=%lld\n",      (int)g_Language);
+    add("fps=%lld\n",       g_FpsCap);
+    add("crosshair=%lld\n", g_ShowCrosshair     ? 1 : 0);
+    add("dmgnum=%lld\n",    g_ShowDamageNumbers ? 1 : 0);
+    add("combo=%lld\n",     g_ShowCombo         ? 1 : 0);
+    add("soundvol=%lld\n",  g_SoundVol);
+    add("autofire=%lld\n",  g_AutoFire  ? 1 : 0);
+    add("autoskill=%lld\n", g_AutoSkill ? 1 : 0);
+    add("best_easy=%lld\n",   g_BestScore[0]);
+    add("best_normal=%lld\n", g_BestScore[1]);
+    add("best_hard=%lld\n",   g_BestScore[2]);
+    add("kills=%lld\n",   g_TotalKills);
+    add("games=%lld\n",   g_TotalGames);
+    add("coins=%lld\n",   g_Coins);
+    for (int i = 0; i < META_COUNT; i++) {
+        std::snprintf(ln, sizeof(ln), "meta%d=%d\n", i, g_MetaLv[i]); buf += ln;
+    }
+    add("bosskills=%lld\n", g_TotalBossKills);
+    for (int i = 0; i < ACH_COUNT; i++) {
+        std::snprintf(ln, sizeof(ln), "ach%d=%d\n", i, g_AchUnlocked[i] ? 1 : 0); buf += ln;
+    }
+    for (int i = 0; i < AUG_TOTAL; i++)
+        if (g_AugSeen[i]) { std::snprintf(ln, sizeof(ln), "augseen%d=1\n", i); buf += ln; }
+    for (int i = 0; i < CM_COUNT; i++)
+        if (g_MobSeen[i]) { std::snprintf(ln, sizeof(ln), "mobseen%d=1\n", i); buf += ln; }
+
+    // 2) 난독화 후 바이너리(매직+암호문)로 기록
+    OdwCrypt(buf);
 #ifdef _MSC_VER
 #  pragma warning(push)
 #  pragma warning(disable:4996)
 #endif
-    FILE* f = std::fopen(SaveFilePath(), "w");
+    FILE* f = std::fopen(SaveFilePath(), "wb");
 #ifdef _MSC_VER
 #  pragma warning(pop)
 #endif
     if (!f) return;
-    std::fprintf(f, "lang=%d\n",      (int)g_Language);
-    std::fprintf(f, "fps=%d\n",       g_FpsCap);
-    std::fprintf(f, "crosshair=%d\n", g_ShowCrosshair      ? 1 : 0);
-    std::fprintf(f, "dmgnum=%d\n",    g_ShowDamageNumbers  ? 1 : 0);
-    std::fprintf(f, "combo=%d\n",     g_ShowCombo          ? 1 : 0);
-    std::fprintf(f, "soundvol=%d\n",  g_SoundVol);
-    std::fprintf(f, "autofire=%d\n",  g_AutoFire ? 1 : 0);
-    std::fprintf(f, "autoskill=%d\n", g_AutoSkill ? 1 : 0);
-    std::fprintf(f, "best_easy=%lld\n",   g_BestScore[0]);
-    std::fprintf(f, "best_normal=%lld\n", g_BestScore[1]);
-    std::fprintf(f, "best_hard=%lld\n",   g_BestScore[2]);
-    std::fprintf(f, "kills=%lld\n",   g_TotalKills);
-    std::fprintf(f, "games=%lld\n",   g_TotalGames);
-    std::fprintf(f, "coins=%lld\n",   g_Coins);
-    for (int i = 0; i < META_COUNT; i++)
-        std::fprintf(f, "meta%d=%d\n", i, g_MetaLv[i]);
-    std::fprintf(f, "bosskills=%lld\n", g_TotalBossKills);
-    for (int i = 0; i < ACH_COUNT; i++)
-        std::fprintf(f, "ach%d=%d\n", i, g_AchUnlocked[i] ? 1 : 0);
-    // 도감 발견 — 발견된 것만 기록
-    for (int i = 0; i < AUG_TOTAL; i++)
-        if (g_AugSeen[i]) std::fprintf(f, "augseen%d=1\n", i);
-    for (int i = 0; i < CM_COUNT; i++)
-        if (g_MobSeen[i]) std::fprintf(f, "mobseen%d=1\n", i);
+    std::fwrite(ODW_MAGIC, 1, 4, f);
+    if (!buf.empty()) std::fwrite(buf.data(), 1, buf.size(), f);
     std::fclose(f);
 }
 
@@ -61,13 +86,34 @@ inline void LoadGame() {
 #  pragma warning(push)
 #  pragma warning(disable:4996)
 #endif
-    FILE* f = std::fopen(SaveFilePath(), "r");
+    FILE* f = std::fopen(SaveFilePath(), "rb");
 #ifdef _MSC_VER
 #  pragma warning(pop)
 #endif
     if (!f) return;
+    // 전체를 읽어 매직 확인 → 난독화면 복호화, 아니면 구버전 평문으로 처리.
+    std::string raw;
+    {
+        char tmp[1024]; size_t n;
+        while ((n = std::fread(tmp, 1, sizeof(tmp), f)) > 0) raw.append(tmp, n);
+    }
+    std::fclose(f);
+    std::string content;
+    if (raw.size() >= 4 && std::memcmp(raw.data(), ODW_MAGIC, 4) == 0) {
+        content = raw.substr(4);
+        OdwCrypt(content);            // 복호화 (XOR 자기역원)
+    } else {
+        content = raw;                // 구버전 평문 세이브 호환
+    }
+    // 줄 단위 파싱 (기존 sscanf 로직 그대로)
+    size_t pos = 0;
     char line[160];
-    while (std::fgets(line, sizeof(line), f)) {
+    while (pos < content.size()) {
+        size_t nl = content.find('\n', pos);
+        if (nl == std::string::npos) nl = content.size();
+        size_t len = nl - pos; if (len >= sizeof(line)) len = sizeof(line) - 1;
+        std::memcpy(line, content.data() + pos, len); line[len] = '\0';
+        pos = nl + 1;
         char key[64]; long long val = 0;
 #ifdef _MSC_VER
 #  pragma warning(push)
@@ -110,7 +156,6 @@ inline void LoadGame() {
             if (mi >= 0 && mi < CM_COUNT) g_MobSeen[mi] = (val != 0);
         }
     }
-    std::fclose(f);
 }
 
 // 한 판 종료 시 호출 — 최고점/누적 기록 갱신 후 저장. 신기록이면 true.
