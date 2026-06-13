@@ -720,7 +720,24 @@ static const char* fragSrc =
     "#version 330 core\n"
     "in vec4 vColor;\n"
     "out vec4 FragColor;\n"
-    "void main() { FragColor = vColor; }\n";
+    "uniform int  uFx;    // 0 = 그대로, 1 = CRT(스캔라인+비네트)\n"
+    "uniform vec2 uRes;   // 화면 해상도(px)\n"
+    "void main() {\n"
+    "    vec4 c = vColor;\n"
+    "    if (uFx == 1) {\n"
+    "        // 스캔라인 — 가로줄마다 살짝 어둡게 (터미널/CRT 느낌)\n"
+    "        float scan = 0.88 + 0.12 * (0.5 + 0.5 * sin(gl_FragCoord.y * 3.14159));\n"
+    "        c.rgb *= scan;\n"
+    "        // 비네트 — 화면 가장자리 살짝 어둡게\n"
+    "        vec2 uv = gl_FragCoord.xy / max(uRes, vec2(1.0));\n"
+    "        vec2 d = uv - vec2(0.5);\n"
+    "        c.rgb *= (1.0 - dot(d, d) * 0.55);\n"
+    "        // 미세 주사 글로우 — 밝은 픽셀을 살짝 더 밝게(네온 강조)\n"
+    "        float lum = max(c.r, max(c.g, c.b));\n"
+    "        c.rgb += c.rgb * smoothstep(0.6, 1.0, lum) * 0.18;\n"
+    "    }\n"
+    "    FragColor = c;\n"
+    "}\n";
 
 // --- 콜백 ---
 void key_callback(GLFWwindow*, int key, int, int action, int) {
@@ -1042,6 +1059,10 @@ int main() {
 
     GLint projLoc  = glGetUniformLocation(shader, "projection");
     g_colorLoc     = glGetUniformLocation(shader, "color");
+    GLint fxLoc    = glGetUniformLocation(shader, "uFx");    // CRT 효과 토글
+    GLint resLoc   = glGetUniformLocation(shader, "uRes");   // 화면 해상도
+    glUseProgram(shader);
+    glUniform2f(resLoc, (float)screenWidth, (float)screenHeight);
 
     // UI 코드에서 BindMainShader() 로 재바인드할 수 있게 글로벌에 보관
     g_MainShader  = shader;
@@ -4180,6 +4201,7 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shader);
+        glUniform1i(fxLoc, g_ShaderFx ? 1 : 0);   // CRT 셰이더 효과 토글 (G)
         // 화면 흔들기 + 줌 적용 — game world 만, HUD/text(별도 ortho)는 영향 없음
         float orthoShake[16];
         memcpy(orthoShake, ortho, sizeof(ortho));
@@ -7079,7 +7101,7 @@ static void Scene_Settings(const SceneCtx& c) {
         SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
     (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
     (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                const float WW = 940.0f, WH = 680.0f;
+                const float WW = 940.0f, WH = 740.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
@@ -7168,10 +7190,24 @@ static void Scene_Settings(const SceneCtx& c) {
                                  T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_AutoSkill))
                         g_AutoSkill = false;
                 }
+                // CRT 셰이더 효과 토글 (G)
+                {
+                    const wchar_t* sfLabel =
+                        (g_Language == Language::EN) ? L"CRT Shader" :
+                        (g_Language == Language::JP) ? L"CRTシェーダー" : L"CRT 셰이더";
+                    float ly = wy + 540.0f;
+                    g_TextS.Draw(sfLabel, lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
+                    if (UIButton(bx0, ly, OW, OH,
+                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, g_ShaderFx))
+                        g_ShaderFx = true;
+                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
+                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_ShaderFx))
+                        g_ShaderFx = false;
+                }
 
                 // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
                 {
-                    float vy = wy + 552.0f;
+                    float vy = wy + 604.0f;
                     g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
                     auto clampVol = [](int v){ return v < 0 ? 0 : (v > 100 ? 100 : v); };
 

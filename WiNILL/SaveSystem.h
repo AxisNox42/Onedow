@@ -47,6 +47,7 @@ inline void SaveGame() {
     add("soundvol=%lld\n",  g_SoundVol);
     add("autofire=%lld\n",  g_AutoFire  ? 1 : 0);
     add("autoskill=%lld\n", g_AutoSkill ? 1 : 0);
+    add("shaderfx=%lld\n",  g_ShaderFx  ? 1 : 0);
     add("best_easy=%lld\n",   g_BestScore[0]);
     add("best_normal=%lld\n", g_BestScore[1]);
     add("best_hard=%lld\n",   g_BestScore[2]);
@@ -132,6 +133,7 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
         else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);
         else if (!std::strcmp(key, "autoskill"))   g_AutoSkill         = (val != 0);
+        else if (!std::strcmp(key, "shaderfx"))    g_ShaderFx          = (val != 0);
         else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val;
         else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val;
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val;

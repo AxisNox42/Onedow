@@ -112,4 +112,7 @@ inline bool g_AutoFire          = true;
 //   기본 OFF(수동). 설정에서 토글.
 inline bool g_AutoSkill         = false;
 
+// CRT 셰이더 효과 (G) — 스캔라인 + 비네트 + 네온 글로우. 기본 ON. 설정에서 토글.
+inline bool g_ShaderFx          = true;
+
 // (추후 확장: 마스터 볼륨, 마우스 감도 등)
