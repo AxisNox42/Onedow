@@ -82,7 +82,7 @@ struct PlayerStats {
     int   droneCount   = 0;       // 1 = DRONE (RARE), 2 = DRONE_2 (LEGENDARY)
     bool  laser        = false;   // 스캔 레이저 — 주기적 관통 빔 (군중제어)
     int   laserTier    = 1;       // 1 = LASER, 2 = LASER_2 (간격↓·사거리↑)
-    int   boomerang    = 0;       // 부메랑 개수 (주기적 던지기, 관통 타격)
+    int   purgeNova    = 0;       // 백신 스캔 — 주기적 범위 펄스 (중첩 시 강화)
     bool  bulletRain   = false;
     float bulletRainCooldown = 15.0f; // 15 → 10 (II) → 5 (III)
     int   chakramCount = 0;       // 1, 2, 3 — CHAKRAM / II / III
@@ -320,8 +320,8 @@ struct PlayerStats {
         case AugType::LASER:
             laser = true;
             break;
-        case AugType::BOOMERANG:
-            ++boomerang;   // 중첩 시 더 많이 던짐
+        case AugType::PURGE_NOVA:
+            ++purgeNova;   // 중첩 시 주기↓·범위↑
             break;
         // ── 티어 연장 ──
         case AugType::LASER_2:

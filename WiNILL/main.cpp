@@ -431,14 +431,11 @@ std::vector<LaserBeam> g_LaserBeams;
 float          g_LaserTimer = 0.0f;
 constexpr float LASER_INT   = 0.85f;  // 발사 주기(초) — 너프: 0.7
 
-// ── 부메랑 (증강) — 주기적으로 조준 방향으로 던져 나갔다 돌아오며 관통 타격 ──
-struct Boomerang { float x, y, dx, dy, spin, traveled; bool returning; bool active; };
-std::vector<Boomerang> g_Booms;
-float          g_BoomTimer  = 0.0f;
-constexpr float BOOM_INT    = 2.2f;    // 던지는 주기(초)
-constexpr float BOOM_SPD    = 720.0f;  // 비행 속도
-constexpr float BOOM_RANGE  = 520.0f;  // 나가는 최대 사거리
-constexpr float BOOM_HITR   = 46.0f;   // 타격 반경
+// ── 백신 스캔 (증강) — 주기적으로 플레이어 주변에 정화 펄스(범위 일소) ──
+//   시각 링은 기존 SpawnShockWave(팽창 링) 재사용.
+float          g_NovaTimer  = 0.0f;
+constexpr float NOVA_INT    = 2.4f;    // 펄스 주기(초, 중첩 시 단축)
+constexpr float NOVA_R      = 240.0f;  // 기본 반경(중첩 시 확대)
 
 // ── 보스 등장 전조(증상) ──────────────────────────────────────
 //   보스 스폰을 "결정 → 2.5초 전조(테마 증상 + 경고 배너) → 실제 생성" 으로 분리.
@@ -720,21 +717,28 @@ static const char* fragSrc =
     "#version 330 core\n"
     "in vec4 vColor;\n"
     "out vec4 FragColor;\n"
-    "uniform int  uFx;    // 0 = 그대로, 1 = CRT(스캔라인+비네트)\n"
+    "uniform int  uFx;    // 0 = 그대로, 1 = 셰이더(그레이딩+글로우+스캔라인)\n"
     "uniform vec2 uRes;   // 화면 해상도(px)\n"
     "void main() {\n"
     "    vec4 c = vColor;\n"
     "    if (uFx == 1) {\n"
-    "        // 스캔라인 — 가로줄마다 살짝 어둡게 (터미널/CRT 느낌)\n"
-    "        float scan = 0.88 + 0.12 * (0.5 + 0.5 * sin(gl_FragCoord.y * 3.14159));\n"
-    "        c.rgb *= scan;\n"
-    "        // 비네트 — 화면 가장자리 살짝 어둡게\n"
     "        vec2 uv = gl_FragCoord.xy / max(uRes, vec2(1.0));\n"
-    "        vec2 d = uv - vec2(0.5);\n"
-    "        c.rgb *= (1.0 - dot(d, d) * 0.55);\n"
-    "        // 미세 주사 글로우 — 밝은 픽셀을 살짝 더 밝게(네온 강조)\n"
+    "        // 1) 바이브런스 — 채도 부스트로 네온이 쨍하게 (마크 셰이더 느낌)\n"
+    "        float luma = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
+    "        c.rgb = mix(vec3(luma), c.rgb, 1.30);\n"
+    "        // 2) 컬러 그레이딩 — 위쪽 시안/아래쪽 보라빛 분위기 틴트\n"
+    "        vec3 topTint = vec3(0.92, 1.00, 1.06);\n"
+    "        vec3 botTint = vec3(1.04, 0.94, 1.06);\n"
+    "        c.rgb *= mix(botTint, topTint, uv.y);\n"
+    "        // 3) 블룸풍 글로우 — 밝은 픽셀을 더 밝게 끌어올림(네온 번짐 느낌)\n"
     "        float lum = max(c.r, max(c.g, c.b));\n"
-    "        c.rgb += c.rgb * smoothstep(0.6, 1.0, lum) * 0.18;\n"
+    "        c.rgb += c.rgb * smoothstep(0.55, 1.0, lum) * 0.35;\n"
+    "        // 4) 스캔라인 — 가로줄 미세 명암 (CRT)\n"
+    "        c.rgb *= 0.94 + 0.06 * (0.5 + 0.5 * sin(gl_FragCoord.y * 3.14159));\n"
+    "        // 5) 비네트 — 가장자리 살짝 어둡게\n"
+    "        vec2 d = uv - vec2(0.5);\n"
+    "        c.rgb *= (1.0 - dot(d, d) * 0.50);\n"
+    "        c.rgb = clamp(c.rgb, 0.0, 1.0);\n"
     "    }\n"
     "    FragColor = c;\n"
     "}\n";
@@ -1224,7 +1228,7 @@ int main() {
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
             g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
-            g_Booms.clear(); g_BoomTimer = 0.0f;           // 부메랑 초기화
+            g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
             g_RunMelee = false; g_RunBow = false;          // 클래스 게이팅 초기화
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
@@ -1457,7 +1461,7 @@ int main() {
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
                 g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
-                g_Booms.clear(); g_BoomTimer = 0.0f;   // 부메랑 정리
+                g_NovaTimer = 0.0f;   // 백신 스캔 정리
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
                     SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
@@ -4000,99 +4004,79 @@ int main() {
                 }
             }
 
-            // ── 부메랑 (증강) — 조준 방향으로 던져 나갔다 돌아오며 관통 타격 ──
-            if (g_Stats.boomerang > 0) {
-                g_BoomTimer += delta;
-                if (g_BoomTimer >= BOOM_INT && (int)g_Booms.size() < g_Stats.boomerang) {
-                    g_BoomTimer = 0.0f;
-                    float ang = atan2f(wmy - pCY, wmx - pCX);
-                    int idx = (int)g_Booms.size();
-                    float spread = (g_Stats.boomerang > 1)
-                                 ? ((float)idx - (g_Stats.boomerang - 1) * 0.5f) * 0.28f : 0.0f;
-                    Boomerang bm; bm.x = pCX; bm.y = pCY;
-                    bm.dx = cosf(ang + spread); bm.dy = sinf(ang + spread);
-                    bm.spin = 0.0f; bm.traveled = 0.0f; bm.returning = false; bm.active = true;
-                    g_Booms.push_back(bm);
-                }
-                float bdmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 1.4f;
-                auto bOnKill = [&]() {
-                    if (g_Stats.lifestealPerKill > 0.0f) {
-                        g_GameManager.playerHP += g_Stats.lifestealPerKill;
-                        if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
-                    }
-                };
-                const float hr2 = BOOM_HITR * BOOM_HITR;
-                for (auto& bm : g_Booms) {
-                    if (!bm.active) continue;
-                    bm.spin += delta * 20.0f;
-                    if (!bm.returning) {
-                        bm.x += bm.dx * BOOM_SPD * delta; bm.y += bm.dy * BOOM_SPD * delta;
-                        bm.traveled += BOOM_SPD * delta;
-                        if (bm.traveled >= BOOM_RANGE) bm.returning = true;
-                    } else {
-                        float rx = pCX - bm.x, ry = pCY - bm.y; float rl = sqrtf(rx*rx+ry*ry)+1e-3f;
-                        bm.x += rx/rl * BOOM_SPD * delta; bm.y += ry/rl * BOOM_SPD * delta;
-                        if (rl < 44.0f) bm.active = false;   // 플레이어 회수
-                    }
-                    // 잡몹 — 접촉 즉사급
+            // ── 백신 스캔 (증강) — 주기적으로 플레이어 주변 정화 펄스(범위 일소) ──
+            if (g_Stats.purgeNova > 0) {
+                int   n      = g_Stats.purgeNova;
+                float novaInt = NOVA_INT / (1.0f + 0.2f * (float)(n - 1));      // 중첩 시 주기↓
+                float novaR   = NOVA_R   * (1.0f + 0.18f * (float)(n - 1));     // 중첩 시 범위↑
+                g_NovaTimer += delta;
+                if (g_NovaTimer >= novaInt) {
+                    g_NovaTimer = 0.0f;
+                    float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 2.0f;
+                    float r2  = novaR * novaR;
+                    auto nOnKill = [&]() {
+                        if (g_Stats.lifestealPerKill > 0.0f) {
+                            g_GameManager.playerHP += g_Stats.lifestealPerKill;
+                            if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
+                        }
+                    };
                     for (auto m : g_MonsterManager.monsters) {
                         if (!m->alive) continue;
-                        float dx=m->worldX-bm.x, dy=m->worldY-bm.y;
-                        if (dx*dx+dy*dy < hr2) {
-                            m->hp -= bdmg;
+                        float dx=m->worldX-pCX, dy=m->worldY-pCY;
+                        if (dx*dx+dy*dy < r2) {
+                            m->hp -= dmg;
                             if (m->hp <= 0.0f && !m->scored) {
                                 m->alive=false; m->scored=true; AddKillCombo();
                                 float bx,bs; MobKillReward(m->kind,m->splitGen,m->elite,bx,bs);
                                 g_GameManager.xp += (long long)((bx+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum += bs;
-                                g_GameManager.score=(long long)g_GameManager.scoreAccum; bOnKill();
+                                g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill();
                             }
                         }
                     }
                     for (auto bmb : g_MonsterManager.bombers) {
                         if (!bmb->alive) continue;
-                        float dx=bmb->worldX-bm.x, dy=bmb->worldY-bm.y;
-                        if (dx*dx+dy*dy < hr2) {
-                            bmb->hp -= bdmg;
+                        float dx=bmb->worldX-pCX, dy=bmb->worldY-pCY;
+                        if (dx*dx+dy*dy < r2) {
+                            bmb->hp -= dmg;
                             if (bmb->hp<=0.0f && !bmb->scored){ bmb->alive=false; bmb->scored=true; AddKillCombo();
                                 g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum+=200.0f;
-                                g_GameManager.score=(long long)g_GameManager.scoreAccum; bOnKill(); }
+                                g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill(); }
                         }
                     }
                     for (auto r : g_MonsterManager.rangedMobs) {
                         if (!r->alive) continue;
-                        float dx=r->worldX-bm.x, dy=r->worldY-bm.y;
-                        if (dx*dx+dy*dy < hr2) {
-                            r->hp -= bdmg;
+                        float dx=r->worldX-pCX, dy=r->worldY-pCY;
+                        if (dx*dx+dy*dy < r2) {
+                            r->hp -= dmg;
                             if (r->hp<=0.0f && !r->scored){ r->alive=false; r->scored=true; AddKillCombo();
                                 g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.rangedXpBonus)*g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum+=300.0f;
-                                g_GameManager.score=(long long)g_GameManager.scoreAccum; bOnKill(); }
+                                g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill(); }
                         }
                     }
-                    // 보스 — 칩(프레임당 소량, 보스에 머무를 때 폭주 방지)
-                    auto bhitB = [&](float ex, float ey, float& hp, bool& al) {
-                        float dx=ex-bm.x, dy=ey-bm.y;
-                        if (dx*dx+dy*dy < (BOOM_HITR+60.0f)*(BOOM_HITR+60.0f)) {
-                            hp -= bdmg * delta * 6.0f; if (hp <= 0.0f) al = false;
-                        }
+                    // 보스 — 범위 내면 한 방 칩(보스 체력의 폭주 없게 고정량)
+                    auto nhitB = [&](float ex, float ey, float& hp, bool& al) {
+                        float dx=ex-pCX, dy=ey-pCY;
+                        if (dx*dx+dy*dy < (novaR+70.0f)*(novaR+70.0f)) { hp -= dmg * 2.0f; if (hp<=0.0f) al=false; }
                     };
                     if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                        bhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
+                        nhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
                               g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
-                    for (auto* c : g_Slimelings) if (c->alive) bhitB(c->worldX,c->worldY,c->hp,c->alive);
-                    if (g_GlitchBoss && g_GlitchBoss->alive) bhitB(g_GlitchBoss->worldX,g_GlitchBoss->worldY,g_GlitchBoss->hp,g_GlitchBoss->alive);
-                    if (g_RRBoss && g_RRBoss->alive) bhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
-                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) bhitB(g_PolyBoss->worldX,g_PolyBoss->worldY,g_PolyBoss->hp,g_PolyBoss->alive);
-                    if (g_SpamBoss && g_SpamBoss->alive) bhitB(g_SpamBoss->worldX,g_SpamBoss->worldY,g_SpamBoss->hp,g_SpamBoss->alive);
-                    if (g_KernelBoss && g_KernelBoss->alive) bhitB(g_KernelBoss->worldX,g_KernelBoss->worldY,g_KernelBoss->hp,g_KernelBoss->alive);
-                    if (g_FirewallBoss && g_FirewallBoss->alive) bhitB(g_FirewallBoss->worldX,g_FirewallBoss->worldY,g_FirewallBoss->hp,g_FirewallBoss->alive);
-                    if (g_BotnetBoss && g_BotnetBoss->alive) bhitB(g_BotnetBoss->worldX,g_BotnetBoss->worldY,g_BotnetBoss->hp,g_BotnetBoss->alive);
-                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) bhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
+                    for (auto* c : g_Slimelings) if (c->alive) nhitB(c->worldX,c->worldY,c->hp,c->alive);
+                    if (g_GlitchBoss && g_GlitchBoss->alive) nhitB(g_GlitchBoss->worldX,g_GlitchBoss->worldY,g_GlitchBoss->hp,g_GlitchBoss->alive);
+                    if (g_RRBoss && g_RRBoss->alive) nhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
+                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) nhitB(g_PolyBoss->worldX,g_PolyBoss->worldY,g_PolyBoss->hp,g_PolyBoss->alive);
+                    if (g_SpamBoss && g_SpamBoss->alive) nhitB(g_SpamBoss->worldX,g_SpamBoss->worldY,g_SpamBoss->hp,g_SpamBoss->alive);
+                    if (g_KernelBoss && g_KernelBoss->alive) nhitB(g_KernelBoss->worldX,g_KernelBoss->worldY,g_KernelBoss->hp,g_KernelBoss->alive);
+                    if (g_FirewallBoss && g_FirewallBoss->alive) nhitB(g_FirewallBoss->worldX,g_FirewallBoss->worldY,g_FirewallBoss->hp,g_FirewallBoss->alive);
+                    if (g_BotnetBoss && g_BotnetBoss->alive) nhitB(g_BotnetBoss->worldX,g_BotnetBoss->worldY,g_BotnetBoss->hp,g_BotnetBoss->alive);
+                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) nhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
+                    // 시각 — 팽창 링(SpawnShockWave 재사용) + 손맛
+                    SpawnShockWave(pCX, pCY, novaR, 0.45f, 0.4f, 1.0f, 0.75f);
+                    SpawnSparks(pCX, pCY, 10, 0.4f, 1.0f, 0.7f, 360.0f);
                 }
-                g_Booms.erase(std::remove_if(g_Booms.begin(), g_Booms.end(),
-                    [](const Boomerang& b){ return !b.active; }), g_Booms.end());
             }
 
             // 포탑 모드에서는 플레이어가 발사하지 않음
@@ -4603,27 +4587,6 @@ int main() {
             }
         }
 
-        // (c4) 부메랑 — 회전하는 노란 십자(부메랑) 모양
-        if (!g_Booms.empty()) {
-            BindMainShader();
-            for (auto& bm : g_Booms) {
-                if (!bm.active) continue;
-                float a = bm.spin;
-                float ca2 = cosf(a), sa = sinf(a);
-                // 두 날개(가로/세로 막대) 회전
-                for (int k = 0; k < 2; k++) {
-                    float bw = (k==0) ? 40.0f : 14.0f, bh = (k==0) ? 14.0f : 40.0f;
-                    float hx = bw*0.5f, hy = bh*0.5f;
-                    float c1x=-hx,c1y=-hy, c2x=hx,c2y=-hy, c3x=hx,c3y=hy, c4x=-hx,c4y=hy;
-                    auto rot=[&](float x,float y,float&ox,float&oy){ ox=bm.x+x*ca2-y*sa; oy=bm.y+x*sa+y*ca2; };
-                    float q1x,q1y,q2x,q2y,q3x,q3y,q4x,q4y;
-                    rot(c1x,c1y,q1x,q1y); rot(c2x,c2y,q2x,q2y); rot(c3x,c3y,q3x,q3y); rot(c4x,c4y,q4x,q4y);
-                    float v[12]={q1x,q1y,q2x,q2y,q3x,q3y, q1x,q1y,q3x,q3y,q4x,q4y};
-                    BatchVerts(v, 6, 1.0f, 0.85f, 0.2f, 1.0f);
-                }
-                drawCircle(bm.x, bm.y, 7.0f, 1.0f, 1.0f, 0.6f, 1.0f);
-            }
-        }
 
         // (d) 플레이어 캐릭터 + 증강 이펙트 + 사망 파편
         {

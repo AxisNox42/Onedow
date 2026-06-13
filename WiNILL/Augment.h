@@ -20,7 +20,7 @@ enum class AugType {
     DRONE,                 // 희귀 → 에픽
     MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
     LASER,                 // 스캔 레이저 (주기적 관통 빔 — 군중제어)
-    BOOMERANG,             // 부메랑 (주기적 던지기 — 나갔다 돌아오며 관통)
+    PURGE_NOVA,            // 백신 스캔 (주기적 범위 펄스 — 주변 일소)
     MELEE_WIDE, BLADE_WIND,           // 검객 전용 (광폭 베기 / 칼바람)
     POWER_DRAW, MULTISHOT,            // 궁수 전용 (강궁 / 다중 사격)
     LASER_2, PIERCE_2, TWIN_2,        // 티어 연장 (레이저II / 관통II / 트리플)
@@ -205,11 +205,11 @@ static const AugDef ALL_AUGS[] = {
       { L"0.85초마다 조준 방향으로 중거리 관통 레이저 — 직선상 적 일소 (군중 제어)",
         L"Every 0.85s, a mid-range piercing laser along your aim — clears enemies in a line",
         L"0.85秒毎に照準方向へ中距離貫通レーザー — 直線上の敵を一掃 (群衆制御)" } },
-    { AugType::BOOMERANG,     AugRarity::EPIC,      AugUnique::NONE, "BOOMERANG",
-      { L"부메랑", L"Boomerang", L"ブーメラン" },
-      { L"2.2초마다 조준 방향으로 부메랑 — 나갔다 돌아오며 경로상 적 관통 타격  (중첩 시 추가)",
-        L"Every 2.2s throw a boomerang — flies out & back, piercing enemies on its path  (stacks)",
-        L"2.2秒毎に照準方向へブーメラン — 往復しながら経路上の敵を貫通  (重複可)" } },
+    { AugType::PURGE_NOVA,    AugRarity::EPIC,      AugUnique::NONE, "PURGE_NOVA",
+      { L"백신 스캔", L"Antivirus Pulse", L"ワクチンスキャン" },
+      { L"2.4초마다 플레이어 주변으로 정화 펄스 — 범위 내 적 일소  (중첩 시 주기↓·범위↑)",
+        L"Every 2.4s a purge pulse around you — clears nearby enemies  (stacks: faster·wider)",
+        L"2.4秒毎に自機周囲へ浄化パルス — 範囲内の敵を一掃  (重複で 周期↓·範囲↑)" } },
     { AugType::LASER_2,       AugRarity::LEGENDARY, AugUnique::NONE, "LASER II",
       { L"스캔 레이저 II", L"Scan Laser II", L"スキャンレーザー II" },
       { L"레이저 발사 0.85→0.55초 · 사거리 560→760  (요구: 스캔 레이저)",
