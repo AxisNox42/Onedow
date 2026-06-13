@@ -323,6 +323,21 @@ struct PlayerStats {
             deathBlast        = true;
             deathBlastMult   *= 1.6f;
             break;
+        case AugType::CB_TEMPEST:       // 차크람 + 드론 → 난기류
+            if (chakramCount < 3) ++chakramCount;
+            if (droneCount   < 3) ++droneCount;
+            fireInterval     /= 1.10f;
+            break;
+        case AugType::CB_OVERLORD:      // 오버드라이브 + 코어과부하 → 과부하 군주
+            flatDamageBonus  += 35.0f;
+            damageMultiplier *= 1.12f;
+            break;
+        case AugType::CB_HELLFIRE:      // 연쇄폭발 + 탄환세례 → 지옥불
+            deathBlast        = true;
+            deathBlastMult   *= 1.6f;
+            bulletRain        = true;
+            if (bulletRainCooldown > 5.0f) bulletRainCooldown = 5.0f;
+            break;
 
         // ── 희귀: 탄환세례 / 드론 ──
         case AugType::BULLET_RAIN:

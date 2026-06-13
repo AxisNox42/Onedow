@@ -59,7 +59,10 @@ enum class AugType {
     // ── 조합 (COMBO) 확장 — 끝에 추가해 기존 인덱스/세이브 보존 ──
     CB_RAILGUN,      // 저격 + 관통 → 레일건
     CB_GLASS_REAPER, // 유리대포 + 흡혈탄 → 유리 사신
-    CB_WARLORD       // 광전사 + 연쇄폭발 → 전쟁군주
+    CB_WARLORD,      // 광전사 + 연쇄폭발 → 전쟁군주
+    CB_TEMPEST,      // 차크람 + 드론 → 난기류 (공전 오케스트라)
+    CB_OVERLORD,     // 오버드라이브 + 코어과부하 → 과부하 군주
+    CB_HELLFIRE      // 연쇄폭발 + 탄환세례 → 지옥불
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO };
@@ -487,9 +490,24 @@ static const AugDef ALL_AUGS[] = {
       { L"[조합] 공격력 +25% · 폭발 반경 ↑ · 이동속도 +12%",
         L"[Combo] Attack +25% · blast radius up · move speed +12%",
         L"[組合] 攻撃+25%・爆発範囲↑・移動+12%" } },
+    { AugType::CB_TEMPEST,     AugRarity::COMBO,    AugUnique::NONE, "CB_TEMP",
+      { L"난기류", L"Tempest", L"乱気流" },
+      { L"[조합] 차크람 +1 · 드론 +1 · 연사 +10%",
+        L"[Combo] +1 chakram · +1 drone · fire rate +10%",
+        L"[組合] チャクラム+1・ドローン+1・連射+10%" } },
+    { AugType::CB_OVERLORD,    AugRarity::COMBO,    AugUnique::NONE, "CB_OVL",
+      { L"과부하 군주", L"Overlord", L"過負荷の王" },
+      { L"[조합] 공격력 +35 (가산) · 공격력 ×1.12",
+        L"[Combo] Attack +35 (flat) · attack ×1.12",
+        L"[組合] 攻撃+35(加算)・攻撃×1.12" } },
+    { AugType::CB_HELLFIRE,    AugRarity::COMBO,    AugUnique::NONE, "CB_HELL",
+      { L"지옥불", L"Hellfire", L"地獄の炎" },
+      { L"[조합] 연쇄 폭발 반경 ×1.6 · 탄환 세례 쿨다운 5초",
+        L"[Combo] Death blast radius ×1.6 · Bullet Rain CD 5s",
+        L"[組合] 連鎖爆発範囲×1.6・弾幕の雨CD5秒" } },
 };
 
-static constexpr int AUG_TOTAL = 85;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3, +조합3
+static constexpr int AUG_TOTAL = 88;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3, +조합6
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -505,6 +523,9 @@ inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_RAILGUN,      { AugType::SNIPER,       AugType::PIERCE     }, 2 },
     { AugType::CB_GLASS_REAPER, { AugType::GLASS_CANNON, AugType::LIFESTEAL  }, 2 },
     { AugType::CB_WARLORD,      { AugType::BERSERK,      AugType::DEATH_BLAST }, 2 },
+    { AugType::CB_TEMPEST,      { AugType::CHAKRAM,      AugType::DRONE       }, 2 },
+    { AugType::CB_OVERLORD,     { AugType::OVERDRIVE,    AugType::CORE_OVERLOAD }, 2 },
+    { AugType::CB_HELLFIRE,     { AugType::DEATH_BLAST,  AugType::BULLET_RAIN }, 2 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 
