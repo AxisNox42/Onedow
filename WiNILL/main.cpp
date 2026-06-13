@@ -6711,12 +6711,19 @@ static void Scene_Codex(const SceneCtx& c) {
                         g_TextS.Draw(d,  wx + 40.0f, detailY + 54.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
                     }
                 } else {
-                    // 증강 — 검색 필터링 후 재배치
-                    const int COLS = 12; const float CELL = 84.0f;
+                    // 증강 — 검색 필터링 후 재배치 (셀 축소 + 카테고리(등급)별 정렬로
+                    //   상세 박스 침범 방지 + 버프/디버프/특수/조합 그룹화)
+                    const int COLS = 15; const float CELL = 72.0f;
                     int vis[AUG_TOTAL], nv = 0;
                     for (int i = 0; i < AUG_TOTAL; i++)
                         if (g_CodexSearchLen == 0 || (g_AugSeen[i] && CodexMatch(AugName(ALL_AUGS[i]))))
                             vis[nv++] = i;
+                    // 등급 순(COMMON/RARE/EPIC/LEG → DEBUFF → SPECIAL → COMBO)으로 정렬 = 카테고리 그룹
+                    std::sort(vis, vis + nv, [](int a, int b) {
+                        int ra = (int)ALL_AUGS[a].rarity, rb = (int)ALL_AUGS[b].rarity;
+                        if (ra != rb) return ra < rb;
+                        return a < b;
+                    });
                     float gx = wx + (WW - COLS*CELL) * 0.5f;
                     for (int k = 0; k < nv; k++) {
                         int i = vis[k];
@@ -7784,6 +7791,14 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                 // 같은 인덱스 카운트 (스택)
                 int counts[AUG_TOTAL] = {};
                 for (int idx : g_OwnedAugs) counts[idx]++;
+                // 보유 증강을 카테고리(등급)순으로 정렬 — 버프→디버프→특수→조합 그룹화
+                int ord[AUG_TOTAL], nord = 0;
+                for (int i = 0; i < AUG_TOTAL; i++) if (counts[i] > 0) ord[nord++] = i;
+                std::sort(ord, ord + nord, [](int a, int b) {
+                    int ra = (int)ALL_AUGS[a].rarity, rb = (int)ALL_AUGS[b].rarity;
+                    if (ra != rb) return ra < rb;
+                    return a < b;
+                });
 
                 const float PX  = 16.0f;
                 const float ROW_H = 30.0f;
@@ -7796,8 +7811,8 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                 }
                 py += 50.0f;
 
-                for (int i = 0; i < AUG_TOTAL; i++) {
-                    if (counts[i] == 0) continue;
+                for (int oi = 0; oi < nord; oi++) {
+                    int i = ord[oi];
                     if (py > sh - 80.0f) break;
                     const AugDef& def = ALL_AUGS[i];
                     float cr, cg, cb;
