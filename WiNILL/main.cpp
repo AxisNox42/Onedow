@@ -5465,25 +5465,59 @@ int main() {
                 int li2 = (int)g_Language; if (li2<0||li2>=LANG_COUNT) li2=0;
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
                 // 가짜창 타이틀바 — 위에서 만든 z-리스트(낮음→높음) 순서로 그림.
-                //   각 창의 타이틀바가 '자기보다 높은 창' 또는 '플레이어 창'과 겹치면
-                //   숨김(우선순위 가림: 봇넷<원거리<보스<플레이어, 같은 타입은 소환순서).
+                //   '자기보다 높은 창' 또는 '플레이어 창'이 타이틀바를 덮으면, 전체를
+                //   숨기는 게 아니라 **겹친 가로 구간만** 잘라낸다(부분 클리핑).
+                //   타이틀바의 세로 띠[y,y+TB]와 겹치는 가림창의 x구간을 가시구간에서 빼고,
+                //   남은 구간들만 glScissor 로 클립해 그린다. (봇넷<원거리<보스<플레이어,
+                //   같은 타입은 소환순서)
                 const float TBH = 22.0f;
-                auto barOverlap = [&](float ax, float ay, float aw,
-                                      float bx, float by, float bw, float bh) {
-                    return (ax < bx+bw && ax+aw > bx && ay < by+bh && ay+TBH > by);
+                glEnable(GL_SCISSOR_TEST);
+                auto drawBarClipped = [&](float x, float y, float w, float h,
+                                          const wchar_t* nm, float nr, float ng, float nb,
+                                          size_t selfIdx, bool isPlayer) {
+                    // 가시 x구간 리스트 (각 vec2: x=시작, y=끝)
+                    std::vector<glm::vec2> vis{ glm::vec2(x, x + w) };
+                    auto subtract = [&](float c0, float c1) {
+                        if (c1 <= c0) return;
+                        std::vector<glm::vec2> out;
+                        for (auto& iv : vis) {
+                            float a = iv.x, b = iv.y;
+                            if (c1 <= a || c0 >= b) { out.push_back(iv); continue; }
+                            if (c0 > a) out.push_back(glm::vec2(a, c0));
+                            if (c1 < b) out.push_back(glm::vec2(c1, b));
+                        }
+                        vis.swap(out);
+                    };
+                    auto consider = [&](float ox, float oy, float ow, float oh) {
+                        if (oy < y + TBH && oy + oh > y)   // 가림창이 타이틀바 세로 띠와 겹침
+                            subtract(std::max(x, ox), std::min(x + w, ox + ow));
+                    };
+                    // 플레이어 창은 모든 가짜창보다 위 — 가짜창 그릴 땐 항상 가림
+                    if (!isPlayer)
+                        consider(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+                    // 자기보다 높은 z(뒤 인덱스) 가짜창들
+                    for (size_t j = selfIdx + 1; j < zwins.size(); j++)
+                        consider(zwins[j].x, zwins[j].y, zwins[j].w, zwins[j].h);
+                    // 남은 구간만 클립해 그림
+                    for (auto& iv : vis) {
+                        float a = iv.x, b = iv.y;
+                        if (b - a < 0.5f) continue;
+                        WorldScissor(a, y, b - a, TBH);
+                        winChrome(x, y, w, h, nm, nr, ng, nb);
+                    }
                 };
                 for (size_t i = 0; i < zwins.size(); i++) {
                     const FWin& fw = zwins[i];
-                    bool occ = barOverlap(fw.x, fw.y, fw.w,
-                                          playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-                    for (size_t j = i + 1; j < zwins.size() && !occ; j++)
-                        occ = barOverlap(fw.x, fw.y, fw.w, zwins[j].x, zwins[j].y, zwins[j].w, zwins[j].h);
-                    if (occ) continue;
-                    winChrome(fw.x, fw.y, fw.w, fw.h, fw.name, fw.nr, fw.ngc, fw.nbc);
+                    drawBarClipped(fw.x, fw.y, fw.w, fw.h, fw.name,
+                                   fw.nr, fw.ngc, fw.nbc, i, false);
                 }
-                // 플레이어 창 — 마지막에 그려 항상 최상단
+                BatchFlush();
+                // 플레이어 창 — 항상 최상단, 클립 없이 전체
+                glScissor(0, 0, (GLint)screenWidth, (GLint)screenHeight);
                 winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                           PNAME, 0.3f, 0.8f, 1.0f);
+                BatchFlush();
+                glDisable(GL_SCISSOR_TEST);
             }
         }
 
