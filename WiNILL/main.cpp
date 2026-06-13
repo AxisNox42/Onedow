@@ -223,6 +223,12 @@ bool    g_VolEdit = false;
 wchar_t g_VolBuf[8] = {0};
 int     g_VolLen = 0;
 // GLFW 문자 입력 콜백 — CODEX 검색어 / 설정 볼륨 숫자입력에 누적
+// 마우스 휠 누적 (보유 증강 패널 스크롤 등) — 매 프레임 소비
+float g_ScrollAccum = 0.0f;
+void ScrollCallback(GLFWwindow*, double /*xoff*/, double yoff) {
+    g_ScrollAccum += (float)yoff;
+}
+
 void CodexCharCallback(GLFWwindow*, unsigned int cp) {
     if (g_VolEdit && g_GameManager.currentState == GameState::SETTINGS) {
         if (cp >= L'0' && cp <= L'9' && g_VolLen < 3) {   // 0~9, 최대 3자리
@@ -931,6 +937,7 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, key_callback);
     glfwSetCharCallback(window, CodexCharCallback);   // codex.db 검색창 입력
+    glfwSetScrollCallback(window, ScrollCallback);    // 마우스 휠 (보유 증강 패널 스크롤)
     // g_FpsCap == 0 : VSync, 그 외 : VSync 끄고 수동 캡
     glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
 
@@ -6717,9 +6724,11 @@ static void Scene_Codex(const SceneCtx& c) {
                     //   상세 박스 침범 방지 + 버프/디버프/특수/조합 그룹화)
                     const int COLS = 15; const float CELL = 72.0f;
                     int vis[AUG_TOTAL], nv = 0;
-                    for (int i = 0; i < AUG_TOTAL; i++)
+                    for (int i = 0; i < AUG_TOTAL; i++) {
+                        if (AugRemoved(ALL_AUGS[i].type)) continue;   // 삭제/보류 증강은 도감에서 숨김
                         if (g_CodexSearchLen == 0 || (g_AugSeen[i] && CodexMatch(AugName(ALL_AUGS[i]))))
                             vis[nv++] = i;
+                    }
                     // 등급 순(COMMON/RARE/EPIC/LEG → DEBUFF → SPECIAL → COMBO)으로 정렬 = 카테고리 그룹
                     std::sort(vis, vis + nv, [](int a, int b) {
                         int ra = (int)ALL_AUGS[a].rarity, rb = (int)ALL_AUGS[b].rarity;
@@ -7825,139 +7834,115 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                 });
 
                 const float PX  = 16.0f;
-                const float ROW_H = 30.0f;
-                float       py  = 60.0f;
+                const float ROW_H = 28.0f;
+                const float COLW  = 320.0f;          // 리스트 클릭/호버 가로 범위
                 const wchar_t* TITLE = T(StrId::OWNED_AUGS);
-                g_TextS.Draw(TITLE, PX, py, 1.1f, 1, 1, 1, 0.95f);
-                if (st == GameState::PAUSED) {
-                    g_TextS.Draw(L"(클릭 → 설명)", PX + 2.0f, py + 30.0f, 0.70f,
-                                 0.6f, 0.7f, 0.9f, 0.7f);
-                }
-                py += 50.0f;
+                g_TextS.Draw(TITLE, PX, 60.0f, 1.1f, 1, 1, 1, 0.95f);
+                g_TextS.Draw(L"(커서 올리면 설명)", PX + 2.0f, 90.0f, 0.70f,
+                             0.6f, 0.7f, 0.9f, 0.7f);
 
+                // 리스트 뷰 영역 — 하단 스킬/HP HUD 침범 방지 (그 위까지만)
+                const float listTop    = 110.0f;
+                const float listBottom = sh - 250.0f;
+                const float viewH      = listBottom - listTop;
+                const float contentH   = (float)nord * ROW_H;
+
+                // 마우스 휠 스크롤 (리스트 위에서만 소비)
+                static float s_ownScroll = 0.0f;
+                bool overList = (mx >= 0 && mx <= COLW && my >= listTop && my <= listBottom);
+                if (overList && g_ScrollAccum != 0.0f)
+                    s_ownScroll -= g_ScrollAccum * ROW_H * 1.5f;
+                g_ScrollAccum = 0.0f;   // 매 프레임 소비 (다른 곳에서 안 쓰면 무시)
+                float maxScroll = (contentH > viewH) ? (contentH - viewH) : 0.0f;
+                if (s_ownScroll < 0.0f)        s_ownScroll = 0.0f;
+                if (s_ownScroll > maxScroll)   s_ownScroll = maxScroll;
+
+                // 리스트 (scissor 클립 + 스크롤)
+                int   hoverAug = -1;
+                float hoverRowY = 0.0f;
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                glScissor(0, (GLint)(sh - listBottom), (GLint)(COLW + 10.0f), (GLint)viewH);
                 for (int oi = 0; oi < nord; oi++) {
                     int i = ord[oi];
-                    if (py > sh - 80.0f) break;
+                    float ry = listTop + (float)oi * ROW_H - s_ownScroll;
+                    if (ry < listTop - ROW_H || ry > listBottom) continue;   // 화면 밖 컬링
                     const AugDef& def = ALL_AUGS[i];
                     float cr, cg, cb;
                     GetRarityColor(def.rarity, cr, cg, cb);
                     cr = std::min(1.0f, cr * 1.3f + 0.25f);
                     cg = std::min(1.0f, cg * 1.3f + 0.25f);
                     cb = std::min(1.0f, cb * 1.3f + 0.25f);
-
-                    // PAUSED: 클릭으로 설명 선택. 선택된 항목은 배경 강조
-                    if (st == GameState::PAUSED) {
-                        bool rowHover = (mx >= 0 && mx <= 240.0f &&
-                                        my >= py - 4.0f && my <= py + ROW_H - 6.0f);
-                        if (rowHover) {
-                            // 호버 배경
-                            BindMainShader();
-                            drawRect(0, py - 4.0f, 240.0f, ROW_H, 0.15f, 0.15f, 0.25f, 0.55f);
-                        }
-                        if (g_PauseSelectedAug == i) {
-                            // 선택 배경
-                            BindMainShader();
-                            drawRect(0, py - 4.0f, 240.0f, ROW_H, 0.12f, 0.20f, 0.35f, 0.75f);
-                            drawRect(0, py - 4.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
-                        }
-                        // 클릭 처리
-                        if (lmb && !g_LmbPrev && rowHover) {
-                            g_PauseSelectedAug = (g_PauseSelectedAug == i) ? -1 : i;
-                        }
+                    bool rowHover = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
+                    if (rowHover) {
+                        hoverAug = i; hoverRowY = ry;
+                        BindMainShader();
+                        drawRect(0, ry - 2.0f, COLW, ROW_H, 0.15f, 0.16f, 0.26f, 0.6f);
+                        drawRect(0, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
                     }
-
                     wchar_t line[96];
-                    if (counts[i] > 1)
-                        swprintf_s(line, L"· %ls  ×%d", AugName(def), counts[i]);
-                    else
-                        swprintf_s(line, L"· %ls", AugName(def));
-                    g_TextS.Draw(line, PX, py, 0.85f, cr, cg, cb, 0.9f);
-                    py += ROW_H;
+                    if (counts[i] > 1) swprintf_s(line, L"· %ls  ×%d", AugName(def), counts[i]);
+                    else               swprintf_s(line, L"· %ls", AugName(def));
+                    g_TextS.Draw(line, PX, ry, 0.85f, cr, cg, cb, 0.9f);
+                }
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+                // 스크롤바 (내용이 넘칠 때만)
+                if (maxScroll > 0.0f) {
+                    BindMainShader();
+                    float trackX = COLW + 2.0f;
+                    drawRect(trackX, listTop, 4.0f, viewH, 0.12f, 0.12f, 0.16f, 0.6f);
+                    float thumbH = viewH * (viewH / contentH);
+                    float thumbY = listTop + (viewH - thumbH) * (s_ownScroll / maxScroll);
+                    drawRect(trackX, thumbY, 4.0f, thumbH, 0.5f, 0.6f, 0.8f, 0.9f);
                 }
 
-                // PAUSED: 선택된 증강 설명 박스
-                if (st == GameState::PAUSED && g_PauseSelectedAug >= 0 &&
-                    g_PauseSelectedAug < AUG_TOTAL) {
-                    const AugDef& sd = ALL_AUGS[g_PauseSelectedAug];
-                    // 원래 위치 (BX=220, BY=60) 복원
-                    const float BX = 220.0f;
-                    const float BY = 60.0f;
-                    const float BW = std::min(460.0f, sw - BX - 20.0f);
-                    const float BH = 310.0f;
-
-                    // 배경 + 등급 색 띠
+                // 커서 올린 증강 설명 — 해당 줄 바로 옆에 표시
+                if (hoverAug >= 0) {
+                    const AugDef& sd = ALL_AUGS[hoverAug];
+                    const float BW = std::min(380.0f, sw - (COLW + 30.0f));
+                    const float BH = 138.0f;
+                    float BX = COLW + 18.0f;
+                    float BY = hoverRowY - 6.0f;
+                    if (BY + BH > sh - 20.0f) BY = sh - 20.0f - BH;
+                    if (BY < 20.0f) BY = 20.0f;
+                    float hr, hg, hb; GetRarityColor(sd.rarity, hr, hg, hb);
                     BindMainShader();
-                    drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.92f);
-                    float hr, hg, hb;
-                    GetRarityColor(sd.rarity, hr, hg, hb);
-                    drawRect(BX, BY, BW, 5.0f, hr, hg, hb, 1.0f);
-
-                    // 등급 라벨 (소)
-                    const wchar_t* rLabel = GetAugBadge(sd);
-                    g_TextS.Draw(rLabel, BX + 12.0f, BY + 12.0f, 0.9f,
-                                 hr, hg, hb, 0.95f);
-
-                    // 가로 구분선
-                    BindMainShader();
-                    drawRect(BX + 10.0f, BY + 38.0f, BW - 20.0f, 1.0f,
-                             0.3f, 0.3f, 0.4f, 0.5f);
-
-                    // 증강 이름 (대) — 구분선 아래
-                    float nSc = 1.05f;
-                    while (nSc > 0.65f && g_TextL.Width(AugName(sd), nSc) > BW - 20.0f)
-                        nSc -= 0.05f;
-                    float nLw   = g_TextL.Width(AugName(sd), nSc);
-                    float nameY = BY + 48.0f;
-                    g_TextL.Draw(AugName(sd), BX + (BW - nLw) * 0.5f, nameY, nSc,
-                                 1.0f, 1.0f, 1.0f, 0.98f);
-                    float nameH = g_TextL.Height(AugName(sd), nSc);
-
-                    // 설명 ('/' 분리) — BY+92 부터 (이름 아래 여유)
-                    std::vector<std::wstring> dlines;
-                    std::wstring cur2;
+                    drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.95f);
+                    drawRect(BX, BY, BW, 4.0f, hr, hg, hb, 1.0f);
+                    // 배지 + 이름 (한 줄)
+                    wchar_t hd[96];
+                    swprintf_s(hd, L"[%ls] %ls", GetAugBadge(sd), AugName(sd));
+                    g_TextS.Draw(hd, BX + 12.0f, BY + 12.0f, 0.9f,
+                                 std::min(1.0f,hr*1.4f+0.3f), std::min(1.0f,hg*1.4f+0.3f),
+                                 std::min(1.0f,hb*1.4f+0.3f), 1.0f);
+                    // 설명 ('/' 분리 + 폭 워드랩, 고정 폰트)
+                    const float dsc = 0.78f, dWmax = BW - 24.0f;
+                    std::vector<std::wstring> dl; std::wstring cur2;
                     for (const wchar_t* p = AugDesc(sd); *p; ++p) {
-                        if (*p == L'/') { if (!cur2.empty()) dlines.push_back(cur2); cur2.clear(); }
+                        if (*p == L'/') { if (!cur2.empty()) dl.push_back(cur2); cur2.clear(); }
                         else cur2 += *p;
                     }
-                    if (!cur2.empty()) dlines.push_back(cur2);
-                    for (auto& s2 : dlines) {
-                        while (!s2.empty() && (s2.front()==L' '||s2.front()==L'\t')) s2.erase(0,1);
-                        while (!s2.empty() && (s2.back() ==L' '||s2.back() ==L'\t')) s2.pop_back();
-                    }
-                    // 모든 증강 동일 폰트 크기 — 고정 스케일 + 폭 초과 줄은 공백 단위 워드랩
-                    //   (가변 축소 제거 → 증강마다 폰트 다르던 문제 해결)
-                    const float dsc   = 0.8f;
-                    const float dWmax = BW - 24.0f;
+                    if (!cur2.empty()) dl.push_back(cur2);
                     std::vector<std::wstring> wrapped;
-                    for (auto& ln : dlines) {
+                    for (auto& ln : dl) {
+                        while (!ln.empty() && ln.front()==L' ') ln.erase(0,1);
                         if (g_TextS.Width(ln.c_str(), dsc) <= dWmax) { wrapped.push_back(ln); continue; }
-                        // 공백 단위로 잘라 박스 폭에 맞춤
-                        std::wstring acc;
-                        std::wstring word;
-                        auto flushWord = [&]() {
+                        std::wstring acc, word;
+                        auto fw = [&]() {
                             if (word.empty()) return;
-                            std::wstring trial = acc.empty() ? word : acc + L" " + word;
-                            if (g_TextS.Width(trial.c_str(), dsc) > dWmax && !acc.empty()) {
-                                wrapped.push_back(acc); acc = word;
-                            } else acc = trial;
+                            std::wstring tr = acc.empty()?word:acc+L" "+word;
+                            if (g_TextS.Width(tr.c_str(),dsc)>dWmax && !acc.empty()){wrapped.push_back(acc);acc=word;}
+                            else acc=tr;
                             word.clear();
                         };
-                        for (const wchar_t ch : ln) {
-                            if (ch == L' ') flushWord(); else word += ch;
-                        }
-                        flushWord();
+                        for (wchar_t ch: ln){ if(ch==L' ')fw(); else word+=ch; } fw();
                         if (!acc.empty()) wrapped.push_back(acc);
                     }
-                    int nd = (int)wrapped.size(); if (nd < 1) nd = 1;
-                    float dLineH  = 24.0f;
-                    float dStartY = nameY + nameH + 8.0f;   // 이름 실제 높이 아래에서 시작
-                    for (int li = 0; li < (int)wrapped.size(); li++) {
-                        const wchar_t* ds = wrapped[li].c_str();
-                        float dlw = g_TextS.Width(ds, dsc);
-                        g_TextS.Draw(ds, BX + (BW - dlw) * 0.5f,
-                                     dStartY + dLineH * (float)li, dsc,
-                                     1.0f, 1.0f, 0.95f, 0.9f);
-                        if (dStartY + dLineH * (float)(li+1) > BY + BH - 10.0f) break;
+                    float dy = BY + 42.0f;
+                    for (auto& w : wrapped) {
+                        if (dy > BY + BH - 16.0f) break;
+                        g_TextS.Draw(w.c_str(), BX + 12.0f, dy, dsc, 1.0f, 1.0f, 0.95f, 0.92f);
+                        dy += 24.0f;
                     }
                 }
 }

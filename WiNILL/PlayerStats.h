@@ -317,11 +317,9 @@ struct PlayerStats {
             lifestealPerKill += 0.20f;
             maxHP            += 20.0f;
             break;
-        case AugType::CB_WARLORD:       // 광전사 + 연쇄폭발 → 전쟁군주
-            damageMultiplier *= 1.25f;
-            moveSpeedMult    *= 1.12f;
-            deathBlast        = true;
-            deathBlastMult   *= 1.6f;
+        case AugType::CB_WARLORD:       // 광전사 + 연쇄폭발 → 전쟁군주 (영혼 수확 능력)
+            damageMultiplier *= 1.15f;
+            soulHarvest       = true;   // 100킬마다 영구 누적 (영혼수확 이전)
             break;
         case AugType::CB_TEMPEST:       // 차크람 + 드론 → 난기류
             if (chakramCount < 3) ++chakramCount;

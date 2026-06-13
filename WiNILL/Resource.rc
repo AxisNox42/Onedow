@@ -2,6 +2,7 @@
 // WiNILL 임베디드 리소스
 //   exe 안에 폰트/아이콘(이미지)을 직접 포함시켜 단일 파일 배포
 //   런타임에 FindResource/LoadResource/LockResource 로 접근
+//   (BULLET_RAIN.png 교체 — 리소스 재컴파일 강제용 주석)
 // ─────────────────────────────────────────────────────────────
 
 // 폰트 폴백 체인 — stb_truetype 으로 직접 래스터화 (InitFromMemory).

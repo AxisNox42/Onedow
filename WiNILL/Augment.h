@@ -487,9 +487,9 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] 攻撃×1.2・撃破毎吸血+0.2・最大HP+20" } },
     { AugType::CB_WARLORD,     AugRarity::COMBO,    AugUnique::NONE, "CB_WAR",
       { L"전쟁군주", L"Warlord", L"戦争君主" },
-      { L"[조합] 공격력 +25% · 폭발 반경 ↑ · 이동속도 +12%",
-        L"[Combo] Attack +25% · blast radius up · move speed +12%",
-        L"[組合] 攻撃+25%・爆発範囲↑・移動+12%" } },
+      { L"[조합] 공격력 +15% · 100킬마다 공격력 +5%·연사 +2%·탄속 +2% (영구 누적)",
+        L"[Combo] ATK +15% · per 100 kills: ATK +5%·rate +2%·spd +2% (permanent)",
+        L"[組合] 攻撃+15% · 100キル毎 攻撃+5%·連射+2%·弾速+2% (永久)" } },
     { AugType::CB_TEMPEST,     AugRarity::COMBO,    AugUnique::NONE, "CB_TEMP",
       { L"난기류", L"Tempest", L"乱気流" },
       { L"[조합] 차크람 +1 · 드론 +1 · 연사 +10%",
@@ -534,6 +534,25 @@ inline int AugIndexOfType(AugType t) {
     for (int i = 0; i < AUG_TOTAL; i++)
         if (ALL_AUGS[i].type == t) return i;
     return -1;
+}
+
+// 풀/도감에서 완전히 제외된 증강 — 단일 목록(픽 게이팅·코덱스 숨김 공용).
+//   삭제됨: 고장난조준선/백신/건러너/병렬처리/취함/영혼수확(→전쟁군주로 이전)
+//   클래스 전용(DLC 보류): 광폭베기/칼바람/강궁/다중사격
+inline bool AugRemoved(AugType t) {
+    switch (t) {
+    case AugType::BROKEN_SIGHT:
+    case AugType::PURGE_NOVA:
+    case AugType::GUN_RUNNER:
+    case AugType::MELEE_WIDE:  case AugType::BLADE_WIND:
+    case AugType::POWER_DRAW:  case AugType::MULTISHOT:
+    case AugType::D_MOB_PACK:
+    case AugType::D_DRUNK:
+    case AugType::SOUL_HARVEST:
+        return true;
+    default:
+        return false;
+    }
 }
 
 // 현재 런에서 해당 AugType 을 보유 중인지 ((int)AugType 인덱스). 조합 레시피 판정용.

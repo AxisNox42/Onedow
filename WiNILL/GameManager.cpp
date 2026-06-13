@@ -200,13 +200,8 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::LASER_2       && !hasOwnedType(AugType::LASER))         continue;
             if (t == AugType::PIERCE_2      && !hasOwnedType(AugType::PIERCE))        continue;
             if (t == AugType::TWIN_2        && !hasOwnedType(AugType::TWIN))          continue;
-            // 고장난 조준선 — 풀에서 제거 (요청)
-            if (t == AugType::BROKEN_SIGHT) continue;
-            // 클래스 전용 — 검객/궁수 클래스 제거(DLC 보류) → 항상 제외
-            if (t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND ||
-                t == AugType::POWER_DRAW || t == AugType::MULTISHOT) continue;
-            // 제거된 증강 — 백신 스캔(쓰레기), 건 앤 러너
-            if (t == AugType::PURGE_NOVA || t == AugType::GUN_RUNNER) continue;
+            // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/병렬처리/취함/영혼수확/클래스)
+            if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
             if (t == AugType::VISION_UP && g_Stats.visionStacks >= 5) continue;
             if (t == AugType::CRIT      && g_Stats.critChance   >= 75) continue;
@@ -283,7 +278,7 @@ void GameManager::PickRandomDebuffIndices(int* outArr, int n) {
     for (int i = 0; i < AUG_TOTAL; i++) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
-        if (t == AugType::D_MOB_PACK) continue;   // 병렬처리 제거 — 의미 없는 경험치 셔틀이라 풀에서 뺌
+        if (AugRemoved(t)) continue;   // 병렬처리/취함 등 제거된 디버프 제외
         if (g_Difficulty == Difficulty::EASY &&
             (t == AugType::D_BOMBER_BLAST ||
              t == AugType::D_BOMBER_BUFF  ||
