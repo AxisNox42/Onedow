@@ -397,8 +397,9 @@ void GameManager::Render() {
         float oR = 0.0f, oG = 0.0f, oB = 0.0f, overlayA = 0.5f;
         if (currentState == GameState::GAMEOVER)     { overlayA = 0.60f; }
         if (currentState == GameState::AUG_SELECT)   { overlayA = 0.75f; }
-        // 디버프 — 기존엔 진한 채도 빨강이라 눈이 아팠음 → 어두운 적갈색으로 완화
-        if (currentState == GameState::DEBUFF_SELECT){ oR = 0.14f; oG = 0.035f; oB = 0.045f; overlayA = 0.80f; }
+        // 디버프 — 적갈색 틴트. 오버레이가 너무 진하면(0.80) 하단 설명 박스(0.85)와
+        //   겹쳐 새까맣게 보여 "알파 고장"처럼 느껴짐 → 0.62 로 낮춰 가독성 확보.
+        if (currentState == GameState::DEBUFF_SELECT){ oR = 0.16f; oG = 0.05f; oB = 0.06f; overlayA = 0.62f; }
         glUniform4f(colorLoc, oR, oG, oB, overlayA);
         glBindVertexArray(overlayVAO);
         glDrawArrays(GL_TRIANGLES, 0, 6);

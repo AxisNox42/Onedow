@@ -2091,8 +2091,8 @@ int main() {
 
                 // 대시 무적 — 이번 스텝 시작 HP 저장 (적 피해는 무효, 회복은 유지)
                 float hpAtStep = g_GameManager.playerHP;
-                //   적 정지 = 시간정지 스킬 OR 증강 픽 직후 0.25s("전이 텀")
-                bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.25f);
+                //   적 정지 = 시간정지 스킬 OR 증강 픽 직후 ~0.05s("전이 텀", 짧게)
+                bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.45f);
 
                 // 몬스터 업데이트 (디버프 multiplier 적용) — 시간 정지 중엔 적 멈춤
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 → 더 빠름
@@ -4700,13 +4700,14 @@ int main() {
                                                    : g_HpBarPop / 1.6f);          // 느린 페이드아웃
                     if (vis > 1.0f) vis = 1.0f; if (vis < 0.0f) vis = 0.0f;
                     if (vis > 0.01f) {
-                        float bw = 66.0f * g_Stats.playerSizeMult, bh = 7.0f;
-                        float bx = pCX - bw * 0.5f, by = pCY - hs - 24.0f;
-                        drawRect(bx - 2, by - 2, bw + 4, bh + 4, 0.0f, 0.0f, 0.0f, 0.78f * vis);
-                        drawRect(bx, by, bw, bh, 0.25f, 0.05f, 0.05f, 0.85f * vis);
+                        // 작고 플레이어에 가깝게 — 위쪽 적을 덜 가리도록 (가린다는 피드백)
+                        float bw = 46.0f * g_Stats.playerSizeMult, bh = 5.0f;
+                        float bx = pCX - bw * 0.5f, by = pCY - hs - 15.0f;
+                        drawRect(bx - 1.5f, by - 1.5f, bw + 3, bh + 3, 0.0f, 0.0f, 0.0f, 0.6f * vis);
+                        drawRect(bx, by, bw, bh, 0.25f, 0.05f, 0.05f, 0.7f * vis);
                         float r = hf > 0.5f ? 0.2f : 1.0f;
                         float g = hf > 0.5f ? 1.0f : hf * 2.0f;
-                        drawRect(bx, by, bw * hf, bh, r, g, 0.15f, 0.95f * vis);
+                        drawRect(bx, by, bw * hf, bh, r, g, 0.15f, 0.92f * vis);
                     }
                 }
 

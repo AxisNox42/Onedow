@@ -430,9 +430,9 @@ static const AugDef ALL_AUGS[] = {
     // ── 프로세스류(잡몹) 전용 디버프 (확장, 중첩 가능) ──
     { AugType::D_MOB_PACK,    AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBPACK",
       { L"병렬 처리", L"Parallel Spawn", L"並列処理" },
-      { L"잡몹이 군집으로 스폰 (스폰당 +2) · 처치 EXP +6",
-        L"Mobs spawn in packs (+2 per spawn) · kill EXP +6",
-        L"雑魚が群れで出現 (出現毎+2)・撃破EXP +6" } },
+      { L"잡몹이 나올 때마다 한꺼번에 3마리씩 등장 (개체 수 ↑) · 처치 EXP +6",
+        L"Each spawn brings 3 mobs at once (more enemies) · kill EXP +6",
+        L"出現の度に3体まとめて出る (敵増加)・撃破EXP +6" } },
     { AugType::D_MOB_ELITE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBELITE",
       { L"권한 상승", L"Privilege Escalation", L"権限昇格" },
       { L"엘리트 변종(신속/강인/폭발) 출현 확률 대폭 ↑ · 처치 EXP +5",

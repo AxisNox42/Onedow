@@ -44,9 +44,9 @@ public:
                                 : MobKind::BRUTE;
             nm->MakeKind(k);
         }
-        // 엘리트 변종 (드물게) — 신속/강인/폭발성
+        // 엘리트 변종 (드물게) — 신속/강인 (폭발성 e==3 제거: 빨강 자폭류 빼달라 요청)
         if (elitePct > 0 && (rand() % 100) < elitePct)
-            nm->MakeElite(1 + rand() % 3);
+            nm->MakeElite(1 + rand() % 2);
         monsters.push_back(nm);
     }
 
