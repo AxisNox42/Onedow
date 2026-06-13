@@ -13,6 +13,7 @@
 #endif
 
 #include "Platform.h"
+#include "CrashHandler.h"
 
 #include <glm/glm.hpp>
 #include <iostream>
@@ -858,6 +859,7 @@ static void Scene_AugSelect(const SceneCtx& c);
 static void Scene_OwnedAugPanel(const SceneCtx& c);
 // ============================================================
 int main() {
+    CrashHandler::Install();   // 강종(E23) 추적 — 처리 안 된 예외 시 로그+미니덤프
     srand((unsigned)time(NULL));
 
     // 실행 파일 폴더로 작업 디렉터리 이동 (Resource/ 상대경로 로드 보장)
@@ -1126,6 +1128,23 @@ int main() {
         float delta = now - lastFrame;
         if (delta > 0.1f) delta = 0.1f; // 스파이크 클램프
         lastFrame = now;
+
+        // 크래시 추적 브레드크럼 — 마지막 상태를 남겨 강종(E23) 시 로그로 위치 특정
+        {
+            const char* bn = g_MonsterManager.boss ? "swordsman" :
+                             g_GlitchBoss   ? "glitch"   : g_RRBoss      ? "reload"  :
+                             g_PolyBoss     ? "poly"     : g_SpamBoss    ? "spam"    :
+                             g_KernelBoss   ? "kernel"   : g_FirewallBoss? "firewall":
+                             g_BotnetBoss   ? "botnet"   : g_CentiBoss   ? "centi"   : "none";
+            char bc[200];
+            std::snprintf(bc, sizeof(bc),
+                "st=%d score=%lld lv=%d mobs=%u boss=%s",
+                (int)g_GameManager.currentState,
+                (long long)g_GameManager.score,
+                g_GameManager.playerLevel,
+                (unsigned)g_MonsterManager.monsters.size(), bn);
+            CrashHandler::SetBreadcrumb(bc);
+        }
 
         // 창 포커스를 잃으면(다른 앱으로 전환) 자동 일시정지 —
         //   오버레이라 포커스 없어도 루프가 계속 도므로, 안 막으면 게임이

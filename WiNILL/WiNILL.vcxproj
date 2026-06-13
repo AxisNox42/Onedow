@@ -186,6 +186,7 @@
     <ClInclude Include="Monster.h" />
     <ClInclude Include="MonsterManager.h" />
     <ClInclude Include="Platform.h" />
+    <ClInclude Include="CrashHandler.h" />
     <ClInclude Include="Achievements.h" />
     <ClInclude Include="Codex.h" />
     <ClInclude Include="IconSystem.h" />
