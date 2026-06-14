@@ -358,9 +358,6 @@ float g_BulletRainTimer = 0.0f;
 float g_DrunkCycle  = 0.0f;
 bool  g_DrunkActive = false;
 
-// 시즈탱크 1초 단위 stack 누적용
-float g_SiegeTick = 0.0f;
-
 // LIGHT_STEP 피격 감지용 이전 HP 기록
 float g_PrevHP = 100.0f;
 
@@ -1250,7 +1247,6 @@ int main() {
             g_BulletRainTimer = 0.0f;
             g_DrunkCycle      = 0.0f;
             g_DrunkActive     = false;
-            g_SiegeTick       = 0.0f;
             g_PrevHP          = g_Stats.maxHP;
             g_XpTimeAccum     = 0.0f;
             g_OwnedAugs.clear();
@@ -3048,20 +3044,6 @@ int main() {
             }
             if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
             if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
-
-            // 시즈탱크: 정지 시 매 1초 stack +1 (최대 5)
-            if (g_Stats.siegeTank) {
-                if (moving) {
-                    g_Stats.siegeStacks = 0;
-                    g_SiegeTick = 0.0f;
-                } else {
-                    g_SiegeTick += delta;
-                    while (g_SiegeTick >= 1.0f && g_Stats.siegeStacks < 5) {
-                        g_SiegeTick -= 1.0f;
-                        ++g_Stats.siegeStacks;
-                    }
-                }
-            }
 
             // HP 재생 (REGEN_UP, 거대화, 미니화 모두 regenPerSec 에 합산됨)
             if (g_Stats.regenPerSec > 0.0f) {
@@ -6195,20 +6177,6 @@ int main() {
                                  1.0f, 0.4f, 0.4f, 1.0f);
                     wchar_t buf[8];
                     swprintf_s(buf, L"x%d", g_Stats.approachStacks);
-                    float tw = g_TextL.Width(buf, 0.9f);
-                    g_TextL.Draw(buf, x + (SLOT_W - tw) * 0.5f,
-                                 baseY2 + SLOT_H * 0.40f, 0.9f, 1,1,1,0.95f);
-                    ++slot;
-                }
-                // 시즈 탱크 stack 표시 — 증강 제거됨 (siegeTank 항상 false). dead code 유지
-                if (false && g_Stats.siegeTank) {
-                    float x = baseX + slot * (SLOT_W + SLOT_GAP);
-                    drawRect(x, baseY2, SLOT_W, SLOT_H, 0.05f, 0.05f, 0.08f, 0.85f);
-                    drawRect(x, baseY2, SLOT_W, 4.0f, 0.6f, 0.4f, 0.9f, 1.0f);
-                    g_TextS.Draw(L"SIEGE", x + 2.0f, baseY2 + 6.0f, 0.6f,
-                                 0.7f, 0.5f, 1.0f, 1.0f);
-                    wchar_t buf[8];
-                    swprintf_s(buf, L"%d", g_Stats.siegeStacks);
                     float tw = g_TextL.Width(buf, 0.9f);
                     g_TextL.Draw(buf, x + (SLOT_W - tw) * 0.5f,
                                  baseY2 + SLOT_H * 0.40f, 0.9f, 1,1,1,0.95f);

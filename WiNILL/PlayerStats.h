@@ -14,7 +14,7 @@ struct PlayerStats {
     float moveSpeedMult    = 1.0f;
     float regenPerSec      = 1.0f / 3.0f;  // 기본 3초당 HP 1 회복
     float playerSizeMult   = 1.0f;
-    float xpMult           = 1.0f;   // 전체 EXP 곱연산 (XP_UP, 유리심장, 총알걸림, 취함)
+    float xpMult           = 1.0f;   // 전체 EXP 곱연산 (유리심장, 총알걸림, 취함)
     float bulletSpread     = 0.0f;   // 발사 시 각도 흔들기 (라디안). 0 = 정확
     int   pierceChance     = 30;     // PIERCE 활성 시 관통 확률 (%). MINIGUN 등이 덮어씀
     int   meleeXpBonus     = 0;      // 잡몹 처치 추가 EXP (잡몹 폭주)
@@ -40,8 +40,6 @@ struct PlayerStats {
     bool  brokenSight = false;
     bool  sniper      = false;
     bool  bayonet     = false;
-    bool  siegeTank   = false;
-    int   siegeStacks = 0;       // 0~5 (1중첩당 25%)
     bool  miniaturize = false;
     bool  gigantify   = false;
     bool  pierce      = false;   // 매 hit 30% 확률 관통
@@ -128,8 +126,6 @@ struct PlayerStats {
     // 핵앤슬래쉬 디버프
     float bleedPerSec     = 0.0f;  // 초당 HP 감소 (출혈)
 
-    // ── 런타임 ──────────────────────────────────────────
-    float siegeBonus    = 0.0f;  // 시즈탱크 누적 보너스 (외부에서 갱신)
 
     // 일반(COMMON) 증강 = 가산(flat) — 곱연산 복리 폭주(원펀맨) 방지.
     //   초반엔 baseDamage 대비 큰 비중, 후반엔 큰 base 대비 상대값 자동 감소.
@@ -162,7 +158,6 @@ struct PlayerStats {
             }
             break;
         case AugType::REGEN_UP:  regenPerSec += 0.34f; break;  // 5초당 1 → 약 3초당 1
-        case AugType::XP_UP:     xpMult       *= 1.05f; break;
 
         // ── 등급별 공격력 (가산) — 초반 강세. 곱연산 폭주 제거 ──
         case AugType::OVERDRIVE:      flatDamageBonus += 18.0f; break;  // 희귀 +18 (버프)
@@ -204,11 +199,6 @@ struct PlayerStats {
         case AugType::BAYONET:
             bayonet      = true;
             distAugTaken = true;
-            break;
-        case AugType::SIEGE_TANK:
-            siegeTank   = true;
-            siegeBonus  = 0.0f;
-            siegeStacks = 0;
             break;
         case AugType::MINIATURIZE:
             miniaturize    = true;
@@ -431,10 +421,6 @@ struct PlayerStats {
             rmobDmgMult    *= 1.20f;
             rangedXpBonus  += 12;          // (너프: 25 → 12)
             break;
-        case AugType::D_RMOB_DMG:       // deprecated — dead code 유지
-            rmobDmgMult    *= 1.10f;
-            rangedXpBonus  += 5;
-            break;
         case AugType::D_RMOB_DELAY:
             rmobDelayMult  *= 0.80f;
             rangedXpBonus  += 5;           // (너프: 10 → 5)
@@ -553,10 +539,6 @@ struct PlayerStats {
     // 최종 데미지 배율 (거리·시즈·영혼수확·미니화 연사 등)
     float GetDamageMultiplier(float distFromPlayer) const {
         float m = damageMultiplier;
-
-        // 시즈탱크: 25% × stacks
-        if (siegeTank)
-            m *= (1.0f + 0.25f * (float)siegeStacks);
 
         // 저격수: 거리 비례 최대 +50%
         if (sniper) {

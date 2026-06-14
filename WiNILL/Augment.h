@@ -50,8 +50,6 @@ enum class AugType {
     CB_BLOODLORD,     // 흡혈탄 + 흡혈마
     CB_PIERCE_TWIN,   // 더블 + 관통
     CB_STORMCALLER,   // 탄환세례 + 드론
-    // ── deprecated (ALL_AUGS 에서 제외, 코드는 남음) ──
-    SIEGE_TANK, D_RMOB_DMG, XP_UP,
     // ── 프로세스류(잡몹) 전용 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
     D_MOB_PACK,    // 군집 스폰 (한 번에 여러 마리)
     D_MOB_ELITE,   // 엘리트 변종 출현 확률 ↑

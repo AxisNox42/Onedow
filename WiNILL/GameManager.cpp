@@ -215,8 +215,6 @@ static int RollOneAug(const bool* takenOnce,
             // BAYONET 은 일반 에픽으로 복원
             if (t == AugType::CANNON || t == AugType::SNIPER ||
                 t == AugType::SHOTGUN) continue;
-            // 경험치 증가 증강 제거 (#104)
-            if (t == AugType::XP_UP) continue;
             // 쉬움: 자폭병 관련 증강 제외 (#107)
             if (g_Difficulty == Difficulty::EASY && t == AugType::HACK_BOMBER) continue;
             pool[poolSize++] = i;
