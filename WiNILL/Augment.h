@@ -67,7 +67,11 @@ enum class AugType {
     LASER_CONVERGE,      // 수렴 — 레이저 거의 연속 발사 + 초장거리
     PIERCE_RAILSLUG,     // 철갑탄 — 관통 100% + 관통탄 강화
     // ── 조합 (COMBO) 추가 — 끝에 추가해 기존 인덱스/세이브 보존 ──
-    CB_TURRET            // 대포 + 드론 II → 포탑 배치 (드론 공전 대체)
+    CB_TURRET,           // 대포 + 드론 II → 포탑 배치 (드론 공전 대체)
+    // ── 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
+    D_SCHEDULER,         // 스케쥴러 강화 — 특수 잡몹 HP +10% (처치 XP +3)
+    D_TROJAN_BOOST,      // 트로이목마 강화 — [트로이목마 침투 보유] 점멸 쿨다운 단축
+    D_CRASHER_BOOST      // 크래셔 강화 — 돌진 중 받는 피해 -10%
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -537,9 +541,25 @@ static const AugDef ALL_AUGS[] = {
       { L"[조합] 드론이 공전 대신 자동 포탑으로 전개 (5초 지속·소총 화력)",
         L"[Combo] Drones deploy as auto-turrets instead of orbiting (5s, rifle DPS)",
         L"[組合] ドローンが公転せず自動砲台として展開 (5秒・小銃火力)" } },
+    // ── 디버프 (확장) ──
+    { AugType::D_SCHEDULER,   AugRarity::DEBUFF,   AugUnique::NONE, "D_SCHED",
+      { L"스케쥴러 강화", L"Scheduler Boost", L"スケジューラ強化" },
+      { L"특수 잡몹 유형 체력 +10%  (처치 경험치 +3)",
+        L"Special mob types +10% HP  (kill XP +3)",
+        L"特殊雑魚タイプ 体力+10%  (撃破経験値+3)" } },
+    { AugType::D_TROJAN_BOOST, AugRarity::DEBUFF,  AugUnique::NONE, "D_TROJANB",
+      { L"트로이목마 강화", L"Trojan Boost", L"トロイ強化" },
+      { L"[트로이목마 침투 보유 시] 트로이목마 점멸 재사용시간 단축  (처치 경험치 +4)",
+        L"[if you own Trojan Infection] Trojan blink cooldown shortened  (kill XP +4)",
+        L"[トロイ侵入所持時] トロイの瞬間移動CD短縮  (撃破経験値+4)" } },
+    { AugType::D_CRASHER_BOOST, AugRarity::DEBUFF, AugUnique::NONE, "D_CRASHB",
+      { L"크래셔 강화", L"Crasher Boost", L"クラッシャー強化" },
+      { L"크래셔가 돌진하는 동안 받는 피해 -10%  (처치 경험치 +4)",
+        L"Crashers take 10% less damage while dashing  (kill XP +4)",
+        L"クラッシャーが突進中に受けるダメージ-10%  (撃破経験値+4)" } },
 };
 
-static constexpr int AUG_TOTAL = 93;  // ... + 신화 4종 + 조합 포탑(CB_TURRET)
+static constexpr int AUG_TOTAL = 96;  // ... + 조합 포탑 + 디버프 3종(스케쥴러/트로이/크래셔)
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -611,6 +631,8 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     // 적 출현형 디버프 (플래그 1개 — 재등장 불필요)
     case AugType::D_SPLITTER:  case AugType::D_BLINKER:
     case AugType::D_ORBITER:   case AugType::D_SPAWNER:     case AugType::D_SHIELDED:
+    // 강화 디버프 — 불리언 플래그(중첩 의미 없음). 스케쥴러(D_SCHEDULER)는 HP 배율 스택이라 제외.
+    case AugType::D_TROJAN_BOOST: case AugType::D_CRASHER_BOOST:
         return true;
     default:
         return false;

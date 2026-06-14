@@ -106,6 +106,9 @@ public:
                     }
                     // 보호막체: 방패 ON 동안 피해 85% 감소 (광역 공격은 우회)
                     if (m->kind == MobKind::SHIELDED && m->shieldActive) baseDealt *= 0.15f;
+                    // 크래셔 강화 디버프 — 돌진(chargeState==2) 중 크래셔는 받는 피해 -10%
+                    if (stats.crasherBoost && m->kind == MobKind::CHARGER && m->chargeState == 2)
+                        baseDealt *= 0.90f;
                     float dealtThisHit = (baseDealt < m->hp) ? baseDealt : m->hp;
                     m->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;

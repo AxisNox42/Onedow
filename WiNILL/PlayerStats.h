@@ -119,6 +119,10 @@ struct PlayerStats {
     float bomberBlastMult = 1.0f;
     // 잡몹 HP 디버프
     float monsterHpMult   = 1.0f;
+    // 잡몹 강화 디버프 (확장)
+    float specialMobHpMult = 1.0f;  // 스케쥴러 강화 — 특수(비-NORMAL) 잡몹 HP 배율
+    bool  trojanBoost     = false;  // 트로이목마 강화 — 점멸 쿨다운 단축(D_BLINKER 보유 시)
+    bool  crasherBoost    = false;  // 크래셔 강화 — 돌진 중 받는 피해 -10%
     // 프로세스류(잡몹) 출현 디버프 (확장, 중첩 가능)
     int   mobPackBonus    = 0;     // 스폰당 추가 마리 수 (군집)
     float eliteChanceMult = 1.0f;  // 엘리트 변종 출현 확률 배율
@@ -523,6 +527,18 @@ struct PlayerStats {
             break;
         case AugType::D_MOB_FRENZY:        // 특수 잡몹 확률 ↑
             varietyChanceMult *= 1.8f;
+            meleeXpBonus    += 4;
+            break;
+        case AugType::D_SCHEDULER:         // 스케쥴러 강화 — 특수 잡몹 HP +10%
+            specialMobHpMult *= 1.10f;
+            meleeXpBonus    += 3;
+            break;
+        case AugType::D_TROJAN_BOOST:      // 트로이목마 강화 — 점멸 쿨다운 단축
+            trojanBoost     = true;
+            meleeXpBonus    += 4;
+            break;
+        case AugType::D_CRASHER_BOOST:     // 크래셔 강화 — 돌진 중 받는 피해 -10%
+            crasherBoost    = true;
             meleeXpBonus    += 4;
             break;
 

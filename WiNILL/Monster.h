@@ -57,6 +57,7 @@ public:
     float   blinkWarnT  = 0.0f;
     bool    blinkWarn   = false;
     float   blinkTargetX = 0.0f, blinkTargetY = 0.0f;
+    float   blinkIntervalMul = 1.0f;   // 트로이목마 강화 디버프 시 <1 (쿨다운 단축)
     // 돌진체(CHARGER) / 회피체(WEAVER)
     float   chargeTimer = 0.0f;
     int     chargeState = 0;     // 0 접근 / 1 준비(텔레그래프) / 2 돌진
@@ -151,7 +152,7 @@ public:
         if (kind == MobKind::BLINKER) {
             // 점멸체 — 평소 느리게 표류, 주기마다 잔상 경고 후 플레이어 쪽으로 순간이동
             blinkTimer += deltaTime;
-            if (!blinkWarn && blinkTimer >= BLINK_INTERVAL) {
+            if (!blinkWarn && blinkTimer >= BLINK_INTERVAL * blinkIntervalMul) {
                 blinkWarn = true; blinkWarnT = 0.0f;
                 float jump = dist * BLINK_CLOSE;
                 blinkTargetX = worldX + (dx / dist) * jump;

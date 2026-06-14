@@ -3242,6 +3242,12 @@ int main() {
                             else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
                                 nm->MakeKind(MobKind::SHIELDED);
                         }
+                        // 스케쥴러 강화 — 특수(비-NORMAL) 잡몹 HP 추가 배율
+                        if (nm->kind != MobKind::NORMAL && g_Stats.specialMobHpMult != 1.0f)
+                            nm->hp *= g_Stats.specialMobHpMult;
+                        // 트로이목마 강화 — 점멸체(트로이목마) 점멸 재사용시간 단축
+                        if (nm->kind == MobKind::BLINKER && g_Stats.trojanBoost)
+                            nm->blinkIntervalMul = 0.55f;
                     }
                 };
                 int packN = 1 + g_Stats.mobPackBonus;       // D_MOB_PACK: 군집 스폰
