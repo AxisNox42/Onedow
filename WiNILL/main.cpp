@@ -126,6 +126,20 @@ inline void drawBullet(const Bullet& b) {
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
 
+// 웜(SPLITTER) 사망 분열 — 모든 처치 경로 공용 (총알/레이저/근접/노바).
+//   총알 사망은 메인 사망 루프가 처리하지만, 레이저·근접 스윕은 자체 루프에서 잡몹을
+//   죽이고 UpdateAll 이 곧장 erase 하므로 메인 루프가 못 봄 → 그 자리에서 직접 분열시켜야 함.
+//   반복 중인 monsters 벡터에 직접 push 금지 → 호출처가 임시 벡터로 모아 루프 후 append.
+inline void SpawnWormSplit(Monster* m, std::vector<Monster*>& born) {
+    if (m->kind != MobKind::SPLITTER || m->splitGen >= 2) return;
+    for (int c = 0; c < 2; c++) {
+        Monster* ch = new Monster(m->worldX + (c ? 28.0f : -28.0f), m->worldY,
+                                  1.0f, 1.0f, false);
+        ch->MakeKind(MobKind::SPLITTER, m->splitGen + 1, m->sizeScale * 0.7f);
+        born.push_back(ch);
+    }
+}
+
 // 잡몹 그리기 — 종류별 모양 (일반=세모 / 분열체=초록 원 / 점멸체=점멸 다이아)
 // 사각 윈도우(스크린/월드 좌표 동일) 안에 점이 들어오는지 — 창별 컬링용
 //   각 가짜 창 scissor 패스에서 창 밖 엔티티의 draw call 자체를 건너뛴다.
@@ -445,7 +459,7 @@ BotnetBoss* g_BotnetBoss = nullptr;
 CentipedeBoss* g_CentiBoss = nullptr;
 
 // ── 스캔 레이저 (증강) — 주기적 관통 빔 + 페이드 비주얼 ──
-struct LaserBeam { float ox, oy, ex, ey, life, maxLife; };
+struct LaserBeam { float ox, oy, ex, ey, life, maxLife; float width = 1.0f; };
 std::vector<LaserBeam> g_LaserBeams;
 float          g_LaserTimer = 0.0f;
 constexpr float LASER_INT   = 0.85f;  // 발사 주기(초) — 너프: 0.7
@@ -1671,6 +1685,7 @@ int main() {
                     return;
                 }
 
+                bool prevTurret = g_Stats.turretMode;
                 g_Stats.Apply(atype);
                 g_OwnedAugs.push_back(idx);
                 g_TypeOwned[(int)atype] = true;   // 조합 레시피 판정용
@@ -1678,10 +1693,8 @@ int main() {
                 // 액티브 스킬 증강이면 슬롯에 장착 (꽉 차면 순환 교체)
                 EquipSkill(SkillForAug(atype));
 
-                // 조합: CANNON + DRONE_2 → 포탑 배치 (드론 공전 대체)
-                if (g_Stats.cannon && g_Stats.drone && g_Stats.droneCount >= 2
-                    && !g_Stats.turretMode) {
-                    g_Stats.turretMode = true;
+                // 포탑 배치(CB_TURRET 조합) 픽 → 즉시 첫 포탑 배치
+                if (g_Stats.turretMode && !prevTurret) {
                     g_Turrets.clear();
                     g_TurretDeployTimer = TURRET_DEPLOY;  // 즉시 첫 포탑 배치
                 }
@@ -1772,10 +1785,10 @@ int main() {
                 g_Stats = fresh;
                 g_CurrentWeapon = newWeapon;
 
-                // 포탑 조합 재판정
-                if (g_Stats.cannon && g_Stats.drone && g_Stats.droneCount >= 2) {
-                    if (!savedTurret) { g_Turrets.clear(); g_TurretDeployTimer = TURRET_DEPLOY; }
-                    g_Stats.turretMode = true;
+                // 포탑 모드는 CB_TURRET 증강 보유 시 fresh.Apply 가 이미 복원함.
+                // 무기 변환으로 새로 켜졌으면(이전 false) 첫 배치 타이머만 초기화.
+                if (g_Stats.turretMode && !savedTurret) {
+                    g_Turrets.clear(); g_TurretDeployTimer = TURRET_DEPLOY;
                 }
 
                 // HUD / 발사 타이머 동기화
@@ -2646,15 +2659,7 @@ int main() {
                                     g_MonsterManager.boss->hp -= blastDmg;
                             }
                         }
-                        if (m->kind == MobKind::SPLITTER && m->splitGen < 2) {
-                            for (int c = 0; c < 2; c++) {
-                                Monster* ch = new Monster(m->worldX + (c?28:-28), m->worldY,
-                                                          1.0f, 1.0f, false);
-                                ch->MakeKind(MobKind::SPLITTER, m->splitGen + 1,
-                                             m->sizeScale * 0.7f);
-                                mobBorn.push_back(ch);
-                            }
-                        }
+                        SpawnWormSplit(m, mobBorn);
                     }
                 }
                 for (auto* nb : mobBorn) g_MonsterManager.monsters.push_back(nb);
@@ -3653,7 +3658,7 @@ int main() {
                         // 지대공 미사일 발사 느낌 — 5%에서 출발해 ~0.7초에 100%로 가속
                         nb.launchRamp  = 0.05f;
                         nb.launchAccel = 1.35f;
-                        nb.rainMissile = true;   // 로켓 스프라이트로 렌더
+                        // (탄환세례 — 기존 일반 탄환 렌더로 복원. 로켓 스프라이트 미사용)
                         g_Bullets.push_back(nb);
                     }
                 }
@@ -3842,6 +3847,7 @@ int main() {
                             g_GameManager.playerHP = g_Stats.maxHP;
                     }
                 };
+                std::vector<Monster*> swingBorn;
                 for (auto m : g_MonsterManager.monsters) {        // 잡몹
                     if (!m->alive || !inCone(m->worldX, m->worldY)) continue;
                     float dmgM = dmg;
@@ -3854,9 +3860,11 @@ int main() {
                         g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                        SpawnWormSplit(m, swingBorn);
                         onKill();
                     }
                 }
+                for (auto* nb : swingBorn) g_MonsterManager.monsters.push_back(nb);
                 for (auto rr : g_MonsterManager.rangedMobs) {     // 원거리
                     if (!rr->alive || !inCone(rr->worldX, rr->worldY)) continue;
                     float dealt = (dmg < rr->hp) ? dmg : rr->hp; rr->hp -= dealt;
@@ -3970,10 +3978,12 @@ int main() {
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);   // 레이저는 항상 커서 방향
-                    float LASER_RANGE = (g_Stats.laserTier >= 3) ? 1100.0f   // 신화 수렴: 초장거리
-                                      : (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
+                    // 사거리는 II(760)에서 더 늘리지 않음. 신화 수렴은 '너비'로 강화.
+                    float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
-                    const float BEAM_HALF = 24.0f;
+                    // 신화 수렴(tier3): 빔 너비 2배 → 광폭 관통 (잡몹 라인 일소)
+                    const float beamW    = (g_Stats.laserTier >= 3) ? 2.0f : 1.0f;
+                    const float BEAM_HALF = 24.0f * beamW;
                     bool lcrit = false; float lcm = 1.0f;
                     if (g_Stats.critChance > 0 && (rand()%100) < g_Stats.critChance) { lcrit = true; lcm = g_Stats.critMult; }
                     float lbm = 1.0f;
@@ -3998,6 +4008,7 @@ int main() {
                     auto inLine = [&](float qx, float qy) -> bool {
                         return SegDist(qx, qy, pCX, pCY, lex, ley) < BEAM_HALF;
                     };
+                    std::vector<Monster*> laserBorn;
                     for (auto m : g_MonsterManager.monsters) {
                         if (!m->alive || !inLine(m->worldX, m->worldY)) continue;
                         float d = ldmg;
@@ -4009,9 +4020,11 @@ int main() {
                             float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs);
                             g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                             g_Stats.killCount++; g_GameManager.scoreAccum += bs;
-                            g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
+                            g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                            SpawnWormSplit(m, laserBorn); lOnKill();
                         }
                     }
+                    for (auto* nb : laserBorn) g_MonsterManager.monsters.push_back(nb);
                     for (auto rr : g_MonsterManager.rangedMobs) {
                         if (!rr->alive || !inLine(rr->worldX, rr->worldY)) continue;
                         float dealt = (ldmg < rr->hp) ? ldmg : rr->hp; rr->hp -= dealt;
@@ -4061,7 +4074,7 @@ int main() {
                         lhitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
                         lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
-                    g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f });
+                    g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
             }
@@ -4634,7 +4647,7 @@ int main() {
                 float dl = sqrtf(dx*dx + dy*dy) + 1e-3f;
                 float pxx = -dy/dl, pyy = dx/dl;
                 for (int pass = 0; pass < 2; pass++) {
-                    float th = (pass == 0) ? 26.0f * fr + 6.0f : 7.0f * fr + 2.0f;
+                    float th = ((pass == 0) ? 26.0f * fr + 6.0f : 7.0f * fr + 2.0f) * lb.width;
                     float cr = (pass == 0) ? 0.3f : 0.8f;
                     float cg = 1.0f;
                     float cb = (pass == 0) ? 0.9f : 1.0f;
@@ -7212,14 +7225,16 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
 
                 // ── 시작 증강 직접 선택 (우측 그리드, 클릭 토글, 휠 스크롤) ──
                 {
-                    float gx = 700.0f;
+                    const int COLS = 9; const float CELL = 52.0f;
+                    // 좌측 보스 버튼(우단 x≈866)과 겹치지 않게 우측 배치. 넓은 화면은 우측 정렬.
+                    float gx = sw - (float)COLS * CELL - 60.0f;
+                    if (gx < 900.0f) gx = 900.0f;
                     g_TextS.Draw(L"Pick Start Augments (click)", gx, sh*0.20f, 0.95f, 1,1,1,0.9f);
                     int avail[AUG_TOTAL], na = 0;
                     for (int i = 0; i < AUG_TOTAL; i++) {
                         if (AugRemoved(ALL_AUGS[i].type)) continue;   // 삭제 증강 제외
                         avail[na++] = i;
                     }
-                    const int COLS = 9; const float CELL = 52.0f;
                     float gTop = sh*0.20f + 28.0f, gBottom = sh - 96.0f;
                     float viewH = gBottom - gTop;
                     float contentH = (float)((na + COLS - 1) / COLS) * CELL;
@@ -7266,7 +7281,8 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
                         float cyp = gTop + (k / COLS) * CELL - s_caScroll;
                         if (cyp < gTop || cyp > gBottom) continue;
                         if (mx >= cxp && mx < cxp+CELL-6 && my >= cyp && my < cyp+CELL-6) {
-                            g_TextS.Draw(AugName(ALL_AUGS[i]), gx + 110.0f, gBottom + 10.0f, 0.85f,
+                            // 카운트("selected: N")와 겹치지 않게 한 줄 아래 별도 표기
+                            g_TextS.Draw(AugName(ALL_AUGS[i]), gx, gBottom + 34.0f, 0.85f,
                                          0.8f, 0.95f, 1.0f, 0.95f);
                             break;
                         }

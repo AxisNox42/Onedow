@@ -348,6 +348,9 @@ struct PlayerStats {
             bulletRain        = true;
             if (bulletRainCooldown > 5.0f) bulletRainCooldown = 5.0f;
             break;
+        case AugType::CB_TURRET:        // 대포 + 드론 II → 포탑 배치
+            turretMode = true;          // main: 드론 공전 대신 자동 포탑 전개
+            break;
 
         // ── 희귀: 탄환세례 / 드론 ──
         case AugType::BULLET_RAIN:

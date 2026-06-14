@@ -65,7 +65,9 @@ enum class AugType {
     BULLET_RAIN_ETERNAL, // 무한 세례 — 쿨다운↓ + 처치마다 쿨다운 감소(스노우볼)
     DRONE_HIVE,          // 군집 지능 — 드론 초고속 사격
     LASER_CONVERGE,      // 수렴 — 레이저 거의 연속 발사 + 초장거리
-    PIERCE_RAILSLUG      // 철갑탄 — 관통 100% + 관통탄 강화
+    PIERCE_RAILSLUG,     // 철갑탄 — 관통 100% + 관통탄 강화
+    // ── 조합 (COMBO) 추가 — 끝에 추가해 기존 인덱스/세이브 보존 ──
+    CB_TURRET            // 대포 + 드론 II → 포탑 배치 (드론 공전 대체)
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -327,9 +329,9 @@ static const AugDef ALL_AUGS[] = {
         L"弾幕の雨 クールダウン 10秒 → 5秒  (要: 弾幕の雨 II)" } },
     { AugType::DRONE_2,       AugRarity::LEGENDARY, AugUnique::NONE, "DRONE II",
       { L"드론 II", L"Drone II", L"ドローン II" },
-      { L"드론 1기 → 2기  (요구: 드론)  /  [조합] 대포 보유 시 포탑 배치로 전환",
-        L"1 → 2 drones  (req: Drone)  /  [combo] with Cannon: deploys turret",
-        L"1機 → 2機  (要: ドローン)  /  [組合] 大砲所持で砲台配置に変化" } },
+      { L"드론 1기 → 2기  (요구: 드론)",
+        L"1 → 2 drones  (req: Drone)",
+        L"1機 → 2機  (要: ドローン)" } },
     { AugType::CHAKRAM_3,     AugRarity::LEGENDARY, AugUnique::NONE, "CHAKRAM III",
       { L"차크람 III", L"Chakram III", L"チャクラム III" },
       { L"차크람 2개 → 3개  (요구: 차크람 II)", L"2 → 3 chakrams  (req: Chakram II)", L"2個 → 3個  (要: チャクラム II)" } },
@@ -521,17 +523,23 @@ static const AugDef ALL_AUGS[] = {
         L"ドローン最大 + 超高速射撃" } },
     { AugType::LASER_CONVERGE, AugRarity::MYTHIC, AugUnique::NONE, "LASER_CONV",
       { L"수렴", L"Convergence", L"収束" },
-      { L"스캔 레이저가 거의 연속으로 발사 + 초장거리 (전 직선 일소)",
-        L"Scan laser fires almost continuously + extreme range",
-        L"スキャンレーザーがほぼ連続発射 + 超射程" } },
+      { L"스캔 레이저가 거의 연속으로 발사 + 광폭 빔 (직선 일소)",
+        L"Scan laser fires almost continuously + extra-wide beam",
+        L"スキャンレーザーがほぼ連続発射 + 極太ビーム" } },
     { AugType::PIERCE_RAILSLUG, AugRarity::MYTHIC, AugUnique::NONE, "PIERCE_RAIL",
       { L"철갑탄", L"Railslug", L"徹甲弾" },
       { L"관통 100% · 공격력 +25 (가산) · 탄속 +50% (멈추지 않는 탄)",
         L"100% pierce · attack +25 (flat) · bullet speed +50%",
         L"貫通100% · 攻撃+25(加算) · 弾速+50%" } },
+    // ── 조합 (COMBO) 추가 ── 대포 + 드론 II → 포탑
+    { AugType::CB_TURRET,     AugRarity::COMBO,    AugUnique::NONE, "CB_TURRET",
+      { L"포탑 배치", L"Turret Deploy", L"砲台配置" },
+      { L"[조합] 드론이 공전 대신 자동 포탑으로 전개 (5초 지속·소총 화력)",
+        L"[Combo] Drones deploy as auto-turrets instead of orbiting (5s, rifle DPS)",
+        L"[組合] ドローンが公転せず自動砲台として展開 (5秒・小銃火力)" } },
 };
 
-static constexpr int AUG_TOTAL = 92;  // ... + 신화 4종(무한세례/군집/수렴/철갑탄)
+static constexpr int AUG_TOTAL = 93;  // ... + 신화 4종 + 조합 포탑(CB_TURRET)
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -549,6 +557,7 @@ inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_WARLORD,      { AugType::BERSERK,       AugType::DEATH_BLAST }, 2 },
     { AugType::CB_TEMPEST,      { AugType::CHAKRAM_3,     AugType::DRONE_2    }, 2 },
     { AugType::CB_OVERLORD,     { AugType::POWER_SURGE,   AugType::CORE_OVERLOAD }, 2 },  // 오버클럭
+    { AugType::CB_TURRET,       { AugType::CANNON,        AugType::DRONE_2     }, 2 },  // 포탑 배치
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 
