@@ -296,7 +296,10 @@ inline GLuint IconFor(AugType t) {
     case AugType::DRONE_2:       return g_IconTex[(int)AugType::DRONE];
     // 티어 II → 기본 티어 그림 재사용 (별도 아이콘 없는 것만)
     case AugType::PIERCE_2:      return g_IconTex[(int)AugType::PIERCE];
+    case AugType::PIERCE_RAILSLUG: return g_IconTex[(int)AugType::PIERCE];
     case AugType::TWIN_2:        return g_IconTex[(int)AugType::TWIN];
+    case AugType::DRONE_HIVE:    return g_IconTex[(int)AugType::DRONE];
+    case AugType::LASER_CONVERGE:return g_IconTex[(int)AugType::LASER];
     // 프로세스류 디버프 확장 — 전용 아이콘 없으면 유사 디버프 아이콘 재사용
     case AugType::D_MOB_PACK:    return g_IconTex[(int)AugType::D_MOB_SPAWN];
     case AugType::D_MOB_ELITE:   return g_IconTex[(int)AugType::D_MOB_HP];

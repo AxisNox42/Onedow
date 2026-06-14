@@ -64,7 +64,10 @@ enum class AugType {
     CB_OVERLORD,     // 오버드라이브 + 코어과부하 → 과부하 군주
     CB_HELLFIRE,     // 연쇄폭발 + 탄환세례 → 지옥불
     // ── 신화(MYTHIC) — 전설보다 높은 등급. 티어 자체가 고유 메커니즘으로 바뀜 ──
-    BULLET_RAIN_ETERNAL  // 무한 세례 — 쿨다운↓ + 처치마다 쿨다운 감소(스노우볼)
+    BULLET_RAIN_ETERNAL, // 무한 세례 — 쿨다운↓ + 처치마다 쿨다운 감소(스노우볼)
+    DRONE_HIVE,          // 군집 지능 — 드론 초고속 사격
+    LASER_CONVERGE,      // 수렴 — 레이저 거의 연속 발사 + 초장거리
+    PIERCE_RAILSLUG      // 철갑탄 — 관통 100% + 관통탄 강화
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -513,9 +516,24 @@ static const AugDef ALL_AUGS[] = {
       { L"쿨다운 8초로 단축 · 적 처치마다 쿨다운 0.4초 감소 (몰아칠수록 더 자주)",
         L"Cooldown to 8s · each kill cuts cooldown by 0.4s (snowball)",
         L"クールダウン8秒 · 撃破毎にCD0.4秒短縮 (連鎖で頻発)" } },
+    { AugType::DRONE_HIVE,    AugRarity::MYTHIC, AugUnique::NONE, "DRONE_HIVE",
+      { L"군집 지능", L"Hive Mind", L"群知能" },
+      { L"드론 최대치 + 초고속 사격 (발사 간격 대폭 단축)",
+        L"Max drones + hyper fire rate",
+        L"ドローン最大 + 超高速射撃" } },
+    { AugType::LASER_CONVERGE, AugRarity::MYTHIC, AugUnique::NONE, "LASER_CONV",
+      { L"수렴", L"Convergence", L"収束" },
+      { L"스캔 레이저가 거의 연속으로 발사 + 초장거리 (전 직선 일소)",
+        L"Scan laser fires almost continuously + extreme range",
+        L"スキャンレーザーがほぼ連続発射 + 超射程" } },
+    { AugType::PIERCE_RAILSLUG, AugRarity::MYTHIC, AugUnique::NONE, "PIERCE_RAIL",
+      { L"철갑탄", L"Railslug", L"徹甲弾" },
+      { L"관통 100% · 공격력 +25 (가산) · 탄속 +50% (멈추지 않는 탄)",
+        L"100% pierce · attack +25 (flat) · bullet speed +50%",
+        L"貫通100% · 攻撃+25(加算) · 弾速+50%" } },
 };
 
-static constexpr int AUG_TOTAL = 89;  // +조합4, +레이저, +티어3, +클래스4, +오버드라이브/코어과부하/전력증폭, +부메랑, +프로세스디버프3, +조합6, +신화 무한세례
+static constexpr int AUG_TOTAL = 92;  // ... + 신화 4종(무한세례/군집/수렴/철갑탄)
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {

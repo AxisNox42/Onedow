@@ -201,8 +201,11 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::LASER_2       && !hasOwnedType(AugType::LASER))         continue;
             if (t == AugType::PIERCE_2      && !hasOwnedType(AugType::PIERCE))        continue;
             if (t == AugType::TWIN_2        && !hasOwnedType(AugType::TWIN))          continue;
-            // 신화 무한세례 — 탄환세례 III 선행 (티어 진화)
+            // 신화 — 각 최대 티어 선행 (티어 진화)
             if (t == AugType::BULLET_RAIN_ETERNAL && !hasOwnedType(AugType::BULLET_RAIN_3)) continue;
+            if (t == AugType::DRONE_HIVE     && !hasOwnedType(AugType::DRONE_2))   continue;
+            if (t == AugType::LASER_CONVERGE && !hasOwnedType(AugType::LASER_2))   continue;
+            if (t == AugType::PIERCE_RAILSLUG&& !hasOwnedType(AugType::PIERCE_2))  continue;
             // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/병렬처리/취함/영혼수확/클래스)
             if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)

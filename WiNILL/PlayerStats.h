@@ -81,6 +81,7 @@ struct PlayerStats {
     // ── 희귀/전설 (티어드) ───────────────────────────────
     bool  drone        = false;
     int   droneCount   = 0;       // 1 = DRONE (RARE), 2 = DRONE_2 (LEGENDARY)
+    bool  droneRapid   = false;   // 군집 지능(신화) — 드론 초고속 사격
     bool  laser        = false;   // 스캔 레이저 — 주기적 관통 빔 (군중제어)
     int   laserTier    = 1;       // 1 = LASER, 2 = LASER_2 (간격↓·사거리↑)
     int   purgeNova    = 0;       // 백신 스캔 — 주기적 범위 펄스 (중첩 시 강화)
@@ -335,6 +336,21 @@ struct PlayerStats {
             bulletRain         = true;
             bulletRainCooldown = 8.0f;
             rainKillReduce     = true;
+            break;
+        case AugType::DRONE_HIVE:            // 신화 — 군집 지능
+            drone      = true;
+            droneCount = 2;                  // 최대치(MAX_DRONES)
+            droneRapid = true;               // main: 드론 발사 간격 대폭 단축
+            break;
+        case AugType::LASER_CONVERGE:        // 신화 — 수렴
+            laser     = true;
+            laserTier = 3;                   // main: 거의 연속 발사 + 초장거리
+            break;
+        case AugType::PIERCE_RAILSLUG:       // 신화 — 철갑탄
+            pierce          = true;
+            pierceChance    = 100;
+            flatDamageBonus += 25.0f;
+            bulletSpeed     *= 1.50f;
             break;
         case AugType::CB_HELLFIRE:      // 연쇄폭발 + 탄환세례 → 지옥불
             deathBlast        = true;

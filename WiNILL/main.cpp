@@ -3489,7 +3489,9 @@ int main() {
                     float droneX = pCX + cosf(ang) * 80.0f;
                     float droneY = pCY + sinf(ang) * 80.0f;
                     dr.fireTimer += delta;
-                    if (dr.fireTimer >= g_Stats.fireInterval * 2.0f) {
+                    // 군집 지능(신화) — 발사 간격 2.0× → 0.6× (초고속)
+                    float droneInt = g_Stats.fireInterval * (g_Stats.droneRapid ? 0.6f : 2.0f);
+                    if (dr.fireTimer >= droneInt) {
                         float nd = 1e9f, tx = 0, ty = 0;
                         for (auto m : g_MonsterManager.monsters) {
                             if (!m->alive) continue;
@@ -3976,12 +3978,14 @@ int main() {
             // ── 스캔 레이저 (증강) — 0.7초마다 조준 방향 관통 빔 (군중제어) ──
             //   meleeSwing 의 데미지/처치보상 루프를 '직선 판정(SegDist)' 버전으로 재사용.
             if (g_Stats.laser) {
-                float laserInt = (g_Stats.laserTier >= 2) ? 0.55f : LASER_INT;  // II: 더 자주
+                float laserInt = (g_Stats.laserTier >= 3) ? 0.18f   // 신화 수렴: 거의 연속
+                               : (g_Stats.laserTier >= 2) ? 0.55f : LASER_INT;
                 g_LaserTimer += delta;
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);   // 레이저는 항상 커서 방향
-                    float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;  // II: 더 길게
+                    float LASER_RANGE = (g_Stats.laserTier >= 3) ? 1100.0f   // 신화 수렴: 초장거리
+                                      : (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
                     const float BEAM_HALF = 24.0f;
                     bool lcrit = false; float lcm = 1.0f;
