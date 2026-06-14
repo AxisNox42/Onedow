@@ -22,6 +22,7 @@ enum CodexMobId {
     CM_NORMAL, CM_SPLITTER, CM_BLINKER, CM_CHARGER, CM_WEAVER, CM_BRUTE,
     CM_ORBITER, CM_SPAWNER, CM_SHIELDED,   // == (int)MobKind 0..8
     CM_RANGED, CM_BOMBER,
+    CM_DDOS, CM_BADSECTOR, CM_REGERROR,    // 확장 적 (꼬리 추가 — 세이브 인덱스 보존)
     CM_COUNT
 };
 inline bool g_MobSeen[CM_COUNT] = { false };
@@ -97,6 +98,21 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
         { L"접근해 점화 후 광역 자폭 (미리 처치 가능)",
           L"Closes in, ignites, then blows up in an AoE",
           L"接近して点火後に範囲自爆" } },
+    /* DDOS */ {
+        { L"디도스", L"DDoS", L"DDoS" },
+        { L"한 번에 떼로 몰려오는 약한 프로세스 (물량 압박)",
+          L"Weak processes that swarm in large numbers",
+          L"大量に押し寄せる弱小プロセス" } },
+    /* BADSECTOR */ {
+        { L"배드 섹터", L"Bad Sector", L"バッドセクタ" },
+        { L"처치 시 그 자리에 잠시 감속 구역(손상 영역)을 남김",
+          L"On death leaves a temporary slow zone (damaged area)",
+          L"撃破時にその場へ一時的な減速領域を残す" } },
+    /* REGERROR */ {
+        { L"레지스트리 에러", L"Registry Error", L"レジストリエラー" },
+        { L"가짜창 내부의 적을 강화(이속·공격·체력↑)하는 X형 노드",
+          L"X-node that buffs enemies inside its window (speed/atk/HP)",
+          L"窓内の敵を強化するX字ノード" } },
 };
 
 inline const wchar_t* MobName(int id) {

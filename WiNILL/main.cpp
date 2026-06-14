@@ -150,7 +150,10 @@ static inline bool inWin(float x, float y, float rx, float ry, float rw, float r
 }
 
 inline void drawMob(const Monster* m) {
-    MarkMobSeen(m->kind);   // 도감 발견 (화면에 그려진 적)
+    MarkMobSeen(m->kind);   // 도감 발견 (MobKind 0..8)
+    if      (m->kind == MobKind::DDOS)      MarkMobSeenId(CM_DDOS);
+    else if (m->kind == MobKind::BADSECTOR) MarkMobSeenId(CM_BADSECTOR);
+    else if (m->kind == MobKind::REGERROR)  MarkMobSeenId(CM_REGERROR);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     // 엘리트 오라 (신속=시안 / 강인=금색 / 폭발성=빨강 맥동)
     if (m->elite) {
@@ -228,6 +231,10 @@ inline void drawMob(const Monster* m) {
         }
         drawDiamond(x, y, base, m->color.r, m->color.g, m->color.b, 1.0f);
         drawDiamond(x, y, base*0.4f, 1.0f, 1.0f, 1.0f, 0.85f);
+    } else if (m->kind == MobKind::DDOS) {
+        // 디도스 — 작은 분홍 프로세스(작은 세모 + 코어)
+        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
+        drawTriangle(m->worldX, m->worldY, base*0.42f, 1.0f, 0.85f, 0.9f, 0.9f);
     } else {
         drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
     }
@@ -3241,6 +3248,18 @@ int main() {
                                 nm->MakeKind(MobKind::SPAWNER);
                             else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
                                 nm->MakeKind(MobKind::SHIELDED);
+                            // 디도스(P) — 점수 비례 자연 스폰. 프로세스 1개가 디도스 3마리로 변환(물량).
+                            else if (g_GameManager.score > 60000 && (rand() % 100) < 16) {
+                                nm->MakeKind(MobKind::DDOS);
+                                for (int e = 0; e < 2; e++) {
+                                    Monster* dn = new Monster(
+                                        nm->worldX + (float)(rand() % 70 - 35),
+                                        nm->worldY + (float)(rand() % 70 - 35),
+                                        g_Stats.monsterHpMult * rampHp, 1.0f, false);
+                                    dn->MakeKind(MobKind::DDOS);
+                                    g_MonsterManager.monsters.push_back(dn);
+                                }
+                            }
                         }
                         // 스케쥴러 강화 — 특수(비-NORMAL) 잡몹 HP 추가 배율
                         if (nm->kind != MobKind::NORMAL && g_Stats.specialMobHpMult != 1.0f)
@@ -6778,8 +6797,23 @@ static void Scene_Codex(const SceneCtx& c) {
                             } else if (i == CM_RANGED) {
                                 drawDiamond(ccx, ccy, 28.0f, 0.85f, 0.0f, 0.85f, 1.0f);
                                 drawDiamond(ccx, ccy, 11.0f, 1,1,1, 0.9f);
-                            } else {
+                            } else if (i == CM_BOMBER) {
                                 drawPentagon(ccx, ccy, 32.0f, 1.0f, 0.5f, 0.1f, 1.0f);
+                            } else if (i == CM_DDOS) {
+                                for (int t = 0; t < 3; t++) {
+                                    float a = (float)t * 2.0944f;
+                                    drawTriangle(ccx + cosf(a)*13.0f, ccy + sinf(a)*13.0f,
+                                                 14.0f, 1.0f, 0.35f, 0.55f, 1.0f);
+                                }
+                            } else if (i == CM_BADSECTOR) {
+                                drawPentagon(ccx, ccy, 30.0f, 0.7f, 0.25f, 0.85f, 1.0f);
+                                drawPentagon(ccx, ccy, 13.0f, 0.1f, 0.05f, 0.2f, 1.0f);
+                            } else {   // CM_REGERROR — X형 노드
+                                drawDiamond(ccx, ccy, 26.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                                drawDiamond(ccx + 17, ccy, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                                drawDiamond(ccx - 17, ccy, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                                drawDiamond(ccx, ccy + 17, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                                drawDiamond(ccx, ccy - 17, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
                             }
                             BindMainShader();
                             const wchar_t* nm = MobName(i);

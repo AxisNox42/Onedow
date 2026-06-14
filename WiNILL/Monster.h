@@ -11,7 +11,11 @@
 enum class MobKind {
     NORMAL, SPLITTER, BLINKER,
     CHARGER, WEAVER, BRUTE,
-    ORBITER, SPAWNER, SHIELDED
+    ORBITER, SPAWNER, SHIELDED,
+    // 확장 (인덱스 9~) — MarkMobSeen(<9) 대상 아님. 도감은 CodexMobId 로 별도 추적.
+    DDOS,        // 디도스 — 점수 비례 물량 swarm (프로세스 1→3). 능력 없음
+    BADSECTOR,   // 배드 섹터 — 육각형, 죽으면 임시 감속 구역 생성 (디버프/자연 스폰)
+    REGERROR     // 레지스트리 에러 — X본체+공전, 가짜창 내 적 강화 오라 (디버프/자연 스폰)
 };
 
 // 엘리트 변종 — 0 없음 / 1 신속 / 2 강인 / 3 폭발성. 어떤 잡몹에든 드물게 부여.
@@ -30,6 +34,9 @@ inline void MobKillReward(MobKind k, int splitGen, int elite,
     case MobKind::ORBITER:  xpBase = 5.0f; scoreBase = 200.0f; break;
     case MobKind::SPAWNER:  xpBase = 7.0f; scoreBase = 300.0f; break;
     case MobKind::SHIELDED: xpBase = 5.0f; scoreBase = 220.0f; break;
+    case MobKind::DDOS:     xpBase = 0.5f; scoreBase = 40.0f;  break;  // 물량 swarm — 보상 미미
+    case MobKind::BADSECTOR:xpBase = 30.0f;scoreBase = 350.0f; break;
+    case MobKind::REGERROR: xpBase = 40.0f;scoreBase = 500.0f; break;
     default: break;
     }
     if (elite) { xpBase *= 2.5f; scoreBase *= 2.5f; }
@@ -131,6 +138,11 @@ public:
             color = glm::vec3(0.3f, 0.5f, 1.0f);        // 파랑 — 주기적 보호막
             speed *= 0.85f;
             shieldActive = true; shieldTimer = 0.0f;
+        } else if (k == MobKind::DDOS) {
+            color = glm::vec3(1.0f, 0.35f, 0.55f);      // 분홍빨강 — 작은 프로세스 떼
+            hp   *= 0.35f;                              // 매우 약함 (물량)
+            speed *= 1.05f;
+            sizeScale = scale * 0.62f;                  // 작음
         }
     }
 
