@@ -7454,6 +7454,46 @@ static void Scene_Settings(const SceneCtx& c) {
                         } else s_resetConfirm = false;   // 딴 곳 클릭 = 확인 취소
                     }
                 }
+
+                // 크레딧 (오픈소스 에셋 출처) — 버튼 → 오버레이
+                static bool s_showCredits = false;
+                {
+                    const wchar_t* cl = (g_Language==Language::EN)?L"Credits":
+                                        (g_Language==Language::JP)?L"クレジット":L"크레딧";
+                    float cwid = 150.0f, cxp = lx + 420.0f, cyp = wy + WH - 64.0f;
+                    if (UIButton(cxp, cyp, cwid, 48.0f, cl, mx, my, lmb, g_LmbPrev))
+                        s_showCredits = true;
+                }
+                if (s_showCredits) {
+                    BindMainShader();
+                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.78f);   // 딤
+                    float CW = 620.0f, CH = 440.0f;
+                    float CX = (sw - CW) * 0.5f, CY = (sh - CH) * 0.5f;
+                    drawRect(CX, CY, CW, CH, 0.05f, 0.06f, 0.10f, 0.98f);
+                    drawRect(CX, CY, CW, 4.0f, 0.3f, 0.8f, 1.0f, 1.0f);
+                    const wchar_t* CT = L"CREDITS";
+                    g_TextL.Draw(CT, CX + (CW - g_TextL.Width(CT,1.1f))*0.5f, CY + 24.0f, 1.1f, 1,1,1,1);
+                    const wchar_t* lines[] = {
+                        L"ONEDOW  —  Desktop Defense",
+                        L"",
+                        L"Fonts:  Jua / Kosugi Maru / Oswald  (SIL OFL)",
+                        L"Icons:  game-icons.net  (CC BY 3.0)",
+                        L"         Lorc · Delapouite · Skoll",
+                        L"Missile sprite:  Saepul Nahwan  (Noun Project)",
+                        L"Audio engine:  miniaudio  (public domain)",
+                        L"Built with:  OpenGL · GLFW · GLAD · glm · stb",
+                        L"",
+                        L"Made with Claude Code",
+                    };
+                    float ly = CY + 78.0f;
+                    for (auto* ln : lines) {
+                        g_TextS.Draw(ln, CX + 36.0f, ly, 0.82f, 0.85f, 0.92f, 1.0f, 0.95f);
+                        ly += 32.0f;
+                    }
+                    if (UIButton(CX + (CW-180.0f)*0.5f, CY + CH - 60.0f, 180.0f, 44.0f,
+                                 T(StrId::BTN_BACK), mx, my, lmb, g_LmbPrev))
+                        s_showCredits = false;
+                }
                 }   // close: g_AppOpen open guard
 }
 
