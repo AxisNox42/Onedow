@@ -261,14 +261,18 @@ inline void drawMob(const Monster* m) {
         drawRect(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.5f, 0.1f, 0.1f, 0.09f);
         drawNeonBorder(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.9f, 0.3f, 0.3f);
         float ph = (float)glfwGetTime() * 1.6f;
+        // 주변에 작은 네모(프로세스) 공전 — 스파이웨어 느낌 유지
         for (int k = 0; k < 4; k++) {
-            float a = ph + (float)k * 1.5708f;
-            drawTriangle(x + cosf(a)*base*1.5f, y + sinf(a)*base*1.5f, base*0.4f,
-                         1.0f, 0.55f, 0.2f, 0.95f);
+            float a  = ph + (float)k * 1.5708f;
+            float sx = x + cosf(a) * base * 1.5f;
+            float sy = y + sinf(a) * base * 1.5f;
+            float s  = base * 0.36f;
+            drawRect(sx - s*0.5f, sy - s*0.5f, s, s, 1.0f, 0.55f, 0.2f, 0.95f);
         }
-        // X (두 대각 막대)
+        // X형 본체 — 회전(스파이웨어와 달리 본체 자체가 돌아감)
+        float xr = ph * 0.6f;
         for (int d = 0; d < 2; d++) {
-            float a = 0.7854f + (float)d * 1.5708f;   // 45° / 135°
+            float a = 0.7854f + (float)d * 1.5708f + xr;   // 45°/135° + 회전
             float dx = cosf(a), dy = sinf(a), px = -dy, py = dx;
             float L = base, T = base * 0.28f;
             float v1x=x+dx*L+px*T, v1y=y+dy*L+py*T, v2x=x+dx*L-px*T, v2y=y+dy*L-py*T;
@@ -508,12 +512,18 @@ BotnetBoss* g_BotnetBoss = nullptr;
 CentipedeBoss* g_CentiBoss = nullptr;
 
 // ── 배드 섹터 사망 잔류물 — 임시 감속 구역(손상 영역). 안에 있으면 이동속도 -10% ──
-struct SlowZone { float x, y, w, h, life, maxLife; };
+//   즉시 생기지 않고 ZONE_OPEN(0.7초)에 걸쳐 점점 부식되어 퍼짐(grow factor = age/OPEN).
+struct SlowZone { float x, y, w, h, life, maxLife, age; };
 std::vector<SlowZone> g_SlowZones;
+static constexpr float SLOWZONE_OPEN = 0.7f;   // 부식 확산 시간
+inline float SlowZoneGrow(const SlowZone& z) {
+    float g = z.age / SLOWZONE_OPEN;
+    return g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);
+}
 inline void SpawnBadSectorZone(const Monster* m) {
     if (m->kind != MobKind::BADSECTOR) return;
     float w = 240.0f, h = 240.0f;
-    g_SlowZones.push_back({ m->worldX - w*0.5f, m->worldY - h*0.5f, w, h, 5.0f, 5.0f });
+    g_SlowZones.push_back({ m->worldX - w*0.5f, m->worldY - h*0.5f, w, h, 5.0f, 5.0f, 0.0f });
 }
 
 // ── 스캔 레이저 (증강) — 주기적 관통 빔 + 페이드 비주얼 ──
@@ -1999,15 +2009,18 @@ int main() {
                 if (mlen > 0.001f) {
                     mvX /= mlen; mvY /= mlen;
                     float moveMult = g_Stats.GetMoveMultiplier(lmb);
-                    // 배드 섹터 감속 구역 — 안에 있으면 이동속도 -10%
+                    // 배드 섹터 감속 구역 — 부식되어 퍼진 영역(grow factor) 안이면 이동속도 -10%
                     float zoneSlow = 1.0f;
                     {
                         float pcx = playerWin.x + playerWin.width  * 0.5f;
                         float pcy = playerWin.y + playerWin.height * 0.5f;
-                        for (auto& z : g_SlowZones)
-                            if (pcx >= z.x && pcx <= z.x + z.w && pcy >= z.y && pcy <= z.y + z.h) {
-                                zoneSlow = 0.90f; break;
-                            }
+                        for (auto& z : g_SlowZones) {
+                            float gf = SlowZoneGrow(z);
+                            float hw = z.w * 0.5f * gf, hh = z.h * 0.5f * gf;
+                            float zx = z.x + z.w * 0.5f, zy = z.y + z.h * 0.5f;
+                            if (pcx >= zx - hw && pcx <= zx + hw &&
+                                pcy >= zy - hh && pcy <= zy + hh) { zoneSlow = 0.90f; break; }
+                        }
                     }
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
@@ -3194,8 +3207,8 @@ int main() {
             g_LaserBeams.erase(std::remove_if(g_LaserBeams.begin(), g_LaserBeams.end(),
                 [](const LaserBeam& b){ return b.life <= 0.0f; }), g_LaserBeams.end());
 
-            // 배드 섹터 감속 구역 수명
-            for (auto& z : g_SlowZones) z.life -= delta;
+            // 배드 섹터 감속 구역 수명 + 부식 확산
+            for (auto& z : g_SlowZones) { z.life -= delta; z.age += delta; }
             g_SlowZones.erase(std::remove_if(g_SlowZones.begin(), g_SlowZones.end(),
                 [](const SlowZone& z){ return z.life <= 0.0f; }), g_SlowZones.end());
 
@@ -4743,20 +4756,33 @@ int main() {
             drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
         }
 
-        // (c2.5) 배드 섹터 감속 구역 — 손상 영역(반투명 보라 창 + 테두리 + 격자)
+        // (c2.5) 배드 섹터 감속 구역 — 중심에서 부식되어 퍼지는 손상 블록(깜빡임 애니메이션)
         if (!g_SlowZones.empty()) {
             BindMainShader();
+            float zt = (float)glfwGetTime();
             for (auto& z : g_SlowZones) {
-                float a = (z.maxLife > 0.0f) ? (z.life / z.maxLife) : 0.0f;
-                if (a < 0.0f) a = 0.0f;
-                drawRect(z.x, z.y, z.w, z.h, 0.35f, 0.1f, 0.5f, 0.18f * a + 0.06f);
-                drawNeonBorder(z.x, z.y, z.w, z.h, 0.7f, 0.3f, 0.95f);
-                for (int gi = 1; gi < 4; gi++) {
-                    float fx = z.x + z.w * gi / 4.0f;
-                    float fy = z.y + z.h * gi / 4.0f;
-                    drawRect(fx - 1.0f, z.y, 2.0f, z.h, 0.6f, 0.25f, 0.85f, 0.16f * a);
-                    drawRect(z.x, fy - 1.0f, z.w, 2.0f, 0.6f, 0.25f, 0.85f, 0.16f * a);
+                float lifeF = (z.maxLife > 0.0f) ? (z.life / z.maxLife) : 0.0f;
+                if (lifeF < 0.0f) lifeF = 0.0f;
+                float gf = SlowZoneGrow(z);
+                float zx = z.x + z.w*0.5f, zy = z.y + z.h*0.5f;
+                float hw = z.w*0.5f*gf, hh = z.h*0.5f*gf;
+                drawRect(zx - hw, zy - hh, hw*2, hh*2, 0.32f, 0.08f, 0.45f, 0.14f*lifeF + 0.04f);
+                // 부식 블록 — 셀별 의사난수 깜빡임, 중심에서 grow factor 까지만 노출(퍼짐)
+                const int N = 7;
+                float cw = z.w / (float)N, ch = z.h / (float)N;
+                for (int iy = 0; iy < N; iy++) for (int ix = 0; ix < N; ix++) {
+                    float fx = z.x + ((float)ix + 0.5f) * cw;
+                    float fy = z.y + ((float)iy + 0.5f) * ch;
+                    float dxn = (fx - zx) / (z.w*0.5f + 1e-3f);
+                    float dyn = (fy - zy) / (z.h*0.5f + 1e-3f);
+                    if (sqrtf(dxn*dxn + dyn*dyn) > gf) continue;   // 아직 부식 안 닿음
+                    float seed = sinf((float)ix*12.9898f + (float)iy*78.233f) * 43758.5453f;
+                    float ph = seed - floorf(seed);
+                    float fl = 0.45f + 0.55f * sinf(zt * 6.0f + ph * 6.2831853f);
+                    float ca = (0.10f + 0.22f * fl) * lifeF;
+                    drawRect(fx - cw*0.42f, fy - ch*0.42f, cw*0.84f, ch*0.84f, 0.62f, 0.2f, 0.88f, ca);
                 }
+                drawNeonBorder(zx - hw, zy - hh, hw*2, hh*2, 0.75f, 0.3f, 0.95f);
             }
         }
 
@@ -7527,7 +7553,7 @@ static void Scene_Settings(const SceneCtx& c) {
         SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
     (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
     (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                const float WW = 940.0f, WH = 740.0f;
+                const float WW = 1000.0f, WH = 600.0f;
                 float wx, wy;
                 appWindow(WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
@@ -7574,66 +7600,35 @@ static void Scene_Settings(const SceneCtx& c) {
                     }
                 }
 
-                // ON/OFF 토글 한 줄 헬퍼 (창 기준)
-                auto toggleRow = [&](float ly, StrId label, bool& val) {
-                    g_TextS.Draw(T(label), lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
-                    if (UIButton(bx0, ly, OW, OH,
-                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, val))
-                        val = true;
-                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
-                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !val))
-                        val = false;
+                // ── 토글 옵션 — 2열 배치(좌: 표시 / 우: 조작·효과)로 우측 여백 활용 ──
+                auto toggleAt = [&](float labX, float btnX, float ly,
+                                    const wchar_t* label, bool& val) {
+                    g_TextS.Draw(label, labX, ly + 12.0f, 0.85f, 1,1,1,0.9f);
+                    if (UIButton(btnX, ly, OW, OH, T(StrId::OPT_ON),
+                                 mx, my, lmb, g_LmbPrev, val)) val = true;
+                    if (UIButton(btnX + OW + OG, ly, OW, OH, T(StrId::OPT_OFF),
+                                 mx, my, lmb, g_LmbPrev, !val)) val = false;
                 };
-                toggleRow(wy + 250.0f, StrId::SET_CROSSHAIR, g_ShowCrosshair);
-                toggleRow(wy + 312.0f, StrId::SET_DMGNUM,    g_ShowDamageNumbers);
-                toggleRow(wy + 374.0f, StrId::SET_COMBO,     g_ShowCombo);
-
-                // 자동 발사 토글 (C13) — i18n 테이블 손대지 않게 언어별 라벨 인라인
-                {
-                    const wchar_t* afLabel =
-                        (g_Language == Language::EN) ? L"Auto-Fire" :
-                        (g_Language == Language::JP) ? L"自動発射"   : L"자동 발사";
-                    float ly = wy + 436.0f;
-                    g_TextS.Draw(afLabel, lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
-                    if (UIButton(bx0, ly, OW, OH,
-                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, g_AutoFire))
-                        g_AutoFire = true;
-                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
-                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_AutoFire))
-                        g_AutoFire = false;
-                }
-                // 액티브 스킬 자동 사용 토글 (C16)
-                {
-                    const wchar_t* asLabel =
-                        (g_Language == Language::EN) ? L"Auto-Skill" :
-                        (g_Language == Language::JP) ? L"自動スキル" : L"자동 스킬";
-                    float ly = wy + 488.0f;
-                    g_TextS.Draw(asLabel, lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
-                    if (UIButton(bx0, ly, OW, OH,
-                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, g_AutoSkill))
-                        g_AutoSkill = true;
-                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
-                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_AutoSkill))
-                        g_AutoSkill = false;
-                }
-                // CRT 셰이더 효과 토글 (G)
-                {
-                    const wchar_t* sfLabel =
-                        (g_Language == Language::EN) ? L"CRT Shader" :
-                        (g_Language == Language::JP) ? L"CRTシェーダー" : L"CRT 셰이더";
-                    float ly = wy + 540.0f;
-                    g_TextS.Draw(sfLabel, lx, ly + 12.0f, 0.85f, 1,1,1,0.9f);
-                    if (UIButton(bx0, ly, OW, OH,
-                                 T(StrId::OPT_ON), mx, my, lmb, g_LmbPrev, g_ShaderFx))
-                        g_ShaderFx = true;
-                    if (UIButton(bx0 + OW + OG, ly, OW, OH,
-                                 T(StrId::OPT_OFF), mx, my, lmb, g_LmbPrev, !g_ShaderFx))
-                        g_ShaderFx = false;
-                }
+                const wchar_t* afLabel = (g_Language==Language::EN)?L"Auto-Fire":
+                                         (g_Language==Language::JP)?L"自動発射":L"자동 발사";
+                const wchar_t* asLabel = (g_Language==Language::EN)?L"Auto-Skill":
+                                         (g_Language==Language::JP)?L"自動スキル":L"자동 스킬";
+                const wchar_t* sfLabel = (g_Language==Language::EN)?L"CRT Shader":
+                                         (g_Language==Language::JP)?L"CRTシェーダー":L"CRT 셰이더";
+                float labR = wx + 540.0f, btnR = wx + 720.0f;
+                float tY0 = wy + 250.0f, tGap = 64.0f;
+                // 좌열 — 표시 옵션
+                toggleAt(lx,   bx0,  tY0,            T(StrId::SET_CROSSHAIR), g_ShowCrosshair);
+                toggleAt(lx,   bx0,  tY0 + tGap,     T(StrId::SET_DMGNUM),    g_ShowDamageNumbers);
+                toggleAt(lx,   bx0,  tY0 + tGap*2,   T(StrId::SET_COMBO),     g_ShowCombo);
+                // 우열 — 조작·효과 옵션
+                toggleAt(labR, btnR, tY0,            afLabel, g_AutoFire);
+                toggleAt(labR, btnR, tY0 + tGap,     asLabel, g_AutoSkill);
+                toggleAt(labR, btnR, tY0 + tGap*2,   sfLabel, g_ShaderFx);
 
                 // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
                 {
-                    float vy = wy + 604.0f;
+                    float vy = wy + 458.0f;
                     g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
                     auto clampVol = [](int v){ return v < 0 ? 0 : (v > 100 ? 100 : v); };
 
