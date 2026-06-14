@@ -108,7 +108,7 @@ inline const char* IconNameForAug(AugType t) {
 }
 
 // (int)AugType 로 인덱싱 (이넘이 0부터 연속). 여유 있게 잡음.
-inline GLuint g_IconTex[96] = { 0 };
+inline GLuint g_IconTex[128] = { 0 };   // AugType 값으로 인덱싱 (enum 이 96 넘어 확장됨 → 128)
 inline char   g_IconBaseDir[260] = "Icons";   // 런타임에 실제 폴더로 확정
 
 inline GLuint g_IconProg = 0, g_IconVAO = 0, g_IconVBO = 0;
@@ -270,7 +270,7 @@ inline void LoadIcons() {
         const char* nm = IconNameForAug(t);
         if (!nm) continue;
         int idx = (int)t;
-        if (idx < 0 || idx >= 96) continue;
+        if (idx < 0 || idx >= 128) continue;
         if (g_IconTex[idx]) continue;
         g_IconTex[idx] = IconLoad(nm);
     }
@@ -286,7 +286,7 @@ inline GLuint JobIcon(int jobId) {
 // AugType 텍스처 (없으면 티어 폴백)
 inline GLuint IconFor(AugType t) {
     int idx = (int)t;
-    if (idx >= 0 && idx < 96 && g_IconTex[idx]) return g_IconTex[idx];
+    if (idx >= 0 && idx < 128 && g_IconTex[idx]) return g_IconTex[idx];
     switch (t) {  // 티어 II/III → 기본 티어 그림 재사용
     case AugType::BULLET_RAIN_2:
     case AugType::BULLET_RAIN_3:

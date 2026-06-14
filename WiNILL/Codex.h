@@ -9,7 +9,7 @@
 #include "Settings.h"  // g_Language, LANG_COUNT
 
 // ── 증강 발견 (ALL_AUGS 인덱스 기준) ──
-inline bool g_AugSeen[96]  = { false };
+inline bool g_AugSeen[128] = { false };   // ALL_AUGS 인덱스(AUG_TOTAL) 기준 — 여유 128
 inline bool g_CodexDirty   = false;   // 새 발견 발생 → main 에서 SaveGame 호출
 
 inline void MarkAugSeen(int augIdx) {

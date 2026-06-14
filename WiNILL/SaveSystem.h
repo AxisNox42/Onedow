@@ -155,7 +155,7 @@ inline void LoadGame() {
         }
         else if (!std::strncmp(key, "augseen", 7)) {
             int ai = atoi(key + 7);
-            if (ai >= 0 && ai < 96) g_AugSeen[ai] = (val != 0);
+            if (ai >= 0 && ai < 128) g_AugSeen[ai] = (val != 0);
         }
         else if (!std::strncmp(key, "mobseen", 7)) {
             int mi = atoi(key + 7);
