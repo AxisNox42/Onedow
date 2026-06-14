@@ -271,8 +271,7 @@ struct PlayerStats {
 
         // ── 핵앤슬래쉬 (희귀) ──
         case AugType::CRIT:
-            // 첫 픽 10% → 중첩마다 +20% (최대 75%) — 카드 설명과 일치
-            critChance = (critChance < 10) ? 10 : std::min(75, critChance + 20);
+            critChance = std::min(75, critChance + 15);   // 15%/스택, 최대 75% (카드 설명과 일치)
             critMult   = 2.0f;                            // 배율 너프: 2.5 → 2.0
             break;
         case AugType::LIFESTEAL:
