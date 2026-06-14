@@ -235,6 +235,48 @@ inline void drawMob(const Monster* m) {
         // 디도스 — 작은 분홍 프로세스(작은 세모 + 코어)
         drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
         drawTriangle(m->worldX, m->worldY, base*0.42f, 1.0f, 0.85f, 0.9f, 0.9f);
+    } else if (m->kind == MobKind::BADSECTOR) {
+        // 배드 섹터 — 육각형(6각) 손상 블록 + 코어
+        float x = m->worldX, y = m->worldY;
+        for (int ring = 0; ring < 2; ring++) {
+            float rr = base * (ring == 0 ? 1.0f : 0.5f);
+            float cr = ring == 0 ? m->color.r : 0.1f;
+            float cg = ring == 0 ? m->color.g : 0.05f;
+            float cb = ring == 0 ? m->color.b : 0.2f;
+            float vx[6], vy[6];
+            for (int s = 0; s < 6; s++) {
+                float a = (float)s * 1.0471976f + 0.5236f;   // 60° 간격
+                vx[s] = x + cosf(a) * rr; vy[s] = y + sinf(a) * rr;
+            }
+            for (int s = 0; s < 6; s++) {
+                int n = (s + 1) % 6;
+                float v[6] = { x, y, vx[s], vy[s], vx[n], vy[n] };
+                BatchVerts(v, 3, cr, cg, cb, 1.0f);
+            }
+        }
+    } else if (m->kind == MobKind::REGERROR) {
+        // 레지스트리 에러 — X형 본체 + 공전 프로세스 + 강화 오라(가짜창)
+        float x = m->worldX, y = m->worldY;
+        float ww = 240.0f;   // 강화 오라 창 (내부 적 강화)
+        drawRect(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.5f, 0.1f, 0.1f, 0.09f);
+        drawNeonBorder(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.9f, 0.3f, 0.3f);
+        float ph = (float)glfwGetTime() * 1.6f;
+        for (int k = 0; k < 4; k++) {
+            float a = ph + (float)k * 1.5708f;
+            drawTriangle(x + cosf(a)*base*1.5f, y + sinf(a)*base*1.5f, base*0.4f,
+                         1.0f, 0.55f, 0.2f, 0.95f);
+        }
+        // X (두 대각 막대)
+        for (int d = 0; d < 2; d++) {
+            float a = 0.7854f + (float)d * 1.5708f;   // 45° / 135°
+            float dx = cosf(a), dy = sinf(a), px = -dy, py = dx;
+            float L = base, T = base * 0.28f;
+            float v1x=x+dx*L+px*T, v1y=y+dy*L+py*T, v2x=x+dx*L-px*T, v2y=y+dy*L-py*T;
+            float v3x=x-dx*L+px*T, v3y=y-dy*L+py*T, v4x=x-dx*L-px*T, v4y=y-dy*L-py*T;
+            float va[12]={v1x,v1y,v2x,v2y,v3x,v3y, v2x,v2y,v4x,v4y,v3x,v3y};
+            BatchVerts(va, 6, m->color.r, m->color.g, m->color.b, 1.0f);
+        }
+        drawCircle(x, y, base*0.32f, 1.0f, 0.9f, 0.6f, 1.0f);
     } else {
         drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
     }
@@ -464,6 +506,15 @@ FirewallBoss* g_FirewallBoss = nullptr;
 BotnetBoss* g_BotnetBoss = nullptr;
 // BUG.proc 보스 (지네형 — 지그재그 배회 + 벽 돌진) — 별도 관리
 CentipedeBoss* g_CentiBoss = nullptr;
+
+// ── 배드 섹터 사망 잔류물 — 임시 감속 구역(손상 영역). 안에 있으면 이동속도 -10% ──
+struct SlowZone { float x, y, w, h, life, maxLife; };
+std::vector<SlowZone> g_SlowZones;
+inline void SpawnBadSectorZone(const Monster* m) {
+    if (m->kind != MobKind::BADSECTOR) return;
+    float w = 240.0f, h = 240.0f;
+    g_SlowZones.push_back({ m->worldX - w*0.5f, m->worldY - h*0.5f, w, h, 5.0f, 5.0f });
+}
 
 // ── 스캔 레이저 (증강) — 주기적 관통 빔 + 페이드 비주얼 ──
 struct LaserBeam { float ox, oy, ex, ey, life, maxLife; float width = 1.0f; };
@@ -1292,6 +1343,7 @@ int main() {
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
             g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
+            g_SlowZones.clear();                            // 배드 섹터 감속 구역 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
             g_RunMelee = false; g_RunBow = false;          // 클래스 게이팅 초기화
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
@@ -1525,6 +1577,7 @@ int main() {
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
                 g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
+                g_SlowZones.clear();    // 배드 섹터 감속 구역 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
@@ -1946,7 +1999,17 @@ int main() {
                 if (mlen > 0.001f) {
                     mvX /= mlen; mvY /= mlen;
                     float moveMult = g_Stats.GetMoveMultiplier(lmb);
-                    float curMove  = MOVE_SPEED * moveMult;
+                    // 배드 섹터 감속 구역 — 안에 있으면 이동속도 -10%
+                    float zoneSlow = 1.0f;
+                    {
+                        float pcx = playerWin.x + playerWin.width  * 0.5f;
+                        float pcy = playerWin.y + playerWin.height * 0.5f;
+                        for (auto& z : g_SlowZones)
+                            if (pcx >= z.x && pcx <= z.x + z.w && pcy >= z.y && pcy <= z.y + z.h) {
+                                zoneSlow = 0.90f; break;
+                            }
+                    }
+                    float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
                     playerWin.y += mvY * curMove * FIXED_DT;
                     // 이동 잔상(afterimage) — 일정 간격으로 플레이어 중심에 옅은 시안 잔상
@@ -2667,6 +2730,7 @@ int main() {
                             }
                         }
                         SpawnWormSplit(m, mobBorn);
+                        SpawnBadSectorZone(m);   // 배드 섹터 — 사망 자리에 감속 구역
                     }
                 }
                 for (auto* nb : mobBorn) g_MonsterManager.monsters.push_back(nb);
@@ -3130,6 +3194,11 @@ int main() {
             g_LaserBeams.erase(std::remove_if(g_LaserBeams.begin(), g_LaserBeams.end(),
                 [](const LaserBeam& b){ return b.life <= 0.0f; }), g_LaserBeams.end());
 
+            // 배드 섹터 감속 구역 수명
+            for (auto& z : g_SlowZones) z.life -= delta;
+            g_SlowZones.erase(std::remove_if(g_SlowZones.begin(), g_SlowZones.end(),
+                [](const SlowZone& z){ return z.life <= 0.0f; }), g_SlowZones.end());
+
             // 타격 스파크 업데이트 (이동 + 감속 + 수명)
             for (auto& sp : g_Sparks) {
                 sp.x += sp.vx * delta;
@@ -3248,6 +3317,16 @@ int main() {
                                 nm->MakeKind(MobKind::SPAWNER);
                             else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
                                 nm->MakeKind(MobKind::SHIELDED);
+                            // 배드 섹터(M) — 디버프 보유 시 흔함, 자연 스폰은 매우 낮음. 50만점 넘으면 미등장.
+                            else if (g_GameManager.score < 500000 &&
+                                     ((g_Stats.badsectorMobs && (rand() % 100) < 12) ||
+                                      (rand() % 1000) < 5))
+                                nm->MakeKind(MobKind::BADSECTOR);
+                            // 레지스트리 에러(M) — 더 희귀. 50만점 넘으면 미등장.
+                            else if (g_GameManager.score < 500000 &&
+                                     ((g_Stats.regerrorMobs && (rand() % 100) < 8) ||
+                                      (rand() % 1000) < 2))
+                                nm->MakeKind(MobKind::REGERROR);
                             // 디도스(P) — 점수 비례 자연 스폰. 프로세스 1개가 디도스 3마리로 변환(물량).
                             else if (g_GameManager.score > 60000 && (rand() % 100) < 16) {
                                 nm->MakeKind(MobKind::DDOS);
@@ -3886,6 +3965,7 @@ int main() {
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         SpawnWormSplit(m, swingBorn);
+                        SpawnBadSectorZone(m);
                         onKill();
                     }
                 }
@@ -4046,7 +4126,7 @@ int main() {
                             g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                             g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                            SpawnWormSplit(m, laserBorn); lOnKill();
+                            SpawnWormSplit(m, laserBorn); SpawnBadSectorZone(m); lOnKill();
                         }
                     }
                     for (auto* nb : laserBorn) g_MonsterManager.monsters.push_back(nb);
@@ -4661,6 +4741,23 @@ int main() {
             if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
             drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 1.0f);
             drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
+        }
+
+        // (c2.5) 배드 섹터 감속 구역 — 손상 영역(반투명 보라 창 + 테두리 + 격자)
+        if (!g_SlowZones.empty()) {
+            BindMainShader();
+            for (auto& z : g_SlowZones) {
+                float a = (z.maxLife > 0.0f) ? (z.life / z.maxLife) : 0.0f;
+                if (a < 0.0f) a = 0.0f;
+                drawRect(z.x, z.y, z.w, z.h, 0.35f, 0.1f, 0.5f, 0.18f * a + 0.06f);
+                drawNeonBorder(z.x, z.y, z.w, z.h, 0.7f, 0.3f, 0.95f);
+                for (int gi = 1; gi < 4; gi++) {
+                    float fx = z.x + z.w * gi / 4.0f;
+                    float fy = z.y + z.h * gi / 4.0f;
+                    drawRect(fx - 1.0f, z.y, 2.0f, z.h, 0.6f, 0.25f, 0.85f, 0.16f * a);
+                    drawRect(z.x, fy - 1.0f, z.w, 2.0f, 0.6f, 0.25f, 0.85f, 0.16f * a);
+                }
+            }
         }
 
         // (c3) 스캔 레이저 빔 — 페이드되는 청록 관통 빔 (보스 레이저 쿼드 패턴)

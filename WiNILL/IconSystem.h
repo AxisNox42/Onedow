@@ -307,6 +307,8 @@ inline GLuint IconFor(AugType t) {
     case AugType::D_SCHEDULER:    return g_IconTex[(int)AugType::D_MOB_HP];
     case AugType::D_TROJAN_BOOST: return g_IconTex[(int)AugType::D_BLINKER];
     case AugType::D_CRASHER_BOOST:return g_IconTex[(int)AugType::D_MOB_SPEED];
+    case AugType::D_BADSECTOR:    return g_IconTex[(int)AugType::D_SLOW_MOVE];
+    case AugType::D_REGERROR:     return g_IconTex[(int)AugType::D_MOB_HP];
     default:                     break;
     }
     // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용

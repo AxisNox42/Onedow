@@ -65,6 +65,15 @@ public:
     {
         bool playerHit = false;
 
+        // 레지스트리 에러 강화 오라 — 노드 주변(반경 130) 적은 받는 피해 -5%(체력↑ 프록시).
+        //   매우 희귀(보통 0개)라 프레임당 한 번만 좌표 수집 → 히트당 비용 거의 0.
+        static std::vector<glm::vec2> regAura;
+        regAura.clear();
+        for (auto* rg : mm.monsters)
+            if (rg->alive && rg->kind == MobKind::REGERROR)
+                regAura.push_back(glm::vec2(rg->worldX, rg->worldY));
+        const float REG_AURA_R2 = 130.0f * 130.0f;
+
         for (auto& b : bullets) {
             if (!b.active) continue;
 
@@ -109,6 +118,13 @@ public:
                     // 크래셔 강화 디버프 — 돌진(chargeState==2) 중 크래셔는 받는 피해 -10%
                     if (stats.crasherBoost && m->kind == MobKind::CHARGER && m->chargeState == 2)
                         baseDealt *= 0.90f;
+                    // 레지스트리 에러 강화 오라 — 노드 주변 적은 받는 피해 -5%
+                    if (!regAura.empty() && m->kind != MobKind::REGERROR) {
+                        for (auto& rp : regAura) {
+                            float ddx = m->worldX - rp.x, ddy = m->worldY - rp.y;
+                            if (ddx*ddx + ddy*ddy < REG_AURA_R2) { baseDealt *= 0.95f; break; }
+                        }
+                    }
                     float dealtThisHit = (baseDealt < m->hp) ? baseDealt : m->hp;
                     m->hp -= dealtThisHit;
                     if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;

@@ -123,6 +123,8 @@ struct PlayerStats {
     float specialMobHpMult = 1.0f;  // 스케쥴러 강화 — 특수(비-NORMAL) 잡몹 HP 배율
     bool  trojanBoost     = false;  // 트로이목마 강화 — 점멸 쿨다운 단축(D_BLINKER 보유 시)
     bool  crasherBoost    = false;  // 크래셔 강화 — 돌진 중 받는 피해 -10%
+    bool  badsectorMobs   = false;  // 배드 섹터 출현 (죽으면 감속 구역)
+    bool  regerrorMobs    = false;  // 레지스트리 에러 출현 (강화 오라)
     // 프로세스류(잡몹) 출현 디버프 (확장, 중첩 가능)
     int   mobPackBonus    = 0;     // 스폰당 추가 마리 수 (군집)
     float eliteChanceMult = 1.0f;  // 엘리트 변종 출현 확률 배율
@@ -540,6 +542,14 @@ struct PlayerStats {
         case AugType::D_CRASHER_BOOST:     // 크래셔 강화 — 돌진 중 받는 피해 -10%
             crasherBoost    = true;
             meleeXpBonus    += 4;
+            break;
+        case AugType::D_BADSECTOR:         // 배드 섹터 출현
+            badsectorMobs   = true;
+            meleeXpBonus    += 8;
+            break;
+        case AugType::D_REGERROR:          // 레지스트리 에러 출현
+            regerrorMobs    = true;
+            meleeXpBonus    += 10;
             break;
 
         // ── 특수 ──

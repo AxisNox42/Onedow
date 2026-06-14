@@ -71,7 +71,10 @@ enum class AugType {
     // ── 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
     D_SCHEDULER,         // 스케쥴러 강화 — 특수 잡몹 HP +10% (처치 XP +3)
     D_TROJAN_BOOST,      // 트로이목마 강화 — [트로이목마 침투 보유] 점멸 쿨다운 단축
-    D_CRASHER_BOOST      // 크래셔 강화 — 돌진 중 받는 피해 -10%
+    D_CRASHER_BOOST,     // 크래셔 강화 — 돌진 중 받는 피해 -10%
+    // ── 적 출현 디버프 (확장 — 신규 적) ──
+    D_BADSECTOR,         // 배드 섹터 출현 (죽으면 감속 구역)
+    D_REGERROR           // 레지스트리 에러 출현 (강화 오라 노드)
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -557,9 +560,19 @@ static const AugDef ALL_AUGS[] = {
       { L"크래셔가 돌진하는 동안 받는 피해 -10%  (처치 경험치 +4)",
         L"Crashers take 10% less damage while dashing  (kill XP +4)",
         L"クラッシャーが突進中に受けるダメージ-10%  (撃破経験値+4)" } },
+    { AugType::D_BADSECTOR,   AugRarity::DEBUFF,   AugUnique::NONE, "D_BADSEC",
+      { L"배드 섹터 출현", L"Bad Sector Spawn", L"バッドセクタ出現" },
+      { L"배드 섹터 등장 — 처치 시 잠시 감속 구역을 남김  (처치 경험치 +8)",
+        L"Bad Sectors appear — leave a temp slow zone on death  (kill XP +8)",
+        L"バッドセクタ出現 — 撃破時に減速領域を残す  (撃破経験値+8)" } },
+    { AugType::D_REGERROR,    AugRarity::DEBUFF,   AugUnique::NONE, "D_REGERR",
+      { L"레지스트리 에러 출현", L"Registry Error Spawn", L"レジストリエラー出現" },
+      { L"레지스트리 에러 등장 — 주변 적을 강화하는 노드  (처치 경험치 +10)",
+        L"Registry Errors appear — nodes that buff nearby foes  (kill XP +10)",
+        L"レジストリエラー出現 — 周囲の敵を強化するノード  (撃破経験値+10)" } },
 };
 
-static constexpr int AUG_TOTAL = 96;  // ... + 조합 포탑 + 디버프 3종(스케쥴러/트로이/크래셔)
+static constexpr int AUG_TOTAL = 98;  // + 조합 포탑 + 디버프 5종(강화3 + 신규적 출현2)
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -633,6 +646,8 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::D_ORBITER:   case AugType::D_SPAWNER:     case AugType::D_SHIELDED:
     // 강화 디버프 — 불리언 플래그(중첩 의미 없음). 스케쥴러(D_SCHEDULER)는 HP 배율 스택이라 제외.
     case AugType::D_TROJAN_BOOST: case AugType::D_CRASHER_BOOST:
+    // 신규 적 출현 디버프 (플래그 1개)
+    case AugType::D_BADSECTOR:    case AugType::D_REGERROR:
         return true;
     default:
         return false;
