@@ -27,7 +27,8 @@ static inline float SegDist(float px, float py, float ax, float ay, float bx, fl
 // 연쇄 작용(리코셰) — 적중 지점에서 가장 가까운 '다른' 적으로 총알 방향 전환.
 //   성공 시 true. (적중한 적은 fromX/fromY 와 동일 위치라 d²≈0 으로 제외됨)
 static inline bool RicochetTo(Bullet& b, float fromX, float fromY, MonsterManager& mm) {
-    float bestD2 = 1e18f, bx = 0, by = 0; bool found = false;
+    // 연쇄 작용 — 주변 200px 내에 적이 있을 때만 튕김 (없으면 그냥 소멸)
+    float bestD2 = 200.0f * 200.0f, bx = 0, by = 0; bool found = false;
     auto consider = [&](float ex, float ey) {
         float dx = ex - fromX, dy = ey - fromY;
         float d2 = dx*dx + dy*dy;

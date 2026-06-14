@@ -1967,11 +1967,11 @@ int main() {
                 if (pCX > ccX + halfW) pCX = ccX + halfW;
                 if (pCY < ccY - halfH) pCY = ccY - halfH;
                 // C17: 하단 작업표시줄(인게임 가짜 바 + 실제 OS 작업표시줄) 침범 방지 —
-                //   플레이어가 바 안으로 못 들어가게 하단 한계를 그만큼 위로.
-                float bottomLimit = ccY + halfH;
+                //   작업표시줄은 '스크린' 하단 고정 픽셀이라, 줌아웃(점수 확장)되면 월드 단위로
+                //   barTotal/zoom 만큼 차지함. 보이는 영역 하단(ccY+halfH)에서 그만큼 위가 한계 →
+                //   상단 확장과 대칭이 되도록(기존엔 sh-barTotal 고정이라 하단만 안 늘어났음).
                 float barTotal    = g_GameBarH + (float)g_TaskbarH;
-                if (bottomLimit > (float)screenHeight - barTotal)
-                    bottomLimit = (float)screenHeight - barTotal;
+                float bottomLimit = ccY + halfH - barTotal / zoomNow;
                 if (pCY > bottomLimit) pCY = bottomLimit;
                 playerWin.x = pCX - playerWin.width  * 0.5f;
                 playerWin.y = pCY - playerWin.height * 0.5f;
@@ -3288,7 +3288,7 @@ int main() {
                         case 2:  startWarn(2, L"RELOADER.exe",  bossHpC);         break;
                         case 3:  startWarn(3, L"SPAM.dll",      bossHpC * 0.65f); break;
                         case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
-                        case 5:  startWarn(5, L"KERNEL.sys",    bossHpC * 0.8f);  break;
+                        case 5:  startWarn(5, L"KERNEL.sys",    bossHpC * 0.45f); break;  // DPS체크 — 자가붕괴 보정 위해 HP↓
                         case 6:  startWarn(6, L"FIREWALL.sys",  bossHpC * 0.7f);  break;
                         case 7:  startWarn(7, L"BOTNET.exe",    bossHpC * 0.75f); break;
                         case 8:  startWarn(8, L"BUG.proc",      bossHpC * 0.7f);  break;
@@ -3314,7 +3314,7 @@ int main() {
                         case 1:  startWarn(1, L"GLITCH.sys",   bossHp * 0.7f);  break;
                         case 2:  startWarn(2, L"RELOADER.exe", bossHp);         break;
                         case 3:  startWarn(3, L"SPAM.dll",     bossHp * 0.65f); break;
-                        case 4:  startWarn(5, L"KERNEL.sys",   bossHp * 0.8f);  break;  // 커널 (DPS체크·자가붕괴)
+                        case 4:  startWarn(5, L"KERNEL.sys",   bossHp * 0.45f); break;  // 커널 (DPS체크·자가붕괴) — HP↓로 후반 처치 가능
                         case 5:  startWarn(6, L"FIREWALL.sys", bossHp * 0.7f);  break;  // 방화벽 (보호막 방어형)
                         case 6:  startWarn(7, L"BOTNET.exe",   bossHp * 0.75f); break;  // 봇넷 (물량형 투척)
                         default: startWarn(8, L"BUG.proc",     bossHp * 0.7f);  break;  // 지네 (배회+돌진)
@@ -7006,6 +7006,11 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                             if (ji < 0) continue;
                             g_Stats.Apply(jd.startAugs[a]);
                             g_OwnedAugs.push_back(ji);
+                            // 일반 픽과 동일하게 마킹 — 직업 시작 증강이 재추첨되어 중복되는 버그 방지
+                            g_TypeOwned[(int)jd.startAugs[a]] = true;
+                            MarkAugSeen(ji);
+                            if (AugOnceOnly(jd.startAugs[a], ALL_AUGS[ji].rarity))
+                                g_GameManager.takenOnce[ji] = true;
                             EquipSkill(SkillForAug(jd.startAugs[a]));
                         }
                         if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
