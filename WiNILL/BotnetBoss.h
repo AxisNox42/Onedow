@@ -37,7 +37,7 @@ public:
     Proc procs[5];
 
     static constexpr int   NPROC      = 5;
-    static constexpr float BODY       = 70.0f;     // 2배 노드
+    static constexpr float BODY       = 52.0f;     // 기본 노드의 1.5배 (2배→1.5배 축소)
     static constexpr float ORBIT_R    = 165.0f;
     static constexpr float ORBIT_SPD  = 2.2f;      // 빠른 공전(rad/s)
     static constexpr float P2_ORBIT_R = 70.0f;     // 페이즈2: 중앙 근접

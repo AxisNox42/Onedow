@@ -5264,20 +5264,35 @@ int main() {
             WorldScissor(fb->worldX - FIREWALL_WIN_W*0.5f, fb->worldY - FIREWALL_WIN_W*0.5f,
                          FIREWALL_WIN_W, FIREWALL_WIN_W);
             for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
-            // 본체 — 주황 다이아 (방어형)
+            // 본체 — 방화벽 코어: 외곽 다이아 + 어두운 내곽 + 회전 십자 코어 + 맥동 중심
+            float fb_t = (float)glfwGetTime();
+            float fbp  = 0.5f + 0.5f * sinf(fb_t * 4.0f);
             drawDiamond(fb->worldX, fb->worldY, FirewallBoss::BODY,        0.95f, 0.45f, 0.15f, 1.0f);
-            drawDiamond(fb->worldX, fb->worldY, FirewallBoss::BODY * 0.5f, 1.0f,  0.75f, 0.35f, 1.0f);
-            // 보호막 아크 3개 — 각 아크를 작은 사각형 다수로 곡선 배치 (빠를 땐 더 밝게)
+            drawDiamond(fb->worldX, fb->worldY, FirewallBoss::BODY * 0.74f, 0.5f, 0.22f, 0.08f, 1.0f);
+            drawDiamond(fb->worldX, fb->worldY, FirewallBoss::BODY * 0.5f,  1.0f, 0.7f,  0.3f,  1.0f);
+            float fra = fb_t * 0.7f;
+            for (int s = 0; s < 4; s++) {
+                float a  = fra + (float)s * 1.5707963f;
+                float ox = fb->worldX + cosf(a) * FirewallBoss::BODY * 0.30f;
+                float oy = fb->worldY + sinf(a) * FirewallBoss::BODY * 0.30f;
+                drawRect(ox - 7.0f, oy - 7.0f, 14.0f, 14.0f, 1.0f, 0.8f, 0.4f, 0.95f);
+            }
+            drawCircle(fb->worldX, fb->worldY,
+                       FirewallBoss::BODY * 0.16f * (0.9f + 0.2f*fbp), 1.0f, 0.95f, 0.7f, 1.0f);
+            // 보호막 아크 3개 — 부메랑(중앙 바깥 돌출 + 끝 뾰족) 촘촘한 다이아 띠 (빠를 땐 밝게)
             float sb = fb->fast ? 1.0f : 0.7f;
             for (int s = 0; s < FirewallBoss::SHIELDS; s++) {
                 float c = fb->shieldRot + (float)s * (6.2831853f / (float)FirewallBoss::SHIELDS);
-                int seg = 11;
+                const int seg = 17;
                 for (int i = 0; i < seg; i++) {
-                    float t = (seg > 1) ? (float)i / (seg - 1) : 0.5f;
+                    float t = (float)i / (float)(seg - 1);            // 0..1
                     float a = c + (t - 0.5f) * 2.0f * FirewallBoss::SHIELD_HALF;
-                    float ox = fb->worldX + cosf(a) * FirewallBoss::SHIELD_R;
-                    float oy = fb->worldY + sinf(a) * FirewallBoss::SHIELD_R;
-                    drawRect(ox - 11.0f, oy - 11.0f, 22.0f, 22.0f, 1.0f, 0.55f*sb, 0.2f*sb, 0.95f);
+                    float mid = 0.5f - fabsf(t - 0.5f);               // 0(끝)~0.5(중앙)
+                    float rr  = FirewallBoss::SHIELD_R + mid * 52.0f; // 중앙이 바깥으로 — 부메랑 굴곡
+                    float dsz = 9.0f + mid * 24.0f;                   // 중앙 두껍고 끝 뾰족
+                    float ox  = fb->worldX + cosf(a) * rr;
+                    float oy  = fb->worldY + sinf(a) * rr;
+                    drawDiamond(ox, oy, dsz, 1.0f, 0.55f*sb, 0.2f*sb, 0.95f);
                 }
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
@@ -5287,43 +5302,92 @@ int main() {
         if (g_BotnetBoss && g_BotnetBoss->alive) {
             auto* nb2 = g_BotnetBoss;
             BindMainShader();
+            float bp = 0.5f + 0.5f * sinf((float)glfwGetTime() * 5.0f);
+            // 부하 프로세스 — 가시 박힌 사각 (공전=청록 / 투척=적색 경고)
+            auto drawProc = [&](float x, float y, bool thrown) {
+                float sz = BotnetBoss::PROC_SIZE;
+                if (thrown) {
+                    drawCircle(x, y, sz*0.95f, 1.0f, 0.3f, 0.2f, 0.32f);      // 경고 글로우
+                    drawRect(x - sz*0.5f, y - sz*0.5f, sz, sz, 1.0f, 0.28f, 0.22f, 1.0f);
+                    drawRect(x - sz*0.27f, y - sz*0.27f, sz*0.54f, sz*0.54f, 0.28f, 0.05f, 0.05f, 1.0f);
+                    drawDiamond(x, y - sz*0.62f, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
+                    drawDiamond(x, y + sz*0.62f, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
+                    drawDiamond(x - sz*0.62f, y, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
+                    drawDiamond(x + sz*0.62f, y, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
+                } else {
+                    drawRect(x - sz*0.5f, y - sz*0.5f, sz, sz, 0.25f, 0.55f, 1.0f, 1.0f);
+                    drawRect(x - sz*0.27f, y - sz*0.27f, sz*0.54f, sz*0.54f, 0.06f, 0.2f, 0.45f, 1.0f);
+                    drawDiamond(x, y - sz*0.62f, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
+                    drawDiamond(x, y + sz*0.62f, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
+                    drawDiamond(x - sz*0.62f, y, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
+                    drawDiamond(x + sz*0.62f, y, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
+                }
+            };
+
+            // (1) 창 안(클리핑) — 탄·본체·공전/복귀 프로세스
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(nb2->worldX - BOTNET_WIN_W*0.5f, nb2->worldY - BOTNET_WIN_W*0.5f,
                          BOTNET_WIN_W, BOTNET_WIN_W);
             for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
-            // 프로세스 — 공전(파랑)/투척(빨강) 작은 사각
-            for (int i = 0; i < BotnetBoss::NPROC; i++) {
-                auto& p = nb2->procs[i];
-                float sz = BotnetBoss::PROC_SIZE;
-                if (p.state == 1) {   // 투척 — 빨강 + 경고
-                    drawRect(p.x - sz*0.5f, p.y - sz*0.5f, sz, sz, 1.0f, 0.25f, 0.2f, 1.0f);
-                    drawCircle(p.x, p.y, sz*0.9f, 1.0f, 0.3f, 0.2f, 0.25f);
-                } else {
-                    drawRect(p.x - sz*0.5f, p.y - sz*0.5f, sz, sz, 0.3f, 0.6f, 1.0f, 1.0f);
-                }
-            }
-            // 본체 — 파란 사각 노드 (펄스)
-            float bp = 0.5f + 0.5f * sinf((float)glfwGetTime() * 5.0f);
+            // 본체 — 가시 돌출 노드(회전 다이아 8개) + 네스티드 사각 + 코어
             float bb2 = BotnetBoss::BODY;
+            for (int s = 0; s < 8; s++) {
+                float a  = nb2->orbitRot * 0.5f + (float)s * 0.7853982f;
+                float ox = nb2->worldX + cosf(a) * bb2 * 1.20f;
+                float oy = nb2->worldY + sinf(a) * bb2 * 1.20f;
+                drawDiamond(ox, oy, bb2*0.28f, 0.15f, 0.4f, 0.9f, 1.0f);
+            }
             drawRect(nb2->worldX - bb2, nb2->worldY - bb2, bb2*2, bb2*2,
                      0.2f, 0.45f + 0.2f*bp, 0.95f, 1.0f);
+            drawRect(nb2->worldX - bb2*0.64f, nb2->worldY - bb2*0.64f, bb2*1.28f, bb2*1.28f,
+                     0.08f, 0.22f, 0.55f, 1.0f);
             drawRect(nb2->worldX - bb2*0.5f, nb2->worldY - bb2*0.5f, bb2, bb2,
                      0.6f, 0.85f, 1.0f, 1.0f);
+            drawCircle(nb2->worldX, nb2->worldY, bb2*0.26f, 1.0f, 1.0f, 1.0f, 0.95f);
+            for (int i = 0; i < BotnetBoss::NPROC; i++) {
+                auto& p = nb2->procs[i];
+                if (p.state == 1) continue;      // 투척은 창 밖에서 렌더
+                drawProc(p.x, p.y, false);
+            }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+            // (2) 창 밖(전체화면) — 투척 프로세스: 창 밖으로 날아가도 보이게(클리핑 버그 fix)
+            for (int i = 0; i < BotnetBoss::NPROC; i++) {
+                auto& p = nb2->procs[i];
+                if (p.state == 1) drawProc(p.x, p.y, true);
+            }
+            BatchFlush();
         }
 
         // (g4f) BUG.proc — 지네 (머리+세그먼트, 창 클리핑 없이 전체 렌더) + 돌진 예고선
         if (g_CentiBoss && g_CentiBoss->alive) {
             auto* cb2 = g_CentiBoss;
             BindMainShader();
-            // 돌진 예고선 (state==2, 사라진 뒤) — 곡선(베지어) 경로 깜빡이는 점선
+            // 돌진 예고선 (state==2, 사라진 뒤) — 곡선 경로 + 진행 방향 화살표('>')
             if (cb2->state == 2) {
-                float blink = 0.45f + 0.45f * sinf((float)glfwGetTime() * 18.0f);
-                int   n  = 48;
-                for (int i = 0; i < n; i++) {
-                    float t = (float)i / (float)(n - 1);
+                float blink = 0.55f + 0.45f * sinf((float)glfwGetTime() * 22.0f);
+                // (1) 경로 — 굵은 밝은 띠 (연속 원)
+                int n = 40;
+                for (int i = 0; i <= n; i++) {
+                    float t = (float)i / (float)n;
                     glm::vec2 p = cb2->bezier(t);
-                    drawRect(p.x - 7.0f, p.y - 7.0f, 14.0f, 14.0f, 1.0f, 0.3f, 0.2f, 0.25f + 0.4f * blink);
+                    drawCircle(p.x, p.y, 11.0f, 1.0f, 0.3f, 0.18f, 0.30f + 0.22f * blink);
+                }
+                // (2) 진행 방향 화살촉 — 경로 따라 균등 배치, 베지어 접선 방향
+                int arrows = 7;
+                for (int k = 1; k <= arrows; k++) {
+                    float t  = (float)k / (float)(arrows + 1);
+                    glm::vec2 p  = cb2->bezier(t);
+                    glm::vec2 pf = cb2->bezier(t + 0.02f);
+                    float ang = atan2f(pf.y - p.y, pf.x - p.x);
+                    float dxn = cosf(ang), dyn = sinf(ang);
+                    float pxn = -dyn, pyn = dxn;
+                    const float L = 34.0f, W = 19.0f;
+                    float tx = p.x + dxn*L*0.6f, ty = p.y + dyn*L*0.6f;       // 촉 끝
+                    float b1x = p.x - dxn*L*0.4f + pxn*W, b1y = p.y - dyn*L*0.4f + pyn*W;
+                    float b2x = p.x - dxn*L*0.4f - pxn*W, b2y = p.y - dyn*L*0.4f - pyn*W;
+                    float v[6] = { tx,ty, b1x,b1y, b2x,b2y };
+                    BatchVerts(v, 3, 1.0f, 0.35f, 0.15f, 0.55f + 0.4f*blink);
                 }
             }
             // 세그먼트 (꼬리→머리 순, 뒤에서 앞으로) — 연두 마디 (머리에서 멀수록 작아짐)

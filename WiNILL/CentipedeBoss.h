@@ -52,6 +52,11 @@ public:
     static constexpr float WANDER_T   = 4.5f;    // 배회 시간(딜 타임)
     static constexpr float TELEGRAPH  = 0.8f;    // 경로 예고(사라진 뒤)
     static constexpr float TURN_INT   = 0.5f;    // 지그재그 방향 전환 주기
+    // 2번째 패턴 — 데이터 토사(원거리 견제): 배회 중 주기적으로 플레이어에 부채꼴 토사
+    static constexpr float SPIT_INT   = 2.6f;    // 토사 주기
+    static constexpr int   SPIT_N     = 5;       // 부채꼴 탄 수
+    static constexpr float SPIT_SPD   = 300.0f;  // 토사 탄 속도
+    float spitTimer = 0.0f;
 
     CentipedeBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -100,15 +105,31 @@ public:
         dashCtrlX = mx + pxn * curve;  dashCtrlY = my + pyn * curve;
     }
 
-    void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& /*bullets*/) {
+    void fireDir(std::vector<Bullet>& b, float dx, float dy, float sp, glm::vec3 col) {
+        Bullet bb(worldX, worldY, worldX + dx * 100.0f, worldY + dy * 100.0f);
+        bb.isEnemy = true; bb.speed = sp; bb.color = col;
+        b.push_back(bb);
+    }
+
+    void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& bullets) {
         if (!alive) return;
         stateTimer += dt;
 
-        if (state == 0) {            // ── 배회(지그재그) ──
+        if (state == 0) {            // ── 배회(지그재그) + 데이터 토사 ──
             wanderTimer += dt;
             if (wanderTimer >= TURN_INT) {
                 wanderTimer = 0.0f;
                 heading += ((rand() % 2) ? 1.0f : -1.0f) * 0.7f;
+            }
+            // 데이터 토사 — 주기적으로 플레이어 향해 부채꼴 탄 (돌진 사이 원거리 압박)
+            spitTimer += dt;
+            if (spitTimer >= SPIT_INT) {
+                spitTimer = 0.0f;
+                float base = atan2f(py - worldY, px - worldX);
+                for (int i = 0; i < SPIT_N; i++) {
+                    float a = base + ((float)i / (float)(SPIT_N - 1) - 0.5f) * 0.8f;
+                    fireDir(bullets, cosf(a), sinf(a), SPIT_SPD, glm::vec3(0.6f, 1.0f, 0.5f));
+                }
             }
             float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
             float m = 120.0f;
@@ -154,6 +175,7 @@ public:
             worldX = p.x; worldY = p.y;
             if (dashT >= 1.0f) {
                 state = 0; stateTimer = 0.0f; ++dashCount;     // 돌진 완료 → 배회 가속
+                spitTimer = 0.0f;                              // 재진입 직후 즉시 토사 방지
                 glm::vec2 p2 = bezier(0.98f);
                 heading = atan2f(worldY - p2.y, worldX - p2.x);
             }
