@@ -144,7 +144,7 @@ static int RarityWeight(int rarity, int level) {
     case AugRarity::LEGENDARY: return level < 8 ? 0 : std::min(5,  level - 7);        // L8=1 … L12+=5
     case AugRarity::DEBUFF:    return 6;                                              // 샌드박스(allowDebuff)
     case AugRarity::SPECIAL:   return level < 5 ? 0 : 2;                              // 카오스/판도라도 초반 차단
-    case AugRarity::MYTHIC:    return level < 12 ? 0 : 3;                             // 신화 — 후반(L12+)만, 선행조건도 필요
+    case AugRarity::MYTHIC:    return level < 10 ? 0 : 5;                             // 신화 — L10+ & 선행조건 충족 시 등장
     default:                   return 0;
     }
 }
@@ -156,9 +156,9 @@ static int RollOneAug(const bool* takenOnce,
                       bool allowSpecial, int level,
                       bool allowDebuff = false) {
     for (int attempt = 0; attempt < 200; attempt++) {
-        // 등급 추첨 (레벨 비례 가중치)
+        // 등급 추첨 (레벨 비례 가중치) — MYTHIC(7)까지 포함. COMBO(6)는 주입식이라 가중치 0.
         int total = 0;
-        for (int r = 0; r < 6; r++) {
+        for (int r = 0; r <= (int)AugRarity::MYTHIC; r++) {
             if (!allowSpecial && r == (int)AugRarity::SPECIAL) continue;
             if (!allowDebuff  && r == (int)AugRarity::DEBUFF)  continue;
             total += RarityWeight(r, level);
@@ -167,7 +167,7 @@ static int RollOneAug(const bool* takenOnce,
         int roll = rand() % total;
         int acc  = 0;
         AugRarity chosen = AugRarity::COMMON;
-        for (int r = 0; r < 6; r++) {
+        for (int r = 0; r <= (int)AugRarity::MYTHIC; r++) {
             if (!allowSpecial && r == (int)AugRarity::SPECIAL) continue;
             if (!allowDebuff  && r == (int)AugRarity::DEBUFF)  continue;
             acc += RarityWeight(r, level);

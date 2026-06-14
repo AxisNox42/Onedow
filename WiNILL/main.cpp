@@ -7871,11 +7871,10 @@ static void Scene_OwnedAugPanel(const SceneCtx& c) {
                 g_TextS.Draw(L"(커서 올리면 설명)", PX + 2.0f, 90.0f, 0.70f,
                              0.6f, 0.7f, 0.9f, 0.7f);
 
-                // 리스트 뷰 영역 — 하단 스킬/HP HUD 침범 방지 + 최대 14줄로 캡(넘치면 스크롤)
+                // 리스트 뷰 영역 — 하단 스킬/HP HUD 바로 위까지 (넘치면 스크롤)
                 const float listTop    = 110.0f;
-                float listBottom = sh - 250.0f;
-                float capBottom  = listTop + 14.0f * ROW_H;   // 화면 커도 14줄까지만 노출
-                if (listBottom > capBottom) listBottom = capBottom;
+                float listBottom = sh - 175.0f;               // 스킬 슬롯/HP 패널 위까지
+                if (listBottom < listTop + 4.0f * ROW_H) listBottom = listTop + 4.0f * ROW_H;
                 const float viewH      = listBottom - listTop;
                 const float contentH   = (float)nord * ROW_H;
 
