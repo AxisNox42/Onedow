@@ -552,6 +552,10 @@ int    g_FpsFrames   = 0;
 // 보유 증강 인덱스 목록 (선택 순서대로, 중복 스택 가능)
 std::vector<int> g_OwnedAugs;
 
+// 크리에이티브 — 시작 증강 직접 선택 (인덱스). 게임 시작 시 일괄 적용.
+std::vector<int> g_CreativeStartAugList;
+bool g_CreativeStartPending = false;   // 적용 대기 (main 루프가 applyByIdx 로 처리)
+
 // 증강 선택 hover state (-1 = 미선택, 0/1/2 = 카드 인덱스)
 int  g_HoveredAug    = -1;
 bool g_EnterReleased = true;
@@ -6973,6 +6977,16 @@ static void Scene_WeaponSelect(const SceneCtx& c) {
                     }
                     // 검객/궁수는 총기 표기가 무의미 → 변환/게임오버 표시용 무기 제거
                     if (classJob) g_CurrentWeapon = -1;
+                    // 크리에이티브: 직접 고른 시작 증강 즉시 적용 (스탯+보유목록 직접)
+                    if (g_CreativeMode) {
+                        for (int aidx : g_CreativeStartAugList) {
+                            if (aidx < 0 || aidx >= AUG_TOTAL) continue;
+                            g_Stats.Apply(ALL_AUGS[aidx].type);
+                            g_OwnedAugs.push_back(aidx);
+                            g_TypeOwned[(int)ALL_AUGS[aidx].type] = true;
+                            g_GameManager.takenOnce[aidx] = true;
+                        }
+                    }
                     g_GameManager.maxHP    = g_Stats.maxHP;
                     g_GameManager.playerHP = g_Stats.maxHP;
                     g_PrevHP               = g_Stats.maxHP;
@@ -7226,6 +7240,69 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
                     if (UIButton(ox, sh*0.58f + 28.0f, OBW, OBH, lb,
                                  mx, my, lmb, g_LmbPrev, sel))
                         g_CreativeStartAugs = aOpts[i];
+                }
+
+                // ── 시작 증강 직접 선택 (우측 그리드, 클릭 토글, 휠 스크롤) ──
+                {
+                    float gx = 700.0f;
+                    g_TextS.Draw(L"Pick Start Augments (click)", gx, sh*0.20f, 0.95f, 1,1,1,0.9f);
+                    int avail[AUG_TOTAL], na = 0;
+                    for (int i = 0; i < AUG_TOTAL; i++) {
+                        if (AugRemoved(ALL_AUGS[i].type)) continue;   // 삭제 증강 제외
+                        avail[na++] = i;
+                    }
+                    const int COLS = 9; const float CELL = 52.0f;
+                    float gTop = sh*0.20f + 28.0f, gBottom = sh - 96.0f;
+                    float viewH = gBottom - gTop;
+                    float contentH = (float)((na + COLS - 1) / COLS) * CELL;
+                    static float s_caScroll = 0.0f;
+                    bool over = (mx >= gx && mx <= gx + COLS*CELL && my >= gTop && my <= gBottom);
+                    if (over && g_ScrollAccum != 0.0f) s_caScroll -= g_ScrollAccum * CELL;
+                    g_ScrollAccum = 0.0f;
+                    float maxS = (contentH > viewH) ? (contentH - viewH) : 0.0f;
+                    if (s_caScroll < 0) s_caScroll = 0; if (s_caScroll > maxS) s_caScroll = maxS;
+                    BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                    glScissor((GLint)gx, (GLint)(sh - gBottom), (GLint)(COLS*CELL + 4), (GLint)viewH);
+                    for (int k = 0; k < na; k++) {
+                        int i = avail[k];
+                        float cxp = gx + (k % COLS) * CELL;
+                        float cyp = gTop + (k / COLS) * CELL - s_caScroll;
+                        if (cyp < gTop - CELL || cyp > gBottom) continue;
+                        float cw = CELL - 6.0f;
+                        int selPos = -1;
+                        for (int s = 0; s < (int)g_CreativeStartAugList.size(); s++)
+                            if (g_CreativeStartAugList[s] == i) { selPos = s; break; }
+                        bool selected = (selPos >= 0);
+                        bool hv = (over && mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
+                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
+                        BindMainShader();
+                        drawRect(cxp, cyp, cw, cw, rr*0.4f, rg*0.4f, rb*0.4f, selected?0.95f:(hv?0.7f:0.5f));
+                        if (selected) {  // 선택 강조 테두리
+                            drawRect(cxp, cyp, cw, 3.0f, 1,1,1,1); drawRect(cxp, cyp+cw-3, cw, 3.0f, 1,1,1,1);
+                            drawRect(cxp, cyp, 3.0f, cw, 1,1,1,1); drawRect(cxp+cw-3, cyp, 3.0f, cw, 1,1,1,1);
+                        }
+                        GLuint ic = IconFor(ALL_AUGS[i].type);
+                        if (ic) DrawIcon(ic, cxp+(cw-34)*0.5f, cyp+(cw-34)*0.5f, 34, 34, 1,1,1,1);
+                        if (hv && lmb && !g_LmbPrev) {
+                            if (selected) g_CreativeStartAugList.erase(g_CreativeStartAugList.begin()+selPos);
+                            else          g_CreativeStartAugList.push_back(i);
+                        }
+                    }
+                    BatchFlush(); glDisable(GL_SCISSOR_TEST);
+                    wchar_t cb[48]; swprintf_s(cb, L"selected: %d", (int)g_CreativeStartAugList.size());
+                    g_TextS.Draw(cb, gx, gBottom + 10.0f, 0.85f, 1.0f, 0.9f, 0.4f, 0.95f);
+                    // 호버 시 이름 툴팁
+                    for (int k = 0; k < na; k++) {
+                        int i = avail[k];
+                        float cxp = gx + (k % COLS) * CELL;
+                        float cyp = gTop + (k / COLS) * CELL - s_caScroll;
+                        if (cyp < gTop || cyp > gBottom) continue;
+                        if (mx >= cxp && mx < cxp+CELL-6 && my >= cyp && my < cyp+CELL-6) {
+                            g_TextS.Draw(AugName(ALL_AUGS[i]), gx + 110.0f, gBottom + 10.0f, 0.85f,
+                                         0.8f, 0.95f, 1.0f, 0.95f);
+                            break;
+                        }
+                    }
                 }
 
                 // 시작 버튼
