@@ -120,7 +120,7 @@ public:
     float burrowX = 0, burrowY = 0;
 
     // ── 이동 사출 — 움직이며 좌우로 데이터 탄을 흘림(상시 압박) ──
-    static constexpr float SHED_INT = 0.4f;
+    static constexpr float SHED_INT = 0.22f;     // 촘촘하게(자주)
     static constexpr float SHED_SPD = 200.0f;
     float shedTimer = 0.0f;
     // ── 탈피 지뢰 ──
@@ -597,29 +597,30 @@ public:
                      0.40f, 0.95f*br, 0.42f, 1.0f);  // 코어 블록
         }
 
-        // ── 머리 — 몸통과 같은 녹색 톤의 가장 큰 블록(2겹 네온 + 맥동 코어) ──
-        //   방향은 '선두 블록 + 진행쪽 작은 동색 표식'으로만 — 충돌색(주황/노랑) 없음.
-        float pulse = dash ? 1.0f : 0.8f;
+        // ── 머리 — 진행방향으로 뾰족한 화살촉(레이어드 녹색) + 맥동 코어 ──
+        //   몸통과 같은 녹색 톤. 뒤 끝을 V로 파서 날카로운 '▸' 느낌.
+        float pulse = dash ? 1.0f : 0.82f;
         float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
-        float H = HEAD * 0.95f;
-        float x = worldX - H, y = worldY - H, w = H * 2.0f;
-        drawRect(x, y, w, w, 0.05f, 0.14f, 0.07f, 0.97f);                  // 본문(어두운 녹)
-        drawNeonBorder(x, y, w, w, 0.30f, 0.95f * pulse, 0.42f);           // 바깥 네온
-        drawNeonBorder(x + 5.0f, y + 5.0f, w - 10.0f, w - 10.0f,
-                       0.55f, 1.0f, 0.62f);                                // 안쪽 네온(머리 강조)
-        // 진행 방향 표식 — 선두 변 안쪽 작은 동색 삼각
-        {
-            float cx = worldX + dxn * H * 0.62f, cy = worldY + dyn * H * 0.62f;
-            float tx = cx + dxn * H * 0.28f, ty = cy + dyn * H * 0.28f;
-            float a1x = cx + pxn * H * 0.24f, a1y = cy + pyn * H * 0.24f;
-            float a2x = cx - pxn * H * 0.24f, a2y = cy - pyn * H * 0.24f;
-            tri(tx, ty, a1x, a1y, a2x, a2y, 0.6f, 1.0f, 0.7f, 1.0f);
-        }
+        float H = HEAD;
+        // 화살촉 1겹 = 앞 꼭짓점 + 뒤 좌/우 + 뒤 중앙 노치(앞으로 당겨 V)
+        auto arrow = [&](float fwd, float back, float side, float notch,
+                         float r, float g, float b) {
+            float tx  = worldX + dxn*fwd,            ty  = worldY + dyn*fwd;          // 앞 끝(뾰족)
+            float l1x = worldX - dxn*back + pxn*side, l1y = worldY - dyn*back + pyn*side; // 뒤 좌
+            float l2x = worldX - dxn*back - pxn*side, l2y = worldY - dyn*back - pyn*side; // 뒤 우
+            float nx  = worldX - dxn*(back - notch),  ny  = worldY - dyn*(back - notch);  // 뒤 중앙 노치
+            tri(tx, ty, l1x, l1y, nx, ny, r, g, b, 1.0f);
+            tri(tx, ty, nx, ny, l2x, l2y, r, g, b, 1.0f);
+        };
+        float ext = dash ? 0.18f : 0.0f;                                    // 돌진 시 살짝 길어짐
+        arrow(H*(1.45f+ext), H*0.78f, H*0.98f, H*0.42f, 0.08f, 0.30f, 0.10f);   // 외곽(어둠)
+        arrow(H*(1.15f+ext), H*0.58f, H*0.70f, H*0.32f, 0.22f, 0.62f*pulse, 0.24f); // 중간
+        arrow(H*(0.85f+ext), H*0.40f, H*0.46f, H*0.22f, 0.45f, 0.98f*pulse, 0.42f); // 밝은 갑각
         // 맥동 코어
         float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
-        float cs = H * 0.5f;
-        drawRect(worldX - cs*0.5f, worldY - cs*0.5f, cs, cs, 0.40f, 0.95f*cpul, 0.48f, 1.0f);
-        drawRect(worldX - cs*0.22f, worldY - cs*0.22f, cs*0.44f, cs*0.44f, 0.9f, 1.0f, 0.85f, 1.0f);
+        drawCircle(worldX, worldY, H*0.22f, 0.10f, 0.20f, 0.10f, 1.0f);
+        drawCircle(worldX, worldY, H*0.15f, 0.5f, 1.0f*cpul, 0.55f, 1.0f);
+        drawCircle(worldX, worldY, H*0.07f, 0.95f, 1.0f, 0.9f, 1.0f);
         BatchFlush();
     }
 };
