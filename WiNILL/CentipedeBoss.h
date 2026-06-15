@@ -23,6 +23,8 @@ public:
     bool  alive = true;
     bool  exploded = false;
     int   screenW, screenH;
+    // 프로토타입: 순수 보스전 — 잡몹 흡수 HP + 보통 피해 감소(피감 너무 높으면 손맛 죽음)
+    float dmgTakenMult = 0.85f;    // 받는 피해 ×0.85 (15% 감소)
 
     // 상태: 0=배회(피격가능) / 1=화면밖 이탈 / 2=경로 예고(화면밖) / 3=곡선 재진입 돌진
     int   state      = 0;

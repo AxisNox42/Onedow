@@ -2548,6 +2548,7 @@ int main() {
                             else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                             else dmg = g_Stats.GetBaseDamage()
                                      * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg *= cb2->dmgTakenMult;   // 프로토타입: 보통 피해 감소
                             float dealt = (dmg < cb2->hp) ? dmg : cb2->hp;
                             cb2->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
@@ -3337,6 +3338,9 @@ int main() {
             float effHpMul = 1.0f;
             if (g_Difficulty == Difficulty::EASY) { spawnInterval *= 1.6f; effHpMul = 0.65f; }
             else if (g_Difficulty == Difficulty::HARD) { effHpMul = 1.1f; }
+            // 프로토타입: 지네 보스전 동안엔 잡몹 스폰 완전 정지(순수 듀얼)
+            bool centiDuel = g_CentiBoss && g_CentiBoss->alive;
+            if (centiDuel) spawnInterval = 1e9f;
             if (spawnTimer > spawnInterval) {
                 // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
                 int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
@@ -3533,6 +3537,25 @@ int main() {
                         case 8:
                             g_CentiBoss = new CentipedeBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_CentiBoss->worldX = bsx; g_CentiBoss->worldY = bsy;
+                            // ── 프로토타입: 현재 잡몹 전체 체력을 흡수(상한) → 순수 보스전 ──
+                            //   잡몹은 보스로 흡수되어 사라지고, 보스전 동안 추가 스폰 안 됨.
+                            {
+                                float absorb = 0.0f;
+                                for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
+                                for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
+                                for (auto* bm : g_MonsterManager.bombers)     if (bm->alive) absorb += bm->hp;
+                                float cap = g_BossWarnHp * 2.0f;   // 상한: 기본 HP의 2배까지만 흡수(스펀지 방지)
+                                if (absorb > cap) absorb = cap;
+                                g_CentiBoss->hp += absorb; g_CentiBoss->maxHp += absorb;
+                                // 잡몹 흡수 — 화면 정리(순수 듀얼)
+                                for (auto* m  : g_MonsterManager.monsters)   delete m;
+                                g_MonsterManager.monsters.clear();
+                                for (auto* r  : g_MonsterManager.rangedMobs)  delete r;
+                                g_MonsterManager.rangedMobs.clear();
+                                for (auto* bm : g_MonsterManager.bombers)     delete bm;
+                                g_MonsterManager.bombers.clear();
+                                g_ShakeTime = 0.4f; g_ShakeMag = 14.0f;   // 흡수 순간 진동
+                            }
                             break;
                         default:
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -3555,7 +3578,7 @@ int main() {
 
             // 자폭병 spawn (난이도별 시작 시간/주기, 쉬움은 안 나옴)
             DifficultyParams dp = GetDifficultyParams(g_Difficulty);
-            if (g_GameTime >= dp.bomberStartTime) {
+            if (g_GameTime >= dp.bomberStartTime && !centiDuel) {
                 g_BomberSpawnTimer += delta;
                 float bomberInt = dp.bomberInterval / (p2mult * rampSpawn);
                 if (bossNow) bomberInt *= 2.0f;   // 보스전: 자폭병도 덜 나오게
@@ -3578,7 +3601,7 @@ int main() {
             int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult
                                   + intensity * 2.0f);           // 점수당 동시 +2
             if (rangedMax > 16) rangedMax = 16;   // 창 개수 = scissor 패스 수 → 상한 (성능)
-            if (rangedSpawnTimer > rangedInterval) {
+            if (rangedSpawnTimer > rangedInterval && !centiDuel) {   // 듀얼 중 원거리몹도 정지
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
                     g_Stats.rmobHpMult * rampHp, rangedMax, saX, saY, saW, saH);
                 rangedSpawnTimer = 0.0f;
