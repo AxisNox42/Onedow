@@ -191,7 +191,7 @@ public:
                 worldX += (dx / dist) * speed * 0.30f * speedMult * deltaTime;
                 worldY += (dy / dist) * speed * 0.30f * speedMult * deltaTime;
             }
-            if (dist < 22.0f) playerHP -= 7.0f * deltaTime;
+            if (dist < 26.0f) playerHP -= 7.0f * deltaTime;
             return;
         }
 
@@ -214,7 +214,7 @@ public:
                 chargeTimer += deltaTime;
                 if (chargeTimer >= 0.35f) { chargeState = 0; chargeTimer = 0.0f; }
             }
-            if (dist < 20.0f * sizeScale) playerHP -= 6.0f * deltaTime;
+            if (dist < 26.0f * sizeScale) playerHP -= 6.0f * deltaTime;
             return;
         }
 
@@ -228,7 +228,7 @@ public:
                 worldX += (fX * speed + pX * speed * w) * speedMult * deltaTime;
                 worldY += (fY * speed + pY * speed * w) * speedMult * deltaTime;
             }
-            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
             return;
         }
 
@@ -242,7 +242,7 @@ public:
             float k = std::min(1.0f, 7.0f * deltaTime);
             worldX += (tx - worldX) * k;
             worldY += (ty - worldY) * k;
-            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
             return;
         }
 
@@ -256,7 +256,7 @@ public:
                 worldX += (dx / dist) * speed * speedMult * deltaTime;
                 worldY += (dy / dist) * speed * speedMult * deltaTime;
             }
-            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
             return;
         }
 
@@ -274,7 +274,7 @@ public:
                     anchored = true;   // 배치 완료 → 이후 영구 고정
                 }
             }
-            if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
             return;
         }
 
@@ -283,6 +283,6 @@ public:
             worldX += (dx / dist) * speed * speedMult * deltaTime;
             worldY += (dy / dist) * speed * speedMult * deltaTime;
         }
-        if (dist < 20.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+        if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
     }
 };

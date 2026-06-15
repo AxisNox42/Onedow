@@ -6324,7 +6324,7 @@ int main() {
                             : L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
                     float cw = g_TextS.Width(c, 0.7f);
                     g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 106.0f - (float)g_TaskbarH - g_GameBarH, 0.7f,
-                                 0.6f, 0.7f, 0.8f, 0.5f);
+                                 0.7f, 0.82f, 0.95f, 0.72f);   // 가시성 ↑ (옅어서 안 보인다는 피드백)
                 }
                 // ── 저체력 경고 — HP 25% 이하 시 가장자리 부드러운 적색 펄스 + 텍스트 ──
                 if (st == GameState::RUNNING || st == GameState::PAUSED) {
