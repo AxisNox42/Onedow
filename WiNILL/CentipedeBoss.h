@@ -75,6 +75,15 @@ public:
     static constexpr float SURGE_SPD  = 280.0f;
     float surgeCd = 0.0f, surgeT = 0.0f, surgeTick = 0.0f, surgeAng = 0.0f;
     bool  surging = false;
+    // 신규 패턴 — 벽 들이박기 난동: 벽에 연속으로 박으며 파편 살포 + 자해 + 화면 진동
+    static constexpr float RAMP_INT       = 13.0f;   // 난동 쿨다운
+    static constexpr int   RAMP_HITS      = 4;       // 들이박는 횟수
+    static constexpr float RAMP_SPD       = 1400.0f; // 들이박기 속도
+    static constexpr int   RAMP_SHRAP     = 12;      // 충돌 파편 수
+    static constexpr float RAMP_SHRAP_SPD = 360.0f;
+    float rampCd = 0.0f;
+    int   rampHits = 0;
+    float rampDX = 0.0f, rampDY = 0.0f;
 
     CentipedeBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -84,7 +93,7 @@ public:
         trail.assign(NSEG * SEG_STEP + 8, glm::vec2(worldX, worldY));
     }
 
-    bool vulnerable() const { return state == 0; }   // 배회 중에만 피격 가능
+    bool vulnerable() const { return state == 0 || state == 4; }   // 배회·난동 중 피격 가능
 
     static float segSize(int i) {
         float t = (NSEG > 1) ? (float)(i - 1) / (float)(NSEG - 1) : 0.0f;
@@ -219,7 +228,19 @@ public:
                     worldX += cosf(heading) * ws * dt;
                     worldY += sinf(heading) * ws * dt;
                 }
-                if (stateTimer >= WANDER_T) {
+                // 벽 들이박기 난동 발동 — 돌진/폭주 중이 아닐 때, 가장 가까운 벽으로 첫 돌진
+                rampCd += dt;
+                if (rampCd >= RAMP_INT && chargePhase == 0 && !surging) {
+                    state = 4; stateTimer = 0.0f; rampHits = 0; chargeTelegraph = false;
+                    float dl = worldX, dr = (float)screenW - worldX;
+                    float dtp = worldY, db = (float)screenH - worldY;
+                    float mn = dl; rampDX = -1.0f; rampDY = 0.0f;
+                    if (dr < mn)  { mn = dr;  rampDX = 1.0f;  rampDY = 0.0f; }
+                    if (dtp < mn) { mn = dtp; rampDX = 0.0f;  rampDY = -1.0f; }
+                    if (db < mn)  { mn = db;  rampDX = 0.0f;  rampDY = 1.0f; }
+                    heading = atan2f(rampDY, rampDX);
+                }
+                if (state == 0 && stateTimer >= WANDER_T) {
                     // 멈추지 않고 곧바로 이탈 — 현재 위치에서 화면 바깥(중앙 반대)으로
                     state = 1; stateTimer = 0.0f;
                     chargePhase = 0; chargeTelegraph = false;
@@ -246,7 +267,7 @@ public:
         else if (state == 2) {       // ── 경로 예고(화면밖, 무적) ──
             if (stateTimer >= TELEGRAPH) { state = 3; stateTimer = 0.0f; dashT = 0.0f; }
         }
-        else {                       // ── 곡선 재진입 돌진(무적) ──
+        else if (state == 3) {       // ── 곡선 재진입 돌진(무적) ──
             float chord = std::sqrt((dashToX-dashFromX)*(dashToX-dashFromX) +
                                     (dashToY-dashFromY)*(dashToY-dashFromY)) + 1e-3f;
             dashT += DASH_SPD * dt / chord;   // 0→1 (대략 일정 속도)
@@ -263,12 +284,45 @@ public:
                 chargePhase = 0; chargeCdTimer = CHARGE_INT * 0.7f; chargeTelegraph = false;
             }
         }
+        else {                       // ── state 4: 벽 들이박기 난동(파편+자해+진동) ──
+            worldX += rampDX * RAMP_SPD * dt;
+            worldY += rampDY * RAMP_SPD * dt;
+            heading = atan2f(rampDY, rampDX);
+            float mg = HEAD * 0.55f;
+            bool hit = (worldX <= mg) || (worldX >= (float)screenW - mg) ||
+                       (worldY <= mg) || (worldY >= (float)screenH - mg);
+            if (hit) {
+                if (worldX < mg) worldX = mg;
+                if (worldX > (float)screenW - mg) worldX = (float)screenW - mg;
+                if (worldY < mg) worldY = mg;
+                if (worldY > (float)screenH - mg) worldY = (float)screenH - mg;
+                // 파편 탄환 (방사형) + 자해 + 화면 진동
+                for (int i = 0; i < RAMP_SHRAP; i++) {
+                    float a = (float)i / (float)RAMP_SHRAP * 6.2831853f + (float)(rand()%100)*0.01f;
+                    fireDir(bullets, cosf(a), sinf(a), RAMP_SHRAP_SPD, glm::vec3(0.95f, 0.9f, 0.3f));
+                }
+                hp -= maxHp * 0.02f; if (hp < 1.0f) hp = 1.0f;   // 들이박을 때마다 피 조금
+                shakePulse = true;                               // 화면 진동
+                ++rampHits;
+                if (rampHits >= RAMP_HITS) {                     // 난동 종료 → 배회 복귀
+                    state = 0; stateTimer = 0.0f; rampCd = 0.0f;
+                    spitTimer = 0.0f; surging = false; surgeCd = 0.0f;
+                } else {                                         // 임의 내부 지점 향해 재돌진(다른 벽으로)
+                    int rx = screenW - (int)(2.0f*mg); if (rx < 1) rx = 1;
+                    int ry = screenH - (int)(2.0f*mg); if (ry < 1) ry = 1;
+                    float tx = mg + (float)(rand()%rx), ty = mg + (float)(rand()%ry);
+                    float dx = tx - worldX, dy = ty - worldY;
+                    float d = std::sqrt(dx*dx+dy*dy) + 1e-3f;
+                    rampDX = dx/d; rampDY = dy/d;
+                }
+            }
+        }
 
         // 궤적 기록
         trail.insert(trail.begin(), glm::vec2(worldX, worldY));
         if ((int)trail.size() > NSEG * SEG_STEP + 8) trail.pop_back();
 
-        bool dashing = (state == 1 || state == 3 || chargePhase == 2);
+        bool dashing = (state == 1 || state == 3 || state == 4 || chargePhase == 2);
         float hcr = HEAD * 0.78f;
         float hdx = px - worldX, hdy = py - worldY;
         if (hdx*hdx + hdy*hdy < hcr * hcr)

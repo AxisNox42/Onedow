@@ -5618,7 +5618,7 @@ int main() {
                 drawDiamond(s.x, s.y, sz * 0.5f, 0.6f, 0.95f, 0.4f, 1.0f);
             }
             // 머리 — 진행 방향으로 뾰족한 창끝(돌진류 인상) / 돌진 중 더 밝게
-            bool dash = (cb2->state == 1 || cb2->state == 3 || cb2->chargePhase == 2);
+            bool dash = (cb2->state == 1 || cb2->state == 3 || cb2->state == 4 || cb2->chargePhase == 2);
             float hr = dash ? 1.0f : (cb2->chargeTelegraph ? 0.85f : 0.6f);
             float ha = cb2->heading;
             float dxn = cosf(ha), dyn = sinf(ha), pxn = -dyn, pyn = dxn;
