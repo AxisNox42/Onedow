@@ -38,10 +38,16 @@ public:
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         Monster* nm = new Monster(sx, sy, hpMul);
         if (varietyPct > 0 && (rand() % 100) < varietyPct) {
-            int r = rand() % 10;                       // 40% 돌진 / 40% 회피 / 20% 거대
-            MobKind k = (r < 4) ? MobKind::CHARGER
-                      : (r < 8) ? MobKind::WEAVER
+            int r = rand() % 10;                       // 45% 돌진 / 45% 회피 / 10% 거대(너프: 20→10)
+            MobKind k = (r < 5) ? MobKind::CHARGER
+                      : (r < 9) ? MobKind::WEAVER
                                 : MobKind::BRUTE;
+            // 거대체(커널 프로세스)는 동시 상한 — 안 죽는 탱커가 누적돼 화면을 채우던 문제
+            if (k == MobKind::BRUTE) {
+                int brutes = 0;
+                for (auto* m : monsters) if (m->alive && m->kind == MobKind::BRUTE) ++brutes;
+                if (brutes >= 4) k = MobKind::WEAVER;   // 4마리 넘으면 회피체로 대체
+            }
             nm->MakeKind(k);
         }
         // 엘리트 변종 (드물게) — 신속/강인 (폭발성 e==3 제거: 빨강 자폭류 빼달라 요청)

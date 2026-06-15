@@ -491,7 +491,7 @@ float g_ShakeMag  = 0.0f;
 // 보스 보상 — 남은 버프 픽 수 (디버프 페이지 skip)
 int  g_BossRewardPicksLeft = 0;
 // 보스 스폰 — 일반 보스는 20만점마다, 폴리모프는 50만점 고정(1회)
-long long g_NextBossScore  = 200000;   // 다음 일반 보스 점수 (도달 시 +20만)
+long long g_NextBossScore  = 50000;    // 첫 보스 5만점(테스터들이 보스를 못 만남) → 이후 +20만
 bool      g_PolySpawned    = false;    // 폴리모프(50만 고정) 등장 여부
 bool      g_CreativeBossPending = false;  // 크리에이티브: 선택 보스 즉시 스폰 대기
 // 글리치 보스 (슬라임과 양자택일로 등장) — 슬라임과 별도 관리
@@ -1348,7 +1348,7 @@ int main() {
             g_MuzzleTimer = 0.0f;
             g_ArcherCharge = 0.0f;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
-            g_NextBossScore = 200000;
+            g_NextBossScore = 50000;   // 첫 보스 5만점
             g_PolySpawned   = false;
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
@@ -5487,10 +5487,11 @@ int main() {
             }
             drawCircle(fb->worldX, fb->worldY,
                        FirewallBoss::BODY * 0.16f * (0.9f + 0.2f*fbp), 1.0f, 0.95f, 0.7f, 1.0f);
-            // 보호막 아크 3개 — 부메랑(중앙 바깥 돌출 + 끝 뾰족) 촘촘한 다이아 띠 (빠를 땐 밝게)
+            // 보호막 아크 3개 — 부메랑 띠. 페이즈2엔 보호막마다 색상(능력별), 평소엔 주황.
             float sb = fb->fast ? 1.0f : 0.7f;
             for (int s = 0; s < FirewallBoss::SHIELDS; s++) {
                 float c = fb->shieldRot + (float)s * (6.2831853f / (float)FirewallBoss::SHIELDS);
+                float scr, scg, scb; fb->shieldColor(s, scr, scg, scb);
                 const int seg = 17;
                 for (int i = 0; i < seg; i++) {
                     float t = (float)i / (float)(seg - 1);            // 0..1
@@ -5500,7 +5501,7 @@ int main() {
                     float dsz = 9.0f + mid * 24.0f;                   // 중앙 두껍고 끝 뾰족
                     float ox  = fb->worldX + cosf(a) * rr;
                     float oy  = fb->worldY + sinf(a) * rr;
-                    drawDiamond(ox, oy, dsz, 1.0f, 0.55f*sb, 0.2f*sb, 0.95f);
+                    drawDiamond(ox, oy, dsz, scr*sb, scg*sb, scb*sb, 0.95f);
                 }
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);

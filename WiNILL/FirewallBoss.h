@@ -30,6 +30,11 @@ public:
     float skillWarn  = 0.0f;   // 펄스 예고(렌더가 읽음) — >0 동안 본체 깜빡
     float tgtX = 0, tgtY = 0, moveTimer = 0.0f;
     bool  moveInit = false;
+    // 페이즈2 — 보호막 색상별 추가 능력 (3색 순환): 0=적(차단펄스 강화) 1=청(고속회전) 2=금(조준연사)
+    bool  phase2 = false;
+    int   activeColor = 0;
+    float colorTimer = 0.0f, colorFireTimer = 0.0f;
+    static constexpr float COLOR_INT = 3.5f;   // 색 전환 주기
 
     static constexpr float BODY        = 84.0f;    // 본체 2배급
     static constexpr int   SHIELDS     = 3;        // 보호막 아크 3개 (120° 간격)
@@ -70,8 +75,18 @@ public:
         return false;
     }
 
+    // 보호막 색상 (페이즈2: 색별, 활성 색은 밝게). 렌더가 호출.
+    void shieldColor(int s, float& r, float& g, float& b) const {
+        if (!phase2) { r = 1.0f; g = 0.55f; b = 0.2f; return; }
+        static const float C[3][3] = {{1.0f,0.3f,0.2f},{0.3f,0.85f,1.0f},{1.0f,0.85f,0.2f}};
+        int idx = s % 3;
+        float br = (idx == activeColor) ? 1.0f : 0.5f;
+        r = C[idx][0]*br; g = C[idx][1]*br; b = C[idx][2]*br;
+    }
+
     void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& bullets) {
         if (!alive) return;
+        if (!phase2 && hp <= maxHp * 0.5f) phase2 = true;   // 페이즈2 진입
 
         // 회전 완급 — 느림(2초) ↔ 빠름(1초)
         phaseTimer += dt;
@@ -79,6 +94,34 @@ public:
         if (phaseTimer >= dur) { phaseTimer = 0.0f; fast = !fast; }
         shieldRot += (fast ? FAST_SPD : SLOW_SPD) * dt;
         if (shieldRot > 6.2831853f) shieldRot -= 6.2831853f;
+
+        // ── 페이즈2: 보호막 색상별 추가 능력 (3색 순환) ──
+        if (phase2) {
+            colorTimer += dt;
+            if (colorTimer >= COLOR_INT) { colorTimer = 0.0f; activeColor = (activeColor+1)%3; colorFireTimer = 0.0f; }
+            colorFireTimer += dt;
+            if (activeColor == 0) {            // 적 — 강화 차단펄스(자주 방사)
+                if (colorFireTimer >= 1.4f) {
+                    colorFireTimer = 0.0f;
+                    float off = (float)(rand()%100)*0.01f;
+                    for (int i = 0; i < 18; i++) {
+                        float a = off + (float)i/18.0f*6.2831853f;
+                        fireDir(bullets, cosf(a), sinf(a), PULSE_SPD*0.9f, glm::vec3(1.0f,0.3f,0.2f));
+                    }
+                }
+            } else if (activeColor == 1) {     // 청 — 보호막 고속 회전(틈 빠르게 → 회피 강제)
+                shieldRot += 2.2f * dt;
+                if (shieldRot > 6.2831853f) shieldRot -= 6.2831853f;
+            } else {                           // 금 — 플레이어 조준 5연사
+                if (colorFireTimer >= 0.85f) {
+                    colorFireTimer = 0.0f;
+                    float base = atan2f(py - worldY, px - worldX);
+                    for (int i = -2; i <= 2; i++)
+                        fireDir(bullets, cosf(base+(float)i*0.18f), sinf(base+(float)i*0.18f),
+                                BSPEED*1.1f, glm::vec3(1.0f,0.85f,0.2f));
+                }
+            }
+        }
 
         // 느린 배회 이동 — 주기적으로 화면 안 임의 지점으로 (고정형 → 이동형)
         moveTimer -= dt;

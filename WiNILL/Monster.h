@@ -120,7 +120,7 @@ public:
             weavePhase = (float)(rand() % 628) * 0.01f;
         } else if (k == MobKind::BRUTE) {
             color = glm::vec3(0.65f, 0.12f, 0.15f);     // 짙은 적 — 크고 단단함
-            hp   *= 4.5f;
+            hp   *= 3.2f;                               // 너프: 4.5 → 3.2 (안 죽고 쌓이던 문제)
             speed *= 0.55f;
             sizeScale = scale * 2.2f;
         } else if (k == MobKind::ORBITER) {
