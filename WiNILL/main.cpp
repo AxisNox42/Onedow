@@ -2380,6 +2380,13 @@ int main() {
                             }
                         }
                         if (!b.active) continue;
+                        // 페이즈2 잔상(디코이) — 맞으면 이벤트(본체/잔상 재배치+노이즈), HP 영향 X
+                        if (gb->phase2 && gb->tryHitDecoy(b.x, b.y)) {
+                            g_GameManager.scoreAccum += 50.0f;
+                            g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                            continue;
+                        }
                         // 본체
                         if (SegDist(gb->worldX, gb->worldY,
                                     b.prevX, b.prevY, b.x, b.y) < GlitchBoss::BODY * 0.7f) {
@@ -5268,6 +5275,14 @@ int main() {
             for (auto& t : gb->minis) {
                 if (t.homing) drawTriangle(t.x, t.y, 11.0f, 1.0f, 0.2f, 0.2f, 1.0f);
                 else          drawTriangle(t.x, t.y, 9.0f,  0.9f, 0.3f, 0.95f, 1.0f);
+            }
+            // 페이즈2 잔상(디코이) — 본체와 비슷한 글리치 다이아(깜빡임). 쏘면 이벤트 발생.
+            for (auto& d : gb->decoys) {
+                if (!d.alive) continue;
+                float fl = 0.5f + 0.5f * sinf((float)glfwGetTime()*18.0f + d.x*0.05f);
+                drawDiamond(d.x + 3, d.y, GlitchBoss::BODY, 1.0f, 0.1f, 0.4f, 0.40f);
+                drawDiamond(d.x - 3, d.y, GlitchBoss::BODY, 0.1f, 0.9f, 1.0f, 0.40f);
+                drawDiamond(d.x, d.y, GlitchBoss::BODY, 0.9f, 0.9f, 0.98f, 0.55f + 0.35f * fl);
             }
             // 본체 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
