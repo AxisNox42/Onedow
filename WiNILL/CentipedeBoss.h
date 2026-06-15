@@ -68,6 +68,13 @@ public:
     float chargeTimer = 0.0f;    // 조준·돌진 경과
     float chargeDX = 0.0f, chargeDY = 0.0f;
     bool  chargeTelegraph = false; // 조준 중 — main 이 예고선 렌더
+    // 신규 스킬 — 데이터 폭주(나선 살포): 배회 중 가끔 머리가 회전하며 2갈래 나선 탄막
+    static constexpr float SURGE_INT  = 8.5f;    // 폭주 주기
+    static constexpr float SURGE_DUR  = 1.4f;    // 폭주 지속
+    static constexpr float SURGE_TICK = 0.09f;   // 발사 간격
+    static constexpr float SURGE_SPD  = 280.0f;
+    float surgeCd = 0.0f, surgeT = 0.0f, surgeTick = 0.0f, surgeAng = 0.0f;
+    bool  surging = false;
 
     CentipedeBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -165,14 +172,33 @@ public:
                     wanderTimer = 0.0f;
                     heading += ((rand() % 2) ? 1.0f : -1.0f) * 0.7f;
                 }
-                // 데이터 토사 — 주기적으로 플레이어 향해 부채꼴 탄 (돌진 사이 원거리 압박)
-                spitTimer += dt;
-                if (spitTimer >= SPIT_INT) {
-                    spitTimer = 0.0f;
-                    float base = atan2f(py - worldY, px - worldX);
-                    for (int i = 0; i < SPIT_N; i++) {
-                        float a = base + ((float)i / (float)(SPIT_N - 1) - 0.5f) * 0.8f;
-                        fireDir(bullets, cosf(a), sinf(a), SPIT_SPD, glm::vec3(0.6f, 1.0f, 0.5f));
+                // 데이터 폭주(나선 살포) — 폭주 중엔 토사 안 함(패턴 겹침 방지). 회전하며 2갈래 나선.
+                if (surging) {
+                    surgeT += dt; surgeTick += dt; surgeAng += dt * 3.2f;
+                    if (surgeTick >= SURGE_TICK) {
+                        surgeTick = 0.0f;
+                        for (int i = 0; i < 2; i++) {
+                            float a = surgeAng + (float)i * 3.14159265f;
+                            fireDir(bullets, cosf(a), sinf(a), SURGE_SPD, glm::vec3(0.7f, 1.0f, 0.4f));
+                        }
+                    }
+                    if (surgeT >= SURGE_DUR) { surging = false; surgeCd = 0.0f; }
+                } else {
+                    // 데이터 토사 — 주기적으로 플레이어 향해 부채꼴 탄 (돌진 사이 원거리 압박)
+                    spitTimer += dt;
+                    if (spitTimer >= SPIT_INT) {
+                        spitTimer = 0.0f;
+                        float base = atan2f(py - worldY, px - worldX);
+                        for (int i = 0; i < SPIT_N; i++) {
+                            float a = base + ((float)i / (float)(SPIT_N - 1) - 0.5f) * 0.8f;
+                            fireDir(bullets, cosf(a), sinf(a), SPIT_SPD, glm::vec3(0.6f, 1.0f, 0.5f));
+                        }
+                    }
+                    // 폭주 발동 — 돌진(charge) 중이 아닐 때만 (패턴 관리: 동시 발동 방지)
+                    surgeCd += dt;
+                    if (surgeCd >= SURGE_INT && chargePhase == 0) {
+                        surging = true; surgeT = 0.0f; surgeTick = 0.0f;
+                        surgeAng = (float)(rand() % 628) * 0.01f;
                     }
                 }
                 float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
@@ -233,6 +259,7 @@ public:
             if (dashT >= 1.0f) {
                 state = 0; stateTimer = 0.0f; ++dashCount;     // 돌진 완료 → 배회 가속
                 spitTimer = 0.0f;                              // 재진입 직후 즉시 토사 방지
+                surging = false; surgeCd = 0.0f;               // 폭주 리셋
                 chargePhase = 0; chargeCdTimer = CHARGE_INT * 0.7f; chargeTelegraph = false;
             }
         }
