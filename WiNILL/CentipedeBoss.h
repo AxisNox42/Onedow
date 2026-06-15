@@ -55,10 +55,10 @@ public:
     std::vector<glm::vec2> trail;  // 머리 궤적(세그먼트 추종)
 
     static constexpr int   NSEG       = 18;      // 꼬리 세그먼트 수(엄청 길게)
-    static constexpr int   SEG_STEP   = 8;       // 세그먼트 간 궤적 인덱스 간격
-    static constexpr float HEAD       = 92.0f;   // 머리 충돌 반경(가짜창은 더 큼)
-    static constexpr float SEG_NEAR   = 48.0f;   // 머리에 가장 가까운 세그먼트(창 반크기)
-    static constexpr float SEG_FAR    = 22.0f;   // 꼬리 끝(가장 작음)
+    static constexpr int   SEG_STEP   = 6;       // 세그먼트 간 궤적 인덱스 간격(작을수록 촘촘)
+    static constexpr float HEAD       = 92.0f;   // 머리 충돌 반경
+    static constexpr float SEG_NEAR   = 44.0f;   // 머리에 가장 가까운 세그먼트(반크기)
+    static constexpr float SEG_FAR    = 20.0f;   // 꼬리 끝(가장 작음)
     static constexpr float WANDER_SPD = 230.0f;  // 기본 배회 속도
     static constexpr float WANDER_GAIN= 0.12f;   // 돌진 1회당 +12%
     static constexpr float WANDER_CAP = 2.6f;    // 속도 배율 상한
@@ -597,28 +597,29 @@ public:
                      0.40f, 0.95f*br, 0.42f, 1.0f);  // 코어 블록
         }
 
-        // ── 머리 — 큰 프로세스 블록(BUG.proc) + 진행방향 셰브론(>) ──
-        float pulse = dash ? 1.0f : (chargeTelegraph ? 0.9f : 0.72f);
+        // ── 머리 — 몸통과 같은 녹색 톤의 가장 큰 블록(2겹 네온 + 맥동 코어) ──
+        //   방향은 '선두 블록 + 진행쪽 작은 동색 표식'으로만 — 충돌색(주황/노랑) 없음.
+        float pulse = dash ? 1.0f : 0.8f;
         float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
         float H = HEAD * 0.95f;
         float x = worldX - H, y = worldY - H, w = H * 2.0f;
-        // 진행방향 셰브론(화살촉) — 본체 뒤에 깔아 머리가 그 위로
+        drawRect(x, y, w, w, 0.05f, 0.14f, 0.07f, 0.97f);                  // 본문(어두운 녹)
+        drawNeonBorder(x, y, w, w, 0.30f, 0.95f * pulse, 0.42f);           // 바깥 네온
+        drawNeonBorder(x + 5.0f, y + 5.0f, w - 10.0f, w - 10.0f,
+                       0.55f, 1.0f, 0.62f);                                // 안쪽 네온(머리 강조)
+        // 진행 방향 표식 — 선두 변 안쪽 작은 동색 삼각
         {
-            float tipx = worldX + dxn*H*1.6f,  tipy = worldY + dyn*H*1.6f;
-            float b1x  = worldX + dxn*H*0.5f + pxn*H*0.85f, b1y = worldY + dyn*H*0.5f + pyn*H*0.85f;
-            float b2x  = worldX + dxn*H*0.5f - pxn*H*0.85f, b2y = worldY + dyn*H*0.5f - pyn*H*0.85f;
-            tri(tipx, tipy, b1x, b1y, b2x, b2y, pulse, 0.9f, 0.4f, 0.95f);
-            float nx = worldX + dxn*H*0.95f, ny = worldY + dyn*H*0.95f;     // 안쪽 노치 → 셰브론
-            tri(nx, ny, b1x, b1y, b2x, b2y, 0.05f, 0.10f, 0.06f, 1.0f);
+            float cx = worldX + dxn * H * 0.62f, cy = worldY + dyn * H * 0.62f;
+            float tx = cx + dxn * H * 0.28f, ty = cy + dyn * H * 0.28f;
+            float a1x = cx + pxn * H * 0.24f, a1y = cy + pyn * H * 0.24f;
+            float a2x = cx - pxn * H * 0.24f, a2y = cy - pyn * H * 0.24f;
+            tri(tx, ty, a1x, a1y, a2x, a2y, 0.6f, 1.0f, 0.7f, 1.0f);
         }
-        drawRect(x, y, w, w, 0.06f, 0.11f, 0.06f, 0.97f);                   // 본문
-        drawRect(x, y, w, H*0.34f, pulse, 0.32f, 0.18f, 1.0f);             // 타이틀바(주황 accent)
-        for (int kk = 0; kk < 3; kk++)                                      // 창 버튼 3개
-            drawCircle(x + w - ((float)kk + 1.0f) * H*0.22f, y + H*0.17f,
-                       H*0.05f, 0.05f, 0.05f, 0.05f, 1.0f);
-        drawNeonBorder(x, y, w, w, pulse, 0.92f, 0.4f);                     // 네온 보더(밝은 연두)
-        drawRect(worldX - H*0.42f, worldY - H*0.04f, H*0.84f, H*0.6f,
-                 0.42f, 1.0f, 0.46f, 1.0f);                                 // 발광 코어 블록
+        // 맥동 코어
+        float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
+        float cs = H * 0.5f;
+        drawRect(worldX - cs*0.5f, worldY - cs*0.5f, cs, cs, 0.40f, 0.95f*cpul, 0.48f, 1.0f);
+        drawRect(worldX - cs*0.22f, worldY - cs*0.22f, cs*0.44f, cs*0.44f, 0.9f, 1.0f, 0.85f, 1.0f);
         BatchFlush();
     }
 };
