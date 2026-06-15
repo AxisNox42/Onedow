@@ -89,12 +89,10 @@ public:
                 if (!m->alive || m->kind != MobKind::SPAWNER) continue;
                 m->spawnTimer -= dt;
                 if (m->spawnTimer <= 0.0f && total + (int)born.size() < 140) {
-                    m->spawnTimer = 3.0f;
-                    for (int s = 0; s < 2; s++) {
-                        float a = (float)(rand() % 628) * 0.01f;
-                        born.push_back(new Monster(m->worldX + cosf(a) * 32.0f,
-                                                   m->worldY + sinf(a) * 32.0f, 0.5f));
-                    }
+                    m->spawnTimer = 5.0f;          // 소환률 감소 (3.0 → 5.0)
+                    float a = (float)(rand() % 628) * 0.01f;   // 1마리만 (2 → 1)
+                    born.push_back(new Monster(m->worldX + cosf(a) * 32.0f,
+                                               m->worldY + sinf(a) * 32.0f, 0.5f));
                 }
             }
             for (auto* b : born) monsters.push_back(b);

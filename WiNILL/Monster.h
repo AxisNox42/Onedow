@@ -263,11 +263,13 @@ public:
         // SPAWNER(봇넷 노드) — 사정거리까지만 진입 후 제자리 고정. 플레이어를 추격하지 않음.
         //   (소환사가 끝까지 쫓아오는 게 이상해서 변경. 잡몹 소환은 그대로, 총알은 안 쏨.)
         if (kind == MobKind::SPAWNER) {
-            const float ANCHOR = 360.0f;
+            // 봇넷 노드 — 플레이어를 쫓지 않고 정해진 자리(blinkTarget=스폰 시 설정)로 이동 후 고정
             if (!anchored) {
-                if (dist > ANCHOR) {
-                    worldX += (dx / dist) * speed * speedMult * deltaTime;
-                    worldY += (dy / dist) * speed * speedMult * deltaTime;
+                float hx = blinkTargetX - worldX, hy = blinkTargetY - worldY;
+                float hd = std::sqrt(hx*hx + hy*hy);
+                if (hd > 12.0f) {
+                    worldX += (hx / hd) * speed * speedMult * deltaTime;
+                    worldY += (hy / hd) * speed * speedMult * deltaTime;
                 } else {
                     anchored = true;   // 배치 완료 → 이후 영구 고정
                 }

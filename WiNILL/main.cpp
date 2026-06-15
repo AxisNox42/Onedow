@@ -3354,8 +3354,12 @@ int main() {
                                 nm->MakeKind(MobKind::BLINKER);
                             else if (g_Stats.orbiterMobs && (rand() % 100) < 22)
                                 nm->MakeKind(MobKind::ORBITER);
-                            else if (g_Stats.spawnerMobs && (rand() % 100) < 14)
+                            else if (g_Stats.spawnerMobs && (rand() % 100) < 14) {
                                 nm->MakeKind(MobKind::SPAWNER);
+                                // 플레이어를 쫓지 않게 — 화면 안 임의 지점을 배치 목표로 (가장자리 여백 안)
+                                nm->blinkTargetX = 160.0f + (float)(rand() % (screenWidth  > 360 ? screenWidth  - 320 : 1));
+                                nm->blinkTargetY = 160.0f + (float)(rand() % (screenHeight > 360 ? screenHeight - 320 : 1));
+                            }
                             else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
                                 nm->MakeKind(MobKind::SHIELDED);
                             // 배드 섹터(M) — 디버프 보유 시 흔함, 자연 스폰은 매우 낮음. 50만점 넘으면 미등장.

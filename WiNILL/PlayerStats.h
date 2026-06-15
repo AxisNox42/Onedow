@@ -101,6 +101,7 @@ struct PlayerStats {
     float rmobHpMult    = 1.0f;
     float rmobDmgMult   = 1.0f;
     float rmobDelayMult = 1.0f;  // <1.0 = 더 빠름
+    int   rmobDelayStacks = 0;   // 원거리 몹 가속 누적 (10 제한 — 과다 시 화면 밖으로 사라짐)
     float mobSpawnMult  = 1.0f;  // <1.0 = 더 자주
     bool  splitterMobs  = false; // 분열체(죽으면 분열) 등장 (디버프)
     bool  blinkerMobs   = false; // 점멸체(순간이동) 등장 (디버프)
@@ -150,7 +151,7 @@ struct PlayerStats {
         case AugType::RATE_UP:
             if (meleeWeapon)      flatDamageBonus   += 5.0f;   // 검객: 연사 무의미 → 가산 공격력
             else if (bowWeapon)   bowChargeRateMult *= 1.07f;  // 궁수: 연사 → 차징 빠름
-            else                  fireInterval      /= 1.07f;  // 총기: 연사 +7% (백분율 곱연산)
+            else                  fireInterval      /= 1.05f;  // 총기: 연사 +5% (너프: 7→5)
             break;
         case AugType::SPD_UP:
             if (meleeWeapon)      damageMultiplier *= 1.04f;    // 검객: 탄속 무의미 → 공격력 +4%
@@ -287,10 +288,10 @@ struct PlayerStats {
             critMult  += 1.2f;                            // 너프: +1.5 → +1.2
             damageMultiplier *= 1.20f;
             break;
-        case AugType::CB_BLOODLORD:     // 흡혈탄 + 흡혈마 (너프)
-            lifestealPerKill += 0.30f;
-            maxHP            += 25.0f;
-            regenPerSec      += 0.3f;
+        case AugType::CB_BLOODLORD:     // 흡혈탄 + 흡혈마 (재너프 — 처치당 회복이 사기)
+            lifestealPerKill += 0.12f;   // 너프: 0.30 → 0.12
+            maxHP            += 20.0f;   // 너프: 25 → 20
+            regenPerSec      += 0.2f;    // 너프: 0.3 → 0.2
             break;
         case AugType::CB_PIERCE_TWIN:   // 더블 + 관통 (너프: 100%→60%)
             pierce       = true;
@@ -342,9 +343,9 @@ struct PlayerStats {
             laser     = true;
             laserTier = 3;                   // main: 거의 연속 발사 + 초장거리
             break;
-        case AugType::PIERCE_RAILSLUG:       // 신화 — 철갑탄
+        case AugType::PIERCE_RAILSLUG:       // 신화 — 철갑탄 (관통 90% 고정 너프)
             pierce          = true;
-            pierceChance    = 100;
+            pierceChance    = 90;
             flatDamageBonus += 25.0f;
             bulletSpeed     *= 1.50f;
             break;
@@ -428,10 +429,13 @@ struct PlayerStats {
         case AugType::D_RMOB_HP:
             rmobHpMult     *= 1.20f;
             rmobDmgMult    *= 1.20f;
-            rangedXpBonus  += 12;          // (너프: 25 → 12)
+            rangedXpBonus  += 6;           // (너프: 12 → 6)
             break;
         case AugType::D_RMOB_DELAY:
-            rmobDelayMult  *= 0.80f;
+            if (rmobDelayStacks < 10) {     // 10 제한 (13쯤부터 너무 빨라 화면 밖으로 사라짐)
+                rmobDelayMult *= 0.80f;
+                ++rmobDelayStacks;
+            }
             rangedXpBonus  += 5;           // (너프: 10 → 5)
             break;
         case AugType::D_MOB_SPAWN:
@@ -439,13 +443,13 @@ struct PlayerStats {
             mobCapBonus    += 200;
             meleeXpBonus   += 1;
             break;
-        case AugType::D_SPLITTER:    // 분열체 출현 (죽으면 쪼개짐) · 처치 EXP +3
+        case AugType::D_SPLITTER:    // 웜 침투 (죽으면 쪼개짐) · 처치 EXP +2
             splitterMobs   = true;
-            meleeXpBonus   += 3;
+            meleeXpBonus   += 2;           // (너프: 3 → 2)
             break;
-        case AugType::D_BLINKER:     // 점멸체 출현 (순간이동 추격) · 처치 EXP +6
+        case AugType::D_BLINKER:     // 트로이목마 침투 (순간이동 추격) · 처치 EXP +3
             blinkerMobs    = true;
-            meleeXpBonus   += 6;
+            meleeXpBonus   += 3;           // (너프: 6 → 3)
             break;
         case AugType::D_ORBITER:     // 공전체 출현 (스파이럴 인) · 처치 EXP +5
             orbiterMobs    = true;
@@ -494,11 +498,11 @@ struct PlayerStats {
             break;
         case AugType::D_BOMBER_BUFF:
             bomberHpMult    *= 1.50f;
-            meleeXpBonus    += 10;         // (너프: 20 → 10)
+            meleeXpBonus    += 5;          // (너프: 10 → 5)
             break;
         case AugType::D_BOMBER_SPEED:
             bomberSpeedMult *= 1.30f;
-            meleeXpBonus    += 5;          // (너프: 10 → 5)
+            meleeXpBonus    += 3;          // (너프: 5 → 3)
             break;
         // ── 잡몹/플레이어 디버프 ──
         case AugType::D_MOB_HP:
@@ -523,9 +527,9 @@ struct PlayerStats {
             mobPackBonus    += 2;
             meleeXpBonus    += 6;
             break;
-        case AugType::D_MOB_ELITE:         // 엘리트 변종 확률 ↑
+        case AugType::D_MOB_ELITE:         // 권한 상승 — 엘리트 변종(변종개체) 확률 ↑
             eliteChanceMult *= 2.2f;
-            meleeXpBonus    += 5;
+            meleeXpBonus    += 3;          // (너프: 5 → 3)
             break;
         case AugType::D_MOB_FRENZY:        // 특수 잡몹 확률 ↑
             varietyChanceMult *= 1.8f;
@@ -533,11 +537,11 @@ struct PlayerStats {
             break;
         case AugType::D_SCHEDULER:         // 스케쥴러 강화 — 특수 잡몹 HP +10%
             specialMobHpMult *= 1.10f;
-            meleeXpBonus    += 3;
+            meleeXpBonus    += 2;          // (너프: 3 → 2)
             break;
         case AugType::D_TROJAN_BOOST:      // 트로이목마 강화 — 점멸 쿨다운 단축
             trojanBoost     = true;
-            meleeXpBonus    += 4;
+            meleeXpBonus    += 2;          // (너프: 4 → 2)
             break;
         case AugType::D_CRASHER_BOOST:     // 크래셔 강화 — 돌진 중 받는 피해 -10%
             crasherBoost    = true;
@@ -579,10 +583,10 @@ struct PlayerStats {
         if (bayonet && distFromPlayer < 200.0f)
             m *= 1.5f;
 
-        // 영혼 수확: 100킬당 +5%
+        // 영혼 수확: 1000킬당 +5% (최대 10스택 = +50%) — 너프(100킬·무제한 → 1000킬·10스택)
         if (soulHarvest) {
-            float bonus = (float)(killCount / 100) * 0.05f;
-            m *= (1.0f + bonus);
+            int souls = (int)(killCount / 1000); if (souls > 10) souls = 10;
+            m *= (1.0f + (float)souls * 0.05f);
         }
 
         // 대포: 추가 연사 1%당 공격력 +2% (연사력은 발사에 반영 안 되고 전부 공격력으로)
@@ -599,8 +603,8 @@ struct PlayerStats {
     float GetFireIntervalMult() const {
         float mult = 1.0f;
         if (soulHarvest) {
-            float bonus = (float)(killCount / 100) * 0.02f;  // 너프: 5% → 2%
-            mult /= (1.0f + bonus);
+            int souls = (int)(killCount / 1000); if (souls > 10) souls = 10;  // 1000킬당·10스택
+            mult /= (1.0f + (float)souls * 0.02f);
         }
         if (miniaturize)
             mult /= (1.0f + 0.02f * (float)totalAugs);       // 너프: 5% → 2%
@@ -609,8 +613,8 @@ struct PlayerStats {
     float GetBulletSpeedBonus() const {
         float b = 0.0f;
         if (soulHarvest) {
-            float bonus = (float)(killCount / 100) * 0.02f;
-            b += bulletSpeed * bonus;
+            int souls = (int)(killCount / 1000); if (souls > 10) souls = 10;  // 1000킬당·10스택
+            b += bulletSpeed * (float)souls * 0.02f;
         }
         return b;
     }
