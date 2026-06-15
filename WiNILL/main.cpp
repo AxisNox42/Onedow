@@ -3333,6 +3333,10 @@ int main() {
             spawnTimer += delta;
             float spawnInterval = 0.3f * g_Stats.mobSpawnMult / (p2mult * rampSpawn);
             if (bossNow) spawnInterval *= 2.5f;   // 보스전: 트래시 스폰 대폭 감소
+            // 쉬움 난이도 — 잡몹 스폰 느리게(이지도 어렵다는 피드백). 체력은 아래 effHpMul 에서 ↓
+            float effHpMul = 1.0f;
+            if (g_Difficulty == Difficulty::EASY) { spawnInterval *= 1.6f; effHpMul = 0.65f; }
+            else if (g_Difficulty == Difficulty::HARD) { effHpMul = 1.1f; }
             if (spawnTimer > spawnInterval) {
                 // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
                 int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
@@ -3342,7 +3346,7 @@ int main() {
                     size_t mbefore = g_MonsterManager.monsters.size();
                     g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                               effCap,
-                                              g_Stats.monsterHpMult * rampHp, saX, saY, saW, saH,
+                                              g_Stats.monsterHpMult * rampHp * effHpMul, saX, saY, saW, saH,
                                               varietyPct, elitePct);
                     // 디버프 보유 시 일부 몹을 분열체/점멸체로 (특수 잡몹 안 된 경우만)
                     if (g_MonsterManager.monsters.size() > mbefore) {
@@ -3388,7 +3392,7 @@ int main() {
                                         Monster* dn = new Monster(
                                             nm->worldX + (float)(rand() % 70 - 35),
                                             nm->worldY + (float)(rand() % 70 - 35),
-                                            g_Stats.monsterHpMult * rampHp, 1.0f, false);
+                                            g_Stats.monsterHpMult * rampHp * effHpMul, 1.0f, false);
                                         dn->MakeKind(MobKind::DDOS);
                                         g_MonsterManager.monsters.push_back(dn);
                                     }
@@ -6312,11 +6316,12 @@ int main() {
                 // (HP/EXP 시각 바는 플레이어 창 하단에 부착됨 — 위 (c2) 참고)
                 // 하단 조작 안내 (희미하게 항상) — 새 플레이어가 HP/스킬 위치를 알게
                 if (st == GameState::RUNNING) {
-                    const wchar_t* CTRL =
-                        L"WASD 이동   마우스 발사   SHIFT 대시   Q/E/R 스킬   ESC 일시정지";
-                    const wchar_t* CTRL_EN =
-                        L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
-                    const wchar_t* c = (g_Language == Language::KR) ? CTRL : CTRL_EN;
+                    const wchar_t* c =
+                        (g_Language == Language::KR)
+                            ? L"WASD 이동   마우스 발사   SHIFT 대시   Q/E/R 스킬   ESC 일시정지"
+                        : (g_Language == Language::JP)
+                            ? L"WASD 移動   マウス 射撃   SHIFT ダッシュ   Q/E/R スキル   ESC 一時停止"
+                            : L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
                     float cw = g_TextS.Width(c, 0.7f);
                     g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 106.0f - (float)g_TaskbarH - g_GameBarH, 0.7f,
                                  0.6f, 0.7f, 0.8f, 0.5f);
