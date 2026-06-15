@@ -49,7 +49,7 @@ public:
     static constexpr float WANDER_GAIN= 0.14f;   // 돌진 1회당 배회 속도 +14%
     static constexpr float WANDER_CAP = 2.4f;    // 배회 속도 배율 상한(×2.4)
     static constexpr float DASH_SPD   = 1500.0f; // 돌진/이탈 속도
-    static constexpr float WANDER_T   = 4.5f;    // 배회 시간(딜 타임)
+    static constexpr float WANDER_T   = 3.2f;    // 배회 시간(딜 타임) — 단축으로 돌진 잦게
     static constexpr float TELEGRAPH  = 0.8f;    // 경로 예고(사라진 뒤)
     static constexpr float TURN_INT   = 0.5f;    // 지그재그 방향 전환 주기
     // 2번째 패턴 — 데이터 토사(원거리 견제): 배회 중 주기적으로 플레이어에 부채꼴 토사
@@ -57,6 +57,13 @@ public:
     static constexpr int   SPIT_N     = 5;       // 부채꼴 탄 수
     static constexpr float SPIT_SPD   = 300.0f;  // 토사 탄 속도
     float spitTimer = 0.0f;
+    // 3번째 패턴 — 미니 돌진(짧고 빠른 대시): 배회 중 주기적으로 플레이어 향해 휙
+    static constexpr float LUNGE_INT  = 2.0f;    // 미니 돌진 주기
+    static constexpr float LUNGE_DUR  = 0.40f;   // 미니 돌진 지속
+    static constexpr float LUNGE_SPD  = 900.0f;  // 미니 돌진 속도
+    float lungeTimer = 0.0f, lungeT = 0.0f;
+    bool  lunging = false;
+    float lungeDX = 0.0f, lungeDY = 0.0f;
 
     CentipedeBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -139,9 +146,24 @@ public:
                 while (d < -3.14159265f) d += 6.2831853f;
                 heading += d * 2.0f * dt;
             }
-            float ws = wanderSpeed();
-            worldX += cosf(heading) * ws * dt;
-            worldY += sinf(heading) * ws * dt;
+            // 이동 — 미니 돌진 중이면 고속 대시, 아니면 배회 (돌진류 정체성 강화)
+            if (lunging) {
+                lungeT += dt;
+                worldX += lungeDX * LUNGE_SPD * dt;
+                worldY += lungeDY * LUNGE_SPD * dt;
+                if (lungeT >= LUNGE_DUR) { lunging = false; lungeTimer = 0.0f; }
+            } else {
+                lungeTimer += dt;
+                if (lungeTimer >= LUNGE_INT) {
+                    lunging = true; lungeT = 0.0f;
+                    float d = atan2f(py - worldY, px - worldX);
+                    lungeDX = cosf(d); lungeDY = sinf(d); heading = d;
+                } else {
+                    float ws = wanderSpeed();
+                    worldX += cosf(heading) * ws * dt;
+                    worldY += sinf(heading) * ws * dt;
+                }
+            }
             if (stateTimer >= WANDER_T) {
                 // 멈추지 않고 곧바로 이탈 — 현재 위치에서 화면 바깥(중앙 반대)으로
                 state = 1; stateTimer = 0.0f;
@@ -176,6 +198,7 @@ public:
             if (dashT >= 1.0f) {
                 state = 0; stateTimer = 0.0f; ++dashCount;     // 돌진 완료 → 배회 가속
                 spitTimer = 0.0f;                              // 재진입 직후 즉시 토사 방지
+                lunging = false; lungeTimer = 0.0f;            // 미니 돌진 리셋
                 glm::vec2 p2 = bezier(0.98f);
                 heading = atan2f(worldY - p2.y, worldX - p2.x);
             }

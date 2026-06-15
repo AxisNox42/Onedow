@@ -5582,18 +5582,26 @@ int main() {
                 drawDiamond(s.x, s.y, sz,        0.35f, 0.7f, 0.2f, 1.0f);
                 drawDiamond(s.x, s.y, sz * 0.5f, 0.6f, 0.95f, 0.4f, 1.0f);
             }
-            // 머리 — 큰 버그(빨강 눈) / 돌진(이탈·재진입) 중 더 밝게
+            // 머리 — 진행 방향으로 뾰족한 창끝(돌진류 인상) / 돌진 중 더 밝게
             bool dash = (cb2->state == 1 || cb2->state == 3);
             float hr = dash ? 1.0f : 0.6f;
-            drawDiamond(cb2->worldX, cb2->worldY, CentipedeBoss::HEAD,
-                        hr, 0.85f, 0.25f, 1.0f);
-            drawDiamond(cb2->worldX, cb2->worldY, CentipedeBoss::HEAD * 0.55f,
-                        0.2f, 0.35f, 0.1f, 1.0f);
-            // 더듬이/눈 (빨강 점 2개) — 진행 방향 기준
             float ha = cb2->heading;
+            float dxn = cosf(ha), dyn = sinf(ha), pxn = -dyn, pyn = dxn;
+            float H = CentipedeBoss::HEAD;
+            float hx = cb2->worldX, hy = cb2->worldY;
+            auto spear = [&](float fwd, float back, float side, float r, float g, float b) {
+                float tx = hx + dxn*fwd,        ty = hy + dyn*fwd;
+                float l1x= hx - dxn*back + pxn*side, l1y = hy - dyn*back + pyn*side;
+                float l2x= hx - dxn*back - pxn*side, l2y = hy - dyn*back - pyn*side;
+                float v[6] = { tx,ty, l1x,l1y, l2x,l2y };
+                BatchVerts(v, 3, r, g, b, 1.0f);
+            };
+            spear(H*1.35f, H*0.55f, H*0.85f, hr,  0.85f, 0.25f);   // 외곽 창끝
+            spear(H*0.85f, H*0.30f, H*0.48f, 0.2f, 0.35f, 0.1f);   // 내부(어두운) 창끝
+            // 눈 (빨강 점 2개) — 창끝 앞쪽 양옆
             for (int e = -1; e <= 1; e += 2) {
-                float ex = cb2->worldX + cosf(ha + e * 0.5f) * CentipedeBoss::HEAD * 0.55f;
-                float ey = cb2->worldY + sinf(ha + e * 0.5f) * CentipedeBoss::HEAD * 0.55f;
+                float ex = hx + dxn*H*0.45f + pxn*(float)e*H*0.30f;
+                float ey = hy + dyn*H*0.45f + pyn*(float)e*H*0.30f;
                 drawCircle(ex, ey, 7.0f, 1.0f, 0.15f, 0.1f, 1.0f);
             }
             BatchFlush();
