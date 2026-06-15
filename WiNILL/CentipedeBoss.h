@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <glm/glm.hpp>
 #include "Bullet.h"
+#include "DrawPrim.h"   // 보스 자체 렌더(완전 분리) — drawDiamond/BatchVerts 등
 
 // ─────────────────────────────────────────────────────────────
 // BUG.proc — 버그 (지네형 보스)
@@ -23,8 +24,8 @@ public:
     bool  alive = true;
     bool  exploded = false;
     int   screenW, screenH;
-    // 프로토타입: 순수 보스전 — 잡몹 흡수 HP + 보통 피해 감소(피감 너무 높으면 손맛 죽음)
-    float dmgTakenMult = 0.85f;    // 받는 피해 ×0.85 (15% 감소)
+    // 프로토타입: 순수 보스전 — 잡몹 흡수 HP + 피해 감소(트리플MG/미니건 DPS 로 즉살 방지)
+    float dmgTakenMult = 0.65f;    // 받는 피해 ×0.65 (35% 감소)
 
     // 상태: 0=배회(피격가능) / 1=화면밖 이탈 / 2=경로 예고(화면밖) / 3=곡선 재진입 돌진
     int   state      = 0;
@@ -342,5 +343,71 @@ public:
         if (idx >= (int)trail.size()) idx = (int)trail.size() - 1;
         if (idx < 0) idx = 0;
         return trail[idx];
+    }
+
+    // ── 월드 렌더 (보스 자체 렌더 — main.cpp 밖, 완전 분리). t = glfwGetTime() 전달받음 ──
+    //   창 클리핑 없이 전체 화면에 직접 그림(세그먼트/머리/예고선). 탄·창은 main 공용 처리.
+    void render(float t) const {
+        BindMainShader();
+        // 곡선 돌진 예고선 (state==2) — 굵은 경로 + 진행 방향 화살촉
+        if (state == 2) {
+            float blink = 0.55f + 0.45f * sinf(t * 22.0f);
+            int n = 40;
+            for (int i = 0; i <= n; i++) {
+                glm::vec2 p = bezier((float)i / (float)n);
+                drawCircle(p.x, p.y, 11.0f, 1.0f, 0.3f, 0.18f, 0.30f + 0.22f * blink);
+            }
+            int arrows = 7;
+            for (int k = 1; k <= arrows; k++) {
+                float tt = (float)k / (float)(arrows + 1);
+                glm::vec2 p  = bezier(tt);
+                glm::vec2 pf = bezier(tt + 0.02f);
+                float ang = atan2f(pf.y - p.y, pf.x - p.x);
+                float dxn = cosf(ang), dyn = sinf(ang), pxn = -dyn, pyn = dxn;
+                const float L = 34.0f, W = 19.0f;
+                float tx = p.x + dxn*L*0.6f, ty = p.y + dyn*L*0.6f;
+                float b1x = p.x - dxn*L*0.4f + pxn*W, b1y = p.y - dyn*L*0.4f + pyn*W;
+                float b2x = p.x - dxn*L*0.4f - pxn*W, b2y = p.y - dyn*L*0.4f - pyn*W;
+                float v[6] = { tx,ty, b1x,b1y, b2x,b2y };
+                BatchVerts(v, 3, 1.0f, 0.35f, 0.15f, 0.55f + 0.4f*blink);
+            }
+        }
+        // 플레이어 직선 돌진 조준선 (chargePhase==1)
+        if (chargeTelegraph) {
+            float blink = 0.5f + 0.5f * sinf(t * 18.0f);
+            float dxn = cosf(heading), dyn = sinf(heading);
+            for (int i = 1; i <= 12; i++) {
+                float tt = (float)i / 12.0f;
+                drawCircle(worldX + dxn*tt*420.0f, worldY + dyn*tt*420.0f,
+                           8.0f + tt*4.0f, 1.0f, 0.25f, 0.15f, 0.35f + 0.45f*blink);
+            }
+        }
+        // 세그먼트 (꼬리→머리) — 연두 마디
+        for (int i = NSEG; i >= 1; i--) {
+            glm::vec2 s = segPos(i);
+            float sz = segSize(i);
+            drawDiamond(s.x, s.y, sz,        0.35f, 0.7f, 0.2f, 1.0f);
+            drawDiamond(s.x, s.y, sz * 0.5f, 0.6f, 0.95f, 0.4f, 1.0f);
+        }
+        // 머리 — 진행 방향 창끝(스피어헤드) 2겹 + 눈
+        bool dash = (state == 1 || state == 3 || state == 4 || chargePhase == 2);
+        float hr = dash ? 1.0f : (chargeTelegraph ? 0.85f : 0.6f);
+        float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
+        float H = HEAD, hx = worldX, hy = worldY;
+        auto spear = [&](float fwd, float back, float side, float r, float g, float b) {
+            float tx = hx + dxn*fwd, ty = hy + dyn*fwd;
+            float l1x = hx - dxn*back + pxn*side, l1y = hy - dyn*back + pyn*side;
+            float l2x = hx - dxn*back - pxn*side, l2y = hy - dyn*back - pyn*side;
+            float v[6] = { tx,ty, l1x,l1y, l2x,l2y };
+            BatchVerts(v, 3, r, g, b, 1.0f);
+        };
+        spear(H*1.35f, H*0.55f, H*0.85f, hr,  0.85f, 0.25f);
+        spear(H*0.85f, H*0.30f, H*0.48f, 0.2f, 0.35f, 0.1f);
+        for (int e = -1; e <= 1; e += 2) {
+            float ex = hx + dxn*H*0.45f + pxn*(float)e*H*0.30f;
+            float ey = hy + dyn*H*0.45f + pyn*(float)e*H*0.30f;
+            drawCircle(ex, ey, 7.0f, 1.0f, 0.15f, 0.1f, 1.0f);
+        }
+        BatchFlush();
     }
 };

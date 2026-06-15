@@ -5591,80 +5591,9 @@ int main() {
             BatchFlush();
         }
 
-        // (g4f) BUG.proc — 지네 (머리+세그먼트, 창 클리핑 없이 전체 렌더) + 돌진 예고선
-        if (g_CentiBoss && g_CentiBoss->alive) {
-            auto* cb2 = g_CentiBoss;
-            BindMainShader();
-            // 돌진 예고선 (state==2, 사라진 뒤) — 곡선 경로 + 진행 방향 화살표('>')
-            if (cb2->state == 2) {
-                float blink = 0.55f + 0.45f * sinf((float)glfwGetTime() * 22.0f);
-                // (1) 경로 — 굵은 밝은 띠 (연속 원)
-                int n = 40;
-                for (int i = 0; i <= n; i++) {
-                    float t = (float)i / (float)n;
-                    glm::vec2 p = cb2->bezier(t);
-                    drawCircle(p.x, p.y, 11.0f, 1.0f, 0.3f, 0.18f, 0.30f + 0.22f * blink);
-                }
-                // (2) 진행 방향 화살촉 — 경로 따라 균등 배치, 베지어 접선 방향
-                int arrows = 7;
-                for (int k = 1; k <= arrows; k++) {
-                    float t  = (float)k / (float)(arrows + 1);
-                    glm::vec2 p  = cb2->bezier(t);
-                    glm::vec2 pf = cb2->bezier(t + 0.02f);
-                    float ang = atan2f(pf.y - p.y, pf.x - p.x);
-                    float dxn = cosf(ang), dyn = sinf(ang);
-                    float pxn = -dyn, pyn = dxn;
-                    const float L = 34.0f, W = 19.0f;
-                    float tx = p.x + dxn*L*0.6f, ty = p.y + dyn*L*0.6f;       // 촉 끝
-                    float b1x = p.x - dxn*L*0.4f + pxn*W, b1y = p.y - dyn*L*0.4f + pyn*W;
-                    float b2x = p.x - dxn*L*0.4f - pxn*W, b2y = p.y - dyn*L*0.4f - pyn*W;
-                    float v[6] = { tx,ty, b1x,b1y, b2x,b2y };
-                    BatchVerts(v, 3, 1.0f, 0.35f, 0.15f, 0.55f + 0.4f*blink);
-                }
-            }
-            // 플레이어 돌진 조준선 (chargePhase==1)
-            if (cb2->chargeTelegraph) {
-                float blink = 0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f);
-                float ha = cb2->heading;
-                float dxn = cosf(ha), dyn = sinf(ha);
-                for (int i = 1; i <= 12; i++) {
-                    float t = (float)i / 12.0f;
-                    float lx = cb2->worldX + dxn * t * 420.0f;
-                    float ly = cb2->worldY + dyn * t * 420.0f;
-                    drawCircle(lx, ly, 8.0f + t * 4.0f, 1.0f, 0.25f, 0.15f, 0.35f + 0.45f * blink);
-                }
-            }
-            // 세그먼트 (꼬리→머리 순, 뒤에서 앞으로) — 연두 마디 (머리에서 멀수록 작아짐)
-            for (int i = CentipedeBoss::NSEG; i >= 1; i--) {
-                glm::vec2 s = cb2->segPos(i);
-                float sz = CentipedeBoss::segSize(i);
-                drawDiamond(s.x, s.y, sz,        0.35f, 0.7f, 0.2f, 1.0f);
-                drawDiamond(s.x, s.y, sz * 0.5f, 0.6f, 0.95f, 0.4f, 1.0f);
-            }
-            // 머리 — 진행 방향으로 뾰족한 창끝(돌진류 인상) / 돌진 중 더 밝게
-            bool dash = (cb2->state == 1 || cb2->state == 3 || cb2->state == 4 || cb2->chargePhase == 2);
-            float hr = dash ? 1.0f : (cb2->chargeTelegraph ? 0.85f : 0.6f);
-            float ha = cb2->heading;
-            float dxn = cosf(ha), dyn = sinf(ha), pxn = -dyn, pyn = dxn;
-            float H = CentipedeBoss::HEAD;
-            float hx = cb2->worldX, hy = cb2->worldY;
-            auto spear = [&](float fwd, float back, float side, float r, float g, float b) {
-                float tx = hx + dxn*fwd,        ty = hy + dyn*fwd;
-                float l1x= hx - dxn*back + pxn*side, l1y = hy - dyn*back + pyn*side;
-                float l2x= hx - dxn*back - pxn*side, l2y = hy - dyn*back - pyn*side;
-                float v[6] = { tx,ty, l1x,l1y, l2x,l2y };
-                BatchVerts(v, 3, r, g, b, 1.0f);
-            };
-            spear(H*1.35f, H*0.55f, H*0.85f, hr,  0.85f, 0.25f);   // 외곽 창끝
-            spear(H*0.85f, H*0.30f, H*0.48f, 0.2f, 0.35f, 0.1f);   // 내부(어두운) 창끝
-            // 눈 (빨강 점 2개) — 창끝 앞쪽 양옆
-            for (int e = -1; e <= 1; e += 2) {
-                float ex = hx + dxn*H*0.45f + pxn*(float)e*H*0.30f;
-                float ey = hy + dyn*H*0.45f + pyn*(float)e*H*0.30f;
-                drawCircle(ex, ey, 7.0f, 1.0f, 0.15f, 0.1f, 1.0f);
-            }
-            BatchFlush();
-        }
+        // (g4f) BUG.proc — 지네: 보스 자체 렌더(CentipedeBoss::render). 창 클리핑 없이 전체 렌더.
+        if (g_CentiBoss && g_CentiBoss->alive)
+            g_CentiBoss->render((float)glfwGetTime());
 
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
         if (g_PolyBoss && g_PolyBoss->alive) {
