@@ -586,65 +586,101 @@ public:
         bool hidden = (state == 7 && burrowPhase < 2);
         if (hidden) { BatchFlush(); return; }
 
-        // ── 작은 가짜 창 그리기 헬퍼 (몸통 마디 = 줄줄이 창) ──
-        auto fakeWin = [&](float cx, float cy, float hs,
-                           float tr, float tg, float tb, float gr, float gg, float gb) {
-            float w = hs * 2.0f, h = hs * 1.55f;
-            float x = cx - w * 0.5f, y = cy - h * 0.5f;
-            drawRect(x, y, w, h, 0.06f, 0.11f, 0.07f, 0.95f);          // 창 본문(어두움)
-            float th = h * 0.28f;                                      // 타이틀바
-            drawRect(x, y, w, th, tr, tg, tb, 1.0f);
-            float dr = th * 0.16f;                                     // 창 버튼 3개
-            for (int kk = 0; kk < 3; kk++)
-                drawCircle(x + w - ((float)kk + 1.0f) * th * 0.55f, y + th * 0.5f,
-                           dr, 0.05f, 0.05f, 0.05f, 1.0f);
-            drawNeonBorder(x, y, w, h, tr, tg, tb);                    // 네온 보더
-            drawDiamond(cx, cy + th * 0.35f, hs * 0.55f, gr, gg, gb, 0.95f);  // 프로세스 글리프
-            drawDiamond(cx, cy + th * 0.35f, hs * 0.28f, 1.0f, 1.0f, 0.85f, 0.9f);
+        bool dash = (state == 1 || state == 3 || state == 4 || state == 5 ||
+                     state == 6 || chargePhase == 2);
+
+        // 삼각형 채움 헬퍼 (정점 3개)
+        auto tri = [&](float ax, float ay, float bx, float by, float cx, float cy,
+                       float r, float g, float b, float a) {
+            float v[6] = { ax,ay, bx,by, cx,cy };
+            BatchVerts(v, 3, r, g, b, a);
         };
 
-        // (3) 몸통 세그먼트 (꼬리→머리) — 줄줄이 가짜 창
+        // ── 몸통 세그먼트 (꼬리→머리) — 디테일 레이어드 마디 + 다리 ──
+        //   본체 진행방향 기준으로 양옆에 다리(좌우 삼각)가 꿈틀거림(지네 디테일).
         for (int i = activeSeg; i >= 1; i--) {
             glm::vec2 s = segPos(i);
             float hs = segSize(i);
-            float bright = 0.55f + 0.45f * (1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1));
-            fakeWin(s.x, s.y, hs,
-                    0.30f * bright + 0.10f, 0.62f * bright, 0.20f * bright,   // 타이틀바(연두)
-                    0.45f, 0.95f, 0.4f);                                      // 글리프
+            // 마디의 진행 방향 = 머리 쪽(앞 마디)으로
+            glm::vec2 ahead = (i == 1) ? glm::vec2(worldX, worldY) : segPos(i - 1);
+            float fwx = ahead.x - s.x, fwy = ahead.y - s.y;
+            float fl = std::sqrt(fwx*fwx + fwy*fwy) + 1e-3f; fwx /= fl; fwy /= fl;
+            float pxn = -fwy, pyn = fwx;               // 좌우(수직)
+            float head01 = 1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1);
+            float br = 0.5f + 0.5f * head01;           // 머리에 가까울수록 밝게
+
+            // 다리 — 좌/우로 꿈틀(시간·인덱스 위상차)
+            float wig = sinf(t * 7.0f + (float)i * 0.8f);
+            for (int e = -1; e <= 1; e += 2) {
+                float legLen = hs * (0.95f + 0.18f * wig * (float)e);
+                float footx = s.x + pxn * (float)e * legLen, footy = s.y + pyn * (float)e * legLen;
+                float b1x = s.x + fwx * hs * 0.32f, b1y = s.y + fwy * hs * 0.32f;
+                float b2x = s.x - fwx * hs * 0.32f, b2y = s.y - fwy * hs * 0.32f;
+                tri(footx, footy, b1x, b1y, b2x, b2y, 0.18f * br, 0.42f * br, 0.14f * br, 1.0f);
+                drawDiamond(footx, footy, hs * 0.20f, 0.30f * br, 0.6f * br, 0.18f, 1.0f);
+            }
+            // 마디 몸통 — 다이아 3겹(어둠→중간→밝은 코어)
+            drawDiamond(s.x, s.y, hs * 1.55f, 0.10f, 0.26f * br, 0.08f, 1.0f);  // 외곽(가로로 긴 느낌)
+            drawDiamond(s.x, s.y, hs * 1.05f, 0.22f, 0.55f * br, 0.16f, 1.0f);
+            drawDiamond(s.x, s.y, hs * 0.62f, 0.45f, 0.92f * br, 0.32f, 1.0f);
+            drawDiamond(s.x, s.y, hs * 0.30f, 0.75f, 1.0f, 0.6f, 1.0f);         // 발광 코어
         }
 
-        // (4) 머리 — 큰 가짜 창(BUG.proc) + 눈 + 진행방향 송곳니
-        bool dash = (state == 1 || state == 3 || state == 4 || state == 5 ||
-                     state == 6 || chargePhase == 2);
-        float pulse = dash ? 1.0f : (chargeTelegraph ? 0.85f : 0.7f);
-        float HW = HEAD * 1.45f;                       // 머리 창 반크기(가짜창 크게)
-        float w = HW * 2.0f, h = HW * 1.5f;
-        float x = worldX - w * 0.5f, y = worldY - h * 0.5f;
-        drawRect(x, y, w, h, 0.08f, 0.04f, 0.05f, 0.96f);          // 본문(어두운 적)
-        float th = h * 0.26f;
-        drawRect(x, y, w, th, pulse, 0.22f, 0.16f, 1.0f);          // 타이틀바(적)
-        for (int kk = 0; kk < 3; kk++)                             // 창 버튼
-            drawCircle(x + w - ((float)kk + 1.0f) * th * 0.55f, y + th * 0.5f,
-                       th * 0.16f, 0.05f, 0.05f, 0.05f, 1.0f);
-        drawNeonBorder(x, y, w, h, pulse, 0.3f, 0.2f);
-        // 눈(빨강) 2개 — 본문 안
-        float eyeY = worldY + h * 0.05f;
+        // ── 머리 — 뾰족한 곤충 두부(레이어드) + 큰턱 + 더듬이 + 눈 ──
+        float pulse = dash ? 1.0f : (chargeTelegraph ? 0.88f : 0.72f);
+        float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
+        float hx = worldX, hy = worldY, H = HEAD;
+        // 회전하는 가시 플레이트(봇넷풍 디테일) — 머리 둘레
+        for (int sgi = 0; sgi < 6; sgi++) {
+            float a = t * 1.4f + (float)sgi * 1.0471976f;
+            float ox = hx + cosf(a) * H * 0.92f, oy = hy + sinf(a) * H * 0.92f;
+            drawDiamond(ox, oy, H * 0.16f, 0.12f * pulse, 0.5f * pulse, 0.12f, 0.9f);
+        }
+        // 더듬이 2가닥 — 전방 바깥으로
         for (int e = -1; e <= 1; e += 2) {
-            float ex = worldX + (float)e * w * 0.22f;
-            drawCircle(ex, eyeY, HW * 0.16f, 0.15f, 0.02f, 0.02f, 1.0f);
-            drawCircle(ex, eyeY, HW * 0.10f, 1.0f, 0.2f, 0.15f, 1.0f);
-            drawCircle(ex + (float)e * HW * 0.03f, eyeY, HW * 0.045f, 1.0f, 0.9f, 0.8f, 1.0f);
+            float bx = hx + dxn * H * 0.7f + pxn * (float)e * H * 0.35f;
+            float by = hy + dyn * H * 0.7f + pyn * (float)e * H * 0.35f;
+            float wig = 0.12f * sinf(t * 5.0f + (float)e);
+            float tx = hx + dxn * H * 1.5f + pxn * (float)e * (H * 0.8f + H * wig);
+            float ty = hy + dyn * H * 1.5f + pyn * (float)e * (H * 0.8f + H * wig);
+            // 가는 막대(삼각 2개로)
+            float wsz = H * 0.05f;
+            tri(tx, ty, bx + pxn*wsz, by + pyn*wsz, bx - pxn*wsz, by - pyn*wsz,
+                0.4f, 0.85f, 0.35f, 1.0f);
+            drawDiamond(tx, ty, H * 0.1f, 0.7f, 1.0f, 0.5f, 1.0f);
         }
-        // 진행 방향 송곳니(돌진감) — heading 방향으로 삼각 2겹
-        {
-            float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
-            float fwd = HW * 1.35f, back = HW * 0.5f, side = HW * 0.55f;
-            float txx = worldX + dxn*fwd, tyy = worldY + dyn*fwd;
-            float l1x = worldX - dxn*back + pxn*side, l1y = worldY - dyn*back + pyn*side;
-            float l2x = worldX - dxn*back - pxn*side, l2y = worldY - dyn*back - pyn*side;
-            float v[6] = { txx,tyy, l1x,l1y, l2x,l2y };
-            BatchVerts(v, 3, pulse, 0.85f, 0.25f, 0.95f);
+        // 큰턱(큰 송곳니 X, 작은 좌우 턱 2개)
+        for (int e = -1; e <= 1; e += 2) {
+            float rootx = hx + dxn * H * 0.7f + pxn * (float)e * H * 0.5f;
+            float rooty = hy + dyn * H * 0.7f + pyn * (float)e * H * 0.5f;
+            float tipx = hx + dxn * H * 1.45f + pxn * (float)e * H * 0.18f;
+            float tipy = hy + dyn * H * 1.45f + pyn * (float)e * H * 0.18f;
+            float backx = hx + dxn * H * 0.45f + pxn * (float)e * H * 0.55f;
+            float backy = hy + dyn * H * 0.45f + pyn * (float)e * H * 0.55f;
+            tri(tipx, tipy, rootx, rooty, backx, backy, pulse, 0.7f, 0.2f, 1.0f);
         }
+        // 두부 본체 — 진행방향으로 뾰족한 다이아(레이어드)
+        auto headDiamond = [&](float fwd, float back, float side, float r, float g, float b) {
+            float fx = hx + dxn*fwd,  fy = hy + dyn*fwd;        // 앞 꼭짓점(뾰족)
+            float bx = hx - dxn*back, by = hy - dyn*back;       // 뒤 꼭짓점
+            float lx = hx + pxn*side, ly = hy + pyn*side;       // 좌
+            float rx = hx - pxn*side, ry = hy - pyn*side;       // 우
+            tri(fx, fy, lx, ly, bx, by, r, g, b, 1.0f);
+            tri(fx, fy, bx, by, rx, ry, r, g, b, 1.0f);
+        };
+        headDiamond(H * 1.25f, H * 0.85f, H * 0.78f, 0.10f, 0.30f, 0.08f);   // 외곽(어둠)
+        headDiamond(H * 1.00f, H * 0.62f, H * 0.55f, 0.24f, 0.62f, 0.18f);   // 중간
+        headDiamond(H * 0.72f, H * 0.42f, H * 0.36f, 0.45f, 0.95f, 0.35f);   // 밝은 갑각
+        // 눈 2개 — 작고 청록(공격적이지만 흉하지 않게)
+        for (int e = -1; e <= 1; e += 2) {
+            float ex = hx + dxn * H * 0.32f + pxn * (float)e * H * 0.26f;
+            float ey = hy + dyn * H * 0.32f + pyn * (float)e * H * 0.26f;
+            drawCircle(ex, ey, H * 0.13f, 0.05f, 0.12f, 0.05f, 1.0f);
+            drawDiamond(ex, ey, H * 0.16f, 0.7f, 1.0f, 0.5f, 1.0f);
+            drawCircle(ex, ey, H * 0.05f, 1.0f, 1.0f, 0.9f, 1.0f);
+        }
+        // 발광 코어
+        drawCircle(hx, hy, H * 0.18f, 0.9f, 1.0f, 0.7f, 0.95f);
         BatchFlush();
     }
 };
