@@ -142,7 +142,7 @@ public:
             color = glm::vec3(1.0f, 0.35f, 0.55f);      // 분홍빨강 — 작은 프로세스 떼
             hp   *= 0.35f;                              // 매우 약함 (물량)
             speed *= 1.05f;
-            sizeScale = scale * 0.62f;                  // 작음
+            sizeScale = scale * 0.72f;                  // 작지만 보이게
         } else if (k == MobKind::BADSECTOR) {
             color = glm::vec3(0.6f, 0.25f, 0.85f);      // 보라 — 손상 섹터(육각)
             hp   *= 1.3f;

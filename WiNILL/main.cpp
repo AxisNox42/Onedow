@@ -3341,15 +3341,25 @@ int main() {
                                       (rand() % 1000) < 2))
                                 nm->MakeKind(MobKind::REGERROR);
                             // 디도스(P) — 점수 비례 자연 스폰. 프로세스 1개가 디도스 3마리로 변환(물량).
-                            else if (g_GameManager.score > 60000 && (rand() % 100) < 16) {
-                                nm->MakeKind(MobKind::DDOS);
-                                for (int e = 0; e < 2; e++) {
-                                    Monster* dn = new Monster(
-                                        nm->worldX + (float)(rand() % 70 - 35),
-                                        nm->worldY + (float)(rand() % 70 - 35),
-                                        g_Stats.monsterHpMult * rampHp, 1.0f, false);
-                                    dn->MakeKind(MobKind::DDOS);
-                                    g_MonsterManager.monsters.push_back(dn);
+                            //   단, 디도스가 전체 cap 의 일부(≈35%)만 차지하게 제한 → 일반 프로세스
+                            //   슬롯 보존(안 그러면 swarm 이 cap 을 독점해 일반이 안 나옴). 추가분도 cap 준수.
+                            else if (g_GameManager.score > 60000 && (rand() % 100) < 14) {
+                                int ddosCount = 0;
+                                for (auto* mm2 : g_MonsterManager.monsters)
+                                    if (mm2->alive && mm2->kind == MobKind::DDOS) ++ddosCount;
+                                int ddosCap = (int)((float)effCap * 0.35f);
+                                if (ddosCount < ddosCap) {       // 여유 있을 때만 디도스화 (아니면 NORMAL 유지)
+                                    nm->MakeKind(MobKind::DDOS);
+                                    for (int e = 0; e < 2
+                                         && (int)g_MonsterManager.monsters.size() < effCap
+                                         && (ddosCount + 1 + e) < ddosCap; e++) {
+                                        Monster* dn = new Monster(
+                                            nm->worldX + (float)(rand() % 70 - 35),
+                                            nm->worldY + (float)(rand() % 70 - 35),
+                                            g_Stats.monsterHpMult * rampHp, 1.0f, false);
+                                        dn->MakeKind(MobKind::DDOS);
+                                        g_MonsterManager.monsters.push_back(dn);
+                                    }
                                 }
                             }
                         }

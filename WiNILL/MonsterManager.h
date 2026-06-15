@@ -126,8 +126,8 @@ public:
                     pushCount++;
                 }
             }
-            // 4+ 이웃에 끼이면 압사
-            if (pushCount >= 4) {
+            // 4+ 이웃에 끼이면 압사 (디도스는 물량 swarm 정체성이라 압사 면제)
+            if (pushCount >= 4 && monsters[i]->kind != MobKind::DDOS) {
                 monsters[i]->hp -= CRUSH_DPS * dt;
                 if (monsters[i]->hp <= 0.0f) monsters[i]->alive = false;
             }
