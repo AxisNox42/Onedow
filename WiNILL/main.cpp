@@ -3556,6 +3556,7 @@ int main() {
                                 g_MonsterManager.bombers.clear();
                                 g_ShakeTime = 0.4f; g_ShakeMag = 14.0f;   // 흡수 순간 진동
                             }
+                            g_CentiBoss->enterSpawn();   // 등장 모션 — 화면 밖에서 곡선 돌진으로 입장
                             break;
                         default:
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);

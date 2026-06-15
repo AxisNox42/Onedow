@@ -59,13 +59,13 @@ public:
     static constexpr float HEAD       = 62.0f;   // 머리 충돌 반경 (작고 날카롭게)
     static constexpr float SEG_NEAR   = 36.0f;   // 머리에 가장 가까운 세그먼트(반크기)
     static constexpr float SEG_FAR    = 15.0f;   // 꼬리 끝(가장 작음)
-    static constexpr float WANDER_SPD = 300.0f;  // 기본 배회 속도 (빠르게)
+    static constexpr float WANDER_SPD = 440.0f;  // 기본 배회 속도 (정신 사납게 빠르게)
     static constexpr float WANDER_GAIN= 0.12f;   // 돌진 1회당 +12%
     static constexpr float WANDER_CAP = 2.6f;    // 속도 배율 상한
-    static constexpr float DASH_SPD   = 1650.0f; // 돌진/이탈 속도
-    static constexpr float WANDER_T   = 8.0f;    // 배회 시간(딜 타임, 더 공격적)
+    static constexpr float DASH_SPD   = 1700.0f; // 돌진/이탈 속도
+    static constexpr float WANDER_T   = 7.5f;    // 배회 시간(딜 타임, 더 공격적)
     static constexpr float TELEGRAPH  = 1.2f;    // 곡선 돌진 예고
-    static constexpr float TURN_INT   = 0.5f;    // 지그재그 전환 주기
+    static constexpr float TURN_INT   = 0.38f;   // 지그재그 전환 주기(더 잦게 = 산만)
 
     // 데이터 토사(부채꼴)
     static constexpr float SPIT_INT   = 5.5f;
@@ -215,6 +215,14 @@ public:
         state = 0; stateTimer = 0.0f;
         spitTimer = 0.0f; surging = false; surgeCd = 0.0f;
         chargePhase = 0; chargeTelegraph = false; chargeCdTimer = CHARGE_INT * 0.5f;
+    }
+
+    // 등장 모션 — '사라졌다가 돌진' 기술 재활용: 화면 밖 경로 예고 → 곡선 돌진으로 입장
+    void enterSpawn() {
+        pickDash();
+        state = 2; stateTimer = 0.0f;
+        worldX = dashFromX; worldY = dashFromY;
+        for (auto& p : trail) p = glm::vec2(worldX, worldY);
     }
 
     void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& bullets) {
@@ -583,14 +591,34 @@ public:
             BatchVerts(v, 3, r, g, b, a);
         };
 
-        // ── 몸통 — 솔리드 녹색 블록(창 아님). 머리에 가까울수록 밝게 ──
+        // ── 몸통 — PPT 셰브론(한 모서리 파인 육각형) 마디. 진행방향 정렬 → 이어진 지네 ──
+        auto chevron = [&](float cx, float cy, float fx, float fy, float L, float W,
+                           float r, float g, float b) {
+            float pxn = -fy, pyn = fx;                         // 수직(좌우 폭)
+            float v1x = cx + fx*L,          v1y = cy + fy*L;            // 앞 꼭짓점(뾰족)
+            float v2x = cx + pxn*W,         v2y = cy + pyn*W;           // 위 중앙
+            float v3x = cx - fx*L + pxn*W,  v3y = cy - fy*L + pyn*W;    // 위-뒤
+            float v4x = cx - fx*L*0.42f,    v4y = cy - fy*L*0.42f;      // 뒤 노치(파인 모서리)
+            float v5x = cx - fx*L - pxn*W,  v5y = cy - fy*L - pyn*W;    // 아래-뒤
+            float v6x = cx - pxn*W,         v6y = cy - pyn*W;           // 아래 중앙
+            tri(cx, cy, v1x, v1y, v2x, v2y, r, g, b, 1.0f);
+            tri(cx, cy, v2x, v2y, v3x, v3y, r, g, b, 1.0f);
+            tri(cx, cy, v3x, v3y, v4x, v4y, r, g, b, 1.0f);
+            tri(cx, cy, v4x, v4y, v5x, v5y, r, g, b, 1.0f);
+            tri(cx, cy, v5x, v5y, v6x, v6y, r, g, b, 1.0f);
+            tri(cx, cy, v6x, v6y, v1x, v1y, r, g, b, 1.0f);
+        };
         for (int i = activeSeg; i >= 1; i--) {
             glm::vec2 s = segPos(i);
             float sz = segSize(i) * sc;
+            glm::vec2 ahead = (i == 1) ? glm::vec2(worldX, worldY) : segPos(i - 1);
+            float fx = ahead.x - s.x, fy = ahead.y - s.y;
+            float fl = std::sqrt(fx*fx + fy*fy);
+            if (fl < 1e-3f) { fx = cosf(heading); fy = sinf(heading); } else { fx /= fl; fy /= fl; }
             float head01 = 1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1);
             float br = 0.5f + 0.5f * head01;
-            drawRect(s.x - sz, s.y - sz, sz*2.0f, sz*2.0f, 0.10f, 0.42f*br, 0.14f, 1.0f);   // 솔리드 몸통
-            drawRect(s.x - sz*0.5f, s.y - sz*0.5f, sz, sz, 0.40f, 0.95f*br, 0.46f, 1.0f);   // 밝은 코어
+            chevron(s.x, s.y, fx, fy, sz*1.55f, sz*0.95f, 0.10f, 0.40f*br, 0.14f);   // 외곽(어둠)
+            chevron(s.x, s.y, fx, fy, sz*1.00f, sz*0.58f, 0.42f, 0.95f*br, 0.46f);   // 밝은 코어
         }
 
         // ── 머리 — 진행방향으로 뾰족한 화살촉(레이어드 녹색) + 맥동 코어 ──
