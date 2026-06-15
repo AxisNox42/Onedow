@@ -5590,6 +5590,18 @@ int main() {
                     BatchVerts(v, 3, 1.0f, 0.35f, 0.15f, 0.55f + 0.4f*blink);
                 }
             }
+            // 플레이어 돌진 조준선 (chargePhase==1)
+            if (cb2->chargeTelegraph) {
+                float blink = 0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f);
+                float ha = cb2->heading;
+                float dxn = cosf(ha), dyn = sinf(ha);
+                for (int i = 1; i <= 12; i++) {
+                    float t = (float)i / 12.0f;
+                    float lx = cb2->worldX + dxn * t * 420.0f;
+                    float ly = cb2->worldY + dyn * t * 420.0f;
+                    drawCircle(lx, ly, 8.0f + t * 4.0f, 1.0f, 0.25f, 0.15f, 0.35f + 0.45f * blink);
+                }
+            }
             // 세그먼트 (꼬리→머리 순, 뒤에서 앞으로) — 연두 마디 (머리에서 멀수록 작아짐)
             for (int i = CentipedeBoss::NSEG; i >= 1; i--) {
                 glm::vec2 s = cb2->segPos(i);
@@ -5598,8 +5610,8 @@ int main() {
                 drawDiamond(s.x, s.y, sz * 0.5f, 0.6f, 0.95f, 0.4f, 1.0f);
             }
             // 머리 — 진행 방향으로 뾰족한 창끝(돌진류 인상) / 돌진 중 더 밝게
-            bool dash = (cb2->state == 1 || cb2->state == 3);
-            float hr = dash ? 1.0f : 0.6f;
+            bool dash = (cb2->state == 1 || cb2->state == 3 || cb2->chargePhase == 2);
+            float hr = dash ? 1.0f : (cb2->chargeTelegraph ? 0.85f : 0.6f);
             float ha = cb2->heading;
             float dxn = cosf(ha), dyn = sinf(ha), pxn = -dyn, pyn = dxn;
             float H = CentipedeBoss::HEAD;

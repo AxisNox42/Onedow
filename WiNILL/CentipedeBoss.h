@@ -13,6 +13,7 @@
 //     ① 멈추지 않고 곧바로 화면 밖으로 빠져나감(나갈 때 화면 진동)
 //     ② 사라진 뒤에야 돌진 경로(곡선)를 예고선으로 표시
 //     ③ 반대편에서 곡선으로 고속 재진입 돌진(대각선 가능, 이때 무적)
+//   4번째 패턴 — 플레이어 돌진: 잠깐 멈춰 조준(텔레그래프) → 고속 직선 돌진
 //   돌진을 반복할수록 기본 배회 속도가 점점 빨라진다(누적 압박).
 // ─────────────────────────────────────────────────────────────
 class CentipedeBoss {
@@ -42,33 +43,37 @@ public:
 
     static constexpr int   NSEG       = 9;       // 꼬리 세그먼트 수
     static constexpr int   SEG_STEP   = 6;       // 세그먼트 간 궤적 인덱스 간격
-    static constexpr float HEAD       = 88.0f;   // 머리 크기(2배 — 큰 버그 머리)
+    static constexpr float HEAD       = 88.0f * 2.0f / 3.0f;   // 머리 크기 (기존 대비 2/3)
     static constexpr float SEG_NEAR   = 55.0f;   // 머리에 가장 가까운 세그먼트
     static constexpr float SEG_FAR    = 22.0f;   // 꼬리 끝 세그먼트(가장 작음)
     static constexpr float WANDER_SPD = 230.0f;  // 기본 배회 속도(돌진마다 가속)
     static constexpr float WANDER_GAIN= 0.14f;   // 돌진 1회당 배회 속도 +14%
     static constexpr float WANDER_CAP = 2.4f;    // 배회 속도 배율 상한(×2.4)
     static constexpr float DASH_SPD   = 1500.0f; // 돌진/이탈 속도
-    static constexpr float WANDER_T   = 3.2f;    // 배회 시간(딜 타임) — 단축으로 돌진 잦게
-    static constexpr float TELEGRAPH  = 0.8f;    // 경로 예고(사라진 뒤)
+    static constexpr float WANDER_T   = 10.0f;   // 배회 시간(딜 타임) — 피격 가능 구간
+    static constexpr float TELEGRAPH  = 1.2f;    // 곡선 돌진 경로 예고(사라진 뒤)
     static constexpr float TURN_INT   = 0.5f;    // 지그재그 방향 전환 주기
     // 2번째 패턴 — 데이터 토사(원거리 견제): 배회 중 주기적으로 플레이어에 부채꼴 토사
-    static constexpr float SPIT_INT   = 2.6f;    // 토사 주기
+    static constexpr float SPIT_INT   = 5.5f;    // 토사 주기 (딜 타임 방해 ↓)
     static constexpr int   SPIT_N     = 5;       // 부채꼴 탄 수
     static constexpr float SPIT_SPD   = 300.0f;  // 토사 탄 속도
     float spitTimer = 0.0f;
-    // 3번째 패턴 — 미니 돌진(짧고 빠른 대시): 배회 중 주기적으로 플레이어 향해 휙
-    static constexpr float LUNGE_INT  = 2.0f;    // 미니 돌진 주기
-    static constexpr float LUNGE_DUR  = 0.40f;   // 미니 돌진 지속
-    static constexpr float LUNGE_SPD  = 900.0f;  // 미니 돌진 속도
-    float lungeTimer = 0.0f, lungeT = 0.0f;
-    bool  lunging = false;
-    float lungeDX = 0.0f, lungeDY = 0.0f;
+    // 플레이어 돌진 — 배회 중 가끔 멈춰 조준 후 직선 돌진 (쿨 길게 → 딜 타임 확보)
+    static constexpr float CHARGE_INT    = 12.0f;   // 돌진 쿨다운
+    static constexpr float CHARGE_WINDUP = 0.55f;   // 조준(멈춤) 시간
+    static constexpr float CHARGE_DUR    = 0.65f;   // 돌진 지속
+    static constexpr float CHARGE_SPD    = 1280.0f; // 돌진 속도
+    int   chargePhase = 0;       // 0=쿨다운/배회 / 1=조준 / 2=돌진
+    float chargeCdTimer = 0.0f;  // 다음 돌진까지
+    float chargeTimer = 0.0f;    // 조준·돌진 경과
+    float chargeDX = 0.0f, chargeDY = 0.0f;
+    bool  chargeTelegraph = false; // 조준 중 — main 이 예고선 렌더
 
     CentipedeBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
         worldX = sw * 0.5f; worldY = sh * 0.4f;   // main 이 스폰 시 덮어씀
         heading = (float)(rand() % 628) * 0.01f;
+        chargeCdTimer = CHARGE_INT * 0.7f;   // 스폰 직후·재진입 직후 바로 돌진 X
         trail.assign(NSEG * SEG_STEP + 8, glm::vec2(worldX, worldY));
     }
 
@@ -93,6 +98,14 @@ public:
         float bx = u*u*dashFromX + 2.0f*u*t*dashCtrlX + t*t*dashToX;
         float by = u*u*dashFromY + 2.0f*u*t*dashCtrlY + t*t*dashToY;
         return glm::vec2(bx, by);
+    }
+
+    // 2차 베지어 접선(진행 방향)
+    glm::vec2 bezierTangent(float t) const {
+        float u = 1.0f - t;
+        float tx = 2.0f*u*(dashCtrlX - dashFromX) + 2.0f*t*(dashToX - dashCtrlX);
+        float ty = 2.0f*u*(dashCtrlY - dashFromY) + 2.0f*t*(dashToY - dashCtrlY);
+        return glm::vec2(tx, ty);
     }
 
     // 재진입 곡선 경로 결정 — 대각선 가능 + 곡선(컨트롤점 측면 오프셋)
@@ -120,55 +133,73 @@ public:
 
     void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& bullets) {
         if (!alive) return;
-        stateTimer += dt;
+        // 배회 시간은 돌진 조준·돌진 중에는 멈춤 (딜 타임 보장)
+        if (state != 0 || chargePhase == 0)
+            stateTimer += dt;
 
-        if (state == 0) {            // ── 배회(지그재그) + 데이터 토사 ──
-            wanderTimer += dt;
-            if (wanderTimer >= TURN_INT) {
-                wanderTimer = 0.0f;
-                heading += ((rand() % 2) ? 1.0f : -1.0f) * 0.7f;
-            }
-            // 데이터 토사 — 주기적으로 플레이어 향해 부채꼴 탄 (돌진 사이 원거리 압박)
-            spitTimer += dt;
-            if (spitTimer >= SPIT_INT) {
-                spitTimer = 0.0f;
-                float base = atan2f(py - worldY, px - worldX);
-                for (int i = 0; i < SPIT_N; i++) {
-                    float a = base + ((float)i / (float)(SPIT_N - 1) - 0.5f) * 0.8f;
-                    fireDir(bullets, cosf(a), sinf(a), SPIT_SPD, glm::vec3(0.6f, 1.0f, 0.5f));
+        if (state == 0) {            // ── 배회(지그재그) + 데이터 토사 + 플레이어 돌진 ──
+            if (chargePhase == 1) {  // 조준(멈춤) — 플레이어 방향 고정
+                chargeTimer += dt;
+                float d = atan2f(py - worldY, px - worldX);
+                heading = d;
+                if (chargeTimer >= CHARGE_WINDUP) {
+                    chargePhase = 2;
+                    chargeTimer = 0.0f;
+                    chargeDX = cosf(d);
+                    chargeDY = sinf(d);
+                    chargeTelegraph = false;
                 }
-            }
-            float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
-            float m = 120.0f;
-            if (worldX < m || worldX > screenW - m || worldY < m || worldY > screenH - m) {
-                float d = toC - heading;
-                while (d >  3.14159265f) d -= 6.2831853f;
-                while (d < -3.14159265f) d += 6.2831853f;
-                heading += d * 2.0f * dt;
-            }
-            // 이동 — 미니 돌진 중이면 고속 대시, 아니면 배회 (돌진류 정체성 강화)
-            if (lunging) {
-                lungeT += dt;
-                worldX += lungeDX * LUNGE_SPD * dt;
-                worldY += lungeDY * LUNGE_SPD * dt;
-                if (lungeT >= LUNGE_DUR) { lunging = false; lungeTimer = 0.0f; }
-            } else {
-                lungeTimer += dt;
-                if (lungeTimer >= LUNGE_INT) {
-                    lunging = true; lungeT = 0.0f;
-                    float d = atan2f(py - worldY, px - worldX);
-                    lungeDX = cosf(d); lungeDY = sinf(d); heading = d;
+            } else if (chargePhase == 2) { // 직선 돌진
+                chargeTimer += dt;
+                worldX += chargeDX * CHARGE_SPD * dt;
+                worldY += chargeDY * CHARGE_SPD * dt;
+                heading = atan2f(chargeDY, chargeDX);
+                if (chargeTimer >= CHARGE_DUR) {
+                    chargePhase = 0;
+                    chargeTimer = 0.0f;
+                    chargeCdTimer = 0.0f;
+                }
+            } else {                 // 일반 배회
+                wanderTimer += dt;
+                if (wanderTimer >= TURN_INT) {
+                    wanderTimer = 0.0f;
+                    heading += ((rand() % 2) ? 1.0f : -1.0f) * 0.7f;
+                }
+                // 데이터 토사 — 주기적으로 플레이어 향해 부채꼴 탄 (돌진 사이 원거리 압박)
+                spitTimer += dt;
+                if (spitTimer >= SPIT_INT) {
+                    spitTimer = 0.0f;
+                    float base = atan2f(py - worldY, px - worldX);
+                    for (int i = 0; i < SPIT_N; i++) {
+                        float a = base + ((float)i / (float)(SPIT_N - 1) - 0.5f) * 0.8f;
+                        fireDir(bullets, cosf(a), sinf(a), SPIT_SPD, glm::vec3(0.6f, 1.0f, 0.5f));
+                    }
+                }
+                float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
+                float m = 120.0f;
+                if (worldX < m || worldX > screenW - m || worldY < m || worldY > screenH - m) {
+                    float d = toC - heading;
+                    while (d >  3.14159265f) d -= 6.2831853f;
+                    while (d < -3.14159265f) d += 6.2831853f;
+                    heading += d * 2.0f * dt;
+                }
+                chargeCdTimer += dt;
+                if (chargeCdTimer >= CHARGE_INT) {
+                    chargePhase = 1;
+                    chargeTimer = 0.0f;
+                    chargeTelegraph = true;
                 } else {
                     float ws = wanderSpeed();
                     worldX += cosf(heading) * ws * dt;
                     worldY += sinf(heading) * ws * dt;
                 }
-            }
-            if (stateTimer >= WANDER_T) {
-                // 멈추지 않고 곧바로 이탈 — 현재 위치에서 화면 바깥(중앙 반대)으로
-                state = 1; stateTimer = 0.0f;
-                heading = atan2f(worldY - screenH*0.5f, worldX - screenW*0.5f);
-                wasInside = onScreen(worldX, worldY);
+                if (stateTimer >= WANDER_T) {
+                    // 멈추지 않고 곧바로 이탈 — 현재 위치에서 화면 바깥(중앙 반대)으로
+                    state = 1; stateTimer = 0.0f;
+                    chargePhase = 0; chargeTelegraph = false;
+                    heading = atan2f(worldY - screenH*0.5f, worldX - screenW*0.5f);
+                    wasInside = onScreen(worldX, worldY);
+                }
             }
         }
         else if (state == 1) {       // ── 화면밖 이탈(무적) ──
@@ -193,14 +224,16 @@ public:
             float chord = std::sqrt((dashToX-dashFromX)*(dashToX-dashFromX) +
                                     (dashToY-dashFromY)*(dashToY-dashFromY)) + 1e-3f;
             dashT += DASH_SPD * dt / chord;   // 0→1 (대략 일정 속도)
+            if (dashT > 1.0f) dashT = 1.0f;
             glm::vec2 p = bezier(dashT);
             worldX = p.x; worldY = p.y;
+            glm::vec2 tan = bezierTangent(dashT);
+            if (tan.x * tan.x + tan.y * tan.y > 1e-6f)
+                heading = atan2f(tan.y, tan.x);
             if (dashT >= 1.0f) {
                 state = 0; stateTimer = 0.0f; ++dashCount;     // 돌진 완료 → 배회 가속
                 spitTimer = 0.0f;                              // 재진입 직후 즉시 토사 방지
-                lunging = false; lungeTimer = 0.0f;            // 미니 돌진 리셋
-                glm::vec2 p2 = bezier(0.98f);
-                heading = atan2f(worldY - p2.y, worldX - p2.x);
+                chargePhase = 0; chargeCdTimer = CHARGE_INT * 0.7f; chargeTelegraph = false;
             }
         }
 
@@ -208,7 +241,7 @@ public:
         trail.insert(trail.begin(), glm::vec2(worldX, worldY));
         if ((int)trail.size() > NSEG * SEG_STEP + 8) trail.pop_back();
 
-        bool dashing = (state == 1 || state == 3);
+        bool dashing = (state == 1 || state == 3 || chargePhase == 2);
         float hcr = HEAD * 0.78f;
         float hdx = px - worldX, hdy = py - worldY;
         if (hdx*hdx + hdy*hdy < hcr * hcr)
