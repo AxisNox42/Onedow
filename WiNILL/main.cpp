@@ -394,7 +394,7 @@ float SPAM_WIN_W   = 660.0f;
 float KERNEL_WIN_W = 760.0f;   // 커널: 거대 코어 (큰 창)
 float FIREWALL_WIN_W = 720.0f; // 방화벽: 본체+회전 보호막
 float BOTNET_WIN_W = 680.0f;   // 봇넷: 본체+공전 프로세스
-float CENTI_WIN_W = 460.0f;    // 지네: 머리 창 (몸통은 창 밖까지 렌더)
+float CENTI_WIN_W = 600.0f;    // 지네: 본체 가짜 창 (몸통도 이 창 안으로만 렌더)
 // 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
 float SPAWNER_WIN_W = 300.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
@@ -5591,9 +5591,16 @@ int main() {
             BatchFlush();
         }
 
-        // (g4f) BUG.proc — 지네: 보스 자체 렌더(CentipedeBoss::render). 창 클리핑 없이 전체 렌더.
-        if (g_CentiBoss && g_CentiBoss->alive)
-            g_CentiBoss->render((float)glfwGetTime());
+        // (g4f) BUG.proc — 지네: FX(전체화면) + 본체(가짜 창 안으로 scissor 클리핑)
+        if (g_CentiBoss && g_CentiBoss->alive) {
+            float ct = (float)glfwGetTime();
+            g_CentiBoss->renderFx(ct);                       // 지뢰/예고선 — 클리핑 X
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(g_CentiBoss->worldX - CENTI_WIN_W*0.5f,
+                         g_CentiBoss->worldY - CENTI_WIN_W*0.5f, CENTI_WIN_W, CENTI_WIN_W);
+            g_CentiBoss->renderBody(ct);                     // 머리+몸통 — 창 안만
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
 
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
         if (g_PolyBoss && g_PolyBoss->alive) {

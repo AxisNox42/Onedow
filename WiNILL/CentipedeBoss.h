@@ -94,9 +94,9 @@ public:
     static constexpr float BIG_INT = 7.5f;       // 대형 패턴 쿨다운(속도 비례 감소)
     float bigCd = 0.0f;
     // 벽 들이박기 난동
-    static constexpr int   RAMP_HITS      = 4;
-    static constexpr float RAMP_SPD       = 1400.0f;
-    static constexpr int   RAMP_SHRAP     = 12;
+    static constexpr int   RAMP_HITS      = 6;       // 주변 벽 연속 들이박기(횟수 ↑)
+    static constexpr float RAMP_SPD       = 1480.0f;
+    static constexpr int   RAMP_SHRAP     = 9;
     static constexpr float RAMP_SHRAP_SPD = 360.0f;
     int   rampHits = 0;
     float rampDX = 0.0f, rampDY = 0.0f;
@@ -114,10 +114,12 @@ public:
     float wallFireT = 0.0f;
     // 잠복(B4)
     static constexpr float BURROW_WARN      = 0.75f;
+    static constexpr float BURROW_SINK      = 0.45f;   // 제자리 가라앉는 시간
     static constexpr int   BURROW_SHRAP     = 18;
     static constexpr float BURROW_SHRAP_SPD = 380.0f;
-    int   burrowPhase = 0;       // 0=잠수(화면밖) / 1=발밑 예고 / 2=솟구침
+    int   burrowPhase = 0;       // 0=제자리 가라앉기 / 1=발밑 예고(잠복) / 2=솟구침
     float burrowX = 0, burrowY = 0;
+    float burrowScale = 1.0f;    // 가라앉기/솟구침 스케일(1=정상, 0=완전 잠복)
 
     // ── 이동 사출 — 움직이며 좌우로 데이터 탄을 흘림(상시 압박) ──
     static constexpr float SHED_INT = 0.22f;     // 촘촘하게(자주)
@@ -327,10 +329,8 @@ public:
                         wallDir = (worldX < screenW * 0.5f) ? 1 : -1;
                         heading = (wallDir > 0) ? 0.0f : 3.14159265f;
                         break; }
-                    default: { // BURROW — 잠수 → 발밑 예고 → 솟구침
-                        state = 7; stateTimer = 0.0f; burrowPhase = 0;
-                        heading = atan2f(worldY - screenH*0.5f, worldX - screenW*0.5f);
-                        wasInside = onScreen(worldX, worldY);
+                    default: { // BURROW — 제자리 잠수 → 발밑 예고 → 솟구침
+                        state = 7; stateTimer = 0.0f; burrowPhase = 0; burrowScale = 1.0f;
                         break; }
                     }
                 }
@@ -395,13 +395,9 @@ public:
                 ++rampHits;
                 if (rampHits >= RAMP_HITS) {
                     backToWander(); bigCd = 0.0f;
-                } else {                     // 다른 벽으로 재돌진
-                    int rx = screenW - (int)(2.0f*mg); if (rx < 1) rx = 1;
-                    int ry = screenH - (int)(2.0f*mg); if (ry < 1) ry = 1;
-                    float tx = mg + (float)(rand()%rx), ty = mg + (float)(rand()%ry);
-                    float dx = tx - worldX, dy = ty - worldY;
-                    float d = std::sqrt(dx*dx+dy*dy) + 1e-3f;
-                    rampDX = dx/d; rampDY = dy/d;
+                } else {                     // 주변(수직) 벽으로 연속 들이박기 — 가까운 쪽으로
+                    if (rampDX != 0.0f) { rampDX = 0.0f; rampDY = (worldY < screenH*0.5f) ? -1.0f : 1.0f; }
+                    else                { rampDY = 0.0f; rampDX = (worldX < screenW*0.5f) ? -1.0f : 1.0f; }
                 }
             }
         }
@@ -428,22 +424,17 @@ public:
                 heading = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
             }
         }
-        else {                       // ── state 7: 잠복(B4) ──
-            if (burrowPhase == 0) {  // 잠수 — 화면 밖으로 빠르게
-                worldX += cosf(heading) * DASH_SPD * dt;
-                worldY += sinf(heading) * DASH_SPD * dt;
-                bool inside = onScreen(worldX, worldY);
-                if (wasInside && !inside) shakePulse = true;
-                wasInside = inside;
-                float M = 160.0f;
-                if (worldX < -M || worldX > screenW + M || worldY < -M || worldY > screenH + M) {
-                    burrowPhase = 1; stateTimer = 0.0f;
+        else {                       // ── state 7: 잠복(B4) — 제자리에서 가라앉음 ──
+            if (burrowPhase == 0) {  // 제자리 가라앉기(축소) — 날아가서 먼저 사라지지 않음
+                burrowScale -= dt / BURROW_SINK;
+                if (burrowScale <= 0.0f) {
+                    burrowScale = 0.0f; burrowPhase = 1; stateTimer = 0.0f;
                     burrowX = px; burrowY = py;       // 발밑 타겟 고정
                     float m = HEAD;
                     if (burrowX < m) burrowX = m; if (burrowX > screenW - m) burrowX = screenW - m;
                     if (burrowY < m) burrowY = m; if (burrowY > screenH - m) burrowY = screenH - m;
                 }
-            } else if (burrowPhase == 1) { // 발밑 예고
+            } else if (burrowPhase == 1) { // 발밑 예고(완전 잠복)
                 if (stateTimer >= BURROW_WARN) {
                     burrowPhase = 2; stateTimer = 0.0f;
                     worldX = burrowX; worldY = burrowY;
@@ -454,8 +445,9 @@ public:
                     }
                     shakePulse = true;
                 }
-            } else {                       // 솟구침 정착 → 배회
-                if (stateTimer >= 0.25f) { backToWander(); bigCd = 0.0f; }
+            } else {                       // 솟구침(제자리 확대) → 배회
+                burrowScale += dt / 0.25f;
+                if (burrowScale >= 1.0f) { burrowScale = 1.0f; backToWander(); bigCd = 0.0f; }
             }
         }
 
@@ -516,27 +508,25 @@ public:
         return trail[idx];
     }
 
-    // ── 월드 렌더 (보스 자체 렌더 — main.cpp 밖, 완전 분리). t = glfwGetTime() ──
-    //   창 클리핑 없이 전체 화면에 직접 그림. 탄·창 HUD 는 main 공용 처리.
-    void render(float t) const {
+    // ── FX 렌더 (창 클리핑 X, 전체 화면) — 지뢰/예고선/잠복 그림자 ──
+    //   경고·장판류는 가짜 창 밖에서도 보여야 하므로 클리핑하지 않음.
+    void renderFx(float t) const {
         BindMainShader();
 
-        // (0) 탈피 지뢰 — 주황 마름모(접촉 폭발) — 본체 뒤에 깔기
+        // (0) 탈피 지뢰 — 주황 마름모(접촉 폭발)
         for (const auto& h : hazards) {
             float pul = 0.5f + 0.5f * sinf(t * 12.0f + h.x * 0.05f);
             drawCircle(h.x, h.y, h.r, 1.0f, 0.5f, 0.15f, 0.12f);
             drawDiamond(h.x, h.y, 22.0f + 6.0f * pul, 1.0f, 0.6f, 0.2f, 0.85f);
             drawDiamond(h.x, h.y, 10.0f, 1.0f, 0.9f, 0.4f, 1.0f);
         }
-
         // (0b) 잠복 발밑 예고 — 솟구침 직전 그림자 링
         if (state == 7 && burrowPhase == 1) {
-            float p = stateTimer / BURROW_WARN;       // 0→1
+            float p = stateTimer / BURROW_WARN;
             float blink = 0.5f + 0.5f * sinf(t * 24.0f);
             drawCircle(burrowX, burrowY, 30.0f + 80.0f * p, 0.6f, 0.15f, 0.15f, 0.18f + 0.2f * p);
             drawCircle(burrowX, burrowY, 14.0f + 30.0f * p, 1.0f, 0.3f, 0.2f, 0.3f + 0.4f * blink);
         }
-
         // (1) 곡선 돌진 예고선 (state==2)
         if (state == 2) {
             float blink = 0.55f + 0.45f * sinf(t * 22.0f);
@@ -570,53 +560,51 @@ public:
                            8.0f + tt*4.0f, 1.0f, 0.25f, 0.15f, 0.35f + 0.45f*blink);
             }
         }
+        BatchFlush();
+    }
 
-        // 잠복 잠수/예고 중엔 본체(머리+몸통)가 화면에 없음
-        bool hidden = (state == 7 && burrowPhase < 2);
-        if (hidden) { BatchFlush(); return; }
+    // ── 본체 렌더 (가짜 창 안으로 클리핑 — main 이 scissor 적용). 머리+몸통 ──
+    //   창 밖으로 몸통이 삐져나가지 않게 main 에서 WorldScissor 로 감싸 호출.
+    void renderBody(float t) const {
+        if (state == 7 && burrowPhase == 1) return;   // 완전 잠복 = 안 보임
+        BindMainShader();
+        float sc = (state == 7) ? burrowScale : 1.0f;  // 잠복 가라앉기/솟구침 스케일
 
-        bool dash = (state == 1 || state == 3 || state == 4 || state == 5 ||
-                     state == 6 || chargePhase == 2);
-
-        // 삼각형 채움 헬퍼
         auto tri = [&](float ax, float ay, float bx, float by, float cx, float cy,
                        float r, float g, float b, float a) {
             float v[6] = { ax,ay, bx,by, cx,cy };
             BatchVerts(v, 3, r, g, b, a);
         };
 
-        // ── 몸통 — 줄줄이 네온 '프로세스 블록'(데이터 패킷 체인). Onedow OS 톤 ──
+        // ── 몸통 — 솔리드 녹색 블록(창 아님). 머리에 가까울수록 밝게 ──
         for (int i = activeSeg; i >= 1; i--) {
             glm::vec2 s = segPos(i);
-            float sz = segSize(i);
+            float sz = segSize(i) * sc;
             float head01 = 1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1);
-            float br = 0.5f + 0.5f * head01;          // 머리에 가까울수록 밝게
-            drawRect(s.x - sz, s.y - sz, sz*2.0f, sz*2.0f, 0.05f, 0.12f, 0.06f, 0.95f);   // 본문(어두움)
-            drawNeonBorder(s.x - sz, s.y - sz, sz*2.0f, sz*2.0f, 0.20f*br+0.1f, 0.92f*br, 0.32f*br);
-            drawRect(s.x - sz*0.32f, s.y - sz*0.32f, sz*0.64f, sz*0.64f,
-                     0.40f, 0.95f*br, 0.42f, 1.0f);  // 코어 블록
+            float br = 0.5f + 0.5f * head01;
+            drawRect(s.x - sz, s.y - sz, sz*2.0f, sz*2.0f, 0.10f, 0.42f*br, 0.14f, 1.0f);   // 솔리드 몸통
+            drawRect(s.x - sz*0.5f, s.y - sz*0.5f, sz, sz, 0.40f, 0.95f*br, 0.46f, 1.0f);   // 밝은 코어
         }
 
         // ── 머리 — 진행방향으로 뾰족한 화살촉(레이어드 녹색) + 맥동 코어 ──
-        //   몸통과 같은 녹색 톤. 뒤 끝을 V로 파서 날카로운 '▸' 느낌.
+        bool dash = (state == 1 || state == 3 || state == 4 || state == 5 ||
+                     state == 6 || chargePhase == 2);
         float pulse = dash ? 1.0f : 0.82f;
         float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
-        float H = HEAD;
-        // 화살촉 1겹 = 앞 꼭짓점 + 뒤 좌/우 + 뒤 중앙 노치(앞으로 당겨 V)
+        float H = HEAD * sc;
         auto arrow = [&](float fwd, float back, float side, float notch,
                          float r, float g, float b) {
-            float tx  = worldX + dxn*fwd,            ty  = worldY + dyn*fwd;          // 앞 끝(뾰족)
-            float l1x = worldX - dxn*back + pxn*side, l1y = worldY - dyn*back + pyn*side; // 뒤 좌
-            float l2x = worldX - dxn*back - pxn*side, l2y = worldY - dyn*back - pyn*side; // 뒤 우
-            float nx  = worldX - dxn*(back - notch),  ny  = worldY - dyn*(back - notch);  // 뒤 중앙 노치
+            float tx  = worldX + dxn*fwd,            ty  = worldY + dyn*fwd;
+            float l1x = worldX - dxn*back + pxn*side, l1y = worldY - dyn*back + pyn*side;
+            float l2x = worldX - dxn*back - pxn*side, l2y = worldY - dyn*back - pyn*side;
+            float nx  = worldX - dxn*(back - notch),  ny  = worldY - dyn*(back - notch);
             tri(tx, ty, l1x, l1y, nx, ny, r, g, b, 1.0f);
             tri(tx, ty, nx, ny, l2x, l2y, r, g, b, 1.0f);
         };
-        float ext = dash ? 0.18f : 0.0f;                                    // 돌진 시 살짝 길어짐
-        arrow(H*(1.45f+ext), H*0.78f, H*0.98f, H*0.42f, 0.08f, 0.30f, 0.10f);   // 외곽(어둠)
-        arrow(H*(1.15f+ext), H*0.58f, H*0.70f, H*0.32f, 0.22f, 0.62f*pulse, 0.24f); // 중간
-        arrow(H*(0.85f+ext), H*0.40f, H*0.46f, H*0.22f, 0.45f, 0.98f*pulse, 0.42f); // 밝은 갑각
-        // 맥동 코어
+        float ext = dash ? 0.18f : 0.0f;
+        arrow(H*(1.45f+ext), H*0.78f, H*0.98f, H*0.42f, 0.08f, 0.30f, 0.10f);
+        arrow(H*(1.15f+ext), H*0.58f, H*0.70f, H*0.32f, 0.22f, 0.62f*pulse, 0.24f);
+        arrow(H*(0.85f+ext), H*0.40f, H*0.46f, H*0.22f, 0.45f, 0.98f*pulse, 0.42f);
         float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
         drawCircle(worldX, worldY, H*0.22f, 0.10f, 0.20f, 0.10f, 1.0f);
         drawCircle(worldX, worldY, H*0.15f, 0.5f, 1.0f*cpul, 0.55f, 1.0f);
