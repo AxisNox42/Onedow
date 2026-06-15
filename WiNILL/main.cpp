@@ -5591,15 +5591,12 @@ int main() {
             BatchFlush();
         }
 
-        // (g4f) BUG.proc — 지네: FX(전체화면) + 본체(가짜 창 안으로 scissor 클리핑)
+        // (g4f) BUG.proc — 지네: 필드 전체에 렌더(모든 창 위로 노출되는 로밍 보스).
+        //   디아블로식 빠른 보스 — 특정 창에 갇히지 않고 화면을 휘젓는다.
         if (g_CentiBoss && g_CentiBoss->alive) {
             float ct = (float)glfwGetTime();
-            g_CentiBoss->renderFx(ct);                       // 지뢰/예고선 — 클리핑 X
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(g_CentiBoss->worldX - CENTI_WIN_W*0.5f,
-                         g_CentiBoss->worldY - CENTI_WIN_W*0.5f, CENTI_WIN_W, CENTI_WIN_W);
-            g_CentiBoss->renderBody(ct);                     // 머리+몸통 — 창 안만
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            g_CentiBoss->renderFx(ct);     // 지뢰/예고선
+            g_CentiBoss->renderBody(ct);   // 머리+몸통
         }
 
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP

@@ -56,14 +56,14 @@ public:
 
     static constexpr int   NSEG       = 18;      // 꼬리 세그먼트 수(엄청 길게)
     static constexpr int   SEG_STEP   = 6;       // 세그먼트 간 궤적 인덱스 간격(작을수록 촘촘)
-    static constexpr float HEAD       = 92.0f;   // 머리 충돌 반경
-    static constexpr float SEG_NEAR   = 44.0f;   // 머리에 가장 가까운 세그먼트(반크기)
-    static constexpr float SEG_FAR    = 20.0f;   // 꼬리 끝(가장 작음)
-    static constexpr float WANDER_SPD = 230.0f;  // 기본 배회 속도
+    static constexpr float HEAD       = 62.0f;   // 머리 충돌 반경 (작고 날카롭게)
+    static constexpr float SEG_NEAR   = 36.0f;   // 머리에 가장 가까운 세그먼트(반크기)
+    static constexpr float SEG_FAR    = 15.0f;   // 꼬리 끝(가장 작음)
+    static constexpr float WANDER_SPD = 300.0f;  // 기본 배회 속도 (빠르게)
     static constexpr float WANDER_GAIN= 0.12f;   // 돌진 1회당 +12%
     static constexpr float WANDER_CAP = 2.6f;    // 속도 배율 상한
-    static constexpr float DASH_SPD   = 1500.0f; // 돌진/이탈 속도
-    static constexpr float WANDER_T   = 10.0f;   // 배회 시간(딜 타임)
+    static constexpr float DASH_SPD   = 1650.0f; // 돌진/이탈 속도
+    static constexpr float WANDER_T   = 8.0f;    // 배회 시간(딜 타임, 더 공격적)
     static constexpr float TELEGRAPH  = 1.2f;    // 곡선 돌진 예고
     static constexpr float TURN_INT   = 0.5f;    // 지그재그 전환 주기
 
@@ -73,10 +73,10 @@ public:
     static constexpr float SPIT_SPD   = 300.0f;
     float spitTimer = 0.0f;
     // 플레이어 직선 돌진
-    static constexpr float CHARGE_INT    = 12.0f;
-    static constexpr float CHARGE_WINDUP = 0.55f;
+    static constexpr float CHARGE_INT    = 9.0f;
+    static constexpr float CHARGE_WINDUP = 0.5f;
     static constexpr float CHARGE_DUR    = 0.65f;
-    static constexpr float CHARGE_SPD    = 1280.0f;
+    static constexpr float CHARGE_SPD    = 1500.0f;
     int   chargePhase = 0;       // 0=배회 / 1=조준 / 2=돌진
     float chargeCdTimer = 0.0f;
     float chargeTimer = 0.0f;
@@ -91,14 +91,17 @@ public:
     bool  surging = false;
 
     // ── 대형 패턴 로테이션(난동/똬리/장벽/잠복) ──
-    static constexpr float BIG_INT = 7.5f;       // 대형 패턴 쿨다운(속도 비례 감소)
+    static constexpr float BIG_INT = 6.0f;       // 대형 패턴 쿨다운(속도 비례 감소)
     float bigCd = 0.0f;
-    // 벽 들이박기 난동
-    static constexpr int   RAMP_HITS      = 6;       // 주변 벽 연속 들이박기(횟수 ↑)
-    static constexpr float RAMP_SPD       = 1480.0f;
-    static constexpr int   RAMP_SHRAP     = 9;
+    // 벽 박기 광란 — 고속으로 벽 사이를 튕기며 속도 비례 탄을 뿜고, 박을수록 감속
+    static constexpr float RAMP_SPD0      = 1750.0f; // 초기 속도(폭발적)
+    static constexpr float RAMP_MIN       = 470.0f;  // 이 속도 밑이면 종료
+    static constexpr float RAMP_DECAY     = 0.80f;   // 벽 충돌마다 속도 ×0.80
+    static constexpr float RAMP_FIRE_SPD  = 340.0f;  // 분출 탄 속도
+    static constexpr float RAMP_FIRE_K    = 135.0f;  // 분출 간격 = K/속도 (빠를수록 자주)
+    static constexpr int   RAMP_SHRAP     = 10;      // 벽 충돌 방사 파편
     static constexpr float RAMP_SHRAP_SPD = 360.0f;
-    int   rampHits = 0;
+    float rampSpeed = 0.0f, rampFireTimer = 0.0f;
     float rampDX = 0.0f, rampDY = 0.0f;
     // 똬리 감기(A1)
     static constexpr float COIL_DUR    = 2.6f;
@@ -200,16 +203,13 @@ public:
         fireFrom(b, worldX, worldY, dx, dy, sp, col);
     }
 
-    // 가장 가까운 벽 방향으로 난동 시작
+    // 벽 박기 광란 시작 — 임의 대각 방향으로 폭발적으로 튕기기 시작
     void enterRamp() {
-        state = 4; stateTimer = 0.0f; rampHits = 0; chargeTelegraph = false;
-        float dl = worldX, dr = (float)screenW - worldX;
-        float dtp = worldY, db = (float)screenH - worldY;
-        float mn = dl; rampDX = -1.0f; rampDY = 0.0f;
-        if (dr < mn)  { mn = dr;  rampDX = 1.0f;  rampDY = 0.0f; }
-        if (dtp < mn) { mn = dtp; rampDX = 0.0f;  rampDY = -1.0f; }
-        if (db < mn)  { mn = db;  rampDX = 0.0f;  rampDY = 1.0f; }
-        heading = atan2f(rampDY, rampDX);
+        state = 4; stateTimer = 0.0f; chargeTelegraph = false;
+        float a = (float)(rand() % 628) * 0.01f;
+        rampDX = cosf(a); rampDY = sinf(a);
+        rampSpeed = RAMP_SPD0; rampFireTimer = 0.0f;
+        heading = a;
     }
     void backToWander() {
         state = 0; stateTimer = 0.0f;
@@ -375,30 +375,37 @@ public:
                 chargePhase = 0; chargeCdTimer = CHARGE_INT * 0.7f; chargeTelegraph = false;
             }
         }
-        else if (state == 4) {       // ── 벽 들이박기 난동(파편 + 진동) ──
-            worldX += rampDX * RAMP_SPD * dt;
-            worldY += rampDY * RAMP_SPD * dt;
+        else if (state == 4) {       // ── 벽 박기 광란: 고속 튕기기 + 속도비례 분출 + 박을수록 감속 ──
+            worldX += rampDX * rampSpeed * dt;
+            worldY += rampDY * rampSpeed * dt;
             heading = atan2f(rampDY, rampDX);
+            // 이동속도 비례 탄 분출 — 빠를수록 자주(많이) 좌우로 뿜음
+            rampFireTimer += dt;
+            float fi = RAMP_FIRE_K / rampSpeed;
+            if (rampFireTimer >= fi) {
+                rampFireTimer = 0.0f;
+                float pxn = -rampDY, pyn = rampDX;
+                fireDir(bullets,  pxn,  pyn, RAMP_FIRE_SPD, glm::vec3(0.95f, 0.9f, 0.35f));
+                fireDir(bullets, -pxn, -pyn, RAMP_FIRE_SPD, glm::vec3(0.95f, 0.9f, 0.35f));
+            }
+            // 벽 충돌 → 반사 + 감속(박을수록 느려짐) + 방사 파편
             float mg = HEAD * 0.55f;
-            bool hit = (worldX <= mg) || (worldX >= (float)screenW - mg) ||
-                       (worldY <= mg) || (worldY >= (float)screenH - mg);
-            if (hit) {
+            bool hitX = (worldX <= mg) || (worldX >= (float)screenW - mg);
+            bool hitY = (worldY <= mg) || (worldY >= (float)screenH - mg);
+            if (hitX || hitY) {
                 if (worldX < mg) worldX = mg;
                 if (worldX > (float)screenW - mg) worldX = (float)screenW - mg;
                 if (worldY < mg) worldY = mg;
                 if (worldY > (float)screenH - mg) worldY = (float)screenH - mg;
+                if (hitX) rampDX = -rampDX;
+                if (hitY) rampDY = -rampDY;
+                rampSpeed *= RAMP_DECAY;     // 박을수록 감속
                 for (int i = 0; i < RAMP_SHRAP; i++) {
                     float a = (float)i / (float)RAMP_SHRAP * 6.2831853f + (float)(rand()%100)*0.01f;
                     fireDir(bullets, cosf(a), sinf(a), RAMP_SHRAP_SPD, glm::vec3(0.95f, 0.9f, 0.3f));
                 }
-                shakePulse = true;          // 화면 진동(자해 제거 — 들이박아도 HP 안 깎임)
-                ++rampHits;
-                if (rampHits >= RAMP_HITS) {
-                    backToWander(); bigCd = 0.0f;
-                } else {                     // 주변(수직) 벽으로 연속 들이박기 — 가까운 쪽으로
-                    if (rampDX != 0.0f) { rampDX = 0.0f; rampDY = (worldY < screenH*0.5f) ? -1.0f : 1.0f; }
-                    else                { rampDY = 0.0f; rampDX = (worldX < screenW*0.5f) ? -1.0f : 1.0f; }
-                }
+                shakePulse = true;
+                if (rampSpeed < RAMP_MIN) { backToWander(); bigCd = 0.0f; }   // 다 느려지면 종료
             }
         }
         else if (state == 5) {       // ── 똬리 감기(A1): 플레이어 중심 링 + 조임 ──
@@ -453,7 +460,7 @@ public:
 
         // ── 이동 사출 — 실제로 이동하는 상태에서 좌우로 데이터 탄을 흘림 ──
         //   "이동할 때마다 탄이 날아간다" — 배회/돌진/난동 중 진행 수직 양옆으로 누수.
-        bool moving = (state == 0 && chargePhase != 1) || state == 3 || state == 4;
+        bool moving = (state == 0 && chargePhase != 1) || state == 3;   // state4(광란)은 자체 분출
         if (moving && onScreen(worldX, worldY)) {
             shedTimer += dt;
             if (shedTimer >= SHED_INT * cdScale()) {
@@ -601,10 +608,10 @@ public:
             tri(tx, ty, l1x, l1y, nx, ny, r, g, b, 1.0f);
             tri(tx, ty, nx, ny, l2x, l2y, r, g, b, 1.0f);
         };
-        float ext = dash ? 0.18f : 0.0f;
-        arrow(H*(1.45f+ext), H*0.78f, H*0.98f, H*0.42f, 0.08f, 0.30f, 0.10f);
-        arrow(H*(1.15f+ext), H*0.58f, H*0.70f, H*0.32f, 0.22f, 0.62f*pulse, 0.24f);
-        arrow(H*(0.85f+ext), H*0.40f, H*0.46f, H*0.22f, 0.45f, 0.98f*pulse, 0.42f);
+        float ext = dash ? 0.30f : 0.0f;                                    // 날카롭게 + 돌진 시 더 길게
+        arrow(H*(1.95f+ext), H*0.62f, H*0.72f, H*0.34f, 0.08f, 0.30f, 0.10f);   // 외곽(어둠)
+        arrow(H*(1.60f+ext), H*0.46f, H*0.50f, H*0.26f, 0.22f, 0.62f*pulse, 0.24f); // 중간
+        arrow(H*(1.20f+ext), H*0.32f, H*0.32f, H*0.18f, 0.45f, 0.98f*pulse, 0.42f); // 밝은 갑각
         float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
         drawCircle(worldX, worldY, H*0.22f, 0.10f, 0.20f, 0.10f, 1.0f);
         drawCircle(worldX, worldY, H*0.15f, 0.5f, 1.0f*cpul, 0.55f, 1.0f);
