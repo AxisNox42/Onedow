@@ -119,14 +119,13 @@ public:
     int   burrowPhase = 0;       // 0=잠수(화면밖) / 1=발밑 예고 / 2=솟구침
     float burrowX = 0, burrowY = 0;
 
-    // ── 상시 해저드(EMP 감전장 / 탈피 지뢰) ──
-    struct Hazard { float x, y, life, maxLife, r; int kind; };  // kind 0=EMP, 1=Molt
+    // ── 이동 사출 — 움직이며 좌우로 데이터 탄을 흘림(상시 압박) ──
+    static constexpr float SHED_INT = 0.4f;
+    static constexpr float SHED_SPD = 200.0f;
+    float shedTimer = 0.0f;
+    // ── 탈피 지뢰 ──
+    struct Hazard { float x, y, life, maxLife, r; };
     std::vector<Hazard> hazards;
-    static constexpr float EMP_DROP = 0.22f;
-    static constexpr float EMP_R    = 64.0f;
-    static constexpr float EMP_LIFE = 3.0f;
-    static constexpr float EMP_DPS  = 16.0f;
-    float empDrop = 0.0f;
     // 탈피/사출(A2)
     int   activeSeg = NSEG;      // 현재 살아있는 세그먼트 수(탈피로 줄어듦)
     int   moltLevel = 0;
@@ -228,7 +227,7 @@ public:
                 for (int i = 0; i < 2; i++) {
                     float a = (float)(rand() % 628) * 0.01f;
                     Hazard h; h.x = tail.x + cosf(a) * 30.0f; h.y = tail.y + sinf(a) * 30.0f;
-                    h.maxLife = h.life = MOLT_LIFE; h.r = MOLT_R; h.kind = 1;
+                    h.maxLife = h.life = MOLT_LIFE; h.r = MOLT_R;
                     hazards.push_back(h);
                 }
                 activeSeg -= 3; if (activeSeg < 6) activeSeg = 6;
@@ -460,27 +459,24 @@ public:
             }
         }
 
-        // ── EMP 트레일(B6) — 고속 이동 상태에서 잔류 감전장 살포 ──
-        bool fastState = (state == 1 || state == 3 || state == 4 || state == 5 ||
-                          state == 6 || chargePhase == 2 || (state == 7 && burrowPhase == 0));
-        if (fastState && onScreen(worldX, worldY)) {
-            empDrop += dt;
-            if (empDrop >= EMP_DROP) {
-                empDrop = 0.0f;
-                Hazard h; h.x = worldX; h.y = worldY;
-                h.maxLife = h.life = EMP_LIFE; h.r = EMP_R; h.kind = 0;
-                hazards.push_back(h);
+        // ── 이동 사출 — 실제로 이동하는 상태에서 좌우로 데이터 탄을 흘림 ──
+        //   "이동할 때마다 탄이 날아간다" — 배회/돌진/난동 중 진행 수직 양옆으로 누수.
+        bool moving = (state == 0 && chargePhase != 1) || state == 3 || state == 4;
+        if (moving && onScreen(worldX, worldY)) {
+            shedTimer += dt;
+            if (shedTimer >= SHED_INT * cdScale()) {
+                shedTimer = 0.0f;
+                float pxn = -sinf(heading), pyn = cosf(heading);
+                fireDir(bullets,  pxn,  pyn, SHED_SPD, glm::vec3(0.5f, 1.0f, 0.45f));
+                fireDir(bullets, -pxn, -pyn, SHED_SPD, glm::vec3(0.5f, 1.0f, 0.45f));
             }
         }
-        // ── 해저드 갱신 + 플레이어 피해 ──
+        // ── 탈피 지뢰 갱신 + 접촉 폭발 ──
         for (size_t i = 0; i < hazards.size(); ) {
             Hazard& h = hazards[i];
             h.life -= dt;
             float dx = px - h.x, dy = py - h.y;
-            bool inside = (dx*dx + dy*dy) < h.r * h.r;
-            if (h.kind == 0) {                 // EMP 감전장 — 지속 피해
-                if (inside) playerHP -= EMP_DPS * dt;
-            } else if (inside) {               // 탈피 지뢰 — 접촉 시 폭발
+            if ((dx*dx + dy*dy) < h.r * h.r) {   // 접촉 → 방사형 파편 폭발
                 for (int k = 0; k < MOLT_SHRAP; k++) {
                     float a = (float)k / (float)MOLT_SHRAP * 6.2831853f;
                     fireFrom(bullets, h.x, h.y, cosf(a), sinf(a), MOLT_SHRAP_SPD, glm::vec3(1.0f, 0.6f, 0.2f));
@@ -525,19 +521,12 @@ public:
     void render(float t) const {
         BindMainShader();
 
-        // (0) 해저드 — EMP 감전장(청록) / 탈피 지뢰(주황) — 본체 뒤에 깔기
+        // (0) 탈피 지뢰 — 주황 마름모(접촉 폭발) — 본체 뒤에 깔기
         for (const auto& h : hazards) {
-            float k = h.life / h.maxLife;            // 1→0
-            if (h.kind == 0) {
-                float pul = 0.5f + 0.5f * sinf(t * 9.0f + h.x * 0.05f);
-                drawCircle(h.x, h.y, h.r,        0.15f, 0.7f, 0.95f, 0.10f * k + 0.05f);
-                drawCircle(h.x, h.y, h.r * (0.4f + 0.5f * pul), 0.3f, 0.9f, 1.0f, 0.16f * k);
-            } else {
-                float pul = 0.5f + 0.5f * sinf(t * 12.0f + h.x * 0.05f);
-                drawCircle(h.x, h.y, h.r, 1.0f, 0.5f, 0.15f, 0.12f);
-                drawDiamond(h.x, h.y, 22.0f + 6.0f * pul, 1.0f, 0.6f, 0.2f, 0.85f);
-                drawDiamond(h.x, h.y, 10.0f, 1.0f, 0.9f, 0.4f, 1.0f);
-            }
+            float pul = 0.5f + 0.5f * sinf(t * 12.0f + h.x * 0.05f);
+            drawCircle(h.x, h.y, h.r, 1.0f, 0.5f, 0.15f, 0.12f);
+            drawDiamond(h.x, h.y, 22.0f + 6.0f * pul, 1.0f, 0.6f, 0.2f, 0.85f);
+            drawDiamond(h.x, h.y, 10.0f, 1.0f, 0.9f, 0.4f, 1.0f);
         }
 
         // (0b) 잠복 발밑 예고 — 솟구침 직전 그림자 링
@@ -589,98 +578,47 @@ public:
         bool dash = (state == 1 || state == 3 || state == 4 || state == 5 ||
                      state == 6 || chargePhase == 2);
 
-        // 삼각형 채움 헬퍼 (정점 3개)
+        // 삼각형 채움 헬퍼
         auto tri = [&](float ax, float ay, float bx, float by, float cx, float cy,
                        float r, float g, float b, float a) {
             float v[6] = { ax,ay, bx,by, cx,cy };
             BatchVerts(v, 3, r, g, b, a);
         };
 
-        // ── 몸통 세그먼트 (꼬리→머리) — 디테일 레이어드 마디 + 다리 ──
-        //   본체 진행방향 기준으로 양옆에 다리(좌우 삼각)가 꿈틀거림(지네 디테일).
+        // ── 몸통 — 줄줄이 네온 '프로세스 블록'(데이터 패킷 체인). Onedow OS 톤 ──
         for (int i = activeSeg; i >= 1; i--) {
             glm::vec2 s = segPos(i);
-            float hs = segSize(i);
-            // 마디의 진행 방향 = 머리 쪽(앞 마디)으로
-            glm::vec2 ahead = (i == 1) ? glm::vec2(worldX, worldY) : segPos(i - 1);
-            float fwx = ahead.x - s.x, fwy = ahead.y - s.y;
-            float fl = std::sqrt(fwx*fwx + fwy*fwy) + 1e-3f; fwx /= fl; fwy /= fl;
-            float pxn = -fwy, pyn = fwx;               // 좌우(수직)
+            float sz = segSize(i);
             float head01 = 1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1);
-            float br = 0.5f + 0.5f * head01;           // 머리에 가까울수록 밝게
-
-            // 다리 — 좌/우로 꿈틀(시간·인덱스 위상차)
-            float wig = sinf(t * 7.0f + (float)i * 0.8f);
-            for (int e = -1; e <= 1; e += 2) {
-                float legLen = hs * (0.95f + 0.18f * wig * (float)e);
-                float footx = s.x + pxn * (float)e * legLen, footy = s.y + pyn * (float)e * legLen;
-                float b1x = s.x + fwx * hs * 0.32f, b1y = s.y + fwy * hs * 0.32f;
-                float b2x = s.x - fwx * hs * 0.32f, b2y = s.y - fwy * hs * 0.32f;
-                tri(footx, footy, b1x, b1y, b2x, b2y, 0.18f * br, 0.42f * br, 0.14f * br, 1.0f);
-                drawDiamond(footx, footy, hs * 0.20f, 0.30f * br, 0.6f * br, 0.18f, 1.0f);
-            }
-            // 마디 몸통 — 다이아 3겹(어둠→중간→밝은 코어)
-            drawDiamond(s.x, s.y, hs * 1.55f, 0.10f, 0.26f * br, 0.08f, 1.0f);  // 외곽(가로로 긴 느낌)
-            drawDiamond(s.x, s.y, hs * 1.05f, 0.22f, 0.55f * br, 0.16f, 1.0f);
-            drawDiamond(s.x, s.y, hs * 0.62f, 0.45f, 0.92f * br, 0.32f, 1.0f);
-            drawDiamond(s.x, s.y, hs * 0.30f, 0.75f, 1.0f, 0.6f, 1.0f);         // 발광 코어
+            float br = 0.5f + 0.5f * head01;          // 머리에 가까울수록 밝게
+            drawRect(s.x - sz, s.y - sz, sz*2.0f, sz*2.0f, 0.05f, 0.12f, 0.06f, 0.95f);   // 본문(어두움)
+            drawNeonBorder(s.x - sz, s.y - sz, sz*2.0f, sz*2.0f, 0.20f*br+0.1f, 0.92f*br, 0.32f*br);
+            drawRect(s.x - sz*0.32f, s.y - sz*0.32f, sz*0.64f, sz*0.64f,
+                     0.40f, 0.95f*br, 0.42f, 1.0f);  // 코어 블록
         }
 
-        // ── 머리 — 뾰족한 곤충 두부(레이어드) + 큰턱 + 더듬이 + 눈 ──
-        float pulse = dash ? 1.0f : (chargeTelegraph ? 0.88f : 0.72f);
+        // ── 머리 — 큰 프로세스 블록(BUG.proc) + 진행방향 셰브론(>) ──
+        float pulse = dash ? 1.0f : (chargeTelegraph ? 0.9f : 0.72f);
         float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
-        float hx = worldX, hy = worldY, H = HEAD;
-        // 회전하는 가시 플레이트(봇넷풍 디테일) — 머리 둘레
-        for (int sgi = 0; sgi < 6; sgi++) {
-            float a = t * 1.4f + (float)sgi * 1.0471976f;
-            float ox = hx + cosf(a) * H * 0.92f, oy = hy + sinf(a) * H * 0.92f;
-            drawDiamond(ox, oy, H * 0.16f, 0.12f * pulse, 0.5f * pulse, 0.12f, 0.9f);
+        float H = HEAD * 0.95f;
+        float x = worldX - H, y = worldY - H, w = H * 2.0f;
+        // 진행방향 셰브론(화살촉) — 본체 뒤에 깔아 머리가 그 위로
+        {
+            float tipx = worldX + dxn*H*1.6f,  tipy = worldY + dyn*H*1.6f;
+            float b1x  = worldX + dxn*H*0.5f + pxn*H*0.85f, b1y = worldY + dyn*H*0.5f + pyn*H*0.85f;
+            float b2x  = worldX + dxn*H*0.5f - pxn*H*0.85f, b2y = worldY + dyn*H*0.5f - pyn*H*0.85f;
+            tri(tipx, tipy, b1x, b1y, b2x, b2y, pulse, 0.9f, 0.4f, 0.95f);
+            float nx = worldX + dxn*H*0.95f, ny = worldY + dyn*H*0.95f;     // 안쪽 노치 → 셰브론
+            tri(nx, ny, b1x, b1y, b2x, b2y, 0.05f, 0.10f, 0.06f, 1.0f);
         }
-        // 더듬이 2가닥 — 전방 바깥으로
-        for (int e = -1; e <= 1; e += 2) {
-            float bx = hx + dxn * H * 0.7f + pxn * (float)e * H * 0.35f;
-            float by = hy + dyn * H * 0.7f + pyn * (float)e * H * 0.35f;
-            float wig = 0.12f * sinf(t * 5.0f + (float)e);
-            float tx = hx + dxn * H * 1.5f + pxn * (float)e * (H * 0.8f + H * wig);
-            float ty = hy + dyn * H * 1.5f + pyn * (float)e * (H * 0.8f + H * wig);
-            // 가는 막대(삼각 2개로)
-            float wsz = H * 0.05f;
-            tri(tx, ty, bx + pxn*wsz, by + pyn*wsz, bx - pxn*wsz, by - pyn*wsz,
-                0.4f, 0.85f, 0.35f, 1.0f);
-            drawDiamond(tx, ty, H * 0.1f, 0.7f, 1.0f, 0.5f, 1.0f);
-        }
-        // 큰턱(큰 송곳니 X, 작은 좌우 턱 2개)
-        for (int e = -1; e <= 1; e += 2) {
-            float rootx = hx + dxn * H * 0.7f + pxn * (float)e * H * 0.5f;
-            float rooty = hy + dyn * H * 0.7f + pyn * (float)e * H * 0.5f;
-            float tipx = hx + dxn * H * 1.45f + pxn * (float)e * H * 0.18f;
-            float tipy = hy + dyn * H * 1.45f + pyn * (float)e * H * 0.18f;
-            float backx = hx + dxn * H * 0.45f + pxn * (float)e * H * 0.55f;
-            float backy = hy + dyn * H * 0.45f + pyn * (float)e * H * 0.55f;
-            tri(tipx, tipy, rootx, rooty, backx, backy, pulse, 0.7f, 0.2f, 1.0f);
-        }
-        // 두부 본체 — 진행방향으로 뾰족한 다이아(레이어드)
-        auto headDiamond = [&](float fwd, float back, float side, float r, float g, float b) {
-            float fx = hx + dxn*fwd,  fy = hy + dyn*fwd;        // 앞 꼭짓점(뾰족)
-            float bx = hx - dxn*back, by = hy - dyn*back;       // 뒤 꼭짓점
-            float lx = hx + pxn*side, ly = hy + pyn*side;       // 좌
-            float rx = hx - pxn*side, ry = hy - pyn*side;       // 우
-            tri(fx, fy, lx, ly, bx, by, r, g, b, 1.0f);
-            tri(fx, fy, bx, by, rx, ry, r, g, b, 1.0f);
-        };
-        headDiamond(H * 1.25f, H * 0.85f, H * 0.78f, 0.10f, 0.30f, 0.08f);   // 외곽(어둠)
-        headDiamond(H * 1.00f, H * 0.62f, H * 0.55f, 0.24f, 0.62f, 0.18f);   // 중간
-        headDiamond(H * 0.72f, H * 0.42f, H * 0.36f, 0.45f, 0.95f, 0.35f);   // 밝은 갑각
-        // 눈 2개 — 작고 청록(공격적이지만 흉하지 않게)
-        for (int e = -1; e <= 1; e += 2) {
-            float ex = hx + dxn * H * 0.32f + pxn * (float)e * H * 0.26f;
-            float ey = hy + dyn * H * 0.32f + pyn * (float)e * H * 0.26f;
-            drawCircle(ex, ey, H * 0.13f, 0.05f, 0.12f, 0.05f, 1.0f);
-            drawDiamond(ex, ey, H * 0.16f, 0.7f, 1.0f, 0.5f, 1.0f);
-            drawCircle(ex, ey, H * 0.05f, 1.0f, 1.0f, 0.9f, 1.0f);
-        }
-        // 발광 코어
-        drawCircle(hx, hy, H * 0.18f, 0.9f, 1.0f, 0.7f, 0.95f);
+        drawRect(x, y, w, w, 0.06f, 0.11f, 0.06f, 0.97f);                   // 본문
+        drawRect(x, y, w, H*0.34f, pulse, 0.32f, 0.18f, 1.0f);             // 타이틀바(주황 accent)
+        for (int kk = 0; kk < 3; kk++)                                      // 창 버튼 3개
+            drawCircle(x + w - ((float)kk + 1.0f) * H*0.22f, y + H*0.17f,
+                       H*0.05f, 0.05f, 0.05f, 0.05f, 1.0f);
+        drawNeonBorder(x, y, w, w, pulse, 0.92f, 0.4f);                     // 네온 보더(밝은 연두)
+        drawRect(worldX - H*0.42f, worldY - H*0.04f, H*0.84f, H*0.6f,
+                 0.42f, 1.0f, 0.46f, 1.0f);                                 // 발광 코어 블록
         BatchFlush();
     }
 };
