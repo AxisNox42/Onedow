@@ -26,6 +26,10 @@ public:
     float phaseTimer = 0.0f;
     bool  fast       = false;  // false=느림(2초) / true=빠름(1초)
     float fireTimer  = 0.0f;
+    float skillTimer = 0.0f;   // 차단 펄스(방사형 링) 스킬 쿨다운
+    float skillWarn  = 0.0f;   // 펄스 예고(렌더가 읽음) — >0 동안 본체 깜빡
+    float tgtX = 0, tgtY = 0, moveTimer = 0.0f;
+    bool  moveInit = false;
 
     static constexpr float BODY        = 84.0f;    // 본체 2배급
     static constexpr int   SHIELDS     = 3;        // 보호막 아크 3개 (120° 간격)
@@ -37,6 +41,11 @@ public:
     static constexpr float FAST_SPD    = 3.4f;     // rad/s (빠름)
     static constexpr float FIRE_INT    = 1.4f;
     static constexpr float BSPEED      = 320.0f;
+    static constexpr float MOVE_SPEED  = 48.0f;    // 느린 배회
+    static constexpr float SKILL_INT   = 5.5f;     // 차단 펄스 주기
+    static constexpr float SKILL_WARN  = 0.8f;     // 펄스 예고 시간
+    static constexpr int   PULSE_N     = 30;       // 방사형 링 탄 수
+    static constexpr float PULSE_SPD   = 300.0f;
 
     FirewallBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -71,6 +80,26 @@ public:
         shieldRot += (fast ? FAST_SPD : SLOW_SPD) * dt;
         if (shieldRot > 6.2831853f) shieldRot -= 6.2831853f;
 
+        // 느린 배회 이동 — 주기적으로 화면 안 임의 지점으로 (고정형 → 이동형)
+        moveTimer -= dt;
+        float marg = BODY + 90.0f;
+        if (!moveInit || moveTimer <= 0.0f) {
+            moveInit = true;
+            moveTimer = 2.5f + (float)(rand() % 150) * 0.01f;
+            int rx = screenW - (int)(2.0f * marg); if (rx < 1) rx = 1;
+            int ry = screenH - (int)(2.0f * marg); if (ry < 1) ry = 1;
+            tgtX = marg + (float)(rand() % rx);
+            tgtY = marg + (float)(rand() % ry);
+        }
+        {
+            float mdx = tgtX - worldX, mdy = tgtY - worldY;
+            float md  = std::sqrt(mdx*mdx + mdy*mdy);
+            if (md > 1.0f) {
+                float step = MOVE_SPEED * dt; if (step > md) step = md;
+                worldX += mdx / md * step; worldY += mdy / md * step;
+            }
+        }
+
         // 본체 접촉 데미지
         float ddx = px - worldX, ddy = py - worldY;
         if (ddx*ddx + ddy*ddy < BODY * BODY) playerHP -= 11.0f * dt;
@@ -85,5 +114,21 @@ public:
                 fireDir(bullets, cosf(a), sinf(a), BSPEED, glm::vec3(1.0f, 0.45f, 0.25f));
             }
         }
+
+        // 공격 스킬 — '차단 펄스': 예고 후 사방으로 방사형 링 탄막 방출 (거리 강제)
+        if (skillWarn > 0.0f) skillWarn -= dt;
+        skillTimer += dt;
+        if (skillTimer >= SKILL_INT && skillWarn <= 0.0f) {
+            skillWarn = SKILL_WARN;   // 예고 시작
+        }
+        if (skillWarn > 0.0f && skillTimer >= SKILL_INT + SKILL_WARN) {
+            skillTimer = 0.0f; skillWarn = 0.0f;
+            float off = (float)(rand() % 100) * 0.01f;
+            for (int i = 0; i < PULSE_N; i++) {
+                float a = off + (float)i / (float)PULSE_N * 6.2831853f;
+                fireDir(bullets, cosf(a), sinf(a), PULSE_SPD, glm::vec3(1.0f, 0.6f, 0.2f));
+            }
+        }
     }
+    bool pulseWarning() const { return skillWarn > 0.0f; }
 };

@@ -72,7 +72,7 @@ public:
         for (auto* rg : mm.monsters)
             if (rg->alive && rg->kind == MobKind::REGERROR)
                 regAura.push_back(glm::vec2(rg->worldX, rg->worldY));
-        const float REG_AURA_R2 = 130.0f * 130.0f;
+        const float REG_AURA_R2 = 145.0f * 145.0f;   // 가짜창 290px 의 절반 (범위 +50px 반영)
 
         for (auto& b : bullets) {
             if (!b.active) continue;

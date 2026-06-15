@@ -257,7 +257,7 @@ inline void drawMob(const Monster* m) {
     } else if (m->kind == MobKind::REGERROR) {
         // 레지스트리 에러 — X형 본체 + 공전 프로세스 + 강화 오라(가짜창)
         float x = m->worldX, y = m->worldY;
-        float ww = 240.0f;   // 강화 오라 창 (내부 적 강화)
+        float ww = 290.0f;   // 강화 오라 창 (내부 적 강화) — 범위 +50px
         drawRect(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.5f, 0.1f, 0.1f, 0.09f);
         drawNeonBorder(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.9f, 0.3f, 0.3f);
         float ph = (float)glfwGetTime() * 1.6f;
@@ -515,6 +515,7 @@ CentipedeBoss* g_CentiBoss = nullptr;
 //   즉시 생기지 않고 ZONE_OPEN(0.7초)에 걸쳐 점점 부식되어 퍼짐(grow factor = age/OPEN).
 struct SlowZone { float x, y, w, h, life, maxLife, age; };
 std::vector<SlowZone> g_SlowZones;
+float g_BadSectorBleed = 0.0f;   // 배드 섹터 구역 안에 있으면 2초로 갱신 → 빠져나와도 출혈 지속
 static constexpr float SLOWZONE_OPEN = 0.7f;   // 부식 확산 시간
 inline float SlowZoneGrow(const SlowZone& z) {
     float g = z.age / SLOWZONE_OPEN;
@@ -522,7 +523,7 @@ inline float SlowZoneGrow(const SlowZone& z) {
 }
 inline void SpawnBadSectorZone(const Monster* m) {
     if (m->kind != MobKind::BADSECTOR) return;
-    float w = 240.0f, h = 240.0f;
+    float w = 300.0f, h = 300.0f;   // 범위 +25% (240 → 300)
     g_SlowZones.push_back({ m->worldX - w*0.5f, m->worldY - h*0.5f, w, h, 5.0f, 5.0f, 0.0f });
 }
 
@@ -1353,7 +1354,7 @@ int main() {
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
             g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
-            g_SlowZones.clear();                            // 배드 섹터 감속 구역 초기화
+            g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
             g_RunMelee = false; g_RunBow = false;          // 클래스 게이팅 초기화
             if (g_GlitchBoss) { delete g_GlitchBoss; g_GlitchBoss = nullptr; }
@@ -1587,7 +1588,7 @@ int main() {
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
                 g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
-                g_SlowZones.clear();    // 배드 섹터 감속 구역 정리
+                g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
                 // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
                 for (int k = 0; k < 4; k++)
@@ -3144,6 +3145,26 @@ int main() {
             if (g_Stats.bleedPerSec > 0.0f && g_GameManager.playerHP > 1.0f) {
                 g_GameManager.playerHP -= g_Stats.bleedPerSec * delta;
                 if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
+            }
+            // 배드 섹터 출혈 — 감속 구역 안이면 출혈 타이머 2초로 갱신, 빠져나와도 잔류
+            {
+                bool inZone = false;
+                float pcx = playerWin.x + playerWin.width  * 0.5f;
+                float pcy = playerWin.y + playerWin.height * 0.5f;
+                for (auto& z : g_SlowZones) {
+                    float gf = SlowZoneGrow(z);
+                    float zx = z.x + z.w*0.5f, zy = z.y + z.h*0.5f;
+                    float hw = z.w*0.5f*gf, hh = z.h*0.5f*gf;
+                    if (pcx >= zx-hw && pcx <= zx+hw && pcy >= zy-hh && pcy <= zy+hh) { inZone = true; break; }
+                }
+                if (inZone) g_BadSectorBleed = 2.0f;
+                if (g_BadSectorBleed > 0.0f) {
+                    g_BadSectorBleed -= delta;
+                    if (g_GameManager.playerHP > 1.0f) {
+                        g_GameManager.playerHP -= 4.0f * delta;   // 출혈 DPS
+                        if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
+                    }
+                }
             }
 
             // 도감 발견 — 원거리/자폭병 (존재하면 발견 처리)
@@ -5422,6 +5443,12 @@ int main() {
             WorldScissor(fb->worldX - FIREWALL_WIN_W*0.5f, fb->worldY - FIREWALL_WIN_W*0.5f,
                          FIREWALL_WIN_W, FIREWALL_WIN_W);
             for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
+            // 차단 펄스 예고 — 곧 방사형 탄막 방출 (커지는 옅은 링)
+            if (fb->pulseWarning()) {
+                float wp = 0.5f + 0.5f * sinf((float)glfwGetTime() * 24.0f);
+                drawCircle(fb->worldX, fb->worldY, FirewallBoss::SHIELD_R * (1.1f + 0.5f * wp),
+                           1.0f, 0.55f, 0.15f, 0.10f + 0.12f * wp);
+            }
             // 본체 — 방화벽 코어: 외곽 다이아 + 어두운 내곽 + 회전 십자 코어 + 맥동 중심
             float fb_t = (float)glfwGetTime();
             float fbp  = 0.5f + 0.5f * sinf(fb_t * 4.0f);
