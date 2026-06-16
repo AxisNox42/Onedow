@@ -123,7 +123,7 @@ public:
     std::vector<LineWall> walls;
     static constexpr float WALL_CELL  = 60.0f;   // 셀 크기(px)
     static constexpr float WALL_THICK = 30.0f;   // 차단 두께(직선 폭)
-    static constexpr int   WALL_CELLHP = 3;      // 셀 뚫는 데 필요한 피격 수
+    static constexpr int   WALL_CELLHP = 24;     // 셀 뚫는 데 필요한 피격 수(대폭 버프)
     static constexpr int   WALL_MAX   = 3;        // 동시 상한(전체 직선이라 적게)
     static constexpr float WALL_STEP  = 0.08f;    // maxHp 8% 깎일 때마다 1개
     static constexpr float WALL_ANIM  = 0.7f;     // 등장 애니메이션 길이
@@ -352,6 +352,20 @@ public:
             mb.trail.insert(mb.trail.begin(), glm::vec2(mb.x, mb.y));
             if ((int)mb.trail.size() > MINI_NSEG*MINI_STEP + 2) mb.trail.pop_back();
             if (d < MINI_HEAD + 14.0f) playerHP -= 6.0f * dt;
+        }
+        // 새끼끼리 겹침 방지 — 소프트 콜리전(서로 밀어냄)
+        for (size_t i = 0; i < minis.size(); i++) {
+            if (!minis[i].alive) continue;
+            for (size_t j = i + 1; j < minis.size(); j++) {
+                if (!minis[j].alive) continue;
+                float dx = minis[j].x - minis[i].x, dy = minis[j].y - minis[i].y;
+                float d2 = dx*dx + dy*dy, minD = MINI_HEAD * 2.4f;
+                if (d2 > 1e-4f && d2 < minD * minD) {
+                    float d = std::sqrt(d2), push = (minD - d) * 0.5f, nx = dx/d, ny = dy/d;
+                    minis[i].x -= nx*push; minis[i].y -= ny*push;
+                    minis[j].x += nx*push; minis[j].y += ny*push;
+                }
+            }
         }
         for (size_t i = 0; i < minis.size(); ) {
             if (!minis[i].alive) minis.erase(minis.begin() + i); else ++i;
@@ -728,12 +742,15 @@ public:
         // (0c) 새끼 버그 — 작은 지네(가짜창 + 머리 화살촉 + 마디). 잡몹과 확연히 구분
         for (const auto& mb : minis) {
             if (!mb.alive) continue;
-            // 가짜 창 — 머리에 붙은 프로세스 창(타이틀바 + 네온 보더), 약 200px
-            float ww = 200.0f, wh = 150.0f;
+            // 가짜 창 — 프레임만(내부 투명 → 총알/본체 비쳐 보임), 타이틀바 얇게, 300px
+            float ww = 300.0f, wh = 210.0f;
             float wx = mb.x - ww * 0.5f, wy = mb.y - wh * 0.5f;
-            drawRect(wx, wy, ww, wh, 0.05f, 0.12f, 0.07f, 0.82f);
-            drawRect(wx, wy, ww, wh * 0.24f, 0.25f, 0.7f, 0.32f, 0.95f);     // 타이틀바
-            drawNeonBorder(wx, wy, ww, wh, 0.3f, 0.85f, 0.4f);
+            const float tb = 26.0f;                                         // 고정 타이틀바(정상 비율)
+            drawRect(wx, wy, ww, tb, 0.20f, 0.55f, 0.26f, 0.88f);           // 타이틀바
+            for (int k = 0; k < 3; k++)                                     // 창 버튼 3개
+                drawCircle(wx + ww - ((float)k + 1.0f) * 15.0f, wy + tb * 0.5f, 4.0f,
+                           0.05f, 0.05f, 0.05f, 1.0f);
+            drawNeonBorder(wx, wy, ww, wh, 0.3f, 0.85f, 0.4f);             // 테두리만(내부 채움 X)
             // 몸통 마디
             for (int i = MINI_NSEG; i >= 1; i--) {
                 int idx = i * MINI_STEP;
