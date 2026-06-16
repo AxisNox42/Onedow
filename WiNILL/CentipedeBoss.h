@@ -97,10 +97,18 @@ public:
     float cannonCd = 0.0f, cannonT = 0.0f;
     int   cannonIdx = 0;
     // 새끼 버그 소환 — 작고 빠른 미니 추격 adds. main 이 summonPending 만큼 스폰.
-    static constexpr float SUMMON_INT   = 11.0f;
+    static constexpr float SUMMON_INT   = 8.5f;
     static constexpr int   SUMMON_COUNT = 3;
     float summonCd = 0.0f;
     int   summonPending = 0;
+    // ── 갑옷 벽 — 피 깎일 때마다 몸으로 맵 곳곳에 이동 차단 블록 생성(대시로만 통과) ──
+    struct ArmorWall { float x, y, r, life, maxLife; };
+    std::vector<ArmorWall> walls;
+    static constexpr float WALL_R     = 54.0f;   // 차단 반경
+    static constexpr float WALL_LIFE  = 8.0f;    // 지속(영구 아님 — 맵 순환)
+    static constexpr int   WALL_MAX   = 9;       // 동시 상한(맵 완전봉쇄 방지)
+    static constexpr float WALL_STEP  = 0.045f;  // maxHp 의 4.5% 깎일 때마다 1개
+    float lastWallHp = -1.0f;
 
     // ── 대형 패턴 로테이션(난동/똬리/장벽/잠복) ──
     static constexpr float BIG_INT = 6.0f;       // 대형 패턴 쿨다운(속도 비례 감소)
@@ -257,6 +265,40 @@ public:
             }
         }
 
+        // ── 스킬 쿨다운(상태 무관 누적 → 신뢰성). 트리거는 여기서 일괄 ──
+        cannonCd += dt;
+        if (!cannonActive && cannonCd >= CANNON_INT * cdScale() &&
+            state == 0 && chargePhase == 0 && !surging) {
+            cannonCd = 0.0f; cannonActive = true; cannonIdx = 0; cannonT = 0.0f;
+        }
+        summonCd += dt;
+        if (summonCd >= SUMMON_INT * cdScale() && state != 2) {   // 등장(state2) 중엔 안 함
+            summonCd = 0.0f; summonPending += SUMMON_COUNT;
+        }
+
+        // ── 갑옷 벽 — 피 깎인 누적량마다 맵 곳곳에 차단 블록 생성 ──
+        if (lastWallHp < 0.0f) lastWallHp = hp;             // 첫 프레임 기준
+        float step = maxHp * WALL_STEP;
+        while (hp <= lastWallHp - step) {
+            lastWallHp -= step;
+            // 플레이어와 너무 가깝지 않은 맵 임의 지점(가둠 방지)
+            float wx = 0, wy = 0;
+            for (int tryN = 0; tryN < 6; tryN++) {
+                wx = 80.0f + (float)(rand() % (screenW > 160 ? screenW - 160 : 1));
+                wy = 80.0f + (float)(rand() % (screenH > 160 ? screenH - 160 : 1));
+                float dx = wx - px, dy = wy - py;
+                if (dx*dx + dy*dy > 200.0f * 200.0f) break;   // 플레이어 200px 밖이면 채택
+            }
+            ArmorWall w; w.x = wx; w.y = wy; w.r = WALL_R; w.maxLife = w.life = WALL_LIFE;
+            walls.push_back(w);
+            if ((int)walls.size() > WALL_MAX) walls.erase(walls.begin());   // 오래된 것 제거
+        }
+        for (size_t i = 0; i < walls.size(); ) {
+            walls[i].life -= dt;
+            if (walls[i].life <= 0.0f) walls.erase(walls.begin() + i);
+            else ++i;
+        }
+
         // 배회 타이머는 조준·돌진 중 멈춤(딜 타임)
         if (state != 0 || chargePhase == 0)
             stateTimer += dt;
@@ -311,7 +353,7 @@ public:
                         surgeAng = (float)(rand() % 628) * 0.01f;
                     }
                 }
-                // ── 세그먼트 포격 — 마디들이 머리→꼬리 순서로 플레이어에게 차례 발사 ──
+                // ── 세그먼트 포격 진행(트리거는 상단) — 마디 머리→꼬리 차례 발사 ──
                 if (cannonActive) {
                     cannonT += dt;
                     while (cannonT >= CANNON_STEP) {
@@ -322,16 +364,6 @@ public:
                         ++cannonIdx;
                         if (cannonIdx > activeSeg) { cannonActive = false; cannonT = 0.0f; break; }
                     }
-                } else {
-                    cannonCd += dt;
-                    if (cannonCd >= CANNON_INT * cdScale() && !surging && chargePhase == 0) {
-                        cannonCd = 0.0f; cannonActive = true; cannonIdx = 0; cannonT = 0.0f;
-                    }
-                }
-                // ── 새끼 버그 소환 요청 (main 이 실제 스폰) ──
-                summonCd += dt;
-                if (summonCd >= SUMMON_INT * cdScale() && !surging && chargePhase == 0) {
-                    summonCd = 0.0f; summonPending += SUMMON_COUNT;
                 }
                 // 화면 경계에서 중앙으로 부드럽게 선회
                 float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
@@ -561,6 +593,21 @@ public:
     //   경고·장판류는 가짜 창 밖에서도 보여야 하므로 클리핑하지 않음.
     void renderFx(float t) const {
         BindMainShader();
+
+        // (00) 갑옷 벽 — 이동 차단 블록(대시로만 통과). 전체화면 = 공정하게 보이게
+        for (const auto& w : walls) {
+            float a = (w.life < 1.0f) ? w.life : 1.0f;            // 사라지기 직전 페이드
+            float pul = 0.5f + 0.5f * sinf(t * 3.0f + w.x * 0.03f);
+            drawDiamond(w.x, w.y, w.r * 1.95f, 0.10f, 0.20f, 0.10f, a);          // 외곽(어둠)
+            drawRect(w.x - w.r, w.y - w.r, w.r*2.0f, w.r*2.0f, 0.14f, 0.30f, 0.14f, a*0.92f); // 판
+            drawDiamond(w.x, w.y, w.r * 1.25f, 0.28f, 0.58f, 0.26f, a);
+            drawDiamond(w.x, w.y, w.r * 0.55f, 0.5f, 0.9f, 0.4f, a);
+            for (int e = 0; e < 4; e++) {                                         // 네 모서리 볼트
+                float bx = w.x + ((e & 1) ? 1 : -1) * w.r * 0.7f;
+                float by = w.y + ((e & 2) ? 1 : -1) * w.r * 0.7f;
+                drawDiamond(bx, by, 8.0f + 2.0f * pul, 0.7f, 1.0f, 0.5f, a);
+            }
+        }
 
         // (0) 탈피 지뢰 — 주황 마름모(접촉 폭발)
         for (const auto& h : hazards) {

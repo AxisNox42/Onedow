@@ -2026,6 +2026,22 @@ int main() {
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
                     playerWin.y += mvY * curMove * FIXED_DT;
+                    // 지네 갑옷 벽 — 일반 이동은 막힘(밀어냄), 대시(무적 중)는 통과
+                    if (g_CentiBoss && g_CentiBoss->alive && g_DashInvuln <= 0.0f) {
+                        float wpcx = playerWin.x + playerWin.width  * 0.5f;
+                        float wpcy = playerWin.y + playerWin.height * 0.5f;
+                        const float PLR = 18.0f;
+                        for (auto& w : g_CentiBoss->walls) {
+                            float dx = wpcx - w.x, dy = wpcy - w.y;
+                            float rr = w.r + PLR, d2 = dx*dx + dy*dy;
+                            if (d2 < rr*rr && d2 > 1e-4f) {
+                                float d = std::sqrt(d2), push = rr - d;
+                                wpcx += dx/d*push; wpcy += dy/d*push;
+                            }
+                        }
+                        playerWin.x = wpcx - playerWin.width  * 0.5f;
+                        playerWin.y = wpcy - playerWin.height * 0.5f;
+                    }
                     // 이동 잔상(afterimage) — 일정 간격으로 플레이어 중심에 옅은 시안 잔상
                     static float s_trailAcc = 0.0f;
                     s_trailAcc += FIXED_DT;
@@ -2294,13 +2310,15 @@ int main() {
                         g_CentiBoss->shakePulse = false;
                         g_ShakeTime = 0.35f; g_ShakeMag = 14.0f;
                     }
-                    // 새끼 버그 소환 — 작고 빠른 미니 추격 adds (머리 주변에서 spawn)
+                    // 새끼 버그 소환 — 작고 빠른 미니 추격 adds. 플레이어 주변 링에 spawn
+                    //   (머리는 화면 구석을 휘저어 안 보이던 문제 → 플레이어 근처로 확실히 등장).
                     if (g_CentiBoss->summonPending > 0) {
                         int n = g_CentiBoss->summonPending; g_CentiBoss->summonPending = 0;
+                        float spcx = playerWin.x + playerWin.width  * 0.5f;
+                        float spcy = playerWin.y + playerWin.height * 0.5f;
                         for (int i = 0; i < n; i++) {
-                            float a = (float)(rand()%628)*0.01f, rr = 40.0f + (float)(rand()%70);
-                            Monster* mb = new Monster(g_CentiBoss->worldX + cosf(a)*rr,
-                                                      g_CentiBoss->worldY + sinf(a)*rr, 0.5f);
+                            float a = (float)(rand()%628)*0.01f, rr = 150.0f + (float)(rand()%130);
+                            Monster* mb = new Monster(spcx + cosf(a)*rr, spcy + sinf(a)*rr, 0.5f);
                             mb->MakeKind(MobKind::CHARGER);
                             g_MonsterManager.monsters.push_back(mb);
                         }
