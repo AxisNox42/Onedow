@@ -2310,18 +2310,12 @@ int main() {
                         g_CentiBoss->shakePulse = false;
                         g_ShakeTime = 0.35f; g_ShakeMag = 14.0f;
                     }
-                    // 새끼 버그 소환 — 작고 빠른 미니 추격 adds. 플레이어 주변 링에 spawn
-                    //   (머리는 화면 구석을 휘저어 안 보이던 문제 → 플레이어 근처로 확실히 등장).
-                    if (g_CentiBoss->summonPending > 0) {
-                        int n = g_CentiBoss->summonPending; g_CentiBoss->summonPending = 0;
-                        float spcx = playerWin.x + playerWin.width  * 0.5f;
-                        float spcy = playerWin.y + playerWin.height * 0.5f;
-                        for (int i = 0; i < n; i++) {
-                            float a = (float)(rand()%628)*0.01f, rr = 150.0f + (float)(rand()%130);
-                            Monster* mb = new Monster(spcx + cosf(a)*rr, spcy + sinf(a)*rr, 0.5f);
-                            mb->MakeKind(MobKind::CHARGER);
-                            g_MonsterManager.monsters.push_back(mb);
+                    // 스킬 시전 진동(가벼운 피드백, 눈뽕 X) — 큰 진동 중이면 덮어쓰지 않음
+                    if (g_CentiBoss->wantShake > 0.0f) {
+                        if (g_ShakeTime <= 0.0f || g_CentiBoss->wantShake > g_ShakeMag) {
+                            g_ShakeTime = 0.22f; g_ShakeMag = g_CentiBoss->wantShake;
                         }
+                        g_CentiBoss->wantShake = 0.0f;
                     }
                 }
 
@@ -2559,6 +2553,34 @@ int main() {
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (nb2->hp <= 0.0f) nb2->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // BUG.proc 새끼 버그(작은 지네) vs 플레이어 총알 — 항상 피격 가능
+                if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
+                    for (auto& mb : g_CentiBoss->minis) {
+                        if (!mb.alive) continue;
+                        for (auto& b : g_Bullets) {
+                            if (!b.active || b.isEnemy) continue;
+                            if (SegDist(mb.x, mb.y, b.prevX, b.prevY, b.x, b.y) < CentipedeBoss::MINI_HEAD + 6.0f) {
+                                float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(mb.x, mb.y));
+                                float dmg;
+                                if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                                else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                                else dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                                float dealt = (dmg < mb.hp) ? dmg : mb.hp;
+                                mb.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (mb.hp <= 0.0f) {
+                                    mb.alive = false;
+                                    AddKillCombo();
+                                    g_GameManager.xp += 3;
+                                    g_GameManager.scoreAccum += 150.0f;
+                                }
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                                break;
+                            }
                         }
                     }
                 }

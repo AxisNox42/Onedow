@@ -96,11 +96,21 @@ public:
     bool  cannonActive = false;
     float cannonCd = 0.0f, cannonT = 0.0f;
     int   cannonIdx = 0;
-    // 새끼 버그 소환 — 작고 빠른 미니 추격 adds. main 이 summonPending 만큼 스폰.
-    static constexpr float SUMMON_INT   = 8.5f;
-    static constexpr int   SUMMON_COUNT = 3;
+    // ── 새끼 버그 — 작은 '지네' 형태의 추격 adds(자체 관리). 잡몹(크래셔)과 완전 분리 ──
+    struct MiniBug { float x, y, heading, hp; bool alive; std::vector<glm::vec2> trail; };
+    std::vector<MiniBug> minis;
+    static constexpr float SUMMON_INT  = 9.0f;
+    static constexpr int   SUMMON_COUNT = 2;   // 한 번에 2마리(밸런스)
+    static constexpr int   MINI_MAX    = 6;    // 동시 상한
+    static constexpr int   MINI_NSEG   = 4;    // 작은 지네: 머리 + 4마디
+    static constexpr int   MINI_STEP   = 4;
+    static constexpr float MINI_HEAD   = 15.0f;
+    static constexpr float MINI_SPD    = 240.0f;
+    static constexpr float MINI_HP0    = 60.0f;
     float summonCd = 0.0f;
-    int   summonPending = 0;
+    // 스킬 시전 진동(가벼운 피드백, 눈뽕 X) — main 이 읽고 적용
+    float wantShake = 0.0f;
+    void shake(float m) { if (m > wantShake) wantShake = m; }
     // ── 갑옷 벽 — 피 깎일 때마다 몸으로 맵 곳곳에 이동 차단 블록 생성(대시로만 통과) ──
     struct ArmorWall { float x, y, r, life, maxLife; };
     std::vector<ArmorWall> walls;
@@ -270,10 +280,33 @@ public:
         if (!cannonActive && cannonCd >= CANNON_INT * cdScale() &&
             state == 0 && chargePhase == 0 && !surging) {
             cannonCd = 0.0f; cannonActive = true; cannonIdx = 0; cannonT = 0.0f;
+            shake(7.0f);
         }
         summonCd += dt;
-        if (summonCd >= SUMMON_INT * cdScale() && state != 2) {   // 등장(state2) 중엔 안 함
-            summonCd = 0.0f; summonPending += SUMMON_COUNT;
+        if (summonCd >= SUMMON_INT * cdScale() && state != 2 && (int)minis.size() < MINI_MAX) {
+            summonCd = 0.0f;
+            for (int i = 0; i < SUMMON_COUNT && (int)minis.size() < MINI_MAX; i++) {
+                float a = (float)(rand()%628)*0.01f, rr = 150.0f + (float)(rand()%130);
+                MiniBug mb; mb.x = px + cosf(a)*rr; mb.y = py + sinf(a)*rr;
+                mb.heading = a; mb.hp = MINI_HP0; mb.alive = true;
+                mb.trail.assign(MINI_NSEG*MINI_STEP + 2, glm::vec2(mb.x, mb.y));
+                minis.push_back(mb);
+            }
+            shake(6.0f);
+        }
+        // ── 새끼 버그(작은 지네) 갱신 — 추격 + 궤적 + 접촉 피해 ──
+        for (auto& mb : minis) {
+            if (!mb.alive) continue;
+            float dx = px - mb.x, dy = py - mb.y, d = std::sqrt(dx*dx + dy*dy) + 1e-3f;
+            mb.heading = atan2f(dy, dx);
+            mb.x += dx/d * MINI_SPD * dt;
+            mb.y += dy/d * MINI_SPD * dt;
+            mb.trail.insert(mb.trail.begin(), glm::vec2(mb.x, mb.y));
+            if ((int)mb.trail.size() > MINI_NSEG*MINI_STEP + 2) mb.trail.pop_back();
+            if (d < MINI_HEAD + 14.0f) playerHP -= 6.0f * dt;
+        }
+        for (size_t i = 0; i < minis.size(); ) {
+            if (!minis[i].alive) minis.erase(minis.begin() + i); else ++i;
         }
 
         // ── 갑옷 벽 — 피 깎인 누적량마다 맵 곳곳에 차단 블록 생성 ──
@@ -312,6 +345,7 @@ public:
                     chargePhase = 2; chargeTimer = 0.0f;
                     chargeDX = cosf(d); chargeDY = sinf(d);
                     chargeTelegraph = false;
+                    shake(9.0f);                 // 돌진 개시 — 묵직한 진동
                 }
             } else if (chargePhase == 2) { // 직선 돌진
                 chargeTimer += dt;
@@ -351,6 +385,7 @@ public:
                     if (surgeCd >= SURGE_INT * cdScale() && chargePhase == 0) {
                         surging = true; surgeT = 0.0f; surgeTick = 0.0f;
                         surgeAng = (float)(rand() % 628) * 0.01f;
+                        shake(6.0f);
                     }
                 }
                 // ── 세그먼트 포격 진행(트리거는 상단) — 마디 머리→꼬리 차례 발사 ──
@@ -387,6 +422,7 @@ public:
                 bigCd += dt;
                 if (bigCd >= BIG_INT * cdScale() && chargePhase == 0 && !surging) {
                     bigCd = 0.0f; chargeTelegraph = false;
+                    shake(8.0f);                 // 대형 패턴 개시 — 진동
                     switch (rand() % 4) {
                     case 0: enterRamp(); break;
                     case 1: {  // COIL — 플레이어를 중심으로 똬리
@@ -615,6 +651,27 @@ public:
             drawCircle(h.x, h.y, h.r, 1.0f, 0.5f, 0.15f, 0.12f);
             drawDiamond(h.x, h.y, 22.0f + 6.0f * pul, 1.0f, 0.6f, 0.2f, 0.85f);
             drawDiamond(h.x, h.y, 10.0f, 1.0f, 0.9f, 0.4f, 1.0f);
+        }
+
+        // (0c) 새끼 버그 — 작은 지네(머리 화살촉 + 마디). 잡몹이 아닌 미니 지네로 보이게
+        for (const auto& mb : minis) {
+            if (!mb.alive) continue;
+            for (int i = MINI_NSEG; i >= 1; i--) {
+                int idx = i * MINI_STEP;
+                if (idx >= (int)mb.trail.size()) idx = (int)mb.trail.size() - 1;
+                if (idx < 0) idx = 0;
+                glm::vec2 s = mb.trail[idx];
+                float ssz = MINI_HEAD * (0.45f + 0.55f * (1.0f - (float)(i - 1) / (float)MINI_NSEG));
+                drawDiamond(s.x, s.y, ssz * 1.6f, 0.18f, 0.62f, 0.24f, 1.0f);
+                drawDiamond(s.x, s.y, ssz * 0.8f, 0.45f, 1.0f, 0.50f, 1.0f);
+            }
+            float dxn = cosf(mb.heading), dyn = sinf(mb.heading), pxn = -dyn, pyn = dxn;
+            float v[6] = {
+                mb.x + dxn*MINI_HEAD*1.5f, mb.y + dyn*MINI_HEAD*1.5f,
+                mb.x + pxn*MINI_HEAD*0.7f, mb.y + pyn*MINI_HEAD*0.7f,
+                mb.x - pxn*MINI_HEAD*0.7f, mb.y - pyn*MINI_HEAD*0.7f };
+            BatchVerts(v, 3, 0.5f, 1.0f, 0.55f, 1.0f);
+            drawDiamond(mb.x, mb.y, MINI_HEAD*0.85f, 0.7f, 1.0f, 0.6f, 1.0f);
         }
         // (0b) 잠복 발밑 예고 — 솟구침 직전 그림자 링
         if (state == 7 && burrowPhase == 1) {
