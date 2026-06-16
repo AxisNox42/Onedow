@@ -102,22 +102,31 @@ public:
     static constexpr float SUMMON_INT  = 9.0f;
     static constexpr int   SUMMON_COUNT = 2;   // 한 번에 2마리(밸런스)
     static constexpr int   MINI_MAX    = 6;    // 동시 상한
-    static constexpr int   MINI_NSEG   = 4;    // 작은 지네: 머리 + 4마디
+    static constexpr int   MINI_NSEG   = 5;    // 작은 지네: 머리 + 5마디
     static constexpr int   MINI_STEP   = 4;
-    static constexpr float MINI_HEAD   = 15.0f;
-    static constexpr float MINI_SPD    = 240.0f;
-    static constexpr float MINI_HP0    = 60.0f;
+    static constexpr float MINI_HEAD   = 26.0f;  // 더 크게(가시성)
+    static constexpr float MINI_SPD    = 230.0f;
+    static constexpr float MINI_HP0    = 70.0f;
     float summonCd = 0.0f;
     // 스킬 시전 진동(가벼운 피드백, 눈뽕 X) — main 이 읽고 적용
     float wantShake = 0.0f;
     void shake(float m) { if (m > wantShake) wantShake = m; }
-    // ── 갑옷 벽 — 피 깎일 때마다 몸으로 맵 곳곳에 이동 차단 블록 생성(대시로만 통과) ──
-    struct ArmorWall { float x, y, r, life, maxLife; };
-    std::vector<ArmorWall> walls;
-    static constexpr float WALL_R     = 54.0f;   // 차단 반경
-    static constexpr float WALL_LIFE  = 8.0f;    // 지속(영구 아님 — 맵 순환)
-    static constexpr int   WALL_MAX   = 9;       // 동시 상한(맵 완전봉쇄 방지)
-    static constexpr float WALL_STEP  = 0.045f;  // maxHp 의 4.5% 깎일 때마다 1개
+    // ── 죽은 지네 벽 — 피 깎일 때마다 화면을 가로지르는 '직선' 차단벽(대시로만 통과) ──
+    //   시간으로 안 사라짐. 셀 단위로 총 맞으면 그 부분만 뚫림(이동 통로 확보).
+    struct WallCell { /* per-cell hp; 0=뚫림 */ };
+    struct LineWall {
+        bool  horiz;                 // true=가로(고정 y) / false=세로(고정 x)
+        float coord;                 // 고정 좌표(가로면 y, 세로면 x)
+        float spawnT;                // 등장 애니메이션 잔여(사체가 꿈틀하다 굳음)
+        std::vector<int> cellHp;     // 셀별 HP (0 = 뚫림)
+    };
+    std::vector<LineWall> walls;
+    static constexpr float WALL_CELL  = 60.0f;   // 셀 크기(px)
+    static constexpr float WALL_THICK = 30.0f;   // 차단 두께(직선 폭)
+    static constexpr int   WALL_CELLHP = 3;      // 셀 뚫는 데 필요한 피격 수
+    static constexpr int   WALL_MAX   = 3;        // 동시 상한(전체 직선이라 적게)
+    static constexpr float WALL_STEP  = 0.08f;    // maxHp 8% 깎일 때마다 1개
+    static constexpr float WALL_ANIM  = 0.7f;     // 등장 애니메이션 길이
     float lastWallHp = -1.0f;
 
     // ── 대형 패턴 로테이션(난동/똬리/장벽/잠복) ──
@@ -133,12 +142,12 @@ public:
     static constexpr float RAMP_SHRAP_SPD = 360.0f;
     float rampSpeed = 0.0f, rampFireTimer = 0.0f;
     float rampDX = 0.0f, rampDY = 0.0f;
-    // 똬리 감기(A1)
-    static constexpr float COIL_DUR    = 2.6f;
-    static constexpr float COIL_SPIN   = 3.6f;   // rad/s
-    static constexpr float COIL_R0     = 330.0f;
-    static constexpr float COIL_RMIN   = 150.0f;
-    static constexpr float COIL_SHRINK = 70.0f;  // px/s (조임)
+    // 똬리 감기(A1) — 순간이동 X(현재 위치에서 조여듦), 오래 감음
+    static constexpr float COIL_DUR    = 4.6f;   // 도는 시간 ↑(안에 있으면 위험)
+    static constexpr float COIL_SPIN   = 4.4f;   // rad/s (더 많이 감김)
+    static constexpr float COIL_R0     = 300.0f; // 목표 시작 반경(접근 후)
+    static constexpr float COIL_RMIN   = 115.0f; // 더 조여듦
+    static constexpr float COIL_SHRINK = 42.0f;  // px/s (천천히 조임 → 오래 위협)
     float coilCX = 0, coilCY = 0, coilR = 0, coilAng = 0;
     // 장벽 분할(A3)
     static constexpr float WALL_SPD  = 780.0f;
@@ -255,6 +264,42 @@ public:
         for (auto& p : trail) p = glm::vec2(worldX, worldY);
     }
 
+    // 총알 선분이 벽 직선을 가로지르면 해당 셀 HP 감소(그 부분만 뚫림). 탄은 통과(소멸 X).
+    void hitWall(float x0, float y0, float x1, float y1) {
+        for (auto& w : walls) {
+            if (w.horiz) {
+                if ((y0 - w.coord) * (y1 - w.coord) <= 0.0f && fabsf(y1 - y0) > 1e-4f) {
+                    float tt = (w.coord - y0) / (y1 - y0);
+                    int ci = (int)((x0 + (x1 - x0) * tt) / WALL_CELL);
+                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) w.cellHp[ci]--;
+                }
+            } else {
+                if ((x0 - w.coord) * (x1 - w.coord) <= 0.0f && fabsf(x1 - x0) > 1e-4f) {
+                    float tt = (w.coord - x0) / (x1 - x0);
+                    int ci = (int)((y0 + (y1 - y0) * tt) / WALL_CELL);
+                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) w.cellHp[ci]--;
+                }
+            }
+        }
+    }
+    // 살아있는 벽 셀이 플레이어 이동을 막음(직선 밖으로 밀어냄). 대시(무적)는 main 에서 제외.
+    void blockMove(float& pcx, float& pcy, float plr) const {
+        float half = WALL_THICK * 0.5f + plr;
+        for (const auto& w : walls) {
+            if (w.horiz) {
+                int ci = (int)(pcx / WALL_CELL);
+                if (ci < 0 || ci >= (int)w.cellHp.size() || w.cellHp[ci] <= 0) continue;
+                float dy = pcy - w.coord;
+                if (fabsf(dy) < half) pcy = w.coord + (dy >= 0.0f ? half : -half);
+            } else {
+                int ci = (int)(pcy / WALL_CELL);
+                if (ci < 0 || ci >= (int)w.cellHp.size() || w.cellHp[ci] <= 0) continue;
+                float dx = pcx - w.coord;
+                if (fabsf(dx) < half) pcx = w.coord + (dx >= 0.0f ? half : -half);
+            }
+        }
+    }
+
     void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& bullets) {
         if (!alive) return;
 
@@ -309,28 +354,29 @@ public:
             if (!minis[i].alive) minis.erase(minis.begin() + i); else ++i;
         }
 
-        // ── 갑옷 벽 — 피 깎인 누적량마다 맵 곳곳에 차단 블록 생성 ──
+        // ── 죽은 지네 벽 — 피 깎인 누적량마다 화면 가로지르는 직선 차단벽 생성 ──
         if (lastWallHp < 0.0f) lastWallHp = hp;             // 첫 프레임 기준
         float step = maxHp * WALL_STEP;
         while (hp <= lastWallHp - step) {
             lastWallHp -= step;
-            // 플레이어와 너무 가깝지 않은 맵 임의 지점(가둠 방지)
-            float wx = 0, wy = 0;
-            for (int tryN = 0; tryN < 6; tryN++) {
-                wx = 80.0f + (float)(rand() % (screenW > 160 ? screenW - 160 : 1));
-                wy = 80.0f + (float)(rand() % (screenH > 160 ? screenH - 160 : 1));
-                float dx = wx - px, dy = wy - py;
-                if (dx*dx + dy*dy > 200.0f * 200.0f) break;   // 플레이어 200px 밖이면 채택
-            }
-            ArmorWall w; w.x = wx; w.y = wy; w.r = WALL_R; w.maxLife = w.life = WALL_LIFE;
-            walls.push_back(w);
-            if ((int)walls.size() > WALL_MAX) walls.erase(walls.begin());   // 오래된 것 제거
+            LineWall lw;
+            lw.horiz  = (rand() % 2) == 0;
+            lw.spawnT = WALL_ANIM;
+            int span  = lw.horiz ? screenH : screenW;       // 고정좌표 축 범위
+            int along = lw.horiz ? screenW : screenH;       // 직선이 뻗는 축 범위
+            lw.coord  = 90.0f + (float)(rand() % (span > 180 ? span - 180 : 1));
+            int nc = along / (int)WALL_CELL + 1;
+            lw.cellHp.assign(nc, WALL_CELLHP);
+            // 플레이어 위치 셀은 미리 뚫어 둠(즉시 가둠 방지)
+            float pAlong = lw.horiz ? px : py;
+            int pc = (int)(pAlong / WALL_CELL);
+            for (int k = pc - 1; k <= pc + 1; k++)
+                if (k >= 0 && k < nc) lw.cellHp[k] = 0;
+            walls.push_back(lw);
+            if ((int)walls.size() > WALL_MAX) walls.erase(walls.begin());   // 오래된 벽 제거
+            shake(8.0f);
         }
-        for (size_t i = 0; i < walls.size(); ) {
-            walls[i].life -= dt;
-            if (walls[i].life <= 0.0f) walls.erase(walls.begin() + i);
-            else ++i;
-        }
+        for (auto& w : walls) if (w.spawnT > 0.0f) w.spawnT -= dt;          // 등장 애니메이션만(시간소멸 X)
 
         // 배회 타이머는 조준·돌진 중 멈춤(딜 타임)
         if (state != 0 || chargePhase == 0)
@@ -425,14 +471,17 @@ public:
                     shake(8.0f);                 // 대형 패턴 개시 — 진동
                     switch (rand() % 4) {
                     case 0: enterRamp(); break;
-                    case 1: {  // COIL — 플레이어를 중심으로 똬리
+                    case 1: {  // COIL — 현재 위치에서 그대로 감기 시작(순간이동 X)
                         state = 5; stateTimer = 0.0f;
                         coilCX = px; coilCY = py;
-                        float mg = COIL_R0 + 40.0f;
+                        float mg = COIL_RMIN + 40.0f;
                         if (coilCX < mg) coilCX = mg; if (coilCX > screenW - mg) coilCX = screenW - mg;
                         if (coilCY < mg) coilCY = mg; if (coilCY > screenH - mg) coilCY = screenH - mg;
-                        coilR = COIL_R0;
-                        coilAng = atan2f(worldY - coilCY, worldX - coilCX);
+                        float ddx = worldX - coilCX, ddy = worldY - coilCY;
+                        coilR = std::sqrt(ddx*ddx + ddy*ddy);   // 지금 거리에서 시작 = 점프 없음
+                        if (coilR < COIL_RMIN) coilR = COIL_RMIN;
+                        if (coilR > 540.0f) coilR = 540.0f;
+                        coilAng = atan2f(ddy, ddx);
                         break; }
                     case 2: {  // WALL — 가까운 쪽에서 먼 쪽으로 가로질러 펴기
                         state = 6; stateTimer = 0.0f; wallFireT = 0.0f;
@@ -630,18 +679,39 @@ public:
     void renderFx(float t) const {
         BindMainShader();
 
-        // (00) 갑옷 벽 — 이동 차단 블록(대시로만 통과). 전체화면 = 공정하게 보이게
+        // (00) 죽은 지네 벽 — 화면 가로지르는 직선. 셀=사체 마디(뚫린 셀은 빈칸).
+        //   등장 시 마디가 차례로 떨어져 굳는(사체) 애니메이션.
         for (const auto& w : walls) {
-            float a = (w.life < 1.0f) ? w.life : 1.0f;            // 사라지기 직전 페이드
-            float pul = 0.5f + 0.5f * sinf(t * 3.0f + w.x * 0.03f);
-            drawDiamond(w.x, w.y, w.r * 1.95f, 0.10f, 0.20f, 0.10f, a);          // 외곽(어둠)
-            drawRect(w.x - w.r, w.y - w.r, w.r*2.0f, w.r*2.0f, 0.14f, 0.30f, 0.14f, a*0.92f); // 판
-            drawDiamond(w.x, w.y, w.r * 1.25f, 0.28f, 0.58f, 0.26f, a);
-            drawDiamond(w.x, w.y, w.r * 0.55f, 0.5f, 0.9f, 0.4f, a);
-            for (int e = 0; e < 4; e++) {                                         // 네 모서리 볼트
-                float bx = w.x + ((e & 1) ? 1 : -1) * w.r * 0.7f;
-                float by = w.y + ((e & 2) ? 1 : -1) * w.r * 0.7f;
-                drawDiamond(bx, by, 8.0f + 2.0f * pul, 0.7f, 1.0f, 0.5f, a);
+            int nc = (int)w.cellHp.size();
+            float anim = (w.spawnT > 0.0f) ? (w.spawnT / WALL_ANIM) : 0.0f;   // 1→0
+            for (int i = 0; i < nc; i++) {
+                if (w.cellHp[i] <= 0) continue;                   // 뚫린 셀 = 통로
+                float along = ((float)i + 0.5f) * WALL_CELL;
+                float cx = w.horiz ? along : w.coord;
+                float cy = w.horiz ? w.coord : along;
+                // 등장 애니: 마디가 위에서 떨어지듯(인덱스 위상차) + 페이드
+                float delay = anim - (float)i * 0.02f;
+                float drop = (delay > 0.0f) ? delay * 60.0f * sinf((float)i + t * 30.0f) : 0.0f;
+                float ca = (delay > 0.0f) ? (1.0f - delay) : 1.0f; if (ca < 0.2f) ca = 0.2f;
+                float oy = cy + (w.horiz ? drop : 0.0f);
+                float ox = cx + (w.horiz ? 0.0f : drop);
+                float dmg01 = (float)w.cellHp[i] / (float)WALL_CELLHP;   // 닳을수록 어둡게
+                float hsz = WALL_CELL * 0.5f;
+                // 사체 마디(셰브론) — 진행축 정렬. 어두운 죽은 녹색.
+                float fx = w.horiz ? 1.0f : 0.0f, fy = w.horiz ? 0.0f : 1.0f;
+                float pxn = -fy, pyn = fx;
+                float g = 0.30f + 0.35f * dmg01;
+                float v1x = ox + fx*hsz,        v1y = oy + fy*hsz;
+                float v2x = ox + pxn*WALL_THICK, v2y = oy + pyn*WALL_THICK;
+                float v3x = ox - fx*hsz,        v3y = oy - fy*hsz;
+                float v4x = ox - pxn*WALL_THICK, v4y = oy - pyn*WALL_THICK;
+                float vv[6];
+                vv[0]=v1x;vv[1]=v1y; vv[2]=v2x;vv[3]=v2y; vv[4]=v3x;vv[5]=v3y;
+                BatchVerts(vv, 3, 0.10f, g, 0.12f, ca);
+                vv[0]=v1x;vv[1]=v1y; vv[2]=v3x;vv[3]=v3y; vv[4]=v4x;vv[5]=v4y;
+                BatchVerts(vv, 3, 0.10f, g, 0.12f, ca);
+                drawDiamond(ox, oy, WALL_THICK * 0.9f, 0.18f, 0.5f + 0.4f*dmg01, 0.18f, ca);
+                drawDiamond(ox, oy, WALL_THICK * 0.4f, 0.4f, 0.85f, 0.4f, ca);
             }
         }
 
@@ -653,25 +723,33 @@ public:
             drawDiamond(h.x, h.y, 10.0f, 1.0f, 0.9f, 0.4f, 1.0f);
         }
 
-        // (0c) 새끼 버그 — 작은 지네(머리 화살촉 + 마디). 잡몹이 아닌 미니 지네로 보이게
+        // (0c) 새끼 버그 — 작은 지네(가짜창 + 머리 화살촉 + 마디). 잡몹과 확연히 구분
         for (const auto& mb : minis) {
             if (!mb.alive) continue;
+            // 가짜 창 — 머리에 붙은 작은 프로세스 창(타이틀바 + 네온 보더)
+            float ww = MINI_HEAD * 3.0f, wh = MINI_HEAD * 2.4f;
+            float wx = mb.x - ww * 0.5f, wy = mb.y - wh * 0.5f;
+            drawRect(wx, wy, ww, wh, 0.05f, 0.12f, 0.07f, 0.82f);
+            drawRect(wx, wy, ww, wh * 0.24f, 0.25f, 0.7f, 0.32f, 0.95f);     // 타이틀바
+            drawNeonBorder(wx, wy, ww, wh, 0.3f, 0.85f, 0.4f);
+            // 몸통 마디
             for (int i = MINI_NSEG; i >= 1; i--) {
                 int idx = i * MINI_STEP;
                 if (idx >= (int)mb.trail.size()) idx = (int)mb.trail.size() - 1;
                 if (idx < 0) idx = 0;
                 glm::vec2 s = mb.trail[idx];
-                float ssz = MINI_HEAD * (0.45f + 0.55f * (1.0f - (float)(i - 1) / (float)MINI_NSEG));
-                drawDiamond(s.x, s.y, ssz * 1.6f, 0.18f, 0.62f, 0.24f, 1.0f);
-                drawDiamond(s.x, s.y, ssz * 0.8f, 0.45f, 1.0f, 0.50f, 1.0f);
+                float ssz = MINI_HEAD * (0.5f + 0.5f * (1.0f - (float)(i - 1) / (float)MINI_NSEG));
+                drawDiamond(s.x, s.y, ssz * 1.5f, 0.18f, 0.62f, 0.24f, 1.0f);
+                drawDiamond(s.x, s.y, ssz * 0.75f, 0.45f, 1.0f, 0.50f, 1.0f);
             }
+            // 머리 화살촉 + 코어
             float dxn = cosf(mb.heading), dyn = sinf(mb.heading), pxn = -dyn, pyn = dxn;
             float v[6] = {
-                mb.x + dxn*MINI_HEAD*1.5f, mb.y + dyn*MINI_HEAD*1.5f,
-                mb.x + pxn*MINI_HEAD*0.7f, mb.y + pyn*MINI_HEAD*0.7f,
-                mb.x - pxn*MINI_HEAD*0.7f, mb.y - pyn*MINI_HEAD*0.7f };
+                mb.x + dxn*MINI_HEAD*1.4f, mb.y + dyn*MINI_HEAD*1.4f,
+                mb.x + pxn*MINI_HEAD*0.8f, mb.y + pyn*MINI_HEAD*0.8f,
+                mb.x - pxn*MINI_HEAD*0.8f, mb.y - pyn*MINI_HEAD*0.8f };
             BatchVerts(v, 3, 0.5f, 1.0f, 0.55f, 1.0f);
-            drawDiamond(mb.x, mb.y, MINI_HEAD*0.85f, 0.7f, 1.0f, 0.6f, 1.0f);
+            drawDiamond(mb.x, mb.y, MINI_HEAD*0.9f, 0.7f, 1.0f, 0.6f, 1.0f);
         }
         // (0b) 잠복 발밑 예고 — 솟구침 직전 그림자 링
         if (state == 7 && burrowPhase == 1) {
@@ -774,10 +852,13 @@ public:
             tri(tx, ty, l1x, l1y, nx, ny, r, g, b, 1.0f);
             tri(tx, ty, nx, ny, l2x, l2y, r, g, b, 1.0f);
         };
-        float ext = dash ? 0.30f : 0.0f;                                    // 날카롭게 + 돌진 시 더 길게
-        arrow(H*(1.95f+ext), H*0.62f, H*0.72f, H*0.34f, 0.08f, 0.30f, 0.10f);   // 외곽(어둠)
-        arrow(H*(1.60f+ext), H*0.46f, H*0.50f, H*0.26f, 0.22f, 0.62f*pulse, 0.24f); // 중간
-        arrow(H*(1.20f+ext), H*0.32f, H*0.32f, H*0.18f, 0.45f, 0.98f*pulse, 0.42f); // 밝은 갑각
+        float ext = dash ? 0.20f : 0.0f;                                    // 돌진 시 살짝 길게
+        // 뭉툭한 두부 — 앞은 덜 뾰족(짧은 fwd) + 넓은 옆(side) + 둥근 코로 마감
+        arrow(H*(1.15f+ext), H*0.78f, H*1.05f, H*0.40f, 0.08f, 0.30f, 0.10f);   // 외곽(어둠)
+        arrow(H*(0.95f+ext), H*0.58f, H*0.80f, H*0.32f, 0.22f, 0.62f*pulse, 0.24f); // 중간
+        arrow(H*(0.74f+ext), H*0.40f, H*0.55f, H*0.22f, 0.45f, 0.98f*pulse, 0.42f); // 밝은 갑각
+        drawCircle(worldX + dxn*H*0.7f, worldY + dyn*H*0.7f, H*0.34f,            // 둥근 코(뭉툭)
+                   0.30f, 0.72f*pulse, 0.28f, 1.0f);
         float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
         drawCircle(worldX, worldY, H*0.22f, 0.10f, 0.20f, 0.10f, 1.0f);
         drawCircle(worldX, worldY, H*0.15f, 0.5f, 1.0f*cpul, 0.55f, 1.0f);

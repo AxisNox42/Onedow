@@ -2026,19 +2026,11 @@ int main() {
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
                     playerWin.y += mvY * curMove * FIXED_DT;
-                    // 지네 갑옷 벽 — 일반 이동은 막힘(밀어냄), 대시(무적 중)는 통과
+                    // 지네 죽은-지네 벽 — 일반 이동은 직선에 막힘, 대시(무적 중)는 통과
                     if (g_CentiBoss && g_CentiBoss->alive && g_DashInvuln <= 0.0f) {
                         float wpcx = playerWin.x + playerWin.width  * 0.5f;
                         float wpcy = playerWin.y + playerWin.height * 0.5f;
-                        const float PLR = 18.0f;
-                        for (auto& w : g_CentiBoss->walls) {
-                            float dx = wpcx - w.x, dy = wpcy - w.y;
-                            float rr = w.r + PLR, d2 = dx*dx + dy*dy;
-                            if (d2 < rr*rr && d2 > 1e-4f) {
-                                float d = std::sqrt(d2), push = rr - d;
-                                wpcx += dx/d*push; wpcy += dy/d*push;
-                            }
-                        }
+                        g_CentiBoss->blockMove(wpcx, wpcy, 18.0f);
                         playerWin.x = wpcx - playerWin.width  * 0.5f;
                         playerWin.y = wpcy - playerWin.height * 0.5f;
                     }
@@ -2557,7 +2549,15 @@ int main() {
                     }
                 }
 
-                // BUG.proc 새끼 버그(작은 지네) vs 플레이어 총알 — 항상 피격 가능
+                // BUG.proc 죽은-지네 벽 — 총알이 직선을 가로지르면 그 셀만 뚫림(탄은 통과)
+                if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->walls.empty()) {
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        g_CentiBoss->hitWall(b.prevX, b.prevY, b.x, b.y);
+                    }
+                }
+
+                // BUG.proc 새끼 버그(작은 지네) vs 플레이어 총알 — 항상 피격 가능. 경험치 0.
                 if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
                     for (auto& mb : g_CentiBoss->minis) {
                         if (!mb.alive) continue;
@@ -2574,9 +2574,8 @@ int main() {
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                                 if (mb.hp <= 0.0f) {
                                     mb.alive = false;
-                                    AddKillCombo();
-                                    g_GameManager.xp += 3;
-                                    g_GameManager.scoreAccum += 150.0f;
+                                    AddKillCombo();                 // 콤보만, 경험치 0
+                                    g_GameManager.scoreAccum += 80.0f;
                                 }
                                 if (b.remainingDmg <= 0.001f) b.active = false;
                                 break;
@@ -3616,13 +3615,17 @@ int main() {
                             break;
                         }
                         // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
+                        //   지네는 화면 밖에서 곡선 돌진으로 '들어오는' 등장이라, 중앙 폭발이
+                        //   위치상 안 맞음 → 흔들기만 두고 중앙 파티클은 생략(자체 입장 연출 사용).
                         g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
-                        SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
-                        SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
-                        for (int k = 0; k < 3; k++) {
-                            SpawnEnemyExplosion(bsx + (rand()%200 - 100),
-                                                bsy + (rand()%200 - 100),
-                                                1.0f, 0.3f, 0.3f, true);
+                        if (!g_CentiBoss) {
+                            SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
+                            SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
+                            for (int k = 0; k < 3; k++) {
+                                SpawnEnemyExplosion(bsx + (rand()%200 - 100),
+                                                    bsy + (rand()%200 - 100),
+                                                    1.0f, 0.3f, 0.3f, true);
+                            }
                         }
                     }
                 }
@@ -5643,12 +5646,23 @@ int main() {
             BatchFlush();
         }
 
-        // (g4f) BUG.proc — 지네: 필드 전체에 렌더(모든 창 위로 노출되는 로밍 보스).
-        //   디아블로식 빠른 보스 — 특정 창에 갇히지 않고 화면을 휘젓는다.
+        // (g4f) BUG.proc — 지네: 모든 가짜 창 '안'으로만 렌더(창 밖 바탕화면엔 안 보임).
+        //   창마다 scissor 패스 → 다른 창에서도 보이되, 가짜창 밖 사막엔 안 그림.
         if (g_CentiBoss && g_CentiBoss->alive) {
             float ct = (float)glfwGetTime();
-            g_CentiBoss->renderFx(ct);     // 지뢰/예고선
-            g_CentiBoss->renderBody(ct);   // 머리+몸통
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            auto centiPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                g_CentiBoss->renderFx(ct);     // 벽/지뢰/예고선/새끼
+                g_CentiBoss->renderBody(ct);   // 머리+몸통
+            };
+            for (auto& fw : zwins) centiPass(fw.x, fw.y, fw.w, fw.h);
+            centiPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            if (g_Stats.turretMode)
+                for (auto& tr : g_Turrets)
+                    centiPass(tr.x - TURRET_WIN_W*0.5f, tr.y - TURRET_WIN_H*0.5f,
+                              TURRET_WIN_W, TURRET_WIN_H);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
