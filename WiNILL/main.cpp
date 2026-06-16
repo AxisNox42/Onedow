@@ -2549,11 +2549,13 @@ int main() {
                     }
                 }
 
-                // BUG.proc 죽은-지네 벽 — 총알이 직선을 가로지르면 그 셀만 뚫림(탄은 통과)
+                // BUG.proc 죽은-지네 벽 — 총알이 직선을 가로지르면 그 셀만 뚫림.
+                //   일반탄은 벽에 막혀 소멸(관통 X). 관통탄(remainingDmg>0)은 통과.
                 if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->walls.empty()) {
                     for (auto& b : g_Bullets) {
                         if (!b.active || b.isEnemy) continue;
-                        g_CentiBoss->hitWall(b.prevX, b.prevY, b.x, b.y);
+                        if (g_CentiBoss->hitWall(b.prevX, b.prevY, b.x, b.y) && b.remainingDmg <= 0.0f)
+                            b.active = false;
                     }
                 }
 

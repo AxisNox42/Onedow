@@ -264,23 +264,26 @@ public:
         for (auto& p : trail) p = glm::vec2(worldX, worldY);
     }
 
-    // 총알 선분이 벽 직선을 가로지르면 해당 셀 HP 감소(그 부분만 뚫림). 탄은 통과(소멸 X).
-    void hitWall(float x0, float y0, float x1, float y1) {
+    // 총알 선분이 벽 직선을 가로지르면 해당 셀 HP 감소(그 부분만 뚫림).
+    //   살아있는 셀에 맞았으면 true 반환(일반탄은 main 에서 소멸시킴 = 관통 안 됨).
+    bool hitWall(float x0, float y0, float x1, float y1) {
+        bool hit = false;
         for (auto& w : walls) {
             if (w.horiz) {
                 if ((y0 - w.coord) * (y1 - w.coord) <= 0.0f && fabsf(y1 - y0) > 1e-4f) {
                     float tt = (w.coord - y0) / (y1 - y0);
                     int ci = (int)((x0 + (x1 - x0) * tt) / WALL_CELL);
-                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) w.cellHp[ci]--;
+                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) { w.cellHp[ci]--; hit = true; }
                 }
             } else {
                 if ((x0 - w.coord) * (x1 - w.coord) <= 0.0f && fabsf(x1 - x0) > 1e-4f) {
                     float tt = (w.coord - x0) / (x1 - x0);
                     int ci = (int)((y0 + (y1 - y0) * tt) / WALL_CELL);
-                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) w.cellHp[ci]--;
+                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) { w.cellHp[ci]--; hit = true; }
                 }
             }
         }
+        return hit;
     }
     // 살아있는 벽 셀이 플레이어 이동을 막음(직선 밖으로 밀어냄). 대시(무적)는 main 에서 제외.
     void blockMove(float& pcx, float& pcy, float plr) const {
@@ -372,8 +375,7 @@ public:
             int pc = (int)(pAlong / WALL_CELL);
             for (int k = pc - 1; k <= pc + 1; k++)
                 if (k >= 0 && k < nc) lw.cellHp[k] = 0;
-            walls.push_back(lw);
-            if ((int)walls.size() > WALL_MAX) walls.erase(walls.begin());   // 오래된 벽 제거
+            walls.push_back(lw);   // 상한 없음 — 계속 누적(시간 소멸 X, 총으로만 뚫림)
             shake(8.0f);
         }
         for (auto& w : walls) if (w.spawnT > 0.0f) w.spawnT -= dt;          // 등장 애니메이션만(시간소멸 X)
@@ -726,8 +728,8 @@ public:
         // (0c) 새끼 버그 — 작은 지네(가짜창 + 머리 화살촉 + 마디). 잡몹과 확연히 구분
         for (const auto& mb : minis) {
             if (!mb.alive) continue;
-            // 가짜 창 — 머리에 붙은 작은 프로세스 창(타이틀바 + 네온 보더)
-            float ww = MINI_HEAD * 3.0f, wh = MINI_HEAD * 2.4f;
+            // 가짜 창 — 머리에 붙은 프로세스 창(타이틀바 + 네온 보더), 약 200px
+            float ww = 200.0f, wh = 150.0f;
             float wx = mb.x - ww * 0.5f, wy = mb.y - wh * 0.5f;
             drawRect(wx, wy, ww, wh, 0.05f, 0.12f, 0.07f, 0.82f);
             drawRect(wx, wy, ww, wh * 0.24f, 0.25f, 0.7f, 0.32f, 0.95f);     // 타이틀바
@@ -857,8 +859,6 @@ public:
         arrow(H*(1.15f+ext), H*0.78f, H*1.05f, H*0.40f, 0.08f, 0.30f, 0.10f);   // 외곽(어둠)
         arrow(H*(0.95f+ext), H*0.58f, H*0.80f, H*0.32f, 0.22f, 0.62f*pulse, 0.24f); // 중간
         arrow(H*(0.74f+ext), H*0.40f, H*0.55f, H*0.22f, 0.45f, 0.98f*pulse, 0.42f); // 밝은 갑각
-        drawCircle(worldX + dxn*H*0.7f, worldY + dyn*H*0.7f, H*0.34f,            // 둥근 코(뭉툭)
-                   0.30f, 0.72f*pulse, 0.28f, 1.0f);
         float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
         drawCircle(worldX, worldY, H*0.22f, 0.10f, 0.20f, 0.10f, 1.0f);
         drawCircle(worldX, worldY, H*0.15f, 0.5f, 1.0f*cpul, 0.55f, 1.0f);
