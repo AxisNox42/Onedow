@@ -2294,6 +2294,17 @@ int main() {
                         g_CentiBoss->shakePulse = false;
                         g_ShakeTime = 0.35f; g_ShakeMag = 14.0f;
                     }
+                    // 새끼 버그 소환 — 작고 빠른 미니 추격 adds (머리 주변에서 spawn)
+                    if (g_CentiBoss->summonPending > 0) {
+                        int n = g_CentiBoss->summonPending; g_CentiBoss->summonPending = 0;
+                        for (int i = 0; i < n; i++) {
+                            float a = (float)(rand()%628)*0.01f, rr = 40.0f + (float)(rand()%70);
+                            Monster* mb = new Monster(g_CentiBoss->worldX + cosf(a)*rr,
+                                                      g_CentiBoss->worldY + sinf(a)*rr, 0.5f);
+                            mb->MakeKind(MobKind::CHARGER);
+                            g_MonsterManager.monsters.push_back(mb);
+                        }
+                    }
                 }
 
                 // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기

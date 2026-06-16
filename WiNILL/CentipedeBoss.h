@@ -89,6 +89,18 @@ public:
     static constexpr float SURGE_SPD  = 280.0f;
     float surgeCd = 0.0f, surgeT = 0.0f, surgeTick = 0.0f, surgeAng = 0.0f;
     bool  surging = false;
+    // 세그먼트 포격 — 머리→꼬리로 마디가 차례차례 플레이어에게 발사(화면 전체 수렴)
+    static constexpr float CANNON_INT  = 9.5f;
+    static constexpr float CANNON_STEP = 0.045f;  // 마디 간 발사 간격
+    static constexpr float CANNON_SPD  = 360.0f;
+    bool  cannonActive = false;
+    float cannonCd = 0.0f, cannonT = 0.0f;
+    int   cannonIdx = 0;
+    // 새끼 버그 소환 — 작고 빠른 미니 추격 adds. main 이 summonPending 만큼 스폰.
+    static constexpr float SUMMON_INT   = 11.0f;
+    static constexpr int   SUMMON_COUNT = 3;
+    float summonCd = 0.0f;
+    int   summonPending = 0;
 
     // ── 대형 패턴 로테이션(난동/똬리/장벽/잠복) ──
     static constexpr float BIG_INT = 6.0f;       // 대형 패턴 쿨다운(속도 비례 감소)
@@ -298,6 +310,28 @@ public:
                         surging = true; surgeT = 0.0f; surgeTick = 0.0f;
                         surgeAng = (float)(rand() % 628) * 0.01f;
                     }
+                }
+                // ── 세그먼트 포격 — 마디들이 머리→꼬리 순서로 플레이어에게 차례 발사 ──
+                if (cannonActive) {
+                    cannonT += dt;
+                    while (cannonT >= CANNON_STEP) {
+                        cannonT -= CANNON_STEP;
+                        glm::vec2 s = (cannonIdx == 0) ? glm::vec2(worldX, worldY) : segPos(cannonIdx);
+                        float a = atan2f(py - s.y, px - s.x);
+                        fireFrom(bullets, s.x, s.y, cosf(a), sinf(a), CANNON_SPD, glm::vec3(0.55f, 1.0f, 0.85f));
+                        ++cannonIdx;
+                        if (cannonIdx > activeSeg) { cannonActive = false; cannonT = 0.0f; break; }
+                    }
+                } else {
+                    cannonCd += dt;
+                    if (cannonCd >= CANNON_INT * cdScale() && !surging && chargePhase == 0) {
+                        cannonCd = 0.0f; cannonActive = true; cannonIdx = 0; cannonT = 0.0f;
+                    }
+                }
+                // ── 새끼 버그 소환 요청 (main 이 실제 스폰) ──
+                summonCd += dt;
+                if (summonCd >= SUMMON_INT * cdScale() && !surging && chargePhase == 0) {
+                    summonCd = 0.0f; summonPending += SUMMON_COUNT;
                 }
                 // 화면 경계에서 중앙으로 부드럽게 선회
                 float toC = atan2f(screenH*0.5f - worldY, screenW*0.5f - worldX);
