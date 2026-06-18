@@ -371,7 +371,7 @@ struct DroneState {
     float angle     = 0.0f;
     float fireTimer = 0.0f;
 };
-static const int MAX_DRONES = 2;
+static const int MAX_DRONES = 4;
 DroneState g_Drones[MAX_DRONES] = {};
 
 // 포탑 (CANNON + DRONE_2 조합)
@@ -1436,7 +1436,7 @@ int main() {
             bool bgmOn = (cs == GameState::RUNNING || cs == GameState::PAUSED ||
                           cs == GameState::AUG_SELECT || cs == GameState::DEBUFF_SELECT ||
                           cs == GameState::READY);
-            if (bgmOn) Audio::PlayBgmMain(); else Audio::StopBgm();
+            (void)bgmOn; Audio::StopBgm();   // BGM 험("우우웅") 제거 — 항상 정지
         }
 
         // 크리에이티브 무적 — 매 프레임 체력 풀 고정 (절대 죽지 않음)
@@ -3514,30 +3514,14 @@ int main() {
                         default: startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
                         }
                     }
-                    else if (!g_PolySpawned && g_GameManager.score >= 500000) {
-                        // 폴리모프 — 50만점 고정 (1회)
-                        g_PolySpawned = true;
-                        startWarn(4, L"POLYMORPH.vir", polyHpC);
-                    }
                     else if (g_GameManager.score >= g_NextBossScore) {
-                        // 일반 보스 (슬라임/글리치/리로드/스팸 랜덤) — 다음 임계 +20만
+                        // 업데이트된 보스(지네)만 등장 — 다음 임계 +20만
                         g_NextBossScore += 200000;
-                        // 점수 비례 체력 스케일 ↑ (20만=×2 … 상한 ×12) — 초반 강화 보정
                         float sc = 1.0f + (float)g_GameManager.score / 200000.0f;
                         if (sc > 12.0f) sc = 12.0f;
-                        // 라운드2: 플레이어 레벨 비례 추가 스케일 — 후반 원펀맨이라도 보스는 위협 유지
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
-                        switch (rand() % 8) {
-                        case 0:  startWarn(0, L"SLIME.worm",   bossHp);         break;
-                        case 1:  startWarn(1, L"GLITCH.sys",   bossHp * 0.7f);  break;
-                        case 2:  startWarn(2, L"RELOADER.exe", bossHp);         break;
-                        case 3:  startWarn(3, L"SPAM.dll",     bossHp * 0.65f); break;
-                        case 4:  startWarn(5, L"KERNEL.sys",   bossHp * 0.45f); break;  // 커널 (DPS체크·자가붕괴) — HP↓로 후반 처치 가능
-                        case 5:  startWarn(6, L"FIREWALL.sys", bossHp * 0.7f);  break;  // 방화벽 (보호막 방어형)
-                        case 6:  startWarn(7, L"BOTNET.exe",   bossHp * 0.75f); break;  // 봇넷 (물량형 투척)
-                        default: startWarn(8, L"BUG.proc",     bossHp * 0.7f);  break;  // 지네 (배회+돌진)
-                        }
+                        startWarn(8, L"BUG.proc", bossHp);   // 지네 — 기본 HP + 잡몹 전체 흡수
                     }
                 }
 
@@ -3596,8 +3580,8 @@ int main() {
                                 for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
                                 for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
                                 for (auto* bm : g_MonsterManager.bombers)     if (bm->alive) absorb += bm->hp;
-                                float cap = g_BossWarnHp * 2.0f;   // 상한: 기본 HP의 2배까지만 흡수(스펀지 방지)
-                                if (absorb > cap) absorb = cap;
+                                // 상한 제거 — 진짜 '잡몹 전체 체력 + 보스 체력'. 후반 탱커 잡몹
+                                //   horde 가 많을수록 보스도 그만큼 단단(잡몹보다 빨리 죽는 문제 해결).
                                 g_CentiBoss->hp += absorb; g_CentiBoss->maxHp += absorb;
                                 // 잡몹 흡수 — 화면 정리(순수 듀얼)
                                 for (auto* m  : g_MonsterManager.monsters)   delete m;
@@ -6532,11 +6516,7 @@ int main() {
                     drawRect(-off, by + bh, (float)screenWidth, bh, 1.0f, 0.0f, 1.0f, a);
                 }
             }
-            // 2) "펑!" 화이트아웃 깜빡임
-            if (gb->burstFlash > 0.01f) {
-                drawRect(0, 0, (float)screenWidth, (float)screenHeight,
-                         1.0f, 1.0f, 1.0f, gb->burstFlash * 0.85f);
-            }
+            // 2) "펑!" 화이트아웃 깜빡임 — 제거(눈뽕/잔상 플래시 빼달라는 요청)
             // 3) 텍스트 노이즈 — 외계어 에러 깜빡
             if (gb->textNoise > 0.3f && (rand() % 2 == 0)) {
                 static const wchar_t* errs[4] =

@@ -123,7 +123,7 @@ public:
     std::vector<LineWall> walls;
     static constexpr float WALL_CELL  = 60.0f;   // 셀 크기(px)
     static constexpr float WALL_THICK = 30.0f;   // 차단 두께(직선 폭)
-    static constexpr int   WALL_CELLHP = 24;     // 셀 뚫는 데 필요한 피격 수(대폭 버프)
+    static constexpr int   WALL_CELLHP = 10;     // 셀 뚫는 데 필요한 피격 수(대폭 버프)
     static constexpr int   WALL_MAX   = 3;        // 동시 상한(전체 직선이라 적게)
     static constexpr float WALL_STEP  = 0.08f;    // maxHp 8% 깎일 때마다 1개
     static constexpr float WALL_ANIM  = 0.7f;     // 등장 애니메이션 길이
@@ -270,17 +270,21 @@ public:
         bool hit = false;
         for (auto& w : walls) {
             if (w.horiz) {
-                if ((y0 - w.coord) * (y1 - w.coord) <= 0.0f && fabsf(y1 - y0) > 1e-4f) {
-                    float tt = (w.coord - y0) / (y1 - y0);
-                    int ci = (int)((x0 + (x1 - x0) * tt) / WALL_CELL);
-                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) { w.cellHp[ci]--; hit = true; }
-                }
+                bool crossed = (y0 - w.coord) * (y1 - w.coord) <= 0.0f && fabsf(y1 - y0) > 1e-4f;
+                float cx;
+                if (crossed) { float tt = (w.coord - y0) / (y1 - y0); cx = x0 + (x1 - x0) * tt; }
+                else if (fabsf((y0 + y1) * 0.5f - w.coord) < WALL_THICK * 0.5f) cx = (x0 + x1) * 0.5f; // 평행 근접(좌우 관통 차단)
+                else continue;
+                int ci = (int)(cx / WALL_CELL);
+                if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) { w.cellHp[ci]--; hit = true; }
             } else {
-                if ((x0 - w.coord) * (x1 - w.coord) <= 0.0f && fabsf(x1 - x0) > 1e-4f) {
-                    float tt = (w.coord - x0) / (x1 - x0);
-                    int ci = (int)((y0 + (y1 - y0) * tt) / WALL_CELL);
-                    if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) { w.cellHp[ci]--; hit = true; }
-                }
+                bool crossed = (x0 - w.coord) * (x1 - w.coord) <= 0.0f && fabsf(x1 - x0) > 1e-4f;
+                float cy;
+                if (crossed) { float tt = (w.coord - x0) / (x1 - x0); cy = y0 + (y1 - y0) * tt; }
+                else if (fabsf((x0 + x1) * 0.5f - w.coord) < WALL_THICK * 0.5f) cy = (y0 + y1) * 0.5f;
+                else continue;
+                int ci = (int)(cy / WALL_CELL);
+                if (ci >= 0 && ci < (int)w.cellHp.size() && w.cellHp[ci] > 0) { w.cellHp[ci]--; hit = true; }
             }
         }
         return hit;
@@ -305,6 +309,7 @@ public:
 
     void Update(float px, float py, float dt, float& playerHP, std::vector<Bullet>& bullets) {
         if (!alive) return;
+        const glm::vec3 BUL(0.95f, 0.35f, 0.95f);   // 보스 탄 색상 — 한 가지(마젠타)로 통일
 
         // ── 탈피(Molt) — HP 임계마다 꼬리 마디 사출 → 지뢰 + 가속 ──
         {
@@ -331,16 +336,22 @@ public:
             shake(7.0f);
         }
         summonCd += dt;
-        if (summonCd >= SUMMON_INT * cdScale() && state != 2 && (int)minis.size() < MINI_MAX) {
+        if (summonCd >= SUMMON_INT * cdScale() && state != 2) {   // 상한 없음 — 일정 시간마다 계속
             summonCd = 0.0f;
-            for (int i = 0; i < SUMMON_COUNT && (int)minis.size() < MINI_MAX; i++) {
-                float a = (float)(rand()%628)*0.01f, rr = 150.0f + (float)(rand()%130);
-                MiniBug mb; mb.x = px + cosf(a)*rr; mb.y = py + sinf(a)*rr;
-                mb.heading = a; mb.hp = MINI_HP0; mb.alive = true;
+            for (int i = 0; i < SUMMON_COUNT; i++) {
+                float ex, ey;                                     // 화면 끝(가장자리)에서만 생성
+                switch (rand() % 4) {
+                case 0:  ex = (float)(rand()%screenW);   ey = -24.0f;                 break;
+                case 1:  ex = (float)(rand()%screenW);   ey = (float)screenH + 24.0f; break;
+                case 2:  ex = -24.0f;                    ey = (float)(rand()%screenH); break;
+                default: ex = (float)screenW + 24.0f;    ey = (float)(rand()%screenH); break;
+                }
+                MiniBug mb; mb.x = ex; mb.y = ey;
+                mb.heading = atan2f(py - ey, px - ex); mb.hp = MINI_HP0; mb.alive = true;
                 mb.trail.assign(MINI_NSEG*MINI_STEP + 2, glm::vec2(mb.x, mb.y));
                 minis.push_back(mb);
             }
-            shake(6.0f);
+            shake(5.0f);
         }
         // ── 새끼 버그(작은 지네) 갱신 — 추격 + 궤적 + 접촉 피해 ──
         for (auto& mb : minis) {
@@ -429,7 +440,7 @@ public:
                         surgeTick = 0.0f;
                         for (int i = 0; i < 2; i++) {
                             float a = surgeAng + (float)i * 3.14159265f;
-                            fireDir(bullets, cosf(a), sinf(a), SURGE_SPD, glm::vec3(0.7f, 1.0f, 0.4f));
+                            fireDir(bullets, cosf(a), sinf(a), SURGE_SPD, BUL);
                         }
                     }
                     if (surgeT >= SURGE_DUR) { surging = false; surgeCd = 0.0f; }
@@ -440,7 +451,7 @@ public:
                         float base = atan2f(py - worldY, px - worldX);
                         for (int i = 0; i < SPIT_N; i++) {
                             float a = base + ((float)i / (float)(SPIT_N - 1) - 0.5f) * 0.8f;
-                            fireDir(bullets, cosf(a), sinf(a), SPIT_SPD, glm::vec3(0.6f, 1.0f, 0.5f));
+                            fireDir(bullets, cosf(a), sinf(a), SPIT_SPD, BUL);
                         }
                     }
                     surgeCd += dt;       // 폭주 발동
@@ -457,7 +468,7 @@ public:
                         cannonT -= CANNON_STEP;
                         glm::vec2 s = (cannonIdx == 0) ? glm::vec2(worldX, worldY) : segPos(cannonIdx);
                         float a = atan2f(py - s.y, px - s.x);
-                        fireFrom(bullets, s.x, s.y, cosf(a), sinf(a), CANNON_SPD, glm::vec3(0.55f, 1.0f, 0.85f));
+                        fireFrom(bullets, s.x, s.y, cosf(a), sinf(a), CANNON_SPD, BUL);
                         ++cannonIdx;
                         if (cannonIdx > activeSeg) { cannonActive = false; cannonT = 0.0f; break; }
                     }
@@ -560,8 +571,8 @@ public:
             if (rampFireTimer >= fi) {
                 rampFireTimer = 0.0f;
                 float pxn = -rampDY, pyn = rampDX;
-                fireDir(bullets,  pxn,  pyn, RAMP_FIRE_SPD, glm::vec3(0.95f, 0.9f, 0.35f));
-                fireDir(bullets, -pxn, -pyn, RAMP_FIRE_SPD, glm::vec3(0.95f, 0.9f, 0.35f));
+                fireDir(bullets,  pxn,  pyn, RAMP_FIRE_SPD, BUL);
+                fireDir(bullets, -pxn, -pyn, RAMP_FIRE_SPD, BUL);
             }
             // 벽 충돌 → 반사 + 감속(박을수록 느려짐) + 방사 파편
             float mg = HEAD * 0.55f;
@@ -577,7 +588,7 @@ public:
                 rampSpeed *= RAMP_DECAY;     // 박을수록 감속
                 for (int i = 0; i < RAMP_SHRAP; i++) {
                     float a = (float)i / (float)RAMP_SHRAP * 6.2831853f + (float)(rand()%100)*0.01f;
-                    fireDir(bullets, cosf(a), sinf(a), RAMP_SHRAP_SPD, glm::vec3(0.95f, 0.9f, 0.3f));
+                    fireDir(bullets, cosf(a), sinf(a), RAMP_SHRAP_SPD, BUL);
                 }
                 shakePulse = true;
                 if (rampSpeed < RAMP_MIN) { backToWander(); bigCd = 0.0f; }   // 다 느려지면 종료
@@ -589,7 +600,10 @@ public:
             worldX = coilCX + cosf(coilAng) * coilR;
             worldY = coilCY + sinf(coilAng) * coilR;
             heading = coilAng + 1.5707963f;       // 접선
-            if (stateTimer >= COIL_DUR) { backToWander(); bigCd = 0.0f; }
+            // 플레이어가 링 밖으로 빠져나가면 똬리 중단 → 배회 (갇힌 사람만 위협)
+            float edx = px - coilCX, edy = py - coilCY;
+            bool escaped = (edx*edx + edy*edy) > (coilR + 70.0f) * (coilR + 70.0f);
+            if (escaped || stateTimer >= COIL_DUR) { backToWander(); bigCd = 0.0f; }
         }
         else if (state == 6) {       // ── 장벽 분할(A3): 가로질러 펴며 견제 ──
             worldX += (float)wallDir * WALL_SPD * dt;
@@ -598,7 +612,7 @@ public:
             if (wallFireT >= WALL_FIRE) {
                 wallFireT = 0.0f;
                 float base = atan2f(py - worldY, px - worldX);
-                fireDir(bullets, cosf(base), sinf(base), 330.0f, glm::vec3(0.5f, 1.0f, 0.5f));
+                fireDir(bullets, cosf(base), sinf(base), 330.0f, BUL);
             }
             float M = HEAD;
             if (worldX < -M || worldX > screenW + M) {
@@ -623,7 +637,7 @@ public:
                     for (auto& p : trail) p = glm::vec2(worldX, worldY);
                     for (int i = 0; i < BURROW_SHRAP; i++) {
                         float a = (float)i / (float)BURROW_SHRAP * 6.2831853f + (float)(rand()%100)*0.01f;
-                        fireDir(bullets, cosf(a), sinf(a), BURROW_SHRAP_SPD, glm::vec3(0.8f, 1.0f, 0.4f));
+                        fireDir(bullets, cosf(a), sinf(a), BURROW_SHRAP_SPD, BUL);
                     }
                     shakePulse = true;
                 }
@@ -641,8 +655,8 @@ public:
             if (shedTimer >= SHED_INT * cdScale()) {
                 shedTimer = 0.0f;
                 float pxn = -sinf(heading), pyn = cosf(heading);
-                fireDir(bullets,  pxn,  pyn, SHED_SPD, glm::vec3(0.5f, 1.0f, 0.45f));
-                fireDir(bullets, -pxn, -pyn, SHED_SPD, glm::vec3(0.5f, 1.0f, 0.45f));
+                fireDir(bullets,  pxn,  pyn, SHED_SPD, BUL);
+                fireDir(bullets, -pxn, -pyn, SHED_SPD, BUL);
             }
         }
         // ── 탈피 지뢰 갱신 + 접촉 폭발 ──
@@ -653,7 +667,7 @@ public:
             if ((dx*dx + dy*dy) < h.r * h.r) {   // 접촉 → 방사형 파편 폭발
                 for (int k = 0; k < MOLT_SHRAP; k++) {
                     float a = (float)k / (float)MOLT_SHRAP * 6.2831853f;
-                    fireFrom(bullets, h.x, h.y, cosf(a), sinf(a), MOLT_SHRAP_SPD, glm::vec3(1.0f, 0.6f, 0.2f));
+                    fireFrom(bullets, h.x, h.y, cosf(a), sinf(a), MOLT_SHRAP_SPD, BUL);
                 }
                 h.life = 0.0f;
             }
@@ -723,11 +737,11 @@ public:
                 float v4x = ox - pxn*WALL_THICK, v4y = oy - pyn*WALL_THICK;
                 float vv[6];
                 vv[0]=v1x;vv[1]=v1y; vv[2]=v2x;vv[3]=v2y; vv[4]=v3x;vv[5]=v3y;
-                BatchVerts(vv, 3, 0.10f, g, 0.12f, ca);
+                BatchVerts(vv, 3, 0.10f, 0.06f, g, ca);
                 vv[0]=v1x;vv[1]=v1y; vv[2]=v3x;vv[3]=v3y; vv[4]=v4x;vv[5]=v4y;
-                BatchVerts(vv, 3, 0.10f, g, 0.12f, ca);
-                drawDiamond(ox, oy, WALL_THICK * 0.9f, 0.18f, 0.5f + 0.4f*dmg01, 0.18f, ca);
-                drawDiamond(ox, oy, WALL_THICK * 0.4f, 0.4f, 0.85f, 0.4f, ca);
+                BatchVerts(vv, 3, 0.10f, 0.06f, g, ca);
+                drawDiamond(ox, oy, WALL_THICK * 0.9f, 0.45f, 0.2f, 0.6f + 0.4f*dmg01, ca);
+                drawDiamond(ox, oy, WALL_THICK * 0.4f, 0.7f, 0.4f, 0.95f, ca);
             }
         }
 
@@ -746,11 +760,11 @@ public:
             float ww = 300.0f, wh = 210.0f;
             float wx = mb.x - ww * 0.5f, wy = mb.y - wh * 0.5f;
             const float tb = 26.0f;                                         // 고정 타이틀바(정상 비율)
-            drawRect(wx, wy, ww, tb, 0.20f, 0.55f, 0.26f, 0.88f);           // 타이틀바
+            drawRect(wx, wy, ww, tb, 0.45f, 0.18f, 0.70f, 0.88f);           // 타이틀바
             for (int k = 0; k < 3; k++)                                     // 창 버튼 3개
                 drawCircle(wx + ww - ((float)k + 1.0f) * 15.0f, wy + tb * 0.5f, 4.0f,
                            0.05f, 0.05f, 0.05f, 1.0f);
-            drawNeonBorder(wx, wy, ww, wh, 0.3f, 0.85f, 0.4f);             // 테두리만(내부 채움 X)
+            drawNeonBorder(wx, wy, ww, wh, 0.6f, 0.3f, 0.95f);             // 테두리만(내부 채움 X)
             // 몸통 마디
             for (int i = MINI_NSEG; i >= 1; i--) {
                 int idx = i * MINI_STEP;
@@ -758,8 +772,8 @@ public:
                 if (idx < 0) idx = 0;
                 glm::vec2 s = mb.trail[idx];
                 float ssz = MINI_HEAD * (0.5f + 0.5f * (1.0f - (float)(i - 1) / (float)MINI_NSEG));
-                drawDiamond(s.x, s.y, ssz * 1.5f, 0.18f, 0.62f, 0.24f, 1.0f);
-                drawDiamond(s.x, s.y, ssz * 0.75f, 0.45f, 1.0f, 0.50f, 1.0f);
+                drawDiamond(s.x, s.y, ssz * 1.5f, 0.40f, 0.15f, 0.62f, 1.0f);
+                drawDiamond(s.x, s.y, ssz * 0.75f, 0.75f, 0.4f, 1.0f, 1.0f);
             }
             // 머리 화살촉 + 코어
             float dxn = cosf(mb.heading), dyn = sinf(mb.heading), pxn = -dyn, pyn = dxn;
@@ -767,8 +781,8 @@ public:
                 mb.x + dxn*MINI_HEAD*1.4f, mb.y + dyn*MINI_HEAD*1.4f,
                 mb.x + pxn*MINI_HEAD*0.8f, mb.y + pyn*MINI_HEAD*0.8f,
                 mb.x - pxn*MINI_HEAD*0.8f, mb.y - pyn*MINI_HEAD*0.8f };
-            BatchVerts(v, 3, 0.5f, 1.0f, 0.55f, 1.0f);
-            drawDiamond(mb.x, mb.y, MINI_HEAD*0.9f, 0.7f, 1.0f, 0.6f, 1.0f);
+            BatchVerts(v, 3, 0.8f, 0.45f, 1.0f, 1.0f);
+            drawDiamond(mb.x, mb.y, MINI_HEAD*0.9f, 0.9f, 0.6f, 1.0f, 1.0f);
         }
         // (0b) 잠복 발밑 예고 — 솟구침 직전 그림자 링
         if (state == 7 && burrowPhase == 1) {
@@ -852,8 +866,8 @@ public:
             if (fl < 1e-3f) { fx = cosf(heading); fy = sinf(heading); } else { fx /= fl; fy /= fl; }
             float head01 = 1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1);
             float br = 0.5f + 0.5f * head01;
-            chevron(s.x, s.y, fx, fy, sz*1.55f, sz*0.95f, 0.10f, 0.40f*br, 0.14f);   // 외곽(어둠)
-            chevron(s.x, s.y, fx, fy, sz*1.00f, sz*0.58f, 0.42f, 0.95f*br, 0.46f);   // 밝은 코어
+            chevron(s.x, s.y, fx, fy, sz*1.55f, sz*0.95f, 0.28f, 0.08f, 0.42f);   // 외곽(어둠)
+            chevron(s.x, s.y, fx, fy, sz*1.00f, sz*0.58f, 0.55f, 0.22f, 0.95f*br);   // 밝은 코어
         }
 
         // ── 머리 — 진행방향으로 뾰족한 화살촉(레이어드 녹색) + 맥동 코어 ──
@@ -873,13 +887,13 @@ public:
         };
         float ext = dash ? 0.20f : 0.0f;                                    // 돌진 시 살짝 길게
         // 뭉툭한 두부 — 앞은 덜 뾰족(짧은 fwd) + 넓은 옆(side) + 둥근 코로 마감
-        arrow(H*(1.15f+ext), H*0.78f, H*1.05f, H*0.40f, 0.08f, 0.30f, 0.10f);   // 외곽(어둠)
-        arrow(H*(0.95f+ext), H*0.58f, H*0.80f, H*0.32f, 0.22f, 0.62f*pulse, 0.24f); // 중간
-        arrow(H*(0.74f+ext), H*0.40f, H*0.55f, H*0.22f, 0.45f, 0.98f*pulse, 0.42f); // 밝은 갑각
+        arrow(H*(1.15f+ext), H*0.78f, H*1.05f, H*0.40f, 0.22f, 0.06f, 0.34f);   // 외곽(어둠)
+        arrow(H*(0.95f+ext), H*0.58f, H*0.80f, H*0.32f, 0.45f, 0.18f, 0.72f*pulse); // 중간
+        arrow(H*(0.74f+ext), H*0.40f, H*0.55f, H*0.22f, 0.70f, 0.40f, 1.0f*pulse); // 밝은 갑각
         float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
-        drawCircle(worldX, worldY, H*0.22f, 0.10f, 0.20f, 0.10f, 1.0f);
-        drawCircle(worldX, worldY, H*0.15f, 0.5f, 1.0f*cpul, 0.55f, 1.0f);
-        drawCircle(worldX, worldY, H*0.07f, 0.95f, 1.0f, 0.9f, 1.0f);
+        drawCircle(worldX, worldY, H*0.22f, 0.20f, 0.06f, 0.28f, 1.0f);
+        drawCircle(worldX, worldY, H*0.15f, 0.7f, 0.4f*cpul, 1.0f, 1.0f);
+        drawCircle(worldX, worldY, H*0.07f, 1.0f, 0.85f, 1.0f, 1.0f);
         BatchFlush();
     }
 };
