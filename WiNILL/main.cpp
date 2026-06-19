@@ -347,6 +347,20 @@ bool g_aug1Released = true, g_aug2Released = true, g_aug3Released = true;
 TextRenderer   g_TextL;   // 큰 글자 (증강 이름, 상태 타이틀)
 TextRenderer   g_TextS;   // 작은 글자 (설명, 힌트)
 TextRenderer   g_TextXL;  // 초대형 타이틀(시작창 로고) 전용 — 고해상도 래스터
+
+// 가짜 앱 창 한 개의 '크롬'(배경+고정높이 타이틀바+보더+제목)만 그림.
+//   내용(월드/본체)은 호출측이 별도로. 타이틀바 높이는 항상 동일(WIN_TB).
+static constexpr float WIN_TB = 22.0f;   // 타이틀바 고정 높이(모든 가짜창 공통)
+static void DrawAppWindow(float wx, float wy, float w, float h, const wchar_t* title) {
+    BatchFlush(); glDisable(GL_BLEND);
+    drawRect(wx, wy, w, h, 0.05f, 0.05f, 0.09f, 0.88f);            // 본문(살짝 투명 → 겹쳐도 비침)
+    BatchFlush(); glEnable(GL_BLEND);
+    drawRect(wx, wy, w, WIN_TB, 0.45f, 0.18f, 0.70f, 1.0f);       // 타이틀바(고정 높이)
+    drawNeonBorder(wx, wy, w, h, 0.6f, 0.3f, 0.95f);
+    BatchFlush();
+    if (title) g_TextS.Draw(title, wx + 8.0f, wy + 4.0f, 0.5f, 1.0f, 0.95f, 1.0f, 1.0f);
+    BatchFlush();   // 메인 셰이더로 복귀
+}
 #ifdef _WIN32
 HANDLE         g_FontMemHandle   = nullptr; // Dongle (한국어)
 HANDLE         g_OswaldMemHandle = nullptr; // Oswald (라틴/키릴)
@@ -5652,9 +5666,8 @@ int main() {
                               TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-            // 새끼 버그 — 각자 '진짜 가짜창'(불투명 + 타이틀바 이름 + 월드 비침).
-            //   우선순위 레이아웃: y 오름차순 정렬 → 화면 아래쪽 창이 위로 겹쳐 안정적 스택.
-            const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H, MTB = CentipedeBoss::MINI_WIN_TB;
+            // 새끼 버그 — 각자 가짜 앱 창(DrawAppWindow 함수). 우선순위: y 오름차순(아래가 위로).
+            const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H;
             std::vector<CentipedeBoss::MiniBug*> ord;
             for (auto& mb : g_CentiBoss->minis) if (mb.alive) ord.push_back(&mb);
             std::sort(ord.begin(), ord.end(),
@@ -5662,19 +5675,16 @@ int main() {
             for (auto* mbp : ord) {
                 auto& mb = *mbp;
                 float wx = mb.x - MW*0.5f, wy = mb.y - MH*0.5f;
-                BatchFlush(); glDisable(GL_BLEND);
-                drawRect(wx, wy, MW, MH, 0.05f, 0.05f, 0.09f, 1.0f);            // 창 본문(불투명)
-                BatchFlush(); glEnable(GL_BLEND);
-                drawRect(wx, wy, MW, MTB, 0.45f, 0.18f, 0.70f, 1.0f);          // 얇은 타이틀바
-                drawNeonBorder(wx, wy, MW, MH, 0.6f, 0.3f, 0.95f);
-                BatchFlush();
-                g_TextS.Draw(L"bug.sub", wx + 7.0f, wy + 1.0f, 0.42f, 1.0f, 0.92f, 1.0f, 0.95f);  // 타이틀
+                DrawAppWindow(wx, wy, MW, MH, L"bug.sub");                      // 창 크롬(함수)
+                // 창 안 월드(탄) — scissor 로 클리핑
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                WorldScissor(wx, wy, MW, MH);                                   // 창 안 = 월드 비침
+                WorldScissor(wx, wy, MW, MH);
                 for (auto& b : g_Bullets)
                     if (b.active && inWin(b.x, b.y, wx, wy, MW, MH)) drawBullet(b);
-                g_CentiBoss->drawMini(mb);
                 BatchFlush(); glDisable(GL_SCISSOR_TEST);
+                // 새끼 본체 — 창 중앙(항상 보이게, scissor 없이 위에 그림)
+                g_CentiBoss->drawMini(mb);
+                BatchFlush();
             }
         }
 
