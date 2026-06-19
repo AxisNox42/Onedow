@@ -4840,6 +4840,28 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
+        // 새끼 지네 창 — 우선순위 낮음(플레이어 창보다 먼저 그려 뒤로 깔림).
+        //   각자 가짜 앱 창(DrawAppWindow). y 오름차순(아래가 위로 겹침).
+        if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
+            const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H;
+            std::vector<CentipedeBoss::MiniBug*> ord;
+            for (auto& mb : g_CentiBoss->minis) if (mb.alive) ord.push_back(&mb);
+            std::sort(ord.begin(), ord.end(),
+                      [](CentipedeBoss::MiniBug* a, CentipedeBoss::MiniBug* b) { return a->y < b->y; });
+            for (auto* mbp : ord) {
+                auto& mb = *mbp;
+                float wx = mb.x - MW*0.5f, wy = mb.y - MH*0.5f;
+                DrawAppWindow(wx, wy, MW, MH, L"bug.sub");
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy, MW, MH);
+                for (auto& b : g_Bullets)
+                    if (b.active && inWin(b.x, b.y, wx, wy, MW, MH)) drawBullet(b);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+                g_CentiBoss->drawMini(mb);
+                BatchFlush();
+            }
+        }
+
         // (c) 플레이어 FakeWindow 배경 — 블렌드 OFF 로 직접 덮어쓰기
         //     원거리 몹 창과 겹친 영역도 player 색으로 깔끔하게 덮임 (누적 없음)
         //     ranged 컨텐츠 (b) 가 player 영역에 그려졌으면 여기서 덮여 사라짐
@@ -5665,27 +5687,6 @@ int main() {
                     centiPass(tr.x - TURRET_WIN_W*0.5f, tr.y - TURRET_WIN_H*0.5f,
                               TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-            // 새끼 버그 — 각자 가짜 앱 창(DrawAppWindow 함수). 우선순위: y 오름차순(아래가 위로).
-            const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H;
-            std::vector<CentipedeBoss::MiniBug*> ord;
-            for (auto& mb : g_CentiBoss->minis) if (mb.alive) ord.push_back(&mb);
-            std::sort(ord.begin(), ord.end(),
-                      [](CentipedeBoss::MiniBug* a, CentipedeBoss::MiniBug* b) { return a->y < b->y; });
-            for (auto* mbp : ord) {
-                auto& mb = *mbp;
-                float wx = mb.x - MW*0.5f, wy = mb.y - MH*0.5f;
-                DrawAppWindow(wx, wy, MW, MH, L"bug.sub");                      // 창 크롬(함수)
-                // 창 안 월드(탄) — scissor 로 클리핑
-                BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                WorldScissor(wx, wy, MW, MH);
-                for (auto& b : g_Bullets)
-                    if (b.active && inWin(b.x, b.y, wx, wy, MW, MH)) drawBullet(b);
-                BatchFlush(); glDisable(GL_SCISSOR_TEST);
-                // 새끼 본체 — 창 중앙(항상 보이게, scissor 없이 위에 그림)
-                g_CentiBoss->drawMini(mb);
-                BatchFlush();
-            }
         }
 
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP
