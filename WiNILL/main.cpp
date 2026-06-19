@@ -3598,8 +3598,9 @@ int main() {
                         case 5:  startWarn(5, L"KERNEL.sys",    bossHpC * 0.45f); break;  // DPS체크 — 자가붕괴 보정 위해 HP↓
                         case 6:  startWarn(6, L"FIREWALL.sys",  bossHpC * 0.7f);  break;
                         case 7:  startWarn(7, L"BOTNET.exe",    bossHpC * 0.75f); break;
-                        case 8:  startWarn(8, L"BUG.proc",      bossHpC * 0.7f);  break;
-                        default: startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
+                        case 8:  startWarn(8, L"BUG.proc",        bossHpC * 0.7f);  break;
+                        case 9:  startWarn(9, L"Trojan_king.vir", bossHpC);        break;
+                        default: startWarn(4, L"POLYMORPH.vir",   polyHpC);        break;
                         }
                     }
                     else if (g_GameManager.score >= g_NextBossScore) {
@@ -7657,14 +7658,14 @@ static void Scene_CreativeConfig(const SceneCtx& c) {
                         g_CreativeStartScore = sOpts[i].v;
                 }
 
-                // 보스 선택 — 9종 전부 (None 포함 10개, 5개씩 2줄)
+                // 보스 선택 — 10종 전부 (None 포함 11개, 5개씩 줄바꿈)
                 g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[10] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
+                BossOpt bOpts[11] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
                                       {L"Reload",2},{L"Spam",3},{L"Polymorph",4},
                                       {L"Kernel",5},{L"Firewall",6},{L"Botnet",7},
-                                      {L"Bug",8} };
-                for (int i = 0; i < 10; i++) {
+                                      {L"Bug",8},{L"Chess",9} };
+                for (int i = 0; i < 11; i++) {
                     int col = i % 5, row = i / 5;
                     float ox = 60.0f + col * (OBW + OBG);
                     float oy = sh*0.40f + 28.0f + row * (OBH + 8.0f);
