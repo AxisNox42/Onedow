@@ -5652,16 +5652,23 @@ int main() {
                               TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-            // 새끼 버그 — 각자 '진짜 가짜창'(불투명 배경 + 타이틀바 + 보더 + 월드 비침)
+            // 새끼 버그 — 각자 '진짜 가짜창'(불투명 + 타이틀바 이름 + 월드 비침).
+            //   우선순위 레이아웃: y 오름차순 정렬 → 화면 아래쪽 창이 위로 겹쳐 안정적 스택.
             const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H, MTB = CentipedeBoss::MINI_WIN_TB;
-            for (auto& mb : g_CentiBoss->minis) {
-                if (!mb.alive) continue;
+            std::vector<CentipedeBoss::MiniBug*> ord;
+            for (auto& mb : g_CentiBoss->minis) if (mb.alive) ord.push_back(&mb);
+            std::sort(ord.begin(), ord.end(),
+                      [](CentipedeBoss::MiniBug* a, CentipedeBoss::MiniBug* b) { return a->y < b->y; });
+            for (auto* mbp : ord) {
+                auto& mb = *mbp;
                 float wx = mb.x - MW*0.5f, wy = mb.y - MH*0.5f;
                 BatchFlush(); glDisable(GL_BLEND);
                 drawRect(wx, wy, MW, MH, 0.05f, 0.05f, 0.09f, 1.0f);            // 창 본문(불투명)
                 BatchFlush(); glEnable(GL_BLEND);
                 drawRect(wx, wy, MW, MTB, 0.45f, 0.18f, 0.70f, 1.0f);          // 얇은 타이틀바
                 drawNeonBorder(wx, wy, MW, MH, 0.6f, 0.3f, 0.95f);
+                BatchFlush();
+                g_TextS.Draw(L"bug.sub", wx + 7.0f, wy + 1.0f, 0.42f, 1.0f, 0.92f, 1.0f, 0.95f);  // 타이틀
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
                 WorldScissor(wx, wy, MW, MH);                                   // 창 안 = 월드 비침
                 for (auto& b : g_Bullets)

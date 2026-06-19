@@ -96,21 +96,29 @@ public:
     bool  cannonActive = false;
     float cannonCd = 0.0f, cannonT = 0.0f;
     int   cannonIdx = 0;
-    // ── 새끼 버그 — 작은 '지네' 형태의 추격 adds(자체 관리). 잡몹(크래셔)과 완전 분리 ──
-    struct MiniBug { float x, y, heading, hp; bool alive; std::vector<glm::vec2> trail; };
+    // ── 새끼 버그 — '작은 지네형 보스'처럼 패턴 가진 추격 adds(자체 관리) ──
+    struct MiniBug { float x, y, heading, hp; bool alive; std::vector<glm::vec2> trail;
+                     float wt; int lungeState; float lungeT; };
     std::vector<MiniBug> minis;
     static constexpr float SUMMON_INT  = 9.0f;
-    static constexpr int   SUMMON_COUNT = 2;   // 한 번에 2마리(밸런스)
-    static constexpr int   MINI_MAX    = 6;    // 동시 상한
+    static constexpr int   SUMMON_COUNT = 2;   // 한 번에 2마리
     static constexpr int   MINI_NSEG   = 5;    // 작은 지네: 머리 + 5마디
     static constexpr int   MINI_STEP   = 4;
-    static constexpr float MINI_HEAD   = 26.0f;  // 더 크게(가시성)
+    static constexpr float MINI_HEAD   = 26.0f;
     static constexpr float MINI_SPD    = 230.0f;
-    static constexpr float MINI_HP0    = 70.0f;
+    static constexpr float MINI_HP0    = 288.0f; // = 기본 커널 프로세스(BRUTE 90*3.2) 체력
     static constexpr float MINI_WIN_W  = 300.0f; // 새끼 가짜창 크기
     static constexpr float MINI_WIN_H  = 210.0f;
     static constexpr float MINI_WIN_TB = 14.0f;  // 얇은 타이틀바
     float summonCd = 0.0f;
+
+    void spawnMini(float ex, float ey, float tx, float ty) {
+        MiniBug mb; mb.x = ex; mb.y = ey;
+        mb.heading = atan2f(ty - ey, tx - ex); mb.hp = MINI_HP0; mb.alive = true;
+        mb.wt = (float)(rand()%628)*0.01f; mb.lungeState = 0; mb.lungeT = 0.0f;
+        mb.trail.assign(MINI_NSEG*MINI_STEP + 2, glm::vec2(ex, ey));
+        minis.push_back(mb);
+    }
 
     // 새끼 한 마리의 본체(마디+머리) — main 이 새끼 창 scissor 안에서 호출
     void drawMini(const MiniBug& mb) const {
@@ -369,20 +377,26 @@ public:
                 case 2:  ex = -24.0f;                    ey = (float)(rand()%screenH); break;
                 default: ex = (float)screenW + 24.0f;    ey = (float)(rand()%screenH); break;
                 }
-                MiniBug mb; mb.x = ex; mb.y = ey;
-                mb.heading = atan2f(py - ey, px - ex); mb.hp = MINI_HP0; mb.alive = true;
-                mb.trail.assign(MINI_NSEG*MINI_STEP + 2, glm::vec2(mb.x, mb.y));
-                minis.push_back(mb);
+                spawnMini(ex, ey, px, py);
             }
             shake(5.0f);
         }
-        // ── 새끼 버그(작은 지네) 갱신 — 추격 + 궤적 + 접촉 피해 ──
+        // ── 새끼 버그(작은 지네형 보스) 갱신 — 지그재그 위빙 + 주기적 런지(돌진) 패턴 ──
         for (auto& mb : minis) {
             if (!mb.alive) continue;
             float dx = px - mb.x, dy = py - mb.y, d = std::sqrt(dx*dx + dy*dy) + 1e-3f;
-            mb.heading = atan2f(dy, dx);
-            mb.x += dx/d * MINI_SPD * dt;
-            mb.y += dy/d * MINI_SPD * dt;
+            float toP = atan2f(dy, dx);
+            mb.wt += dt; mb.lungeT += dt;
+            float spd = MINI_SPD;
+            if (mb.lungeState == 0) {                          // 위빙 접근(지그재그)
+                mb.heading = toP + sinf(mb.wt * 6.0f) * 0.6f;
+                if (mb.lungeT >= 2.4f && d < 430.0f) { mb.lungeState = 1; mb.lungeT = 0.0f; mb.heading = toP; }
+            } else {                                            // 짧은 런지(돌진)
+                spd = MINI_SPD * 2.7f;
+                if (mb.lungeT >= 0.4f) { mb.lungeState = 0; mb.lungeT = 0.0f; }
+            }
+            mb.x += cosf(mb.heading) * spd * dt;
+            mb.y += sinf(mb.heading) * spd * dt;
             mb.trail.insert(mb.trail.begin(), glm::vec2(mb.x, mb.y));
             if ((int)mb.trail.size() > MINI_NSEG*MINI_STEP + 2) mb.trail.pop_back();
             if (d < MINI_HEAD + 14.0f) playerHP -= 6.0f * dt;
@@ -612,6 +626,7 @@ public:
                     fireDir(bullets, cosf(a), sinf(a), RAMP_SHRAP_SPD, BUL);
                 }
                 shakePulse = true;
+                spawnMini(worldX, worldY, px, py);   // 벽 박을 때마다 새끼 지네 추가 드롭
                 if (rampSpeed < RAMP_MIN) { backToWander(); bigCd = 0.0f; }   // 다 느려지면 종료
             }
         }
