@@ -203,6 +203,7 @@
     <ClInclude Include="FirewallBoss.h" />
     <ClInclude Include="BotnetBoss.h" />
     <ClInclude Include="CentipedeBoss.h" />
+    <ClInclude Include="TrojanKingBoss.h" />
     <ClInclude Include="TextRenderer.h" />
     <ClInclude Include="Translations.h" />
     <ClInclude Include="Weapons.h" />

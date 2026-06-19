@@ -42,6 +42,7 @@
 #include "FirewallBoss.h"
 #include "BotnetBoss.h"
 #include "CentipedeBoss.h"
+#include "TrojanKingBoss.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -524,6 +525,8 @@ FirewallBoss* g_FirewallBoss = nullptr;
 BotnetBoss* g_BotnetBoss = nullptr;
 // BUG.proc 보스 (지네형 — 지그재그 배회 + 벽 돌진) — 별도 관리
 CentipedeBoss* g_CentiBoss = nullptr;
+// Trojan_king.vir 보스 (체스 — 킹 DPS체크 + 기물 adds) — 별도 관리
+TrojanKingBoss* g_TrojanBoss = nullptr;
 
 // ── 배드 섹터 사망 잔류물 — 임시 감속 구역(손상 영역). 안에 있으면 이동속도 -10% ──
 //   즉시 생기지 않고 ZONE_OPEN(0.7초)에 걸쳐 점점 부식되어 퍼짐(grow factor = age/OPEN).
@@ -1379,6 +1382,7 @@ int main() {
             if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
             if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+            if (g_TrojanBoss) { delete g_TrojanBoss; g_TrojanBoss = nullptr; }
             g_PolyPrevForm = -1;
             g_PolySummonTimer = 0.0f;
             g_PolyWasPhase2 = false;
@@ -1595,6 +1599,7 @@ int main() {
                 if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
                 if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
                 if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+                if (g_TrojanBoss) { delete g_TrojanBoss; g_TrojanBoss = nullptr; }
                 for (auto* c : g_Slimelings) delete c;
                 g_Slimelings.clear();
                 g_Turrets.clear();
@@ -2325,6 +2330,15 @@ int main() {
                     }
                 }
 
+                // Trojan_king.vir 업데이트 (체스판 + 기물 소환/이동)
+                if (!timeStopped && g_TrojanBoss && g_TrojanBoss->alive) {
+                    g_TrojanBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP);
+                    if (g_TrojanBoss->shakePulse) {
+                        g_TrojanBoss->shakePulse = false;
+                        g_ShakeTime = 0.25f; g_ShakeMag = 10.0f;
+                    }
+                }
+
                 // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기
                 if (!g_Slimelings.empty()) {
                     std::vector<Monster*> sink;
@@ -2619,6 +2633,44 @@ int main() {
                             cb2->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (cb2->hp <= 0.0f) cb2->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // Trojan_king.vir — 기물(adds) + 킹(본체) vs 플레이어 총알
+                if (g_TrojanBoss && g_TrojanBoss->alive) {
+                    auto* tb = g_TrojanBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        auto dmgOf = [&](float ex, float ey) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(ex, ey));
+                            if (b.remainingDmg > 0.0f)   return b.remainingDmg;
+                            if (b.turretDmg > 0.0f)      return b.turretDmg;
+                            return g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                        };
+                        // 기물
+                        bool hitPiece = false;
+                        for (auto& p : tb->pieces) {
+                            if (!p.alive) continue;
+                            if (SegDist(p.wx, p.wy, b.prevX, b.prevY, b.x, b.y) < tb->cell * 0.42f) {
+                                float dmg = dmgOf(p.wx, p.wy);
+                                float dealt = (dmg < p.hp) ? dmg : p.hp;
+                                p.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (p.hp <= 0.0f) { p.alive = false; AddKillCombo(); g_GameManager.scoreAccum += 120.0f; }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; hitPiece = true; }
+                                break;
+                            }
+                        }
+                        if (hitPiece || !b.active) continue;
+                        // 킹(본체)
+                        if (SegDist(tb->worldX, tb->worldY, b.prevX, b.prevY, b.x, b.y) < tb->cell * 0.6f) {
+                            float dmg = dmgOf(tb->worldX, tb->worldY);
+                            float dealt = (dmg < tb->hp) ? dmg : tb->hp;
+                            tb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (tb->hp <= 0.0f) tb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
@@ -3058,6 +3110,27 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
+                // Trojan_king.vir(체스) 사망 → 보상 (증강 2 + 점수)
+                if (g_TrojanBoss && !g_TrojanBoss->alive && !g_TrojanBoss->exploded) {
+                    auto* tb = g_TrojanBoss;
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.82f, 0.25f, true);
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.6f, 0.2f, true);
+                    SpawnShockWave(tb->worldX, tb->worldY, 460.0f, 0.8f, 1.0f, 0.7f, 0.3f);
+                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
+                    TriggerHitStop(0.11f);
+                    tb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete tb;
+                    g_TrojanBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken, g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
                 // 폴리모프 사망 → 화면 원복 + 증강 3개 + 점수 50% 추가
                 if (g_PolyBoss && !g_PolyBoss->alive && !g_PolyBoss->exploded) {
                     auto* pb = g_PolyBoss;
@@ -3404,8 +3477,9 @@ int main() {
             float effHpMul = 1.0f;
             if (g_Difficulty == Difficulty::EASY) { spawnInterval *= 1.6f; effHpMul = 0.65f; }
             else if (g_Difficulty == Difficulty::HARD) { effHpMul = 1.1f; }
-            // 프로토타입: 지네 보스전 동안엔 잡몹 스폰 완전 정지(순수 듀얼)
-            bool centiDuel = g_CentiBoss && g_CentiBoss->alive;
+            // 프로토타입: 지네/체스 보스전 동안엔 잡몹 스폰 완전 정지(순수 듀얼)
+            bool centiDuel = (g_CentiBoss && g_CentiBoss->alive) ||
+                             (g_TrojanBoss && g_TrojanBoss->alive);
             if (centiDuel) spawnInterval = 1e9f;
             if (spawnTimer > spawnInterval) {
                 // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
@@ -3490,7 +3564,7 @@ int main() {
             {
                 bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
                                   g_RRBoss || g_PolyBoss || g_SpamBoss || g_KernelBoss ||
-                                  g_FirewallBoss || g_BotnetBoss || g_CentiBoss ||
+                                  g_FirewallBoss || g_BotnetBoss || g_CentiBoss || g_TrojanBoss ||
                                   !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
                 // 라운드2 — 보스 눈덩이 차단: 보스를 잡아 완전히 정리되는 순간(활성→비활성),
                 //   다음 보스 임계값을 현재 점수+20만으로 리베이스 → 최소 20만점 휴식 보장
@@ -3535,7 +3609,9 @@ int main() {
                         if (sc > 12.0f) sc = 12.0f;
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
-                        startWarn(8, L"BUG.proc", bossHp);   // 지네 — 기본 HP + 잡몹 전체 흡수
+                        // 업데이트된 보스 — 지네 / 체스(트로이킹) 교대 등장
+                        if (rand() % 2) startWarn(8, L"BUG.proc", bossHp);
+                        else            startWarn(9, L"Trojan_king.vir", bossHp);
                     }
                 }
 
@@ -3607,6 +3683,24 @@ int main() {
                                 g_ShakeTime = 0.4f; g_ShakeMag = 14.0f;   // 흡수 순간 진동
                             }
                             g_CentiBoss->enterSpawn();   // 등장 모션 — 화면 밖에서 곡선 돌진으로 입장
+                            break;
+                        case 9:
+                            g_TrojanBoss = new TrojanKingBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            // 체스판 보스전도 순수전 — 현재 잡몹 흡수(상한 없음)
+                            {
+                                float absorb = 0.0f;
+                                for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
+                                for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
+                                for (auto* bm : g_MonsterManager.bombers)     if (bm->alive) absorb += bm->hp;
+                                g_TrojanBoss->hp += absorb; g_TrojanBoss->maxHp += absorb;
+                                for (auto* m  : g_MonsterManager.monsters)   delete m;
+                                g_MonsterManager.monsters.clear();
+                                for (auto* r  : g_MonsterManager.rangedMobs)  delete r;
+                                g_MonsterManager.rangedMobs.clear();
+                                for (auto* bm : g_MonsterManager.bombers)     delete bm;
+                                g_MonsterManager.bombers.clear();
+                                g_ShakeTime = 0.5f; g_ShakeMag = 16.0f;
+                            }
                             break;
                         default:
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -4205,6 +4299,10 @@ int main() {
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
                 if (g_CentiBoss && g_CentiBoss->alive)                              // 새끼 지네도 자동조준 대상
                     for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
+                if (g_TrojanBoss && g_TrojanBoss->alive) {                          // 체스 — 킹 + 기물
+                    consider(g_TrojanBoss->worldX, g_TrojanBoss->worldY);
+                    for (auto& p : g_TrojanBoss->pieces) if (p.alive) consider(p.wx, p.wy);
+                }
                 return found;
             };
             // 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
@@ -5670,6 +5768,10 @@ int main() {
             BatchFlush();
         }
 
+        // (g4g) Trojan_king.vir — 체스판 + 킹 + 기물 (보드 중앙, 전체 렌더)
+        if (g_TrojanBoss && g_TrojanBoss->alive)
+            g_TrojanBoss->render((float)glfwGetTime());
+
         // (g4f) BUG.proc — 지네: 모든 가짜 창 '안'으로만 렌더(창 밖 바탕화면엔 안 보임).
         //   창마다 scissor 패스 → 다른 창에서도 보이되, 가짜창 밖 사막엔 안 그림.
         if (g_CentiBoss && g_CentiBoss->alive) {
@@ -6010,6 +6112,9 @@ int main() {
             } else if (g_CentiBoss && g_CentiBoss->alive) {
                 bn = L"BUG.proc";      bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
                 bc = glm::vec3(0.7f, 1.0f, 0.3f);
+            } else if (g_TrojanBoss && g_TrojanBoss->alive) {
+                bn = L"Trojan_king.vir"; bhf = g_TrojanBoss->hp / g_TrojanBoss->maxHp;
+                bc = glm::vec3(1.0f, 0.8f, 0.3f);
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
