@@ -2658,14 +2658,19 @@ int main() {
                                 float dealt = (dmg < p.hp) ? dmg : p.hp;
                                 p.hp -= dealt;
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                                if (p.hp <= 0.0f) { p.alive = false; AddKillCombo(); g_GameManager.scoreAccum += 120.0f; }
+                                if (p.hp <= 0.0f) {
+                                    p.alive = false; AddKillCombo();
+                                    g_GameManager.scoreAccum += 120.0f;
+                                    tb->onPieceKilled(p.type);   // 파괴 가치 누적 → 킹 딜 타임
+                                }
                                 if (b.remainingDmg <= 0.001f) { b.active = false; hitPiece = true; }
                                 break;
                             }
                         }
                         if (hitPiece || !b.active) continue;
-                        // 킹(본체)
-                        if (SegDist(tb->worldX, tb->worldY, b.prevX, b.prevY, b.x, b.y) < tb->cell * 0.6f) {
+                        // 킹(본체) — 딜 타임(취약) 중에만 피격
+                        if (tb->kingVulnerable() &&
+                            SegDist(tb->worldX, tb->worldY, b.prevX, b.prevY, b.x, b.y) < tb->cell * 0.9f) {
                             float dmg = dmgOf(tb->worldX, tb->worldY);
                             float dealt = (dmg < tb->hp) ? dmg : tb->hp;
                             tb->hp -= dealt;
@@ -4300,8 +4305,8 @@ int main() {
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
                 if (g_CentiBoss && g_CentiBoss->alive)                              // 새끼 지네도 자동조준 대상
                     for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
-                if (g_TrojanBoss && g_TrojanBoss->alive) {                          // 체스 — 킹 + 기물
-                    consider(g_TrojanBoss->worldX, g_TrojanBoss->worldY);
+                if (g_TrojanBoss && g_TrojanBoss->alive) {                          // 체스 — 기물 + (취약 시)킹
+                    if (g_TrojanBoss->kingVulnerable()) consider(g_TrojanBoss->worldX, g_TrojanBoss->worldY);
                     for (auto& p : g_TrojanBoss->pieces) if (p.alive) consider(p.wx, p.wy);
                 }
                 return found;
