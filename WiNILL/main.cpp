@@ -4189,6 +4189,8 @@ int main() {
                 if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY);
                 if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY);
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
+                if (g_CentiBoss && g_CentiBoss->alive)                              // 새끼 지네도 자동조준 대상
+                    for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
                 return found;
             };
             // 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
@@ -5649,6 +5651,24 @@ int main() {
                     centiPass(tr.x - TURRET_WIN_W*0.5f, tr.y - TURRET_WIN_H*0.5f,
                               TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+            // 새끼 버그 — 각자 '진짜 가짜창'(불투명 배경 + 타이틀바 + 보더 + 월드 비침)
+            const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H, MTB = CentipedeBoss::MINI_WIN_TB;
+            for (auto& mb : g_CentiBoss->minis) {
+                if (!mb.alive) continue;
+                float wx = mb.x - MW*0.5f, wy = mb.y - MH*0.5f;
+                BatchFlush(); glDisable(GL_BLEND);
+                drawRect(wx, wy, MW, MH, 0.05f, 0.05f, 0.09f, 1.0f);            // 창 본문(불투명)
+                BatchFlush(); glEnable(GL_BLEND);
+                drawRect(wx, wy, MW, MTB, 0.45f, 0.18f, 0.70f, 1.0f);          // 얇은 타이틀바
+                drawNeonBorder(wx, wy, MW, MH, 0.6f, 0.3f, 0.95f);
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy, MW, MH);                                   // 창 안 = 월드 비침
+                for (auto& b : g_Bullets)
+                    if (b.active && inWin(b.x, b.y, wx, wy, MW, MH)) drawBullet(b);
+                g_CentiBoss->drawMini(mb);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            }
         }
 
         // (g5) 폴리모프 보스 — 마커/세모/레이저/차크람/본체/HP

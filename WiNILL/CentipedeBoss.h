@@ -107,7 +107,30 @@ public:
     static constexpr float MINI_HEAD   = 26.0f;  // 더 크게(가시성)
     static constexpr float MINI_SPD    = 230.0f;
     static constexpr float MINI_HP0    = 70.0f;
+    static constexpr float MINI_WIN_W  = 300.0f; // 새끼 가짜창 크기
+    static constexpr float MINI_WIN_H  = 210.0f;
+    static constexpr float MINI_WIN_TB = 14.0f;  // 얇은 타이틀바
     float summonCd = 0.0f;
+
+    // 새끼 한 마리의 본체(마디+머리) — main 이 새끼 창 scissor 안에서 호출
+    void drawMini(const MiniBug& mb) const {
+        for (int i = MINI_NSEG; i >= 1; i--) {
+            int idx = i * MINI_STEP;
+            if (idx >= (int)mb.trail.size()) idx = (int)mb.trail.size() - 1;
+            if (idx < 0) idx = 0;
+            glm::vec2 s = mb.trail[idx];
+            float ssz = MINI_HEAD * (0.5f + 0.5f * (1.0f - (float)(i - 1) / (float)MINI_NSEG));
+            drawDiamond(s.x, s.y, ssz * 1.5f, 0.40f, 0.15f, 0.62f, 1.0f);
+            drawDiamond(s.x, s.y, ssz * 0.75f, 0.75f, 0.4f, 1.0f, 1.0f);
+        }
+        float dxn = cosf(mb.heading), dyn = sinf(mb.heading), pxn = -dyn, pyn = dxn;
+        float v[6] = {
+            mb.x + dxn*MINI_HEAD*1.4f, mb.y + dyn*MINI_HEAD*1.4f,
+            mb.x + pxn*MINI_HEAD*0.8f, mb.y + pyn*MINI_HEAD*0.8f,
+            mb.x - pxn*MINI_HEAD*0.8f, mb.y - pyn*MINI_HEAD*0.8f };
+        BatchVerts(v, 3, 0.8f, 0.45f, 1.0f, 1.0f);
+        drawDiamond(mb.x, mb.y, MINI_HEAD*0.9f, 0.9f, 0.6f, 1.0f, 1.0f);
+    }
     // 스킬 시전 진동(가벼운 피드백, 눈뽕 X) — main 이 읽고 적용
     float wantShake = 0.0f;
     void shake(float m) { if (m > wantShake) wantShake = m; }
@@ -505,9 +528,7 @@ public:
                         if (coilCX < mg) coilCX = mg; if (coilCX > screenW - mg) coilCX = screenW - mg;
                         if (coilCY < mg) coilCY = mg; if (coilCY > screenH - mg) coilCY = screenH - mg;
                         float ddx = worldX - coilCX, ddy = worldY - coilCY;
-                        coilR = std::sqrt(ddx*ddx + ddy*ddy);   // 지금 거리에서 시작 = 점프 없음
-                        if (coilR < COIL_RMIN) coilR = COIL_RMIN;
-                        if (coilR > 540.0f) coilR = 540.0f;
+                        coilR = std::sqrt(ddx*ddx + ddy*ddy);   // 클램프 없이 현재 거리 = 점프 0
                         coilAng = atan2f(ddy, ddx);
                         break; }
                     case 2: {  // WALL — 가까운 쪽에서 먼 쪽으로 가로질러 펴기
@@ -596,7 +617,7 @@ public:
         }
         else if (state == 5) {       // ── 똬리 감기(A1): 플레이어 중심 링 + 조임 ──
             coilAng += COIL_SPIN * dt;
-            coilR -= COIL_SHRINK * dt; if (coilR < COIL_RMIN) coilR = COIL_RMIN;
+            coilR += (COIL_RMIN - coilR) * 1.3f * dt;   // 어디서 시작하든 RMIN 로 부드럽게 수렴(점프 X)
             worldX = coilCX + cosf(coilAng) * coilR;
             worldY = coilCY + sinf(coilAng) * coilR;
             heading = coilAng + 1.5707963f;       // 접선
@@ -753,37 +774,7 @@ public:
             drawDiamond(h.x, h.y, 10.0f, 1.0f, 0.9f, 0.4f, 1.0f);
         }
 
-        // (0c) 새끼 버그 — 작은 지네(가짜창 + 머리 화살촉 + 마디). 잡몹과 확연히 구분
-        for (const auto& mb : minis) {
-            if (!mb.alive) continue;
-            // 가짜 창 — 프레임만(내부 투명 → 총알/본체 비쳐 보임), 타이틀바 얇게, 300px
-            float ww = 300.0f, wh = 210.0f;
-            float wx = mb.x - ww * 0.5f, wy = mb.y - wh * 0.5f;
-            const float tb = 26.0f;                                         // 고정 타이틀바(정상 비율)
-            drawRect(wx, wy, ww, tb, 0.45f, 0.18f, 0.70f, 0.88f);           // 타이틀바
-            for (int k = 0; k < 3; k++)                                     // 창 버튼 3개
-                drawCircle(wx + ww - ((float)k + 1.0f) * 15.0f, wy + tb * 0.5f, 4.0f,
-                           0.05f, 0.05f, 0.05f, 1.0f);
-            drawNeonBorder(wx, wy, ww, wh, 0.6f, 0.3f, 0.95f);             // 테두리만(내부 채움 X)
-            // 몸통 마디
-            for (int i = MINI_NSEG; i >= 1; i--) {
-                int idx = i * MINI_STEP;
-                if (idx >= (int)mb.trail.size()) idx = (int)mb.trail.size() - 1;
-                if (idx < 0) idx = 0;
-                glm::vec2 s = mb.trail[idx];
-                float ssz = MINI_HEAD * (0.5f + 0.5f * (1.0f - (float)(i - 1) / (float)MINI_NSEG));
-                drawDiamond(s.x, s.y, ssz * 1.5f, 0.40f, 0.15f, 0.62f, 1.0f);
-                drawDiamond(s.x, s.y, ssz * 0.75f, 0.75f, 0.4f, 1.0f, 1.0f);
-            }
-            // 머리 화살촉 + 코어
-            float dxn = cosf(mb.heading), dyn = sinf(mb.heading), pxn = -dyn, pyn = dxn;
-            float v[6] = {
-                mb.x + dxn*MINI_HEAD*1.4f, mb.y + dyn*MINI_HEAD*1.4f,
-                mb.x + pxn*MINI_HEAD*0.8f, mb.y + pyn*MINI_HEAD*0.8f,
-                mb.x - pxn*MINI_HEAD*0.8f, mb.y - pyn*MINI_HEAD*0.8f };
-            BatchVerts(v, 3, 0.8f, 0.45f, 1.0f, 1.0f);
-            drawDiamond(mb.x, mb.y, MINI_HEAD*0.9f, 0.9f, 0.6f, 1.0f, 1.0f);
-        }
+        // (0c) 새끼 버그는 각자 '진짜 가짜창'(월드 비침)으로 main 이 따로 렌더 → 여기선 생략
         // (0b) 잠복 발밑 예고 — 솟구침 직전 그림자 링
         if (state == 7 && burrowPhase == 1) {
             float p = stateTimer / BURROW_WARN;
