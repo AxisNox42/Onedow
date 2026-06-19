@@ -5677,8 +5677,10 @@ int main() {
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             auto centiPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
-                g_CentiBoss->renderFx(ct);     // 벽/지뢰/예고선/새끼
+                g_CentiBoss->renderFx(ct);     // 벽/지뢰/예고선
                 g_CentiBoss->renderBody(ct);   // 머리+몸통
+                for (auto& mb : g_CentiBoss->minis)   // 새끼 본체 — 플레이어 창 등 모든 창 위로 보이게
+                    if (mb.alive) g_CentiBoss->drawMini(mb);
             };
             for (auto& fw : zwins) centiPass(fw.x, fw.y, fw.w, fw.h);
             centiPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
