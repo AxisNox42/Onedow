@@ -143,3 +143,31 @@ inline const wchar_t* MobDesc(int id) {
 
 // CodexMobId(0..8) → MobKind (프리뷰 렌더용)
 inline MobKind CodexMobKind(int id) { return (MobKind)id; }
+
+// ── 보스 도감 (활성 pick: 0,2,3,5,6) ──
+#include "BossDirector.h"
+
+inline bool g_BossSeenPick[10] = { false };
+
+inline void MarkBossSeenPick(int pick) {
+    if (pick < 0 || pick > 9) return;
+    if (!g_BossSeenPick[pick]) { g_BossSeenPick[pick] = true; g_CodexDirty = true; }
+}
+
+inline const int BOSS_CODEX_PICKS[] = { 0, 2, 3, 5, 6 };
+inline const int BOSS_CODEX_COUNT = 5;
+
+inline bool BossCodexSeen(int idx) {
+    if (idx < 0 || idx >= BOSS_CODEX_COUNT) return false;
+    return g_BossSeenPick[BOSS_CODEX_PICKS[idx]];
+}
+inline int BossCodexPick(int idx) {
+    if (idx < 0 || idx >= BOSS_CODEX_COUNT) return -1;
+    return BOSS_CODEX_PICKS[idx];
+}
+inline const wchar_t* BossCodexName(int idx) {
+    return BossDir::DisplayName(BossCodexPick(idx));
+}
+inline const wchar_t* BossCodexDesc(int idx) {
+    return BossDir::Tagline(BossCodexPick(idx));
+}

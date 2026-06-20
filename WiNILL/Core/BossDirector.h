@@ -13,8 +13,8 @@ inline int& RotIdx() {
 inline void ResetRotation() { RotIdx() = 0; }
 
 inline int RollScorePick() {
-    static const int kRot[] = { 0, 2, 3, 5, 6, 7, 8, 9 };
-    return kRot[RotIdx()++ % 8];
+    static const int kRot[] = { 0, 2, 3, 5, 6 };
+    return kRot[RotIdx()++ % 5];
 }
 
 inline const wchar_t* DisplayName(int pick) {

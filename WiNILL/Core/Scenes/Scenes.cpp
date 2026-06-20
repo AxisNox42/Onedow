@@ -383,13 +383,16 @@ void Scene_Codex(const SceneCtx& c) {
                                  0.4f, 1.0f, 0.55f, a);
                 }
 
-                static int s_tab = 0;   // 0 적 / 1 증강
+                static int s_tab = 0;   // 0 적 / 1 증강 / 2 보스
                 const wchar_t* TAB_MOB[3] = { L"적", L"Enemies", L"敵" };
                 const wchar_t* TAB_AUG[3] = { L"증강", L"Augments", L"強化" };
-                if (UIButton(wx + 530.0f, searchY, 150.0f, searchH, TAB_MOB[li],
+                const wchar_t* TAB_BOS[3] = { L"보스", L"Bosses", L"ボス" };
+                if (UIButton(wx + 520.0f, searchY, 120.0f, searchH, TAB_MOB[li],
                              mx, my, lmb, g_LmbPrev, s_tab == 0)) s_tab = 0;
-                if (UIButton(wx + 690.0f, searchY, 150.0f, searchH, TAB_AUG[li],
+                if (UIButton(wx + 648.0f, searchY, 120.0f, searchH, TAB_AUG[li],
                              mx, my, lmb, g_LmbPrev, s_tab == 1)) s_tab = 1;
+                if (UIButton(wx + 776.0f, searchY, 120.0f, searchH, TAB_BOS[li],
+                             mx, my, lmb, g_LmbPrev, s_tab == 2)) s_tab = 2;
 
                 float gTop = wy + 110.0f;          // 그리드 상단
                 float detailY = wy + WH - 170.0f;  // 상세(article) 영역
@@ -459,7 +462,7 @@ void Scene_Codex(const SceneCtx& c) {
                         g_TextL.Draw(nm, wx + 40.0f, detailY, 1.0f, 0.6f, 0.95f, 0.7f, 1.0f);
                         g_TextS.Draw(d,  wx + 40.0f, detailY + 54.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
                     }
-                } else {
+                } else if (s_tab == 1) {
                     // 증강 — 검색 필터링 후 재배치 (셀 축소 + 카테고리(등급)별 정렬로
                     //   상세 박스 침범 방지 + 버프/디버프/특수/조합 그룹화)
                     const int COLS = 15; const float CELL = 72.0f;
@@ -533,6 +536,57 @@ void Scene_Codex(const SceneCtx& c) {
                         const wchar_t* q[3] = { L"??? — 미발견 (획득 시 공개)",
                                                 L"??? — Undiscovered (unlock by acquiring)",
                                                 L"??? — 未発見 (取得で公開)" };
+                        g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
+                    }
+                } else {
+                    // 보스 — 5종 (HANG/VOLLEY/SPAM/KERNEL/FIREWALL)
+                    const int COLS = 5; const float CELL = 200.0f;
+                    int vis[BOSS_CODEX_COUNT], nv = 0;
+                    for (int i = 0; i < BOSS_CODEX_COUNT; i++)
+                        if (g_CodexSearchLen == 0 || (BossCodexSeen(i) && CodexMatch(BossCodexName(i))))
+                            vis[nv++] = i;
+                    float gx = wx + (WW - COLS*CELL) * 0.5f;
+                    for (int k = 0; k < nv; k++) {
+                        int i = vis[k];
+                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
+                        float cw = CELL - 16.0f, ch = CELL - 8.0f;
+                        bool seen = BossCodexSeen(i);
+                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+ch);
+                        if (hv) hoverItem = i;
+                        BindMainShader();
+                        drawRect(cxp, cyp, cw, ch, hv?0.13f:0.06f, 0.10f, 0.15f, 0.95f);
+                        if (seen) {
+                            int pick = BossCodexPick(i);
+                            glm::vec3 wc = BossDir::WarnColor(pick);
+                            float ww = cw * 0.72f, wh = ch * 0.58f;
+                            float wx0 = cxp + (cw - ww) * 0.5f;
+                            float wy0 = cyp + (ch - wh) * 0.38f;
+                            drawRect(wx0, wy0, ww, wh, 0.10f, 0.11f, 0.14f, 0.92f);
+                            drawRect(wx0, wy0, ww, 18.0f, wc.r*0.75f, wc.g*0.75f, wc.b*0.75f, 0.95f);
+                            drawNeonBorder(wx0, wy0, ww, wh, wc.r, wc.g, wc.b);
+                            const wchar_t* nm = BossCodexName(i);
+                            float nw = g_TextS.Width(nm, 0.72f);
+                            if (nw > ww - 8.0f) nw = ww - 8.0f;
+                            g_TextS.Draw(nm, wx0 + (ww - nw)*0.5f, cyp + ch - 28.0f, 0.72f,
+                                         0.9f, 0.95f, 1.0f, 0.95f);
+                        } else {
+                            float ccx = cxp + cw*0.5f, ccy = cyp + ch*0.45f;
+                            float qw = g_TextL.Width(L"?", 1.4f);
+                            g_TextL.Draw(L"?", ccx - qw*0.5f, ccy - 24.0f, 1.4f,
+                                         0.4f, 0.4f, 0.45f, 0.9f);
+                        }
+                    }
+                    if (hoverItem >= 0 && BossCodexSeen(hoverItem)) {
+                        int pick = BossCodexPick(hoverItem);
+                        glm::vec3 wc = BossDir::WarnColor(pick);
+                        g_TextL.Draw(BossCodexName(hoverItem), wx + 40.0f, detailY, 1.0f,
+                                     wc.r, wc.g, wc.b, 1.0f);
+                        g_TextS.Draw(BossCodexDesc(hoverItem), wx + 40.0f, detailY + 54.0f, 0.9f,
+                                     0.85f, 0.92f, 1.0f, 0.95f);
+                    } else if (hoverItem >= 0) {
+                        const wchar_t* q[3] = { L"??? — 미발견 (보스 조우 시 공개)",
+                                                L"??? — Undiscovered (encounter the boss)",
+                                                L"??? — 未発見 (ボス遭遇で公開)" };
                         g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 }
@@ -894,15 +948,14 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                         g_CreativeStartScore = sOpts[i].v;
                 }
 
-                // 보스 선택 — 9종 (None 포함 10개, 5개씩 줄바꿈)
+                // 보스 선택 — 5종 (+ None)
                 g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[10] = { {L"None",-1},{L"Hang",0},
-                                      {L"Volley",2},{L"Spam",3},{L"Polymorph",4},
-                                      {L"Kernel",5},{L"Firewall",6},{L"C2 Relay",7},
-                                      {L"Fork Worm",8},{L"Rite Core",9} };
-                for (int i = 0; i < 10; i++) {
-                    int col = i % 5, row = i / 5;
+                BossOpt bOpts[6] = { {L"None",-1},{L"Hang",0},
+                                      {L"Volley",2},{L"Spam",3},
+                                      {L"Kernel",5},{L"Firewall",6} };
+                for (int i = 0; i < 6; i++) {
+                    int col = i % 3, row = i / 3;
                     float ox = 60.0f + col * (OBW + OBG);
                     float oy = sh*0.40f + 28.0f + row * (OBH + 8.0f);
                     bool sel = (g_CreativeBossPick == bOpts[i].v);

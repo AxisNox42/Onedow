@@ -67,6 +67,8 @@ inline void SaveGame() {
         if (g_AugSeen[i]) { std::snprintf(ln, sizeof(ln), "augseen%d=1\n", i); buf += ln; }
     for (int i = 0; i < CM_COUNT; i++)
         if (g_MobSeen[i]) { std::snprintf(ln, sizeof(ln), "mobseen%d=1\n", i); buf += ln; }
+    for (int i = 0; i < 10; i++)
+        if (g_BossSeenPick[i]) { std::snprintf(ln, sizeof(ln), "bossseen%d=1\n", i); buf += ln; }
 
     // 2) 난독화 후 바이너리(매직+암호문)로 기록
     OdwCrypt(buf);
@@ -161,6 +163,10 @@ inline void LoadGame() {
             int mi = atoi(key + 7);
             if (mi >= 0 && mi < CM_COUNT) g_MobSeen[mi] = (val != 0);
         }
+        else if (!std::strncmp(key, "bossseen", 8)) {
+            int bi = atoi(key + 8);
+            if (bi >= 0 && bi < 10) g_BossSeenPick[bi] = (val != 0);
+        }
     }
 }
 
@@ -174,6 +180,7 @@ inline void ResetSaveProgress() {
     for (int i = 0; i < ACH_COUNT;  i++) g_AchUnlocked[i] = false;
     for (int i = 0; i < AUG_TOTAL;  i++) g_AugSeen[i] = false;
     for (int i = 0; i < CM_COUNT;   i++) g_MobSeen[i] = false;
+    for (int i = 0; i < 10; i++) g_BossSeenPick[i] = false;
     g_ThemeOwned = 1; g_ThemeSel = 0; ApplyAccentTheme();
     SaveGame();
 }
