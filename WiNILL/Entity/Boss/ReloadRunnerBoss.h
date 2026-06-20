@@ -98,8 +98,12 @@ public:
     static constexpr int   SPAM_N      = 18;
     static constexpr float SPAM_BSPEED = 400.0f;
 
-    static constexpr float ASSAULT_DUR = 2.8f;
-    static constexpr float ASSAULT_CD  = 9.0f;
+    static constexpr float ASSAULT_WARM = 0.72f;   // 붉은 예고 — 이 동안 사격 없음
+    static constexpr float ASSAULT_DUR  = 1.25f;   // 예고 포함 총 길이 (사격 ~0.5초)
+    static constexpr float ASSAULT_CD   = 15.0f;
+    static constexpr float ASSAULT_MIN  = 255.0f;  // 이 거리 밖에서만 발동
+    static constexpr float ASSAULT_MAX  = 460.0f;
+    static constexpr float ASSAULT_FIRE = 0.40f;     // 사격 간격
     static constexpr float SALVO_CD    = 4.0f;
 
     ReloadRunnerBoss(int sw, int sh, float hpInit)
@@ -170,6 +174,19 @@ public:
             float a = base + (t - 0.5f) * spread;
             fireDir(bullets, cosf(a), sinf(a), SG_BSPEED,
                     glm::vec3(1.0f, 0.48f, 0.12f), dmg);
+        }
+    }
+
+    void fireAssaultBurst(std::vector<Bullet>& bullets, float nx, float ny) {
+        float base = atan2f(ny, nx);
+        int n = phase3 ? 5 : 4;
+        float spread = 0.42f;
+        float dmg = SG_DMG * 0.68f;
+        for (int i = 0; i < n; i++) {
+            float t = (n > 1) ? (float)i / (float)(n - 1) : 0.5f;
+            float a = base + (t - 0.5f) * spread;
+            fireDir(bullets, cosf(a), sinf(a), SG_BSPEED * 0.92f,
+                    glm::vec3(1.0f, 0.35f, 0.12f), dmg);
         }
     }
 
@@ -249,13 +266,13 @@ public:
         if (nearMelee) spamInt *= 2.8f;
         else if (!midOrFar) spamInt *= 1.6f;
         spamTimer += dt;
-        if (spamTimer >= spamInt && midOrFar) {
+        if (spamTimer >= spamInt && midOrFar && state != RRState::ASSAULT) {
             spamTimer = 0.0f;
             fireSpamBurst(bullets, nx, ny);
         }
 
         salvoCd -= dt;
-        if (salvoCd <= 0.0f && midOrFar) {
+        if (salvoCd <= 0.0f && midOrFar && state != RRState::ASSAULT) {
             salvoCd = phase3 ? SALVO_CD * 0.55f : (phase2 ? SALVO_CD * 0.75f : SALVO_CD);
             fireEdgeSalvo(bullets, px, py);
         }
@@ -271,32 +288,45 @@ public:
         }
 
         assaultCd -= dt;
-        if (state == RRState::ACTIVE && assaultCd <= 0.0f && midOrFar) {
+        bool assaultRange = dist >= ASSAULT_MIN && dist <= ASSAULT_MAX;
+        if (state == RRState::ACTIVE && assaultCd <= 0.0f && midOrFar && assaultRange) {
             state = RRState::ASSAULT;
             assaultT = 0.0f;
-            assaultCd = phase3 ? ASSAULT_CD * 0.7f : ASSAULT_CD;
+            fireTimer = 0.0f;
+            float cd = ASSAULT_CD;
+            if (phase2) cd *= 0.88f;
+            if (phase3) cd *= 0.78f;
+            assaultCd = cd;
         }
 
         if (state == RRState::ASSAULT) {
-            if (nearMelee) {
+            if (nearMelee || dist < MELEE_MID) {
                 state = RRState::ACTIVE;
                 enterReload(bullets, true);
                 return;
             }
             assaultT += dt;
-            strafeMove(nx, ny, dt);
+            float strafeMul = (assaultT < ASSAULT_WARM) ? 0.45f : 0.7f;
+            strafeT -= dt;
+            if (strafeT <= 0.0f) {
+                strafeT = 0.7f;
+                strafeSign = (rand() % 2) ? 1.0f : -1.0f;
+            }
+            float px = -ny * strafeSign, py = nx * strafeSign;
+            worldX += px * moveSpeed * strafeMul * dt;
+            worldY += py * moveSpeed * strafeMul * dt;
             clampToScreen();
-            fireTimer += dt;
-            if (fireTimer >= 0.16f) {
-                fireTimer = 0.0f;
-                fireShotgun(bullets, nx, ny, dist);
-                float a = atan2f(ny, nx) + (float)(rand() % 40 - 20) * 0.01f;
-                fireDir(bullets, cosf(a), sinf(a), MG_BSPEED,
-                        glm::vec3(1.0f, 0.82f, 0.22f), MG_DMG * 0.85f);
+
+            if (assaultT >= ASSAULT_WARM) {
+                fireTimer += dt;
+                if (fireTimer >= ASSAULT_FIRE) {
+                    fireTimer = 0.0f;
+                    fireAssaultBurst(bullets, nx, ny);
+                }
             }
             if (assaultT >= ASSAULT_DUR) {
                 state = RRState::ACTIVE;
-                equip((RRWeapon)(rand() % 3));
+                enterReload(bullets, false);
             }
             return;
         }
@@ -496,9 +526,17 @@ public:
             }
         }
         if (state == RRState::ASSAULT) {
-            float pulse = 0.5f + 0.5f * sinf(gt * 12.0f);
-            drawCircle(worldX, worldY, BODY * (1.6f + pulse * 0.3f),
-                       1.0f, 0.25f, 0.08f, 0.18f + pulse * 0.12f);
+            float prog = (ASSAULT_WARM > 0.0f) ? assaultT / ASSAULT_WARM : 1.0f;
+            if (prog > 1.0f) prog = 1.0f;
+            float pulse = 0.5f + 0.5f * sinf(gt * (assaultT < ASSAULT_WARM ? 18.0f : 10.0f));
+            drawCircle(worldX, worldY, BODY * (1.35f + prog * 0.45f + pulse * 0.15f),
+                       1.0f, 0.25f, 0.08f, 0.12f + prog * 0.2f);
+            if (assaultT < ASSAULT_WARM) {
+                wchar_t warn[] = L"ASSAULT —";
+                float ww = g_TextS.Width(warn, 0.5f);
+                g_TextS.Draw(warn, worldX - ww * 0.5f, worldY - BODY - 36.0f, 0.5f,
+                             1.0f, 0.3f, 0.1f, 0.7f + prog * 0.25f);
+            }
         }
     }
 
