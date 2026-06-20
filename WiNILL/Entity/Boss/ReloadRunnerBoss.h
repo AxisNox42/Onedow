@@ -11,7 +11,7 @@
 extern TextRenderer g_TextS;
 
 // ─────────────────────────────────────────────────────────────
-// RELOADER.exe — 기동 화력 플랫폼 (전면전 보스)
+// VOLLEY.sys — 기동 화력 드론 (전면전 보스)
 //   3종 무기 로테이션 + 장전 질주 + 화면 가장자리 포격 + ASSAULT 돌격
 //   · 근접(110px 이내): 탄막·ASSAULT·살보 OFF → 도주·장전 = 딜 타임
 //   · 중거리~(210px+): 전면전 화력 유지
@@ -479,81 +479,160 @@ public:
         }
     }
 
+    static const wchar_t* BossName() { return L"VOLLEY.sys"; }
+
+    static void drawFan(float ox, float oy, float a0, float a1, float len,
+                        float r, float g, float b, float fillA, float edgeA, int segs = 24) {
+        for (int s = 0; s < segs; s++) {
+            float u0 = (float)s / (float)segs, u1 = (float)(s + 1) / (float)segs;
+            float aa = a0 + (a1 - a0) * u0, ab = a0 + (a1 - a0) * u1;
+            float x0 = ox + cosf(aa) * len, y0 = oy + sinf(aa) * len;
+            float x1 = ox + cosf(ab) * len, y1 = oy + sinf(ab) * len;
+            for (int layer = 1; layer <= 4; layer++) {
+                float t = (float)layer / 4.0f;
+                float sx = (x0 + x1) * 0.5f, sy = (y0 + y1) * 0.5f;
+                float mx = ox + (sx - ox) * t;
+                float my = oy + (sy - oy) * t;
+                drawRect(mx - 2.5f, my - 2.5f, 5.0f, 5.0f, r, g, b, fillA * (0.25f + t * 0.75f));
+            }
+            drawRect(x0 - 3.0f, y0 - 3.0f, 6.0f, 6.0f, r, g, b, edgeA);
+            drawRect(x1 - 3.0f, y1 - 3.0f, 6.0f, 6.0f, r, g, b, edgeA);
+        }
+        float ex0 = ox + cosf(a0) * len, ey0 = oy + sinf(a0) * len;
+        float ex1 = ox + cosf(a1) * len, ey1 = oy + sinf(a1) * len;
+        const int RAY = 14;
+        for (int s = 0; s < RAY; s++) {
+            if ((s & 1) == 0) continue;
+            float u0 = (float)s / (float)RAY, u1 = (float)(s + 1) / (float)RAY;
+            auto dot = [&](float x0, float y0, float x1, float y1) {
+                float px = x0 + (x1 - x0) * u0, py = y0 + (y1 - y0) * u0;
+                float qx = x0 + (x1 - x0) * u1, qy = y0 + (y1 - y0) * u1;
+                drawRect((px + qx) * 0.5f - 2.0f, (py + qy) * 0.5f - 2.0f,
+                         4.0f, 4.0f, r, g, b, edgeA);
+            };
+            dot(ox, oy, ex0, ey0);
+            dot(ox, oy, ex1, ey1);
+        }
+    }
+
+    static void drawArcRing(float cx, float cy, float rad,
+                            float r, float g, float b, float a, int n = 32) {
+        for (int i = 0; i < n; i++) {
+            if ((i & 1) == 0) continue;
+            float a0 = (float)i / (float)n * 6.2831853f;
+            float a1 = (float)(i + 1) / (float)n * 6.2831853f;
+            float x0 = cx + cosf(a0) * rad, y0 = cy + sinf(a0) * rad;
+            float x1 = cx + cosf(a1) * rad, y1 = cy + sinf(a1) * rad;
+            drawRect((x0 + x1) * 0.5f - 2.0f, (y0 + y1) * 0.5f - 2.0f,
+                     4.0f, 4.0f, r, g, b, a);
+        }
+    }
+
     void renderTelegraphs(float px, float py, float gt) const {
+        float adx = px - worldX, ady = py - worldY;
+        float ad = sqrtf(adx * adx + ady * ady) + 1e-3f;
+        float baseA = atan2f(ady, adx);
+
+        drawArcRing(worldX, worldY, MELEE_NEAR, 0.25f, 0.95f, 0.85f, 0.22f);
+        drawNeonBorder(worldX - MELEE_NEAR, worldY - MELEE_NEAR,
+                       MELEE_NEAR * 2, MELEE_NEAR * 2, 0.3f, 1.0f, 0.75f);
+
+        if (salvoCd < 0.45f && state != RRState::ASSAULT) {
+            float flash = 0.35f + 0.45f * sinf(gt * 22.0f);
+            float m = 28.0f;
+            drawRect(0, 0, (float)screenW, m, 1.0f, 0.35f, 0.15f, flash * 0.35f);
+            drawRect(0, (float)screenH - m, (float)screenW, m, 1.0f, 0.35f, 0.15f, flash * 0.35f);
+            drawRect(0, 0, m, (float)screenH, 1.0f, 0.35f, 0.15f, flash * 0.35f);
+            drawRect((float)screenW - m, 0, m, (float)screenH, 1.0f, 0.35f, 0.15f, flash * 0.35f);
+        }
+
         if (aiming) {
-            float adx = px - worldX, ady = py - worldY;
-            float ad = sqrtf(adx * adx + ady * ady) + 1e-3f;
             float dxn = adx / ad, dyn = ady / ad;
             float ex = worldX + dxn * (float)(screenW + screenH);
             float ey = worldY + dyn * (float)(screenW + screenH);
-            float blink = 0.55f + 0.4f * sinf(gt * 38.0f);
-            const int SEG = 18;
+            float blink = 0.65f + 0.35f * sinf(gt * 38.0f);
+            float prog = (SN_FREEZE > 0.0f) ? stopTimer / SN_FREEZE : 0.0f;
+            if (prog > 1.0f) prog = 1.0f;
+            const int SEG = 22;
             for (int s = 0; s < SEG; s++) {
                 if ((s & 1) == 0) continue;
                 float u0 = (float)s / (float)SEG, u1 = (float)(s + 1) / (float)SEG;
                 float x0 = worldX + (ex - worldX) * u0, y0 = worldY + (ey - worldY) * u0;
                 float x1 = worldX + (ex - worldX) * u1, y1 = worldY + (ey - worldY) * u1;
-                float th = phase3 ? 4.0f : 3.0f;
+                float th = 4.0f + prog * 4.0f;
                 drawRect((x0 + x1) * 0.5f - th, (y0 + y1) * 0.5f - th,
-                         th * 2, th * 2, 0.25f, 0.95f, 1.0f, blink);
+                         th * 2, th * 2, 0.15f, 0.95f, 1.0f, blink);
             }
+            drawCircle(px, py, 16.0f + prog * 10.0f, 0.2f, 0.95f, 1.0f, 0.25f + prog * 0.35f);
+            drawNeonBorder(px - 18.0f, py - 18.0f, 36.0f, 36.0f, 0.3f, 0.95f, 1.0f);
         }
-        if (mgTelegraph) {
+
+        if (weapon == RRWeapon::SNIPER && !aiming && ad < SN_KITE_RANGE) {
+            drawArcRing(worldX, worldY, SN_KITE_RANGE, 0.2f, 0.85f, 1.0f, 0.14f);
+        }
+
+        if (mgTelegraph || mgFiring) {
             float base = atan2f(zoneDirY, zoneDirX);
             float a0 = base - zoneHalfAngle, a1 = base + zoneHalfAngle;
-            float prog = warmUpTimer / MG_WARMUP;
-            float alpha = 0.14f + 0.38f * prog;
-            const int SEG = 22;
-            for (int s = 0; s < SEG; s++) {
-                float aa = a0 + (a1 - a0) * (float)s / (float)SEG;
-                float ab = a0 + (a1 - a0) * (float)(s + 1) / (float)SEG;
-                float L = zoneLen;
-                float mx = (worldX + cosf(aa) * L + worldX + cosf(ab) * L) * 0.5f;
-                float my = (worldY + sinf(aa) * L + worldY + sinf(ab) * L) * 0.5f;
-                drawRect(mx - 2, my - 2, 4, 4, 1.0f, 0.55f, 0.12f, alpha);
-            }
-            drawCircle(worldX, worldY, 18.0f + prog * 24.0f, 1.0f, 0.45f, 0.1f, 0.12f + prog * 0.15f);
+            float prog = mgTelegraph ? (warmUpTimer / MG_WARMUP) : 1.0f;
+            if (prog > 1.0f) prog = 1.0f;
+            float fillA = 0.18f + 0.32f * prog;
+            float edgeA = 0.45f + 0.4f * prog;
+            drawFan(worldX, worldY, a0, a1, zoneLen * (0.55f + prog * 0.45f),
+                    1.0f, 0.55f, 0.12f, fillA, edgeA, 28);
+            drawCircle(worldX, worldY, 22.0f + prog * 18.0f, 1.0f, 0.5f, 0.1f, 0.2f + prog * 0.2f);
+            wchar_t mgw[] = L"MG ZONE";
+            float mw = g_TextS.Width(mgw, 0.48f);
+            g_TextS.Draw(mgw, worldX - mw * 0.5f, worldY + BODY + 8.0f, 0.48f,
+                         1.0f, 0.65f, 0.15f, 0.75f + prog * 0.2f);
         }
-        if (state == RRState::ACTIVE && weapon == RRWeapon::SHOTGUN) {
-            float adx = px - worldX, ady = py - worldY;
-            float ad = sqrtf(adx * adx + ady * ady) + 1e-3f;
-            if (ad < SG_RANGE) {
-                float base = atan2f(ady, adx);
-                float ha = SG_SPREAD * 0.5f;
-                drawCircle(worldX + cosf(base) * SG_RANGE * 0.5f,
-                           worldY + sinf(base) * SG_RANGE * 0.5f,
-                           SG_RANGE * 0.35f, 1.0f, 0.42f, 0.12f, 0.06f);
-            }
+
+        if (state == RRState::ACTIVE && weapon == RRWeapon::SHOTGUN && ad < SG_RANGE + 40.0f) {
+            float ha = SG_SPREAD * 0.5f;
+            float inRange = (ad < SG_RANGE) ? 1.0f : 0.55f;
+            drawFan(worldX, worldY, baseA - ha, baseA + ha, SG_RANGE,
+                    1.0f, 0.45f, 0.12f, 0.22f * inRange, 0.55f * inRange, 20);
+            drawArcRing(worldX, worldY, SG_RANGE, 1.0f, 0.42f, 0.12f, 0.28f * inRange);
         }
+
         if (state == RRState::ASSAULT) {
             float prog = (ASSAULT_WARM > 0.0f) ? assaultT / ASSAULT_WARM : 1.0f;
             if (prog > 1.0f) prog = 1.0f;
             float pulse = 0.5f + 0.5f * sinf(gt * (assaultT < ASSAULT_WARM ? 18.0f : 10.0f));
-            drawCircle(worldX, worldY, BODY * (1.35f + prog * 0.45f + pulse * 0.15f),
-                       1.0f, 0.25f, 0.08f, 0.12f + prog * 0.2f);
+            drawArcRing(worldX, worldY, ASSAULT_MIN, 1.0f, 0.35f, 0.12f, 0.2f + prog * 0.15f);
             if (assaultT < ASSAULT_WARM) {
-                wchar_t warn[] = L"ASSAULT —";
-                float ww = g_TextS.Width(warn, 0.5f);
-                g_TextS.Draw(warn, worldX - ww * 0.5f, worldY - BODY - 36.0f, 0.5f,
-                             1.0f, 0.3f, 0.1f, 0.7f + prog * 0.25f);
+                float ha = 0.28f;
+                drawFan(worldX, worldY, baseA - ha, baseA + ha, ASSAULT_MAX * 0.55f,
+                        1.0f, 0.22f, 0.08f, 0.15f + prog * 0.2f, 0.5f + prog * 0.3f, 18);
+                wchar_t warn[] = L"! ASSAULT !";
+                float ww = g_TextS.Width(warn, 0.58f);
+                g_TextS.Draw(warn, worldX - ww * 0.5f, worldY - BODY - 40.0f, 0.58f,
+                             1.0f, 0.28f, 0.1f, 0.85f + prog * 0.15f);
+            } else {
+                float ha = 0.26f;
+                drawFan(worldX, worldY, baseA - ha, baseA + ha, 280.0f,
+                        1.0f, 0.28f, 0.1f, 0.25f, 0.65f, 14);
             }
+            drawCircle(worldX, worldY, BODY * (1.3f + prog * 0.35f + pulse * 0.12f),
+                       1.0f, 0.25f, 0.08f, 0.15f + prog * 0.25f);
         }
     }
 
     void renderBody(float gt, float px, float py) const {
         float aim = atan2f(py - worldY, px - worldX);
         float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
+        float ca = cosf(aim), sa = sinf(aim);
 
         for (auto& tr : trails) {
             float a = (tr.life > 0.0f) ? tr.life / 0.28f : 0.0f;
-            drawRect(tr.x - BODY * 0.4f, tr.y - BODY * 0.25f,
-                     BODY * 0.8f, BODY * 0.5f, 1.0f, 0.55f, 0.15f, 0.14f * a);
+            drawRect(tr.x - BODY * 0.35f, tr.y - BODY * 0.2f,
+                     BODY * 0.7f, BODY * 0.4f, 1.0f, 0.55f, 0.15f, 0.16f * a);
         }
 
         if (phase3) {
-            drawCircle(worldX, worldY, BODY * 1.55f, 1.0f, 0.15f, 0.08f, 0.12f + pulse * 0.1f);
+            drawCircle(worldX, worldY, BODY * 1.5f, 1.0f, 0.15f, 0.08f, 0.1f + pulse * 0.08f);
         } else if (phase2) {
-            drawCircle(worldX, worldY, BODY * 1.35f, 1.0f, 0.45f, 0.12f, 0.08f + pulse * 0.08f);
+            drawCircle(worldX, worldY, BODY * 1.28f, 1.0f, 0.45f, 0.12f, 0.07f + pulse * 0.06f);
         }
 
         float cr, cg, cb;
@@ -563,57 +642,60 @@ public:
         else if (weapon == RRWeapon::SNIPER)      { cr = 0.22f; cg = 0.92f; cb = 1.0f; }
         else                                      { cr = 1.0f; cg = 0.78f; cb = 0.18f; }
 
-        for (int i = 0; i < 4; i++) {
-            float a = spinAng * 0.5f + (float)i * 1.571f;
-            float lx = worldX + cosf(a) * (BODY * 0.95f);
-            float ly = worldY + sinf(a) * (BODY * 0.72f);
-            drawRect(lx - 7, ly - 5, 14, 10, cr * 0.15f, cg * 0.15f, cb * 0.15f, 0.85f);
-            drawRect(lx - 5, ly - 3, 10, 6, cr * 0.35f, cg * 0.35f, cb * 0.35f, 0.9f);
+        for (int i = 0; i < 2; i++) {
+            float side = (i == 0) ? 1.0f : -1.0f;
+            float pxp = worldX + (-sa * side) * (BODY * 0.72f);
+            float pyp = worldY + ( ca * side) * (BODY * 0.72f);
+            drawCircle(pxp, pyp, 11.0f, cr * 0.12f, cg * 0.12f, cb * 0.12f, 0.9f);
+            drawCircle(pxp, pyp, 7.0f, cr * 0.35f, cg * 0.35f, cb * 0.35f, 0.85f);
+            float gx = pxp + ca * 10.0f, gy = pyp + sa * 10.0f;
+            drawRect(gx - 2, gy - 2, 12.0f, 4.0f, cr, cg, cb, 0.9f);
         }
 
-        drawRect(worldX - BODY * 0.78f, worldY - BODY * 0.55f,
-                 BODY * 1.56f, BODY * 1.1f, 0.07f, 0.06f, 0.08f, 0.94f);
-        drawNeonBorder(worldX - BODY * 0.78f, worldY - BODY * 0.55f,
-                       BODY * 1.56f, BODY * 1.1f, cr, cg, cb);
-
-        for (int i = 0; i < 6; i++) {
-            float a = -spinAng + (float)i * 1.047f;
-            float rx = worldX + cosf(a) * (BODY * 0.42f);
-            float ry = worldY + sinf(a) * (BODY * 0.32f);
-            drawRect(rx - 3, ry - 3, 6, 6, cr, cg, cb, 0.45f + pulse * 0.35f);
+        drawCircle(worldX, worldY, BODY * 0.62f, 0.06f, 0.05f, 0.08f, 0.92f);
+        drawNeonBorder(worldX - BODY * 0.62f, worldY - BODY * 0.62f,
+                       BODY * 1.24f, BODY * 1.24f, cr, cg, cb);
+        for (int i = 0; i < 3; i++) {
+            float a = spinAng * 0.8f + (float)i * 2.094f;
+            drawRect(worldX + cosf(a) * BODY * 0.5f - 2.0f,
+                     worldY + sinf(a) * BODY * 0.38f - 2.0f,
+                     4.0f, 4.0f, cr, cg, cb, 0.4f + pulse * 0.3f);
         }
 
-        float bx = worldX + cosf(aim) * (BODY * 0.55f);
-        float by = worldY + sinf(aim) * (BODY * 0.55f);
+        float prowX = worldX + ca * (BODY * 0.38f);
+        float prowY = worldY + sa * (BODY * 0.38f);
+        drawTriangle(prowX, prowY, 16.0f, cr, cg, cb, 0.88f);
+
+        float bx = worldX + ca * (BODY * 0.62f);
+        float by = worldY + sa * (BODY * 0.62f);
         if (weapon == RRWeapon::SHOTGUN || state == RRState::ASSAULT) {
-            drawRect(bx - 4, by - 3, 22, 6, 0.12f, 0.12f, 0.14f, 0.95f);
-            drawRect(bx, by - 2, 18, 4, cr, cg, cb, 0.95f);
-            drawRect(bx + 14, by - 5, 8, 10, cr * 0.8f, cg * 0.8f, cb * 0.8f, 0.85f);
+            drawRect(bx - 3, by - 4, 20, 8, 0.1f, 0.1f, 0.12f, 0.95f);
+            drawRect(bx, by - 2, 16, 4, cr, cg, cb, 0.95f);
         } else if (weapon == RRWeapon::SNIPER) {
-            drawRect(bx - 2, by - 2, 32, 4, 0.1f, 0.12f, 0.14f, 0.95f);
-            drawRect(bx, by - 1.5f, 28, 3, cr, cg, cb, 1.0f);
-            drawCircle(bx + 26, by, 5.0f, cr, cg, cb, 0.7f);
+            drawRect(bx - 1, by - 1.5f, 30, 3, cr, cg, cb, 1.0f);
+            drawCircle(bx + 24, by, 4.0f, cr, cg, cb, 0.75f);
         } else {
-            drawRect(bx - 3, by - 4, 16, 8, 0.1f, 0.1f, 0.12f, 0.95f);
-            for (int i = 0; i < 3; i++)
-                drawRect(bx + (float)i * 5.0f, by - 2, 4, 4, cr, cg, cb, 0.85f);
+            for (int i = 0; i < 4; i++)
+                drawRect(bx + (float)i * 4.0f, by - 2, 3, 4, cr, cg, cb, 0.85f);
         }
 
-        drawCircle(worldX, worldY, BODY * 0.22f, 1.0f, 0.92f, 0.75f, 0.65f + pulse * 0.25f);
+        drawRect(worldX - 8.0f, worldY - BODY * 0.55f, 16.0f, 5.0f,
+                 0.15f, 0.95f, 1.0f, 0.55f + pulse * 0.25f);
+        drawCircle(worldX, worldY, 6.0f, 1.0f, 0.95f, 0.8f, 0.7f);
 
         if (state == RRState::RELOAD_SPRINT &&
             ((int)(gt * 6.0f) % 2 == 0)) {
-            const wchar_t* rl = L"RELOAD>>";
-            float rw = g_TextS.Width(rl, 0.55f);
-            g_TextS.Draw(rl, worldX - rw * 0.5f, worldY - BODY - 38.0f, 0.55f,
+            const wchar_t* rl = L"SPRINT>>";
+            float rw = g_TextS.Width(rl, 0.52f);
+            g_TextS.Draw(rl, worldX - rw * 0.5f, worldY - BODY - 38.0f, 0.52f,
                          1.0f, 0.85f, 0.25f, 0.95f);
         } else if (state != RRState::RELOAD_SPRINT) {
             wchar_t tag[24];
             float adx = px - worldX, ady = py - worldY;
-            float ad = sqrtf(adx * adx + ady * ady);
+            float dist = sqrtf(adx * adx + ady * ady);
             if (state == RRState::ASSAULT)
                 swprintf_s(tag, L"ASSAULT");
-            else if (ad < MELEE_NEAR)
+            else if (dist < MELEE_NEAR)
                 swprintf_s(tag, L"PANIC");
             else
                 swprintf_s(tag, L"[%ls %d]", weaponTag(weapon), ammo);

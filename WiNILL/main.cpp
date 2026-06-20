@@ -991,7 +991,7 @@ int main() {
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
                     if (g_MonsterManager.boss && g_MonsterManager.boss->alive) consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, L"SLIME.worm");
                     if (g_GlitchBoss && g_GlitchBoss->alive) consider(g_GlitchBoss->worldX, g_GlitchBoss->worldY, L"GLITCH.sys");
-                    if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"RELOADER.exe");
+                    if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY.sys");
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
                     if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
                     if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY, L"KERNEL.sys");
@@ -3148,7 +3148,7 @@ int main() {
                         switch (g_CreativeBossPick) {
                         case 0:  startWarn(0, L"SLIME.worm",    bossHpC);         break;
                         case 1:  startWarn(1, L"GLITCH.sys",    bossHpC * 0.7f);  break;
-                        case 2:  startWarn(2, L"RELOADER.exe",  bossHpC);         break;
+                        case 2:  startWarn(2, L"VOLLEY.sys",  bossHpC);         break;
                         case 3:  startWarn(3, L"SPAM.dll",      bossHpC * 0.65f); break;
                         case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
                         case 5:  startWarn(5, L"KERNEL.sys",    bossHpC * 0.45f); break;  // DPS체크 — 자가붕괴 보정 위해 HP↓
@@ -4295,7 +4295,7 @@ int main() {
                  L"GLITCH.sys", 0.07f,0.06f,0.10f, 0.95f,0.20f,0.60f);
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
-                 L"RELOADER.exe", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
+                 L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
         if (g_PolyBoss && g_PolyBoss->alive)
             addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
                  L"POLYMORPH.vir", 0.09f,0.06f,0.11f, 0.60f,0.30f,1.0f);
@@ -5080,7 +5080,7 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
-        // (g4) RELOADER.exe — 전조 + 기동 화력 플랫폼
+                // VOLLEY.sys — 전조 + 기동 화력 드론
         if (g_RRBoss && g_RRBoss->alive) {
             auto* rb = g_RRBoss;
             float pCX = playerWin.x + playerWin.width  * 0.5f;
@@ -5089,6 +5089,10 @@ int main() {
             BindMainShader();
 
             rb->renderTelegraphs(pCX, pCY, gtRR);
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            rb->renderTelegraphs(pCX, pCY, gtRR);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(rb->worldX - RR_WIN_W * 0.5f, rb->worldY - RR_WIN_W * 0.5f,
@@ -5588,7 +5592,7 @@ int main() {
                 bn = L"GLITCH.sys";    bhf = g_GlitchBoss->hp / g_GlitchBoss->maxHp;
                 bc = glm::vec3(0.95f, 0.2f, 0.6f);
             } else if (g_RRBoss && g_RRBoss->alive) {
-                bn = L"RELOADER.exe";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
+                bn = L"VOLLEY.sys";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.55f, 0.2f);
             } else if (g_PolyBoss && g_PolyBoss->alive) {
                 bn = L"POLYMORPH.vir"; bhf = g_PolyBoss->hp / g_PolyBoss->maxHp;
@@ -5616,7 +5620,7 @@ int main() {
             if (bn) {
                 if      (bn == L"SLIME.worm")     bossPick = 0;
                 else if (bn == L"GLITCH.sys")     bossPick = 1;
-                else if (bn == L"RELOADER.exe")   bossPick = 2;
+                else if (bn == L"VOLLEY.sys")   bossPick = 2;
                 else if (bn == L"SPAM.dll")       bossPick = 3;
                 else if (bn == L"POLYMORPH.vir")  bossPick = 4;
                 else if (bn == L"KERNEL.sys")     bossPick = 5;
@@ -5672,7 +5676,7 @@ int main() {
                                    ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
                     else if (g_RRBoss->phase2)
                         swprintf_s(rrBuf, L"P2 · %ls",
-                                   g_RRBoss->state == RRState::RELOAD_SPRINT ? L"RELOAD" :
+                                   g_RRBoss->state == RRState::RELOAD_SPRINT ? L"SPRINT" :
                                    ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
                     else
                         swprintf_s(rrBuf, L"%ls",
@@ -5741,7 +5745,7 @@ int main() {
                     drawRect(off, by2, sw2, bh2, wc.r, wc.g, wc.b, 0.10f + 0.20f * blink);
                 }
             } break;
-            case 2: {  // RELOADER — 화면 가장자리 교차 포격 + 기동 플랫폼 실루엣
+            case 2: {  // VOLLEY — 교차 포격선 + 드론 실루엣
                 float cx = sw2 * 0.5f, cy = sh2 * 0.42f;
                 for (int e = 0; e < 4; e++) {
                     float ex = (e % 2) ? sw2 - 20.0f : 20.0f;
