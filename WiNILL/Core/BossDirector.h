@@ -66,7 +66,7 @@ inline glm::vec3 WarnColor(int pick) {
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
         L"메모리 누수 — 프로세스 증식",
-        L"화면 깨짐 — PHANTOM 디코이 · TEAR 예고",
+        L"화면 깨짐 — 점멸 추격 · PHANTOM 잔상",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
         L"실행 파일 형태 변조",
@@ -78,7 +78,7 @@ inline const wchar_t* Tagline(int pick) {
     };
     static const wchar_t* EN[10] = {
         L"Memory leak — process swarm",
-        L"Broken display — phantom decoys · telegraphed tear",
+        L"Broken display — flicker chase · phantom trails",
         L"Volley fire — telegraphed danger zones",
         L"Popup ad flood",
         L"Executable morphing",
@@ -90,7 +90,7 @@ inline const wchar_t* Tagline(int pick) {
     };
     static const wchar_t* JP[10] = {
         L"メモリリーク — プロセス増殖",
-        L"画面破損 — PHANTOMデコイ · TEAR予告",
+        L"画面破損 — 点滅追跡 · PHANTOM残像",
         L"連発砲撃 — 射程予告表示",
         L"ポップアップ広告暴走",
         L"実行ファイル変形",
