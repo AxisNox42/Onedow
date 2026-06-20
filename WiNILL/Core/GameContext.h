@@ -37,8 +37,6 @@ extern FirewallBoss*       g_FirewallBoss;
 extern BotnetBoss*         g_BotnetBoss;
 extern CentipedeBoss*      g_CentiBoss;
 extern TotemBoss*          g_TotemBoss;
-extern std::vector<Boss*>  g_LeakNodes;
-
 // ── UI / 메뉴 씬에서 참조 (main.cpp 정의) ──
 extern bool      g_LmbPrev;
 extern GameState g_SettingsReturnTo;

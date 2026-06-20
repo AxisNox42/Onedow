@@ -302,7 +302,7 @@ int            g_BossWarnPick   = -1;           // 0~8 보스 통일 인덱스 (
 const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
 float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
 // 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
-bool g_LeakWasP2 = false, g_LeakWasP3 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
+bool g_OvWasP2 = false, g_OvWasP3 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
 bool g_BotnetWasP2 = false;
 // 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
 float     g_P2ToastTimer = 0.0f;
@@ -345,27 +345,6 @@ static void ResetSkills() {
 // 보스 생존 동안 화면 전체를 보스 고유색으로 점점 물들이는 연출
 float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
 glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
-
-// 슬라임 분열체 (원본 사망 시 2마리 → 각자 또 1번 분열, 총 2세대) — main 이 직접 관리
-std::vector<Boss*> g_LeakNodes;
-bool g_LeakEncounter = false;   // 분열 인카운터 진행 중 (끝나면 보상)
-// 누수 위성 노드 — 누수 궤적만, 바닥에서만 증식
-static Boss* MakeLeakNode(float x, float y, float maxHp, float scale, int gen,
-                          int sw, int sh) {
-    Boss* c = new Boss(x, y, sw, sh, maxHp);
-    c->sizeScale  = scale;
-    c->splitGen   = gen;
-    c->leakNode   = true;
-    c->color = glm::vec3(0.88f, 0.92f, 0.98f);
-    return c;
-}
-
-static void SpawnLeakNodes(const std::vector<LeakNodeSpawn>& spawns, int sw, int sh) {
-    for (auto& ns : spawns) {
-        if (ns.gen > Boss::NODE_SPAWN_MAXGEN) continue;
-        g_LeakNodes.push_back(MakeLeakNode(ns.x, ns.y, ns.hp, ns.scale, ns.gen, sw, sh));
-    }
-}
 
 // HUD: 현재 측정 FPS (상단 우측 표시)
 int    g_CurrentFPS  = 0;
@@ -662,7 +641,6 @@ int main() {
             if (bm->alive && vis(bm->worldX, bm->worldY)) consider(bm->worldX, bm->worldY);
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
             consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY);
-        for (auto* c : g_LeakNodes) if (c->alive) consider(c->worldX, c->worldY);
         if (g_RRBoss && g_RRBoss->alive)         consider(g_RRBoss->worldX, g_RRBoss->worldY);
         if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
             consider(g_PolyBoss->worldX, g_PolyBoss->worldY);
@@ -816,7 +794,7 @@ int main() {
             BossDir::ResetRotation();
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
-            g_LeakWasP2 = g_LeakWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+            g_OvWasP2 = g_OvWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
@@ -832,9 +810,6 @@ int main() {
             g_PolyPrevForm = -1;
             g_PolySummonTimer = 0.0f;
             g_PolyWasPhase2 = false;
-            for (auto* c : g_LeakNodes) delete c;   // 분열체 정리
-            g_LeakNodes.clear();
-            g_LeakEncounter = false;
             g_BossTintT = 0.0f;
             ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱/적 폭발·처치태그 초기화
             ResetSkills();                           // 액티브 스킬/대시 초기화
@@ -989,7 +964,7 @@ int main() {
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName((int)m->kind));
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_RANGED));
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, L"LEAK.sys");
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, L"OVERLAY.dll");
                     if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY.sys");
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
                     if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
@@ -1042,12 +1017,10 @@ int main() {
                 if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
                 if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
-                for (auto* c : g_LeakNodes) delete c;
-                g_LeakNodes.clear();
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
-                g_LeakWasP2 = g_LeakWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+                g_OvWasP2 = g_OvWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
@@ -1550,8 +1523,14 @@ int main() {
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  hitKB(m->worldX,  m->worldY,  m->hp,  m->alive);
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  hitKB(r->worldX,  r->worldY,  r->hp,  r->alive);
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) hitKB(bm->worldX, bm->worldY, bm->hp, bm->alive);
-                    for (auto* c : g_LeakNodes)                if (c->alive) { float dx=c->worldX-cx,dy=c->worldY-cy; if(dx*dx+dy*dy<r2){c->hp-=dmg; if(c->hp<=0)c->alive=false;} }
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) { float dx=g_MonsterManager.boss->worldX-cx,dy=g_MonsterManager.boss->worldY-cy; if(dx*dx+dy*dy<r2){g_MonsterManager.boss->hp-=dmg; if(g_MonsterManager.boss->hp<=0)g_MonsterManager.boss->alive=false;} }
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                        float hx, hy; g_MonsterManager.boss->hurtFocus(hx, hy);
+                        float dx=hx-cx, dy=hy-cy;
+                        if (dx*dx+dy*dy<r2) {
+                            g_MonsterManager.boss->hp-=dmg;
+                            if (g_MonsterManager.boss->hp<=0) g_MonsterManager.boss->alive=false;
+                        }
+                    }
                     if (g_RRBoss && g_RRBoss->alive) { float dx=g_RRBoss->worldX-cx,dy=g_RRBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_RRBoss->hp-=dmg; if(g_RRBoss->hp<=0)g_RRBoss->alive=false;} }
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) { float dx=g_PolyBoss->worldX-cx,dy=g_PolyBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_PolyBoss->hp-=dmg; if(g_PolyBoss->hp<=0)g_PolyBoss->alive=false;} }
                     if (g_SpamBoss && g_SpamBoss->alive) { float dx=g_SpamBoss->worldX-cx,dy=g_SpamBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_SpamBoss->hp-=dmg; if(g_SpamBoss->hp<=0)g_SpamBoss->alive=false;} }
@@ -1684,15 +1663,11 @@ int main() {
                 // 점수 기반 속도 램프 (지루함 방지)
                 float si = (float)g_GameManager.score / 100000.0f; if (si > 6.0f) si = 6.0f;
                 float mobSpdRamp = 1.0f + si * 0.09f;
-                if (!timeStopped) {
-                    std::vector<LeakNodeSpawn> leakBorn;
+                if (!timeStopped)
                     g_MonsterManager.UpdateAll(pCX, pCY, FIXED_DT,
                                                g_GameManager.playerHP, g_Bullets,
                                                g_Stats.mobSpeedMult * mobSpdRamp,
-                                               rmobMoveMult * mobSpdRamp,
-                                               &leakBorn);
-                    SpawnLeakNodes(leakBorn, screenWidth, screenHeight);
-                }
+                                               rmobMoveMult * mobSpdRamp);
 
                 // 리로드 러너 업데이트 (무기 상태머신 + 장전 질주, 적 총알 push)
                 if (!timeStopped && g_RRBoss && g_RRBoss->alive)
@@ -1803,17 +1778,6 @@ int main() {
                     g_TotemBoss->mobSpawnQueue.clear();
                 }
 
-                // leak.node 업데이트 — 누수 바닥에서만 증식
-                if (!g_LeakNodes.empty()) {
-                    std::vector<Monster*> sink;
-                    std::vector<LeakNodeSpawn> nodeBorn;
-                    for (auto* c : g_LeakNodes)
-                        if (c->alive && !timeStopped)
-                            c->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, sink, nodeBorn);
-                    for (auto* m : sink) delete m;
-                    SpawnLeakNodes(nodeBorn, screenWidth, screenHeight);
-                }
-
                 // ── 보스 페이즈2 진입 (상승엣지) — 통일 연출 + 보스별 처리 ──
                 auto p2enter = [&](float bx, float by, glm::vec3 col) {
                     g_ShakeTime = 0.55f; g_ShakeMag = 26.0f;
@@ -1826,22 +1790,21 @@ int main() {
                                             col.r, col.g, col.b, true);
                     g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
                 };
-                // LEAK.sys — P2 HEAP+ 누수 버스트
+                // OVERLAY.dll — P2/P3 진입 연출
                 if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
                     auto* b = g_MonsterManager.boss;
-                    if (b->phase2 && !g_LeakWasP2) {
-                        g_LeakWasP2 = true;
-                        p2enter(b->worldX, b->worldY, glm::vec3(0.45f, 0.55f, 1.0f));
-                        b->burstPools(6);
+                    if (b->phase2 && !g_OvWasP2) {
+                        g_OvWasP2 = true;
+                        p2enter(b->worldX, b->worldY, glm::vec3(0.55f, 0.72f, 1.0f));
                     }
-                    if (b->phase3 && !g_LeakWasP3) {
-                        g_LeakWasP3 = true;
+                    if (b->phase3 && !g_OvWasP3) {
+                        g_OvWasP3 = true;
                         g_ShakeTime = 0.65f; g_ShakeMag = 34.0f;
-                        TriggerFlash(0.35f, 0.45f, 1.0f, 0.45f);
+                        TriggerFlash(0.45f, 0.55f, 1.0f, 0.45f);
                         TriggerHitStop(0.14f);
                         SpawnShockWave(b->worldX, b->worldY, 480.0f, 0.85f, 0.35f, 0.55f, 1.0f);
                     }
-                } else { g_LeakWasP2 = false; g_LeakWasP3 = false; }
+                } else { g_OvWasP2 = false; g_OvWasP3 = false; }
                 // RELOADER — 오버클럭 + ASSAULT 전면전
                 if (g_RRBoss && g_RRBoss->alive) {
                     if (g_RRBoss->phase2 && !g_RRWasP2) {
@@ -2255,35 +2218,6 @@ int main() {
                     }
                 }
 
-                // 슬라임 분열체 vs 플레이어 총알 (수동 충돌)
-                if (!g_LeakNodes.empty()) {
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        for (auto* c : g_LeakNodes) {
-                            if (!c->alive) continue;
-                            float bodyR = Boss::BODY_SIZE * c->sizeScale * 0.65f;
-                            if (SegDist(c->worldX, c->worldY, b.prevX, b.prevY, b.x, b.y) < bodyR) {
-                                float pd = glm::distance(glm::vec2(pCX, pCY),
-                                                         glm::vec2(c->worldX, c->worldY));
-                                float dmg;
-                                if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
-                                else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
-                                else dmg = g_Stats.GetBaseDamage()
-                                         * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
-                                float dealt = (dmg < c->hp) ? dmg : c->hp;
-                                c->hp -= dealt;
-                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                                SpawnDamageNumber(c->worldX, c->worldY, dealt, dealt >= 40.0f);
-                                if (c->hp <= 0.0f) { c->alive = false; AddKillCombo(); }
-                                bool keep = (b.remainingDmg > 0.001f) ||
-                                            (g_Stats.pierce && (rand()%100) < g_Stats.pierceChance);
-                                if (!keep) b.active = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-
                 // 처치 보상 정산 — 총알/근접이 아닌 모든 죽음(연쇄폭발·스킬·MK2·해킹 폭발 등)
                 //   도 여기서 한 번씩 EXP/점수/콤보/흡혈을 받는다 (scored 플래그로 중복 방지).
                 auto creditKill = [&](float xpBase, float scoreBase) {
@@ -2411,52 +2345,18 @@ int main() {
                     g_ShakeTime = 0.5f; g_ShakeMag = 18.0f;
                     TriggerFlash(0.5f, 1.0f, 0.6f, 0.5f); TriggerHitStop(0.08f);
                     bs->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
                     delete bs;
                     g_MonsterManager.boss = nullptr;
-                    if (!g_LeakNodes.empty()) {
-                        g_LeakEncounter = true;
-                    } else {
-                        g_GameManager.scoreAccum += 20000.0f;
-                        g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                        g_TotalBossKills++;
-                        TryUnlockAch(ACH_FIRST_BOSS);
-                        if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                        if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                        g_BossRewardPicksLeft = 2;
-                        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                     g_Stats.distAugTaken);
-                        g_GameManager.currentState = GameState::AUG_SELECT;
-                    }
-                }
-
-                // leak.node 사망 — 바닥 누수만 남김 (연쇄 분열 없음)
-                if (!g_LeakNodes.empty()) {
-                    for (auto* c : g_LeakNodes) {
-                        if (c->alive || c->exploded) continue;
-                        c->exploded = true;
-                        SpawnEnemyExplosion(c->worldX, c->worldY, 0.5f, 0.95f, 0.6f, true);
-                        SpawnShockWave(c->worldX, c->worldY, 180.0f, 0.4f, 0.5f, 0.95f, 0.5f);
-                        g_GameManager.scoreAccum += 2500.0f;
-                        g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    }
-                    for (auto it = g_LeakNodes.begin(); it != g_LeakNodes.end(); ) {
-                        if (!(*it)->alive) { delete *it; it = g_LeakNodes.erase(it); }
-                        else ++it;
-                    }
-
-                    if (g_LeakEncounter && g_LeakNodes.empty()) {
-                        g_LeakEncounter = false;
-                        g_GameManager.scoreAccum += 20000.0f;
-                        g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                        g_TotalBossKills++;
-                        TryUnlockAch(ACH_FIRST_BOSS);
-                        if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                        if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                        g_BossRewardPicksLeft = 2;
-                        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                     g_Stats.distAugTaken);
-                        g_GameManager.currentState = GameState::AUG_SELECT;
-                    }
                 }
 
                 // 리로드 러너 사망 → 보상
@@ -2906,7 +2806,7 @@ int main() {
             bool  bossNow = g_MonsterManager.boss || g_RRBoss ||
                             g_PolyBoss || g_SpamBoss || g_KernelBoss || g_FirewallBoss ||
                             g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
-                            !g_LeakNodes.empty() || g_BossWarnTimer > 0.0f;
+                            g_BossWarnTimer > 0.0f;
             // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
             //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
@@ -2953,7 +2853,6 @@ int main() {
                 if (g_BotnetBoss && g_BotnetBoss->alive) return true;
                 if (g_CentiBoss && g_CentiBoss->alive) return true;
                 if (g_TotemBoss && g_TotemBoss->alive) return true;
-                for (auto* s : g_LeakNodes) if (s && s->alive) return true;
                 return false;
             };
             bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f;
@@ -3042,7 +2941,7 @@ int main() {
                 bool bossActive = g_MonsterManager.boss ||
                                   g_RRBoss || g_PolyBoss || g_SpamBoss || g_KernelBoss ||
                                   g_FirewallBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
-                                  !g_LeakNodes.empty() || g_BossWarnTimer > 0.0f;
+                                  g_BossWarnTimer > 0.0f;
                 // 라운드2 — 보스 눈덩이 차단: 보스를 잡아 완전히 정리되는 순간(활성→비활성),
                 //   다음 보스 임계값을 현재 점수+20만으로 리베이스 → 최소 20만점 휴식 보장
                 //   (보스전 중 쌓인 점수로 잡자마자 또 보스 뜨던 악순환 제거).
@@ -3067,7 +2966,7 @@ int main() {
                         // 크리에이티브: 선택한 보스 (점수 무관, 1회)
                         g_CreativeBossPending = false;
                         switch (g_CreativeBossPick) {
-                        case 0:  startWarn(0, L"LEAK.sys",    bossHpC);         break;
+                        case 0:  startWarn(0, L"OVERLAY.dll",    bossHpC);         break;
                         case 2:  startWarn(2, L"VOLLEY.sys",  bossHpC);         break;
                         case 3:  startWarn(3, L"SPAM.dll",      bossHpC * 0.65f); break;
                         case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
@@ -3704,11 +3603,11 @@ int main() {
                     SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || crit);
                     if (hp <= 0.0f) al = false;
                 };
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                    hitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
-                         g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
-                for (auto* c : g_LeakNodes) if (c->alive)
-                    hitB(c->worldX, c->worldY, c->hp, c->alive);
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                    float hx, hy;
+                    g_MonsterManager.boss->hurtFocus(hx, hy);
+                    hitB(hx, hy, g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
+                }
                 if (g_RRBoss && g_RRBoss->alive)
                     hitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
                 if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
@@ -3839,11 +3738,11 @@ int main() {
                         SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || lcrit);
                         if (hp <= 0.0f) al = false;
                     };
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                        lhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
-                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
-                    for (auto* c : g_LeakNodes) if (c->alive)
-                        lhitB(c->worldX, c->worldY, c->hp, c->alive);
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                        float hx, hy;
+                        g_MonsterManager.boss->hurtFocus(hx, hy);
+                        lhitB(hx, hy, g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
+                    }
                     if (g_RRBoss && g_RRBoss->alive)
                         lhitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
@@ -3923,10 +3822,11 @@ int main() {
                         float dx=ex-pCX, dy=ey-pCY;
                         if (dx*dx+dy*dy < (novaR+70.0f)*(novaR+70.0f)) { hp -= dmg * 2.0f; if (hp<=0.0f) al=false; }
                     };
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                        nhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
-                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
-                    for (auto* c : g_LeakNodes) if (c->alive) nhitB(c->worldX,c->worldY,c->hp,c->alive);
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                        float hx, hy;
+                        g_MonsterManager.boss->hurtFocus(hx, hy);
+                        nhitB(hx, hy, g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
+                    }
                     if (g_RRBoss && g_RRBoss->alive) nhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) nhitB(g_PolyBoss->worldX,g_PolyBoss->worldY,g_PolyBoss->hp,g_PolyBoss->alive);
                     if (g_SpamBoss && g_SpamBoss->alive) nhitB(g_SpamBoss->worldX,g_SpamBoss->worldY,g_SpamBoss->hp,g_SpamBoss->alive);
@@ -4165,12 +4065,11 @@ int main() {
             addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"popup.exe", 0.08f,0.08f,0.10f, 0.85f,0.20f,0.95f);
         }
         // 보스/분열체 (상단)
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-            addW(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, Boss::WIN_W, Boss::WIN_H,
-                 L"LEAK.sys", 0.07f,0.08f,0.12f, 0.45f,0.55f,1.0f);
-        for (auto* c : g_LeakNodes) if (c->alive) {
-            float w = Boss::WIN_W * c->sizeScale;
-            addW(c->worldX, c->worldY, w, w, L"leak.node", 0.06f,0.08f,0.12f, 0.35f,0.65f,1.0f);
+        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+            auto* b0 = g_MonsterManager.boss;
+            addW(b0->worldX, b0->worldY,
+                 Boss::WIN_W * b0->sizeScale, Boss::WIN_H * b0->sizeScale,
+                 L"OVERLAY.dll", 0.07f,0.08f,0.12f, 0.45f,0.55f,1.0f);
         }
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
@@ -4323,8 +4222,9 @@ int main() {
         };
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
-            drawBossWinContent(bs->worldX - Boss::WIN_W * 0.5f,
-                               bs->worldY - Boss::WIN_H * 0.5f, Boss::WIN_W, Boss::WIN_H);
+            drawBossWinContent(bs->worldX - Boss::WIN_W * bs->sizeScale * 0.5f,
+                               bs->worldY - Boss::WIN_H * bs->sizeScale * 0.5f,
+                               Boss::WIN_W * bs->sizeScale, Boss::WIN_H * bs->sizeScale);
         }
         if (g_RRBoss && g_RRBoss->alive)
             drawBossWinContent(g_RRBoss->worldX - RR_WIN_W * 0.5f,
@@ -4350,11 +4250,6 @@ int main() {
         if (g_TotemBoss && g_TotemBoss->alive)
             drawBossWinContent(g_TotemBoss->worldX - TOTEM_WIN_W * 0.5f,
                                g_TotemBoss->worldY - TOTEM_WIN_W * 0.5f, TOTEM_WIN_W, TOTEM_WIN_W);
-        for (auto* c : g_LeakNodes) {
-            if (!c->alive) continue;
-            float w = Boss::WIN_W * c->sizeScale;
-            drawBossWinContent(c->worldX - w * 0.5f, c->worldY - w * 0.5f, w, w);
-        }
         // 봇넷 노드(SPAWNER) 창 내부 컨텐츠 — 노드 본체/소환 알이 자기 창에서 보이도록 (E21)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
@@ -4728,48 +4623,40 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
-        // (e2.4) LEAK 누수 구역 — 전체 화면 (가짜창 밖에도 보임)
-        {
-            float leakGt = (float)glfwGetTime();
-            BindMainShader();
-            if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                g_MonsterManager.boss->renderPools(leakGt);
-            for (auto* c : g_LeakNodes)
-                if (c->alive) c->renderPools(leakGt);
-        }
-
-        // (e3) LEAK.sys 본체
+        // (e2.4) OVERLAY 패널 + 경고 (전체 화면)
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            float bwx = bs->worldX - Boss::WIN_W * 0.5f;
-            float bwy = bs->worldY - Boss::WIN_H * 0.5f;
-            WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
-            bs->renderBody((float)glfwGetTime());
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-        }
-    
-        // (e3.5) 누수 노드 — 본체/HP/총알(개인 창)
-        for (auto* c : g_LeakNodes) {
-            if (!c->alive) continue;
-            float scale = c->sizeScale;
-            float body  = Boss::BODY_SIZE * scale;
-            float win   = Boss::WIN_W * scale;
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(c->worldX - win*0.5f, c->worldY - win*0.5f, win, win);
-            for (auto& b : g_Bullets) {
-                if (!b.active) continue;
-                drawBullet(b);
+            float ogt = (float)glfwGetTime();
+            BindMainShader();
+            bs->renderPanes(ogt);
+            if (bs->panePending) {
+                float warnT = bs->paneTimer - (Boss::PANE_INTERVAL - Boss::PANE_WARN);
+                float prog = warnT / Boss::PANE_WARN;
+                if (prog < 0.0f) prog = 0.0f;
+                if (prog > 1.0f) prog = 1.0f;
+                float pw = 90.0f + prog * 50.0f, ph = 64.0f + prog * 36.0f;
+                float blink = 0.3f + 0.35f * (0.5f + 0.5f * sinf(ogt * 16.0f));
+                drawRect(bs->paneX - pw * 0.5f, bs->paneY - ph * 0.5f, pw, ph,
+                         0.12f, 0.16f, 0.28f, blink * (0.15f + 0.35f * prog));
+                drawNeonBorder(bs->paneX - pw * 0.5f, bs->paneY - ph * 0.5f, pw, ph,
+                               0.45f, 0.65f, 1.0f);
             }
-            c->renderBody((float)glfwGetTime());
-            float hpFrac = c->hp / c->maxHp; if(hpFrac<0)hpFrac=0; if(hpFrac>1)hpFrac=1;
-            float hbW = 120.0f * scale, hbH = 7.0f;
-            float hbX = c->worldX - hbW*0.5f, hbY = c->worldY - body - 14.0f;
-            drawRect(hbX, hbY, hbW, hbH, 0.10f, 0.12f, 0.18f, 0.85f);
-            drawRect(hbX, hbY, hbW*hpFrac, hbH, 0.35f, 0.65f, 1.0f, 0.95f);
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            if (bs->snapPending) {
+                float warnT = bs->snapTimer - (Boss::SNAP_INTERVAL - Boss::SNAP_WARN);
+                float prog = warnT / Boss::SNAP_WARN;
+                if (prog < 0.0f) prog = 0.0f;
+                if (prog > 1.0f) prog = 1.0f;
+                float r = 36.0f + prog * 120.0f;
+                drawCircle(bs->snapX, bs->snapY, r, 0.55f, 0.35f, 1.0f, 0.12f + 0.28f * prog);
+            }
         }
-    
+
+        // (e3) OVERLAY.dll 본체 — 가짜 창
+        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+            auto* bs = g_MonsterManager.boss;
+            bs->renderWindow((float)glfwGetTime());
+        }
+
         // (f) BrokenSight 오브 — 항상 표시 (클리핑 없음, 무적)
         if (g_Stats.brokenSight && g_Orb.active) {
             drawCircle(g_Orb.x, g_Orb.y, 16.0f, 1.0f, 1.0f, 0.1f, 0.22f);
@@ -5312,9 +5199,8 @@ int main() {
         {
             bool bossAlive = false;
             glm::vec3 tc(0.6f, 0.3f, 1.0f);
-            if ((g_MonsterManager.boss && g_MonsterManager.boss->alive) ||
-                !g_LeakNodes.empty()) {
-                bossAlive = true; tc = glm::vec3(0.45f, 0.55f, 1.0f); }   // LEAK/노드: 청보라
+            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                bossAlive = true; tc = glm::vec3(0.55f, 0.72f, 1.0f); }
             else if (g_RRBoss && g_RRBoss->alive) {
                 bossAlive = true; tc = glm::vec3(1.0f, 0.55f, 0.2f); }     // 리로드러너: 주황
             else if (g_PolyBoss && g_PolyBoss->alive) {
@@ -5344,8 +5230,8 @@ int main() {
             const wchar_t* bn = nullptr;
             float bhf = 0.0f; glm::vec3 bc(1.0f, 1.0f, 1.0f);
             if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                bn = L"LEAK.sys";    bhf = g_MonsterManager.boss->hp / g_MonsterManager.boss->maxHp;
-                bc = glm::vec3(0.45f, 0.55f, 1.0f);
+                bn = L"OVERLAY.dll";    bhf = g_MonsterManager.boss->hp / g_MonsterManager.boss->maxHp;
+                bc = glm::vec3(0.55f, 0.72f, 1.0f);
             } else if (g_RRBoss && g_RRBoss->alive) {
                 bn = L"VOLLEY.sys";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.55f, 0.2f);
@@ -5373,7 +5259,7 @@ int main() {
             }
             int bossPick = -1;
             if (bn) {
-                if      (bn == L"LEAK.sys")     bossPick = 0;
+                if      (bn == L"OVERLAY.dll")     bossPick = 0;
                 else if (bn == L"VOLLEY.sys")   bossPick = 2;
                 else if (bn == L"SPAM.dll")       bossPick = 3;
                 else if (bn == L"POLYMORPH.vir")  bossPick = 4;
@@ -5488,19 +5374,18 @@ int main() {
     
             // 보스별 증상 테마
             switch (g_BossWarnPick) {
-            case 0: {  // LEAK — RAM 미터 차오름 + 누수 바이트
-                float rise = (30.0f + 130.0f * prog);
-                drawRect(0, sh2 - rise, sw2, rise, 0.12f, 0.18f, 0.42f, 0.10f + 0.12f * prog);
-                for (int i = 0; i < 9; i++) {
-                    float bx = 24.0f + (float)(i % 3) * (sw2 * 0.32f);
-                    float by = sh2 - rise - 20.0f - (float)(i / 3) * 38.0f;
-                    float bh = 12.0f + (float)(rand() % 40) * prog;
-                    drawRect(bx, by - bh, 18.0f, bh, 0.35f, 0.55f, 1.0f, 0.22f);
+            case 0: {  // OVERLAY — 겹쳐지는 반투명 창들
+                int layers = 2 + (int)(prog * 5);
+                for (int i = 0; i < layers; i++) {
+                    float pw = 140.0f + (float)(rand() % 120);
+                    float ph = 90.0f + (float)(rand() % 80);
+                    float px = (float)(rand() % (int)(sw2 - pw));
+                    float py = (float)(rand() % (int)(sh2 - ph));
+                    float a = 0.08f + 0.12f * prog;
+                    drawRect(px, py, pw, ph, 0.06f, 0.08f, 0.14f, a);
+                    drawRect(px, py, pw, 14.0f, wc.r, wc.g, wc.b, 0.35f + 0.25f * blink);
+                    drawNeonBorder(px, py, pw, ph, wc.r, wc.g, wc.b);
                 }
-                float meterW = sw2 * 0.55f;
-                drawRect(sw2 * 0.5f - meterW * 0.5f, 36.0f, meterW, 14.0f, 0.08f, 0.08f, 0.12f, 0.6f);
-                drawRect(sw2 * 0.5f - meterW * 0.5f, 36.0f, meterW * prog, 14.0f,
-                         0.45f, 0.55f, 1.0f, 0.75f);
             } break;
             case 1: break;
             case 2: {  // VOLLEY — 교차 포격선 + 드론 실루엣
