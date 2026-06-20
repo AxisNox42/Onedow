@@ -307,7 +307,7 @@ int            g_BossWarnPick   = -1;           // 0~8 보스 통일 인덱스 (
 const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
 float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
 // 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
-bool g_SlimeWasP2 = false, g_GlitchWasP2 = false, g_GlitchWasP3 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
+bool g_SlimeWasP2 = false, g_GlitchWasP2 = false, g_GlitchWasP3 = false, g_GlitchWasTear = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
 bool g_BotnetWasP2 = false;
 // 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
 float     g_P2ToastTimer = 0.0f;
@@ -820,7 +820,7 @@ int main() {
             BossDir::ResetRotation();
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
-            g_SlimeWasP2 = g_GlitchWasP2 = g_GlitchWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+            g_SlimeWasP2 = g_GlitchWasP2 = g_GlitchWasP3 = g_GlitchWasTear = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
@@ -1054,7 +1054,7 @@ int main() {
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
-                g_SlimeWasP2 = g_GlitchWasP2 = g_GlitchWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+                g_SlimeWasP2 = g_GlitchWasP2 = g_GlitchWasP3 = g_GlitchWasTear = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
@@ -1855,7 +1855,15 @@ int main() {
                         g_GlitchWasP3 = true;
                         p2enter(g_GlitchBoss->worldX, g_GlitchBoss->worldY, glm::vec3(0.85f, 0.15f, 0.95f));
                     }
-                } else { g_GlitchWasP2 = false; g_GlitchWasP3 = false; }
+                    if (g_GlitchBoss->state == BossState::TEAR && !g_GlitchWasTear) {
+                        g_GlitchWasTear = true;
+                        g_ShakeTime = 0.42f; g_ShakeMag = 22.0f;
+                        TriggerFlash(1.0f, 0.12f, 0.38f, 0.42f);
+                        TriggerHitStop(0.07f);
+                    } else if (g_GlitchBoss->state != BossState::TEAR) {
+                        g_GlitchWasTear = false;
+                    }
+                } else { g_GlitchWasP2 = false; g_GlitchWasP3 = false; g_GlitchWasTear = false; }
                 // RELOADER — 오버클럭 + ASSAULT 전면전
                 if (g_RRBoss && g_RRBoss->alive) {
                     if (g_RRBoss->phase2 && !g_RRWasP2) {
@@ -3219,7 +3227,7 @@ int main() {
                                 new Boss(bsx, bsy, screenWidth, screenHeight, g_BossWarnHp);
                             break;
                         case 1:
-                            g_GlitchWasP2 = g_GlitchWasP3 = false;
+                            g_GlitchWasP2 = g_GlitchWasP3 = g_GlitchWasTear = false;
                             g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_GlitchBoss->hideInCorner();
                             g_GlitchBoss->state = BossState::FRAGMENT;
@@ -5091,19 +5099,7 @@ int main() {
                                 GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
         }
     
-        // CORRUPT.dll — TEAR 전조 + RGB 레이저 (창 위 전역 연출)
-        if (g_GlitchBoss && g_GlitchBoss->alive) {
-            auto* gb = g_GlitchBoss;
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            float gtG = (float)glfwGetTime();
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-            BindMainShader();
-            gb->renderTelegraphs(pCX, pCY, gtG);
-            BindMainShader();
-            gb->renderLasers();
-            BatchFlush();
-        }
+        // CORRUPT.dll 전역 연출 — 프레임 최상단 블록(6320)에서 처리
     
                 // VOLLEY.sys — 전조 + 기동 화력 드론
         if (g_RRBoss && g_RRBoss->alive) {
@@ -6321,28 +6317,57 @@ int main() {
             }
         }
     
-        // ── CORRUPT.dll 화면 연출 (리소스 없이, 최상단) ──
+        // ── CORRUPT.dll — 전조/레이저/글리치 (프레임 최상단, UI 위) ──
         if (g_GlitchBoss && g_GlitchBoss->alive) {
             auto* gb = g_GlitchBoss;
+            float pCX = playerWin.x + playerWin.width  * 0.5f;
+            float pCY = playerWin.y + playerWin.height * 0.5f;
+            float gtG = (float)glfwGetTime();
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
             BindMainShader();
+            gb->renderTelegraphs(pCX, pCY, gtG);
+            BatchFlush();
+
+            if (gb->hasBeamVisual()) {
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                BindMainShader();
+                gb->renderBeams(gtG);
+                BatchFlush();
+                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                    GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
+            }
+
+            if (gb->tearFlash > 0.02f) {
+                BindMainShader();
+                float tf = gb->tearFlash;
+                drawRect(0.0f, 0.0f, (float)screenWidth, (float)screenHeight,
+                         1.0f, 0.12f, 0.38f, tf * 0.14f);
+                BatchFlush();
+            }
+
+            BindMainShader();
+            gb->renderTelegraphLabels(pCX, pCY, (float)screenWidth, (float)screenHeight, gtG);
+
+            float gMul = gb->suppressScreenGlitch() ? 0.22f : 1.0f;
             if (gb->glitchAmount > 0.02f) {
-                for (int i = 0; i < 7; i++) {
+                BindMainShader();
+                for (int i = 0; i < 5; i++) {
                     float by  = (float)(rand() % screenHeight);
-                    float bh  = 2.0f + (float)(rand() % 9);
-                    float off = (float)(rand() % 40 - 20) * gb->glitchAmount;
-                    float a   = gb->glitchAmount * 0.45f;
+                    float bh  = 2.0f + (float)(rand() % 7);
+                    float off = (float)(rand() % 30 - 15) * gb->glitchAmount * gMul;
+                    float a   = gb->glitchAmount * 0.38f * gMul;
                     drawRect(off,  by,      (float)screenWidth, bh, 0.0f, 1.0f, 1.0f, a);
                     drawRect(-off, by + bh, (float)screenWidth, bh, 1.0f, 0.0f, 1.0f, a);
                 }
             }
-            if (gb->textNoise > 0.3f && (rand() % 2 == 0)) {
+            if (gb->textNoise > 0.35f && (rand() % 3 == 0)) {
                 static const wchar_t* errs[5] =
                     { L"CORRUPT.dll", L"0xC0000005", L"DISPLAY_TDR", L"PHANTOM_SWAP", L"TEAR_PENDING" };
-                for (int i = 0; i < 4; i++) {
+                for (int i = 0; i < 2; i++) {
                     float ex = (float)(rand() % screenWidth);
                     float ey = (float)(rand() % screenHeight);
-                    g_TextL.Draw(errs[rand() % 5], ex, ey, 0.75f,
-                                 1.0f, 0.1f, 0.3f, gb->textNoise * 0.85f);
+                    g_TextL.Draw(errs[rand() % 5], ex, ey, 0.65f,
+                                 1.0f, 0.1f, 0.3f, gb->textNoise * 0.55f * gMul);
                 }
             }
         }

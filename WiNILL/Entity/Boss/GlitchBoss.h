@@ -99,20 +99,26 @@ public:
     float slideVX = 0, slideVY = 0;
     float forkCd = 0.0f;
 
+    float tearFlash = 0.0f;
+    float attackBanner = 0.0f;
+    float beamPulse = 0.0f;
+
     static constexpr float BODY = 44.0f;
     static constexpr float MELEE_NEAR = 105.0f;
+    static constexpr float BEAM_HALF = 20.0f;
+    static constexpr float BEAM_HALF_WARN = 13.0f;
     static constexpr float PHANTOM_WIN_W = 300.0f;
     static constexpr float PHANTOM_WIN_H = 220.0f;
     static constexpr float PHANTOM_WIN_TB = 16.0f;
     static constexpr float GLITCH_WIN_TB = 22.0f;
 
-    static constexpr float T_CORRUPT = 2.8f;
-    static constexpr float T_FRAGMENT = 6.0f;
-    static constexpr float T_TEAR = 0.95f;
-    static constexpr float T_SYNC = 2.8f;
-    static constexpr float LASER_WARN = 1.05f;
-    static constexpr float T_LASER1 = 0.62f;
-    static constexpr float LASER2_STAGGER = 0.38f;
+    static constexpr float T_CORRUPT = 2.2f;
+    static constexpr float T_FRAGMENT = 5.5f;
+    static constexpr float T_TEAR = 1.65f;
+    static constexpr float T_SYNC = 2.4f;
+    static constexpr float LASER_WARN = 1.45f;
+    static constexpr float T_LASER1 = 1.35f;
+    static constexpr float LASER2_STAGGER = 0.42f;
 
     static constexpr float DRIFT_SPD = 82.0f;
     static constexpr float SHARD_SPEED = 340.0f;
@@ -378,14 +384,25 @@ public:
     void enterTear() {
         state = BossState::TEAR;
         stateTimer = 0.0f;
-        textNoise = 0.85f;
-        glitchAmount = 0.42f;
+        textNoise = 0.2f;
+        glitchAmount = 0.18f;
         laserWarn = false;
         laserActive = true;
         laser2Active = laser3Active = false;
         laser2Delay = LASER2_STAGGER;
-        laser3Delay = LASER2_STAGGER * 1.55f;
+        laser3Delay = LASER2_STAGGER * 1.45f;
+        tearFlash = 1.0f;
+        attackBanner = 0.9f;
+        beamPulse = 1.0f;
         shards.clear();
+    }
+
+    bool hasBeamVisual() const {
+        return laserWarn || laserActive || laser2Active || laser3Active;
+    }
+
+    bool suppressScreenGlitch() const {
+        return state == BossState::TEAR || hasBeamVisual();
     }
 
     const wchar_t* stateTag() const {
@@ -440,6 +457,9 @@ public:
         textNoise = std::max(0.0f, textNoise - dt * 1.8f);
         decoyFlash = std::max(0.0f, decoyFlash - dt * 2.2f);
         swapFlash = std::max(0.0f, swapFlash - dt * 2.5f);
+        tearFlash = std::max(0.0f, tearFlash - dt * 2.4f);
+        attackBanner = std::max(0.0f, attackBanner - dt * 1.1f);
+        beamPulse = 0.5f + 0.5f * sinf(stateTimer * 28.0f);
 
         hopCd -= dt; slideCd -= dt; pulseCd -= dt; shardCd -= dt; forkCd -= dt;
 
@@ -473,10 +493,10 @@ public:
 
         switch (state) {
         case BossState::CORRUPT:
-            glitchAmount = 0.28f + 0.22f * sinf(stateTimer * 12.0f);
-            textNoise = 0.65f;
+            glitchAmount = 0.18f + 0.12f * sinf(stateTimer * 9.0f);
+            if (stateTimer < 0.5f) textNoise = 0.55f;
             if (stateTimer >= T_CORRUPT) {
-                glitchAmount = 0.08f;
+                glitchAmount = 0.06f;
                 hideInCorner();
                 state = BossState::FRAGMENT;
                 stateTimer = 0.0f;
@@ -484,7 +504,7 @@ public:
             break;
 
         case BossState::FRAGMENT: {
-            glitchAmount = phase2 ? 0.10f : 0.04f;
+            glitchAmount = phase2 ? 0.07f : 0.03f;
 
             if (shardCd <= 0.0f) {
                 shardCd = phase2 ? 2.2f : 2.8f;
@@ -530,7 +550,8 @@ public:
         }
 
         case BossState::TEAR:
-            glitchAmount = 0.38f * (1.0f - stateTimer / T_TEAR);
+            glitchAmount = 0.12f * (1.0f - stateTimer / T_TEAR);
+            textNoise = 0.08f;
             if (stateTimer >= T_LASER1) laserActive = false;
             laser2Delay -= dt;
             laser3Delay -= dt;
@@ -545,7 +566,7 @@ public:
 
         case BossState::SYNC:
             glitchAmount = 0.0f;
-            textNoise = 0.12f;
+            textNoise = 0.05f;
             shards.clear();
             if (stateTimer >= T_SYNC) {
                 state = BossState::FRAGMENT;
@@ -624,20 +645,42 @@ public:
         syncAlive();
     }
 
-    static void drawLaserLine(float ox, float oy, float dx, float dy, float reach,
-                              float cr, float cg, float cb, float coreA, float outerA) {
+    static void drawBeam(float ox, float oy, float dx, float dy, float reach,
+                         float cr, float cg, float cb, float halfW,
+                         float glowA, float coreA, float flicker = 1.0f) {
         float ex = ox + dx * reach, ey = oy + dy * reach;
-        const int SEG = 20;
-        for (int s = 0; s < SEG; s++) {
-            if ((s & 1) == 0) continue;
-            float u0 = (float)s / (float)SEG, u1 = (float)(s + 1) / (float)SEG;
-            float x0 = ox + (ex - ox) * u0, y0 = oy + (ey - oy) * u0;
-            float x1 = ox + (ex - ox) * u1, y1 = oy + (ey - oy) * u1;
-            drawRect((x0 + x1) * 0.5f - 5.0f, (y0 + y1) * 0.5f - 5.0f,
-                     10.0f, 10.0f, cr * 0.4f, cg * 0.4f, cb * 0.4f, outerA);
-            drawRect((x0 + x1) * 0.5f - 2.5f, (y0 + y1) * 0.5f - 2.5f,
-                     5.0f, 5.0f, cr, cg, cb, coreA);
+        float pxx = -dy, pyy = dx;
+        for (int pass = 0; pass < 3; pass++) {
+            float th, ca, rr, gg, bb;
+            if (pass == 0) {
+                th = halfW * 2.6f; ca = glowA * 0.38f * flicker;
+                rr = cr * 0.45f; gg = cg * 0.45f; bb = cb * 0.45f;
+            } else if (pass == 1) {
+                th = halfW * 1.35f; ca = glowA * 0.62f * flicker;
+                rr = cr * 0.82f; gg = cg * 0.82f; bb = cb * 0.82f;
+            } else {
+                th = halfW * 0.42f; ca = coreA * flicker;
+                rr = cr; gg = cg; bb = cb;
+            }
+            float p1x = ox + pxx * th, p1y = oy + pyy * th;
+            float p2x = ox - pxx * th, p2y = oy - pyy * th;
+            float p3x = ex + pxx * th, p3y = ey + pyy * th;
+            float p4x = ex - pxx * th, p4y = ey - pyy * th;
+            float v[12] = { p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y };
+            BatchVerts(v, 6, rr, gg, bb, ca);
         }
+    }
+
+    static void drawBeamRgbSplit(float ox, float oy, float dx, float dy, float reach,
+                                 float halfW, float glowA, float coreA, float flicker,
+                                 float chromaPx) {
+        float pxx = -dy, pyy = dx;
+        drawBeam(ox + pxx * chromaPx, oy + pyy * chromaPx, dx, dy, reach,
+                 1.0f, 0.12f, 0.28f, halfW, glowA, coreA, flicker);
+        drawBeam(ox - pxx * chromaPx * 0.55f, oy - pyy * chromaPx * 0.55f, dx, dy, reach,
+                 0.12f, 0.95f, 0.35f, halfW * 0.92f, glowA * 0.9f, coreA * 0.95f, flicker);
+        drawBeam(ox - pxx * chromaPx * 1.15f, oy - pyy * chromaPx * 1.15f, dx, dy, reach,
+                 0.35f, 0.18f, 0.98f, halfW * 0.88f, glowA * 0.85f, coreA * 0.9f, flicker);
     }
 
     void renderTelegraphs(float px, float py, float gt) const {
@@ -647,33 +690,96 @@ public:
         if (hopWarn > 0.05f) {
             float hp = hopWarn / 0.34f;
             drawCircle(hopTX, hopTY, BODY * 0.85f, 0.95f, 0.25f, 0.65f, 0.15f + hp * 0.35f);
+            drawCircle(hopTX, hopTY, BODY * 0.45f, 1.0f, 0.35f, 0.75f, 0.25f + hp * 0.35f);
         }
 
         for (auto& p : pulses) {
             if (!p.alive) continue;
-            drawArcRing(p.x, p.y, p.r, 0.95f, 0.25f, 0.65f, 0.22f);
+            drawArcRing(p.x, p.y, p.r, 0.95f, 0.25f, 0.65f, 0.28f);
+            drawCircle(p.x, p.y, 10.0f, 0.95f, 0.25f, 0.65f, 0.35f);
         }
 
         if (laserWarn) {
-            float reach = (float)(screenW + screenH);
             float prog = laserWarnT / LASER_WARN;
             if (prog > 1.0f) prog = 1.0f;
-            float blink = 0.55f + 0.45f * sinf(gt * 24.0f);
-            drawLaserLine(worldX, worldY, laserDirX, laserDirY, reach,
-                          0.3f, 0.95f, 1.0f, blink * (0.5f + prog * 0.5f), blink * 0.35f);
-            drawCircle(px, py, 14.0f + prog * 12.0f, 0.25f, 0.95f, 1.0f, 0.2f + prog * 0.35f);
-            wchar_t tw[] = L"RGB TEAR";
-            float tw_w = g_TextS.Width(tw, 0.48f);
-            g_TextS.Draw(tw, worldX - tw_w * 0.5f, worldY - BODY - 38.0f, 0.48f,
-                         0.35f, 0.95f, 1.0f, 0.85f);
+            drawCircle(px, py, 16.0f + prog * 18.0f, 0.25f, 0.95f, 1.0f, 0.22f + prog * 0.38f);
+            drawCircle(worldX, worldY, BODY * (0.9f + prog * 0.35f), 0.95f, 0.25f, 0.55f, 0.18f + prog * 0.25f);
         }
 
         if (state == BossState::SYNC) {
-            drawCircle(worldX, worldY, BODY * 1.35f, 0.95f, 0.25f, 0.65f, 0.12f + pulse * 0.1f);
-            wchar_t sw[] = L"SYNC — CORE OPEN";
+            drawCircle(worldX, worldY, BODY * 1.55f, 0.95f, 0.25f, 0.65f, 0.16f + pulse * 0.14f);
+            drawCircle(worldX, worldY, BODY * 1.05f, 1.0f, 0.55f, 0.85f, 0.12f + pulse * 0.1f);
+        }
+
+        if (slideT > 0.0f) {
+            float sx = worldX + slideVX * 0.35f;
+            float sy = worldY + slideVY * 0.35f;
+            drawRect(sx - 18.0f, sy - 4.0f, 36.0f, 8.0f, 0.95f, 0.35f, 0.72f, 0.45f);
+        }
+    }
+
+    void renderBeams(float gt) const {
+        float reach = (float)(screenW + screenH) * 1.15f;
+        float pxn = -laserDirY, pyn = laserDirX;
+        float chroma = 5.0f + sinf(gt * 40.0f) * 2.0f;
+
+        if (laserWarn) {
+            float prog = laserWarnT / LASER_WARN;
+            if (prog > 1.0f) prog = 1.0f;
+            float blink = 0.45f + 0.55f * sinf(gt * 26.0f);
+            float hw = BEAM_HALF_WARN * (0.75f + prog * 0.35f);
+            drawBeamRgbSplit(worldX, worldY, laserDirX, laserDirY, reach,
+                             hw, blink * (0.35f + prog * 0.45f), blink * (0.55f + prog * 0.4f),
+                             blink, chroma * 0.35f);
+        }
+
+        if (laserActive) {
+            float flick = 0.82f + 0.18f * beamPulse;
+            drawBeamRgbSplit(worldX, worldY, laserDirX, laserDirY, reach,
+                             BEAM_HALF, 0.75f * flick, 0.98f * flick, flick, chroma);
+            drawCircle(worldX, worldY, BODY * 0.95f, 1.0f, 0.25f, 0.45f, 0.55f * flick);
+        }
+        if (laser2Active) {
+            float flick = 0.78f + 0.22f * sinf(gt * 32.0f);
+            drawBeam(worldX, worldY, laser2DirX, laser2DirY, reach,
+                     0.15f, 0.98f, 0.42f, BEAM_HALF * 0.88f, 0.68f * flick, 0.92f * flick, flick);
+        }
+        if (laser3Active) {
+            float d3x = laserDirX * 0.88f - pxn * 0.14f;
+            float d3y = laserDirY * 0.88f - pyn * 0.14f;
+            float flick = 0.78f + 0.22f * sinf(gt * 32.0f + 1.2f);
+            drawBeam(worldX, worldY, d3x, d3y, reach,
+                     0.42f, 0.18f, 0.98f, BEAM_HALF * 0.84f, 0.65f * flick, 0.9f * flick, flick);
+        }
+    }
+
+    void renderTelegraphLabels(float px, float py, float sw, float sh, float gt) const {
+        if (laserWarn) {
+            float prog = laserWarnT / LASER_WARN;
+            if (prog > 1.0f) prog = 1.0f;
+            wchar_t tw[] = L"▶ RGB TEAR INCOMING";
+            float tw_w = g_TextS.Width(tw, 0.52f);
+            g_TextS.Draw(tw, px - tw_w * 0.5f, py - 58.0f, 0.52f,
+                         0.35f, 0.95f, 1.0f, 0.75f + prog * 0.2f);
+        }
+        if (state == BossState::SYNC) {
+            wchar_t sw[] = L"◆ SYNC — CORE EXPOSED";
             float sw_w = g_TextS.Width(sw, 0.5f);
             g_TextS.Draw(sw, worldX - sw_w * 0.5f, worldY - BODY - 36.0f, 0.5f,
-                         0.95f, 0.35f, 0.72f, 0.9f);
+                         0.95f, 0.35f, 0.72f, 0.92f);
+        }
+        if (attackBanner > 0.05f) {
+            wchar_t bw[] = L"RGB TEAR";
+            float scale = 1.05f + attackBanner * 0.35f;
+            float bw_w = g_TextS.Width(bw, scale);
+            g_TextS.Draw(bw, sw * 0.5f - bw_w * 0.5f, sh * 0.22f, scale,
+                         1.0f, 0.18f, 0.42f, attackBanner * 0.92f);
+        }
+        if (state == BossState::CORRUPT && stateTimer < 1.6f) {
+            wchar_t iw[] = L"CORRUPT.dll loaded";
+            float iw_w = g_TextS.Width(iw, 0.48f);
+            g_TextS.Draw(iw, sw * 0.5f - iw_w * 0.5f, sh * 0.16f, 0.48f,
+                         0.95f, 0.25f, 0.55f, 0.85f);
         }
     }
 
@@ -690,44 +796,42 @@ public:
         }
     }
 
+    void renderLasers() const { renderBeams(0.0f); }
+
     void renderShards(float gt) const {
         for (auto& s : shards) {
             if (!s.alive) continue;
             float flick = 0.5f + 0.5f * sinf(gt * 22.0f + s.x * 0.1f);
-            drawRect(s.x - 6.0f, s.y - 1.5f, 12.0f, 3.0f, 0.1f, 0.95f, 1.0f, 0.85f);
-            drawRect(s.x - 4.0f + flick * 2.0f, s.y - 2.0f, 8.0f, 4.0f, 0.95f, 0.2f, 0.55f, 0.7f);
-        }
-    }
-
-    void renderLasers() const {
-        float reach = (float)(screenW + screenH);
-        float pxn = -laserDirY, pyn = laserDirX;
-        if (laserActive)
-            drawLaserLine(worldX, worldY, laserDirX, laserDirY, reach, 1.0f, 0.2f, 0.45f, 0.9f, 0.4f);
-        if (laser2Active)
-            drawLaserLine(worldX, worldY, laser2DirX, laser2DirY, reach, 0.2f, 0.95f, 0.55f, 0.88f, 0.38f);
-        if (laser3Active) {
-            float d3x = laserDirX * 0.88f - pxn * 0.14f;
-            float d3y = laserDirY * 0.88f - pyn * 0.14f;
-            drawLaserLine(worldX, worldY, d3x, d3y, reach, 0.55f, 0.2f, 0.95f, 0.85f, 0.35f);
+            drawRect(s.x - 10.0f, s.y - 2.5f, 20.0f, 5.0f, 0.08f, 0.95f, 1.0f, 0.9f);
+            drawRect(s.x - 7.0f + flick * 2.0f, s.y - 3.5f, 14.0f, 7.0f, 0.95f, 0.2f, 0.55f, 0.82f);
+            drawCircle(s.x, s.y, 5.0f, 0.35f, 0.95f, 1.0f, 0.65f);
         }
     }
 
     void renderCore(float cx, float cy, float gt, bool real, float alpha, float hpFrac = 1.0f) const {
         float pulse = 0.5f + 0.5f * sinf(gt * 6.0f + cx * 0.02f);
         float a = alpha * (real ? 1.0f : 0.65f);
-        drawCircle(cx + 4.0f, cy, BODY * 0.72f, 1.0f, 0.08f, 0.35f, 0.35f * a);
-        drawCircle(cx - 4.0f, cy, BODY * 0.72f, 0.08f, 0.85f, 1.0f, 0.35f * a);
-        drawCircle(cx, cy, BODY * 0.68f, 0.08f, 0.06f, 0.1f, 0.88f * a);
-        drawNeonBorder(cx - BODY * 0.68f, cy - BODY * 0.68f,
-                         BODY * 1.36f, BODY * 1.36f, 0.95f, 0.22f, 0.62f);
+        drawRect(cx - BODY * 0.78f, cy - BODY * 0.62f, BODY * 1.56f, BODY * 1.24f,
+                 0.04f, 0.05f, 0.08f, 0.92f * a);
+        for (int i = 0; i < 6; i++) {
+            float sy = cy - BODY * 0.55f + (float)i * BODY * 0.22f;
+            float sr = 0.15f + 0.08f * sinf(gt * 9.0f + (float)i);
+            drawRect(cx - BODY * 0.72f, sy, BODY * 1.44f, 2.0f, sr, 0.85f, 1.0f, 0.22f * a);
+        }
+        drawCircle(cx + 5.0f, cy, BODY * 0.74f, 1.0f, 0.08f, 0.35f, 0.42f * a);
+        drawCircle(cx - 5.0f, cy, BODY * 0.74f, 0.08f, 0.85f, 1.0f, 0.42f * a);
+        drawCircle(cx, cy, BODY * 0.7f, 0.08f, 0.06f, 0.1f, 0.92f * a);
+        drawNeonBorder(cx - BODY * 0.72f, cy - BODY * 0.72f,
+                         BODY * 1.44f, BODY * 1.44f, 0.95f, 0.22f, 0.62f);
         for (int i = 0; i < 6; i++) {
             float ang = spinAng + (float)i * 1.047f;
             float px = cx + cosf(ang) * (BODY * 0.55f);
             float py = cy + sinf(ang) * (BODY * 0.42f);
             drawRect(px - 2, py - 2, 4, 4, 0.9f, 0.3f, 0.75f, 0.45f * a + pulse * 0.25f);
         }
-        drawRect(cx - 10.0f, cy - 3.0f, 20.0f, 6.0f, 0.12f, 0.95f, 1.0f, 0.65f * a);
+        drawRect(cx - 12.0f, cy - 3.0f, 24.0f, 6.0f, 0.12f, 0.95f, 1.0f, 0.72f * a);
+        if (state == BossState::SYNC && real)
+            drawCircle(cx, cy, BODY * 0.35f, 1.0f, 0.45f, 0.75f, 0.35f + pulse * 0.25f);
         if (hpFrac < 1.0f) {
             float bw = BODY * 1.3f;
             drawRect(cx - bw * 0.5f, cy - BODY - 12.0f, bw, 4.0f, 0.12f, 0.1f, 0.14f, 0.85f * a);
