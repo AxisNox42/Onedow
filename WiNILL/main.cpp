@@ -143,6 +143,7 @@ float TURRET_WIN_W  = 250.0f;
 float TURRET_WIN_H  = 250.0f;
 // 신규 보스 개인 창 크기 (본체/HP 를 가두는 따라다니는 창)
 float GLITCH_WIN_W = 620.0f;
+float GLITCH_PHANTOM_WIN_W = 340.0f;
 float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float SPAM_WIN_W   = 660.0f;
@@ -153,6 +154,7 @@ float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창 (PID 체인도 �
 float TOTEM_WIN_W = 720.0f;    // RITE.CORE: 코어 + 기둥 의식 공간
 // 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
 float SPAWNER_WIN_W = 300.0f;
+float DDOS_WIN_W    = 210.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
 float g_RfwW = 500.0f, g_RfwH = 500.0f;
 static constexpr float TURRET_LIFE   = 5.0f;      // 포탑 지속 5초
@@ -486,11 +488,12 @@ int main() {
     if (g_Scale < 0.5f) g_Scale = 0.5f;
     Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
-    GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
+    GLITCH_WIN_W *= g_Scale; GLITCH_PHANTOM_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
     KERNEL_WIN_W *= g_Scale; FIREWALL_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
     TOTEM_WIN_W *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
+    DDOS_WIN_W    *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
     InputRegisterCallbacks(window);
@@ -1907,11 +1910,26 @@ int main() {
                         }
                         if (!b.active) continue;
                         // 페이즈2 잔상(디코이) — 맞으면 이벤트(본체/잔상 재배치+노이즈), HP 영향 X
-                        if (!gb->decoys.empty() && gb->tryHitDecoy(b.x, b.y)) {
-                            g_GameManager.scoreAccum += 50.0f;
-                            g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                            if (b.remainingDmg <= 0.001f) b.active = false;
-                            continue;
+                        if (!gb->decoys.empty()) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(gb->worldX, gb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)      dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f)    dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dealt = gb->tryHitDecoy(b.x, b.y, b.prevX, b.prevY, dmg);
+                            if (dealt > 0.0f) {
+                                g_GameManager.scoreAccum += 50.0f;
+                                g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                                if (b.remainingDmg > 0.0f) {
+                                    b.remainingDmg -= dealt;
+                                    if (b.remainingDmg <= 0.001f) b.active = false;
+                                } else {
+                                    b.active = false;
+                                }
+                                continue;
+                            }
                         }
                         // 본체
                         if (SegDist(gb->worldX, gb->worldY,
@@ -1926,7 +1944,7 @@ int main() {
                             float dealt = (dmg < gb->hp) ? dmg : gb->hp;
                             gb->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                            if (gb->hp <= 0.0f) gb->alive = false;
+                            if (gb->hp <= 0.0f) gb->syncAlive();
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
@@ -3166,9 +3184,9 @@ int main() {
                     else if (g_GameManager.score >= g_NextBossScore) {
                         // 20만점마다 로테이션 (50만 1회 폴리 고정)
                         g_NextBossScore += 200000;
-                        float sc = 1.0f + (float)g_GameManager.score / 200000.0f;
-                        if (sc > 12.0f) sc = 12.0f;
-                        sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
+                        float sc = 0.36f + (float)g_GameManager.score / 300000.0f;
+                        if (sc > 9.0f) sc = 9.0f;
+                        sc *= (1.0f + (float)g_GameManager.playerLevel * 0.022f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
                         if (!g_PolySpawned && g_GameManager.score >= 500000) {
                             g_PolySpawned = true;
@@ -4280,6 +4298,12 @@ int main() {
             float w = SPAWNER_WIN_W * m->sizeScale;
             addW(m->worldX, m->worldY, w, w, L"botnet.node", 0.06f,0.10f,0.09f, 0.20f,0.85f,0.65f);
         }
+        // DDOS swarm — 각 프로세스 개별 작은 창
+        for (auto m : g_MonsterManager.monsters) {
+            if (!m->alive || m->kind != MobKind::DDOS) continue;
+            float w = DDOS_WIN_W * m->sizeScale;
+            addW(m->worldX, m->worldY, w, w, L"flood.exe", 0.09f,0.04f,0.06f, 0.95f,0.25f,0.55f);
+        }
         // 원거리 몹 (소환 순서)
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
@@ -4294,9 +4318,16 @@ int main() {
             float w = Boss::WIN_W * c->sizeScale;
             addW(c->worldX, c->worldY, w, w, L"slime.worm", 0.07f,0.10f,0.07f, 0.40f,1.0f,0.55f);
         }
-        if (g_GlitchBoss && g_GlitchBoss->alive)
-            addW(g_GlitchBoss->worldX, g_GlitchBoss->worldY, GLITCH_WIN_W, GLITCH_WIN_W,
+        if (g_GlitchBoss && g_GlitchBoss->alive) {
+            auto* gb = g_GlitchBoss;
+            for (auto& d : gb->decoys) {
+                if (!d.alive) continue;
+                addW(d.x, d.y, GLITCH_PHANTOM_WIN_W, GLITCH_PHANTOM_WIN_W,
+                     L"PHANTOM.exe", 0.06f,0.05f,0.08f, 0.85f,0.18f,0.55f);
+            }
+            addW(gb->worldX, gb->worldY, GLITCH_WIN_W, GLITCH_WIN_W,
                  L"CORRUPT.dll", 0.07f,0.06f,0.10f, 0.95f,0.20f,0.60f);
+        }
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
                  L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
@@ -4353,7 +4384,7 @@ int main() {
             WorldScissor(rwx, rwy, rW, rH);
             // 잡몹 (보스 소환물은 더 큼) — 창 밖은 컬링
             for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || !inWin(m->worldX, m->worldY, rwx, rwy, rW, rH)) continue;
+                if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, rwx, rwy, rW, rH)) continue;
                 drawMob(m);
             }
             // 자폭병 (5각형)
@@ -4391,7 +4422,8 @@ int main() {
                 float twy = WinOrigin(t.y, TURRET_WIN_H);
                 WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 for (auto m : g_MonsterManager.monsters) {
-                    if (!m->alive || !inWin(m->worldX, m->worldY, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
+                    if (!m->alive || m->kind == MobKind::DDOS ||
+                        !inWin(m->worldX, m->worldY, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
                     drawMob(m);
                 }
                 for (auto bm : g_MonsterManager.bombers) {
@@ -4419,7 +4451,7 @@ int main() {
         auto drawBossWinContent = [&](float bwx, float bwy, float ww, float wh) {
             WorldScissor(bwx, bwy, ww, wh);
             for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || !inWin(m->worldX, m->worldY, bwx, bwy, ww, wh)) continue;
+                if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, bwx, bwy, ww, wh)) continue;
                 drawMob(m);
             }
             for (auto bm : g_MonsterManager.bombers) {
@@ -4448,9 +4480,16 @@ int main() {
             drawBossWinContent(bs->worldX - Boss::WIN_W * 0.5f,
                                bs->worldY - Boss::WIN_H * 0.5f, Boss::WIN_W, Boss::WIN_H);
         }
-        if (g_GlitchBoss && g_GlitchBoss->alive)
-            drawBossWinContent(g_GlitchBoss->worldX - GLITCH_WIN_W * 0.5f,
-                               g_GlitchBoss->worldY - GLITCH_WIN_W * 0.5f, GLITCH_WIN_W, GLITCH_WIN_W);
+        if (g_GlitchBoss && g_GlitchBoss->alive) {
+            auto* gb = g_GlitchBoss;
+            for (auto& d : gb->decoys) {
+                if (!d.alive) continue;
+                float pw = GLITCH_PHANTOM_WIN_W;
+                drawBossWinContent(d.x - pw * 0.5f, d.y - pw * 0.5f, pw, pw);
+            }
+            drawBossWinContent(gb->worldX - GLITCH_WIN_W * 0.5f,
+                               gb->worldY - GLITCH_WIN_W * 0.5f, GLITCH_WIN_W, GLITCH_WIN_W);
+        }
         if (g_RRBoss && g_RRBoss->alive)
             drawBossWinContent(g_RRBoss->worldX - RR_WIN_W * 0.5f,
                                g_RRBoss->worldY - RR_WIN_W * 0.5f, RR_WIN_W, RR_WIN_W);
@@ -4484,6 +4523,11 @@ int main() {
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
             float w = SPAWNER_WIN_W * m->sizeScale;
+            drawBossWinContent(m->worldX - w * 0.5f, m->worldY - w * 0.5f, w, w);
+        }
+        for (auto m : g_MonsterManager.monsters) {
+            if (!m->alive || m->kind != MobKind::DDOS) continue;
+            float w = DDOS_WIN_W * m->sizeScale;
             drawBossWinContent(m->worldX - w * 0.5f, m->worldY - w * 0.5f, w, w);
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
@@ -4755,7 +4799,7 @@ int main() {
         float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
         // 잡몹 (보스 소환물은 더 큼) — 창 밖 컬링
         for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
+            if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
             drawMob(m);
         }
         // 자폭병
@@ -5015,6 +5059,20 @@ int main() {
             WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
             gb->renderTelegraphs(pCX, pCY, gtG);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+            for (auto& d : gb->decoys) {
+                if (!d.alive) continue;
+                float pw = GLITCH_PHANTOM_WIN_W;
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(d.x - pw * 0.5f, d.y - pw * 0.5f, pw, pw);
+                for (auto& b : g_Bullets) {
+                    if (!b.active) continue;
+                    drawBullet(b);
+                }
+                gb->renderMinis(gtG);
+                gb->renderDecoyBody(d, gtG);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            }
 
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(gb->worldX - GLITCH_WIN_W * 0.5f, gb->worldY - GLITCH_WIN_W * 0.5f,
@@ -5537,7 +5595,9 @@ int main() {
                 bn = L"SLIME.worm";    bhf = g_MonsterManager.boss->hp / g_MonsterManager.boss->maxHp;
                 bc = glm::vec3(0.55f, 0.9f, 0.55f);
             } else if (g_GlitchBoss && g_GlitchBoss->alive) {
-                bn = L"CORRUPT.dll";    bhf = g_GlitchBoss->hp / g_GlitchBoss->maxHp;
+                bn = L"CORRUPT.dll";
+                float cm = g_GlitchBoss->combinedMaxHp();
+                bhf = (cm > 0.0f) ? g_GlitchBoss->combinedHp() / cm : 0.0f;
                 bc = glm::vec3(0.95f, 0.2f, 0.6f);
             } else if (g_RRBoss && g_RRBoss->alive) {
                 bn = L"VOLLEY.sys";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;

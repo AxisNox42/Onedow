@@ -53,8 +53,22 @@ public:
     float driftTX = 0, driftTY = 0, driftTimer = 0.0f;
     bool  driftInit = false;
 
-    struct Decoy { float x = 0, y = 0; float respawn = 0.0f; bool alive = true; };
+    struct Decoy {
+        float x = 0, y = 0;
+        float hp = 0, maxHp = 0;
+        float respawn = 0.0f;
+        bool  alive = true;
+        float driftTX = 0, driftTY = 0, driftTimer = 0.0f;
+        float hopWarn = 0.0f;
+        float hopTX = 0, hopTY = 0;
+        float atkCd = 0.0f;
+        int   atkKind = 0;
+        bool  miniLaser = false;
+        float miniLaserT = 0.0f;
+        float laserDirX = 1.0f, laserDirY = 0.0f;
+    };
     std::vector<Decoy> decoys;
+    int   decoyCountLast = 0;
     float decoyFlash = 0.0f;
     float swapCd = 0.0f;
     float swapFlash = 0.0f;
@@ -70,8 +84,19 @@ public:
     float textNoise = 0.0f;
     float spinAng = 0.0f;
 
+    // 추가 패턴
+    float hopCd = 0.0f;
+    float hopWarn = 0.0f;
+    float hopTX = 0, hopTY = 0;
+    float slideCd = 0.0f;
+    float slideT = 0.0f;
+    float slideVX = 0, slideVY = 0;
+    float skewCd = 0.0f;
+    float mirrorCd = 0.0f;
+
     static constexpr float BODY = 44.0f;
     static constexpr float MELEE_NEAR = 105.0f;
+    static constexpr float PHANTOM_WIN_W = 340.0f;
 
     static constexpr float T_CORRUPT = 3.2f;
     static constexpr float T_FRAGMENT = 5.5f;
@@ -94,6 +119,7 @@ public:
     static constexpr int   NOVA_N = 12;
     static constexpr float NOVA_WARN_T = 0.55f;
     static constexpr float SWAP_INT = 9.0f;
+    static constexpr float DECOY_HP_SHARE = 0.10f;
 
     GlitchBoss(int sw, int sh, float hpInit = 9000.0f) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -104,6 +130,26 @@ public:
     static const wchar_t* BossName() { return L"CORRUPT.dll"; }
 
     int miniCap() const { return phase2 ? MINI_CAP_P2 : MINI_CAP; }
+
+    float combinedHp() const {
+        float t = hp;
+        for (auto& d : decoys) if (d.alive) t += d.hp;
+        return t;
+    }
+
+    float combinedMaxHp() const {
+        int n = 0;
+        for (auto& d : decoys) if (d.alive) n++;
+        return maxHp + maxHp * DECOY_HP_SHARE * (float)n;
+    }
+
+    void syncAlive() {
+        if (hp <= 0.0f) {
+            bool any = false;
+            for (auto& d : decoys) if (d.alive && d.hp > 0.0f) any = true;
+            if (!any) alive = false;
+        }
+    }
 
     void hideInCorner() {
         int c = rand() % 4;
@@ -159,6 +205,22 @@ public:
         }
     }
 
+    void skewBurst(float ox, float oy, float tx, float ty, int n = 5) {
+        float base = atan2f(ty - oy, tx - ox);
+        for (int i = 0; i < n; i++) {
+            if ((int)minis.size() >= miniCap()) break;
+            float ha = base + ((float)i - (float)(n - 1) * 0.5f) * 0.22f;
+            MiniTri t;
+            t.x = ox;
+            t.y = oy;
+            float sp = MINI_SPEED * 0.72f;
+            t.vx = cosf(ha) * sp;
+            t.vy = sinf(ha) * sp;
+            t.angle = ha;
+            minis.push_back(t);
+        }
+    }
+
     Decoy makeDecoy() {
         Decoy d;
         float m = 0.16f;
@@ -166,13 +228,113 @@ public:
         d.y = screenH * (m + (float)(rand() % 1000) * 0.001f * (1.0f - 2.0f * m));
         d.alive = true;
         d.respawn = 0.0f;
+        d.maxHp = d.hp = maxHp * DECOY_HP_SHARE;
+        d.atkKind = rand() % 4;
         return d;
     }
 
+    void splitHpToDecoys() {
+        int n = 0;
+        for (auto& d : decoys) if (d.alive) n++;
+        if (n <= 0) return;
+        float per = maxHp * DECOY_HP_SHARE;
+        float reserve = per * (float)n;
+        for (auto& d : decoys) {
+            if (!d.alive) continue;
+            d.maxHp = per;
+            if (d.hp <= 0.0f || d.hp > per) d.hp = per;
+        }
+        float coreCap = maxHp - reserve;
+        if (coreCap < maxHp * 0.35f) coreCap = maxHp * 0.35f;
+        if (hp > coreCap) hp = coreCap;
+    }
+
     void ensureDecoys() {
-        int want = phase3 ? 3 : (phase2 ? 2 : 1);
+        int want = phase3 ? 3 : (phase2 ? 2 : 0);
         while ((int)decoys.size() < want) decoys.push_back(makeDecoy());
         while ((int)decoys.size() > want) decoys.pop_back();
+        if (want != decoyCountLast) {
+            decoyCountLast = want;
+            splitHpToDecoys();
+        }
+    }
+
+    void pickDriftTarget(float& tx, float& ty, float margin) const {
+        int rx = screenW - (int)(2.0f * margin); if (rx < 1) rx = 1;
+        int ry = screenH - (int)(2.0f * margin); if (ry < 1) ry = 1;
+        tx = margin + (float)(rand() % rx);
+        ty = margin + (float)(rand() % ry);
+    }
+
+    void driftEntity(float& x, float& y, float& dtx, float& dty, float& dtimer,
+                     float spd, float dt) {
+        float dmarg = BODY + 72.0f;
+        dtimer -= dt;
+        if (dtimer <= 0.0f) {
+            dtimer = 1.2f + (float)(rand() % 100) * 0.012f;
+            pickDriftTarget(dtx, dty, dmarg);
+        }
+        float mdx = dtx - x, mdy = dty - y;
+        float md = sqrtf(mdx * mdx + mdy * mdy);
+        if (md > 1.0f) {
+            float step = spd * dt;
+            if (step > md) step = md;
+            x += mdx / md * step;
+            y += mdy / md * step;
+        }
+    }
+
+    void startGlitchHop(float& x, float& y, float& warn, float& htx, float& hty) {
+        warn = 0.38f;
+        float jump = 130.0f + (float)(rand() % 90);
+        float ang = (float)(rand() % 628) * 0.01f;
+        htx = x + cosf(ang) * jump;
+        hty = y + sinf(ang) * jump;
+        float m = BODY + 60.0f;
+        if (htx < m) htx = m; if (htx > screenW - m) htx = screenW - m;
+        if (hty < m) hty = m; if (hty > screenH - m) hty = screenH - m;
+    }
+
+    void tickGlitchHop(float& x, float& y, float& warn, float htx, float hty, float dt) {
+        if (warn <= 0.0f) return;
+        warn -= dt;
+        if (warn <= 0.0f) {
+            x = htx;
+            y = hty;
+            glitchAmount = std::max(glitchAmount, 0.35f);
+        }
+    }
+
+    void startScreenSlide() {
+        slideT = 0.55f;
+        int dir = rand() % 4;
+        float mag = 165.0f;
+        switch (dir) {
+        case 0: slideVX = mag;  slideVY = 0; break;
+        case 1: slideVX = -mag; slideVY = 0; break;
+        case 2: slideVX = 0; slideVY = mag; break;
+        default: slideVX = 0; slideVY = -mag; break;
+        }
+        glitchAmount = std::max(glitchAmount, 0.28f);
+        textNoise = std::max(textNoise, 0.45f);
+    }
+
+    void tickScreenSlide(float dt) {
+        if (slideT <= 0.0f) return;
+        slideT -= dt;
+        float step = 420.0f * dt;
+        worldX += slideVX * dt;
+        worldY += slideVY * dt;
+        for (auto& d : decoys) {
+            if (!d.alive) continue;
+            d.x += slideVX * dt;
+            d.y += slideVY * dt;
+        }
+        for (auto& t : minis) {
+            t.x += slideVX * dt * 0.35f;
+            t.y += slideVY * dt * 0.35f;
+        }
+        (void)step;
     }
 
     void swapPhantom() {
@@ -180,37 +342,40 @@ public:
         int i = rand() % (int)decoys.size();
         if (!decoys[i].alive) return;
         float tx = worldX, ty = worldY;
+        float thp = hp;
         worldX = decoys[i].x;
         worldY = decoys[i].y;
+        hp = decoys[i].hp;
         decoys[i].x = tx;
         decoys[i].y = ty;
+        decoys[i].hp = thp;
         swapFlash = 1.0f;
         glitchAmount = std::max(glitchAmount, 0.45f);
         textNoise = std::max(textNoise, 0.5f);
     }
 
-    void onDecoyDestroyed(float dx, float dy) {
+    void onDecoyDestroyed(Decoy& d) {
         decoyFlash = 1.0f;
         glitchAmount = 0.55f;
         textNoise = 0.75f;
-        burstMiniAt(dx, dy, 6);
-        hideInCorner();
-        driftInit = false;
-        for (auto& d : decoys) if (d.alive) d = makeDecoy();
+        burstMiniAt(d.x, d.y, 6);
+        d.alive = false;
+        d.respawn = 2.0f;
+        d.hp = 0.0f;
+        syncAlive();
     }
 
-    bool tryHitDecoy(float bx, float by) {
+    float tryHitDecoy(float bx, float by, float pbx, float pby, float dmg) {
         for (auto& d : decoys) {
-            if (!d.alive) continue;
-            float dx = bx - d.x, dy = by - d.y;
-            if (dx * dx + dy * dy < BODY * BODY) {
-                d.alive = false;
-                d.respawn = 1.2f;
-                onDecoyDestroyed(d.x, d.y);
-                return true;
+            if (!d.alive || d.hp <= 0.0f) continue;
+            if (segDist(bx, by, pbx, pby, d.x, d.y) < BODY * 0.75f) {
+                float dealt = (dmg < d.hp) ? dmg : d.hp;
+                d.hp -= dealt;
+                if (d.hp <= 0.0f) onDecoyDestroyed(d);
+                return dealt;
             }
         }
-        return false;
+        return 0.0f;
     }
 
     static float segDist(float px, float py, float ax, float ay, float bx, float by) {
@@ -253,10 +418,48 @@ public:
     const wchar_t* stateTag() const {
         switch (state) {
         case BossState::CORRUPT:   return L"CORRUPT";
-        case BossState::FRAGMENT:  return laserWarn ? L"TEAR SOON" : L"FRAGMENT";
+        case BossState::FRAGMENT:  return laserWarn ? L"TEAR SOON" : (hopWarn > 0.05f ? L"HOP" : L"FRAGMENT");
         case BossState::TEAR:      return L"TEAR";
         case BossState::SYNC:      return L"SYNC";
         default: return L"?";
+        }
+    }
+
+    void updateDecoys(float playerCX, float playerCY, float dt) {
+        for (auto& d : decoys) {
+            if (!d.alive) {
+                d.respawn -= dt;
+                if (d.respawn <= 0.0f) {
+                    d = makeDecoy();
+                    splitHpToDecoys();
+                }
+                continue;
+            }
+            driftEntity(d.x, d.y, d.driftTX, d.driftTY, d.driftTimer,
+                        DRIFT_SPD * 1.15f, dt);
+
+            d.atkCd -= dt;
+            if (d.atkCd <= 0.0f) {
+                d.atkCd = phase3 ? 2.2f : 3.0f;
+                if (d.atkKind == 0) {
+                    spawnMiniAt(d.x, d.y, playerCX, playerCY);
+                    spawnMiniAt(d.x, d.y, playerCX, playerCY);
+                } else if (d.atkKind == 1) {
+                    skewBurst(d.x, d.y, playerCX, playerCY, 4);
+                } else if (d.atkKind == 2) {
+                    startGlitchHop(d.x, d.y, d.hopWarn, d.hopTX, d.hopTY);
+                } else {
+                    float dx = playerCX - d.x, dy = playerCY - d.y;
+                    float dist = sqrtf(dx * dx + dy * dy) + 1e-3f;
+                    d.laserDirX = dx / dist;
+                    d.laserDirY = dy / dist;
+                    d.miniLaser = true;
+                    d.miniLaserT = 0.38f;
+                }
+            }
+            tickGlitchHop(d.x, d.y, d.hopWarn, d.hopTX, d.hopTY, dt);
+            if (d.miniLaser) d.miniLaserT -= dt;
+            if (d.miniLaserT <= 0.0f) d.miniLaser = false;
         }
     }
 
@@ -265,8 +468,8 @@ public:
         stateTimer += dt;
         spinAng += dt * 2.4f;
 
-        if (!phase2 && hp <= maxHp * 0.5f) phase2 = true;
-        if (!phase3 && hp <= maxHp * 0.25f) phase3 = true;
+        if (!phase2 && combinedHp() <= combinedMaxHp() * 0.5f) phase2 = true;
+        if (!phase3 && combinedHp() <= combinedMaxHp() * 0.25f) phase3 = true;
 
         burstFlash = std::max(0.0f, burstFlash - dt * 3.5f);
         textNoise = std::max(0.0f, textNoise - dt * 1.8f);
@@ -274,47 +477,39 @@ public:
         swapFlash = std::max(0.0f, swapFlash - dt * 2.5f);
         if (novaWarn > 0.0f) novaWarn -= dt;
 
+        hopCd -= dt;
+        slideCd -= dt;
+        skewCd -= dt;
+        mirrorCd -= dt;
+
         float pdx = playerCX - worldX, pdy = playerCY - worldY;
         float pdist = sqrtf(pdx * pdx + pdy * pdy) + 1e-3f;
 
         if (phase2 || phase3) {
             ensureDecoys();
-            for (auto& d : decoys) {
-                if (!d.alive) {
-                    d.respawn -= dt;
-                    if (d.respawn <= 0.0f) d = makeDecoy();
-                }
-            }
             swapCd -= dt;
             if (swapCd <= 0.0f) {
                 swapCd = phase3 ? SWAP_INT * 0.65f : SWAP_INT;
                 swapPhantom();
             }
+            updateDecoys(playerCX, playerCY, dt);
+            for (auto& d : decoys) {
+                if (!d.alive || !d.miniLaser) continue;
+                float reach = 300.0f;
+                float ex = d.x + d.laserDirX * reach, ey = d.y + d.laserDirY * reach;
+                if (segDist(playerCX, playerCY, d.x, d.y, ex, ey) < 16.0f)
+                    playerHP -= 22.0f * dt;
+            }
         } else {
             decoys.clear();
+            decoyCountLast = 0;
         }
 
-        driftTimer -= dt;
-        float dmarg = BODY + 72.0f;
-        if (!driftInit || driftTimer <= 0.0f) {
-            driftInit = true;
-            driftTimer = 1.6f + (float)(rand() % 120) * 0.01f;
-            int rx = screenW - (int)(2.0f * dmarg); if (rx < 1) rx = 1;
-            int ry = screenH - (int)(2.0f * dmarg); if (ry < 1) ry = 1;
-            driftTX = dmarg + (float)(rand() % rx);
-            driftTY = dmarg + (float)(rand() % ry);
-        }
-        {
-            float mdx = driftTX - worldX, mdy = driftTY - worldY;
-            float md = sqrtf(mdx * mdx + mdy * mdy);
-            float spd = DRIFT_SPD * (state == BossState::SYNC ? 0.55f : (phase2 ? 1.25f : 1.0f));
-            if (md > 1.0f) {
-                float step = spd * dt;
-                if (step > md) step = md;
-                worldX += mdx / md * step;
-                worldY += mdy / md * step;
-            }
-        }
+        tickScreenSlide(dt);
+        tickGlitchHop(worldX, worldY, hopWarn, hopTX, hopTY, dt);
+
+        driftEntity(worldX, worldY, driftTX, driftTY, driftTimer,
+                    DRIFT_SPD * (state == BossState::SYNC ? 0.55f : (phase2 ? 1.25f : 1.0f)), dt);
 
         if (laserWarn && pdist < MELEE_NEAR) {
             hideInCorner();
@@ -346,12 +541,46 @@ public:
             }
             trimMinis();
 
+            if (hopCd <= 0.0f && hopWarn <= 0.0f) {
+                hopCd = phase3 ? 3.2f : 4.5f;
+                startGlitchHop(worldX, worldY, hopWarn, hopTX, hopTY);
+            }
+
+            if (slideCd <= 0.0f && slideT <= 0.0f) {
+                slideCd = phase2 ? 10.0f : 13.0f;
+                startScreenSlide();
+            }
+
+            if (skewCd <= 0.0f) {
+                skewCd = phase2 ? 4.5f : 6.0f;
+                skewBurst(worldX, worldY, playerCX, playerCY, phase2 ? 7 : 5);
+            }
+
+            if (mirrorCd <= 0.0f && !decoys.empty()) {
+                mirrorCd = 7.5f;
+                for (auto& d : decoys) {
+                    if (!d.alive) continue;
+                    skewBurst(d.x, d.y, playerCX, playerCY, 3);
+                }
+            }
+
             if (!laserWarn && stateTimer >= T_FRAGMENT - LASER_WARN) {
                 lockLaser(playerCX, playerCY);
                 laserWarn = true;
                 laserWarnT = 0.0f;
             }
-            if (laserWarn) laserWarnT += dt;
+            if (laserWarn) {
+                laserWarnT += dt;
+                if (phase2 && laserWarnT > LASER_WARN * 0.45f) {
+                    for (auto& d : decoys) {
+                        if (!d.alive) continue;
+                        float reach = (float)(screenW + screenH);
+                        float ex = d.x + laserDirX * reach, ey = d.y + laserDirY * reach;
+                        if (segDist(playerCX, playerCY, d.x, d.y, ex, ey) < 20.0f)
+                            playerHP -= 8.0f * dt;
+                    }
+                }
+            }
 
             novaTimer += dt;
             float nInt = phase2 ? NOVA_INT * 0.75f : NOVA_INT;
@@ -450,12 +679,12 @@ public:
 
         prevPx = playerCX;
         prevPy = playerCY;
+        syncAlive();
     }
 
     static void drawLaserLine(float ox, float oy, float dx, float dy, float reach,
                               float cr, float cg, float cb, float coreA, float outerA) {
         float ex = ox + dx * reach, ey = oy + dy * reach;
-        float px = -dy, py = dx;
         const int SEG = 20;
         for (int s = 0; s < SEG; s++) {
             if ((s & 1) == 0) continue;
@@ -474,6 +703,18 @@ public:
 
         drawArcRing(worldX, worldY, MELEE_NEAR, 0.3f, 1.0f, 0.78f, 0.18f);
 
+        if (hopWarn > 0.05f) {
+            float hp = hopWarn / 0.38f;
+            drawCircle(hopTX, hopTY, BODY * 0.9f, 0.95f, 0.25f, 0.65f, 0.15f + hp * 0.35f);
+            drawCircle(worldX, worldY, BODY * 1.1f, 1.0f, 0.4f, 0.7f, 0.25f * hp);
+        }
+
+        if (slideT > 0.0f) {
+            float sa = slideT / 0.55f;
+            drawRect(worldX - 80.0f, worldY - 80.0f, 160.0f, 160.0f,
+                     0.2f, 0.95f, 1.0f, 0.08f + sa * 0.15f);
+        }
+
         if (novaWarn > 0.0f) {
             float np = novaWarn / NOVA_WARN_T;
             drawCircle(worldX, worldY, BODY * (1.2f + (1.0f - np) * 0.8f),
@@ -491,6 +732,11 @@ public:
             float blink = 0.55f + 0.45f * sinf(gt * 24.0f);
             drawLaserLine(worldX, worldY, laserDirX, laserDirY, reach,
                           0.3f, 0.95f, 1.0f, blink * (0.5f + prog * 0.5f), blink * 0.35f);
+            for (auto& d : decoys) {
+                if (!d.alive) continue;
+                drawLaserLine(d.x, d.y, laserDirX, laserDirY, reach * 0.55f,
+                              0.95f, 0.2f, 0.55f, blink * 0.35f, blink * 0.2f);
+            }
             drawCircle(px, py, 14.0f + prog * 12.0f, 0.25f, 0.95f, 1.0f, 0.2f + prog * 0.35f);
             wchar_t tw[] = L"TEAR LINE";
             float tw_w = g_TextS.Width(tw, 0.48f);
@@ -582,9 +828,14 @@ public:
         if (laser2Active)
             drawLaserLine(worldX, worldY, laser2DirX, laser2DirY, reach,
                           0.95f, 0.2f, 0.85f, 0.88f, 0.4f);
+        for (auto& d : decoys) {
+            if (!d.alive || !d.miniLaser) continue;
+            drawLaserLine(d.x, d.y, d.laserDirX, d.laserDirY, 260.0f,
+                          0.95f, 0.15f, 0.55f, 0.75f, 0.35f);
+        }
     }
 
-    void renderCore(float cx, float cy, float gt, bool real, float alpha) const {
+    void renderCore(float cx, float cy, float gt, bool real, float alpha, float hpFrac = 1.0f) const {
         float pulse = 0.5f + 0.5f * sinf(gt * 6.0f + cx * 0.02f);
         float a = alpha * (real ? 1.0f : 0.55f);
 
@@ -605,20 +856,33 @@ public:
         drawRect(cx - 6.0f, cy - 1.5f, 12.0f, 3.0f, 0.95f, 0.25f, 0.55f, 0.85f * a);
 
         if (!real) {
-            wchar_t q[] = L"?";
-            g_TextS.Draw(q, cx - 4.0f, cy + BODY * 0.35f, 0.45f, 1.0f, 0.4f, 0.65f, 0.7f * a);
+            wchar_t q[] = L"PHANTOM";
+            float qw = g_TextS.Width(q, 0.38f);
+            g_TextS.Draw(q, cx - qw * 0.5f, cy + BODY * 0.28f, 0.38f, 1.0f, 0.4f, 0.65f, 0.7f * a);
         }
+
+        if (hpFrac < 1.0f) {
+            float bw = BODY * 1.4f;
+            drawRect(cx - bw * 0.5f, cy - BODY - 14.0f, bw, 5.0f, 0.12f, 0.1f, 0.14f, 0.85f * a);
+            drawRect(cx - bw * 0.5f, cy - BODY - 14.0f, bw * hpFrac, 5.0f, 0.95f, 0.25f, 0.55f, 0.9f * a);
+        }
+    }
+
+    void renderDecoyBody(const Decoy& d, float gt) const {
+        if (!d.alive) return;
+        float hf = (d.maxHp > 0.0f) ? d.hp / d.maxHp : 0.0f;
+        if (d.hopWarn > 0.05f) {
+            float hp = d.hopWarn / 0.38f;
+            drawCircle(d.hopTX, d.hopTY, BODY * 0.7f, 0.95f, 0.2f, 0.55f, 0.2f * hp);
+        }
+        renderCore(d.x, d.y, gt, false, 0.9f, hf);
     }
 
     void renderBody(float gt) const {
         if (swapFlash > 0.0f)
             drawCircle(worldX, worldY, BODY * 1.5f, 1.0f, 0.3f, 0.65f, swapFlash * 0.25f);
 
-        for (auto& d : decoys) {
-            if (!d.alive) continue;
-            renderCore(d.x, d.y, gt, false, 0.85f);
-        }
-        renderCore(worldX, worldY, gt, true, 1.0f);
+        renderCore(worldX, worldY, gt, true, 1.0f, (maxHp > 0.0f) ? hp / maxHp : 1.0f);
 
         wchar_t tag[32];
         swprintf_s(tag, L"[%ls]", stateTag());
