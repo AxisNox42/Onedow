@@ -200,6 +200,7 @@ public:
             std::vector<Monster*> newSummons;
             boss->Update(playerCX, playerCY, dt, playerHP, newSummons);
             for (auto m : newSummons) monsters.push_back(m);
+            boss->TickAbsorb(monsters);
         }
         // 보스가 죽은 경우는 main 에서 보상 처리 후 직접 nullify
     }

@@ -8,18 +8,19 @@
 #include "DrawPrim.h"
 
 // ─────────────────────────────────────────────────────────────
-// SLIME.worm — 메모리 누수 프로세스 보스 (v2)
+// LEAK.sys — 힙 메모리 누수 보스
 //
-//   P1: 플레이어 추격 + 돌진(벽 튕김) + 산성 궤적 + 주기적 FORK 소환
-//   P2 50%: 돌진↑ · 소환↑ · 분열체(main 스폰)
-//   P3 25%: 연속 돌진 · 산성↑ · OVERFLOW 소환
+//   P1: 느린 추격 + 이동 궤적에 누수 구역 · 주기적 ALLOC 소환
+//   P2 50%: 팽창 + 누수 노드 2기 · 즉시 누수 버스트
+//   P3 25%: GC 실패 — 소환 흡수 회복 · 누수 구역 성장 가속
 // ─────────────────────────────────────────────────────────────
 
-struct SlimeAcid {
+struct LeakPool {
     float x = 0, y = 0;
     float life = 0.0f;
-    float maxLife = 1.4f;
-    float radius = 28.0f;
+    float maxLife = 3.0f;
+    float radius = 26.0f;
+    float grow = 10.0f;
 };
 
 class Boss {
@@ -31,50 +32,44 @@ public:
 
     static inline float WIN_W = 700.0f;
     static inline float WIN_H = 700.0f;
-    static inline float BODY_SIZE = 50.0f;
+    static inline float BODY_SIZE = 48.0f;
 
-    glm::vec3 color = glm::vec3(0.9f, 0.85f, 0.95f);
+    glm::vec3 color = glm::vec3(0.45f, 0.62f, 1.0f);
 
     float sizeScale = 1.0f;
     int   splitGen = 0;
-    bool  chargeOnly = false;
+    bool  leakNode = false;          // 위성 누수 노드 (본체 아님)
 
     bool  phase2 = false;
     bool  phase3 = false;
 
-    std::vector<SlimeAcid> acids;
+    std::vector<LeakPool> pools;
 
     float targetX = 0, targetY = 0;
     float wanderTimer = 0.0f;
+    float trailTimer = 0.0f;
 
-    enum class Skill { IDLE, TELEGRAPH, CHARGING, RECOVER };
-    Skill skill = Skill::IDLE;
-    float skillTimer = 0.0f;
-    float idleCooldown = 4.2f;
+    float allocTimer = 0.0f;
+    bool  summonPending = false;     // ALLOC 경고 (main 렌더 호환)
 
-    float chargeDirX = 1.0f, chargeDirY = 0.0f;
-    int   bounceCount = 0;
-    int   chainRushLeft_ = 0;
+    float dripTimer = 0.0f;
+    bool  dripPending = false;
+    float dripX = 0.0f, dripY = 0.0f;
 
-    float summonTimer = 0.0f;
-    bool  summonPending = false;
-    bool  overflowBurst_ = false;
+    bool  p2BurstReady_ = false;
 
     int screenW = 0, screenH = 0;
 
-    static constexpr float TELEGRAPH_TIME = 0.95f;
-    static constexpr float CHARGE_SPEED   = 1780.0f;
-    static constexpr float CHARGE_DAMAGE  = 58.0f;
-    static constexpr float CHARGE_RADIUS  = 58.0f;
-    static constexpr float RECOVER_TIME   = 0.55f;
+    static constexpr float CONTACT_RADIUS = 52.0f;
+    static constexpr float CONTACT_DPS    = 22.0f;
 
-    static constexpr int   BOUNCE_MAX          = 5;
-    static constexpr int   IMPACT_SUMMON_COUNT = 4;
+    static constexpr float ALLOC_INTERVAL = 3.2f;
+    static constexpr float ALLOC_WARN     = 0.7f;
+    static constexpr int   ALLOC_COUNT    = 5;
+    static constexpr float ALLOC_RING_R   = 82.0f;
 
-    static constexpr float SUMMON_INTERVAL = 2.6f;
-    static constexpr float SUMMON_WARN     = 0.65f;
-    static constexpr int   SUMMON_COUNT    = 6;
-    static constexpr float SUMMON_RING_R   = 78.0f;
+    static constexpr float DRIP_INTERVAL = 5.2f;
+    static constexpr float DRIP_WARN     = 0.9f;
 
     Boss(float sx, float sy, int sw, int sh, float maxHpInit = 7000.0f)
         : worldX(sx), worldY(sy), targetX(sx), targetY(sy)
@@ -84,18 +79,15 @@ public:
     }
 
     const wchar_t* stateTag() const {
-        if (phase3) return L"OVERFLOW";
-        if (phase2) return L"FORK";
-        switch (skill) {
-        case Skill::TELEGRAPH: return L"RUSH◉";
-        case Skill::CHARGING:  return L"RUSH";
-        case Skill::RECOVER:   return L"COOL";
-        default: return summonPending ? L"FORK◉" : L"HUNT";
-        }
+        if (phase3) return L"GC FAIL";
+        if (phase2) return L"HEAP+";
+        if (dripPending) return L"DRIP◉";
+        if (summonPending) return L"ALLOC◉";
+        return leakNode ? L"NODE" : L"LEAK";
     }
 
     void pickNewTarget() {
-        float margin = 100.0f;
+        float margin = 90.0f;
         float rw = (float)(screenW - 2 * (int)margin);
         float rh = (float)(screenH - 2 * (int)margin);
         if (rw < 1) rw = 1; if (rh < 1) rh = 1;
@@ -109,201 +101,189 @@ public:
     {
         if (!alive) return;
 
-        if (!phase2 && !chargeOnly && hp <= maxHp * 0.5f) enterPhase2();
-        if (!phase3 && !chargeOnly && hp <= maxHp * 0.25f) enterPhase3();
+        if (!phase2 && !leakNode && hp <= maxHp * 0.5f) enterPhase2();
+        if (!phase3 && !leakNode && hp <= maxHp * 0.25f) enterPhase3();
 
         float p2 = phase2 ? 1.0f : 0.0f;
         float p3 = phase3 ? 1.0f : 0.0f;
-        float huntSpd = (2.2f + p2 * 0.9f + p3 * 0.6f) * (chargeOnly ? 1.15f : 1.0f);
-        float sumMul = 1.0f + p2 * 0.55f + p3 * 0.45f;
+        float driftSpd = (1.35f + p2 * 0.55f + p3 * 0.35f) * (leakNode ? 1.1f : 1.0f);
+        float allocMul = 1.0f + p2 * 0.45f + p3 * 0.35f;
 
-        tickAcid(playerCX, playerCY, dt, playerHP);
+        tickPools(playerCX, playerCY, dt, playerHP);
+        tickDrift(playerCX, playerCY, dt, driftSpd);
+        tickTrail(dt, p2, p3);
 
-        if (!chargeOnly) {
-            summonTimer += dt * sumMul;
-            if (!summonPending && summonTimer >= SUMMON_INTERVAL - SUMMON_WARN)
+        if (!leakNode) {
+            allocTimer += dt * allocMul;
+            if (!summonPending && allocTimer >= ALLOC_INTERVAL - ALLOC_WARN)
                 summonPending = true;
-            if (summonTimer >= SUMMON_INTERVAL) {
-                summonTimer = 0.0f;
+            if (allocTimer >= ALLOC_INTERVAL) {
+                allocTimer = 0.0f;
                 summonPending = false;
-                forkRing(outSummons, phase3 ? SUMMON_COUNT + 2 : SUMMON_COUNT);
+                allocRing(outSummons, phase3 ? ALLOC_COUNT + 2 : ALLOC_COUNT);
+            }
+
+            dripTimer += dt;
+            if (!dripPending && dripTimer >= DRIP_INTERVAL - DRIP_WARN) {
+                dripPending = true;
+                dripX = playerCX;
+                dripY = playerCY;
+            }
+            if (dripPending && dripTimer >= DRIP_INTERVAL) {
+                dripTimer = 0.0f;
+                dripPending = false;
+                spawnPool(dripX, dripY, phase3 ? 1.55f : (phase2 ? 1.25f : 1.0f));
             }
         }
 
-        skillTimer += dt;
-        switch (skill) {
-        case Skill::IDLE:
-            tickHunt(playerCX, playerCY, dt, huntSpd);
-            if (skillTimer >= idleCooldown) beginTelegraph(playerCX, playerCY);
-            break;
+        float cr = CONTACT_RADIUS * sizeScale;
+        float dx = playerCX - worldX, dy = playerCY - worldY;
+        if (dx * dx + dy * dy < cr * cr)
+            playerHP -= CONTACT_DPS * dt * (1.0f + p2 * 0.35f + p3 * 0.5f);
+    }
 
-        case Skill::TELEGRAPH:
-            if (skillTimer >= TELEGRAPH_TIME) {
-                skill = Skill::CHARGING;
-                skillTimer = 0.0f;
-            }
-            break;
-
-        case Skill::CHARGING:
-            tickCharge(playerCX, playerCY, dt, playerHP, outSummons);
-            break;
-
-        case Skill::RECOVER:
-            tickHunt(playerCX, playerCY, dt, huntSpd * 0.65f);
-            if (skillTimer >= RECOVER_TIME) {
-                if (chainRushLeft_ > 0) {
-                    chainRushLeft_--;
-                    beginTelegraph(playerCX, playerCY);
-                } else {
-                    skill = Skill::IDLE;
-                    skillTimer = 0.0f;
-                    idleCooldown = phase3 ? 1.6f : (phase2 ? 2.2f : 3.4f);
-                }
-            }
-            break;
+    void TickAbsorb(std::vector<Monster*>& monsters) {
+        if (!phase3 || leakNode || !alive) return;
+        float ar = BODY_SIZE * sizeScale * 2.5f;
+        for (auto it = monsters.begin(); it != monsters.end(); ) {
+            Monster* m = *it;
+            if (!m->alive || !m->summoned) { ++it; continue; }
+            float dx = m->worldX - worldX, dy = m->worldY - worldY;
+            if (dx * dx + dy * dy < ar * ar) {
+                hp = (std::min)(maxHp, hp + m->hp * 0.32f);
+                delete m;
+                it = monsters.erase(it);
+            } else ++it;
         }
     }
 
-    void renderAcid(float gt) const {
-        for (auto& a : acids) {
-            if (a.life <= 0.0f) continue;
-            float t = a.life / a.maxLife;
-            float pulse = 0.55f + 0.45f * sinf(gt * 14.0f + a.x * 0.03f);
-            float alpha = t * pulse * 0.55f;
-            drawCircle(a.x, a.y, a.radius, 0.35f, 0.95f, 0.28f, alpha);
-            drawCircle(a.x, a.y, a.radius * 0.55f, 0.55f, 1.0f, 0.45f, alpha * 0.75f);
+    void renderPools(float gt) const {
+        for (auto& p : pools) {
+            if (p.life <= 0.0f) continue;
+            float t = p.life / p.maxLife;
+            float pulse = 0.5f + 0.5f * sinf(gt * 11.0f + p.x * 0.02f);
+            float alpha = t * pulse * 0.5f;
+            drawCircle(p.x, p.y, p.radius, 0.22f, 0.35f, 0.95f, alpha);
+            drawCircle(p.x, p.y, p.radius * 0.55f, 0.45f, 0.55f, 1.0f, alpha * 0.65f);
+            drawRect(p.x - 3.0f, p.y - 2.0f, 6.0f, 4.0f, 0.85f, 0.9f, 1.0f, alpha * 0.35f);
         }
+    }
+
+    void renderBody(float gt) const {
+        float r = BODY_SIZE * sizeScale;
+        float pulse = 0.9f + 0.1f * sinf(gt * 2.8f + worldY * 0.01f);
+        float pr = r * pulse;
+        float br = color.r, bg = color.g, bb = color.b;
+        if (phase3) { br *= 1.05f; bg *= 0.85f; }
+        drawCircle(worldX, worldY, pr * 1.12f, br * 0.35f, bg * 0.35f, bb * 0.55f, 0.35f);
+        drawCircle(worldX, worldY, pr, br, bg, bb, 0.88f);
+        drawCircle(worldX, worldY, pr * 0.55f, 0.75f, 0.85f, 1.0f, 0.55f);
+        float wob = sinf(gt * 4.2f) * pr * 0.12f;
+        drawRect(worldX - pr * 0.28f + wob, worldY - pr * 0.12f,
+                 pr * 0.56f, pr * 0.24f, 0.92f, 0.95f, 1.0f, 0.45f);
+        if (phase3) {
+            float ar = pr * (1.4f + 0.15f * sinf(gt * 6.0f));
+            drawCircle(worldX, worldY, ar, 0.55f, 0.35f, 1.0f, 0.08f);
+        }
+    }
+
+    void onPhase2Burst(std::vector<Monster*>& outSummons) {
+        if (!p2BurstReady_) return;
+        p2BurstReady_ = false;
+        allocRing(outSummons, ALLOC_COUNT + 1);
+        for (int i = 0; i < 5; i++)
+            spawnPool(worldX + (float)(rand() % 100 - 50),
+                      worldY + (float)(rand() % 100 - 50), 1.1f);
     }
 
 private:
     void enterPhase2() {
         phase2 = true;
-        idleCooldown = 2.4f;
-        overflowBurst_ = true;
+        sizeScale = 1.12f;
+        p2BurstReady_ = true;
     }
 
     void enterPhase3() {
         phase3 = true;
-        idleCooldown = 1.8f;
-        chainRushLeft_ = 1;
+        sizeScale = 1.18f;
     }
 
-    void tickHunt(float px, float py, float dt, float spd) {
+    void tickDrift(float px, float py, float dt, float spd) {
         wanderTimer += dt;
-        if (wanderTimer >= 2.4f) {
+        if (wanderTimer >= 3.0f) {
             pickNewTarget();
             wanderTimer = 0.0f;
         }
-        float tx = px * 0.78f + targetX * 0.22f;
-        float ty = py * 0.78f + targetY * 0.22f;
+        float tx = px * 0.62f + targetX * 0.38f;
+        float ty = py * 0.62f + targetY * 0.38f;
         float dx = tx - worldX, dy = ty - worldY;
         float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
-        worldX += dx / d * spd * 85.0f * dt;
-        worldY += dy / d * spd * 85.0f * dt;
+        worldX += dx / d * spd * 72.0f * dt;
+        worldY += dy / d * spd * 72.0f * dt;
+        clampToScreen();
     }
 
-    void beginTelegraph(float px, float py) {
-        float dx = px - worldX, dy = py - worldY;
-        float l = sqrtf(dx * dx + dy * dy) + 1e-3f;
-        chargeDirX = dx / l;
-        chargeDirY = dy / l;
-        skill = Skill::TELEGRAPH;
-        skillTimer = 0.0f;
-        bounceCount = 0;
+    void clampToScreen() {
+        float m = BODY_SIZE * sizeScale + 8.0f;
+        if (worldX < m) worldX = m;
+        if (worldX > (float)screenW - m) worldX = (float)screenW - m;
+        if (worldY < m) worldY = m;
+        if (worldY > (float)screenH - m) worldY = (float)screenH - m;
     }
 
-    void dropAcid(float x, float y) {
-        if ((int)acids.size() >= acidCap()) {
-            auto it = std::min_element(acids.begin(), acids.end(),
-                [](const SlimeAcid& a, const SlimeAcid& b) { return a.life < b.life; });
-            if (it != acids.end()) *it = SlimeAcid{};
+    void tickTrail(float dt, float p2, float p3) {
+        trailTimer += dt;
+        float interval = leakNode ? 0.55f : (0.42f - p2 * 0.06f - p3 * 0.04f);
+        if (trailTimer >= interval) {
+            trailTimer = 0.0f;
+            spawnPool(worldX, worldY, leakNode ? 0.75f : (0.85f + p2 * 0.1f));
         }
-        SlimeAcid a;
-        a.x = x; a.y = y;
-        a.radius = (22.0f + (float)(rand() % 12)) * (0.85f + sizeScale * 0.15f);
-        a.maxLife = a.life = phase3 ? 2.0f : (phase2 ? 1.7f : 1.4f);
-        acids.push_back(a);
     }
 
-    int acidCap() const {
-        if (phase3) return 18;
-        if (phase2) return 14;
-        return chargeOnly ? 8 : 10;
+    int poolCap() const {
+        if (phase3) return leakNode ? 10 : 16;
+        if (phase2) return leakNode ? 8 : 13;
+        return leakNode ? 6 : 9;
     }
 
-    void tickAcid(float px, float py, float dt, float& playerHP) {
-        for (auto& a : acids) {
-            if (a.life <= 0.0f) continue;
-            a.life -= dt;
-            float dx = px - a.x, dy = py - a.y;
-            if (dx * dx + dy * dy < (a.radius + 8.0f) * (a.radius + 8.0f)) {
-                float rate = phase3 ? 14.0f : (phase2 ? 10.0f : 7.0f);
-                playerHP -= rate * dt;
+    void spawnPool(float x, float y, float scale) {
+        if ((int)pools.size() >= poolCap()) {
+            auto it = std::min_element(pools.begin(), pools.end(),
+                [](const LeakPool& a, const LeakPool& b) { return a.life < b.life; });
+            if (it != pools.end()) *it = LeakPool{};
+        }
+        LeakPool p;
+        p.x = x; p.y = y;
+        p.radius = (20.0f + (float)(rand() % 14)) * scale * (0.85f + sizeScale * 0.12f);
+        p.maxLife = p.life = phase3 ? 4.2f : (phase2 ? 3.5f : 2.8f);
+        p.grow = (8.0f + (float)(rand() % 6)) * scale * (1.0f + (phase2 ? 0.25f : 0.0f) + (phase3 ? 0.35f : 0.0f));
+        pools.push_back(p);
+    }
+
+    void tickPools(float px, float py, float dt, float& playerHP) {
+        for (auto& p : pools) {
+            if (p.life <= 0.0f) continue;
+            p.life -= dt;
+            p.radius += p.grow * dt;
+            float dx = px - p.x, dy = py - p.y;
+            float hitR = p.radius + 6.0f;
+            if (dx * dx + dy * dy < hitR * hitR) {
+                float rate = phase3 ? 11.0f : (phase2 ? 8.5f : 6.0f);
+                playerHP -= rate * dt * (p.radius / 40.0f);
             }
         }
-        acids.erase(std::remove_if(acids.begin(), acids.end(),
-            [](const SlimeAcid& a) { return a.life <= 0.0f; }), acids.end());
+        pools.erase(std::remove_if(pools.begin(), pools.end(),
+            [](const LeakPool& p) { return p.life <= 0.0f; }), pools.end());
     }
 
-    void forkRing(std::vector<Monster*>& out, int count) {
-        float hpMul = phase3 ? 2.4f : (phase2 ? 2.0f : 1.7f);
-        float spdMul = phase3 ? 1.05f : (phase2 ? 0.92f : 0.85f);
+    void allocRing(std::vector<Monster*>& out, int count) {
+        float hpMul = phase3 ? 2.2f : (phase2 ? 1.85f : 1.55f);
+        float spdMul = phase3 ? 0.95f : (phase2 ? 0.82f : 0.72f);
         for (int i = 0; i < count; i++) {
             float ang = (float)i / (float)count * 6.2831853f;
-            float sx = worldX + cosf(ang) * SUMMON_RING_R;
-            float sy = worldY + sinf(ang) * SUMMON_RING_R;
+            float sx = worldX + cosf(ang) * ALLOC_RING_R;
+            float sy = worldY + sinf(ang) * ALLOC_RING_R;
             out.push_back(new Monster(sx, sy, hpMul, spdMul, true));
         }
-    }
-
-    void tickCharge(float px, float py, float dt, float& playerHP,
-                    std::vector<Monster*>& outSummons)
-    {
-        float spd = CHARGE_SPEED * (1.0f + (phase2 ? 0.12f : 0.0f) + (phase3 ? 0.18f : 0.0f));
-        worldX += chargeDirX * spd * dt;
-        worldY += chargeDirY * spd * dt;
-
-        if (skillTimer > 0.04f && (int)(skillTimer * 20.0f) % 3 == 0)
-            dropAcid(worldX, worldY);
-
-        float dx = px - worldX, dy = py - worldY;
-        if (dx * dx + dy * dy < CHARGE_RADIUS * CHARGE_RADIUS)
-            playerHP -= CHARGE_DAMAGE * dt * (phase3 ? 4.8f : 4.2f);
-
-        bool bounced = false;
-        if (worldX < 0.0f) {
-            worldX = 0.0f; chargeDirX = fabsf(chargeDirX); bounced = true;
-        } else if (worldX > (float)screenW) {
-            worldX = (float)screenW; chargeDirX = -fabsf(chargeDirX); bounced = true;
-        }
-        if (worldY < 0.0f) {
-            worldY = 0.0f; chargeDirY = fabsf(chargeDirY); bounced = true;
-        } else if (worldY > (float)screenH) {
-            worldY = (float)screenH; chargeDirY = -fabsf(chargeDirY); bounced = true;
-        }
-
-        if (bounced) {
-            ++bounceCount;
-            dropAcid(worldX, worldY);
-            if (!chargeOnly)
-                forkRing(outSummons, phase3 ? IMPACT_SUMMON_COUNT + 1 : IMPACT_SUMMON_COUNT);
-            if (phase3 && bounceCount == 2) chainRushLeft_ = 1;
-
-            if (bounceCount >= BOUNCE_MAX) {
-                skill = Skill::RECOVER;
-                skillTimer = 0.0f;
-                bounceCount = 0;
-            }
-        }
-    }
-
-public:
-    // P2 진입 시 main에서 1회 호출 — 즉시 FORK 링
-    void onPhase2Burst(std::vector<Monster*>& outSummons) {
-        if (!overflowBurst_) return;
-        overflowBurst_ = false;
-        forkRing(outSummons, SUMMON_COUNT + 2);
-        for (int i = 0; i < 4; i++)
-            dropAcid(worldX + (float)(rand() % 80 - 40), worldY + (float)(rand() % 80 - 40));
     }
 };

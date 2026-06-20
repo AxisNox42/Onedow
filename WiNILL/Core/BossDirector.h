@@ -2,7 +2,7 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 0슬라임 1(미사용) 2리로드 3스팸 4폴리 5커널 6방화벽 7C2 8포크웜 9토템
+// 보스 pick: 0누수 1(미사용) 2리로드 3스팸 4폴리 5커널 6방화벽 7C2 8포크웜 9토템
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -19,7 +19,7 @@ inline int RollScorePick() {
 
 inline const wchar_t* DisplayName(int pick) {
     switch (pick) {
-    case 0: return L"SLIME.worm";
+    case 0: return L"LEAK.sys";
     case 1: return L"UNKNOWN.sys";
     case 2: return L"VOLLEY.sys";
     case 3: return L"SPAM.dll";
@@ -49,7 +49,7 @@ inline float HpMul(int pick) {
 
 inline glm::vec3 WarnColor(int pick) {
     switch (pick) {
-    case 0: return { 0.55f, 0.9f,  0.55f };
+    case 0: return { 0.45f, 0.55f, 1.0f  };
     case 1: return { 0.95f, 0.2f,  0.6f  };
     case 2: return { 1.0f,  0.55f, 0.2f  };
     case 3: return { 1.0f,  0.4f,  0.8f  };
@@ -65,7 +65,7 @@ inline glm::vec3 WarnColor(int pick) {
 
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
-        L"추격·돌진·산성 궤적 — FORK 증식",
+        L"할당은 계속, 해제는 없음",
         L"",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
@@ -77,7 +77,7 @@ inline const wchar_t* Tagline(int pick) {
         L"기둥 의식 — Q/E/R 봉인 · 의식망",
     };
     static const wchar_t* EN[10] = {
-        L"Hunt · rush · acid trail — fork swarm",
+        L"Alloc forever — free never",
         L"",
         L"Volley fire — telegraphed danger zones",
         L"Popup ad flood",
