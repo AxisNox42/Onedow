@@ -2,7 +2,7 @@
 // ─────────────────────────────────────────────────────────────
 // CORRUPT.dll — 깨진 디스플레이 보스 (v2 전면 재작성)
 //
-//   컨셉: 가짜 OS 창 + PHANTOM.exe 분신 + RGB TEAR 예고 레이저
+//   컨셉: CORRUPT.dll 단일 창 + 내부 PHANTOM 분신 + RGB TEAR 예고 레이저
 //
 //   사이클 (반복):
 //     CORRUPT  → 부팅 글리치 (2s)
@@ -12,7 +12,7 @@
 //     SYNC     → 코어 노출 · 딜 타임 (2.2s)
 //
 //   페이즈:
-//     P2 50% — PHANTOM 분신 2 (각 10% HP, 자체 exe 창)
+//     P2 50% — PHANTOM 분신 2 (각 10% HP, CORRUPT 창 내부)
 //     P3 25% — 분신 3, 사이클 가속, SWAP
 // ─────────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ public:
     float spinAng = 0.0f;
 
     struct Decoy {
-        float x = 0, y = 0;
+        float offX = 0, offY = 0;
         float hp = 0, maxHp = 0;
         bool  alive = true;
         float respawn = 0.0f;
@@ -80,9 +80,6 @@ public:
 
     static constexpr float BODY = 44.0f;
     static constexpr float WIN_TB = 22.0f;
-    static constexpr float PHANTOM_WIN_W = 300.0f;
-    static constexpr float PHANTOM_WIN_H = 220.0f;
-    static constexpr float PHANTOM_WIN_TB = 16.0f;
     static constexpr float GLITCH_WIN_TB = 22.0f;
 
     static constexpr float T_BOOT = 2.0f;
@@ -105,9 +102,14 @@ public:
 
     static const wchar_t* BossName() { return L"CORRUPT.dll"; }
 
-    static void phantomWinTitle(int seed, wchar_t* out, int cap) {
-        swprintf_s(out, cap, L"PHANTOM_%04X.exe", seed & 0xFFFF);
+    static void phantomLabel(int seed, wchar_t* out, int cap) {
+        swprintf_s(out, cap, L"PHANTOM_%04X", seed & 0xFFFF);
     }
+
+    float decoyWorldX(const Decoy& d) const { return worldX + d.offX; }
+    float decoyWorldY(const Decoy& d) const { return worldY + d.offY; }
+    float coreWorldX() const { return worldX + coreOffX_; }
+    float coreWorldY() const { return worldY + coreOffY_; }
 
     float combinedHp() const {
         float t = hp;
@@ -168,6 +170,7 @@ public:
             tickSwap(dt);
         } else {
             decoys.clear();
+            coreOffX_ = coreOffY_ = 0.0f;
         }
 
         driftBoss(dt);
@@ -232,7 +235,7 @@ public:
     float tryHitDecoy(float bx, float by, float pbx, float pby, float dmg) {
         for (auto& d : decoys) {
             if (!d.alive || d.hp <= 0.0f) continue;
-            if (segDist(bx, by, pbx, pby, d.x, d.y) < BODY * 0.72f) {
+            if (segDist(bx, by, pbx, pby, decoyWorldX(d), decoyWorldY(d)) < BODY * 0.72f) {
                 float dealt = (dmg < d.hp) ? dmg : d.hp;
                 d.hp -= dealt;
                 if (d.hp <= 0.0f) onDecoyDead(d);
@@ -258,19 +261,27 @@ public:
     void renderBody(float gt) const {
         if (swapFlash > 0.02f)
             drawCircle(worldX, worldY, BODY * 1.4f, 1.0f, 0.35f, 0.7f, swapFlash * 0.22f);
-        drawMonitorCore(worldX, worldY, gt, true,
+        drawMonitorCore(worldX + coreOffX_, worldY + coreOffY_, gt, true,
                         (maxHp > 0.0f) ? hp / maxHp : 1.0f);
         wchar_t tag[32];
         swprintf_s(tag, L"[%ls]", stateTag());
         float tw = g_TextS.Width(tag, 0.44f);
-        g_TextS.Draw(tag, worldX - tw * 0.5f, worldY - BODY - 30.0f, 0.44f,
+        g_TextS.Draw(tag, worldX + coreOffX_ - tw * 0.5f, worldY + coreOffY_ - BODY - 30.0f, 0.44f,
                      0.95f, 0.35f, 0.72f, 0.88f);
     }
 
-    void renderDecoyWindow(const Decoy& d, float gt, float wx, float wy, float ww, float wh) const {
-        if (!d.alive) return;
-        float hf = (d.maxHp > 0.0f) ? d.hp / d.maxHp : 0.0f;
-        drawMonitorCore(wx + ww * 0.5f, wy + wh * 0.52f, gt, false, hf);
+    void renderDecoys(float gt) const {
+        for (auto& d : decoys) {
+            if (!d.alive) continue;
+            float cx = decoyWorldX(d), cy = decoyWorldY(d);
+            float hf = (d.maxHp > 0.0f) ? d.hp / d.maxHp : 0.0f;
+            drawMonitorCore(cx, cy, gt, false, hf);
+            wchar_t tag[24];
+            phantomLabel(d.winSeed, tag, 24);
+            float tw = g_TextS.Width(tag, 0.34f);
+            g_TextS.Draw(tag, cx - tw * 0.5f, cy - BODY - 18.0f, 0.34f,
+                         0.55f, 0.75f, 0.95f, 0.72f);
+        }
     }
 
     // ── Render (월드 FX — UI ortho 전, caller가 additive 처리) ─
@@ -286,7 +297,7 @@ public:
             float prog = laserWarnT / T_LOCK;
             if (prog > 1.0f) prog = 1.0f;
             drawCircle(px, py, 18.0f + prog * 16.0f, 0.3f, 0.95f, 1.0f, 0.25f + prog * 0.35f);
-            drawCircle(worldX, worldY, BODY * (0.95f + prog * 0.3f), 0.95f, 0.25f, 0.55f, 0.2f + prog * 0.25f);
+            drawCircle(coreWorldX(), coreWorldY(), BODY * (0.95f + prog * 0.3f), 0.95f, 0.25f, 0.55f, 0.2f + prog * 0.25f);
         }
 
         for (auto& s : shards) {
@@ -303,26 +314,26 @@ public:
             float prog = laserWarnT / T_LOCK;
             if (prog > 1.0f) prog = 1.0f;
             float blink = 0.5f + 0.5f * sinf(gt * 22.0f);
-            drawRgbBeam(worldX, worldY, beamDirX, beamDirY, reach,
+            drawRgbBeam(coreWorldX(), coreWorldY(), beamDirX, beamDirY, reach,
                         BEAM_HALF_LOCK * (0.8f + prog * 0.25f),
                         blink * (0.4f + prog * 0.45f), blink * (0.55f + prog * 0.4f), 3.0f);
         }
 
         if (beam1) {
             float f = 0.85f + 0.15f * sinf(gt * 30.0f);
-            drawRgbBeam(worldX, worldY, beamDirX, beamDirY, reach, BEAM_HALF, 0.95f * f, 0.98f * f, 5.0f);
-            drawCircle(worldX, worldY, BODY, 1.0f, 0.25f, 0.45f, 0.5f * f);
+            drawRgbBeam(coreWorldX(), coreWorldY(), beamDirX, beamDirY, reach, BEAM_HALF, 0.95f * f, 0.98f * f, 5.0f);
+            drawCircle(coreWorldX(), coreWorldY(), BODY, 1.0f, 0.25f, 0.45f, 0.5f * f);
         }
         if (beam2) {
             float f = 0.82f + 0.18f * sinf(gt * 28.0f + 1.0f);
-            drawBeam(worldX, worldY, beam2DirX, beam2DirY, reach,
+            drawBeam(coreWorldX(), coreWorldY(), beam2DirX, beam2DirY, reach,
                      0.15f, 0.98f, 0.4f, BEAM_HALF * 0.9f, 0.88f * f, 0.95f * f);
         }
         if (beam3) {
             float d3x = beamDirX * 0.9f - perpX * 0.12f;
             float d3y = beamDirY * 0.9f - perpY * 0.12f;
             float f = 0.82f + 0.18f * sinf(gt * 28.0f + 2.0f);
-            drawBeam(worldX, worldY, d3x, d3y, reach,
+            drawBeam(coreWorldX(), coreWorldY(), d3x, d3y, reach,
                      0.45f, 0.18f, 0.98f, BEAM_HALF * 0.88f, 0.85f * f, 0.92f * f);
         }
         (void)perpX;
@@ -341,7 +352,7 @@ public:
         if (state == BossState::SYNC) {
             wchar_t sw[] = L"◆ CORE EXPOSED";
             float sw_w = g_TextS.Width(sw, 0.5f);
-            g_TextS.Draw(sw, worldX - sw_w * 0.5f, worldY - BODY - 34.0f, 0.5f,
+            g_TextS.Draw(sw, coreWorldX() - sw_w * 0.5f, coreWorldY() - BODY - 34.0f, 0.5f,
                          0.95f, 0.35f, 0.72f, 0.92f);
         }
         if (attackBanner > 0.04f) {
@@ -364,7 +375,8 @@ private:
     float shardCd_ = 0.0f;
     float swapCd_ = 0.0f;
     float driftTX_ = 0.0f, driftTY_ = 0.0f, driftTimer_ = 0.0f;
-    int   decoyCountLast_ = 0;
+    float coreOffX_ = 0.0f, coreOffY_ = 0.0f;
+    float decoyCountLast_ = 0;
 
     float scanDuration() const {
         float base = T_SCAN;
@@ -450,7 +462,8 @@ private:
     }
 
     void beginLock(float px, float py) {
-        float dx = px - worldX, dy = py - worldY;
+        float cx = coreWorldX(), cy = coreWorldY();
+        float dx = px - cx, dy = py - cy;
         float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
         beamDirX = dx / d;
         beamDirY = dy / d;
@@ -531,18 +544,19 @@ private:
         if (!beam1 && !beam2 && !beam3) return;
         float reach = (float)(screenW + screenH);
         float hitR = 26.0f;
-        if (beam1 && segDist(px, py, worldX, worldY, worldX + beamDirX * reach,
-                             worldY + beamDirY * reach) < hitR)
+        float cx = coreWorldX(), cy = coreWorldY();
+        if (beam1 && segDist(px, py, cx, cy, cx + beamDirX * reach,
+                             cy + beamDirY * reach) < hitR)
             playerHP -= 34.0f * dt;
-        if (beam2 && segDist(px, py, worldX, worldY, worldX + beam2DirX * reach,
-                             worldY + beam2DirY * reach) < hitR - 2.0f)
+        if (beam2 && segDist(px, py, cx, cy, cx + beam2DirX * reach,
+                             cy + beam2DirY * reach) < hitR - 2.0f)
             playerHP -= 28.0f * dt;
         if (beam3) {
             float pxn = -beamDirY, pyn = beamDirX;
             float d3x = beamDirX * 0.9f - pxn * 0.12f;
             float d3y = beamDirY * 0.9f - pyn * 0.12f;
-            if (segDist(px, py, worldX, worldY, worldX + d3x * reach,
-                        worldY + d3y * reach) < hitR - 3.0f)
+            if (segDist(px, py, cx, cy, cx + d3x * reach,
+                        cy + d3y * reach) < hitR - 3.0f)
                 playerHP -= 26.0f * dt;
         }
     }
@@ -571,13 +585,24 @@ private:
     Decoy makeDecoy(int slot) {
         Decoy d;
         float ang = (float)slot * 2.094395f + (float)(rand() % 60) * 0.008f;
-        float dist = 240.0f + (float)(rand() % 90);
-        d.x = worldX + cosf(ang) * dist;
-        d.y = worldY + sinf(ang) * dist * 0.82f;
+        float dist = 90.0f + (float)(rand() % 80);
+        d.offX = cosf(ang) * dist;
+        d.offY = sinf(ang) * dist * 0.72f;
+        clampDecoyOffset(d);
         d.alive = true;
         d.maxHp = d.hp = maxHp * DECOY_HP_SHARE;
         d.winSeed = rand() & 0xFFFF;
         return d;
+    }
+
+    void clampDecoyOffset(Decoy& d) const {
+        float maxR = (float)std::min(screenW, screenH) * 0.14f;
+        if (maxR < 70.0f) maxR = 70.0f;
+        float r = sqrtf(d.offX * d.offX + d.offY * d.offY);
+        if (r > maxR && r > 1e-3f) {
+            d.offX = d.offX / r * maxR;
+            d.offY = d.offY / r * maxR;
+        }
     }
 
     void ensureDecoys() {
@@ -612,19 +637,21 @@ private:
             d.driftTimer -= dt;
             if (d.driftTimer <= 0.0f) {
                 d.driftTimer = 1.6f;
-                float m = BODY + 60.0f;
-                int rx = screenW - (int)(2.0f * m); if (rx < 1) rx = 1;
-                int ry = screenH - (int)(2.0f * m); if (ry < 1) ry = 1;
-                d.driftTX = m + (float)(rand() % rx);
-                d.driftTY = m + (float)(rand() % ry);
+                float maxR = (float)std::min(screenW, screenH) * 0.14f;
+                if (maxR < 70.0f) maxR = 70.0f;
+                float a = (float)(rand() % 628) * 0.01f;
+                float r = maxR * (0.35f + (float)(rand() % 55) * 0.01f);
+                d.driftTX = cosf(a) * r;
+                d.driftTY = sinf(a) * r * 0.72f;
             }
-            float mdx = d.driftTX - d.x, mdy = d.driftTY - d.y;
+            float mdx = d.driftTX - d.offX, mdy = d.driftTY - d.offY;
             float md = sqrtf(mdx * mdx + mdy * mdy);
             if (md > 1.0f) {
-                float step = 70.0f * dt;
+                float step = 55.0f * dt;
                 if (step > md) step = md;
-                d.x += mdx / md * step;
-                d.y += mdy / md * step;
+                d.offX += mdx / md * step;
+                d.offY += mdy / md * step;
+                clampDecoyOffset(d);
             }
         }
     }
@@ -636,9 +663,9 @@ private:
             swapCd_ = phase3 ? SWAP_INT * 0.65f : SWAP_INT;
             int i = rand() % (int)decoys.size();
             if (!decoys[i].alive) return;
-            float tx = worldX, ty = worldY, th = hp;
-            worldX = decoys[i].x; worldY = decoys[i].y; hp = decoys[i].hp;
-            decoys[i].x = tx; decoys[i].y = ty; decoys[i].hp = th;
+            float tx = decoys[i].offX, ty = decoys[i].offY, th = decoys[i].hp;
+            decoys[i].offX = coreOffX_; decoys[i].offY = coreOffY_; decoys[i].hp = hp;
+            coreOffX_ = tx; coreOffY_ = ty; hp = th;
             swapFlash = 1.0f;
             glitchAmount = 0.35f;
         }

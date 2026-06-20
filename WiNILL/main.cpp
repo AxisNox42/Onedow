@@ -143,8 +143,6 @@ float TURRET_WIN_W  = 250.0f;
 float TURRET_WIN_H  = 250.0f;
 // 신규 보스 개인 창 크기 (본체/HP 를 가두는 따라다니는 창)
 float GLITCH_WIN_W = 620.0f;
-float GLITCH_PHANTOM_WIN_W = 300.0f;
-float GLITCH_PHANTOM_WIN_H = 220.0f;
 float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float SPAM_WIN_W   = 660.0f;
@@ -489,7 +487,7 @@ int main() {
     if (g_Scale < 0.5f) g_Scale = 0.5f;
     Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
-    GLITCH_WIN_W *= g_Scale; GLITCH_PHANTOM_WIN_W *= g_Scale; GLITCH_PHANTOM_WIN_H *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
+    GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
     KERNEL_WIN_W *= g_Scale; FIREWALL_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
     TOTEM_WIN_W *= g_Scale;
@@ -665,7 +663,8 @@ int main() {
         if (g_GlitchBoss && g_GlitchBoss->alive) {
             consider(g_GlitchBoss->worldX, g_GlitchBoss->worldY);
             for (auto& gt : g_GlitchBoss->shards) if (gt.alive) consider(gt.x, gt.y);
-            for (auto& dc : g_GlitchBoss->decoys) if (dc.alive) consider(dc.x, dc.y);
+            for (auto& dc : g_GlitchBoss->decoys)
+                if (dc.alive) consider(g_GlitchBoss->decoyWorldX(dc), g_GlitchBoss->decoyWorldY(dc));
         }
         if (g_RRBoss && g_RRBoss->alive)         consider(g_RRBoss->worldX, g_RRBoss->worldY);
         if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
@@ -1942,10 +1941,10 @@ int main() {
                             }
                         }
                         // 본체
-                        if (SegDist(gb->worldX, gb->worldY,
+                        if (SegDist(gb->coreWorldX(), gb->coreWorldY(),
                                     b.prevX, b.prevY, b.x, b.y) < GlitchBoss::BODY * 0.7f) {
                             float pd = glm::distance(glm::vec2(pCX, pCY),
-                                                     glm::vec2(gb->worldX, gb->worldY));
+                                                     glm::vec2(gb->coreWorldX(), gb->coreWorldY()));
                             float dmg;
                             if (b.remainingDmg > 0.0f)      dmg = b.remainingDmg;
                             else if (b.turretDmg > 0.0f)    dmg = b.turretDmg;
@@ -4816,34 +4815,27 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-        // (e3) flood.exe / PHANTOM / CORRUPT.dll — y-sort 앱 창 통합 (플레이어 위 레이어)
+        // (e3) flood.exe / CORRUPT.dll — y-sort 앱 창 (플레이어 위 레이어)
         {
-            enum AppKind { AW_DDOS, AW_PHANTOM, AW_CORRUPT };
+            enum AppKind { AW_DDOS, AW_CORRUPT };
             struct AppLayer {
                 float y;
                 AppKind kind;
                 Monster* ddos;
-                GlitchBoss::Decoy* dec;
             };
             std::vector<AppLayer> apps;
             for (auto m : g_MonsterManager.monsters) {
                 if (!m->alive || m->kind != MobKind::DDOS) continue;
-                apps.push_back({ m->worldY, AW_DDOS, m, nullptr });
+                apps.push_back({ m->worldY, AW_DDOS, m });
             }
-            if (g_GlitchBoss && g_GlitchBoss->alive) {
-                auto* gb = g_GlitchBoss;
-                for (auto& d : gb->decoys)
-                    if (d.alive) apps.push_back({ d.y, AW_PHANTOM, nullptr, &d });
-                apps.push_back({ gb->worldY, AW_CORRUPT, nullptr, nullptr });
-            }
+            if (g_GlitchBoss && g_GlitchBoss->alive)
+                apps.push_back({ g_GlitchBoss->worldY, AW_CORRUPT, nullptr });
             if (!apps.empty()) {
                 std::sort(apps.begin(), apps.end(),
                           [](const AppLayer& a, const AppLayer& b) { return a.y < b.y; });
                 float gtApp = (float)glfwGetTime();
                 auto* gb = g_GlitchBoss;
                 const float DTB = 14.0f * g_Scale;
-                const float PW = GLITCH_PHANTOM_WIN_W, PH = GLITCH_PHANTOM_WIN_H;
-                const float PTB = GlitchBoss::PHANTOM_WIN_TB * g_Scale;
                 for (auto& L : apps) {
                     if (L.kind == AW_DDOS) {
                         Monster* m = L.ddos;
@@ -4856,19 +4848,6 @@ int main() {
                         WorldScissor(wx, wy, w, h);
                         drawMob(m);
                         BatchFlush(); glDisable(GL_SCISSOR_TEST);
-                    } else if (L.kind == AW_PHANTOM && gb) {
-                        auto& d = *L.dec;
-                        float wx = d.x - PW * 0.5f, wy = d.y - PH * 0.5f;
-                        wchar_t ptitle[32];
-                        GlitchBoss::phantomWinTitle(d.winSeed, ptitle, 32);
-                        DrawAppWindow(wx, wy, PW, PH, ptitle, PTB);
-                        BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                        BindMainShader();
-                        WorldScissor(wx, wy, PW, PH);
-                        for (auto& b : g_Bullets)
-                            if (b.active && inWin(b.x, b.y, wx, wy, PW, PH)) drawBullet(b);
-                        gb->renderDecoyWindow(d, gtApp, wx, wy, PW, PH);
-                        BatchFlush(); glDisable(GL_SCISSOR_TEST);
                     } else if (L.kind == AW_CORRUPT && gb) {
                         float ww = GLITCH_WIN_W, wh = GLITCH_WIN_W;
                         float wx = gb->worldX - ww * 0.5f, wy = gb->worldY - wh * 0.5f;
@@ -4879,6 +4858,7 @@ int main() {
                         for (auto& b : g_Bullets)
                             if (b.active && inWin(b.x, b.y, wx, wy, ww, wh)) drawBullet(b);
                         gb->renderShards(gtApp);
+                        gb->renderDecoys(gtApp);
                         gb->renderBody(gtApp);
                         BatchFlush(); glDisable(GL_SCISSOR_TEST);
                     }
