@@ -36,6 +36,7 @@ inline const wchar_t* DisplayName(int pick) {
 inline float HpMul(int pick) {
     switch (pick) {
     case 1: return 0.7f;
+    case 2: return 1.08f;
     case 3: return 0.65f;
     case 5: return 0.45f;
     case 6: return 0.7f;
@@ -66,7 +67,7 @@ inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
         L"메모리 누수 — 프로세스 증식",
         L"디스플레이 드라이버 충돌",
-        L"무한 재시작 루프",
+        L"전면 교전 — 화력 플랫폼 ASSAULT",
         L"팝업 광고 폭주",
         L"실행 파일 형태 변조",
         L"커널 패닉 직전",
@@ -78,7 +79,7 @@ inline const wchar_t* Tagline(int pick) {
     static const wchar_t* EN[10] = {
         L"Memory leak — process swarm",
         L"Display driver fault",
-        L"Infinite restart loop",
+        L"Full assault — mobile fire platform",
         L"Popup ad flood",
         L"Executable morphing",
         L"Kernel panic imminent",
@@ -90,7 +91,7 @@ inline const wchar_t* Tagline(int pick) {
     static const wchar_t* JP[10] = {
         L"メモリリーク — プロセス増殖",
         L"ディスプレイドライバー衝突",
-        L"無限再起動ループ",
+        L"全面交戦 — 火力プラットフォーム",
         L"ポップアップ広告暴走",
         L"実行ファイル変形",
         L"カーネルパニック直前",

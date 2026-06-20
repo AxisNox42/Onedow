@@ -304,7 +304,7 @@ int            g_BossWarnPick   = -1;           // 0~8 보스 통일 인덱스 (
 const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
 float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
 // 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
-bool g_SlimeWasP2 = false, g_GlitchWasP2 = false, g_RRWasP2 = false, g_SpamWasP2 = false;
+bool g_SlimeWasP2 = false, g_GlitchWasP2 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
 bool g_BotnetWasP2 = false;
 // 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
 float     g_P2ToastTimer = 0.0f;
@@ -815,7 +815,7 @@ int main() {
             BossDir::ResetRotation();
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
-            g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = g_BotnetWasP2 = false;
+            g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
@@ -1049,7 +1049,7 @@ int main() {
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
-                g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = g_BotnetWasP2 = false;
+                g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
@@ -1847,13 +1847,17 @@ int main() {
                         p2enter(g_GlitchBoss->worldX, g_GlitchBoss->worldY, glm::vec3(0.95f, 0.2f, 0.6f));
                     }
                 } else g_GlitchWasP2 = false;
-                // RELOADER — 오버클럭 + 스팸클릭
+                // RELOADER — 오버클럭 + ASSAULT 전면전
                 if (g_RRBoss && g_RRBoss->alive) {
                     if (g_RRBoss->phase2 && !g_RRWasP2) {
                         g_RRWasP2 = true;
                         p2enter(g_RRBoss->worldX, g_RRBoss->worldY, glm::vec3(1.0f, 0.55f, 0.2f));
                     }
-                } else g_RRWasP2 = false;
+                    if (g_RRBoss->phase3 && !g_RRWasP3) {
+                        g_RRWasP3 = true;
+                        p2enter(g_RRBoss->worldX, g_RRBoss->worldY, glm::vec3(1.0f, 0.22f, 0.08f));
+                    }
+                } else { g_RRWasP2 = false; g_RRWasP3 = false; }
                 // SPAM — 역회전 이중 나선 + 조준 버스트
                 if (g_SpamBoss && g_SpamBoss->alive) {
                     if (g_SpamBoss->phase2 && !g_SpamWasP2) {
@@ -5076,96 +5080,25 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
-        // (g4) 리로드 러너 — 무기 전조(저격선/MG 부채꼴) + 본체 + HP + [RELOADING]
+        // (g4) RELOADER.exe — 전조 + 기동 화력 플랫폼
         if (g_RRBoss && g_RRBoss->alive) {
             auto* rb = g_RRBoss;
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
+            float gtRR = (float)glfwGetTime();
             BindMainShader();
-    
-            // SNIPER 정지 조준선 (보스 → 플레이어, 깜빡)
-            if (rb->aiming) {
-                float adx = pCX - rb->worldX, ady = pCY - rb->worldY;
-                float ad = sqrtf(adx*adx + ady*ady) + 1e-3f;
-                float dxn = adx/ad, dyn = ady/ad;
-                float ex = rb->worldX + dxn * (float)(screenWidth + screenHeight);
-                float ey = rb->worldY + dyn * (float)(screenWidth + screenHeight);
-                float pxx = -dyn, pyy = dxn, th = 3.0f;
-                float v[12] = {
-                    rb->worldX+pxx*th, rb->worldY+pyy*th, rb->worldX-pxx*th, rb->worldY-pyy*th, ex+pxx*th, ey+pyy*th,
-                    rb->worldX-pxx*th, rb->worldY-pyy*th, ex-pxx*th, ey-pyy*th,                   ex+pxx*th, ey+pyy*th };
-                float a = 0.55f + 0.35f * sinf((float)glfwGetTime() * 30.0f);
-                BatchVerts(v, 6, 0.4f, 1.0f, 1.0f, a);
-            }
-    
-            // MACHINEGUN 부채꼴 범위 예고 (삼각 부채로 채움)
-            if (rb->mgTelegraph) {
-                float base = atan2f(rb->zoneDirY, rb->zoneDirX);
-                float a0 = base - rb->zoneHalfAngle, a1 = base + rb->zoneHalfAngle;
-                float prog  = rb->warmUpTimer / ReloadRunnerBoss::MG_WARMUP;
-                float alpha = 0.10f + 0.28f * prog;
-                const int SEG = 18;
-                for (int s = 0; s < SEG; s++) {
-                    float aa = a0 + (a1 - a0) * (float)s / SEG;
-                    float ab = a0 + (a1 - a0) * (float)(s + 1) / SEG;
-                    float L  = rb->zoneLen;
-                    float v[6] = { rb->worldX, rb->worldY,
-                                   rb->worldX + cosf(aa)*L, rb->worldY + sinf(aa)*L,
-                                   rb->worldX + cosf(ab)*L, rb->worldY + sinf(ab)*L };
-                    BatchVerts(v, 3, 1.0f, 0.85f, 0.2f, alpha);
-                }
-            }
-    
-            // SHOTGUN 부채꼴 사거리 예고 (사정거리 진입 시 플레이어 방향 옅은 콘)
-            if (rb->state == RRState::ACTIVE && rb->weapon == RRWeapon::SHOTGUN) {
-                float adx = pCX - rb->worldX, ady = pCY - rb->worldY;
-                float ad  = sqrtf(adx*adx + ady*ady) + 1e-3f;
-                if (ad < ReloadRunnerBoss::SG_RANGE) {
-                    float base = atan2f(ady, adx);
-                    float ha   = ReloadRunnerBoss::SG_SPREAD * 0.5f;
-                    float a0 = base - ha, a1 = base + ha;
-                    float L  = ReloadRunnerBoss::SG_RANGE;
-                    const int SEG = 12;
-                    for (int s = 0; s < SEG; s++) {
-                        float aa = a0 + (a1 - a0) * (float)s / SEG;
-                        float ab = a0 + (a1 - a0) * (float)(s + 1) / SEG;
-                        float v[6] = { rb->worldX, rb->worldY,
-                                       rb->worldX + cosf(aa)*L, rb->worldY + sinf(aa)*L,
-                                       rb->worldX + cosf(ab)*L, rb->worldY + sinf(ab)*L };
-                        BatchVerts(v, 3, 1.0f, 0.5f, 0.15f, 0.10f);
-                    }
-                }
-            }
-    
-            // 본체 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
+
+            rb->renderTelegraphs(pCX, pCY, gtRR);
+
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(rb->worldX - RR_WIN_W*0.5f, rb->worldY - RR_WIN_W*0.5f,
+            WorldScissor(rb->worldX - RR_WIN_W * 0.5f, rb->worldY - RR_WIN_W * 0.5f,
                          RR_WIN_W, RR_WIN_W);
-            // 총알 (이 창 안에서도 보이도록 — 리로드 러너 탄막 가시성 버그 fix)
             for (auto& b : g_Bullets) {
                 if (!b.active) continue;
                 drawBullet(b);
             }
-            // 본체 — 상태/무기색 다이아몬드
-            float br = 0.9f, bg = 0.9f, bb = 0.95f;
-            if      (rb->state  == RRState::RELOAD_SPRINT) { br=1.0f; bg=0.9f;  bb=0.3f; }
-            else if (rb->weapon == RRWeapon::SHOTGUN)      { br=1.0f; bg=0.5f;  bb=0.2f; }
-            else if (rb->weapon == RRWeapon::SNIPER)       { br=0.3f; bg=1.0f;  bb=1.0f; }
-            else                                           { br=1.0f; bg=0.85f; bb=0.2f; }
-            drawDiamond(rb->worldX, rb->worldY, ReloadRunnerBoss::BODY, br, bg, bb, 1.0f);
-    
-            // (HP 바는 화면 상단 고정 보스 바로 이동)
+            rb->renderBody(gtRR, pCX, pCY);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
-    
-            // [RELOADING...] 깜빡 텍스트
-            if (rb->state == RRState::RELOAD_SPRINT &&
-                ((int)(glfwGetTime() * 5.0) % 2 == 0)) {
-                const wchar_t* rl = L"[ RELOADING... ]";
-                float rw = g_TextS.Width(rl, 0.8f);
-                g_TextS.Draw(rl, rb->worldX - rw * 0.5f,
-                             rb->worldY - ReloadRunnerBoss::BODY - 46.0f, 0.8f,
-                             1.0f, 0.9f, 0.3f, 0.95f);
-            }
         }
     
         // (g4b) SPAM.dll — 회전 나선포 본체 + 탄막(개인 창 클리핑) + HP
@@ -5731,6 +5664,24 @@ int main() {
                     g_TextS.Draw(hostBuf, bx + bw - hw - 8.0f, by - 48.0f, hs,
                                  0.25f, 0.92f, 0.48f, 0.85f);
                 }
+                if (g_RRBoss && g_RRBoss->alive) {
+                    wchar_t rrBuf[64];
+                    if (g_RRBoss->phase3)
+                        swprintf_s(rrBuf, L"OVERCLOCK · %ls",
+                                   g_RRBoss->state == RRState::ASSAULT ? L"ASSAULT" :
+                                   ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
+                    else if (g_RRBoss->phase2)
+                        swprintf_s(rrBuf, L"P2 · %ls",
+                                   g_RRBoss->state == RRState::RELOAD_SPRINT ? L"RELOAD" :
+                                   ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
+                    else
+                        swprintf_s(rrBuf, L"%ls",
+                                   ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
+                    float rs = 0.55f;
+                    float rw = g_TextS.Width(rrBuf, rs);
+                    g_TextS.Draw(rrBuf, bx + bw - rw - 8.0f, by - 48.0f, rs,
+                                 1.0f, 0.55f, 0.2f, 0.85f);
+                }
                 if (g_TotemBoss && g_TotemBoss->alive) {
                     wchar_t totBuf[64];
                     if (g_TotemBoss->vulnerable())
@@ -5790,13 +5741,27 @@ int main() {
                     drawRect(off, by2, sw2, bh2, wc.r, wc.g, wc.b, 0.10f + 0.20f * blink);
                 }
             } break;
-            case 2: {  // RELOADER — 가장자리 주황 머즐 플래시 점멸
-                for (int i = 0; i < 6; i++) {
-                    float fx = (rand() % 2) ? (float)(rand() % 40) : sw2 - (float)(rand() % 40);
-                    float fy = (float)(rand() % (int)sh2);
-                    if (rand() % 2) { fy = (rand() % 2) ? (float)(rand()%40) : sh2-(float)(rand()%40);
-                                      fx = (float)(rand() % (int)sw2); }
-                    drawCircle(fx, fy, 8.0f + (float)(rand()%14), 1.0f, 0.6f, 0.2f, 0.5f * blink);
+            case 2: {  // RELOADER — 화면 가장자리 교차 포격 + 기동 플랫폼 실루엣
+                float cx = sw2 * 0.5f, cy = sh2 * 0.42f;
+                for (int e = 0; e < 4; e++) {
+                    float ex = (e % 2) ? sw2 - 20.0f : 20.0f;
+                    float ey = (e < 2) ? 20.0f : sh2 - 20.0f;
+                    const int SEG = 8;
+                    for (int s = 0; s < SEG; s++) {
+                        if ((s & 1) == 0) continue;
+                        float u0 = (float)s / (float)SEG, u1 = (float)(s + 1) / (float)SEG;
+                        float x0 = ex + (cx - ex) * u0, y0 = ey + (cy - ey) * u0;
+                        float x1 = ex + (cx - ex) * u1, y1 = ey + (cy - ey) * u1;
+                        drawRect((x0 + x1) * 0.5f - 2, (y0 + y1) * 0.5f - 2, 4, 4,
+                                 1.0f, 0.5f, 0.15f, 0.15f + 0.25f * blink * prog);
+                    }
+                }
+                drawRect(cx - 28.0f, cy - 18.0f, 56.0f, 36.0f, 0.08f, 0.06f, 0.07f, 0.5f);
+                drawNeonBorder(cx - 28.0f, cy - 18.0f, 56.0f, 36.0f, 1.0f, 0.55f, 0.18f);
+                for (int i = 0; i < 4; i++) {
+                    float a = t * 2.0f + (float)i * 1.571f;
+                    drawRect(cx + cosf(a) * 34.0f - 3, cy + sinf(a) * 22.0f - 3,
+                             6, 6, 1.0f, 0.45f, 0.12f, 0.35f + 0.2f * prog);
                 }
             } break;
             case 3: {  // SPAM — 분홍 popup.exe 창들이 깜빡이며 증식
