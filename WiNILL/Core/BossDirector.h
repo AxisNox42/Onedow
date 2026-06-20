@@ -2,7 +2,7 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 0오버레이 1(미사용) 2리로드 ...
+// 보스 pick: 0행(HANG) 1(미사용) 2리로드 ...
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -19,7 +19,7 @@ inline int RollScorePick() {
 
 inline const wchar_t* DisplayName(int pick) {
     switch (pick) {
-    case 0: return L"OVERLAY.dll";
+    case 0: return L"HANG.exe";
     case 1: return L"UNKNOWN.sys";
     case 2: return L"VOLLEY.sys";
     case 3: return L"SPAM.dll";
@@ -49,7 +49,7 @@ inline float HpMul(int pick) {
 
 inline glm::vec3 WarnColor(int pick) {
     switch (pick) {
-    case 0: return { 0.55f, 0.72f, 1.0f  };
+    case 0: return { 0.65f, 0.68f, 0.74f };
     case 1: return { 0.95f, 0.2f,  0.6f  };
     case 2: return { 1.0f,  0.55f, 0.2f  };
     case 3: return { 1.0f,  0.4f,  0.8f  };
@@ -65,7 +65,7 @@ inline glm::vec3 WarnColor(int pick) {
 
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
-        L"DWM 레이어 납치 — 타이틀바만 약점",
+        L"응답 없음 — 멈추면 LAG 장판",
         L"",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
@@ -77,7 +77,7 @@ inline const wchar_t* Tagline(int pick) {
         L"기둥 의식 — Q/E/R 봉인 · 의식망",
     };
     static const wchar_t* EN[10] = {
-        L"DWM overlay hijack — title bar weak point",
+        L"Not responding — freeze then lag",
         L"",
         L"Volley fire — telegraphed danger zones",
         L"Popup ad flood",
@@ -89,7 +89,7 @@ inline const wchar_t* Tagline(int pick) {
         L"Pylon rite — skill bind · ritual web",
     };
     static const wchar_t* JP[10] = {
-        L"メモリリーク — プロセス増殖",
+        L"応答なし — 停止後LAG",
         L"",
         L"連発砲撃 — 射程予告表示",
         L"ポップアップ広告暴走",

@@ -302,7 +302,7 @@ int            g_BossWarnPick   = -1;           // 0~8 보스 통일 인덱스 (
 const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
 float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
 // 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
-bool g_OvWasP2 = false, g_OvWasP3 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
+bool g_HangWasP2 = false, g_HangWasP3 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
 bool g_BotnetWasP2 = false;
 // 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
 float     g_P2ToastTimer = 0.0f;
@@ -794,7 +794,7 @@ int main() {
             BossDir::ResetRotation();
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
-            g_OvWasP2 = g_OvWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+            g_HangWasP2 = g_HangWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
@@ -964,7 +964,7 @@ int main() {
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName((int)m->kind));
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_RANGED));
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, L"OVERLAY.dll");
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, L"HANG.exe");
                     if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY.sys");
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
                     if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
@@ -1020,7 +1020,7 @@ int main() {
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
-                g_OvWasP2 = g_OvWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+                g_HangWasP2 = g_HangWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
@@ -1524,8 +1524,7 @@ int main() {
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  hitKB(r->worldX,  r->worldY,  r->hp,  r->alive);
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) hitKB(bm->worldX, bm->worldY, bm->hp, bm->alive);
                     if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                        float hx, hy; g_MonsterManager.boss->hurtFocus(hx, hy);
-                        float dx=hx-cx, dy=hy-cy;
+                        float dx=g_MonsterManager.boss->worldX-cx, dy=g_MonsterManager.boss->worldY-cy;
                         if (dx*dx+dy*dy<r2) {
                             g_MonsterManager.boss->hp-=dmg;
                             if (g_MonsterManager.boss->hp<=0) g_MonsterManager.boss->alive=false;
@@ -1790,21 +1789,20 @@ int main() {
                                             col.r, col.g, col.b, true);
                     g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
                 };
-                // OVERLAY.dll — P2/P3 진입 연출
+                // HANG.exe — P2/P3 진입 연출
                 if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
                     auto* b = g_MonsterManager.boss;
-                    if (b->phase2 && !g_OvWasP2) {
-                        g_OvWasP2 = true;
-                        p2enter(b->worldX, b->worldY, glm::vec3(0.55f, 0.72f, 1.0f));
+                    if (b->phase2 && !g_HangWasP2) {
+                        g_HangWasP2 = true;
+                        p2enter(b->worldX, b->worldY, glm::vec3(0.65f, 0.68f, 0.74f));
                     }
-                    if (b->phase3 && !g_OvWasP3) {
-                        g_OvWasP3 = true;
-                        g_ShakeTime = 0.65f; g_ShakeMag = 34.0f;
-                        TriggerFlash(0.45f, 0.55f, 1.0f, 0.45f);
-                        TriggerHitStop(0.14f);
-                        SpawnShockWave(b->worldX, b->worldY, 480.0f, 0.85f, 0.35f, 0.55f, 1.0f);
+                    if (b->phase3 && !g_HangWasP3) {
+                        g_HangWasP3 = true;
+                        g_ShakeTime = 0.5f; g_ShakeMag = 22.0f;
+                        TriggerFlash(0.55f, 0.58f, 0.62f, 0.4f);
+                        TriggerHitStop(0.1f);
                     }
-                } else { g_OvWasP2 = false; g_OvWasP3 = false; }
+                } else { g_HangWasP2 = false; g_HangWasP3 = false; }
                 // RELOADER — 오버클럭 + ASSAULT 전면전
                 if (g_RRBoss && g_RRBoss->alive) {
                     if (g_RRBoss->phase2 && !g_RRWasP2) {
@@ -2966,7 +2964,7 @@ int main() {
                         // 크리에이티브: 선택한 보스 (점수 무관, 1회)
                         g_CreativeBossPending = false;
                         switch (g_CreativeBossPick) {
-                        case 0:  startWarn(0, L"OVERLAY.dll",    bossHpC);         break;
+                        case 0:  startWarn(0, L"HANG.exe",    bossHpC);         break;
                         case 2:  startWarn(2, L"VOLLEY.sys",  bossHpC);         break;
                         case 3:  startWarn(3, L"SPAM.dll",      bossHpC * 0.65f); break;
                         case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
@@ -3603,11 +3601,9 @@ int main() {
                     SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || crit);
                     if (hp <= 0.0f) al = false;
                 };
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                    float hx, hy;
-                    g_MonsterManager.boss->hurtFocus(hx, hy);
-                    hitB(hx, hy, g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
-                }
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                    hitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
+                         g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
                 if (g_RRBoss && g_RRBoss->alive)
                     hitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
                 if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
@@ -3738,11 +3734,9 @@ int main() {
                         SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || lcrit);
                         if (hp <= 0.0f) al = false;
                     };
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                        float hx, hy;
-                        g_MonsterManager.boss->hurtFocus(hx, hy);
-                        lhitB(hx, hy, g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
-                    }
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                        lhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
+                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
                     if (g_RRBoss && g_RRBoss->alive)
                         lhitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
@@ -3822,11 +3816,9 @@ int main() {
                         float dx=ex-pCX, dy=ey-pCY;
                         if (dx*dx+dy*dy < (novaR+70.0f)*(novaR+70.0f)) { hp -= dmg * 2.0f; if (hp<=0.0f) al=false; }
                     };
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                        float hx, hy;
-                        g_MonsterManager.boss->hurtFocus(hx, hy);
-                        nhitB(hx, hy, g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
-                    }
+                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                        nhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
+                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
                     if (g_RRBoss && g_RRBoss->alive) nhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) nhitB(g_PolyBoss->worldX,g_PolyBoss->worldY,g_PolyBoss->hp,g_PolyBoss->alive);
                     if (g_SpamBoss && g_SpamBoss->alive) nhitB(g_SpamBoss->worldX,g_SpamBoss->worldY,g_SpamBoss->hp,g_SpamBoss->alive);
@@ -4068,8 +4060,8 @@ int main() {
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* b0 = g_MonsterManager.boss;
             addW(b0->worldX, b0->worldY,
-                 Boss::WIN_W * b0->sizeScale, Boss::WIN_H * b0->sizeScale,
-                 L"OVERLAY.dll", 0.07f,0.08f,0.12f, 0.45f,0.55f,1.0f);
+                 Boss::WIN_W, Boss::WIN_H,
+                 L"HANG.exe", 0.07f,0.08f,0.10f, 0.65f,0.68f,0.74f);
         }
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
@@ -4222,9 +4214,9 @@ int main() {
         };
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
-            drawBossWinContent(bs->worldX - Boss::WIN_W * bs->sizeScale * 0.5f,
-                               bs->worldY - Boss::WIN_H * bs->sizeScale * 0.5f,
-                               Boss::WIN_W * bs->sizeScale, Boss::WIN_H * bs->sizeScale);
+            drawBossWinContent(bs->worldX - Boss::WIN_W * 0.5f,
+                               bs->worldY - Boss::WIN_H * 0.5f,
+                               Boss::WIN_W, Boss::WIN_H);
         }
         if (g_RRBoss && g_RRBoss->alive)
             drawBossWinContent(g_RRBoss->worldX - RR_WIN_W * 0.5f,
@@ -4623,38 +4615,28 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
-        // (e2.4) OVERLAY 패널 + 경고 (전체 화면)
+        // (e2.4) HANG LAG 장판 + 예고 (전체 화면)
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
             float ogt = (float)glfwGetTime();
             BindMainShader();
-            bs->renderPanes(ogt);
-            if (bs->panePending) {
-                float warnT = bs->paneTimer - (Boss::PANE_INTERVAL - Boss::PANE_WARN);
-                float prog = warnT / Boss::PANE_WARN;
+            bs->renderZones(ogt);
+            if (bs->lagPending) {
+                float warnT = bs->lagTimer - (Boss::LAG_INTERVAL - Boss::LAG_WARN);
+                float prog = warnT / Boss::LAG_WARN;
                 if (prog < 0.0f) prog = 0.0f;
                 if (prog > 1.0f) prog = 1.0f;
-                float pw = 90.0f + prog * 50.0f, ph = 64.0f + prog * 36.0f;
-                float blink = 0.3f + 0.35f * (0.5f + 0.5f * sinf(ogt * 16.0f));
-                drawRect(bs->paneX - pw * 0.5f, bs->paneY - ph * 0.5f, pw, ph,
-                         0.12f, 0.16f, 0.28f, blink * (0.15f + 0.35f * prog));
-                drawNeonBorder(bs->paneX - pw * 0.5f, bs->paneY - ph * 0.5f, pw, ph,
-                               0.45f, 0.65f, 1.0f);
-            }
-            if (bs->snapPending) {
-                float warnT = bs->snapTimer - (Boss::SNAP_INTERVAL - Boss::SNAP_WARN);
-                float prog = warnT / Boss::SNAP_WARN;
-                if (prog < 0.0f) prog = 0.0f;
-                if (prog > 1.0f) prog = 1.0f;
-                float r = 36.0f + prog * 120.0f;
-                drawCircle(bs->snapX, bs->snapY, r, 0.55f, 0.35f, 1.0f, 0.12f + 0.28f * prog);
+                float r = 28.0f + prog * 90.0f;
+                float blink = 0.25f + 0.35f * (0.5f + 0.5f * sinf(ogt * 14.0f));
+                drawCircle(bs->lagX, bs->lagY, r, 0.55f, 0.58f, 0.62f, blink * (0.12f + 0.32f * prog));
+                drawCircle(bs->lagX, bs->lagY, r * 0.35f, 0.72f, 0.75f, 0.78f, blink * 0.25f * prog);
             }
         }
 
-        // (e3) OVERLAY.dll 본체 — 가짜 창
+        // (e3) HANG.exe 본체 — 가짜 창
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
-            bs->renderWindow((float)glfwGetTime());
+            bs->renderBody((float)glfwGetTime());
         }
 
         // (f) BrokenSight 오브 — 항상 표시 (클리핑 없음, 무적)
@@ -5230,8 +5212,8 @@ int main() {
             const wchar_t* bn = nullptr;
             float bhf = 0.0f; glm::vec3 bc(1.0f, 1.0f, 1.0f);
             if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                bn = L"OVERLAY.dll";    bhf = g_MonsterManager.boss->hp / g_MonsterManager.boss->maxHp;
-                bc = glm::vec3(0.55f, 0.72f, 1.0f);
+                bn = L"HANG.exe";    bhf = g_MonsterManager.boss->hp / g_MonsterManager.boss->maxHp;
+                bc = glm::vec3(0.65f, 0.68f, 0.74f);
             } else if (g_RRBoss && g_RRBoss->alive) {
                 bn = L"VOLLEY.sys";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.55f, 0.2f);
@@ -5259,7 +5241,7 @@ int main() {
             }
             int bossPick = -1;
             if (bn) {
-                if      (bn == L"OVERLAY.dll")     bossPick = 0;
+                if      (bn == L"HANG.exe")     bossPick = 0;
                 else if (bn == L"VOLLEY.sys")   bossPick = 2;
                 else if (bn == L"SPAM.dll")       bossPick = 3;
                 else if (bn == L"POLYMORPH.vir")  bossPick = 4;
@@ -5374,17 +5356,27 @@ int main() {
     
             // 보스별 증상 테마
             switch (g_BossWarnPick) {
-            case 0: {  // OVERLAY — 겹쳐지는 반투명 창들
-                int layers = 2 + (int)(prog * 5);
-                for (int i = 0; i < layers; i++) {
-                    float pw = 140.0f + (float)(rand() % 120);
-                    float ph = 90.0f + (float)(rand() % 80);
-                    float px = (float)(rand() % (int)(sw2 - pw));
-                    float py = (float)(rand() % (int)(sh2 - ph));
-                    float a = 0.08f + 0.12f * prog;
-                    drawRect(px, py, pw, ph, 0.06f, 0.08f, 0.14f, a);
-                    drawRect(px, py, pw, 14.0f, wc.r, wc.g, wc.b, 0.35f + 0.25f * blink);
-                    drawNeonBorder(px, py, pw, ph, wc.r, wc.g, wc.b);
+            case 0: {  // HANG — 응답 없음 창 + 느려지는 커서
+                float cx = sw2 * 0.5f, cy = sh2 * 0.45f;
+                float pw = 220.0f + prog * 40.0f;
+                float ph = 140.0f + prog * 24.0f;
+                float px = cx - pw * 0.5f, py = cy - ph * 0.5f;
+                drawRect(px, py, pw, ph, 0.10f, 0.11f, 0.13f, 0.55f + 0.25f * prog);
+                drawRect(px, py, pw, 22.0f, wc.r * 0.7f, wc.g * 0.7f, wc.b * 0.7f, 0.85f);
+                drawNeonBorder(px, py, pw, ph, wc.r, wc.g, wc.b);
+                float hs = 18.0f + prog * 8.0f;
+                float hx = cx, hy = cy + 10.0f;
+                float spin = t * (1.2f + prog * 0.8f);
+                BatchTri(hx - hs * 0.35f, hy - hs * 0.5f, hx + hs * 0.35f, hy - hs * 0.5f,
+                         hx, hy - hs * 0.05f, 0.75f, 0.78f, 0.82f, 0.5f + 0.3f * blink);
+                BatchTri(hx - hs * 0.35f, hy + hs * 0.5f, hx + hs * 0.35f, hy + hs * 0.5f,
+                         hx, hy + hs * 0.05f, 0.65f, 0.68f, 0.72f, 0.45f + 0.25f * blink);
+                float sand = sinf(spin) * 3.0f;
+                drawRect(hx - 2.5f, hy - 1.5f + sand, 5.0f, 3.0f, 0.85f, 0.5f, 0.18f, 0.55f * blink);
+                for (int i = 0; i < 3; i++) {
+                    float ox = px + 18.0f + (float)(i * 38);
+                    float oy = py + ph - 28.0f;
+                    drawRect(ox, oy, 28.0f, 14.0f, 0.18f, 0.19f, 0.22f, 0.35f + 0.2f * prog);
                 }
             } break;
             case 1: break;

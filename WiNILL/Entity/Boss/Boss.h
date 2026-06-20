@@ -8,18 +8,18 @@
 #include "DrawPrim.h"
 
 // ─────────────────────────────────────────────────────────────
-// OVERLAY.dll — DWM 투명 오버레이 납치 보스
+// HANG.exe — 응답 없음 프로세스 (pick 0)
 //
-//   거대 가짜 창이 떠다니며 테두리·낙하 패널로 압박
-//   약점: 타이틀바만 피격 (클라이언트 영역은 허공)
-//   P2: 창 확대 + 패널 가속  P3: TOPMOST 스냅
+//   느리게 추격 + 주기적 LAG 장판(플레이어 위치) + 근접 피해
+//   P2: 추격·장판↑   P3: 장판 지속↑
 // ─────────────────────────────────────────────────────────────
 
-struct OverlayPane {
+struct HangZone {
     float x = 0, y = 0;
-    float w = 120.0f, h = 88.0f;
+    float radius = 20.0f;
     float life = 0.0f;
-    float maxLife = 4.0f;
+    float maxLife = 2.8f;
+    float grow = 22.0f;
 };
 
 class Boss {
@@ -29,93 +29,43 @@ public:
     bool  alive = true;
     bool  exploded = false;
 
-    static inline float WIN_W = 520.0f;
-    static inline float WIN_H = 380.0f;
-    static inline float BODY_SIZE = 260.0f;   // 근접 판정 보조
-    static constexpr float TITLE_H = 34.0f;
-    static constexpr float BORDER_D = 14.0f;
+    static inline float WIN_W = 300.0f;
+    static inline float WIN_H = 220.0f;
+    static inline float BODY_SIZE = 95.0f;
 
-    glm::vec3 color = glm::vec3(0.55f, 0.72f, 1.0f);
+    glm::vec3 color = glm::vec3(0.72f, 0.74f, 0.78f);
 
-    float sizeScale = 1.0f;
     bool  phase2 = false;
     bool  phase3 = false;
 
-    std::vector<OverlayPane> panes;
+    std::vector<HangZone> zones;
 
-    float targetX = 0, targetY = 0;
-    float wanderTimer = 0.0f;
+    float lagTimer = 0.0f;
+    bool  lagPending = false;
+    float lagX = 0.0f, lagY = 0.0f;
 
-    float paneTimer = 0.0f;
-    bool  panePending = false;
-    float paneX = 0.0f, paneY = 0.0f;
-
-    float snapTimer = 0.0f;
-    bool  snapPending = false;
-    float snapX = 0.0f, snapY = 0.0f;
+    float stallTimer = 0.0f;
+    bool  stalled = false;
 
     int screenW = 0, screenH = 0;
 
-    static constexpr float PANE_INTERVAL = 4.4f;
-    static constexpr float PANE_WARN     = 0.85f;
-    static constexpr float SNAP_INTERVAL = 7.5f;
-    static constexpr float SNAP_WARN     = 0.75f;
+    static constexpr float CONTACT_R   = 72.0f;
+    static constexpr float CONTACT_DPS = 20.0f;
+    static constexpr float LAG_INTERVAL = 4.8f;
+    static constexpr float LAG_WARN     = 0.75f;
 
     Boss(float sx, float sy, int sw, int sh, float maxHpInit = 7000.0f)
-        : worldX(sx), worldY(sy), targetX(sx), targetY(sy)
-        , screenW(sw), screenH(sh)
+        : worldX(sx), worldY(sy), screenW(sw), screenH(sh)
     {
         hp = maxHp = maxHpInit;
     }
 
-    float winLeft()   const { return worldX - WIN_W * sizeScale * 0.5f; }
-    float winTop()    const { return worldY - WIN_H * sizeScale * 0.5f; }
-    float winRight()  const { return worldX + WIN_W * sizeScale * 0.5f; }
-    float winBottom() const { return worldY + WIN_H * sizeScale * 0.5f; }
-
-    void hurtFocus(float& hx, float& hy) const {
-        hx = worldX;
-        hy = winTop() + TITLE_H * sizeScale * 0.5f;
-    }
-
-    float hurtReach() const { return WIN_W * sizeScale * 0.52f; }
-
     const wchar_t* stateTag() const {
-        if (phase3) return L"TOPMOST";
-        if (phase2) return L"GLASS+";
-        if (snapPending) return L"SNAP◉";
-        if (panePending) return L"PANE◉";
-        return L"OVERLAY";
-    }
-
-    static float segRectDist(float ax, float ay, float bx, float by,
-                             float left, float top, float right, float bottom) {
-        float best = 1e9f;
-        for (int i = 0; i <= 10; i++) {
-            float u = (float)i / 10.0f;
-            float px = ax + (bx - ax) * u;
-            float py = ay + (by - ay) * u;
-            float cx = px; if (cx < left) cx = left; if (cx > right) cx = right;
-            float cy = py; if (cy < top)  cy = top;  if (cy > bottom) cy = bottom;
-            float dx = px - cx, dy = py - cy;
-            float d2 = dx * dx + dy * dy;
-            if (d2 < best) best = d2;
-        }
-        return sqrtf(best);
-    }
-
-    bool shotHitsSeg(float ax, float ay, float bx, float by) const {
-        float barBot = winTop() + TITLE_H * sizeScale;
-        return segRectDist(ax, ay, bx, by, winLeft(), winTop(), winRight(), barBot) < 8.0f;
-    }
-
-    void pickNewTarget() {
-        float margin = 120.0f;
-        float rw = (float)(screenW - 2 * (int)margin);
-        float rh = (float)(screenH - 2 * (int)margin);
-        if (rw < 1) rw = 1; if (rh < 1) rh = 1;
-        targetX = margin + (float)(rand() % (int)rw);
-        targetY = margin + (float)(rand() % (int)rh);
+        if (phase3) return L"DEADLOCK";
+        if (phase2) return L"NOT RESP";
+        if (lagPending) return L"LAG◉";
+        if (stalled) return L"FREEZE";
+        return L"HANG";
     }
 
     void Update(float playerCX, float playerCY, float dt,
@@ -124,170 +74,127 @@ public:
     {
         if (!alive) return;
 
-        if (!phase2 && hp <= maxHp * 0.5f) { phase2 = true; sizeScale = 1.16f; }
-        if (!phase3 && hp <= maxHp * 0.25f) { phase3 = true; sizeScale = 1.26f; }
+        if (!phase2 && hp <= maxHp * 0.5f) phase2 = true;
+        if (!phase3 && hp <= maxHp * 0.25f) phase3 = true;
 
         float p2 = phase2 ? 1.0f : 0.0f;
         float p3 = phase3 ? 1.0f : 0.0f;
 
-        tickPanes(playerCX, playerCY, dt, playerHP);
-        tickDrift(playerCX, playerCY, dt, 1.0f + p2 * 0.35f + p3 * 0.25f);
-        tickBorder(playerCX, playerCY, dt, playerHP, p2, p3);
-        tickPaneDrop(playerCX, playerCY, dt, p2, p3);
-        tickSnap(playerCX, playerCY, dt, p2, p3);
+        tickZones(playerCX, playerCY, dt, playerHP, p2, p3);
+        tickLag(playerCX, playerCY, dt, p2, p3);
+
+        if (!stalled)
+            tickChase(playerCX, playerCY, dt, 0.95f + p2 * 0.35f + p3 * 0.2f);
+
+        float dx = playerCX - worldX, dy = playerCY - worldY;
+        if (dx * dx + dy * dy < CONTACT_R * CONTACT_R)
+            playerHP -= CONTACT_DPS * dt * (1.0f + p2 * 0.25f + p3 * 0.35f);
     }
 
-    void renderPanes(float gt) const {
-        for (auto& p : panes) {
-            if (p.life <= 0.0f) continue;
-            float t = p.life / p.maxLife;
-            float pulse = 0.55f + 0.45f * sinf(gt * 13.0f + p.x * 0.02f);
-            float a = t * pulse * 0.42f;
-            drawRect(p.x - p.w * 0.5f, p.y - p.h * 0.5f, p.w, p.h,
-                     0.08f, 0.10f, 0.18f, a * 0.85f);
-            drawNeonBorder(p.x - p.w * 0.5f, p.y - p.h * 0.5f, p.w, p.h,
-                           0.45f, 0.65f, 1.0f);
+    void renderZones(float gt) const {
+        for (auto& z : zones) {
+            if (z.life <= 0.0f) continue;
+            float t = z.life / z.maxLife;
+            float pulse = 0.55f + 0.45f * sinf(gt * 10.0f + z.x * 0.02f);
+            float a = t * pulse * 0.38f;
+            drawCircle(z.x, z.y, z.radius, 0.55f, 0.58f, 0.62f, a);
+            drawCircle(z.x, z.y, z.radius * 0.45f, 0.75f, 0.78f, 0.82f, a * 0.6f);
         }
     }
 
-    void renderWindow(float gt) const {
-        float wl = winLeft(), wt = winTop();
-        float ww = WIN_W * sizeScale, wh = WIN_H * sizeScale;
-        float th = TITLE_H * sizeScale;
+    void renderBody(float gt) const {
+        float wl = worldX - WIN_W * 0.5f;
+        float wt = worldY - WIN_H * 0.5f;
+        float th = 28.0f;
 
-        drawRect(wl, wt, ww, wh, 0.05f, 0.06f, 0.10f, 0.88f);
-        drawRect(wl, wt, ww, th, 0.18f, 0.22f, 0.38f, 0.96f);
-        drawRect(wl + ww - th * 0.95f, wt + th * 0.18f, th * 0.72f, th * 0.64f,
-                 0.75f, 0.18f, 0.22f, 0.92f);
-        drawRect(wl + ww - th * 1.85f, wt + th * 0.28f, th * 0.38f, th * 0.12f,
-                 0.35f, 0.55f, 0.95f, 0.85f);
-        drawNeonBorder(wl, wt, ww, wh, color.r, color.g, color.b);
+        drawRect(wl, wt, WIN_W, WIN_H, 0.12f, 0.13f, 0.16f, 0.92f);
+        drawRect(wl, wt, WIN_W, th,
+                 stalled ? 0.55f : 0.42f, 0.44f, 0.48f, 0.96f);
+        drawNeonBorder(wl, wt, WIN_W, WIN_H, 0.65f, 0.68f, 0.74f);
 
-        float cy = wt + th + 12.0f;
-        while (cy < wt + wh - 8.0f) {
-            float flick = 0.04f + 0.03f * sinf(gt * 9.0f + cy * 0.08f);
-            drawRect(wl + 10.0f, cy, ww - 20.0f, 2.0f,
-                     0.35f, 0.55f, 1.0f, flick);
-            cy += 14.0f;
-        }
-
-        float pulse = 0.7f + 0.3f * sinf(gt * 3.2f);
-        drawRect(wl + 12.0f, wt + th * 0.22f, ww * 0.42f, th * 0.55f,
-                 0.85f * pulse, 0.92f * pulse, 1.0f, 0.55f);
-
-        if (phase3) {
-            float a = 0.06f + 0.04f * sinf(gt * 5.0f);
-            drawRect(wl - 6.0f, wt - 6.0f, ww + 12.0f, wh + 12.0f,
-                     0.55f, 0.35f, 1.0f, a);
+        float spin = stalled ? 0.0f : gt * 2.2f;
+        float cx = worldX, cy = worldY + 8.0f;
+        float hs = 22.0f;
+        float topY = cy - hs * 0.55f;
+        float botY = cy + hs * 0.55f;
+        float lw = hs * 0.38f;
+        BatchTri(cx - lw, topY, cx + lw, topY, cx, topY + hs * 0.42f,
+                 0.82f, 0.84f, 0.88f, 0.85f);
+        BatchTri(cx - lw, botY, cx + lw, botY, cx, botY - hs * 0.42f,
+                 0.72f, 0.74f, 0.78f, 0.85f);
+        if (!stalled) {
+            float sand = sinf(spin) * 4.0f;
+            drawRect(cx - 3.0f, cy - 2.0f + sand, 6.0f, 4.0f, 0.9f, 0.55f, 0.2f, 0.7f);
         }
     }
 
 private:
-    void tickDrift(float px, float py, float dt, float spd) {
-        wanderTimer += dt;
-        if (wanderTimer >= 2.8f) {
-            pickNewTarget();
-            wanderTimer = 0.0f;
-        }
-        float tx = px * 0.55f + targetX * 0.45f;
-        float ty = py * 0.55f + targetY * 0.45f;
-        float dx = tx - worldX, dy = ty - worldY;
+    void tickChase(float px, float py, float dt, float spd) {
+        float dx = px - worldX, dy = py - worldY;
         float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
-        worldX += dx / d * spd * 58.0f * dt;
-        worldY += dy / d * spd * 58.0f * dt;
-        clampToScreen();
+        worldX += dx / d * spd * 62.0f * dt;
+        worldY += dy / d * spd * 62.0f * dt;
+        float m = BODY_SIZE + 12.0f;
+        if (worldX < m) worldX = m;
+        if (worldX > (float)screenW - m) worldX = (float)screenW - m;
+        if (worldY < m) worldY = m;
+        if (worldY > (float)screenH - m) worldY = (float)screenH - m;
     }
 
-    void clampToScreen() {
-        float mx = WIN_W * sizeScale * 0.5f + 16.0f;
-        float my = WIN_H * sizeScale * 0.5f + 16.0f;
-        if (worldX < mx) worldX = mx;
-        if (worldX > (float)screenW - mx) worldX = (float)screenW - mx;
-        if (worldY < my) worldY = my;
-        if (worldY > (float)screenH - my) worldY = (float)screenH - my;
-    }
+    void tickLag(float px, float py, float dt, float p2, float p3) {
+        float mul = 1.0f + p2 * 0.4f + p3 * 0.35f;
+        lagTimer += dt * mul;
 
-    void tickPaneDrop(float px, float py, float dt, float p2, float p3) {
-        float mul = 1.0f + p2 * 0.35f + p3 * 0.45f;
-        paneTimer += dt * mul;
-        if (!panePending && paneTimer >= PANE_INTERVAL - PANE_WARN) {
-            panePending = true;
-            paneX = px;
-            paneY = py;
+        if (!lagPending && lagTimer >= LAG_INTERVAL - LAG_WARN) {
+            lagPending = true;
+            lagX = px;
+            lagY = py;
+            stalled = true;
+            stallTimer = 0.0f;
         }
-        if (panePending && paneTimer >= PANE_INTERVAL) {
-            paneTimer = 0.0f;
-            panePending = false;
-            spawnPane(paneX, paneY, p2, p3);
-        }
-    }
-
-    void tickSnap(float px, float py, float dt, float p2, float p3) {
-        if (!phase2) return;
-        float mul = phase3 ? 1.45f : 1.0f;
-        snapTimer += dt * mul;
-        if (!snapPending && snapTimer >= SNAP_INTERVAL - SNAP_WARN) {
-            snapPending = true;
-            snapX = px + (float)(rand() % 80 - 40);
-            snapY = py + (float)(rand() % 80 - 40);
-        }
-        if (snapPending && snapTimer >= SNAP_INTERVAL) {
-            snapTimer = 0.0f;
-            snapPending = false;
-            worldX = snapX;
-            worldY = snapY;
-            clampToScreen();
-            spawnPane(snapX, snapY, p2, p3);
+        if (lagPending) {
+            stallTimer += dt;
+            if (lagTimer >= LAG_INTERVAL) {
+                lagTimer = 0.0f;
+                lagPending = false;
+                stalled = false;
+                spawnZone(lagX, lagY, p2, p3);
+            }
         }
     }
 
-    int paneCap() const {
-        if (phase3) return 10;
-        if (phase2) return 8;
-        return 6;
+    int zoneCap() const {
+        if (phase3) return 7;
+        if (phase2) return 5;
+        return 4;
     }
 
-    void spawnPane(float x, float y, float p2, float p3) {
-        if ((int)panes.size() >= paneCap()) {
-            auto it = std::min_element(panes.begin(), panes.end(),
-                [](const OverlayPane& a, const OverlayPane& b) { return a.life < b.life; });
-            if (it != panes.end()) *it = OverlayPane{};
+    void spawnZone(float x, float y, float p2, float p3) {
+        if ((int)zones.size() >= zoneCap()) {
+            auto it = std::min_element(zones.begin(), zones.end(),
+                [](const HangZone& a, const HangZone& b) { return a.life < b.life; });
+            if (it != zones.end()) *it = HangZone{};
         }
-        OverlayPane p;
-        p.x = x; p.y = y;
-        p.w = 110.0f + (float)(rand() % 40) + p2 * 20.0f;
-        p.h = 78.0f + (float)(rand() % 30) + p2 * 14.0f;
-        p.maxLife = p.life = phase3 ? 5.0f : (phase2 ? 4.2f : 3.6f);
-        panes.push_back(p);
+        HangZone z;
+        z.x = x; z.y = y;
+        z.radius = 26.0f + p2 * 8.0f;
+        z.maxLife = z.life = phase3 ? 3.4f : (phase2 ? 2.9f : 2.5f);
+        z.grow = 18.0f + p2 * 6.0f + p3 * 4.0f;
+        zones.push_back(z);
     }
 
-    void tickPanes(float px, float py, float dt, float& playerHP) {
-        for (auto& p : panes) {
-            if (p.life <= 0.0f) continue;
-            p.life -= dt;
-            if (px >= p.x - p.w * 0.5f && px <= p.x + p.w * 0.5f &&
-                py >= p.y - p.h * 0.5f && py <= p.y + p.h * 0.5f) {
-                float rate = phase3 ? 13.0f : (phase2 ? 10.0f : 7.5f);
+    void tickZones(float px, float py, float dt, float& playerHP, float p2, float p3) {
+        for (auto& z : zones) {
+            if (z.life <= 0.0f) continue;
+            z.life -= dt;
+            z.radius += z.grow * dt;
+            float dx = px - z.x, dy = py - z.y;
+            if (dx * dx + dy * dy < (z.radius + 4.0f) * (z.radius + 4.0f)) {
+                float rate = phase3 ? 9.0f : (phase2 ? 7.0f : 5.5f);
                 playerHP -= rate * dt;
             }
         }
-        panes.erase(std::remove_if(panes.begin(), panes.end(),
-            [](const OverlayPane& p) { return p.life <= 0.0f; }), panes.end());
-    }
-
-    void tickBorder(float px, float py, float dt, float& playerHP, float p2, float p3) {
-        float bd = BORDER_D * (1.0f + p2 * 0.25f + p3 * 0.35f);
-        float wl = winLeft(), wr = winRight(), wt = winTop(), wb = winBottom();
-
-        bool borderHit = false;
-        if (px >= wl - bd && px <= wr + bd && py >= wt - bd && py <= wb + bd) {
-            bool insideCore = px >= wl + bd && px <= wr - bd &&
-                              py >= wt + TITLE_H * sizeScale + bd && py <= wb - bd;
-            if (!insideCore) borderHit = true;
-        }
-        if (borderHit) {
-            float rate = 16.0f + p2 * 5.0f + p3 * 7.0f;
-            playerHP -= rate * dt;
-        }
+        zones.erase(std::remove_if(zones.begin(), zones.end(),
+            [](const HangZone& z) { return z.life <= 0.0f; }), zones.end());
     }
 };

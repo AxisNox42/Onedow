@@ -286,7 +286,8 @@ public:
             // 플레이어 총알 vs 보스
             if (!consumed && mm.boss && mm.boss->alive) {
                 auto* bs = mm.boss;
-                if (bs->shotHitsSeg(b.prevX, b.prevY, b.x, b.y)) {
+                float d = SegDist(bs->worldX, bs->worldY, b.prevX, b.prevY, b.x, b.y);
+                if (d < Boss::BODY_SIZE * 0.62f) {
                     float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                              glm::vec2(bs->worldX, bs->worldY));
                     float baseDealt;
