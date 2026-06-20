@@ -3229,8 +3229,9 @@ int main() {
                         case 1:
                             g_GlitchWasP2 = g_GlitchWasP3 = g_GlitchWasTear = false;
                             g_GlitchBoss = new GlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_GlitchBoss->hideInCorner();
-                            g_GlitchBoss->state = BossState::FRAGMENT;
+                            g_GlitchBoss->worldX = bsx;
+                            g_GlitchBoss->worldY = bsy;
+                            g_GlitchBoss->state = BossState::CORRUPT;
                             g_GlitchBoss->stateTimer = 0.0f;
                             break;
                         case 2:
@@ -4323,7 +4324,9 @@ int main() {
             float w = Boss::WIN_W * c->sizeScale;
             addW(c->worldX, c->worldY, w, w, L"slime.worm", 0.07f,0.10f,0.07f, 0.40f,1.0f,0.55f);
         }
-        // CORRUPT.dll — DrawAppWindow 통합 패스 (e3)
+        if (g_GlitchBoss && g_GlitchBoss->alive)
+            addW(g_GlitchBoss->worldX, g_GlitchBoss->worldY, GLITCH_WIN_W, GLITCH_WIN_W,
+                 L"CORRUPT.dll", 0.07f,0.06f,0.10f, 0.95f,0.20f,0.60f);
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
                  L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
@@ -4841,7 +4844,6 @@ int main() {
                 const float DTB = 14.0f * g_Scale;
                 const float PW = GLITCH_PHANTOM_WIN_W, PH = GLITCH_PHANTOM_WIN_H;
                 const float PTB = GlitchBoss::PHANTOM_WIN_TB * g_Scale;
-                const float CTB = GlitchBoss::GLITCH_WIN_TB * g_Scale;
                 for (auto& L : apps) {
                     if (L.kind == AW_DDOS) {
                         Monster* m = L.ddos;
@@ -4870,7 +4872,6 @@ int main() {
                     } else if (L.kind == AW_CORRUPT && gb) {
                         float ww = GLITCH_WIN_W, wh = GLITCH_WIN_W;
                         float wx = gb->worldX - ww * 0.5f, wy = gb->worldY - wh * 0.5f;
-                        DrawAppWindow(wx, wy, ww, wh, L"CORRUPT.dll", CTB);
                         BatchFlush(); glEnable(GL_SCISSOR_TEST);
                         BindMainShader();
                         WorldScissor(wx, wy, ww, wh);
@@ -5099,8 +5100,7 @@ int main() {
                                 GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
         }
     
-        // CORRUPT.dll 전역 연출 — 프레임 최상단 블록(6320)에서 처리
-    
+
                 // VOLLEY.sys — 전조 + 기동 화력 드론
         if (g_RRBoss && g_RRBoss->alive) {
             auto* rb = g_RRBoss;
@@ -5561,6 +5561,36 @@ int main() {
                 BatchFlush();
                 glDisable(GL_SCISSOR_TEST);
             }
+        }
+
+        // CORRUPT.dll — 전조/RGB 빔 (월드 ortho · UI 전환 전, 줌/카메라와 동기)
+        if (g_GlitchBoss && g_GlitchBoss->alive) {
+            auto* gb = g_GlitchBoss;
+            float pCX = playerWin.x + playerWin.width  * 0.5f;
+            float pCY = playerWin.y + playerWin.height * 0.5f;
+            float gtG = (float)glfwGetTime();
+            BindMainShader();
+            gb->renderTelegraphs(pCX, pCY, gtG);
+            if (gb->hasBeamVisual()) {
+                BindMainShader();
+                gb->renderBeams(gtG);
+                BatchFlush();
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                BindMainShader();
+                gb->renderBeams(gtG);
+                BatchFlush();
+                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                                    GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
+            }
+            if (gb->tearFlash > 0.02f) {
+                BindMainShader();
+                float tf = gb->tearFlash;
+                drawRect(0.0f, 0.0f, (float)screenWidth, (float)screenHeight,
+                         1.0f, 0.12f, 0.38f, tf * 0.14f);
+            }
+            BindMainShader();
+            gb->renderTelegraphLabels(pCX, pCY, gtG);
+            BatchFlush();
         }
     
         // ── 여기부터 UI/오버레이: 줌·흔들기 무시하고 화면 고정 좌표(base ortho)로 ──
@@ -6317,58 +6347,28 @@ int main() {
             }
         }
     
-        // ── CORRUPT.dll — 전조/레이저/글리치 (프레임 최상단, UI 위) ──
+        // ── CORRUPT.dll — 화면 글리치 (UI 좌표, 빔 중엔 거의 끔) ──
         if (g_GlitchBoss && g_GlitchBoss->alive) {
             auto* gb = g_GlitchBoss;
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            float gtG = (float)glfwGetTime();
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-            BindMainShader();
-            gb->renderTelegraphs(pCX, pCY, gtG);
-            BatchFlush();
-
-            if (gb->hasBeamVisual()) {
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            float gMul = gb->suppressScreenGlitch() ? 0.12f : 1.0f;
+            if (gb->glitchAmount > 0.02f && gMul > 0.05f) {
                 BindMainShader();
-                gb->renderBeams(gtG);
-                BatchFlush();
-                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                                    GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
-            }
-
-            if (gb->tearFlash > 0.02f) {
-                BindMainShader();
-                float tf = gb->tearFlash;
-                drawRect(0.0f, 0.0f, (float)screenWidth, (float)screenHeight,
-                         1.0f, 0.12f, 0.38f, tf * 0.14f);
-                BatchFlush();
-            }
-
-            BindMainShader();
-            gb->renderTelegraphLabels(pCX, pCY, (float)screenWidth, (float)screenHeight, gtG);
-
-            float gMul = gb->suppressScreenGlitch() ? 0.22f : 1.0f;
-            if (gb->glitchAmount > 0.02f) {
-                BindMainShader();
-                for (int i = 0; i < 5; i++) {
+                for (int i = 0; i < 4; i++) {
                     float by  = (float)(rand() % screenHeight);
-                    float bh  = 2.0f + (float)(rand() % 7);
-                    float off = (float)(rand() % 30 - 15) * gb->glitchAmount * gMul;
-                    float a   = gb->glitchAmount * 0.38f * gMul;
+                    float bh  = 2.0f + (float)(rand() % 6);
+                    float off = (float)(rand() % 24 - 12) * gb->glitchAmount * gMul;
+                    float a   = gb->glitchAmount * 0.32f * gMul;
                     drawRect(off,  by,      (float)screenWidth, bh, 0.0f, 1.0f, 1.0f, a);
                     drawRect(-off, by + bh, (float)screenWidth, bh, 1.0f, 0.0f, 1.0f, a);
                 }
             }
-            if (gb->textNoise > 0.35f && (rand() % 3 == 0)) {
-                static const wchar_t* errs[5] =
-                    { L"CORRUPT.dll", L"0xC0000005", L"DISPLAY_TDR", L"PHANTOM_SWAP", L"TEAR_PENDING" };
-                for (int i = 0; i < 2; i++) {
-                    float ex = (float)(rand() % screenWidth);
-                    float ey = (float)(rand() % screenHeight);
-                    g_TextL.Draw(errs[rand() % 5], ex, ey, 0.65f,
-                                 1.0f, 0.1f, 0.3f, gb->textNoise * 0.55f * gMul);
-                }
+            if (gb->textNoise > 0.45f && gMul > 0.4f && (rand() % 4 == 0)) {
+                static const wchar_t* errs[3] =
+                    { L"CORRUPT.dll", L"0xC0000005", L"TEAR_PENDING" };
+                float ex = (float)(rand() % screenWidth);
+                float ey = (float)(rand() % screenHeight);
+                g_TextL.Draw(errs[rand() % 3], ex, ey, 0.55f,
+                             1.0f, 0.1f, 0.3f, gb->textNoise * 0.4f);
             }
         }
         g_LmbPrev = lmb;

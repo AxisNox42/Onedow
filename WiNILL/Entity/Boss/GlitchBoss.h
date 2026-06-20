@@ -105,8 +105,8 @@ public:
 
     static constexpr float BODY = 44.0f;
     static constexpr float MELEE_NEAR = 105.0f;
-    static constexpr float BEAM_HALF = 20.0f;
-    static constexpr float BEAM_HALF_WARN = 13.0f;
+    static constexpr float BEAM_HALF = 28.0f;
+    static constexpr float BEAM_HALF_WARN = 18.0f;
     static constexpr float PHANTOM_WIN_W = 300.0f;
     static constexpr float PHANTOM_WIN_H = 220.0f;
     static constexpr float PHANTOM_WIN_TB = 16.0f;
@@ -653,10 +653,10 @@ public:
         for (int pass = 0; pass < 3; pass++) {
             float th, ca, rr, gg, bb;
             if (pass == 0) {
-                th = halfW * 2.6f; ca = glowA * 0.38f * flicker;
+                th = halfW * 2.6f; ca = glowA * 0.55f * flicker;
                 rr = cr * 0.45f; gg = cg * 0.45f; bb = cb * 0.45f;
             } else if (pass == 1) {
-                th = halfW * 1.35f; ca = glowA * 0.62f * flicker;
+                th = halfW * 1.35f; ca = glowA * 0.82f * flicker;
                 rr = cr * 0.82f; gg = cg * 0.82f; bb = cb * 0.82f;
             } else {
                 th = halfW * 0.42f; ca = coreA * flicker;
@@ -753,7 +753,7 @@ public:
         }
     }
 
-    void renderTelegraphLabels(float px, float py, float sw, float sh, float gt) const {
+    void renderTelegraphLabels(float px, float py, float gt) const {
         if (laserWarn) {
             float prog = laserWarnT / LASER_WARN;
             if (prog > 1.0f) prog = 1.0f;
@@ -772,13 +772,13 @@ public:
             wchar_t bw[] = L"RGB TEAR";
             float scale = 1.05f + attackBanner * 0.35f;
             float bw_w = g_TextS.Width(bw, scale);
-            g_TextS.Draw(bw, sw * 0.5f - bw_w * 0.5f, sh * 0.22f, scale,
+            g_TextS.Draw(bw, px - bw_w * 0.5f, py - 92.0f, scale,
                          1.0f, 0.18f, 0.42f, attackBanner * 0.92f);
         }
         if (state == BossState::CORRUPT && stateTimer < 1.6f) {
             wchar_t iw[] = L"CORRUPT.dll loaded";
             float iw_w = g_TextS.Width(iw, 0.48f);
-            g_TextS.Draw(iw, sw * 0.5f - iw_w * 0.5f, sh * 0.16f, 0.48f,
+            g_TextS.Draw(iw, worldX - iw_w * 0.5f, worldY - BODY - 48.0f, 0.48f,
                          0.95f, 0.25f, 0.55f, 0.85f);
         }
     }
