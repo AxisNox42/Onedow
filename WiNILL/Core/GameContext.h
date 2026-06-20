@@ -10,7 +10,6 @@
 #include "TextRenderer.h"
 #include "Camera.h"
 
-class GlitchBoss;
 class ReloadRunnerBoss;
 class PolymorphBoss;
 class SpamBoss;
@@ -30,7 +29,6 @@ extern TextRenderer g_TextL;
 extern TextRenderer g_TextS;
 extern TextRenderer g_TextXL;
 
-extern GlitchBoss*         g_GlitchBoss;
 extern ReloadRunnerBoss*   g_RRBoss;
 extern PolymorphBoss*      g_PolyBoss;
 extern SpamBoss*           g_SpamBoss;

@@ -2,7 +2,7 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 0슬라임 1글리치 2리로드 3스팸 4폴리 5커널 6방화벽 7C2 8포크웜 9토템
+// 보스 pick: 0슬라임 1(미사용) 2리로드 3스팸 4폴리 5커널 6방화벽 7C2 8포크웜 9토템
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -13,14 +13,14 @@ inline int& RotIdx() {
 inline void ResetRotation() { RotIdx() = 0; }
 
 inline int RollScorePick() {
-    static const int kRot[] = { 0, 1, 2, 3, 5, 6, 7, 8, 9 };
-    return kRot[RotIdx()++ % 9];
+    static const int kRot[] = { 0, 2, 3, 5, 6, 7, 8, 9 };
+    return kRot[RotIdx()++ % 8];
 }
 
 inline const wchar_t* DisplayName(int pick) {
     switch (pick) {
     case 0: return L"SLIME.worm";
-    case 1: return L"CORRUPT.dll";
+    case 1: return L"UNKNOWN.sys";
     case 2: return L"VOLLEY.sys";
     case 3: return L"SPAM.dll";
     case 4: return L"POLYMORPH.vir";
@@ -66,7 +66,7 @@ inline glm::vec3 WarnColor(int pick) {
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
         L"메모리 누수 — 프로세스 증식",
-        L"화면 깨짐 — 점멸 추격 · 파동 · 잔상",
+        L"",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
         L"실행 파일 형태 변조",
@@ -78,7 +78,7 @@ inline const wchar_t* Tagline(int pick) {
     };
     static const wchar_t* EN[10] = {
         L"Memory leak — process swarm",
-        L"Broken display — flicker chase · wave · afterimages",
+        L"",
         L"Volley fire — telegraphed danger zones",
         L"Popup ad flood",
         L"Executable morphing",
@@ -90,7 +90,7 @@ inline const wchar_t* Tagline(int pick) {
     };
     static const wchar_t* JP[10] = {
         L"メモリリーク — プロセス増殖",
-        L"画面破損 — 点滅追跡 · 波動 · 残像",
+        L"",
         L"連発砲撃 — 射程予告表示",
         L"ポップアップ広告暴走",
         L"実行ファイル変形",

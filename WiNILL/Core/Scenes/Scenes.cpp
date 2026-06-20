@@ -897,11 +897,11 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 // 보스 선택 — 9종 (None 포함 10개, 5개씩 줄바꿈)
                 g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[11] = { {L"None",-1},{L"Slime",0},{L"Corrupt",1},
+                BossOpt bOpts[10] = { {L"None",-1},{L"Slime",0},
                                       {L"Volley",2},{L"Spam",3},{L"Polymorph",4},
                                       {L"Kernel",5},{L"Firewall",6},{L"C2 Relay",7},
                                       {L"Fork Worm",8},{L"Rite Core",9} };
-                for (int i = 0; i < 11; i++) {
+                for (int i = 0; i < 10; i++) {
                     int col = i % 5, row = i / 5;
                     float ox = 60.0f + col * (OBW + OBG);
                     float oy = sh*0.40f + 28.0f + row * (OBH + 8.0f);

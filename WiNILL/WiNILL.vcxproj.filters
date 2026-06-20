@@ -165,9 +165,6 @@
     <ClInclude Include="Entity\Boss\FirewallBoss.h">
       <Filter>Entity\Boss</Filter>
     </ClInclude>
-    <ClInclude Include="Entity\Boss\GlitchBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
     <ClInclude Include="Entity\Boss\KernelBoss.h">
       <Filter>Entity\Boss</Filter>
     </ClInclude>
