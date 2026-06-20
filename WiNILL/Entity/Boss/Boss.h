@@ -3,85 +3,99 @@
 #include <cmath>
 #include <cstdlib>
 #include <vector>
+#include <algorithm>
 #include "Monster.h"
+#include "DrawPrim.h"
 
 // ─────────────────────────────────────────────────────────────
-// 슬라임 (Slime) — 첫 보스
-//   - FakeWindow 700×700 보유
-//   - 움직임: 랜덤 wander
-//   - 스킬:
-//     A. 돌진: 1.5s 빨간 텔레그래프 → 화면 끝까지 대시
-//              벽에 튕길 때마다 강화 잡몹 3마리 소환 (카타리나 궁극기 스타일)
-//              최대 3회 바운스 후 IDLE 복귀
-//     B. 소환: 4초마다 강화 잡몹 5마리 spawn (HP×2, 속도×0.8)
+// SLIME.worm — 메모리 누수 프로세스 보스 (v2)
+//
+//   P1: 플레이어 추격 + 돌진(벽 튕김) + 산성 궤적 + 주기적 FORK 소환
+//   P2 50%: 돌진↑ · 소환↑ · 분열체(main 스폰)
+//   P3 25%: 연속 돌진 · 산성↑ · OVERFLOW 소환
 // ─────────────────────────────────────────────────────────────
+
+struct SlimeAcid {
+    float x = 0, y = 0;
+    float life = 0.0f;
+    float maxLife = 1.4f;
+    float radius = 28.0f;
+};
+
 class Boss {
 public:
-    float worldX, worldY;
-    float hp    = 7000.0f;
-    float maxHp = 7000.0f;
+    float worldX = 0, worldY = 0;
+    float hp = 7000.0f, maxHp = 7000.0f;
     bool  alive = true;
     bool  exploded = false;
 
-    // g_Scale 로 시작 시 일괄 축소 가능하도록 런타임 값 (constexpr → inline static)
     static inline float WIN_W = 700.0f;
     static inline float WIN_H = 700.0f;
-    static inline float BODY_SIZE = 50.0f;  // 플레이어(25) 2배
+    static inline float BODY_SIZE = 50.0f;
 
     glm::vec3 color = glm::vec3(0.9f, 0.85f, 0.95f);
 
-    // ── 분열(슬라임) ──
-    float sizeScale  = 1.0f;     // 본체/창 크기 배율 (분열할수록 작아짐)
-    int   splitGen   = 0;        // 0 = 원본, 1~2 = 분열체
-    bool  chargeOnly = false;    // 분열체: 소환 없이 돌진만
+    float sizeScale = 1.0f;
+    int   splitGen = 0;
+    bool  chargeOnly = false;
 
-    // ── 페이즈2 (HP 50% 이하) — 분열(main 이 분열체 2기 스폰) + 자체 광폭화 ──
     bool  phase2 = false;
+    bool  phase3 = false;
 
-    // ── Wander ──
-    float targetX, targetY;
-    float wanderTimer  = 0.0f;
-    static constexpr float WANDER_INTERVAL = 3.0f;
-    static constexpr float WANDER_SPEED    = 1.4f;
+    std::vector<SlimeAcid> acids;
 
-    // ── 스킬 상태 머신 ──
-    enum class Skill { IDLE, TELEGRAPH, CHARGING };
+    float targetX = 0, targetY = 0;
+    float wanderTimer = 0.0f;
+
+    enum class Skill { IDLE, TELEGRAPH, CHARGING, RECOVER };
     Skill skill = Skill::IDLE;
-    float skillTimer    = 0.0f;
-    float idleCooldown  = 5.0f;                       // 버프: 7 → 5 (돌진 더 자주)
-    static constexpr float TELEGRAPH_TIME = 1.2f;     // 버프: 1.5 → 1.2 (반응 시간 단축)
-    float chargeDirX = 0.0f, chargeDirY = 0.0f;
-    static constexpr float CHARGE_SPEED   = 1650.0f;  // 버프: 1400 → 1650
-    static constexpr float CHARGE_DAMAGE  = 50.0f;    // 버프: 35 → 50
-    static constexpr float CHARGE_RADIUS  = 55.0f;    // 버프: 50 → 55
+    float skillTimer = 0.0f;
+    float idleCooldown = 4.2f;
 
-    // ── 바운스 ──
+    float chargeDirX = 1.0f, chargeDirY = 0.0f;
     int   bounceCount = 0;
-    static constexpr int   BOUNCE_MAX          = 4;  // 버프: 3 → 4회 바운스
-    static constexpr int   IMPACT_SUMMON_COUNT = 3;  // 너프: 4 → 3 (보스전 과밀 완화)
+    int   chainRushLeft_ = 0;
 
-    // ── 소환 ──
     float summonTimer = 0.0f;
-    bool  summonPending = false;                     // 소환 직전 경고(텔레그래프) 중
-    static constexpr float SUMMON_INTERVAL = 3.0f;   // 버프: 4 → 3초마다
-    static constexpr float SUMMON_WARN     = 0.7f;   // 소환 0.7초 전부터 경고 링 표시
-    static constexpr int   SUMMON_COUNT    = 5;      // 너프: 7 → 5 (보스전 과밀 완화)
-    static constexpr float SUMMON_RING_R   = 70.0f;  // 소환 반경(경고/스폰 일치)
+    bool  summonPending = false;
+    bool  overflowBurst_ = false;
 
-    int screenW, screenH;
+    int screenW = 0, screenH = 0;
+
+    static constexpr float TELEGRAPH_TIME = 0.95f;
+    static constexpr float CHARGE_SPEED   = 1780.0f;
+    static constexpr float CHARGE_DAMAGE  = 58.0f;
+    static constexpr float CHARGE_RADIUS  = 58.0f;
+    static constexpr float RECOVER_TIME   = 0.55f;
+
+    static constexpr int   BOUNCE_MAX          = 5;
+    static constexpr int   IMPACT_SUMMON_COUNT = 4;
+
+    static constexpr float SUMMON_INTERVAL = 2.6f;
+    static constexpr float SUMMON_WARN     = 0.65f;
+    static constexpr int   SUMMON_COUNT    = 6;
+    static constexpr float SUMMON_RING_R   = 78.0f;
 
     Boss(float sx, float sy, int sw, int sh, float maxHpInit = 7000.0f)
-        : worldX(sx), worldY(sy)
-        , targetX(sx), targetY(sy)
+        : worldX(sx), worldY(sy), targetX(sx), targetY(sy)
         , screenW(sw), screenH(sh)
     {
-        hp    = maxHpInit;
-        maxHp = maxHpInit;
-        pickNewTarget();
+        hp = maxHp = maxHpInit;
+    }
+
+    const wchar_t* stateTag() const {
+        if (phase3) return L"OVERFLOW";
+        if (phase2) return L"FORK";
+        switch (skill) {
+        case Skill::TELEGRAPH: return L"RUSH◉";
+        case Skill::CHARGING:  return L"RUSH";
+        case Skill::RECOVER:   return L"COOL";
+        default: return summonPending ? L"FORK◉" : L"HUNT";
+        }
     }
 
     void pickNewTarget() {
-        float margin = 120.0f;
+        float margin = 100.0f;
         float rw = (float)(screenW - 2 * (int)margin);
         float rh = (float)(screenH - 2 * (int)margin);
         if (rw < 1) rw = 1; if (rh < 1) rh = 1;
@@ -89,133 +103,207 @@ public:
         targetY = margin + (float)(rand() % (int)rh);
     }
 
-    // dt 동안 보스 갱신.
-    // outSummons : 이번 프레임에 소환할 강화 잡몹들이 push 됨
     void Update(float playerCX, float playerCY, float dt,
                 float& playerHP,
                 std::vector<Monster*>& outSummons)
     {
         if (!alive) return;
 
-        // ── 페이즈2 진입 (HP 50% 이하) — 광폭화: 돌진 쿨↓·소환↑·이동↑ ──
-        //   (분열체 2기 스폰은 main 이 상승엣지에서 처리)
-        if (!phase2 && !chargeOnly && hp <= maxHp * 0.5f) {
-            phase2 = true;
-            idleCooldown = 2.5f;   // 돌진 더 자주
-        }
-        float p2move = phase2 ? 1.7f : 1.0f;   // 이동/추격 가속
-        float p2sum  = phase2 ? 1.6f : 1.0f;   // 소환 가속
+        if (!phase2 && !chargeOnly && hp <= maxHp * 0.5f) enterPhase2();
+        if (!phase3 && !chargeOnly && hp <= maxHp * 0.25f) enterPhase3();
 
-        // ── 소환 타이머 (스킬과 독립적으로) — 0.7초 경고 후 소환 ──
-        // 분열체(chargeOnly)는 소환 안 함 (돌진만)
+        float p2 = phase2 ? 1.0f : 0.0f;
+        float p3 = phase3 ? 1.0f : 0.0f;
+        float huntSpd = (2.2f + p2 * 0.9f + p3 * 0.6f) * (chargeOnly ? 1.15f : 1.0f);
+        float sumMul = 1.0f + p2 * 0.55f + p3 * 0.45f;
+
+        tickAcid(playerCX, playerCY, dt, playerHP);
+
         if (!chargeOnly) {
-            summonTimer += dt * p2sum;
+            summonTimer += dt * sumMul;
             if (!summonPending && summonTimer >= SUMMON_INTERVAL - SUMMON_WARN)
-                summonPending = true;             // 경고 링 표시 시작 (main 이 렌더)
+                summonPending = true;
             if (summonTimer >= SUMMON_INTERVAL) {
-                summonTimer   = 0.0f;
+                summonTimer = 0.0f;
                 summonPending = false;
-                for (int i = 0; i < SUMMON_COUNT; i++) {
-                    float ang = (float)i / SUMMON_COUNT * 6.2831853f;
-                    float sx  = worldX + cosf(ang) * SUMMON_RING_R;
-                    float sy  = worldY + sinf(ang) * SUMMON_RING_R;
-                    outSummons.push_back(new Monster(sx, sy, 2.0f, 0.8f, /*summoned=*/true));
-                }
+                forkRing(outSummons, phase3 ? SUMMON_COUNT + 2 : SUMMON_COUNT);
             }
         }
 
-        // ── 스킬 상태 머신 ──
         skillTimer += dt;
         switch (skill) {
         case Skill::IDLE:
-            // wander
-            wanderTimer += dt;
-            if (wanderTimer >= WANDER_INTERVAL) {
-                pickNewTarget();
-                wanderTimer = 0.0f;
-            }
-            worldX += (targetX - worldX) * WANDER_SPEED * p2move * dt;
-            worldY += (targetY - worldY) * WANDER_SPEED * dt;
-
-            if (skillTimer >= idleCooldown) {
-                // 돌진 텔레그래프 — 플레이어 방향
-                float dx = playerCX - worldX;
-                float dy = playerCY - worldY;
-                float l  = std::sqrt(dx*dx + dy*dy);
-                if (l < 1e-3f) { dx = 1; dy = 0; l = 1; }
-                chargeDirX  = dx / l;
-                chargeDirY  = dy / l;
-                skill       = Skill::TELEGRAPH;
-                skillTimer  = 0.0f;
-                bounceCount = 0;
-            }
+            tickHunt(playerCX, playerCY, dt, huntSpd);
+            if (skillTimer >= idleCooldown) beginTelegraph(playerCX, playerCY);
             break;
 
         case Skill::TELEGRAPH:
-            // 정지 + 빨간 범위 표시. 종료 후 대시 시작
             if (skillTimer >= TELEGRAPH_TIME) {
-                skill      = Skill::CHARGING;
+                skill = Skill::CHARGING;
                 skillTimer = 0.0f;
             }
             break;
 
         case Skill::CHARGING:
-        {
-            worldX += chargeDirX * CHARGE_SPEED * dt;
-            worldY += chargeDirY * CHARGE_SPEED * dt;
+            tickCharge(playerCX, playerCY, dt, playerHP, outSummons);
+            break;
 
-            // 플레이어 접촉 데미지
-            float dx = playerCX - worldX;
-            float dy = playerCY - worldY;
-            if (dx*dx + dy*dy < CHARGE_RADIUS * CHARGE_RADIUS) {
-                playerHP -= CHARGE_DAMAGE * dt * 4.0f;
-            }
-
-            // ── 벽 바운스 + 충돌 지점 강화 잡몹 소환 ──
-            bool bounced = false;
-            if (worldX < 0.0f) {
-                worldX = 0.0f;
-                chargeDirX = std::fabsf(chargeDirX);
-                bounced = true;
-            } else if (worldX > (float)screenW) {
-                worldX = (float)screenW;
-                chargeDirX = -std::fabsf(chargeDirX);
-                bounced = true;
-            }
-            if (worldY < 0.0f) {
-                worldY = 0.0f;
-                chargeDirY = std::fabsf(chargeDirY);
-                bounced = true;
-            } else if (worldY > (float)screenH) {
-                worldY = (float)screenH;
-                chargeDirY = -std::fabsf(chargeDirY);
-                bounced = true;
-            }
-
-            if (bounced) {
-                ++bounceCount;
-                // 카타리나 궁극기 스타일: 충돌 지점에서 방사형 강화 잡몹 소환
-                // (분열체는 소환 없이 튕기기만)
-                if (!chargeOnly)
-                for (int i = 0; i < IMPACT_SUMMON_COUNT; i++) {
-                    float ang = (float)i / (float)IMPACT_SUMMON_COUNT * 6.2831853f;
-                    float r   = 45.0f;
-                    outSummons.push_back(new Monster(
-                        worldX + cosf(ang) * r,
-                        worldY + sinf(ang) * r,
-                        2.5f, 1.3f, /*summoned=*/true));
-                }
-                if (bounceCount >= BOUNCE_MAX) {
-                    // 바운스 MAX 도달 → IDLE 복귀
-                    skill        = Skill::IDLE;
-                    skillTimer   = 0.0f;
-                    idleCooldown = 4.0f;   // 버프: 5 → 4 (이후 돌진 더 빨라짐)
-                    bounceCount  = 0;
-                    pickNewTarget();
+        case Skill::RECOVER:
+            tickHunt(playerCX, playerCY, dt, huntSpd * 0.65f);
+            if (skillTimer >= RECOVER_TIME) {
+                if (chainRushLeft_ > 0) {
+                    chainRushLeft_--;
+                    beginTelegraph(playerCX, playerCY);
+                } else {
+                    skill = Skill::IDLE;
+                    skillTimer = 0.0f;
+                    idleCooldown = phase3 ? 1.6f : (phase2 ? 2.2f : 3.4f);
                 }
             }
             break;
         }
+    }
+
+    void renderAcid(float gt) const {
+        for (auto& a : acids) {
+            if (a.life <= 0.0f) continue;
+            float t = a.life / a.maxLife;
+            float pulse = 0.55f + 0.45f * sinf(gt * 14.0f + a.x * 0.03f);
+            float alpha = t * pulse * 0.55f;
+            drawCircle(a.x, a.y, a.radius, 0.35f, 0.95f, 0.28f, alpha);
+            drawCircle(a.x, a.y, a.radius * 0.55f, 0.55f, 1.0f, 0.45f, alpha * 0.75f);
         }
+    }
+
+private:
+    void enterPhase2() {
+        phase2 = true;
+        idleCooldown = 2.4f;
+        overflowBurst_ = true;
+    }
+
+    void enterPhase3() {
+        phase3 = true;
+        idleCooldown = 1.8f;
+        chainRushLeft_ = 1;
+    }
+
+    void tickHunt(float px, float py, float dt, float spd) {
+        wanderTimer += dt;
+        if (wanderTimer >= 2.4f) {
+            pickNewTarget();
+            wanderTimer = 0.0f;
+        }
+        float tx = px * 0.78f + targetX * 0.22f;
+        float ty = py * 0.78f + targetY * 0.22f;
+        float dx = tx - worldX, dy = ty - worldY;
+        float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
+        worldX += dx / d * spd * 85.0f * dt;
+        worldY += dy / d * spd * 85.0f * dt;
+    }
+
+    void beginTelegraph(float px, float py) {
+        float dx = px - worldX, dy = py - worldY;
+        float l = sqrtf(dx * dx + dy * dy) + 1e-3f;
+        chargeDirX = dx / l;
+        chargeDirY = dy / l;
+        skill = Skill::TELEGRAPH;
+        skillTimer = 0.0f;
+        bounceCount = 0;
+    }
+
+    void dropAcid(float x, float y) {
+        if ((int)acids.size() >= acidCap()) {
+            auto it = std::min_element(acids.begin(), acids.end(),
+                [](const SlimeAcid& a, const SlimeAcid& b) { return a.life < b.life; });
+            if (it != acids.end()) *it = SlimeAcid{};
+        }
+        SlimeAcid a;
+        a.x = x; a.y = y;
+        a.radius = (22.0f + (float)(rand() % 12)) * (0.85f + sizeScale * 0.15f);
+        a.maxLife = a.life = phase3 ? 2.0f : (phase2 ? 1.7f : 1.4f);
+        acids.push_back(a);
+    }
+
+    int acidCap() const {
+        if (phase3) return 18;
+        if (phase2) return 14;
+        return chargeOnly ? 8 : 10;
+    }
+
+    void tickAcid(float px, float py, float dt, float& playerHP) {
+        for (auto& a : acids) {
+            if (a.life <= 0.0f) continue;
+            a.life -= dt;
+            float dx = px - a.x, dy = py - a.y;
+            if (dx * dx + dy * dy < (a.radius + 8.0f) * (a.radius + 8.0f)) {
+                float rate = phase3 ? 14.0f : (phase2 ? 10.0f : 7.0f);
+                playerHP -= rate * dt;
+            }
+        }
+        acids.erase(std::remove_if(acids.begin(), acids.end(),
+            [](const SlimeAcid& a) { return a.life <= 0.0f; }), acids.end());
+    }
+
+    void forkRing(std::vector<Monster*>& out, int count) {
+        float hpMul = phase3 ? 2.4f : (phase2 ? 2.0f : 1.7f);
+        float spdMul = phase3 ? 1.05f : (phase2 ? 0.92f : 0.85f);
+        for (int i = 0; i < count; i++) {
+            float ang = (float)i / (float)count * 6.2831853f;
+            float sx = worldX + cosf(ang) * SUMMON_RING_R;
+            float sy = worldY + sinf(ang) * SUMMON_RING_R;
+            out.push_back(new Monster(sx, sy, hpMul, spdMul, true));
+        }
+    }
+
+    void tickCharge(float px, float py, float dt, float& playerHP,
+                    std::vector<Monster*>& outSummons)
+    {
+        float spd = CHARGE_SPEED * (1.0f + (phase2 ? 0.12f : 0.0f) + (phase3 ? 0.18f : 0.0f));
+        worldX += chargeDirX * spd * dt;
+        worldY += chargeDirY * spd * dt;
+
+        if (skillTimer > 0.04f && (int)(skillTimer * 20.0f) % 3 == 0)
+            dropAcid(worldX, worldY);
+
+        float dx = px - worldX, dy = py - worldY;
+        if (dx * dx + dy * dy < CHARGE_RADIUS * CHARGE_RADIUS)
+            playerHP -= CHARGE_DAMAGE * dt * (phase3 ? 4.8f : 4.2f);
+
+        bool bounced = false;
+        if (worldX < 0.0f) {
+            worldX = 0.0f; chargeDirX = fabsf(chargeDirX); bounced = true;
+        } else if (worldX > (float)screenW) {
+            worldX = (float)screenW; chargeDirX = -fabsf(chargeDirX); bounced = true;
+        }
+        if (worldY < 0.0f) {
+            worldY = 0.0f; chargeDirY = fabsf(chargeDirY); bounced = true;
+        } else if (worldY > (float)screenH) {
+            worldY = (float)screenH; chargeDirY = -fabsf(chargeDirY); bounced = true;
+        }
+
+        if (bounced) {
+            ++bounceCount;
+            dropAcid(worldX, worldY);
+            if (!chargeOnly)
+                forkRing(outSummons, phase3 ? IMPACT_SUMMON_COUNT + 1 : IMPACT_SUMMON_COUNT);
+            if (phase3 && bounceCount == 2) chainRushLeft_ = 1;
+
+            if (bounceCount >= BOUNCE_MAX) {
+                skill = Skill::RECOVER;
+                skillTimer = 0.0f;
+                bounceCount = 0;
+            }
+        }
+    }
+
+public:
+    // P2 진입 시 main에서 1회 호출 — 즉시 FORK 링
+    void onPhase2Burst(std::vector<Monster*>& outSummons) {
+        if (!overflowBurst_) return;
+        overflowBurst_ = false;
+        forkRing(outSummons, SUMMON_COUNT + 2);
+        for (int i = 0; i < 4; i++)
+            dropAcid(worldX + (float)(rand() % 80 - 40), worldY + (float)(rand() % 80 - 40));
     }
 };

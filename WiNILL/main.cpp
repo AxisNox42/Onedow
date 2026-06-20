@@ -302,7 +302,7 @@ int            g_BossWarnPick   = -1;           // 0~8 보스 통일 인덱스 (
 const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
 float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
 // 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
-bool g_SlimeWasP2 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
+bool g_SlimeWasP2 = false, g_SlimeWasP3 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
 bool g_BotnetWasP2 = false;
 // 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
 float     g_P2ToastTimer = 0.0f;
@@ -349,15 +349,15 @@ glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
 // 슬라임 분열체 (원본 사망 시 2마리 → 각자 또 1번 분열, 총 2세대) — main 이 직접 관리
 std::vector<Boss*> g_Slimelings;
 bool g_SlimeEncounter = false;   // 분열 인카운터 진행 중 (끝나면 보상)
-// 분열체 생성 (체력 반토막·크기 0.75배·돌진만)
+// 분열체 — 돌진+산성 궤적만 (소환/FORK 없음)
 static Boss* MakeSlimeling(float x, float y, float maxHp, float scale, int gen,
                            int sw, int sh) {
     Boss* c = new Boss(x, y, sw, sh, maxHp);
-    c->sizeScale  = scale;
-    c->splitGen   = gen;
-    c->chargeOnly = true;
-    c->idleCooldown = 2.2f;                        // 돌진만 하니 자주
-    c->color = glm::vec3(0.55f, 0.95f, 0.60f);     // 분열체 = 초록빛 슬라임
+    c->sizeScale    = scale;
+    c->splitGen     = gen;
+    c->chargeOnly   = true;
+    c->idleCooldown = (gen >= 2) ? 1.15f : 1.55f;
+    c->color = glm::vec3(0.45f, 0.98f, 0.52f);
     return c;
 }
 
@@ -810,7 +810,7 @@ int main() {
             BossDir::ResetRotation();
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
-            g_SlimeWasP2 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+            g_SlimeWasP2 = g_SlimeWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
@@ -1041,7 +1041,7 @@ int main() {
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
-                g_SlimeWasP2 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
+                g_SlimeWasP2 = g_SlimeWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = g_BotnetWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
@@ -1814,19 +1814,31 @@ int main() {
                                             col.r, col.g, col.b, true);
                     g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
                 };
-                // SLIME — 분열(약한 chargeOnly 2기) + 광폭화 연출
+                // SLIME — P2 FORK 분열 + OVERFLOW 버스트
                 if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
                     auto* b = g_MonsterManager.boss;
                     if (b->phase2 && !g_SlimeWasP2) {
                         g_SlimeWasP2 = true;
                         p2enter(b->worldX, b->worldY, glm::vec3(0.55f, 0.9f, 0.55f));
-                        float aHp = b->maxHp * 0.15f;
-                        g_Slimelings.push_back(MakeSlimeling(b->worldX - 55, b->worldY,
-                                               aHp, 0.5f, 1, screenWidth, screenHeight));
-                        g_Slimelings.push_back(MakeSlimeling(b->worldX + 55, b->worldY,
-                                               aHp, 0.5f, 1, screenWidth, screenHeight));
+                        float aHp = b->maxHp * 0.18f;
+                        g_Slimelings.push_back(MakeSlimeling(b->worldX - 70, b->worldY,
+                                               aHp, 0.52f, 1, screenWidth, screenHeight));
+                        g_Slimelings.push_back(MakeSlimeling(b->worldX + 70, b->worldY,
+                                               aHp, 0.52f, 1, screenWidth, screenHeight));
+                        g_Slimelings.push_back(MakeSlimeling(b->worldX, b->worldY - 55,
+                                               aHp, 0.52f, 1, screenWidth, screenHeight));
+                        std::vector<Monster*> burst;
+                        b->onPhase2Burst(burst);
+                        for (auto* m : burst) g_MonsterManager.monsters.push_back(m);
                     }
-                } else g_SlimeWasP2 = false;
+                    if (b->phase3 && !g_SlimeWasP3) {
+                        g_SlimeWasP3 = true;
+                        g_ShakeTime = 0.65f; g_ShakeMag = 34.0f;
+                        TriggerFlash(0.35f, 1.0f, 0.45f, 0.45f);
+                        TriggerHitStop(0.14f);
+                        SpawnShockWave(b->worldX, b->worldY, 480.0f, 0.85f, 0.35f, 1.0f, 0.45f);
+                    }
+                } else { g_SlimeWasP2 = false; g_SlimeWasP3 = false; }
                 // RELOADER — 오버클럭 + ASSAULT 전면전
                 if (g_RRBoss && g_RRBoss->alive) {
                     if (g_RRBoss->phase2 && !g_RRWasP2) {
@@ -2396,12 +2408,14 @@ int main() {
                     g_ShakeTime = 0.5f; g_ShakeMag = 18.0f;
                     TriggerFlash(0.5f, 1.0f, 0.6f, 0.5f); TriggerHitStop(0.08f);
                     bs->exploded = true;
-                    // 슬라임이니까 죽으면 분할 — 절반 체력·0.75배 크기 분열체 2마리 (1세대)
-                    float childHp = bs->maxHp * 0.5f;
-                    g_Slimelings.push_back(MakeSlimeling(bs->worldX - 40, bs->worldY,
-                                           childHp, 0.75f, 1, screenWidth, screenHeight));
-                    g_Slimelings.push_back(MakeSlimeling(bs->worldX + 40, bs->worldY,
-                                           childHp, 0.75f, 1, screenWidth, screenHeight));
+                    // 슬라임 사망 → 3-way fork (42% HP · 0.68 scale)
+                    float childHp = bs->maxHp * 0.42f;
+                    g_Slimelings.push_back(MakeSlimeling(bs->worldX - 52, bs->worldY - 18,
+                                           childHp, 0.68f, 1, screenWidth, screenHeight));
+                    g_Slimelings.push_back(MakeSlimeling(bs->worldX, bs->worldY + 42,
+                                           childHp, 0.68f, 1, screenWidth, screenHeight));
+                    g_Slimelings.push_back(MakeSlimeling(bs->worldX + 52, bs->worldY - 18,
+                                           childHp, 0.68f, 1, screenWidth, screenHeight));
                     g_SlimeEncounter = true;          // 분열 인카운터 시작 (보상은 전멸 시)
                     // 원본 보스 객체 정리 (아직 보상 X)
                     delete bs;
@@ -2417,11 +2431,11 @@ int main() {
                         SpawnEnemyExplosion(c->worldX, c->worldY, 0.5f, 0.95f, 0.6f, true);
                         SpawnShockWave(c->worldX, c->worldY, 180.0f, 0.4f, 0.5f, 0.95f, 0.5f);
                         if (c->splitGen < 2) {     // 총 2세대까지만 분열
-                            float hp2 = c->maxHp * 0.5f;
-                            float sc2 = c->sizeScale * 0.75f;
-                            born.push_back(MakeSlimeling(c->worldX - 28, c->worldY,
+                            float hp2 = c->maxHp * 0.48f;
+                            float sc2 = c->sizeScale * 0.72f;
+                            born.push_back(MakeSlimeling(c->worldX - 32, c->worldY,
                                            hp2, sc2, c->splitGen + 1, screenWidth, screenHeight));
-                            born.push_back(MakeSlimeling(c->worldX + 28, c->worldY,
+                            born.push_back(MakeSlimeling(c->worldX + 32, c->worldY,
                                            hp2, sc2, c->splitGen + 1, screenWidth, screenHeight));
                         } else {
                             g_GameManager.scoreAccum += 4000.0f;   // 최종 분열체 처치 보너스
@@ -4748,6 +4762,16 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
+        // (e2.4) SLIME 산성 궤적 — 전체 화면 (가짜창 밖에도 보임)
+        {
+            float acidGt = (float)glfwGetTime();
+            BindMainShader();
+            if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+                g_MonsterManager.boss->renderAcid(acidGt);
+            for (auto* c : g_Slimelings)
+                if (c->alive) c->renderAcid(acidGt);
+        }
+
         // (e2.5) 보스 텔레그래프 — scissor 없이 전체 화면에 표시
         //        보스 창 밖에서도 보이도록 (e3) 의 scissor 이전에 그림
         //        보스 위치에서 돌진 방향으로 점점 늘어나는 빨간 구역
@@ -4775,16 +4799,17 @@ int main() {
                 BindMainShader();
                 BatchVerts(v, 6, 1.0f, 0.08f, 0.08f, alpha);
             }
-            // 소환 경고 — 잡몹이 나올 자리에 점멸 링 (소환 0.7초 전부터)
+            // 소환 경고 — FORK 링 (SUMMON_WARN 초 전부터)
             if (bs->summonPending) {
                 BindMainShader();
                 float blink = 0.30f + 0.30f * (0.5f + 0.5f *
                               sinf((float)glfwGetTime() * 16.0f));
-                for (int i = 0; i < Boss::SUMMON_COUNT; i++) {
-                    float ang = (float)i / Boss::SUMMON_COUNT * 6.2831853f;
+                int sc = bs->phase3 ? Boss::SUMMON_COUNT + 2 : Boss::SUMMON_COUNT;
+                for (int i = 0; i < sc; i++) {
+                    float ang = (float)i / (float)sc * 6.2831853f;
                     float sx  = bs->worldX + cosf(ang) * Boss::SUMMON_RING_R;
                     float sy  = bs->worldY + sinf(ang) * Boss::SUMMON_RING_R;
-                    drawCircle(sx, sy, 14.0f, 1.0f, 0.55f, 0.2f, blink);
+                    drawCircle(sx, sy, 14.0f, 0.35f, 1.0f, 0.35f, blink);
                 }
             }
         }
@@ -4800,9 +4825,12 @@ int main() {
             WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
     
             // 본체 — Mercedes 로고
-            float bodyColR = (bs->skill == Boss::Skill::TELEGRAPH) ? 1.0f : 0.95f;
-            float bodyColG = (bs->skill == Boss::Skill::TELEGRAPH) ? 0.4f : 0.85f;
-            float bodyColB = (bs->skill == Boss::Skill::TELEGRAPH) ? 0.4f : 0.95f;
+            bool rush = (bs->skill == Boss::Skill::CHARGING);
+            bool tel  = (bs->skill == Boss::Skill::TELEGRAPH);
+            float bodyColR = tel ? 1.0f : (rush ? 0.55f : 0.95f);
+            float bodyColG = tel ? 0.35f : (rush ? 1.0f  : 0.85f);
+            float bodyColB = tel ? 0.35f : (rush ? 0.45f : 0.95f);
+            if (bs->phase3 && !tel) { bodyColR *= 0.85f; bodyColG *= 1.08f; }
             drawMercedes(bs->worldX, bs->worldY, Boss::BODY_SIZE,
                          bodyColR, bodyColG, bodyColB, 1.0f);
     
@@ -5494,6 +5522,13 @@ int main() {
                     float tw = g_TextS.Width(tag, ts);
                     g_TextS.Draw(tag, ((float)screenWidth - tw) * 0.5f, by - 48.0f, ts,
                                  0.75f, 0.78f, 0.82f, 0.88f);
+                }
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
+                    const wchar_t* stg = g_MonsterManager.boss->stateTag();
+                    float ss = 0.62f;
+                    float sw = g_TextS.Width(stg, ss);
+                    g_TextS.Draw(stg, bx + bw - sw - 10.0f, by - 28.0f, ss,
+                                 0.45f, 0.98f, 0.55f, 0.92f);
                 }
                 if (g_BotnetBoss && g_BotnetBoss->alive) {
                     wchar_t hostBuf[56];

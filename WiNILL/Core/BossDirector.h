@@ -65,7 +65,7 @@ inline glm::vec3 WarnColor(int pick) {
 
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
-        L"메모리 누수 — 프로세스 증식",
+        L"추격·돌진·산성 궤적 — FORK 증식",
         L"",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
@@ -77,7 +77,7 @@ inline const wchar_t* Tagline(int pick) {
         L"기둥 의식 — Q/E/R 봉인 · 의식망",
     };
     static const wchar_t* EN[10] = {
-        L"Memory leak — process swarm",
+        L"Hunt · rush · acid trail — fork swarm",
         L"",
         L"Volley fire — telegraphed danger zones",
         L"Popup ad flood",
