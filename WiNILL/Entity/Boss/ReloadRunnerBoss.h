@@ -13,7 +13,8 @@ extern TextRenderer g_TextS;
 // ─────────────────────────────────────────────────────────────
 // RELOADER.exe — 기동 화력 플랫폼 (전면전 보스)
 //   3종 무기 로테이션 + 장전 질주 + 화면 가장자리 포격 + ASSAULT 돌격
-//   P2(50%) 오버클럭 · P3(25%) 핫리로드 + 교차화력
+//   · 근접(110px 이내): 탄막·ASSAULT·살보 OFF → 도주·장전 = 딜 타임
+//   · 중거리~(210px+): 전면전 화력 유지
 // ─────────────────────────────────────────────────────────────
 
 enum class RRWeapon { SHOTGUN, SNIPER, MACHINEGUN };
@@ -62,6 +63,10 @@ public:
     std::vector<Trail> trails;
 
     static constexpr float BODY = 48.0f;
+    static constexpr float MELEE_NEAR  = 112.0f;   // 붙으면 화력 OFF, 도주·장전
+    static constexpr float MELEE_MID   = 215.0f;   // 이 안쪽이면 살보·스팸·ASSAULT 제한
+    static constexpr float PANIC_DIST  = 88.0f;    // 강제 패닉 장전
+    static constexpr float SG_FLEE_DIST  = 155.0f;   // SG 근접 시 후퇴 구간
 
     static constexpr float SG_RANGE    = 500.0f;
     static constexpr float SG_INTERVAL = 0.20f;
@@ -117,11 +122,14 @@ public:
         }
     }
 
-    void enterReload(std::vector<Bullet>& bullets) {
-        for (int i = 0; i < 20; i++) {
-            float a = (float)i / 20.0f * 6.2831853f;
-            fireDir(bullets, cosf(a), sinf(a), 420.0f,
-                    glm::vec3(1.0f, 0.55f, 0.15f), 9.0f);
+    void enterReload(std::vector<Bullet>& bullets, bool panic = false) {
+        int ringN = panic ? 8 : 14;
+        float ringDmg = panic ? 5.5f : 7.5f;
+        float ringSpd = panic ? 340.0f : 400.0f;
+        for (int i = 0; i < ringN; i++) {
+            float a = (float)i / (float)ringN * 6.2831853f;
+            fireDir(bullets, cosf(a), sinf(a), ringSpd,
+                    glm::vec3(1.0f, 0.55f, 0.15f), ringDmg);
         }
         state = RRState::RELOAD_SPRINT;
         reloadTimer = 0.0f;
@@ -145,14 +153,23 @@ public:
         bullets.push_back(b);
     }
 
-    void fireShotgun(std::vector<Bullet>& bullets, float nx, float ny) {
+    void fleeFrom(float nx, float ny, float dt, float mul = 1.0f) {
+        worldX -= nx * moveSpeed * mul * dt;
+        worldY -= ny * moveSpeed * mul * dt;
+        clampToScreen();
+    }
+
+    void fireShotgun(std::vector<Bullet>& bullets, float nx, float ny, float dist) {
         float base = atan2f(ny, nx);
         int n = SG_PELLETS + (phase2 ? 2 : 0);
+        if (dist < SG_FLEE_DIST) n = (n > 4) ? 4 : n;
+        float spread = (dist < SG_FLEE_DIST) ? SG_SPREAD * 0.55f : SG_SPREAD;
+        float dmg = (dist < MELEE_NEAR) ? SG_DMG * 0.65f : SG_DMG;
         for (int i = 0; i < n; i++) {
             float t = (n > 1) ? (float)i / (float)(n - 1) : 0.5f;
-            float a = base + (t - 0.5f) * SG_SPREAD;
+            float a = base + (t - 0.5f) * spread;
             fireDir(bullets, cosf(a), sinf(a), SG_BSPEED,
-                    glm::vec3(1.0f, 0.48f, 0.12f), SG_DMG);
+                    glm::vec3(1.0f, 0.48f, 0.12f), dmg);
         }
     }
 
@@ -222,39 +239,60 @@ public:
         float nx = dx / dist, ny = dy / dist;
         spinAng += dt * (phase3 ? 4.5f : (phase2 ? 3.0f : 2.0f));
 
-        if (dist < BODY + 14.0f) playerHP -= (phase3 ? 26.0f : (phase2 ? 22.0f : 18.0f)) * dt;
+        if (dist < BODY + 10.0f)
+            playerHP -= (phase3 ? 12.0f : (phase2 ? 10.0f : 8.0f)) * dt;
+
+        bool nearMelee = dist < MELEE_NEAR;
+        bool midOrFar  = dist >= MELEE_MID;
 
         float spamInt = phase3 ? SPAM_INT * 0.65f : (phase2 ? SPAM_INT * 0.85f : SPAM_INT * 1.15f);
+        if (nearMelee) spamInt *= 2.8f;
+        else if (!midOrFar) spamInt *= 1.6f;
         spamTimer += dt;
-        if (spamTimer >= spamInt) {
+        if (spamTimer >= spamInt && midOrFar) {
             spamTimer = 0.0f;
             fireSpamBurst(bullets, nx, ny);
         }
 
         salvoCd -= dt;
-        if (salvoCd <= 0.0f) {
+        if (salvoCd <= 0.0f && midOrFar) {
             salvoCd = phase3 ? SALVO_CD * 0.55f : (phase2 ? SALVO_CD * 0.75f : SALVO_CD);
             fireEdgeSalvo(bullets, px, py);
         }
 
+        if (nearMelee && state == RRState::ACTIVE &&
+            (weapon == RRWeapon::SNIPER || weapon == RRWeapon::MACHINEGUN)) {
+            enterReload(bullets, true);
+            return;
+        }
+        if (dist < PANIC_DIST && state == RRState::ACTIVE) {
+            enterReload(bullets, true);
+            return;
+        }
+
         assaultCd -= dt;
-        if (state == RRState::ACTIVE && assaultCd <= 0.0f) {
+        if (state == RRState::ACTIVE && assaultCd <= 0.0f && midOrFar) {
             state = RRState::ASSAULT;
             assaultT = 0.0f;
             assaultCd = phase3 ? ASSAULT_CD * 0.7f : ASSAULT_CD;
         }
 
         if (state == RRState::ASSAULT) {
+            if (nearMelee) {
+                state = RRState::ACTIVE;
+                enterReload(bullets, true);
+                return;
+            }
             assaultT += dt;
             strafeMove(nx, ny, dt);
             clampToScreen();
             fireTimer += dt;
-            if (fireTimer >= 0.12f) {
+            if (fireTimer >= 0.16f) {
                 fireTimer = 0.0f;
-                fireShotgun(bullets, nx, ny);
+                fireShotgun(bullets, nx, ny, dist);
                 float a = atan2f(ny, nx) + (float)(rand() % 40 - 20) * 0.01f;
                 fireDir(bullets, cosf(a), sinf(a), MG_BSPEED,
-                        glm::vec3(1.0f, 0.82f, 0.22f), MG_DMG);
+                        glm::vec3(1.0f, 0.82f, 0.22f), MG_DMG * 0.85f);
             }
             if (assaultT >= ASSAULT_DUR) {
                 state = RRState::ACTIVE;
@@ -268,16 +306,18 @@ public:
             float sp = moveSpeed * SPRINT_MULT;
             worldX -= nx * sp * dt;
             worldY -= ny * sp * dt;
-            strafeMove(nx, ny, dt * 0.6f);
+            if (!nearMelee) strafeMove(nx, ny, dt * 0.6f);
             clampToScreen();
             sprintFireTimer += dt;
-            if (sprintFireTimer >= SPRINT_FIRE_INT) {
+            float sfInt = nearMelee ? 0.32f : SPRINT_FIRE_INT;
+            if (sprintFireTimer >= sfInt) {
                 sprintFireTimer = 0.0f;
                 float base = atan2f(ny, nx);
-                for (int i = -3; i <= 3; i++) {
+                int spread = nearMelee ? 2 : 3;
+                for (int i = -spread; i <= spread; i++) {
                     float a = base + (float)i * 0.16f;
                     fireDir(bullets, cosf(a), sinf(a), SPRINT_BSPEED,
-                            glm::vec3(1.0f, 0.42f, 0.28f), 8.0f);
+                            glm::vec3(1.0f, 0.42f, 0.28f), nearMelee ? 5.5f : 7.5f);
                 }
             }
             reloadTimer += dt;
@@ -301,20 +341,26 @@ public:
 
         switch (weapon) {
         case RRWeapon::SHOTGUN: {
-            if (dist > SG_RANGE * 0.92f) {
+            if (dist < SG_FLEE_DIST) {
+                fleeFrom(nx, ny, dt, 1.35f);
+            } else if (dist > SG_RANGE * 0.92f) {
                 worldX += nx * moveSpeed * dt;
                 worldY += ny * moveSpeed * dt;
+                clampToScreen();
             } else {
                 strafeMove(nx, ny, dt);
+                clampToScreen();
             }
-            clampToScreen();
-            if (dist < SG_RANGE) {
+            if (dist < SG_RANGE && dist >= MELEE_NEAR * 0.85f) {
                 fireTimer += dt;
-                if (fireTimer >= SG_INTERVAL) {
+                float interval = (dist < SG_FLEE_DIST) ? 0.36f : SG_INTERVAL;
+                if (fireTimer >= interval) {
                     fireTimer = 0.0f;
-                    fireShotgun(bullets, nx, ny);
-                    if (--ammo <= 0) enterReload(bullets);
+                    fireShotgun(bullets, nx, ny, dist);
+                    if (--ammo <= 0) enterReload(bullets, dist < SG_FLEE_DIST);
                 }
+            } else if (dist < MELEE_NEAR && ammo <= 1) {
+                enterReload(bullets, true);
             }
             break;
         }
@@ -344,12 +390,17 @@ public:
                     }
                     aiming = false;
                     aimDelay = 0.0f;
-                    if (--ammo <= 0) enterReload(bullets);
+                    if (--ammo <= 0) enterReload(bullets, false);
                 }
             }
             break;
         }
         case RRWeapon::MACHINEGUN: {
+            if (dist < SG_FLEE_DIST && (mgTelegraph || mgFiring)) {
+                mgTelegraph = mgFiring = mgZoneLocked = false;
+                enterReload(bullets, true);
+                break;
+            }
             if (mgTelegraph) {
                 if (!mgZoneLocked) { zoneDirX = nx; zoneDirY = ny; mgZoneLocked = true; }
                 warmUpTimer += dt;
@@ -377,7 +428,7 @@ public:
                         fireDir(bullets, cosf(a2), sinf(a2), MG_BSPEED * 0.9f,
                                 glm::vec3(1.0f, 0.55f, 0.15f), MG_DMG * 0.7f);
                     }
-                    if (--ammo <= 0) { mgFiring = false; enterReload(bullets); }
+                    if (--ammo <= 0) { mgFiring = false; enterReload(bullets, false); }
                 }
             }
             break;
@@ -520,8 +571,12 @@ public:
                          1.0f, 0.85f, 0.25f, 0.95f);
         } else if (state != RRState::RELOAD_SPRINT) {
             wchar_t tag[24];
+            float adx = px - worldX, ady = py - worldY;
+            float ad = sqrtf(adx * adx + ady * ady);
             if (state == RRState::ASSAULT)
                 swprintf_s(tag, L"ASSAULT");
+            else if (ad < MELEE_NEAR)
+                swprintf_s(tag, L"PANIC");
             else
                 swprintf_s(tag, L"[%ls %d]", weaponTag(weapon), ammo);
             float tw = g_TextS.Width(tag, 0.48f);
