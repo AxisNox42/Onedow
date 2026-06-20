@@ -11,13 +11,11 @@
 extern TextRenderer g_TextS;
 
 // ─────────────────────────────────────────────────────────────
-// TOTEM.sys — 이름 미정 · 토템 봉인 보스
-//   · 시작 시 토템 4기 랜덤 배치 + 보스 등장
-//   · 토템 생존 중: 보스 무적 / 토템마다 스킬 봉인·스탯 흡수·잡몹 방해
-//   · 토템 전멸 → 일정 시간 보스 본체 공격 가능 → 토템 재생성
-//   · 보스: 순간이동 + 팽창(블랙홀·총으로 깨는 보호막) → 수축(360° 탄막)
-//           + 회전 레이저(가끔 역회전)
-//   · 토템 공격 시: 주변 잡몹 소환 + 보스가 체력 낮은 토템 쪽으로 이동
+// RITE.CORE (TOTEM.sys) — 능력 봉인 의식 보스
+//   · 4 기둥이 화면 중심 링 위를 공전 — 절대 겹치지 않는 궤도 배치
+//   · 기둥 생존 = 보스 무적 / Q·E·R·DRAIN·SPAWN 디버프
+//   · 기둥 전멸 → RITE DOWN(취약) → 웨이브+1 후 재의식
+//   · 보스: 위상이동 · 특이점(보호막) · 수축탄 · 회전 레이저 · 의식망(기둥 연결선)
 // ─────────────────────────────────────────────────────────────
 class TotemBoss {
 public:
@@ -26,12 +24,13 @@ public:
     struct Totem {
         float x = 0.0f, y = 0.0f;
         float targetX = 0.0f, targetY = 0.0f;
-        int   anchorSlot = 0;
+        int   ringSlot = 0;
         float hp = 0.0f, maxHp = 0.0f;
         bool  alive = false;
         TotemKind kind = TotemKind::StatDrain;
         float mobSpawnCd = 0.0f;
         float bobPhase = 0.0f;
+        float hitFlash = 0.0f;
     };
 
     float worldX, worldY;
@@ -39,53 +38,59 @@ public:
     bool  alive = true;
     bool  exploded = false;
     int   screenW, screenH;
+    int   wave = 1;
 
     Totem totems[4];
     std::vector<std::pair<float, float>> mobSpawnQueue;
 
-    // ── 공격 FSM ──
-    enum class Skill { Idle, Teleport, Expand, Contract, Laser };
+    enum class Skill { Idle, PhaseShift, Singularity, Collapse, OrbitBeam, RitePulse };
     Skill skill = Skill::Idle;
     float skillT = 0.0f;
-    float skillCd = 2.5f;
+    float skillCd = 2.2f;
 
     float expandShield = 0.0f, expandShieldMax = 0.0f;
-    float expandPull = 0.0f;          // 0..1 팽창 강도 (렌더·당김)
+    float expandPull = 0.0f;
     float laserAng = 0.0f;
-    float laserSpin = 1.35f;          // rad/s
+    float laserSpin = 1.45f;
     float laserFlipCd = 0.0f;
     bool  protectTotems = false;
     float vulnTimer = 0.0f;
-    float rotateCd = 6.0f;
+    float shuffleCd = 5.5f;
+    float ringAngle = 0.0f;
+    float ringSpin = 0.22f;
+    float ritePulse = 0.0f;
+    struct Ghost { float x, y, life; };
+    std::vector<Ghost> ghosts;
 
-    static constexpr int   N_TOTEM        = 4;
-    static constexpr float BODY           = 62.0f;
-    static constexpr float TOTEM_HIT      = 28.0f;
-    static constexpr float WIN_W          = 200.0f;
-    static constexpr float WIN_H          = 168.0f;
-    static constexpr float WIN_TB         = 12.0f;
-    static constexpr float ANCHOR_RX      = 0.34f;   // 화면 폭 대비
-    static constexpr float ANCHOR_RY      = 0.30f;
-    static constexpr float ROTATE_INT     = 7.5f;
-    static constexpr float DRIFT_SPD      = 145.0f;
-    static constexpr float VULN_WINDOW    = 14.0f;
-    static constexpr float TOTEM_HP_BASE  = 420.0f;
-    static constexpr float STAT_DRAIN     = 0.22f;   // 토템 1기당 피해 −22%
-    static constexpr float EXPAND_T       = 2.8f;
-    static constexpr float EXPAND_TEL     = 0.65f;
-    static constexpr float CONTRACT_T     = 0.45f;
-    static constexpr float LASER_T        = 3.2f;
-    static constexpr float TELEPORT_T     = 0.35f;
-    static constexpr float LASER_LEN      = 920.0f;
-    static constexpr float LASER_HALF     = 14.0f;
-    static constexpr int   BURST_N        = 32;
-    static constexpr float BURST_SPD      = 480.0f;
-    static constexpr float MAP_PAD        = 80.0f;
+    static constexpr int   N_TOTEM     = 4;
+    static constexpr float BODY        = 58.0f;
+    static constexpr float TOTEM_HIT   = 26.0f;
+    static constexpr float WIN_W       = 188.0f;
+    static constexpr float WIN_H       = 158.0f;
+    static constexpr float WIN_TB      = 11.0f;
+    static constexpr float ORBIT_R     = 0.31f;
+    static constexpr float SHUFFLE_INT = 5.5f;
+    static constexpr float DRIFT_SPD   = 165.0f;
+    static constexpr float VULN_BASE   = 11.0f;
+    static constexpr float TOTEM_HP0   = 380.0f;
+    static constexpr float STAT_DRAIN  = 0.20f;
+    static constexpr float EXPAND_T    = 2.6f;
+    static constexpr float EXPAND_TEL  = 0.72f;
+    static constexpr float COLLAPSE_T  = 0.42f;
+    static constexpr float BEAM_T      = 3.0f;
+    static constexpr float SHIFT_T     = 0.42f;
+    static constexpr float PULSE_T     = 0.55f;
+    static constexpr float LASER_LEN   = 880.0f;
+    static constexpr float LASER_HALF  = 13.0f;
+    static constexpr int   BURST_N     = 36;
+    static constexpr float BURST_SPD   = 500.0f;
+    static constexpr float MAP_PAD     = 72.0f;
 
     TotemBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
         worldX = sw * 0.5f;
-        worldY = sh * 0.42f;
+        worldY = sh * 0.40f;
+        ringAngle = (float)(rand() % 628) * 0.01f;
         spawnTotems();
     }
 
@@ -111,57 +116,57 @@ public:
         for (int i = 0; i < N_TOTEM; i++)
             if (totems[i].alive && totems[i].kind == TotemKind::StatDrain) ++n;
         float m = 1.0f - STAT_DRAIN * (float)n;
-        return (m < 0.15f) ? 0.15f : m;
+        return (m < 0.18f) ? 0.18f : m;
     }
 
-    void anchorPos(int slot, float& ax, float& ay) const {
+    float orbitRadius() const {
+        float r = (screenW < screenH ? screenW : screenH) * ORBIT_R;
+        float pad = WIN_W * 0.72f;
+        if (r < pad) r = pad;
+        return r;
+    }
+
+    void ringPos(int slot, float ang, float& ax, float& ay) const {
         float cx = screenW * 0.5f;
         float cy = screenH * 0.40f;
-        float rx = screenW * ANCHOR_RX;
-        float ry = screenH * ANCHOR_RY;
-        float pad = WIN_W * 0.65f;
-        if (rx < pad + 40.0f) rx = pad + 40.0f;
-        if (ry < pad + 40.0f) ry = pad + 40.0f;
-        switch (slot & 3) {
-        case 0: ax = cx;       ay = cy - ry; break;
-        case 1: ax = cx + rx;  ay = cy;       break;
-        case 2: ax = cx;       ay = cy + ry;  break;
-        default: ax = cx - rx; ay = cy;       break;
-        }
+        float R = orbitRadius();
+        float a = ang + (float)(slot & 3) * 1.5707963f;
+        ax = cx + cosf(a) * R;
+        ay = cy + sinf(a) * R * 0.88f;
+        float pad = WIN_W * 0.55f;
         if (ax < pad) ax = pad;
         if (ax > screenW - pad) ax = screenW - pad;
-        if (ay < pad + 20.0f) ay = pad + 20.0f;
-        if (ay > screenH - pad - 60.0f) ay = screenH - pad - 60.0f;
+        if (ay < pad + 16.0f) ay = pad + 16.0f;
+        if (ay > screenH - pad - 72.0f) ay = screenH - pad - 72.0f;
     }
 
-    void assignAnchors(bool snap) {
-        int slots[N_TOTEM] = { 0, 1, 2, 3 };
+    void assignRingSlots(bool snap) {
+        int order[N_TOTEM] = { 0, 1, 2, 3 };
         for (int i = N_TOTEM - 1; i > 0; i--) {
             int j = rand() % (i + 1);
-            int t = slots[i]; slots[i] = slots[j]; slots[j] = t;
+            int t = order[i]; order[i] = order[j]; order[j] = t;
         }
         int si = 0;
         for (int i = 0; i < N_TOTEM; i++) {
             if (!totems[i].alive) continue;
-            totems[i].anchorSlot = slots[si++];
-            anchorPos(totems[i].anchorSlot, totems[i].targetX, totems[i].targetY);
+            totems[i].ringSlot = order[si++];
+            ringPos(totems[i].ringSlot, ringAngle, totems[i].targetX, totems[i].targetY);
             if (snap) { totems[i].x = totems[i].targetX; totems[i].y = totems[i].targetY; }
         }
     }
 
-    void shuffleAnchors() {
-        int aliveIdx[N_TOTEM], na = 0;
-        for (int i = 0; i < N_TOTEM; i++)
-            if (totems[i].alive) aliveIdx[na++] = i;
+    void shuffleRingSlots() {
+        int idx[N_TOTEM], na = 0;
+        for (int i = 0; i < N_TOTEM; i++) if (totems[i].alive) idx[na++] = i;
         if (na < 2) return;
-        int a = aliveIdx[rand() % na], b = aliveIdx[rand() % na];
-        while (b == a && na > 1) b = aliveIdx[rand() % na];
-        if (a == b) return;
-        int tmp = totems[a].anchorSlot;
-        totems[a].anchorSlot = totems[b].anchorSlot;
-        totems[b].anchorSlot = tmp;
-        anchorPos(totems[a].anchorSlot, totems[a].targetX, totems[a].targetY);
-        anchorPos(totems[b].anchorSlot, totems[b].targetX, totems[b].targetY);
+        int a = idx[rand() % na], b = idx[rand() % na];
+        while (b == a) b = idx[rand() % na];
+        int tmp = totems[a].ringSlot;
+        totems[a].ringSlot = totems[b].ringSlot;
+        totems[b].ringSlot = tmp;
+        ringPos(totems[a].ringSlot, ringAngle, totems[a].targetX, totems[a].targetY);
+        ringPos(totems[b].ringSlot, ringAngle, totems[b].targetX, totems[b].targetY);
+        ringSpin = (rand() % 2) ? 0.22f : -0.22f;
     }
 
     void spawnTotems() {
@@ -173,17 +178,19 @@ public:
             int j = rand() % i;
             TotemKind t = pool[i]; pool[i] = pool[j]; pool[j] = t;
         }
+        float hpMul = 1.0f + (float)(wave - 1) * 0.08f;
         for (int k = 0; k < N_TOTEM; k++) {
-            totems[k].maxHp = totems[k].hp = TOTEM_HP_BASE * (0.85f + (float)(rand() % 30) * 0.01f);
+            totems[k].maxHp = totems[k].hp = TOTEM_HP0 * hpMul * (0.9f + (float)(rand() % 20) * 0.01f);
             totems[k].alive = true;
             totems[k].kind = pool[k];
             totems[k].mobSpawnCd = 0.0f;
             totems[k].bobPhase = (float)(rand() % 628) * 0.01f;
+            totems[k].hitFlash = 0.0f;
         }
-        assignAnchors(true);
+        assignRingSlots(true);
         vulnTimer = 0.0f;
         protectTotems = false;
-        rotateCd = ROTATE_INT;
+        shuffleCd = SHUFFLE_INT;
     }
 
     void onTotemDamaged(int idx) {
@@ -191,12 +198,14 @@ public:
         Totem& t = totems[idx];
         if (!t.alive) return;
         protectTotems = true;
-        t.mobSpawnCd -= 0.35f;
+        t.hitFlash = 0.18f;
+        t.mobSpawnCd -= 0.4f;
         if (t.mobSpawnCd <= 0.0f) {
-            t.mobSpawnCd = 1.1f;
-            for (int i = 0; i < 2; i++) {
+            t.mobSpawnCd = 1.0f + (float)(rand() % 40) * 0.02f;
+            int n = (t.kind == TotemKind::MobSpawn) ? 3 : 1;
+            for (int i = 0; i < n; i++) {
                 float a = (float)(rand() % 628) * 0.01f;
-                float d = 60.0f + (float)(rand() % 90);
+                float d = 48.0f + (float)(rand() % 70);
                 mobSpawnQueue.push_back({ t.x + cosf(a) * d, t.y + sinf(a) * d });
             }
         }
@@ -205,10 +214,13 @@ public:
     void onTotemKilled(int idx) {
         if (idx < 0 || idx >= N_TOTEM) return;
         totems[idx].alive = false;
-        if (aliveTotems() > 0) assignAnchors(false);
+        ritePulse = 0.35f;
+        if (aliveTotems() > 0) assignRingSlots(false);
         if (aliveTotems() <= 0) {
-            vulnTimer = VULN_WINDOW;
+            vulnTimer = VULN_BASE + (float)wave * 0.6f;
+            if (vulnTimer > 16.0f) vulnTimer = 16.0f;
             protectTotems = false;
+            wave++;
         }
     }
 
@@ -219,7 +231,9 @@ public:
         b.push_back(bb);
     }
 
-    void teleportRandom() {
+    void phaseShift() {
+        ghosts.push_back({ worldX, worldY, 0.35f });
+        if ((int)ghosts.size() > 8) ghosts.erase(ghosts.begin());
         float m = MAP_PAD + BODY;
         float rx = screenW - 2.0f * m; if (rx < 1.0f) rx = 1.0f;
         float ry = screenH - 2.0f * m; if (ry < 1.0f) ry = 1.0f;
@@ -227,7 +241,7 @@ public:
         worldY = m + (float)(rand() % (int)ry);
     }
 
-    void moveTowardLowestTotem(float dt) {
+    void moveTowardThreatenedTotem(float dt) {
         int best = -1;
         float bestR = 2.0f;
         for (int i = 0; i < N_TOTEM; i++) {
@@ -236,11 +250,10 @@ public:
             if (r < bestR) { bestR = r; best = i; }
         }
         if (best < 0) return;
-        float tx = totems[best].x, ty = totems[best].y;
-        float dx = tx - worldX, dy = ty - worldY;
+        float dx = totems[best].x - worldX, dy = totems[best].y - worldY;
         float d = sqrtf(dx * dx + dy * dy);
         if (d < 1.0f) return;
-        float spd = 210.0f * dt;
+        float spd = 240.0f * dt;
         if (spd > d) spd = d;
         worldX += dx / d * spd;
         worldY += dy / d * spd;
@@ -249,13 +262,36 @@ public:
     void startSkill(Skill s) {
         skill = s;
         skillT = 0.0f;
-        if (s == Skill::Expand) {
-            expandShieldMax = expandShield = maxHp * 0.18f + 800.0f;
+        if (s == Skill::Singularity) {
+            float boost = 1.0f + 0.12f * (float)aliveTotems();
+            expandShieldMax = expandShield = (maxHp * 0.15f + 720.0f) * boost;
             expandPull = 0.0f;
         }
-        if (s == Skill::Laser) {
-            laserAng = (float)(rand() % 628) * 0.01f;
-            laserSpin = (rand() % 2) ? 1.35f : -1.35f;
+        if (s == Skill::OrbitBeam) {
+            laserAng = ringAngle + (float)(rand() % 628) * 0.01f;
+            laserSpin = (rand() % 2) ? 1.45f : -1.45f;
+        }
+    }
+
+    void damageRiteWeb(float px, float py, float dt, float& playerHP) {
+        if (vulnerable() || aliveTotems() < 2) return;
+        int alive[N_TOTEM], na = 0;
+        for (int i = 0; i < N_TOTEM; i++) if (totems[i].alive) alive[na++] = i;
+        for (int a = 0; a < na; a++) {
+            int b = (a + 1) % na;
+            float ax = totems[alive[a]].x, ay = totems[alive[a]].y;
+            float bx = totems[alive[b]].x, by = totems[alive[b]].y;
+            float d = SegDist(px, py, ax, ay, bx, by);
+            if (d < 14.0f) playerHP -= 14.0f * dt;
+        }
+        if (aliveTotems() >= 3) {
+            for (int a = 0; a < na; a++)
+                for (int b = a + 2; b < na; b++) {
+                    float ax = totems[alive[a]].x, ay = totems[alive[a]].y;
+                    float bx = totems[alive[b]].x, by = totems[alive[b]].y;
+                    float d = SegDist(px, py, ax, ay, bx, by);
+                    if (d < 10.0f) playerHP -= 8.0f * dt;
+                }
         }
     }
 
@@ -273,16 +309,17 @@ public:
             }
         }
 
-        // 토템 앵커 교대 — 살아있는 토템끼리 자리 스왑
-        if (aliveTotems() >= 2 && vulnTimer <= 0.0f) {
-            rotateCd -= dt;
-            if (rotateCd <= 0.0f) {
-                rotateCd = ROTATE_INT + (float)(rand() % 50) * 0.04f;
-                shuffleAnchors();
+        ringAngle += ringSpin * dt;
+        if (aliveTotems() >= 2 && !vulnerable()) {
+            shuffleCd -= dt;
+            if (shuffleCd <= 0.0f) {
+                shuffleCd = SHUFFLE_INT + (float)(rand() % 30) * 0.05f;
+                shuffleRingSlots();
             }
         }
         for (int i = 0; i < N_TOTEM; i++) {
             if (!totems[i].alive) continue;
+            ringPos(totems[i].ringSlot, ringAngle, totems[i].targetX, totems[i].targetY);
             float dx = totems[i].targetX - totems[i].x;
             float dy = totems[i].targetY - totems[i].y;
             float d = sqrtf(dx * dx + dy * dy);
@@ -292,18 +329,29 @@ public:
                 totems[i].x += dx / d * step;
                 totems[i].y += dy / d * step;
             }
+            if (totems[i].hitFlash > 0.0f) totems[i].hitFlash -= dt;
+            totems[i].mobSpawnCd -= dt;
         }
 
-        if (protectTotems && aliveTotems() > 0)
-            moveTowardLowestTotem(dt);
-        else
-            protectTotems = false;
+        if (protectTotems && aliveTotems() > 0) moveTowardThreatenedTotem(dt);
+        else protectTotems = false;
 
+        if (ritePulse > 0.0f) ritePulse -= dt;
         laserFlipCd -= dt;
+        for (auto& g : ghosts) g.life -= dt;
+        ghosts.erase(std::remove_if(ghosts.begin(), ghosts.end(),
+                     [](const Ghost& g) { return g.life <= 0.0f; }), ghosts.end());
+
+        damageRiteWeb(px, py, dt, playerHP);
+        if (skill == Skill::RitePulse && ritePulse > 0.4f) {
+            float dx = px - worldX, dy = py - worldY;
+            if (dx * dx + dy * dy < (BODY * 3.2f) * (BODY * 3.2f))
+                playerHP -= 28.0f * dt;
+        }
 
         float ddx = px - worldX, ddy = py - worldY;
         if (vulnerable() && ddx * ddx + ddy * ddy < BODY * BODY)
-            playerHP -= 12.0f * dt;
+            playerHP -= 14.0f * dt;
 
         skillCd -= dt;
         skillT += dt;
@@ -312,74 +360,77 @@ public:
         case Skill::Idle:
             if (skillCd <= 0.0f) {
                 int roll = rand() % 100;
-                if (roll < 22)      startSkill(Skill::Teleport);
-                else if (roll < 48) startSkill(Skill::Expand);
-                else if (roll < 72) startSkill(Skill::Laser);
-                else                startSkill(Skill::Contract);
-                skillCd = 2.0f + (float)(rand() % 80) * 0.025f;
+                int n = aliveTotems();
+                if (roll < 18)                    startSkill(Skill::PhaseShift);
+                else if (roll < 40)               startSkill(Skill::Singularity);
+                else if (roll < 62)               startSkill(Skill::OrbitBeam);
+                else if (roll < 78 && n >= 2)     startSkill(Skill::RitePulse);
+                else                              startSkill(Skill::Collapse);
+                skillCd = 1.9f + (float)(rand() % 60) * 0.03f;
             }
             break;
-        case Skill::Teleport:
-            if (skillT >= TELEPORT_T * 0.5f && skillT - dt < TELEPORT_T * 0.5f)
-                teleportRandom();
-            if (skillT >= TELEPORT_T) { skill = Skill::Idle; skillT = 0.0f; }
+        case Skill::PhaseShift:
+            if (skillT >= SHIFT_T * 0.45f && skillT - dt < SHIFT_T * 0.45f)
+                phaseShift();
+            if (skillT >= SHIFT_T) { skill = Skill::Idle; skillT = 0.0f; }
             break;
-        case Skill::Expand:
+        case Skill::Singularity:
             if (skillT < EXPAND_TEL) {
                 expandPull = skillT / EXPAND_TEL;
             } else {
                 expandPull = 1.0f;
                 float dx = worldX - px, dy = worldY - py;
                 float d = sqrtf(dx * dx + dy * dy);
-                if (d > 40.0f && d < 520.0f) {
-                    float pull = 280.0f * dt * (1.0f - d / 520.0f);
-                    pullX = dx / d * pull;
-                    pullY = dy / d * pull;
+                if (d > 36.0f && d < 500.0f) {
+                    float str = 300.0f * dt * (1.0f - d / 500.0f);
+                    pullX = dx / d * str;
+                    pullY = dy / d * str;
                 }
-                if (skillT >= EXPAND_TEL + EXPAND_T || expandShield <= 0.0f) {
-                    startSkill(Skill::Contract);
-                }
+                if (skillT >= EXPAND_TEL + EXPAND_T || expandShield <= 0.0f)
+                    startSkill(Skill::Collapse);
             }
             break;
-        case Skill::Contract:
-            if (skillT >= CONTRACT_T * 0.5f && skillT - dt < CONTRACT_T * 0.5f) {
+        case Skill::Collapse:
+            if (skillT >= COLLAPSE_T * 0.45f && skillT - dt < COLLAPSE_T * 0.45f) {
                 float off = (float)(rand() % 100) * 0.01f;
                 for (int i = 0; i < BURST_N; i++) {
                     float a = off + (float)i / (float)BURST_N * 6.2831853f;
                     fireDir(bullets, worldX, worldY, cosf(a), sinf(a),
-                            BURST_SPD, glm::vec3(0.95f, 0.35f, 1.0f));
+                            BURST_SPD, glm::vec3(0.92f, 0.28f, 1.0f));
                 }
             }
             expandPull = 0.0f;
-            if (skillT >= CONTRACT_T) { skill = Skill::Idle; skillT = 0.0f; }
+            if (skillT >= COLLAPSE_T) { skill = Skill::Idle; skillT = 0.0f; }
             break;
-        case Skill::Laser:
+        case Skill::OrbitBeam:
             laserAng += laserSpin * dt;
-            if (laserFlipCd <= 0.0f && (rand() % 180) == 0) {
+            if (laserFlipCd <= 0.0f && (rand() % 140) == 0) {
                 laserSpin = -laserSpin;
-                laserFlipCd = 1.8f;
+                laserFlipCd = 1.6f;
             }
             {
                 float lx = cosf(laserAng), ly = sinf(laserAng);
                 float ex = worldX + lx * LASER_LEN, ey = worldY + ly * LASER_LEN;
-                float dist = SegDist(px, py, worldX, worldY, ex, ey);
-                if (dist < LASER_HALF + 18.0f) playerHP -= 22.0f * dt;
+                if (SegDist(px, py, worldX, worldY, ex, ey) < LASER_HALF + 16.0f)
+                    playerHP -= 24.0f * dt;
             }
-            if (skillT >= LASER_T) { skill = Skill::Idle; skillT = 0.0f; }
+            if (skillT >= BEAM_T) { skill = Skill::Idle; skillT = 0.0f; }
+            break;
+        case Skill::RitePulse:
+            if (skillT >= PULSE_T * 0.5f && skillT - dt < PULSE_T * 0.5f)
+                ritePulse = 1.0f;
+            if (skillT >= PULSE_T) { skill = Skill::Idle; skillT = 0.0f; }
             break;
         }
-
-        for (int i = 0; i < N_TOTEM; i++)
-            if (totems[i].alive) totems[i].mobSpawnCd -= dt;
     }
 
     void damageExpandShield(float dmg) {
-        if (skill != Skill::Expand || expandShield <= 0.0f) return;
+        if (skill != Skill::Singularity || expandShield <= 0.0f) return;
         expandShield -= dmg;
         if (expandShield < 0.0f) expandShield = 0.0f;
     }
 
-    bool expanding() const { return skill == Skill::Expand && skillT >= EXPAND_TEL; }
+    bool expanding() const { return skill == Skill::Singularity && skillT >= EXPAND_TEL; }
     float expandShieldFrac() const {
         if (expandShieldMax <= 0.0f) return 0.0f;
         float f = expandShield / expandShieldMax;
@@ -388,229 +439,222 @@ public:
 
     static const wchar_t* totemLabel(TotemKind k) {
         switch (k) {
-        case TotemKind::SealQ:      return L"Q";
-        case TotemKind::SealE:      return L"E";
-        case TotemKind::SealR:      return L"R";
-        case TotemKind::StatDrain:  return L"DRN";
-        case TotemKind::MobSpawn:   return L"SPN";
+        case TotemKind::SealQ:     return L"Q";
+        case TotemKind::SealE:     return L"E";
+        case TotemKind::SealR:     return L"R";
+        case TotemKind::StatDrain: return L"DR";
+        case TotemKind::MobSpawn:  return L"SP";
         default: return L"?";
         }
     }
 
     static const wchar_t* totemWinTitle(TotemKind k) {
         switch (k) {
-        case TotemKind::SealQ:      return L"SEAL.Q";
-        case TotemKind::SealE:      return L"SEAL.E";
-        case TotemKind::SealR:      return L"SEAL.R";
-        case TotemKind::StatDrain:  return L"DRAIN";
-        case TotemKind::MobSpawn:   return L"SPAWN";
-        default: return L"TOTEM";
+        case TotemKind::SealQ:     return L":: BIND.Q";
+        case TotemKind::SealE:     return L":: BIND.E";
+        case TotemKind::SealR:     return L":: BIND.R";
+        case TotemKind::StatDrain: return L":: DRAIN";
+        case TotemKind::MobSpawn:  return L":: SPAWN";
+        default: return L":: RITE";
         }
     }
 
     static void totemColor(TotemKind k, float& r, float& g, float& b) {
-        r = 0.35f; g = 0.75f; b = 0.95f;
         switch (k) {
-        case TotemKind::SealQ:     r = 0.5f; g = 0.8f; b = 1.0f; break;
-        case TotemKind::SealE:     r = 1.0f; g = 0.6f; b = 0.2f; break;
-        case TotemKind::SealR:     r = 0.4f; g = 0.95f; b = 1.0f; break;
-        case TotemKind::StatDrain: r = 0.95f; g = 0.3f; b = 0.55f; break;
-        case TotemKind::MobSpawn:  r = 0.55f; g = 0.95f; b = 0.45f; break;
-        default: break;
+        case TotemKind::SealQ:     r = 0.45f; g = 0.82f; b = 1.0f;  break;
+        case TotemKind::SealE:     r = 1.0f;  g = 0.55f; b = 0.18f; break;
+        case TotemKind::SealR:     r = 0.35f; g = 0.95f; b = 1.0f;  break;
+        case TotemKind::StatDrain: r = 0.95f; g = 0.28f; b = 0.62f; break;
+        case TotemKind::MobSpawn:  r = 0.48f; g = 0.98f; b = 0.42f; break;
+        default: r = 0.7f; g = 0.4f; b = 0.95f; break;
+        }
+    }
+
+    void renderOrbitGuide(float gt) const {
+        if (vulnerable()) return;
+        float cx = screenW * 0.5f, cy = screenH * 0.40f;
+        float R = orbitRadius();
+        float pulse = 0.5f + 0.5f * sinf(gt * 2.2f);
+        const int N = 24;
+        for (int i = 0; i < N; i++) {
+            if ((i & 1) == 0) continue;
+            float a0 = ringAngle + (float)i / (float)N * 6.2831853f;
+            float a1 = ringAngle + (float)(i + 1) / (float)N * 6.2831853f;
+            float x0 = cx + cosf(a0) * R, y0 = cy + sinf(a0) * R * 0.88f;
+            float x1 = cx + cosf(a1) * R, y1 = cy + sinf(a1) * R * 0.88f;
+            drawRect((x0 + x1) * 0.5f - 1.0f, (y0 + y1) * 0.5f - 1.0f,
+                     2.0f, 2.0f, 0.55f, 0.2f, 0.85f, 0.08f + pulse * 0.06f);
+        }
+    }
+
+    void renderRiteWeb(float gt) const {
+        if (vulnerable() || aliveTotems() < 2) return;
+        int alive[N_TOTEM], na = 0;
+        for (int i = 0; i < N_TOTEM; i++) if (totems[i].alive) alive[na++] = i;
+        float pulse = 0.35f + 0.45f * sinf(gt * 6.0f);
+        if (ritePulse > 0.0f) pulse = 0.85f;
+        auto drawEdge = [&](int ia, int ib, float alpha) {
+            float ax = totems[alive[ia]].x, ay = totems[alive[ia]].y;
+            float bx = totems[alive[ib]].x, by = totems[alive[ib]].y;
+            const int SEG = 12;
+            for (int s = 0; s < SEG; s++) {
+                if ((s & 1) == 0) continue;
+                float u0 = (float)s / (float)SEG, u1 = (float)(s + 1) / (float)SEG;
+                float x0 = ax + (bx - ax) * u0, y0 = ay + (by - ay) * u0;
+                float x1 = ax + (bx - ax) * u1, y1 = ay + (by - ay) * u1;
+                drawRect((x0 + x1) * 0.5f - 1.5f, (y0 + y1) * 0.5f - 1.5f,
+                         3.0f, 3.0f, 0.75f, 0.25f, 0.98f, alpha * pulse);
+            }
+        };
+        for (int a = 0; a < na; a++)
+            drawEdge(a, (a + 1) % na, 0.22f);
+        if (na >= 3) {
+            for (int a = 0; a < na; a++)
+                for (int b = a + 2; b < na; b++)
+                    drawEdge(a, b, 0.10f);
         }
     }
 
     void renderCore(float t) const {
-        float pulse = 0.5f + 0.5f * sinf(t * 3.6f);
-        float spin  = t * 0.85f;
+        float pulse = 0.5f + 0.5f * sinf(t * 4.0f);
+        float spin = t * 1.1f;
 
-        // 외곽 오라 — 보라·마젠타 맥동
-        for (int i = 0; i < 3; i++) {
-            float rr = BODY * (1.55f + (float)i * 0.22f + pulse * 0.12f);
-            float a  = 0.10f - (float)i * 0.025f;
-            drawCircle(worldX, worldY, rr, 0.72f, 0.22f, 0.95f, a + pulse * 0.06f);
+        for (auto& g : ghosts) {
+            float a = (g.life > 0.0f) ? g.life / 0.35f : 0.0f;
+            drawCircle(g.x, g.y, BODY * 0.7f, 0.85f, 0.35f, 1.0f, 0.12f * a);
         }
 
-        // 순간이동 잔상
-        if (skill == Skill::Teleport && skillT > TELEPORT_T * 0.35f) {
-            float fade = 1.0f - (skillT - TELEPORT_T * 0.35f) / (TELEPORT_T * 0.65f);
-            if (fade < 0.0f) fade = 0.0f;
-            drawCircle(worldX, worldY, BODY * 1.1f, 0.9f, 0.5f, 1.0f, 0.18f * fade);
-            drawRect(worldX - BODY, worldY - BODY, BODY * 2, BODY * 2,
-                     0.9f, 0.4f, 1.0f, 0.12f * fade);
+        if (vulnerable()) {
+            drawCircle(worldX, worldY, BODY * 1.2f, 1.0f, 0.35f, 0.55f, 0.15f + pulse * 0.1f);
         }
 
-        // 회전 룬 링
-        const int RUNE = 8;
-        for (int i = 0; i < RUNE; i++) {
-            float a = spin + (float)i * 6.2831853f / (float)RUNE;
-            float rx = worldX + cosf(a) * (BODY * 1.05f);
-            float ry = worldY + sinf(a) * (BODY * 1.05f);
-            drawRect(rx - 4.0f, ry - 4.0f, 8.0f, 8.0f,
-                     0.85f, 0.35f, 1.0f, 0.55f + pulse * 0.3f);
-        }
-
-        // 역회전 내환
         for (int i = 0; i < 6; i++) {
-            float a = -spin * 1.4f + (float)i * 1.047f;
-            float ix = worldX + cosf(a) * (BODY * 0.62f);
-            float iy = worldY + sinf(a) * (BODY * 0.62f);
-            drawTriangle(ix, iy, 10.0f, 0.55f, 0.15f, 0.95f, 0.65f);
+            float a = spin + (float)i * 1.047f;
+            float hx = worldX + cosf(a) * BODY * 0.95f;
+            float hy = worldY + sinf(a) * BODY * 0.95f;
+            drawTriangle(hx, hy, 11.0f, 0.65f, 0.18f, 0.95f, 0.5f + pulse * 0.25f);
         }
 
-        // 코어 — 어두운 베이스 + 네온 심장
-        drawRect(worldX - BODY * 0.92f, worldY - BODY * 0.92f,
-                 BODY * 1.84f, BODY * 1.84f, 0.08f, 0.03f, 0.12f, 0.94f);
-        drawNeonBorder(worldX - BODY * 0.92f, worldY - BODY * 0.92f,
-                       BODY * 1.84f, BODY * 1.84f, 0.75f, 0.25f, 0.98f);
-        drawCircle(worldX, worldY, BODY * 0.55f,
-                   0.45f + pulse * 0.35f, 0.12f, 0.55f, 0.88f);
-        drawCircle(worldX, worldY, BODY * 0.28f,
-                   1.0f, 0.55f, 0.95f, 0.75f + pulse * 0.2f);
-        // 십자 슬릿 — 글리치 느낌
-        float sl = BODY * (0.35f + pulse * 0.08f);
-        drawRect(worldX - sl * 0.5f, worldY - 2.5f, sl, 5.0f, 1.0f, 0.9f, 1.0f, 0.7f);
-        drawRect(worldX - 2.5f, worldY - sl * 0.5f, 5.0f, sl, 1.0f, 0.9f, 1.0f, 0.7f);
+        drawCircle(worldX, worldY, BODY * 0.72f, 0.08f, 0.04f, 0.14f, 0.9f);
+        drawNeonBorder(worldX - BODY * 0.72f, worldY - BODY * 0.72f,
+                       BODY * 1.44f, BODY * 1.44f, 0.78f, 0.22f, 0.98f);
+        drawCircle(worldX, worldY, BODY * 0.38f,
+                   0.5f + pulse * 0.3f, 0.1f, 0.55f, 0.85f);
+        drawCircle(worldX, worldY, BODY * 0.16f, 1.0f, 0.92f, 1.0f, 0.7f);
+
+        float tri = BODY * 0.42f;
+        for (int i = 0; i < 3; i++) {
+            float a = -spin * 1.6f + (float)i * 2.094f;
+            float tx = worldX + cosf(a) * tri * 0.55f;
+            float ty = worldY + sinf(a) * tri * 0.55f;
+            drawTriangle(tx, ty, 9.0f, 1.0f, 0.5f, 0.95f, 0.55f);
+        }
 
         if (expanding() && expandShield > 0.0f) {
-            float sf = expandPull * (0.85f + expandShieldFrac() * 0.35f);
-            float rr = BODY * (1.35f + sf * 2.0f);
-            drawCircle(worldX, worldY, rr, 0.12f, 0.04f, 0.18f, 0.14f + expandShieldFrac() * 0.22f);
-            drawNeonBorder(worldX - rr, worldY - rr, rr * 2, rr * 2, 0.85f, 0.15f, 1.0f);
-            // 보호막 arc
-            int segs = 16;
-            for (int i = 0; i < segs; i++) {
-                float u = (float)i / (float)segs * expandShieldFrac();
-                float a0 = -spin + u * 6.2831853f;
-                float r0 = rr * 0.92f;
-                drawRect(worldX + cosf(a0) * r0 - 3, worldY + sinf(a0) * r0 - 3,
-                         6, 6, 0.9f, 0.3f, 1.0f, 0.5f);
-            }
+            float sf = expandPull * (0.9f + expandShieldFrac() * 0.4f);
+            float rr = BODY * (1.25f + sf * 2.2f);
+            drawCircle(worldX, worldY, rr, 0.1f, 0.03f, 0.16f, 0.16f + expandShieldFrac() * 0.2f);
+            drawNeonBorder(worldX - rr, worldY - rr, rr * 2, rr * 2, 0.9f, 0.15f, 1.0f);
         }
+
         if (!vulnerable() && aliveTotems() > 0) {
-            float lockW = BODY * 0.9f;
-            drawRect(worldX - lockW * 0.5f, worldY - BODY - 20.0f,
-                     lockW, 7.0f, 0.95f, 0.2f, 0.35f, 0.85f);
-            drawRect(worldX - 5.0f, worldY - BODY - 28.0f, 10.0f, 10.0f,
-                     0.95f, 0.25f, 0.35f, 0.9f);
+            wchar_t wbuf[16]; swprintf_s(wbuf, L"W%d", wave);
+            float ws = 0.42f;
+            g_TextS.Draw(wbuf, worldX - 10.0f, worldY - BODY - 22.0f, ws, 0.95f, 0.3f, 0.4f, 0.85f);
         }
     }
 
     void renderLinks(float gt) const {
         if (vulnerable() || aliveTotems() <= 0) return;
-        float pulse = 0.45f + 0.35f * sinf(gt * 5.0f);
+        float pulse = 0.4f + 0.35f * sinf(gt * 5.5f);
         for (int i = 0; i < N_TOTEM; i++) {
             if (!totems[i].alive) continue;
             float r, g, b; totemColor(totems[i].kind, r, g, b);
             float tx = totems[i].x, ty = totems[i].y;
-            const int SEG = 10;
+            const int SEG = 8;
             for (int s = 0; s < SEG; s++) {
                 if ((s & 1) == 0) continue;
                 float u0 = (float)s / (float)SEG, u1 = (float)(s + 1) / (float)SEG;
                 float x0 = worldX + (tx - worldX) * u0, y0 = worldY + (ty - worldY) * u0;
                 float x1 = worldX + (tx - worldX) * u1, y1 = worldY + (ty - worldY) * u1;
-                drawRect((x0 + x1) * 0.5f - 1.5f, (y0 + y1) * 0.5f - 1.5f,
-                         3.0f, 3.0f, r, g, b, pulse * 0.55f);
+                drawRect((x0 + x1) * 0.5f - 1.0f, (y0 + y1) * 0.5f - 1.0f,
+                         2.0f, 2.0f, r, g, b, pulse * 0.45f);
             }
         }
     }
 
     void renderTotem(const Totem& tot, float gt) const {
         if (!tot.alive) return;
-        float bob = sinf(gt * 2.8f + tot.bobPhase) * 3.0f;
+        float bob = sinf(gt * 3.0f + tot.bobPhase) * 2.5f;
         float cx = tot.x, cy = tot.y + bob;
-        float pulse = 0.5f + 0.5f * sinf(gt * 4.0f + tot.bobPhase);
+        float pulse = 0.5f + 0.5f * sinf(gt * 4.5f + tot.bobPhase);
         float r, g, b;
         totemColor(tot.kind, r, g, b);
+        float flash = (tot.hitFlash > 0.0f) ? tot.hitFlash / 0.18f : 0.0f;
 
-        // ── 네온 오벨리스크 (창 안에만, 오버플로 없음) ──
-        float coreH = 72.0f, coreW = 14.0f;
-        float baseW = 52.0f;
+        float plat = 38.0f;
+        drawRect(cx - plat * 0.5f, cy + 22.0f, plat, 6.0f, r * 0.12f, g * 0.12f, b * 0.15f, 0.85f);
+        drawNeonBorder(cx - plat * 0.5f, cy + 22.0f, plat, 6.0f, r, g, b);
 
-        // 바닥 육각 발광
-        drawCircle(cx, cy + coreH * 0.38f, baseW * 0.55f,
-                   r * 0.15f, g * 0.15f, b * 0.2f, 0.22f + pulse * 0.1f);
-        for (int i = 0; i < 6; i++) {
-            float a = gt * 0.45f + (float)i * 1.047f;
-            float px = cx + cosf(a) * baseW * 0.48f;
-            float py = cy + coreH * 0.38f + sinf(a) * baseW * 0.28f;
-            drawTriangle(px, py, 7.0f, r, g, b, 0.35f + pulse * 0.25f);
+        for (int i = 0; i < 4; i++) {
+            float a = gt * 0.9f + (float)i * 1.571f;
+            drawRect(cx + cosf(a) * 22.0f - 1.5f, cy + sinf(a) * 14.0f - 1.5f,
+                     3.0f, 3.0f, r, g, b, 0.35f + pulse * 0.3f);
         }
 
-        // 회전 룬 링 (좁게)
-        for (int i = 0; i < 5; i++) {
-            float a = -gt * 1.1f + (float)i * 1.257f;
-            float rx = cx + cosf(a) * 28.0f;
-            float ry = cy + sinf(a) * 18.0f;
-            drawRect(rx - 2.0f, ry - 2.0f, 4.0f, 4.0f, r, g, b, 0.5f + pulse * 0.35f);
-        }
+        float coreH = 58.0f, coreW = 12.0f;
+        drawRect(cx - coreW * 0.5f, cy - coreH * 0.35f, coreW, coreH,
+                 r * 0.2f, g * 0.2f, b * 0.25f, 0.92f);
+        drawRect(cx - 1.5f, cy - coreH * 0.32f, 3.0f, coreH * 0.78f,
+                 r + flash * 0.5f, g + flash * 0.4f, b + flash * 0.3f,
+                 0.6f + pulse * 0.35f);
+        drawTriangle(cx, cy - coreH * 0.38f, 12.0f, r, g, b, 0.92f);
 
-        // 기둥 그림자 + 코어
-        drawRect(cx - coreW * 0.5f - 2, cy - coreH * 0.42f, coreW + 4, coreH,
-                 0.03f, 0.03f, 0.06f, 0.75f);
-        drawRect(cx - coreW * 0.5f, cy - coreH * 0.42f, coreW, coreH,
-                 r * 0.25f, g * 0.25f, b * 0.3f, 0.85f);
-        drawRect(cx - 2.0f, cy - coreH * 0.38f, 4.0f, coreH * 0.82f,
-                 r, g, b, 0.55f + pulse * 0.4f);
-
-        // 상단 크리스탈 캡
-        drawTriangle(cx, cy - coreH * 0.48f, 16.0f, r, g, b, 0.9f);
-        drawTriangle(cx, cy - coreH * 0.44f, 9.0f, 1.0f, 1.0f, 1.0f, 0.55f);
-
-        // 종류별 글리프 (텍스트 대신 도형)
         switch (tot.kind) {
         case TotemKind::SealQ:
         case TotemKind::SealE:
         case TotemKind::SealR: {
             const wchar_t* ch = totemLabel(tot.kind);
-            float sc = 0.62f;
+            float sc = 0.58f;
             float tw = g_TextS.Width(ch, sc);
-            g_TextS.Draw(ch, cx - tw * 0.5f, cy - 6.0f, sc, r, g, b, 0.95f);
-            drawRect(cx - 11.0f, cy + 6.0f, 22.0f, 14.0f, 0.06f, 0.06f, 0.1f, 0.9f);
-            drawRect(cx - 7.0f, cy + 2.0f, 14.0f, 10.0f, r, g, b, 0.75f);
+            g_TextS.Draw(ch, cx - tw * 0.5f, cy - 4.0f, sc, 1, 1, 1, 0.92f);
+            drawRect(cx - 8.0f, cy + 8.0f, 16.0f, 10.0f, 0.05f, 0.05f, 0.08f, 0.9f);
+            drawRect(cx - 5.0f, cy + 10.0f, 10.0f, 6.0f, r, g, b, 0.8f);
             break;
         }
         case TotemKind::StatDrain:
-            drawCircle(cx, cy, 9.0f, r, g, b, 0.45f);
             for (int i = 0; i < 3; i++) {
-                float a = gt * 2.0f + (float)i * 2.094f;
-                drawRect(cx + cosf(a) * 16.0f - 2, cy + sinf(a) * 10.0f - 2,
-                         4, 4, r, g, b, 0.8f);
+                float a = gt * 1.8f + (float)i * 2.094f;
+                drawRect(cx + cosf(a) * 14.0f - 2, cy + sinf(a) * 9.0f - 2,
+                         4, 4, r, g, b, 0.75f);
             }
             break;
         case TotemKind::MobSpawn:
-            for (int i = 0; i < 3; i++) {
-                float ox = cx + ((float)i - 1.0f) * 11.0f;
-                drawCircle(ox, cy + 2.0f, 4.5f, r, g, b, 0.65f + pulse * 0.3f);
-            }
+            for (int i = 0; i < 3; i++)
+                drawCircle(cx + ((float)i - 1.0f) * 9.0f, cy + 4.0f, 3.5f,
+                           r, g, b, 0.55f + pulse * 0.35f);
             break;
         default: break;
         }
 
-        // HP — 기둥 우측 세로 바
         float hf = (tot.maxHp > 0.0f) ? tot.hp / tot.maxHp : 0.0f;
-        float barX = cx + coreW * 0.5f + 8.0f;
-        float barH = coreH * 0.7f;
-        float barY = cy - barH * 0.5f;
-        drawRect(barX, barY, 4.0f, barH, 0.1f, 0.1f, 0.14f, 0.85f);
-        drawRect(barX, barY + barH * (1.0f - hf), 4.0f, barH * hf, r, g, b, 1.0f);
+        drawRect(cx - plat * 0.42f, cy + 30.0f, plat * 0.84f, 3.0f, 0.08f, 0.08f, 0.1f, 0.9f);
+        drawRect(cx - plat * 0.42f, cy + 30.0f, plat * 0.84f * hf, 3.0f, r, g, b, 1.0f);
     }
 
     void renderLaser() const {
-        if (skill != Skill::Laser) return;
+        if (skill != Skill::OrbitBeam) return;
         float lx = cosf(laserAng), ly = sinf(laserAng);
         float ex = worldX + lx * LASER_LEN, ey = worldY + ly * LASER_LEN;
-        const int N = 24;
+        const int N = 20;
         for (int i = 0; i < N; i++) {
-            float u0 = (float)i / (float)N;
-            float u1 = (float)(i + 1) / (float)N;
+            float u0 = (float)i / (float)N, u1 = (float)(i + 1) / (float)N;
             float x0 = worldX + lx * LASER_LEN * u0, y0 = worldY + ly * LASER_LEN * u0;
             float x1 = worldX + lx * LASER_LEN * u1, y1 = worldY + ly * LASER_LEN * u1;
-            float w = LASER_HALF * (1.0f - u0 * 0.4f);
+            float w = LASER_HALF * (1.0f - u0 * 0.45f);
             drawRect((x0 + x1) * 0.5f - w, (y0 + y1) * 0.5f - w, w * 2, w * 2,
-                     1.0f, 0.25f, 0.85f, 0.35f);
+                     0.95f, 0.22f, 0.88f, 0.32f);
         }
-        drawRect(ex - 10, ey - 10, 20, 20, 1.0f, 0.4f, 1.0f, 0.7f);
     }
 
 private:

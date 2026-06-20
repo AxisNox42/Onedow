@@ -28,7 +28,7 @@ inline const wchar_t* DisplayName(int pick) {
     case 6: return L"FIREWALL.sys";
     case 7: return L"C2_RELAY.sys";
     case 8: return L"FORK.worm";
-    case 9: return L"TOTEM.sys";
+    case 9: return L"RITE.CORE";
     default: return L"UNKNOWN.sys";
     }
 }
@@ -73,7 +73,7 @@ inline const wchar_t* Tagline(int pick) {
         L"인바운드 차단 — 아웃바운드 허용",
         L"C2 터미널 — 맵 전역 Agent 교전",
         L"프로세스 포크 — 연쇄 분열",
-        L"토템 봉인 — 스펙 흡수 의식",
+        L"기둥 의식 — Q/E/R 봉인 · 의식망",
     };
     static const wchar_t* EN[10] = {
         L"Memory leak — process swarm",
@@ -85,7 +85,7 @@ inline const wchar_t* Tagline(int pick) {
         L"Inbound blocked — outbound open",
         L"C2 terminal — zombie host relay",
         L"Fork bomb — chained child processes",
-        L"Totem seal — stat drain ritual",
+        L"Pylon rite — skill bind · ritual web",
     };
     static const wchar_t* JP[10] = {
         L"メモリリーク — プロセス増殖",
@@ -97,7 +97,7 @@ inline const wchar_t* Tagline(int pick) {
         L"インバウンド遮断",
         L"C2端末 — ゾンビホスト中継",
         L"フォーク爆弾 — 子プロセス連鎖",
-        L"トーテム封印 — ステータス吸収",
+        L"柱の儀式 — スキル封印 · 儀式網",
     };
     if (pick < 0 || pick > 9) return L"";
     int li = LangIndex();

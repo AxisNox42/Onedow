@@ -150,7 +150,7 @@ float KERNEL_WIN_W = 760.0f;   // 커널: 거대 코어 (큰 창)
 float FIREWALL_WIN_W = 720.0f; // 방화벽: 본체+회전 보호막
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 대형 터미널 + 호스트 링
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창 (PID 체인도 창 안 렌더)
-float TOTEM_WIN_W = 720.0f;    // TOTEM.sys: 코어 + 토템 의식 공간
+float TOTEM_WIN_W = 720.0f;    // RITE.CORE: 코어 + 기둥 의식 공간
 // 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
 float SPAWNER_WIN_W = 300.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
@@ -998,7 +998,7 @@ int main() {
                     if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY, L"FIREWALL.sys");
                     if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
-                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"TOTEM.sys");
+                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"RITE.CORE");
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls 에 의해 종료됨", L"Terminated by %ls", L"%ls により終了" };
                     const wchar_t* UNK[3] = { L"알 수 없는 오류로 종료됨", L"Terminated by unknown error", L"不明なエラーで終了" };
@@ -3151,7 +3151,7 @@ int main() {
                         case 6:  startWarn(6, L"FIREWALL.sys",  bossHpC * 0.7f);  break;
                         case 7:  startWarn(7, L"C2_RELAY.sys",    bossHpC * 0.75f); break;
                         case 8:  startWarn(8, L"FORK.worm",        bossHpC * 0.7f);  break;
-                        case 9:  startWarn(9, L"TOTEM.sys",        bossHpC * 0.72f); break;
+                        case 9:  startWarn(9, L"RITE.CORE",        bossHpC * 0.72f); break;
                         default: startWarn(4, L"POLYMORPH.vir",   polyHpC);        break;
                         }
                     }
@@ -4312,7 +4312,7 @@ int main() {
                  CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f);
         if (g_TotemBoss && g_TotemBoss->alive)
             addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
-                 L"TOTEM.sys", 0.08f,0.04f,0.10f, 0.85f,0.45f,0.95f);
+                 L"RITE.CORE", 0.08f,0.04f,0.10f, 0.85f,0.45f,0.95f);
         // 포탑 창 배경+보더 (최하단, 플레이어 소유라 z-리스트 밖)
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
@@ -5330,6 +5330,8 @@ int main() {
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             auto totemPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
+                tb->renderOrbitGuide(gt);
+                tb->renderRiteWeb(gt);
                 tb->renderLinks(gt);
                 tb->renderCore(gt);
                 tb->renderLaser();
@@ -5674,7 +5676,7 @@ int main() {
                 bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
                 bc = glm::vec3(0.35f, 0.88f, 0.95f);
             } else if (g_TotemBoss && g_TotemBoss->alive) {
-                bn = L"TOTEM.sys";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
+                bn = L"RITE.CORE";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
                 bc = glm::vec3(0.85f, 0.45f, 0.95f);
             }
             int bossPick = -1;
@@ -5688,7 +5690,7 @@ int main() {
                 else if (bn == L"FIREWALL.sys")   bossPick = 6;
                 else if (bn == L"C2_RELAY.sys")   bossPick = 7;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
-                else if (bn == L"TOTEM.sys")             bossPick = 9;
+                else if (bn == L"RITE.CORE")             bossPick = 9;
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
@@ -5732,9 +5734,9 @@ int main() {
                 if (g_TotemBoss && g_TotemBoss->alive) {
                     wchar_t totBuf[64];
                     if (g_TotemBoss->vulnerable())
-                        swprintf_s(totBuf, L"VULN %.0fs", g_TotemBoss->vulnTimer);
+                        swprintf_s(totBuf, L"RITE DOWN %.0fs", g_TotemBoss->vulnTimer);
                     else
-                        swprintf_s(totBuf, L"TOTEM %d/4", g_TotemBoss->aliveTotems());
+                        swprintf_s(totBuf, L"W%d · %d/4", g_TotemBoss->wave, g_TotemBoss->aliveTotems());
                     float ts = 0.55f;
                     float tw = g_TextS.Width(totBuf, ts);
                     g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
@@ -5863,16 +5865,31 @@ int main() {
                                0.35f, 0.85f, 0.25f, 0.2f + 0.15f * prog);
                 }
             } break;
-            case 9: {  // TOTEM — 네 귀퉁이에서 솟는 기둥 + 보라 맥동
-                for (int c = 0; c < 4; c++) {
-                    float cx = (c % 2) ? sw2 - 60.0f : 60.0f;
-                    float cy = (c < 2) ? sh2 - 80.0f : 80.0f;
-                    float th = 30.0f + 120.0f * prog;
-                    drawRect(cx - 12.0f, cy - th, 24.0f, th, wc.r, wc.g, wc.b,
-                             0.15f + 0.2f * blink);
+            case 9: {  // RITE — 궤도 링 + 기둥 + 육각 코어
+                float cx = sw2 * 0.5f, cy = sh2 * 0.5f;
+                float R = (sw2 < sh2 ? sw2 : sh2) * 0.28f;
+                for (int i = 0; i < 16; i++) {
+                    if ((i & 1) == 0) continue;
+                    float a0 = (float)i / 16.0f * 6.283f + t * 0.4f;
+                    float a1 = (float)(i + 1) / 16.0f * 6.283f + t * 0.4f;
+                    float x0 = cx + cosf(a0) * R, y0 = cy + sinf(a0) * R * 0.85f;
+                    float x1 = cx + cosf(a1) * R, y1 = cy + sinf(a1) * R * 0.85f;
+                    drawRect((x0 + x1) * 0.5f - 2, (y0 + y1) * 0.5f - 2, 4, 4,
+                             wc.r, wc.g, wc.b, 0.12f + 0.15f * blink);
                 }
-                drawCircle(sw2 * 0.5f, sh2 * 0.5f, 50.0f + prog * 180.0f,
-                           wc.r, wc.g, wc.b, 0.08f + 0.06f * blink);
+                for (int c = 0; c < 4; c++) {
+                    float a = (float)c * 1.571f + t * 0.5f;
+                    float px = cx + cosf(a) * R, py = cy + sinf(a) * R * 0.85f;
+                    float th = 24.0f + 90.0f * prog;
+                    drawRect(px - 8.0f, py - th * 0.5f, 16.0f, th, wc.r, wc.g, wc.b,
+                             0.18f + 0.22f * blink);
+                }
+                for (int i = 0; i < 6; i++) {
+                    float a = t * 1.2f + (float)i * 1.047f;
+                    float hx = cx + cosf(a) * (38.0f + prog * 22.0f);
+                    float hy = cy + sinf(a) * (38.0f + prog * 22.0f);
+                    drawTriangle(hx, hy, 10.0f, wc.r, wc.g, wc.b, 0.35f + 0.25f * blink);
+                }
             } break;
             default: break;
             }

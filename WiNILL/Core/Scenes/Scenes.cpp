@@ -900,7 +900,7 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 BossOpt bOpts[11] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
                                       {L"Reload",2},{L"Spam",3},{L"Polymorph",4},
                                       {L"Kernel",5},{L"Firewall",6},{L"C2 Relay",7},
-                                      {L"Fork Worm",8},{L"Totem",9} };
+                                      {L"Fork Worm",8},{L"Rite Core",9} };
                 for (int i = 0; i < 11; i++) {
                     int col = i % 5, row = i / 5;
                     float ox = 60.0f + col * (OBW + OBG);
