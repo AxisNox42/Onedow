@@ -76,7 +76,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\01_Study\02_OpenGL\WiNILL\Include;$(ProjectDir)..\Include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -86,7 +86,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;D:\01_Study\02_OpenGL\WiNILL\Lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3_mt.lib;opengl32.lib;user32.lib;gdi32.lib;shell32.lib</AdditionalDependencies>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
     </Link>
@@ -99,7 +99,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\01_Study\02_OpenGL\WiNILL\Include;$(ProjectDir)..\Include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -109,7 +109,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;D:\01_Study\02_OpenGL\WiNILL\Lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3_mt.lib;opengl32.lib;user32.lib;gdi32.lib;shell32.lib</AdditionalDependencies>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
     </Link>
@@ -120,7 +120,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\01_Study\02_OpenGL\WiNILL\Include;$(ProjectDir)..\Include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -130,7 +130,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;D:\01_Study\02_OpenGL\WiNILL\Lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3_mt.lib;opengl32.lib;user32.lib;gdi32.lib;shell32.lib</AdditionalDependencies>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
     </Link>
@@ -143,7 +143,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\01_Study\02_OpenGL\WiNILL\Include;$(ProjectDir)..\Include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -153,66 +153,87 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;D:\01_Study\02_OpenGL\WiNILL\Lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)..\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>glfw3_mt.lib;opengl32.lib;user32.lib;gdi32.lib;shell32.lib</AdditionalDependencies>
       <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\glad.c" />
-    <ClCompile Include="Audio.cpp" />
-    <ClCompile Include="FakeWindow.cpp" />
-    <ClCompile Include="GameManager.cpp" />
+    <ClCompile Include="Core\GameManager.cpp" />
+    <ClCompile Include="Core\Scenes\SceneBoot.cpp" />
+    <ClCompile Include="Core\Scenes\SceneSkills.cpp" />
+    <ClCompile Include="Core\Scenes\SceneUI.cpp" />
+    <ClCompile Include="Core\Scenes\Scenes.cpp" />
+    <ClCompile Include="Core\Scenes\WindowChrome.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="stb_impl.cpp" />
-    <ClCompile Include="WindowFx.cpp" />
+    <ClCompile Include="Render\Camera.cpp" />
+    <ClCompile Include="Render\EntityDraw.cpp" />
+    <ClCompile Include="Render\MainShader.cpp" />
+    <ClCompile Include="Render\stb_impl.cpp" />
+    <ClCompile Include="System\Audio.cpp" />
+    <ClCompile Include="System\FakeWindow.cpp" />
+    <ClCompile Include="System\Input.cpp" />
+    <ClCompile Include="System\WindowFx.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Audio.h" />
-    <ClInclude Include="Augment.h" />
-    <ClInclude Include="Bomber.h" />
-    <ClInclude Include="miniaudio.h" />
-    <ClInclude Include="Boss.h" />
-    <ClInclude Include="Bullet.h" />
-    <ClInclude Include="CollisionSystem.h" />
-    <ClInclude Include="DrawPrim.h" />
-    <ClInclude Include="ExpSystem.h" />
-    <ClInclude Include="FakeWindow.h" />
-    <ClInclude Include="GameManager.h" />
-    <ClInclude Include="GlitchBoss.h" />
-    <ClInclude Include="Monster.h" />
-    <ClInclude Include="MonsterManager.h" />
-    <ClInclude Include="Platform.h" />
-    <ClInclude Include="CrashHandler.h" />
-    <ClInclude Include="Achievements.h" />
-    <ClInclude Include="Codex.h" />
-    <ClInclude Include="IconSystem.h" />
-    <ClInclude Include="Juice.h" />
-    <ClInclude Include="Meta.h" />
-    <ClInclude Include="PlayerStats.h" />
-    <ClInclude Include="PolymorphBoss.h" />
-    <ClInclude Include="RangedMob.h" />
-    <ClInclude Include="ReloadRunnerBoss.h" />
-    <ClInclude Include="SaveSystem.h" />
-    <ClInclude Include="Settings.h" />
-    <ClInclude Include="SpamBoss.h" />
-    <ClInclude Include="KernelBoss.h" />
-    <ClInclude Include="FirewallBoss.h" />
-    <ClInclude Include="BotnetBoss.h" />
-    <ClInclude Include="CentipedeBoss.h" />
-    <ClInclude Include="TrojanKingBoss.h" />
-    <ClInclude Include="TextRenderer.h" />
-    <ClInclude Include="Translations.h" />
-    <ClInclude Include="Weapons.h" />
-    <ClInclude Include="WindowFx.h" />
+    <ClInclude Include="Core\Achievements.h" />
+    <ClInclude Include="Core\Codex.h" />
+    <ClInclude Include="Core\GameContext.h" />
+    <ClInclude Include="Core\Scenes\SceneContext.h" />
+    <ClInclude Include="Core\Scenes\SceneSkills.h" />
+    <ClInclude Include="Core\Scenes\SceneUI.h" />
+    <ClInclude Include="Core\Scenes\Scenes.h" />
+    <ClInclude Include="Core\Scenes\WindowChrome.h" />
+    <ClInclude Include="Core\GameManager.h" />
+    <ClInclude Include="Core\Meta.h" />
+    <ClInclude Include="Entity\Augment.h" />
+    <ClInclude Include="Entity\Bomber.h" />
+    <ClInclude Include="Entity\Boss\Boss.h" />
+    <ClInclude Include="Entity\Boss\BotnetBoss.h" />
+    <ClInclude Include="Entity\Boss\CentipedeBoss.h" />
+    <ClInclude Include="Entity\Boss\TotemBoss.h" />
+    <ClInclude Include="Entity\Boss\FirewallBoss.h" />
+    <ClInclude Include="Entity\Boss\GlitchBoss.h" />
+    <ClInclude Include="Entity\Boss\KernelBoss.h" />
+    <ClInclude Include="Entity\Boss\PolymorphBoss.h" />
+    <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h" />
+    <ClInclude Include="Entity\Boss\SpamBoss.h" />
+    <ClInclude Include="Core\BossDirector.h" />
+    <ClInclude Include="Entity\Bullet.h" />
+    <ClInclude Include="Entity\CollisionSystem.h" />
+    <ClInclude Include="Entity\ExpSystem.h" />
+    <ClInclude Include="Entity\Monster.h" />
+    <ClInclude Include="Entity\MonsterManager.h" />
+    <ClInclude Include="Entity\PlayerStats.h" />
+    <ClInclude Include="Entity\RangedMob.h" />
+    <ClInclude Include="Entity\Weapons.h" />
+    <ClInclude Include="Render\Camera.h" />
+    <ClInclude Include="Render\EntityDraw.h" />
+    <ClInclude Include="Render\MainShader.h" />
+    <ClInclude Include="Render\DrawPrim.h" />
+    <ClInclude Include="Render\IconSystem.h" />
+    <ClInclude Include="Render\Juice.h" />
+    <ClInclude Include="Render\UiColors.h" />
+    <ClInclude Include="Render\UiLayout.h" />
+    <ClInclude Include="Render\TextRenderer.h" />
+    <ClInclude Include="System\Audio.h" />
+    <ClInclude Include="System\CrashHandler.h" />
+    <ClInclude Include="System\FakeWindow.h" />
+    <ClInclude Include="System\Input.h" />
+    <ClInclude Include="System\miniaudio.h" />
+    <ClInclude Include="System\Platform.h" />
+    <ClInclude Include="System\SaveSystem.h" />
+    <ClInclude Include="System\Settings.h" />
+    <ClInclude Include="System\Translations.h" />
+    <ClInclude Include="System\WindowFx.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <!-- 사운드 파일을 빌드 출력 폴더로 복사 (실행파일 기준 Resource\Audio\ 에서 로드) -->
   <Target Name="CopyAudioAssets" AfterTargets="Build">
     <ItemGroup>
       <AudioAssets Include="$(ProjectDir)Resource\Audio\**\*.*" />

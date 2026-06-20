@@ -1,84 +1,214 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="소스 파일">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    <Filter Include="Core">
+      <UniqueIdentifier>{a1b2c3d4-e5f6-7890-abcd-ef1234567890}</UniqueIdentifier>
     </Filter>
-    <Filter Include="헤더 파일">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    <Filter Include="Render">
+      <UniqueIdentifier>{b2c3d4e5-f6a7-8901-bcde-f12345678901}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Entity">
+      <UniqueIdentifier>{c3d4e5f6-a7b8-9012-cdef-123456789012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Entity\Boss">
+      <UniqueIdentifier>{d4e5f6a7-b8c9-0123-def0-234567890123}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="System">
+      <UniqueIdentifier>{e5f6a7b8-c9d0-1234-ef01-345678901234}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Scenes">
+      <UniqueIdentifier>{a7b8c9d0-e1f2-3456-7890-abcdef123456}</UniqueIdentifier>
     </Filter>
     <Filter Include="리소스 파일">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="외부">
+      <UniqueIdentifier>{f6a7b8c9-d0e1-2345-f012-456789012345}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FakeWindow.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp">
-      <Filter>소스 파일</Filter>
+      <Filter>Core</Filter>
     </ClCompile>
-    <ClCompile Include="GameManager.cpp">
-      <Filter>소스 파일</Filter>
+    <ClCompile Include="Core\GameManager.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\SceneBoot.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\SceneUI.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\Scenes.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\WindowChrome.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Render\Camera.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="Render\EntityDraw.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="Render\MainShader.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="Render\stb_impl.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="System\Audio.cpp">
+      <Filter>System</Filter>
+    </ClCompile>
+    <ClCompile Include="System\FakeWindow.cpp">
+      <Filter>System</Filter>
+    </ClCompile>
+    <ClCompile Include="System\WindowFx.cpp">
+      <Filter>System</Filter>
     </ClCompile>
     <ClCompile Include="..\glad.c">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="WindowFx.cpp">
-      <Filter>소스 파일</Filter>
+      <Filter>외부</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FakeWindow.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\Achievements.h">
+      <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="GameManager.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\Codex.h">
+      <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="Augment.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\GameContext.h">
+      <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="Bullet.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\GameManager.h">
+      <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="CollisionSystem.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\Meta.h">
+      <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="DrawPrim.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\Scenes\SceneContext.h">
+      <Filter>Core\Scenes</Filter>
     </ClInclude>
-    <ClInclude Include="ExpSystem.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\Scenes\SceneUI.h">
+      <Filter>Core\Scenes</Filter>
     </ClInclude>
-    <ClInclude Include="Monster.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\Scenes\Scenes.h">
+      <Filter>Core\Scenes</Filter>
     </ClInclude>
-    <ClInclude Include="MonsterManager.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Core\Scenes\WindowChrome.h">
+      <Filter>Core\Scenes</Filter>
     </ClInclude>
-    <ClInclude Include="PlayerStats.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Render\Camera.h">
+      <Filter>Render</Filter>
     </ClInclude>
-    <ClInclude Include="RangedMob.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Render\EntityDraw.h">
+      <Filter>Render</Filter>
     </ClInclude>
-    <ClInclude Include="Settings.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Render\MainShader.h">
+      <Filter>Render</Filter>
     </ClInclude>
-    <ClInclude Include="TextRenderer.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Render\DrawPrim.h">
+      <Filter>Render</Filter>
     </ClInclude>
-    <ClInclude Include="Translations.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Render\IconSystem.h">
+      <Filter>Render</Filter>
     </ClInclude>
-    <ClInclude Include="WindowFx.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Render\Juice.h">
+      <Filter>Render</Filter>
     </ClInclude>
-    <ClInclude Include="Bomber.h">
-      <Filter>헤더 파일</Filter>
+    <ClInclude Include="Render\TextRenderer.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Augment.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Bomber.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Bullet.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\CollisionSystem.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\ExpSystem.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Monster.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\MonsterManager.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\PlayerStats.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\RangedMob.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Weapons.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\Boss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\BotnetBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\CentipedeBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\TotemBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\FirewallBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\GlitchBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\KernelBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\PolymorphBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Boss\SpamBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\BossDirector.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="System\Audio.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\CrashHandler.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\FakeWindow.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\miniaudio.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\Platform.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\SaveSystem.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\Settings.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\Translations.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\WindowFx.h">
+      <Filter>System</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

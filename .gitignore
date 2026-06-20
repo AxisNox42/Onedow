@@ -28,3 +28,18 @@ transparency_debug.txt
 # 런타임 저장 파일
 onedow_save.cfg
 *.cfg
+
+# ── 로컬 AI / 에이전트 ──
+.claude/
+
+# ── main.cpp 복구용 스크래치 (커밋 제외) ──
+WiNILL/_recover_main.cpp
+WiNILL/_git_main_utf8.cpp
+WiNILL/_extract_render.ps1
+WiNILL/_fix_main.ps1
+WiNILL/_patch_main.ps1
+WiNILL/_restore_render.ps1
+WiNILL/_strip_render.ps1
+
+# ── auto-backup hook 상태 ──
+.cursor/hooks/.last-backup

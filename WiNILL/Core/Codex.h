@@ -7,6 +7,23 @@
 #include "Augment.h"   // AUG_TOTAL
 #include "Monster.h"   // MobKind
 #include "Settings.h"  // g_Language, LANG_COUNT
+#include <string>
+#include <cwctype>
+
+extern wchar_t g_CodexSearch[32];
+extern int     g_CodexSearchLen;
+
+inline void CodexSearchClear() { g_CodexSearch[0] = 0; g_CodexSearchLen = 0; }
+
+inline bool CodexMatch(const wchar_t* name) {
+    if (g_CodexSearchLen == 0) return true;
+    std::wstring a(name), b(g_CodexSearch);
+    auto lc = [](std::wstring s) {
+        for (auto& c : s) if (c < 128) c = (wchar_t)towlower(c);
+        return s;
+    };
+    return lc(a).find(lc(b)) != std::wstring::npos;
+}
 
 // ── 증강 발견 (ALL_AUGS 인덱스 기준) ──
 inline bool g_AugSeen[128] = { false };   // ALL_AUGS 인덱스(AUG_TOTAL) 기준 — 여유 128

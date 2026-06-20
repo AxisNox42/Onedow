@@ -7,27 +7,13 @@
 #include "DrawPrim.h"   // 보스 자체 렌더(완전 분리) — drawRect/drawNeonBorder/drawDiamond 등
 
 // ─────────────────────────────────────────────────────────────
-// BUG.proc — 버그 (지네형 보스) — "창(window) 으로 이루어진 거대 웜"
-//   머리 = 큰 가짜 창(BUG.proc), 몸통 = 줄줄이 이어진 작은 가짜 창들.
-//   몸체가 매우 길어 화면을 휘감고 다니는 "진짜 보스" 스케일.
-//
-//   ■ 평상시(배회): 지그재그로 압박(피격 가능 = 딜 타임).
-//   ■ 라이트 견제: 데이터 토사(부채꼴), 데이터 폭주(나선), 플레이어 직선 돌진.
-//   ■ 곡선 돌진: 화면 밖 이탈(무적) → 경로 예고선 → 반대편 곡선 재진입.
-//   ■ 대형 패턴(BIG, 4종 랜덤 로테이션):
-//       0 벽 들이박기 난동(파편 살포 + 진동)         [RAMP]
-//       1 똬리 감기(플레이어를 몸통 링으로 가둠·조임)  [COIL]   ← A1
-//       2 장벽 분할(몸을 가로질러 펴 화면을 반으로)     [WALL]   ← A3
-//       3 잠복 후 솟구침(발밑 예고 → 폭발)             [BURROW] ← B4
-//   ■ 상시: EMP 트레일(고속 이동 중 잔류 감전장)         [EMP]    ← B6
-//           탈피/사출(HP 임계마다 꼬리 마디 → 지뢰 + 가속) [MOLT]   ← A2
-//
-//   설계: 트리플MG/미니건 대시로 "다가오는 머리"를 즉살하지 못하도록
-//         거리 강제·공간 분할·잠복 위주. 받는 피해 35% 감소(dmgTakenMult).
-//         이동이 빠를수록(돌진/탈피 누적) 스킬 쿨다운이 짧아짐(속도 비례).
+// FORK.worm — 플라즈마 포크 체인 (체인형 보스)
+//   네온 노드 + 에너지 케이블이 이어진 긴 보스. OS/가짜창 UI 비주얼 사용 안 함.
+//   실루엣: 시안·마젠타 노드 체인 + 머리 3-prong 포크 글로우.
 // ─────────────────────────────────────────────────────────────
 class CentipedeBoss {
 public:
+    static constexpr const wchar_t* BOSS_NAME = L"FORK.worm";
     float worldX, worldY;          // 머리 위치
     float hp, maxHp;
     bool  alive = true;
@@ -96,21 +82,129 @@ public:
     bool  cannonActive = false;
     float cannonCd = 0.0f, cannonT = 0.0f;
     int   cannonIdx = 0;
-    // ── 새끼 버그 — '작은 지네형 보스'처럼 패턴 가진 추격 adds(자체 관리) ──
+    // ── 자식 프로세스 — 작은 체인 adds(자체 관리) ──
     struct MiniBug { float x, y, heading, hp; bool alive; std::vector<glm::vec2> trail;
                      float wt; int lungeState; float lungeT; };
     std::vector<MiniBug> minis;
     static constexpr float SUMMON_INT  = 9.0f;
     static constexpr int   SUMMON_COUNT = 2;   // 한 번에 2마리
-    static constexpr int   MINI_NSEG   = 5;    // 작은 지네: 머리 + 5마디
+    static constexpr int   MINI_NSEG   = 5;    // 작은 체인: 머리 + 5 PID 칩
     static constexpr int   MINI_STEP   = 4;
     static constexpr float MINI_HEAD   = 26.0f;
     static constexpr float MINI_SPD    = 230.0f;
     static constexpr float MINI_HP0    = 288.0f; // = 기본 커널 프로세스(BRUTE 90*3.2) 체력
-    static constexpr float MINI_WIN_W  = 300.0f; // 새끼 가짜창 크기
+    static constexpr float MINI_WIN_W  = 300.0f; // adds 충돌·조준 반경용
     static constexpr float MINI_WIN_H  = 210.0f;
-    static constexpr float MINI_WIN_TB = 14.0f;  // 얇은 타이틀바
+    static constexpr float MINI_WIN_TB = 14.0f;
+    static constexpr wchar_t MINI_WIN_NAME[] = L"child.exe";
     float summonCd = 0.0f;
+
+    // ── VFX (Gemini 가이드 — OS UI 없이 순수 이펙트) ──
+    float prevWorldX = 0.0f, prevWorldY = 0.0f;
+    struct SegFlash { int seg; float t; };
+    std::vector<SegFlash> segFlashes;
+    struct GhostEcho { float x, y, r, life, maxLife; };
+    std::vector<GhostEcho> ghosts;
+    static constexpr int   MAX_GHOST = 96;
+    struct HitSpark { float x, y, vx, vy, life; };
+    std::vector<HitSpark> hitSparks;
+    struct ErrorNode { float x, y, fuse; bool alive; };
+    std::vector<ErrorNode> errorNodes;
+    float tailDropCd = 0.5f;
+    bool  moltGlitchPulse = false;
+    float glitchOverlay   = 0.0f;
+
+    bool lockOnActive() const {
+        return chargeTelegraph || chargePhase == 1 || state == 2;
+    }
+
+    void onSegHit(int seg, float bx, float by) {
+        for (auto& f : segFlashes)
+            if (f.seg == seg && f.t > 0.02f) return;
+        SegFlash sf; sf.seg = seg; sf.t = 0.05f;
+        segFlashes.push_back(sf);
+        for (int i = 0; i < 2; i++) {
+            float a = (float)(rand() % 628) * 0.01f;
+            HitSpark sp;
+            sp.x = bx; sp.y = by;
+            sp.vx = cosf(a) * (140.0f + (float)(rand() % 60));
+            sp.vy = sinf(a) * (140.0f + (float)(rand() % 60));
+            sp.life = 0.18f;
+            hitSparks.push_back(sp);
+        }
+    }
+
+    void spawnGhost(float x, float y, float r) {
+        if ((int)ghosts.size() >= MAX_GHOST)
+            ghosts.erase(ghosts.begin());
+        GhostEcho g;
+        g.x = x; g.y = y; g.r = r; g.maxLife = g.life = 0.5f;
+        ghosts.push_back(g);
+    }
+
+    void tickVfx(float dt) {
+        for (size_t i = 0; i < segFlashes.size(); ) {
+            segFlashes[i].t -= dt;
+            if (segFlashes[i].t <= 0.0f) segFlashes.erase(segFlashes.begin() + i);
+            else ++i;
+        }
+        for (size_t i = 0; i < ghosts.size(); ) {
+            ghosts[i].life -= dt;
+            if (ghosts[i].life <= 0.0f) ghosts.erase(ghosts.begin() + i);
+            else ++i;
+        }
+        for (size_t i = 0; i < hitSparks.size(); ) {
+            HitSpark& sp = hitSparks[i];
+            sp.life -= dt;
+            sp.x += sp.vx * dt; sp.y += sp.vy * dt;
+            sp.vx *= 0.90f; sp.vy *= 0.90f;
+            if (sp.life <= 0.0f) hitSparks.erase(hitSparks.begin() + i);
+            else ++i;
+        }
+        if (glitchOverlay > 0.0f) glitchOverlay -= dt;
+    }
+
+    // 강제 종료 X — 지직거리는 글리치 아이콘
+    void drawKillMark(float cx, float cy, float r, float tm, bool glitchy) const {
+        float flick = glitchy
+            ? (sinf(tm * 44.0f) > 0.0f ? 1.0f : 0.35f)
+            : (0.82f + 0.18f * sinf(tm * 9.0f));
+        float jx = glitchy ? sinf(tm * 61.0f) * r * 0.08f : 0.0f;
+        float jy = glitchy ? cosf(tm * 53.0f) * r * 0.08f : 0.0f;
+        cx += jx; cy += jy;
+        drawCircle(cx, cy, r * 1.15f, 0.12f, 0.04f, 0.06f, 0.88f);
+        drawCircle(cx, cy, r * 0.92f, 0.22f, 0.06f, 0.08f, 0.75f);
+        auto xArm = [&](float ang) {
+            float ca = cosf(ang), sa = sinf(ang);
+            for (int k = 0; k < 9; k++) {
+                float u = ((float)k / 8.0f - 0.5f) * 1.85f;
+                drawCircle(cx + ca * r * u * 0.48f, cy + sa * r * u * 0.48f,
+                           r * 0.11f, 1.0f, 1.0f, 1.0f, flick);
+            }
+        };
+        xArm(0.785398f);
+        xArm(-0.785398f);
+        if (glitchy) {
+            drawCircle(cx + r * 0.12f, cy - r * 0.08f, r * 0.08f,
+                       1.0f, 0.25f, 0.25f, flick * 0.7f);
+        }
+    }
+
+    bool segFlashing(int seg) const {
+        for (auto& f : segFlashes)
+            if (f.seg == seg && f.t > 0.0f) return true;
+        return false;
+    }
+
+    void drawErrorNode(float cx, float cy, float fuseLeft, float tm) const {
+        float pulse = 0.6f + 0.4f * sinf(tm * 16.0f);
+        float sz = 22.0f + pulse * 3.0f;
+        float warn = fuseLeft < 0.6f ? (0.5f + 0.5f * sinf(tm * 24.0f)) : 0.35f;
+        drawRect(cx - sz, cy - sz * 0.75f, sz * 2.0f, sz * 1.5f, 0.14f, 0.06f, 0.10f, 0.92f);
+        drawRect(cx - sz, cy - sz * 0.75f, sz * 2.0f, sz * 0.28f,
+                 0.85f + warn * 0.15f, 0.18f, 0.22f, 1.0f);
+        drawKillMark(cx, cy, sz * 0.55f, tm, fuseLeft < 0.5f);
+    }
 
     void spawnMini(float ex, float ey, float tx, float ty) {
         MiniBug mb; mb.x = ex; mb.y = ey;
@@ -120,29 +214,75 @@ public:
         minis.push_back(mb);
     }
 
-    // 새끼 한 마리의 본체(마디+머리) — main 이 새끼 창 scissor 안에서 호출
+    // ── 플라즈마 노드 / 케이블 (공용 드로우) ──
+    void drawPlasmaNode(float cx, float cy, float r, float br, float tm, int idx,
+                        bool forkGlow, float forkAng) const {
+        float ph = tm * 5.5f + (float)idx * 0.65f;
+        float pulse = 0.72f + 0.28f * sinf(ph);
+        bool alt = (idx & 1) != 0;
+        float cr = alt ? 0.95f : 0.30f;
+        float cg = alt ? 0.35f : 0.88f;
+        float cb = alt ? 0.75f : 1.00f;
+
+        drawCircle(cx, cy, r * 1.45f, cr * 0.35f, cg * 0.35f, cb * 0.35f, 0.14f * br);
+        drawCircle(cx, cy, r * 1.12f, cr * 0.25f, cg * 0.25f, cb * 0.25f, 0.28f * br);
+        drawDiamond(cx, cy, r * 1.18f, cr * br, cg * br, cb * br, 0.82f);
+        drawCircle(cx, cy, r * 0.62f, 0.12f, 0.08f, 0.16f, 0.92f);
+        drawCircle(cx, cy, r * 0.42f * pulse, cr * pulse, cg * pulse, cb * pulse, 1.0f);
+        drawCircle(cx, cy, r * 0.16f, 1.0f, 0.96f, 1.0f, 1.0f);
+
+        if (forkGlow) {
+            for (int pr = 0; pr < 3; pr++) {
+                float ang = forkAng + (float)pr * 2.094395f;
+                float len = r * 1.55f;
+                for (int k = 1; k <= 5; k++) {
+                    float u = (float)k / 5.0f;
+                    drawCircle(cx + cosf(ang) * len * u, cy + sinf(ang) * len * u,
+                               4.5f - u * 2.0f, cr, cg, cb, 0.55f * br * (1.0f - u * 0.35f));
+                }
+            }
+        }
+    }
+
+    void drawPlasmaLink(glm::vec2 a, glm::vec2 b, float thick, float tm, int idx) const {
+        float dx = b.x - a.x, dy = b.y - a.y;
+        float len = std::sqrt(dx * dx + dy * dy) + 1e-3f;
+        int nd = (int)(len / 11.0f);
+        if (nd < 3) nd = 3;
+        for (int k = 0; k <= nd; k++) {
+            float u = (float)k / (float)nd;
+            float wob = sinf(tm * 9.0f + u * 12.0f + (float)idx) * 2.5f;
+            float pxn = -dy / len, pyn = dx / len;
+            float px = a.x + dx * u + pxn * wob;
+            float py = a.y + dy * u + pyn * wob;
+            float t01 = 0.35f + 0.65f * (1.0f - u);
+            drawCircle(px, py, thick * t01, 0.55f, 0.18f, 0.92f, 0.42f);
+            if (k % 2 == 0)
+                drawCircle(px, py, thick * 0.35f, 0.95f, 0.45f, 0.85f, 0.75f);
+        }
+    }
+
+    // 자식 adds — 축소 플라즈마 체인 (가짜창 없음)
     void drawMini(const MiniBug& mb) const {
+        float tm = (float)mb.x * 0.003f;
+        glm::vec2 prev = glm::vec2(mb.x, mb.y);
         for (int i = MINI_NSEG; i >= 1; i--) {
             int idx = i * MINI_STEP;
             if (idx >= (int)mb.trail.size()) idx = (int)mb.trail.size() - 1;
             if (idx < 0) idx = 0;
             glm::vec2 s = mb.trail[idx];
-            float ssz = MINI_HEAD * (0.5f + 0.5f * (1.0f - (float)(i - 1) / (float)MINI_NSEG));
-            drawDiamond(s.x, s.y, ssz * 1.5f, 0.40f, 0.15f, 0.62f, 1.0f);
-            drawDiamond(s.x, s.y, ssz * 0.75f, 0.75f, 0.4f, 1.0f, 1.0f);
+            float br = 0.55f + 0.45f * (1.0f - (float)(i - 1) / (float)MINI_NSEG);
+            float r = MINI_HEAD * (0.55f - 0.06f * (float)i);
+            drawPlasmaLink(prev, s, 4.5f, tm, i + 100);
+            drawPlasmaNode(s.x, s.y, r, br, tm, i, (i % 3) == 0, mb.heading);
+            prev = s;
         }
-        float dxn = cosf(mb.heading), dyn = sinf(mb.heading), pxn = -dyn, pyn = dxn;
-        float v[6] = {
-            mb.x + dxn*MINI_HEAD*1.4f, mb.y + dyn*MINI_HEAD*1.4f,
-            mb.x + pxn*MINI_HEAD*0.8f, mb.y + pyn*MINI_HEAD*0.8f,
-            mb.x - pxn*MINI_HEAD*0.8f, mb.y - pyn*MINI_HEAD*0.8f };
-        BatchVerts(v, 3, 0.8f, 0.45f, 1.0f, 1.0f);
-        drawDiamond(mb.x, mb.y, MINI_HEAD*0.9f, 0.9f, 0.6f, 1.0f, 1.0f);
+        drawKillMark(mb.x, mb.y, MINI_HEAD * 0.62f, tm, mb.lungeState == 1);
     }
     // 스킬 시전 진동(가벼운 피드백, 눈뽕 X) — main 이 읽고 적용
     float wantShake = 0.0f;
     void shake(float m) { if (m > wantShake) wantShake = m; }
-    // ── 죽은 지네 벽 — 피 깎일 때마다 화면을 가로지르는 '직선' 차단벽(대시로만 통과) ──
+    // ── 크래시 벽 — HP 깎일 때마다 화면 가로지르는 직선 차단(대시로만 통과) ──
     //   시간으로 안 사라짐. 셀 단위로 총 맞으면 그 부분만 뚫림(이동 통로 확보).
     struct WallCell { /* per-cell hp; 0=뚫림 */ };
     struct LineWall {
@@ -216,6 +356,8 @@ public:
         chargeCdTimer = CHARGE_INT * 0.7f;
         bigCd = BIG_INT * 0.5f;
         trail.assign(NSEG * SEG_STEP + 8, glm::vec2(worldX, worldY));
+        prevWorldX = worldX;
+        prevWorldY = worldY;
     }
 
     bool vulnerable() const { return state == 0 || state == 4 || state == 5 || state == 6; }
@@ -356,6 +498,9 @@ public:
                 }
                 activeSeg -= 3; if (activeSeg < 6) activeSeg = 6;
                 shakePulse = true;
+                moltGlitchPulse = true;
+                glitchOverlay = 0.12f;
+                spawnMini(tail.x, tail.y, px, py);
             }
         }
 
@@ -711,6 +856,58 @@ public:
             else ++i;
         }
 
+        // ── 메모리 누수 잔상 + 꼬리 포크배출 + VFX 틱 ──
+        {
+            float mvx = worldX - prevWorldX, mvy = worldY - prevWorldY;
+            float moveSpd = std::sqrt(mvx * mvx + mvy * mvy) / (dt > 1e-4f ? dt : 1e-4f);
+            bool fastMove = moveSpd > 620.0f || state == 1 || state == 3 || state == 4 ||
+                            state == 5 || state == 6 || chargePhase == 2;
+            if (fastMove && !(state == 7 && burrowPhase < 2)) {
+                if (rand() % 2 == 0)
+                    spawnGhost(worldX, worldY, HEAD * 0.85f);
+                for (int gi = 2; gi <= activeSeg; gi += 3)
+                    spawnGhost(segPos(gi).x, segPos(gi).y, segSize(gi) * 1.05f);
+            }
+            prevWorldX = worldX;
+            prevWorldY = worldY;
+        }
+        if (state != 7) {
+            tailDropCd -= dt;
+            if (tailDropCd <= 0.0f) {
+                tailDropCd = 1.0f;
+                glm::vec2 tail = segPos(activeSeg);
+                ErrorNode en; en.x = tail.x; en.y = tail.y; en.fuse = 2.0f; en.alive = true;
+                errorNodes.push_back(en);
+            }
+        }
+        for (size_t i = 0; i < errorNodes.size(); ) {
+            ErrorNode& en = errorNodes[i];
+            if (!en.alive) { errorNodes.erase(errorNodes.begin() + i); continue; }
+            en.fuse -= dt;
+            if (en.fuse <= 0.0f) {
+                for (int d = 0; d < 4; d++) {
+                    float ang = (float)d * 1.5707963f;
+                    fireFrom(bullets, en.x, en.y, cosf(ang), sinf(ang), 270.0f,
+                             glm::vec3(1.0f, 0.35f, 0.55f));
+                }
+                for (int k = 0; k < 8; k++) {
+                    float a = (float)k / 8.0f * 6.2831853f;
+                    HitSpark sp;
+                    sp.x = en.x; sp.y = en.y;
+                    sp.vx = cosf(a) * 220.0f; sp.vy = sinf(a) * 220.0f;
+                    sp.life = 0.25f;
+                    hitSparks.push_back(sp);
+                }
+                Hazard h;
+                h.x = en.x; h.y = en.y; h.maxLife = h.life = 3.0f; h.r = 34.0f;
+                hazards.push_back(h);
+                en.alive = false;
+            }
+            if (!en.alive) errorNodes.erase(errorNodes.begin() + i);
+            else ++i;
+        }
+        tickVfx(dt);
+
         // 궤적 기록
         trail.insert(trail.begin(), glm::vec2(worldX, worldY));
         if ((int)trail.size() > NSEG * SEG_STEP + 8) trail.pop_back();
@@ -740,56 +937,80 @@ public:
         return trail[idx];
     }
 
-    // ── FX 렌더 (창 클리핑 X, 전체 화면) — 지뢰/예고선/잠복 그림자 ──
-    //   경고·장판류는 가짜 창 밖에서도 보여야 하므로 클리핑하지 않음.
-    void renderFx(float t) const {
+    // ── FX 렌더 (창 클리핑 X) — 잔상/에러노드/조준선/벽/함정 ──
+    void renderFx(float t, float aimX, float aimY) const {
         BindMainShader();
 
-        // (00) 죽은 지네 벽 — 화면 가로지르는 직선. 셀=사체 마디(뚫린 셀은 빈칸).
-        //   등장 시 마디가 차례로 떨어져 굳는(사체) 애니메이션.
+        for (const auto& g : ghosts) {
+            float a = (g.maxLife > 0.0f) ? (g.life / g.maxLife) : 0.0f;
+            float sz = g.r * (0.55f + 0.45f * a);
+            drawRect(g.x - sz * 0.6f, g.y - sz * 0.45f, sz * 1.2f, sz * 0.9f,
+                     0.95f, 0.25f, 0.75f, 0.22f * a);
+            drawCircle(g.x, g.y, sz * 0.35f, 0.95f, 0.35f, 0.85f, 0.35f * a);
+        }
+        for (const auto& en : errorNodes) {
+            if (!en.alive) continue;
+            drawErrorNode(en.x, en.y, en.fuse, t);
+        }
+        for (const auto& sp : hitSparks) {
+            float a = sp.life / 0.18f; if (a > 1.0f) a = 1.0f;
+            drawCircle(sp.x, sp.y, 4.5f * a, 0.35f, 0.95f, 1.0f, a);
+            drawCircle(sp.x, sp.y, 2.0f * a, 1.0f, 1.0f, 1.0f, a);
+        }
+        if (lockOnActive() && !(state == 7 && burrowPhase == 1)) {
+            float dx = aimX - worldX, dy = aimY - worldY;
+            float len = std::sqrt(dx * dx + dy * dy) + 1e-3f;
+            int steps = (int)(len / 12.0f);
+            if (steps < 4) steps = 4;
+            float blink = 0.55f + 0.45f * sinf(t * 20.0f);
+            for (int i = 0; i <= steps; i++) {
+                if (i % 2 != 0) continue;
+                float u = (float)i / (float)steps;
+                drawCircle(worldX + dx * u, worldY + dy * u, 2.8f,
+                           0.35f, 0.95f, 1.0f, (0.35f + 0.45f * blink) * (1.0f - u * 0.2f));
+            }
+            drawCircle(aimX, aimY, 7.0f, 0.35f, 0.95f, 1.0f, 0.25f * blink);
+        }
+
+        // (00) 크래시 벽 — 네온 샤드가 직선으로 굳음
         for (const auto& w : walls) {
             int nc = (int)w.cellHp.size();
-            float anim = (w.spawnT > 0.0f) ? (w.spawnT / WALL_ANIM) : 0.0f;   // 1→0
+            float anim = (w.spawnT > 0.0f) ? (w.spawnT / WALL_ANIM) : 0.0f;
             for (int i = 0; i < nc; i++) {
-                if (w.cellHp[i] <= 0) continue;                   // 뚫린 셀 = 통로
+                if (w.cellHp[i] <= 0) continue;
                 float along = ((float)i + 0.5f) * WALL_CELL;
                 float cx = w.horiz ? along : w.coord;
                 float cy = w.horiz ? w.coord : along;
-                // 등장 애니: 마디가 위에서 떨어지듯(인덱스 위상차) + 페이드
                 float delay = anim - (float)i * 0.02f;
-                float drop = (delay > 0.0f) ? delay * 60.0f * sinf((float)i + t * 30.0f) : 0.0f;
+                float drop = (delay > 0.0f) ? delay * 42.0f * sinf((float)i + t * 20.0f) : 0.0f;
                 float ca = (delay > 0.0f) ? (1.0f - delay) : 1.0f; if (ca < 0.2f) ca = 0.2f;
                 float oy = cy + (w.horiz ? drop : 0.0f);
                 float ox = cx + (w.horiz ? 0.0f : drop);
-                float dmg01 = (float)w.cellHp[i] / (float)WALL_CELLHP;   // 닳을수록 어둡게
-                float hsz = WALL_CELL * 0.5f;
-                // 사체 마디(셰브론) — 진행축 정렬. 어두운 죽은 녹색.
-                float fx = w.horiz ? 1.0f : 0.0f, fy = w.horiz ? 0.0f : 1.0f;
-                float pxn = -fy, pyn = fx;
-                float g = 0.30f + 0.35f * dmg01;
-                float v1x = ox + fx*hsz,        v1y = oy + fy*hsz;
-                float v2x = ox + pxn*WALL_THICK, v2y = oy + pyn*WALL_THICK;
-                float v3x = ox - fx*hsz,        v3y = oy - fy*hsz;
-                float v4x = ox - pxn*WALL_THICK, v4y = oy - pyn*WALL_THICK;
-                float vv[6];
-                vv[0]=v1x;vv[1]=v1y; vv[2]=v2x;vv[3]=v2y; vv[4]=v3x;vv[5]=v3y;
-                BatchVerts(vv, 3, 0.10f, 0.06f, g, ca);
-                vv[0]=v1x;vv[1]=v1y; vv[2]=v3x;vv[3]=v3y; vv[4]=v4x;vv[5]=v4y;
-                BatchVerts(vv, 3, 0.10f, 0.06f, g, ca);
-                drawDiamond(ox, oy, WALL_THICK * 0.9f, 0.45f, 0.2f, 0.6f + 0.4f*dmg01, ca);
-                drawDiamond(ox, oy, WALL_THICK * 0.4f, 0.7f, 0.4f, 0.95f, ca);
+                float dmg01 = (float)w.cellHp[i] / (float)WALL_CELLHP;
+                bool alt = (i & 1) != 0;
+                float sr = WALL_CELL * 0.38f;
+                drawCircle(ox, oy, sr * 1.2f, 0.55f, 0.15f, 0.85f, 0.10f * ca);
+                drawDiamond(ox, oy, sr,
+                            alt ? 0.95f : 0.30f, alt ? 0.35f : 0.88f, alt ? 0.75f : 1.0f,
+                            ca * (0.35f + 0.65f * dmg01));
+                drawCircle(ox, oy, sr * 0.35f * dmg01, 1.0f, 0.92f, 1.0f, ca * 0.85f);
             }
         }
 
-        // (0) 탈피 지뢰 — 주황 마름모(접촉 폭발)
+        // (0) 불안정 코어 — 접촉 폭발 (주황 플라즈마 구)
         for (const auto& h : hazards) {
-            float pul = 0.5f + 0.5f * sinf(t * 12.0f + h.x * 0.05f);
-            drawCircle(h.x, h.y, h.r, 1.0f, 0.5f, 0.15f, 0.12f);
-            drawDiamond(h.x, h.y, 22.0f + 6.0f * pul, 1.0f, 0.6f, 0.2f, 0.85f);
-            drawDiamond(h.x, h.y, 10.0f, 1.0f, 0.9f, 0.4f, 1.0f);
+            float pul = 0.5f + 0.5f * sinf(t * 14.0f + h.x * 0.05f);
+            drawCircle(h.x, h.y, h.r * 1.3f, 1.0f, 0.45f, 0.12f, 0.14f);
+            drawCircle(h.x, h.y, h.r * (0.85f + pul * 0.15f), 1.0f, 0.55f, 0.18f, 0.55f);
+            drawCircle(h.x, h.y, h.r * 0.45f, 1.0f, 0.85f, 0.35f, 0.95f);
+            for (int sp = 0; sp < 8; sp++) {
+                float ang = (float)sp / 8.0f * 6.2831853f + t * 2.0f;
+                drawDiamond(h.x + cosf(ang) * h.r * 0.9f, h.y + sinf(ang) * h.r * 0.9f,
+                            10.0f + pul * 4.0f, 1.0f, 0.65f, 0.22f, 0.75f);
+            }
         }
 
-        // (0c) 새끼 버그는 각자 '진짜 가짜창'(월드 비침)으로 main 이 따로 렌더 → 여기선 생략
+        // (0c) child adds 는 centiPass 에서 drawMini 로 렌더
         // (0b) 잠복 발밑 예고 — 솟구침 직전 그림자 링
         if (state == 7 && burrowPhase == 1) {
             float p = stateTimer / BURROW_WARN;
@@ -797,109 +1018,71 @@ public:
             drawCircle(burrowX, burrowY, 30.0f + 80.0f * p, 0.6f, 0.15f, 0.15f, 0.18f + 0.2f * p);
             drawCircle(burrowX, burrowY, 14.0f + 30.0f * p, 1.0f, 0.3f, 0.2f, 0.3f + 0.4f * blink);
         }
-        // (1) 곡선 돌진 예고선 (state==2)
+        // (1) 곡선 돌진 예고 — 플라즈마 궤적
         if (state == 2) {
             float blink = 0.55f + 0.45f * sinf(t * 22.0f);
-            int n = 40;
-            for (int i = 0; i <= n; i++) {
+            int n = 36;
+            glm::vec2 prev = bezier(0.0f);
+            for (int i = 1; i <= n; i++) {
                 glm::vec2 p = bezier((float)i / (float)n);
-                drawCircle(p.x, p.y, 11.0f, 1.0f, 0.3f, 0.18f, 0.30f + 0.22f * blink);
+                drawPlasmaLink(prev, p, 5.0f, t, i);
+                if (i % 3 == 0)
+                    drawPlasmaNode(p.x, p.y, 10.0f + blink * 4.0f, blink, t, i, false, 0.0f);
+                prev = p;
             }
-            int arrows = 7;
-            for (int kk = 1; kk <= arrows; kk++) {
-                float tt = (float)kk / (float)(arrows + 1);
+            int marks = 5;
+            for (int kk = 1; kk <= marks; kk++) {
+                float tt = (float)kk / (float)(marks + 1);
                 glm::vec2 p  = bezier(tt);
-                glm::vec2 pf = bezier(tt + 0.02f);
+                glm::vec2 pf = bezier(tt + 0.025f);
                 float ang = atan2f(pf.y - p.y, pf.x - p.x);
-                float dxn = cosf(ang), dyn = sinf(ang), pxn = -dyn, pyn = dxn;
-                const float L = 34.0f, W = 19.0f;
-                float tx = p.x + dxn*L*0.6f, ty = p.y + dyn*L*0.6f;
-                float b1x = p.x - dxn*L*0.4f + pxn*W, b1y = p.y - dyn*L*0.4f + pyn*W;
-                float b2x = p.x - dxn*L*0.4f - pxn*W, b2y = p.y - dyn*L*0.4f - pyn*W;
-                float v[6] = { tx,ty, b1x,b1y, b2x,b2y };
-                BatchVerts(v, 3, 1.0f, 0.35f, 0.15f, 0.55f + 0.4f*blink);
+                drawDiamond(p.x + cosf(ang) * 14.0f, p.y + sinf(ang) * 14.0f,
+                            14.0f, 1.0f, 0.72f, 0.28f, 0.55f + 0.4f * blink);
             }
         }
-        // (2) 플레이어 직선 돌진 조준선 (chargePhase==1)
+        // (2) 직선 돌진 조준선
         if (chargeTelegraph) {
             float blink = 0.5f + 0.5f * sinf(t * 18.0f);
             float dxn = cosf(heading), dyn = sinf(heading);
-            for (int i = 1; i <= 12; i++) {
-                float tt = (float)i / 12.0f;
-                drawCircle(worldX + dxn*tt*420.0f, worldY + dyn*tt*420.0f,
-                           8.0f + tt*4.0f, 1.0f, 0.25f, 0.15f, 0.35f + 0.45f*blink);
+            glm::vec2 prev = glm::vec2(worldX, worldY);
+            for (int i = 1; i <= 14; i++) {
+                float tt = (float)i / 14.0f;
+                glm::vec2 p(worldX + dxn * tt * 420.0f, worldY + dyn * tt * 420.0f);
+                drawPlasmaLink(prev, p, 4.5f, t, i + 50);
+                if (i % 2 == 0)
+                    drawCircle(p.x, p.y, 7.0f + tt * 3.0f, 1.0f, 0.55f, 0.22f, 0.35f + 0.45f * blink);
+                prev = p;
             }
         }
         BatchFlush();
     }
 
-    // ── 본체 렌더 (가짜 창 안으로 클리핑 — main 이 scissor 적용). 머리+몸통 ──
-    //   창 밖으로 몸통이 삐져나가지 않게 main 에서 WorldScissor 로 감싸 호출.
+    // ── 본체 — 플라즈마 노드 체인 + 포크 코어 ──
     void renderBody(float t) const {
-        if (state == 7 && burrowPhase == 1) return;   // 완전 잠복 = 안 보임
+        if (state == 7 && burrowPhase == 1) return;
         BindMainShader();
-        float sc = (state == 7) ? burrowScale : 1.0f;  // 잠복 가라앉기/솟구침 스케일
+        float sc = (state == 7) ? burrowScale : 1.0f;
 
-        auto tri = [&](float ax, float ay, float bx, float by, float cx, float cy,
-                       float r, float g, float b, float a) {
-            float v[6] = { ax,ay, bx,by, cx,cy };
-            BatchVerts(v, 3, r, g, b, a);
-        };
-
-        // ── 몸통 — PPT 셰브론(한 모서리 파인 육각형) 마디. 진행방향 정렬 → 이어진 지네 ──
-        auto chevron = [&](float cx, float cy, float fx, float fy, float L, float W,
-                           float r, float g, float b) {
-            float pxn = -fy, pyn = fx;                         // 수직(좌우 폭)
-            float v1x = cx + fx*L,          v1y = cy + fy*L;            // 앞 꼭짓점(뾰족)
-            float v2x = cx + pxn*W,         v2y = cy + pyn*W;           // 위 중앙
-            float v3x = cx - fx*L + pxn*W,  v3y = cy - fy*L + pyn*W;    // 위-뒤
-            float v4x = cx - fx*L*0.42f,    v4y = cy - fy*L*0.42f;      // 뒤 노치(파인 모서리)
-            float v5x = cx - fx*L - pxn*W,  v5y = cy - fy*L - pyn*W;    // 아래-뒤
-            float v6x = cx - pxn*W,         v6y = cy - pyn*W;           // 아래 중앙
-            tri(cx, cy, v1x, v1y, v2x, v2y, r, g, b, 1.0f);
-            tri(cx, cy, v2x, v2y, v3x, v3y, r, g, b, 1.0f);
-            tri(cx, cy, v3x, v3y, v4x, v4y, r, g, b, 1.0f);
-            tri(cx, cy, v4x, v4y, v5x, v5y, r, g, b, 1.0f);
-            tri(cx, cy, v5x, v5y, v6x, v6y, r, g, b, 1.0f);
-            tri(cx, cy, v6x, v6y, v1x, v1y, r, g, b, 1.0f);
-        };
-        for (int i = activeSeg; i >= 1; i--) {
+        glm::vec2 prev = glm::vec2(worldX, worldY);
+        for (int i = 1; i <= activeSeg; i++) {
             glm::vec2 s = segPos(i);
             float sz = segSize(i) * sc;
-            glm::vec2 ahead = (i == 1) ? glm::vec2(worldX, worldY) : segPos(i - 1);
-            float fx = ahead.x - s.x, fy = ahead.y - s.y;
-            float fl = std::sqrt(fx*fx + fy*fy);
-            if (fl < 1e-3f) { fx = cosf(heading); fy = sinf(heading); } else { fx /= fl; fy /= fl; }
-            float head01 = 1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1);
-            float br = 0.5f + 0.5f * head01;
-            chevron(s.x, s.y, fx, fy, sz*1.55f, sz*0.95f, 0.28f, 0.08f, 0.42f);   // 외곽(어둠)
-            chevron(s.x, s.y, fx, fy, sz*1.00f, sz*0.58f, 0.55f, 0.22f, 0.95f*br);   // 밝은 코어
+            float br = 0.5f + 0.5f * (1.0f - (float)(i - 1) / (float)(activeSeg > 1 ? activeSeg - 1 : 1));
+            drawPlasmaLink(prev, s, 7.0f, t, i);
+            if (segFlashing(i)) {
+                drawCircle(s.x, s.y, sz * 1.35f, 1.0f, 1.0f, 1.0f, 0.92f);
+                drawCircle(s.x, s.y, sz * 0.9f, 0.35f, 0.95f, 1.0f, 0.55f);
+            } else {
+                drawPlasmaNode(s.x, s.y, sz * 1.05f, br, t, i, (i % 3) == 0, heading);
+            }
+            prev = s;
         }
 
-        // ── 머리 — 진행방향으로 뾰족한 화살촉(레이어드 녹색) + 맥동 코어 ──
         bool dash = (state == 1 || state == 3 || state == 4 || state == 5 ||
                      state == 6 || chargePhase == 2);
-        float pulse = dash ? 1.0f : 0.82f;
-        float dxn = cosf(heading), dyn = sinf(heading), pxn = -dyn, pyn = dxn;
         float H = HEAD * sc;
-        auto arrow = [&](float fwd, float back, float side, float notch,
-                         float r, float g, float b) {
-            float tx  = worldX + dxn*fwd,            ty  = worldY + dyn*fwd;
-            float l1x = worldX - dxn*back + pxn*side, l1y = worldY - dyn*back + pyn*side;
-            float l2x = worldX - dxn*back - pxn*side, l2y = worldY - dyn*back - pyn*side;
-            float nx  = worldX - dxn*(back - notch),  ny  = worldY - dyn*(back - notch);
-            tri(tx, ty, l1x, l1y, nx, ny, r, g, b, 1.0f);
-            tri(tx, ty, nx, ny, l2x, l2y, r, g, b, 1.0f);
-        };
-        float ext = dash ? 0.20f : 0.0f;                                    // 돌진 시 살짝 길게
-        // 뭉툭한 두부 — 앞은 덜 뾰족(짧은 fwd) + 넓은 옆(side) + 둥근 코로 마감
-        arrow(H*(1.15f+ext), H*0.78f, H*1.05f, H*0.40f, 0.22f, 0.06f, 0.34f);   // 외곽(어둠)
-        arrow(H*(0.95f+ext), H*0.58f, H*0.80f, H*0.32f, 0.45f, 0.18f, 0.72f*pulse); // 중간
-        arrow(H*(0.74f+ext), H*0.40f, H*0.55f, H*0.22f, 0.70f, 0.40f, 1.0f*pulse); // 밝은 갑각
-        float cpul = 0.7f + 0.3f * sinf(t * 4.0f);
-        drawCircle(worldX, worldY, H*0.22f, 0.20f, 0.06f, 0.28f, 1.0f);
-        drawCircle(worldX, worldY, H*0.15f, 0.7f, 0.4f*cpul, 1.0f, 1.0f);
-        drawCircle(worldX, worldY, H*0.07f, 1.0f, 0.85f, 1.0f, 1.0f);
+        drawKillMark(worldX, worldY, H * 0.95f, t, lockOnActive() || dash);
+
         BatchFlush();
     }
 };

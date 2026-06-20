@@ -2,8 +2,11 @@
 #include <vector>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <glm/glm.hpp>
 #include "Audio.h"
+#include "Camera.h"
+#include "TextRenderer.h"
 
 // ─────────────────────────────────────────────────────────────
 // 손맛(juice) 공용 시스템 — 데미지 숫자 / 콤보 / 히트스톱 / 화면 플래시
@@ -105,6 +108,110 @@ inline void AddKillCombo() {
     }
 }
 
+// ── 적 사망 폭발 파티클 ──
+struct EnemyParticle {
+    float x, y, vx, vy;
+    float life, maxLife, size;
+    float r, g, b;
+    bool  active = false;
+};
+inline constexpr int MAX_ENEMY_PARTS = 256;
+inline EnemyParticle g_EnemyParts[MAX_ENEMY_PARTS] = {};
+
+inline void SpawnEnemyExplosion(float ex, float ey,
+                                float cr, float cg, float cb, bool big) {
+    SpawnSparks(ex, ey, big ? 8 : 4, 1.0f, 0.95f, 0.7f, big ? 420.0f : 320.0f);
+    int count   = big ? 20 : 10;
+    float baseS = big ? 200.0f : 100.0f;
+    float varS  = big ? 250.0f : 150.0f;
+    float lifeT = big ? 0.45f  : 0.30f;
+    int placed = 0, j = 0;
+    while (placed < count && j < MAX_ENEMY_PARTS) {
+        if (!g_EnemyParts[j].active) {
+            float angle = (float)placed / (float)count * 6.2831853f
+                        + ((float)(rand() % 100) - 50.0f) * 0.012f;
+            float spd   = baseS + (float)(rand() % (int)varS);
+            float sz    = big ? (float)(5 + rand() % 10)
+                              : (float)(3 + rand() % 5);
+            g_EnemyParts[j] = {
+                ex, ey,
+                cosf(angle) * spd, sinf(angle) * spd,
+                lifeT, lifeT, sz, cr, cg, cb, true
+            };
+            ++placed;
+        }
+        ++j;
+    }
+}
+
+// ── 처치 연출 — "프로세스 종료" 플로팅 태그 ──
+struct KillTag {
+    float x, y;
+    float life, maxLife;
+    float r, g, b;
+    float scale;
+    wchar_t text[24];
+    bool  active = false;
+};
+inline constexpr int MAX_KILLTAGS = 24;
+inline KillTag g_KillTags[MAX_KILLTAGS] = {};
+inline float g_KillTagCD = 0.0f;
+
+inline void SpawnKillTag(float x, float y, float r, float g, float b,
+                         const wchar_t* word, bool notable) {
+    if (!notable && g_KillTagCD > 0.0f) return;
+    for (int i = 0; i < MAX_KILLTAGS; i++) {
+        if (g_KillTags[i].active) continue;
+        KillTag& t = g_KillTags[i];
+        t.x = x; t.y = y - 14.0f;
+        t.maxLife = t.life = notable ? 0.9f : 0.6f;
+        t.r = r; t.g = g; t.b = b;
+        t.scale = notable ? 0.8f : 0.58f;
+        wcsncpy_s(t.text, word, _TRUNCATE);
+        t.active = true;
+        if (!notable) g_KillTagCD = 0.05f;
+        return;
+    }
+}
+
+inline void UpdateEnemyFx(float delta) {
+    for (auto& p : g_EnemyParts) {
+        if (!p.active) continue;
+        p.life -= delta;
+        if (p.life <= 0.0f) { p.active = false; continue; }
+        p.x  += p.vx * delta;
+        p.y  += p.vy * delta;
+        p.vx *= (1.0f - 2.5f * delta);
+        p.vy *= (1.0f - 2.5f * delta);
+    }
+    g_KillTagCD -= delta; if (g_KillTagCD < 0.0f) g_KillTagCD = 0.0f;
+    for (auto& t : g_KillTags) {
+        if (!t.active) continue;
+        t.life -= delta;
+        if (t.life <= 0.0f) { t.active = false; continue; }
+        t.y -= 42.0f * delta;
+    }
+}
+
+inline void DrawKillTags(TextRenderer& text, bool visible) {
+    if (!visible) return;
+    for (auto& t : g_KillTags) {
+        if (!t.active) continue;
+        float fr = t.life / t.maxLife;
+        float a  = fr < 0.5f ? (fr / 0.5f) : 1.0f;
+        float sx = W2SX(t.x), sy = W2SY(t.y);
+        float tw = text.Width(t.text, t.scale);
+        text.Draw(t.text, sx - tw * 0.5f, sy, t.scale,
+                  t.r, t.g, t.b, a * 0.95f);
+    }
+}
+
+inline void ResetEnemyFx() {
+    for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
+    for (int i = 0; i < MAX_KILLTAGS; i++) g_KillTags[i].active = false;
+    g_KillTagCD = 0.0f;
+}
+
 // 새 게임/리셋 시 호출
 inline void ResetJuice() {
     g_DmgNumbers.clear();
@@ -115,4 +222,5 @@ inline void ResetJuice() {
     g_RainKillAccum = 0.0f;
     g_HitStopTimer = 0.0f;
     g_FlashIntensity = 0.0f;
+    ResetEnemyFx();
 }

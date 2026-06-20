@@ -1,0 +1,21 @@
+---
+description: 자동 백업 커밋 및 에이전트 git 자율성
+alwaysApply: true
+---
+
+# Git 백업 & 에이전트 자율성
+
+## 자동 백업
+- `.cursor/hooks/auto-backup.ps1` — 에이전트 세션 종료(`stop`) 시 변경 있으면 `backup: YYYY-MM-DD HH:MM:SS (auto)` 커밋
+- 2분 디바운스. 스크래치(`WiNILL/_*.ps1`, `_recover_main.cpp` 등)와 `.claude/`는 제외
+
+## 에이전트 커밋 권한
+- **허용**: 작업 단위 완료·백업·리팩터 마일스톤마다 **로컬 커밋** (push 없이)
+- **금지**: `git push`, `force push`, `reset --hard`, git config 변경 — 사용자 명시 요청 없이 실행하지 않음
+- 커밋 메시지: `backup:` (자동) 또는 `feat:`/`fix:`/`refactor:` (의미 있는 수동 백업)
+
+## 수동 백업
+```powershell
+git add -A
+git commit -m "backup: 설명"
+```

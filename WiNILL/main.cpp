@@ -42,7 +42,8 @@
 #include "FirewallBoss.h"
 #include "BotnetBoss.h"
 #include "CentipedeBoss.h"
-#include "TrojanKingBoss.h"
+#include "TotemBoss.h"
+#include "BossDirector.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
 #include "PlayerStats.h"
@@ -55,6 +56,15 @@
 #include "Weapons.h"
 #include "SaveSystem.h"
 #include "IconSystem.h"
+#include "Camera.h"
+#include "MainShader.h"
+#include "EntityDraw.h"
+#include "Scenes.h"
+#include "SceneContext.h"
+#include "SceneSkills.h"
+#include "Input.h"
+#include "UiLayout.h"
+#include "WindowChrome.h"
 
 #ifdef _MSC_VER
 #pragma comment(lib, "opengl32.lib")
@@ -73,295 +83,25 @@ extern "C++" {
 // (EnableWindowTransparency 와 TransparencyLog 가 동일 기능)
 #define DBG TransparencyLog
 
-// --- 전역 ---
-int   screenWidth  = 0;
-int   screenHeight = 0;
-
-// 화면 줌 (보스 페이즈2 "화면 2배 확장" 등). 1.0=기본, 0.5=2배 확장(전체 절반 크기).
-//   중심 = 화면 중앙. 줌=1 일 때 모든 헬퍼가 항등(identity)이라 기존 동작 그대로.
-float g_ViewZoom       = 1.0f;
-float g_ViewZoomTarget = 1.0f;
-// 줌 중심(픽셀). <=0 이면 화면 중앙. 사망 연출에서 플레이어 창 기준으로 줌인.
-float g_ZoomCX = 0.0f, g_ZoomCY = 0.0f;
-inline float ZCX() { return g_ZoomCX > 0.0f ? g_ZoomCX : screenWidth  * 0.5f; }
-inline float ZCY() { return g_ZoomCY > 0.0f ? g_ZoomCY : screenHeight * 0.5f; }
-// 월드 좌표 → 화면 픽셀 (줌 적용, 줌 중심 기준)
-inline float W2SX(float wx) { return ZCX() + (wx - ZCX()) * g_ViewZoom; }
-inline float W2SY(float wy) { return ZCY() + (wy - ZCY()) * g_ViewZoom; }
-// 가짜창 scissor — 월드 사각형을 줌 적용해 픽셀 scissor 로 (줌=1 이면 기존과 동일)
-inline void WorldScissor(float wx, float wy, float ww, float wh) {
-    BatchFlush();   // 스카이저 바꾸기 전 — 이전 영역 도형 먼저 그림
-    float sx = W2SX(wx), sy = W2SY(wy);
-    float sw = ww * g_ViewZoom, sh = wh * g_ViewZoom;
-    glScissor((GLint)sx, (GLint)(screenHeight - (sy + sh)), (GLint)sw, (GLint)sh);
-}
-// 총알 그리기 — 플레이어 탄은 탄속 비례 잔상(streak) + 머리 원, 적 탄은 원만
-inline void drawBullet(const Bullet& b) {
-    float r = 6.0f * b.sizeScale;
-    // 탄환 세례 — 로켓 스프라이트(진행 방향으로 회전). 텍스처 없으면 기본 원으로 폴백.
-    if (b.rainMissile && g_RainMissileTex) {
-        float z   = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
-        float sx  = W2SX(b.x), sy = W2SY(b.y);
-        float ang = std::atan2(b.dirX, -b.dirY);   // 스프라이트 코(위)를 진행 방향에 정렬
-        float hw  = 13.0f * z, hh = 17.0f * z;
-        // 뒤쪽 옅은 화염 글로우(가시성 ↑ — 로켓이 어두워도 보이게)
-        drawCircle(b.x - b.dirX * 10.0f, b.y - b.dirY * 10.0f, r * 1.3f,
-                   1.0f, 0.6f, 0.2f, 0.5f);
-        BatchFlush();
-        DrawIconRot(g_RainMissileTex, sx, sy, hw, hh, ang,
-                    b.color.r, b.color.g, b.color.b, 1.0f);
-        BindMainShader();
-        return;
-    }
-    if (!b.isEnemy) {
-        float trailLen = b.speed * 0.020f;          // 탄속 빠를수록 잔상 김
-        if (trailLen > 5.0f) {
-            float tx = b.x - b.dirX * trailLen;
-            float ty = b.y - b.dirY * trailLen;
-            float px = -b.dirY * r, py = b.dirX * r;  // 머리 폭(진행방향 수직)
-            float v[6] = { b.x + px, b.y + py, b.x - px, b.y - py, tx, ty };
-            BatchVerts(v, 3, b.color.r, b.color.g, b.color.b, 0.38f);
-        }
-    }
-    // (글로우 헤일로 제거 — 후반 탄막에서 탄환당 추가 드로콜이 가장 큰 부하라 성능 위해 뺌)
-    drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
-}
-
-// 웜(SPLITTER) 사망 분열 — 모든 처치 경로 공용 (총알/레이저/근접/노바).
-//   총알 사망은 메인 사망 루프가 처리하지만, 레이저·근접 스윕은 자체 루프에서 잡몹을
-//   죽이고 UpdateAll 이 곧장 erase 하므로 메인 루프가 못 봄 → 그 자리에서 직접 분열시켜야 함.
-//   반복 중인 monsters 벡터에 직접 push 금지 → 호출처가 임시 벡터로 모아 루프 후 append.
-inline void SpawnWormSplit(Monster* m, std::vector<Monster*>& born) {
-    if (m->kind != MobKind::SPLITTER || m->splitGen >= 2) return;
-    for (int c = 0; c < 2; c++) {
-        Monster* ch = new Monster(m->worldX + (c ? 28.0f : -28.0f), m->worldY,
-                                  1.0f, 1.0f, false);
-        ch->MakeKind(MobKind::SPLITTER, m->splitGen + 1, m->sizeScale * 0.7f);
-        born.push_back(ch);
-    }
-}
-
-// 잡몹 그리기 — 종류별 모양 (일반=세모 / 분열체=초록 원 / 점멸체=점멸 다이아)
-// 사각 윈도우(스크린/월드 좌표 동일) 안에 점이 들어오는지 — 창별 컬링용
-//   각 가짜 창 scissor 패스에서 창 밖 엔티티의 draw call 자체를 건너뛴다.
-static inline bool inWin(float x, float y, float rx, float ry, float rw, float rh,
-                         float margin = 48.0f) {
-    return x >= rx - margin && x <= rx + rw + margin &&
-           y >= ry - margin && y <= ry + rh + margin;
-}
-
-inline void drawMob(const Monster* m) {
-    MarkMobSeen(m->kind);   // 도감 발견 (MobKind 0..8)
-    if      (m->kind == MobKind::DDOS)      MarkMobSeenId(CM_DDOS);
-    else if (m->kind == MobKind::BADSECTOR) MarkMobSeenId(CM_BADSECTOR);
-    else if (m->kind == MobKind::REGERROR)  MarkMobSeenId(CM_REGERROR);
-    float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
-    // 엘리트 오라 (신속=시안 / 강인=금색 / 폭발성=빨강 맥동)
-    if (m->elite) {
-        float gr, gg, gb;
-        if (m->elite == 1)      { gr = 0.35f; gg = 0.9f;  gb = 1.0f; }
-        else if (m->elite == 2) { gr = 1.0f;  gg = 0.85f; gb = 0.2f; }
-        else                    { gr = 1.0f;  gg = 0.3f;  gb = 0.1f; }
-        float pulse = (m->elite == 3)
-                    ? (0.5f + 0.5f * sinf((float)glfwGetTime() * 10.0f)) : 0.55f;
-        drawCircle(m->worldX, m->worldY, base * 1.85f, gr, gg, gb, 0.10f + 0.16f * pulse);
-        drawCircle(m->worldX, m->worldY, base * 1.35f, gr, gg, gb, 0.14f + 0.14f * pulse);
-    }
-    if (m->kind == MobKind::SPLITTER) {
-        drawCircle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawCircle(m->worldX, m->worldY, base*0.42f, 0.05f, 0.22f, 0.08f, 0.9f); // 분할 코어
-    } else if (m->kind == MobKind::BLINKER) {
-        if (m->blinkWarn) {   // 점멸 목표 위치 잔상 (경고)
-            float a = 0.18f + 0.22f * (m->blinkWarnT / Monster::BLINK_WARN);
-            drawDiamond(m->blinkTargetX, m->blinkTargetY, base*1.15f,
-                        m->color.r, m->color.g, m->color.b, a);
-        }
-        drawDiamond(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(m->worldX, m->worldY, base*0.4f, 1.0f, 1.0f, 1.0f, 0.9f);
-    } else if (m->kind == MobKind::CHARGER) {
-        // 준비(텔레그래프) 중엔 깜빡이는 큰 외곽 + 조준선 느낌
-        if (m->chargeState == 1) {
-            float p = 0.5f + 0.5f * sinf((float)glfwGetTime() * 28.0f);
-            drawTriangle(m->worldX, m->worldY, base * (1.5f + 0.4f * p),
-                         1.0f, 0.85f, 0.25f, 0.35f);
-        } else if (m->chargeState == 2) {   // 돌진 중 잔열
-            drawCircle(m->worldX, m->worldY, base * 1.2f, 1.0f, 0.5f, 0.1f, 0.35f);
-        }
-        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawTriangle(m->worldX, m->worldY, base*0.4f, 1.0f, 0.95f, 0.7f, 0.9f);
-    } else if (m->kind == MobKind::WEAVER) {
-        // 회피체 — 시안 다이아 (좌우로 흔들림)
-        drawDiamond(m->worldX, m->worldY, base*0.95f, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(m->worldX, m->worldY, base*0.35f, 1.0f, 1.0f, 1.0f, 0.85f);
-    } else if (m->kind == MobKind::BRUTE) {
-        // 거대체 — 겹친 다이아(보석/장갑) + 네 모서리 장갑 스터드 (원형 바디 없음)
-        float x = m->worldX, y = m->worldY;
-        drawDiamond(x, y, base*1.15f, m->color.r*0.55f, m->color.g*0.55f, m->color.b*0.55f, 1.0f);
-        drawDiamond(x, y, base*0.85f, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.40f, 1.0f, 0.6f, 0.45f, 0.95f);
-        float s = base*0.28f, o = base*0.50f;
-        drawRect(x - o - s*0.5f, y - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-        drawRect(x + o - s*0.5f, y - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-        drawRect(x - s*0.5f, y - o - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-        drawRect(x - s*0.5f, y + o - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-    } else if (m->kind == MobKind::ORBITER) {
-        // 공전체 — 노란 십자(위성) + 중심 다이아
-        float x = m->worldX, y = m->worldY;
-        float bw = base*1.7f, th = base*0.42f;
-        drawRect(x - bw*0.5f, y - th*0.5f, bw, th, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawRect(x - th*0.5f, y - bw*0.5f, th, bw, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.6f, 1.0f, 1.0f, 0.85f, 0.95f);
-    } else if (m->kind == MobKind::SPAWNER) {
-        // 소환체 — 청록 다이아 둥지 + 주위를 도는 작은 세모(알) 3개
-        float x = m->worldX, y = m->worldY;
-        float ph = (float)glfwGetTime() * 1.2f;
-        for (int k = 0; k < 3; k++) {
-            float a = ph + (float)k * 2.0944f;
-            drawTriangle(x + cosf(a) * base*1.35f, y + sinf(a) * base*1.35f,
-                         base*0.45f, m->color.r*1.3f, m->color.g*1.2f, m->color.b*1.2f, 0.95f);
-        }
-        drawDiamond(x, y, base*1.05f, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.5f, 0.04f, 0.18f, 0.13f, 0.95f);
-    } else if (m->kind == MobKind::SHIELDED) {
-        // 보호막체 — 파란 다이아 + 방패 ON 동안 플레이어 방향 부채꼴 실드
-        float x = m->worldX, y = m->worldY;
-        if (m->shieldActive) {
-            float ang = atan2f(m->dashDirY, m->dashDirX);
-            float pulse = 0.4f + 0.15f * sinf((float)glfwGetTime() * 8.0f);
-            drawConeFan(x, y, base*2.0f, ang, 1.0f, 0.35f, 0.75f, 1.0f, pulse);
-        }
-        drawDiamond(x, y, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.4f, 1.0f, 1.0f, 1.0f, 0.85f);
-    } else if (m->kind == MobKind::DDOS) {
-        // 디도스 — 작은 분홍 프로세스(작은 세모 + 코어)
-        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawTriangle(m->worldX, m->worldY, base*0.42f, 1.0f, 0.85f, 0.9f, 0.9f);
-    } else if (m->kind == MobKind::BADSECTOR) {
-        // 배드 섹터 — 육각형(6각) 손상 블록 + 코어
-        float x = m->worldX, y = m->worldY;
-        for (int ring = 0; ring < 2; ring++) {
-            float rr = base * (ring == 0 ? 1.0f : 0.5f);
-            float cr = ring == 0 ? m->color.r : 0.1f;
-            float cg = ring == 0 ? m->color.g : 0.05f;
-            float cb = ring == 0 ? m->color.b : 0.2f;
-            float vx[6], vy[6];
-            for (int s = 0; s < 6; s++) {
-                float a = (float)s * 1.0471976f + 0.5236f;   // 60° 간격
-                vx[s] = x + cosf(a) * rr; vy[s] = y + sinf(a) * rr;
-            }
-            for (int s = 0; s < 6; s++) {
-                int n = (s + 1) % 6;
-                float v[6] = { x, y, vx[s], vy[s], vx[n], vy[n] };
-                BatchVerts(v, 3, cr, cg, cb, 1.0f);
-            }
-        }
-    } else if (m->kind == MobKind::REGERROR) {
-        // 레지스트리 에러 — X형 본체 + 공전 프로세스 + 강화 오라(가짜창)
-        float x = m->worldX, y = m->worldY;
-        float ww = 290.0f;   // 강화 오라 창 (내부 적 강화) — 범위 +50px
-        drawRect(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.5f, 0.1f, 0.1f, 0.09f);
-        drawNeonBorder(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.9f, 0.3f, 0.3f);
-        float ph = (float)glfwGetTime() * 1.6f;
-        // 주변에 작은 네모(프로세스) 공전 — 스파이웨어 느낌 유지
-        for (int k = 0; k < 4; k++) {
-            float a  = ph + (float)k * 1.5708f;
-            float sx = x + cosf(a) * base * 1.5f;
-            float sy = y + sinf(a) * base * 1.5f;
-            float s  = base * 0.36f;
-            drawRect(sx - s*0.5f, sy - s*0.5f, s, s, 1.0f, 0.55f, 0.2f, 0.95f);
-        }
-        // X형 본체 — 회전(스파이웨어와 달리 본체 자체가 돌아감)
-        float xr = ph * 0.6f;
-        for (int d = 0; d < 2; d++) {
-            float a = 0.7854f + (float)d * 1.5708f + xr;   // 45°/135° + 회전
-            float dx = cosf(a), dy = sinf(a), px = -dy, py = dx;
-            float L = base, T = base * 0.28f;
-            float v1x=x+dx*L+px*T, v1y=y+dy*L+py*T, v2x=x+dx*L-px*T, v2y=y+dy*L-py*T;
-            float v3x=x-dx*L+px*T, v3y=y-dy*L+py*T, v4x=x-dx*L-px*T, v4y=y-dy*L-py*T;
-            float va[12]={v1x,v1y,v2x,v2y,v3x,v3y, v2x,v2y,v4x,v4y,v3x,v3y};
-            BatchVerts(va, 6, m->color.r, m->color.g, m->color.b, 1.0f);
-        }
-        drawCircle(x, y, base*0.32f, 1.0f, 0.9f, 0.6f, 1.0f);
-    } else {
-        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-    }
-}
-bool  keys[1024]   = {};
-
 GameManager    g_GameManager;
 MonsterManager g_MonsterManager;
 std::vector<Bullet> g_Bullets;
 
-// ── codex.db 검색창 입력 버퍼 (위키 스타일 앱) ──
-wchar_t g_CodexSearch[32] = {0};
-int     g_CodexSearchLen  = 0;
 // ── 개발자(크리에이티브) 모드 — 도감 검색창 이스터에그로만 해금 ──
 //    출시 빌드엔 크리에이티브 진입점이 숨겨져 있고, 도감 검색에 시크릿 코드를
 //    입력하면 해금되어 난이도 화면에 토글이 등장한다. (일반 플레이어는 못 켬)
 bool    g_DevUnlocked   = false;
 float   g_DevToastTimer = 0.0f;            // 해금 확인 토스트 (초)
-static const wchar_t* DEV_CODE = L"develop_mod";
 // 설정창 볼륨 숫자 직접입력 상태
 bool    g_VolEdit = false;
 wchar_t g_VolBuf[8] = {0};
 int     g_VolLen = 0;
-// GLFW 문자 입력 콜백 — CODEX 검색어 / 설정 볼륨 숫자입력에 누적
-// 마우스 휠 누적 (보유 증강 패널 스크롤 등) — 매 프레임 소비
-float g_ScrollAccum = 0.0f;
-void ScrollCallback(GLFWwindow*, double /*xoff*/, double yoff) {
-    g_ScrollAccum += (float)yoff;
-}
-
-void CodexCharCallback(GLFWwindow*, unsigned int cp) {
-    if (g_VolEdit && g_GameManager.currentState == GameState::SETTINGS) {
-        if (cp >= L'0' && cp <= L'9' && g_VolLen < 3) {   // 0~9, 최대 3자리
-            g_VolBuf[g_VolLen++] = (wchar_t)cp; g_VolBuf[g_VolLen] = 0;
-        }
-        return;
-    }
-    if (g_GameManager.currentState != GameState::CODEX) return;
-    if (cp >= 32 && g_CodexSearchLen < 31) {
-        g_CodexSearch[g_CodexSearchLen++] = (wchar_t)cp;
-        g_CodexSearch[g_CodexSearchLen]   = 0;
-        // 이스터에그 — 시크릿 코드 입력 시 개발(크리에이티브) 모드 해금
-        if (!g_DevUnlocked) {
-            std::wstring s(g_CodexSearch);
-            for (auto& ch : s) if (ch < 128) ch = (wchar_t)towlower(ch);
-            if (s == DEV_CODE) {
-                g_DevUnlocked   = true;
-                g_DevToastTimer = 3.0f;
-                g_CodexSearch[0] = 0; g_CodexSearchLen = 0;   // 검색어 비움
-            }
-        }
-    }
-}
-inline void CodexSearchClear() { g_CodexSearch[0] = 0; g_CodexSearchLen = 0; }
-// 대소문자 무시 부분일치 (ASCII 소문자화). 한글 등은 그대로 비교.
-inline bool CodexMatch(const wchar_t* name) {
-    if (g_CodexSearchLen == 0) return true;
-    std::wstring a(name), b(g_CodexSearch);
-    auto lc = [](std::wstring s){ for (auto& c : s) if (c < 128) c = (wchar_t)towlower(c); return s; };
-    return lc(a).find(lc(b)) != std::wstring::npos;
-}
 PlayerStats    g_Stats;
 bool g_aug1Released = true, g_aug2Released = true, g_aug3Released = true;
 TextRenderer   g_TextL;   // 큰 글자 (증강 이름, 상태 타이틀)
 TextRenderer   g_TextS;   // 작은 글자 (설명, 힌트)
 TextRenderer   g_TextXL;  // 초대형 타이틀(시작창 로고) 전용 — 고해상도 래스터
 
-// 가짜 앱 창 한 개의 '크롬'(배경+고정높이 타이틀바+보더+제목)만 그림.
-//   내용(월드/본체)은 호출측이 별도로. 타이틀바 높이는 항상 동일(WIN_TB).
-static constexpr float WIN_TB = 22.0f;   // 타이틀바 고정 높이(모든 가짜창 공통)
-static void DrawAppWindow(float wx, float wy, float w, float h, const wchar_t* title) {
-    BatchFlush(); glDisable(GL_BLEND);
-    drawRect(wx, wy, w, h, 0.05f, 0.05f, 0.09f, 0.88f);            // 본문(살짝 투명 → 겹쳐도 비침)
-    BatchFlush(); glEnable(GL_BLEND);
-    drawRect(wx, wy, w, WIN_TB, 0.45f, 0.18f, 0.70f, 1.0f);       // 타이틀바(고정 높이)
-    drawNeonBorder(wx, wy, w, h, 0.6f, 0.3f, 0.95f);
-    BatchFlush();
-    if (title) g_TextS.Draw(title, wx + 8.0f, wy + 4.0f, 0.5f, 1.0f, 0.95f, 1.0f, 1.0f);
-    BatchFlush();   // 메인 셰이더로 복귀
-}
 #ifdef _WIN32
 HANDLE         g_FontMemHandle   = nullptr; // Dongle (한국어)
 HANDLE         g_OswaldMemHandle = nullptr; // Oswald (라틴/키릴)
@@ -408,8 +148,9 @@ float POLY_WIN_W   = 840.0f;
 float SPAM_WIN_W   = 660.0f;
 float KERNEL_WIN_W = 760.0f;   // 커널: 거대 코어 (큰 창)
 float FIREWALL_WIN_W = 720.0f; // 방화벽: 본체+회전 보호막
-float BOTNET_WIN_W = 680.0f;   // 봇넷: 본체+공전 프로세스
-float CENTI_WIN_W = 600.0f;    // 지네: 본체 가짜 창 (몸통도 이 창 안으로만 렌더)
+float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 대형 터미널 + 호스트 링
+float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창 (PID 체인도 창 안 렌더)
+float TOTEM_WIN_W = 720.0f;    // TOTEM.sys: 코어 + 토템 의식 공간
 // 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
 float SPAWNER_WIN_W = 300.0f;
 // 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
@@ -521,13 +262,11 @@ SpamBoss* g_SpamBoss = nullptr;
 KernelBoss* g_KernelBoss = nullptr;
 // FIREWALL.sys 보스 (방어형 — 회전 보호막, 가변속도) — 별도 관리
 FirewallBoss* g_FirewallBoss = nullptr;
-// BOTNET.exe 보스 (물량형 — 공전 프로세스 투척) — 별도 관리
+// C2_RELAY.sys 보스 (C&C 터미널 — 좀비 호스트 릴레이) — 별도 관리
 BotnetBoss* g_BotnetBoss = nullptr;
-// BUG.proc 보스 (지네형 — 지그재그 배회 + 벽 돌진) — 별도 관리
+// FORK.worm 보스 (프로세스 체인 — 지그재그 배회 + 벽 돌진) — 별도 관리
 CentipedeBoss* g_CentiBoss = nullptr;
-// Trojan_king.vir 보스 (체스 — 킹 DPS체크 + 기물 adds) — 별도 관리
-TrojanKingBoss* g_TrojanBoss = nullptr;
-
+TotemBoss* g_TotemBoss = nullptr;
 // ── 배드 섹터 사망 잔류물 — 임시 감속 구역(손상 영역). 안에 있으면 이동속도 -10% ──
 //   즉시 생기지 않고 ZONE_OPEN(0.7초)에 걸쳐 점점 부식되어 퍼짐(grow factor = age/OPEN).
 struct SlowZone { float x, y, w, h, life, maxLife, age; };
@@ -561,11 +300,12 @@ constexpr float NOVA_R      = 240.0f;  // 기본 반경(중첩 시 확대)
 //   전조 동안 게임플레이는 계속(텔레그래프). 만료 시 결정된 보스를 실제로 생성.
 float          g_BossWarnTimer = 0.0f;          // >0 이면 전조 진행 중 (남은 시간)
 constexpr float BOSS_WARN_DUR  = 2.5f;
-int            g_BossWarnPick   = -1;           // 0슬라임 1글리치 2리로드 3스팸 4폴리 (통일 인덱스)
+int            g_BossWarnPick   = -1;           // 0~8 보스 통일 인덱스 (4=폴리)
 const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
 float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
 // 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
 bool g_SlimeWasP2 = false, g_GlitchWasP2 = false, g_RRWasP2 = false, g_SpamWasP2 = false;
+bool g_BotnetWasP2 = false;
 // 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
 float     g_P2ToastTimer = 0.0f;
 glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
@@ -582,10 +322,6 @@ float g_HurtVignette  = 0.0f;     // 피격 빨간 비네트 잔여
 float g_HpBarPop      = 0.0f;     // 산나비식 HP 게이지바 — 피격 시 떴다가 페이드(초)
 
 // ── 액티브 스킬 시스템 — 대시(기본) + 슬롯 3개(증강 획득, 꽉 차면 교체) ──
-enum class SkillType { NONE, CLOSE_WINDOW, OVERCLOCK, TIME_STOP };
-struct SkillSlot { SkillType type = SkillType::NONE; float cd = 0.0f; }; // cd = 남은 쿨다운
-SkillSlot g_Skills[3];
-int   g_SkillReplaceIdx = 0;       // 슬롯 꽉 찼을 때 교체할 슬롯(순환)
 float g_DashCd        = 0.0f;      // 대시 쿨다운
 float g_DashInvuln    = 0.0f;      // 대시 무적 잔여
 float g_PostPickGrace = 0.0f;      // C14: 증강 픽 후 짧은 유예(무적+발사억제)로 복귀 텀
@@ -602,20 +338,6 @@ static float SkillCooldownMax(SkillType t) {
     case SkillType::TIME_STOP:    return 28.0f;
     default:                      return 0.0f;
     }
-}
-static SkillType SkillForAug(AugType a) {
-    if (a == AugType::SKILL_CLOSE)     return SkillType::CLOSE_WINDOW;
-    if (a == AugType::SKILL_OVERCLOCK) return SkillType::OVERCLOCK;
-    if (a == AugType::SKILL_TIMESTOP)  return SkillType::TIME_STOP;
-    return SkillType::NONE;
-}
-static void EquipSkill(SkillType t) {
-    if (t == SkillType::NONE) return;
-    for (int i = 0; i < 3; i++) if (g_Skills[i].type == t) return;      // 이미 보유
-    for (int i = 0; i < 3; i++) if (g_Skills[i].type == SkillType::NONE) {
-        g_Skills[i] = { t, 0.0f }; return; }
-    g_Skills[g_SkillReplaceIdx] = { t, 0.0f };                          // 꽉 참 → 순환 교체
-    g_SkillReplaceIdx = (g_SkillReplaceIdx + 1) % 3;
 }
 static void ResetSkills() {
     for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
@@ -677,135 +399,6 @@ int g_CurrentWeapon = -1;
 // 값 = 전환할 StartWeapon 인덱스. -1 = 이번 라운드는 변환 카드 없음
 int g_ConversionWeapon = -1;
 
-// ── UI 버튼 헬퍼 ─────────────────────────────────────────────
-// 호버 시 밝아짐 + 테두리 강조. 클릭 release 시 true 반환 (한 번)
-// 호출 시점 마우스 좌표 mx,my 와 lmb 상태를 외부에서 받아옴
-static bool UIButton(float x, float y, float w, float h, const wchar_t* label,
-                     double mx, double my, bool lmb, bool lmbPrev,
-                     bool selected = false)
-{
-    BindMainShader();  // 직전 text 그리기로 shader 바뀌었을 수 있음
-
-    bool hover = (mx >= x && mx <= x + w && my >= y && my <= y + h);
-
-    // 배경
-    float br = selected ? 0.32f : (hover ? 0.22f : 0.10f);
-    float bg = selected ? 0.32f : (hover ? 0.22f : 0.10f);
-    float bb = selected ? 0.40f : (hover ? 0.28f : 0.14f);
-    drawRect(x, y, w, h, br, bg, bb, 0.92f);
-
-    // 테두리
-    float er = hover ? 0.95f : (selected ? 0.75f : 0.45f);
-    float eg = hover ? 0.95f : (selected ? 0.75f : 0.45f);
-    float eb = hover ? 1.00f : (selected ? 0.95f : 0.55f);
-    drawRect(x,         y,         w, 2.0f, er, eg, eb, 1.0f);
-    drawRect(x,         y + h - 2, w, 2.0f, er, eg, eb, 1.0f);
-    drawRect(x,         y,    2.0f, h, er, eg, eb, 1.0f);
-    drawRect(x + w - 2, y,    2.0f, h, er, eg, eb, 1.0f);
-
-    // 라벨 (가로/세로 모두 중앙 정렬, 너무 길면 fit)
-    float sc = 0.9f;
-    while (sc > 0.55f && g_TextL.Width(label, sc) > w - 16.0f) sc -= 0.05f;
-    float lw = g_TextL.Width (label, sc);
-    float lh = g_TextL.Height(label, sc);
-    g_TextL.Draw(label,
-                 x + (w - lw) * 0.5f,
-                 y + (h - lh) * 0.5f,
-                 sc, 1.0f, 1.0f, 1.0f, 0.98f);
-
-    return hover && lmbPrev && !lmb; // release edge over button
-}
-
-// ── 적 사망 폭발 파티클 (잡몹/원거리 몹 공용) ──
-struct EnemyParticle {
-    float x, y, vx, vy;
-    float life;     // 남은 시간 (s)
-    float maxLife;
-    float size;
-    float r, g, b;
-    bool  active = false;
-};
-static const int MAX_ENEMY_PARTS = 256;
-EnemyParticle g_EnemyParts[MAX_ENEMY_PARTS] = {};
-
-// 폭발 spawn — big=true 면 원거리 몹용 (더 큰 폭발)
-static void SpawnEnemyExplosion(float ex, float ey,
-                                float cr, float cg, float cb, bool big) {
-    // 흰 핫코어 스파크 — 폭발 순간 번쩍이는 밝은 알갱이
-    SpawnSparks(ex, ey, big ? 8 : 4, 1.0f, 0.95f, 0.7f, big ? 420.0f : 320.0f);
-    int count   = big ? 20 : 10;
-    float baseS = big ? 200.0f : 100.0f;
-    float varS  = big ? 250.0f : 150.0f;
-    float lifeT = big ? 0.45f  : 0.30f;
-    int placed = 0, j = 0;
-    while (placed < count && j < MAX_ENEMY_PARTS) {
-        if (!g_EnemyParts[j].active) {
-            float angle = (float)placed / (float)count * 6.2831853f
-                        + ((float)(rand() % 100) - 50.0f) * 0.012f;
-            float spd   = baseS + (float)(rand() % (int)varS);
-            float sz    = big ? (float)(5 + rand() % 10)
-                              : (float)(3 + rand() % 5);
-            g_EnemyParts[j] = {
-                ex, ey,
-                cosf(angle) * spd, sinf(angle) * spd,
-                lifeT, lifeT, sz, cr, cg, cb, true
-            };
-            ++placed;
-        }
-        ++j;
-    }
-}
-
-// ── 처치 연출 — "프로세스 종료" 플로팅 태그 (데스크톱 세계관) ──
-//    적 = 프로세스. 처치 시 위로 떠오르며 사라지는 작은 라벨 (terminated 등).
-//    잡몹 떼죽음 과밀 방지 위해 일반 처치는 쿨다운으로 솎아냄. 강적은 항상 표시.
-struct KillTag {
-    float x, y;            // 월드 좌표 (zoom 반영해 화면에 그림)
-    float life, maxLife;
-    float r, g, b;
-    float scale;
-    wchar_t text[24];
-    bool  active = false;
-};
-static const int MAX_KILLTAGS = 24;
-KillTag g_KillTags[MAX_KILLTAGS] = {};
-float   g_KillTagCD = 0.0f;        // 일반 처치 스폰 쓰로틀
-
-static void SpawnKillTag(float x, float y, float r, float g, float b,
-                         const wchar_t* word, bool notable) {
-    if (!notable && g_KillTagCD > 0.0f) return;     // 잡몹은 쿨다운 시 생략
-    for (int i = 0; i < MAX_KILLTAGS; i++) {
-        if (g_KillTags[i].active) continue;
-        KillTag& t = g_KillTags[i];
-        t.x = x; t.y = y - 14.0f;
-        t.maxLife = t.life = notable ? 0.9f : 0.6f;
-        t.r = r; t.g = g; t.b = b;
-        t.scale = notable ? 0.8f : 0.58f;
-        wcsncpy_s(t.text, word, _TRUNCATE);
-        t.active = true;
-        if (!notable) g_KillTagCD = 0.05f;
-        return;
-    }
-}
-
-// ── 프로그램 실행 연출 — 메뉴(바탕화면)에서 앱 아이콘 더블클릭 후 부팅 ──
-float          g_BootAnim   = 0.0f;                  // >0 동안 실행 스플래시
-GameState      g_BootTarget = GameState::DIFFICULTY_SELECT;
-const wchar_t* g_BootName   = L"onedow.exe";         // 실행 중인 앱 파일명
-float          g_BootAr = 0.30f, g_BootAg = 0.80f, g_BootAb = 1.00f;  // 강조색
-static const float BOOT_DUR = 1.15f;                 // 실행 연출 길이
-
-// ── 앱 창 열림 애니메이션 — 크기 0 → 지정 크기로 커짐 ──
-float g_AppOpen = 1.0f;                               // 0=닫힘 1=완전히 열림
-static const float APP_OPEN_DUR = 0.22f;
-
-// 앱 실행 시작 — 부팅 스플래시 띄우고 끝나면 target 으로 전이
-inline void LaunchApp(GameState target, const wchar_t* name,
-                      float ar, float ag, float ab) {
-    g_BootAnim = BOOT_DUR; g_BootTarget = target;
-    g_BootName = name; g_BootAr = ar; g_BootAg = ag; g_BootAb = ab;
-}
-
 // DYING 사망 연출 상태
 float g_DyingTimer    = 0.0f;
 bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
@@ -828,158 +421,6 @@ float g_DeathCX = 0, g_DeathCY = 0;
 float g_DeathFlash = 0.0f; // 폭발 섬광 (1.0 → 0.0)
 wchar_t g_DeathReason[96] = {0};   // 사망 원인 ("○○ 에 의해 종료됨")
 
-// --- 셰이더 소스 ---
-static const char* vertSrc =
-    "#version 330 core\n"
-    "layout (location = 0) in vec2 aPos;\n"
-    "layout (location = 1) in vec4 aColor;\n"
-    "uniform mat4 projection;\n"
-    "out vec4 vColor;\n"
-    "void main() { vColor = aColor; gl_Position = projection * vec4(aPos, 0.0, 1.0); }\n";
-static const char* fragSrc =
-    "#version 330 core\n"
-    "in vec4 vColor;\n"
-    "out vec4 FragColor;\n"
-    "uniform int  uFx;    // 0 = 그대로, 1 = 셰이더(그레이딩+글로우+스캔라인)\n"
-    "uniform vec2 uRes;   // 화면 해상도(px)\n"
-    "void main() {\n"
-    "    vec4 c = vColor;\n"
-    "    if (uFx == 1) {\n"
-    "        vec2 uv = gl_FragCoord.xy / max(uRes, vec2(1.0));\n"
-    "        // 1) 바이브런스 — 채도 부스트로 네온이 쨍하게 (마크 셰이더 느낌)\n"
-    "        float luma = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
-    "        c.rgb = mix(vec3(luma), c.rgb, 1.30);\n"
-    "        // 2) 컬러 그레이딩 — 위쪽 시안/아래쪽 보라빛 분위기 틴트\n"
-    "        vec3 topTint = vec3(0.92, 1.00, 1.06);\n"
-    "        vec3 botTint = vec3(1.04, 0.94, 1.06);\n"
-    "        c.rgb *= mix(botTint, topTint, uv.y);\n"
-    "        // 3) 블룸풍 글로우 — 밝은 픽셀을 더 밝게 끌어올림(네온 번짐 느낌)\n"
-    "        float lum = max(c.r, max(c.g, c.b));\n"
-    "        c.rgb += c.rgb * smoothstep(0.55, 1.0, lum) * 0.35;\n"
-    "        // 4) 스캔라인 — 가로줄 미세 명암 (CRT)\n"
-    "        c.rgb *= 0.94 + 0.06 * (0.5 + 0.5 * sin(gl_FragCoord.y * 3.14159));\n"
-    "        // 5) 비네트 — 가장자리 살짝 어둡게\n"
-    "        vec2 d = uv - vec2(0.5);\n"
-    "        c.rgb *= (1.0 - dot(d, d) * 0.50);\n"
-    "        c.rgb = clamp(c.rgb, 0.0, 1.0);\n"
-    "    }\n"
-    "    FragColor = c;\n"
-    "}\n";
-
-// --- 콜백 ---
-void key_callback(GLFWwindow*, int key, int, int action, int) {
-    if (key >= 0 && key < 1024) {
-        if      (action == GLFW_PRESS)   keys[key] = true;
-        else if (action == GLFW_RELEASE) keys[key] = false;
-    }
-}
-
-static GLuint compileShader(GLenum type, const char* src) {
-    GLuint s = glCreateShader(type);
-    glShaderSource(s, 1, &src, NULL);
-    glCompileShader(s);
-    // 컴파일 에러 체크 — AMD 등 엄격한 드라이버에서 실패 시 원인 파악(검은화면 디버그)
-    GLint ok = 0;
-    glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[1024] = {0};
-        glGetShaderInfoLog(s, sizeof(log), NULL, log);
-        std::fprintf(stderr, "[SHADER COMPILE FAIL] %s\n", log);
-#ifdef _WIN32
-        MessageBoxA(NULL, log, "Shader compile failed", MB_OK | MB_ICONERROR);
-#endif
-    }
-    return s;
-}
-
-// ============================================================
-//  UI 씬(메뉴) 분리 — 컨텍스트 + 헬퍼 + 전방 선언 (Phase 1a)
-//  메뉴/창 상태 렌더·입력을 main 의 거대 if/else 체인에서 떼어냄.
-// ============================================================
-struct SceneCtx {
-    float  sw, sh;
-    double mx, my;
-    bool   lmb;
-    float  delta;
-    GLFWwindow* window;
-    float* fireTimer;               // WEAPON_SELECT 에서 갱신
-    std::function<void()> reset;    // ResetForNewGame
-};
-
-// deskWindow/appWindow 람다 → 자유함수 (sw/sh 명시 인자)
-static void SceneDeskWindow(float sw, float sh, const wchar_t* fname,
-                            float ar, float ag, float ab) {
-                BindMainShader();
-                const float TB = 30.0f;
-                drawRect(0, 0, sw, TB, ar*0.5f, ag*0.5f, ab*0.5f, 0.96f);   // 제목 표시줄
-                drawRect(0, TB, sw, 2.0f, ar, ag, ab, 0.9f);               // 강조 라인
-                // 외곽 테두리 (앱 창 느낌)
-                drawRect(0, 0, sw, 1.5f, ar, ag, ab, 0.5f);
-                drawRect(0, sh-1.5f, sw, 1.5f, ar, ag, ab, 0.5f);
-                drawRect(0, 0, 1.5f, sh, ar, ag, ab, 0.5f);
-                drawRect(sw-1.5f, 0, 1.5f, sh, ar, ag, ab, 0.5f);
-                // 창 컨트롤 (─ □ X)
-                float bs = 14.0f, byc = (TB-bs)*0.5f, bxc = sw - 24.0f;
-                drawRect(bxc - 2*(bs+8), byc, bs, bs, 1,1,1, 0.25f);
-                drawRect(bxc - (bs+8),   byc, bs, bs, 1,1,1, 0.25f);
-                drawRect(bxc, byc, bs, bs, 0.9f, 0.25f, 0.25f, 0.9f);       // X = 빨강
-                g_TextS.Draw(fname, 14.0f, 5.0f, 0.62f, 0.95f, 0.97f, 1.0f, 1.0f);
-}
-static void SceneAppWindow(float sw, float sh, float WW, float WH,
-                           const wchar_t* fname, float ar, float ag, float ab,
-                           float& outX, float& outY) {
-                float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
-                outX = wx; outY = wy;
-                // 열림 애니메이션 — 크기 0 → 지정 크기 (중앙 기준, smoothstep)
-                float op = g_AppOpen; if (op < 0.0f) op = 0.0f; if (op > 1.0f) op = 1.0f;
-                float e  = op * op * (3.0f - 2.0f * op);
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.40f * e);    // 데스크톱 딤(서서히)
-                if (e < 0.999f) {
-                    // 여는 중 — 0에서 커지는 빈 패널만 (콘텐츠는 호출부에서 생략)
-                    float dw = WW * e, dh = WH * e;
-                    float dx = sw*0.5f - dw*0.5f, dy = sh*0.5f - dh*0.5f;
-                    drawRect(dx+5, dy+6, dw, dh, 0.0f,0.0f,0.0f, 0.30f);     // 그림자
-                    drawRect(dx, dy, dw, dh, 0.07f, 0.08f, 0.11f, 0.99f);    // 본체
-                    drawRect(dx, dy, dw, 4.0f, ar, ag, ab, 1.0f);           // 강조 띠
-                    drawRect(dx, dy, dw, 1.5f, ar,ag,ab,0.5f);              // 테두리
-                    drawRect(dx, dy+dh-1.5f, dw, 1.5f, ar,ag,ab,0.5f);
-                    drawRect(dx, dy, 1.5f, dh, ar,ag,ab,0.5f);
-                    drawRect(dx+dw-1.5f, dy, 1.5f, dh, ar,ag,ab,0.5f);
-                    return;
-                }
-                drawRect(wx+7, wy+9, WW, WH, 0.0f, 0.0f, 0.0f, 0.35f);  // 그림자
-                drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, 0.99f);   // 창 본체
-                const float TB = 30.0f;
-                drawRect(wx, wy, WW, TB, ar*0.5f, ag*0.5f, ab*0.55f, 1.0f); // 제목줄
-                drawRect(wx, wy+TB, WW, 2.0f, ar, ag, ab, 0.9f);           // 강조 라인
-                float bs=13.0f, byc=wy+(TB-bs)*0.5f, bxc=wx+WW-22.0f;       // ─ □ X
-                drawRect(bxc-2*(bs+7), byc, bs,bs, 1,1,1,0.25f);
-                drawRect(bxc-(bs+7),   byc, bs,bs, 1,1,1,0.25f);
-                drawRect(bxc, byc, bs,bs, 0.9f,0.25f,0.25f,0.9f);
-                drawRect(wx, wy, WW, 1.5f, ar,ag,ab,0.5f);                 // 테두리
-                drawRect(wx, wy+WH-1.5f, WW, 1.5f, ar,ag,ab,0.5f);
-                drawRect(wx, wy, 1.5f, WH, ar,ag,ab,0.5f);
-                drawRect(wx+WW-1.5f, wy, 1.5f, WH, ar,ag,ab,0.5f);
-                g_TextS.Draw(fname, wx+12.0f, wy+5.0f, 0.6f, 0.95f,0.97f,1.0f,1.0f);
-                outX = wx; outY = wy;
-}
-
-// UI 씬 함수 전방 선언 (정의는 main 뒤)
-static void Scene_MainMenu(const SceneCtx& c);
-static void Scene_Shop(const SceneCtx& c);
-static void Scene_Codex(const SceneCtx& c);
-static void Scene_JobSelect(const SceneCtx& c);
-static void Scene_WeaponSelect(const SceneCtx& c);
-static void Scene_DifficultySelect(const SceneCtx& c);
-static void Scene_CreativeConfig(const SceneCtx& c);
-static void Scene_Settings(const SceneCtx& c);
-static void Scene_Ready(const SceneCtx& c);
-static void Scene_Paused(const SceneCtx& c);
-static void Scene_GameOver(const SceneCtx& c);
-static void Scene_AugSelect(const SceneCtx& c);
-static void Scene_OwnedAugPanel(const SceneCtx& c);
-// ============================================================
 int main() {
     CrashHandler::Install();   // 강종(E23) 추적 — 처리 안 된 예외 시 로그+미니덤프
     srand((unsigned)time(NULL));
@@ -1048,12 +489,11 @@ int main() {
     GLITCH_WIN_W *= g_Scale; RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
     KERNEL_WIN_W *= g_Scale; FIREWALL_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
+    TOTEM_WIN_W *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
-    glfwSetKeyCallback(window, key_callback);
-    glfwSetCharCallback(window, CodexCharCallback);   // codex.db 검색창 입력
-    glfwSetScrollCallback(window, ScrollCallback);    // 마우스 휠 (보유 증강 패널 스크롤)
+    InputRegisterCallbacks(window);
     // g_FpsCap == 0 : VSync, 그 외 : VSync 끄고 수동 캡
     glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
 
@@ -1173,55 +613,8 @@ int main() {
     }
 #endif // _WIN32 (진단 블록)
 
-    // --- 셰이더 빌드 ---
-    GLuint vs = compileShader(GL_VERTEX_SHADER,   vertSrc);
-    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragSrc);
-    GLuint shader = glCreateProgram();
-    glAttachShader(shader, vs); glAttachShader(shader, fs);
-    glLinkProgram(shader);
-    { GLint lok = 0; glGetProgramiv(shader, GL_LINK_STATUS, &lok);
-      if (!lok) { char log[1024]={0}; glGetProgramInfoLog(shader, sizeof(log), NULL, log);
-                  std::fprintf(stderr, "[SHADER LINK FAIL] %s\n", log);
-#ifdef _WIN32
-                  MessageBoxA(NULL, log, "Shader link failed", MB_OK | MB_ICONERROR);
-#endif
-      } }
-    glDeleteShader(vs); glDeleteShader(fs);
-
-    GLint projLoc  = glGetUniformLocation(shader, "projection");
-    g_colorLoc     = glGetUniformLocation(shader, "color");
-    GLint fxLoc    = glGetUniformLocation(shader, "uFx");    // CRT 효과 토글
-    GLint resLoc   = glGetUniformLocation(shader, "uRes");   // 화면 해상도
-    glUseProgram(shader);
-    glUniform2f(resLoc, (float)screenWidth, (float)screenHeight);
-
-    // UI 코드에서 BindMainShader() 로 재바인드할 수 있게 글로벌에 보관
-    g_MainShader  = shader;
-    g_MainProjLoc = projLoc;
-
-    // --- VAO / VBO ---
-    GLuint VAO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &g_VBO);
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-    glBufferData(GL_ARRAY_BUFFER, 65536 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
-    // 배칭: 정점당 [pos.xy, color.rgba] = 6 float (stride 24바이트)
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // --- 오르토 행렬 (픽셀 좌표계, Y 아래) ---
-    float ortho[16] = {
-         2.0f / screenWidth,  0,  0,  0,
-         0, -2.0f / screenHeight,  0,  0,
-         0,  0, -1,  0,
-        -1,  1,  0,  1
-    };
-    // BindMainShader() 가 사용할 수 있게 글로벌에도 복사
-    memcpy(g_MainOrtho, ortho, sizeof(ortho));
-    g_MainVAO = VAO;
+    InitMainShaderPipeline(screenWidth, screenHeight);
+    InitMainBatchGeometry(screenWidth, screenHeight);
 
     // --- 게임 오브젝트 초기화 ---
     FakeWindow playerWin(0, "Onedow",
@@ -1244,6 +637,57 @@ int main() {
 
     Audio::Init();   // 사운드 시스템 (Sounds/ 폴더, 파일 없으면 무음)
 
+    // 최근접 적 — 자동조준·유도탄(탄환세례)·드론·포탑 공용
+    auto findNearestEnemy = [&](float fx, float fy, float& tx, float& ty) -> bool {
+        float nd = 1e18f; bool found = false;
+        auto consider = [&](float ex, float ey) {
+            float ddx = ex - fx, ddy = ey - fy;
+            float ds = ddx * ddx + ddy * ddy;
+            if (ds < nd) { nd = ds; tx = ex; ty = ey; found = true; }
+        };
+        auto vis = [&](float ex, float ey) {
+            return ex >= playerWin.x && ex <= playerWin.x + playerWin.width &&
+                   ey >= playerWin.y && ey <= playerWin.y + playerWin.height;
+        };
+        for (auto m : g_MonsterManager.monsters)
+            if (m->alive && vis(m->worldX, m->worldY)) consider(m->worldX, m->worldY);
+        for (auto r : g_MonsterManager.rangedMobs)
+            if (r->alive) consider(r->worldX, r->worldY);
+        for (auto bm : g_MonsterManager.bombers)
+            if (bm->alive && vis(bm->worldX, bm->worldY)) consider(bm->worldX, bm->worldY);
+        if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
+            consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY);
+        for (auto* c : g_Slimelings) if (c->alive) consider(c->worldX, c->worldY);
+        if (g_GlitchBoss && g_GlitchBoss->alive) {
+            consider(g_GlitchBoss->worldX, g_GlitchBoss->worldY);
+            for (auto& gt : g_GlitchBoss->minis) if (gt.alive) consider(gt.x, gt.y);
+        }
+        if (g_RRBoss && g_RRBoss->alive)         consider(g_RRBoss->worldX, g_RRBoss->worldY);
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
+            consider(g_PolyBoss->worldX, g_PolyBoss->worldY);
+        if (g_SpamBoss && g_SpamBoss->alive)     consider(g_SpamBoss->worldX, g_SpamBoss->worldY);
+        if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY);
+        if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY);
+        if (g_BotnetBoss && g_BotnetBoss->alive) {
+            consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY);
+            for (auto& mn : g_BotnetBoss->minions) if (mn.alive) consider(mn.x, mn.y);
+        }
+        if (g_CentiBoss && g_CentiBoss->alive) {
+            if (g_CentiBoss->vulnerable())
+                consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
+            for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
+        }
+        if (g_TotemBoss && g_TotemBoss->alive) {
+            if (g_TotemBoss->vulnerable())
+                consider(g_TotemBoss->worldX, g_TotemBoss->worldY);
+            for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                auto& tt = g_TotemBoss->totems[ti];
+                if (tt.alive) consider(tt.x, tt.y);
+            }
+        }
+        return found;
+    };
+
     // ============================================================
     // 메인 루프
     // ============================================================
@@ -1259,7 +703,8 @@ int main() {
                              g_GlitchBoss   ? "glitch"   : g_RRBoss      ? "reload"  :
                              g_PolyBoss     ? "poly"     : g_SpamBoss    ? "spam"    :
                              g_KernelBoss   ? "kernel"   : g_FirewallBoss? "firewall":
-                             g_BotnetBoss   ? "botnet"   : g_CentiBoss   ? "centi"   : "none";
+                             g_BotnetBoss   ? "botnet"   : g_CentiBoss   ? "centi"   :
+                             g_TotemBoss    ? "totem"   : "none";
             char bc[200];
             std::snprintf(bc, sizeof(bc),
                 "st=%d score=%lld lv=%d mobs=%u boss=%s",
@@ -1325,8 +770,8 @@ int main() {
         double mx, my;
         glfwGetCursorPos(window, &mx, &my);
         bool lmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-        float wmx = screenWidth  * 0.5f + ((float)mx - screenWidth  * 0.5f) / g_ViewZoom;
-        float wmy = screenHeight * 0.5f + ((float)my - screenHeight * 0.5f) / g_ViewZoom;
+        float wmx = ScreenToWorldX((float)mx);
+        float wmy = ScreenToWorldY((float)my);
 
         // --- 입력 처리 ---
         GameState prevState = g_GameManager.currentState;
@@ -1367,9 +812,10 @@ int main() {
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
             g_NextBossScore = 50000;   // 첫 보스 5만점
             g_PolySpawned   = false;
+            BossDir::ResetRotation();
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
-            g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
+            g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = g_BotnetWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
             g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
@@ -1382,7 +828,7 @@ int main() {
             if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
             if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
-            if (g_TrojanBoss) { delete g_TrojanBoss; g_TrojanBoss = nullptr; }
+            if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
             g_PolyPrevForm = -1;
             g_PolySummonTimer = 0.0f;
             g_PolyWasPhase2 = false;
@@ -1390,16 +836,13 @@ int main() {
             g_Slimelings.clear();
             g_SlimeEncounter = false;
             g_BossTintT = 0.0f;
-            ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱 초기화
+            ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱/적 폭발·처치태그 초기화
             ResetSkills();                           // 액티브 스킬/대시 초기화
             g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f; // 창 시야 기믹
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
             g_ZoomCX = g_ZoomCY = 0.0f;
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
-            for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
-            for (int i = 0; i < MAX_KILLTAGS; i++) g_KillTags[i].active = false;
-            g_KillTagCD       = 0.0f;
             g_DyingTimer      = 0.0f;
             g_DeathBoomDone   = false;
             g_GameOverFade    = 0.0f;
@@ -1553,9 +996,10 @@ int main() {
                     if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
                     if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY, L"KERNEL.sys");
                     if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY, L"FIREWALL.sys");
-                    if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"BOTNET.exe");
-                    if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"BUG.proc");
-                    int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
+                    if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
+                    if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
+                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"TOTEM.sys");
+                    int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls 에 의해 종료됨", L"Terminated by %ls", L"%ls により終了" };
                     const wchar_t* UNK[3] = { L"알 수 없는 오류로 종료됨", L"Terminated by unknown error", L"不明なエラーで終了" };
                     if (nm) swprintf_s(g_DeathReason, FMT[li], nm);
@@ -1599,13 +1043,13 @@ int main() {
                 if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
                 if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
                 if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
-                if (g_TrojanBoss) { delete g_TrojanBoss; g_TrojanBoss = nullptr; }
+            if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
                 for (auto* c : g_Slimelings) delete c;
                 g_Slimelings.clear();
                 g_Turrets.clear();
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
-                g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = false;
+                g_SlimeWasP2 = g_GlitchWasP2 = g_RRWasP2 = g_SpamWasP2 = g_BotnetWasP2 = false;
                 g_LaserBeams.clear();   // 스캔 레이저 빔 정리
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
                 g_NovaTimer = 0.0f;   // 백신 스캔 정리
@@ -2045,7 +1489,7 @@ int main() {
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
                     playerWin.y += mvY * curMove * FIXED_DT;
-                    // 지네 죽은-지네 벽 — 일반 이동은 직선에 막힘, 대시(무적 중)는 통과
+                    // FORK.worm 크래시 벽 — 일반 이동은 직선에 막힘, 대시(무적 중)는 통과
                     if (g_CentiBoss && g_CentiBoss->alive && g_DashInvuln <= 0.0f) {
                         float wpcx = playerWin.x + playerWin.width  * 0.5f;
                         float wpcy = playerWin.y + playerWin.height * 0.5f;
@@ -2098,6 +1542,7 @@ int main() {
                 // 창 닫기 — 플레이어 중심 폭발 (넉백 + 피해)
                 auto closeWindowBlast = [&](float cx, float cy) {
                     float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 8.0f;
+                    if (g_TotemBoss && g_TotemBoss->alive) dmg *= g_TotemBoss->statDamageMult();
                     float rad = 380.0f, r2 = rad * rad, knock = 130.0f;
                     auto hitKB = [&](float& ex, float& ey, float& hp, bool& al) {
                         float dx = ex - cx, dy = ey - cy, d2 = dx*dx + dy*dy;
@@ -2117,6 +1562,13 @@ int main() {
                     if (g_FirewallBoss && g_FirewallBoss->alive) { float dx=g_FirewallBoss->worldX-cx,dy=g_FirewallBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_FirewallBoss->hp-=dmg; if(g_FirewallBoss->hp<=0)g_FirewallBoss->alive=false;} }
                     if (g_BotnetBoss && g_BotnetBoss->alive) { float dx=g_BotnetBoss->worldX-cx,dy=g_BotnetBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_BotnetBoss->hp-=dmg; if(g_BotnetBoss->hp<=0)g_BotnetBoss->alive=false;} }
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) { float dx=g_CentiBoss->worldX-cx,dy=g_CentiBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_CentiBoss->hp-=dmg; if(g_CentiBoss->hp<=0)g_CentiBoss->alive=false;} }
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) { float dx=g_TotemBoss->worldX-cx,dy=g_TotemBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TotemBoss->hp-=dmg; if(g_TotemBoss->hp<=0)g_TotemBoss->alive=false;} }
+                    for (int ti = 0; g_TotemBoss && g_TotemBoss->alive && ti < TotemBoss::N_TOTEM; ti++) {
+                        auto& tt = g_TotemBoss->totems[ti];
+                        if (!tt.alive) continue;
+                        float dx = tt.x - cx, dy = tt.y - cy;
+                        if (dx*dx + dy*dy < r2) { tt.hp -= dmg; if (tt.hp <= 0) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); } }
+                    }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -2126,6 +1578,7 @@ int main() {
                 // 슬롯 스킬 발동 헬퍼
                 auto useSkill = [&](int slot) {
                     if (slot < 0 || slot >= 3) return;
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->isSkillSealed(slot)) return;
                     SkillSlot& s = g_Skills[slot];
                     if (s.type == SkillType::NONE || s.cd > 0.0f) return;
                     switch (s.type) {
@@ -2167,20 +1620,8 @@ int main() {
                 for (auto& b : g_Bullets) {
                     // 유도탄: 가장 가까운 적을 향해 점진적 방향 보정
                     if (b.homing && !b.isEnemy && b.active) {
-                        float nd = 1e9f, tx = 0, ty = 0;
-                        for (auto m : g_MonsterManager.monsters) {
-                            if (!m->alive) continue;
-                            float ddx = m->worldX - b.x, ddy = m->worldY - b.y;
-                            float dd  = ddx*ddx + ddy*ddy;
-                            if (dd < nd) { nd = dd; tx = m->worldX; ty = m->worldY; }
-                        }
-                        for (auto r : g_MonsterManager.rangedMobs) {
-                            if (!r->alive) continue;
-                            float ddx = r->worldX - b.x, ddy = r->worldY - b.y;
-                            float dd  = ddx*ddx + ddy*ddy;
-                            if (dd < nd) { nd = dd; tx = r->worldX; ty = r->worldY; }
-                        }
-                        if (nd < 1e8f) {
+                        float tx = 0.0f, ty = 0.0f;
+                        if (findNearestEnemy(b.x, b.y, tx, ty)) {
                             // 현재 방향 → 목표 방향 사이를 turn rate 만큼 회전
                             float wx = tx - b.x, wy = ty - b.y;
                             float wl = sqrtf(wx*wx + wy*wy);
@@ -2310,11 +1751,15 @@ int main() {
                 if (!timeStopped && g_FirewallBoss && g_FirewallBoss->alive)
                     g_FirewallBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
-                // BOTNET.exe 업데이트 (공전 프로세스 투척 + 페이즈2 중앙집결)
+                // C2_RELAY.sys 업데이트 (호스트 릴레이 + OVERLOAD)
                 if (!timeStopped && g_BotnetBoss && g_BotnetBoss->alive)
                     g_BotnetBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                if (g_BotnetBoss && g_BotnetBoss->shakePulse) {
+                    g_BotnetBoss->shakePulse = false;
+                    g_ShakeTime = 0.32f; g_ShakeMag = 14.0f;
+                }
 
-                // BUG.proc 업데이트 (지그재그 배회 + 화면밖 이탈→재진입 돌진)
+                // FORK.worm 업데이트 (지그재그 배회 + 화면밖 이탈→재진입 돌진)
                 if (!timeStopped && g_CentiBoss && g_CentiBoss->alive) {
                     g_CentiBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
                     if (g_CentiBoss->shakePulse) {          // 화면 밖으로 나갈 때 약한 진동
@@ -2328,15 +1773,37 @@ int main() {
                         }
                         g_CentiBoss->wantShake = 0.0f;
                     }
+                    if (g_CentiBoss->moltGlitchPulse) {
+                        g_CentiBoss->moltGlitchPulse = false;
+                        TriggerFlash(1.0f, 1.0f, 1.0f, 0.28f);
+                        TriggerHitStop(0.05f);
+                        g_ShakeTime = 0.18f; g_ShakeMag = 12.0f;
+                    }
                 }
 
-                // Trojan_king.vir 업데이트 (체스판 + 기물 소환/이동)
-                if (!timeStopped && g_TrojanBoss && g_TrojanBoss->alive) {
-                    g_TrojanBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP);
-                    if (g_TrojanBoss->shakePulse) {
-                        g_TrojanBoss->shakePulse = false;
-                        g_ShakeTime = 0.25f; g_ShakeMag = 10.0f;
+                // TOTEM.sys 업데이트 (토템 봉인 + 순간이동 공격)
+                if (!timeStopped && g_TotemBoss && g_TotemBoss->alive) {
+                    float pullX = 0.0f, pullY = 0.0f;
+                    g_TotemBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP,
+                                        g_Bullets, pullX, pullY);
+                    if (pullX != 0.0f || pullY != 0.0f) {
+                        pCX += pullX; pCY += pullY;
+                        if (pCX < ccX - halfW) pCX = ccX - halfW;
+                        if (pCX > ccX + halfW) pCX = ccX + halfW;
+                        if (pCY < ccY - halfH) pCY = ccY - halfH;
+                        if (pCY > bottomLimit) pCY = bottomLimit;
+                        playerWin.x = pCX - playerWin.width * 0.5f;
+                        playerWin.y = pCY - playerWin.height * 0.5f;
                     }
+                    for (auto& sp : g_TotemBoss->mobSpawnQueue) {
+                        if ((int)g_MonsterManager.monsters.size() >= 40) break;
+                        Monster* nm = new Monster(sp.first, sp.second,
+                                                  g_Stats.monsterHpMult * 0.55f,
+                                                  0.85f, true);
+                        nm->color = glm::vec3(0.5f, 0.92f, 0.42f);
+                        g_MonsterManager.monsters.push_back(nm);
+                    }
+                    g_TotemBoss->mobSpawnQueue.clear();
                 }
 
                 // 슬라임 분열체 업데이트 (돌진만, 소환 X) — outSummons 폐기
@@ -2394,6 +1861,14 @@ int main() {
                         p2enter(g_SpamBoss->worldX, g_SpamBoss->worldY, glm::vec3(1.0f, 0.4f, 0.8f));
                     }
                 } else g_SpamWasP2 = false;
+                // C2_RELAY — OVERLOAD 페이즈
+                if (g_BotnetBoss && g_BotnetBoss->alive) {
+                    if (g_BotnetBoss->phase2 && !g_BotnetWasP2) {
+                        g_BotnetWasP2 = true;
+                        p2enter(g_BotnetBoss->worldX, g_BotnetBoss->worldY,
+                                glm::vec3(0.25f, 0.95f, 0.45f));
+                    }
+                } else g_BotnetWasP2 = false;
 
                 // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
                 bool hit = CollisionSystem::Update(pCX, pCY,
@@ -2554,20 +2029,63 @@ int main() {
                     }
                 }
 
-                // BOTNET.exe 본체 vs 플레이어 총알 (스윕 판정)
+                // C2_RELAY.sys — 좀비 호스트 + 본체(피해 감소) vs 플레이어 총알
                 if (g_BotnetBoss && g_BotnetBoss->alive) {
                     auto* nb2 = g_BotnetBoss;
                     for (auto& b : g_Bullets) {
                         if (!b.active || b.isEnemy) continue;
+                        auto dmgAt = [&](float ex, float ey) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(ex, ey));
+                            if (b.remainingDmg > 0.0f)   return b.remainingDmg;
+                            if (b.turretDmg > 0.0f)      return b.turretDmg;
+                            return g_Stats.GetBaseDamage()
+                                 * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                        };
+                        bool consumed = false;
+                        for (auto& mn : nb2->minions) {
+                            if (!mn.alive) continue;
+                            if (SegDist(mn.x, mn.y, b.prevX, b.prevY, b.x, b.y)
+                                    < BotnetBoss::minionHit(mn.kind)) {
+                                float dmg = dmgAt(mn.x, mn.y);
+                                float dealt = (dmg < mn.hp) ? dmg : mn.hp;
+                                mn.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (mn.hp <= 0.0f) {
+                                    mn.alive = false;
+                                    AddKillCombo();
+                                    float sc = 45.0f;
+                                    if (mn.kind == BotnetBoss::MinionKind::Heavy) sc = 80.0f;
+                                    if (mn.kind == BotnetBoss::MinionKind::Pulse) sc = 60.0f;
+                                    g_GameManager.scoreAccum += sc;
+                                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                                }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+                        for (int hi = 0; hi < BotnetBoss::NHOST; hi++) {
+                            auto& h = nb2->hosts[hi];
+                            if (!h.alive) continue;
+                            if (SegDist(h.x, h.y, b.prevX, b.prevY, b.x, b.y) < BotnetBoss::HOST_HIT) {
+                                float dmg = dmgAt(h.x, h.y);
+                                float dealt = (dmg < h.hp) ? dmg : h.hp;
+                                h.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (h.hp <= 0.0f) {
+                                    h.alive = false;
+                                    AddKillCombo();
+                                    g_GameManager.scoreAccum += 180.0f;
+                                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                                }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
                         if (SegDist(nb2->worldX, nb2->worldY,
                                     b.prevX, b.prevY, b.x, b.y) < BotnetBoss::BODY * 0.95f) {
-                            float pd = glm::distance(glm::vec2(pCX, pCY),
-                                                     glm::vec2(nb2->worldX, nb2->worldY));
-                            float dmg;
-                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
-                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
-                            else dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dmg = dmgAt(nb2->worldX, nb2->worldY) * nb2->bodyDamageTakenMult();
                             float dealt = (dmg < nb2->hp) ? dmg : nb2->hp;
                             nb2->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
@@ -2577,7 +2095,7 @@ int main() {
                     }
                 }
 
-                // BUG.proc 죽은-지네 벽 — 총알이 직선을 가로지르면 그 셀만 뚫림.
+                // FORK.worm 크래시 벽 — 총알이 직선을 가로지르면 그 셀만 뚫림.
                 //   일반탄은 벽에 막혀 소멸(관통 X). 관통탄(remainingDmg>0)은 통과.
                 if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->walls.empty()) {
                     for (auto& b : g_Bullets) {
@@ -2587,7 +2105,7 @@ int main() {
                     }
                 }
 
-                // BUG.proc 새끼 버그(작은 지네) vs 플레이어 총알 — 항상 피격 가능. 경험치 0.
+                // FORK.worm child adds vs 플레이어 총알 — 항상 피격 가능. 경험치 0.
                 if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
                     for (auto& mb : g_CentiBoss->minis) {
                         if (!mb.alive) continue;
@@ -2614,7 +2132,23 @@ int main() {
                     }
                 }
 
-                // BUG.proc 머리 vs 플레이어 총알 — 배회(피격가능) 중에만 타격
+                // FORK.worm 몸통 노드 — 피격 VFX (데미지는 머리 HP 풀, 플래시만)
+                if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) {
+                    auto* cb2 = g_CentiBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        for (int si = 1; si <= cb2->activeSeg; si++) {
+                            glm::vec2 sp = cb2->segPos(si);
+                            float sr = cb2->segSize(si) + 6.0f;
+                            if (SegDist(sp.x, sp.y, b.prevX, b.prevY, b.x, b.y) < sr) {
+                                cb2->onSegHit(si, sp.x, sp.y);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // FORK.worm 머리 vs 플레이어 총알 — 배회(피격가능) 중에만 타격
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) {
                     auto* cb2 = g_CentiBoss;
                     for (auto& b : g_Bullets) {
@@ -2638,45 +2172,61 @@ int main() {
                     }
                 }
 
-                // Trojan_king.vir — 기물(adds) + 킹(본체) vs 플레이어 총알
-                if (g_TrojanBoss && g_TrojanBoss->alive) {
-                    auto* tb = g_TrojanBoss;
+                // TOTEM.sys — 토템 + 본체(무적/취약) + 팽창 보호막
+                if (g_TotemBoss && g_TotemBoss->alive) {
+                    auto* tb = g_TotemBoss;
                     for (auto& b : g_Bullets) {
                         if (!b.active || b.isEnemy) continue;
-                        auto dmgOf = [&](float ex, float ey) {
+                        auto dmgAt = [&](float ex, float ey) {
                             float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(ex, ey));
-                            if (b.remainingDmg > 0.0f)   return b.remainingDmg;
-                            if (b.turretDmg > 0.0f)      return b.turretDmg;
-                            return g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            return dmg * tb->statDamageMult();
                         };
-                        // 기물
-                        bool hitPiece = false;
-                        for (auto& p : tb->pieces) {
-                            if (!p.alive) continue;
-                            if (SegDist(p.wx, p.wy, b.prevX, b.prevY, b.x, b.y) < tb->cell * 0.42f) {
-                                float dmg = dmgOf(p.wx, p.wy);
-                                float dealt = (dmg < p.hp) ? dmg : p.hp;
-                                p.hp -= dealt;
+                        bool consumed = false;
+                        for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                            auto& tt = tb->totems[ti];
+                            if (!tt.alive) continue;
+                            if (SegDist(tt.x, tt.y, b.prevX, b.prevY, b.x, b.y) < TotemBoss::TOTEM_HIT) {
+                                float dmg = dmgAt(tt.x, tt.y);
+                                float dealt = (dmg < tt.hp) ? dmg : tt.hp;
+                                tt.hp -= dealt;
+                                tb->onTotemDamaged(ti);
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                                if (p.hp <= 0.0f) {
-                                    p.alive = false; AddKillCombo();
+                                if (tt.hp <= 0.0f) {
+                                    tt.alive = false;
+                                    tb->onTotemKilled(ti);
+                                    AddKillCombo();
                                     g_GameManager.scoreAccum += 120.0f;
-                                    tb->onPieceKilled(p.type);   // 파괴 가치 누적 → 킹 딜 타임
+                                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
                                 }
-                                if (b.remainingDmg <= 0.001f) { b.active = false; hitPiece = true; }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
                                 break;
                             }
                         }
-                        if (hitPiece || !b.active) continue;
-                        // 킹(본체) — 딜 타임(취약) 중에만 피격
-                        if (tb->kingVulnerable() &&
-                            SegDist(tb->worldX, tb->worldY, b.prevX, b.prevY, b.x, b.y) < tb->cell * 0.9f) {
-                            float dmg = dmgOf(tb->worldX, tb->worldY);
-                            float dealt = (dmg < tb->hp) ? dmg : tb->hp;
-                            tb->hp -= dealt;
-                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                            if (tb->hp <= 0.0f) tb->alive = false;
-                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        if (consumed || !b.active) continue;
+                        if (tb->expanding() && tb->expandShield > 0.0f) {
+                            float rr = TotemBoss::BODY * (1.4f + tb->expandPull * 2.2f);
+                            if (SegDist(tb->worldX, tb->worldY, b.prevX, b.prevY, b.x, b.y) < rr) {
+                                float dmg = dmgAt(tb->worldX, tb->worldY);
+                                tb->damageExpandShield(dmg);
+                                b.active = false;
+                                continue;
+                            }
+                        }
+                        if (tb->vulnerable()) {
+                            if (SegDist(tb->worldX, tb->worldY,
+                                        b.prevX, b.prevY, b.x, b.y) < TotemBoss::BODY) {
+                                float dmg = dmgAt(tb->worldX, tb->worldY);
+                                float dealt = (dmg < tb->hp) ? dmg : tb->hp;
+                                tb->hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (tb->hp <= 0.0f) tb->alive = false;
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                            }
                         }
                     }
                 }
@@ -3071,7 +2621,7 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
-                // BOTNET.exe 사망 → 보상
+                // C2_RELAY.sys 사망 → 보상
                 if (g_BotnetBoss && !g_BotnetBoss->alive && !g_BotnetBoss->exploded) {
                     auto* nb2 = g_BotnetBoss;
                     SpawnEnemyExplosion(nb2->worldX, nb2->worldY, 1.0f, 0.3f, 0.9f, true);
@@ -3093,7 +2643,7 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
-                // BUG.proc 사망 → 보상
+                // FORK.worm 사망 → 보상
                 if (g_CentiBoss && !g_CentiBoss->alive && !g_CentiBoss->exploded) {
                     auto* cb2 = g_CentiBoss;
                     SpawnEnemyExplosion(cb2->worldX, cb2->worldY, 1.0f, 0.8f, 0.2f, true);
@@ -3115,24 +2665,25 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
-                // Trojan_king.vir(체스) 사망 → 보상 (증강 2 + 점수)
-                if (g_TrojanBoss && !g_TrojanBoss->alive && !g_TrojanBoss->exploded) {
-                    auto* tb = g_TrojanBoss;
-                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.82f, 0.25f, true);
-                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.6f, 0.2f, true);
-                    SpawnShockWave(tb->worldX, tb->worldY, 460.0f, 0.8f, 1.0f, 0.7f, 0.3f);
+                // TOTEM.sys 사망 → 보상
+                if (g_TotemBoss && !g_TotemBoss->alive && !g_TotemBoss->exploded) {
+                    auto* tb = g_TotemBoss;
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.85f, 0.35f, 1.0f, true);
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.5f, 0.95f, true);
+                    SpawnShockWave(tb->worldX, tb->worldY, 440.0f, 0.85f, 0.4f, 0.95f, 1.0f);
                     g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
-                    TriggerHitStop(0.11f);
+                    TriggerFlash(0.8f, 0.4f, 1.0f, 0.6f); TriggerHitStop(0.11f);
                     tb->exploded = true;
                     g_GameManager.scoreAccum += 20000.0f;
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
                     delete tb;
-                    g_TrojanBoss = nullptr;
+                    g_TotemBoss = nullptr;
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken, g_Stats.distAugTaken);
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
@@ -3341,25 +2892,7 @@ int main() {
                 if (debuffCnt >= 5) TryUnlockAch(ACH_DEBUFF_5);
             }
 
-            // 적 사망 파티클 업데이트 (drag + 수명)
-            for (auto& p : g_EnemyParts) {
-                if (!p.active) continue;
-                p.life -= delta;
-                if (p.life <= 0.0f) { p.active = false; continue; }
-                p.x  += p.vx * delta;
-                p.y  += p.vy * delta;
-                p.vx *= (1.0f - 2.5f * delta);
-                p.vy *= (1.0f - 2.5f * delta);
-            }
-
-            // 처치 태그(프로세스 종료) 업데이트 — 위로 떠오르며 소멸
-            g_KillTagCD -= delta; if (g_KillTagCD < 0.0f) g_KillTagCD = 0.0f;
-            for (auto& t : g_KillTags) {
-                if (!t.active) continue;
-                t.life -= delta;
-                if (t.life <= 0.0f) { t.active = false; continue; }
-                t.y -= 42.0f * delta;
-            }
+            UpdateEnemyFx(delta);
 
             // 충격파 업데이트
             for (auto& sw : g_ShockWaves) {
@@ -3446,7 +2979,7 @@ int main() {
             // 보스전 중(전조 포함)엔 트래시를 대폭 줄여 보스에 집중 가능하게
             bool  bossNow = g_MonsterManager.boss || g_GlitchBoss || g_RRBoss ||
                             g_PolyBoss || g_SpamBoss || g_KernelBoss || g_FirewallBoss ||
-                            g_BotnetBoss || g_CentiBoss ||
+                            g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
                             !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
             // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
             //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
@@ -3482,10 +3015,24 @@ int main() {
             float effHpMul = 1.0f;
             if (g_Difficulty == Difficulty::EASY) { spawnInterval *= 1.6f; effHpMul = 0.65f; }
             else if (g_Difficulty == Difficulty::HARD) { effHpMul = 1.1f; }
-            // 프로토타입: 지네/체스 보스전 동안엔 잡몹 스폰 완전 정지(순수 듀얼)
-            bool centiDuel = (g_CentiBoss && g_CentiBoss->alive) ||
-                             (g_TrojanBoss && g_TrojanBoss->alive);
-            if (centiDuel) spawnInterval = 1e9f;
+            // 보스 전면전 — 활성 보스가 있으면 자연 잡몹/원거리/자폭 스폰 완전 정지
+            //   (보스가 직접 소환하는 adds 는 각 보스 클래스 내부에서만)
+            auto anyBossAlive = [&]() -> bool {
+                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) return true;
+                if (g_GlitchBoss && g_GlitchBoss->alive) return true;
+                if (g_RRBoss && g_RRBoss->alive) return true;
+                if (g_PolyBoss && g_PolyBoss->alive) return true;
+                if (g_SpamBoss && g_SpamBoss->alive) return true;
+                if (g_KernelBoss && g_KernelBoss->alive) return true;
+                if (g_FirewallBoss && g_FirewallBoss->alive) return true;
+                if (g_BotnetBoss && g_BotnetBoss->alive) return true;
+                if (g_CentiBoss && g_CentiBoss->alive) return true;
+                if (g_TotemBoss && g_TotemBoss->alive) return true;
+                for (auto* s : g_Slimelings) if (s && s->alive) return true;
+                return false;
+            };
+            bool bossDuel = anyBossAlive();
+            if (bossDuel) spawnInterval = 1e9f;
             if (spawnTimer > spawnInterval) {
                 // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
                 int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
@@ -3569,7 +3116,7 @@ int main() {
             {
                 bool bossActive = g_MonsterManager.boss || g_GlitchBoss ||
                                   g_RRBoss || g_PolyBoss || g_SpamBoss || g_KernelBoss ||
-                                  g_FirewallBoss || g_BotnetBoss || g_CentiBoss || g_TrojanBoss ||
+                                  g_FirewallBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
                                   !g_Slimelings.empty() || g_BossWarnTimer > 0.0f;
                 // 라운드2 — 보스 눈덩이 차단: 보스를 잡아 완전히 정리되는 순간(활성→비활성),
                 //   다음 보스 임계값을 현재 점수+20만으로 리베이스 → 최소 20만점 휴식 보장
@@ -3602,22 +3149,27 @@ int main() {
                         case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
                         case 5:  startWarn(5, L"KERNEL.sys",    bossHpC * 0.45f); break;  // DPS체크 — 자가붕괴 보정 위해 HP↓
                         case 6:  startWarn(6, L"FIREWALL.sys",  bossHpC * 0.7f);  break;
-                        case 7:  startWarn(7, L"BOTNET.exe",    bossHpC * 0.75f); break;
-                        case 8:  startWarn(8, L"BUG.proc",        bossHpC * 0.7f);  break;
-                        case 9:  startWarn(9, L"Trojan_king.vir", bossHpC);        break;
+                        case 7:  startWarn(7, L"C2_RELAY.sys",    bossHpC * 0.75f); break;
+                        case 8:  startWarn(8, L"FORK.worm",        bossHpC * 0.7f);  break;
+                        case 9:  startWarn(9, L"TOTEM.sys",        bossHpC * 0.72f); break;
                         default: startWarn(4, L"POLYMORPH.vir",   polyHpC);        break;
                         }
                     }
                     else if (g_GameManager.score >= g_NextBossScore) {
-                        // 업데이트된 보스(지네)만 등장 — 다음 임계 +20만
+                        // 20만점마다 로테이션 (50만 1회 폴리 고정)
                         g_NextBossScore += 200000;
                         float sc = 1.0f + (float)g_GameManager.score / 200000.0f;
                         if (sc > 12.0f) sc = 12.0f;
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.03f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
-                        // 업데이트된 보스 — 지네 / 체스(트로이킹) 교대 등장
-                        if (rand() % 2) startWarn(8, L"BUG.proc", bossHp);
-                        else            startWarn(9, L"Trojan_king.vir", bossHp);
+                        if (!g_PolySpawned && g_GameManager.score >= 500000) {
+                            g_PolySpawned = true;
+                            startWarn(4, L"POLYMORPH.vir", polyHpC);
+                        } else {
+                            int pick = BossDir::RollScorePick();
+                            startWarn(pick, BossDir::DisplayName(pick),
+                                      bossHp * BossDir::HpMul(pick));
+                        }
                     }
                 }
 
@@ -3665,6 +3217,28 @@ int main() {
                         case 7:
                             g_BotnetBoss = new BotnetBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_BotnetBoss->worldX = bsx; g_BotnetBoss->worldY = bsy;
+                            // 순수 전면전 — 잡몹 흡수 + 초기 패킷 러시
+                            {
+                                float absorb = 0.0f;
+                                for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
+                                for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
+                                for (auto* bm : g_MonsterManager.bombers)     if (bm->alive) absorb += bm->hp;
+                                g_BotnetBoss->hp += absorb * 0.35f;
+                                g_BotnetBoss->maxHp += absorb * 0.35f;
+                                for (auto* m  : g_MonsterManager.monsters)   delete m;
+                                g_MonsterManager.monsters.clear();
+                                for (auto* r  : g_MonsterManager.rangedMobs)  delete r;
+                                g_MonsterManager.rangedMobs.clear();
+                                for (auto* bm : g_MonsterManager.bombers)     delete bm;
+                                g_MonsterManager.bombers.clear();
+                                {
+                                    float pCX = playerWin.x + playerWin.width  * 0.5f;
+                                    float pCY = playerWin.y + playerWin.height * 0.5f;
+                                    g_BotnetBoss->deployRushFromHosts(3, pCX, pCY);
+                                    g_BotnetBoss->deployMapRush(pCX, pCY, 3);
+                                }
+                                g_ShakeTime = 0.45f; g_ShakeMag = 16.0f;
+                            }
                             break;
                         case 8:
                             g_CentiBoss = new CentipedeBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -3691,22 +3265,8 @@ int main() {
                             g_CentiBoss->enterSpawn();   // 등장 모션 — 화면 밖에서 곡선 돌진으로 입장
                             break;
                         case 9:
-                            g_TrojanBoss = new TrojanKingBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            // 체스판 보스전도 순수전 — 현재 잡몹 흡수(상한 없음)
-                            {
-                                float absorb = 0.0f;
-                                for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
-                                for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
-                                for (auto* bm : g_MonsterManager.bombers)     if (bm->alive) absorb += bm->hp;
-                                g_TrojanBoss->hp += absorb; g_TrojanBoss->maxHp += absorb;
-                                for (auto* m  : g_MonsterManager.monsters)   delete m;
-                                g_MonsterManager.monsters.clear();
-                                for (auto* r  : g_MonsterManager.rangedMobs)  delete r;
-                                g_MonsterManager.rangedMobs.clear();
-                                for (auto* bm : g_MonsterManager.bombers)     delete bm;
-                                g_MonsterManager.bombers.clear();
-                                g_ShakeTime = 0.5f; g_ShakeMag = 16.0f;
-                            }
+                            g_TotemBoss = new TotemBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_TotemBoss->worldX = bsx; g_TotemBoss->worldY = bsy;
                             break;
                         default:
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -3715,7 +3275,7 @@ int main() {
                             break;
                         }
                         // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
-                        //   지네는 화면 밖에서 곡선 돌진으로 '들어오는' 등장이라, 중앙 폭발이
+                        //   FORK.worm 은 화면 밖에서 곡선 돌진으로 '들어오는' 등장이라, 중앙 폭발이
                         //   위치상 안 맞음 → 흔들기만 두고 중앙 파티클은 생략(자체 입장 연출 사용).
                         g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
                         if (!g_CentiBoss) {
@@ -3733,7 +3293,7 @@ int main() {
 
             // 자폭병 spawn (난이도별 시작 시간/주기, 쉬움은 안 나옴)
             DifficultyParams dp = GetDifficultyParams(g_Difficulty);
-            if (g_GameTime >= dp.bomberStartTime && !centiDuel) {
+            if (g_GameTime >= dp.bomberStartTime && !bossDuel) {
                 g_BomberSpawnTimer += delta;
                 float bomberInt = dp.bomberInterval / (p2mult * rampSpawn);
                 if (bossNow) bomberInt *= 2.0f;   // 보스전: 자폭병도 덜 나오게
@@ -3756,7 +3316,7 @@ int main() {
             int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult
                                   + intensity * 2.0f);           // 점수당 동시 +2
             if (rangedMax > 16) rangedMax = 16;   // 창 개수 = scissor 패스 수 → 상한 (성능)
-            if (rangedSpawnTimer > rangedInterval && !centiDuel) {   // 듀얼 중 원거리몹도 정지
+            if (rangedSpawnTimer > rangedInterval && !bossDuel) {
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
                     g_Stats.rmobHpMult * rampHp, rangedMax, saX, saY, saW, saH);
                 rangedSpawnTimer = 0.0f;
@@ -3824,20 +3384,8 @@ int main() {
                     // 군집 지능(신화) — 발사 간격 2.0× → 0.6× (초고속)
                     float droneInt = g_Stats.fireInterval * (g_Stats.droneRapid ? 0.6f : 2.0f);
                     if (dr.fireTimer >= droneInt) {
-                        float nd = 1e9f, tx = 0, ty = 0;
-                        for (auto m : g_MonsterManager.monsters) {
-                            if (!m->alive) continue;
-                            float ddx = m->worldX - droneX, ddy = m->worldY - droneY;
-                            float ds  = ddx*ddx + ddy*ddy;
-                            if (ds < nd) { nd = ds; tx = m->worldX; ty = m->worldY; }
-                        }
-                        for (auto r : g_MonsterManager.rangedMobs) {
-                            if (!r->alive) continue;
-                            float ddx = r->worldX - droneX, ddy = r->worldY - droneY;
-                            float ds  = ddx*ddx + ddy*ddy;
-                            if (ds < nd) { nd = ds; tx = r->worldX; ty = r->worldY; }
-                        }
-                        if (nd < 1e8f) {
+                        float tx = 0.0f, ty = 0.0f;
+                        if (findNearestEnemy(droneX, droneY, tx, ty)) {
                             Bullet nb(droneX, droneY, tx, ty);
                             nb.speed = g_Stats.bulletSpeed * 0.5f;
                             nb.color = glm::vec3(0.2f, 0.9f, 1.0f);
@@ -4167,6 +3715,7 @@ int main() {
                 }
                 float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
                           * 1.8f * critMult * bMult;       // 근접 보너스 ×1.8
+                if (g_TotemBoss && g_TotemBoss->alive) dmg *= g_TotemBoss->statDamageMult();
                 auto inCone = [&](float ex, float ey) -> bool {
                     float dx = ex - pCX, dy = ey - pCY, d2 = dx*dx + dy*dy;
                     if (d2 > r2) return false;
@@ -4259,6 +3808,17 @@ int main() {
                     hitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
                     hitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
+                if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
+                    hitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
+                if (g_TotemBoss && g_TotemBoss->alive) {
+                    for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                        auto& tt = g_TotemBoss->totems[ti];
+                        if (!tt.alive || !inCone(tt.x, tt.y)) continue;
+                        tt.hp -= dmg;
+                        g_TotemBoss->onTotemDamaged(ti);
+                        if (tt.hp <= 0.0f) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); }
+                    }
+                }
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
                 // 칼바람 — 스윙마다 전방으로 관통 투사체 (근접의 원거리 견제)
@@ -4273,48 +3833,10 @@ int main() {
                 }
             };
 
-            // ── 최근접 적 좌표 (자동발사·자동조준 공용) — 드론/포탑 스캔과 동일 철학 ──
-            //   monsters/rangedMobs/bombers/보스(슬라임·글리치·RR·폴리·스팸)·슬라임분열체 중 최근접.
-            auto nearestEnemy = [&](float fx, float fy, float& tx, float& ty) -> bool {
-                float nd = 1e18f; bool found = false;
-                auto consider = [&](float ex, float ey) {
-                    float ddx = ex - fx, ddy = ey - fy; float ds = ddx*ddx + ddy*ddy;
-                    if (ds < nd) { nd = ds; tx = ex; ty = ey; found = true; }
-                };
-                // 잡몹/자폭병(자기 창 없는 적)은 플레이어 창 안(=화면에 보이는)일 때만 타깃.
-                //   → 자동발사가 창 밖 안 보이는 잡몹을 미리 죽여 "뭘 했는지 모르게" 되는 문제 방지.
-                //   (원거리몹·보스는 자기 가짜 창이 있어 항상 보이므로 거리 무관 타깃)
-                auto vis = [&](float ex, float ey) {
-                    return ex >= playerWin.x && ex <= playerWin.x + playerWin.width &&
-                           ey >= playerWin.y && ey <= playerWin.y + playerWin.height;
-                };
-                for (auto m  : g_MonsterManager.monsters)  if (m->alive  && vis(m->worldX, m->worldY))  consider(m->worldX, m->worldY);
-                for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX, r->worldY);
-                for (auto bm : g_MonsterManager.bombers)    if (bm->alive && vis(bm->worldX, bm->worldY)) consider(bm->worldX, bm->worldY);
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                    consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY);
-                for (auto* c : g_Slimelings) if (c->alive) consider(c->worldX, c->worldY);
-                if (g_GlitchBoss && g_GlitchBoss->alive) consider(g_GlitchBoss->worldX, g_GlitchBoss->worldY);
-                if (g_RRBoss && g_RRBoss->alive)         consider(g_RRBoss->worldX, g_RRBoss->worldY);
-                if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
-                    consider(g_PolyBoss->worldX, g_PolyBoss->worldY);
-                if (g_SpamBoss && g_SpamBoss->alive)     consider(g_SpamBoss->worldX, g_SpamBoss->worldY);
-                if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY);
-                if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY);
-                if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY);
-                if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
-                if (g_CentiBoss && g_CentiBoss->alive)                              // 새끼 지네도 자동조준 대상
-                    for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
-                if (g_TrojanBoss && g_TrojanBoss->alive) {                          // 체스 — 기물 + (취약 시)킹
-                    if (g_TrojanBoss->kingVulnerable()) consider(g_TrojanBoss->worldX, g_TrojanBoss->worldY);
-                    for (auto& p : g_TrojanBoss->pieces) if (p.alive) consider(p.wx, p.wy);
-                }
-                return found;
-            };
-            // 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
+            // ── 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
             auto aimTarget = [&](float& tx, float& ty) -> bool {
                 if (lmb) { tx = wmx; ty = wmy; return true; }       // 일점사
-                return nearestEnemy(pCX, pCY, tx, ty);              // 드론식 자동조준
+                return findNearestEnemy(pCX, pCY, tx, ty);          // 드론식 자동조준
             };
 
             // ── 스캔 레이저 (증강) — 0.7초마다 조준 방향 관통 빔 (군중제어) ──
@@ -4342,6 +3864,7 @@ int main() {
                     }
                     float ldmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
                                * 1.4f * lcm * lbm;   // 너프: 2.5 → 1.4 (잡몹 정리용, 보스 칩 최소)
+                    if (g_TotemBoss && g_TotemBoss->alive) ldmg *= g_TotemBoss->statDamageMult();
                     auto lOnKill = [&]() {
                         if (g_Stats.lifestealPerKill > 0.0f) {
                             g_GameManager.playerHP += g_Stats.lifestealPerKill;
@@ -4422,6 +3945,8 @@ int main() {
                         lhitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
                         lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
+                        lhitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
@@ -4436,6 +3961,7 @@ int main() {
                 if (g_NovaTimer >= novaInt) {
                     g_NovaTimer = 0.0f;
                     float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 2.0f;
+                    if (g_TotemBoss && g_TotemBoss->alive) dmg *= g_TotemBoss->statDamageMult();
                     float r2  = novaR * novaR;
                     auto nOnKill = [&]() {
                         if (g_Stats.lifestealPerKill > 0.0f) {
@@ -4496,6 +4022,19 @@ int main() {
                     if (g_FirewallBoss && g_FirewallBoss->alive) nhitB(g_FirewallBoss->worldX,g_FirewallBoss->worldY,g_FirewallBoss->hp,g_FirewallBoss->alive);
                     if (g_BotnetBoss && g_BotnetBoss->alive) nhitB(g_BotnetBoss->worldX,g_BotnetBoss->worldY,g_BotnetBoss->hp,g_BotnetBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) nhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) nhitB(g_TotemBoss->worldX,g_TotemBoss->worldY,g_TotemBoss->hp,g_TotemBoss->alive);
+                    if (g_TotemBoss && g_TotemBoss->alive) {
+                        for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                            auto& tt = g_TotemBoss->totems[ti];
+                            if (!tt.alive) continue;
+                            float dx = tt.x - pCX, dy = tt.y - pCY;
+                            if (dx*dx + dy*dy < r2) {
+                                tt.hp -= dmg;
+                                g_TotemBoss->onTotemDamaged(ti);
+                                if (tt.hp <= 0.0f) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); }
+                            }
+                        }
+                    }
                     // 시각 — 팽창 링(SpawnShockWave 재사용) + 손맛
                     SpawnShockWave(pCX, pCY, novaR, 0.45f, 0.4f, 1.0f, 0.75f);
                     SpawnSparks(pCX, pCY, 10, 0.4f, 1.0f, 0.7f, 360.0f);
@@ -4571,6 +4110,7 @@ int main() {
                         fireTimer = 0.0f;
                     }
                 } else {
+                    // 홀드 연사 — 공속(effInterval) 준수. 자동발사 OFF여도 LMB 홀드 시 연사.
                     if (fireHeld && fireTimer >= effInterval) {
                         float tx, ty;
                         bool haveTarget = aimTarget(tx, ty);   // 클릭=커서 일점사 / 자동=최근접 적
@@ -4585,11 +4125,6 @@ int main() {
                             fireTimer = 0.0f;
                         }
                     }
-                    // 클릭 release 시 타이머 리셋 — 다음 클릭에 즉시 발사 가능 (일반 무기 UX)
-                    // 단발 고화력 무기(대포·샷건·저격)는 연타로 연사 우회 방지 → 리셋 스킵
-                    // (자동발사 모드면 항상 발사 중이라 리셋 안 함)
-                    if (!fireHeld && !g_Stats.cannon && !g_Stats.shotgun && !g_Stats.sniper)
-                        fireTimer = effInterval;
                 }
             }
         }
@@ -4598,20 +4133,18 @@ int main() {
         g_GameManager.hoveredCard = g_HoveredAug;
         g_GameManager.conversionAug = g_ConversionWeapon;
 
-        g_GameManager.UpdateTitle(window);
-
         // ============================================================
         // 렌더링
         // ============================================================
         glViewport(0, 0, screenWidth, screenHeight);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-
-        glUseProgram(shader);
-        glUniform1i(fxLoc, g_ShaderFx ? 1 : 0);   // CRT 셰이더 효과 토글 (G)
+    
+        glUseProgram(g_MainShader);
+        glUniform1i(g_MainFxLoc, g_ShaderFx ? 1 : 0);   // CRT 셰이더 효과 토글 (G)
         // 화면 흔들기 + 줌 적용 — game world 만, HUD/text(별도 ortho)는 영향 없음
         float orthoShake[16];
-        memcpy(orthoShake, ortho, sizeof(ortho));
+        memcpy(orthoShake, g_BaseOrtho, sizeof(g_BaseOrtho));
         // 줌(중심 = ZCX/ZCY, 기본 화면 중앙). z=1 이면 base ortho 와 동일(identity)
         {
             float z = g_ViewZoom;
@@ -4640,11 +4173,11 @@ int main() {
             orthoShake[13] += 2.0f * sy / (float)screenHeight;
         }
         BatchFlush();   // ortho(줌) 바꾸기 전 — 이전 매트릭스로 쌓인 도형 먼저 그림
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, orthoShake);
+        glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, orthoShake);
         // 글로벌에도 동기화 — BindMainShader() 가 이 값 사용
         memcpy(g_MainOrtho, orthoShake, sizeof(orthoShake));
-        glBindVertexArray(VAO);
-
+        glBindVertexArray(g_MainVAO);
+    
         // 월드/엔티티 렌더는 게임플레이 상태에서만 그린다 — 메뉴(시작창 등)에
         //   직전 게임의 플레이어 창·잔여 엔티티가 정지 상태로 비치던 문제 방지.
         //   (g_MainOrtho 는 위에서 이미 갱신했으므로 메뉴 텍스트/데모 렌더는 정상)
@@ -4655,11 +4188,11 @@ int main() {
                               wgs == GameState::AUG_SELECT || wgs == GameState::DEBUFF_SELECT ||
                               wgs == GameState::GAMEOVER);
         if (inWorldRender) {
-
+    
         // 원거리 몹 FakeWindow 크기 상수 (렌더·클리핑 공용)
         const float RFW_W = g_RfwW;
         const float RFW_H = g_RfwH;
-
+    
         // ============================================================
         // 렌더 z-order (아래→위)
         //  (a) 원거리 몹 FakeWindow 배경  ← 가장 아래
@@ -4669,13 +4202,13 @@ int main() {
         //  (e) 플레이어 창 내부의 잡몹·총알 (scissor 클리핑) ← 가장 위
         //  (f) BrokenSight 오브 (클리핑 없음)
         // ============================================================
-
+    
         // (a0) 투명 배경 가리기 — 충격파 배경 + 텔레그래프 배경
         //      glDisable(GL_BLEND) + 불투명 어두운 도형 → 이후 FakeWindow 로 덮어씀
         //      투명 영역에만 남아 VFX / 텔레그래프가 데스크톱 위에 뜨지 않게 함
         BatchFlush(); glDisable(GL_BLEND);
         BindMainShader();
-
+    
         // (a0-1) 자폭병 충격파 배경 — needsBg 플래그가 설정된 충격파에 한해
         for (auto& sw : g_ShockWaves) {
             if (!sw.active || !sw.needsBg) continue;
@@ -4683,7 +4216,7 @@ int main() {
             float bgR = sw.maxRadius * t + 30.0f;      // 링보다 조금 크게
             drawCircle(sw.x, sw.y, bgR, 0.08f, 0.08f, 0.10f, 1.0f);
         }
-
+    
         // (a0-2) 텔레그래프 배경 — 돌진 예고선 주변 ~100px 어두운 띠
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs0 = g_MonsterManager.boss;
@@ -4694,7 +4227,7 @@ int main() {
                 float maxLen0 = (float)screenWidth + (float)screenHeight;
                 float len0    = maxLen0 * prog0 + 100.0f;   // 진행 방향 100px 여유
                 float thick0  = (80.0f + 20.0f * prog0) + 200.0f; // 양쪽 100px
-
+    
                 // 시작점: 보스 뒤 100px (방향 반대)
                 float sx0 = bs0->worldX - bs0->chargeDirX * 100.0f;
                 float sy0 = bs0->worldY - bs0->chargeDirY * 100.0f;
@@ -4710,14 +4243,14 @@ int main() {
                 BatchVerts(vt, 6, 0.08f, 0.08f, 0.10f, 1.0f);
             }
         }
-
+    
         // (a) 원거리 몹 + 포탑 + 보스 FakeWindow 배경 — 블렌드 OFF 로 직접 덮어쓰기
         //     겹쳐서 또 그려도 같은 색이 그대로 쓰여 누적 없음.
         // 포탑 250×250 창 배경 (다수)
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
-                float twx = t.x - TURRET_WIN_W * 0.5f;
-                float twy = t.y - TURRET_WIN_H * 0.5f;
+                float twx = WinOrigin(t.x, TURRET_WIN_W);
+                float twy = WinOrigin(t.y, TURRET_WIN_H);
                 drawRect(twx, twy, TURRET_WIN_W, TURRET_WIN_H,
                          0.06f, 0.08f, 0.10f, 1.0f);
             }
@@ -4773,11 +4306,13 @@ int main() {
                  L"FIREWALL.sys", 0.10f,0.06f,0.05f, 1.0f,0.45f,0.2f);
         if (g_BotnetBoss && g_BotnetBoss->alive)
             addW(g_BotnetBoss->worldX, g_BotnetBoss->worldY, BOTNET_WIN_W, BOTNET_WIN_W,
-                 L"BOTNET.exe", 0.06f,0.07f,0.11f, 0.3f,0.55f,1.0f);
+                 L"C2_RELAY.sys", 0.04f,0.07f,0.05f, 0.25f,0.92f,0.45f);
         if (g_CentiBoss && g_CentiBoss->alive)
             addW(g_CentiBoss->worldX, g_CentiBoss->worldY, CENTI_WIN_W, CENTI_WIN_W,
-                 L"BUG.proc", 0.09f,0.10f,0.05f, 0.7f,1.0f,0.3f);
-
+                 CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f);
+        if (g_TotemBoss && g_TotemBoss->alive)
+            addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
+                 L"TOTEM.sys", 0.08f,0.04f,0.10f, 0.85f,0.45f,0.95f);
         // 포탑 창 배경+보더 (최하단, 플레이어 소유라 z-리스트 밖)
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
@@ -4797,7 +4332,7 @@ int main() {
             drawNeonBorder(fw.x, fw.y, fw.w, fw.h, fw.nr, fw.ngc, fw.nbc);
         }
         BatchFlush(); glEnable(GL_BLEND);  // 이후 일반 알파 블렌딩 보장
-
+    
         // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
         //     각 창마다 scissor 패스. 다이아몬드/본체는 (e2)/(e3) 에서 별도로 그림
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
@@ -4838,15 +4373,14 @@ int main() {
             }
             // 다가오는 죽음 오브 (창 안에서만)
             for (auto& orb : g_ApproachOrbs) {
-                drawRect(orb.x - 18, orb.y - 18, 36, 36, 0.95f, 0.0f, 0.0f, 0.30f);
-                drawRect(orb.x - 14, orb.y - 14, 28, 28, 0.95f, 0.05f, 0.05f, 1.0f);
+                DrawApproachOrb(orb.x, orb.y);
             }
         }
         // (b'') 포탑 창 안 컨텐츠 (다수)
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
-                float twx = t.x - TURRET_WIN_W * 0.5f;
-                float twy = t.y - TURRET_WIN_H * 0.5f;
+                float twx = WinOrigin(t.x, TURRET_WIN_W);
+                float twy = WinOrigin(t.y, TURRET_WIN_H);
                 WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive || !inWin(m->worldX, m->worldY, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
@@ -4869,7 +4403,7 @@ int main() {
                 }
             }
         }
-
+    
         // (b') 보스 창 안 컨텐츠 — 같은 잡몹/자폭병/총알을 보스 창 영역으로도 노출
         //     모든 보스 종류(슬라임/글리치/리로드/폴리/스팸/슬라임분열체) 공통 처리.
         //     E22: 이전엔 슬라임 보스(g_MonsterManager.boss)만 노출돼 다른 보스 창에선
@@ -4898,8 +4432,7 @@ int main() {
                 drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
             }
             for (auto& orb : g_ApproachOrbs) {
-                drawRect(orb.x - 18, orb.y - 18, 36, 36, 0.95f, 0.0f, 0.0f, 0.30f);
-                drawRect(orb.x - 14, orb.y - 14, 28, 28, 0.95f, 0.05f, 0.05f, 1.0f);
+                DrawApproachOrb(orb.x, orb.y);
             }
         };
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
@@ -4931,6 +4464,9 @@ int main() {
         if (g_CentiBoss && g_CentiBoss->alive)
             drawBossWinContent(g_CentiBoss->worldX - CENTI_WIN_W * 0.5f,
                                g_CentiBoss->worldY - CENTI_WIN_W * 0.5f, CENTI_WIN_W, CENTI_WIN_W);
+        if (g_TotemBoss && g_TotemBoss->alive)
+            drawBossWinContent(g_TotemBoss->worldX - TOTEM_WIN_W * 0.5f,
+                               g_TotemBoss->worldY - TOTEM_WIN_W * 0.5f, TOTEM_WIN_W, TOTEM_WIN_W);
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
             float w = Boss::WIN_W * c->sizeScale;
@@ -4944,8 +4480,7 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-        // 새끼 지네 창 — 우선순위 낮음(플레이어 창보다 먼저 그려 뒤로 깔림).
-        //   각자 가짜 앱 창(DrawAppWindow). y 오름차순(아래가 위로 겹침).
+        // FORK.worm child adds — 각자 가짜 앱 창 (y 오름차순 = 아래가 위로 겹침)
         if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
             const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H;
             std::vector<CentipedeBoss::MiniBug*> ord;
@@ -4954,8 +4489,8 @@ int main() {
                       [](CentipedeBoss::MiniBug* a, CentipedeBoss::MiniBug* b) { return a->y < b->y; });
             for (auto* mbp : ord) {
                 auto& mb = *mbp;
-                float wx = mb.x - MW*0.5f, wy = mb.y - MH*0.5f;
-                DrawAppWindow(wx, wy, MW, MH, L"bug.sub");
+                float wx = mb.x - MW * 0.5f, wy = mb.y - MH * 0.5f;
+                DrawAppWindow(wx, wy, MW, MH, CentipedeBoss::MINI_WIN_NAME, CentipedeBoss::MINI_WIN_TB);
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
                 WorldScissor(wx, wy, MW, MH);
                 for (auto& b : g_Bullets)
@@ -4966,7 +4501,34 @@ int main() {
             }
         }
 
-        // (c) 플레이어 FakeWindow 배경 — 블렌드 OFF 로 직접 덮어쓰기
+        // TOTEM.sys 토템 — 종류별 가짜 앱 창
+        if (g_TotemBoss && g_TotemBoss->alive) {
+            const float TW = TotemBoss::WIN_W * g_Scale, TH = TotemBoss::WIN_H * g_Scale;
+            const float TTB = TotemBoss::WIN_TB * g_Scale;
+            struct TotemPtr { TotemBoss::Totem* p; };
+            std::vector<TotemPtr> ord;
+            for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++)
+                if (g_TotemBoss->totems[ti].alive) ord.push_back({ &g_TotemBoss->totems[ti] });
+            std::sort(ord.begin(), ord.end(),
+                      [](TotemPtr a, TotemPtr b) { return a.p->y < b.p->y; });
+            float gtTot = (float)glfwGetTime();
+            for (auto& tp : ord) {
+                auto& tt = *tp.p;
+                float wx = tt.x - TW * 0.5f, wy = tt.y - TH * 0.5f;
+                DrawAppWindow(wx, wy, TW, TH,
+                              TotemBoss::totemWinTitle(tt.kind), TTB);
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy, TW, TH);
+                for (auto& b : g_Bullets)
+                    if (b.active && inWin(b.x, b.y, wx, wy, TW, TH)) drawBullet(b);
+                for (auto m : g_MonsterManager.monsters)
+                    if (m->alive && inWin(m->worldX, m->worldY, wx, wy, TW, TH)) drawMob(m);
+                g_TotemBoss->renderTotem(tt, gtTot);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            }
+        }
+
+        // (c) 플레이어 FakeWindow 배경
         //     원거리 몹 창과 겹친 영역도 player 색으로 깔끔하게 덮임 (누적 없음)
         //     ranged 컨텐츠 (b) 가 player 영역에 그려졌으면 여기서 덮여 사라짐
         //     = "원거리 몹 창이 플레이어 창 안에 들어가면 가려짐" 원래 의도 그대로
@@ -4977,7 +4539,7 @@ int main() {
         // 사이버펑크 네온 터미널 — 플레이어 창 네온 보더 (액센트 테마 색)
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        g_AccentR, g_AccentG, g_AccentB);
-
+    
         // (c2) HP/EXP 바 — 플레이어 창 하단 안쪽에 부착 (창과 함께 이동) ──
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::PAUSED ||
@@ -5007,7 +4569,7 @@ int main() {
             drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 1.0f);
             drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
         }
-
+    
         // (c2.5) 배드 섹터 감속 구역 — 중심에서 부식되어 퍼지는 손상 블록(깜빡임 애니메이션)
         if (!g_SlowZones.empty()) {
             BindMainShader();
@@ -5037,7 +4599,7 @@ int main() {
                 drawNeonBorder(zx - hw, zy - hh, hw*2, hh*2, 0.75f, 0.3f, 0.95f);
             }
         }
-
+    
         // (c3) 스캔 레이저 빔 — 페이드되는 청록 관통 빔 (보스 레이저 쿼드 패턴)
         if (!g_LaserBeams.empty()) {
             BindMainShader();
@@ -5061,8 +4623,8 @@ int main() {
                 }
             }
         }
-
-
+    
+    
         // (d) 플레이어 캐릭터 + 증강 이펙트 + 사망 파편
         {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
@@ -5070,7 +4632,7 @@ int main() {
             // 총검: 200px 이내 표시 (희미한 시안 원)
             if (g_Stats.bayonet)
                 drawCircle(pCX, pCY, 200.0f, 0.4f, 1.0f, 0.9f, 0.10f);
-
+    
             // 궁수 차징 게이지 (플레이어 위 바) — 완충 시 흰색 번쩍
             if (g_Stats.bowWeapon && g_ArcherCharge > 0.001f) {
                 float bw = 60.0f, bh = 7.0f;
@@ -5080,17 +4642,17 @@ int main() {
                 float cr = full ? 1.0f : 0.6f, cg = 1.0f, cb = full ? 0.7f : 0.3f;
                 drawRect(bxp, byp, bw * g_ArcherCharge, bh, cr, cg, cb, 0.95f);
             }
-
+    
             if (g_GameManager.currentState == GameState::DYING) {
                 float fade = (g_DyingTimer > 0) ? g_DyingTimer : 0.0f;
-
+    
                 // 폭발 충격파
                 float t      = 1.0f - fade;
                 float shockR = 60.0f + t * 520.0f;
                 float shockA = (1.0f - t) * 0.55f;
                 drawCircle(g_DeathCX, g_DeathCY, shockR,
                            1.0f, 0.95f, 0.4f, shockA);
-
+    
                 // 중심 섬광
                 if (g_DeathFlash > 0.0f) {
                     float fr = 220.0f * g_DeathFlash;
@@ -5099,7 +4661,7 @@ int main() {
                     drawCircle(g_DeathCX, g_DeathCY, fr * 1.8f,
                                1.0f, 0.85f, 0.2f, g_DeathFlash * 0.45f);
                 }
-
+    
                 // 사망 파편
                 for (int i = 0; i < MAX_DEBRIS; i++) {
                     if (!g_Debris[i].active) continue;
@@ -5127,7 +4689,7 @@ int main() {
                 float core = sz * 0.35f;
                 drawRect(pCX - core * 0.5f, pCY - core * 0.5f, core, core,
                          1.0f, 1.0f, 1.0f, 1.0f);
-
+    
                 // ── 산나비식 HP 게이지바 — 피격 시 플레이어 위에 떴다 페이드, 피 낮으면 상시 ──
                 if (g_GameManager.currentState == GameState::RUNNING) {
                     float hf = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
@@ -5148,7 +4710,7 @@ int main() {
                         drawRect(bx, by, bw * hf, bh, r, g, 0.15f, 0.92f * vis);
                     }
                 }
-
+    
                 // ── 위치 강조 표시 (혼잡한 탄막 속에서 플레이어를 쉽게 찾도록) ──
                 //   + 자형 레티클(중심 비움) + 옅은 헤일로. HP 낮을수록 강해지고 붉어짐.
                 if (g_GameManager.currentState == GameState::RUNNING) {
@@ -5177,7 +4739,7 @@ int main() {
                 }
             }
         }
-
+    
         // (e) 플레이어 창 내부 컨텐츠 — scissor (가장 위 레이어)
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
         WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
@@ -5213,11 +4775,10 @@ int main() {
         }
         // 다가오는 죽음 오브 (플레이어 창 안에서만)
         for (auto& orb : g_ApproachOrbs) {
-            drawRect(orb.x - 18, orb.y - 18, 36, 36, 0.95f, 0.0f, 0.0f, 0.30f);
-            drawRect(orb.x - 14, orb.y - 14, 28, 28, 0.95f, 0.05f, 0.05f, 1.0f);
+            DrawApproachOrb(orb.x, orb.y);
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
+    
         // (e2) 원거리 몹 다이아몬드 — 각 원거리 몹 창 영역에서 항상 위에 그림
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
         for (auto r : g_MonsterManager.rangedMobs) {
@@ -5234,13 +4795,13 @@ int main() {
                         r->color.r, r->color.g, r->color.b, dAlpha);
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
+    
         // (e2.1) 포탑 아이콘 + 수명바 (다수) — 각 창 영역 scissor 내에서 표시
         if (g_Stats.turretMode) {
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             for (auto& t : g_Turrets) {
-                float twx = t.x - TURRET_WIN_W * 0.5f;
-                float twy = t.y - TURRET_WIN_H * 0.5f;
+                float twx = WinOrigin(t.x, TURRET_WIN_W);
+                float twy = WinOrigin(t.y, TURRET_WIN_H);
                 WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 // 포탑 본체 — 십자형 (중앙 사각형 + 4방향 돌출)
                 float tc = 12.0f;
@@ -5257,7 +4818,7 @@ int main() {
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
+    
         // (e2.5) 보스 텔레그래프 — scissor 없이 전체 화면에 표시
         //        보스 창 밖에서도 보이도록 (e3) 의 scissor 이전에 그림
         //        보스 위치에서 돌진 방향으로 점점 늘어나는 빨간 구역
@@ -5272,7 +4833,7 @@ int main() {
                 float len    = maxLen * prog;
                 float thick  = 80.0f + 20.0f * prog; // 폭도 살짝 확장
                 float alpha  = 0.12f + 0.28f * prog;  // 처음엔 희미, 끝엔 진하게
-
+    
                 float ex = bs->worldX + bs->chargeDirX * len;
                 float ey = bs->worldY + bs->chargeDirY * len;
                 float perpX = -bs->chargeDirY, perpY = bs->chargeDirX;
@@ -5298,29 +4859,29 @@ int main() {
                 }
             }
         }
-
+    
         // (e3) 보스 본체 (Mercedes 모양) + HP 바
         if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
             auto* bs = g_MonsterManager.boss;
-
+    
             // 보스 창 영역 scissor (플레이어 창 위에 가려도 보임)
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             float bwx = bs->worldX - Boss::WIN_W * 0.5f;
             float bwy = bs->worldY - Boss::WIN_H * 0.5f;
             WorldScissor(bwx, bwy, Boss::WIN_W, Boss::WIN_H);
-
+    
             // 본체 — Mercedes 로고
             float bodyColR = (bs->skill == Boss::Skill::TELEGRAPH) ? 1.0f : 0.95f;
             float bodyColG = (bs->skill == Boss::Skill::TELEGRAPH) ? 0.4f : 0.85f;
             float bodyColB = (bs->skill == Boss::Skill::TELEGRAPH) ? 0.4f : 0.95f;
             drawMercedes(bs->worldX, bs->worldY, Boss::BODY_SIZE,
                          bodyColR, bodyColG, bodyColB, 1.0f);
-
+    
             // (HP 바는 화면 상단 고정 보스 바로 이동 — 후반 가시성)
-
+    
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
+    
         // (e3.5) 슬라임 분열체 — 돌진 경고(전체화면) + 본체/HP/총알(개인 창)
         for (auto* c : g_Slimelings) {
             if (!c->alive) continue;
@@ -5363,13 +4924,13 @@ int main() {
             drawRect(hbX, hbY, hbW*hpFrac, hbH, 0.4f, 0.95f, 0.5f, 0.95f);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
+    
         // (f) BrokenSight 오브 — 항상 표시 (클리핑 없음, 무적)
         if (g_Stats.brokenSight && g_Orb.active) {
             drawCircle(g_Orb.x, g_Orb.y, 16.0f, 1.0f, 1.0f, 0.1f, 0.22f);
             drawDiamond(g_Orb.x, g_Orb.y, 22.0f, 1.0f, 0.92f, 0.0f, 1.0f);
         }
-
+    
         // 크로스헤어 — 게임 중에만, g_ShowCrosshair true 일 때
         if (g_ShowCrosshair &&
             (g_GameManager.currentState == GameState::RUNNING ||
@@ -5390,9 +4951,9 @@ int main() {
             drawRect(ax - 1.0f, ay - 14.0f, 2.0f, 6.0f, cr, cg, cb, 0.95f);
             drawRect(ax - 1.0f, ay + 8.0f,  2.0f, 6.0f, cr, cg, cb, 0.95f);
         }
-
+    
         // (g) 다가오는 죽음 오브 — scissor 안에서만 표시 ((b)/(e) 패스에 위임)
-
+    
         // (g2) 충격파 — 자폭병 자폭 / 보스 스폰 등. 항상 위에 표시
         for (auto& sw : g_ShockWaves) {
             if (!sw.active) continue;
@@ -5401,7 +4962,7 @@ int main() {
             float alpha  = (1.0f - t) * 0.55f;
             drawCircle(sw.x, sw.y, radius, sw.r, sw.g, sw.b, alpha);
         }
-
+    
         // (g2b) 검객 스윙 잔상 — 조준 방향 부채꼴
         for (auto& sl : g_Slashes) {
             if (!sl.active) continue;
@@ -5411,7 +4972,7 @@ int main() {
             float halfArc = 1.15f * (1.0f - 0.15f * t);
             drawConeFan(sl.x, sl.y, rad, sl.ang, halfArc, 0.85f, 0.95f, 1.0f, alpha);
         }
-
+    
         // (g2c) 타격 스파크 + 머즐 플래시 — 가산(additive) 블렌딩으로 밝게
         if (!g_Sparks.empty() || g_MuzzleTimer > 0.0f) {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);     // additive
@@ -5431,7 +4992,7 @@ int main() {
             glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                                 GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
         }
-
+    
         // (g3) 글리치 보스 — 레이저 + 미니 세모 + 본체 + HP 바 (스크린 좌표 최상단)
         if (g_GlitchBoss && g_GlitchBoss->alive) {
             auto* gb = g_GlitchBoss;
@@ -5514,14 +5075,14 @@ int main() {
             // (HP 바는 화면 상단 고정 보스 바로 이동)
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
+    
         // (g4) 리로드 러너 — 무기 전조(저격선/MG 부채꼴) + 본체 + HP + [RELOADING]
         if (g_RRBoss && g_RRBoss->alive) {
             auto* rb = g_RRBoss;
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
             BindMainShader();
-
+    
             // SNIPER 정지 조준선 (보스 → 플레이어, 깜빡)
             if (rb->aiming) {
                 float adx = pCX - rb->worldX, ady = pCY - rb->worldY;
@@ -5536,7 +5097,7 @@ int main() {
                 float a = 0.55f + 0.35f * sinf((float)glfwGetTime() * 30.0f);
                 BatchVerts(v, 6, 0.4f, 1.0f, 1.0f, a);
             }
-
+    
             // MACHINEGUN 부채꼴 범위 예고 (삼각 부채로 채움)
             if (rb->mgTelegraph) {
                 float base = atan2f(rb->zoneDirY, rb->zoneDirX);
@@ -5554,7 +5115,7 @@ int main() {
                     BatchVerts(v, 3, 1.0f, 0.85f, 0.2f, alpha);
                 }
             }
-
+    
             // SHOTGUN 부채꼴 사거리 예고 (사정거리 진입 시 플레이어 방향 옅은 콘)
             if (rb->state == RRState::ACTIVE && rb->weapon == RRWeapon::SHOTGUN) {
                 float adx = pCX - rb->worldX, ady = pCY - rb->worldY;
@@ -5575,7 +5136,7 @@ int main() {
                     }
                 }
             }
-
+    
             // 본체 + HP + 총알 — 개인 창 영역으로 클리핑 (맨 배경에 떠 보이지 않게)
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(rb->worldX - RR_WIN_W*0.5f, rb->worldY - RR_WIN_W*0.5f,
@@ -5592,10 +5153,10 @@ int main() {
             else if (rb->weapon == RRWeapon::SNIPER)       { br=0.3f; bg=1.0f;  bb=1.0f; }
             else                                           { br=1.0f; bg=0.85f; bb=0.2f; }
             drawDiamond(rb->worldX, rb->worldY, ReloadRunnerBoss::BODY, br, bg, bb, 1.0f);
-
+    
             // (HP 바는 화면 상단 고정 보스 바로 이동)
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
+    
             // [RELOADING...] 깜빡 텍스트
             if (rb->state == RRState::RELOAD_SPRINT &&
                 ((int)(glfwGetTime() * 5.0) % 2 == 0)) {
@@ -5606,7 +5167,7 @@ int main() {
                              1.0f, 0.9f, 0.3f, 0.95f);
             }
         }
-
+    
         // (g4b) SPAM.dll — 회전 나선포 본체 + 탄막(개인 창 클리핑) + HP
         if (g_SpamBoss && g_SpamBoss->alive) {
             auto* sb = g_SpamBoss;
@@ -5632,7 +5193,7 @@ int main() {
             // (HP 바는 화면 상단 고정 보스 바로 이동)
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
+    
         // (g4c) KERNEL.sys — 고정형 거대 코어 + 팽창 예고 링 + 자가붕괴 비주얼
         if (g_KernelBoss && g_KernelBoss->alive) {
             auto* kb = g_KernelBoss;
@@ -5663,7 +5224,7 @@ int main() {
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
+    
         // (g4d) FIREWALL.sys — 본체 + 회전 보호막 아크(가변속도) + 견제탄
         if (g_FirewallBoss && g_FirewallBoss->alive) {
             auto* fb = g_FirewallBoss;
@@ -5712,82 +5273,45 @@ int main() {
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
-        // (g4e) BOTNET.exe — 본체 + 공전/투척 프로세스 5개
+    
+        // (g4e) C2_RELAY.sys — 코어(창 안) + 패킷 adds(가짜창 없음·단순 도형)
         if (g_BotnetBoss && g_BotnetBoss->alive) {
             auto* nb2 = g_BotnetBoss;
-            BindMainShader();
-            float bp = 0.5f + 0.5f * sinf((float)glfwGetTime() * 5.0f);
-            // 부하 프로세스 — 가시 박힌 사각 (공전=청록 / 투척=적색 경고)
-            auto drawProc = [&](float x, float y, bool thrown) {
-                float sz = BotnetBoss::PROC_SIZE;
-                if (thrown) {
-                    drawCircle(x, y, sz*0.95f, 1.0f, 0.3f, 0.2f, 0.32f);      // 경고 글로우
-                    drawRect(x - sz*0.5f, y - sz*0.5f, sz, sz, 1.0f, 0.28f, 0.22f, 1.0f);
-                    drawRect(x - sz*0.27f, y - sz*0.27f, sz*0.54f, sz*0.54f, 0.28f, 0.05f, 0.05f, 1.0f);
-                    drawDiamond(x, y - sz*0.62f, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
-                    drawDiamond(x, y + sz*0.62f, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
-                    drawDiamond(x - sz*0.62f, y, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
-                    drawDiamond(x + sz*0.62f, y, 6.0f, 1.0f, 0.45f, 0.3f, 1.0f);
-                } else {
-                    drawRect(x - sz*0.5f, y - sz*0.5f, sz, sz, 0.25f, 0.55f, 1.0f, 1.0f);
-                    drawRect(x - sz*0.27f, y - sz*0.27f, sz*0.54f, sz*0.54f, 0.06f, 0.2f, 0.45f, 1.0f);
-                    drawDiamond(x, y - sz*0.62f, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
-                    drawDiamond(x, y + sz*0.62f, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
-                    drawDiamond(x - sz*0.62f, y, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
-                    drawDiamond(x + sz*0.62f, y, 5.0f, 0.5f, 0.8f, 1.0f, 1.0f);
-                }
-            };
-
-            // (1) 창 안(클리핑) — 탄·본체·공전/복귀 프로세스
+            float ct = (float)glfwGetTime();
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(nb2->worldX - BOTNET_WIN_W*0.5f, nb2->worldY - BOTNET_WIN_W*0.5f,
+            WorldScissor(nb2->worldX - BOTNET_WIN_W * 0.5f, nb2->worldY - BOTNET_WIN_W * 0.5f,
                          BOTNET_WIN_W, BOTNET_WIN_W);
-            for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
-            // 본체 — 가시 돌출 노드(회전 다이아 8개) + 네스티드 사각 + 코어
-            float bb2 = BotnetBoss::BODY;
-            for (int s = 0; s < 8; s++) {
-                float a  = nb2->orbitRot * 0.5f + (float)s * 0.7853982f;
-                float ox = nb2->worldX + cosf(a) * bb2 * 1.20f;
-                float oy = nb2->worldY + sinf(a) * bb2 * 1.20f;
-                drawDiamond(ox, oy, bb2*0.28f, 0.15f, 0.4f, 0.9f, 1.0f);
-            }
-            drawRect(nb2->worldX - bb2, nb2->worldY - bb2, bb2*2, bb2*2,
-                     0.2f, 0.45f + 0.2f*bp, 0.95f, 1.0f);
-            drawRect(nb2->worldX - bb2*0.64f, nb2->worldY - bb2*0.64f, bb2*1.28f, bb2*1.28f,
-                     0.08f, 0.22f, 0.55f, 1.0f);
-            drawRect(nb2->worldX - bb2*0.5f, nb2->worldY - bb2*0.5f, bb2, bb2,
-                     0.6f, 0.85f, 1.0f, 1.0f);
-            drawCircle(nb2->worldX, nb2->worldY, bb2*0.26f, 1.0f, 1.0f, 1.0f, 0.95f);
-            for (int i = 0; i < BotnetBoss::NPROC; i++) {
-                auto& p = nb2->procs[i];
-                if (p.state == 1) continue;      // 투척은 창 밖에서 렌더
-                drawProc(p.x, p.y, false);
-            }
+            nb2->renderCore(ct);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-            // (2) 창 밖(전체화면) — 투척 프로세스: 창 밖으로 날아가도 보이게(클리핑 버그 fix)
-            for (int i = 0; i < BotnetBoss::NPROC; i++) {
-                auto& p = nb2->procs[i];
-                if (p.state == 1) drawProc(p.x, p.y, true);
-            }
-            BatchFlush();
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            auto c2MinionPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                for (auto& b : g_Bullets)
+                    if (b.active) drawBullet(b);
+                nb2->renderMinions(ct);
+            };
+            for (auto& fw : zwins) c2MinionPass(fw.x, fw.y, fw.w, fw.h);
+            c2MinionPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            if (g_Stats.turretMode)
+                for (auto& tr : g_Turrets)
+                    c2MinionPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
+                                 TURRET_WIN_W, TURRET_WIN_H);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
-        // (g4g) Trojan_king.vir — 체스판 + 킹 + 기물 (보드 중앙, 전체 렌더)
-        if (g_TrojanBoss && g_TrojanBoss->alive)
-            g_TrojanBoss->render((float)glfwGetTime());
-
-        // (g4f) BUG.proc — 지네: 모든 가짜 창 '안'으로만 렌더(창 밖 바탕화면엔 안 보임).
+    
+        // (g4f) FORK.worm — 플라즈마 체인: 가짜 창 scissor 안에 본체·adds·FX
         //   창마다 scissor 패스 → 다른 창에서도 보이되, 가짜창 밖 사막엔 안 그림.
         if (g_CentiBoss && g_CentiBoss->alive) {
             float ct = (float)glfwGetTime();
+            float centiAimX = playerWin.x + playerWin.width  * 0.5f;
+            float centiAimY = playerWin.y + playerWin.height * 0.5f;
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             auto centiPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
-                g_CentiBoss->renderFx(ct);     // 벽/지뢰/예고선
-                g_CentiBoss->renderBody(ct);   // 머리+몸통
-                for (auto& mb : g_CentiBoss->minis)   // 새끼 본체 — 플레이어 창 등 모든 창 위로 보이게
+                g_CentiBoss->renderFx(ct, centiAimX, centiAimY);
+                g_CentiBoss->renderBody(ct);
+                for (auto& mb : g_CentiBoss->minis)
                     if (mb.alive) g_CentiBoss->drawMini(mb);
             };
             for (auto& fw : zwins) centiPass(fw.x, fw.y, fw.w, fw.h);
@@ -5795,6 +5319,37 @@ int main() {
             if (g_Stats.turretMode)
                 for (auto& tr : g_Turrets)
                     centiPass(tr.x - TURRET_WIN_W*0.5f, tr.y - TURRET_WIN_H*0.5f,
+                              TURRET_WIN_W, TURRET_WIN_H);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
+
+        // (g4g) TOTEM.sys — 보스 코어·레이저 + 타 창 겹침 시 토템 재렌더
+        if (g_TotemBoss && g_TotemBoss->alive) {
+            auto* tb = g_TotemBoss;
+            float gt = (float)glfwGetTime();
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            auto totemPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                tb->renderLinks(gt);
+                tb->renderCore(gt);
+                tb->renderLaser();
+                for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                    auto& tt = tb->totems[ti];
+                    if (!tt.alive) continue;
+                    float tx0 = tt.x - TotemBoss::WIN_W * g_Scale * 0.5f;
+                    float ty0 = tt.y - TotemBoss::WIN_H * g_Scale * 0.5f;
+                    float tww = TotemBoss::WIN_W * g_Scale;
+                    float thh = TotemBoss::WIN_H * g_Scale;
+                    if (tx0 + tww < wx || tx0 > wx + ww ||
+                        ty0 + thh < wy || ty0 > wy + wh) continue;
+                    tb->renderTotem(tt, gt);
+                }
+            };
+            for (auto& fw : zwins) totemPass(fw.x, fw.y, fw.w, fw.h);
+            totemPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            if (g_Stats.turretMode)
+                for (auto& tr : g_Turrets)
+                    totemPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
                               TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
@@ -5915,11 +5470,11 @@ int main() {
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-
+    
         // 드론/차크람은 데스크톱 최상단(클립 없음)에 그린다 — 위쪽 보스창 scissor 패스가
         //   poly 보스 없을 땐 안 닫혀 드론/차크람이 통째로 클립되던 버그 방지(무조건 해제).
         BatchFlush(); glDisable(GL_SCISSOR_TEST); BindMainShader();
-
+    
         // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)
         if (g_Stats.drone && !g_Stats.turretMode &&
             g_GameManager.currentState != GameState::GAMEOVER) {
@@ -5933,7 +5488,7 @@ int main() {
                 drawDiamond(dx, dy, 14.0f, 0.2f, 0.9f, 1.0f, 1.0f);
             }
         }
-
+    
         // (h2) 차크람 — 1~3개
         if (g_Stats.chakram && g_GameManager.currentState != GameState::GAMEOVER) {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
@@ -5959,7 +5514,7 @@ int main() {
         // 드론/차크람 배치를 지금 즉시 flush — 바로 아래 타이틀바 패스가 scissor 를
         //   재활성(직전 작은 창 rect)하면 미flush 지오메트리가 통째로 클립되던 진짜 원인.
         BatchFlush();
-
+    
         // ── (h3) 가짜 OS 창 크롬 — 타이틀바 + [X] 닫기 (데스크톱 세계관) ──
         //    "적 = 프로세스, 창을 닫아 종료한다" 정체성. 월드 좌표(줌 반영)로 그림.
         {
@@ -5989,7 +5544,7 @@ int main() {
                     g_TextS.Draw(title, W2SX(x + 8.0f), W2SY(y + 3.0f),
                                  0.55f * g_ViewZoom, 0.92f,0.96f,1.0f, 0.95f);
                 };
-                int li2 = (int)g_Language; if (li2<0||li2>=LANG_COUNT) li2=0;
+                int li2 = LangIndex();
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
                 // 가짜창 타이틀바 — 위에서 만든 z-리스트(낮음→높음) 순서로 그림.
                 //   '자기보다 높은 창' 또는 '플레이어 창'이 타이틀바를 덮으면, 전체를
@@ -6047,13 +5602,13 @@ int main() {
                 glDisable(GL_SCISSOR_TEST);
             }
         }
-
+    
         // ── 여기부터 UI/오버레이: 줌·흔들기 무시하고 화면 고정 좌표(base ortho)로 ──
         //    (폴리모프 2페이즈 줌 0.5 에서 쿨다운칸·메뉴딤·비네트·플래시가 찌그러지던 버그 fix)
         BatchFlush();   // 월드(줌 ortho) 도형 전부 그린 뒤 base ortho 로 전환
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, ortho);
-        memcpy(g_MainOrtho, ortho, sizeof(ortho));
-
+        glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
+        memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
+    
         // (h2) 보스 고유색 화면 물들이기 — 보스 생존 중 서서히 차오르고, 처치 후 사라짐
         {
             bool bossAlive = false;
@@ -6069,7 +5624,7 @@ int main() {
                 bossAlive = true; tc = glm::vec3(0.6f, 0.25f, 1.0f); }     // 폴리모프: 보라
             else if (g_SpamBoss && g_SpamBoss->alive) {
                 bossAlive = true; tc = glm::vec3(1.0f, 0.4f, 0.8f); }      // 스팸: 핑크
-
+    
             if (bossAlive) {
                 g_BossTintCol = tc;
                 g_BossTintT  += delta * 0.07f;          // ~14초에 최대
@@ -6085,7 +5640,7 @@ int main() {
                          g_BossTintT * 0.06f);
             }
         }
-
+    
         // (h2b) 보스 레이드 HP 바 — 화면 상단 고정. 몸체 밑 작은 바는 후반 탄막에
         //   묻혀 안 보이므로, 활성 보스의 체력을 상단에 크게 표시한다 (이름 + %).
         {
@@ -6113,14 +5668,27 @@ int main() {
                 bn = L"FIREWALL.sys";  bhf = g_FirewallBoss->hp / g_FirewallBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.45f, 0.2f);
             } else if (g_BotnetBoss && g_BotnetBoss->alive) {
-                bn = L"BOTNET.exe";    bhf = g_BotnetBoss->hp / g_BotnetBoss->maxHp;
-                bc = glm::vec3(0.3f, 0.55f, 1.0f);
+                bn = L"C2_RELAY.sys";  bhf = g_BotnetBoss->hp / g_BotnetBoss->maxHp;
+                bc = glm::vec3(0.25f, 0.92f, 0.48f);
             } else if (g_CentiBoss && g_CentiBoss->alive) {
-                bn = L"BUG.proc";      bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
-                bc = glm::vec3(0.7f, 1.0f, 0.3f);
-            } else if (g_TrojanBoss && g_TrojanBoss->alive) {
-                bn = L"Trojan_king.vir"; bhf = g_TrojanBoss->hp / g_TrojanBoss->maxHp;
-                bc = glm::vec3(1.0f, 0.8f, 0.3f);
+                bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
+                bc = glm::vec3(0.35f, 0.88f, 0.95f);
+            } else if (g_TotemBoss && g_TotemBoss->alive) {
+                bn = L"TOTEM.sys";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
+                bc = glm::vec3(0.85f, 0.45f, 0.95f);
+            }
+            int bossPick = -1;
+            if (bn) {
+                if      (bn == L"SLIME.worm")     bossPick = 0;
+                else if (bn == L"GLITCH.sys")     bossPick = 1;
+                else if (bn == L"RELOADER.exe")   bossPick = 2;
+                else if (bn == L"SPAM.dll")       bossPick = 3;
+                else if (bn == L"POLYMORPH.vir")  bossPick = 4;
+                else if (bn == L"KERNEL.sys")     bossPick = 5;
+                else if (bn == L"FIREWALL.sys")   bossPick = 6;
+                else if (bn == L"C2_RELAY.sys")   bossPick = 7;
+                else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
+                else if (bn == L"TOTEM.sys")             bossPick = 9;
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
@@ -6143,6 +5711,35 @@ int main() {
                 float nw = g_TextS.Width(bn, ns);
                 g_TextS.Draw(bn, ((float)screenWidth - nw) * 0.5f, by - 28.0f, ns,
                              bc.r, bc.g, bc.b, 1.0f);
+                if (bossPick >= 0) {
+                    const wchar_t* tag = BossDir::Tagline(bossPick);
+                    float ts = 0.58f;
+                    float tw = g_TextS.Width(tag, ts);
+                    g_TextS.Draw(tag, ((float)screenWidth - tw) * 0.5f, by - 48.0f, ts,
+                                 0.75f, 0.78f, 0.82f, 0.88f);
+                }
+                if (g_BotnetBoss && g_BotnetBoss->alive) {
+                    wchar_t hostBuf[56];
+                    swprintf_s(hostBuf, L"HOST %d/%d  SHIELD %d%%  PKT %d",
+                               g_BotnetBoss->aliveHosts(), BotnetBoss::NHOST,
+                               (int)(g_BotnetBoss->hostShieldPercent() + 0.5f),
+                               g_BotnetBoss->aliveMinions());
+                    float hs = 0.55f;
+                    float hw = g_TextS.Width(hostBuf, hs);
+                    g_TextS.Draw(hostBuf, bx + bw - hw - 8.0f, by - 48.0f, hs,
+                                 0.25f, 0.92f, 0.48f, 0.85f);
+                }
+                if (g_TotemBoss && g_TotemBoss->alive) {
+                    wchar_t totBuf[64];
+                    if (g_TotemBoss->vulnerable())
+                        swprintf_s(totBuf, L"VULN %.0fs", g_TotemBoss->vulnTimer);
+                    else
+                        swprintf_s(totBuf, L"TOTEM %d/4", g_TotemBoss->aliveTotems());
+                    float ts = 0.55f;
+                    float tw = g_TextS.Width(totBuf, ts);
+                    g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
+                                 0.85f, 0.45f, 0.95f, 0.85f);
+                }
                 // % (바 우측 끝 안쪽)
                 wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(bhf * 100.0f + 0.5f));
                 float ps = 0.7f;
@@ -6150,7 +5747,7 @@ int main() {
                 g_TextS.Draw(pct, bx + bw - pw - 8.0f, by + 3.0f, ps, 1.0f, 1.0f, 1.0f, 0.95f);
             }
         }
-
+    
         // (h2c) 보스 등장 전조(증상) — 스폰 2.5초 전 테마 연출 + 경고 배너
         if (g_BossWarnTimer > 0.0f &&
             (g_GameManager.currentState == GameState::RUNNING ||
@@ -6160,14 +5757,7 @@ int main() {
             float t = (float)glfwGetTime();
             float blink = 0.5f + 0.5f * sinf(t * 9.0f);
             // 보스 고유색
-            glm::vec3 wc(1,1,1);
-            switch (g_BossWarnPick) {
-            case 0: wc = glm::vec3(0.55f, 0.9f, 0.55f); break;  // 슬라임 연두
-            case 1: wc = glm::vec3(0.95f, 0.2f, 0.6f);  break;  // 글리치 마젠타
-            case 2: wc = glm::vec3(1.0f, 0.55f, 0.2f);  break;  // 리로더 주황
-            case 3: wc = glm::vec3(1.0f, 0.4f, 0.8f);   break;  // 스팸 분홍
-            default: wc = glm::vec3(0.6f, 0.25f, 1.0f); break;  // 폴리 보라
-            }
+            glm::vec3 wc = BossDir::WarnColor(g_BossWarnPick);
             BindMainShader();
             float sw2 = (float)screenWidth, sh2 = (float)screenHeight;
             // 공통: 가장자리 비네트 (보스색, progress 비례로 짙어짐)
@@ -6177,7 +5767,7 @@ int main() {
             drawRect(0, sh2 - eb, sw2, eb, wc.r, wc.g, wc.b, ea);
             drawRect(0, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
             drawRect(sw2 - eb, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
-
+    
             // 보스별 증상 테마
             switch (g_BossWarnPick) {
             case 0: {  // SLIME — 하단에서 차오르는 연두 점액 + 방울
@@ -6218,15 +5808,75 @@ int main() {
                     drawRect(px2, py2, pw2, 12.0f, 1.0f, 0.4f, 0.8f, 0.7f);  // 타이틀바
                 }
             } break;
-            default: {  // POLYMORPH — 중앙에서 퍼지는 보라 맥동 링
+            case 4: {  // POLYMORPH — 중앙에서 퍼지는 보라 맥동 링
                 for (int i = 0; i < 3; i++) {
                     float r = (80.0f + i * 120.0f) + prog * 200.0f;
                     drawCircle(sw2 * 0.5f, sh2 * 0.5f, r, wc.r, wc.g, wc.b,
                                (0.05f + 0.05f * blink) * (1.0f - (float)i * 0.25f));
                 }
             } break;
+            case 5: {  // KERNEL — BSOD 청색 번쩍 + 가로 스트라이프
+                drawRect(0, 0, sw2, sh2, 0.05f, 0.12f, 0.45f, 0.08f + 0.12f * prog);
+                int stripes = 6 + (int)(prog * 8);
+                for (int i = 0; i < stripes; i++) {
+                    float sy = (float)(rand() % (int)sh2);
+                    drawRect(0, sy, sw2, 3.0f + (float)(rand() % 6),
+                             0.2f, 0.5f, 1.0f, 0.12f + 0.15f * blink);
+                }
+            } break;
+            case 6: {  // FIREWALL — 붉은 차단 벽이 좌우에서 좁혀짐
+                float wall = (30.0f + 120.0f * prog);
+                drawRect(0, 0, wall, sh2, 1.0f, 0.25f, 0.15f, 0.15f + 0.12f * prog);
+                drawRect(sw2 - wall, 0, wall, sh2, 1.0f, 0.25f, 0.15f, 0.15f + 0.12f * prog);
+                for (int i = 0; i < 5; i++) {
+                    float ly = sh2 * (0.15f + 0.17f * i);
+                    drawRect(wall - 8.0f, ly, sw2 - 2.0f * wall + 16.0f, 4.0f,
+                             1.0f, 0.5f, 0.2f, 0.35f * blink);
+                }
+            } break;
+            case 7: {  // C2_RELAY — 터미널 로그 스크롤 + 녹색 노드 링
+                drawRect(0, 0, sw2, sh2, 0.02f, 0.06f, 0.03f, 0.06f + 0.08f * prog);
+                for (int i = 0; i < 8; i++) {
+                    float ly = 40.0f + (float)(i * 47) + fmodf(t * 60.0f, 47.0f);
+                    if (ly > sh2) continue;
+                    float lw = 80.0f + (float)(rand() % (int)(sw2 * 0.5f));
+                    drawRect(30.0f, ly, lw, 3.0f, wc.r, wc.g, wc.b, 0.15f + 0.12f * blink);
+                }
+                drawCircle(sw2 * 0.5f, sh2 * 0.5f, 90.0f + prog * 60.0f,
+                           wc.r, wc.g, wc.b, 0.06f + 0.05f * blink);
+                for (int i = 0; i < 6; i++) {
+                    float a = (float)i * 1.047f + t * 0.4f;
+                    float nx = sw2 * 0.5f + cosf(a) * (120.0f + prog * 80.0f);
+                    float ny = sh2 * 0.5f + sinf(a) * (120.0f + prog * 80.0f);
+                    drawRect(sw2 * 0.5f, sh2 * 0.5f, nx - sw2 * 0.5f, 2.0f,
+                             wc.r, wc.g, wc.b, 0.1f);
+                    drawRect(nx - 8.0f, ny - 6.0f, 16.0f, 12.0f,
+                             0.1f, 0.2f, 0.12f, 0.35f + 0.2f * blink);
+                }
+            } break;
+            case 8: {  // FORK — 하단에서 기어오는 분절 몸통
+                float crawl = 40.0f + 90.0f * prog;
+                for (int s = 0; s < 9; s++) {
+                    float sx = sw2 * 0.08f + s * sw2 * 0.105f;
+                    float bob = sinf(t * 6.0f + s * 0.7f) * 6.0f;
+                    drawCircle(sx, sh2 - crawl + bob, 14.0f + (float)(s % 3) * 3.0f,
+                               0.35f, 0.85f, 0.25f, 0.2f + 0.15f * prog);
+                }
+            } break;
+            case 9: {  // TOTEM — 네 귀퉁이에서 솟는 기둥 + 보라 맥동
+                for (int c = 0; c < 4; c++) {
+                    float cx = (c % 2) ? sw2 - 60.0f : 60.0f;
+                    float cy = (c < 2) ? sh2 - 80.0f : 80.0f;
+                    float th = 30.0f + 120.0f * prog;
+                    drawRect(cx - 12.0f, cy - th, 24.0f, th, wc.r, wc.g, wc.b,
+                             0.15f + 0.2f * blink);
+                }
+                drawCircle(sw2 * 0.5f, sh2 * 0.5f, 50.0f + prog * 180.0f,
+                           wc.r, wc.g, wc.b, 0.08f + 0.06f * blink);
+            } break;
+            default: break;
             }
-
+    
             // 공통 경고 배너 (중앙 상단쪽)
             float by3 = sh2 * 0.30f;
             // 이름 (대)
@@ -6239,7 +5889,7 @@ int main() {
             const wchar_t* SUB[3] = { L"위협 프로세스 감지 — 실행 중...",
                                        L"THREAT PROCESS DETECTED — launching...",
                                        L"脅威プロセス検出 — 実行中..." };
-            int li5 = (int)g_Language; if (li5 < 0 || li5 >= LANG_COUNT) li5 = 0;
+            int li5 = LangIndex();
             float ssc = 0.7f;
             float sw3 = g_TextS.Width(SUB[li5], ssc);
             g_TextS.Draw(SUB[li5], (sw2 - sw3) * 0.5f, by3 + 44.0f, ssc, 1.0f, 1.0f, 1.0f, 0.85f);
@@ -6250,7 +5900,7 @@ int main() {
             drawRect(gx, gy, gw, gh, 0.15f, 0.15f, 0.18f, 0.9f);
             drawRect(gx, gy, gw * prog, gh, wc.r, wc.g, wc.b, 0.95f);
         }
-
+    
         // (h2d) 페이즈2 진입 토스트 — "■ 과부하 — PHASE 2" (1.8초 페이드)
         if (g_P2ToastTimer > 0.0f &&
             (g_GameManager.currentState == GameState::RUNNING ||
@@ -6260,14 +5910,14 @@ int main() {
             if (a > 1.0f) a = 1.0f; if (a < 0.0f) a = 0.0f;
             const wchar_t* P2[3] = { L"■ 과부하 — PHASE 2", L"■ OVERLOAD — PHASE 2",
                                       L"■ 過負荷 — PHASE 2" };
-            int li6 = (int)g_Language; if (li6 < 0 || li6 >= LANG_COUNT) li6 = 0;
+            int li6 = LangIndex();
             float psc = 1.2f;
             float pw3 = g_TextL.Width(P2[li6], psc);
             glm::vec3& pc = g_P2ToastCol;
             g_TextL.Draw(P2[li6], ((float)screenWidth - pw3) * 0.5f,
                          (float)screenHeight * 0.22f, psc, pc.r, pc.g, pc.b, a);
         }
-
+    
         // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍
         if (g_FlashIntensity > 0.001f) {
             BindMainShader();
@@ -6275,7 +5925,17 @@ int main() {
             drawRect(0, 0, (float)screenWidth, (float)screenHeight,
                      g_FlashColor.r, g_FlashColor.g, g_FlashColor.b, a);
         }
-
+        // FORK.worm 탈피 — 저가형 RGB 분리 글리치
+        if (g_CentiBoss && g_CentiBoss->glitchOverlay > 0.001f) {
+            BindMainShader();
+            float go = g_CentiBoss->glitchOverlay * 7.0f;
+            if (go > 1.0f) go = 1.0f;
+            float off = 7.0f * go;
+            float sw = (float)screenWidth, sh = (float)screenHeight;
+            drawRect(off, 0.0f, sw, sh, 1.0f, 0.15f, 0.15f, go * 0.07f);
+            drawRect(-off, 0.0f, sw, sh, 0.15f, 0.85f, 1.0f, go * 0.07f);
+        }
+    
         // (h4) 시간 정지 — 화면 가장자리 시안 비네트 (정지 연출)
         if (g_TimeStopTimer > 0.0f) {
             BindMainShader();
@@ -6286,7 +5946,7 @@ int main() {
             drawRect(0, 0, bw, (float)screenHeight, 0.3f, 0.9f, 1.0f, a);
             drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.3f, 0.9f, 1.0f, a);
         }
-
+    
         // (h5) 피격 — 빨간 가장자리 비네트 (피격 펀치)
         if (g_HurtVignette > 0.001f) {
             BindMainShader();
@@ -6297,7 +5957,7 @@ int main() {
             drawRect(0, 0, bw, (float)screenHeight, 0.95f, 0.1f, 0.1f, a);
             drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.95f, 0.1f, 0.1f, a);
         }
-
+    
         // (i) 취함 상태 표시 (화면 가장자리 자홍색 비네트)
         if (g_DrunkActive) {
             // 가장자리 4겹 사각 테두리 — alpha 빠르게 누적되며 비네트
@@ -6307,19 +5967,19 @@ int main() {
             drawRect(0, 0, 12.0f, (float)screenHeight, 0.9f, 0.1f, 0.6f, a);
             drawRect((float)screenWidth - 12, 0, 12.0f, (float)screenHeight, 0.9f, 0.1f, 0.6f, a);
         }
-
+    
         }   // if (inWorldRender)
         }   // 월드 렌더 게이트 블록
-
+    
         // [6] HUD 오버레이 (HP바, 상태 표시)
         g_GameManager.Render();
-
+    
         // ── [7] 한국어 텍스트 + 메뉴 ─────────────────────────────────────────
         {
             float sw = (float)screenWidth, sh = (float)screenHeight;
             auto  st = g_GameManager.currentState;
-
-
+    
+    
             // 앱 창(shop/codex/config) 진입 시 열림 애니메이션 시작 — 매 프레임 진행
             {
                 static GameState s_prevWinSt = GameState::MAIN_MENU;
@@ -6334,33 +5994,13 @@ int main() {
                     if (g_AppOpen > 1.0f) g_AppOpen = 1.0f;
                 }
             }
-
+    
             // ── 인게임 작업표시줄 — 메뉴와 동일한 OS 프레임 유지 (데스크톱 방어 일관성) ──
             if (st == GameState::RUNNING || st == GameState::PAUSED || st == GameState::DYING ||
                 st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
-                int li5 = (int)g_Language; if (li5 < 0 || li5 >= LANG_COUNT) li5 = 0;
-                BindMainShader();
-                float tbH = g_GameBarH, tbY = sh - (float)g_TaskbarH - tbH;
-                drawRect(0, tbY, sw, tbH, 0.01f, 0.015f, 0.03f, 0.94f);          // 본체
-                drawRect(0, tbY, sw, 2.0f, 0.35f, 0.62f, 1.0f, 0.9f);            // 상단 강조
-                drawRect(9.0f, tbY + (tbH-22.0f)*0.5f, 22.0f, 22.0f, 0.30f, 0.8f, 1.0f, 0.95f); // 시작 오브
-                g_TextS.Draw(L"onedow.exe", 40.0f, tbY + (tbH-15.0f)*0.5f, 0.68f,
-                             0.9f, 0.96f, 1.0f, 1.0f);
-                // 중앙: 상태 (방어 중 / 일시정지)
-                const wchar_t* STAT_RUN[3] = { L"● 데스크톱 방어 중", L"● Defending desktop", L"● デスクトップ防衛中" };
-                const wchar_t* STAT_PAU[3] = { L"❚❚ 일시정지", L"❚❚ Paused", L"❚❚ 一時停止" };
-                const wchar_t* STAT = (st == GameState::PAUSED) ? STAT_PAU[li5] : STAT_RUN[li5];
-                float stw = g_TextS.Width(STAT, 0.66f);
-                g_TextS.Draw(STAT, (sw - stw) * 0.5f, tbY + (tbH-14.0f)*0.5f, 0.66f,
-                             0.6f, 0.85f, 1.0f, 0.9f);
-                // 우측: 시계
-                time_t tt = time(nullptr); struct tm lt; localtime_s(&lt, &tt);
-                wchar_t clk[16]; swprintf_s(clk, L"%02d:%02d", lt.tm_hour, lt.tm_min);
-                float clw = g_TextS.Width(clk, 0.72f);
-                g_TextS.Draw(clk, sw - clw - 16.0f, tbY + (tbH-15.0f)*0.5f, 0.72f,
-                             0.85f, 0.92f, 1.0f, 1.0f);
+                DrawIngameTaskbar(sw, sh, st);
             }
-
+    
             // ── 업적 해금 토스트 (상단 중앙 배너, 4초 표시 후 페이드) ──
             if (g_AchToastTimer > 0.0f && g_AchToastId >= 0 &&
                 g_AchToastId < ACH_COUNT) {
@@ -6368,7 +6008,7 @@ int main() {
                 float a = g_AchToastTimer > 3.0f ? (4.0f - g_AchToastTimer) // 페이드인
                         : std::min(1.0f, g_AchToastTimer);                 // 페이드아웃
                 if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
-                int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
+                int li2 = LangIndex();
                 const wchar_t* LBL[3] = { L"업적 달성!", L"Achievement!", L"実績解除!" };
                 wchar_t tb[160];
                 swprintf_s(tb, L"%ls  %ls  (+%lld)", LBL[li2],
@@ -6380,39 +6020,26 @@ int main() {
                 drawRect(bx0, by0, bw, 4.0f, 1.0f, 0.85f, 0.25f, 0.95f * a);
                 g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, 1.0f, 1.0f, 0.9f, 0.4f, a);
             }
-
-            // ── 처치 연출 — 프로세스 종료 플로팅 태그 (실제 플레이 중에만) ──
-            //    메뉴(증강/디버프 선택·일시정지)에선 숨김 — 텍스트가 메뉴 위에 남던 버그 fix
-            if (st == GameState::RUNNING || st == GameState::DYING) {
-                for (auto& t : g_KillTags) {
-                    if (!t.active) continue;
-                    float fr = t.life / t.maxLife;            // 1→0
-                    float a  = fr < 0.5f ? (fr / 0.5f) : 1.0f; // 후반 페이드아웃
-                    float sx = W2SX(t.x), sy = W2SY(t.y);
-                    float tw = g_TextS.Width(t.text, t.scale);
-                    g_TextS.Draw(t.text, sx - tw * 0.5f, sy, t.scale,
-                                 t.r, t.g, t.b, a * 0.95f);
-                }
-            }
-
+    
+            DrawKillTags(g_TextS, st == GameState::RUNNING || st == GameState::DYING);
 
             // ── 크리에이티브 HUD (게임 중) — F:증강  G:무적 ──
             if (g_CreativeMode &&
                 (st == GameState::RUNNING || st == GameState::READY ||
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
-                int li3 = (int)g_Language; if (li3 < 0 || li3 >= LANG_COUNT) li3 = 0;
+                int li3 = LangIndex();
                 const wchar_t* CH[3] = {
                     L"CREATIVE   F: 증강(디버프 포함)   G: 무적",
                     L"CREATIVE   F: Augment(+debuff)   G: Godmode",
                     L"CREATIVE   F: 強化(デバフ含)   G: 無敵" };
-                g_TextS.Draw(CH[li3], 20.0f, sh - 36.0f - (float)g_TaskbarH - g_GameBarH, 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
+                g_TextS.Draw(CH[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL), 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
                     const wchar_t* GOD[3] = { L"● 무적 ON", L"● GODMODE ON", L"● 無敵 ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
                     g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f, 1.0f, 0.85f, 0.2f, blink);
                 }
             }
-
+    
             // ── [7b] UI 씬 디스패치 — 메뉴/창 상태는 Scene_* 함수로 분리 ──
             //    RUNNING/DYING(순수 인게임)엔 씬이 없으니 컨텍스트 구성 자체를 건너뜀.
             if (st != GameState::RUNNING && st != GameState::DYING) {
@@ -6438,17 +6065,17 @@ int main() {
                     st == GameState::DEBUFF_SELECT || st == GameState::GAMEOVER)
                     Scene_OwnedAugPanel(ctx);
             }
-
+    
             // 상단 HUD — 실제 게임 진행 상태에서만 (메뉴/도감/상점엔 안 뜨게)
             if (st == GameState::RUNNING || st == GameState::PAUSED ||
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
                 st == GameState::DEBUFF_SELECT) {
                 // macOS: 상단 메뉴바(~25px)가 화면 맨 위를 가리므로 HUD 를 아래로
-#ifdef __APPLE__
+    #ifdef __APPLE__
                 const float hudTopY = 8.0f + 30.0f;
-#else
+    #else
                 const float hudTopY = 8.0f;
-#endif
+    #endif
                 // 좌상단: Lv. + HP 숫자 (시각 바는 플레이어 창에 부착됨)
                 {
                     int hpCur = (int)(g_GameManager.playerHP + 0.5f);
@@ -6458,21 +6085,21 @@ int main() {
                                T(StrId::LV_PREFIX), g_GameManager.playerLevel, hpCur, hpMax);
                     g_TextS.Draw(lvBuf2, 12.0f, hudTopY, 0.85f, 0.7f, 1.0f, 0.7f, 0.9f);
                 }
-
+    
                 // 상단 중앙: Score
                 wchar_t scoreBuf[64];
                 swprintf_s(scoreBuf, L"%ls  %lld", T(StrId::SCORE), g_GameManager.score);
                 float scoreW = g_TextS.Width(scoreBuf, 1.0f);
                 g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, hudTopY, 1.0f,
                              1.0f, 1.0f, 1.0f, 0.95f);
-
+    
                 // 우상단: FPS
                 wchar_t fpsBuf[32];
                 swprintf_s(fpsBuf, L"%ls  %d", T(StrId::FPS), g_CurrentFPS);
                 float fpsW = g_TextS.Width(fpsBuf, 0.85f);
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
-
+    
                 // (HP/EXP 시각 바는 플레이어 창 하단에 부착됨 — 위 (c2) 참고)
                 // 하단 조작 안내 (희미하게 항상) — 새 플레이어가 HP/스킬 위치를 알게
                 if (st == GameState::RUNNING) {
@@ -6483,7 +6110,7 @@ int main() {
                             ? L"WASD 移動   マウス 射撃   SHIFT ダッシュ   Q/E/R スキル   ESC 一時停止"
                             : L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
                     float cw = g_TextS.Width(c, 0.7f);
-                    g_TextS.Draw(c, (sw - cw) * 0.5f, sh - 106.0f - (float)g_TaskbarH - g_GameBarH, 0.7f,
+                    g_TextS.Draw(c, CenterX(sw, cw), HudY(sh, Hud::COMBO_TEXT), 0.7f,
                                  0.7f, 0.82f, 0.95f, 0.72f);   // 가시성 ↑ (옅어서 안 보인다는 피드백)
                 }
                 // ── 저체력 경고 — HP 25% 이하 시 가장자리 부드러운 적색 펄스 + 텍스트 ──
@@ -6501,14 +6128,14 @@ int main() {
                         drawRect(0, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
                         drawRect(sw - bw, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
                         const wchar_t* LOW[3] = { L"● 위험", L"● LOW HP", L"● 危険" };
-                        int li4 = (int)g_Language; if (li4 < 0 || li4 >= LANG_COUNT) li4 = 0;
+                        int li4 = LangIndex();
                         float lw = g_TextS.Width(LOW[li4], 0.9f);
-                        g_TextS.Draw(LOW[li4], (sw - lw) * 0.5f, sh - 94.0f - (float)g_TaskbarH - g_GameBarH,
+                        g_TextS.Draw(LOW[li4], CenterX(sw, lw), HudY(sh, Hud::LOW_HP_WARN),
                                      0.9f, 1.0f, 0.4f, 0.4f, 0.55f + 0.45f * pulse);
                     }
                 }
             }
-
+    
             // ── 손맛: 데미지 숫자 팝업 + 콤보 카운터 (실제 플레이 중에만) ──
             //    메뉴/일시정지에선 숨김 — 텍스트가 메뉴 위에 남던 버그 fix
             if (st == GameState::RUNNING || st == GameState::DYING) {
@@ -6540,11 +6167,11 @@ int main() {
                     g_TextS.Draw(cb, (sw - w) * 0.5f, sh * 0.115f, sc, cr, cg, cbl, 0.95f);
                 }
             }
-
+    
             // ── 액티브 스킬 슬롯 (좌하단, 패시브 쿨다운 위 행) ──
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float KW = 54.0f, KH = 54.0f, KG = 8.0f;
-                float kx0 = 16.0f, ky0 = sh - KH - 40.0f - (56.0f + 8.0f) - (float)g_TaskbarH - g_GameBarH;
+                float kx0 = 16.0f, ky0 = HudY(sh, KH + Hud::SKILL_KEYS_Y);
                 auto skillBox = [&](int idx, const wchar_t* key, const wchar_t* tag,
                                     float cd, float r, float g, float b) {
                     float x = kx0 + idx * (KW + KG), y = ky0;
@@ -6572,17 +6199,22 @@ int main() {
                     default: break;
                     }
                     skillBox(i + 1, keys3[i], tag, g_Skills[i].cd, r, g, b);
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->isSkillSealed(i)) {
+                        float x = kx0 + (float)(i + 1) * (KW + KG), y = ky0;
+                        drawRect(x, y, KW, KH, 0.05f, 0.05f, 0.05f, 0.55f);
+                        g_TextS.Draw(L"SEAL", x + 6.0f, y + 20.0f, 0.45f, 0.9f, 0.3f, 0.35f, 0.9f);
+                    }
                 }
             }
-
+    
             // ── 액티브/패시브 쿨다운 UI (좌하단) ─────────────────────
             // 추후 픽토그램 PNG 가 들어오면 사각형 placeholder 자리에 텍스처 표시
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float SLOT_W = 56.0f, SLOT_H = 56.0f, SLOT_GAP = 8.0f;
                 float baseX  = 16.0f;
-                float baseY2 = sh - SLOT_H - 40.0f - (float)g_TaskbarH - g_GameBarH;   // HP 바 위쪽(작업표시줄 위)
+                float baseY2 = HudY(sh, SLOT_H + Hud::SLOT_BAR_BASE);   // HP 바 위쪽(작업표시줄 위)
                 int   slot   = 0;
-
+    
                 auto drawSlot = [&](const wchar_t* tag, float remain,
                                     float r, float g, float b) {
                     float x = baseX + slot * (SLOT_W + SLOT_GAP);
@@ -6608,7 +6240,7 @@ int main() {
                                      y + SLOT_H * 0.40f, 0.9f, 1,1,1,0.95f);
                     }
                 };
-
+    
                 // 탄환 세례 — 쿨다운 (20 / 15 / 7.5)
                 if (g_Stats.bulletRain) {
                     float remain = g_Stats.bulletRainCooldown - g_BulletRainTimer;
@@ -6650,7 +6282,7 @@ int main() {
                 }
             }
         }
-
+    
         // ── 글리치 보스 화면 연출 (리소스 없이, 최상단) ──
         //   1) 글리치 가로 찢김(시안/마젠타 바)  2) "펑!" 화이트아웃  3) 텍스트 노이즈
         if (g_GlitchBoss && g_GlitchBoss->alive) {
@@ -6680,8 +6312,6 @@ int main() {
                 }
             }
         }
-
-        // 마우스 click edge 감지용 — 이번 프레임 상태를 저장
         g_LmbPrev = lmb;
 
         // 업적 해금 / 도감 발견 발생 시 저장 (게임 중 즉시 영구화)
@@ -6710,9 +6340,9 @@ int main() {
         }
     }
 
-    glDeleteVertexArrays(1, &VAO);
+    glDeleteVertexArrays(1, &g_MainVAO);
     glDeleteBuffers(1, &g_VBO);
-    glDeleteProgram(shader);
+    glDeleteProgram(g_MainShader);
     g_TextL.Cleanup();
     g_TextS.Cleanup();
 #ifdef _WIN32
@@ -6729,1750 +6359,4 @@ int main() {
     PlatformTimerEnd();
     glfwTerminate();
     return 0;
-}
-
-
-// ============================================================
-//  UI 씬(메뉴) 함수 정의 (Phase 1a: 같은 파일 내 추출)
-// ============================================================
-static void Scene_MainMenu(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                int li2 = (int)g_Language; if (li2 < 0 || li2 >= LANG_COUNT) li2 = 0;
-                bool booting = (g_BootAnim > 0.0f);
-
-                // 배경을 칠하지 않음 → 투명 프레임버퍼라 "진짜 윈도우 바탕화면"이
-                //   그대로 비친다 (Wallpaper Engine 등 라이브 배경도 그대로 보임).
-                //   가독성을 위해 아주 옅은 상/하단 비네트만 깐다.
-                BindMainShader();
-                drawRect(0, 0, sw, 130.0f, 0.0f, 0.0f, 0.0f, 0.18f);
-                drawRect(0, sh - 150.0f, sw, 150.0f, 0.0f, 0.0f, 0.0f, 0.22f);
-
-                // ── 앰비언트 — 은은한 빛 입자 + 스캔라인 (진짜 바탕화면 위) ──
-                {
-                    float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
-                    BindMainShader();
-                    struct AP { float x, y, vx, vy, sz, tw; };
-                    static AP a_ps[55]; static bool ap_init = false;
-                    if (!ap_init) { ap_init = true;
-                        for (int i = 0; i < 55; i++) {
-                            a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
-                            float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
-                            a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
-                            a_ps[i].sz = 1.2f + (rand()%26)*0.1f; a_ps[i].tw = (rand()%628)*0.01f;
-                        }
-                    }
-                    for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
-                        p.x += p.vx*dtp; p.y += p.vy*dtp;
-                        if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
-                        if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
-                        p.tw += dtp*1.6f;
-                        float a = 0.10f + 0.10f*sinf(p.tw);
-                        drawCircle(p.x, p.y, p.sz, 0.55f, 0.78f, 1.0f, a);
-                    }
-                    // 스캔라인 (시네마틱) — 옅은 가로줄
-                    for (float yy = 0.0f; yy < sh; yy += 4.0f)
-                        drawRect(0.0f, yy, sw, 1.0f, 0.40f, 0.70f, 1.0f, 0.025f);
-                }
-
-                // ── 중앙 로고 + 부제 ──
-                const wchar_t* TITLE = T(StrId::GAME_TITLE);
-                float logoY = sh * 0.28f;
-                // 로고는 고해상도 전용 렌더러(g_TextXL, 100px)로 — 기존 g_TextL 3배
-                //   확대 시 비트맵이 뭉개지던 화질 문제 fix.
-                g_TextXL.Draw(TITLE, cx(TITLE, g_TextXL, 1.05f), logoY, 1.05f,
-                              0.6f, 0.85f, 1.0f, 0.96f);
-                {
-                    const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
-                    float subw = g_TextS.Width(SUBT[li2], 1.05f);
-                    // 로고 실제 높이 아래로 — 겹침 방지
-                    float subY = logoY + g_TextXL.Height(TITLE, 1.05f) + 18.0f;
-                    g_TextS.Draw(SUBT[li2], (sw - subw) * 0.5f, subY, 1.05f,
-                                 0.5f, 0.68f, 0.9f, 0.8f);
-                }
-
-                // ── PLAY 버튼 (맥동 글로우) → onedow.exe 부팅 → 난이도 선택 ──
-                {
-                    float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 2.5f);
-                    const float PW = 320.0f, PH = 76.0f;
-                    float px = (sw - PW) * 0.5f, py = sh * 0.49f;
-                    BindMainShader();
-                    drawRect(px - 7, py - 7, PW + 14, PH + 14,
-                             0.30f, 0.70f, 1.0f, 0.08f + 0.10f * pulse);   // 글로우
-                    const wchar_t* PLAYL[3] = { L"실행", L"PLAY", L"実行" };
-                    if (UIButton(px, py, PW, PH, PLAYL[li2], mx, my, lmb, g_LmbPrev) && !booting) {
-                        LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
-                    }
-                }
-
-                // ── 보조 버튼 행: 상점 · 도감 · 설정 · 종료 ──
-                {
-                    const float bw2 = 158.0f, bh2 = 48.0f, gap2 = 14.0f;
-                    float totalW = bw2 * 4 + gap2 * 3;
-                    float bx2 = (sw - totalW) * 0.5f, by2 = sh * 0.49f + 100.0f;
-                    const wchar_t* SHOPL[3] = { L"상점", L"Shop",  L"ショップ" };
-                    const wchar_t* CODL [3] = { L"도감", L"Codex", L"図鑑" };
-                    const wchar_t* CFGL [3] = { L"설정", L"Config", L"設定" };
-                    // 서브창(상점/도감/설정)은 부팅 로딩 없이 즉시 — 창 열림 애니메이션만
-                    if (UIButton(bx2 + 0*(bw2+gap2), by2, bw2, bh2, SHOPL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        g_GameManager.currentState = GameState::SHOP;
-                    if (UIButton(bx2 + 1*(bw2+gap2), by2, bw2, bh2, CODL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        g_GameManager.currentState = GameState::CODEX;
-                    if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
-                        g_SettingsReturnTo = GameState::MAIN_MENU;
-                        g_GameManager.currentState = GameState::SETTINGS;
-                    }
-                    if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
-                        glfwSetWindowShouldClose(window, GLFW_TRUE);
-                }
-
-                // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
-                if (g_BootAnim > 0.0f) {
-                    g_BootAnim -= delta;
-                    float prog = 1.0f - g_BootAnim / BOOT_DUR;        // 0→1
-                    if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
-                    float ease = prog < 0.25f ? (prog / 0.25f) : 1.0f; // 창 열림 0~25%
-                    float ar = g_BootAr, ag = g_BootAg, ab = g_BootAb;
-                    float WW = 520.0f, WH = 300.0f;
-                    float cw = WW * ease;              // 크기 0 → 지정 크기
-                    float chh= WH * ease;
-                    float wx = sw * 0.5f - cw * 0.5f;
-                    float wy = sh * 0.5f - chh * 0.5f;
-                    BindMainShader();
-                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease);  // 배경 딤
-                    // 시네마틱 — 아래로 훑는 스캔 스윕 라인 (화이트 플래시는 눈 아파서 제거)
-                    {
-                        float sweepY = fmodf(prog * 1.3f, 1.0f) * sh;
-                        drawRect(0, sweepY, sw, 2.0f, ar, ag, ab, 0.30f * ease);
-                        drawRect(0, sweepY - 40.0f, sw, 40.0f, ar, ag, ab, 0.05f * ease);
-                    }
-                    drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
-                    drawRect(wx, wy, cw, 28.0f, ar*0.55f, ag*0.55f, ab*0.6f, 1.0f); // 타이틀바
-                    drawRect(wx, wy+28.0f, cw, 2.0f, ar, ag, ab, 0.9f);      // 강조 라인
-                    drawRect(wx+cw-22, wy+8, 12, 12, 0.9f, 0.25f, 0.25f, 0.95f); // [X]
-                    if (ease > 0.9f) {
-                        g_TextS.Draw(g_BootName, wx + 12.0f, wy + 6.0f, 0.6f,
-                                     0.95f, 0.97f, 1.0f, 1.0f);
-                        // 부팅 로그 — 진행도에 따라 한 줄씩 나타남
-                        static const wchar_t* LOG[6] = {
-                            L"> mounting modules ...",
-                            L"> loading assets        [ OK ]",
-                            L"> init renderer         [ OK ]",
-                            L"> linking onedow.dll    [ OK ]",
-                            L"> verify save data      [ OK ]",
-                            L"> ready." };
-                        int shown = (int)(prog * 6.5f); if (shown > 6) shown = 6;
-                        for (int i = 0; i < shown; i++) {
-                            bool last = (i == 5);
-                            g_TextS.Draw(LOG[i], wx + 22.0f, wy + 44.0f + i * 24.0f, 0.6f,
-                                         last ? ag : 0.65f, last ? 1.0f : 0.78f,
-                                         last ? ag : 0.7f, 0.95f);
-                        }
-                        // 진행 바 (창 하단)
-                        float barW = cw - 44.0f, barX = wx + 22.0f, barY = wy + chh - 30.0f;
-                        BindMainShader();
-                        drawRect(barX, barY, barW, 14.0f, 0.12f, 0.14f, 0.20f, 1.0f);
-                        drawRect(barX, barY, barW * prog, 14.0f, ar, ag, ab, 1.0f);
-                        wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(prog * 100.0f));
-                        g_TextS.Draw(pct, barX + barW - 44.0f, barY - 22.0f, 0.6f,
-                                     0.8f, 0.9f, 1.0f, 1.0f);
-                    }
-                    if (g_BootAnim <= 0.0f) {
-                        g_BootAnim = 0.0f;
-                        g_GameManager.currentState = g_BootTarget;
-                    }
-                }
-}
-
-static void Scene_Shop(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                const float WW = 720.0f, WH = 812.0f;
-                float wx, wy;
-                appWindow(WW, WH, L"shop.exe", 1.0f, 0.80f, 0.20f, wx, wy);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-
-                const wchar_t* TIT = T(StrId::BTN_SHOP);
-                float tw0 = g_TextL.Width(TIT, 1.3f);
-                g_TextL.Draw(TIT, wx + (WW-tw0)*0.5f, wy + 44.0f, 1.3f, 1,1,1,1);
-                wchar_t cbuf[48]; swprintf_s(cbuf, L"COIN  %lld", g_Coins);
-                float cw0 = g_TextL.Width(cbuf, 1.0f);
-                g_TextL.Draw(cbuf, wx + (WW-cw0)*0.5f, wy + 86.0f, 1.0f, 1.0f, 0.9f, 0.3f, 1.0f);
-
-                const float RW = 640.0f, RH = 56.0f, RG = 10.0f;
-                float rx = wx + (WW - RW) * 0.5f, ry0 = wy + 128.0f;
-                for (int i = 0; i < META_COUNT; i++) {
-                    float ry = ry0 + i * (RH + RG);
-                    BindMainShader();
-                    drawRect(rx, ry, RW, RH, 0.07f, 0.07f, 0.11f, 0.9f);
-                    wchar_t nm[96];
-                    swprintf_s(nm, L"%ls   Lv %d/%d", MetaName(i), g_MetaLv[i], META_DEFS[i].maxLv);
-                    g_TextS.Draw(nm, rx + 16.0f, ry + 16.0f, 0.95f, 0.9f, 0.95f, 1.0f, 1.0f);
-                    long long cost = MetaNextCost(i);
-                    float btX = rx + RW - 170.0f;
-                    if (cost < 0) {
-                        g_TextS.Draw(L"MAX", btX + 50.0f, ry + 16.0f, 0.9f, 0.6f, 1.0f, 0.6f, 1.0f);
-                    } else {
-                        wchar_t bb[32]; swprintf_s(bb, L"%lld", cost);
-                        bool can = (g_Coins >= cost);
-                        if (can) {
-                            if (UIButton(btX, ry + 6.0f, 154.0f, RH - 12.0f, bb,
-                                         mx, my, lmb, g_LmbPrev, false)) {
-                                g_Coins -= cost;
-                                g_MetaLv[i]++;
-                                SaveGame();
-                            }
-                        } else {
-                            BindMainShader();
-                            drawRect(btX, ry + 6.0f, 154.0f, RH - 12.0f, 0.18f, 0.06f, 0.06f, 0.9f);
-                            float tw = g_TextS.Width(bb, 0.9f);
-                            g_TextS.Draw(bb, btX + (154.0f - tw) * 0.5f, ry + 18.0f, 0.9f,
-                                         0.95f, 0.4f, 0.4f, 1.0f);
-                        }
-                    }
-                }
-
-                // ── 액센트 테마 (네온 색) 코스메틱 — 스와치 행 ──
-                float themeBottom;
-                {
-                    int li4 = (int)g_Language; if (li4 < 0 || li4 >= LANG_COUNT) li4 = 0;
-                    const wchar_t* TTIT[3] = { L"테마  (창 네온 색)", L"Theme  (window neon)", L"テーマ  (窓ネオン)" };
-                    float ty0 = ry0 + META_COUNT * (RH + RG) + 16.0f;
-                    BindMainShader();
-                    g_TextS.Draw(TTIT[li4], rx, ty0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
-                    float swY = ty0 + 30.0f;
-                    float gap = 8.0f;
-                    float swW = (RW - gap * (ACCENT_COUNT - 1)) / (float)ACCENT_COUNT;
-                    float swH = 64.0f;
-                    for (int i = 0; i < ACCENT_COUNT; i++) {
-                        const AccentTheme& th = ACCENT_THEMES[i];
-                        float sx = rx + i * (swW + gap);
-                        bool owned = ThemeOwned(i);
-                        bool sel   = (g_ThemeSel == i);
-                        bool hover = (mx >= sx && mx <= sx + swW && my >= swY && my <= swY + swH);
-                        bool clicked = hover && lmb && !g_LmbPrev;
-                        BindMainShader();
-                        // 색 스와치 (미보유는 어둡게)
-                        float dim = owned ? 1.0f : 0.30f;
-                        drawRect(sx, swY, swW, swH, th.r * dim, th.g * dim, th.b * dim, 1.0f);
-                        // 테두리 — 선택=흰색 두껍게 / 호버=옅게
-                        float br = sel ? 1.0f : (hover ? 0.85f : 0.35f);
-                        float bt = sel ? 3.0f : 1.5f;
-                        drawRect(sx, swY, swW, bt, br, br, br, 1.0f);
-                        drawRect(sx, swY + swH - bt, swW, bt, br, br, br, 1.0f);
-                        drawRect(sx, swY, bt, swH, br, br, br, 1.0f);
-                        drawRect(sx + swW - bt, swY, bt, swH, br, br, br, 1.0f);
-                        // 라벨 / 비용
-                        if (owned) {
-                            if (sel) {
-                                float ew = g_TextS.Width(L"●", 0.7f);
-                                g_TextS.Draw(L"●", sx + (swW - ew) * 0.5f, swY + swH * 0.5f - 10.0f,
-                                             0.7f, 0.05f, 0.05f, 0.08f, 1.0f);
-                            }
-                        } else {
-                            wchar_t cb[24]; swprintf_s(cb, L"%lld", th.cost);
-                            float cwd = g_TextS.Width(cb, 0.62f);
-                            g_TextS.Draw(cb, sx + (swW - cwd) * 0.5f, swY + swH * 0.5f - 9.0f,
-                                         0.62f, 1.0f, 0.95f, 0.5f, 1.0f);
-                        }
-                        // 이름 (아래)
-                        float nwd = g_TextS.Width(AccentName(i), 0.55f);
-                        g_TextS.Draw(AccentName(i), sx + (swW - nwd) * 0.5f, swY + swH + 3.0f,
-                                     0.55f, 0.85f, 0.9f, 0.95f, owned ? 1.0f : 0.6f);
-                        // 클릭 처리 — 보유면 장착, 미보유면 코인 충분 시 구매+장착
-                        if (clicked) {
-                            if (owned) {
-                                g_ThemeSel = i; ApplyAccentTheme(); SaveGame();
-                            } else if (g_Coins >= th.cost) {
-                                g_Coins -= th.cost;
-                                g_ThemeOwned |= (1 << i);
-                                g_ThemeSel = i; ApplyAccentTheme(); SaveGame();
-                            }
-                        }
-                    }
-                    themeBottom = swY + swH + 22.0f;
-                }
-
-                // ── 업적 목록 (테마 행 아래, 3열) ──
-                {
-                    int li3 = (int)g_Language; if (li3 < 0 || li3 >= LANG_COUNT) li3 = 0;
-                    const wchar_t* ATIT[3] = { L"업적", L"Achievements", L"実績" };
-                    float ay0 = themeBottom;
-                    BindMainShader();
-                    g_TextS.Draw(ATIT[li3], rx, ay0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
-                    float colW = RW / 3.0f;
-                    float rowH = 28.0f;
-                    for (int i = 0; i < ACH_COUNT; i++) {
-                        bool got = g_AchUnlocked[i];
-                        int  col = i / 4, row = i % 4;
-                        float ax = rx + col * colW;
-                        float ay = ay0 + 32.0f + row * rowH;
-                        wchar_t ab[96];
-                        swprintf_s(ab, L"%ls %ls", got ? L"★" : L"☆", AchName(i));
-                        if (got) g_TextS.Draw(ab, ax, ay, 0.72f, 0.5f, 0.95f, 0.55f, 1.0f);
-                        else     g_TextS.Draw(ab, ax, ay, 0.72f, 0.55f, 0.55f, 0.6f, 0.9f);
-                    }
-                }
-
-                if (UIButton(wx + 40.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                }   // close: g_AppOpen open guard
-}
-
-static void Scene_Codex(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                // codex.db = 검색 가능한 위키 스타일 앱 창
-                const float WW = 1240.0f, WH = 860.0f;
-                float wx, wy;
-                appWindow(WW, WH, L"codex.db", 0.40f, 0.90f, 0.50f, wx, wy);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-
-                // 백스페이스 (검색어 편집)
-                {
-                    static bool s_bsPrev = false;
-                    bool bs = (glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS);
-                    if (bs && !s_bsPrev && g_CodexSearchLen > 0)
-                        g_CodexSearch[--g_CodexSearchLen] = 0;
-                    s_bsPrev = bs;
-                }
-
-                // 검색창 (위키 느낌) — 항상 입력 활성
-                float searchX = wx + 40.0f, searchY = wy + 46.0f, searchW = 460.0f, searchH = 40.0f;
-                BindMainShader();
-                drawRect(searchX, searchY, searchW, searchH, 0.12f, 0.14f, 0.18f, 1.0f);
-                drawRect(searchX, searchY, searchW, 2.0f, 0.4f, 0.9f, 0.5f, 0.9f);
-                if (g_CodexSearchLen > 0) {
-                    g_TextS.Draw(g_CodexSearch, searchX + 14.0f, searchY + 10.0f, 0.85f,
-                                 1.0f, 1.0f, 1.0f, 1.0f);
-                } else {
-                    const wchar_t* PH[3] = { L"검색…", L"Search…", L"検索…" };
-                    g_TextS.Draw(PH[li], searchX + 14.0f, searchY + 10.0f, 0.85f,
-                                 0.5f, 0.55f, 0.6f, 0.9f);
-                }
-                // 깜빡이는 캐럿
-                if (((int)(glfwGetTime() * 2.0) & 1) == 0) {
-                    float cwid = g_CodexSearchLen ? g_TextS.Width(g_CodexSearch, 0.85f) : 0.0f;
-                    BindMainShader();
-                    drawRect(searchX + 14.0f + cwid + 2.0f, searchY + 8.0f, 2.0f, 24.0f,
-                             0.9f, 0.95f, 1.0f, 0.9f);
-                }
-                // 개발 모드 해금 토스트 (이스터에그) — 검색창 아래 잠깐 표시
-                if (g_DevToastTimer > 0.0f) {
-                    g_DevToastTimer -= delta;
-                    float a = g_DevToastTimer > 2.5f ? (3.0f - g_DevToastTimer) / 0.5f
-                                                     : (g_DevToastTimer > 1.0f ? 1.0f : g_DevToastTimer);
-                    if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
-                    g_TextS.Draw(L"● DEV MODE UNLOCKED — 난이도 화면에서 크리에이티브 활성",
-                                 searchX, searchY + searchH + 8.0f, 0.8f,
-                                 0.4f, 1.0f, 0.55f, a);
-                }
-
-                static int s_tab = 0;   // 0 적 / 1 증강
-                const wchar_t* TAB_MOB[3] = { L"적", L"Enemies", L"敵" };
-                const wchar_t* TAB_AUG[3] = { L"증강", L"Augments", L"強化" };
-                if (UIButton(wx + 530.0f, searchY, 150.0f, searchH, TAB_MOB[li],
-                             mx, my, lmb, g_LmbPrev, s_tab == 0)) s_tab = 0;
-                if (UIButton(wx + 690.0f, searchY, 150.0f, searchH, TAB_AUG[li],
-                             mx, my, lmb, g_LmbPrev, s_tab == 1)) s_tab = 1;
-
-                float gTop = wy + 110.0f;          // 그리드 상단
-                float detailY = wy + WH - 170.0f;  // 상세(article) 영역
-                int hoverItem = -1;                // 실제 데이터 인덱스
-
-                if (s_tab == 0) {
-                    // 적 — 검색 필터링 후 재배치
-                    const int COLS = 6; const float CELL = 150.0f;
-                    int vis[CM_COUNT], nv = 0;
-                    for (int i = 0; i < CM_COUNT; i++)
-                        if (g_CodexSearchLen == 0 || (g_MobSeen[i] && CodexMatch(MobName(i))))
-                            vis[nv++] = i;
-                    float gx = wx + (WW - COLS*CELL) * 0.5f;
-                    for (int k = 0; k < nv; k++) {
-                        int i = vis[k];
-                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
-                        float cw = CELL - 14.0f;
-                        bool seen = g_MobSeen[i];
-                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        if (hv) hoverItem = i;
-                        BindMainShader();
-                        drawRect(cxp, cyp, cw, cw, hv?0.13f:0.06f, 0.10f, 0.15f, 0.95f);
-                        float ccx = cxp + cw*0.5f, ccy = cyp + cw*0.42f;
-                        if (seen) {
-                            if (i <= CM_SHIELDED) {
-                                Monster pm(ccx, ccy);
-                                if (i > 0) pm.MakeKind((MobKind)i);
-                                pm.worldX = ccx; pm.worldY = ccy;
-                                if (i == 0) pm.color = glm::vec3(0.75f,0.75f,0.8f);
-                                pm.sizeScale = (i == (int)MobKind::BRUTE) ? 1.3f : 1.7f;
-                                drawMob(&pm);
-                            } else if (i == CM_RANGED) {
-                                drawDiamond(ccx, ccy, 28.0f, 0.85f, 0.0f, 0.85f, 1.0f);
-                                drawDiamond(ccx, ccy, 11.0f, 1,1,1, 0.9f);
-                            } else if (i == CM_BOMBER) {
-                                drawPentagon(ccx, ccy, 32.0f, 1.0f, 0.5f, 0.1f, 1.0f);
-                            } else if (i == CM_DDOS) {
-                                for (int t = 0; t < 3; t++) {
-                                    float a = (float)t * 2.0944f;
-                                    drawTriangle(ccx + cosf(a)*13.0f, ccy + sinf(a)*13.0f,
-                                                 14.0f, 1.0f, 0.35f, 0.55f, 1.0f);
-                                }
-                            } else if (i == CM_BADSECTOR) {
-                                drawPentagon(ccx, ccy, 30.0f, 0.7f, 0.25f, 0.85f, 1.0f);
-                                drawPentagon(ccx, ccy, 13.0f, 0.1f, 0.05f, 0.2f, 1.0f);
-                            } else {   // CM_REGERROR — X형 노드
-                                drawDiamond(ccx, ccy, 26.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx + 17, ccy, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx - 17, ccy, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx, ccy + 17, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx, ccy - 17, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                            }
-                            BindMainShader();
-                            const wchar_t* nm = MobName(i);
-                            float nw = g_TextS.Width(nm, 0.8f);
-                            g_TextS.Draw(nm, cxp + (cw - nw)*0.5f, cyp + cw - 34.0f, 0.8f,
-                                         0.9f, 0.95f, 1.0f, 0.95f);
-                        } else {
-                            float qw = g_TextL.Width(L"?", 1.3f);
-                            g_TextL.Draw(L"?", ccx - qw*0.5f, ccy - 22.0f, 1.3f,
-                                         0.4f, 0.4f, 0.45f, 0.9f);
-                        }
-                    }
-                    if (hoverItem >= 0 && g_MobSeen[hoverItem]) {
-                        const wchar_t* nm = MobName(hoverItem);
-                        const wchar_t* d  = MobDesc(hoverItem);
-                        g_TextL.Draw(nm, wx + 40.0f, detailY, 1.0f, 0.6f, 0.95f, 0.7f, 1.0f);
-                        g_TextS.Draw(d,  wx + 40.0f, detailY + 54.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
-                    }
-                } else {
-                    // 증강 — 검색 필터링 후 재배치 (셀 축소 + 카테고리(등급)별 정렬로
-                    //   상세 박스 침범 방지 + 버프/디버프/특수/조합 그룹화)
-                    const int COLS = 15; const float CELL = 72.0f;
-                    int vis[AUG_TOTAL], nv = 0;
-                    for (int i = 0; i < AUG_TOTAL; i++) {
-                        if (AugRemoved(ALL_AUGS[i].type)) continue;   // 삭제/보류 증강은 도감에서 숨김
-                        if (g_CodexSearchLen == 0 || (g_AugSeen[i] && CodexMatch(AugName(ALL_AUGS[i]))))
-                            vis[nv++] = i;
-                    }
-                    // 등급 순(COMMON/RARE/EPIC/LEG → DEBUFF → SPECIAL → COMBO)으로 정렬 = 카테고리 그룹
-                    std::sort(vis, vis + nv, [](int a, int b) {
-                        int ra = (int)ALL_AUGS[a].rarity, rb = (int)ALL_AUGS[b].rarity;
-                        if (ra != rb) return ra < rb;
-                        return a < b;
-                    });
-                    float gx = wx + (WW - COLS*CELL) * 0.5f;
-                    for (int k = 0; k < nv; k++) {
-                        int i = vis[k];
-                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
-                        float cw = CELL - 8.0f;
-                        bool seen = g_AugSeen[i];
-                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        if (hv) hoverItem = i;
-                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
-                        BindMainShader();
-                        if (seen) drawRect(cxp, cyp, cw, cw, rr*0.35f, rg*0.35f, rb*0.35f, 0.95f);
-                        else      drawRect(cxp, cyp, cw, cw, 0.06f, 0.06f, 0.08f, 0.95f);
-                        if (seen) {
-                            GLuint ic = IconFor(ALL_AUGS[i].type);
-                            float isz = 48.0f;
-                            if (ic) DrawIcon(ic, cxp + (cw-isz)*0.5f, cyp + (cw-isz)*0.5f,
-                                             isz, isz, 1,1,1, 0.97f);
-                            else {
-                                BindMainShader();
-                                drawRect(cxp + cw*0.3f, cyp + cw*0.3f, cw*0.4f, cw*0.4f, rr, rg, rb, 0.9f);
-                            }
-                        } else {
-                            float qw = g_TextL.Width(L"?", 1.0f);
-                            g_TextL.Draw(L"?", cxp + (cw - qw)*0.5f, cyp + cw*0.5f - 18.0f, 1.0f,
-                                         0.4f, 0.4f, 0.45f, 0.9f);
-                        }
-                    }
-                    // 상세(article)
-                    BindMainShader();
-                    if (hoverItem >= 0 && g_AugSeen[hoverItem]) {
-                        const AugDef& d = ALL_AUGS[hoverItem];
-                        float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
-                        wchar_t hd[96];
-                        swprintf_s(hd, L"[%ls] %ls", GetAugBadge(d), AugName(d));
-                        g_TextL.Draw(hd, wx + 40.0f, detailY, 0.95f,
-                                     std::min(1.0f, rr*1.4f+0.3f), std::min(1.0f, rg*1.4f+0.3f),
-                                     std::min(1.0f, rb*1.4f+0.3f), 1.0f);
-                        const wchar_t* ds = AugDesc(d);
-                        g_TextS.Draw(ds, wx + 40.0f, detailY + 54.0f, 0.85f,
-                                     0.85f, 0.92f, 1.0f, 0.95f);
-                        if (d.rarity == AugRarity::COMBO) {
-                            for (int c = 0; c < COMBO_COUNT; c++)
-                                if (COMBO_DEFS[c].result == d.type) {
-                                    int ia = AugIndexOfType(COMBO_DEFS[c].reqs[0]);
-                                    int ib = AugIndexOfType(COMBO_DEFS[c].reqs[1]);
-                                    wchar_t rc[128];
-                                    swprintf_s(rc, L"%ls + %ls",
-                                               ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
-                                               ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
-                                    g_TextS.Draw(rc, wx + 40.0f, detailY + 92.0f, 0.85f,
-                                                 0.1f, 0.85f, 0.8f, 0.95f);
-                                    break;
-                                }
-                        }
-                    } else if (hoverItem >= 0) {
-                        const wchar_t* q[3] = { L"??? — 미발견 (획득 시 공개)",
-                                                L"??? — Undiscovered (unlock by acquiring)",
-                                                L"??? — 未発見 (取得で公開)" };
-                        g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
-                    }
-                }
-
-                if (UIButton(wx + WW - 220.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    CodexSearchClear();
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                }   // close: g_AppOpen open guard
-}
-
-static void Scene_JobSelect(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
-                deskWindow(L"career.exe", 0.55f, 0.7f, 1.0f);
-
-                int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-                const wchar_t* JTIT[3] = { L"직업 선택", L"Choose a Class", L"職業を選択" };
-                const wchar_t* JHINT[3] = {
-                    L"업적을 달성하면 새 직업이 해금됩니다",
-                    L"Complete achievements to unlock more classes",
-                    L"実績達成で新しい職業が解放されます" };
-                const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
-                const wchar_t* TIT = JTIT[li];
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.3f), sh*0.045f, 1.3f, 1,1,1,1);
-                const wchar_t* HN = JHINT[li];
-                g_TextS.Draw(HN, cx(HN, g_TextS, 0.85f), sh*0.115f, 0.85f, 0.7f,0.8f,0.9f,0.9f);
-
-                const float BW = 660.0f, BH = 70.0f, BG = 13.0f;
-                float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.185f;
-                for (int j = 0; j < JOB_PLAYABLE; j++) {   // 검객/궁수(DLC 보류)는 숨김
-                    float y = by + j * (BH + BG);
-                    bool unlocked = JobUnlocked(j);
-                    bool sel = (g_SelectedJob == j);
-                    bool clicked = false;
-                    if (unlocked) {
-                        // 박스만 (라벨은 직접 — 이름 상단 / 설명 하단 분리)
-                        clicked = UIButton(bx, y, BW, BH, L"", mx, my, lmb, g_LmbPrev, sel);
-                    } else {
-                        BindMainShader();
-                        drawRect(bx, y, BW, BH, 0.08f, 0.06f, 0.06f, 0.9f);
-                        drawRect(bx, y, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
-                        drawRect(bx, y+BH-2, BW, 2.0f, 0.4f,0.3f,0.3f,0.8f);
-                    }
-                    // 아이콘 (좌측)
-                    GLuint ji = JobIcon(j);
-                    if (ji) {
-                        float isz = BH - 20.0f;
-                        DrawIcon(ji, bx + 14.0f, y + (BH - isz)*0.5f, isz, isz,
-                                 unlocked?1.0f:0.45f, unlocked?1.0f:0.45f, unlocked?1.0f:0.5f, 0.95f);
-                    }
-                    BindMainShader();
-                    // 이름 (상단, 너비 맞춤)
-                    float nsc = 0.78f;
-                    while (nsc > 0.5f && g_TextL.Width(JobName(j), nsc) > BW - 130.0f) nsc -= 0.05f;
-                    float nw = g_TextL.Width(JobName(j), nsc);
-                    g_TextL.Draw(JobName(j), bx + (BW - nw)*0.5f, y + 7.0f, nsc,
-                                 unlocked?1.0f:0.55f, unlocked?1.0f:0.55f, unlocked?1.0f:0.6f, 0.98f);
-                    // 설명 / 잠금조건 (하단, 너비 맞춤)
-                    wchar_t line[200];
-                    float lr=0.85f, lg=0.95f, lb=1.0f;
-                    if (unlocked) {
-                        swprintf_s(line, L"%ls", JobDesc(j));
-                    } else {
-                        int a = JOB_DEFS[j].unlockAch;
-                        swprintf_s(line, L"%ls%ls", LOCKED[li],
-                                   (a>=0 && a<ACH_COUNT) ? AchName(a) : L"???");
-                        lr=0.9f; lg=0.45f; lb=0.45f;
-                    }
-                    float dsc = 0.72f;
-                    while (dsc > 0.45f && g_TextS.Width(line, dsc) > BW - 120.0f) dsc -= 0.04f;
-                    float dw = g_TextS.Width(line, dsc);
-                    g_TextS.Draw(line, bx + (BW - dw)*0.5f, y + BH - 25.0f, dsc, lr, lg, lb, 0.92f);
-
-                    if (clicked) {
-                        g_SelectedJob = j;
-                        ResetForNewGame();
-                        PickRandomWeapons(g_WeaponChoices);
-                        g_GameManager.currentState = GameState::WEAPON_SELECT;
-                    }
-                }
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    // 크리에이티브면 설정창으로, 아니면 난이도로
-                    g_GameManager.currentState = g_CreativeMode
-                        ? GameState::CREATIVE_CONFIG : GameState::DIFFICULTY_SELECT;
-                }
-}
-
-static void Scene_WeaponSelect(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                // 무기 확정 → 직업 시작증강/무기모드 적용 → 시작증강 or READY 로 전이
-                auto finalizeLoadout = [&](int wIdx) {
-                    g_Stats.baseFireInterval = g_Stats.fireInterval;
-                    ApplyWeapon(g_Stats, (StartWeapon)wIdx);
-                    g_CurrentWeapon = wIdx;
-                    fireTimer = g_Stats.fireInterval;
-                    bool classJob = false;
-                    if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
-                        const JobDef& jd = JOB_DEFS[g_SelectedJob];
-                        for (int a = 0; a < jd.startAugCount; a++) {
-                            int ji = AugIndexOf(jd.startAugs[a]);
-                            if (ji < 0) continue;
-                            g_Stats.Apply(jd.startAugs[a]);
-                            g_OwnedAugs.push_back(ji);
-                            // 일반 픽과 동일하게 마킹 — 직업 시작 증강이 재추첨되어 중복되는 버그 방지
-                            g_TypeOwned[(int)jd.startAugs[a]] = true;
-                            MarkAugSeen(ji);
-                            if (AugOnceOnly(jd.startAugs[a], ALL_AUGS[ji].rarity))
-                                g_GameManager.takenOnce[ji] = true;
-                            EquipSkill(SkillForAug(jd.startAugs[a]));
-                        }
-                        if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
-                            g_Stats.meleeWeapon  = true;
-                            g_Stats.fireInterval = 0.26f;
-                            g_Stats.baseFireInterval = g_Stats.fireInterval;
-                            g_RunMelee = true; classJob = true;
-                        } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
-                            g_Stats.bowWeapon    = true;
-                            g_Stats.bulletSpeed *= 1.4f;
-                            g_RunBow = true; classJob = true;
-                        }
-                        fireTimer = g_Stats.fireInterval;
-                    }
-                    // 검객/궁수는 총기 표기가 무의미 → 변환/게임오버 표시용 무기 제거
-                    if (classJob) g_CurrentWeapon = -1;
-                    // 크리에이티브: 직접 고른 시작 증강 즉시 적용 (스탯+보유목록 직접)
-                    if (g_CreativeMode) {
-                        for (int aidx : g_CreativeStartAugList) {
-                            if (aidx < 0 || aidx >= AUG_TOTAL) continue;
-                            g_Stats.Apply(ALL_AUGS[aidx].type);
-                            g_OwnedAugs.push_back(aidx);
-                            g_TypeOwned[(int)ALL_AUGS[aidx].type] = true;
-                            g_GameManager.takenOnce[aidx] = true;
-                        }
-                    }
-                    g_GameManager.maxHP    = g_Stats.maxHP;
-                    g_GameManager.playerHP = g_Stats.maxHP;
-                    g_PrevHP               = g_Stats.maxHP;
-                    int startAugs = g_MetaStartAugs + ((g_CreativeMode) ? g_CreativeStartAugs : 0);
-                    if (startAugs > 0) {
-                        g_BossRewardPicksLeft = startAugs;
-                        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                     g_Stats.distAugTaken, g_CreativeMode);
-                        g_GameManager.currentState = GameState::AUG_SELECT;
-                    } else {
-                        g_GameManager.currentState = GameState::READY;
-                    }
-                };
-                // 검객/궁수 — 총기 선택이 무의미(무기모드가 덮어씀) → 페이지 건너뛰고 기본 무기로 확정
-                if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
-                    int wm = JOB_DEFS[g_SelectedJob].weaponMode;
-                    if (wm == 1 || wm == 2) { finalizeLoadout((int)StartWeapon::RIFLE); return; }
-                }
-
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                deskWindow(L"loadout.exe", 0.4f, 0.85f, 1.0f);
-
-                const wchar_t* TIT = L"시작 무기를 선택하세요";
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.4f), sh*0.14f, 1.4f,
-                             1, 1, 1, 0.98f);
-
-                // 3 카드 — 가로 배치 (DIFFICULTY 와 비슷)
-                const float CARD_W = 320.0f, CARD_H = 260.0f, GAP = 32.0f;
-                const float TOTAL_W = 3*CARD_W + 2*GAP;
-                float baseX = (sw - TOTAL_W) * 0.5f;
-                float baseY = sh * 0.30f;
-
-                for (int i = 0; i < 3; i++) {
-                    int idx = g_WeaponChoices[i];
-                    if (idx < 0 || idx >= (int)StartWeapon::_COUNT) continue;
-                    const WeaponDef& w = ALL_WEAPONS[idx];
-                    float cardX = baseX + i * (CARD_W + GAP);
-
-                    // 카드 = 큰 버튼 (라벨 비움 — 이름은 위쪽에 따로 그려 설명과 겹침 방지)
-                    if (UIButton(cardX, baseY, CARD_W, CARD_H, L"",
-                                 mx, my, lmb, g_LmbPrev)) {
-                        finalizeLoadout(idx);
-                    }
-
-                    // 무기 이름 — 카드 상단쪽 (설명과 분리)
-                    {
-                        const wchar_t* nm = WeaponName(w);
-                        float nsc = 1.05f;
-                        while (nsc > 0.6f && g_TextL.Width(nm, nsc) > CARD_W - 24.0f) nsc -= 0.05f;
-                        float nw = g_TextL.Width(nm, nsc);
-                        g_TextL.Draw(nm, cardX + (CARD_W - nw) * 0.5f,
-                                     baseY + CARD_H * 0.20f, nsc, 1, 1, 1, 0.98f);
-                    }
-
-                    // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
-                    BindMainShader();
-                    const wchar_t* d = WeaponDesc(w);
-                    // '/' 로 split → 줄 단위
-                    std::vector<std::wstring> lines;
-                    std::wstring cur;
-                    for (const wchar_t* p = d; *p; ++p) {
-                        if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
-                        else cur += *p;
-                    }
-                    if (!cur.empty()) lines.push_back(cur);
-                    for (auto& s : lines) {
-                        while (!s.empty() && s.front() == L' ') s.erase(0, 1);
-                        while (!s.empty() && s.back() == L' ') s.pop_back();
-                    }
-                    // 설명을 카드 안에 가둔다 — 줄 많은 무기(대포 등)는 줄간격/글자 압축
-                    float descTop = baseY + CARD_H * 0.44f;
-                    float descBot = baseY + CARD_H - 14.0f;
-                    int   nL = (int)lines.size(); if (nL < 1) nL = 1;
-                    float lineH = 26.0f;
-                    if (descTop + nL * lineH > descBot)
-                        lineH = (descBot - descTop) / nL;
-                    for (int li = 0; li < (int)lines.size(); li++) {
-                        const wchar_t* s = lines[li].c_str();
-                        float sc = (lineH < 24.0f) ? 0.78f : 0.85f;
-                        while (sc > 0.52f &&
-                               g_TextS.Width(s, sc) > CARD_W - 24.0f) sc -= 0.05f;
-                        float lw = g_TextS.Width(s, sc);
-                        g_TextS.Draw(s, cardX + (CARD_W - lw) * 0.5f,
-                                     descTop + li * lineH, sc, 0.88f, 0.95f, 1.0f, 0.95f);
-                    }
-                }
-
-                // 뒤로 — 직업 선택으로
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::JOB_SELECT;
-                }
-}
-
-static void Scene_DifficultySelect(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                deskWindow(L"newgame.exe", 0.30f, 0.8f, 1.0f);
-
-                const wchar_t* TIT = T(StrId::DIFF_TITLE);
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.20f, 1.6f,
-                             1.0f, 1.0f, 1.0f, 1.0f);
-
-                struct DiffBtn { Difficulty d; StrId label; StrId desc; float r, g, b; };
-                DiffBtn btns[3] = {
-                    { Difficulty::EASY,   StrId::DIFF_EASY,   StrId::DIFF_EASY_DESC,
-                      0.3f, 0.85f, 0.4f },
-                    { Difficulty::NORMAL, StrId::DIFF_NORMAL, StrId::DIFF_NORMAL_DESC,
-                      0.4f, 0.6f, 1.0f },
-                    { Difficulty::HARD,   StrId::DIFF_HARD,   StrId::DIFF_HARD_DESC,
-                      1.0f, 0.4f, 0.4f },
-                };
-
-                const float BW = 520.0f, BH = 90.0f, BG = 30.0f;
-                float totalH = 3 * BH + 2 * BG;
-                float bx = (sw - BW) * 0.5f;
-                float by = (sh - totalH) * 0.5f;
-
-                for (int i = 0; i < 3; i++) {
-                    float y = by + i * (BH + BG);
-                    bool sel = (g_Difficulty == btns[i].d);
-                    if (UIButton(bx, y, BW, BH, T(btns[i].label),
-                                 mx, my, lmb, g_LmbPrev, sel)) {
-                        g_Difficulty = btns[i].d;
-                        if (g_CreativeMode) {
-                            // 크리에이티브: 설정 화면으로 (시작/보스/증강 조정)
-                            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
-                        } else {
-                            // 직업 선택 화면으로 (해금된 직업 선택 후 무기 선택)
-                            g_GameManager.currentState = GameState::JOB_SELECT;
-                        }
-                    }
-                    // 버튼 아래 설명
-                    const wchar_t* desc = T(btns[i].desc);
-                    float dw = g_TextS.Width(desc, 0.85f);
-                    g_TextS.Draw(desc, bx + (BW - dw) * 0.5f, y + BH - 28.0f, 0.85f,
-                                 btns[i].r, btns[i].g, btns[i].b, 0.85f);
-                }
-
-                // 크리에이티브(개발) 모드 토글 — 도감 시크릿 코드로 해금 시에만 노출
-                if (g_DevUnlocked) {
-                    const wchar_t* CLBL = g_CreativeMode
-                        ? T(StrId::CREATIVE_ON)
-                        : T(StrId::CREATIVE_OFF);
-                    float cby = by + 3 * (BH + BG) + 20.0f;
-                    float cbw = BW, cbh = 72.0f;     // 세로 키움 (라벨/설명 겹침 방지)
-                    float cbx = (sw - cbw) * 0.5f;
-                    if (UIButton(cbx, cby, cbw, cbh, CLBL,
-                                 mx, my, lmb, g_LmbPrev, g_CreativeMode)) {
-                        g_CreativeMode = !g_CreativeMode;
-                    }
-                    // 설명 — 버튼 아래쪽에 (버튼 안과 겹치지 않게)
-                    const wchar_t* CDESC = g_CreativeMode
-                        ? T(StrId::CREATIVE_DESC_ON)
-                        : T(StrId::CREATIVE_DESC_OFF);
-                    float cdw = g_TextS.Width(CDESC, 0.78f);
-                    g_TextS.Draw(CDESC, cbx + (cbw - cdw) * 0.5f,
-                                 cby + cbh + 10.0f, 0.78f,
-                                 0.85f, 0.95f, 0.6f, 0.85f);
-                }
-
-                // 뒤로 버튼
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-}
-
-static void Scene_CreativeConfig(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                deskWindow(L"sandbox.cfg", 0.6f, 0.95f, 0.4f);
-
-                const wchar_t* TIT = L"CREATIVE";
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.6f), sh*0.08f, 1.6f,
-                             0.85f, 0.95f, 0.6f, 1.0f);
-
-                const float OBW = 150.0f, OBH = 50.0f, OBG = 14.0f;
-
-                // 시작 점수
-                g_TextS.Draw(L"Start Score", 60.0f, sh*0.22f, 1.0f, 1,1,1,0.9f);
-                struct ScoreOpt { const wchar_t* l; long long v; };
-                ScoreOpt sOpts[5] = { {L"0",0},{L"200k",200000},{L"400k",400000},{L"500k",500000} };
-                for (int i = 0; i < 4; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
-                    bool sel = (g_CreativeStartScore == sOpts[i].v);
-                    if (UIButton(ox, sh*0.22f + 28.0f, OBW, OBH, sOpts[i].l,
-                                 mx, my, lmb, g_LmbPrev, sel))
-                        g_CreativeStartScore = sOpts[i].v;
-                }
-
-                // 보스 선택 — 10종 전부 (None 포함 11개, 5개씩 줄바꿈)
-                g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
-                struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[11] = { {L"None",-1},{L"Slime",0},{L"Glitch",1},
-                                      {L"Reload",2},{L"Spam",3},{L"Polymorph",4},
-                                      {L"Kernel",5},{L"Firewall",6},{L"Botnet",7},
-                                      {L"Bug",8},{L"Chess",9} };
-                for (int i = 0; i < 11; i++) {
-                    int col = i % 5, row = i / 5;
-                    float ox = 60.0f + col * (OBW + OBG);
-                    float oy = sh*0.40f + 28.0f + row * (OBH + 8.0f);
-                    bool sel = (g_CreativeBossPick == bOpts[i].v);
-                    if (UIButton(ox, oy, OBW, OBH, bOpts[i].l,
-                                 mx, my, lmb, g_LmbPrev, sel))
-                        g_CreativeBossPick = bOpts[i].v;
-                }
-
-                // 시작 증강 픽 횟수
-                g_TextS.Draw(L"Start Augments", 60.0f, sh*0.58f, 1.0f, 1,1,1,0.9f);
-                int aOpts[4] = { 0, 3, 5, 10 };
-                for (int i = 0; i < 4; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
-                    wchar_t lb[8]; swprintf_s(lb, L"%d", aOpts[i]);
-                    bool sel = (g_CreativeStartAugs == aOpts[i]);
-                    if (UIButton(ox, sh*0.58f + 28.0f, OBW, OBH, lb,
-                                 mx, my, lmb, g_LmbPrev, sel))
-                        g_CreativeStartAugs = aOpts[i];
-                }
-
-                // ── 시작 증강 직접 선택 (우측 그리드, 클릭 토글, 휠 스크롤) ──
-                {
-                    const int COLS = 9; const float CELL = 52.0f;
-                    // 좌측 보스 버튼(우단 x≈866)과 겹치지 않게 우측 배치. 넓은 화면은 우측 정렬.
-                    float gx = sw - (float)COLS * CELL - 60.0f;
-                    if (gx < 900.0f) gx = 900.0f;
-                    g_TextS.Draw(L"Pick Start Augments (click)", gx, sh*0.20f, 0.95f, 1,1,1,0.9f);
-                    int avail[AUG_TOTAL], na = 0;
-                    for (int i = 0; i < AUG_TOTAL; i++) {
-                        if (AugRemoved(ALL_AUGS[i].type)) continue;   // 삭제 증강 제외
-                        avail[na++] = i;
-                    }
-                    float gTop = sh*0.20f + 28.0f, gBottom = sh - 96.0f;
-                    float viewH = gBottom - gTop;
-                    float contentH = (float)((na + COLS - 1) / COLS) * CELL;
-                    static float s_caScroll = 0.0f;
-                    bool over = (mx >= gx && mx <= gx + COLS*CELL && my >= gTop && my <= gBottom);
-                    if (over && g_ScrollAccum != 0.0f) s_caScroll -= g_ScrollAccum * CELL;
-                    g_ScrollAccum = 0.0f;
-                    float maxS = (contentH > viewH) ? (contentH - viewH) : 0.0f;
-                    if (s_caScroll < 0) s_caScroll = 0; if (s_caScroll > maxS) s_caScroll = maxS;
-                    BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                    glScissor((GLint)gx, (GLint)(sh - gBottom), (GLint)(COLS*CELL + 4), (GLint)viewH);
-                    for (int k = 0; k < na; k++) {
-                        int i = avail[k];
-                        float cxp = gx + (k % COLS) * CELL;
-                        float cyp = gTop + (k / COLS) * CELL - s_caScroll;
-                        if (cyp < gTop - CELL || cyp > gBottom) continue;
-                        float cw = CELL - 6.0f;
-                        int selPos = -1;
-                        for (int s = 0; s < (int)g_CreativeStartAugList.size(); s++)
-                            if (g_CreativeStartAugList[s] == i) { selPos = s; break; }
-                        bool selected = (selPos >= 0);
-                        bool hv = (over && mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
-                        BindMainShader();
-                        drawRect(cxp, cyp, cw, cw, rr*0.4f, rg*0.4f, rb*0.4f, selected?0.95f:(hv?0.7f:0.5f));
-                        if (selected) {  // 선택 강조 테두리
-                            drawRect(cxp, cyp, cw, 3.0f, 1,1,1,1); drawRect(cxp, cyp+cw-3, cw, 3.0f, 1,1,1,1);
-                            drawRect(cxp, cyp, 3.0f, cw, 1,1,1,1); drawRect(cxp+cw-3, cyp, 3.0f, cw, 1,1,1,1);
-                        }
-                        GLuint ic = IconFor(ALL_AUGS[i].type);
-                        if (ic) DrawIcon(ic, cxp+(cw-34)*0.5f, cyp+(cw-34)*0.5f, 34, 34, 1,1,1,1);
-                        if (hv && lmb && !g_LmbPrev) {
-                            if (selected) g_CreativeStartAugList.erase(g_CreativeStartAugList.begin()+selPos);
-                            else          g_CreativeStartAugList.push_back(i);
-                        }
-                    }
-                    BatchFlush(); glDisable(GL_SCISSOR_TEST);
-                    wchar_t cb[48]; swprintf_s(cb, L"selected: %d", (int)g_CreativeStartAugList.size());
-                    g_TextS.Draw(cb, gx, gBottom + 10.0f, 0.85f, 1.0f, 0.9f, 0.4f, 0.95f);
-                    // 호버 시 이름 툴팁
-                    for (int k = 0; k < na; k++) {
-                        int i = avail[k];
-                        float cxp = gx + (k % COLS) * CELL;
-                        float cyp = gTop + (k / COLS) * CELL - s_caScroll;
-                        if (cyp < gTop || cyp > gBottom) continue;
-                        if (mx >= cxp && mx < cxp+CELL-6 && my >= cyp && my < cyp+CELL-6) {
-                            // 카운트("selected: N")와 겹치지 않게 한 줄 아래 별도 표기
-                            g_TextS.Draw(AugName(ALL_AUGS[i]), gx, gBottom + 34.0f, 0.85f,
-                                         0.8f, 0.95f, 1.0f, 0.95f);
-                            break;
-                        }
-                    }
-                }
-
-                // 시작 버튼
-                if (UIButton((sw - 300.0f) * 0.5f, sh*0.78f, 300.0f, 64.0f,
-                             L"START", mx, my, lmb, g_LmbPrev)) {
-                    // 크리에이티브도 직업 선택을 거친다 (리셋/무기뽑기는 직업 확정 시)
-                    g_GameManager.currentState = GameState::JOB_SELECT;
-                }
-
-                // 뒤로 버튼 — 난이도 선택으로
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
-                }
-}
-
-static void Scene_Settings(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                const float WW = 1000.0f, WH = 600.0f;
-                float wx, wy;
-                appWindow(WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-                float lx = wx + 40.0f;     // 라벨 열
-                float bx0 = wx + 250.0f;   // 옵션 버튼 시작 열
-                const float OW = 120.0f, OH = 46.0f, OG = 8.0f;
-
-                // 헤딩
-                g_TextL.Draw(T(StrId::SET_TITLE), lx, wy + 48.0f, 1.0f, 1,1,1,1);
-
-                // FPS 라인
-                float lineY = wy + 110.0f;
-                g_TextS.Draw(T(StrId::SET_FPS), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
-                struct FpsOpt { const wchar_t* label; int val; };
-                FpsOpt fpsOpts[4] = {
-                    { L"30", 30 }, { L"60", 60 }, { L"144", 144 },
-                    { L"300", 300 }   // C18: '무제한' 제거 → 300 상한
-                };
-                for (int i = 0; i < 4; i++) {
-                    float bx = bx0 + i * (OW + OG);
-                    bool sel = (g_FpsCap == fpsOpts[i].val);
-                    if (UIButton(bx, lineY, OW, OH, fpsOpts[i].label,
-                                 mx, my, lmb, g_LmbPrev, sel)) {
-                        g_FpsCap = fpsOpts[i].val;
-                        glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
-                    }
-                }
-
-                // 언어 라인
-                lineY = wy + 180.0f;
-                g_TextS.Draw(T(StrId::SET_LANG), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
-                struct LangOpt { const wchar_t* label; Language lang; };
-                LangOpt langOpts[LANG_COUNT] = {
-                    { L"한국어",  Language::KR },
-                    { L"English", Language::EN },
-                    { L"日本語",  Language::JP },
-                };
-                for (int i = 0; i < LANG_COUNT; i++) {
-                    float bx = bx0 + i * (OW + OG);
-                    bool sel = (g_Language == langOpts[i].lang);
-                    if (UIButton(bx, lineY, OW, OH, langOpts[i].label,
-                                 mx, my, lmb, g_LmbPrev, sel)) {
-                        g_Language = langOpts[i].lang;
-                    }
-                }
-
-                // ── 토글 옵션 — 2열 배치(좌: 표시 / 우: 조작·효과)로 우측 여백 활용 ──
-                auto toggleAt = [&](float labX, float btnX, float ly,
-                                    const wchar_t* label, bool& val) {
-                    g_TextS.Draw(label, labX, ly + 12.0f, 0.85f, 1,1,1,0.9f);
-                    if (UIButton(btnX, ly, OW, OH, T(StrId::OPT_ON),
-                                 mx, my, lmb, g_LmbPrev, val)) val = true;
-                    if (UIButton(btnX + OW + OG, ly, OW, OH, T(StrId::OPT_OFF),
-                                 mx, my, lmb, g_LmbPrev, !val)) val = false;
-                };
-                const wchar_t* afLabel = (g_Language==Language::EN)?L"Auto-Fire":
-                                         (g_Language==Language::JP)?L"自動発射":L"자동 발사";
-                const wchar_t* asLabel = (g_Language==Language::EN)?L"Auto-Skill":
-                                         (g_Language==Language::JP)?L"自動スキル":L"자동 스킬";
-                const wchar_t* sfLabel = (g_Language==Language::EN)?L"CRT Shader":
-                                         (g_Language==Language::JP)?L"CRTシェーダー":L"CRT 셰이더";
-                float labR = wx + 540.0f, btnR = wx + 720.0f;
-                float tY0 = wy + 250.0f, tGap = 64.0f;
-                // 좌열 — 표시 옵션
-                toggleAt(lx,   bx0,  tY0,            T(StrId::SET_CROSSHAIR), g_ShowCrosshair);
-                toggleAt(lx,   bx0,  tY0 + tGap,     T(StrId::SET_DMGNUM),    g_ShowDamageNumbers);
-                toggleAt(lx,   bx0,  tY0 + tGap*2,   T(StrId::SET_COMBO),     g_ShowCombo);
-                // 우열 — 조작·효과 옵션
-                toggleAt(labR, btnR, tY0,            afLabel, g_AutoFire);
-                toggleAt(labR, btnR, tY0 + tGap,     asLabel, g_AutoSkill);
-                toggleAt(labR, btnR, tY0 + tGap*2,   sfLabel, g_ShaderFx);
-
-                // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
-                {
-                    float vy = wy + 458.0f;
-                    g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
-                    auto clampVol = [](int v){ return v < 0 ? 0 : (v > 100 ? 100 : v); };
-
-                    // [−]
-                    if (UIButton(bx0, vy, 44.0f, OH, L"−", mx, my, lmb, g_LmbPrev)) {
-                        g_VolEdit = false; g_SoundVol = clampVol(g_SoundVol - 5);
-                    }
-                    // 슬라이더 (트랙 + 손잡이) — 클릭/드래그로 직접 설정
-                    float barX = bx0 + 56.0f, barW = 300.0f;
-                    float trackY = vy + OH * 0.5f, trackH = 6.0f;
-                    float kx = barX + barW * (g_SoundVol / 100.0f);
-                    drawRect(barX, trackY - trackH*0.5f, barW, trackH, 0.10f, 0.12f, 0.16f, 1.0f);     // 트랙
-                    drawRect(barX, trackY - trackH*0.5f, kx - barX, trackH, 0.35f, 0.75f, 1.0f, 0.95f); // 채움
-                    drawCircle(kx, trackY, 11.0f, 0.35f, 0.8f, 1.0f, 1.0f);    // 손잡이 외곽
-                    drawCircle(kx, trackY,  6.0f, 0.95f, 0.98f, 1.0f, 1.0f);   // 손잡이 코어
-                    bool barHover = (mx >= barX && mx <= barX + barW && my >= vy && my <= vy + OH);
-                    if (lmb && barHover) {   // 누르는 동안(드래그) 마우스 X 로 값 설정
-                        g_VolEdit = false;
-                        g_SoundVol = clampVol((int)((float)(mx - barX) / barW * 100.0f + 0.5f));
-                    }
-                    // [+]
-                    float plusX = barX + barW + 8.0f;
-                    if (UIButton(plusX, vy, 44.0f, OH, L"+", mx, my, lmb, g_LmbPrev)) {
-                        g_VolEdit = false; g_SoundVol = clampVol(g_SoundVol + 5);
-                    }
-                    // 숫자 직접입력 필드
-                    float fldX = plusX + 44.0f + 14.0f, fldW = 92.0f;
-                    bool fldHover = (mx >= fldX && mx <= fldX + fldW && my >= vy && my <= vy + OH);
-                    BindMainShader();
-                    drawRect(fldX, vy, fldW, OH, g_VolEdit ? 0.16f : 0.09f,
-                             g_VolEdit ? 0.18f : 0.10f, 0.22f, 1.0f);
-                    drawRect(fldX, vy, fldW, 2.0f, 0.4f, 0.9f, 0.6f, 0.8f);
-                    auto commitVol = [&]() {
-                        int v = 0; for (int i = 0; i < g_VolLen; i++) v = v*10 + (g_VolBuf[i]-L'0');
-                        if (g_VolLen > 0) g_SoundVol = clampVol(v);
-                        g_VolEdit = false;
-                    };
-                    if (lmb && !g_LmbPrev) {
-                        if (fldHover) { g_VolEdit = true; g_VolLen = 0; g_VolBuf[0] = 0; }
-                        else if (g_VolEdit) commitVol();   // 다른 곳 클릭 = 확정
-                    }
-                    // 백스페이스 / 엔터 (엣지 감지)
-                    {
-                        static bool bsPrev = false, enPrev = false;
-                        bool bs = (glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS);
-                        if (g_VolEdit && bs && !bsPrev && g_VolLen > 0) g_VolBuf[--g_VolLen] = 0;
-                        bsPrev = bs;
-                        bool en = (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS);
-                        if (g_VolEdit && en && !enPrev) commitVol();
-                        enPrev = en;
-                    }
-                    wchar_t shown[16];
-                    if (g_VolEdit) {
-                        bool caret = (((int)(glfwGetTime()*2.0)) & 1) == 0;
-                        swprintf_s(shown, L"%ls%ls", g_VolLen ? g_VolBuf : L"", caret ? L"|" : L"");
-                    } else swprintf_s(shown, L"%d", g_SoundVol);
-                    g_TextS.Draw(shown, fldX + 12.0f, vy + 12.0f, 0.9f, 1,1,1,0.95f);
-                }
-
-                // 뒤로(저장 후 닫기) — 창 하단
-                if (UIButton(lx, wy + WH - 64.0f, 180.0f, 48.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    SaveGame();
-                    g_GameManager.currentState = g_SettingsReturnTo;
-                }
-                // 세이브 초기화 (2단계 확인) — 점수/코인/메타/업적/도감/테마 전부 리셋
-                {
-                    static bool s_resetConfirm = false;
-                    const wchar_t* rl = s_resetConfirm
-                        ? ((g_Language==Language::EN)?L"Sure? (click again)":
-                           (g_Language==Language::JP)?L"本当に？(再クリック)":L"정말? (다시 클릭)")
-                        : ((g_Language==Language::EN)?L"Reset Save":
-                           (g_Language==Language::JP)?L"セーブ初期化":L"세이브 초기화");
-                    float rwid = 210.0f, rx = lx + 200.0f, ry = wy + WH - 64.0f;
-                    bool rh = (mx>=rx && mx<=rx+rwid && my>=ry && my<=ry+48.0f);
-                    BindMainShader();
-                    drawRect(rx, ry, rwid, 48.0f, s_resetConfirm?0.40f:0.18f, 0.06f, 0.06f, rh?1.0f:0.9f);
-                    drawRect(rx, ry, rwid, 2.0f, 0.95f, 0.3f, 0.3f, 0.9f);
-                    float rtw = g_TextS.Width(rl, 0.82f);
-                    g_TextS.Draw(rl, rx+(rwid-rtw)*0.5f, ry+15.0f, 0.82f, 1.0f, 0.65f, 0.6f, 1.0f);
-                    if (lmb && !g_LmbPrev) {
-                        if (rh) {
-                            if (!s_resetConfirm) s_resetConfirm = true;
-                            else { ResetSaveProgress(); s_resetConfirm = false; }
-                        } else s_resetConfirm = false;   // 딴 곳 클릭 = 확인 취소
-                    }
-                }
-
-                // 크레딧 (오픈소스 에셋 출처) — 버튼 → 오버레이
-                static bool s_showCredits = false;
-                {
-                    const wchar_t* cl = (g_Language==Language::EN)?L"Credits":
-                                        (g_Language==Language::JP)?L"クレジット":L"크레딧";
-                    float cwid = 150.0f, cxp = lx + 420.0f, cyp = wy + WH - 64.0f;
-                    if (UIButton(cxp, cyp, cwid, 48.0f, cl, mx, my, lmb, g_LmbPrev))
-                        s_showCredits = true;
-                }
-                if (s_showCredits) {
-                    BindMainShader();
-                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.78f);   // 딤
-                    float CW = 620.0f, CH = 440.0f;
-                    float CX = (sw - CW) * 0.5f, CY = (sh - CH) * 0.5f;
-                    drawRect(CX, CY, CW, CH, 0.05f, 0.06f, 0.10f, 0.98f);
-                    drawRect(CX, CY, CW, 4.0f, 0.3f, 0.8f, 1.0f, 1.0f);
-                    const wchar_t* CT = L"CREDITS";
-                    g_TextL.Draw(CT, CX + (CW - g_TextL.Width(CT,1.1f))*0.5f, CY + 24.0f, 1.1f, 1,1,1,1);
-                    const wchar_t* lines[] = {
-                        L"ONEDOW  —  Desktop Defense",
-                        L"",
-                        L"Fonts:  Jua / Kosugi Maru / Oswald  (SIL OFL)",
-                        L"Icons:  game-icons.net  (CC BY 3.0)",
-                        L"         Lorc · Delapouite · Skoll",
-                        L"Missile sprite:  Saepul Nahwan  (Noun Project)",
-                        L"Audio engine:  miniaudio  (public domain)",
-                        L"Built with:  OpenGL · GLFW · GLAD · glm · stb",
-                        L"",
-                        L"Made with Claude Code",
-                    };
-                    float ly = CY + 78.0f;
-                    for (auto* ln : lines) {
-                        g_TextS.Draw(ln, CX + 36.0f, ly, 0.82f, 0.85f, 0.92f, 1.0f, 0.95f);
-                        ly += 32.0f;
-                    }
-                    if (UIButton(CX + (CW-180.0f)*0.5f, CY + CH - 60.0f, 180.0f, 44.0f,
-                                 T(StrId::BTN_BACK), mx, my, lmb, g_LmbPrev))
-                        s_showCredits = false;
-                }
-                }   // close: g_AppOpen open guard
-}
-
-static void Scene_Ready(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
-                const wchar_t* T2 = T(StrId::ESC_QUIT);
-                g_TextL.Draw(T1, cx(T1, g_TextL, 1.0f), sh*0.42f, 1.0f, 1,1,1,0.95f);
-                g_TextS.Draw(T2, cx(T2, g_TextS, 1.0f), sh*0.50f, 1.0f, 0.8f,0.8f,0.8f,0.8f);
-                // 조작 안내 (키는 언어 무관 — 새 플레이어가 스킬/대시 존재를 알게)
-                const wchar_t* CTRL =
-                    L"WASD Move    Mouse Fire    SHIFT Dash    Q/E/R Skills    ESC Pause";
-                g_TextS.Draw(CTRL, cx(CTRL, g_TextS, 0.9f), sh*0.62f, 0.9f,
-                             0.55f, 0.85f, 1.0f, 0.95f);
-}
-
-static void Scene_Paused(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                // 전체 화면 딤 — 보스 창/엔티티가 메뉴 뒤로 비치지 않게
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.86f);
-                const wchar_t* T1 = T(StrId::PAUSED);
-                g_TextL.Draw(T1, cx(T1, g_TextL, 1.4f), sh*0.22f, 1.4f, 1,1,1,0.95f);
-
-                // 버튼 4개: 재개 / 설정 / 메뉴로 / 종료
-                const float BW = 280.0f, BH = 64.0f, BG = 16.0f;
-                float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.36f;
-
-                if (UIButton(bx, by + 0*(BH+BG), BW, BH, T(StrId::BTN_RESUME),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::RUNNING;
-                }
-                if (UIButton(bx, by + 1*(BH+BG), BW, BH, T(StrId::BTN_SETTINGS),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_SettingsReturnTo = GameState::PAUSED;
-                    g_GameManager.currentState = GameState::SETTINGS;
-                }
-                if (UIButton(bx, by + 2*(BH+BG), BW, BH, T(StrId::BTN_MAIN_MENU),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                if (UIButton(bx, by + 3*(BH+BG), BW, BH, T(StrId::BTN_QUIT),
-                             mx, my, lmb, g_LmbPrev)) {
-                    glfwSetWindowShouldClose(window, GLFW_TRUE);
-                }
-}
-
-static void Scene_GameOver(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                // ── 메뉴 페이드인: 폭발 직후 결과 메뉴가 서서히 떠오름 (0→1, 2.5초) ──
-                float gof = g_GameOverFade;          // 0..1
-                float ge  = gof * gof * (3.0f - 2.0f * gof);  // smoothstep (부드럽게)
-
-                // 전체 화면 딤 — 보스 창/엔티티가 결과창 뒤로 비치지 않게 (페이드)
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f * ge);
-                const wchar_t* T1 = T(StrId::GAMEOVER);
-                g_TextL.Draw(T1, cx(T1, g_TextL, 1.6f), sh*0.30f, 1.6f,
-                             1, 0.25f, 0.25f, 0.95f * ge);
-                // 사망 원인 (프로세스 종료 사유)
-                if (g_DeathReason[0]) {
-                    g_TextS.Draw(g_DeathReason, cx(g_DeathReason, g_TextS, 1.0f), sh*0.385f, 1.0f,
-                                 1.0f, 0.55f, 0.45f, 0.92f * ge);
-                }
-
-                // 결과 — 점수 카운트업(띠리릭) + Best(통계 바로 위) + 레벨/처치/코인
-                float cu = gof / 0.75f; if (cu > 1.0f) cu = 1.0f;
-                cu = cu * cu * (3.0f - 2.0f * cu);          // smoothstep → 숫자 롤업 느낌
-                long long curScore = (long long)(g_GameManager.score * cu);
-                long long bestVal  = g_BestScore[(int)g_Difficulty];
-                long long curBest  = g_LastRunRecord ? (long long)(bestVal * cu) : bestVal;  // 신기록이면 같이 롤업
-
-                wchar_t bestBuf[64], scoreBuf[64], lvBuf[64], killBuf[64], coinBuf[64];
-                // BEST — 통계(최종점수) 바로 위
-                swprintf_s(bestBuf, L"BEST   %lld", curBest);
-                g_TextS.Draw(bestBuf, cx(bestBuf, g_TextS, 1.1f), sh*0.405f, 1.1f,
-                             1.0f, 0.85f, 0.4f, 0.95f * ge);
-                // 최종 점수 (카운트업, 대)
-                swprintf_s(scoreBuf, L"%ls   %lld", T(StrId::FINAL_SCORE), curScore);
-                g_TextL.Draw(scoreBuf, cx(scoreBuf, g_TextL, 1.3f), sh*0.455f, 1.3f,
-                             1.0f, 1.0f, 0.7f, 0.95f * ge);
-                // 도달 레벨 / 처치 수
-                swprintf_s(lvBuf,   L"%ls   Lv. %d", T(StrId::REACHED_LEVEL), g_GameManager.playerLevel);
-                swprintf_s(killBuf, L"%ls   %lld",   T(StrId::KILL_COUNT),    g_Stats.killCount);
-                g_TextS.Draw(lvBuf,   cx(lvBuf,   g_TextS, 1.05f), sh*0.545f, 1.05f, 0.85f,0.95f,0.85f, 0.95f*ge);
-                g_TextS.Draw(killBuf, cx(killBuf, g_TextS, 1.05f), sh*0.59f,  1.05f, 0.85f,0.95f,0.85f, 0.95f*ge);
-                // 코인
-                swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
-                g_TextS.Draw(coinBuf, cx(coinBuf, g_TextS, 1.0f), sh*0.645f, 1.0f, 1.0f,0.9f,0.3f, 0.95f*ge);
-                if (g_LastRunRecord) {
-                    const wchar_t* rec = L"★ NEW RECORD ★";
-                    float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
-                    g_TextL.Draw(rec, cx(rec, g_TextL, 1.0f), sh*0.355f, 1.0f,
-                                 1.0f, 0.9f, 0.2f, blink * ge);
-                }
-
-                // (사망 시점 보유 증강은 Scene_OwnedAugPanel — 일시정지와 동일한 호버 패널로 표시.
-                //  기존 다열 목록은 제거: 패널과 겹쳐 이중 표시되던 문제 fix)
-
-                // 버튼 3개: 다시하기 / 메뉴로 / 종료 — 페이드 완료 후에만 표시/활성
-                if (gof >= 0.999f) {
-                    const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
-                    float totalW = 3 * BW + 2 * BG;
-                    float bx = (sw - totalW) * 0.5f;
-                    float by = sh * 0.72f;
-
-                    if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        ResetForNewGame();
-                        PickRandomWeapons(g_WeaponChoices);
-                        g_GameManager.currentState = GameState::WEAPON_SELECT;
-                    }
-                    if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        g_GameManager.currentState = GameState::MAIN_MENU;
-                    }
-                    if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        glfwSetWindowShouldClose(window, GLFW_TRUE);
-                    }
-                }
-}
-
-static void Scene_AugSelect(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                // ── 카드 레이아웃 (GameManager::Render 와 동기화) ──
-                bool hasConv = (g_ConversionWeapon >= 0 && st == GameState::AUG_SELECT);
-                int  nCards  = hasConv ? 4 : 3;
-                const float CARD_W = hasConv ? 240.0f : 280.0f;
-                const float CARD_H = 400.0f;
-                const float GAP    = hasConv ? 32.0f : 48.0f;
-                const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
-                float baseX = (sw - TOTAL_W) * 0.5f;
-                float baseY = (sh - CARD_H)  * 0.4f;
-
-                // 타이틀
-                const wchar_t* TIT = (st == GameState::DEBUFF_SELECT)
-                                     ? T(StrId::CHOOSE_DEBUFF)
-                                     : T(StrId::CHOOSE_AUG);
-                g_TextL.Draw(TIT, cx(TIT, g_TextL, 1.0f), baseY - 56.0f, 1.0f,
-                             1,1,1,0.95f);
-
-                // 키 힌트
-                const wchar_t* HINT = (g_HoveredAug < 0)
-                                      ? T(StrId::KEY_HINT_NO_HOVER)
-                                      : T(StrId::KEY_HINT_HOVER);
-                g_TextS.Draw(HINT, cx(HINT, g_TextS, 0.85f),
-                             baseY + CARD_H + 200.0f,
-                             0.85f, 0.75f,0.75f,0.75f,0.8f);
-
-                // 각 카드: 등급 라벨 + 이름만 (4번째는 변환 카드)
-                static const wchar_t* KEY_LABELS[4] = {L"[ 1 ]", L"[ 2 ]", L"[ 3 ]", L"[ 4 ]"};
-                for (int i = 0; i < nCards; i++) {
-                    float cardX = baseX + i * (CARD_W + GAP);
-                    float yOff  = (g_HoveredAug == i) ? -16.0f : 0.0f;
-
-                    // 카드 이름 — 3개는 증강, 4번째는 변환 무기
-                    const wchar_t* cardName;
-                    float tr, tg, tb;
-                    const wchar_t* topLabel;
-                    if (i < 3) {
-                        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
-                        cardName = AugName(def);
-                        GetRarityColor(def.rarity, tr, tg, tb);
-                        tr = std::min(1.0f, tr * 1.4f + 0.25f);
-                        tg = std::min(1.0f, tg * 1.4f + 0.25f);
-                        tb = std::min(1.0f, tb * 1.4f + 0.25f);
-                        topLabel = GetAugBadge(def);
-                        // 픽토그램 (있으면) — 카드 상단 중앙, 흰색
-                        GLuint icon = IconFor(def.type);
-                        if (icon) {
-                            float isz = 144.0f;   // 크게 — 유저는 그림 위주로 인지
-                            DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
-                                     baseY + yOff + CARD_H * 0.10f, isz, isz,
-                                     1.0f, 1.0f, 1.0f, 0.97f);
-                        }
-                    } else {
-                        cardName = (g_ConversionWeapon >= 0)
-                                 ? WeaponName(ALL_WEAPONS[g_ConversionWeapon]) : L"?";
-                        tr = 1.0f; tg = 0.9f; tb = 0.3f;
-                        topLabel = L"변환";
-                    }
-                    float rw = g_TextS.Width(topLabel, 1.0f);
-                    g_TextS.Draw(topLabel,
-                                 cardX + (CARD_W - rw) * 0.5f,
-                                 baseY + yOff + 22.0f, 1.0f, tr, tg, tb, 0.95f);
-
-                    // 증강/무기 이름
-                    float nameSc = 1.2f;
-                    while (nameSc > 0.7f &&
-                           g_TextL.Width(cardName, nameSc) > CARD_W - 20.0f)
-                        nameSc -= 0.05f;
-                    float nw = g_TextL.Width(cardName, nameSc);
-                    g_TextL.Draw(cardName,
-                                 cardX + (CARD_W - nw) * 0.5f,
-                                 baseY + yOff + CARD_H * 0.54f, nameSc,
-                                 1,1,1,0.95f);
-
-                    // 키 힌트 (카드 하단)
-                    float kw = g_TextS.Width(KEY_LABELS[i], 1.0f);
-                    g_TextS.Draw(KEY_LABELS[i],
-                                 cardX + (CARD_W - kw) * 0.5f,
-                                 baseY + yOff + CARD_H - 50.0f, 1.0f,
-                                 tr, tg, tb, 0.95f);
-                }
-
-                // ── 하단 상세 설명 박스 (호버 카드의 전체 설명) ──
-                if (g_HoveredAug >= 0) {
-                    // 호버 카드 설명 + 상단 띠 색상 (3개는 증강, 4번째는 변환 무기)
-                    const wchar_t* hDesc;
-                    float hr, hg, hb;
-                    if (g_HoveredAug < 3) {
-                        int hIdx = g_GameManager.augChoices[g_HoveredAug];
-                        if (hIdx < 0) hIdx = 0;
-                        const AugDef& hDef = ALL_AUGS[hIdx];
-                        hDesc = AugDesc(hDef);
-                        GetRarityColor(hDef.rarity, hr, hg, hb);
-                    } else {
-                        hDesc = (g_ConversionWeapon >= 0)
-                              ? WeaponDesc(ALL_WEAPONS[g_ConversionWeapon])
-                              : L"기존 무기 효과 제거 후 새 무기로 전환";
-                        hr = 1.0f; hg = 0.78f; hb = 0.10f;  // 변환 = 금색
-                    }
-                    float boxY = baseY + CARD_H + 24.0f;
-                    float boxW = TOTAL_W;
-                    float boxH = 150.0f;
-                    float boxX = (sw - boxW) * 0.5f;
-
-                    // 박스 배경 (어두운 반투명)
-                    drawRect(boxX, boxY, boxW, boxH, 0.03f, 0.03f, 0.05f, 0.85f);
-
-                    // 상단 띠
-                    drawRect(boxX, boxY, boxW, 4.0f, hr, hg, hb, 1.0f);
-
-                    // 설명 ('/' 분리, 각 줄 fit)
-                    std::vector<std::wstring> lines;
-                    std::wstring cur;
-                    for (const wchar_t* p = hDesc; *p; ++p) {
-                        if (*p == L'/') {
-                            if (!cur.empty()) lines.push_back(cur);
-                            cur.clear();
-                        } else cur += *p;
-                    }
-                    if (!cur.empty()) lines.push_back(cur);
-                    for (auto& s : lines) {
-                        while (!s.empty() && (s.front() == L' ' || s.front() == L'\t'))
-                            s.erase(0, 1);
-                        while (!s.empty() && (s.back() == L' ' || s.back() == L'\t'))
-                            s.pop_back();
-                    }
-
-                    int n = (int)lines.size();
-                    if (n < 1) n = 1;
-                    // 모든 줄을 같은 폰트 크기로 — 가장 긴 줄 기준 한 번만 스케일 결정(일정한 크기)
-                    float maxw = 1.0f;
-                    for (auto& ln : lines) {
-                        float w = g_TextS.Width(ln.c_str(), 1.0f);
-                        if (w > maxw) maxw = w;
-                    }
-                    float sc = 0.95f;
-                    if (maxw * sc > boxW - 40.0f) sc = (boxW - 40.0f) / maxw;
-                    if (sc < 0.6f) sc = 0.6f;
-                    float lineH = 34.0f * sc;
-                    float startY = boxY + 22.0f + (boxH - 22.0f - lineH * n) * 0.5f;
-                    for (int li = 0; li < n; li++) {
-                        const wchar_t* s = lines[li].c_str();
-                        float lw = g_TextS.Width(s, sc);
-                        g_TextS.Draw(s, boxX + (boxW - lw) * 0.5f,
-                                     startY + lineH * (float)li, sc,
-                                     1.0f, 1.0f, 1.0f, 0.95f);
-                    }
-                }
-}
-
-static void Scene_OwnedAugPanel(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-    auto cx = [&](const wchar_t* t, TextRenderer& tr, float scale)->float {
-        return (sw - tr.Width(t, scale)) * 0.5f; };
-    auto deskWindow = [&](const wchar_t* fname, float ar, float ag, float ab) {
-        SceneDeskWindow(sw, sh, fname, ar, ag, ab); };
-    auto appWindow = [&](float WW, float WH, const wchar_t* fname,
-                         float ar, float ag, float ab, float& ox, float& oy) {
-        SceneAppWindow(sw, sh, WW, WH, fname, ar, ag, ab, ox, oy); };
-    (void)delta; (void)window; (void)fireTimer; (void)ResetForNewGame; (void)st;
-    (void)cx; (void)deskWindow; (void)appWindow; (void)mx; (void)my; (void)lmb;
-                // 같은 인덱스 카운트 (스택)
-                int counts[AUG_TOTAL] = {};
-                for (int idx : g_OwnedAugs) counts[idx]++;
-                // 보유 증강을 카테고리(등급)순으로 정렬 — 버프→디버프→특수→조합 그룹화
-                int ord[AUG_TOTAL], nord = 0;
-                for (int i = 0; i < AUG_TOTAL; i++) if (counts[i] > 0) ord[nord++] = i;
-                std::sort(ord, ord + nord, [](int a, int b) {
-                    int ra = (int)ALL_AUGS[a].rarity, rb = (int)ALL_AUGS[b].rarity;
-                    if (ra != rb) return ra < rb;
-                    return a < b;
-                });
-
-                const float PX  = 16.0f;
-                const float ROW_H = 28.0f;
-                const float COLW  = 320.0f;          // 리스트 클릭/호버 가로 범위
-                const wchar_t* TITLE = T(StrId::OWNED_AUGS);
-                g_TextS.Draw(TITLE, PX, 60.0f, 1.1f, 1, 1, 1, 0.95f);
-                g_TextS.Draw(L"(커서 올리면 설명)", PX + 2.0f, 90.0f, 0.70f,
-                             0.6f, 0.7f, 0.9f, 0.7f);
-
-                // 리스트 뷰 영역 — 하단 스킬/HP HUD 바로 위까지 (넘치면 스크롤)
-                const float listTop    = 110.0f;
-                float listBottom = sh - 175.0f;               // 스킬 슬롯/HP 패널 위까지
-                if (listBottom < listTop + 4.0f * ROW_H) listBottom = listTop + 4.0f * ROW_H;
-                const float viewH      = listBottom - listTop;
-                const float contentH   = (float)nord * ROW_H;
-
-                // 마우스 휠 스크롤 (리스트 위에서만 소비)
-                static float s_ownScroll = 0.0f;
-                bool overList = (mx >= 0 && mx <= COLW && my >= listTop && my <= listBottom);
-                if (overList && g_ScrollAccum != 0.0f)
-                    s_ownScroll -= g_ScrollAccum * ROW_H * 1.5f;
-                g_ScrollAccum = 0.0f;   // 매 프레임 소비 (다른 곳에서 안 쓰면 무시)
-                float maxScroll = (contentH > viewH) ? (contentH - viewH) : 0.0f;
-                if (s_ownScroll < 0.0f)        s_ownScroll = 0.0f;
-                if (s_ownScroll > maxScroll)   s_ownScroll = maxScroll;
-
-                // 리스트 (scissor 클립 + 스크롤)
-                int   hoverAug = -1;
-                float hoverRowY = 0.0f;
-                BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                glScissor(0, (GLint)(sh - listBottom), (GLint)(COLW + 10.0f), (GLint)viewH);
-                for (int oi = 0; oi < nord; oi++) {
-                    int i = ord[oi];
-                    float ry = listTop + (float)oi * ROW_H - s_ownScroll;
-                    if (ry < listTop - ROW_H || ry > listBottom) continue;   // 화면 밖 컬링
-                    const AugDef& def = ALL_AUGS[i];
-                    float cr, cg, cb;
-                    GetRarityColor(def.rarity, cr, cg, cb);
-                    cr = std::min(1.0f, cr * 1.3f + 0.25f);
-                    cg = std::min(1.0f, cg * 1.3f + 0.25f);
-                    cb = std::min(1.0f, cb * 1.3f + 0.25f);
-                    bool rowHover = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
-                    if (rowHover) {
-                        hoverAug = i; hoverRowY = ry;
-                        BindMainShader();
-                        drawRect(0, ry - 2.0f, COLW, ROW_H, 0.15f, 0.16f, 0.26f, 0.6f);
-                        drawRect(0, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
-                    }
-                    wchar_t line[96];
-                    if (counts[i] > 1) swprintf_s(line, L"· %ls  ×%d", AugName(def), counts[i]);
-                    else               swprintf_s(line, L"· %ls", AugName(def));
-                    g_TextS.Draw(line, PX, ry, 0.85f, cr, cg, cb, 0.9f);
-                }
-                BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-                // 스크롤바 (내용이 넘칠 때만)
-                if (maxScroll > 0.0f) {
-                    BindMainShader();
-                    float trackX = COLW + 2.0f;
-                    drawRect(trackX, listTop, 4.0f, viewH, 0.12f, 0.12f, 0.16f, 0.6f);
-                    float thumbH = viewH * (viewH / contentH);
-                    float thumbY = listTop + (viewH - thumbH) * (s_ownScroll / maxScroll);
-                    drawRect(trackX, thumbY, 4.0f, thumbH, 0.5f, 0.6f, 0.8f, 0.9f);
-                }
-
-                // 커서 올린 증강 설명 — 해당 줄 바로 옆에 표시
-                if (hoverAug >= 0) {
-                    const AugDef& sd = ALL_AUGS[hoverAug];
-                    const float BW = std::min(380.0f, sw - (COLW + 30.0f));
-                    const float BH = 138.0f;
-                    float BX = COLW + 18.0f;
-                    float BY = hoverRowY - 6.0f;
-                    if (BY + BH > sh - 20.0f) BY = sh - 20.0f - BH;
-                    if (BY < 20.0f) BY = 20.0f;
-                    float hr, hg, hb; GetRarityColor(sd.rarity, hr, hg, hb);
-                    BindMainShader();
-                    drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.95f);
-                    drawRect(BX, BY, BW, 4.0f, hr, hg, hb, 1.0f);
-                    // 배지 + 이름 (한 줄)
-                    wchar_t hd[96];
-                    swprintf_s(hd, L"[%ls] %ls", GetAugBadge(sd), AugName(sd));
-                    g_TextS.Draw(hd, BX + 12.0f, BY + 12.0f, 0.9f,
-                                 std::min(1.0f,hr*1.4f+0.3f), std::min(1.0f,hg*1.4f+0.3f),
-                                 std::min(1.0f,hb*1.4f+0.3f), 1.0f);
-                    // 설명 ('/' 분리 + 폭 워드랩, 고정 폰트)
-                    const float dsc = 0.78f, dWmax = BW - 24.0f;
-                    std::vector<std::wstring> dl; std::wstring cur2;
-                    for (const wchar_t* p = AugDesc(sd); *p; ++p) {
-                        if (*p == L'/') { if (!cur2.empty()) dl.push_back(cur2); cur2.clear(); }
-                        else cur2 += *p;
-                    }
-                    if (!cur2.empty()) dl.push_back(cur2);
-                    std::vector<std::wstring> wrapped;
-                    for (auto& ln : dl) {
-                        while (!ln.empty() && ln.front()==L' ') ln.erase(0,1);
-                        if (g_TextS.Width(ln.c_str(), dsc) <= dWmax) { wrapped.push_back(ln); continue; }
-                        std::wstring acc, word;
-                        auto fw = [&]() {
-                            if (word.empty()) return;
-                            std::wstring tr = acc.empty()?word:acc+L" "+word;
-                            if (g_TextS.Width(tr.c_str(),dsc)>dWmax && !acc.empty()){wrapped.push_back(acc);acc=word;}
-                            else acc=tr;
-                            word.clear();
-                        };
-                        for (wchar_t ch: ln){ if(ch==L' ')fw(); else word+=ch; } fw();
-                        if (!acc.empty()) wrapped.push_back(acc);
-                    }
-                    float dy = BY + 42.0f;
-                    for (auto& w : wrapped) {
-                        if (dy > BY + BH - 16.0f) break;
-                        g_TextS.Draw(w.c_str(), BX + 12.0f, dy, dsc, 1.0f, 1.0f, 0.95f, 0.92f);
-                        dy += 24.0f;
-                    }
-                }
 }

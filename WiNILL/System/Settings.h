@@ -13,6 +13,12 @@ enum class Language { KR, EN, JP };
 inline Language g_Language = Language::KR;
 inline constexpr int LANG_COUNT = 3;
 
+inline int LangIndex() {
+    int li = (int)g_Language;
+    if (li < 0 || li >= LANG_COUNT) li = 0;
+    return li;
+}
+
 // 크로스헤어 표시 (기본 ON)
 inline bool g_ShowCrosshair = true;
 
