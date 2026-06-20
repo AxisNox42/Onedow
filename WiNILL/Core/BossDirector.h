@@ -65,7 +65,7 @@ inline glm::vec3 WarnColor(int pick) {
 
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
-        L"할당은 계속, 해제는 없음",
+        L"굴러가는 눈 — 이동할수록 누수",
         L"",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
@@ -77,7 +77,7 @@ inline const wchar_t* Tagline(int pick) {
         L"기둥 의식 — Q/E/R 봉인 · 의식망",
     };
     static const wchar_t* EN[10] = {
-        L"Alloc forever — free never",
+        L"Rolling eye — move to leak",
         L"",
         L"Volley fire — telegraphed danger zones",
         L"Popup ad flood",

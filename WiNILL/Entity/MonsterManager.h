@@ -83,7 +83,8 @@ public:
     // rmobMoveMult : 원거리 몹 lerp 가속 (rmobDelayMult <1 → 더 빠름 → moveMult >1)
     void UpdateAll(float playerCX, float playerCY, float dt,
                    float& playerHP, std::vector<Bullet>& bullets,
-                   float mobSpeedMult = 1.0f, float rmobMoveMult = 1.0f) {
+                   float mobSpeedMult = 1.0f, float rmobMoveMult = 1.0f,
+                   std::vector<LeakNodeSpawn>* leakNodesOut = nullptr) {
         for (auto m : monsters)
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult);
 
@@ -198,9 +199,11 @@ public:
         // 보스 (단일) — 소환물은 monsters 에 그대로 push
         if (boss && boss->alive) {
             std::vector<Monster*> newSummons;
-            boss->Update(playerCX, playerCY, dt, playerHP, newSummons);
+            std::vector<LeakNodeSpawn> newNodes;
+            boss->Update(playerCX, playerCY, dt, playerHP, newSummons, newNodes);
             for (auto m : newSummons) monsters.push_back(m);
-            boss->TickAbsorb(monsters);
+            if (leakNodesOut)
+                leakNodesOut->insert(leakNodesOut->end(), newNodes.begin(), newNodes.end());
         }
         // 보스가 죽은 경우는 main 에서 보상 처리 후 직접 nullify
     }
