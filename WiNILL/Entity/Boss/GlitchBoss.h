@@ -3,149 +3,209 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include "DrawPrim.h"
+#include "TextRenderer.h"
+
+extern TextRenderer g_TextS;
 
 // ─────────────────────────────────────────────────────────────
-// 글리치 보스 (Glitch / "Err_0x7B")
-//   페이즈 머신:
-//   1) GLITCH_WARNING : 출현 전조 — 화면 글리치 + UI 텍스트 노이즈 (3~5초)
-//   2) SPAWN_MINI     : 본체는 구석에 숨고, 플레이어 주변에 '뚝뚝' 끊기듯
-//                       아주 빠른 작은 세모 떼 대량 스폰 (공격력 0.5)
-//   3) BURST_ATTACK   : "펑!" 화이트아웃 → 남은 세모 전부 플레이어로 유도 가속
-//                       + 본체는 화면 가로지르는 직선 레이저 포격
-//   4) COOLDOWN       : 회복 후 다시 2)
-//   효과(글리치/플래시/텍스트노이즈)는 신호값만 노출 → main.cpp 가 렌더
+// CORRUPT.dll — 깨진 디스플레이 / PHANTOM 디코이 보스
+//   CORRUPT → FRAGMENT → TEAR → SYNC 루프
 // ─────────────────────────────────────────────────────────────
 
-enum class BossState { GLITCH_WARNING, SPAWN_MINI, BURST_ATTACK, COOLDOWN };
+enum class BossState { CORRUPT, FRAGMENT, TEAR, SYNC };
 
 struct MiniTri {
     float x = 0, y = 0;
     float vx = 0, vy = 0;
     float angle = 0;
-    bool  homing = false;   // BURST 시 유도 가속 ON
-    bool  alive  = true;
+    bool  homing = false;
+    float homingDelay = 0.0f;
+    bool  alive = true;
 };
 
 class GlitchBoss {
 public:
-    float worldX, worldY;          // 본체 (화면 구석에 숨음)
+    float worldX, worldY;
     float hp = 9000.0f, maxHp = 9000.0f;
-    bool  alive    = true;
+    bool  alive = true;
     bool  exploded = false;
     int   screenW, screenH;
 
-    BossState state = BossState::GLITCH_WARNING;
+    BossState state = BossState::CORRUPT;
     float stateTimer = 0.0f;
 
     std::vector<MiniTri> minis;
     float spawnAccum = 0.0f;
+    int   spawnEdgeHint = 0;
 
-    // 레이저 (BURST 동안 활성)
     bool  laserActive = false;
-    bool  laserWarn   = false;   // 발사 전 경고선 (SPAWN_MINI 막바지)
+    bool  laser2Active = false;
+    bool  laserWarn = false;
+    float laserWarnT = 0.0f;
     float laserDirX = 1.0f, laserDirY = 0.0f;
-    float laser2DirX = 0.0f, laser2DirY = 1.0f;   // 페이즈2: 직교 두 번째 레이저(X자)
-    static constexpr float LASER_WARN_LEAD = 0.8f;   // 발사 0.8초 전부터 경고
+    float laser2DirX = 0.0f, laser2DirY = 0.0f;
+    float laser2Delay = 0.0f;
 
-    // 페이즈2 (HP 50% 이하) — 듀얼 레이저 + 과밀 스웜 + 상시 글리치
     bool  phase2 = false;
+    bool  phase3 = false;
 
-    // 이동(드리프트) — 고정형 일점사 방지
     float driftTX = 0, driftTY = 0, driftTimer = 0.0f;
     bool  driftInit = false;
-    static constexpr float DRIFT_SPD = 70.0f;
 
-    // 페이즈2 잔상(디코이) — 본체와 똑같이 보이는 가짜. 쏘면 '이벤트' 발생(재배치+노이즈).
     struct Decoy { float x = 0, y = 0; float respawn = 0.0f; bool alive = true; };
     std::vector<Decoy> decoys;
-    float decoyFlash = 0.0f;     // 잔상 파괴 연출 신호 (main 렌더)
-    float novaTimer  = 0.0f;     // 신규 스킬: 글리치 노바(방사 세모) 쿨다운
-    static constexpr float NOVA_INT = 7.0f;
-    static constexpr int   NOVA_N   = 16;
+    float decoyFlash = 0.0f;
+    float swapCd = 0.0f;
+    float swapFlash = 0.0f;
 
-    // 효과 신호 (0~1) — main.cpp 가 읽어서 화면 연출
-    float glitchAmount = 0.0f;   // 화면 좌우 찢김 강도
-    float burstFlash   = 0.0f;   // 화이트아웃 깜빡임
-    float textNoise    = 0.0f;   // UI 텍스트 깨짐 강도
+    float novaTimer = 0.0f;
+    float novaWarn = 0.0f;
 
-    static constexpr float BODY = 46.0f;          // 플레이어(25) 보다 큼
+    float rollbackCd = 6.0f;
+    float prevPx = 0.0f, prevPy = 0.0f;
 
-    // 페이즈 지속 시간
-    static constexpr float T_WARNING = 4.0f;
-    static constexpr float T_SPAWN   = 6.0f;
-    static constexpr float T_BURST   = 1.3f;
-    static constexpr float T_COOL    = 3.0f;
+    float glitchAmount = 0.0f;
+    float burstFlash = 0.0f;
+    float textNoise = 0.0f;
+    float spinAng = 0.0f;
 
-    static constexpr float MINI_SPEED       = 520.0f;
-    static constexpr float MINI_BURST_ACCEL = 1500.0f;  // BURST 유도 가속
-    static constexpr float MINI_DMG         = 6.0f;     // 접촉 1회 (일반 몹의 약 절반)
-    static constexpr float MINI_HIT_R       = 16.0f;
+    static constexpr float BODY = 44.0f;
+    static constexpr float MELEE_NEAR = 105.0f;
+
+    static constexpr float T_CORRUPT = 3.2f;
+    static constexpr float T_FRAGMENT = 5.5f;
+    static constexpr float T_TEAR = 1.15f;
+    static constexpr float T_SYNC = 2.6f;
+    static constexpr float LASER_WARN = 1.2f;
+    static constexpr float T_LASER1 = 0.95f;
+    static constexpr float LASER2_STAGGER = 0.42f;
+
+    static constexpr float DRIFT_SPD = 78.0f;
+    static constexpr float MINI_SPEED = 500.0f;
+    static constexpr float MINI_BURST_ACCEL = 1350.0f;
+    static constexpr float MINI_DMG = 5.5f;
+    static constexpr float MINI_HIT_R = 15.0f;
+    static constexpr float HOMING_DELAY = 0.48f;
+    static constexpr int   MINI_CAP = 28;
+    static constexpr int   MINI_CAP_P2 = 34;
+
+    static constexpr float NOVA_INT = 8.0f;
+    static constexpr int   NOVA_N = 12;
+    static constexpr float NOVA_WARN_T = 0.55f;
+    static constexpr float SWAP_INT = 9.0f;
 
     GlitchBoss(int sw, int sh, float hpInit = 9000.0f) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
-        worldX = sw * 0.85f; worldY = sh * 0.15f;
+        worldX = sw * 0.85f;
+        worldY = sh * 0.15f;
     }
+
+    static const wchar_t* BossName() { return L"CORRUPT.dll"; }
+
+    int miniCap() const { return phase2 ? MINI_CAP_P2 : MINI_CAP; }
 
     void hideInCorner() {
         int c = rand() % 4;
-        float m = 0.12f;
+        float m = 0.13f;
         worldX = (c & 1) ? screenW * (1.0f - m) : screenW * m;
         worldY = (c & 2) ? screenH * (1.0f - m) : screenH * m;
     }
 
-    void spawnMini(float px, float py) {
-        // 화면 '밖' 가장자리에서 등장 → 플레이어 방향으로 진입
-        float m = 60.0f;   // 화면 밖 여유
-        float sx, sy;
-        switch (rand() % 4) {
-        case 0:  sx = (float)(rand() % screenW); sy = -m;             break; // 위
-        case 1:  sx = (float)(rand() % screenW); sy = screenH + m;    break; // 아래
-        case 2:  sx = -m;            sy = (float)(rand() % screenH);  break; // 왼
-        default: sx = screenW + m;   sy = (float)(rand() % screenH);  break; // 오른
-        }
+    void trimMinis() {
+        while ((int)minis.size() > miniCap()) minis.erase(minis.begin());
+    }
+
+    void spawnMiniAt(float sx, float sy, float tx, float ty) {
+        if ((int)minis.size() >= miniCap()) return;
         MiniTri t;
-        t.x = sx;  t.y = sy;
-        float dx = px - sx, dy = py - sy;
-        float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
-        float sp = MINI_SPEED * (0.6f + (float)(rand() % 60) * 0.01f);
-        t.vx = dx / d * sp;  t.vy = dy / d * sp;
+        t.x = sx;
+        t.y = sy;
+        float dx = tx - sx, dy = ty - sy;
+        float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
+        float sp = MINI_SPEED * (0.62f + (float)(rand() % 50) * 0.01f);
+        t.vx = dx / d * sp;
+        t.vy = dy / d * sp;
         t.angle = atan2f(dy, dx);
         minis.push_back(t);
     }
 
-    // 본체 주변에 소량 미니 세모 분출 (잔상 파괴 이벤트용)
+    void spawnMini(float px, float py, float tx, float ty) {
+        float m = 55.0f;
+        float sx, sy;
+        int edge = rand() % 4;
+        spawnEdgeHint = edge;
+        switch (edge) {
+        case 0: sx = (float)(rand() % screenW); sy = -m; break;
+        case 1: sx = (float)(rand() % screenW); sy = screenH + m; break;
+        case 2: sx = -m; sy = (float)(rand() % screenH); break;
+        default: sx = screenW + m; sy = (float)(rand() % screenH); break;
+        }
+        spawnMiniAt(sx, sy, tx, ty);
+    }
+
     void burstMiniAt(float cx, float cy, int n) {
         for (int i = 0; i < n; i++) {
-            float a = (float)i / (float)n * 6.2831853f + (float)(rand()%100)*0.01f;
-            MiniTri t; t.x = cx; t.y = cy;
-            float sp = MINI_SPEED * 0.7f;
-            t.vx = cosf(a) * sp; t.vy = sinf(a) * sp; t.angle = a;
+            if ((int)minis.size() >= miniCap()) break;
+            float a = (float)i / (float)n * 6.2831853f + (float)(rand() % 100) * 0.01f;
+            MiniTri t;
+            t.x = cx;
+            t.y = cy;
+            float sp = MINI_SPEED * 0.65f;
+            t.vx = cosf(a) * sp;
+            t.vy = sinf(a) * sp;
+            t.angle = a;
             minis.push_back(t);
         }
     }
+
     Decoy makeDecoy() {
         Decoy d;
-        float m = 0.18f;
-        d.x = screenW * (m + (float)(rand()%1000)*0.001f * (1.0f - 2.0f*m));
-        d.y = screenH * (m + (float)(rand()%1000)*0.001f * (1.0f - 2.0f*m));
-        d.alive = true; d.respawn = 0.0f;
+        float m = 0.16f;
+        d.x = screenW * (m + (float)(rand() % 1000) * 0.001f * (1.0f - 2.0f * m));
+        d.y = screenH * (m + (float)(rand() % 1000) * 0.001f * (1.0f - 2.0f * m));
+        d.alive = true;
+        d.respawn = 0.0f;
         return d;
     }
-    // 잔상이 맞으면 '이벤트': 글리치 노이즈 + 본체/잔상 전부 재배치 + 미니 분출. (일점사 방지)
-    void onDecoyDestroyed(float dx, float dy) {
-        decoyFlash = 1.0f; glitchAmount = 0.6f; burstFlash = 0.7f; textNoise = 0.8f;
-        burstMiniAt(dx, dy, 7);
-        hideInCorner();                       // 본체 순간이동
-        driftInit = false;                    // 새 드리프트 목표 강제
-        for (auto& d : decoys) d = makeDecoy();
+
+    void ensureDecoys() {
+        int want = phase3 ? 3 : (phase2 ? 2 : 1);
+        while ((int)decoys.size() < want) decoys.push_back(makeDecoy());
+        while ((int)decoys.size() > want) decoys.pop_back();
     }
-    // main 의 총알 충돌이 호출 — 점이 살아있는 잔상에 닿으면 파괴+이벤트 (true 반환)
+
+    void swapPhantom() {
+        if (decoys.empty()) return;
+        int i = rand() % (int)decoys.size();
+        if (!decoys[i].alive) return;
+        float tx = worldX, ty = worldY;
+        worldX = decoys[i].x;
+        worldY = decoys[i].y;
+        decoys[i].x = tx;
+        decoys[i].y = ty;
+        swapFlash = 1.0f;
+        glitchAmount = std::max(glitchAmount, 0.45f);
+        textNoise = std::max(textNoise, 0.5f);
+    }
+
+    void onDecoyDestroyed(float dx, float dy) {
+        decoyFlash = 1.0f;
+        glitchAmount = 0.55f;
+        textNoise = 0.75f;
+        burstMiniAt(dx, dy, 6);
+        hideInCorner();
+        driftInit = false;
+        for (auto& d : decoys) if (d.alive) d = makeDecoy();
+    }
+
     bool tryHitDecoy(float bx, float by) {
         for (auto& d : decoys) {
             if (!d.alive) continue;
             float dx = bx - d.x, dy = by - d.y;
-            if (dx*dx + dy*dy < BODY * BODY) {
-                d.alive = false; d.respawn = 1.4f;
+            if (dx * dx + dy * dy < BODY * BODY) {
+                d.alive = false;
+                d.respawn = 1.2f;
                 onDecoyDestroyed(d.x, d.y);
                 return true;
             }
@@ -153,168 +213,425 @@ public:
         return false;
     }
 
-    // 점-선분 최단거리 (레이저 판정)
     static float segDist(float px, float py, float ax, float ay, float bx, float by) {
         float abx = bx - ax, aby = by - ay;
-        float l2 = abx*abx + aby*aby, t = 0.0f;
-        if (l2 > 1e-6f) { t = ((px-ax)*abx + (py-ay)*aby) / l2; t = t<0?0:(t>1?1:t); }
-        float cx = ax + abx*t, cy = ay + aby*t;
+        float l2 = abx * abx + aby * aby, t = 0.0f;
+        if (l2 > 1e-6f) {
+            t = ((px - ax) * abx + (py - ay) * aby) / l2;
+            if (t < 0.0f) t = 0.0f;
+            else if (t > 1.0f) t = 1.0f;
+        }
+        float cx = ax + abx * t, cy = ay + aby * t;
         float dx = px - cx, dy = py - cy;
-        return std::sqrt(dx*dx + dy*dy);
+        return sqrtf(dx * dx + dy * dy);
+    }
+
+    void lockLaser(float px, float py) {
+        float dx = px - worldX, dy = py - worldY;
+        float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
+        laserDirX = dx / d;
+        laserDirY = dy / d;
+        laser2DirX = laserDirX;
+        laser2DirY = laserDirY;
+    }
+
+    void enterTear() {
+        state = BossState::TEAR;
+        stateTimer = 0.0f;
+        textNoise = 0.85f;
+        glitchAmount = 0.42f;
+        laserWarn = false;
+        laserActive = true;
+        laser2Active = false;
+        laser2Delay = (phase2 || phase3) ? LASER2_STAGGER : 999.0f;
+        for (auto& t : minis) {
+            t.homing = true;
+            t.homingDelay = HOMING_DELAY;
+        }
+    }
+
+    const wchar_t* stateTag() const {
+        switch (state) {
+        case BossState::CORRUPT:   return L"CORRUPT";
+        case BossState::FRAGMENT:  return laserWarn ? L"TEAR SOON" : L"FRAGMENT";
+        case BossState::TEAR:      return L"TEAR";
+        case BossState::SYNC:      return L"SYNC";
+        default: return L"?";
+        }
     }
 
     void Update(float playerCX, float playerCY, float dt, float& playerHP) {
         if (!alive) return;
         stateTimer += dt;
+        spinAng += dt * 2.4f;
 
-        // 페이즈2 진입 (HP 50% 이하)
         if (!phase2 && hp <= maxHp * 0.5f) phase2 = true;
+        if (!phase3 && hp <= maxHp * 0.25f) phase3 = true;
 
-        // 효과 자연 감쇠
         burstFlash = std::max(0.0f, burstFlash - dt * 3.5f);
-        textNoise  = std::max(0.0f, textNoise  - dt * 2.0f);
-        decoyFlash = std::max(0.0f, decoyFlash - dt * 2.5f);
+        textNoise = std::max(0.0f, textNoise - dt * 1.8f);
+        decoyFlash = std::max(0.0f, decoyFlash - dt * 2.2f);
+        swapFlash = std::max(0.0f, swapFlash - dt * 2.5f);
+        if (novaWarn > 0.0f) novaWarn -= dt;
 
-        // ── 느린 드리프트 이동 (고정형 일점사 방지) ──
+        float pdx = playerCX - worldX, pdy = playerCY - worldY;
+        float pdist = sqrtf(pdx * pdx + pdy * pdy) + 1e-3f;
+
+        if (phase2 || phase3) {
+            ensureDecoys();
+            for (auto& d : decoys) {
+                if (!d.alive) {
+                    d.respawn -= dt;
+                    if (d.respawn <= 0.0f) d = makeDecoy();
+                }
+            }
+            swapCd -= dt;
+            if (swapCd <= 0.0f) {
+                swapCd = phase3 ? SWAP_INT * 0.65f : SWAP_INT;
+                swapPhantom();
+            }
+        } else {
+            decoys.clear();
+        }
+
         driftTimer -= dt;
-        float dmarg = BODY + 80.0f;
+        float dmarg = BODY + 72.0f;
         if (!driftInit || driftTimer <= 0.0f) {
             driftInit = true;
-            driftTimer = 1.8f + (float)(rand()%150)*0.01f;
-            int rx = screenW - (int)(2.0f*dmarg); if (rx < 1) rx = 1;
-            int ry = screenH - (int)(2.0f*dmarg); if (ry < 1) ry = 1;
-            driftTX = dmarg + (float)(rand()%rx);
-            driftTY = dmarg + (float)(rand()%ry);
+            driftTimer = 1.6f + (float)(rand() % 120) * 0.01f;
+            int rx = screenW - (int)(2.0f * dmarg); if (rx < 1) rx = 1;
+            int ry = screenH - (int)(2.0f * dmarg); if (ry < 1) ry = 1;
+            driftTX = dmarg + (float)(rand() % rx);
+            driftTY = dmarg + (float)(rand() % ry);
         }
         {
             float mdx = driftTX - worldX, mdy = driftTY - worldY;
-            float md  = std::sqrt(mdx*mdx + mdy*mdy);
-            float spd = DRIFT_SPD * (phase2 ? 1.4f : 1.0f);
-            if (md > 1.0f) { float step = spd*dt; if (step>md) step=md;
-                worldX += mdx/md*step; worldY += mdy/md*step; }
+            float md = sqrtf(mdx * mdx + mdy * mdy);
+            float spd = DRIFT_SPD * (state == BossState::SYNC ? 0.55f : (phase2 ? 1.25f : 1.0f));
+            if (md > 1.0f) {
+                float step = spd * dt;
+                if (step > md) step = md;
+                worldX += mdx / md * step;
+                worldY += mdy / md * step;
+            }
         }
 
-        // ── 페이즈2 잔상(디코이) 유지/부활 ──
-        if (phase2) {
-            while ((int)decoys.size() < 2) decoys.push_back(makeDecoy());
-            for (auto& d : decoys) {
-                if (!d.alive) { d.respawn -= dt; if (d.respawn <= 0.0f) d = makeDecoy(); }
-            }
-        } else decoys.clear();
-
-        // ── 신규 스킬: 글리치 노바 — 주기적으로 본체에서 방사형 미니 세모 ──
-        novaTimer += dt;
-        if (novaTimer >= (phase2 ? NOVA_INT * 0.65f : NOVA_INT)) {
-            novaTimer = 0.0f;
-            glitchAmount = std::max(glitchAmount, 0.35f);
-            for (int i = 0; i < NOVA_N; i++) {
-                float a = (float)i / (float)NOVA_N * 6.2831853f;
-                MiniTri t; t.x = worldX; t.y = worldY;
-                t.vx = cosf(a) * MINI_SPEED * 0.55f;
-                t.vy = sinf(a) * MINI_SPEED * 0.55f; t.angle = a;
-                minis.push_back(t);
-            }
+        if (laserWarn && pdist < MELEE_NEAR) {
+            hideInCorner();
+            driftInit = false;
+            laserWarn = false;
+            laserWarnT = 0.0f;
+            stateTimer = std::max(0.0f, stateTimer - 0.8f);
         }
 
         switch (state) {
-        case BossState::GLITCH_WARNING:
-            glitchAmount = 0.30f + 0.30f * sinf(stateTimer * 14.0f);  // 깜빡 찢김
-            textNoise    = 0.7f;
-            if (stateTimer >= T_WARNING) {
-                glitchAmount = 0.0f;
+        case BossState::CORRUPT:
+            glitchAmount = 0.28f + 0.22f * sinf(stateTimer * 12.0f);
+            textNoise = 0.65f;
+            if (stateTimer >= T_CORRUPT) {
+                glitchAmount = 0.08f;
                 hideInCorner();
-                state = BossState::SPAWN_MINI; stateTimer = 0.0f;
+                state = BossState::FRAGMENT;
+                stateTimer = 0.0f;
             }
             break;
 
-        case BossState::SPAWN_MINI:
-            glitchAmount = phase2 ? 0.14f : 0.05f;   // 페이즈2: 상시 글리치 강화
+        case BossState::FRAGMENT: {
+            glitchAmount = phase2 ? 0.12f : 0.04f;
             spawnAccum += dt;
-            if (spawnAccum >= (phase2 ? 0.6f : 0.8f)) {  // 페이즈2: 더 자주·더 많이
+            if (spawnAccum >= (phase2 ? 0.65f : 0.82f)) {
                 spawnAccum = 0.0f;
-                int n = phase2 ? 5 : 2;
-                for (int i = 0; i < n; i++) spawnMini(playerCX, playerCY);
+                int n = phase2 ? 3 : 2;
+                for (int i = 0; i < n; i++) spawnMini(playerCX, playerCY, playerCX, playerCY);
             }
-            // 발사 0.8초 전: 레이저 방향 락 + 경고선 표시 (조준선 == 실제 발사선)
-            if (!laserWarn && stateTimer >= T_SPAWN - LASER_WARN_LEAD) {
-                float dx = playerCX - worldX, dy = playerCY - worldY;
-                float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
-                laserDirX = dx / d; laserDirY = dy / d;
+            trimMinis();
+
+            if (!laserWarn && stateTimer >= T_FRAGMENT - LASER_WARN) {
+                lockLaser(playerCX, playerCY);
                 laserWarn = true;
+                laserWarnT = 0.0f;
             }
-            if (stateTimer >= T_SPAWN) {
-                // ── "펑!" BURST 돌입 (락된 방향으로 레이저 발사) ──
-                state = BossState::BURST_ATTACK; stateTimer = 0.0f;
-                burstFlash = 1.0f; textNoise = 1.0f;
-                glitchAmount = 0.5f;                          // 레이저 쏠 때 글리치 재발동
-                for (auto& t : minis) t.homing = true;       // 전부 유도 가속
-                laserWarn   = false;
-                laserActive = true;                          // 방향은 경고 때 락된 값 사용
-                // 페이즈2: 두 번째 레이저 — 본체에서 +28° 벌어진 트윈 빔(플레이어 쪽으로)
-                {
-                    float c = cosf(0.49f), s = sinf(0.49f);
-                    laser2DirX = laserDirX * c - laserDirY * s;
-                    laser2DirY = laserDirX * s + laserDirY * c;
+            if (laserWarn) laserWarnT += dt;
+
+            novaTimer += dt;
+            float nInt = phase2 ? NOVA_INT * 0.75f : NOVA_INT;
+            if (novaTimer >= nInt - NOVA_WARN_T && novaWarn <= 0.0f) novaWarn = NOVA_WARN_T;
+            if (novaTimer >= nInt && !laserWarn) {
+                novaTimer = 0.0f;
+                novaWarn = 0.0f;
+                glitchAmount = std::max(glitchAmount, 0.32f);
+                for (int i = 0; i < NOVA_N; i++) {
+                    if ((int)minis.size() >= miniCap()) break;
+                    float a = (float)i / (float)NOVA_N * 6.2831853f;
+                    MiniTri t;
+                    t.x = worldX;
+                    t.y = worldY;
+                    t.vx = cosf(a) * MINI_SPEED * 0.5f;
+                    t.vy = sinf(a) * MINI_SPEED * 0.5f;
+                    t.angle = a;
+                    minis.push_back(t);
                 }
             }
-            break;
 
-        case BossState::BURST_ATTACK:
-            // 레이저 발사 동안 약한 글리치가 서서히 잦아듦
-            glitchAmount = 0.5f * (1.0f - stateTimer / T_BURST);
-            if (stateTimer >= T_BURST) {
-                state = BossState::COOLDOWN; stateTimer = 0.0f;
-                laserActive = false;
+            rollbackCd -= dt;
+            if (rollbackCd <= 0.0f) {
+                rollbackCd = phase2 ? 7.0f : 9.0f;
+                for (int i = 0; i < 3; i++)
+                    spawnMini(prevPx, prevPy, prevPx, prevPy);
+            }
+
+            if (stateTimer >= T_FRAGMENT) enterTear();
+            break;
+        }
+
+        case BossState::TEAR:
+            glitchAmount = 0.38f * (1.0f - stateTimer / T_TEAR);
+            if (stateTimer >= T_LASER1) laserActive = false;
+            if (laser2Delay < 900.0f) {
+                laser2Delay -= dt;
+                if (laser2Delay <= 0.0f && !laser2Active) laser2Active = true;
+            }
+            if (stateTimer >= T_TEAR) {
+                state = BossState::SYNC;
+                stateTimer = 0.0f;
+                laserActive = laser2Active = false;
+                for (auto& t : minis) { t.homing = false; t.homingDelay = 0.0f; }
             }
             break;
 
-        case BossState::COOLDOWN:
-            glitchAmount = phase2 ? 0.08f : 0.0f;
-            if (stateTimer >= (phase2 ? T_COOL * 0.5f : T_COOL)) {  // 페이즈2: 회복 짧게
-                for (auto& t : minis) t.homing = false;
-                state = BossState::SPAWN_MINI; stateTimer = 0.0f;
+        case BossState::SYNC:
+            glitchAmount = phase2 ? 0.05f : 0.0f;
+            textNoise = 0.15f;
+            if (stateTimer >= T_SYNC) {
+                state = BossState::FRAGMENT;
+                stateTimer = 0.0f;
+                spawnAccum = 0.0f;
+                laserWarn = false;
             }
             break;
         }
 
-        // ── 작은 세모 업데이트 ──
         for (auto& t : minis) {
             if (!t.alive) continue;
-            if (t.homing) {  // 플레이어로 유도 가속
-                float dx = playerCX - t.x, dy = playerCY - t.y;
-                float d  = std::sqrt(dx*dx + dy*dy) + 1e-3f;
-                t.vx += dx / d * MINI_BURST_ACCEL * dt;
-                t.vy += dy / d * MINI_BURST_ACCEL * dt;
+            if (t.homing) {
+                if (t.homingDelay > 0.0f) t.homingDelay -= dt;
+                else {
+                    float dx = playerCX - t.x, dy = playerCY - t.y;
+                    float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
+                    t.vx += dx / d * MINI_BURST_ACCEL * dt;
+                    t.vy += dy / d * MINI_BURST_ACCEL * dt;
+                }
             }
             t.x += t.vx * dt;
             t.y += t.vy * dt;
-            t.angle += dt * 9.0f;
-            // 플레이어 접촉 → 데미지 0.5배 후 소멸
+            t.angle += dt * 8.0f;
             float dx = playerCX - t.x, dy = playerCY - t.y;
-            if (dx*dx + dy*dy < MINI_HIT_R * MINI_HIT_R) {
+            if (dx * dx + dy * dy < MINI_HIT_R * MINI_HIT_R) {
                 playerHP -= MINI_DMG;
                 t.alive = false;
             }
-            if (t.x < -150 || t.x > screenW + 150 ||
-                t.y < -150 || t.y > screenH + 150) t.alive = false;
+            if (t.x < -150 || t.x > screenW + 150 || t.y < -150 || t.y > screenH + 150)
+                t.alive = false;
         }
-        minis.erase(
-            std::remove_if(minis.begin(), minis.end(),
-                [](const MiniTri& t){ return !t.alive; }),
-            minis.end());
+        minis.erase(std::remove_if(minis.begin(), minis.end(),
+                     [](const MiniTri& t) { return !t.alive; }), minis.end());
 
-        // ── 레이저 포격 (BURST 동안) ── 페이즈2 는 직교 두 번째 레이저까지
+        float reach = (float)(screenW + screenH);
         if (laserActive) {
-            float reach = (float)(screenW + screenH);
             float ex = worldX + laserDirX * reach, ey = worldY + laserDirY * reach;
-            if (segDist(playerCX, playerCY, worldX, worldY, ex, ey) < 32.0f)
-                playerHP -= 45.0f * dt;
-            if (phase2) {
-                // 본체에서 바깥으로 나가는 단방향 트윈 빔 (관통 십자 X)
-                float ex2 = worldX + laser2DirX * reach, ey2 = worldY + laser2DirY * reach;
-                if (segDist(playerCX, playerCY, worldX, worldY, ex2, ey2) < 30.0f)
-                    playerHP -= 40.0f * dt;
+            if (segDist(playerCX, playerCY, worldX, worldY, ex, ey) < 28.0f)
+                playerHP -= 38.0f * dt;
+        }
+        if (laser2Active) {
+            float ex2 = worldX + laser2DirX * reach, ey2 = worldY + laser2DirY * reach;
+            if (segDist(playerCX, playerCY, worldX, worldY, ex2, ey2) < 26.0f)
+                playerHP -= 34.0f * dt;
+        }
+
+        prevPx = playerCX;
+        prevPy = playerCY;
+    }
+
+    static void drawLaserLine(float ox, float oy, float dx, float dy, float reach,
+                              float cr, float cg, float cb, float coreA, float outerA) {
+        float ex = ox + dx * reach, ey = oy + dy * reach;
+        float px = -dy, py = dx;
+        const int SEG = 20;
+        for (int s = 0; s < SEG; s++) {
+            if ((s & 1) == 0) continue;
+            float u0 = (float)s / (float)SEG, u1 = (float)(s + 1) / (float)SEG;
+            float x0 = ox + (ex - ox) * u0, y0 = oy + (ey - oy) * u0;
+            float x1 = ox + (ex - ox) * u1, y1 = oy + (ey - oy) * u1;
+            drawRect((x0 + x1) * 0.5f - 5.0f, (y0 + y1) * 0.5f - 5.0f,
+                     10.0f, 10.0f, cr * 0.4f, cg * 0.4f, cb * 0.4f, outerA);
+            drawRect((x0 + x1) * 0.5f - 2.5f, (y0 + y1) * 0.5f - 2.5f,
+                     5.0f, 5.0f, cr, cg, cb, coreA);
+        }
+    }
+
+    void renderTelegraphs(float px, float py, float gt) const {
+        float pulse = 0.5f + 0.5f * sinf(gt * 14.0f);
+
+        drawArcRing(worldX, worldY, MELEE_NEAR, 0.3f, 1.0f, 0.78f, 0.18f);
+
+        if (novaWarn > 0.0f) {
+            float np = novaWarn / NOVA_WARN_T;
+            drawCircle(worldX, worldY, BODY * (1.2f + (1.0f - np) * 0.8f),
+                       1.0f, 0.35f, 0.65f, 0.15f + np * 0.25f);
+            wchar_t nw[] = L"NOVA";
+            float nw_w = g_TextS.Width(nw, 0.5f);
+            g_TextS.Draw(nw, worldX - nw_w * 0.5f, worldY + BODY + 6.0f, 0.5f,
+                         1.0f, 0.4f, 0.7f, 0.8f);
+        }
+
+        if (laserWarn) {
+            float reach = (float)(screenW + screenH);
+            float prog = (LASER_WARN > 0.0f) ? laserWarnT / LASER_WARN : 1.0f;
+            if (prog > 1.0f) prog = 1.0f;
+            float blink = 0.55f + 0.45f * sinf(gt * 24.0f);
+            drawLaserLine(worldX, worldY, laserDirX, laserDirY, reach,
+                          0.3f, 0.95f, 1.0f, blink * (0.5f + prog * 0.5f), blink * 0.35f);
+            drawCircle(px, py, 14.0f + prog * 12.0f, 0.25f, 0.95f, 1.0f, 0.2f + prog * 0.35f);
+            wchar_t tw[] = L"TEAR LINE";
+            float tw_w = g_TextS.Width(tw, 0.48f);
+            g_TextS.Draw(tw, worldX - tw_w * 0.5f, worldY - BODY - 38.0f, 0.48f,
+                         0.35f, 0.95f, 1.0f, 0.85f);
+            float sec = LASER_WARN - laserWarnT;
+            if (sec < 0.0f) sec = 0.0f;
+            wchar_t cd[16];
+            swprintf_s(cd, L"%.1fs", sec);
+            g_TextS.Draw(cd, worldX - 16.0f, worldY - BODY - 54.0f, 0.55f,
+                         1.0f, 0.5f, 0.85f, 0.9f);
+        }
+
+        if (state == BossState::TEAR) {
+            float ha = 0.32f;
+            float base = atan2f(py - worldY, px - worldX);
+            drawFan(worldX, worldY, base - ha, base + ha, 320.0f,
+                    1.0f, 0.25f, 0.35f, 0.2f, 0.55f, 16);
+        }
+
+        if (state == BossState::SYNC) {
+            drawCircle(worldX, worldY, BODY * 1.35f, 0.95f, 0.25f, 0.65f, 0.12f + pulse * 0.1f);
+        }
+
+        const float m = 22.0f;
+        if (state == BossState::FRAGMENT && spawnEdgeHint >= 0 && spawnEdgeHint < 4) {
+            float flash = 0.25f + 0.2f * pulse;
+            switch (spawnEdgeHint) {
+            case 0: drawRect(0, 0, (float)screenW, m, 0.95f, 0.2f, 0.55f, flash); break;
+            case 1: drawRect(0, (float)screenH - m, (float)screenW, m, 0.95f, 0.2f, 0.55f, flash); break;
+            case 2: drawRect(0, 0, m, (float)screenH, 0.95f, 0.2f, 0.55f, flash); break;
+            default: drawRect((float)screenW - m, 0, m, (float)screenH, 0.95f, 0.2f, 0.55f, flash); break;
             }
+        }
+    }
+
+    static void drawArcRing(float cx, float cy, float rad,
+                            float r, float g, float b, float a, int n = 28) {
+        for (int i = 0; i < n; i++) {
+            if ((i & 1) == 0) continue;
+            float a0 = (float)i / (float)n * 6.2831853f;
+            float a1 = (float)(i + 1) / (float)n * 6.2831853f;
+            float x0 = cx + cosf(a0) * rad, y0 = cy + sinf(a0) * rad;
+            float x1 = cx + cosf(a1) * rad, y1 = cy + sinf(a1) * rad;
+            drawRect((x0 + x1) * 0.5f - 2.0f, (y0 + y1) * 0.5f - 2.0f,
+                     4.0f, 4.0f, r, g, b, a);
+        }
+    }
+
+    static void drawFan(float ox, float oy, float a0, float a1, float len,
+                        float r, float g, float b, float fillA, float edgeA, int segs = 20) {
+        for (int s = 0; s < segs; s++) {
+            float u0 = (float)s / (float)segs, u1 = (float)(s + 1) / (float)segs;
+            float aa = a0 + (a1 - a0) * u0, ab = a0 + (a1 - a0) * u1;
+            float x0 = ox + cosf(aa) * len, y0 = oy + sinf(aa) * len;
+            float x1 = ox + cosf(ab) * len, y1 = oy + sinf(ab) * len;
+            for (int layer = 1; layer <= 3; layer++) {
+                float t = (float)layer / 3.0f;
+                float mx = ox + ((x0 + x1) * 0.5f - ox) * t;
+                float my = oy + ((y0 + y1) * 0.5f - oy) * t;
+                drawRect(mx - 2.0f, my - 2.0f, 4.0f, 4.0f, r, g, b, fillA * t);
+            }
+            drawRect(x0 - 2.5f, y0 - 2.5f, 5.0f, 5.0f, r, g, b, edgeA);
+            drawRect(x1 - 2.5f, y1 - 2.5f, 5.0f, 5.0f, r, g, b, edgeA);
+        }
+    }
+
+    void renderMinis(float gt) const {
+        for (auto& t : minis) {
+            if (!t.alive) continue;
+            if (t.homing && t.homingDelay <= 0.0f) {
+                drawRect(t.x - 4, t.y - 4, 8, 8, 1.0f, 0.25f, 0.35f, 0.95f);
+                drawRect(t.x - 2, t.y - 2, 4, 4, 1.0f, 0.5f, 0.55f, 0.85f);
+            } else if (t.homing) {
+                float p = t.homingDelay / HOMING_DELAY;
+                drawRect(t.x - 3, t.y - 3, 6, 6, 1.0f, 0.55f, 0.2f, 0.5f + (1.0f - p) * 0.4f);
+            } else {
+                drawRect(t.x - 3, t.y - 2, 6, 4, 0.85f, 0.35f, 0.95f, 0.9f);
+                drawRect(t.x - 1.5f, t.y - 1, 3, 2, 0.95f, 0.55f, 1.0f, 0.75f);
+            }
+        }
+    }
+
+    void renderLasers() const {
+        float reach = (float)(screenW + screenH);
+        if (laserActive)
+            drawLaserLine(worldX, worldY, laserDirX, laserDirY, reach,
+                          1.0f, 0.25f, 0.75f, 0.92f, 0.45f);
+        if (laser2Active)
+            drawLaserLine(worldX, worldY, laser2DirX, laser2DirY, reach,
+                          0.95f, 0.2f, 0.85f, 0.88f, 0.4f);
+    }
+
+    void renderCore(float cx, float cy, float gt, bool real, float alpha) const {
+        float pulse = 0.5f + 0.5f * sinf(gt * 6.0f + cx * 0.02f);
+        float a = alpha * (real ? 1.0f : 0.55f);
+
+        drawCircle(cx + 4.0f, cy, BODY * 0.72f, 1.0f, 0.08f, 0.35f, 0.35f * a);
+        drawCircle(cx - 4.0f, cy, BODY * 0.72f, 0.08f, 0.85f, 1.0f, 0.35f * a);
+        drawCircle(cx, cy, BODY * 0.68f, 0.08f, 0.06f, 0.1f, 0.88f * a);
+        drawNeonBorder(cx - BODY * 0.68f, cy - BODY * 0.68f,
+                         BODY * 1.36f, BODY * 1.36f, 0.95f, 0.22f, 0.62f);
+
+        for (int i = 0; i < 6; i++) {
+            float ang = spinAng + (float)i * 1.047f;
+            float px = cx + cosf(ang) * (BODY * 0.55f);
+            float py = cy + sinf(ang) * (BODY * 0.42f);
+            drawRect(px - 2, py - 2, 4, 4, 0.9f, 0.3f, 0.75f, 0.45f * a + pulse * 0.25f);
+        }
+
+        drawRect(cx - 10.0f, cy - 3.0f, 20.0f, 6.0f, 0.12f, 0.95f, 1.0f, 0.65f * a);
+        drawRect(cx - 6.0f, cy - 1.5f, 12.0f, 3.0f, 0.95f, 0.25f, 0.55f, 0.85f * a);
+
+        if (!real) {
+            wchar_t q[] = L"?";
+            g_TextS.Draw(q, cx - 4.0f, cy + BODY * 0.35f, 0.45f, 1.0f, 0.4f, 0.65f, 0.7f * a);
+        }
+    }
+
+    void renderBody(float gt) const {
+        if (swapFlash > 0.0f)
+            drawCircle(worldX, worldY, BODY * 1.5f, 1.0f, 0.3f, 0.65f, swapFlash * 0.25f);
+
+        for (auto& d : decoys) {
+            if (!d.alive) continue;
+            renderCore(d.x, d.y, gt, false, 0.85f);
+        }
+        renderCore(worldX, worldY, gt, true, 1.0f);
+
+        wchar_t tag[32];
+        swprintf_s(tag, L"[%ls]", stateTag());
+        float tw = g_TextS.Width(tag, 0.46f);
+        g_TextS.Draw(tag, worldX - tw * 0.5f, worldY - BODY - 32.0f, 0.46f,
+                     0.95f, 0.35f, 0.72f, 0.88f);
+
+        if ((int)minis.size() > 0) {
+            wchar_t mb[24];
+            swprintf_s(mb, L"FRAG %d", (int)minis.size());
+            float mw = g_TextS.Width(mb, 0.42f);
+            g_TextS.Draw(mb, worldX - mw * 0.5f, worldY + BODY + 8.0f, 0.42f,
+                         0.85f, 0.45f, 0.95f, 0.75f);
         }
     }
 };
