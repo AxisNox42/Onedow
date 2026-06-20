@@ -870,7 +870,8 @@ int main() {
                         if (bm->hp <= 0) bm->alive = false;
                     }
                 }
-                // ?쒓컖 ?④낵 ??????컻 + 異⑷꺽??+ ?붾㈃ ?붾뱾湲?                SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.8f, 0.3f, true);
+                // 시각 효과 — 폭발 + 충격파 + 화면 흔들기
+                SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.8f, 0.3f, true);
                 SpawnEnemyExplosion(pCX, pCY, 0.4f, 1.0f, 0.8f, true);
                 SpawnShockWave(pCX, pCY, blastRad * 1.4f, 0.55f,
                                1.0f, 0.85f, 0.3f);
@@ -887,7 +888,8 @@ int main() {
                 // ?쇰컲 ?щ쭩 ???뚮젅?댁뼱 湲곗젏 ???컻(紐⑤뱺 ???곗쭚) ??硫붾돱 ?섏씠?쒖씤
                 g_GameManager.currentState = GameState::DYING;
                 g_GameManager.playerHP     = 0.0f;
-                Audio::PlaySfx(Audio::Sfx::Death);   // ?뚮젅?댁뼱 ?щ쭩??                Audio::StopBgm();
+                Audio::PlaySfx(Audio::Sfx::Death);
+                Audio::StopBgm();
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
                 g_DeathCX = pCX; g_DeathCY = pCY;
@@ -1122,7 +1124,8 @@ int main() {
                 bool prevTurret = g_Stats.turretMode;
                 g_Stats.Apply(atype);
                 g_OwnedAugs.push_back(idx);
-                g_TypeOwned[(int)atype] = true;   // 議고빀 ?덉떆???먯젙??                MarkAugSeen(idx);                 // ?꾧컧 諛쒓껄
+                g_TypeOwned[(int)atype] = true;
+                MarkAugSeen(idx);
                 // ?≫떚釉??ㅽ궗 利앷컯?대㈃ ?щ’???μ갑 (苑?李⑤㈃ ?쒗솚 援먯껜)
                 EquipSkill(SkillForAug(atype));
 
@@ -1355,7 +1358,8 @@ int main() {
         // --- Fixed timestep (DYING = 0.15횞 ?щ줈??紐⑥뀡, ?덊듃?ㅽ넲 = ?꾩쟾 ?뺤?) ---
         float physDelta = (g_GameManager.currentState == GameState::DYING)
                           ? delta * 0.15f : delta;
-        if (g_HitStopTimer > 0.0f) physDelta = 0.0f;   // ?꾩쟻 ???????ㅽ뀦 誘몄떎??        accumulator += physDelta;
+        if (g_HitStopTimer > 0.0f) physDelta = 0.0f;   // 히트스탑 중 물리 스텝 미실행
+        accumulator += physDelta;
         while (accumulator >= FIXED_DT) {
             if (g_GameManager.ShouldUpdate()) {
                 // WASD ?대룞 ???媛곸꽑 normalize (vec 紐⑥븘??湲몄씠濡??섎닎)
@@ -1593,7 +1597,9 @@ int main() {
                     if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
                         g_PolyWasPhase2 = true;
                         float bx = g_PolyBoss->worldX, by = g_PolyBoss->worldY;
-                        g_ShakeTime = 1.0f; g_ShakeMag = 42.0f;        // 媛뺥븳 ?붾뱾由?                        TriggerFlash(0.6f, 0.25f, 1.0f, 0.85f);        // 蹂대씪 ?붿씠?몄븘??                        TriggerHitStop(0.20f);                         // ?꾪뙥???뺤?
+                        g_ShakeTime = 1.0f; g_ShakeMag = 42.0f;
+                        TriggerFlash(0.6f, 0.25f, 1.0f, 0.85f);
+                        TriggerHitStop(0.20f);
                         // ?쇱졇?섍???蹂대씪 異⑷꺽??3寃?(?ы슚)
                         SpawnShockWave(bx, by, 760.0f, 1.1f, 0.7f, 0.3f, 1.0f);
                         SpawnShockWave(bx, by, 500.0f, 0.9f, 0.85f, 0.45f, 1.0f);
@@ -1983,10 +1989,12 @@ int main() {
                         if (SegDist(pb->worldX, pb->worldY,
                                     b.prevX, b.prevY, b.x, b.y) < PolymorphBoss::BODY * 0.55f) {
                             if (pb->reflecting()) {
-                                // ?ㅼ씠?꾨が???? 諛섏궗 ???먮옒 ?꾨젰 洹몃?濡???珥앹븣濡?                                b.dirX = -b.dirX; b.dirY = -b.dirY;
+                                // 다이아몬드 폼: 반사 — 원래 위력 그대로 적 탄환으로
+                                b.dirX = -b.dirX; b.dirY = -b.dirY;
                                 b.prevX = b.x;    b.prevY = b.y;
                                 b.isEnemy  = true;
-                                b.enemyDmg = dmg;          // ?뚮젅?댁뼱 ?꾨젰 洹몃?濡?                                b.color    = glm::vec3(0.8f, 0.3f, 1.0f);
+                                b.enemyDmg = dmg;
+                                b.color    = glm::vec3(0.8f, 0.3f, 1.0f);
                             } else if (pb->shielded()) {
                                 // 李⑦겕???⑥쓬 ??臾댁쟻 (珥앹븣留??뚮え)
                                 if (b.remainingDmg <= 0.001f) b.active = false;
@@ -3005,7 +3013,8 @@ int main() {
                         nb.homing     = true;
                         nb.homingTurn = 5.0f;   // rad/s
                         nb.dmgMult    = 0.5f;
-                        // 吏?怨?誘몄궗??諛쒖궗 ?먮굦 ??5%?먯꽌 異쒕컻??~0.7珥덉뿉 100%濡?媛??                        nb.launchRamp  = 0.05f;
+                        // 지연 미사일 — 발사 직후 5%에서 시작해 ~0.7초에 100% 가속
+                        nb.launchRamp  = 0.05f;
                         nb.launchAccel = 1.35f;
                         // (?꾪솚?몃? ??湲곗〈 ?쇰컲 ?꾪솚 ?뚮뜑濡?蹂듭썝. 濡쒖폆 ?ㅽ봽?쇱씠??誘몄궗??
                         g_Bullets.push_back(nb);
@@ -3545,7 +3554,8 @@ int main() {
                             ty = pCY + sinf(a) * 200.0f;
                             haveTarget = true;
                         }
-                        if (haveTarget) {                       // ?먮룞?몃뜲 ???놁쑝硫?諛쒖궗 ????                            spawnAimed(tx, ty);
+                        if (haveTarget) {
+                            spawnAimed(tx, ty);
                             fireTimer = 0.0f;
                         }
                     }
@@ -5000,12 +5010,12 @@ int main() {
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
                 int li3 = LangIndex();
                 const wchar_t* CH[3] = {
-                    L"CREATIVE   F: 利앷컯(?붾쾭???ы븿)   G: 臾댁쟻",
+                    L"CREATIVE   F: 증강(디버프 포함)   G: 무적",
                     L"CREATIVE   F: Augment(+debuff)   G: Godmode",
-                    L"CREATIVE   F: 凉룟뙑(?뉎깘?뺝맜)   G: ?→빑" };
+                    L"CREATIVE   F: 強化(デバフ込)   G: ゴッド" };
                 g_TextS.Draw(CH[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL), 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
-                    const wchar_t* GOD[3] = { L"??臾댁쟻 ON", L"??GODMODE ON", L"???→빑 ON" };
+                    const wchar_t* GOD[3] = { L"★ 무적 ON", L"★ GODMODE ON", L"★ ゴッド ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
                     g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f, 1.0f, 0.85f, 0.2f, blink);
                 }
