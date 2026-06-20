@@ -539,7 +539,7 @@ void Scene_Codex(const SceneCtx& c) {
                         g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 } else {
-                    // 보스 — 5종 (HANG/VOLLEY/SPAM/KERNEL/FIREWALL)
+                    // 보스 — 5종 (POLY/VOLLEY/C2/FORK/RITE)
                     const int COLS = 5; const float CELL = 200.0f;
                     int vis[BOSS_CODEX_COUNT], nv = 0;
                     for (int i = 0; i < BOSS_CODEX_COUNT; i++)
@@ -951,9 +951,9 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 // 보스 선택 — 5종 (+ None)
                 g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[6] = { {L"None",-1},{L"Hang",0},
-                                      {L"Volley",2},{L"Spam",3},
-                                      {L"Kernel",5},{L"Firewall",6} };
+                BossOpt bOpts[6] = { {L"None",-1},{L"Polymorph",4},
+                                      {L"Volley",2},{L"C2 Relay",7},
+                                      {L"Fork Worm",8},{L"Rite Core",9} };
                 for (int i = 0; i < 6; i++) {
                     int col = i % 3, row = i / 3;
                     float ox = 60.0f + col * (OBW + OBG);

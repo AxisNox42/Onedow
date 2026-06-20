@@ -200,11 +200,11 @@
     <ClInclude Include="Core\Meta.h" />
     <ClInclude Include="Entity\Augment.h" />
     <ClInclude Include="Entity\Bomber.h" />
-    <ClInclude Include="Entity\Boss\Boss.h" />
-    <ClInclude Include="Entity\Boss\FirewallBoss.h" />
-    <ClInclude Include="Entity\Boss\KernelBoss.h" />
+    <ClInclude Include="Entity\Boss\BotnetBoss.h" />
+    <ClInclude Include="Entity\Boss\CentipedeBoss.h" />
+    <ClInclude Include="Entity\Boss\PolymorphBoss.h" />
     <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h" />
-    <ClInclude Include="Entity\Boss\SpamBoss.h" />
+    <ClInclude Include="Entity\Boss\TotemBoss.h" />
     <ClInclude Include="Core\BossDirector.h" />
     <ClInclude Include="Entity\Bullet.h" />
     <ClInclude Include="Entity\CollisionSystem.h" />

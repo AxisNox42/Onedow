@@ -37,7 +37,6 @@ static inline bool RicochetTo(Bullet& b, float fromX, float fromY, MonsterManage
     for (auto m  : mm.monsters)   if (m->alive)  consider(m->worldX,  m->worldY);
     for (auto r  : mm.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY);
     for (auto bm : mm.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY);
-    if (mm.boss && mm.boss->alive) consider(mm.boss->worldX, mm.boss->worldY);
     if (!found) return false;
     float dx = bx - b.x, dy = by - b.y;
     float d = std::sqrt(dx*dx + dy*dy);
@@ -257,13 +256,6 @@ public:
                                         if (bm2->hp <= 0) bm2->alive = false;
                                     }
                                 }
-                                if (mm.boss && mm.boss->alive) {
-                                    float ddx = mm.boss->worldX - hcx, ddy = mm.boss->worldY - hcy;
-                                    if (ddx*ddx + ddy*ddy < hackR * hackR) {
-                                        mm.boss->hp -= hackDmg;
-                                        if (mm.boss->hp <= 0) mm.boss->alive = false;
-                                    }
-                                }
                             }
                         }
                         bool keepAlive = false;
@@ -280,43 +272,6 @@ public:
                         consumed = true;
                         break;
                     }
-                }
-            }
-
-            // 플레이어 총알 vs 보스
-            if (!consumed && mm.boss && mm.boss->alive) {
-                auto* bs = mm.boss;
-                float d = SegDist(bs->worldX, bs->worldY, b.prevX, b.prevY, b.x, b.y);
-                if (d < Boss::BODY_SIZE * 0.62f) {
-                    float pd = glm::distance(glm::vec2(playerCX, playerCY),
-                                             glm::vec2(bs->worldX, bs->worldY));
-                    float baseDealt;
-                    bool  isCrit = false;
-                    if (b.remainingDmg > 0.0f) baseDealt = b.remainingDmg;
-                    else if (b.turretDmg > 0.0f) baseDealt = b.turretDmg;
-                    else if (b.lockedDmg > 0.0f) baseDealt = b.lockedDmg;
-                    else baseDealt = stats.GetBaseDamage()
-                                   * stats.GetDamageMultiplier(pd)
-                                   * b.dmgMult * CritRoll(stats, isCrit);
-                    float dealtThisHit = (baseDealt < bs->hp) ? baseDealt : bs->hp;
-                    bs->hp -= dealtThisHit;
-                    if (b.remainingDmg > 0.0f) b.remainingDmg -= dealtThisHit;
-                    SpawnDamageNumber(bs->worldX, bs->worldY, dealtThisHit, dealtThisHit >= 40.0f || isCrit);
-                    if (bs->hp <= 0.0f) {
-                        bs->alive = false; // 보상/연출은 main 에서 처리
-                    }
-                    bool keepAlive = false;
-                    if (b.remainingDmg > 0.001f) keepAlive = true;
-                    if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
-                    if (!keepAlive && b.bouncesLeft > 0 &&
-                        (rand() % 100) < stats.ricochetChance &&
-                        RicochetTo(b, bs->worldX, bs->worldY, mm)) {
-                        if (b.lockedDmg <= 0.0f) b.lockedDmg = baseDealt;
-                        --b.bouncesLeft;
-                        keepAlive = true;
-                    }
-                    if (!keepAlive) b.active = false;
-                    consumed = true;
                 }
             }
 

@@ -5,14 +5,12 @@
 #include "Monster.h"
 #include "RangedMob.h"
 #include "Bomber.h"
-#include "Boss.h"
 
 class MonsterManager {
 public:
     std::vector<Monster*>   monsters;
     std::vector<RangedMob*> rangedMobs;
     std::vector<Bomber*>    bombers;
-    Boss*                   boss = nullptr;   // 단일 보스 (검객) — 추후 vector 로 확장 가능
 
     ~MonsterManager() { Clear(); }
 
@@ -194,14 +192,6 @@ public:
             }
         }
         // 죽은 자폭병은 여기서 삭제하지 않음 — main.cpp 의 VFX 체크 후 ClearDeadBombers() 호출
-
-        // 보스 (단일) — 소환물은 monsters 에 그대로 push
-        if (boss && boss->alive) {
-            std::vector<Monster*> newSummons;
-            boss->Update(playerCX, playerCY, dt, playerHP, newSummons);
-            for (auto m : newSummons) monsters.push_back(m);
-        }
-        // 보스가 죽은 경우는 main 에서 보상 처리 후 직접 nullify
     }
 
     // main.cpp 의 VFX 처리 후 호출 — 죽은 자폭병 실제 삭제
@@ -219,6 +209,5 @@ public:
         rangedMobs.clear();
         for (auto b : bombers) delete b;
         bombers.clear();
-        if (boss) { delete boss; boss = nullptr; }
     }
 };

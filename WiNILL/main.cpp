@@ -1,8 +1,8 @@
-// Windows 헤더를 glad보다 먼저 — APIENTRY 매크로 중복 정의 방지
+// Windows ?ㅻ뜑瑜?glad蹂대떎 癒쇱? ??APIENTRY 留ㅽ겕濡?以묐났 ?뺤쓽 諛⑹?
 #ifdef _WIN32
   #include <windows.h>
-  #include <dwmapi.h>   // DwmIsCompositionEnabled (진단용)
-  #include <timeapi.h>  // timeBeginPeriod / timeEndPeriod (FPS 캡 정밀도)
+  #include <dwmapi.h>   // DwmIsCompositionEnabled (吏꾨떒??
+  #include <timeapi.h>  // timeBeginPeriod / timeEndPeriod (FPS 罹??뺣???
 #endif
 
 #include <glad/glad.h>
@@ -35,9 +35,10 @@
 #include "Bullet.h"
 #include "MonsterManager.h"
 #include "ReloadRunnerBoss.h"
-#include "SpamBoss.h"
-#include "KernelBoss.h"
-#include "FirewallBoss.h"
+#include "PolymorphBoss.h"
+#include "BotnetBoss.h"
+#include "CentipedeBoss.h"
+#include "TotemBoss.h"
 #include "BossDirector.h"
 #include "Codex.h"
 #include "CollisionSystem.h"
@@ -66,8 +67,8 @@
 #pragma comment(lib, "opengl32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "advapi32.lib")   // RegOpenKeyExA / RegQueryValueExA / RegCloseKey
-#pragma comment(lib, "winmm.lib")      // timeBeginPeriod / timeEndPeriod (FPS 캡 정밀도)
-// dwmapi.lib 은 WindowFx.cpp 에서 링크
+#pragma comment(lib, "winmm.lib")      // timeBeginPeriod / timeEndPeriod (FPS 罹??뺣???
+// dwmapi.lib ? WindowFx.cpp ?먯꽌 留곹겕
 #endif
 
 extern "C++" {
@@ -75,35 +76,32 @@ extern "C++" {
     __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 0;
 }
 
-// 투명도 헬퍼는 WindowFx.h/cpp 로 이동
-// (EnableWindowTransparency 와 TransparencyLog 가 동일 기능)
+// ?щ챸???ы띁??WindowFx.h/cpp 濡??대룞
+// (EnableWindowTransparency ? TransparencyLog 媛 ?숈씪 湲곕뒫)
 #define DBG TransparencyLog
 
 GameManager    g_GameManager;
 MonsterManager g_MonsterManager;
 std::vector<Bullet> g_Bullets;
 
-// ── 개발자(크리에이티브) 모드 — 도감 검색창 이스터에그로만 해금 ──
-//    출시 빌드엔 크리에이티브 진입점이 숨겨져 있고, 도감 검색에 시크릿 코드를
-//    입력하면 해금되어 난이도 화면에 토글이 등장한다. (일반 플레이어는 못 켬)
+// ?? 媛쒕컻???щ━?먯씠?곕툕) 紐⑤뱶 ???꾧컧 寃?됱갹 ?댁뒪?곗뿉洹몃줈留??닿툑 ??
+//    異쒖떆 鍮뚮뱶???щ━?먯씠?곕툕 吏꾩엯?먯씠 ?④꺼???덇퀬, ?꾧컧 寃?됱뿉 ?쒗겕由?肄붾뱶瑜?//    ?낅젰?섎㈃ ?닿툑?섏뼱 ?쒖씠???붾㈃???좉????깆옣?쒕떎. (?쇰컲 ?뚮젅?댁뼱??紐?耳?
 bool    g_DevUnlocked   = false;
-float   g_DevToastTimer = 0.0f;            // 해금 확인 토스트 (초)
-// 설정창 볼륨 숫자 직접입력 상태
+float   g_DevToastTimer = 0.0f;            // ?닿툑 ?뺤씤 ?좎뒪??(珥?
+// ?ㅼ젙李?蹂쇰ⅷ ?レ옄 吏곸젒?낅젰 ?곹깭
 bool    g_VolEdit = false;
 wchar_t g_VolBuf[8] = {0};
 int     g_VolLen = 0;
 PlayerStats    g_Stats;
 bool g_aug1Released = true, g_aug2Released = true, g_aug3Released = true;
-TextRenderer   g_TextL;   // 큰 글자 (증강 이름, 상태 타이틀)
-TextRenderer   g_TextS;   // 작은 글자 (설명, 힌트)
-TextRenderer   g_TextXL;  // 초대형 타이틀(시작창 로고) 전용 — 고해상도 래스터
-
+TextRenderer   g_TextL;   // ??湲??(利앷컯 ?대쫫, ?곹깭 ??댄?)
+TextRenderer   g_TextS;   // ?묒? 湲??(?ㅻ챸, ?뚰듃)
+TextRenderer   g_TextXL;  // 珥덈?????댄?(?쒖옉李?濡쒓퀬) ?꾩슜 ??怨좏빐?곷룄 ?섏뒪??
 #ifdef _WIN32
-HANDLE         g_FontMemHandle   = nullptr; // Dongle (한국어)
-HANDLE         g_OswaldMemHandle = nullptr; // Oswald (라틴/키릴)
+HANDLE         g_FontMemHandle   = nullptr; // Dongle (?쒓뎅??
+HANDLE         g_OswaldMemHandle = nullptr; // Oswald (?쇳떞/?ㅻ┫)
 #endif
 
-// BROKEN_SIGHT 오브 — 맵 위를 랜덤 배회하는 황금 목표물
 struct BrokenSightOrb {
     float x = 0, y = 0;
     float vx = 0, vy = 0;
@@ -111,13 +109,12 @@ struct BrokenSightOrb {
     bool  active = false;
 } g_Orb;
 
-// 다가오는 죽음 (디버프) — 죽지 않고 영원히 추격하는 빨간 사각형 (여러 개 가능)
+// ?ㅺ??ㅻ뒗 二쎌쓬 (?붾쾭?? ??二쎌? ?딄퀬 ?곸썝??異붽꺽?섎뒗 鍮④컙 ?ш컖??(?щ윭 媛?媛??
 struct ApproachOrb {
     float x = 0, y = 0;
 };
 std::vector<ApproachOrb> g_ApproachOrbs;
 
-// 드론 (희귀+) — 플레이어 주위 공전 + 자동 발사. 최대 2기
 struct DroneState {
     float angle     = 0.0f;
     float fireTimer = 0.0f;
@@ -125,35 +122,34 @@ struct DroneState {
 static const int MAX_DRONES = 4;
 DroneState g_Drones[MAX_DRONES] = {};
 
-// 포탑 (CANNON + DRONE_2 조합)
-//   1초마다 플레이어 위치에 1개씩 배치, 각 5초 지속 → 맵에 ~5개 상시
-//   능력치는 '대포'가 아니라 '소총' 기준(g_TurretStats)으로 계산
+// ?ы깙 (CANNON + DRONE_2 議고빀)
+//   1珥덈쭏???뚮젅?댁뼱 ?꾩튂??1媛쒖뵫 諛곗튂, 媛?5珥?吏????留듭뿉 ~5媛??곸떆
+//   ?λ젰移섎뒗 '???媛 ?꾨땲??'?뚯킑' 湲곗?(g_TurretStats)?쇰줈 怨꾩궛
 struct Turret {
     float x = 0.0f, y = 0.0f;
-    float lifeTimer = 0.0f;   // 0→TURRET_LIFE
+    float lifeTimer = 0.0f;   // 0?뭈URRET_LIFE
     float fireTimer = 0.0f;
 };
-static const int MAX_TURRETS = 8;                 // 안전 상한
-// 창 크기 — g_Scale 로 시작 시 일괄 축소 가능하도록 런타임 값 (constexpr → 변수)
+static const int MAX_TURRETS = 8;                 // ?덉쟾 ?곹븳
+// 李??ш린 ??g_Scale 濡??쒖옉 ???쇨큵 異뺤냼 媛?ν븯?꾨줉 ?고???媛?(constexpr ??蹂??
 float TURRET_WIN_W  = 250.0f;
 float TURRET_WIN_H  = 250.0f;
-// 신규 보스 개인 창 크기 (본체/HP 를 가두는 따라다니는 창)
+// ?좉퇋 蹂댁뒪 媛쒖씤 李??ш린 (蹂몄껜/HP 瑜?媛?먮뒗 ?곕씪?ㅻ땲??李?
 float RR_WIN_W     = 600.0f;
-float SPAM_WIN_W   = 660.0f;
-float KERNEL_WIN_W = 760.0f;   // 커널: 거대 코어 (큰 창)
-float FIREWALL_WIN_W = 720.0f; // 방화벽: 본체+회전 보호막
-// 봇넷 노드(SPAWNER) 개인 작은 창 — 고정 후 자기 가짜 창을 띄움 (E21)
+float POLY_WIN_W   = 840.0f;
+float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
+float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
+float TOTEM_WIN_W = 720.0f;    // RITE.CORE: 코어 + 기둥 의식 공간
+// 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
 float SPAWNER_WIN_W = 300.0f;
 float DDOS_WIN_W    = 210.0f;
-// 원거리 몹 FakeWindow 크기 (렌더/클리핑 공용) — 시작 시 g_Scale 적용
+// ?먭굅由?紐?FakeWindow ?ш린 (?뚮뜑/?대━??怨듭슜) ???쒖옉 ??g_Scale ?곸슜
 float g_RfwW = 500.0f, g_RfwH = 500.0f;
-static constexpr float TURRET_LIFE   = 5.0f;      // 포탑 지속 5초
-static constexpr float TURRET_DEPLOY = 1.0f;      // 1초마다 배치 (대포 공속 고정)
+static constexpr float TURRET_LIFE   = 5.0f;
+static constexpr float TURRET_DEPLOY = 1.0f;
 std::vector<Turret> g_Turrets;
 float       g_TurretDeployTimer = 0.0f;
-PlayerStats g_TurretStats;                        // 소총 기준 능력치
-
-// 차크람 (에픽+) — 주변 공전 + 잡몹 즉사 + HP. 최대 3개
+PlayerStats g_TurretStats;                        // ?뚯킑 湲곗? ?λ젰移?
 struct ChakramState {
     float angle        = 0.0f;
     float hp           = 150.0f;
@@ -163,34 +159,33 @@ struct ChakramState {
 };
 static const int   MAX_CHAKRAMS    = 3;
 ChakramState g_Chakrams[MAX_CHAKRAMS] = {};
-static const float CHAKRAM_RADIUS = 130.0f;   // 버프: 넓은 공전 (공전체 요격)
-static const float CHAKRAM_SIZE   = 30.0f;    // 버프: 큰 칼날
+static const float CHAKRAM_RADIUS = 130.0f;   // 踰꾪봽: ?볦? 怨듭쟾 (怨듭쟾泥??붽꺽)
+static const float CHAKRAM_SIZE   = 30.0f;    // 踰꾪봽: ??移쇰궇
 
-// 탄환 세례 (전설) — 20초 쿨다운
 float g_BulletRainTimer = 0.0f;
 
-// 취함 (디버프) — 20초 사이클 중 5초간 랜덤 방향 사격
+// 痍⑦븿 (?붾쾭?? ??20珥??ъ씠??以?5珥덇컙 ?쒕뜡 諛⑺뼢 ?ш꺽
 float g_DrunkCycle  = 0.0f;
 bool  g_DrunkActive = false;
 
-// LIGHT_STEP 피격 감지용 이전 HP 기록
+// LIGHT_STEP ?쇨꺽 媛먯????댁쟾 HP 湲곕줉
 float g_PrevHP = 100.0f;
 
-// 초당 EXP 누적용 (디버프 — 다가오는 죽음, 잡몹 가속)
+// 珥덈떦 EXP ?꾩쟻??(?붾쾭?????ㅺ??ㅻ뒗 二쎌쓬, ?〓す 媛??
 float g_XpTimeAccum = 0.0f;
 
-// 게임 시작 후 경과 시간 (자폭병/보스 등장 타이밍)
+// 寃뚯엫 ?쒖옉 ??寃쎄낵 ?쒓컙 (?먰룺蹂?蹂댁뒪 ?깆옣 ??대컢)
 float g_GameTime         = 0.0f;
 float g_BomberSpawnTimer = 0.0f;
 
-// 폭발 충격파 (자폭병 자폭 / 보스 스폰)
+// ??컻 異⑷꺽??(?먰룺蹂??먰룺 / 蹂댁뒪 ?ㅽ룿)
 struct ShockWave {
     float x, y;
     float life, maxLife;
     float maxRadius;
     float r, g, b;
     bool  active  = false;
-    bool  needsBg = false;  // true → 투명 배경 위에서 어두운 원 배경 그리기
+    bool  needsBg = false;
 };
 static const int MAX_SHOCKS = 8;
 ShockWave g_ShockWaves[MAX_SHOCKS] = {};
@@ -206,7 +201,7 @@ static void SpawnShockWave(float x, float y, float maxR, float life,
     }
 }
 
-// 검객 근접 스윙 잔상 (조준 방향 호)
+// 寃媛?洹쇱젒 ?ㅼ쐷 ?붿긽 (議곗? 諛⑺뼢 ??
 struct SlashFx {
     float x, y, ang, range, life, maxLife;
     bool  active = false;
@@ -214,11 +209,10 @@ struct SlashFx {
 static const int MAX_SLASH = 8;
 SlashFx g_Slashes[MAX_SLASH] = {};
 
-// 궁수 차징 (0~1) — LMB 누른 만큼 충전, 떼면 발사
+// 沅곸닔 李⑥쭠 (0~1) ??LMB ?꾨Ⅸ 留뚰겮 異⑹쟾, ?쇰㈃ 諛쒖궗
 float g_ArcherCharge = 0.0f;
-static const float BOW_CHARGE_TIME = 0.9f;   // 완충까지 초
-
-// 머즐 플래시 (발사 순간 총구 섬광)
+static const float BOW_CHARGE_TIME = 0.9f;   // ?꾩땐源뚯? 珥?
+// 癒몄쫹 ?뚮옒??(諛쒖궗 ?쒓컙 珥앷뎄 ?ш킅)
 float g_MuzzleX = 0.0f, g_MuzzleY = 0.0f, g_MuzzleAng = 0.0f, g_MuzzleTimer = 0.0f;
 inline void TriggerMuzzle(float x, float y, float ang) {
     g_MuzzleX = x; g_MuzzleY = y; g_MuzzleAng = ang; g_MuzzleTimer = 0.05f;
@@ -232,80 +226,80 @@ static void SpawnSlash(float x, float y, float ang, float range) {
     }
 }
 
-// 화면 흔들기 (보스 스폰, 충격파)
+// ?붾㈃ ?붾뱾湲?(蹂댁뒪 ?ㅽ룿, 異⑷꺽??
 float g_ShakeTime = 0.0f;
 float g_ShakeMag  = 0.0f;
 
-// 보스 보상 — 남은 버프 픽 수 (디버프 페이지 skip)
+// 蹂댁뒪 蹂댁긽 ???⑥? 踰꾪봽 ????(?붾쾭???섏씠吏 skip)
 int  g_BossRewardPicksLeft = 0;
-// 보스 스폰 — 20만점마다 BossDir 로테이션
-long long g_NextBossScore  = 50000;    // 첫 보스 5만점 → 이후 +20만
-bool      g_CreativeBossPending = false;  // 크리에이티브: 선택 보스 즉시 스폰 대기
-// 리로드 러너 보스 (무기 교체형) — 별도 관리
+// 蹂댁뒪 ?ㅽ룿 ???쇰컲 蹂댁뒪??20留뚯젏留덈떎, ?대━紐⑦봽??50留뚯젏 怨좎젙(1??
+long long g_NextBossScore  = 50000;
+bool      g_PolySpawned    = false;
+bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss = nullptr;
-// SPAM.dll 보스 (탄막/불릿헬 — 회전 나선탄 + 방사 버스트) — 별도 관리
-SpamBoss* g_SpamBoss = nullptr;
-// KERNEL.sys 보스 (고정형 DPS 체크 — 자가붕괴 + 팽창/수축) — 별도 관리
-KernelBoss* g_KernelBoss = nullptr;
-// FIREWALL.sys 보스 (방어형 — 회전 보호막, 가변속도) — 별도 관리
-FirewallBoss* g_FirewallBoss = nullptr;
-// ── 배드 섹터 사망 잔류물 — 임시 감속 구역(손상 영역). 안에 있으면 이동속도 -10% ──
-//   즉시 생기지 않고 ZONE_OPEN(0.7초)에 걸쳐 점점 부식되어 퍼짐(grow factor = age/OPEN).
+PolymorphBoss* g_PolyBoss = nullptr;
+BotnetBoss* g_BotnetBoss = nullptr;
+CentipedeBoss* g_CentiBoss = nullptr;
+TotemBoss* g_TotemBoss = nullptr;
+// ?? 諛곕뱶 ?뱁꽣 ?щ쭩 ?붾쪟臾????꾩떆 媛먯냽 援ъ뿭(?먯긽 ?곸뿭). ?덉뿉 ?덉쑝硫??대룞?띾룄 -10% ??
+//   利됱떆 ?앷린吏 ?딄퀬 ZONE_OPEN(0.7珥???嫄몄퀜 ?먯젏 遺?앸릺???쇱쭚(grow factor = age/OPEN).
 struct SlowZone { float x, y, w, h, life, maxLife, age; };
 std::vector<SlowZone> g_SlowZones;
-float g_BadSectorBleed = 0.0f;   // 배드 섹터 구역 안에 있으면 2초로 갱신 → 빠져나와도 출혈 지속
-static constexpr float SLOWZONE_OPEN = 0.7f;   // 부식 확산 시간
+float g_BadSectorBleed = 0.0f;
+static constexpr float SLOWZONE_OPEN = 0.7f;
 inline float SlowZoneGrow(const SlowZone& z) {
     float g = z.age / SLOWZONE_OPEN;
     return g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);
 }
 inline void SpawnBadSectorZone(const Monster* m) {
     if (m->kind != MobKind::BADSECTOR) return;
-    float w = 300.0f, h = 300.0f;   // 범위 +25% (240 → 300)
+    float w = 300.0f, h = 300.0f;   // 踰붿쐞 +25% (240 ??300)
     g_SlowZones.push_back({ m->worldX - w*0.5f, m->worldY - h*0.5f, w, h, 5.0f, 5.0f, 0.0f });
 }
 
-// ── 스캔 레이저 (증강) — 주기적 관통 빔 + 페이드 비주얼 ──
+// ?? ?ㅼ틪 ?덉씠? (利앷컯) ??二쇨린??愿??鍮?+ ?섏씠??鍮꾩＜????
 struct LaserBeam { float ox, oy, ex, ey, life, maxLife; float width = 1.0f; };
 std::vector<LaserBeam> g_LaserBeams;
 float          g_LaserTimer = 0.0f;
-constexpr float LASER_INT   = 0.85f;  // 발사 주기(초) — 너프: 0.7
+constexpr float LASER_INT   = 0.85f;  // 諛쒖궗 二쇨린(珥? ???덊봽: 0.7
 
-// ── 백신 스캔 (증강) — 주기적으로 플레이어 주변에 정화 펄스(범위 일소) ──
-//   시각 링은 기존 SpawnShockWave(팽창 링) 재사용.
+// ?? 諛깆떊 ?ㅼ틪 (利앷컯) ??二쇨린?곸쑝濡??뚮젅?댁뼱 二쇰????뺥솕 ?꾩뒪(踰붿쐞 ?쇱냼) ??
+//   ?쒓컖 留곸? 湲곗〈 SpawnShockWave(?쎌갹 留? ?ъ궗??
 float          g_NovaTimer  = 0.0f;
-constexpr float NOVA_INT    = 2.4f;    // 펄스 주기(초, 중첩 시 단축)
-constexpr float NOVA_R      = 240.0f;  // 기본 반경(중첩 시 확대)
+constexpr float NOVA_INT    = 2.4f;    // ?꾩뒪 二쇨린(珥? 以묒꺽 ???⑥텞)
+constexpr float NOVA_R      = 240.0f;  // 湲곕낯 諛섍꼍(以묒꺽 ???뺣?)
 
-// ── 보스 등장 전조(증상) ──────────────────────────────────────
-//   보스 스폰을 "결정 → 2.5초 전조(테마 증상 + 경고 배너) → 실제 생성" 으로 분리.
-//   전조 동안 게임플레이는 계속(텔레그래프). 만료 시 결정된 보스를 실제로 생성.
-float          g_BossWarnTimer = 0.0f;          // >0 이면 전조 진행 중 (남은 시간)
+// ?? 蹂댁뒪 ?깆옣 ?꾩“(利앹긽) ??????????????????????????????????????
+//   蹂댁뒪 ?ㅽ룿??"寃곗젙 ??2.5珥??꾩“(?뚮쭏 利앹긽 + 寃쎄퀬 諛곕꼫) ???ㅼ젣 ?앹꽦" ?쇰줈 遺꾨━.
+//   ?꾩“ ?숈븞 寃뚯엫?뚮젅?대뒗 怨꾩냽(?붾젅洹몃옒??. 留뚮즺 ??寃곗젙??蹂댁뒪瑜??ㅼ젣濡??앹꽦.
+float          g_BossWarnTimer = 0.0f;          // >0 ?대㈃ ?꾩“ 吏꾪뻾 以?(?⑥? ?쒓컙)
 constexpr float BOSS_WARN_DUR  = 2.5f;
-int            g_BossWarnPick   = -1;           // BossDir pick (0,2,3,5,6)
-const wchar_t* g_BossWarnName   = L"";          // 배너에 띄울 프로세스명
-float          g_BossWarnHp      = 0.0f;        // 전조 시작 시 확정한 maxHp (만료 시 생성에 사용)
-// 페이즈2 상승엣지 추적 (통일 진입 연출 1회 재생용)
-bool g_HangWasP2 = false, g_HangWasP3 = false, g_RRWasP2 = false, g_RRWasP3 = false, g_SpamWasP2 = false;
-// 페이즈2 진입 토스트 ("■ 과부하 — PHASE 2")
+int            g_BossWarnPick   = -1;           // 0~8 蹂댁뒪 ?듭씪 ?몃뜳??(4=?대━)
+const wchar_t* g_BossWarnName   = L"";
+float          g_BossWarnHp      = 0.0f;
+// ?섏씠利? ?곸듅?ｌ? 異붿쟻 (?듭씪 吏꾩엯 ?곗텧 1???ъ깮??
+bool g_RRWasP2 = false, g_RRWasP3 = false;
+bool g_BotnetWasP2 = false;
+// ?섏씠利? 吏꾩엯 ?좎뒪??("??怨쇰?????PHASE 2")
 float     g_P2ToastTimer = 0.0f;
 glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
-bool  g_LastRunRecord   = false;  // 직전 판이 신기록이었는지 (GAMEOVER 표시용)
-int   g_MetaStartAugs   = 0;      // 메타 해금: 시작 무료 증강 픽 횟수
+int g_PolyPrevForm = -1;   // ??蹂??媛먯???(蹂?????뚰떚?? ??-1 = 誘몄큹湲고솕
+float g_PolySummonTimer = 0.0f;   // 2?섏씠利? 7珥덈쭏??二쇰????먭굅由??먰룺蹂?5留덈━
+bool  g_PolyWasPhase2   = false;  // 2?섏씠利?吏꾩엯 ?곗텧 1?뚯슜
+bool  g_LastRunRecord   = false;  // 吏곸쟾 ?먯씠 ?좉린濡앹씠?덈뒗吏 (GAMEOVER ?쒖떆??
+int   g_MetaStartAugs   = 0;      // 硫뷀? ?닿툑: ?쒖옉 臾대즺 利앷컯 ???잛닔
 
-// ── 피격 시 창(시야) 축소 기믹 ── 체력 비율에 따라 창 크기 변동 + 피격 펀치
-float g_WindowSizeCur = 0.0f;     // 현재 애니메이션 창 크기 (0 = 미초기화)
-float g_WinPrevHP     = -1.0f;    // 창 축소용 HP 추적
-float g_HurtVignette  = 0.0f;     // 피격 빨간 비네트 잔여
-float g_HpBarPop      = 0.0f;     // 산나비식 HP 게이지바 — 피격 시 떴다가 페이드(초)
+float g_WindowSizeCur = 0.0f;
+float g_WinPrevHP     = -1.0f;    // 李?異뺤냼??HP 異붿쟻
+float g_HurtVignette  = 0.0f;     // ?쇨꺽 鍮④컙 鍮꾨꽕???붿뿬
+float g_HpBarPop      = 0.0f;     // ?곕굹鍮꾩떇 HP 寃뚯씠吏諛????쇨꺽 ???대떎媛 ?섏씠??珥?
 
-// ── 액티브 스킬 시스템 — 대시(기본) + 슬롯 3개(증강 획득, 꽉 차면 교체) ──
-float g_DashCd        = 0.0f;      // 대시 쿨다운
-float g_DashInvuln    = 0.0f;      // 대시 무적 잔여
-float g_PostPickGrace = 0.0f;      // C14: 증강 픽 후 짧은 유예(무적+발사억제)로 복귀 텀
-float g_TimeStopTimer = 0.0f;      // >0 = 적·적탄 정지 중
-float g_OverclockTimer= 0.0f;      // >0 = 연사/공격력 버프 중
-
+// ?? ?≫떚釉??ㅽ궗 ?쒖뒪???????湲곕낯) + ?щ’ 3媛?利앷컯 ?띾뱷, 苑?李⑤㈃ 援먯껜) ??
+float g_DashCd        = 0.0f;
+float g_DashInvuln    = 0.0f;
+float g_PostPickGrace = 0.0f;      // C14: 利앷컯 ????吏㏃? ?좎삁(臾댁쟻+諛쒖궗?듭젣)濡?蹂듦? ?
+float g_TimeStopTimer = 0.0f;
+float g_OverclockTimer= 0.0f;
 static constexpr float DASH_CD = 3.5f, DASH_DIST = 300.0f, DASH_INVULN = 0.25f;
 static constexpr float TIMESTOP_DUR = 1.5f, OVERCLOCK_DUR = 5.0f;
 
@@ -322,149 +316,144 @@ static void ResetSkills() {
     g_SkillReplaceIdx = 0; g_DashCd = 0; g_DashInvuln = 0;
     g_TimeStopTimer = 0; g_OverclockTimer = 0;
 }
-// 보스 생존 동안 화면 전체를 보스 고유색으로 점점 물들이는 연출
-float     g_BossTintT   = 0.0f;                     // 0..1 (생존 시 상승, 사망 시 하강)
+// 蹂댁뒪 ?앹〈 ?숈븞 ?붾㈃ ?꾩껜瑜?蹂댁뒪 怨좎쑀?됱쑝濡??먯젏 臾쇰뱾?대뒗 ?곗텧
+float     g_BossTintT   = 0.0f;                     // 0..1 (?앹〈 ???곸듅, ?щ쭩 ???섍컯)
 glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
 
-// HUD: 현재 측정 FPS (상단 우측 표시)
+// HUD: ?꾩옱 痢≪젙 FPS (?곷떒 ?곗륫 ?쒖떆)
 int    g_CurrentFPS  = 0;
 double g_FpsLastTime = 0.0;
 int    g_FpsFrames   = 0;
 
-// 보유 증강 인덱스 목록 (선택 순서대로, 중복 스택 가능)
+// 蹂댁쑀 利앷컯 ?몃뜳??紐⑸줉 (?좏깮 ?쒖꽌?濡? 以묐났 ?ㅽ깮 媛??
 std::vector<int> g_OwnedAugs;
 
-// 크리에이티브 — 시작 증강 직접 선택 (인덱스). 게임 시작 시 일괄 적용.
+// ?щ━?먯씠?곕툕 ???쒖옉 利앷컯 吏곸젒 ?좏깮 (?몃뜳??. 寃뚯엫 ?쒖옉 ???쇨큵 ?곸슜.
 std::vector<int> g_CreativeStartAugList;
-bool g_CreativeStartPending = false;   // 적용 대기 (main 루프가 applyByIdx 로 처리)
+bool g_CreativeStartPending = false;   // ?곸슜 ?湲?(main 猷⑦봽媛 applyByIdx 濡?泥섎━)
 
-// 증강 선택 hover state (-1 = 미선택, 0/1/2 = 카드 인덱스)
+// 利앷컯 ?좏깮 hover state (-1 = 誘몄꽑?? 0/1/2 = 移대뱶 ?몃뜳??
 int  g_HoveredAug    = -1;
 bool g_EnterReleased = true;
 
-// 마우스 클릭 edge 감지 (이전 프레임 left button 상태)
+// 留덉슦???대┃ edge 媛먯? (?댁쟾 ?꾨젅??left button ?곹깭)
 bool g_LmbPrev = false;
 
-// PAUSED 상태 — 보유 증강 클릭 시 설명 표시 (-1 = 없음, 0..AUG_TOTAL-1 = 인덱스)
+// PAUSED ?곹깭 ??蹂댁쑀 利앷컯 ?대┃ ???ㅻ챸 ?쒖떆 (-1 = ?놁쓬, 0..AUG_TOTAL-1 = ?몃뜳??
 int g_PauseSelectedAug = -1;
 
-// 설정 화면 진입 시 이전 상태 (뒤로 가기 시 복귀)
+// ?ㅼ젙 ?붾㈃ 吏꾩엯 ???댁쟾 ?곹깭 (?ㅻ줈 媛湲???蹂듦?)
 GameState g_SettingsReturnTo = GameState::MAIN_MENU;
 
-// 시작 무기 선택 화면 — 6 중 랜덤 3 인덱스
 int g_WeaponChoices[3] = {0, 1, 2};
 
-// 현재 보유 중인 시작 무기 (StartWeapon 인덱스). -1 = 아직 선택 안 함
 int g_CurrentWeapon = -1;
 
-// 변환 카드 — AUG_SELECT 시 25% 확률로 4번째 카드 등장
-// 현재 무기를 다른 StartWeapon 으로 전환 (기존 무기 효과 제거 후 새 무기 적용)
-// 값 = 전환할 StartWeapon 인덱스. -1 = 이번 라운드는 변환 카드 없음
+// 蹂??移대뱶 ??AUG_SELECT ??25% ?뺣쪧濡?4踰덉㎏ 移대뱶 ?깆옣
+// ?꾩옱 臾닿린瑜??ㅻⅨ StartWeapon ?쇰줈 ?꾪솚 (湲곗〈 臾닿린 ?④낵 ?쒓굅 ????臾닿린 ?곸슜)
+// 媛?= ?꾪솚??StartWeapon ?몃뜳?? -1 = ?대쾲 ?쇱슫?쒕뒗 蹂??移대뱶 ?놁쓬
 int g_ConversionWeapon = -1;
 
-// DYING 사망 연출 상태
+// DYING ?щ쭩 ?곗텧 ?곹깭
 float g_DyingTimer    = 0.0f;
-bool  g_DeathBoomDone = false;   // 창 수축 후 대폭발 1회 트리거
-float g_DeathWinW0    = 0.0f;    // 사망 시점 플레이어 창 크기 (수축 기준)
-float g_GameOverFade  = 0.0f;    // 게임오버 메뉴 페이드인 (0→1, 풀스크린 후 2.5초)
-// 사망 연출 = 즉시 대폭발(파티클) → 폭발 여파 → GAMEOVER (줌/시네마틱 없음, 단순)
-static const float DYING_DUR      = 0.8f;   // 폭발 여파가 재생되는 시간 (페이드 전까지)
-static const float GAMEOVER_FADE  = 2.5f;   // 메뉴 100% 까지 걸리는 시간
+bool  g_DeathBoomDone = false;
+float g_DeathWinW0    = 0.0f;
+float g_GameOverFade  = 0.0f;    // 寃뚯엫?ㅻ쾭 硫붾돱 ?섏씠?쒖씤 (0??, ??ㅽ겕由???2.5珥?
+// ?щ쭩 ?곗텧 = 利됱떆 ???컻(?뚰떚?? ????컻 ?ы뙆 ??GAMEOVER (以??쒕꽕留덊떛 ?놁쓬, ?⑥닚)
+static const float DYING_DUR      = 0.8f;   // ??컻 ?ы뙆媛 ?ъ깮?섎뒗 ?쒓컙 (?섏씠???꾧퉴吏)
+static const float GAMEOVER_FADE  = 2.5f;   // 硫붾돱 100% 源뚯? 嫄몃━???쒓컙
 
-// 사망 파편 파티클
 struct DeathParticle {
     float x, y, vx, vy;
-    float size;       // 한 변 길이(px)
-    float r, g, b;    // 색상
+    float size;       // ??蹂 湲몄씠(px)
+    float r, g, b;    // ?됱긽
     bool  active = false;
 };
 static const int MAX_DEBRIS = 48;
 DeathParticle g_Debris[MAX_DEBRIS] = {};
 float g_DeathCX = 0, g_DeathCY = 0;
-float g_DeathFlash = 0.0f; // 폭발 섬광 (1.0 → 0.0)
-wchar_t g_DeathReason[96] = {0};   // 사망 원인 ("○○ 에 의해 종료됨")
+float g_DeathFlash = 0.0f; // ??컻 ?ш킅 (1.0 ??0.0)
+wchar_t g_DeathReason[96] = {0};   // ?щ쭩 ?먯씤 ("?뗢뿃 ???섑빐 醫낅즺??)
 
 int main() {
-    CrashHandler::Install();   // 강종(E23) 추적 — 처리 안 된 예외 시 로그+미니덤프
+    CrashHandler::Install();   // 媛뺤쥌(E23) 異붿쟻 ??泥섎━ ?????덉쇅 ??濡쒓렇+誘몃땲?ㅽ봽
     srand((unsigned)time(NULL));
 
-    // 실행 파일 폴더로 작업 디렉터리 이동 (Resource/ 상대경로 로드 보장)
-    //   Windows 는 임베디드 폰트라 no-op, macOS/Linux 는 더블클릭 실행 대응
+    // ?ㅽ뻾 ?뚯씪 ?대뜑濡??묒뾽 ?붾젆?곕━ ?대룞 (Resource/ ?곷?寃쎈줈 濡쒕뱶 蹂댁옣)
     PlatformChdirToExeDir();
-    LoadGame();   // 저장된 설정/기록 불러오기 (없으면 기본값 유지)
-    ApplyAccentTheme();   // 저장된 액센트 테마 → g_Accent* 반영
+    LoadGame();   // ??λ맂 ?ㅼ젙/湲곕줉 遺덈윭?ㅺ린 (?놁쑝硫?湲곕낯媛??좎?)
+    ApplyAccentTheme();   // ??λ맂 ?≪꽱???뚮쭏 ??g_Accent* 諛섏쁺
 
     if (!glfwInit()) return -1;
-    // Sleep 해상도 1ms 로 (FPS 캡 정밀도용). Windows 만 의미 있음
+    // Sleep ?댁긽??1ms 濡?(FPS 罹??뺣??꾩슜). Windows 留??섎? ?덉쓬
     PlatformTimerBegin();
 
     GLFWmonitor*       monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode    = glfwGetVideoMode(monitor);
     screenWidth  = mode->width;
-    screenHeight = mode->height - 1; // ★ DirectFlip 회피: 화면보다 1px 작게
+    screenHeight = mode->height - 1; // ??DirectFlip ?뚰뵾: ?붾㈃蹂대떎 1px ?묎쾶
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE,        GLFW_OPENGL_CORE_PROFILE);
 #ifdef __APPLE__
-    // macOS 는 3.2+ Core 에서 forward-compatible 컨텍스트 필수
+    // macOS ??3.2+ Core ?먯꽌 forward-compatible 而⑦뀓?ㅽ듃 ?꾩닔
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-    // 레티나(HiDPI) 2× 백버퍼 끄기 → 프레임버퍼 = 창 크기(점) 1:1
-    //   좌표/스크issor/마우스가 전부 점 단위로 일치 → Windows 와 동일하게 동작
-    //   (안 끄면 게임이 화면 좌하단 1/4 에만 그려지고 클릭 위치가 어긋남)
+    // ?덊떚??HiDPI) 2횞 諛깅쾭???꾧린 ???꾨젅?꾨쾭??= 李??ш린(?? 1:1
+    //   醫뚰몴/?ㅽ겕issor/留덉슦?ㅺ? ?꾨? ???⑥쐞濡??쇱튂 ??Windows ? ?숈씪?섍쾶 ?숈옉
+    //   (???꾨㈃ 寃뚯엫???붾㈃ 醫뚰븯??1/4 ?먮쭔 洹몃젮吏怨??대┃ ?꾩튂媛 ?닿툔??
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 #endif
     glfwWindowHint(GLFW_DECORATED,             GLFW_FALSE);
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
-    // GLFW_FLOATING 제거: WS_EX_TOPMOST + 전체화면 크기 조합이 DWM 플립 모드를 유발
-    // → DWM 컴포지팅 우회 → 알파 투명도 무효화. TOPMOST 없이 생성 후 수동으로 설정.
+    // GLFW_FLOATING ?쒓굅: WS_EX_TOPMOST + ?꾩껜?붾㈃ ?ш린 議고빀??DWM ?뚮┰ 紐⑤뱶瑜??좊컻
+    // ??DWM 而댄룷吏???고쉶 ???뚰뙆 ?щ챸??臾댄슚?? TOPMOST ?놁씠 ?앹꽦 ???섎룞?쇰줈 ?ㅼ젙.
     glfwWindowHint(GLFW_RESIZABLE,             GLFW_FALSE);
     glfwWindowHint(GLFW_ALPHA_BITS,            8);
 
-    // ★ screenHeight 가 이미 mode->height-1 (위에서 DirectFlip 회피용)
-    //   화면 정확히 같은 크기로 생성하면 DWM 이 DirectFlip 으로 컴포지팅 우회
+    // ??screenHeight 媛 ?대? mode->height-1 (?꾩뿉??DirectFlip ?뚰뵾??
+    //   ?붾㈃ ?뺥솗??媛숈? ?ш린濡??앹꽦?섎㈃ DWM ??DirectFlip ?쇰줈 而댄룷吏???고쉶
     GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight,
                                           "Onedow", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
 
     glfwSetWindowPos(window, 0, 0);
 
-    // 하단 작업표시줄 높이 계산 — 풀스크린 위에 떠 있는 작업표시줄에 하단 UI 가
-    //   가려지지 않도록. (작업 영역이 화면보다 작으면 그 차이가 작업표시줄 높이)
+    // ?섎떒 ?묒뾽?쒖떆以??믪씠 怨꾩궛 ????ㅽ겕由??꾩뿉 ???덈뒗 ?묒뾽?쒖떆以꾩뿉 ?섎떒 UI 媛
+    //   媛?ㅼ?吏 ?딅룄濡? (?묒뾽 ?곸뿭???붾㈃蹂대떎 ?묒쑝硫?洹?李⑥씠媛 ?묒뾽?쒖떆以??믪씠)
 #ifdef _WIN32
     {
         int fullH = GetSystemMetrics(SM_CYSCREEN);
         RECT wa;
         if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) {
-            int bottomGap = fullH - (int)wa.bottom;   // 하단 작업표시줄 높이 (그 외 위치면 0)
+            int bottomGap = fullH - (int)wa.bottom;   // ?섎떒 ?묒뾽?쒖떆以??믪씠 (洹????꾩튂硫?0)
             if (bottomGap > 0 && bottomGap < 120) g_TaskbarH = bottomGap;
         }
     }
 #endif
 
-    // 해상도 기준 스케일 — 작은 화면에서 창/엔티티가 비례 축소되도록 계산 후 일괄 적용.
-    //   (절대 픽셀이라 작은 화면일수록 상대적으로 컸던 문제 해결 + 전체적으로 창 축소)
+    // ?댁긽??湲곗? ?ㅼ??????묒? ?붾㈃?먯꽌 李??뷀떚?곌? 鍮꾨? 異뺤냼?섎룄濡?怨꾩궛 ???쇨큵 ?곸슜.
+    //   (?덈? ?쎌??대씪 ?묒? ?붾㈃?쇱닔濡??곷??곸쑝濡?而몃뜕 臾몄젣 ?닿껐 + ?꾩껜?곸쑝濡?李?異뺤냼)
     g_Scale = (float)screenHeight / SCALE_REF_H;
     if (g_Scale > 1.0f) g_Scale = 1.0f;
     if (g_Scale < 0.5f) g_Scale = 0.5f;
-    Boss::WIN_W *= g_Scale; Boss::WIN_H *= g_Scale; Boss::BODY_SIZE *= g_Scale;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
-    RR_WIN_W *= g_Scale; SPAM_WIN_W *= g_Scale;
-    KERNEL_WIN_W *= g_Scale; FIREWALL_WIN_W *= g_Scale;
+    RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
+    CENTI_WIN_W *= g_Scale;
+    TOTEM_WIN_W *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
     DDOS_WIN_W    *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
     glfwMakeContextCurrent(window);
     InputRegisterCallbacks(window);
-    // g_FpsCap == 0 : VSync, 그 외 : VSync 끄고 수동 캡
     glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
 
-    // 폰트 초기화 — Jua(한글)/KosugiMaru(일본어)/Oswald(라틴) 폴백 체인.
-    //   세 폰트를 항상 동시 로드 → 언어와 무관하게 모든 글리프(한/일/영) 표시.
+    // ?고듃 珥덇린????Jua(?쒓?)/KosugiMaru(?쇰낯??/Oswald(?쇳떞) ?대갚 泥댁씤.
+    //   ???고듃瑜???긽 ?숈떆 濡쒕뱶 ???몄뼱? 臾닿??섍쾶 紐⑤뱺 湲由ы봽(?????? ?쒖떆.
 #ifdef _WIN32
-    // EXE 임베디드 RCDATA 바이트를 stb_truetype 으로 직접 래스터화
+    // EXE ?꾨쿋?붾뱶 RCDATA 諛붿씠?몃? stb_truetype ?쇰줈 吏곸젒 ?섏뒪?고솕
     auto loadRc = [&](const char* resName, int& outSize) -> const unsigned char* {
         HMODULE hMod = GetModuleHandleA(nullptr);
         HRSRC   hRes = FindResourceA(hMod, resName, (LPCSTR)RT_RCDATA);
@@ -480,35 +469,35 @@ int main() {
     int sizes[3] = { szJ, szK, szO };
     g_TextL.InitFromMemory(datas, sizes, 3, 36, screenWidth, screenHeight);
     g_TextS.InitFromMemory(datas, sizes, 3, 22, screenWidth, screenHeight);
-    g_TextXL.InitFromMemory(datas, sizes, 3, 100, screenWidth, screenHeight);  // 로고 고해상도
+    g_TextXL.InitFromMemory(datas, sizes, 3, 100, screenWidth, screenHeight);  // 濡쒓퀬 怨좏빐?곷룄
 #else
-    // macOS/Linux: 디스크의 TTF 폴백 체인
+    // macOS/Linux: ?붿뒪?ъ쓽 TTF ?대갚 泥댁씤
     {
         const char* chain[3];
         int nc = LanguageFontChain(g_Language, chain);
         g_TextL.InitFromFiles(chain, nc, 36, screenWidth, screenHeight);
         g_TextS.InitFromFiles(chain, nc, 22, screenWidth, screenHeight);
-        g_TextXL.InitFromFiles(chain, nc, 100, screenWidth, screenHeight);  // 로고 고해상도
+        g_TextXL.InitFromFiles(chain, nc, 100, screenWidth, screenHeight);  // 濡쒓퀬 怨좏빐?곷룄
     }
 #endif
 
     BatchFlush(); glEnable(GL_BLEND);
-    // RGB: 표준 알파블렌딩 / Alpha: 프레임버퍼 알파값 올바르게 누적
+    // RGB: ?쒖? ?뚰뙆釉붾젋??/ Alpha: ?꾨젅?꾨쾭???뚰뙆媛??щ컮瑜닿쾶 ?꾩쟻
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                         GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
 
-    // 아이콘(픽토그램) 텍스처 파이프라인 + 증강 아이콘 로드
+    // ?꾩씠肄??쏀넗洹몃옩) ?띿뒪泥??뚯씠?꾨씪??+ 利앷컯 ?꾩씠肄?濡쒕뱶
     InitIconGL();
     LoadIcons();
-    InitRainMissileTex();   // 탄환 세례 로켓 스프라이트(흰배경 제거+틴트 가능)
+    InitRainMissileTex();   // ?꾪솚 ?몃? 濡쒖폆 ?ㅽ봽?쇱씠???곕같寃??쒓굅+?댄듃 媛??
 
     EnableWindowTransparency(window);
 
-    // --- 창/GL/레지스트리 종합 진단 (Windows 전용) ---
+    // --- 李?GL/?덉??ㅽ듃由?醫낇빀 吏꾨떒 (Windows ?꾩슜) ---
 #ifdef _WIN32
     {
         HWND hWnd = glfwGetWin32Window(window);
-        // GL 3.3 Core Profile: GL_ALPHA_BITS deprecated → glGetFramebufferAttachmentParameteriv 사용
+        // GL 3.3 Core Profile: GL_ALPHA_BITS deprecated ??glGetFramebufferAttachmentParameteriv ?ъ슜
         GLint alphaBits = 0, rBits = 0, gBits = 0, bBits = 0;
         glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_BACK_LEFT,
             GL_FRAMEBUFFER_ATTACHMENT_ALPHA_SIZE, &alphaBits);
@@ -521,8 +510,8 @@ int main() {
         const char* renderer = (const char*)glGetString(GL_RENDERER);
         const char* glVer    = (const char*)glGetString(GL_VERSION);
         const char* vendor   = (const char*)glGetString(GL_VENDOR);
-        // AMD/ATI 감지 — AMD 드라이버는 GLSL 컴파일이 더 엄격하고 투명 FBO 처리가
-        //   NVIDIA 와 달라, 벤더를 로그로 남겨 검은화면/투명실패 원인 추적에 사용.
+        // AMD/ATI 媛먯? ??AMD ?쒕씪?대쾭??GLSL 而댄뙆?쇱씠 ???꾧꺽?섍퀬 ?щ챸 FBO 泥섎━媛
+        //   NVIDIA ? ?щ씪, 踰ㅻ뜑瑜?濡쒓렇濡??④꺼 寃??붾㈃/?щ챸?ㅽ뙣 ?먯씤 異붿쟻???ъ슜.
         bool isAMD = false;
         if (vendor) {
             std::string vlow = vendor;
@@ -532,8 +521,8 @@ int main() {
                     (vlow.find("advanced micro") != std::string::npos);
         }
 
-        // Windows 투명도 효과 설정 (레지스트리)
-        DWORD enableTrans = 1; // 기본값: 켜진 것으로 가정
+        // Windows ?щ챸???④낵 ?ㅼ젙 (?덉??ㅽ듃由?
+        DWORD enableTrans = 1;
         HKEY hKey = nullptr;
         if (RegOpenKeyExA(HKEY_CURRENT_USER,
             "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
@@ -549,14 +538,14 @@ int main() {
         LONG ex    = GetWindowLong(hWnd, GWL_EXSTYLE);
         int  trans = glfwGetWindowAttrib(window, GLFW_TRANSPARENT_FRAMEBUFFER);
 
-        DBG("=== 종합 진단 ===\n");
+        DBG("=== 醫낇빀 吏꾨떒 ===\n");
         DBG("  [GL] Vendor           : %s%s\n", vendor ? vendor : "NULL",
-            isAMD ? "  (AMD 감지 — 엄격 GLSL/투명 FBO 경로)" : "");
+            isAMD ? "  (AMD 媛먯? ???꾧꺽 GLSL/?щ챸 FBO 寃쎈줈)" : "");
         DBG("  [GL] Renderer         : %s\n", renderer ? renderer : "NULL");
         DBG("  [GL] Version          : %s\n", glVer    ? glVer    : "NULL");
         DBG("  [GL] Framebuffer bits : R=%d G=%d B=%d A=%d\n",
             rBits, gBits, bBits, alphaBits);
-        DBG("       → (Core Profile 정확한 쿼리. A=0이면 드라이버가 알파 채널 거부)\n");
+        DBG("       ??(Core Profile ?뺥솗??荑쇰━. A=0?대㈃ ?쒕씪?대쾭媛 ?뚰뙆 梨꾨꼸 嫄곕?)\n");
         DBG("\n");
         DBG("  [GLFW] transparent_framebuffer : %d [%s]\n",
             trans, trans ? "SUPPORTED" : "NOT SUPPORTED");
@@ -565,20 +554,20 @@ int main() {
         DBG("  [Win]  WS_EX_LAYERED           : %s\n",
             (ex & WS_EX_LAYERED)     ? "SET"           : "NOT SET");
         DBG("  [Win]  WS_EX_TRANSPARENT       : %s\n",
-            (ex & WS_EX_TRANSPARENT) ? "SET (클릭통과!)" : "NOT SET (정상)");
+            (ex & WS_EX_TRANSPARENT) ? "SET (?대┃?듦낵!)" : "NOT SET (?뺤긽)");
         DBG("\n");
         DBG("  [REG]  EnableTransparency      : %lu [%s]\n",
             enableTrans,
-            enableTrans ? "ON (정상)"
-                        : "OFF ← 이게 문제! 설정>개인설정>색>투명도 효과 켜기");
+            enableTrans ? "ON (?뺤긽)"
+                        : "OFF ???닿쾶 臾몄젣! ?ㅼ젙>媛쒖씤?ㅼ젙>???щ챸???④낵 耳쒓린");
         DBG("=================\n\n");
     }
-#endif // _WIN32 (진단 블록)
+#endif // _WIN32 (吏꾨떒 釉붾줉)
 
     InitMainShaderPipeline(screenWidth, screenHeight);
     InitMainBatchGeometry(screenWidth, screenHeight);
 
-    // --- 게임 오브젝트 초기화 ---
+    // --- 寃뚯엫 ?ㅻ툕?앺듃 珥덇린??---
     FakeWindow playerWin(0, "Onedow",
         (screenWidth  - g_Stats.windowSize) * 0.5f,
         (screenHeight - g_Stats.windowSize) * 0.5f,
@@ -597,9 +586,9 @@ int main() {
     float accumulator      = 0.0f;
     const float FIXED_DT = 1.0f / 60.0f;
 
-    Audio::Init();   // 사운드 시스템 (Sounds/ 폴더, 파일 없으면 무음)
+    Audio::Init();   // ?ъ슫???쒖뒪??(Sounds/ ?대뜑, ?뚯씪 ?놁쑝硫?臾댁쓬)
 
-    // 최근접 적 — 자동조준·유도탄(탄환세례)·드론·포탑 공용
+    // 理쒓렐???????먮룞議곗?쨌?좊룄???꾪솚?몃?)쨌?쒕줎쨌?ы깙 怨듭슜
     auto findNearestEnemy = [&](float fx, float fy, float& tx, float& ty) -> bool {
         float nd = 1e18f; bool found = false;
         auto consider = [&](float ex, float ey) {
@@ -617,31 +606,44 @@ int main() {
             if (r->alive) consider(r->worldX, r->worldY);
         for (auto bm : g_MonsterManager.bombers)
             if (bm->alive && vis(bm->worldX, bm->worldY)) consider(bm->worldX, bm->worldY);
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-            consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY);
         if (g_RRBoss && g_RRBoss->alive)         consider(g_RRBoss->worldX, g_RRBoss->worldY);
-        if (g_SpamBoss && g_SpamBoss->alive)     consider(g_SpamBoss->worldX, g_SpamBoss->worldY);
-        if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY);
-        if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY);
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
+            consider(g_PolyBoss->worldX, g_PolyBoss->worldY);
+        if (g_BotnetBoss && g_BotnetBoss->alive) {
+            consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY);
+            for (auto& mn : g_BotnetBoss->minions) if (mn.alive) consider(mn.x, mn.y);
+        }
+        if (g_CentiBoss && g_CentiBoss->alive) {
+            if (g_CentiBoss->vulnerable())
+                consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
+            for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
+        }
+        if (g_TotemBoss && g_TotemBoss->alive) {
+            if (g_TotemBoss->vulnerable())
+                consider(g_TotemBoss->worldX, g_TotemBoss->worldY);
+            for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                auto& tt = g_TotemBoss->totems[ti];
+                if (tt.alive) consider(tt.x, tt.y);
+            }
+        }
         return found;
     };
 
     // ============================================================
-    // 메인 루프
+    // 硫붿씤 猷⑦봽
     // ============================================================
     while (!glfwWindowShouldClose(window)) {
         float now   = (float)glfwGetTime();
         float delta = now - lastFrame;
-        if (delta > 0.1f) delta = 0.1f; // 스파이크 클램프
+        if (delta > 0.1f) delta = 0.1f;
         lastFrame = now;
 
-        // 크래시 추적 브레드크럼 — 마지막 상태를 남겨 강종(E23) 시 로그로 위치 특정
+        // ?щ옒??異붿쟻 釉뚮젅?쒗겕????留덉?留??곹깭瑜??④꺼 媛뺤쥌(E23) ??濡쒓렇濡??꾩튂 ?뱀젙
         {
-            const char* bn = g_MonsterManager.boss ? "hang" :
-                             g_RRBoss      ? "reload"  :
-                             g_SpamBoss    ? "spam"    :
-                             g_KernelBoss  ? "kernel"  :
-                             g_FirewallBoss? "firewall": "none";
+            const char* bn = g_RRBoss ? "reload" :
+                             g_PolyBoss ? "poly" :
+                             g_BotnetBoss ? "botnet" : g_CentiBoss ? "centi" :
+                             g_TotemBoss ? "totem" : "none";
             char bc[200];
             std::snprintf(bc, sizeof(bc),
                 "st=%d score=%lld lv=%d mobs=%u boss=%s",
@@ -652,9 +654,7 @@ int main() {
             CrashHandler::SetBreadcrumb(bc);
         }
 
-        // 창 포커스를 잃으면(다른 앱으로 전환) 자동 일시정지 —
-        //   오버레이라 포커스 없어도 루프가 계속 도므로, 안 막으면 게임이
-        //   백그라운드에서 계속 진행됨(콤보 3초 창이 흘러가 리셋되는 버그 등).
+        // 李??ъ빱?ㅻ? ?껋쑝硫??ㅻⅨ ?깆쑝濡??꾪솚) ?먮룞 ?쇱떆?뺤? ??        //   ?ㅻ쾭?덉씠???ъ빱???놁뼱??猷⑦봽媛 怨꾩냽 ?꾨?濡? ??留됱쑝硫?寃뚯엫??        //   諛깃렇?쇱슫?쒖뿉??怨꾩냽 吏꾪뻾??肄ㅻ낫 3珥?李쎌씠 ?섎윭媛 由ъ뀑?섎뒗 踰꾧렇 ??.
         {
             static bool s_wasFocused = true;
             bool focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
@@ -664,7 +664,7 @@ int main() {
             s_wasFocused = focused;
         }
 
-        // FPS 측정 (1초 단위)
+        // FPS 痢≪젙 (1珥??⑥쐞)
         ++g_FpsFrames;
         if (now - g_FpsLastTime >= 1.0f) {
             g_CurrentFPS  = g_FpsFrames;
@@ -674,10 +674,8 @@ int main() {
 
         glfwPollEvents();
 
-        // 줌 부드럽게 보간 (페이즈2 화면 확장 등)
-        //   전투/전투오버레이(RUNNING/DYING/PAUSED/증강·디버프 선택)에선 줌 유지 —
-        //   일시정지 시 줌인되는 게 부자연스럽다는 피드백. 줌 해제는 시작창 등
-        //   '진짜 메뉴'로 나갈 때만(보스 처치 시엔 polyDeath 가 target=1 로 부드럽게 복원).
+        // 以?遺?쒕읇寃?蹂닿컙 (?섏씠利? ?붾㈃ ?뺤옣 ??
+        //   ?꾪닾/?꾪닾?ㅻ쾭?덉씠(RUNNING/DYING/PAUSED/利앷컯쨌?붾쾭???좏깮)?먯꽑 以??좎? ??        //   ?쇱떆?뺤? ??以뚯씤?섎뒗 寃?遺?먯뿰?ㅻ읇?ㅻ뒗 ?쇰뱶諛? 以??댁젣???쒖옉李???        //   '吏꾩쭨 硫붾돱'濡??섍컝 ?뚮쭔(蹂댁뒪 泥섏튂 ?쒖뿏 polyDeath 媛 target=1 濡?遺?쒕읇寃?蹂듭썝).
         {
             GameState zs = g_GameManager.currentState;
             bool inFight = (zs == GameState::RUNNING || zs == GameState::DYING ||
@@ -685,39 +683,40 @@ int main() {
                             zs == GameState::DEBUFF_SELECT);
             if (!inFight) { g_ViewZoom = g_ViewZoomTarget = 1.0f; }
             else {
-                // 점수 비례 줌아웃 — 전장이 서서히 넓어짐 (상한 1.4배 = zoom 0.714).
-                //   200만점에서 최대치 도달.
+                // ?먯닔 鍮꾨? 以뚯븘?????꾩옣???쒖꽌???볦뼱吏?(?곹븳 1.4諛?= zoom 0.714).
+                //   200留뚯젏?먯꽌 理쒕?移??꾨떖. ?대━紐⑦봽 ?섏씠利?(0.5)硫?洹몄そ???곗꽑(min).
                 float t = std::min(1.0f, (float)g_GameManager.score / 2000000.0f);
-                float scoreZoom = 1.0f - 0.286f * t;   // 1.0 → 0.714
-                g_ViewZoomTarget = scoreZoom;
+                float scoreZoom = 1.0f - 0.286f * t;   // 1.0 ??0.714
+                float polyZoom  = (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->phase2) ? 0.5f : 1.0f;
+                g_ViewZoomTarget = std::min(scoreZoom, polyZoom);
             }
         }
         g_ViewZoom += (g_ViewZoomTarget - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
 
-        // 확장 아레나 — 줌아웃된 만큼 보이는 영역이 넓어지므로 엔티티 배회/스폰 영역도 확장
-        //   (점수 줌아웃·폴리모프 줌아웃 공통 처리)
+        // ?뺤옣 ?꾨젅????以뚯븘?껊맂 留뚰겮 蹂댁씠???곸뿭???볦뼱吏誘濡??뷀떚??諛고쉶/?ㅽ룿 ?곸뿭???뺤옣
+        //   (?먯닔 以뚯븘?꺜룻뤃由щえ??以뚯븘??怨듯넻 泥섎━)
         {
             float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
             g_ArenaExX = (float)screenWidth  * 0.5f * (1.0f / zb - 1.0f);
             g_ArenaExY = (float)screenHeight * 0.5f * (1.0f / zb - 1.0f);
         }
 
-        // 마우스 상태 (mx,my = 화면 픽셀 / wmx,wmy = 줌 보정한 월드 좌표 = 조준용)
+        // 留덉슦???곹깭 (mx,my = ?붾㈃ ?쎌? / wmx,wmy = 以?蹂댁젙???붾뱶 醫뚰몴 = 議곗???
         double mx, my;
         glfwGetCursorPos(window, &mx, &my);
         bool lmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         float wmx = ScreenToWorldX((float)mx);
         float wmy = ScreenToWorldY((float)my);
 
-        // --- 입력 처리 ---
+        // --- ?낅젰 泥섎━ ---
         GameState prevState = g_GameManager.currentState;
         g_GameManager.HandleInput(window);
 
-        // 새 게임 리셋 람다 (GAMEOVER → READY, 난이도 선택 후, 다시하기 버튼 등에서 호출)
+        // ??寃뚯엫 由ъ뀑 ?뚮떎 (GAMEOVER ??READY, ?쒖씠???좏깮 ?? ?ㅼ떆?섍린 踰꾪듉 ?깆뿉???몄텧)
         auto ResetForNewGame = [&]() {
             g_Stats        = PlayerStats();
-            g_MetaStartAugs = ApplyMeta(g_Stats);    // 메타 영구 업그레이드 적용
-            g_Stats.windowSize *= g_Scale;           // 플레이어 창 — 해상도 비례 축소
+            g_MetaStartAugs = ApplyMeta(g_Stats);    // 硫뷀? ?곴뎄 ?낃렇?덉씠???곸슜
+            g_Stats.windowSize *= g_Scale;           // ?뚮젅?댁뼱 李????댁긽??鍮꾨? 異뺤냼
             g_Orb          = BrokenSightOrb{};
             g_ApproachOrbs.clear();
             for (int d = 0; d < MAX_DRONES;   d++) g_Drones[d]   = DroneState{};
@@ -731,8 +730,8 @@ int main() {
             g_PrevHP          = g_Stats.maxHP;
             g_XpTimeAccum     = 0.0f;
             g_OwnedAugs.clear();
-            memset(g_TypeOwned, 0, sizeof(g_TypeOwned));  // 조합 레시피 보유 초기화
-            g_CreativeGodmode  = false;   // 무적 토글 초기화
+            memset(g_TypeOwned, 0, sizeof(g_TypeOwned));
+            g_CreativeGodmode  = false;
             g_CreativeFreeGrab = false;
             g_HoveredAug       = -1;
             g_EnterReleased    = true;
@@ -746,24 +745,29 @@ int main() {
             g_MuzzleTimer = 0.0f;
             g_ArcherCharge = 0.0f;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
-            g_NextBossScore = 50000;   // 첫 보스 5만점
+            g_NextBossScore = 50000;   // 泥?蹂댁뒪 5留뚯젏
+            g_PolySpawned   = false;
             BossDir::ResetRotation();
             g_BossRewardPicksLeft = 0;
-            g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;   // 보스 전조 초기화
-            g_HangWasP2 = g_HangWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = false;
-            g_LaserBeams.clear(); g_LaserTimer = 0.0f;     // 스캔 레이저 초기화
-            g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 초기화
-            g_NovaTimer = 0.0f;                            // 백신 스캔 초기화
-            g_RunMelee = false; g_RunBow = false;          // 클래스 게이팅 초기화
+            g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;
+            g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
+            g_LaserBeams.clear(); g_LaserTimer = 0.0f;
+            g_SlowZones.clear(); g_BadSectorBleed = 0.0f;
+            g_NovaTimer = 0.0f;
+            g_RunMelee = false; g_RunBow = false;
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
-            if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
-            if (g_KernelBoss) { delete g_KernelBoss; g_KernelBoss = nullptr; }
-            if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
+            if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
+            if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
+            if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+            if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
+            g_PolyPrevForm = -1;
+            g_PolySummonTimer = 0.0f;
+            g_PolyWasPhase2 = false;
             g_BossTintT = 0.0f;
-            ResetJuice();                            // 데미지숫자/콤보/플래시/히트스톱/적 폭발·처치태그 초기화
-            ResetSkills();                           // 액티브 스킬/대시 초기화
-            g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f; // 창 시야 기믹
-            g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복
+            ResetJuice();
+            ResetSkills();
+            g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
+            g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 以??먮났
             g_ZoomCX = g_ZoomCY = 0.0f;
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
             spawnTimer        = 0.0f;
@@ -777,7 +781,7 @@ int main() {
             playerWin.height = g_Stats.windowSize;
             playerWin.x = (screenWidth  - g_Stats.windowSize) * 0.5f;
             playerWin.y = (screenHeight - g_Stats.windowSize) * 0.5f;
-            // GameManager 필드도 직접 리셋
+            // GameManager ?꾨뱶??吏곸젒 由ъ뀑
             g_GameManager.playerHP    = 100.0f;
             g_GameManager.maxHP       = 100.0f;
             g_GameManager.score       = 0;
@@ -785,9 +789,11 @@ int main() {
             if (g_CreativeMode) {
                 g_GameManager.score      = g_CreativeStartScore;
                 g_GameManager.scoreAccum = (float)g_CreativeStartScore;
-                // 시작 점수보다 위 첫 20만 배수부터 일반 보스 (한꺼번에 쏟아짐 방지)
+                // ?쒖옉 ?먯닔蹂대떎 ??泥?20留?諛곗닔遺???쇰컲 蹂댁뒪 (?쒓볼踰덉뿉 ?잛븘吏?諛⑹?)
                 g_NextBossScore = ((g_CreativeStartScore / 200000) + 1) * 200000;
-                // 선택 보스 즉시 스폰 예약 (점수 무관)
+                // ?대? 50留??댁긽?먯꽌 ?쒖옉?섎㈃ ?대━紐⑦봽 ?먮룞?깆옣 ?앸왂 (蹂댁뒪?좏깮?쇰줈 ?뚰솚)
+                g_PolySpawned   = (g_CreativeStartScore >= 500000);
+                // ?좏깮 蹂댁뒪 利됱떆 ?ㅽ룿 ?덉빟 (?먯닔 臾닿?)
                 g_CreativeBossPending = (g_CreativeBossPick >= 0);
             }
             g_GameManager.xp          = 0;
@@ -795,43 +801,43 @@ int main() {
             memset(g_GameManager.takenOnce, 0, sizeof(g_GameManager.takenOnce));
             g_Bullets.clear();
             g_MonsterManager.Clear();
-            // UpdateStateSystem 의 중복 reset 회피
+            // UpdateStateSystem ??以묐났 reset ?뚰뵾
             g_GameManager.lastState = GameState::READY;
         };
 
-        // GAMEOVER→READY 자동 감지 (ESC 등으로 직접 전환된 경우)
+        // GAMEOVER?뭃EADY ?먮룞 媛먯? (ESC ?깆쑝濡?吏곸젒 ?꾪솚??寃쎌슦)
         if (prevState == GameState::GAMEOVER &&
             g_GameManager.currentState == GameState::READY) {
             ResetForNewGame();
         }
-        // PAUSED → 다른 상태: 증강 설명 박스 닫기
+        // PAUSED ???ㅻⅨ ?곹깭: 利앷컯 ?ㅻ챸 諛뺤뒪 ?リ린
         if (prevState == GameState::PAUSED &&
             g_GameManager.currentState != GameState::PAUSED) {
             g_PauseSelectedAug = -1;
         }
         g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
 
-        // ── BGM — 게임플레이 중엔 메인 루프, 메뉴에선 정지 (보스 BGM 은 파일 생기면 확장) ──
+        // ?? BGM ??寃뚯엫?뚮젅??以묒뿏 硫붿씤 猷⑦봽, 硫붾돱?먯꽑 ?뺤? (蹂댁뒪 BGM ? ?뚯씪 ?앷린硫??뺤옣) ??
         {
-            Audio::SetEnabled(g_SoundVol > 0);            // 0 = 끄기
-            Audio::SetVolume(g_SoundVol / 100.0f);        // 마스터 볼륨
+            Audio::SetEnabled(g_SoundVol > 0);            // 0 = ?꾧린
+            Audio::SetVolume(g_SoundVol / 100.0f);        // 留덉뒪??蹂쇰ⅷ
             GameState cs = g_GameManager.currentState;
             bool bgmOn = (cs == GameState::RUNNING || cs == GameState::PAUSED ||
                           cs == GameState::AUG_SELECT || cs == GameState::DEBUFF_SELECT ||
                           cs == GameState::READY);
-            (void)bgmOn; Audio::StopBgm();   // BGM 험("우우웅") 제거 — 항상 정지
+            (void)bgmOn; Audio::StopBgm();   // BGM ??"?곗슦??) ?쒓굅 ????긽 ?뺤?
         }
 
-        // 크리에이티브 무적 — 매 프레임 체력 풀 고정 (절대 죽지 않음)
+        // ?щ━?먯씠?곕툕 臾댁쟻 ??留??꾨젅??泥대젰 ? 怨좎젙 (?덈? 二쎌? ?딆쓬)
         if (g_CreativeGodmode && g_CreativeMode &&
             g_GameManager.currentState == GameState::RUNNING) {
             g_GameManager.playerHP = g_Stats.maxHP;
         }
 
-        // HP 0 → MK2 부활 OR DYING (1초 슬로우 모션 → GAMEOVER)
+        // HP 0 ??MK2 遺??OR DYING (1珥??щ줈??紐⑥뀡 ??GAMEOVER)
         if (g_GameManager.playerHP <= 0.0f &&
             g_GameManager.currentState == GameState::RUNNING) {
-            // MK2: 1회 부활 — 공격력 비례 폭발 + 풀 HP (페널티 없음)
+            // MK2: 1??遺????怨듦꺽??鍮꾨? ??컻 + ? HP (?섎꼸???놁쓬)
             if (g_Stats.mk2 && !g_Stats.mk2Used) {
                 g_Stats.mk2Used = true;
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
@@ -839,7 +845,7 @@ int main() {
                 float blastDmg = g_Stats.GetBaseDamage()
                                * g_Stats.GetDamageMultiplier(0.0f) * 6.0f;
                 float blastRad = 280.0f;
-                // 주변 적에게 데미지
+                // 二쇰? ?곸뿉寃??곕?吏
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive) continue;
                     float dx = m->worldX - pCX, dy = m->worldY - pCY;
@@ -864,44 +870,34 @@ int main() {
                         if (bm->hp <= 0) bm->alive = false;
                     }
                 }
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                    auto* bs = g_MonsterManager.boss;
-                    float dx = bs->worldX - pCX, dy = bs->worldY - pCY;
-                    if (dx*dx + dy*dy < blastRad * blastRad) {
-                        bs->hp -= blastDmg;
-                        if (bs->hp <= 0) bs->alive = false;
-                    }
-                }
-                // 시각 효과 — 큰 폭발 + 충격파 + 화면 흔들기
-                SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.8f, 0.3f, true);
+                // ?쒓컖 ?④낵 ??????컻 + 異⑷꺽??+ ?붾㈃ ?붾뱾湲?                SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.8f, 0.3f, true);
                 SpawnEnemyExplosion(pCX, pCY, 0.4f, 1.0f, 0.8f, true);
                 SpawnShockWave(pCX, pCY, blastRad * 1.4f, 0.55f,
                                1.0f, 0.85f, 0.3f);
                 g_ShakeTime = 0.45f; g_ShakeMag = 22.0f;
-                TriggerFlash(1.0f, 0.9f, 0.4f, 0.8f);   // 부활 — 강한 번쩍
-                TriggerHitStop(0.14f);                  // 임팩트 정지
+                TriggerFlash(1.0f, 0.9f, 0.4f, 0.8f);   // 遺????媛뺥븳 踰덉찉
+                TriggerHitStop(0.14f);                  // ?꾪뙥???뺤?
 
-                // 부활 — 능력치 페널티 없이 풀 HP 로 (디버프 없음)
+                // 遺?????λ젰移??섎꼸???놁씠 ? HP 濡?(?붾쾭???놁쓬)
                 g_GameManager.maxHP    = g_Stats.maxHP;
                 g_GameManager.playerHP = g_Stats.maxHP;
                 g_PrevHP               = g_GameManager.playerHP;
-                // RUNNING 상태 유지 (DYING 전이 X)
+                // RUNNING ?곹깭 ?좎? (DYING ?꾩씠 X)
             } else {
-                // 일반 사망 — 플레이어 기점 대폭발(모든 적 터짐) 후 메뉴 페이드인
+                // ?쇰컲 ?щ쭩 ???뚮젅?댁뼱 湲곗젏 ???컻(紐⑤뱺 ???곗쭚) ??硫붾돱 ?섏씠?쒖씤
                 g_GameManager.currentState = GameState::DYING;
                 g_GameManager.playerHP     = 0.0f;
-                Audio::PlaySfx(Audio::Sfx::Death);   // 플레이어 사망음
-                Audio::StopBgm();
+                Audio::PlaySfx(Audio::Sfx::Death);   // ?뚮젅?댁뼱 ?щ쭩??                Audio::StopBgm();
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
                 g_DeathCX = pCX; g_DeathCY = pCY;
                 g_DyingTimer    = DYING_DUR;
                 g_DeathBoomDone = false;
                 g_DeathFlash    = 0.0f;
-                // 폴리모프 등 줌 원복 (사망 연출엔 줌 없음)
+                // ?대━紐⑦봽 ??以??먮났 (?щ쭩 ?곗텧??以??놁쓬)
                 g_ZoomCX = g_ZoomCY = 0.0f;
                 g_ViewZoom = 1.0f; g_ViewZoomTarget = 1.0f;
-                // 사망 원인 — 엔티티 삭제 전, 가장 가까운 위협(프로세스)을 기록 (결과창에 표시용)
+                // ?щ쭩 ?먯씤 ???뷀떚????젣 ?? 媛??媛源뚯슫 ?꾪삊(?꾨줈?몄뒪)??湲곕줉 (寃곌낵李쎌뿉 ?쒖떆??
                 {
                     float best = 1e18f; const wchar_t* nm = nullptr;
                     auto consider = [&](float ex, float ey, const wchar_t* n) {
@@ -911,31 +907,31 @@ int main() {
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName((int)m->kind));
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_RANGED));
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) consider(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY, L"HANG.exe");
                     if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY.sys");
-                    if (g_SpamBoss   && g_SpamBoss->alive)   consider(g_SpamBoss->worldX,   g_SpamBoss->worldY,   L"SPAM.dll");
-                    if (g_KernelBoss && g_KernelBoss->alive) consider(g_KernelBoss->worldX, g_KernelBoss->worldY, L"KERNEL.sys");
-                    if (g_FirewallBoss && g_FirewallBoss->alive) consider(g_FirewallBoss->worldX, g_FirewallBoss->worldY, L"FIREWALL.sys");
+                    if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
+                    if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
+                    if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
+                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"RITE.CORE");
                     int li = LangIndex();
-                    const wchar_t* FMT[3] = { L"%ls 에 의해 종료됨", L"Terminated by %ls", L"%ls により終了" };
-                    const wchar_t* UNK[3] = { L"알 수 없는 오류로 종료됨", L"Terminated by unknown error", L"不明なエラーで終了" };
+                    const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
+                    const wchar_t* UNK[3] = { L"Unknown error", L"Terminated by unknown error", L"Unknown error" };
                     if (nm) swprintf_s(g_DeathReason, FMT[li], nm);
                     else    wcscpy_s(g_DeathReason, UNK[li]);
                 }
-            }   // close else (MK2 분기 외)
+            }   // close else (MK2 遺꾧린 ??
         }       // close outer if (HP <= 0)
 
-        // DYING 사망 연출 — 플레이어 기점 대폭발(모든 적 터짐) → GAMEOVER (창 변형 없음)
+        // DYING ?щ쭩 ?곗텧 ???뚮젅?댁뼱 湲곗젏 ???컻(紐⑤뱺 ???곗쭚) ??GAMEOVER (李?蹂???놁쓬)
         if (g_GameManager.currentState == GameState::DYING) {
             g_DyingTimer -= delta;
             g_DeathFlash -= delta * 4.0f;
             if (g_DeathFlash < 0.0f) g_DeathFlash = 0.0f;
 
-            // 대폭발 — 플레이어 기점, 모든 적이 터짐 (즉시, 줌/시네마틱 없음)
+            // ???컻 ???뚮젅?댁뼱 湲곗젏, 紐⑤뱺 ?곸씠 ?곗쭚 (利됱떆, 以??쒕꽕留덊떛 ?놁쓬)
             if (!g_DeathBoomDone) {
                 g_DeathBoomDone = true;
                 float pCX = g_DeathCX, pCY = g_DeathCY;
-                // 모든 적 폭발시키며 제거 (scored/noBlast 표시 → 점수/연쇄 정산 안 함)
+                // 紐⑤뱺 ????컻?쒗궎硫??쒓굅 (scored/noBlast ?쒖떆 ???먯닔/?곗뇙 ?뺤궛 ????
                 for (auto m : g_MonsterManager.monsters) if (m->alive) {
                     SpawnEnemyExplosion(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b, true);
                     m->alive = false; m->scored = true; m->noBlast = true;
@@ -948,21 +944,22 @@ int main() {
                     SpawnEnemyExplosion(bm->worldX, bm->worldY, bm->color.r, bm->color.g, bm->color.b, true);
                     bm->alive = false; bm->scored = true;
                 }
-                // 모든 적·보스·분열체·총알·포탑을 즉시 완전 삭제 — UpdateAll(RUNNING 전용)에
-                //   맡기면 DYING/GAMEOVER 동안 원거리 몹 창 등이 정지 상태로 남으므로 여기서 제거.
-                g_MonsterManager.Clear();   // monsters/ranged/bombers/boss 전부 delete + clear
+                // 紐⑤뱺 ?겶룸낫?ㅒ룸텇?댁껜쨌珥앹븣쨌?ы깙??利됱떆 ?꾩쟾 ??젣 ??UpdateAll(RUNNING ?꾩슜)??                //   留↔린硫?DYING/GAMEOVER ?숈븞 ?먭굅由?紐?李??깆씠 ?뺤? ?곹깭濡??⑥쑝誘濡??ш린???쒓굅.
+                g_MonsterManager.Clear();   // monsters/ranged/bombers/boss ?꾨? delete + clear
                 g_Bullets.clear();
                 if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
-                if (g_SpamBoss)   { delete g_SpamBoss;   g_SpamBoss   = nullptr; }
-                if (g_KernelBoss) { delete g_KernelBoss; g_KernelBoss = nullptr; }
-                if (g_FirewallBoss) { delete g_FirewallBoss; g_FirewallBoss = nullptr; }
+                if (g_PolyBoss)   { delete g_PolyBoss;   g_PolyBoss   = nullptr; }
+                if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
+                if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+            if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
                 g_Turrets.clear();
-                g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // 사망 시 대기 중 전조 취소
-                g_HangWasP2 = g_HangWasP3 = g_RRWasP2 = g_RRWasP3 = g_SpamWasP2 = false;
-                g_LaserBeams.clear();   // 스캔 레이저 빔 정리
-                g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 섹터 감속 구역/출혈 정리
-                g_NovaTimer = 0.0f;   // 백신 스캔 정리
-                // 플레이어 중심 대폭발 + 충격파 + 섬광 + 흔들기 + 방사형 파편
+                g_PolyWasPhase2  = false;
+                g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
+                g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
+                g_LaserBeams.clear();   // ?ㅼ틪 ?덉씠? 鍮??뺣━
+                g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭/異쒗삁 ?뺣━
+                g_NovaTimer = 0.0f;   // 諛깆떊 ?ㅼ틪 ?뺣━
+                // ?뚮젅?댁뼱 以묒떖 ???컻 + 異⑷꺽??+ ?ш킅 + ?붾뱾湲?+ 諛⑹궗???뚰렪
                 for (int k = 0; k < 4; k++)
                     SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.85f - (k%2)*0.4f, 0.3f, true);
                 SpawnShockWave(pCX, pCY, 900.0f, 0.7f, 0.4f, 0.9f, 1.0f);
@@ -984,7 +981,6 @@ int main() {
                 }
             }
 
-            // 파편 이동 — 폭발과 함께 실시간으로 날아감
             float sd = delta;
             for (int i = 0; i < MAX_DEBRIS; i++) {
                 if (!g_Debris[i].active) continue;
@@ -994,13 +990,13 @@ int main() {
                 g_Debris[i].vy *= (1.0f - 1.6f * sd);
             }
             if (g_DyingTimer <= 0.0f) {
-                g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 줌 원복 (메뉴 정상화)
-                g_ZoomCX = g_ZoomCY = 0.0f;             // 줌 중심 화면 중앙으로
+                g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 以??먮났 (硫붾돱 ?뺤긽??
+                g_ZoomCX = g_ZoomCY = 0.0f;             // 以?以묒떖 ?붾㈃ 以묒븰?쇰줈
                 g_GameManager.currentState = GameState::GAMEOVER;
                 g_DyingTimer = 0.0f;
-                g_GameOverFade = 0.0f;   // 결과 메뉴 페이드인 시작 (2.5초)
-                // 기록 저장 — 난이도별 최고점/누적/코인 갱신 (신기록이면 표시)
-                //   크리에이티브 모드(샌드박스)는 코인·기록 제외 (파밍 방지)
+                g_GameOverFade = 0.0f;   // 寃곌낵 硫붾돱 ?섏씠?쒖씤 ?쒖옉 (2.5珥?
+                // 湲곕줉 ??????쒖씠?꾨퀎 理쒓퀬???꾩쟻/肄붿씤 媛깆떊 (?좉린濡앹씠硫??쒖떆)
+                //   ?щ━?먯씠?곕툕 紐⑤뱶(?뚮뱶諛뺤뒪)??肄붿씤쨌湲곕줉 ?쒖쇅 (?뚮컢 諛⑹?)
                 if (!g_CreativeMode) {
                     g_LastRunRecord = RecordRunResult((int)g_Difficulty,
                                                       g_GameManager.score,
@@ -1014,14 +1010,12 @@ int main() {
             }
         }
 
-        // GAMEOVER 메뉴 페이드인 — 폭발 후 0→1 까지 2.5초에 걸쳐 차오름
         if (g_GameManager.currentState == GameState::GAMEOVER && g_GameOverFade < 1.0f) {
             g_GameOverFade += delta / GAMEOVER_FADE;
             if (g_GameOverFade > 1.0f) g_GameOverFade = 1.0f;
         }
 
-        // 사망 폭발 잔여물(파티클·파편·충격파·스파크)이 게임오버 화면에 굳어버리지 않도록
-        //   DYING/GAMEOVER 동안에도 계속 갱신해 자연스럽게 사라지게 한다.
+        // ?щ쭩 ??컻 ?붿뿬臾??뚰떚?는룻뙆?맞룹땐寃⑺뙆쨌?ㅽ뙆????寃뚯엫?ㅻ쾭 ?붾㈃??援녹뼱踰꾨━吏 ?딅룄濡?        //   DYING/GAMEOVER ?숈븞?먮룄 怨꾩냽 媛깆떊???먯뿰?ㅻ읇寃??щ씪吏寃??쒕떎.
         {
             GameState gvs = g_GameManager.currentState;
             if (gvs == GameState::DYING || gvs == GameState::GAMEOVER) {
@@ -1041,7 +1035,6 @@ int main() {
                 }
                 g_Sparks.erase(std::remove_if(g_Sparks.begin(), g_Sparks.end(),
                     [](const Spark& s){ return s.life <= 0.0f; }), g_Sparks.end());
-                // 파편은 DYING 블록이 이미 갱신 → GAMEOVER 에서만 추가로 굴린다
                 if (gvs == GameState::GAMEOVER) {
                     for (int i = 0; i < MAX_DEBRIS; i++) { if (!g_Debris[i].active) continue;
                         g_Debris[i].x += g_Debris[i].vx * delta; g_Debris[i].y += g_Debris[i].vy * delta;
@@ -1051,8 +1044,8 @@ int main() {
             }
         }
 
-        // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 키로 선택 ---
-        // s_augSpaceReleased: 블록 바깥에서도 release 감지하도록 static 선언
+        // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 ?ㅻ줈 ?좏깮 ---
+        // s_augSpaceReleased: 釉붾줉 諛붽묑?먯꽌??release 媛먯??섎룄濡?static ?좎뼵
         static bool s_augSpaceReleased = true;
         {
             int kSpChk = glfwGetKey(window, GLFW_KEY_SPACE);
@@ -1064,7 +1057,7 @@ int main() {
             int k2 = glfwGetKey(window, GLFW_KEY_2);
             int k3 = glfwGetKey(window, GLFW_KEY_3);
 
-            // 단일 증강 적용 헬퍼 (재귀용 — RANDOM_AUG/PANDORA 가 호출)
+            // ?⑥씪 利앷컯 ?곸슜 ?ы띁 (?ш?????RANDOM_AUG/PANDORA 媛 ?몄텧)
             std::function<void(int)> applyByIdx;
             applyByIdx = [&](int idx) {
                 AugType atype = ALL_AUGS[idx].type;
@@ -1072,15 +1065,14 @@ int main() {
                 float oldPCX  = playerWin.x + playerWin.width  * 0.5f;
                 float oldPCY  = playerWin.y + playerWin.height * 0.5f;
 
-                // 특수: 디스패치만 수행하고 Apply 호출 X
+                // ?뱀닔: ?붿뒪?⑥튂留??섑뻾?섍퀬 Apply ?몄텧 X
                 if (atype == AugType::S_CHAOS) {
-                    // 대혼란: 보유 증강 잊고, 같은 개수 랜덤. 약 60% 버프 / 40% 디버프
-                    // 실제 보유 목록(중첩 포함) 기준으로 카운트 — 공격력 증가×4 같은 중첩도 모두 포함
+                    // ??쇰?: 蹂댁쑀 利앷컯 ?딄퀬, 媛숈? 媛쒖닔 ?쒕뜡. ??60% 踰꾪봽 / 40% ?붾쾭??                    // ?ㅼ젣 蹂댁쑀 紐⑸줉(以묒꺽 ?ы븿) 湲곗??쇰줈 移댁슫????怨듦꺽??利앷?횞4 媛숈? 以묒꺽??紐⑤몢 ?ы븿
                     int prevAugs = (int)g_OwnedAugs.size();
                     g_Stats = PlayerStats();
-                    g_Stats.windowSize *= g_Scale;          // 창 — 해상도 비례 유지
-                    // 무기/직업 정체성은 유지 — CHAOS 는 증강만 재추첨한다.
-                    //   (검객/궁수가 기본 총으로 바뀌던 버그 fix. 증강은 이 아래서 위에 덮임)
+                    g_Stats.windowSize *= g_Scale;          // 李????댁긽??鍮꾨? ?좎?
+                    // 臾닿린/吏곸뾽 ?뺤껜?깆? ?좎? ??CHAOS ??利앷컯留??ъ텛泥⑦븳??
+                    //   (寃媛?沅곸닔媛 湲곕낯 珥앹쑝濡?諛붾뚮뜕 踰꾧렇 fix. 利앷컯? ???꾨옒???꾩뿉 ??엫)
                     if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
                         ApplyWeapon(g_Stats, (StartWeapon)g_CurrentWeapon);
                     if (g_RunMelee)    { g_Stats.meleeWeapon = true; g_Stats.fireInterval = 0.26f; }
@@ -1089,14 +1081,13 @@ int main() {
                     g_OwnedAugs.clear();
                     memset(g_GameManager.takenOnce, 0,
                            sizeof(g_GameManager.takenOnce));
-                    memset(g_TypeOwned, 0, sizeof(g_TypeOwned));   // 조합 레시피 보유도 초기화
-                    //   (없으면 더블 잃었는데 '관통 쌍둥이' 조합이 뜨던 버그)
+                    memset(g_TypeOwned, 0, sizeof(g_TypeOwned));   // 議고빀 ?덉떆??蹂댁쑀??珥덇린??                    //   (?놁쑝硫??붾툝 ?껋뿀?붾뜲 '愿???띾뫁?? 議고빀???⑤뜕 踰꾧렇)
                     g_GameManager.maxHP = g_Stats.maxHP;
                     if (g_GameManager.playerHP > g_Stats.maxHP)
                         g_GameManager.playerHP = g_Stats.maxHP;
-                    // 보유 개수 보존 — 이전엔 24로 캡해서 40개 보유 시 반토막 나던 버그 수정.
-                    if (prevAugs > 60) prevAugs = 60;       // 배열 상한(여유)
-                    int nDebuffs = prevAugs / 3;            // 40% → 33% (덜 가혹하게)
+                    // 蹂댁쑀 媛쒖닔 蹂댁〈 ???댁쟾??24濡?罹≫빐??40媛?蹂댁쑀 ??諛섑넗留??섎뜕 踰꾧렇 ?섏젙.
+                    if (prevAugs > 60) prevAugs = 60;       // 諛곗뿴 ?곹븳(?ъ쑀)
+                    int nDebuffs = prevAugs / 3;            // 40% ??33% (??媛?뱁븯寃?
                     int nBuffs   = prevAugs - nDebuffs;
                     int buffs[64], debuffs[64];
                     g_GameManager.PickRandomAugIndices(buffs, nBuffs,
@@ -1107,7 +1098,7 @@ int main() {
                     return;
                 }
                 if (atype == AugType::S_PANDORA) {
-                    // PANDORA: 5장 = 3 버프 + 2 디버프 (명시적 분리)
+                    // PANDORA: 5??= 3 踰꾪봽 + 2 ?붾쾭??(紐낆떆??遺꾨━)
                     int buffs[3], debuffs[2];
                     g_GameManager.PickRandomAugIndices(buffs, 3,
                         g_Stats.sizeAugTaken, g_Stats.distAugTaken,
@@ -1118,7 +1109,7 @@ int main() {
                     return;
                 }
                 if (atype == AugType::RANDOM_AUG) {
-                    // RANDOM_AUG: 버프만 (디버프 제외, 사용자 의도 유지)
+                    // RANDOM_AUG: 踰꾪봽留?(?붾쾭???쒖쇅, ?ъ슜???섎룄 ?좎?)
                     int picks[3];
                     g_GameManager.PickRandomAugIndices(picks, 3,
                         g_Stats.sizeAugTaken, g_Stats.distAugTaken,
@@ -1131,30 +1122,29 @@ int main() {
                 bool prevTurret = g_Stats.turretMode;
                 g_Stats.Apply(atype);
                 g_OwnedAugs.push_back(idx);
-                g_TypeOwned[(int)atype] = true;   // 조합 레시피 판정용
-                MarkAugSeen(idx);                 // 도감 발견
-                // 액티브 스킬 증강이면 슬롯에 장착 (꽉 차면 순환 교체)
+                g_TypeOwned[(int)atype] = true;   // 議고빀 ?덉떆???먯젙??                MarkAugSeen(idx);                 // ?꾧컧 諛쒓껄
+                // ?≫떚釉??ㅽ궗 利앷컯?대㈃ ?щ’???μ갑 (苑?李⑤㈃ ?쒗솚 援먯껜)
                 EquipSkill(SkillForAug(atype));
 
-                // 포탑 배치(CB_TURRET 조합) 픽 → 즉시 첫 포탑 배치
+                // ?ы깙 諛곗튂(CB_TURRET 議고빀) ????利됱떆 泥??ы깙 諛곗튂
                 if (g_Stats.turretMode && !prevTurret) {
                     g_Turrets.clear();
-                    g_TurretDeployTimer = TURRET_DEPLOY;  // 즉시 첫 포탑 배치
+                    g_TurretDeployTimer = TURRET_DEPLOY;  // 利됱떆 泥??ы깙 諛곗튂
                 }
 
-                // 한 번만 뽑힐 증강 표시:
-                //   - EPIC/LEGENDARY 전체
-                //   - 티어드 증강 (탄환세례/드론/차크람) — 등급 무관 1회씩
+                // ??踰덈쭔 戮묓옄 利앷컯 ?쒖떆:
+                //   - EPIC/LEGENDARY ?꾩껜
+                //   - ?곗뼱??利앷컯 (?꾪솚?몃?/?쒕줎/李⑦겕?? ???깃툒 臾닿? 1?뚯뵫
                 if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
                     g_GameManager.takenOnce[idx] = true;
 
-                // (흡혈마 버프: 현재 HP -20% 패널티 제거 — 최대 체력 +25/흡혈로 변경)
+                // (?≫삁留?踰꾪봽: ?꾩옱 HP -20% ?⑤꼸???쒓굅 ??理쒕? 泥대젰 +25/?≫삁濡?蹂寃?
 
-                // 미니화: 강제로 maxHP 10 적용 후 현재 HP cap
+                // 誘몃땲?? 媛뺤젣濡?maxHP 10 ?곸슜 ???꾩옱 HP cap
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
 
-                // 차크람 (티어 적용 후 chakramCount 만큼 활성화)
+                // 李⑦겕??(?곗뼱 ?곸슜 ??chakramCount 留뚰겮 ?쒖꽦??
                 if (atype == AugType::CHAKRAM ||
                     atype == AugType::CHAKRAM_2 ||
                     atype == AugType::CHAKRAM_3) {
@@ -1165,13 +1155,12 @@ int main() {
                             g_Chakrams[c].maxHp        = 150.0f;
                             g_Chakrams[c].respawnTimer = 0.0f;
                         }
-                        // 균등 각도 배치
+                        // 洹좊벑 媛곷룄 諛곗튂
                         g_Chakrams[c].angle =
                             (float)c / (float)g_Stats.chakramCount * 6.2831853f;
                     }
                 }
 
-                // 고장난 조준선: 황금 오브 초기화
                 if (atype == AugType::BROKEN_SIGHT) {
                     g_Orb.active = true;
                     g_Orb.x = (float)(rand() % screenWidth);
@@ -1182,8 +1171,8 @@ int main() {
                     g_Orb.vy = sinf(a) * s;
                     g_Orb.wanderTimer = 0.5f;
                 }
-                // 다가오는 죽음: 첫 픽에서만 오브 스폰. 이후 픽은 속도만 +20%
-                // (속도 누적은 PlayerStats::Apply 의 approachStacks ++ 가 담당)
+                // ?ㅺ??ㅻ뒗 二쎌쓬: 泥??쎌뿉?쒕쭔 ?ㅻ툕 ?ㅽ룿. ?댄썑 ?쎌? ?띾룄留?+20%
+                // (?띾룄 ?꾩쟻? PlayerStats::Apply ??approachStacks ++ 媛 ?대떦)
                 if (atype == AugType::D_APPROACH && g_ApproachOrbs.empty()) {
                     ApproachOrb orb;
                     int edge = rand() % 4;
@@ -1193,7 +1182,7 @@ int main() {
                     else                { orb.x = screenWidth + 40.0f;          orb.y = (float)(rand()%screenHeight); }
                     g_ApproachOrbs.push_back(orb);
                 }
-                // 시야/크기 변경 → playerWin 크기·위치 갱신
+                // ?쒖빞/?ш린 蹂寃???playerWin ?ш린쨌?꾩튂 媛깆떊
                 if (g_Stats.windowSize != oldWS) {
                     playerWin.width  = g_Stats.windowSize;
                     playerWin.height = g_Stats.windowSize;
@@ -1202,9 +1191,8 @@ int main() {
                 }
             };
 
-            // 무기 변환 — 기존 무기 효과 제거 후 새 무기 적용 (#109)
-            //   g_Stats 를 처음부터 재계산: fresh + 새 무기 + 보유 증강 전부 재적용
-            //   런타임 카운터(killCount 등)는 보존
+            // 臾닿린 蹂????湲곗〈 臾닿린 ?④낵 ?쒓굅 ????臾닿린 ?곸슜 (#109)
+            //   g_Stats 瑜?泥섏쓬遺???ш퀎?? fresh + ??臾닿린 + 蹂댁쑀 利앷컯 ?꾨? ?ъ쟻??            //   ?고???移댁슫??killCount ????蹂댁〈
             auto convertWeapon = [&](int newWeapon) {
                 long long savedKills    = g_Stats.killCount;
                 int   savedVampStreak   = g_Stats.vampireKillStreak;
@@ -1215,11 +1203,11 @@ int main() {
                 PlayerStats fresh;
                 ApplyWeapon(fresh, (StartWeapon)newWeapon);
                 fresh.baseFireInterval = fresh.fireInterval;
-                // 보유 증강 전부 재적용 (원래 픽 순서 유지)
+                // 蹂댁쑀 利앷컯 ?꾨? ?ъ쟻??(?먮옒 ???쒖꽌 ?좎?)
                 for (int ownedIdx : g_OwnedAugs)
                     fresh.Apply(ALL_AUGS[ownedIdx].type);
 
-                // 런타임 카운터 복원
+                // ?고???移댁슫??蹂듭썝
                 fresh.killCount             = savedKills;
                 fresh.vampireKillStreak     = savedVampStreak;
                 fresh.mk2Used               = savedMk2Used;
@@ -1228,13 +1216,12 @@ int main() {
                 g_Stats = fresh;
                 g_CurrentWeapon = newWeapon;
 
-                // 포탑 모드는 CB_TURRET 증강 보유 시 fresh.Apply 가 이미 복원함.
-                // 무기 변환으로 새로 켜졌으면(이전 false) 첫 배치 타이머만 초기화.
+                // ?ы깙 紐⑤뱶??CB_TURRET 利앷컯 蹂댁쑀 ??fresh.Apply 媛 ?대? 蹂듭썝??
+                // 臾닿린 蹂?섏쑝濡??덈줈 耳쒖죱?쇰㈃(?댁쟾 false) 泥?諛곗튂 ??대㉧留?珥덇린??
                 if (g_Stats.turretMode && !savedTurret) {
                     g_Turrets.clear(); g_TurretDeployTimer = TURRET_DEPLOY;
                 }
 
-                // HUD / 발사 타이머 동기화
                 g_GameManager.maxHP = g_Stats.maxHP;
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
@@ -1244,15 +1231,15 @@ int main() {
             auto applyAug = [&](int slot) {
                 bool wasBuff  = (g_GameManager.currentState == GameState::AUG_SELECT);
                 if (slot == 3) {
-                    // 변환 카드 — 무기 전환 (기존 무기 효과 제거)
+                    // 蹂??移대뱶 ??臾닿린 ?꾪솚 (湲곗〈 臾닿린 ?④낵 ?쒓굅)
                     if (g_ConversionWeapon >= 0) convertWeapon(g_ConversionWeapon);
-                    g_ConversionWeapon = -1;  // 변환 카드 소모
+                    g_ConversionWeapon = -1;  // 蹂??移대뱶 ?뚮え
                 } else {
                     applyByIdx(g_GameManager.augChoices[slot]);
                 }
                 g_GameManager.maxHP = g_Stats.maxHP;
                 if (wasBuff) {
-                    // 보스 보상 중이면 디버프 페이지 skip
+                    // 蹂댁뒪 蹂댁긽 以묒씠硫??붾쾭???섏씠吏 skip
                     if (g_BossRewardPicksLeft > 0) {
                         --g_BossRewardPicksLeft;
                         if (g_BossRewardPicksLeft > 0) {
@@ -1263,26 +1250,26 @@ int main() {
                             g_GameManager.currentState = GameState::RUNNING;
                         }
                     } else if (g_Stats.mk2SkipDebuff || g_CreativeFreeGrab) {
-                        // MK2 부활 후 / 크리에이티브 F 그랩: DEBUFF_SELECT 스킵
-                        //   (크리에이티브라도 레벨업은 정상 디버프 페이지 = "디버프도 뜨는 게임")
+                        // MK2 遺????/ ?щ━?먯씠?곕툕 F 洹몃옪: DEBUFF_SELECT ?ㅽ궢
+                        //   (?щ━?먯씠?곕툕?쇰룄 ?덈꺼?낆? ?뺤긽 ?붾쾭???섏씠吏 = "?붾쾭?꾨룄 ?⑤뒗 寃뚯엫")
                         g_CreativeFreeGrab = false;
                         g_GameManager.currentState = GameState::RUNNING;
                     } else {
-                        // 일반: 버프 → 디버프 강제 선택 페이지
+                        // ?쇰컲: 踰꾪봽 ???붾쾭??媛뺤젣 ?좏깮 ?섏씠吏
                         g_GameManager.PickDebuffChoices();
                         g_GameManager.currentState = GameState::DEBUFF_SELECT;
                     }
                 } else {
-                    // 디버프 픽 끝 → 게임 재개
+                    // ?붾쾭????????寃뚯엫 ?ш컻
                     g_GameManager.currentState = GameState::RUNNING;
                 }
-                // C14: 인게임 복귀 시 짧은 유예 — 앞 0.25s 는 적 정지("텀"), 전체 무적+발사억제
-                //   로 즉사/오발 방지하며 자연스러운 전이 딜레이를 준다.
+                // C14: ?멸쾶??蹂듦? ??吏㏃? ?좎삁 ????0.25s ?????뺤?("?"), ?꾩껜 臾댁쟻+諛쒖궗?듭젣
+                //   濡?利됱궗/?ㅻ컻 諛⑹??섎ŉ ?먯뿰?ㅻ윭???꾩씠 ?쒕젅?대? 以??
                 if (g_GameManager.currentState == GameState::RUNNING)
                     g_PostPickGrace = 0.5f;
             };
 
-            // 1/2/3/4 = hover (선택 후보 변경만, 적용 X). 4는 변환 카드 (있을 때만)
+            // 1/2/3/4 = hover (?좏깮 ?꾨낫 蹂寃쎈쭔, ?곸슜 X). 4??蹂??移대뱶 (?덉쓣 ?뚮쭔)
             static bool s_aug4Released = true;
             int k4 = glfwGetKey(window, GLFW_KEY_4);
             if (k1 == GLFW_PRESS && g_aug1Released) { g_HoveredAug = 0; g_aug1Released = false; }
@@ -1297,16 +1284,16 @@ int main() {
             if (k3 == GLFW_RELEASE) g_aug3Released = true;
             if (k4 == GLFW_RELEASE) s_aug4Released = true;
 
-            // Space = 적용 (hover 된 카드만). Enter 키 제거 → Space 로 통일
+            // Space = ?곸슜 (hover ??移대뱶留?. Enter ???쒓굅 ??Space 濡??듭씪
             int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
             if (kSp == GLFW_PRESS && s_augSpaceReleased && g_HoveredAug >= 0) {
                 applyAug(g_HoveredAug);
                 g_HoveredAug = -1;
                 s_augSpaceReleased = false;
-                g_GameManager.spaceReleased = false; // RUNNING 직후 pause 방지
+                g_GameManager.spaceReleased = false; // RUNNING 吏곹썑 pause 諛⑹?
             }
 
-            // 마우스 클릭: 카드 hit-test → hover 만 (적용은 Space 키로만)
+            // 留덉슦???대┃: 移대뱶 hit-test ??hover 留?(?곸슜? Space ?ㅻ줈留?
             if (lmb && !g_LmbPrev) {
                 bool hasConv = (g_ConversionWeapon >= 0 &&
                                 g_GameManager.currentState == GameState::AUG_SELECT);
@@ -1322,25 +1309,25 @@ int main() {
                     float yOff = (g_HoveredAug == i) ? -16.0f : 0.0f;
                     if (mx >= cx && mx <= cx + CARD_W &&
                         my >= baseY + yOff && my <= baseY + yOff + CARD_H) {
-                        g_HoveredAug = i;  // 클릭 = hover 만 (적용은 Space)
+                        g_HoveredAug = i;  // ?대┃ = hover 留?(?곸슜? Space)
                         break;
                     }
                 }
             }
         }
 
-        // --- 크리에이티브 모드: F = 증강 그랩(디버프 포함 샌드박스), G = 무적 토글 ---
+        // --- ?щ━?먯씠?곕툕 紐⑤뱶: F = 利앷컯 洹몃옪(?붾쾭???ы븿 ?뚮뱶諛뺤뒪), G = 臾댁쟻 ?좉? ---
         if (g_CreativeMode) {
             static bool s_fkeyReleased = true;
             int kF = glfwGetKey(window, GLFW_KEY_F);
             if (kF == GLFW_RELEASE) s_fkeyReleased = true;
             if (kF == GLFW_PRESS && s_fkeyReleased &&
                 g_GameManager.currentState == GameState::RUNNING) {
-                // 샌드박스: 디버프도 카드 풀에 섞어서 무엇이든 집을 수 있게
+                // ?뚮뱶諛뺤뒪: ?붾쾭?꾨룄 移대뱶 ????욎뼱??臾댁뾿?대뱺 吏묒쓣 ???덇쾶
                 g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                              g_Stats.distAugTaken, /*allowDebuff=*/true);
-                g_CreativeFreeGrab = true;   // 이 픽 뒤엔 디버프 페이지 강제 X
-                // 변환 카드 — 25% 확률 (검객/궁수 제외)
+                g_CreativeFreeGrab = true;   // ?????ㅼ뿏 ?붾쾭???섏씠吏 媛뺤젣 X
+                // 蹂??移대뱶 ??25% ?뺣쪧 (寃媛?沅곸닔 ?쒖쇅)
                 g_ConversionWeapon = -1;
                 if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
                     (rand() % 100) < 25 && g_CurrentWeapon >= 0) {
@@ -1352,7 +1339,7 @@ int main() {
                 g_GameManager.currentState = GameState::AUG_SELECT;
                 s_fkeyReleased = false;
             }
-            // G — 무적 ON/OFF 토글
+            // G ??臾댁쟻 ON/OFF ?좉?
             static bool s_gkeyReleased = true;
             int kG = glfwGetKey(window, GLFW_KEY_G);
             if (kG == GLFW_RELEASE) s_gkeyReleased = true;
@@ -1362,17 +1349,16 @@ int main() {
             }
         }
 
-        // --- 히트스톱: 큰 이벤트 직후 잠깐 시뮬레이션 정지 (렌더는 계속) ---
+        // --- ?덊듃?ㅽ넲: ???대깽??吏곹썑 ?좉퉸 ?쒕??덉씠???뺤? (?뚮뜑??怨꾩냽) ---
         if (g_HitStopTimer > 0.0f) g_HitStopTimer -= delta;
 
-        // --- Fixed timestep (DYING = 0.15× 슬로우 모션, 히트스톱 = 완전 정지) ---
+        // --- Fixed timestep (DYING = 0.15횞 ?щ줈??紐⑥뀡, ?덊듃?ㅽ넲 = ?꾩쟾 ?뺤?) ---
         float physDelta = (g_GameManager.currentState == GameState::DYING)
                           ? delta * 0.15f : delta;
-        if (g_HitStopTimer > 0.0f) physDelta = 0.0f;   // 누적 안 함 → 스텝 미실행
-        accumulator += physDelta;
+        if (g_HitStopTimer > 0.0f) physDelta = 0.0f;   // ?꾩쟻 ???????ㅽ뀦 誘몄떎??        accumulator += physDelta;
         while (accumulator >= FIXED_DT) {
             if (g_GameManager.ShouldUpdate()) {
-                // WASD 이동 — 대각선 normalize (vec 모아서 길이로 나눔)
+                // WASD ?대룞 ???媛곸꽑 normalize (vec 紐⑥븘??湲몄씠濡??섎닎)
                 float mvX = 0.0f, mvY = 0.0f;
                 if (keys[GLFW_KEY_W]) mvY -= 1.0f;
                 if (keys[GLFW_KEY_S]) mvY += 1.0f;
@@ -1382,7 +1368,7 @@ int main() {
                 if (mlen > 0.001f) {
                     mvX /= mlen; mvY /= mlen;
                     float moveMult = g_Stats.GetMoveMultiplier(lmb);
-                    // 배드 섹터 감속 구역 — 부식되어 퍼진 영역(grow factor) 안이면 이동속도 -10%
+                    // 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭 ??遺?앸릺???쇱쭊 ?곸뿭(grow factor) ?덉씠硫??대룞?띾룄 -10%
                     float zoneSlow = 1.0f;
                     {
                         float pcx = playerWin.x + playerWin.width  * 0.5f;
@@ -1398,7 +1384,15 @@ int main() {
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
                     playerWin.y += mvY * curMove * FIXED_DT;
-                    // 이동 잔상(afterimage) — 일정 간격으로 플레이어 중심에 옅은 시안 잔상
+                    // FORK.worm ?щ옒??踰????쇰컲 ?대룞? 吏곸꽑??留됲옒, ???臾댁쟻 以????듦낵
+                    if (g_CentiBoss && g_CentiBoss->alive && g_DashInvuln <= 0.0f) {
+                        float wpcx = playerWin.x + playerWin.width  * 0.5f;
+                        float wpcy = playerWin.y + playerWin.height * 0.5f;
+                        g_CentiBoss->blockMove(wpcx, wpcy, 18.0f);
+                        playerWin.x = wpcx - playerWin.width  * 0.5f;
+                        playerWin.y = wpcy - playerWin.height * 0.5f;
+                    }
+                    // ?대룞 ?붿긽(afterimage) ???쇱젙 媛꾧꺽?쇰줈 ?뚮젅?댁뼱 以묒떖???낆? ?쒖븞 ?붿긽
                     static float s_trailAcc = 0.0f;
                     s_trailAcc += FIXED_DT;
                     if (s_trailAcc >= 0.028f) {
@@ -1409,9 +1403,9 @@ int main() {
                     }
                 }
 
-                // 플레이어 캐릭터(창 중앙)가 보이는 영역 밖으로 나가지 못하게 클램프.
-                // 줌아웃(폴리모프 2페이즈)되면 보이는 월드가 넓어지므로 이동 구역도 같이 확장.
-                // (zoom=1 이면 정확히 [0, screen] — 기존과 동일)
+                // ?뚮젅?댁뼱 罹먮┃??李?以묒븰)媛 蹂댁씠???곸뿭 諛뽰쑝濡??섍?吏 紐삵븯寃??대옩??
+                // 以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???붾뱶媛 ?볦뼱吏誘濡??대룞 援ъ뿭??媛숈씠 ?뺤옣.
+                // (zoom=1 ?대㈃ ?뺥솗??[0, screen] ??湲곗〈怨??숈씪)
                 float zoomNow = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
                 float halfW = (float)screenWidth  * 0.5f / zoomNow;
                 float halfH = (float)screenHeight * 0.5f / zoomNow;
@@ -1422,17 +1416,14 @@ int main() {
                 if (pCX < ccX - halfW) pCX = ccX - halfW;
                 if (pCX > ccX + halfW) pCX = ccX + halfW;
                 if (pCY < ccY - halfH) pCY = ccY - halfH;
-                // C17: 하단 작업표시줄(인게임 가짜 바 + 실제 OS 작업표시줄) 침범 방지 —
-                //   작업표시줄은 '스크린' 하단 고정 픽셀이라, 줌아웃(점수 확장)되면 월드 단위로
-                //   barTotal/zoom 만큼 차지함. 보이는 영역 하단(ccY+halfH)에서 그만큼 위가 한계 →
-                //   상단 확장과 대칭이 되도록(기존엔 sh-barTotal 고정이라 하단만 안 늘어났음).
+                // C17: ?섎떒 ?묒뾽?쒖떆以??멸쾶??媛吏?諛?+ ?ㅼ젣 OS ?묒뾽?쒖떆以? 移⑤쾾 諛⑹? ??                //   ?묒뾽?쒖떆以꾩? '?ㅽ겕由? ?섎떒 怨좎젙 ?쎌??대씪, 以뚯븘???먯닔 ?뺤옣)?섎㈃ ?붾뱶 ?⑥쐞濡?                //   barTotal/zoom 留뚰겮 李⑥??? 蹂댁씠???곸뿭 ?섎떒(ccY+halfH)?먯꽌 洹몃쭔???꾧? ?쒓퀎 ??                //   ?곷떒 ?뺤옣怨??移?씠 ?섎룄濡?湲곗〈??sh-barTotal 怨좎젙?대씪 ?섎떒留????섏뼱?ъ쓬).
                 float barTotal    = g_GameBarH + (float)g_TaskbarH;
                 float bottomLimit = ccY + halfH - barTotal / zoomNow;
                 if (pCY > bottomLimit) pCY = bottomLimit;
                 playerWin.x = pCX - playerWin.width  * 0.5f;
                 playerWin.y = pCY - playerWin.height * 0.5f;
 
-                // ── 액티브 스킬 — 쿨다운/지속 갱신 + 입력(Shift 대시 / Q·E·R 슬롯) ──
+                // ?? ?≫떚釉??ㅽ궗 ??荑⑤떎??吏??媛깆떊 + ?낅젰(Shift ???/ Q쨌E쨌R ?щ’) ??
                 if (g_DashCd > 0.0f)        g_DashCd        -= FIXED_DT;
                 if (g_DashInvuln > 0.0f)    g_DashInvuln    -= FIXED_DT;
                 if (g_PostPickGrace > 0.0f) g_PostPickGrace -= FIXED_DT;  // C14
@@ -1440,9 +1431,10 @@ int main() {
                 if (g_OverclockTimer > 0.0f)g_OverclockTimer-= FIXED_DT;
                 for (int i = 0; i < 3; i++) if (g_Skills[i].cd > 0.0f) g_Skills[i].cd -= FIXED_DT;
 
-                // 창 닫기 — 플레이어 중심 폭발 (넉백 + 피해)
+                // 李??リ린 ???뚮젅?댁뼱 以묒떖 ??컻 (?됰갚 + ?쇳빐)
                 auto closeWindowBlast = [&](float cx, float cy) {
                     float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 8.0f;
+                    if (g_TotemBoss && g_TotemBoss->alive) dmg *= g_TotemBoss->statDamageMult();
                     float rad = 380.0f, r2 = rad * rad, knock = 130.0f;
                     auto hitKB = [&](float& ex, float& ey, float& hp, bool& al) {
                         float dx = ex - cx, dy = ey - cy, d2 = dx*dx + dy*dy;
@@ -1452,26 +1444,27 @@ int main() {
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  hitKB(m->worldX,  m->worldY,  m->hp,  m->alive);
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  hitKB(r->worldX,  r->worldY,  r->hp,  r->alive);
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) hitKB(bm->worldX, bm->worldY, bm->hp, bm->alive);
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                        float dx=g_MonsterManager.boss->worldX-cx, dy=g_MonsterManager.boss->worldY-cy;
-                        if (dx*dx+dy*dy<r2) {
-                            g_MonsterManager.boss->hp-=dmg;
-                            if (g_MonsterManager.boss->hp<=0) g_MonsterManager.boss->alive=false;
-                        }
-                    }
                     if (g_RRBoss && g_RRBoss->alive) { float dx=g_RRBoss->worldX-cx,dy=g_RRBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_RRBoss->hp-=dmg; if(g_RRBoss->hp<=0)g_RRBoss->alive=false;} }
-                    if (g_SpamBoss && g_SpamBoss->alive) { float dx=g_SpamBoss->worldX-cx,dy=g_SpamBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_SpamBoss->hp-=dmg; if(g_SpamBoss->hp<=0)g_SpamBoss->alive=false;} }
-                    if (g_KernelBoss && g_KernelBoss->alive) { float dx=g_KernelBoss->worldX-cx,dy=g_KernelBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_KernelBoss->hp-=dmg; if(g_KernelBoss->hp<=0)g_KernelBoss->alive=false;} }
-                    if (g_FirewallBoss && g_FirewallBoss->alive) { float dx=g_FirewallBoss->worldX-cx,dy=g_FirewallBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_FirewallBoss->hp-=dmg; if(g_FirewallBoss->hp<=0)g_FirewallBoss->alive=false;} }
+                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) { float dx=g_PolyBoss->worldX-cx,dy=g_PolyBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_PolyBoss->hp-=dmg; if(g_PolyBoss->hp<=0)g_PolyBoss->alive=false;} }
+                    if (g_BotnetBoss && g_BotnetBoss->alive) { float dx=g_BotnetBoss->worldX-cx,dy=g_BotnetBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_BotnetBoss->hp-=dmg; if(g_BotnetBoss->hp<=0)g_BotnetBoss->alive=false;} }
+                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) { float dx=g_CentiBoss->worldX-cx,dy=g_CentiBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_CentiBoss->hp-=dmg; if(g_CentiBoss->hp<=0)g_CentiBoss->alive=false;} }
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) { float dx=g_TotemBoss->worldX-cx,dy=g_TotemBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TotemBoss->hp-=dmg; if(g_TotemBoss->hp<=0)g_TotemBoss->alive=false;} }
+                    for (int ti = 0; g_TotemBoss && g_TotemBoss->alive && ti < TotemBoss::N_TOTEM; ti++) {
+                        auto& tt = g_TotemBoss->totems[ti];
+                        if (!tt.alive) continue;
+                        float dx = tt.x - cx, dy = tt.y - cy;
+                        if (dx*dx + dy*dy < r2) { tt.hp -= dmg; if (tt.hp <= 0) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); } }
+                    }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
                     TriggerFlash(0.5f, 0.8f, 1.0f, 0.45f); TriggerHitStop(0.07f);
                 };
 
-                // 슬롯 스킬 발동 헬퍼
+                // ?щ’ ?ㅽ궗 諛쒕룞 ?ы띁
                 auto useSkill = [&](int slot) {
                     if (slot < 0 || slot >= 3) return;
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->isSkillSealed(slot)) return;
                     SkillSlot& s = g_Skills[slot];
                     if (s.type == SkillType::NONE || s.cd > 0.0f) return;
                     switch (s.type) {
@@ -1484,12 +1477,12 @@ int main() {
                     s.cd = SkillCooldownMax(s.type);
                 };
 
-                // 입력 (엣지 검출)
+                // ?낅젰 (?ｌ? 寃異?
                 static bool pDash=false, pQ=false, pE=false, pR=false;
                 bool cDash = keys[GLFW_KEY_LEFT_SHIFT] || keys[GLFW_KEY_RIGHT_SHIFT];
                 if (cDash && !pDash && g_DashCd <= 0.0f) {
                     float ddx = mvX, ddy = mvY;
-                    if (mlen <= 0.001f) {              // 안 움직이면 조준 방향으로
+                    if (mlen <= 0.001f) {              // ???吏곸씠硫?議곗? 諛⑺뼢?쇰줈
                         float ax = wmx - pCX, ay = wmy - pCY;
                         float al = std::sqrt(ax*ax+ay*ay)+1e-3f; ddx = ax/al; ddy = ay/al;
                     }
@@ -1506,21 +1499,21 @@ int main() {
                 bool cQ = keys[GLFW_KEY_Q]; if (cQ && !pQ) useSkill(0); pQ = cQ;
                 bool cE = keys[GLFW_KEY_E]; if (cE && !pE) useSkill(1); pE = cE;
                 bool cR = keys[GLFW_KEY_R]; if (cR && !pR) useSkill(2); pR = cR;
-                // C16: 액티브 스킬 자동 사용 — 쿨다운 끝난 슬롯을 자동 발동
+                // C16: ?≫떚釉??ㅽ궗 ?먮룞 ?ъ슜 ??荑⑤떎???앸궃 ?щ’???먮룞 諛쒕룞
                 if (g_AutoSkill) for (int i = 0; i < 3; i++) useSkill(i);
 
-                // 총알 이동 + 화면 밖 비활성화 (+ 유도탄 보정)
+                // 珥앹븣 ?대룞 + ?붾㈃ 諛?鍮꾪솢?깊솕 (+ ?좊룄??蹂댁젙)
                 for (auto& b : g_Bullets) {
-                    // 유도탄: 가장 가까운 적을 향해 점진적 방향 보정
+                    // ?좊룄?? 媛??媛源뚯슫 ?곸쓣 ?ν빐 ?먯쭊??諛⑺뼢 蹂댁젙
                     if (b.homing && !b.isEnemy && b.active) {
                         float tx = 0.0f, ty = 0.0f;
                         if (findNearestEnemy(b.x, b.y, tx, ty)) {
-                            // 현재 방향 → 목표 방향 사이를 turn rate 만큼 회전
+                            // ?꾩옱 諛⑺뼢 ??紐⑺몴 諛⑺뼢 ?ъ씠瑜?turn rate 留뚰겮 ?뚯쟾
                             float wx = tx - b.x, wy = ty - b.y;
                             float wl = sqrtf(wx*wx + wy*wy);
                             if (wl > 0.001f) {
                                 float wdx = wx / wl, wdy = wy / wl;
-                                // 외적/내적으로 각도 차이 (작은 단계)
+                                // ?몄쟻/?댁쟻?쇰줈 媛곷룄 李⑥씠 (?묒? ?④퀎)
                                 float curA   = atan2f(b.dirY, b.dirX);
                                 float wantA  = atan2f(wdy, wdx);
                                 float diff   = wantA - curA;
@@ -1535,9 +1528,9 @@ int main() {
                             }
                         }
                     }
-                    // 적 유도탄(원거리몹 탄): 플레이어 쪽으로 아주 약하게 방향 보정.
-                    //   단, 플레이어 근처(<300px)에선 유도 중단 → 빗나간 탄이 공전하지 않고
-                    //   그대로 지나감(이전 0.9 rad/s 가 플레이어 주위를 도는 문제 수정).
+                    // ???좊룄???먭굅由щす ??: ?뚮젅?댁뼱 履쎌쑝濡??꾩＜ ?쏀븯寃?諛⑺뼢 蹂댁젙.
+                    //   ?? ?뚮젅?댁뼱 洹쇱쿂(<300px)?먯꽑 ?좊룄 以묐떒 ??鍮쀫굹媛??꾩씠 怨듭쟾?섏? ?딄퀬
+                    //   洹몃?濡?吏?섍컧(?댁쟾 0.9 rad/s 媛 ?뚮젅?댁뼱 二쇱쐞瑜??꾨뒗 臾몄젣 ?섏젙).
                     if (b.homing && b.isEnemy && b.active && g_TimeStopTimer <= 0.0f) {
                         float pCX = playerWin.x + playerWin.width  * 0.5f;
                         float pCY = playerWin.y + playerWin.height * 0.5f;
@@ -1549,17 +1542,16 @@ int main() {
                             float diff  = wantA - curA;
                             while (diff >  3.14159265f) diff -= 6.2831853f;
                             while (diff < -3.14159265f) diff += 6.2831853f;
-                            float maxStep = b.homingTurn * FIXED_DT;   // 작은 turn rate
+                            float maxStep = b.homingTurn * FIXED_DT;   // ?묒? turn rate
                             if (diff >  maxStep) diff =  maxStep;
                             if (diff < -maxStep) diff = -maxStep;
                             float newA = curA + diff;
                             b.dirX = cosf(newA); b.dirY = sinf(newA);
                         }
                     }
-                    // 시간 정지: 적 총알은 멈춤 (플레이어 총알은 계속 이동)
+                    // ?쒓컙 ?뺤?: ??珥앹븣? 硫덉땄 (?뚮젅?댁뼱 珥앹븣? 怨꾩냽 ?대룞)
                     if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(FIXED_DT);
-                    // 화면 밖 비활성화 — 줌아웃(폴리모프 2페이즈)되면 보이는 영역이
-                    // 넓어지므로 경계도 같이 확장 (안 그러면 확장 구역에서 탄이 즉시 사라짐)
+                    // ?붾㈃ 諛?鍮꾪솢?깊솕 ??以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???곸뿭??                    // ?볦뼱吏誘濡?寃쎄퀎??媛숈씠 ?뺤옣 (??洹몃윭硫??뺤옣 援ъ뿭?먯꽌 ?꾩씠 利됱떆 ?щ씪吏?
                     {
                         float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
                         float mX = screenWidth  * 0.5f * (1.0f / zb - 1.0f) + 200.0f;
@@ -1570,14 +1562,14 @@ int main() {
                     }
                 }
 
-                // 대시 무적 — 이번 스텝 시작 HP 저장 (적 피해는 무효, 회복은 유지)
+                // ???臾댁쟻 ???대쾲 ?ㅽ뀦 ?쒖옉 HP ???(???쇳빐??臾댄슚, ?뚮났? ?좎?)
                 float hpAtStep = g_GameManager.playerHP;
-                //   적 정지 = 시간정지 스킬 OR 증강 픽 직후 ~0.05s("전이 텀", 짧게)
+                //   ???뺤? = ?쒓컙?뺤? ?ㅽ궗 OR 利앷컯 ??吏곹썑 ~0.05s("?꾩씠 ?", 吏㏐쾶)
                 bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.45f);
 
-                // 몬스터 업데이트 (디버프 multiplier 적용) — 시간 정지 중엔 적 멈춤
-                float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 → 더 빠름
-                // 점수 기반 속도 램프 (지루함 방지)
+                // 紐ъ뒪???낅뜲?댄듃 (?붾쾭??multiplier ?곸슜) ???쒓컙 ?뺤? 以묒뿏 ??硫덉땄
+                float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 ????鍮좊쫫
+                // ?먯닔 湲곕컲 ?띾룄 ?⑦봽 (吏猷⑦븿 諛⑹?)
                 float si = (float)g_GameManager.score / 100000.0f; if (si > 6.0f) si = 6.0f;
                 float mobSpdRamp = 1.0f + si * 0.09f;
                 if (!timeStopped)
@@ -1586,23 +1578,101 @@ int main() {
                                                g_Stats.mobSpeedMult * mobSpdRamp,
                                                rmobMoveMult * mobSpdRamp);
 
-                // 리로드 러너 업데이트 (무기 상태머신 + 장전 질주, 적 총알 push)
+                // 由щ줈???щ꼫 ?낅뜲?댄듃 (臾닿린 ?곹깭癒몄떊 + ?μ쟾 吏덉＜, ??珥앹븣 push)
                 if (!timeStopped && g_RRBoss && g_RRBoss->alive)
                     g_RRBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
 
-                // SPAM.dll 업데이트 (회전 나선탄 + 방사 버스트, 적 총알 push)
-                if (!timeStopped && g_SpamBoss && g_SpamBoss->alive)
-                    g_SpamBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
+                if (g_PolyBoss && g_PolyBoss->alive) {
+                    if (!timeStopped)
+                    g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    // ?섏씠利? = ?곸쐞 蹂댁뒪: ?붾㈃ 以뚯븘?껋쑝濡????볦? 援ш컙?먯꽌 ?몄? (?섎룄??湲곕뒫)
+                    //   ?먯닔 以뚯븘?껉낵 異⑸룎 ?딄쾶 ??以뚯븘?껊맂 履?min) 梨꾪깮. (?섏씠利?? ?먯닔以??좎?)
+                    g_ViewZoomTarget = std::min(g_ViewZoomTarget, g_PolyBoss->phase2 ? 0.5f : 1.0f);
+                    // ?? 2?섏씠利?吏꾩엯 ?곗텧 ??蹂댁뒪 ?ы슚 + ?ㅼ쨷 異⑷꺽??(1?? ??
+                    if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
+                        g_PolyWasPhase2 = true;
+                        float bx = g_PolyBoss->worldX, by = g_PolyBoss->worldY;
+                        g_ShakeTime = 1.0f; g_ShakeMag = 42.0f;        // 媛뺥븳 ?붾뱾由?                        TriggerFlash(0.6f, 0.25f, 1.0f, 0.85f);        // 蹂대씪 ?붿씠?몄븘??                        TriggerHitStop(0.20f);                         // ?꾪뙥???뺤?
+                        // ?쇱졇?섍???蹂대씪 異⑷꺽??3寃?(?ы슚)
+                        SpawnShockWave(bx, by, 760.0f, 1.1f, 0.7f, 0.3f, 1.0f);
+                        SpawnShockWave(bx, by, 500.0f, 0.9f, 0.85f, 0.45f, 1.0f);
+                        SpawnShockWave(bx, by, 280.0f, 0.7f, 1.0f, 0.8f, 1.0f);
+                        for (int k = 0; k < 6; k++)
+                            SpawnEnemyExplosion(bx + (rand()%320 - 160),
+                                                by + (rand()%320 - 160),
+                                                0.7f, 0.3f, 1.0f, true);
+                    }
+                    int curForm = (int)g_PolyBoss->form;
+                    if (curForm != g_PolyPrevForm) {
+                        if (g_PolyPrevForm != -1) {   // 理쒖큹 ?숆린?붾뒗 ?곗텧 ?앸왂
+                            SpawnEnemyExplosion(g_PolyBoss->worldX, g_PolyBoss->worldY,
+                                                0.7f, 0.3f, 1.0f, true);
+                            SpawnEnemyExplosion(g_PolyBoss->worldX, g_PolyBoss->worldY,
+                                                0.95f, 0.6f, 1.0f, true);
+                            SpawnShockWave(g_PolyBoss->worldX, g_PolyBoss->worldY,
+                                           170.0f, 0.45f, 0.7f, 0.3f, 1.0f);
+                        }
+                        g_PolyPrevForm = curForm;
+                    }
+                }
 
-                // KERNEL.sys 업데이트 (자가붕괴 + 팽창/수축)
-                if (!timeStopped && g_KernelBoss && g_KernelBoss->alive)
-                    g_KernelBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                // C2_RELAY.sys Update
+                if (!timeStopped && g_BotnetBoss && g_BotnetBoss->alive)
+                    g_BotnetBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                if (g_BotnetBoss && g_BotnetBoss->shakePulse) {
+                    g_BotnetBoss->shakePulse = false;
+                    g_ShakeTime = 0.32f; g_ShakeMag = 14.0f;
+                }
 
-                // FIREWALL.sys 업데이트 (회전 보호막 가변속도 + 견제 사격)
-                if (!timeStopped && g_FirewallBoss && g_FirewallBoss->alive)
-                    g_FirewallBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                // FORK.worm ?낅뜲?댄듃 (吏洹몄옱洹?諛고쉶 + ?붾㈃諛??댄깉?믪옱吏꾩엯 ?뚯쭊)
+                if (!timeStopped && g_CentiBoss && g_CentiBoss->alive) {
+                    g_CentiBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    if (g_CentiBoss->shakePulse) {          // ?붾㈃ 諛뽰쑝濡??섍컝 ???쏀븳 吏꾨룞
+                        g_CentiBoss->shakePulse = false;
+                        g_ShakeTime = 0.35f; g_ShakeMag = 14.0f;
+                    }
+                    // ?ㅽ궗 ?쒖쟾 吏꾨룞(媛踰쇱슫 ?쇰뱶諛? ?덈퐬 X) ????吏꾨룞 以묒씠硫???뼱?곗? ?딆쓬
+                    if (g_CentiBoss->wantShake > 0.0f) {
+                        if (g_ShakeTime <= 0.0f || g_CentiBoss->wantShake > g_ShakeMag) {
+                            g_ShakeTime = 0.22f; g_ShakeMag = g_CentiBoss->wantShake;
+                        }
+                        g_CentiBoss->wantShake = 0.0f;
+                    }
+                    if (g_CentiBoss->moltGlitchPulse) {
+                        g_CentiBoss->moltGlitchPulse = false;
+                        TriggerFlash(1.0f, 1.0f, 1.0f, 0.28f);
+                        TriggerHitStop(0.05f);
+                        g_ShakeTime = 0.18f; g_ShakeMag = 12.0f;
+                    }
+                }
 
-                // ── 보스 페이즈2 진입 (상승엣지) — 통일 연출 + 보스별 처리 ──
+                // TOTEM.sys ?낅뜲?댄듃 (?좏뀥 遊됱씤 + ?쒓컙?대룞 怨듦꺽)
+                if (!timeStopped && g_TotemBoss && g_TotemBoss->alive) {
+                    float pullX = 0.0f, pullY = 0.0f;
+                    g_TotemBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP,
+                                        g_Bullets, pullX, pullY);
+                    if (pullX != 0.0f || pullY != 0.0f) {
+                        pCX += pullX; pCY += pullY;
+                        if (pCX < ccX - halfW) pCX = ccX - halfW;
+                        if (pCX > ccX + halfW) pCX = ccX + halfW;
+                        if (pCY < ccY - halfH) pCY = ccY - halfH;
+                        if (pCY > bottomLimit) pCY = bottomLimit;
+                        playerWin.x = pCX - playerWin.width * 0.5f;
+                        playerWin.y = pCY - playerWin.height * 0.5f;
+                    }
+                    for (auto& sp : g_TotemBoss->mobSpawnQueue) {
+                        if ((int)g_MonsterManager.monsters.size() >= 40) break;
+                        Monster* nm = new Monster(sp.first, sp.second,
+                                                  g_Stats.monsterHpMult * 0.55f,
+                                                  0.85f, true);
+                        nm->color = glm::vec3(0.5f, 0.92f, 0.42f);
+                        g_MonsterManager.monsters.push_back(nm);
+                    }
+                    g_TotemBoss->mobSpawnQueue.clear();
+                }
+
+                // ?? 蹂댁뒪 ?섏씠利? 吏꾩엯 (?곸듅?ｌ?) ???듭씪 ?곗텧 + 蹂댁뒪蹂?泥섎━ ??
                 auto p2enter = [&](float bx, float by, glm::vec3 col) {
                     g_ShakeTime = 0.55f; g_ShakeMag = 26.0f;
                     TriggerFlash(col.r, col.g, col.b, 0.55f);
@@ -1614,21 +1684,6 @@ int main() {
                                             col.r, col.g, col.b, true);
                     g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
                 };
-                // HANG.exe — P2/P3 진입 연출
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                    auto* b = g_MonsterManager.boss;
-                    if (b->phase2 && !g_HangWasP2) {
-                        g_HangWasP2 = true;
-                        p2enter(b->worldX, b->worldY, glm::vec3(0.65f, 0.68f, 0.74f));
-                    }
-                    if (b->phase3 && !g_HangWasP3) {
-                        g_HangWasP3 = true;
-                        g_ShakeTime = 0.5f; g_ShakeMag = 22.0f;
-                        TriggerFlash(0.55f, 0.58f, 0.62f, 0.4f);
-                        TriggerHitStop(0.1f);
-                    }
-                } else { g_HangWasP2 = false; g_HangWasP3 = false; }
-                // RELOADER — 오버클럭 + ASSAULT 전면전
                 if (g_RRBoss && g_RRBoss->alive) {
                     if (g_RRBoss->phase2 && !g_RRWasP2) {
                         g_RRWasP2 = true;
@@ -1639,26 +1694,26 @@ int main() {
                         p2enter(g_RRBoss->worldX, g_RRBoss->worldY, glm::vec3(1.0f, 0.22f, 0.08f));
                     }
                 } else { g_RRWasP2 = false; g_RRWasP3 = false; }
-                // SPAM — 역회전 이중 나선 + 조준 버스트
-                if (g_SpamBoss && g_SpamBoss->alive) {
-                    if (g_SpamBoss->phase2 && !g_SpamWasP2) {
-                        g_SpamWasP2 = true;
-                        p2enter(g_SpamBoss->worldX, g_SpamBoss->worldY, glm::vec3(1.0f, 0.4f, 0.8f));
+                if (g_BotnetBoss && g_BotnetBoss->alive) {
+                    if (g_BotnetBoss->phase2 && !g_BotnetWasP2) {
+                        g_BotnetWasP2 = true;
+                        p2enter(g_BotnetBoss->worldX, g_BotnetBoss->worldY,
+                                glm::vec3(0.25f, 0.95f, 0.45f));
                     }
-                } else g_SpamWasP2 = false;
+                } else g_BotnetWasP2 = false;
 
-                // 충돌 (반환값 = 플레이어가 이번 프레임 피격됐는지)
+                // 異⑸룎 (諛섑솚媛?= ?뚮젅?댁뼱媛 ?대쾲 ?꾨젅???쇨꺽?먮뒗吏)
                 bool hit = CollisionSystem::Update(pCX, pCY,
                     g_MonsterManager, g_Bullets,
                     g_GameManager.playerHP,
                     g_GameManager.scoreAccum, g_GameManager.score,
                     g_Stats, g_GameManager.xp);
-                // 대시 무적 / 증강픽 유예(C14) — 이번 스텝의 적 피해 무효 (회복은 유지)
+                // ???臾댁쟻 / 利앷컯???좎삁(C14) ???대쾲 ?ㅽ뀦?????쇳빐 臾댄슚 (?뚮났? ?좎?)
                 if ((g_DashInvuln > 0.0f || g_PostPickGrace > 0.0f) &&
                     g_GameManager.playerHP < hpAtStep)
                     g_GameManager.playerHP = hpAtStep;
 
-                // 리로드 러너 본체 vs 플레이어 총알 (스윕 판정)
+                // 由щ줈???щ꼫 蹂몄껜 vs ?뚮젅?댁뼱 珥앹븣 (?ㅼ쐲 ?먯젙)
                 if (g_RRBoss && g_RRBoss->alive) {
                     auto* rb = g_RRBoss;
                     for (auto& b : g_Bullets) {
@@ -1681,90 +1736,274 @@ int main() {
                     }
                 }
 
-                // SPAM.dll 본체 vs 플레이어 총알 (스윕 판정)
-                if (g_SpamBoss && g_SpamBoss->alive) {
-                    auto* sb = g_SpamBoss;
+                // C2_RELAY.sys ??醫鍮??몄뒪??+ 蹂몄껜(?쇳빐 媛먯냼) vs ?뚮젅?댁뼱 珥앹븣
+                if (g_BotnetBoss && g_BotnetBoss->alive) {
+                    auto* nb2 = g_BotnetBoss;
                     for (auto& b : g_Bullets) {
                         if (!b.active || b.isEnemy) continue;
-                        if (SegDist(sb->worldX, sb->worldY,
-                                    b.prevX, b.prevY, b.x, b.y) < SpamBoss::BODY * 0.8f) {
-                            float pd = glm::distance(glm::vec2(pCX, pCY),
-                                                     glm::vec2(sb->worldX, sb->worldY));
-                            float dmg;
-                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
-                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
-                            else dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
-                            float dealt = (dmg < sb->hp) ? dmg : sb->hp;
-                            sb->hp -= dealt;
+                        auto dmgAt = [&](float ex, float ey) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(ex, ey));
+                            if (b.remainingDmg > 0.0f)   return b.remainingDmg;
+                            if (b.turretDmg > 0.0f)      return b.turretDmg;
+                            return g_Stats.GetBaseDamage()
+                                 * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                        };
+                        bool consumed = false;
+                        for (auto& mn : nb2->minions) {
+                            if (!mn.alive) continue;
+                            if (SegDist(mn.x, mn.y, b.prevX, b.prevY, b.x, b.y)
+                                    < BotnetBoss::minionHit(mn.kind)) {
+                                float dmg = dmgAt(mn.x, mn.y);
+                                float dealt = (dmg < mn.hp) ? dmg : mn.hp;
+                                mn.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (mn.hp <= 0.0f) {
+                                    mn.alive = false;
+                                    AddKillCombo();
+                                    float sc = 45.0f;
+                                    if (mn.kind == BotnetBoss::MinionKind::Heavy) sc = 80.0f;
+                                    if (mn.kind == BotnetBoss::MinionKind::Pulse) sc = 60.0f;
+                                    g_GameManager.scoreAccum += sc;
+                                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                                }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+                        for (int hi = 0; hi < BotnetBoss::NHOST; hi++) {
+                            auto& h = nb2->hosts[hi];
+                            if (!h.alive) continue;
+                            if (SegDist(h.x, h.y, b.prevX, b.prevY, b.x, b.y) < BotnetBoss::HOST_HIT) {
+                                float dmg = dmgAt(h.x, h.y);
+                                float dealt = (dmg < h.hp) ? dmg : h.hp;
+                                h.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (h.hp <= 0.0f) {
+                                    h.alive = false;
+                                    AddKillCombo();
+                                    g_GameManager.scoreAccum += 180.0f;
+                                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                                }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+                        if (SegDist(nb2->worldX, nb2->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < BotnetBoss::BODY * 0.95f) {
+                            float dmg = dmgAt(nb2->worldX, nb2->worldY) * nb2->bodyDamageTakenMult();
+                            float dealt = (dmg < nb2->hp) ? dmg : nb2->hp;
+                            nb2->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                            if (sb->hp <= 0.0f) sb->alive = false;
+                            if (nb2->hp <= 0.0f) nb2->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
                 }
 
-                // KERNEL.sys 본체 vs 플레이어 총알 (스윕 판정) — 큰 코어
-                if (g_KernelBoss && g_KernelBoss->alive) {
-                    auto* kb = g_KernelBoss;
+                // FORK.worm ?щ옒??踰???珥앹븣??吏곸꽑??媛濡쒖?瑜대㈃ 洹??留??ル┝.
+                //   ?쇰컲?꾩? 踰쎌뿉 留됲? ?뚮㈇(愿??X). 愿?듯깂(remainingDmg>0)? ?듦낵.
+                if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->walls.empty()) {
                     for (auto& b : g_Bullets) {
                         if (!b.active || b.isEnemy) continue;
-                        if (SegDist(kb->worldX, kb->worldY,
-                                    b.prevX, b.prevY, b.x, b.y) < KernelBoss::BODY * 0.95f) {
-                            float pd = glm::distance(glm::vec2(pCX, pCY),
-                                                     glm::vec2(kb->worldX, kb->worldY));
-                            float dmg;
-                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
-                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
-                            else dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
-                            float dealt = (dmg < kb->hp) ? dmg : kb->hp;
-                            kb->hp -= dealt;
-                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                            if (kb->hp <= 0.0f) kb->alive = false;
-                            if (b.remainingDmg <= 0.001f) b.active = false;
-                        }
-                    }
-                }
-
-                // FIREWALL.sys vs 플레이어 총알 — 보호막 사이 틈으로만 본체 타격
-                if (g_FirewallBoss && g_FirewallBoss->alive) {
-                    auto* fb = g_FirewallBoss;
-                    const float SR = FirewallBoss::SHIELD_R;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        float dx = b.x - fb->worldX, dy = b.y - fb->worldY;
-                        float dist2 = dx*dx + dy*dy;
-                        if (dist2 >= SR * SR) continue;          // 보호막 밖 — 무시
-                        float ang = atan2f(dy, dx);
-                        // 보호막 막힌 각도면 흡수(무피해)
-                        if (dist2 > (FirewallBoss::BODY*0.9f)*(FirewallBoss::BODY*0.9f)
-                            && fb->shieldBlocks(ang)) {
+                        if (g_CentiBoss->hitWall(b.prevX, b.prevY, b.x, b.y) && b.remainingDmg <= 0.0f)
                             b.active = false;
-                            SpawnSparks(b.x, b.y, 3, 1.0f, 0.5f, 0.2f);
-                            continue;
+                    }
+                }
+
+                // FORK.worm child adds vs ?뚮젅?댁뼱 珥앹븣 ????긽 ?쇨꺽 媛?? 寃쏀뿕移?0.
+                if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
+                    for (auto& mb : g_CentiBoss->minis) {
+                        if (!mb.alive) continue;
+                        for (auto& b : g_Bullets) {
+                            if (!b.active || b.isEnemy) continue;
+                            if (SegDist(mb.x, mb.y, b.prevX, b.prevY, b.x, b.y) < CentipedeBoss::MINI_HEAD + 6.0f) {
+                                float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(mb.x, mb.y));
+                                float dmg;
+                                if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                                else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                                else dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                                float dealt = (dmg < mb.hp) ? dmg : mb.hp;
+                                mb.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (mb.hp <= 0.0f) {
+                                    mb.alive = false;
+                                    AddKillCombo();                 // 肄ㅻ낫留? 寃쏀뿕移?0
+                                    g_GameManager.scoreAccum += 80.0f;
+                                }
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                                break;
+                            }
                         }
-                        // 틈으로 들어와 본체 타격
-                        if (SegDist(fb->worldX, fb->worldY, b.prevX, b.prevY, b.x, b.y)
-                            < FirewallBoss::BODY * 0.95f) {
+                    }
+                }
+
+                // FORK.worm 紐명넻 ?몃뱶 ???쇨꺽 VFX (?곕?吏??癒몃━ HP ?, ?뚮옒?쒕쭔)
+                if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) {
+                    auto* cb2 = g_CentiBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        for (int si = 1; si <= cb2->activeSeg; si++) {
+                            glm::vec2 sp = cb2->segPos(si);
+                            float sr = cb2->segSize(si) + 6.0f;
+                            if (SegDist(sp.x, sp.y, b.prevX, b.prevY, b.x, b.y) < sr) {
+                                cb2->onSegHit(si, sp.x, sp.y);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) {
+                    auto* cb2 = g_CentiBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (SegDist(cb2->worldX, cb2->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < CentipedeBoss::HEAD * 1.0f) {
                             float pd = glm::distance(glm::vec2(pCX, pCY),
-                                                     glm::vec2(fb->worldX, fb->worldY));
+                                                     glm::vec2(cb2->worldX, cb2->worldY));
                             float dmg;
                             if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
                             else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                             else dmg = g_Stats.GetBaseDamage()
                                      * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
-                            float dealt = (dmg < fb->hp) ? dmg : fb->hp;
-                            fb->hp -= dealt;
+                            dmg *= cb2->dmgTakenMult;   // ?꾨줈?좏??? 蹂댄넻 ?쇳빐 媛먯냼
+                            float dealt = (dmg < cb2->hp) ? dmg : cb2->hp;
+                            cb2->hp -= dealt;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                            if (fb->hp <= 0.0f) fb->alive = false;
+                            if (cb2->hp <= 0.0f) cb2->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
                 }
 
-                // 처치 보상 정산 — 총알/근접이 아닌 모든 죽음(연쇄폭발·스킬·MK2·해킹 폭발 등)
-                //   도 여기서 한 번씩 EXP/점수/콤보/흡혈을 받는다 (scored 플래그로 중복 방지).
+                if (g_TotemBoss && g_TotemBoss->alive) {
+                    auto* tb = g_TotemBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        auto dmgAt = [&](float ex, float ey) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(ex, ey));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            return dmg * tb->statDamageMult();
+                        };
+                        bool consumed = false;
+                        for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                            auto& tt = tb->totems[ti];
+                            if (!tt.alive) continue;
+                            if (SegDist(tt.x, tt.y, b.prevX, b.prevY, b.x, b.y) < TotemBoss::TOTEM_HIT) {
+                                float dmg = dmgAt(tt.x, tt.y);
+                                float dealt = (dmg < tt.hp) ? dmg : tt.hp;
+                                tt.hp -= dealt;
+                                tb->onTotemDamaged(ti);
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (tt.hp <= 0.0f) {
+                                    tt.alive = false;
+                                    tb->onTotemKilled(ti);
+                                    AddKillCombo();
+                                    g_GameManager.scoreAccum += 120.0f;
+                                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                                }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+                        if (tb->expanding() && tb->expandShield > 0.0f) {
+                            float rr = TotemBoss::BODY * (1.4f + tb->expandPull * 2.2f);
+                            if (SegDist(tb->worldX, tb->worldY, b.prevX, b.prevY, b.x, b.y) < rr) {
+                                float dmg = dmgAt(tb->worldX, tb->worldY);
+                                tb->damageExpandShield(dmg);
+                                b.active = false;
+                                continue;
+                            }
+                        }
+                        if (tb->vulnerable()) {
+                            if (SegDist(tb->worldX, tb->worldY,
+                                        b.prevX, b.prevY, b.x, b.y) < TotemBoss::BODY) {
+                                float dmg = dmgAt(tb->worldX, tb->worldY);
+                                float dealt = (dmg < tb->hp) ? dmg : tb->hp;
+                                tb->hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (tb->hp <= 0.0f) tb->alive = false;
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                            }
+                        }
+                    }
+                }
+
+                // ?대━紐⑦봽 蹂댁뒪 vs ?뚮젅?댁뼱 珥앹븣 (李⑦겕??/ 蹂몄껜 諛섏궗쨌諛⑹뼱留?/ ?몃え EXP)
+                if (g_PolyBoss && g_PolyBoss->alive) {
+                    auto* pb = g_PolyBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                 glm::vec2(pb->worldX, pb->worldY));
+                        float dmg;
+                        if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                        else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                        else dmg = g_Stats.GetBaseDamage()
+                                 * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+
+                        // 1) ?몃え 臾대━ ??寃⑺뙆 ??EXP 2
+                        bool consumed = false;
+                        for (auto& s : pb->swarm) {
+                            if (!s.alive) continue;
+                            if (SegDist(s.x, s.y, b.prevX, b.prevY, b.x, b.y) < 13.0f) {
+                                s.alive = false;
+                                AddKillCombo();
+                                g_GameManager.xp += 2;
+                                g_GameManager.scoreAccum += 10.0f;
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+
+                        // 2) 李⑦겕??(?섏씠利? 諛⑹뼱留?
+                        for (auto& c : pb->chakrams) {
+                            if (!c.alive) continue;
+                            float cx = pb->worldX + cosf(c.angle) * 150.0f;
+                            float cy = pb->worldY + sinf(c.angle) * 150.0f;
+                            if (SegDist(cx, cy, b.prevX, b.prevY, b.x, b.y) < 26.0f) {
+                                c.hp -= dmg;
+                                if (c.hp <= 0.0f) c.alive = false;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dmg;
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+
+                        // 3) 蹂몄껜
+                        if (SegDist(pb->worldX, pb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < PolymorphBoss::BODY * 0.55f) {
+                            if (pb->reflecting()) {
+                                // ?ㅼ씠?꾨が???? 諛섏궗 ???먮옒 ?꾨젰 洹몃?濡???珥앹븣濡?                                b.dirX = -b.dirX; b.dirY = -b.dirY;
+                                b.prevX = b.x;    b.prevY = b.y;
+                                b.isEnemy  = true;
+                                b.enemyDmg = dmg;          // ?뚮젅?댁뼱 ?꾨젰 洹몃?濡?                                b.color    = glm::vec3(0.8f, 0.3f, 1.0f);
+                            } else if (pb->shielded()) {
+                                // 李⑦겕???⑥쓬 ??臾댁쟻 (珥앹븣留??뚮え)
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                            } else {
+                                float dealt = (dmg < pb->hp) ? dmg : pb->hp;
+                                pb->hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                SpawnDamageNumber(pb->worldX, pb->worldY, dealt, true);
+                                if (pb->hp <= 0.0f) pb->alive = false;
+                                if (b.remainingDmg <= 0.001f) b.active = false;
+                            }
+                        }
+                    }
+                }
+
+                // 泥섏튂 蹂댁긽 ?뺤궛 ??珥앹븣/洹쇱젒???꾨땶 紐⑤뱺 二쎌쓬(?곗뇙??컻쨌?ㅽ궗쨌MK2쨌?댄궧 ??컻 ??
+                //   ???ш린????踰덉뵫 EXP/?먯닔/肄ㅻ낫/?≫삁??諛쏅뒗??(scored ?뚮옒洹몃줈 以묐났 諛⑹?).
                 auto creditKill = [&](float xpBase, float scoreBase) {
                     AddKillCombo();
                     g_GameManager.xp        += (long long)(xpBase * g_Stats.xpMult);
@@ -1784,12 +2023,12 @@ int main() {
                     }
                 };
 
-                // 사망 폭발 spawn (다음 UpdateAll 이 실제 erase 하기 전에 위치 캡처)
-                //   + 분열체 사망 시 작은 자식 2마리 (총 2세대까지)
+                // ?щ쭩 ??컻 spawn (?ㅼ쓬 UpdateAll ???ㅼ젣 erase ?섍린 ?꾩뿉 ?꾩튂 罹≪쿂)
+                //   + 遺꾩뿴泥??щ쭩 ???묒? ?먯떇 2留덈━ (珥?2?몃?源뚯?)
                 std::vector<Monster*> mobBorn;
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive && !m->exploded) {
-                        if (!m->scored) {       // 아직 보상 안 받은 죽음 → 정산
+                        if (!m->scored) {       // ?꾩쭅 蹂댁긽 ??諛쏆? 二쎌쓬 ???뺤궛
                             m->scored = true;
                             float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB);
                             creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
@@ -1798,7 +2037,7 @@ int main() {
                                             m->color.r, m->color.g, m->color.b,
                                             /*big=*/false);
                         m->exploded = true;
-                        // 처치 연출 — 프로세스 종료 태그 (강적은 항상 강조)
+                        // 泥섏튂 ?곗텧 ???꾨줈?몄뒪 醫낅즺 ?쒓렇 (媛뺤쟻? ??긽 媛뺤“)
                         {
                             static const wchar_t* W[5] =
                                 { L"terminated", L"killed", L"ended", L"exited", L"0x1B" };
@@ -1810,7 +2049,7 @@ int main() {
                                 SpawnKillTag(m->worldX, m->worldY, 0.85f, 0.95f, 1.0f,
                                              W[rand() % 5], false);
                         }
-                        // 폭발성 엘리트 — 죽을 때 터져 플레이어에게 광역 피해
+                        // ??컻???섎━????二쎌쓣 ???곗졇 ?뚮젅?댁뼱?먭쾶 愿묒뿭 ?쇳빐
                         if (m->elite == 3) {
                             float vbx = m->worldX, vby = m->worldY, vr = 120.0f;
                             SpawnEnemyExplosion(vbx, vby, 1.0f, 0.4f, 0.1f, true);
@@ -1820,8 +2059,8 @@ int main() {
                             float dpx = ppx - vbx, dpy = ppy - vby;
                             if (dpx*dpx + dpy*dpy < vr*vr) g_GameManager.playerHP -= 20.0f;
                         }
-                        // 연쇄 폭발(DEATH_BLAST) — 사망 위치에서 주변 적에게 AoE
-                        //   너프: 데미지 0.8→0.3 + 폭발로 죽은 몹은 다시 안 터짐(무한연쇄 차단)
+                        // ?곗뇙 ??컻(DEATH_BLAST) ???щ쭩 ?꾩튂?먯꽌 二쇰? ?곸뿉寃?AoE
+                        //   ?덊봽: ?곕?吏 0.8??.3 + ??컻濡?二쎌? 紐뱀? ?ㅼ떆 ???곗쭚(臾댄븳?곗뇙 李⑤떒)
                         if (g_Stats.deathBlast && !m->noBlast) {
                             float blastDmg = g_Stats.GetBaseDamage()
                                            * g_Stats.GetDamageMultiplier(0.0f) * 0.3f;
@@ -1852,15 +2091,9 @@ int main() {
                                     if (bm2->hp <= 0.0f) bm2->alive = false;
                                 }
                             }
-                            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                                float ddx = g_MonsterManager.boss->worldX - bx;
-                                float ddy = g_MonsterManager.boss->worldY - by;
-                                if (ddx*ddx + ddy*ddy < blastR*blastR)
-                                    g_MonsterManager.boss->hp -= blastDmg;
-                            }
                         }
                         SpawnWormSplit(m, mobBorn);
-                        SpawnBadSectorZone(m);   // 배드 섹터 — 사망 자리에 감속 구역
+                        SpawnBadSectorZone(m);   // 諛곕뱶 ?뱁꽣 ???щ쭩 ?먮━??媛먯냽 援ъ뿭
                     }
                 }
                 for (auto* nb : mobBorn) g_MonsterManager.monsters.push_back(nb);
@@ -1878,33 +2111,7 @@ int main() {
                                      L"popup closed", true);
                     }
                 }
-                // 보스 사망 → 보상 (score +20000, 버프 2개 픽 / 디버프 없이)
-                if (g_MonsterManager.boss && !g_MonsterManager.boss->alive &&
-                    !g_MonsterManager.boss->exploded) {
-                    Boss* bs = g_MonsterManager.boss;
-                    // 분열 폭발 + 충격파 + 화면 흔들기
-                    SpawnEnemyExplosion(bs->worldX, bs->worldY, 0.6f, 0.95f, 0.6f, true);
-                    SpawnEnemyExplosion(bs->worldX, bs->worldY, 0.4f, 0.9f, 0.4f, true);
-                    SpawnShockWave(bs->worldX, bs->worldY, 350.0f, 0.7f,
-                                   0.5f, 0.95f, 0.5f);
-                    g_ShakeTime = 0.5f; g_ShakeMag = 18.0f;
-                    TriggerFlash(0.5f, 1.0f, 0.6f, 0.5f); TriggerHitStop(0.08f);
-                    bs->exploded = true;
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                    g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
-                    delete bs;
-                    g_MonsterManager.boss = nullptr;
-                }
-
-                // 리로드 러너 사망 → 보상
+                // ReloadRunner boss kill reward
                 if (g_RRBoss && !g_RRBoss->alive && !g_RRBoss->exploded) {
                     auto* rb = g_RRBoss;
                     SpawnEnemyExplosion(rb->worldX, rb->worldY, 1.0f, 0.6f, 0.2f, true);
@@ -1926,41 +2133,19 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
-                // SPAM.dll 사망 → 보상
-                if (g_SpamBoss && !g_SpamBoss->alive && !g_SpamBoss->exploded) {
-                    auto* sb = g_SpamBoss;
-                    SpawnEnemyExplosion(sb->worldX, sb->worldY, 1.0f, 0.4f, 0.85f, true);
-                    SpawnEnemyExplosion(sb->worldX, sb->worldY, 1.0f, 0.8f, 0.3f, true);
-                    SpawnShockWave(sb->worldX, sb->worldY, 380.0f, 0.7f, 1.0f, 0.4f, 0.85f);
-                    g_ShakeTime = 0.5f; g_ShakeMag = 22.0f;
-                    TriggerFlash(1.0f, 0.5f, 0.9f, 0.6f); TriggerHitStop(0.10f);
-                    sb->exploded = true;
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete sb;
-                    g_SpamBoss = nullptr;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
-                }
-
-                // KERNEL.sys 사망 → 보상
-                if (g_KernelBoss && !g_KernelBoss->alive && !g_KernelBoss->exploded) {
-                    auto* kb = g_KernelBoss;
-                    SpawnEnemyExplosion(kb->worldX, kb->worldY, 1.0f, 0.6f, 0.3f, true);
-                    SpawnEnemyExplosion(kb->worldX, kb->worldY, 1.0f, 1.0f, 0.6f, true);
-                    SpawnShockWave(kb->worldX, kb->worldY, 460.0f, 0.8f, 1.0f, 0.6f, 0.25f);
+                // C2_RELAY.sys kill reward
+                if (g_BotnetBoss && !g_BotnetBoss->alive && !g_BotnetBoss->exploded) {
+                    auto* nb2 = g_BotnetBoss;
+                    SpawnEnemyExplosion(nb2->worldX, nb2->worldY, 1.0f, 0.3f, 0.9f, true);
+                    SpawnEnemyExplosion(nb2->worldX, nb2->worldY, 1.0f, 0.5f, 1.0f, true);
+                    SpawnShockWave(nb2->worldX, nb2->worldY, 430.0f, 0.8f, 0.3f, 0.7f, 1.0f);
                     g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
-                    TriggerFlash(1.0f, 0.7f, 0.3f, 0.6f); TriggerHitStop(0.11f);
-                    kb->exploded = true;
+                    TriggerFlash(0.4f, 0.6f, 1.0f, 0.6f); TriggerHitStop(0.11f);
+                    nb2->exploded = true;
                     g_GameManager.scoreAccum += 20000.0f;
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete kb;
-                    g_KernelBoss = nullptr;
+                    delete nb2;
+                    g_BotnetBoss = nullptr;
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
@@ -1970,19 +2155,19 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
-                // FIREWALL.sys 사망 → 보상
-                if (g_FirewallBoss && !g_FirewallBoss->alive && !g_FirewallBoss->exploded) {
-                    auto* fb = g_FirewallBoss;
-                    SpawnEnemyExplosion(fb->worldX, fb->worldY, 1.0f, 0.5f, 0.2f, true);
-                    SpawnEnemyExplosion(fb->worldX, fb->worldY, 1.0f, 0.9f, 0.4f, true);
-                    SpawnShockWave(fb->worldX, fb->worldY, 440.0f, 0.8f, 1.0f, 0.5f, 0.2f);
+                // FORK.worm ?щ쭩 ??蹂댁긽
+                if (g_CentiBoss && !g_CentiBoss->alive && !g_CentiBoss->exploded) {
+                    auto* cb2 = g_CentiBoss;
+                    SpawnEnemyExplosion(cb2->worldX, cb2->worldY, 1.0f, 0.8f, 0.2f, true);
+                    SpawnEnemyExplosion(cb2->worldX, cb2->worldY, 0.7f, 1.0f, 0.3f, true);
+                    SpawnShockWave(cb2->worldX, cb2->worldY, 420.0f, 0.8f, 0.7f, 1.0f, 0.3f);
                     g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
-                    TriggerFlash(1.0f, 0.6f, 0.25f, 0.6f); TriggerHitStop(0.11f);
-                    fb->exploded = true;
+                    TriggerFlash(0.7f, 1.0f, 0.3f, 0.6f); TriggerHitStop(0.11f);
+                    cb2->exploded = true;
                     g_GameManager.scoreAccum += 20000.0f;
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete fb;
-                    g_FirewallBoss = nullptr;
+                    delete cb2;
+                    g_CentiBoss = nullptr;
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
@@ -1992,18 +2177,65 @@ int main() {
                     g_GameManager.currentState = GameState::AUG_SELECT;
                 }
 
-                // 자폭병 사망 (점화 후 폭발 OR 총알 격파)
+                // TOTEM.sys ?щ쭩 ??蹂댁긽
+                if (g_TotemBoss && !g_TotemBoss->alive && !g_TotemBoss->exploded) {
+                    auto* tb = g_TotemBoss;
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.85f, 0.35f, 1.0f, true);
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.5f, 0.95f, true);
+                    SpawnShockWave(tb->worldX, tb->worldY, 440.0f, 0.85f, 0.4f, 0.95f, 1.0f);
+                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
+                    TriggerFlash(0.8f, 0.4f, 1.0f, 0.6f); TriggerHitStop(0.11f);
+                    tb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete tb;
+                    g_TotemBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_BossRewardPicksLeft = 2;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
+                // ?대━紐⑦봽 ?щ쭩 ???붾㈃ ?먮났 + 利앷컯 3媛?+ ?먯닔 50% 異붽?
+                if (g_PolyBoss && !g_PolyBoss->alive && !g_PolyBoss->exploded) {
+                    auto* pb = g_PolyBoss;
+                    SpawnEnemyExplosion(pb->worldX, pb->worldY, 0.6f, 0.2f, 0.9f, true);
+                    SpawnEnemyExplosion(pb->worldX, pb->worldY, 0.9f, 0.3f, 1.0f, true);
+                    SpawnShockWave(pb->worldX, pb->worldY, 450.0f, 0.8f, 0.7f, 0.3f, 1.0f);
+                    g_ShakeTime = 0.6f; g_ShakeMag = 24.0f;
+                    TriggerFlash(0.7f, 0.3f, 1.0f, 0.7f); TriggerHitStop(0.13f);
+                    pb->exploded = true;
+                    g_ViewZoomTarget = 1.0f;
+                    g_GameManager.scoreAccum += 30000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete pb;
+                    g_PolyBoss = nullptr;
+                    g_PolyPrevForm = -1;
+                    g_PolyWasPhase2 = false;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_BossRewardPicksLeft = 3;
+                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                                 g_Stats.distAugTaken);
+                    g_GameManager.currentState = GameState::AUG_SELECT;
+                }
+
+                // ?먰룺蹂??щ쭩 (?먰솕 ????컻 OR 珥앹븣 寃⑺뙆)
                 for (auto bm : g_MonsterManager.bombers) {
                     if (!bm->alive && !bm->exploded) {
                         bool blast = bm->arming;
-                        // 자폭(blast)은 보상 없음. 플레이어가 죽인 경우(!blast)만,
-                        //   그리고 아직 정산 안 됐으면(광역 처치 등) 보상 지급.
+                        // ?먰룺(blast)? 蹂댁긽 ?놁쓬. ?뚮젅?댁뼱媛 二쎌씤 寃쎌슦(!blast)留?
+                        //   洹몃━怨??꾩쭅 ?뺤궛 ???먯쑝硫?愿묒뿭 泥섏튂 ?? 蹂댁긽 吏湲?
                         if (!bm->scored && !blast) {
                             bm->scored = true;
                             creditKill(25.0f + (float)g_Stats.meleeXpBonus, 200.0f);
                         }
                         if (blast) {
-                            // 자폭: 플레이어 죽음급 폭발 (다발 + 이중 충격파)
+                            // ?먰룺: ?뚮젅?댁뼱 二쎌쓬湲???컻 (?ㅻ컻 + ?댁쨷 異⑷꺽??
                             for (int k = 0; k < 5; k++) {
                                 SpawnEnemyExplosion(bm->worldX, bm->worldY,
                                                     1.0f, 0.3f + (k%2)*0.3f, 0.1f, true);
@@ -2015,13 +2247,13 @@ int main() {
                                            bm->blastRadius * 1.2f, 0.35f,
                                            1.0f, 0.95f, 0.4f, /*needsBg=*/true);
                         } else {
-                            // 총알 격파: 평범한 폭발 파티클 + 종료 태그
+                            // 珥앹븣 寃⑺뙆: ?됰쾾????컻 ?뚰떚??+ 醫낅즺 ?쒓렇
                             SpawnEnemyExplosion(bm->worldX, bm->worldY,
                                                 0.9f, 0.4f, 0.4f, true);
                             SpawnKillTag(bm->worldX, bm->worldY, 1.0f, 0.5f, 0.45f,
                                          L"ransomware purged", true);
                         }
-                        // HACK_BOMBER: 해킹 폭발 VFX (CollisionSystem 에서 플래그 설정됨)
+                        // HACK_BOMBER: ?댄궧 ??컻 VFX (CollisionSystem ?먯꽌 ?뚮옒洹??ㅼ젙??
                         if (bm->hackBlastPending) {
                             SpawnEnemyExplosion(bm->worldX, bm->worldY,
                                                 0.3f, 1.0f, 0.4f, true);
@@ -2032,27 +2264,27 @@ int main() {
                         bm->exploded = true;
                     }
                 }
-                // VFX 체크 완료 후 죽은 자폭병 메모리 정리
+                // VFX 泥댄겕 ?꾨즺 ??二쎌? ?먰룺蹂?硫붾え由??뺣━
                 g_MonsterManager.ClearDeadBombers();
 
-                // 잡몹 근접 데미지로 HP 감소했는지 (전 프레임 비교)
+                // ?〓す 洹쇱젒 ?곕?吏濡?HP 媛먯냼?덈뒗吏 (???꾨젅??鍮꾧탳)
                 if (g_GameManager.playerHP < g_PrevHP - 0.0001f) hit = true;
                 if (hit && g_Stats.lightStep)
                     g_Stats.lightStepDisableTimer = 10.0f;
                 g_PrevHP = g_GameManager.playerHP;
 
-                // 레벨업: xp 가 필요량을 넘으면 레벨업 (남은 xp 이월) + AUG_SELECT
+                // ?덈꺼?? xp 媛 ?꾩슂?됱쓣 ?섏쑝硫??덈꺼??(?⑥? xp ?댁썡) + AUG_SELECT
                 if (g_GameManager.currentState == GameState::RUNNING) {
                     long long need = g_ExpSystem.Required(g_GameManager.playerLevel);
                     if (g_GameManager.xp >= need) {
                         g_GameManager.xp -= need;
                         ++g_GameManager.playerLevel;
-                        // (레벨업 풀스크린 플래시 제거 — 눈부심. AUG_SELECT 카드로 충분히 안내)
+                        // (?덈꺼????ㅽ겕由??뚮옒???쒓굅 ???덈??? AUG_SELECT 移대뱶濡?異⑸텇???덈궡)
                         g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                      g_Stats.distAugTaken);
 
-                        // 변환 카드 — 25% 확률, 현재 무기와 다른 StartWeapon 으로 전환
-                        //   검객/궁수는 총을 안 쓰므로 변환 카드 제외
+                        // 蹂??移대뱶 ??25% ?뺣쪧, ?꾩옱 臾닿린? ?ㅻⅨ StartWeapon ?쇰줈 ?꾪솚
+                        //   寃媛?沅곸닔??珥앹쓣 ???곕?濡?蹂??移대뱶 ?쒖쇅
                         g_ConversionWeapon = -1;
                         if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
                             (rand() % 100) < 25 && g_CurrentWeapon >= 0) {
@@ -2066,19 +2298,19 @@ int main() {
                     }
                 }
 
-                // 시간 점수
+                // ?쒓컙 ?먯닔
                 g_GameManager.AddScore(FIXED_DT * 100.0f);
             }
             accumulator -= FIXED_DT;
         }
 
-        // ── 손맛: 데미지 숫자 / 콤보 / 플래시 매 프레임 갱신 (게임 진행 중에만 감쇠) ──
+        // ?? ?먮쭧: ?곕?吏 ?レ옄 / 肄ㅻ낫 / ?뚮옒??留??꾨젅??媛깆떊 (寃뚯엫 吏꾪뻾 以묒뿉留?媛먯뇿) ??
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::DYING) {
             for (auto& d : g_DmgNumbers) {
                 d.x  += d.vx * delta;
                 d.y  += d.vy * delta;
-                d.vy += 70.0f * delta;        // 약한 중력 (솟구쳤다 처짐)
+                d.vy += 70.0f * delta;        // ?쏀븳 以묐젰 (?잕뎄爾ㅻ떎 泥섏쭚)
                 d.life -= delta;
             }
             g_DmgNumbers.erase(std::remove_if(g_DmgNumbers.begin(), g_DmgNumbers.end(),
@@ -2090,7 +2322,7 @@ int main() {
             g_ComboPulse -= delta * 4.0f;
             if (g_ComboPulse < 0.0f) g_ComboPulse = 0.0f;
             if (g_ComboMilestone > 0.0f) g_ComboMilestone -= delta;
-            if (g_P2ToastTimer > 0.0f) g_P2ToastTimer -= delta;   // 페이즈2 토스트
+            if (g_P2ToastTimer > 0.0f) g_P2ToastTimer -= delta;
         }
         if (g_FlashIntensity > 0.0f) {
             g_FlashIntensity -= delta * 3.5f;
@@ -2103,13 +2335,13 @@ int main() {
             bool  moving = keys[GLFW_KEY_W] || keys[GLFW_KEY_S] ||
                            keys[GLFW_KEY_A] || keys[GLFW_KEY_D];
 
-            // ── 피격 펀치 — HP 감소 시 빨간 비네트만 (시야 변동 제거, 창 크기 고정) ──
+            // ?? ?쇨꺽 ?移???HP 媛먯냼 ??鍮④컙 鍮꾨꽕?몃쭔 (?쒖빞 蹂???쒓굅, 李??ш린 怨좎젙) ??
             {
                 if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
-                if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; Audio::PlaySfx(Audio::Sfx::Hurt); }   // 피격 비네트 + HP바 팝 + 피격음
+                if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; Audio::PlaySfx(Audio::Sfx::Hurt); }
                 g_WinPrevHP = g_GameManager.playerHP;
-                // 창 크기는 g_Stats.windowSize 로 고정 (HP 와 무관)
+                // 李??ш린??g_Stats.windowSize 濡?怨좎젙 (HP ? 臾닿?)
                 g_WindowSizeCur = g_Stats.windowSize;
                 playerWin.width = playerWin.height = g_WindowSizeCur;
                 playerWin.x = pCX - g_WindowSizeCur * 0.5f;
@@ -2118,18 +2350,18 @@ int main() {
             if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
             if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
 
-            // HP 재생 (REGEN_UP, 거대화, 미니화 모두 regenPerSec 에 합산됨)
+            // HP ?ъ깮 (REGEN_UP, 嫄곕??? 誘몃땲??紐⑤몢 regenPerSec ???⑹궛??
             if (g_Stats.regenPerSec > 0.0f) {
                 g_GameManager.playerHP += g_Stats.regenPerSec * delta;
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
             }
-            // 출혈(D_BLEED) — 초당 HP 감소 (재생으로 상쇄 가능, 죽지는 않음 하한 1)
+            // 異쒗삁(D_BLEED) ??珥덈떦 HP 媛먯냼 (?ъ깮?쇰줈 ?곸뇙 媛?? 二쎌????딆쓬 ?섑븳 1)
             if (g_Stats.bleedPerSec > 0.0f && g_GameManager.playerHP > 1.0f) {
                 g_GameManager.playerHP -= g_Stats.bleedPerSec * delta;
                 if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
             }
-            // 배드 섹터 출혈 — 감속 구역 안이면 출혈 타이머 2초로 갱신, 빠져나와도 잔류
+            // 諛곕뱶 ?뱁꽣 異쒗삁 ??媛먯냽 援ъ뿭 ?덉씠硫?異쒗삁 ??대㉧ 2珥덈줈 媛깆떊, 鍮좎졇?섏????붾쪟
             {
                 bool inZone = false;
                 float pcx = playerWin.x + playerWin.width  * 0.5f;
@@ -2144,17 +2376,17 @@ int main() {
                 if (g_BadSectorBleed > 0.0f) {
                     g_BadSectorBleed -= delta;
                     if (g_GameManager.playerHP > 1.0f) {
-                        g_GameManager.playerHP -= 4.0f * delta;   // 출혈 DPS
+                        g_GameManager.playerHP -= 4.0f * delta;   // 異쒗삁 DPS
                         if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
                     }
                 }
             }
 
-            // 도감 발견 — 원거리/자폭병 (존재하면 발견 처리)
+            // ?꾧컧 諛쒓껄 ???먭굅由??먰룺蹂?(議댁옱?섎㈃ 諛쒓껄 泥섎━)
             if (!g_MonsterManager.rangedMobs.empty()) MarkMobSeenId(CM_RANGED);
             if (!g_MonsterManager.bombers.empty())    MarkMobSeenId(CM_BOMBER);
 
-            // 업적 조건 체크 (런 점수/킬/보유 증강 기준 — 보스 업적은 처치 시점에서 처리)
+            // ?낆쟻 議곌굔 泥댄겕 (???먯닔/??蹂댁쑀 利앷컯 湲곗? ??蹂댁뒪 ?낆쟻? 泥섏튂 ?쒖젏?먯꽌 泥섎━)
             {
                 long long runScore = g_GameManager.score;
                 long long runKills = g_Stats.killCount;
@@ -2174,31 +2406,30 @@ int main() {
 
             UpdateEnemyFx(delta);
 
-            // 충격파 업데이트
+            // 異⑷꺽???낅뜲?댄듃
             for (auto& sw : g_ShockWaves) {
                 if (!sw.active) continue;
                 sw.life -= delta;
                 if (sw.life <= 0.0f) sw.active = false;
             }
 
-            // 검객 스윙 잔상 업데이트
+            // 寃媛??ㅼ쐷 ?붿긽 ?낅뜲?댄듃
             for (auto& sl : g_Slashes) {
                 if (!sl.active) continue;
                 sl.life -= delta;
                 if (sl.life <= 0.0f) sl.active = false;
             }
 
-            // 스캔 레이저 빔 페이드
             for (auto& lb : g_LaserBeams) lb.life -= delta;
             g_LaserBeams.erase(std::remove_if(g_LaserBeams.begin(), g_LaserBeams.end(),
                 [](const LaserBeam& b){ return b.life <= 0.0f; }), g_LaserBeams.end());
 
-            // 배드 섹터 감속 구역 수명 + 부식 확산
+            // 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭 ?섎챸 + 遺???뺤궛
             for (auto& z : g_SlowZones) { z.life -= delta; z.age += delta; }
             g_SlowZones.erase(std::remove_if(g_SlowZones.begin(), g_SlowZones.end(),
                 [](const SlowZone& z){ return z.life <= 0.0f; }), g_SlowZones.end());
 
-            // 타격 스파크 업데이트 (이동 + 감속 + 수명)
+            // ?寃??ㅽ뙆???낅뜲?댄듃 (?대룞 + 媛먯냽 + ?섎챸)
             for (auto& sp : g_Sparks) {
                 sp.x += sp.vx * delta;
                 sp.y += sp.vy * delta;
@@ -2208,17 +2439,15 @@ int main() {
             }
             g_Sparks.erase(std::remove_if(g_Sparks.begin(), g_Sparks.end(),
                 [](const Spark& s){ return s.life <= 0.0f; }), g_Sparks.end());
-            // 이동 잔상 수명 갱신
+            // ?대룞 ?붿긽 ?섎챸 媛깆떊
             for (auto& tr : g_Trail) tr.life -= delta;
             g_Trail.erase(std::remove_if(g_Trail.begin(), g_Trail.end(),
                 [](const Trail& t){ return t.life <= 0.0f; }), g_Trail.end());
-            // 머즐 플래시 카운트다운
             if (g_MuzzleTimer > 0.0f) g_MuzzleTimer -= delta;
 
-            // 화면 흔들기 카운트다운
             if (g_ShakeTime > 0.0f) g_ShakeTime -= delta;
 
-            // 초당 EXP 누적 (다가오는 죽음 + 잡몹 가속)
+            // 珥덈떦 EXP ?꾩쟻 (?ㅺ??ㅻ뒗 二쎌쓬 + ?〓す 媛??
             if (g_Stats.xpPerSec > 0.0f) {
                 g_XpTimeAccum += g_Stats.xpPerSec * g_Stats.xpMult * delta;
                 if (g_XpTimeAccum >= 1.0f) {
@@ -2228,11 +2457,10 @@ int main() {
                 }
             }
 
-            // 가벼운 발걸음 비활성 카운트다운
             if (g_Stats.lightStepDisableTimer > 0.0f)
                 g_Stats.lightStepDisableTimer -= delta;
 
-            // 취함: drunkCooldown + drunkActiveDuration 사이클 (중복 픽 시 파라미터 변동)
+            // 痍⑦븿: drunkCooldown + drunkActiveDuration ?ъ씠??(以묐났 ?????뚮씪誘명꽣 蹂??
             if (g_Stats.drunk) {
                 g_DrunkCycle += delta;
                 if (!g_DrunkActive && g_DrunkCycle >= g_Stats.drunkCooldown) {
@@ -2246,67 +2474,73 @@ int main() {
                 }
             }
 
-            const float p2mult = 1.0f;
+            // ?대━紐⑦봽 2?섏씠利?= 吏꾩쭨 理쒖쥌蹂댁뒪: 紐⑤뱺 ???뚰솚 3諛?(蹂댁뒪 二쎌쑝硫?1諛?蹂듦?)
+            bool  polyP2  = (g_PolyBoss && g_PolyBoss->phase2);
+            float p2mult  = polyP2 ? 3.0f : 1.0f;
 
-            // 점수 기반 난이도 램프 — 점수 오를수록 스폰↑·체력↑·속도↑ (중후반 지루함 방지)
-            //   intensity: 10만점=1, 20만점=2 ... 상한 6 (60만점)
+            // ?먯닔 湲곕컲 ?쒖씠???⑦봽 ???먯닔 ?ㅻ??섎줉 ?ㅽ룿?뫢룹껜?β넁쨌?띾룄??(以묓썑諛?吏猷⑦븿 諛⑹?)
+            //   intensity: 10留뚯젏=1, 20留뚯젏=2 ... ?곹븳 6 (60留뚯젏)
             float intensity = (float)g_GameManager.score / 100000.0f;
             if (intensity > 6.0f) intensity = 6.0f;
-            float rampSpawn = 1.0f + intensity * 0.40f;   // 스폰 빈도 (너프: 0.55 → 0.40, ×3.4 @60만)
-            float rampSpd   = 1.0f + intensity * 0.09f;   // 몹 속도
-            // 보스전 중(전조 포함)엔 트래시를 대폭 줄여 보스에 집중 가능하게
-            bool  bossNow = g_MonsterManager.boss || g_RRBoss ||
-                            g_SpamBoss || g_KernelBoss || g_FirewallBoss ||
+            float rampSpawn = 1.0f + intensity * 0.40f;   // ?ㅽ룿 鍮덈룄 (?덊봽: 0.55 ??0.40, 횞3.4 @60留?
+            float rampSpd   = 1.0f + intensity * 0.09f;   // 紐??띾룄
+            bool  bossNow = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
                             g_BossWarnTimer > 0.0f;
-            // 몹 체력은 별도로 더 높은 상한까지 계속 증가 — 후반 치명타에 즉사 방지
-            //   (스폰/속도는 성능·체감 위해 60만에서 캡, 체력만 140만까지 램프)
+            // 紐?泥대젰? 蹂꾨룄濡????믪? ?곹븳源뚯? 怨꾩냽 利앷? ???꾨컲 移섎챸???利됱궗 諛⑹?
+            //   (?ㅽ룿/?띾룄???깅뒫쨌泥닿컧 ?꾪빐 60留뚯뿉??罹? 泥대젰留?140留뚭퉴吏 ?⑦봽)
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > 16.0f) hpIntensity = 16.0f;
-            float rampHp    = 1.0f + hpIntensity * 0.55f; // 몹 체력 스케일 ↑ (초반 강화 보정용)
-            // 특수 잡몹(돌진/회피/거대) 출현 확률 — 점수 비례 (초반 0 → 약 13.5만점에 45% 상한)
-            //   D_MOB_FRENZY 디버프 보유 시 배율 ↑ (상한도 비례 확대)
+            float rampHp    = 1.0f + hpIntensity * 0.55f; // 紐?泥대젰 ?ㅼ?????(珥덈컲 媛뺥솕 蹂댁젙??
+            // ?뱀닔 ?〓す(?뚯쭊/?뚰뵾/嫄곕?) 異쒗쁽 ?뺣쪧 ???먯닔 鍮꾨? (珥덈컲 0 ????13.5留뚯젏??45% ?곹븳)
+            //   D_MOB_FRENZY ?붾쾭??蹂댁쑀 ??諛곗쑉 ??(?곹븳??鍮꾨? ?뺣?)
             int   varietyPct = (int)std::min(45.0f * g_Stats.varietyChanceMult,
                                    (float)g_GameManager.score / 3000.0f * g_Stats.varietyChanceMult);
-            // 엘리트 변종 확률 — 점수 비례 (초반 0 → 약 14만점에 12% 상한)
-            //   D_MOB_ELITE 디버프 보유 시 배율 ↑
+            // ?섎━??蹂醫??뺣쪧 ???먯닔 鍮꾨? (珥덈컲 0 ????14留뚯젏??12% ?곹븳)
             int   elitePct   = (int)std::min(40.0f,
                                    (float)g_GameManager.score / 12000.0f * g_Stats.eliteChanceMult);
 
+            // ?ㅽ룿 ?곸뿭 ??2?섏씠利?以뚯븘?????뺤옣??蹂댁씠?? ?곸뿭 紐⑥꽌由ъ뿉???ㅽ룿.
             float saX = 0.0f, saY = 0.0f;
             int   saW = screenWidth, saH = screenHeight;
+            if (polyP2) {
+                float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
+                saW = (int)((float)screenWidth  / zb);
+                saH = (int)((float)screenHeight / zb);
+                saX = (float)screenWidth  * 0.5f - saW * 0.5f;
+                saY = (float)screenHeight * 0.5f - saH * 0.5f;
+            }
 
-            // 잡몹 스폰 (D_MOB_SPAWN → 더 자주 + cap +200, D_MOB_HP → HP+, 점수 램프)
+            // ?〓す ?ㅽ룿 (D_MOB_SPAWN ?????먯＜ + cap +200, D_MOB_HP ??HP+, ?먯닔 ?⑦봽)
             spawnTimer += delta;
             float spawnInterval = 0.3f * g_Stats.mobSpawnMult / (p2mult * rampSpawn);
-            if (bossNow) spawnInterval *= 2.5f;   // 보스전: 트래시 스폰 대폭 감소
-            // 쉬움 난이도 — 잡몹 스폰 느리게(이지도 어렵다는 피드백). 체력은 아래 effHpMul 에서 ↓
+            if (bossNow) spawnInterval *= 2.5f;   // 蹂댁뒪?? ?몃옒???ㅽ룿 ???媛먯냼
             float effHpMul = 1.0f;
             if (g_Difficulty == Difficulty::EASY) { spawnInterval *= 1.6f; effHpMul = 0.65f; }
             else if (g_Difficulty == Difficulty::HARD) { effHpMul = 1.1f; }
-            // 보스 전면전 — 활성 보스가 있으면 자연 잡몹/원거리/자폭 스폰 완전 정지
-            //   (보스가 직접 소환하는 adds 는 각 보스 클래스 내부에서만)
+            // 蹂댁뒪 ?꾨㈃?????쒖꽦 蹂댁뒪媛 ?덉쑝硫??먯뿰 ?〓す/?먭굅由??먰룺 ?ㅽ룿 ?꾩쟾 ?뺤?
+            //   (蹂댁뒪媛 吏곸젒 ?뚰솚?섎뒗 adds ??媛?蹂댁뒪 ?대옒???대??먯꽌留?
             auto anyBossAlive = [&]() -> bool {
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) return true;
                 if (g_RRBoss && g_RRBoss->alive) return true;
-                if (g_SpamBoss && g_SpamBoss->alive) return true;
-                if (g_KernelBoss && g_KernelBoss->alive) return true;
-                if (g_FirewallBoss && g_FirewallBoss->alive) return true;
+                if (g_PolyBoss && g_PolyBoss->alive) return true;
+                if (g_BotnetBoss && g_BotnetBoss->alive) return true;
+                if (g_CentiBoss && g_CentiBoss->alive) return true;
+                if (g_TotemBoss && g_TotemBoss->alive) return true;
                 return false;
             };
             bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f;
             if (bossDuel) spawnInterval = 1e9f;
             if (spawnTimer > spawnInterval) {
-                // 절대 상한 — 폴리2페이즈×점수램프로 한도가 1000+ 까지 폭주하던 것 방지 (성능)
+                // ?덈? ?곹븳 ???대━2?섏씠利댠쀬젏?섎옩?꾨줈 ?쒕룄媛 1000+ 源뚯? ??＜?섎뜕 寃?諛⑹? (?깅뒫)
                 int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
                 if (effCap > 180) effCap = 180;
-                // 한 마리 스폰 + 디버프 변환 (D_MOB_PACK 시 군집으로 여러 번)
+                // ??留덈━ ?ㅽ룿 + ?붾쾭??蹂??(D_MOB_PACK ??援곗쭛?쇰줈 ?щ윭 踰?
                 auto spawnOne = [&]() {
                     size_t mbefore = g_MonsterManager.monsters.size();
                     g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                               effCap,
                                               g_Stats.monsterHpMult * rampHp * effHpMul, saX, saY, saW, saH,
                                               varietyPct, elitePct);
-                    // 디버프 보유 시 일부 몹을 분열체/점멸체로 (특수 잡몹 안 된 경우만)
+                    // ?붾쾭??蹂댁쑀 ???쇰? 紐뱀쓣 遺꾩뿴泥??먮㈇泥대줈 (?뱀닔 ?〓す ????寃쎌슦留?
                     if (g_MonsterManager.monsters.size() > mbefore) {
                         Monster* nm = g_MonsterManager.monsters.back();
                         if (nm->kind == MobKind::NORMAL) {
@@ -2318,23 +2552,23 @@ int main() {
                                 nm->MakeKind(MobKind::ORBITER);
                             else if (g_Stats.spawnerMobs && (rand() % 100) < 14) {
                                 nm->MakeKind(MobKind::SPAWNER);
-                                // 플레이어를 쫓지 않게 — 화면 안 임의 지점을 배치 목표로 (가장자리 여백 안)
+                                // ?뚮젅?댁뼱瑜?已볦? ?딄쾶 ???붾㈃ ???꾩쓽 吏?먯쓣 諛곗튂 紐⑺몴濡?(媛?μ옄由??щ갚 ??
                                 nm->blinkTargetX = 160.0f + (float)(rand() % (screenWidth  > 360 ? screenWidth  - 320 : 1));
                                 nm->blinkTargetY = 160.0f + (float)(rand() % (screenHeight > 360 ? screenHeight - 320 : 1));
                             }
                             else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
                                 nm->MakeKind(MobKind::SHIELDED);
-                            // 배드 섹터(M) — 디버프 보유 시 흔함, 자연 스폰은 매우 낮음. 50만점 넘으면 미등장.
+                            // 諛곕뱶 ?뱁꽣(M) ???붾쾭??蹂댁쑀 ???뷀븿, ?먯뿰 ?ㅽ룿? 留ㅼ슦 ??쓬. 50留뚯젏 ?섏쑝硫?誘몃벑??
                             else if (g_GameManager.score < 500000 &&
                                      ((g_Stats.badsectorMobs && (rand() % 100) < 12) ||
                                       (rand() % 1000) < 5))
                                 nm->MakeKind(MobKind::BADSECTOR);
-                            // 레지스트리 에러(M) — 더 희귀. 50만점 넘으면 미등장.
+                            // ?덉??ㅽ듃由??먮윭(M) ?????ш?. 50留뚯젏 ?섏쑝硫?誘몃벑??
                             else if (g_GameManager.score < 500000 &&
                                      ((g_Stats.regerrorMobs && (rand() % 100) < 8) ||
                                       (rand() % 1000) < 2))
                                 nm->MakeKind(MobKind::REGERROR);
-                            // 디도스 — 22만점 이후·보스전 제외. 1마리 위주, cap 10~18%.
+                            // ?붾룄????22留뚯젏 ?댄썑쨌蹂댁뒪???쒖쇅. 1留덈━ ?꾩＜, cap 10~18%.
                             else if (!bossDuel && g_GameManager.score > 220000 &&
                                      (rand() % 100) < (g_GameManager.score < 400000 ? 4 : 8)) {
                                 int ddosCount = 0;
@@ -2357,30 +2591,29 @@ int main() {
                                 }
                             }
                         }
-                        // 스케쥴러 강화 — 특수(비-NORMAL) 잡몹 HP 추가 배율
+                        // ?ㅼ?伊대윭 媛뺥솕 ???뱀닔(鍮?NORMAL) ?〓す HP 異붽? 諛곗쑉
                         if (nm->kind != MobKind::NORMAL && g_Stats.specialMobHpMult != 1.0f)
                             nm->hp *= g_Stats.specialMobHpMult;
-                        // 트로이목마 강화 — 점멸체(트로이목마) 점멸 재사용시간 단축
+                        // ?몃줈?대ぉ留?媛뺥솕 ???먮㈇泥??몃줈?대ぉ留? ?먮㈇ ?ъ궗?⑹떆媛??⑥텞
                         if (nm->kind == MobKind::BLINKER && g_Stats.trojanBoost)
                             nm->blinkIntervalMul = 0.55f;
                     }
                 };
-                int packN = 1 + g_Stats.mobPackBonus;       // D_MOB_PACK: 군집 스폰
+                int packN = 1 + g_Stats.mobPackBonus;       // D_MOB_PACK: 援곗쭛 ?ㅽ룿
                 for (int p = 0; p < packN; p++) spawnOne();
                 spawnTimer = 0.0f;
             }
 
-            // 게임 시간 카운트
             g_GameTime += delta;
 
-            // 보스 스폰 — 20만점마다 BossDir 로테이션
+            // 蹂댁뒪 ?ㅽ룿 ???쇰컲 蹂댁뒪 20留뚯젏留덈떎 / ?대━紐⑦봽 50留뚯젏 怨좎젙.
+            //   (?대뼡 蹂댁뒪???댁븘?덉쑝硫??湲?= ?숈떆 ?ㅽ룿 諛⑹?)
             {
-                bool bossActive = g_MonsterManager.boss ||
-                                  g_RRBoss || g_SpamBoss || g_KernelBoss ||
-                                  g_FirewallBoss || g_BossWarnTimer > 0.0f;
-                // 라운드2 — 보스 눈덩이 차단: 보스를 잡아 완전히 정리되는 순간(활성→비활성),
-                //   다음 보스 임계값을 현재 점수+20만으로 리베이스 → 최소 20만점 휴식 보장
-                //   (보스전 중 쌓인 점수로 잡자마자 또 보스 뜨던 악순환 제거).
+                bool bossActive = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
+                                  g_BossWarnTimer > 0.0f;
+                // ?쇱슫?? ??蹂댁뒪 ?덈뜦??李⑤떒: 蹂댁뒪瑜??≪븘 ?꾩쟾???뺣━?섎뒗 ?쒓컙(?쒖꽦?믩퉬?쒖꽦),
+                //   ?ㅼ쓬 蹂댁뒪 ?꾧퀎媛믪쓣 ?꾩옱 ?먯닔+20留뚯쑝濡?由щ쿋?댁뒪 ??理쒖냼 20留뚯젏 ?댁떇 蹂댁옣
+                //   (蹂댁뒪??以??볦씤 ?먯닔濡??≪옄留덉옄 ??蹂댁뒪 ?⑤뜕 ?낆닚???쒓굅).
                 static bool s_prevBossActive = false;
                 if (s_prevBossActive && !bossActive) {
                     long long rebase = (long long)g_GameManager.score + 200000;
@@ -2388,8 +2621,10 @@ int main() {
                 }
                 s_prevBossActive = bossActive;
                 float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
+                float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
+                              : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
 
-                // 전조 시작 — pick·이름·HP 확정 후 2.5초 경고. 실제 생성은 만료 시.
+                // ?꾩“ ?쒖옉 ??pick쨌?대쫫쨌HP ?뺤젙 ??2.5珥?寃쎄퀬. ?ㅼ젣 ?앹꽦? 留뚮즺 ??
                 auto startWarn = [&](int pick, const wchar_t* name, float hp) {
                     g_BossWarnPick = pick; g_BossWarnName = name;
                     g_BossWarnHp = hp;     g_BossWarnTimer = BOSS_WARN_DUR;
@@ -2397,84 +2632,140 @@ int main() {
 
                 if (!bossActive) {
                     if (g_CreativeBossPending) {
-                        // 크리에이티브: 선택한 보스 (점수 무관, 1회)
+                        // ?щ━?먯씠?곕툕: ?좏깮??蹂댁뒪 (?먯닔 臾닿?, 1??
                         g_CreativeBossPending = false;
                         switch (g_CreativeBossPick) {
-                        case 0:  startWarn(0, L"HANG.exe",    bossHpC);         break;
-                        case 2:  startWarn(2, L"VOLLEY.sys",  bossHpC);         break;
-                        case 3:  startWarn(3, L"SPAM.dll",      bossHpC * 0.65f); break;
-                        case 5:  startWarn(5, L"KERNEL.sys",    bossHpC * 0.45f); break;
-                        case 6:  startWarn(6, L"FIREWALL.sys",  bossHpC * 0.7f);  break;
-                        default: startWarn(0, L"HANG.exe",      bossHpC);         break;
+                        case 2:  startWarn(2, L"VOLLEY.sys",    bossHpC);         break;
+                        case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
+                        case 7:  startWarn(7, L"C2_RELAY.sys",  bossHpC * 0.75f); break;
+                        case 8:  startWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
+                        case 9:  startWarn(9, L"RITE.CORE",     bossHpC * 0.72f); break;
+                        default: startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
                         }
                     }
                     else if (g_GameManager.score >= g_NextBossScore) {
+                        // 20留뚯젏留덈떎 濡쒗뀒?댁뀡 (50留?1???대━ 怨좎젙)
                         g_NextBossScore += 200000;
                         float sc = 0.36f + (float)g_GameManager.score / 300000.0f;
                         if (sc > 9.0f) sc = 9.0f;
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.022f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
-                        int pick = BossDir::RollScorePick();
-                        startWarn(pick, BossDir::DisplayName(pick),
-                                  bossHp * BossDir::HpMul(pick));
+                        if (!g_PolySpawned && g_GameManager.score >= 500000) {
+                            g_PolySpawned = true;
+                            startWarn(4, L"POLYMORPH.vir", polyHpC);
+                        } else {
+                            int pick = BossDir::RollScorePick();
+                            startWarn(pick, BossDir::DisplayName(pick),
+                                      bossHp * BossDir::HpMul(pick));
+                        }
                     }
                 }
 
-                // 전조 진행 → 만료 시 실제 보스 생성 + 등장 연출
+                // ?꾩“ 吏꾪뻾 ??留뚮즺 ???ㅼ젣 蹂댁뒪 ?앹꽦 + ?깆옣 ?곗텧
                 if (g_BossWarnTimer > 0.0f) {
                     g_BossWarnTimer -= delta;
                     if (g_BossWarnTimer <= 0.0f) {
                         g_BossWarnTimer = 0.0f;
-                        // C15: 소환 위치 랜덤화 — 항상 중앙 근처라 거기서 캠핑/샷건 파훼되던 문제.
-                        //   화면 안쪽(가장자리 마진 제외) 전 영역에서 무작위 위치.
+                        // C15: ?뚰솚 ?꾩튂 ?쒕뜡??????긽 以묒븰 洹쇱쿂??嫄곌린??罹좏븨/?룰굔 ?뚰쎕?섎뜕 臾몄젣.
+                        //   ?붾㈃ ?덉そ(媛?μ옄由?留덉쭊 ?쒖쇅) ???곸뿭?먯꽌 臾댁옉???꾩튂.
                         float bMargin = 340.0f * g_Scale;
                         float bRangeX = std::max(1.0f, (float)screenWidth  - 2.0f * bMargin);
                         float bRangeY = std::max(1.0f, (float)screenHeight - 2.0f * bMargin);
                         float bsx = bMargin + (float)(rand() % (int)bRangeX);
                         float bsy = bMargin + (float)(rand() % (int)bRangeY);
                         switch (g_BossWarnPick) {
-                        case 0:
-                            g_MonsterManager.boss =
-                                new Boss(bsx, bsy, screenWidth, screenHeight, g_BossWarnHp);
-                            break;
                         case 2:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
                             break;
-                        case 3:
-                            g_SpamBoss = new SpamBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_SpamBoss->worldX = g_SpamBoss->baseX = bsx;
-                            g_SpamBoss->worldY = g_SpamBoss->baseY = bsy;
+                        case 4:
+                            g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_PolyBoss->worldX = bsx; g_PolyBoss->worldY = bsy;
+                            g_PolyPrevForm = -1;
                             break;
-                        case 5:
-                            g_KernelBoss = new KernelBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_KernelBoss->worldX = bsx; g_KernelBoss->worldY = bsy;
+                        case 7:
+                            g_BotnetBoss = new BotnetBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_BotnetBoss->worldX = bsx; g_BotnetBoss->worldY = bsy;
+                            // ?쒖닔 ?꾨㈃?????〓す ?≪닔 + 珥덇린 ?⑦궥 ?ъ떆
+                            {
+                                float absorb = 0.0f;
+                                for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
+                                for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
+                                for (auto* bm : g_MonsterManager.bombers)     if (bm->alive) absorb += bm->hp;
+                                g_BotnetBoss->hp += absorb * 0.35f;
+                                g_BotnetBoss->maxHp += absorb * 0.35f;
+                                for (auto* m  : g_MonsterManager.monsters)   delete m;
+                                g_MonsterManager.monsters.clear();
+                                for (auto* r  : g_MonsterManager.rangedMobs)  delete r;
+                                g_MonsterManager.rangedMobs.clear();
+                                for (auto* bm : g_MonsterManager.bombers)     delete bm;
+                                g_MonsterManager.bombers.clear();
+                                {
+                                    float pCX = playerWin.x + playerWin.width  * 0.5f;
+                                    float pCY = playerWin.y + playerWin.height * 0.5f;
+                                    g_BotnetBoss->deployRushFromHosts(3, pCX, pCY);
+                                    g_BotnetBoss->deployMapRush(pCX, pCY, 3);
+                                }
+                                g_ShakeTime = 0.45f; g_ShakeMag = 16.0f;
+                            }
                             break;
-                        case 6:
-                            g_FirewallBoss = new FirewallBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_FirewallBoss->worldX = bsx; g_FirewallBoss->worldY = bsy;
+                        case 8:
+                            g_CentiBoss = new CentipedeBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_CentiBoss->worldX = bsx; g_CentiBoss->worldY = bsy;
+                            // ?? ?꾨줈?좏??? ?꾩옱 ?〓す ?꾩껜 泥대젰???≪닔(?곹븳) ???쒖닔 蹂댁뒪????
+                            //   ?〓す? 蹂댁뒪濡??≪닔?섏뼱 ?щ씪吏怨? 蹂댁뒪???숈븞 異붽? ?ㅽ룿 ????
+                            {
+                                float absorb = 0.0f;
+                                for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
+                                for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
+                                for (auto* bm : g_MonsterManager.bombers)     if (bm->alive) absorb += bm->hp;
+                                // ?곹븳 ?쒓굅 ??吏꾩쭨 '?〓す ?꾩껜 泥대젰 + 蹂댁뒪 泥대젰'. ?꾨컲 ?깆빱 ?〓す
+                                //   horde 媛 留롮쓣?섎줉 蹂댁뒪??洹몃쭔???⑤떒(?〓す蹂대떎 鍮⑤━ 二쎈뒗 臾몄젣 ?닿껐).
+                                g_CentiBoss->hp += absorb; g_CentiBoss->maxHp += absorb;
+                                // ?〓す ?≪닔 ???붾㈃ ?뺣━(?쒖닔 ???
+                                for (auto* m  : g_MonsterManager.monsters)   delete m;
+                                g_MonsterManager.monsters.clear();
+                                for (auto* r  : g_MonsterManager.rangedMobs)  delete r;
+                                g_MonsterManager.rangedMobs.clear();
+                                for (auto* bm : g_MonsterManager.bombers)     delete bm;
+                                g_MonsterManager.bombers.clear();
+                                g_ShakeTime = 0.4f; g_ShakeMag = 14.0f;   // ?≪닔 ?쒓컙 吏꾨룞
+                            }
+                            g_CentiBoss->enterSpawn();   // ?깆옣 紐⑥뀡 ???붾㈃ 諛뽰뿉??怨≪꽑 ?뚯쭊?쇰줈 ?낆옣
+                            break;
+                        case 9:
+                            g_TotemBoss = new TotemBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_TotemBoss->worldX = bsx; g_TotemBoss->worldY = bsy;
+                            break;
+                        default:
+                            g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_PolyBoss->worldX = bsx; g_PolyBoss->worldY = bsy;
+                            g_PolyPrevForm = -1;
                             break;
                         }
-                        MarkBossSeenPick(g_BossWarnPick);
-                        // 공통 등장 연출 — 큰 화면 흔들기 + 충격파 + 빵빵 폭발
+                        if (g_BossWarnPick >= 0)
+                            MarkBossSeenPick(g_BossWarnPick);
+                        // 공통 등장 연출
                         g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
-                        SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
-                        SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
-                        for (int k = 0; k < 3; k++) {
-                            SpawnEnemyExplosion(bsx + (rand()%200 - 100),
-                                                bsy + (rand()%200 - 100),
-                                                1.0f, 0.3f, 0.3f, true);
+                        if (!g_CentiBoss) {
+                            SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
+                            SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
+                            for (int k = 0; k < 3; k++) {
+                                SpawnEnemyExplosion(bsx + (rand()%200 - 100),
+                                                    bsy + (rand()%200 - 100),
+                                                    1.0f, 0.3f, 0.3f, true);
+                            }
                         }
                     }
                 }
             }
 
-            // 자폭병 spawn (난이도별 시작 시간/주기, 쉬움은 안 나옴)
+            // ?먰룺蹂?spawn (?쒖씠?꾨퀎 ?쒖옉 ?쒓컙/二쇨린, ?ъ?? ???섏샂)
             DifficultyParams dp = GetDifficultyParams(g_Difficulty);
             if (g_GameTime >= dp.bomberStartTime && !bossDuel) {
                 g_BomberSpawnTimer += delta;
                 float bomberInt = dp.bomberInterval / (p2mult * rampSpawn);
-                if (bossNow) bomberInt *= 2.0f;   // 보스전: 자폭병도 덜 나오게
+                if (bossNow) bomberInt *= 2.0f;
                 if (g_BomberSpawnTimer >= bomberInt) {
                     g_MonsterManager.SpawnBomber(screenWidth, screenHeight,
                                                  g_Stats.bomberHpMult * rampHp,
@@ -2485,23 +2776,54 @@ int main() {
                 }
             }
 
-            // 원거리 몹 스폰 — 난이도별 + 디버프 (D_RMOB_MAX, rmobSpawnDelayBonus)
+            // ?먭굅由?紐??ㅽ룿 ???쒖씠?꾨퀎 + ?붾쾭??(D_RMOB_MAX, rmobSpawnDelayBonus)
             rangedSpawnTimer += delta;
             float rangedInterval = dp.rangedSpawnInterval - g_Stats.rmobSpawnDelayBonus;
-            if (rangedInterval < 1.0f) rangedInterval = 1.0f;   // 최소 1초
-            rangedInterval /= (p2mult * rampSpawn);              // 2페이즈 + 점수 램프
-            if (bossNow) rangedInterval *= 2.0f;                 // 보스전: 원거리몹도 덜
+            if (rangedInterval < 1.0f) rangedInterval = 1.0f;
+            rangedInterval /= (p2mult * rampSpawn);
+            if (bossNow) rangedInterval *= 2.0f;
             int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult
-                                  + intensity * 2.0f);           // 점수당 동시 +2
-            if (rangedMax > 16) rangedMax = 16;   // 창 개수 = scissor 패스 수 → 상한 (성능)
+                                  + intensity * 2.0f);           // ?먯닔???숈떆 +2
+            if (rangedMax > 16) rangedMax = 16;   // 李?媛쒖닔 = scissor ?⑥뒪 ?????곹븳 (?깅뒫)
             if (rangedSpawnTimer > rangedInterval && !bossDuel) {
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
                     g_Stats.rmobHpMult * rampHp, rangedMax, saX, saY, saW, saH);
                 rangedSpawnTimer = 0.0f;
             }
 
-            // 다가오는 죽음: 모든 오브 영원히 추격 + 접촉 데미지
-            // 스택 1회 = 기본 속도, 2회 이상부터 +20%/스택
+            // ?대━紐⑦봽 2?섏씠利??꾩슜 ??7珥덈쭏???뚮젅?댁뼱 二쇰????먭굅由??먰룺蹂?5留덈━
+            //   (?ㅽ룿 ?쒗븳 臾댁떆 ??踰≫꽣??吏곸젒 push)
+            if (polyP2) {
+                g_PolySummonTimer += delta;
+                if (g_PolySummonTimer >= 7.0f) {
+                    g_PolySummonTimer = 0.0f;
+                    float pCX = playerWin.x + playerWin.width  * 0.5f;
+                    float pCY = playerWin.y + playerWin.height * 0.5f;
+                    for (int k = 0; k < 5; k++) {
+                        float ang = (float)k / 5.0f * 6.2831853f
+                                  + (float)(rand() % 100) * 0.01f;
+                        float rad = 280.0f + (float)(rand() % 160);
+                        float sx = pCX + cosf(ang) * rad;
+                        float sy = pCY + sinf(ang) * rad;
+                        if (rand() % 2 == 0) {
+                            if ((int)g_MonsterManager.rangedMobs.size() >= 16) continue;
+                            RangedMob* rm = new RangedMob(sx, sy, screenWidth, screenHeight);
+                            rm->hp *= g_Stats.rmobHpMult;
+                            g_MonsterManager.rangedMobs.push_back(rm);
+                        } else {
+                            if ((int)g_MonsterManager.bombers.size() >= 30) continue;
+                            g_MonsterManager.bombers.push_back(
+                                new Bomber(sx, sy, g_Stats.bomberHpMult,
+                                           g_Stats.bomberSpeedMult, g_Stats.bomberBlastMult));
+                        }
+                    }
+                    // ?뚰솚 ?곗텧
+                    SpawnShockWave(pCX, pCY, 320.0f, 0.5f, 0.7f, 0.3f, 1.0f);
+                }
+            }
+
+            // ?ㅺ??ㅻ뒗 二쎌쓬: 紐⑤뱺 ?ㅻ툕 ?곸썝??異붽꺽 + ?묒큺 ?곕?吏
+            // ?ㅽ깮 1??= 湲곕낯 ?띾룄, 2???댁긽遺??+20%/?ㅽ깮
             float approachSpeed = 120.0f *
                 (1.0f + 0.20f * (float)(g_Stats.approachStacks > 0 ? g_Stats.approachStacks - 1 : 0));
             for (auto& orb : g_ApproachOrbs) {
@@ -2517,18 +2839,17 @@ int main() {
                 }
             }
 
-            // 드론: 플레이어 주위 공전 + 자동 발사 (능력치 50%), 1~2기
-            // 포탑 모드 활성 시 드론은 공전/발사 않고 포탑으로 대체됨
+            // ?쒕줎: ?뚮젅?댁뼱 二쇱쐞 怨듭쟾 + ?먮룞 諛쒖궗 (?λ젰移?50%), 1~2湲?            // ?ы깙 紐⑤뱶 ?쒖꽦 ???쒕줎? 怨듭쟾/諛쒖궗 ?딄퀬 ?ы깙?쇰줈 ?泥대맖
             if (g_Stats.drone && !g_Stats.turretMode) {
                 for (int d = 0; d < g_Stats.droneCount && d < MAX_DRONES; d++) {
                     auto& dr = g_Drones[d];
                     dr.angle += 1.5f * delta;
-                    // 균등 각도 오프셋 (각자 다른 위치)
+                    // 洹좊벑 媛곷룄 ?ㅽ봽??(媛곸옄 ?ㅻⅨ ?꾩튂)
                     float ang = dr.angle + (float)d * 6.2831853f / (float)g_Stats.droneCount;
                     float droneX = pCX + cosf(ang) * 80.0f;
                     float droneY = pCY + sinf(ang) * 80.0f;
                     dr.fireTimer += delta;
-                    // 군집 지능(신화) — 발사 간격 2.0× → 0.6× (초고속)
+                    // 援곗쭛 吏???좏솕) ??諛쒖궗 媛꾧꺽 2.0횞 ??0.6횞 (珥덇퀬??
                     float droneInt = g_Stats.fireInterval * (g_Stats.droneRapid ? 0.6f : 2.0f);
                     if (dr.fireTimer >= droneInt) {
                         float tx = 0.0f, ty = 0.0f;
@@ -2543,11 +2864,10 @@ int main() {
                 }
             }
 
-            // 포탑 배치 (CANNON + DRONE_2 조합)
-            //   1초마다 플레이어 위치에 포탑 1개 배치, 각 5초 지속 → 맵에 ~5개 상시
-            //   능력치는 '소총' 기준(g_TurretStats) — 대포 ×5/1초고정 미적용
+            // ?ы깙 諛곗튂 (CANNON + DRONE_2 議고빀)
+            //   1珥덈쭏???뚮젅?댁뼱 ?꾩튂???ы깙 1媛?諛곗튂, 媛?5珥?吏????留듭뿉 ~5媛??곸떆
             if (g_Stats.turretMode) {
-                // 소총 기준 능력치 재계산 (보유 증강 개수 변할 때만)
+                // ?뚯킑 湲곗? ?λ젰移??ш퀎??(蹂댁쑀 利앷컯 媛쒖닔 蹂???뚮쭔)
                 static size_t s_lastTurretAugCount = (size_t)-1;
                 if (g_OwnedAugs.size() != s_lastTurretAugCount) {
                     s_lastTurretAugCount = g_OwnedAugs.size();
@@ -2556,7 +2876,7 @@ int main() {
                     for (int oi : g_OwnedAugs) g_TurretStats.Apply(ALL_AUGS[oi].type);
                 }
 
-                // 1초마다 새 포탑 배치 (플레이어 위치)
+                // 1珥덈쭏?????ы깙 諛곗튂 (?뚮젅?댁뼱 ?꾩튂)
                 g_TurretDeployTimer += delta;
                 if (g_TurretDeployTimer >= TURRET_DEPLOY) {
                     g_TurretDeployTimer -= TURRET_DEPLOY;
@@ -2566,7 +2886,7 @@ int main() {
                     }
                 }
 
-                // 각 포탑: 수명 + 소총 발사
+                // 媛??ы깙: ?섎챸 + ?뚯킑 諛쒖궗
                 float tInterval = g_TurretStats.fireInterval * g_TurretStats.GetFireIntervalMult();
                 float tSpeed    = g_TurretStats.bulletSpeed   + g_TurretStats.GetBulletSpeedBonus();
                 for (auto& t : g_Turrets) {
@@ -2593,17 +2913,11 @@ int main() {
                             float ds  = ddx*ddx + ddy*ddy;
                             if (ds < nd2) { nd2 = ds; ttx = bm2->worldX; tty = bm2->worldY; }
                         }
-                        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                            auto* bs2 = g_MonsterManager.boss;
-                            float ddx = bs2->worldX - t.x, ddy = bs2->worldY - t.y;
-                            float ds  = ddx*ddx + ddy*ddy;
-                            if (ds < nd2) { nd2 = ds; ttx = bs2->worldX; tty = bs2->worldY; }
-                        }
                         if (nd2 < 1e8f) {
                             float dist = sqrtf(nd2);
                             Bullet nb(t.x, t.y, ttx, tty);
                             nb.speed     = tSpeed;
-                            nb.color     = glm::vec3(0.1f, 1.0f, 0.55f);  // 청록 (포탑 고유색)
+                            nb.color     = glm::vec3(0.1f, 1.0f, 0.55f);  // 泥?줉 (?ы깙 怨좎쑀??
                             nb.turretDmg = g_TurretStats.GetBaseDamage()
                                          * g_TurretStats.GetDamageMultiplier(dist);
                             if (nb.turretDmg < 1.0f) nb.turretDmg = 1.0f;
@@ -2611,14 +2925,14 @@ int main() {
                         }
                     }
                 }
-                // 만료된 포탑 제거
+                // 留뚮즺???ы깙 ?쒓굅
                 g_Turrets.erase(
                     std::remove_if(g_Turrets.begin(), g_Turrets.end(),
                         [](const Turret& t){ return t.lifeTimer >= TURRET_LIFE; }),
                     g_Turrets.end());
             }
 
-            // 차크람: 공전 + 잡몹 즉사 + 적 총알 충돌 + 재생성 (n 개)
+            // 李⑦겕?? 怨듭쟾 + ?〓す 利됱궗 + ??珥앹븣 異⑸룎 + ?ъ깮??(n 媛?
             if (g_Stats.chakram) {
                 for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
                     auto& ch = g_Chakrams[c];
@@ -2626,8 +2940,8 @@ int main() {
                         ch.angle += 5.5f * delta;
                         float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                         float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
-                        float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;   // 버프: 큰 히트박스
-                        // 잡몹 접촉 — 즉사 (hp 소모 -2 로 완화 → 오래 버팀)
+                        float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;   // 踰꾪봽: ???덊듃諛뺤뒪
+                        // ?〓す ?묒큺 ??利됱궗 (hp ?뚮え -2 濡??꾪솕 ???ㅻ옒 踰꾪?)
                         for (auto m : g_MonsterManager.monsters) {
                             if (!m->alive) continue;
                             float ddx = m->worldX - chx, ddy = m->worldY - chy;
@@ -2636,19 +2950,19 @@ int main() {
                                 ch.hp -= 2.0f;
                             }
                         }
-                        // 자폭병 접촉 — 즉사(자폭 전 처리)
+                        // ?먰룺蹂??묒큺 ??利됱궗(?먰룺 ??泥섎━)
                         for (auto bm : g_MonsterManager.bombers) {
                             if (!bm->alive) continue;
                             float ddx = bm->worldX - chx, ddy = bm->worldY - chy;
                             if (ddx*ddx + ddy*ddy < hitR2) { bm->hp = 0.0f; bm->alive = false; ch.hp -= 3.0f; }
                         }
-                        // 원거리 몹 접촉 — 큰 피해
+                        // ?먭굅由?紐??묒큺 ?????쇳빐
                         for (auto rr : g_MonsterManager.rangedMobs) {
                             if (!rr->alive) continue;
                             float ddx = rr->worldX - chx, ddy = rr->worldY - chy;
                             if (ddx*ddx + ddy*ddy < hitR2) { rr->hp -= 120.0f; if (rr->hp <= 0) rr->alive = false; ch.hp -= 3.0f; }
                         }
-                        // 적 총알 막기
+                        // ??珥앹븣 留됯린
                         for (auto& bb : g_Bullets) {
                             if (!bb.active || !bb.isEnemy) continue;
                             float ddx = bb.x - chx, ddy = bb.y - chy;
@@ -2659,7 +2973,7 @@ int main() {
                         }
                         if (ch.hp <= 0.0f) {
                             ch.alive = false;
-                            ch.respawnTimer = 6.0f;   // 버프: 재생성 10 → 6초
+                            ch.respawnTimer = 6.0f;
                         }
                     } else {
                         ch.respawnTimer -= delta;
@@ -2671,10 +2985,10 @@ int main() {
                 }
             }
 
-            // 탄환 세례: 쿨다운(20/15/7.5)마다 유도탄 20발 (데미지 50%)
+            // ?꾪솚 ?몃?: 荑⑤떎??20/15/7.5)留덈떎 ?좊룄??20諛?(?곕?吏 50%)
             if (g_Stats.bulletRain) {
                 g_BulletRainTimer += delta;
-                // 무한 세례(신화) — 처치마다 쿨다운 진행 가속(0.4s/처치). 미보유 시 처치 카운트만 비움.
+                // 臾댄븳 ?몃?(?좏솕) ??泥섏튂留덈떎 荑⑤떎??吏꾪뻾 媛??0.4s/泥섏튂). 誘몃낫????泥섏튂 移댁슫?몃쭔 鍮꾩?.
                 if (g_Stats.rainKillReduce) g_BulletRainTimer += g_RainKillAccum * 0.4f;
                 g_RainKillAccum = 0.0f;
                 if (g_BulletRainTimer >= g_Stats.bulletRainCooldown) {
@@ -2686,21 +3000,20 @@ int main() {
                         Bullet nb(pCX, pCY,
                                   pCX + cosf(a) * 100.0f,
                                   pCY + sinf(a) * 100.0f);
-                        nb.speed      = g_Stats.bulletSpeed * 1.05f;  // 최고속(가속 끝) — SAM 미사일식
+                        nb.speed      = g_Stats.bulletSpeed * 1.05f;  // 理쒓퀬??媛???? ??SAM 誘몄궗?쇱떇
                         nb.color      = glm::vec3(1.0f, 0.5f, 0.2f);
                         nb.homing     = true;
                         nb.homingTurn = 5.0f;   // rad/s
                         nb.dmgMult    = 0.5f;
-                        // 지대공 미사일 발사 느낌 — 5%에서 출발해 ~0.7초에 100%로 가속
-                        nb.launchRamp  = 0.05f;
+                        // 吏?怨?誘몄궗??諛쒖궗 ?먮굦 ??5%?먯꽌 異쒕컻??~0.7珥덉뿉 100%濡?媛??                        nb.launchRamp  = 0.05f;
                         nb.launchAccel = 1.35f;
-                        // (탄환세례 — 기존 일반 탄환 렌더로 복원. 로켓 스프라이트 미사용)
+                        // (?꾪솚?몃? ??湲곗〈 ?쇰컲 ?꾪솚 ?뚮뜑濡?蹂듭썝. 濡쒖폆 ?ㅽ봽?쇱씠??誘몄궗??
                         g_Bullets.push_back(nb);
                     }
                 }
             }
 
-            // 고장난 조준선 오브 배회
+            // 怨좎옣??議곗????ㅻ툕 諛고쉶
             if (g_Stats.brokenSight && g_Orb.active) {
                 g_Orb.wanderTimer -= delta;
                 if (g_Orb.wanderTimer <= 0.0f) {
@@ -2718,18 +3031,18 @@ int main() {
                 else if (g_Orb.y > screenHeight - 20){ g_Orb.vy = -fabsf(g_Orb.vy); g_Orb.y = (float)screenHeight - 20; }
             }
 
-            // 총알 발사 (영혼수확/미니화 보너스, Twin 2발, Cannon 잔존 데미지 캐싱)
-            // 포탑 모드: 플레이어 수동 발사 비활성 (포탑이 대신 발사)
+            // 珥앹븣 諛쒖궗 (?곹샎?섑솗/誘몃땲??蹂대꼫?? Twin 2諛? Cannon ?붿〈 ?곕?吏 罹먯떛)
+            // ?ы깙 紐⑤뱶: ?뚮젅?댁뼱 ?섎룞 諛쒖궗 鍮꾪솢??(?ы깙?????諛쒖궗)
             float effInterval = g_Stats.fireInterval * g_Stats.GetFireIntervalMult();
-            // 대포: 연사 %는 공격력으로만 환산되고, 실제 발사는 1초 고정
+            // ??? ?곗궗 %??怨듦꺽?μ쑝濡쒕쭔 ?섏궛?섍퀬, ?ㅼ젣 諛쒖궗??1珥?怨좎젙
             if (g_Stats.cannon) effInterval = 1.0f;
-            // 과부하 — 연사 ×2 (발사 간격 절반)
+            // 怨쇰??????곗궗 횞2 (諛쒖궗 媛꾧꺽 ?덈컲)
             if (g_OverclockTimer > 0.0f) effInterval *= 0.5f;
             float effSpeed    = g_Stats.bulletSpeed   + g_Stats.GetBulletSpeedBonus();
             if (!g_Stats.turretMode) fireTimer += delta;
 
-            // 한 발 spawn 헬퍼 (Twin / Cannon / 취함 / brokenSight 공통)
-            // bulletSpread > 0 면 발사 방향에 랜덤 흔들기 적용
+            // ??諛?spawn ?ы띁 (Twin / Cannon / 痍⑦븿 / brokenSight 怨듯넻)
+            // bulletSpread > 0 硫?諛쒖궗 諛⑺뼢???쒕뜡 ?붾뱾湲??곸슜
             auto spawnOne = [&](float tx, float ty) {
                 float ftx = tx, fty = ty;
                 if (g_Stats.bulletSpread > 0.0f) {
@@ -2747,18 +3060,18 @@ int main() {
                 if (g_Stats.cannon) {
                     nb.remainingDmg = g_Stats.GetBaseDamage()
                                     * g_Stats.GetDamageMultiplier(0.0f);
-                    nb.sizeScale    = 3.0f;  // 대포 총알 크기 3배
+                    nb.sizeScale    = 3.0f;
                 }
-                // 연쇄 작용(리코셰) — 튕김 횟수 + 데미지 배율(-30%) 적용
+                // ?곗뇙 ?묒슜(由ъ퐫?? ???뺢? ?잛닔 + ?곕?吏 諛곗쑉(-30%) ?곸슜
                 if (g_Stats.ricochetMax > 0) {
                     nb.bouncesLeft = g_Stats.ricochetMax;
                     nb.dmgMult    *= g_Stats.ricochetDmgMult;
                 }
-                if (g_OverclockTimer > 0.0f) {     // 과부하 — 공격력 +50%
+                if (g_OverclockTimer > 0.0f) {     // 怨쇰?????怨듦꺽??+50%
                     nb.dmgMult *= 1.5f;
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
                 }
-                if (g_Stats.berserk) {             // 광전사 — 체력 낮을수록 최대 +60%
+                if (g_Stats.berserk) {             // 愿묒쟾????泥대젰 ??쓣?섎줉 理쒕? +60%
                     float hpFrac = g_Stats.maxHP > 0.0f
                                  ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                     if (hpFrac < 0.0f) hpFrac = 0.0f; else if (hpFrac > 1.0f) hpFrac = 1.0f;
@@ -2766,32 +3079,32 @@ int main() {
                     nb.dmgMult *= bMult;
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= bMult;
                 }
-                if (g_Stats.bowWeapon) {           // 궁수 — 화살 비주얼 (길쭉·갈색녹)
+                if (g_Stats.bowWeapon) {           // 沅곸닔 ???붿궡 鍮꾩＜??(湲몄춬쨌媛덉깋??
                     nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
                     nb.sizeScale = 1.7f;
                 }
-                if (g_DrunkActive) {               // 취함 활성 — 조준 흐트러짐 + 데미지 -40%
+                if (g_DrunkActive) {               // 痍⑦븿 ?쒖꽦 ??議곗? ?먰듃?ъ쭚 + ?곕?吏 -40%
                     nb.dmgMult *= 0.6f;
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 0.6f;
                 }
                 g_Bullets.push_back(nb);
             };
 
-            // Twin: ±5도 2발 / Shotgun: 5발 산탄 (사거리 700)
+            // Twin: 짹5??2諛?/ Shotgun: 5諛??고깂 (?ш굅由?700)
             auto spawnAimed = [&](float tx, float ty) {
-                TriggerMuzzle(pCX, pCY, atan2f(ty - pCY, tx - pCX));  // 총구 섬광
-                Audio::PlaySfx(Audio::Sfx::Shoot);                    // 발사음
+                TriggerMuzzle(pCX, pCY, atan2f(ty - pCY, tx - pCX));  // 珥앷뎄 ?ш킅
+                Audio::PlaySfx(Audio::Sfx::Shoot);
                 if (g_Stats.shotgun) {
                     float dx = tx - pCX, dy = ty - pCY;
                     float ang = atan2f(dy, dx);
                     const int N = 5;
-                    float spread = 0.42f;  // 전체 spread ≈ ±12도
+                    float spread = 0.42f;
                     float r = 200.0f;
                     for (int s = 0; s < N; s++) {
                         float t = (float)s / (float)(N - 1); // 0..1
                         float off = (t - 0.5f) * spread;
                         float a = ang + off;
-                        // 직접 spawn (maxRange 적용)
+                        // 吏곸젒 spawn (maxRange ?곸슜)
                         Bullet nb(pCX, pCY,
                                   pCX + cosf(a) * r, pCY + sinf(a) * r);
                         nb.speed    = effSpeed;
@@ -2801,15 +3114,15 @@ int main() {
                                             * g_Stats.GetDamageMultiplier(0.0f);
                             nb.sizeScale    = 5.0f;
                         }
-                        if (g_Stats.ricochetMax > 0) {     // 연쇄 작용 — 샷건 펠릿도
+                        if (g_Stats.ricochetMax > 0) {
                             nb.bouncesLeft = g_Stats.ricochetMax;
                             nb.dmgMult    *= g_Stats.ricochetDmgMult;
                         }
-                        if (g_OverclockTimer > 0.0f) {     // 과부하 +50%
+                        if (g_OverclockTimer > 0.0f) {     // 怨쇰???+50%
                             nb.dmgMult *= 1.5f;
                             if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
                         }
-                        if (g_Stats.berserk) {             // 광전사 — 체력 낮을수록 최대 +60%
+                        if (g_Stats.berserk) {             // 愿묒쟾????泥대젰 ??쓣?섎줉 理쒕? +60%
                             float hpFrac = g_Stats.maxHP > 0.0f
                                          ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                             if (hpFrac < 0.0f) hpFrac = 0.0f; else if (hpFrac > 1.0f) hpFrac = 1.0f;
@@ -2821,7 +3134,7 @@ int main() {
                             nb.color     = glm::vec3(0.75f, 0.95f, 0.45f);
                             nb.sizeScale = 1.7f;
                         }
-                        if (g_DrunkActive) {               // 취함 활성 — 데미지 -40%
+                        if (g_DrunkActive) {               // 痍⑦븿 ?쒖꽦 ???곕?吏 -40%
                             nb.dmgMult *= 0.6f;
                             if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 0.6f;
                         }
@@ -2832,9 +3145,9 @@ int main() {
                     float ang = atan2f(dy, dx);
                     float off = 0.087f;
                     float r = 200.0f;
-                    int   n = (g_Stats.twinCount < 2) ? 2 : g_Stats.twinCount;  // 2발(더블)/3발(트리플)
+                    int   n = (g_Stats.twinCount < 2) ? 2 : g_Stats.twinCount;  // 2諛??붾툝)/3諛??몃━??
                     for (int s = 0; s < n; s++) {
-                        // 중심 기준 대칭 부채꼴 (-off … +off)
+                        // 以묒떖 湲곗? ?移?遺梨꾧섦 (-off ??+off)
                         float a = (n > 1) ? ang + (((float)s / (float)(n - 1)) - 0.5f) * (2.0f * off)
                                           : ang;
                         spawnOne(pCX + cosf(a) * r, pCY + sinf(a) * r);
@@ -2844,11 +3157,11 @@ int main() {
                 }
             };
 
-            // 검객 근접 스윙 — 조준 방향 호(arc) 안의 모든 적에게 즉시 피해
+            // 寃媛?洹쇱젒 ?ㅼ쐷 ??議곗? 諛⑺뼢 ??arc) ?덉쓽 紐⑤뱺 ?곸뿉寃?利됱떆 ?쇳빐
             auto meleeSwing = [&](float ang) {
                 float range = 190.0f * g_Stats.playerSizeMult * (g_Stats.meleeWide ? 1.25f : 1.0f);
                 float r2 = range * range;
-                float halfArc = g_Stats.meleeWide ? 1.5f : 1.15f;  // 광폭 베기: 호 확대
+                float halfArc = g_Stats.meleeWide ? 1.5f : 1.15f;  // 愿묓룺 踰좉린: ???뺣?
                 bool crit = false; float critMult = 1.0f;
                 if (g_Stats.critChance > 0 && (rand() % 100) < g_Stats.critChance) {
                     crit = true; critMult = g_Stats.critMult;
@@ -2861,7 +3174,8 @@ int main() {
                     bMult = 1.0f + (1.0f - hf) * 0.6f;
                 }
                 float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
-                          * 1.8f * critMult * bMult;       // 근접 보너스 ×1.8
+                          * 1.8f * critMult * bMult;       // 洹쇱젒 蹂대꼫??횞1.8
+                if (g_TotemBoss && g_TotemBoss->alive) dmg *= g_TotemBoss->statDamageMult();
                 auto inCone = [&](float ex, float ey) -> bool {
                     float dx = ex - pCX, dy = ey - pCY, d2 = dx*dx + dy*dy;
                     if (d2 > r2) return false;
@@ -2870,7 +3184,7 @@ int main() {
                     while (diff < -3.14159265f) diff += 6.2831853f;
                     return fabsf(diff) <= halfArc;
                 };
-                auto onKill = [&]() {   // 흡혈탄/흡혈마 공통 처리
+                auto onKill = [&]() {   // ?≫삁???≫삁留?怨듯넻 泥섎━
                     if (g_Stats.lifestealPerKill > 0.0f) {
                         g_GameManager.playerHP += g_Stats.lifestealPerKill;
                         if (g_GameManager.playerHP > g_Stats.maxHP)
@@ -2884,7 +3198,7 @@ int main() {
                     }
                 };
                 std::vector<Monster*> swingBorn;
-                for (auto m : g_MonsterManager.monsters) {        // 잡몹
+                for (auto m : g_MonsterManager.monsters) {        // ?〓す
                     if (!m->alive || !inCone(m->worldX, m->worldY)) continue;
                     float dmgM = dmg;
                     if (m->kind == MobKind::SHIELDED && m->shieldActive) dmgM *= 0.15f;
@@ -2902,7 +3216,7 @@ int main() {
                     }
                 }
                 for (auto* nb : swingBorn) g_MonsterManager.monsters.push_back(nb);
-                for (auto rr : g_MonsterManager.rangedMobs) {     // 원거리
+                for (auto rr : g_MonsterManager.rangedMobs) {
                     if (!rr->alive || !inCone(rr->worldX, rr->worldY)) continue;
                     float dealt = (dmg < rr->hp) ? dmg : rr->hp; rr->hp -= dealt;
                     SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || crit);
@@ -2914,7 +3228,7 @@ int main() {
                         onKill();
                     }
                 }
-                for (auto bm : g_MonsterManager.bombers) {        // 자폭병
+                for (auto bm : g_MonsterManager.bombers) {
                     if (!bm->alive || !inCone(bm->worldX, bm->worldY)) continue;
                     float dealt = (dmg < bm->hp) ? dmg : bm->hp; bm->hp -= dealt;
                     SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || crit);
@@ -2926,57 +3240,65 @@ int main() {
                         onKill();
                     }
                 }
-                // 보스류 — hp만 감소 (보상/연출은 각 사망 블록이 담당)
+                // 蹂댁뒪瑜???hp留?媛먯냼 (蹂댁긽/?곗텧? 媛??щ쭩 釉붾줉???대떦)
                 auto hitB = [&](float ex, float ey, float& hp, bool& al) {
                     if (!inCone(ex, ey)) return;
                     float dealt = (dmg < hp) ? dmg : hp; hp -= dealt;
                     SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || crit);
                     if (hp <= 0.0f) al = false;
                 };
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                    hitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
-                         g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
                 if (g_RRBoss && g_RRBoss->alive)
                     hitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
-                if (g_SpamBoss && g_SpamBoss->alive)
-                    hitB(g_SpamBoss->worldX, g_SpamBoss->worldY, g_SpamBoss->hp, g_SpamBoss->alive);
-                if (g_KernelBoss && g_KernelBoss->alive)
-                    hitB(g_KernelBoss->worldX, g_KernelBoss->worldY, g_KernelBoss->hp, g_KernelBoss->alive);
-                if (g_FirewallBoss && g_FirewallBoss->alive)
-                    hitB(g_FirewallBoss->worldX, g_FirewallBoss->worldY, g_FirewallBoss->hp, g_FirewallBoss->alive);
+                if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
+                    hitB(g_PolyBoss->worldX, g_PolyBoss->worldY, g_PolyBoss->hp, g_PolyBoss->alive);
+                if (g_BotnetBoss && g_BotnetBoss->alive)
+                    hitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
+                if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
+                    hitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
+                if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
+                    hitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
+                if (g_TotemBoss && g_TotemBoss->alive) {
+                    for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                        auto& tt = g_TotemBoss->totems[ti];
+                        if (!tt.alive || !inCone(tt.x, tt.y)) continue;
+                        tt.hp -= dmg;
+                        g_TotemBoss->onTotemDamaged(ti);
+                        if (tt.hp <= 0.0f) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); }
+                    }
+                }
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
-                // 칼바람 — 스윙마다 전방으로 관통 투사체 (근접의 원거리 견제)
+                // 移쇰컮?????ㅼ쐷留덈떎 ?꾨갑?쇰줈 愿???ъ궗泥?(洹쇱젒???먭굅由?寃ъ젣)
                 if (g_Stats.bladeWind) {
                     Bullet bw(pCX, pCY, pCX + cosf(ang)*200.0f, pCY + sinf(ang)*200.0f);
                     bw.speed       = 900.0f;
                     bw.maxRange    = 700.0f;
                     bw.sizeScale   = 2.2f;
                     bw.color       = glm::vec3(0.7f, 0.95f, 1.0f);
-                    bw.remainingDmg = dmg * 0.6f;   // 관통(대포식) — 근접 데미지의 60%
+                    bw.remainingDmg = dmg * 0.6f;   // 愿????ъ떇) ??洹쇱젒 ?곕?吏??60%
                     g_Bullets.push_back(bw);
                 }
             };
 
-            // ── 조준 타깃 헬퍼: 좌클릭=커서 일점사, 자동(클릭X)=최근접 적. 자동인데 적 없으면 false.
+            // ?? 議곗? ?源??ы띁: 醫뚰겢由?而ㅼ꽌 ?쇱젏?? ?먮룞(?대┃X)=理쒓렐???? ?먮룞?몃뜲 ???놁쑝硫?false.
             auto aimTarget = [&](float& tx, float& ty) -> bool {
-                if (lmb) { tx = wmx; ty = wmy; return true; }       // 일점사
-                return findNearestEnemy(pCX, pCY, tx, ty);          // 드론식 자동조준
+                if (lmb) { tx = wmx; ty = wmy; return true; }
+                return findNearestEnemy(pCX, pCY, tx, ty);
             };
 
-            // ── 스캔 레이저 (증강) — 0.7초마다 조준 방향 관통 빔 (군중제어) ──
-            //   meleeSwing 의 데미지/처치보상 루프를 '직선 판정(SegDist)' 버전으로 재사용.
+            // ?? ?ㅼ틪 ?덉씠? (利앷컯) ??0.7珥덈쭏??議곗? 諛⑺뼢 愿??鍮?(援곗쨷?쒖뼱) ??
+            //   meleeSwing ???곕?吏/泥섏튂蹂댁긽 猷⑦봽瑜?'吏곸꽑 ?먯젙(SegDist)' 踰꾩쟾?쇰줈 ?ъ궗??
             if (g_Stats.laser) {
-                float laserInt = (g_Stats.laserTier >= 3) ? 0.18f   // 신화 수렴: 거의 연속
+                float laserInt = (g_Stats.laserTier >= 3) ? 0.18f   // ?좏솕 ?섎졃: 嫄곗쓽 ?곗냽
                                : (g_Stats.laserTier >= 2) ? 0.55f : LASER_INT;
                 g_LaserTimer += delta;
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
-                    float lang  = atan2f(wmy - pCY, wmx - pCX);   // 레이저는 항상 커서 방향
-                    // 사거리는 II(760)에서 더 늘리지 않음. 신화 수렴은 '너비'로 강화.
+                    float lang  = atan2f(wmy - pCY, wmx - pCX);   // ?덉씠?????긽 而ㅼ꽌 諛⑺뼢
+                    // ?ш굅由щ뒗 II(760)?먯꽌 ???섎━吏 ?딆쓬. ?좏솕 ?섎졃? '?덈퉬'濡?媛뺥솕.
                     float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
-                    // 신화 수렴(tier3): 빔 너비 2배 → 광폭 관통 (잡몹 라인 일소)
+                    // ?좏솕 ?섎졃(tier3): 鍮??덈퉬 2諛???愿묓룺 愿??(?〓す ?쇱씤 ?쇱냼)
                     const float beamW    = (g_Stats.laserTier >= 3) ? 2.0f : 1.0f;
                     const float BEAM_HALF = 24.0f * beamW;
                     bool lcrit = false; float lcm = 1.0f;
@@ -2988,7 +3310,8 @@ int main() {
                         lbm = 1.0f + (1.0f - hf) * 0.6f;
                     }
                     float ldmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
-                               * 1.4f * lcm * lbm;   // 너프: 2.5 → 1.4 (잡몹 정리용, 보스 칩 최소)
+                               * 1.4f * lcm * lbm;   // ?덊봽: 2.5 ??1.4 (?〓す ?뺣━?? 蹂댁뒪 移?理쒖냼)
+                    if (g_TotemBoss && g_TotemBoss->alive) ldmg *= g_TotemBoss->statDamageMult();
                     auto lOnKill = [&]() {
                         if (g_Stats.lifestealPerKill > 0.0f) {
                             g_GameManager.playerHP += g_Stats.lifestealPerKill;
@@ -3048,31 +3371,31 @@ int main() {
                         SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || lcrit);
                         if (hp <= 0.0f) al = false;
                     };
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                        lhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
-                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
                     if (g_RRBoss && g_RRBoss->alive)
                         lhitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
-                    if (g_SpamBoss && g_SpamBoss->alive)
-                        lhitB(g_SpamBoss->worldX, g_SpamBoss->worldY, g_SpamBoss->hp, g_SpamBoss->alive);
-                    if (g_KernelBoss && g_KernelBoss->alive)
-                        lhitB(g_KernelBoss->worldX, g_KernelBoss->worldY, g_KernelBoss->hp, g_KernelBoss->alive);
-                    if (g_FirewallBoss && g_FirewallBoss->alive)
-                        lhitB(g_FirewallBoss->worldX, g_FirewallBoss->worldY, g_FirewallBoss->hp, g_FirewallBoss->alive);
+                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable())
+                        lhitB(g_PolyBoss->worldX, g_PolyBoss->worldY, g_PolyBoss->hp, g_PolyBoss->alive);
+                    if (g_BotnetBoss && g_BotnetBoss->alive)
+                        lhitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
+                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
+                        lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
+                        lhitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
             }
 
-            // ── 백신 스캔 (증강) — 주기적으로 플레이어 주변 정화 펄스(범위 일소) ──
+            // ?? 諛깆떊 ?ㅼ틪 (利앷컯) ??二쇨린?곸쑝濡??뚮젅?댁뼱 二쇰? ?뺥솕 ?꾩뒪(踰붿쐞 ?쇱냼) ??
             if (g_Stats.purgeNova > 0) {
                 int   n      = g_Stats.purgeNova;
-                float novaInt = NOVA_INT / (1.0f + 0.2f * (float)(n - 1));      // 중첩 시 주기↓
-                float novaR   = NOVA_R   * (1.0f + 0.18f * (float)(n - 1));     // 중첩 시 범위↑
+                float novaInt = NOVA_INT / (1.0f + 0.2f * (float)(n - 1));
+                float novaR   = NOVA_R   * (1.0f + 0.18f * (float)(n - 1));
                 g_NovaTimer += delta;
                 if (g_NovaTimer >= novaInt) {
                     g_NovaTimer = 0.0f;
                     float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * 2.0f;
+                    if (g_TotemBoss && g_TotemBoss->alive) dmg *= g_TotemBoss->statDamageMult();
                     float r2  = novaR * novaR;
                     auto nOnKill = [&]() {
                         if (g_Stats.lifestealPerKill > 0.0f) {
@@ -3116,46 +3439,55 @@ int main() {
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill(); }
                         }
                     }
-                    // 보스 — 범위 내면 한 방 칩(보스 체력의 폭주 없게 고정량)
+                    // 蹂댁뒪 ??踰붿쐞 ?대㈃ ??諛?移?蹂댁뒪 泥대젰????＜ ?녾쾶 怨좎젙??
                     auto nhitB = [&](float ex, float ey, float& hp, bool& al) {
                         float dx=ex-pCX, dy=ey-pCY;
                         if (dx*dx+dy*dy < (novaR+70.0f)*(novaR+70.0f)) { hp -= dmg * 2.0f; if (hp<=0.0f) al=false; }
                     };
-                    if (g_MonsterManager.boss && g_MonsterManager.boss->alive)
-                        nhitB(g_MonsterManager.boss->worldX, g_MonsterManager.boss->worldY,
-                              g_MonsterManager.boss->hp, g_MonsterManager.boss->alive);
                     if (g_RRBoss && g_RRBoss->alive) nhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
-                    if (g_SpamBoss && g_SpamBoss->alive) nhitB(g_SpamBoss->worldX,g_SpamBoss->worldY,g_SpamBoss->hp,g_SpamBoss->alive);
-                    if (g_KernelBoss && g_KernelBoss->alive) nhitB(g_KernelBoss->worldX,g_KernelBoss->worldY,g_KernelBoss->hp,g_KernelBoss->alive);
-                    if (g_FirewallBoss && g_FirewallBoss->alive) nhitB(g_FirewallBoss->worldX,g_FirewallBoss->worldY,g_FirewallBoss->hp,g_FirewallBoss->alive);
-                    // 시각 — 팽창 링
+                    if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) nhitB(g_PolyBoss->worldX,g_PolyBoss->worldY,g_PolyBoss->hp,g_PolyBoss->alive);
+                    if (g_BotnetBoss && g_BotnetBoss->alive) nhitB(g_BotnetBoss->worldX,g_BotnetBoss->worldY,g_BotnetBoss->hp,g_BotnetBoss->alive);
+                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) nhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) nhitB(g_TotemBoss->worldX,g_TotemBoss->worldY,g_TotemBoss->hp,g_TotemBoss->alive);
+                    if (g_TotemBoss && g_TotemBoss->alive) {
+                        for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                            auto& tt = g_TotemBoss->totems[ti];
+                            if (!tt.alive) continue;
+                            float dx = tt.x - pCX, dy = tt.y - pCY;
+                            if (dx*dx + dy*dy < r2) {
+                                tt.hp -= dmg;
+                                g_TotemBoss->onTotemDamaged(ti);
+                                if (tt.hp <= 0.0f) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); }
+                            }
+                        }
+                    }
+                    // ?쒓컖 ???쎌갹 留?SpawnShockWave ?ъ궗?? + ?먮쭧
                     SpawnShockWave(pCX, pCY, novaR, 0.45f, 0.4f, 1.0f, 0.75f);
                     SpawnSparks(pCX, pCY, 10, 0.4f, 1.0f, 0.7f, 360.0f);
                 }
             }
 
-            // 포탑 모드에서는 플레이어가 발사하지 않음
+            // ?ы깙 紐⑤뱶?먯꽌???뚮젅?댁뼱媛 諛쒖궗?섏? ?딆쓬
             if (!g_Stats.turretMode) {
-                // C13 자동 발사: 기본 ON 이면 좌클릭 없이도 조준 방향으로 자동 발사.
-                //   C14 유예 중에는 발사 억제(오발 방지). 수동 모드면 좌클릭 홀드.
+                // C13 ?먮룞 諛쒖궗: 湲곕낯 ON ?대㈃ 醫뚰겢由??놁씠??議곗? 諛⑺뼢?쇰줈 ?먮룞 諛쒖궗.
+                //   C14 ?좎삁 以묒뿉??諛쒖궗 ?듭젣(?ㅻ컻 諛⑹?). ?섎룞 紐⑤뱶硫?醫뚰겢由????
                 bool fireHeld = (g_AutoFire || lmb) && (g_PostPickGrace <= 0.0f);
-                if (g_Stats.meleeWeapon) {       // 검객 — 근접 스윙 (총알 없음)
-                    // 단타 방지: 쿨다운(effInterval)은 클릭/홀드 무관 항상 적용.
-                    //   (예전엔 버튼 떼면 fireTimer 를 즉시 준비 상태로 돌려 광클로
-                    //    스윙 속도를 무한히 올릴 수 있었음 — 그 리셋을 제거)
+                if (g_Stats.meleeWeapon) {       // 寃媛???洹쇱젒 ?ㅼ쐷 (珥앹븣 ?놁쓬)
+                    // ?⑦? 諛⑹?: 荑⑤떎??effInterval)? ?대┃/???臾닿? ??긽 ?곸슜.
+                    //   (?덉쟾??踰꾪듉 ?쇰㈃ fireTimer 瑜?利됱떆 以鍮??곹깭濡??뚮젮 愿묓겢濡?                    //    ?ㅼ쐷 ?띾룄瑜?臾댄븳???щ┫ ???덉뿀????洹?由ъ뀑???쒓굅)
                     if (fireHeld && fireTimer >= effInterval) {
                         float tx, ty;
-                        if (aimTarget(tx, ty)) {   // 자동: 최근접 적 / 클릭: 커서
+                        if (aimTarget(tx, ty)) {   // ?먮룞: 理쒓렐????/ ?대┃: 而ㅼ꽌
                             meleeSwing(atan2f(ty - pCY, tx - pCX));
                             fireTimer = 0.0f;
                         }
                     }
-                } else if (g_Stats.bowWeapon) {  // 궁수 — 누른 만큼 차징 후 발사
-                    // 자동: 풀차징까지 자동 충전 → 완충되면 자동 발사(차지 사이클 반복).
+                } else if (g_Stats.bowWeapon) {  // 沅곸닔 ???꾨Ⅸ 留뚰겮 李⑥쭠 ??諛쒖궗
+                    // ?먮룞: ?李⑥쭠源뚯? ?먮룞 異⑹쟾 ???꾩땐?섎㈃ ?먮룞 諛쒖궗(李⑥? ?ъ씠??諛섎났).
                     bool bowHold = g_AutoFire ? (g_ArcherCharge < 1.0f && g_PostPickGrace <= 0.0f)
                                               : lmb;
                     if (bowHold) {
-                        // 강궁(40% 빠름) + 연사증강 변환(bowChargeRateMult)
+                        // 媛뺢턿(40% 鍮좊쫫) + ?곗궗利앷컯 蹂??bowChargeRateMult)
                         g_ArcherCharge += delta / (BOW_CHARGE_TIME * (g_Stats.powerDraw ? 0.6f : 1.0f))
                                           * g_Stats.bowChargeRateMult;
                         if (g_ArcherCharge > 1.0f) g_ArcherCharge = 1.0f;
@@ -3163,7 +3495,7 @@ int main() {
                         float charge = g_ArcherCharge;
                         float atx, aty; if (!aimTarget(atx, aty)) { atx = wmx; aty = wmy; }
                         float ang = atan2f(aty - pCY, atx - pCX);
-                        // 완충 위력 (기본 4.1× / 강궁 5.1×) + 공격력증강 변환(bowChargeCapBonus)
+                        // ?꾩땐 ?꾨젰 (湲곕낯 4.1횞 / 媛뺢턿 5.1횞) + 怨듦꺽?μ쬆媛?蹂??bowChargeCapBonus)
                         float chMult = 0.5f + charge *
                                        ((g_Stats.powerDraw ? 4.6f : 3.6f) + g_Stats.bowChargeCapBonus);
                         float arrowDmg = g_Stats.GetBaseDamage()
@@ -3180,11 +3512,11 @@ int main() {
                             nb.speed       = effSpeed;
                             nb.maxRange    = 1500.0f;
                             nb.remainingDmg= arrowDmg;
-                            nb.sizeScale   = 1.0f + charge * 3.0f;     // 최대 4배 크기
+                            nb.sizeScale   = 1.0f + charge * 3.0f;     // 理쒕? 4諛??ш린
                             nb.color       = glm::vec3(0.75f, 0.95f, 0.45f);
                             g_Bullets.push_back(nb);
                         };
-                        // 다중 사격: 완충(>0.85) 발사 시 3발 부채꼴
+                        // ?ㅼ쨷 ?ш꺽: ?꾩땐(>0.85) 諛쒖궗 ??3諛?遺梨꾧섦
                         if (g_Stats.multishot && charge > 0.85f) {
                             fireArrow(ang);
                             fireArrow(ang + 0.16f);
@@ -3203,18 +3535,17 @@ int main() {
                         fireTimer = 0.0f;
                     }
                 } else {
-                    // 홀드 연사 — 공속(effInterval) 준수. 자동발사 OFF여도 LMB 홀드 시 연사.
+                    // ????곗궗 ??怨듭냽(effInterval) 以?? ?먮룞諛쒖궗 OFF?щ룄 LMB ??????곗궗.
                     if (fireHeld && fireTimer >= effInterval) {
                         float tx, ty;
-                        bool haveTarget = aimTarget(tx, ty);   // 클릭=커서 일점사 / 자동=최근접 적
-                        if (g_DrunkActive) {                    // 취함: 조준 무작위 (적 없어도 발사)
+                        bool haveTarget = aimTarget(tx, ty);
+                        if (g_DrunkActive) {
                             float a = (float)(rand() % 628) * 0.01f;
                             tx = pCX + cosf(a) * 200.0f;
                             ty = pCY + sinf(a) * 200.0f;
                             haveTarget = true;
                         }
-                        if (haveTarget) {                       // 자동인데 적 없으면 발사 안 함
-                            spawnAimed(tx, ty);
+                        if (haveTarget) {                       // ?먮룞?몃뜲 ???놁쑝硫?諛쒖궗 ????                            spawnAimed(tx, ty);
                             fireTimer = 0.0f;
                         }
                     }
@@ -3222,23 +3553,22 @@ int main() {
             }
         }
 
-        // GameManager 가 호버/변환 상태를 알 수 있게 동기화 (Render 에서 사용)
+        // GameManager 媛 ?몃쾭/蹂???곹깭瑜??????덇쾶 ?숆린??(Render ?먯꽌 ?ъ슜)
         g_GameManager.hoveredCard = g_HoveredAug;
         g_GameManager.conversionAug = g_ConversionWeapon;
 
         // ============================================================
-        // 렌더링
-        // ============================================================
+        // ?뚮뜑留?        // ============================================================
         glViewport(0, 0, screenWidth, screenHeight);
         glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     
         glUseProgram(g_MainShader);
-        glUniform1i(g_MainFxLoc, g_ShaderFx ? 1 : 0);   // CRT 셰이더 효과 토글 (G)
-        // 화면 흔들기 + 줌 적용 — game world 만, HUD/text(별도 ortho)는 영향 없음
+        glUniform1i(g_MainFxLoc, g_ShaderFx ? 1 : 0);   // CRT ?곗씠???④낵 ?좉? (G)
+        // ?붾㈃ ?붾뱾湲?+ 以??곸슜 ??game world 留? HUD/text(蹂꾨룄 ortho)???곹뼢 ?놁쓬
         float orthoShake[16];
         memcpy(orthoShake, g_BaseOrtho, sizeof(g_BaseOrtho));
-        // 줌(중심 = ZCX/ZCY, 기본 화면 중앙). z=1 이면 base ortho 와 동일(identity)
+        // 以?以묒떖 = ZCX/ZCY, 湲곕낯 ?붾㈃ 以묒븰). z=1 ?대㈃ base ortho ? ?숈씪(identity)
         {
             float z = g_ViewZoom;
             float zcx = ZCX(), zcy = ZCY();
@@ -3247,8 +3577,8 @@ int main() {
             orthoShake[12] =  2.0f * zcx * (1.0f - z) / (float)screenWidth  - 1.0f;
             orthoShake[13] =  1.0f - 2.0f * zcy * (1.0f - z) / (float)screenHeight;
         }
-        // 게임플레이/사망연출 외 상태(메뉴·게임오버 등)에선 화면 흔들림 잔여 제거
-        //   — 사망 후 시작창으로 갔을 때 화면이 계속 떨리던 문제 방지
+        // 寃뚯엫?뚮젅???щ쭩?곗텧 ???곹깭(硫붾돱쨌寃뚯엫?ㅻ쾭 ???먯꽑 ?붾㈃ ?붾뱾由??붿뿬 ?쒓굅
+        //   ???щ쭩 ???쒖옉李쎌쑝濡?媛붿쓣 ???붾㈃??怨꾩냽 ?⑤━??臾몄젣 諛⑹?
         {
             GameState gs = g_GameManager.currentState;
             if (gs != GameState::RUNNING && gs != GameState::DYING &&
@@ -3265,15 +3595,14 @@ int main() {
             orthoShake[12] -= 2.0f * sx / (float)screenWidth;
             orthoShake[13] += 2.0f * sy / (float)screenHeight;
         }
-        BatchFlush();   // ortho(줌) 바꾸기 전 — 이전 매트릭스로 쌓인 도형 먼저 그림
+        BatchFlush();   // ortho(以? 諛붽씀湲??????댁쟾 留ㅽ듃由?뒪濡??볦씤 ?꾪삎 癒쇱? 洹몃┝
         glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, orthoShake);
-        // 글로벌에도 동기화 — BindMainShader() 가 이 값 사용
+        // 湲濡쒕쾶?먮룄 ?숆린????BindMainShader() 媛 ??媛??ъ슜
         memcpy(g_MainOrtho, orthoShake, sizeof(orthoShake));
         glBindVertexArray(g_MainVAO);
     
-        // 월드/엔티티 렌더는 게임플레이 상태에서만 그린다 — 메뉴(시작창 등)에
-        //   직전 게임의 플레이어 창·잔여 엔티티가 정지 상태로 비치던 문제 방지.
-        //   (g_MainOrtho 는 위에서 이미 갱신했으므로 메뉴 텍스트/데모 렌더는 정상)
+        // ?붾뱶/?뷀떚???뚮뜑??寃뚯엫?뚮젅???곹깭?먯꽌留?洹몃┛????硫붾돱(?쒖옉李?????        //   吏곸쟾 寃뚯엫???뚮젅?댁뼱 李승룹옍???뷀떚?곌? ?뺤? ?곹깭濡?鍮꾩튂??臾몄젣 諛⑹?.
+        //   (g_MainOrtho ???꾩뿉???대? 媛깆떊?덉쑝誘濡?硫붾돱 ?띿뒪???곕え ?뚮뜑???뺤긽)
         {
         GameState wgs = g_GameManager.currentState;
         bool inWorldRender = (wgs == GameState::RUNNING || wgs == GameState::DYING ||
@@ -3282,37 +3611,34 @@ int main() {
                               wgs == GameState::GAMEOVER);
         if (inWorldRender) {
     
-        // 원거리 몹 FakeWindow 크기 상수 (렌더·클리핑 공용)
+        // ?먭굅由?紐?FakeWindow ?ш린 ?곸닔 (?뚮뜑쨌?대━??怨듭슜)
         const float RFW_W = g_RfwW;
         const float RFW_H = g_RfwH;
     
         // ============================================================
-        // 렌더 z-order (아래→위)
-        //  (a) 원거리 몹 FakeWindow 배경  ← 가장 아래
-        //  (b) 원거리 몹 창 내부의 잡몹·총알·다이아몬드 (scissor 클리핑)
-        //  (c) 플레이어 FakeWindow 배경 ← 위에서 덮음
-        //  (d) 플레이어 캐릭터/사망 이펙트
-        //  (e) 플레이어 창 내부의 잡몹·총알 (scissor 클리핑) ← 가장 위
-        //  (f) BrokenSight 오브 (클리핑 없음)
+        // ?뚮뜑 z-order (?꾨옒?믪쐞)
+        //  (a) ?먭굅由?紐?FakeWindow 諛곌꼍  ??媛???꾨옒
+        //  (b) ?먭굅由?紐?李??대????〓す쨌珥앹븣쨌?ㅼ씠?꾨が??(scissor ?대━??
+        //  (c) ?뚮젅?댁뼱 FakeWindow 諛곌꼍 ???꾩뿉????쓬
+        //  (d) ?뚮젅?댁뼱 罹먮┃???щ쭩 ?댄럺??        //  (e) ?뚮젅?댁뼱 李??대????〓す쨌珥앹븣 (scissor ?대━?? ??媛????        //  (f) BrokenSight ?ㅻ툕 (?대━???놁쓬)
         // ============================================================
     
-        // (a0) 투명 배경 가리기 — 충격파 배경 + 텔레그래프 배경
-        //      glDisable(GL_BLEND) + 불투명 어두운 도형 → 이후 FakeWindow 로 덮어씀
-        //      투명 영역에만 남아 VFX / 텔레그래프가 데스크톱 위에 뜨지 않게 함
+        // (a0) ?щ챸 諛곌꼍 媛由ш린 ??異⑷꺽??諛곌꼍 + ?붾젅洹몃옒??諛곌꼍
+        //      glDisable(GL_BLEND) + 遺덊닾紐??대몢???꾪삎 ???댄썑 FakeWindow 濡???뼱?
         BatchFlush(); glDisable(GL_BLEND);
         BindMainShader();
     
-        // (a0-1) 자폭병 충격파 배경 — needsBg 플래그가 설정된 충격파에 한해
+        // (a0-1) ?먰룺蹂?異⑷꺽??諛곌꼍 ??needsBg ?뚮옒洹멸? ?ㅼ젙??異⑷꺽?뚯뿉 ?쒗빐
         for (auto& sw : g_ShockWaves) {
             if (!sw.active || !sw.needsBg) continue;
-            float t   = 1.0f - sw.life / sw.maxLife;  // 0→1
-            float bgR = sw.maxRadius * t + 30.0f;      // 링보다 조금 크게
+            float t   = 1.0f - sw.life / sw.maxLife;  // 0??
+            float bgR = sw.maxRadius * t + 30.0f;      // 留곷낫??議곌툑 ?ш쾶
             drawCircle(sw.x, sw.y, bgR, 0.08f, 0.08f, 0.10f, 1.0f);
         }
     
-        // (a) 원거리 몹 + 포탑 + 보스 FakeWindow 배경 — 블렌드 OFF 로 직접 덮어쓰기
-        //     겹쳐서 또 그려도 같은 색이 그대로 쓰여 누적 없음.
-        // 포탑 250×250 창 배경 (다수)
+        // (a) ?먭굅由?紐?+ ?ы깙 + 蹂댁뒪 FakeWindow 諛곌꼍 ??釉붾젋??OFF 濡?吏곸젒 ??뼱?곌린
+        //     寃뱀퀜????洹몃젮??媛숈? ?됱씠 洹몃?濡??곗뿬 ?꾩쟻 ?놁쓬.
+        // ?ы깙 250횞250 李?諛곌꼍 (?ㅼ닔)
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
                 float twx = WinOrigin(t.x, TURRET_WIN_W);
@@ -3321,10 +3647,10 @@ int main() {
                          0.06f, 0.08f, 0.10f, 1.0f);
             }
         }
-        // ── 가짜창 통합 z-리스트 (낮음→높음: 봇넷 < 원거리 < 보스/슬라임). 같은 타입은
-        //    소환(벡터) 순서 = 먼저 소환된 애가 아래. 배경+네온보더를 이 순서로 '창 단위'
-        //    로 그려, 높은 창의 불투명 배경이 낮은 창의 배경·외곽선을 자연히 덮음(우선순위 가림).
-        //    (플레이어 창은 이 뒤에 따로 그려 항상 최상단.)
+        // ?? 媛吏쒖갹 ?듯빀 z-由ъ뒪??(??쓬?믩넂?? 遊뉖꽬 < ?먭굅由?< 蹂댁뒪/?щ씪??. 媛숈? ??낆?
+        //    ?뚰솚(踰≫꽣) ?쒖꽌 = 癒쇱? ?뚰솚???좉? ?꾨옒. 諛곌꼍+?ㅼ삩蹂대뜑瑜????쒖꽌濡?'李??⑥쐞'
+        //    濡?洹몃젮, ?믪? 李쎌쓽 遺덊닾紐?諛곌꼍????? 李쎌쓽 諛곌꼍쨌?멸낸?좎쓣 ?먯뿰????쓬(?곗꽑?쒖쐞 媛由?.
+        //    (?뚮젅?댁뼱 李쎌? ???ㅼ뿉 ?곕줈 洹몃젮 ??긽 理쒖긽??)
         struct FWin { float x, y, w, h; const wchar_t* name;
                       float br, bgc, bbc, nr, ngc, nbc; };
         std::vector<FWin> zwins;
@@ -3332,39 +3658,36 @@ int main() {
                         float br, float bgc, float bbc, float nr, float ngc, float nbc) {
             zwins.push_back({ cx - w*0.5f, cy - h*0.5f, w, h, nm, br,bgc,bbc, nr,ngc,nbc });
         };
-        // 봇넷 노드 (최하단, 소환 순서)
+        // 遊뉖꽬 ?몃뱶 (理쒗븯?? ?뚰솚 ?쒖꽌)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
             float w = SPAWNER_WIN_W * m->sizeScale;
             addW(m->worldX, m->worldY, w, w, L"botnet.node", 0.06f,0.10f,0.09f, 0.20f,0.85f,0.65f);
         }
-        // DDOS — DrawAppWindow 통합 패스 (e3) 에서만 렌더
-        // 원거리 몹 (소환 순서)
+        // DDOS ??DrawAppWindow ?듯빀 ?⑥뒪 (e3) ?먯꽌留??뚮뜑
+        // ?먭굅由?紐?(?뚰솚 ?쒖꽌)
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
             float sc = r->deathScale;
             addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"popup.exe", 0.08f,0.08f,0.10f, 0.85f,0.20f,0.95f);
         }
-        // 보스/분열체 (상단)
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-            auto* b0 = g_MonsterManager.boss;
-            addW(b0->worldX, b0->worldY,
-                 Boss::WIN_W, Boss::WIN_H,
-                 L"HANG.exe", 0.07f,0.08f,0.10f, 0.65f,0.68f,0.74f);
-        }
+        // 蹂댁뒪/遺꾩뿴泥?(?곷떒)
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
                  L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
-        if (g_SpamBoss && g_SpamBoss->alive)
-            addW(g_SpamBoss->worldX, g_SpamBoss->worldY, SPAM_WIN_W, SPAM_WIN_W,
-                 L"SPAM.dll", 0.10f,0.06f,0.09f, 1.0f,0.40f,0.80f);
-        if (g_KernelBoss && g_KernelBoss->alive)
-            addW(g_KernelBoss->worldX, g_KernelBoss->worldY, KERNEL_WIN_W, KERNEL_WIN_W,
-                 L"KERNEL.sys", 0.10f,0.07f,0.05f, 1.0f,0.65f,0.25f);
-        if (g_FirewallBoss && g_FirewallBoss->alive)
-            addW(g_FirewallBoss->worldX, g_FirewallBoss->worldY, FIREWALL_WIN_W, FIREWALL_WIN_W,
-                 L"FIREWALL.sys", 0.10f,0.06f,0.05f, 1.0f,0.45f,0.2f);
-        // 포탑 창 배경+보더 (최하단, 플레이어 소유라 z-리스트 밖)
+        if (g_PolyBoss && g_PolyBoss->alive)
+            addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
+                 L"POLYMORPH.vir", 0.09f,0.06f,0.11f, 0.60f,0.30f,1.0f);
+        if (g_BotnetBoss && g_BotnetBoss->alive)
+            addW(g_BotnetBoss->worldX, g_BotnetBoss->worldY, BOTNET_WIN_W, BOTNET_WIN_W,
+                 L"C2_RELAY.sys", 0.04f,0.07f,0.05f, 0.25f,0.92f,0.45f);
+        if (g_CentiBoss && g_CentiBoss->alive)
+            addW(g_CentiBoss->worldX, g_CentiBoss->worldY, CENTI_WIN_W, CENTI_WIN_W,
+                 CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f);
+        if (g_TotemBoss && g_TotemBoss->alive)
+            addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
+                 L"RITE.CORE", 0.08f,0.04f,0.10f, 0.85f,0.45f,0.95f);
+        // ?ы깙 李?諛곌꼍+蹂대뜑 (理쒗븯?? ?뚮젅?댁뼱 ?뚯쑀??z-由ъ뒪??諛?
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
                 BatchFlush(); glDisable(GL_BLEND);
@@ -3375,17 +3698,17 @@ int main() {
                                TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
             }
         }
-        // z-리스트 — 창 단위로 (불투명 배경 → 네온 보더). 높은 창이 낮은 창을 자연 가림.
+        // z-由ъ뒪????李??⑥쐞濡?(遺덊닾紐?諛곌꼍 ???ㅼ삩 蹂대뜑). ?믪? 李쎌씠 ??? 李쎌쓣 ?먯뿰 媛由?
         for (auto& fw : zwins) {
             BatchFlush(); glDisable(GL_BLEND);
             drawRect(fw.x, fw.y, fw.w, fw.h, fw.br, fw.bgc, fw.bbc, 1.0f);
             BatchFlush(); glEnable(GL_BLEND);
             drawNeonBorder(fw.x, fw.y, fw.w, fw.h, fw.nr, fw.ngc, fw.nbc);
         }
-        BatchFlush(); glEnable(GL_BLEND);  // 이후 일반 알파 블렌딩 보장
+        BatchFlush(); glEnable(GL_BLEND);  // ?댄썑 ?쇰컲 ?뚰뙆 釉붾젋??蹂댁옣
     
-        // (b) 원거리 몹 + 보스 창 내부 컨텐츠 (잡몹·자폭병·총알·파편)
-        //     각 창마다 scissor 패스. 다이아몬드/본체는 (e2)/(e3) 에서 별도로 그림
+        // (b) ?먭굅由?紐?+ 蹂댁뒪 李??대? 而⑦뀗痢?(?〓す쨌?먰룺蹂뫢룹킑?뙿룻뙆??
+        //     媛?李쎈쭏??scissor ?⑥뒪. ?ㅼ씠?꾨が??蹂몄껜??(e2)/(e3) ?먯꽌 蹂꾨룄濡?洹몃┝
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
@@ -3394,40 +3717,39 @@ int main() {
             float rwx = r->worldX - rW * 0.5f;
             float rwy = r->worldY - rH * 0.5f;
             WorldScissor(rwx, rwy, rW, rH);
-            // 잡몹 (보스 소환물은 더 큼) — 창 밖은 컬링
+            // ?〓す (蹂댁뒪 ?뚰솚臾쇱? ???? ??李?諛뽰? 而щ쭅
             for (auto m : g_MonsterManager.monsters) {
                 if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, rwx, rwy, rW, rH)) continue;
                 drawMob(m);
             }
-            // 자폭병 (5각형)
+            // ?먰룺蹂?(5媛곹삎)
             for (auto bm : g_MonsterManager.bombers) {
                 if (!bm->alive || !inWin(bm->worldX, bm->worldY, rwx, rwy, rW, rH)) continue;
                 drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
                              bm->color.r, bm->color.g, bm->color.b, 1.0f);
-                // 점화 중 — 트리거/폭발 반경 표시
+                // ?먰솕 以????몃━嫄???컻 諛섍꼍 ?쒖떆
                 if (bm->arming) {
                     drawCircle(bm->worldX, bm->worldY, bm->blastRadius,
                                1.0f, 0.2f, 0.2f, 0.10f);
                 }
             }
-            // 총알
+            // 珥앹븣
             for (auto& b : g_Bullets) {
                 if (!b.active || !inWin(b.x, b.y, rwx, rwy, rW, rH)) continue;
                 drawBullet(b);
             }
-            // 사망 파티클
             for (auto& p : g_EnemyParts) {
                 if (!p.active || !inWin(p.x, p.y, rwx, rwy, rW, rH)) continue;
                 float a  = p.life / p.maxLife;
                 float hs = p.size * 0.5f;
                 drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
             }
-            // 다가오는 죽음 오브 (창 안에서만)
+            // ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 (李??덉뿉?쒕쭔)
             for (auto& orb : g_ApproachOrbs) {
                 DrawApproachOrb(orb.x, orb.y);
             }
         }
-        // (b'') 포탑 창 안 컨텐츠 (다수)
+        // (b'') ?ы깙 李???而⑦뀗痢?(?ㅼ닔)
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
                 float twx = WinOrigin(t.x, TURRET_WIN_W);
@@ -3456,10 +3778,9 @@ int main() {
             }
         }
     
-        // (b') 보스 창 안 컨텐츠 — 같은 잡몹/자폭병/총알을 보스 창 영역으로도 노출
-        //     모든 보스 종류(슬라임/글리치/리로드/폴리/스팸/슬라임분열체) 공통 처리.
-        //     E22: 이전엔 슬라임 보스(g_MonsterManager.boss)만 노출돼 다른 보스 창에선
-        //          잡몹/탄이 컬링되어 안 보였음 → 보스별 창 영역마다 scissor 패스 추가.
+        // (b') 蹂댁뒪 李???而⑦뀗痢???媛숈? ?〓す/?먰룺蹂?珥앹븣??蹂댁뒪 李??곸뿭?쇰줈???몄텧
+        //     紐⑤뱺 蹂댁뒪 醫낅쪟(?щ씪??湲由ъ튂/由щ줈???대━/?ㅽ뙵/?щ씪?꾨텇?댁껜) 怨듯넻 泥섎━.
+        //     E22: ?댁쟾???щ씪??蹂댁뒪(g_MonsterManager.boss)留??몄텧???ㅻⅨ 蹂댁뒪 李쎌뿉??        //          ?〓す/?꾩씠 而щ쭅?섏뼱 ??蹂댁?????蹂댁뒪蹂?李??곸뿭留덈떎 scissor ?⑥뒪 異붽?.
         auto drawBossWinContent = [&](float bwx, float bwy, float ww, float wh, bool withBullets = true) {
             WorldScissor(bwx, bwy, ww, wh);
             for (auto m : g_MonsterManager.monsters) {
@@ -3489,25 +3810,22 @@ int main() {
                 DrawApproachOrb(orb.x, orb.y);
             }
         };
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-            auto* bs = g_MonsterManager.boss;
-            drawBossWinContent(bs->worldX - Boss::WIN_W * 0.5f,
-                               bs->worldY - Boss::WIN_H * 0.5f,
-                               Boss::WIN_W, Boss::WIN_H);
-        }
         if (g_RRBoss && g_RRBoss->alive)
             drawBossWinContent(g_RRBoss->worldX - RR_WIN_W * 0.5f,
                                g_RRBoss->worldY - RR_WIN_W * 0.5f, RR_WIN_W, RR_WIN_W);
-        if (g_SpamBoss && g_SpamBoss->alive)
-            drawBossWinContent(g_SpamBoss->worldX - SPAM_WIN_W * 0.5f,
-                               g_SpamBoss->worldY - SPAM_WIN_W * 0.5f, SPAM_WIN_W, SPAM_WIN_W);
-        if (g_KernelBoss && g_KernelBoss->alive)
-            drawBossWinContent(g_KernelBoss->worldX - KERNEL_WIN_W * 0.5f,
-                               g_KernelBoss->worldY - KERNEL_WIN_W * 0.5f, KERNEL_WIN_W, KERNEL_WIN_W);
-        if (g_FirewallBoss && g_FirewallBoss->alive)
-            drawBossWinContent(g_FirewallBoss->worldX - FIREWALL_WIN_W * 0.5f,
-                               g_FirewallBoss->worldY - FIREWALL_WIN_W * 0.5f, FIREWALL_WIN_W, FIREWALL_WIN_W);
-        // 봇넷 노드(SPAWNER) 창 내부 컨텐츠 — 노드 본체/소환 알이 자기 창에서 보이도록 (E21)
+        if (g_PolyBoss && g_PolyBoss->alive)
+            drawBossWinContent(g_PolyBoss->worldX - POLY_WIN_W * 0.5f,
+                               g_PolyBoss->worldY - POLY_WIN_W * 0.5f, POLY_WIN_W, POLY_WIN_W);
+        if (g_BotnetBoss && g_BotnetBoss->alive)
+            drawBossWinContent(g_BotnetBoss->worldX - BOTNET_WIN_W * 0.5f,
+                               g_BotnetBoss->worldY - BOTNET_WIN_W * 0.5f, BOTNET_WIN_W, BOTNET_WIN_W);
+        if (g_CentiBoss && g_CentiBoss->alive)
+            drawBossWinContent(g_CentiBoss->worldX - CENTI_WIN_W * 0.5f,
+                               g_CentiBoss->worldY - CENTI_WIN_W * 0.5f, CENTI_WIN_W, CENTI_WIN_W);
+        if (g_TotemBoss && g_TotemBoss->alive)
+            drawBossWinContent(g_TotemBoss->worldX - TOTEM_WIN_W * 0.5f,
+                               g_TotemBoss->worldY - TOTEM_WIN_W * 0.5f, TOTEM_WIN_W, TOTEM_WIN_W);
+        // 遊뉖꽬 ?몃뱶(SPAWNER) 李??대? 而⑦뀗痢????몃뱶 蹂몄껜/?뚰솚 ?뚯씠 ?먭린 李쎌뿉??蹂댁씠?꾨줉 (E21)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
             float w = SPAWNER_WIN_W * m->sizeScale;
@@ -3515,19 +3833,65 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-        // (c) 플레이어 FakeWindow 배경
-        //     원거리 몹 창과 겹친 영역도 player 색으로 깔끔하게 덮임 (누적 없음)
-        //     ranged 컨텐츠 (b) 가 player 영역에 그려졌으면 여기서 덮여 사라짐
-        //     = "원거리 몹 창이 플레이어 창 안에 들어가면 가려짐" 원래 의도 그대로
+        // FORK.worm child adds ??媛곸옄 媛吏???李?(y ?ㅻ쫫李⑥닚 = ?꾨옒媛 ?꾨줈 寃뱀묠)
+        if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
+            const float MW = CentipedeBoss::MINI_WIN_W, MH = CentipedeBoss::MINI_WIN_H;
+            std::vector<CentipedeBoss::MiniBug*> ord;
+            for (auto& mb : g_CentiBoss->minis) if (mb.alive) ord.push_back(&mb);
+            std::sort(ord.begin(), ord.end(),
+                      [](CentipedeBoss::MiniBug* a, CentipedeBoss::MiniBug* b) { return a->y < b->y; });
+            for (auto* mbp : ord) {
+                auto& mb = *mbp;
+                float wx = mb.x - MW * 0.5f, wy = mb.y - MH * 0.5f;
+                DrawAppWindow(wx, wy, MW, MH, CentipedeBoss::MINI_WIN_NAME, CentipedeBoss::MINI_WIN_TB);
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy, MW, MH);
+                for (auto& b : g_Bullets)
+                    if (b.active && inWin(b.x, b.y, wx, wy, MW, MH)) drawBullet(b);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+                g_CentiBoss->drawMini(mb);
+                BatchFlush();
+            }
+        }
+
+        if (g_TotemBoss && g_TotemBoss->alive) {
+            const float TW = TotemBoss::WIN_W * g_Scale, TH = TotemBoss::WIN_H * g_Scale;
+            const float TTB = TotemBoss::WIN_TB * g_Scale;
+            struct TotemPtr { TotemBoss::Totem* p; };
+            std::vector<TotemPtr> ord;
+            for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++)
+                if (g_TotemBoss->totems[ti].alive) ord.push_back({ &g_TotemBoss->totems[ti] });
+            std::sort(ord.begin(), ord.end(),
+                      [](TotemPtr a, TotemPtr b) { return a.p->y < b.p->y; });
+            float gtTot = (float)glfwGetTime();
+            for (auto& tp : ord) {
+                auto& tt = *tp.p;
+                float wx = tt.x - TW * 0.5f, wy = tt.y - TH * 0.5f;
+                DrawAppWindow(wx, wy, TW, TH,
+                              TotemBoss::totemWinTitle(tt.kind), TTB);
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy, TW, TH);
+                for (auto& b : g_Bullets)
+                    if (b.active && inWin(b.x, b.y, wx, wy, TW, TH)) drawBullet(b);
+                for (auto m : g_MonsterManager.monsters)
+                    if (m->alive && m->kind != MobKind::DDOS &&
+                        inWin(m->worldX, m->worldY, wx, wy, TW, TH)) drawMob(m);
+                g_TotemBoss->renderTotem(tt, gtTot);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            }
+        }
+
+        // (c) ?뚮젅?댁뼱 FakeWindow 諛곌꼍
+        //     ?먭굅由?紐?李쎄낵 寃뱀튇 ?곸뿭??player ?됱쑝濡?源붾걫?섍쾶 ??엫 (?꾩쟻 ?놁쓬)
         BatchFlush(); glDisable(GL_BLEND);
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                  0.05f, 0.06f, 0.09f, 1.0f);
         BatchFlush(); glEnable(GL_BLEND);
-        // 사이버펑크 네온 터미널 — 플레이어 창 네온 보더 (액센트 테마 색)
+        // ?ъ씠踰꾪럱???ㅼ삩 ?곕??????뚮젅?댁뼱 李??ㅼ삩 蹂대뜑 (?≪꽱???뚮쭏 ??
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        g_AccentR, g_AccentG, g_AccentB);
     
-        // (c2) HP/EXP 바 — 플레이어 창 하단 안쪽에 부착 (창과 함께 이동) ──
+        // (c2) HP/EXP 諛????뚮젅?댁뼱 李??섎떒 ?덉そ??遺李?(李쎄낵 ?④퍡 ?대룞) ??
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::PAUSED ||
             g_GameManager.currentState == GameState::AUG_SELECT ||
@@ -3535,10 +3899,9 @@ int main() {
             g_GameManager.currentState == GameState::DYING) {
             float pad = 12.0f, bx = playerWin.x + pad;
             float bw = playerWin.width - pad * 2.0f;
-            float hpH = 14.0f, xpH = 8.0f, gap = 3.0f;   // 두껍게 (가시성)
-            float hpY = playerWin.y + playerWin.height - 18.0f - hpH;   // 하단 안쪽
+            float hpH = 14.0f, xpH = 8.0f, gap = 3.0f;   // ?먭퍖寃?(媛?쒖꽦)
+            float hpY = playerWin.y + playerWin.height - 18.0f - hpH;   // ?섎떒 ?덉そ
             float xpY = hpY - gap - xpH;
-            // 공통 불투명 패널 — 탄막/적과 겹쳐도 바가 묻히지 않도록
             drawRect(bx - 5, xpY - 5, bw + 10, (hpY + hpH) - (xpY) + 10, 0.03f, 0.03f, 0.05f, 0.96f);
             // HP
             float hpFrac = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
@@ -3547,8 +3910,7 @@ int main() {
             float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
             drawRect(bx, hpY, bw, hpH, 0.22f, 0.04f, 0.04f, 1.0f);
             drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 1.0f);
-            // (HP 수치는 좌상단 HUD 에 표시 — 월드 섹션에서 텍스트를 그리면
-            //  TextRenderer 가 셰이더/VAO 를 언바인드해 이후 엔티티 렌더가 깨지므로 금지)
+            // (HP ?섏튂??醫뚯긽??HUD ???쒖떆 ???붾뱶 ?뱀뀡?먯꽌 ?띿뒪?몃? 洹몃━硫?            //  TextRenderer 媛 ?곗씠??VAO 瑜??몃컮?몃뱶???댄썑 ?뷀떚???뚮뜑媛 源⑥?誘濡?湲덉?)
             // XP
             long long needX = g_ExpSystem.Required(g_GameManager.playerLevel);
             float xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
@@ -3557,7 +3919,7 @@ int main() {
             drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
         }
     
-        // (c2.5) 배드 섹터 감속 구역 — 중심에서 부식되어 퍼지는 손상 블록(깜빡임 애니메이션)
+        // (c2.5) 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭 ??以묒떖?먯꽌 遺?앸릺???쇱????먯긽 釉붾줉(源쒕묀???좊땲硫붿씠??
         if (!g_SlowZones.empty()) {
             BindMainShader();
             float zt = (float)glfwGetTime();
@@ -3568,7 +3930,7 @@ int main() {
                 float zx = z.x + z.w*0.5f, zy = z.y + z.h*0.5f;
                 float hw = z.w*0.5f*gf, hh = z.h*0.5f*gf;
                 drawRect(zx - hw, zy - hh, hw*2, hh*2, 0.32f, 0.08f, 0.45f, 0.14f*lifeF + 0.04f);
-                // 부식 블록 — 셀별 의사난수 깜빡임, 중심에서 grow factor 까지만 노출(퍼짐)
+                // 遺??釉붾줉 ???蹂??섏궗?쒖닔 源쒕묀?? 以묒떖?먯꽌 grow factor 源뚯?留??몄텧(?쇱쭚)
                 const int N = 7;
                 float cw = z.w / (float)N, ch = z.h / (float)N;
                 for (int iy = 0; iy < N; iy++) for (int ix = 0; ix < N; ix++) {
@@ -3576,7 +3938,7 @@ int main() {
                     float fy = z.y + ((float)iy + 0.5f) * ch;
                     float dxn = (fx - zx) / (z.w*0.5f + 1e-3f);
                     float dyn = (fy - zy) / (z.h*0.5f + 1e-3f);
-                    if (sqrtf(dxn*dxn + dyn*dyn) > gf) continue;   // 아직 부식 안 닿음
+                    if (sqrtf(dxn*dxn + dyn*dyn) > gf) continue;   // ?꾩쭅 遺?????우쓬
                     float seed = sinf((float)ix*12.9898f + (float)iy*78.233f) * 43758.5453f;
                     float ph = seed - floorf(seed);
                     float fl = 0.45f + 0.55f * sinf(zt * 6.0f + ph * 6.2831853f);
@@ -3587,7 +3949,7 @@ int main() {
             }
         }
     
-        // (c3) 스캔 레이저 빔 — 페이드되는 청록 관통 빔 (보스 레이저 쿼드 패턴)
+        // (c3) ?ㅼ틪 ?덉씠? 鍮????섏씠?쒕릺??泥?줉 愿??鍮?(蹂댁뒪 ?덉씠? 荑쇰뱶 ?⑦꽩)
         if (!g_LaserBeams.empty()) {
             BindMainShader();
             for (auto& lb : g_LaserBeams) {
@@ -3612,15 +3974,15 @@ int main() {
         }
     
     
-        // (d) 플레이어 캐릭터 + 증강 이펙트 + 사망 파편
+        // (d) ?뚮젅?댁뼱 罹먮┃??+ 利앷컯 ?댄럺??+ ?щ쭩 ?뚰렪
         {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
-            // 총검: 200px 이내 표시 (희미한 시안 원)
+            // 珥앷?: 200px ?대궡 ?쒖떆 (?щ????쒖븞 ??
             if (g_Stats.bayonet)
                 drawCircle(pCX, pCY, 200.0f, 0.4f, 1.0f, 0.9f, 0.10f);
     
-            // 궁수 차징 게이지 (플레이어 위 바) — 완충 시 흰색 번쩍
+            // 沅곸닔 李⑥쭠 寃뚯씠吏 (?뚮젅?댁뼱 ??諛? ???꾩땐 ???곗깋 踰덉찉
             if (g_Stats.bowWeapon && g_ArcherCharge > 0.001f) {
                 float bw = 60.0f, bh = 7.0f;
                 float bxp = pCX - bw * 0.5f, byp = pCY - 44.0f;
@@ -3633,14 +3995,13 @@ int main() {
             if (g_GameManager.currentState == GameState::DYING) {
                 float fade = (g_DyingTimer > 0) ? g_DyingTimer : 0.0f;
     
-                // 폭발 충격파
                 float t      = 1.0f - fade;
                 float shockR = 60.0f + t * 520.0f;
                 float shockA = (1.0f - t) * 0.55f;
                 drawCircle(g_DeathCX, g_DeathCY, shockR,
                            1.0f, 0.95f, 0.4f, shockA);
     
-                // 중심 섬광
+                // 以묒떖 ?ш킅
                 if (g_DeathFlash > 0.0f) {
                     float fr = 220.0f * g_DeathFlash;
                     drawCircle(g_DeathCX, g_DeathCY, fr,
@@ -3649,7 +4010,7 @@ int main() {
                                1.0f, 0.85f, 0.2f, g_DeathFlash * 0.45f);
                 }
     
-                // 사망 파편
+                // ?щ쭩 ?뚰렪
                 for (int i = 0; i < MAX_DEBRIS; i++) {
                     if (!g_Debris[i].active) continue;
                     float s  = g_Debris[i].size;
@@ -3658,36 +4019,35 @@ int main() {
                              g_Debris[i].r, g_Debris[i].g, g_Debris[i].b, fade);
                 }
             } else if (g_GameManager.currentState != GameState::GAMEOVER) {
-                // 이동 잔상 — 플레이어 뒤(먼저 그려 아래에 깔림), 수명 비례 페이드+축소
+                // ?대룞 ?붿긽 ???뚮젅?댁뼱 ??癒쇱? 洹몃젮 ?꾨옒??源붾┝), ?섎챸 鍮꾨? ?섏씠??異뺤냼
                 for (auto& tr : g_Trail) {
-                    float f = tr.life / tr.maxLife;        // 1→0
+                    float f = tr.life / tr.maxLife;        // 1??
                     float s = tr.size * (0.4f + 0.6f * f);
                     drawRect(tr.x - s*0.5f, tr.y - s*0.5f, s, s, tr.r, tr.g, tr.b, 0.28f * f);
                 }
                 float sz = PLAYER_SIZE * g_Stats.playerSizeMult;
                 float hs = sz * 0.5f;
-                // 외곽: 어두운 테두리 (대비)
+                // ?멸낸: ?대몢???뚮몢由?(?鍮?
                 drawRect(pCX - hs - 3, pCY - hs - 3, sz + 6, sz + 6,
                          0.0f, 0.0f, 0.0f, 0.8f);
-                // 본체: 밝은 시안
+                // 蹂몄껜: 諛앹? ?쒖븞
                 drawRect(pCX - hs, pCY - hs, sz, sz,
                          0.3f, 1.0f, 1.0f, 1.0f);
-                // 중심 코어: 흰색 작은 사각형
                 float core = sz * 0.35f;
                 drawRect(pCX - core * 0.5f, pCY - core * 0.5f, core, core,
                          1.0f, 1.0f, 1.0f, 1.0f);
     
-                // ── 산나비식 HP 게이지바 — 피격 시 플레이어 위에 떴다 페이드, 피 낮으면 상시 ──
+                // ?? ?곕굹鍮꾩떇 HP 寃뚯씠吏諛????쇨꺽 ???뚮젅?댁뼱 ?꾩뿉 ?대떎 ?섏씠?? ????쑝硫??곸떆 ??
                 if (g_GameManager.currentState == GameState::RUNNING) {
                     float hf = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
                     if (hf < 0.0f) hf = 0.0f; if (hf > 1.0f) hf = 1.0f;
                     bool low = hf < 0.40f;
                     float vis = low ? 1.0f
-                              : (g_HpBarPop > 1.6f ? (2.2f - g_HpBarPop) / 0.6f   // 빠른 페이드인
-                                                   : g_HpBarPop / 1.6f);          // 느린 페이드아웃
+                              : (g_HpBarPop > 1.6f ? (2.2f - g_HpBarPop) / 0.6f
+                                                   : g_HpBarPop / 1.6f);
                     if (vis > 1.0f) vis = 1.0f; if (vis < 0.0f) vis = 0.0f;
                     if (vis > 0.01f) {
-                        // 작고 플레이어에 가깝게 — 위쪽 적을 덜 가리도록 (가린다는 피드백)
+                        // ?묎퀬 ?뚮젅?댁뼱??媛源앷쾶 ???꾩そ ?곸쓣 ??媛由щ룄濡?(媛由곕떎???쇰뱶諛?
                         float bw = 46.0f * g_Stats.playerSizeMult, bh = 5.0f;
                         float bx = pCX - bw * 0.5f, by = pCY - hs - 15.0f;
                         drawRect(bx - 1.5f, by - 1.5f, bw + 3, bh + 3, 0.0f, 0.0f, 0.0f, 0.6f * vis);
@@ -3698,8 +4058,8 @@ int main() {
                     }
                 }
     
-                // ── 위치 강조 표시 (혼잡한 탄막 속에서 플레이어를 쉽게 찾도록) ──
-                //   + 자형 레티클(중심 비움) + 옅은 헤일로. HP 낮을수록 강해지고 붉어짐.
+                // ?? ?꾩튂 媛뺤“ ?쒖떆 (?쇱옟???꾨쭑 ?띿뿉???뚮젅?댁뼱瑜??쎄쾶 李얜룄濡? ??
+                //   + ?먰삎 ?덊떚??以묒떖 鍮꾩?) + ?낆? ?ㅼ씪濡? HP ??쓣?섎줉 媛뺥빐吏怨?遺됱뼱吏?
                 if (g_GameManager.currentState == GameState::RUNNING) {
                     float hpFrac = (g_Stats.maxHP > 0.0f)
                                  ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
@@ -3708,36 +4068,35 @@ int main() {
                     float spd   = low ? 9.0f : 3.5f;
                     float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * spd);
                     float a = (low ? (0.45f + 0.4f * pulse) : (0.22f + 0.12f * pulse));
-                    // 색: 평상시 시안, 위험 시 붉게
+                    // ?? ?됱긽???쒖븞, ?꾪뿕 ??遺됯쾶
                     float rr = low ? 1.0f : 0.4f;
                     float gg = low ? 0.35f : 1.0f;
                     float bb = low ? 0.35f : 1.0f;
-                    // 옅은 헤일로(채워진 원) — 멀리서도 위치가 보이도록
+                    // ?낆? ?ㅼ씪濡?梨꾩썙吏??? ??硫由ъ꽌???꾩튂媛 蹂댁씠?꾨줉
                     drawCircle(pCX, pCY, hs + 22.0f * g_Stats.playerSizeMult,
                                rr, gg, bb, a * 0.18f);
-                    // + 자형 레티클 (중심은 비워서 본체를 가리지 않음)
+                    // + ?먰삎 ?덊떚??(以묒떖? 鍮꾩썙??蹂몄껜瑜?媛由ъ? ?딆쓬)
                     float gap = hs + 6.0f;
                     float L   = 16.0f * g_Stats.playerSizeMult;
                     float t   = 3.0f;
-                    drawRect(pCX - t*0.5f, pCY - gap - L, t, L, rr, gg, bb, a);  // 위
-                    drawRect(pCX - t*0.5f, pCY + gap,     t, L, rr, gg, bb, a);  // 아래
-                    drawRect(pCX - gap - L, pCY - t*0.5f, L, t, rr, gg, bb, a);  // 좌
-                    drawRect(pCX + gap,     pCY - t*0.5f, L, t, rr, gg, bb, a);  // 우
+                    drawRect(pCX - t*0.5f, pCY - gap - L, t, L, rr, gg, bb, a);
+                    drawRect(pCX - t*0.5f, pCY + gap,     t, L, rr, gg, bb, a);
+                    drawRect(pCX - gap - L, pCY - t*0.5f, L, t, rr, gg, bb, a);
+                    drawRect(pCX + gap,     pCY - t*0.5f, L, t, rr, gg, bb, a);
                 }
             }
         }
     
-        // (e) 플레이어 창 내부 컨텐츠 — scissor (가장 위 레이어)
+        // (e) ?뚮젅?댁뼱 李??대? 而⑦뀗痢???scissor (媛?????덉씠??
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
         WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
         {
         float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
-        // 잡몹 (보스 소환물은 더 큼) — 창 밖 컬링
+        // ?〓す (蹂댁뒪 ?뚰솚臾쇱? ???? ??李?諛?而щ쭅
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
             drawMob(m);
         }
-        // 자폭병
         for (auto bm : g_MonsterManager.bombers) {
             if (!bm->alive || !inWin(bm->worldX, bm->worldY, pwx, pwy, pww, pwh)) continue;
             drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
@@ -3747,12 +4106,11 @@ int main() {
                            1.0f, 0.2f, 0.2f, 0.10f);
             }
         }
-        // 총알
+        // 珥앹븣
         for (auto& b : g_Bullets) {
             if (!b.active || !inWin(b.x, b.y, pwx, pwy, pww, pwh)) continue;
             drawBullet(b);
         }
-        // 사망 파티클
         for (auto& p : g_EnemyParts) {
             if (!p.active || !inWin(p.x, p.y, pwx, pwy, pww, pwh)) continue;
             float a  = p.life / p.maxLife;
@@ -3760,13 +4118,13 @@ int main() {
             drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
         }
         }
-        // 다가오는 죽음 오브 (플레이어 창 안에서만)
+        // ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 (?뚮젅?댁뼱 李??덉뿉?쒕쭔)
         for (auto& orb : g_ApproachOrbs) {
             DrawApproachOrb(orb.x, orb.y);
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-        // (e3) flood.exe — y-sort 앱 창 (플레이어 위 레이어)
+        // (e3) flood.exe ??y-sort ??李?(?뚮젅?댁뼱 ???덉씠??
         {
             std::vector<Monster*> ddos;
             for (auto m : g_MonsterManager.monsters) {
@@ -3791,7 +4149,7 @@ int main() {
             }
         }
 
-        // (e2) 원거리 몹 다이아몬드 — 각 원거리 몹 창 영역에서 항상 위에 그림
+        // (e2) ?먭굅由?紐??ㅼ씠?꾨が????媛??먭굅由?紐?李??곸뿭?먯꽌 ??긽 ?꾩뿉 洹몃┝
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
@@ -3800,7 +4158,6 @@ int main() {
             float rwx = r->worldX - rW * 0.5f;
             float rwy = r->worldY - rH * 0.5f;
             WorldScissor(rwx, rwy, rW, rH);
-            // 죽은 몹은 다이아몬드도 축소 + 페이드
             float dSize = 32.0f * sc;
             float dAlpha = sc;
             drawDiamond(r->worldX, r->worldY, dSize,
@@ -3808,18 +4165,18 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
     
-        // (e2.1) 포탑 아이콘 + 수명바 (다수) — 각 창 영역 scissor 내에서 표시
+        // (e2.1) ?ы깙 ?꾩씠肄?+ ?섎챸諛?(?ㅼ닔) ??媛?李??곸뿭 scissor ?댁뿉???쒖떆
         if (g_Stats.turretMode) {
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             for (auto& t : g_Turrets) {
                 float twx = WinOrigin(t.x, TURRET_WIN_W);
                 float twy = WinOrigin(t.y, TURRET_WIN_H);
                 WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
-                // 포탑 본체 — 십자형 (중앙 사각형 + 4방향 돌출)
+                // ?ы깙 蹂몄껜 ????옄??(以묒븰 ?ш컖??+ 4諛⑺뼢 ?뚯텧)
                 float tc = 12.0f;
                 drawRect(t.x - tc, t.y - 4, tc*2, 8, 0.1f, 1.0f, 0.55f, 1.0f);
                 drawRect(t.x - 4, t.y - tc, 8, tc*2, 0.1f, 1.0f, 0.55f, 1.0f);
-                // 수명 바 (창 상단)
+                // ?섎챸 諛?(李??곷떒)
                 float lifeRem = 1.0f - t.lifeTimer / TURRET_LIFE;
                 if (lifeRem < 0.0f) lifeRem = 0.0f;
                 float barW = TURRET_WIN_W - 24.0f;
@@ -3831,100 +4188,74 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
-        // (e2.4) HANG LAG 장판 + 예고 (전체 화면)
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-            auto* bs = g_MonsterManager.boss;
-            float ogt = (float)glfwGetTime();
-            BindMainShader();
-            bs->renderZones(ogt);
-            if (bs->lagPending) {
-                float warnT = bs->lagTimer - (Boss::LAG_INTERVAL - Boss::LAG_WARN);
-                float prog = warnT / Boss::LAG_WARN;
-                if (prog < 0.0f) prog = 0.0f;
-                if (prog > 1.0f) prog = 1.0f;
-                float r = 28.0f + prog * 90.0f;
-                float blink = 0.25f + 0.35f * (0.5f + 0.5f * sinf(ogt * 14.0f));
-                drawCircle(bs->lagX, bs->lagY, r, 0.55f, 0.58f, 0.62f, blink * (0.12f + 0.32f * prog));
-                drawCircle(bs->lagX, bs->lagY, r * 0.35f, 0.72f, 0.75f, 0.78f, blink * 0.25f * prog);
-            }
-        }
-
-        // (e3) HANG.exe 본체 — 가짜 창
-        if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-            auto* bs = g_MonsterManager.boss;
-            bs->renderBody((float)glfwGetTime());
-        }
-
-        // (f) BrokenSight 오브 — 항상 표시 (클리핑 없음, 무적)
+        // (f) BrokenSight orb
         if (g_Stats.brokenSight && g_Orb.active) {
             drawCircle(g_Orb.x, g_Orb.y, 16.0f, 1.0f, 1.0f, 0.1f, 0.22f);
             drawDiamond(g_Orb.x, g_Orb.y, 22.0f, 1.0f, 0.92f, 0.0f, 1.0f);
         }
     
-        // 크로스헤어 — 게임 중에만, g_ShowCrosshair true 일 때
         if (g_ShowCrosshair &&
             (g_GameManager.currentState == GameState::RUNNING ||
              g_GameManager.currentState == GameState::PAUSED  ||
              g_GameManager.currentState == GameState::DYING)) {
-            float ax = wmx, ay = wmy;   // 줌 보정 → 줌 적용된 ortho 에서 커서 위치에 표시
-            // 외곽 어두운 원 + 중앙 십자 (링/십자는 액센트 테마 색)
+            float ax = wmx, ay = wmy;   // 以?蹂댁젙 ??以??곸슜??ortho ?먯꽌 而ㅼ꽌 ?꾩튂???쒖떆
+            // ?멸낸 ?대몢????+ 以묒븰 ??옄 (留???옄???≪꽱???뚮쭏 ??
             float cr = g_AccentR, cg = g_AccentG, cb = g_AccentB;
             drawCircle(ax, ay, 12.0f, 0.0f, 0.0f, 0.0f, 0.6f);
             drawCircle(ax, ay, 10.0f, cr, cg, cb, 0.9f);
             drawCircle(ax, ay, 5.0f, 0.05f, 0.05f, 0.05f, 0.9f);
-            // 중심 점
             drawRect(ax - 1.5f, ay - 1.5f, 3.0f, 3.0f,
                      1.0f, 1.0f, 1.0f, 1.0f);
-            // 4방향 짧은 라인 (십자)
+            // 4諛⑺뼢 吏㏃? ?쇱씤 (??옄)
             drawRect(ax - 14.0f, ay - 1.0f, 6.0f, 2.0f, cr, cg, cb, 0.95f);
             drawRect(ax + 8.0f,  ay - 1.0f, 6.0f, 2.0f, cr, cg, cb, 0.95f);
             drawRect(ax - 1.0f, ay - 14.0f, 2.0f, 6.0f, cr, cg, cb, 0.95f);
             drawRect(ax - 1.0f, ay + 8.0f,  2.0f, 6.0f, cr, cg, cb, 0.95f);
         }
     
-        // (g) 다가오는 죽음 오브 — scissor 안에서만 표시 ((b)/(e) 패스에 위임)
+        // (g) ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 ??scissor ?덉뿉?쒕쭔 ?쒖떆 ((b)/(e) ?⑥뒪???꾩엫)
     
-        // (g2) 충격파 — 자폭병 자폭 / 보스 스폰 등. 항상 위에 표시
+        // (g2) 異⑷꺽?????먰룺蹂??먰룺 / 蹂댁뒪 ?ㅽ룿 ?? ??긽 ?꾩뿉 ?쒖떆
         for (auto& sw : g_ShockWaves) {
             if (!sw.active) continue;
-            float t = 1.0f - sw.life / sw.maxLife;  // 0 → 1
+            float t = 1.0f - sw.life / sw.maxLife;  // 0 ??1
             float radius = sw.maxRadius * t;
             float alpha  = (1.0f - t) * 0.55f;
             drawCircle(sw.x, sw.y, radius, sw.r, sw.g, sw.b, alpha);
         }
     
-        // (g2b) 검객 스윙 잔상 — 조준 방향 부채꼴
+        // (g2b) 寃媛??ㅼ쐷 ?붿긽 ??議곗? 諛⑺뼢 遺梨꾧섦
         for (auto& sl : g_Slashes) {
             if (!sl.active) continue;
-            float t   = 1.0f - sl.life / sl.maxLife;       // 0 → 1
+            float t   = 1.0f - sl.life / sl.maxLife;       // 0 ??1
             float rad = sl.range * (0.72f + 0.28f * t);
             float alpha   = (1.0f - t) * 0.5f;
             float halfArc = 1.15f * (1.0f - 0.15f * t);
             drawConeFan(sl.x, sl.y, rad, sl.ang, halfArc, 0.85f, 0.95f, 1.0f, alpha);
         }
     
-        // (g2c) 타격 스파크 + 머즐 플래시 — 가산(additive) 블렌딩으로 밝게
+        // (g2c) ?寃??ㅽ뙆??+ 癒몄쫹 ?뚮옒????媛??additive) 釉붾젋?⑹쑝濡?諛앷쾶
         if (!g_Sparks.empty() || g_MuzzleTimer > 0.0f) {
             glBlendFunc(GL_SRC_ALPHA, GL_ONE);     // additive
             for (auto& sp : g_Sparks) {
-                float t = sp.life / sp.maxLife;    // 1 → 0
+                float t = sp.life / sp.maxLife;    // 1 ??0
                 drawCircle(sp.x, sp.y, sp.size * (0.5f + 0.5f * t),
                            sp.r, sp.g, sp.b, t);
             }
             if (g_MuzzleTimer > 0.0f) {
-                float mt = g_MuzzleTimer / 0.05f;  // 1 → 0
+                float mt = g_MuzzleTimer / 0.05f;  // 1 ??0
                 float mx2 = g_MuzzleX + cosf(g_MuzzleAng) * 26.0f;
                 float my2 = g_MuzzleY + sinf(g_MuzzleAng) * 26.0f;
                 drawCircle(mx2, my2, 22.0f * mt + 6.0f, 1.0f, 0.92f, 0.55f, mt * 0.9f);
                 drawCircle(mx2, my2, 11.0f * mt + 3.0f, 1.0f, 1.0f, 0.9f, mt);
             }
-            // 기본 분리 블렌딩 복원
+            // 湲곕낯 遺꾨━ 釉붾젋??蹂듭썝
             glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
                                 GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
         }
     
 
-                // VOLLEY.sys — 전조 + 기동 화력 드론
+                // VOLLEY.sys ???꾩“ + 湲곕룞 ?붾젰 ?쒕줎
         if (g_RRBoss && g_RRBoss->alive) {
             auto* rb = g_RRBoss;
             float pCX = playerWin.x + playerWin.width  * 0.5f;
@@ -3949,115 +4280,207 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
-        // (g4b) SPAM.dll — 회전 나선포 본체 + 탄막(개인 창 클리핑) + HP
-        if (g_SpamBoss && g_SpamBoss->alive) {
-            auto* sb = g_SpamBoss;
-            BindMainShader();
+        // (g4e) C2_RELAY.sys
+        if (g_BotnetBoss && g_BotnetBoss->alive) {
+            auto* nb2 = g_BotnetBoss;
+            float ct = (float)glfwGetTime();
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(sb->worldX - SPAM_WIN_W*0.5f, sb->worldY - SPAM_WIN_W*0.5f,
-                         SPAM_WIN_W, SPAM_WIN_W);
-            // 탄막이 창 안에서도 보이도록
-            for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
-            // 회전하는 나선 팔(발사구) — 본체 둘레에서 뻗는 작은 핑크 다이아
-            for (int a = 0; a < SpamBoss::ARMS; a++) {
-                float ang = sb->spiralAngle + (float)a * (6.2831853f / (float)SpamBoss::ARMS);
-                float ox = sb->worldX + cosf(ang) * (SpamBoss::BODY * 1.15f);
-                float oy = sb->worldY + sinf(ang) * (SpamBoss::BODY * 1.15f);
-                drawDiamond(ox, oy, SpamBoss::BODY * 0.32f, 1.0f, 0.45f, 0.85f, 0.95f);
-            }
-            // 본체 — 펄스하는 핑크/마젠타 다이아
-            float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 6.0f);
-            drawDiamond(sb->worldX, sb->worldY, SpamBoss::BODY,
-                        1.0f, 0.35f + 0.25f * pulse, 0.8f, 1.0f);
-            drawDiamond(sb->worldX, sb->worldY, SpamBoss::BODY * 0.5f,
-                        1.0f, 0.85f, 0.95f, 1.0f);
-            // (HP 바는 화면 상단 고정 보스 바로 이동)
+            WorldScissor(nb2->worldX - BOTNET_WIN_W * 0.5f, nb2->worldY - BOTNET_WIN_W * 0.5f,
+                         BOTNET_WIN_W, BOTNET_WIN_W);
+            nb2->renderCore(ct);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            auto c2MinionPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                for (auto& b : g_Bullets)
+                    if (b.active) drawBullet(b);
+                nb2->renderMinions(ct);
+            };
+            for (auto& fw : zwins) c2MinionPass(fw.x, fw.y, fw.w, fw.h);
+            c2MinionPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            if (g_Stats.turretMode)
+                for (auto& tr : g_Turrets)
+                    c2MinionPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
+                                 TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
-        // (g4c) KERNEL.sys — 고정형 거대 코어 + 팽창 예고 링 + 자가붕괴 비주얼
-        if (g_KernelBoss && g_KernelBoss->alive) {
-            auto* kb = g_KernelBoss;
-            BindMainShader();
+        // (g4f) FORK.worm ???뚮씪利덈쭏 泥댁씤: 媛吏?李?scissor ?덉뿉 蹂몄껜쨌adds쨌FX
+        //   李쎈쭏??scissor ?⑥뒪 ???ㅻⅨ 李쎌뿉?쒕룄 蹂댁씠?? 媛吏쒖갹 諛??щ쭑????洹몃┝.
+        if (g_CentiBoss && g_CentiBoss->alive) {
+            float ct = (float)glfwGetTime();
+            float centiAimX = playerWin.x + playerWin.width  * 0.5f;
+            float centiAimY = playerWin.y + playerWin.height * 0.5f;
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(kb->worldX - KERNEL_WIN_W*0.5f, kb->worldY - KERNEL_WIN_W*0.5f,
-                         KERNEL_WIN_W, KERNEL_WIN_W);
-            for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
-            // 팽창 예고 — 곧 뿜을 링을 미리 옅게(자라나는 호박 디스크)
-            if (kb->telegraphing()) {
-                float tp = kb->telegraphProg();
-                drawCircle(kb->worldX, kb->worldY, KernelBoss::BODY * (1.2f + tp * 2.2f),
-                           1.0f, 0.55f, 0.2f, 0.10f + 0.10f * tp);
-            }
-            // 본체 — 펄스하는 코어 (호박/주황 네스티드 + 회전 십자 프로세스)
-            float kp = 0.5f + 0.5f * sinf(kb->pulse * 3.0f);
-            float br = KernelBoss::BODY * (0.96f + 0.06f * kp);
-            drawCircle(kb->worldX, kb->worldY, br,            0.85f, 0.45f, 0.12f, 1.0f);
-            drawCircle(kb->worldX, kb->worldY, br * 0.66f,    1.0f,  0.65f, 0.2f,  1.0f);
-            drawCircle(kb->worldX, kb->worldY, br * 0.34f,    1.0f,  0.9f,  0.55f, 1.0f);
-            // 회전 프로세스 바 (십자)
-            float ra = kb->pulse * 0.8f;
-            for (int s = 0; s < 4; s++) {
-                float a = ra + (float)s * 1.5707963f;
-                float ox = kb->worldX + cosf(a) * br * 1.18f;
-                float oy = kb->worldY + sinf(a) * br * 1.18f;
-                drawRect(ox - 9.0f, oy - 9.0f, 18.0f, 18.0f, 0.95f, 0.55f, 0.15f, 0.95f);
-            }
+            auto centiPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                g_CentiBoss->renderFx(ct, centiAimX, centiAimY);
+                g_CentiBoss->renderBody(ct);
+                for (auto& mb : g_CentiBoss->minis)
+                    if (mb.alive) g_CentiBoss->drawMini(mb);
+            };
+            for (auto& fw : zwins) centiPass(fw.x, fw.y, fw.w, fw.h);
+            centiPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            if (g_Stats.turretMode)
+                for (auto& tr : g_Turrets)
+                    centiPass(tr.x - TURRET_WIN_W*0.5f, tr.y - TURRET_WIN_H*0.5f,
+                              TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-    
-        // (g4d) FIREWALL.sys — 본체 + 회전 보호막 아크(가변속도) + 견제탄
-        if (g_FirewallBoss && g_FirewallBoss->alive) {
-            auto* fb = g_FirewallBoss;
-            BindMainShader();
+
+        if (g_TotemBoss && g_TotemBoss->alive) {
+            auto* tb = g_TotemBoss;
+            float gt = (float)glfwGetTime();
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(fb->worldX - FIREWALL_WIN_W*0.5f, fb->worldY - FIREWALL_WIN_W*0.5f,
-                         FIREWALL_WIN_W, FIREWALL_WIN_W);
-            for (auto& b : g_Bullets) { if (b.active) drawBullet(b); }
-            // 차단 펄스 예고 — 곧 방사형 탄막 방출 (커지는 옅은 링)
-            if (fb->pulseWarning()) {
-                float wp = 0.5f + 0.5f * sinf((float)glfwGetTime() * 24.0f);
-                drawCircle(fb->worldX, fb->worldY, FirewallBoss::SHIELD_R * (1.1f + 0.5f * wp),
-                           1.0f, 0.55f, 0.15f, 0.10f + 0.12f * wp);
-            }
-            // 본체 — 방화벽 코어: 외곽 다이아 + 어두운 내곽 + 회전 십자 코어 + 맥동 중심
-            float fb_t = (float)glfwGetTime();
-            float fbp  = 0.5f + 0.5f * sinf(fb_t * 4.0f);
-            drawDiamond(fb->worldX, fb->worldY, FirewallBoss::BODY,        0.95f, 0.45f, 0.15f, 1.0f);
-            drawDiamond(fb->worldX, fb->worldY, FirewallBoss::BODY * 0.74f, 0.5f, 0.22f, 0.08f, 1.0f);
-            drawDiamond(fb->worldX, fb->worldY, FirewallBoss::BODY * 0.5f,  1.0f, 0.7f,  0.3f,  1.0f);
-            float fra = fb_t * 0.7f;
-            for (int s = 0; s < 4; s++) {
-                float a  = fra + (float)s * 1.5707963f;
-                float ox = fb->worldX + cosf(a) * FirewallBoss::BODY * 0.30f;
-                float oy = fb->worldY + sinf(a) * FirewallBoss::BODY * 0.30f;
-                drawRect(ox - 7.0f, oy - 7.0f, 14.0f, 14.0f, 1.0f, 0.8f, 0.4f, 0.95f);
-            }
-            drawCircle(fb->worldX, fb->worldY,
-                       FirewallBoss::BODY * 0.16f * (0.9f + 0.2f*fbp), 1.0f, 0.95f, 0.7f, 1.0f);
-            // 보호막 아크 3개 — 부메랑 띠. 페이즈2엔 보호막마다 색상(능력별), 평소엔 주황.
-            float sb = fb->fast ? 1.0f : 0.7f;
-            for (int s = 0; s < FirewallBoss::SHIELDS; s++) {
-                float c = fb->shieldRot + (float)s * (6.2831853f / (float)FirewallBoss::SHIELDS);
-                float scr, scg, scb; fb->shieldColor(s, scr, scg, scb);
-                const int seg = 17;
-                for (int i = 0; i < seg; i++) {
-                    float t = (float)i / (float)(seg - 1);            // 0..1
-                    float a = c + (t - 0.5f) * 2.0f * FirewallBoss::SHIELD_HALF;
-                    float mid = 0.5f - fabsf(t - 0.5f);               // 0(끝)~0.5(중앙)
-                    float rr  = FirewallBoss::SHIELD_R + mid * 52.0f; // 중앙이 바깥으로 — 부메랑 굴곡
-                    float dsz = 9.0f + mid * 24.0f;                   // 중앙 두껍고 끝 뾰족
-                    float ox  = fb->worldX + cosf(a) * rr;
-                    float oy  = fb->worldY + sinf(a) * rr;
-                    drawDiamond(ox, oy, dsz, scr*sb, scg*sb, scb*sb, 0.95f);
+            auto totemPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                tb->renderOrbitGuide(gt);
+                tb->renderRiteWeb(gt);
+                tb->renderLinks(gt);
+                tb->renderCore(gt);
+                tb->renderLaser();
+                for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
+                    auto& tt = tb->totems[ti];
+                    if (!tt.alive) continue;
+                    float tx0 = tt.x - TotemBoss::WIN_W * g_Scale * 0.5f;
+                    float ty0 = tt.y - TotemBoss::WIN_H * g_Scale * 0.5f;
+                    float tww = TotemBoss::WIN_W * g_Scale;
+                    float thh = TotemBoss::WIN_H * g_Scale;
+                    if (tx0 + tww < wx || tx0 > wx + ww ||
+                        ty0 + thh < wy || ty0 > wy + wh) continue;
+                    tb->renderTotem(tt, gt);
+                }
+            };
+            for (auto& fw : zwins) totemPass(fw.x, fw.y, fw.w, fw.h);
+            totemPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            if (g_Stats.turretMode)
+                for (auto& tr : g_Turrets)
+                    totemPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
+                              TURRET_WIN_W, TURRET_WIN_H);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
+
+        // (g5) ?대━紐⑦봽 蹂댁뒪 ??留덉빱/?몃え/?덉씠?/李⑦겕??蹂몄껜/HP
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            auto* pb = g_PolyBoss;
+            BindMainShader();
+            const float PUR_R = 0.6f, PUR_G = 0.2f, PUR_B = 0.95f;
+            if (pb->triWarn) {
+                // ?섏씠利? 以뚯븘???뺤옣 ?곸뿭??留욎떠 寃쎄퀬瑜?'蹂댁씠?? ?앷퉴吏 ?뺤옣
+                float exX = pb->arenaExX(), exY = pb->arenaExY();
+                float fullW = (float)screenWidth + 2*exX, fullH = (float)screenHeight + 2*exY;
+                float blink = 0.35f + 0.35f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 16.0f));
+                int arrows = 14;
+                for (int i = 0; i < arrows; i++) {
+                    float t = (arrows > 1) ? (float)i / (arrows - 1) : 0.5f;
+                    float ax, ay;
+                    if (pb->triDirX != 0.0f) {   // 媛濡??대룞 ??醫???(?뺤옣)紐⑥꽌由ъ뿉 ?몃줈 諛곗뿴
+                        ax = (pb->triDirX > 0) ? -exX + 24.0f
+                                               : (float)screenWidth + exX - 24.0f;
+                        ay = -exY + t * fullH;
+                    } else {                     // ?몃줈 ?대룞 ??????(?뺤옣)紐⑥꽌由ъ뿉 媛濡?諛곗뿴
+                        ax = -exX + t * fullW;
+                        ay = (pb->triDirY > 0) ? -exY + 24.0f
+                                               : (float)screenHeight + exY - 24.0f;
+                    }
+                    // 吏꾪뻾 諛⑺뼢??媛由ы궎???묒? ?몃え
+                    drawTriangle(ax + pb->triDirX * 6.0f, ay + pb->triDirY * 6.0f,
+                                 14.0f, 1.0f, 0.4f, 1.0f, blink);
+                }
+                // ?룸같寃쎌뿉 ?낃쾶 源붾━?????諛⑺뼢 ?붿궡???먮툕濡? ??吏꾪뻾 寃쎈줈 ?덈궡
+                float bgA = 0.08f + 0.05f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 8.0f));
+                for (int c = 0; c < 4; c++) {
+                    float u = (c + 0.5f) / 4.0f;   // 吏꾪뻾異?諛⑺뼢 ?꾩튂 鍮꾩쑉
+                    float cx, cy;
+                    if (pb->triDirX != 0.0f) {     // 媛濡??대룞 ???뺤옣 ??쓣 ?곕씪 諛곗튂
+                        cx = (pb->triDirX > 0) ? -exX + u * fullW
+                                               : (float)screenWidth + exX - u * fullW;
+                        cy = screenHeight * 0.5f;
+                    } else {                       // ?몃줈 ?대룞
+                        cx = screenWidth * 0.5f;
+                        cy = (pb->triDirY > 0) ? -exY + u * fullH
+                                               : (float)screenHeight + exY - u * fullH;
+                    }
+                    drawTriangle(cx + pb->triDirX * 30.0f, cy + pb->triDirY * 30.0f,
+                                 80.0f, 0.8f, 0.4f, 1.0f, bgA);
                 }
             }
+            // ?몃え 臾대━
+            for (auto& s : pb->swarm)
+                drawTriangle(s.x, s.y, 11.0f, 0.7f, 0.3f, 1.0f, 1.0f);
+            if (pb->laserWarn) {
+                float ex = pb->laserX + pb->laserDirX * pb->laserReach();
+                float ey = pb->laserY + pb->laserDirY * pb->laserReach();
+                float pxx = -pb->laserDirY, pyy = pb->laserDirX;
+                float th = 3.0f;
+                float warnA = 0.4f + 0.4f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f));
+                float p1x=pb->laserX+pxx*th, p1y=pb->laserY+pyy*th;
+                float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
+                float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
+                float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                BatchVerts(v, 6, 1.0f, 0.3f, 1.0f, warnA);
+            }
+            // ?덉씠? (RHOMBUS) ???대몢???쒖빞 諛대뱶 + 諛앹? 肄붿뼱
+            if (pb->laserActive) {
+                float ex = pb->laserX + pb->laserDirX * pb->laserReach();
+                float ey = pb->laserY + pb->laserDirY * pb->laserReach();
+                float pxx = -pb->laserDirY, pyy = pb->laserDirX;
+                for (int pass = 0; pass < 2; pass++) {
+                    float th = (pass == 0) ? pb->laserHalf : 5.0f;
+                    float cr = (pass == 0) ? 0.0f : 1.0f;
+                    float cg = (pass == 0) ? 0.0f : 0.4f;
+                    float cb = (pass == 0) ? 0.0f : 1.0f;
+                    float ca = (pass == 0) ? 0.82f : 0.95f;
+                    float p1x=pb->laserX+pxx*th, p1y=pb->laserY+pyy*th;
+                    float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
+                    float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
+                    float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
+                    BatchVerts(v, 6, cr, cg, cb, ca);
+                }
+            }
+            // 蹂몄껜 + 李⑦겕??+ HP + 珥앹븣 ??媛쒖씤 李??곸뿭?쇰줈 ?대━??(留?諛곌꼍????蹂댁씠吏 ?딄쾶)
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(pb->worldX - POLY_WIN_W*0.5f, pb->worldY - POLY_WIN_W*0.5f,
+                         POLY_WIN_W, POLY_WIN_W);
+            // 珥앹븣 (??李??덉뿉?쒕룄 蹂댁씠?꾨줉)
+            for (auto& b : g_Bullets) {
+                if (!b.active) continue;
+                drawBullet(b);
+            }
+            // 蹂몄껜 ???쇰퀎 紐⑥뼇 (??
+            float bsz = PolymorphBoss::BODY;
+            if (pb->form == PForm::TRIANGLE)
+                drawTriangle(pb->worldX, pb->worldY, bsz, PUR_R, PUR_G, PUR_B, 1.0f);
+            else
+                drawDiamond(pb->worldX, pb->worldY, bsz, PUR_R, PUR_G, PUR_B, 1.0f);
+            if (pb->reflecting())  // 諛섏궗 ?ㅻ씪
+                drawCircle(pb->worldX, pb->worldY, bsz * 0.95f, 1.0f, 1.0f, 1.0f, 0.18f);
+            // 李⑦겕??(?ㅼ씠?꾨が??諛⑹뼱留?
+            for (auto& c : pb->chakrams) {
+                if (!c.alive) continue;
+                float cx = pb->worldX + cosf(c.angle) * 150.0f;
+                float cy = pb->worldY + sinf(c.angle) * 150.0f;
+                drawDiamond(cx, cy, 30.0f, 0.7f, 0.3f, 1.0f, 1.0f);
+                float cf = c.hp / 1000.0f; if (cf < 0) cf = 0;
+                drawRect(cx - 18, cy - 34, 36.0f, 4.0f, 0.2f, 0.1f, 0.2f, 0.8f);
+                drawRect(cx - 18, cy - 34, 36.0f * cf, 4.0f, 0.8f, 0.4f, 1.0f, 0.9f);
+            }
+            // (HP 諛붾뒗 ?붾㈃ ?곷떒 怨좎젙 蹂댁뒪 諛붾줈 ?대룞)
+            // ??蹂???뚰떚????蹂댁뒪 媛쒖씤 李??덉뿉?쒕룄 蹂댁씠?꾨줉 (李?諛??곗뒪?ы넲??????
+            for (auto& p : g_EnemyParts) {
+                if (!p.active) continue;
+                float a = p.life / p.maxLife, hs = p.size * 0.5f;
+                drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
+            }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
     
+        // ?쒕줎/李⑦겕?뚯? ?곗뒪?ы넲 理쒖긽???대┰ ?놁쓬)??洹몃┛?????꾩そ 蹂댁뒪李?scissor ?⑥뒪媛
+        //   poly 蹂댁뒪 ?놁쓣 ?????ロ? ?쒕줎/李⑦겕?뚯씠 ?듭㎏濡??대┰?섎뜕 踰꾧렇 諛⑹?(臾댁“嫄??댁젣).
         BatchFlush(); glDisable(GL_SCISSOR_TEST); BindMainShader();
     
-        // (h) 드론 — 1~2기 (포탑 모드 시 드론 렌더 비활성)
+        // (h) ?쒕줎 ??1~2湲?(?ы깙 紐⑤뱶 ???쒕줎 ?뚮뜑 鍮꾪솢??
         if (g_Stats.drone && !g_Stats.turretMode &&
             g_GameManager.currentState != GameState::GAMEOVER) {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
@@ -4071,7 +4494,6 @@ int main() {
             }
         }
     
-        // (h2) 차크람 — 1~3개
         if (g_Stats.chakram && g_GameManager.currentState != GameState::GAMEOVER) {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
@@ -4080,12 +4502,11 @@ int main() {
                 if (!ch.alive) continue;
                 float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                 float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
-                // 시안 톱날 디스크 — 스파이웨어(노란 십자)와 확실히 구분
-                drawCircle(chx, chy, CHAKRAM_SIZE * 0.62f, 0.3f, 0.9f, 1.0f, 0.28f);   // 글로우
-                drawDiamond(chx, chy, CHAKRAM_SIZE * 1.15f, 0.5f, 1.0f, 1.0f, 0.45f);  // 회전날 힌트
-                drawCircle(chx, chy, CHAKRAM_SIZE * 0.5f, 0.2f, 0.85f, 1.0f, 1.0f);    // 시안 디스크
-                drawCircle(chx, chy, CHAKRAM_SIZE * 0.22f, 0.04f, 0.12f, 0.18f, 1.0f); // 어두운 허브
-                // HP 바
+                // ?쒖븞 ?깅궇 ?붿뒪?????ㅽ뙆?댁썾???몃? ??옄)? ?뺤떎??援щ텇
+                drawCircle(chx, chy, CHAKRAM_SIZE * 0.62f, 0.3f, 0.9f, 1.0f, 0.28f);   // 湲濡쒖슦
+                drawDiamond(chx, chy, CHAKRAM_SIZE * 1.15f, 0.5f, 1.0f, 1.0f, 0.45f);  // ?뚯쟾???뚰듃
+                drawCircle(chx, chy, CHAKRAM_SIZE * 0.5f, 0.2f, 0.85f, 1.0f, 1.0f);
+                drawCircle(chx, chy, CHAKRAM_SIZE * 0.22f, 0.04f, 0.12f, 0.18f, 1.0f);
                 float hpFrac = ch.hp / ch.maxHp;
                 if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
                 drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28, 3, 0.2f, 0.2f, 0.2f, 0.7f);
@@ -4093,12 +4514,11 @@ int main() {
                          1.0f, 0.7f, 0.0f, 0.95f);
             }
         }
-        // 드론/차크람 배치를 지금 즉시 flush — 바로 아래 타이틀바 패스가 scissor 를
-        //   재활성(직전 작은 창 rect)하면 미flush 지오메트리가 통째로 클립되던 진짜 원인.
+        // ?쒕줎/李⑦겕??諛곗튂瑜?吏湲?利됱떆 flush ??諛붾줈 ?꾨옒 ??댄?諛??⑥뒪媛 scissor 瑜?        //   ?ы솢??吏곸쟾 ?묒? 李?rect)?섎㈃ 誘퇰lush 吏?ㅻ찓?몃━媛 ?듭㎏濡??대┰?섎뜕 吏꾩쭨 ?먯씤.
         BatchFlush();
     
-        // ── (h3) 가짜 OS 창 크롬 — 타이틀바 + [X] 닫기 (데스크톱 세계관) ──
-        //    "적 = 프로세스, 창을 닫아 종료한다" 정체성. 월드 좌표(줌 반영)로 그림.
+        // ?? (h3) 媛吏?OS 李??щ＼ ????댄?諛?+ [X] ?リ린 (?곗뒪?ы넲 ?멸퀎愿) ??
+        //    "??= ?꾨줈?몄뒪, 李쎌쓣 ?レ븘 醫낅즺?쒕떎" ?뺤껜?? ?붾뱶 醫뚰몴(以?諛섏쁺)濡?洹몃┝.
         {
             GameState gst = g_GameManager.currentState;
             bool inGame = (gst == GameState::RUNNING || gst == GameState::PAUSED ||
@@ -4109,18 +4529,16 @@ int main() {
                                      const wchar_t* title, float tr, float tg, float tb) {
                     BindMainShader();
                     const float TB = 22.0f;
-                    drawRect(x, y, w, TB, tr*0.45f, tg*0.45f, tb*0.55f, 1.0f);   // 타이틀바
-                    drawRect(x, y, w, 2.0f, tr, tg, tb, 1.0f);                   // 상단 강조선
-                    // (창 외곽선 = 아래/좌/우 테두리선 제거 — 창 끝에서 그려 플레이어 창 위로
-                    //  삐져나오던 문제. 외곽 프레임은 drawNeonBorder(플레이어 배경보다 먼저
-                    //  그려져 겹친 부분이 올바르게 가려짐)가 담당.)
-                    // 창 컨트롤 (─ □ X) 우측
+                    drawRect(x, y, w, TB, tr*0.45f, tg*0.45f, tb*0.55f, 1.0f);
+                    drawRect(x, y, w, 2.0f, tr, tg, tb, 1.0f);                    // (李??멸낸??= ?꾨옒/醫????뚮몢由ъ꽑 ?쒓굅 ??李??앹뿉??洹몃젮 ?뚮젅?댁뼱 李??꾨줈
+                    //  ?먯졇?섏삤??臾몄젣. ?멸낸 ?꾨젅?꾩? drawNeonBorder(?뚮젅?댁뼱 諛곌꼍蹂대떎 癒쇱?
+                    //  洹몃젮??寃뱀튇 遺遺꾩씠 ?щ컮瑜닿쾶 媛?ㅼ쭚)媛 ?대떦.)
+                    // 李?而⑦듃濡?(? ??X) ?곗륫
                     float bs = 13.0f, byc = y + (TB-bs)*0.5f, bxc = x + w - 19.0f;
-                    drawRect(bxc - 2*(bs+5), byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // ─
-                    drawRect(bxc - (bs+5),   byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // □
-                    drawRect(bxc, byc, bs, bs, 0.85f, 0.2f, 0.2f, 0.95f);          // X = 빨강
-                    // 텍스트는 TextRenderer 자체 스크린 ortho(줌 무시)라, 월드 좌표를
-                    //   W2SX/W2SY 로 변환 + g_ViewZoom 스케일 → 줌된 창에 정확히 붙음
+                    drawRect(bxc - 2*(bs+5), byc, bs, bs, 0.22f,0.22f,0.28f,0.9f); // ?
+                    drawRect(bxc - (bs+5),   byc, bs, bs, 0.22f,0.22f,0.28f,0.9f);
+                    drawRect(bxc, byc, bs, bs, 0.85f, 0.2f, 0.2f, 0.95f);
+                    // ?띿뒪?몃뒗 TextRenderer ?먯껜 ?ㅽ겕由?ortho(以?臾댁떆)?? ?붾뱶 醫뚰몴瑜?                    //   W2SX/W2SY 濡?蹂??+ g_ViewZoom ?ㅼ?????以뚮맂 李쎌뿉 ?뺥솗??遺숈쓬
                     g_TextS.Draw(L"X", W2SX(bxc + 3.0f), W2SY(byc - 2.0f),
                                  0.5f * g_ViewZoom, 1,1,1, 0.95f);
                     g_TextS.Draw(title, W2SX(x + 8.0f), W2SY(y + 3.0f),
@@ -4128,18 +4546,17 @@ int main() {
                 };
                 int li2 = LangIndex();
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
-                // 가짜창 타이틀바 — 위에서 만든 z-리스트(낮음→높음) 순서로 그림.
-                //   '자기보다 높은 창' 또는 '플레이어 창'이 타이틀바를 덮으면, 전체를
-                //   숨기는 게 아니라 **겹친 가로 구간만** 잘라낸다(부분 클리핑).
-                //   타이틀바의 세로 띠[y,y+TB]와 겹치는 가림창의 x구간을 가시구간에서 빼고,
-                //   남은 구간들만 glScissor 로 클립해 그린다. (봇넷<원거리<보스<플레이어,
-                //   같은 타입은 소환순서)
+                // 媛吏쒖갹 ??댄?諛????꾩뿉??留뚮뱺 z-由ъ뒪????쓬?믩넂?? ?쒖꽌濡?洹몃┝.
+                //   '?먭린蹂대떎 ?믪? 李? ?먮뒗 '?뚮젅?댁뼱 李?????댄?諛붾? ??쑝硫? ?꾩껜瑜?                //   ?④린??寃??꾨땲??**寃뱀튇 媛濡?援ш컙留?* ?섎씪?몃떎(遺遺??대━??.
+                //   ??댄?諛붿쓽 ?몃줈 ??y,y+TB]? 寃뱀튂??媛由쇱갹??x援ш컙??媛?쒓뎄媛꾩뿉??鍮쇨퀬,
+                //   ?⑥? 援ш컙?ㅻ쭔 glScissor 濡??대┰??洹몃┛?? (遊뉖꽬<?먭굅由?蹂댁뒪<?뚮젅?댁뼱,
+                //   媛숈? ??낆? ?뚰솚?쒖꽌)
                 const float TBH = 22.0f;
                 glEnable(GL_SCISSOR_TEST);
                 auto drawBarClipped = [&](float x, float y, float w, float h,
                                           const wchar_t* nm, float nr, float ng, float nb,
                                           size_t selfIdx, bool isPlayer) {
-                    // 가시 x구간 리스트 (각 vec2: x=시작, y=끝)
+                    // 媛??x援ш컙 由ъ뒪??(媛?vec2: x=?쒖옉, y=??
                     std::vector<glm::vec2> vis{ glm::vec2(x, x + w) };
                     auto subtract = [&](float c0, float c1) {
                         if (c1 <= c0) return;
@@ -4153,16 +4570,14 @@ int main() {
                         vis.swap(out);
                     };
                     auto consider = [&](float ox, float oy, float ow, float oh) {
-                        if (oy < y + TBH && oy + oh > y)   // 가림창이 타이틀바 세로 띠와 겹침
+                        if (oy < y + TBH && oy + oh > y)   // 媛由쇱갹????댄?諛??몃줈 ?좎? 寃뱀묠
                             subtract(std::max(x, ox), std::min(x + w, ox + ow));
                     };
-                    // 플레이어 창은 모든 가짜창보다 위 — 가짜창 그릴 땐 항상 가림
                     if (!isPlayer)
                         consider(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-                    // 자기보다 높은 z(뒤 인덱스) 가짜창들
                     for (size_t j = selfIdx + 1; j < zwins.size(); j++)
                         consider(zwins[j].x, zwins[j].y, zwins[j].w, zwins[j].h);
-                    // 남은 구간만 클립해 그림
+                    // ?⑥? 援ш컙留??대┰??洹몃┝
                     for (auto& iv : vis) {
                         float a = iv.x, b = iv.y;
                         if (b - a < 0.5f) continue;
@@ -4176,7 +4591,7 @@ int main() {
                                    fw.nr, fw.ngc, fw.nbc, i, false);
                 }
                 BatchFlush();
-                // 플레이어 창 — 항상 최상단, 클립 없이 전체
+                // ?뚮젅?댁뼱 李?????긽 理쒖긽?? ?대┰ ?놁씠 ?꾩껜
                 glScissor(0, 0, (GLint)screenWidth, (GLint)screenHeight);
                 winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                           PNAME, g_AccentR, g_AccentG, g_AccentB);
@@ -4186,33 +4601,32 @@ int main() {
         }
 
     
-        // ── 여기부터 UI/오버레이: 줌·흔들기 무시하고 화면 고정 좌표(base ortho)로 ──
-        //    (폴리모프 2페이즈 줌 0.5 에서 쿨다운칸·메뉴딤·비네트·플래시가 찌그러지던 버그 fix)
-        BatchFlush();   // 월드(줌 ortho) 도형 전부 그린 뒤 base ortho 로 전환
+        // ?? ?ш린遺??UI/?ㅻ쾭?덉씠: 以뙿룻쓷?ㅺ린 臾댁떆?섍퀬 ?붾㈃ 怨좎젙 醫뚰몴(base ortho)濡???
+        //    (?대━紐⑦봽 2?섏씠利?以?0.5 ?먯꽌 荑⑤떎?댁뭏쨌硫붾돱?ㅒ룸퉬?ㅽ듃쨌?뚮옒?쒓? 李뚭렇?ъ???踰꾧렇 fix)
+        BatchFlush();   // ?붾뱶(以?ortho) ?꾪삎 ?꾨? 洹몃┛ ??base ortho 濡??꾪솚
         glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
         memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
     
-        // (h2) 보스 고유색 화면 물들이기 — 보스 생존 중 서서히 차오르고, 처치 후 사라짐
+        // (h2) boss tint overlay
         {
             bool bossAlive = false;
             glm::vec3 tc(0.6f, 0.3f, 1.0f);
-            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                bossAlive = true; tc = glm::vec3(0.55f, 0.72f, 1.0f); }
-            else if (g_RRBoss && g_RRBoss->alive) {
+            if (g_RRBoss && g_RRBoss->alive) {
                 bossAlive = true; tc = glm::vec3(1.0f, 0.55f, 0.2f); }
-            else if (g_SpamBoss && g_SpamBoss->alive) {
-                bossAlive = true; tc = glm::vec3(1.0f, 0.4f, 0.8f); }
-            else if (g_KernelBoss && g_KernelBoss->alive) {
-                bossAlive = true; tc = glm::vec3(1.0f, 0.65f, 0.25f); }
-            else if (g_FirewallBoss && g_FirewallBoss->alive) {
-                bossAlive = true; tc = glm::vec3(1.0f, 0.45f, 0.2f); }
-
+            else if (g_PolyBoss && g_PolyBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.6f, 0.25f, 1.0f); }
+            else if (g_BotnetBoss && g_BotnetBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.25f, 0.92f, 0.48f); }
+            else if (g_CentiBoss && g_CentiBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 0.95f); }
+            else if (g_TotemBoss && g_TotemBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.85f, 0.45f, 0.95f); }
             if (bossAlive) {
                 g_BossTintCol = tc;
-                g_BossTintT  += delta * 0.07f;          // ~14초에 최대
+                g_BossTintT  += delta * 0.07f;          // ~14珥덉뿉 理쒕?
                 if (g_BossTintT > 1.0f) g_BossTintT = 1.0f;
             } else {
-                g_BossTintT  -= delta * 0.6f;           // 처치 후 빠르게 원복
+                g_BossTintT  -= delta * 0.6f;           // 泥섏튂 ??鍮좊Ⅴ寃??먮났
                 if (g_BossTintT < 0.0f) g_BossTintT = 0.0f;
             }
             if (g_BossTintT > 0.001f) {
@@ -4223,34 +4637,33 @@ int main() {
             }
         }
     
-        // (h2b) 보스 레이드 HP 바 — 화면 상단 고정. 몸체 밑 작은 바는 후반 탄막에
-        //   묻혀 안 보이므로, 활성 보스의 체력을 상단에 크게 표시한다 (이름 + %).
+        // (h2b) 蹂댁뒪 ?덉씠??HP 諛????붾㈃ ?곷떒 怨좎젙. 紐몄껜 諛??묒? 諛붾뒗 ?꾨컲 ?꾨쭑??        //   臾삵? ??蹂댁씠誘濡? ?쒖꽦 蹂댁뒪??泥대젰???곷떒???ш쾶 ?쒖떆?쒕떎 (?대쫫 + %).
         {
             const wchar_t* bn = nullptr;
             float bhf = 0.0f; glm::vec3 bc(1.0f, 1.0f, 1.0f);
-            if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                bn = L"HANG.exe";    bhf = g_MonsterManager.boss->hp / g_MonsterManager.boss->maxHp;
-                bc = glm::vec3(0.65f, 0.68f, 0.74f);
-            } else if (g_RRBoss && g_RRBoss->alive) {
+            if (g_RRBoss && g_RRBoss->alive) {
                 bn = L"VOLLEY.sys";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.55f, 0.2f);
-            } else if (g_SpamBoss && g_SpamBoss->alive) {
-                bn = L"SPAM.dll";      bhf = g_SpamBoss->hp / g_SpamBoss->maxHp;
-                bc = glm::vec3(1.0f, 0.4f, 0.8f);
-            } else if (g_KernelBoss && g_KernelBoss->alive) {
-                bn = L"KERNEL.sys";    bhf = g_KernelBoss->hp / g_KernelBoss->maxHp;
-                bc = glm::vec3(1.0f, 0.65f, 0.25f);
-            } else if (g_FirewallBoss && g_FirewallBoss->alive) {
-                bn = L"FIREWALL.sys";  bhf = g_FirewallBoss->hp / g_FirewallBoss->maxHp;
-                bc = glm::vec3(1.0f, 0.45f, 0.2f);
+            } else if (g_PolyBoss && g_PolyBoss->alive) {
+                bn = L"POLYMORPH.vir"; bhf = g_PolyBoss->hp / g_PolyBoss->maxHp;
+                bc = glm::vec3(0.6f, 0.25f, 1.0f);
+            } else if (g_BotnetBoss && g_BotnetBoss->alive) {
+                bn = L"C2_RELAY.sys";  bhf = g_BotnetBoss->hp / g_BotnetBoss->maxHp;
+                bc = glm::vec3(0.25f, 0.92f, 0.48f);
+            } else if (g_CentiBoss && g_CentiBoss->alive) {
+                bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
+                bc = glm::vec3(0.35f, 0.88f, 0.95f);
+            } else if (g_TotemBoss && g_TotemBoss->alive) {
+                bn = L"RITE.CORE";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
+                bc = glm::vec3(0.85f, 0.45f, 0.95f);
             }
             int bossPick = -1;
             if (bn) {
-                if      (bn == L"HANG.exe")     bossPick = 0;
-                else if (bn == L"VOLLEY.sys")   bossPick = 2;
-                else if (bn == L"SPAM.dll")       bossPick = 3;
-                else if (bn == L"KERNEL.sys")     bossPick = 5;
-                else if (bn == L"FIREWALL.sys")   bossPick = 6;
+                if      (bn == L"VOLLEY.sys")   bossPick = 2;
+                else if (bn == L"POLYMORPH.vir") bossPick = 4;
+                else if (bn == L"C2_RELAY.sys")  bossPick = 7;
+                else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
+                else if (bn == L"RITE.CORE")     bossPick = 9;
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
@@ -4265,10 +4678,9 @@ int main() {
                 float by = 78.0f;
                 drawRect(bx - 3.0f, by - 3.0f, bw + 6.0f, bh + 6.0f, 0.05f, 0.05f, 0.07f, 0.88f);
                 drawRect(bx, by, bw, bh, 0.18f, 0.16f, 0.20f, 0.92f);
-                // 체력 — 낮을수록 어두워지는 보스 고유색
                 float lit = 0.5f + 0.5f * bhf;
                 drawRect(bx, by, bw * bhf, bh, bc.r * lit, bc.g * lit, bc.b * lit, 0.96f);
-                // 이름 (바 위 중앙)
+                // ?대쫫 (諛???以묒븰)
                 float ns = 0.85f;
                 float nw = g_TextS.Width(bn, ns);
                 g_TextS.Draw(bn, ((float)screenWidth - nw) * 0.5f, by - 28.0f, ns,
@@ -4280,21 +4692,25 @@ int main() {
                     g_TextS.Draw(tag, ((float)screenWidth - tw) * 0.5f, by - 48.0f, ts,
                                  0.75f, 0.78f, 0.82f, 0.88f);
                 }
-                if (g_MonsterManager.boss && g_MonsterManager.boss->alive) {
-                    const wchar_t* stg = g_MonsterManager.boss->stateTag();
-                    float ss = 0.62f;
-                    float sw = g_TextS.Width(stg, ss);
-                    g_TextS.Draw(stg, bx + bw - sw - 10.0f, by - 28.0f, ss,
-                                 0.45f, 0.55f, 1.0f, 0.92f);
+                if (g_BotnetBoss && g_BotnetBoss->alive) {
+                    wchar_t hostBuf[56];
+                    swprintf_s(hostBuf, L"HOST %d/%d  SHIELD %d%%  PKT %d",
+                               g_BotnetBoss->aliveHosts(), BotnetBoss::NHOST,
+                               (int)(g_BotnetBoss->hostShieldPercent() + 0.5f),
+                               g_BotnetBoss->aliveMinions());
+                    float hs = 0.55f;
+                    float hw = g_TextS.Width(hostBuf, hs);
+                    g_TextS.Draw(hostBuf, bx + bw - hw - 8.0f, by - 48.0f, hs,
+                                 0.25f, 0.92f, 0.48f, 0.85f);
                 }
                 if (g_RRBoss && g_RRBoss->alive) {
                     wchar_t rrBuf[64];
                     if (g_RRBoss->phase3)
-                        swprintf_s(rrBuf, L"OVERCLOCK · %ls",
+                        swprintf_s(rrBuf, L"OVERCLOCK 쨌 %ls",
                                    g_RRBoss->state == RRState::ASSAULT ? L"ASSAULT" :
                                    ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
                     else if (g_RRBoss->phase2)
-                        swprintf_s(rrBuf, L"P2 · %ls",
+                        swprintf_s(rrBuf, L"P2 쨌 %ls",
                                    g_RRBoss->state == RRState::RELOAD_SPRINT ? L"SPRINT" :
                                    ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
                     else
@@ -4305,7 +4721,18 @@ int main() {
                     g_TextS.Draw(rrBuf, bx + bw - rw - 8.0f, by - 48.0f, rs,
                                  1.0f, 0.55f, 0.2f, 0.85f);
                 }
-                // % (바 우측 끝 안쪽)
+                if (g_TotemBoss && g_TotemBoss->alive) {
+                    wchar_t totBuf[64];
+                    if (g_TotemBoss->vulnerable())
+                        swprintf_s(totBuf, L"RITE DOWN %.0fs", g_TotemBoss->vulnTimer);
+                    else
+                        swprintf_s(totBuf, L"W%d 쨌 %d/4", g_TotemBoss->wave, g_TotemBoss->aliveTotems());
+                    float ts = 0.55f;
+                    float tw = g_TextS.Width(totBuf, ts);
+                    g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
+                                 0.85f, 0.45f, 0.95f, 0.85f);
+                }
+                // % (諛??곗륫 ???덉そ)
                 wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(bhf * 100.0f + 0.5f));
                 float ps = 0.7f;
                 float pw = g_TextS.Width(pct, ps);
@@ -4313,19 +4740,18 @@ int main() {
             }
         }
     
-        // (h2c) 보스 등장 전조(증상) — 스폰 2.5초 전 테마 연출 + 경고 배너
+        // (h2c) 蹂댁뒪 ?깆옣 ?꾩“(利앹긽) ???ㅽ룿 2.5珥????뚮쭏 ?곗텧 + 寃쎄퀬 諛곕꼫
         if (g_BossWarnTimer > 0.0f &&
             (g_GameManager.currentState == GameState::RUNNING ||
              g_GameManager.currentState == GameState::PAUSED)) {
-            float prog = 1.0f - g_BossWarnTimer / BOSS_WARN_DUR;   // 0→1
+            float prog = 1.0f - g_BossWarnTimer / BOSS_WARN_DUR;   // 0??
             if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
             float t = (float)glfwGetTime();
             float blink = 0.5f + 0.5f * sinf(t * 9.0f);
-            // 보스 고유색
             glm::vec3 wc = BossDir::WarnColor(g_BossWarnPick);
             BindMainShader();
             float sw2 = (float)screenWidth, sh2 = (float)screenHeight;
-            // 공통: 가장자리 비네트 (보스색, progress 비례로 짙어짐)
+            // 怨듯넻: 媛?μ옄由?鍮꾨꽕??(蹂댁뒪?? progress 鍮꾨?濡?吏숈뼱吏?
             float ea = (0.05f + 0.13f * prog) * (0.6f + 0.4f * blink);
             float eb = 70.0f;
             drawRect(0, 0, sw2, eb, wc.r, wc.g, wc.b, ea);
@@ -4333,33 +4759,10 @@ int main() {
             drawRect(0, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
             drawRect(sw2 - eb, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
     
-            // 보스별 증상 테마
+            // 蹂댁뒪蹂?利앹긽 ?뚮쭏
             switch (g_BossWarnPick) {
-            case 0: {  // HANG — 응답 없음 창 + 느려지는 커서
-                float cx = sw2 * 0.5f, cy = sh2 * 0.45f;
-                float pw = 220.0f + prog * 40.0f;
-                float ph = 140.0f + prog * 24.0f;
-                float px = cx - pw * 0.5f, py = cy - ph * 0.5f;
-                drawRect(px, py, pw, ph, 0.10f, 0.11f, 0.13f, 0.55f + 0.25f * prog);
-                drawRect(px, py, pw, 22.0f, wc.r * 0.7f, wc.g * 0.7f, wc.b * 0.7f, 0.85f);
-                drawNeonBorder(px, py, pw, ph, wc.r, wc.g, wc.b);
-                float hs = 18.0f + prog * 8.0f;
-                float hx = cx, hy = cy + 10.0f;
-                float spin = t * (1.2f + prog * 0.8f);
-                BatchTri(hx - hs * 0.35f, hy - hs * 0.5f, hx + hs * 0.35f, hy - hs * 0.5f,
-                         hx, hy - hs * 0.05f, 0.75f, 0.78f, 0.82f, 0.5f + 0.3f * blink);
-                BatchTri(hx - hs * 0.35f, hy + hs * 0.5f, hx + hs * 0.35f, hy + hs * 0.5f,
-                         hx, hy + hs * 0.05f, 0.65f, 0.68f, 0.72f, 0.45f + 0.25f * blink);
-                float sand = sinf(spin) * 3.0f;
-                drawRect(hx - 2.5f, hy - 1.5f + sand, 5.0f, 3.0f, 0.85f, 0.5f, 0.18f, 0.55f * blink);
-                for (int i = 0; i < 3; i++) {
-                    float ox = px + 18.0f + (float)(i * 38);
-                    float oy = py + ph - 28.0f;
-                    drawRect(ox, oy, 28.0f, 14.0f, 0.18f, 0.19f, 0.22f, 0.35f + 0.2f * prog);
-                }
-            } break;
             case 1: break;
-            case 2: {  // VOLLEY — 교차 포격선 + 드론 실루엣
+            case 2: {
                 float cx = sw2 * 0.5f, cy = sh2 * 0.42f;
                 for (int e = 0; e < 4; e++) {
                     float ex = (e % 2) ? sw2 - 20.0f : 20.0f;
@@ -4382,56 +4785,87 @@ int main() {
                              6, 6, 1.0f, 0.45f, 0.12f, 0.35f + 0.2f * prog);
                 }
             } break;
-            case 3: {  // SPAM — 분홍 popup.exe 창들이 깜빡이며 증식
-                int pops = 3 + (int)(prog * 8);
-                for (int i = 0; i < pops; i++) {
-                    float pw2 = 70.0f + (float)(rand() % 90);
-                    float ph2 = 50.0f + (float)(rand() % 60);
-                    float px2 = (float)(rand() % (int)(sw2 - pw2));
-                    float py2 = (float)(rand() % (int)(sh2 - ph2));
-                    drawRect(px2, py2, pw2, ph2, 0.10f, 0.06f, 0.09f, 0.5f);
-                    drawRect(px2, py2, pw2, 12.0f, 1.0f, 0.4f, 0.8f, 0.7f);  // 타이틀바
+            case 4: {
+                for (int i = 0; i < 3; i++) {
+                    float r = (80.0f + i * 120.0f) + prog * 200.0f;
+                    drawCircle(sw2 * 0.5f, sh2 * 0.5f, r, wc.r, wc.g, wc.b,
+                               (0.05f + 0.05f * blink) * (1.0f - (float)i * 0.25f));
                 }
             } break;
-            case 5: {  // KERNEL — BSOD 청색 번쩍 + 가로 스트라이프
-                drawRect(0, 0, sw2, sh2, 0.05f, 0.12f, 0.45f, 0.08f + 0.12f * prog);
-                int stripes = 6 + (int)(prog * 8);
-                for (int i = 0; i < stripes; i++) {
-                    float sy = (float)(rand() % (int)sh2);
-                    drawRect(0, sy, sw2, 3.0f + (float)(rand() % 6),
-                             0.2f, 0.5f, 1.0f, 0.12f + 0.15f * blink);
+            case 7: {
+                drawRect(0, 0, sw2, sh2, 0.02f, 0.06f, 0.03f, 0.06f + 0.08f * prog);
+                for (int i = 0; i < 8; i++) {
+                    float ly = 40.0f + (float)(i * 47) + fmodf(t * 60.0f, 47.0f);
+                    if (ly > sh2) continue;
+                    float lw = 80.0f + (float)(rand() % (int)(sw2 * 0.5f));
+                    drawRect(30.0f, ly, lw, 3.0f, wc.r, wc.g, wc.b, 0.15f + 0.12f * blink);
+                }
+                drawCircle(sw2 * 0.5f, sh2 * 0.5f, 90.0f + prog * 60.0f,
+                           wc.r, wc.g, wc.b, 0.06f + 0.05f * blink);
+                for (int i = 0; i < 6; i++) {
+                    float a = (float)i * 1.047f + t * 0.4f;
+                    float nx = sw2 * 0.5f + cosf(a) * (120.0f + prog * 80.0f);
+                    float ny = sh2 * 0.5f + sinf(a) * (120.0f + prog * 80.0f);
+                    drawRect(sw2 * 0.5f, sh2 * 0.5f, nx - sw2 * 0.5f, 2.0f,
+                             wc.r, wc.g, wc.b, 0.1f);
+                    drawRect(nx - 8.0f, ny - 6.0f, 16.0f, 12.0f,
+                             0.1f, 0.2f, 0.12f, 0.35f + 0.2f * blink);
                 }
             } break;
-            case 6: {  // FIREWALL — 붉은 차단 벽이 좌우에서 좁혀짐
-                float wall = (30.0f + 120.0f * prog);
-                drawRect(0, 0, wall, sh2, 1.0f, 0.25f, 0.15f, 0.15f + 0.12f * prog);
-                drawRect(sw2 - wall, 0, wall, sh2, 1.0f, 0.25f, 0.15f, 0.15f + 0.12f * prog);
-                for (int i = 0; i < 5; i++) {
-                    float ly = sh2 * (0.15f + 0.17f * i);
-                    drawRect(wall - 8.0f, ly, sw2 - 2.0f * wall + 16.0f, 4.0f,
-                             1.0f, 0.5f, 0.2f, 0.35f * blink);
+            case 8: {  // FORK ???섎떒?먯꽌 湲곗뼱?ㅻ뒗 遺꾩젅 紐명넻
+                float crawl = 40.0f + 90.0f * prog;
+                for (int s = 0; s < 9; s++) {
+                    float sx = sw2 * 0.08f + s * sw2 * 0.105f;
+                    float bob = sinf(t * 6.0f + s * 0.7f) * 6.0f;
+                    drawCircle(sx, sh2 - crawl + bob, 14.0f + (float)(s % 3) * 3.0f,
+                               0.35f, 0.85f, 0.25f, 0.2f + 0.15f * prog);
+                }
+            } break;
+            case 9: {  // RITE ??沅ㅻ룄 留?+ 湲곕뫁 + ?↔컖 肄붿뼱
+                float cx = sw2 * 0.5f, cy = sh2 * 0.5f;
+                float R = (sw2 < sh2 ? sw2 : sh2) * 0.28f;
+                for (int i = 0; i < 16; i++) {
+                    if ((i & 1) == 0) continue;
+                    float a0 = (float)i / 16.0f * 6.283f + t * 0.4f;
+                    float a1 = (float)(i + 1) / 16.0f * 6.283f + t * 0.4f;
+                    float x0 = cx + cosf(a0) * R, y0 = cy + sinf(a0) * R * 0.85f;
+                    float x1 = cx + cosf(a1) * R, y1 = cy + sinf(a1) * R * 0.85f;
+                    drawRect((x0 + x1) * 0.5f - 2, (y0 + y1) * 0.5f - 2, 4, 4,
+                             wc.r, wc.g, wc.b, 0.12f + 0.15f * blink);
+                }
+                for (int c = 0; c < 4; c++) {
+                    float a = (float)c * 1.571f + t * 0.5f;
+                    float px = cx + cosf(a) * R, py = cy + sinf(a) * R * 0.85f;
+                    float th = 24.0f + 90.0f * prog;
+                    drawRect(px - 8.0f, py - th * 0.5f, 16.0f, th, wc.r, wc.g, wc.b,
+                             0.18f + 0.22f * blink);
+                }
+                for (int i = 0; i < 6; i++) {
+                    float a = t * 1.2f + (float)i * 1.047f;
+                    float hx = cx + cosf(a) * (38.0f + prog * 22.0f);
+                    float hy = cy + sinf(a) * (38.0f + prog * 22.0f);
+                    drawTriangle(hx, hy, 10.0f, wc.r, wc.g, wc.b, 0.35f + 0.25f * blink);
                 }
             } break;
             default: break;
             }
     
-            // 공통 경고 배너 (중앙 상단쪽)
+            // 怨듯넻 寃쎄퀬 諛곕꼫 (以묒븰 ?곷떒履?
             float by3 = sh2 * 0.30f;
-            // 이름 (대)
-            wchar_t banner[64]; swprintf_s(banner, L"⚠  %ls  ⚠", g_BossWarnName);
+            // ?대쫫 (?)
+            wchar_t banner[64]; swprintf_s(banner, L"!! %ls !!", g_BossWarnName);
             float nsc = 1.5f;
             float nw2 = g_TextL.Width(banner, nsc);
             g_TextL.Draw(banner, (sw2 - nw2) * 0.5f, by3, nsc,
                          wc.r, wc.g, wc.b, 0.7f + 0.3f * blink);
-            // 부제
-            const wchar_t* SUB[3] = { L"위협 프로세스 감지 — 실행 중...",
-                                       L"THREAT PROCESS DETECTED — launching...",
-                                       L"脅威プロセス検出 — 実行中..." };
+            const wchar_t* SUB[3] = { L"?꾪삊 ?꾨줈?몄뒪 媛먯? ???ㅽ뻾 以?..",
+                                       L"THREAT PROCESS DETECTED ??launching...",
+                                       L"?끻쮤?쀣꺆?삠궧濾쒎눣 ??若잒죱訝?.." };
             int li5 = LangIndex();
             float ssc = 0.7f;
             float sw3 = g_TextS.Width(SUB[li5], ssc);
             g_TextS.Draw(SUB[li5], (sw2 - sw3) * 0.5f, by3 + 44.0f, ssc, 1.0f, 1.0f, 1.0f, 0.85f);
-            // 진행 게이지
+            // 吏꾪뻾 寃뚯씠吏
             float gw = 320.0f, gh = 8.0f, gx = (sw2 - gw) * 0.5f, gy = by3 + 74.0f;
             BindMainShader();
             drawRect(gx - 2, gy - 2, gw + 4, gh + 4, 0.0f, 0.0f, 0.0f, 0.6f);
@@ -4439,15 +4873,15 @@ int main() {
             drawRect(gx, gy, gw * prog, gh, wc.r, wc.g, wc.b, 0.95f);
         }
     
-        // (h2d) 페이즈2 진입 토스트 — "■ 과부하 — PHASE 2" (1.8초 페이드)
+        // (h2d) ?섏씠利? 吏꾩엯 ?좎뒪????"??怨쇰?????PHASE 2" (1.8珥??섏씠??
         if (g_P2ToastTimer > 0.0f &&
             (g_GameManager.currentState == GameState::RUNNING ||
              g_GameManager.currentState == GameState::DYING)) {
             float a = (g_P2ToastTimer > 1.4f) ? (1.8f - g_P2ToastTimer) / 0.4f
                                               : (g_P2ToastTimer / 1.4f);
             if (a > 1.0f) a = 1.0f; if (a < 0.0f) a = 0.0f;
-            const wchar_t* P2[3] = { L"■ 과부하 — PHASE 2", L"■ OVERLOAD — PHASE 2",
-                                      L"■ 過負荷 — PHASE 2" };
+            const wchar_t* P2[3] = { L"??怨쇰?????PHASE 2", L"??OVERLOAD ??PHASE 2",
+                                      L"???롨쿋????PHASE 2" };
             int li6 = LangIndex();
             float psc = 1.2f;
             float pw3 = g_TextL.Width(P2[li6], psc);
@@ -4456,14 +4890,25 @@ int main() {
                          (float)screenHeight * 0.22f, psc, pc.r, pc.g, pc.b, a);
         }
     
-        // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍
+        // (h3) ?붾㈃ ?뚮옒?????덈꺼??蹂댁뒪泥섏튂/遺???쒓컙 踰덉찉
         if (g_FlashIntensity > 0.001f) {
             BindMainShader();
             float a = g_FlashIntensity; if (a > 0.85f) a = 0.85f;
             drawRect(0, 0, (float)screenWidth, (float)screenHeight,
                      g_FlashColor.r, g_FlashColor.g, g_FlashColor.b, a);
         }
-        // (h3) 화면 플래시 — 레벨업/보스처치/부활 순간 번쩍
+        // FORK.worm ?덊뵾 ???媛??RGB 遺꾨━ 湲由ъ튂
+        if (g_CentiBoss && g_CentiBoss->glitchOverlay > 0.001f) {
+            BindMainShader();
+            float go = g_CentiBoss->glitchOverlay * 7.0f;
+            if (go > 1.0f) go = 1.0f;
+            float off = 7.0f * go;
+            float sw = (float)screenWidth, sh = (float)screenHeight;
+            drawRect(off, 0.0f, sw, sh, 1.0f, 0.15f, 0.15f, go * 0.07f);
+            drawRect(-off, 0.0f, sw, sh, 0.15f, 0.85f, 1.0f, go * 0.07f);
+        }
+    
+        // (h4) ?쒓컙 ?뺤? ???붾㈃ 媛?μ옄由??쒖븞 鍮꾨꽕??(?뺤? ?곗텧)
         if (g_TimeStopTimer > 0.0f) {
             BindMainShader();
             float a = 0.10f + 0.05f * sinf((float)glfwGetTime() * 10.0f);
@@ -4474,7 +4919,7 @@ int main() {
             drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.3f, 0.9f, 1.0f, a);
         }
     
-        // (h5) 피격 — 빨간 가장자리 비네트 (피격 펀치)
+        // (h5) ?쇨꺽 ??鍮④컙 媛?μ옄由?鍮꾨꽕??(?쇨꺽 ?移?
         if (g_HurtVignette > 0.001f) {
             BindMainShader();
             float a = g_HurtVignette * 0.55f;
@@ -4485,9 +4930,8 @@ int main() {
             drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.95f, 0.1f, 0.1f, a);
         }
     
-        // (i) 취함 상태 표시 (화면 가장자리 자홍색 비네트)
+        // (i) 痍⑦븿 ?곹깭 ?쒖떆 (?붾㈃ 媛?μ옄由??먰솉??鍮꾨꽕??
         if (g_DrunkActive) {
-            // 가장자리 4겹 사각 테두리 — alpha 빠르게 누적되며 비네트
             float a = 0.18f;
             drawRect(0, 0, (float)screenWidth, 12.0f, 0.9f, 0.1f, 0.6f, a);
             drawRect(0, (float)screenHeight - 12, (float)screenWidth, 12.0f, 0.9f, 0.1f, 0.6f, a);
@@ -4496,24 +4940,24 @@ int main() {
         }
     
         }   // if (inWorldRender)
-        }   // 월드 렌더 게이트 블록
+        }   // world render game block
     
-        // [6] HUD 오버레이 (HP바, 상태 표시)
+        // [6] HUD
         g_GameManager.Render();
     
-        // ── [7] 한국어 텍스트 + 메뉴 ─────────────────────────────────────────
+        // ?? [7] ?쒓뎅???띿뒪??+ 硫붾돱 ?????????????????????????????????????????
         {
             float sw = (float)screenWidth, sh = (float)screenHeight;
             auto  st = g_GameManager.currentState;
     
     
-            // 앱 창(shop/codex/config) 진입 시 열림 애니메이션 시작 — 매 프레임 진행
+            // ??李?shop/codex/config) 吏꾩엯 ???대┝ ?좊땲硫붿씠???쒖옉 ??留??꾨젅??吏꾪뻾
             {
                 static GameState s_prevWinSt = GameState::MAIN_MENU;
                 bool isApp = (st == GameState::SHOP || st == GameState::CODEX ||
                               st == GameState::SETTINGS);
                 if (st != s_prevWinSt) {
-                    if (isApp) g_AppOpen = 0.0f;   // 새 창 → 크기 0에서 열기
+                    if (isApp) g_AppOpen = 0.0f;   // ??李????ш린 0?먯꽌 ?닿린
                     s_prevWinSt = st;
                 }
                 if (isApp && g_AppOpen < 1.0f) {
@@ -4522,21 +4966,21 @@ int main() {
                 }
             }
     
-            // ── 인게임 작업표시줄 — 메뉴와 동일한 OS 프레임 유지 (데스크톱 방어 일관성) ──
+            // ?? ?멸쾶???묒뾽?쒖떆以???硫붾돱? ?숈씪??OS ?꾨젅???좎? (?곗뒪?ы넲 諛⑹뼱 ?쇨??? ??
             if (st == GameState::RUNNING || st == GameState::PAUSED || st == GameState::DYING ||
                 st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
                 DrawIngameTaskbar(sw, sh, st);
             }
     
-            // ── 업적 해금 토스트 (상단 중앙 배너, 4초 표시 후 페이드) ──
+            // ?? ?낆쟻 ?닿툑 ?좎뒪??(?곷떒 以묒븰 諛곕꼫, 4珥??쒖떆 ???섏씠?? ??
             if (g_AchToastTimer > 0.0f && g_AchToastId >= 0 &&
                 g_AchToastId < ACH_COUNT) {
                 g_AchToastTimer -= delta;
-                float a = g_AchToastTimer > 3.0f ? (4.0f - g_AchToastTimer) // 페이드인
-                        : std::min(1.0f, g_AchToastTimer);                 // 페이드아웃
+                float a = g_AchToastTimer > 3.0f ? (4.0f - g_AchToastTimer)
+                        : std::min(1.0f, g_AchToastTimer);
                 if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
                 int li2 = LangIndex();
-                const wchar_t* LBL[3] = { L"업적 달성!", L"Achievement!", L"実績解除!" };
+                const wchar_t* LBL[3] = { L"?낆쟻 ?ъ꽦!", L"Achievement!", L"若잏맘鰲ｉ솮!" };
                 wchar_t tb[160];
                 swprintf_s(tb, L"%ls  %ls  (+%lld)", LBL[li2],
                            AchName(g_AchToastId), ACH_DEFS[g_AchToastId].coinReward);
@@ -4550,25 +4994,25 @@ int main() {
     
             DrawKillTags(g_TextS, st == GameState::RUNNING || st == GameState::DYING);
 
-            // ── 크리에이티브 HUD (게임 중) — F:증강  G:무적 ──
+            // ?? ?щ━?먯씠?곕툕 HUD (寃뚯엫 以? ??F:利앷컯  G:臾댁쟻 ??
             if (g_CreativeMode &&
                 (st == GameState::RUNNING || st == GameState::READY ||
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
                 int li3 = LangIndex();
                 const wchar_t* CH[3] = {
-                    L"CREATIVE   F: 증강(디버프 포함)   G: 무적",
+                    L"CREATIVE   F: 利앷컯(?붾쾭???ы븿)   G: 臾댁쟻",
                     L"CREATIVE   F: Augment(+debuff)   G: Godmode",
-                    L"CREATIVE   F: 強化(デバフ含)   G: 無敵" };
+                    L"CREATIVE   F: 凉룟뙑(?뉎깘?뺝맜)   G: ?→빑" };
                 g_TextS.Draw(CH[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL), 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
-                    const wchar_t* GOD[3] = { L"● 무적 ON", L"● GODMODE ON", L"● 無敵 ON" };
+                    const wchar_t* GOD[3] = { L"??臾댁쟻 ON", L"??GODMODE ON", L"???→빑 ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
                     g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f, 1.0f, 0.85f, 0.2f, blink);
                 }
             }
     
-            // ── [7b] UI 씬 디스패치 — 메뉴/창 상태는 Scene_* 함수로 분리 ──
-            //    RUNNING/DYING(순수 인게임)엔 씬이 없으니 컨텍스트 구성 자체를 건너뜀.
+            // ?? [7b] UI ???붿뒪?⑥튂 ??硫붾돱/李??곹깭??Scene_* ?⑥닔濡?遺꾨━ ??
+            //    RUNNING/DYING(?쒖닔 ?멸쾶?????ъ씠 ?놁쑝??而⑦뀓?ㅽ듃 援ъ꽦 ?먯껜瑜?嫄대꼫?.
             if (st != GameState::RUNNING && st != GameState::DYING) {
                 std::function<void()> resetFn = ResetForNewGame;
                 SceneCtx ctx{ sw, sh, mx, my, lmb, delta, window, &fireTimer, resetFn };
@@ -4593,17 +5037,16 @@ int main() {
                     Scene_OwnedAugPanel(ctx);
             }
     
-            // 상단 HUD — 실제 게임 진행 상태에서만 (메뉴/도감/상점엔 안 뜨게)
+            // ?곷떒 HUD ???ㅼ젣 寃뚯엫 吏꾪뻾 ?곹깭?먯꽌留?(硫붾돱/?꾧컧/?곸젏?????④쾶)
             if (st == GameState::RUNNING || st == GameState::PAUSED ||
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
                 st == GameState::DEBUFF_SELECT) {
-                // macOS: 상단 메뉴바(~25px)가 화면 맨 위를 가리므로 HUD 를 아래로
-    #ifdef __APPLE__
+#ifdef __APPLE__
                 const float hudTopY = 8.0f + 30.0f;
-    #else
+#else
                 const float hudTopY = 8.0f;
-    #endif
-                // 좌상단: Lv. + HP 숫자 (시각 바는 플레이어 창에 부착됨)
+#endif
+                // 醫뚯긽?? Lv. + HP ?レ옄 (?쒓컖 諛붾뒗 ?뚮젅?댁뼱 李쎌뿉 遺李⑸맖)
                 {
                     int hpCur = (int)(g_GameManager.playerHP + 0.5f);
                     int hpMax = (int)(g_Stats.maxHP + 0.5f);
@@ -4613,40 +5056,40 @@ int main() {
                     g_TextS.Draw(lvBuf2, 12.0f, hudTopY, 0.85f, 0.7f, 1.0f, 0.7f, 0.9f);
                 }
     
-                // 상단 중앙: Score
+                // ?곷떒 以묒븰: Score
                 wchar_t scoreBuf[64];
                 swprintf_s(scoreBuf, L"%ls  %lld", T(StrId::SCORE), g_GameManager.score);
                 float scoreW = g_TextS.Width(scoreBuf, 1.0f);
                 g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, hudTopY, 1.0f,
                              1.0f, 1.0f, 1.0f, 0.95f);
     
-                // 우상단: FPS
+                // ?곗긽?? FPS
                 wchar_t fpsBuf[32];
                 swprintf_s(fpsBuf, L"%ls  %d", T(StrId::FPS), g_CurrentFPS);
                 float fpsW = g_TextS.Width(fpsBuf, 0.85f);
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
     
-                // (HP/EXP 시각 바는 플레이어 창 하단에 부착됨 — 위 (c2) 참고)
-                // 하단 조작 안내 (희미하게 항상) — 새 플레이어가 HP/스킬 위치를 알게
+                // (HP/EXP ?쒓컖 諛붾뒗 ?뚮젅?댁뼱 李??섎떒??遺李⑸맖 ????(c2) 李멸퀬)
+                // ?섎떒 議곗옉 ?덈궡 (?щ??섍쾶 ??긽) ?????뚮젅?댁뼱媛 HP/?ㅽ궗 ?꾩튂瑜??뚭쾶
                 if (st == GameState::RUNNING) {
                     const wchar_t* c =
                         (g_Language == Language::KR)
-                            ? L"WASD 이동   마우스 발사   SHIFT 대시   Q/E/R 스킬   ESC 일시정지"
+                            ? L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause"
                         : (g_Language == Language::JP)
-                            ? L"WASD 移動   マウス 射撃   SHIFT ダッシュ   Q/E/R スキル   ESC 一時停止"
+                            ? L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause"
                             : L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
                     float cw = g_TextS.Width(c, 0.7f);
                     g_TextS.Draw(c, CenterX(sw, cw), HudY(sh, Hud::COMBO_TEXT), 0.7f,
-                                 0.7f, 0.82f, 0.95f, 0.72f);   // 가시성 ↑ (옅어서 안 보인다는 피드백)
+                                 0.7f, 0.82f, 0.95f, 0.72f);   // 媛?쒖꽦 ??(?낆뼱????蹂댁씤?ㅻ뒗 ?쇰뱶諛?
                 }
-                // ── 저체력 경고 — HP 25% 이하 시 가장자리 부드러운 적색 펄스 + 텍스트 ──
+                // ?? ?泥대젰 寃쎄퀬 ??HP 25% ?댄븯 ??媛?μ옄由?遺?쒕윭???곸깋 ?꾩뒪 + ?띿뒪????
                 if (st == GameState::RUNNING || st == GameState::PAUSED) {
                     float hpFrac = (g_Stats.maxHP > 0.0f)
                                  ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                     if (hpFrac > 0.0f && hpFrac < 0.25f) {
                         float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 6.0f);
-                        float sev   = 1.0f - hpFrac / 0.25f;            // 낮을수록 강하게
+                        float sev   = 1.0f - hpFrac / 0.25f;
                         float a     = (0.08f + 0.13f * pulse) * (0.5f + 0.5f * sev);
                         BindMainShader();
                         float bw = 64.0f;
@@ -4654,7 +5097,7 @@ int main() {
                         drawRect(0, sh - bw, sw, bw, 0.9f, 0.15f, 0.15f, a);
                         drawRect(0, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
                         drawRect(sw - bw, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
-                        const wchar_t* LOW[3] = { L"● 위험", L"● LOW HP", L"● 危険" };
+                        const wchar_t* LOW[3] = { L"???꾪뿕", L"??LOW HP", L"???깁쇇" };
                         int li4 = LangIndex();
                         float lw = g_TextS.Width(LOW[li4], 0.9f);
                         g_TextS.Draw(LOW[li4], CenterX(sw, lw), HudY(sh, Hud::LOW_HP_WARN),
@@ -4663,13 +5106,13 @@ int main() {
                 }
             }
     
-            // ── 손맛: 데미지 숫자 팝업 + 콤보 카운터 (실제 플레이 중에만) ──
-            //    메뉴/일시정지에선 숨김 — 텍스트가 메뉴 위에 남던 버그 fix
+            // ?? ?먮쭧: ?곕?吏 ?レ옄 ?앹뾽 + 肄ㅻ낫 移댁슫??(?ㅼ젣 ?뚮젅??以묒뿉留? ??
+            //    硫붾돱/?쇱떆?뺤??먯꽑 ?④? ???띿뒪?멸? 硫붾돱 ?꾩뿉 ?⑤뜕 踰꾧렇 fix
             if (st == GameState::RUNNING || st == GameState::DYING) {
-                // 데미지 숫자 (월드 → 스크린 변환 후 텍스트) — 설정 토글
+                // ?곕?吏 ?レ옄 (?붾뱶 ???ㅽ겕由?蹂?????띿뒪?? ???ㅼ젙 ?좉?
                 if (g_ShowDamageNumbers)
                 for (auto& d : g_DmgNumbers) {
-                    float t  = d.life / d.maxLife;                   // 1 → 0
+                    float t  = d.life / d.maxLife;                   // 1 ??0
                     float sx = W2SX(d.x), sy = W2SY(d.y);
                     wchar_t nb[16]; swprintf_s(nb, L"%d", d.amount);
                     float sc = (d.crit ? 1.05f : 0.72f) * g_ViewZoom * (0.7f + 0.3f * t);
@@ -4678,10 +5121,10 @@ int main() {
                     if (d.crit) g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 0.85f, 0.2f, a);
                     else        g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 1.0f, 1.0f, a*0.9f);
                 }
-                // 콤보 카운터 (5콤보 이상부터, 색이 콤보에 따라 강해짐) — 설정 토글
+                // 肄ㅻ낫 移댁슫??(5肄ㅻ낫 ?댁긽遺?? ?됱씠 肄ㅻ낫???곕씪 媛뺥빐吏? ???ㅼ젙 ?좉?
                 if (g_ShowCombo && st == GameState::RUNNING && g_Combo >= 5) {
-                    bool  ms      = (g_ComboMilestone > 0.0f);   // 마일스톤 강조 중
-                    float msBoost = ms ? (g_ComboMilestone / 0.7f) : 0.0f;  // 1→0
+                    bool  ms      = (g_ComboMilestone > 0.0f);
+                    float msBoost = ms ? (g_ComboMilestone / 0.7f) : 0.0f;
                     wchar_t cb[32]; swprintf_s(cb, L"%d COMBO", g_Combo);
                     float sc = (1.05f + (g_Combo > 30 ? 0.3f : 0.0f))
                              * (1.0f + g_ComboPulse * 0.4f + msBoost * 0.55f);
@@ -4689,13 +5132,13 @@ int main() {
                     if      (g_Combo >= 50) { cg = 0.25f; cbl = 0.2f; }
                     else if (g_Combo >= 25) { cg = 0.55f; cbl = 0.15f; }
                     else if (g_Combo >= 12) { cg = 0.9f;  cbl = 0.3f; }
-                    if (ms) { cr = 1.0f; cg = 0.85f; cbl = 0.30f; }   // 마일스톤 = 골드 펄스
+                    if (ms) { cr = 1.0f; cg = 0.85f; cbl = 0.30f; }   // 留덉씪?ㅽ넠 = 怨⑤뱶 ?꾩뒪
                     float w = g_TextS.Width(cb, sc);
                     g_TextS.Draw(cb, (sw - w) * 0.5f, sh * 0.115f, sc, cr, cg, cbl, 0.95f);
                 }
             }
     
-            // ── 액티브 스킬 슬롯 (좌하단, 패시브 쿨다운 위 행) ──
+            // ?? ?≫떚釉??ㅽ궗 ?щ’ (醫뚰븯?? ?⑥떆釉?荑⑤떎?????? ??
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float KW = 54.0f, KH = 54.0f, KG = 8.0f;
                 float kx0 = 16.0f, ky0 = HudY(sh, KH + Hud::SKILL_KEYS_Y);
@@ -4726,34 +5169,39 @@ int main() {
                     default: break;
                     }
                     skillBox(i + 1, keys3[i], tag, g_Skills[i].cd, r, g, b);
+                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->isSkillSealed(i)) {
+                        float x = kx0 + (float)(i + 1) * (KW + KG), y = ky0;
+                        drawRect(x, y, KW, KH, 0.05f, 0.05f, 0.05f, 0.55f);
+                        g_TextS.Draw(L"SEAL", x + 6.0f, y + 20.0f, 0.45f, 0.9f, 0.3f, 0.35f, 0.9f);
+                    }
                 }
             }
     
-            // ── 액티브/패시브 쿨다운 UI (좌하단) ─────────────────────
-            // 추후 픽토그램 PNG 가 들어오면 사각형 placeholder 자리에 텍스처 표시
+            // ?? ?≫떚釉??⑥떆釉?荑⑤떎??UI (醫뚰븯?? ?????????????????????
+            // 異뷀썑 ?쏀넗洹몃옩 PNG 媛 ?ㅼ뼱?ㅻ㈃ ?ш컖??placeholder ?먮━???띿뒪泥??쒖떆
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float SLOT_W = 56.0f, SLOT_H = 56.0f, SLOT_GAP = 8.0f;
                 float baseX  = 16.0f;
-                float baseY2 = HudY(sh, SLOT_H + Hud::SLOT_BAR_BASE);   // HP 바 위쪽(작업표시줄 위)
+                float baseY2 = HudY(sh, SLOT_H + Hud::SLOT_BAR_BASE);   // HP 諛??꾩そ(?묒뾽?쒖떆以???
                 int   slot   = 0;
     
                 auto drawSlot = [&](const wchar_t* tag, float remain,
                                     float r, float g, float b) {
                     float x = baseX + slot * (SLOT_W + SLOT_GAP);
                     float y = baseY2;
-                    // 배경
+                    // 諛곌꼍
                     drawRect(x, y, SLOT_W, SLOT_H, 0.05f, 0.05f, 0.08f, 0.85f);
-                    // 진행도 (위→아래 채워지지 않은 부분 = 쿨타임)
+                    // 吏꾪뻾??(?꾟넂?꾨옒 梨꾩썙吏吏 ?딆? 遺遺?= 荑⑦???
                     if (remain > 0.0f) {
-                        // 어두운 오버레이 (남은 비율만큼 위에서부터 채움)
-                        // remain 정규화는 호출 시점에서 처리하기 어려우니 alpha 0.55 고정
+                        // ?대몢???ㅻ쾭?덉씠 (?⑥? 鍮꾩쑉留뚰겮 ?꾩뿉?쒕???梨꾩?)
+                        // remain ?뺢퇋?붾뒗 ?몄텧 ?쒖젏?먯꽌 泥섎━?섍린 ?대젮?곕땲 alpha 0.55 怨좎젙
                         drawRect(x, y, SLOT_W, SLOT_H, 0.0f, 0.0f, 0.0f, 0.55f);
                     }
-                    // 컬러 테두리 (위쪽 띠)
+                    // 而щ윭 ?뚮몢由?(?꾩そ ??
                     drawRect(x, y, SLOT_W, 4.0f, r, g, b, 1.0f);
-                    // 태그 (영문/약어 — 픽토그램 들어오면 제거)
+                    // ?쒓렇 (?곷Ц/?쎌뼱 ???쏀넗洹몃옩 ?ㅼ뼱?ㅻ㈃ ?쒓굅)
                     g_TextS.Draw(tag, x + 4.0f, y + 6.0f, 0.7f, r, g, b, 1.0f);
-                    // 남은 시간 (정수)
+                    // ?⑥? ?쒓컙 (?뺤닔)
                     if (remain > 0.0f) {
                         wchar_t buf[16];
                         swprintf_s(buf, L"%d", (int)(remain + 0.99f));
@@ -4763,14 +5211,14 @@ int main() {
                     }
                 };
     
-                // 탄환 세례 — 쿨다운 (20 / 15 / 7.5)
+                // ?꾪솚 ?몃? ??荑⑤떎??(20 / 15 / 7.5)
                 if (g_Stats.bulletRain) {
                     float remain = g_Stats.bulletRainCooldown - g_BulletRainTimer;
                     if (remain < 0) remain = 0;
                     drawSlot(L"RAIN", remain, 1.0f, 0.5f, 0.2f);
                     ++slot;
                 }
-                // 취함 — drunkCooldown 대기 / drunkActiveDuration 활성
+                // 痍⑦븿 ??drunkCooldown ?湲?/ drunkActiveDuration ?쒖꽦
                 if (g_Stats.drunk) {
                     float remain = g_DrunkActive
                         ? (g_Stats.drunkCooldown + g_Stats.drunkActiveDuration - g_DrunkCycle)
@@ -4782,13 +5230,12 @@ int main() {
                     drawSlot(L"DRNK", remain, r, gC, b);
                     ++slot;
                 }
-                // 가벼운 발걸음 비활성 카운트다운
                 if (g_Stats.lightStep && g_Stats.lightStepDisableTimer > 0.0f) {
                     drawSlot(L"LSTP", g_Stats.lightStepDisableTimer,
                              0.7f, 0.7f, 0.85f);
                     ++slot;
                 }
-                // 다가오는 죽음 — 활성 + stack (속도 +20%/스택)
+                // ?ㅺ??ㅻ뒗 二쎌쓬 ???쒖꽦 + stack (?띾룄 +20%/?ㅽ깮)
                 if (!g_ApproachOrbs.empty()) {
                     float x = baseX + slot * (SLOT_W + SLOT_GAP);
                     drawRect(x, baseY2, SLOT_W, SLOT_H, 0.20f, 0.0f, 0.0f, 0.85f);
@@ -4804,31 +5251,31 @@ int main() {
                 }
             }
         }
-    
+
         g_LmbPrev = lmb;
 
-        // 업적 해금 / 도감 발견 발생 시 저장 (게임 중 즉시 영구화)
+        // ?낆쟻 ?닿툑 / ?꾧컧 諛쒓껄 諛쒖깮 ?????(寃뚯엫 以?利됱떆 ?곴뎄??
         if (g_AchSaveNeeded || g_CodexDirty) {
             SaveGame(); g_AchSaveNeeded = false; g_CodexDirty = false;
         }
 
-        BatchFlush();   // 프레임 마지막 — 남은 도형 모두 그림
+        BatchFlush();   // ?꾨젅??留덉?留????⑥? ?꾪삎 紐⑤몢 洹몃┝
         glfwSwapBuffers(window);
 
-        // ── FPS 캡 (g_FpsCap > 0 일 때만) ─────────────────────────────
-        // timeBeginPeriod(1) 로 Sleep 해상도 1ms. 마지막 ~1ms 는 busy-wait
-        // C18: 과거 '무제한'(-1) 세이브는 300 으로 클램프 (진짜 무제한 제거).
+        // ?? FPS 罹?(g_FpsCap > 0 ???뚮쭔) ?????????????????????????????
+        // timeBeginPeriod(1) 濡?Sleep ?댁긽??1ms. 留덉?留?~1ms ??busy-wait
+        // C18: 怨쇨굅 '臾댁젣??(-1) ?몄씠釉뚮뒗 300 ?쇰줈 ?대옩??(吏꾩쭨 臾댁젣???쒓굅).
         int capFps = (g_FpsCap < 0) ? 300 : g_FpsCap;
         if (capFps > 0) {
             double target = 1.0 / (double)capFps;
             double frameStart = (double)now;
             double remain = target - (glfwGetTime() - frameStart);
             if (remain > 0.001) {
-                // 마지막 1ms 만 남기고 Sleep
+                // 留덉?留?1ms 留??④린怨?Sleep
                 unsigned ms = (unsigned)((remain - 0.001) * 1000.0);
                 PlatformSleepMs(ms);
             }
-            // 잔여 busy-wait (정확한 캡)
+            // ?붿뿬 busy-wait (?뺥솗??罹?
             while (glfwGetTime() - frameStart < target) { /* spin */ }
         }
     }

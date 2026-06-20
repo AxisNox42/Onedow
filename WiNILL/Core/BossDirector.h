@@ -2,7 +2,7 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 0행(HANG) 1(미사용) 2리로드 ...
+// 보스 pick: 2 VOLLEY 4 POLYMORPH 7 C2 8 FORK 9 RITE
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -13,7 +13,7 @@ inline int& RotIdx() {
 inline void ResetRotation() { RotIdx() = 0; }
 
 inline int RollScorePick() {
-    static const int kRot[] = { 0, 2, 3, 5, 6 };
+    static const int kRot[] = { 4, 2, 7, 8, 9 };
     return kRot[RotIdx()++ % 5];
 }
 
