@@ -104,6 +104,7 @@ public:
     static constexpr float PHANTOM_WIN_W = 300.0f;
     static constexpr float PHANTOM_WIN_H = 220.0f;
     static constexpr float PHANTOM_WIN_TB = 16.0f;
+    static constexpr float GLITCH_WIN_TB = 22.0f;
 
     static constexpr float T_CORRUPT = 2.8f;
     static constexpr float T_FRAGMENT = 6.0f;
@@ -197,11 +198,12 @@ public:
         }
     }
 
-    Decoy makeDecoy() {
+    Decoy makeDecoy(int slot = 0) {
         Decoy d;
-        float m = 0.16f;
-        d.x = screenW * (m + (float)(rand() % 1000) * 0.001f * (1.0f - 2.0f * m));
-        d.y = screenH * (m + (float)(rand() % 1000) * 0.001f * (1.0f - 2.0f * m));
+        float ang = (float)slot * 2.094395102f + (float)(rand() % 100) * 0.006f;
+        float dist = 260.0f + (float)(rand() % 100);
+        d.x = worldX + cosf(ang) * dist;
+        d.y = worldY + sinf(ang) * dist * 0.85f;
         d.alive = true;
         d.respawn = 0.0f;
         d.maxHp = d.hp = maxHp * DECOY_HP_SHARE;
@@ -230,7 +232,7 @@ public:
 
     void ensureDecoys() {
         int want = phase3 ? 3 : (phase2 ? 2 : 0);
-        while ((int)decoys.size() < want) decoys.push_back(makeDecoy());
+        while ((int)decoys.size() < want) decoys.push_back(makeDecoy((int)decoys.size()));
         while ((int)decoys.size() > want) decoys.pop_back();
         if (want != decoyCountLast) {
             decoyCountLast = want;
@@ -397,11 +399,12 @@ public:
     }
 
     void updateDecoys(float playerCX, float playerCY, float dt) {
-        for (auto& d : decoys) {
+        for (size_t di = 0; di < decoys.size(); di++) {
+            auto& d = decoys[di];
             if (!d.alive) {
                 d.respawn -= dt;
                 if (d.respawn <= 0.0f) {
-                    d = makeDecoy();
+                    d = makeDecoy((int)di);
                     splitHpToDecoys();
                 }
                 continue;
