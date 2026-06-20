@@ -1858,7 +1858,10 @@ int main() {
                         g_ShakeTime = 0.28f; g_ShakeMag = 16.0f;
                         TriggerFlash(1.0f, 0.12f, 0.38f, 0.32f);
                         TriggerHitStop(0.05f);
-                    } else if (g_GlitchBoss->state != BossState::LUNGE) {
+                    } else if (g_GlitchBoss->state == BossState::WAVE && g_GlitchWasLunge) {
+                        g_GlitchWasLunge = false;
+                    } else if (g_GlitchBoss->state != BossState::LUNGE &&
+                               g_GlitchBoss->state != BossState::WAVE) {
                         g_GlitchWasLunge = false;
                     }
                 } else { g_GlitchWasP2 = false; g_GlitchWasP3 = false; g_GlitchWasLunge = false; }
@@ -4418,7 +4421,7 @@ int main() {
         //     모든 보스 종류(슬라임/글리치/리로드/폴리/스팸/슬라임분열체) 공통 처리.
         //     E22: 이전엔 슬라임 보스(g_MonsterManager.boss)만 노출돼 다른 보스 창에선
         //          잡몹/탄이 컬링되어 안 보였음 → 보스별 창 영역마다 scissor 패스 추가.
-        auto drawBossWinContent = [&](float bwx, float bwy, float ww, float wh) {
+        auto drawBossWinContent = [&](float bwx, float bwy, float ww, float wh, bool withBullets = true) {
             WorldScissor(bwx, bwy, ww, wh);
             for (auto m : g_MonsterManager.monsters) {
                 if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, bwx, bwy, ww, wh)) continue;
@@ -4431,9 +4434,11 @@ int main() {
                 if (bm->arming)
                     drawCircle(bm->worldX, bm->worldY, bm->blastRadius, 1.0f, 0.2f, 0.2f, 0.10f);
             }
-            for (auto& b : g_Bullets) {
-                if (!b.active || !inWin(b.x, b.y, bwx, bwy, ww, wh)) continue;
-                drawBullet(b);
+            if (withBullets) {
+                for (auto& b : g_Bullets) {
+                    if (!b.active || !inWin(b.x, b.y, bwx, bwy, ww, wh)) continue;
+                    drawBullet(b);
+                }
             }
             for (auto& p : g_EnemyParts) {
                 if (!p.active || !inWin(p.x, p.y, bwx, bwy, ww, wh)) continue;
@@ -4826,11 +4831,12 @@ int main() {
                         BatchFlush(); glEnable(GL_SCISSOR_TEST);
                         BindMainShader();
                         WorldScissor(wx, wy, ww, wh);
-                        drawBossWinContent(wx, wy, ww, wh);
-                        for (auto& b : g_Bullets)
-                            if (b.active && inWin(b.x, b.y, wx, wy, ww, wh)) drawBullet(b);
+                        drawBossWinContent(wx, wy, ww, wh, false);
+                        gb->renderWaves(gtApp);
                         gb->renderAfterimages(gtApp);
                         gb->renderBody(gtApp);
+                        for (auto& b : g_Bullets)
+                            if (b.active && inWin(b.x, b.y, wx, wy, ww, wh)) drawBullet(b);
                         BatchFlush(); glDisable(GL_SCISSOR_TEST);
                     }
                 }
@@ -5685,7 +5691,7 @@ int main() {
                     if (gb->phase3)
                         swprintf_s(glBuf, L"P3 · %ls · PH %d", gb->stateTag(), phantoms);
                     else if (gb->phase2)
-                        swprintf_s(glBuf, L"P2 · %ls · PH %d", gb->stateTag(), phantoms);
+                        swprintf_s(glBuf, L"P2 · %ls · %ls", gb->stateTag(), gb->attackName());
                     else
                         swprintf_s(glBuf, L"%ls · PH %d", gb->stateTag(), phantoms);
                     float gs = 0.55f;

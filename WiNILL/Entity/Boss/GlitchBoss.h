@@ -1,15 +1,9 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
-// CORRUPT.dll — v3 근접·점멸·잔상
+// CORRUPT.dll — v3.1 근접·점멸·잔상 + 글리치 파동·블링크
 //
-//   레이저/소환 제거. CORRUPT.dll 창 하나 안에서:
-//     · 플레이어 추격 (STALK)
-//     · 고속 점멸 → 무적 구간 / STUTTER 때만 확실히 맞음
-//     · 이동·돌진 궤적에 RGB 잔상 (PHANTOM) — 접촉 피해
-//     · LUNGE — 짧은 예고 후 근접 돌진
-//
-//   사이클: BOOT → STALK → LUNGE_WARN → LUNGE → STUTTER → …
-//   P2 50%: 잔상↑·점멸↑   P3 25%: 연속 돌진·잔상 지속↑
+//   STALK → (LUNGE | WAVE | BLINK) → STUTTER → …
+//   P1: LUNGE만  P2+: 3종 로테이션  P3: 연속기·파동↑
 // ─────────────────────────────────────────────────────────────
 
 #include <vector>
@@ -21,7 +15,15 @@
 
 extern TextRenderer g_TextS;
 
-enum class BossState { BOOT, STALK, LUNGE_WARN, LUNGE, STUTTER };
+enum class BossState {
+    BOOT, STALK,
+    LUNGE_WARN, LUNGE,
+    WAVE_WARN, WAVE,
+    BLINK,
+    STUTTER
+};
+
+enum class GAttack { LUNGE, WAVE, BLINK };
 
 struct GlitchAfterimage {
     float x = 0, y = 0;
@@ -29,6 +31,16 @@ struct GlitchAfterimage {
     float maxLife = 0.55f;
     bool  harmful = true;
     float rgbOff = 0.0f;
+};
+
+struct GlitchWave {
+    float x = 0, y = 0;
+    float r = 0.0f;
+    float maxR = 380.0f;
+    float spd = 260.0f;
+    float thick = 22.0f;
+    float life = 1.0f;
+    bool  alive = true;
 };
 
 class GlitchBoss {
@@ -46,6 +58,7 @@ public:
     bool  phase3 = false;
 
     std::vector<GlitchAfterimage> afterimages;
+    std::vector<GlitchWave> waves;
 
     float glitchAmount = 0.0f;
     float textNoise = 0.0f;
@@ -57,9 +70,12 @@ public:
     static constexpr float GLITCH_WIN_TB = 22.0f;
 
     static constexpr float T_BOOT = 1.8f;
-    static constexpr float T_STALK = 3.8f;
+    static constexpr float T_STALK = 3.6f;
     static constexpr float T_LUNGE_WARN = 0.42f;
     static constexpr float T_LUNGE = 0.28f;
+    static constexpr float T_WAVE_WARN = 0.55f;
+    static constexpr float T_WAVE = 1.35f;
+    static constexpr float T_BLINK = 0.72f;
     static constexpr float T_STUTTER = 1.85f;
 
     GlitchBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
@@ -81,14 +97,28 @@ public:
         case BossState::STALK:      return L"STALK";
         case BossState::LUNGE_WARN: return L"◉ LOCK";
         case BossState::LUNGE:      return L"DASH";
+        case BossState::WAVE_WARN:  return L"WAVE◉";
+        case BossState::WAVE:       return L"WAVE";
+        case BossState::BLINK:      return L"BLINK";
         case BossState::STUTTER:    return L"STUTTER";
+        default: return L"?";
+        }
+    }
+
+    const wchar_t* attackName() const {
+        switch (nextAttack_) {
+        case GAttack::LUNGE: return L"RUSH";
+        case GAttack::WAVE:  return L"WAVE";
+        case GAttack::BLINK: return L"BLINK";
         default: return L"?";
         }
     }
 
     bool isVisible() const {
         if (state == BossState::STUTTER) return true;
+        if (state == BossState::WAVE_WARN || state == BossState::WAVE) return true;
         if (state == BossState::LUNGE_WARN && stateTimer > T_LUNGE_WARN * 0.55f) return true;
+        if (state == BossState::BLINK) return blinkVisible_;
         return flickerOn_;
     }
 
@@ -96,6 +126,8 @@ public:
         if (hp <= 0.0f) return false;
         if (state == BossState::STUTTER) return true;
         if (state == BossState::LUNGE || state == BossState::LUNGE_WARN) return false;
+        if (state == BossState::BLINK) return false;
+        if (state == BossState::WAVE) return false;
         return isVisible();
     }
 
@@ -116,6 +148,7 @@ public:
 
         tickFlicker(dt);
         tickAfterimages(dt, playerCX, playerCY, playerHP);
+        tickWaves(dt, playerCX, playerCY, playerHP);
         tickContact(playerCX, playerCY, dt, playerHP);
 
         switch (state) {
@@ -126,9 +159,9 @@ public:
             break;
 
         case BossState::STALK:
-            glitchAmount = 0.06f + (phase2 ? 0.04f : 0.0f);
+            glitchAmount = 0.06f + (phase2 ? 0.05f : 0.0f);
             chasePlayer(playerCX, playerCY, dt);
-            if (stateTimer >= stalkDuration()) beginLungeWarn(playerCX, playerCY);
+            if (stateTimer >= stalkDuration()) pickAttack(playerCX, playerCY);
             break;
 
         case BossState::LUNGE_WARN:
@@ -139,17 +172,35 @@ public:
 
         case BossState::LUNGE:
             glitchAmount = 0.1f;
-            tickLunge(dt, playerCX, playerCY, playerHP);
+            tickLunge(dt);
             if (stateTimer >= T_LUNGE) enterStutter();
+            break;
+
+        case BossState::WAVE_WARN:
+            glitchAmount = 0.12f + 0.06f * sinf(stateTimer * 16.0f);
+            textNoise = 0.3f;
+            if (stateTimer >= T_WAVE_WARN) enterWave();
+            break;
+
+        case BossState::WAVE:
+            glitchAmount = 0.09f;
+            tickWaveSpawn(dt);
+            if (stateTimer >= T_WAVE) enterStutter();
+            break;
+
+        case BossState::BLINK:
+            glitchAmount = 0.18f;
+            tickBlink(dt, playerCX, playerCY);
+            if (stateTimer >= T_BLINK) enterStutter();
             break;
 
         case BossState::STUTTER:
             glitchAmount = 0.02f;
             driftIdle(dt);
             if (stateTimer >= T_STUTTER) {
-                if (phase3 && chainLunges_ > 0) {
-                    chainLunges_--;
-                    beginLungeWarn(playerCX, playerCY);
+                if (phase3 && chainExtra_ > 0) {
+                    chainExtra_--;
+                    pickAttack(playerCX, playerCY);
                 } else {
                     enterStalk();
                 }
@@ -184,6 +235,24 @@ public:
             return dealt;
         }
         return 0.0f;
+    }
+
+    void renderWaves(float gt) const {
+        for (auto& w : waves) {
+            if (!w.alive) continue;
+            float fade = w.life;
+            float blink = 0.55f + 0.45f * sinf(gt * 20.0f + w.r * 0.04f);
+            float a = fade * blink;
+            drawRing(w.x + 5.0f, w.y, w.r, w.thick, 1.0f, 0.12f, 0.35f, a * 0.55f);
+            drawRing(w.x - 4.0f, w.y, w.r, w.thick * 0.92f, 0.12f, 0.92f, 0.38f, a * 0.5f);
+            drawRing(w.x, w.y, w.r, w.thick * 0.85f, 0.42f, 0.18f, 0.98f, a * 0.48f);
+            for (int i = 0; i < 6; i++) {
+                float ang = gt * 1.8f + (float)i * 1.047f;
+                float sx = w.x + cosf(ang) * w.r;
+                float sy = w.y + sinf(ang) * w.r * 0.75f;
+                drawRect(sx - 8.0f, sy - 2.0f, 16.0f, 4.0f, 0.2f, 0.95f, 1.0f, a * 0.35f);
+            }
+        }
     }
 
     void renderAfterimages(float gt) const {
@@ -224,18 +293,22 @@ public:
                        0.22f + prog * 0.38f * blink);
             drawCircle(worldX, worldY, BODY * (0.9f + prog * 0.35f),
                        0.95f, 0.22f, 0.58f, 0.18f + prog * 0.28f);
-            float ex = worldX + lungeDirX_ * (80.0f + prog * 120.0f);
-            float ey = worldY + lungeDirY_ * (80.0f + prog * 120.0f);
-            drawCircle(ex, ey, 12.0f + prog * 8.0f, 1.0f, 0.15f, 0.45f, 0.35f * blink);
+        }
+        if (state == BossState::WAVE_WARN) {
+            float prog = stateTimer / T_WAVE_WARN;
+            if (prog > 1.0f) prog = 1.0f;
+            for (int i = 1; i <= 3; i++) {
+                float pr = 40.0f + (float)i * 35.0f * prog;
+                float blink = 0.5f + 0.5f * sinf(gt * 18.0f + (float)i);
+                drawRing(worldX, worldY, pr, 10.0f, 0.35f, 0.92f, 1.0f, 0.15f * blink * prog);
+            }
         }
         if (state == BossState::STUTTER) {
             float pulse = 0.5f + 0.5f * sinf(gt * 9.0f);
             drawCircle(worldX, worldY, BODY * 1.35f, 0.95f, 0.35f, 0.7f, 0.12f + pulse * 0.14f);
         }
-        if (state == BossState::LUNGE) {
-            float ex = worldX - lungeDirX_ * 40.0f;
-            float ey = worldY - lungeDirY_ * 40.0f;
-            drawRect(ex - 18.0f, ey - 8.0f, 36.0f, 16.0f, 1.0f, 0.12f, 0.42f, 0.55f);
+        if (state == BossState::BLINK && blinkVisible_) {
+            drawCircle(worldX, worldY, BODY * 1.1f, 0.85f, 0.3f, 0.95f, 0.35f);
         }
     }
 
@@ -249,6 +322,18 @@ public:
             g_TextS.Draw(tw, px - tw_w * 0.5f, py - 58.0f, 0.52f,
                          0.35f, 0.95f, 1.0f, 0.75f + prog * 0.2f);
         }
+        if (state == BossState::WAVE_WARN || state == BossState::WAVE) {
+            wchar_t ww[] = L"≈ GLITCH WAVE ≈";
+            float ww_w = g_TextS.Width(ww, 0.5f);
+            g_TextS.Draw(ww, worldX - ww_w * 0.5f, worldY - BODY - 42.0f, 0.5f,
+                         0.35f, 0.95f, 1.0f, 0.82f);
+        }
+        if (state == BossState::BLINK) {
+            wchar_t bw[] = L"▣ BLINK CHAIN";
+            float bw_w = g_TextS.Width(bw, 0.48f);
+            g_TextS.Draw(bw, worldX - bw_w * 0.5f, worldY - BODY - 40.0f, 0.48f,
+                         0.85f, 0.35f, 0.95f, 0.85f);
+        }
         if (state == BossState::STUTTER) {
             wchar_t sw[] = L"◆ STUTTER — HIT NOW";
             float sw_w = g_TextS.Width(sw, 0.48f);
@@ -256,17 +341,12 @@ public:
                          0.95f, 0.35f, 0.72f, 0.92f);
         }
         if (attackBanner > 0.04f) {
-            wchar_t bw[] = L"DASH";
+            wchar_t ab[16];
+            swprintf_s(ab, L"%ls", attackName());
             float sc = 1.05f + attackBanner * 0.25f;
-            float bw_w = g_TextS.Width(bw, sc);
-            g_TextS.Draw(bw, px - bw_w * 0.5f, py - 90.0f, sc,
+            float ab_w = g_TextS.Width(ab, sc);
+            g_TextS.Draw(ab, px - ab_w * 0.5f, py - 90.0f, sc,
                          1.0f, 0.15f, 0.4f, attackBanner * 0.88f);
-        }
-        if (state == BossState::BOOT && stateTimer < 1.2f) {
-            wchar_t iw[] = L"CORRUPT.dll";
-            float iw_w = g_TextS.Width(iw, 0.5f);
-            g_TextS.Draw(iw, worldX - iw_w * 0.5f, worldY - BODY - 44.0f, 0.5f,
-                         0.95f, 0.25f, 0.55f, 0.88f);
         }
     }
 
@@ -277,8 +357,14 @@ private:
     float lungeSpd_ = 520.0f;
     float afterimageCd_ = 0.0f;
     float moveTrail_ = 0.0f;
-    int   chainLunges_ = 0;
+    int   chainExtra_ = 0;
     float lastX_ = 0.0f, lastY_ = 0.0f;
+    GAttack nextAttack_ = GAttack::LUNGE;
+    float waveSpawnCd_ = 0.0f;
+    int   waveSpawned_ = 0;
+    int   blinkStep_ = 0;
+    float blinkStepT_ = 0.0f;
+    bool  blinkVisible_ = true;
 
     float stalkDuration() const {
         float base = T_STALK;
@@ -312,8 +398,32 @@ private:
         return sqrtf(dx * dx + dy * dy);
     }
 
+    static void drawRing(float cx, float cy, float r, float thick,
+                         float cr, float cg, float cb, float a) {
+        if (a <= 0.01f || r <= 1.0f) return;
+        const int SEG = 32;
+        for (int i = 0; i < SEG; i++) {
+            float a0 = (float)i / (float)SEG * 6.283185f;
+            float a1 = (float)(i + 1) / (float)SEG * 6.283185f;
+            float ox = cosf(a0), oy = sinf(a0);
+            float ix = cosf(a1), iy = sinf(a1);
+            float ro = r + thick * 0.5f, ri = r - thick * 0.5f;
+            if (ri < 2.0f) ri = 2.0f;
+            float v[12] = {
+                cx + ox * ro, cy + oy * ro,
+                cx + ox * ri, cy + oy * ri,
+                cx + ix * ro, cy + iy * ro,
+                cx + ox * ri, cy + oy * ri,
+                cx + ix * ri, cy + iy * ri,
+                cx + ix * ro, cy + iy * ro
+            };
+            BatchVerts(v, 6, cr, cg, cb, a);
+        }
+    }
+
     void tickFlicker(float dt) {
-        if (state == BossState::STUTTER) {
+        if (state == BossState::STUTTER || state == BossState::WAVE ||
+            state == BossState::WAVE_WARN) {
             flickerOn_ = true;
             return;
         }
@@ -341,6 +451,36 @@ private:
         afterimages.push_back(g);
     }
 
+    void spawnWave() {
+        GlitchWave w;
+        w.x = worldX;
+        w.y = worldY;
+        w.r = BODY * 0.5f;
+        w.maxR = phase3 ? 440.0f : (phase2 ? 400.0f : 340.0f);
+        w.spd = phase3 ? 310.0f : (phase2 ? 270.0f : 240.0f);
+        w.thick = phase3 ? 26.0f : 22.0f;
+        w.life = 1.0f;
+        waves.push_back(w);
+    }
+
+    void tickWaves(float dt, float px, float py, float& playerHP) {
+        for (auto& w : waves) {
+            if (!w.alive) continue;
+            w.r += w.spd * dt;
+            w.life = 1.0f - w.r / w.maxR;
+            if (w.r >= w.maxR) { w.alive = false; continue; }
+            float dx = px - w.x, dy = py - w.y;
+            float dist = sqrtf(dx * dx + dy * dy);
+            float half = w.thick * 0.55f;
+            if (dist > w.r - half && dist < w.r + half) {
+                float rate = phase3 ? 22.0f : (phase2 ? 16.0f : 12.0f);
+                playerHP -= rate * dt;
+            }
+        }
+        waves.erase(std::remove_if(waves.begin(), waves.end(),
+            [](const GlitchWave& w) { return !w.alive; }), waves.end());
+    }
+
     void tickAfterimages(float dt, float px, float py, float& playerHP) {
         for (auto& g : afterimages) {
             if (g.life <= 0.0f) continue;
@@ -355,6 +495,7 @@ private:
     }
 
     void tickContact(float px, float py, float dt, float& playerHP) {
+        (void)px; (void)py;
         if (state != BossState::LUNGE && state != BossState::STALK) return;
         float dx = px - worldX, dy = py - worldY;
         float d2 = dx * dx + dy * dy;
@@ -378,10 +519,10 @@ private:
 
         moveTrail_ += step;
         afterimageCd_ -= dt;
-        float trailNeed = phase3 ? 14.0f : (phase2 ? 20.0f : 28.0f);
+        float trailNeed = phase3 ? 14.0f : (phase2 ? 18.0f : 28.0f);
         if (afterimageCd_ <= 0.0f || moveTrail_ >= trailNeed) {
             moveTrail_ = 0.0f;
-            afterimageCd_ = phase3 ? 0.08f : (phase2 ? 0.11f : 0.15f);
+            afterimageCd_ = phase3 ? 0.08f : (phase2 ? 0.10f : 0.15f);
             spawnAfterimage(lastX_, lastY_, true, phase3 ? 0.75f : 0.55f);
             if (phase2) spawnAfterimage(lastX_ + 6.0f, lastY_ - 4.0f, true, 0.45f);
         }
@@ -399,7 +540,29 @@ private:
         worldY += dy / d * step;
         worldX = std::max(margin, std::min((float)screenW - margin, worldX));
         worldY = std::max(margin, std::min((float)screenH - margin, worldY));
-        (void)dt;
+    }
+
+    void pickAttack(float px, float py) {
+        if (!phase2) {
+            nextAttack_ = GAttack::LUNGE;
+            beginLungeWarn(px, py);
+            return;
+        }
+        int roll = rand() % 100;
+        if (phase3) {
+            if (roll < 34) nextAttack_ = GAttack::LUNGE;
+            else if (roll < 67) nextAttack_ = GAttack::WAVE;
+            else nextAttack_ = GAttack::BLINK;
+        } else {
+            if (roll < 45) nextAttack_ = GAttack::LUNGE;
+            else if (roll < 75) nextAttack_ = GAttack::WAVE;
+            else nextAttack_ = GAttack::BLINK;
+        }
+        switch (nextAttack_) {
+        case GAttack::LUNGE: beginLungeWarn(px, py); break;
+        case GAttack::WAVE:  beginWaveWarn(); break;
+        case GAttack::BLINK: beginBlink(px, py); break;
+        }
     }
 
     void beginLungeWarn(float px, float py) {
@@ -423,26 +586,90 @@ private:
         spawnAfterimage(worldX - lungeDirX_ * 24.0f, worldY - lungeDirY_ * 24.0f, true, 0.5f);
     }
 
-    void tickLunge(float dt, float px, float py, float& playerHP) {
-        (void)px; (void)py; (void)playerHP;
+    void tickLunge(float dt) {
         lastX_ = worldX; lastY_ = worldY;
         worldX += lungeDirX_ * lungeSpd_ * dt;
         worldY += lungeDirY_ * lungeSpd_ * dt;
         spawnAfterimage(lastX_, lastY_, true, 0.4f);
     }
 
+    void beginWaveWarn() {
+        state = BossState::WAVE_WARN;
+        stateTimer = 0.0f;
+        attackBanner = 0.75f;
+        textNoise = 0.45f;
+        flickerOn_ = true;
+    }
+
+    void enterWave() {
+        state = BossState::WAVE;
+        stateTimer = 0.0f;
+        waveSpawnCd_ = 0.0f;
+        waveSpawned_ = 0;
+        lungeFlash = 0.6f;
+        attackBanner = 0.85f;
+        spawnWave();
+    }
+
+    void tickWaveSpawn(float dt) {
+        waveSpawnCd_ -= dt;
+        int maxWaves = phase3 ? 4 : (phase2 ? 3 : 2);
+        if (waveSpawnCd_ <= 0.0f && waveSpawned_ < maxWaves) {
+            waveSpawnCd_ = phase3 ? 0.28f : 0.36f;
+            spawnWave();
+            waveSpawned_++;
+            spawnAfterimage(worldX, worldY, false, 0.3f);
+        }
+    }
+
+    void beginBlink(float px, float py) {
+        state = BossState::BLINK;
+        stateTimer = 0.0f;
+        blinkStep_ = 0;
+        blinkStepT_ = 0.0f;
+        blinkVisible_ = true;
+        attackBanner = 0.8f;
+        textNoise = 0.5f;
+        float dx = px - worldX, dy = py - worldY;
+        float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
+        lungeDirX_ = dx / d;
+        lungeDirY_ = dy / d;
+    }
+
+    void tickBlink(float dt, float px, float py) {
+        blinkStepT_ -= dt;
+        if (blinkStepT_ <= 0.0f && blinkStep_ < (phase3 ? 5 : 4)) {
+            blinkStepT_ = phase3 ? 0.11f : 0.14f;
+            blinkVisible_ = false;
+            lastX_ = worldX; lastY_ = worldY;
+            float jump = phase3 ? 95.0f : 78.0f;
+            float dx = px - worldX, dy = py - worldY;
+            float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
+            worldX += dx / d * jump;
+            worldY += dy / d * jump;
+            spawnAfterimage(lastX_, lastY_, true, 0.65f);
+            spawnAfterimage(worldX, worldY, true, 0.5f);
+            if (phase2) spawnAfterimage(lastX_ + 8.0f, lastY_ - 6.0f, true, 0.4f);
+            blinkVisible_ = true;
+            blinkStep_++;
+            glitchAmount = 0.3f;
+        }
+    }
+
     void enterStutter() {
         state = BossState::STUTTER;
         stateTimer = 0.0f;
         flickerOn_ = true;
+        blinkVisible_ = true;
         glitchAmount = 0.05f;
-        if (phase3 && chainLunges_ == 0) chainLunges_ = 1;
+        waves.clear();
+        if (phase3 && chainExtra_ == 0) chainExtra_ = 1;
     }
 
     void enterStalk() {
         state = BossState::STALK;
         stateTimer = 0.0f;
-        chainLunges_ = 0;
+        chainExtra_ = 0;
         glitchAmount = 0.05f;
     }
 
