@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <cmath>
 #include <cstdlib>
+#include "PlayerStats.h"
 
 // ─────────────────────────────────────────────────────────────
 // 자폭병 (Bomber)
@@ -68,7 +69,7 @@ public:
             if (armTimer >= ARM_TIME) {
                 // 폭발 — 반경 안 플레이어 데미지
                 if (dist < blastRadius) {
-                    playerHP -= BLAST_DAMAGE;
+                    HurtPlayer(playerHP, BLAST_DAMAGE);
                 }
                 alive = false;
             }

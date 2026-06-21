@@ -1331,6 +1331,7 @@ int main() {
         accumulator += physDelta;
         while (accumulator >= FIXED_DT) {
             if (g_GameManager.ShouldUpdate()) {
+                g_PlayerDmgMult = g_Stats.GetDamageTakenMult();
                 // WASD ?대룞 ???媛곸꽑 normalize (vec 紐⑥븘??湲몄씠濡??섎닎)
                 float mvX = 0.0f, mvY = 0.0f;
                 if (keys[GLFW_KEY_W]) mvY -= 1.0f;
@@ -2099,7 +2100,7 @@ int main() {
                             g_GameManager.playerHP = g_Stats.maxHP;
                     }
                     if (g_Stats.vampire || g_Stats.lifesteal2) {
-                        if (++g_Stats.vampireKillStreak >= 10) {
+                        if (++g_Stats.vampireKillStreak >= g_Stats.GetVampireKillNeed()) {
                             g_Stats.vampireKillStreak = 0;
                             g_GameManager.playerHP += 1.0f;
                             if (g_GameManager.playerHP > g_Stats.maxHP)
@@ -2143,7 +2144,7 @@ int main() {
                             float ppx = playerWin.x + playerWin.width  * 0.5f;
                             float ppy = playerWin.y + playerWin.height * 0.5f;
                             float dpx = ppx - vbx, dpy = ppy - vby;
-                            if (dpx*dpx + dpy*dpy < vr*vr) g_GameManager.playerHP -= 20.0f;
+                            if (dpx*dpx + dpy*dpy < vr*vr) HurtPlayer(g_GameManager.playerHP, 20.0f);
                         }
                         // ?곗뇙 ??컻(DEATH_BLAST) ???щ쭩 ?꾩튂?먯꽌 二쇰? ?곸뿉寃?AoE
                         //   ?덊봽: ?곕?吏 0.8??.3 + ??컻濡?二쎌? 紐뱀? ?ㅼ떆 ???곗쭚(臾댄븳?곗뇙 李⑤떒)
@@ -2355,7 +2356,7 @@ int main() {
                 // ?〓す 洹쇱젒 ?곕?吏濡?HP 媛먯냼?덈뒗吏 (???꾨젅??鍮꾧탳)
                 if (g_GameManager.playerHP < g_PrevHP - 0.0001f) hit = true;
                 if (hit && g_Stats.lightStep)
-                    g_Stats.lightStepDisableTimer = 10.0f;
+                    g_Stats.lightStepDisableTimer = g_Stats.lightStepHitLock;
                 g_PrevHP = g_GameManager.playerHP;
 
                 // ?덈꺼?? xp 媛 ?꾩슂?됱쓣 ?섏쑝硫??덈꺼??(?⑥? xp ?댁썡) + AUG_SELECT
@@ -2430,9 +2431,9 @@ int main() {
             if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
             if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
 
-            // HP ?ъ깮 (REGEN_UP, 嫄곕??? 誘몃땲??紐⑤몢 regenPerSec ???⑹궛??
+            // HP 재생 (REGEN_UP, 거대화, 재생 II 등 regenPerSec 합산)
             if (g_Stats.regenPerSec > 0.0f) {
-                g_GameManager.playerHP += g_Stats.regenPerSec * delta;
+                g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * delta;
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
             }
@@ -3297,7 +3298,7 @@ int main() {
                             g_GameManager.playerHP = g_Stats.maxHP;
                     }
                     if (g_Stats.vampire || g_Stats.lifesteal2) {
-                        if (++g_Stats.vampireKillStreak >= 10) {
+                        if (++g_Stats.vampireKillStreak >= g_Stats.GetVampireKillNeed()) {
                             g_Stats.vampireKillStreak = 0;
                             g_GameManager.playerHP += 1.0f;
                             if (g_GameManager.playerHP > g_Stats.maxHP)
@@ -3427,7 +3428,7 @@ int main() {
                             if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
                         }
                         if (g_Stats.vampire || g_Stats.lifesteal2) {
-                            if (++g_Stats.vampireKillStreak >= 10) {
+                            if (++g_Stats.vampireKillStreak >= g_Stats.GetVampireKillNeed()) {
                                 g_Stats.vampireKillStreak = 0;
                                 g_GameManager.playerHP += 1.0f;
                                 if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;

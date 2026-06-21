@@ -103,6 +103,10 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::BLADE_WIND:    return "BLADE_WIND";
     case AugType::POWER_DRAW:    return "POWER_DRAW";
     case AugType::MULTISHOT:     return "MULTISHOT";
+    case AugType::SNIPER_AMPLIFIER:return "SNIPER_AMPLIFIER";
+    case AugType::HP_UP:           return "REGEN_UP";
+    case AugType::FIREWALL:        return "MK2";
+    case AugType::REGEN_2:         return "REGEN_UP";
     default:                     return nullptr;
     }
 }
@@ -321,6 +325,9 @@ inline GLuint IconFor(AugType t) {
     case AugType::SMG_COMPRESSOR: return g_IconTex[(int)AugType::MINIGUN];
     case AugType::RIFLE_STABILITY:return g_IconTex[(int)AugType::BROKEN_SIGHT];
     case AugType::SNIPER_AMPLIFIER:return g_IconTex[(int)AugType::SNIPER];
+    case AugType::HP_UP:           return g_IconTex[(int)AugType::REGEN_UP];
+    case AugType::FIREWALL:        return g_IconTex[(int)AugType::MK2];
+    case AugType::REGEN_2:         return g_IconTex[(int)AugType::REGEN_UP];
     default:                     break;
     }
     // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <glm/glm.hpp>
 #include "Bullet.h"
+#include "PlayerStats.h"
 
 // ?????????????????????????????????????????????????????????????
 // ?대━紐⑦봽 蹂댁뒪 (蹂대씪??쨌 ??쨌 ?ш? ?깆옣) ????蹂?섑삎
@@ -244,7 +245,7 @@ public:
                 float ex = laserX + laserDirX * laserReach();
                 float ey = laserY + laserDirY * laserReach();
                 if (segDist(px, py, laserX, laserY, ex, ey) < 14.0f)
-                    playerHP -= LASER_DPS * dt;
+                    HurtPlayer(playerHP, LASER_DPS * dt);
                 if (laserTimer >= 0.7f) {            // 鍮?吏??吏㏐쾶
                     laserActive = false;
                     laserCd = phase2 ? 0.35f : 0.6f;  // ?ㅼ쓬 鍮붽퉴吏 荑?吏㏐쾶
@@ -262,7 +263,7 @@ public:
             s.x += s.vx * dt; s.y += s.vy * dt;
             s.life -= dt;
             float dx = px - s.x, dy = py - s.y;
-            if (dx*dx + dy*dy < 15.0f*15.0f) { playerHP -= SWARM_DMG; s.alive = false; }
+            if (dx*dx + dy*dy < 15.0f*15.0f) { HurtPlayer(playerHP, SWARM_DMG); s.alive = false; }
             // ?섏씠利? ?뺤옣 ?곸뿭源뚯? 媛濡쒖쭏?ъ빞 ?섎?濡?despawn 寃쎄퀎???뺤옣
             float mxB = (phase2 ? (float)screenW * 0.5f : 0.0f) + 160.0f;
             float myB = (phase2 ? (float)screenH * 0.5f : 0.0f) + 160.0f;

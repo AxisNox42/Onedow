@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include "Bullet.h"
 #include "DrawPrim.h"   // 蹂댁뒪 ?먯껜 ?뚮뜑(?꾩쟾 遺꾨━) ??drawRect/drawNeonBorder/drawDiamond ??
+#include "PlayerStats.h"
 // ?????????????????????????????????????????????????????????????
 // FORK.worm ???뚮씪利덈쭏 ?ы겕 泥댁씤 (泥댁씤??蹂댁뒪)
 //   ?ㅼ삩 ?몃뱶 + ?먮꼫吏 耳?대툝???댁뼱吏?湲?蹂댁뒪. OS/媛吏쒖갹 UI 鍮꾩＜???ъ슜 ????
@@ -541,7 +542,7 @@ public:
             mb.y += sinf(mb.heading) * spd * dt;
             mb.trail.insert(mb.trail.begin(), glm::vec2(mb.x, mb.y));
             if ((int)mb.trail.size() > MINI_NSEG*MINI_STEP + 2) mb.trail.pop_back();
-            if (d < MINI_HEAD + 14.0f) playerHP -= 6.0f * dt;
+            if (d < MINI_HEAD + 14.0f) HurtPlayer(playerHP, 6.0f * dt);
         }
         // ?덈겮?쇰━ 寃뱀묠 諛⑹? ???뚰봽??肄쒕━???쒕줈 諛?대깂)
         for (size_t i = 0; i < minis.size(); i++) {
@@ -916,12 +917,12 @@ public:
             float hcr = HEAD * 0.78f;
             float hdx = px - worldX, hdy = py - worldY;
             if (hdx*hdx + hdy*hdy < hcr * hcr)
-                playerHP -= (dashing ? 22.0f : 12.0f) * dt;
+                HurtPlayer(playerHP, (dashing ? 22.0f : 12.0f) * dt);
             for (int i = 1; i <= activeSeg; i++) {
                 glm::vec2 s = segPos(i);
                 float sr = segSize(i) + 4.0f;
                 float sdx = px - s.x, sdy = py - s.y;
-                if (sdx*sdx + sdy*sdy < sr * sr) playerHP -= 8.0f * dt;
+                if (sdx*sdx + sdy*sdy < sr * sr) HurtPlayer(playerHP, 8.0f * dt);
             }
         }
     }

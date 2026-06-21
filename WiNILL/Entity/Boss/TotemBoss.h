@@ -7,6 +7,7 @@
 #include "Bullet.h"
 #include "DrawPrim.h"
 #include "TextRenderer.h"
+#include "PlayerStats.h"
 
 extern TextRenderer g_TextS;
 
@@ -280,7 +281,7 @@ public:
             float ax = totems[alive[a]].x, ay = totems[alive[a]].y;
             float bx = totems[alive[b]].x, by = totems[alive[b]].y;
             float d = SegDist(px, py, ax, ay, bx, by);
-            if (d < 14.0f) playerHP -= 14.0f * dt;
+            if (d < 14.0f) HurtPlayer(playerHP, 14.0f * dt);
         }
         if (aliveTotems() >= 3) {
             for (int a = 0; a < na; a++)
@@ -288,7 +289,7 @@ public:
                     float ax = totems[alive[a]].x, ay = totems[alive[a]].y;
                     float bx = totems[alive[b]].x, by = totems[alive[b]].y;
                     float d = SegDist(px, py, ax, ay, bx, by);
-                    if (d < 10.0f) playerHP -= 8.0f * dt;
+                    if (d < 10.0f) HurtPlayer(playerHP, 8.0f * dt);
                 }
         }
     }
@@ -344,12 +345,12 @@ public:
         if (skill == Skill::RitePulse && ritePulse > 0.4f) {
             float dx = px - worldX, dy = py - worldY;
             if (dx * dx + dy * dy < (BODY * 3.2f) * (BODY * 3.2f))
-                playerHP -= 28.0f * dt;
+                HurtPlayer(playerHP, 28.0f * dt);
         }
 
         float ddx = px - worldX, ddy = py - worldY;
         if (vulnerable() && ddx * ddx + ddy * ddy < BODY * BODY)
-            playerHP -= 14.0f * dt;
+            HurtPlayer(playerHP, 14.0f * dt);
 
         skillCd -= dt;
         skillT += dt;
@@ -410,7 +411,7 @@ public:
                 float lx = cosf(laserAng), ly = sinf(laserAng);
                 float ex = worldX + lx * LASER_LEN, ey = worldY + ly * LASER_LEN;
                 if (SegDist(px, py, worldX, worldY, ex, ey) < LASER_HALF + 16.0f)
-                    playerHP -= 24.0f * dt;
+                    HurtPlayer(playerHP, 24.0f * dt);
             }
             if (skillT >= BEAM_T) { skill = Skill::Idle; skillT = 0.0f; }
             break;

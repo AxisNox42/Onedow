@@ -8,6 +8,7 @@
 #include "DrawPrim.h"
 #include "TextRenderer.h"
 #include "Camera.h"
+#include "PlayerStats.h"
 
 // ?????????????????????????????????????????????????????????????
 // C2_RELAY.sys ??Command & Control (?꾨㈃??
@@ -318,7 +319,7 @@ public:
                 float dps = (m.kind == MinionKind::Heavy) ? 14.0f
                           : (m.kind == MinionKind::Pulse) ? 10.0f : 11.0f;
                 if (phase2) dps *= 1.15f;
-                playerHP -= dps * dt;
+                HurtPlayer(playerHP, dps * dt);
             }
         }
     }
@@ -463,7 +464,7 @@ public:
 
         float bdx = px - worldX, bdy = py - worldY;
         if (bdx * bdx + bdy * bdy < BODY * BODY)
-            playerHP -= (phase2 ? 13.0f : 8.0f) * dt;
+            HurtPlayer(playerHP, (phase2 ? 13.0f : 8.0f) * dt);
 
         float fireInt = phase2 ? P2_FIRE : FIRE_INT;
         glm::vec3 pktCol = phase2 ? glm::vec3(1.0f, 0.35f, 0.25f)
@@ -479,7 +480,7 @@ public:
             }
             float hdx = px - h.x, hdy = py - h.y;
             if (hdx * hdx + hdy * hdy < HOST_HIT * HOST_HIT)
-                playerHP -= (phase2 ? 10.0f : 7.0f) * dt;
+                HurtPlayer(playerHP, (phase2 ? 10.0f : 7.0f) * dt);
         }
 
         if (phase2) {

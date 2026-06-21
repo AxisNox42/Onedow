@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
+#include "PlayerStats.h"
 
 // 잡몹 종류 — 같은 monsters 벡터에서 kind 로 분기 (충돌/렌더 재사용)
 //   NORMAL/SPLITTER/BLINKER 외:
@@ -179,7 +180,7 @@ public:
                     float thresh = -1.0f) const {
         if (singularityGrace > 0.0f) return;
         float t = (thresh >= 0.0f) ? thresh : (26.0f * sizeScale);
-        if (dist < t) playerHP -= dps * deltaTime;
+        if (dist < t) HurtPlayer(playerHP, dps * deltaTime);
     }
 
     void Update(float playerCX, float playerCY, float deltaTime,

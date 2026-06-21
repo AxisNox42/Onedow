@@ -7,6 +7,7 @@
 #include "Bullet.h"
 #include "DrawPrim.h"
 #include "TextRenderer.h"
+#include "PlayerStats.h"
 
 extern TextRenderer g_TextS;
 
@@ -257,7 +258,7 @@ public:
         spinAng += dt * (phase3 ? 4.5f : (phase2 ? 3.0f : 2.0f));
 
         if (dist < BODY + 10.0f)
-            playerHP -= (phase3 ? 12.0f : (phase2 ? 10.0f : 8.0f)) * dt;
+            HurtPlayer(playerHP, (phase3 ? 12.0f : (phase2 ? 10.0f : 8.0f)) * dt);
 
         bool nearMelee = dist < MELEE_NEAR;
         bool midOrFar  = dist >= MELEE_MID;

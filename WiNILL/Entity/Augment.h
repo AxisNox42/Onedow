@@ -99,6 +99,12 @@ enum class AugType {
     TRAP_EXE,            // trap.exe — 바닥 덫 창
     POPUP_ALLY,          // popup.exe (아군) — 미니 창 사격
     GLUE_SYNC,           // 동기화 — 위성 계열 많을수록 위성 피해 ↑
+    // ── 생존 빌드 (끝에 추가 — 세이브 인덱스 보존) ──
+    HP_UP,               // 체력 증가 (일반)
+    FIREWALL,            // 방화벽 — 받는 피해 감소
+    REGEN_2,             // 재생 II (에픽)
+    CB_BASTION,          // 조합: 거대화 + MK2 + 방화벽
+    CB_LIFEBUOY,         // 조합: 재생 II + 흡혈마 + 가벼운 발걸음
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -667,6 +673,33 @@ static const AugDef ALL_AUGS[] = {
       { L"[저격] 거리 보너스 +30%p  (저격총·저격 증강)",
         L"[Sniper] distance bonus +30%p  (sniper gun/aug)",
         L"[スナイパー] 距離ボーナス+30%p" } },
+
+    // ── 생존 빌드 ──
+    { AugType::HP_UP,         AugRarity::COMMON,    AugUnique::NONE, "HP_UP",
+      { L"체력 증가", L"HP Up", L"体力アップ" },
+      { L"최대 체력 +20  (중첩 가능)",
+        L"Max HP +20  (stackable)",
+        L"最大体力 +20  (重複可)" } },
+    { AugType::FIREWALL,      AugRarity::RARE,      AugUnique::NONE, "FIREWALL",
+      { L"방화벽", L"Firewall", L"ファイアウォール" },
+      { L"받는 피해 -12%  (중첩 시 감소 효율 감소 · 최대 35%)",
+        L"Damage taken -12%  (diminishing · cap 35%)",
+        L"被ダメ -12%  (逓減 · 上限35%)" } },
+    { AugType::REGEN_2,       AugRarity::EPIC,      AugUnique::NONE, "REGEN2",
+      { L"재생 II", L"Regen II", L"再生 II" },
+      { L"재생 +0.45/s  /  체력 40% 이하 시 재생 ×2  (요구: 재생 증강 권장)",
+        L"Regen +0.45/s  /  below 40% HP regen ×2  (works best with Regen Up)",
+        L"再生 +0.45/s  /  体力40%以下で再生×2" } },
+    { AugType::CB_BASTION,    AugRarity::COMBO,     AugUnique::NONE, "CB_BAST",
+      { L"철벽", L"Bastion", L"鉄壁" },
+      { L"[조합] 최대 체력 +15% · 재생 +0.35/s · 받는 피해 -8%p",
+        L"[Combo] Max HP +15% · regen +0.35/s · damage taken -8%p",
+        L"[組合] 最大HP+15% · 再生+0.35/s · 被ダメ-8%p" } },
+    { AugType::CB_LIFEBUOY,   AugRarity::COMBO,     AugUnique::NONE, "CB_LIFE",
+      { L"구명줄", L"Lifebuoy", L"救命浮輪" },
+      { L"[조합] 재생 +0.25/s · 이동 +12% · 10킬→7킬 회복 · 피격 정지 6초",
+        L"[Combo] regen +0.25/s · move +12% · heal every 7 kills · hit lock 6s",
+        L"[組合] 再生+0.25/s · 移動+12% · 7キル回復 · 被弾停止6秒" } },
 };
 
 static constexpr int AUG_TOTAL = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
@@ -683,6 +716,8 @@ inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_RAILGUN,   { AugType::SNIPER,    AugType::PIERCE,      AugType::PIERCE_2 }, 3 },
     { AugType::CB_WARLORD,   { AugType::BERSERK,   AugType::DEATH_BLAST, AugType::CHAIN_2  }, 3 },
     { AugType::CB_TURRET,    { AugType::CANNON,    AugType::DRONE_2,     AugType::HE_SHELLS }, 3 },
+    { AugType::CB_BASTION,   { AugType::GIGANTIFY, AugType::MK2,         AugType::FIREWALL  }, 3 },
+    { AugType::CB_LIFEBUOY,  { AugType::REGEN_2,   AugType::VAMPIRE,     AugType::LIGHT_STEP }, 3 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 
@@ -764,6 +799,7 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::SKILL_DASH_UP:
     case AugType::SMG_COMPRESSOR: case AugType::RIFLE_STABILITY:
     case AugType::SNIPER_AMPLIFIER:
+    case AugType::FIREWALL:    case AugType::REGEN_2:
         return true;
     default:
         return false;

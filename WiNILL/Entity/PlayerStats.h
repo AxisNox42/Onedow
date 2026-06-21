@@ -13,6 +13,10 @@ struct PlayerStats {
     float windowSize       = 800.0f;
     float moveSpeedMult    = 1.0f;
     float regenPerSec      = 1.0f / 3.0f;  // 기본 3초당 HP 1 회복
+    float damageReduction  = 0.0f;   // 받는 피해 감소 (0~0.35 캡)
+    float regenLowHpMult   = 1.0f;   // REGEN_2 — 저체력 재생 배율
+    int   vampireKillNeed  = 10;     // 흡혈마/흡혈탄 II — N킬당 HP +1
+    float lightStepHitLock = 10.0f;  // 가벼운 발걸음 — 피격 후 비활성 시간(s)
     float playerSizeMult   = 1.0f;
     float xpMult           = 1.0f;   // 전체 EXP 곱연산 (유리심장, 총알걸림, 취함)
     float bulletSpread     = 0.0f;   // 발사 시 각도 흔들기 (라디안). 0 = 정확
@@ -179,6 +183,7 @@ struct PlayerStats {
             }
             break;
         case AugType::REGEN_UP:  regenPerSec += 0.34f; break;  // 5초당 1 → 약 3초당 1
+        case AugType::HP_UP:     maxHP += 20.0f; break;
 
         // ── 등급별 공격력 (가산) — 초반 강세. 곱연산 폭주 제거 ──
         case AugType::OVERDRIVE:      flatDamageBonus += 18.0f; break;  // 희귀 +18 (버프)
@@ -202,6 +207,9 @@ struct PlayerStats {
         case AugType::LIGHT_STEP:
             lightStep      = true;
             moveSpeedMult *= 1.30f;      // 이동속도 +30% (너프: +50% → +30%)
+            break;
+        case AugType::FIREWALL:
+            damageReduction += 0.12f;
             break;
         case AugType::GUN_RUNNER:
             gunRunner = true;
@@ -312,6 +320,17 @@ struct PlayerStats {
         case AugType::CB_BLOODLORD:     // 흡혈탄 II + 흡혈마
             maxHP            += 15.0f;
             regenPerSec      += 0.25f;
+            break;
+        case AugType::CB_BASTION:       // 거대화 + MK2 + 방화벽
+            maxHP            *= 1.15f;
+            regenPerSec      += 0.35f;
+            damageReduction  += 0.08f;
+            break;
+        case AugType::CB_LIFEBUOY:      // 재생 II + 흡혈마 + 가벼운 발걸음
+            regenPerSec      += 0.25f;
+            moveSpeedMult    *= 1.12f;
+            vampireKillNeed  = 7;
+            lightStepHitLock = 6.0f;
             break;
         case AugType::CB_PIERCE_TWIN:   // 더블 + 관통 (너프: 100%→60%)
             pierce       = true;
@@ -592,6 +611,10 @@ struct PlayerStats {
         case AugType::LIFESTEAL_2:
             lifesteal2      = true;
             break;
+        case AugType::REGEN_2:
+            regenPerSec    += 0.45f;
+            regenLowHpMult  = 2.0f;
+            break;
         case AugType::CHAIN_2:
             ricochetMax     = 3;
             ricochetChance  = 100;
@@ -628,6 +651,21 @@ struct PlayerStats {
         case AugType::S_PANDORA: /* main 에서 디스패치 */ break;
         }
     }
+
+    float GetDamageTakenMult() const {
+        float dr = damageReduction;
+        if (dr > 0.35f) dr = 0.35f;
+        return 1.0f - dr;
+    }
+
+    float GetRegenRate(float curHP) const {
+        float r = regenPerSec;
+        if (regenLowHpMult > 1.0f && curHP < maxHP * 0.40f)
+            r *= regenLowHpMult;
+        return r;
+    }
+
+    int GetVampireKillNeed() const { return vampireKillNeed; }
 
     // 최종 베이스 피해량 (미니화·대포 포함)
     float GetBaseDamage() const {
@@ -723,3 +761,10 @@ struct PlayerStats {
         return m;
     }
 };
+
+// 전투 피해 감소 — main 에서 g_Stats.GetDamageTakenMult() 로 매 프레임 동기화
+inline float g_PlayerDmgMult = 1.0f;
+inline void HurtPlayer(float& hp, float raw) {
+    if (raw <= 0.0f) return;
+    hp -= raw * g_PlayerDmgMult;
+}

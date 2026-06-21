@@ -102,7 +102,7 @@ public:
                 float dist = SegDist(playerCX, playerCY, b.prevX, b.prevY, b.x, b.y);
                 if (dist < 10.0f * stats.playerSizeMult) {
                     float ed = (b.enemyDmg > 0.0f) ? b.enemyDmg : 10.0f;
-                    playerHP -= ed * stats.rmobDmgMult;
+                    HurtPlayer(playerHP, ed * stats.rmobDmgMult);
                     b.active  = false;
                     playerHit = true;
                 }
@@ -169,7 +169,7 @@ public:
                         score = (long long)scoreAccum;
                         if (stats.vampire || stats.lifesteal2) {
                             ++stats.vampireKillStreak;
-                            if (stats.vampireKillStreak >= 10) {
+                            if (stats.vampireKillStreak >= stats.GetVampireKillNeed()) {
                                 stats.vampireKillStreak = 0;
                                 playerHP += 1.0f;
                                 if (playerHP > stats.maxHP)
@@ -240,7 +240,7 @@ public:
                             score = (long long)scoreAccum;
                             if (stats.vampire || stats.lifesteal2) {
                                 ++stats.vampireKillStreak;
-                                if (stats.vampireKillStreak >= 10) {
+                                if (stats.vampireKillStreak >= stats.GetVampireKillNeed()) {
                                     stats.vampireKillStreak = 0;
                                     playerHP += 1.0f;
                                     if (playerHP > stats.maxHP)
@@ -347,7 +347,7 @@ public:
                             score = (long long)scoreAccum;
                             if (stats.vampire || stats.lifesteal2) {
                                 ++stats.vampireKillStreak;
-                                if (stats.vampireKillStreak >= 10) {
+                                if (stats.vampireKillStreak >= stats.GetVampireKillNeed()) {
                                     stats.vampireKillStreak = 0;
                                     playerHP += 1.0f;
                                     if (playerHP > stats.maxHP)
