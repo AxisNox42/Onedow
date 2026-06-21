@@ -1,0 +1,42 @@
+[
+  {
+    "title": "01 · GAME INTRODUCTION",
+    "body": "Onedow\n\n바탕화면 위에서 펼쳐지는 가짜 OS 창 서바이벌 로그라이트\n\n개발: Rid (1인 개발) · 기획 · 프로그래밍 · 아트(벡터/네온 UI)\n개발 기간: 2024.09 ~ 2026.06\n장르: 2D 탑다운 · 로그라이트 · 슈팅 · 데스크톱 오버레이\n\n[메인 스크린샷 / 로고 자리]\n\n\"진짜 Windows 바탕화면이 전장이 되는, 창 단위 시야의 로그라이트\""
+  },
+  {
+    "title": "02 · GAMEPLAY VIDEO",
+    "body": "실제 플레이 영상 (1~2분 권장)\n\n[영상 삽입]\n1. 메인 메뉴 → 난이도 → 무기 3택1\n2. 레벨업 증강 선택\n3. 가짜 창 사이 이동 + 사격\n4. 보스 등장 (VOLLEY / UNKNOWN / FORK.worm)\n5. 디버프 카드 or 런 상점\n6. 게임 오버 → 메타 코인/업적\n\n조작: WASD 이동 · 마우스 조준 · 좌클릭 사격 · 스페이스 스킬 · ESC 일시정지"
+  },
+  {
+    "title": "03 · DEVELOPMENT OVERVIEW",
+    "body": "장르: 2D 탑다운 액션 로그라이트 · Win32 DWM 투명 오버레이\n\n① 가짜 OS 창 = 시야 & 전장\n   플레이어·적·보스가 .exe/.sys Fake Window 소유 · 창 안에서만 렌더\n\n② 로그라이트 빌드 — 증강 · 디버프 · 조합 · 신화\n   무기 6종 3택1 · 직업 5종 · 액티브 스킬 3슬롯\n\n③ ACT 테마 보스 & 무한 구간\n   5보스 클리어 후 ACT ∞ ENDLESS\n\n레퍼런스: Vampire Survivors · OneShot · Windows 바탤러 계열"
+  },
+  {
+    "title": "04 · GAME CONCEPT",
+    "body": "기획 의도: \"내 컴퓨터 바탕화면\"이라는 익숙한 공간을 깨뜨리되,\n창·작업표시줄·.exe 파일명으로 세계관을 설명\n\n한 줄: 가짜 윈도우 창 단위 시야의 2D 로그라이트\n\n차별점:\n  ① 전투가 화면 전체가 아닌 창 단위 클리핑\n  ② DWM 투명 오버레이 — 실제 바탕화면 위\n  ③ 적/보스도 각자 창 → z-order가 전술 요소\n  ④ 디버프를 고르는 로그라이트\n  ⑤ 보스마다 ACT 스폰 테마 변경"
+  },
+  {
+    "title": "05 · DEVELOPMENT TIMELINE",
+    "body": "2024.09~10  기획 · DWM 오버레이 POC · OpenGL 배치 렌더\n2024.11~12  Fake Window · 플레이어/몬스터 · EXP/증강 1차\n2025.01~02  보스 1~2종 · 메타 코인/상점 · 세이브 · 다국어\n2025.03~04  ACT · 디버프/조합 · 크리에이티브 모드\n2025.05~06  보스 대량 추가 · 밸런스 패스\n2026.01~03  신화 등급 · 스킬 슬롯 · 런 상점 · UI 개편\n2026.04~06  UNKNOWN 검객 보스 · QA · 발표/출시 준비"
+  },
+  {
+    "title": "06 · DEVELOPMENT PROCESS",
+    "body": "① Win32 DWM Layered Window + OpenGL 3.3\n   투명 FB · BatchFlush CPU 배치\n\n② Fake Window 멀티 패스 렌더링\n   WorldScissor 창 단위 클리핑 · z-order 관리\n\n③ 로그라이트 시스템 스택\n   GameManager · Augment · SaveSystem · BossDirector\n\n주요 버그:\n  BUG-01 보스 투사체 클립 → 월드좌표+멀티패스 수정\n  BUG-02 디버프 UI 가독성 → 오버레이 α 조정\n  BUG-03 창 밖 파편 → 데스크톱 패스 (진행 중)\n\nC++17 · OpenGL 3.3 · GLFW · glm · Win32 · MSBuild x64"
+  },
+  {
+    "title": "07 · GAME FLOW",
+    "body": "ACT 0 BOOT → ACT 1~5 (보스 클리어 시 테마 변경) → ACT ∞ ENDLESS\n\n메인 메뉴 → 난이도 → 직업 → 시작 무기 3택1\n  ↓\nRUNNING (이동/사격/EXP/증강/디버프/런상점)\n  ↓\n보스전 → 처치 → ACT 전환 → (5보스 후 ENDLESS)\n  ↓\nHP 0 → GAME OVER → 코인·업적 → 메인 메뉴\n\n한 판 = 빌드 고르고 → ACT 바뀌며 보스 깨는 런 → 메타 성장"
+  },
+  {
+    "title": "08 · ART DIRECTION",
+    "body": "키워드: 네온 다크 UI · 가짜 Win10/11 창 크롬 · 벡터 실루엣 + 글로우\n\n컬러: Desktop #0A0A0C · Neon Cyan #4DF0FF · Magenta #F23394\n      Boss Orange #FF8C33 · HP Red #E8384F\n\n폰트: Microsoft YaHei UI + 한/일 시스템 폴백\n아이콘: Icons/ PNG + 벡터 · .exe/.sys 파일명\n\n레퍼런스: OneShot · Hypnospace Outlaw · VS · Win11 Fluent parody\n\n[스크린샷: 메뉴 / 증강 UI / GLITCH / UNKNOWN pin]"
+  },
+  {
+    "title": "09 · PLAY FEEDBACK",
+    "body": "⚠ 내부 플레이테스트 가안 — 실제 설문 후 수치 교체\n\nQ1 재미 / 한 판 더        5.6 / 7\nQ2 그래픽 / UI 가독성     5.1 / 7\nQ3 몰입도 / OS 메타       6.0 / 7\nQ4 난이도 적절성          4.5 / 7\nQ5 완성도 / 버그 체감     5.0 / 7\n\n긍정: 창 시야 규칙 신선 · 증강 조합 · .sys/.exe 분위기\n부정: 초반 EXP · 보스 telegraph · 아이콘 미비"
+  },
+  {
+    "title": "10 · FUTURE IMPROVEMENTS",
+    "body": "① 튜토리얼 — ACT 0 창 시야/z-order/대시 안내\n② 난이도 커브 — intensity ramp · telegraph · EASY/NORMAL/HARD\n③ BGM/SFX — ACT·보스 테마별 스템\n\n🔴 AMD GPU 테스트 · 크래시 로그\n🟡 증강 아이콘 전량 · 해상도/키 리바인드\n🟢 Steam · 트레일러 · DLC 직업\n\n\"바탕화면을 지키는 방법은 창을 닫는 것뿐이 아닙니다.\"\n→ Onedow, 감사합니다."
+  }
+]
