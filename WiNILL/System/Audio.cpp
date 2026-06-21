@@ -47,7 +47,6 @@ namespace {
         { "Resource/Audio/sfx_kill.wav",          0.30f, 55,  true  },  // 처치 — 대량처치 도배 방지(55ms)
         { "Resource/Audio/sfx_hurt.wav",          0.55f, 80,  false },
         { "Resource/Audio/sfx_death.wav",         0.85f, 0,   false },
-        { "Resource/Audio/sfx_glitch_phase2.wav", 0.70f, 0,   false },
     };
     unsigned long long g_sfxLastMs[(int)Audio::Sfx::COUNT] = {0};
 

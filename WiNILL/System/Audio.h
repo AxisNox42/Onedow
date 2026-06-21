@@ -12,7 +12,6 @@ enum class Sfx {
     Kill,     // 적 처치 (sfx_kill.wav)
     Hurt,     // 플레이어 피격 (sfx_hurt.wav)
     Death,    // 플레이어 사망 (sfx_death.wav)
-    Phase2,   // 보스 페이즈2 전환 (sfx_glitch_phase2.wav)
     COUNT
 };
 

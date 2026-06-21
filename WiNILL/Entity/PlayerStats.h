@@ -325,11 +325,13 @@ struct PlayerStats {
             if (droneCount < 3) ++droneCount;
             fireInterval      /= 1.15f;
             break;
-        case AugType::CB_RAILGUN:       // 저격 + 관통 → 레일건
+        case AugType::CB_RAILGUN:       // 저격 + 관통 → 레일건 (철갑탄과 분리: 확률 관통+거리)
+            sniper       = true;
             pierce       = true;
-            pierceChance = 100;
-            damageMultiplier *= 1.35f;
-            bulletSpeed  *= 1.40f;
+            pierceChance = std::min(85, pierceChance + 15);
+            sniperDistBonusPct += 0.20f;
+            damageMultiplier *= 1.30f;
+            bulletSpeed  *= 1.35f;
             break;
         case AugType::CB_GLASS_REAPER:  // 유리대포 + 흡혈탄 → 유리 사신
             damageMultiplier *= 1.20f;
