@@ -4641,10 +4641,10 @@ int main() {
         }
         if (g_UnknownBoss && g_UnknownBoss->alive)
             g_UnknownBoss->renderPinOnWindow(pwx, pwy, pww, pwh, (float)glfwGetTime());
-        }
         // ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 (?뚮젅?댁뼱 李??덉뿉?쒕쭔)
         for (auto& orb : g_ApproachOrbs) {
             DrawApproachOrb(orb.x, orb.y);
+        }
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
@@ -4832,7 +4832,10 @@ int main() {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
             BindMainShader();
+
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
             ub->renderWorld(gtUB, playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            BatchFlush();
 
             float uwx = ub->worldX - UNKNOWN_WIN_W * 0.5f;
             float uwy = ub->worldY - UNKNOWN_WIN_H * 0.5f;
@@ -4844,9 +4847,16 @@ int main() {
             ub->renderPinOnWindow(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H, gtUB);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            ub->renderWorld(gtUB, playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            ub->renderPinOnWindow(playerWin.x, playerWin.y, playerWin.width, playerWin.height, gtUB);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
             for (auto& ew : ub->extraWins) {
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
                 WorldScissor(ew.x, ew.y, ew.w, ew.h);
+                ub->renderWorld(gtUB, ew.x, ew.y, ew.w, ew.h);
                 ub->renderPinOnWindow(ew.x, ew.y, ew.w, ew.h, gtUB);
                 BatchFlush(); glDisable(GL_SCISSOR_TEST);
             }

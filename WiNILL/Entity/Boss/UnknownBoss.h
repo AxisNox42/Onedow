@@ -47,6 +47,7 @@ struct UBPin {
 };
 
 struct UBFly {
+    float fx, fy;
     float x, y, tx, ty;
     float t;
     bool  active;
@@ -194,11 +195,32 @@ public:
         return true;
     }
 
+    static void edgeNormal(UBEdge e, float& nx, float& ny) {
+        switch (e) {
+        case UBEdge::TOP:    nx = 0.0f;  ny = -1.0f; break;
+        case UBEdge::BOTTOM: nx = 0.0f;  ny =  1.0f; break;
+        case UBEdge::LEFT:   nx = -1.0f; ny =  0.0f; break;
+        case UBEdge::RIGHT:  nx =  1.0f; ny =  0.0f; break;
+        }
+    }
+
+    static void drawBlade(float x, float y, float ang, float len, float thick,
+                          float r, float g, float b, float a) {
+        float ex = x + cosf(ang) * len;
+        float ey = y + sinf(ang) * len;
+        ubDrawThickLine(x, y, ex, ey, thick, r, g, b, a);
+        drawCircle(ex, ey, thick * 0.62f, r, g * 1.1f, b, a);
+        drawCircle(x, y, thick * 0.38f, 1.0f, 0.92f, 0.98f, a * 0.75f);
+    }
+
+    static bool windowMatch(float a, float b) { return std::fabs(a - b) < 3.0f; }
+
     void beginThrow() {
         float tx, ty;
         edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
                   throwEdge, throwAlong, tx, ty);
         UBFly f;
+        f.fx = worldX; f.fy = worldY;
         f.x = worldX; f.y = worldY;
         f.tx = tx; f.ty = ty;
         f.t = 0.0f; f.active = true;
@@ -475,82 +497,89 @@ public:
     }
 
     void renderBody(float gt, float aimX, float aimY) const {
-        float cx = WIN_W * 0.5f, cy = WIN_H * 0.52f;
-        drawRect(cx - 28.0f, cy - 36.0f, 56.0f, 72.0f, 0.92f, 0.92f, 0.95f, 0.95f);
-        drawRect(cx - 10.0f, cy - 8.0f, 20.0f, 20.0f, 0.95f, 0.22f, 0.58f, 1.0f);
-        g_TextS.Draw(L"?", cx - 6.0f, cy - 10.0f, 1.1f, 1.0f, 1.0f, 1.0f, 1.0f);
+        float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
+        float cx = worldX, cy = worldY;
 
-        int show = quiver;
-        for (int i = 0; i < show; i++) {
+        drawCircle(cx, cy, BODY * 0.88f, 0.95f, 0.22f, 0.58f, 0.08f + pulse * 0.06f);
+        drawNeonBorder(cx - BODY * 0.78f, cy - BODY * 0.95f,
+                       BODY * 1.56f, BODY * 1.9f, 0.95f, 0.28f, 0.62f);
+        drawRect(cx - 24.0f, cy - 34.0f, 48.0f, 66.0f, 0.90f, 0.90f, 0.95f, 0.94f);
+        drawRect(cx - 10.0f, cy - 8.0f, 20.0f, 20.0f, 0.95f, 0.22f, 0.58f, 1.0f);
+        g_TextS.Draw(L"?", cx - 7.0f, cy - 11.0f, 1.08f, 1.0f, 1.0f, 1.0f, 1.0f);
+
+        for (int i = 0; i < quiver; i++) {
             float ang = gt * 1.8f + (float)i * (6.2831853f / (float)std::max(1, maxQuiver));
-            float ox = cx + cosf(ang) * 72.0f;
-            float oy = cy + sinf(ang) * 52.0f;
-            float bladeAng = ang + 1.57f;
-            float ex = ox + cosf(bladeAng) * 28.0f;
-            float ey = oy + sinf(bladeAng) * 28.0f;
-            ubDrawThickLine(ox, oy, ex, ey, 3.0f, 0.95f, 0.30f, 0.62f, 0.95f);
+            float ox = cx + cosf(ang) * 82.0f;
+            float oy = cy + sinf(ang) * 60.0f;
+            drawBlade(ox, oy, ang + 1.57f, 40.0f, 5.0f, 0.95f, 0.32f, 0.68f, 0.98f);
         }
 
         if (orbitT > 0.0f) {
-            float pulse = 0.5f + 0.5f * sinf(gt * 12.0f);
-            drawCircle(cx, cy, 88.0f, 0.95f, 0.35f, 0.65f, 0.12f * pulse);
+            float op = 0.5f + 0.5f * sinf(gt * 12.0f);
+            drawCircle(cx, cy, 96.0f, 0.95f, 0.35f, 0.65f, 0.14f * op);
         }
 
         wchar_t tag[32];
         swprintf_s(tag, L"blades: %d", quiver);
-        g_TextS.Draw(tag, 14.0f, WIN_H - 36.0f, 0.55f, 0.95f, 0.45f, 0.70f, 0.9f);
+        g_TextS.Draw(tag, cx - 52.0f, cy + BODY + 18.0f, 0.58f, 0.95f, 0.45f, 0.70f, 0.9f);
     }
 
-    void renderPinOnWindow(float wx, float wy, float ww, float wh, float gt) const {
+    void renderPinOnWindow(float wx, float wy, float ww, float wh, float /*gt*/) const {
         for (auto& p : pins) {
-            if (std::fabs(p.wx - wx) > 1.0f || std::fabs(p.wy - wy) > 1.0f ||
-                std::fabs(p.ww - ww) > 1.0f || std::fabs(p.wh - wh) > 1.0f)
+            if (!windowMatch(p.wx, wx) || !windowMatch(p.wy, wy) ||
+                !windowMatch(p.ww, ww) || !windowMatch(p.wh, wh))
                 continue;
             float ox, oy;
             edgePoint(p.wx, p.wy, p.ww, p.wh, p.edge, p.along, ox, oy);
-            float lx = ox - wx, ly = oy - wy;
-            float alpha = (p.scar > 0.5f) ? 0.35f : 1.0f;
-            float inset = 18.0f;
-            float ex = lx, ey = ly;
-            switch (p.edge) {
-            case UBEdge::TOP:    ey = ly + inset; break;
-            case UBEdge::BOTTOM: ey = ly - inset; break;
-            case UBEdge::LEFT:   ex = lx + inset; break;
-            case UBEdge::RIGHT:  ex = lx - inset; break;
-            }
-            ubDrawThickLine(lx, ly, ex, ey, 3.5f, 0.95f, 0.28f, 0.60f, alpha);
-            drawCircle(lx, ly, 6.0f, 0.95f, 0.40f, 0.70f, alpha * 0.85f);
+            float nx, ny;
+            edgeNormal(p.edge, nx, ny);
+            float alpha = (p.scar > 0.5f) ? 0.40f : 1.0f;
+            const float outLen = 46.0f;
+            const float inLen  = 38.0f;
+            float sx = ox + nx * outLen;
+            float sy = oy + ny * outLen;
+            float ex = ox - nx * inLen;
+            float ey = oy - ny * inLen;
+            float ang = atan2f(ey - sy, ex - sx);
+            drawBlade(sx, sy, ang, sqrtf((ex - sx) * (ex - sx) + (ey - sy) * (ey - sy)),
+                      5.5f, 0.95f, 0.28f, 0.62f, alpha);
+            drawCircle(ox, oy, 7.0f, 1.0f, 0.55f, 0.85f, alpha * 0.9f);
 
             float strip = EDGE_HAZ;
+            float hz = strip * 2.0f;
             switch (p.edge) {
             case UBEdge::TOP:
-                drawRect(lx - 20.0f, ly - strip, 40.0f, strip * 2.0f,
-                         0.95f, 0.20f, 0.50f, 0.10f * alpha);
+                drawRect(ox - 24.0f, oy - strip, 48.0f, hz,
+                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
                 break;
             case UBEdge::BOTTOM:
-                drawRect(lx - 20.0f, ly - strip, 40.0f, strip * 2.0f,
-                         0.95f, 0.20f, 0.50f, 0.10f * alpha);
+                drawRect(ox - 24.0f, oy - strip, 48.0f, hz,
+                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
                 break;
             case UBEdge::LEFT:
-                drawRect(lx - strip, ly - 20.0f, strip * 2.0f, 40.0f,
-                         0.95f, 0.20f, 0.50f, 0.10f * alpha);
+                drawRect(ox - strip, oy - 24.0f, hz, 48.0f,
+                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
                 break;
             case UBEdge::RIGHT:
-                drawRect(lx - strip, ly - 20.0f, strip * 2.0f, 40.0f,
-                         0.95f, 0.20f, 0.50f, 0.10f * alpha);
+                drawRect(ox - strip, oy - 24.0f, hz, 48.0f,
+                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
                 break;
             }
         }
     }
 
-    void renderWorld(float gt, float pwx, float pwy, float pww, float pwh) const {
+    void renderWorld(float gt, float /*pwx*/, float /*pwy*/, float /*pww*/, float /*pwh*/) const {
         for (auto& f : flies) {
             if (!f.active) continue;
-            ubDrawThickLine(f.x, f.y, f.tx, f.ty, 2.0f, 0.95f, 0.35f, 0.55f, 0.35f);
-            float ang = atan2f(f.ty - f.y, f.tx - f.x);
-            float ex = f.x + cosf(ang) * 22.0f;
-            float ey = f.y + sinf(ang) * 22.0f;
-            ubDrawThickLine(f.x, f.y, ex, ey, 4.0f, 0.95f, 0.30f, 0.65f, 0.95f);
+            float rdx = f.tx - f.x, rdy = f.ty - f.y;
+            float rem = sqrtf(rdx * rdx + rdy * rdy);
+            float ang = atan2f(rdy, rdx);
+            ubDrawThickLine(f.fx, f.fy, f.x, f.y, 2.5f, 0.95f, 0.40f, 0.65f, 0.30f);
+            ubDrawThickLine(f.x, f.y, f.tx, f.ty, 2.0f, 1.0f, 0.50f, 0.80f, 0.40f);
+            float bladeLen = std::min(56.0f, rem + 14.0f);
+            drawBlade(f.x, f.y, ang, bladeLen, 6.0f, 0.98f, 0.35f, 0.70f, 1.0f);
+            float pulse = 0.5f + 0.5f * sinf(gt * 22.0f);
+            drawCircle(f.tx, f.ty, 10.0f + pulse * 4.0f, 1.0f, 0.55f, 0.85f, 0.65f * pulse);
         }
 
         if (state == UBState::RECALL_TEL) {
@@ -558,17 +587,16 @@ public:
             float prog = 1.0f - stateT / RECALL_TEL;
             for (auto& p : pins) {
                 if (p.scar > 0.5f) continue;
-                ubDrawThickLine(p.pinX, p.pinY, worldX, worldY, 2.0f,
-                                1.0f, 0.25f, 0.45f, blink * (0.35f + 0.65f * prog));
+                ubDrawThickLine(p.pinX, p.pinY, worldX, worldY, 3.0f,
+                                1.0f, 0.25f, 0.45f, blink * (0.40f + 0.60f * prog));
             }
         }
 
         for (auto& r : recalls) {
             if (!r.active) continue;
-            ubDrawThickLine(r.fromX, r.fromY, r.x, r.y, 2.5f, 1.0f, 0.35f, 0.55f, 0.75f);
+            ubDrawThickLine(r.fromX, r.fromY, r.x, r.y, 3.5f, 1.0f, 0.35f, 0.55f, 0.80f);
             float ang = atan2f(r.vy, r.vx);
-            ubDrawThickLine(r.x, r.y, r.x - cosf(ang) * 20.0f, r.y - sinf(ang) * 20.0f,
-                            4.0f, 0.95f, 0.28f, 0.62f, 1.0f);
+            drawBlade(r.x, r.y, ang, 40.0f, 5.5f, 0.95f, 0.28f, 0.62f, 1.0f);
         }
 
         if (state == UBState::WINDUP) {
@@ -576,8 +604,10 @@ public:
             edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
                       throwEdge, throwAlong, tx, ty);
             float pulse = 0.5f + 0.5f * sinf(gt * 18.0f);
-            drawCircle(tx, ty, 16.0f + pulse * 6.0f, 1.0f, 0.45f, 0.65f, 0.55f * pulse);
-            ubDrawThickLine(worldX, worldY, tx, ty, 1.5f, 0.95f, 0.40f, 0.70f, 0.25f * pulse);
+            drawCircle(tx, ty, 18.0f + pulse * 8.0f, 1.0f, 0.45f, 0.65f, 0.60f * pulse);
+            ubDrawThickLine(worldX, worldY, tx, ty, 2.5f, 0.95f, 0.40f, 0.70f, 0.30f + 0.25f * pulse);
+            float ang = atan2f(ty - worldY, tx - worldX);
+            drawBlade(worldX, worldY, ang, 36.0f, 4.5f, 0.95f, 0.35f, 0.65f, 0.85f);
         }
     }
 
