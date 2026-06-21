@@ -73,6 +73,7 @@ public:
     // 공전체(ORBITER) / 소환체(SPAWNER) / 보호막체(SHIELDED)
     float weaveAmp      = 0.85f;   // WEAVER 지그재그 진폭 (기본)
     float contactDmg    = 5.0f;    // 접촉 초당 피해
+    float singularityGrace = 0.0f; // 특이점 필드 — 접촉 피해 면역(초)
     float   orbitAngle  = 0.0f;
     float   orbitRadius = 0.0f;
     float   spawnTimer  = 0.0f;
@@ -169,9 +170,20 @@ public:
         else if (e == 3) { hp *= 1.3f; speed *= 0.65f; }            // 폭발성(빨강) — 무거워 느리게
     }
 
+    void TryContact(float dist, float& playerHP, float dps, float deltaTime,
+                    float thresh = -1.0f) const {
+        if (singularityGrace > 0.0f) return;
+        float t = (thresh >= 0.0f) ? thresh : (26.0f * sizeScale);
+        if (dist < t) playerHP -= dps * deltaTime;
+    }
+
     void Update(float playerCX, float playerCY, float deltaTime,
                 float& playerHP, float speedMult = 1.0f) {
         if (!alive) return;
+        if (singularityGrace > 0.0f) {
+            singularityGrace -= deltaTime;
+            if (singularityGrace < 0.0f) singularityGrace = 0.0f;
+        }
         float dx = playerCX - worldX;
         float dy = playerCY - worldY;
         float dist = std::sqrt(dx * dx + dy * dy) + 1e-4f;
@@ -195,7 +207,7 @@ public:
                 worldX += (dx / dist) * speed * 0.30f * speedMult * deltaTime;
                 worldY += (dy / dist) * speed * 0.30f * speedMult * deltaTime;
             }
-            if (dist < 26.0f) playerHP -= 7.0f * deltaTime;
+            TryContact(dist, playerHP, 7.0f, deltaTime, 26.0f);
             return;
         }
 
@@ -218,7 +230,7 @@ public:
                 chargeTimer += deltaTime;
                 if (chargeTimer >= 0.35f) { chargeState = 0; chargeTimer = 0.0f; }
             }
-            if (dist < 26.0f * sizeScale) playerHP -= 6.0f * deltaTime;
+            TryContact(dist, playerHP, 6.0f, deltaTime);
             return;
         }
 
@@ -232,7 +244,7 @@ public:
                 worldX += (fX * speed + pX * speed * w) * speedMult * deltaTime;
                 worldY += (fY * speed + pY * speed * w) * speedMult * deltaTime;
             }
-            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            TryContact(dist, playerHP, 5.0f, deltaTime);
             return;
         }
 
@@ -246,7 +258,7 @@ public:
             float k = std::min(1.0f, 7.0f * deltaTime);
             worldX += (tx - worldX) * k;
             worldY += (ty - worldY) * k;
-            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            TryContact(dist, playerHP, 5.0f, deltaTime);
             return;
         }
 
@@ -260,7 +272,7 @@ public:
                 worldX += (dx / dist) * speed * speedMult * deltaTime;
                 worldY += (dy / dist) * speed * speedMult * deltaTime;
             }
-            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            TryContact(dist, playerHP, 5.0f, deltaTime);
             return;
         }
 
@@ -278,7 +290,7 @@ public:
                     anchored = true;   // 배치 완료 → 이후 영구 고정
                 }
             }
-            if (dist < 26.0f * sizeScale) playerHP -= contactDmg * deltaTime;
+            TryContact(dist, playerHP, contactDmg, deltaTime);
             return;
         }
 
@@ -287,6 +299,6 @@ public:
             worldX += (dx / dist) * speed * speedMult * deltaTime;
             worldY += (dy / dist) * speed * speedMult * deltaTime;
         }
-        if (dist < 26.0f * sizeScale) playerHP -= contactDmg * deltaTime;
+        TryContact(dist, playerHP, contactDmg, deltaTime);
     }
 };

@@ -7,6 +7,7 @@
 #include "Bullet.h"
 #include "DrawPrim.h"
 #include "TextRenderer.h"
+#include "Camera.h"
 
 // ?????????????????????????????????????????????????????????????
 // C2_RELAY.sys ??Command & Control (?꾨㈃??
@@ -551,13 +552,15 @@ public:
 
         extern TextRenderer g_TextS;
         const wchar_t* title = phase2 ? L"C2_RELAY.sys  !!! OVERLOAD !!!"
-                                      : L"C2_RELAY.sys  ??relay active";
-        g_TextS.Draw(title, tx + 8.0f, ty + 2.0f, 0.38f, 1.0f, 0.95f, 0.9f, 1.0f);
+                                      : L"C2_RELAY.sys  :: relay active";
+        float tScale = 0.38f * g_ViewZoom;
+        g_TextS.Draw(title, W2SX(tx + 8.0f), W2SY(ty + 2.0f), tScale, 1.0f, 0.95f, 0.9f, 1.0f);
 
         wchar_t stat[64];
         swprintf_s(stat, L"HOST %d/%d  SHIELD %d%%  PKT %d",
                    aliveHosts(), NHOST, (int)(hostShieldPercent() + 0.5f), aliveMinions());
-        g_TextS.Draw(stat, tx + 8.0f, ty + TERM_H - 22.0f, 0.30f, GR, GG, GB, 0.85f);
+        g_TextS.Draw(stat, W2SX(tx + 8.0f), W2SY(ty + TERM_H - 22.0f),
+                     0.30f * g_ViewZoom, GR, GG, GB, 0.85f);
 
         float lineY = ty + 18.0f;
         for (int ln = 0; ln < 6; ln++) {

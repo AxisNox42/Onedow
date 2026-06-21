@@ -1620,11 +1620,56 @@ int main() {
                 // ?먯닔 湲곕컲 ?띾룄 ?⑦봽 (吏猷⑦븿 諛⑹?)
                 float si = (float)g_GameManager.score / 100000.0f; if (si > 6.0f) si = 6.0f;
                 float mobSpdRamp = 1.0f + si * 0.09f;
+                // 특이점 — 몹 AI 전에 끌어당김·소각, AI 후 플레이어 밀어내기
+                if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
+                    const float pullR2 = 220.0f * 220.0f;
+                    const float winSz = g_WindowSizeCur > 1.0f ? g_WindowSizeCur : g_Stats.windowSize;
+                    const float safeR  = winSz * 0.52f;
+                    const float safeR2 = safeR * safeR;
+                    for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
+                        if (!g_Chakrams[c].alive) continue;
+                        float chx = pCX + cosf(g_Chakrams[c].angle) * CHAKRAM_RADIUS;
+                        float chy = pCY + sinf(g_Chakrams[c].angle) * CHAKRAM_RADIUS;
+                        for (auto m : g_MonsterManager.monsters) {
+                            if (!m->alive) continue;
+                            float ddx = chx - m->worldX, ddy = chy - m->worldY;
+                            float d2 = ddx * ddx + ddy * ddy;
+                            float pdx = m->worldX - pCX, pdy = m->worldY - pCY;
+                            float pd2 = pdx * pdx + pdy * pdy;
+                            if (d2 < pullR2) {
+                                m->singularityGrace = 0.14f;
+                                if (d2 > 900.0f && pd2 > safeR2) {
+                                    float d = std::sqrt(d2) + 1e-3f;
+                                    m->worldX += (ddx / d) * 300.0f * FIXED_DT;
+                                    m->worldY += (ddy / d) * 300.0f * FIXED_DT;
+                                }
+                                m->hp -= 100.0f * FIXED_DT;
+                                if (m->hp <= 0.0f) m->alive = false;
+                            }
+                        }
+                    }
+                }
                 if (!timeStopped)
                     g_MonsterManager.UpdateAll(pCX, pCY, FIXED_DT,
                                                g_GameManager.playerHP, g_Bullets,
                                                g_Stats.mobSpeedMult * mobSpdRamp,
                                                rmobMoveMult * mobSpdRamp);
+                if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
+                    const float winSz = g_WindowSizeCur > 1.0f ? g_WindowSizeCur : g_Stats.windowSize;
+                    const float safeR  = winSz * 0.52f;
+                    const float safeR2 = safeR * safeR;
+                    for (auto m : g_MonsterManager.monsters) {
+                        if (!m->alive) continue;
+                        float pdx = m->worldX - pCX, pdy = m->worldY - pCY;
+                        float pd2 = pdx * pdx + pdy * pdy;
+                        if (pd2 >= safeR2) continue;
+                        float pd = std::sqrt(pd2) + 1e-3f;
+                        float push = (safeR - pd + 20.0f) * 16.0f;
+                        m->worldX += (pdx / pd) * push * FIXED_DT;
+                        m->worldY += (pdy / pd) * push * FIXED_DT;
+                        m->singularityGrace = 0.16f;
+                    }
+                }
 
                 // 由щ줈???щ꼫 ?낅뜲?댄듃 (臾닿린 ?곹깭癒몄떊 + ?μ쟾 吏덉＜, ??珥앹븣 push)
                 if (!timeStopped && g_RRBoss && g_RRBoss->alive)
@@ -3010,25 +3055,7 @@ int main() {
                         float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                         float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
                         float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;
-                        // 특이점 — 끌어당김 + 지속 피해
-                        if (g_Stats.chakramSingularity) {
-                            const float pullR2 = 220.0f * 220.0f;
-                            for (auto m : g_MonsterManager.monsters) {
-                                if (!m->alive) continue;
-                                float ddx = chx - m->worldX, ddy = chy - m->worldY;
-                                float d2 = ddx*ddx + ddy*ddy;
-                                if (d2 < pullR2 && d2 > 100.0f) {
-                                    float d = std::sqrt(d2) + 1e-3f;
-                                    m->worldX += (ddx / d) * 200.0f * delta;
-                                    m->worldY += (ddy / d) * 200.0f * delta;
-                                }
-                                if (d2 < hitR2 * 2.5f) {
-                                    m->hp -= 45.0f * delta;
-                                    if (m->hp <= 0.0f) m->alive = false;
-                                    ch.hp -= 0.5f * delta;
-                                }
-                            }
-                        }
+                        // 특이점 — 끌어당김/소각은 고정틱(몹 AI 전후). 여기선 차크람 생존만.
                         // 잡몹 접촉 즉사 (특이점 제외 시)
                         if (!g_Stats.chakramSingularity) {
                         for (auto m : g_MonsterManager.monsters) {
@@ -3038,12 +3065,6 @@ int main() {
                                 m->alive = false;
                                 ch.hp -= 2.0f;
                             }
-                        }
-                        } else {
-                        for (auto m : g_MonsterManager.monsters) {
-                            if (!m->alive) continue;
-                            float ddx = m->worldX - chx, ddy = m->worldY - chy;
-                            if (ddx*ddx + ddy*ddy < hitR2) ch.hp -= 1.0f;
                         }
                         }
                         // 자폭병
@@ -4214,6 +4235,7 @@ int main() {
         // ?〓す (蹂댁뒪 ?뚰솚臾쇱? ???? ??李?諛?而щ쭅
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
+            // DDOS — 플레이어 창 안에서만 렌더 (가짜창 없음)
             drawMob(m);
         }
         for (auto bm : g_MonsterManager.bombers) {
@@ -4242,35 +4264,6 @@ int main() {
             DrawApproachOrb(orb.x, orb.y);
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-        // (e3) flood.exe ??y-sort ??李?(?뚮젅?댁뼱 ???덉씠??
-        {
-            std::vector<Monster*> ddos;
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || m->kind != MobKind::DDOS) continue;
-                ddos.push_back(m);
-            }
-            if (!ddos.empty()) {
-                std::sort(ddos.begin(), ddos.end(),
-                          [](Monster* a, Monster* b) { return a->worldY < b->worldY; });
-                const float DTB = 14.0f * g_Scale;
-                for (auto* m : ddos) {
-                    // 플레이어 창 안은 (e) 패스에서 몬스터만 — flood.exe 크롬은 창 밖 스warm만
-                    if (inWin(m->worldX, m->worldY,
-                              playerWin.x, playerWin.y, playerWin.width, playerWin.height))
-                        continue;
-                    float w = DDOS_WIN_W * m->sizeScale;
-                    float h = w * 0.82f;
-                    float wx = m->worldX - w * 0.5f, wy = m->worldY - h * 0.5f;
-                    DrawAppWindow(wx, wy, w, h, L"flood.exe", DTB);
-                    BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                    BindMainShader();
-                    WorldScissor(wx, wy, w, h);
-                    drawMob(m);
-                    BatchFlush(); glDisable(GL_SCISSOR_TEST);
-                }
-            }
-        }
 
         // (e2) ?먭굅由?紐??ㅼ씠?꾨が????媛??먭굅由?紐?李??곸뿭?먯꽌 ??긽 ?꾩뿉 洹몃┝
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
