@@ -152,28 +152,7 @@ std::vector<Turret> g_Turrets;
 float       g_TurretDeployTimer = 0.0f;
 PlayerStats g_TurretStats;                        // 소총 기준 화력
 
-// ── 위성/FIELD/DROP 월드 엔티티 ──
-struct PatchMineEnt { float x, y, life, armTimer; bool armed; };
-struct TrapExeEnt   { float x, y, life, tickAcc; };
-struct PopupAllyEnt { float x, y, fireTimer, orbitAng; bool active; };
-static const int   MAX_PATCHES = 4;
-static const int   MAX_TRAPS   = 1;
-static float TRAP_WIN_W  = 128.0f;
-static float TRAP_WIN_H  = 128.0f;
-static float VACCINE_WIN_W  = 200.0f;
-static float VACCINE_WIN_H  = 160.0f;
-static const float VACCINE_ORBIT_R = 142.0f;
-std::vector<PatchMineEnt> g_Patches;
-std::vector<TrapExeEnt>   g_Traps;
-PopupAllyEnt g_PopupAlly = {};
-float g_StaticFieldTick  = 0.0f;
-float g_StaticFieldPulse = 0.0f;
-float g_EmpPulseTimer    = 0.0f;
-float g_PatchDropTimer   = 0.0f;
-float g_PatchLastX       = 0.0f;
-float g_PatchLastY       = 0.0f;
-bool  g_PatchLastInit    = false;
-float g_TrapSpawnTimer   = 0.0f;
+
 struct ChakramState {
     float angle        = 0.0f;
     float hp           = 150.0f;
@@ -476,8 +455,6 @@ int main() {
     if (g_Scale > 1.0f) g_Scale = 1.0f;
     if (g_Scale < 0.5f) g_Scale = 0.5f;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
-    TRAP_WIN_W *= g_Scale; TRAP_WIN_H *= g_Scale;
-    VACCINE_WIN_W *= g_Scale; VACCINE_WIN_H *= g_Scale;
     RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
     TOTEM_WIN_W *= g_Scale;
@@ -765,12 +742,6 @@ int main() {
             g_Turrets.clear();
             g_TurretDeployTimer = 0.0f;
             g_TurretStats = PlayerStats();
-            g_Patches.clear();
-            g_Traps.clear();
-            g_PopupAlly = {};
-            g_StaticFieldTick = g_StaticFieldPulse = 0.0f;
-            g_EmpPulseTimer = g_PatchDropTimer = g_TrapSpawnTimer = 0.0f;
-            g_PatchLastInit = false;
             g_BulletRainTimer = 0.0f;
             g_DrunkCycle      = 0.0f;
             g_DrunkActive     = false;
@@ -1002,9 +973,6 @@ int main() {
                 if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
                 g_Turrets.clear();
-                g_Patches.clear();
-                g_Traps.clear();
-                g_PopupAlly = {};
                 g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
                 g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
@@ -3102,220 +3070,6 @@ int main() {
                 }
             }
 
-            // ── 위성/FIELD/DROP ──
-            {
-                const float satM = g_Stats.GetSatelliteMult();
-                auto satDmg = [&](float mult) -> float {
-                    return g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f) * mult * satM;
-                };
-                auto hurtMob = [&](Monster* m, float d) {
-                    if (!m || !m->alive) return;
-                    if (m->kind == MobKind::SHIELDED && m->shieldActive) d *= 0.15f;
-                    m->hp -= d;
-                    if (m->hp <= 0.0f) { m->alive = false; m->scored = true; AddKillCombo(); }
-                };
-
-                if (g_Stats.staticField) {
-                    float tickInt = (g_Stats.staticFieldTier >= 2) ? 0.28f : 0.35f;
-                    float radius  = (g_Stats.staticFieldTier >= 2) ? 118.0f : 88.0f;
-                    float r2 = radius * radius;
-                    g_StaticFieldTick += delta;
-                    if (g_StaticFieldTick >= tickInt) {
-                        g_StaticFieldTick = 0.0f;
-                        g_StaticFieldPulse = 1.0f;
-                        float d = satDmg((g_Stats.staticFieldTier >= 2) ? 0.22f : 0.16f);
-                        for (auto m : g_MonsterManager.monsters) {
-                            if (!m->alive) continue;
-                            float dx = m->worldX - pCX, dy = m->worldY - pCY;
-                            if (dx*dx + dy*dy <= r2) hurtMob(m, d);
-                        }
-                        for (auto r : g_MonsterManager.rangedMobs) {
-                            if (!r->alive) continue;
-                            float dx = r->worldX - pCX, dy = r->worldY - pCY;
-                            if (dx*dx + dy*dy <= r2) {
-                                r->hp -= d;
-                                if (r->hp <= 0.0f) r->alive = false;
-                            }
-                        }
-                        for (auto b : g_MonsterManager.bombers) {
-                            if (!b->alive) continue;
-                            float dx = b->worldX - pCX, dy = b->worldY - pCY;
-                            if (dx*dx + dy*dy <= r2) {
-                                b->hp -= d;
-                                if (b->hp <= 0.0f) b->alive = false;
-                            }
-                        }
-                    }
-                    if (g_StaticFieldPulse > 0.0f)
-                        g_StaticFieldPulse = std::max(0.0f, g_StaticFieldPulse - delta * 2.8f);
-                }
-
-                if (g_Stats.empPulse) {
-                    g_EmpPulseTimer += delta;
-                    if (g_EmpPulseTimer >= 2.5f * VfxIntervalMult()) {
-                        g_EmpPulseTimer = 0.0f;
-                        const float blastR = 150.0f;
-                        const float blastR2 = blastR * blastR;
-                        float d = satDmg(0.26f);
-                        SpawnShockWave(pCX, pCY, blastR, 0.42f, 1.0f, 0.88f, 0.15f);
-                        auto pushAway = [&](float& wx, float& wy) {
-                            float dx = wx - pCX, dy = wy - pCY;
-                            float ds = sqrtf(dx*dx + dy*dy);
-                            if (ds < 8.0f) ds = 8.0f;
-                            wx += (dx / ds) * 38.0f;
-                            wy += (dy / ds) * 38.0f;
-                        };
-                        for (auto m : g_MonsterManager.monsters) {
-                            if (!m->alive) continue;
-                            float dx = m->worldX - pCX, dy = m->worldY - pCY;
-                            if (dx*dx + dy*dy > blastR2) continue;
-                            hurtMob(m, d);
-                            pushAway(m->worldX, m->worldY);
-                        }
-                        for (auto r : g_MonsterManager.rangedMobs) {
-                            if (!r->alive) continue;
-                            float dx = r->worldX - pCX, dy = r->worldY - pCY;
-                            if (dx*dx + dy*dy > blastR2) continue;
-                            r->hp -= d;
-                            if (r->hp <= 0.0f) r->alive = false;
-                            pushAway(r->worldX, r->worldY);
-                        }
-                        for (auto b : g_MonsterManager.bombers) {
-                            if (!b->alive) continue;
-                            float dx = b->worldX - pCX, dy = b->worldY - pCY;
-                            if (dx*dx + dy*dy > blastR2) continue;
-                            b->hp -= d;
-                            if (b->hp <= 0.0f) b->alive = false;
-                            pushAway(b->worldX, b->worldY);
-                        }
-                    }
-                }
-
-                if (g_Stats.patchMine) {
-                    if (!g_PatchLastInit) {
-                        g_PatchLastInit = true;
-                        g_PatchLastX = pCX; g_PatchLastY = pCY;
-                    }
-                    float pdx = pCX - g_PatchLastX, pdy = pCY - g_PatchLastY;
-                    if (pdx*pdx + pdy*pdy > 50.0f * 50.0f) {
-                        g_PatchDropTimer += delta;
-                        if (g_PatchDropTimer >= 0.75f * VfxIntervalMult() &&
-                            (int)g_Patches.size() < MAX_PATCHES) {
-                            g_PatchDropTimer = 0.0f;
-                            g_PatchLastX = pCX; g_PatchLastY = pCY;
-                            PatchMineEnt pm;
-                            pm.x = pCX; pm.y = pCY; pm.life = 9.0f;
-                            pm.armTimer = 0.38f; pm.armed = false;
-                            g_Patches.push_back(pm);
-                        }
-                    }
-                    for (auto it = g_Patches.begin(); it != g_Patches.end(); ) {
-                        it->life -= delta;
-                        if (!it->armed) {
-                            it->armTimer -= delta;
-                            if (it->armTimer <= 0.0f) it->armed = true;
-                        }
-                        bool pop = false;
-                        if (it->armed) {
-                            const float hr = 24.0f, hr2 = hr * hr;
-                            float bd = satDmg(0.34f);
-                            auto checkPop = [&](float ex, float ey) {
-                                float dx = ex - it->x, dy = ey - it->y;
-                                return dx*dx + dy*dy < hr2;
-                            };
-                            for (auto m : g_MonsterManager.monsters) {
-                                if (!m->alive || !checkPop(m->worldX, m->worldY)) continue;
-                                hurtMob(m, bd); pop = true; break;
-                            }
-                            if (!pop) for (auto r : g_MonsterManager.rangedMobs) {
-                                if (!r->alive || !checkPop(r->worldX, r->worldY)) continue;
-                                r->hp -= bd; if (r->hp <= 0.0f) r->alive = false;
-                                pop = true; break;
-                            }
-                            if (!pop) for (auto b : g_MonsterManager.bombers) {
-                                if (!b->alive || !checkPop(b->worldX, b->worldY)) continue;
-                                b->hp -= bd; if (b->hp <= 0.0f) b->alive = false;
-                                pop = true; break;
-                            }
-                            if (pop) {
-                                SpawnShockWave(it->x, it->y, 72.0f, 0.28f, 0.25f, 1.0f, 0.35f);
-                                it->life = 0.0f;
-                            }
-                        }
-                        if (it->life <= 0.0f) it = g_Patches.erase(it);
-                        else ++it;
-                    }
-                }
-
-                if (g_Stats.trapExe) {
-                    g_TrapSpawnTimer += delta;
-                    if (g_TrapSpawnTimer >= 8.0f * VfxIntervalMult() && (int)g_Traps.size() < MAX_TRAPS) {
-                        g_TrapSpawnTimer = 0.0f;
-                        float nd2 = 1e9f, tx = pCX, ty = pCY;
-                        for (auto m : g_MonsterManager.monsters) {
-                            if (!m->alive) continue;
-                            float dx = m->worldX - pCX, dy = m->worldY - pCY;
-                            float ds = dx*dx + dy*dy;
-                            if (ds < nd2 && ds < 620.0f * 620.0f) { nd2 = ds; tx = m->worldX; ty = m->worldY; }
-                        }
-                        if (nd2 < 1e8f) {
-                            TrapExeEnt tr;
-                            tr.x = tx; tr.y = ty; tr.life = 11.0f; tr.tickAcc = 0.0f;
-                            g_Traps.push_back(tr);
-                        }
-                    }
-                    const float hw = TRAP_WIN_W * 0.5f, hh = TRAP_WIN_H * 0.5f;
-                    for (auto it = g_Traps.begin(); it != g_Traps.end(); ) {
-                        it->life -= delta;
-                        it->tickAcc += delta;
-                        if (it->tickAcc >= 0.48f) {
-                            it->tickAcc = 0.0f;
-                            float td = satDmg(0.26f);
-                            for (auto m : g_MonsterManager.monsters) {
-                                if (!m->alive) continue;
-                                if (m->worldX < it->x - hw || m->worldX > it->x + hw ||
-                                    m->worldY < it->y - hh || m->worldY > it->y + hh) continue;
-                                hurtMob(m, td);
-                            }
-                            for (auto r : g_MonsterManager.rangedMobs) {
-                                if (!r->alive) continue;
-                                if (r->worldX < it->x - hw || r->worldX > it->x + hw ||
-                                    r->worldY < it->y - hh || r->worldY > it->y + hh) continue;
-                                r->hp -= td;
-                                if (r->hp <= 0.0f) r->alive = false;
-                            }
-                        }
-                        if (it->life <= 0.0f) it = g_Traps.erase(it);
-                        else ++it;
-                    }
-                }
-
-                if (g_Stats.popupAlly) {
-                    if (!g_PopupAlly.active) {
-                        g_PopupAlly.active = true;
-                        g_PopupAlly.orbitAng = 0.0f;
-                        g_PopupAlly.fireTimer = 0.0f;
-                    }
-                    g_PopupAlly.orbitAng += 0.72f * delta;
-                    g_PopupAlly.x = pCX + cosf(g_PopupAlly.orbitAng) * VACCINE_ORBIT_R;
-                    g_PopupAlly.y = pCY + sinf(g_PopupAlly.orbitAng) * VACCINE_ORBIT_R;
-                    g_PopupAlly.fireTimer += delta;
-                    if (g_PopupAlly.fireTimer >= 1.5f) {
-                        g_PopupAlly.fireTimer = 0.0f;
-                        float ttx = 0.0f, tty = 0.0f;
-                        if (findNearestEnemy(g_PopupAlly.x, g_PopupAlly.y, ttx, tty)) {
-                            Bullet nb(g_PopupAlly.x, g_PopupAlly.y, ttx, tty);
-                            nb.speed = g_Stats.bulletSpeed * 0.62f;
-                            nb.color = glm::vec3(RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b);
-                            nb.dmgMult = 0.55f * satM;
-                            g_Bullets.push_back(nb);
-                        }
-                    }
-                } else {
-                    g_PopupAlly.active = false;
-                }
-            }
-
             if (g_Stats.bulletRain) {
                 g_BulletRainTimer += delta;
                 // 臾댄븳 ?몃?(?좏솕) ??泥섏튂留덈떎 荑⑤떎??吏꾪뻾 媛??0.4s/泥섏튂). 誘몃낫????泥섏튂 移댁슫?몃쭔 鍮꾩?.
@@ -4474,69 +4228,6 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-        // (e.sat) trap.exe / vaccine.exe — 플레이어 창(c) 위 레이어, WorldScissor 내부만 VFX
-        {
-            const float SAT_TB = 22.0f;
-            auto drawSatWin = [&](float cx, float cy, float ww, float wh,
-                                  float nr, float ng, float nb,
-                                  const std::function<void(float,float,float,float,float,float)>& interior) {
-                float wx = cx - ww * 0.5f, wy = cy - wh * 0.5f;
-                BatchFlush(); glDisable(GL_BLEND);
-                drawRect(wx, wy, ww, wh, 0.06f, 0.08f, 0.10f, 1.0f);
-                BatchFlush(); glEnable(GL_BLEND);
-                drawNeonBorder(wx, wy, ww, wh, nr, ng, nb);
-                BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                WorldScissor(wx, wy + SAT_TB, ww, wh - SAT_TB);
-                interior(wx, wy, ww, wh, cx, cy);
-                BatchFlush(); glDisable(GL_SCISSOR_TEST);
-            };
-            for (auto& tr : g_Traps) {
-                TrapExeEnt trEnt = tr;
-                drawSatWin(trEnt.x, trEnt.y, TRAP_WIN_W, TRAP_WIN_H,
-                             RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b,
-                             [trEnt, SAT_TB](float wx, float wy, float ww, float wh, float cx, float cy) {
-                    float pulse = 0.45f + 0.35f * sinf(g_GameTime * 5.5f);
-                    drawCircle(cx, cy, ww * 0.36f,
-                               RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 0.10f * pulse);
-                    float tc = 11.0f;
-                    drawRect(cx - tc, cy - 3.0f, tc * 2.0f, 6.0f,
-                             RoleCol::TRAP.r, RoleCol::TRAP.g * 0.85f, RoleCol::TRAP.b * 0.7f, 0.80f);
-                    drawRect(cx - 3.0f, cy - tc, 6.0f, tc * 2.0f,
-                             RoleCol::TRAP.r, RoleCol::TRAP.g * 0.85f, RoleCol::TRAP.b * 0.7f, 0.80f);
-                    float lifeFrac = trEnt.life / 11.0f;
-                    if (lifeFrac < 0.0f) lifeFrac = 0.0f;
-                    if (lifeFrac > 1.0f) lifeFrac = 1.0f;
-                    float barW = ww - 24.0f;
-                    drawRect(wx + 12.0f, wy + SAT_TB + 6.0f, barW, 5.0f, 0.12f, 0.08f, 0.08f, 0.75f);
-                    drawRect(wx + 12.0f, wy + SAT_TB + 6.0f, barW * lifeFrac, 5.0f,
-                             RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 0.92f);
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || !inWin(b.x, b.y, wx, wy, ww, wh)) continue;
-                        drawBullet(b);
-                    }
-                });
-            }
-            if (g_Stats.popupAlly && g_PopupAlly.active &&
-                g_GameManager.currentState != GameState::GAMEOVER) {
-                drawSatWin(g_PopupAlly.x, g_PopupAlly.y, VACCINE_WIN_W, VACCINE_WIN_H,
-                           RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b,
-                           [&](float wx, float wy, float ww, float wh, float cx, float cy) {
-                    float vx = cx, vy = cy;
-                    float tc = 12.0f;
-                    drawRect(vx - tc, vy - 4.0f, tc * 2.0f, 8.0f,
-                             RoleCol::ALLY.r * 0.35f, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.95f);
-                    drawRect(vx - 4.0f, vy - tc, 8.0f, tc * 2.0f,
-                             RoleCol::ALLY.r * 0.35f, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.95f);
-                    drawCircle(vx, vy, 10.0f, RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.50f);
-                    drawCircle(vx, vy, 4.5f, 0.04f, 0.12f, 0.10f, 1.0f);
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || !inWin(b.x, b.y, wx, wy, ww, wh)) continue;
-                        drawBullet(b);
-                    }
-                });
-            }
-        }
-
         // (e2) ?먭굅由?紐??ㅼ씠?꾨が????媛??먭굅由?紐?李??곸뿭?먯꽌 ??긽 ?꾩뿉 洹몃┝
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
         for (auto r : g_MonsterManager.rangedMobs) {
@@ -4881,28 +4572,9 @@ int main() {
             }
         }
 
-        if (g_GameManager.currentState != GameState::GAMEOVER &&
-            (g_Stats.staticField || g_Stats.patchMine || g_Stats.chakram)) {
+        if (g_GameManager.currentState != GameState::GAMEOVER && g_Stats.chakram) {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
-            if (g_Stats.staticField) {
-                float baseR = (g_Stats.staticFieldTier >= 2) ? 118.0f : 88.0f;
-                float pulse = 1.0f + g_StaticFieldPulse * 0.18f;
-                float r1 = baseR * pulse;
-                drawCircle(pCX, pCY, r1, RoleCol::FIELD.r, RoleCol::FIELD.g, RoleCol::FIELD.b,
-                           0.10f + g_StaticFieldPulse * 0.12f);
-                if (g_Stats.staticFieldTier >= 2)
-                    drawCircle(pCX, pCY, baseR * 0.72f, RoleCol::FIELD.r * 0.65f,
-                               RoleCol::FIELD.g * 0.65f, RoleCol::FIELD.b * 0.65f, 0.08f);
-            }
-            for (auto& pm : g_Patches) {
-                float blink = pm.armed ? 0.85f : (0.35f + 0.65f * sinf(g_GameTime * 14.0f));
-                drawRect(pm.x - 14.0f, pm.y - 14.0f, 28.0f, 28.0f,
-                         0.08f, 0.55f + blink * 0.2f, 0.12f, 0.75f + blink * 0.2f);
-                if (!pm.armed)
-                    drawRect(pm.x - 6.0f, pm.y - 6.0f, 12.0f, 12.0f, 1.0f, 0.9f, 0.2f, blink);
-            }
-            if (g_Stats.chakram) {
             for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
                 auto& ch = g_Chakrams[c];
                 if (!ch.alive) continue;
@@ -4918,7 +4590,6 @@ int main() {
                 drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28, 3, 0.2f, 0.2f, 0.2f, 0.7f);
                 drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28 * hpFrac, 3,
                          1.0f, 0.7f, 0.0f, 0.95f);
-            }
             }
         }
         // ?쒕줎/李⑦겕??諛곗튂瑜?吏湲?利됱떆 flush
@@ -5002,18 +4673,6 @@ int main() {
                 glScissor(0, 0, (GLint)screenWidth, (GLint)screenHeight);
                 winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                           PNAME, g_AccentR, g_AccentG, g_AccentB);
-                // 위성 창 타이틀 — 플레이어와 겹쳐도 클립하지 않음 (공전·덫은 항상 겹침)
-                for (auto& tr : g_Traps) {
-                    float tx = tr.x - TRAP_WIN_W * 0.5f, ty = tr.y - TRAP_WIN_H * 0.5f;
-                    winChrome(tx, ty, TRAP_WIN_W, TRAP_WIN_H, L"trap.exe",
-                              RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b);
-                }
-                if (g_Stats.popupAlly && g_PopupAlly.active) {
-                    float vwx = g_PopupAlly.x - VACCINE_WIN_W * 0.5f;
-                    float vwy = g_PopupAlly.y - VACCINE_WIN_H * 0.5f;
-                    winChrome(vwx, vwy, VACCINE_WIN_W, VACCINE_WIN_H, L"vaccine.exe",
-                              RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b);
-                }
                 BatchFlush();
                 glDisable(GL_SCISSOR_TEST);
             }
