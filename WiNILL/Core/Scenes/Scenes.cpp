@@ -1671,46 +1671,73 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     drawRect(trackX, thumbY, 4.0f, thumbH, 0.5f, 0.6f, 0.8f, 0.9f);
                 }
 
-                // 호버 시 — 현재 무기 설명 (고정 패널, 증강 설명 대신)
-                if (hoverAug >= 0) {
-                    const float BW = std::min(380.0f, sw - (COLW + 30.0f));
-                    const float BH = 120.0f;
-                    float BX = COLW + 18.0f;
-                    float BY = std::min(hoverRowY - 6.0f, listTop + 8.0f);
-                    if (BY + BH > sh - 20.0f) BY = sh - 20.0f - BH;
-                    if (BY < 20.0f) BY = 20.0f;
-                    BindMainShader();
-                    drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.95f);
-                    drawRect(BX, BY, BW, 4.0f, 0.35f, 0.75f, 1.0f, 1.0f);
-                    const wchar_t* wnm = CurrentWeaponLabel();
-                    g_TextS.Draw(wnm, BX + 12.0f, BY + 12.0f, 0.92f, 0.55f, 0.88f, 1.0f, 1.0f);
-                    const float dsc = 0.76f, dWmax = BW - 24.0f;
+                // 무기 줄 호버 (리스트 y=110 이전 — 증강 행과 분리)
+                const float WEAPON_Y = 90.0f;
+                bool overWeapon = (mx >= 0 && mx <= COLW &&
+                                   my >= WEAPON_Y - 4.0f && my <= WEAPON_Y + 18.0f);
+
+                // 우측 상세 패널 — 증강 행: 증강 설명 / 무기 줄: 무기 설명
+                auto wrapDescLines = [&](const wchar_t* src, float dsc, float dWmax,
+                                         std::vector<std::wstring>& out) {
                     std::vector<std::wstring> dl; std::wstring cur2;
-                    for (const wchar_t* p = CurrentWeaponDescText(); *p; ++p) {
+                    for (const wchar_t* p = src; *p; ++p) {
                         if (*p == L'/') { if (!cur2.empty()) dl.push_back(cur2); cur2.clear(); }
                         else cur2 += *p;
                     }
                     if (!cur2.empty()) dl.push_back(cur2);
-                    std::vector<std::wstring> wrapped;
+                    out.clear();
                     for (auto& ln : dl) {
-                        while (!ln.empty() && ln.front()==L' ') ln.erase(0,1);
-                        if (g_TextS.Width(ln.c_str(), dsc) <= dWmax) { wrapped.push_back(ln); continue; }
+                        while (!ln.empty() && ln.front() == L' ') ln.erase(0, 1);
+                        if (g_TextS.Width(ln.c_str(), dsc) <= dWmax) { out.push_back(ln); continue; }
                         std::wstring acc, word;
                         auto fw = [&]() {
                             if (word.empty()) return;
-                            std::wstring tr = acc.empty()?word:acc+L" "+word;
-                            if (g_TextS.Width(tr.c_str(),dsc)>dWmax && !acc.empty()){wrapped.push_back(acc);acc=word;}
-                            else acc=tr;
+                            std::wstring tr = acc.empty() ? word : acc + L" " + word;
+                            if (g_TextS.Width(tr.c_str(), dsc) > dWmax && !acc.empty()) {
+                                out.push_back(acc); acc = word;
+                            } else acc = tr;
                             word.clear();
                         };
-                        for (wchar_t ch: ln){ if(ch==L' ')fw(); else word+=ch; } fw();
-                        if (!acc.empty()) wrapped.push_back(acc);
+                        for (wchar_t ch : ln) { if (ch == L' ') fw(); else word += ch; }
+                        fw();
+                        if (!acc.empty()) out.push_back(acc);
                     }
-                    float dy = BY + 38.0f;
+                };
+
+                auto drawSidePanel = [&](float BY, float br, float bg, float bb,
+                                         const wchar_t* title, const wchar_t* descSrc) {
+                    const float BW = std::min(380.0f, sw - (COLW + 30.0f));
+                    const float BH = 138.0f;
+                    float BX = COLW + 18.0f;
+                    if (BY + BH > sh - 20.0f) BY = sh - 20.0f - BH;
+                    if (BY < 20.0f) BY = 20.0f;
+                    BindMainShader();
+                    drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.95f);
+                    drawRect(BX, BY, BW, 4.0f, br, bg, bb, 1.0f);
+                    g_TextS.Draw(title, BX + 12.0f, BY + 12.0f, 0.90f,
+                                 std::min(1.0f, br * 1.4f + 0.3f),
+                                 std::min(1.0f, bg * 1.4f + 0.3f),
+                                 std::min(1.0f, bb * 1.4f + 0.3f), 1.0f);
+                    const float dsc = 0.76f, dWmax = BW - 24.0f;
+                    std::vector<std::wstring> wrapped;
+                    wrapDescLines(descSrc, dsc, dWmax, wrapped);
+                    float dy = BY + 40.0f;
                     for (auto& w : wrapped) {
                         if (dy > BY + BH - 14.0f) break;
                         g_TextS.Draw(w.c_str(), BX + 12.0f, dy, dsc, 1.0f, 1.0f, 0.95f, 0.90f);
                         dy += 22.0f;
                     }
+                };
+
+                if (hoverAug >= 0) {
+                    const AugDef& sd = ALL_AUGS[hoverAug];
+                    float hr, hg, hb;
+                    GetRarityColor(sd.rarity, hr, hg, hb);
+                    wchar_t hd[128];
+                    swprintf_s(hd, L"[%ls] %ls", GetAugBadge(sd), AugName(sd));
+                    drawSidePanel(hoverRowY - 6.0f, hr, hg, hb, hd, AugDesc(sd));
+                } else if (overWeapon) {
+                    drawSidePanel(WEAPON_Y - 4.0f, 0.35f, 0.75f, 1.0f,
+                                  CurrentWeaponLabel(), CurrentWeaponDescText());
                 }
 }
