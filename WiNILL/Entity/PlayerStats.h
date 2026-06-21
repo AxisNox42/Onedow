@@ -61,6 +61,7 @@ struct PlayerStats {
     bool  shotgunSpread= false;  // 산탄 확장 — 7발
     bool  revolverOverload = false;
     bool  heShells     = false;
+    bool  dashUpgrade  = false;  // SKILL_DASH_UP — 대시 유도탄 + 3발 2배
     float sniperDistBonusPct = 0.0f;  // SNIPER_AMPLIFIER — 거리 보너스 +%p
     int   powerSurgeStacks = 0;  // 전력 증폭 중첩 (3 이후 diminishing)
     int   commonMultBoosts = 0;  // 초반 일반 증강 ×1.08 (최대 3)
@@ -274,6 +275,9 @@ struct PlayerStats {
         case AugType::SKILL_OVERCLOCK:
         case AugType::SKILL_TIMESTOP:
         case AugType::SKILL_FOCUS:
+            break;
+        case AugType::SKILL_DASH_UP:
+            dashUpgrade = true;
             break;
         case AugType::SHOTGUN:
             shotgun      = true;

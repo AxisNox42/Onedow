@@ -86,6 +86,7 @@ enum class AugType {
     HE_SHELLS,           // HE탄 (대포 전용)
     CHAKRAM_SINGULARITY, // 특이점 (신화 — 차크람 III 진화)
     SKILL_FOCUS,         // [스킬] 집중 조준 (저격 전용)
+    SKILL_DASH_UP,       // [스킬] 대시 강화
     // ── 총기 전용 (끝에 추가 — 세이브 인덱스 보존) ──
     SMG_COMPRESSOR,      // SMG — 흩어짐·연사
     RIFLE_STABILITY,     // 소총 — 정조준
@@ -635,6 +636,11 @@ static const AugDef ALL_AUGS[] = {
       { L"0.4초 정지 후 발동 — 다음 1발 ×2.5 · 관통 +30%p  (쿨 14초 · 저격)",
         L"After 0.4s still — next shot ×2.5 · +30% pierce  (14s CD · sniper)",
         L"0.4秒静止後 — 次弾×2.5 · 貫通+30%p  (CD14秒 · スナイパー)" } },
+    { AugType::SKILL_DASH_UP, AugRarity::EPIC,    AugUnique::NONE, "DASH_UP",
+      { L"[스킬] 섬광 돌진", L"[Skill] Flash Dash", L"[スキル] 閃光突進" },
+      { L"대시 시 유도탄 3~5발 · 이후 3발 ×2 공격력  (SHIFT · 대시 강화)",
+        L"Dash — 3~5 homing shots · next 3 shots ×2 dmg  (SHIFT upgrade)",
+        L"ダッシュ — 誘導弾3~5 · 次3発×2  (SHIFT強化)" } },
     { AugType::SMG_COMPRESSOR, AugRarity::EPIC,     AugUnique::NONE, "SMG_COMP",
       { L"탄뭉치 억제", L"Spray Control", L"弾束制御" },
       { L"[SMG] 흩어짐 -50% · 연사 +8%",
@@ -652,7 +658,7 @@ static const AugDef ALL_AUGS[] = {
         L"[スナイパー] 距離ボーナス+30%p" } },
 };
 
-static constexpr int AUG_TOTAL = 111;
+static constexpr int AUG_TOTAL = 112;
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -735,6 +741,7 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
     case AugType::HE_SHELLS:    case AugType::CHAKRAM_SINGULARITY:
     case AugType::SKILL_FOCUS:
+    case AugType::SKILL_DASH_UP:
     case AugType::SMG_COMPRESSOR: case AugType::RIFLE_STABILITY:
     case AugType::SNIPER_AMPLIFIER:
         return true;
@@ -794,7 +801,8 @@ inline const wchar_t* GetAugTag(const AugDef& a) {
     if (a.unique == AugUnique::DISTANCE) { static const wchar_t* s[3]={L"거리",L"Range",L"距離"};  return s[li]; }
     if (a.unique == AugUnique::SIZE)     { static const wchar_t* s[3]={L"크기",L"Size",L"サイズ"}; return s[li]; }
     if (a.type == AugType::SKILL_CLOSE || a.type == AugType::SKILL_OVERCLOCK ||
-        a.type == AugType::SKILL_TIMESTOP || a.type == AugType::SKILL_FOCUS)
+        a.type == AugType::SKILL_TIMESTOP || a.type == AugType::SKILL_FOCUS ||
+        a.type == AugType::SKILL_DASH_UP)
         { static const wchar_t* s[3]={L"스킬",L"Skill",L"スキル"}; return s[li]; }
     return nullptr;
 }

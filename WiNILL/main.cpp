@@ -309,6 +309,7 @@ static float g_DashToX    = 0.0f, g_DashToY   = 0.0f;
 static float g_FocusStandTimer = 0.0f;
 static int   g_FocusShotsLeft  = 0;
 static int   g_RevolverRound   = 0;
+static int   g_DashBoostShotsLeft = 0;
 static constexpr float TIMESTOP_DUR = 1.5f, OVERCLOCK_DUR = 5.0f;
 
 static float SkillCooldownMax(SkillType t) {
@@ -325,6 +326,7 @@ static void ResetSkills() {
     g_SkillReplaceIdx = 0; g_DashCd = 0; g_DashInvuln = 0;
     g_DashActive = false; g_DashT = 0.0f;
     g_FocusStandTimer = 0.0f; g_FocusShotsLeft = 0; g_RevolverRound = 0;
+    g_DashBoostShotsLeft = 0;
     g_TimeStopTimer = 0; g_OverclockTimer = 0;
 }
 // 蹂댁뒪 ?앹〈 ?숈븞 ?붾㈃ ?꾩껜瑜?蹂댁뒪 怨좎쑀?됱쑝濡??먯젏 臾쇰뱾?대뒗 ?곗텧
@@ -697,8 +699,9 @@ int main() {
                 // ?먯닔 鍮꾨? 以뚯븘?????꾩옣???쒖꽌???볦뼱吏?(?곹븳 1.4諛?= zoom 0.714).
                 //   200留뚯젏?먯꽌 理쒕?移??꾨떖. ?대━紐⑦봽 ?섏씠利?(0.5)硫?洹몄そ???곗꽑(min).
                 float t = std::min(1.0f, (float)g_GameManager.score / 2000000.0f);
-                float scoreZoom = 1.0f - 0.286f * t;   // 1.0 ??0.714
-                float polyZoom  = (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->phase2) ? 0.5f : 1.0f;
+                float scoreZoom = 1.0f - 0.286f * t;   // 1.0 → 0.714
+                float polyZoom  = g_PolyWasPhase2 ? 0.5f
+                    : ((g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->phase2) ? 0.5f : 1.0f);
                 g_ViewZoomTarget = std::min(scoreZoom, polyZoom);
             }
         }
@@ -1488,6 +1491,25 @@ int main() {
                     g_DashInvuln = DASH_INVULN;
                     TriggerFlash(0.35f, 0.85f, 1.0f, 0.12f);
                     SpawnShockWave(g_DashFromX, g_DashFromY, 70.0f, 0.25f, 0.4f, 1.0f, 1.0f);
+                    if (g_Stats.dashUpgrade) {
+                        g_DashBoostShotsLeft = 3;
+                        const int burstN = 3 + rand() % 3;
+                        for (int bi = 0; bi < burstN; bi++) {
+                            float a = (float)bi / (float)burstN * 2.0f * (float)M_PI
+                                    + ((float)(rand() % 100) - 50.0f) * 0.01f;
+                            Bullet nb(pCX, pCY,
+                                      pCX + cosf(a) * 120.0f,
+                                      pCY + sinf(a) * 120.0f);
+                            nb.speed      = g_Stats.bulletSpeed * 1.1f;
+                            nb.color      = glm::vec3(0.45f, 0.95f, 1.0f);
+                            nb.homing     = true;
+                            nb.homingTurn = 6.0f;
+                            nb.dmgMult    = 0.55f;
+                            nb.launchRamp  = 0.08f;
+                            nb.launchAccel = 1.4f;
+                            g_Bullets.push_back(nb);
+                        }
+                    }
                 }
                 pDash = cDash;
                 bool cQ = keys[GLFW_KEY_Q]; if (cQ && !pQ) useSkill(0); pQ = cQ;
@@ -1627,7 +1649,8 @@ int main() {
                     g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
                     // ?섏씠利? = ?곸쐞 蹂댁뒪: ?붾㈃ 以뚯븘?껋쑝濡????볦? 援ш컙?먯꽌 ?몄? (?섎룄??湲곕뒫)
                     //   ?먯닔 以뚯븘?껉낵 異⑸룎 ?딄쾶 ??以뚯븘?껊맂 履?min) 梨꾪깮. (?섏씠利?? ?먯닔以??좎?)
-                    g_ViewZoomTarget = std::min(g_ViewZoomTarget, g_PolyBoss->phase2 ? 0.5f : 1.0f);
+                    g_ViewZoomTarget = std::min(g_ViewZoomTarget,
+                        g_PolyWasPhase2 ? 0.5f : (g_PolyBoss->phase2 ? 0.5f : 1.0f));
                     // ?? 2?섏씠利?吏꾩엯 ?곗텧 ??蹂댁뒪 ?ы슚 + ?ㅼ쨷 異⑷꺽??(1?? ??
                     if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
                         g_PolyWasPhase2 = true;
@@ -2254,13 +2277,12 @@ int main() {
                     g_ShakeTime = 0.6f; g_ShakeMag = 24.0f;
                     TriggerFlash(0.7f, 0.3f, 1.0f, 0.7f); TriggerHitStop(0.13f);
                     pb->exploded = true;
-                    g_ViewZoomTarget = 1.0f;
                     g_GameManager.scoreAccum += 30000.0f;
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
                     delete pb;
                     g_PolyBoss = nullptr;
                     g_PolyPrevForm = -1;
-                    g_PolyWasPhase2 = false;
+                    // g_PolyWasPhase2 유지 — P2 줌아웃을 런 끝까지 이어감
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
@@ -3147,6 +3169,11 @@ int main() {
                     nb.dmgMult *= 2.5f;
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 2.5f;
                     nb.pierceBonusPct = 30;
+                }
+                if (g_DashBoostShotsLeft > 0) {
+                    --g_DashBoostShotsLeft;
+                    nb.dmgMult *= 2.0f;
+                    if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 2.0f;
                 }
                 if (g_Stats.revolverOverload && g_Stats.revolver) {
                     if (g_RevolverRound == 5)
@@ -5205,7 +5232,8 @@ int main() {
                         g_TextL.Draw(bf, x + (KW - tw) * 0.5f, y + KH * 0.34f, 0.85f, 1,1,1,0.95f);
                     }
                 };
-                skillBox(0, L"SHIFT", L"DASH", g_DashCd, 0.4f, 1.0f, 1.0f);
+                skillBox(0, L"SHIFT", g_Stats.dashUpgrade ? L"FLASH" : L"DASH",
+                         g_DashCd, 0.4f, 1.0f, 1.0f);
                 const wchar_t* keys3[3] = { L"Q", L"E", L"R" };
                 for (int i = 0; i < 3; i++) {
                     if (g_Skills[i].type == SkillType::NONE) continue;

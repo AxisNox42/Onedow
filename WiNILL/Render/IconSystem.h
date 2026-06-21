@@ -317,6 +317,7 @@ inline GLuint IconFor(AugType t) {
     case AugType::CHAKRAM_SINGULARITY: return g_IconTex[(int)AugType::CHAKRAM];
     case AugType::HE_SHELLS:      return g_IconTex[(int)AugType::CANNON];
     case AugType::SKILL_FOCUS:    return g_IconTex[(int)AugType::SNIPER];
+    case AugType::SKILL_DASH_UP:  return g_IconTex[(int)AugType::LIGHT_STEP];
     case AugType::SMG_COMPRESSOR: return g_IconTex[(int)AugType::MINIGUN];
     case AugType::RIFLE_STABILITY:return g_IconTex[(int)AugType::BROKEN_SIGHT];
     case AugType::SNIPER_AMPLIFIER:return g_IconTex[(int)AugType::SNIPER];
