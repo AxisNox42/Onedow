@@ -2,6 +2,7 @@
 #include "Settings.h"
 #include "PlayerStats.h"
 #include "Weapons.h"
+#include "GameContext.h"
 #include <string>
 #include <algorithm>   // std::min (등급 가중치 게이팅)
 
@@ -456,7 +457,9 @@ void GameManager::Render() {
     //   GAMEOVER 는 main.cpp 가 페이드인 딤을 직접 그림.
     //   MAIN_MENU 는 "진짜 바탕화면"을 비추기 위해 어둡게 덮지 않음.
     if (currentState != GameState::RUNNING && currentState != GameState::DYING &&
-        currentState != GameState::GAMEOVER && currentState != GameState::MAIN_MENU) {
+        currentState != GameState::GAMEOVER && currentState != GameState::MAIN_MENU &&
+        !(currentState == GameState::SETTINGS &&
+          g_SettingsReturnTo == GameState::PAUSED)) {
         float identity[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, identity);
 

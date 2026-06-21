@@ -3713,7 +3713,9 @@ int main() {
         bool inWorldRender = (wgs == GameState::RUNNING || wgs == GameState::DYING ||
                               wgs == GameState::PAUSED  || wgs == GameState::READY  ||
                               wgs == GameState::AUG_SELECT || wgs == GameState::DEBUFF_SELECT ||
-                              wgs == GameState::GAMEOVER);
+                              wgs == GameState::GAMEOVER ||
+                              (wgs == GameState::SETTINGS &&
+                               g_SettingsReturnTo == GameState::PAUSED));
         if (inWorldRender) {
     
         // ?먭굅由?紐?FakeWindow ?ш린 ?곸닔 (?뚮뜑쨌?대━??怨듭슜)
@@ -5048,8 +5050,10 @@ int main() {
     
             // ?? ?멸쾶???묒뾽?쒖떆以???硫붾돱? ?숈씪??OS ?꾨젅???좎? (?곗뒪?ы넲 諛⑹뼱 ?쇨??? ??
             if (st == GameState::RUNNING || st == GameState::PAUSED || st == GameState::DYING ||
-                st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT) {
-                DrawIngameTaskbar(sw, sh, st);
+                st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT ||
+                (st == GameState::SETTINGS && g_SettingsReturnTo == GameState::PAUSED)) {
+                DrawIngameTaskbar(sw, sh,
+                    (st == GameState::SETTINGS) ? GameState::PAUSED : st);
             }
     
             // ?? ?낆쟻 ?닿툑 ?좎뒪??(?곷떒 以묒븰 諛곕꼫, 4珥??쒖떆 ???섏씠?? ??

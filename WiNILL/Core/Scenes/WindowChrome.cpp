@@ -29,18 +29,20 @@ void SceneDeskWindow(float sw, float sh, const wchar_t* fname,
 
 void SceneAppWindow(float sw, float sh, float WW, float WH,
                     const wchar_t* fname, float ar, float ag, float ab,
-                    float& outX, float& outY) {
+                    float& outX, float& outY, bool gameOverlay) {
     float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
     outX = wx; outY = wy;
     float op = g_AppOpen; if (op < 0.0f) op = 0.0f; if (op > 1.0f) op = 1.0f;
     float e  = Smoothstep(op);
+    const float dimA  = gameOverlay ? 0.10f : 0.40f;
+    const float bodyA = gameOverlay ? 0.86f : 0.99f;
     BindMainShader();
-    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.40f * e);
+    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, dimA * e);
     if (e < 0.999f) {
         float dw = WW * e, dh = WH * e;
         float dx = sw*0.5f - dw*0.5f, dy = sh*0.5f - dh*0.5f;
         drawRect(dx+5, dy+6, dw, dh, 0.0f,0.0f,0.0f, 0.30f);
-        drawRect(dx, dy, dw, dh, 0.07f, 0.08f, 0.11f, 0.99f);
+        drawRect(dx, dy, dw, dh, 0.07f, 0.08f, 0.11f, bodyA);
         drawRect(dx, dy, dw, 4.0f, ar, ag, ab, 1.0f);
         drawRect(dx, dy, dw, 1.5f, ar,ag,ab,0.5f);
         drawRect(dx, dy+dh-1.5f, dw, 1.5f, ar,ag,ab,0.5f);
@@ -49,7 +51,7 @@ void SceneAppWindow(float sw, float sh, float WW, float WH,
         return;
     }
     drawRect(wx+7, wy+9, WW, WH, 0.0f, 0.0f, 0.0f, 0.35f);
-    drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, 0.99f);
+    drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, bodyA);
     const float TB = 30.0f;
     drawRect(wx, wy, WW, TB, ar*0.5f, ag*0.5f, ab*0.55f, 1.0f);
     drawRect(wx, wy+TB, WW, 2.0f, ar, ag, ab, 0.9f);

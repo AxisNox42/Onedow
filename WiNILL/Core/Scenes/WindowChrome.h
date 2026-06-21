@@ -5,5 +5,5 @@ void SceneDeskWindow(float sw, float sh, const wchar_t* fname,
                      float ar, float ag, float ab);
 void SceneAppWindow(float sw, float sh, float WW, float WH,
                     const wchar_t* fname, float ar, float ag, float ab,
-                    float& outX, float& outY);
+                    float& outX, float& outY, bool gameOverlay = false);
 void DrawIngameTaskbar(float sw, float sh, GameState st);

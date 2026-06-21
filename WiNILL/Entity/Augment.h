@@ -909,6 +909,14 @@ inline bool AugListIndexLess(int a, int b) {
     return a < b;
 }
 
+// 등급(티어) 순 정렬 — 도감 기본값
+inline bool AugTierIndexLess(int a, int b) {
+    int ra = OwnedAugListOrder(ALL_AUGS[a].rarity);
+    int rb = OwnedAugListOrder(ALL_AUGS[b].rarity);
+    if (ra != rb) return ra < rb;
+    return a < b;
+}
+
 // 등급 라벨 (현재 언어)
 inline const wchar_t* GetRarityKR(AugRarity r) {
     int li = CurLangIdx();
