@@ -514,6 +514,36 @@ void RunShopPurchase(int slot) {
     g_RunShopPrice[slot]  = 0;
 }
 
+static bool BossFightBusy() {
+    return (g_RRBoss && g_RRBoss->alive)
+        || (g_PolyBoss && g_PolyBoss->alive)
+        || (g_BotnetBoss && g_BotnetBoss->alive)
+        || (g_CentiBoss && g_CentiBoss->alive)
+        || (g_TotemBoss && g_TotemBoss->alive)
+        || (g_UnknownBoss && g_UnknownBoss->alive)
+        || g_BossWarnTimer > 0.0f;
+}
+
+static void StartBossWarn(int pick, const wchar_t* name, float hp) {
+    BossDir::SetActTheme(pick);
+    g_BossWarnPick = pick;
+    g_BossWarnName = name;
+    g_BossWarnHp   = hp;
+    g_BossWarnTimer = g_CreativeMode ? 0.35f : BOSS_WARN_DUR;
+}
+
+static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
+    switch (pick) {
+    case 1: StartBossWarn(1, L"UNKNOWN.sys",  bossHpC * 0.7f);  break;
+    case 2: StartBossWarn(2, L"VOLLEY.sys",   bossHpC);         break;
+    case 4: StartBossWarn(4, L"GLITCH.exe",   polyHpC);         break;
+    case 7: StartBossWarn(7, L"C2_RELAY.sys", bossHpC * 0.75f); break;
+    case 8: StartBossWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
+    case 9: StartBossWarn(9, L"RITE.CORE",     bossHpC * 0.72f); break;
+    default: StartBossWarn(4, L"GLITCH.exe",   polyHpC);         break;
+    }
+}
+
 int main() {
     CrashHandler::Install();   // 媛뺤쥌(E23) 異붿쟻 ??泥섎━ ?????덉쇅 ??濡쒓렇+誘몃땲?ㅽ봽
     srand((unsigned)time(NULL));
@@ -1510,6 +1540,21 @@ int main() {
             if (kG == GLFW_PRESS && s_gkeyReleased) {
                 g_CreativeGodmode = !g_CreativeGodmode;
                 s_gkeyReleased = false;
+            }
+            // B — 선택 보스 즉시 스폰 (None이면 UNKNOWN.sys)
+            static bool s_bkeyReleased = true;
+            int kB = glfwGetKey(window, GLFW_KEY_B);
+            if (kB == GLFW_RELEASE) s_bkeyReleased = true;
+            if (kB == GLFW_PRESS && s_bkeyReleased &&
+                g_GameManager.currentState == GameState::RUNNING) {
+                if (!BossFightBusy()) {
+                    float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
+                    float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
+                                  : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
+                    int pick = g_CreativeBossPick >= 0 ? g_CreativeBossPick : 1;
+                    QueueCreativeBossPick(pick, bossHpC, polyHpC);
+                }
+                s_bkeyReleased = false;
             }
         }
 
@@ -2927,26 +2972,16 @@ int main() {
                 float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
                               : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
 
-                // ?꾩“ ?쒖옉 ??pick쨌?대쫫쨌HP ?뺤젙 ??2.5珥?寃쎄퀬. ?ㅼ젣 ?앹꽦? 留뚮즺 ??
+                // 예고 시작 — pick·이름·HP 확정 후 짧은 경고(크리에이티브 0.35s)
                 auto startWarn = [&](int pick, const wchar_t* name, float hp) {
-                    BossDir::SetActTheme(pick);
-                    g_BossWarnPick = pick; g_BossWarnName = name;
-                    g_BossWarnHp = hp;     g_BossWarnTimer = BOSS_WARN_DUR;
+                    StartBossWarn(pick, name, hp);
                 };
 
                 if (!bossActive) {
                     if (g_CreativeBossPending) {
-                        // ?щ━?먯씠?곕툕: ?좏깮??蹂댁뒪 (?먯닔 臾닿?, 1??
                         g_CreativeBossPending = false;
-                        switch (g_CreativeBossPick) {
-                        case 2:  startWarn(2, L"VOLLEY.sys",    bossHpC);         break;
-                        case 1:  startWarn(1, L"UNKNOWN.sys",  bossHpC * 0.7f); break;
-                        case 4:  startWarn(4, L"GLITCH.exe", polyHpC);         break;
-                        case 7:  startWarn(7, L"C2_RELAY.sys",  bossHpC * 0.75f); break;
-                        case 8:  startWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
-                        case 9:  startWarn(9, L"RITE.CORE",     bossHpC * 0.72f); break;
-                        default: startWarn(4, L"GLITCH.exe", polyHpC);         break;
-                        }
+                        QueueCreativeBossPick(g_CreativeBossPick >= 0 ? g_CreativeBossPick : 1,
+                                              bossHpC, polyHpC);
                     }
                     else if (g_GameManager.score >= g_NextBossScore) {
                         // 20留뚯젏留덈떎 濡쒗뀒?댁뀡 (50留?1???대━ 怨좎젙)
@@ -5244,7 +5279,8 @@ int main() {
         if (g_BossWarnTimer > 0.0f &&
             (g_GameManager.currentState == GameState::RUNNING ||
              g_GameManager.currentState == GameState::PAUSED)) {
-            float prog = 1.0f - g_BossWarnTimer / BOSS_WARN_DUR;   // 0??
+            float warnDur = g_CreativeMode ? 0.35f : BOSS_WARN_DUR;
+            float prog = 1.0f - g_BossWarnTimer / warnDur;   // 0→1
             if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
             float t = (float)glfwGetTime();
             float blink = 0.5f + 0.5f * sinf(t * 9.0f);
@@ -5502,9 +5538,9 @@ int main() {
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
                 int li3 = LangIndex();
                 const wchar_t* CH[3] = {
-                    L"CREATIVE   F: 증강(디버프 포함)   G: 무적",
-                    L"CREATIVE   F: Augment(+debuff)   G: Godmode",
-                    L"CREATIVE   F: 強化(デバフ込)   G: ゴッド" };
+                    L"CREATIVE   F: 증강   G: 무적   B: 보스 스폰",
+                    L"CREATIVE   F: Augment   G: Godmode   B: Spawn boss",
+                    L"CREATIVE   F: 強化   G: ゴッド   B: ボス召喚" };
                 g_TextS.Draw(CH[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL), 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
                     const wchar_t* GOD[3] = { L"★ 무적 ON", L"★ GODMODE ON", L"★ ゴッド ON" };

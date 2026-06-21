@@ -1118,27 +1118,31 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 }
 
                 g_TextS.Draw(L"Boss", leftX, contentTop + 90.0f, 1.0f, 1, 1, 1, 0.9f);
+                g_TextS.Draw(L"(런 중 B = 선택 보스 즉시 스폰)", leftX, contentTop + 108.0f,
+                             0.52f, 0.72f, 0.78f, 0.88f, 0.85f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[7] = { {L"None",-1},{L"Unknown",1},{L"Polymorph",4},
-                                      {L"Volley",2},{L"C2 Relay",7},
-                                      {L"Fork Worm",8},{L"Rite Core",9} };
+                BossOpt bOpts[7] = {
+                    {L"None",-1}, {L"UNKNOWN.sys",1}, {L"VOLLEY.sys",2}, {L"GLITCH.exe",4},
+                    {L"C2_RELAY",7}, {L"FORK.worm",8}, {L"RITE.CORE",9}
+                };
+                const float BBW = 112.0f;
                 for (int i = 0; i < 7; i++) {
-                    int col = i % 3, row = i / 3;
-                    float ox = leftX + col * (OBW + OBG);
-                    float oy = contentTop + 118.0f + row * (OBH + 8.0f);
+                    int col = i % 4, row = i / 4;
+                    float ox = leftX + col * (BBW + OBG);
+                    float oy = contentTop + 128.0f + row * (OBH + 8.0f);
                     bool sel = (g_CreativeBossPick == bOpts[i].v);
-                    if (UIButton(ox, oy, OBW, OBH, bOpts[i].l,
+                    if (UIButton(ox, oy, BBW, OBH, bOpts[i].l,
                                  mx, my, lmb, g_LmbPrev, sel))
                         g_CreativeBossPick = bOpts[i].v;
                 }
 
-                g_TextS.Draw(L"Start Augments", leftX, contentTop + 220.0f, 1.0f, 1, 1, 1, 0.9f);
+                g_TextS.Draw(L"Start Augments", leftX, contentTop + 236.0f, 1.0f, 1, 1, 1, 0.9f);
                 int aOpts[4] = { 0, 3, 5, 10 };
                 for (int i = 0; i < 4; i++) {
                     float ox = leftX + i * (OBW + OBG);
                     wchar_t lb[8]; swprintf_s(lb, L"%d", aOpts[i]);
                     bool sel = (g_CreativeStartAugs == aOpts[i]);
-                    if (UIButton(ox, contentTop + 248.0f, OBW, OBH, lb,
+                    if (UIButton(ox, contentTop + 264.0f, OBW, OBH, lb,
                                  mx, my, lmb, g_LmbPrev, sel))
                         g_CreativeStartAugs = aOpts[i];
                 }
