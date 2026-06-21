@@ -40,6 +40,7 @@
 #include "CentipedeBoss.h"
 #include "TotemBoss.h"
 #include "BossDirector.h"
+#include "RunIntermission.h"
 #include "Codex.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
@@ -392,6 +393,84 @@ float g_DeathCX = 0, g_DeathCY = 0;
 float g_DeathFlash = 0.0f; // ??컻 ?ш킅 (1.0 ??0.0)
 wchar_t g_DeathReason[96] = {0};   // ?щ쭩 ?먯씤 ("?뗢뿃 ???섑빐 醫낅즺??)
 
+static FakeWindow* s_PlayerWinRef = nullptr;
+
+static void ApplyPurchasedAug(int idx, FakeWindow& playerWin, int scrW, int scrH) {
+    AugType atype = ALL_AUGS[idx].type;
+    float oldWS   = playerWin.width;
+    float oldPCX  = playerWin.x + playerWin.width  * 0.5f;
+    float oldPCY  = playerWin.y + playerWin.height * 0.5f;
+
+    bool prevTurret = g_Stats.turretMode;
+    g_Stats.Apply(atype);
+    if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
+        g_Stats.ApplyCommonMultBoost();
+    g_OwnedAugs.push_back(idx);
+    g_TypeOwned[(int)atype] = true;
+    MarkAugSeen(idx);
+    EquipSkill(SkillForAug(atype));
+    if (g_Stats.turretMode && !prevTurret) {
+        g_Turrets.clear();
+        g_TurretDeployTimer = TURRET_DEPLOY;
+    }
+    if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
+        g_GameManager.takenOnce[idx] = true;
+    if (g_GameManager.playerHP > g_Stats.maxHP)
+        g_GameManager.playerHP = g_Stats.maxHP;
+    g_GameManager.maxHP = g_Stats.maxHP;
+
+    if (atype == AugType::CHAKRAM || atype == AugType::CHAKRAM_2 ||
+        atype == AugType::CHAKRAM_3 || atype == AugType::CHAKRAM_SINGULARITY) {
+        for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
+            if (!g_Chakrams[c].alive && g_Chakrams[c].respawnTimer <= 0) {
+                g_Chakrams[c].alive        = true;
+                g_Chakrams[c].hp           = 150.0f;
+                g_Chakrams[c].maxHp        = 150.0f;
+                g_Chakrams[c].respawnTimer = 0.0f;
+            }
+            g_Chakrams[c].angle =
+                (float)c / (float)g_Stats.chakramCount * 6.2831853f;
+        }
+    }
+    if (atype == AugType::BROKEN_SIGHT) {
+        g_Orb.active = true;
+        g_Orb.x = (float)(rand() % scrW);
+        g_Orb.y = (float)(rand() % scrH);
+        float a = (float)(rand() % 628) * 0.01f;
+        float s = 100.0f + (float)(rand() % 150);
+        g_Orb.vx = cosf(a) * s;
+        g_Orb.vy = sinf(a) * s;
+        g_Orb.wanderTimer = 0.5f;
+    }
+    if (atype == AugType::D_APPROACH && g_ApproachOrbs.empty()) {
+        ApproachOrb orb;
+        int edge = rand() % 4;
+        if      (edge == 0) { orb.x = (float)(rand() % scrW);  orb.y = -40.0f; }
+        else if (edge == 1) { orb.x = (float)(rand() % scrW);  orb.y = scrH + 40.0f; }
+        else if (edge == 2) { orb.x = -40.0f;                  orb.y = (float)(rand() % scrH); }
+        else                { orb.x = (float)scrW + 40.0f;     orb.y = (float)(rand() % scrH); }
+        g_ApproachOrbs.push_back(orb);
+    }
+    if (g_Stats.windowSize != oldWS) {
+        playerWin.width  = g_Stats.windowSize;
+        playerWin.height = g_Stats.windowSize;
+        playerWin.x = oldPCX - g_Stats.windowSize * 0.5f;
+        playerWin.y = oldPCY - g_Stats.windowSize * 0.5f;
+    }
+}
+
+void RunShopPurchase(int slot) {
+    if (!s_PlayerWinRef || slot < 0 || slot >= 4) return;
+    int idx = g_RunShopStock[slot];
+    if (idx < 0) return;
+    int price = g_RunShopPrice[slot];
+    if (g_RunGold < (long long)price) return;
+    g_RunGold -= price;
+    ApplyPurchasedAug(idx, *s_PlayerWinRef, g_GameManager.screenW, g_GameManager.screenH);
+    g_RunShopStock[slot] = -1;
+    g_RunShopPrice[slot]  = 0;
+}
+
 int main() {
     CrashHandler::Install();   // 媛뺤쥌(E23) 異붿쟻 ??泥섎━ ?????덉쇅 ??濡쒓렇+誘몃땲?ㅽ봽
     srand((unsigned)time(NULL));
@@ -650,6 +729,7 @@ int main() {
     // 硫붿씤 猷⑦봽
     // ============================================================
     while (!glfwWindowShouldClose(window)) {
+        s_PlayerWinRef = &playerWin;
         float now   = (float)glfwGetTime();
         float delta = now - lastFrame;
         if (delta > 0.1f) delta = 0.1f;
@@ -697,7 +777,9 @@ int main() {
             GameState zs = g_GameManager.currentState;
             bool inFight = (zs == GameState::RUNNING || zs == GameState::DYING ||
                             zs == GameState::PAUSED  || zs == GameState::AUG_SELECT ||
-                            zs == GameState::DEBUFF_SELECT);
+                            zs == GameState::DEBUFF_SELECT ||
+                            zs == GameState::BOSS_INTERMISSION ||
+                            zs == GameState::RUN_SHOP);
             if (!inFight) { g_ViewZoom = g_ViewZoomTarget = 1.0f; }
             else {
                 // ?먯닔 鍮꾨? 以뚯븘?????꾩옣???쒖꽌???볦뼱吏?(?곹븳 1.4諛?= zoom 0.714).
@@ -766,6 +848,11 @@ int main() {
             g_NextBossScore = 50000;   // 泥?蹂댁뒪 5留뚯젏
             g_PolySpawned   = false;
             BossDir::ResetRotation();
+            BossDir::ResetAct();
+            g_RunGold           = 0;
+            g_IntermissionTimer = 0.0f;
+            g_ShopZoneHold      = 0.0f;
+            g_ShopReentryBlock  = 0.0f;
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;
             g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
@@ -1297,6 +1384,60 @@ int main() {
             }
         }
 
+        // --- 런 상점 (보스 클리어 후) ---
+        if (g_GameManager.currentState == GameState::RUN_SHOP) {
+            int k1 = glfwGetKey(window, GLFW_KEY_1);
+            int k2 = glfwGetKey(window, GLFW_KEY_2);
+            int k3 = glfwGetKey(window, GLFW_KEY_3);
+            int k4 = glfwGetKey(window, GLFW_KEY_4);
+            static bool s_rs1 = true, s_rs2 = true, s_rs3 = true, s_rs4 = true;
+            static bool s_rsSpace = true;
+            if (k1 == GLFW_PRESS && s_rs1) { g_HoveredAug = 0; s_rs1 = false; }
+            if (k2 == GLFW_PRESS && s_rs2) { g_HoveredAug = 1; s_rs2 = false; }
+            if (k3 == GLFW_PRESS && s_rs3) { g_HoveredAug = 2; s_rs3 = false; }
+            if (k4 == GLFW_PRESS && s_rs4) { g_HoveredAug = 3; s_rs4 = false; }
+            if (k1 == GLFW_RELEASE) s_rs1 = true;
+            if (k2 == GLFW_RELEASE) s_rs2 = true;
+            if (k3 == GLFW_RELEASE) s_rs3 = true;
+            if (k4 == GLFW_RELEASE) s_rs4 = true;
+
+            int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
+            if (kSp == GLFW_PRESS && s_rsSpace && g_HoveredAug >= 0 && g_HoveredAug < 4) {
+                RunShopPurchase(g_HoveredAug);
+                s_rsSpace = false;
+            }
+            if (kSp == GLFW_RELEASE) s_rsSpace = true;
+
+            if (lmb && !g_LmbPrev) {
+                const int  nCards  = 4;
+                const float CARD_W = 240.0f;
+                const float CARD_H = 360.0f;
+                const float GAP    = 32.0f;
+                const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards - 1) * GAP;
+                float baseX = (screenWidth  - TOTAL_W) * 0.5f;
+                float baseY = (screenHeight - CARD_H)  * 0.38f;
+                for (int i = 0; i < nCards; i++) {
+                    float cx = baseX + i * (CARD_W + GAP);
+                    float yOff = (g_HoveredAug == i) ? -14.0f : 0.0f;
+                    if (mx >= cx && mx <= cx + CARD_W &&
+                        my >= baseY + yOff && my <= baseY + yOff + CARD_H) {
+                        g_HoveredAug = i;
+                        break;
+                    }
+                }
+            }
+
+            int kEsc = glfwGetKey(window, GLFW_KEY_ESCAPE);
+            if (kEsc == GLFW_PRESS && g_GameManager.escReleased) {
+                g_GameManager.currentState = GameState::BOSS_INTERMISSION;
+                g_ShopZoneHold     = 0.0f;
+                g_ShopReentryBlock = 0.6f;
+                g_HoveredAug       = -1;
+                g_GameManager.escReleased = false;
+            }
+            if (kEsc == GLFW_RELEASE) g_GameManager.escReleased = true;
+        }
+
         // --- ?щ━?먯씠?곕툕 紐⑤뱶: F = 利앷컯 洹몃옪(?붾쾭???ы븿 ?뚮뱶諛뺤뒪), G = 臾댁쟻 ?좉? ---
         if (g_CreativeMode) {
             static bool s_fkeyReleased = true;
@@ -1398,6 +1539,11 @@ int main() {
                 playerWin.y = pCY - playerWin.height * 0.5f;
 
                 // ?? ?≫떚釉??ㅽ궗 ??荑⑤떎??吏??媛깆떊 + ?낅젰(Shift ???/ Q쨌E쨌R ?щ’) ??
+                if (g_GameManager.currentState == GameState::BOSS_INTERMISSION) {
+                    accumulator -= FIXED_DT;
+                    continue;
+                }
+
                 if (g_DashCd > 0.0f)        g_DashCd        -= FIXED_DT;
                 if (g_DashInvuln > 0.0f)    g_DashInvuln    -= FIXED_DT;
                 if (g_PostPickGrace > 0.0f) g_PostPickGrace -= FIXED_DT;  // C14
@@ -1603,9 +1749,11 @@ int main() {
 
                 // 紐ъ뒪???낅뜲?댄듃 (?붾쾭??multiplier ?곸슜) ???쒓컙 ?뺤? 以묒뿏 ??硫덉땄
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 ????鍮좊쫫
-                // ?먯닔 湲곕컲 ?띾룄 ?⑦봽 (吏猷⑦븿 諛⑹?)
-                float si = (float)g_GameManager.score / 100000.0f; if (si > 6.0f) si = 6.0f;
-                float mobSpdRamp = 1.0f + si * 0.09f;
+                // ?먯닔 湲곕컲 ?띾룄 ?⑦봽 (ACT 테마 반영)
+                BossDir::ActRules actSpd = BossDir::GetActRules();
+                float si = (float)g_GameManager.score / 100000.0f;
+                if (si > actSpd.intensityCap) si = actSpd.intensityCap;
+                float mobSpdRamp = (1.0f + si * 0.09f) * actSpd.speedMult;
                 // 특이점 — 몹 AI 전에 끌어당김·소각, AI 후 플레이어 밀어내기
                 if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
                     const float pullR2 = 220.0f * 220.0f;
@@ -2094,6 +2242,7 @@ int main() {
                     g_Stats.killCount       += 1;
                     g_GameManager.scoreAccum += scoreBase;
                     g_GameManager.score      = (long long)g_GameManager.scoreAccum;
+                    g_RunGold               += 1;
                     if (g_Stats.GetLifestealPerKill() > 0.0f) {
                         g_GameManager.playerHP += g_Stats.GetLifestealPerKill();
                         if (g_GameManager.playerHP > g_Stats.maxHP)
@@ -2119,6 +2268,7 @@ int main() {
                             float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB);
                             float rwm = MobRewardMult(m->kind); xpB *= rwm; scB *= rwm;
                             creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
+                            if (m->elite) g_RunGold += 1;
                         }
                         SpawnEnemyExplosion(m->worldX, m->worldY,
                                             m->color.r, m->color.g, m->color.b,
@@ -2214,10 +2364,8 @@ int main() {
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
+                    g_Bullets.clear();
+                    FinishBossKill(g_MonsterManager, 2, 35);
                 }
 
                 // C2_RELAY.sys kill reward
@@ -2236,10 +2384,8 @@ int main() {
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
+                    g_Bullets.clear();
+                    FinishBossKill(g_MonsterManager, 7, 35);
                 }
 
                 // FORK.worm ?щ쭩 ??蹂댁긽
@@ -2258,10 +2404,8 @@ int main() {
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
+                    g_Bullets.clear();
+                    FinishBossKill(g_MonsterManager, 8, 35);
                 }
 
                 // TOTEM.sys ?щ쭩 ??蹂댁긽
@@ -2280,10 +2424,8 @@ int main() {
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    g_BossRewardPicksLeft = 2;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
+                    g_Bullets.clear();
+                    FinishBossKill(g_MonsterManager, 9, 35);
                 }
 
                 // ?대━紐⑦봽 ?щ쭩 ???붾㈃ ?먮났 + 利앷컯 3媛?+ ?먯닔 50% 異붽?
@@ -2304,10 +2446,8 @@ int main() {
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    g_BossRewardPicksLeft = 3;
-                    g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                 g_Stats.distAugTaken);
-                    g_GameManager.currentState = GameState::AUG_SELECT;
+                    g_Bullets.clear();
+                    FinishBossKill(g_MonsterManager, 4, 45);
                 }
 
                 // ?먰룺蹂??щ쭩 (?먰솕 ????컻 OR 珥앹븣 寃⑺뙆)
@@ -2559,26 +2699,24 @@ int main() {
             bool  polyP2  = (g_PolyBoss && g_PolyBoss->phase2);
             float p2mult  = polyP2 ? 3.0f : 1.0f;
 
-            // ?먯닔 湲곕컲 ?쒖씠???⑦봽 ???먯닔 ?ㅻ??섎줉 ?ㅽ룿?뫢룹껜?β넁쨌?띾룄??(以묓썑諛?吏猷⑦븿 諛⑹?)
-            //   intensity: 10留뚯젏=1, 20留뚯젏=2 ... ?곹븳 6 (60留뚯젏)
+            // ?먯닔 湲곕컲 ?쒖씠???⑦봽 — ACT 테마 (BossDirector)
+            BossDir::ActRules act = BossDir::GetActRules();
             float intensity = (float)g_GameManager.score / 100000.0f;
-            if (intensity > 6.0f) intensity = 6.0f;
-            float rampSpawn = 1.0f + intensity * 0.40f;   // ?ㅽ룿 鍮덈룄 (?덊봽: 0.55 ??0.40, 횞3.4 @60留?
-            float rampSpd   = 1.0f + intensity * 0.09f;   // 紐??띾룄
+            if (intensity > act.intensityCap) intensity = act.intensityCap;
+            float rampSpawn = (1.0f + intensity * 0.40f) * act.spawnMult;
+            float rampSpd   = (1.0f + intensity * 0.09f) * act.speedMult;
             bool  bossNow = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
                             g_BossWarnTimer > 0.0f;
-            // 紐?泥대젰? 蹂꾨룄濡????믪? ?곹븳源뚯? 怨꾩냽 利앷? ???꾨컲 移섎챸???利됱궗 諛⑹?
-            //   (?ㅽ룿/?띾룄???깅뒫쨌泥닿컧 ?꾪빐 60留뚯뿉??罹? 泥대젰留?140留뚭퉴吏 ?⑦봽)
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
-            if (hpIntensity > 16.0f) hpIntensity = 16.0f;
-            float rampHp    = 1.0f + hpIntensity * 0.55f; // 紐?泥대젰 ?ㅼ?????(珥덈컲 媛뺥솕 蹂댁젙??
-            // ?뱀닔 ?〓す(?뚯쭊/?뚰뵾/嫄곕?) 異쒗쁽 ?뺣쪧 ???먯닔 鍮꾨? (珥덈컲 0 ????13.5留뚯젏??45% ?곹븳)
-            //   D_MOB_FRENZY ?붾쾭??蹂댁쑀 ??諛곗쑉 ??(?곹븳??鍮꾨? ?뺣?)
-            int   varietyPct = (int)std::min(45.0f * g_Stats.varietyChanceMult,
-                                   (float)g_GameManager.score / 3000.0f * g_Stats.varietyChanceMult);
-            // ?섎━??蹂醫??뺣쪧 ???먯닔 鍮꾨? (珥덈컲 0 ????14留뚯젏??12% ?곹븳)
-            int   elitePct   = (int)std::min(40.0f,
-                                   (float)g_GameManager.score / 12000.0f * g_Stats.eliteChanceMult);
+            if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
+            float rampHp    = 1.0f + hpIntensity * 0.55f;
+            int   varietyPct = (int)(std::min(45.0f * g_Stats.varietyChanceMult,
+                                   (float)g_GameManager.score / 3000.0f * g_Stats.varietyChanceMult)
+                               + (float)act.varietyBias);
+            int   elitePct   = (int)(std::min(40.0f,
+                                   (float)g_GameManager.score / 12000.0f * g_Stats.eliteChanceMult)
+                               + (float)act.eliteBias);
+            (void)rampSpd;
 
             // ?ㅽ룿 ?곸뿭 ??2?섏씠利?以뚯븘?????뺤옣??蹂댁씠?? ?곸뿭 紐⑥꽌由ъ뿉???ㅽ룿.
             float saX = 0.0f, saY = 0.0f;
@@ -2625,7 +2763,16 @@ int main() {
                     if (g_MonsterManager.monsters.size() > mbefore) {
                         Monster* nm = g_MonsterManager.monsters.back();
                         if (nm->kind == MobKind::NORMAL) {
-                            if (g_Stats.splitterMobs && (rand() % 100) < 25)
+                            if (BossDir::ActBiasSplitter() && (rand() % 100) < 32)
+                                nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
+                            else if (BossDir::ActBiasSpawner() && (rand() % 100) < 26) {
+                                nm->MakeKind(MobKind::SPAWNER);
+                                nm->blinkTargetX = 160.0f + (float)(rand() % (screenWidth  > 360 ? screenWidth  - 320 : 1));
+                                nm->blinkTargetY = 160.0f + (float)(rand() % (screenHeight > 360 ? screenHeight - 320 : 1));
+                            }
+                            else if (BossDir::ActBiasShielded() && (rand() % 100) < 28)
+                                nm->MakeKind(MobKind::SHIELDED);
+                            else if (g_Stats.splitterMobs && (rand() % 100) < 25)
                                 nm->MakeKind(MobKind::SPLITTER, 0, 1.2f);
                             else if (g_Stats.blinkerMobs && (rand() % 100) < 25)
                                 nm->MakeKind(MobKind::BLINKER);
@@ -2717,6 +2864,7 @@ int main() {
 
                 // ?꾩“ ?쒖옉 ??pick쨌?대쫫쨌HP ?뺤젙 ??2.5珥?寃쎄퀬. ?ㅼ젣 ?앹꽦? 留뚮즺 ??
                 auto startWarn = [&](int pick, const wchar_t* name, float hp) {
+                    BossDir::SetActTheme(pick);
                     g_BossWarnPick = pick; g_BossWarnName = name;
                     g_BossWarnHp = hp;     g_BossWarnTimer = BOSS_WARN_DUR;
                 };
@@ -3668,6 +3816,47 @@ int main() {
         }
 
         // GameManager 媛 ?몃쾭/蹂???곹깭瑜??????덇쾶 ?숆린??(Render ?먯꽌 ?ъ슜)
+        if (g_GameManager.currentState == GameState::BOSS_INTERMISSION) {
+            float pCX = playerWin.x + playerWin.width  * 0.5f;
+            float pCY = playerWin.y + playerWin.height * 0.5f;
+            if (g_Stats.regenPerSec > 0.0f) {
+                g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * delta;
+                if (g_GameManager.playerHP > g_Stats.maxHP)
+                    g_GameManager.playerHP = g_Stats.maxHP;
+            }
+            {
+                float targetWin = g_Stats.windowSize *
+                    ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
+                if (g_WindowSizeCur < 1.0f) g_WindowSizeCur = g_Stats.windowSize;
+                float winStep = std::min(1.0f, delta * 5.5f);
+                g_WindowSizeCur += (targetWin - g_WindowSizeCur) * winStep;
+            }
+            playerWin.width = playerWin.height = g_WindowSizeCur;
+            playerWin.x = pCX - g_WindowSizeCur * 0.5f;
+            playerWin.y = pCY - g_WindowSizeCur * 0.5f;
+            pCX = playerWin.x + playerWin.width  * 0.5f;
+            pCY = playerWin.y + playerWin.height * 0.5f;
+
+            g_IntermissionTimer -= delta;
+            if (g_ShopReentryBlock > 0.0f) g_ShopReentryBlock -= delta;
+            float shopX = pCX + SHOP_ZONE_OFFSET_X;
+            float shopY = pCY;
+            float sdx = pCX - shopX, sdy = pCY - shopY;
+            if (g_ShopReentryBlock <= 0.0f &&
+                sdx * sdx + sdy * sdy <= SHOP_ZONE_RADIUS * SHOP_ZONE_RADIUS) {
+                g_ShopZoneHold += delta;
+                if (g_ShopZoneHold >= SHOP_ZONE_HOLD_S) {
+                    g_GameManager.currentState = GameState::RUN_SHOP;
+                    g_ShopZoneHold = 0.0f;
+                    g_HoveredAug   = -1;
+                }
+            } else {
+                g_ShopZoneHold = 0.0f;
+            }
+            if (g_IntermissionTimer <= 0.0f)
+                EndIntermission();
+        }
+
         g_GameManager.hoveredCard = g_HoveredAug;
         // ============================================================
         // ?뚮뜑留?        // ============================================================
@@ -3720,6 +3909,7 @@ int main() {
         bool inWorldRender = (wgs == GameState::RUNNING || wgs == GameState::DYING ||
                               wgs == GameState::PAUSED  || wgs == GameState::READY  ||
                               wgs == GameState::AUG_SELECT || wgs == GameState::DEBUFF_SELECT ||
+                              wgs == GameState::BOSS_INTERMISSION || wgs == GameState::RUN_SHOP ||
                               wgs == GameState::GAMEOVER ||
                               (wgs == GameState::SETTINGS &&
                                g_SettingsReturnTo == GameState::PAUSED));
@@ -4004,10 +4194,27 @@ int main() {
         // ?ъ씠踰꾪럱???ㅼ삩 ?곕??????뚮젅?댁뼱 李??ㅼ삩 蹂대뜑 (?≪꽱???뚮쭏 ??
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        g_AccentR, g_AccentG, g_AccentB);
+
+        if (g_GameManager.currentState == GameState::BOSS_INTERMISSION) {
+            float pCX = playerWin.x + playerWin.width  * 0.5f;
+            float pCY = playerWin.y + playerWin.height * 0.5f;
+            float shopX = pCX + SHOP_ZONE_OFFSET_X;
+            float shopY = pCY;
+            float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 4.5f);
+            float holdF = g_ShopZoneHold / SHOP_ZONE_HOLD_S;
+            if (holdF > 1.0f) holdF = 1.0f;
+            float alpha = 0.10f + 0.14f * pulse + 0.28f * holdF;
+            drawCircle(shopX, shopY, SHOP_ZONE_RADIUS, 1.0f, 0.82f, 0.22f, alpha);
+            drawNeonBorder(shopX - SHOP_ZONE_RADIUS, shopY - SHOP_ZONE_RADIUS,
+                           SHOP_ZONE_RADIUS * 2.0f, SHOP_ZONE_RADIUS * 2.0f,
+                           1.0f, 0.78f, 0.25f);
+        }
     
         // (c2) HP/EXP 諛????뚮젅?댁뼱 李??섎떒 ?덉そ??遺李?(李쎄낵 ?④퍡 ?대룞) ??
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::PAUSED ||
+            g_GameManager.currentState == GameState::BOSS_INTERMISSION ||
+            g_GameManager.currentState == GameState::RUN_SHOP ||
             g_GameManager.currentState == GameState::AUG_SELECT ||
             g_GameManager.currentState == GameState::DEBUFF_SELECT ||
             g_GameManager.currentState == GameState::DYING) {
@@ -5121,17 +5328,21 @@ int main() {
                 case GameState::GAMEOVER:          Scene_GameOver(ctx);         break;
                 case GameState::AUG_SELECT:
                 case GameState::DEBUFF_SELECT:     Scene_AugSelect(ctx);        break;
+                case GameState::RUN_SHOP:          Scene_RunShop(ctx);          break;
                 default: break;
                 }
                 if (st == GameState::PAUSED || st == GameState::AUG_SELECT ||
-                    st == GameState::DEBUFF_SELECT || st == GameState::GAMEOVER)
+                    st == GameState::DEBUFF_SELECT || st == GameState::GAMEOVER ||
+                    st == GameState::RUN_SHOP)
                     Scene_OwnedAugPanel(ctx);
             }
     
             // ?곷떒 HUD ???ㅼ젣 寃뚯엫 吏꾪뻾 ?곹깭?먯꽌留?(硫붾돱/?꾧컧/?곸젏?????④쾶)
             if (st == GameState::RUNNING || st == GameState::PAUSED ||
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
-                st == GameState::DEBUFF_SELECT) {
+                st == GameState::DEBUFF_SELECT ||
+                st == GameState::BOSS_INTERMISSION ||
+                st == GameState::RUN_SHOP) {
 #ifdef __APPLE__
                 const float hudTopY = 8.0f + 30.0f;
 #else
@@ -5160,6 +5371,36 @@ int main() {
                 float fpsW = g_TextS.Width(fpsBuf, 0.85f);
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
+
+                if (st == GameState::RUNNING || st == GameState::BOSS_INTERMISSION ||
+                    st == GameState::RUN_SHOP) {
+                    const wchar_t* actLbl = BossDir::ActLabel();
+                    g_TextS.Draw(actLbl, 12.0f, hudTopY + 22.0f, 0.72f,
+                                 0.82f, 0.92f, 1.0f, 0.82f);
+                    wchar_t goldHud[32];
+                    swprintf_s(goldHud, L"G  %lld", g_RunGold);
+                    float gdw = g_TextS.Width(goldHud, 0.82f);
+                    g_TextS.Draw(goldHud, sw - gdw - 12.0f, hudTopY + 22.0f, 0.82f,
+                                 1.0f, 0.86f, 0.32f, 0.9f);
+                }
+                if (st == GameState::BOSS_INTERMISSION) {
+                    int sec = (int)(g_IntermissionTimer + 0.99f);
+                    if (sec < 0) sec = 0;
+                    wchar_t tbuf[48];
+                    swprintf_s(tbuf, L"REST  %d:%02d", sec / 60, sec % 60);
+                    float tw = g_TextL.Width(tbuf, 0.95f);
+                    g_TextL.Draw(tbuf, (sw - tw) * 0.5f, hudTopY + 48.0f, 0.95f,
+                                 1.0f, 0.92f, 0.45f, 0.92f);
+                    const wchar_t* zhint[3] = {
+                        L"오른쪽 금색 구역 — 잠시 머물면 상점",
+                        L"Golden zone on your right — hold to open shop",
+                        L"右の金色ゾーン — 留まるとショップ" };
+                    int zli = LangIndex();
+                    if (zli < 0 || zli > 2) zli = 0;
+                    float zw = g_TextS.Width(zhint[zli], 0.78f);
+                    g_TextS.Draw(zhint[zli], (sw - zw) * 0.5f, hudTopY + 82.0f, 0.78f,
+                                 0.85f, 0.85f, 0.85f, 0.75f);
+                }
     
                 // (HP/EXP ?쒓컖 諛붾뒗 ?뚮젅?댁뼱 李??섎떒??遺李⑸맖 ????(c2) 李멸퀬)
                 // ?섎떒 議곗옉 ?덈궡 (?щ??섍쾶 ??긽) ?????뚮젅?댁뼱媛 HP/?ㅽ궗 ?꾩튂瑜??뚭쾶

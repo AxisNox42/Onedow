@@ -17,6 +17,64 @@ inline int RollScorePick() {
     return kRot[RotIdx()++ % 5];
 }
 
+// ── ACT 테마 (보스 예고 ~ 처치까지) ─────────────────────────
+inline int  g_ActBossPick  = -1;   // -1 = 워밍업 ACT
+inline int  g_ActClears    = 0;    // 이번 런 보스 클리어 수
+inline bool g_ActEndless   = false;
+
+inline void ResetAct() {
+    g_ActBossPick = -1;
+    g_ActClears   = 0;
+    g_ActEndless  = false;
+}
+
+inline void SetActTheme(int pick) { g_ActBossPick = pick; }
+
+inline void OnBossDefeated() {
+    ++g_ActClears;
+    if (g_ActClears >= 5) g_ActEndless = true;
+}
+
+struct ActRules {
+    float intensityCap;    // score/100k 상한
+    float hpIntensityCap;
+    float spawnMult;       // rampSpawn 배율
+    float speedMult;       // mobSpdRamp 배율
+    int   eliteBias;       // elitePct 가산
+    int   varietyBias;     // varietyPct 가산
+};
+
+inline ActRules WarmupRules() {
+    return { 0.55f, 1.2f, 0.88f, 0.92f, 0, 0 };
+}
+
+inline ActRules EndlessRules() {
+    return { 6.0f, 18.0f, 1.08f, 1.0f, 8, 6 };
+}
+
+inline ActRules RulesForPick(int pick) {
+    switch (pick) {
+    case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f, 4, 2 };   // VOLLEY — 탄막·원거리
+    case 4:  return { 2.5f, 4.5f, 1.0f,  1.0f,  8, 4 };   // POLYMORPH — 엘리트
+    case 7:  return { 3.5f, 6.0f, 1.18f, 1.0f,  3, 8 };   // C2 — swarm
+    case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };  // FORK — 물량
+    case 9:  return { 4.5f, 8.0f, 1.12f, 1.08f, 6, 6 };   // RITE — 특수몹
+    default: return { 2.0f, 3.0f, 1.0f,  1.0f,  2, 2 };
+    }
+}
+
+inline ActRules GetActRules() {
+    if (g_ActEndless) return EndlessRules();
+    if (g_ActBossPick < 0) return WarmupRules();
+    return RulesForPick(g_ActBossPick);
+}
+
+inline int GetActNumber() {
+    if (g_ActEndless) return 6;
+    if (g_ActBossPick < 0) return 0;
+    return g_ActClears + 1;
+}
+
 inline const wchar_t* DisplayName(int pick) {
     switch (pick) {
     case 0: return L"HANG.exe";
@@ -105,6 +163,21 @@ inline const wchar_t* Tagline(int pick) {
     if (li == 2) return JP[pick];
     if (li == 1) return EN[pick];
     return KR[pick];
+}
+
+// ACT별 스폰 bias — main 에서 kind 롤 시 참조
+inline bool ActBiasSplitter()  { return g_ActBossPick == 8; }
+inline bool ActBiasSpawner()   { return g_ActBossPick == 7 || g_ActBossPick == 8; }
+inline bool ActBiasRanged()    { return g_ActBossPick == 2; }
+inline bool ActBiasShielded()  { return g_ActBossPick == 9; }
+
+inline const wchar_t* ActLabel() {
+    static const wchar_t* W0[3] = { L"ACT 0 · BOOT", L"ACT 0 · BOOT", L"ACT 0 · 起動" };
+    static const wchar_t* W6[3] = { L"ACT ∞ · ENDLESS", L"ACT ∞ · ENDLESS", L"ACT ∞ · 無限" };
+    int li = LangIndex();
+    if (g_ActEndless) return W6[li < 3 ? li : 0];
+    if (g_ActBossPick < 0) return W0[li < 3 ? li : 0];
+    return DisplayName(g_ActBossPick);
 }
 
 } // namespace BossDir

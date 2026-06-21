@@ -3,6 +3,7 @@
 #include "PlayerStats.h"
 #include "Weapons.h"
 #include "GameContext.h"
+#include "RunIntermission.h"
 #include <string>
 #include <algorithm>   // std::min (등급 가중치 게이팅)
 
@@ -276,6 +277,29 @@ static int RollOneDebuff(const bool* takenOnce = nullptr) {
     }
     if (poolSize == 0) return 0;
     return pool[rand() % poolSize];
+}
+
+void GameManager::PickRunShopStock(int* outIdx, int* outPrice, int n,
+                                   bool sizeTaken, bool distTaken) {
+    bool used[AUG_TOTAL] = {};
+    for (int i = 0; i < n; i++) {
+        outIdx[i]   = -1;
+        outPrice[i] = 0;
+        for (int attempt = 0; attempt < 60; attempt++) {
+            int idx = RollOneAug(takenOnce, sizeTaken, distTaken,
+                                 /*allowSpecial=*/false, playerLevel,
+                                 /*allowDebuff=*/false);
+            if (used[idx]) continue;
+            AugRarity r = ALL_AUGS[idx].rarity;
+            if (r == AugRarity::DEBUFF || r == AugRarity::SPECIAL ||
+                r == AugRarity::COMBO) continue;
+            if (AugRemoved(ALL_AUGS[idx].type)) continue;
+            used[idx]     = true;
+            outIdx[i]     = idx;
+            outPrice[i]   = RunShopPriceFor(r);
+            break;
+        }
+    }
 }
 
 void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuff) {

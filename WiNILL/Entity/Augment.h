@@ -137,10 +137,10 @@ static const AugDef ALL_AUGS[] = {
     // ── 일반 ───────────────────────────────────────────
     { AugType::DMG_UP,        AugRarity::COMMON,    AugUnique::NONE, "DMG+5",
       { L"공격력 증가", L"Attack Up", L"攻撃力アップ" },
-      { L"공격력 +12  (고정 가산)", L"Attack +12  (flat)", L"攻撃力 +12  (固定)" } },
+      { L"공격력 +9  (고정 가산)", L"Attack +9  (flat)", L"攻撃力 +9  (固定)" } },
     { AugType::RATE_UP,       AugRarity::COMMON,    AugUnique::NONE, "RATE+4%",
       { L"연사 속도 증가", L"Fire Rate Up", L"連射速度アップ" },
-      { L"연사 속도 +5%  (백분율 누적)", L"Fire rate +5%  (percent)", L"連射速度 +5%  (%累積)" } },
+      { L"연사 속도 +4%  (백분율 누적)", L"Fire rate +4%  (percent)", L"連射速度 +4%  (%累積)" } },
     { AugType::SPD_UP,        AugRarity::COMMON,    AugUnique::NONE, "BSPD+30",
       { L"탄속 증가", L"Bullet Speed Up", L"弾速アップ" },
       { L"탄환 속도 +30", L"Bullet speed +30", L"弾速 +30" } },
@@ -154,9 +154,9 @@ static const AugDef ALL_AUGS[] = {
         L"視界(ウィンドウ) +70  /  最大5重 (+350)" } },
     { AugType::REGEN_UP,      AugRarity::COMMON,    AugUnique::NONE, "REGEN",
       { L"체력 재생", L"Regeneration", L"体力リジェネ" },
-      { L"약 3초마다 체력 1 추가 회복  (중첩 가능)",
-        L"Heal ~1 HP every 3s  (stackable)",
-        L"約3秒ごとに体力1回復  (重複可)" } },
+      { L"약 3.5초마다 체력 1 추가 회복  (중첩 가능)",
+        L"Heal ~1 HP every 3.5s  (stackable)",
+        L"約3.5秒ごとに体力1回復  (重複可)" } },
 
     // ── 희귀 ───────────────────────────────────────────
     { AugType::GLASS_CANNON,  AugRarity::RARE,      AugUnique::NONE, "GLASSCANNON",
@@ -199,12 +199,12 @@ static const AugDef ALL_AUGS[] = {
         L"低HPほど攻撃力上昇  (瀕死時 最大+60%)" } },
     { AugType::OVERDRIVE,     AugRarity::RARE,      AugUnique::NONE, "OVERDRIVE",
       { L"오버드라이브", L"Overdrive", L"オーバードライブ" },
-      { L"공격력 +18  (고정 가산)", L"Attack +18  (flat)", L"攻撃力 +18  (固定)" } },
+      { L"공격력 +14  (고정 가산)", L"Attack +14  (flat)", L"攻撃力 +14  (固定)" } },
 
     // ── 에픽 ───────────────────────────────────────────
     { AugType::CORE_OVERLOAD, AugRarity::EPIC,      AugUnique::NONE, "CORE_OVERLOAD",
       { L"코어 과부하", L"Core Overload", L"コア過負荷" },
-      { L"공격력 +30  (고정 가산)", L"Attack +30  (flat)", L"攻撃力 +30  (固定)" } },
+      { L"공격력 +24  (고정 가산)", L"Attack +24  (flat)", L"攻撃力 +24  (固定)" } },
     { AugType::VAMPIRE,       AugRarity::EPIC,      AugUnique::NONE, "VAMPIRE",
       { L"흡혈마", L"Vampire", L"吸血鬼" },
       { L"흡혈 한도 0.48 · Max HP +20 · 10킬마다 HP +1",
@@ -677,9 +677,9 @@ static const AugDef ALL_AUGS[] = {
     // ── 생존 빌드 ──
     { AugType::HP_UP,         AugRarity::COMMON,    AugUnique::NONE, "HP_UP",
       { L"체력 증가", L"HP Up", L"体力アップ" },
-      { L"최대 체력 +20  (중첩 가능)",
-        L"Max HP +20  (stackable)",
-        L"最大体力 +20  (重複可)" } },
+      { L"최대 체력 +15  (중첩 가능)",
+        L"Max HP +15  (stackable)",
+        L"最大体力 +15  (重複可)" } },
     { AugType::FIREWALL,      AugRarity::RARE,      AugUnique::NONE, "FIREWALL",
       { L"방화벽", L"Firewall", L"ファイアウォール" },
       { L"받는 피해 -12%  (중첩 시 감소 효율 감소 · 최대 35%)",

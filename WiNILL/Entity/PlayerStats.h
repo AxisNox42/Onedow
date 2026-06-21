@@ -164,12 +164,12 @@ struct PlayerStats {
         // ── 일반 (버프: QA 피드백 — 일반 증강이 너무 약함) ──
         //   ※ 검객/궁수 변환: 무의미한 스탯 증강을 클래스에 맞게 재해석
         case AugType::DMG_UP:
-            flatDamageBonus   += 12.0f;                   // 일반 가산 공격력 +12 (초반 강화)
+            flatDamageBonus   += 9.0f;
             break;
         case AugType::RATE_UP:
-            if (meleeWeapon)      flatDamageBonus   += 5.0f;   // 검객: 연사 무의미 → 가산 공격력
-            else if (bowWeapon)   bowChargeRateMult *= 1.07f;  // 궁수: 연사 → 차징 빠름
-            else                  fireInterval      /= 1.05f;  // 총기: 연사 +5% (너프: 7→5)
+            if (meleeWeapon)      flatDamageBonus   += 4.0f;
+            else if (bowWeapon)   bowChargeRateMult *= 1.05f;
+            else                  fireInterval      /= 1.04f;
             break;
         case AugType::SPD_UP:
             if (meleeWeapon)      damageMultiplier *= 1.04f;    // 검객: 탄속 무의미 → 공격력 +4%
@@ -182,12 +182,12 @@ struct PlayerStats {
                 ++visionStacks;
             }
             break;
-        case AugType::REGEN_UP:  regenPerSec += 0.34f; break;  // 5초당 1 → 약 3초당 1
-        case AugType::HP_UP:     maxHP += 20.0f; break;
+        case AugType::REGEN_UP:  regenPerSec += 0.28f; break;
+        case AugType::HP_UP:     maxHP += 15.0f; break;
 
         // ── 등급별 공격력 (가산) — 초반 강세. 곱연산 폭주 제거 ──
-        case AugType::OVERDRIVE:      flatDamageBonus += 18.0f; break;  // 희귀 +18 (버프)
-        case AugType::CORE_OVERLOAD:  flatDamageBonus += 30.0f; break;  // 에픽 +30 (버프)
+        case AugType::OVERDRIVE:      flatDamageBonus += 14.0f; break;
+        case AugType::CORE_OVERLOAD:  flatDamageBonus += 24.0f; break;
         case AugType::POWER_SURGE:
             if (powerSurgeStacks < 3) damageMultiplier *= 1.05f;
             else                      damageMultiplier *= 1.03f;

@@ -16,7 +16,9 @@ enum class GameState {
     JOB_SELECT,        // 직업(클래스) 선택 (업적으로 해금)
     WEAPON_SELECT,     // 시작 무기 선택 (랜덤 3개)
     SETTINGS,          // 설정 화면
-    READY, RUNNING, PAUSED, GAMEOVER, AUG_SELECT, DEBUFF_SELECT, DYING
+    READY, RUNNING, PAUSED, GAMEOVER, AUG_SELECT, DEBUFF_SELECT, DYING,
+    BOSS_INTERMISSION,  // 보스 클리어 후 휴식 (이동·상점 구역)
+    RUN_SHOP            // 런 골드 상점 (증강 구매)
 };
 
 class GameManager {
@@ -61,8 +63,14 @@ public:
                               bool allowDebuff = false);
     // 디버프만 n개 픽 (PANDORA / CHAOS 의 디버프 슬롯용)
     void PickRandomDebuffIndices(int* outArr, int n);
-    bool ShouldUpdate()   const { return currentState == GameState::RUNNING ||
-                                         currentState == GameState::DYING; }
+    // 런 상점 — 버프만, 가격은 RunShopPriceFor 로 채움
+    void PickRunShopStock(int* outIdx, int* outPrice, int n,
+                          bool sizeTaken, bool distTaken);
+    bool ShouldUpdate()   const {
+        return currentState == GameState::RUNNING ||
+               currentState == GameState::DYING ||
+               currentState == GameState::BOSS_INTERMISSION;
+    }
     GameState GetState()  const { return currentState; }
     void UpdateTitle(GLFWwindow* window);
     void Render();

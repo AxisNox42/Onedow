@@ -24,6 +24,8 @@
 #include "Camera.h"
 #include "EntityDraw.h"
 #include "Monster.h"
+#include "RunIntermission.h"
+#include "BossDirector.h"
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -1788,6 +1790,145 @@ void Scene_AugSelect(const SceneCtx& c) {
                                      1.0f, 1.0f, 1.0f, 0.95f);
                     }
                 }
+}
+
+void Scene_RunShop(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const GameState st = g_GameManager.currentState;
+
+    const int  nCards  = 4;
+    const float CARD_W = 240.0f;
+    const float CARD_H = 360.0f;
+    const float GAP    = 32.0f;
+    const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards - 1) * GAP;
+    float baseX = (sw - TOTAL_W) * 0.5f;
+    float baseY = (sh - CARD_H) * 0.38f;
+
+    const wchar_t* TIT[3] = {
+        L"런 상점 — 골드로 증강 구매",
+        L"Run Shop — buy augments with gold",
+        L"ランショップ — ゴールドで強化購入" };
+    int li = LangIndex();
+    if (li < 0 || li > 2) li = 0;
+    g_TextL.Draw(TIT[li], CenterTextX(sw, g_TextL, TIT[li], 0.95f), baseY - 72.0f,
+                 0.95f, 1, 1, 1, 0.95f);
+
+    wchar_t goldBuf[48];
+    swprintf_s(goldBuf, L"G  %lld", g_RunGold);
+    float gw = g_TextL.Width(goldBuf, 0.9f);
+    g_TextL.Draw(goldBuf, sw - gw - 24.0f, 18.0f, 0.9f, 1.0f, 0.88f, 0.35f, 0.95f);
+
+    const wchar_t* HINT[3] = {
+        L"1~4 선택 · Space 구매 · ESC 휴식 구간으로",
+        L"1~4 select · Space buy · ESC back to rest",
+        L"1~4 選択 · Space 購入 · ESC 休憩へ" };
+    g_TextS.Draw(HINT[li], CenterTextX(sw, g_TextS, HINT[li], 0.82f),
+                 baseY + CARD_H + 168.0f, 0.82f, 0.75f, 0.75f, 0.75f, 0.85f);
+
+    static const wchar_t* KEY_LABELS[4] = { L"[ 1 ]", L"[ 2 ]", L"[ 3 ]", L"[ 4 ]" };
+    for (int i = 0; i < nCards; i++) {
+        float cardX = baseX + i * (CARD_W + GAP);
+        float yOff  = (g_HoveredAug == i) ? -14.0f : 0.0f;
+        int idx = g_RunShopStock[i];
+        bool sold = (idx < 0);
+
+        drawRect(cardX, baseY + yOff, CARD_W, CARD_H,
+                 0.04f, 0.05f, 0.07f, sold ? 0.55f : 0.88f);
+
+        if (sold) {
+            const wchar_t* SOLD[3] = { L"매진", L"SOLD", L"売切" };
+            float tw = g_TextL.Width(SOLD[li], 1.1f);
+            g_TextL.Draw(SOLD[li], cardX + (CARD_W - tw) * 0.5f,
+                         baseY + yOff + CARD_H * 0.45f, 1.1f,
+                         0.5f, 0.5f, 0.55f, 0.7f);
+            continue;
+        }
+
+        const AugDef& def = ALL_AUGS[idx];
+        const wchar_t* cardName = AugName(def);
+        float tr, tg, tb;
+        GetRarityColor(def.rarity, tr, tg, tb);
+        tr = std::min(1.0f, tr * 1.4f + 0.25f);
+        tg = std::min(1.0f, tg * 1.4f + 0.25f);
+        tb = std::min(1.0f, tb * 1.4f + 0.25f);
+        const wchar_t* topLabel = GetAugBadge(def);
+        GLuint icon = IconFor(def.type);
+        if (icon) {
+            float isz = 120.0f;
+            DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
+                     baseY + yOff + CARD_H * 0.12f, isz, isz,
+                     1.0f, 1.0f, 1.0f, 0.97f);
+        }
+        float rw = g_TextS.Width(topLabel, 1.0f);
+        g_TextS.Draw(topLabel, cardX + (CARD_W - rw) * 0.5f,
+                     baseY + yOff + 18.0f, 1.0f, tr, tg, tb, 0.95f);
+
+        float nameSc = 1.05f;
+        while (nameSc > 0.65f &&
+               g_TextL.Width(cardName, nameSc) > CARD_W - 16.0f)
+            nameSc -= 0.05f;
+        float nw = g_TextL.Width(cardName, nameSc);
+        g_TextL.Draw(cardName, cardX + (CARD_W - nw) * 0.5f,
+                     baseY + yOff + CARD_H * 0.52f, nameSc, 1, 1, 1, 0.95f);
+
+        wchar_t priceBuf[32];
+        swprintf_s(priceBuf, L"G %d", g_RunShopPrice[i]);
+        bool afford = (g_RunGold >= g_RunShopPrice[i]);
+        float pw = g_TextS.Width(priceBuf, 1.0f);
+        g_TextS.Draw(priceBuf, cardX + (CARD_W - pw) * 0.5f,
+                     baseY + yOff + CARD_H - 72.0f, 1.0f,
+                     afford ? 1.0f : 0.55f,
+                     afford ? 0.85f : 0.4f,
+                     afford ? 0.35f : 0.35f, 0.95f);
+
+        float kw = g_TextS.Width(KEY_LABELS[i], 1.0f);
+        g_TextS.Draw(KEY_LABELS[i], cardX + (CARD_W - kw) * 0.5f,
+                     baseY + yOff + CARD_H - 40.0f, 1.0f, tr, tg, tb, 0.95f);
+    }
+
+    if (g_HoveredAug >= 0 && g_HoveredAug < nCards &&
+        g_RunShopStock[g_HoveredAug] >= 0) {
+        int hIdx = g_RunShopStock[g_HoveredAug];
+        const AugDef& hDef = ALL_AUGS[hIdx];
+        const wchar_t* hDesc = AugDesc(hDef);
+        float hr, hg, hb;
+        GetRarityColor(hDef.rarity, hr, hg, hb);
+        float boxY = baseY + CARD_H + 20.0f;
+        float boxW = TOTAL_W;
+        float boxH = 130.0f;
+        float boxX = (sw - boxW) * 0.5f;
+        drawRect(boxX, boxY, boxW, boxH, 0.03f, 0.03f, 0.05f, 0.85f);
+        drawRect(boxX, boxY, boxW, 4.0f, hr, hg, hb, 1.0f);
+        std::vector<std::wstring> lines;
+        std::wstring cur;
+        for (const wchar_t* p = hDesc; *p; ++p) {
+            if (*p == L'/') {
+                if (!cur.empty()) lines.push_back(cur);
+                cur.clear();
+            } else cur += *p;
+        }
+        if (!cur.empty()) lines.push_back(cur);
+        int n = (int)lines.size();
+        if (n < 1) n = 1;
+        float maxw = 1.0f;
+        for (auto& ln : lines) {
+            float w = g_TextS.Width(ln.c_str(), 1.0f);
+            if (w > maxw) maxw = w;
+        }
+        float sc = 0.9f;
+        if (maxw * sc > boxW - 40.0f) sc = (boxW - 40.0f) / maxw;
+        if (sc < 0.6f) sc = 0.6f;
+        float lineH = 30.0f * sc;
+        float startY = boxY + 18.0f + (boxH - 18.0f - lineH * n) * 0.5f;
+        for (int li2 = 0; li2 < n; li2++) {
+            const wchar_t* s = lines[li2].c_str();
+            float lw = g_TextS.Width(s, sc);
+            g_TextS.Draw(s, boxX + (boxW - lw) * 0.5f,
+                         startY + lineH * (float)li2, sc,
+                         1.0f, 1.0f, 1.0f, 0.95f);
+        }
+    }
+    (void)st;
 }
 
 void Scene_OwnedAugPanel(const SceneCtx& c) {

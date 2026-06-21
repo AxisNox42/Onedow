@@ -13,4 +13,5 @@ void Scene_Ready(const SceneCtx& c);
 void Scene_Paused(const SceneCtx& c);
 void Scene_GameOver(const SceneCtx& c);
 void Scene_AugSelect(const SceneCtx& c);
+void Scene_RunShop(const SceneCtx& c);
 void Scene_OwnedAugPanel(const SceneCtx& c);
