@@ -25,7 +25,8 @@ static inline void ubDrawThickLine(float x1, float y1, float x2, float y2, float
 // UNKNOWN.sys — 30검: 20 연속 투척(게임창 끝 pin) + 10 예비(플레이어 주위 EDGE CAGE)
 
 enum class UBEdge { TOP, RIGHT, BOTTOM, LEFT };
-enum class UBState { MOVE, RESERVE_TEL, RESERVE, RECALL_TEL, RECALLING };
+enum class UBState { MOVE, LUNGE_TEL, LUNGE, SWEEP_TEL, SWEEP,
+                     RESERVE_TEL, RESERVE, RECALL_TEL, RECALLING };
 enum class UBSkill { EDGE, CHAIN, CROSS };
 
 struct UBPin {
@@ -91,6 +92,13 @@ public:
     float orbitT = 0.0f;
     float shakePulse = 0.0f;
     float spinAng = 0.0f;
+    float aimAng = 0.0f;
+    float sweepProg = 0.0f;
+    float sweepBaseAng = 0.0f;
+    float meleeCd = 1.2f;
+    float lungeFromX = 0.0f, lungeFromY = 0.0f;
+    float meleeDirX = 0.0f, meleeDirY = 0.0f;
+    float meleeHitCd = 0.0f;
 
     int   chainLeft = 0;
     int   crossLeft = 0;
@@ -131,6 +139,20 @@ public:
     static constexpr float THROW_CD_P2 = 0.058f;
     static constexpr float THROW_CD_P3 = 0.040f;
     static constexpr float RESERVE_THROW_GAP = 0.105f;
+    static constexpr float LUNGE_TEL_DUR = 0.38f;
+    static constexpr float LUNGE_DUR = 0.22f;
+    static constexpr float LUNGE_SPD = 880.0f;
+    static constexpr float LUNGE_DMG = 24.0f;
+    static constexpr float SWEEP_TEL_DUR = 0.30f;
+    static constexpr float SWEEP_DUR = 0.26f;
+    static constexpr float SWEEP_R = 158.0f;
+    static constexpr float SWEEP_ARC = 2.55f;
+    static constexpr float SWEEP_DMG = 19.0f;
+    static constexpr float MELEE_CD_P1 = 2.6f;
+    static constexpr float MELEE_CD_P2 = 1.85f;
+    static constexpr float MELEE_CD_P3 = 1.15f;
+    static constexpr float GIANT_BLADE_LEN = 152.0f;
+    static constexpr float GIANT_BLADE_THICK = 12.0f;
 
     UnknownBoss(int sw, int sh, float hpInit)
         : screenW(sw), screenH(sh) {
@@ -148,8 +170,20 @@ public:
     float damageTakenMult() const {
         if (state == UBState::RECALLING) return 1.24f;
         if (state == UBState::RECALL_TEL) return 1.14f;
+        if (state == UBState::LUNGE_TEL || state == UBState::SWEEP_TEL) return 1.08f;
         if (orbitT > 0.0f) return 0.68f;
         return 1.0f;
+    }
+
+    bool inMeleeCombat() const {
+        return state == UBState::LUNGE_TEL || state == UBState::LUNGE ||
+               state == UBState::SWEEP_TEL || state == UBState::SWEEP;
+    }
+
+    float meleeCooldown() const {
+        if (phase3) return MELEE_CD_P3;
+        if (phase2) return MELEE_CD_P2;
+        return MELEE_CD_P1;
     }
 
     void refreshQuiver() {
@@ -521,6 +555,141 @@ public:
         windupT = windupTime();
     }
 
+    void tryStartMelee(float px, float py, float dist) {
+        if (state != UBState::MOVE) return;
+        if (meleeCd > 0.0f || windupT > 0.0f) return;
+        if (activeFlyCount() > 0) return;
+        if (dist > 400.0f || dist < 70.0f) return;
+
+        int chance = phase3 ? 38 : (phase2 ? 24 : 14);
+        if ((rand() % 100) >= chance) return;
+
+        meleeDirX = (px - worldX) / dist;
+        meleeDirY = (py - worldY) / dist;
+        aimAng = atan2f(meleeDirY, meleeDirX);
+        clearWindupTel();
+        meleeHitCd = 0.0f;
+
+        if (dist > 135.0f) {
+            lungeFromX = worldX;
+            lungeFromY = worldY;
+            state = UBState::LUNGE_TEL;
+            stateT = LUNGE_TEL_DUR;
+            shakePulse = 0.35f;
+        } else {
+            sweepBaseAng = aimAng;
+            sweepProg = 0.0f;
+            state = UBState::SWEEP_TEL;
+            stateT = SWEEP_TEL_DUR;
+            shakePulse = 0.30f;
+        }
+    }
+
+    void hurtLunge(float px, float py, float& playerHP) {
+        float tipX = worldX + meleeDirX * (BODY + GIANT_BLADE_LEN * 0.82f);
+        float tipY = worldY + meleeDirY * (BODY + GIANT_BLADE_LEN * 0.82f);
+        if (SegDist(px, py, lungeFromX, lungeFromY, worldX, worldY) < 24.0f ||
+            SegDist(px, py, worldX, worldY, tipX, tipY) < 28.0f) {
+            if (meleeHitCd <= 0.0f) {
+                HurtPlayer(playerHP, LUNGE_DMG);
+                meleeHitCd = 0.35f;
+            }
+        }
+    }
+
+    void hurtSweep(float px, float py, float& playerHP, float dt) {
+        float dx = px - worldX, dy = py - worldY;
+        float d = sqrtf(dx * dx + dy * dy);
+        if (d > SWEEP_R + 18.0f || d < BODY * 0.35f) return;
+        float ang = atan2f(dy, dx);
+        float swing = sweepBaseAng - SWEEP_ARC * 0.5f + sweepProg * SWEEP_ARC;
+        float diff = ang - swing;
+        while (diff > 3.14159265f) diff -= 6.2831853f;
+        while (diff < -3.14159265f) diff += 6.2831853f;
+        if (std::fabs(diff) < 0.55f)
+            HurtPlayer(playerHP, SWEEP_DMG * dt * 7.5f);
+    }
+
+    float swordDisplayAng(float aim, float gt) const {
+        float idle = aim + sinf(gt * 2.4f) * 0.06f;
+        switch (state) {
+        case UBState::LUNGE_TEL: {
+            float p = 1.0f - stateT / LUNGE_TEL_DUR;
+            return aim + 3.14159265f * 0.22f * (1.0f - p);
+        }
+        case UBState::LUNGE:
+            return aim - 0.08f;
+        case UBState::SWEEP_TEL: {
+            float p = 1.0f - stateT / SWEEP_TEL_DUR;
+            return sweepBaseAng - SWEEP_ARC * 0.52f * (1.0f - p);
+        }
+        case UBState::SWEEP:
+            return sweepBaseAng - SWEEP_ARC * 0.5f + sweepProg * SWEEP_ARC;
+        default:
+            if (windupT > 0.0f) {
+                float p = 1.0f - windupT / std::max(0.01f, windupTime());
+                return aim + 0.35f * (1.0f - p);
+            }
+            return idle;
+        }
+    }
+
+    void drawHeldSword(float cx, float cy, float ang, float alpha) const {
+        const float cr = 0.95f, cg = 0.20f, cb = 0.58f;
+        float backX = cx + cosf(ang + 3.14159265f) * (BODY * 0.22f);
+        float backY = cy + sinf(ang + 3.14159265f) * (BODY * 0.22f);
+        float gripX = backX + cosf(ang) * 10.0f;
+        float gripY = backY + sinf(ang) * 10.0f;
+
+        float px = -sinf(ang), py = cosf(ang);
+        ubDrawThickLine(gripX + px * 22.0f, gripY + py * 22.0f,
+                        gripX - px * 22.0f, gripY - py * 22.0f,
+                        6.0f, cr * 0.55f, cg * 0.55f, cb * 0.85f, alpha * 0.92f);
+
+        float len = GIANT_BLADE_LEN;
+        if (state == UBState::LUNGE) len *= 1.08f;
+        drawBlade(gripX, gripY, ang, len, GIANT_BLADE_THICK, cr, cg, cb, alpha);
+
+        float tipX = gripX + cosf(ang) * len;
+        float tipY = gripY + sinf(ang) * len;
+        drawCircle(tipX, tipY, 7.0f, 1.0f, 0.85f, 0.95f, alpha * 0.55f);
+    }
+
+    void renderMeleeTelegraph(float gt, float aimX, float aimY) const {
+        if (!inMeleeCombat()) return;
+        float cx = worldX, cy = worldY;
+        float blink = 0.45f + 0.45f * (0.5f + 0.5f * sinf(gt * 16.0f));
+
+        if (state == UBState::LUNGE_TEL) {
+            float prog = 1.0f - stateT / LUNGE_TEL_DUR;
+            float tx = cx + meleeDirX * (120.0f + prog * 90.0f);
+            float ty = cy + meleeDirY * (120.0f + prog * 90.0f);
+            ubDrawThickLine(cx, cy, tx, ty, 4.0f, 1.0f, 0.35f, 0.55f, blink * (0.25f + 0.45f * prog));
+            drawCircle(tx, ty, 16.0f + pulse(gt) * 8.0f, 1.0f, 0.40f, 0.65f, 0.65f * blink);
+        } else if (state == UBState::SWEEP_TEL) {
+            float a0 = sweepBaseAng - SWEEP_ARC * 0.5f;
+            float a1 = sweepBaseAng + SWEEP_ARC * 0.5f;
+            int steps = 14;
+            for (int i = 0; i < steps; i++) {
+                float u0 = (float)i / (float)steps;
+                float u1 = (float)(i + 1) / (float)steps;
+                if ((i & 1) != 0) continue;
+                float x0 = cx + cosf(a0 + (a1 - a0) * u0) * SWEEP_R;
+                float y0 = cy + sinf(a0 + (a1 - a0) * u0) * SWEEP_R;
+                float x1 = cx + cosf(a0 + (a1 - a0) * u1) * SWEEP_R;
+                float y1 = cy + sinf(a0 + (a1 - a0) * u1) * SWEEP_R;
+                ubDrawThickLine(x0, y0, x1, y1, 5.0f, 1.0f, 0.32f, 0.52f, blink * 0.55f);
+            }
+            (void)aimX; (void)aimY;
+        } else if (state == UBState::SWEEP) {
+            float swing = sweepBaseAng - SWEEP_ARC * 0.5f + sweepProg * SWEEP_ARC;
+            ubDrawThickLine(cx, cy,
+                            cx + cosf(swing) * SWEEP_R,
+                            cy + sinf(swing) * SWEEP_R,
+                            8.0f, 0.98f, 0.28f, 0.55f, 0.35f * blink);
+        }
+    }
+
     void startReservePhase(float px, float py) {
         buildReserveFan(px, py);
         reservePending = false;
@@ -547,7 +716,10 @@ public:
                 std::vector<Bullet>& /*bullets*/) {
         if (!alive) return;
 
-        spinAng += dt * (phase3 ? 3.4f : 2.2f);
+        spinAng += dt * (phase3 ? 2.4f : 1.6f);
+        aimAng = atan2f(py - worldY, px - worldX);
+        if (meleeHitCd > 0.0f) meleeHitCd -= dt;
+        meleeCd -= dt;
 
         if (!phase2 && hp <= maxHp * 0.55f) { phase2 = true; refreshQuiver(); }
         if (!phase3 && hp <= maxHp * 0.28f) { phase3 = true; refreshQuiver(); }
@@ -559,12 +731,13 @@ public:
         hurtEdge(px, py, playerHP, dt);
 
         if (orbitT > 0.0f) orbitT -= dt;
-        if (dist < 160.0f && quiver > RESERVE_COUNT && orbitT <= 0.0f)
+        if (dist < 160.0f && quiver > RESERVE_COUNT && orbitT <= 0.0f && !inMeleeCombat())
             orbitT = 1.4f;
 
         actionCd -= dt;
 
-        if (state == UBState::MOVE || state == UBState::RESERVE_TEL || state == UBState::RESERVE) {
+        if ((state == UBState::MOVE || state == UBState::RESERVE_TEL || state == UBState::RESERVE) &&
+            !inMeleeCombat()) {
             if (dist > 380.0f) {
                 worldX += nx * moveSpeed * dt;
                 worldY += ny * moveSpeed * dt;
@@ -591,6 +764,7 @@ public:
                 else resetCycle();
             }
 
+            tryStartMelee(px, py, dist);
             tryStartThrow(px, py);
             if (windupT > 0.0f) {
                 windupT -= dt;
@@ -599,6 +773,56 @@ public:
         }
 
         switch (state) {
+        case UBState::LUNGE_TEL:
+            stateT -= dt;
+            if (stateT <= 0.0f) {
+                state = UBState::LUNGE;
+                stateT = LUNGE_DUR;
+                lungeFromX = worldX;
+                lungeFromY = worldY;
+                shakePulse = 0.55f;
+            }
+            break;
+
+        case UBState::LUNGE: {
+            float ox = worldX, oy = worldY;
+            worldX += meleeDirX * LUNGE_SPD * dt;
+            worldY += meleeDirY * LUNGE_SPD * dt;
+            clampPos();
+            lungeFromX = ox;
+            lungeFromY = oy;
+            hurtLunge(px, py, playerHP);
+            stateT -= dt;
+            if (stateT <= 0.0f) {
+                state = UBState::MOVE;
+                meleeCd = meleeCooldown();
+                actionCd = 0.12f;
+            }
+            break;
+        }
+
+        case UBState::SWEEP_TEL:
+            stateT -= dt;
+            if (stateT <= 0.0f) {
+                state = UBState::SWEEP;
+                stateT = SWEEP_DUR;
+                sweepProg = 0.0f;
+                shakePulse = 0.50f;
+            }
+            break;
+
+        case UBState::SWEEP:
+            sweepProg += dt / SWEEP_DUR;
+            if (sweepProg > 1.0f) sweepProg = 1.0f;
+            hurtSweep(px, py, playerHP, dt);
+            stateT -= dt;
+            if (stateT <= 0.0f) {
+                state = UBState::MOVE;
+                meleeCd = meleeCooldown();
+                actionCd = 0.10f;
+            }
+            break;
+
         case UBState::RESERVE_TEL:
             stateT -= dt;
             if (stateT <= 0.0f) {
@@ -661,7 +885,6 @@ public:
             float sy = worldY + (telTargetY - worldY) * u;
             drawCircle(sx, sy, 5.0f, 0.95f, 0.40f, 0.70f, 0.35f * blink);
         }
-        drawBlade(worldX, worldY, ang, 38.0f, 4.5f, 0.95f, 0.32f, 0.65f, 0.75f * blink);
         float p = pulse(gt);
         drawCircle(telTargetX, telTargetY, 14.0f + p * 10.0f, 1.0f, 0.55f, 0.85f, 0.70f * blink);
         drawNeonBorder(telTargetX - 22.0f, telTargetY - 22.0f, 44.0f, 44.0f,
@@ -685,47 +908,53 @@ public:
         }
     }
 
-    void renderBody(float gt, float /*aimX*/, float /*aimY*/) const {
+    void renderBody(float gt, float aimX, float aimY) const {
         float cx = worldX, cy = worldY;
         float pulse = 0.5f + 0.5f * sinf(gt * 6.5f);
         const float cr = 0.95f, cg = 0.20f, cb = 0.58f;
+        float aim = atan2f(aimY - cy, aimX - cx);
+        float swordAng = swordDisplayAng(aim, gt);
 
         if (phase3)
-            drawCircle(cx, cy, BODY * 1.45f, cr, cg, cb, 0.09f + pulse * 0.07f);
+            drawCircle(cx, cy, BODY * 1.35f, cr, cg, cb, 0.08f + pulse * 0.06f);
         else if (phase2)
-            drawCircle(cx, cy, BODY * 1.22f, cr, cg, cb, 0.06f + pulse * 0.05f);
+            drawCircle(cx, cy, BODY * 1.18f, cr, cg, cb, 0.05f + pulse * 0.04f);
 
-        for (int i = 0; i < 6; i++) {
-            float a = spinAng * 0.9f + (float)i * 1.047f;
-            float fx = cx + cosf(a) * (BODY * 0.95f);
-            float fy = cy + sinf(a) * (BODY * 0.62f);
-            drawRect(fx - 13.0f, fy - 9.0f, 26.0f, 18.0f, 0.03f, 0.02f, 0.05f, 0.55f);
-            drawNeonBorder(fx - 13.0f, fy - 9.0f, 26.0f, 18.0f, cr * 0.55f, cg * 0.55f, cb * 0.85f);
-        }
+        // 검객 실루엣 — 얇은 몸통 + 망토 느낌
+        float fx = cosf(aim + 3.14159265f * 0.5f);
+        float fy = sinf(aim + 3.14159265f * 0.5f);
+        drawRect(cx + fx * 8.0f - 16.0f, cy + fy * 8.0f - 28.0f, 32.0f, 56.0f,
+                 0.04f, 0.03f, 0.07f, 0.88f);
+        drawNeonBorder(cx + fx * 8.0f - 16.0f, cy + fy * 8.0f - 28.0f, 32.0f, 56.0f,
+                       cr * 0.70f, cg * 0.70f, cb * 0.95f);
 
-        drawCircle(cx, cy, BODY * 0.82f, cr, cg, cb, 0.05f + pulse * 0.04f);
-        drawNeonBorder(cx - BODY * 0.58f, cy - BODY * 0.58f,
-                       BODY * 1.16f, BODY * 1.16f, cr, cg, cb);
+        drawCircle(cx, cy, BODY * 0.72f, cr, cg, cb, 0.06f + pulse * 0.04f);
+        drawNeonBorder(cx - BODY * 0.52f, cy - BODY * 0.52f,
+                       BODY * 1.04f, BODY * 1.04f, cr, cg, cb);
 
-        drawCircle(cx, cy, BODY * 0.34f, 0.04f, 0.03f, 0.07f, 0.94f);
-        drawCircle(cx, cy, BODY * 0.14f, 1.0f, 0.88f, 0.96f, 0.65f + pulse * 0.30f);
+        drawCircle(cx + cosf(aim) * 6.0f, cy + sinf(aim) * 6.0f - 4.0f,
+                   BODY * 0.30f, 0.05f, 0.04f, 0.08f, 0.94f);
+        drawCircle(cx + cosf(aim) * 8.0f, cy + sinf(aim) * 8.0f - 5.0f,
+                   BODY * 0.11f, 1.0f, 0.88f, 0.96f, 0.70f + pulse * 0.25f);
 
-        int shown = std::min(quiver, 22);
-        for (int i = 0; i < shown; i++) {
-            float ring = (float)(i % 4);
-            float rad = BODY + 24.0f + ring * 14.0f;
-            float ang = gt * 2.2f + (float)i * (6.2831853f / (float)std::max(1, shown));
-            drawBlade(cx + cosf(ang) * rad, cy + sinf(ang) * (rad * 0.62f),
-                      ang + 1.57f, 28.0f, 3.2f, cr, cg, cb, 0.85f);
-        }
+        renderMeleeTelegraph(gt, aimX, aimY);
+
+        float swordAlpha = 1.0f;
+        if (state == UBState::LUNGE_TEL || state == UBState::SWEEP_TEL)
+            swordAlpha = 0.85f + 0.15f * pulse;
+        drawHeldSword(cx, cy, swordAng, swordAlpha);
 
         if (state == UBState::RESERVE_TEL || state == UBState::RESERVE) {
             float blink = 0.5f + 0.5f * sinf(gt * 18.0f);
-            drawCircle(cx, cy, BODY * 1.05f, 1.0f, 0.30f, 0.50f, 0.20f * blink);
+            drawCircle(cx, cy, BODY * 1.05f, 1.0f, 0.30f, 0.50f, 0.18f * blink);
         }
         if (state == UBState::RECALL_TEL) {
             float blink = 0.5f + 0.5f * sinf(gt * 16.0f);
             drawCircle(cx, cy, BODY * 0.9f, 1.0f, 0.22f, 0.42f, 0.22f * blink);
+        }
+        if (inMeleeCombat()) {
+            float blink = 0.5f + 0.5f * sinf(gt * 20.0f);
+            drawCircle(cx, cy, BODY * 0.95f, 1.0f, 0.45f, 0.55f, 0.12f * blink);
         }
     }
 
@@ -809,6 +1038,10 @@ public:
 
     static const wchar_t* stateTag(UBState s) {
         switch (s) {
+        case UBState::LUNGE_TEL:   return L"돌진…";
+        case UBState::LUNGE:      return L"돌진";
+        case UBState::SWEEP_TEL:   return L"베기…";
+        case UBState::SWEEP:       return L"베기";
         case UBState::RESERVE_TEL: return L"CAGE…";
         case UBState::RESERVE:     return L"CAGE";
         case UBState::RECALL_TEL:  return L"PULL…";
