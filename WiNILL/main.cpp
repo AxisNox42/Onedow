@@ -2415,8 +2415,14 @@ int main() {
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
                 if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; Audio::PlaySfx(Audio::Sfx::Hurt); }
                 g_WinPrevHP = g_GameManager.playerHP;
-                // 李??ш린??g_Stats.windowSize 濡?怨좎젙 (HP ? 臾닿?)
-                g_WindowSizeCur = g_Stats.windowSize * ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
+                // 창 크기 — g_Stats.windowSize 기준, 초집중 시 +50% (부드럽게 보간)
+                {
+                    float targetWin = g_Stats.windowSize *
+                        ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
+                    if (g_WindowSizeCur < 1.0f) g_WindowSizeCur = g_Stats.windowSize;
+                    float winStep = std::min(1.0f, delta * 5.5f);
+                    g_WindowSizeCur += (targetWin - g_WindowSizeCur) * winStep;
+                }
                 playerWin.width = playerWin.height = g_WindowSizeCur;
                 playerWin.x = pCX - g_WindowSizeCur * 0.5f;
                 playerWin.y = pCY - g_WindowSizeCur * 0.5f;

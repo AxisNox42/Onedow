@@ -735,8 +735,9 @@ void Scene_JobSelect(const SceneCtx& c) {
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.94f);
-                SceneDeskWindow(sw, sh,L"career.exe", 0.55f, 0.7f, 1.0f);
+                const float FW = 740.0f, FH = 640.0f;
+                float fx, fcy;
+                SceneFlowWindow(sw, sh, FW, FH, L"career.exe", 0.55f, 0.7f, 1.0f, fx, fcy);
 
                 int li = LangIndex();
                 const wchar_t* JTIT[3] = { L"직업 선택", L"Choose a Class", L"職業を選択" };
@@ -746,13 +747,15 @@ void Scene_JobSelect(const SceneCtx& c) {
                     L"実績達成で新しい職業が解放されます" };
                 const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
                 const wchar_t* TIT = JTIT[li];
-                g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.3f), sh*0.045f, 1.3f, 1,1,1,1);
+                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, 1.15f)) * 0.5f,
+                             fcy, 1.15f, 1, 1, 1, 1);
                 const wchar_t* HN = JHINT[li];
-                g_TextS.Draw(HN, CenterTextX(sw, g_TextS, HN, 0.85f), sh*0.115f, 0.85f, 0.7f,0.8f,0.9f,0.9f);
+                g_TextS.Draw(HN, fx + (FW - g_TextS.Width(HN, 0.82f)) * 0.5f,
+                             fcy + 36.0f, 0.82f, 0.7f, 0.8f, 0.9f, 0.9f);
 
-                const float BW = 660.0f, BH = 70.0f, BG = 13.0f;
-                float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.185f;
+                const float BW = FW - 64.0f, BH = 64.0f, BG = 10.0f;
+                float bx = fx + 32.0f;
+                float by = fcy + 68.0f;
                 for (int j = 0; j < JOB_PLAYABLE; j++) {   // 검객/궁수(DLC 보류)는 숨김
                     float y = by + j * (BH + BG);
                     bool unlocked = JobUnlocked(j);
@@ -804,7 +807,7 @@ void Scene_JobSelect(const SceneCtx& c) {
                         g_GameManager.currentState = GameState::WEAPON_SELECT;
                     }
                 }
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                if (UIButton(fx + 24.0f, fcy + FH - 118.0f, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     // 크리에이티브면 설정창으로, 아니면 난이도로
                     g_GameManager.currentState = g_CreativeMode
@@ -889,18 +892,18 @@ void Scene_WeaponSelect(const SceneCtx& c) {
                 }
 
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                SceneDeskWindow(sw, sh,L"loadout.exe", 0.4f, 0.85f, 1.0f);
+                const float FW = 1080.0f, FH = 400.0f;
+                float fx, fcy;
+                SceneFlowWindow(sw, sh, FW, FH, L"loadout.exe", 0.4f, 0.85f, 1.0f, fx, fcy);
 
                 const wchar_t* TIT = L"시작 무기를 선택하세요";
-                g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.4f), sh*0.14f, 1.4f,
-                             1, 1, 1, 0.98f);
+                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, 1.25f)) * 0.5f,
+                             fcy, 1.25f, 1, 1, 1, 0.98f);
 
-                // 3 카드 — 가로 배치 (DIFFICULTY 와 비슷)
-                const float CARD_W = 320.0f, CARD_H = 260.0f, GAP = 32.0f;
-                const float TOTAL_W = 3*CARD_W + 2*GAP;
-                float baseX = (sw - TOTAL_W) * 0.5f;
-                float baseY = sh * 0.30f;
+                const float CARD_W = 300.0f, CARD_H = 240.0f, GAP = 24.0f;
+                const float TOTAL_W = 3 * CARD_W + 2 * GAP;
+                float baseX = fx + (FW - TOTAL_W) * 0.5f;
+                float baseY = fcy + 52.0f;
 
                 for (int i = 0; i < 3; i++) {
                     int idx = g_WeaponChoices[i];
@@ -958,7 +961,7 @@ void Scene_WeaponSelect(const SceneCtx& c) {
                 }
 
                 // 뒤로 — 직업 선택으로
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                if (UIButton(fx + 24.0f, fcy + FH - 58.0f, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::JOB_SELECT;
                 }
@@ -974,12 +977,13 @@ void Scene_DifficultySelect(const SceneCtx& c) {
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                SceneDeskWindow(sw, sh,L"newgame.exe", 0.30f, 0.8f, 1.0f);
+                const float FW = 720.0f, FH = 660.0f;
+                float fx, fcy;
+                SceneFlowWindow(sw, sh, FW, FH, L"onedow.exe", 0.30f, 0.8f, 1.0f, fx, fcy);
 
                 const wchar_t* TIT = T(StrId::DIFF_TITLE);
-                g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.6f), sh*0.20f, 1.6f,
-                             1.0f, 1.0f, 1.0f, 1.0f);
+                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, 1.35f)) * 0.5f,
+                             fcy, 1.35f, 1.0f, 1.0f, 1.0f, 1.0f);
 
                 struct DiffBtn { Difficulty d; StrId label; StrId desc; float r, g, b; };
                 DiffBtn btns[3] = {
@@ -991,10 +995,9 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                       1.0f, 0.4f, 0.4f },
                 };
 
-                const float BW = 520.0f, BH = 90.0f, BG = 30.0f;
-                float totalH = 3 * BH + 2 * BG;
-                float bx = (sw - BW) * 0.5f;
-                float by = (sh - totalH) * 0.5f;
+                const float BW = FW - 80.0f, BH = 78.0f, BG = 16.0f;
+                float bx = fx + 40.0f;
+                float by = fcy + 56.0f;
 
                 for (int i = 0; i < 3; i++) {
                     float y = by + i * (BH + BG);
@@ -1023,8 +1026,8 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                         ? T(StrId::CREATIVE_ON)
                         : T(StrId::CREATIVE_OFF);
                     float cby = by + 3 * (BH + BG) + 20.0f;
-                    float cbw = BW, cbh = 72.0f;     // 세로 키움 (라벨/설명 겹침 방지)
-                    float cbx = (sw - cbw) * 0.5f;
+                    float cbw = BW, cbh = 72.0f;
+                    float cbx = fx + (FW - cbw) * 0.5f;
                     if (UIButton(cbx, cby, cbw, cbh, CLBL,
                                  mx, my, lmb, g_LmbPrev, g_CreativeMode)) {
                         g_CreativeMode = !g_CreativeMode;
@@ -1040,7 +1043,7 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                 }
 
                 // 뒤로 버튼
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                if (UIButton(fx + 24.0f, fcy + FH - 58.0f, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::MAIN_MENU;
                 }
@@ -1056,37 +1059,40 @@ void Scene_CreativeConfig(const SceneCtx& c) {
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.92f);
-                SceneDeskWindow(sw, sh,L"sandbox.cfg", 0.6f, 0.95f, 0.4f);
+                const float FW = std::min(sw * 0.94f, 1280.0f);
+                const float FH = std::min(sh * 0.90f, 860.0f);
+                float fx, fcy;
+                SceneFlowWindow(sw, sh, FW, FH, L"sandbox.cfg", 0.6f, 0.95f, 0.4f, fx, fcy);
 
                 const wchar_t* TIT = L"CREATIVE";
-                g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.6f), sh*0.08f, 1.6f,
-                             0.85f, 0.95f, 0.6f, 1.0f);
+                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, 1.4f)) * 0.5f,
+                             fcy, 1.4f, 0.85f, 0.95f, 0.6f, 1.0f);
 
-                const float OBW = 150.0f, OBH = 50.0f, OBG = 14.0f;
+                const float OBW = 130.0f, OBH = 44.0f, OBG = 10.0f;
+                const float leftX = fx + 28.0f;
 
                 // 시작 점수
-                g_TextS.Draw(L"Start Score", 60.0f, sh*0.22f, 1.0f, 1,1,1,0.9f);
+                g_TextS.Draw(L"Start Score", leftX, fcy + 48.0f, 0.95f, 1, 1, 1, 0.9f);
                 struct ScoreOpt { const wchar_t* l; long long v; };
                 ScoreOpt sOpts[5] = { {L"0",0},{L"200k",200000},{L"400k",400000},{L"500k",500000} };
                 for (int i = 0; i < 4; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
+                    float ox = leftX + i * (OBW + OBG);
                     bool sel = (g_CreativeStartScore == sOpts[i].v);
-                    if (UIButton(ox, sh*0.22f + 28.0f, OBW, OBH, sOpts[i].l,
+                    if (UIButton(ox, fcy + 76.0f, OBW, OBH, sOpts[i].l,
                                  mx, my, lmb, g_LmbPrev, sel))
                         g_CreativeStartScore = sOpts[i].v;
                 }
 
                 // 보스 선택 — 5종 (+ None)
-                g_TextS.Draw(L"Boss", 60.0f, sh*0.40f, 1.0f, 1,1,1,0.9f);
+                g_TextS.Draw(L"Boss", leftX, fcy + 138.0f, 1.0f, 1, 1, 1, 0.9f);
                 struct BossOpt { const wchar_t* l; int v; };
                 BossOpt bOpts[6] = { {L"None",-1},{L"Polymorph",4},
                                       {L"Volley",2},{L"C2 Relay",7},
                                       {L"Fork Worm",8},{L"Rite Core",9} };
                 for (int i = 0; i < 6; i++) {
                     int col = i % 3, row = i / 3;
-                    float ox = 60.0f + col * (OBW + OBG);
-                    float oy = sh*0.40f + 28.0f + row * (OBH + 8.0f);
+                    float ox = leftX + col * (OBW + OBG);
+                    float oy = fcy + 166.0f + row * (OBH + 8.0f);
                     bool sel = (g_CreativeBossPick == bOpts[i].v);
                     if (UIButton(ox, oy, OBW, OBH, bOpts[i].l,
                                  mx, my, lmb, g_LmbPrev, sel))
@@ -1094,23 +1100,22 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 }
 
                 // 시작 증강 픽 횟수
-                g_TextS.Draw(L"Start Augments", 60.0f, sh*0.58f, 1.0f, 1,1,1,0.9f);
+                g_TextS.Draw(L"Start Augments", leftX, fcy + 268.0f, 1.0f, 1, 1, 1, 0.9f);
                 int aOpts[4] = { 0, 3, 5, 10 };
                 for (int i = 0; i < 4; i++) {
-                    float ox = 60.0f + i * (OBW + OBG);
+                    float ox = leftX + i * (OBW + OBG);
                     wchar_t lb[8]; swprintf_s(lb, L"%d", aOpts[i]);
                     bool sel = (g_CreativeStartAugs == aOpts[i]);
-                    if (UIButton(ox, sh*0.58f + 28.0f, OBW, OBH, lb,
+                    if (UIButton(ox, fcy + 296.0f, OBW, OBH, lb,
                                  mx, my, lmb, g_LmbPrev, sel))
                         g_CreativeStartAugs = aOpts[i];
                 }
 
                 // ── 시작 증강 직접 선택 (우측 카테고리 리스트, 클릭 토글) ──
                 {
-                    const float LIST_W = std::min(820.0f, sw * 0.46f);
-                    float gx = sw - LIST_W - 52.0f;
-                    if (gx < 560.0f) gx = 560.0f;
-                    g_TextS.Draw(L"Pick Start Augments (click)", gx, sh*0.20f, 0.95f, 1,1,1,0.9f);
+                    const float LIST_W = FW - (leftX + 420.0f) - 28.0f;
+                    float gx = fx + FW - LIST_W - 28.0f;
+                    g_TextS.Draw(L"Pick Start Augments (click)", gx, fcy + 48.0f, 0.95f, 1, 1, 1, 0.9f);
                     int avail[AUG_TOTAL], na = 0;
                     for (int i = 0; i < AUG_TOTAL; i++) {
                         if (AugRemoved(ALL_AUGS[i].type)) continue;
@@ -1120,7 +1125,8 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                         return AugListIndexLess(a, b);
                     });
                     const float ROW_H = 24.0f, HDR_H = 22.0f;
-                    float gTop = sh*0.20f + 28.0f, gBottom = sh - 96.0f;
+                    float gTop = fcy + 76.0f;
+                    float gBottom = fcy + FH - 72.0f;
                     float viewH = gBottom - gTop;
                     int hdrCount = 0;
                     AugListGroup prevGrp = (AugListGroup)-1;
@@ -1188,14 +1194,12 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 }
 
                 // 시작 버튼
-                if (UIButton((sw - 300.0f) * 0.5f, sh*0.78f, 300.0f, 64.0f,
+                if (UIButton(fx + (FW - 280.0f) * 0.5f, fcy + FH - 62.0f, 280.0f, 52.0f,
                              L"START", mx, my, lmb, g_LmbPrev)) {
-                    // 크리에이티브도 직업 선택을 거친다 (리셋/무기뽑기는 직업 확정 시)
                     g_GameManager.currentState = GameState::JOB_SELECT;
                 }
 
-                // 뒤로 버튼 — 난이도 선택으로
-                if (UIButton(40.0f, sh - 80.0f, 180.0f, 56.0f, T(StrId::BTN_BACK),
+                if (UIButton(fx + 24.0f, fcy + FH - 62.0f, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::DIFFICULTY_SELECT;
                 }
@@ -1217,23 +1221,36 @@ void Scene_Settings(const SceneCtx& c) {
                 SceneAppWindow(sw, sh, WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy,
                                settingsOverlay);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-                float lx = wx + 40.0f;     // 라벨 열
-                float bx0 = wx + 250.0f;   // 옵션 버튼 시작 열
-                const float OW = 120.0f, OH = 46.0f, OG = 8.0f;
+                // ── 중앙 정렬 2열 그리드 (좌: 표시·그래픽 / 우: 조작·효과) ──
+                const float OW = 112.0f, OH = 44.0f, OG = 8.0f;
+                const float rowH = 58.0f;
+                const float contentW = 980.0f;
+                const float colW = (contentW - 48.0f) * 0.5f;
+                const float cx0 = wx + (WW - contentW) * 0.5f;
+                const float colL = cx0;
+                const float colR = cx0 + colW + 48.0f;
+                const float btnX = 168.0f;   // 열 내 라벨→버튼 오프셋
 
-                // 헤딩
-                g_TextL.Draw(T(StrId::SET_TITLE), lx, wy + 48.0f, 1.0f, 1,1,1,1);
+                g_TextL.Draw(T(StrId::SET_TITLE), cx0, wy + 44.0f, 1.05f, 1, 1, 1, 1);
 
-                // FPS 라인
-                float lineY = wy + 110.0f;
-                g_TextS.Draw(T(StrId::SET_FPS), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
+                auto toggleAt = [&](float labX, float btnBase, float ly,
+                                    const wchar_t* label, bool& val) {
+                    g_TextS.Draw(label, labX, ly + 12.0f, 0.85f, 1, 1, 1, 0.9f);
+                    if (UIButton(btnBase, ly, OW, OH, T(StrId::OPT_ON),
+                                 mx, my, lmb, g_LmbPrev, val)) val = true;
+                    if (UIButton(btnBase + OW + OG, ly, OW, OH, T(StrId::OPT_OFF),
+                                 mx, my, lmb, g_LmbPrev, !val)) val = false;
+                };
+
+                // FPS (전체 폭)
+                float lineY = wy + 96.0f;
+                g_TextS.Draw(T(StrId::SET_FPS), colL, lineY + 12.0f, 0.85f, 1, 1, 1, 0.9f);
                 struct FpsOpt { const wchar_t* label; int val; };
                 FpsOpt fpsOpts[4] = {
-                    { L"30", 30 }, { L"60", 60 }, { L"144", 144 },
-                    { L"300", 300 }   // C18: '무제한' 제거 → 300 상한
+                    { L"30", 30 }, { L"60", 60 }, { L"144", 144 }, { L"300", 300 }
                 };
                 for (int i = 0; i < 4; i++) {
-                    float bx = bx0 + i * (OW + OG);
+                    float bx = colL + btnX + i * (OW + OG);
                     bool sel = (g_FpsCap == fpsOpts[i].val);
                     if (UIButton(bx, lineY, OW, OH, fpsOpts[i].label,
                                  mx, my, lmb, g_LmbPrev, sel)) {
@@ -1242,9 +1259,9 @@ void Scene_Settings(const SceneCtx& c) {
                     }
                 }
 
-                // 언어 라인
-                lineY = wy + 180.0f;
-                g_TextS.Draw(T(StrId::SET_LANG), lx, lineY + 12.0f, 0.85f, 1,1,1,0.9f);
+                // 언어 (전체 폭)
+                lineY = wy + 96.0f + rowH;
+                g_TextS.Draw(T(StrId::SET_LANG), colL, lineY + 12.0f, 0.85f, 1, 1, 1, 0.9f);
                 struct LangOpt { const wchar_t* label; Language lang; };
                 LangOpt langOpts[LANG_COUNT] = {
                     { L"한국어",  Language::KR },
@@ -1252,7 +1269,7 @@ void Scene_Settings(const SceneCtx& c) {
                     { L"日本語",  Language::JP },
                 };
                 for (int i = 0; i < LANG_COUNT; i++) {
-                    float bx = bx0 + i * (OW + OG);
+                    float bx = colL + btnX + i * (OW + OG);
                     bool sel = (g_Language == langOpts[i].lang);
                     if (UIButton(bx, lineY, OW, OH, langOpts[i].label,
                                  mx, my, lmb, g_LmbPrev, sel)) {
@@ -1260,45 +1277,33 @@ void Scene_Settings(const SceneCtx& c) {
                     }
                 }
 
-                // ── 토글 옵션 — 2열 배치(좌: 표시 / 우: 조작·효과)로 우측 여백 활용 ──
-                auto toggleAt = [&](float labX, float btnX, float ly,
-                                    const wchar_t* label, bool& val) {
-                    g_TextS.Draw(label, labX, ly + 12.0f, 0.85f, 1,1,1,0.9f);
-                    if (UIButton(btnX, ly, OW, OH, T(StrId::OPT_ON),
-                                 mx, my, lmb, g_LmbPrev, val)) val = true;
-                    if (UIButton(btnX + OW + OG, ly, OW, OH, T(StrId::OPT_OFF),
-                                 mx, my, lmb, g_LmbPrev, !val)) val = false;
-                };
                 const wchar_t* afLabel = (g_Language==Language::EN)?L"Auto-Fire":
                                          (g_Language==Language::JP)?L"自動発射":L"자동 발사";
                 const wchar_t* asLabel = (g_Language==Language::EN)?L"Auto-Skill":
                                          (g_Language==Language::JP)?L"自動スキル":L"자동 스킬";
                 const wchar_t* sfLabel = (g_Language==Language::EN)?L"CRT Shader":
                                          (g_Language==Language::JP)?L"CRTシェーダー":L"CRT 셰이더";
-                float labR = wx + 540.0f, btnR = wx + 720.0f;
-                float tY0 = wy + 250.0f, tGap = 64.0f;
-                // 좌열 — 표시 옵션
-                toggleAt(lx,   bx0,  tY0,            T(StrId::SET_CROSSHAIR), g_ShowCrosshair);
-                toggleAt(lx,   bx0,  tY0 + tGap,     T(StrId::SET_DMGNUM),    g_ShowDamageNumbers);
-                toggleAt(lx,   bx0,  tY0 + tGap*2,   T(StrId::SET_COMBO),     g_ShowCombo);
-                // 우열 — 조작·효과 옵션
-                toggleAt(labR, btnR, tY0,            afLabel, g_AutoFire);
-                toggleAt(labR, btnR, tY0 + tGap,     asLabel, g_AutoSkill);
-                toggleAt(labR, btnR, tY0 + tGap*2,   sfLabel, g_ShaderFx);
+                float tY0 = wy + 96.0f + rowH * 2;
+                toggleAt(colL, colL + btnX, tY0,            T(StrId::SET_CROSSHAIR), g_ShowCrosshair);
+                toggleAt(colL, colL + btnX, tY0 + rowH,     T(StrId::SET_DMGNUM),    g_ShowDamageNumbers);
+                toggleAt(colL, colL + btnX, tY0 + rowH * 2,  T(StrId::SET_COMBO),     g_ShowCombo);
+                toggleAt(colR, colR + btnX, tY0,            afLabel, g_AutoFire);
+                toggleAt(colR, colR + btnX, tY0 + rowH,     asLabel, g_AutoSkill);
+                toggleAt(colR, colR + btnX, tY0 + rowH * 2, sfLabel, g_ShaderFx);
 
-                // 몹 외형 · 위성 VFX (그래픽/피로도)
-                float gfxY = tY0 + tGap * 3;
+                // 몹 외형 · 위성 VFX
+                float gfxY = tY0 + rowH * 3;
                 const wchar_t* mobLabel = (g_Language==Language::EN)?L"Mob look":
                                           (g_Language==Language::JP)?L"敵見た目":L"몹 외형";
                 const wchar_t* mobA = (g_Language==Language::EN)?L"Classic":
                                       (g_Language==Language::JP)?L"クラシック":L"기본";
                 const wchar_t* mobB = (g_Language==Language::EN)?L"Soft":
                                       (g_Language==Language::JP)?L"ソフト":L"부드럽";
-                g_TextS.Draw(mobLabel, lx, gfxY + 12.0f, 0.85f, 1,1,1,0.9f);
-                if (UIButton(bx0, gfxY, OW, OH, mobA, mx, my, lmb, g_LmbPrev,
+                g_TextS.Draw(mobLabel, colL, gfxY + 12.0f, 0.85f, 1, 1, 1, 0.9f);
+                if (UIButton(colL + btnX, gfxY, OW, OH, mobA, mx, my, lmb, g_LmbPrev,
                              g_MobVisualStyle == MobVisualStyle::CLASSIC))
                     g_MobVisualStyle = MobVisualStyle::CLASSIC;
-                if (UIButton(bx0 + OW + OG, gfxY, OW, OH, mobB, mx, my, lmb, g_LmbPrev,
+                if (UIButton(colL + btnX + OW + OG, gfxY, OW, OH, mobB, mx, my, lmb, g_LmbPrev,
                              g_MobVisualStyle == MobVisualStyle::SOFT))
                     g_MobVisualStyle = MobVisualStyle::SOFT;
 
@@ -1308,19 +1313,20 @@ void Scene_Settings(const SceneCtx& c) {
                                       (g_Language==Language::JP)?L"通常":L"보통";
                 const wchar_t* vfxB = (g_Language==Language::EN)?L"Reduced":
                                       (g_Language==Language::JP)?L"節約":L"절약";
-                g_TextS.Draw(vfxLabel, labR, gfxY + 12.0f, 0.85f, 1,1,1,0.9f);
-                if (UIButton(btnR, gfxY, OW, OH, vfxA, mx, my, lmb, g_LmbPrev,
+                g_TextS.Draw(vfxLabel, colR, gfxY + 12.0f, 0.85f, 1, 1, 1, 0.9f);
+                if (UIButton(colR + btnX, gfxY, OW, OH, vfxA, mx, my, lmb, g_LmbPrev,
                              g_VfxDensity == VfxDensity::FULL))
                     g_VfxDensity = VfxDensity::FULL;
-                if (UIButton(btnR + OW + OG, gfxY, OW, OH, vfxB, mx, my, lmb, g_LmbPrev,
+                if (UIButton(colR + btnX + OW + OG, gfxY, OW, OH, vfxB, mx, my, lmb, g_LmbPrev,
                              g_VfxDensity == VfxDensity::REDUCED))
                     g_VfxDensity = VfxDensity::REDUCED;
 
-                // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
+                // 사운드 볼륨 — 전체 폭 한 줄 (그래픽 행과 분리)
                 {
-                    float vy = wy + 458.0f;
-                    g_TextS.Draw(T(StrId::SET_SOUND), lx, vy + 12.0f, 0.85f, 1,1,1,0.9f);
+                    float vy = gfxY + rowH + 8.0f;
+                    g_TextS.Draw(T(StrId::SET_SOUND), colL, vy + 12.0f, 0.85f, 1, 1, 1, 0.9f);
                     auto clampVol = [](int v){ return v < 0 ? 0 : (v > 100 ? 100 : v); };
+                    float bx0 = colL + btnX;
 
                     // [−]
                     if (UIButton(bx0, vy, 44.0f, OH, L"−", mx, my, lmb, g_LmbPrev)) {
@@ -1384,20 +1390,25 @@ void Scene_Settings(const SceneCtx& c) {
                                                (g_Language==Language::JP)?L"PCスペック (フィードバック用)":
                                                L"PC 사양 (피드백용)";
                     float sy = wy + WH - 118.0f;
-                    g_TextS.Draw(specTitle, lx, sy, 0.72f, 0.62f, 0.72f, 0.82f, 0.88f);
+                    g_TextS.Draw(specTitle, cx0, sy, 0.72f, 0.62f, 0.72f, 0.82f, 0.88f);
                     int fw = 0, fh = 0;
                     glfwGetFramebufferSize(window, &fw, &fh);
                     std::wstring s1 = GetSystemSpecLine1();
                     std::wstring s2 = GetSystemSpecLine2(fw, fh);
                     float specSc = 0.60f;
-                    float maxW = WW - 80.0f;
+                    float maxW = contentW;
                     while (specSc > 0.48f && g_TextS.Width(s1.c_str(), specSc) > maxW) specSc -= 0.02f;
-                    g_TextS.Draw(s1.c_str(), lx, sy + 20.0f, specSc, 0.78f, 0.88f, 0.98f, 0.90f);
-                    g_TextS.Draw(s2.c_str(), lx, sy + 38.0f, specSc, 0.72f, 0.82f, 0.92f, 0.85f);
+                    g_TextS.Draw(s1.c_str(), cx0, sy + 20.0f, specSc, 0.78f, 0.88f, 0.98f, 0.90f);
+                    g_TextS.Draw(s2.c_str(), cx0, sy + 38.0f, specSc, 0.72f, 0.82f, 0.92f, 0.85f);
                 }
 
-                // 뒤로(저장 후 닫기) — 창 하단
-                if (UIButton(lx, wy + WH - 64.0f, 180.0f, 48.0f, T(StrId::BTN_BACK),
+                // 하단 버튼 — 중앙 정렬
+                const float footY = wy + WH - 64.0f;
+                const float backW = 180.0f, resetW = 210.0f, credW = 150.0f;
+                const float footGap = 16.0f;
+                const float footTotal = backW + resetW + credW + footGap * 2.0f;
+                const float footX = wx + (WW - footTotal) * 0.5f;
+                if (UIButton(footX, footY, backW, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     SaveGame();
                     g_GameManager.currentState = g_SettingsReturnTo;
@@ -1410,7 +1421,7 @@ void Scene_Settings(const SceneCtx& c) {
                            (g_Language==Language::JP)?L"本当に？(再クリック)":L"정말? (다시 클릭)")
                         : ((g_Language==Language::EN)?L"Reset Save":
                            (g_Language==Language::JP)?L"セーブ初期化":L"세이브 초기화");
-                    float rwid = 210.0f, rx = lx + 200.0f, ry = wy + WH - 64.0f;
+                    float rx = footX + backW + footGap, ry = footY, rwid = resetW;
                     bool rh = (mx>=rx && mx<=rx+rwid && my>=ry && my<=ry+48.0f);
                     BindMainShader();
                     drawRect(rx, ry, rwid, 48.0f, s_resetConfirm?0.40f:0.18f, 0.06f, 0.06f, rh?1.0f:0.9f);
@@ -1430,8 +1441,8 @@ void Scene_Settings(const SceneCtx& c) {
                 {
                     const wchar_t* cl = (g_Language==Language::EN)?L"Credits":
                                         (g_Language==Language::JP)?L"クレジット":L"크레딧";
-                    float cwid = 150.0f, cxp = lx + 420.0f, cyp = wy + WH - 64.0f;
-                    if (UIButton(cxp, cyp, cwid, 48.0f, cl, mx, my, lmb, g_LmbPrev))
+                    float cxp = footX + backW + resetW + footGap * 2.0f;
+                    if (UIButton(cxp, footY, credW, 48.0f, cl, mx, my, lmb, g_LmbPrev))
                         s_showCredits = true;
                 }
                 if (s_showCredits) {
@@ -1759,11 +1770,11 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 // 같은 인덱스 카운트 (스택)
                 int counts[AUG_TOTAL] = {};
                 for (int idx : g_OwnedAugs) counts[idx]++;
-                // 보유 증강을 카테고리(등급)순으로 정렬
+                // 보유 증강을 티어(등급)순으로 정렬
                 int ord[AUG_TOTAL], nord = 0;
                 for (int i = 0; i < AUG_TOTAL; i++) if (counts[i] > 0) ord[nord++] = i;
                 std::sort(ord, ord + nord, [](int a, int b) {
-                    return AugListIndexLess(a, b);
+                    return AugTierIndexLess(a, b);
                 });
 
                 const float PX  = 16.0f;
@@ -1791,10 +1802,10 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 if (listBottom < listTop + 4.0f * ROW_H) listBottom = listTop + 4.0f * ROW_H;
                 const float viewH      = listBottom - listTop;
                 int hdrCount = 0;
-                AugListGroup prevGrp = (AugListGroup)-1;
+                AugRarity prevR = (AugRarity)-1;
                 for (int oi = 0; oi < nord; oi++) {
-                    AugListGroup g = AugListGroupOf(ALL_AUGS[ord[oi]]);
-                    if (g != prevGrp) { hdrCount++; prevGrp = g; }
+                    AugRarity r = ALL_AUGS[ord[oi]].rarity;
+                    if (r != prevR) { hdrCount++; prevR = r; }
                 }
                 const float contentH   = (float)nord * ROW_H + (float)hdrCount * HDR_H;
 
@@ -1813,18 +1824,19 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 float hoverRowY = 0.0f;
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
                 glScissor(0, (GLint)(sh - listBottom), (GLint)(COLW + 10.0f), (GLint)viewH);
-                prevGrp = (AugListGroup)-1;
+                prevR = (AugRarity)-1;
                 float ry = listTop - s_ownScroll;
                 for (int oi = 0; oi < nord; oi++) {
                     int i = ord[oi];
-                    AugListGroup grp = AugListGroupOf(ALL_AUGS[i]);
-                    if (grp != prevGrp) {
+                    AugRarity rar = ALL_AUGS[i].rarity;
+                    if (rar != prevR) {
                         if (ry >= listTop - HDR_H && ry <= listBottom) {
-                            g_TextS.Draw(AugListGroupLabel(grp), PX, ry, 0.72f,
-                                         0.55f, 0.75f, 0.95f, 0.88f);
+                            wchar_t rh[48];
+                            swprintf_s(rh, L"── %ls ──", GetRarityKR(rar));
+                            g_TextS.Draw(rh, PX, ry, 0.72f, 0.55f, 0.75f, 0.95f, 0.88f);
                         }
                         ry += HDR_H;
-                        prevGrp = grp;
+                        prevR = rar;
                     }
                     if (ry < listTop - ROW_H || ry > listBottom) { ry += ROW_H; continue; }
                     const AugDef& def = ALL_AUGS[i];

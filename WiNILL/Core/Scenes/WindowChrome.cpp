@@ -27,6 +27,30 @@ void SceneDeskWindow(float sw, float sh, const wchar_t* fname,
     g_TextS.Draw(fname, 14.0f, 5.0f, 0.62f, 0.95f, 0.97f, 1.0f, 1.0f);
 }
 
+void SceneFlowWindow(float sw, float sh, float WW, float WH,
+                     const wchar_t* fname, float ar, float ag, float ab,
+                     float& outX, float& outContentY) {
+    float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
+    outX = wx;
+    const float TB = 30.0f;
+    outContentY = wy + TB + 10.0f;
+    BindMainShader();
+    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.25f);
+    drawRect(wx + 6.0f, wy + 8.0f, WW, WH, 0.0f, 0.0f, 0.0f, 0.32f);
+    drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, 0.97f);
+    drawRect(wx, wy, WW, TB, ar * 0.5f, ag * 0.5f, ab * 0.55f, 1.0f);
+    drawRect(wx, wy + TB, WW, 2.0f, ar, ag, ab, 0.9f);
+    float bs = 13.0f, byc = wy + (TB - bs) * 0.5f, bxc = wx + WW - 22.0f;
+    drawRect(bxc - 2 * (bs + 7), byc, bs, bs, 1, 1, 1, 0.25f);
+    drawRect(bxc - (bs + 7), byc, bs, bs, 1, 1, 1, 0.25f);
+    drawRect(bxc, byc, bs, bs, 0.9f, 0.25f, 0.25f, 0.9f);
+    drawRect(wx, wy, WW, 1.5f, ar, ag, ab, 0.5f);
+    drawRect(wx, wy + WH - 1.5f, WW, 1.5f, ar, ag, ab, 0.5f);
+    drawRect(wx, wy, 1.5f, WH, ar, ag, ab, 0.5f);
+    drawRect(wx + WW - 1.5f, wy, 1.5f, WH, ar, ag, ab, 0.5f);
+    g_TextS.Draw(fname, wx + 12.0f, wy + 5.0f, 0.6f, 0.95f, 0.97f, 1.0f, 1.0f);
+}
+
 void SceneAppWindow(float sw, float sh, float WW, float WH,
                     const wchar_t* fname, float ar, float ag, float ab,
                     float& outX, float& outY, bool gameOverlay) {
