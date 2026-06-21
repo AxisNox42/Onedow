@@ -90,12 +90,9 @@ enum class AugType {
     SMG_COMPRESSOR,      // SMG — 흩어짐·연사
     RIFLE_STABILITY,     // 소총 — 정조준
     SNIPER_AMPLIFIER,    // 저격 — 거리 보너스 강화
-    // ── 퀘스트 (런 중 목표 달성 시 자동 획득, 레벨업 풀 제외) ──
-    Q_KILL_100,          // 100처치
-    Q_KILL_300,          // 300처치
 };
 
-enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC, QUEST };
+enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
 
 // 고유 카테고리 — 같은 카테고리 내에서 1개만 선택 가능
 enum class AugUnique { NONE, SIZE, DISTANCE };
@@ -653,19 +650,9 @@ static const AugDef ALL_AUGS[] = {
       { L"[저격] 거리 보너스 +30%p  (저격총·저격 증강)",
         L"[Sniper] distance bonus +30%p  (sniper gun/aug)",
         L"[スナイパー] 距離ボーナス+30%p" } },
-    { AugType::Q_KILL_100, AugRarity::QUEST, AugUnique::NONE, "Q_KILL100",
-      { L"처치 의뢰 I", L"Bounty I", L"討伐依頼 I" },
-      { L"퀘스트 — 이번 런 100처치 달성  /  공격력 +18",
-        L"Quest — 100 kills this run  /  Attack +18",
-        L"クエスト — 100討伐  /  攻撃+18" } },
-    { AugType::Q_KILL_300, AugRarity::QUEST, AugUnique::NONE, "Q_KILL300",
-      { L"처치 의뢰 II", L"Bounty II", L"討伐依頼 II" },
-      { L"퀘스트 — 300처치 달성  /  공격력 +15%",
-        L"Quest — 300 kills  /  Attack +15%",
-        L"クエスト — 300討伐  /  攻撃+15%" } },
 };
 
-static constexpr int AUG_TOTAL = 113;
+static constexpr int AUG_TOTAL = 111;
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -722,8 +709,7 @@ inline bool g_TypeOwned[128] = { false };
 // 한 번만 등장해야 하는 증강/디버프 (스택 불가 플래그형) — 픽 풀에서 takenOnce 로 제외
 inline bool AugOnceOnly(AugType t, AugRarity r) {
     if (r == AugRarity::EPIC || r == AugRarity::LEGENDARY ||
-        r == AugRarity::COMBO || r == AugRarity::MYTHIC ||
-        r == AugRarity::QUEST)
+        r == AugRarity::COMBO || r == AugRarity::MYTHIC)
         return true;
     switch (t) {
     // 티어드 (등급 무관 1회씩)
@@ -768,7 +754,6 @@ inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
     case AugRarity::SPECIAL:   cr = 0.85f; cg = 0.10f; cb = 0.55f; break; // 마젠타
     case AugRarity::COMBO:     cr = 0.10f; cg = 0.85f; cb = 0.80f; break; // 청록(시안)
     case AugRarity::MYTHIC:    cr = 1.00f; cg = 0.25f; cb = 0.35f; break; // 신화(진홍)
-    case AugRarity::QUEST:     cr = 0.95f; cg = 0.55f; cb = 0.12f; break; // 퀘스트(호박)
     }
 }
 
@@ -779,11 +764,10 @@ inline int OwnedAugListOrder(AugRarity r) {
     case AugRarity::RARE:      return 1;
     case AugRarity::EPIC:      return 2;
     case AugRarity::LEGENDARY: return 3;
-    case AugRarity::QUEST:     return 4;
-    case AugRarity::COMBO:     return 5;
-    case AugRarity::MYTHIC:    return 6;
-    case AugRarity::SPECIAL:   return 7;
-    case AugRarity::DEBUFF:    return 8;
+    case AugRarity::COMBO:     return 4;
+    case AugRarity::MYTHIC:    return 5;
+    case AugRarity::SPECIAL:   return 6;
+    case AugRarity::DEBUFF:    return 7;
     default: return 99;
     }
 }
@@ -800,7 +784,6 @@ inline const wchar_t* GetRarityKR(AugRarity r) {
     case AugRarity::SPECIAL:   { static const wchar_t* s[3]={L"특수",L"Special",L"スペシャル"};   return s[li]; }
     case AugRarity::COMBO:     { static const wchar_t* s[3]={L"조합",L"Combo",L"組合"};           return s[li]; }
     case AugRarity::MYTHIC:    { static const wchar_t* s[3]={L"신화",L"Mythic",L"神話"};         return s[li]; }
-    case AugRarity::QUEST:     { static const wchar_t* s[3]={L"퀘스트",L"Quest",L"クエスト"};     return s[li]; }
     }
     return L"?";
 }

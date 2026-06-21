@@ -207,8 +207,7 @@ static int RollOneAug(const bool* takenOnce,
         for (int i = 0; i < AUG_TOTAL; i++) {
             if (ALL_AUGS[i].rarity != chosen) continue;
             AugType t = ALL_AUGS[i].type;
-            if (ALL_AUGS[i].rarity == AugRarity::QUEST) continue;  // 퀘스트 — 런 목표 달성 전용
-            // 한 번만 뽑힐 증강
+            // 한 번만 뽑힐 증강 (EPIC/LEG/COMBO·티어드·불리언 플래그·적출현 디버프)
             if (AugOnceOnly(t, ALL_AUGS[i].rarity) && takenOnce[i]) continue;
             // 고유 카테고리 잠금 (SIZE/DISTANCE)
             AugUnique u = ALL_AUGS[i].unique;

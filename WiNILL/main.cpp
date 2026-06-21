@@ -339,49 +339,6 @@ int    g_FpsFrames   = 0;
 // 보유 증강 인덱스 목록 (선택 순서대로, 중복 스택 가능)
 std::vector<int> g_OwnedAugs;
 
-static float   g_QuestToastTimer = 0.0f;
-static wchar_t g_QuestToastMsg[128] = {};
-
-static bool HasOwnedAugIndex(int idx) {
-    for (int o : g_OwnedAugs) if (o == idx) return true;
-    return false;
-}
-
-static void GrantQuestAug(int idx) {
-    if (idx < 0 || idx >= AUG_TOTAL || HasOwnedAugIndex(idx)) return;
-    AugType atype = ALL_AUGS[idx].type;
-    bool prevTurret = g_Stats.turretMode;
-    g_Stats.Apply(atype);
-    g_OwnedAugs.push_back(idx);
-    g_TypeOwned[(int)atype] = true;
-    MarkAugSeen(idx);
-    EquipSkill(SkillForAug(atype));
-    if (g_Stats.turretMode && !prevTurret) {
-        g_Turrets.clear();
-        g_TurretDeployTimer = TURRET_DEPLOY;
-    }
-    if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
-        g_GameManager.takenOnce[idx] = true;
-    if (g_GameManager.playerHP > g_Stats.maxHP)
-        g_GameManager.playerHP = g_Stats.maxHP;
-    const wchar_t* prefix = (g_Language==Language::EN)?L"Quest complete:":
-                            (g_Language==Language::JP)?L"クエスト達成:":
-                            L"퀘스트 달성:";
-    swprintf_s(g_QuestToastMsg, L"%ls  %ls", prefix, AugName(ALL_AUGS[idx]));
-    g_QuestToastTimer = 3.5f;
-}
-
-static void CheckQuestAugments() {
-    if (g_Stats.killCount >= 100) {
-        int idx = AugIndexOfType(AugType::Q_KILL_100);
-        if (idx >= 0) GrantQuestAug(idx);
-    }
-    if (g_Stats.killCount >= 300) {
-        int idx = AugIndexOfType(AugType::Q_KILL_300);
-        if (idx >= 0) GrantQuestAug(idx);
-    }
-}
-
 // 크리에이티브 모드 시작 증강 직접 선택 (인덱스). 게임 시작 시 일괄 적용.
 std::vector<int> g_CreativeStartAugList;
 bool g_CreativeStartPending = false;   // ?곸슜 ?湲?(main 猷⑦봽媛 applyByIdx 濡?泥섎━)
@@ -2401,7 +2358,6 @@ int main() {
             if (g_ComboPulse < 0.0f) g_ComboPulse = 0.0f;
             if (g_ComboMilestone > 0.0f) g_ComboMilestone -= delta;
             if (g_P2ToastTimer > 0.0f) g_P2ToastTimer -= delta;
-            CheckQuestAugments();
         }
         if (g_FlashIntensity > 0.0f) {
             g_FlashIntensity -= delta * 3.5f;
@@ -5082,22 +5038,6 @@ int main() {
                 drawRect(bx0, by0, bw, 52.0f, 0.12f, 0.10f, 0.02f, 0.85f * a);
                 drawRect(bx0, by0, bw, 4.0f, 1.0f, 0.85f, 0.25f, 0.95f * a);
                 g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, 1.0f, 1.0f, 0.9f, 0.4f, a);
-            }
-
-            // 퀘스트 증강 달성 토스트
-            if (g_QuestToastTimer > 0.0f &&
-                (st == GameState::RUNNING || st == GameState::DYING || st == GameState::PAUSED)) {
-                g_QuestToastTimer -= delta;
-                float a = g_QuestToastTimer > 2.8f ? (3.5f - g_QuestToastTimer) / 0.7f
-                        : std::min(1.0f, g_QuestToastTimer);
-                if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
-                float bw = g_TextS.Width(g_QuestToastMsg, 0.95f) + 44.0f;
-                float bx0 = (sw - bw) * 0.5f, by0 = sh * 0.16f;
-                BindMainShader();
-                drawRect(bx0, by0, bw, 46.0f, 0.10f, 0.08f, 0.02f, 0.88f * a);
-                drawRect(bx0, by0, bw, 3.0f, 0.95f, 0.65f, 0.15f, 0.95f * a);
-                g_TextS.Draw(g_QuestToastMsg, bx0 + 22.0f, by0 + 14.0f, 0.95f,
-                             1.0f, 0.88f, 0.45f, a);
             }
     
             DrawKillTags(g_TextS, st == GameState::RUNNING || st == GameState::DYING);

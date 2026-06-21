@@ -320,8 +320,6 @@ inline GLuint IconFor(AugType t) {
     case AugType::SMG_COMPRESSOR: return g_IconTex[(int)AugType::MINIGUN];
     case AugType::RIFLE_STABILITY:return g_IconTex[(int)AugType::BROKEN_SIGHT];
     case AugType::SNIPER_AMPLIFIER:return g_IconTex[(int)AugType::SNIPER];
-    case AugType::Q_KILL_100:     return g_IconTex[(int)AugType::SOUL_HARVEST];
-    case AugType::Q_KILL_300:     return g_IconTex[(int)AugType::SOUL_HARVEST];
     default:                     break;
     }
     // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용
