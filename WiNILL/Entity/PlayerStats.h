@@ -61,6 +61,7 @@ struct PlayerStats {
     bool  shotgunSpread= false;  // 산탄 확장 — 7발
     bool  revolverOverload = false;
     bool  heShells     = false;
+    float sniperDistBonusPct = 0.0f;  // SNIPER_AMPLIFIER — 거리 보너스 +%p
     int   powerSurgeStacks = 0;  // 전력 증폭 중첩 (3 이후 diminishing)
     int   commonMultBoosts = 0;  // 초반 일반 증강 ×1.08 (최대 3)
     // ── 핵앤슬래쉬 ──
@@ -599,6 +600,17 @@ struct PlayerStats {
         case AugType::HE_SHELLS:
             heShells        = true;
             break;
+        case AugType::SMG_COMPRESSOR:
+            bulletSpread   *= 0.50f;
+            fireInterval   /= 1.08f;
+            break;
+        case AugType::RIFLE_STABILITY:
+            bulletSpread    = 0.0f;
+            flatDamageBonus += 12.0f;
+            break;
+        case AugType::SNIPER_AMPLIFIER:
+            sniperDistBonusPct += 0.30f;
+            break;
         case AugType::CHAKRAM_SINGULARITY:
             chakramSingularity = true;
             chakram         = true;
@@ -622,10 +634,10 @@ struct PlayerStats {
     float GetDamageMultiplier(float distFromPlayer) const {
         float m = damageMultiplier;
 
-        // 저격수: 거리 비례 최대 +50%
-        if (sniper) {
+        // 저격: 거리 비례 (기본 50% + SNIPER_AMPLIFIER %p)
+        if (sniper || sniperDistBonusPct > 0.0f) {
             float f = std::min(distFromPlayer / 1000.0f, 1.0f);
-            m *= (1.0f + f * 0.5f);
+            m *= (1.0f + f * (0.5f + sniperDistBonusPct));
         }
 
         // 총검: 200px 이내 +50%

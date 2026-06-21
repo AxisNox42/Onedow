@@ -39,6 +39,35 @@ inline const WeaponDef ALL_WEAPONS[] = {
 inline const wchar_t* WeaponName(const WeaponDef& w) { return w.locName[CurLangIdx()]; }
 inline const wchar_t* WeaponDesc(const WeaponDef& w) { return w.locDesc[CurLangIdx()]; }
 
+extern PlayerStats g_Stats;
+extern int         g_CurrentWeapon;
+
+inline const wchar_t* CurrentWeaponLabel() {
+    if (g_Stats.meleeWeapon) {
+        static const wchar_t* M[3] = { L"검객 (근접)", L"Blade (Melee)", L"剣客 (近接)" };
+        return M[CurLangIdx()];
+    }
+    if (g_Stats.bowWeapon) {
+        static const wchar_t* B[3] = { L"궁수 (활)", L"Archer (Bow)", L"弓師 (弓)" };
+        return B[CurLangIdx()];
+    }
+    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
+        return WeaponName(ALL_WEAPONS[g_CurrentWeapon]);
+    static const wchar_t* None[3] = { L"(없음)", L"(none)", L"(なし)" };
+    return None[CurLangIdx()];
+}
+
+inline const wchar_t* CurrentWeaponDescText() {
+    if (g_Stats.meleeWeapon || g_Stats.bowWeapon) {
+        static const wchar_t* C[3] = { L"클래스 전용 무기", L"Class weapon", L"クラス専用武器" };
+        return C[CurLangIdx()];
+    }
+    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
+        return WeaponDesc(ALL_WEAPONS[g_CurrentWeapon]);
+    static const wchar_t* None[3] = { L"", L"", L"" };
+    return None[CurLangIdx()];
+}
+
 inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
     switch (w) {
     case StartWeapon::SMG:

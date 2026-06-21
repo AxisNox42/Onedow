@@ -20,6 +20,7 @@
 #include "DrawPrim.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
+#include "../System/SystemInfo.h"
 #include "Camera.h"
 #include "EntityDraw.h"
 #include "Monster.h"
@@ -1200,6 +1201,24 @@ void Scene_Settings(const SceneCtx& c) {
                     g_TextS.Draw(shown, fldX + 12.0f, vy + 12.0f, 0.9f, 1,1,1,0.95f);
                 }
 
+                // PC 사양 — 베타 피드백용 (설정 하단)
+                {
+                    const wchar_t* specTitle = (g_Language==Language::EN)?L"System specs (for feedback)":
+                                               (g_Language==Language::JP)?L"PCスペック (フィードバック用)":
+                                               L"PC 사양 (피드백용)";
+                    float sy = wy + WH - 118.0f;
+                    g_TextS.Draw(specTitle, lx, sy, 0.72f, 0.62f, 0.72f, 0.82f, 0.88f);
+                    int fw = 0, fh = 0;
+                    glfwGetFramebufferSize(window, &fw, &fh);
+                    std::wstring s1 = GetSystemSpecLine1();
+                    std::wstring s2 = GetSystemSpecLine2(fw, fh);
+                    float specSc = 0.60f;
+                    float maxW = WW - 80.0f;
+                    while (specSc > 0.48f && g_TextS.Width(s1.c_str(), specSc) > maxW) specSc -= 0.02f;
+                    g_TextS.Draw(s1.c_str(), lx, sy + 20.0f, specSc, 0.78f, 0.88f, 0.98f, 0.90f);
+                    g_TextS.Draw(s2.c_str(), lx, sy + 38.0f, specSc, 0.72f, 0.82f, 0.92f, 0.85f);
+                }
+
                 // 뒤로(저장 후 닫기) — 창 하단
                 if (UIButton(lx, wy + WH - 64.0f, 180.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
@@ -1577,8 +1596,18 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 const float COLW  = 320.0f;          // 리스트 클릭/호버 가로 범위
                 const wchar_t* TITLE = T(StrId::OWNED_AUGS);
                 g_TextS.Draw(TITLE, PX, 60.0f, 1.1f, 1, 1, 1, 0.95f);
-                g_TextS.Draw(L"(커서 올리면 설명)", PX + 2.0f, 90.0f, 0.70f,
-                             0.6f, 0.7f, 0.9f, 0.7f);
+                // 현재 무기 (항상 표시)
+                {
+                    const wchar_t* wPrefix = (g_Language==Language::EN)?L"Weapon:":
+                                             (g_Language==Language::JP)?L"武器:":
+                                             L"현재 무기:";
+                    wchar_t wLine[160];
+                    swprintf_s(wLine, L"%ls %ls", wPrefix, CurrentWeaponLabel());
+                    float wSc = 0.78f;
+                    while (wSc > 0.62f && g_TextS.Width(wLine, wSc) > COLW - 4.0f) wSc -= 0.03f;
+                    g_TextS.Draw(wLine, PX + 2.0f, 90.0f, wSc,
+                                 0.55f, 0.85f, 1.0f, 0.92f);
+                }
 
                 // 리스트 뷰 영역 — 하단 스킬/HP HUD 바로 위까지 (넘치면 스크롤)
                 const float listTop    = 110.0f;
@@ -1619,10 +1648,14 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                         drawRect(0, ry - 2.0f, COLW, ROW_H, 0.15f, 0.16f, 0.26f, 0.6f);
                         drawRect(0, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
                     }
-                    wchar_t line[96];
-                    if (counts[i] > 1) swprintf_s(line, L"· %ls  ×%d", AugName(def), counts[i]);
-                    else               swprintf_s(line, L"· %ls", AugName(def));
-                    g_TextS.Draw(line, PX, ry, 0.85f, cr, cg, cb, 0.9f);
+                    wchar_t line[128];
+                    if (counts[i] > 1)
+                        swprintf_s(line, L"· [%ls] %ls  ×%d", GetAugBadge(def), AugName(def), counts[i]);
+                    else
+                        swprintf_s(line, L"· [%ls] %ls", GetAugBadge(def), AugName(def));
+                    float rowSc = 0.82f;
+                    while (rowSc > 0.62f && g_TextS.Width(line, rowSc) > COLW - PX - 10.0f) rowSc -= 0.03f;
+                    g_TextS.Draw(line, PX, ry, rowSc, cr, cg, cb, 0.9f);
                 }
                 BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
@@ -1636,29 +1669,22 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     drawRect(trackX, thumbY, 4.0f, thumbH, 0.5f, 0.6f, 0.8f, 0.9f);
                 }
 
-                // 커서 올린 증강 설명 — 해당 줄 바로 옆에 표시
+                // 호버 시 — 현재 무기 설명 (고정 패널, 증강 설명 대신)
                 if (hoverAug >= 0) {
-                    const AugDef& sd = ALL_AUGS[hoverAug];
                     const float BW = std::min(380.0f, sw - (COLW + 30.0f));
-                    const float BH = 138.0f;
+                    const float BH = 120.0f;
                     float BX = COLW + 18.0f;
-                    float BY = hoverRowY - 6.0f;
+                    float BY = std::min(hoverRowY - 6.0f, listTop + 8.0f);
                     if (BY + BH > sh - 20.0f) BY = sh - 20.0f - BH;
                     if (BY < 20.0f) BY = 20.0f;
-                    float hr, hg, hb; GetRarityColor(sd.rarity, hr, hg, hb);
                     BindMainShader();
                     drawRect(BX, BY, BW, BH, 0.03f, 0.03f, 0.06f, 0.95f);
-                    drawRect(BX, BY, BW, 4.0f, hr, hg, hb, 1.0f);
-                    // 배지 + 이름 (한 줄)
-                    wchar_t hd[96];
-                    swprintf_s(hd, L"[%ls] %ls", GetAugBadge(sd), AugName(sd));
-                    g_TextS.Draw(hd, BX + 12.0f, BY + 12.0f, 0.9f,
-                                 std::min(1.0f,hr*1.4f+0.3f), std::min(1.0f,hg*1.4f+0.3f),
-                                 std::min(1.0f,hb*1.4f+0.3f), 1.0f);
-                    // 설명 ('/' 분리 + 폭 워드랩, 고정 폰트)
-                    const float dsc = 0.78f, dWmax = BW - 24.0f;
+                    drawRect(BX, BY, BW, 4.0f, 0.35f, 0.75f, 1.0f, 1.0f);
+                    const wchar_t* wnm = CurrentWeaponLabel();
+                    g_TextS.Draw(wnm, BX + 12.0f, BY + 12.0f, 0.92f, 0.55f, 0.88f, 1.0f, 1.0f);
+                    const float dsc = 0.76f, dWmax = BW - 24.0f;
                     std::vector<std::wstring> dl; std::wstring cur2;
-                    for (const wchar_t* p = AugDesc(sd); *p; ++p) {
+                    for (const wchar_t* p = CurrentWeaponDescText(); *p; ++p) {
                         if (*p == L'/') { if (!cur2.empty()) dl.push_back(cur2); cur2.clear(); }
                         else cur2 += *p;
                     }
@@ -1678,11 +1704,11 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                         for (wchar_t ch: ln){ if(ch==L' ')fw(); else word+=ch; } fw();
                         if (!acc.empty()) wrapped.push_back(acc);
                     }
-                    float dy = BY + 42.0f;
+                    float dy = BY + 38.0f;
                     for (auto& w : wrapped) {
-                        if (dy > BY + BH - 16.0f) break;
-                        g_TextS.Draw(w.c_str(), BX + 12.0f, dy, dsc, 1.0f, 1.0f, 0.95f, 0.92f);
-                        dy += 24.0f;
+                        if (dy > BY + BH - 14.0f) break;
+                        g_TextS.Draw(w.c_str(), BX + 12.0f, dy, dsc, 1.0f, 1.0f, 0.95f, 0.90f);
+                        dy += 22.0f;
                     }
                 }
 }

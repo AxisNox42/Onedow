@@ -193,6 +193,14 @@ static int RollOneAug(const bool* takenOnce,
             return g_Stats.sniper ||
                    g_CurrentWeapon == (int)StartWeapon::SNIPER;
         };
+        auto playerHasSMG = [&]() -> bool {
+            return !g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
+                   g_CurrentWeapon == (int)StartWeapon::SMG;
+        };
+        auto playerHasRifle = [&]() -> bool {
+            return !g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
+                   g_CurrentWeapon == (int)StartWeapon::RIFLE;
+        };
 
         // 해당 등급의 후보 수집
         int pool[AUG_TOTAL]; int poolSize = 0;
@@ -231,6 +239,9 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::REVOLVER_OVERLOAD  && !g_Stats.revolver) continue;
             if (t == AugType::HE_SHELLS          && !g_Stats.cannon)   continue;
             if (t == AugType::SKILL_FOCUS        && !playerHasSniper()) continue;
+            if (t == AugType::SMG_COMPRESSOR    && !playerHasSMG())   continue;
+            if (t == AugType::RIFLE_STABILITY   && !playerHasRifle()) continue;
+            if (t == AugType::SNIPER_AMPLIFIER  && !playerHasSniper()) continue;
             // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/병렬처리/취함/영혼수확/클래스)
             if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)

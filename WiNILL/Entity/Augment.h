@@ -85,7 +85,11 @@ enum class AugType {
     REVOLVER_OVERLOAD,   // 과装填 (리볼버 전용)
     HE_SHELLS,           // HE탄 (대포 전용)
     CHAKRAM_SINGULARITY, // 특이점 (신화 — 차크람 III 진화)
-    SKILL_FOCUS          // [스킬] 집중 조준 (저격 전용)
+    SKILL_FOCUS,         // [스킬] 집중 조준 (저격 전용)
+    // ── 총기 전용 (끝에 추가 — 세이브 인덱스 보존) ──
+    SMG_COMPRESSOR,      // SMG — 흩어짐·연사
+    RIFLE_STABILITY,     // 소총 — 정조준
+    SNIPER_AMPLIFIER,    // 저격 — 거리 보너스 강화
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -631,9 +635,24 @@ static const AugDef ALL_AUGS[] = {
       { L"0.4초 정지 후 발동 — 다음 1발 ×2.5 · 관통 +30%p  (쿨 14초 · 저격)",
         L"After 0.4s still — next shot ×2.5 · +30% pierce  (14s CD · sniper)",
         L"0.4秒静止後 — 次弾×2.5 · 貫通+30%p  (CD14秒 · スナイパー)" } },
+    { AugType::SMG_COMPRESSOR, AugRarity::EPIC,     AugUnique::NONE, "SMG_COMP",
+      { L"탄뭉치 억제", L"Spray Control", L"弾束制御" },
+      { L"[SMG] 흩어짐 -50% · 연사 +8%",
+        L"[SMG] spread -50% · fire rate +8%",
+        L"[SMG] 拡散-50% · 連射+8%" } },
+    { AugType::RIFLE_STABILITY, AugRarity::EPIC,    AugUnique::NONE, "RIFLE_STAB",
+      { L"정조준", L"Marksman", L"精密照準" },
+      { L"[소총] 흩어짐 제거 · 공격력 +12",
+        L"[Rifle] no spread · Attack +12",
+        L"[ライフル] 拡散なし · 攻撃+12" } },
+    { AugType::SNIPER_AMPLIFIER, AugRarity::EPIC,   AugUnique::NONE, "SNIP_AMP",
+      { L"장거리 증폭", L"Long Range Amp", L"長距離増幅" },
+      { L"[저격] 거리 보너스 +30%p  (저격총·저격 증강)",
+        L"[Sniper] distance bonus +30%p  (sniper gun/aug)",
+        L"[スナイパー] 距離ボーナス+30%p" } },
 };
 
-static constexpr int AUG_TOTAL = 108;
+static constexpr int AUG_TOTAL = 111;
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -716,6 +735,8 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
     case AugType::HE_SHELLS:    case AugType::CHAKRAM_SINGULARITY:
     case AugType::SKILL_FOCUS:
+    case AugType::SMG_COMPRESSOR: case AugType::RIFLE_STABILITY:
+    case AugType::SNIPER_AMPLIFIER:
         return true;
     default:
         return false;
