@@ -74,7 +74,18 @@ enum class AugType {
     D_CRASHER_BOOST,     // 크래셔 강화 — 돌진 중 받는 피해 -10%
     // ── 적 출현 디버프 (확장 — 신규 적) ──
     D_BADSECTOR,         // 배드 섹터 출현 (죽으면 감속 구역)
-    D_REGERROR           // 레지스트리 에러 출현 (강화 오라 노드)
+    D_REGERROR,          // 레지스트리 에러 출현 (강화 오라 노드)
+    // ── 확장 (끝에 추가 — 세이브 인덱스 보존) ──
+    D_DDOS,              // 디도스 침투
+    D_WEAVER_BOOST,      // 위버 강화
+    D_BRUTE_BOOST,       // 브루트 강화
+    LIFESTEAL_2,         // 흡혈탄 II (에픽 티어)
+    CHAIN_2,             // 연쇄 작용 II (전설 티어)
+    SHOTGUN_SPREAD,      // 산탄 확장 (샷건 전용)
+    REVOLVER_OVERLOAD,   // 과装填 (리볼버 전용)
+    HE_SHELLS,           // HE탄 (대포 전용)
+    CHAKRAM_SINGULARITY, // 특이점 (신화 — 차크람 III 진화)
+    SKILL_FOCUS          // [스킬] 집중 조준 (저격 전용)
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -156,9 +167,9 @@ static const AugDef ALL_AUGS[] = {
         L"15%でクリティカル (×2.0)  (重複で+15%, 最大75%)" } },
     { AugType::LIFESTEAL,     AugRarity::RARE,      AugUnique::NONE, "LIFESTEAL",
       { L"흡혈탄", L"Lifesteal", L"吸血弾" },
-      { L"적 처치마다 체력 0.12 회복  (중첩 가능)",
-        L"Heal 0.12 HP per kill  (stackable)",
-        L"撃破毎に体力0.12回復  (重複可)" } },
+      { L"처치당 HP +0.06  (최대 4중첩 · 합 0.24/kill)",
+        L"Heal +0.06/kill  (max 4 stacks · 0.24 total)",
+        L"撃破毎 +0.06  (最大4重 · 合計0.24)" } },
     { AugType::BERSERK,       AugRarity::RARE,      AugUnique::NONE, "BERSERK",
       { L"광전사", L"Berserker", L"バーサーカー" },
       { L"체력이 낮을수록 공격력 증가  (최대 +60% · 빈사 시)",
@@ -174,9 +185,9 @@ static const AugDef ALL_AUGS[] = {
       { L"공격력 +30  (고정 가산)", L"Attack +30  (flat)", L"攻撃力 +30  (固定)" } },
     { AugType::VAMPIRE,       AugRarity::EPIC,      AugUnique::NONE, "VAMPIRE",
       { L"흡혈마", L"Vampire", L"吸血鬼" },
-      { L"10킬마다 체력 +1  /  처치당 +0.15 흡혈  /  최대 체력 +25",
-        L"+1 HP per 10 kills  /  +0.15 lifesteal per kill  /  Max HP +25",
-        L"10キル毎に体力+1  /  撃破毎に+0.15吸血  /  最大体力 +25" } },
+      { L"흡혈 한도 0.48 · Max HP +20 · 10킬마다 HP +1",
+        L"Lifesteal cap 0.48 · Max HP +20 · +1 HP per 10 kills",
+        L"吸血上限0.48 · 最大HP+20 · 10キル毎HP+1" } },
     { AugType::BROKEN_SIGHT,  AugRarity::EPIC,      AugUnique::NONE, "BROKENSIGHT",
       { L"고장난 조준선", L"Broken Sight", L"壊れた照準" },
       { L"마우스 무시, 황금 오브 방향으로 자동 발사  /  공격력 +250%",
@@ -296,9 +307,9 @@ static const AugDef ALL_AUGS[] = {
     // ── 전설 ───────────────────────────────────────────
     { AugType::POWER_SURGE,   AugRarity::LEGENDARY, AugUnique::NONE, "POWER_SURGE",
       { L"전력 증폭", L"Power Surge", L"パワーサージ" },
-      { L"공격력 ×1.05  (곱연산 · 중첩 · 후반 스케일)",
-        L"Attack ×1.05  (multiplicative · stacks · late scaling)",
-        L"攻撃力 ×1.05  (乗算・重複・後半スケール)" } },
+      { L"공격력 ×1.05  (3스택까지 · 이후 ×1.03 · 중첩)",
+        L"Attack ×1.05  (stacks to 3 · then ×1.03)",
+        L"攻撃力 ×1.05  (3まで · 以降 ×1.03)" } },
     { AugType::RANDOM_AUG,    AugRarity::LEGENDARY, AugUnique::NONE, "RANDOM",
       { L"랜덤 증강", L"Random Augment", L"ランダム強化" },
       { L"등급 무관 랜덤 버프 3개 즉시 획득  (디버프 없음)",
@@ -570,9 +581,59 @@ static const AugDef ALL_AUGS[] = {
       { L"레지스트리 에러 등장 — 주변 적을 강화하는 노드  (처치 경험치 +10)",
         L"Registry Errors appear — nodes that buff nearby foes  (kill XP +10)",
         L"レジストリエラー出現 — 周囲の敵を強化するノード  (撃破経験値+10)" } },
+    { AugType::D_DDOS,        AugRarity::DEBUFF,   AugUnique::NONE, "D_DDOS",
+      { L"디도스 침투", L"DDoS Infection", L"DDoS侵入" },
+      { L"디도스 프로세스 창(1→3 swarm) 등장  (처치 경험치 +4)",
+        L"DDoS window swarms appear (1→3)  (kill XP +4)",
+        L"DDoS窓スウォーム出現  (撃破経験値+4)" } },
+    { AugType::D_WEAVER_BOOST, AugRarity::DEBUFF,  AugUnique::NONE, "D_WEAVERB",
+      { L"위버 강화", L"Weaver Boost", L"ウィーバー強化" },
+      { L"회피체 지그재그·속도 +15%  (처치 경험치 +3)",
+        L"Weavers weave faster & wider  (kill XP +3)",
+        L"回避体のジグザグ・速度+15%  (撃破経験値+3)" } },
+    { AugType::D_BRUTE_BOOST, AugRarity::DEBUFF,   AugUnique::NONE, "D_BRUTEB",
+      { L"브루트 강화", L"Brute Boost", L"ブルート強化" },
+      { L"거대체 HP +25% · 접촉 피해 +20%  (처치 경험치 +4)",
+        L"Brutes +25% HP · +20% contact dmg  (kill XP +4)",
+        L"巨大体 HP+25% · 接触ダメ+20%  (撃破経験値+4)" } },
+    { AugType::LIFESTEAL_2,   AugRarity::EPIC,     AugUnique::NONE, "LIFESTEAL2",
+      { L"흡혈탄 II", L"Lifesteal II", L"吸血弾 II" },
+      { L"흡혈 한도 0.24→0.36 · 10킬마다 HP +1  (요구: 흡혈탄)",
+        L"Lifesteal cap 0.24→0.36 · +1 HP per 10 kills  (req: Lifesteal)",
+        L"吸血上限0.24→0.36 · 10キル毎HP+1  (要:吸血弾)" } },
+    { AugType::CHAIN_2,       AugRarity::LEGENDARY, AugUnique::NONE, "CHAIN2",
+      { L"연쇄 작용 II", L"Chain Reaction II", L"連鎖反応 II" },
+      { L"튕김 2→3회 · 총알 -30%→-20%  (요구: 연쇄 작용)",
+        L"Ricochet 2→3 · bullet dmg -30%→-20%  (req: Chain)",
+        L"跳弾2→3 · 弾-30%→-20%  (要:連鎖反応)" } },
+    { AugType::SHOTGUN_SPREAD, AugRarity::EPIC,    AugUnique::NONE, "SG_SPREAD",
+      { L"산탄 확장", L"Spread Extension", L"散弾拡張" },
+      { L"[샷건] 펠릿 5→7 · 사거리 -10%",
+        L"[Shotgun] pellets 5→7 · range -10%",
+        L"[ショットガン] 弾数5→7 · 射程-10%" } },
+    { AugType::REVOLVER_OVERLOAD, AugRarity::EPIC,  AugUnique::NONE, "REV_OVLD",
+      { L"과装填", L"Overload", L"過装填" },
+      { L"[리볼버] 6발 장전 · 마지막 탄 치명타 확정",
+        L"[Revolver] 6-round cylinder · last shot always crits",
+        L"[リボルバー] 6発装填 · 最終弾クリ確定" } },
+    { AugType::HE_SHELLS,     AugRarity::EPIC,      AugUnique::NONE, "HE_SHELLS",
+      { L"HE탄", L"HE Shells", L"HE弾" },
+      { L"[대포] 관통 종료 시 작은 폭발 (공격력 25%)",
+        L"[Cannon] small blast when pierce ends (25% ATK)",
+        L"[大砲] 貫通終了時に小爆発 (攻撃25%)" } },
+    { AugType::CHAKRAM_SINGULARITY, AugRarity::MYTHIC, AugUnique::NONE, "CHAK_SING",
+      { L"특이점", L"Singularity", L"特異点" },
+      { L"차크람이 적을 끌어당김 · 접촉 지속 피해  (요구: 차크람 III)",
+        L"Chakrams pull enemies in · contact DOT  (req: Chakram III)",
+        L"チャクラムが敵を吸引 · 接触DoT  (要:チャクラムIII)" } },
+    { AugType::SKILL_FOCUS,   AugRarity::EPIC,      AugUnique::NONE, "SKILL_FOCUS",
+      { L"[스킬] 집중 조준", L"[Skill] Focused Aim", L"[スキル] 集中照準" },
+      { L"0.4초 정지 후 발동 — 다음 1발 ×2.5 · 관통 +30%p  (쿨 14초 · 저격)",
+        L"After 0.4s still — next shot ×2.5 · +30% pierce  (14s CD · sniper)",
+        L"0.4秒静止後 — 次弾×2.5 · 貫通+30%p  (CD14秒 · スナイパー)" } },
 };
 
-static constexpr int AUG_TOTAL = 98;  // + 조합 포탑 + 디버프 5종(강화3 + 신규적 출현2)
+static constexpr int AUG_TOTAL = 108;
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -582,7 +643,7 @@ struct ComboDef {
 };
 inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_EXECUTIONER, { AugType::CRIT,        AugType::BERSERK }, 2 },
-    { AugType::CB_BLOODLORD,   { AugType::LIFESTEAL,   AugType::VAMPIRE }, 2 },
+    { AugType::CB_BLOODLORD,   { AugType::LIFESTEAL_2, AugType::VAMPIRE }, 2 },
     // 티어 증강이 재료면 최대 티어에서만 조합 성립 (요청)
     { AugType::CB_PIERCE_TWIN, { AugType::TWIN_2,        AugType::PIERCE_2   }, 2 },
     { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN_3, AugType::DRONE_2    }, 2 },
@@ -649,6 +710,12 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::D_TROJAN_BOOST: case AugType::D_CRASHER_BOOST:
     // 신규 적 출현 디버프 (플래그 1개)
     case AugType::D_BADSECTOR:    case AugType::D_REGERROR:
+    case AugType::D_DDOS:       case AugType::D_WEAVER_BOOST:
+    case AugType::D_BRUTE_BOOST:
+    case AugType::LIFESTEAL_2:  case AugType::CHAIN_2:
+    case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
+    case AugType::HE_SHELLS:    case AugType::CHAKRAM_SINGULARITY:
+    case AugType::SKILL_FOCUS:
         return true;
     default:
         return false;
@@ -691,7 +758,7 @@ inline const wchar_t* GetAugTag(const AugDef& a) {
     if (a.unique == AugUnique::DISTANCE) { static const wchar_t* s[3]={L"거리",L"Range",L"距離"};  return s[li]; }
     if (a.unique == AugUnique::SIZE)     { static const wchar_t* s[3]={L"크기",L"Size",L"サイズ"}; return s[li]; }
     if (a.type == AugType::SKILL_CLOSE || a.type == AugType::SKILL_OVERCLOCK ||
-        a.type == AugType::SKILL_TIMESTOP)
+        a.type == AugType::SKILL_TIMESTOP || a.type == AugType::SKILL_FOCUS)
         { static const wchar_t* s[3]={L"스킬",L"Skill",L"スキル"}; return s[li]; }
     return nullptr;
 }

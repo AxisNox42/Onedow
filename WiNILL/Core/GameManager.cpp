@@ -1,10 +1,12 @@
 #include "GameManager.h"
 #include "Settings.h"
 #include "PlayerStats.h"
+#include "Weapons.h"
 #include <string>
 #include <algorithm>   // std::min (등급 가중치 게이팅)
 
 extern PlayerStats g_Stats;   // 최대치 도달 증강 게이팅용 (main.cpp 정의)
+extern int         g_CurrentWeapon;
 
 static const char* gm_vert =
     "#version 330 core\n"
@@ -180,6 +182,17 @@ static int RollOneAug(const bool* takenOnce,
             }
             return false;
         };
+        auto hasAnyMythicOwned = [&]() -> bool {
+            for (int k = 0; k < AUG_TOTAL; k++) {
+                if (ALL_AUGS[k].rarity != AugRarity::MYTHIC) continue;
+                if (g_TypeOwned[(int)ALL_AUGS[k].type]) return true;
+            }
+            return false;
+        };
+        auto playerHasSniper = [&]() -> bool {
+            return g_Stats.sniper ||
+                   g_CurrentWeapon == (int)StartWeapon::SNIPER;
+        };
 
         // 해당 등급의 후보 수집
         int pool[AUG_TOTAL]; int poolSize = 0;
@@ -206,6 +219,18 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::DRONE_HIVE     && !hasOwnedType(AugType::DRONE_2))   continue;
             if (t == AugType::LASER_CONVERGE && !hasOwnedType(AugType::LASER_2))   continue;
             if (t == AugType::PIERCE_RAILSLUG&& !hasOwnedType(AugType::PIERCE_2))  continue;
+            if (t == AugType::CHAKRAM_SINGULARITY && !hasOwnedType(AugType::CHAKRAM_3)) continue;
+            if (t == AugType::LIFESTEAL_2 && !hasOwnedType(AugType::LIFESTEAL)) continue;
+            if (t == AugType::CHAIN_2     && !hasOwnedType(AugType::CHAIN))     continue;
+            // 1런 1신화 — 이미 신화 보유 시 다른 신화 제외
+            if (ALL_AUGS[i].rarity == AugRarity::MYTHIC && hasAnyMythicOwned()) continue;
+            // 흡혈탄 스택 상한
+            if (t == AugType::LIFESTEAL && g_Stats.lifestealStacks >= 4) continue;
+            // 무기/스킬 전용 — 해당 무기 없으면 제외
+            if (t == AugType::SHOTGUN_SPREAD     && !g_Stats.shotgun)  continue;
+            if (t == AugType::REVOLVER_OVERLOAD  && !g_Stats.revolver) continue;
+            if (t == AugType::HE_SHELLS          && !g_Stats.cannon)   continue;
+            if (t == AugType::SKILL_FOCUS        && !playerHasSniper()) continue;
             // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/병렬처리/취함/영혼수확/클래스)
             if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
@@ -258,6 +283,27 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
         }
         used[idx] = true;
         augChoices[i] = idx;
+    }
+
+    // L1~2: 3장 중 최소 1장 희귀 이상 보장 (초반 파워 스파이크)
+    if (playerLevel <= 2) {
+        bool hasRarePlus = false;
+        for (int i = 0; i < 3; i++)
+            if (ALL_AUGS[augChoices[i]].rarity >= AugRarity::RARE)
+                hasRarePlus = true;
+        if (!hasRarePlus) {
+            for (int attempt = 0; attempt < 80; attempt++) {
+                int idx = RollOneAug(takenOnce, sizeTaken, distTaken,
+                                     true, playerLevel, allowDebuff);
+                if (ALL_AUGS[idx].rarity < AugRarity::RARE) continue;
+                bool dup = false;
+                for (int j = 0; j < 3; j++)
+                    if (augChoices[j] == idx) { dup = true; break; }
+                if (dup) continue;
+                augChoices[0] = idx;
+                break;
+            }
+        }
     }
 
     // 조합 증강 주입 — 레시피(모든 재료 보유) 충족 + 미획득이면 한 칸을 조합으로 교체

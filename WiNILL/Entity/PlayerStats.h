@@ -57,10 +57,18 @@ struct PlayerStats {
     bool  hackBomber   = false;  // 자폭병 처치 20% 폭발
     bool  hackRanged   = false;  // 원거리 처치 20% 유도탄 5
     bool  shotgun      = false;  // 5발 산탄 / 사거리 700
+    bool  revolver     = false;  // 리볼버 시작무기/변환
+    bool  shotgunSpread= false;  // 산탄 확장 — 7발
+    bool  revolverOverload = false;
+    bool  heShells     = false;
+    int   powerSurgeStacks = 0;  // 전력 증폭 중첩 (3 이후 diminishing)
+    int   commonMultBoosts = 0;  // 초반 일반 증강 ×1.08 (최대 3)
     // ── 핵앤슬래쉬 ──
     int   critChance   = 0;       // 치명타 확률 (%) — 25%/스택
     float critMult     = 2.5f;    // 치명타 데미지 배율
-    float lifestealPerKill = 0.0f;// 처치당 회복 HP (흡혈탄)
+    float lifestealPerKill = 0.0f;// (legacy — GetLifestealPerKill() 사용)
+    int   lifestealStacks  = 0;   // 흡혈탄 중첩 (최대 4)
+    bool  lifesteal2       = false; // 흡혈탄 II — 한도 0.36
     bool  berserk      = false;   // 체력 낮을수록 공격력 ↑ (최대 +60%)
     bool  deathBlast   = false;   // 적 사망 시 주변 폭발
     float deathBlastMult = 1.0f;  // 연쇄 폭발 반경 배율 (CB_WARLORD)
@@ -87,6 +95,7 @@ struct PlayerStats {
     float bulletRainCooldown = 15.0f; // 15 → 10 (II) → 5 (III)
     bool  rainKillReduce = false;     // 무한 세례(신화) — 처치마다 쿨다운 감소
     int   chakramCount = 0;       // 1, 2, 3 — CHAKRAM / II / III
+    bool  chakramSingularity = false; // 신화 — 끌어당김
     bool  cannon       = false;
     bool  turretMode   = false;  // CANNON + DRONE_2 조합: 포탑 배치
     bool  soulHarvest  = false;
@@ -126,6 +135,9 @@ struct PlayerStats {
     bool  crasherBoost    = false;  // 크래셔 강화 — 돌진 중 받는 피해 -10%
     bool  badsectorMobs   = false;  // 배드 섹터 출현 (죽으면 감속 구역)
     bool  regerrorMobs    = false;  // 레지스트리 에러 출현 (강화 오라)
+    bool  ddosMobs        = false;  // 디도스 침투
+    bool  weaverBoost     = false;  // 위버 강화
+    bool  bruteBoost      = false;  // 브루트 강화
     // 프로세스류(잡몹) 출현 디버프 (확장, 중첩 가능)
     int   mobPackBonus    = 0;     // 스폰당 추가 마리 수 (군집)
     float eliteChanceMult = 1.0f;  // 엘리트 변종 출현 확률 배율
@@ -169,7 +181,11 @@ struct PlayerStats {
         // ── 등급별 공격력 (가산) — 초반 강세. 곱연산 폭주 제거 ──
         case AugType::OVERDRIVE:      flatDamageBonus += 18.0f; break;  // 희귀 +18 (버프)
         case AugType::CORE_OVERLOAD:  flatDamageBonus += 30.0f; break;  // 에픽 +30 (버프)
-        case AugType::POWER_SURGE:    damageMultiplier *= 1.07f; break; // 전설 +7%(유일 곱연산)
+        case AugType::POWER_SURGE:
+            if (powerSurgeStacks < 3) damageMultiplier *= 1.05f;
+            else                      damageMultiplier *= 1.03f;
+            ++powerSurgeStacks;
+            break; // 전설 +7%(유일 곱연산) — 3스택 이후 diminishing
 
         // ── 희귀 ──
         case AugType::GLASS_CANNON:
@@ -192,8 +208,7 @@ struct PlayerStats {
         // ── 에픽 ──
         case AugType::VAMPIRE:
             vampire = true;
-            maxHP  += 25.0f;             // 버프: 패널티(-10%) 제거 → 최대 체력 +25
-            lifestealPerKill += 0.15f;   // 버프: 처치당 소량 흡혈도 추가(흡혈탄과 경쟁)
+            maxHP  += 20.0f;
             break;
         case AugType::BROKEN_SIGHT:
             brokenSight       = true;
@@ -257,6 +272,7 @@ struct PlayerStats {
         case AugType::SKILL_CLOSE:
         case AugType::SKILL_OVERCLOCK:
         case AugType::SKILL_TIMESTOP:
+        case AugType::SKILL_FOCUS:
             break;
         case AugType::SHOTGUN:
             shotgun      = true;
@@ -272,7 +288,7 @@ struct PlayerStats {
             critMult   = 2.0f;                            // 배율 너프: 2.5 → 2.0
             break;
         case AugType::LIFESTEAL:
-            lifestealPerKill += 0.12f;  // 처치당 HP +0.12 (너프: 0.5 → 0.25 → 0.12)
+            if (lifestealStacks < 4) ++lifestealStacks;
             break;
         case AugType::BERSERK:
             berserk = true;             // 체력 낮을수록 공격력 ↑ (발사 시 반영)
@@ -288,10 +304,9 @@ struct PlayerStats {
             critMult  += 1.2f;                            // 너프: +1.5 → +1.2
             damageMultiplier *= 1.20f;
             break;
-        case AugType::CB_BLOODLORD:     // 흡혈탄 + 흡혈마 (재너프 — 처치당 회복이 사기)
-            lifestealPerKill += 0.12f;   // 너프: 0.30 → 0.12
-            maxHP            += 20.0f;   // 너프: 25 → 20
-            regenPerSec      += 0.2f;    // 너프: 0.3 → 0.2
+        case AugType::CB_BLOODLORD:     // 흡혈탄 II + 흡혈마
+            maxHP            += 15.0f;
+            regenPerSec      += 0.25f;
             break;
         case AugType::CB_PIERCE_TWIN:   // 더블 + 관통 (너프: 100%→60%)
             pierce       = true;
@@ -555,6 +570,40 @@ struct PlayerStats {
             regerrorMobs    = true;
             meleeXpBonus    += 10;
             break;
+        case AugType::D_DDOS:
+            ddosMobs        = true;
+            meleeXpBonus    += 4;
+            break;
+        case AugType::D_WEAVER_BOOST:
+            weaverBoost     = true;
+            meleeXpBonus    += 3;
+            break;
+        case AugType::D_BRUTE_BOOST:
+            bruteBoost      = true;
+            meleeXpBonus    += 4;
+            break;
+        case AugType::LIFESTEAL_2:
+            lifesteal2      = true;
+            break;
+        case AugType::CHAIN_2:
+            ricochetMax     = 3;
+            ricochetChance  = 100;
+            ricochetDmgMult = 0.80f;
+            break;
+        case AugType::SHOTGUN_SPREAD:
+            shotgunSpread   = true;
+            break;
+        case AugType::REVOLVER_OVERLOAD:
+            revolverOverload = true;
+            break;
+        case AugType::HE_SHELLS:
+            heShells        = true;
+            break;
+        case AugType::CHAKRAM_SINGULARITY:
+            chakramSingularity = true;
+            chakram         = true;
+            if (chakramCount < 3) chakramCount = 3;
+            break;
 
         // ── 특수 ──
         case AugType::S_CHAOS:   /* main 에서 디스패치 */ break;
@@ -583,17 +632,21 @@ struct PlayerStats {
         if (bayonet && distFromPlayer < 200.0f)
             m *= 1.5f;
 
-        // 영혼 수확: 1000킬당 +5% (최대 10스택 = +50%) — 너프(100킬·무제한 → 1000킬·10스택)
+        // 영혼 수확: 1500킬당 +5% (최대 7스택)
         if (soulHarvest) {
-            int souls = (int)(killCount / 1000); if (souls > 10) souls = 10;
+            int souls = (int)(killCount / 1500); if (souls > 7) souls = 7;
             m *= (1.0f + (float)souls * 0.05f);
         }
 
-        // 대포: 추가 연사 1%당 공격력 +2% (연사력은 발사에 반영 안 되고 전부 공격력으로)
+        // 대포: 연사→공격 변환 상한 +80%
         if (cannon) {
             float fireRateMult = 1.0f / std::max(0.001f, fireInterval);
-            float extraPct     = fireRateMult - 1.0f;  // 0% = 연사 1초 기준
-            if (extraPct > 0.0f) m *= (1.0f + extraPct * 2.0f);
+            float extraPct     = fireRateMult - 1.0f;
+            if (extraPct > 0.0f) {
+                float bonus = extraPct * 2.0f;
+                if (bonus > 0.80f) bonus = 0.80f;
+                m *= (1.0f + bonus);
+            }
         }
 
         return m;
@@ -603,7 +656,7 @@ struct PlayerStats {
     float GetFireIntervalMult() const {
         float mult = 1.0f;
         if (soulHarvest) {
-            int souls = (int)(killCount / 1000); if (souls > 10) souls = 10;  // 1000킬당·10스택
+            int souls = (int)(killCount / 1500); if (souls > 7) souls = 7;
             mult /= (1.0f + (float)souls * 0.02f);
         }
         if (miniaturize)
@@ -613,10 +666,31 @@ struct PlayerStats {
     float GetBulletSpeedBonus() const {
         float b = 0.0f;
         if (soulHarvest) {
-            int souls = (int)(killCount / 1000); if (souls > 10) souls = 10;  // 1000킬당·10스택
+            int souls = (int)(killCount / 1500); if (souls > 7) souls = 7;
             b += bulletSpeed * (float)souls * 0.02f;
         }
         return b;
+    }
+
+    // 흡혈탄 티어 — 스택×0.06, 한도: 0.24 / II 0.36 / 흡혈마 0.48
+    float GetLifestealCap() const {
+        if (vampire)     return 0.48f;
+        if (lifesteal2)  return 0.36f;
+        return 0.24f;
+    }
+    float GetLifestealPerKill() const {
+        float v = (float)lifestealStacks * 0.06f;
+        float cap = GetLifestealCap();
+        if (v > cap) v = cap;
+        return v;
+    }
+
+    // 일반 증강 초반 부스트 (최대 3회 ×1.08)
+    void ApplyCommonMultBoost() {
+        if (commonMultBoosts < 3) {
+            damageMultiplier *= 1.08f;
+            ++commonMultBoosts;
+        }
     }
 
     // 현재 이동속도 배율 (가벼운 발걸음·건러너 상태 반영)

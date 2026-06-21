@@ -24,6 +24,25 @@ static inline float SegDist(float px, float py, float ax, float ay, float bx, fl
     return std::sqrt(dx*dx + dy*dy);
 }
 
+// HE탄 — 대포 관통 종료 시 소형 폭발
+static inline void TryHEShellBlast(float cx, float cy, const PlayerStats& stats,
+                                   MonsterManager& mm) {
+    if (!stats.heShells) return;
+    float blastDmg = stats.GetBaseDamage() * stats.GetDamageMultiplier(0.0f) * 0.25f;
+    const float r2 = 80.0f * 80.0f;
+    auto hitRad = [&](float& ex, float& ey, float& hp, bool& al) {
+        float dx = ex - cx, dy = ey - cy;
+        if (dx*dx + dy*dy < r2) {
+            hp -= blastDmg;
+            if (hp <= 0.0f) al = false;
+        }
+    };
+    for (auto m : mm.monsters)    if (m->alive)  hitRad(m->worldX,  m->worldY,  m->hp,  m->alive);
+    for (auto r : mm.rangedMobs)  if (r->alive)  hitRad(r->worldX,  r->worldY,  r->hp,  r->alive);
+    for (auto bm : mm.bombers)    if (bm->alive) hitRad(bm->worldX, bm->worldY, bm->hp, bm->alive);
+    SpawnEnemyExplosion(cx, cy, 1.0f, 0.45f, 0.08f, true);
+}
+
 // 연쇄 작용(리코셰) — 적중 지점에서 가장 가까운 '다른' 적으로 총알 방향 전환.
 //   성공 시 true. (적중한 적은 fromX/fromY 와 동일 위치라 d²≈0 으로 제외됨)
 static inline bool RicochetTo(Bullet& b, float fromX, float fromY, MonsterManager& mm) {
@@ -145,7 +164,7 @@ public:
                         stats.killCount += 1;
                         scoreAccum      += baseScore;
                         score = (long long)scoreAccum;
-                        if (stats.vampire) {
+                        if (stats.vampire || stats.lifesteal2) {
                             ++stats.vampireKillStreak;
                             if (stats.vampireKillStreak >= 10) {
                                 stats.vampireKillStreak = 0;
@@ -154,8 +173,8 @@ public:
                                     playerHP = stats.maxHP;
                             }
                         }
-                        if (stats.lifestealPerKill > 0.0f) {
-                            playerHP += stats.lifestealPerKill;
+                        if (stats.GetLifestealPerKill() > 0.0f) {
+                            playerHP += stats.GetLifestealPerKill();
                             if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                         }
                     }
@@ -163,7 +182,7 @@ public:
                     // 관통 판정: cannon 잔존 데미지 OR pierce 30%
                     bool keepAlive = false;
                     if (b.remainingDmg > 0.001f) keepAlive = true;
-                    if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                    if (stats.pierce && (rand() % 100) < (stats.pierceChance + b.pierceBonusPct)) keepAlive = true;
                     // 연쇄 작용(리코셰) — 가까운 다른 적으로 튕김
                     if (!keepAlive && b.bouncesLeft > 0 &&
                         (rand() % 100) < stats.ricochetChance &&
@@ -172,7 +191,11 @@ public:
                         --b.bouncesLeft;
                         keepAlive = true;
                     }
-                    if (!keepAlive) b.active = false;
+                    if (!keepAlive) {
+                        if (stats.heShells && b.remainingDmg > 0.001f)
+                            TryHEShellBlast(b.x, b.y, stats, mm);
+                        b.active = false;
+                    }
                     consumed = true;
                     break;
                 }
@@ -212,7 +235,7 @@ public:
                             stats.killCount += 1;
                             scoreAccum      += 200.0f;
                             score = (long long)scoreAccum;
-                            if (stats.vampire) {
+                            if (stats.vampire || stats.lifesteal2) {
                                 ++stats.vampireKillStreak;
                                 if (stats.vampireKillStreak >= 10) {
                                     stats.vampireKillStreak = 0;
@@ -221,8 +244,8 @@ public:
                                         playerHP = stats.maxHP;
                                 }
                             }
-                            if (stats.lifestealPerKill > 0.0f) {
-                                playerHP += stats.lifestealPerKill;
+                            if (stats.GetLifestealPerKill() > 0.0f) {
+                                playerHP += stats.GetLifestealPerKill();
                                 if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                             }
                             // HACK_BOMBER: 20% 확률 폭발 (적에게만 피해, VFX는 main.cpp 에서)
@@ -260,7 +283,7 @@ public:
                         }
                         bool keepAlive = false;
                         if (b.remainingDmg > 0.001f) keepAlive = true;
-                        if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                        if (stats.pierce && (rand() % 100) < (stats.pierceChance + b.pierceBonusPct)) keepAlive = true;
                         if (!keepAlive && b.bouncesLeft > 0 &&
                             (rand() % 100) < stats.ricochetChance &&
                             RicochetTo(b, bm->worldX, bm->worldY, mm)) {
@@ -268,14 +291,18 @@ public:
                             --b.bouncesLeft;
                             keepAlive = true;
                         }
-                        if (!keepAlive) b.active = false;
+                        if (!keepAlive) {
+                            if (stats.heShells && b.remainingDmg > 0.001f)
+                                TryHEShellBlast(b.x, b.y, stats, mm);
+                            b.active = false;
+                        }
                         consumed = true;
                         break;
                     }
                 }
             }
 
-            // 플레이어 총알 vs 원거리 몹 — cannon 잔존 데미지 / pierce 모두 적용
+            // 플레이어 총알 vs 원거리 몹
             if (!consumed) {
                 for (auto r : mm.rangedMobs) {
                     if (!r->alive) continue;
@@ -315,7 +342,7 @@ public:
                             stats.killCount += 1;
                             scoreAccum      += 300.0f;
                             score = (long long)scoreAccum;
-                            if (stats.vampire) {
+                            if (stats.vampire || stats.lifesteal2) {
                                 ++stats.vampireKillStreak;
                                 if (stats.vampireKillStreak >= 10) {
                                     stats.vampireKillStreak = 0;
@@ -324,8 +351,8 @@ public:
                                         playerHP = stats.maxHP;
                                 }
                             }
-                            if (stats.lifestealPerKill > 0.0f) {
-                                playerHP += stats.lifestealPerKill;
+                            if (stats.GetLifestealPerKill() > 0.0f) {
+                                playerHP += stats.GetLifestealPerKill();
                                 if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                             }
                             // HACK_RANGED: 20% 확률 유도탄 5발 (적에게만 피해 — player bullet)
@@ -349,7 +376,7 @@ public:
 
                         bool keepAlive = false;
                         if (b.remainingDmg > 0.001f) keepAlive = true;
-                        if (stats.pierce && (rand() % 100) < stats.pierceChance) keepAlive = true;
+                        if (stats.pierce && (rand() % 100) < (stats.pierceChance + b.pierceBonusPct)) keepAlive = true;
                         if (!keepAlive && b.bouncesLeft > 0 &&
                             (rand() % 100) < stats.ricochetChance &&
                             RicochetTo(b, r->worldX, r->worldY, mm)) {
@@ -357,7 +384,11 @@ public:
                             --b.bouncesLeft;
                             keepAlive = true;
                         }
-                        if (!keepAlive) b.active = false;
+                        if (!keepAlive) {
+                            if (stats.heShells && b.remainingDmg > 0.001f)
+                                TryHEShellBlast(b.x, b.y, stats, mm);
+                            b.active = false;
+                        }
                         break;
                     }
                 }

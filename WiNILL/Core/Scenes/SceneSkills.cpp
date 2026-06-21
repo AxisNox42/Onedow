@@ -7,6 +7,7 @@ SkillType SkillForAug(AugType a) {
     if (a == AugType::SKILL_CLOSE)     return SkillType::CLOSE_WINDOW;
     if (a == AugType::SKILL_OVERCLOCK) return SkillType::OVERCLOCK;
     if (a == AugType::SKILL_TIMESTOP)  return SkillType::TIME_STOP;
+    if (a == AugType::SKILL_FOCUS)     return SkillType::FOCUS_AIM;
     return SkillType::NONE;
 }
 

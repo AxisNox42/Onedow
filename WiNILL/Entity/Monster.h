@@ -71,6 +71,8 @@ public:
     float   dashDirX = 0.0f, dashDirY = 0.0f;   // SHIELDED 도 재사용(플레이어 방향 = 방패 정면)
     float   weavePhase = 0.0f;
     // 공전체(ORBITER) / 소환체(SPAWNER) / 보호막체(SHIELDED)
+    float weaveAmp      = 0.85f;   // WEAVER 지그재그 진폭 (기본)
+    float contactDmg    = 5.0f;    // 접촉 초당 피해
     float   orbitAngle  = 0.0f;
     float   orbitRadius = 0.0f;
     float   spawnTimer  = 0.0f;
@@ -114,15 +116,17 @@ public:
             speed *= 0.8f;                              // 평소 느림, 돌진 시 폭발적
             chargeTimer = (float)(rand() % 100) * 0.01f;
         } else if (k == MobKind::WEAVER) {
-            color = glm::vec3(0.2f, 0.9f, 1.0f);        // 시안 — 좌우로 흔들며 접근
+            color = glm::vec3(0.2f, 0.9f, 1.0f);
             hp   *= 0.7f;
             speed *= 1.15f;
             weavePhase = (float)(rand() % 628) * 0.01f;
+            weaveAmp   = 0.85f;
         } else if (k == MobKind::BRUTE) {
-            color = glm::vec3(0.65f, 0.12f, 0.15f);     // 짙은 적 — 크고 단단함
-            hp   *= 3.2f;                               // 너프: 4.5 → 3.2 (안 죽고 쌓이던 문제)
+            color = glm::vec3(0.65f, 0.12f, 0.15f);
+            hp   *= 3.2f;
             speed *= 0.55f;
             sizeScale = scale * 2.2f;
+            contactDmg = 5.0f;
         } else if (k == MobKind::ORBITER) {
             color = glm::vec3(1.0f, 0.85f, 0.2f);       // 노랑 — 공전하며 스파이럴 인
             hp   *= 0.6f;
@@ -224,7 +228,7 @@ public:
             if (dist > 5.0f) {
                 float fX = dx / dist, fY = dy / dist;
                 float pX = -fY, pY = fX;               // 진행방향 수직
-                float w  = sinf(weavePhase) * 0.85f;
+                float w  = sinf(weavePhase) * weaveAmp;
                 worldX += (fX * speed + pX * speed * w) * speedMult * deltaTime;
                 worldY += (fY * speed + pY * speed * w) * speedMult * deltaTime;
             }
@@ -274,7 +278,7 @@ public:
                     anchored = true;   // 배치 완료 → 이후 영구 고정
                 }
             }
-            if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+            if (dist < 26.0f * sizeScale) playerHP -= contactDmg * deltaTime;
             return;
         }
 
@@ -283,6 +287,6 @@ public:
             worldX += (dx / dist) * speed * speedMult * deltaTime;
             worldY += (dy / dist) * speed * speedMult * deltaTime;
         }
-        if (dist < 26.0f * sizeScale) playerHP -= 5.0f * deltaTime;
+        if (dist < 26.0f * sizeScale) playerHP -= contactDmg * deltaTime;
     }
 };

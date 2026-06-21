@@ -300,7 +300,15 @@ float g_DashInvuln    = 0.0f;
 float g_PostPickGrace = 0.0f;      // C14: 利앷컯 ????吏㏃? ?좎삁(臾댁쟻+諛쒖궗?듭젣)濡?蹂듦? ?
 float g_TimeStopTimer = 0.0f;
 float g_OverclockTimer= 0.0f;
-static constexpr float DASH_CD = 3.5f, DASH_DIST = 300.0f, DASH_INVULN = 0.25f;
+static constexpr float DASH_CD = 2.9f, DASH_DIST = 300.0f, DASH_INVULN = 0.20f;
+static constexpr float DASH_DUR  = 0.11f;
+static bool  g_DashActive = false;
+static float g_DashT      = 0.0f;
+static float g_DashFromX  = 0.0f, g_DashFromY = 0.0f;
+static float g_DashToX    = 0.0f, g_DashToY   = 0.0f;
+static float g_FocusStandTimer = 0.0f;
+static int   g_FocusShotsLeft  = 0;
+static int   g_RevolverRound   = 0;
 static constexpr float TIMESTOP_DUR = 1.5f, OVERCLOCK_DUR = 5.0f;
 
 static float SkillCooldownMax(SkillType t) {
@@ -308,12 +316,15 @@ static float SkillCooldownMax(SkillType t) {
     case SkillType::CLOSE_WINDOW: return 16.0f;
     case SkillType::OVERCLOCK:    return 20.0f;
     case SkillType::TIME_STOP:    return 28.0f;
+    case SkillType::FOCUS_AIM:    return 14.0f;
     default:                      return 0.0f;
     }
 }
 static void ResetSkills() {
     for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
     g_SkillReplaceIdx = 0; g_DashCd = 0; g_DashInvuln = 0;
+    g_DashActive = false; g_DashT = 0.0f;
+    g_FocusStandTimer = 0.0f; g_FocusShotsLeft = 0; g_RevolverRound = 0;
     g_TimeStopTimer = 0; g_OverclockTimer = 0;
 }
 // 蹂댁뒪 ?앹〈 ?숈븞 ?붾㈃ ?꾩껜瑜?蹂댁뒪 怨좎쑀?됱쑝濡??먯젏 臾쇰뱾?대뒗 ?곗텧
@@ -1123,6 +1134,8 @@ int main() {
 
                 bool prevTurret = g_Stats.turretMode;
                 g_Stats.Apply(atype);
+                if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
+                    g_Stats.ApplyCommonMultBoost();
                 g_OwnedAugs.push_back(idx);
                 g_TypeOwned[(int)atype] = true;
                 MarkAugSeen(idx);
@@ -1150,7 +1163,8 @@ int main() {
                 // 李⑦겕??(?곗뼱 ?곸슜 ??chakramCount 留뚰겮 ?쒖꽦??
                 if (atype == AugType::CHAKRAM ||
                     atype == AugType::CHAKRAM_2 ||
-                    atype == AugType::CHAKRAM_3) {
+                    atype == AugType::CHAKRAM_3 ||
+                    atype == AugType::CHAKRAM_SINGULARITY) {
                     for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
                         if (!g_Chakrams[c].alive && g_Chakrams[c].respawnTimer <= 0) {
                             g_Chakrams[c].alive        = true;
@@ -1369,7 +1383,7 @@ int main() {
                 if (keys[GLFW_KEY_A]) mvX -= 1.0f;
                 if (keys[GLFW_KEY_D]) mvX += 1.0f;
                 float mlen = sqrtf(mvX*mvX + mvY*mvY);
-                if (mlen > 0.001f) {
+                if (mlen > 0.001f && !g_DashActive) {
                     mvX /= mlen; mvY /= mlen;
                     float moveMult = g_Stats.GetMoveMultiplier(lmb);
                     // 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭 ??遺?앸릺???쇱쭊 ?곸뿭(grow factor) ?덉씠硫??대룞?띾룄 -10%
@@ -1476,28 +1490,58 @@ int main() {
                     case SkillType::OVERCLOCK:    g_OverclockTimer = OVERCLOCK_DUR; break;
                     case SkillType::TIME_STOP:    g_TimeStopTimer  = TIMESTOP_DUR;
                                                   TriggerFlash(0.4f,0.9f,1.0f,0.4f); break;
+                    case SkillType::FOCUS_AIM:
+                        if (g_FocusStandTimer >= 0.4f) {
+                            g_FocusShotsLeft = 1;
+                            TriggerFlash(0.9f, 0.95f, 1.0f, 0.2f);
+                            s.cd = SkillCooldownMax(s.type);
+                        }
+                        return;
                     default: break;
                     }
                     s.cd = SkillCooldownMax(s.type);
                 };
 
-                // ?낅젰 (?ｌ? 寃異?
+                // 정지 시간 (집중 조준 스킬)
+                if (mlen <= 0.001f && !g_DashActive)
+                    g_FocusStandTimer += FIXED_DT;
+                else
+                    g_FocusStandTimer = 0.0f;
+
+                // 플래시 대시 — 보간 이동 + 짧은 무적
                 static bool pDash=false, pQ=false, pE=false, pR=false;
+                if (g_DashActive) {
+                    g_DashT += FIXED_DT / DASH_DUR;
+                    if (g_DashT >= 1.0f) {
+                        g_DashT = 1.0f;
+                        g_DashActive = false;
+                    }
+                    float u = g_DashT;
+                    pCX = g_DashFromX + (g_DashToX - g_DashFromX) * u;
+                    pCY = g_DashFromY + (g_DashToY - g_DashFromY) * u;
+                    playerWin.x = pCX - playerWin.width * 0.5f;
+                    playerWin.y = pCY - playerWin.height * 0.5f;
+                    g_DashInvuln = DASH_INVULN;
+                }
                 bool cDash = keys[GLFW_KEY_LEFT_SHIFT] || keys[GLFW_KEY_RIGHT_SHIFT];
-                if (cDash && !pDash && g_DashCd <= 0.0f) {
+                if (cDash && !pDash && g_DashCd <= 0.0f && !g_DashActive) {
                     float ddx = mvX, ddy = mvY;
-                    if (mlen <= 0.001f) {              // ???吏곸씠硫?議곗? 諛⑺뼢?쇰줈
+                    if (mlen <= 0.001f) {
                         float ax = wmx - pCX, ay = wmy - pCY;
                         float al = std::sqrt(ax*ax+ay*ay)+1e-3f; ddx = ax/al; ddy = ay/al;
                     }
-                    float ox = pCX, oy = pCY;
-                    pCX += ddx * DASH_DIST; pCY += ddy * DASH_DIST;
-                    if (pCX < ccX-halfW) pCX = ccX-halfW; if (pCX > ccX+halfW) pCX = ccX+halfW;
-                    if (pCY < ccY-halfH) pCY = ccY-halfH; if (pCY > ccY+halfH) pCY = ccY+halfH;
-                    playerWin.x = pCX - playerWin.width*0.5f;
-                    playerWin.y = pCY - playerWin.height*0.5f;
-                    g_DashInvuln = DASH_INVULN; g_DashCd = DASH_CD;
-                    SpawnShockWave(ox, oy, 70.0f, 0.25f, 0.4f, 1.0f, 1.0f);
+                    g_DashFromX = pCX;  g_DashFromY = pCY;
+                    g_DashToX   = pCX + ddx * DASH_DIST;
+                    g_DashToY   = pCY + ddy * DASH_DIST;
+                    if (g_DashToX < ccX-halfW) g_DashToX = ccX-halfW;
+                    if (g_DashToX > ccX+halfW) g_DashToX = ccX+halfW;
+                    if (g_DashToY < ccY-halfH) g_DashToY = ccY-halfH;
+                    if (g_DashToY > ccY+halfH) g_DashToY = ccY+halfH;
+                    g_DashActive = true; g_DashT = 0.0f;
+                    g_DashCd = DASH_CD;
+                    g_DashInvuln = DASH_INVULN;
+                    TriggerFlash(0.35f, 0.85f, 1.0f, 0.12f);
+                    SpawnShockWave(g_DashFromX, g_DashFromY, 70.0f, 0.25f, 0.4f, 1.0f, 1.0f);
                 }
                 pDash = cDash;
                 bool cQ = keys[GLFW_KEY_Q]; if (cQ && !pQ) useSkill(0); pQ = cQ;
@@ -2018,20 +2062,22 @@ int main() {
                     g_Stats.killCount       += 1;
                     g_GameManager.scoreAccum += scoreBase;
                     g_GameManager.score      = (long long)g_GameManager.scoreAccum;
-                    if (g_Stats.lifestealPerKill > 0.0f) {
-                        g_GameManager.playerHP += g_Stats.lifestealPerKill;
+                    if (g_Stats.GetLifestealPerKill() > 0.0f) {
+                        g_GameManager.playerHP += g_Stats.GetLifestealPerKill();
                         if (g_GameManager.playerHP > g_Stats.maxHP)
                             g_GameManager.playerHP = g_Stats.maxHP;
                     }
-                    if (g_Stats.vampire && ++g_Stats.vampireKillStreak >= 10) {
-                        g_Stats.vampireKillStreak = 0;
-                        g_GameManager.playerHP += 1.0f;
-                        if (g_GameManager.playerHP > g_Stats.maxHP)
-                            g_GameManager.playerHP = g_Stats.maxHP;
+                    if (g_Stats.vampire || g_Stats.lifesteal2) {
+                        if (++g_Stats.vampireKillStreak >= 10) {
+                            g_Stats.vampireKillStreak = 0;
+                            g_GameManager.playerHP += 1.0f;
+                            if (g_GameManager.playerHP > g_Stats.maxHP)
+                                g_GameManager.playerHP = g_Stats.maxHP;
+                        }
                     }
                 };
 
-                // ?щ쭩 ??컻 spawn (?ㅼ쓬 UpdateAll ???ㅼ젣 erase ?섍린 ?꾩뿉 ?꾩튂 罹≪쿂)
+                // ?щ쭩 ??컻 spawn
                 //   + 遺꾩뿴泥??щ쭩 ???묒? ?먯떇 2留덈━ (珥?2?몃?源뚯?)
                 std::vector<Monster*> mobBorn;
                 for (auto m : g_MonsterManager.monsters) {
@@ -2294,12 +2340,17 @@ int main() {
                         // 蹂??移대뱶 ??25% ?뺣쪧, ?꾩옱 臾닿린? ?ㅻⅨ StartWeapon ?쇰줈 ?꾪솚
                         //   寃媛?沅곸닔??珥앹쓣 ???곕?濡?蹂??移대뱶 ?쒖쇅
                         g_ConversionWeapon = -1;
-                        if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
-                            (rand() % 100) < 25 && g_CurrentWeapon >= 0) {
-                            int wc = (int)StartWeapon::_COUNT;
-                            int pick = rand() % wc;
-                            if (pick == g_CurrentWeapon) pick = (pick + 1) % wc;
-                            g_ConversionWeapon = pick;
+                        if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon) {
+                            int convChance = 0;
+                            if (g_GameManager.playerLevel == 3)      convChance = 50;
+                            else if (g_GameManager.playerLevel >= 4) convChance = 25;
+                            if (convChance > 0 && g_CurrentWeapon >= 0 &&
+                                (rand() % 100) < convChance) {
+                                int wc = (int)StartWeapon::_COUNT;
+                                int pick = rand() % wc;
+                                if (pick == g_CurrentWeapon) pick = (pick + 1) % wc;
+                                g_ConversionWeapon = pick;
+                            }
                         }
 
                         g_GameManager.currentState = GameState::AUG_SELECT;
@@ -2566,7 +2617,9 @@ int main() {
                             }
                             else if (g_Stats.shieldedMobs && (rand() % 100) < 22)
                                 nm->MakeKind(MobKind::SHIELDED);
-                            // 諛곕뱶 ?뱁꽣(M) ???붾쾭??蹂댁쑀 ???뷀븿, ?먯뿰 ?ㅽ룿? 留ㅼ슦 ??쓬. 50留뚯젏 ?섏쑝硫?誘몃벑??
+                            else if (g_Stats.ddosMobs && (rand() % 100) < 10)
+                                nm->MakeKind(MobKind::DDOS);
+                            // 諛곕뱶 ?뱁꽣(M)
                             else if (g_GameManager.score < 500000 &&
                                      ((g_Stats.badsectorMobs && (rand() % 100) < 12) ||
                                       (rand() % 1000) < 5))
@@ -2605,6 +2658,14 @@ int main() {
                         // ?몃줈?대ぉ留?媛뺥솕 ???먮㈇泥??몃줈?대ぉ留? ?먮㈇ ?ъ궗?⑹떆媛??⑥텞
                         if (nm->kind == MobKind::BLINKER && g_Stats.trojanBoost)
                             nm->blinkIntervalMul = 0.55f;
+                        if (nm->kind == MobKind::WEAVER && g_Stats.weaverBoost) {
+                            nm->speed    *= 1.15f;
+                            nm->weaveAmp  = 0.98f;
+                        }
+                        if (nm->kind == MobKind::BRUTE && g_Stats.bruteBoost) {
+                            nm->hp        *= 1.25f;
+                            nm->contactDmg = 6.0f;
+                        }
                     }
                 };
                 int packN = 1 + g_Stats.mobPackBonus;       // D_MOB_PACK: 援곗쭛 ?ㅽ룿
@@ -2948,8 +3009,28 @@ int main() {
                         ch.angle += 5.5f * delta;
                         float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                         float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
-                        float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;   // 踰꾪봽: ???덊듃諛뺤뒪
-                        // ?〓す ?묒큺 ??利됱궗 (hp ?뚮え -2 濡??꾪솕 ???ㅻ옒 踰꾪?)
+                        float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;
+                        // 특이점 — 끌어당김 + 지속 피해
+                        if (g_Stats.chakramSingularity) {
+                            const float pullR2 = 220.0f * 220.0f;
+                            for (auto m : g_MonsterManager.monsters) {
+                                if (!m->alive) continue;
+                                float ddx = chx - m->worldX, ddy = chy - m->worldY;
+                                float d2 = ddx*ddx + ddy*ddy;
+                                if (d2 < pullR2 && d2 > 100.0f) {
+                                    float d = std::sqrt(d2) + 1e-3f;
+                                    m->worldX += (ddx / d) * 200.0f * delta;
+                                    m->worldY += (ddy / d) * 200.0f * delta;
+                                }
+                                if (d2 < hitR2 * 2.5f) {
+                                    m->hp -= 45.0f * delta;
+                                    if (m->hp <= 0.0f) m->alive = false;
+                                    ch.hp -= 0.5f * delta;
+                                }
+                            }
+                        }
+                        // 잡몹 접촉 즉사 (특이점 제외 시)
+                        if (!g_Stats.chakramSingularity) {
                         for (auto m : g_MonsterManager.monsters) {
                             if (!m->alive) continue;
                             float ddx = m->worldX - chx, ddy = m->worldY - chy;
@@ -2958,7 +3039,14 @@ int main() {
                                 ch.hp -= 2.0f;
                             }
                         }
-                        // ?먰룺蹂??묒큺 ??利됱궗(?먰룺 ??泥섎━)
+                        } else {
+                        for (auto m : g_MonsterManager.monsters) {
+                            if (!m->alive) continue;
+                            float ddx = m->worldX - chx, ddy = m->worldY - chy;
+                            if (ddx*ddx + ddy*ddy < hitR2) ch.hp -= 1.0f;
+                        }
+                        }
+                        // 자폭병
                         for (auto bm : g_MonsterManager.bombers) {
                             if (!bm->alive) continue;
                             float ddx = bm->worldX - chx, ddy = bm->worldY - chy;
@@ -2997,7 +3085,11 @@ int main() {
             if (g_Stats.bulletRain) {
                 g_BulletRainTimer += delta;
                 // 臾댄븳 ?몃?(?좏솕) ??泥섏튂留덈떎 荑⑤떎??吏꾪뻾 媛??0.4s/泥섏튂). 誘몃낫????泥섏튂 移댁슫?몃쭔 鍮꾩?.
-                if (g_Stats.rainKillReduce) g_BulletRainTimer += g_RainKillAccum * 0.4f;
+                if (g_Stats.rainKillReduce) {
+                    g_BulletRainTimer += g_RainKillAccum * 0.25f;
+                    float minLeft = g_Stats.bulletRainCooldown - 3.0f;
+                    if (g_BulletRainTimer > minLeft) g_BulletRainTimer = minLeft;
+                }
                 g_RainKillAccum = 0.0f;
                 if (g_BulletRainTimer >= g_Stats.bulletRainCooldown) {
                     g_BulletRainTimer = 0.0f;
@@ -3096,28 +3188,39 @@ int main() {
                     nb.dmgMult *= 0.6f;
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 0.6f;
                 }
+                if (g_FocusShotsLeft > 0) {
+                    --g_FocusShotsLeft;
+                    nb.dmgMult *= 2.5f;
+                    if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 2.5f;
+                    nb.pierceBonusPct = 30;
+                }
+                if (g_Stats.revolverOverload && g_Stats.revolver) {
+                    if (g_RevolverRound == 5)
+                        nb.dmgMult *= g_Stats.critMult;
+                    g_RevolverRound = (g_RevolverRound + 1) % 6;
+                }
                 g_Bullets.push_back(nb);
             };
 
-            // Twin: 짹5??2諛?/ Shotgun: 5諛??고깂 (?ш굅由?700)
+            // Twin / Shotgun
             auto spawnAimed = [&](float tx, float ty) {
-                TriggerMuzzle(pCX, pCY, atan2f(ty - pCY, tx - pCX));  // 珥앷뎄 ?ш킅
+                TriggerMuzzle(pCX, pCY, atan2f(ty - pCY, tx - pCX));
                 Audio::PlaySfx(Audio::Sfx::Shoot);
                 if (g_Stats.shotgun) {
                     float dx = tx - pCX, dy = ty - pCY;
                     float ang = atan2f(dy, dx);
-                    const int N = 5;
+                    const int N = g_Stats.shotgunSpread ? 7 : 5;
                     float spread = 0.42f;
                     float r = 200.0f;
+                    float maxR = g_Stats.shotgunSpread ? 630.0f : 700.0f;
                     for (int s = 0; s < N; s++) {
-                        float t = (float)s / (float)(N - 1); // 0..1
+                        float t = (N > 1) ? (float)s / (float)(N - 1) : 0.5f;
                         float off = (t - 0.5f) * spread;
                         float a = ang + off;
-                        // 吏곸젒 spawn (maxRange ?곸슜)
                         Bullet nb(pCX, pCY,
                                   pCX + cosf(a) * r, pCY + sinf(a) * r);
                         nb.speed    = effSpeed;
-                        nb.maxRange = 700.0f;
+                        nb.maxRange = maxR;
                         if (g_Stats.cannon) {
                             nb.remainingDmg = g_Stats.GetBaseDamage()
                                             * g_Stats.GetDamageMultiplier(0.0f);
@@ -3194,16 +3297,18 @@ int main() {
                     return fabsf(diff) <= halfArc;
                 };
                 auto onKill = [&]() {   // ?≫삁???≫삁留?怨듯넻 泥섎━
-                    if (g_Stats.lifestealPerKill > 0.0f) {
-                        g_GameManager.playerHP += g_Stats.lifestealPerKill;
+                    if (g_Stats.GetLifestealPerKill() > 0.0f) {
+                        g_GameManager.playerHP += g_Stats.GetLifestealPerKill();
                         if (g_GameManager.playerHP > g_Stats.maxHP)
                             g_GameManager.playerHP = g_Stats.maxHP;
                     }
-                    if (g_Stats.vampire && ++g_Stats.vampireKillStreak >= 10) {
-                        g_Stats.vampireKillStreak = 0;
-                        g_GameManager.playerHP += 1.0f;
-                        if (g_GameManager.playerHP > g_Stats.maxHP)
-                            g_GameManager.playerHP = g_Stats.maxHP;
+                    if (g_Stats.vampire || g_Stats.lifesteal2) {
+                        if (++g_Stats.vampireKillStreak >= 10) {
+                            g_Stats.vampireKillStreak = 0;
+                            g_GameManager.playerHP += 1.0f;
+                            if (g_GameManager.playerHP > g_Stats.maxHP)
+                                g_GameManager.playerHP = g_Stats.maxHP;
+                        }
                     }
                 };
                 std::vector<Monster*> swingBorn;
@@ -3326,10 +3431,12 @@ int main() {
                             g_GameManager.playerHP += g_Stats.lifestealPerKill;
                             if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
                         }
-                        if (g_Stats.vampire && ++g_Stats.vampireKillStreak >= 10) {
-                            g_Stats.vampireKillStreak = 0;
-                            g_GameManager.playerHP += 1.0f;
-                            if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
+                        if (g_Stats.vampire || g_Stats.lifesteal2) {
+                            if (++g_Stats.vampireKillStreak >= 10) {
+                                g_Stats.vampireKillStreak = 0;
+                                g_GameManager.playerHP += 1.0f;
+                                if (g_GameManager.playerHP > g_Stats.maxHP) g_GameManager.playerHP = g_Stats.maxHP;
+                            }
                         }
                     };
                     auto inLine = [&](float qx, float qy) -> bool {
@@ -5176,6 +5283,7 @@ int main() {
                     case SkillType::CLOSE_WINDOW: tag = L"CLOSE"; r=0.5f; g=0.8f; b=1.0f; break;
                     case SkillType::OVERCLOCK:    tag = L"OVCLK"; r=1.0f; g=0.6f; b=0.2f; break;
                     case SkillType::TIME_STOP:    tag = L"TIME";  r=0.4f; g=0.9f; b=1.0f; break;
+                    case SkillType::FOCUS_AIM:    tag = L"FOCUS"; r=0.7f; g=0.9f; b=1.0f; break;
                     default: break;
                     }
                     skillBox(i + 1, keys3[i], tag, g_Skills[i].cd, r, g, b);

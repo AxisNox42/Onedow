@@ -69,6 +69,7 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
         s.damageMultiplier *= 5.0f;  // 자체 공격력 ×10 → ×5
         break;
     case StartWeapon::REVOLVER:
+        s.revolver         = true;
         s.fireInterval     *= 1.4f;
         s.damageMultiplier *= 1.4f;
         s.bulletSpread     = 0.0f;
