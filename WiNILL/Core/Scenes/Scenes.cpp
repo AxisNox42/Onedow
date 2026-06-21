@@ -741,8 +741,9 @@ void Scene_JobSelect(const SceneCtx& c) {
     const std::function<void()>& ResetForNewGame = c.reset;
                 BindMainShader();
                 const float FW = FLOW_PANEL_W, FH = FLOW_PANEL_H;
-                float fx, fcy;
-                SceneFlowWindow(sw, sh, FW, FH, L"career.exe", 0.55f, 0.7f, 1.0f, fx, fcy);
+                float fx, fy, fcy;
+                SceneFlowWindow(sw, sh, FW, FH, L"career.exe", 0.55f, 0.7f, 1.0f, fx, fy, fcy);
+                const float backY = FlowBackY(fy, FH);
 
                 int li = LangIndex();
                 const wchar_t* JTIT[3] = { L"직업 선택", L"Choose a Class", L"職業を選択" };
@@ -752,17 +753,22 @@ void Scene_JobSelect(const SceneCtx& c) {
                     L"実績達成で新しい職業が解放されます" };
                 const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
                 const wchar_t* TIT = JTIT[li];
-                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, 1.15f)) * 0.5f,
-                             fcy, 1.15f, 1, 1, 1, 1);
+                float titSc = 1.35f;
+                float titleY = fcy + 28.0f;
+                float titW = g_TextL.Width(TIT, titSc);
+                g_TextL.Draw(TIT, fx + (FW - titW) * 0.5f, titleY, titSc, 1, 1, 1, 1);
                 const wchar_t* HN = JHINT[li];
-                g_TextS.Draw(HN, fx + (FW - g_TextS.Width(HN, 0.82f)) * 0.5f,
-                             fcy + 36.0f, 0.82f, 0.7f, 0.8f, 0.9f, 0.9f);
+                float hintSc = 0.88f;
+                float hintY = titleY + g_TextL.Height(TIT, titSc) + 20.0f;
+                float hintW = g_TextS.Width(HN, hintSc);
+                g_TextS.Draw(HN, fx + (FW - hintW) * 0.5f, hintY, hintSc,
+                             0.7f, 0.8f, 0.9f, 0.9f);
 
-                const float BW = FW - 64.0f, BH = 72.0f, BG = 8.0f;
-                const float ICON_W = 54.0f;
-                const float TX = 12.0f;   // 텍스트 영역 좌측 (아이콘 오른쪽)
-                float bx = fx + 32.0f;
-                float by = fcy + 68.0f;
+                const float BW = 920.0f, BH = 84.0f, BG = 14.0f;
+                const float ICON_W = 58.0f;
+                const float TX = 14.0f;
+                float bx = fx + (FW - BW) * 0.5f;
+                float by = hintY + g_TextS.Height(HN, hintSc) + 36.0f;
                 for (int j = 0; j < JOB_PLAYABLE; j++) {   // 검객/궁수(DLC 보류)는 숨김
                     float y = by + j * (BH + BG);
                     bool unlocked = JobUnlocked(j);
@@ -787,7 +793,7 @@ void Scene_JobSelect(const SceneCtx& c) {
                     float textW = BW - ICON_W - TX - 12.0f;
                     float nsc = 0.82f;
                     while (nsc > 0.52f && g_TextL.Width(JobName(j), nsc) > textW) nsc -= 0.04f;
-                    g_TextL.Draw(JobName(j), textX, y + 10.0f, nsc,
+                    g_TextL.Draw(JobName(j), textX, y + 12.0f, nsc,
                                  unlocked?1.0f:0.55f, unlocked?1.0f:0.55f, unlocked?1.0f:0.6f, 0.98f);
                     wchar_t line[200];
                     float lr=0.85f, lg=0.95f, lb=1.0f;
@@ -801,7 +807,7 @@ void Scene_JobSelect(const SceneCtx& c) {
                     }
                     float dsc = 0.70f;
                     while (dsc > 0.48f && g_TextS.Width(line, dsc) > textW) dsc -= 0.03f;
-                    g_TextS.Draw(line, textX, y + 40.0f, dsc, lr, lg, lb, 0.92f);
+                    g_TextS.Draw(line, textX, y + 46.0f, dsc, lr, lg, lb, 0.92f);
 
                     if (clicked) {
                         g_SelectedJob = j;
@@ -810,7 +816,7 @@ void Scene_JobSelect(const SceneCtx& c) {
                         g_GameManager.currentState = GameState::WEAPON_SELECT;
                     }
                 }
-                if (UIButton(fx + 24.0f, fcy + FH - 58.0f, 160.0f, 48.0f, T(StrId::BTN_BACK),
+                if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = g_CreativeMode
                         ? GameState::CREATIVE_CONFIG : GameState::DIFFICULTY_SELECT;
@@ -895,20 +901,26 @@ void Scene_WeaponSelect(const SceneCtx& c) {
 
                 BindMainShader();
                 const float FW = FLOW_PANEL_W, FH = FLOW_PANEL_H;
-                float fx, fcy;
-                SceneFlowWindow(sw, sh, FW, FH, L"loadout.exe", 0.4f, 0.85f, 1.0f, fx, fcy);
+                float fx, fy, fcy;
+                SceneFlowWindow(sw, sh, FW, FH, L"loadout.exe", 0.4f, 0.85f, 1.0f, fx, fy, fcy);
+                const float backY = FlowBackY(fy, FH);
 
                 const wchar_t* TIT = L"시작 무기를 선택하세요";
-                float titSc = 1.15f;
-                while (titSc > 0.85f && g_TextL.Width(TIT, titSc) > FW - 48.0f) titSc -= 0.05f;
+                float titSc = 1.2f;
+                while (titSc > 0.85f && g_TextL.Width(TIT, titSc) > FW - 96.0f) titSc -= 0.05f;
+                float titleY = fcy + 32.0f;
+                float titH = g_TextL.Height(TIT, titSc);
                 g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, titSc)) * 0.5f,
-                             fcy, titSc, 1, 1, 1, 0.98f);
+                             titleY, titSc, 1, 1, 1, 0.98f);
 
-                const float GAP = 14.0f;
-                const float CARD_W = (FW - 64.0f - 2.0f * GAP) / 3.0f;
-                const float CARD_H = FH - 168.0f;
-                float baseX = fx + 32.0f;
-                float baseY = fcy + 48.0f;
+                const float GAP = 32.0f;
+                const float CARD_W = 380.0f;
+                const float totalCardsW = 3.0f * CARD_W + 2.0f * GAP;
+                float cardsTop = titleY + titH + 40.0f;
+                float cardsBot = backY - 20.0f;
+                float CARD_H = std::min(480.0f, cardsBot - cardsTop);
+                float baseX = fx + (FW - totalCardsW) * 0.5f;
+                float baseY = cardsTop + (cardsBot - cardsTop - CARD_H) * 0.5f;
 
                 for (int i = 0; i < 3; i++) {
                     int idx = g_WeaponChoices[i];
@@ -965,8 +977,7 @@ void Scene_WeaponSelect(const SceneCtx& c) {
                     }
                 }
 
-                // 뒤로 — 직업 선택으로
-                if (UIButton(fx + 24.0f, fcy + FH - 58.0f, 160.0f, 48.0f, T(StrId::BTN_BACK),
+                if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::JOB_SELECT;
                 }
@@ -983,12 +994,16 @@ void Scene_DifficultySelect(const SceneCtx& c) {
     const std::function<void()>& ResetForNewGame = c.reset;
                 BindMainShader();
                 const float FW = FLOW_PANEL_W, FH = FLOW_PANEL_H;
-                float fx, fcy;
-                SceneFlowWindow(sw, sh, FW, FH, L"onedow.exe", 0.30f, 0.8f, 1.0f, fx, fcy);
+                float fx, fy, fcy;
+                SceneFlowWindow(sw, sh, FW, FH, L"onedow.exe", 0.30f, 0.8f, 1.0f, fx, fy, fcy);
+                const float backY = FlowBackY(fy, FH);
 
                 const wchar_t* TIT = T(StrId::DIFF_TITLE);
-                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, 1.35f)) * 0.5f,
-                             fcy, 1.35f, 1.0f, 1.0f, 1.0f, 1.0f);
+                float titSc = 1.35f;
+                float titleY = fcy + 28.0f;
+                float titH = g_TextL.Height(TIT, titSc);
+                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, titSc)) * 0.5f,
+                             titleY, titSc, 1.0f, 1.0f, 1.0f, 1.0f);
 
                 struct DiffBtn { Difficulty d; StrId label; StrId desc; float r, g, b; };
                 DiffBtn btns[3] = {
@@ -1000,9 +1015,11 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                       1.0f, 0.4f, 0.4f },
                 };
 
-                const float BW = FW - 80.0f, BH = 78.0f, BG = 16.0f;
-                float bx = fx + 40.0f;
-                float by = fcy + 56.0f;
+                const float BW = 680.0f, BH = 96.0f, BG = 28.0f;
+                float bx = fx + (FW - BW) * 0.5f;
+                float blockH = 3.0f * BH + 2.0f * BG;
+                float by = titleY + titH + 40.0f +
+                           (FlowContentH(FH) - titH - 40.0f - blockH) * 0.32f;
 
                 for (int i = 0; i < 3; i++) {
                     float y = by + i * (BH + BG);
@@ -1019,23 +1036,23 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                     float lsc = 0.95f;
                     while (lsc > 0.65f && g_TextL.Width(lbl, lsc) > BW - 24.0f) lsc -= 0.05f;
                     float lw = g_TextL.Width(lbl, lsc);
-                    g_TextL.Draw(lbl, bx + (BW - lw) * 0.5f, y + 12.0f, lsc, 1, 1, 1, 0.98f);
+                    g_TextL.Draw(lbl, bx + (BW - lw) * 0.5f, y + 16.0f, lsc, 1, 1, 1, 0.98f);
                     const wchar_t* desc = T(btns[i].desc);
                     float dsc = 0.82f;
                     while (dsc > 0.58f && g_TextS.Width(desc, dsc) > BW - 24.0f) dsc -= 0.04f;
                     float dw = g_TextS.Width(desc, dsc);
-                    g_TextS.Draw(desc, bx + (BW - dw) * 0.5f, y + BH - 30.0f, dsc,
+                    g_TextS.Draw(desc, bx + (BW - dw) * 0.5f, y + BH - 34.0f, dsc,
                                  btns[i].r, btns[i].g, btns[i].b, 0.88f);
                 }
 
-                // 크리에이티브(개발) 모드 토글 — 도감 시크릿 코드로 해금 시에만 노출
                 if (g_DevUnlocked) {
                     const wchar_t* CLBL = g_CreativeMode
                         ? T(StrId::CREATIVE_ON)
                         : T(StrId::CREATIVE_OFF);
-                    float cby = by + 3 * (BH + BG) + 20.0f;
+                    float cby = by + blockH + 28.0f;
+                    if (cby + 72.0f > backY - 12.0f) cby = backY - 84.0f;
                     float cbw = BW, cbh = 72.0f;
-                    float cbx = fx + (FW - cbw) * 0.5f;
+                    float cbx = bx;
                     if (UIButton(cbx, cby, cbw, cbh, CLBL,
                                  mx, my, lmb, g_LmbPrev, g_CreativeMode)) {
                         g_CreativeMode = !g_CreativeMode;
@@ -1050,8 +1067,7 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                                  0.85f, 0.95f, 0.6f, 0.85f);
                 }
 
-                // 뒤로 버튼
-                if (UIButton(fx + 24.0f, fcy + FH - 58.0f, 160.0f, 48.0f, T(StrId::BTN_BACK),
+                if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::MAIN_MENU;
                 }

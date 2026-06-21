@@ -29,11 +29,12 @@ void SceneDeskWindow(float sw, float sh, const wchar_t* fname,
 
 void SceneFlowWindow(float sw, float sh, float WW, float WH,
                      const wchar_t* fname, float ar, float ag, float ab,
-                     float& outX, float& outContentY) {
+                     float& outX, float& outY, float& outContentY) {
     float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
     outX = wx;
+    outY = wy;
+    outContentY = wy + FLOW_CHROME_TOP;
     const float TB = 30.0f;
-    outContentY = wy + TB + 10.0f;
     BindMainShader();
     drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.25f);
     drawRect(wx + 6.0f, wy + 8.0f, WW, WH, 0.0f, 0.0f, 0.0f, 0.32f);
