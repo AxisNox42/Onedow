@@ -243,6 +243,41 @@ bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss = nullptr;
 PolymorphBoss* g_PolyBoss = nullptr;
 BotnetBoss* g_BotnetBoss = nullptr;
+
+static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
+                                     float dx, float dy) {
+    if (std::fabs(dx) < 0.01f && std::fabs(dy) < 0.01f) return;
+    auto inside = [&](float x, float y) {
+        return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+    };
+    for (auto m : g_MonsterManager.monsters) {
+        if (!m->alive) continue;
+        if (inside(m->worldX, m->worldY)) {
+            m->worldX += dx;
+            m->worldY += dy;
+        }
+        if (m->kind == MobKind::BLINKER && m->blinkWarn &&
+            inside(m->blinkTargetX, m->blinkTargetY)) {
+            m->blinkTargetX += dx;
+            m->blinkTargetY += dy;
+        }
+    }
+    for (auto bm : g_MonsterManager.bombers) {
+        if (!bm->alive) continue;
+        if (inside(bm->worldX, bm->worldY)) {
+            bm->worldX += dx;
+            bm->worldY += dy;
+        }
+    }
+    for (auto r : g_MonsterManager.rangedMobs) {
+        if (r->deathScale <= 0.0f) continue;
+        if (inside(r->worldX, r->worldY)) {
+            r->worldX += dx;
+            r->worldY += dy;
+        }
+    }
+}
+
 CentipedeBoss* g_CentiBoss = nullptr;
 TotemBoss* g_TotemBoss = nullptr;
 // ?? 諛곕뱶 ?뱁꽣 ?щ쭩 ?붾쪟臾????꾩떆 媛먯냽 援ъ뿭(?먯긽 ?곸뿭). ?덉뿉 ?덉쑝硫??대룞?띾룄 -10% ??
@@ -1806,9 +1841,15 @@ int main() {
 
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
                 if (g_PolyBoss && g_PolyBoss->alive) {
+                    float prevPWx = playerWin.x, prevPWy = playerWin.y;
                     if (!timeStopped)
                     g_PolyBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets,
                         playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+                    if (!timeStopped) {
+                        float wdx = playerWin.x - prevPWx, wdy = playerWin.y - prevPWy;
+                        DisplaceEntitiesInWindow(prevPWx, prevPWy,
+                            playerWin.width, playerWin.height, wdx, wdy);
+                    }
                     if (g_PolyBoss->fx.shakePulse) {
                         g_PolyBoss->fx.shakePulse = false;
                         g_ShakeTime = 0.28f; g_ShakeMag = 16.0f;
@@ -3850,7 +3891,8 @@ int main() {
         //    濡?洹몃젮, ?믪? 李쎌쓽 遺덊닾紐?諛곌꼍????? 李쎌쓽 諛곌꼍쨌?멸낸?좎쓣 ?먯뿰????쓬(?곗꽑?쒖쐞 媛由?.
         //    (?뚮젅?댁뼱 李쎌? ???ㅼ뿉 ?곕줈 洹몃젮 ??긽 理쒖긽??)
         struct FWin { float x, y, w, h; const wchar_t* name;
-                      float br, bgc, bbc, nr, ngc, nbc; };
+                      float br, bgc, bbc, nr, ngc, nbc;
+                      float gaugePct = -1.0f; };
         std::vector<FWin> zwins;
         auto addW = [&](float cx, float cy, float w, float h, const wchar_t* nm,
                         float br, float bgc, float bbc, float nr, float ngc, float nbc) {
@@ -3873,6 +3915,13 @@ int main() {
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
                  L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
+            float hw = g_PolyBoss->holeWinSize();
+            float hx = g_PolyBoss->holeX - hw * 0.5f;
+            float hy = g_PolyBoss->holeY - hw * 0.5f;
+            zwins.push_back({ hx, hy, hw, hw, L"GRAVITY.core",
+                0.02f, 0.01f, 0.05f, 0.12f, 0.92f, 0.78f, g_PolyBoss->holeFillPct() });
+        }
         if (g_PolyBoss && g_PolyBoss->alive)
             addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
                  L"GLITCH.exe", 0.04f,0.02f,0.06f, 0.85f,0.25f,1.0f);
@@ -3936,21 +3985,10 @@ int main() {
                         }
                 }
                 if (pb->blackHoleActive) {
-                    float hr = pb->holeR;
-                    float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
-                    drawCircle(pb->holeX, pb->holeY, hr * 1.45f, 0.08f, 0.5f, 0.95f, 0.10f + 0.06f * pulse);
-                    drawCircle(pb->holeX, pb->holeY, hr * 1.12f, 0.0f, 0.82f, 0.72f, 0.24f);
-                    drawCircle(pb->holeX, pb->holeY, hr * 0.62f, 0.0f, 0.0f, 0.0f, 0.94f);
-                    for (int r = 0; r < 4; r++) {
-                        float ang = gt * (2.0f + r * 0.35f) + r * 1.57f;
-                        drawTriangle(pb->holeX + cosf(ang) * hr * 0.78f,
-                                     pb->holeY + sinf(ang) * hr * 0.78f,
-                                     14.0f, 0.15f, 1.0f, 0.9f, 0.5f);
+                    for (auto& s : pb->swarm) {
+                        if (!s.alive || hidePt(s.x, s.y)) continue;
+                        drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
                     }
-                }
-                for (auto& s : pb->swarm) {
-                    if (!s.alive || hidePt(s.x, s.y)) continue;
-                    drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
                 }
             }
             if (pb->form == PForm::DISPLACE) {
@@ -4104,6 +4142,36 @@ int main() {
         if (g_PolyBoss && g_PolyBoss->alive)
             drawBossWinContent(g_PolyBoss->worldX - POLY_WIN_W * 0.5f,
                                g_PolyBoss->worldY - POLY_WIN_W * 0.5f, POLY_WIN_W, POLY_WIN_W);
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
+            auto* pb = g_PolyBoss;
+            float hw = pb->holeWinSize();
+            float hx = pb->holeX - hw * 0.5f, hy = pb->holeY - hw * 0.5f;
+            WorldScissor(hx, hy, hw, hw);
+            float gt = (float)glfwGetTime();
+            float hr = pb->holeR;
+            float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
+            drawCircle(pb->holeX, pb->holeY, hr * 1.55f, 0.10f, 0.55f, 0.98f, 0.18f + 0.08f * pulse);
+            drawCircle(pb->holeX, pb->holeY, hr * 1.18f, 0.0f, 0.88f, 0.78f, 0.34f);
+            drawCircle(pb->holeX, pb->holeY, hr * 0.64f, 0.0f, 0.0f, 0.0f, 0.97f);
+            for (int ri = 0; ri < 5; ri++) {
+                float ang = gt * (2.2f + ri * 0.3f) + ri * 1.256f;
+                drawTriangle(pb->holeX + cosf(ang) * hr * 0.82f,
+                             pb->holeY + sinf(ang) * hr * 0.82f,
+                             16.0f, 0.12f, 1.0f, 0.92f, 0.55f);
+            }
+            float barW = hw - 28.0f;
+            float fill = pb->holeFillPct();
+            drawRect(hx + 14.0f, hy + hw - 18.0f, barW, 6.0f, 0.05f, 0.04f, 0.07f, 0.92f);
+            drawRect(hx + 14.0f, hy + hw - 18.0f, barW * fill, 6.0f, 0.12f, 0.95f, 0.78f, 0.98f);
+            for (auto& s : pb->swarm) {
+                if (!s.alive || !inWin(s.x, s.y, hx, hy, hw, hw)) continue;
+                drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
+            }
+            for (auto& b : g_Bullets) {
+                if (!b.active || !inWin(b.x, b.y, hx, hy, hw, hw)) continue;
+                drawBullet(b);
+            }
+        }
         if (g_BotnetBoss && g_BotnetBoss->alive)
             drawBossWinContent(g_BotnetBoss->worldX - BOTNET_WIN_W * 0.5f,
                                g_BotnetBoss->worldY - BOTNET_WIN_W * 0.5f, BOTNET_WIN_W, BOTNET_WIN_W);
@@ -4438,6 +4506,12 @@ int main() {
             float hs = p.size * 0.5f;
             drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
         }
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->form == PForm::SINGULARITY) {
+            for (auto& s : g_PolyBoss->swarm) {
+                if (!s.alive || !inWin(s.x, s.y, pwx, pwy, pww, pwh)) continue;
+                drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
+            }
+        }
         }
         // ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 (?뚮젅?댁뼱 李??덉뿉?쒕쭔)
         for (auto& orb : g_ApproachOrbs) {
@@ -4758,7 +4832,8 @@ int main() {
                            gst == GameState::DEBUFF_SELECT);
             if (inGame) {
                 auto winChrome = [&](float x, float y, float w, float h,
-                                     const wchar_t* title, float tr, float tg, float tb) {
+                                     const wchar_t* title, float tr, float tg, float tb,
+                                     float gaugePct = -1.0f) {
                     BindMainShader();
                     const float TB = 22.0f;
                     drawRect(x, y, w, TB, tr*0.45f, tg*0.45f, tb*0.55f, 1.0f);
@@ -4775,6 +4850,14 @@ int main() {
                                  0.5f * g_ViewZoom, 1,1,1, 0.95f);
                     g_TextS.Draw(title, W2SX(x + 8.0f), W2SY(y + 3.0f),
                                  0.55f * g_ViewZoom, 0.92f,0.96f,1.0f, 0.95f);
+                    if (gaugePct >= 0.0f) {
+                        wchar_t gp[16];
+                        swprintf_s(gp, L"%d%%", (int)(gaugePct * 100.0f + 0.5f));
+                        float gs = 0.48f * g_ViewZoom;
+                        float gw = g_TextS.Width(gp, gs);
+                        g_TextS.Draw(gp, W2SX(x + w - gw - 52.0f), W2SY(y + 3.0f),
+                                     gs, 0.55f, 0.98f, 0.85f, 0.95f);
+                    }
                 };
                 int li2 = LangIndex();
                 const wchar_t* PNAME = (li2==0) ? L"onedow.exe" : L"onedow.exe";
@@ -4787,7 +4870,7 @@ int main() {
                 glEnable(GL_SCISSOR_TEST);
                 auto drawBarClipped = [&](float x, float y, float w, float h,
                                           const wchar_t* nm, float nr, float ng, float nb,
-                                          size_t selfIdx, bool isPlayer) {
+                                          size_t selfIdx, bool isPlayer, float gaugePct = -1.0f) {
                     // 媛??x援ш컙 由ъ뒪??(媛?vec2: x=?쒖옉, y=??
                     std::vector<glm::vec2> vis{ glm::vec2(x, x + w) };
                     auto subtract = [&](float c0, float c1) {
@@ -4814,13 +4897,13 @@ int main() {
                         float a = iv.x, b = iv.y;
                         if (b - a < 0.5f) continue;
                         WorldScissor(a, y, b - a, TBH);
-                        winChrome(x, y, w, h, nm, nr, ng, nb);
+                        winChrome(x, y, w, h, nm, nr, ng, nb, gaugePct);
                     }
                 };
                 for (size_t i = 0; i < zwins.size(); i++) {
                     const FWin& fw = zwins[i];
                     drawBarClipped(fw.x, fw.y, fw.w, fw.h, fw.name,
-                                   fw.nr, fw.ngc, fw.nbc, i, false);
+                                   fw.nr, fw.ngc, fw.nbc, i, false, fw.gaugePct);
                 }
                 BatchFlush();
                 // ?뚮젅?댁뼱 李?????긽 理쒖긽?? ?대┰ ?놁씠 ?꾩껜

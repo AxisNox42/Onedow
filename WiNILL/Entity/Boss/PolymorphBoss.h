@@ -61,11 +61,13 @@ public:
     float triWarnTimer = 0.0f;
     float singularitySpawn = 0.0f;
     float holeX = 0.0f, holeY = 0.0f;
-    float holeR = 38.0f;
-    float holeRMin = 38.0f;
-    float holeRMax = 100.0f;
+    float holeR = 70.0f;
+    float holeRMin = 70.0f;
+    float holeRMax = 230.0f;
     bool  holeBursting = false;
     float holeBurstT = 0.0f;
+    float holeBurstEmit = 0.0f;
+    static constexpr float HOLE_BURST_DUR = 4.0f;
 
     std::vector<PGlitchBar> bars;
     float displaceCd = 0.0f;
@@ -84,7 +86,7 @@ public:
         worldY = sh * 0.28f;
         holeX = sw * 0.5f;
         holeY = (sh - 90.0f) * 0.5f;
-        holeRMax = 100.0f;
+        holeRMax = 230.0f;
         for (int i = 0; i < DRONE_N; i++)
             droneAng[i] = (float)i / (float)DRONE_N * 6.2831853f;
         pickForm(true);
@@ -126,7 +128,8 @@ public:
         holeR = holeRMin;
         holeBursting = false;
         holeBurstT = 0.0f;
-        holeRMax = enraged ? 118.0f : 100.0f;
+        holeBurstEmit = 0.0f;
+        holeRMax = enraged ? 270.0f : 230.0f;
         displaceCd = enraged ? 1.0f : 1.4f;
         snapTimer = 0.0f;
         phantomSlipCd = 1.2f;
@@ -146,8 +149,20 @@ public:
         if (!enraged && hp <= maxHp * 0.40f) {
             enraged = true;
             formDuration = 7.0f;
-            holeRMax = 118.0f;
+            holeRMax = 270.0f;
         }
+    }
+
+    float holeWinSize() const {
+        return std::max(220.0f, holeR * 2.85f + 64.0f);
+    }
+
+    float holeFillPct() const {
+        if (holeRMax <= holeRMin + 0.001f) return 0.0f;
+        float p = (holeR - holeRMin) / (holeRMax - holeRMin);
+        if (p < 0.0f) p = 0.0f;
+        if (p > 1.0f) p = 1.0f;
+        return p;
     }
 
     void spawnEdgeTriangle() {
@@ -171,37 +186,38 @@ public:
         swarm.push_back(s);
     }
 
-    void fireHoleBurst(std::vector<Bullet>& bullets) {
-        int n = enraged ? 32 : 26;
+    void fireHoleBurstWave(std::vector<Bullet>& bullets, float angOff = 0.0f) {
+        int n = enraged ? 22 : 18;
         for (int i = 0; i < n; i++) {
-            float ang = (float)i / (float)n * 6.2831853f;
-            float tx = holeX + cosf(ang) * 220.0f;
-            float ty = holeY + sinf(ang) * 220.0f;
+            float ang = angOff + (float)i / (float)n * 6.2831853f;
+            float tx = holeX + cosf(ang) * 260.0f;
+            float ty = holeY + sinf(ang) * 260.0f;
             Bullet b(holeX, holeY, tx, ty);
             b.isEnemy  = true;
-            b.enemyDmg = enraged ? 8.5f : 6.5f;
-            b.speed    = enraged ? 460.0f : 400.0f;
-            b.color    = glm::vec3(0.8f, 0.25f, 1.0f);
+            b.enemyDmg = enraged ? 7.5f : 5.8f;
+            b.speed    = enraged ? 520.0f : 440.0f;
+            b.color    = glm::vec3(0.85f, 0.22f, 1.0f);
             bullets.push_back(b);
         }
-        fx.shakePulse = true;
     }
 
     void triggerHoleBurst(std::vector<Bullet>& bullets) {
         if (holeBursting) return;
         holeBursting = true;
-        holeBurstT = enraged ? 0.38f : 0.48f;
-        fireHoleBurst(bullets);
+        holeBurstT = HOLE_BURST_DUR;
+        holeBurstEmit = 0.0f;
+        fireHoleBurstWave(bullets, 0.0f);
+        fx.shakePulse = true;
     }
 
     void absorbTriangle() {
-        holeR += enraged ? 4.2f : 3.2f;
+        holeR += enraged ? 3.6f : 3.0f;
         if (holeR >= holeRMax)
             holeR = holeRMax;
     }
 
     void onTriangleShot() {
-        holeR -= enraged ? 7.0f : 5.5f;
+        holeR -= enraged ? 8.0f : 6.0f;
         if (holeR < holeRMin) holeR = holeRMin;
     }
 
@@ -359,17 +375,26 @@ public:
             if (blackHoleActive) {
                 if (holeBursting) {
                     holeBurstT -= dt;
-                    holeR = holeRMin + (holeRMax - holeRMin) * (holeBurstT / (enraged ? 0.38f : 0.48f));
-                    if (holeR < holeRMin) holeR = holeRMin;
+                    float burstProg = holeBurstT / HOLE_BURST_DUR;
+                    if (burstProg < 0.0f) burstProg = 0.0f;
+                    holeR = holeRMin + (holeRMax - holeRMin) * burstProg;
+                    holeBurstEmit -= dt;
+                    if (holeBurstEmit <= 0.0f) {
+                        holeBurstEmit = enraged ? 0.055f : 0.07f;
+                        float spin = (HOLE_BURST_DUR - holeBurstT) * (enraged ? 4.2f : 3.4f);
+                        fireHoleBurstWave(bullets, spin);
+                        if ((int)(holeBurstT * 14.0f) % 2 == 0)
+                            fx.shakePulse = true;
+                    }
                     if (holeBurstT <= 0.0f) {
                         holeBursting = false;
                         holeR = holeRMin;
-                        vulnTimer = enraged ? 0.9f : 1.1f;
+                        vulnTimer = enraged ? 1.0f : 1.2f;
                     }
                 } else {
                     singularitySpawn -= dt;
                     if (singularitySpawn <= 0.0f) {
-                        singularitySpawn = enraged ? 0.07f : 0.095f;
+                        singularitySpawn = enraged ? 0.14f : 0.18f;
                         spawnEdgeTriangle();
                     }
                     float pdx = holeX - px, pdy = holeY - py;
