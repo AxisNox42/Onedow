@@ -201,14 +201,19 @@ void Scene_Shop(const SceneCtx& c) {
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
 
                 const wchar_t* TIT = T(StrId::BTN_SHOP);
-                float tw0 = g_TextL.Width(TIT, 1.3f);
-                g_TextL.Draw(TIT, wx + (WW-tw0)*0.5f, wy + 44.0f, 1.3f, 1,1,1,1);
+                float titSc = 1.3f;
+                float titleY = wy + 48.0f;
+                float tw0 = g_TextL.Width(TIT, titSc);
+                g_TextL.Draw(TIT, wx + (WW - tw0) * 0.5f, titleY, titSc, 1, 1, 1, 1);
                 wchar_t cbuf[48]; swprintf_s(cbuf, L"COIN  %lld", g_Coins);
-                float cw0 = g_TextL.Width(cbuf, 1.0f);
-                g_TextL.Draw(cbuf, wx + (WW-cw0)*0.5f, wy + 86.0f, 1.0f, 1.0f, 0.9f, 0.3f, 1.0f);
+                float coinSc = 1.0f;
+                float coinY = titleY + g_TextL.Height(TIT, titSc) + 18.0f;
+                float cw0 = g_TextL.Width(cbuf, coinSc);
+                g_TextL.Draw(cbuf, wx + (WW - cw0) * 0.5f, coinY, coinSc, 1.0f, 0.9f, 0.3f, 1.0f);
 
                 const float RW = 640.0f, RH = 56.0f, RG = 10.0f;
-                float rx = wx + (WW - RW) * 0.5f, ry0 = wy + 128.0f;
+                float rx = wx + (WW - RW) * 0.5f;
+                float ry0 = coinY + g_TextL.Height(cbuf, coinSc) + 28.0f;
                 for (int i = 0; i < META_COUNT; i++) {
                     float ry = ry0 + i * (RH + RG);
                     BindMainShader();
