@@ -236,10 +236,6 @@ static int RollOneAug(const bool* takenOnce,
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
             if (t == AugType::VISION_UP && g_Stats.visionStacks >= 5) continue;
             if (t == AugType::CRIT      && g_Stats.critChance   >= 75) continue;
-            // 변환 전용 증강 — 일반 픽 제외 (4번째 변환 카드 슬롯에서만 등장)
-            // BAYONET 은 일반 에픽으로 복원
-            if (t == AugType::CANNON || t == AugType::SNIPER ||
-                t == AugType::SHOTGUN) continue;
             // 쉬움: 자폭병 관련 증강 제외 (#107)
             if (g_Difficulty == Difficulty::EASY && t == AugType::HACK_BOMBER) continue;
             pool[poolSize++] = i;
@@ -464,12 +460,10 @@ void GameManager::Render() {
         currentState == GameState::DEBUFF_SELECT) {
         setOrtho(projLoc);
 
-        bool        hasConv = (conversionAug >= 0 &&
-                               currentState == GameState::AUG_SELECT);
-        int         nCards  = hasConv ? 4 : 3;
-        const float CARD_W  = hasConv ? 240.0f : 280.0f;
+        const int         nCards  = 3;
+        const float CARD_W  = 280.0f;
         const float CARD_H  = 400.0f;
-        const float GAP     = hasConv ? 32.0f : 48.0f;
+        const float GAP     = 48.0f;
         const float INSET   = 10.0f;
         const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
         float baseX = (screenW - TOTAL_W) * 0.5f;
@@ -480,13 +474,8 @@ void GameManager::Render() {
             bool  hover  = (hoveredCard == i);
 
             float cr, cg, cb;
-            if (i < 3) {
-                AugRarity rar = ALL_AUGS[augChoices[i]].rarity;
-                GetRarityColor(rar, cr, cg, cb);
-            } else {
-                // 변환 카드 — 금색 테마
-                cr = 1.00f; cg = 0.78f; cb = 0.10f;
-            }
+            AugRarity rar = ALL_AUGS[augChoices[i]].rarity;
+            GetRarityColor(rar, cr, cg, cb);
 
             // 호버 시: 16px 위로 부유 + glow 외곽
             float yOff = hover ? -16.0f : 0.0f;

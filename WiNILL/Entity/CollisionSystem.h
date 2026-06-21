@@ -158,6 +158,9 @@ public:
                         // 종류별 기본 EXP/점수 (공용 테이블, 엘리트 ×2.5)
                         float baseXp, baseScore;
                         MobKillReward(m->kind, m->splitGen, m->elite, baseXp, baseScore);
+                        float rwm = MobRewardMult(m->kind);
+                        baseXp *= rwm;
+                        baseScore *= rwm;
                         float gained = (baseXp + (float)stats.meleeXpBonus)
                                      * stats.xpMult;
                         xp              += (long long)gained;
@@ -174,7 +177,7 @@ public:
                             }
                         }
                         if (stats.GetLifestealPerKill() > 0.0f) {
-                            playerHP += stats.GetLifestealPerKill();
+                            playerHP += stats.GetLifestealPerKill() * MobRewardMult(m->kind);
                             if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                         }
                     }
@@ -248,7 +251,7 @@ public:
                                 playerHP += stats.GetLifestealPerKill();
                                 if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                             }
-                            // HACK_BOMBER: 20% 확률 폭발 (적에게만 피해, VFX는 main.cpp 에서)
+                            // HACK_BOMBER: 20% 확률 폭발
                             if (stats.hackBomber && (rand() % 100) < 20) {
                                 bm->hackBlastPending = true;  // main.cpp 에서 폭발 VFX spawn
                                 float hackDmg = stats.GetBaseDamage()
@@ -355,7 +358,7 @@ public:
                                 playerHP += stats.GetLifestealPerKill();
                                 if (playerHP > stats.maxHP) playerHP = stats.maxHP;
                             }
-                            // HACK_RANGED: 20% 확률 유도탄 5발 (적에게만 피해 — player bullet)
+                            // HACK_RANGED: 20% 확률 유도탄 5발
                             if (stats.hackRanged && (rand() % 100) < 20) {
                                 const int N = 5;
                                 for (int k = 0; k < N; k++) {

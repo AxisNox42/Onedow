@@ -1423,11 +1423,10 @@ void Scene_AugSelect(const SceneCtx& c) {
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
                 // ── 카드 레이아웃 (GameManager::Render 와 동기화) ──
-                bool hasConv = (g_ConversionWeapon >= 0 && st == GameState::AUG_SELECT);
-                int  nCards  = hasConv ? 4 : 3;
-                const float CARD_W = hasConv ? 240.0f : 280.0f;
+                const int  nCards  = 3;
+                const float CARD_W = 280.0f;
                 const float CARD_H = 400.0f;
-                const float GAP    = hasConv ? 32.0f : 48.0f;
+                const float GAP    = 48.0f;
                 const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
                 float baseX = (sw - TOTAL_W) * 0.5f;
                 float baseY = (sh - CARD_H)  * 0.4f;
@@ -1447,37 +1446,26 @@ void Scene_AugSelect(const SceneCtx& c) {
                              baseY + CARD_H + 200.0f,
                              0.85f, 0.75f,0.75f,0.75f,0.8f);
 
-                // 각 카드: 등급 라벨 + 이름만 (4번째는 변환 카드)
-                static const wchar_t* KEY_LABELS[4] = {L"[ 1 ]", L"[ 2 ]", L"[ 3 ]", L"[ 4 ]"};
+                // 각 카드: 등급 라벨 + 이름
+                static const wchar_t* KEY_LABELS[3] = {L"[ 1 ]", L"[ 2 ]", L"[ 3 ]"};
                 for (int i = 0; i < nCards; i++) {
                     float cardX = baseX + i * (CARD_W + GAP);
                     float yOff  = (g_HoveredAug == i) ? -16.0f : 0.0f;
 
-                    // 카드 이름 — 3개는 증강, 4번째는 변환 무기
-                    const wchar_t* cardName;
+                    const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
+                    const wchar_t* cardName = AugName(def);
                     float tr, tg, tb;
-                    const wchar_t* topLabel;
-                    if (i < 3) {
-                        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
-                        cardName = AugName(def);
-                        GetRarityColor(def.rarity, tr, tg, tb);
-                        tr = std::min(1.0f, tr * 1.4f + 0.25f);
-                        tg = std::min(1.0f, tg * 1.4f + 0.25f);
-                        tb = std::min(1.0f, tb * 1.4f + 0.25f);
-                        topLabel = GetAugBadge(def);
-                        // 픽토그램 (있으면) — 카드 상단 중앙, 흰색
-                        GLuint icon = IconFor(def.type);
-                        if (icon) {
-                            float isz = 144.0f;   // 크게 — 유저는 그림 위주로 인지
-                            DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
-                                     baseY + yOff + CARD_H * 0.10f, isz, isz,
-                                     1.0f, 1.0f, 1.0f, 0.97f);
-                        }
-                    } else {
-                        cardName = (g_ConversionWeapon >= 0)
-                                 ? WeaponName(ALL_WEAPONS[g_ConversionWeapon]) : L"?";
-                        tr = 1.0f; tg = 0.9f; tb = 0.3f;
-                        topLabel = L"변환";
+                    GetRarityColor(def.rarity, tr, tg, tb);
+                    tr = std::min(1.0f, tr * 1.4f + 0.25f);
+                    tg = std::min(1.0f, tg * 1.4f + 0.25f);
+                    tb = std::min(1.0f, tb * 1.4f + 0.25f);
+                    const wchar_t* topLabel = GetAugBadge(def);
+                    GLuint icon = IconFor(def.type);
+                    if (icon) {
+                        float isz = 144.0f;
+                        DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
+                                 baseY + yOff + CARD_H * 0.10f, isz, isz,
+                                 1.0f, 1.0f, 1.0f, 0.97f);
                     }
                     float rw = g_TextS.Width(topLabel, 1.0f);
                     g_TextS.Draw(topLabel,
@@ -1505,21 +1493,13 @@ void Scene_AugSelect(const SceneCtx& c) {
 
                 // ── 하단 상세 설명 박스 (호버 카드의 전체 설명) ──
                 if (g_HoveredAug >= 0) {
-                    // 호버 카드 설명 + 상단 띠 색상 (3개는 증강, 4번째는 변환 무기)
                     const wchar_t* hDesc;
                     float hr, hg, hb;
-                    if (g_HoveredAug < 3) {
-                        int hIdx = g_GameManager.augChoices[g_HoveredAug];
-                        if (hIdx < 0) hIdx = 0;
-                        const AugDef& hDef = ALL_AUGS[hIdx];
-                        hDesc = AugDesc(hDef);
-                        GetRarityColor(hDef.rarity, hr, hg, hb);
-                    } else {
-                        hDesc = (g_ConversionWeapon >= 0)
-                              ? WeaponDesc(ALL_WEAPONS[g_ConversionWeapon])
-                              : L"기존 무기 효과 제거 후 새 무기로 전환";
-                        hr = 1.0f; hg = 0.78f; hb = 0.10f;  // 변환 = 금색
-                    }
+                    int hIdx = g_GameManager.augChoices[g_HoveredAug];
+                    if (hIdx < 0) hIdx = 0;
+                    const AugDef& hDef = ALL_AUGS[hIdx];
+                    hDesc = AugDesc(hDef);
+                    GetRarityColor(hDef.rarity, hr, hg, hb);
                     float boxY = baseY + CARD_H + 24.0f;
                     float boxW = TOTAL_W;
                     float boxH = 150.0f;
@@ -1593,7 +1573,7 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 });
 
                 const float PX  = 16.0f;
-                const float ROW_H = 28.0f;
+                const float ROW_H = 24.0f;
                 const float COLW  = 320.0f;          // 리스트 클릭/호버 가로 범위
                 const wchar_t* TITLE = T(StrId::OWNED_AUGS);
                 g_TextS.Draw(TITLE, PX, 60.0f, 1.1f, 1, 1, 1, 0.95f);

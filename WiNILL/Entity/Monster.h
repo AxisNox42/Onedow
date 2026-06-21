@@ -34,12 +34,17 @@ inline void MobKillReward(MobKind k, int splitGen, int elite,
     case MobKind::ORBITER:  xpBase = 5.0f; scoreBase = 200.0f; break;
     case MobKind::SPAWNER:  xpBase = 7.0f; scoreBase = 300.0f; break;
     case MobKind::SHIELDED: xpBase = 5.0f; scoreBase = 220.0f; break;
-    case MobKind::DDOS:     xpBase = 0.5f; scoreBase = 40.0f;  break;  // 물량 swarm — 보상 미미
+    case MobKind::DDOS:     xpBase = 0.12f; scoreBase = 12.0f;  break;  // 물량형 — 보상 최저
     case MobKind::BADSECTOR:xpBase = 30.0f;scoreBase = 350.0f; break;
     case MobKind::REGERROR: xpBase = 40.0f;scoreBase = 500.0f; break;
     default: break;
     }
     if (elite) { xpBase *= 2.5f; scoreBase *= 2.5f; }
+}
+
+inline float MobRewardMult(MobKind k) {
+    if (k == MobKind::DDOS) return 0.20f;
+    return 1.0f;
 }
 
 class Monster {

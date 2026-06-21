@@ -1082,6 +1082,9 @@ int main() {
                 if (atype == AugType::S_CHAOS) {
                     // ??쇰?: 蹂댁쑀 利앷컯 ?딄퀬, 媛숈? 媛쒖닔 ?쒕뜡. ??60% 踰꾪봽 / 40% ?붾쾭??                    // ?ㅼ젣 蹂댁쑀 紐⑸줉(以묒꺽 ?ы븿) 湲곗??쇰줈 移댁슫????怨듦꺽??利앷?횞4 媛숈? 以묒꺽??紐⑤몢 ?ы븿
                     int prevAugs = (int)g_OwnedAugs.size();
+                    float saveSpawnMult = g_Stats.mobSpawnMult;
+                    int   saveCapBonus  = g_Stats.mobCapBonus;
+                    int   savePackBonus = g_Stats.mobPackBonus;
                     g_Stats = PlayerStats();
                     g_Stats.windowSize *= g_Scale;          // 李????댁긽??鍮꾨? ?좎?
                     // 臾닿린/吏곸뾽 ?뺤껜?깆? ?좎? ??CHAOS ??利앷컯留??ъ텛泥⑦븳??
@@ -1108,6 +1111,10 @@ int main() {
                     g_GameManager.PickRandomDebuffIndices(debuffs, nDebuffs);
                     for (int k = 0; k < nBuffs;   k++) applyByIdx(buffs[k]);
                     for (int k = 0; k < nDebuffs; k++) applyByIdx(debuffs[k]);
+                    // 스폰 압력(간격/캡/군집)은 reroll 전후 중 강한 쪽 유지 — 대혼란 후 급감 방지
+                    g_Stats.mobSpawnMult  = std::min(g_Stats.mobSpawnMult,  saveSpawnMult);
+                    g_Stats.mobCapBonus   = std::max(g_Stats.mobCapBonus,   saveCapBonus);
+                    g_Stats.mobPackBonus  = std::max(g_Stats.mobPackBonus,  savePackBonus);
                     return;
                 }
                 if (atype == AugType::S_PANDORA) {
@@ -1208,52 +1215,9 @@ int main() {
                 }
             };
 
-            // 臾닿린 蹂????湲곗〈 臾닿린 ?④낵 ?쒓굅 ????臾닿린 ?곸슜 (#109)
-            //   g_Stats 瑜?泥섏쓬遺???ш퀎?? fresh + ??臾닿린 + 蹂댁쑀 利앷컯 ?꾨? ?ъ쟻??            //   ?고???移댁슫??killCount ????蹂댁〈
-            auto convertWeapon = [&](int newWeapon) {
-                long long savedKills    = g_Stats.killCount;
-                int   savedVampStreak   = g_Stats.vampireKillStreak;
-                bool  savedMk2Used      = g_Stats.mk2Used;
-                float savedLightTimer   = g_Stats.lightStepDisableTimer;
-                bool  savedTurret       = g_Stats.turretMode;
-
-                PlayerStats fresh;
-                ApplyWeapon(fresh, (StartWeapon)newWeapon);
-                fresh.baseFireInterval = fresh.fireInterval;
-                // 蹂댁쑀 利앷컯 ?꾨? ?ъ쟻??(?먮옒 ???쒖꽌 ?좎?)
-                for (int ownedIdx : g_OwnedAugs)
-                    fresh.Apply(ALL_AUGS[ownedIdx].type);
-
-                // ?고???移댁슫??蹂듭썝
-                fresh.killCount             = savedKills;
-                fresh.vampireKillStreak     = savedVampStreak;
-                fresh.mk2Used               = savedMk2Used;
-                fresh.lightStepDisableTimer = savedLightTimer;
-
-                g_Stats = fresh;
-                g_CurrentWeapon = newWeapon;
-
-                // ?ы깙 紐⑤뱶??CB_TURRET 利앷컯 蹂댁쑀 ??fresh.Apply 媛 ?대? 蹂듭썝??
-                // 臾닿린 蹂?섏쑝濡??덈줈 耳쒖죱?쇰㈃(?댁쟾 false) 泥?諛곗튂 ??대㉧留?珥덇린??
-                if (g_Stats.turretMode && !savedTurret) {
-                    g_Turrets.clear(); g_TurretDeployTimer = TURRET_DEPLOY;
-                }
-
-                g_GameManager.maxHP = g_Stats.maxHP;
-                if (g_GameManager.playerHP > g_Stats.maxHP)
-                    g_GameManager.playerHP = g_Stats.maxHP;
-                fireTimer = g_Stats.fireInterval;
-            };
-
             auto applyAug = [&](int slot) {
                 bool wasBuff  = (g_GameManager.currentState == GameState::AUG_SELECT);
-                if (slot == 3) {
-                    // 蹂??移대뱶 ??臾닿린 ?꾪솚 (湲곗〈 臾닿린 ?④낵 ?쒓굅)
-                    if (g_ConversionWeapon >= 0) convertWeapon(g_ConversionWeapon);
-                    g_ConversionWeapon = -1;  // 蹂??移대뱶 ?뚮え
-                } else {
-                    applyByIdx(g_GameManager.augChoices[slot]);
-                }
+                applyByIdx(g_GameManager.augChoices[slot]);
                 g_GameManager.maxHP = g_Stats.maxHP;
                 if (wasBuff) {
                     // 蹂댁뒪 蹂댁긽 以묒씠硫??붾쾭???섏씠吏 skip
@@ -1286,20 +1250,13 @@ int main() {
                     g_PostPickGrace = 0.5f;
             };
 
-            // 1/2/3/4 = hover (?좏깮 ?꾨낫 蹂寃쎈쭔, ?곸슜 X). 4??蹂??移대뱶 (?덉쓣 ?뚮쭔)
-            static bool s_aug4Released = true;
-            int k4 = glfwGetKey(window, GLFW_KEY_4);
+            // 1/2/3 = hover (Space로 적용)
             if (k1 == GLFW_PRESS && g_aug1Released) { g_HoveredAug = 0; g_aug1Released = false; }
             if (k2 == GLFW_PRESS && g_aug2Released) { g_HoveredAug = 1; g_aug2Released = false; }
             if (k3 == GLFW_PRESS && g_aug3Released) { g_HoveredAug = 2; g_aug3Released = false; }
-            if (k4 == GLFW_PRESS && s_aug4Released && g_ConversionWeapon >= 0 &&
-                g_GameManager.currentState == GameState::AUG_SELECT) {
-                g_HoveredAug = 3; s_aug4Released = false;
-            }
             if (k1 == GLFW_RELEASE) g_aug1Released = true;
             if (k2 == GLFW_RELEASE) g_aug2Released = true;
             if (k3 == GLFW_RELEASE) g_aug3Released = true;
-            if (k4 == GLFW_RELEASE) s_aug4Released = true;
 
             // Space = ?곸슜 (hover ??移대뱶留?. Enter ???쒓굅 ??Space 濡??듭씪
             int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
@@ -1312,12 +1269,10 @@ int main() {
 
             // 留덉슦???대┃: 移대뱶 hit-test ??hover 留?(?곸슜? Space ?ㅻ줈留?
             if (lmb && !g_LmbPrev) {
-                bool hasConv = (g_ConversionWeapon >= 0 &&
-                                g_GameManager.currentState == GameState::AUG_SELECT);
-                int  nCards  = hasConv ? 4 : 3;
-                const float CARD_W = hasConv ? 240.0f : 280.0f;
+                const int  nCards  = 3;
+                const float CARD_W = 280.0f;
                 const float CARD_H = 400.0f;
-                const float GAP    = hasConv ? 32.0f : 48.0f;
+                const float GAP    = 48.0f;
                 const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
                 float baseX = (screenWidth  - TOTAL_W) * 0.5f;
                 float baseY = (screenHeight - CARD_H)  * 0.4f;
@@ -1343,16 +1298,7 @@ int main() {
                 // ?뚮뱶諛뺤뒪: ?붾쾭?꾨룄 移대뱶 ????욎뼱??臾댁뾿?대뱺 吏묒쓣 ???덇쾶
                 g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                              g_Stats.distAugTaken, /*allowDebuff=*/true);
-                g_CreativeFreeGrab = true;   // ?????ㅼ뿏 ?붾쾭???섏씠吏 媛뺤젣 X
-                // 蹂??移대뱶 ??25% ?뺣쪧 (寃媛?沅곸닔 ?쒖쇅)
-                g_ConversionWeapon = -1;
-                if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
-                    (rand() % 100) < 25 && g_CurrentWeapon >= 0) {
-                    int wc = (int)StartWeapon::_COUNT;
-                    int pick = rand() % wc;
-                    if (pick == g_CurrentWeapon) pick = (pick + 1) % wc;
-                    g_ConversionWeapon = pick;
-                }
+                g_CreativeFreeGrab = true;
                 g_GameManager.currentState = GameState::AUG_SELECT;
                 s_fkeyReleased = false;
             }
@@ -2130,6 +2076,7 @@ int main() {
                         if (!m->scored) {       // ?꾩쭅 蹂댁긽 ??諛쏆? 二쎌쓬 ???뺤궛
                             m->scored = true;
                             float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB);
+                            float rwm = MobRewardMult(m->kind); xpB *= rwm; scB *= rwm;
                             creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
                         }
                         SpawnEnemyExplosion(m->worldX, m->worldY,
@@ -2381,22 +2328,6 @@ int main() {
                         // (?덈꺼????ㅽ겕由??뚮옒???쒓굅 ???덈??? AUG_SELECT 移대뱶濡?異⑸텇???덈궡)
                         g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
                                                      g_Stats.distAugTaken);
-
-                        // 蹂??移대뱶 ??25% ?뺣쪧, ?꾩옱 臾닿린? ?ㅻⅨ StartWeapon ?쇰줈 ?꾪솚
-                        //   寃媛?沅곸닔??珥앹쓣 ???곕?濡?蹂??移대뱶 ?쒖쇅
-                        g_ConversionWeapon = -1;
-                        if (!g_Stats.meleeWeapon && !g_Stats.bowWeapon) {
-                            int convChance = 0;
-                            if (g_GameManager.playerLevel == 3)      convChance = 50;
-                            else if (g_GameManager.playerLevel >= 4) convChance = 25;
-                            if (convChance > 0 && g_CurrentWeapon >= 0 &&
-                                (rand() % 100) < convChance) {
-                                int wc = (int)StartWeapon::_COUNT;
-                                int pick = rand() % wc;
-                                if (pick == g_CurrentWeapon) pick = (pick + 1) % wc;
-                                g_ConversionWeapon = pick;
-                            }
-                        }
 
                         g_GameManager.currentState = GameState::AUG_SELECT;
                     }
@@ -3344,6 +3275,7 @@ int main() {
                     if (m->hp <= 0.0f) {
                         m->alive = false; m->scored = true; AddKillCombo();
                         float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs);
+                        float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
                         g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -3475,6 +3407,7 @@ int main() {
                         if (m->hp <= 0.0f) {
                             m->alive = false; m->scored = true; AddKillCombo();
                             float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs);
+                            float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
                             g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                             g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -3550,6 +3483,7 @@ int main() {
                             if (m->hp <= 0.0f && !m->scored) {
                                 m->alive=false; m->scored=true; AddKillCombo();
                                 float bx,bs; MobKillReward(m->kind,m->splitGen,m->elite,bx,bs);
+                                float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
                                 g_GameManager.xp += (long long)((bx+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill();
@@ -3695,8 +3629,6 @@ int main() {
 
         // GameManager 媛 ?몃쾭/蹂???곹깭瑜??????덇쾶 ?숆린??(Render ?먯꽌 ?ъ슜)
         g_GameManager.hoveredCard = g_HoveredAug;
-        g_GameManager.conversionAug = g_ConversionWeapon;
-
         // ============================================================
         // ?뚮뜑留?        // ============================================================
         glViewport(0, 0, screenWidth, screenHeight);
@@ -5256,7 +5188,7 @@ int main() {
     
             // ?? ?≫떚釉??ㅽ궗 ?щ’ (醫뚰븯?? ?⑥떆釉?荑⑤떎?????? ??
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
-                const float KW = 54.0f, KH = 54.0f, KG = 8.0f;
+                const float KW = 54.0f, KH = 48.0f, KG = 8.0f;
                 float kx0 = 16.0f, ky0 = HudY(sh, KH + Hud::SKILL_KEYS_Y);
                 auto skillBox = [&](int idx, const wchar_t* key, const wchar_t* tag,
                                     float cd, float r, float g, float b) {
@@ -5297,7 +5229,7 @@ int main() {
             // ?? ?≫떚釉??⑥떆釉?荑⑤떎??UI (醫뚰븯?? ?????????????????????
             // 異뷀썑 ?쏀넗洹몃옩 PNG 媛 ?ㅼ뼱?ㅻ㈃ ?ш컖??placeholder ?먮━???띿뒪泥??쒖떆
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
-                const float SLOT_W = 56.0f, SLOT_H = 56.0f, SLOT_GAP = 8.0f;
+                const float SLOT_W = 56.0f, SLOT_H = 48.0f, SLOT_GAP = 8.0f;
                 float baseX  = 16.0f;
                 float baseY2 = HudY(sh, SLOT_H + Hud::SLOT_BAR_BASE);   // HP 諛??꾩そ(?묒뾽?쒖떆以???
                 int   slot   = 0;
