@@ -778,8 +778,8 @@ int main() {
             bool inFight = (zs == GameState::RUNNING || zs == GameState::DYING ||
                             zs == GameState::PAUSED  || zs == GameState::AUG_SELECT ||
                             zs == GameState::DEBUFF_SELECT ||
-                            zs == GameState::BOSS_INTERMISSION ||
-                            zs == GameState::RUN_SHOP);
+                            zs == GameState::RUN_SHOP ||
+                            (zs == GameState::RUNNING && g_InBossIntermission));
             if (!inFight) { g_ViewZoom = g_ViewZoomTarget = 1.0f; }
             else {
                 // ?먯닔 鍮꾨? 以뚯븘?????꾩옣???쒖꽌???볦뼱吏?(?곹븳 1.4諛?= zoom 0.714).
@@ -850,6 +850,7 @@ int main() {
             BossDir::ResetRotation();
             BossDir::ResetAct();
             g_RunGold           = 0;
+            g_InBossIntermission = false;
             g_IntermissionTimer = 0.0f;
             g_ShopZoneHold      = 0.0f;
             g_SkipZoneHold      = 0.0f;
@@ -1432,6 +1433,17 @@ int main() {
                 }
             }
 
+            {
+                int kEsc = glfwGetKey(window, GLFW_KEY_ESCAPE);
+                static bool s_rsEsc = true;
+                if (kEsc == GLFW_PRESS && s_rsEsc) {
+                    CloseRunShop();
+                    g_HoveredAug = -1;
+                    g_GameManager.escReleased = false;
+                    s_rsEsc = false;
+                }
+                if (kEsc == GLFW_RELEASE) s_rsEsc = true;
+            }
         }
 
         // --- ?щ━?먯씠?곕툕 紐⑤뱶: F = 利앷컯 洹몃옪(?붾쾭???ы븿 ?뚮뱶諛뺤뒪), G = 臾댁쟻 ?좉? ---
@@ -2737,7 +2749,8 @@ int main() {
                 if (g_TotemBoss && g_TotemBoss->alive) return true;
                 return false;
             };
-            bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f;
+            bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f ||
+                              g_InBossIntermission;
             if (bossDuel) spawnInterval = 1e9f;
             if (spawnTimer > spawnInterval) {
                 // ?덈? ?곹븳 ???대━2?섏씠利댠쀬젏?섎옩?꾨줈 ?쒕룄媛 1000+ 源뚯? ??＜?섎뜕 寃?諛⑹? (?깅뒫)
@@ -3807,31 +3820,14 @@ int main() {
         }
 
         // GameManager 媛 ?몃쾭/蹂???곹깭瑜??????덇쾶 ?숆린??(Render ?먯꽌 ?ъ슜)
-        if (g_GameManager.currentState == GameState::BOSS_INTERMISSION) {
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            if (g_Stats.regenPerSec > 0.0f) {
-                g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * delta;
-                if (g_GameManager.playerHP > g_Stats.maxHP)
-                    g_GameManager.playerHP = g_Stats.maxHP;
-            }
-            {
-                float targetWin = g_Stats.windowSize *
-                    ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
-                if (g_WindowSizeCur < 1.0f) g_WindowSizeCur = g_Stats.windowSize;
-                float winStep = std::min(1.0f, delta * 5.5f);
-                g_WindowSizeCur += (targetWin - g_WindowSizeCur) * winStep;
-            }
-            playerWin.width = playerWin.height = g_WindowSizeCur;
-            playerWin.x = pCX - g_WindowSizeCur * 0.5f;
-            playerWin.y = pCY - g_WindowSizeCur * 0.5f;
-            pCX = playerWin.x + playerWin.width  * 0.5f;
-            pCY = playerWin.y + playerWin.height * 0.5f;
-
+        if (g_InBossIntermission &&
+            g_GameManager.currentState == GameState::RUNNING) {
             g_IntermissionTimer -= delta;
             GameState preShop = g_GameManager.currentState;
-            TickIntermissionZones(pCX, pCY, delta);
-            if (preShop == GameState::BOSS_INTERMISSION &&
+            float ipCX = playerWin.x + playerWin.width  * 0.5f;
+            float ipCY = playerWin.y + playerWin.height * 0.5f;
+            TickIntermissionZones(ipCX, ipCY, delta);
+            if (preShop == GameState::RUNNING &&
                 g_GameManager.currentState == GameState::RUN_SHOP)
                 g_HoveredAug = -1;
         }
@@ -3888,7 +3884,8 @@ int main() {
         bool inWorldRender = (wgs == GameState::RUNNING || wgs == GameState::DYING ||
                               wgs == GameState::PAUSED  || wgs == GameState::READY  ||
                               wgs == GameState::AUG_SELECT || wgs == GameState::DEBUFF_SELECT ||
-                              wgs == GameState::BOSS_INTERMISSION || wgs == GameState::RUN_SHOP ||
+                              wgs == GameState::RUN_SHOP ||
+                              (wgs == GameState::RUNNING && g_InBossIntermission) ||
                               wgs == GameState::GAMEOVER ||
                               (wgs == GameState::SETTINGS &&
                                g_SettingsReturnTo == GameState::PAUSED));
@@ -4174,13 +4171,13 @@ int main() {
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        g_AccentR, g_AccentG, g_AccentB);
 
-        if (g_GameManager.currentState == GameState::BOSS_INTERMISSION ||
-            g_GameManager.currentState == GameState::RUN_SHOP) {
+        if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
             float wx = g_ShopZoneX - RUN_SHOP_WIN_W * 0.5f;
             float wy = g_ShopZoneY - RUN_SHOP_WIN_H * 0.5f;
             DrawAppWindow(wx, wy, RUN_SHOP_WIN_W, RUN_SHOP_WIN_H, L"AUGMENT.store");
         }
-        if (g_GameManager.currentState == GameState::BOSS_INTERMISSION) {
+        if (g_InBossIntermission &&
+            g_GameManager.currentState != GameState::RUN_SHOP) {
             float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 4.5f);
             float holdF = g_ShopZoneHold / SHOP_ZONE_HOLD_S;
             if (holdF > 1.0f) holdF = 1.0f;
@@ -4200,7 +4197,7 @@ int main() {
         // (c2) HP/EXP 諛????뚮젅?댁뼱 李??섎떒 ?덉そ??遺李?(李쎄낵 ?④퍡 ?대룞) ??
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::PAUSED ||
-            g_GameManager.currentState == GameState::BOSS_INTERMISSION ||
+            g_InBossIntermission ||
             g_GameManager.currentState == GameState::RUN_SHOP ||
             g_GameManager.currentState == GameState::AUG_SELECT ||
             g_GameManager.currentState == GameState::DEBUFF_SELECT ||
@@ -5328,8 +5325,8 @@ int main() {
             if (st == GameState::RUNNING || st == GameState::PAUSED ||
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
                 st == GameState::DEBUFF_SELECT ||
-                st == GameState::BOSS_INTERMISSION ||
-                st == GameState::RUN_SHOP) {
+                st == GameState::RUN_SHOP ||
+                (st == GameState::RUNNING && g_InBossIntermission)) {
 #ifdef __APPLE__
                 const float hudTopY = 8.0f + 30.0f;
 #else
@@ -5359,8 +5356,8 @@ int main() {
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
 
-                if (st == GameState::RUNNING || st == GameState::BOSS_INTERMISSION ||
-                    st == GameState::RUN_SHOP) {
+                if (st == GameState::RUNNING || st == GameState::RUN_SHOP ||
+                    g_InBossIntermission) {
                     const wchar_t* actLbl = BossDir::ActLabel();
                     g_TextS.Draw(actLbl, 12.0f, hudTopY + 22.0f, 0.72f,
                                  0.82f, 0.92f, 1.0f, 0.82f);
@@ -5370,7 +5367,7 @@ int main() {
                     g_TextS.Draw(goldHud, sw - gdw - 12.0f, hudTopY + 22.0f, 0.82f,
                                  1.0f, 0.86f, 0.32f, 0.9f);
                 }
-                if (st == GameState::BOSS_INTERMISSION) {
+                if (g_InBossIntermission && st != GameState::RUN_SHOP) {
                     int sec = (int)(g_IntermissionTimer + 0.99f);
                     if (sec < 0) sec = 0;
                     wchar_t tbuf[48];

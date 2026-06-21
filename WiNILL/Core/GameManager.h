@@ -68,8 +68,7 @@ public:
                           bool sizeTaken, bool distTaken);
     bool ShouldUpdate()   const {
         return currentState == GameState::RUNNING ||
-               currentState == GameState::DYING ||
-               currentState == GameState::BOSS_INTERMISSION;
+               currentState == GameState::DYING;
     }
     GameState GetState()  const { return currentState; }
     void UpdateTitle(GLFWwindow* window);
