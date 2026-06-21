@@ -113,8 +113,24 @@ public:
     }
 
     void resetFx() {
-        fx = PolyGlitchFX{};
         fx.playerAlpha = 1.0f;
+        fx.shakePulse  = false;
+        fx.staticBand  = 0.0f;
+        fx.snapWarn    = false;
+        fx.snapWarnX = fx.snapWarnY = fx.snapWarnW = fx.snapWarnH = 0.0f;
+        fx.snapFromX = fx.snapFromY = 0.0f;
+    }
+
+    void tickFxForForm() {
+        fx.playerAlpha = 1.0f;
+        switch (form) {
+        case PForm::PHANTOM:
+            fx.staticBand = fmodf(glitchT * (enraged ? 0.55f : 0.42f), 1.0f);
+            break;
+        default:
+            fx.staticBand = 0.0f;
+            break;
+        }
     }
 
     void pickForm(bool first) {
@@ -154,7 +170,7 @@ public:
     }
 
     float holeWinSize() const {
-        return std::max(220.0f, holeR * 2.85f + 64.0f);
+        return std::max(280.0f, holeR * 3.1f + 80.0f);
     }
 
     float holeFillPct() const {
@@ -357,10 +373,11 @@ public:
         if (formTimer >= formDuration && !triWarn && !holeBursting && snapTimer <= 0.0f)
             pickForm(false);
 
-        resetFx();
+        tickFxForForm();
 
         switch (form) {
         case PForm::SINGULARITY:
+            fx.snapWarn = false;
             worldX += (holeX - worldX) * 2.5f * dt;
             worldY += (holeY - worldY - 100.0f) * 2.5f * dt;
             if (triWarn) {
@@ -414,11 +431,13 @@ public:
             worldX += sinf(glitchT * 2.1f) * 14.0f * dt;
             worldY += cosf(glitchT * 1.7f) * 11.0f * dt;
             displaceCd -= dt;
-            if (displaceCd <= 0.0f && snapTimer <= 0.0f && !fx.snapWarn) {
+            if (displaceCd <= 0.0f && snapTimer <= 0.0f) {
                 beginSnap(winX, winY, winW, winH);
                 displaceCd = enraged ? 2.4f : 3.2f;
             }
             if (snapTimer > 0.0f) {
+                fx.snapFromX = winX + winW * 0.5f;
+                fx.snapFromY = winY + winH * 0.5f;
                 snapTimer -= dt;
                 if (snapTimer <= 0.0f)
                     applySnap(winX, winY, winW, winH, playerHP);
@@ -431,9 +450,9 @@ public:
             break;
 
         case PForm::PHANTOM:
+            fx.snapWarn = false;
             worldX = (float)screenW * 0.5f + sinf(glitchT * 1.0f) * 36.0f;
             worldY = (float)screenH * 0.22f + cosf(glitchT * 0.85f) * 20.0f;
-            fx.staticBand = fmodf(glitchT * (enraged ? 0.55f : 0.42f), 1.0f);
             phantomSlipCd -= dt;
             if (phantomSlipCd <= 0.0f) {
                 phaseSlip(winX, winY, winW, winH);

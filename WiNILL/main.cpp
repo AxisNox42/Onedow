@@ -247,34 +247,40 @@ BotnetBoss* g_BotnetBoss = nullptr;
 static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
                                      float dx, float dy) {
     if (std::fabs(dx) < 0.01f && std::fabs(dy) < 0.01f) return;
-    auto inside = [&](float x, float y) {
-        return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+    const float pad = 48.0f;
+    auto overlaps = [&](float x, float y) {
+        return x >= rx - pad && x <= rx + rw + pad &&
+               y >= ry - pad && y <= ry + rh + pad;
     };
     for (auto m : g_MonsterManager.monsters) {
         if (!m->alive) continue;
-        if (inside(m->worldX, m->worldY)) {
+        if (overlaps(m->worldX, m->worldY)) {
             m->worldX += dx;
             m->worldY += dy;
         }
         if (m->kind == MobKind::BLINKER && m->blinkWarn &&
-            inside(m->blinkTargetX, m->blinkTargetY)) {
+            overlaps(m->blinkTargetX, m->blinkTargetY)) {
             m->blinkTargetX += dx;
             m->blinkTargetY += dy;
         }
     }
     for (auto bm : g_MonsterManager.bombers) {
         if (!bm->alive) continue;
-        if (inside(bm->worldX, bm->worldY)) {
+        if (overlaps(bm->worldX, bm->worldY)) {
             bm->worldX += dx;
             bm->worldY += dy;
         }
     }
     for (auto r : g_MonsterManager.rangedMobs) {
         if (r->deathScale <= 0.0f) continue;
-        if (inside(r->worldX, r->worldY)) {
+        if (overlaps(r->worldX, r->worldY)) {
             r->worldX += dx;
             r->worldY += dy;
         }
+    }
+    for (auto& p : g_EnemyParts) {
+        if (!p.active) continue;
+        if (overlaps(p.x, p.y)) { p.x += dx; p.y += dy; }
     }
 }
 
@@ -3911,10 +3917,23 @@ int main() {
             float sc = r->deathScale;
             addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"popup.exe", 0.08f,0.08f,0.10f, 0.85f,0.20f,0.95f);
         }
+        // GLITCH.exe: 근접 몹도 각자 mob.exe 창 (창 밖 렌더 금지 규칙)
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            const float GMW = g_RfwW * 0.62f, GMH = g_RfwH * 0.62f;
+            for (auto m : g_MonsterManager.monsters) {
+                if (!m->alive || m->kind == MobKind::DDOS || m->kind == MobKind::SPAWNER) continue;
+                float sc = m->sizeScale;
+                addW(m->worldX, m->worldY, GMW * sc, GMH * sc, L"mob.exe",
+                     0.07f, 0.07f, 0.09f, 0.72f, 0.28f, 0.98f);
+            }
+        }
         // 蹂댁뒪/遺꾩뿴泥?(?곷떒)
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
                  L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
+        if (g_PolyBoss && g_PolyBoss->alive)
+            addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
+                 L"GLITCH.exe", 0.04f,0.02f,0.06f, 0.85f,0.25f,1.0f);
         if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
             float hw = g_PolyBoss->holeWinSize();
             float hx = g_PolyBoss->holeX - hw * 0.5f;
@@ -3922,9 +3941,6 @@ int main() {
             zwins.push_back({ hx, hy, hw, hw, L"GRAVITY.core",
                 0.02f, 0.01f, 0.05f, 0.12f, 0.92f, 0.78f, g_PolyBoss->holeFillPct() });
         }
-        if (g_PolyBoss && g_PolyBoss->alive)
-            addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
-                 L"GLITCH.exe", 0.04f,0.02f,0.06f, 0.85f,0.25f,1.0f);
         if (g_BotnetBoss && g_BotnetBoss->alive)
             addW(g_BotnetBoss->worldX, g_BotnetBoss->worldY, BOTNET_WIN_W, BOTNET_WIN_W,
                  L"C2_RELAY.sys", 0.04f,0.07f,0.05f, 0.25f,0.92f,0.45f);
@@ -3992,24 +4008,30 @@ int main() {
                 }
             }
             if (pb->form == PForm::DISPLACE) {
-                if (pb->fx.snapWarn) {
+                if (pb->fx.snapWarn || pb->snapTimer > 0.0f) {
                     auto& fx = pb->fx;
                     float tx = fx.snapWarnX + fx.snapWarnW * 0.5f;
                     float ty = fx.snapWarnY + fx.snapWarnH * 0.5f;
-                    float sa = 0.4f + 0.35f * (0.5f + 0.5f * sinf(gt * 20.0f));
+                    float warnF = pb->snapTimer > 0.0f ? (pb->snapTimer / 1.05f) : 1.0f;
+                    if (warnF > 1.0f) warnF = 1.0f;
+                    float sa = (0.55f + 0.35f * (0.5f + 0.5f * sinf(gt * 20.0f))) * warnF;
                     drawNeonBorder(fx.snapWarnX, fx.snapWarnY, fx.snapWarnW, fx.snapWarnH,
-                                   1.0f, 0.42f, 0.12f);
+                                   1.0f, 0.50f, 0.12f);
+                    drawNeonBorder(fx.snapWarnX - 4.0f, fx.snapWarnY - 4.0f,
+                                   fx.snapWarnW + 8.0f, fx.snapWarnH + 8.0f,
+                                   1.0f, 0.35f, 0.08f);
                     drawRect(fx.snapWarnX, fx.snapWarnY, fx.snapWarnW, fx.snapWarnH,
-                             1.0f, 0.28f, 0.08f, 0.10f * sa);
+                             1.0f, 0.32f, 0.06f, 0.14f * sa);
                     float dx = tx - fx.snapFromX, dy = ty - fx.snapFromY;
                     float len = sqrtf(dx * dx + dy * dy) + 1e-3f;
-                    int segs = (int)(len / 14.0f);
-                    if (segs < 4) segs = 4;
+                    int segs = (int)(len / 12.0f);
+                    if (segs < 6) segs = 6;
                     for (int i = 0; i <= segs; i++) {
                         float u = (float)i / (float)segs;
                         drawCircle(fx.snapFromX + dx * u, fx.snapFromY + dy * u,
-                                   5.0f, 1.0f, 0.45f, 0.15f, 0.55f * sa);
+                                   6.0f, 1.0f, 0.50f, 0.12f, 0.70f * sa);
                     }
+                    drawCircle(tx, ty, 14.0f, 1.0f, 0.45f, 0.10f, 0.85f * sa);
                 }
                 for (auto& bar : pb->bars) {
                     if (!bar.alive || hidePt(bar.x + bar.w * 0.5f, bar.y + bar.h * 0.5f)) continue;
@@ -4142,34 +4164,13 @@ int main() {
         if (g_PolyBoss && g_PolyBoss->alive)
             drawBossWinContent(g_PolyBoss->worldX - POLY_WIN_W * 0.5f,
                                g_PolyBoss->worldY - POLY_WIN_W * 0.5f, POLY_WIN_W, POLY_WIN_W);
-        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
-            auto* pb = g_PolyBoss;
-            float hw = pb->holeWinSize();
-            float hx = pb->holeX - hw * 0.5f, hy = pb->holeY - hw * 0.5f;
-            WorldScissor(hx, hy, hw, hw);
-            float gt = (float)glfwGetTime();
-            float hr = pb->holeR;
-            float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
-            drawCircle(pb->holeX, pb->holeY, hr * 1.55f, 0.10f, 0.55f, 0.98f, 0.18f + 0.08f * pulse);
-            drawCircle(pb->holeX, pb->holeY, hr * 1.18f, 0.0f, 0.88f, 0.78f, 0.34f);
-            drawCircle(pb->holeX, pb->holeY, hr * 0.64f, 0.0f, 0.0f, 0.0f, 0.97f);
-            for (int ri = 0; ri < 5; ri++) {
-                float ang = gt * (2.2f + ri * 0.3f) + ri * 1.256f;
-                drawTriangle(pb->holeX + cosf(ang) * hr * 0.82f,
-                             pb->holeY + sinf(ang) * hr * 0.82f,
-                             16.0f, 0.12f, 1.0f, 0.92f, 0.55f);
-            }
-            float barW = hw - 28.0f;
-            float fill = pb->holeFillPct();
-            drawRect(hx + 14.0f, hy + hw - 18.0f, barW, 6.0f, 0.05f, 0.04f, 0.07f, 0.92f);
-            drawRect(hx + 14.0f, hy + hw - 18.0f, barW * fill, 6.0f, 0.12f, 0.95f, 0.78f, 0.98f);
-            for (auto& s : pb->swarm) {
-                if (!s.alive || !inWin(s.x, s.y, hx, hy, hw, hw)) continue;
-                drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
-            }
-            for (auto& b : g_Bullets) {
-                if (!b.active || !inWin(b.x, b.y, hx, hy, hw, hw)) continue;
-                drawBullet(b);
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            const float GMW = g_RfwW * 0.62f, GMH = g_RfwH * 0.62f;
+            for (auto m : g_MonsterManager.monsters) {
+                if (!m->alive || m->kind == MobKind::DDOS || m->kind == MobKind::SPAWNER) continue;
+                float sc = m->sizeScale;
+                float mw = GMW * sc, mh = GMH * sc;
+                drawBossWinContent(m->worldX - mw * 0.5f, m->worldY - mh * 0.5f, mw, mh);
             }
         }
         if (g_BotnetBoss && g_BotnetBoss->alive)
@@ -4483,7 +4484,9 @@ int main() {
         // ?〓す (蹂댁뒪 ?뚰솚臾쇱? ???? ??李?諛?而щ쭅
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
-            // DDOS — 플레이어 창 안에서만 렌더 (가짜창 없음)
+            if (g_PolyBoss && g_PolyBoss->alive &&
+                m->kind != MobKind::DDOS && m->kind != MobKind::SPAWNER)
+                continue;
             drawMob(m);
         }
         for (auto bm : g_MonsterManager.bombers) {
@@ -4518,6 +4521,54 @@ int main() {
             DrawApproachOrb(orb.x, orb.y);
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+        // GLITCH GRAVITY.core — 플레이어 창 위에 블랙홀 오버레이
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
+            auto* pb = g_PolyBoss;
+            float hw = pb->holeWinSize();
+            float hx = pb->holeX - hw * 0.5f, hy = pb->holeY - hw * 0.5f;
+            const float TBH = 22.0f;
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(hx, hy, hw, hw);
+            BatchFlush(); glDisable(GL_BLEND);
+            drawRect(hx, hy, hw, hw, 0.01f, 0.02f, 0.05f, 0.94f);
+            drawRect(hx, hy, hw, TBH, 0.07f, 0.42f, 0.36f, 1.0f);
+            BatchFlush(); glEnable(GL_BLEND);
+            drawNeonBorder(hx, hy, hw, hw, 0.15f, 0.98f, 0.82f);
+            float gt = (float)glfwGetTime();
+            float hr = pb->holeR;
+            float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
+            drawCircle(pb->holeX, pb->holeY, hr * 1.60f, 0.12f, 0.58f, 1.0f, 0.22f + 0.10f * pulse);
+            drawCircle(pb->holeX, pb->holeY, hr * 1.22f, 0.0f, 0.90f, 0.80f, 0.40f);
+            drawCircle(pb->holeX, pb->holeY, hr * 0.66f, 0.0f, 0.0f, 0.0f, 0.98f);
+            for (int ri = 0; ri < 6; ri++) {
+                float ang = gt * (2.4f + ri * 0.28f) + ri * 1.047f;
+                drawTriangle(pb->holeX + cosf(ang) * hr * 0.85f,
+                             pb->holeY + sinf(ang) * hr * 0.85f,
+                             17.0f, 0.12f, 1.0f, 0.92f, 0.60f);
+            }
+            float barW = hw - 28.0f;
+            float fill = pb->holeFillPct();
+            drawRect(hx + 14.0f, hy + hw - 20.0f, barW, 8.0f, 0.04f, 0.03f, 0.06f, 0.95f);
+            drawRect(hx + 14.0f, hy + hw - 20.0f, barW * fill, 8.0f, 0.10f, 0.98f, 0.80f, 1.0f);
+            for (auto& s : pb->swarm) {
+                if (!s.alive || !inWin(s.x, s.y, hx, hy + TBH, hw, hw - TBH)) continue;
+                drawTriangle(s.x, s.y, 12.0f, 0.2f, 1.0f, 0.92f, 1.0f);
+            }
+            for (auto& b : g_Bullets) {
+                if (!b.active || !inWin(b.x, b.y, hx, hy, hw, hw)) continue;
+                drawBullet(b);
+            }
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            wchar_t gp[16];
+            swprintf_s(gp, L"%d%%", (int)(fill * 100.0f + 0.5f));
+            float ts = 0.52f * g_ViewZoom, gs = 0.46f * g_ViewZoom;
+            g_TextS.Draw(L"GRAVITY.core", W2SX(hx + 8.0f), W2SY(hy + 3.0f),
+                         ts, 0.90f, 0.98f, 0.95f, 0.98f);
+            float gw = g_TextS.Width(gp, gs);
+            g_TextS.Draw(gp, W2SX(hx + hw - gw - 52.0f), W2SY(hy + 3.0f),
+                         gs, 0.55f, 0.98f, 0.85f, 0.98f);
+        }
 
         // (e2) ?먭굅由?紐??ㅼ씠?꾨が????媛??먭굅由?紐?李??곸뿭?먯꽌 ??긽 ?꾩뿉 洹몃┝
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
@@ -4764,9 +4815,9 @@ int main() {
                 drawDiamond(dx, dy, ds, fr, fg, fb, da_a);
             }
             if (pb->form == PForm::SINGULARITY && pb->blackHoleActive) {
-                float mini = pb->holeR * 0.18f;
-                drawCircle(bx, by - bsz * 0.15f, mini, 0.0f, 0.0f, 0.0f, 0.85f);
-                drawCircle(bx, by - bsz * 0.15f, mini * 1.4f, 0.1f, 0.85f, 0.75f, 0.35f);
+                float mini = std::min(28.0f, pb->holeR * 0.12f);
+                drawCircle(bx, by - bsz * 0.12f, mini, 0.0f, 0.0f, 0.0f, 0.75f);
+                drawCircle(bx, by - bsz * 0.12f, mini * 1.5f, 0.1f, 0.90f, 0.78f, 0.30f);
             }
             if (pb->damageable()) {
                 float pulse = 0.5f + 0.5f * sinf(gt * 14.0f);
