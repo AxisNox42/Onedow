@@ -7,11 +7,10 @@
 #include "Bullet.h"
 #include "PlayerStats.h"
 
-// ── GLITCH.exe — map/environment boss (not a direct DPS check) ──
-//   SINGULARITY : edge warn → central black hole, edge triangles get sucked in
-//   DISPLACE    : fake window snap + sliding corrupt panels (layout hazard)
-//   PHANTOM     : cursor offset + player window blink / afterimage
-//   Boss only damageable during brief sync windows after each attack cycle.
+// ── GLITCH.exe — environment boss ──
+//   SINGULARITY : persistent black hole; triangles feed it → burst at max size
+//   DISPLACE    : telegraphed player-window hijack (clear orange landing zone)
+//   PHANTOM     : interference static + brief phase slips (mobs stay visible)
 
 enum class PForm { SINGULARITY, DISPLACE, PHANTOM };
 
@@ -27,15 +26,13 @@ struct PGlitchBar {
 };
 
 struct PolyGlitchFX {
-    float cursorOffX  = 0.0f, cursorOffY  = 0.0f;
-    bool  cursorGlitch  = false;
     float playerAlpha   = 1.0f;
-    bool  showGhostWin  = false;
-    float ghostX = 0.0f, ghostY = 0.0f, ghostW = 0.0f, ghostH = 0.0f;
     bool  snapWarn      = false;
     float snapWarnX = 0.0f, snapWarnY = 0.0f;
     float snapWarnW = 0.0f, snapWarnH = 0.0f;
+    float snapFromX = 0.0f, snapFromY = 0.0f;
     bool  shakePulse    = false;
+    float staticBand    = 0.0f;
 };
 
 class PolymorphBoss {
@@ -54,31 +51,32 @@ public:
 
     PolyGlitchFX fx;
 
-    // SINGULARITY
+    static constexpr int DRONE_N = 6;
+    float droneAng[DRONE_N] = {};
+    float droneSpin = 0.0f;
+
     std::vector<PSwarm> swarm;
     bool  triWarn = false;
     bool  blackHoleActive = false;
     float triWarnTimer = 0.0f;
-    float singularityTimer = 0.0f;
-    float singularityCd = 1.8f;
     float singularitySpawn = 0.0f;
     float holeX = 0.0f, holeY = 0.0f;
-    float holeRadius = 0.0f;
-    float holeGrow = 0.0f;
+    float holeR = 38.0f;
+    float holeRMin = 38.0f;
+    float holeRMax = 100.0f;
+    bool  holeBursting = false;
+    float holeBurstT = 0.0f;
 
-    // DISPLACE
     std::vector<PGlitchBar> bars;
     float displaceCd = 0.0f;
     float snapTimer = 0.0f;
     float snapTargetX = 0.0f, snapTargetY = 0.0f;
-    float driftX = 0.0f, driftY = 0.0f;
 
-    // PHANTOM
-    float phantomPhase = 0.0f;
+    float phantomSlipCd = 0.0f;
 
-    static constexpr float BODY = 72.0f;
+    static constexpr float BODY = 78.0f;
     static constexpr float SWARM_DMG = 7.0f;
-    static constexpr float CORE_DMG  = 9.0f;
+    static constexpr float CORE_DMG  = 8.0f;
 
     PolymorphBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
@@ -86,11 +84,23 @@ public:
         worldY = sh * 0.28f;
         holeX = sw * 0.5f;
         holeY = (sh - 90.0f) * 0.5f;
+        holeRMax = 100.0f;
+        for (int i = 0; i < DRONE_N; i++)
+            droneAng[i] = (float)i / (float)DRONE_N * 6.2831853f;
         pickForm(true);
     }
 
     bool damageable() const { return vulnTimer > 0.0f; }
     bool reflecting() const { return false; }
+
+    bool droneActive(int i) const {
+        switch (form) {
+        case PForm::SINGULARITY: return i < 3;
+        case PForm::DISPLACE:    return i >= 2 && i <= 4;
+        case PForm::PHANTOM:     return i >= 3;
+        default: return false;
+        }
+    }
 
     static void clampWin(float& wx, float& wy, float ww, float wh, int sw, int sh) {
         const float bar = 90.0f;
@@ -102,89 +112,121 @@ public:
 
     void resetFx() {
         fx = PolyGlitchFX{};
+        fx.playerAlpha = 1.0f;
     }
 
     void pickForm(bool first) {
         PForm prev = form;
         do { form = (PForm)(rand() % 3); } while (!first && form == prev);
         formTimer = 0.0f;
-        formDuration = enraged ? 6.5f : 9.0f;
-        triWarn = blackHoleActive = false;
-        singularityCd = enraged ? 1.2f : 1.8f;
-        singularityTimer = 0.0f;
+        formDuration = enraged ? 7.0f : 10.0f;
+        triWarn = false;
+        blackHoleActive = false;
         singularitySpawn = 0.0f;
-        holeRadius = 0.0f;
-        displaceCd = enraged ? 0.8f : 1.2f;
+        holeR = holeRMin;
+        holeBursting = false;
+        holeBurstT = 0.0f;
+        holeRMax = enraged ? 118.0f : 100.0f;
+        displaceCd = enraged ? 1.0f : 1.4f;
         snapTimer = 0.0f;
-        fx.snapWarn = false;
+        phantomSlipCd = 1.2f;
         bars.clear();
+        swarm.clear();
         resetFx();
-        switch (form) {
-        case PForm::DISPLACE:
-            driftX = ((rand() % 2) ? 1.0f : -1.0f) * (enraged ? 55.0f : 38.0f);
-            driftY = ((rand() % 2) ? 1.0f : -1.0f) * (enraged ? 42.0f : 28.0f);
-            break;
-        default: break;
+
+        if (form == PForm::SINGULARITY) {
+            triWarn = true;
+            triWarnTimer = enraged ? 0.85f : 1.05f;
+            holeX = (float)screenW * 0.5f;
+            holeY = ((float)screenH - 90.0f) * 0.5f;
         }
     }
 
     void checkEnrage() {
         if (!enraged && hp <= maxHp * 0.40f) {
             enraged = true;
-            formDuration = 6.5f;
+            formDuration = 7.0f;
+            holeRMax = 118.0f;
         }
-    }
-
-    void startSingularityWarn() {
-        triWarn = true;
-        triWarnTimer = enraged ? 0.75f : 0.95f;
-        holeX = (float)screenW * 0.5f;
-        holeY = ((float)screenH - 90.0f) * 0.5f;
-        holeRadius = 0.0f;
     }
 
     void spawnEdgeTriangle() {
         PSwarm s;
         s.alive = true;
         s.pulled = true;
-        s.life = enraged ? 5.5f : 4.5f;
-        float m = 30.0f;
-        switch (rand() % 4) {
-        case 0: s.x = (float)(rand() % screenW); s.y = -m; break;
-        case 1: s.x = (float)(rand() % screenW); s.y = screenH + m; break;
-        case 2: s.x = -m; s.y = (float)(rand() % screenH); break;
-        default:s.x = screenW + m; s.y = (float)(rand() % screenH); break;
+        s.life = enraged ? 6.0f : 5.0f;
+        float m = 36.0f;
+        int edge = rand() % 4;
+        switch (edge) {
+        case 0: s.x = (float)(rand() % std::max(1, screenW)); s.y = -m; break;
+        case 1: s.x = (float)(rand() % std::max(1, screenW)); s.y = screenH + m; break;
+        case 2: s.x = -m; s.y = (float)(rand() % std::max(1, screenH)); break;
+        default:s.x = screenW + m; s.y = (float)(rand() % std::max(1, screenH)); break;
         }
         float dx = holeX - s.x, dy = holeY - s.y;
         float d = std::sqrt(dx * dx + dy * dy) + 1e-3f;
-        float sp = enraged ? 140.0f : 110.0f;
+        float sp = enraged ? 130.0f : 105.0f;
         s.vx = dx / d * sp;
         s.vy = dy / d * sp;
         swarm.push_back(s);
     }
 
+    void fireHoleBurst(std::vector<Bullet>& bullets) {
+        int n = enraged ? 32 : 26;
+        for (int i = 0; i < n; i++) {
+            float ang = (float)i / (float)n * 6.2831853f;
+            float tx = holeX + cosf(ang) * 220.0f;
+            float ty = holeY + sinf(ang) * 220.0f;
+            Bullet b(holeX, holeY, tx, ty);
+            b.isEnemy  = true;
+            b.enemyDmg = enraged ? 8.5f : 6.5f;
+            b.speed    = enraged ? 460.0f : 400.0f;
+            b.color    = glm::vec3(0.8f, 0.25f, 1.0f);
+            bullets.push_back(b);
+        }
+        fx.shakePulse = true;
+    }
+
+    void triggerHoleBurst(std::vector<Bullet>& bullets) {
+        if (holeBursting) return;
+        holeBursting = true;
+        holeBurstT = enraged ? 0.38f : 0.48f;
+        fireHoleBurst(bullets);
+    }
+
+    void absorbTriangle() {
+        holeR += enraged ? 4.2f : 3.2f;
+        if (holeR >= holeRMax)
+            holeR = holeRMax;
+    }
+
+    void onTriangleShot() {
+        holeR -= enraged ? 7.0f : 5.5f;
+        if (holeR < holeRMin) holeR = holeRMin;
+    }
+
     void spawnGlitchBar() {
         PGlitchBar b;
         b.alive = true;
-        b.life = enraged ? 3.8f : 3.0f;
-        b.w = enraged ? 220.0f : 180.0f;
-        b.h = enraged ? 28.0f : 22.0f;
+        b.life = enraged ? 3.5f : 2.8f;
+        b.w = enraged ? 200.0f : 170.0f;
+        b.h = enraged ? 26.0f : 20.0f;
         if (rand() % 2 == 0) {
             b.x = (rand() % 2) ? -b.w - 20.0f : (float)screenW + 20.0f;
             b.y = 80.0f + (float)(rand() % std::max(1, screenH - 200));
-            b.vx = (b.x < 0.0f ? 1.0f : -1.0f) * (enraged ? 320.0f : 240.0f);
+            b.vx = (b.x < 0.0f ? 1.0f : -1.0f) * (enraged ? 280.0f : 220.0f);
             b.vy = 0.0f;
         } else {
             b.x = 40.0f + (float)(rand() % std::max(1, screenW - 80));
             b.y = (rand() % 2) ? -b.h - 20.0f : (float)screenH + 20.0f;
             b.vx = 0.0f;
-            b.vy = (b.y < 0.0f ? 1.0f : -1.0f) * (enraged ? 280.0f : 210.0f);
+            b.vy = (b.y < 0.0f ? 1.0f : -1.0f) * (enraged ? 250.0f : 190.0f);
         }
         bars.push_back(b);
     }
 
-    void beginSnap(float winW, float winH) {
-        float margin = 36.0f;
+    void beginSnap(float winX, float winY, float winW, float winH) {
+        float margin = 40.0f;
         int spanX = std::max(1, (int)((float)screenW - winW - margin * 2.0f));
         int spanY = std::max(1, (int)((float)screenH - 90.0f - winH - margin * 2.0f));
         snapTargetX = margin + (float)(rand() % spanX);
@@ -194,7 +236,9 @@ public:
         fx.snapWarnY = snapTargetY;
         fx.snapWarnW = winW;
         fx.snapWarnH = winH;
-        snapTimer = enraged ? 0.55f : 0.72f;
+        fx.snapFromX = winX + winW * 0.5f;
+        fx.snapFromY = winY + winH * 0.5f;
+        snapTimer = enraged ? 0.85f : 1.05f;
     }
 
     void applySnap(float& winX, float& winY, float winW, float winH, float& playerHP) {
@@ -203,26 +247,29 @@ public:
         clampWin(winX, winY, winW, winH, screenW, screenH);
         fx.snapWarn = false;
         fx.shakePulse = true;
-        HurtPlayer(playerHP, enraged ? 8.0f : 5.0f);
+        HurtPlayer(playerHP, enraged ? 7.0f : 4.5f);
     }
 
-    void chipBoss(float frac) {
-        float d = maxHp * frac;
-        if (d < 1.0f) d = 1.0f;
-        hp -= d;
-        if (hp <= 0.0f) alive = false;
+    void phaseSlip(float& winX, float& winY, float winW, float winH) {
+        float ang = (float)(rand() % 628) * 0.01f;
+        float dist = enraged ? 72.0f : 52.0f;
+        winX += cosf(ang) * dist;
+        winY += sinf(ang) * dist;
+        clampWin(winX, winY, winW, winH, screenW, screenH);
+        fx.shakePulse = true;
     }
 
-    void updateSwarm(float px, float py, float dt, float& playerHP) {
+    void updateSwarm(float px, float py, float dt, float& playerHP,
+                     std::vector<Bullet>& bullets) {
         for (auto& s : swarm) {
             if (!s.alive) continue;
-            if (s.pulled && blackHoleActive) {
+            if (s.pulled && blackHoleActive && !holeBursting) {
                 float dx = holeX - s.x, dy = holeY - s.y;
                 float d = std::sqrt(dx * dx + dy * dy) + 1e-3f;
-                float pull = enraged ? 520.0f : 420.0f;
+                float pull = enraged ? 500.0f : 400.0f;
                 s.vx += (dx / d) * pull * dt;
                 s.vy += (dy / d) * pull * dt;
-                float maxSp = enraged ? 980.0f : 820.0f;
+                float maxSp = enraged ? 920.0f : 780.0f;
                 float sp2 = s.vx * s.vx + s.vy * s.vy;
                 if (sp2 > maxSp * maxSp) {
                     float sc = maxSp / std::sqrt(sp2);
@@ -239,13 +286,15 @@ public:
                 s.alive = false;
                 continue;
             }
-            if (blackHoleActive) {
+            if (blackHoleActive && !holeBursting) {
                 float hdx = s.x - holeX, hdy = s.y - holeY;
-                if (hdx * hdx + hdy * hdy < (holeRadius + 8.0f) * (holeRadius + 8.0f)) {
+                if (hdx * hdx + hdy * hdy < (holeR * 0.35f + 10.0f) * (holeR * 0.35f + 10.0f)) {
                     s.alive = false;
-                    chipBoss(enraged ? 0.0025f : 0.0018f);
+                    absorbTriangle();
+                    if (holeR >= holeRMax - 0.5f)
+                        triggerHoleBurst(bullets);
                     float adx = px - holeX, ady = py - holeY;
-                    if (adx * adx + ady * ady < (holeRadius + 55.0f) * (holeRadius + 55.0f))
+                    if (adx * adx + ady * ady < (holeR + 50.0f) * (holeR + 50.0f))
                         HurtPlayer(playerHP, CORE_DMG);
                 }
             }
@@ -265,7 +314,7 @@ public:
             b.y += b.vy * dt;
             b.life -= dt;
             if (px + pw > b.x && px < b.x + b.w && py + ph > b.y && py < b.y + b.h)
-                HurtPlayer(playerHP, 10.0f * dt);
+                HurtPlayer(playerHP, 9.0f * dt);
             if (b.life <= 0.0f ||
                 b.x < -400.0f || b.x > screenW + 400.0f ||
                 b.y < -400.0f || b.y > screenH + 400.0f)
@@ -276,108 +325,97 @@ public:
     }
 
     void Update(float px, float py, float dt, float& playerHP,
-                std::vector<Bullet>& /*bullets*/,
+                std::vector<Bullet>& bullets,
                 float& winX, float& winY, float winW, float winH) {
         if (!alive) return;
 
         checkEnrage();
         glitchT += dt;
+        droneSpin += dt * (enraged ? 2.8f : 2.1f);
+        for (int i = 0; i < DRONE_N; i++)
+            droneAng[i] += dt * (1.4f + (float)i * 0.22f) * (droneActive(i) ? 1.35f : 0.45f);
+
         if (vulnTimer > 0.0f) vulnTimer -= dt;
 
         formTimer += dt;
-        if (formTimer >= formDuration && !triWarn && !blackHoleActive && snapTimer <= 0.0f)
+        if (formTimer >= formDuration && !triWarn && !holeBursting && snapTimer <= 0.0f)
             pickForm(false);
 
         resetFx();
 
         switch (form) {
         case PForm::SINGULARITY:
-            worldX += (holeX - worldX) * 2.0f * dt;
-            worldY += (holeY - worldY - 120.0f) * 2.0f * dt;
-            if (!triWarn && !blackHoleActive) {
-                singularityCd -= dt;
-                if (singularityCd <= 0.0f) startSingularityWarn();
-            }
+            worldX += (holeX - worldX) * 2.5f * dt;
+            worldY += (holeY - worldY - 100.0f) * 2.5f * dt;
             if (triWarn) {
                 triWarnTimer -= dt;
                 if (triWarnTimer <= 0.0f) {
                     triWarn = false;
                     blackHoleActive = true;
-                    singularityTimer = enraged ? 3.8f : 3.2f;
+                    holeR = holeRMin;
                     singularitySpawn = 0.0f;
-                    holeGrow = 0.0f;
                 }
             }
             if (blackHoleActive) {
-                singularityTimer -= dt;
-                singularitySpawn -= dt;
-                holeGrow += dt;
-                holeRadius = std::min(enraged ? 105.0f : 88.0f, holeGrow * (enraged ? 95.0f : 78.0f));
-                if (singularitySpawn <= 0.0f) {
-                    singularitySpawn = enraged ? 0.06f : 0.085f;
-                    spawnEdgeTriangle();
-                }
-                float pdx = holeX - px, pdy = holeY - py;
-                float pd = std::sqrt(pdx * pdx + pdy * pdy) + 1e-3f;
-                if (pd < 420.0f) {
-                    float pull = (420.0f - pd) * (enraged ? 0.0009f : 0.00065f);
-                    winX += (pdx / pd) * pull * dt * 60.0f;
-                    winY += (pdy / pd) * pull * dt * 60.0f;
-                    clampWin(winX, winY, winW, winH, screenW, screenH);
-                }
-                if (singularityTimer <= 0.0f) {
-                    blackHoleActive = false;
-                    singularityCd = enraged ? 1.2f : 1.8f;
-                    vulnTimer = enraged ? 1.0f : 1.3f;
+                if (holeBursting) {
+                    holeBurstT -= dt;
+                    holeR = holeRMin + (holeRMax - holeRMin) * (holeBurstT / (enraged ? 0.38f : 0.48f));
+                    if (holeR < holeRMin) holeR = holeRMin;
+                    if (holeBurstT <= 0.0f) {
+                        holeBursting = false;
+                        holeR = holeRMin;
+                        vulnTimer = enraged ? 0.9f : 1.1f;
+                    }
+                } else {
+                    singularitySpawn -= dt;
+                    if (singularitySpawn <= 0.0f) {
+                        singularitySpawn = enraged ? 0.07f : 0.095f;
+                        spawnEdgeTriangle();
+                    }
+                    float pdx = holeX - px, pdy = holeY - py;
+                    float pd = std::sqrt(pdx * pdx + pdy * pdy) + 1e-3f;
+                    if (pd < 380.0f) {
+                        float pull = (380.0f - pd) * (enraged ? 0.00055f : 0.0004f);
+                        winX += (pdx / pd) * pull * dt * 60.0f;
+                        winY += (pdy / pd) * pull * dt * 60.0f;
+                        clampWin(winX, winY, winW, winH, screenW, screenH);
+                    }
                 }
             }
-            updateSwarm(px, py, dt, playerHP);
+            updateSwarm(px, py, dt, playerHP, bullets);
             break;
 
         case PForm::DISPLACE:
-            worldX += sinf(glitchT * 2.4f) * 18.0f * dt;
-            worldY += cosf(glitchT * 1.9f) * 14.0f * dt;
+            worldX += sinf(glitchT * 2.1f) * 14.0f * dt;
+            worldY += cosf(glitchT * 1.7f) * 11.0f * dt;
             displaceCd -= dt;
             if (displaceCd <= 0.0f && snapTimer <= 0.0f && !fx.snapWarn) {
-                beginSnap(winW, winH);
-                displaceCd = enraged ? 2.0f : 2.8f;
+                beginSnap(winX, winY, winW, winH);
+                displaceCd = enraged ? 2.4f : 3.2f;
             }
             if (snapTimer > 0.0f) {
                 snapTimer -= dt;
                 if (snapTimer <= 0.0f)
                     applySnap(winX, winY, winW, winH, playerHP);
             }
-            winX += driftX * dt;
-            winY += driftY * dt;
-            clampWin(winX, winY, winW, winH, screenW, screenH);
-            if (displaceCd > 1.2f && (int)(glitchT * 3.0f) != (int)((glitchT - dt) * 3.0f))
+            if ((int)(glitchT * 2.5f) != (int)((glitchT - dt) * 2.5f))
                 spawnGlitchBar();
             updateBars(winX, winY, winW, winH, dt, playerHP);
-            if (formTimer > formDuration * 0.82f && vulnTimer <= 0.0f)
-                vulnTimer = 0.6f;
+            if (formTimer > formDuration * 0.85f && vulnTimer <= 0.0f)
+                vulnTimer = 0.65f;
             break;
 
         case PForm::PHANTOM:
-            worldX = (float)screenW * 0.5f + sinf(glitchT * 1.1f) * 40.0f;
-            worldY = (float)screenH * 0.22f + cosf(glitchT * 0.9f) * 22.0f;
-            phantomPhase += dt;
-            fx.cursorGlitch = true;
-            fx.cursorOffX = sinf(glitchT * 6.8f) * (enraged ? 120.0f : 95.0f)
-                          + sinf(glitchT * 13.7f) * 35.0f;
-            fx.cursorOffY = cosf(glitchT * 5.4f) * (enraged ? 95.0f : 75.0f)
-                          + cosf(glitchT * 11.2f) * 28.0f;
-            {
-                float blinkT = fmodf(phantomPhase, enraged ? 0.28f : 0.38f);
-                fx.playerAlpha = (blinkT < (enraged ? 0.13f : 0.17f)) ? 0.12f : 1.0f;
+            worldX = (float)screenW * 0.5f + sinf(glitchT * 1.0f) * 36.0f;
+            worldY = (float)screenH * 0.22f + cosf(glitchT * 0.85f) * 20.0f;
+            fx.staticBand = fmodf(glitchT * (enraged ? 0.55f : 0.42f), 1.0f);
+            phantomSlipCd -= dt;
+            if (phantomSlipCd <= 0.0f) {
+                phaseSlip(winX, winY, winW, winH);
+                phantomSlipCd = enraged ? 2.0f : 2.8f;
             }
-            fx.showGhostWin = true;
-            fx.ghostW = winW;
-            fx.ghostH = winH;
-            fx.ghostX = winX + sinf(glitchT * 3.3f) * 140.0f;
-            fx.ghostY = winY + cosf(glitchT * 2.7f) * 110.0f;
-            clampWin(fx.ghostX, fx.ghostY, fx.ghostW, fx.ghostH, screenW, screenH);
-            if (fmodf(phantomPhase, enraged ? 2.2f : 2.8f) < dt)
-                vulnTimer = enraged ? 0.55f : 0.75f;
+            if (fmodf(glitchT, enraged ? 2.0f : 2.6f) < dt)
+                vulnTimer = enraged ? 0.6f : 0.8f;
             break;
         }
     }

@@ -802,10 +802,6 @@ int main() {
         bool lmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         float wmx = ScreenToWorldX((float)mx);
         float wmy = ScreenToWorldY((float)my);
-        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->fx.cursorGlitch) {
-            wmx += g_PolyBoss->fx.cursorOffX;
-            wmy += g_PolyBoss->fx.cursorOffY;
-        }
 
         // --- ?낅젰 泥섎━ ---
         GameState prevState = g_GameManager.currentState;
@@ -2175,10 +2171,7 @@ int main() {
                             if (!s.alive) continue;
                             if (SegDist(s.x, s.y, b.prevX, b.prevY, b.x, b.y) < 13.0f) {
                                 s.alive = false;
-                                AddKillCombo();
-                                g_GameManager.xp += 2;
-                                g_GameManager.scoreAccum += 10.0f;
-                                pb->chipBoss(0.0012f);
+                                pb->onTriangleShot();
                                 if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
                                 break;
                             }
@@ -3904,6 +3897,96 @@ int main() {
                                TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
             }
         }
+        // GLITCH.exe world hazards — draw below fake window chrome
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            auto* pb = g_PolyBoss;
+            auto hidePt = [&](float px, float py) {
+                if (px >= playerWin.x && px <= playerWin.x + playerWin.width &&
+                    py >= playerWin.y && py <= playerWin.y + playerWin.height)
+                    return true;
+                for (auto& fw : zwins)
+                    if (px >= fw.x && px <= fw.x + fw.w &&
+                        py >= fw.y && py <= fw.y + fw.h)
+                        return true;
+                if (g_Stats.turretMode)
+                    for (auto& t : g_Turrets) {
+                        float tx0 = t.x - TURRET_WIN_W * 0.5f;
+                        float ty0 = t.y - TURRET_WIN_H * 0.5f;
+                        if (px >= tx0 && px <= tx0 + TURRET_WIN_W &&
+                            py >= ty0 && py <= ty0 + TURRET_WIN_H)
+                            return true;
+                    }
+                return false;
+            };
+            BindMainShader();
+            float gt = (float)glfwGetTime();
+            if (pb->form == PForm::SINGULARITY) {
+                if (pb->triWarn) {
+                    float blink = 0.45f + 0.4f * (0.5f + 0.5f * sinf(gt * 16.0f));
+                    for (int e = 0; e < 4; e++)
+                        for (int i = 0; i < 18; i++) {
+                            float t = (float)i / 17.0f;
+                            float ax, ay, dx = 0, dy = 0;
+                            if (e == 0) { ax = t * screenWidth; ay = 10.0f; dy = 1; }
+                            else if (e == 1) { ax = t * screenWidth; ay = screenHeight - 10.0f; dy = -1; }
+                            else if (e == 2) { ax = 10.0f; ay = t * screenHeight; dx = 1; }
+                            else { ax = screenWidth - 10.0f; ay = t * screenHeight; dx = -1; }
+                            drawTriangle(ax + dx * 12.0f, ay + dy * 12.0f,
+                                         11.0f, 0.1f, 1.0f, 0.88f, blink);
+                        }
+                }
+                if (pb->blackHoleActive) {
+                    float hr = pb->holeR;
+                    float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
+                    drawCircle(pb->holeX, pb->holeY, hr * 1.45f, 0.08f, 0.5f, 0.95f, 0.10f + 0.06f * pulse);
+                    drawCircle(pb->holeX, pb->holeY, hr * 1.12f, 0.0f, 0.82f, 0.72f, 0.24f);
+                    drawCircle(pb->holeX, pb->holeY, hr * 0.62f, 0.0f, 0.0f, 0.0f, 0.94f);
+                    for (int r = 0; r < 4; r++) {
+                        float ang = gt * (2.0f + r * 0.35f) + r * 1.57f;
+                        drawTriangle(pb->holeX + cosf(ang) * hr * 0.78f,
+                                     pb->holeY + sinf(ang) * hr * 0.78f,
+                                     14.0f, 0.15f, 1.0f, 0.9f, 0.5f);
+                    }
+                }
+                for (auto& s : pb->swarm) {
+                    if (!s.alive || hidePt(s.x, s.y)) continue;
+                    drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
+                }
+            }
+            if (pb->form == PForm::DISPLACE) {
+                if (pb->fx.snapWarn) {
+                    auto& fx = pb->fx;
+                    float tx = fx.snapWarnX + fx.snapWarnW * 0.5f;
+                    float ty = fx.snapWarnY + fx.snapWarnH * 0.5f;
+                    float sa = 0.4f + 0.35f * (0.5f + 0.5f * sinf(gt * 20.0f));
+                    drawNeonBorder(fx.snapWarnX, fx.snapWarnY, fx.snapWarnW, fx.snapWarnH,
+                                   1.0f, 0.42f, 0.12f);
+                    drawRect(fx.snapWarnX, fx.snapWarnY, fx.snapWarnW, fx.snapWarnH,
+                             1.0f, 0.28f, 0.08f, 0.10f * sa);
+                    float dx = tx - fx.snapFromX, dy = ty - fx.snapFromY;
+                    float len = sqrtf(dx * dx + dy * dy) + 1e-3f;
+                    int segs = (int)(len / 14.0f);
+                    if (segs < 4) segs = 4;
+                    for (int i = 0; i <= segs; i++) {
+                        float u = (float)i / (float)segs;
+                        drawCircle(fx.snapFromX + dx * u, fx.snapFromY + dy * u,
+                                   5.0f, 1.0f, 0.45f, 0.15f, 0.55f * sa);
+                    }
+                }
+                for (auto& bar : pb->bars) {
+                    if (!bar.alive || hidePt(bar.x + bar.w * 0.5f, bar.y + bar.h * 0.5f)) continue;
+                    drawRect(bar.x, bar.y, bar.w, bar.h, 0.07f, 0.05f, 0.09f, 0.82f);
+                    drawNeonBorder(bar.x, bar.y, bar.w, bar.h, 1.0f, 0.38f, 0.18f);
+                }
+            }
+            if (pb->form == PForm::PHANTOM) {
+                for (int i = 0; i < 8; i++) {
+                    float by = fmodf(pb->fx.staticBand * (float)screenHeight + (float)i * 96.0f,
+                                     (float)screenHeight + 40.0f) - 20.0f;
+                    drawRect(0.0f, by, (float)screenWidth, 5.0f, 0.55f, 0.45f, 1.0f, 0.055f);
+                }
+            }
+        }
         // z-由ъ뒪????李??⑥쐞濡?
         for (auto& fw : zwins) {
             BatchFlush(); glDisable(GL_BLEND);
@@ -4086,27 +4169,22 @@ int main() {
             }
         }
 
-        // (c) player FakeWindow background (+ GLITCH phantom blink / ghost)
+        // (c) player FakeWindow background
         BatchFlush(); glDisable(GL_BLEND);
-        float polyPA = 1.0f;
-        if (g_PolyBoss && g_PolyBoss->alive)
-            polyPA = g_PolyBoss->fx.playerAlpha;
-        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->fx.showGhostWin) {
-            auto& gfx = g_PolyBoss->fx;
-            drawRect(gfx.ghostX, gfx.ghostY, gfx.ghostW, gfx.ghostH,
-                     0.12f, 0.08f, 0.18f, 0.35f);
-            drawNeonBorder(gfx.ghostX, gfx.ghostY, gfx.ghostW, gfx.ghostH,
-                           0.55f, 0.45f, 1.0f);
-        }
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                 0.05f, 0.06f, 0.09f, polyPA);
+                 0.05f, 0.06f, 0.09f, 1.0f);
         BatchFlush(); glEnable(GL_BLEND);
         // ?ъ씠踰꾪럱???ㅼ삩 ?곕??????뚮젅?댁뼱 李??ㅼ삩 蹂대뜑 (?≪꽱???뚮쭏 ??
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        g_AccentR, g_AccentG, g_AccentB);
-        if (polyPA < 0.5f)
-            drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                           1.0f, 0.3f, 0.9f);
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->form == PForm::PHANTOM) {
+            float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 9.0f);
+            drawNeonBorder(playerWin.x - 3, playerWin.y - 3,
+                           playerWin.width + 6, playerWin.height + 6,
+                           0.75f, 0.55f, 1.0f);
+            drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
+                     0.45f, 0.35f, 0.85f, 0.04f * pulse);
+        }
 
         if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
             float wx = g_ShopZoneX - RUN_SHOP_WIN_W * 0.5f;
@@ -4583,58 +4661,6 @@ int main() {
             auto* pb = g_PolyBoss;
             BindMainShader();
             float gt = (float)glfwGetTime();
-            if (pb->form == PForm::SINGULARITY) {
-                if (pb->triWarn) {
-                    float blink = 0.4f + 0.45f * (0.5f + 0.5f * sinf(gt * 18.0f));
-                    for (int e = 0; e < 4; e++) {
-                        for (int i = 0; i < 16; i++) {
-                            float t = (float)i / 15.0f;
-                            float ax, ay, dx = 0, dy = 0;
-                            if (e == 0) { ax = t * screenWidth; ay = 8.0f; dy = 1; }
-                            else if (e == 1) { ax = t * screenWidth; ay = screenHeight - 8.0f; dy = -1; }
-                            else if (e == 2) { ax = 8.0f; ay = t * screenHeight; dx = 1; }
-                            else { ax = screenWidth - 8.0f; ay = t * screenHeight; dx = -1; }
-                            drawTriangle(ax + dx * 10.0f, ay + dy * 10.0f,
-                                         12.0f, 0.15f, 1.0f, 0.85f, blink);
-                        }
-                    }
-                    drawCircle(pb->holeX, pb->holeY, 28.0f, 0.05f, 0.02f, 0.08f, 0.5f * blink);
-                }
-                if (pb->blackHoleActive) {
-                    float hr = pb->holeRadius;
-                    drawCircle(pb->holeX, pb->holeY, hr * 1.35f, 0.1f, 0.55f, 0.95f, 0.12f);
-                    drawCircle(pb->holeX, pb->holeY, hr * 1.05f, 0.0f, 0.85f, 0.75f, 0.22f);
-                    drawCircle(pb->holeX, pb->holeY, hr * 0.55f, 0.0f, 0.0f, 0.0f, 0.92f);
-                }
-                for (auto& s : pb->swarm) {
-                    if (!s.alive) continue;
-                    drawTriangle(s.x, s.y, 10.0f, 0.25f, 1.0f, 0.95f, 1.0f);
-                }
-            }
-            if (pb->form == PForm::DISPLACE) {
-                if (pb->fx.snapWarn) {
-                    float sa = 0.35f + 0.35f * (0.5f + 0.5f * sinf(gt * 22.0f));
-                    drawNeonBorder(pb->fx.snapWarnX, pb->fx.snapWarnY,
-                                   pb->fx.snapWarnW, pb->fx.snapWarnH, 1.0f, 0.35f, 0.15f);
-                    drawRect(pb->fx.snapWarnX, pb->fx.snapWarnY,
-                             pb->fx.snapWarnW, pb->fx.snapWarnH,
-                             1.0f, 0.25f, 0.1f, 0.08f * sa);
-                }
-                for (auto& bar : pb->bars) {
-                    if (!bar.alive) continue;
-                    drawRect(bar.x, bar.y, bar.w, bar.h, 0.08f, 0.06f, 0.10f, 0.85f);
-                    drawNeonBorder(bar.x, bar.y, bar.w, bar.h, 1.0f, 0.4f, 0.2f);
-                }
-            }
-            if (pb->form == PForm::PHANTOM && pb->fx.cursorGlitch) {
-                double gmx, gmy;
-                glfwGetCursorPos(window, &gmx, &gmy);
-                float fakeX = ScreenToWorldX((float)gmx) + pb->fx.cursorOffX;
-                float fakeY = ScreenToWorldY((float)gmy) + pb->fx.cursorOffY;
-                drawCircle(fakeX, fakeY, 18.0f, 0.85f, 0.3f, 1.0f, 0.25f);
-                drawRect(fakeX - 2, fakeY - 22, 4, 44, 0.9f, 0.4f, 1.0f, 0.5f);
-                drawRect(fakeX - 22, fakeY - 2, 44, 4, 0.9f, 0.4f, 1.0f, 0.5f);
-            }
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(pb->worldX - POLY_WIN_W*0.5f, pb->worldY - POLY_WIN_W*0.5f,
                          POLY_WIN_W, POLY_WIN_W);
@@ -4646,20 +4672,27 @@ int main() {
             // 蹂몄껜 ???쇰퀎 紐⑥뼇 (??
             float bsz = PolymorphBoss::BODY;
             float bx = pb->worldX, by = pb->worldY;
-            if (pb->form == PForm::SINGULARITY) {
-                drawCircle(bx, by, bsz * 0.45f, 0.0f, 0.0f, 0.0f, 1.0f);
-                drawCircle(bx, by, bsz * 0.65f, 0.1f, 0.9f, 0.8f, 0.55f);
-                drawTriangle(bx, by - bsz * 0.2f, bsz * 0.5f, 0.2f, 1.0f, 0.85f, 0.9f);
-            } else if (pb->form == PForm::DISPLACE) {
-                drawDiamond(bx, by, bsz, 1.0f, 0.35f, 0.15f, 1.0f);
-                drawRect(bx - bsz * 0.35f, by - bsz * 0.12f, bsz * 0.7f, bsz * 0.24f,
-                         0.12f, 0.10f, 0.14f, 0.9f);
-            } else {
-                drawDiamond(bx, by, bsz * 0.75f, 0.85f, 0.85f, 1.0f, 0.55f);
-                for (int s = 0; s < 5; s++) {
-                    float sy = by - bsz + (float)s * (bsz * 0.45f);
-                    drawRect(bx - bsz * 0.6f, sy, bsz * 1.2f, 2.0f, 0.5f, 0.5f, 1.0f, 0.12f);
-                }
+            float fr = 0.2f, fg = 1.0f, fb = 0.85f;
+            if (pb->form == PForm::DISPLACE) { fr = 1.0f; fg = 0.38f; fb = 0.15f; }
+            else if (pb->form == PForm::PHANTOM) { fr = 0.75f; fg = 0.65f; fb = 1.0f; }
+            drawCircle(bx, by, bsz * 0.55f, 0.03f, 0.02f, 0.05f, 0.95f);
+            drawCircle(bx, by, bsz * 0.72f, fr * 0.35f, fg * 0.35f, fb * 0.35f, 0.45f);
+            drawDiamond(bx, by, bsz * 0.82f, fr, fg, fb, 1.0f);
+            for (int i = 0; i < PolymorphBoss::DRONE_N; i++) {
+                float da = pb->droneAng[i] + pb->droneSpin * (pb->droneActive(i) ? 1.0f : 0.35f);
+                float dr = 88.0f + (float)(i % 3) * 16.0f;
+                float dx = bx + cosf(da) * dr;
+                float dy = by + sinf(da) * dr;
+                bool on = pb->droneActive(i);
+                float ds = on ? 15.0f : 9.0f;
+                float da_a = on ? 0.95f : 0.22f;
+                drawCircle(dx, dy, ds * 0.55f, fr, fg, fb, da_a * 0.35f);
+                drawDiamond(dx, dy, ds, fr, fg, fb, da_a);
+            }
+            if (pb->form == PForm::SINGULARITY && pb->blackHoleActive) {
+                float mini = pb->holeR * 0.18f;
+                drawCircle(bx, by - bsz * 0.15f, mini, 0.0f, 0.0f, 0.0f, 0.85f);
+                drawCircle(bx, by - bsz * 0.15f, mini * 1.4f, 0.1f, 0.85f, 0.75f, 0.35f);
             }
             if (pb->damageable()) {
                 float pulse = 0.5f + 0.5f * sinf(gt * 14.0f);
