@@ -5106,7 +5106,7 @@ int main() {
             }
         }
 
-        // UNKNOWN.sys — 가짜창 scissor 안에서 비행 검·박힌 검·조준 프레임
+        // UNKNOWN.sys — 게임 창(화면) 가장자리 검 + pull.lane
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             auto* ub = g_UnknownBoss;
             float gtUB = (float)glfwGetTime();
@@ -5121,6 +5121,12 @@ int main() {
             float uwy = ub->worldY - UNKNOWN_WIN_H * 0.5f;
             ubWinPass(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H);
             ubWinPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            const float edgeBand = 84.0f;
+            float sw = (float)screenWidth, sh = (float)screenHeight;
+            ubWinPass(0.0f, 0.0f, sw, edgeBand);
+            ubWinPass(0.0f, sh - edgeBand, sw, edgeBand);
+            ubWinPass(0.0f, 0.0f, edgeBand, sh);
+            ubWinPass(sw - edgeBand, 0.0f, edgeBand, sh);
             for (auto& lane : ub->recallLanes)
                 ubWinPass(lane.x, lane.y, lane.w, lane.h);
         }

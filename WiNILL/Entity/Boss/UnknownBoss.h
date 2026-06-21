@@ -23,7 +23,7 @@ static inline void ubDrawThickLine(float x1, float y1, float x2, float y2, float
 }
 
 // UNKNOWN.sys — 창연(窗緣) 검 보스
-//   검 → 플레이어 가짜창 가장자리 pin → 전부 소진 → 2초 전조 + pull.lane 창(회수 경로 가독) → 회수
+//   검 → 게임 창(화면) 가장자리 pin → 전부 소진 → 2초 전조 + pull.lane → 회수
 
 enum class UBEdge { TOP, RIGHT, BOTTOM, LEFT };
 
@@ -178,11 +178,25 @@ public:
         worldY = std::max(m, std::min(worldY, (float)screenH - m));
     }
 
-    void pickThrowAtPlayer(float px, float py, float pwx, float pwy, float pww, float pwh) {
-        throwTargetWx = pwx; throwTargetWy = pwy;
-        throwTargetWw = pww; throwTargetWh = pwh;
-        throwEdge = pickEdge(px, py, pwx, pwy, pww, pwh);
-        throwAlong = 0.06f + (float)(rand() % 88) * 0.01f;
+    static bool visibleInRect(float px, float py,
+                              float wx, float wy, float ww, float wh, float pad = 72.0f) {
+        return px >= wx - pad && px <= wx + ww + pad &&
+               py >= wy - pad && py <= wy + wh + pad;
+    }
+
+    static bool rectOverlap(float ax, float ay, float aw, float ah,
+                            float bx, float by, float bw, float bh) {
+        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    void pickThrowAtScreenEdge(float px, float py) {
+        throwTargetWx = 0.0f;
+        throwTargetWy = 0.0f;
+        throwTargetWw = (float)screenW;
+        throwTargetWh = (float)screenH;
+        throwEdge = pickEdge(px, py, 0.0f, 0.0f,
+                             (float)screenW, (float)screenH);
+        throwAlong = 0.03f + (float)(rand() % 94) * 0.01f;
     }
 
     void buildRecallLanes() {
@@ -368,7 +382,7 @@ public:
 
             if (quiver > 0 && actionCd <= 0.0f) {
                 pickNextSkill();
-                pickThrowAtPlayer(px, py, pwx, pwy, pww, pwh);
+                pickThrowAtScreenEdge(px, py);
                 state = UBState::WINDUP;
                 stateT = windupTime();
             }
@@ -402,7 +416,7 @@ public:
                     [](const UBFly& f) { return !f.active; }), flies.end());
                 if (chainLeft > 1) {
                     chainLeft--;
-                    pickThrowAtPlayer(px, py, pwx, pwy, pww, pwh);
+                    pickThrowAtScreenEdge(px, py);
                     state = UBState::WINDUP;
                     stateT = windupTime() * 0.65f;
                 } else if (crossLeft > 1) {
@@ -519,9 +533,9 @@ public:
 
     void renderPinOnWindow(float wx, float wy, float ww, float wh, float /*gt*/) const {
         for (auto& p : pins) {
-            if (!sameWindow(wx, wy, ww, wh, p.wx, p.wy, p.ww, p.wh)) continue;
             float ox, oy;
             edgePoint(p.wx, p.wy, p.ww, p.wh, p.edge, p.along, ox, oy);
+            if (!visibleInRect(ox, oy, wx, wy, ww, wh)) continue;
             float nx, ny;
             edgeNormal(p.edge, nx, ny);
             float alpha = (p.scar > 0.5f) ? 0.35f : 1.0f;
@@ -544,7 +558,7 @@ public:
     void renderLaneInWindow(float gt, float wx, float wy, float ww, float wh) const {
         if (state != UBState::RECALL_TEL && state != UBState::RECALLING) return;
         for (auto& lane : recallLanes) {
-            if (!sameWindow(wx, wy, ww, wh, lane.x, lane.y, lane.w, lane.h)) continue;
+            if (!rectOverlap(lane.x, lane.y, lane.w, lane.h, wx, wy, ww, wh)) continue;
             float blink = 0.40f + 0.40f * (0.5f + 0.5f * sinf(gt * 12.0f));
             float prog = (state == UBState::RECALL_TEL) ? (1.0f - stateT / RECALL_TEL) : 1.0f;
             ubDrawThickLine(lane.pinX, lane.pinY, worldX, worldY, 5.0f,
@@ -559,18 +573,15 @@ public:
     void renderWorld(float gt, float wx, float wy, float ww, float wh) const {
         float bx = worldX - WIN_W * 0.5f, by = worldY - WIN_H * 0.5f;
         bool isBossWin = sameWindow(wx, wy, ww, wh, bx, by, WIN_W, WIN_H);
-        bool isPlayerWin = sameWindow(wx, wy, ww, wh,
-                                      throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh);
+        auto inWinPt = [&](float px, float py) {
+            return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
+        };
 
         renderLaneInWindow(gt, wx, wy, ww, wh);
 
         for (auto& f : flies) {
             if (!f.active) continue;
-            bool targetWin = sameWindow(wx, wy, ww, wh, f.twx, f.twy, f.tww, f.twh);
-            auto inWinPt = [&](float px, float py) {
-                return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
-            };
-            if (!targetWin && !isBossWin &&
+            if (!isBossWin &&
                 !inWinPt(f.x, f.y) && !inWinPt(f.fx, f.fy) && !inWinPt(f.tx, f.ty))
                 continue;
 
@@ -580,25 +591,24 @@ public:
             ubDrawThickLine(f.fx, f.fy, f.x, f.y, 2.5f, 0.95f, 0.38f, 0.62f, 0.32f);
             drawBlade(f.x, f.y, ang, std::min(68.0f, rem + 18.0f), 6.5f,
                       0.98f, 0.32f, 0.68f, 1.0f);
-            if (targetWin) {
+            if (inWinPt(f.tx, f.ty)) {
                 float p = pulse(gt);
                 drawCircle(f.tx, f.ty, 14.0f + p * 6.0f, 1.0f, 0.55f, 0.85f, 0.65f * p);
             }
         }
 
-        if (state == UBState::WINDUP && isPlayerWin) {
+        if (state == UBState::WINDUP) {
             float tx, ty;
             edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
                       throwEdge, throwAlong, tx, ty);
-            float p = pulse(gt);
-            drawCircle(tx, ty, 12.0f + p * 8.0f, 1.0f, 0.50f, 0.80f, 0.70f * p);
+            if (visibleInRect(tx, ty, wx, wy, ww, wh, 24.0f)) {
+                float p = pulse(gt);
+                drawCircle(tx, ty, 12.0f + p * 8.0f, 1.0f, 0.50f, 0.80f, 0.70f * p);
+            }
         }
 
         for (auto& r : recalls) {
             if (!r.active) continue;
-            auto inWinPt = [&](float px, float py) {
-                return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
-            };
             if (!inWinPt(r.x, r.y) && !inWinPt(r.fromX, r.fromY) &&
                 !inWinPt(worldX, worldY) && !isBossWin)
                 continue;
