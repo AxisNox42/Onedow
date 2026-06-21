@@ -523,12 +523,20 @@ void Scene_Codex(const SceneCtx& c) {
                         if (d.rarity == AugRarity::COMBO) {
                             for (int c = 0; c < COMBO_COUNT; c++)
                                 if (COMBO_DEFS[c].result == d.type) {
-                                    int ia = AugIndexOfType(COMBO_DEFS[c].reqs[0]);
-                                    int ib = AugIndexOfType(COMBO_DEFS[c].reqs[1]);
-                                    wchar_t rc[128];
-                                    swprintf_s(rc, L"%ls + %ls",
-                                               ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
-                                               ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
+                                    const ComboDef& cd = COMBO_DEFS[c];
+                                    int ia = AugIndexOfType(cd.reqs[0]);
+                                    int ib = AugIndexOfType(cd.reqs[1]);
+                                    int ic = cd.reqCount >= 3 ? AugIndexOfType(cd.reqs[2]) : -1;
+                                    wchar_t rc[192];
+                                    if (cd.reqCount >= 3)
+                                        swprintf_s(rc, L"%ls + %ls + %ls",
+                                                   ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
+                                                   ib>=0 ? AugName(ALL_AUGS[ib]) : L"?",
+                                                   ic>=0 ? AugName(ALL_AUGS[ic]) : L"?");
+                                    else
+                                        swprintf_s(rc, L"%ls + %ls",
+                                                   ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
+                                                   ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
                                     g_TextS.Draw(rc, wx + 40.0f, detailY + 92.0f, 0.85f,
                                                  0.1f, 0.85f, 0.8f, 0.95f);
                                     break;

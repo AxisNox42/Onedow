@@ -313,19 +313,24 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
         }
     }
 
-    // 조합 증강 주입 — 레시피(런 중 획득한 재료만 g_TypeOwned) 충족 시 확률 교체
-    for (int c = 0; c < COMBO_COUNT; c++) {
-        AugType res = COMBO_DEFS[c].result;
-        if (g_TypeOwned[(int)res]) continue;        // 이미 획득
-        bool met = true;
-        for (int r = 0; r < COMBO_DEFS[c].reqCount; r++)
-            if (!g_TypeOwned[(int)COMBO_DEFS[c].reqs[r]]) { met = false; break; }
-        if (met) {
-            // 조합은 확률적으로만 제시 — 예전엔 재료 모이면 매 픽 100% 강제라 너무 자주 떴음
+    // 조합 증강 주입 — 재료 3개·L10+·10% 확률 (런 중 획득 재료만 g_TypeOwned)
+    if (playerLevel >= 10) {
+        int eligible[COMBO_COUNT];
+        int eligCount = 0;
+        for (int c = 0; c < COMBO_COUNT; c++) {
+            AugType res = COMBO_DEFS[c].result;
+            if (AugRemoved(res)) continue;
+            if (g_TypeOwned[(int)res]) continue;
+            bool met = true;
+            for (int r = 0; r < COMBO_DEFS[c].reqCount; r++)
+                if (!g_TypeOwned[(int)COMBO_DEFS[c].reqs[r]]) { met = false; break; }
+            if (met) eligible[eligCount++] = c;
+        }
+        if (eligCount > 0 && (rand() % 100) < 10) {
+            AugType res = COMBO_DEFS[eligible[rand() % eligCount]].result;
             int ridx = AugIndexOfType(res);
-            if (ridx >= 0 && (rand() % 100) < 18)   // 18% 확률
+            if (ridx >= 0)
                 augChoices[rand() % 3] = ridx;
-            break;   // 한 번에 조합 후보 1개만 고려 (실패해도 다른 조합 안 봄)
         }
     }
 }

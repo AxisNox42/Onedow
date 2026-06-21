@@ -490,9 +490,9 @@ static const AugDef ALL_AUGS[] = {
         L"[組合] クリ率+30%・クリ倍率+1.2・攻撃+20%" } },
     { AugType::CB_BLOODLORD,   AugRarity::COMBO,    AugUnique::NONE, "CB_BLOOD",
       { L"피의 군주", L"Bloodlord", L"血の君主" },
-      { L"[조합] 처치당 회복 +0.12 · 최대 체력 +20 · 초당 재생 ↑",
-        L"[Combo] Heal +0.12/kill · Max HP +20 · regen up",
-        L"[組合] 撃破毎+0.12回復・最大HP+20・再生↑" } },
+      { L"[조합] 최대 체력 +15 · 재생 +0.25/s (흡혈 라인 완성)",
+        L"[Combo] Max HP +15 · regen +0.25/s (lifesteal line capstone)",
+        L"[組合] 最大HP+15・再生+0.25/s (吸血ライン完成)" } },
     { AugType::CB_PIERCE_TWIN, AugRarity::COMBO,    AugUnique::NONE, "CB_PTWIN",
       { L"관통 쌍둥이", L"Piercing Twins", L"貫通の双子" },
       { L"[조합] 관통 확률 60% · 공격력 +40% (더블 패널티 상쇄)",
@@ -667,16 +667,11 @@ struct ComboDef {
     int     reqCount;
 };
 inline const ComboDef COMBO_DEFS[] = {
-    { AugType::CB_EXECUTIONER, { AugType::CRIT,        AugType::BERSERK }, 2 },
-    { AugType::CB_BLOODLORD,   { AugType::LIFESTEAL_2, AugType::VAMPIRE }, 2 },
-    // 티어 증강이 재료면 최대 티어에서만 조합 성립 (요청)
-    { AugType::CB_PIERCE_TWIN, { AugType::TWIN_2,        AugType::PIERCE_2   }, 2 },
-    { AugType::CB_STORMCALLER, { AugType::BULLET_RAIN_3, AugType::DRONE_2    }, 2 },
-    { AugType::CB_RAILGUN,      { AugType::SNIPER,        AugType::PIERCE_2   }, 2 },
-    { AugType::CB_WARLORD,      { AugType::BERSERK,       AugType::DEATH_BLAST }, 2 },
-    { AugType::CB_TEMPEST,      { AugType::CHAKRAM_3,     AugType::DRONE_2    }, 2 },
-    { AugType::CB_OVERLORD,     { AugType::POWER_SURGE,   AugType::CORE_OVERLOAD }, 2 },  // 오버클럭
-    { AugType::CB_TURRET,       { AugType::CANNON,        AugType::DRONE_2     }, 2 },  // 포탑 배치
+    // 재료 3개 · 최대 티어/전설 선행 — 단순 스탯 합친 조합은 AugRemoved
+    { AugType::CB_BLOODLORD, { AugType::LIFESTEAL, AugType::LIFESTEAL_2, AugType::VAMPIRE }, 3 },
+    { AugType::CB_RAILGUN,   { AugType::SNIPER,    AugType::PIERCE,      AugType::PIERCE_2 }, 3 },
+    { AugType::CB_WARLORD,   { AugType::BERSERK,   AugType::DEATH_BLAST, AugType::CHAIN_2  }, 3 },
+    { AugType::CB_TURRET,    { AugType::CANNON,    AugType::DRONE_2,     AugType::HE_SHELLS }, 3 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 
@@ -689,6 +684,7 @@ inline int AugIndexOfType(AugType t) {
 
 // 풀/도감에서 완전히 제외된 증강 — 단일 목록(픽 게이팅·코덱스 숨김 공용).
 //   삭제됨: 고장난조준선/백신/건러너/병렬처리/취함/영혼수확(→전쟁군주로 이전)
+//   조합 제거: 처형자·관통쌍둥이·폭풍소환사·난기류·오버클럭·유리사신·지옥불
 //   클래스 전용(DLC 보류): 광폭베기/칼바람/강궁/다중사격
 inline bool AugRemoved(AugType t) {
     switch (t) {
@@ -700,8 +696,13 @@ inline bool AugRemoved(AugType t) {
     case AugType::D_MOB_PACK:
     case AugType::D_DRUNK:
     case AugType::SOUL_HARVEST:
-    case AugType::CB_GLASS_REAPER:   // 유리 사신 삭제
-    case AugType::CB_HELLFIRE:       // 지옥불 삭제
+    case AugType::CB_EXECUTIONER:    // 치명+광전 스탯 합 — 재료만으로 충분
+    case AugType::CB_PIERCE_TWIN:    // 더블+관통 이미 최종 티어
+    case AugType::CB_STORMCALLER:    // 세례+드론 중복·과스펙
+    case AugType::CB_TEMPEST:        // 차크람+드론 +1만 — 의미 없음
+    case AugType::CB_OVERLORD:       // 공격력 가산 합친 것뿐
+    case AugType::CB_GLASS_REAPER:   // 유리 사신
+    case AugType::CB_HELLFIRE:       // 지옥불
         return true;
     default:
         return false;
