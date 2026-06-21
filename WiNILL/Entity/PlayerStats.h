@@ -616,6 +616,12 @@ struct PlayerStats {
             chakram         = true;
             if (chakramCount < 3) chakramCount = 3;
             break;
+        case AugType::Q_KILL_100:
+            flatDamageBonus += 18.0f;
+            break;
+        case AugType::Q_KILL_300:
+            damageMultiplier *= 1.15f;
+            break;
 
         // ── 특수 ──
         case AugType::S_CHAOS:   /* main 에서 디스패치 */ break;

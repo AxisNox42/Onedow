@@ -473,9 +473,10 @@ void Scene_Codex(const SceneCtx& c) {
                         if (g_CodexSearchLen == 0 || (g_AugSeen[i] && CodexMatch(AugName(ALL_AUGS[i]))))
                             vis[nv++] = i;
                     }
-                    // 등급 순(COMMON/RARE/EPIC/LEG → DEBUFF → SPECIAL → COMBO)으로 정렬 = 카테고리 그룹
+                    // 등급 순(일반→희귀→에픽→전설→조합→신화→디버프)으로 정렬
                     std::sort(vis, vis + nv, [](int a, int b) {
-                        int ra = (int)ALL_AUGS[a].rarity, rb = (int)ALL_AUGS[b].rarity;
+                        int ra = OwnedAugListOrder(ALL_AUGS[a].rarity);
+                        int rb = OwnedAugListOrder(ALL_AUGS[b].rarity);
                         if (ra != rb) return ra < rb;
                         return a < b;
                     });
@@ -1582,11 +1583,12 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 // 같은 인덱스 카운트 (스택)
                 int counts[AUG_TOTAL] = {};
                 for (int idx : g_OwnedAugs) counts[idx]++;
-                // 보유 증강을 카테고리(등급)순으로 정렬 — 버프→디버프→특수→조합 그룹화
+                // 보유 증강을 카테고리(등급)순으로 정렬
                 int ord[AUG_TOTAL], nord = 0;
                 for (int i = 0; i < AUG_TOTAL; i++) if (counts[i] > 0) ord[nord++] = i;
                 std::sort(ord, ord + nord, [](int a, int b) {
-                    int ra = (int)ALL_AUGS[a].rarity, rb = (int)ALL_AUGS[b].rarity;
+                    int ra = OwnedAugListOrder(ALL_AUGS[a].rarity);
+                    int rb = OwnedAugListOrder(ALL_AUGS[b].rarity);
                     if (ra != rb) return ra < rb;
                     return a < b;
                 });
