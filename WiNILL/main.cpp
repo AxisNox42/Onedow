@@ -143,8 +143,8 @@ float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
 float TOTEM_WIN_W = 720.0f;    // RITE.CORE: 코어 + 기둥 의식 공간
-float UNKNOWN_WIN_W = 420.0f;  // UNKNOWN.sys: 창연 검 보스
-float UNKNOWN_WIN_H = 520.0f;
+float UNKNOWN_WIN_W = 520.0f;  // UNKNOWN.sys: 창연 검 보스
+float UNKNOWN_WIN_H = 620.0f;
 // 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
 float SPAWNER_WIN_W = 300.0f;
 float DDOS_WIN_W    = 210.0f;
@@ -4639,8 +4639,6 @@ int main() {
                 drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
             }
         }
-        if (g_UnknownBoss && g_UnknownBoss->alive)
-            g_UnknownBoss->renderPinOnWindow(pwx, pwy, pww, pwh, (float)glfwGetTime());
         // ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 (?뚮젅?댁뼱 李??덉뿉?쒕쭔)
         for (auto& orb : g_ApproachOrbs) {
             DrawApproachOrb(orb.x, orb.y);
@@ -4833,10 +4831,6 @@ int main() {
             float pCY = playerWin.y + playerWin.height * 0.5f;
             BindMainShader();
 
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-            ub->renderWorld(gtUB, playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            BatchFlush();
-
             float uwx = ub->worldX - UNKNOWN_WIN_W * 0.5f;
             float uwy = ub->worldY - UNKNOWN_WIN_H * 0.5f;
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
@@ -4844,25 +4838,9 @@ int main() {
             for (auto& b : g_Bullets)
                 if (b.active) drawBullet(b);
             ub->renderBody(gtUB, pCX, pCY);
-            ub->renderPinOnWindow(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H, gtUB);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            ub->renderWorld(gtUB, playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            ub->renderPinOnWindow(playerWin.x, playerWin.y, playerWin.width, playerWin.height, gtUB);
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-            for (auto& ew : ub->extraWins) {
-                BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                WorldScissor(ew.x, ew.y, ew.w, ew.h);
-                ub->renderWorld(gtUB, ew.x, ew.y, ew.w, ew.h);
-                ub->renderPinOnWindow(ew.x, ew.y, ew.w, ew.h, gtUB);
-                BatchFlush(); glDisable(GL_SCISSOR_TEST);
-            }
         }
-    
-        // (g4e) C2_RELAY.sys
+
         if (g_BotnetBoss && g_BotnetBoss->alive) {
             auto* nb2 = g_BotnetBoss;
             float ct = (float)glfwGetTime();
@@ -5126,6 +5104,25 @@ int main() {
                 BatchFlush();
                 glDisable(GL_SCISSOR_TEST);
             }
+        }
+
+        // UNKNOWN.sys — 가짜창 scissor 안에서 비행 검·박힌 검·조준 프레임
+        if (g_UnknownBoss && g_UnknownBoss->alive) {
+            auto* ub = g_UnknownBoss;
+            float gtUB = (float)glfwGetTime();
+            BindMainShader();
+            auto ubWinPass = [&](float wx, float wy, float ww, float wh) {
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy, ww, wh);
+                ub->renderWindowPass(gtUB, wx, wy, ww, wh);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            };
+            float uwx = ub->worldX - UNKNOWN_WIN_W * 0.5f;
+            float uwy = ub->worldY - UNKNOWN_WIN_H * 0.5f;
+            ubWinPass(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H);
+            ubWinPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            for (auto& ew : ub->extraWins)
+                ubWinPass(ew.x, ew.y, ew.w, ew.h);
         }
 
     

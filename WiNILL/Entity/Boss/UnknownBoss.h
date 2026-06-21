@@ -49,6 +49,10 @@ struct UBPin {
 struct UBFly {
     float fx, fy;
     float x, y, tx, ty;
+    float twx, twy, tww, twh;
+    UBEdge edge;
+    float along;
+    bool  ownedWin;
     float t;
     bool  active;
     int   pinSlot;
@@ -82,11 +86,12 @@ public:
     UBState state = UBState::MOVE;
     UBSkill nextSkill = UBSkill::EDGE;
     float stateT = 0.0f;
-    float actionCd = 1.2f;
-    float moveSpeed = 175.0f;
+    float actionCd = 2.4f;
+    float moveSpeed = 165.0f;
     float orbitT = 0.0f;
     float sheathCd = 0.0f;
     float shakePulse = 0.0f;
+    float spinAng = 0.0f;
 
     int   chainLeft = 0;
     int   crossLeft = 0;
@@ -100,17 +105,20 @@ public:
     std::vector<UBRecall> recalls;
     std::vector<UBExtraWin> extraWins;
 
-    static constexpr float BODY = 44.0f;
-    static constexpr float WIN_W = 420.0f;
-    static constexpr float WIN_H = 520.0f;
+    static constexpr float BODY = 68.0f;
+    static constexpr float WIN_W = 520.0f;
+    static constexpr float WIN_H = 620.0f;
     static constexpr float RECALL_TEL = 2.0f;
-    static constexpr float EDGE_HAZ = 11.0f;
-    static constexpr int   MAX_PINS = 14;
-    static constexpr int   MAX_EXTRA = 4;
-    static constexpr float FLY_SPD = 920.0f;
-    static constexpr float RECALL_SPD = 780.0f;
+    static constexpr float EDGE_HAZ = 13.0f;
+    static constexpr int   MAX_PINS = 28;
+    static constexpr int   MAX_EXTRA = 8;
+    static constexpr float FLY_SPD = 760.0f;
+    static constexpr float RECALL_SPD = 720.0f;
     static constexpr float RECALL_DMG = 14.0f;
     static constexpr float EDGE_DPS = 9.0f;
+    static constexpr float THROW_CD_P1 = 2.85f;
+    static constexpr float THROW_CD_P2 = 2.35f;
+    static constexpr float THROW_CD_P3 = 1.85f;
 
     UnknownBoss(int sw, int sh, float hpInit)
         : screenW(sw), screenH(sh) {
@@ -118,6 +126,7 @@ public:
         worldX = sw * 0.5f;
         worldY = sh * 0.30f;
         refreshQuiver();
+        quiver = maxQuiver;
     }
 
     bool vulnerable() const {
@@ -132,8 +141,38 @@ public:
     }
 
     void refreshQuiver() {
-        maxQuiver = phase3 ? 5 : (phase2 ? 4 : 3);
+        maxQuiver = phase3 ? 18 : (phase2 ? 14 : 10);
         if (quiver > maxQuiver) quiver = maxQuiver;
+    }
+
+    static bool sameWindow(float wx, float wy, float ww, float wh,
+                           float ox, float oy, float ow, float oh) {
+        return windowMatch(wx, ox) && windowMatch(wy, oy) &&
+               windowMatch(ww, ow) && windowMatch(wh, oh);
+    }
+
+    bool ownsWindow(float wx, float wy, float ww, float wh) const {
+        float bx = worldX - WIN_W * 0.5f, by = worldY - WIN_H * 0.5f;
+        if (sameWindow(wx, wy, ww, wh, bx, by, WIN_W, WIN_H)) return true;
+        for (auto& ew : extraWins)
+            if (sameWindow(wx, wy, ww, wh, ew.x, ew.y, ew.w, ew.h)) return true;
+        return false;
+    }
+
+    void spawnPinWindow(float px, float py, float pwx, float pwy, float pww, float pwh) {
+        if ((int)extraWins.size() >= MAX_EXTRA) return;
+        float ew = 200.0f + (float)(rand() % 90);
+        float eh = 140.0f + (float)(rand() % 60);
+        float ex = px - ew * 0.5f + (float)(rand() % 80 - 40);
+        float ey = py - eh * 0.5f + (float)(rand() % 80 - 40);
+        ex = std::max(40.0f, std::min(ex, (float)screenW - ew - 40.0f));
+        ey = std::max(40.0f, std::min(ey, (float)screenH - eh - 40.0f));
+        if (ex + ew > pwx - 8.0f && ex < pwx + pww + 8.0f &&
+            ey + eh > pwy - 8.0f && ey < pwy + pwh + 8.0f) {
+            if (px < pwx + pww * 0.5f) ex = pwx - ew - 24.0f;
+            else                       ex = pwx + pww + 24.0f;
+        }
+        extraWins.push_back({ ex, ey, ew, eh });
     }
 
     static void edgePoint(float wx, float wy, float ww, float wh,
@@ -168,26 +207,37 @@ public:
                     float pwx, float pwy, float pww, float pwh,
                     bool preferPlayer) {
         throwOwnedWin = false;
-        if (preferPlayer || (rand() % 100) < 72) {
-            throwTargetWx = pwx; throwTargetWy = pwy;
-            throwTargetWw = pww; throwTargetWh = pwh;
-            throwEdge = pickEdge(px, py, pwx, pwy, pww, pwh);
-            throwAlong = 0.18f + (float)(rand() % 65) * 0.01f;
-            return true;
-        }
-        if ((int)extraWins.size() < MAX_EXTRA && (rand() % 100) < 40) {
-            float ew = 180.0f + (float)(rand() % 80);
-            float eh = 120.0f + (float)(rand() % 50);
-            float ex = 80.0f + (float)(rand() % (int)std::max(1.0f, screenW - ew - 160.0f));
-            float ey = 80.0f + (float)(rand() % (int)std::max(1.0f, screenH - eh - 160.0f));
-            extraWins.push_back({ ex, ey, ew, eh });
-            throwTargetWx = ex; throwTargetWy = ey;
-            throwTargetWw = ew; throwTargetWh = eh;
+        int roll = rand() % 100;
+
+        if ((int)extraWins.size() > 0 && roll < 38) {
+            auto& ew = extraWins[rand() % extraWins.size()];
+            throwTargetWx = ew.x; throwTargetWy = ew.y;
+            throwTargetWw = ew.w; throwTargetWh = ew.h;
             throwEdge = (UBEdge)(rand() % 4);
-            throwAlong = 0.2f + (float)(rand() % 60) * 0.01f;
+            throwAlong = 0.12f + (float)(rand() % 76) * 0.01f;
             throwOwnedWin = true;
             return true;
         }
+
+        if (preferPlayer || roll < 62) {
+            throwTargetWx = pwx; throwTargetWy = pwy;
+            throwTargetWw = pww; throwTargetWh = pwh;
+            throwEdge = pickEdge(px, py, pwx, pwy, pww, pwh);
+            throwAlong = 0.10f + (float)(rand() % 80) * 0.01f;
+            return true;
+        }
+
+        if ((int)extraWins.size() < MAX_EXTRA && roll < 82) {
+            spawnPinWindow(px, py, pwx, pwy, pww, pwh);
+            auto& ew = extraWins.back();
+            throwTargetWx = ew.x; throwTargetWy = ew.y;
+            throwTargetWw = ew.w; throwTargetWh = ew.h;
+            throwEdge = pickEdge(px, py, ew.x, ew.y, ew.w, ew.h);
+            throwAlong = 0.15f + (float)(rand() % 70) * 0.01f;
+            throwOwnedWin = true;
+            return true;
+        }
+
         throwTargetWx = pwx; throwTargetWy = pwy;
         throwTargetWw = pww; throwTargetWh = pwh;
         throwEdge = pickEdge(px, py, pwx, pwy, pww, pwh);
@@ -208,9 +258,14 @@ public:
                           float r, float g, float b, float a) {
         float ex = x + cosf(ang) * len;
         float ey = y + sinf(ang) * len;
+        ubDrawThickLine(x, y, ex, ey, thick * 1.8f, r * 0.55f, g * 0.55f, b * 0.55f, a * 0.28f);
         ubDrawThickLine(x, y, ex, ey, thick, r, g, b, a);
-        drawCircle(ex, ey, thick * 0.62f, r, g * 1.1f, b, a);
-        drawCircle(x, y, thick * 0.38f, 1.0f, 0.92f, 0.98f, a * 0.75f);
+        float gx = x + cosf(ang) * len * 0.42f;
+        float gy = y + sinf(ang) * len * 0.42f;
+        drawRect(gx - thick * 0.55f, gy - thick * 0.35f, thick * 1.1f, thick * 0.7f,
+                 0.92f, 0.88f, 0.96f, a * 0.92f);
+        drawCircle(ex, ey, thick * 0.72f, r, g * 1.12f, b, a);
+        drawCircle(x, y, thick * 0.42f, 1.0f, 0.94f, 0.98f, a * 0.82f);
     }
 
     static bool windowMatch(float a, float b) { return std::fabs(a - b) < 3.0f; }
@@ -223,6 +278,11 @@ public:
         f.fx = worldX; f.fy = worldY;
         f.x = worldX; f.y = worldY;
         f.tx = tx; f.ty = ty;
+        f.twx = throwTargetWx; f.twy = throwTargetWy;
+        f.tww = throwTargetWw; f.twh = throwTargetWh;
+        f.edge = throwEdge;
+        f.along = throwAlong;
+        f.ownedWin = throwOwnedWin;
         f.t = 0.0f; f.active = true;
         f.pinSlot = (int)pins.size();
         flies.push_back(f);
@@ -236,12 +296,12 @@ public:
             pins.erase(pins.begin());
         }
         UBPin p;
-        p.wx = throwTargetWx; p.wy = throwTargetWy;
-        p.ww = throwTargetWw; p.wh = throwTargetWh;
-        p.edge = throwEdge;
-        p.along = throwAlong;
+        p.wx = f.twx; p.wy = f.twy;
+        p.ww = f.tww; p.wh = f.twh;
+        p.edge = f.edge;
+        p.along = f.along;
         p.pinX = f.tx; p.pinY = f.ty;
-        p.ownedWin = throwOwnedWin;
+        p.ownedWin = f.ownedWin;
         p.scar = 0.0f;
         pins.push_back(p);
     }
@@ -272,17 +332,17 @@ public:
     }
 
     void pickNextSkill() {
-        if (phase3 && quiver >= 3 && (rand() % 100) < 35) {
+        if (phase3 && quiver >= 4 && (rand() % 100) < 32) {
             nextSkill = UBSkill::CHAIN;
-            chainLeft = std::min(3, quiver);
+            chainLeft = std::min(4, quiver);
             return;
         }
-        if (phase2 && quiver >= 2 && (rand() % 100) < 40) {
+        if (phase2 && quiver >= 3 && (rand() % 100) < 36) {
             nextSkill = UBSkill::CROSS;
             crossLeft = 2;
             return;
         }
-        if (phase2 && (int)extraWins.size() < MAX_EXTRA && (rand() % 100) < 28) {
+        if ((int)extraWins.size() < MAX_EXTRA && (rand() % 100) < 34) {
             nextSkill = UBSkill::SKEW;
             return;
         }
@@ -337,6 +397,8 @@ public:
                 std::vector<Bullet>& bullets) {
         if (!alive) return;
 
+        spinAng += dt * (phase3 ? 2.4f : (phase2 ? 1.8f : 1.2f));
+
         if (!phase2 && hp <= maxHp * 0.55f) { phase2 = true; refreshQuiver(); }
         if (!phase3 && hp <= maxHp * 0.28f) { phase3 = true; refreshQuiver(); }
 
@@ -382,21 +444,32 @@ public:
                 if (anyLivePin) startRecallTelegraph();
                 else {
                     quiver = maxQuiver;
-                    actionCd = 0.8f;
+                    actionCd = 1.4f;
                 }
                 break;
             }
 
             if (quiver > 0 && actionCd <= 0.0f) {
                 pickNextSkill();
-                if (nextSkill == UBSkill::SKEW)
-                    pickTarget(px, py, pwx, pwy, pww, pwh, false);
-                else if (nextSkill == UBSkill::CROSS)
+                if (nextSkill == UBSkill::SKEW) {
+                    if ((int)extraWins.size() < MAX_EXTRA)
+                        spawnPinWindow(px, py, pwx, pwy, pww, pwh);
+                    if (!extraWins.empty()) {
+                        auto& ew = extraWins[rand() % extraWins.size()];
+                        throwTargetWx = ew.x; throwTargetWy = ew.y;
+                        throwTargetWw = ew.w; throwTargetWh = ew.h;
+                        throwEdge = pickEdge(px, py, ew.x, ew.y, ew.w, ew.h);
+                        throwAlong = 0.12f + (float)(rand() % 76) * 0.01f;
+                        throwOwnedWin = true;
+                    } else {
+                        pickTarget(px, py, pwx, pwy, pww, pwh, false);
+                    }
+                } else if (nextSkill == UBSkill::CROSS)
                     pickTarget(px, py, pwx, pwy, pww, pwh, true);
                 else
                     pickTarget(px, py, pwx, pwy, pww, pwh, true);
                 state = UBState::WINDUP;
-                stateT = 0.42f;
+                stateT = 0.62f;
             }
             break;
 
@@ -429,7 +502,7 @@ public:
                     [](const UBFly& f) { return !f.active; }), flies.end());
                 if (chainLeft > 1) {
                     chainLeft--;
-                    actionCd = 0.22f;
+                    actionCd = 0.55f;
                     state = UBState::MOVE;
                 } else if (crossLeft > 1) {
                     crossLeft--;
@@ -438,10 +511,10 @@ public:
                     else if (throwEdge == UBEdge::LEFT) throwEdge = UBEdge::RIGHT;
                     else throwEdge = UBEdge::LEFT;
                     state = UBState::WINDUP;
-                    stateT = 0.32f;
+                    stateT = 0.48f;
                 } else {
                     state = UBState::PAUSE;
-                    stateT = 0.35f;
+                    stateT = 0.55f;
                 }
             }
             break;
@@ -451,7 +524,7 @@ public:
             stateT -= dt;
             if (stateT <= 0.0f) {
                 state = UBState::MOVE;
-                actionCd = phase3 ? 0.55f : (phase2 ? 0.72f : 0.95f);
+                actionCd = phase3 ? THROW_CD_P3 : (phase2 ? THROW_CD_P2 : THROW_CD_P1);
             }
             break;
 
@@ -480,7 +553,7 @@ public:
                 recalls.clear();
                 quiver = maxQuiver;
                 state = UBState::MOVE;
-                actionCd = 1.0f;
+                actionCd = 1.35f;
             } else if (phase2 && stateT > 0.45f) {
                 // Stagger: phase2+ recalls don't all need to finish same frame
             }
@@ -499,29 +572,89 @@ public:
     void renderBody(float gt, float aimX, float aimY) const {
         float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
         float cx = worldX, cy = worldY;
+        float aim = atan2f(aimY - cy, aimX - cx);
+        float ca = cosf(aim), sa = sinf(aim);
+        float cr = 0.95f, cg = 0.28f, cb = 0.62f;
 
-        drawCircle(cx, cy, BODY * 0.88f, 0.95f, 0.22f, 0.58f, 0.08f + pulse * 0.06f);
-        drawNeonBorder(cx - BODY * 0.78f, cy - BODY * 0.95f,
-                       BODY * 1.56f, BODY * 1.9f, 0.95f, 0.28f, 0.62f);
-        drawRect(cx - 24.0f, cy - 34.0f, 48.0f, 66.0f, 0.90f, 0.90f, 0.95f, 0.94f);
-        drawRect(cx - 10.0f, cy - 8.0f, 20.0f, 20.0f, 0.95f, 0.22f, 0.58f, 1.0f);
-        g_TextS.Draw(L"?", cx - 7.0f, cy - 11.0f, 1.08f, 1.0f, 1.0f, 1.0f, 1.0f);
+        if (phase3) {
+            drawCircle(cx, cy, BODY * 1.55f, 0.95f, 0.18f, 0.55f, 0.10f + pulse * 0.08f);
+        } else if (phase2) {
+            drawCircle(cx, cy, BODY * 1.32f, 0.85f, 0.22f, 0.58f, 0.08f + pulse * 0.06f);
+        }
 
-        for (int i = 0; i < quiver; i++) {
-            float ang = gt * 1.8f + (float)i * (6.2831853f / (float)std::max(1, maxQuiver));
-            float ox = cx + cosf(ang) * 82.0f;
-            float oy = cy + sinf(ang) * 60.0f;
-            drawBlade(ox, oy, ang + 1.57f, 40.0f, 5.0f, 0.95f, 0.32f, 0.68f, 0.98f);
+        for (int i = 0; i < 3; i++) {
+            float a = spinAng * 0.75f + (float)i * 2.094f;
+            drawRect(cx + cosf(a) * BODY * 0.62f - 2.0f,
+                     cy + sinf(a) * BODY * 0.48f - 2.0f,
+                     4.0f, 4.0f, cr, cg, cb, 0.35f + pulse * 0.25f);
+        }
+
+        drawCircle(cx, cy, BODY * 0.95f, cr, cg, cb, 0.07f + pulse * 0.05f);
+        drawNeonBorder(cx - BODY * 0.82f, cy - BODY * 1.05f,
+                       BODY * 1.64f, BODY * 2.1f, cr, cg, cb);
+
+        float hoodW = BODY * 1.05f, hoodH = BODY * 1.35f;
+        drawRect(cx - hoodW * 0.5f, cy - hoodH * 0.62f, hoodW, hoodH,
+                 0.06f, 0.05f, 0.09f, 0.94f);
+        drawRect(cx - hoodW * 0.38f, cy - hoodH * 0.48f, hoodW * 0.76f, hoodH * 0.72f,
+                 0.12f, 0.10f, 0.14f, 0.92f);
+        drawTriangle(cx, cy - hoodH * 0.58f, 18.0f, cr, cg, cb, 0.88f);
+
+        float visorY = cy - BODY * 0.08f;
+        drawRect(cx - 22.0f, visorY - 5.0f, 44.0f, 10.0f, cr * 0.35f, cg * 0.35f, cb * 0.35f, 0.95f);
+        drawRect(cx - 18.0f, visorY - 2.0f, 36.0f, 4.0f, 0.55f, 0.95f, 1.0f, 0.55f + pulse * 0.35f);
+
+        float shoulder = BODY * 0.78f;
+        drawRect(cx - shoulder - 6.0f, cy + 4.0f, 14.0f, 22.0f, 0.10f, 0.08f, 0.12f, 0.92f);
+        drawRect(cx + shoulder - 8.0f, cy + 4.0f, 14.0f, 22.0f, 0.10f, 0.08f, 0.12f, 0.92f);
+        drawRect(cx - 16.0f, cy + 10.0f, 32.0f, 34.0f, 0.08f, 0.07f, 0.10f, 0.90f);
+        drawRect(cx - 10.0f, cy + 14.0f, 20.0f, 22.0f, cr * 0.25f, cg * 0.25f, cb * 0.25f, 0.85f);
+
+        for (int side = 0; side < 2; side++) {
+            float sgn = (side == 0) ? -1.0f : 1.0f;
+            float hx = cx + (-sa * sgn) * (BODY * 0.62f);
+            float hy = cy + ( ca * sgn) * (BODY * 0.62f);
+            drawBlade(hx, hy, aim + sgn * 0.55f, 46.0f, 5.5f, cr, cg, cb, 0.92f);
+        }
+
+        int shown = std::min(quiver, 16);
+        for (int i = 0; i < shown; i++) {
+            float ring = (float)(i % 3);
+            float rad = 88.0f + ring * 20.0f;
+            float ang = gt * (1.55f - ring * 0.12f) + (float)i * (6.2831853f / (float)shown);
+            float ox = cx + cosf(ang) * rad;
+            float oy = cy + sinf(ang) * (rad * 0.72f);
+            drawBlade(ox, oy, ang + 1.57f, 34.0f, 4.5f, 0.92f, 0.35f, 0.70f, 0.95f);
         }
 
         if (orbitT > 0.0f) {
             float op = 0.5f + 0.5f * sinf(gt * 12.0f);
-            drawCircle(cx, cy, 96.0f, 0.95f, 0.35f, 0.65f, 0.14f * op);
+            drawCircle(cx, cy, 118.0f, cr, cg, cb, 0.16f * op);
+            drawNeonBorder(cx - 118.0f, cy - 118.0f, 236.0f, 236.0f, cr, cg, cb);
+        }
+
+        if (state == UBState::RECALL_TEL) {
+            float blink = 0.45f + 0.45f * (0.5f + 0.5f * sinf(gt * 14.0f));
+            drawCircle(cx, cy, BODY * 1.1f, 1.0f, 0.25f, 0.45f, 0.18f * blink);
         }
 
         wchar_t tag[32];
-        swprintf_s(tag, L"blades: %d", quiver);
-        g_TextS.Draw(tag, cx - 52.0f, cy + BODY + 18.0f, 0.58f, 0.95f, 0.45f, 0.70f, 0.9f);
+        swprintf_s(tag, L"edge:%d  pin:%d", quiver, (int)pins.size());
+        g_TextS.Draw(tag, cx - 58.0f, cy + BODY + 22.0f, 0.52f, cr, cg * 1.2f, cb, 0.9f);
+    }
+
+    void renderTargetFrame(float gt, float wx, float wy, float ww, float wh) const {
+        if (state != UBState::WINDUP && state != UBState::FLYING) return;
+        if (!sameWindow(wx, wy, ww, wh, throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh))
+            return;
+        float pulse = 0.45f + 0.45f * (0.5f + 0.5f * sinf(gt * 16.0f));
+        drawNeonBorder(wx, wy, ww, wh, 0.95f, 0.35f, 0.68f);
+        drawNeonBorder(wx - 3.0f, wy - 3.0f, ww + 6.0f, wh + 6.0f,
+                       0.95f, 0.28f, 0.62f);
+        float tx, ty;
+        edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
+                  throwEdge, throwAlong, tx, ty);
+        drawCircle(tx, ty, 16.0f + pulse * 10.0f, 1.0f, 0.55f, 0.85f, 0.55f * pulse);
     }
 
     void renderPinOnWindow(float wx, float wy, float ww, float wh, float /*gt*/) const {
@@ -534,8 +667,8 @@ public:
             float nx, ny;
             edgeNormal(p.edge, nx, ny);
             float alpha = (p.scar > 0.5f) ? 0.40f : 1.0f;
-            const float outLen = 46.0f;
-            const float inLen  = 38.0f;
+            const float outLen = 52.0f;
+            const float inLen  = 44.0f;
             float sx = ox + nx * outLen;
             float sy = oy + ny * outLen;
             float ex = ox - nx * inLen;
@@ -568,18 +701,31 @@ public:
         }
     }
 
-    void renderWorld(float gt, float /*pwx*/, float /*pwy*/, float /*pww*/, float /*pwh*/) const {
+    void renderWorld(float gt, float wx, float wy, float ww, float wh) const {
+        renderTargetFrame(gt, wx, wy, ww, wh);
+
         for (auto& f : flies) {
             if (!f.active) continue;
+            bool hitWin = sameWindow(wx, wy, ww, wh, f.twx, f.twy, f.tww, f.twh);
+            float bx = worldX - WIN_W * 0.5f, by = worldY - WIN_H * 0.5f;
+            bool bossWin = sameWindow(wx, wy, ww, wh, bx, by, WIN_W, WIN_H);
+            auto inWinPt = [&](float px, float py) {
+                return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
+            };
+            if (!hitWin && !bossWin &&
+                !inWinPt(f.x, f.y) && !inWinPt(f.fx, f.fy) && !inWinPt(f.tx, f.ty))
+                continue;
+
             float rdx = f.tx - f.x, rdy = f.ty - f.y;
             float rem = sqrtf(rdx * rdx + rdy * rdy);
             float ang = atan2f(rdy, rdx);
-            ubDrawThickLine(f.fx, f.fy, f.x, f.y, 2.5f, 0.95f, 0.40f, 0.65f, 0.30f);
-            ubDrawThickLine(f.x, f.y, f.tx, f.ty, 2.0f, 1.0f, 0.50f, 0.80f, 0.40f);
-            float bladeLen = std::min(56.0f, rem + 14.0f);
-            drawBlade(f.x, f.y, ang, bladeLen, 6.0f, 0.98f, 0.35f, 0.70f, 1.0f);
+            ubDrawThickLine(f.fx, f.fy, f.x, f.y, 3.0f, 0.95f, 0.40f, 0.65f, 0.35f);
+            ubDrawThickLine(f.x, f.y, f.tx, f.ty, 2.5f, 1.0f, 0.50f, 0.80f, 0.45f);
+            float bladeLen = std::min(62.0f, rem + 16.0f);
+            drawBlade(f.x, f.y, ang, bladeLen, 7.0f, 0.98f, 0.35f, 0.70f, 1.0f);
             float pulse = 0.5f + 0.5f * sinf(gt * 22.0f);
-            drawCircle(f.tx, f.ty, 10.0f + pulse * 4.0f, 1.0f, 0.55f, 0.85f, 0.65f * pulse);
+            if (hitWin)
+                drawCircle(f.tx, f.ty, 12.0f + pulse * 5.0f, 1.0f, 0.55f, 0.85f, 0.70f * pulse);
         }
 
         if (state == UBState::RECALL_TEL) {
@@ -587,28 +733,34 @@ public:
             float prog = 1.0f - stateT / RECALL_TEL;
             for (auto& p : pins) {
                 if (p.scar > 0.5f) continue;
-                ubDrawThickLine(p.pinX, p.pinY, worldX, worldY, 3.0f,
-                                1.0f, 0.25f, 0.45f, blink * (0.40f + 0.60f * prog));
+                if (!sameWindow(wx, wy, ww, wh, p.wx, p.wy, p.ww, p.wh)) continue;
+                ubDrawThickLine(p.pinX, p.pinY, worldX, worldY, 3.5f,
+                                1.0f, 0.25f, 0.45f, blink * (0.45f + 0.55f * prog));
             }
         }
 
         for (auto& r : recalls) {
             if (!r.active) continue;
-            ubDrawThickLine(r.fromX, r.fromY, r.x, r.y, 3.5f, 1.0f, 0.35f, 0.55f, 0.80f);
+            ubDrawThickLine(r.fromX, r.fromY, r.x, r.y, 4.0f, 1.0f, 0.35f, 0.55f, 0.82f);
             float ang = atan2f(r.vy, r.vx);
-            drawBlade(r.x, r.y, ang, 40.0f, 5.5f, 0.95f, 0.28f, 0.62f, 1.0f);
+            drawBlade(r.x, r.y, ang, 44.0f, 6.0f, 0.95f, 0.28f, 0.62f, 1.0f);
         }
 
-        if (state == UBState::WINDUP) {
+        if (state == UBState::WINDUP &&
+            sameWindow(wx, wy, ww, wh, throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh)) {
             float tx, ty;
             edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
                       throwEdge, throwAlong, tx, ty);
             float pulse = 0.5f + 0.5f * sinf(gt * 18.0f);
-            drawCircle(tx, ty, 18.0f + pulse * 8.0f, 1.0f, 0.45f, 0.65f, 0.60f * pulse);
-            ubDrawThickLine(worldX, worldY, tx, ty, 2.5f, 0.95f, 0.40f, 0.70f, 0.30f + 0.25f * pulse);
+            ubDrawThickLine(worldX, worldY, tx, ty, 3.0f, 0.95f, 0.40f, 0.70f, 0.35f + 0.30f * pulse);
             float ang = atan2f(ty - worldY, tx - worldX);
-            drawBlade(worldX, worldY, ang, 36.0f, 4.5f, 0.95f, 0.35f, 0.65f, 0.85f);
+            drawBlade(worldX, worldY, ang, 42.0f, 5.0f, 0.95f, 0.35f, 0.65f, 0.88f);
         }
+    }
+
+    void renderWindowPass(float gt, float wx, float wy, float ww, float wh) const {
+        renderWorld(gt, wx, wy, ww, wh);
+        renderPinOnWindow(wx, wy, ww, wh, gt);
     }
 
     static const wchar_t* stateTag(UBState s) {
