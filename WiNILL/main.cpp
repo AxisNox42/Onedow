@@ -4065,9 +4065,11 @@ int main() {
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
             for (auto& bw : g_UnknownBoss->bladeWins) {
                 if (!bw.active) continue;
+                float nr = bw.recall ? 0.85f : (bw.telegraph ? 0.55f : 0.92f);
+                float ng = bw.recall ? 0.22f : (bw.telegraph ? 0.85f : 0.35f);
+                float nb = bw.recall ? 0.48f : (bw.telegraph ? 0.95f : 0.65f);
                 addW(bw.x + bw.w * 0.5f, bw.y + bw.h * 0.5f, bw.w, bw.h,
-                     UnknownBoss::BLADE_NAME, 0.05f,0.03f,0.06f,
-                     bw.recall ? 0.85f : 0.92f, bw.recall ? 0.22f : 0.35f, bw.recall ? 0.48f : 0.65f);
+                     UnknownBoss::BLADE_NAME, 0.05f,0.03f,0.06f, nr, ng, nb);
             }
         }
         // trap.exe / vaccine.exe — (e.sat)에서 플레이어 창 위에 통째로 그림
@@ -5278,10 +5280,11 @@ int main() {
                 }
                 if (g_UnknownBoss && g_UnknownBoss->alive) {
                     wchar_t ubBuf[64];
-                    swprintf_s(ubBuf, L"%ls 쨌 %ls  pin:%d",
-                               g_UnknownBoss->phase3 ? L"P3" : (g_UnknownBoss->phase2 ? L"P2" : L"P1"),
-                               UnknownBoss::stateTag(g_UnknownBoss->state),
-                               (int)g_UnknownBoss->pins.size());
+                    swprintf_s(ubBuf, L"edge:%d cage:%d pin:%d · %ls",
+                               g_UnknownBoss->edgeBladesLeft(),
+                               g_UnknownBoss->quiver,
+                               (int)g_UnknownBoss->pins.size(),
+                               UnknownBoss::stateTag(g_UnknownBoss->state));
                     float us = 0.55f;
                     float uw = g_TextS.Width(ubBuf, us);
                     g_TextS.Draw(ubBuf, bx + bw - uw - 8.0f, by - 48.0f, us,
