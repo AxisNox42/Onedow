@@ -143,8 +143,8 @@ float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
 float TOTEM_WIN_W = 720.0f;    // RITE.CORE: 코어 + 기둥 의식 공간
-float UNKNOWN_WIN_W = 520.0f;  // UNKNOWN.sys: 창연 검 보스
-float UNKNOWN_WIN_H = 620.0f;
+float UNKNOWN_WIN_W = 500.0f;  // UNKNOWN.sys: 창연 검 보스
+float UNKNOWN_WIN_H = 580.0f;
 // 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
 float SPAWNER_WIN_W = 300.0f;
 float DDOS_WIN_W    = 210.0f;
@@ -4063,9 +4063,9 @@ int main() {
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
-            for (auto& ew : g_UnknownBoss->extraWins)
-                addW(ew.x + ew.w * 0.5f, ew.y + ew.h * 0.5f, ew.w, ew.h,
-                     L"pinned.sys", 0.06f,0.04f,0.07f, 0.90f,0.35f,0.65f);
+            for (auto& lane : g_UnknownBoss->recallLanes)
+                addW(lane.x + lane.w * 0.5f, lane.y + lane.h * 0.5f, lane.w, lane.h,
+                     UnknownBoss::LANE_NAME, 0.04f,0.03f,0.05f, 0.85f,0.22f,0.48f);
         }
         // trap.exe / vaccine.exe — (e.sat)에서 플레이어 창 위에 통째로 그림
         // ?ы깙 李?諛곌꼍+蹂대뜑 (理쒗븯?? ?뚮젅?댁뼱 ?뚯쑀??z-由ъ뒪??諛?
@@ -4303,8 +4303,8 @@ int main() {
             drawBossWinContent(g_UnknownBoss->worldX - UNKNOWN_WIN_W * 0.5f,
                                g_UnknownBoss->worldY - UNKNOWN_WIN_H * 0.5f,
                                UNKNOWN_WIN_W, UNKNOWN_WIN_H);
-            for (auto& ew : g_UnknownBoss->extraWins)
-                drawBossWinContent(ew.x, ew.y, ew.w, ew.h);
+            for (auto& lane : g_UnknownBoss->recallLanes)
+                drawBossWinContent(lane.x, lane.y, lane.w, lane.h);
         }
         // 遊뉖꽬 ?몃뱶(SPAWNER) 李??대? 而⑦뀗痢????몃뱶 蹂몄껜/?뚰솚 ?뚯씠 ?먭린 李쎌뿉??蹂댁씠?꾨줉 (E21)
         for (auto m : g_MonsterManager.monsters) {
@@ -5121,8 +5121,8 @@ int main() {
             float uwy = ub->worldY - UNKNOWN_WIN_H * 0.5f;
             ubWinPass(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H);
             ubWinPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            for (auto& ew : ub->extraWins)
-                ubWinPass(ew.x, ew.y, ew.w, ew.h);
+            for (auto& lane : ub->recallLanes)
+                ubWinPass(lane.x, lane.y, lane.w, lane.h);
         }
 
     

@@ -22,10 +22,8 @@ static inline void ubDrawThickLine(float x1, float y1, float x2, float y2, float
     BatchTri(x1 + px, y1 + py, x2 - px, y2 - py, x1 - px, y1 - py, r, g, b, a);
 }
 
-// ─────────────────────────────────────────────────────────────
 // UNKNOWN.sys — 창연(窗緣) 검 보스
-//   검 투척 → 가짜창 가장자리 pin (영구) → 전부 소진 시 2초 전조 → 회수 경로 피격
-// ─────────────────────────────────────────────────────────────
+//   검 → 플레이어 가짜창 가장자리 pin → 전부 소진 → 2초 전조 + pull.lane 창(회수 경로 가독) → 회수
 
 enum class UBEdge { TOP, RIGHT, BOTTOM, LEFT };
 
@@ -33,17 +31,14 @@ enum class UBState {
     MOVE, WINDUP, FLYING, RECALL_TEL, RECALLING, PAUSE
 };
 
-enum class UBSkill {
-    EDGE, CHAIN, CROSS, SKEW
-};
+enum class UBSkill { EDGE, CHAIN, CROSS };
 
 struct UBPin {
     float wx, wy, ww, wh;
     UBEdge edge;
     float along;
     float pinX, pinY;
-    bool  ownedWin;
-    float scar;          // 0=검 박힘, 1=회수 후 흔적만
+    float scar;
 };
 
 struct UBFly {
@@ -52,10 +47,7 @@ struct UBFly {
     float twx, twy, tww, twh;
     UBEdge edge;
     float along;
-    bool  ownedWin;
-    float t;
     bool  active;
-    int   pinSlot;
 };
 
 struct UBRecall {
@@ -64,13 +56,15 @@ struct UBRecall {
     bool  active;
 };
 
-struct UBExtraWin {
+struct UBLaneWin {
     float x, y, w, h;
+    float pinX, pinY;
 };
 
 class UnknownBoss {
 public:
     static constexpr const wchar_t* BOSS_NAME = L"UNKNOWN.sys";
+    static constexpr const wchar_t* LANE_NAME = L"pull.lane";
 
     float worldX, worldY;
     float hp, maxHp;
@@ -86,10 +80,9 @@ public:
     UBState state = UBState::MOVE;
     UBSkill nextSkill = UBSkill::EDGE;
     float stateT = 0.0f;
-    float actionCd = 2.4f;
-    float moveSpeed = 165.0f;
+    float actionCd = 0.6f;
+    float moveSpeed = 150.0f;
     float orbitT = 0.0f;
-    float sheathCd = 0.0f;
     float shakePulse = 0.0f;
     float spinAng = 0.0f;
 
@@ -98,33 +91,31 @@ public:
     float throwTargetWx = 0, throwTargetWy = 0, throwTargetWw = 0, throwTargetWh = 0;
     UBEdge throwEdge = UBEdge::TOP;
     float throwAlong = 0.5f;
-    bool  throwOwnedWin = false;
 
-    std::vector<UBPin>   pins;
-    std::vector<UBFly>   flies;
-    std::vector<UBRecall> recalls;
-    std::vector<UBExtraWin> extraWins;
+    std::vector<UBPin>      pins;
+    std::vector<UBFly>      flies;
+    std::vector<UBRecall>   recalls;
+    std::vector<UBLaneWin>  recallLanes;
 
-    static constexpr float BODY = 68.0f;
-    static constexpr float WIN_W = 520.0f;
-    static constexpr float WIN_H = 620.0f;
+    static constexpr float BODY = 58.0f;
+    static constexpr float WIN_W = 500.0f;
+    static constexpr float WIN_H = 580.0f;
     static constexpr float RECALL_TEL = 2.0f;
-    static constexpr float EDGE_HAZ = 13.0f;
-    static constexpr int   MAX_PINS = 28;
-    static constexpr int   MAX_EXTRA = 8;
-    static constexpr float FLY_SPD = 760.0f;
-    static constexpr float RECALL_SPD = 720.0f;
-    static constexpr float RECALL_DMG = 14.0f;
-    static constexpr float EDGE_DPS = 9.0f;
-    static constexpr float THROW_CD_P1 = 2.85f;
-    static constexpr float THROW_CD_P2 = 2.35f;
-    static constexpr float THROW_CD_P3 = 1.85f;
+    static constexpr float EDGE_HAZ = 12.0f;
+    static constexpr int   MAX_PINS = 24;
+    static constexpr float FLY_SPD = 1180.0f;
+    static constexpr float RECALL_SPD = 820.0f;
+    static constexpr float RECALL_DMG = 13.0f;
+    static constexpr float EDGE_DPS = 8.0f;
+    static constexpr float THROW_CD_P1 = 0.14f;
+    static constexpr float THROW_CD_P2 = 0.09f;
+    static constexpr float THROW_CD_P3 = 0.05f;
 
     UnknownBoss(int sw, int sh, float hpInit)
         : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
         worldX = sw * 0.5f;
-        worldY = sh * 0.30f;
+        worldY = sh * 0.28f;
         refreshQuiver();
         quiver = maxQuiver;
     }
@@ -136,14 +127,16 @@ public:
     float damageTakenMult() const {
         if (state == UBState::RECALLING) return 1.22f;
         if (state == UBState::RECALL_TEL) return 1.12f;
-        if (orbitT > 0.0f) return 0.55f;
+        if (orbitT > 0.0f) return 0.72f;
         return 1.0f;
     }
 
     void refreshQuiver() {
-        maxQuiver = phase3 ? 18 : (phase2 ? 14 : 10);
+        maxQuiver = phase3 ? 16 : (phase2 ? 12 : 8);
         if (quiver > maxQuiver) quiver = maxQuiver;
     }
+
+    static bool windowMatch(float a, float b) { return std::fabs(a - b) < 3.0f; }
 
     static bool sameWindow(float wx, float wy, float ww, float wh,
                            float ox, float oy, float ow, float oh) {
@@ -151,34 +144,9 @@ public:
                windowMatch(ww, ow) && windowMatch(wh, oh);
     }
 
-    bool ownsWindow(float wx, float wy, float ww, float wh) const {
-        float bx = worldX - WIN_W * 0.5f, by = worldY - WIN_H * 0.5f;
-        if (sameWindow(wx, wy, ww, wh, bx, by, WIN_W, WIN_H)) return true;
-        for (auto& ew : extraWins)
-            if (sameWindow(wx, wy, ww, wh, ew.x, ew.y, ew.w, ew.h)) return true;
-        return false;
-    }
-
-    void spawnPinWindow(float px, float py, float pwx, float pwy, float pww, float pwh) {
-        if ((int)extraWins.size() >= MAX_EXTRA) return;
-        float ew = 200.0f + (float)(rand() % 90);
-        float eh = 140.0f + (float)(rand() % 60);
-        float ex = px - ew * 0.5f + (float)(rand() % 80 - 40);
-        float ey = py - eh * 0.5f + (float)(rand() % 80 - 40);
-        ex = std::max(40.0f, std::min(ex, (float)screenW - ew - 40.0f));
-        ey = std::max(40.0f, std::min(ey, (float)screenH - eh - 40.0f));
-        if (ex + ew > pwx - 8.0f && ex < pwx + pww + 8.0f &&
-            ey + eh > pwy - 8.0f && ey < pwy + pwh + 8.0f) {
-            if (px < pwx + pww * 0.5f) ex = pwx - ew - 24.0f;
-            else                       ex = pwx + pww + 24.0f;
-        }
-        extraWins.push_back({ ex, ey, ew, eh });
-    }
-
     static void edgePoint(float wx, float wy, float ww, float wh,
                           UBEdge e, float along, float& ox, float& oy) {
-        if (along < 0.05f) along = 0.05f;
-        if (along > 0.95f) along = 0.95f;
+        along = std::max(0.04f, std::min(0.96f, along));
         switch (e) {
         case UBEdge::TOP:    ox = wx + ww * along; oy = wy; break;
         case UBEdge::BOTTOM: ox = wx + ww * along; oy = wy + wh; break;
@@ -190,59 +158,9 @@ public:
     static UBEdge pickEdge(float px, float py, float wx, float wy, float ww, float wh) {
         float cx = wx + ww * 0.5f, cy = wy + wh * 0.5f;
         float dx = px - cx, dy = py - cy;
-        if (std::fabs(dx) > std::fabs(dy))
+        if (std::fabs(dx) * wh > std::fabs(dy) * ww)
             return dx > 0 ? UBEdge::LEFT : UBEdge::RIGHT;
         return dy > 0 ? UBEdge::TOP : UBEdge::BOTTOM;
-    }
-
-    void clampPos() {
-        float m = BODY + 24.0f;
-        if (worldX < m) worldX = m;
-        else if (worldX > screenW - m) worldX = screenW - m;
-        if (worldY < m) worldY = m;
-        else if (worldY > screenH - m) worldY = screenH - m;
-    }
-
-    bool pickTarget(float px, float py,
-                    float pwx, float pwy, float pww, float pwh,
-                    bool preferPlayer) {
-        throwOwnedWin = false;
-        int roll = rand() % 100;
-
-        if ((int)extraWins.size() > 0 && roll < 38) {
-            auto& ew = extraWins[rand() % extraWins.size()];
-            throwTargetWx = ew.x; throwTargetWy = ew.y;
-            throwTargetWw = ew.w; throwTargetWh = ew.h;
-            throwEdge = (UBEdge)(rand() % 4);
-            throwAlong = 0.12f + (float)(rand() % 76) * 0.01f;
-            throwOwnedWin = true;
-            return true;
-        }
-
-        if (preferPlayer || roll < 62) {
-            throwTargetWx = pwx; throwTargetWy = pwy;
-            throwTargetWw = pww; throwTargetWh = pwh;
-            throwEdge = pickEdge(px, py, pwx, pwy, pww, pwh);
-            throwAlong = 0.10f + (float)(rand() % 80) * 0.01f;
-            return true;
-        }
-
-        if ((int)extraWins.size() < MAX_EXTRA && roll < 82) {
-            spawnPinWindow(px, py, pwx, pwy, pww, pwh);
-            auto& ew = extraWins.back();
-            throwTargetWx = ew.x; throwTargetWy = ew.y;
-            throwTargetWw = ew.w; throwTargetWh = ew.h;
-            throwEdge = pickEdge(px, py, ew.x, ew.y, ew.w, ew.h);
-            throwAlong = 0.15f + (float)(rand() % 70) * 0.01f;
-            throwOwnedWin = true;
-            return true;
-        }
-
-        throwTargetWx = pwx; throwTargetWy = pwy;
-        throwTargetWw = pww; throwTargetWh = pwh;
-        throwEdge = pickEdge(px, py, pwx, pwy, pww, pwh);
-        throwAlong = 0.5f;
-        return true;
     }
 
     static void edgeNormal(UBEdge e, float& nx, float& ny) {
@@ -254,21 +172,46 @@ public:
         }
     }
 
+    void clampPos() {
+        float m = BODY + 20.0f;
+        worldX = std::max(m, std::min(worldX, (float)screenW - m));
+        worldY = std::max(m, std::min(worldY, (float)screenH - m));
+    }
+
+    void pickThrowAtPlayer(float px, float py, float pwx, float pwy, float pww, float pwh) {
+        throwTargetWx = pwx; throwTargetWy = pwy;
+        throwTargetWw = pww; throwTargetWh = pwh;
+        throwEdge = pickEdge(px, py, pwx, pwy, pww, pwh);
+        throwAlong = 0.06f + (float)(rand() % 88) * 0.01f;
+    }
+
+    void buildRecallLanes() {
+        recallLanes.clear();
+        const float pad = 34.0f;
+        for (auto& p : pins) {
+            if (p.scar > 0.5f) continue;
+            float x1 = p.pinX, y1 = p.pinY;
+            float x2 = worldX, y2 = worldY;
+            float minX = std::min(x1, x2) - pad;
+            float maxX = std::max(x1, x2) + pad;
+            float minY = std::min(y1, y2) - pad;
+            float maxY = std::max(y1, y2) + pad;
+            minX = std::max(8.0f, minX);
+            minY = std::max(8.0f, minY);
+            maxX = std::min((float)screenW - 8.0f, maxX);
+            maxY = std::min((float)screenH - 8.0f, maxY);
+            recallLanes.push_back({ minX, minY, maxX - minX, maxY - minY, x1, y1 });
+        }
+    }
+
     static void drawBlade(float x, float y, float ang, float len, float thick,
                           float r, float g, float b, float a) {
         float ex = x + cosf(ang) * len;
         float ey = y + sinf(ang) * len;
-        ubDrawThickLine(x, y, ex, ey, thick * 1.8f, r * 0.55f, g * 0.55f, b * 0.55f, a * 0.28f);
+        ubDrawThickLine(x, y, ex, ey, thick * 2.0f, r * 0.45f, g * 0.45f, b * 0.45f, a * 0.22f);
         ubDrawThickLine(x, y, ex, ey, thick, r, g, b, a);
-        float gx = x + cosf(ang) * len * 0.42f;
-        float gy = y + sinf(ang) * len * 0.42f;
-        drawRect(gx - thick * 0.55f, gy - thick * 0.35f, thick * 1.1f, thick * 0.7f,
-                 0.92f, 0.88f, 0.96f, a * 0.92f);
-        drawCircle(ex, ey, thick * 0.72f, r, g * 1.12f, b, a);
-        drawCircle(x, y, thick * 0.42f, 1.0f, 0.94f, 0.98f, a * 0.82f);
+        drawCircle(ex, ey, thick * 0.65f, r, g * 1.08f, b, a);
     }
-
-    static bool windowMatch(float a, float b) { return std::fabs(a - b) < 3.0f; }
 
     void beginThrow() {
         float tx, ty;
@@ -282,9 +225,7 @@ public:
         f.tww = throwTargetWw; f.twh = throwTargetWh;
         f.edge = throwEdge;
         f.along = throwAlong;
-        f.ownedWin = throwOwnedWin;
-        f.t = 0.0f; f.active = true;
-        f.pinSlot = (int)pins.size();
+        f.active = true;
         flies.push_back(f);
         quiver--;
         state = UBState::FLYING;
@@ -292,21 +233,20 @@ public:
     }
 
     void commitPin(const UBFly& f) {
-        if ((int)pins.size() >= MAX_PINS) {
+        if ((int)pins.size() >= MAX_PINS)
             pins.erase(pins.begin());
-        }
         UBPin p;
         p.wx = f.twx; p.wy = f.twy;
         p.ww = f.tww; p.wh = f.twh;
         p.edge = f.edge;
         p.along = f.along;
         p.pinX = f.tx; p.pinY = f.ty;
-        p.ownedWin = f.ownedWin;
         p.scar = 0.0f;
         pins.push_back(p);
     }
 
     void startRecallTelegraph() {
+        buildRecallLanes();
         state = UBState::RECALL_TEL;
         stateT = RECALL_TEL;
         shakePulse = 1.0f;
@@ -332,41 +272,28 @@ public:
     }
 
     void pickNextSkill() {
-        if (phase3 && quiver >= 4 && (rand() % 100) < 32) {
+        if (phase3 && quiver >= 3 && (rand() % 100) < 38) {
             nextSkill = UBSkill::CHAIN;
             chainLeft = std::min(4, quiver);
             return;
         }
-        if (phase2 && quiver >= 3 && (rand() % 100) < 36) {
+        if (phase2 && quiver >= 2 && (rand() % 100) < 42) {
             nextSkill = UBSkill::CROSS;
             crossLeft = 2;
-            return;
-        }
-        if ((int)extraWins.size() < MAX_EXTRA && (rand() % 100) < 34) {
-            nextSkill = UBSkill::SKEW;
             return;
         }
         nextSkill = UBSkill::EDGE;
     }
 
-    void sheathBurst(std::vector<Bullet>& bullets) {
-        for (auto& p : pins) {
-            for (int i = 0; i < 6; i++) {
-                float a = (float)i / 6.0f * 6.2831853f + (float)(rand() % 100) * 0.01f;
-                Bullet b(p.pinX, p.pinY,
-                         p.pinX + cosf(a) * 80.0f, p.pinY + sinf(a) * 80.0f);
-                b.isEnemy = true;
-                b.speed = 340.0f + (float)(rand() % 60);
-                b.color = glm::vec3(0.95f, 0.25f, 0.55f);
-                b.enemyDmg = 8.0f;
-                bullets.push_back(b);
-            }
-        }
-        shakePulse = 1.0f;
+    float windupTime() const {
+        if (phase3) return 0.14f;
+        if (phase2) return 0.18f;
+        return 0.22f;
     }
 
     void hurtEdge(float px, float py, float& playerHP, float dt) {
         for (auto& p : pins) {
+            if (p.scar > 0.5f) continue;
             float strip = EDGE_HAZ;
             bool hit = false;
             switch (p.edge) {
@@ -394,10 +321,10 @@ public:
     void Update(float px, float py,
                 float pwx, float pwy, float pww, float pwh,
                 float dt, float& playerHP,
-                std::vector<Bullet>& bullets) {
+                std::vector<Bullet>& /*bullets*/) {
         if (!alive) return;
 
-        spinAng += dt * (phase3 ? 2.4f : (phase2 ? 1.8f : 1.2f));
+        spinAng += dt * (phase3 ? 3.0f : 2.0f);
 
         if (!phase2 && hp <= maxHp * 0.55f) { phase2 = true; refreshQuiver(); }
         if (!phase3 && hp <= maxHp * 0.28f) { phase3 = true; refreshQuiver(); }
@@ -406,35 +333,25 @@ public:
         float dist = sqrtf(dx * dx + dy * dy) + 1e-3f;
         float nx = dx / dist, ny = dy / dist;
 
-        if (dist < BODY + 8.0f)
-            HurtPlayer(playerHP, (phase3 ? 11.0f : 9.0f) * dt);
-
         hurtEdge(px, py, playerHP, dt);
 
         if (orbitT > 0.0f) orbitT -= dt;
-        if (dist < 130.0f && quiver > 0 && orbitT <= 0.0f) {
-            orbitT = 2.2f;
-        }
-
-        sheathCd -= dt;
-        if (phase2 && sheathCd <= 0.0f && hp < maxHp * 0.72f) {
-            sheathCd = 18.0f;
-            sheathBurst(bullets);
-        }
+        if (dist < 150.0f && quiver > 0 && orbitT <= 0.0f)
+            orbitT = 1.6f;
 
         actionCd -= dt;
 
         switch (state) {
         case UBState::MOVE:
-            if (dist > 340.0f) {
+            if (dist > 380.0f) {
                 worldX += nx * moveSpeed * dt;
                 worldY += ny * moveSpeed * dt;
-            } else if (dist < 200.0f) {
-                worldX -= nx * moveSpeed * 0.85f * dt;
-                worldY -= ny * moveSpeed * 0.85f * dt;
+            } else if (dist < 260.0f) {
+                worldX -= nx * moveSpeed * 0.7f * dt;
+                worldY -= ny * moveSpeed * 0.7f * dt;
             } else {
-                worldX += -ny * moveSpeed * 0.45f * dt;
-                worldY += nx * moveSpeed * 0.45f * dt;
+                worldX += -ny * moveSpeed * 0.35f * dt;
+                worldY += nx * moveSpeed * 0.35f * dt;
             }
             clampPos();
 
@@ -444,32 +361,16 @@ public:
                 if (anyLivePin) startRecallTelegraph();
                 else {
                     quiver = maxQuiver;
-                    actionCd = 1.4f;
+                    actionCd = 0.45f;
                 }
                 break;
             }
 
             if (quiver > 0 && actionCd <= 0.0f) {
                 pickNextSkill();
-                if (nextSkill == UBSkill::SKEW) {
-                    if ((int)extraWins.size() < MAX_EXTRA)
-                        spawnPinWindow(px, py, pwx, pwy, pww, pwh);
-                    if (!extraWins.empty()) {
-                        auto& ew = extraWins[rand() % extraWins.size()];
-                        throwTargetWx = ew.x; throwTargetWy = ew.y;
-                        throwTargetWw = ew.w; throwTargetWh = ew.h;
-                        throwEdge = pickEdge(px, py, ew.x, ew.y, ew.w, ew.h);
-                        throwAlong = 0.12f + (float)(rand() % 76) * 0.01f;
-                        throwOwnedWin = true;
-                    } else {
-                        pickTarget(px, py, pwx, pwy, pww, pwh, false);
-                    }
-                } else if (nextSkill == UBSkill::CROSS)
-                    pickTarget(px, py, pwx, pwy, pww, pwh, true);
-                else
-                    pickTarget(px, py, pwx, pwy, pww, pwh, true);
+                pickThrowAtPlayer(px, py, pwx, pwy, pww, pwh);
                 state = UBState::WINDUP;
-                stateT = 0.62f;
+                stateT = windupTime();
             }
             break;
 
@@ -479,7 +380,6 @@ public:
             break;
 
         case UBState::FLYING: {
-            stateT += dt;
             bool anyFly = false;
             for (auto& f : flies) {
                 if (!f.active) continue;
@@ -487,11 +387,11 @@ public:
                 float fdx = f.tx - f.x, fdy = f.ty - f.y;
                 float fl = sqrtf(fdx * fdx + fdy * fdy);
                 float step = FLY_SPD * dt;
-                if (fl <= step + 2.0f) {
+                if (fl <= step + 1.0f) {
                     f.x = f.tx; f.y = f.ty;
                     f.active = false;
                     commitPin(f);
-                    shakePulse = 0.6f;
+                    shakePulse = 0.5f;
                 } else {
                     f.x += fdx / fl * step;
                     f.y += fdy / fl * step;
@@ -502,8 +402,9 @@ public:
                     [](const UBFly& f) { return !f.active; }), flies.end());
                 if (chainLeft > 1) {
                     chainLeft--;
-                    actionCd = 0.55f;
-                    state = UBState::MOVE;
+                    pickThrowAtPlayer(px, py, pwx, pwy, pww, pwh);
+                    state = UBState::WINDUP;
+                    stateT = windupTime() * 0.65f;
                 } else if (crossLeft > 1) {
                     crossLeft--;
                     if (throwEdge == UBEdge::TOP) throwEdge = UBEdge::BOTTOM;
@@ -511,22 +412,14 @@ public:
                     else if (throwEdge == UBEdge::LEFT) throwEdge = UBEdge::RIGHT;
                     else throwEdge = UBEdge::LEFT;
                     state = UBState::WINDUP;
-                    stateT = 0.48f;
+                    stateT = windupTime() * 0.7f;
                 } else {
-                    state = UBState::PAUSE;
-                    stateT = 0.55f;
+                    state = UBState::MOVE;
+                    actionCd = phase3 ? THROW_CD_P3 : (phase2 ? THROW_CD_P2 : THROW_CD_P1);
                 }
             }
             break;
         }
-
-        case UBState::PAUSE:
-            stateT -= dt;
-            if (stateT <= 0.0f) {
-                state = UBState::MOVE;
-                actionCd = phase3 ? THROW_CD_P3 : (phase2 ? THROW_CD_P2 : THROW_CD_P1);
-            }
-            break;
 
         case UBState::RECALL_TEL:
             stateT -= dt;
@@ -534,7 +427,6 @@ public:
             break;
 
         case UBState::RECALLING: {
-            stateT += dt;
             int activeN = 0;
             for (auto& r : recalls) {
                 if (!r.active) continue;
@@ -542,219 +434,177 @@ public:
                 float ox = r.x, oy = r.y;
                 r.x += r.vx * dt;
                 r.y += r.vy * dt;
-                if (SegDist(px, py, ox, oy, r.x, r.y) < 16.0f)
-                    HurtPlayer(playerHP, RECALL_DMG * dt * 8.0f);
+                if (SegDist(px, py, ox, oy, r.x, r.y) < 15.0f)
+                    HurtPlayer(playerHP, RECALL_DMG * dt * 7.0f);
                 float bdx = worldX - r.x, bdy = worldY - r.y;
-                if (bdx * bdx + bdy * bdy < BODY * BODY) {
+                if (bdx * bdx + bdy * bdy < BODY * BODY)
                     r.active = false;
-                }
             }
             if (activeN == 0) {
                 recalls.clear();
+                recallLanes.clear();
+                pins.clear();
                 quiver = maxQuiver;
                 state = UBState::MOVE;
-                actionCd = 1.35f;
-            } else if (phase2 && stateT > 0.45f) {
-                // Stagger: phase2+ recalls don't all need to finish same frame
+                actionCd = 0.35f;
             }
             break;
         }
+
+        default: break;
         }
 
-        // Recall blades vs player point
         for (auto& r : recalls) {
             if (!r.active) continue;
-            if (SegDist(px, py, r.x - r.vx * dt, r.y - r.vy * dt, r.x, r.y) < 14.0f)
+            if (SegDist(px, py, r.x - r.vx * dt, r.y - r.vy * dt, r.x, r.y) < 13.0f)
                 HurtPlayer(playerHP, RECALL_DMG);
         }
     }
 
-    void renderBody(float gt, float aimX, float aimY) const {
-        float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
+    void renderBody(float gt, float /*aimX*/, float /*aimY*/) const {
         float cx = worldX, cy = worldY;
-        float aim = atan2f(aimY - cy, aimX - cx);
-        float ca = cosf(aim), sa = sinf(aim);
-        float cr = 0.95f, cg = 0.28f, cb = 0.62f;
+        float pulse = 0.5f + 0.5f * sinf(gt * 6.5f);
+        const float cr = 0.95f, cg = 0.20f, cb = 0.58f;
 
-        if (phase3) {
-            drawCircle(cx, cy, BODY * 1.55f, 0.95f, 0.18f, 0.55f, 0.10f + pulse * 0.08f);
-        } else if (phase2) {
-            drawCircle(cx, cy, BODY * 1.32f, 0.85f, 0.22f, 0.58f, 0.08f + pulse * 0.06f);
+        if (phase3)
+            drawCircle(cx, cy, BODY * 1.45f, cr, cg, cb, 0.09f + pulse * 0.07f);
+        else if (phase2)
+            drawCircle(cx, cy, BODY * 1.22f, cr, cg, cb, 0.06f + pulse * 0.05f);
+
+        for (int i = 0; i < 6; i++) {
+            float a = spinAng * 0.9f + (float)i * 1.047f;
+            float fx = cx + cosf(a) * (BODY * 0.95f);
+            float fy = cy + sinf(a) * (BODY * 0.62f);
+            float fw = 26.0f, fh = 18.0f;
+            drawRect(fx - fw * 0.5f, fy - fh * 0.5f, fw, fh, 0.03f, 0.02f, 0.05f, 0.55f);
+            drawNeonBorder(fx - fw * 0.5f, fy - fh * 0.5f, fw, fh,
+                           cr * 0.55f, cg * 0.55f, cb * 0.85f);
         }
 
-        for (int i = 0; i < 3; i++) {
-            float a = spinAng * 0.75f + (float)i * 2.094f;
-            drawRect(cx + cosf(a) * BODY * 0.62f - 2.0f,
-                     cy + sinf(a) * BODY * 0.48f - 2.0f,
-                     4.0f, 4.0f, cr, cg, cb, 0.35f + pulse * 0.25f);
+        drawCircle(cx, cy, BODY * 0.82f, cr, cg, cb, 0.05f + pulse * 0.04f);
+        drawNeonBorder(cx - BODY * 0.58f, cy - BODY * 0.58f,
+                       BODY * 1.16f, BODY * 1.16f, cr, cg, cb);
+
+        for (int i = 0; i < 4; i++) {
+            float a = -spinAng * 1.4f + (float)i * 1.571f;
+            float tx = cx + cosf(a) * BODY * 0.28f;
+            float ty = cy + sinf(a) * BODY * 0.28f;
+            drawTriangle(tx, ty, 11.0f, 0.35f, 0.95f, 1.0f, 0.55f + pulse * 0.25f);
         }
 
-        drawCircle(cx, cy, BODY * 0.95f, cr, cg, cb, 0.07f + pulse * 0.05f);
-        drawNeonBorder(cx - BODY * 0.82f, cy - BODY * 1.05f,
-                       BODY * 1.64f, BODY * 2.1f, cr, cg, cb);
+        drawCircle(cx, cy, BODY * 0.34f, 0.04f, 0.03f, 0.07f, 0.94f);
+        drawCircle(cx, cy, BODY * 0.14f, 1.0f, 0.88f, 0.96f, 0.65f + pulse * 0.30f);
 
-        float hoodW = BODY * 1.05f, hoodH = BODY * 1.35f;
-        drawRect(cx - hoodW * 0.5f, cy - hoodH * 0.62f, hoodW, hoodH,
-                 0.06f, 0.05f, 0.09f, 0.94f);
-        drawRect(cx - hoodW * 0.38f, cy - hoodH * 0.48f, hoodW * 0.76f, hoodH * 0.72f,
-                 0.12f, 0.10f, 0.14f, 0.92f);
-        drawTriangle(cx, cy - hoodH * 0.58f, 18.0f, cr, cg, cb, 0.88f);
-
-        float visorY = cy - BODY * 0.08f;
-        drawRect(cx - 22.0f, visorY - 5.0f, 44.0f, 10.0f, cr * 0.35f, cg * 0.35f, cb * 0.35f, 0.95f);
-        drawRect(cx - 18.0f, visorY - 2.0f, 36.0f, 4.0f, 0.55f, 0.95f, 1.0f, 0.55f + pulse * 0.35f);
-
-        float shoulder = BODY * 0.78f;
-        drawRect(cx - shoulder - 6.0f, cy + 4.0f, 14.0f, 22.0f, 0.10f, 0.08f, 0.12f, 0.92f);
-        drawRect(cx + shoulder - 8.0f, cy + 4.0f, 14.0f, 22.0f, 0.10f, 0.08f, 0.12f, 0.92f);
-        drawRect(cx - 16.0f, cy + 10.0f, 32.0f, 34.0f, 0.08f, 0.07f, 0.10f, 0.90f);
-        drawRect(cx - 10.0f, cy + 14.0f, 20.0f, 22.0f, cr * 0.25f, cg * 0.25f, cb * 0.25f, 0.85f);
-
-        for (int side = 0; side < 2; side++) {
-            float sgn = (side == 0) ? -1.0f : 1.0f;
-            float hx = cx + (-sa * sgn) * (BODY * 0.62f);
-            float hy = cy + ( ca * sgn) * (BODY * 0.62f);
-            drawBlade(hx, hy, aim + sgn * 0.55f, 46.0f, 5.5f, cr, cg, cb, 0.92f);
-        }
-
-        int shown = std::min(quiver, 16);
+        int shown = std::min(quiver, 18);
         for (int i = 0; i < shown; i++) {
             float ring = (float)(i % 3);
-            float rad = 88.0f + ring * 20.0f;
-            float ang = gt * (1.55f - ring * 0.12f) + (float)i * (6.2831853f / (float)shown);
+            float rad = BODY + 28.0f + ring * 16.0f;
+            float ang = gt * 2.4f + (float)i * (6.2831853f / (float)shown);
             float ox = cx + cosf(ang) * rad;
-            float oy = cy + sinf(ang) * (rad * 0.72f);
-            drawBlade(ox, oy, ang + 1.57f, 34.0f, 4.5f, 0.92f, 0.35f, 0.70f, 0.95f);
+            float oy = cy + sinf(ang) * (rad * 0.62f);
+            drawBlade(ox, oy, ang + 1.57f, 30.0f, 3.5f, cr, cg, cb, 0.88f);
         }
 
         if (orbitT > 0.0f) {
-            float op = 0.5f + 0.5f * sinf(gt * 12.0f);
-            drawCircle(cx, cy, 118.0f, cr, cg, cb, 0.16f * op);
-            drawNeonBorder(cx - 118.0f, cy - 118.0f, 236.0f, 236.0f, cr, cg, cb);
+            float op = 0.5f + 0.5f * sinf(gt * 14.0f);
+            drawNeonBorder(cx - 100.0f, cy - 100.0f, 200.0f, 200.0f, cr, cg, cb);
+            drawCircle(cx, cy, 100.0f, cr, cg, cb, 0.10f * op);
         }
 
         if (state == UBState::RECALL_TEL) {
-            float blink = 0.45f + 0.45f * (0.5f + 0.5f * sinf(gt * 14.0f));
-            drawCircle(cx, cy, BODY * 1.1f, 1.0f, 0.25f, 0.45f, 0.18f * blink);
+            float blink = 0.5f + 0.5f * sinf(gt * 16.0f);
+            drawCircle(cx, cy, BODY * 0.9f, 1.0f, 0.22f, 0.42f, 0.22f * blink);
         }
-
-        wchar_t tag[32];
-        swprintf_s(tag, L"edge:%d  pin:%d", quiver, (int)pins.size());
-        g_TextS.Draw(tag, cx - 58.0f, cy + BODY + 22.0f, 0.52f, cr, cg * 1.2f, cb, 0.9f);
-    }
-
-    void renderTargetFrame(float gt, float wx, float wy, float ww, float wh) const {
-        if (state != UBState::WINDUP && state != UBState::FLYING) return;
-        if (!sameWindow(wx, wy, ww, wh, throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh))
-            return;
-        float pulse = 0.45f + 0.45f * (0.5f + 0.5f * sinf(gt * 16.0f));
-        drawNeonBorder(wx, wy, ww, wh, 0.95f, 0.35f, 0.68f);
-        drawNeonBorder(wx - 3.0f, wy - 3.0f, ww + 6.0f, wh + 6.0f,
-                       0.95f, 0.28f, 0.62f);
-        float tx, ty;
-        edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
-                  throwEdge, throwAlong, tx, ty);
-        drawCircle(tx, ty, 16.0f + pulse * 10.0f, 1.0f, 0.55f, 0.85f, 0.55f * pulse);
     }
 
     void renderPinOnWindow(float wx, float wy, float ww, float wh, float /*gt*/) const {
         for (auto& p : pins) {
-            if (!windowMatch(p.wx, wx) || !windowMatch(p.wy, wy) ||
-                !windowMatch(p.ww, ww) || !windowMatch(p.wh, wh))
-                continue;
+            if (!sameWindow(wx, wy, ww, wh, p.wx, p.wy, p.ww, p.wh)) continue;
             float ox, oy;
             edgePoint(p.wx, p.wy, p.ww, p.wh, p.edge, p.along, ox, oy);
             float nx, ny;
             edgeNormal(p.edge, nx, ny);
-            float alpha = (p.scar > 0.5f) ? 0.40f : 1.0f;
-            const float outLen = 52.0f;
-            const float inLen  = 44.0f;
-            float sx = ox + nx * outLen;
-            float sy = oy + ny * outLen;
-            float ex = ox - nx * inLen;
-            float ey = oy - ny * inLen;
+            float alpha = (p.scar > 0.5f) ? 0.35f : 1.0f;
+            const float outLen = 50.0f, inLen = 42.0f;
+            float sx = ox + nx * outLen, sy = oy + ny * outLen;
+            float ex = ox - nx * inLen,  ey = oy - ny * inLen;
             float ang = atan2f(ey - sy, ex - sx);
-            drawBlade(sx, sy, ang, sqrtf((ex - sx) * (ex - sx) + (ey - sy) * (ey - sy)),
-                      5.5f, 0.95f, 0.28f, 0.62f, alpha);
-            drawCircle(ox, oy, 7.0f, 1.0f, 0.55f, 0.85f, alpha * 0.9f);
+            float blen = sqrtf((ex - sx) * (ex - sx) + (ey - sy) * (ey - sy));
+            drawBlade(sx, sy, ang, blen, 6.0f, 0.98f, 0.28f, 0.62f, alpha);
+            drawCircle(ox, oy, 8.0f, 1.0f, 0.55f, 0.85f, alpha * 0.9f);
 
-            float strip = EDGE_HAZ;
-            float hz = strip * 2.0f;
-            switch (p.edge) {
-            case UBEdge::TOP:
-                drawRect(ox - 24.0f, oy - strip, 48.0f, hz,
-                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
-                break;
-            case UBEdge::BOTTOM:
-                drawRect(ox - 24.0f, oy - strip, 48.0f, hz,
-                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
-                break;
-            case UBEdge::LEFT:
-                drawRect(ox - strip, oy - 24.0f, hz, 48.0f,
-                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
-                break;
-            case UBEdge::RIGHT:
-                drawRect(ox - strip, oy - 24.0f, hz, 48.0f,
-                         0.95f, 0.20f, 0.50f, 0.14f * alpha);
-                break;
-            }
+            float strip = EDGE_HAZ, hz = strip * 2.0f;
+            if (p.edge == UBEdge::TOP || p.edge == UBEdge::BOTTOM)
+                drawRect(ox - 28.0f, oy - strip, 56.0f, hz, 0.95f, 0.18f, 0.48f, 0.16f * alpha);
+            else
+                drawRect(ox - strip, oy - 28.0f, hz, 56.0f, 0.95f, 0.18f, 0.48f, 0.16f * alpha);
         }
     }
 
+    void renderLaneInWindow(float gt, float wx, float wy, float ww, float wh) const {
+        if (state != UBState::RECALL_TEL && state != UBState::RECALLING) return;
+        for (auto& lane : recallLanes) {
+            if (!sameWindow(wx, wy, ww, wh, lane.x, lane.y, lane.w, lane.h)) continue;
+            float blink = 0.40f + 0.40f * (0.5f + 0.5f * sinf(gt * 12.0f));
+            float prog = (state == UBState::RECALL_TEL) ? (1.0f - stateT / RECALL_TEL) : 1.0f;
+            ubDrawThickLine(lane.pinX, lane.pinY, worldX, worldY, 5.0f,
+                            1.0f, 0.22f, 0.42f, blink * (0.35f + 0.55f * prog));
+            drawCircle(lane.pinX, lane.pinY, 10.0f + pulse(gt) * 6.0f,
+                       1.0f, 0.45f, 0.65f, 0.55f * blink);
+        }
+    }
+
+    static float pulse(float gt) { return 0.5f + 0.5f * sinf(gt * 18.0f); }
+
     void renderWorld(float gt, float wx, float wy, float ww, float wh) const {
-        renderTargetFrame(gt, wx, wy, ww, wh);
+        float bx = worldX - WIN_W * 0.5f, by = worldY - WIN_H * 0.5f;
+        bool isBossWin = sameWindow(wx, wy, ww, wh, bx, by, WIN_W, WIN_H);
+        bool isPlayerWin = sameWindow(wx, wy, ww, wh,
+                                      throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh);
+
+        renderLaneInWindow(gt, wx, wy, ww, wh);
 
         for (auto& f : flies) {
             if (!f.active) continue;
-            bool hitWin = sameWindow(wx, wy, ww, wh, f.twx, f.twy, f.tww, f.twh);
-            float bx = worldX - WIN_W * 0.5f, by = worldY - WIN_H * 0.5f;
-            bool bossWin = sameWindow(wx, wy, ww, wh, bx, by, WIN_W, WIN_H);
+            bool targetWin = sameWindow(wx, wy, ww, wh, f.twx, f.twy, f.tww, f.twh);
             auto inWinPt = [&](float px, float py) {
                 return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
             };
-            if (!hitWin && !bossWin &&
+            if (!targetWin && !isBossWin &&
                 !inWinPt(f.x, f.y) && !inWinPt(f.fx, f.fy) && !inWinPt(f.tx, f.ty))
                 continue;
 
             float rdx = f.tx - f.x, rdy = f.ty - f.y;
             float rem = sqrtf(rdx * rdx + rdy * rdy);
             float ang = atan2f(rdy, rdx);
-            ubDrawThickLine(f.fx, f.fy, f.x, f.y, 3.0f, 0.95f, 0.40f, 0.65f, 0.35f);
-            ubDrawThickLine(f.x, f.y, f.tx, f.ty, 2.5f, 1.0f, 0.50f, 0.80f, 0.45f);
-            float bladeLen = std::min(62.0f, rem + 16.0f);
-            drawBlade(f.x, f.y, ang, bladeLen, 7.0f, 0.98f, 0.35f, 0.70f, 1.0f);
-            float pulse = 0.5f + 0.5f * sinf(gt * 22.0f);
-            if (hitWin)
-                drawCircle(f.tx, f.ty, 12.0f + pulse * 5.0f, 1.0f, 0.55f, 0.85f, 0.70f * pulse);
+            ubDrawThickLine(f.fx, f.fy, f.x, f.y, 2.5f, 0.95f, 0.38f, 0.62f, 0.32f);
+            drawBlade(f.x, f.y, ang, std::min(68.0f, rem + 18.0f), 6.5f,
+                      0.98f, 0.32f, 0.68f, 1.0f);
+            if (targetWin) {
+                float p = pulse(gt);
+                drawCircle(f.tx, f.ty, 14.0f + p * 6.0f, 1.0f, 0.55f, 0.85f, 0.65f * p);
+            }
         }
 
-        if (state == UBState::RECALL_TEL) {
-            float blink = 0.45f + 0.45f * (0.5f + 0.5f * sinf(gt * 14.0f));
-            float prog = 1.0f - stateT / RECALL_TEL;
-            for (auto& p : pins) {
-                if (p.scar > 0.5f) continue;
-                if (!sameWindow(wx, wy, ww, wh, p.wx, p.wy, p.ww, p.wh)) continue;
-                ubDrawThickLine(p.pinX, p.pinY, worldX, worldY, 3.5f,
-                                1.0f, 0.25f, 0.45f, blink * (0.45f + 0.55f * prog));
-            }
+        if (state == UBState::WINDUP && isPlayerWin) {
+            float tx, ty;
+            edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
+                      throwEdge, throwAlong, tx, ty);
+            float p = pulse(gt);
+            drawCircle(tx, ty, 12.0f + p * 8.0f, 1.0f, 0.50f, 0.80f, 0.70f * p);
         }
 
         for (auto& r : recalls) {
             if (!r.active) continue;
-            ubDrawThickLine(r.fromX, r.fromY, r.x, r.y, 4.0f, 1.0f, 0.35f, 0.55f, 0.82f);
-            float ang = atan2f(r.vy, r.vx);
-            drawBlade(r.x, r.y, ang, 44.0f, 6.0f, 0.95f, 0.28f, 0.62f, 1.0f);
-        }
-
-        if (state == UBState::WINDUP &&
-            sameWindow(wx, wy, ww, wh, throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh)) {
-            float tx, ty;
-            edgePoint(throwTargetWx, throwTargetWy, throwTargetWw, throwTargetWh,
-                      throwEdge, throwAlong, tx, ty);
-            float pulse = 0.5f + 0.5f * sinf(gt * 18.0f);
-            ubDrawThickLine(worldX, worldY, tx, ty, 3.0f, 0.95f, 0.40f, 0.70f, 0.35f + 0.30f * pulse);
-            float ang = atan2f(ty - worldY, tx - worldX);
-            drawBlade(worldX, worldY, ang, 42.0f, 5.0f, 0.95f, 0.35f, 0.65f, 0.88f);
+            auto inWinPt = [&](float px, float py) {
+                return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
+            };
+            if (!inWinPt(r.x, r.y) && !inWinPt(r.fromX, r.fromY) &&
+                !inWinPt(worldX, worldY) && !isBossWin)
+                continue;
+            ubDrawThickLine(r.fromX, r.fromY, r.x, r.y, 4.0f, 1.0f, 0.30f, 0.50f, 0.85f);
+            drawBlade(r.x, r.y, atan2f(r.vy, r.vx), 42.0f, 5.5f,
+                      0.98f, 0.25f, 0.55f, 1.0f);
         }
     }
 
@@ -765,11 +615,11 @@ public:
 
     static const wchar_t* stateTag(UBState s) {
         switch (s) {
-        case UBState::WINDUP:      return L"AIM";
-        case UBState::FLYING:      return L"THROW";
-        case UBState::RECALL_TEL:  return L"RECALL…";
+        case UBState::WINDUP:      return L"THROW";
+        case UBState::FLYING:      return L"EDGE";
+        case UBState::RECALL_TEL:  return L"PULL…";
         case UBState::RECALLING:   return L"PULL";
-        default:                   return L"EDGE";
+        default:                   return L"IDLE";
         }
     }
 };

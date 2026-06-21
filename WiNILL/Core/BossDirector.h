@@ -125,7 +125,7 @@ inline glm::vec3 WarnColor(int pick) {
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
         L"응답 없음 — 멈추면 LAG 장판",
-        L"창 가장자리 고정 — 회수 경로가 칼날",
+        L"창연 연사 — pull.lane으로 회수 경로 읽기",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
         L"실행 파일 형태 변조",
