@@ -225,7 +225,7 @@ struct PlayerStats {
         case AugType::MINIATURIZE:
             miniaturize    = true;
             sizeAugTaken   = true;
-            maxHP          = 10.0f;
+            maxHP         *= 0.5f;
             regenPerSec   += 0.1f;
             moveSpeedMult *= 1.20f;
             playerSizeMult *= 0.80f;
@@ -344,10 +344,10 @@ struct PlayerStats {
             flatDamageBonus  += 35.0f;
             damageMultiplier *= 1.12f;
             break;
-        case AugType::BULLET_RAIN_ETERNAL:   // 신화 — 무한 세례
+        case AugType::BULLET_RAIN_ETERNAL:   // 신화 — 무한 세례 (III 쿨 유지 + 처치 가속)
             bulletRain         = true;
-            bulletRainCooldown = 8.0f;
             rainKillReduce     = true;
+            if (bulletRainCooldown > 8.0f) bulletRainCooldown = 8.0f;
             break;
         case AugType::DRONE_HIVE:            // 신화 — 군집 지능
             drone      = true;

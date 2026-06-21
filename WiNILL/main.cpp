@@ -3085,10 +3085,12 @@ int main() {
             if (g_Stats.bulletRain) {
                 g_BulletRainTimer += delta;
                 // 臾댄븳 ?몃?(?좏솕) ??泥섏튂留덈떎 荑⑤떎??吏꾪뻾 媛??0.4s/泥섏튂). 誘몃낫????泥섏튂 移댁슫?몃쭔 鍮꾩?.
-                if (g_Stats.rainKillReduce) {
-                    g_BulletRainTimer += g_RainKillAccum * 0.25f;
-                    float minLeft = g_Stats.bulletRainCooldown - 3.0f;
-                    if (g_BulletRainTimer > minLeft) g_BulletRainTimer = minLeft;
+                if (g_Stats.rainKillReduce && g_RainKillAccum > 0.0f) {
+                    float killBoost = g_RainKillAccum * 0.4f;
+                    float maxBoost = g_Stats.bulletRainCooldown - 3.0f - g_BulletRainTimer;
+                    if (maxBoost < 0.0f) maxBoost = 0.0f;
+                    if (killBoost > maxBoost) killBoost = maxBoost;
+                    g_BulletRainTimer += killBoost;
                 }
                 g_RainKillAccum = 0.0f;
                 if (g_BulletRainTimer >= g_Stats.bulletRainCooldown) {
@@ -4211,7 +4213,7 @@ int main() {
         float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
         // ?〓す (蹂댁뒪 ?뚰솚臾쇱? ???? ??李?諛?而щ쭅
         for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
+            if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
             drawMob(m);
         }
         for (auto bm : g_MonsterManager.bombers) {
@@ -4253,6 +4255,10 @@ int main() {
                           [](Monster* a, Monster* b) { return a->worldY < b->worldY; });
                 const float DTB = 14.0f * g_Scale;
                 for (auto* m : ddos) {
+                    // 플레이어 창 안은 (e) 패스에서 몬스터만 — flood.exe 크롬은 창 밖 스warm만
+                    if (inWin(m->worldX, m->worldY,
+                              playerWin.x, playerWin.y, playerWin.width, playerWin.height))
+                        continue;
                     float w = DDOS_WIN_W * m->sizeScale;
                     float h = w * 0.82f;
                     float wx = m->worldX - w * 0.5f, wy = m->worldY - h * 0.5f;
@@ -5097,7 +5103,7 @@ int main() {
                         : std::min(1.0f, g_AchToastTimer);
                 if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
                 int li2 = LangIndex();
-                const wchar_t* LBL[3] = { L"?낆쟻 ?ъ꽦!", L"Achievement!", L"若잏맘鰲ｉ솮!" };
+                const wchar_t* LBL[3] = { L"\uC5C5\uC801 \uB2EC\uC131!", L"Achievement!", L"\u5B9F\u7E3E\u9054\u6210!" };
                 wchar_t tb[160];
                 swprintf_s(tb, L"%ls  %ls  (+%lld)", LBL[li2],
                            AchName(g_AchToastId), ACH_DEFS[g_AchToastId].coinReward);
