@@ -39,6 +39,7 @@
 #include "BotnetBoss.h"
 #include "CentipedeBoss.h"
 #include "TotemBoss.h"
+#include "UnknownBoss.h"
 #include "BossDirector.h"
 #include "RunIntermission.h"
 #include "Codex.h"
@@ -142,6 +143,8 @@ float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
 float TOTEM_WIN_W = 720.0f;    // RITE.CORE: 코어 + 기둥 의식 공간
+float UNKNOWN_WIN_W = 420.0f;  // UNKNOWN.sys: 창연 검 보스
+float UNKNOWN_WIN_H = 520.0f;
 // 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
 float SPAWNER_WIN_W = 300.0f;
 float DDOS_WIN_W    = 210.0f;
@@ -286,6 +289,7 @@ static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
 
 CentipedeBoss* g_CentiBoss = nullptr;
 TotemBoss* g_TotemBoss = nullptr;
+UnknownBoss* g_UnknownBoss = nullptr;
 // ?? 諛곕뱶 ?뱁꽣 ?щ쭩 ?붾쪟臾????꾩떆 媛먯냽 援ъ뿭(?먯긽 ?곸뿭). ?덉뿉 ?덉쑝硫??대룞?띾룄 -10% ??
 //   利됱떆 ?앷린吏 ?딄퀬 ZONE_OPEN(0.7珥???嫄몄퀜 ?먯젏 遺?앸릺???쇱쭚(grow factor = age/OPEN).
 struct SlowZone { float x, y, w, h, life, maxLife, age; };
@@ -576,6 +580,7 @@ int main() {
     RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
     TOTEM_WIN_W *= g_Scale;
+    UNKNOWN_WIN_W *= g_Scale; UNKNOWN_WIN_H *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
     DDOS_WIN_W    *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
@@ -761,6 +766,8 @@ int main() {
                 if (tt.alive) consider(tt.x, tt.y);
             }
         }
+        if (g_UnknownBoss && g_UnknownBoss->alive)
+            consider(g_UnknownBoss->worldX, g_UnknownBoss->worldY);
         return found;
     };
 
@@ -907,6 +914,7 @@ int main() {
             if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
+            if (g_UnknownBoss) { delete g_UnknownBoss; g_UnknownBoss = nullptr; }
             g_PolyPrevForm = -1;
             g_BossTintT = 0.0f;
             ResetJuice();
@@ -1059,6 +1067,7 @@ int main() {
                     if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
                     if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"RITE.CORE");
+                    if (g_UnknownBoss && g_UnknownBoss->alive) consider(g_UnknownBoss->worldX, g_UnknownBoss->worldY, L"UNKNOWN.sys");
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
                     const wchar_t* UNK[3] = { L"Unknown error", L"Terminated by unknown error", L"Unknown error" };
@@ -1099,6 +1108,7 @@ int main() {
                 if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
                 if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
+            if (g_UnknownBoss) { delete g_UnknownBoss; g_UnknownBoss = nullptr; }
                 g_Turrets.clear();
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
                 g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
@@ -1605,6 +1615,7 @@ int main() {
                     if (g_BotnetBoss && g_BotnetBoss->alive) { float dx=g_BotnetBoss->worldX-cx,dy=g_BotnetBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_BotnetBoss->hp-=dmg; if(g_BotnetBoss->hp<=0)g_BotnetBoss->alive=false;} }
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) { float dx=g_CentiBoss->worldX-cx,dy=g_CentiBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_CentiBoss->hp-=dmg; if(g_CentiBoss->hp<=0)g_CentiBoss->alive=false;} }
                     if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) { float dx=g_TotemBoss->worldX-cx,dy=g_TotemBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TotemBoss->hp-=dmg; if(g_TotemBoss->hp<=0)g_TotemBoss->alive=false;} }
+                    if (g_UnknownBoss && g_UnknownBoss->alive) { float dx=g_UnknownBoss->worldX-cx,dy=g_UnknownBoss->worldY-cy; if(dx*dx+dy*dy<r2){float ud=dmg*g_UnknownBoss->damageTakenMult(); g_UnknownBoss->hp-=ud; if(g_UnknownBoss->hp<=0)g_UnknownBoss->alive=false;} }
                     for (int ti = 0; g_TotemBoss && g_TotemBoss->alive && ti < TotemBoss::N_TOTEM; ti++) {
                         auto& tt = g_TotemBoss->totems[ti];
                         if (!tt.alive) continue;
@@ -1910,7 +1921,7 @@ int main() {
                     }
                 }
 
-                // TOTEM.sys ?낅뜲?댄듃 (?좏뀥 遊됱씤 + ?쒓컙?대룞 怨듦꺽)
+                // TOTEM.sys 업데이트 (토템 루틴 + 시간정지 공격)
                 if (!timeStopped && g_TotemBoss && g_TotemBoss->alive) {
                     float pullX = 0.0f, pullY = 0.0f;
                     g_TotemBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
@@ -1935,7 +1946,18 @@ int main() {
                     g_TotemBoss->mobSpawnQueue.clear();
                 }
 
-                // ?? 蹂댁뒪 ?섏씠利? 吏꾩엯 (?곸듅?ｌ?) ???듭씪 ?곗텧 + 蹂댁뒪蹂?泥섎━ ??
+                if (!timeStopped && g_UnknownBoss && g_UnknownBoss->alive) {
+                    g_UnknownBoss->Update(pCX, pCY,
+                                          playerWin.x, playerWin.y,
+                                          playerWin.width, playerWin.height,
+                                          enemyDt, g_GameManager.playerHP, g_Bullets);
+                    if (g_UnknownBoss->shakePulse > 0.0f) {
+                        g_UnknownBoss->shakePulse = 0.0f;
+                        g_ShakeTime = 0.16f; g_ShakeMag = 10.0f;
+                    }
+                }
+
+                // ── 보스 페이즈 진입 (상승음?) ── 공통 등장 연출 + 보스별 처리 ──
                 auto p2enter = [&](float bx, float by, glm::vec3 col) {
                     g_ShakeTime = 0.55f; g_ShakeMag = 26.0f;
                     TriggerFlash(col.r, col.g, col.b, 0.55f);
@@ -1999,7 +2021,30 @@ int main() {
                     }
                 }
 
-                // C2_RELAY.sys ??醫鍮??몄뒪??+ 蹂몄껜(?쇳빐 媛먯냼) vs ?뚮젅?댁뼱 珥앹븣
+                if (g_UnknownBoss && g_UnknownBoss->alive) {
+                    auto* ub = g_UnknownBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (SegDist(ub->worldX, ub->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < UnknownBoss::BODY * 0.75f) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(ub->worldX, ub->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg *= ub->damageTakenMult();
+                            float dealt = (dmg < ub->hp) ? dmg : ub->hp;
+                            ub->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (ub->hp <= 0.0f) ub->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
+                // C2_RELAY.sys — 호스트 + 본체(피해 감소) vs 플레이어 총알
                 if (g_BotnetBoss && g_BotnetBoss->alive) {
                     auto* nb2 = g_BotnetBoss;
                     for (auto& b : g_Bullets) {
@@ -2416,7 +2461,7 @@ int main() {
                     FinishBossKill(g_MonsterManager, 8, 35, screenWidth, screenHeight);
                 }
 
-                // TOTEM.sys ?щ쭩 ??蹂댁긽
+                // TOTEM.sys 처치 보상
                 if (g_TotemBoss && !g_TotemBoss->alive && !g_TotemBoss->exploded) {
                     auto* tb = g_TotemBoss;
                     SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.85f, 0.35f, 1.0f, true);
@@ -2434,6 +2479,25 @@ int main() {
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_Bullets.clear();
                     FinishBossKill(g_MonsterManager, 9, 35, screenWidth, screenHeight);
+                }
+
+                if (g_UnknownBoss && !g_UnknownBoss->alive && !g_UnknownBoss->exploded) {
+                    auto* ub = g_UnknownBoss;
+                    SpawnEnemyExplosion(ub->worldX, ub->worldY, 0.95f, 0.25f, 0.58f, true);
+                    SpawnEnemyExplosion(ub->worldX, ub->worldY, 1.0f, 0.45f, 0.75f, true);
+                    SpawnShockWave(ub->worldX, ub->worldY, 400.0f, 0.75f, 0.95f, 0.30f, 0.62f);
+                    g_ShakeTime = 0.5f; g_ShakeMag = 20.0f;
+                    TriggerFlash(0.95f, 0.28f, 0.58f, 0.6f); TriggerHitStop(0.10f);
+                    ub->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete ub;
+                    g_UnknownBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_Bullets.clear();
+                    FinishBossKill(g_MonsterManager, 1, 35, screenWidth, screenHeight);
                 }
 
                 // ?대━紐⑦봽 ?щ쭩 ???붾㈃ ?먮났 + 利앷컯 3媛?+ ?먯닔 50% 異붽?
@@ -2711,7 +2775,7 @@ int main() {
             if (intensity > act.intensityCap) intensity = act.intensityCap;
             float rampSpawn = (1.0f + intensity * 0.40f) * act.spawnMult;
             float rampSpd   = (1.0f + intensity * 0.09f) * act.speedMult;
-            bool  bossNow = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
+            bool  bossNow = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss || g_UnknownBoss ||
                             g_BossWarnTimer > 0.0f;
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
@@ -2743,6 +2807,7 @@ int main() {
                 if (g_BotnetBoss && g_BotnetBoss->alive) return true;
                 if (g_CentiBoss && g_CentiBoss->alive) return true;
                 if (g_TotemBoss && g_TotemBoss->alive) return true;
+                if (g_UnknownBoss && g_UnknownBoss->alive) return true;
                 return false;
             };
             bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f ||
@@ -2847,7 +2912,7 @@ int main() {
             // 蹂댁뒪 ?ㅽ룿 ???쇰컲 蹂댁뒪 20留뚯젏留덈떎 / ?대━紐⑦봽 50留뚯젏 怨좎젙.
             //   (?대뼡 蹂댁뒪???댁븘?덉쑝硫??湲?= ?숈떆 ?ㅽ룿 諛⑹?)
             {
-                bool bossActive = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss ||
+                bool bossActive = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss || g_UnknownBoss ||
                                   g_BossWarnTimer > 0.0f;
                 // ?쇱슫?? ??蹂댁뒪 ?덈뜦??李⑤떒: 蹂댁뒪瑜??≪븘 ?꾩쟾???뺣━?섎뒗 ?쒓컙(?쒖꽦?믩퉬?쒖꽦),
                 //   ?ㅼ쓬 蹂댁뒪 ?꾧퀎媛믪쓣 ?꾩옱 ?먯닔+20留뚯쑝濡?由щ쿋?댁뒪 ??理쒖냼 20留뚯젏 ?댁떇 蹂댁옣
@@ -2875,6 +2940,7 @@ int main() {
                         g_CreativeBossPending = false;
                         switch (g_CreativeBossPick) {
                         case 2:  startWarn(2, L"VOLLEY.sys",    bossHpC);         break;
+                        case 1:  startWarn(1, L"UNKNOWN.sys",  bossHpC * 0.7f); break;
                         case 4:  startWarn(4, L"GLITCH.exe", polyHpC);         break;
                         case 7:  startWarn(7, L"C2_RELAY.sys",  bossHpC * 0.75f); break;
                         case 8:  startWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
@@ -2913,6 +2979,10 @@ int main() {
                         float bsx = bMargin + (float)(rand() % (int)bRangeX);
                         float bsy = bMargin + (float)(rand() % (int)bRangeY);
                         switch (g_BossWarnPick) {
+                        case 1:
+                            g_UnknownBoss = new UnknownBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_UnknownBoss->worldX = bsx; g_UnknownBoss->worldY = bsy;
+                            break;
                         case 2:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
@@ -3484,6 +3554,8 @@ int main() {
                     hitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
                 if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
                     hitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
+                if (g_UnknownBoss && g_UnknownBoss->alive)
+                    hitB(g_UnknownBoss->worldX, g_UnknownBoss->worldY, g_UnknownBoss->hp, g_UnknownBoss->alive);
                 if (g_TotemBoss && g_TotemBoss->alive) {
                     for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
                         auto& tt = g_TotemBoss->totems[ti];
@@ -3611,6 +3683,8 @@ int main() {
                         lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
                     if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
                         lhitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
+                    if (g_UnknownBoss && g_UnknownBoss->alive)
+                        lhitB(g_UnknownBoss->worldX, g_UnknownBoss->worldY, g_UnknownBoss->hp, g_UnknownBoss->alive);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
@@ -3680,6 +3754,7 @@ int main() {
                     if (g_BotnetBoss && g_BotnetBoss->alive) nhitB(g_BotnetBoss->worldX,g_BotnetBoss->worldY,g_BotnetBoss->hp,g_BotnetBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) nhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
                     if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) nhitB(g_TotemBoss->worldX,g_TotemBoss->worldY,g_TotemBoss->hp,g_TotemBoss->alive);
+                    if (g_UnknownBoss && g_UnknownBoss->alive) nhitB(g_UnknownBoss->worldX,g_UnknownBoss->worldY,g_UnknownBoss->hp,g_UnknownBoss->alive);
                     if (g_TotemBoss && g_TotemBoss->alive) {
                         for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
                             auto& tt = g_TotemBoss->totems[ti];
@@ -3950,6 +4025,13 @@ int main() {
         if (g_TotemBoss && g_TotemBoss->alive)
             addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
                  L"RITE.CORE", 0.08f,0.04f,0.10f, 0.85f,0.45f,0.95f);
+        if (g_UnknownBoss && g_UnknownBoss->alive) {
+            addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
+                 UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
+            for (auto& ew : g_UnknownBoss->extraWins)
+                addW(ew.x + ew.w * 0.5f, ew.y + ew.h * 0.5f, ew.w, ew.h,
+                     L"pinned.sys", 0.06f,0.04f,0.07f, 0.90f,0.35f,0.65f);
+        }
         // trap.exe / vaccine.exe — (e.sat)에서 플레이어 창 위에 통째로 그림
         // ?ы깙 李?諛곌꼍+蹂대뜑 (理쒗븯?? ?뚮젅?댁뼱 ?뚯쑀??z-由ъ뒪??諛?
         if (g_Stats.turretMode) {
@@ -4182,6 +4264,13 @@ int main() {
         if (g_TotemBoss && g_TotemBoss->alive)
             drawBossWinContent(g_TotemBoss->worldX - TOTEM_WIN_W * 0.5f,
                                g_TotemBoss->worldY - TOTEM_WIN_W * 0.5f, TOTEM_WIN_W, TOTEM_WIN_W);
+        if (g_UnknownBoss && g_UnknownBoss->alive) {
+            drawBossWinContent(g_UnknownBoss->worldX - UNKNOWN_WIN_W * 0.5f,
+                               g_UnknownBoss->worldY - UNKNOWN_WIN_H * 0.5f,
+                               UNKNOWN_WIN_W, UNKNOWN_WIN_H);
+            for (auto& ew : g_UnknownBoss->extraWins)
+                drawBossWinContent(ew.x, ew.y, ew.w, ew.h);
+        }
         // 遊뉖꽬 ?몃뱶(SPAWNER) 李??대? 而⑦뀗痢????몃뱶 蹂몄껜/?뚰솚 ?뚯씠 ?먭린 李쎌뿉??蹂댁씠?꾨줉 (E21)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
@@ -4515,6 +4604,8 @@ int main() {
                 drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
             }
         }
+        if (g_UnknownBoss && g_UnknownBoss->alive)
+            g_UnknownBoss->renderPinOnWindow(pwx, pwy, pww, pwh, (float)glfwGetTime());
         }
         // ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 (?뚮젅?댁뼱 李??덉뿉?쒕쭔)
         for (auto& orb : g_ApproachOrbs) {
@@ -4698,6 +4789,32 @@ int main() {
             }
             rb->renderBody(gtRR, pCX, pCY);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
+
+        if (g_UnknownBoss && g_UnknownBoss->alive) {
+            auto* ub = g_UnknownBoss;
+            float gtUB = (float)glfwGetTime();
+            float pCX = playerWin.x + playerWin.width  * 0.5f;
+            float pCY = playerWin.y + playerWin.height * 0.5f;
+            BindMainShader();
+            ub->renderWorld(gtUB, playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+
+            float uwx = ub->worldX - UNKNOWN_WIN_W * 0.5f;
+            float uwy = ub->worldY - UNKNOWN_WIN_H * 0.5f;
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H);
+            for (auto& b : g_Bullets)
+                if (b.active) drawBullet(b);
+            ub->renderBody(gtUB, pCX, pCY);
+            ub->renderPinOnWindow(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H, gtUB);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+            for (auto& ew : ub->extraWins) {
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(ew.x, ew.y, ew.w, ew.h);
+                ub->renderPinOnWindow(ew.x, ew.y, ew.w, ew.h, gtUB);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            }
         }
     
         // (g4e) C2_RELAY.sys
@@ -4987,6 +5104,8 @@ int main() {
                 bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 0.95f); }
             else if (g_TotemBoss && g_TotemBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.85f, 0.45f, 0.95f); }
+            else if (g_UnknownBoss && g_UnknownBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.95f, 0.28f, 0.58f); }
             if (bossAlive) {
                 g_BossTintCol = tc;
                 g_BossTintT  += delta * 0.07f;          // ~14珥덉뿉 理쒕?
@@ -5022,6 +5141,9 @@ int main() {
             } else if (g_TotemBoss && g_TotemBoss->alive) {
                 bn = L"RITE.CORE";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
                 bc = glm::vec3(0.85f, 0.45f, 0.95f);
+            } else if (g_UnknownBoss && g_UnknownBoss->alive) {
+                bn = UnknownBoss::BOSS_NAME; bhf = g_UnknownBoss->hp / g_UnknownBoss->maxHp;
+                bc = glm::vec3(0.95f, 0.28f, 0.58f);
             }
             int bossPick = -1;
             if (bn) {
@@ -5030,6 +5152,7 @@ int main() {
                 else if (bn == L"C2_RELAY.sys")  bossPick = 7;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
                 else if (bn == L"RITE.CORE")     bossPick = 9;
+                else if (bn == UnknownBoss::BOSS_NAME) bossPick = 1;
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
@@ -5097,6 +5220,17 @@ int main() {
                     float tw = g_TextS.Width(totBuf, ts);
                     g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
                                  0.85f, 0.45f, 0.95f, 0.85f);
+                }
+                if (g_UnknownBoss && g_UnknownBoss->alive) {
+                    wchar_t ubBuf[64];
+                    swprintf_s(ubBuf, L"%ls 쨌 %ls  pin:%d",
+                               g_UnknownBoss->phase3 ? L"P3" : (g_UnknownBoss->phase2 ? L"P2" : L"P1"),
+                               UnknownBoss::stateTag(g_UnknownBoss->state),
+                               (int)g_UnknownBoss->pins.size());
+                    float us = 0.55f;
+                    float uw = g_TextS.Width(ubBuf, us);
+                    g_TextS.Draw(ubBuf, bx + bw - uw - 8.0f, by - 48.0f, us,
+                                 0.95f, 0.35f, 0.65f, 0.88f);
                 }
                 // % (諛??곗륫 ???덉そ)
                 wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(bhf * 100.0f + 0.5f));

@@ -54,6 +54,7 @@ inline ActRules EndlessRules() {
 
 inline ActRules RulesForPick(int pick) {
     switch (pick) {
+    case 1:  return { 2.8f, 4.8f, 1.04f, 1.02f, 2, 3 };   // UNKNOWN — 기술·필드 pin
     case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f, 4, 2 };   // VOLLEY — 탄막·원거리
     case 4:  return { 2.5f, 4.5f, 1.0f,  1.0f,  8, 4 };   // GLITCH — 엘리트
     case 7:  return { 3.5f, 6.0f, 1.18f, 1.0f,  3, 8 };   // C2 — swarm
@@ -93,7 +94,7 @@ inline const wchar_t* DisplayName(int pick) {
 
 inline float HpMul(int pick) {
     switch (pick) {
-    case 1: return 0.7f;
+    case 1: return 0.70f;
     case 2: return 1.08f;
     case 3: return 0.65f;
     case 5: return 0.45f;
@@ -124,7 +125,7 @@ inline glm::vec3 WarnColor(int pick) {
 inline const wchar_t* Tagline(int pick) {
     static const wchar_t* KR[10] = {
         L"응답 없음 — 멈추면 LAG 장판",
-        L"",
+        L"창 가장자리 고정 — 회수 경로가 칼날",
         L"연발 포격 — 사거리 전조 표시",
         L"팝업 광고 폭주",
         L"실행 파일 형태 변조",
@@ -136,7 +137,7 @@ inline const wchar_t* Tagline(int pick) {
     };
     static const wchar_t* EN[10] = {
         L"Not responding — freeze then lag",
-        L"",
+        L"Edge pin — recall path cuts",
         L"Volley fire — telegraphed danger zones",
         L"Popup ad flood",
         L"Executable morphing",
@@ -148,7 +149,7 @@ inline const wchar_t* Tagline(int pick) {
     };
     static const wchar_t* JP[10] = {
         L"応答なし — 停止後LAG",
-        L"",
+        L"窓縁固定 — 回収経路が刃",
         L"連発砲撃 — 射程予告表示",
         L"ポップアップ広告暴走",
         L"実行ファイル変形",
