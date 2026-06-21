@@ -425,14 +425,14 @@ void Scene_Codex(const SceneCtx& c) {
                     const int COLS = 6; const float CELL = 150.0f;
                     int vis[CM_COUNT], nv = 0;
                     for (int i = 0; i < CM_COUNT; i++)
-                        if (g_CodexSearchLen == 0 || (g_MobSeen[i] && CodexMatch(MobName(i))))
+                        if (g_CodexSearchLen == 0 || (CodexMobSeen(i) && CodexMatch(MobName(i))))
                             vis[nv++] = i;
                     float gx = wx + (WW - COLS*CELL) * 0.5f;
                     for (int k = 0; k < nv; k++) {
                         int i = vis[k];
                         float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
                         float cw = CELL - 14.0f;
-                        bool seen = g_MobSeen[i];
+                        bool seen = CodexMobSeen(i);
                         bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
                         if (hv) hoverItem = i;
                         BindMainShader();
@@ -478,7 +478,7 @@ void Scene_Codex(const SceneCtx& c) {
                                          0.4f, 0.4f, 0.45f, 0.9f);
                         }
                     }
-                    if (hoverItem >= 0 && g_MobSeen[hoverItem]) {
+                    if (hoverItem >= 0 && CodexMobSeen(hoverItem)) {
                         const wchar_t* nm = MobName(hoverItem);
                         const wchar_t* d  = MobDesc(hoverItem);
                         g_TextL.Draw(nm, wx + 40.0f, detailY, 1.0f, 0.6f, 0.95f, 0.7f, 1.0f);
@@ -490,7 +490,7 @@ void Scene_Codex(const SceneCtx& c) {
                     for (int i = 0; i < AUG_TOTAL; i++) {
                         if (AugRemoved(ALL_AUGS[i].type)) continue;
                         if (g_CodexSearchLen > 0) {
-                            if (!g_AugSeen[i] || !CodexMatch(AugName(ALL_AUGS[i]))) continue;
+                            if (!CodexAugSeen(i) || !CodexMatch(AugName(ALL_AUGS[i]))) continue;
                         }
                         vis[nv++] = i;
                     }
@@ -548,7 +548,7 @@ void Scene_Codex(const SceneCtx& c) {
                                 prevGrp = grp;
                             }
                             if (ry >= listTop - ROW_H && ry <= listBottom) {
-                                bool seen = g_AugSeen[i];
+                                bool seen = CodexAugSeen(i);
                                 bool hv = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
                                 if (hv) hoverItem = i;
                                 float rr, rg, rb;
@@ -591,7 +591,7 @@ void Scene_Codex(const SceneCtx& c) {
                                 prevR = rar;
                             }
                             if (ry >= listTop - ROW_H && ry <= listBottom) {
-                                bool seen = g_AugSeen[i];
+                                bool seen = CodexAugSeen(i);
                                 bool hv = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
                                 if (hv) hoverItem = i;
                                 float rr, rg, rb;
@@ -630,7 +630,7 @@ void Scene_Codex(const SceneCtx& c) {
                     }
                     // 상세(article)
                     BindMainShader();
-                    if (hoverItem >= 0 && g_AugSeen[hoverItem]) {
+                    if (hoverItem >= 0 && CodexAugSeen(hoverItem)) {
                         const AugDef& d = ALL_AUGS[hoverItem];
                         float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
                         wchar_t hd[96];

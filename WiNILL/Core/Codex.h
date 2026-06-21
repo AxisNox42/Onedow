@@ -34,6 +34,13 @@ inline void MarkAugSeen(int augIdx) {
     if (!g_AugSeen[augIdx]) { g_AugSeen[augIdx] = true; g_CodexDirty = true; }
 }
 
+// 도감 UI — 크리에이티브 모드면 미발견 항목도 전부 공개 (세이브는 변경하지 않음)
+inline bool CodexAugSeen(int augIdx) {
+    if (g_CreativeMode && augIdx >= 0 && augIdx < AUG_TOTAL) return true;
+    if (augIdx < 0 || augIdx >= 128) return false;
+    return g_AugSeen[augIdx];
+}
+
 // ── 적 도감 목록 (9 MobKind + 원거리 + 자폭병) ──
 enum CodexMobId {
     CM_NORMAL, CM_SPLITTER, CM_BLINKER, CM_CHARGER, CM_WEAVER, CM_BRUTE,
@@ -55,6 +62,12 @@ inline void MarkMobSeen(MobKind k) {
 inline void MarkMobSeenId(CodexMobId id) {
     if (id < 0 || id >= CM_COUNT) return;
     if (!g_MobSeen[id]) { g_MobSeen[id] = true; g_CodexDirty = true; }
+}
+
+inline bool CodexMobSeen(int id) {
+    if (g_CreativeMode && id >= 0 && id < CM_COUNT) return true;
+    if (id < 0 || id >= CM_COUNT) return false;
+    return g_MobSeen[id];
 }
 
 // 적 이름 / 행동 설명 (KR / EN / JP)
@@ -158,6 +171,7 @@ inline const int BOSS_CODEX_PICKS[] = { 4, 2, 7, 8, 9 };
 inline const int BOSS_CODEX_COUNT = 5;
 
 inline bool BossCodexSeen(int idx) {
+    if (g_CreativeMode && idx >= 0 && idx < BOSS_CODEX_COUNT) return true;
     if (idx < 0 || idx >= BOSS_CODEX_COUNT) return false;
     return g_BossSeenPick[BOSS_CODEX_PICKS[idx]];
 }
