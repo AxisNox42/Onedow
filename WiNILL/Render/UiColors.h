@@ -15,6 +15,16 @@ inline constexpr UiColor3 APPROACH_ORB_OUTER = {0.95f, 0.00f, 0.00f};
 inline constexpr UiColor3 APPROACH_ORB_INNER = {0.95f, 0.05f, 0.05f};
 }
 
+// 전투 VFX 역할색 — 아군/필드/함정/적 구분 (후반 눈 피로↓)
+namespace RoleCol {
+inline constexpr UiColor3 ALLY      = {0.28f, 0.95f, 0.58f};  // 백신·아군 창
+inline constexpr UiColor3 FIELD    = {0.55f, 1.00f, 0.28f};  // 정전기장
+inline constexpr UiColor3 EMP      = {1.00f, 0.88f, 0.18f};  // EMP
+inline constexpr UiColor3 DROP     = {0.22f, 0.82f, 0.32f};  // 패치
+inline constexpr UiColor3 TRAP     = {1.00f, 0.38f, 0.22f};  // trap.exe
+inline constexpr UiColor3 ENEMY_UI = {0.85f, 0.22f, 0.95f}; // 적 popup 계열
+}
+
 inline void drawRectCol(float x, float y, float w, float h, UiColor4 c) {
     drawRect(x, y, w, h, c.r, c.g, c.b, c.a);
 }

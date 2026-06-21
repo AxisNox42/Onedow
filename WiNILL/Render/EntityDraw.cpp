@@ -5,10 +5,18 @@
 #include "Codex.h"
 #include "TextRenderer.h"
 #include "UiColors.h"
+#include "Settings.h"
 #include <GLFW/glfw3.h>
 #include <cmath>
 
 extern TextRenderer g_TextS;
+
+static void ApplyMobStyleTint(float& r, float& g, float& b) {
+    if (g_MobVisualStyle != MobVisualStyle::SOFT) return;
+    r = r * 0.72f + 0.14f;
+    g = g * 0.72f + 0.16f;
+    b = b * 0.72f + 0.20f;
+}
 
 void DrawApproachOrb(float x, float y) {
     drawRectCol3(x - 18.0f, y - 18.0f, 36.0f, 36.0f, UiCol::APPROACH_ORB_OUTER, 0.30f);
@@ -195,6 +203,8 @@ void drawMob(const Monster* m) {
         }
         drawCircle(x, y, base*0.32f, 1.0f, 0.9f, 0.6f, 1.0f);
     } else {
-        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
+        float cr = m->color.r, cg = m->color.g, cb = m->color.b;
+        ApplyMobStyleTint(cr, cg, cb);
+        drawTriangle(m->worldX, m->worldY, base, cr, cg, cb, 1.0f);
     }
 }

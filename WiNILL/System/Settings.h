@@ -121,6 +121,17 @@ inline bool g_AutoSkill         = false;
 // CRT 셰이더 효과 (G) — 스캔라인 + 비네트 + 네온 글로우. 기본 ON. 설정에서 토글.
 inline bool g_ShaderFx          = true;
 
+// 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게
+enum class MobVisualStyle { CLASSIC, SOFT };
+inline MobVisualStyle g_MobVisualStyle = MobVisualStyle::CLASSIC;
+
+// 위성 VFX 밀도 — REDUCED=EMP·덫·패치 간격↑
+enum class VfxDensity { FULL, REDUCED };
+inline VfxDensity g_VfxDensity = VfxDensity::FULL;
+inline float VfxIntervalMult() {
+    return g_VfxDensity == VfxDensity::REDUCED ? 1.45f : 1.0f;
+}
+
 // ── 코스메틱: OS 액센트 컬러 테마 (코인 상점에서 구매/장착, 저장됨) ──
 //   플레이어 창 네온 보더/타이틀바 색을 바꾼다("데스크톱 테마" 커스터마이즈).
 //   g_ThemeOwned 는 비트마스크(비트0=기본, 항상 보유), g_ThemeSel 은 선택 인덱스.

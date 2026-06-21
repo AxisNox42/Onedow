@@ -46,6 +46,7 @@
 #include "PlayerStats.h"
 #include "TextRenderer.h"
 #include "Settings.h"
+#include "UiColors.h"
 #include "ExpSystem.h"
 #include "DrawPrim.h"
 #include "WindowFx.h"
@@ -154,13 +155,14 @@ PlayerStats g_TurretStats;                        // 소총 기준 화력
 // ── 위성/FIELD/DROP 월드 엔티티 ──
 struct PatchMineEnt { float x, y, life, armTimer; bool armed; };
 struct TrapExeEnt   { float x, y, life, tickAcc; };
-struct PopupAllyEnt { float x, y, fireTimer; bool active; };
-static const int   MAX_PATCHES = 6;
-static const int   MAX_TRAPS   = 2;
+struct PopupAllyEnt { float x, y, fireTimer, orbitAng; bool active; };
+static const int   MAX_PATCHES = 4;
+static const int   MAX_TRAPS   = 1;
 static const float TRAP_WIN_W  = 128.0f;
 static const float TRAP_WIN_H  = 128.0f;
-static const float POPUP_ALLY_W = 160.0f;
-static const float POPUP_ALLY_H = 140.0f;
+static const float VACCINE_WIN_W  = 220.0f;
+static const float VACCINE_WIN_H  = 178.0f;
+static const float VACCINE_ORBIT_R = 142.0f;
 std::vector<PatchMineEnt> g_Patches;
 std::vector<TrapExeEnt>   g_Traps;
 PopupAllyEnt g_PopupAlly = {};
@@ -172,7 +174,6 @@ float g_PatchLastX       = 0.0f;
 float g_PatchLastY       = 0.0f;
 bool  g_PatchLastInit    = false;
 float g_TrapSpawnTimer   = 0.0f;
-float g_PopupFollowAng   = 0.0f;
 struct ChakramState {
     float angle        = 0.0f;
     float hp           = 150.0f;
@@ -3149,7 +3150,7 @@ int main() {
 
                 if (g_Stats.empPulse) {
                     g_EmpPulseTimer += delta;
-                    if (g_EmpPulseTimer >= 2.5f) {
+                    if (g_EmpPulseTimer >= 2.5f * VfxIntervalMult()) {
                         g_EmpPulseTimer = 0.0f;
                         const float blastR = 150.0f;
                         const float blastR2 = blastR * blastR;
@@ -3194,9 +3195,9 @@ int main() {
                         g_PatchLastX = pCX; g_PatchLastY = pCY;
                     }
                     float pdx = pCX - g_PatchLastX, pdy = pCY - g_PatchLastY;
-                    if (pdx*pdx + pdy*pdy > 42.0f * 42.0f) {
+                    if (pdx*pdx + pdy*pdy > 50.0f * 50.0f) {
                         g_PatchDropTimer += delta;
-                        if (g_PatchDropTimer >= 0.55f &&
+                        if (g_PatchDropTimer >= 0.75f * VfxIntervalMult() &&
                             (int)g_Patches.size() < MAX_PATCHES) {
                             g_PatchDropTimer = 0.0f;
                             g_PatchLastX = pCX; g_PatchLastY = pCY;
@@ -3246,7 +3247,7 @@ int main() {
 
                 if (g_Stats.trapExe) {
                     g_TrapSpawnTimer += delta;
-                    if (g_TrapSpawnTimer >= 5.0f && (int)g_Traps.size() < MAX_TRAPS) {
+                    if (g_TrapSpawnTimer >= 8.0f * VfxIntervalMult() && (int)g_Traps.size() < MAX_TRAPS) {
                         g_TrapSpawnTimer = 0.0f;
                         float nd2 = 1e9f, tx = pCX, ty = pCY;
                         for (auto m : g_MonsterManager.monsters) {
@@ -3290,20 +3291,20 @@ int main() {
                 if (g_Stats.popupAlly) {
                     if (!g_PopupAlly.active) {
                         g_PopupAlly.active = true;
-                        g_PopupAlly.x = pCX; g_PopupAlly.y = pCY;
+                        g_PopupAlly.orbitAng = 0.0f;
                         g_PopupAlly.fireTimer = 0.0f;
                     }
-                    g_PopupFollowAng = atan2f(wmy - pCY, wmx - pCX);
-                    g_PopupAlly.x = pCX - cosf(g_PopupFollowAng) * 105.0f;
-                    g_PopupAlly.y = pCY - sinf(g_PopupFollowAng) * 105.0f;
+                    g_PopupAlly.orbitAng += 0.72f * delta;
+                    g_PopupAlly.x = pCX + cosf(g_PopupAlly.orbitAng) * VACCINE_ORBIT_R;
+                    g_PopupAlly.y = pCY + sinf(g_PopupAlly.orbitAng) * VACCINE_ORBIT_R;
                     g_PopupAlly.fireTimer += delta;
-                    if (g_PopupAlly.fireTimer >= 1.15f) {
+                    if (g_PopupAlly.fireTimer >= 1.5f) {
                         g_PopupAlly.fireTimer = 0.0f;
                         float ttx = 0.0f, tty = 0.0f;
                         if (findNearestEnemy(g_PopupAlly.x, g_PopupAlly.y, ttx, tty)) {
                             Bullet nb(g_PopupAlly.x, g_PopupAlly.y, ttx, tty);
-                            nb.speed = g_Stats.bulletSpeed * 0.65f;
-                            nb.color = glm::vec3(0.15f, 0.95f, 0.85f);
+                            nb.speed = g_Stats.bulletSpeed * 0.62f;
+                            nb.color = glm::vec3(RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b);
                             nb.dmgMult = 0.55f * satM;
                             g_Bullets.push_back(nb);
                         }
@@ -4044,28 +4045,24 @@ int main() {
                                TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
             }
         }
-        // trap.exe / popup 아군 미니 창
+        // trap.exe 미니 창 (적 쪽)
         for (auto& tr : g_Traps) {
+            float tx = tr.x - TRAP_WIN_W*0.5f, ty = tr.y - TRAP_WIN_H*0.5f;
+            const float TB = 22.0f;
             BatchFlush(); glDisable(GL_BLEND);
-            drawRect(tr.x - TRAP_WIN_W*0.5f, tr.y - TRAP_WIN_H*0.5f,
-                     TRAP_WIN_W, TRAP_WIN_H, 0.10f, 0.04f, 0.04f, 0.92f);
+            drawRect(tx, ty, TRAP_WIN_W, TB, RoleCol::TRAP.r*0.4f, RoleCol::TRAP.g*0.25f, RoleCol::TRAP.b*0.25f, 1.0f);
+            drawRect(tx, ty, TRAP_WIN_W, 2.0f, RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 1.0f);
+            drawRect(tx, ty + TB, TRAP_WIN_W, TRAP_WIN_H - TB, 0.10f, 0.04f, 0.04f, 0.92f);
             BatchFlush(); glEnable(GL_BLEND);
-            drawNeonBorder(tr.x - TRAP_WIN_W*0.5f, tr.y - TRAP_WIN_H*0.5f,
-                           TRAP_WIN_W, TRAP_WIN_H, 1.0f, 0.35f, 0.20f);
+            drawNeonBorder(tx, ty, TRAP_WIN_W, TRAP_WIN_H, RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b);
+            g_TextS.Draw(L"trap.exe", W2SX(tx + 8.0f), W2SY(ty + 3.0f), 0.48f * g_ViewZoom,
+                         1.0f, 0.75f, 0.65f, 0.92f);
             float lifeFrac = tr.life / 11.0f;
             if (lifeFrac < 0.0f) lifeFrac = 0.0f;
-            drawRect(tr.x - TRAP_WIN_W*0.5f + 6.0f, tr.y + TRAP_WIN_H*0.5f - 14.0f,
-                     (TRAP_WIN_W - 12.0f) * lifeFrac, 4.0f, 1.0f, 0.45f, 0.15f, 0.85f);
+            drawRect(tx + 6.0f, ty + TRAP_WIN_H - 14.0f,
+                     (TRAP_WIN_W - 12.0f) * lifeFrac, 4.0f, RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 0.85f);
         }
-        if (g_Stats.popupAlly && g_PopupAlly.active) {
-            BatchFlush(); glDisable(GL_BLEND);
-            drawRect(g_PopupAlly.x - POPUP_ALLY_W*0.5f, g_PopupAlly.y - POPUP_ALLY_H*0.5f,
-                     POPUP_ALLY_W, POPUP_ALLY_H, 0.05f, 0.10f, 0.12f, 0.95f);
-            BatchFlush(); glEnable(GL_BLEND);
-            drawNeonBorder(g_PopupAlly.x - POPUP_ALLY_W*0.5f, g_PopupAlly.y - POPUP_ALLY_H*0.5f,
-                           POPUP_ALLY_W, POPUP_ALLY_H, 0.15f, 0.95f, 0.82f);
-        }
-        // z-由ъ뒪????李??⑥쐞濡?(遺덊닾紐?諛곌꼍 ???ㅼ삩 蹂대뜑). ?믪? 李쎌씠 ??? 李쎌쓣 ?먯뿰 媛由?
+        // z-由ъ뒪????李??⑥쐞濡?
         for (auto& fw : zwins) {
             BatchFlush(); glDisable(GL_BLEND);
             drawRect(fw.x, fw.y, fw.w, fw.h, fw.br, fw.bgc, fw.bbc, 1.0f);
@@ -4845,9 +4842,11 @@ int main() {
                 float baseR = (g_Stats.staticFieldTier >= 2) ? 118.0f : 88.0f;
                 float pulse = 1.0f + g_StaticFieldPulse * 0.18f;
                 float r1 = baseR * pulse;
-                drawCircle(pCX, pCY, r1, 0.55f, 1.0f, 0.25f, 0.10f + g_StaticFieldPulse * 0.12f);
+                drawCircle(pCX, pCY, r1, RoleCol::FIELD.r, RoleCol::FIELD.g, RoleCol::FIELD.b,
+                           0.10f + g_StaticFieldPulse * 0.12f);
                 if (g_Stats.staticFieldTier >= 2)
-                    drawCircle(pCX, pCY, baseR * 0.72f, 0.35f, 0.95f, 0.15f, 0.08f);
+                    drawCircle(pCX, pCY, baseR * 0.72f, RoleCol::FIELD.r * 0.65f,
+                               RoleCol::FIELD.g * 0.65f, RoleCol::FIELD.b * 0.65f, 0.08f);
             }
             for (auto& pm : g_Patches) {
                 float blink = pm.armed ? 0.85f : (0.35f + 0.65f * sinf(g_GameTime * 14.0f));
@@ -4874,6 +4873,24 @@ int main() {
                          1.0f, 0.7f, 0.0f, 0.95f);
             }
             }
+        }
+        // 백신(vaccine.exe) — 드론처럼 최상단에 가짜 창 + 타이틀
+        if (g_Stats.popupAlly && g_PopupAlly.active &&
+            g_GameManager.currentState != GameState::GAMEOVER) {
+            float vx = g_PopupAlly.x, vy = g_PopupAlly.y;
+            float wx0 = vx - VACCINE_WIN_W * 0.5f, wy0 = vy - VACCINE_WIN_H * 0.5f;
+            const float TB = 22.0f;
+            BatchFlush(); glDisable(GL_BLEND);
+            drawRect(wx0, wy0, VACCINE_WIN_W, TB,
+                     RoleCol::ALLY.r * 0.42f, RoleCol::ALLY.g * 0.42f, RoleCol::ALLY.b * 0.50f, 1.0f);
+            drawRect(wx0, wy0, VACCINE_WIN_W, 2.0f, RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b, 1.0f);
+            drawRect(wx0, wy0 + TB, VACCINE_WIN_W, VACCINE_WIN_H - TB, 0.05f, 0.10f, 0.08f, 0.96f);
+            BatchFlush(); glEnable(GL_BLEND);
+            drawNeonBorder(wx0, wy0, VACCINE_WIN_W, VACCINE_WIN_H,
+                           RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b);
+            g_TextS.Draw(L"vaccine.exe", W2SX(wx0 + 8.0f), W2SY(wy0 + 3.0f), 0.52f * g_ViewZoom,
+                         0.92f, 1.0f, 0.95f, 0.96f);
+            drawCircle(vx, vy, 10.0f, RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.55f);
         }
         // ?쒕줎/李⑦겕??諛곗튂瑜?吏湲?利됱떆 flush
         BatchFlush();

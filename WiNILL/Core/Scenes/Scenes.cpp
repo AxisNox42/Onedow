@@ -1074,7 +1074,7 @@ void Scene_Settings(const SceneCtx& c) {
     const GameState st = g_GameManager.currentState;
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
-                const float WW = 1000.0f, WH = 600.0f;
+                const float WW = 1000.0f, WH = 640.0f;
                 float wx, wy;
                 SceneAppWindow(sw, sh,WW, WH, L"config.sys", 0.70f, 0.75f, 0.88f, wx, wy);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
@@ -1146,6 +1146,36 @@ void Scene_Settings(const SceneCtx& c) {
                 toggleAt(labR, btnR, tY0,            afLabel, g_AutoFire);
                 toggleAt(labR, btnR, tY0 + tGap,     asLabel, g_AutoSkill);
                 toggleAt(labR, btnR, tY0 + tGap*2,   sfLabel, g_ShaderFx);
+
+                // 몹 외형 · 위성 VFX (그래픽/피로도)
+                float gfxY = tY0 + tGap * 3;
+                const wchar_t* mobLabel = (g_Language==Language::EN)?L"Mob look":
+                                          (g_Language==Language::JP)?L"敵見た目":L"몹 외형";
+                const wchar_t* mobA = (g_Language==Language::EN)?L"Classic":
+                                      (g_Language==Language::JP)?L"クラシック":L"기본";
+                const wchar_t* mobB = (g_Language==Language::EN)?L"Soft":
+                                      (g_Language==Language::JP)?L"ソフト":L"부드럽";
+                g_TextS.Draw(mobLabel, lx, gfxY + 12.0f, 0.85f, 1,1,1,0.9f);
+                if (UIButton(bx0, gfxY, OW, OH, mobA, mx, my, lmb, g_LmbPrev,
+                             g_MobVisualStyle == MobVisualStyle::CLASSIC))
+                    g_MobVisualStyle = MobVisualStyle::CLASSIC;
+                if (UIButton(bx0 + OW + OG, gfxY, OW, OH, mobB, mx, my, lmb, g_LmbPrev,
+                             g_MobVisualStyle == MobVisualStyle::SOFT))
+                    g_MobVisualStyle = MobVisualStyle::SOFT;
+
+                const wchar_t* vfxLabel = (g_Language==Language::EN)?L"Satellite VFX":
+                                          (g_Language==Language::JP)?L"衛星VFX":L"위성 VFX";
+                const wchar_t* vfxA = (g_Language==Language::EN)?L"Full":
+                                      (g_Language==Language::JP)?L"通常":L"보통";
+                const wchar_t* vfxB = (g_Language==Language::EN)?L"Reduced":
+                                      (g_Language==Language::JP)?L"節約":L"절약";
+                g_TextS.Draw(vfxLabel, labR, gfxY + 12.0f, 0.85f, 1,1,1,0.9f);
+                if (UIButton(btnR, gfxY, OW, OH, vfxA, mx, my, lmb, g_LmbPrev,
+                             g_VfxDensity == VfxDensity::FULL))
+                    g_VfxDensity = VfxDensity::FULL;
+                if (UIButton(btnR + OW + OG, gfxY, OW, OH, vfxB, mx, my, lmb, g_LmbPrev,
+                             g_VfxDensity == VfxDensity::REDUCED))
+                    g_VfxDensity = VfxDensity::REDUCED;
 
                 // 사운드 볼륨 — 게이지바(클릭/드래그) + [−][+] + 숫자 직접입력
                 {
