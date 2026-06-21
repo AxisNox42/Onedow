@@ -158,10 +158,10 @@ struct TrapExeEnt   { float x, y, life, tickAcc; };
 struct PopupAllyEnt { float x, y, fireTimer, orbitAng; bool active; };
 static const int   MAX_PATCHES = 4;
 static const int   MAX_TRAPS   = 1;
-static const float TRAP_WIN_W  = 128.0f;
-static const float TRAP_WIN_H  = 128.0f;
-static const float VACCINE_WIN_W  = 220.0f;
-static const float VACCINE_WIN_H  = 178.0f;
+static float TRAP_WIN_W  = 128.0f;
+static float TRAP_WIN_H  = 128.0f;
+static float VACCINE_WIN_W  = 200.0f;
+static float VACCINE_WIN_H  = 160.0f;
 static const float VACCINE_ORBIT_R = 142.0f;
 std::vector<PatchMineEnt> g_Patches;
 std::vector<TrapExeEnt>   g_Traps;
@@ -476,6 +476,8 @@ int main() {
     if (g_Scale > 1.0f) g_Scale = 1.0f;
     if (g_Scale < 0.5f) g_Scale = 0.5f;
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
+    TRAP_WIN_W *= g_Scale; TRAP_WIN_H *= g_Scale;
+    VACCINE_WIN_W *= g_Scale; VACCINE_WIN_H *= g_Scale;
     RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
     TOTEM_WIN_W *= g_Scale;
@@ -4034,12 +4036,7 @@ int main() {
         if (g_TotemBoss && g_TotemBoss->alive)
             addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
                  L"RITE.CORE", 0.08f,0.04f,0.10f, 0.85f,0.45f,0.95f);
-        // trap.exe — zwins z-order (popup.exe와 동일 파이프라인)
-        for (auto& tr : g_Traps) {
-            addW(tr.x, tr.y, TRAP_WIN_W, TRAP_WIN_H, L"trap.exe",
-                 0.06f, 0.08f, 0.10f,
-                 RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b);
-        }
+        // trap.exe / vaccine.exe — (e.sat)에서 플레이어 창 위에 통째로 그림
         // ?ы깙 李?諛곌꼍+蹂대뜑 (理쒗븯?? ?뚮젅?댁뼱 ?뚯쑀??z-由ъ뒪??諛?
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
@@ -4050,17 +4047,6 @@ int main() {
                 drawNeonBorder(t.x - TURRET_WIN_W*0.5f, t.y - TURRET_WIN_H*0.5f,
                                TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
             }
-        }
-        // vaccine.exe — 터렛과 동일: 불투명 배경 + 네온 (타이틀은 h3)
-        if (g_Stats.popupAlly && g_PopupAlly.active &&
-            g_GameManager.currentState != GameState::GAMEOVER) {
-            float vwx = g_PopupAlly.x - VACCINE_WIN_W * 0.5f;
-            float vwy = g_PopupAlly.y - VACCINE_WIN_H * 0.5f;
-            BatchFlush(); glDisable(GL_BLEND);
-            drawRect(vwx, vwy, VACCINE_WIN_W, VACCINE_WIN_H, 0.06f, 0.08f, 0.10f, 1.0f);
-            BatchFlush(); glEnable(GL_BLEND);
-            drawNeonBorder(vwx, vwy, VACCINE_WIN_W, VACCINE_WIN_H,
-                           RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b);
         }
         // z-由ъ뒪????李??⑥쐞濡?
         for (auto& fw : zwins) {
@@ -4141,42 +4127,6 @@ int main() {
                 }
             }
         }
-        // (b''') trap.exe 창 내부 — DoT 구역 펄스
-        for (auto& tr : g_Traps) {
-            float tx = tr.x - TRAP_WIN_W * 0.5f, ty = tr.y - TRAP_WIN_H * 0.5f;
-            WorldScissor(tx, ty, TRAP_WIN_W, TRAP_WIN_H);
-            float pulse = 0.45f + 0.35f * sinf(g_GameTime * 5.5f);
-            drawCircle(tr.x, tr.y, TRAP_WIN_W * 0.38f,
-                       RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 0.08f * pulse);
-            float tc = 11.0f;
-            drawRect(tr.x - tc, tr.y - 3.0f, tc * 2.0f, 6.0f,
-                     RoleCol::TRAP.r, RoleCol::TRAP.g * 0.85f, RoleCol::TRAP.b * 0.7f, 0.75f);
-            drawRect(tr.x - 3.0f, tr.y - tc, 6.0f, tc * 2.0f,
-                     RoleCol::TRAP.r, RoleCol::TRAP.g * 0.85f, RoleCol::TRAP.b * 0.7f, 0.75f);
-            for (auto& b : g_Bullets) {
-                if (!b.active || !inWin(b.x, b.y, tx, ty, TRAP_WIN_W, TRAP_WIN_H)) continue;
-                drawBullet(b);
-            }
-        }
-        // (b'''') vaccine.exe 창 내부 — 아군 크로스hair
-        if (g_Stats.popupAlly && g_PopupAlly.active &&
-            g_GameManager.currentState != GameState::GAMEOVER) {
-            float vwx = g_PopupAlly.x - VACCINE_WIN_W * 0.5f;
-            float vwy = g_PopupAlly.y - VACCINE_WIN_H * 0.5f;
-            WorldScissor(vwx, vwy, VACCINE_WIN_W, VACCINE_WIN_H);
-            float vx = g_PopupAlly.x, vy = g_PopupAlly.y;
-            float tc = 12.0f;
-            drawRect(vx - tc, vy - 4.0f, tc * 2.0f, 8.0f,
-                     RoleCol::ALLY.r * 0.35f, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.95f);
-            drawRect(vx - 4.0f, vy - tc, 8.0f, tc * 2.0f,
-                     RoleCol::ALLY.r * 0.35f, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.95f);
-            drawCircle(vx, vy, 9.0f, RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.42f);
-            for (auto& b : g_Bullets) {
-                if (!b.active || !inWin(b.x, b.y, vwx, vwy, VACCINE_WIN_W, VACCINE_WIN_H)) continue;
-                drawBullet(b);
-            }
-        }
-    
         // (b') 蹂댁뒪 李???而⑦뀗痢???媛숈? ?〓す/?먰룺蹂?珥앹븣??蹂댁뒪 李??곸뿭?쇰줈???몄텧
         //     紐⑤뱺 蹂댁뒪 醫낅쪟(?щ씪??湲由ъ튂/由щ줈???대━/?ㅽ뙵/?щ씪?꾨텇?댁껜) 怨듯넻 泥섎━.
         //     E22: ?댁쟾???щ씪??蹂댁뒪(g_MonsterManager.boss)留??몄텧???ㅻⅨ 蹂댁뒪 李쎌뿉??        //          ?〓す/?꾩씠 而щ쭅?섏뼱 ??蹂댁?????蹂댁뒪蹂?李??곸뿭留덈떎 scissor ?⑥뒪 異붽?.
@@ -4524,6 +4474,69 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
+        // (e.sat) trap.exe / vaccine.exe — 플레이어 창(c) 위 레이어, WorldScissor 내부만 VFX
+        {
+            const float SAT_TB = 22.0f;
+            auto drawSatWin = [&](float cx, float cy, float ww, float wh,
+                                  float nr, float ng, float nb,
+                                  const std::function<void(float,float,float,float,float,float)>& interior) {
+                float wx = cx - ww * 0.5f, wy = cy - wh * 0.5f;
+                BatchFlush(); glDisable(GL_BLEND);
+                drawRect(wx, wy, ww, wh, 0.06f, 0.08f, 0.10f, 1.0f);
+                BatchFlush(); glEnable(GL_BLEND);
+                drawNeonBorder(wx, wy, ww, wh, nr, ng, nb);
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy + SAT_TB, ww, wh - SAT_TB);
+                interior(wx, wy, ww, wh, cx, cy);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            };
+            for (auto& tr : g_Traps) {
+                TrapExeEnt trEnt = tr;
+                drawSatWin(trEnt.x, trEnt.y, TRAP_WIN_W, TRAP_WIN_H,
+                             RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b,
+                             [trEnt, SAT_TB](float wx, float wy, float ww, float wh, float cx, float cy) {
+                    float pulse = 0.45f + 0.35f * sinf(g_GameTime * 5.5f);
+                    drawCircle(cx, cy, ww * 0.36f,
+                               RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 0.10f * pulse);
+                    float tc = 11.0f;
+                    drawRect(cx - tc, cy - 3.0f, tc * 2.0f, 6.0f,
+                             RoleCol::TRAP.r, RoleCol::TRAP.g * 0.85f, RoleCol::TRAP.b * 0.7f, 0.80f);
+                    drawRect(cx - 3.0f, cy - tc, 6.0f, tc * 2.0f,
+                             RoleCol::TRAP.r, RoleCol::TRAP.g * 0.85f, RoleCol::TRAP.b * 0.7f, 0.80f);
+                    float lifeFrac = trEnt.life / 11.0f;
+                    if (lifeFrac < 0.0f) lifeFrac = 0.0f;
+                    if (lifeFrac > 1.0f) lifeFrac = 1.0f;
+                    float barW = ww - 24.0f;
+                    drawRect(wx + 12.0f, wy + SAT_TB + 6.0f, barW, 5.0f, 0.12f, 0.08f, 0.08f, 0.75f);
+                    drawRect(wx + 12.0f, wy + SAT_TB + 6.0f, barW * lifeFrac, 5.0f,
+                             RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 0.92f);
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || !inWin(b.x, b.y, wx, wy, ww, wh)) continue;
+                        drawBullet(b);
+                    }
+                });
+            }
+            if (g_Stats.popupAlly && g_PopupAlly.active &&
+                g_GameManager.currentState != GameState::GAMEOVER) {
+                drawSatWin(g_PopupAlly.x, g_PopupAlly.y, VACCINE_WIN_W, VACCINE_WIN_H,
+                           RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b,
+                           [&](float wx, float wy, float ww, float wh, float cx, float cy) {
+                    float vx = cx, vy = cy;
+                    float tc = 12.0f;
+                    drawRect(vx - tc, vy - 4.0f, tc * 2.0f, 8.0f,
+                             RoleCol::ALLY.r * 0.35f, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.95f);
+                    drawRect(vx - 4.0f, vy - tc, 8.0f, tc * 2.0f,
+                             RoleCol::ALLY.r * 0.35f, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.95f);
+                    drawCircle(vx, vy, 10.0f, RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b, 0.50f);
+                    drawCircle(vx, vy, 4.5f, 0.04f, 0.12f, 0.10f, 1.0f);
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || !inWin(b.x, b.y, wx, wy, ww, wh)) continue;
+                        drawBullet(b);
+                    }
+                });
+            }
+        }
+
         // (e2) ?먭굅由?紐??ㅼ씠?꾨が????媛??먭굅由?紐?李??곸뿭?먯꽌 ??긽 ?꾩뿉 洹몃┝
         BatchFlush(); glEnable(GL_SCISSOR_TEST);
         for (auto r : g_MonsterManager.rangedMobs) {
@@ -4562,23 +4575,6 @@ int main() {
             }
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
-        // (e2.2) trap.exe 수명바 (창 scissor 안)
-        if (!g_Traps.empty()) {
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            for (auto& tr : g_Traps) {
-                float tx = tr.x - TRAP_WIN_W * 0.5f, ty = tr.y - TRAP_WIN_H * 0.5f;
-                WorldScissor(tx, ty, TRAP_WIN_W, TRAP_WIN_H);
-                float lifeFrac = tr.life / 11.0f;
-                if (lifeFrac < 0.0f) lifeFrac = 0.0f;
-                if (lifeFrac > 1.0f) lifeFrac = 1.0f;
-                float barW = TRAP_WIN_W - 24.0f;
-                drawRect(tx + 12.0f, ty + 8.0f, barW, 5.0f, 0.12f, 0.08f, 0.08f, 0.7f);
-                drawRect(tx + 12.0f, ty + 8.0f, barW * lifeFrac, 5.0f,
-                         RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b, 0.9f);
-            }
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-        }
-    
         // (f) BrokenSight orb
         if (g_Stats.brokenSight && g_Orb.active) {
             drawCircle(g_Orb.x, g_Orb.y, 16.0f, 1.0f, 1.0f, 0.1f, 0.22f);
@@ -5001,19 +4997,23 @@ int main() {
                     drawBarClipped(fw.x, fw.y, fw.w, fw.h, fw.name,
                                    fw.nr, fw.ngc, fw.nbc, i, false);
                 }
-                // vaccine.exe 타이틀 (플레이어 창보다 아래 z — 겹치면 클립)
-                if (g_Stats.popupAlly && g_PopupAlly.active) {
-                    float vwx = g_PopupAlly.x - VACCINE_WIN_W * 0.5f;
-                    float vwy = g_PopupAlly.y - VACCINE_WIN_H * 0.5f;
-                    drawBarClipped(vwx, vwy, VACCINE_WIN_W, VACCINE_WIN_H, L"vaccine.exe",
-                                   RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b,
-                                   zwins.size(), false);
-                }
                 BatchFlush();
                 // ?뚮젅?댁뼱 李?????긽 理쒖긽?? ?대┰ ?놁씠 ?꾩껜
                 glScissor(0, 0, (GLint)screenWidth, (GLint)screenHeight);
                 winChrome(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                           PNAME, g_AccentR, g_AccentG, g_AccentB);
+                // 위성 창 타이틀 — 플레이어와 겹쳐도 클립하지 않음 (공전·덫은 항상 겹침)
+                for (auto& tr : g_Traps) {
+                    float tx = tr.x - TRAP_WIN_W * 0.5f, ty = tr.y - TRAP_WIN_H * 0.5f;
+                    winChrome(tx, ty, TRAP_WIN_W, TRAP_WIN_H, L"trap.exe",
+                              RoleCol::TRAP.r, RoleCol::TRAP.g, RoleCol::TRAP.b);
+                }
+                if (g_Stats.popupAlly && g_PopupAlly.active) {
+                    float vwx = g_PopupAlly.x - VACCINE_WIN_W * 0.5f;
+                    float vwy = g_PopupAlly.y - VACCINE_WIN_H * 0.5f;
+                    winChrome(vwx, vwy, VACCINE_WIN_W, VACCINE_WIN_H, L"vaccine.exe",
+                              RoleCol::ALLY.r, RoleCol::ALLY.g, RoleCol::ALLY.b);
+                }
                 BatchFlush();
                 glDisable(GL_SCISSOR_TEST);
             }
