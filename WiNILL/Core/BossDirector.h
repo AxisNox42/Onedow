@@ -2,7 +2,7 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 2 VOLLEY 4 POLYMORPH 7 C2 8 FORK 9 RITE
+// 보스 pick: 2 VOLLEY 4 GLITCH 7 C2 8 FORK 9 RITE
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -55,7 +55,7 @@ inline ActRules EndlessRules() {
 inline ActRules RulesForPick(int pick) {
     switch (pick) {
     case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f, 4, 2 };   // VOLLEY — 탄막·원거리
-    case 4:  return { 2.5f, 4.5f, 1.0f,  1.0f,  8, 4 };   // POLYMORPH — 엘리트
+    case 4:  return { 2.5f, 4.5f, 1.0f,  1.0f,  8, 4 };   // GLITCH — 엘리트
     case 7:  return { 3.5f, 6.0f, 1.18f, 1.0f,  3, 8 };   // C2 — swarm
     case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };  // FORK — 물량
     case 9:  return { 4.5f, 8.0f, 1.12f, 1.08f, 6, 6 };   // RITE — 특수몹
@@ -81,7 +81,7 @@ inline const wchar_t* DisplayName(int pick) {
     case 1: return L"UNKNOWN.sys";
     case 2: return L"VOLLEY.sys";
     case 3: return L"SPAM.dll";
-    case 4: return L"POLYMORPH.vir";
+    case 4: return L"GLITCH.exe";
     case 5: return L"KERNEL.sys";
     case 6: return L"FIREWALL.sys";
     case 7: return L"C2_RELAY.sys";

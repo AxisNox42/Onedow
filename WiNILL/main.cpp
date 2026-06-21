@@ -802,6 +802,10 @@ int main() {
         bool lmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         float wmx = ScreenToWorldX((float)mx);
         float wmy = ScreenToWorldY((float)my);
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->fx.cursorGlitch) {
+            wmx += g_PolyBoss->fx.cursorOffX;
+            wmy += g_PolyBoss->fx.cursorOffY;
+        }
 
         // --- ?낅젰 泥섎━ ---
         GameState prevState = g_GameManager.currentState;
@@ -1014,7 +1018,7 @@ int main() {
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_RANGED));
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
                     if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY.sys");
-                    if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"POLYMORPH.vir");
+                    if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"GLITCH.exe");
                     if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
                     if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"RITE.CORE");
@@ -1807,22 +1811,30 @@ int main() {
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     if (!timeStopped)
-                    g_PolyBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
+                    g_PolyBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets,
+                        playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+                    if (g_PolyBoss->fx.shakePulse) {
+                        g_PolyBoss->fx.shakePulse = false;
+                        g_ShakeTime = 0.28f; g_ShakeMag = 16.0f;
+                    }
                     // ?섏씠利? = ?곸쐞 蹂댁뒪: ?붾㈃ 以뚯븘?껋쑝濡????볦? 援ш컙?먯꽌 ?몄? (?섎룄??湲곕뒫)
                     //   ?먯닔 以뚯븘?껉낵 異⑸룎 ?딄쾶 ??以뚯븘?껊맂 履?min) 梨꾪깮. (?섏씠利?? ?먯닔以??좎?)
                     // ?? 2?섏씠利?吏꾩엯 ?곗텧 ??蹂댁뒪 ?ы슚 + ?ㅼ쨷 異⑷꺽??(1?? ??
                     int curForm = (int)g_PolyBoss->form;
                     if (curForm != g_PolyPrevForm) {
-                        if (g_PolyPrevForm != -1) {   // 理쒖큹 ?숆린?붾뒗 ?곗텧 ?앸왂
-                            SpawnEnemyExplosion(g_PolyBoss->worldX, g_PolyBoss->worldY,
-                                                0.7f, 0.3f, 1.0f, true);
-                            SpawnEnemyExplosion(g_PolyBoss->worldX, g_PolyBoss->worldY,
-                                                0.95f, 0.6f, 1.0f, true);
+                        if (g_PolyPrevForm != -1) {
+                            float fr = 0.2f, fg = 1.0f, fb = 0.85f;
+                            if (g_PolyBoss->form == PForm::DISPLACE) { fr = 1.0f; fg = 0.35f; fb = 0.2f; }
+                            else if (g_PolyBoss->form == PForm::PHANTOM) { fr = 0.85f; fg = 0.85f; fb = 1.0f; }
+                            TriggerFlash(fr, fg, fb, 0.45f);
+                            TriggerHitStop(0.06f);
                             SpawnShockWave(g_PolyBoss->worldX, g_PolyBoss->worldY,
-                                           170.0f, 0.45f, 0.7f, 0.3f, 1.0f);
+                                           220.0f, 0.55f, fr, fg, fb);
                         }
                         g_PolyPrevForm = curForm;
                     }
+                    pCX = playerWin.x + playerWin.width  * 0.5f;
+                    pCY = playerWin.y + playerWin.height * 0.5f;
                 }
 
                 // C2_RELAY.sys Update
@@ -2166,6 +2178,7 @@ int main() {
                                 AddKillCombo();
                                 g_GameManager.xp += 2;
                                 g_GameManager.scoreAccum += 10.0f;
+                                pb->chipBoss(0.0012f);
                                 if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
                                 break;
                             }
@@ -2175,13 +2188,8 @@ int main() {
                         // 3) 본체
                         if (SegDist(pb->worldX, pb->worldY,
                                     b.prevX, b.prevY, b.x, b.y) < PolymorphBoss::BODY * 0.55f) {
-                            if (pb->reflecting()) {
-                                // 다이아몬드 폼: 반사 — 원래 위력 그대로 적 탄환으로
-                                b.dirX = -b.dirX; b.dirY = -b.dirY;
-                                b.prevX = b.x;    b.prevY = b.y;
-                                b.isEnemy  = true;
-                                b.enemyDmg = dmg;
-                                b.color    = glm::vec3(0.8f, 0.3f, 1.0f);
+                            if (!pb->damageable()) {
+                                if (b.remainingDmg <= 0.001f) b.active = false;
                             } else {
                                 float dealt = (dmg < pb->hp) ? dmg : pb->hp;
                                 pb->hp -= dealt;
@@ -2827,11 +2835,11 @@ int main() {
                         g_CreativeBossPending = false;
                         switch (g_CreativeBossPick) {
                         case 2:  startWarn(2, L"VOLLEY.sys",    bossHpC);         break;
-                        case 4:  startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
+                        case 4:  startWarn(4, L"GLITCH.exe", polyHpC);         break;
                         case 7:  startWarn(7, L"C2_RELAY.sys",  bossHpC * 0.75f); break;
                         case 8:  startWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
                         case 9:  startWarn(9, L"RITE.CORE",     bossHpC * 0.72f); break;
-                        default: startWarn(4, L"POLYMORPH.vir", polyHpC);         break;
+                        default: startWarn(4, L"GLITCH.exe", polyHpC);         break;
                         }
                     }
                     else if (g_GameManager.score >= g_NextBossScore) {
@@ -2843,7 +2851,7 @@ int main() {
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
                         if (!g_PolySpawned && g_GameManager.score >= 500000) {
                             g_PolySpawned = true;
-                            startWarn(4, L"POLYMORPH.vir", polyHpC);
+                            startWarn(4, L"GLITCH.exe", polyHpC);
                         } else {
                             int pick = BossDir::RollScorePick();
                             startWarn(pick, BossDir::DisplayName(pick),
@@ -3874,7 +3882,7 @@ int main() {
                  L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
         if (g_PolyBoss && g_PolyBoss->alive)
             addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
-                 L"POLYMORPH.vir", 0.09f,0.06f,0.11f, 0.60f,0.30f,1.0f);
+                 L"GLITCH.exe", 0.04f,0.02f,0.06f, 0.85f,0.25f,1.0f);
         if (g_BotnetBoss && g_BotnetBoss->alive)
             addW(g_BotnetBoss->worldX, g_BotnetBoss->worldY, BOTNET_WIN_W, BOTNET_WIN_W,
                  L"C2_RELAY.sys", 0.04f,0.07f,0.05f, 0.25f,0.92f,0.45f);
@@ -4078,15 +4086,27 @@ int main() {
             }
         }
 
-        // (c) ?뚮젅?댁뼱 FakeWindow 諛곌꼍
-        //     ?먭굅由?紐?李쎄낵 寃뱀튇 ?곸뿭??player ?됱쑝濡?源붾걫?섍쾶 ??엫 (?꾩쟻 ?놁쓬)
+        // (c) player FakeWindow background (+ GLITCH phantom blink / ghost)
         BatchFlush(); glDisable(GL_BLEND);
+        float polyPA = 1.0f;
+        if (g_PolyBoss && g_PolyBoss->alive)
+            polyPA = g_PolyBoss->fx.playerAlpha;
+        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->fx.showGhostWin) {
+            auto& gfx = g_PolyBoss->fx;
+            drawRect(gfx.ghostX, gfx.ghostY, gfx.ghostW, gfx.ghostH,
+                     0.12f, 0.08f, 0.18f, 0.35f);
+            drawNeonBorder(gfx.ghostX, gfx.ghostY, gfx.ghostW, gfx.ghostH,
+                           0.55f, 0.45f, 1.0f);
+        }
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                 0.05f, 0.06f, 0.09f, 1.0f);
+                 0.05f, 0.06f, 0.09f, polyPA);
         BatchFlush(); glEnable(GL_BLEND);
         // ?ъ씠踰꾪럱???ㅼ삩 ?곕??????뚮젅?댁뼱 李??ㅼ삩 蹂대뜑 (?≪꽱???뚮쭏 ??
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        g_AccentR, g_AccentG, g_AccentB);
+        if (polyPA < 0.5f)
+            drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
+                           1.0f, 0.3f, 0.9f);
 
         if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
             float wx = g_ShopZoneX - RUN_SHOP_WIN_W * 0.5f;
@@ -4562,80 +4582,59 @@ int main() {
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
             BindMainShader();
-            const float PUR_R = 0.6f, PUR_G = 0.2f, PUR_B = 0.95f;
-            if (pb->triWarn) {
-                float exX = 0.0f, exY = 0.0f;
-                float fullW = (float)screenWidth, fullH = (float)screenHeight;
-                float blink = 0.35f + 0.35f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 16.0f));
-                int arrows = 14;
-                for (int i = 0; i < arrows; i++) {
-                    float t = (arrows > 1) ? (float)i / (arrows - 1) : 0.5f;
-                    float ax, ay;
-                    if (pb->triDirX != 0.0f) {   // 媛濡??대룞 ??醫???(?뺤옣)紐⑥꽌由ъ뿉 ?몃줈 諛곗뿴
-                        ax = (pb->triDirX > 0) ? -exX + 24.0f
-                                               : (float)screenWidth + exX - 24.0f;
-                        ay = -exY + t * fullH;
-                    } else {                     // ?몃줈 ?대룞 ??????(?뺤옣)紐⑥꽌由ъ뿉 媛濡?諛곗뿴
-                        ax = -exX + t * fullW;
-                        ay = (pb->triDirY > 0) ? -exY + 24.0f
-                                               : (float)screenHeight + exY - 24.0f;
+            float gt = (float)glfwGetTime();
+            if (pb->form == PForm::SINGULARITY) {
+                if (pb->triWarn) {
+                    float blink = 0.4f + 0.45f * (0.5f + 0.5f * sinf(gt * 18.0f));
+                    for (int e = 0; e < 4; e++) {
+                        for (int i = 0; i < 16; i++) {
+                            float t = (float)i / 15.0f;
+                            float ax, ay, dx = 0, dy = 0;
+                            if (e == 0) { ax = t * screenWidth; ay = 8.0f; dy = 1; }
+                            else if (e == 1) { ax = t * screenWidth; ay = screenHeight - 8.0f; dy = -1; }
+                            else if (e == 2) { ax = 8.0f; ay = t * screenHeight; dx = 1; }
+                            else { ax = screenWidth - 8.0f; ay = t * screenHeight; dx = -1; }
+                            drawTriangle(ax + dx * 10.0f, ay + dy * 10.0f,
+                                         12.0f, 0.15f, 1.0f, 0.85f, blink);
+                        }
                     }
-                    // 吏꾪뻾 諛⑺뼢??媛由ы궎???묒? ?몃え
-                    drawTriangle(ax + pb->triDirX * 6.0f, ay + pb->triDirY * 6.0f,
-                                 14.0f, 1.0f, 0.4f, 1.0f, blink);
+                    drawCircle(pb->holeX, pb->holeY, 28.0f, 0.05f, 0.02f, 0.08f, 0.5f * blink);
                 }
-                // ?룸같寃쎌뿉 ?낃쾶 源붾━?????諛⑺뼢 ?붿궡???먮툕濡? ??吏꾪뻾 寃쎈줈 ?덈궡
-                float bgA = 0.08f + 0.05f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 8.0f));
-                for (int c = 0; c < 4; c++) {
-                    float u = (c + 0.5f) / 4.0f;   // 吏꾪뻾異?諛⑺뼢 ?꾩튂 鍮꾩쑉
-                    float cx, cy;
-                    if (pb->triDirX != 0.0f) {     // 媛濡??대룞 ???뺤옣 ??쓣 ?곕씪 諛곗튂
-                        cx = (pb->triDirX > 0) ? -exX + u * fullW
-                                               : (float)screenWidth + exX - u * fullW;
-                        cy = screenHeight * 0.5f;
-                    } else {                       // ?몃줈 ?대룞
-                        cx = screenWidth * 0.5f;
-                        cy = (pb->triDirY > 0) ? -exY + u * fullH
-                                               : (float)screenHeight + exY - u * fullH;
-                    }
-                    drawTriangle(cx + pb->triDirX * 30.0f, cy + pb->triDirY * 30.0f,
-                                 80.0f, 0.8f, 0.4f, 1.0f, bgA);
+                if (pb->blackHoleActive) {
+                    float hr = pb->holeRadius;
+                    drawCircle(pb->holeX, pb->holeY, hr * 1.35f, 0.1f, 0.55f, 0.95f, 0.12f);
+                    drawCircle(pb->holeX, pb->holeY, hr * 1.05f, 0.0f, 0.85f, 0.75f, 0.22f);
+                    drawCircle(pb->holeX, pb->holeY, hr * 0.55f, 0.0f, 0.0f, 0.0f, 0.92f);
+                }
+                for (auto& s : pb->swarm) {
+                    if (!s.alive) continue;
+                    drawTriangle(s.x, s.y, 10.0f, 0.25f, 1.0f, 0.95f, 1.0f);
                 }
             }
-            // ?몃え 臾대━
-            for (auto& s : pb->swarm)
-                drawTriangle(s.x, s.y, 11.0f, 0.7f, 0.3f, 1.0f, 1.0f);
-            if (pb->laserWarn) {
-                float ex = pb->laserX + pb->laserDirX * pb->laserReach();
-                float ey = pb->laserY + pb->laserDirY * pb->laserReach();
-                float pxx = -pb->laserDirY, pyy = pb->laserDirX;
-                float th = 3.0f;
-                float warnA = 0.4f + 0.4f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f));
-                float p1x=pb->laserX+pxx*th, p1y=pb->laserY+pyy*th;
-                float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
-                float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
-                float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                BatchVerts(v, 6, 1.0f, 0.3f, 1.0f, warnA);
-            }
-            // ?덉씠? (RHOMBUS) ???대몢???쒖빞 諛대뱶 + 諛앹? 肄붿뼱
-            if (pb->laserActive) {
-                float ex = pb->laserX + pb->laserDirX * pb->laserReach();
-                float ey = pb->laserY + pb->laserDirY * pb->laserReach();
-                float pxx = -pb->laserDirY, pyy = pb->laserDirX;
-                for (int pass = 0; pass < 2; pass++) {
-                    float th = (pass == 0) ? pb->laserHalf : 5.0f;
-                    float cr = (pass == 0) ? 0.0f : 1.0f;
-                    float cg = (pass == 0) ? 0.0f : 0.4f;
-                    float cb = (pass == 0) ? 0.0f : 1.0f;
-                    float ca = (pass == 0) ? 0.82f : 0.95f;
-                    float p1x=pb->laserX+pxx*th, p1y=pb->laserY+pyy*th;
-                    float p2x=pb->laserX-pxx*th, p2y=pb->laserY-pyy*th;
-                    float p3x=ex+pxx*th, p3y=ey+pyy*th, p4x=ex-pxx*th, p4y=ey-pyy*th;
-                    float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                    BatchVerts(v, 6, cr, cg, cb, ca);
+            if (pb->form == PForm::DISPLACE) {
+                if (pb->fx.snapWarn) {
+                    float sa = 0.35f + 0.35f * (0.5f + 0.5f * sinf(gt * 22.0f));
+                    drawNeonBorder(pb->fx.snapWarnX, pb->fx.snapWarnY,
+                                   pb->fx.snapWarnW, pb->fx.snapWarnH, 1.0f, 0.35f, 0.15f);
+                    drawRect(pb->fx.snapWarnX, pb->fx.snapWarnY,
+                             pb->fx.snapWarnW, pb->fx.snapWarnH,
+                             1.0f, 0.25f, 0.1f, 0.08f * sa);
+                }
+                for (auto& bar : pb->bars) {
+                    if (!bar.alive) continue;
+                    drawRect(bar.x, bar.y, bar.w, bar.h, 0.08f, 0.06f, 0.10f, 0.85f);
+                    drawNeonBorder(bar.x, bar.y, bar.w, bar.h, 1.0f, 0.4f, 0.2f);
                 }
             }
-            // 蹂몄껜 + 李⑦겕??+ HP + 珥앹븣 ??媛쒖씤 李??곸뿭?쇰줈 ?대━??(留?諛곌꼍????蹂댁씠吏 ?딄쾶)
+            if (pb->form == PForm::PHANTOM && pb->fx.cursorGlitch) {
+                double gmx, gmy;
+                glfwGetCursorPos(window, &gmx, &gmy);
+                float fakeX = ScreenToWorldX((float)gmx) + pb->fx.cursorOffX;
+                float fakeY = ScreenToWorldY((float)gmy) + pb->fx.cursorOffY;
+                drawCircle(fakeX, fakeY, 18.0f, 0.85f, 0.3f, 1.0f, 0.25f);
+                drawRect(fakeX - 2, fakeY - 22, 4, 44, 0.9f, 0.4f, 1.0f, 0.5f);
+                drawRect(fakeX - 22, fakeY - 2, 44, 4, 0.9f, 0.4f, 1.0f, 0.5f);
+            }
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(pb->worldX - POLY_WIN_W*0.5f, pb->worldY - POLY_WIN_W*0.5f,
                          POLY_WIN_W, POLY_WIN_W);
@@ -4646,12 +4645,26 @@ int main() {
             }
             // 蹂몄껜 ???쇰퀎 紐⑥뼇 (??
             float bsz = PolymorphBoss::BODY;
-            if (pb->form == PForm::TRIANGLE)
-                drawTriangle(pb->worldX, pb->worldY, bsz, PUR_R, PUR_G, PUR_B, 1.0f);
-            else
-                drawDiamond(pb->worldX, pb->worldY, bsz, PUR_R, PUR_G, PUR_B, 1.0f);
-            if (pb->reflecting())  // 諛섏궗 ?ㅻ씪
-                drawCircle(pb->worldX, pb->worldY, bsz * 0.95f, 1.0f, 1.0f, 1.0f, 0.18f);
+            float bx = pb->worldX, by = pb->worldY;
+            if (pb->form == PForm::SINGULARITY) {
+                drawCircle(bx, by, bsz * 0.45f, 0.0f, 0.0f, 0.0f, 1.0f);
+                drawCircle(bx, by, bsz * 0.65f, 0.1f, 0.9f, 0.8f, 0.55f);
+                drawTriangle(bx, by - bsz * 0.2f, bsz * 0.5f, 0.2f, 1.0f, 0.85f, 0.9f);
+            } else if (pb->form == PForm::DISPLACE) {
+                drawDiamond(bx, by, bsz, 1.0f, 0.35f, 0.15f, 1.0f);
+                drawRect(bx - bsz * 0.35f, by - bsz * 0.12f, bsz * 0.7f, bsz * 0.24f,
+                         0.12f, 0.10f, 0.14f, 0.9f);
+            } else {
+                drawDiamond(bx, by, bsz * 0.75f, 0.85f, 0.85f, 1.0f, 0.55f);
+                for (int s = 0; s < 5; s++) {
+                    float sy = by - bsz + (float)s * (bsz * 0.45f);
+                    drawRect(bx - bsz * 0.6f, sy, bsz * 1.2f, 2.0f, 0.5f, 0.5f, 1.0f, 0.12f);
+                }
+            }
+            if (pb->damageable()) {
+                float pulse = 0.5f + 0.5f * sinf(gt * 14.0f);
+                drawCircle(bx, by, bsz * 1.15f, 0.2f, 1.0f, 0.7f, 0.12f + 0.18f * pulse);
+            }
             // (HP 諛붾뒗 ?붾㈃ ?곷떒 怨좎젙 蹂댁뒪 諛붾줈 ?대룞)
             // ??蹂???뚰떚????蹂댁뒪 媛쒖씤 李??덉뿉?쒕룄 蹂댁씠?꾨줉 (李?諛??곗뒪?ы넲??????
             for (auto& p : g_EnemyParts) {
@@ -4831,7 +4844,7 @@ int main() {
                 bn = L"VOLLEY.sys";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.55f, 0.2f);
             } else if (g_PolyBoss && g_PolyBoss->alive) {
-                bn = L"POLYMORPH.vir"; bhf = g_PolyBoss->hp / g_PolyBoss->maxHp;
+                bn = L"GLITCH.exe"; bhf = g_PolyBoss->hp / g_PolyBoss->maxHp;
                 bc = glm::vec3(0.6f, 0.25f, 1.0f);
             } else if (g_BotnetBoss && g_BotnetBoss->alive) {
                 bn = L"C2_RELAY.sys";  bhf = g_BotnetBoss->hp / g_BotnetBoss->maxHp;
@@ -4846,7 +4859,7 @@ int main() {
             int bossPick = -1;
             if (bn) {
                 if      (bn == L"VOLLEY.sys")   bossPick = 2;
-                else if (bn == L"POLYMORPH.vir") bossPick = 4;
+                else if (bn == L"GLITCH.exe") bossPick = 4;
                 else if (bn == L"C2_RELAY.sys")  bossPick = 7;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
                 else if (bn == L"RITE.CORE")     bossPick = 9;
