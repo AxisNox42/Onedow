@@ -1,6 +1,10 @@
 #pragma once
 #include "GameManager.h"
 
+// onedow.exe 흐름(난이도·직업·무기) — 세 페이지 공통 패널 크기
+constexpr float FLOW_PANEL_W = 720.0f;
+constexpr float FLOW_PANEL_H = 660.0f;
+
 void SceneDeskWindow(float sw, float sh, const wchar_t* fname,
                      float ar, float ag, float ab);
 // onedow.exe 흐름(난이도·직업·무기 등) — 화면 전체가 아닌 컴팩트 패널
