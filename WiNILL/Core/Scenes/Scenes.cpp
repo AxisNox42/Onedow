@@ -1819,9 +1819,9 @@ void Scene_RunShop(const SceneCtx& c) {
     g_TextL.Draw(goldBuf, sw - gw - 24.0f, 18.0f, 0.9f, 1.0f, 0.88f, 0.35f, 0.95f);
 
     const wchar_t* HINT[3] = {
-        L"1~4 선택 · Space 구매 · ESC 휴식 구간으로",
-        L"1~4 select · Space buy · ESC back to rest",
-        L"1~4 選択 · Space 購入 · ESC 休憩へ" };
+        L"1~4 선택 · Space 구매 · ESC 나가기 (구역 밖으로 나갔다가 재입장)",
+        L"1~4 select · Space buy · ESC leave (re-enter zone after exit)",
+        L"1~4 選択 · Space 購入 · ESC 退出 (再入場は一度離れる)" };
     g_TextS.Draw(HINT[li], CenterTextX(sw, g_TextS, HINT[li], 0.82f),
                  baseY + CARD_H + 168.0f, 0.82f, 0.75f, 0.75f, 0.75f, 0.85f);
 

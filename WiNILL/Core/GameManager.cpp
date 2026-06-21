@@ -4,7 +4,6 @@
 #include "Weapons.h"
 #include "GameContext.h"
 #include "RunIntermission.h"
-#include <string>
 #include <algorithm>   // std::min (등급 가중치 게이팅)
 
 extern PlayerStats g_Stats;   // 최대치 도달 증강 게이팅용 (main.cpp 정의)
@@ -117,6 +116,10 @@ void GameManager::HandleInput(GLFWwindow* window) {
         // ESC = 일시정지 토글만. 메뉴/설정 종료는 마우스 클릭 (뒤로/메뉴로 버튼) 으로
         if      (currentState == GameState::RUNNING) currentState = GameState::PAUSED;
         else if (currentState == GameState::PAUSED)  currentState = GameState::RUNNING;
+        else if (currentState == GameState::RUN_SHOP) {
+            CloseRunShop();
+            g_HoveredAug = -1;
+        }
         escReleased = false;
     }
     if (esc == GLFW_RELEASE) escReleased = true;
