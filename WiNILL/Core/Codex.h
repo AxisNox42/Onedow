@@ -6,9 +6,15 @@
 // ─────────────────────────────────────────────────────────────
 #include "Augment.h"   // AUG_TOTAL
 #include "Monster.h"   // MobKind
-#include "Settings.h"  // g_Language, LANG_COUNT
+#include "Settings.h"  // g_Language, g_CreativeMode
 #include <string>
 #include <cwctype>
+
+extern bool g_DevUnlocked;   // main.cpp — 도감 develop_mod 해금
+
+inline bool CodexFullReveal() {
+    return g_CreativeMode || g_DevUnlocked;
+}
 
 extern wchar_t g_CodexSearch[32];
 extern int     g_CodexSearchLen;
@@ -26,17 +32,16 @@ inline bool CodexMatch(const wchar_t* name) {
 }
 
 // ── 증강 발견 (ALL_AUGS 인덱스 기준) ──
-inline bool g_AugSeen[128] = { false };   // ALL_AUGS 인덱스(AUG_TOTAL) 기준 — 여유 128
-inline bool g_CodexDirty   = false;   // 새 발견 발생 → main 에서 SaveGame 호출
+inline bool g_AugSeen[128] = { false };
+inline bool g_CodexDirty   = false;
 
 inline void MarkAugSeen(int augIdx) {
-    if (augIdx < 0 || augIdx >= 96) return;
+    if (augIdx < 0 || augIdx >= AUG_TOTAL || augIdx >= 128) return;
     if (!g_AugSeen[augIdx]) { g_AugSeen[augIdx] = true; g_CodexDirty = true; }
 }
 
-// 도감 UI — 크리에이티브 모드면 미발견 항목도 전부 공개 (세이브는 변경하지 않음)
 inline bool CodexAugSeen(int augIdx) {
-    if (g_CreativeMode && augIdx >= 0 && augIdx < AUG_TOTAL) return true;
+    if (CodexFullReveal() && augIdx >= 0 && augIdx < AUG_TOTAL) return true;
     if (augIdx < 0 || augIdx >= 128) return false;
     return g_AugSeen[augIdx];
 }
@@ -65,7 +70,7 @@ inline void MarkMobSeenId(CodexMobId id) {
 }
 
 inline bool CodexMobSeen(int id) {
-    if (g_CreativeMode && id >= 0 && id < CM_COUNT) return true;
+    if (CodexFullReveal() && id >= 0 && id < CM_COUNT) return true;
     if (id < 0 || id >= CM_COUNT) return false;
     return g_MobSeen[id];
 }
@@ -171,7 +176,7 @@ inline const int BOSS_CODEX_PICKS[] = { 4, 2, 7, 8, 9 };
 inline const int BOSS_CODEX_COUNT = 5;
 
 inline bool BossCodexSeen(int idx) {
-    if (g_CreativeMode && idx >= 0 && idx < BOSS_CODEX_COUNT) return true;
+    if (CodexFullReveal() && idx >= 0 && idx < BOSS_CODEX_COUNT) return true;
     if (idx < 0 || idx >= BOSS_CODEX_COUNT) return false;
     return g_BossSeenPick[BOSS_CODEX_PICKS[idx]];
 }

@@ -490,7 +490,8 @@ void Scene_Codex(const SceneCtx& c) {
                     for (int i = 0; i < AUG_TOTAL; i++) {
                         if (AugRemoved(ALL_AUGS[i].type)) continue;
                         if (g_CodexSearchLen > 0) {
-                            if (!CodexAugSeen(i) || !CodexMatch(AugName(ALL_AUGS[i]))) continue;
+                            if (!CodexMatch(AugName(ALL_AUGS[i]))) continue;
+                            if (!CodexFullReveal() && !g_AugSeen[i]) continue;
                         }
                         vis[nv++] = i;
                     }
@@ -620,6 +621,14 @@ void Scene_Codex(const SceneCtx& c) {
                         }
                     }
                     BatchFlush(); glDisable(GL_SCISSOR_TEST);
+                    if (nv == 0 && g_CodexSearchLen > 0) {
+                        const wchar_t* nh[3] = {
+                            L"검색 결과 없음 — 검색창을 비우거나 다른 키워드를 입력하세요",
+                            L"No results — clear search or try another keyword",
+                            L"結果なし — 検索をクリアするか別の語句を入力" };
+                        g_TextS.Draw(nh[li], LIST_X, listTop + 24.0f, 0.82f,
+                                     0.65f, 0.75f, 0.85f, 0.92f);
+                    }
                     if (maxScroll > 0.0f) {
                         BindMainShader();
                         float trackX = LIST_X + LIST_W + 6.0f;
