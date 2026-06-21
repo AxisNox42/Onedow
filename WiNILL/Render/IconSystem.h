@@ -321,6 +321,12 @@ inline GLuint IconFor(AugType t) {
     case AugType::SMG_COMPRESSOR: return g_IconTex[(int)AugType::MINIGUN];
     case AugType::RIFLE_STABILITY:return g_IconTex[(int)AugType::BROKEN_SIGHT];
     case AugType::SNIPER_AMPLIFIER:return g_IconTex[(int)AugType::SNIPER];
+    case AugType::STATIC_FIELD_2: return g_IconTex[(int)AugType::STATIC_FIELD];
+    case AugType::EMP_PULSE:      return g_IconTex[(int)AugType::LASER];
+    case AugType::PATCH_MINE:     return g_IconTex[(int)AugType::HACK_BOMBER];
+    case AugType::TRAP_EXE:       return g_IconTex[(int)AugType::HACK_RANGED];
+    case AugType::POPUP_ALLY:     return g_IconTex[(int)AugType::DRONE];
+    case AugType::GLUE_SYNC:      return g_IconTex[(int)AugType::DRONE];
     default:                     break;
     }
     // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용

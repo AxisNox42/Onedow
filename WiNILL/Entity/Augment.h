@@ -91,12 +91,23 @@ enum class AugType {
     SMG_COMPRESSOR,      // SMG — 흩어짐·연사
     RIFLE_STABILITY,     // 소총 — 정조준
     SNIPER_AMPLIFIER,    // 저격 — 거리 보너스 강화
+    // ── 위성/FIELD/DROP (끝에 추가 — 세이브 인덱스 보존) ──
+    STATIC_FIELD,        // 정전기장 — 근접 펄스 링 DoT
+    STATIC_FIELD_2,      // 정전기장 II
+    EMP_PULSE,           // EMP 구역 — 확장 충격파
+    PATCH_MINE,          // 패치 배포 — 이동 경로 지뢰
+    TRAP_EXE,            // trap.exe — 바닥 덫 창
+    POPUP_ALLY,          // popup.exe (아군) — 미니 창 사격
+    GLUE_SYNC,           // 동기화 — 위성 계열 많을수록 위성 피해 ↑
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
 
 // 고유 카테고리 — 같은 카테고리 내에서 1개만 선택 가능
 enum class AugUnique { NONE, SIZE, DISTANCE };
+
+// 위성/시스템 계열 (빌드 연결·동기화 판정용)
+enum class AugSubsystem { NONE, BEAM, ORBIT, BURST, FIELD, DROP, SUMMON };
 
 struct AugDef {
     AugType        type;
@@ -656,9 +667,45 @@ static const AugDef ALL_AUGS[] = {
       { L"[저격] 거리 보너스 +30%p  (저격총·저격 증강)",
         L"[Sniper] distance bonus +30%p  (sniper gun/aug)",
         L"[スナイパー] 距離ボーナス+30%p" } },
+    // ── 위성/FIELD/DROP ──
+    { AugType::STATIC_FIELD,   AugRarity::RARE,     AugUnique::NONE, "STATIC_F",
+      { L"정전기장", L"Static Field", L"静電フィールド" },
+      { L"발밑 펄스 링 — 0.35초마다 근접 적에게 피해  (FIELD · 시각 링)",
+        L"Pulsing ring at feet — nearby DOT every 0.35s  (FIELD · visible ring)",
+        L"足元パルスリング — 0.35秒毎 近接DoT  (FIELD · 視認リング)" } },
+    { AugType::STATIC_FIELD_2, AugRarity::EPIC,    AugUnique::NONE, "STATIC_F2",
+      { L"정전기장 II", L"Static Field II", L"静電フィールド II" },
+      { L"반경↑ · tick↑  (요구: 정전기장)",
+        L"Wider ring · faster ticks  (req: Static Field)",
+        L"範囲↑ · tick↑  (要: 静電フィールド)" } },
+    { AugType::EMP_PULSE,      AugRarity::EPIC,     AugUnique::NONE, "EMP",
+      { L"EMP 펄스", L"EMP Pulse", L"EMPパルス" },
+      { L"2.5초마다 노란 충격파 — 주변 넉백·피해  (FIELD · 확장 링)",
+        L"Every 2.5s yellow shockwave — knockback + dmg  (FIELD · expanding ring)",
+        L"2.5秒毎 黄ショック — ノックバック+ダメ  (FIELD · 拡張リング)" } },
+    { AugType::PATCH_MINE,     AugRarity::RARE,     AugUnique::NONE, "PATCH",
+      { L"패치 배포", L"Patch Deploy", L"パッチ配置" },
+      { L"이동 경로에 녹색 패치 — ARM 후 폭발  (최대 6 · DROP)",
+        L"Green patches on path — arm then pop  (max 6 · DROP)",
+        L"移動経路に緑パッチ — ARM後爆発  (最大6 · DROP)" } },
+    { AugType::TRAP_EXE,       AugRarity::EPIC,     AugUnique::NONE, "TRAP_EXE",
+      { L"trap.exe", L"trap.exe", L"trap.exe" },
+      { L"5초마다 적 근처 128창 덫 — 안의 적 지속 피해  (최대 2 · SUMMON)",
+        L"Every 5s spawns 128px trap window on foe — DOT inside  (max 2 · SUMMON)",
+        L"5秒毎 敵付近128窓 — 内部DoT  (最大2 · SUMMON)" } },
+    { AugType::POPUP_ALLY,     AugRarity::EPIC,     AugUnique::NONE, "POPUP_A",
+      { L"popup.exe (아군)", L"popup.exe (ally)", L"popup.exe (味方)" },
+      { L"청록 미니 창 1개 — 1.2초마다 자동 사격  (SUMMON · 적 popup 반색)",
+        L"Cyan mini window — auto shot every 1.2s  (SUMMON · ally popup)",
+        L"シアン小窓 — 1.2秒毎自動射撃  (SUMMON · 味方popup)" } },
+    { AugType::GLUE_SYNC,      AugRarity::RARE,     AugUnique::NONE, "GLUE_SYNC",
+      { L"동기화", L"Sync Core", L"同期コア" },
+      { L"위성 계열 2종+ 보유 시 — 위성 피해 +12%/종  (빌드 연결)",
+        L"With 2+ satellite lanes — satellite dmg +12%/lane  (build bridge)",
+        L"衛星系2種以上 — 衛星ダメ+12%/種  (ビルド連結)" } },
 };
 
-static constexpr int AUG_TOTAL = 112;
+static constexpr int AUG_TOTAL = 119;
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
@@ -713,6 +760,26 @@ inline bool AugRemoved(AugType t) {
 //   main 의 applyByIdx 가 갱신, ResetForNewGame 이 초기화.
 inline bool g_TypeOwned[128] = { false };
 
+// 런 중 보유한 위성 '계열' 수 (동기화 글루 등장·피해 판정)
+inline int OwnedSatelliteLaneCount() {
+    int n = 0;
+    auto lane = [&](bool b) { if (b) ++n; };
+    lane(g_TypeOwned[(int)AugType::LASER] || g_TypeOwned[(int)AugType::LASER_2] ||
+         g_TypeOwned[(int)AugType::LASER_CONVERGE]);
+    lane(g_TypeOwned[(int)AugType::DRONE] || g_TypeOwned[(int)AugType::DRONE_2] ||
+         g_TypeOwned[(int)AugType::DRONE_HIVE] || g_TypeOwned[(int)AugType::CB_TURRET]);
+    lane(g_TypeOwned[(int)AugType::CHAKRAM] || g_TypeOwned[(int)AugType::CHAKRAM_2] ||
+         g_TypeOwned[(int)AugType::CHAKRAM_3] || g_TypeOwned[(int)AugType::CHAKRAM_SINGULARITY]);
+    lane(g_TypeOwned[(int)AugType::BULLET_RAIN] || g_TypeOwned[(int)AugType::BULLET_RAIN_2] ||
+         g_TypeOwned[(int)AugType::BULLET_RAIN_3] || g_TypeOwned[(int)AugType::BULLET_RAIN_ETERNAL]);
+    lane(g_TypeOwned[(int)AugType::STATIC_FIELD] || g_TypeOwned[(int)AugType::STATIC_FIELD_2]);
+    lane(g_TypeOwned[(int)AugType::EMP_PULSE]);
+    lane(g_TypeOwned[(int)AugType::PATCH_MINE]);
+    lane(g_TypeOwned[(int)AugType::TRAP_EXE]);
+    lane(g_TypeOwned[(int)AugType::POPUP_ALLY]);
+    return n;
+}
+
 // 한 번만 등장해야 하는 증강/디버프 (스택 불가 플래그형) — 픽 풀에서 takenOnce 로 제외
 inline bool AugOnceOnly(AugType t, AugRarity r) {
     if (r == AugRarity::EPIC || r == AugRarity::LEGENDARY ||
@@ -745,6 +812,10 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::SKILL_DASH_UP:
     case AugType::SMG_COMPRESSOR: case AugType::RIFLE_STABILITY:
     case AugType::SNIPER_AMPLIFIER:
+    case AugType::STATIC_FIELD: case AugType::STATIC_FIELD_2:
+    case AugType::EMP_PULSE:    case AugType::PATCH_MINE:
+    case AugType::TRAP_EXE:     case AugType::POPUP_ALLY:
+    case AugType::GLUE_SYNC:
         return true;
     default:
         return false;

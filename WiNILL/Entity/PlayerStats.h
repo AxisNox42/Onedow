@@ -101,6 +101,14 @@ struct PlayerStats {
     bool  cannon       = false;
     bool  turretMode   = false;  // CANNON + DRONE_2 조합: 포탑 배치
     bool  soulHarvest  = false;
+    // ── 위성/FIELD/DROP ──
+    bool  staticField  = false;
+    int   staticFieldTier = 0;   // 1 = I, 2 = II
+    bool  empPulse     = false;
+    bool  patchMine    = false;
+    bool  trapExe      = false;
+    bool  popupAlly    = false;
+    bool  glueSync     = false;  // 위성 피해 배율 (동기화)
     long long killCount = 0;     // 영혼 수확용 (외부에서 +1)
 
     // ── 무기/부활 ─────────────────────────────────────
@@ -615,6 +623,29 @@ struct PlayerStats {
         case AugType::SNIPER_AMPLIFIER:
             sniperDistBonusPct += 0.30f;
             break;
+        case AugType::STATIC_FIELD:
+            staticField = true;
+            if (staticFieldTier < 1) staticFieldTier = 1;
+            break;
+        case AugType::STATIC_FIELD_2:
+            staticField = true;
+            staticFieldTier = 2;
+            break;
+        case AugType::EMP_PULSE:
+            empPulse = true;
+            break;
+        case AugType::PATCH_MINE:
+            patchMine = true;
+            break;
+        case AugType::TRAP_EXE:
+            trapExe = true;
+            break;
+        case AugType::POPUP_ALLY:
+            popupAlly = true;
+            break;
+        case AugType::GLUE_SYNC:
+            glueSync = true;
+            break;
         case AugType::CHAKRAM_SINGULARITY:
             chakramSingularity = true;
             chakram         = true;
@@ -686,6 +717,28 @@ struct PlayerStats {
             b += bulletSpeed * (float)souls * 0.02f;
         }
         return b;
+    }
+
+    // 위성/FIELD/DROP 피해 배율 (동기화 — 활성 위성 계열 수)
+    int CountActiveSatelliteLanes() const {
+        int n = 0;
+        auto lane = [&](bool b) { if (b) ++n; };
+        lane(laser);
+        lane(drone || turretMode);
+        lane(chakram);
+        lane(bulletRain);
+        lane(staticField);
+        lane(empPulse);
+        lane(patchMine);
+        lane(trapExe);
+        lane(popupAlly);
+        return n;
+    }
+    float GetSatelliteMult() const {
+        if (!glueSync) return 1.0f;
+        int n = CountActiveSatelliteLanes();
+        if (n <= 1) return 1.0f;
+        return 1.0f + 0.12f * (float)(n - 1);
     }
 
     // 흡혈탄 티어 — 스택×0.06, 한도: 0.24 / II 0.36 / 흡혈마 0.48
