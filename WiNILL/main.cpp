@@ -853,6 +853,8 @@ int main() {
             g_IntermissionTimer = 0.0f;
             g_ShopZoneHold      = 0.0f;
             g_ShopReentryBlock  = 0.0f;
+            g_ShopZoneX         = 0.0f;
+            g_ShopZoneY         = 0.0f;
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;
             g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
@@ -2365,7 +2367,10 @@ int main() {
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_Bullets.clear();
-                    FinishBossKill(g_MonsterManager, 2, 35);
+                    FinishBossKill(g_MonsterManager, 2, 35,
+                        playerWin.x + playerWin.width * 0.5f,
+                        playerWin.y + playerWin.height * 0.5f,
+                        screenWidth, screenHeight);
                 }
 
                 // C2_RELAY.sys kill reward
@@ -2385,7 +2390,10 @@ int main() {
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_Bullets.clear();
-                    FinishBossKill(g_MonsterManager, 7, 35);
+                    FinishBossKill(g_MonsterManager, 7, 35,
+                        playerWin.x + playerWin.width * 0.5f,
+                        playerWin.y + playerWin.height * 0.5f,
+                        screenWidth, screenHeight);
                 }
 
                 // FORK.worm ?щ쭩 ??蹂댁긽
@@ -2405,7 +2413,10 @@ int main() {
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_Bullets.clear();
-                    FinishBossKill(g_MonsterManager, 8, 35);
+                    FinishBossKill(g_MonsterManager, 8, 35,
+                        playerWin.x + playerWin.width * 0.5f,
+                        playerWin.y + playerWin.height * 0.5f,
+                        screenWidth, screenHeight);
                 }
 
                 // TOTEM.sys ?щ쭩 ??蹂댁긽
@@ -2425,7 +2436,10 @@ int main() {
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_Bullets.clear();
-                    FinishBossKill(g_MonsterManager, 9, 35);
+                    FinishBossKill(g_MonsterManager, 9, 35,
+                        playerWin.x + playerWin.width * 0.5f,
+                        playerWin.y + playerWin.height * 0.5f,
+                        screenWidth, screenHeight);
                 }
 
                 // ?대━紐⑦봽 ?щ쭩 ???붾㈃ ?먮났 + 利앷컯 3媛?+ ?먯닔 50% 異붽?
@@ -2447,7 +2461,10 @@ int main() {
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_Bullets.clear();
-                    FinishBossKill(g_MonsterManager, 4, 45);
+                    FinishBossKill(g_MonsterManager, 4, 45,
+                        playerWin.x + playerWin.width * 0.5f,
+                        playerWin.y + playerWin.height * 0.5f,
+                        screenWidth, screenHeight);
                 }
 
                 // ?먰룺蹂??щ쭩 (?먰솕 ????컻 OR 珥앹븣 寃⑺뙆)
@@ -3839,9 +3856,7 @@ int main() {
 
             g_IntermissionTimer -= delta;
             if (g_ShopReentryBlock > 0.0f) g_ShopReentryBlock -= delta;
-            float shopX = pCX + SHOP_ZONE_OFFSET_X;
-            float shopY = pCY;
-            float sdx = pCX - shopX, sdy = pCY - shopY;
+            float sdx = pCX - g_ShopZoneX, sdy = pCY - g_ShopZoneY;
             if (g_ShopReentryBlock <= 0.0f &&
                 sdx * sdx + sdy * sdy <= SHOP_ZONE_RADIUS * SHOP_ZONE_RADIUS) {
                 g_ShopZoneHold += delta;
@@ -4196,16 +4211,12 @@ int main() {
                        g_AccentR, g_AccentG, g_AccentB);
 
         if (g_GameManager.currentState == GameState::BOSS_INTERMISSION) {
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            float shopX = pCX + SHOP_ZONE_OFFSET_X;
-            float shopY = pCY;
             float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 4.5f);
             float holdF = g_ShopZoneHold / SHOP_ZONE_HOLD_S;
             if (holdF > 1.0f) holdF = 1.0f;
             float alpha = 0.10f + 0.14f * pulse + 0.28f * holdF;
-            drawCircle(shopX, shopY, SHOP_ZONE_RADIUS, 1.0f, 0.82f, 0.22f, alpha);
-            drawNeonBorder(shopX - SHOP_ZONE_RADIUS, shopY - SHOP_ZONE_RADIUS,
+            drawCircle(g_ShopZoneX, g_ShopZoneY, SHOP_ZONE_RADIUS, 1.0f, 0.82f, 0.22f, alpha);
+            drawNeonBorder(g_ShopZoneX - SHOP_ZONE_RADIUS, g_ShopZoneY - SHOP_ZONE_RADIUS,
                            SHOP_ZONE_RADIUS * 2.0f, SHOP_ZONE_RADIUS * 2.0f,
                            1.0f, 0.78f, 0.25f);
         }
@@ -5392,9 +5403,9 @@ int main() {
                     g_TextL.Draw(tbuf, (sw - tw) * 0.5f, hudTopY + 48.0f, 0.95f,
                                  1.0f, 0.92f, 0.45f, 0.92f);
                     const wchar_t* zhint[3] = {
-                        L"오른쪽 금색 구역 — 잠시 머물면 상점",
-                        L"Golden zone on your right — hold to open shop",
-                        L"右の金色ゾーン — 留まるとショップ" };
+                        L"금색 구역으로 이동 — 잠시 머물면 상점",
+                        L"Move into the gold zone — hold to open shop",
+                        L"金色ゾーンへ移動 — 留まるとショップ" };
                     int zli = LangIndex();
                     if (zli < 0 || zli > 2) zli = 0;
                     float zw = g_TextS.Width(zhint[zli], 0.78f);
