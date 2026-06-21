@@ -299,7 +299,7 @@ float g_DashCd        = 0.0f;
 float g_DashInvuln    = 0.0f;
 float g_PostPickGrace = 0.0f;      // C14: 利앷컯 ????吏㏃? ?좎삁(臾댁쟻+諛쒖궗?듭젣)濡?蹂듦? ?
 float g_TimeStopTimer = 0.0f;
-float g_OverclockTimer= 0.0f;
+float g_HyperFocusTimer = 0.0f;
 static constexpr float DASH_CD = 2.9f, DASH_DIST = 300.0f, DASH_INVULN = 0.20f;
 static constexpr float DASH_DUR  = 0.11f;
 static bool  g_DashActive = false;
@@ -310,12 +310,13 @@ static float g_FocusStandTimer = 0.0f;
 static int   g_FocusShotsLeft  = 0;
 static int   g_RevolverRound   = 0;
 static int   g_DashBoostShotsLeft = 0;
-static constexpr float TIMESTOP_DUR = 1.5f, OVERCLOCK_DUR = 5.0f;
+static constexpr float TIMESTOP_DUR = 1.5f, HYPER_FOCUS_DUR = 5.0f;
+static constexpr float HYPER_FOCUS_DASH_CD = 2.0f;
 
 static float SkillCooldownMax(SkillType t) {
     switch (t) {
     case SkillType::CLOSE_WINDOW: return 16.0f;
-    case SkillType::OVERCLOCK:    return 20.0f;
+    case SkillType::HYPER_FOCUS:  return 20.0f;
     case SkillType::TIME_STOP:    return 28.0f;
     case SkillType::FOCUS_AIM:    return 14.0f;
     default:                      return 0.0f;
@@ -327,7 +328,7 @@ static void ResetSkills() {
     g_DashActive = false; g_DashT = 0.0f;
     g_FocusStandTimer = 0.0f; g_FocusShotsLeft = 0; g_RevolverRound = 0;
     g_DashBoostShotsLeft = 0;
-    g_TimeStopTimer = 0; g_OverclockTimer = 0;
+    g_TimeStopTimer = 0; g_HyperFocusTimer = 0;
 }
 // 蹂댁뒪 ?앹〈 ?숈븞 ?붾㈃ ?꾩껜瑜?蹂댁뒪 怨좎쑀?됱쑝濡??먯젏 臾쇰뱾?대뒗 ?곗텧
 float     g_BossTintT   = 0.0f;                     // 0..1 (?앹〈 ???곸듅, ?щ쭩 ???섍컯)
@@ -1395,7 +1396,7 @@ int main() {
                 if (g_DashInvuln > 0.0f)    g_DashInvuln    -= FIXED_DT;
                 if (g_PostPickGrace > 0.0f) g_PostPickGrace -= FIXED_DT;  // C14
                 if (g_TimeStopTimer > 0.0f) g_TimeStopTimer -= FIXED_DT;
-                if (g_OverclockTimer > 0.0f)g_OverclockTimer-= FIXED_DT;
+                if (g_HyperFocusTimer > 0.0f) g_HyperFocusTimer -= FIXED_DT;
                 for (int i = 0; i < 3; i++) if (g_Skills[i].cd > 0.0f) g_Skills[i].cd -= FIXED_DT;
 
                 // 李??リ린 ???뚮젅?댁뼱 以묒떖 ??컻 (?됰갚 + ?쇳빐)
@@ -1436,7 +1437,10 @@ int main() {
                     if (s.type == SkillType::NONE || s.cd > 0.0f) return;
                     switch (s.type) {
                     case SkillType::CLOSE_WINDOW: closeWindowBlast(pCX, pCY); break;
-                    case SkillType::OVERCLOCK:    g_OverclockTimer = OVERCLOCK_DUR; break;
+                    case SkillType::HYPER_FOCUS:
+                        g_HyperFocusTimer = HYPER_FOCUS_DUR;
+                        TriggerFlash(0.5f, 0.75f, 1.0f, 0.35f);
+                        break;
                     case SkillType::TIME_STOP:    g_TimeStopTimer  = TIMESTOP_DUR;
                                                   TriggerFlash(0.4f,0.9f,1.0f,0.4f); break;
                     case SkillType::FOCUS_AIM:
@@ -1473,6 +1477,7 @@ int main() {
                     g_DashInvuln = DASH_INVULN;
                 }
                 bool cDash = keys[GLFW_KEY_LEFT_SHIFT] || keys[GLFW_KEY_RIGHT_SHIFT];
+                const float dashCdMax = (g_HyperFocusTimer > 0.0f) ? HYPER_FOCUS_DASH_CD : DASH_CD;
                 if (cDash && !pDash && g_DashCd <= 0.0f && !g_DashActive) {
                     float ddx = mvX, ddy = mvY;
                     if (mlen <= 0.001f) {
@@ -1487,7 +1492,7 @@ int main() {
                     if (g_DashToY < ccY-halfH) g_DashToY = ccY-halfH;
                     if (g_DashToY > ccY+halfH) g_DashToY = ccY+halfH;
                     g_DashActive = true; g_DashT = 0.0f;
-                    g_DashCd = DASH_CD;
+                    g_DashCd = dashCdMax;
                     g_DashInvuln = DASH_INVULN;
                     TriggerFlash(0.35f, 0.85f, 1.0f, 0.12f);
                     SpawnShockWave(g_DashFromX, g_DashFromY, 70.0f, 0.25f, 0.4f, 1.0f, 1.0f);
@@ -1552,21 +1557,25 @@ int main() {
                         float pCY = playerWin.y + playerWin.height * 0.5f;
                         float wx = pCX - b.x, wy = pCY - b.y;
                         float wl = sqrtf(wx*wx + wy*wy);
+                        float homDt = FIXED_DT * ((g_HyperFocusTimer > 0.0f) ? 0.7f : 1.0f);
                         if (wl > 300.0f) {
                             float curA  = atan2f(b.dirY, b.dirX);
                             float wantA = atan2f(wy / wl, wx / wl);
                             float diff  = wantA - curA;
                             while (diff >  3.14159265f) diff -= 6.2831853f;
                             while (diff < -3.14159265f) diff += 6.2831853f;
-                            float maxStep = b.homingTurn * FIXED_DT;   // ?묒? turn rate
+                            float maxStep = b.homingTurn * homDt;
                             if (diff >  maxStep) diff =  maxStep;
                             if (diff < -maxStep) diff = -maxStep;
                             float newA = curA + diff;
                             b.dirX = cosf(newA); b.dirY = sinf(newA);
                         }
                     }
-                    // ?쒓컙 ?뺤?: ??珥앹븣? 硫덉땄 (?뚮젅?댁뼱 珥앹븣? 怨꾩냽 ?대룞)
-                    if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(FIXED_DT);
+                    // 시간 정지: 적 탄만 멈춤. 초집중: 적 탄 30% 감속
+                    float bDt = FIXED_DT;
+                    if (b.isEnemy && g_TimeStopTimer > 0.0f) { /* skip update below */ }
+                    else if (b.isEnemy && g_HyperFocusTimer > 0.0f) bDt *= 0.7f;
+                    if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(bDt);
                     // ?붾㈃ 諛?鍮꾪솢?깊솕 ??以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???곸뿭??                    // ?볦뼱吏誘濡?寃쎄퀎??媛숈씠 ?뺤옣 (??洹몃윭硫??뺤옣 援ъ뿭?먯꽌 ?꾩씠 利됱떆 ?щ씪吏?
                     {
                         float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
@@ -1582,6 +1591,9 @@ int main() {
                 float hpAtStep = g_GameManager.playerHP;
                 //   ???뺤? = ?쒓컙?뺤? ?ㅽ궗 OR 利앷컯 ??吏곹썑 ~0.05s("?꾩씠 ?", 吏㏐쾶)
                 bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.45f);
+                float enemyDt = FIXED_DT;
+                if (!timeStopped && g_HyperFocusTimer > 0.0f) enemyDt *= 0.7f;
+                float focusSlow = (g_HyperFocusTimer > 0.0f) ? 0.7f : 1.0f;
 
                 // 紐ъ뒪???낅뜲?댄듃 (?붾쾭??multiplier ?곸슜) ???쒓컙 ?뺤? 以묒뿏 ??硫덉땄
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 ????鍮좊쫫
@@ -1618,10 +1630,10 @@ int main() {
                     }
                 }
                 if (!timeStopped)
-                    g_MonsterManager.UpdateAll(pCX, pCY, FIXED_DT,
+                    g_MonsterManager.UpdateAll(pCX, pCY, enemyDt,
                                                g_GameManager.playerHP, g_Bullets,
-                                               g_Stats.mobSpeedMult * mobSpdRamp,
-                                               rmobMoveMult * mobSpdRamp);
+                                               g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
+                                               rmobMoveMult * mobSpdRamp * focusSlow);
                 if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
                     const float winSz = g_WindowSizeCur > 1.0f ? g_WindowSizeCur : g_Stats.windowSize;
                     const float safeR  = winSz * 0.52f;
@@ -1641,12 +1653,12 @@ int main() {
 
                 // 由щ줈???щ꼫 ?낅뜲?댄듃 (臾닿린 ?곹깭癒몄떊 + ?μ쟾 吏덉＜, ??珥앹븣 push)
                 if (!timeStopped && g_RRBoss && g_RRBoss->alive)
-                    g_RRBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    g_RRBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
 
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     if (!timeStopped)
-                    g_PolyBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    g_PolyBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
                     // ?섏씠利? = ?곸쐞 蹂댁뒪: ?붾㈃ 以뚯븘?껋쑝濡????볦? 援ш컙?먯꽌 ?몄? (?섎룄??湲곕뒫)
                     //   ?먯닔 以뚯븘?껉낵 異⑸룎 ?딄쾶 ??以뚯븘?껊맂 履?min) 梨꾪깮. (?섏씠利?? ?먯닔以??좎?)
                     g_ViewZoomTarget = std::min(g_ViewZoomTarget,
@@ -1683,7 +1695,7 @@ int main() {
 
                 // C2_RELAY.sys Update
                 if (!timeStopped && g_BotnetBoss && g_BotnetBoss->alive)
-                    g_BotnetBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    g_BotnetBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
                 if (g_BotnetBoss && g_BotnetBoss->shakePulse) {
                     g_BotnetBoss->shakePulse = false;
                     g_ShakeTime = 0.32f; g_ShakeMag = 14.0f;
@@ -1691,7 +1703,7 @@ int main() {
 
                 // FORK.worm ?낅뜲?댄듃 (吏洹몄옱洹?諛고쉶 + ?붾㈃諛??댄깉?믪옱吏꾩엯 ?뚯쭊)
                 if (!timeStopped && g_CentiBoss && g_CentiBoss->alive) {
-                    g_CentiBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP, g_Bullets);
+                    g_CentiBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
                     if (g_CentiBoss->shakePulse) {          // ?붾㈃ 諛뽰쑝濡??섍컝 ???쏀븳 吏꾨룞
                         g_CentiBoss->shakePulse = false;
                         g_ShakeTime = 0.35f; g_ShakeMag = 14.0f;
@@ -1714,7 +1726,7 @@ int main() {
                 // TOTEM.sys ?낅뜲?댄듃 (?좏뀥 遊됱씤 + ?쒓컙?대룞 怨듦꺽)
                 if (!timeStopped && g_TotemBoss && g_TotemBoss->alive) {
                     float pullX = 0.0f, pullY = 0.0f;
-                    g_TotemBoss->Update(pCX, pCY, FIXED_DT, g_GameManager.playerHP,
+                    g_TotemBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
                                         g_Bullets, pullX, pullY);
                     if (pullX != 0.0f || pullY != 0.0f) {
                         pCX += pullX; pCY += pullY;
@@ -2399,7 +2411,7 @@ int main() {
                 if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; Audio::PlaySfx(Audio::Sfx::Hurt); }
                 g_WinPrevHP = g_GameManager.playerHP;
                 // 李??ш린??g_Stats.windowSize 濡?怨좎젙 (HP ? 臾닿?)
-                g_WindowSizeCur = g_Stats.windowSize;
+                g_WindowSizeCur = g_Stats.windowSize * ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
                 playerWin.width = playerWin.height = g_WindowSizeCur;
                 playerWin.x = pCX - g_WindowSizeCur * 0.5f;
                 playerWin.y = pCY - g_WindowSizeCur * 0.5f;
@@ -3114,7 +3126,6 @@ int main() {
             // ??? ?곗궗 %??怨듦꺽?μ쑝濡쒕쭔 ?섏궛?섍퀬, ?ㅼ젣 諛쒖궗??1珥?怨좎젙
             if (g_Stats.cannon) effInterval = 1.0f;
             // 怨쇰??????곗궗 횞2 (諛쒖궗 媛꾧꺽 ?덈컲)
-            if (g_OverclockTimer > 0.0f) effInterval *= 0.5f;
             float effSpeed    = g_Stats.bulletSpeed   + g_Stats.GetBulletSpeedBonus();
             if (!g_Stats.turretMode) fireTimer += delta;
 
@@ -3144,11 +3155,7 @@ int main() {
                     nb.bouncesLeft = g_Stats.ricochetMax;
                     nb.dmgMult    *= g_Stats.ricochetDmgMult;
                 }
-                if (g_OverclockTimer > 0.0f) {     // 怨쇰?????怨듦꺽??+50%
-                    nb.dmgMult *= 1.5f;
-                    if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
-                }
-                if (g_Stats.berserk) {             // 愿묒쟾????泥대젰 ??쓣?섎줉 理쒕? +60%
+                if (g_Stats.berserk) {             // 광전사: 체력 낮을수록 최대 +60%
                     float hpFrac = g_Stats.maxHP > 0.0f
                                  ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                     if (hpFrac < 0.0f) hpFrac = 0.0f; else if (hpFrac > 1.0f) hpFrac = 1.0f;
@@ -3211,11 +3218,7 @@ int main() {
                             nb.bouncesLeft = g_Stats.ricochetMax;
                             nb.dmgMult    *= g_Stats.ricochetDmgMult;
                         }
-                        if (g_OverclockTimer > 0.0f) {     // 怨쇰???+50%
-                            nb.dmgMult *= 1.5f;
-                            if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 1.5f;
-                        }
-                        if (g_Stats.berserk) {             // 愿묒쟾????泥대젰 ??쓣?섎줉 理쒕? +60%
+                        if (g_Stats.berserk) {             // 광전사
                             float hpFrac = g_Stats.maxHP > 0.0f
                                          ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                             if (hpFrac < 0.0f) hpFrac = 0.0f; else if (hpFrac > 1.0f) hpFrac = 1.0f;
@@ -3600,7 +3603,6 @@ int main() {
                                        ((g_Stats.powerDraw ? 4.6f : 3.6f) + g_Stats.bowChargeCapBonus);
                         float arrowDmg = g_Stats.GetBaseDamage()
                                        * g_Stats.GetDamageMultiplier(0.0f) * chMult;
-                        if (g_OverclockTimer > 0.0f) arrowDmg *= 1.5f;
                         if (g_Stats.berserk) {
                             float hf = g_Stats.maxHP > 0.0f
                                      ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
@@ -5240,7 +5242,7 @@ int main() {
                     const wchar_t* tag = L""; float r = 1, g = 1, b = 1;
                     switch (g_Skills[i].type) {
                     case SkillType::CLOSE_WINDOW: tag = L"CLOSE"; r=0.5f; g=0.8f; b=1.0f; break;
-                    case SkillType::OVERCLOCK:    tag = L"OVCLK"; r=1.0f; g=0.6f; b=0.2f; break;
+                    case SkillType::HYPER_FOCUS:  tag = L"FOCUS"; r=0.55f; g=0.85f; b=1.0f; break;
                     case SkillType::TIME_STOP:    tag = L"TIME";  r=0.4f; g=0.9f; b=1.0f; break;
                     case SkillType::FOCUS_AIM:    tag = L"FOCUS"; r=0.7f; g=0.9f; b=1.0f; break;
                     default: break;

@@ -26,7 +26,7 @@ enum class AugType {
     LASER_2, PIERCE_2, TWIN_2,        // 티어 연장 (레이저II / 관통II / 트리플)
     PROB_CHAIN,            // 확률적 연쇄 작용 (30% 3튕김)
     DEATH_BLAST,           // 연쇄 폭발 (적 사망 시 폭발)
-    SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 과부하)
+    SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 초집중 — enum명 유지)
     // ── 전설 ──
     POWER_SURGE,                // 전설 공격력 ×1.05 (유일 곱연산 스케일러)
     RANDOM_AUG, SOUL_HARVEST,
@@ -304,10 +304,10 @@ static const AugDef ALL_AUGS[] = {
         L"Active skill — explosion at the player (knockback+dmg)  (16s CD)",
         L"アクティブスキル — 自分中心の大爆発(ノックバック+ダメージ)  (CD16秒)" } },
     { AugType::SKILL_OVERCLOCK,AugRarity::EPIC,     AugUnique::NONE, "SKILL_OVCLK",
-      { L"[스킬] 과부하", L"[Skill] Overclock", L"[スキル] オーバークロック" },
-      { L"액티브 스킬 획득 — 5초간 연사 ×2 · 공격력 +50%  (쿨 20초)",
-        L"Active skill — 5s: fire rate x2, attack +50%  (20s CD)",
-        L"アクティブスキル — 5秒間 連射×2・攻撃+50%  (CD20秒)" } },
+      { L"[스킬] 초집중", L"[Skill] Hyper Focus", L"[スキル] 超集中" },
+      { L"액티브 — 5초간 시야 +50% · 적 행동 -30% · 대시 쿨 2초  (쿨 20초)",
+        L"Active — 5s: vision +50%, enemies -30% speed, dash CD 2s  (20s CD)",
+        L"アクティブ — 5秒: 視界+50%・敵-30%・ダッシュCD2秒  (CD20秒)" } },
 
     // ── 전설 ───────────────────────────────────────────
     { AugType::POWER_SURGE,   AugRarity::LEGENDARY, AugUnique::NONE, "POWER_SURGE",

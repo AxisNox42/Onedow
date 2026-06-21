@@ -711,8 +711,7 @@ void Scene_WeaponSelect(const SceneCtx& c) {
                             if (ji < 0) continue;
                             g_Stats.Apply(jd.startAugs[a]);
                             g_OwnedAugs.push_back(ji);
-                            // 일반 픽과 동일하게 마킹 — 직업 시작 증강이 재추첨되어 중복되는 버그 방지
-                            g_TypeOwned[(int)jd.startAugs[a]] = true;
+                            // 조합 레시피(g_TypeOwned)와 분리 — 런 중 획득한 증강만 조합에 사용
                             MarkAugSeen(ji);
                             if (AugOnceOnly(jd.startAugs[a], ALL_AUGS[ji].rarity))
                                 g_GameManager.takenOnce[ji] = true;

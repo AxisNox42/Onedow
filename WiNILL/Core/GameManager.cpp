@@ -313,7 +313,7 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
         }
     }
 
-    // 조합 증강 주입 — 레시피(모든 재료 보유) 충족 + 미획득이면 한 칸을 조합으로 교체
+    // 조합 증강 주입 — 레시피(런 중 획득한 재료만 g_TypeOwned) 충족 시 확률 교체
     for (int c = 0; c < COMBO_COUNT; c++) {
         AugType res = COMBO_DEFS[c].result;
         if (g_TypeOwned[(int)res]) continue;        // 이미 획득
