@@ -288,8 +288,6 @@ bool g_BotnetWasP2 = false;
 float     g_P2ToastTimer = 0.0f;
 glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
 int g_PolyPrevForm = -1;   // ??蹂??媛먯???(蹂?????뚰떚?? ??-1 = 誘몄큹湲고솕
-float g_PolySummonTimer = 0.0f;   // 2?섏씠利? 7珥덈쭏??二쇰????먭굅由??먰룺蹂?5留덈━
-bool  g_PolyWasPhase2   = false;  // 2?섏씠利?吏꾩엯 ?곗텧 1?뚯슜
 bool  g_LastRunRecord   = false;  // 吏곸쟾 ?먯씠 ?좉린濡앹씠?덈뒗吏 (GAMEOVER ?쒖떆??
 int   g_MetaStartAugs   = 0;      // 硫뷀? ?닿툑: ?쒖옉 臾대즺 利앷컯 ???잛닔
 
@@ -783,12 +781,9 @@ int main() {
             if (!inFight) { g_ViewZoom = g_ViewZoomTarget = 1.0f; }
             else {
                 // ?먯닔 鍮꾨? 以뚯븘?????꾩옣???쒖꽌???볦뼱吏?(?곹븳 1.4諛?= zoom 0.714).
-                //   200留뚯젏?먯꽌 理쒕?移??꾨떖. ?대━紐⑦봽 ?섏씠利?(0.5)硫?洹몄そ???곗꽑(min).
+                //   200만 점에서 최대치 도달.
                 float t = std::min(1.0f, (float)g_GameManager.score / 2000000.0f);
-                float scoreZoom = 1.0f - 0.286f * t;   // 1.0 → 0.714
-                float polyZoom  = g_PolyWasPhase2 ? 0.5f
-                    : ((g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->phase2) ? 0.5f : 1.0f);
-                g_ViewZoomTarget = std::min(scoreZoom, polyZoom);
+                g_ViewZoomTarget = 1.0f - 0.286f * t;   // 1.0 → 0.714
             }
         }
         g_ViewZoom += (g_ViewZoomTarget - g_ViewZoom) * std::min(1.0f, delta * 4.0f);
@@ -872,8 +867,6 @@ int main() {
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
             g_PolyPrevForm = -1;
-            g_PolySummonTimer = 0.0f;
-            g_PolyWasPhase2 = false;
             g_BossTintT = 0.0f;
             ResetJuice();
             ResetSkills();
@@ -1066,7 +1059,6 @@ int main() {
                 if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
                 g_Turrets.clear();
-                g_PolyWasPhase2  = false;
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
                 g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
                 g_LaserBeams.clear();   // ?ㅼ틪 ?덉씠? 鍮??뺣━
@@ -1818,24 +1810,7 @@ int main() {
                     g_PolyBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
                     // ?섏씠利? = ?곸쐞 蹂댁뒪: ?붾㈃ 以뚯븘?껋쑝濡????볦? 援ш컙?먯꽌 ?몄? (?섎룄??湲곕뒫)
                     //   ?먯닔 以뚯븘?껉낵 異⑸룎 ?딄쾶 ??以뚯븘?껊맂 履?min) 梨꾪깮. (?섏씠利?? ?먯닔以??좎?)
-                    g_ViewZoomTarget = std::min(g_ViewZoomTarget,
-                        g_PolyWasPhase2 ? 0.5f : (g_PolyBoss->phase2 ? 0.5f : 1.0f));
                     // ?? 2?섏씠利?吏꾩엯 ?곗텧 ??蹂댁뒪 ?ы슚 + ?ㅼ쨷 異⑷꺽??(1?? ??
-                    if (g_PolyBoss->phase2 && !g_PolyWasPhase2) {
-                        g_PolyWasPhase2 = true;
-                        float bx = g_PolyBoss->worldX, by = g_PolyBoss->worldY;
-                        g_ShakeTime = 1.0f; g_ShakeMag = 42.0f;
-                        TriggerFlash(0.6f, 0.25f, 1.0f, 0.85f);
-                        TriggerHitStop(0.20f);
-                        // ?쇱졇?섍???蹂대씪 異⑷꺽??3寃?(?ы슚)
-                        SpawnShockWave(bx, by, 760.0f, 1.1f, 0.7f, 0.3f, 1.0f);
-                        SpawnShockWave(bx, by, 500.0f, 0.9f, 0.85f, 0.45f, 1.0f);
-                        SpawnShockWave(bx, by, 280.0f, 0.7f, 1.0f, 0.8f, 1.0f);
-                        for (int k = 0; k < 6; k++)
-                            SpawnEnemyExplosion(bx + (rand()%320 - 160),
-                                                by + (rand()%320 - 160),
-                                                0.7f, 0.3f, 1.0f, true);
-                    }
                     int curForm = (int)g_PolyBoss->form;
                     if (curForm != g_PolyPrevForm) {
                         if (g_PolyPrevForm != -1) {   // 理쒖큹 ?숆린?붾뒗 ?곗텧 ?앸왂
@@ -2197,22 +2172,7 @@ int main() {
                         }
                         if (consumed || !b.active) continue;
 
-                        // 2) 李⑦겕??(?섏씠利? 諛⑹뼱留?
-                        for (auto& c : pb->chakrams) {
-                            if (!c.alive) continue;
-                            float cx = pb->worldX + cosf(c.angle) * 150.0f;
-                            float cy = pb->worldY + sinf(c.angle) * 150.0f;
-                            if (SegDist(cx, cy, b.prevX, b.prevY, b.x, b.y) < 26.0f) {
-                                c.hp -= dmg;
-                                if (c.hp <= 0.0f) c.alive = false;
-                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dmg;
-                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
-                                break;
-                            }
-                        }
-                        if (consumed || !b.active) continue;
-
-                        // 3) 蹂몄껜
+                        // 3) 본체
                         if (SegDist(pb->worldX, pb->worldY,
                                     b.prevX, b.prevY, b.x, b.y) < PolymorphBoss::BODY * 0.55f) {
                             if (pb->reflecting()) {
@@ -2222,9 +2182,6 @@ int main() {
                                 b.isEnemy  = true;
                                 b.enemyDmg = dmg;
                                 b.color    = glm::vec3(0.8f, 0.3f, 1.0f);
-                            } else if (pb->shielded()) {
-                                // 李⑦겕???⑥쓬 ??臾댁쟻 (珥앹븣留??뚮え)
-                                if (b.remainingDmg <= 0.001f) b.active = false;
                             } else {
                                 float dealt = (dmg < pb->hp) ? dmg : pb->hp;
                                 pb->hp -= dealt;
@@ -2445,7 +2402,6 @@ int main() {
                     delete pb;
                     g_PolyBoss = nullptr;
                     g_PolyPrevForm = -1;
-                    // g_PolyWasPhase2 유지 — P2 줌아웃을 런 끝까지 이어감
                     g_TotalBossKills++;
                     TryUnlockAch(ACH_FIRST_BOSS);
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
@@ -2516,8 +2472,9 @@ int main() {
                     }
                 }
 
-                // ?쒓컙 ?먯닔
-                g_GameManager.AddScore(FIXED_DT * 100.0f);
+                // 시간 점수 (휴식·상점 중에는 정지)
+                if (!InBossRest())
+                    g_GameManager.AddScore(FIXED_DT * 100.0f);
             }
             accumulator -= FIXED_DT;
         }
@@ -2698,9 +2655,7 @@ int main() {
                 }
             }
 
-            // ?대━紐⑦봽 2?섏씠利?= 吏꾩쭨 理쒖쥌蹂댁뒪: 紐⑤뱺 ???뚰솚 3諛?(蹂댁뒪 二쎌쑝硫?1諛?蹂듦?)
-            bool  polyP2  = (g_PolyBoss && g_PolyBoss->phase2);
-            float p2mult  = polyP2 ? 3.0f : 1.0f;
+            const float p2mult = 1.0f;
 
             // ?먯닔 湲곕컲 ?쒖씠???⑦봽 — ACT 테마 (BossDirector)
             BossDir::ActRules act = BossDir::GetActRules();
@@ -2724,13 +2679,6 @@ int main() {
             // ?ㅽ룿 ?곸뿭 ??2?섏씠利?以뚯븘?????뺤옣??蹂댁씠?? ?곸뿭 紐⑥꽌由ъ뿉???ㅽ룿.
             float saX = 0.0f, saY = 0.0f;
             int   saW = screenWidth, saH = screenHeight;
-            if (polyP2) {
-                float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
-                saW = (int)((float)screenWidth  / zb);
-                saH = (int)((float)screenHeight / zb);
-                saX = (float)screenWidth  * 0.5f - saW * 0.5f;
-                saY = (float)screenHeight * 0.5f - saH * 0.5f;
-            }
 
             // ?〓す ?ㅽ룿 (D_MOB_SPAWN ?????먯＜ + cap +200, D_MOB_HP ??HP+, ?먯닔 ?⑦봽)
             spawnTimer += delta;
@@ -3032,37 +2980,6 @@ int main() {
                 g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
                     g_Stats.rmobHpMult * rampHp, rangedMax, saX, saY, saW, saH);
                 rangedSpawnTimer = 0.0f;
-            }
-
-            // ?대━紐⑦봽 2?섏씠利??꾩슜 ??7珥덈쭏???뚮젅?댁뼱 二쇰????먭굅由??먰룺蹂?5留덈━
-            //   (?ㅽ룿 ?쒗븳 臾댁떆 ??踰≫꽣??吏곸젒 push)
-            if (polyP2) {
-                g_PolySummonTimer += delta;
-                if (g_PolySummonTimer >= 7.0f) {
-                    g_PolySummonTimer = 0.0f;
-                    float pCX = playerWin.x + playerWin.width  * 0.5f;
-                    float pCY = playerWin.y + playerWin.height * 0.5f;
-                    for (int k = 0; k < 5; k++) {
-                        float ang = (float)k / 5.0f * 6.2831853f
-                                  + (float)(rand() % 100) * 0.01f;
-                        float rad = 280.0f + (float)(rand() % 160);
-                        float sx = pCX + cosf(ang) * rad;
-                        float sy = pCY + sinf(ang) * rad;
-                        if (rand() % 2 == 0) {
-                            if ((int)g_MonsterManager.rangedMobs.size() >= 16) continue;
-                            RangedMob* rm = new RangedMob(sx, sy, screenWidth, screenHeight);
-                            rm->hp *= g_Stats.rmobHpMult;
-                            g_MonsterManager.rangedMobs.push_back(rm);
-                        } else {
-                            if ((int)g_MonsterManager.bombers.size() >= 30) continue;
-                            g_MonsterManager.bombers.push_back(
-                                new Bomber(sx, sy, g_Stats.bomberHpMult,
-                                           g_Stats.bomberSpeedMult, g_Stats.bomberBlastMult));
-                        }
-                    }
-                    // ?뚰솚 ?곗텧
-                    SpawnShockWave(pCX, pCY, 320.0f, 0.5f, 0.7f, 0.3f, 1.0f);
-                }
             }
 
             // ?ㅺ??ㅻ뒗 二쎌쓬: 紐⑤뱺 ?ㅻ툕 ?곸썝??異붽꺽 + ?묒큺 ?곕?吏
@@ -4647,9 +4564,8 @@ int main() {
             BindMainShader();
             const float PUR_R = 0.6f, PUR_G = 0.2f, PUR_B = 0.95f;
             if (pb->triWarn) {
-                // ?섏씠利? 以뚯븘???뺤옣 ?곸뿭??留욎떠 寃쎄퀬瑜?'蹂댁씠?? ?앷퉴吏 ?뺤옣
-                float exX = pb->arenaExX(), exY = pb->arenaExY();
-                float fullW = (float)screenWidth + 2*exX, fullH = (float)screenHeight + 2*exY;
+                float exX = 0.0f, exY = 0.0f;
+                float fullW = (float)screenWidth, fullH = (float)screenHeight;
                 float blink = 0.35f + 0.35f * (0.5f + 0.5f * sinf((float)glfwGetTime() * 16.0f));
                 int arrows = 14;
                 for (int i = 0; i < arrows; i++) {
@@ -4736,16 +4652,6 @@ int main() {
                 drawDiamond(pb->worldX, pb->worldY, bsz, PUR_R, PUR_G, PUR_B, 1.0f);
             if (pb->reflecting())  // 諛섏궗 ?ㅻ씪
                 drawCircle(pb->worldX, pb->worldY, bsz * 0.95f, 1.0f, 1.0f, 1.0f, 0.18f);
-            // 李⑦겕??(?ㅼ씠?꾨が??諛⑹뼱留?
-            for (auto& c : pb->chakrams) {
-                if (!c.alive) continue;
-                float cx = pb->worldX + cosf(c.angle) * 150.0f;
-                float cy = pb->worldY + sinf(c.angle) * 150.0f;
-                drawDiamond(cx, cy, 30.0f, 0.7f, 0.3f, 1.0f, 1.0f);
-                float cf = c.hp / 1000.0f; if (cf < 0) cf = 0;
-                drawRect(cx - 18, cy - 34, 36.0f, 4.0f, 0.2f, 0.1f, 0.2f, 0.8f);
-                drawRect(cx - 18, cy - 34, 36.0f * cf, 4.0f, 0.8f, 0.4f, 1.0f, 0.9f);
-            }
             // (HP 諛붾뒗 ?붾㈃ ?곷떒 怨좎젙 蹂댁뒪 諛붾줈 ?대룞)
             // ??蹂???뚰떚????蹂댁뒪 媛쒖씤 李??덉뿉?쒕룄 蹂댁씠?꾨줉 (李?諛??곗뒪?ы넲??????
             for (auto& p : g_EnemyParts) {
