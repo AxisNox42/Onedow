@@ -464,48 +464,94 @@ void Scene_Codex(const SceneCtx& c) {
                         g_TextS.Draw(d,  wx + 40.0f, detailY + 54.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
                     }
                 } else if (s_tab == 1) {
-                    // 증강 — 검색 필터링 후 재배치 (셀 축소 + 카테고리(등급)별 정렬로
-                    //   상세 박스 침범 방지 + 버프/디버프/특수/조합 그룹화)
-                    const int COLS = 15; const float CELL = 72.0f;
+                    // 증강 — 카테고리별 스크롤 리스트 (일시정지 보유 패널과 동일 형식)
                     int vis[AUG_TOTAL], nv = 0;
                     for (int i = 0; i < AUG_TOTAL; i++) {
-                        if (AugRemoved(ALL_AUGS[i].type)) continue;   // 삭제/보류 증강은 도감에서 숨김
-                        if (g_CodexSearchLen == 0 || (g_AugSeen[i] && CodexMatch(AugName(ALL_AUGS[i]))))
-                            vis[nv++] = i;
+                        if (AugRemoved(ALL_AUGS[i].type)) continue;
+                        if (g_CodexSearchLen > 0) {
+                            if (!g_AugSeen[i] || !CodexMatch(AugName(ALL_AUGS[i]))) continue;
+                        }
+                        vis[nv++] = i;
                     }
-                    // 등급 순(일반→희귀→에픽→전설→조합→신화→디버프)으로 정렬
                     std::sort(vis, vis + nv, [](int a, int b) {
-                        int ra = OwnedAugListOrder(ALL_AUGS[a].rarity);
-                        int rb = OwnedAugListOrder(ALL_AUGS[b].rarity);
-                        if (ra != rb) return ra < rb;
-                        return a < b;
+                        return AugListIndexLess(a, b);
                     });
-                    float gx = wx + (WW - COLS*CELL) * 0.5f;
+
+                    const float LIST_X = wx + 40.0f;
+                    const float LIST_W = WW - 80.0f;
+                    const float ROW_H  = 22.0f;
+                    const float HDR_H  = 20.0f;
+                    const float listTop = gTop;
+                    const float listBottom = detailY - 12.0f;
+                    const float viewH = listBottom - listTop;
+                    int hdrCount = 0;
+                    AugListGroup prevGrp = (AugListGroup)-1;
+                    for (int k = 0; k < nv; k++) {
+                        AugListGroup g = AugListGroupOf(ALL_AUGS[vis[k]]);
+                        if (g != prevGrp) { hdrCount++; prevGrp = g; }
+                    }
+                    const float contentH = (float)nv * ROW_H + (float)hdrCount * HDR_H;
+                    static float s_codexAugScroll = 0.0f;
+                    bool overList = (mx >= LIST_X && mx <= LIST_X + LIST_W &&
+                                     my >= listTop && my <= listBottom);
+                    if (overList && g_ScrollAccum != 0.0f)
+                        s_codexAugScroll -= g_ScrollAccum * ROW_H * 1.5f;
+                    g_ScrollAccum = 0.0f;
+                    float maxScroll = (contentH > viewH) ? (contentH - viewH) : 0.0f;
+                    if (s_codexAugScroll < 0.0f) s_codexAugScroll = 0.0f;
+                    if (s_codexAugScroll > maxScroll) s_codexAugScroll = maxScroll;
+
+                    BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                    glScissor((GLint)LIST_X, (GLint)(sh - listBottom),
+                              (GLint)LIST_W, (GLint)viewH);
+                    prevGrp = (AugListGroup)-1;
+                    float ry = listTop - s_codexAugScroll;
                     for (int k = 0; k < nv; k++) {
                         int i = vis[k];
-                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
-                        float cw = CELL - 8.0f;
-                        bool seen = g_AugSeen[i];
-                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        if (hv) hoverItem = i;
-                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
-                        BindMainShader();
-                        if (seen) drawRect(cxp, cyp, cw, cw, rr*0.35f, rg*0.35f, rb*0.35f, 0.95f);
-                        else      drawRect(cxp, cyp, cw, cw, 0.06f, 0.06f, 0.08f, 0.95f);
-                        if (seen) {
-                            GLuint ic = IconFor(ALL_AUGS[i].type);
-                            float isz = 48.0f;
-                            if (ic) DrawIcon(ic, cxp + (cw-isz)*0.5f, cyp + (cw-isz)*0.5f,
-                                             isz, isz, 1,1,1, 0.97f);
-                            else {
-                                BindMainShader();
-                                drawRect(cxp + cw*0.3f, cyp + cw*0.3f, cw*0.4f, cw*0.4f, rr, rg, rb, 0.9f);
-                            }
-                        } else {
-                            float qw = g_TextL.Width(L"?", 1.0f);
-                            g_TextL.Draw(L"?", cxp + (cw - qw)*0.5f, cyp + cw*0.5f - 18.0f, 1.0f,
-                                         0.4f, 0.4f, 0.45f, 0.9f);
+                        AugListGroup grp = AugListGroupOf(ALL_AUGS[i]);
+                        if (grp != prevGrp) {
+                            if (ry >= listTop - HDR_H && ry <= listBottom)
+                                g_TextS.Draw(AugListGroupLabel(grp), LIST_X, ry, 0.72f,
+                                             0.55f, 0.75f, 0.95f, 0.88f);
+                            ry += HDR_H;
+                            prevGrp = grp;
                         }
+                        if (ry >= listTop - ROW_H && ry <= listBottom) {
+                            bool seen = g_AugSeen[i];
+                            bool hv = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
+                            if (hv) hoverItem = i;
+                            float rr, rg, rb;
+                            GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
+                            if (hv) {
+                                BindMainShader();
+                                drawRect(LIST_X, ry - 2.0f, LIST_W, ROW_H,
+                                         0.15f, 0.16f, 0.26f, 0.55f);
+                            }
+                            wchar_t line[128];
+                            if (seen)
+                                swprintf_s(line, L"· [%ls] %ls",
+                                           GetAugBadge(ALL_AUGS[i]), AugName(ALL_AUGS[i]));
+                            else
+                                swprintf_s(line, L"· ???");
+                            float rowSc = 0.78f;
+                            while (rowSc > 0.62f &&
+                                   g_TextS.Width(line, rowSc) > LIST_W - 8.0f) rowSc -= 0.03f;
+                            if (seen)
+                                g_TextS.Draw(line, LIST_X + 2.0f, ry, rowSc, rr, rg, rb, 0.92f);
+                            else
+                                g_TextS.Draw(line, LIST_X + 2.0f, ry, rowSc,
+                                             0.45f, 0.45f, 0.5f, 0.85f);
+                        }
+                        ry += ROW_H;
+                    }
+                    BatchFlush(); glDisable(GL_SCISSOR_TEST);
+                    if (maxScroll > 0.0f) {
+                        BindMainShader();
+                        float trackX = LIST_X + LIST_W + 4.0f;
+                        drawRect(trackX, listTop, 4.0f, viewH, 0.12f, 0.12f, 0.16f, 0.6f);
+                        float thumbH = viewH * (viewH / contentH);
+                        float thumbY = listTop + (viewH - thumbH) * (s_codexAugScroll / maxScroll);
+                        drawRect(trackX, thumbY, 4.0f, thumbH, 0.5f, 0.6f, 0.8f, 0.9f);
                     }
                     // 상세(article)
                     BindMainShader();
@@ -743,10 +789,14 @@ void Scene_WeaponSelect(const SceneCtx& c) {
                     if (g_CreativeMode) {
                         for (int aidx : g_CreativeStartAugList) {
                             if (aidx < 0 || aidx >= AUG_TOTAL) continue;
-                            g_Stats.Apply(ALL_AUGS[aidx].type);
+                            AugType atype = ALL_AUGS[aidx].type;
+                            g_Stats.Apply(atype);
                             g_OwnedAugs.push_back(aidx);
-                            g_TypeOwned[(int)ALL_AUGS[aidx].type] = true;
-                            g_GameManager.takenOnce[aidx] = true;
+                            g_TypeOwned[(int)atype] = true;
+                            MarkAugSeen(aidx);
+                            EquipSkill(SkillForAug(atype));
+                            if (AugOnceOnly(atype, ALL_AUGS[aidx].rarity))
+                                g_GameManager.takenOnce[aidx] = true;
                         }
                     }
                     g_GameManager.maxHP    = g_Stats.maxHP;
@@ -985,70 +1035,86 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                         g_CreativeStartAugs = aOpts[i];
                 }
 
-                // ── 시작 증강 직접 선택 (우측 그리드, 클릭 토글, 휠 스크롤) ──
+                // ── 시작 증강 직접 선택 (우측 카테고리 리스트, 클릭 토글) ──
                 {
-                    const int COLS = 9; const float CELL = 52.0f;
-                    // 좌측 보스 버튼(우단 x≈866)과 겹치지 않게 우측 배치. 넓은 화면은 우측 정렬.
-                    float gx = sw - (float)COLS * CELL - 60.0f;
-                    if (gx < 900.0f) gx = 900.0f;
+                    float gx = 900.0f;
+                    if (gx < sw * 0.48f) gx = sw * 0.48f;
+                    const float LIST_W = sw - gx - 40.0f;
                     g_TextS.Draw(L"Pick Start Augments (click)", gx, sh*0.20f, 0.95f, 1,1,1,0.9f);
                     int avail[AUG_TOTAL], na = 0;
                     for (int i = 0; i < AUG_TOTAL; i++) {
-                        if (AugRemoved(ALL_AUGS[i].type)) continue;   // 삭제 증강 제외
+                        if (AugRemoved(ALL_AUGS[i].type)) continue;
                         avail[na++] = i;
                     }
+                    std::sort(avail, avail + na, [](int a, int b) {
+                        return AugListIndexLess(a, b);
+                    });
+                    const float ROW_H = 22.0f, HDR_H = 20.0f;
                     float gTop = sh*0.20f + 28.0f, gBottom = sh - 96.0f;
                     float viewH = gBottom - gTop;
-                    float contentH = (float)((na + COLS - 1) / COLS) * CELL;
+                    int hdrCount = 0;
+                    AugListGroup prevGrp = (AugListGroup)-1;
+                    for (int k = 0; k < na; k++) {
+                        AugListGroup g = AugListGroupOf(ALL_AUGS[avail[k]]);
+                        if (g != prevGrp) { hdrCount++; prevGrp = g; }
+                    }
+                    float contentH = (float)na * ROW_H + (float)hdrCount * HDR_H;
                     static float s_caScroll = 0.0f;
-                    bool over = (mx >= gx && mx <= gx + COLS*CELL && my >= gTop && my <= gBottom);
-                    if (over && g_ScrollAccum != 0.0f) s_caScroll -= g_ScrollAccum * CELL;
+                    bool over = (mx >= gx && mx <= gx + LIST_W && my >= gTop && my <= gBottom);
+                    if (over && g_ScrollAccum != 0.0f) s_caScroll -= g_ScrollAccum * ROW_H * 1.5f;
                     g_ScrollAccum = 0.0f;
                     float maxS = (contentH > viewH) ? (contentH - viewH) : 0.0f;
                     if (s_caScroll < 0) s_caScroll = 0; if (s_caScroll > maxS) s_caScroll = maxS;
                     BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                    glScissor((GLint)gx, (GLint)(sh - gBottom), (GLint)(COLS*CELL + 4), (GLint)viewH);
+                    glScissor((GLint)gx, (GLint)(sh - gBottom), (GLint)(LIST_W + 4), (GLint)viewH);
+                    prevGrp = (AugListGroup)-1;
+                    float ry = gTop - s_caScroll;
                     for (int k = 0; k < na; k++) {
                         int i = avail[k];
-                        float cxp = gx + (k % COLS) * CELL;
-                        float cyp = gTop + (k / COLS) * CELL - s_caScroll;
-                        if (cyp < gTop - CELL || cyp > gBottom) continue;
-                        float cw = CELL - 6.0f;
-                        int selPos = -1;
-                        for (int s = 0; s < (int)g_CreativeStartAugList.size(); s++)
-                            if (g_CreativeStartAugList[s] == i) { selPos = s; break; }
-                        bool selected = (selPos >= 0);
-                        bool hv = (over && mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
-                        BindMainShader();
-                        drawRect(cxp, cyp, cw, cw, rr*0.4f, rg*0.4f, rb*0.4f, selected?0.95f:(hv?0.7f:0.5f));
-                        if (selected) {  // 선택 강조 테두리
-                            drawRect(cxp, cyp, cw, 3.0f, 1,1,1,1); drawRect(cxp, cyp+cw-3, cw, 3.0f, 1,1,1,1);
-                            drawRect(cxp, cyp, 3.0f, cw, 1,1,1,1); drawRect(cxp+cw-3, cyp, 3.0f, cw, 1,1,1,1);
+                        AugListGroup grp = AugListGroupOf(ALL_AUGS[i]);
+                        if (grp != prevGrp) {
+                            if (ry >= gTop - HDR_H && ry <= gBottom)
+                                g_TextS.Draw(AugListGroupLabel(grp), gx, ry, 0.72f,
+                                             0.55f, 0.75f, 0.95f, 0.88f);
+                            ry += HDR_H;
+                            prevGrp = grp;
                         }
-                        GLuint ic = IconFor(ALL_AUGS[i].type);
-                        if (ic) DrawIcon(ic, cxp+(cw-34)*0.5f, cyp+(cw-34)*0.5f, 34, 34, 1,1,1,1);
-                        if (hv && lmb && !g_LmbPrev) {
-                            if (selected) g_CreativeStartAugList.erase(g_CreativeStartAugList.begin()+selPos);
-                            else          g_CreativeStartAugList.push_back(i);
+                        if (ry >= gTop - ROW_H && ry <= gBottom) {
+                            int selPos = -1;
+                            for (int s = 0; s < (int)g_CreativeStartAugList.size(); s++)
+                                if (g_CreativeStartAugList[s] == i) { selPos = s; break; }
+                            bool selected = (selPos >= 0);
+                            bool hv = (over && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
+                            float rr, rg, rb;
+                            GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
+                            if (selected || hv) {
+                                BindMainShader();
+                                drawRect(gx, ry - 2.0f, LIST_W, ROW_H,
+                                         selected ? 0.18f : 0.12f,
+                                         selected ? 0.22f : 0.14f,
+                                         selected ? 0.30f : 0.18f, 0.75f);
+                                if (selected)
+                                    drawRect(gx, ry - 2.0f, 3.0f, ROW_H, rr, rg, rb, 1.0f);
+                            }
+                            wchar_t line[128];
+                            swprintf_s(line, L"%ls [%ls] %ls",
+                                       selected ? L"✓" : L"·",
+                                       GetAugBadge(ALL_AUGS[i]), AugName(ALL_AUGS[i]));
+                            float rowSc = 0.76f;
+                            while (rowSc > 0.60f &&
+                                   g_TextS.Width(line, rowSc) > LIST_W - 8.0f) rowSc -= 0.03f;
+                            g_TextS.Draw(line, gx + 4.0f, ry, rowSc, rr, rg, rb, selected ? 1.0f : 0.88f);
+                            if (hv && lmb && !g_LmbPrev) {
+                                if (selected) g_CreativeStartAugList.erase(
+                                    g_CreativeStartAugList.begin() + selPos);
+                                else          g_CreativeStartAugList.push_back(i);
+                            }
                         }
+                        ry += ROW_H;
                     }
                     BatchFlush(); glDisable(GL_SCISSOR_TEST);
                     wchar_t cb[48]; swprintf_s(cb, L"selected: %d", (int)g_CreativeStartAugList.size());
                     g_TextS.Draw(cb, gx, gBottom + 10.0f, 0.85f, 1.0f, 0.9f, 0.4f, 0.95f);
-                    // 호버 시 이름 툴팁
-                    for (int k = 0; k < na; k++) {
-                        int i = avail[k];
-                        float cxp = gx + (k % COLS) * CELL;
-                        float cyp = gTop + (k / COLS) * CELL - s_caScroll;
-                        if (cyp < gTop || cyp > gBottom) continue;
-                        if (mx >= cxp && mx < cxp+CELL-6 && my >= cyp && my < cyp+CELL-6) {
-                            // 카운트("selected: N")와 겹치지 않게 한 줄 아래 별도 표기
-                            g_TextS.Draw(AugName(ALL_AUGS[i]), gx, gBottom + 34.0f, 0.85f,
-                                         0.8f, 0.95f, 1.0f, 0.95f);
-                            break;
-                        }
-                    }
                 }
 
                 // 시작 버튼
@@ -1624,14 +1690,12 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 int ord[AUG_TOTAL], nord = 0;
                 for (int i = 0; i < AUG_TOTAL; i++) if (counts[i] > 0) ord[nord++] = i;
                 std::sort(ord, ord + nord, [](int a, int b) {
-                    int ra = OwnedAugListOrder(ALL_AUGS[a].rarity);
-                    int rb = OwnedAugListOrder(ALL_AUGS[b].rarity);
-                    if (ra != rb) return ra < rb;
-                    return a < b;
+                    return AugListIndexLess(a, b);
                 });
 
                 const float PX  = 16.0f;
                 const float ROW_H = 24.0f;
+                const float HDR_H = 20.0f;
                 const float COLW  = 320.0f;          // 리스트 클릭/호버 가로 범위
                 const wchar_t* TITLE = T(StrId::OWNED_AUGS);
                 g_TextS.Draw(TITLE, PX, 60.0f, 1.1f, 1, 1, 1, 0.95f);
@@ -1653,7 +1717,13 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 float listBottom = sh - 175.0f;               // 스킬 슬롯/HP 패널 위까지
                 if (listBottom < listTop + 4.0f * ROW_H) listBottom = listTop + 4.0f * ROW_H;
                 const float viewH      = listBottom - listTop;
-                const float contentH   = (float)nord * ROW_H;
+                int hdrCount = 0;
+                AugListGroup prevGrp = (AugListGroup)-1;
+                for (int oi = 0; oi < nord; oi++) {
+                    AugListGroup g = AugListGroupOf(ALL_AUGS[ord[oi]]);
+                    if (g != prevGrp) { hdrCount++; prevGrp = g; }
+                }
+                const float contentH   = (float)nord * ROW_H + (float)hdrCount * HDR_H;
 
                 // 마우스 휠 스크롤 (리스트 위에서만 소비)
                 static float s_ownScroll = 0.0f;
@@ -1670,10 +1740,20 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 float hoverRowY = 0.0f;
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
                 glScissor(0, (GLint)(sh - listBottom), (GLint)(COLW + 10.0f), (GLint)viewH);
+                prevGrp = (AugListGroup)-1;
+                float ry = listTop - s_ownScroll;
                 for (int oi = 0; oi < nord; oi++) {
                     int i = ord[oi];
-                    float ry = listTop + (float)oi * ROW_H - s_ownScroll;
-                    if (ry < listTop - ROW_H || ry > listBottom) continue;   // 화면 밖 컬링
+                    AugListGroup grp = AugListGroupOf(ALL_AUGS[i]);
+                    if (grp != prevGrp) {
+                        if (ry >= listTop - HDR_H && ry <= listBottom) {
+                            g_TextS.Draw(AugListGroupLabel(grp), PX, ry, 0.72f,
+                                         0.55f, 0.75f, 0.95f, 0.88f);
+                        }
+                        ry += HDR_H;
+                        prevGrp = grp;
+                    }
+                    if (ry < listTop - ROW_H || ry > listBottom) { ry += ROW_H; continue; }
                     const AugDef& def = ALL_AUGS[i];
                     float cr, cg, cb;
                     GetRarityColor(def.rarity, cr, cg, cb);
@@ -1695,6 +1775,7 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     float rowSc = 0.82f;
                     while (rowSc > 0.62f && g_TextS.Width(line, rowSc) > COLW - PX - 10.0f) rowSc -= 0.03f;
                     g_TextS.Draw(line, PX, ry, rowSc, cr, cg, cb, 0.9f);
+                    ry += ROW_H;
                 }
                 BatchFlush(); glDisable(GL_SCISSOR_TEST);
 

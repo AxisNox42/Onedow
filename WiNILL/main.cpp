@@ -1118,6 +1118,8 @@ int main() {
                     g_GameManager.PickRandomDebuffIndices(debuffs, nDebuffs);
                     for (int k = 0; k < nBuffs;   k++) applyByIdx(buffs[k]);
                     for (int k = 0; k < nDebuffs; k++) applyByIdx(debuffs[k]);
+                    // 스킬 슬롯 — reroll 후 보유 목록 기준 재장착
+                    ReequipSkillsFromOwned(g_OwnedAugs.data(), (int)g_OwnedAugs.size());
                     // 스폰 압력(간격/캡/군집)은 reroll 전후 중 강한 쪽 유지 — 대혼란 후 급감 방지
                     g_Stats.mobSpawnMult  = std::min(g_Stats.mobSpawnMult,  saveSpawnMult);
                     g_Stats.mobCapBonus   = std::max(g_Stats.mobCapBonus,   saveCapBonus);

@@ -21,3 +21,18 @@ void EquipSkill(SkillType t) {
     g_Skills[g_SkillReplaceIdx] = { t, 0.0f };
     g_SkillReplaceIdx = (g_SkillReplaceIdx + 1) % 3;
 }
+
+void ClearEquippedSkills() {
+    for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
+    g_SkillReplaceIdx = 0;
+}
+
+void ReequipSkillsFromOwned(const int* indices, int count) {
+    ClearEquippedSkills();
+    if (!indices || count <= 0) return;
+    for (int k = 0; k < count; k++) {
+        int idx = indices[k];
+        if (idx < 0 || idx >= AUG_TOTAL) continue;
+        EquipSkill(SkillForAug(ALL_AUGS[idx].type));
+    }
+}

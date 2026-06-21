@@ -784,6 +784,104 @@ inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
     }
 }
 
+// 도감·일시정지·크리에이티브 공통 — 카테고리 그룹
+enum class AugListGroup {
+    SKILL, WEAPON, ORBIT, COMBO, MYTHIC, SPECIAL, SIZE, DISTANCE, STAT, DEBUFF
+};
+
+inline bool AugIsSkillType(AugType t) {
+    return t == AugType::SKILL_CLOSE     || t == AugType::SKILL_OVERCLOCK ||
+           t == AugType::SKILL_TIMESTOP  || t == AugType::SKILL_FOCUS     ||
+           t == AugType::SKILL_DASH_UP;
+}
+
+inline bool AugIsWeaponType(AugType t) {
+    switch (t) {
+    case AugType::CANNON: case AugType::MINIGUN: case AugType::SHOTGUN:
+    case AugType::SNIPER: case AugType::MK2: case AugType::HACK_RANGED:
+    case AugType::BAYONET: case AugType::MELEE_WIDE: case AugType::BLADE_WIND:
+    case AugType::POWER_DRAW: case AugType::MULTISHOT:
+    case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
+    case AugType::HE_SHELLS: case AugType::SMG_COMPRESSOR:
+    case AugType::RIFLE_STABILITY: case AugType::SNIPER_AMPLIFIER:
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline bool AugIsOrbitType(AugType t) {
+    switch (t) {
+    case AugType::DRONE: case AugType::DRONE_2: case AugType::DRONE_HIVE:
+    case AugType::CHAKRAM: case AugType::CHAKRAM_2: case AugType::CHAKRAM_3:
+    case AugType::CHAKRAM_SINGULARITY:
+    case AugType::LASER: case AugType::LASER_2: case AugType::LASER_CONVERGE:
+    case AugType::BULLET_RAIN: case AugType::BULLET_RAIN_2:
+    case AugType::BULLET_RAIN_3: case AugType::BULLET_RAIN_ETERNAL:
+    case AugType::CB_TURRET:
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline AugListGroup AugListGroupOf(const AugDef& d) {
+    if (d.rarity == AugRarity::DEBUFF) return AugListGroup::DEBUFF;
+    if (d.rarity == AugRarity::COMBO)  return AugListGroup::COMBO;
+    if (d.rarity == AugRarity::MYTHIC) return AugListGroup::MYTHIC;
+    if (d.rarity == AugRarity::SPECIAL)return AugListGroup::SPECIAL;
+    if (AugIsSkillType(d.type))        return AugListGroup::SKILL;
+    if (AugIsWeaponType(d.type))       return AugListGroup::WEAPON;
+    if (AugIsOrbitType(d.type))        return AugListGroup::ORBIT;
+    if (d.unique == AugUnique::SIZE)     return AugListGroup::SIZE;
+    if (d.unique == AugUnique::DISTANCE) return AugListGroup::DISTANCE;
+    return AugListGroup::STAT;
+}
+
+inline int AugListGroupOrder(AugListGroup g) {
+    switch (g) {
+    case AugListGroup::SKILL:    return 0;
+    case AugListGroup::WEAPON:   return 1;
+    case AugListGroup::ORBIT:    return 2;
+    case AugListGroup::COMBO:    return 3;
+    case AugListGroup::MYTHIC:   return 4;
+    case AugListGroup::SPECIAL:  return 5;
+    case AugListGroup::SIZE:     return 6;
+    case AugListGroup::DISTANCE: return 7;
+    case AugListGroup::STAT:     return 8;
+    case AugListGroup::DEBUFF:   return 9;
+    default: return 99;
+    }
+}
+
+inline const wchar_t* AugListGroupLabel(AugListGroup g) {
+    int li = CurLangIdx();
+    switch (g) {
+    case AugListGroup::SKILL:
+        { static const wchar_t* s[3]={L"── 스킬 ──",L"── Skills ──",L"── スキル ──"}; return s[li]; }
+    case AugListGroup::WEAPON:
+        { static const wchar_t* s[3]={L"── 무기 ──",L"── Weapons ──",L"── 武器 ──"}; return s[li]; }
+    case AugListGroup::ORBIT:
+        { static const wchar_t* s[3]={L"── 오빗·동료 ──",L"── Orbit·Allies ──",L"── 軌道·僚 ──"}; return s[li]; }
+    case AugListGroup::COMBO:
+        { static const wchar_t* s[3]={L"── 조합 ──",L"── Combo ──",L"── 組合 ──"}; return s[li]; }
+    case AugListGroup::MYTHIC:
+        { static const wchar_t* s[3]={L"── 신화 ──",L"── Mythic ──",L"── 神話 ──"}; return s[li]; }
+    case AugListGroup::SPECIAL:
+        { static const wchar_t* s[3]={L"── 특수 ──",L"── Special ──",L"── 特殊 ──"}; return s[li]; }
+    case AugListGroup::SIZE:
+        { static const wchar_t* s[3]={L"── 크기 ──",L"── Size ──",L"── サイズ ──"}; return s[li]; }
+    case AugListGroup::DISTANCE:
+        { static const wchar_t* s[3]={L"── 거리 ──",L"── Range ──",L"── 距離 ──"}; return s[li]; }
+    case AugListGroup::STAT:
+        { static const wchar_t* s[3]={L"── 강화 ──",L"── Stats ──",L"── 強化 ──"}; return s[li]; }
+    case AugListGroup::DEBUFF:
+        { static const wchar_t* s[3]={L"── 디버프 ──",L"── Debuffs ──",L"── デバフ ──"}; return s[li]; }
+    default:
+        return L"── ? ──";
+    }
+}
+
 // 보유 증강·도감 리스트 표시 순서 (enum 값과 무관)
 inline int OwnedAugListOrder(AugRarity r) {
     switch (r) {
@@ -797,6 +895,18 @@ inline int OwnedAugListOrder(AugRarity r) {
     case AugRarity::DEBUFF:    return 7;
     default: return 99;
     }
+}
+
+// 카테고리 → 등급 순 정렬 (도감·보유·크리에이티브 공통)
+inline bool AugListIndexLess(int a, int b) {
+    AugListGroup ga = AugListGroupOf(ALL_AUGS[a]);
+    AugListGroup gb = AugListGroupOf(ALL_AUGS[b]);
+    int oa = AugListGroupOrder(ga), ob = AugListGroupOrder(gb);
+    if (oa != ob) return oa < ob;
+    int ra = OwnedAugListOrder(ALL_AUGS[a].rarity);
+    int rb = OwnedAugListOrder(ALL_AUGS[b].rarity);
+    if (ra != rb) return ra < rb;
+    return a < b;
 }
 
 // 등급 라벨 (현재 언어)

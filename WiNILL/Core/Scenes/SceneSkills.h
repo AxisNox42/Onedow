@@ -13,3 +13,5 @@ extern int       g_SkillReplaceIdx;
 
 SkillType SkillForAug(AugType a);
 void      EquipSkill(SkillType t);
+void      ClearEquippedSkills();
+void      ReequipSkillsFromOwned(const int* indices, int count);
