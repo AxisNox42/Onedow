@@ -4063,9 +4063,12 @@ int main() {
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
-            for (auto& lane : g_UnknownBoss->recallLanes)
-                addW(lane.x + lane.w * 0.5f, lane.y + lane.h * 0.5f, lane.w, lane.h,
-                     UnknownBoss::LANE_NAME, 0.04f,0.03f,0.05f, 0.85f,0.22f,0.48f);
+            for (auto& bw : g_UnknownBoss->bladeWins) {
+                if (!bw.active) continue;
+                addW(bw.x + bw.w * 0.5f, bw.y + bw.h * 0.5f, bw.w, bw.h,
+                     UnknownBoss::BLADE_NAME, 0.05f,0.03f,0.06f,
+                     bw.recall ? 0.85f : 0.92f, bw.recall ? 0.22f : 0.35f, bw.recall ? 0.48f : 0.65f);
+            }
         }
         // trap.exe / vaccine.exe — (e.sat)에서 플레이어 창 위에 통째로 그림
         // ?ы깙 李?諛곌꼍+蹂대뜑 (理쒗븯?? ?뚮젅?댁뼱 ?뚯쑀??z-由ъ뒪??諛?
@@ -4303,8 +4306,10 @@ int main() {
             drawBossWinContent(g_UnknownBoss->worldX - UNKNOWN_WIN_W * 0.5f,
                                g_UnknownBoss->worldY - UNKNOWN_WIN_H * 0.5f,
                                UNKNOWN_WIN_W, UNKNOWN_WIN_H);
-            for (auto& lane : g_UnknownBoss->recallLanes)
-                drawBossWinContent(lane.x, lane.y, lane.w, lane.h);
+            for (auto& bw : g_UnknownBoss->bladeWins) {
+                if (!bw.active) continue;
+                drawBossWinContent(bw.x, bw.y, bw.w, bw.h);
+            }
         }
         // 遊뉖꽬 ?몃뱶(SPAWNER) 李??대? 而⑦뀗痢????몃뱶 蹂몄껜/?뚰솚 ?뚯씠 ?먭린 李쎌뿉??蹂댁씠?꾨줉 (E21)
         for (auto m : g_MonsterManager.monsters) {
@@ -5106,7 +5111,7 @@ int main() {
             }
         }
 
-        // UNKNOWN.sys — 게임 창(화면) 가장자리 검 + pull.lane
+        // UNKNOWN.sys — blade.sys 미니창 + 화면 가장자리 pin
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             auto* ub = g_UnknownBoss;
             float gtUB = (float)glfwGetTime();
@@ -5121,14 +5126,16 @@ int main() {
             float uwy = ub->worldY - UNKNOWN_WIN_H * 0.5f;
             ubWinPass(uwx, uwy, UNKNOWN_WIN_W, UNKNOWN_WIN_H);
             ubWinPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            for (auto& bw : ub->bladeWins) {
+                if (!bw.active) continue;
+                ubWinPass(bw.x, bw.y, bw.w, bw.h);
+            }
             const float edgeBand = 84.0f;
             float sw = (float)screenWidth, sh = (float)screenHeight;
             ubWinPass(0.0f, 0.0f, sw, edgeBand);
             ubWinPass(0.0f, sh - edgeBand, sw, edgeBand);
             ubWinPass(0.0f, 0.0f, edgeBand, sh);
             ubWinPass(sw - edgeBand, 0.0f, edgeBand, sh);
-            for (auto& lane : ub->recallLanes)
-                ubWinPass(lane.x, lane.y, lane.w, lane.h);
         }
 
     
