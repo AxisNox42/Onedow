@@ -705,7 +705,7 @@ static const AugDef ALL_AUGS[] = {
         L"衛星系2種以上 — 衛星ダメ+12%/種  (ビルド連結)" } },
 };
 
-static constexpr int AUG_TOTAL = 119;
+static constexpr int AUG_TOTAL = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
 
 // ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
