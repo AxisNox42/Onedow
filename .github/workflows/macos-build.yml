@@ -1,17 +1,20 @@
 name: macOS Build
 
-# 수동 실행(Actions 탭의 "Run workflow") + main 푸시 시 자동 빌드
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
+
+concurrency:
+  group: macos-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    # macos-latest = Apple Silicon(arm64) 러너 → 줄이 짧음.
-    # 여기서 universal(arm64 + x86_64) 로 빌드하면
-    # Intel 맥·M칩 맥 모두 네이티브 실행 (Rosetta 불필요) = 단일 파일로 전부 호환
     runs-on: macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -22,8 +25,6 @@ jobs:
           test -f WiNILL/Font/Jua-Regular.ttf
           test -f WiNILL/Font/KosugiMaru-Regular.ttf
 
-      # ── GLFW 를 정적(static) · 유니버설로 직접 빌드 ──
-      #    → 최종 바이너리가 GLFW dylib 에 의존하지 않아 어디서나 실행 가능
       - name: Build GLFW (static, universal)
         run: |
           git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git glfw-src
@@ -37,26 +38,40 @@ jobs:
           cmake --build glfw-src/build --config Release
           cmake --install glfw-src/build
 
-      # ── 게임 빌드 (universal) ──
       - name: Configure & build Onedow
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${{ github.workspace }}/glfw-install" \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-          cmake --build build --config Release
+          cmake --build build --config Release -j"$(sysctl -n hw.ncpu)"
 
-      # ── 패키징 (바이너리 + 폰트) ──
+      - name: Verify binary
+        run: |
+          test -x build/WiNILL
+          file build/WiNILL
+          lipo -info build/WiNILL | tee /dev/stderr | grep -q 'arm64' || exit 1
+          test -d build/Resource
+          test -d build/Font
+
       - name: Package
         run: |
-          mkdir -p bin/Zip/Onedow/WindowsOS bin/Zip/Onedow/macOS
-          cp build/WiNILL bin/Zip/Onedow/macOS/Onedow
-          chmod +x bin/Zip/Onedow/macOS/Onedow
-          codesign --force --deep --sign - bin/Zip/Onedow/macOS/Onedow || true
+          ONEDOW=bin/Zip/Onedow
+          mkdir -p "$ONEDOW/WindowsOS" "$ONEDOW/macOS"
+          cp -R WiNILL/Resource "$ONEDOW/Resource"
+          cp -R WiNILL/Font "$ONEDOW/Font"
+          if [ -d WiNILL/Icons ]; then cp -R WiNILL/Icons "$ONEDOW/Icons"; fi
+          cp build/WiNILL "$ONEDOW/macOS/Onedow"
+          chmod +x "$ONEDOW/macOS/Onedow"
+          codesign --force --deep --sign - "$ONEDOW/macOS/Onedow" || true
           cd bin/Zip && zip -r Onedow.zip Onedow
+          ls -lh Onedow.zip
+          unzip -l Onedow.zip | head -20
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: Onedow-macOS
           path: bin/Zip/Onedow.zip
+          if-no-files-found: error
