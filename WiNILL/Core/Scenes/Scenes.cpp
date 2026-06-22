@@ -2123,3 +2123,35 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                                   CurrentWeaponLabel(), CurrentWeaponDescText());
                 }
 }
+
+bool TryEscNavigateBack() {
+    using GS = GameState;
+    GameState& st = g_GameManager.currentState;
+    switch (st) {
+    case GS::SHOP:
+        st = GS::MAIN_MENU;
+        return true;
+    case GS::CODEX:
+        CodexSearchClear();
+        st = GS::MAIN_MENU;
+        return true;
+    case GS::JOB_SELECT:
+        st = g_CreativeMode ? GS::CREATIVE_CONFIG : GS::DIFFICULTY_SELECT;
+        return true;
+    case GS::WEAPON_SELECT:
+        st = GS::JOB_SELECT;
+        return true;
+    case GS::DIFFICULTY_SELECT:
+        st = GS::MAIN_MENU;
+        return true;
+    case GS::CREATIVE_CONFIG:
+        st = GS::DIFFICULTY_SELECT;
+        return true;
+    case GS::SETTINGS:
+        SaveGame();
+        st = g_SettingsReturnTo;
+        return true;
+    default:
+        return false;
+    }
+}
