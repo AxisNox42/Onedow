@@ -10,12 +10,19 @@
 #include "PlayerStats.h"
 
 // ── GLITCH.exe — 블랙홀 중심 보스 ──
-//   블랙홀은 항상 활성. 탄환·몹·플레이어·보스 모두 끌어당김.
-//   SINGULARITY : 몹 소환률↑ + 삼각형 탄막
-//   DISPLACE    : 블랙홀을 화면에서 이동
-//   PHANTOM     : 블랙홀을 플레이어에게 던짐
+//   블랙홀은 항상 성장(억제 거의 불가). 패턴 전환 시 랜덤 위치 텔레포트.
+//   SINGULARITY : 청록 — 몹 소환↑ + 삼각형
+//   DISPLACE    : 주황 — 블랙홀 궤도 이동
+//   PHANTOM     : 보라 — 블랙홀 투척
 
 enum class PForm { SINGULARITY, DISPLACE, PHANTOM };
+
+struct PFormColors {
+    float accentR, accentG, accentB;
+    float winNR, winNG, winNB;
+    float glowR, glowG, glowB;
+    float barR, barG, barB;
+};
 
 struct PSwarm {
     float x, y, vx, vy, life;
@@ -36,7 +43,7 @@ public:
 
     PForm form = PForm::SINGULARITY;
     float formTimer = 0.0f;
-    float formDuration = 9.0f;
+    float formDuration = 17.0f;
     float glitchT = 0.0f;
 
     PolyGlitchFX fx;
@@ -50,13 +57,15 @@ public:
     bool  blackHoleActive = true;
     float holeX = 0.0f, holeY = 0.0f;
     float holeVx = 0.0f, holeVy = 0.0f;
+    float holeAnchorX = 0.0f, holeAnchorY = 0.0f;
+    float bossAnchorX = 0.0f, bossAnchorY = 0.0f;
     float holeR = 70.0f;
     float holeRMin = 55.0f;
     float holeRMax = 210.0f;
     bool  holeBursting = false;
     float holeBurstT = 0.0f;
     float holeBurstEmit = 0.0f;
-    static constexpr float HOLE_BURST_DUR = 3.2f;
+    static constexpr float HOLE_BURST_DUR = 2.8f;
 
     float holeOrbitT = 0.0f;
     bool  holeThrowing = false;
@@ -84,6 +93,17 @@ public:
         pickForm(true);
     }
 
+    PFormColors formColors() const {
+        switch (form) {
+        case PForm::DISPLACE:
+            return { 1.0f, 0.42f, 0.10f,  1.0f, 0.38f, 0.12f,  1.0f, 0.35f, 0.08f,  1.0f, 0.55f, 0.15f };
+        case PForm::PHANTOM:
+            return { 0.78f, 0.48f, 1.0f,  0.82f, 0.55f, 1.0f,  0.65f, 0.40f, 0.95f,  0.72f, 0.45f, 1.0f };
+        default:
+            return { 0.12f, 0.98f, 0.82f,  0.85f, 0.25f, 1.0f,  0.10f, 0.92f, 0.75f,  0.10f, 0.98f, 0.80f };
+        }
+    }
+
     bool damageable() const { return true; }
     bool reflecting() const { return false; }
 
@@ -103,8 +123,32 @@ public:
     }
 
     void requestMobClear() { mobClearPending = true; }
-
     void resetFx() { fx.shakePulse = false; }
+
+    float randRange(float lo, float hi) const {
+        if (hi <= lo) return lo;
+        return lo + (float)(rand() % 10001) * 0.0001f * (hi - lo);
+    }
+
+    void placeFormAnchors(bool snap) {
+        const float pad = 150.0f;
+        const float top = pad * 0.6f;
+        const float bot = (float)screenH - pad - 90.0f;
+        const float right = (float)screenW - pad;
+        holeAnchorX = randRange(pad, right);
+        holeAnchorY = randRange(pad + 40.0f, bot);
+        bossAnchorX = randRange(pad, right);
+        bossAnchorY = randRange(top, bot * 0.42f);
+        holeOrbitT = randRange(0.0f, 6.2831853f);
+        if (snap) {
+            holeX = holeAnchorX;
+            holeY = holeAnchorY;
+            holeVx = holeVy = 0.0f;
+            holeThrowing = false;
+        }
+        worldX = bossAnchorX;
+        worldY = bossAnchorY;
+    }
 
     void pickForm(bool first) {
         PForm prev = form;
@@ -113,15 +157,10 @@ public:
             requestMobClear();
 
         formTimer = 0.0f;
-        formDuration = enraged ? 8.0f : 11.0f;
-        holeR = std::max(holeRMin, holeR * 0.65f);
+        formDuration = enraged ? 14.0f : 18.0f;
         holeBursting = false;
         holeBurstT = 0.0f;
         holeBurstEmit = 0.0f;
-        holeRMax = enraged ? 250.0f : 210.0f;
-        holeVx = holeVy = 0.0f;
-        holeThrowing = false;
-        holeOrbitT = 0.0f;
         mobSpawnCd = 0.35f;
         singularitySpawn = 0.0f;
         directShotCd = 0.6f;
@@ -130,13 +169,13 @@ public:
         swarm.clear();
         resetFx();
         blackHoleActive = true;
+        placeFormAnchors(true);
     }
 
     void checkEnrage() {
         if (!enraged && hp <= maxHp * 0.40f) {
             enraged = true;
-            formDuration = 8.0f;
-            holeRMax = 250.0f;
+            formDuration = 14.0f;
         }
     }
 
@@ -187,12 +226,14 @@ public:
         if (holeR > holeRMax) holeR = holeRMax;
     }
 
-    void starveHole(float amount) {
-        holeR -= amount;
-        if (holeR < holeRMin) holeR = holeRMin;
-    }
+    void onTriangleShot() { /* 억제 거의 불가 — 무시 */ }
 
-    void onTriangleShot() { starveHole(enraged ? 7.0f : 5.5f); }
+    void passiveHoleGrowth(float dt) {
+        float rate = enraged ? 9.5f : 7.0f;
+        if (form == PForm::SINGULARITY) rate *= 1.4f;
+        holeR += rate * dt;
+        if (holeR > holeRMax) holeR = holeRMax;
+    }
 
     void fireAtPlayer(std::vector<Bullet>& bullets, float px, float py,
                       int count, float spread, float speed, float dmg,
@@ -215,6 +256,7 @@ public:
     }
 
     void fireHoleBurstWave(std::vector<Bullet>& bullets, float angOff = 0.0f) {
+        auto c = formColors();
         int n = enraged ? 20 : 16;
         for (int i = 0; i < n; i++) {
             float ang = angOff + (float)i / (float)n * 6.2831853f;
@@ -224,7 +266,7 @@ public:
             b.isEnemy  = true;
             b.enemyDmg = enraged ? 7.0f : 5.5f;
             b.speed    = enraged ? 500.0f : 420.0f;
-            b.color    = glm::vec3(0.85f, 0.22f, 1.0f);
+            b.color    = glm::vec3(c.accentR, c.accentG, c.accentB);
             bullets.push_back(b);
         }
     }
@@ -236,6 +278,7 @@ public:
         holeBurstEmit = 0.0f;
         fireHoleBurstWave(bullets, 0.0f);
         fx.shakePulse = true;
+        holeRMax += enraged ? 28.0f : 20.0f;
     }
 
     void pullPoint(float& x, float& y, float pullMul, float dt) const {
@@ -277,8 +320,7 @@ public:
             float bdx = b.x - holeX, bdy = b.y - holeY;
             if (bdx * bdx + bdy * bdy < coreR2) {
                 b.active = false;
-                if (b.isEnemy) feedHole(enraged ? 2.8f : 2.2f);
-                else           starveHole(enraged ? 5.0f : 4.0f);
+                if (b.isEnemy) feedHole(enraged ? 3.2f : 2.6f);
             }
         }
 
@@ -289,7 +331,7 @@ public:
             if (mdx * mdx + mdy * mdy < coreR2) {
                 m->alive = false;
                 m->hp = 0.0f;
-                feedHole(enraged ? 5.5f : 4.5f);
+                feedHole(enraged ? 6.0f : 5.0f);
             }
         }
 
@@ -338,7 +380,7 @@ public:
             float hdx = s.x - holeX, hdy = s.y - holeY;
             if (hdx * hdx + hdy * hdy < coreRadius() * coreRadius()) {
                 s.alive = false;
-                feedHole(enraged ? 2.5f : 2.0f);
+                feedHole(enraged ? 2.8f : 2.2f);
             }
             if (s.life <= 0.0f ||
                 s.x < -160.0f || s.x > screenW + 160.0f ||
@@ -352,35 +394,36 @@ public:
     void updateHoleMotion(float px, float py, float dt) {
         switch (form) {
         case PForm::SINGULARITY: {
-            float tx = (float)screenW * 0.5f + sinf(glitchT * 0.55f) * 48.0f;
-            float ty = (float)screenH * 0.44f + cosf(glitchT * 0.42f) * 36.0f;
+            float tx = holeAnchorX + sinf(glitchT * 0.55f) * 58.0f;
+            float ty = holeAnchorY + cosf(glitchT * 0.42f) * 44.0f;
             holeX += (tx - holeX) * 1.4f * dt;
             holeY += (ty - holeY) * 1.4f * dt;
-            worldX += (holeX - worldX) * 2.2f * dt;
-            worldY += (holeY - worldY - 110.0f) * 2.2f * dt;
+            worldX += (holeX - worldX) * 2.0f * dt;
+            worldY += (holeY - worldY - 105.0f) * 2.0f * dt;
             break;
         }
         case PForm::DISPLACE: {
             holeOrbitT += dt;
-            float tx = (float)screenW * 0.5f + sinf(holeOrbitT * 1.05f) * 200.0f;
-            float ty = (float)screenH * 0.46f + cosf(holeOrbitT * 0.88f) * 150.0f;
-            if (tx < 120.0f) tx = 120.0f;
-            if (tx > screenW - 120.0f) tx = screenW - 120.0f;
-            if (ty < 120.0f) ty = 120.0f;
-            if (ty > screenH - 140.0f) ty = screenH - 140.0f;
+            float tx = holeAnchorX + sinf(holeOrbitT * 1.05f) * 185.0f;
+            float ty = holeAnchorY + cosf(holeOrbitT * 0.88f) * 135.0f;
+            float pad = 100.0f;
+            if (tx < pad) tx = pad;
+            if (tx > screenW - pad) tx = screenW - pad;
+            if (ty < pad) ty = pad;
+            if (ty > screenH - pad - 90.0f) ty = screenH - pad - 90.0f;
             holeX += (tx - holeX) * (enraged ? 2.4f : 1.9f) * dt;
             holeY += (ty - holeY) * (enraged ? 2.4f : 1.9f) * dt;
-            worldX = (float)screenW * 0.5f + sinf(glitchT * 1.2f) * 100.0f;
-            worldY = (float)screenH * 0.24f + cosf(glitchT * 0.95f) * 32.0f;
+            worldX = bossAnchorX + sinf(glitchT * 1.2f) * 72.0f;
+            worldY = bossAnchorY + cosf(glitchT * 0.95f) * 26.0f;
             break;
         }
         case PForm::PHANTOM: {
-            worldX = (float)screenW * 0.5f + sinf(glitchT * 0.85f) * 70.0f;
-            worldY = (float)screenH * 0.22f + cosf(glitchT * 0.7f) * 22.0f;
+            worldX = bossAnchorX + sinf(glitchT * 0.85f) * 58.0f;
+            worldY = bossAnchorY + cosf(glitchT * 0.7f) * 20.0f;
 
             throwCd -= dt;
             if (!holeThrowing && throwCd <= 0.0f) {
-                throwCd = enraged ? 2.6f : 3.4f;
+                throwCd = enraged ? 2.8f : 3.6f;
                 float dx = px - holeX, dy = py - holeY;
                 float d = std::sqrt(dx * dx + dy * dy) + 1e-3f;
                 float spd = enraged ? 460.0f : 380.0f;
@@ -403,19 +446,24 @@ public:
                     holeThrowing = false;
             }
             if (!holeThrowing) {
-                float hx = worldX + sinf(glitchT * 1.1f) * 40.0f;
-                float hy = worldY + 90.0f;
+                float hx = holeAnchorX + sinf(glitchT * 1.1f) * 48.0f;
+                float hy = holeAnchorY + cosf(glitchT * 0.9f) * 38.0f;
                 holeX += (hx - holeX) * 1.8f * dt;
                 holeY += (hy - holeY) * 1.8f * dt;
                 holeVx = holeVy = 0.0f;
             }
-            if (holeX < 80.0f) holeX = 80.0f;
-            if (holeX > screenW - 80.0f) holeX = screenW - 80.0f;
-            if (holeY < 80.0f) holeY = 80.0f;
-            if (holeY > screenH - 120.0f) holeY = screenH - 120.0f;
+            clampHole();
             break;
         }
         }
+        if (form != PForm::PHANTOM) clampHole();
+    }
+
+    void clampHole() {
+        if (holeX < 80.0f) holeX = 80.0f;
+        if (holeX > screenW - 80.0f) holeX = screenW - 80.0f;
+        if (holeY < 80.0f) holeY = 80.0f;
+        if (holeY > screenH - 120.0f) holeY = screenH - 120.0f;
     }
 
     void Update(float px, float py, float dt, float& playerHP,
@@ -434,11 +482,10 @@ public:
         if (formTimer >= formDuration && !holeBursting)
             pickForm(false);
 
+        passiveHoleGrowth(dt);
+
         if (holeBursting) {
             holeBurstT -= dt;
-            float burstProg = holeBurstT / HOLE_BURST_DUR;
-            if (burstProg < 0.0f) burstProg = 0.0f;
-            holeR = holeRMin + (holeRMax - holeRMin) * burstProg;
             holeBurstEmit -= dt;
             if (holeBurstEmit <= 0.0f) {
                 holeBurstEmit = enraged ? 0.06f : 0.075f;
@@ -449,7 +496,7 @@ public:
             }
             if (holeBurstT <= 0.0f) {
                 holeBursting = false;
-                holeR = holeRMin;
+                holeR = holeRMax * 0.78f;
             }
         }
 
@@ -457,6 +504,7 @@ public:
         applyBlackHoleField(bullets, monsters, px, py, playerHP, dt,
                             playerPullX, playerPullY);
 
+        auto c = formColors();
         switch (form) {
         case PForm::SINGULARITY:
             singularitySpawn -= dt;
@@ -479,7 +527,7 @@ public:
                 directShotCd = enraged ? 0.85f : 1.1f;
                 fireAtPlayer(bullets, px, py, enraged ? 6 : 4, 0.50f,
                              enraged ? 480.0f : 400.0f, enraged ? 6.0f : 4.8f,
-                             1.0f, 0.42f, 0.12f);
+                             c.accentR, c.accentG, c.accentB);
             }
             break;
 
@@ -489,7 +537,7 @@ public:
                 directShotCd = enraged ? 1.0f : 1.35f;
                 fireAtPlayer(bullets, px, py, enraged ? 8 : 6, 0.70f,
                              enraged ? 520.0f : 440.0f, enraged ? 5.8f : 4.6f,
-                             0.72f, 0.52f, 1.0f);
+                             c.accentR, c.accentG, c.accentB);
             }
             break;
         }

@@ -4060,15 +4060,18 @@ int main() {
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
                  L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f);
-        if (g_PolyBoss && g_PolyBoss->alive)
-            addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
-                 L"GLITCH.exe", 0.04f,0.02f,0.06f, 0.85f,0.25f,1.0f);
         if (g_PolyBoss && g_PolyBoss->alive) {
+            auto pc = g_PolyBoss->formColors();
+            addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
+                 L"GLITCH.exe", 0.04f, 0.02f, 0.06f, pc.winNR, pc.winNG, pc.winNB);
+        }
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            auto pc = g_PolyBoss->formColors();
             float hw = g_PolyBoss->holeWinSize();
             float hx = g_PolyBoss->holeX - hw * 0.5f;
             float hy = g_PolyBoss->holeY - hw * 0.5f;
             zwins.push_back({ hx, hy, hw, hw, L"GRAVITY.core",
-                0.02f, 0.01f, 0.05f, 0.12f, 0.92f, 0.78f, g_PolyBoss->holeFillPct() });
+                0.02f, 0.01f, 0.05f, pc.glowR, pc.glowG, pc.glowB, g_PolyBoss->holeFillPct() });
         }
         if (g_BotnetBoss && g_BotnetBoss->alive)
             addW(g_BotnetBoss->worldX, g_BotnetBoss->worldY, BOTNET_WIN_W, BOTNET_WIN_W,
@@ -4126,14 +4129,18 @@ int main() {
             };
             BindMainShader();
             float gt = (float)glfwGetTime();
+            auto fc = pb->formColors();
             float pr = pb->pullRadius();
             float pulse = 0.5f + 0.5f * sinf(gt * 4.2f);
             if (!hidePt(pb->holeX, pb->holeY))
-                drawCircle(pb->holeX, pb->holeY, pr, 0.12f, 0.55f, 1.0f, 0.04f + 0.03f * pulse);
+                drawCircle(pb->holeX, pb->holeY, pr,
+                           fc.glowR * 0.5f, fc.glowG * 0.5f, fc.glowB * 0.5f,
+                           0.04f + 0.03f * pulse);
             if (pb->form == PForm::SINGULARITY) {
                 for (auto& s : pb->swarm) {
                     if (!s.alive || hidePt(s.x, s.y)) continue;
-                    drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
+                    drawTriangle(s.x, s.y, 11.0f,
+                                 fc.accentR * 0.2f, fc.accentG, fc.accentB, 1.0f);
                 }
             }
         }
@@ -4589,9 +4596,11 @@ int main() {
             drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
         }
         if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->form == PForm::SINGULARITY) {
+            auto fc = g_PolyBoss->formColors();
             for (auto& s : g_PolyBoss->swarm) {
                 if (!s.alive || !inWin(s.x, s.y, pwx, pwy, pww, pwh)) continue;
-                drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
+                drawTriangle(s.x, s.y, 11.0f,
+                             fc.accentR * 0.2f, fc.accentG, fc.accentB, 1.0f);
             }
         }
         // ?ㅺ??ㅻ뒗 二쎌쓬 ?ㅻ툕 (?뚮젅?댁뼱 李??덉뿉?쒕쭔)
@@ -4604,6 +4613,7 @@ int main() {
         // GLITCH GRAVITY.core — 블랙홀 오버레이 (항상 표시)
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
+            auto fc = pb->formColors();
             float hw = pb->holeWinSize();
             float hx = pb->holeX - hw * 0.5f, hy = pb->holeY - hw * 0.5f;
             const float TBH = 22.0f;
@@ -4611,28 +4621,32 @@ int main() {
             WorldScissor(hx, hy, hw, hw);
             BatchFlush(); glDisable(GL_BLEND);
             drawRect(hx, hy, hw, hw, 0.01f, 0.02f, 0.05f, 0.94f);
-            drawRect(hx, hy, hw, TBH, 0.07f, 0.42f, 0.36f, 1.0f);
+            drawRect(hx, hy, hw, TBH, fc.accentR * 0.35f, fc.accentG * 0.35f, fc.accentB * 0.35f, 1.0f);
             BatchFlush(); glEnable(GL_BLEND);
-            drawNeonBorder(hx, hy, hw, hw, 0.15f, 0.98f, 0.82f);
+            drawNeonBorder(hx, hy, hw, hw, fc.glowR, fc.glowG, fc.glowB);
             float gt = (float)glfwGetTime();
             float hr = pb->holeR;
             float pulse = 0.5f + 0.5f * sinf(gt * 5.0f);
-            drawCircle(pb->holeX, pb->holeY, hr * 1.60f, 0.12f, 0.58f, 1.0f, 0.22f + 0.10f * pulse);
-            drawCircle(pb->holeX, pb->holeY, hr * 1.22f, 0.0f, 0.90f, 0.80f, 0.40f);
+            drawCircle(pb->holeX, pb->holeY, hr * 1.60f,
+                       fc.glowR * 0.8f, fc.glowG * 0.8f, fc.glowB * 0.8f, 0.22f + 0.10f * pulse);
+            drawCircle(pb->holeX, pb->holeY, hr * 1.22f,
+                       fc.accentR * 0.5f, fc.accentG * 0.5f, fc.accentB * 0.5f, 0.40f);
             drawCircle(pb->holeX, pb->holeY, hr * 0.66f, 0.0f, 0.0f, 0.0f, 0.98f);
             for (int ri = 0; ri < 6; ri++) {
                 float ang = gt * (2.4f + ri * 0.28f) + ri * 1.047f;
                 drawTriangle(pb->holeX + cosf(ang) * hr * 0.85f,
                              pb->holeY + sinf(ang) * hr * 0.85f,
-                             17.0f, 0.12f, 1.0f, 0.92f, 0.60f);
+                             17.0f, fc.accentR * 0.15f, fc.accentG, fc.accentB, 0.60f);
             }
             float barW = hw - 28.0f;
             float fill = pb->holeFillPct();
             drawRect(hx + 14.0f, hy + hw - 20.0f, barW, 8.0f, 0.04f, 0.03f, 0.06f, 0.95f);
-            drawRect(hx + 14.0f, hy + hw - 20.0f, barW * fill, 8.0f, 0.10f, 0.98f, 0.80f, 1.0f);
+            drawRect(hx + 14.0f, hy + hw - 20.0f, barW * fill, 8.0f,
+                     fc.barR, fc.barG, fc.barB, 1.0f);
             for (auto& s : pb->swarm) {
                 if (!s.alive || !inWin(s.x, s.y, hx, hy + TBH, hw, hw - TBH)) continue;
-                drawTriangle(s.x, s.y, 12.0f, 0.2f, 1.0f, 0.92f, 1.0f);
+                drawTriangle(s.x, s.y, 12.0f,
+                             fc.accentR * 0.2f, fc.accentG, fc.accentB, 1.0f);
             }
             for (auto& b : g_Bullets) {
                 if (!b.active || !inWin(b.x, b.y, hx, hy, hw, hw)) continue;
@@ -4643,10 +4657,10 @@ int main() {
             swprintf_s(gp, L"%d%%", (int)(fill * 100.0f + 0.5f));
             float ts = 0.52f * g_ViewZoom, gs = 0.46f * g_ViewZoom;
             g_TextS.Draw(L"GRAVITY.core", W2SX(hx + 8.0f), W2SY(hy + 3.0f),
-                         ts, 0.90f, 0.98f, 0.95f, 0.98f);
+                         ts, fc.accentR, fc.accentG, fc.accentB, 0.98f);
             float gw = g_TextS.Width(gp, gs);
             g_TextS.Draw(gp, W2SX(hx + hw - gw - 52.0f), W2SY(hy + 3.0f),
-                         gs, 0.55f, 0.98f, 0.85f, 0.98f);
+                         gs, fc.barR * 0.7f, fc.barG * 0.7f, fc.barB * 0.7f, 0.98f);
         }
 
         // (e2) ?먭굅由?紐??ㅼ씠?꾨が????媛??먭굅由?紐?李??곸뿭?먯꽌 ??긽 ?꾩뿉 洹몃┝
@@ -4892,9 +4906,8 @@ int main() {
             // 蹂몄껜 ???쇰퀎 紐⑥뼇 (??
             float bsz = PolymorphBoss::BODY;
             float bx = pb->worldX, by = pb->worldY;
-            float fr = 0.2f, fg = 1.0f, fb = 0.85f;
-            if (pb->form == PForm::DISPLACE) { fr = 1.0f; fg = 0.38f; fb = 0.15f; }
-            else if (pb->form == PForm::PHANTOM) { fr = 0.75f; fg = 0.65f; fb = 1.0f; }
+            auto fc = pb->formColors();
+            float fr = fc.accentR, fg = fc.accentG, fb = fc.accentB;
             drawCircle(bx, by, bsz * 0.55f, 0.03f, 0.02f, 0.05f, 0.95f);
             drawCircle(bx, by, bsz * 0.72f, fr * 0.35f, fg * 0.35f, fb * 0.35f, 0.45f);
             drawDiamond(bx, by, bsz * 0.82f, fr, fg, fb, 1.0f);
