@@ -4,6 +4,7 @@
 #include "TextRenderer.h"
 #include "Settings.h"
 #include "GameManager.h"
+#include "Platform.h"
 #include "UiLayout.h"
 #include "UiColors.h"
 #include <ctime>

@@ -17,13 +17,37 @@
   #include <thread>
   #include <chrono>
   #include <cwchar>
+  #include <ctime>
   #if defined(__APPLE__)
     #include <mach-o/dyld.h>
     #include <cstdint>
   #endif
-  #ifndef swprintf_s
-    #define swprintf_s(buf, ...) swprintf((buf), sizeof(buf)/sizeof((buf)[0]), __VA_ARGS__)
+
+  // MSVC secure CRT 호환 (macOS / Linux)
+  #ifndef _TRUNCATE
+    #define _TRUNCATE static_cast<size_t>(-1)
   #endif
+  #ifndef swprintf_s
+    #define swprintf_s(buf, ...) swprintf((buf), sizeof(buf) / sizeof((buf)[0]), __VA_ARGS__)
+  #endif
+  template <size_t N>
+  inline void wcscpy_s(wchar_t (&dest)[N], const wchar_t* src) {
+    wcsncpy(dest, src, N - 1);
+    dest[N - 1] = L'\0';
+  }
+  template <size_t N>
+  inline void wcsncpy_s(wchar_t (&dest)[N], const wchar_t* src, size_t count) {
+    if (count == static_cast<size_t>(-1) || count >= N) {
+      wcsncpy(dest, src, N - 1);
+      dest[N - 1] = L'\0';
+    } else {
+      wcsncpy(dest, src, count);
+      dest[count] = L'\0';
+    }
+  }
+  inline void localtime_s(struct tm* result, const time_t* timep) {
+    localtime_r(timep, result);
+  }
 #endif
 
 inline void PlatformTimerBegin() {

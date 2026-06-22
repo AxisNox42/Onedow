@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <glm/glm.hpp>
+#include "Platform.h"
 #include "Audio.h"
 #include "Camera.h"
 #include "TextRenderer.h"

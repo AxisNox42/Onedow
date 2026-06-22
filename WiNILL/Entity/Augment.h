@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdlib>
-#include <cstdio>       // swprintf_s
+#include "Platform.h"
 #include "Settings.h"   // g_Language, LANG_COUNT
 
 enum class AugType {
