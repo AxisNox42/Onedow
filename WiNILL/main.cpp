@@ -287,6 +287,16 @@ static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
     }
 }
 
+static void ClearPolySummonedMobs() {
+    auto& ms = g_MonsterManager.monsters;
+    ms.erase(std::remove_if(ms.begin(), ms.end(),
+        [](Monster* m) {
+            if (!m->summoned) return false;
+            delete m;
+            return true;
+        }), ms.end());
+}
+
 CentipedeBoss* g_CentiBoss = nullptr;
 TotemBoss* g_TotemBoss = nullptr;
 UnknownBoss* g_UnknownBoss = nullptr;
@@ -1874,16 +1884,10 @@ int main() {
                     }
                 }
                 if (!timeStopped) {
-                    float gWX = -1.0f, gWY = -1.0f, gWW = -1.0f, gWH = -1.0f;
-                    if (g_PolyBoss && g_PolyBoss->alive) {
-                        gWX = playerWin.x; gWY = playerWin.y;
-                        gWW = playerWin.width; gWH = playerWin.height;
-                    }
                     g_MonsterManager.UpdateAll(pCX, pCY, enemyDt,
                                                g_GameManager.playerHP, g_Bullets,
                                                g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
-                                               rmobMoveMult * mobSpdRamp * focusSlow,
-                                               gWX, gWY, gWW, gWH);
+                                               rmobMoveMult * mobSpdRamp * focusSlow);
                 }
                 if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
                     const float winSz = g_WindowSizeCur > 1.0f ? g_WindowSizeCur : g_Stats.windowSize;
@@ -1908,14 +1912,21 @@ int main() {
 
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
                 if (g_PolyBoss && g_PolyBoss->alive) {
-                    float prevPWx = playerWin.x, prevPWy = playerWin.y;
                     if (!timeStopped)
-                    g_PolyBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets,
-                        playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+                        g_PolyBoss->Update(pCX, pCY, enemyDt,
+                                           g_GameManager.playerHP, g_Bullets);
                     if (!timeStopped) {
-                        float wdx = playerWin.x - prevPWx, wdy = playerWin.y - prevPWy;
-                        DisplaceEntitiesInWindow(prevPWx, prevPWy,
-                            playerWin.width, playerWin.height, wdx, wdy);
+                        for (auto& sp : g_PolyBoss->mobSpawnQueue) {
+                            if ((int)g_MonsterManager.monsters.size() >= 22) break;
+                            Monster* nm = new Monster(sp.first, sp.second,
+                                                      g_Stats.monsterHpMult * 0.42f,
+                                                      0.88f, true);
+                            nm->color = glm::vec3(0.72f, 0.28f, 0.98f);
+                            g_MonsterManager.monsters.push_back(nm);
+                        }
+                        g_PolyBoss->mobSpawnQueue.clear();
+                        if (g_PolyBoss->consumeMobClear())
+                            ClearPolySummonedMobs();
                     }
                     if (g_PolyBoss->fx.shakePulse) {
                         g_PolyBoss->fx.shakePulse = false;
@@ -3025,6 +3036,12 @@ int main() {
                             g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
                             break;
                         case 4:
+                            for (auto* m : g_MonsterManager.monsters) delete m;
+                            g_MonsterManager.monsters.clear();
+                            for (auto* r : g_MonsterManager.rangedMobs) delete r;
+                            g_MonsterManager.rangedMobs.clear();
+                            for (auto* bm : g_MonsterManager.bombers) delete bm;
+                            g_MonsterManager.bombers.clear();
                             g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_PolyBoss->worldX = bsx; g_PolyBoss->worldY = bsy;
                             g_PolyPrevForm = -1;
@@ -4028,7 +4045,7 @@ int main() {
             float sc = r->deathScale;
             addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"popup.exe", 0.08f,0.08f,0.10f, 0.85f,0.20f,0.95f);
         }
-        // GLITCH.exe: 플레이어 창 밖 근접 몹은 (e)에서 mob.exe 통합 렌더
+        // GLITCH.exe: 몹은 플레이어 창에서 일반 drawMob
         // 蹂댁뒪/遺꾩뿴泥?(?곷떒)
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
@@ -4076,7 +4093,7 @@ int main() {
                                TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
             }
         }
-        // GLITCH.exe world hazards — draw below fake window chrome
+        // GLITCH.exe world hazards — SINGULARITY 삼각형만
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
             auto hidePt = [&](float px, float py) {
@@ -4119,66 +4136,6 @@ int main() {
                         if (!s.alive || hidePt(s.x, s.y)) continue;
                         drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
                     }
-                }
-            }
-            if (pb->form == PForm::DISPLACE) {
-                if (pb->fx.snapWarn || pb->snapTimer > 0.0f) {
-                    auto& fx = pb->fx;
-                    float tx = fx.snapWarnX + fx.snapWarnW * 0.5f;
-                    float ty = fx.snapWarnY + fx.snapWarnH * 0.5f;
-                    float warnF = pb->snapTimer > 0.0f ? (pb->snapTimer / 1.05f) : 1.0f;
-                    if (warnF > 1.0f) warnF = 1.0f;
-                    float sa = (0.55f + 0.35f * (0.5f + 0.5f * sinf(gt * 20.0f))) * warnF;
-                    drawNeonBorder(fx.snapWarnX, fx.snapWarnY, fx.snapWarnW, fx.snapWarnH,
-                                   1.0f, 0.50f, 0.12f);
-                    drawNeonBorder(fx.snapWarnX - 4.0f, fx.snapWarnY - 4.0f,
-                                   fx.snapWarnW + 8.0f, fx.snapWarnH + 8.0f,
-                                   1.0f, 0.35f, 0.08f);
-                    drawRect(fx.snapWarnX, fx.snapWarnY, fx.snapWarnW, fx.snapWarnH,
-                             1.0f, 0.32f, 0.06f, 0.14f * sa);
-                    float dx = tx - fx.snapFromX, dy = ty - fx.snapFromY;
-                    float len = sqrtf(dx * dx + dy * dy) + 1e-3f;
-                    int segs = (int)(len / 12.0f);
-                    if (segs < 6) segs = 6;
-                    for (int i = 0; i <= segs; i++) {
-                        float u = (float)i / (float)segs;
-                        drawCircle(fx.snapFromX + dx * u, fx.snapFromY + dy * u,
-                                   6.0f, 1.0f, 0.50f, 0.12f, 0.70f * sa);
-                    }
-                    drawCircle(tx, ty, 14.0f, 1.0f, 0.45f, 0.10f, 0.85f * sa);
-                }
-                for (auto& bar : pb->bars) {
-                    if (!bar.alive || hidePt(bar.x + bar.w * 0.5f, bar.y + bar.h * 0.5f)) continue;
-                    drawRect(bar.x, bar.y, bar.w, bar.h, 0.07f, 0.05f, 0.09f, 0.82f);
-                    drawNeonBorder(bar.x, bar.y, bar.w, bar.h, 1.0f, 0.38f, 0.18f);
-                }
-            }
-            if (pb->form == PForm::PHANTOM) {
-                float warnPulse = pb->fx.slipWarn
-                    ? (0.35f + 0.45f * (1.0f - pb->fx.slipWarnT / 0.90f)) : 0.055f;
-                for (int i = 0; i < 6; i++) {
-                    float by = fmodf(pb->fx.staticBand * (float)screenHeight + (float)i * 110.0f,
-                                     (float)screenHeight + 40.0f) - 20.0f;
-                    drawRect(0.0f, by, (float)screenWidth, 4.0f,
-                             0.55f, 0.45f, 1.0f, warnPulse);
-                }
-                if (pb->fx.slipWarn) {
-                    auto& fx = pb->fx;
-                    float pcx = playerWin.x + playerWin.width * 0.5f;
-                    float pcy = playerWin.y + playerWin.height * 0.5f;
-                    float dist = pb->enraged ? 90.0f : 70.0f;
-                    float tx = pcx + fx.slipDirX * dist;
-                    float ty = pcy + fx.slipDirY * dist;
-                    float sa = 0.45f + 0.40f * (1.0f - fx.slipWarnT / 0.90f);
-                    int segs = 8;
-                    for (int i = 0; i <= segs; i++) {
-                        float u = (float)i / (float)segs;
-                        drawCircle(pcx + (tx - pcx) * u, pcy + (ty - pcy) * u,
-                                   5.0f, 0.75f, 0.55f, 1.0f, 0.65f * sa);
-                    }
-                    drawNeonBorder(tx - playerWin.width * 0.5f, ty - playerWin.height * 0.5f,
-                                   playerWin.width, playerWin.height,
-                                   0.75f, 0.55f, 1.0f);
                 }
             }
         }
@@ -4381,14 +4338,6 @@ int main() {
         // ?ъ씠踰꾪럱???ㅼ삩 ?곕??????뚮젅?댁뼱 李??ㅼ삩 蹂대뜑 (?≪꽱???뚮쭏 ??
         drawNeonBorder(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                        g_AccentR, g_AccentG, g_AccentB);
-        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->form == PForm::PHANTOM) {
-            float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 9.0f);
-            drawNeonBorder(playerWin.x - 3, playerWin.y - 3,
-                           playerWin.width + 6, playerWin.height + 6,
-                           0.75f, 0.55f, 1.0f);
-            drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                     0.45f, 0.35f, 0.85f, 0.025f * pulse);
-        }
 
         if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
             float wx = g_ShopZoneX - RUN_SHOP_WIN_W * 0.5f;
@@ -4618,13 +4567,7 @@ int main() {
         float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
         // ?〓す (蹂댁뒪 ?뚰솚臾쇱? ???? ??李?諛?而щ쭅
         for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive) continue;
-            if (g_PolyBoss && g_PolyBoss->alive &&
-                m->kind != MobKind::DDOS && m->kind != MobKind::SPAWNER) {
-                if (!inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh, 10.0f)) continue;
-            } else if (!inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) {
-                continue;
-            }
+            if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
             drawMob(m);
         }
         for (auto bm : g_MonsterManager.bombers) {
@@ -4659,40 +4602,6 @@ int main() {
         }
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-        // GLITCH mob.exe — 플레이어 창 밖 근접 몹만 chrome+내용 통합 렌더 (z/클리핑 오류 방지)
-        if (g_PolyBoss && g_PolyBoss->alive) {
-            const float GMW = g_RfwW * 0.62f, GMH = g_RfwH * 0.62f;
-            const float MTB = WIN_TB;
-            struct MobPtr { Monster* m; float y; };
-            std::vector<MobPtr> outside;
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || m->kind == MobKind::DDOS || m->kind == MobKind::SPAWNER) continue;
-                if (inWin(m->worldX, m->worldY, playerWin.x, playerWin.y,
-                          playerWin.width, playerWin.height, 10.0f))
-                    continue;
-                outside.push_back({ m, m->worldY });
-            }
-            std::sort(outside.begin(), outside.end(),
-                      [](const MobPtr& a, const MobPtr& b) { return a.y < b.y; });
-            BindMainShader();
-            for (auto& mp : outside) {
-                Monster* m = mp.m;
-                float sc = m->sizeScale;
-                float mw = GMW * sc, mh = GMH * sc;
-                float wx = m->worldX - mw * 0.5f;
-                float wy = m->worldY - mh * 0.5f;
-                if (wx < 4.0f) wx = 4.0f;
-                if (wy < 4.0f) wy = 4.0f;
-                if (wx + mw > screenWidth - 4.0f) wx = screenWidth - 4.0f - mw;
-                if (wy + mh > screenHeight - 94.0f) wy = screenHeight - 94.0f - mh;
-                DrawAppWindow(wx, wy, mw, mh, L"mob.exe", MTB);
-                BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                WorldScissor(wx, wy + MTB, mw, mh - MTB);
-                drawMob(m);
-                BatchFlush(); glDisable(GL_SCISSOR_TEST);
-            }
-        }
 
         // GLITCH GRAVITY.core — 플레이어 창 위에 블랙홀 오버레이
         if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
