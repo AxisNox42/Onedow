@@ -1,5 +1,7 @@
 # ── 빌드 산출물 ──
-bin/
+bin/*
+!bin/Onedow/
+!bin/Onedow/README.md
 WiNILL/obj/
 x64/
 Debug/

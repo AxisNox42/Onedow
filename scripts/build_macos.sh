@@ -26,5 +26,5 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 echo ""
-echo "빌드 완료. 실행:"
-echo "  cd build && ./WiNILL"
+echo "빌드 완료. 패키징:"
+echo "  ./scripts/package_macos.sh"

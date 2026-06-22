@@ -35,6 +35,13 @@ cd build && ./WiNILL
 
 빌드 시 `build/Font/` 로 자동 복사됩니다.
 
+패키징 (권장):
+
+```bash
+./scripts/package_macos.sh
+# → bin/Onedow/macOS/Onedow
+```
+
 ## Windows와의 차이
 
 | 항목 | Windows | macOS |

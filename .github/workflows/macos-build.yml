@@ -49,20 +49,19 @@ jobs:
       # ── 패키징 (바이너리 + 폰트) ──
       - name: Package
         run: |
-          mkdir -p dist/Onedow
-          cp build/WiNILL dist/Onedow/Onedow
-          cp -R WiNILL/Resource dist/Onedow/Resource
-          cp -R WiNILL/Font dist/Onedow/Font
-          # 임시(ad-hoc) 서명 — Apple Silicon 에서 "손상됨" 강제종료 방지에 도움
-          codesign --force --deep --sign - dist/Onedow/Onedow || true
-          chmod +x dist/Onedow/Onedow
-          cd dist && zip -r Onedow-macOS.zip Onedow
-          # 확인용: 어떤 아키텍처가 들어갔는지 로그 출력
-          echo "=== lipo info ===" && lipo -info Onedow/Onedow || true
+          mkdir -p dist
+          mkdir -p bin/Onedow/macOS
+          cp build/WiNILL bin/Onedow/macOS/Onedow
+          cp -R WiNILL/Resource bin/Onedow/macOS/Resource
+          cp -R WiNILL/Font bin/Onedow/macOS/Font
+          if [ -d WiNILL/Icons ]; then cp -R WiNILL/Icons bin/Onedow/macOS/Icons; fi
+          chmod +x bin/Onedow/macOS/Onedow
+          codesign --force --deep --sign - bin/Onedow/macOS/Onedow || true
+          cd bin/Onedow && zip -r ../../dist/Onedow-macOS.zip macOS
+          lipo -info macOS/Onedow || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Onedow-macOS
           path: dist/Onedow-macOS.zip
-          if-no-files-found: error
