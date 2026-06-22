@@ -1897,11 +1897,24 @@ void Scene_AugSelect(const SceneCtx& c) {
                     float boxH = 190.0f;
                     float boxX = (sw - boxW) * 0.5f;
 
-                    // 박스 배경 (어두운 반투명)
-                    drawRect(boxX, boxY, boxW, boxH, 0.03f, 0.03f, 0.05f, 0.85f);
+                    // 박스 배경 — DEBUFF_SELECT 는 전체 적갈 오버레이(0.62)와 겹치면
+                    // 0.85 알파가 이중으로 쌓여 새까맣게 보임 → 더 투명하게
+                    const bool debuffPick = (st == GameState::DEBUFF_SELECT);
+                    float boxBgA = debuffPick ? 0.38f : 0.72f;
+                    float boxBr = debuffPick ? 0.12f : 0.03f;
+                    float boxBg = debuffPick ? 0.04f : 0.03f;
+                    float boxBb = debuffPick ? 0.05f : 0.05f;
+                    drawRect(boxX, boxY, boxW, boxH, boxBr, boxBg, boxBb, boxBgA);
+                    if (debuffPick) {
+                        const float bt = 1.0f;
+                        drawRect(boxX, boxY, boxW, bt, hr, hg, hb, 0.55f);
+                        drawRect(boxX, boxY + boxH - bt, boxW, bt, hr, hg, hb, 0.55f);
+                        drawRect(boxX, boxY, bt, boxH, hr, hg, hb, 0.55f);
+                        drawRect(boxX + boxW - bt, boxY, bt, boxH, hr, hg, hb, 0.55f);
+                    }
 
                     // 상단 띠
-                    drawRect(boxX, boxY, boxW, 4.0f, hr, hg, hb, 1.0f);
+                    drawRect(boxX, boxY, boxW, 4.0f, hr, hg, hb, debuffPick ? 0.88f : 1.0f);
 
                     // 설명 ('/' 분리, 각 줄 fit)
                     std::vector<std::wstring> lines;

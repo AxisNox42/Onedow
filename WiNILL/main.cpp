@@ -241,7 +241,7 @@ float g_ShakeMag  = 0.0f;
 // 蹂댁뒪 蹂댁긽 ???⑥? 踰꾪봽 ????(?붾쾭???섏씠吏 skip)
 int  g_BossRewardPicksLeft = 0;
 // 蹂댁뒪 ?ㅽ룿 ???쇰컲 蹂댁뒪??20留뚯젏留덈떎, ?대━紐⑦봽??50留뚯젏 怨좎젙(1??
-static constexpr long long FIRST_BOSS_SCORE = 20000;  // 시연용 (원래 50000)
+static constexpr long long FIRST_BOSS_SCORE = 50000;
 long long g_NextBossScore  = FIRST_BOSS_SCORE;
 bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss = nullptr;
