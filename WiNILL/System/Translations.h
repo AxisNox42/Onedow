@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────────────────────────
 // i18n — UI 라벨 번역 테이블
 //   g_Language 에 따라 적절한 wchar_t* 반환
-//   증강 이름/설명은 Augment.h 에서 별도 관리 (현재 한국어만, TODO)
+//   증강 상세 설명(KR): AugmentDescKR.h — EN/JP 는 Augment.h locDesc
 // ─────────────────────────────────────────────────────────────
 
 enum class StrId {
@@ -196,19 +196,19 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"어려움", L"Hard", L"ハード",
     },
     /* DIFF_EASY_DESC */ {
-        L"원거리 몹 5초 지연  /  최대 2 마리",
-        L"Ranged delay 5s  /  Max 2",
-        L"遠距離敵 5秒遅延  /  最大 2体",
+        L"원거리 프로세스 5초 지연 등장 / 동시 최대 2개 / 첫 런·연습용",
+        L"Ranged spawn delayed 5s / max 2 on field / good for learning",
+        L"遠距離敵 5秒遅延 / 最大2体 / 練習向け",
     },
     /* DIFF_NORMAL_DESC */ {
-        L"기본 설정",
-        L"Default",
-        L"標準設定",
+        L"기본 밸런스 / 원거리·보스 패턴 표준 / 대부분의 해금·업적 기준",
+        L"Default balance / standard ranged & bosses / unlock baseline",
+        L"標準バランス / 遠距離・ボス通常 / 解除の基準",
     },
     /* DIFF_HARD_DESC */ {
-        L"즉시 등장  /  최대 8 마리  /  스폰 2배",
-        L"Immediate  /  Max 8  /  2x spawn",
-        L"即出現  /  最大 8体  /  スポーン2倍",
+        L"원거리 즉시 등장 / 동시 최대 8개 / 스폰 2배 / 고점수·고보상 도전",
+        L"Ranged spawn immediately / max 8 / 2x spawn rate / high risk reward",
+        L"遠距離即出現 / 最大8体 / 出現2倍 / 高難度・高報酬",
     },
     /* SET_TITLE */ {
         L"설정", L"Settings", L"設定",

@@ -131,7 +131,6 @@ inline int CurLangIdx() {
     return li;
 }
 inline const wchar_t* AugName(const AugDef& d) { return d.locName[CurLangIdx()]; }
-inline const wchar_t* AugDesc(const AugDef& d) { return d.locDesc[CurLangIdx()]; }
 
 static const AugDef ALL_AUGS[] = {
     // ── 일반 ───────────────────────────────────────────
@@ -990,4 +989,13 @@ inline const wchar_t* GetAugBadge(const AugDef& a) {
     if (tag) swprintf_s(buf, L"%ls|%ls", rar, tag);
     else     swprintf_s(buf, L"%ls", rar);
     return buf;
+}
+
+#include "AugmentDescKR.h"
+inline const wchar_t* AugDesc(const AugDef& d) {
+    if (CurLangIdx() == 0) {
+        const wchar_t* kr = AugDescKR(d.type);
+        if (kr && kr[0]) return kr;
+    }
+    return d.locDesc[CurLangIdx()];
 }

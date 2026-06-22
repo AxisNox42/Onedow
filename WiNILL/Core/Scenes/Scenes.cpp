@@ -9,6 +9,7 @@
 #include "WindowChrome.h"
 #include "Settings.h"
 #include "Translations.h"
+#include "TutorialText.h"
 #include "Meta.h"
 #include "Achievements.h"
 #include "Codex.h"
@@ -1520,22 +1521,51 @@ void Scene_Settings(const SceneCtx& c) {
 
 void Scene_Ready(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
     const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-                const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
-                const wchar_t* T2 = T(StrId::ESC_QUIT);
-                g_TextL.Draw(T1, CenterTextX(sw, g_TextL, T1, 1.0f), sh*0.42f, 1.0f, 1,1,1,0.95f);
-                g_TextS.Draw(T2, CenterTextX(sw, g_TextS, T2, 1.0f), sh*0.50f, 1.0f, 0.8f,0.8f,0.8f,0.8f);
-                // 조작 안내 (키는 언어 무관 — 새 플레이어가 스킬/대시 존재를 알게)
-                const wchar_t* CTRL =
-                    L"WASD Move    Mouse Fire    SHIFT Dash    Q/E/R Skills    ESC Pause";
-                g_TextS.Draw(CTRL, CenterTextX(sw, g_TextS, CTRL, 0.9f), sh*0.62f, 0.9f,
-                             0.55f, 0.85f, 1.0f, 0.95f);
+    (void)c;
+    (void)st;
+
+    auto drawSlashText = [&](const wchar_t* text, float y, float sc, float r, float g, float b, float a) {
+        if (!text || !text[0]) return;
+        std::vector<std::wstring> lines;
+        std::wstring cur;
+        for (const wchar_t* p = text; *p; ++p) {
+            if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
+            else cur += *p;
+        }
+        if (!cur.empty()) lines.push_back(cur);
+        for (auto& s : lines) {
+            while (!s.empty() && s.front() == L' ') s.erase(0, 1);
+            while (!s.empty() && s.back() == L' ') s.pop_back();
+        }
+        float lineH = 28.0f * sc;
+        float maxW = sw * 0.82f;
+        for (int li = 0; li < (int)lines.size(); li++) {
+            float lsc = sc;
+            while (lsc > 0.55f && g_TextS.Width(lines[li].c_str(), lsc) > maxW) lsc -= 0.04f;
+            float lw = g_TextS.Width(lines[li].c_str(), lsc);
+            g_TextS.Draw(lines[li].c_str(), (sw - lw) * 0.5f, y + li * lineH, lsc, r, g, b, a);
+        }
+    };
+
+    const wchar_t* title = TutorialTitle();
+    g_TextL.Draw(title, CenterTextX(sw, g_TextL, title, 1.05f), sh * 0.10f, 1.05f,
+                 0.55f, 0.90f, 1.0f, 0.98f);
+
+    float blockY = sh * 0.17f;
+    for (int i = 0; i < TUTORIAL_BLOCK_COUNT; i++) {
+        drawSlashText(TutorialBlock(i), blockY, 0.82f, 0.92f, 0.95f, 1.0f, 0.92f);
+        blockY += 52.0f;
+    }
+
+    const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
+    const wchar_t* T2 = T(StrId::ESC_QUIT);
+    g_TextL.Draw(T1, CenterTextX(sw, g_TextL, T1, 1.0f), sh * 0.78f, 1.0f, 1, 1, 1, 0.95f);
+    g_TextS.Draw(T2, CenterTextX(sw, g_TextS, T2, 1.0f), sh * 0.84f, 1.0f, 0.8f, 0.8f, 0.8f, 0.8f);
+
+    const wchar_t* ctrl = TutorialControls();
+    g_TextS.Draw(ctrl, CenterTextX(sw, g_TextS, ctrl, 0.88f), sh * 0.90f, 0.88f,
+                 0.55f, 0.85f, 1.0f, 0.95f);
 }
 
 void Scene_Paused(const SceneCtx& c) {
@@ -1749,7 +1779,7 @@ void Scene_AugSelect(const SceneCtx& c) {
                     GetRarityColor(hDef.rarity, hr, hg, hb);
                     float boxY = baseY + CARD_H + 24.0f;
                     float boxW = TOTAL_W;
-                    float boxH = 150.0f;
+                    float boxH = 190.0f;
                     float boxX = (sw - boxW) * 0.5f;
 
                     // 박스 배경 (어두운 반투명)
