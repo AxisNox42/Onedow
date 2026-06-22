@@ -13,6 +13,7 @@ enum class GameState {
     CREATIVE_CONFIG,   // 크리에이티브 설정 (시작점수/보스/시작증강)
     SHOP,              // 메타 상점 (코인 → 영구 업그레이드)
     CODEX,             // 도감 (적/증강 발견 목록)
+    TUTORIAL,          // 플레이 가이드 (페이지형)
     JOB_SELECT,        // 직업(클래스) 선택 (업적으로 해금)
     WEAPON_SELECT,     // 시작 무기 선택 (랜덤 3개)
     SETTINGS,          // 설정 화면

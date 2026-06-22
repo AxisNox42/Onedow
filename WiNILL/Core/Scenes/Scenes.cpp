@@ -109,24 +109,27 @@ void Scene_MainMenu(const SceneCtx& c) {
                     }
                 }
 
-                // ── 보조 버튼 행: 상점 · 도감 · 설정 · 종료 ──
+                // ── 보조 버튼 행: 상점 · 도감 · 튜토리얼 · 설정 · 종료 ──
                 {
-                    const float bw2 = 158.0f, bh2 = 48.0f, gap2 = 14.0f;
-                    float totalW = bw2 * 4 + gap2 * 3;
+                    const float bw2 = 128.0f, bh2 = 48.0f, gap2 = 10.0f;
+                    float totalW = bw2 * 5 + gap2 * 4;
                     float bx2 = (sw - totalW) * 0.5f, by2 = sh * 0.49f + 100.0f;
                     const wchar_t* SHOPL[3] = { L"상점", L"Shop",  L"ショップ" };
                     const wchar_t* CODL [3] = { L"도감", L"Codex", L"図鑑" };
+                    const wchar_t* TUTL [3] = { L"튜토리얼", L"Tutorial", L"チュートリアル" };
                     const wchar_t* CFGL [3] = { L"설정", L"Config", L"設定" };
-                    // 서브창(상점/도감/설정)은 부팅 로딩 없이 즉시 — 창 열림 애니메이션만
+                    // 서브창(상점/도감/튜토리얼/설정)은 부팅 로딩 없이 즉시 — 창 열림 애니메이션만
                     if (UIButton(bx2 + 0*(bw2+gap2), by2, bw2, bh2, SHOPL[li2], mx,my,lmb,g_LmbPrev) && !booting)
                         g_GameManager.currentState = GameState::SHOP;
                     if (UIButton(bx2 + 1*(bw2+gap2), by2, bw2, bh2, CODL[li2], mx,my,lmb,g_LmbPrev) && !booting)
                         g_GameManager.currentState = GameState::CODEX;
-                    if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
+                    if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, TUTL[li2], mx,my,lmb,g_LmbPrev) && !booting)
+                        g_GameManager.currentState = GameState::TUTORIAL;
+                    if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
                         g_SettingsReturnTo = GameState::MAIN_MENU;
                         g_GameManager.currentState = GameState::SETTINGS;
                     }
-                    if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
+                    if (UIButton(bx2 + 4*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
                         glfwSetWindowShouldClose(window, GLFW_TRUE);
                 }
 
@@ -740,6 +743,120 @@ void Scene_Codex(const SceneCtx& c) {
                     g_GameManager.currentState = GameState::MAIN_MENU;
                 }
                 }   // close: g_AppOpen open guard
+}
+
+void Scene_Tutorial(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    GLFWwindow* window = c.window;
+    const GameState st = g_GameManager.currentState;
+    (void)window;
+
+    static int s_page = 0;
+    static GameState s_prevSt = GameState::MAIN_MENU;
+    if (st != s_prevSt) {
+        if (st == GameState::TUTORIAL) s_page = 0;
+        s_prevSt = st;
+    }
+
+    auto drawSlashText = [&](const wchar_t* text, float x, float y, float maxW,
+                             float sc, float r, float g, float b, float a) -> float {
+        if (!text || !text[0]) return y;
+        std::vector<std::wstring> lines;
+        std::wstring cur;
+        for (const wchar_t* p = text; *p; ++p) {
+            if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
+            else cur += *p;
+        }
+        if (!cur.empty()) lines.push_back(cur);
+        for (auto& s : lines) {
+            while (!s.empty() && s.front() == L' ') s.erase(0, 1);
+            while (!s.empty() && s.back() == L' ') s.pop_back();
+        }
+        float lineH = 26.0f * sc;
+        float cy = y;
+        for (int li = 0; li < (int)lines.size(); li++) {
+            float lsc = sc;
+            while (lsc > 0.55f && g_TextS.Width(lines[li].c_str(), lsc) > maxW) lsc -= 0.04f;
+            g_TextS.Draw(lines[li].c_str(), x, cy + li * lineH, lsc, r, g, b, a);
+        }
+        return y + (float)lines.size() * lineH;
+    };
+
+    const float WW = std::min(sw * 0.92f, 1180.0f);
+    const float WH = std::min(sh * 0.88f, 880.0f);
+    float wx, wy;
+    SceneAppWindow(sw, sh, WW, WH, TutorialWinTitle(), 0.35f, 0.85f, 1.0f, wx, wy, false);
+    if (g_AppOpen < 0.999f) return;
+
+    int li = LangIndexTutorial();
+    const float sideW = 210.0f;
+    const float pad = 24.0f;
+    float sideX = wx + pad;
+    float sideY = wy + 46.0f;
+    float contentX = wx + sideW + pad * 2.0f;
+    float contentW = WW - sideW - pad * 3.0f;
+    float contentY = wy + 46.0f;
+
+    BindMainShader();
+    drawRect(sideX, sideY, sideW, WH - 120.0f, 0.10f, 0.12f, 0.16f, 0.95f);
+
+    const wchar_t* SIDE[3] = { L"목차", L"Contents", L"目次" };
+    g_TextS.Draw(SIDE[li], sideX + 14.0f, sideY + 10.0f, 0.82f, 0.55f, 0.85f, 1.0f, 0.95f);
+
+    const float rowH = 44.0f;
+    for (int i = 0; i < TUTORIAL_PAGE_COUNT; i++) {
+        float ry = sideY + 38.0f + i * rowH;
+        bool sel = (i == s_page);
+        bool hov = (mx >= sideX + 6.0f && mx <= sideX + sideW - 6.0f &&
+                    my >= ry && my <= ry + rowH - 4.0f);
+        if (sel) drawRect(sideX + 6.0f, ry, sideW - 12.0f, rowH - 4.0f, 0.25f, 0.55f, 0.95f, 0.35f);
+        else if (hov) drawRect(sideX + 6.0f, ry, sideW - 12.0f, rowH - 4.0f, 0.18f, 0.22f, 0.28f, 0.85f);
+        const wchar_t* pt = TutorialPageTitle(i);
+        g_TextS.Draw(pt, sideX + 16.0f, ry + 12.0f, 0.78f,
+                     sel ? 0.95f : 0.82f, sel ? 0.98f : 0.88f, 1.0f, 1.0f);
+        if (hov && lmb && !g_LmbPrev) s_page = i;
+    }
+
+    const wchar_t* pageTitle = TutorialPageTitle(s_page);
+    g_TextL.Draw(pageTitle, contentX, contentY, 1.15f, 0.55f, 0.90f, 1.0f, 1.0f);
+    float bodyY = contentY + 52.0f;
+    bodyY = drawSlashText(TutorialPageBody(s_page), contentX, bodyY, contentW,
+                          0.88f, 0.90f, 0.94f, 1.0f, 0.95f);
+
+    const wchar_t* ctrl = TutorialControls();
+    float ctrlW = g_TextS.Width(ctrl, 0.72f);
+    g_TextS.Draw(ctrl, contentX + (contentW - ctrlW) * 0.5f, wy + WH - 108.0f, 0.72f,
+                 0.50f, 0.80f, 1.0f, 0.90f);
+
+    const wchar_t* PREV[3] = { L"◀ 이전", L"◀ Prev", L"◀ 前へ" };
+    const wchar_t* NEXT[3] = { L"다음 ▶", L"Next ▶", L"次へ ▶" };
+    float navY = wy + WH - 62.0f;
+    if (s_page > 0 && UIButton(wx + pad, navY, 130.0f, 46.0f, PREV[li], mx, my, lmb, g_LmbPrev))
+        s_page--;
+    if (s_page < TUTORIAL_PAGE_COUNT - 1 &&
+        UIButton(wx + pad + 140.0f, navY, 130.0f, 46.0f, NEXT[li], mx, my, lmb, g_LmbPrev))
+        s_page++;
+
+    wchar_t pg[32];
+    swprintf_s(pg, L"%d / %d", s_page + 1, TUTORIAL_PAGE_COUNT);
+    float pgW = g_TextS.Width(pg, 0.85f);
+    g_TextS.Draw(pg, wx + WW * 0.5f - pgW * 0.5f, navY + 14.0f, 0.85f, 0.7f, 0.8f, 0.9f, 0.95f);
+
+    {
+        static bool s_lPrev = false, s_rPrev = false;
+        bool lk = (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS);
+        bool rk = (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS);
+        if (lk && !s_lPrev && s_page > 0) s_page--;
+        if (rk && !s_rPrev && s_page < TUTORIAL_PAGE_COUNT - 1) s_page++;
+        s_lPrev = lk;
+        s_rPrev = rk;
+    }
+
+    if (UIButton(wx + WW - pad - 180.0f, navY, 180.0f, 46.0f, T(StrId::BTN_BACK),
+                 mx, my, lmb, g_LmbPrev))
+        g_GameManager.currentState = GameState::MAIN_MENU;
 }
 
 void Scene_JobSelect(const SceneCtx& c) {
@@ -1521,9 +1638,7 @@ void Scene_Settings(const SceneCtx& c) {
 
 void Scene_Ready(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
-    const GameState st = g_GameManager.currentState;
     (void)c;
-    (void)st;
 
     auto drawSlashText = [&](const wchar_t* text, float y, float sc, float r, float g, float b, float a) {
         if (!text || !text[0]) return;
@@ -1538,8 +1653,8 @@ void Scene_Ready(const SceneCtx& c) {
             while (!s.empty() && s.front() == L' ') s.erase(0, 1);
             while (!s.empty() && s.back() == L' ') s.pop_back();
         }
-        float lineH = 28.0f * sc;
-        float maxW = sw * 0.82f;
+        float lineH = 30.0f * sc;
+        float maxW = sw * 0.78f;
         for (int li = 0; li < (int)lines.size(); li++) {
             float lsc = sc;
             while (lsc > 0.55f && g_TextS.Width(lines[li].c_str(), lsc) > maxW) lsc -= 0.04f;
@@ -1548,23 +1663,23 @@ void Scene_Ready(const SceneCtx& c) {
         }
     };
 
-    const wchar_t* title = TutorialTitle();
-    g_TextL.Draw(title, CenterTextX(sw, g_TextL, title, 1.05f), sh * 0.10f, 1.05f,
+    const wchar_t* title = ReadyTitle();
+    g_TextL.Draw(title, CenterTextX(sw, g_TextL, title, 1.2f), sh * 0.22f, 1.2f,
                  0.55f, 0.90f, 1.0f, 0.98f);
 
-    float blockY = sh * 0.17f;
-    for (int i = 0; i < TUTORIAL_BLOCK_COUNT; i++) {
-        drawSlashText(TutorialBlock(i), blockY, 0.82f, 0.92f, 0.95f, 1.0f, 0.92f);
-        blockY += 52.0f;
-    }
+    drawSlashText(ReadyBrief(), sh * 0.36f, 0.95f, 0.92f, 0.95f, 1.0f, 0.92f);
+
+    const wchar_t* hint = ReadyHint();
+    g_TextS.Draw(hint, CenterTextX(sw, g_TextS, hint, 0.88f), sh * 0.52f, 0.88f,
+                 0.55f, 0.82f, 1.0f, 0.88f);
 
     const wchar_t* T1 = T(StrId::PRESS_SPACE_TO_START);
     const wchar_t* T2 = T(StrId::ESC_QUIT);
-    g_TextL.Draw(T1, CenterTextX(sw, g_TextL, T1, 1.0f), sh * 0.78f, 1.0f, 1, 1, 1, 0.95f);
-    g_TextS.Draw(T2, CenterTextX(sw, g_TextS, T2, 1.0f), sh * 0.84f, 1.0f, 0.8f, 0.8f, 0.8f, 0.8f);
+    g_TextL.Draw(T1, CenterTextX(sw, g_TextL, T1, 1.0f), sh * 0.72f, 1.0f, 1, 1, 1, 0.95f);
+    g_TextS.Draw(T2, CenterTextX(sw, g_TextS, T2, 1.0f), sh * 0.78f, 1.0f, 0.8f, 0.8f, 0.8f, 0.8f);
 
     const wchar_t* ctrl = TutorialControls();
-    g_TextS.Draw(ctrl, CenterTextX(sw, g_TextS, ctrl, 0.88f), sh * 0.90f, 0.88f,
+    g_TextS.Draw(ctrl, CenterTextX(sw, g_TextS, ctrl, 0.88f), sh * 0.88f, 0.88f,
                  0.55f, 0.85f, 1.0f, 0.95f);
 }
 
@@ -2163,6 +2278,9 @@ bool TryEscNavigateBack() {
         return true;
     case GS::CODEX:
         CodexSearchClear();
+        st = GS::MAIN_MENU;
+        return true;
+    case GS::TUTORIAL:
         st = GS::MAIN_MENU;
         return true;
     case GS::JOB_SELECT:

@@ -4,6 +4,7 @@
 void Scene_MainMenu(const SceneCtx& c);
 void Scene_Shop(const SceneCtx& c);
 void Scene_Codex(const SceneCtx& c);
+void Scene_Tutorial(const SceneCtx& c);
 void Scene_JobSelect(const SceneCtx& c);
 void Scene_WeaponSelect(const SceneCtx& c);
 void Scene_DifficultySelect(const SceneCtx& c);

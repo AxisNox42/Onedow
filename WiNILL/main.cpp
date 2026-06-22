@@ -5497,7 +5497,7 @@ int main() {
             {
                 static GameState s_prevWinSt = GameState::MAIN_MENU;
                 bool isApp = (st == GameState::SHOP || st == GameState::CODEX ||
-                              st == GameState::SETTINGS);
+                              st == GameState::TUTORIAL || st == GameState::SETTINGS);
                 if (st != s_prevWinSt) {
                     if (isApp) g_AppOpen = 0.0f;   // ??李????ш린 0?먯꽌 ?닿린
                     s_prevWinSt = st;
@@ -5564,6 +5564,7 @@ int main() {
                 case GameState::MAIN_MENU:         Scene_MainMenu(ctx);         break;
                 case GameState::SHOP:              Scene_Shop(ctx);             break;
                 case GameState::CODEX:             Scene_Codex(ctx);            break;
+                case GameState::TUTORIAL:          Scene_Tutorial(ctx);         break;
                 case GameState::JOB_SELECT:        Scene_JobSelect(ctx);        break;
                 case GameState::WEAPON_SELECT:     Scene_WeaponSelect(ctx);     break;
                 case GameState::DIFFICULTY_SELECT: Scene_DifficultySelect(ctx); break;
