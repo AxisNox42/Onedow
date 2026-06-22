@@ -120,4 +120,5 @@ void InitMainBatchGeometry(int screenW, int screenH) {
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
     g_MainVAO = VAO;
+    g_Batch.reserve(131072);
 }

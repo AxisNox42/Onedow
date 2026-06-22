@@ -260,7 +260,10 @@ inline float TextRenderer::Height(const wchar_t* /*text*/, float scale)
 inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scale,
                                float r, float g, float b, float a)
 {
-    BatchFlush();   // 메인 셰이더로 쌓인 도형을 먼저 그린 뒤 텍스트 셰이더로 전환
+    const bool entering = (g_GfxPass != GfxPass::Text);
+    if (entering)
+        BatchFlush();
+    g_GfxPass = GfxPass::Text;
     float P[16] = {
          2.0f / screenW_,  0,               0, 0,
          0,               -2.0f / screenH_, 0, 0,

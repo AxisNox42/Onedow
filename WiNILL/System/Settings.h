@@ -113,8 +113,13 @@ inline bool g_AutoFire          = true;
 //   기본 OFF(수동). 설정에서 토글.
 inline bool g_AutoSkill         = false;
 
-// CRT 셰이더 효과 (G) — 스캔라인 + 비네트 + 네온 글로우. 기본 ON. 설정에서 토글.
+// CRT 셰이더 효과 (G) — 스캔라인 + 비네트 + 네온 글로우. 설정에서 토글.
+// macOS: 투명 전체화면 합성 + 통합 GPU 부담 → 기본 OFF (세이브·macopt 마이그레이션으로도 적용)
+#if defined(__APPLE__)
+inline bool g_ShaderFx          = false;
+#else
 inline bool g_ShaderFx          = true;
+#endif
 
 // 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게
 enum class MobVisualStyle { CLASSIC, SOFT };
@@ -122,9 +127,29 @@ inline MobVisualStyle g_MobVisualStyle = MobVisualStyle::CLASSIC;
 
 // 위성 VFX 밀도 — REDUCED=EMP·덫·패치 간격↑
 enum class VfxDensity { FULL, REDUCED };
+#if defined(__APPLE__)
+inline VfxDensity g_VfxDensity = VfxDensity::REDUCED;
+#else
 inline VfxDensity g_VfxDensity = VfxDensity::FULL;
+#endif
 inline float VfxIntervalMult() {
     return g_VfxDensity == VfxDensity::REDUCED ? 1.45f : 1.0f;
+}
+
+// macOS 1회 성능 프로필 적용 여부 (onedow_save.cfg 의 macopt=1)
+inline bool g_MacOptV1 = false;
+
+// 원·부채꼴 등 다각형 분할 수 (VFX 밀도·플랫폼 반영)
+inline int GfxCircleSegs() {
+#if defined(__APPLE__)
+    return (g_VfxDensity == VfxDensity::REDUCED) ? 6 : 8;
+#else
+    return (g_VfxDensity == VfxDensity::REDUCED) ? 10 : 12;
+#endif
+}
+inline int GfxArcSegs(float mult = 1.5f) {
+    int s = (int)(GfxCircleSegs() * mult + 0.5f);
+    return s < 6 ? 6 : s;
 }
 
 // ── 코스메틱: OS 액센트 컬러 테마 (코인 상점에서 구매/장착, 저장됨) ──

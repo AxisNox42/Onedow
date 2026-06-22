@@ -23,9 +23,31 @@ struct DamageNumber {
 };
 inline std::vector<DamageNumber> g_DmgNumbers;
 
+inline int JuiceDmgCap() {
+#if defined(__APPLE__)
+    return 90;
+#else
+    return 140;
+#endif
+}
+inline int JuiceSparkCap() {
+#if defined(__APPLE__)
+    return (g_VfxDensity == VfxDensity::REDUCED) ? 160 : 220;
+#else
+    return (g_VfxDensity == VfxDensity::REDUCED) ? 350 : 500;
+#endif
+}
+inline int JuiceTrailCap() {
+#if defined(__APPLE__)
+    return 80;
+#else
+    return 120;
+#endif
+}
+
 inline void SpawnDamageNumber(float x, float y, float amount, bool crit) {
     if (amount < 1.0f) return;
-    if (g_DmgNumbers.size() >= 140) return;     // 풀 상한 (성능)
+    if ((int)g_DmgNumbers.size() >= JuiceDmgCap()) return;
     DamageNumber d;
     d.x  = x + (float)((rand() % 24) - 12);
     d.y  = y - 8.0f;
@@ -49,14 +71,14 @@ inline std::vector<Spark> g_Sparks;
 struct Trail { float x, y, life, maxLife, size, r, g, b; };
 inline std::vector<Trail> g_Trail;
 inline void SpawnTrail(float x, float y, float size, float r, float g, float b) {
-    if ((int)g_Trail.size() > 120) return;
+    if ((int)g_Trail.size() > JuiceTrailCap()) return;
     Trail t; t.x = x; t.y = y; t.maxLife = t.life = 0.30f;
     t.size = size; t.r = r; t.g = g; t.b = b;
     g_Trail.push_back(t);
 }
 inline void SpawnSparks(float x, float y, int n,
                         float r, float g, float b, float speed = 300.0f) {
-    if ((int)g_Sparks.size() > 500) return;          // 풀 상한
+    if ((int)g_Sparks.size() > JuiceSparkCap()) return;
     for (int i = 0; i < n; i++) {
         float a = (float)(rand() % 628) * 0.01f;
         float s = speed * (0.35f + (rand() % 100) * 0.01f);

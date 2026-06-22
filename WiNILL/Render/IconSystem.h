@@ -341,7 +341,9 @@ inline GLuint IconFor(AugType t) {
 inline void DrawIcon(GLuint tex, float x, float y, float w, float h,
                      float r, float g, float b, float a) {
     if (!tex || !g_IconProg) return;
-    BatchFlush();   // 메인 배치 도형 먼저 그리고 아이콘 셰이더로 전환
+    if (g_GfxPass != GfxPass::Icon)
+        BatchFlush();
+    g_GfxPass = GfxPass::Icon;
     glUseProgram(g_IconProg);
     glUniformMatrix4fv(g_IconProjLoc, 1, GL_FALSE, g_MainOrtho);
     glUniform4f(g_IconTintLoc, r, g, b, a);
@@ -369,7 +371,9 @@ inline void DrawIcon(GLuint tex, float x, float y, float w, float h,
 inline void DrawIconRot(GLuint tex, float cx, float cy, float halfW, float halfH,
                         float angle, float r, float g, float b, float a) {
     if (!tex || !g_IconProg) return;
-    BatchFlush();
+    if (g_GfxPass != GfxPass::Icon)
+        BatchFlush();
+    g_GfxPass = GfxPass::Icon;
     glUseProgram(g_IconProg);
     glUniformMatrix4fv(g_IconProjLoc, 1, GL_FALSE, g_MainOrtho);
     glUniform4f(g_IconTintLoc, r, g, b, a);

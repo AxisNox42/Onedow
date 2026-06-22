@@ -50,6 +50,7 @@ inline void SaveGame() {
     add("shaderfx=%lld\n",  g_ShaderFx  ? 1 : 0);
     add("mobstyle=%lld\n",  (int)g_MobVisualStyle);
     add("vfxdens=%lld\n",   (int)g_VfxDensity);
+    add("macopt=%lld\n",    g_MacOptV1 ? 1 : 0);
     add("best_easy=%lld\n",   g_BestScore[0]);
     add("best_normal=%lld\n", g_BestScore[1]);
     add("best_hard=%lld\n",   g_BestScore[2]);
@@ -142,6 +143,7 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "shaderfx"))    g_ShaderFx          = (val != 0);
         else if (!std::strcmp(key, "mobstyle"))   { int v = (int)val; if (v >= 0 && v <= 1) g_MobVisualStyle = (MobVisualStyle)v; }
         else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 1) g_VfxDensity = (VfxDensity)v; }
+        else if (!std::strcmp(key, "macopt"))     g_MacOptV1          = (val != 0);
         else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val;
         else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val;
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val;

@@ -561,8 +561,18 @@ int main() {
 
     // ?ㅽ뻾 ?뚯씪 ?대뜑濡??묒뾽 ?붾젆?곕━ ?대룞 (Resource/ ?곷?寃쎈줈 濡쒕뱶 蹂댁옣)
     PlatformChdirToExeDir();
-    LoadGame();   // ??λ맂 ?ㅼ젙/湲곕줉 遺덈윭?ㅺ린 (?놁쑝硫?湲곕낯媛??좎?)
-    ApplyAccentTheme();   // ??λ맂 ?≪꽱???뚮쭏 ??g_Accent* 諛섏쁺
+    LoadGame();   // 저장된 설정/기록 불러오기 (없으면 기본값 유지)
+#if defined(__APPLE__)
+    // 기존 맥 유저 1회: CRT OFF + VFX 경량 (설정에서 다시 켤 수 있음)
+    if (!g_MacOptV1) {
+        g_MacOptV1 = true;
+        g_ShaderFx = false;
+        if (g_VfxDensity == VfxDensity::FULL)
+            g_VfxDensity = VfxDensity::REDUCED;
+        SaveGame();
+    }
+#endif
+    ApplyAccentTheme();   // 저장된 액센트 테마 → g_Accent* 반영
 
     if (!glfwInit()) return -1;
     // Sleep ?댁긽??1ms 濡?(FPS 罹??뺣??꾩슜). Windows 留??섎? ?덉쓬
@@ -5852,12 +5862,21 @@ int main() {
             double frameStart = (double)now;
             double remain = target - (glfwGetTime() - frameStart);
             if (remain > 0.001) {
-                // 留덉?留?1ms 留??④린怨?Sleep
                 unsigned ms = (unsigned)((remain - 0.001) * 1000.0);
                 PlatformSleepMs(ms);
             }
-            // ?붿뿬 busy-wait (?뺥솗??罹?
+#ifndef _WIN32
+            // macOS/Linux: 마지막 구간 busy-spin은 CPU·발열↑ → 짧게 sleep
+            while (glfwGetTime() - frameStart < target) {
+                double left = target - (glfwGetTime() - frameStart);
+                if (left > 0.003)
+                    PlatformSleepMs(1);
+                else
+                    break;
+            }
+#else
             while (glfwGetTime() - frameStart < target) { /* spin */ }
+#endif
         }
     }
 

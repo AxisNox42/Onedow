@@ -2,6 +2,8 @@
 #include <glad/glad.h>
 #include <cmath>
 #include <vector>
+#include <cstdint>
+#include "Settings.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846f
@@ -13,8 +15,12 @@
 //   BatchFlush() 가 한 번에 업로드+드로 (정점당 [pos.xy, col.rgba] = 6 float).
 //   상태(scissor/blend/ortho)나 셰이더(text/icon)가 바뀌기 직전에 반드시 Flush.
 // ─────────────────────────────────────────────────────────────
+enum class GfxPass : uint8_t { Main, Text, Icon };
+inline GfxPass g_GfxPass = GfxPass::Main;
+
 inline GLint  g_colorLoc = -1;   // (배칭 후 미사용 — 호환 위해 유지)
 inline GLuint g_VBO      = 0;
+inline size_t g_BatchVBOFloats = 65536;
 
 inline GLuint g_MainShader  = 0;
 inline GLuint g_MainVAO     = 0;
@@ -25,6 +31,7 @@ inline std::vector<float> g_Batch;   // [x,y,r,g,b,a] × n
 
 inline void BindMainShader() {
     if (g_MainShader == 0) return;
+    g_GfxPass = GfxPass::Main;
     glUseProgram(g_MainShader);
     if (g_MainProjLoc >= 0)
         glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_MainOrtho);
@@ -41,11 +48,17 @@ inline void BatchFlush() {
             glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_MainOrtho);
         glBindVertexArray(g_MainVAO);
     }
+    const GLsizeiptr nbytes = (GLsizeiptr)(g_Batch.size() * sizeof(float));
     glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(g_Batch.size() * sizeof(float)),
-                 g_Batch.data(), GL_DYNAMIC_DRAW);
+    if (g_Batch.size() <= g_BatchVBOFloats)
+        glBufferSubData(GL_ARRAY_BUFFER, 0, nbytes, g_Batch.data());
+    else {
+        glBufferData(GL_ARRAY_BUFFER, nbytes, g_Batch.data(), GL_DYNAMIC_DRAW);
+        g_BatchVBOFloats = g_Batch.size();
+    }
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(g_Batch.size() / 6));
     g_Batch.clear();
+    g_GfxPass = GfxPass::Main;
 }
 
 inline void BatchVtx(float x, float y, float r, float g, float b, float a) {
@@ -78,7 +91,7 @@ inline void drawTriangle(float cx, float cy, float size,
 
 inline void drawCircle(float cx, float cy, float radius,
                        float r, float g, float b, float a) {
-    const int SEG = 12;
+    const int SEG = GfxCircleSegs();
     float px = cx + radius, py = cy;   // theta=0
     for (int s = 1; s <= SEG; s++) {
         float th = (float)s / SEG * 2.0f * (float)M_PI;
@@ -92,7 +105,7 @@ inline void drawCircle(float cx, float cy, float radius,
 inline void drawConeFan(float cx, float cy, float radius,
                         float angCenter, float halfArc,
                         float r, float g, float b, float a) {
-    const int SEG = 18;
+    const int SEG = GfxArcSegs();
     float th0 = angCenter - halfArc;
     float px = cx + radius * cosf(th0), py = cy + radius * sinf(th0);
     for (int s = 1; s <= SEG; s++) {
@@ -107,7 +120,7 @@ inline void drawConeFan(float cx, float cy, float radius,
 // Mercedes 로고 — 외곽 원(어두움) + 3-pointed star(밝음)
 inline void drawMercedes(float cx, float cy, float size,
                          float r, float g, float b, float a) {
-    const int SEG = 20;
+    const int SEG = GfxArcSegs(1.67f);
     float dr = r*0.55f, dg = g*0.55f, db = b*0.55f;
     float px = cx + size, py = cy;
     for (int s = 1; s <= SEG; s++) {
