@@ -1,10 +1,9 @@
 # ── 빌드 산출물 ──
 bin/*
-!bin/Zip/
-!bin/Zip/Onedow/
-!bin/Zip/Onedow/README.txt
-!bin/Zip/Onedow/macOS/
-!bin/Zip/Onedow/macOS/README.txt
+!bin/Onedow/
+!bin/Onedow/README.txt
+!bin/Onedow/macOS/
+!bin/Onedow/macOS/README.txt
 WiNILL/obj/
 x64/
 Debug/

@@ -1,19 +1,23 @@
-# macOS 빌드
+# macOS 빌드 (LTS)
 
 ```bash
-./scripts/package_macos.sh    # bin/Zip/Onedow/macOS/Onedow
-./scripts/zip_onedow.sh       # bin/Zip/Onedow.zip
+./scripts/package_macos.sh    # bin/Onedow/macOS/Onedow
+./scripts/zip_onedow.sh       # bin/Onedow.zip
 ```
 
-Windows exe는 맥 CI/수동으로 `bin/Zip/Onedow/WindowsOS/Onedow.exe` 에 넣은 뒤 같은 ZIP 구조 유지.
+## 폴더 구분
 
-배포 폴더:
+| 용도 | 경로 |
+|------|------|
+| **테스트 (Windows)** | `WiNILL/bin/WiNILL.exe` — `.\scripts\build_windows.ps1` |
+| **LTS 배포** | `bin/Onedow/` — `.\scripts\release_windows.ps1` |
 
 ```
-bin/Zip/Onedow/
+bin/Onedow/
 ├── README.txt
+├── Resource/  Font/  Icons/
 ├── WindowsOS/Onedow.exe
 └── macOS/Onedow
 ```
 
-ZIP: `bin/Zip/Onedow.zip`
+ZIP: `bin/Onedow.zip`

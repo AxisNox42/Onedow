@@ -56,7 +56,7 @@ jobs:
 
       - name: Package
         run: |
-          ONEDOW=bin/Zip/Onedow
+          ONEDOW=bin/Onedow
           mkdir -p "$ONEDOW/WindowsOS" "$ONEDOW/macOS"
           cp -R WiNILL/Resource "$ONEDOW/Resource"
           cp -R WiNILL/Font "$ONEDOW/Font"
@@ -64,7 +64,7 @@ jobs:
           cp build/WiNILL "$ONEDOW/macOS/Onedow"
           chmod +x "$ONEDOW/macOS/Onedow"
           codesign --force --deep --sign - "$ONEDOW/macOS/Onedow" || true
-          cd bin/Zip && zip -r Onedow.zip Onedow
+          cd bin && zip -r Onedow.zip Onedow
           ls -lh Onedow.zip
           unzip -l Onedow.zip | head -20
 
@@ -73,5 +73,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Onedow-macOS
-          path: bin/Zip/Onedow.zip
+          path: bin/Onedow.zip
           if-no-files-found: error

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# macOS 빌드 → bin/Zip/Onedow/macOS/Onedow 만
+# macOS 빌드 → bin/Onedow/macOS/Onedow
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ONEDOW="$ROOT/bin/Zip/Onedow"
+ONEDOW="$ROOT/bin/Onedow"
 MAC_OUT="$ONEDOW/macOS"
 
 "$ROOT/scripts/build_macos.sh"
