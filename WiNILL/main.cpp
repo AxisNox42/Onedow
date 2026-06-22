@@ -103,8 +103,7 @@ TextRenderer   g_TextL;   // ??湲??(利앷컯 ?대쫫, ?곹깭 ??댄?)
 TextRenderer   g_TextS;   // ?묒? 湲??(?ㅻ챸, ?뚰듃)
 TextRenderer   g_TextXL;  // 珥덈?????댄?(?쒖옉李?濡쒓퀬) ?꾩슜 ??怨좏빐?곷룄 ?섏뒪??
 #ifdef _WIN32
-HANDLE         g_FontMemHandle   = nullptr; // Dongle (?쒓뎅??
-HANDLE         g_OswaldMemHandle = nullptr; // Oswald (?쇳떞/?ㅻ┫)
+HANDLE         g_FontMemHandle   = nullptr;
 #endif
 
 struct BrokenSightOrb {
@@ -660,10 +659,8 @@ int main() {
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
 
-    // ?고듃 珥덇린????Jua(?쒓?)/KosugiMaru(?쇰낯??/Oswald(?쇳떞) ?대갚 泥댁씤.
-    //   ???고듃瑜???긽 ?숈떆 濡쒕뱶 ???몄뼱? 臾닿??섍쾶 紐⑤뱺 湲由ы봽(?????? ?쒖떆.
+    // 폰트: Jua(한글) + KosugiMaru(일본어·라틴 폴백)
 #ifdef _WIN32
-    // EXE ?꾨쿋?붾뱶 RCDATA 諛붿씠?몃? stb_truetype ?쇰줈 吏곸젒 ?섏뒪?고솕
     auto loadRc = [&](const char* resName, int& outSize) -> const unsigned char* {
         HMODULE hMod = GetModuleHandleA(nullptr);
         HRSRC   hRes = FindResourceA(hMod, resName, (LPCSTR)RT_RCDATA);
@@ -672,22 +669,21 @@ int main() {
         HGLOBAL hData = LoadResource(hMod, hRes);
         return (const unsigned char*)LockResource(hData);
     };
-    int szJ = 0, szK = 0, szO = 0;
-    const unsigned char* datas[3] = {
-        loadRc("JUA_FONT", szJ), loadRc("KOSUGI_FONT", szK), loadRc("OSWALD_FONT", szO)
+    int szJ = 0, szK = 0;
+    const unsigned char* datas[2] = {
+        loadRc("JUA_FONT", szJ), loadRc("KOSUGI_FONT", szK)
     };
-    int sizes[3] = { szJ, szK, szO };
-    g_TextL.InitFromMemory(datas, sizes, 3, 36, screenWidth, screenHeight);
-    g_TextS.InitFromMemory(datas, sizes, 3, 22, screenWidth, screenHeight);
-    g_TextXL.InitFromMemory(datas, sizes, 3, 100, screenWidth, screenHeight);  // 濡쒓퀬 怨좏빐?곷룄
+    int sizes[2] = { szJ, szK };
+    g_TextL.InitFromMemory(datas, sizes, 2, 36, screenWidth, screenHeight);
+    g_TextS.InitFromMemory(datas, sizes, 2, 22, screenWidth, screenHeight);
+    g_TextXL.InitFromMemory(datas, sizes, 2, 100, screenWidth, screenHeight);
 #else
-    // macOS/Linux: ?붿뒪?ъ쓽 TTF ?대갚 泥댁씤
     {
-        const char* chain[3];
+        const char* chain[2];
         int nc = LanguageFontChain(g_Language, chain);
         g_TextL.InitFromFiles(chain, nc, 36, screenWidth, screenHeight);
         g_TextS.InitFromFiles(chain, nc, 22, screenWidth, screenHeight);
-        g_TextXL.InitFromFiles(chain, nc, 100, screenWidth, screenHeight);  // 濡쒓퀬 怨좏빐?곷룄
+        g_TextXL.InitFromFiles(chain, nc, 100, screenWidth, screenHeight);
     }
 #endif
 
@@ -5873,10 +5869,6 @@ int main() {
     if (g_FontMemHandle) {
         RemoveFontMemResourceEx(g_FontMemHandle);
         g_FontMemHandle = nullptr;
-    }
-    if (g_OswaldMemHandle) {
-        RemoveFontMemResourceEx(g_OswaldMemHandle);
-        g_OswaldMemHandle = nullptr;
     }
 #endif
     Audio::Shutdown();

@@ -53,15 +53,11 @@ inline const char* LanguageFace(Language /*lang*/) {
     return "Microsoft YaHei UI";
 }
 
-// 비-Windows(macOS/Linux): 언어별 폰트 폴백 체인 (TTF 파일 경로)
-//   앞쪽이 주 폰트, 없는 글리프는 다음 폰트로 폴백
-//   ※ 일본어(가나)를 맥에서 표시하려면 Resource/Font/NotoSansJP-Regular.ttf 가 필요.
-//     (없으면 그 슬롯은 자동 스킵 — 빌드/실행엔 문제없고 일본어만 안 보임)
-inline int LanguageFontChain(Language /*lang*/, const char* out[3]) {
-    out[0] = "Resource/Font/Jua-Regular.ttf";
-    out[1] = "Resource/Font/KosugiMaru-Regular.ttf";
-    out[2] = "Resource/Font/Oswald-VariableFont_wght.ttf";
-    return 3;
+// 비-Windows(macOS/Linux): TTF 폴백 체인 — WiNILL/Font/ 두 파일
+inline int LanguageFontChain(Language /*lang*/, const char* out[2]) {
+    out[0] = "Font/Jua-Regular.ttf";
+    out[1] = "Font/KosugiMaru-Regular.ttf";
+    return 2;
 }
 
 // 난이도 (게임 시작 시 적용)

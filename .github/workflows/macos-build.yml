@@ -17,16 +17,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 일본어 폰트 자동 다운로드 (macOS 에서 일본어 가나 표시용) ──
-      #    번들 폰트(Dongle/Oswald)엔 가나가 없어서, 정적 TTF(글리프) 하나를
-      #    NotoSansJP-Regular.ttf 이름으로 받아 Resource/Font 에 배치.
-      #    (실패해도 빌드는 계속 — 일본어만 안 보임)
-      - name: Fetch Japanese font
+      - name: Check fonts
         run: |
-          mkdir -p WiNILL/Resource/Font
-          curl -fL -o WiNILL/Resource/Font/NotoSansJP-Regular.ttf \
-            "https://raw.githubusercontent.com/google/fonts/main/ofl/sawarabigothic/SawarabiGothic-Regular.ttf" \
-            && echo "JP font OK" || echo "JP font fetch failed (Japanese will be blank on macOS)"
+          test -f WiNILL/Font/Jua-Regular.ttf
+          test -f WiNILL/Font/KosugiMaru-Regular.ttf
 
       # ── GLFW 를 정적(static) · 유니버설로 직접 빌드 ──
       #    → 최종 바이너리가 GLFW dylib 에 의존하지 않아 어디서나 실행 가능
@@ -58,6 +52,7 @@ jobs:
           mkdir -p dist/Onedow
           cp build/WiNILL dist/Onedow/Onedow
           cp -R WiNILL/Resource dist/Onedow/Resource
+          cp -R WiNILL/Font dist/Onedow/Font
           # 임시(ad-hoc) 서명 — Apple Silicon 에서 "손상됨" 강제종료 방지에 도움
           codesign --force --deep --sign - dist/Onedow/Onedow || true
           chmod +x dist/Onedow/Onedow

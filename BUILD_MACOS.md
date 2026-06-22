@@ -28,12 +28,12 @@ cd build && ./WiNILL
 
 ## 폰트 (필수)
 
-macOS는 Windows처럼 EXE에 폰트를 넣지 않고 **TTF 파일**을 읽습니다.  
-아래 파일을 `WiNILL/Resource/Font/` 에 넣어 주세요 (Windows 빌드 PC의 `WiNILL/Font/` 에서 복사 가능).
+`WiNILL/Font/` 에 아래 **2개**만 있으면 됩니다.
 
-- `Jua-Regular.ttf`
-- `KosugiMaru-Regular.ttf`
-- `Oswald-VariableFont_wght.ttf`
+- `Jua-Regular.ttf` — 한글
+- `KosugiMaru-Regular.ttf` — 일본어·라틴 폴백
+
+빌드 시 `build/Font/` 로 자동 복사됩니다.
 
 ## Windows와의 차이
 

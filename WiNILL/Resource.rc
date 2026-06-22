@@ -5,9 +5,8 @@
 //   (BULLET_RAIN.png 원본 복원 — 리소스 재컴파일 강제용 주석 v2)
 // ─────────────────────────────────────────────────────────────
 
-// 폰트 폴백 체인 — stb_truetype 으로 직접 래스터화 (InitFromMemory).
-//   라틴=Oswald / 한글=Jua / 일본어=KosugiMaru, 항상 동시 로드 → 모든 언어 표시
-OSWALD_FONT     RCDATA      "Resource\\Font\\Oswald-VariableFont_wght.ttf"
+// 폰트 폴백 체인 — stb_truetype (InitFromMemory).
+//   한글=Jua / 일본어·라틴 폴백=KosugiMaru
 JUA_FONT        RCDATA      "Font\\Jua-Regular.ttf"
 KOSUGI_FONT     RCDATA      "Font\\KosugiMaru-Regular.ttf"
 

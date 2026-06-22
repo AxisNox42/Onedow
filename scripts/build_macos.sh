@@ -16,14 +16,11 @@ if ! brew list glfw >/dev/null 2>&1; then
   brew install glfw
 fi
 
-# 폰트 (Windows 빌드와 동일 파일명) — 없으면 텍스트 일부만 안 보일 수 있음
-FONT_DIR="$ROOT/WiNILL/Resource/Font"
-mkdir -p "$FONT_DIR"
-for f in Jua-Regular.ttf KosugiMaru-Regular.ttf Oswald-VariableFont_wght.ttf; do
-  if [[ ! -f "$FONT_DIR/$f" && -f "$ROOT/WiNILL/Font/$f" ]]; then
-    cp "$ROOT/WiNILL/Font/$f" "$FONT_DIR/"
-  fi
-done
+# 폰트 — WiNILL/Font/ (Jua + KosugiMaru)
+if [[ ! -f "$ROOT/WiNILL/Font/Jua-Regular.ttf" || ! -f "$ROOT/WiNILL/Font/KosugiMaru-Regular.ttf" ]]; then
+  echo "오류: WiNILL/Font/ 에 Jua-Regular.ttf, KosugiMaru-Regular.ttf 가 필요합니다."
+  exit 1
+fi
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"

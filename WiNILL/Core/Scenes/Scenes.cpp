@@ -1497,7 +1497,7 @@ void Scene_Settings(const SceneCtx& c) {
                     const wchar_t* lines[] = {
                         L"ONEDOW  —  Desktop Defense",
                         L"",
-                        L"Fonts:  Jua / Kosugi Maru / Oswald  (SIL OFL)",
+                        L"Fonts:  Jua / Kosugi Maru  (SIL OFL)",
                         L"Icons:  game-icons.net  (CC BY 3.0)",
                         L"         Lorc · Delapouite · Skoll",
                         L"Missile sprite:  Saepul Nahwan  (Noun Project)",

@@ -82,13 +82,10 @@ add_custom_command(TARGET WiNILL POST_BUILD
         $<TARGET_FILE_DIR:WiNILL>/Icons
     COMMENT "Copying Resource/ and Icons/ next to executable")
 
-# Windows 프로젝트의 Font/ 폴더가 있으면 Resource/Font 로 합침
 if(EXISTS ${WINILL_DIR}/Font)
     add_custom_command(TARGET WiNILL POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            $<TARGET_FILE_DIR:WiNILL>/Resource/Font
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${WINILL_DIR}/Font
-            $<TARGET_FILE_DIR:WiNILL>/Resource/Font
-        COMMENT "Copying Font/ into Resource/Font/")
+            $<TARGET_FILE_DIR:WiNILL>/Font
+        COMMENT "Copying Font/ next to executable")
 endif()
