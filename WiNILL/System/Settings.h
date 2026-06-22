@@ -99,7 +99,7 @@ inline DifficultyParams GetDifficultyParams(Difficulty d) {
 inline bool g_CreativeMode = false;
 // 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
 inline long long g_CreativeStartScore = 0;       // 시작 점수
-inline int       g_CreativeBossPick   = -1;      // -1=없음, pick=BossDirector id (1=UNKNOWN.sys …)
+inline int       g_CreativeBossPick   = -1;      // -1=없음. 1·4=크리에이티브 전용, LTS=2·7·8·9
 inline int       g_CreativeStartAugs  = 0;       // 시작 시 무료 증강 픽 횟수
 inline bool      g_CreativeGodmode    = false;   // G 키 무적 토글 (런타임)
 inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤엔 디버프 페이지 스킵

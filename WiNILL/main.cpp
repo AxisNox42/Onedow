@@ -242,7 +242,6 @@ int  g_BossRewardPicksLeft = 0;
 // 蹂댁뒪 ?ㅽ룿 ???쇰컲 蹂댁뒪??20留뚯젏留덈떎, ?대━紐⑦봽??50留뚯젏 怨좎젙(1??
 static constexpr long long FIRST_BOSS_SCORE = 20000;  // 시연용 (원래 50000)
 long long g_NextBossScore  = FIRST_BOSS_SCORE;
-bool      g_PolySpawned    = false;
 bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss = nullptr;
 PolymorphBoss* g_PolyBoss = nullptr;
@@ -541,7 +540,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     case 7: StartBossWarn(7, L"C2_RELAY.sys", bossHpC * 0.75f); break;
     case 8: StartBossWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
     case 9: StartBossWarn(9, L"RITE.CORE",     bossHpC * 0.72f); break;
-    default: StartBossWarn(4, L"GLITCH.exe",   polyHpC);         break;
+    default: StartBossWarn(2, L"VOLLEY.sys",   bossHpC);         break;
     }
 }
 
@@ -920,7 +919,6 @@ int main() {
             g_ArcherCharge = 0.0f;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
             g_NextBossScore = FIRST_BOSS_SCORE;
-            g_PolySpawned   = false;
             BossDir::ResetRotation();
             BossDir::ResetAct();
             g_RunGold           = 0;
@@ -976,7 +974,6 @@ int main() {
                 // ?쒖옉 ?먯닔蹂대떎 ??泥?20留?諛곗닔遺???쇰컲 蹂댁뒪 (?쒓볼踰덉뿉 ?잛븘吏?諛⑹?)
                 g_NextBossScore = ((g_CreativeStartScore / 200000) + 1) * 200000;
                 // ?대? 50留??댁긽?먯꽌 ?쒖옉?섎㈃ ?대━紐⑦봽 ?먮룞?깆옣 ?앸왂 (蹂댁뒪?좏깮?쇰줈 ?뚰솚)
-                g_PolySpawned   = (g_CreativeStartScore >= 500000);
                 // ?좏깮 蹂댁뒪 利됱떆 ?ㅽ룿 ?덉빟 (?먯닔 臾닿?)
                 g_CreativeBossPending = (g_CreativeBossPick >= 0);
             }
@@ -1542,7 +1539,7 @@ int main() {
                 g_CreativeGodmode = !g_CreativeGodmode;
                 s_gkeyReleased = false;
             }
-            // B — 선택 보스 즉시 스폰 (None이면 UNKNOWN.sys)
+            // B — 선택 보스 즉시 스폰 (None이면 VOLLEY.sys)
             static bool s_bkeyReleased = true;
             int kB = glfwGetKey(window, GLFW_KEY_B);
             if (kB == GLFW_RELEASE) s_bkeyReleased = true;
@@ -1552,7 +1549,7 @@ int main() {
                     float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
                     float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
                                   : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
-                    int pick = g_CreativeBossPick >= 0 ? g_CreativeBossPick : 1;
+                    int pick = g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2;
                     QueueCreativeBossPick(pick, bossHpC, polyHpC);
                 }
                 s_bkeyReleased = false;
@@ -2988,7 +2985,7 @@ int main() {
                 if (!bossActive) {
                     if (g_CreativeBossPending) {
                         g_CreativeBossPending = false;
-                        QueueCreativeBossPick(g_CreativeBossPick >= 0 ? g_CreativeBossPick : 1,
+                        QueueCreativeBossPick(g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2,
                                               bossHpC, polyHpC);
                     }
                     else if (g_GameManager.score >= g_NextBossScore) {
@@ -2998,10 +2995,7 @@ int main() {
                         if (sc > 9.0f) sc = 9.0f;
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.022f);
                         float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
-                        if (!g_PolySpawned && g_GameManager.score >= 500000) {
-                            g_PolySpawned = true;
-                            startWarn(4, L"GLITCH.exe", polyHpC);
-                        } else {
+                        {
                             int pick = BossDir::RollScorePick();
                             startWarn(pick, BossDir::DisplayName(pick),
                                       bossHp * BossDir::HpMul(pick));
@@ -3090,9 +3084,8 @@ int main() {
                             g_TotemBoss->worldX = bsx; g_TotemBoss->worldY = bsy;
                             break;
                         default:
-                            g_PolyBoss = new PolymorphBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_PolyBoss->worldX = bsx; g_PolyBoss->worldY = bsy;
-                            g_PolyPrevForm = -1;
+                            g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
                             break;
                         }
                         if (g_BossWarnPick >= 0)

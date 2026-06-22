@@ -1120,16 +1120,18 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 g_TextS.Draw(L"Boss", leftX, contentTop + 90.0f, 1.0f, 1, 1, 1, 0.9f);
                 g_TextS.Draw(L"(런 중 B = 선택 보스 즉시 스폰)", leftX, contentTop + 108.0f,
                              0.52f, 0.72f, 0.78f, 0.88f, 0.85f);
+                g_TextS.Draw(L"* 일반 런 미포함 (개발용)", leftX, contentTop + 124.0f,
+                             0.48f, 0.68f, 0.75f, 0.82f, 0.75f);
                 struct BossOpt { const wchar_t* l; int v; };
                 BossOpt bOpts[7] = {
-                    {L"None",-1}, {L"UNKNOWN.sys",1}, {L"VOLLEY.sys",2}, {L"GLITCH.exe",4},
+                    {L"None",-1}, {L"UNKNOWN.sys*",1}, {L"VOLLEY.sys",2}, {L"GLITCH.exe*",4},
                     {L"C2_RELAY",7}, {L"FORK.worm",8}, {L"RITE.CORE",9}
                 };
                 const float BBW = 112.0f;
                 for (int i = 0; i < 7; i++) {
                     int col = i % 4, row = i / 4;
                     float ox = leftX + col * (BBW + OBG);
-                    float oy = contentTop + 128.0f + row * (OBH + 8.0f);
+                    float oy = contentTop + 144.0f + row * (OBH + 8.0f);
                     bool sel = (g_CreativeBossPick == bOpts[i].v);
                     if (UIButton(ox, oy, BBW, OBH, bOpts[i].l,
                                  mx, my, lmb, g_LmbPrev, sel))
