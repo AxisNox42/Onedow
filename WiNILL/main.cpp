@@ -1912,9 +1912,23 @@ int main() {
 
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
                 if (g_PolyBoss && g_PolyBoss->alive) {
+                    float polyPullX = 0.0f, polyPullY = 0.0f;
                     if (!timeStopped)
                         g_PolyBoss->Update(pCX, pCY, enemyDt,
-                                           g_GameManager.playerHP, g_Bullets);
+                                           g_GameManager.playerHP, g_Bullets,
+                                           g_MonsterManager.monsters,
+                                           polyPullX, polyPullY);
+                    if (!timeStopped && (polyPullX != 0.0f || polyPullY != 0.0f)) {
+                        playerWin.x += polyPullX;
+                        playerWin.y += polyPullY;
+                        float margin = 8.0f;
+                        if (playerWin.x < margin) playerWin.x = margin;
+                        if (playerWin.y < margin) playerWin.y = margin;
+                        if (playerWin.x + playerWin.width > screenWidth - margin)
+                            playerWin.x = screenWidth - margin - playerWin.width;
+                        if (playerWin.y + playerWin.height > screenHeight - 90.0f - margin)
+                            playerWin.y = screenHeight - 90.0f - margin - playerWin.height;
+                    }
                     if (!timeStopped) {
                         for (auto& sp : g_PolyBoss->mobSpawnQueue) {
                             if ((int)g_MonsterManager.monsters.size() >= 22) break;
@@ -2334,16 +2348,12 @@ int main() {
                         // 3) 본체
                         if (SegDist(pb->worldX, pb->worldY,
                                     b.prevX, b.prevY, b.x, b.y) < PolymorphBoss::BODY * 0.55f) {
-                            if (!pb->damageable()) {
-                                if (b.remainingDmg <= 0.001f) b.active = false;
-                            } else {
-                                float dealt = (dmg < pb->hp) ? dmg : pb->hp;
-                                pb->hp -= dealt;
-                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                                SpawnDamageNumber(pb->worldX, pb->worldY, dealt, true);
-                                if (pb->hp <= 0.0f) pb->alive = false;
-                                if (b.remainingDmg <= 0.001f) b.active = false;
-                            }
+                            float dealt = (dmg < pb->hp) ? dmg : pb->hp;
+                            pb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            SpawnDamageNumber(pb->worldX, pb->worldY, dealt, true);
+                            if (pb->hp <= 0.0f) pb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
                 }
@@ -4053,7 +4063,7 @@ int main() {
         if (g_PolyBoss && g_PolyBoss->alive)
             addW(g_PolyBoss->worldX, g_PolyBoss->worldY, POLY_WIN_W, POLY_WIN_W,
                  L"GLITCH.exe", 0.04f,0.02f,0.06f, 0.85f,0.25f,1.0f);
-        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
+        if (g_PolyBoss && g_PolyBoss->alive) {
             float hw = g_PolyBoss->holeWinSize();
             float hx = g_PolyBoss->holeX - hw * 0.5f;
             float hy = g_PolyBoss->holeY - hw * 0.5f;
@@ -4093,7 +4103,7 @@ int main() {
                                TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
             }
         }
-        // GLITCH.exe world hazards — SINGULARITY 삼각형만
+        // GLITCH.exe world hazards — SINGULARITY 삼각형 + 블랙홀 당김 링
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
             auto hidePt = [&](float px, float py) {
@@ -4116,26 +4126,14 @@ int main() {
             };
             BindMainShader();
             float gt = (float)glfwGetTime();
+            float pr = pb->pullRadius();
+            float pulse = 0.5f + 0.5f * sinf(gt * 4.2f);
+            if (!hidePt(pb->holeX, pb->holeY))
+                drawCircle(pb->holeX, pb->holeY, pr, 0.12f, 0.55f, 1.0f, 0.04f + 0.03f * pulse);
             if (pb->form == PForm::SINGULARITY) {
-                if (pb->triWarn) {
-                    float blink = 0.45f + 0.4f * (0.5f + 0.5f * sinf(gt * 16.0f));
-                    for (int e = 0; e < 4; e++)
-                        for (int i = 0; i < 18; i++) {
-                            float t = (float)i / 17.0f;
-                            float ax, ay, dx = 0, dy = 0;
-                            if (e == 0) { ax = t * screenWidth; ay = 10.0f; dy = 1; }
-                            else if (e == 1) { ax = t * screenWidth; ay = screenHeight - 10.0f; dy = -1; }
-                            else if (e == 2) { ax = 10.0f; ay = t * screenHeight; dx = 1; }
-                            else { ax = screenWidth - 10.0f; ay = t * screenHeight; dx = -1; }
-                            drawTriangle(ax + dx * 12.0f, ay + dy * 12.0f,
-                                         11.0f, 0.1f, 1.0f, 0.88f, blink);
-                        }
-                }
-                if (pb->blackHoleActive) {
-                    for (auto& s : pb->swarm) {
-                        if (!s.alive || hidePt(s.x, s.y)) continue;
-                        drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
-                    }
+                for (auto& s : pb->swarm) {
+                    if (!s.alive || hidePt(s.x, s.y)) continue;
+                    drawTriangle(s.x, s.y, 11.0f, 0.2f, 1.0f, 0.92f, 1.0f);
                 }
             }
         }
@@ -4603,8 +4601,8 @@ int main() {
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
-        // GLITCH GRAVITY.core — 플레이어 창 위에 블랙홀 오버레이
-        if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {
+        // GLITCH GRAVITY.core — 블랙홀 오버레이 (항상 표시)
+        if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
             float hw = pb->holeWinSize();
             float hx = pb->holeX - hw * 0.5f, hy = pb->holeY - hw * 0.5f;
@@ -4911,15 +4909,11 @@ int main() {
                 drawCircle(dx, dy, ds * 0.55f, fr, fg, fb, da_a * 0.35f);
                 drawDiamond(dx, dy, ds, fr, fg, fb, da_a);
             }
-            if (pb->form == PForm::SINGULARITY && pb->blackHoleActive) {
-                float mini = std::min(28.0f, pb->holeR * 0.12f);
-                drawCircle(bx, by - bsz * 0.12f, mini, 0.0f, 0.0f, 0.0f, 0.75f);
-                drawCircle(bx, by - bsz * 0.12f, mini * 1.5f, 0.1f, 0.90f, 0.78f, 0.30f);
-            }
-            if (pb->damageable()) {
-                float pulse = 0.5f + 0.5f * sinf(gt * 14.0f);
-                drawCircle(bx, by, bsz * 1.15f, 0.2f, 1.0f, 0.7f, 0.12f + 0.18f * pulse);
-            }
+            float mini = std::min(28.0f, pb->holeR * 0.12f);
+            drawCircle(bx, by - bsz * 0.12f, mini, 0.0f, 0.0f, 0.0f, 0.75f);
+            drawCircle(bx, by - bsz * 0.12f, mini * 1.5f, 0.1f, 0.90f, 0.78f, 0.30f);
+            float pulse = 0.5f + 0.5f * sinf(gt * 14.0f);
+            drawCircle(bx, by, bsz * 1.15f, 0.2f, 1.0f, 0.7f, 0.12f + 0.18f * pulse);
             // (HP 諛붾뒗 ?붾㈃ ?곷떒 怨좎젙 蹂댁뒪 諛붾줈 ?대룞)
             // ??蹂???뚰떚????蹂댁뒪 媛쒖씤 李??덉뿉?쒕룄 蹂댁씠?꾨줉 (李?諛??곗뒪?ы넲??????
             for (auto& p : g_EnemyParts) {
