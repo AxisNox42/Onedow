@@ -81,7 +81,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::MULTISHOT:
         return L"완충 발사 시 3발 부채꼴 / 단발 화력을 면제역으로 / 다탄 화력";
     case AugType::MINIGUN:
-        return L"연사 속도 ×2 / 공격력 -30% / 관통 없음 — 탄막형 연사 특화";
+        return L"연사 +75% / 탄 퍼짐 +0.15 / 정조준·소총과 반대 축 — 근거리 탄막 특화";
     case AugType::HACK_RANGED:
         return L"원거리 몹 처치 시 20% 확률 / 유도탄 5발 추가 (적에게만 피해) / 원거리 격파 연쇄";
     case AugType::PROB_CHAIN:
@@ -200,9 +200,9 @@ inline const wchar_t* AugDescKR(AugType t) {
         return L"[조합] 재생 II+흡혈마+가벼운 발걸음 / 재생 +0.25/s · 이동 +12% · 7킬마다 HP+1 / 피격 시 가벼운 발걸음 6초 정지";
 
     case AugType::MINIGUN_2:
-        return L"연사 ×2 유지 · 공격력 -30%→-15% / 선행: 미니건 / 미니건 빌드 2티어";
+        return L"연사 +12%p / 탄 퍼짐 -25% / 선행: 미니건 / 제어 조금 나아지지만 여전히 산탄기";
     case AugType::MINIGUN_CYCLONE:
-        return L"명중마다 연사 쿨 0.1초 단축(최대 0.6초 누적) · 관통 40% / 선행: 미니건 II / 신화 스노우볼";
+        return L"명중마다 연사 쿨 0.1초 단축(누적 최대 0.6초) / 선행: 미니건 II / 관통 없음·순수 연사 스노우볼";
     case AugType::DEATH_BLAST_2:
         return L"처치 폭발 피해 30%→40% · 반경 +40% / 선행: 연쇄 폭발 / 연쇄폭발 완성";
     case AugType::CB_TANWOO:

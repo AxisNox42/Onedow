@@ -57,7 +57,7 @@ struct PlayerStats {
     // 신규 (에픽/전설)
     bool  mk2          = false;  // 사망 시 1회 부활
     bool  mk2Used      = false;
-    bool  minigun      = false;  // 연사 ×2, 데미지 -30%
+    bool  minigun      = false;  // 탄 퍼짐↑ ↔ 연사↑ (정조준과 반대 축)
     int   minigunTier  = 0;      // 1=미니건, 2=미니건 II
     bool  minigunCyclone = false; // 신화 — 명중 시 연사 가속
     float minigunHitBoost = 0.0f; // 소용돌이 — fireTimer 가산(초)
@@ -265,35 +265,37 @@ struct PlayerStats {
             break;
         // ── 신규 에픽/전설 ──
         case AugType::MINIGUN:
-            minigun           = true;
-            minigunTier       = 1;
-            fireInterval     /= 2.0f;
-            damageMultiplier *= 0.70f;
+            minigun       = true;
+            minigunTier   = 1;
+            fireInterval /= 1.75f;   // 연사 ↑ (정조준·소총과 반대 축)
+            bulletSpread += 0.15f;   // 탄 퍼짐 ↑ — 근거리 탄막 특화
             break;
         case AugType::MINIGUN_2:
             if (!minigun) {
                 minigun       = true;
                 minigunTier   = 2;
-                fireInterval /= 2.0f;
-                damageMultiplier *= 0.85f;
+                fireInterval /= 1.75f;
+                bulletSpread += 0.15f;
             } else {
                 minigunTier   = 2;
-                damageMultiplier *= (0.85f / 0.70f);
             }
+            fireInterval /= 1.12f;     // 연사 추가 ↑
+            bulletSpread *= 0.75f;     // 퍼짐 약간 억제 (완전 정조준은 아님)
             break;
         case AugType::MINIGUN_CYCLONE:
             minigunCyclone = true;
             if (!minigun) {
                 minigun       = true;
                 minigunTier   = 2;
-                fireInterval /= 2.0f;
-                damageMultiplier *= 0.85f;
+                fireInterval /= 1.75f;
+                bulletSpread += 0.15f;
+                fireInterval /= 1.12f;
+                bulletSpread *= 0.75f;
             } else if (minigunTier < 2) {
                 minigunTier   = 2;
-                damageMultiplier *= (0.85f / 0.70f);
+                fireInterval /= 1.12f;
+                bulletSpread *= 0.75f;
             }
-            pierce = true;
-            if (pierceChance < 40) pierceChance = 40;
             break;
         case AugType::HACK_RANGED: hackRanged = true; break;
         // 확률적 연쇄 작용 — 30% 확률, 최대 3튕김
