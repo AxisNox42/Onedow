@@ -177,14 +177,24 @@ public:
     }
 
     void TryContact(float dist, float& playerHP, float dps, float deltaTime,
-                    float thresh = -1.0f) const {
+                    float thresh = -1.0f,
+                    float gateWX = -1.0f, float gateWY = -1.0f,
+                    float gateWW = -1.0f, float gateWH = -1.0f) const {
         if (singularityGrace > 0.0f) return;
+        if (gateWW > 0.0f) {
+            float m = 14.0f * sizeScale;
+            if (worldX < gateWX - m || worldX > gateWX + gateWW + m ||
+                worldY < gateWY - m || worldY > gateWY + gateWH + m)
+                return;
+        }
         float t = (thresh >= 0.0f) ? thresh : (26.0f * sizeScale);
         if (dist < t) HurtPlayer(playerHP, dps * deltaTime);
     }
 
     void Update(float playerCX, float playerCY, float deltaTime,
-                float& playerHP, float speedMult = 1.0f) {
+                float& playerHP, float speedMult = 1.0f,
+                float gateWX = -1.0f, float gateWY = -1.0f,
+                float gateWW = -1.0f, float gateWH = -1.0f) {
         if (!alive) return;
         if (singularityGrace > 0.0f) {
             singularityGrace -= deltaTime;
@@ -213,7 +223,8 @@ public:
                 worldX += (dx / dist) * speed * 0.30f * speedMult * deltaTime;
                 worldY += (dy / dist) * speed * 0.30f * speedMult * deltaTime;
             }
-            TryContact(dist, playerHP, 7.0f, deltaTime, 26.0f);
+            TryContact(dist, playerHP, 7.0f, deltaTime, 26.0f,
+                       gateWX, gateWY, gateWW, gateWH);
             return;
         }
 
@@ -236,7 +247,8 @@ public:
                 chargeTimer += deltaTime;
                 if (chargeTimer >= 0.35f) { chargeState = 0; chargeTimer = 0.0f; }
             }
-            TryContact(dist, playerHP, 6.0f, deltaTime);
+            TryContact(dist, playerHP, 6.0f, deltaTime, -1.0f,
+                       gateWX, gateWY, gateWW, gateWH);
             return;
         }
 
@@ -250,7 +262,8 @@ public:
                 worldX += (fX * speed + pX * speed * w) * speedMult * deltaTime;
                 worldY += (fY * speed + pY * speed * w) * speedMult * deltaTime;
             }
-            TryContact(dist, playerHP, 5.0f, deltaTime);
+            TryContact(dist, playerHP, 5.0f, deltaTime, -1.0f,
+                       gateWX, gateWY, gateWW, gateWH);
             return;
         }
 
@@ -264,7 +277,8 @@ public:
             float k = std::min(1.0f, 7.0f * deltaTime);
             worldX += (tx - worldX) * k;
             worldY += (ty - worldY) * k;
-            TryContact(dist, playerHP, 5.0f, deltaTime);
+            TryContact(dist, playerHP, 5.0f, deltaTime, -1.0f,
+                       gateWX, gateWY, gateWW, gateWH);
             return;
         }
 
@@ -278,7 +292,8 @@ public:
                 worldX += (dx / dist) * speed * speedMult * deltaTime;
                 worldY += (dy / dist) * speed * speedMult * deltaTime;
             }
-            TryContact(dist, playerHP, 5.0f, deltaTime);
+            TryContact(dist, playerHP, 5.0f, deltaTime, -1.0f,
+                       gateWX, gateWY, gateWW, gateWH);
             return;
         }
 
@@ -296,7 +311,8 @@ public:
                     anchored = true;   // 배치 완료 → 이후 영구 고정
                 }
             }
-            TryContact(dist, playerHP, contactDmg, deltaTime);
+            TryContact(dist, playerHP, contactDmg, deltaTime, -1.0f,
+                       gateWX, gateWY, gateWW, gateWH);
             return;
         }
 
@@ -305,6 +321,7 @@ public:
             worldX += (dx / dist) * speed * speedMult * deltaTime;
             worldY += (dy / dist) * speed * speedMult * deltaTime;
         }
-        TryContact(dist, playerHP, contactDmg, deltaTime);
+        TryContact(dist, playerHP, contactDmg, deltaTime, -1.0f,
+                   gateWX, gateWY, gateWW, gateWH);
     }
 };

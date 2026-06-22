@@ -81,9 +81,12 @@ public:
     // rmobMoveMult : 원거리 몹 lerp 가속 (rmobDelayMult <1 → 더 빠름 → moveMult >1)
     void UpdateAll(float playerCX, float playerCY, float dt,
                    float& playerHP, std::vector<Bullet>& bullets,
-                   float mobSpeedMult = 1.0f, float rmobMoveMult = 1.0f) {
+                   float mobSpeedMult = 1.0f, float rmobMoveMult = 1.0f,
+                   float gateWX = -1.0f, float gateWY = -1.0f,
+                   float gateWW = -1.0f, float gateWH = -1.0f) {
         for (auto m : monsters)
-            m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult);
+            m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
+                      gateWX, gateWY, gateWW, gateWH);
 
         // ── 소환체(SPAWNER) — 주기마다 작은 잡몹 2마리 (전체 몹 수 제한) ──
         {
@@ -152,7 +155,8 @@ public:
             rangedMobs.end());
 
         for (auto b : bombers)
-            b->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult);
+            b->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
+                      gateWX, gateWY, gateWW, gateWH);
 
         // ── 자폭병 소프트 콜리전 — 자폭병끼리 + 잡몹과도 분리 ──
         //   예전엔 자폭병이 서로 겹쳐 쌓여 "한 마리"처럼 보였고, 들어갔다가

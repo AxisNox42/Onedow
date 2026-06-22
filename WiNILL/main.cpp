@@ -1876,11 +1876,18 @@ int main() {
                         }
                     }
                 }
-                if (!timeStopped)
+                if (!timeStopped) {
+                    float gWX = -1.0f, gWY = -1.0f, gWW = -1.0f, gWH = -1.0f;
+                    if (g_PolyBoss && g_PolyBoss->alive) {
+                        gWX = playerWin.x; gWY = playerWin.y;
+                        gWW = playerWin.width; gWH = playerWin.height;
+                    }
                     g_MonsterManager.UpdateAll(pCX, pCY, enemyDt,
                                                g_GameManager.playerHP, g_Bullets,
                                                g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
-                                               rmobMoveMult * mobSpdRamp * focusSlow);
+                                               rmobMoveMult * mobSpdRamp * focusSlow,
+                                               gWX, gWY, gWW, gWH);
+                }
                 if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
                     const float winSz = g_WindowSizeCur > 1.0f ? g_WindowSizeCur : g_Stats.windowSize;
                     const float safeR  = winSz * 0.52f;
@@ -4028,16 +4035,7 @@ int main() {
             float sc = r->deathScale;
             addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"popup.exe", 0.08f,0.08f,0.10f, 0.85f,0.20f,0.95f);
         }
-        // GLITCH.exe: 근접 몹도 각자 mob.exe 창 (창 밖 렌더 금지 규칙)
-        if (g_PolyBoss && g_PolyBoss->alive) {
-            const float GMW = g_RfwW * 0.62f, GMH = g_RfwH * 0.62f;
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || m->kind == MobKind::DDOS || m->kind == MobKind::SPAWNER) continue;
-                float sc = m->sizeScale;
-                addW(m->worldX, m->worldY, GMW * sc, GMH * sc, L"mob.exe",
-                     0.07f, 0.07f, 0.09f, 0.72f, 0.28f, 0.98f);
-            }
-        }
+        // GLITCH.exe: 플레이어 창 밖 근접 몹은 (e)에서 mob.exe 통합 렌더
         // 蹂댁뒪/遺꾩뿴泥?(?곷떒)
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
@@ -4163,10 +4161,31 @@ int main() {
                 }
             }
             if (pb->form == PForm::PHANTOM) {
-                for (int i = 0; i < 8; i++) {
-                    float by = fmodf(pb->fx.staticBand * (float)screenHeight + (float)i * 96.0f,
+                float warnPulse = pb->fx.slipWarn
+                    ? (0.35f + 0.45f * (1.0f - pb->fx.slipWarnT / 0.90f)) : 0.055f;
+                for (int i = 0; i < 6; i++) {
+                    float by = fmodf(pb->fx.staticBand * (float)screenHeight + (float)i * 110.0f,
                                      (float)screenHeight + 40.0f) - 20.0f;
-                    drawRect(0.0f, by, (float)screenWidth, 5.0f, 0.55f, 0.45f, 1.0f, 0.055f);
+                    drawRect(0.0f, by, (float)screenWidth, 4.0f,
+                             0.55f, 0.45f, 1.0f, warnPulse);
+                }
+                if (pb->fx.slipWarn) {
+                    auto& fx = pb->fx;
+                    float pcx = playerWin.x + playerWin.width * 0.5f;
+                    float pcy = playerWin.y + playerWin.height * 0.5f;
+                    float dist = pb->enraged ? 90.0f : 70.0f;
+                    float tx = pcx + fx.slipDirX * dist;
+                    float ty = pcy + fx.slipDirY * dist;
+                    float sa = 0.45f + 0.40f * (1.0f - fx.slipWarnT / 0.90f);
+                    int segs = 8;
+                    for (int i = 0; i <= segs; i++) {
+                        float u = (float)i / (float)segs;
+                        drawCircle(pcx + (tx - pcx) * u, pcy + (ty - pcy) * u,
+                                   5.0f, 0.75f, 0.55f, 1.0f, 0.65f * sa);
+                    }
+                    drawNeonBorder(tx - playerWin.width * 0.5f, ty - playerWin.height * 0.5f,
+                                   playerWin.width, playerWin.height,
+                                   0.75f, 0.55f, 1.0f);
                 }
             }
         }
@@ -4287,15 +4306,6 @@ int main() {
         if (g_PolyBoss && g_PolyBoss->alive)
             drawBossWinContent(g_PolyBoss->worldX - POLY_WIN_W * 0.5f,
                                g_PolyBoss->worldY - POLY_WIN_W * 0.5f, POLY_WIN_W, POLY_WIN_W);
-        if (g_PolyBoss && g_PolyBoss->alive) {
-            const float GMW = g_RfwW * 0.62f, GMH = g_RfwH * 0.62f;
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || m->kind == MobKind::DDOS || m->kind == MobKind::SPAWNER) continue;
-                float sc = m->sizeScale;
-                float mw = GMW * sc, mh = GMH * sc;
-                drawBossWinContent(m->worldX - mw * 0.5f, m->worldY - mh * 0.5f, mw, mh);
-            }
-        }
         if (g_BotnetBoss && g_BotnetBoss->alive)
             drawBossWinContent(g_BotnetBoss->worldX - BOTNET_WIN_W * 0.5f,
                                g_BotnetBoss->worldY - BOTNET_WIN_W * 0.5f, BOTNET_WIN_W, BOTNET_WIN_W);
@@ -4384,7 +4394,7 @@ int main() {
                            playerWin.width + 6, playerWin.height + 6,
                            0.75f, 0.55f, 1.0f);
             drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                     0.45f, 0.35f, 0.85f, 0.04f * pulse);
+                     0.45f, 0.35f, 0.85f, 0.025f * pulse);
         }
 
         if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
@@ -4615,10 +4625,13 @@ int main() {
         float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
         // ?〓す (蹂댁뒪 ?뚰솚臾쇱? ???? ??李?諛?而щ쭅
         for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
+            if (!m->alive) continue;
             if (g_PolyBoss && g_PolyBoss->alive &&
-                m->kind != MobKind::DDOS && m->kind != MobKind::SPAWNER)
+                m->kind != MobKind::DDOS && m->kind != MobKind::SPAWNER) {
+                if (!inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh, 10.0f)) continue;
+            } else if (!inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) {
                 continue;
+            }
             drawMob(m);
         }
         for (auto bm : g_MonsterManager.bombers) {
@@ -4653,6 +4666,40 @@ int main() {
         }
         }
         BatchFlush(); glDisable(GL_SCISSOR_TEST);
+
+        // GLITCH mob.exe — 플레이어 창 밖 근접 몹만 chrome+내용 통합 렌더 (z/클리핑 오류 방지)
+        if (g_PolyBoss && g_PolyBoss->alive) {
+            const float GMW = g_RfwW * 0.62f, GMH = g_RfwH * 0.62f;
+            const float MTB = WIN_TB;
+            struct MobPtr { Monster* m; float y; };
+            std::vector<MobPtr> outside;
+            for (auto m : g_MonsterManager.monsters) {
+                if (!m->alive || m->kind == MobKind::DDOS || m->kind == MobKind::SPAWNER) continue;
+                if (inWin(m->worldX, m->worldY, playerWin.x, playerWin.y,
+                          playerWin.width, playerWin.height, 10.0f))
+                    continue;
+                outside.push_back({ m, m->worldY });
+            }
+            std::sort(outside.begin(), outside.end(),
+                      [](const MobPtr& a, const MobPtr& b) { return a.y < b.y; });
+            BindMainShader();
+            for (auto& mp : outside) {
+                Monster* m = mp.m;
+                float sc = m->sizeScale;
+                float mw = GMW * sc, mh = GMH * sc;
+                float wx = m->worldX - mw * 0.5f;
+                float wy = m->worldY - mh * 0.5f;
+                if (wx < 4.0f) wx = 4.0f;
+                if (wy < 4.0f) wy = 4.0f;
+                if (wx + mw > screenWidth - 4.0f) wx = screenWidth - 4.0f - mw;
+                if (wy + mh > screenHeight - 94.0f) wy = screenHeight - 94.0f - mh;
+                DrawAppWindow(wx, wy, mw, mh, L"mob.exe", MTB);
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                WorldScissor(wx, wy + MTB, mw, mh - MTB);
+                drawMob(m);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            }
+        }
 
         // GLITCH GRAVITY.core — 플레이어 창 위에 블랙홀 오버레이
         if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->blackHoleActive) {

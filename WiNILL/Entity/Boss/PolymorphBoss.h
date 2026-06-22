@@ -31,6 +31,9 @@ struct PolyGlitchFX {
     float snapWarnX = 0.0f, snapWarnY = 0.0f;
     float snapWarnW = 0.0f, snapWarnH = 0.0f;
     float snapFromX = 0.0f, snapFromY = 0.0f;
+    bool  slipWarn      = false;
+    float slipWarnT     = 0.0f;
+    float slipDirX      = 0.0f, slipDirY = 0.0f;
     bool  shakePulse    = false;
     float staticBand    = 0.0f;
 };
@@ -119,6 +122,9 @@ public:
         fx.snapWarn    = false;
         fx.snapWarnX = fx.snapWarnY = fx.snapWarnW = fx.snapWarnH = 0.0f;
         fx.snapFromX = fx.snapFromY = 0.0f;
+        fx.slipWarn  = false;
+        fx.slipWarnT = 0.0f;
+        fx.slipDirX = fx.slipDirY = 0.0f;
     }
 
     void tickFxForForm() {
@@ -148,7 +154,7 @@ public:
         holeRMax = enraged ? 270.0f : 230.0f;
         displaceCd = enraged ? 1.0f : 1.4f;
         snapTimer = 0.0f;
-        phantomSlipCd = 1.2f;
+        phantomSlipCd = enraged ? 2.4f : 3.2f;
         bars.clear();
         swarm.clear();
         resetFx();
@@ -279,14 +285,30 @@ public:
         clampWin(winX, winY, winW, winH, screenW, screenH);
         fx.snapWarn = false;
         fx.shakePulse = true;
-        HurtPlayer(playerHP, enraged ? 7.0f : 4.5f);
+        for (auto& b : bars) {
+            if (!b.alive) continue;
+            if (winX + winW > b.x && winX < b.x + b.w &&
+                winY + winH > b.y && winY < b.y + b.h) {
+                HurtPlayer(playerHP, enraged ? 5.0f : 3.0f);
+                break;
+            }
+        }
+        vulnTimer = enraged ? 0.85f : 1.05f;
     }
 
-    void phaseSlip(float& winX, float& winY, float winW, float winH) {
+    void queuePhaseSlip() {
         float ang = (float)(rand() % 628) * 0.01f;
-        float dist = enraged ? 72.0f : 52.0f;
-        winX += cosf(ang) * dist;
-        winY += sinf(ang) * dist;
+        fx.slipDirX = cosf(ang);
+        fx.slipDirY = sinf(ang);
+        fx.slipWarn = true;
+        fx.slipWarnT = enraged ? 0.70f : 0.90f;
+    }
+
+    void phaseSlip(float& winX, float& winY, float winW, float winH,
+                   float dirX, float dirY) {
+        float dist = enraged ? 34.0f : 24.0f;
+        winX += dirX * dist;
+        winY += dirY * dist;
         clampWin(winX, winY, winW, winH, screenW, screenH);
         fx.shakePulse = true;
     }
@@ -346,7 +368,7 @@ public:
             b.y += b.vy * dt;
             b.life -= dt;
             if (px + pw > b.x && px < b.x + b.w && py + ph > b.y && py < b.y + b.h)
-                HurtPlayer(playerHP, 9.0f * dt);
+                HurtPlayer(playerHP, 6.0f * dt);
             if (b.life <= 0.0f ||
                 b.x < -400.0f || b.x > screenW + 400.0f ||
                 b.y < -400.0f || b.y > screenH + 400.0f)
@@ -406,7 +428,7 @@ public:
                     if (holeBurstT <= 0.0f) {
                         holeBursting = false;
                         holeR = holeRMin;
-                        vulnTimer = enraged ? 1.0f : 1.2f;
+                        vulnTimer = enraged ? 2.4f : 2.8f;
                     }
                 } else {
                     singularitySpawn -= dt;
@@ -442,24 +464,31 @@ public:
                 if (snapTimer <= 0.0f)
                     applySnap(winX, winY, winW, winH, playerHP);
             }
-            if ((int)(glitchT * 2.5f) != (int)((glitchT - dt) * 2.5f))
+            if ((int)(glitchT * 1.8f) != (int)((glitchT - dt) * 1.8f))
                 spawnGlitchBar();
             updateBars(winX, winY, winW, winH, dt, playerHP);
-            if (formTimer > formDuration * 0.85f && vulnTimer <= 0.0f)
-                vulnTimer = 0.65f;
+            if (formTimer > formDuration * 0.78f && vulnTimer <= 0.0f)
+                vulnTimer = enraged ? 1.6f : 2.0f;
             break;
 
         case PForm::PHANTOM:
             fx.snapWarn = false;
             worldX = (float)screenW * 0.5f + sinf(glitchT * 1.0f) * 36.0f;
             worldY = (float)screenH * 0.22f + cosf(glitchT * 0.85f) * 20.0f;
-            phantomSlipCd -= dt;
-            if (phantomSlipCd <= 0.0f) {
-                phaseSlip(winX, winY, winW, winH);
-                phantomSlipCd = enraged ? 2.0f : 2.8f;
+            if (fx.slipWarn) {
+                fx.slipWarnT -= dt;
+                if (fx.slipWarnT <= 0.0f) {
+                    fx.slipWarn = false;
+                    phaseSlip(winX, winY, winW, winH, fx.slipDirX, fx.slipDirY);
+                    phantomSlipCd = enraged ? 3.4f : 4.5f;
+                }
+            } else {
+                phantomSlipCd -= dt;
+                if (phantomSlipCd <= 0.0f)
+                    queuePhaseSlip();
             }
-            if (fmodf(glitchT, enraged ? 2.0f : 2.6f) < dt)
-                vulnTimer = enraged ? 0.6f : 0.8f;
+            if (fmodf(glitchT, enraged ? 2.4f : 3.0f) < dt)
+                vulnTimer = enraged ? 1.6f : 2.0f;
             break;
         }
     }

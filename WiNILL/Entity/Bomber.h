@@ -45,7 +45,9 @@ public:
     }
 
     void Update(float playerCX, float playerCY, float dt,
-                float& playerHP, float speedMult = 1.0f)
+                float& playerHP, float speedMult = 1.0f,
+                float gateWX = -1.0f, float gateWY = -1.0f,
+                float gateWW = -1.0f, float gateWH = -1.0f)
     {
         if (!alive) return;
 
@@ -67,8 +69,14 @@ public:
             color = glm::vec3(1.0f, 1.0f - lerp * 0.85f, 1.0f - lerp * 0.85f);
 
             if (armTimer >= ARM_TIME) {
-                // 폭발 — 반경 안 플레이어 데미지
-                if (dist < blastRadius) {
+                bool inGate = true;
+                if (gateWW > 0.0f) {
+                    inGate = (worldX >= gateWX - BLAST_RADIUS_BASE &&
+                              worldX <= gateWX + gateWW + BLAST_RADIUS_BASE &&
+                              worldY >= gateWY - BLAST_RADIUS_BASE &&
+                              worldY <= gateWY + gateWH + BLAST_RADIUS_BASE);
+                }
+                if (inGate && dist < blastRadius) {
                     HurtPlayer(playerHP, BLAST_DAMAGE);
                 }
                 alive = false;
