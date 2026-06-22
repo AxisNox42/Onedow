@@ -685,7 +685,7 @@ void Scene_Codex(const SceneCtx& c) {
                         g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 } else {
-                    // 보스 — 5종 (POLY/VOLLEY/C2/FORK/RITE)
+                    // 보스 — LTS 4종 (VOLLEY / C2 / FORK / RITE)
                     const int COLS = 5; const float CELL = 200.0f;
                     int vis[BOSS_CODEX_COUNT], nv = 0;
                     for (int i = 0; i < BOSS_CODEX_COUNT; i++)

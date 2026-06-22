@@ -7,9 +7,9 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::DMG_UP:
         return L"공격력 +9 (고정 가산) / 중첩마다 기본 피해가 누적 상승 / 초반·후반 모두 안정적인 화력 보강";
     case AugType::RATE_UP:
-        return L"총기·궁수: 연사 속도 +4% (백분율 누적) / [검객] 연사 대신 공격력 +4 가산 / [궁수] 차징 속도 +5%";
+        return L"연사 속도 +4% (백분율 누적) / 중첩마다 발사 간격 단축 / 안정적인 화력 보강";
     case AugType::SPD_UP:
-        return L"총기·궁수: 탄환 속도 +30 / [검객] 탄속 대신 공격력 +4% / 멀리 날아가는 탄의 실효 사거리·관통 체감 향상";
+        return L"탄환 속도 +30 / 멀리 날아가는 탄의 실효 사거리·관통 체감 향상 / 중첩 가능";
     case AugType::MOVE_UP:
         return L"이동 속도 +5% (백분율 누적) / 회피·진입·후퇴 기동성 상승 / 중첩 가능";
     case AugType::VISION_UP:
@@ -19,7 +19,7 @@ inline const wchar_t* AugDescKR(AugType t) {
 
     // ── Rare ──
     case AugType::GLASS_CANNON:
-        return L"공격력 +50% (곱연산) / 최대 체력 -35% / 한 방 화력 극대화·생존 리스크 동반 (1회만 획득)";
+        return L"공격력 +50% / 최대 체력 -35% / 한 방 화력 극대화·생존 리스크 동반 (1회만 획득)";
     case AugType::LIGHT_AMMO:
         return L"연사 +10% · 탄속 +30% / 공격력 -20% / 가볍고 빠른 탄환 빌드 (1회만 획득)";
     case AugType::LIGHT_STEP:
@@ -35,7 +35,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::BERSERK:
         return L"체력이 낮을수록 공격력 증가 / 빈사 시 최대 +60% / 위기 역전·고위험 고보상 (1회만 획득)";
     case AugType::OVERDRIVE:
-        return L"공격력 +14 (고정 가산) / 희귀 등급 단일 스탯 부스트 / 곱연산 폭주 없이 안정적 화력";
+        return L"공격력 +14 (고정 가산) / 희귀 등급 단일 스탯 부스트 / 안정적인 화력 상승";
 
     // ── Epic ──
     case AugType::CORE_OVERLOAD:
@@ -73,13 +73,13 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::TWIN_2:
         return L"동시 발사 2발 → 3발 (트리플 샷) / 선행: 더블 필요 / 화력 밀도 최대화";
     case AugType::MELEE_WIDE:
-        return L"[검객] 스윙 호(부채꼴)·사거리 확대 / 근접 범위 딜 상승 / 검객 전용";
+        return L"근접 공격 범위(호) 확대 / 사거리·부채꼴 커버리지 상승 / 근접 빌드 보조";
     case AugType::BLADE_WIND:
-        return L"[검객] 스윙마다 전방 관통 칼바람 발사 / 근접+원거리 견제 / 검객 전용";
+        return L"근접 공격마다 전방 관통 칼바람 발사 / 근접+원거리 견제 / 범위 딜 보강";
     case AugType::POWER_DRAW:
-        return L"[궁수] 차징 속도 +40% / 완충(풀 차지) 위력 증가 / 궁수 전용";
+        return L"차징 속도 +40% / 완충(풀 차지) 위력 증가 / 강한 단발 화력";
     case AugType::MULTISHOT:
-        return L"[궁수] 완충 발사 시 3발 부채꼴 / 단발 화력을 면제역으로 / 궁수 전용";
+        return L"완충 발사 시 3발 부채꼴 / 단발 화력을 면제역으로 / 다탄 화력";
     case AugType::MINIGUN:
         return L"연사 속도 ×2 / 공격력 -30% / 관통 없음 — 탄막형 연사 특화";
     case AugType::HACK_RANGED:
@@ -95,7 +95,7 @@ inline const wchar_t* AugDescKR(AugType t) {
 
     // ── Legendary ──
     case AugType::POWER_SURGE:
-        return L"공격력 ×1.05 (곱연산) / 3스택까지, 이후 스택은 ×1.03 / 유일한 곱연산 스케일러";
+        return L"공격력 +5% (중첩) / 3스택까지 효율 좋음, 이후 스택은 +3% / 장기 화력 성장";
     case AugType::RANDOM_AUG:
         return L"등급 무관 랜덤 버프 3개 즉시 획득 / 디버프는 포함되지 않음 / 한 번에 빌드 다각화";
     case AugType::SOUL_HARVEST:

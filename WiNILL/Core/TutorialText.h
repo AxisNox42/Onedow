@@ -40,11 +40,11 @@ inline const wchar_t* kTutorialWinTitle[LANG_COUNT] = {
 
 inline const wchar_t* kTutorialPageTitle[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
     /* KR */
-    { L"1. 세계관", L"2. 조작", L"3. 증강", L"4. 디버프", L"5. 무기·직업", L"6. 보스", L"7. 런 경제", L"8. 메타·팁" },
+    { L"1. 세계관", L"2. 조작", L"3. 증강", L"4. 디버프", L"5. 런 준비", L"6. 보스", L"7. 런 경제", L"8. 메타·팁" },
     /* EN */
-    { L"1. World", L"2. Controls", L"3. Augments", L"4. Debuffs", L"5. Weapons", L"6. Bosses", L"7. Run economy", L"8. Meta & tips" },
+    { L"1. World", L"2. Controls", L"3. Augments", L"4. Debuffs", L"5. Run setup", L"6. Bosses", L"7. Run economy", L"8. Meta & tips" },
     /* JP */
-    { L"1. 世界観", L"2. 操作", L"3. 強化", L"4. デバフ", L"5. 武器·職", L"6. ボス", L"7. ラン経済", L"8. メタ·コツ" },
+    { L"1. 世界観", L"2. 操作", L"3. 強化", L"4. デバフ", L"5. ラン準備", L"6. ボス", L"7. ラン経済", L"8. メタ·コツ" },
 };
 
 inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
@@ -74,17 +74,17 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"증강으로 상쇄하거나, 패턴에 맞춰 플레이 스타일을 바꿔 대응하세요 / "
         L"난이도가 높을수록 디버프·적 밀도가 거칠어집니다",
 
-        L"런 시작 전 난이도 → 직업(클래스) → 시작 무기 순으로 고릅니다 / "
-        L"직업은 업적으로 해금되며, 고유 패시브·시작 증강이 다릅니다 / "
-        L"무기는 랜덤 3종 제시 — 사거리·연사·특수 탄환 등 스타일이 크게 달라집니다 / "
-        L"크리에이티브 모드에서는 시작 점수·보스·시작 증강을 직접 설정할 수 있습니다 / "
-        L"무기 설명과 직업 특성은 선택 화면에서 반드시 읽어보세요",
+        L"런 시작 전 난이도를 고릅니다 / "
+        L"이어서 랜덤 3종 중 시작 무기를 선택합니다 / "
+        L"무기마다 사거리, 연사, 특수 탄환 등 스타일이 크게 달라집니다 / "
+        L"선택 화면 설명을 읽고 플레이에 맞는 무기를 고르세요 / "
+        L"크리에이티브 모드에서는 시작 조건과 시작 증강을 직접 설정할 수 있습니다",
 
-        L"보스는 별도의 .sys · .exe 창으로 등장합니다 / "
+        L"보스는 VOLLEY.sys, C2_RELAY.sys, FORK.worm, RITE.CORE 등이 별도 창으로 등장합니다 / "
         L"보스 창 안에서만 패턴이 펼쳐지며, 체력바를 깎아 격파합니다 / "
-        L"탄막·소환·장판 패턴을 읽고, SHIFT 대시와 창 위치로 회피하세요 / "
+        L"탄막, 소환, 장판 패턴을 읽고 SHIFT 대시와 창 위치로 회피하세요 / "
         L"보스 처치 후 짧은 휴식(인터미션)과 런 골드 상점이 열립니다 / "
-        L"보스마다 약점·공략법이 다릅니다 — 도감에서 정보를 해금하세요",
+        L"보스마다 공략이 다릅니다 - 도감에서 정보를 해금하세요",
 
         L"런 중 획득한 골드는 웨이브·보스 사이 「런 상점」에서 소비합니다 / "
         L"런 상점에서는 증강을 직접 구매할 수 있어 빌드를 보완합니다 / "
@@ -124,17 +124,17 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Counter with augments or adapt your playstyle / "
         L"Higher difficulty means harsher debuffs and enemy density",
 
-        L"Before a run: difficulty → job(class) → starting weapon / "
-        L"Jobs unlock via achievements; each has unique passives and starters / "
-        L"Three random weapons — range, fire rate, and specials differ greatly / "
-        L"Creative mode lets you set start score, boss, and starting augments / "
-        L"Read weapon and job text on the select screens",
+        L"Before a run: pick difficulty / "
+        L"Then choose 1 of 3 random starting weapons / "
+        L"Range, fire rate, and specials differ a lot per weapon / "
+        L"Read the select-screen text and pick what fits your style / "
+        L"Creative mode lets you set start conditions and starting augments",
 
-        L"Bosses spawn in their own .sys / .exe windows / "
+        L"Bosses like VOLLEY.sys, C2_RELAY.sys, FORK.worm, and RITE.CORE spawn in their own windows / "
         L"Patterns play inside the boss window; burn the HP bar to win / "
         L"Dodge with SHIFT and window positioning / "
         L"After each boss: short intermission and run gold shop / "
-        L"Each boss has different tells — unlock info in the Codex",
+        L"Each boss plays differently - unlock tips in the Codex",
 
         L"Gold earned mid-run is spent in the run shop between waves / "
         L"Buy augments directly to patch your build / "
@@ -174,17 +174,17 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"強化で相殺するかプレイを変えて対応 / "
         L"難易度が上がるほどデバフと敵密度が厳しくなります",
 
-        L"ラン前: 難易度→職業→開始武器の順に選択 / "
-        L"職業は実績で解放、固有パッシブと開始強化が異なります / "
-        L"武器はランダム3択 — 射程·連射·特殊弾でスタイルが大きく変わります / "
-        L"クリエイティブモードで開始点·ボス·開始強化を設定可能 / "
-        L"選択画面の武器·職説明を必ず読んでください",
+        L"ラン前: 難易度を選択 / "
+        L"続けてランダム3択から開始武器を選ぶ / "
+        L"武器ごとに射程·連射·特殊弾などスタイルが大きく異なる / "
+        L"選択画面の説明を読み、自分に合う武器を選ぶ / "
+        L"クリエイティブモードで開始条件·開始強化を設定可能",
 
-        L"ボスは別の.sys·.exe窓で出現 / "
+        L"VOLLEY.sys、C2_RELAY.sys、FORK.worm、RITE.CORE などのボスが別窓で出現 / "
         L"窓内でパターンが展開、HPバーを削って撃破 / "
         L"SHIFTダッシュと窓位置で回避 / "
         L"撃破後は短い休憩とランゴールドショップ / "
-        L"ボスごとに攻略が異なります — 図鑑で情報解禁",
+        L"ボスごとに攻略が異なる - 図鑑で情報解禁",
 
         L"ラン中のゴールドはウェーブ間の「ランショップ」で消費 / "
         L"強化を直接購入してビルドを補強 / "
