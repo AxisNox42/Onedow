@@ -74,10 +74,12 @@
 // dwmapi.lib ? WindowFx.cpp ?먯꽌 留곹겕
 #endif
 
+#ifdef _MSC_VER
 extern "C++" {
     __declspec(dllexport) DWORD NvOptimusEnablement = 0;
     __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 0;
 }
+#endif
 
 // ?щ챸???ы띁??WindowFx.h/cpp 濡??대룞
 // (EnableWindowTransparency ? TransparencyLog 媛 ?숈씪 湲곕뒫)
@@ -570,7 +572,24 @@ int main() {
     GLFWmonitor*       monitor = glfwGetPrimaryMonitor();
     const GLFWvidmode* mode    = glfwGetVideoMode(monitor);
     screenWidth  = mode->width;
-    screenHeight = mode->height - 1; // ??DirectFlip ?뚰뵾: ?붾㈃蹂대떎 1px ?묎쾶
+#ifdef _WIN32
+    screenHeight = mode->height - 1; // DirectFlip 회피: 화면보다 1px 작게
+#else
+    screenHeight = mode->height;
+#endif
+
+#if defined(__APPLE__)
+    {
+        int wx = 0, wy = 0, ww = 0, wh = 0;
+        glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
+        if (ww > 0 && wh > 0) {
+            screenWidth  = ww;
+            screenHeight = wh;
+            if (mode->height > wh)
+                g_TaskbarH = mode->height - (wy + wh);
+        }
+    }
+#endif
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -596,7 +615,18 @@ int main() {
                                           "Onedow", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
 
+#if defined(__APPLE__)
+    {
+        int wx = 0, wy = 0, ww = 0, wh = 0;
+        glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
+        if (ww > 0 && wh > 0)
+            glfwSetWindowPos(window, wx, wy);
+        else
+            glfwSetWindowPos(window, 0, 0);
+    }
+#else
     glfwSetWindowPos(window, 0, 0);
+#endif
 
     // ?섎떒 ?묒뾽?쒖떆以??믪씠 怨꾩궛 ????ㅽ겕由??꾩뿉 ???덈뒗 ?묒뾽?쒖떆以꾩뿉 ?섎떒 UI 媛
     //   媛?ㅼ?吏 ?딅룄濡? (?묒뾽 ?곸뿭???붾㈃蹂대떎 ?묒쑝硫?洹?李⑥씠媛 ?묒뾽?쒖떆以??믪씠)

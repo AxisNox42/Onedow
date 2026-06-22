@@ -11,8 +11,13 @@
 #include <cstring>
 #include <cstdlib>
 #include <string>
+#include <chrono>
 #ifdef _WIN32
 #  include <windows.h>
+#elif defined(__APPLE__)
+#  include <mach-o/dyld.h>
+#elif defined(__linux__)
+#  include <unistd.h>
 #endif
 
 namespace {
@@ -20,7 +25,6 @@ namespace {
     bool g_inited  = false;
     bool g_enabled = true;
 
-    // 실행파일 폴더 기준 경로 — 작업 디렉터리에 상관없이 Sounds/ 를 찾도록
     std::string g_base;
     void ResolveBase() {
 #ifdef _WIN32
@@ -29,8 +33,23 @@ namespace {
         std::string p(buf, n);
         size_t slash = p.find_last_of("\\/");
         g_base = (slash == std::string::npos) ? "" : p.substr(0, slash + 1);
+#elif defined(__APPLE__)
+        char buf[4096];
+        uint32_t sz = sizeof(buf);
+        if (_NSGetExecutablePath(buf, &sz) == 0) {
+            std::string p(buf);
+            size_t slash = p.find_last_of('/');
+            g_base = (slash == std::string::npos) ? "" : p.substr(0, slash + 1);
+        }
 #else
-        g_base = "";
+        char buf[4096];
+        ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            std::string p(buf);
+            size_t slash = p.find_last_of('/');
+            g_base = (slash == std::string::npos) ? "" : p.substr(0, slash + 1);
+        }
 #endif
     }
     std::string FullPath(const char* rel) { return g_base + rel; }
@@ -101,10 +120,13 @@ void Audio::PlaySfx(Sfx s) {
     if (i < 0 || i >= (int)Sfx::COUNT || !g_sfx[i].ok) return;
     // 쓰로틀 — 도배 방지 (연사/대량처치)
     if (SFX_DEFS[i].minMs > 0) {
-#ifdef _WIN32
-        unsigned long long now = GetTickCount64();
-#else
         unsigned long long now = 0;
+#ifdef _WIN32
+        now = GetTickCount64();
+#else
+        using clock = std::chrono::steady_clock;
+        now = (unsigned long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+            clock::now().time_since_epoch()).count();
 #endif
         if (now - g_sfxLastMs[i] < SFX_DEFS[i].minMs) return;
         g_sfxLastMs[i] = now;

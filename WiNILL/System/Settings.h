@@ -58,10 +58,9 @@ inline const char* LanguageFace(Language /*lang*/) {
 //   ※ 일본어(가나)를 맥에서 표시하려면 Resource/Font/NotoSansJP-Regular.ttf 가 필요.
 //     (없으면 그 슬롯은 자동 스킵 — 빌드/실행엔 문제없고 일본어만 안 보임)
 inline int LanguageFontChain(Language /*lang*/, const char* out[3]) {
-    // 한/일/영 항상 동시 로드 (언어 무관 동일 체인) — 글리프 단위 폴백
-    out[0] = "Font/Jua-Regular.ttf";                       // 한글
-    out[1] = "Font/KosugiMaru-Regular.ttf";                // 일본어
-    out[2] = "Resource/Font/Oswald-VariableFont_wght.ttf"; // 라틴
+    out[0] = "Resource/Font/Jua-Regular.ttf";
+    out[1] = "Resource/Font/KosugiMaru-Regular.ttf";
+    out[2] = "Resource/Font/Oswald-VariableFont_wght.ttf";
     return 3;
 }
 
