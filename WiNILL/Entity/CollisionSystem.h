@@ -28,8 +28,10 @@ static inline float SegDist(float px, float py, float ax, float ay, float bx, fl
 static inline void TryHEShellBlast(float cx, float cy, const PlayerStats& stats,
                                    MonsterManager& mm) {
     if (!stats.heShells) return;
-    float blastDmg = stats.GetBaseDamage() * stats.GetDamageMultiplier(0.0f) * 0.25f;
-    const float r2 = 80.0f * 80.0f;
+    float pct = stats.heShells2 ? 0.35f : 0.25f;
+    float rad = stats.heShells2 ? 110.0f : 80.0f;
+    float blastDmg = stats.GetBaseDamage() * stats.GetDamageMultiplier(0.0f) * pct;
+    const float r2 = rad * rad;
     auto hitRad = [&](float& ex, float& ey, float& hp, bool& al) {
         float dx = ex - cx, dy = ey - cy;
         if (dx*dx + dy*dy < r2) {
@@ -71,6 +73,18 @@ static inline float CritRoll(const PlayerStats& stats, bool& isCrit) {
         isCrit = true;  return stats.critMult;
     }
     isCrit = false; return 1.0f;
+}
+
+static inline void ApplySilverBurn(Monster* m, float atkDmg) {
+    if (!m || !m->alive) return;
+    m->burnTimer = 1.0f;
+    m->burnDps   = atkDmg * 1.20f;
+}
+
+static inline void TryHackFirewallOnKill(MobKind kind, const PlayerStats& stats) {
+    if (!stats.hackFirewall || kind != MobKind::SHIELDED) return;
+    if (rand() % 100 >= 10) return;
+    GrantPlayerShield(stats.maxHP * 0.20f, 3.0f);
 }
 
 static inline void MinigunCycloneHit(PlayerStats& stats) {
@@ -156,14 +170,19 @@ public:
                                 isCrit ? 1.0f : b.color.r, isCrit ? 0.85f : b.color.g,
                                 isCrit ? 0.3f : b.color.b);   // 명중 스파크
                     MinigunCycloneHit(stats);
+                    if (b.silverBurn)
+                        ApplySilverBurn(m, stats.GetBaseDamage()
+                                            * stats.GetDamageMultiplier(pd) * b.dmgMult);
 
                     if (m->hp <= 0.0f) {
                         m->alive = false;
                         m->scored = true;   // 총알 처치 — 보상 지급 완료 표시
+                        TryHackFirewallOnKill(m->kind, stats);
                         AddKillCombo();
                         // 종류별 기본 EXP/점수 (공용 테이블, 엘리트 ×2.5)
                         float baseXp, baseScore;
-                        MobKillReward(m->kind, m->splitGen, m->elite, baseXp, baseScore);
+                        MobKillReward(m->kind, m->splitGen, m->elite, baseXp, baseScore,
+                                      stats.splitterBoost);
                         float rwm = MobRewardMult(m->kind);
                         baseXp *= rwm;
                         baseScore *= rwm;

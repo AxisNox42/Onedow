@@ -63,11 +63,14 @@ struct PlayerStats {
     float minigunHitBoost = 0.0f; // 소용돌이 — fireTimer 가산(초)
     bool  hackBomber   = false;  // 자폭병 처치 20% 폭발
     bool  hackRanged   = false;  // 원거리 처치 20% 유도탄 5
+    bool  hackFirewall = false;  // 보호막체 처치 10% 플레이어 보호막
     bool  shotgun      = false;  // 5발 산탄 / 사거리 700
     bool  revolver     = false;  // 리볼버 시작무기/변환
     bool  shotgunSpread= false;  // 산탄 확장 — 7발
     bool  revolverOverload = false;
+    bool  revolverSilver   = false;  // 은탄환 — 6번째 탄 화상 DoT
     bool  heShells     = false;
+    bool  heShells2    = false;
     bool  dashUpgrade  = false;  // SKILL_DASH_UP — 대시 유도탄 + 3발 2배
     float sniperDistBonusPct = 0.0f;  // SNIPER_AMPLIFIER — 거리 보너스 +%p
     int   powerSurgeStacks = 0;  // 전력 증폭 중첩 (3 이후 diminishing)
@@ -123,6 +126,7 @@ struct PlayerStats {
     int   rmobDelayStacks = 0;   // 원거리 몹 가속 누적 (10 제한 — 과다 시 화면 밖으로 사라짐)
     float mobSpawnMult  = 1.0f;  // <1.0 = 더 자주
     bool  splitterMobs  = false; // 분열체(죽으면 분열) 등장 (디버프)
+    bool  splitterBoost = false; // 스플리터 강화 — 3세대·개체별 보상
     bool  blinkerMobs   = false; // 점멸체(순간이동) 등장 (디버프)
     bool  orbiterMobs   = false; // 공전체(스파이럴 인) 등장 (디버프)
     bool  spawnerMobs   = false; // 소환체(잡몹 소환) 등장 (디버프)
@@ -298,7 +302,6 @@ struct PlayerStats {
             }
             break;
         case AugType::HACK_RANGED: hackRanged = true; break;
-        // 확률적 연쇄 작용 — 30% 확률, 최대 3튕김
         case AugType::PROB_CHAIN:
             if (ricochetMax < 3) ricochetMax = 3;
             if (ricochetChance < 30) ricochetChance = 30;
@@ -325,6 +328,7 @@ struct PlayerStats {
             break;
         case AugType::MK2:         mk2        = true; break;
         case AugType::HACK_BOMBER: hackBomber = true; break;
+        case AugType::HACK_FIREWALL: hackFirewall = true; break;
 
         // ── 핵앤슬래쉬 (희귀) ──
         case AugType::CRIT:
@@ -530,7 +534,11 @@ struct PlayerStats {
             break;
         case AugType::D_SPLITTER:    // 웜 침투 (죽으면 쪼개짐) · 처치 EXP +2
             splitterMobs   = true;
-            meleeXpBonus   += 2;           // (너프: 3 → 2)
+            meleeXpBonus   += 2;
+            break;
+        case AugType::D_SPLITTER_BOOST:
+            splitterMobs   = true;
+            splitterBoost  = true;
             break;
         case AugType::D_BLINKER:     // 트로이목마 침투 (순간이동 추격) · 처치 EXP +3
             blinkerMobs    = true;
@@ -670,8 +678,15 @@ struct PlayerStats {
         case AugType::REVOLVER_OVERLOAD:
             revolverOverload = true;
             break;
+        case AugType::REVOLVER_SILVER:
+            revolverSilver = true;
+            break;
         case AugType::HE_SHELLS:
             heShells        = true;
+            break;
+        case AugType::HE_SHELLS_2:
+            heShells        = true;
+            heShells2       = true;
             break;
         case AugType::SMG_COMPRESSOR:
             bulletSpread   *= 0.50f;
@@ -808,7 +823,35 @@ struct PlayerStats {
 
 // 전투 피해 감소 — main 에서 g_Stats.GetDamageTakenMult() 로 매 프레임 동기화
 inline float g_PlayerDmgMult = 1.0f;
+inline float g_PlayerShield     = 0.0f;
+inline float g_PlayerShieldTimer = 0.0f;
+
+inline void GrantPlayerShield(float amount, float durationSec) {
+    if (amount <= 0.0f || durationSec <= 0.0f) return;
+    g_PlayerShield      = amount;
+    g_PlayerShieldTimer = durationSec;
+}
+
+inline void TickPlayerShield(float dt) {
+    if (g_PlayerShieldTimer > 0.0f) {
+        g_PlayerShieldTimer -= dt;
+        if (g_PlayerShieldTimer <= 0.0f) {
+            g_PlayerShieldTimer = 0.0f;
+            g_PlayerShield      = 0.0f;
+        }
+    }
+}
+
 inline void HurtPlayer(float& hp, float raw) {
     if (raw <= 0.0f) return;
-    hp -= raw * g_PlayerDmgMult;
+    float dmg = raw * g_PlayerDmgMult;
+    if (g_PlayerShield > 0.0f) {
+        if (dmg <= g_PlayerShield) {
+            g_PlayerShield -= dmg;
+            return;
+        }
+        dmg -= g_PlayerShield;
+        g_PlayerShield = 0.0f;
+    }
+    hp -= dmg;
 }

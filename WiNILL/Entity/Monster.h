@@ -24,10 +24,14 @@ enum class EliteMod { NONE = 0, SWIFT = 1, TANKY = 2, VOLATILE = 3 };
 
 // 종류별 처치 보상 — 총알/근접/광역 처치 모두 같은 값 쓰도록 공용화 (엘리트면 ×2.5)
 inline void MobKillReward(MobKind k, int splitGen, int elite,
-                          float& xpBase, float& scoreBase) {
+                          float& xpBase, float& scoreBase,
+                          bool splitterBoost = false) {
     xpBase = 1.0f; scoreBase = 100.0f;
     switch (k) {
-    case MobKind::SPLITTER: xpBase = (splitGen >= 2) ? 1.0f : 2.0f; scoreBase = 120.0f; break;
+    case MobKind::SPLITTER:
+        xpBase = (splitGen >= 2 && !splitterBoost) ? 1.0f : 2.0f;
+        scoreBase = 120.0f;
+        break;
     case MobKind::BLINKER:  xpBase = 6.0f; scoreBase = 250.0f; break;
     case MobKind::CHARGER:  xpBase = 3.0f; scoreBase = 180.0f; break;
     case MobKind::WEAVER:   xpBase = 3.0f; scoreBase = 160.0f; break;
@@ -86,6 +90,8 @@ public:
     bool    anchored    = false;   // SPAWNER(봇넷 노드) — 사정거리 도달 후 고정(추격 X)
     bool    shieldActive = true;
     float   shieldTimer  = 0.0f;
+    float   burnTimer    = 0.0f;   // 은탄환 화상 DoT
+    float   burnDps      = 0.0f;
 
     static constexpr float BLINK_INTERVAL = 1.8f;   // 점멸 주기
     static constexpr float BLINK_WARN      = 0.40f; // 점멸 전 잔상 경고
@@ -199,6 +205,13 @@ public:
         if (singularityGrace > 0.0f) {
             singularityGrace -= deltaTime;
             if (singularityGrace < 0.0f) singularityGrace = 0.0f;
+        }
+        if (burnTimer > 0.0f) {
+            float tick = burnDps * deltaTime;
+            hp -= tick;
+            burnTimer -= deltaTime;
+            if (burnTimer <= 0.0f) { burnTimer = 0.0f; burnDps = 0.0f; }
+            if (hp <= 0.0f) { hp = 0.0f; alive = false; return; }
         }
         float dx = playerCX - worldX;
         float dy = playerCY - worldY;

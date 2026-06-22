@@ -110,6 +110,11 @@ enum class AugType {
     MINIGUN_CYCLONE,     // 탄환 소용돌이 (신화)
     DEATH_BLAST_2,       // 연쇄 폭발 II (전설 티어)
     CB_TANWOO,           // 조합: 미니건 + 관통 II
+    // ── 확장 (끝에 추가 — 세이브 인덱스 보존) ──
+    HACK_FIREWALL,       // 해킹: 방화벽 — 보호막체 처치 시 플레이어 보호막
+    REVOLVER_SILVER,     // 리볼버 II — 은탄환 (마지막 탄 화상 DoT)
+    HE_SHELLS_2,         // 대포 II — HE탄 강화
+    D_SPLITTER_BOOST,    // 스플리터 강화 — 분열 개체 각각 처치 보상
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -726,6 +731,26 @@ static const AugDef ALL_AUGS[] = {
       { L"[조합] 미니건 + 관통 II / 관통 70% · 연사 +15%",
         L"[Combo] Minigun + Pierce II / 70% pierce · fire rate +15%",
         L"[組合] ミニガン+貫通II / 貫通70% · 連射+15%" } },
+    { AugType::HACK_FIREWALL, AugRarity::EPIC,      AugUnique::NONE, "HACK_FW",
+      { L"해킹: 방화벽", L"Hack: Firewall", L"ハック: ファイアウォール" },
+      { L"보호막체 처치 시 10% 확률 / 3초간 최대 체력 20% 보호막",
+        L"10% on shielded kill / shield = 20% max HP for 3s",
+        L"盾持ち撃破10% / 3秒間 最大HP20%の盾" } },
+    { AugType::REVOLVER_SILVER, AugRarity::LEGENDARY, AugUnique::NONE, "REV_SILV",
+      { L"은탄환", L"Silver Bullet", L"銀弾" },
+      { L"[리볼버] 6번째 탄 — 명중 대상에 공격력 120% 화상(1초)  (요구: 과장전)",
+        L"[Revolver] 6th shot — 120% ATK burn over 1s  (req: Overload)",
+        L"[リボルバー] 6発目 — 攻撃120%の燃焼(1秒)  (要:過装填)" } },
+    { AugType::HE_SHELLS_2,   AugRarity::LEGENDARY, AugUnique::NONE, "HE_SH2",
+      { L"HE탄 II", L"HE Shells II", L"HE弾 II" },
+      { L"[대포] 폭발 피해 25%→35% · 반경 80→110  (요구: HE탄)",
+        L"[Cannon] blast 25%→35% · radius 80→110  (req: HE Shells)",
+        L"[大砲] 爆発25%→35% · 範囲80→110  (要:HE弾)" } },
+    { AugType::D_SPLITTER_BOOST, AugRarity::DEBUFF, AugUnique::NONE, "D_SPLTB",
+      { L"스플리터 강화", L"Splitter Boost", L"スプリッター強化" },
+      { L"웜 분열 3세대까지 · 분열된 개체마다 처치 보상 별도  (요구: 웜 침투)",
+        L"Worms split to 3rd gen · each offspring grants its own kill reward  (req: Worm)",
+        L"ワーム3世代まで · 分裂体ごとに撃破報酬  (要:ワーム侵入)" } },
 };
 
 static constexpr int AUG_TOTAL = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
@@ -819,9 +844,12 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::D_BADSECTOR:    case AugType::D_REGERROR:
     case AugType::D_DDOS:       case AugType::D_WEAVER_BOOST:
     case AugType::D_BRUTE_BOOST:
+    case AugType::D_SPLITTER_BOOST:
     case AugType::LIFESTEAL_2:  case AugType::CHAIN_2:
     case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
-    case AugType::HE_SHELLS:    case AugType::CHAKRAM_SINGULARITY:
+    case AugType::REVOLVER_SILVER:
+    case AugType::HE_SHELLS:    case AugType::HE_SHELLS_2:
+    case AugType::CHAKRAM_SINGULARITY:
     case AugType::SKILL_FOCUS:
     case AugType::SKILL_DASH_UP:
     case AugType::SMG_COMPRESSOR: case AugType::RIFLE_STABILITY:
@@ -867,7 +895,8 @@ inline bool AugIsWeaponType(AugType t) {
     case AugType::BAYONET: case AugType::MELEE_WIDE: case AugType::BLADE_WIND:
     case AugType::POWER_DRAW: case AugType::MULTISHOT:
     case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
-    case AugType::HE_SHELLS: case AugType::SMG_COMPRESSOR:
+    case AugType::REVOLVER_SILVER:
+    case AugType::HE_SHELLS: case AugType::HE_SHELLS_2: case AugType::SMG_COMPRESSOR:
     case AugType::RIFLE_STABILITY: case AugType::SNIPER_AMPLIFIER:
         return true;
     default:

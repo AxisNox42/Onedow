@@ -84,6 +84,8 @@ inline const wchar_t* AugDescKR(AugType t) {
         return L"연사 +75% / 탄 퍼짐 +0.15 / 정조준·소총과 반대 축 — 근거리 탄막 특화";
     case AugType::HACK_RANGED:
         return L"원거리 몹 처치 시 20% 확률 / 유도탄 5발 추가 (적에게만 피해) / 원거리 격파 연쇄";
+    case AugType::HACK_FIREWALL:
+        return L"보호막체 처치 시 10% 확률 / 3초간 최대 체력 20% 보호막 / 해킹 생존 연계";
     case AugType::PROB_CHAIN:
         return L"명중 시 30% 확률로 가까운 적에게 튕김 / 최대 3회 연쇄 / 확률형 멀티히트";
     case AugType::DEATH_BLAST:
@@ -146,6 +148,8 @@ inline const wchar_t* AugDescKR(AugType t) {
         return L"플레이어 이동 속도 -5% / 전체 EXP +10% / 둔한 기동·높은 경험치";
     case AugType::D_SPLITTER:
         return L"일부 프로세스가 웜으로 변이 / 처치 시 작은 2마리로 분열 (2세대까지) / 처치 EXP +2";
+    case AugType::D_SPLITTER_BOOST:
+        return L"웜 분열 3세대까지 · 분열된 개체마다 처치 보상 별도 / 디버프 EXP 보너스 없음 / 선행: 웜 침투";
     case AugType::D_BLINKER:
         return L"일부 프로세스가 트로이목마로 변이 / 잔상 예고 후 순간이동 추격 / 처치 EXP +3";
     case AugType::D_ORBITER:
@@ -246,9 +250,13 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::SHOTGUN_SPREAD:
         return L"[샷건] 펠릿 5→7발 / 사거리 700→630 (-10%) / 산탄 확장·근거리 화력";
     case AugType::REVOLVER_OVERLOAD:
-        return L"[리볼버] 6발 장전 사이클 / 6번째 탄은 치명타 배율 적용 / 과장전 폭발 화력";
+        return L"[리볼버] 6발 장전 / 6번째 탄 치명타 (은탄환 보유 시 화상으로 대체) / 과장전";
+    case AugType::REVOLVER_SILVER:
+        return L"[리볼버] 6번째 탄 은탄환 — 명중 대상에 공격력 120% 화상(1초) / 선행: 과장전";
     case AugType::HE_SHELLS:
         return L"[대포] 관통 종료 시 소형 폭발 (공격력 25%, 반경 80) / 관통 끝마다 범위 피해";
+    case AugType::HE_SHELLS_2:
+        return L"[대포] 폭발 25%→35% · 반경 80→110 / 선행: HE탄 / 대포 II";
     case AugType::SKILL_FOCUS:
         return L"[스킬] Q/E/R 슬롯 · [저격] 전용 / 0.4초 정지 후 다음 1발 ×2.5·관통 +30%p / 재사용 14초";
     case AugType::SKILL_DASH_UP:

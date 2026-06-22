@@ -73,7 +73,10 @@ void drawBullet(const Bullet& b) {
 }
 
 void SpawnWormSplit(Monster* m, std::vector<Monster*>& born) {
-    if (m->kind != MobKind::SPLITTER || m->splitGen >= 2) return;
+    if (m->kind != MobKind::SPLITTER) return;
+    extern PlayerStats g_Stats;
+    int maxGen = g_Stats.splitterBoost ? 3 : 2;
+    if (m->splitGen >= maxGen) return;
     for (int c = 0; c < 2; c++) {
         Monster* ch = new Monster(m->worldX + (c ? 28.0f : -28.0f), m->worldY,
                                   1.0f, 1.0f, false);
@@ -101,6 +104,10 @@ void drawMob(const Monster* m) {
     if (m->kind == MobKind::SPLITTER) {
         drawCircle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
         drawCircle(m->worldX, m->worldY, base*0.42f, 0.05f, 0.22f, 0.08f, 0.9f);
+        if (m->burnTimer > 0.0f) {
+            float pulse = 0.35f + 0.25f * sinf((float)glfwGetTime() * 14.0f);
+            drawCircle(m->worldX, m->worldY, base * 1.25f, 1.0f, 0.55f, 0.12f, pulse);
+        }
     } else if (m->kind == MobKind::BLINKER) {
         if (m->blinkWarn) {
             float a = 0.18f + 0.22f * (m->blinkWarnT / Monster::BLINK_WARN);
@@ -206,5 +213,9 @@ void drawMob(const Monster* m) {
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         ApplyMobStyleTint(cr, cg, cb);
         drawTriangle(m->worldX, m->worldY, base, cr, cg, cb, 1.0f);
+    }
+    if (m->burnTimer > 0.0f && m->kind != MobKind::SPLITTER) {
+        float pulse = 0.35f + 0.25f * sinf((float)glfwGetTime() * 14.0f);
+        drawCircle(m->worldX, m->worldY, base * 1.2f, 1.0f, 0.55f, 0.12f, pulse);
     }
 }

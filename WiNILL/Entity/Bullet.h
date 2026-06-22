@@ -37,6 +37,7 @@ public:
     float launchAccel = 0.0f;
     int pierceBonusPct = 0;  // 집중 조준 등 일회성 관통 보너스
     bool  rainMissile = false;   // 탄환 세례 — 로켓 스프라이트로 렌더
+    bool  silverBurn  = false;   // 은탄환 — 명중 시 화상 DoT
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 

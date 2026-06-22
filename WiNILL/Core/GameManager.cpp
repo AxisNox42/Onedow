@@ -239,7 +239,9 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::CHAIN_2     && !hasOwnedType(AugType::CHAIN))     continue;
             if (t == AugType::MINIGUN_2   && !hasOwnedType(AugType::MINIGUN))  continue;
             if (t == AugType::MINIGUN_CYCLONE && !hasOwnedType(AugType::MINIGUN_2)) continue;
-            if (t == AugType::DEATH_BLAST_2 && !hasOwnedType(AugType::DEATH_BLAST)) continue;
+            if (t == AugType::HE_SHELLS_2       && !hasOwnedType(AugType::HE_SHELLS)) continue;
+            if (t == AugType::REVOLVER_SILVER   && !hasOwnedType(AugType::REVOLVER_OVERLOAD)) continue;
+            if (t == AugType::D_SPLITTER_BOOST  && !hasOwnedType(AugType::D_SPLITTER)) continue;
             // 1런 1신화 — 이미 신화 보유 시 다른 신화 제외
             if (ALL_AUGS[i].rarity == AugRarity::MYTHIC && hasAnyMythicOwned()) continue;
             // 흡혈탄 스택 상한

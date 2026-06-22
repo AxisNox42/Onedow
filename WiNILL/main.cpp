@@ -386,6 +386,7 @@ static void ResetSkills() {
     g_DashActive = false; g_DashT = 0.0f;
     g_FocusStandTimer = 0.0f; g_FocusShotsLeft = 0; g_RevolverRound = 0;
     g_DashBoostShotsLeft = 0;
+    g_PlayerShield = 0.0f; g_PlayerShieldTimer = 0.0f;
     g_TimeStopTimer = 0; g_HyperFocusTimer = 0;
 }
 // 蹂댁뒪 ?앹〈 ?숈븞 ?붾㈃ ?꾩껜瑜?蹂댁뒪 怨좎쑀?됱쑝濡??먯젏 臾쇰뱾?대뒗 ?곗텧
@@ -1877,6 +1878,7 @@ int main() {
 
                 // ???臾댁쟻 ???대쾲 ?ㅽ뀦 ?쒖옉 HP ???(???쇳빐??臾댄슚, ?뚮났? ?좎?)
                 float hpAtStep = g_GameManager.playerHP;
+                TickPlayerShield(FIXED_DT);
                 //   ???뺤? = ?쒓컙?뺤? ?ㅽ궗 OR 利앷컯 ??吏곹썑 ~0.05s("?꾩씠 ?", 吏㏐쾶)
                 bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.45f);
                 float enemyDt = FIXED_DT;
@@ -2425,7 +2427,9 @@ int main() {
                     if (!m->alive && !m->exploded) {
                         if (!m->scored) {       // ?꾩쭅 蹂댁긽 ??諛쏆? 二쎌쓬 ???뺤궛
                             m->scored = true;
-                            float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB);
+                            float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB,
+                                                          g_Stats.splitterBoost);
+                            TryHackFirewallOnKill(m->kind, g_Stats);
                             float rwm = MobRewardMult(m->kind); xpB *= rwm; scB *= rwm;
                             creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
                             if (m->elite) g_RunGold += 1;
@@ -3484,8 +3488,14 @@ int main() {
                     if (nb.remainingDmg > 0.0f) nb.remainingDmg *= 2.0f;
                 }
                 if (g_Stats.revolverOverload && g_Stats.revolver) {
-                    if (g_RevolverRound == 5)
-                        nb.dmgMult *= g_Stats.critMult;
+                    if (g_RevolverRound == 5) {
+                        if (g_Stats.revolverSilver) {
+                            nb.silverBurn = true;
+                            nb.color = glm::vec3(0.85f, 0.92f, 1.0f);
+                        } else {
+                            nb.dmgMult *= g_Stats.critMult;
+                        }
+                    }
                     g_RevolverRound = (g_RevolverRound + 1) % 6;
                 }
                 g_Bullets.push_back(nb);
@@ -3605,7 +3615,9 @@ int main() {
                     SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
                     if (m->hp <= 0.0f) {
                         m->alive = false; m->scored = true; AddKillCombo();
-                        float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs);
+                        float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs,
+                                                      g_Stats.splitterBoost);
+                        TryHackFirewallOnKill(m->kind, g_Stats);
                         float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
                         g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
@@ -3739,7 +3751,9 @@ int main() {
                         SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || lcrit);
                         if (m->hp <= 0.0f) {
                             m->alive = false; m->scored = true; AddKillCombo();
-                            float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs);
+                            float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs,
+                                                      g_Stats.splitterBoost);
+                            TryHackFirewallOnKill(m->kind, g_Stats);
                             float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
                             g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
                             g_Stats.killCount++; g_GameManager.scoreAccum += bs;
@@ -3817,7 +3831,9 @@ int main() {
                             m->hp -= dmg;
                             if (m->hp <= 0.0f && !m->scored) {
                                 m->alive=false; m->scored=true; AddKillCombo();
-                                float bx,bs; MobKillReward(m->kind,m->splitGen,m->elite,bx,bs);
+                                float bx,bs; MobKillReward(m->kind,m->splitGen,m->elite,bx,bs,
+                                                           g_Stats.splitterBoost);
+                                TryHackFirewallOnKill(m->kind, g_Stats);
                                 float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
                                 g_GameManager.xp += (long long)((bx+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum += bs;
@@ -4421,6 +4437,13 @@ int main() {
             float hpY = playerWin.y + playerWin.height - 18.0f - hpH;   // ?섎떒 ?덉そ
             float xpY = hpY - gap - xpH;
             drawRect(bx - 5, xpY - 5, bw + 10, (hpY + hpH) - (xpY) + 10, 0.03f, 0.03f, 0.05f, 0.96f);
+            if (g_PlayerShield > 0.0f && g_Stats.maxHP > 0.0f) {
+                float shFrac = g_PlayerShield / g_Stats.maxHP;
+                if (shFrac > 1.0f) shFrac = 1.0f;
+                float shY = hpY - gap - 6.0f;
+                drawRect(bx, shY, bw, 5.0f, 0.08f, 0.12f, 0.22f, 1.0f);
+                drawRect(bx, shY, bw * shFrac, 5.0f, 0.35f, 0.75f, 1.0f, 0.95f);
+            }
             // HP
             float hpFrac = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
             if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
