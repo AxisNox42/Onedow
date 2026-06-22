@@ -54,3 +54,6 @@ extern bool      g_VolEdit;
 extern wchar_t   g_VolBuf[8];
 extern int       g_VolLen;
 extern float     g_ScrollAccum;
+extern float     g_WindowSizeCur;
+void ApplyAugmentSideEffects(AugType atype, int scrW, int scrH);
+void SyncPlayerWindowAfterLoadout();

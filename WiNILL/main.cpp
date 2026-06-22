@@ -468,42 +468,32 @@ wchar_t g_DeathReason[96] = {0};   // ?щ쭩 ?먯씤 ("?뗢뿃 ???섑빐 醫낅�
 
 static FakeWindow* s_PlayerWinRef = nullptr;
 
-static void ApplyPurchasedAug(int idx, FakeWindow& playerWin, int scrW, int scrH) {
-    AugType atype = ALL_AUGS[idx].type;
-    float oldWS   = playerWin.width;
-    float oldPCX  = playerWin.x + playerWin.width  * 0.5f;
-    float oldPCY  = playerWin.y + playerWin.height * 0.5f;
-
-    bool prevTurret = g_Stats.turretMode;
-    g_Stats.Apply(atype);
-    if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
-        g_Stats.ApplyCommonMultBoost();
-    g_OwnedAugs.push_back(idx);
-    g_TypeOwned[(int)atype] = true;
-    MarkAugSeen(idx);
-    EquipSkill(SkillForAug(atype));
-    if (g_Stats.turretMode && !prevTurret) {
-        g_Turrets.clear();
-        g_TurretDeployTimer = TURRET_DEPLOY;
+static void InitChakramsFromStats() {
+    if (!g_Stats.chakram) return;
+    for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
+        if (!g_Chakrams[c].alive && g_Chakrams[c].respawnTimer <= 0) {
+            g_Chakrams[c].alive        = true;
+            g_Chakrams[c].hp           = 150.0f;
+            g_Chakrams[c].maxHp        = 150.0f;
+            g_Chakrams[c].respawnTimer = 0.0f;
+        }
+        g_Chakrams[c].angle =
+            (float)c / (float)g_Stats.chakramCount * 6.2831853f;
     }
-    if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
-        g_GameManager.takenOnce[idx] = true;
-    if (g_GameManager.playerHP > g_Stats.maxHP)
-        g_GameManager.playerHP = g_Stats.maxHP;
-    g_GameManager.maxHP = g_Stats.maxHP;
+}
+
+void ApplyAugmentSideEffects(AugType atype, int scrW, int scrH) {
+    float oldWS  = s_PlayerWinRef ? s_PlayerWinRef->width : g_Stats.windowSize;
+    float oldPCX = s_PlayerWinRef
+        ? s_PlayerWinRef->x + s_PlayerWinRef->width  * 0.5f
+        : (float)scrW * 0.5f;
+    float oldPCY = s_PlayerWinRef
+        ? s_PlayerWinRef->y + s_PlayerWinRef->height * 0.5f
+        : (float)scrH * 0.5f;
 
     if (atype == AugType::CHAKRAM || atype == AugType::CHAKRAM_2 ||
         atype == AugType::CHAKRAM_3 || atype == AugType::CHAKRAM_SINGULARITY) {
-        for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
-            if (!g_Chakrams[c].alive && g_Chakrams[c].respawnTimer <= 0) {
-                g_Chakrams[c].alive        = true;
-                g_Chakrams[c].hp           = 150.0f;
-                g_Chakrams[c].maxHp        = 150.0f;
-                g_Chakrams[c].respawnTimer = 0.0f;
-            }
-            g_Chakrams[c].angle =
-                (float)c / (float)g_Stats.chakramCount * 6.2831853f;
-        }
+        InitChakramsFromStats();
     }
     if (atype == AugType::BROKEN_SIGHT) {
         g_Orb.active = true;
@@ -524,12 +514,42 @@ static void ApplyPurchasedAug(int idx, FakeWindow& playerWin, int scrW, int scrH
         else                { orb.x = (float)scrW + 40.0f;     orb.y = (float)(rand() % scrH); }
         g_ApproachOrbs.push_back(orb);
     }
-    if (g_Stats.windowSize != oldWS) {
-        playerWin.width  = g_Stats.windowSize;
-        playerWin.height = g_Stats.windowSize;
-        playerWin.x = oldPCX - g_Stats.windowSize * 0.5f;
-        playerWin.y = oldPCY - g_Stats.windowSize * 0.5f;
+    if (g_Stats.windowSize != oldWS && s_PlayerWinRef) {
+        s_PlayerWinRef->width  = g_Stats.windowSize;
+        s_PlayerWinRef->height = g_Stats.windowSize;
+        s_PlayerWinRef->x = oldPCX - g_Stats.windowSize * 0.5f;
+        s_PlayerWinRef->y = oldPCY - g_Stats.windowSize * 0.5f;
+        g_WindowSizeCur = g_Stats.windowSize;
     }
+}
+
+void SyncPlayerWindowAfterLoadout() {
+    g_WindowSizeCur = g_Stats.windowSize;
+    if (s_PlayerWinRef) EnsurePlayerWindow(*s_PlayerWinRef);
+    if (g_Stats.chakram) InitChakramsFromStats();
+}
+
+static void ApplyPurchasedAug(int idx, FakeWindow& playerWin, int scrW, int scrH) {
+    AugType atype = ALL_AUGS[idx].type;
+
+    bool prevTurret = g_Stats.turretMode;
+    g_Stats.Apply(atype);
+    if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
+        g_Stats.ApplyCommonMultBoost();
+    g_OwnedAugs.push_back(idx);
+    g_TypeOwned[(int)atype] = true;
+    MarkAugSeen(idx);
+    EquipSkill(SkillForAug(atype));
+    if (g_Stats.turretMode && !prevTurret) {
+        g_Turrets.clear();
+        g_TurretDeployTimer = TURRET_DEPLOY;
+    }
+    if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
+        g_GameManager.takenOnce[idx] = true;
+    if (g_GameManager.playerHP > g_Stats.maxHP)
+        g_GameManager.playerHP = g_Stats.maxHP;
+    g_GameManager.maxHP = g_Stats.maxHP;
+    ApplyAugmentSideEffects(atype, scrW, scrH);
 }
 
 void RunShopPurchase(int slot) {
@@ -1311,9 +1331,6 @@ int main() {
             std::function<void(int)> applyByIdx;
             applyByIdx = [&](int idx) {
                 AugType atype = ALL_AUGS[idx].type;
-                float oldWS   = g_Stats.windowSize;
-                float oldPCX  = playerWin.x + playerWin.width  * 0.5f;
-                float oldPCY  = playerWin.y + playerWin.height * 0.5f;
 
                 // ?뱀닔: ?붿뒪?⑥튂留??섑뻾?섍퀬 Apply ?몄텧 X
                 if (atype == AugType::S_CHAOS) {
@@ -1406,52 +1423,8 @@ int main() {
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
 
-                // 李⑦겕??(?곗뼱 ?곸슜 ??chakramCount 留뚰겮 ?쒖꽦??
-                if (atype == AugType::CHAKRAM ||
-                    atype == AugType::CHAKRAM_2 ||
-                    atype == AugType::CHAKRAM_3 ||
-                    atype == AugType::CHAKRAM_SINGULARITY) {
-                    for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
-                        if (!g_Chakrams[c].alive && g_Chakrams[c].respawnTimer <= 0) {
-                            g_Chakrams[c].alive        = true;
-                            g_Chakrams[c].hp           = 150.0f;
-                            g_Chakrams[c].maxHp        = 150.0f;
-                            g_Chakrams[c].respawnTimer = 0.0f;
-                        }
-                        // 洹좊벑 媛곷룄 諛곗튂
-                        g_Chakrams[c].angle =
-                            (float)c / (float)g_Stats.chakramCount * 6.2831853f;
-                    }
-                }
-
-                if (atype == AugType::BROKEN_SIGHT) {
-                    g_Orb.active = true;
-                    g_Orb.x = (float)(rand() % screenWidth);
-                    g_Orb.y = (float)(rand() % screenHeight);
-                    float a = (float)(rand() % 628) * 0.01f;
-                    float s = 100.0f + (float)(rand() % 150);
-                    g_Orb.vx = cosf(a) * s;
-                    g_Orb.vy = sinf(a) * s;
-                    g_Orb.wanderTimer = 0.5f;
-                }
-                // ?ㅺ??ㅻ뒗 二쎌쓬: 泥??쎌뿉?쒕쭔 ?ㅻ툕 ?ㅽ룿. ?댄썑 ?쎌? ?띾룄留?+20%
-                // (?띾룄 ?꾩쟻? PlayerStats::Apply ??approachStacks ++ 媛 ?대떦)
-                if (atype == AugType::D_APPROACH && g_ApproachOrbs.empty()) {
-                    ApproachOrb orb;
-                    int edge = rand() % 4;
-                    if      (edge == 0) { orb.x = (float)(rand()%screenWidth);  orb.y = -40.0f; }
-                    else if (edge == 1) { orb.x = (float)(rand()%screenWidth);  orb.y = screenHeight + 40.0f; }
-                    else if (edge == 2) { orb.x = -40.0f;                       orb.y = (float)(rand()%screenHeight); }
-                    else                { orb.x = screenWidth + 40.0f;          orb.y = (float)(rand()%screenHeight); }
-                    g_ApproachOrbs.push_back(orb);
-                }
-                // ?쒖빞/?ш린 蹂寃???playerWin ?ш린쨌?꾩튂 媛깆떊
-                if (g_Stats.windowSize != oldWS) {
-                    playerWin.width  = g_Stats.windowSize;
-                    playerWin.height = g_Stats.windowSize;
-                    playerWin.x = oldPCX - g_Stats.windowSize * 0.5f;
-                    playerWin.y = oldPCY - g_Stats.windowSize * 0.5f;
-                }
+                // 차크람 등 Apply 이후 부가 효과 (크리에이티브 시작과 동일 경로)
+                ApplyAugmentSideEffects(atype, screenWidth, screenHeight);
             };
 
             auto applyAug = [&](int slot) {
@@ -3383,6 +3356,7 @@ int main() {
                         ch.respawnTimer -= delta;
                         if (ch.respawnTimer <= 0.0f) {
                             ch.alive = true;
+                            if (ch.maxHp < 1.0f) ch.maxHp = 150.0f;
                             ch.hp    = ch.maxHp;
                         }
                     }
@@ -5053,7 +5027,7 @@ int main() {
                 drawDiamond(chx, chy, CHAKRAM_SIZE * 1.15f, 0.5f, 1.0f, 1.0f, 0.45f);  // ?뚯쟾???뚰듃
                 drawCircle(chx, chy, CHAKRAM_SIZE * 0.5f, 0.2f, 0.85f, 1.0f, 1.0f);
                 drawCircle(chx, chy, CHAKRAM_SIZE * 0.22f, 0.04f, 0.12f, 0.18f, 1.0f);
-                float hpFrac = ch.hp / ch.maxHp;
+                float hpFrac = (ch.maxHp > 0.0f) ? ch.hp / ch.maxHp : 0.0f;
                 if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
                 drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28, 3, 0.2f, 0.2f, 0.2f, 0.7f);
                 drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28 * hpFrac, 3,

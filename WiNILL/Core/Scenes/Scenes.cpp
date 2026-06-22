@@ -1008,7 +1008,9 @@ void Scene_WeaponSelect(const SceneCtx& c) {
                             EquipSkill(SkillForAug(atype));
                             if (AugOnceOnly(atype, ALL_AUGS[aidx].rarity))
                                 g_GameManager.takenOnce[aidx] = true;
+                            ApplyAugmentSideEffects(atype, (int)sw, (int)sh);
                         }
+                        SyncPlayerWindowAfterLoadout();
                     }
                     g_GameManager.maxHP    = g_Stats.maxHP;
                     g_GameManager.playerHP = g_Stats.maxHP;
