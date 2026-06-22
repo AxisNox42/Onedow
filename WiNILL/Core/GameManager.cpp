@@ -491,6 +491,7 @@ void GameManager::Render() {
     //   GAMEOVER 는 main.cpp 가 페이드인 딤을 직접 그림.
     //   MAIN_MENU 는 "진짜 바탕화면"을 비추기 위해 어둡게 덮지 않음.
     if (currentState != GameState::RUNNING && currentState != GameState::DYING &&
+        currentState != GameState::PAUSED &&
         currentState != GameState::GAMEOVER && currentState != GameState::MAIN_MENU &&
         !(currentState == GameState::SETTINGS &&
           g_SettingsReturnTo == GameState::PAUSED)) {

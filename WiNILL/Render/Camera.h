@@ -19,7 +19,10 @@ inline float ScreenToWorldY(float sy) { return ZCY() + (sy - ZCY()) / g_ViewZoom
 
 inline void WorldScissor(float wx, float wy, float ww, float wh) {
     BatchFlush();
+    float z  = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
     float sx = W2SX(wx), sy = W2SY(wy);
-    float sw = ww * g_ViewZoom, sh = wh * g_ViewZoom;
+    float sw = ww * z, sh = wh * z;
+    if (sw < 1.0f) sw = 1.0f;
+    if (sh < 1.0f) sh = 1.0f;
     glScissor((GLint)sx, (GLint)(screenHeight - (sy + sh)), (GLint)sw, (GLint)sh);
 }

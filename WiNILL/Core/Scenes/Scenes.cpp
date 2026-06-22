@@ -19,6 +19,7 @@
 #include "ExpSystem.h"
 #include "SaveSystem.h"
 #include "DrawPrim.h"
+#include "MainShader.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
 #include "../System/SystemInfo.h"
@@ -1693,6 +1694,10 @@ void Scene_Paused(const SceneCtx& c) {
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
                 // 전체 화면 딤 — 보스 창/엔티티가 메뉴 뒤로 비치지 않게
+                BatchFlush();
+                glDisable(GL_SCISSOR_TEST);
+                glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
+                memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
                 BindMainShader();
                 drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.86f);
                 const wchar_t* T1 = T(StrId::PAUSED);

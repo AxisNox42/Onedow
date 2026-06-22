@@ -348,6 +348,24 @@ bool  g_LastRunRecord   = false;  // 吏곸쟾 ?먯씠 ?좉린濡앹씠?덈뒗�
 int   g_MetaStartAugs   = 0;      // 硫뷀? ?닿툑: ?쒖옉 臾대즺 利앷컯 ???잛닔
 
 float g_WindowSizeCur = 0.0f;
+
+static float EffectivePlayerWinSize() {
+    if (g_WindowSizeCur >= 64.0f) return g_WindowSizeCur;
+    if (g_Stats.windowSize >= 64.0f) return g_Stats.windowSize;
+    return 400.0f * g_Scale;
+}
+
+static void EnsurePlayerWindow(FakeWindow& pw) {
+    float sz = EffectivePlayerWinSize();
+    float cx = pw.x + pw.width * 0.5f;
+    float cy = pw.y + pw.height * 0.5f;
+    if (cx != cx || cy != cy) { cx = screenWidth * 0.5f; cy = screenHeight * 0.5f; }
+    if (pw.width < 64.0f || pw.height < 64.0f || pw.width != pw.width) {
+        pw.width = pw.height = sz;
+        pw.x = cx - sz * 0.5f;
+        pw.y = cy - sz * 0.5f;
+    }
+}
 float g_WinPrevHP     = -1.0f;    // 李?異뺤냼??HP 異붿쟻
 float g_HurtVignette  = 0.0f;     // ?쇨꺽 鍮④컙 鍮꾨꽕???붿뿬
 float g_HpBarPop      = 0.0f;     // ?곕굹鍮꾩떇 HP 寃뚯씠吏諛????쇨꺽 ???대떎媛 ?섏씠??珥?
@@ -995,7 +1013,8 @@ int main() {
             g_BossTintT = 0.0f;
             ResetJuice();
             ResetSkills();
-            g_WindowSizeCur = 0.0f; g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
+            g_WindowSizeCur = g_Stats.windowSize;
+            g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 以??먮났
             g_ZoomCX = g_ZoomCY = 0.0f;
             rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
@@ -2743,13 +2762,14 @@ int main() {
                 {
                     float targetWin = g_Stats.windowSize *
                         ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
-                    if (g_WindowSizeCur < 1.0f) g_WindowSizeCur = g_Stats.windowSize;
+                    if (g_WindowSizeCur < 64.0f) g_WindowSizeCur = g_Stats.windowSize;
                     float winStep = std::min(1.0f, delta * 5.5f);
                     g_WindowSizeCur += (targetWin - g_WindowSizeCur) * winStep;
                 }
-                playerWin.width = playerWin.height = g_WindowSizeCur;
-                playerWin.x = pCX - g_WindowSizeCur * 0.5f;
-                playerWin.y = pCY - g_WindowSizeCur * 0.5f;
+                float pwSz = std::max(g_WindowSizeCur, 64.0f);
+                playerWin.width = playerWin.height = pwSz;
+                playerWin.x = pCX - pwSz * 0.5f;
+                playerWin.y = pCY - pwSz * 0.5f;
             }
             if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
             if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
@@ -4049,6 +4069,8 @@ int main() {
                               (wgs == GameState::SETTINGS &&
                                g_SettingsReturnTo == GameState::PAUSED));
         if (inWorldRender) {
+
+        EnsurePlayerWindow(playerWin);
     
         // ?먭굅由?紐?FakeWindow ?ш린 ?곸닔 (?뚮뜑쨌?대━??怨듭슜)
         const float RFW_W = g_RfwW;
@@ -5517,6 +5539,9 @@ int main() {
             drawRect(0, 0, 12.0f, (float)screenHeight, 0.9f, 0.1f, 0.6f, a);
             drawRect((float)screenWidth - 12, 0, 12.0f, (float)screenHeight, 0.9f, 0.1f, 0.6f, a);
         }
+    
+        BatchFlush();
+        glDisable(GL_SCISSOR_TEST);
     
         }   // if (inWorldRender)
         }   // world render game block
