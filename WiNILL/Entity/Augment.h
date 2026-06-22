@@ -893,27 +893,27 @@ inline const wchar_t* AugListGroupLabel(AugListGroup g) {
     int li = CurLangIdx();
     switch (g) {
     case AugListGroup::SKILL:
-        { static const wchar_t* s[3]={L"── 스킬 ──",L"── Skills ──",L"── スキル ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 스킬 --",L"-- Skills --",L"-- スキル --"}; return s[li]; }
     case AugListGroup::WEAPON:
-        { static const wchar_t* s[3]={L"── 무기 ──",L"── Weapons ──",L"── 武器 ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 무기 --",L"-- Weapons --",L"-- 武器 --"}; return s[li]; }
     case AugListGroup::ORBIT:
-        { static const wchar_t* s[3]={L"── 오빗·동료 ──",L"── Orbit·Allies ──",L"── 軌道·僚 ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 오빗·동료 --",L"-- Orbit·Allies --",L"-- 軌道·僚 --"}; return s[li]; }
     case AugListGroup::COMBO:
-        { static const wchar_t* s[3]={L"── 조합 ──",L"── Combo ──",L"── 組合 ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 조합 --",L"-- Combo --",L"-- 組合 --"}; return s[li]; }
     case AugListGroup::MYTHIC:
-        { static const wchar_t* s[3]={L"── 신화 ──",L"── Mythic ──",L"── 神話 ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 신화 --",L"-- Mythic --",L"-- 神話 --"}; return s[li]; }
     case AugListGroup::SPECIAL:
-        { static const wchar_t* s[3]={L"── 특수 ──",L"── Special ──",L"── 特殊 ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 특수 --",L"-- Special --",L"-- 特殊 --"}; return s[li]; }
     case AugListGroup::SIZE:
-        { static const wchar_t* s[3]={L"── 크기 ──",L"── Size ──",L"── サイズ ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 크기 --",L"-- Size --",L"-- サイズ --"}; return s[li]; }
     case AugListGroup::DISTANCE:
-        { static const wchar_t* s[3]={L"── 거리 ──",L"── Range ──",L"── 距離 ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 거리 --",L"-- Range --",L"-- 距離 --"}; return s[li]; }
     case AugListGroup::STAT:
-        { static const wchar_t* s[3]={L"── 강화 ──",L"── Stats ──",L"── 強化 ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 강화 --",L"-- Stats --",L"-- 強化 --"}; return s[li]; }
     case AugListGroup::DEBUFF:
-        { static const wchar_t* s[3]={L"── 디버프 ──",L"── Debuffs ──",L"── デバフ ──"}; return s[li]; }
+        { static const wchar_t* s[3]={L"-- 디버프 --",L"-- Debuffs --",L"-- デバフ --"}; return s[li]; }
     default:
-        return L"── ? ──";
+        return L"-- ? --";
     }
 }
 

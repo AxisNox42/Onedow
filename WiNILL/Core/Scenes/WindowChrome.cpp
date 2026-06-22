@@ -103,8 +103,8 @@ void DrawIngameTaskbar(float sw, float sh, GameState st) {
     drawRectCol3(9.0f, tbY + (tbH - 22.0f) * 0.5f, 22.0f, 22.0f, UiCol::ACCENT_CYAN, 0.95f);
     g_TextS.Draw(L"onedow.exe", 40.0f, tbY + (tbH - 15.0f) * 0.5f, 0.68f,
                  0.9f, 0.96f, 1.0f, 1.0f);
-    const wchar_t* STAT_RUN[3] = { L"● 데스크톱 방어 중", L"● Defending desktop", L"● デスクトップ防衛中" };
-    const wchar_t* STAT_PAU[3] = { L"❚❚ 일시정지", L"❚❚ Paused", L"❚❚ 一時停止" };
+    const wchar_t* STAT_RUN[3] = { L"* 데스크톱 방어 중", L"* Defending desktop", L"* デスクトップ防衛中" };
+    const wchar_t* STAT_PAU[3] = { L"|| 일시정지", L"|| Paused", L"|| 一時停止" };
     const wchar_t* stat = (st == GameState::PAUSED) ? STAT_PAU[li] : STAT_RUN[li];
     float stw = g_TextS.Width(stat, 0.66f);
     g_TextS.Draw(stat, CenterX(sw, stw), tbY + (tbH - 14.0f) * 0.5f, 0.66f,

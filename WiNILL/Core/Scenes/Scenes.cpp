@@ -284,8 +284,8 @@ void Scene_Shop(const SceneCtx& c) {
                         // 라벨 / 비용
                         if (owned) {
                             if (sel) {
-                                float ew = g_TextS.Width(L"●", 0.7f);
-                                g_TextS.Draw(L"●", sx + (swW - ew) * 0.5f, swY + swH * 0.5f - 10.0f,
+                                float ew = g_TextS.Width(L"*", 0.7f);
+                                g_TextS.Draw(L"*", sx + (swW - ew) * 0.5f, swY + swH * 0.5f - 10.0f,
                                              0.7f, 0.05f, 0.05f, 0.08f, 1.0f);
                             }
                         } else {
@@ -327,7 +327,7 @@ void Scene_Shop(const SceneCtx& c) {
                         float ax = rx + col * colW;
                         float ay = ay0 + 32.0f + row * rowH;
                         wchar_t ab[96];
-                        swprintf_s(ab, L"%ls %ls", got ? L"★" : L"☆", AchName(i));
+                        swprintf_s(ab, L"%ls %ls", got ? L"*" : L"-", AchName(i));
                         if (got) g_TextS.Draw(ab, ax, ay, 0.72f, 0.5f, 0.95f, 0.55f, 1.0f);
                         else     g_TextS.Draw(ab, ax, ay, 0.72f, 0.55f, 0.55f, 0.6f, 0.9f);
                     }
@@ -375,7 +375,7 @@ void Scene_Codex(const SceneCtx& c) {
                     g_TextS.Draw(g_CodexSearch, searchX + 14.0f, searchY + 10.0f, 0.85f,
                                  1.0f, 1.0f, 1.0f, 1.0f);
                 } else {
-                    const wchar_t* PH[3] = { L"검색…", L"Search…", L"検索…" };
+                    const wchar_t* PH[3] = { L"검색...", L"Search...", L"検索..." };
                     g_TextS.Draw(PH[li], searchX + 14.0f, searchY + 10.0f, 0.85f,
                                  0.5f, 0.55f, 0.6f, 0.9f);
                 }
@@ -392,7 +392,7 @@ void Scene_Codex(const SceneCtx& c) {
                     float a = g_DevToastTimer > 2.5f ? (3.0f - g_DevToastTimer) / 0.5f
                                                      : (g_DevToastTimer > 1.0f ? 1.0f : g_DevToastTimer);
                     if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
-                    g_TextS.Draw(L"● DEV MODE UNLOCKED — 난이도 화면에서 크리에이티브 활성",
+                    g_TextS.Draw(L"* DEV MODE UNLOCKED - 난이도 화면에서 크리에이티브 활성",
                                  searchX, searchY + searchH + 8.0f, 0.8f,
                                  0.4f, 1.0f, 0.55f, a);
                 }
@@ -590,7 +590,7 @@ void Scene_Codex(const SceneCtx& c) {
                             if (rar != prevR) {
                                 if (ry >= listTop - HDR_H && ry <= listBottom) {
                                     wchar_t rh[48];
-                                    swprintf_s(rh, L"── %ls ──", GetRarityKR(rar));
+                                    swprintf_s(rh, L"-- %ls --", GetRarityKR(rar));
                                     g_TextS.Draw(rh, LIST_X, ry, 0.74f,
                                                  0.55f, 0.75f, 0.95f, 0.88f);
                                 }
@@ -679,9 +679,9 @@ void Scene_Codex(const SceneCtx& c) {
                                 }
                         }
                     } else if (hoverItem >= 0) {
-                        const wchar_t* q[3] = { L"??? — 미발견 (획득 시 공개)",
-                                                L"??? — Undiscovered (unlock by acquiring)",
-                                                L"??? — 未発見 (取得で公開)" };
+                        const wchar_t* q[3] = { L"??? - 미발견 (획득 시 공개)",
+                                                L"??? - Undiscovered (unlock by acquiring)",
+                                                L"??? - 未発見 (取得で公開)" };
                         g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 } else {
@@ -730,9 +730,9 @@ void Scene_Codex(const SceneCtx& c) {
                         g_TextS.Draw(BossCodexDesc(hoverItem), wx + 40.0f, detailY + 54.0f, 0.9f,
                                      0.85f, 0.92f, 1.0f, 0.95f);
                     } else if (hoverItem >= 0) {
-                        const wchar_t* q[3] = { L"??? — 미발견 (보스 조우 시 공개)",
-                                                L"??? — Undiscovered (encounter the boss)",
-                                                L"??? — 未発見 (ボス遭遇で公開)" };
+                        const wchar_t* q[3] = { L"??? - 미발견 (보스 조우 시 공개)",
+                                                L"??? - Undiscovered (encounter the boss)",
+                                                L"??? - 未発見 (ボス遭遇で公開)" };
                         g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 }
@@ -830,8 +830,8 @@ void Scene_Tutorial(const SceneCtx& c) {
     g_TextS.Draw(ctrl, contentX + (contentW - ctrlW) * 0.5f, wy + WH - 108.0f, 0.72f,
                  0.50f, 0.80f, 1.0f, 0.90f);
 
-    const wchar_t* PREV[3] = { L"◀ 이전", L"◀ Prev", L"◀ 前へ" };
-    const wchar_t* NEXT[3] = { L"다음 ▶", L"Next ▶", L"次へ ▶" };
+    const wchar_t* PREV[3] = { L"< 이전", L"< Prev", L"< 前へ" };
+    const wchar_t* NEXT[3] = { L"다음 >", L"Next >", L"次へ >" };
     float navY = wy + WH - 62.0f;
     if (s_page > 0 && UIButton(wx + pad, navY, 130.0f, 46.0f, PREV[li], mx, my, lmb, g_LmbPrev))
         s_page--;
@@ -1330,7 +1330,7 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                             }
                             wchar_t line[128];
                             swprintf_s(line, L"%ls [%ls] %ls",
-                                       selected ? L"✓" : L"·",
+                                       selected ? L"v" : L"-",
                                        GetAugBadge(ALL_AUGS[i]), AugName(ALL_AUGS[i]));
                             float rowSc = 0.76f;
                             while (rowSc > 0.60f &&
@@ -1772,7 +1772,7 @@ void Scene_GameOver(const SceneCtx& c) {
                 swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
                 g_TextS.Draw(coinBuf, CenterTextX(sw, g_TextS, coinBuf, 1.0f), sh*0.645f, 1.0f, 1.0f,0.9f,0.3f, 0.95f*ge);
                 if (g_LastRunRecord) {
-                    const wchar_t* rec = L"★ NEW RECORD ★";
+                    const wchar_t* rec = L"* NEW RECORD *";
                     float blink = 0.6f + 0.4f * sinf((float)glfwGetTime() * 6.0f);
                     g_TextL.Draw(rec, CenterTextX(sw, g_TextL, rec, 1.0f), sh*0.355f, 1.0f,
                                  1.0f, 0.9f, 0.2f, blink * ge);
@@ -2156,7 +2156,7 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     if (rar != prevR) {
                         if (ry >= listTop - HDR_H && ry <= listBottom) {
                             wchar_t rh[48];
-                            swprintf_s(rh, L"── %ls ──", GetRarityKR(rar));
+                            swprintf_s(rh, L"-- %ls --", GetRarityKR(rar));
                             g_TextS.Draw(rh, PX, ry, 0.72f, 0.55f, 0.75f, 0.95f, 0.88f);
                         }
                         ry += HDR_H;

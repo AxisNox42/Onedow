@@ -5400,9 +5400,9 @@ int main() {
             float nw2 = g_TextL.Width(banner, nsc);
             g_TextL.Draw(banner, (sw2 - nw2) * 0.5f, by3, nsc,
                          wc.r, wc.g, wc.b, 0.7f + 0.3f * blink);
-            const wchar_t* SUB[3] = { L"?꾪삊 ?꾨줈?몄뒪 媛먯? ???ㅽ뻾 以?..",
-                                       L"THREAT PROCESS DETECTED ??launching...",
-                                       L"?끻쮤?쀣꺆?삠궧濾쒎눣 ??若잒죱訝?.." };
+            const wchar_t* SUB[3] = { L"위협 프로세스 감지 - 실행 중...",
+                                       L"THREAT PROCESS DETECTED - launching...",
+                                       L"脅威プロセス検知 - 起動中..." };
             int li5 = LangIndex();
             float ssc = 0.7f;
             float sw3 = g_TextS.Width(SUB[li5], ssc);
@@ -5422,8 +5422,8 @@ int main() {
             float a = (g_P2ToastTimer > 1.4f) ? (1.8f - g_P2ToastTimer) / 0.4f
                                               : (g_P2ToastTimer / 1.4f);
             if (a > 1.0f) a = 1.0f; if (a < 0.0f) a = 0.0f;
-            const wchar_t* P2[3] = { L"??怨쇰?????PHASE 2", L"??OVERLOAD ??PHASE 2",
-                                      L"???롨쿋????PHASE 2" };
+            const wchar_t* P2[3] = { L">> 과부하 >> PHASE 2", L">> OVERLOAD >> PHASE 2",
+                                      L">> 過負荷 >> PHASE 2" };
             int li6 = LangIndex();
             float psc = 1.2f;
             float pw3 = g_TextL.Width(P2[li6], psc);
@@ -5549,7 +5549,7 @@ int main() {
                     L"CREATIVE   F: 強化   G: ゴッド   B: ボス召喚" };
                 g_TextS.Draw(CH[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL), 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
-                    const wchar_t* GOD[3] = { L"★ 무적 ON", L"★ GODMODE ON", L"★ ゴッド ON" };
+                    const wchar_t* GOD[3] = { L"* 무적 ON", L"* GODMODE ON", L"* ゴッド ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
                     g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f, 1.0f, 0.85f, 0.2f, blink);
                 }
@@ -5676,7 +5676,7 @@ int main() {
                         drawRect(0, sh - bw, sw, bw, 0.9f, 0.15f, 0.15f, a);
                         drawRect(0, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
                         drawRect(sw - bw, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
-                        const wchar_t* LOW[3] = { L"???꾪뿕", L"??LOW HP", L"???깁쇇" };
+                        const wchar_t* LOW[3] = { L"! 위험", L"! LOW HP", L"! 危険" };
                         int li4 = LangIndex();
                         float lw = g_TextS.Width(LOW[li4], 0.9f);
                         g_TextS.Draw(LOW[li4], CenterX(sw, lw), HudY(sh, Hud::LOW_HP_WARN),

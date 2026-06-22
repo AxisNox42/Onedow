@@ -247,10 +247,10 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"끄기", L"OFF", L"オフ",
     },
     /* CREATIVE_ON */ {
-        L"★ 크리에이티브  [ON]", L"★ Creative  [ON]", L"★ クリエイティブ  [ON]",
+        L"* 크리에이티브  [ON]", L"* Creative  [ON]", L"* クリエイティブ  [ON]",
     },
     /* CREATIVE_OFF */ {
-        L"☆ 크리에이티브  [OFF]", L"☆ Creative  [OFF]", L"☆ クリエイティブ  [OFF]",
+        L"- 크리에이티브  [OFF]", L"- Creative  [OFF]", L"- クリエイティブ  [OFF]",
     },
     /* CREATIVE_DESC_ON */ {
         L"샌드박스 · F키 증강(디버프 포함) · G키 무적 · 코인/기록 제외",

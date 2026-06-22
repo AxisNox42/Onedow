@@ -194,9 +194,10 @@ inline int TextRenderer::FaceForCodepoint(int cp) const
 {
     for (int i = 0; i < (int)faces_.size(); i++) {
         if (!faces_[i].ok) continue;
+        // glyph index 0 = .notdef — missing codepoint; try next font in chain
         if (stbtt_FindGlyphIndex(&faces_[i].info, cp) != 0) return i;
     }
-    return faces_.empty() ? -1 : 0;
+    return -1;
 }
 
 inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
@@ -206,29 +207,31 @@ inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
 
     Glyph g;
     int fi = FaceForCodepoint(cp);
-    if (fi >= 0) {
-        const stbtt_fontinfo* fn = &faces_[fi].info;
-        float s = stbtt_ScaleForMappingEmToPixels(fn, emPx_);
-        int adv = 0, lsb = 0;
-        stbtt_GetCodepointHMetrics(fn, cp, &adv, &lsb);
-        g.advance = adv * s;
-        int ix0, iy0, ix1, iy1;
-        stbtt_GetCodepointBitmapBox(fn, cp, s, s, &ix0, &iy0, &ix1, &iy1);
-        int w = ix1 - ix0, h = iy1 - iy0;
-        if (w > 0 && h > 0) {
-            std::vector<unsigned char> bmp((size_t)w * h);
-            stbtt_MakeCodepointBitmap(fn, bmp.data(), w, h, w, s, s, cp);
-            GLuint tex = 0;
-            glGenTextures(1, &tex);
-            glBindTexture(GL_TEXTURE_2D, tex);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, bmp.data());
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            g.tex = tex; g.w = w; g.h = h; g.xoff = ix0; g.yoff = iy0;
-        }
+    if (fi < 0) {
+        if (cp != L'?' && cp > 32) return GetGlyph(L'?');
+        return glyphs_[cp] = g;
+    }
+    const stbtt_fontinfo* fn = &faces_[fi].info;
+    float s = stbtt_ScaleForMappingEmToPixels(fn, emPx_);
+    int adv = 0, lsb = 0;
+    stbtt_GetCodepointHMetrics(fn, cp, &adv, &lsb);
+    g.advance = adv * s;
+    int ix0, iy0, ix1, iy1;
+    stbtt_GetCodepointBitmapBox(fn, cp, s, s, &ix0, &iy0, &ix1, &iy1);
+    int w = ix1 - ix0, h = iy1 - iy0;
+    if (w > 0 && h > 0) {
+        std::vector<unsigned char> bmp((size_t)w * h);
+        stbtt_MakeCodepointBitmap(fn, bmp.data(), w, h, w, s, s, cp);
+        GLuint tex = 0;
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, bmp.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        g.tex = tex; g.w = w; g.h = h; g.xoff = ix0; g.yoff = iy0;
     }
     return glyphs_[cp] = g;
 }
