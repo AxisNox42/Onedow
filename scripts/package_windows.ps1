@@ -1,7 +1,7 @@
-# Windows 빌드 → bin/Onedow/WindowsOS/Onedow.exe (에셋은 Onedow 루트 공용)
+# Windows 빌드 → bin/Zip/Onedow/WindowsOS/Onedow.exe 만
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$Onedow = Join-Path $Root "bin\Onedow"
+$Onedow = Join-Path $Root "bin\Zip\Onedow"
 $WinOut = Join-Path $Onedow "WindowsOS"
 $Vcx = Join-Path $Root "WiNILL\WiNILL.vcxproj"
 
@@ -15,10 +15,11 @@ if (-not $Msbuild) { throw "MSBuild를 찾을 수 없습니다." }
 & $Msbuild $Vcx /p:Configuration=Release /p:Platform=x64 /v:minimal
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& (Join-Path $PSScriptRoot "sync_onedow_assets.ps1")
-
+New-Item -ItemType Directory -Force -Path $Onedow | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $Onedow "macOS") | Out-Null
 if (Test-Path $WinOut) { Remove-Item $WinOut -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $WinOut | Out-Null
+
 $SrcExe = Join-Path $Root "WiNILL\bin\WiNILL.exe"
 Copy-Item $SrcExe (Join-Path $WinOut "Onedow.exe") -Force
 
