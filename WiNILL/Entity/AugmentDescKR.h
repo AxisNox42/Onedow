@@ -199,6 +199,15 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::CB_LIFEBUOY:
         return L"[조합] 재생 II+흡혈마+가벼운 발걸음 / 재생 +0.25/s · 이동 +12% · 7킬마다 HP+1 / 피격 시 가벼운 발걸음 6초 정지";
 
+    case AugType::MINIGUN_2:
+        return L"연사 ×2 유지 · 공격력 -30%→-15% / 선행: 미니건 / 미니건 빌드 2티어";
+    case AugType::MINIGUN_CYCLONE:
+        return L"명중마다 연사 쿨 0.1초 단축(최대 0.6초 누적) · 관통 40% / 선행: 미니건 II / 신화 스노우볼";
+    case AugType::DEATH_BLAST_2:
+        return L"처치 폭발 피해 30%→40% · 반경 +40% / 선행: 연쇄 폭발 / 연쇄폭발 완성";
+    case AugType::CB_TANWOO:
+        return L"[조합] 미니건+관통 II / 관통 70% · 연사 +15% / 탄막 관통 빌드";
+
     // ── Mythic ──
     case AugType::BULLET_RAIN_ETERNAL:
         return L"탄환 세례 쿨 최대 8초 / 적 처치마다 쿨다운 0.4초 감소 / 몰아칠수록 세례가 더 자주 — 무한 세례";

@@ -328,6 +328,9 @@ inline GLuint IconFor(AugType t) {
     case AugType::HP_UP:           return g_IconTex[(int)AugType::REGEN_UP];
     case AugType::FIREWALL:        return g_IconTex[(int)AugType::MK2];
     case AugType::REGEN_2:         return g_IconTex[(int)AugType::REGEN_UP];
+    case AugType::MINIGUN_2:       return g_IconTex[(int)AugType::MINIGUN];
+    case AugType::MINIGUN_CYCLONE: return g_IconTex[(int)AugType::MINIGUN];
+    case AugType::DEATH_BLAST_2:   return g_IconTex[(int)AugType::DEATH_BLAST];
     default:                     break;
     }
     // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용

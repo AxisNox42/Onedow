@@ -2460,7 +2460,7 @@ int main() {
                         //   ?덊봽: ?곕?吏 0.8??.3 + ??컻濡?二쎌? 紐뱀? ?ㅼ떆 ???곗쭚(臾댄븳?곗뇙 李⑤떒)
                         if (g_Stats.deathBlast && !m->noBlast) {
                             float blastDmg = g_Stats.GetBaseDamage()
-                                           * g_Stats.GetDamageMultiplier(0.0f) * 0.3f;
+                                           * g_Stats.GetDamageMultiplier(0.0f) * g_Stats.deathBlastDmgPct;
                             float blastR = 130.0f * g_Stats.deathBlastMult;
                             float bx = m->worldX, by = m->worldY;
                             SpawnShockWave(bx, by, blastR, 0.35f, 1.0f, 0.55f, 0.15f);
@@ -3425,6 +3425,10 @@ int main() {
             // 怨쇰??????곗궗 횞2 (諛쒖궗 媛꾧꺽 ?덈컲)
             float effSpeed    = g_Stats.bulletSpeed   + g_Stats.GetBulletSpeedBonus();
             if (!g_Stats.turretMode) fireTimer += delta;
+            if (g_Stats.minigunHitBoost > 0.0f) {
+                fireTimer += g_Stats.minigunHitBoost;
+                g_Stats.minigunHitBoost = 0.0f;
+            }
 
             // ??諛?spawn ?ы띁 (Twin / Cannon / 痍⑦븿 / brokenSight 怨듯넻)
             // bulletSpread > 0 硫?諛쒖궗 諛⑺뼢???쒕뜡 ?붾뱾湲??곸슜

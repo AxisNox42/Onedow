@@ -73,6 +73,11 @@ static inline float CritRoll(const PlayerStats& stats, bool& isCrit) {
     isCrit = false; return 1.0f;
 }
 
+static inline void MinigunCycloneHit(PlayerStats& stats) {
+    if (stats.minigunCyclone)
+        stats.minigunHitBoost = std::min(stats.minigunHitBoost + 0.1f, 0.6f);
+}
+
 class CollisionSystem {
 public:
     // 반환값: 이번 프레임에 플레이어가 피해를 받았는지 (LIGHT_STEP 타이머용)
@@ -150,6 +155,7 @@ public:
                     SpawnSparks(b.x, b.y, isCrit ? 6 : 3,
                                 isCrit ? 1.0f : b.color.r, isCrit ? 0.85f : b.color.g,
                                 isCrit ? 0.3f : b.color.b);   // 명중 스파크
+                    MinigunCycloneHit(stats);
 
                     if (m->hp <= 0.0f) {
                         m->alive = false;
@@ -227,6 +233,7 @@ public:
                         SpawnSparks(b.x, b.y, isCrit ? 6 : 3,
                                     isCrit ? 1.0f : b.color.r, isCrit ? 0.85f : b.color.g,
                                     isCrit ? 0.3f : b.color.b);
+                        MinigunCycloneHit(stats);
                         if (bm->hp <= 0.0f) {
                             bm->alive = false;
                             bm->scored = true;       // 총알 처치 — 보상 지급 완료 표시
@@ -333,6 +340,7 @@ public:
                         SpawnSparks(b.x, b.y, isCrit ? 6 : 3,
                                     isCrit ? 1.0f : b.color.r, isCrit ? 0.85f : b.color.g,
                                     isCrit ? 0.3f : b.color.b);
+                        MinigunCycloneHit(stats);
 
                         if (r->hp <= 0.0f) {
                             r->alive = false;

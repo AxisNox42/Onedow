@@ -105,6 +105,11 @@ enum class AugType {
     REGEN_2,             // 재생 II (에픽)
     CB_BASTION,          // 조합: 거대화 + MK2 + 방화벽
     CB_LIFEBUOY,         // 조합: 재생 II + 흡혈마 + 가벼운 발걸음
+    // ── 미니건 티어·연쇄폭발 II (끝에 추가 — 세이브 인덱스 보존) ──
+    MINIGUN_2,           // 미니건 II (에픽 티어)
+    MINIGUN_CYCLONE,     // 탄환 소용돌이 (신화)
+    DEATH_BLAST_2,       // 연쇄 폭발 II (전설 티어)
+    CB_TANWOO,           // 조합: 미니건 + 관통 II
 };
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
@@ -298,7 +303,9 @@ static const AugDef ALL_AUGS[] = {
         L"満タン発射で3本の扇状射撃" } },
     { AugType::MINIGUN,       AugRarity::EPIC,      AugUnique::NONE, "MINIGUN",
       { L"미니건", L"Minigun", L"ミニガン" },
-      { L"연사 ×2  /  공격력 -30%  /  20% 확률 관통", L"Fire rate ×2  /  Attack -30%  /  20% pierce", L"連射 ×2  /  攻撃力 -30%  /  20%貫通" } },
+      { L"연사 ×2  /  공격력 -30%",
+        L"Fire rate ×2  /  Attack -30%",
+        L"連射 ×2  /  攻撃力 -30%" } },
     { AugType::HACK_RANGED,   AugRarity::EPIC,      AugUnique::NONE, "HACK_RANGED",
       { L"해킹: 원거리", L"Hack: Ranged", L"ハック: 遠距離" },
       { L"원거리 몹 처치 시 20% 확률로 유도탄 5발  (적에게만 피해)",
@@ -699,6 +706,26 @@ static const AugDef ALL_AUGS[] = {
       { L"[조합] 재생 +0.25/s · 이동 +12% · 10킬→7킬 회복 · 피격 정지 6초",
         L"[Combo] regen +0.25/s · move +12% · heal every 7 kills · hit lock 6s",
         L"[組合] 再生+0.25/s · 移動+12% · 7キル回復 · 被弾停止6秒" } },
+    { AugType::MINIGUN_2,     AugRarity::EPIC,      AugUnique::NONE, "MINIGUN2",
+      { L"미니건 II", L"Minigun II", L"ミニガン II" },
+      { L"연사 ×2 유지 · 공격력 -30%→-15%  (요구: 미니건)",
+        L"Keep ×2 fire rate · attack penalty -30%→-15%  (req: Minigun)",
+        L"連射×2維持 · 攻撃-30%→-15%  (要:ミニガン)" } },
+    { AugType::MINIGUN_CYCLONE, AugRarity::MYTHIC,  AugUnique::NONE, "MG_CYCLONE",
+      { L"탄환 소용돌이", L"Bullet Cyclone", L"弾丸サイクロン" },
+      { L"명중마다 연사 가속(0.1초) · 관통 40%  (요구: 미니건 II)",
+        L"Each hit shaves 0.1s off fire CD · 40% pierce  (req: Minigun II)",
+        L"命中毎に連射短縮0.1秒 · 貫通40%  (要:ミニガンII)" } },
+    { AugType::DEATH_BLAST_2, AugRarity::LEGENDARY, AugUnique::NONE, "DBLST2",
+      { L"연쇄 폭발 II", L"Death Blast II", L"連鎖爆発 II" },
+      { L"폭발 피해 30%→40% · 반경 +40%  (요구: 연쇄 폭발)",
+        L"Blast dmg 30%→40% · radius +40%  (req: Death Blast)",
+        L"爆発30%→40% · 範囲+40%  (要:連鎖爆発)" } },
+    { AugType::CB_TANWOO,     AugRarity::COMBO,     AugUnique::NONE, "CB_TANWOO",
+      { L"탄우", L"Bullet Storm", L"弾雨" },
+      { L"[조합] 미니건 + 관통 II / 관통 70% · 연사 +15%",
+        L"[Combo] Minigun + Pierce II / 70% pierce · fire rate +15%",
+        L"[組合] ミニガン+貫通II / 貫通70% · 連射+15%" } },
 };
 
 static constexpr int AUG_TOTAL = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
@@ -717,6 +744,7 @@ inline const ComboDef COMBO_DEFS[] = {
     { AugType::CB_TURRET,    { AugType::CANNON,    AugType::DRONE_2,     AugType::HE_SHELLS }, 3 },
     { AugType::CB_BASTION,   { AugType::GIGANTIFY, AugType::MK2,         AugType::FIREWALL  }, 3 },
     { AugType::CB_LIFEBUOY,  { AugType::REGEN_2,   AugType::VAMPIRE,     AugType::LIGHT_STEP }, 3 },
+    { AugType::CB_TANWOO,    { AugType::MINIGUN,   AugType::PIERCE_2 }, 2 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 
@@ -799,6 +827,8 @@ inline bool AugOnceOnly(AugType t, AugRarity r) {
     case AugType::SMG_COMPRESSOR: case AugType::RIFLE_STABILITY:
     case AugType::SNIPER_AMPLIFIER:
     case AugType::FIREWALL:    case AugType::REGEN_2:
+    case AugType::MINIGUN_2:  case AugType::MINIGUN_CYCLONE:
+    case AugType::DEATH_BLAST_2:
         return true;
     default:
         return false;

@@ -237,6 +237,9 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::CHAKRAM_SINGULARITY && !hasOwnedType(AugType::CHAKRAM_3)) continue;
             if (t == AugType::LIFESTEAL_2 && !hasOwnedType(AugType::LIFESTEAL)) continue;
             if (t == AugType::CHAIN_2     && !hasOwnedType(AugType::CHAIN))     continue;
+            if (t == AugType::MINIGUN_2   && !hasOwnedType(AugType::MINIGUN))  continue;
+            if (t == AugType::MINIGUN_CYCLONE && !hasOwnedType(AugType::MINIGUN_2)) continue;
+            if (t == AugType::DEATH_BLAST_2 && !hasOwnedType(AugType::DEATH_BLAST)) continue;
             // 1런 1신화 — 이미 신화 보유 시 다른 신화 제외
             if (ALL_AUGS[i].rarity == AugRarity::MYTHIC && hasAnyMythicOwned()) continue;
             // 흡혈탄 스택 상한

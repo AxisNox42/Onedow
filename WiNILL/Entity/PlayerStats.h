@@ -57,7 +57,10 @@ struct PlayerStats {
     // 신규 (에픽/전설)
     bool  mk2          = false;  // 사망 시 1회 부활
     bool  mk2Used      = false;
-    bool  minigun      = false;  // 연사 ×2, 데미지 -30% (관통 없음 — 제거됨)
+    bool  minigun      = false;  // 연사 ×2, 데미지 -30%
+    int   minigunTier  = 0;      // 1=미니건, 2=미니건 II
+    bool  minigunCyclone = false; // 신화 — 명중 시 연사 가속
+    float minigunHitBoost = 0.0f; // 소용돌이 — fireTimer 가산(초)
     bool  hackBomber   = false;  // 자폭병 처치 20% 폭발
     bool  hackRanged   = false;  // 원거리 처치 20% 유도탄 5
     bool  shotgun      = false;  // 5발 산탄 / 사거리 700
@@ -77,7 +80,8 @@ struct PlayerStats {
     bool  lifesteal2       = false; // 흡혈탄 II — 한도 0.36
     bool  berserk      = false;   // 체력 낮을수록 공격력 ↑ (최대 +60%)
     bool  deathBlast   = false;   // 적 사망 시 주변 폭발
-    float deathBlastMult = 1.0f;  // 연쇄 폭발 반경 배율 (CB_WARLORD)
+    float deathBlastMult = 1.0f;  // 연쇄 폭발 반경 배율
+    float deathBlastDmgPct = 0.30f; // 폭발 피해 (공격력 대비)
     // ── 직업 무기 모드 (검객/궁수) ──
     bool  meleeWeapon  = false;   // 검객 — 총알 대신 근접 호 스윙
     bool  bowWeapon    = false;   // 궁수 — 관통 화살 (느리고 강함)
@@ -262,9 +266,34 @@ struct PlayerStats {
         // ── 신규 에픽/전설 ──
         case AugType::MINIGUN:
             minigun           = true;
+            minigunTier       = 1;
             fireInterval     /= 2.0f;
             damageMultiplier *= 0.70f;
-            // (미니건 관통 제거 — 요청)
+            break;
+        case AugType::MINIGUN_2:
+            if (!minigun) {
+                minigun       = true;
+                minigunTier   = 2;
+                fireInterval /= 2.0f;
+                damageMultiplier *= 0.85f;
+            } else {
+                minigunTier   = 2;
+                damageMultiplier *= (0.85f / 0.70f);
+            }
+            break;
+        case AugType::MINIGUN_CYCLONE:
+            minigunCyclone = true;
+            if (!minigun) {
+                minigun       = true;
+                minigunTier   = 2;
+                fireInterval /= 2.0f;
+                damageMultiplier *= 0.85f;
+            } else if (minigunTier < 2) {
+                minigunTier   = 2;
+                damageMultiplier *= (0.85f / 0.70f);
+            }
+            pierce = true;
+            if (pierceChance < 40) pierceChance = 40;
             break;
         case AugType::HACK_RANGED: hackRanged = true; break;
         // 확률적 연쇄 작용 — 30% 확률, 최대 3튕김
@@ -308,7 +337,13 @@ struct PlayerStats {
             break;
         // ── 핵앤슬래쉬 (에픽) ──
         case AugType::DEATH_BLAST:
-            deathBlast = true;          // 적 사망 시 주변 폭발
+            deathBlast = true;
+            deathBlastDmgPct = 0.30f;
+            break;
+        case AugType::DEATH_BLAST_2:
+            deathBlast = true;
+            deathBlastDmgPct = 0.40f;
+            deathBlastMult  *= 1.4f;
             break;
 
         // ── 조합 (COMBO) — 레시피 충족 시에만 등장 ──
@@ -331,6 +366,13 @@ struct PlayerStats {
             moveSpeedMult    *= 1.12f;
             vampireKillNeed  = 7;
             lightStepHitLock = 6.0f;
+            break;
+        case AugType::CB_TANWOO:        // 미니건 + 관통 II
+            minigun          = true;
+            if (minigunTier < 1) minigunTier = 1;
+            pierce           = true;
+            pierceChance     = std::max(pierceChance, 70);
+            fireInterval    /= 1.15f;
             break;
         case AugType::CB_PIERCE_TWIN:   // 더블 + 관통 (너프: 100%→60%)
             pierce       = true;
