@@ -201,9 +201,9 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
 };
 
 inline const wchar_t* kTutorialControls[LANG_COUNT] = {
-    L"WASD 이동  ·  마우스 사격  ·  SHIFT 대시  ·  Q / E / R 스킬  ·  ESC 일시정지",
-    L"WASD  ·  Mouse fire  ·  SHIFT dash  ·  Q / E / R skills  ·  ESC pause",
-    L"WASD  ·  マウス射撃  ·  SHIFTダッシュ  ·  Q/E/Rスキル  ·  ESC停止",
+    L"WASD 이동  |  마우스 사격  |  SHIFT 대시  |  Q / E / R 스킬  |  ESC 일시정지",
+    L"WASD  |  Mouse fire  |  SHIFT dash  |  Q / E / R skills  |  ESC pause",
+    L"WASD  |  マウス射撃  |  SHIFTダッシュ  |  Q/E/Rスキル  |  ESC停止",
 };
 
 inline const wchar_t* TutorialWinTitle() { return kTutorialWinTitle[LangIndexTutorial()]; }

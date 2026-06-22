@@ -208,7 +208,8 @@ inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
     Glyph g;
     int fi = FaceForCodepoint(cp);
     if (fi < 0) {
-        if (cp != L'?' && cp > 32) return GetGlyph(L'?');
+        // 미지원 글자 — ? 대신 공백 폭만 (사용자에게 물음표 노출 방지)
+        if (cp != L' ' && cp > 32) return GetGlyph(L' ');
         return glyphs_[cp] = g;
     }
     const stbtt_fontinfo* fn = &faces_[fi].info;
