@@ -1042,7 +1042,8 @@ int main() {
             bool bgmOn = (cs == GameState::RUNNING || cs == GameState::PAUSED ||
                           cs == GameState::AUG_SELECT || cs == GameState::DEBUFF_SELECT ||
                           cs == GameState::READY);
-            (void)bgmOn; Audio::StopBgm();   // BGM ??"?곗슦??) ?쒓굅 ????긽 ?뺤?
+            if (bgmOn) Audio::PlayBgmMain();
+            else       Audio::StopBgm();
         }
 
         // ?щ━?먯씠?곕툕 臾댁쟻 ??留??꾨젅??泥대젰 ? 怨좎젙 (?덈? 二쎌? ?딆쓬)
@@ -1105,7 +1106,6 @@ int main() {
                 // ?쇰컲 ?щ쭩 ???뚮젅?댁뼱 湲곗젏 ???컻(紐⑤뱺 ???곗쭚) ??硫붾돱 ?섏씠?쒖씤
                 g_GameManager.currentState = GameState::DYING;
                 g_GameManager.playerHP     = 0.0f;
-                Audio::PlaySfx(Audio::Sfx::Death);
                 Audio::StopBgm();
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
@@ -2723,7 +2723,7 @@ int main() {
             {
                 if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
-                if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; Audio::PlaySfx(Audio::Sfx::Hurt); }
+                if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; }
                 g_WinPrevHP = g_GameManager.playerHP;
                 // 창 크기 — g_Stats.windowSize 기준, 초집중 시 +50% (부드럽게 보간)
                 {

@@ -36,10 +36,8 @@ namespace {
     //   minMs   : 최소 재생 간격(ms). 도배 방지 (연사/대량처치)
     //   pitchVary: 매번 피치 ±10% 랜덤 → 반복돼도 기계 같지 않게
     const SfxDef SFX_DEFS[(int)Audio::Sfx::COUNT] = {
-        { "Resource/Audio/sfx_shoot.wav",         0.20f, 25,  true  },  // 발사 — 작게+피치변주+25ms 쓰로틀
-        { "Resource/Audio/sfx_kill.wav",          0.30f, 55,  true  },  // 처치 — 대량처치 도배 방지(55ms)
-        { "Resource/Audio/sfx_hurt.wav",          0.55f, 80,  false },
-        { "Resource/Audio/sfx_death.wav",         0.85f, 0,   false },
+        { "Resource/Audio/sfx_shoot.wav", 0.20f, 25, true  },
+        { "Resource/Audio/sfx_kill.wav",  0.30f, 55, true  },
     };
     unsigned long long g_sfxLastMs[(int)Audio::Sfx::COUNT] = {0};
 
@@ -115,7 +113,6 @@ void Audio::PlaySfx(Sfx s) {
 }
 
 void Audio::PlayBgmMain() { StartBgm("Resource/Audio/bgm_main.mp3", 0.50f); }
-void Audio::PlayBgmBoss() { StartBgm("Resource/Audio/bgm_boss.mp3", 0.55f); }
 
 void Audio::StopBgm() {
     if (g_bgmActive) { ma_sound_uninit(&g_bgm); g_bgmActive = false; g_bgmPath[0] = 0; }

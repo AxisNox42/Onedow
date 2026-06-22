@@ -8,18 +8,15 @@
 namespace Audio {
 
 enum class Sfx {
-    Shoot,    // 발사 (sfx_shoot.wav)
-    Kill,     // 적 처치 (sfx_kill.wav)
-    Hurt,     // 플레이어 피격 (sfx_hurt.wav)
-    Death,    // 플레이어 사망 (sfx_death.wav)
+    Shoot,    // sfx_shoot.wav
+    Kill,     // sfx_kill.wav
     COUNT
 };
 
-void Init();              // 엔진 + SFX 프리로드
+void Init();
 void Shutdown();
-void PlaySfx(Sfx s);      // 원샷 (없으면 무음)
-void PlayBgmMain();       // bgm_main.mp3 루프 (이미 재생 중이면 무시)
-void PlayBgmBoss();       // bgm_boss.mp3 루프
+void PlaySfx(Sfx s);
+void PlayBgmMain();       // bgm_main.mp3 루프
 void StopBgm();
 void SetEnabled(bool on); // 마스터 ON/OFF (OFF 시 BGM 정지)
 bool IsEnabled();
