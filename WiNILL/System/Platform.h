@@ -1,51 +1,112 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
-// 플랫폼 추상화 — 타이머 해상도 / 슬립 / 작업 디렉터리
-//   Windows : timeBeginPeriod 로 Sleep 해상도 1ms + Sleep
-//   그 외   : std::this_thread::sleep_for (이미 고해상도)
+// 플랫폼 추상화 — 타이머 / 슬립 / 작업 디렉터리
+//   배포: Onedow/{Resource,Font,WindowsOS/Onedow.exe,macOS/Onedow}
 // ─────────────────────────────────────────────────────────────
+#include <string>
+#include <cstdio>
+
 #ifdef _WIN32
   #include <windows.h>
   #include <timeapi.h>
-  inline void PlatformTimerBegin() { timeBeginPeriod(1); }
-  inline void PlatformTimerEnd()   { timeEndPeriod(1); }
-  inline void PlatformSleepMs(unsigned ms) { if (ms) Sleep(ms); }
-  // Windows 는 폰트를 EXE 임베디드 리소스로 로드하므로 작업 디렉터리 변경 불필요 (no-op)
-  inline void PlatformChdirToExeDir() {}
+  #include <direct.h>
 #else
-  #include <thread>
-  #include <chrono>
   #include <unistd.h>
   #include <libgen.h>
-  #include <string>
+  #include <sys/stat.h>
+  #include <thread>
+  #include <chrono>
   #include <cwchar>
-  // MSVC 전용 swprintf_s → 표준 swprintf 매핑 (고정 크기 배열 버퍼 전용)
-  //   swprintf_s(buf, fmt, ...) → swprintf(buf, 배열원소수, fmt, ...)
-  #ifndef swprintf_s
-    #define swprintf_s(buf, ...) swprintf((buf), sizeof(buf)/sizeof((buf)[0]), __VA_ARGS__)
-  #endif
-  inline void PlatformTimerBegin() {}
-  inline void PlatformTimerEnd()   {}
-  inline void PlatformSleepMs(unsigned ms) {
-      if (ms) std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-  }
-  // 실행 파일이 있는 폴더로 작업 디렉터리 변경
-  //   → Finder 더블클릭(작업폴더=/)으로 실행해도 "Resource/Font/..." 상대경로가 잡힘
   #if defined(__APPLE__)
     #include <mach-o/dyld.h>
     #include <cstdint>
-    inline void PlatformChdirToExeDir() {
-        char buf[4096]; uint32_t sz = sizeof(buf);
-        if (_NSGetExecutablePath(buf, &sz) == 0) {
-            std::string path(buf);
-            chdir(dirname(&path[0]));
-        }
-    }
-  #else  // Linux
-    inline void PlatformChdirToExeDir() {
-        char buf[4096];
-        ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-        if (n > 0) { buf[n] = '\0'; chdir(dirname(buf)); }
-    }
+  #endif
+  #ifndef swprintf_s
+    #define swprintf_s(buf, ...) swprintf((buf), sizeof(buf)/sizeof((buf)[0]), __VA_ARGS__)
   #endif
 #endif
+
+inline void PlatformTimerBegin() {
+#ifdef _WIN32
+    timeBeginPeriod(1);
+#endif
+}
+inline void PlatformTimerEnd() {
+#ifdef _WIN32
+    timeEndPeriod(1);
+#endif
+}
+inline void PlatformSleepMs(unsigned ms) {
+    if (!ms) return;
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+#endif
+}
+
+inline bool PlatformPathIsDir(const std::string& path) {
+#ifdef _WIN32
+    DWORD a = GetFileAttributesA(path.c_str());
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return false;
+    return S_ISDIR(st.st_mode);
+#endif
+}
+
+inline std::string PlatformExeDirectory() {
+#ifdef _WIN32
+    char buf[MAX_PATH] = {};
+    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    std::string p(buf, n);
+    size_t slash = p.find_last_of("\\/");
+    if (slash == std::string::npos) return {};
+    return p.substr(0, slash);
+#elif defined(__APPLE__)
+    char buf[4096] = {};
+    uint32_t sz = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &sz) != 0) return {};
+    std::string p(buf);
+    size_t slash = p.find_last_of('/');
+    if (slash == std::string::npos) return {};
+    return p.substr(0, slash);
+#else
+    char buf[4096] = {};
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return {};
+    buf[n] = '\0';
+    std::string p(buf);
+    size_t slash = p.find_last_of('/');
+    if (slash == std::string::npos) return {};
+    return p.substr(0, slash);
+#endif
+}
+
+inline void PlatformChdirToExeDir() {
+    std::string exeDir = PlatformExeDirectory();
+    if (exeDir.empty()) return;
+
+    auto tryChdir = [](const std::string& dir) -> bool {
+        if (dir.empty()) return false;
+#ifdef _WIN32
+        return _chdir(dir.c_str()) == 0;
+#else
+        return chdir(dir.c_str()) == 0;
+#endif
+    };
+
+    std::string parent = exeDir;
+    size_t slash = parent.find_last_of("/\\");
+    if (slash != std::string::npos)
+        parent = parent.substr(0, slash);
+
+    if (PlatformPathIsDir(exeDir + "/Resource"))
+        tryChdir(exeDir);
+    else if (PlatformPathIsDir(parent + "/Resource"))
+        tryChdir(parent);
+    else
+        tryChdir(exeDir);
+}

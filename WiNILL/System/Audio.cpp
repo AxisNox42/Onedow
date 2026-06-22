@@ -14,10 +14,6 @@
 #include <chrono>
 #ifdef _WIN32
 #  include <windows.h>
-#elif defined(__APPLE__)
-#  include <mach-o/dyld.h>
-#elif defined(__linux__)
-#  include <unistd.h>
 #endif
 
 namespace {
@@ -27,30 +23,8 @@ namespace {
 
     std::string g_base;
     void ResolveBase() {
-#ifdef _WIN32
-        char buf[MAX_PATH] = {0};
-        DWORD n = GetModuleFileNameA(NULL, buf, MAX_PATH);
-        std::string p(buf, n);
-        size_t slash = p.find_last_of("\\/");
-        g_base = (slash == std::string::npos) ? "" : p.substr(0, slash + 1);
-#elif defined(__APPLE__)
-        char buf[4096];
-        uint32_t sz = sizeof(buf);
-        if (_NSGetExecutablePath(buf, &sz) == 0) {
-            std::string p(buf);
-            size_t slash = p.find_last_of('/');
-            g_base = (slash == std::string::npos) ? "" : p.substr(0, slash + 1);
-        }
-#else
-        char buf[4096];
-        ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-        if (n > 0) {
-            buf[n] = '\0';
-            std::string p(buf);
-            size_t slash = p.find_last_of('/');
-            g_base = (slash == std::string::npos) ? "" : p.substr(0, slash + 1);
-        }
-#endif
+        // PlatformChdirToExeDir() 이후 상대경로(Resource/...) 사용
+        g_base = "";
     }
     std::string FullPath(const char* rel) { return g_base + rel; }
 

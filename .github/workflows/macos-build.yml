@@ -49,19 +49,17 @@ jobs:
       # ── 패키징 (바이너리 + 폰트) ──
       - name: Package
         run: |
-          mkdir -p dist
-          mkdir -p bin/Onedow/macOS
+          mkdir -p dist bin/Onedow/macOS
+          cp -R WiNILL/Resource bin/Onedow/Resource
+          cp -R WiNILL/Font bin/Onedow/Font
+          if [ -d WiNILL/Icons ]; then cp -R WiNILL/Icons bin/Onedow/Icons; fi
           cp build/WiNILL bin/Onedow/macOS/Onedow
-          cp -R WiNILL/Resource bin/Onedow/macOS/Resource
-          cp -R WiNILL/Font bin/Onedow/macOS/Font
-          if [ -d WiNILL/Icons ]; then cp -R WiNILL/Icons bin/Onedow/macOS/Icons; fi
           chmod +x bin/Onedow/macOS/Onedow
           codesign --force --deep --sign - bin/Onedow/macOS/Onedow || true
-          cd bin/Onedow && zip -r ../../dist/Onedow-macOS.zip macOS
-          lipo -info macOS/Onedow || true
+          cd bin && zip -r ../dist/Onedow.zip Onedow
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Onedow-macOS
-          path: dist/Onedow-macOS.zip
+          path: dist/Onedow.zip
