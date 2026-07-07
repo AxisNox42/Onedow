@@ -11,20 +11,29 @@
 
 extern TextRenderer g_TextS;
 
-// FLAGSHIP.sys — 와이어프레임 대형 기함 + 플레이어 주변 스웜 드론
+// FLAGSHIP.sys — 추상 와이어 코어 + 플레이어 주변 고속 스웜 + 십자 포격
 class TotemBoss {
 public:
     struct Interceptor {
         float x = 0.0f, y = 0.0f;
         float vx = 0.0f, vy = 0.0f;
-        float wanderAng = 0.0f;
-        float buzzPhase = 0.0f;
-        float orbitRad = 100.0f;
+        float burstAng = 0.0f;
+        float dashCd = 0.0f;
         float hp = 0.0f, maxHp = 0.0f;
         bool  alive = false;
         float shootCd = 0.0f;
         float hitFlash = 0.0f;
         float aimAng = 0.0f;
+    };
+
+    struct StrikeMark {
+        float x = 0.0f, y = 0.0f;
+        float age = 0.0f;
+        float rot = 0.0f;
+        float size = 28.0f;
+        float blastR = 64.0f;
+        float blastDmg = 16.0f;
+        bool  done = false;
     };
 
     float worldX, worldY;
@@ -35,14 +44,15 @@ public:
     float facing = 0.0f;
 
     std::vector<Interceptor> ints;
+    std::vector<StrikeMark> strikes;
 
     float moveSpeed = 52.0f;
     float preferDist = 300.0f;
     float hullFlash = 0.0f;
 
-    float broadsideCd = 2.2f;
+    float strikeCd = 2.4f;
+    float bigStrikeCd = 7.5f;
     float intSpawnCd = 0.35f;
-    float purifierCd  = 7.5f;
 
     enum class YamPhase { Idle, Charge, Fire };
     YamPhase yamPhase = YamPhase::Idle;
@@ -50,16 +60,17 @@ public:
     float yamTimer = 0.0f;
     float yamAim = 0.0f;
 
-    bool  purActive = false;
-    float purX = 0.0f, purY = 0.0f;
-    float purTimer = 0.0f;
-
-    static constexpr float BODY            = 88.0f;
-    static constexpr float INT_HIT         = 14.0f;
-    static constexpr float MAP_PAD         = 96.0f;
-    static constexpr float INT_HP_RATIO    = 0.05f;
-    static constexpr float INT_SPAWN_INT   = 1.0f;
-    static constexpr int   MAX_INT_ALIVE   = 26;
+    static constexpr float BODY              = 72.0f;
+    static constexpr float INT_HIT           = 14.0f;
+    static constexpr float MAP_PAD           = 96.0f;
+    static constexpr float INT_HP_RATIO      = 0.05f;
+    static constexpr float INT_SPAWN_INT     = 1.0f;
+    static constexpr int   MAX_INT_ALIVE     = 26;
+    static constexpr float YAMATO_CHARGE     = 0.42f;
+    static constexpr float STRIKE_HOLD       = 0.12f;
+    static constexpr float STRIKE_SHRINK_DUR = 0.20f;
+    static constexpr float INT_BURST_SPEED   = 920.0f;
+    static constexpr float INT_MAX_SPEED     = 1050.0f;
 
     float intHpMax() const {
         return (maxHp > 0.0f) ? maxHp * INT_HP_RATIO : 1.0f;
@@ -118,17 +129,13 @@ public:
         BatchTri(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, r, g, b, a);
     }
 
-    void drawWireLoop(const float (*pts)[2], int n, float thick,
-                      float r, float g, float b, float a) const {
-        float x0, y0, x1, y1;
-        localToWorld(pts[0][0], pts[0][1], x0, y0);
-        for (int i = 1; i < n; i++) {
-            localToWorld(pts[i][0], pts[i][1], x1, y1);
-            drawWireSeg(x0, y0, x1, y1, thick, r, g, b, a);
-            x0 = x1; y0 = y1;
-        }
-        localToWorld(pts[0][0], pts[0][1], x1, y1);
-        drawWireSeg(x0, y0, x1, y1, thick, r, g, b, a);
+    static void drawWireCross(float cx, float cy, float halfLen, float rot,
+                              float thick, float r, float g, float b, float a) {
+        float c = cosf(rot), s = sinf(rot);
+        float dx = c * halfLen, dy = s * halfLen;
+        float px = -s * halfLen, py = c * halfLen;
+        drawWireSeg(cx - dx, cy - dy, cx + dx, cy + dy, thick, r, g, b, a);
+        drawWireSeg(cx - px, cy - py, cx + px, cy + py, thick, r, g, b, a);
     }
 
     void fireDir(std::vector<Bullet>& b, float ox, float oy, float dx, float dy,
@@ -138,21 +145,26 @@ public:
         b.push_back(bb);
     }
 
+    void burstFromPlayer(Interceptor& ic, float px, float py, bool randomRadial) {
+        if (randomRadial)
+            ic.burstAng = (float)(rand() % 628) * 0.01f;
+        else
+            ic.burstAng = atan2f(ic.y - py, ic.x - px);
+        float spd = INT_BURST_SPEED + (float)(rand() % 320);
+        ic.x = px + cosf(ic.burstAng) * (6.0f + (float)(rand() % 18));
+        ic.y = py + sinf(ic.burstAng) * (6.0f + (float)(rand() % 18));
+        ic.vx = cosf(ic.burstAng) * spd;
+        ic.vy = sinf(ic.burstAng) * spd;
+        ic.dashCd = 0.18f + (float)(rand() % 35) * 0.01f;
+        ic.aimAng = atan2f(ic.vy, ic.vx);
+    }
+
     void initInterceptor(Interceptor& ic, float px, float py) {
         ic.alive = true;
         ic.maxHp = ic.hp = intHpMax();
-        float launch = (float)(rand() % 628) * 0.01f;
-        ic.x = worldX + cosf(launch) * 36.0f;
-        ic.y = worldY + sinf(launch) * 36.0f;
-        ic.vx = cosf(launch) * 120.0f;
-        ic.vy = sinf(launch) * 120.0f;
-        ic.wanderAng = (float)(rand() % 628) * 0.01f;
-        ic.buzzPhase = (float)(rand() % 628) * 0.01f;
-        ic.orbitRad = 75.0f + (float)(rand() % 110);
-        ic.shootCd = 0.25f + (float)(rand() % 40) * 0.01f;
+        ic.shootCd = 0.2f + (float)(rand() % 30) * 0.01f;
         ic.hitFlash = 0.0f;
-        ic.aimAng = atan2f(py - ic.y, px - ic.x);
-        (void)px;
+        burstFromPlayer(ic, px, py, true);
     }
 
     bool spawnInterceptor(float px, float py) {
@@ -193,85 +205,119 @@ public:
             if (!ic.alive) continue;
             if (ic.hitFlash > 0.0f) ic.hitFlash -= dt;
 
-            ic.wanderAng += dt * (2.8f + sinf(ic.buzzPhase) * 1.4f);
-            ic.buzzPhase += dt * (8.0f + fmodf(ic.orbitRad, 3.0f));
-            float rad = ic.orbitRad + sinf(ic.buzzPhase * 1.65f) * 38.0f;
-            float gx = px + cosf(ic.wanderAng) * rad;
-            float gy = py + sinf(ic.wanderAng) * rad * 0.72f;
+            ic.dashCd -= dt;
+            if (ic.dashCd <= 0.0f)
+                burstFromPlayer(ic, px, py, true);
 
-            float ax = (gx - ic.x) * 4.5f;
-            float ay = (gy - ic.y) * 4.5f;
-            ic.vx = ic.vx * 0.86f + ax * dt;
-            ic.vy = ic.vy * 0.86f + ay * dt;
-            float spd = sqrtf(ic.vx * ic.vx + ic.vy * ic.vy);
-            const float maxSpd = 265.0f;
-            if (spd > maxSpd) {
-                ic.vx *= maxSpd / spd;
-                ic.vy *= maxSpd / spd;
-            }
             ic.x += ic.vx * dt;
             ic.y += ic.vy * dt;
-            ic.aimAng = atan2f(ic.vy, ic.vx);
+            ic.vx *= 0.994f;
+            ic.vy *= 0.994f;
+            float spd = sqrtf(ic.vx * ic.vx + ic.vy * ic.vy);
+            if (spd > INT_MAX_SPEED) {
+                ic.vx *= INT_MAX_SPEED / spd;
+                ic.vy *= INT_MAX_SPEED / spd;
+            }
+            if (spd > 8.0f) ic.aimAng = atan2f(ic.vy, ic.vx);
 
             ic.shootCd -= dt;
             if (ic.shootCd <= 0.0f) {
+                burstFromPlayer(ic, px, py, false);
                 float bx = px - ic.x, by = py - ic.y;
                 float bd = sqrtf(bx * bx + by * by);
                 if (bd > 1.0f) {
                     ic.aimAng = atan2f(by, bx);
                     fireDir(bullets, ic.x, ic.y, bx / bd, by / bd,
-                            290.0f + (float)(rand() % 70),
+                            340.0f + (float)(rand() % 80),
                             glm::vec3(0.55f, 0.95f, 1.0f), 0.75f);
                 }
-                ic.shootCd = 0.85f + (float)(rand() % 55) * 0.01f;
+                ic.shootCd = 0.55f + (float)(rand() % 40) * 0.01f;
             }
         }
     }
 
-    void fireBroadside(std::vector<Bullet>& bullets) {
-        float side = (rand() % 2) ? 1.0f : -1.0f;
-        float fx, fy, sx, sy;
-        localToWorld(48.0f, 0.0f, fx, fy);
-        localToWorld(0.0f, side * 34.0f, sx, sy);
-        float dx = cosf(facing), dy = sinf(facing);
-        float px = -dy * side, py = dx * side;
-        for (int i = 0; i < 7; i++) {
-            float t = (float)i * 0.14f;
-            fireDir(bullets, sx + dx * t * 30.0f, sy + dy * t * 30.0f,
-                    dx + px * 0.22f, dy + py * 0.22f,
-                    340.0f + (float)(rand() % 50), glm::vec3(1.0f, 0.72f, 0.22f), 0.9f);
+    void addStrike(float x, float y, float blastR, float dmg) {
+        StrikeMark s;
+        s.x = x; s.y = y;
+        s.age = 0.0f;
+        s.rot = (float)(rand() % 628) * 0.01f;
+        s.size = 26.0f + (float)(rand() % 12);
+        s.blastR = blastR;
+        s.blastDmg = dmg;
+        s.done = false;
+        strikes.push_back(s);
+    }
+
+    void explodeStrike(StrikeMark& s, float px, float py,
+                       float& playerHP, std::vector<Bullet>& bullets) {
+        float dx = px - s.x, dy = py - s.y;
+        if (dx * dx + dy * dy < s.blastR * s.blastR)
+            HurtPlayer(playerHP, s.blastDmg);
+        for (int i = 0; i < 10; i++) {
+            float a = (float)i * 0.628f + s.rot;
+            fireDir(bullets, s.x, s.y, cosf(a), sinf(a),
+                    240.0f + (float)(rand() % 50),
+                    glm::vec3(1.0f, 0.82f, 0.18f), 0.85f);
         }
-        fireDir(bullets, fx, fy, dx, dy, 280.0f, glm::vec3(1.0f, 0.55f, 0.15f), 1.1f);
+    }
+
+    void updateStrikes(float px, float py, float dt,
+                       float& playerHP, std::vector<Bullet>& bullets) {
+        for (auto& s : strikes) {
+            if (s.done) continue;
+            s.age += dt;
+            if (s.age < STRIKE_HOLD) {
+                s.size = 26.0f + (float)(rand() % 8) * 0.0f;
+            } else if (s.age < STRIKE_HOLD + STRIKE_SHRINK_DUR) {
+                float u = (s.age - STRIKE_HOLD) / STRIKE_SHRINK_DUR;
+                s.rot += dt * (5.0f + u * 9.0f);
+                s.size = 28.0f * (1.0f - u);
+            } else if (!s.done) {
+                s.done = true;
+                explodeStrike(s, px, py, playerHP, bullets);
+            }
+        }
+        strikes.erase(std::remove_if(strikes.begin(), strikes.end(),
+            [](const StrikeMark& s) { return s.done && s.age > STRIKE_HOLD + STRIKE_SHRINK_DUR + 0.5f; }),
+            strikes.end());
     }
 
     void startYamato(float px, float py) {
         yamPhase = YamPhase::Charge;
-        yamTimer = 1.35f;
+        yamTimer = YAMATO_CHARGE;
         yamAim = atan2f(py - worldY, px - worldX);
     }
 
     void fireYamato(std::vector<Bullet>& bullets) {
         float dx = cosf(yamAim), dy = sinf(yamAim);
         float ox, oy;
-        localToWorld(72.0f, 0.0f, ox, oy);
-        for (int i = 0; i < 5; i++) {
-            float t = (float)i * 38.0f;
-            fireDir(bullets, ox + dx * t, oy + dy * t, dx, dy,
-                    520.0f, glm::vec3(1.0f, 0.35f, 0.12f), 1.35f + (float)i * 0.08f);
-        }
+        localToWorld(58.0f, 0.0f, ox, oy);
+        Bullet bb(ox, oy, ox + dx * 200.0f, oy + dy * 200.0f);
+        bb.isEnemy = true;
+        bb.speed = 720.0f;
+        bb.sizeScale = 2.1f;
+        bb.color = glm::vec3(1.0f, 0.32f, 0.12f);
+        bb.maxRange = 300.0f;
+        bb.shellKaboom = true;
+        bb.shellRadius = 82.0f;
+        bb.shellDmg = 30.0f;
+        bullets.push_back(bb);
     }
 
-    void startPurifier(float px, float py) {
-        purActive = true;
-        purX = px; purY = py;
-        purTimer = 1.05f;
-    }
-
-    void firePurifier(std::vector<Bullet>& bullets) {
-        for (int i = 0; i < 16; i++) {
-            float a = (float)i * 0.393f;
-            fireDir(bullets, purX, purY, cosf(a), sinf(a),
-                    260.0f + (float)(rand() % 40), glm::vec3(0.95f, 0.88f, 0.35f), 0.85f);
+    void processShellBlasts(float px, float py, float& playerHP,
+                            std::vector<Bullet>& bullets) {
+        for (auto& b : bullets) {
+            if (b.active || !b.isEnemy || !b.shellKaboom || b.shellHandled) continue;
+            if (b.maxRange > 0.0f && b.traveled < b.maxRange * 0.92f) continue;
+            b.shellHandled = true;
+            float dx = px - b.x, dy = py - b.y;
+            if (dx * dx + dy * dy < b.shellRadius * b.shellRadius)
+                HurtPlayer(playerHP, b.shellDmg);
+            for (int i = 0; i < 12; i++) {
+                float a = (float)i * 0.524f;
+                fireDir(bullets, b.x, b.y, cosf(a), sinf(a),
+                        200.0f, glm::vec3(1.0f, 0.4f, 0.12f), 0.7f);
+            }
         }
     }
 
@@ -296,6 +342,8 @@ public:
 
         updateMovement(px, py, dt);
         updateInterceptors(px, py, dt, bullets);
+        updateStrikes(px, py, dt, playerHP, bullets);
+        processShellBlasts(px, py, playerHP, bullets);
 
         intSpawnCd -= dt;
         if (intSpawnCd <= 0.0f) {
@@ -307,10 +355,18 @@ public:
         if (ddx * ddx + ddy * ddy < (BODY * 0.85f) * (BODY * 0.85f))
             HurtPlayer(playerHP, 14.0f * dt);
 
-        broadsideCd -= dt;
-        if (broadsideCd <= 0.0f) {
-            fireBroadside(bullets);
-            broadsideCd = 3.2f + (float)(rand() % 30) * 0.04f;
+        strikeCd -= dt;
+        if (strikeCd <= 0.0f) {
+            float ox = px + (float)(rand() % 160 - 80);
+            float oy = py + (float)(rand() % 160 - 80);
+            addStrike(ox, oy, 58.0f, 14.0f);
+            strikeCd = 2.0f + (float)(rand() % 30) * 0.04f;
+        }
+
+        bigStrikeCd -= dt;
+        if (bigStrikeCd <= 0.0f) {
+            addStrike(px, py, 78.0f, 22.0f);
+            bigStrikeCd = 7.0f + (float)(rand() % 40) * 0.05f;
         }
 
         if (yamPhase == YamPhase::Idle) {
@@ -321,71 +377,57 @@ public:
             if (yamTimer <= 0.0f) {
                 fireYamato(bullets);
                 yamPhase = YamPhase::Idle;
-                yamCd = 11.0f + (float)(rand() % 50) * 0.06f;
-            }
-        }
-
-        if (purActive) {
-            purTimer -= dt;
-            if (purTimer <= 0.0f) {
-                float pdx = px - purX, pdy = py - purY;
-                if (pdx * pdx + pdy * pdy < 72.0f * 72.0f)
-                    HurtPlayer(playerHP, 22.0f);
-                firePurifier(bullets);
-                purActive = false;
-            }
-        } else {
-            purifierCd -= dt;
-            if (purifierCd <= 0.0f) {
-                startPurifier(px, py);
-                purifierCd = 8.5f + (float)(rand() % 40) * 0.05f;
+                yamCd = 10.0f + (float)(rand() % 50) * 0.06f;
             }
         }
     }
 
+    void renderWireRing(float cx, float cy, float rad, int seg, float thick,
+                        float r, float g, float b, float a, float spin) const {
+        float prevX = cx + cosf(spin) * rad;
+        float prevY = cy + sinf(spin) * rad;
+        for (int i = 1; i <= seg; i++) {
+            float ang = spin + (float)i / (float)seg * 6.283f;
+            float x = cx + cosf(ang) * rad;
+            float y = cy + sinf(ang) * rad;
+            drawWireSeg(prevX, prevY, x, y, thick, r, g, b, a);
+            prevX = x; prevY = y;
+        }
+    }
+
     void renderHull(float t) const {
-        float pulse = 0.5f + 0.5f * sinf(t * 2.8f);
+        float pulse = 0.5f + 0.5f * sinf(t * 3.0f);
         float flash = (hullFlash > 0.0f) ? hullFlash / 0.18f : 0.0f;
         float cr = 0.35f + flash * 0.35f;
         float cg = 0.82f + flash * 0.1f;
         float cb = 1.0f;
-        float tr = 0.95f + pulse * 0.05f;
-        float tg = 0.72f + pulse * 0.1f;
-        float tb = 0.18f;
 
-        static const float hull[][2] = {
-            { 82.0f, 0.0f }, { 48.0f, 28.0f }, { -8.0f, 34.0f },
-            { -78.0f, 22.0f }, { -88.0f, 0.0f }, { -78.0f, -22.0f },
-            { -8.0f, -34.0f }, { 48.0f, -28.0f }
-        };
-        drawWireLoop(hull, 8, 2.6f, cr, cg, cb, 0.95f);
+        renderWireRing(worldX, worldY, 46.0f + pulse * 5.0f, 16, 2.0f,
+                       cr, cg, cb, 0.9f, t * 0.35f);
+        renderWireRing(worldX, worldY, 28.0f, 10, 1.6f,
+                       cr * 0.7f, cg * 0.7f, cb * 0.7f, 0.75f, -t * 0.55f);
 
-        static const float spine[][2] = { { -72.0f, 0.0f }, { 70.0f, 0.0f } };
-        float sx0, sy0, sx1, sy1;
-        localToWorld(spine[0][0], spine[0][1], sx0, sy0);
-        localToWorld(spine[1][0], spine[1][1], sx1, sy1);
-        drawWireSeg(sx0, sy0, sx1, sy1, 1.8f, cr * 0.7f, cg * 0.7f, cb * 0.7f, 0.75f);
-
-        static const float wingL[][2] = { { 10.0f, 18.0f }, { -40.0f, 30.0f }, { -62.0f, 14.0f } };
-        static const float wingR[][2] = { { 10.0f, -18.0f }, { -40.0f, -30.0f }, { -62.0f, -14.0f } };
-        drawWireLoop(wingL, 3, 1.6f, cr * 0.55f, cg * 0.55f, cb * 0.55f, 0.7f);
-        drawWireLoop(wingR, 3, 1.6f, cr * 0.55f, cg * 0.55f, cb * 0.55f, 0.7f);
-
-        float bx, by, ex0, ey0, ex1, ey1;
-        localToWorld(58.0f, 0.0f, bx, by);
-        drawWireSeg(bx - 8.0f, by, bx + 14.0f, by, 2.0f, tr, tg, tb, 0.9f);
-        localToWorld(-74.0f, 16.0f, ex0, ey0);
-        localToWorld(-86.0f, 24.0f, ex1, ey1);
-        drawWireSeg(ex0, ey0, ex1, ey1, 2.2f, 0.3f, 0.9f, 1.0f, 0.55f + pulse * 0.3f);
-        localToWorld(-74.0f, -16.0f, ex0, ey0);
-        localToWorld(-86.0f, -24.0f, ex1, ey1);
-        drawWireSeg(ex0, ey0, ex1, ey1, 2.2f, 0.3f, 0.9f, 1.0f, 0.55f + pulse * 0.3f);
-
-        localToWorld(68.0f, 0.0f, bx, by);
-        for (int i = -2; i <= 2; i++) {
-            float ox = bx + (float)i * 5.0f;
-            drawWireSeg(ox, by - 6.0f, ox + 10.0f, by, 1.2f, tr, tg, tb, 0.65f);
+        for (int i = 0; i < 8; i++) {
+            float a = (float)i * 0.785f + t * 0.25f;
+            float x1 = worldX + cosf(a) * 22.0f;
+            float y1 = worldY + sinf(a) * 22.0f;
+            float x2 = worldX + cosf(a) * (58.0f + pulse * 8.0f);
+            float y2 = worldY + sinf(a) * (58.0f + pulse * 8.0f);
+            drawWireSeg(x1, y1, x2, y2, 1.5f, cr * 0.6f, cg * 0.6f, cb * 0.6f, 0.7f);
         }
+
+        float hx[6], hy[6];
+        for (int i = 0; i < 6; i++) {
+            float a = (float)i * 1.047f + t * 0.15f;
+            hx[i] = worldX + cosf(a) * 18.0f;
+            hy[i] = worldY + sinf(a) * 18.0f;
+        }
+        for (int i = 0; i < 6; i++) {
+            int j = (i + 1) % 6;
+            drawWireSeg(hx[i], hy[i], hx[j], hy[j], 1.8f, cr, cg, cb, 0.85f);
+        }
+        drawWireSeg(worldX - 10.0f, worldY, worldX + 10.0f, worldY, 1.4f, cr, cg, cb, 0.65f);
+        drawWireSeg(worldX, worldY - 10.0f, worldX, worldY + 10.0f, 1.4f, cr, cg, cb, 0.65f);
     }
 
     static void drawCursorShard(float cx, float cy, float size, float ang,
@@ -401,11 +443,7 @@ public:
         }
         for (int i = 0; i < 6; i++) {
             int j = (i + 1) % 6;
-            drawWireSeg(wx[i], wy[i], wx[j], wy[j], 1.4f, r, g, b, a);
-        }
-        for (int i = 0; i < 6; i++) {
-            int j = (i + 1) % 6;
-            BatchTri(cx, cy, wx[i], wy[i], wx[j], wy[j], r * 0.25f, g * 0.25f, b * 0.25f, a * 0.35f);
+            drawWireSeg(wx[i], wy[i], wx[j], wy[j], 1.3f, r, g, b, a);
         }
     }
 
@@ -418,46 +456,37 @@ public:
             if (!ic.alive) continue;
             if (!inWinPt(ic.x, ic.y, wx, wy, ww, wh)) continue;
             float flash = (ic.hitFlash > 0.0f) ? ic.hitFlash / 0.14f : 0.0f;
-            float pulse = 0.5f + 0.5f * sinf(t * 7.0f + ic.buzzPhase);
-            float sz = 10.0f + pulse * 2.0f;
-            drawWireSeg(ic.x - sz * 0.3f, ic.y, ic.x + sz * 0.5f, ic.y, 1.0f,
-                        0.25f, 0.7f, 0.95f, 0.35f + pulse * 0.15f);
+            float pulse = 0.5f + 0.5f * sinf(t * 9.0f + ic.burstAng);
+            float sz = 9.0f + pulse * 2.0f;
             drawCursorShard(ic.x, ic.y, sz, ic.aimAng,
-                            0.35f + flash * 0.45f, 0.88f + flash * 0.1f, 1.0f, 0.9f);
+                            0.35f + flash * 0.45f, 0.88f + flash * 0.1f, 1.0f, 0.92f);
+        }
+        (void)t;
+    }
+
+    void renderStrikesInWin(float wx, float wy, float ww, float wh) const {
+        for (const auto& s : strikes) {
+            if (s.done) continue;
+            if (s.age >= STRIKE_HOLD + STRIKE_SHRINK_DUR) continue;
+            if (!inWinPt(s.x, s.y, wx, wy, ww, wh)) continue;
+            float a = (s.age < STRIKE_HOLD) ? 0.95f : (1.0f - (s.age - STRIKE_HOLD) / STRIKE_SHRINK_DUR);
+            drawWireCross(s.x, s.y, s.size, s.rot, 2.2f, 1.0f, 0.88f, 0.22f, 0.55f * a);
         }
     }
 
     void renderTelegraphs(float t) const {
         if (yamPhase == YamPhase::Charge) {
-            float prog = 1.0f - yamTimer / 1.35f;
+            float prog = 1.0f - yamTimer / YAMATO_CHARGE;
             if (prog < 0.0f) prog = 0.0f;
             if (prog > 1.0f) prog = 1.0f;
-            float ox, oy, lx, ly;
-            localToWorld(70.0f, 0.0f, ox, oy);
+            float ox, oy;
+            localToWorld(52.0f, 0.0f, ox, oy);
             float dx = cosf(yamAim), dy = sinf(yamAim);
-            for (int s = 0; s < 14; s++) {
-                float u = (float)s / 13.0f;
-                float len = 100.0f + u * 440.0f;
-                lx = ox + dx * len;
-                ly = oy + dy * len;
-                float lx0 = ox + dx * (len - 28.0f);
-                float ly0 = oy + dy * (len - 28.0f);
-                drawWireSeg(lx0, ly0, lx, ly, 1.5f + prog * 1.5f,
-                            1.0f, 0.3f + prog * 0.3f, 0.12f, 0.2f + prog * 0.55f);
-            }
-            g_TextS.Draw(L"YAMATO", ox - 28.0f, oy - 42.0f, 0.52f,
-                         1.0f, 0.35f, 0.12f, 0.5f + prog * 0.5f);
-        }
-        if (purActive) {
-            float prog = 1.0f - purTimer / 1.05f;
-            float rad = 36.0f + prog * 40.0f;
-            for (int i = 0; i < 12; i++) {
-                float a0 = (float)i * 0.524f;
-                float a1 = a0 + 0.42f;
-                drawWireSeg(purX + cosf(a0) * rad, purY + sinf(a0) * rad,
-                            purX + cosf(a1) * rad, purY + sinf(a1) * rad,
-                            1.8f, 0.95f, 0.85f, 0.3f, 0.15f + prog * 0.45f);
-            }
+            float len = 120.0f + prog * 280.0f;
+            drawWireSeg(ox, oy, ox + dx * len, oy + dy * len,
+                        2.0f + prog * 2.0f, 1.0f, 0.28f + prog * 0.2f, 0.1f, 0.35f + prog * 0.5f);
+            g_TextS.Draw(L"YAMATO", ox - 28.0f, oy - 36.0f, 0.48f,
+                         1.0f, 0.35f, 0.12f, 0.45f + prog * 0.55f);
         }
         (void)t;
     }

@@ -4900,6 +4900,7 @@ int main() {
                 WorldScissor(wx, wy, ww, wh);
                 tb->renderCore(gt);
                 tb->renderInterceptorsInWin(gt, wx, wy, ww, wh);
+                tb->renderStrikesInWin(wx, wy, ww, wh);
             };
             for (auto& fw : zwins) flagPass(fw.x, fw.y, fw.w, fw.h);
             flagPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);

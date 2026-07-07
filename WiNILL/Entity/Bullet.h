@@ -39,6 +39,12 @@ public:
     bool  rainMissile = false;   // 탄환 세례 — 로켓 스프라이트로 렌더
     bool  silverBurn  = false;   // 은탄환 — 명중 시 화상 DoT
 
+    // FLAGSHIP 야마토 — 사거리 도달 시 폭발
+    bool  shellKaboom   = false;
+    bool  shellHandled  = false;
+    float shellRadius   = 0.0f;
+    float shellDmg      = 0.0f;
+
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 
     Bullet(float startX, float startY, float targetX, float targetY) {
