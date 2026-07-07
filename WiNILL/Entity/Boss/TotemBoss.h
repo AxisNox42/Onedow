@@ -11,18 +11,17 @@
 
 extern TextRenderer g_TextS;
 
-// FLAGSHIP.sys — 느린 대형 기함 (궤도 드론 + 야마토 + 정화자)
-//   · 느린 기동(사거리 유지 + 측면 드리프트)
-//   · 인터셉터 궤도/교전
-//   · 야마토 직선 포격, 현측 포격, 정화자 타격 예고
+// FLAGSHIP.sys — 와이어프레임 대형 기함 + 플레이어 주변 스웜 드론
 class TotemBoss {
 public:
     struct Interceptor {
         float x = 0.0f, y = 0.0f;
-        float orbitAng = 0.0f;
+        float vx = 0.0f, vy = 0.0f;
+        float wanderAng = 0.0f;
+        float buzzPhase = 0.0f;
+        float orbitRad = 100.0f;
         float hp = 0.0f, maxHp = 0.0f;
         bool  alive = false;
-        bool  aggressive = false;
         float shootCd = 0.0f;
         float hitFlash = 0.0f;
         float aimAng = 0.0f;
@@ -35,17 +34,14 @@ public:
     int   screenW, screenH;
     float facing = 0.0f;
 
-    static constexpr int N_INT = 8;
-    Interceptor ints[N_INT];
-    int intCap = 4;
-    int lastIntCap = 4;
+    std::vector<Interceptor> ints;
 
     float moveSpeed = 52.0f;
     float preferDist = 300.0f;
     float hullFlash = 0.0f;
 
     float broadsideCd = 2.2f;
-    float intLaunchCd = 4.5f;
+    float intSpawnCd = 0.35f;
     float purifierCd  = 7.5f;
 
     enum class YamPhase { Idle, Charge, Fire };
@@ -58,17 +54,17 @@ public:
     float purX = 0.0f, purY = 0.0f;
     float purTimer = 0.0f;
 
-    static constexpr float BODY       = 88.0f;
-    static constexpr float INT_HIT    = 14.0f;
-    static constexpr float MAP_PAD    = 96.0f;
-    static constexpr float INT_ORBIT  = 118.0f;
-    static constexpr float INT_HP_RATIO = 0.05f;
+    static constexpr float BODY            = 88.0f;
+    static constexpr float INT_HIT         = 14.0f;
+    static constexpr float MAP_PAD         = 96.0f;
+    static constexpr float INT_HP_RATIO    = 0.05f;
+    static constexpr float INT_SPAWN_INT   = 1.0f;
+    static constexpr int   MAX_INT_ALIVE   = 26;
 
     float intHpMax() const {
         return (maxHp > 0.0f) ? maxHp * INT_HP_RATIO : 1.0f;
     }
 
-    // main.cpp 호환 스텁
     bool vulnerable() const { return false; }
     float vulnTimer = 0.0f;
     int wave = 1;
@@ -82,54 +78,20 @@ public:
     void renderRiteWeb(float) const {}
     void renderLinks(float) const {}
     void renderLaser() const {}
+    void repositionBays() {}
 
     TotemBoss(int sw, int sh, float hpInit) : screenW(sw), screenH(sh) {
         hp = maxHp = hpInit;
         worldX = sw * 0.5f;
         worldY = sh * 0.36f;
-        syncPhase();
-        initInterceptors(true);
+        ints.reserve(MAX_INT_ALIVE);
     }
 
     int aliveInterceptors() const {
         int n = 0;
-        for (int i = 0; i < N_INT; i++) if (ints[i].alive) ++n;
+        for (const auto& ic : ints) if (ic.alive) ++n;
         return n;
     }
-
-    void syncPhase() {
-        lastIntCap = intCap;
-        float r = (maxHp > 0.0f) ? hp / maxHp : 1.0f;
-        if (r > 0.66f) intCap = 4;
-        else if (r > 0.33f) intCap = 6;
-        else intCap = 8;
-        if (intCap > lastIntCap) {
-            for (int i = lastIntCap; i < intCap; i++) {
-                ints[i].alive = true;
-                ints[i].maxHp = ints[i].hp = intHpMax();
-                ints[i].aggressive = false;
-                ints[i].orbitAng = (float)i * (6.283f / (float)intCap);
-                ints[i].shootCd = 0.4f;
-            }
-        }
-    }
-
-    void initInterceptors(bool fresh) {
-        for (int i = 0; i < N_INT; i++) {
-            bool live = (i < intCap);
-            if (!fresh && !ints[i].alive && !live) continue;
-            if (fresh || (live && ints[i].maxHp <= 0.0f)) {
-                ints[i].alive = live;
-                ints[i].maxHp = ints[i].hp = live ? intHpMax() : 0.0f;
-                ints[i].aggressive = false;
-                ints[i].orbitAng = (float)i * (6.283f / (float)(intCap > 0 ? intCap : 1));
-                ints[i].shootCd = (float)(rand() % 80) * 0.01f;
-                ints[i].hitFlash = 0.0f;
-            }
-        }
-    }
-
-    void repositionBays() {}  // legacy no-op
 
     void clampPos() {
         float m = MAP_PAD;
@@ -145,11 +107,65 @@ public:
         wy = worldY + lx * s + ly * c;
     }
 
+    static void drawWireSeg(float x0, float y0, float x1, float y1, float thick,
+                            float r, float g, float b, float a) {
+        float dx = x1 - x0, dy = y1 - y0;
+        float len = sqrtf(dx * dx + dy * dy);
+        if (len < 0.5f) return;
+        float nx = -dy / len * thick * 0.5f;
+        float ny =  dx / len * thick * 0.5f;
+        BatchTri(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, r, g, b, a);
+        BatchTri(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, r, g, b, a);
+    }
+
+    void drawWireLoop(const float (*pts)[2], int n, float thick,
+                      float r, float g, float b, float a) const {
+        float x0, y0, x1, y1;
+        localToWorld(pts[0][0], pts[0][1], x0, y0);
+        for (int i = 1; i < n; i++) {
+            localToWorld(pts[i][0], pts[i][1], x1, y1);
+            drawWireSeg(x0, y0, x1, y1, thick, r, g, b, a);
+            x0 = x1; y0 = y1;
+        }
+        localToWorld(pts[0][0], pts[0][1], x1, y1);
+        drawWireSeg(x0, y0, x1, y1, thick, r, g, b, a);
+    }
+
     void fireDir(std::vector<Bullet>& b, float ox, float oy, float dx, float dy,
                  float sp, glm::vec3 col, float sz = 1.0f) {
         Bullet bb(ox, oy, ox + dx * 100.0f, oy + dy * 100.0f);
         bb.isEnemy = true; bb.speed = sp; bb.color = col; bb.sizeScale = sz;
         b.push_back(bb);
+    }
+
+    void initInterceptor(Interceptor& ic, float px, float py) {
+        ic.alive = true;
+        ic.maxHp = ic.hp = intHpMax();
+        float launch = (float)(rand() % 628) * 0.01f;
+        ic.x = worldX + cosf(launch) * 36.0f;
+        ic.y = worldY + sinf(launch) * 36.0f;
+        ic.vx = cosf(launch) * 120.0f;
+        ic.vy = sinf(launch) * 120.0f;
+        ic.wanderAng = (float)(rand() % 628) * 0.01f;
+        ic.buzzPhase = (float)(rand() % 628) * 0.01f;
+        ic.orbitRad = 75.0f + (float)(rand() % 110);
+        ic.shootCd = 0.25f + (float)(rand() % 40) * 0.01f;
+        ic.hitFlash = 0.0f;
+        ic.aimAng = atan2f(py - ic.y, px - ic.x);
+        (void)px;
+    }
+
+    bool spawnInterceptor(float px, float py) {
+        for (auto& ic : ints) {
+            if (!ic.alive) {
+                initInterceptor(ic, px, py);
+                return true;
+            }
+        }
+        if ((int)ints.size() >= MAX_INT_ALIVE) return false;
+        ints.emplace_back();
+        initInterceptor(ints.back(), px, py);
+        return true;
     }
 
     void updateMovement(float px, float py, float dt) {
@@ -173,34 +189,41 @@ public:
     }
 
     void updateInterceptors(float px, float py, float dt, std::vector<Bullet>& bullets) {
-        float gtSpin = dt * (0.9f + (float)(8 - intCap) * 0.08f);
-        for (int i = 0; i < N_INT; i++) {
-            Interceptor& ic = ints[i];
-            if (!ic.alive || i >= intCap) continue;
+        for (auto& ic : ints) {
+            if (!ic.alive) continue;
             if (ic.hitFlash > 0.0f) ic.hitFlash -= dt;
-            ic.orbitAng += gtSpin * (ic.aggressive ? 1.8f : 1.0f);
-            ic.aimAng = ic.orbitAng + 1.571f;
-            float rad = ic.aggressive ? INT_ORBIT * 0.72f : INT_ORBIT;
-            float ox = cosf(ic.orbitAng) * rad;
-            float oy = sinf(ic.orbitAng) * rad * 0.65f;
-            if (ic.aggressive) {
-                float tx = px - worldX, ty = py - worldY;
-                float td = sqrtf(tx * tx + ty * ty);
-                if (td > 1.0f) { ox += tx / td * 42.0f; oy += ty / td * 28.0f; }
+
+            ic.wanderAng += dt * (2.8f + sinf(ic.buzzPhase) * 1.4f);
+            ic.buzzPhase += dt * (8.0f + fmodf(ic.orbitRad, 3.0f));
+            float rad = ic.orbitRad + sinf(ic.buzzPhase * 1.65f) * 38.0f;
+            float gx = px + cosf(ic.wanderAng) * rad;
+            float gy = py + sinf(ic.wanderAng) * rad * 0.72f;
+
+            float ax = (gx - ic.x) * 4.5f;
+            float ay = (gy - ic.y) * 4.5f;
+            ic.vx = ic.vx * 0.86f + ax * dt;
+            ic.vy = ic.vy * 0.86f + ay * dt;
+            float spd = sqrtf(ic.vx * ic.vx + ic.vy * ic.vy);
+            const float maxSpd = 265.0f;
+            if (spd > maxSpd) {
+                ic.vx *= maxSpd / spd;
+                ic.vy *= maxSpd / spd;
             }
-            ic.x = worldX + ox;
-            ic.y = worldY + oy;
+            ic.x += ic.vx * dt;
+            ic.y += ic.vy * dt;
+            ic.aimAng = atan2f(ic.vy, ic.vx);
+
             ic.shootCd -= dt;
             if (ic.shootCd <= 0.0f) {
                 float bx = px - ic.x, by = py - ic.y;
                 float bd = sqrtf(bx * bx + by * by);
                 if (bd > 1.0f) {
-                    ic.aimAng = atan2f(by / bd, bx / bd);
+                    ic.aimAng = atan2f(by, bx);
                     fireDir(bullets, ic.x, ic.y, bx / bd, by / bd,
-                            300.0f + (float)(rand() % 60),
+                            290.0f + (float)(rand() % 70),
                             glm::vec3(0.55f, 0.95f, 1.0f), 0.75f);
                 }
-                ic.shootCd = 0.95f + (float)(rand() % 50) * 0.01f;
+                ic.shootCd = 0.85f + (float)(rand() % 55) * 0.01f;
             }
         }
     }
@@ -236,11 +259,6 @@ public:
             fireDir(bullets, ox + dx * t, oy + dy * t, dx, dy,
                     520.0f, glm::vec3(1.0f, 0.35f, 0.12f), 1.35f + (float)i * 0.08f);
         }
-        for (int s = -2; s <= 2; s++) {
-            float px = -dy * (float)s * 0.12f, py = dx * (float)s * 0.12f;
-            fireDir(bullets, ox, oy, dx + px, dy + py, 420.0f,
-                    glm::vec3(1.0f, 0.5f, 0.2f), 0.95f);
-        }
     }
 
     void startPurifier(float px, float py) {
@@ -249,46 +267,24 @@ public:
         purTimer = 1.05f;
     }
 
-    void firePurifier(float& playerHP, std::vector<Bullet>& bullets) {
+    void firePurifier(std::vector<Bullet>& bullets) {
         for (int i = 0; i < 16; i++) {
             float a = (float)i * 0.393f;
             fireDir(bullets, purX, purY, cosf(a), sinf(a),
                     260.0f + (float)(rand() % 40), glm::vec3(0.95f, 0.88f, 0.35f), 0.85f);
         }
-        float dx = worldX - purX, dy = worldY - purY;
-        if (dx * dx + dy * dy > 1.0f) {
-            float d = sqrtf(dx * dx + dy * dy);
-            fireDir(bullets, purX, purY, dx / d, dy / d, 380.0f,
-                    glm::vec3(1.0f, 0.92f, 0.45f), 1.2f);
-        }
-        float pdx = purX - worldX, pdy = purY - worldY;
-        // player damage checked in Update with external px,py — store radius hit
-        (void)playerHP;
-        (void)pdx;
-    }
-
-    void launchInterceptors() {
-        for (int i = 0; i < intCap; i++) {
-            if (!ints[i].alive) {
-                ints[i].alive = true;
-                ints[i].hp = ints[i].maxHp = intHpMax();
-            }
-            ints[i].aggressive = true;
-            ints[i].shootCd = 0.15f;
-        }
     }
 
     void onIntDamaged(int idx) {
-        if (idx < 0 || idx >= N_INT) return;
+        if (idx < 0 || idx >= (int)ints.size()) return;
         if (!ints[idx].alive) return;
         ints[idx].hitFlash = 0.14f;
     }
 
     void onIntKilled(int idx) {
-        if (idx < 0 || idx >= N_INT) return;
+        if (idx < 0 || idx >= (int)ints.size()) return;
         ints[idx].alive = false;
         ints[idx].hp = 0.0f;
-        ints[idx].aggressive = false;
     }
 
     void Update(float px, float py, float dt, float& playerHP,
@@ -296,11 +292,16 @@ public:
                 float& /*pullX*/, float& /*pullY*/) {
         if (!alive) return;
 
-        syncPhase();
         if (hullFlash > 0.0f) hullFlash -= dt;
 
         updateMovement(px, py, dt);
         updateInterceptors(px, py, dt, bullets);
+
+        intSpawnCd -= dt;
+        if (intSpawnCd <= 0.0f) {
+            spawnInterceptor(px, py);
+            intSpawnCd = INT_SPAWN_INT;
+        }
 
         float ddx = px - worldX, ddy = py - worldY;
         if (ddx * ddx + ddy * ddy < (BODY * 0.85f) * (BODY * 0.85f))
@@ -312,19 +313,12 @@ public:
             broadsideCd = 3.2f + (float)(rand() % 30) * 0.04f;
         }
 
-        intLaunchCd -= dt;
-        if (intLaunchCd <= 0.0f) {
-            launchInterceptors();
-            intLaunchCd = 5.5f + (float)(rand() % 40) * 0.05f;
-        }
-
         if (yamPhase == YamPhase::Idle) {
             yamCd -= dt;
             if (yamCd <= 0.0f) startYamato(px, py);
         } else if (yamPhase == YamPhase::Charge) {
             yamTimer -= dt;
             if (yamTimer <= 0.0f) {
-                yamPhase = YamPhase::Fire;
                 fireYamato(bullets);
                 yamPhase = YamPhase::Idle;
                 yamCd = 11.0f + (float)(rand() % 50) * 0.06f;
@@ -337,7 +331,7 @@ public:
                 float pdx = px - purX, pdy = py - purY;
                 if (pdx * pdx + pdy * pdy < 72.0f * 72.0f)
                     HurtPlayer(playerHP, 22.0f);
-                firePurifier(playerHP, bullets);
+                firePurifier(bullets);
                 purActive = false;
             }
         } else {
@@ -349,58 +343,51 @@ public:
         }
     }
 
-    void renderEnginePlume(float lx, float ly, float t) const {
-        float ex, ey;
-        localToWorld(lx, ly, ex, ey);
-        float pulse = 0.5f + 0.5f * sinf(t * 8.0f + lx);
-        drawCircle(ex, ey, 16.0f + pulse * 6.0f, 0.2f, 0.85f, 1.0f, 0.35f + pulse * 0.25f);
-        drawCircle(ex, ey, 9.0f, 0.85f, 0.98f, 1.0f, 0.65f);
-    }
-
     void renderHull(float t) const {
         float pulse = 0.5f + 0.5f * sinf(t * 2.8f);
         float flash = (hullFlash > 0.0f) ? hullFlash / 0.18f : 0.0f;
+        float cr = 0.35f + flash * 0.35f;
+        float cg = 0.82f + flash * 0.1f;
+        float cb = 1.0f;
+        float tr = 0.95f + pulse * 0.05f;
+        float tg = 0.72f + pulse * 0.1f;
+        float tb = 0.18f;
 
-        float pts[8][2] = {
-            { 78.0f,  0.0f }, { 42.0f, 32.0f }, { -58.0f, 36.0f }, { -82.0f, 18.0f },
-            { -82.0f, -18.0f }, { -58.0f, -36.0f }, { 42.0f, -32.0f }, { 78.0f, 0.0f }
+        static const float hull[][2] = {
+            { 82.0f, 0.0f }, { 48.0f, 28.0f }, { -8.0f, 34.0f },
+            { -78.0f, 22.0f }, { -88.0f, 0.0f }, { -78.0f, -22.0f },
+            { -8.0f, -34.0f }, { 48.0f, -28.0f }
         };
-        for (int i = 0; i < 8; i++) {
-            float x0, y0, x1, y1;
-            int j = (i + 1) % 8;
-            localToWorld(pts[i][0], pts[i][1], x0, y0);
-            localToWorld(pts[j][0], pts[j][1], x1, y1);
-            float mx = (x0 + x1) * 0.5f, my = (y0 + y1) * 0.5f;
-            float dx = x1 - x0, dy = y1 - y0;
-            float len = sqrtf(dx * dx + dy * dy);
-            float ang = atan2f(dy, dx);
-            (void)ang;
-            drawRect(mx - len * 0.5f, my - 5.0f, len, 10.0f,
-                     0.16f + flash * 0.2f, 0.18f + flash * 0.15f, 0.22f + flash * 0.1f, 0.92f);
+        drawWireLoop(hull, 8, 2.6f, cr, cg, cb, 0.95f);
+
+        static const float spine[][2] = { { -72.0f, 0.0f }, { 70.0f, 0.0f } };
+        float sx0, sy0, sx1, sy1;
+        localToWorld(spine[0][0], spine[0][1], sx0, sy0);
+        localToWorld(spine[1][0], spine[1][1], sx1, sy1);
+        drawWireSeg(sx0, sy0, sx1, sy1, 1.8f, cr * 0.7f, cg * 0.7f, cb * 0.7f, 0.75f);
+
+        static const float wingL[][2] = { { 10.0f, 18.0f }, { -40.0f, 30.0f }, { -62.0f, 14.0f } };
+        static const float wingR[][2] = { { 10.0f, -18.0f }, { -40.0f, -30.0f }, { -62.0f, -14.0f } };
+        drawWireLoop(wingL, 3, 1.6f, cr * 0.55f, cg * 0.55f, cb * 0.55f, 0.7f);
+        drawWireLoop(wingR, 3, 1.6f, cr * 0.55f, cg * 0.55f, cb * 0.55f, 0.7f);
+
+        float bx, by, ex0, ey0, ex1, ey1;
+        localToWorld(58.0f, 0.0f, bx, by);
+        drawWireSeg(bx - 8.0f, by, bx + 14.0f, by, 2.0f, tr, tg, tb, 0.9f);
+        localToWorld(-74.0f, 16.0f, ex0, ey0);
+        localToWorld(-86.0f, 24.0f, ex1, ey1);
+        drawWireSeg(ex0, ey0, ex1, ey1, 2.2f, 0.3f, 0.9f, 1.0f, 0.55f + pulse * 0.3f);
+        localToWorld(-74.0f, -16.0f, ex0, ey0);
+        localToWorld(-86.0f, -24.0f, ex1, ey1);
+        drawWireSeg(ex0, ey0, ex1, ey1, 2.2f, 0.3f, 0.9f, 1.0f, 0.55f + pulse * 0.3f);
+
+        localToWorld(68.0f, 0.0f, bx, by);
+        for (int i = -2; i <= 2; i++) {
+            float ox = bx + (float)i * 5.0f;
+            drawWireSeg(ox, by - 6.0f, ox + 10.0f, by, 1.2f, tr, tg, tb, 0.65f);
         }
-
-        float bx, by, dx0, dy0, dx1, dy1;
-        localToWorld(-18.0f, 0.0f, bx, by);
-        drawRect(bx - 48.0f, by - 22.0f, 96.0f, 44.0f, 0.10f, 0.11f, 0.14f, 0.95f);
-        localToWorld(34.0f, 24.0f, dx0, dy0);
-        localToWorld(34.0f, -24.0f, dx1, dy1);
-        drawRect(dx0 - 14.0f, dy0 - 8.0f, 28.0f, 16.0f, 0.08f, 0.09f, 0.12f, 0.9f);
-        drawRect(dx1 - 14.0f, dy1 - 8.0f, 28.0f, 16.0f, 0.08f, 0.09f, 0.12f, 0.9f);
-
-        localToWorld(52.0f, 0.0f, bx, by);
-        drawMercedes(bx, by, 22.0f + pulse * 3.0f, 0.95f, 0.82f, 0.28f, 0.92f);
-        localToWorld(62.0f, 0.0f, bx, by);
-        drawTriangle(bx, by, 20.0f, 0.35f, 0.92f, 1.0f, 0.85f);
-
-        renderEnginePlume(-76.0f, 20.0f, t);
-        renderEnginePlume(-76.0f, -20.0f, t);
-
-        float minx = worldX - BODY, miny = worldY - BODY * 0.7f;
-        drawNeonBorder(minx, miny, BODY * 2.0f, BODY * 1.4f,
-                       0.35f + flash * 0.4f, 0.88f + flash * 0.1f, 1.0f);
     }
 
-    // 커서형 파임 다이아 — 한쪽 모서리가 파인 6각 실루엣
     static void drawCursorShard(float cx, float cy, float size, float ang,
                                 float r, float g, float b, float a) {
         static const float lx[] = { 0.0f,  0.62f,  0.34f,  0.0f, -0.34f, -0.62f };
@@ -414,66 +401,70 @@ public:
         }
         for (int i = 0; i < 6; i++) {
             int j = (i + 1) % 6;
-            BatchTri(cx, cy, wx[i], wy[i], wx[j], wy[j], r, g, b, a);
+            drawWireSeg(wx[i], wy[i], wx[j], wy[j], 1.4f, r, g, b, a);
+        }
+        for (int i = 0; i < 6; i++) {
+            int j = (i + 1) % 6;
+            BatchTri(cx, cy, wx[i], wy[i], wx[j], wy[j], r * 0.25f, g * 0.25f, b * 0.25f, a * 0.35f);
         }
     }
 
-    void renderInterceptors(float t) const {
-        for (int i = 0; i < N_INT; i++) {
-            const Interceptor& ic = ints[i];
-            if (!ic.alive || i >= intCap) continue;
+    static bool inWinPt(float px, float py, float wx, float wy, float ww, float wh) {
+        return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
+    }
+
+    void renderInterceptorsInWin(float t, float wx, float wy, float ww, float wh) const {
+        for (const auto& ic : ints) {
+            if (!ic.alive) continue;
+            if (!inWinPt(ic.x, ic.y, wx, wy, ww, wh)) continue;
             float flash = (ic.hitFlash > 0.0f) ? ic.hitFlash / 0.14f : 0.0f;
-            float pulse = 0.5f + 0.5f * sinf(t * 6.0f + ic.orbitAng);
-            float sz = 11.0f + pulse * 2.5f;
-            float aim = ic.aimAng;
-            drawCircle(ic.x, ic.y, sz * 0.85f, 0.15f, 0.65f, 0.95f, 0.18f + pulse * 0.12f);
-            drawCursorShard(ic.x, ic.y, sz, aim,
-                            0.35f + flash * 0.45f, 0.88f + flash * 0.1f, 1.0f, 0.92f);
-            drawCursorShard(ic.x, ic.y, sz * 0.42f, aim,
-                            0.12f, 0.22f, 0.28f, 0.75f);
+            float pulse = 0.5f + 0.5f * sinf(t * 7.0f + ic.buzzPhase);
+            float sz = 10.0f + pulse * 2.0f;
+            drawWireSeg(ic.x - sz * 0.3f, ic.y, ic.x + sz * 0.5f, ic.y, 1.0f,
+                        0.25f, 0.7f, 0.95f, 0.35f + pulse * 0.15f);
+            drawCursorShard(ic.x, ic.y, sz, ic.aimAng,
+                            0.35f + flash * 0.45f, 0.88f + flash * 0.1f, 1.0f, 0.9f);
         }
     }
 
-    void renderTelegraphs(float t, float px, float py) const {
+    void renderTelegraphs(float t) const {
         if (yamPhase == YamPhase::Charge) {
             float prog = 1.0f - yamTimer / 1.35f;
             if (prog < 0.0f) prog = 0.0f;
             if (prog > 1.0f) prog = 1.0f;
-            float ox, oy;
+            float ox, oy, lx, ly;
             localToWorld(70.0f, 0.0f, ox, oy);
             float dx = cosf(yamAim), dy = sinf(yamAim);
-            for (int s = 0; s < 12; s++) {
-                float u = (float)s / 11.0f;
-                float len = 120.0f + u * 420.0f;
-                drawRect(ox + dx * len - 3.0f, oy + dy * len - 3.0f, 6.0f, 6.0f,
-                         1.0f, 0.25f + prog * 0.35f, 0.1f, 0.15f + prog * 0.45f);
+            for (int s = 0; s < 14; s++) {
+                float u = (float)s / 13.0f;
+                float len = 100.0f + u * 440.0f;
+                lx = ox + dx * len;
+                ly = oy + dy * len;
+                float lx0 = ox + dx * (len - 28.0f);
+                float ly0 = oy + dy * (len - 28.0f);
+                drawWireSeg(lx0, ly0, lx, ly, 1.5f + prog * 1.5f,
+                            1.0f, 0.3f + prog * 0.3f, 0.12f, 0.2f + prog * 0.55f);
             }
-            wchar_t warn[16];
-            swprintf_s(warn, L"YAMATO");
-            g_TextS.Draw(warn, ox - 28.0f, oy - 42.0f, 0.52f,
+            g_TextS.Draw(L"YAMATO", ox - 28.0f, oy - 42.0f, 0.52f,
                          1.0f, 0.35f, 0.12f, 0.5f + prog * 0.5f);
         }
         if (purActive) {
             float prog = 1.0f - purTimer / 1.05f;
             float rad = 36.0f + prog * 40.0f;
-            float a = 0.12f + prog * 0.35f;
-            drawCircle(purX, purY, rad, 0.95f, 0.85f, 0.28f, a);
-            drawCircle(purX, purY, rad * 0.55f, 1.0f, 0.95f, 0.5f, a * 1.2f);
-            for (int i = 0; i < 4; i++) {
-                float ang = t * 2.5f + (float)i * 1.571f;
-                drawRect(purX + cosf(ang) * rad - 2.0f, purY + sinf(ang) * rad - 2.0f,
-                         4.0f, 4.0f, 1.0f, 0.92f, 0.4f, 0.5f);
+            for (int i = 0; i < 12; i++) {
+                float a0 = (float)i * 0.524f;
+                float a1 = a0 + 0.42f;
+                drawWireSeg(purX + cosf(a0) * rad, purY + sinf(a0) * rad,
+                            purX + cosf(a1) * rad, purY + sinf(a1) * rad,
+                            1.8f, 0.95f, 0.85f, 0.3f, 0.15f + prog * 0.45f);
             }
         }
-        (void)px; (void)py;
+        (void)t;
     }
 
-    void renderCore(float t) const { renderShip(t, worldX, worldY); }
-
-    void renderShip(float t, float /*px*/, float /*py*/) const {
+    void renderCore(float t) const {
         renderHull(t);
-        renderInterceptors(t);
-        renderTelegraphs(t, 0.0f, 0.0f);
+        renderTelegraphs(t);
     }
 
     float yamatoDisplayCd() const {
@@ -484,4 +475,6 @@ public:
     const wchar_t* yamatoLabel() const {
         return (yamPhase == YamPhase::Charge) ? L"YAMATO" : L"YAMATO CD";
     }
+
+    float swarmSpawnCd() const { return intSpawnCd; }
 };

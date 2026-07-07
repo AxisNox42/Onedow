@@ -1716,7 +1716,7 @@ int main() {
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) { float dx=g_CentiBoss->worldX-cx,dy=g_CentiBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_CentiBoss->hp-=dmg; if(g_CentiBoss->hp<=0)g_CentiBoss->alive=false;} }
                     if (g_TotemBoss && g_TotemBoss->alive) { float dx=g_TotemBoss->worldX-cx,dy=g_TotemBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TotemBoss->hp-=dmg; if(g_TotemBoss->hp<=0)g_TotemBoss->alive=false;} }
                     if (g_UnknownBoss && g_UnknownBoss->alive) { float dx=g_UnknownBoss->worldX-cx,dy=g_UnknownBoss->worldY-cy; if(dx*dx+dy*dy<r2){float ud=dmg*g_UnknownBoss->damageTakenMult(); g_UnknownBoss->hp-=ud; if(g_UnknownBoss->hp<=0)g_UnknownBoss->alive=false;} }
-                    for (int ii = 0; g_TotemBoss && g_TotemBoss->alive && ii < TotemBoss::N_INT; ii++) {
+                    for (int ii = 0; g_TotemBoss && g_TotemBoss->alive && ii < (int)g_TotemBoss->ints.size(); ii++) {
                         auto& ic = g_TotemBoss->ints[ii];
                         if (!ic.alive) continue;
                         float dx = ic.x - cx, dy = ic.y - cy;
@@ -2317,7 +2317,7 @@ int main() {
                             return dmg * tb->statDamageMult();
                         };
                         bool consumed = false;
-                        for (int ii = 0; ii < TotemBoss::N_INT; ii++) {
+                        for (int ii = 0; ii < (int)g_TotemBoss->ints.size(); ii++) {
                             auto& ic = tb->ints[ii];
                             if (!ic.alive) continue;
                             if (SegDist(ic.x, ic.y, b.prevX, b.prevY, b.x, b.y) < TotemBoss::INT_HIT) {
@@ -3665,7 +3665,7 @@ int main() {
                 if (g_UnknownBoss && g_UnknownBoss->alive)
                     hitB(g_UnknownBoss->worldX, g_UnknownBoss->worldY, g_UnknownBoss->hp, g_UnknownBoss->alive);
                 if (g_TotemBoss && g_TotemBoss->alive) {
-                    for (int ii = 0; ii < TotemBoss::N_INT; ii++) {
+                    for (int ii = 0; ii < (int)g_TotemBoss->ints.size(); ii++) {
                         auto& ic = g_TotemBoss->ints[ii];
                         if (!ic.alive || !inCone(ic.x, ic.y)) continue;
                         ic.hp -= dmg;
@@ -3868,7 +3868,7 @@ int main() {
                     if (g_TotemBoss && g_TotemBoss->alive) nhitB(g_TotemBoss->worldX,g_TotemBoss->worldY,g_TotemBoss->hp,g_TotemBoss->alive);
                     if (g_UnknownBoss && g_UnknownBoss->alive) nhitB(g_UnknownBoss->worldX,g_UnknownBoss->worldY,g_UnknownBoss->hp,g_UnknownBoss->alive);
                     if (g_TotemBoss && g_TotemBoss->alive) {
-                        for (int ii = 0; ii < TotemBoss::N_INT; ii++) {
+                        for (int ii = 0; ii < (int)g_TotemBoss->ints.size(); ii++) {
                             auto& ic = g_TotemBoss->ints[ii];
                             if (!ic.alive) continue;
                             float dx = ic.x - pCX, dy = ic.y - pCY;
@@ -4896,15 +4896,16 @@ int main() {
             auto* tb = g_TotemBoss;
             float gt = (float)glfwGetTime();
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            auto totemPass = [&](float wx, float wy, float ww, float wh) {
+            auto flagPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
                 tb->renderCore(gt);
+                tb->renderInterceptorsInWin(gt, wx, wy, ww, wh);
             };
-            for (auto& fw : zwins) totemPass(fw.x, fw.y, fw.w, fw.h);
-            totemPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            for (auto& fw : zwins) flagPass(fw.x, fw.y, fw.w, fw.h);
+            flagPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
             if (g_Stats.turretMode)
                 for (auto& tr : g_Turrets)
-                    totemPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
+                    flagPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
                               TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
@@ -5245,9 +5246,10 @@ int main() {
                 }
                 if (g_TotemBoss && g_TotemBoss->alive) {
                     wchar_t totBuf[80];
-                    swprintf_s(totBuf, L"INT %d/%d · %ls %.1fs",
-                               g_TotemBoss->aliveInterceptors(), g_TotemBoss->intCap,
-                               g_TotemBoss->yamatoLabel(), g_TotemBoss->yamatoDisplayCd());
+                    swprintf_s(totBuf, L"SWARM %d · %ls %.1fs · +%.1fs",
+                               g_TotemBoss->aliveInterceptors(),
+                               g_TotemBoss->yamatoLabel(), g_TotemBoss->yamatoDisplayCd(),
+                               g_TotemBoss->swarmSpawnCd());
                     float ts = 0.55f;
                     float tw = g_TextS.Width(totBuf, ts);
                     g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
