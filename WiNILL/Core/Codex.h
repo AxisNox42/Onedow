@@ -32,17 +32,17 @@ inline bool CodexMatch(const wchar_t* name) {
 }
 
 // ── 증강 발견 (ALL_AUGS 인덱스 기준) ──
-inline bool g_AugSeen[128] = { false };
+inline bool g_AugSeen[AUG_TOTAL] = { false };
 inline bool g_CodexDirty   = false;
 
 inline void MarkAugSeen(int augIdx) {
-    if (augIdx < 0 || augIdx >= AUG_TOTAL || augIdx >= 128) return;
+    if (augIdx < 0 || augIdx >= AUG_TOTAL) return;
     if (!g_AugSeen[augIdx]) { g_AugSeen[augIdx] = true; g_CodexDirty = true; }
 }
 
 inline bool CodexAugSeen(int augIdx) {
     if (CodexFullReveal() && augIdx >= 0 && augIdx < AUG_TOTAL) return true;
-    if (augIdx < 0 || augIdx >= 128) return false;
+    if (augIdx < 0 || augIdx >= AUG_TOTAL) return false;
     return g_AugSeen[augIdx];
 }
 

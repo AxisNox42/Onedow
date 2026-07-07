@@ -117,6 +117,11 @@ enum class AugType {
     D_SPLITTER_BOOST,    // 스플리터 강화 — 분열 개체 각각 처치 보상
 };
 
+// (int)AugType 으로 g_TypeOwned·g_IconTex 등에 인덱싱 — enum 끝에만 추가
+static constexpr int AUG_TYPE_SLOTS = 160;
+static_assert((int)AugType::D_SPLITTER_BOOST < AUG_TYPE_SLOTS,
+              "AugType enum grew past AUG_TYPE_SLOTS — bump the constant");
+
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
 
 // 고유 카테고리 — 같은 카테고리 내에서 1개만 선택 가능
@@ -817,7 +822,7 @@ inline bool AugRemoved(AugType t) {
 
 // 현재 런에서 해당 AugType 을 보유 중인지 ((int)AugType 인덱스). 조합 레시피 판정용.
 //   main 의 applyByIdx 가 갱신, ResetForNewGame 이 초기화.
-inline bool g_TypeOwned[128] = { false };
+inline bool g_TypeOwned[AUG_TYPE_SLOTS] = { false };
 
 // 한 번만 등장해야 하는 증강/디버프 (스택 불가 플래그형) — 픽 풀에서 takenOnce 로 제외
 inline bool AugOnceOnly(AugType t, AugRarity r) {
