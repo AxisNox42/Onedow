@@ -607,14 +607,11 @@ static void StartBossWarn(int pick, const wchar_t* name, float hp) {
 }
 
 static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
+    (void)polyHpC;
     switch (pick) {
-    case 1: StartBossWarn(1, L"UNKNOWN.sys",  bossHpC * 0.7f);  break;
-    case 2: StartBossWarn(2, L"VOLLEY.sys",   bossHpC);         break;
-    case 4: StartBossWarn(4, L"GLITCH.exe",   polyHpC);         break;
-    case 7: StartBossWarn(7, L"C2_RELAY.sys", bossHpC * 0.75f); break;
-    case 8: StartBossWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
-    case 9: StartBossWarn(9, L"ADUN.relay",   bossHpC * 0.72f); break;
-    default: StartBossWarn(2, L"VOLLEY.sys",   bossHpC);         break;
+    case 2: StartBossWarn(2, L"VOLLEY.sys", bossHpC);        break;
+    case 8: StartBossWarn(8, L"FORK.worm",  bossHpC * 0.7f); break;
+    default: StartBossWarn(2, L"VOLLEY.sys", bossHpC);       break;
     }
 }
 

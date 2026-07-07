@@ -686,7 +686,7 @@ void Scene_Codex(const SceneCtx& c) {
                         g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 } else {
-                    // 보스 — LTS 4종 (VOLLEY / C2 / FORK / RITE)
+                    // 보스 — 활성 로스터 (VOLLEY / FORK)
                     const int COLS = 5; const float CELL = 200.0f;
                     int vis[BOSS_CODEX_COUNT], nv = 0;
                     for (int i = 0; i < BOSS_CODEX_COUNT; i++)
@@ -1245,12 +1245,11 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 g_TextS.Draw(L"* 일반 런 미포함 (개발용)", leftX, contentTop + 124.0f,
                              0.48f, 0.68f, 0.75f, 0.82f, 0.75f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[7] = {
-                    {L"None",-1}, {L"UNKNOWN.sys*",1}, {L"VOLLEY.sys",2}, {L"GLITCH.exe*",4},
-                    {L"C2_RELAY",7}, {L"FORK.worm",8}, {L"ADUN.relay",9}
+                BossOpt bOpts[3] = {
+                    {L"None",-1}, {L"VOLLEY.sys",2}, {L"FORK.worm",8}
                 };
                 const float BBW = 112.0f;
-                for (int i = 0; i < 7; i++) {
+                for (int i = 0; i < 3; i++) {
                     int col = i % 4, row = i / 4;
                     float ox = leftX + col * (BBW + OBG);
                     float oy = contentTop + 144.0f + row * (OBH + 8.0f);

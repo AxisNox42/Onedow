@@ -2,8 +2,8 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 1 UNKNOWN 2 VOLLEY 4 GLITCH 7 C2 8 FORK 9 ADUN
-// LTS 일반 런: 2·7·8·9 만 로테. 1·4 는 크리에이티브 전용.
+// 보스 pick: 2 VOLLEY 8 FORK (활성 로스터)
+//   1 UNKNOWN 4 GLITCH 7 C2 9 ADUN 은 로스터에서 제외 (코드만 잔존)
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -14,12 +14,12 @@ inline int& RotIdx() {
 inline void ResetRotation() { RotIdx() = 0; }
 
 inline bool IsLtsRosterPick(int pick) {
-    return pick == 2 || pick == 7 || pick == 8 || pick == 9;
+    return pick == 2 || pick == 8;
 }
 
 inline int RollScorePick() {
-    static const int kLtsRot[] = { 2, 7, 8, 9 };
-    return kLtsRot[RotIdx()++ % 4];
+    static const int kLtsRot[] = { 2, 8 };
+    return kLtsRot[RotIdx()++ % 2];
 }
 
 // ── ACT 테마 (보스 예고 ~ 처치까지) ─────────────────────────
