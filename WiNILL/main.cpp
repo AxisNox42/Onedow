@@ -143,7 +143,7 @@ float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
-float TOTEM_WIN_W = 760.0f;    // FLAGSHIP.sys: 대형 기함 전투 공간
+float TOTEM_WIN_W = 760.0f;    // ADUN.relay: 대형 중계 코어 전투 공간
 float UNKNOWN_WIN_W = 500.0f;  // UNKNOWN.sys: 창연 검 보스
 float UNKNOWN_WIN_H = 580.0f;
 // 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
@@ -613,7 +613,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     case 4: StartBossWarn(4, L"GLITCH.exe",   polyHpC);         break;
     case 7: StartBossWarn(7, L"C2_RELAY.sys", bossHpC * 0.75f); break;
     case 8: StartBossWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
-    case 9: StartBossWarn(9, L"FLAGSHIP.sys",   bossHpC * 0.72f); break;
+    case 9: StartBossWarn(9, L"ADUN.relay",   bossHpC * 0.72f); break;
     default: StartBossWarn(2, L"VOLLEY.sys",   bossHpC);         break;
     }
 }
@@ -1198,7 +1198,7 @@ int main() {
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"GLITCH.exe");
                     if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
-                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"FLAGSHIP.sys");
+                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"ADUN.relay");
                     if (g_UnknownBoss && g_UnknownBoss->alive) consider(g_UnknownBoss->worldX, g_UnknownBoss->worldY, L"UNKNOWN.sys");
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
@@ -2048,7 +2048,7 @@ int main() {
                     }
                 }
 
-                // FLAGSHIP.sys 업데이트 (느린 기동 + 인터셉터 + 야마토)
+                // ADUN.relay 업데이트 (느린 기동 + 인터셉터 무리 + 야마토)
                 if (!timeStopped && g_TotemBoss && g_TotemBoss->alive) {
                     float pullX = 0.0f, pullY = 0.0f;
                     g_TotemBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
@@ -4132,7 +4132,7 @@ int main() {
                  CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f);
         if (g_TotemBoss && g_TotemBoss->alive)
             addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
-                 L"FLAGSHIP.sys", 0.06f,0.07f,0.10f, 0.35f,0.88f,1.0f);
+                 L"ADUN.relay", 0.07f,0.06f,0.10f, 0.58f,0.5f,1.0f);
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
@@ -5174,8 +5174,8 @@ int main() {
                 bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
                 bc = glm::vec3(0.35f, 0.88f, 0.95f);
             } else if (g_TotemBoss && g_TotemBoss->alive) {
-                bn = L"FLAGSHIP.sys";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
-                bc = glm::vec3(0.35f, 0.88f, 1.0f);
+                bn = L"ADUN.relay";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
+                bc = glm::vec3(0.58f, 0.5f, 1.0f);
             } else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bn = UnknownBoss::BOSS_NAME; bhf = g_UnknownBoss->hp / g_UnknownBoss->maxHp;
                 bc = glm::vec3(0.95f, 0.28f, 0.58f);
@@ -5186,7 +5186,7 @@ int main() {
                 else if (bn == L"GLITCH.exe") bossPick = 4;
                 else if (bn == L"C2_RELAY.sys")  bossPick = 7;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
-                else if (bn == L"FLAGSHIP.sys")   bossPick = 9;
+                else if (bn == L"ADUN.relay")   bossPick = 9;
                 else if (bn == UnknownBoss::BOSS_NAME) bossPick = 1;
             }
             GameState st = g_GameManager.currentState;
@@ -5254,7 +5254,7 @@ int main() {
                     float ts = 0.55f;
                     float tw = g_TextS.Width(totBuf, ts);
                     g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
-                                 0.35f, 0.88f, 1.0f, 0.85f);
+                                 0.58f, 0.5f, 1.0f, 0.85f);
                 }
                 if (g_UnknownBoss && g_UnknownBoss->alive) {
                     wchar_t ubBuf[64];
@@ -5358,22 +5358,27 @@ int main() {
                                0.35f, 0.85f, 0.25f, 0.2f + 0.15f * prog);
                 }
             } break;
-            case 9: {  // FLAGSHIP — 기함 실루엣 + 궤도 드론
+            case 9: {  // ADUN.relay — 열린 격납 프레임(점선 링) + 무리 스웜
                 float cx = sw2 * 0.5f, cy = sh2 * 0.52f;
                 float pulse = 0.5f + 0.5f * sinf(t * 4.0f);
-                drawRect(cx - sw2 * 0.18f, cy - sh2 * 0.03f, sw2 * 0.36f, sh2 * 0.07f,
-                         wc.r * 0.15f, wc.g * 0.15f, wc.b * 0.2f, 0.4f + 0.3f * prog);
-                drawTriangle(cx + sw2 * 0.14f, cy, 16.0f + prog * 10.0f, wc.r, wc.g, wc.b, 0.45f + 0.3f * blink);
-                drawMercedes(cx - sw2 * 0.04f, cy, 14.0f + pulse * 4.0f,
-                             0.95f, 0.82f, 0.28f, 0.35f + 0.35f * prog);
+                float ringR = sw2 * 0.1f + pulse * sw2 * 0.006f;
+                for (int i = 0; i < 24; i++) {
+                    float a = (float)i / 24.0f * 6.283f + t * 0.5f;
+                    float dx = cx + cosf(a) * ringR, dy = cy + sinf(a) * ringR;
+                    drawCircle(dx, dy, 2.4f, wc.r, wc.g, wc.b, 0.35f + 0.25f * prog);
+                }
+                for (int i = 0; i < 10; i++) {
+                    float a = (float)i / 10.0f * 6.283f + t * 0.5f;
+                    float ix = cx + cosf(a) * (ringR + 12.0f), iy = cy + sinf(a) * (ringR + 12.0f);
+                    drawCircle(ix, iy, 3.0f, wc.r, wc.g, wc.b, 0.5f + 0.3f * blink);
+                }
                 for (int i = 0; i < 6; i++) {
                     float a = t * 1.6f + (float)i * 1.047f;
-                    float rad = sw2 * 0.12f + prog * sw2 * 0.06f;
+                    float rad = sw2 * 0.14f + prog * sw2 * 0.08f;
                     float ix = cx + cosf(a) * rad, iy = cy + sinf(a) * rad * 0.65f;
-                    drawDiamond(ix, iy, 7.0f + pulse * 2.0f, wc.r, wc.g, wc.b, 0.35f + 0.3f * blink);
+                    drawDiamond(ix, iy, 7.0f + pulse * 2.0f, 1.0f, 0.85f, 1.0f, 0.4f + 0.3f * blink);
                 }
-                drawCircle(cx - sw2 * 0.16f, cy, 8.0f, 0.2f, 0.85f, 1.0f, 0.25f + pulse * 0.25f);
-                drawCircle(cx - sw2 * 0.16f, cy + sh2 * 0.05f, 8.0f, 0.2f, 0.85f, 1.0f, 0.25f + pulse * 0.25f);
+                drawCircle(cx, cy, 6.0f + pulse * 3.0f, wc.r, wc.g, wc.b, 0.3f + pulse * 0.3f);
             } break;
             default: break;
             }

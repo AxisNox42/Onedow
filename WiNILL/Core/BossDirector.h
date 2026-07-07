@@ -2,7 +2,7 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 1 UNKNOWN 2 VOLLEY 4 GLITCH 7 C2 8 FORK 9 RITE
+// 보스 pick: 1 UNKNOWN 2 VOLLEY 4 GLITCH 7 C2 8 FORK 9 ADUN
 // LTS 일반 런: 2·7·8·9 만 로테. 1·4 는 크리에이티브 전용.
 namespace BossDir {
 
@@ -64,7 +64,7 @@ inline ActRules RulesForPick(int pick) {
     case 4:  return { 2.5f, 4.5f, 1.0f,  1.0f,  8, 4 };   // GLITCH — 엘리트
     case 7:  return { 3.5f, 6.0f, 1.18f, 1.0f,  3, 8 };   // C2 — swarm
     case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };  // FORK — 물량
-    case 9:  return { 4.5f, 8.0f, 1.12f, 1.08f, 6, 6 };   // RITE — 특수몹
+    case 9:  return { 4.5f, 8.0f, 1.12f, 1.08f, 6, 6 };   // ADUN — 특수몹
     default: return { 2.0f, 3.0f, 1.0f,  1.0f,  2, 2 };
     }
 }
@@ -92,7 +92,7 @@ inline const wchar_t* DisplayName(int pick) {
     case 6: return L"FIREWALL.sys";
     case 7: return L"C2_RELAY.sys";
     case 8: return L"FORK.worm";
-    case 9: return L"FLAGSHIP.sys";
+    case 9: return L"ADUN.relay";
     default: return L"UNKNOWN.sys";
     }
 }
@@ -122,7 +122,7 @@ inline glm::vec3 WarnColor(int pick) {
     case 6: return { 1.0f,  0.45f, 0.2f  };
     case 7: return { 0.25f, 0.92f, 0.48f };
     case 8: return { 0.35f, 0.88f, 0.95f };
-    case 9: return { 0.35f, 0.88f, 1.0f };
+    case 9: return { 0.58f, 0.5f,  1.0f  };
     default: return { 0.6f, 0.25f, 1.0f };
     }
 }
@@ -138,7 +138,7 @@ inline const wchar_t* Tagline(int pick) {
         L"인바운드 차단 — 아웃바운드 허용",
         L"C2 터미널 — 맵 전역 Agent 교전",
         L"프로세스 포크 — 연쇄 분열",
-        L"대함 기동 — 인터셉터 · 야마토 · 정화자",
+        L"차원 중계 — 무리 스웜 · 야마토 낙하 · 궤도 표적",
     };
     static const wchar_t* EN[10] = {
         L"Not responding — freeze then lag",
@@ -150,7 +150,7 @@ inline const wchar_t* Tagline(int pick) {
         L"Inbound blocked — outbound open",
         L"C2 terminal — zombie host relay",
         L"Fork bomb — chained child processes",
-        L"Capital drift — interceptors · Yamato · purifier",
+        L"Dimensional relay — drone swarm · Yamato drop · orbital marks",
     };
     static const wchar_t* JP[10] = {
         L"応答なし — 停止後LAG",
@@ -162,7 +162,7 @@ inline const wchar_t* Tagline(int pick) {
         L"インバウンド遮断",
         L"C2端末 — ゾンビホスト中継",
         L"フォーク爆弾 — 子プロセス連鎖",
-        L"主力艦 — インターセプター · ヤマト · 浄化",
+        L"次元中継 — ドローン群 · ヤマト落下 · 軌道マーク",
     };
     if (pick < 0 || pick > 9) return L"";
     int li = LangIndex();

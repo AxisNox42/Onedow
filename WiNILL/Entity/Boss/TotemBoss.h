@@ -11,19 +11,23 @@
 
 extern TextRenderer g_TextS;
 
-// FLAGSHIP.sys — 추상 와이어 코어 + 플레이어 주변 고속 스웜 + 십자 포격
+// ADUN.relay — 열린 격납 프레임(코어) + 유기적 무리(flock) 스웜
+//   + 유인·저격 페어 협공 + 착탄식 야마토 낙하 + 회전-플래시 십자 표적
 class TotemBoss {
 public:
     struct Interceptor {
         float x = 0.0f, y = 0.0f;
         float vx = 0.0f, vy = 0.0f;
-        float burstAng = 0.0f;
-        float dashCd = 0.0f;
+        float burstAng = 0.0f;   // 스폰 슬롯 각도 (펄스 시드로도 사용)
+        float aimAng = 0.0f;
         float hp = 0.0f, maxHp = 0.0f;
         bool  alive = false;
-        float shootCd = 0.0f;
         float hitFlash = 0.0f;
-        float aimAng = 0.0f;
+        float shootCd = 0.0f;    // 솔로(미페어) 낙오 개체용 사격 타이머
+        int   pairIdx = -1;      // 협공 짝 인덱스 (-1 = 미페어)
+        bool  isLure = false;    // true = 유인(다이브), false = 저격
+        float pairCd = 0.0f;     // 유인 기체의 다음 돌진까지 남은 시간
+        float divePhase = 0.0f;  // >0 이면 돌진 중 (남은 시간)
     };
 
     struct StrikeMark {
@@ -58,7 +62,7 @@ public:
     YamPhase yamPhase = YamPhase::Idle;
     float yamCd = 6.0f;
     float yamTimer = 0.0f;
-    float yamAim = 0.0f;
+    float yamTargetX = 0.0f, yamTargetY = 0.0f;
 
     static constexpr float BODY              = 72.0f;
     static constexpr float INT_HIT           = 14.0f;
@@ -66,16 +70,33 @@ public:
     static constexpr float INT_HP_RATIO      = 0.05f;
     static constexpr float INT_SPAWN_INT     = 1.0f;
     static constexpr int   MAX_INT_ALIVE     = 26;
+
+    static constexpr float HANGAR_R          = 52.0f;   // 격납 프레임 반경 (스폰 슬롯)
+    static constexpr float LAUNCH_SPD_MIN    = 240.0f;
+
+    static constexpr float FLOCK_SEP_R       = 34.0f;
+    static constexpr float FLOCK_COH_R       = 170.0f;
+    static constexpr float FLOCK_SEP_STR     = 1500.0f;
+    static constexpr float FLOCK_ALI_STR     = 2.2f;
+    static constexpr float FLOCK_COH_STR     = 2.6f;
+    static constexpr float FLOCK_MAX_SPEED   = 480.0f;
+
+    static constexpr float ORBIT_MIN         = 90.0f;
+    static constexpr float ORBIT_MAX         = 240.0f;
+    static constexpr float ORBIT_PUSH        = 560.0f;
+    static constexpr float ORBIT_PULL        = 170.0f;
+
+    static constexpr float PAIR_CYCLE_MIN    = 2.0f;
+    static constexpr float DIVE_DUR          = 0.5f;
+    static constexpr float DIVE_ACCEL        = 1050.0f;
+    static constexpr float DIVE_MAX_SPEED    = 640.0f;
+
     static constexpr float YAMATO_CHARGE     = 0.42f;
-    static constexpr float STRIKE_HOLD       = 0.12f;
-    static constexpr float STRIKE_SHRINK_DUR = 0.20f;
-    static constexpr float INT_BURST_SPEED   = 460.0f;
-    static constexpr float INT_MAX_SPEED     = 525.0f;
-    static constexpr float INT_ORBIT_MIN     = 95.0f;
-    static constexpr float INT_ORBIT_MAX     = 230.0f;
-    static constexpr float INT_ORBIT_PUSH    = 680.0f;
-    static constexpr float INT_ORBIT_PULL    = 220.0f;
-    static constexpr float INT_ORBIT_DRIFT   = 310.0f;
+    static constexpr float YAMATO_IMPACT_R   = 92.0f;
+    static constexpr float YAMATO_DMG        = 32.0f;
+
+    static constexpr float STRIKE_SPIN_DUR   = 0.22f;
+    static constexpr float STRIKE_FLASH_DUR  = 0.08f;
 
     float intHpMax() const {
         return (maxHp > 0.0f) ? maxHp * INT_HP_RATIO : 1.0f;
@@ -117,12 +138,6 @@ public:
         if (worldY > screenH - m) worldY = screenH - m;
     }
 
-    void localToWorld(float lx, float ly, float& wx, float& wy) const {
-        float c = cosf(facing), s = sinf(facing);
-        wx = worldX + lx * c - ly * s;
-        wy = worldY + lx * s + ly * c;
-    }
-
     static void drawWireSeg(float x0, float y0, float x1, float y1, float thick,
                             float r, float g, float b, float a) {
         float dx = x1 - x0, dy = y1 - y0;
@@ -150,71 +165,49 @@ public:
         b.push_back(bb);
     }
 
-    void burstFromPlayer(Interceptor& ic, float px, float py, bool forAttack) {
-        float dx = ic.x - px, dy = ic.y - py;
-        float dist = sqrtf(dx * dx + dy * dy);
-        if (dist < 1.0f) {
-            ic.burstAng = (float)(rand() % 628) * 0.01f;
-            dx = cosf(ic.burstAng);
-            dy = sinf(ic.burstAng);
-            dist = 1.0f;
+    // ── 페어링: 살아있는 미페어 개체를 둘씩 묶어 유인/저격 역할 배정 ──
+    void refreshPairs() {
+        int n = (int)ints.size();
+        for (int i = 0; i < n; i++) {
+            auto& ic = ints[i];
+            if (!ic.alive) { ic.pairIdx = -1; continue; }
+            if (ic.pairIdx >= 0) {
+                if (ic.pairIdx >= n || !ints[ic.pairIdx].alive || ints[ic.pairIdx].pairIdx != i)
+                    ic.pairIdx = -1;
+            }
         }
-        float nx = dx / dist, ny = dy / dist;
-        float tx = -ny, ty = nx;
-        float sign = (ic.burstAng > 3.14159f) ? 1.0f : -1.0f;
-
-        float ang;
-        if (forAttack) {
-            ang = atan2f(ty * sign, tx * sign);
-        } else {
-            ang = atan2f(ny * 0.35f + ty * sign * 0.75f,
-                         nx * 0.35f + tx * sign * 0.75f);
+        int pending = -1;
+        for (int i = 0; i < n; i++) {
+            auto& ic = ints[i];
+            if (!ic.alive || ic.pairIdx >= 0) continue;
+            if (pending < 0) { pending = i; continue; }
+            ints[pending].pairIdx = i;
+            ints[i].pairIdx = pending;
+            ints[pending].isLure = true;
+            ints[i].isLure = false;
+            ints[pending].pairCd = PAIR_CYCLE_MIN * 0.5f + (float)(rand() % 100) * 0.01f;
+            ints[i].pairCd = 0.0f;
+            ints[pending].divePhase = 0.0f;
+            pending = -1;
         }
-        float spd = INT_BURST_SPEED * (forAttack ? 0.55f : 0.72f) + (float)(rand() % 140);
-        ic.vx += cosf(ang) * spd;
-        ic.vy += sinf(ang) * spd;
-        ic.dashCd = 0.72f + (float)(rand() % 45) * 0.01f;
-        ic.aimAng = atan2f(ic.vy, ic.vx);
-    }
-
-    void steerOrbit(Interceptor& ic, float px, float py, float dt) {
-        float dx = ic.x - px, dy = ic.y - py;
-        float dist = sqrtf(dx * dx + dy * dy);
-        if (dist < 1.0f) {
-            ic.burstAng = (float)(rand() % 628) * 0.01f;
-            dx = cosf(ic.burstAng);
-            dy = sinf(ic.burstAng);
-            dist = 1.0f;
-        }
-        float nx = dx / dist, ny = dy / dist;
-        float tx = -ny, ty = nx;
-        float sign = (ic.burstAng > 3.14159f) ? 1.0f : -1.0f;
-
-        if (dist < INT_ORBIT_MIN) {
-            ic.vx += nx * INT_ORBIT_PUSH * dt;
-            ic.vy += ny * INT_ORBIT_PUSH * dt;
-        } else if (dist > INT_ORBIT_MAX) {
-            ic.vx -= nx * INT_ORBIT_PULL * dt;
-            ic.vy -= ny * INT_ORBIT_PULL * dt;
-        }
-        ic.vx += tx * sign * INT_ORBIT_DRIFT * dt;
-        ic.vy += ty * sign * INT_ORBIT_DRIFT * dt;
     }
 
     void initInterceptor(Interceptor& ic, float px, float py) {
         ic.alive = true;
         ic.maxHp = ic.hp = intHpMax();
-        ic.shootCd = 0.8f + (float)(rand() % 50) * 0.02f;
         ic.hitFlash = 0.0f;
-        ic.burstAng = (float)(rand() % 628) * 0.01f;
-        float spawnR = INT_ORBIT_MIN + (float)(rand() % 90);
-        ic.x = px + cosf(ic.burstAng) * spawnR;
-        ic.y = py + sinf(ic.burstAng) * spawnR;
-        float spd = INT_BURST_SPEED * 0.45f + (float)(rand() % 100);
-        ic.vx = cosf(ic.burstAng) * spd;
-        ic.vy = sinf(ic.burstAng) * spd;
-        ic.dashCd = 0.5f + (float)(rand() % 30) * 0.01f;
-        ic.aimAng = ic.burstAng;
+        ic.pairIdx = -1; ic.isLure = false; ic.pairCd = 0.0f; ic.divePhase = 0.0f;
+        ic.shootCd = 1.1f + (float)(rand() % 50) * 0.02f;
+
+        float baseAng = atan2f(py - worldY, px - worldX);
+        float slotAng = baseAng + ((float)(rand() % 200 - 100)) * 0.01f;
+        ic.burstAng = slotAng;
+        ic.x = worldX + cosf(slotAng) * HANGAR_R;
+        ic.y = worldY + sinf(slotAng) * HANGAR_R;
+        float launchSpd = LAUNCH_SPD_MIN + (float)(rand() % 140);
+        ic.vx = cosf(slotAng) * launchSpd;
+        ic.vy = sinf(slotAng) * launchSpd;
+        ic.aimAng = slotAng;
     }
 
     bool spawnInterceptor(float px, float py) {
@@ -250,41 +243,101 @@ public:
         clampPos();
     }
 
+    // ── 무리(flock) 스티어링 + 페어 다이브/사격 ──
     void updateInterceptors(float px, float py, float dt, std::vector<Bullet>& bullets) {
-        for (auto& ic : ints) {
-            if (!ic.alive) continue;
-            if (ic.hitFlash > 0.0f) ic.hitFlash -= dt;
+        refreshPairs();
 
-            steerOrbit(ic, px, py, dt);
+        int n = (int)ints.size();
+        for (int i = 0; i < n; i++) {
+            auto& a = ints[i];
+            if (!a.alive) continue;
+            if (a.hitFlash > 0.0f) a.hitFlash -= dt;
 
-            ic.dashCd -= dt;
-            if (ic.dashCd <= 0.0f)
-                burstFromPlayer(ic, px, py, false);
-
-            ic.x += ic.vx * dt;
-            ic.y += ic.vy * dt;
-            ic.vx *= 0.988f;
-            ic.vy *= 0.988f;
-            float spd = sqrtf(ic.vx * ic.vx + ic.vy * ic.vy);
-            if (spd > INT_MAX_SPEED) {
-                ic.vx *= INT_MAX_SPEED / spd;
-                ic.vy *= INT_MAX_SPEED / spd;
-            }
-            if (spd > 8.0f) ic.aimAng = atan2f(ic.vy, ic.vx);
-
-            ic.shootCd -= dt;
-            if (ic.shootCd <= 0.0f) {
-                float bx = px - ic.x, by = py - ic.y;
-                float bd = sqrtf(bx * bx + by * by);
-                if (bd > INT_ORBIT_MIN * 0.55f) {
-                    burstFromPlayer(ic, px, py, true);
-                    ic.aimAng = atan2f(by, bx);
-                    fireDir(bullets, ic.x, ic.y, bx / bd, by / bd,
-                            300.0f + (float)(rand() % 60),
-                            glm::vec3(0.55f, 0.95f, 1.0f), 0.85f);
+            float sepX = 0.0f, sepY = 0.0f; int nSep = 0;
+            float aliVX = 0.0f, aliVY = 0.0f; int nAli = 0;
+            float cohX = 0.0f, cohY = 0.0f; int nCoh = 0;
+            for (int j = 0; j < n; j++) {
+                if (j == i) continue;
+                auto& b = ints[j];
+                if (!b.alive) continue;
+                float dx = a.x - b.x, dy = a.y - b.y;
+                float d2 = dx * dx + dy * dy;
+                if (d2 > FLOCK_COH_R * FLOCK_COH_R) continue;
+                nCoh++; cohX += b.x; cohY += b.y;
+                nAli++; aliVX += b.vx; aliVY += b.vy;
+                if (d2 < FLOCK_SEP_R * FLOCK_SEP_R && d2 > 0.01f) {
+                    float d = sqrtf(d2);
+                    sepX += dx / d; sepY += dy / d;
+                    nSep++;
                 }
-                ic.shootCd = 1.65f + (float)(rand() % 55) * 0.02f;
             }
+
+            float stx = 0.0f, sty = 0.0f;
+            if (nSep > 0) { stx += (sepX / nSep) * FLOCK_SEP_STR; sty += (sepY / nSep) * FLOCK_SEP_STR; }
+            if (nAli > 0) { stx += (aliVX / nAli - a.vx) * FLOCK_ALI_STR; sty += (aliVY / nAli - a.vy) * FLOCK_ALI_STR; }
+            if (nCoh > 0) { stx += (cohX / nCoh - a.x) * FLOCK_COH_STR; sty += (cohY / nCoh - a.y) * FLOCK_COH_STR; }
+
+            float pdx = a.x - px, pdy = a.y - py;
+            float pdist = sqrtf(pdx * pdx + pdy * pdy);
+            float pnx = 0.0f, pny = 0.0f;
+            if (pdist > 1.0f) {
+                pnx = pdx / pdist; pny = pdy / pdist;
+                if (pdist < ORBIT_MIN)      { stx += pnx * ORBIT_PUSH; sty += pny * ORBIT_PUSH; }
+                else if (pdist > ORBIT_MAX) { stx -= pnx * ORBIT_PULL; sty -= pny * ORBIT_PULL; }
+            }
+
+            float maxSpd = FLOCK_MAX_SPEED;
+            if (a.pairIdx >= 0 && a.isLure && ints[a.pairIdx].alive) {
+                if (a.divePhase > 0.0f) {
+                    a.divePhase -= dt;
+                    if (pdist > 1.0f) { stx -= pnx * DIVE_ACCEL; sty -= pny * DIVE_ACCEL; }
+                    maxSpd = DIVE_MAX_SPEED;
+                    if (a.divePhase <= 0.0f) {
+                        int sIdx = a.pairIdx;
+                        if (sIdx >= 0 && sIdx < n && ints[sIdx].alive) {
+                            auto& sn = ints[sIdx];
+                            float bx = px - sn.x, by = py - sn.y;
+                            float bd = sqrtf(bx * bx + by * by);
+                            if (bd > 1.0f) {
+                                sn.aimAng = atan2f(by, bx);
+                                fireDir(bullets, sn.x, sn.y, bx / bd, by / bd,
+                                        300.0f + (float)(rand() % 60),
+                                        glm::vec3(0.55f, 0.95f, 1.0f), 0.85f);
+                            }
+                        }
+                        a.pairCd = PAIR_CYCLE_MIN + (float)(rand() % 140) * 0.01f;
+                    }
+                } else {
+                    a.pairCd -= dt;
+                    if (a.pairCd <= 0.0f) a.divePhase = DIVE_DUR;
+                }
+            } else if (a.pairIdx < 0) {
+                a.shootCd -= dt;
+                if (a.shootCd <= 0.0f) {
+                    float bx = px - a.x, by = py - a.y;
+                    float bd = sqrtf(bx * bx + by * by);
+                    if (bd > ORBIT_MIN * 0.6f) {
+                        a.aimAng = atan2f(by, bx);
+                        fireDir(bullets, a.x, a.y, bx / bd, by / bd,
+                                300.0f + (float)(rand() % 60),
+                                glm::vec3(0.55f, 0.95f, 1.0f), 0.85f);
+                    }
+                    a.shootCd = 1.8f + (float)(rand() % 60) * 0.02f;
+                }
+            }
+
+            a.vx += stx * dt;
+            a.vy += sty * dt;
+            a.vx *= 0.985f;
+            a.vy *= 0.985f;
+            float spd = sqrtf(a.vx * a.vx + a.vy * a.vy);
+            if (spd > maxSpd) {
+                a.vx *= maxSpd / spd;
+                a.vy *= maxSpd / spd;
+            }
+            a.x += a.vx * dt;
+            a.y += a.vy * dt;
+            if (spd > 6.0f) a.aimAng = atan2f(a.vy, a.vx);
         }
     }
 
@@ -313,63 +366,45 @@ public:
         }
     }
 
+    // ── 십자 표적: 등장부터 회전+축소 → 사라지는 순간 잔광 플래시 → 폭발 ──
     void updateStrikes(float px, float py, float dt,
                        float& playerHP, std::vector<Bullet>& bullets) {
         for (auto& s : strikes) {
             if (s.done) continue;
             s.age += dt;
-            if (s.age < STRIKE_HOLD) {
-                s.size = 26.0f + (float)(rand() % 8) * 0.0f;
-            } else if (s.age < STRIKE_HOLD + STRIKE_SHRINK_DUR) {
-                float u = (s.age - STRIKE_HOLD) / STRIKE_SHRINK_DUR;
-                s.rot += dt * (5.0f + u * 9.0f);
+            if (s.age < STRIKE_SPIN_DUR) {
+                float u = s.age / STRIKE_SPIN_DUR;
+                s.rot += dt * (6.0f + u * 16.0f);
                 s.size = 28.0f * (1.0f - u);
+            } else if (s.age < STRIKE_SPIN_DUR + STRIKE_FLASH_DUR) {
+                // 플래시 구간 — 렌더에서만 처리
             } else if (!s.done) {
                 s.done = true;
                 explodeStrike(s, px, py, playerHP, bullets);
             }
         }
         strikes.erase(std::remove_if(strikes.begin(), strikes.end(),
-            [](const StrikeMark& s) { return s.done && s.age > STRIKE_HOLD + STRIKE_SHRINK_DUR + 0.5f; }),
+            [](const StrikeMark& s) { return s.done && s.age > STRIKE_SPIN_DUR + STRIKE_FLASH_DUR + 0.5f; }),
             strikes.end());
     }
 
+    // ── 야마토: 짧은 예고 후 예고 시점 위치에 즉시 낙하(착탄) ──
     void startYamato(float px, float py) {
         yamPhase = YamPhase::Charge;
         yamTimer = YAMATO_CHARGE;
-        yamAim = atan2f(py - worldY, px - worldX);
+        yamTargetX = px;
+        yamTargetY = py;
     }
 
-    void fireYamato(std::vector<Bullet>& bullets) {
-        float dx = cosf(yamAim), dy = sinf(yamAim);
-        float ox, oy;
-        localToWorld(58.0f, 0.0f, ox, oy);
-        Bullet bb(ox, oy, ox + dx * 200.0f, oy + dy * 200.0f);
-        bb.isEnemy = true;
-        bb.speed = 720.0f;
-        bb.sizeScale = 2.1f;
-        bb.color = glm::vec3(1.0f, 0.32f, 0.12f);
-        bb.maxRange = 300.0f;
-        bb.shellKaboom = true;
-        bb.shellRadius = 82.0f;
-        bb.shellDmg = 30.0f;
-        bullets.push_back(bb);
-    }
-
-    void processShellBlasts(float px, float py, float& playerHP,
-                            std::vector<Bullet>& bullets) {
-        for (auto& b : bullets) {
-            if (b.active || !b.isEnemy || !b.shellKaboom || b.shellHandled) continue;
-            if (b.maxRange > 0.0f && b.traveled < b.maxRange * 0.92f) continue;
-            b.shellHandled = true;
-            float dx = px - b.x, dy = py - b.y;
-            if (dx * dx + dy * dy < b.shellRadius * b.shellRadius)
-                HurtPlayer(playerHP, b.shellDmg);
-            for (int i = 0; i < 12; i++) {
-                float a = (float)i * 0.524f;
-                fireDir(bullets, b.x, b.y, cosf(a), sinf(a),
-                        200.0f, glm::vec3(1.0f, 0.4f, 0.12f), 0.7f);
-            }
+    void detonateYamato(float px, float py, float& playerHP, std::vector<Bullet>& bullets) {
+        float dx = px - yamTargetX, dy = py - yamTargetY;
+        if (dx * dx + dy * dy < YAMATO_IMPACT_R * YAMATO_IMPACT_R)
+            HurtPlayer(playerHP, YAMATO_DMG);
+        for (int i = 0; i < 14; i++) {
+            float a = (float)i * (6.283f / 14.0f);
+            fireDir(bullets, yamTargetX, yamTargetY, cosf(a), sinf(a),
+                    230.0f + (float)(rand() % 60),
+                    glm::vec3(1.0f, 0.42f, 0.15f), 0.8f);
         }
     }
 
@@ -383,6 +418,7 @@ public:
         if (idx < 0 || idx >= (int)ints.size()) return;
         ints[idx].alive = false;
         ints[idx].hp = 0.0f;
+        ints[idx].pairIdx = -1;
     }
 
     void Update(float px, float py, float dt, float& playerHP,
@@ -395,7 +431,6 @@ public:
         updateMovement(px, py, dt);
         updateInterceptors(px, py, dt, bullets);
         updateStrikes(px, py, dt, playerHP, bullets);
-        processShellBlasts(px, py, playerHP, bullets);
 
         intSpawnCd -= dt;
         if (intSpawnCd <= 0.0f) {
@@ -427,9 +462,9 @@ public:
         } else if (yamPhase == YamPhase::Charge) {
             yamTimer -= dt;
             if (yamTimer <= 0.0f) {
-                fireYamato(bullets);
+                detonateYamato(px, py, playerHP, bullets);
                 yamPhase = YamPhase::Idle;
-                yamCd = 10.0f + (float)(rand() % 50) * 0.06f;
+                yamCd = 8.5f + (float)(rand() % 45) * 0.05f;
             }
         }
     }
@@ -447,39 +482,37 @@ public:
         }
     }
 
+    // ── 헐: 열린 격납 프레임(코어) — 배 실루엣 없이 링 + 슬롯 틱 + 회전 애퍼처 ──
     void renderHull(float t) const {
         float pulse = 0.5f + 0.5f * sinf(t * 3.0f);
         float flash = (hullFlash > 0.0f) ? hullFlash / 0.18f : 0.0f;
-        float cr = 0.35f + flash * 0.35f;
-        float cg = 0.82f + flash * 0.1f;
+        float cr = 0.55f + flash * 0.35f;
+        float cg = 0.46f + flash * 0.2f;
         float cb = 1.0f;
 
-        renderWireRing(worldX, worldY, 46.0f + pulse * 5.0f, 16, 2.0f,
-                       cr, cg, cb, 0.9f, t * 0.35f);
-        renderWireRing(worldX, worldY, 28.0f, 10, 1.6f,
-                       cr * 0.7f, cg * 0.7f, cb * 0.7f, 0.75f, -t * 0.55f);
+        renderWireRing(worldX, worldY, HANGAR_R + pulse * 4.0f, 20, 2.2f,
+                       cr, cg, cb, 0.9f, t * 0.3f);
+        renderWireRing(worldX, worldY, HANGAR_R * 0.62f, 14, 1.6f,
+                       cr * 0.75f, cg * 0.75f, cb * 0.75f, 0.7f, -t * 0.5f);
 
-        for (int i = 0; i < 8; i++) {
-            float a = (float)i * 0.785f + t * 0.25f;
-            float x1 = worldX + cosf(a) * 22.0f;
-            float y1 = worldY + sinf(a) * 22.0f;
-            float x2 = worldX + cosf(a) * (58.0f + pulse * 8.0f);
-            float y2 = worldY + sinf(a) * (58.0f + pulse * 8.0f);
-            drawWireSeg(x1, y1, x2, y2, 1.5f, cr * 0.6f, cg * 0.6f, cb * 0.6f, 0.7f);
+        const int SLOTS = 10;
+        for (int i = 0; i < SLOTS; i++) {
+            float a = (float)i / (float)SLOTS * 6.283f + t * 0.3f;
+            float x0 = worldX + cosf(a) * (HANGAR_R - 4.0f);
+            float y0 = worldY + sinf(a) * (HANGAR_R - 4.0f);
+            float x1 = worldX + cosf(a) * (HANGAR_R + 10.0f);
+            float y1 = worldY + sinf(a) * (HANGAR_R + 10.0f);
+            drawWireSeg(x0, y0, x1, y1, 1.6f, cr, cg, cb, 0.55f);
         }
 
-        float hx[6], hy[6];
-        for (int i = 0; i < 6; i++) {
-            float a = (float)i * 1.047f + t * 0.15f;
-            hx[i] = worldX + cosf(a) * 18.0f;
-            hy[i] = worldY + sinf(a) * 18.0f;
+        float ax = t * 0.7f;
+        for (int i = 0; i < 3; i++) {
+            int j = (i + 1) % 3;
+            float a0 = ax + (float)i * 2.094f, a1 = ax + (float)j * 2.094f;
+            drawWireSeg(worldX + cosf(a0) * HANGAR_R * 0.34f, worldY + sinf(a0) * HANGAR_R * 0.34f,
+                        worldX + cosf(a1) * HANGAR_R * 0.34f, worldY + sinf(a1) * HANGAR_R * 0.34f,
+                        1.6f, cr, cg, cb, 0.8f);
         }
-        for (int i = 0; i < 6; i++) {
-            int j = (i + 1) % 6;
-            drawWireSeg(hx[i], hy[i], hx[j], hy[j], 1.8f, cr, cg, cb, 0.85f);
-        }
-        drawWireSeg(worldX - 10.0f, worldY, worldX + 10.0f, worldY, 1.4f, cr, cg, cb, 0.65f);
-        drawWireSeg(worldX, worldY - 10.0f, worldX, worldY + 10.0f, 1.4f, cr, cg, cb, 0.65f);
     }
 
     static void drawCursorShard(float cx, float cy, float size, float ang,
@@ -510,8 +543,12 @@ public:
             float flash = (ic.hitFlash > 0.0f) ? ic.hitFlash / 0.14f : 0.0f;
             float pulse = 0.5f + 0.5f * sinf(t * 9.0f + ic.burstAng);
             float sz = 12.0f + pulse * 2.5f;
-            drawCursorShard(ic.x, ic.y, sz, ic.aimAng,
-                            0.45f + flash * 0.45f, 0.92f + flash * 0.08f, 1.0f, 0.98f);
+            float rr = 0.45f + flash * 0.45f, gg = 0.92f + flash * 0.08f, bb = 1.0f;
+            if (ic.divePhase > 0.0f) {
+                rr = 1.0f; gg = 0.55f + flash * 0.3f; bb = 0.32f;
+                sz += 3.0f;
+            }
+            drawCursorShard(ic.x, ic.y, sz, ic.aimAng, rr, gg, bb, 0.98f);
         }
         (void)t;
     }
@@ -519,10 +556,17 @@ public:
     void renderStrikesInWin(float wx, float wy, float ww, float wh) const {
         for (const auto& s : strikes) {
             if (s.done) continue;
-            if (s.age >= STRIKE_HOLD + STRIKE_SHRINK_DUR) continue;
             if (!inWinPt(s.x, s.y, wx, wy, ww, wh)) continue;
-            float a = (s.age < STRIKE_HOLD) ? 0.95f : (1.0f - (s.age - STRIKE_HOLD) / STRIKE_SHRINK_DUR);
-            drawWireCross(s.x, s.y, s.size, s.rot, 2.2f, 1.0f, 0.88f, 0.22f, 0.55f * a);
+            if (s.age < STRIKE_SPIN_DUR) {
+                float u = s.age / STRIKE_SPIN_DUR;
+                float a = 0.5f + 0.45f * u;
+                drawWireCross(s.x, s.y, s.size, s.rot, 2.0f + u * 1.2f, 1.0f, 0.88f, 0.22f, a);
+            } else if (s.age < STRIKE_SPIN_DUR + STRIKE_FLASH_DUR) {
+                float u = (s.age - STRIKE_SPIN_DUR) / STRIKE_FLASH_DUR;
+                float a = 1.0f - u;
+                float r = 6.0f + u * 40.0f;
+                drawCircle(s.x, s.y, r, 1.0f, 0.95f, 0.6f, a * 0.8f);
+            }
         }
     }
 
@@ -531,14 +575,16 @@ public:
             float prog = 1.0f - yamTimer / YAMATO_CHARGE;
             if (prog < 0.0f) prog = 0.0f;
             if (prog > 1.0f) prog = 1.0f;
-            float ox, oy;
-            localToWorld(52.0f, 0.0f, ox, oy);
-            float dx = cosf(yamAim), dy = sinf(yamAim);
-            float len = 120.0f + prog * 280.0f;
-            drawWireSeg(ox, oy, ox + dx * len, oy + dy * len,
-                        2.0f + prog * 2.0f, 1.0f, 0.28f + prog * 0.2f, 0.1f, 0.35f + prog * 0.5f);
-            g_TextS.Draw(L"YAMATO", ox - 28.0f, oy - 36.0f, 0.48f,
-                         1.0f, 0.35f, 0.12f, 0.45f + prog * 0.55f);
+            float ringR = 58.0f * (1.0f - prog) + 8.0f;
+            float glow = 0.4f + 0.5f * prog;
+            renderWireRing(yamTargetX, yamTargetY, ringR, 14, 2.0f + prog * 2.0f,
+                           1.0f, 0.3f + prog * 0.25f, 0.12f, glow, t * 2.2f);
+            drawWireCross(yamTargetX, yamTargetY, 10.0f + prog * 6.0f, t * 3.0f,
+                          1.8f, 1.0f, 0.4f, 0.15f, glow * 0.8f);
+            wchar_t lbl[] = L"IMPACT";
+            float lw = g_TextS.Width(lbl, 0.42f);
+            g_TextS.Draw(lbl, yamTargetX - lw * 0.5f, yamTargetY - ringR - 20.0f, 0.42f,
+                         1.0f, 0.4f, 0.15f, 0.5f + 0.5f * prog);
         }
         (void)t;
     }
