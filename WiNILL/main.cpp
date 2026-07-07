@@ -2018,9 +2018,23 @@ int main() {
                     pCY = playerWin.y + playerWin.height * 0.5f;
                 }
 
-                // C2_RELAY.sys Update
-                if (!timeStopped && g_BotnetBoss && g_BotnetBoss->alive)
-                    g_BotnetBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
+                // C2_RELAY.sys Update (촉수 그랩은 플레이어 창을 코어 쪽으로 끌어당김)
+                if (!timeStopped && g_BotnetBoss && g_BotnetBoss->alive) {
+                    float c2PullX = 0.0f, c2PullY = 0.0f;
+                    g_BotnetBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
+                                         g_Bullets, c2PullX, c2PullY);
+                    if (c2PullX != 0.0f || c2PullY != 0.0f) {
+                        playerWin.x += c2PullX;
+                        playerWin.y += c2PullY;
+                        float margin = 8.0f;
+                        if (playerWin.x < margin) playerWin.x = margin;
+                        if (playerWin.y < margin) playerWin.y = margin;
+                        if (playerWin.x + playerWin.width > screenWidth - margin)
+                            playerWin.x = screenWidth - margin - playerWin.width;
+                        if (playerWin.y + playerWin.height > screenHeight - margin)
+                            playerWin.y = screenHeight - margin - playerWin.height;
+                    }
+                }
                 if (g_BotnetBoss && g_BotnetBoss->shakePulse) {
                     g_BotnetBoss->shakePulse = false;
                     g_ShakeTime = 0.32f; g_ShakeMag = 14.0f;
@@ -4850,21 +4864,24 @@ int main() {
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(nb2->worldX - BOTNET_WIN_W * 0.5f, nb2->worldY - BOTNET_WIN_W * 0.5f,
                          BOTNET_WIN_W, BOTNET_WIN_W);
+            nb2->renderArms(ct);
             nb2->renderCore(ct);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
+            // 촉수는 보스 창 밖까지 뻗으므로 다른 창에도 창마다 반복 렌더
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            auto c2MinionPass = [&](float wx, float wy, float ww, float wh) {
+            auto c2ArmPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
                 for (auto& b : g_Bullets)
                     if (b.active) drawBullet(b);
+                nb2->renderArms(ct);
                 nb2->renderMinions(ct);
             };
-            for (auto& fw : zwins) c2MinionPass(fw.x, fw.y, fw.w, fw.h);
-            c2MinionPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            for (auto& fw : zwins) c2ArmPass(fw.x, fw.y, fw.w, fw.h);
+            c2ArmPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
             if (g_Stats.turretMode)
                 for (auto& tr : g_Turrets)
-                    c2MinionPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
+                    c2ArmPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
                                  TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
@@ -5219,14 +5236,14 @@ int main() {
                 if (g_BotnetBoss && g_BotnetBoss->alive) {
                     wchar_t hostBuf[64];
                     if (g_BotnetBoss->exposed())
-                        swprintf_s(hostBuf, L"!! EXPOSED %.1fs !!  HOST %d/%d",
+                        swprintf_s(hostBuf, L"!! EXPOSED %.1fs !!  ARM %d/%d",
                                    g_BotnetBoss->exposedT,
                                    g_BotnetBoss->aliveHosts(), BotnetBoss::NHOST);
                     else
-                        swprintf_s(hostBuf, L"HOST %d/%d  FW %d%%  PKT %d",
+                        swprintf_s(hostBuf, L"ARM %d/%d  FW %d%%  SIG %d%%",
                                    g_BotnetBoss->aliveHosts(), BotnetBoss::NHOST,
                                    (int)(g_BotnetBoss->hostShieldPercent() + 0.5f),
-                                   g_BotnetBoss->aliveMinions());
+                                   (int)(g_BotnetBoss->senseLevel() * 100.0f + 0.5f));
                     float hs = 0.55f;
                     float hw = g_TextS.Width(hostBuf, hs);
                     bool ex2 = g_BotnetBoss->exposed();
