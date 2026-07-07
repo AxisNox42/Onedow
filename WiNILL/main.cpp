@@ -39,6 +39,7 @@
 #include "BotnetBoss.h"
 #include "CentipedeBoss.h"
 #include "TotemBoss.h"
+#include "LagBoss.h"
 #include "UnknownBoss.h"
 #include "BossDirector.h"
 #include "RunIntermission.h"
@@ -144,6 +145,7 @@ float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
 float TOTEM_WIN_W = 760.0f;    // ADUN.relay: 대형 중계 코어 전투 공간
+float LAG_WIN_W    = 480.0f;   // LAG.exe: 단일 몸체 + 고스트 잔상 전투 공간
 float UNKNOWN_WIN_W = 500.0f;  // UNKNOWN.sys: 창연 검 보스
 float UNKNOWN_WIN_H = 580.0f;
 // 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
@@ -300,6 +302,7 @@ static void ClearPolySummonedMobs() {
 
 CentipedeBoss* g_CentiBoss = nullptr;
 TotemBoss* g_TotemBoss = nullptr;
+LagBoss* g_LagBoss = nullptr;
 UnknownBoss* g_UnknownBoss = nullptr;
 // ?? 諛곕뱶 ?뱁꽣 ?щ쭩 ?붾쪟臾????꾩떆 媛먯냽 援ъ뿭(?먯긽 ?곸뿭). ?덉뿉 ?덉쑝硫??대룞?띾룄 -10% ??
 //   利됱떆 ?앷린吏 ?딄퀬 ZONE_OPEN(0.7珥???嫄몄퀜 ?먯젏 遺?앸릺???쇱쭚(grow factor = age/OPEN).
@@ -340,6 +343,7 @@ float          g_BossWarnHp      = 0.0f;
 // ?섏씠利? ?곸듅?ｌ? 異붿쟻 (?듭씪 吏꾩엯 ?곗텧 1???ъ깮??
 bool g_RRWasP2 = false, g_RRWasP3 = false;
 bool g_BotnetWasP2 = false;
+bool g_LagWasP2 = false;
 // ?섏씠利? 吏꾩엯 ?좎뒪??("??怨쇰?????PHASE 2")
 float     g_P2ToastTimer = 0.0f;
 glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
@@ -594,6 +598,7 @@ static bool BossFightBusy() {
         || (g_BotnetBoss && g_BotnetBoss->alive)
         || (g_CentiBoss && g_CentiBoss->alive)
         || (g_TotemBoss && g_TotemBoss->alive)
+        || (g_LagBoss && g_LagBoss->alive)
         || (g_UnknownBoss && g_UnknownBoss->alive)
         || g_BossWarnTimer > 0.0f;
 }
@@ -611,6 +616,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     switch (pick) {
     case 2: StartBossWarn(2, L"VOLLEY.sys", bossHpC);        break;
     case 8: StartBossWarn(8, L"FORK.worm",  bossHpC * 0.7f); break;
+    case 10: StartBossWarn(10, L"LAG.exe",  bossHpC * 0.85f); break;
     default: StartBossWarn(2, L"VOLLEY.sys", bossHpC);       break;
     }
 }
@@ -896,6 +902,8 @@ int main() {
         }
         if (g_TotemBoss && g_TotemBoss->alive)
             consider(g_TotemBoss->worldX, g_TotemBoss->worldY);
+        if (g_LagBoss && g_LagBoss->alive)
+            consider(g_LagBoss->worldX, g_LagBoss->worldY);
         if (g_UnknownBoss && g_UnknownBoss->alive)
             consider(g_UnknownBoss->worldX, g_UnknownBoss->worldY);
         return found;
@@ -916,7 +924,7 @@ int main() {
             const char* bn = g_RRBoss ? "reload" :
                              g_PolyBoss ? "poly" :
                              g_BotnetBoss ? "botnet" : g_CentiBoss ? "centi" :
-                             g_TotemBoss ? "totem" : "none";
+                             g_TotemBoss ? "totem" : g_LagBoss ? "lag" : "none";
             char bc[200];
             std::snprintf(bc, sizeof(bc),
                 "st=%d score=%lld lv=%d mobs=%u boss=%s",
@@ -1033,7 +1041,7 @@ int main() {
             g_SkipZoneY         = 0.0f;
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;
-            g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
+            g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false; g_LagWasP2 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;
             g_NovaTimer = 0.0f;
@@ -1043,6 +1051,7 @@ int main() {
             if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
+            if (g_LagBoss) { delete g_LagBoss; g_LagBoss = nullptr; }
             if (g_UnknownBoss) { delete g_UnknownBoss; g_UnknownBoss = nullptr; }
             g_PolyPrevForm = -1;
             g_BossTintT = 0.0f;
@@ -1196,6 +1205,7 @@ int main() {
                     if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
                     if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"ADUN.relay");
+                    if (g_LagBoss && g_LagBoss->alive) consider(g_LagBoss->worldX, g_LagBoss->worldY, L"LAG.exe");
                     if (g_UnknownBoss && g_UnknownBoss->alive) consider(g_UnknownBoss->worldX, g_UnknownBoss->worldY, L"UNKNOWN.sys");
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
@@ -1237,10 +1247,11 @@ int main() {
                 if (g_BotnetBoss) { delete g_BotnetBoss; g_BotnetBoss = nullptr; }
                 if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TotemBoss) { delete g_TotemBoss; g_TotemBoss = nullptr; }
+            if (g_LagBoss) { delete g_LagBoss; g_LagBoss = nullptr; }
             if (g_UnknownBoss) { delete g_UnknownBoss; g_UnknownBoss = nullptr; }
                 g_Turrets.clear();
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
-                g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false;
+                g_RRWasP2 = g_RRWasP3 = g_BotnetWasP2 = false; g_LagWasP2 = false;
                 g_LaserBeams.clear();   // ?ㅼ틪 ?덉씠? 鍮??뺣━
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭/異쒗삁 ?뺣━
                 g_NovaTimer = 0.0f;   // 諛깆떊 ?ㅼ틪 ?뺣━
@@ -1643,6 +1654,9 @@ int main() {
                             if (pcx >= zx - hw && pcx <= zx + hw &&
                                 pcy >= zy - hh && pcy <= zy + hh) { zoneSlow = 0.90f; break; }
                         }
+                        // LAG.exe 시간왜곡 포켓 — 포켓 안이면 이동속도 추가 감속
+                        if (g_LagBoss && g_LagBoss->alive)
+                            zoneSlow *= g_LagBoss->speedMultAt(pcx, pcy);
                     }
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
@@ -1875,6 +1889,9 @@ int main() {
                     float bDt = FIXED_DT;
                     if (b.isEnemy && g_TimeStopTimer > 0.0f) { /* skip update below */ }
                     else if (b.isEnemy && g_HyperFocusTimer > 0.0f) bDt *= 0.7f;
+                    // LAG.exe 시간왜곡 포켓 — 플레이어 탄만 감속 (적 탄은 영향 없음)
+                    if (!b.isEnemy && g_LagBoss && g_LagBoss->alive)
+                        bDt *= g_LagBoss->speedMultAt(b.x, b.y);
                     if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(bDt);
                     // ?붾㈃ 諛?鍮꾪솢?깊솕 ??以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???곸뿭??                    // ?볦뼱吏誘濡?寃쎄퀎??媛숈씠 ?뺤옣 (??洹몃윭硫??뺤옣 援ъ뿭?먯꽌 ?꾩씠 利됱떆 ?щ씪吏?
                     {
@@ -2066,6 +2083,16 @@ int main() {
                                         g_Bullets, pullX, pullY);
                 }
 
+                // LAG.exe 업데이트 (텔레포트-스타터 + 시간왜곡 포켓 + 2페이즈 버퍼오버플로우)
+                if (!timeStopped && g_LagBoss && g_LagBoss->alive) {
+                    g_LagBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
+                    if (g_LagBoss->shakePulse) {
+                        g_LagBoss->shakePulse = false;
+                        g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
+                        TriggerHitStop(0.05f);
+                    }
+                }
+
                 if (!timeStopped && g_UnknownBoss && g_UnknownBoss->alive) {
                     g_UnknownBoss->Update(pCX, pCY,
                                           playerWin.x, playerWin.y,
@@ -2106,6 +2133,13 @@ int main() {
                                 glm::vec3(0.25f, 0.95f, 0.45f));
                     }
                 } else g_BotnetWasP2 = false;
+                if (g_LagBoss && g_LagBoss->alive) {
+                    if (g_LagBoss->phase2 && !g_LagWasP2) {
+                        g_LagWasP2 = true;
+                        p2enter(g_LagBoss->worldX, g_LagBoss->worldY,
+                                glm::vec3(0.95f, 0.25f, 0.35f));
+                    }
+                } else g_LagWasP2 = false;
 
                 // 異⑸룎 (諛섑솚媛?= ?뚮젅?댁뼱媛 ?대쾲 ?꾨젅???쇨꺽?먮뒗吏)
                 bool hit = CollisionSystem::Update(pCX, pCY,
@@ -2362,6 +2396,29 @@ int main() {
                     }
                 }
 
+                if (g_LagBoss && g_LagBoss->alive) {
+                    auto* lb = g_LagBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (SegDist(lb->worldX, lb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < LagBoss::BODY) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(lb->worldX, lb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg *= lb->statDamageMult();
+                            float dealt = (dmg < lb->hp) ? dmg : lb->hp;
+                            lb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (lb->hp <= 0.0f) lb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
                 // ?대━紐⑦봽 蹂댁뒪 vs ?뚮젅?댁뼱 珥앹븣 (李⑦겕??/ 蹂몄껜 諛섏궗쨌諛⑹뼱留?/ ?몃え EXP)
                 if (g_PolyBoss && g_PolyBoss->alive) {
                     auto* pb = g_PolyBoss;
@@ -2595,6 +2652,26 @@ int main() {
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     g_Bullets.clear();
                     FinishBossKill(g_MonsterManager, 9, 35, screenWidth, screenHeight);
+                }
+
+                // LAG.exe 처치 보상
+                if (g_LagBoss && !g_LagBoss->alive && !g_LagBoss->exploded) {
+                    auto* lb = g_LagBoss;
+                    SpawnEnemyExplosion(lb->worldX, lb->worldY, 0.95f, 0.25f, 0.35f, true);
+                    SpawnEnemyExplosion(lb->worldX, lb->worldY, 0.35f, 0.85f, 1.0f, true);
+                    SpawnShockWave(lb->worldX, lb->worldY, 460.0f, 0.85f, 0.95f, 0.3f, 0.5f);
+                    g_ShakeTime = 0.6f; g_ShakeMag = 26.0f;
+                    TriggerFlash(1.0f, 0.3f, 0.5f, 0.65f); TriggerHitStop(0.12f);
+                    lb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete lb;
+                    g_LagBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    g_Bullets.clear();
+                    FinishBossKill(g_MonsterManager, 10, 35, screenWidth, screenHeight);
                 }
 
                 if (g_UnknownBoss && !g_UnknownBoss->alive && !g_UnknownBoss->exploded) {
@@ -2889,7 +2966,7 @@ int main() {
             if (intensity > act.intensityCap) intensity = act.intensityCap;
             float rampSpawn = (1.0f + intensity * 0.40f) * act.spawnMult;
             float rampSpd   = (1.0f + intensity * 0.09f) * act.speedMult;
-            bool  bossNow = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss || g_UnknownBoss ||
+            bool  bossNow = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss || g_LagBoss || g_UnknownBoss ||
                             g_BossWarnTimer > 0.0f;
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
@@ -2921,6 +2998,7 @@ int main() {
                 if (g_BotnetBoss && g_BotnetBoss->alive) return true;
                 if (g_CentiBoss && g_CentiBoss->alive) return true;
                 if (g_TotemBoss && g_TotemBoss->alive) return true;
+                if (g_LagBoss && g_LagBoss->alive) return true;
                 if (g_UnknownBoss && g_UnknownBoss->alive) return true;
                 return false;
             };
@@ -3026,7 +3104,7 @@ int main() {
             // 蹂댁뒪 ?ㅽ룿 ???쇰컲 蹂댁뒪 20留뚯젏留덈떎 / ?대━紐⑦봽 50留뚯젏 怨좎젙.
             //   (?대뼡 蹂댁뒪???댁븘?덉쑝硫??湲?= ?숈떆 ?ㅽ룿 諛⑹?)
             {
-                bool bossActive = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss || g_UnknownBoss ||
+                bool bossActive = g_RRBoss || g_PolyBoss || g_BotnetBoss || g_CentiBoss || g_TotemBoss || g_LagBoss || g_UnknownBoss ||
                                   g_BossWarnTimer > 0.0f;
                 // ?쇱슫?? ??蹂댁뒪 ?덈뜦??李⑤떒: 蹂댁뒪瑜??≪븘 ?꾩쟾???뺣━?섎뒗 ?쒓컙(?쒖꽦?믩퉬?쒖꽦),
                 //   ?ㅼ쓬 蹂댁뒪 ?꾧퀎媛믪쓣 ?꾩옱 ?먯닔+20留뚯쑝濡?由щ쿋?댁뒪 ??理쒖냼 20留뚯젏 ?댁떇 蹂댁옣
@@ -3152,6 +3230,10 @@ int main() {
                         case 9:
                             g_TotemBoss = new TotemBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_TotemBoss->worldX = bsx; g_TotemBoss->worldY = bsy;
+                            break;
+                        case 10:
+                            g_LagBoss = new LagBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_LagBoss->worldX = bsx; g_LagBoss->worldY = bsy;
                             break;
                         default:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -4144,6 +4226,9 @@ int main() {
         if (g_TotemBoss && g_TotemBoss->alive)
             addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
                  L"ADUN.relay", 0.07f,0.06f,0.10f, 0.58f,0.5f,1.0f);
+        if (g_LagBoss && g_LagBoss->alive)
+            addW(g_LagBoss->worldX, g_LagBoss->worldY, LAG_WIN_W, LAG_WIN_W,
+                 L"LAG.exe", 0.06f,0.03f,0.05f, 0.95f,0.3f,0.4f);
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
@@ -4334,6 +4419,9 @@ int main() {
         if (g_TotemBoss && g_TotemBoss->alive)
             drawBossWinContent(g_TotemBoss->worldX - TOTEM_WIN_W * 0.5f,
                                g_TotemBoss->worldY - TOTEM_WIN_W * 0.5f, TOTEM_WIN_W, TOTEM_WIN_W);
+        if (g_LagBoss && g_LagBoss->alive)
+            drawBossWinContent(g_LagBoss->worldX - LAG_WIN_W * 0.5f,
+                               g_LagBoss->worldY - LAG_WIN_W * 0.5f, LAG_WIN_W, LAG_WIN_W);
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             drawBossWinContent(g_UnknownBoss->worldX - UNKNOWN_WIN_W * 0.5f,
                                g_UnknownBoss->worldY - UNKNOWN_WIN_H * 0.5f,
@@ -4925,6 +5013,31 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
+        if (g_LagBoss && g_LagBoss->alive) {
+            auto* lb = g_LagBoss;
+            float gt = (float)glfwGetTime();
+            // 본체는 보스 소유 창에서만 (창 클리핑 규칙)
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            WorldScissor(lb->worldX - LAG_WIN_W * 0.5f, lb->worldY - LAG_WIN_W * 0.5f,
+                         LAG_WIN_W, LAG_WIN_W);
+            lb->renderCore(gt);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            // 고스트 잔상/시간왜곡 포켓은 플레이어 인근에도 떠서 모든 창에 걸쳐 렌더
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            auto lagPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                lb->renderPocketsInWin(wx, wy, ww, wh);
+                lb->renderGhostsInWin(wx, wy, ww, wh);
+            };
+            for (auto& fw : zwins) lagPass(fw.x, fw.y, fw.w, fw.h);
+            lagPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            if (g_Stats.turretMode)
+                for (auto& tr : g_Turrets)
+                    lagPass(tr.x - TURRET_WIN_W * 0.5f, tr.y - TURRET_WIN_H * 0.5f,
+                              TURRET_WIN_W, TURRET_WIN_H);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
+
         // (g5) ?대━紐⑦봽 蹂댁뒪 ??留덉빱/?몃え/?덉씠?/李⑦겕??蹂몄껜/HP
         if (g_PolyBoss && g_PolyBoss->alive) {
             auto* pb = g_PolyBoss;
@@ -5153,6 +5266,8 @@ int main() {
                 bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 0.95f); }
             else if (g_TotemBoss && g_TotemBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 1.0f); }
+            else if (g_LagBoss && g_LagBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.95f, 0.25f, 0.35f); }
             else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.95f, 0.28f, 0.58f); }
             if (bossAlive) {
@@ -5190,6 +5305,9 @@ int main() {
             } else if (g_TotemBoss && g_TotemBoss->alive) {
                 bn = L"ADUN.relay";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
                 bc = glm::vec3(0.58f, 0.5f, 1.0f);
+            } else if (g_LagBoss && g_LagBoss->alive) {
+                bn = L"LAG.exe";  bhf = g_LagBoss->hp / g_LagBoss->maxHp;
+                bc = glm::vec3(0.95f, 0.25f, 0.35f);
             } else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bn = UnknownBoss::BOSS_NAME; bhf = g_UnknownBoss->hp / g_UnknownBoss->maxHp;
                 bc = glm::vec3(0.95f, 0.28f, 0.58f);
@@ -5201,6 +5319,7 @@ int main() {
                 else if (bn == L"C2_RELAY.sys")  bossPick = 7;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
                 else if (bn == L"ADUN.relay")   bossPick = 9;
+                else if (bn == L"LAG.exe")      bossPick = 10;
                 else if (bn == UnknownBoss::BOSS_NAME) bossPick = 1;
             }
             GameState st = g_GameManager.currentState;
@@ -5275,6 +5394,17 @@ int main() {
                     float tw = g_TextS.Width(totBuf, ts);
                     g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
                                  0.58f, 0.5f, 1.0f, 0.85f);
+                }
+                if (g_LagBoss && g_LagBoss->alive) {
+                    wchar_t lagBuf[80];
+                    swprintf_s(lagBuf, L"POCKET %d · %ls %.1fs",
+                               g_LagBoss->pocketCount(),
+                               g_LagBoss->bofLabel(), g_LagBoss->bofDisplayCd());
+                    float ls = 0.55f;
+                    float lw = g_TextS.Width(lagBuf, ls);
+                    bool lagHot = g_LagBoss->frozen();
+                    g_TextS.Draw(lagBuf, bx + bw - lw - 8.0f, by - 48.0f, ls,
+                                 lagHot ? 1.0f : 0.95f, lagHot ? 0.3f : 0.25f, lagHot ? 0.5f : 0.35f, 0.85f);
                 }
                 if (g_UnknownBoss && g_UnknownBoss->alive) {
                     wchar_t ubBuf[64];
@@ -5399,6 +5529,21 @@ int main() {
                     drawDiamond(ix, iy, 7.0f + pulse * 2.0f, 1.0f, 0.85f, 1.0f, 0.4f + 0.3f * blink);
                 }
                 drawCircle(cx, cy, 6.0f + pulse * 3.0f, wc.r, wc.g, wc.b, 0.3f + pulse * 0.3f);
+            } break;
+            case 10: {  // LAG.exe — 잔상 스터터 + 글리치 스캔라인
+                float cx = sw2 * 0.5f, cy = sh2 * 0.5f;
+                for (int i = 0; i < 5; i++) {
+                    float jit = (float)((rand() % 60) - 30);
+                    float ly = fmodf(t * 240.0f + (float)i * 130.0f, sh2);
+                    drawRect(0, ly, sw2, 2.0f + (float)(i % 2), wc.r, wc.g, wc.b, 0.08f + 0.10f * prog);
+                    (void)jit;
+                }
+                for (int i = 0; i < 4; i++) {
+                    float off = (float)(i - 2) * (6.0f + prog * 10.0f);
+                    drawDiamond(cx + off, cy, 26.0f - (float)i * 2.0f,
+                                wc.r, wc.g, wc.b, (0.5f - (float)i * 0.1f) * (0.6f + 0.4f * blink));
+                }
+                drawCircle(cx, cy, 60.0f + prog * 40.0f, wc.r, wc.g, wc.b, 0.05f + 0.05f * blink);
             } break;
             default: break;
             }

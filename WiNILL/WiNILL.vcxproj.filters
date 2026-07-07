@@ -156,6 +156,9 @@
     <ClInclude Include="Entity\Boss\CentipedeBoss.h">
       <Filter>Entity\Boss</Filter>
     </ClInclude>
+    <ClInclude Include="Entity\Boss\LagBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
     <ClInclude Include="Entity\Boss\TotemBoss.h">
       <Filter>Entity\Boss</Filter>
     </ClInclude>

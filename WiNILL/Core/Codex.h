@@ -162,18 +162,18 @@ inline const wchar_t* MobDesc(int id) {
 // CodexMobId(0..8) → MobKind (프리뷰 렌더용)
 inline MobKind CodexMobKind(int id) { return (MobKind)id; }
 
-// ── 보스 도감 (LTS pick: 2,7,8,9 — 1·4 크리에이티브 전용) ──
+// ── 보스 도감 (활성 로스터: 2,8,10 — 나머지는 크리에이티브 전용/미참전) ──
 #include "BossDirector.h"
 
-inline bool g_BossSeenPick[10] = { false };
+inline bool g_BossSeenPick[11] = { false };
 
 inline void MarkBossSeenPick(int pick) {
-    if (pick < 0 || pick > 9) return;
+    if (pick < 0 || pick > 10) return;
     if (!g_BossSeenPick[pick]) { g_BossSeenPick[pick] = true; g_CodexDirty = true; }
 }
 
-inline const int BOSS_CODEX_PICKS[] = { 2, 8 };
-inline const int BOSS_CODEX_COUNT = 2;
+inline const int BOSS_CODEX_PICKS[] = { 2, 8, 10 };
+inline const int BOSS_CODEX_COUNT = 3;
 
 inline bool BossCodexSeen(int idx) {
     if (CodexFullReveal() && idx >= 0 && idx < BOSS_CODEX_COUNT) return true;
