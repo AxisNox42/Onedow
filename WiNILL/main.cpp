@@ -143,7 +143,7 @@ float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
-float TOTEM_WIN_W = 720.0f;    // RITE.CORE: 코어 + 기둥 의식 공간
+float TOTEM_WIN_W = 640.0f;    // HANGAR.sys: 격납고 + 조립 라인
 float UNKNOWN_WIN_W = 500.0f;  // UNKNOWN.sys: 창연 검 보스
 float UNKNOWN_WIN_H = 580.0f;
 // 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
@@ -613,7 +613,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     case 4: StartBossWarn(4, L"GLITCH.exe",   polyHpC);         break;
     case 7: StartBossWarn(7, L"C2_RELAY.sys", bossHpC * 0.75f); break;
     case 8: StartBossWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
-    case 9: StartBossWarn(9, L"RITE.CORE",     bossHpC * 0.72f); break;
+    case 9: StartBossWarn(9, L"HANGAR.sys",     bossHpC * 0.72f); break;
     default: StartBossWarn(2, L"VOLLEY.sys",   bossHpC);         break;
     }
 }
@@ -898,11 +898,10 @@ int main() {
             for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
         }
         if (g_TotemBoss && g_TotemBoss->alive) {
-            if (g_TotemBoss->vulnerable())
-                consider(g_TotemBoss->worldX, g_TotemBoss->worldY);
-            for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
-                auto& tt = g_TotemBoss->totems[ti];
-                if (tt.alive) consider(tt.x, tt.y);
+            consider(g_TotemBoss->worldX, g_TotemBoss->worldY);
+            for (int ti = 0; ti < TotemBoss::N_BAY; ti++) {
+                auto& bb = g_TotemBoss->bays[ti];
+                if (bb.alive) consider(bb.x, bb.y);
             }
         }
         if (g_UnknownBoss && g_UnknownBoss->alive)
@@ -1204,7 +1203,7 @@ int main() {
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"GLITCH.exe");
                     if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
-                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"RITE.CORE");
+                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"HANGAR.sys");
                     if (g_UnknownBoss && g_UnknownBoss->alive) consider(g_UnknownBoss->worldX, g_UnknownBoss->worldY, L"UNKNOWN.sys");
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
@@ -1720,13 +1719,13 @@ int main() {
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) { float dx=g_PolyBoss->worldX-cx,dy=g_PolyBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_PolyBoss->hp-=dmg; if(g_PolyBoss->hp<=0)g_PolyBoss->alive=false;} }
                     if (g_BotnetBoss && g_BotnetBoss->alive) { float dx=g_BotnetBoss->worldX-cx,dy=g_BotnetBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_BotnetBoss->hp-=dmg; if(g_BotnetBoss->hp<=0)g_BotnetBoss->alive=false;} }
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) { float dx=g_CentiBoss->worldX-cx,dy=g_CentiBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_CentiBoss->hp-=dmg; if(g_CentiBoss->hp<=0)g_CentiBoss->alive=false;} }
-                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) { float dx=g_TotemBoss->worldX-cx,dy=g_TotemBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TotemBoss->hp-=dmg; if(g_TotemBoss->hp<=0)g_TotemBoss->alive=false;} }
+                    if (g_TotemBoss && g_TotemBoss->alive) { float dx=g_TotemBoss->worldX-cx,dy=g_TotemBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TotemBoss->hp-=dmg; if(g_TotemBoss->hp<=0)g_TotemBoss->alive=false;} }
                     if (g_UnknownBoss && g_UnknownBoss->alive) { float dx=g_UnknownBoss->worldX-cx,dy=g_UnknownBoss->worldY-cy; if(dx*dx+dy*dy<r2){float ud=dmg*g_UnknownBoss->damageTakenMult(); g_UnknownBoss->hp-=ud; if(g_UnknownBoss->hp<=0)g_UnknownBoss->alive=false;} }
-                    for (int ti = 0; g_TotemBoss && g_TotemBoss->alive && ti < TotemBoss::N_TOTEM; ti++) {
-                        auto& tt = g_TotemBoss->totems[ti];
-                        if (!tt.alive) continue;
-                        float dx = tt.x - cx, dy = tt.y - cy;
-                        if (dx*dx + dy*dy < r2) { tt.hp -= dmg; if (tt.hp <= 0) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); } }
+                    for (int ti = 0; g_TotemBoss && g_TotemBoss->alive && ti < TotemBoss::N_BAY; ti++) {
+                        auto& bb = g_TotemBoss->bays[ti];
+                        if (!bb.alive) continue;
+                        float dx = bb.x - cx, dy = bb.y - cy;
+                        if (dx*dx + dy*dy < r2) { bb.hp -= dmg; if (bb.hp <= 0) { bb.alive = false; g_TotemBoss->onBayDestroyed(ti); } }
                     }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
@@ -2050,26 +2049,25 @@ int main() {
                     }
                 }
 
-                // TOTEM.sys 업데이트 (토템 루틴 + 시간정지 공격)
+                // HANGAR.sys 업데이트 (2초 조립 + 격납고 스킬)
                 if (!timeStopped && g_TotemBoss && g_TotemBoss->alive) {
                     float pullX = 0.0f, pullY = 0.0f;
                     g_TotemBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
                                         g_Bullets, pullX, pullY);
-                    if (pullX != 0.0f || pullY != 0.0f) {
-                        pCX += pullX; pCY += pullY;
-                        if (pCX < ccX - halfW) pCX = ccX - halfW;
-                        if (pCX > ccX + halfW) pCX = ccX + halfW;
-                        if (pCY < ccY - halfH) pCY = ccY - halfH;
-                        if (pCY > bottomLimit) pCY = bottomLimit;
-                        playerWin.x = pCX - playerWin.width * 0.5f;
-                        playerWin.y = pCY - playerWin.height * 0.5f;
-                    }
                     for (auto& sp : g_TotemBoss->mobSpawnQueue) {
                         if ((int)g_MonsterManager.monsters.size() >= 40) break;
-                        Monster* nm = new Monster(sp.first, sp.second,
-                                                  g_Stats.monsterHpMult * 0.55f,
-                                                  0.85f, true);
-                        nm->color = glm::vec3(0.5f, 0.92f, 0.42f);
+                        Monster* nm = new Monster(sp.x, sp.y,
+                                                  g_Stats.monsterHpMult * sp.hpMul,
+                                                  sp.spdMul, true);
+                        nm->MakeKind(sp.kind, 0, sp.scale);
+                        bool ranged = (sp.kind == MobKind::DDOS || sp.kind == MobKind::WEAVER ||
+                                       sp.kind == MobKind::ORBITER || sp.kind == MobKind::SPAWNER ||
+                                       sp.kind == MobKind::BLINKER);
+                        float tr = 0.55f + (float)sp.tier * 0.08f;
+                        if (ranged)
+                            nm->color = glm::vec3(0.35f * tr + 0.2f, 0.72f * tr, 1.0f * tr);
+                        else
+                            nm->color = glm::vec3(1.0f * tr, 0.62f * tr, 0.18f * tr);
                         g_MonsterManager.monsters.push_back(nm);
                     }
                     g_TotemBoss->mobSpawnQueue.clear();
@@ -2337,18 +2335,18 @@ int main() {
                             return dmg * tb->statDamageMult();
                         };
                         bool consumed = false;
-                        for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
-                            auto& tt = tb->totems[ti];
-                            if (!tt.alive) continue;
-                            if (SegDist(tt.x, tt.y, b.prevX, b.prevY, b.x, b.y) < TotemBoss::TOTEM_HIT) {
-                                float dmg = dmgAt(tt.x, tt.y);
-                                float dealt = (dmg < tt.hp) ? dmg : tt.hp;
-                                tt.hp -= dealt;
-                                tb->onTotemDamaged(ti);
+                        for (int ti = 0; ti < TotemBoss::N_BAY; ti++) {
+                            auto& bb = tb->bays[ti];
+                            if (!bb.alive) continue;
+                            if (SegDist(bb.x, bb.y, b.prevX, b.prevY, b.x, b.y) < TotemBoss::BAY_HIT) {
+                                float dmg = dmgAt(bb.x, bb.y);
+                                float dealt = (dmg < bb.hp) ? dmg : bb.hp;
+                                bb.hp -= dealt;
+                                tb->onBayDamaged(ti);
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                                if (tt.hp <= 0.0f) {
-                                    tt.alive = false;
-                                    tb->onTotemKilled(ti);
+                                if (bb.hp <= 0.0f) {
+                                    bb.alive = false;
+                                    tb->onBayDestroyed(ti);
                                     AddKillCombo();
                                     g_GameManager.scoreAccum += 120.0f;
                                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -2358,25 +2356,14 @@ int main() {
                             }
                         }
                         if (consumed || !b.active) continue;
-                        if (tb->expanding() && tb->expandShield > 0.0f) {
-                            float rr = TotemBoss::BODY * (1.4f + tb->expandPull * 2.2f);
-                            if (SegDist(tb->worldX, tb->worldY, b.prevX, b.prevY, b.x, b.y) < rr) {
-                                float dmg = dmgAt(tb->worldX, tb->worldY);
-                                tb->damageExpandShield(dmg);
-                                b.active = false;
-                                continue;
-                            }
-                        }
-                        if (tb->vulnerable()) {
-                            if (SegDist(tb->worldX, tb->worldY,
-                                        b.prevX, b.prevY, b.x, b.y) < TotemBoss::BODY) {
-                                float dmg = dmgAt(tb->worldX, tb->worldY);
-                                float dealt = (dmg < tb->hp) ? dmg : tb->hp;
-                                tb->hp -= dealt;
-                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                                if (tb->hp <= 0.0f) tb->alive = false;
-                                if (b.remainingDmg <= 0.001f) b.active = false;
-                            }
+                        if (SegDist(tb->worldX, tb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < TotemBoss::BODY) {
+                            float dmg = dmgAt(tb->worldX, tb->worldY);
+                            float dealt = (dmg < tb->hp) ? dmg : tb->hp;
+                            tb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (tb->hp <= 0.0f) tb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
                         }
                     }
                 }
@@ -2599,11 +2586,11 @@ int main() {
                 // TOTEM.sys 처치 보상
                 if (g_TotemBoss && !g_TotemBoss->alive && !g_TotemBoss->exploded) {
                     auto* tb = g_TotemBoss;
-                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.85f, 0.35f, 1.0f, true);
-                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.5f, 0.95f, true);
-                    SpawnShockWave(tb->worldX, tb->worldY, 440.0f, 0.85f, 0.4f, 0.95f, 1.0f);
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.95f, 0.62f, 0.18f, true);
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 1.0f, 0.78f, 0.28f, true);
+                    SpawnShockWave(tb->worldX, tb->worldY, 440.0f, 0.85f, 0.95f, 0.55f, 0.18f);
                     g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
-                    TriggerFlash(0.8f, 0.4f, 1.0f, 0.6f); TriggerHitStop(0.11f);
+                    TriggerFlash(0.95f, 0.62f, 0.18f, 0.6f); TriggerHitStop(0.11f);
                     tb->exploded = true;
                     g_GameManager.scoreAccum += 20000.0f;
                     g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -3171,6 +3158,7 @@ int main() {
                         case 9:
                             g_TotemBoss = new TotemBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_TotemBoss->worldX = bsx; g_TotemBoss->worldY = bsy;
+                            g_TotemBoss->repositionBays();
                             break;
                         default:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -3690,17 +3678,17 @@ int main() {
                     hitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
                     hitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
-                if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
+                if (g_TotemBoss && g_TotemBoss->alive)
                     hitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
                 if (g_UnknownBoss && g_UnknownBoss->alive)
                     hitB(g_UnknownBoss->worldX, g_UnknownBoss->worldY, g_UnknownBoss->hp, g_UnknownBoss->alive);
                 if (g_TotemBoss && g_TotemBoss->alive) {
-                    for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
-                        auto& tt = g_TotemBoss->totems[ti];
-                        if (!tt.alive || !inCone(tt.x, tt.y)) continue;
-                        tt.hp -= dmg;
-                        g_TotemBoss->onTotemDamaged(ti);
-                        if (tt.hp <= 0.0f) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); }
+                    for (int ti = 0; ti < TotemBoss::N_BAY; ti++) {
+                        auto& bb = g_TotemBoss->bays[ti];
+                        if (!bb.alive || !inCone(bb.x, bb.y)) continue;
+                        bb.hp -= dmg;
+                        g_TotemBoss->onBayDamaged(ti);
+                        if (bb.hp <= 0.0f) { bb.alive = false; g_TotemBoss->onBayDestroyed(ti); }
                     }
                 }
                 SpawnSlash(pCX, pCY, ang, range);
@@ -3821,7 +3809,7 @@ int main() {
                         lhitB(g_BotnetBoss->worldX, g_BotnetBoss->worldY, g_BotnetBoss->hp, g_BotnetBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
                         lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
-                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable())
+                    if (g_TotemBoss && g_TotemBoss->alive)
                         lhitB(g_TotemBoss->worldX, g_TotemBoss->worldY, g_TotemBoss->hp, g_TotemBoss->alive);
                     if (g_UnknownBoss && g_UnknownBoss->alive)
                         lhitB(g_UnknownBoss->worldX, g_UnknownBoss->worldY, g_UnknownBoss->hp, g_UnknownBoss->alive);
@@ -3895,17 +3883,17 @@ int main() {
                     if (g_PolyBoss && g_PolyBoss->alive && g_PolyBoss->damageable()) nhitB(g_PolyBoss->worldX,g_PolyBoss->worldY,g_PolyBoss->hp,g_PolyBoss->alive);
                     if (g_BotnetBoss && g_BotnetBoss->alive) nhitB(g_BotnetBoss->worldX,g_BotnetBoss->worldY,g_BotnetBoss->hp,g_BotnetBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) nhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
-                    if (g_TotemBoss && g_TotemBoss->alive && g_TotemBoss->vulnerable()) nhitB(g_TotemBoss->worldX,g_TotemBoss->worldY,g_TotemBoss->hp,g_TotemBoss->alive);
+                    if (g_TotemBoss && g_TotemBoss->alive) nhitB(g_TotemBoss->worldX,g_TotemBoss->worldY,g_TotemBoss->hp,g_TotemBoss->alive);
                     if (g_UnknownBoss && g_UnknownBoss->alive) nhitB(g_UnknownBoss->worldX,g_UnknownBoss->worldY,g_UnknownBoss->hp,g_UnknownBoss->alive);
                     if (g_TotemBoss && g_TotemBoss->alive) {
-                        for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
-                            auto& tt = g_TotemBoss->totems[ti];
-                            if (!tt.alive) continue;
-                            float dx = tt.x - pCX, dy = tt.y - pCY;
+                        for (int ti = 0; ti < TotemBoss::N_BAY; ti++) {
+                            auto& bb = g_TotemBoss->bays[ti];
+                            if (!bb.alive) continue;
+                            float dx = bb.x - pCX, dy = bb.y - pCY;
                             if (dx*dx + dy*dy < r2) {
-                                tt.hp -= dmg;
-                                g_TotemBoss->onTotemDamaged(ti);
-                                if (tt.hp <= 0.0f) { tt.alive = false; g_TotemBoss->onTotemKilled(ti); }
+                                bb.hp -= dmg;
+                                g_TotemBoss->onBayDamaged(ti);
+                                if (bb.hp <= 0.0f) { bb.alive = false; g_TotemBoss->onBayDestroyed(ti); }
                             }
                         }
                     }
@@ -4162,7 +4150,7 @@ int main() {
                  CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f);
         if (g_TotemBoss && g_TotemBoss->alive)
             addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
-                 L"RITE.CORE", 0.08f,0.04f,0.10f, 0.85f,0.45f,0.95f);
+                 L"HANGAR.sys", 0.10f,0.07f,0.04f, 0.95f,0.62f,0.18f);
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
@@ -4388,33 +4376,6 @@ int main() {
                 BatchFlush(); glDisable(GL_SCISSOR_TEST);
                 g_CentiBoss->drawMini(mb);
                 BatchFlush();
-            }
-        }
-
-        if (g_TotemBoss && g_TotemBoss->alive) {
-            const float TW = TotemBoss::WIN_W * g_Scale, TH = TotemBoss::WIN_H * g_Scale;
-            const float TTB = TotemBoss::WIN_TB * g_Scale;
-            struct TotemPtr { TotemBoss::Totem* p; };
-            std::vector<TotemPtr> ord;
-            for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++)
-                if (g_TotemBoss->totems[ti].alive) ord.push_back({ &g_TotemBoss->totems[ti] });
-            std::sort(ord.begin(), ord.end(),
-                      [](TotemPtr a, TotemPtr b) { return a.p->y < b.p->y; });
-            float gtTot = (float)glfwGetTime();
-            for (auto& tp : ord) {
-                auto& tt = *tp.p;
-                float wx = tt.x - TW * 0.5f, wy = tt.y - TH * 0.5f;
-                DrawAppWindow(wx, wy, TW, TH,
-                              TotemBoss::totemWinTitle(tt.kind), TTB);
-                BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                WorldScissor(wx, wy, TW, TH);
-                for (auto& b : g_Bullets)
-                    if (b.active && inWin(b.x, b.y, wx, wy, TW, TH)) drawBullet(b);
-                for (auto m : g_MonsterManager.monsters)
-                    if (m->alive && m->kind != MobKind::DDOS &&
-                        inWin(m->worldX, m->worldY, wx, wy, TW, TH)) drawMob(m);
-                g_TotemBoss->renderTotem(tt, gtTot);
-                BatchFlush(); glDisable(GL_SCISSOR_TEST);
             }
         }
 
@@ -4955,21 +4916,11 @@ int main() {
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             auto totemPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
-                tb->renderOrbitGuide(gt);
-                tb->renderRiteWeb(gt);
-                tb->renderLinks(gt);
                 tb->renderCore(gt);
-                tb->renderLaser();
-                for (int ti = 0; ti < TotemBoss::N_TOTEM; ti++) {
-                    auto& tt = tb->totems[ti];
-                    if (!tt.alive) continue;
-                    float tx0 = tt.x - TotemBoss::WIN_W * g_Scale * 0.5f;
-                    float ty0 = tt.y - TotemBoss::WIN_H * g_Scale * 0.5f;
-                    float tww = TotemBoss::WIN_W * g_Scale;
-                    float thh = TotemBoss::WIN_H * g_Scale;
-                    if (tx0 + tww < wx || tx0 > wx + ww ||
-                        ty0 + thh < wy || ty0 > wy + wh) continue;
-                    tb->renderTotem(tt, gt);
+                for (int ti = 0; ti < TotemBoss::N_BAY; ti++) {
+                    auto& bb = tb->bays[ti];
+                    if (!bb.alive) continue;
+                    tb->renderBay(bb, gt);
                 }
             };
             for (auto& fw : zwins) totemPass(fw.x, fw.y, fw.w, fw.h);
@@ -5208,7 +5159,7 @@ int main() {
             else if (g_CentiBoss && g_CentiBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 0.95f); }
             else if (g_TotemBoss && g_TotemBoss->alive) {
-                bossAlive = true; tc = glm::vec3(0.85f, 0.45f, 0.95f); }
+                bossAlive = true; tc = glm::vec3(0.95f, 0.62f, 0.18f); }
             else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.95f, 0.28f, 0.58f); }
             if (bossAlive) {
@@ -5244,8 +5195,8 @@ int main() {
                 bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
                 bc = glm::vec3(0.35f, 0.88f, 0.95f);
             } else if (g_TotemBoss && g_TotemBoss->alive) {
-                bn = L"RITE.CORE";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
-                bc = glm::vec3(0.85f, 0.45f, 0.95f);
+                bn = L"HANGAR.sys";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
+                bc = glm::vec3(0.95f, 0.62f, 0.18f);
             } else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bn = UnknownBoss::BOSS_NAME; bhf = g_UnknownBoss->hp / g_UnknownBoss->maxHp;
                 bc = glm::vec3(0.95f, 0.28f, 0.58f);
@@ -5256,7 +5207,7 @@ int main() {
                 else if (bn == L"GLITCH.exe") bossPick = 4;
                 else if (bn == L"C2_RELAY.sys")  bossPick = 7;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
-                else if (bn == L"RITE.CORE")     bossPick = 9;
+                else if (bn == L"HANGAR.sys")     bossPick = 9;
                 else if (bn == UnknownBoss::BOSS_NAME) bossPick = 1;
             }
             GameState st = g_GameManager.currentState;
@@ -5316,15 +5267,15 @@ int main() {
                                  1.0f, 0.55f, 0.2f, 0.85f);
                 }
                 if (g_TotemBoss && g_TotemBoss->alive) {
-                    wchar_t totBuf[64];
-                    if (g_TotemBoss->vulnerable())
-                        swprintf_s(totBuf, L"RITE DOWN %.0fs", g_TotemBoss->vulnTimer);
-                    else
-                        swprintf_s(totBuf, L"W%d 쨌 %d/4", g_TotemBoss->wave, g_TotemBoss->aliveTotems());
+                    wchar_t totBuf[72];
+                    swprintf_s(totBuf, L"ASM T%d · BAY %d/3 · %.1fs",
+                               g_TotemBoss->maxCraftTier(),
+                               g_TotemBoss->aliveBays(),
+                               g_TotemBoss->craftTimer);
                     float ts = 0.55f;
                     float tw = g_TextS.Width(totBuf, ts);
                     g_TextS.Draw(totBuf, bx + bw - tw - 8.0f, by - 48.0f, ts,
-                                 0.85f, 0.45f, 0.95f, 0.85f);
+                                 0.95f, 0.62f, 0.18f, 0.85f);
                 }
                 if (g_UnknownBoss && g_UnknownBoss->alive) {
                     wchar_t ubBuf[64];
@@ -5428,31 +5379,31 @@ int main() {
                                0.35f, 0.85f, 0.25f, 0.2f + 0.15f * prog);
                 }
             } break;
-            case 9: {  // RITE ??沅ㅻ룄 留?+ 湲곕뫁 + ?↔컖 肄붿뼱
-                float cx = sw2 * 0.5f, cy = sh2 * 0.5f;
-                float R = (sw2 < sh2 ? sw2 : sh2) * 0.28f;
-                for (int i = 0; i < 16; i++) {
-                    if ((i & 1) == 0) continue;
-                    float a0 = (float)i / 16.0f * 6.283f + t * 0.4f;
-                    float a1 = (float)(i + 1) / 16.0f * 6.283f + t * 0.4f;
-                    float x0 = cx + cosf(a0) * R, y0 = cy + sinf(a0) * R * 0.85f;
-                    float x1 = cx + cosf(a1) * R, y1 = cy + sinf(a1) * R * 0.85f;
-                    drawRect((x0 + x1) * 0.5f - 2, (y0 + y1) * 0.5f - 2, 4, 4,
-                             wc.r, wc.g, wc.b, 0.12f + 0.15f * blink);
+            case 9: {  // HANGAR — 활주로 + 격납고 + 조립 베이
+                float cx = sw2 * 0.5f, cy = sh2 * 0.54f;
+                float rw = sw2 * 0.62f, rh = sh2 * 0.045f;
+                drawRect(cx - rw * 0.5f, cy + sh2 * 0.06f, rw, rh,
+                         0.12f, 0.10f, 0.08f, 0.35f + 0.25f * prog);
+                for (int d = -5; d <= 5; d++) {
+                    float dx = cx + (float)d * rw * 0.09f;
+                    float dash = fmodf(t * 2.8f + (float)d * 0.3f, 1.0f);
+                    drawRect(dx - 5.0f, cy + sh2 * 0.065f, 10.0f, rh * 0.55f,
+                             wc.r, wc.g, wc.b, 0.15f + dash * 0.35f * blink);
                 }
-                for (int c = 0; c < 4; c++) {
-                    float a = (float)c * 1.571f + t * 0.5f;
-                    float px = cx + cosf(a) * R, py = cy + sinf(a) * R * 0.85f;
-                    float th = 24.0f + 90.0f * prog;
-                    drawRect(px - 8.0f, py - th * 0.5f, 16.0f, th, wc.r, wc.g, wc.b,
-                             0.18f + 0.22f * blink);
+                float hw = sw2 * 0.22f, hh = sh2 * 0.18f;
+                drawRect(cx - hw, cy - hh * 0.35f, hw * 2.0f, hh,
+                         wc.r * 0.08f, wc.g * 0.06f, wc.b * 0.04f, 0.45f + 0.35f * prog);
+                drawRect(cx - hw * 0.85f, cy - hh * 0.15f, hw * 1.7f, hh * 0.72f,
+                         0.05f, 0.04f, 0.03f, 0.55f + 0.3f * prog);
+                for (int b = 0; b < 3; b++) {
+                    float bx = cx - hw * 0.55f + (float)b * hw * 0.55f;
+                    float lit = 0.25f + 0.55f * blink * (0.5f + 0.5f * sinf(t * 5.0f + (float)b));
+                    drawCircle(bx, cy + hh * 0.42f, 7.0f + prog * 4.0f, wc.r, wc.g, wc.b, lit);
+                    drawRect(bx - 6.0f, cy + hh * 0.12f, 12.0f, 18.0f + prog * 30.0f,
+                             wc.r * 0.4f, wc.g * 0.35f, wc.b * 0.2f, 0.2f + 0.25f * prog);
                 }
-                for (int i = 0; i < 6; i++) {
-                    float a = t * 1.2f + (float)i * 1.047f;
-                    float hx = cx + cosf(a) * (38.0f + prog * 22.0f);
-                    float hy = cy + sinf(a) * (38.0f + prog * 22.0f);
-                    drawTriangle(hx, hy, 10.0f, wc.r, wc.g, wc.b, 0.35f + 0.25f * blink);
-                }
+                drawTriangle(cx, cy - hh * 0.55f, 14.0f + prog * 8.0f,
+                             wc.r, wc.g, wc.b, 0.4f + 0.35f * blink);
             } break;
             default: break;
             }

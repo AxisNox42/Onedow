@@ -92,7 +92,7 @@ inline const wchar_t* DisplayName(int pick) {
     case 6: return L"FIREWALL.sys";
     case 7: return L"C2_RELAY.sys";
     case 8: return L"FORK.worm";
-    case 9: return L"RITE.CORE";
+    case 9: return L"HANGAR.sys";
     default: return L"UNKNOWN.sys";
     }
 }
@@ -122,7 +122,7 @@ inline glm::vec3 WarnColor(int pick) {
     case 6: return { 1.0f,  0.45f, 0.2f  };
     case 7: return { 0.25f, 0.92f, 0.48f };
     case 8: return { 0.35f, 0.88f, 0.95f };
-    case 9: return { 0.85f, 0.45f, 0.95f };
+    case 9: return { 0.95f, 0.62f, 0.18f };
     default: return { 0.6f, 0.25f, 1.0f };
     }
 }
@@ -138,7 +138,7 @@ inline const wchar_t* Tagline(int pick) {
         L"인바운드 차단 — 아웃바운드 허용",
         L"C2 터미널 — 맵 전역 Agent 교전",
         L"프로세스 포크 — 연쇄 분열",
-        L"기둥 의식 — Q/E/R 봉인 · 의식망",
+        L"격납고 조립 — HP↓ 고티어 · 2초 연성",
     };
     static const wchar_t* EN[10] = {
         L"Not responding — freeze then lag",
@@ -150,7 +150,7 @@ inline const wchar_t* Tagline(int pick) {
         L"Inbound blocked — outbound open",
         L"C2 terminal — zombie host relay",
         L"Fork bomb — chained child processes",
-        L"Pylon rite — skill bind · ritual web",
+        L"Hangar fab — lower HP unlocks tiers · 2s craft",
     };
     static const wchar_t* JP[10] = {
         L"応答なし — 停止後LAG",
@@ -162,7 +162,7 @@ inline const wchar_t* Tagline(int pick) {
         L"インバウンド遮断",
         L"C2端末 — ゾンビホスト中継",
         L"フォーク爆弾 — 子プロセス連鎖",
-        L"柱の儀式 — スキル封印 · 儀式網",
+        L"格納庫組立 — HP低下で高ティア · 2秒鍛成",
     };
     if (pick < 0 || pick > 9) return L"";
     int li = LangIndex();
