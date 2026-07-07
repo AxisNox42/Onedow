@@ -352,20 +352,14 @@ float g_WindowSizeCur = 0.0f;
 static float EffectivePlayerWinSize() {
     if (g_WindowSizeCur >= 64.0f) return g_WindowSizeCur;
     if (g_Stats.windowSize >= 64.0f) return g_Stats.windowSize;
-    return 400.0f * g_Scale;
+    return std::max(400.0f * g_Scale, 64.0f);
 }
 
-static void EnsurePlayerWindow(FakeWindow& pw) {
-    float sz = EffectivePlayerWinSize();
-    float cx = pw.x + pw.width * 0.5f;
-    float cy = pw.y + pw.height * 0.5f;
-    if (cx != cx || cy != cy) { cx = screenWidth * 0.5f; cy = screenHeight * 0.5f; }
-    if (pw.width < 64.0f || pw.height < 64.0f || pw.width != pw.width) {
-        pw.width = pw.height = sz;
-        pw.x = cx - sz * 0.5f;
-        pw.y = cy - sz * 0.5f;
-    }
+static float ClampPlayerWinSize(float sz) {
+    if (sz != sz || sz < 64.0f) sz = EffectivePlayerWinSize();
+    return sz;
 }
+
 float g_WinPrevHP     = -1.0f;    // 李?異뺤냼??HP 異붿쟻
 float g_HurtVignette  = 0.0f;     // ?쇨꺽 鍮④컙 鍮꾨꽕???붿뿬
 float g_HpBarPop      = 0.0f;     // ?곕굹鍮꾩떇 HP 寃뚯씠吏諛????쇨꺽 ???대떎媛 ?섏씠??珥?
@@ -376,6 +370,36 @@ float g_DashInvuln    = 0.0f;
 float g_PostPickGrace = 0.0f;      // C14: 利앷컯 ????吏㏃? ?좎삁(臾댁쟻+諛쒖궗?듭젣)濡?蹂듦? ?
 float g_TimeStopTimer = 0.0f;
 float g_HyperFocusTimer = 0.0f;
+
+void SyncPlayerWindowSize(FakeWindow& pw, float delta, bool animate) {
+    if (g_Stats.windowSize < 64.0f)
+        g_Stats.windowSize = std::max(400.0f * g_Scale, 64.0f);
+    float targetWin = g_Stats.windowSize *
+        ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
+    if (g_WindowSizeCur < 64.0f) g_WindowSizeCur = g_Stats.windowSize;
+    if (animate) {
+        float winStep = std::min(1.0f, delta * 5.5f);
+        g_WindowSizeCur += (targetWin - g_WindowSizeCur) * winStep;
+    } else {
+        g_WindowSizeCur = targetWin;
+    }
+    float pwSz = ClampPlayerWinSize(std::max(g_WindowSizeCur, 64.0f));
+    float cx = pw.x + pw.width * 0.5f;
+    float cy = pw.y + pw.height * 0.5f;
+    if (cx != cx || cy != cy || pw.width < 64.0f || pw.height < 64.0f ||
+        pw.width != pw.width || pw.height != pw.height) {
+        cx = (float)screenWidth  * 0.5f;
+        cy = (float)screenHeight * 0.5f;
+    }
+    pw.width = pw.height = pwSz;
+    pw.x = cx - pwSz * 0.5f;
+    pw.y = cy - pwSz * 0.5f;
+}
+
+static void EnsurePlayerWindow(FakeWindow& pw) {
+    SyncPlayerWindowSize(pw, 1.0f, false);
+}
+
 static constexpr float DASH_CD = 2.9f, DASH_DIST = 300.0f, DASH_INVULN = 0.20f;
 static constexpr float DASH_DUR  = 0.11f;
 static bool  g_DashActive = false;
@@ -469,12 +493,12 @@ wchar_t g_DeathReason[96] = {0};   // ?щ쭩 ?먯씤 ("?뗢뿃 ???섑빐 醫낅�
 static FakeWindow* s_PlayerWinRef = nullptr;
 
 static void InitChakramsFromStats() {
-    if (!g_Stats.chakram) return;
+    if (!g_Stats.chakram || g_Stats.chakramCount <= 0) return;
     for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
+        g_Chakrams[c].maxHp = 150.0f;
         if (!g_Chakrams[c].alive && g_Chakrams[c].respawnTimer <= 0) {
             g_Chakrams[c].alive        = true;
             g_Chakrams[c].hp           = 150.0f;
-            g_Chakrams[c].maxHp        = 150.0f;
             g_Chakrams[c].respawnTimer = 0.0f;
         }
         g_Chakrams[c].angle =
@@ -2098,6 +2122,14 @@ int main() {
                     g_GameManager.playerHP,
                     g_GameManager.scoreAccum, g_GameManager.score,
                     g_Stats, g_GameManager.xp);
+                if (g_Bullets.size() > 2800) {
+                    g_Bullets.erase(
+                        std::remove_if(g_Bullets.begin(), g_Bullets.end(),
+                            [](const Bullet& b){ return !b.active; }),
+                        g_Bullets.end());
+                    if (g_Bullets.size() > 2800)
+                        g_Bullets.erase(g_Bullets.begin() + 2800, g_Bullets.end());
+                }
                 // ???臾댁쟻 / 利앷컯???좎삁(C14) ???대쾲 ?ㅽ뀦?????쇳빐 臾댄슚 (?뚮났? ?좎?)
                 if ((g_DashInvuln > 0.0f || g_PostPickGrace > 0.0f) &&
                     g_GameManager.playerHP < hpAtStep)
@@ -2719,6 +2751,15 @@ int main() {
             if (g_FlashIntensity < 0.0f) g_FlashIntensity = 0.0f;
         }
 
+        {
+            GameState ws = g_GameManager.currentState;
+            if (ws == GameState::RUNNING || ws == GameState::PAUSED ||
+                ws == GameState::READY  || ws == GameState::AUG_SELECT ||
+                ws == GameState::DEBUFF_SELECT || ws == GameState::DYING) {
+                SyncPlayerWindowSize(playerWin, delta, ws == GameState::RUNNING);
+            }
+        }
+
         if (g_GameManager.currentState == GameState::RUNNING) {
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
@@ -2731,18 +2772,6 @@ int main() {
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
                 if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; }
                 g_WinPrevHP = g_GameManager.playerHP;
-                // 창 크기 — g_Stats.windowSize 기준, 초집중 시 +50% (부드럽게 보간)
-                {
-                    float targetWin = g_Stats.windowSize *
-                        ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
-                    if (g_WindowSizeCur < 64.0f) g_WindowSizeCur = g_Stats.windowSize;
-                    float winStep = std::min(1.0f, delta * 5.5f);
-                    g_WindowSizeCur += (targetWin - g_WindowSizeCur) * winStep;
-                }
-                float pwSz = std::max(g_WindowSizeCur, 64.0f);
-                playerWin.width = playerWin.height = pwSz;
-                playerWin.x = pCX - pwSz * 0.5f;
-                playerWin.y = pCY - pwSz * 0.5f;
             }
             if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
             if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
@@ -4196,9 +4225,11 @@ int main() {
                 }
             }
         }
-        // z-由ъ뒪????李??⑥쐞濡?
+        // z-리스트 — 창 단위로 (scissor 잔류 시 본문이 통째로 잘리는 것 방지)
+        BatchFlush(); glDisable(GL_SCISSOR_TEST);
         for (auto& fw : zwins) {
             BatchFlush(); glDisable(GL_BLEND);
+            if (fw.w < 64.0f || fw.h < 64.0f || fw.w != fw.w || fw.h != fw.h) continue;
             drawRect(fw.x, fw.y, fw.w, fw.h, fw.br, fw.bgc, fw.bbc, 1.0f);
             BatchFlush(); glEnable(GL_BLEND);
             drawNeonBorder(fw.x, fw.y, fw.w, fw.h, fw.nr, fw.ngc, fw.nbc);
@@ -4388,7 +4419,8 @@ int main() {
         }
 
         // (c) player FakeWindow background
-        BatchFlush(); glDisable(GL_BLEND);
+        BatchFlush(); glDisable(GL_SCISSOR_TEST); glDisable(GL_BLEND);
+        EnsurePlayerWindow(playerWin);
         drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
                  0.05f, 0.06f, 0.09f, 1.0f);
         BatchFlush(); glEnable(GL_BLEND);
@@ -4428,7 +4460,7 @@ int main() {
             g_GameManager.currentState == GameState::DEBUFF_SELECT ||
             g_GameManager.currentState == GameState::DYING) {
             float pad = 12.0f, bx = playerWin.x + pad;
-            float bw = playerWin.width - pad * 2.0f;
+            float bw = std::max(4.0f, playerWin.width - pad * 2.0f);
             float hpH = 14.0f, xpH = 8.0f, gap = 3.0f;   // ?먭퍖寃?(媛?쒖꽦)
             float hpY = playerWin.y + playerWin.height - 18.0f - hpH;   // ?섎떒 ?덉そ
             float xpY = hpY - gap - xpH;

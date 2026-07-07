@@ -55,5 +55,7 @@ extern wchar_t   g_VolBuf[8];
 extern int       g_VolLen;
 extern float     g_ScrollAccum;
 extern float     g_WindowSizeCur;
+class FakeWindow;
 void ApplyAugmentSideEffects(AugType atype, int scrW, int scrH);
 void SyncPlayerWindowAfterLoadout();
+void SyncPlayerWindowSize(FakeWindow& pw, float delta, bool animate);

@@ -981,6 +981,7 @@ void Scene_WeaponSelect(const SceneCtx& c) {
                             if (AugOnceOnly(jd.startAugs[a], ALL_AUGS[ji].rarity))
                                 g_GameManager.takenOnce[ji] = true;
                             EquipSkill(SkillForAug(jd.startAugs[a]));
+                            ApplyAugmentSideEffects(jd.startAugs[a], (int)sw, (int)sh);
                         }
                         if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
                             g_Stats.meleeWeapon  = true;

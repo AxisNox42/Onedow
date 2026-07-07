@@ -61,7 +61,11 @@ inline void BatchFlush() {
     g_GfxPass = GfxPass::Main;
 }
 
+inline bool GfxVertOk(float x, float y) {
+    return (x == x && y == y && x > -1e6f && x < 1e6f && y > -1e6f && y < 1e6f);
+}
 inline void BatchVtx(float x, float y, float r, float g, float b, float a) {
+    if (!GfxVertOk(x, y)) return;
     g_Batch.push_back(x); g_Batch.push_back(y);
     g_Batch.push_back(r); g_Batch.push_back(g);
     g_Batch.push_back(b); g_Batch.push_back(a);
@@ -79,6 +83,8 @@ inline void BatchVerts(const float* v, int n, float r, float g, float b, float a
 
 inline void drawRect(float x, float y, float w, float h,
                      float r, float g, float b, float a) {
+    if (w < 1.0f || h < 1.0f || w != w || h != h) return;
+    if (!GfxVertOk(x, y)) return;
     BatchTri(x, y, x+w, y, x+w, y+h, r, g, b, a);
     BatchTri(x, y, x+w, y+h, x, y+h, r, g, b, a);
 }
