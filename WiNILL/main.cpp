@@ -1654,9 +1654,9 @@ int main() {
                             if (pcx >= zx - hw && pcx <= zx + hw &&
                                 pcy >= zy - hh && pcy <= zy + hh) { zoneSlow = 0.90f; break; }
                         }
-                        // LAG.exe 시간왜곡 포켓 — 포켓 안이면 이동속도 추가 감속
+                        // LAG.exe 글로벌 오버로드 — 공간 제한 없이 주기적으로 이동속도 스터터
                         if (g_LagBoss && g_LagBoss->alive)
-                            zoneSlow *= g_LagBoss->speedMultAt(pcx, pcy);
+                            zoneSlow *= g_LagBoss->globalSlowMult();
                     }
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
@@ -1889,9 +1889,9 @@ int main() {
                     float bDt = FIXED_DT;
                     if (b.isEnemy && g_TimeStopTimer > 0.0f) { /* skip update below */ }
                     else if (b.isEnemy && g_HyperFocusTimer > 0.0f) bDt *= 0.7f;
-                    // LAG.exe 시간왜곡 포켓 — 플레이어 탄만 감속 (적 탄은 영향 없음)
+                    // LAG.exe 글로벌 오버로드 — 플레이어 탄만 감속 (적 탄은 영향 없음)
                     if (!b.isEnemy && g_LagBoss && g_LagBoss->alive)
-                        bDt *= g_LagBoss->speedMultAt(b.x, b.y);
+                        bDt *= g_LagBoss->globalSlowMult();
                     if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(bDt);
                     // ?붾㈃ 諛?鍮꾪솢?깊솕 ??以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???곸뿭??                    // ?볦뼱吏誘濡?寃쎄퀎??媛숈씠 ?뺤옣 (??洹몃윭硫??뺤옣 援ъ뿭?먯꽌 ?꾩씠 利됱떆 ?щ씪吏?
                     {
@@ -2083,13 +2083,18 @@ int main() {
                                         g_Bullets, pullX, pullY);
                 }
 
-                // LAG.exe 업데이트 (텔레포트-스타터 + 시간왜곡 포켓 + 2페이즈 버퍼오버플로우)
+                // LAG.exe 업데이트 (텔레포트-스타터 + 글로벌 오버로드 + 견제 3종 + 2페이즈 버퍼오버플로우)
                 if (!timeStopped && g_LagBoss && g_LagBoss->alive) {
                     g_LagBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
                     if (g_LagBoss->shakePulse) {
                         g_LagBoss->shakePulse = false;
                         g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
                         TriggerHitStop(0.05f);
+                    }
+                    if (g_LagBoss->stutterPulse) {
+                        g_LagBoss->stutterPulse = false;
+                        TriggerHitStop(0.035f);
+                        g_ShakeTime = std::max(g_ShakeTime, 0.1f); g_ShakeMag = std::max(g_ShakeMag, 6.0f);
                     }
                 }
 
@@ -5026,7 +5031,7 @@ int main() {
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             auto lagPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
-                lb->renderPocketsInWin(wx, wy, ww, wh);
+                lb->renderPingInWin(wx, wy, ww, wh);
                 lb->renderGhostsInWin(wx, wy, ww, wh);
             };
             for (auto& fw : zwins) lagPass(fw.x, fw.y, fw.w, fw.h);
@@ -5285,6 +5290,23 @@ int main() {
                          g_BossTintT * 0.06f);
             }
         }
+
+        // (h2a) LAG.exe 글로벌 오버로드 — 화면 전체 글리치 오버레이 (특정 창 제한 없음)
+        if (g_LagBoss && g_LagBoss->alive) {
+            float gs = g_LagBoss->overloadGlitchStrength();
+            if (gs > 0.001f) {
+                BindMainShader();
+                float sw4 = (float)screenWidth, sh4 = (float)screenHeight;
+                float gt2 = (float)glfwGetTime();
+                drawRect(0, 0, sw4, sh4, 0.95f, 0.25f, 0.35f, gs * 0.05f);
+                for (int i = 0; i < 6; i++) {
+                    float ly = fmodf(gt2 * 900.0f + (float)i * 137.0f, sh4);
+                    float lh = 2.0f + (float)(i % 3);
+                    float jitX = (float)((i * 53) % 40 - 20) * gs;
+                    drawRect(jitX, ly, sw4, lh, 0.4f, 0.9f, 1.0f, gs * 0.16f);
+                }
+            }
+        }
     
         // (h2b) 蹂댁뒪 ?덉씠??HP 諛????붾㈃ ?곷떒 怨좎젙. 紐몄껜 諛??묒? 諛붾뒗 ?꾨컲 ?꾨쭑??        //   臾삵? ??蹂댁씠誘濡? ?쒖꽦 蹂댁뒪??泥대젰???곷떒???ш쾶 ?쒖떆?쒕떎 (?대쫫 + %).
         {
@@ -5397,12 +5419,12 @@ int main() {
                 }
                 if (g_LagBoss && g_LagBoss->alive) {
                     wchar_t lagBuf[80];
-                    swprintf_s(lagBuf, L"POCKET %d · %ls %.1fs",
-                               g_LagBoss->pocketCount(),
+                    swprintf_s(lagBuf, L"%ls %.1fs · %ls %.1fs",
+                               g_LagBoss->overloadLabel(), g_LagBoss->overloadDisplayCd(),
                                g_LagBoss->bofLabel(), g_LagBoss->bofDisplayCd());
                     float ls = 0.55f;
                     float lw = g_TextS.Width(lagBuf, ls);
-                    bool lagHot = g_LagBoss->frozen();
+                    bool lagHot = g_LagBoss->frozen() || g_LagBoss->overloadActive();
                     g_TextS.Draw(lagBuf, bx + bw - lw - 8.0f, by - 48.0f, ls,
                                  lagHot ? 1.0f : 0.95f, lagHot ? 0.3f : 0.25f, lagHot ? 0.5f : 0.35f, 0.85f);
                 }
