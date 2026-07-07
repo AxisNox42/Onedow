@@ -5,6 +5,11 @@
 //   (BULLET_RAIN.png 원본 복원 — 리소스 재컴파일 강제용 주석 v2)
 // ─────────────────────────────────────────────────────────────
 
+#include "resource.h"
+
+// Windows exe / 작업 표시줄 / 탐색기 아이콘
+IDI_APP_ICON ICON "Resource\\WiNILL.ico"
+
 // 폰트 폴백 체인 — stb_truetype (InitFromMemory).
 //   한글=Jua / 일본어·라틴 폴백=KosugiMaru
 JUA_FONT        RCDATA      "Font\\Jua-Regular.ttf"

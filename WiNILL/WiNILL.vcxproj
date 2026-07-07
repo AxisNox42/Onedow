@@ -70,6 +70,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <ApplicationIcon>Resource\WiNILL.ico</ApplicationIcon>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)bin\</OutDir>
     <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
@@ -185,6 +188,10 @@
     <ClCompile Include="System\WindowFx.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="Resource\WiNILL.ico" />
+    <Image Include="Resource\WiNILL_app_icon.png" />
+  </ItemGroup>
+  <ItemGroup>
     <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <ItemGroup>
@@ -215,7 +222,7 @@
     <ClInclude Include="Entity\PlayerStats.h" />
     <ClInclude Include="Entity\RangedMob.h" />
     <ClInclude Include="Entity\Weapons.h" />
-    <ClInclude Include="Render\Camera.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="Render\EntityDraw.h" />
     <ClInclude Include="Render\MainShader.h" />
     <ClInclude Include="Render\DrawPrim.h" />
