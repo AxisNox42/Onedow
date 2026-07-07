@@ -69,8 +69,13 @@ public:
     static constexpr float YAMATO_CHARGE     = 0.42f;
     static constexpr float STRIKE_HOLD       = 0.12f;
     static constexpr float STRIKE_SHRINK_DUR = 0.20f;
-    static constexpr float INT_BURST_SPEED   = 920.0f;
-    static constexpr float INT_MAX_SPEED     = 1050.0f;
+    static constexpr float INT_BURST_SPEED   = 460.0f;
+    static constexpr float INT_MAX_SPEED     = 525.0f;
+    static constexpr float INT_ORBIT_MIN     = 95.0f;
+    static constexpr float INT_ORBIT_MAX     = 230.0f;
+    static constexpr float INT_ORBIT_PUSH    = 680.0f;
+    static constexpr float INT_ORBIT_PULL    = 220.0f;
+    static constexpr float INT_ORBIT_DRIFT   = 310.0f;
 
     float intHpMax() const {
         return (maxHp > 0.0f) ? maxHp * INT_HP_RATIO : 1.0f;
@@ -145,26 +150,71 @@ public:
         b.push_back(bb);
     }
 
-    void burstFromPlayer(Interceptor& ic, float px, float py, bool randomRadial) {
-        if (randomRadial)
+    void burstFromPlayer(Interceptor& ic, float px, float py, bool forAttack) {
+        float dx = ic.x - px, dy = ic.y - py;
+        float dist = sqrtf(dx * dx + dy * dy);
+        if (dist < 1.0f) {
             ic.burstAng = (float)(rand() % 628) * 0.01f;
-        else
-            ic.burstAng = atan2f(ic.y - py, ic.x - px);
-        float spd = INT_BURST_SPEED + (float)(rand() % 320);
-        ic.x = px + cosf(ic.burstAng) * (6.0f + (float)(rand() % 18));
-        ic.y = py + sinf(ic.burstAng) * (6.0f + (float)(rand() % 18));
-        ic.vx = cosf(ic.burstAng) * spd;
-        ic.vy = sinf(ic.burstAng) * spd;
-        ic.dashCd = 0.18f + (float)(rand() % 35) * 0.01f;
+            dx = cosf(ic.burstAng);
+            dy = sinf(ic.burstAng);
+            dist = 1.0f;
+        }
+        float nx = dx / dist, ny = dy / dist;
+        float tx = -ny, ty = nx;
+        float sign = (ic.burstAng > 3.14159f) ? 1.0f : -1.0f;
+
+        float ang;
+        if (forAttack) {
+            ang = atan2f(ty * sign, tx * sign);
+        } else {
+            ang = atan2f(ny * 0.35f + ty * sign * 0.75f,
+                         nx * 0.35f + tx * sign * 0.75f);
+        }
+        float spd = INT_BURST_SPEED * (forAttack ? 0.55f : 0.72f) + (float)(rand() % 140);
+        ic.vx += cosf(ang) * spd;
+        ic.vy += sinf(ang) * spd;
+        ic.dashCd = 0.72f + (float)(rand() % 45) * 0.01f;
         ic.aimAng = atan2f(ic.vy, ic.vx);
+    }
+
+    void steerOrbit(Interceptor& ic, float px, float py, float dt) {
+        float dx = ic.x - px, dy = ic.y - py;
+        float dist = sqrtf(dx * dx + dy * dy);
+        if (dist < 1.0f) {
+            ic.burstAng = (float)(rand() % 628) * 0.01f;
+            dx = cosf(ic.burstAng);
+            dy = sinf(ic.burstAng);
+            dist = 1.0f;
+        }
+        float nx = dx / dist, ny = dy / dist;
+        float tx = -ny, ty = nx;
+        float sign = (ic.burstAng > 3.14159f) ? 1.0f : -1.0f;
+
+        if (dist < INT_ORBIT_MIN) {
+            ic.vx += nx * INT_ORBIT_PUSH * dt;
+            ic.vy += ny * INT_ORBIT_PUSH * dt;
+        } else if (dist > INT_ORBIT_MAX) {
+            ic.vx -= nx * INT_ORBIT_PULL * dt;
+            ic.vy -= ny * INT_ORBIT_PULL * dt;
+        }
+        ic.vx += tx * sign * INT_ORBIT_DRIFT * dt;
+        ic.vy += ty * sign * INT_ORBIT_DRIFT * dt;
     }
 
     void initInterceptor(Interceptor& ic, float px, float py) {
         ic.alive = true;
         ic.maxHp = ic.hp = intHpMax();
-        ic.shootCd = 0.2f + (float)(rand() % 30) * 0.01f;
+        ic.shootCd = 0.8f + (float)(rand() % 50) * 0.02f;
         ic.hitFlash = 0.0f;
-        burstFromPlayer(ic, px, py, true);
+        ic.burstAng = (float)(rand() % 628) * 0.01f;
+        float spawnR = INT_ORBIT_MIN + (float)(rand() % 90);
+        ic.x = px + cosf(ic.burstAng) * spawnR;
+        ic.y = py + sinf(ic.burstAng) * spawnR;
+        float spd = INT_BURST_SPEED * 0.45f + (float)(rand() % 100);
+        ic.vx = cosf(ic.burstAng) * spd;
+        ic.vy = sinf(ic.burstAng) * spd;
+        ic.dashCd = 0.5f + (float)(rand() % 30) * 0.01f;
+        ic.aimAng = ic.burstAng;
     }
 
     bool spawnInterceptor(float px, float py) {
@@ -205,14 +255,16 @@ public:
             if (!ic.alive) continue;
             if (ic.hitFlash > 0.0f) ic.hitFlash -= dt;
 
+            steerOrbit(ic, px, py, dt);
+
             ic.dashCd -= dt;
             if (ic.dashCd <= 0.0f)
-                burstFromPlayer(ic, px, py, true);
+                burstFromPlayer(ic, px, py, false);
 
             ic.x += ic.vx * dt;
             ic.y += ic.vy * dt;
-            ic.vx *= 0.994f;
-            ic.vy *= 0.994f;
+            ic.vx *= 0.988f;
+            ic.vy *= 0.988f;
             float spd = sqrtf(ic.vx * ic.vx + ic.vy * ic.vy);
             if (spd > INT_MAX_SPEED) {
                 ic.vx *= INT_MAX_SPEED / spd;
@@ -222,16 +274,16 @@ public:
 
             ic.shootCd -= dt;
             if (ic.shootCd <= 0.0f) {
-                burstFromPlayer(ic, px, py, false);
                 float bx = px - ic.x, by = py - ic.y;
                 float bd = sqrtf(bx * bx + by * by);
-                if (bd > 1.0f) {
+                if (bd > INT_ORBIT_MIN * 0.55f) {
+                    burstFromPlayer(ic, px, py, true);
                     ic.aimAng = atan2f(by, bx);
                     fireDir(bullets, ic.x, ic.y, bx / bd, by / bd,
-                            340.0f + (float)(rand() % 80),
-                            glm::vec3(0.55f, 0.95f, 1.0f), 0.75f);
+                            300.0f + (float)(rand() % 60),
+                            glm::vec3(0.55f, 0.95f, 1.0f), 0.85f);
                 }
-                ic.shootCd = 0.55f + (float)(rand() % 40) * 0.01f;
+                ic.shootCd = 1.65f + (float)(rand() % 55) * 0.02f;
             }
         }
     }
@@ -443,7 +495,7 @@ public:
         }
         for (int i = 0; i < 6; i++) {
             int j = (i + 1) % 6;
-            drawWireSeg(wx[i], wy[i], wx[j], wy[j], 1.3f, r, g, b, a);
+            drawWireSeg(wx[i], wy[i], wx[j], wy[j], 1.7f, r, g, b, a);
         }
     }
 
@@ -457,9 +509,9 @@ public:
             if (!inWinPt(ic.x, ic.y, wx, wy, ww, wh)) continue;
             float flash = (ic.hitFlash > 0.0f) ? ic.hitFlash / 0.14f : 0.0f;
             float pulse = 0.5f + 0.5f * sinf(t * 9.0f + ic.burstAng);
-            float sz = 9.0f + pulse * 2.0f;
+            float sz = 12.0f + pulse * 2.5f;
             drawCursorShard(ic.x, ic.y, sz, ic.aimAng,
-                            0.35f + flash * 0.45f, 0.88f + flash * 0.1f, 1.0f, 0.92f);
+                            0.45f + flash * 0.45f, 0.92f + flash * 0.08f, 1.0f, 0.98f);
         }
         (void)t;
     }
