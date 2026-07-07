@@ -65,7 +65,7 @@ inline ActRules RulesForPick(int pick) {
     case 7:  return { 3.5f, 6.0f, 1.18f, 1.0f,  3, 8 };   // C2 — swarm
     case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };  // FORK — 물량
     case 9:  return { 4.5f, 8.0f, 1.12f, 1.08f, 6, 6 };   // ADUN — 특수몹
-    case 10: return { 3.0f, 5.5f, 1.0f,  1.0f,  3, 5 };   // LAG — 시간왜곡/버스트
+    case 10: return { 3.0f, 5.5f, 1.0f,  1.0f,  3, 5 };   // LAG — 디싱크 분신/버스트
     default: return { 2.0f, 3.0f, 1.0f,  1.0f,  2, 2 };
     }
 }
@@ -126,7 +126,7 @@ inline glm::vec3 WarnColor(int pick) {
     case 7: return { 0.25f, 0.92f, 0.48f };
     case 8: return { 0.35f, 0.88f, 0.95f };
     case 9: return { 0.58f, 0.5f,  1.0f  };
-    case 10: return { 0.95f, 0.25f, 0.35f };
+    case 10: return { 0.3f,  0.85f, 1.0f  };
     default: return { 0.6f, 0.25f, 1.0f };
     }
 }

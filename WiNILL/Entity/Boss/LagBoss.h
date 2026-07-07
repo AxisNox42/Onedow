@@ -12,8 +12,9 @@
 extern TextRenderer g_TextS;
 
 // LAG.exe — 렉 스파이크 프로세스
-//   고스트 잔상 트레일(히트박스는 항상 현재 진짜 몸통에만) + 텔레포트-스타터 이동
-//   + 글로벌 오버로드(공간 제한 없이 주기적으로 게임 전체가 버벅임 — 플레이어 이동/탄속에 스터터)
+//   본체 = 회전하는 "로딩 스피너" 코어(고스트 잔상 트레일 동반, 텔레포트-스타터 이동)
+//   핵심 훅: 디싱크 스플릿 — 주기적으로 가짜 분신(스피너 클론)을 흩뿌려 "진짜가 어디냐"를 묻는 페이크형 압박
+//     (플레이어 조작/탄속은 절대 건드리지 않음 — 판별력을 요구할 뿐, 컨트롤을 뺏지 않음)
 //   + 견제 사격 3종(펄스샷 / 패킷로스 스트림 / 핑 스파이크) + 2페이즈 버퍼오버플로우
 class LagBoss {
 public:
@@ -23,6 +24,10 @@ public:
         float x = 0.0f, y = 0.0f;
         float age = 0.0f;
     };
+    struct Decoy {
+        float x = 0.0f, y = 0.0f;
+        float seed = 0.0f;
+    };
 
     float worldX, worldY;
     float hp, maxHp;
@@ -31,10 +36,18 @@ public:
     int   screenW, screenH;
     float facing = 0.0f;
     bool  shakePulse = false;    // 버퍼오버플로우 발사 순간 (main.cpp 히트스탑/쉐이크)
-    bool  stutterPulse = false;  // 오버로드 프리즈 펄스 시작 순간 (main.cpp 짧은 히트스탑/글리치 플래시)
     bool  phase2 = false;
 
+    // ── 이펙트 트리거(main.cpp가 소비 후 false로 되돌림) ──
+    bool  teleFx = false;
+    float teleFxFromX = 0.0f, teleFxFromY = 0.0f;
+    bool  splitFx = false;      // 디싱크 스플릿 발생(분신 등장) 순간
+    bool  collapseFx = false;   // 디싱크 스플릿 종료(분신 소멸) 순간
+
+    float hullFlash = 0.0f;     // 피격 시 흰 플래시 (main.cpp가 세팅)
+
     std::vector<Ghost> ghosts;
+    std::vector<Decoy> decoys;
 
     static constexpr float BODY       = 56.0f;
     static constexpr float MAP_PAD    = 110.0f;
@@ -44,20 +57,21 @@ public:
     float pulseCd = 2.2f;
     float freezeGlow = 0.0f;   // 렌더용 (버퍼오버플로우 진행도)
 
-    // ── 글로벌 오버로드: 공간 제한 없이 주기적으로 "게임이 버벅임" ──
-    enum class OverloadState { Idle, Telegraph, Active };
-    OverloadState ovState = OverloadState::Idle;
-    float ovCd   = 4.5f;
-    float ovT    = 0.0f;
-    float ovPhaseSeed = 0.0f;
-    float ovPrevMult  = 1.0f;
+    float pulseFlash  = 0.0f;  // 펄스샷 발사 순간 코어 번쩍임
+    float streamFlash = 0.0f;  // 스트림 발사 순간 코어 번쩍임
 
-    static constexpr float OV_TELEGRAPH_DUR = 0.4f;
-    static constexpr float OV_ACTIVE_DUR    = 1.15f;
-    static constexpr float OV_STUTTER_PERIOD = 0.32f;   // 프리즈 펄스 반복 주기
-    static constexpr float OV_STUTTER_FREEZE = 0.10f;   // 주기 중 실제로 얼어있는 구간
-    static constexpr float OV_CD_MIN_P1 = 5.5f, OV_CD_JIT_P1 = 2.2f;
-    static constexpr float OV_CD_MIN_P2 = 3.4f, OV_CD_JIT_P2 = 1.6f;
+    // ── 디싱크 스플릿: 예고 → 분신 등장(진짜를 섞어서 헷갈리게) → 수렴 ──
+    enum class DesyncState { Idle, Telegraph, Split, Collapse };
+    DesyncState dsState = DesyncState::Idle;
+    float dsCd = 5.0f;
+    float dsT  = 0.0f;
+
+    static constexpr float DS_TELEGRAPH_DUR = 0.55f;
+    static constexpr float DS_SPLIT_DUR     = 2.6f;
+    static constexpr float DS_COLLAPSE_DUR  = 0.35f;
+    static constexpr float DS_CD_MIN_P1 = 6.5f, DS_CD_JIT_P1 = 2.2f;
+    static constexpr float DS_CD_MIN_P2 = 4.4f, DS_CD_JIT_P2 = 1.8f;
+    static constexpr int   DS_DECOY_N_P1 = 1, DS_DECOY_N_P2 = 2;
 
     // ── 핑 스파이크: 플레이어의 과거 위치를 찍어두고, 지연 후 그 자리를 타격 ──
     bool  pingArmed = false;
@@ -97,6 +111,8 @@ public:
 
     float statDamageMult() const { return 1.0f; }
     bool  frozen() const { return bofState == BofState::Freeze || bofState == BofState::Recover; }
+    bool  desyncLocked() const { return dsState != DesyncState::Idle; }
+    bool  desyncActive() const { return dsState == DesyncState::Split; }
 
     void clampPos() {
         float m = MAP_PAD;
@@ -135,63 +151,60 @@ public:
         pushGhost((fromX + worldX) * 0.5f, (fromY + worldY) * 0.5f);
         facing = atan2f(py - worldY, px - worldX);
 
+        teleFx = true; teleFxFromX = fromX; teleFxFromY = fromY;
+
         float base = phase2 ? 0.55f : 0.95f;
         float jit  = phase2 ? 0.55f : 0.85f;
         teleCd = base + (float)(rand() % 100) * 0.01f * jit;
     }
 
-    // ── 글로벌 오버로드: 예고(글리치 강화) → 활성(스터터 프리즈 펄스 반복) ──
-    float stutterMultAt(float t) const {
-        float phase = fmodf(t + ovPhaseSeed, OV_STUTTER_PERIOD);
-        return (phase < OV_STUTTER_FREEZE) ? 0.03f : 0.88f;
+    static void clampToArena(float& x, float& y, int sw, int sh) {
+        float m = MAP_PAD;
+        if (x < m) x = m; if (x > sw - m) x = sw - m;
+        if (y < m) y = m; if (y > sh - m) y = sh - m;
     }
 
-    void updateOverload(float dt) {
-        switch (ovState) {
-        case OverloadState::Idle:
-            ovCd -= dt;
-            if (ovCd <= 0.0f) {
-                ovState = OverloadState::Telegraph;
-                ovT = 0.0f;
-                ovPhaseSeed = (float)(rand() % 100) * 0.01f * OV_STUTTER_PERIOD;
+    // ── 디싱크 스플릿: 예고(신호 흔들림) → 분신 등장(진짜와 뒤섞임) → 수렴 ──
+    void updateDesync(float dt) {
+        switch (dsState) {
+        case DesyncState::Idle:
+            dsCd -= dt;
+            if (dsCd <= 0.0f) { dsState = DesyncState::Telegraph; dsT = 0.0f; }
+            break;
+        case DesyncState::Telegraph:
+            dsT += dt;
+            if (dsT >= DS_TELEGRAPH_DUR) {
+                dsState = DesyncState::Split; dsT = 0.0f;
+                decoys.clear();
+                int n = phase2 ? DS_DECOY_N_P2 : DS_DECOY_N_P1;
+                for (int i = 0; i < n; i++) {
+                    float ang  = (float)(rand() % 628) * 0.01f;
+                    float dist = 150.0f + (float)(rand() % 130);
+                    Decoy d;
+                    d.x = worldX + cosf(ang) * dist;
+                    d.y = worldY + sinf(ang) * dist;
+                    clampToArena(d.x, d.y, screenW, screenH);
+                    d.seed = (float)(rand() % 100) * 0.01f;
+                    decoys.push_back(d);
+                }
+                splitFx = true;
             }
             break;
-        case OverloadState::Telegraph:
-            ovT += dt;
-            if (ovT >= OV_TELEGRAPH_DUR) { ovState = OverloadState::Active; ovT = 0.0f; ovPrevMult = 1.0f; }
+        case DesyncState::Split:
+            dsT += dt;
+            if (dsT >= DS_SPLIT_DUR) { dsState = DesyncState::Collapse; dsT = 0.0f; collapseFx = true; }
             break;
-        case OverloadState::Active: {
-            ovT += dt;
-            float m = stutterMultAt(ovT);
-            if (m < 0.3f && ovPrevMult >= 0.3f) stutterPulse = true;   // 프리즈 펄스 진입 순간
-            ovPrevMult = m;
-            if (ovT >= OV_ACTIVE_DUR) {
-                ovState = OverloadState::Idle;
-                ovT = 0.0f;
-                float base = phase2 ? OV_CD_MIN_P2 : OV_CD_MIN_P1;
-                float jit  = phase2 ? OV_CD_JIT_P2 : OV_CD_JIT_P1;
-                ovCd = base + (float)(rand() % 100) * 0.01f * jit;
+        case DesyncState::Collapse:
+            dsT += dt;
+            if (dsT >= DS_COLLAPSE_DUR) {
+                dsState = DesyncState::Idle; dsT = 0.0f;
+                decoys.clear();
+                float base = phase2 ? DS_CD_MIN_P2 : DS_CD_MIN_P1;
+                float jit  = phase2 ? DS_CD_JIT_P2 : DS_CD_JIT_P1;
+                dsCd = base + (float)(rand() % 100) * 0.01f * jit;
             }
-        } break;
+            break;
         }
-    }
-
-    bool overloadActive() const { return ovState == OverloadState::Active; }
-
-    // 공간 제한 없이 항상 적용 — 플레이어 이동속도/플레이어 탄속에 곱해서 사용
-    float globalSlowMult() const {
-        if (ovState != OverloadState::Active) return 1.0f;
-        return stutterMultAt(ovT);
-    }
-
-    // 화면 전체 글리치 오버레이 강도 (0~1) — main.cpp 풀스크린 이펙트용
-    float overloadGlitchStrength() const {
-        if (ovState == OverloadState::Telegraph) return (ovT / OV_TELEGRAPH_DUR) * 0.6f;
-        if (ovState == OverloadState::Active) {
-            bool freezing = stutterMultAt(ovT) < 0.3f;
-            return freezing ? 1.0f : 0.55f;
-        }
-        return 0.0f;
     }
 
     // ── 기본 견제 사격: 3-way 펄스 ──
@@ -207,6 +220,7 @@ public:
                 fireDir(bullets, worldX, worldY, cosf(a), sinf(a),
                         260.0f + (float)(rand() % 50), glm::vec3(0.35f, 0.95f, 1.0f), 0.85f);
             }
+            pulseFlash = 1.0f;
         }
         pulseCd = (phase2 ? 1.6f : 2.3f) + (float)(rand() % 40) * 0.02f;
     }
@@ -226,6 +240,7 @@ public:
                 fireDir(bullets, worldX, worldY, cosf(baseAng + spread), sinf(baseAng + spread),
                         spd, glm::vec3(0.4f, 0.9f, 0.55f), 0.8f);
             }
+            streamFlash = 1.0f;
         }
         streamCd = (phase2 ? 2.6f : 3.9f) + (float)(rand() % 50) * 0.02f;
     }
@@ -307,14 +322,18 @@ public:
         ghosts.erase(std::remove_if(ghosts.begin(), ghosts.end(),
             [](const Ghost& g) { return g.age > GHOST_LIFE; }), ghosts.end());
 
+        if (hullFlash > 0.0f)  hullFlash  = std::max(0.0f, hullFlash  - dt * 5.5f);
+        if (pulseFlash > 0.0f) pulseFlash = std::max(0.0f, pulseFlash - dt * 4.5f);
+        if (streamFlash > 0.0f) streamFlash = std::max(0.0f, streamFlash - dt * 4.5f);
+
         updateBufferOverflow(px, py, dt, bullets);
 
         if (!frozen()) {
-            updateMovement(px, py, dt);
+            if (!desyncLocked()) updateMovement(px, py, dt);
             updatePulse(px, py, dt, bullets);
             updateStream(px, py, dt, bullets);
             updatePing(px, py, dt, bullets);
-            updateOverload(dt);
+            updateDesync(dt);
         }
 
         float ddx = px - worldX, ddy = py - worldY;
@@ -327,13 +346,48 @@ public:
         return px >= wx && px <= wx + ww && py >= wy && py <= wy + wh;
     }
 
-    // 보스 본체 — 보스 소유 창에서만 (크로매틱 애버레이션 글리치 다이아몬드)
+    // 로딩 스피너 세그먼트 링 — 회전 위치에 따라 밝은 헤드 → 어두운 테일 그라데이션
+    static void spinnerSegs(float cx, float cy, float radius, float spin,
+                            float r, float g, float b, float baseA, int segN = 10) {
+        const float slot = 6.2831853f / (float)segN;
+        const float halfArc = slot * 0.32f;
+        for (int i = 0; i < segN; i++) {
+            float bright = 1.0f - (float)i / (float)segN * 0.85f;
+            float angCenter = spin + (float)i * slot + halfArc;
+            drawConeFan(cx, cy, radius, angCenter, halfArc, r, g, b, baseA * bright);
+        }
+    }
+
+    // 보스 본체 — 보스 소유 창에서만 (로딩 스피너 코어)
     void renderCore(float t) const {
-        float jit = (0.5f + 0.5f * sinf(t * 37.0f)) * 3.0f;
-        float sz = 34.0f;
-        drawDiamond(worldX - jit, worldY, sz, 1.0f, 0.15f, 0.55f, 0.55f);
-        drawDiamond(worldX + jit, worldY, sz, 0.15f, 0.85f, 1.0f, 0.55f);
-        drawDiamond(worldX, worldY, sz * 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
+        float telegraphU = (dsState == DesyncState::Telegraph) ? (dsT / DS_TELEGRAPH_DUR) : 0.0f;
+        float flash = (hullFlash > 0.0f) ? std::min(1.0f, hullFlash / 0.18f) : 0.0f;
+        bool  erroring = frozen();   // 버퍼오버플로우 충전/방출 중엔 코어가 "에러" 색으로
+
+        float baseR = 30.0f;
+        float spin  = t * 3.4f;
+
+        float jit = telegraphU * 3.5f;
+        float ccx = worldX + (telegraphU > 0.001f ? sinf(t * 53.0f) * jit : 0.0f);
+        float ccy = worldY + (telegraphU > 0.001f ? cosf(t * 47.0f) * jit : 0.0f);
+
+        float rr, gg, bb;
+        if (erroring)      { rr = 1.0f; gg = 0.25f + flash * 0.5f; bb = 0.35f + flash * 0.5f; }
+        else                { rr = 0.30f + flash * 0.7f; gg = 0.85f + flash * 0.15f; bb = 1.0f; }
+
+        spinnerSegs(ccx, ccy, baseR, spin, rr, gg, bb, 0.82f);
+        drawCircle(ccx, ccy, baseR * 0.42f, 0.85f + flash * 0.15f, 0.95f, 1.0f, 0.72f + flash * 0.28f);
+        drawCircle(ccx, ccy, baseR * 0.16f, 1.0f, 1.0f, 1.0f, 0.9f);
+
+        // 발사 순간 — 코어 번쩍임(펄스=시안 / 스트림=그린) 링
+        if (pulseFlash > 0.001f)
+            drawCircle(ccx, ccy, baseR * 1.15f, 0.4f, 0.95f, 1.0f, pulseFlash * 0.22f);
+        if (streamFlash > 0.001f)
+            drawCircle(ccx, ccy, baseR * 1.15f, 0.45f, 0.9f, 0.55f, streamFlash * 0.20f);
+
+        // 디싱크 예고 — 곧 갈라질 것처럼 신호가 흔들림(경고 링)
+        if (telegraphU > 0.001f)
+            drawCircle(ccx, ccy, baseR * 1.35f, 1.0f, 0.3f, 0.4f, telegraphU * 0.20f);
 
         if (freezeGlow > 0.001f) {
             float ringR = 40.0f + freezeGlow * 70.0f;
@@ -352,6 +406,23 @@ public:
             float u = 1.0f - g.age / GHOST_LIFE;
             if (u < 0.0f) continue;
             drawDiamond(g.x, g.y, 30.0f * (0.7f + 0.3f * u), 0.55f, 0.85f, 1.0f, u * 0.4f);
+        }
+    }
+
+    // 디싱크 분신 — 가짜 스피너 클론(항상 크로매틱 흔들림 = "이건 가짜다" 신호). 창별로 개별 호출
+    void renderDecoysInWin(float wx, float wy, float ww, float wh, float t) const {
+        if (dsState != DesyncState::Split && dsState != DesyncState::Collapse) return;
+        float u = (dsState == DesyncState::Collapse) ? std::max(0.0f, 1.0f - dsT / DS_COLLAPSE_DUR) : 1.0f;
+        for (const auto& d : decoys) {
+            if (!inWinPt(d.x, d.y, wx, wy, ww, wh)) continue;
+            float dspin = t * (2.4f + d.seed * 3.2f);
+            float djit  = 3.0f + d.seed * 4.0f;
+            float dx1 = d.x + sinf(t * 47.0f + d.seed * 10.0f) * djit;
+            float dy1 = d.y + cosf(t * 39.0f + d.seed * 10.0f) * djit;
+            // 크로매틱 애버레이션: 살짝 어긋난 두 색 링이 겹쳐 보임 → 흔들리는 가짜 신호
+            spinnerSegs(dx1 - djit * 0.6f, dy1, 30.0f * u, dspin, 1.0f, 0.2f, 0.5f, 0.42f * u);
+            spinnerSegs(dx1 + djit * 0.6f, dy1, 30.0f * u, dspin, 0.2f, 0.85f, 1.0f, 0.42f * u);
+            drawCircle(dx1, dy1, 30.0f * 0.42f * u, 0.75f, 0.8f, 0.85f, 0.45f * u);
         }
     }
 
@@ -383,16 +454,19 @@ public:
         if (bofState == BofState::Recover) return BOF_RECOVER_DUR - bofT;
         return bofCd;
     }
-    const wchar_t* overloadLabel() const {
-        switch (ovState) {
-        case OverloadState::Telegraph: return L"OVERLOAD..";
-        case OverloadState::Active:    return L"OVERLOAD!!";
-        default: return L"ov cd";
+    const wchar_t* dsLabel() const {
+        switch (dsState) {
+        case DesyncState::Telegraph: return L"DESYNC..";
+        case DesyncState::Split:     return L"DESYNC!!";
+        case DesyncState::Collapse:  return L"SYNC";
+        default: return L"sync cd";
         }
     }
-    float overloadDisplayCd() const {
-        if (ovState == OverloadState::Telegraph) return OV_TELEGRAPH_DUR - ovT;
-        if (ovState == OverloadState::Active)     return OV_ACTIVE_DUR - ovT;
-        return ovCd;
+    float dsDisplayCd() const {
+        if (dsState == DesyncState::Telegraph) return DS_TELEGRAPH_DUR - dsT;
+        if (dsState == DesyncState::Split)      return DS_SPLIT_DUR - dsT;
+        if (dsState == DesyncState::Collapse)   return DS_COLLAPSE_DUR - dsT;
+        return dsCd;
     }
+    int decoyCount() const { return (int)decoys.size(); }
 };

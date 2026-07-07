@@ -1654,9 +1654,6 @@ int main() {
                             if (pcx >= zx - hw && pcx <= zx + hw &&
                                 pcy >= zy - hh && pcy <= zy + hh) { zoneSlow = 0.90f; break; }
                         }
-                        // LAG.exe 글로벌 오버로드 — 공간 제한 없이 주기적으로 이동속도 스터터
-                        if (g_LagBoss && g_LagBoss->alive)
-                            zoneSlow *= g_LagBoss->globalSlowMult();
                     }
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
@@ -1889,9 +1886,6 @@ int main() {
                     float bDt = FIXED_DT;
                     if (b.isEnemy && g_TimeStopTimer > 0.0f) { /* skip update below */ }
                     else if (b.isEnemy && g_HyperFocusTimer > 0.0f) bDt *= 0.7f;
-                    // LAG.exe 글로벌 오버로드 — 플레이어 탄만 감속 (적 탄은 영향 없음)
-                    if (!b.isEnemy && g_LagBoss && g_LagBoss->alive)
-                        bDt *= g_LagBoss->globalSlowMult();
                     if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(bDt);
                     // ?붾㈃ 諛?鍮꾪솢?깊솕 ??以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???곸뿭??                    // ?볦뼱吏誘濡?寃쎄퀎??媛숈씠 ?뺤옣 (??洹몃윭硫??뺤옣 援ъ뿭?먯꽌 ?꾩씠 利됱떆 ?щ씪吏?
                     {
@@ -2083,7 +2077,7 @@ int main() {
                                         g_Bullets, pullX, pullY);
                 }
 
-                // LAG.exe 업데이트 (텔레포트-스타터 + 글로벌 오버로드 + 견제 3종 + 2페이즈 버퍼오버플로우)
+                // LAG.exe 업데이트 (텔레포트-스타터 + 디싱크 스플릿 + 견제 3종 + 2페이즈 버퍼오버플로우)
                 if (!timeStopped && g_LagBoss && g_LagBoss->alive) {
                     g_LagBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
                     if (g_LagBoss->shakePulse) {
@@ -2091,10 +2085,19 @@ int main() {
                         g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
                         TriggerHitStop(0.05f);
                     }
-                    if (g_LagBoss->stutterPulse) {
-                        g_LagBoss->stutterPulse = false;
-                        TriggerHitStop(0.035f);
-                        g_ShakeTime = std::max(g_ShakeTime, 0.1f); g_ShakeMag = std::max(g_ShakeMag, 6.0f);
+                    if (g_LagBoss->teleFx) {
+                        g_LagBoss->teleFx = false;
+                        SpawnSparks(g_LagBoss->teleFxFromX, g_LagBoss->teleFxFromY, 5, 0.55f, 0.85f, 1.0f, 220.0f);
+                        SpawnSparks(g_LagBoss->worldX, g_LagBoss->worldY, 5, 0.55f, 0.85f, 1.0f, 260.0f);
+                    }
+                    if (g_LagBoss->splitFx) {
+                        g_LagBoss->splitFx = false;
+                        TriggerFlash(0.3f, 0.85f, 1.0f, 0.16f);
+                        for (auto& d : g_LagBoss->decoys) SpawnSparks(d.x, d.y, 6, 1.0f, 0.25f, 0.5f, 240.0f);
+                    }
+                    if (g_LagBoss->collapseFx) {
+                        g_LagBoss->collapseFx = false;
+                        for (auto& d : g_LagBoss->decoys) SpawnEnemyExplosion(d.x, d.y, 0.4f, 0.85f, 1.0f, false);
                     }
                 }
 
@@ -2417,6 +2420,7 @@ int main() {
                             dmg *= lb->statDamageMult();
                             float dealt = (dmg < lb->hp) ? dmg : lb->hp;
                             lb->hp -= dealt;
+                            lb->hullFlash = 0.18f;
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (lb->hp <= 0.0f) lb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
@@ -4233,7 +4237,7 @@ int main() {
                  L"ADUN.relay", 0.07f,0.06f,0.10f, 0.58f,0.5f,1.0f);
         if (g_LagBoss && g_LagBoss->alive)
             addW(g_LagBoss->worldX, g_LagBoss->worldY, LAG_WIN_W, LAG_WIN_W,
-                 L"LAG.exe", 0.06f,0.03f,0.05f, 0.95f,0.3f,0.4f);
+                 L"LAG.exe", 0.03f,0.05f,0.06f, 0.3f,0.85f,1.0f);
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
@@ -5027,12 +5031,13 @@ int main() {
                          LAG_WIN_W, LAG_WIN_W);
             lb->renderCore(gt);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
-            // 고스트 잔상/시간왜곡 포켓은 플레이어 인근에도 떠서 모든 창에 걸쳐 렌더
+            // 고스트 잔상/디싱크 분신/핑 텔레그래프는 플레이어 인근에도 떠서 모든 창에 걸쳐 렌더
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             auto lagPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
                 lb->renderPingInWin(wx, wy, ww, wh);
                 lb->renderGhostsInWin(wx, wy, ww, wh);
+                lb->renderDecoysInWin(wx, wy, ww, wh, gt);
             };
             for (auto& fw : zwins) lagPass(fw.x, fw.y, fw.w, fw.h);
             lagPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
@@ -5272,7 +5277,7 @@ int main() {
             else if (g_TotemBoss && g_TotemBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 1.0f); }
             else if (g_LagBoss && g_LagBoss->alive) {
-                bossAlive = true; tc = glm::vec3(0.95f, 0.25f, 0.35f); }
+                bossAlive = true; tc = glm::vec3(0.3f, 0.85f, 1.0f); }
             else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.95f, 0.28f, 0.58f); }
             if (bossAlive) {
@@ -5291,22 +5296,6 @@ int main() {
             }
         }
 
-        // (h2a) LAG.exe 글로벌 오버로드 — 화면 전체 글리치 오버레이 (특정 창 제한 없음)
-        if (g_LagBoss && g_LagBoss->alive) {
-            float gs = g_LagBoss->overloadGlitchStrength();
-            if (gs > 0.001f) {
-                BindMainShader();
-                float sw4 = (float)screenWidth, sh4 = (float)screenHeight;
-                float gt2 = (float)glfwGetTime();
-                drawRect(0, 0, sw4, sh4, 0.95f, 0.25f, 0.35f, gs * 0.05f);
-                for (int i = 0; i < 6; i++) {
-                    float ly = fmodf(gt2 * 900.0f + (float)i * 137.0f, sh4);
-                    float lh = 2.0f + (float)(i % 3);
-                    float jitX = (float)((i * 53) % 40 - 20) * gs;
-                    drawRect(jitX, ly, sw4, lh, 0.4f, 0.9f, 1.0f, gs * 0.16f);
-                }
-            }
-        }
     
         // (h2b) 蹂댁뒪 ?덉씠??HP 諛????붾㈃ ?곷떒 怨좎젙. 紐몄껜 諛??묒? 諛붾뒗 ?꾨컲 ?꾨쭑??        //   臾삵? ??蹂댁씠誘濡? ?쒖꽦 蹂댁뒪??泥대젰???곷떒???ш쾶 ?쒖떆?쒕떎 (?대쫫 + %).
         {
@@ -5329,7 +5318,7 @@ int main() {
                 bc = glm::vec3(0.58f, 0.5f, 1.0f);
             } else if (g_LagBoss && g_LagBoss->alive) {
                 bn = L"LAG.exe";  bhf = g_LagBoss->hp / g_LagBoss->maxHp;
-                bc = glm::vec3(0.95f, 0.25f, 0.35f);
+                bc = glm::vec3(0.3f, 0.85f, 1.0f);
             } else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bn = UnknownBoss::BOSS_NAME; bhf = g_UnknownBoss->hp / g_UnknownBoss->maxHp;
                 bc = glm::vec3(0.95f, 0.28f, 0.58f);
@@ -5419,14 +5408,19 @@ int main() {
                 }
                 if (g_LagBoss && g_LagBoss->alive) {
                     wchar_t lagBuf[80];
-                    swprintf_s(lagBuf, L"%ls %.1fs · %ls %.1fs",
-                               g_LagBoss->overloadLabel(), g_LagBoss->overloadDisplayCd(),
-                               g_LagBoss->bofLabel(), g_LagBoss->bofDisplayCd());
+                    if (g_LagBoss->desyncActive())
+                        swprintf_s(lagBuf, L"CLONE x%d · %ls %.1fs",
+                                   g_LagBoss->decoyCount() + 1,
+                                   g_LagBoss->bofLabel(), g_LagBoss->bofDisplayCd());
+                    else
+                        swprintf_s(lagBuf, L"%ls %.1fs · %ls %.1fs",
+                                   g_LagBoss->dsLabel(), g_LagBoss->dsDisplayCd(),
+                                   g_LagBoss->bofLabel(), g_LagBoss->bofDisplayCd());
                     float ls = 0.55f;
                     float lw = g_TextS.Width(lagBuf, ls);
-                    bool lagHot = g_LagBoss->frozen() || g_LagBoss->overloadActive();
+                    bool lagHot = g_LagBoss->frozen() || g_LagBoss->desyncActive();
                     g_TextS.Draw(lagBuf, bx + bw - lw - 8.0f, by - 48.0f, ls,
-                                 lagHot ? 1.0f : 0.95f, lagHot ? 0.3f : 0.25f, lagHot ? 0.5f : 0.35f, 0.85f);
+                                 lagHot ? 1.0f : 0.3f, lagHot ? 0.3f : 0.85f, lagHot ? 0.5f : 1.0f, 0.85f);
                 }
                 if (g_UnknownBoss && g_UnknownBoss->alive) {
                     wchar_t ubBuf[64];
@@ -5552,20 +5546,21 @@ int main() {
                 }
                 drawCircle(cx, cy, 6.0f + pulse * 3.0f, wc.r, wc.g, wc.b, 0.3f + pulse * 0.3f);
             } break;
-            case 10: {  // LAG.exe — 잔상 스터터 + 글리치 스캔라인
+            case 10: {  // LAG.exe — 로딩 스피너 부팅 + 분신 예열
                 float cx = sw2 * 0.5f, cy = sh2 * 0.5f;
-                for (int i = 0; i < 5; i++) {
-                    float jit = (float)((rand() % 60) - 30);
-                    float ly = fmodf(t * 240.0f + (float)i * 130.0f, sh2);
-                    drawRect(0, ly, sw2, 2.0f + (float)(i % 2), wc.r, wc.g, wc.b, 0.08f + 0.10f * prog);
-                    (void)jit;
+                float spin = t * 3.4f;
+                for (int i = 0; i < 10; i++) {
+                    float bright = 1.0f - (float)i / 10.0f * 0.85f;
+                    float a = spin + (float)i * 0.6283185f + 0.6283185f * 0.32f;
+                    drawConeFan(cx, cy, 48.0f + prog * 30.0f, a, 0.6283185f * 0.32f,
+                                wc.r, wc.g, wc.b, (0.15f + 0.20f * prog) * bright * (0.6f + 0.4f * blink));
                 }
-                for (int i = 0; i < 4; i++) {
-                    float off = (float)(i - 2) * (6.0f + prog * 10.0f);
-                    drawDiamond(cx + off, cy, 26.0f - (float)i * 2.0f,
-                                wc.r, wc.g, wc.b, (0.5f - (float)i * 0.1f) * (0.6f + 0.4f * blink));
+                drawCircle(cx, cy, 20.0f, wc.r, wc.g, wc.b, 0.12f + 0.10f * blink);
+                // 예열되는 잔상 분신 — 좌우로 갈라지는 흔들림
+                for (int i = -1; i <= 1; i += 2) {
+                    float off = (float)i * prog * 40.0f;
+                    drawCircle(cx + off, cy, 14.0f, wc.r, wc.g, wc.b, 0.10f * prog * blink);
                 }
-                drawCircle(cx, cy, 60.0f + prog * 40.0f, wc.r, wc.g, wc.b, 0.05f + 0.05f * blink);
             } break;
             default: break;
             }
