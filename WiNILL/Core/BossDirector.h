@@ -92,7 +92,7 @@ inline const wchar_t* DisplayName(int pick) {
     case 6: return L"FIREWALL.sys";
     case 7: return L"C2_RELAY.sys";
     case 8: return L"FORK.worm";
-    case 9: return L"CARRIER.cap";
+    case 9: return L"FLAGSHIP.sys";
     default: return L"UNKNOWN.sys";
     }
 }

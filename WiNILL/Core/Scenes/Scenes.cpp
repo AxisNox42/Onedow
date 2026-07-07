@@ -1247,7 +1247,7 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 struct BossOpt { const wchar_t* l; int v; };
                 BossOpt bOpts[7] = {
                     {L"None",-1}, {L"UNKNOWN.sys*",1}, {L"VOLLEY.sys",2}, {L"GLITCH.exe*",4},
-                    {L"C2_RELAY",7}, {L"FORK.worm",8}, {L"CARRIER.cap",9}
+                    {L"C2_RELAY",7}, {L"FORK.worm",8}, {L"FLAGSHIP.sys",9}
                 };
                 const float BBW = 112.0f;
                 for (int i = 0; i < 7; i++) {

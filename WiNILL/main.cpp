@@ -143,7 +143,7 @@ float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
-float TOTEM_WIN_W = 760.0f;    // CARRIER.cap: 대형 기함 전투 공간
+float TOTEM_WIN_W = 760.0f;    // FLAGSHIP.sys: 대형 기함 전투 공간
 float UNKNOWN_WIN_W = 500.0f;  // UNKNOWN.sys: 창연 검 보스
 float UNKNOWN_WIN_H = 580.0f;
 // 遊뉖꽬 ?몃뱶(SPAWNER) 媛쒖씤 ?묒? 李???怨좎젙 ???먭린 媛吏?李쎌쓣 ?꾩? (E21)
@@ -613,7 +613,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     case 4: StartBossWarn(4, L"GLITCH.exe",   polyHpC);         break;
     case 7: StartBossWarn(7, L"C2_RELAY.sys", bossHpC * 0.75f); break;
     case 8: StartBossWarn(8, L"FORK.worm",     bossHpC * 0.7f);  break;
-    case 9: StartBossWarn(9, L"CARRIER.cap",   bossHpC * 0.72f); break;
+    case 9: StartBossWarn(9, L"FLAGSHIP.sys",   bossHpC * 0.72f); break;
     default: StartBossWarn(2, L"VOLLEY.sys",   bossHpC);         break;
     }
 }
@@ -1198,7 +1198,7 @@ int main() {
                     if (g_PolyBoss   && g_PolyBoss->alive)   consider(g_PolyBoss->worldX,   g_PolyBoss->worldY,   L"GLITCH.exe");
                     if (g_BotnetBoss && g_BotnetBoss->alive) consider(g_BotnetBoss->worldX, g_BotnetBoss->worldY, L"C2_RELAY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
-                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"CARRIER.cap");
+                    if (g_TotemBoss && g_TotemBoss->alive) consider(g_TotemBoss->worldX, g_TotemBoss->worldY, L"FLAGSHIP.sys");
                     if (g_UnknownBoss && g_UnknownBoss->alive) consider(g_UnknownBoss->worldX, g_UnknownBoss->worldY, L"UNKNOWN.sys");
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
@@ -2048,7 +2048,7 @@ int main() {
                     }
                 }
 
-                // CARRIER.cap 업데이트 (느린 기동 + 인터셉터 + 야마토)
+                // FLAGSHIP.sys 업데이트 (느린 기동 + 인터셉터 + 야마토)
                 if (!timeStopped && g_TotemBoss && g_TotemBoss->alive) {
                     float pullX = 0.0f, pullY = 0.0f;
                     g_TotemBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
@@ -4132,7 +4132,7 @@ int main() {
                  CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f);
         if (g_TotemBoss && g_TotemBoss->alive)
             addW(g_TotemBoss->worldX, g_TotemBoss->worldY, TOTEM_WIN_W, TOTEM_WIN_W,
-                 L"CARRIER.cap", 0.06f,0.07f,0.10f, 0.35f,0.88f,1.0f);
+                 L"FLAGSHIP.sys", 0.06f,0.07f,0.10f, 0.35f,0.88f,1.0f);
         if (g_UnknownBoss && g_UnknownBoss->alive) {
             addW(g_UnknownBoss->worldX, g_UnknownBoss->worldY, UNKNOWN_WIN_W, UNKNOWN_WIN_H,
                  UnknownBoss::BOSS_NAME, 0.05f,0.03f,0.06f, 0.95f,0.28f,0.62f);
@@ -5172,7 +5172,7 @@ int main() {
                 bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
                 bc = glm::vec3(0.35f, 0.88f, 0.95f);
             } else if (g_TotemBoss && g_TotemBoss->alive) {
-                bn = L"CARRIER.cap";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
+                bn = L"FLAGSHIP.sys";  bhf = g_TotemBoss->hp / g_TotemBoss->maxHp;
                 bc = glm::vec3(0.35f, 0.88f, 1.0f);
             } else if (g_UnknownBoss && g_UnknownBoss->alive) {
                 bn = UnknownBoss::BOSS_NAME; bhf = g_UnknownBoss->hp / g_UnknownBoss->maxHp;
@@ -5184,7 +5184,7 @@ int main() {
                 else if (bn == L"GLITCH.exe") bossPick = 4;
                 else if (bn == L"C2_RELAY.sys")  bossPick = 7;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
-                else if (bn == L"CARRIER.cap")   bossPick = 9;
+                else if (bn == L"FLAGSHIP.sys")   bossPick = 9;
                 else if (bn == UnknownBoss::BOSS_NAME) bossPick = 1;
             }
             GameState st = g_GameManager.currentState;
@@ -5355,7 +5355,7 @@ int main() {
                                0.35f, 0.85f, 0.25f, 0.2f + 0.15f * prog);
                 }
             } break;
-            case 9: {  // CARRIER — 캐리어 실루엣 + 인터셉터 궤도
+            case 9: {  // FLAGSHIP — 기함 실루엣 + 궤도 드론
                 float cx = sw2 * 0.5f, cy = sh2 * 0.52f;
                 float pulse = 0.5f + 0.5f * sinf(t * 4.0f);
                 drawRect(cx - sw2 * 0.18f, cy - sh2 * 0.03f, sw2 * 0.36f, sh2 * 0.07f,

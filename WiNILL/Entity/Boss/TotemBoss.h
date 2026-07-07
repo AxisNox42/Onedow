@@ -11,7 +11,7 @@
 
 extern TextRenderer g_TextS;
 
-// CARRIER.cap — 히페리온 + 캐리어 + 아둔의 창 느낌의 느린 기함 보스
+// FLAGSHIP.sys — 느린 대형 기함 (궤도 드론 + 야마토 + 정화자)
 //   · 느린 기동(사거리 유지 + 측면 드리프트)
 //   · 인터셉터 궤도/교전
 //   · 야마토 직선 포격, 현측 포격, 정화자 타격 예고
@@ -25,6 +25,7 @@ public:
         bool  aggressive = false;
         float shootCd = 0.0f;
         float hitFlash = 0.0f;
+        float aimAng = 0.0f;
     };
 
     float worldX, worldY;
@@ -61,7 +62,11 @@ public:
     static constexpr float INT_HIT    = 14.0f;
     static constexpr float MAP_PAD    = 96.0f;
     static constexpr float INT_ORBIT  = 118.0f;
-    static constexpr float INT_HP     = 55.0f;
+    static constexpr float INT_HP_RATIO = 0.05f;
+
+    float intHpMax() const {
+        return (maxHp > 0.0f) ? maxHp * INT_HP_RATIO : 1.0f;
+    }
 
     // main.cpp 호환 스텁
     bool vulnerable() const { return false; }
@@ -101,7 +106,7 @@ public:
         if (intCap > lastIntCap) {
             for (int i = lastIntCap; i < intCap; i++) {
                 ints[i].alive = true;
-                ints[i].maxHp = ints[i].hp = INT_HP;
+                ints[i].maxHp = ints[i].hp = intHpMax();
                 ints[i].aggressive = false;
                 ints[i].orbitAng = (float)i * (6.283f / (float)intCap);
                 ints[i].shootCd = 0.4f;
@@ -115,7 +120,7 @@ public:
             if (!fresh && !ints[i].alive && !live) continue;
             if (fresh || (live && ints[i].maxHp <= 0.0f)) {
                 ints[i].alive = live;
-                ints[i].maxHp = ints[i].hp = live ? INT_HP : 0.0f;
+                ints[i].maxHp = ints[i].hp = live ? intHpMax() : 0.0f;
                 ints[i].aggressive = false;
                 ints[i].orbitAng = (float)i * (6.283f / (float)(intCap > 0 ? intCap : 1));
                 ints[i].shootCd = (float)(rand() % 80) * 0.01f;
@@ -174,6 +179,7 @@ public:
             if (!ic.alive || i >= intCap) continue;
             if (ic.hitFlash > 0.0f) ic.hitFlash -= dt;
             ic.orbitAng += gtSpin * (ic.aggressive ? 1.8f : 1.0f);
+            ic.aimAng = ic.orbitAng + 1.571f;
             float rad = ic.aggressive ? INT_ORBIT * 0.72f : INT_ORBIT;
             float ox = cosf(ic.orbitAng) * rad;
             float oy = sinf(ic.orbitAng) * rad * 0.65f;
@@ -189,6 +195,7 @@ public:
                 float bx = px - ic.x, by = py - ic.y;
                 float bd = sqrtf(bx * bx + by * by);
                 if (bd > 1.0f) {
+                    ic.aimAng = atan2f(by / bd, bx / bd);
                     fireDir(bullets, ic.x, ic.y, bx / bd, by / bd,
                             300.0f + (float)(rand() % 60),
                             glm::vec3(0.55f, 0.95f, 1.0f), 0.75f);
@@ -264,7 +271,7 @@ public:
         for (int i = 0; i < intCap; i++) {
             if (!ints[i].alive) {
                 ints[i].alive = true;
-                ints[i].hp = ints[i].maxHp = INT_HP;
+                ints[i].hp = ints[i].maxHp = intHpMax();
             }
             ints[i].aggressive = true;
             ints[i].shootCd = 0.15f;
@@ -393,15 +400,37 @@ public:
                        0.35f + flash * 0.4f, 0.88f + flash * 0.1f, 1.0f);
     }
 
+    // 커서형 파임 다이아 — 한쪽 모서리가 파인 6각 실루엣
+    static void drawCursorShard(float cx, float cy, float size, float ang,
+                                float r, float g, float b, float a) {
+        static const float lx[] = { 0.0f,  0.62f,  0.34f,  0.0f, -0.34f, -0.62f };
+        static const float ly[] = { -1.0f, -0.18f, 0.62f, 0.38f, 0.62f, -0.18f };
+        float wx[6], wy[6];
+        float c = cosf(ang), s = sinf(ang);
+        for (int i = 0; i < 6; i++) {
+            float px = lx[i] * size, py = ly[i] * size;
+            wx[i] = cx + px * c - py * s;
+            wy[i] = cy + px * s + py * c;
+        }
+        for (int i = 0; i < 6; i++) {
+            int j = (i + 1) % 6;
+            BatchTri(cx, cy, wx[i], wy[i], wx[j], wy[j], r, g, b, a);
+        }
+    }
+
     void renderInterceptors(float t) const {
         for (int i = 0; i < N_INT; i++) {
             const Interceptor& ic = ints[i];
             if (!ic.alive || i >= intCap) continue;
             float flash = (ic.hitFlash > 0.0f) ? ic.hitFlash / 0.14f : 0.0f;
             float pulse = 0.5f + 0.5f * sinf(t * 6.0f + ic.orbitAng);
-            drawCircle(ic.x, ic.y, 10.0f, 0.2f, 0.75f, 1.0f, 0.2f + pulse * 0.2f);
-            drawDiamond(ic.x, ic.y, 9.0f + pulse * 2.0f,
-                        0.4f + flash * 0.5f, 0.92f, 1.0f, 0.9f);
+            float sz = 11.0f + pulse * 2.5f;
+            float aim = ic.aimAng;
+            drawCircle(ic.x, ic.y, sz * 0.85f, 0.15f, 0.65f, 0.95f, 0.18f + pulse * 0.12f);
+            drawCursorShard(ic.x, ic.y, sz, aim,
+                            0.35f + flash * 0.45f, 0.88f + flash * 0.1f, 1.0f, 0.92f);
+            drawCursorShard(ic.x, ic.y, sz * 0.42f, aim,
+                            0.12f, 0.22f, 0.28f, 0.75f);
         }
     }
 
