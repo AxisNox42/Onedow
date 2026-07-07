@@ -136,7 +136,7 @@ inline const wchar_t* Tagline(int pick) {
         L"실행 파일 형태 변조",
         L"커널 패닉 직전",
         L"인바운드 차단 — 아웃바운드 허용",
-        L"C2 터미널 — 맵 전역 Agent 교전",
+        L"C2 터미널 — 명령 신호를 끊어 코어를 노출시켜라",
         L"프로세스 포크 — 연쇄 분열",
         L"차원 중계 — 무리 스웜 · 야마토 낙하 · 궤도 표적",
     };
@@ -148,7 +148,7 @@ inline const wchar_t* Tagline(int pick) {
         L"Executable morphing",
         L"Kernel panic imminent",
         L"Inbound blocked — outbound open",
-        L"C2 terminal — zombie host relay",
+        L"C2 terminal — cut the command signal, expose the core",
         L"Fork bomb — chained child processes",
         L"Dimensional relay — drone swarm · Yamato drop · orbital marks",
     };
@@ -160,7 +160,7 @@ inline const wchar_t* Tagline(int pick) {
         L"実行ファイル変形",
         L"カーネルパニック直前",
         L"インバウンド遮断",
-        L"C2端末 — ゾンビホスト中継",
+        L"C2端末 — 指令信号を断ちコアを暴け",
         L"フォーク爆弾 — 子プロセス連鎖",
         L"次元中継 — ドローン群 · ヤマト落下 · 軌道マーク",
     };

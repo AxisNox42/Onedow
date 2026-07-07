@@ -5217,15 +5217,21 @@ int main() {
                                  0.75f, 0.78f, 0.82f, 0.88f);
                 }
                 if (g_BotnetBoss && g_BotnetBoss->alive) {
-                    wchar_t hostBuf[56];
-                    swprintf_s(hostBuf, L"HOST %d/%d  SHIELD %d%%  PKT %d",
-                               g_BotnetBoss->aliveHosts(), BotnetBoss::NHOST,
-                               (int)(g_BotnetBoss->hostShieldPercent() + 0.5f),
-                               g_BotnetBoss->aliveMinions());
+                    wchar_t hostBuf[64];
+                    if (g_BotnetBoss->exposed())
+                        swprintf_s(hostBuf, L"!! EXPOSED %.1fs !!  HOST %d/%d",
+                                   g_BotnetBoss->exposedT,
+                                   g_BotnetBoss->aliveHosts(), BotnetBoss::NHOST);
+                    else
+                        swprintf_s(hostBuf, L"HOST %d/%d  FW %d%%  PKT %d",
+                                   g_BotnetBoss->aliveHosts(), BotnetBoss::NHOST,
+                                   (int)(g_BotnetBoss->hostShieldPercent() + 0.5f),
+                                   g_BotnetBoss->aliveMinions());
                     float hs = 0.55f;
                     float hw = g_TextS.Width(hostBuf, hs);
+                    bool ex2 = g_BotnetBoss->exposed();
                     g_TextS.Draw(hostBuf, bx + bw - hw - 8.0f, by - 48.0f, hs,
-                                 0.25f, 0.92f, 0.48f, 0.85f);
+                                 ex2 ? 1.0f : 0.25f, ex2 ? 0.4f : 0.92f, ex2 ? 0.25f : 0.48f, 0.85f);
                 }
                 if (g_RRBoss && g_RRBoss->alive) {
                     wchar_t rrBuf[64];
