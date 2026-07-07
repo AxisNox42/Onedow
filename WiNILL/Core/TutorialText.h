@@ -80,7 +80,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"선택 화면 설명을 읽고 플레이에 맞는 무기를 고르세요 / "
         L"크리에이티브 모드에서는 시작 조건과 시작 증강을 직접 설정할 수 있습니다",
 
-        L"보스는 VOLLEY.sys, C2_RELAY.sys, FORK.worm, HANGAR.sys 등이 별도 창으로 등장합니다 / "
+        L"보스는 VOLLEY.sys, C2_RELAY.sys, FORK.worm, CARRIER.cap 등이 별도 창으로 등장합니다 / "
         L"보스 창 안에서만 패턴이 펼쳐지며, 체력바를 깎아 격파합니다 / "
         L"탄막, 소환, 장판 패턴을 읽고 SHIFT 대시와 창 위치로 회피하세요 / "
         L"보스 처치 후 짧은 휴식(인터미션)과 런 골드 상점이 열립니다 / "
@@ -130,7 +130,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Read the select-screen text and pick what fits your style / "
         L"Creative mode lets you set start conditions and starting augments",
 
-        L"Bosses like VOLLEY.sys, C2_RELAY.sys, FORK.worm, and HANGAR.sys spawn in their own windows / "
+        L"Bosses like VOLLEY.sys, C2_RELAY.sys, FORK.worm, and CARRIER.cap spawn in their own windows / "
         L"Patterns play inside the boss window; burn the HP bar to win / "
         L"Dodge with SHIFT and window positioning / "
         L"After each boss: short intermission and run gold shop / "
@@ -180,7 +180,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"選択画面の説明を読み、自分に合う武器を選ぶ / "
         L"クリエイティブモードで開始条件·開始強化を設定可能",
 
-        L"VOLLEY.sys、C2_RELAY.sys、FORK.worm、HANGAR.sys などのボスが別窓で出現 / "
+        L"VOLLEY.sys、C2_RELAY.sys、FORK.worm、CARRIER.cap などのボスが別窓で出現 / "
         L"窓内でパターンが展開、HPバーを削って撃破 / "
         L"SHIFTダッシュと窓位置で回避 / "
         L"撃破後は短い休憩とランゴールドショップ / "
