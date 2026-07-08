@@ -686,7 +686,7 @@ void Scene_Codex(const SceneCtx& c) {
                         g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
                     }
                 } else {
-                    // 보스 — 활성 로스터 (VOLLEY / FORK / LAG)
+                    // 보스 — 활성 로스터 (VOLLEY / FORK / SPAM)
                     const int COLS = 5; const float CELL = 200.0f;
                     int vis[BOSS_CODEX_COUNT], nv = 0;
                     for (int i = 0; i < BOSS_CODEX_COUNT; i++)
@@ -1246,7 +1246,7 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                              0.48f, 0.68f, 0.75f, 0.82f, 0.75f);
                 struct BossOpt { const wchar_t* l; int v; };
                 BossOpt bOpts[4] = {
-                    {L"None",-1}, {L"VOLLEY.sys",2}, {L"FORK.worm",8}, {L"LAG.exe",10}
+                    {L"None",-1}, {L"VOLLEY.sys",2}, {L"FORK.worm",8}, {L"SPAM.dll",3}
                 };
                 const float BBW = 112.0f;
                 for (int i = 0; i < 4; i++) {

@@ -2,8 +2,9 @@
 #include <glm/glm.hpp>
 #include "Settings.h"
 
-// 보스 pick: 2 VOLLEY 8 FORK 10 LAG (활성 로스터)
+// 보스 pick: 2 VOLLEY 8 FORK 3 SPAM (활성 로스터)
 //   1 UNKNOWN 4 GLITCH 7 C2 9 ADUN 은 로스터에서 제외 (코드만 잔존)
+//   10 LAG 는 폐기(코드 삭제) — pick 슬롯만 미사용 상태로 남음
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -14,11 +15,11 @@ inline int& RotIdx() {
 inline void ResetRotation() { RotIdx() = 0; }
 
 inline bool IsLtsRosterPick(int pick) {
-    return pick == 2 || pick == 8 || pick == 10;
+    return pick == 2 || pick == 8 || pick == 3;
 }
 
 inline int RollScorePick() {
-    static const int kLtsRot[] = { 2, 8, 10 };
+    static const int kLtsRot[] = { 2, 8, 3 };
     return kLtsRot[RotIdx()++ % 3];
 }
 
@@ -61,11 +62,11 @@ inline ActRules RulesForPick(int pick) {
     switch (pick) {
     case 1:  return { 2.8f, 4.8f, 1.04f, 1.02f, 2, 3 };   // UNKNOWN — 기술·필드 pin
     case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f, 4, 2 };   // VOLLEY — 탄막·원거리
+    case 3:  return { 2.6f, 4.6f, 0.96f, 0.98f, 2, 4 };   // SPAM — 클러터 관리
     case 4:  return { 2.5f, 4.5f, 1.0f,  1.0f,  8, 4 };   // GLITCH — 엘리트
     case 7:  return { 3.5f, 6.0f, 1.18f, 1.0f,  3, 8 };   // C2 — swarm
     case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };  // FORK — 물량
     case 9:  return { 4.5f, 8.0f, 1.12f, 1.08f, 6, 6 };   // ADUN — 특수몹
-    case 10: return { 3.0f, 5.5f, 1.0f,  1.0f,  3, 5 };   // LAG — 디싱크 분신/버스트
     default: return { 2.0f, 3.0f, 1.0f,  1.0f,  2, 2 };
     }
 }
@@ -94,7 +95,6 @@ inline const wchar_t* DisplayName(int pick) {
     case 7: return L"C2_RELAY.sys";
     case 8: return L"FORK.worm";
     case 9: return L"ADUN.relay";
-    case 10: return L"LAG.exe";
     default: return L"UNKNOWN.sys";
     }
 }
@@ -109,7 +109,6 @@ inline float HpMul(int pick) {
     case 7: return 0.75f;
     case 8: return 0.7f;
     case 9: return 0.72f;
-    case 10: return 0.68f;
     default: return 1.0f;
     }
 }
@@ -126,7 +125,6 @@ inline glm::vec3 WarnColor(int pick) {
     case 7: return { 0.25f, 0.92f, 0.48f };
     case 8: return { 0.35f, 0.88f, 0.95f };
     case 9: return { 0.58f, 0.5f,  1.0f  };
-    case 10: return { 0.3f,  0.85f, 1.0f  };
     default: return { 0.6f, 0.25f, 1.0f };
     }
 }
