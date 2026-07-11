@@ -254,6 +254,9 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::SMG_COMPRESSOR    && !playerHasSMG())   continue;
             if (t == AugType::RIFLE_STABILITY   && !playerHasRifle()) continue;
             if (t == AugType::SNIPER_AMPLIFIER  && !playerHasSniper()) continue;
+            // 검객/궁수 전용 트리 — 해당 클래스가 아니면 제외
+            if ((t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND) && !g_Stats.meleeWeapon) continue;
+            if ((t == AugType::POWER_DRAW || t == AugType::MULTISHOT) && !g_Stats.bowWeapon)   continue;
             // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/병렬처리/취함/영혼수확/클래스)
             if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
@@ -451,7 +454,8 @@ void GameManager::AddScore(float amount) {
 void GameManager::UpdateTitle(GLFWwindow* window) {
     // AUG/DEBUFF_SELECT: update title every frame with choices
     if (currentState == GameState::AUG_SELECT ||
-        currentState == GameState::DEBUFF_SELECT) {
+        currentState == GameState::DEBUFF_SELECT ||
+        currentState == GameState::AUG_REPLACE) {
         std::string t = (currentState == GameState::DEBUFF_SELECT)
                         ? "CHOOSE DEBUFF >> [1] " : "CHOOSE AUG >> [1] ";
         t += ALL_AUGS[augChoices[0]].name;
@@ -492,7 +496,8 @@ void GameManager::Render() {
     //   MAIN_MENU 는 "진짜 바탕화면"을 비추기 위해 어둡게 덮지 않음.
     if (currentState != GameState::RUNNING && currentState != GameState::DYING &&
         currentState != GameState::PAUSED &&
-        currentState != GameState::GAMEOVER && currentState != GameState::MAIN_MENU &&
+        currentState != GameState::GAMEOVER && currentState != GameState::VICTORY &&
+        currentState != GameState::MAIN_MENU &&
         !(currentState == GameState::SETTINGS &&
           g_SettingsReturnTo == GameState::PAUSED)) {
         float identity[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
@@ -501,6 +506,7 @@ void GameManager::Render() {
         float oR = 0.0f, oG = 0.0f, oB = 0.0f, overlayA = 0.5f;
         if (currentState == GameState::GAMEOVER)     { overlayA = 0.60f; }
         if (currentState == GameState::AUG_SELECT)   { overlayA = 0.75f; }
+        if (currentState == GameState::AUG_REPLACE)  { overlayA = 0.78f; }
         // 디버프 — 적갈색 틴트. 오버레이가 너무 진하면(0.80) 하단 설명 박스(0.85)와
         //   겹쳐 새까맣게 보여 "알파 고장"처럼 느껴짐 → 0.62 로 낮춰 가독성 확보.
         if (currentState == GameState::DEBUFF_SELECT){ oR = 0.16f; oG = 0.05f; oB = 0.06f; overlayA = 0.62f; }
@@ -511,7 +517,8 @@ void GameManager::Render() {
 
     // --- AUG_SELECT / DEBUFF_SELECT: 3 또는 4-card picker ----------
     if (currentState == GameState::AUG_SELECT ||
-        currentState == GameState::DEBUFF_SELECT) {
+        currentState == GameState::DEBUFF_SELECT ||
+        currentState == GameState::AUG_REPLACE) {
         setOrtho(projLoc);
 
         const int         nCards  = 3;

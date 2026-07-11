@@ -6,7 +6,7 @@
 #include "PlayerStats.h"
 #include "Settings.h"   // CurLangIdx 는 Augment.h 에 있지만 언어 인덱스만 필요
 
-enum MetaId { META_HP, META_DMG, META_MOVE, META_VISION, META_STARTAUG, META_COUNT };
+enum MetaId { META_HP, META_DMG, META_MOVE, META_VISION, META_STARTAUG, META_ID_SLOT, META_COUNT };
 
 struct MetaDef {
     const wchar_t* name[3];   // KR / EN / JP
@@ -19,6 +19,7 @@ inline const MetaDef META_DEFS[META_COUNT] = {
     { { L"이동속도 +5%",   L"Move Speed +5%",   L"移動速度 +5%" }, 3, 120 },
     { { L"시작 시야 +60",  L"Start Vision +60", L"初期視界 +60" }, 3, 120 },
     { { L"시작 증강 +1",   L"Start Augment +1", L"初期強化 +1" },  2, 400 },
+    { { L"식별 슬롯 +1",   L"Identity Slot +1", L"識別スロット +1" }, 3, 350 },
 };
 
 inline long long g_Coins = 0;

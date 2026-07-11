@@ -33,7 +33,6 @@ extern TotemBoss*          g_TotemBoss;
 // ── UI / 메뉴 씬에서 참조 (main.cpp 정의) ──
 extern bool      g_LmbPrev;
 extern GameState g_SettingsReturnTo;
-extern int       g_WeaponChoices[3];
 extern int       g_CurrentWeapon;
 extern int       g_ConversionWeapon;
 extern std::vector<int> g_OwnedAugs;
@@ -45,6 +44,7 @@ void RunShopPurchase(int slot);
 extern int       g_MetaStartAugs;
 extern bool      g_LastRunRecord;
 extern float     g_GameOverFade;
+extern float     g_VictoryFade;
 extern wchar_t   g_DeathReason[96];
 extern bool      g_RunMelee;
 extern bool      g_RunBow;

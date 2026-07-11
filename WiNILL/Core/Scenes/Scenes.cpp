@@ -28,6 +28,9 @@
 #include "Monster.h"
 #include "RunIntermission.h"
 #include "BossDirector.h"
+#include "Ascension.h"
+#include "AugmentSlots.h"
+#include "FloorDirector.h"
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -860,6 +863,84 @@ void Scene_Tutorial(const SceneCtx& c) {
         g_GameManager.currentState = GameState::MAIN_MENU;
 }
 
+// 직업 확정 → 고정 무기/조작 적용 → 시작증강 or READY 로 전이.
+//   직업제 개편: 총기 3택1 화면 없이 직업 = 고정 무기 1:1 매핑.
+void FinalizeLoadout(const SceneCtx& c, int wIdx) {
+    const float sw = c.sw, sh = c.sh;
+    float& fireTimer = *c.fireTimer;
+
+    g_Stats.baseFireInterval = g_Stats.fireInterval;
+    ApplyWeapon(g_Stats, (StartWeapon)wIdx);
+    g_CurrentWeapon = wIdx;
+    fireTimer = g_Stats.fireInterval;
+    bool classJob = false;
+    if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
+        const JobDef& jd = JOB_DEFS[g_SelectedJob];
+        for (int a = 0; a < jd.startAugCount; a++) {
+            int ji = AugIndexOf(jd.startAugs[a]);
+            if (ji < 0) continue;
+            g_Stats.Apply(jd.startAugs[a]);
+            g_OwnedAugs.push_back(ji);
+            // 조합 레시피(g_TypeOwned)와 분리 — 런 중 획득한 증강만 조합에 사용
+            MarkAugSeen(ji);
+            if (AugOnceOnly(jd.startAugs[a], ALL_AUGS[ji].rarity))
+                g_GameManager.takenOnce[ji] = true;
+            EquipSkill(SkillForAug(jd.startAugs[a]));
+            ApplyAugmentSideEffects(jd.startAugs[a], (int)sw, (int)sh);
+        }
+        if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
+            g_Stats.meleeWeapon  = true;
+            g_Stats.fireInterval = 0.26f;
+            g_Stats.baseFireInterval = g_Stats.fireInterval;
+            g_RunMelee = true; classJob = true;
+        } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
+            g_Stats.bowWeapon    = true;
+            g_Stats.bulletSpeed *= 1.4f;
+            g_RunBow = true; classJob = true;
+        }
+        fireTimer = g_Stats.fireInterval;
+    }
+    // 검객/궁수는 총기 표기가 무의미 → 변환/게임오버 표시용 무기 제거
+    if (classJob) g_CurrentWeapon = -1;
+    // 크리에이티브: 직접 고른 시작 증강 즉시 적용 (스탯+보유목록 직접)
+    if (g_CreativeMode) {
+        for (int aidx : g_CreativeStartAugList) {
+            if (aidx < 0 || aidx >= AUG_TOTAL) continue;
+            AugType atype = ALL_AUGS[aidx].type;
+            g_Stats.Apply(atype);
+            g_OwnedAugs.push_back(aidx);
+            g_TypeOwned[(int)atype] = true;
+            MarkAugSeen(aidx);
+            EquipSkill(SkillForAug(atype));
+            if (AugOnceOnly(atype, ALL_AUGS[aidx].rarity))
+                g_GameManager.takenOnce[aidx] = true;
+            ApplyAugmentSideEffects(atype, (int)sw, (int)sh);
+        }
+        SyncPlayerWindowAfterLoadout();
+    }
+    g_GameManager.maxHP    = g_Stats.maxHP;
+    g_GameManager.playerHP = g_Stats.maxHP;
+    g_PrevHP               = g_Stats.maxHP;
+    int startAugs = g_MetaStartAugs + ((g_CreativeMode) ? g_CreativeStartAugs : 0);
+    if (startAugs > 0) {
+        g_BossRewardPicksLeft = startAugs;
+        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
+                                     g_Stats.distAugTaken, g_CreativeMode);
+        g_GameManager.currentState = GameState::AUG_SELECT;
+    } else {
+        g_GameManager.currentState = GameState::READY;
+    }
+}
+
+// 선택된 직업(g_SelectedJob)의 고정 무기 인덱스. 근접/활 직업은 내부적으로
+// RIFLE 을 더미 베이스로 쓰고 weaponMode 가 이후 덮어쓴다.
+static int FixedWeaponForSelectedJob() {
+    if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT &&
+        JOB_DEFS[g_SelectedJob].fixedWeapon >= 0)
+        return JOB_DEFS[g_SelectedJob].fixedWeapon;
+    return (int)StartWeapon::RIFLE;
+}
+
 void Scene_JobSelect(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
@@ -899,7 +980,7 @@ void Scene_JobSelect(const SceneCtx& c) {
                 const float TX = 14.0f;
                 float bx = fx + (FW - BW) * 0.5f;
                 float by = hintY + g_TextS.Height(HN, hintSc) + 36.0f;
-                for (int j = 0; j < JOB_PLAYABLE; j++) {   // 검객/궁수(DLC 보류)는 숨김
+                for (int j = 0; j < JOB_PLAYABLE; j++) {   // 전 직업 노출 — 각자 고정 무기/조작
                     float y = by + j * (BH + BG);
                     bool unlocked = JobUnlocked(j);
                     bool sel = (g_SelectedJob == j);
@@ -942,177 +1023,13 @@ void Scene_JobSelect(const SceneCtx& c) {
                     if (clicked) {
                         g_SelectedJob = j;
                         ResetForNewGame();
-                        PickRandomWeapons(g_WeaponChoices);
-                        g_GameManager.currentState = GameState::WEAPON_SELECT;
+                        FinalizeLoadout(c, FixedWeaponForSelectedJob());
                     }
                 }
                 if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = g_CreativeMode
                         ? GameState::CREATIVE_CONFIG : GameState::DIFFICULTY_SELECT;
-                }
-}
-
-void Scene_WeaponSelect(const SceneCtx& c) {
-    const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-                // 무기 확정 → 직업 시작증강/무기모드 적용 → 시작증강 or READY 로 전이
-                auto finalizeLoadout = [&](int wIdx) {
-                    g_Stats.baseFireInterval = g_Stats.fireInterval;
-                    ApplyWeapon(g_Stats, (StartWeapon)wIdx);
-                    g_CurrentWeapon = wIdx;
-                    fireTimer = g_Stats.fireInterval;
-                    bool classJob = false;
-                    if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
-                        const JobDef& jd = JOB_DEFS[g_SelectedJob];
-                        for (int a = 0; a < jd.startAugCount; a++) {
-                            int ji = AugIndexOf(jd.startAugs[a]);
-                            if (ji < 0) continue;
-                            g_Stats.Apply(jd.startAugs[a]);
-                            g_OwnedAugs.push_back(ji);
-                            // 조합 레시피(g_TypeOwned)와 분리 — 런 중 획득한 증강만 조합에 사용
-                            MarkAugSeen(ji);
-                            if (AugOnceOnly(jd.startAugs[a], ALL_AUGS[ji].rarity))
-                                g_GameManager.takenOnce[ji] = true;
-                            EquipSkill(SkillForAug(jd.startAugs[a]));
-                            ApplyAugmentSideEffects(jd.startAugs[a], (int)sw, (int)sh);
-                        }
-                        if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
-                            g_Stats.meleeWeapon  = true;
-                            g_Stats.fireInterval = 0.26f;
-                            g_Stats.baseFireInterval = g_Stats.fireInterval;
-                            g_RunMelee = true; classJob = true;
-                        } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
-                            g_Stats.bowWeapon    = true;
-                            g_Stats.bulletSpeed *= 1.4f;
-                            g_RunBow = true; classJob = true;
-                        }
-                        fireTimer = g_Stats.fireInterval;
-                    }
-                    // 검객/궁수는 총기 표기가 무의미 → 변환/게임오버 표시용 무기 제거
-                    if (classJob) g_CurrentWeapon = -1;
-                    // 크리에이티브: 직접 고른 시작 증강 즉시 적용 (스탯+보유목록 직접)
-                    if (g_CreativeMode) {
-                        for (int aidx : g_CreativeStartAugList) {
-                            if (aidx < 0 || aidx >= AUG_TOTAL) continue;
-                            AugType atype = ALL_AUGS[aidx].type;
-                            g_Stats.Apply(atype);
-                            g_OwnedAugs.push_back(aidx);
-                            g_TypeOwned[(int)atype] = true;
-                            MarkAugSeen(aidx);
-                            EquipSkill(SkillForAug(atype));
-                            if (AugOnceOnly(atype, ALL_AUGS[aidx].rarity))
-                                g_GameManager.takenOnce[aidx] = true;
-                            ApplyAugmentSideEffects(atype, (int)sw, (int)sh);
-                        }
-                        SyncPlayerWindowAfterLoadout();
-                    }
-                    g_GameManager.maxHP    = g_Stats.maxHP;
-                    g_GameManager.playerHP = g_Stats.maxHP;
-                    g_PrevHP               = g_Stats.maxHP;
-                    int startAugs = g_MetaStartAugs + ((g_CreativeMode) ? g_CreativeStartAugs : 0);
-                    if (startAugs > 0) {
-                        g_BossRewardPicksLeft = startAugs;
-                        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                     g_Stats.distAugTaken, g_CreativeMode);
-                        g_GameManager.currentState = GameState::AUG_SELECT;
-                    } else {
-                        g_GameManager.currentState = GameState::READY;
-                    }
-                };
-                // 검객/궁수 — 총기 선택이 무의미(무기모드가 덮어씀) → 페이지 건너뛰고 기본 무기로 확정
-                if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
-                    int wm = JOB_DEFS[g_SelectedJob].weaponMode;
-                    if (wm == 1 || wm == 2) { finalizeLoadout((int)StartWeapon::RIFLE); return; }
-                }
-
-                BindMainShader();
-                const float FW = FLOW_PANEL_W, FH = FLOW_PANEL_H;
-                float fx, fy, fcy;
-                SceneFlowWindow(sw, sh, FW, FH, L"loadout.exe", 0.4f, 0.85f, 1.0f, fx, fy, fcy);
-                const float backY = FlowBackY(fy, FH);
-
-                const wchar_t* TIT = L"시작 무기를 선택하세요";
-                float titSc = 1.2f;
-                while (titSc > 0.85f && g_TextL.Width(TIT, titSc) > FW - 96.0f) titSc -= 0.05f;
-                float titleY = fcy + 32.0f;
-                float titH = g_TextL.Height(TIT, titSc);
-                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, titSc)) * 0.5f,
-                             titleY, titSc, 1, 1, 1, 0.98f);
-
-                const float GAP = 32.0f;
-                const float CARD_W = 380.0f;
-                const float totalCardsW = 3.0f * CARD_W + 2.0f * GAP;
-                float cardsTop = titleY + titH + 40.0f;
-                float cardsBot = backY - 20.0f;
-                float CARD_H = std::min(480.0f, cardsBot - cardsTop);
-                float baseX = fx + (FW - totalCardsW) * 0.5f;
-                float baseY = cardsTop + (cardsBot - cardsTop - CARD_H) * 0.5f;
-
-                for (int i = 0; i < 3; i++) {
-                    int idx = g_WeaponChoices[i];
-                    if (idx < 0 || idx >= (int)StartWeapon::_COUNT) continue;
-                    const WeaponDef& w = ALL_WEAPONS[idx];
-                    float cardX = baseX + i * (CARD_W + GAP);
-
-                    // 카드 = 큰 버튼 (라벨 비움 — 이름은 위쪽에 따로 그려 설명과 겹침 방지)
-                    if (UIButton(cardX, baseY, CARD_W, CARD_H, L"",
-                                 mx, my, lmb, g_LmbPrev)) {
-                        finalizeLoadout(idx);
-                    }
-
-                    // 무기 이름 — 카드 상단쪽 (설명과 분리)
-                    {
-                        const wchar_t* nm = WeaponName(w);
-                        float nsc = 1.05f;
-                        while (nsc > 0.6f && g_TextL.Width(nm, nsc) > CARD_W - 24.0f) nsc -= 0.05f;
-                        float nw = g_TextL.Width(nm, nsc);
-                        g_TextL.Draw(nm, cardX + (CARD_W - nw) * 0.5f,
-                                     baseY + CARD_H * 0.20f, nsc, 1, 1, 1, 0.98f);
-                    }
-
-                    // 설명 — 카드 안 하단에 그림 (UIButton 위에 덧그림)
-                    BindMainShader();
-                    const wchar_t* d = WeaponDesc(w);
-                    // '/' 로 split → 줄 단위
-                    std::vector<std::wstring> lines;
-                    std::wstring cur;
-                    for (const wchar_t* p = d; *p; ++p) {
-                        if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
-                        else cur += *p;
-                    }
-                    if (!cur.empty()) lines.push_back(cur);
-                    for (auto& s : lines) {
-                        while (!s.empty() && s.front() == L' ') s.erase(0, 1);
-                        while (!s.empty() && s.back() == L' ') s.pop_back();
-                    }
-                    // 설명을 카드 안에 가둔다 — 줄 많은 무기(대포 등)는 줄간격/글자 압축
-                    float descTop = baseY + CARD_H * 0.44f;
-                    float descBot = baseY + CARD_H - 14.0f;
-                    int   nL = (int)lines.size(); if (nL < 1) nL = 1;
-                    float lineH = 26.0f;
-                    if (descTop + nL * lineH > descBot)
-                        lineH = (descBot - descTop) / nL;
-                    for (int li = 0; li < (int)lines.size(); li++) {
-                        const wchar_t* s = lines[li].c_str();
-                        float sc = (lineH < 24.0f) ? 0.78f : 0.85f;
-                        while (sc > 0.52f &&
-                               g_TextS.Width(s, sc) > CARD_W - 24.0f) sc -= 0.05f;
-                        float lw = g_TextS.Width(s, sc);
-                        g_TextS.Draw(s, cardX + (CARD_W - lw) * 0.5f,
-                                     descTop + li * lineH, sc, 0.88f, 0.95f, 1.0f, 0.95f);
-                    }
-                }
-
-                if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::JOB_SELECT;
                 }
 }
 
@@ -1198,6 +1115,26 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                     g_TextS.Draw(CDESC, cbx + (cbw - cdw) * 0.5f,
                                  cby + cbh + 10.0f, 0.78f,
                                  0.85f, 0.95f, 0.6f, 0.85f);
+                }
+
+                if (!g_CreativeMode) {
+                    float aby = by + blockH + (g_DevUnlocked ? 120.0f : 28.0f);
+                    if (aby + 56.0f > backY - 12.0f) aby = backY - 72.0f;
+                    const float ABW = 680.0f, ABH = 56.0f;
+                    float abx = bx;
+                    if (UIButton(abx, aby, 120.0f, ABH, L"<", mx, my, lmb, g_LmbPrev) &&
+                        Asc::g_SelectedAscension > 0)
+                        Asc::g_SelectedAscension--;
+                    if (UIButton(abx + ABW - 120.0f, aby, 120.0f, ABH, L">", mx, my, lmb, g_LmbPrev) &&
+                        Asc::g_SelectedAscension < Asc::MaxSelectableAscension())
+                        Asc::g_SelectedAscension++;
+                    wchar_t ascLine[128];
+                    swprintf_s(ascLine, L"%ls  (max %d)",
+                               Asc::Label(Asc::g_SelectedAscension),
+                               Asc::MaxSelectableAscension());
+                    float alw = g_TextL.Width(ascLine, 0.88f);
+                    g_TextL.Draw(ascLine, abx + (ABW - alw) * 0.5f, aby + 14.0f, 0.88f,
+                                 0.85f, 0.95f, 1.0f, 0.95f);
                 }
 
                 if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
@@ -1798,8 +1735,7 @@ void Scene_GameOver(const SceneCtx& c) {
                     if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
                                  mx, my, lmb, g_LmbPrev)) {
                         ResetForNewGame();
-                        PickRandomWeapons(g_WeaponChoices);
-                        g_GameManager.currentState = GameState::WEAPON_SELECT;
+                        FinalizeLoadout(c, FixedWeaponForSelectedJob());
                     }
                     if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
                                  mx, my, lmb, g_LmbPrev)) {
@@ -1810,6 +1746,66 @@ void Scene_GameOver(const SceneCtx& c) {
                         glfwSetWindowShouldClose(window, GLFW_TRUE);
                     }
                 }
+}
+
+void Scene_Victory(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    GLFWwindow* window = c.window;
+    const std::function<void()>& ResetForNewGame = c.reset;
+
+    float vf = g_VictoryFade;
+    float ve = Smoothstep(vf);
+
+    BindMainShader();
+    drawRect(0, 0, sw, sh, 0.02f, 0.06f, 0.04f, 0.88f * ve);
+
+    static const wchar_t* T1[3] = { L"탑 클리어!", L"TOWER CLEARED!", L"塔クリア!" };
+    int li = LangIndex();
+    if (li < 0 || li > 2) li = 0;
+    g_TextL.Draw(T1[li], CenterTextX(sw, g_TextL, T1[li], 1.7f), sh * 0.26f, 1.7f,
+                 0.35f, 1.0f, 0.55f, 0.98f * ve);
+
+    wchar_t ascBuf[96];
+    swprintf_s(ascBuf, L"%ls  ·  Clears: %d",
+               Asc::Label(Asc::g_SelectedAscension), Asc::g_TowerClears);
+    g_TextS.Draw(ascBuf, CenterTextX(sw, g_TextS, ascBuf, 0.95f), sh * 0.36f,
+                 0.95f, 0.85f, 1.0f, 0.75f, 0.95f * ve);
+
+    wchar_t scoreBuf[64], lvBuf[64], killBuf[64], coinBuf[64];
+    swprintf_s(scoreBuf, L"%ls   %lld", T(StrId::FINAL_SCORE), g_GameManager.score);
+    swprintf_s(lvBuf,   L"%ls   Lv. %d", T(StrId::REACHED_LEVEL), g_GameManager.playerLevel);
+    swprintf_s(killBuf, L"%ls   %lld", T(StrId::KILL_COUNT), g_Stats.killCount);
+    swprintf_s(coinBuf, L"+%lld COIN  (total %lld)", g_LastRunCoins, g_Coins);
+    g_TextL.Draw(scoreBuf, CenterTextX(sw, g_TextL, scoreBuf, 1.25f), sh * 0.46f, 1.25f,
+                 1.0f, 1.0f, 0.85f, 0.95f * ve);
+    g_TextS.Draw(lvBuf,   CenterTextX(sw, g_TextS, lvBuf, 1.0f), sh * 0.54f, 1.0f,
+                 0.85f, 0.95f, 0.85f, 0.95f * ve);
+    g_TextS.Draw(killBuf, CenterTextX(sw, g_TextS, killBuf, 1.0f), sh * 0.59f, 1.0f,
+                 0.85f, 0.95f, 0.85f, 0.95f * ve);
+    g_TextS.Draw(coinBuf, CenterTextX(sw, g_TextS, coinBuf, 1.0f), sh * 0.64f, 1.0f,
+                 1.0f, 0.9f, 0.35f, 0.95f * ve);
+
+    if (vf >= 0.999f) {
+        const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
+        float totalW = 3 * BW + 2 * BG;
+        float bx = (sw - totalW) * 0.5f;
+        float by = sh * 0.72f;
+        if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
+                     mx, my, lmb, g_LmbPrev)) {
+            ResetForNewGame();
+            FinalizeLoadout(c, FixedWeaponForSelectedJob());
+        }
+        if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
+                     mx, my, lmb, g_LmbPrev)) {
+            g_GameManager.currentState = GameState::MAIN_MENU;
+        }
+        if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
+                     mx, my, lmb, g_LmbPrev)) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
+    }
 }
 
 void Scene_AugSelect(const SceneCtx& c) {
@@ -1836,6 +1832,13 @@ void Scene_AugSelect(const SceneCtx& c) {
                                      : T(StrId::CHOOSE_AUG);
                 g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.0f), baseY - 56.0f, 1.0f,
                              1,1,1,0.95f);
+                if (st == GameState::AUG_SELECT) {
+                    wchar_t slotBuf[96];
+                    swprintf_s(slotBuf, L"ID %d / %d",
+                               CountIdentitySlotsUsed(), IdentitySlotMax());
+                    g_TextS.Draw(slotBuf, CenterTextX(sw, g_TextS, slotBuf, 0.82f),
+                                 baseY - 28.0f, 0.82f, 0.75f, 0.95f, 1.0f, 0.88f);
+                }
 
                 // 키 힌트
                 const wchar_t* HINT = (g_HoveredAug < 0)
@@ -1961,6 +1964,62 @@ void Scene_AugSelect(const SceneCtx& c) {
                                      1.0f, 1.0f, 1.0f, 0.95f);
                     }
                 }
+}
+
+void Scene_AugReplace(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    int newIdx = g_GameManager.pendingAugIdx;
+    if (newIdx < 0 || newIdx >= AUG_TOTAL) return;
+
+    const wchar_t* TIT[3] = {
+        L"식별 슬롯 가득 — 교체할 증강 선택",
+        L"Identity slots full — pick one to replace",
+        L"識別スロット満杯 — 交換する強化を選択" };
+    int li = LangIndex();
+    if (li < 0 || li > 2) li = 0;
+    g_TextL.Draw(TIT[li], CenterTextX(sw, g_TextL, TIT[li], 0.95f), sh * 0.12f,
+                 0.95f, 1, 1, 1, 0.95f);
+
+    wchar_t newLine[160];
+    swprintf_s(newLine, L"NEW: [%ls] %ls",
+               GetAugBadge(ALL_AUGS[newIdx]), AugName(ALL_AUGS[newIdx]));
+    g_TextS.Draw(newLine, CenterTextX(sw, g_TextS, newLine, 0.88f), sh * 0.18f,
+                 0.88f, 0.9f, 1.0f, 0.7f, 0.95f);
+
+    const float CARD_W = 260.0f, CARD_H = 120.0f, GAP = 16.0f;
+    int n = g_GameManager.replaceChoiceCount;
+    float totalW = (float)n * CARD_W + (float)(n > 0 ? n - 1 : 0) * GAP;
+    if (totalW > sw - 40.0f) totalW = sw - 40.0f;
+    float baseX = (sw - totalW) * 0.5f;
+    float baseY = sh * 0.32f;
+
+    for (int i = 0; i < n; i++) {
+        int idx = g_GameManager.replaceChoices[i];
+        if (idx < 0 || idx >= AUG_TOTAL) continue;
+        float cx = baseX + i * (CARD_W + GAP);
+        float yOff = (g_HoveredAug == i) ? -8.0f : 0.0f;
+        const AugDef& def = ALL_AUGS[idx];
+        float tr, tg, tb;
+        GetRarityColor(def.rarity, tr, tg, tb);
+        BindMainShader();
+        drawRect(cx, baseY + yOff, CARD_W, CARD_H, tr * 0.35f, tg * 0.35f, tb * 0.35f, 0.92f);
+        wchar_t lbl[128];
+        swprintf_s(lbl, L"[%d] %ls", i + 1, AugName(def));
+        float lsc = 0.78f;
+        while (lsc > 0.52f && g_TextL.Width(lbl, lsc) > CARD_W - 16.0f) lsc -= 0.04f;
+        g_TextL.Draw(lbl, cx + 10.0f, baseY + yOff + 16.0f, lsc, 1, 1, 1, 0.95f);
+        static const wchar_t* KEYS[9] = { L"[1]",L"[2]",L"[3]",L"[4]",L"[5]",L"[6]",L"[7]",L"[8]",L"[9]" };
+        if (i < 9)
+            g_TextS.Draw(KEYS[i], cx + 10.0f, baseY + yOff + CARD_H - 32.0f, 0.85f,
+                         tr, tg, tb, 0.95f);
+    }
+
+    const wchar_t* HINT[3] = {
+        L"1~9: 선택 · Space: 교체 · Esc: 새 증강 포기",
+        L"1~9: select · Space: replace · Esc: skip new augment",
+        L"1~9: 選択 · Space: 交換 · Esc: 新規強化を見送り" };
+    g_TextS.Draw(HINT[li], CenterTextX(sw, g_TextS, HINT[li], 0.82f), sh * 0.78f,
+                 0.82f, 0.75f, 0.75f, 0.75f, 0.85f);
 }
 
 void Scene_RunShop(const SceneCtx& c) {
@@ -2305,9 +2364,6 @@ bool TryEscNavigateBack() {
         return true;
     case GS::JOB_SELECT:
         st = g_CreativeMode ? GS::CREATIVE_CONFIG : GS::DIFFICULTY_SELECT;
-        return true;
-    case GS::WEAPON_SELECT:
-        st = GS::JOB_SELECT;
         return true;
     case GS::DIFFICULTY_SELECT:
         st = GS::MAIN_MENU;

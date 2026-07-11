@@ -7,21 +7,22 @@
 // ─────────────────────────────────────────────────────────────
 #include "Meta.h"      // g_Coins, g_Language, LANG_COUNT
 #include "Augment.h"   // AugType, ALL_AUGS, AUG_TOTAL
+#include "Weapons.h"   // StartWeapon (직업별 고정 무기)
 
 // ── 직업(클래스) ───────────────────────────────────
 enum JobId {
-    JOB_NONE,        // 방랑자 — 항상 선택 가능, 보너스 없음
-    JOB_ASSASSIN,    // 암살자 — 치명타
-    JOB_BERSERKER,   // 광전사 — 광전사 + 유리대포
-    JOB_BOMBARDIER,  // 폭격수 — 연쇄 폭발
-    JOB_VAMPIRE,     // 흡혈귀 — 흡혈탄 + 흡혈마
-    JOB_SWORDSMAN,   // 검객 — 근접 호 스윙 (총 대신 칼)  [DLC 보류 — 선택 불가]
-    JOB_ARCHER,      // 궁수 — 관통 화살 (총 대신 활)     [DLC 보류 — 선택 불가]
+    JOB_NONE,        // 방랑자 — 소총, 보너스 없음 (만능/입문)
+    JOB_ASSASSIN,    // 암살자 — 리볼버, 치명타
+    JOB_BERSERKER,   // 광전사 — 샷건, 광전사 + 유리대포
+    JOB_BOMBARDIER,  // 폭격수 — 대포, 연쇄 폭발
+    JOB_VAMPIRE,     // 흡혈귀 — 기관단총, 흡혈탄 + 흡혈마
+    JOB_SWORDSMAN,   // 검객 — 근접 호 스윙 (총 대신 칼)
+    JOB_ARCHER,      // 궁수 — 관통 화살 (총 대신 활)
     JOB_COUNT
 };
-// 현재 플레이 가능한(직업 선택창에 노출되는) 직업 수.
-//   검객/궁수는 향후 DLC 로 보류 — enum/weaponMode 코드는 그대로 두되 UI 에서만 숨김.
-inline const int JOB_PLAYABLE = JOB_SWORDSMAN;
+// 직업 선택창에 노출되는 직업 수. 모든 직업은 고유 고정 무기/조작을 가지며
+// 각 직업은 서로 다른 StartWeapon(또는 근접/활)에 매핑된다 — JobDef::fixedWeapon 참고.
+inline const int JOB_PLAYABLE = JOB_COUNT;
 
 // ── 업적 ───────────────────────────────────────────
 enum AchId {
@@ -106,44 +107,52 @@ struct JobDef {
     int            unlockAch;          // AchId or -1 (항상 해금)
     AugType        startAugs[4];
     int            startAugCount;
-    int            weaponMode;         // 0=총(기본) 1=근접(검) 2=관통화살(활)
+    int            weaponMode;         // 0=총(고정 무기) 1=근접(검) 2=관통화살(활)
+    int            fixedWeapon;        // weaponMode==0 일 때 사용할 StartWeapon 인덱스 (-1=해당 없음)
 };
 inline const JobDef JOB_DEFS[JOB_COUNT] = {
     /* JOB_NONE */ {
         { L"방랑자", L"Wanderer", L"放浪者" },
-        { L"보너스 없음 — 순수 실력", L"No bonus — pure skill", L"ボーナス無し — 実力勝負" },
-        -1, {}, 0, 0 },
+        { L"소총 — 만능 균형형, 보너스 없이 순수 실력",
+          L"Rifle — balanced all-rounder, no bonus, pure skill",
+          L"ライフル — バランス万能、ボーナス無し実力勝負" },
+        -1, {}, 0, 0, (int)StartWeapon::RIFLE },
     /* JOB_ASSASSIN */ {
         { L"암살자", L"Assassin", L"アサシン" },
-        { L"치명타 보유 시작", L"Start with Critical Strike", L"クリティカル所持で開始" },
-        ACH_CRIT_SCORE, { AugType::CRIT }, 1, 0 },
+        { L"리볼버 — 치명타 보유 시작, 정확한 단발 처형 빌드",
+          L"Revolver — starts with Critical Strike, precise single-shot execution",
+          L"リボルバー — クリティカル所持、精密単発処刑" },
+        ACH_CRIT_SCORE, { AugType::CRIT }, 1, 0, (int)StartWeapon::REVOLVER },
     /* JOB_BERSERKER */ {
         { L"광전사", L"Berserker", L"バーサーカー" },
-        { L"광전사 + 유리대포 (고위험·고화력)",
-          L"Berserk + Glass Cannon (high risk/reward)",
-          L"バーサーク + ガラスの大砲 (高リスク)" },
-        ACH_KILLS_500, { AugType::BERSERK, AugType::GLASS_CANNON }, 2, 0 },
+        { L"샷건 — 광전사 + 유리대포 보유 시작 (고위험·고화력 근접전)",
+          L"Shotgun — starts with Berserk + Glass Cannon (high risk close-range)",
+          L"ショットガン — バーサーク + ガラスの大砲 (高リスク近接)" },
+        ACH_KILLS_500, { AugType::BERSERK, AugType::GLASS_CANNON }, 2, 0, (int)StartWeapon::SHOTGUN },
     /* JOB_BOMBARDIER */ {
         { L"폭격수", L"Bombardier", L"ボンバー" },
-        { L"연쇄 폭발 보유 시작", L"Start with Death Blast", L"連鎖爆発所持で開始" },
-        ACH_DEATHBLAST_KILLS, { AugType::DEATH_BLAST }, 1, 0 },
+        { L"대포 — 연쇄 폭발 보유 시작, 광역 폭발 빌드",
+          L"Cannon — starts with Death Blast, area explosion build",
+          L"大砲 — 連鎖爆発所持、範囲爆発ビルド" },
+        ACH_DEATHBLAST_KILLS, { AugType::DEATH_BLAST }, 1, 0, (int)StartWeapon::CANNON },
     /* JOB_VAMPIRE */ {
         { L"흡혈귀", L"Vampire", L"吸血鬼" },
-        { L"흡혈탄 + 흡혈마 보유 시작", L"Start with Lifesteal + Vampire",
-          L"吸血弾 + 吸血鬼で開始" },
-        ACH_BOSS_3, { AugType::LIFESTEAL, AugType::VAMPIRE }, 2, 0 },
+        { L"기관단총 — 흡혈탄 + 흡혈마 보유 시작, 연사로 흡혈량 극대화",
+          L"SMG — starts with Lifesteal + Vampire, rapid fire maximizes drain",
+          L"サブマシンガン — 吸血弾 + 吸血鬼所持、連射で吸血最大化" },
+        ACH_BOSS_3, { AugType::LIFESTEAL, AugType::VAMPIRE }, 2, 0, (int)StartWeapon::SMG },
     /* JOB_SWORDSMAN */ {
         { L"검객", L"Swordsman", L"剣士" },
         { L"근접 칼 — 조준 방향 호 스윙 (근거리 고화력)",
           L"Melee blade — arc swing (high close-range DPS)",
           L"近接剣 — 扇状の斬撃 (近距離高火力)" },
-        ACH_SCORE_500K, {}, 0, 1 },
+        ACH_SCORE_500K, {}, 0, 1, -1 },
     /* JOB_ARCHER */ {
         { L"궁수", L"Archer", L"弓兵" },
         { L"활 — 누른 만큼 강해지는 차징 관통 화살 (크기 최대 4배)",
           L"Bow — charge for a stronger piercing arrow (up to 4x size)",
           L"弓 — チャージで強い貫通矢 (最大4倍)" },
-        ACH_BOSS_10, {}, 0, 2 },
+        ACH_BOSS_10, {}, 0, 2, -1 },
 };
 
 // ── 영구/런타임 상태 ────────────────────────────────

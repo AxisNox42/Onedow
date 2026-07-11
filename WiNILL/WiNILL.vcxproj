@@ -215,6 +215,10 @@
     <ClInclude Include="Entity\Boss\TotemBoss.h" />
     <ClInclude Include="Entity\Boss\UnknownBoss.h" />
     <ClInclude Include="Core\BossDirector.h" />
+    <ClInclude Include="Core\Ascension.h" />
+    <ClInclude Include="Core\FloorDirector.h" />
+    <ClInclude Include="Core\AugmentSlots.h" />
+    <ClInclude Include="Core\RunIntermission.h" />
     <ClInclude Include="Entity\Bullet.h" />
     <ClInclude Include="Entity\CollisionSystem.h" />
     <ClInclude Include="Entity\ExpSystem.h" />

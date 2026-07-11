@@ -3,8 +3,8 @@
 
 // ─────────────────────────────────────────────────────────────
 // 시작 무기 (Starter Weapons)
-//   게임 시작 시 6개 중 랜덤 3개를 카드로 제시
-//   고른 무기는 PlayerStats 에 즉시 적용 (증강처럼)
+//   직업(JobId)마다 고정 무기 1개로 매핑됨 (Achievements.h JOB_DEFS::fixedWeapon).
+//   검객/궁수는 weaponMode(1/2)가 이 무기를 덮어써 근접/활 조작으로 대체.
 // ─────────────────────────────────────────────────────────────
 enum class StartWeapon {
     SMG, SNIPER, RIFLE, SHOTGUN, CANNON, REVOLVER, _COUNT
@@ -119,14 +119,3 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
     }
 }
 
-// 6개 중 랜덤 3개 (중복 없음) → outArr[0..2]
-inline void PickRandomWeapons(int outArr[3]) {
-    int pool[(int)StartWeapon::_COUNT];
-    int n = (int)StartWeapon::_COUNT;
-    for (int i = 0; i < n; i++) pool[i] = i;
-    for (int i = 0; i < 3 && i < n; i++) {
-        int j = i + rand() % (n - i);
-        int tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
-        outArr[i] = pool[i];
-    }
-}

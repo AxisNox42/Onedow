@@ -14,10 +14,9 @@ enum class GameState {
     SHOP,              // 메타 상점 (코인 → 영구 업그레이드)
     CODEX,             // 도감 (적/증강 발견 목록)
     TUTORIAL,          // 플레이 가이드 (페이지형)
-    JOB_SELECT,        // 직업(클래스) 선택 (업적으로 해금)
-    WEAPON_SELECT,     // 시작 무기 선택 (랜덤 3개)
+    JOB_SELECT,        // 직업(클래스) 선택 (업적으로 해금) — 직업마다 고정 무기/조작 확정
     SETTINGS,          // 설정 화면
-    READY, RUNNING, PAUSED, GAMEOVER, AUG_SELECT, DEBUFF_SELECT, DYING,
+    READY, RUNNING, PAUSED, GAMEOVER, VICTORY, AUG_SELECT, AUG_REPLACE, DEBUFF_SELECT, DYING,
     BOSS_INTERMISSION,  // 보스 클리어 후 휴식 (이동·상점 구역)
     RUN_SHOP            // 런 골드 상점 (증강 구매)
 };
@@ -37,6 +36,11 @@ public:
     int       augChoices[3] = {0,0,0}; // indices into ALL_AUGS for current pick
     int       conversionAug = -1;      // 변환 4번째 카드 (-1=없음)
     int       hoveredCard  = -1;       // AUG/DEBUFF_SELECT 호버 인덱스 (-1=none, 3=변환 카드)
+    int       pendingAugIdx = -1;      // AUG_REPLACE: 장착 대기 중인 신규 증강
+    int       replaceChoices[32] = {}; // AUG_REPLACE: 교체 후보 (ALL_AUGS 인덱스)
+    int       replaceChoiceCount = 0;
+    bool      replaceFromShop = false; // 상점 구매 경로에서 진입
+    int       replaceShopSlot = -1;
     bool      takenOnce[AUG_TOTAL] = {}; // EPIC/LEGENDARY 한 번만
 
     bool spaceReleased = true;

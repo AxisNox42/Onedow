@@ -788,14 +788,12 @@ inline int AugIndexOfType(AugType t) {
 // 풀/도감에서 완전히 제외된 증강 — 단일 목록(픽 게이팅·코덱스 숨김 공용).
 //   삭제됨: 고장난조준선/백신/건러너/병렬처리/취함/영혼수확(→전쟁군주로 이전)
 //   조합 제거: 처형자·관통쌍둥이·폭풍소환사·난기류·오버클럭·유리사신·지옥불
-//   클래스 전용(DLC 보류): 광폭베기/칼바람/강궁/다중사격
+//   광폭베기/칼바람/강궁/다중사격 — 검객/궁수 정식 활성화로 전용 트리 해금(더 이상 제외 안 함)
 inline bool AugRemoved(AugType t) {
     switch (t) {
     case AugType::BROKEN_SIGHT:
     case AugType::PURGE_NOVA:
     case AugType::GUN_RUNNER:
-    case AugType::MELEE_WIDE:  case AugType::BLADE_WIND:
-    case AugType::POWER_DRAW:  case AugType::MULTISHOT:
     case AugType::D_MOB_PACK:
     case AugType::D_DRUNK:
     case AugType::SOUL_HARVEST:
