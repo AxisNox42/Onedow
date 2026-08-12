@@ -28,9 +28,7 @@
 #include "Monster.h"
 #include "RunIntermission.h"
 #include "BossDirector.h"
-#include "Ascension.h"
 #include "AugmentSlots.h"
-#include "FloorDirector.h"
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -1117,26 +1115,6 @@ void Scene_DifficultySelect(const SceneCtx& c) {
                                  0.85f, 0.95f, 0.6f, 0.85f);
                 }
 
-                if (!g_CreativeMode) {
-                    float aby = by + blockH + (g_DevUnlocked ? 120.0f : 28.0f);
-                    if (aby + 56.0f > backY - 12.0f) aby = backY - 72.0f;
-                    const float ABW = 680.0f, ABH = 56.0f;
-                    float abx = bx;
-                    if (UIButton(abx, aby, 120.0f, ABH, L"<", mx, my, lmb, g_LmbPrev) &&
-                        Asc::g_SelectedAscension > 0)
-                        Asc::g_SelectedAscension--;
-                    if (UIButton(abx + ABW - 120.0f, aby, 120.0f, ABH, L">", mx, my, lmb, g_LmbPrev) &&
-                        Asc::g_SelectedAscension < Asc::MaxSelectableAscension())
-                        Asc::g_SelectedAscension++;
-                    wchar_t ascLine[128];
-                    swprintf_s(ascLine, L"%ls  (max %d)",
-                               Asc::Label(Asc::g_SelectedAscension),
-                               Asc::MaxSelectableAscension());
-                    float alw = g_TextL.Width(ascLine, 0.88f);
-                    g_TextL.Draw(ascLine, abx + (ABW - alw) * 0.5f, aby + 14.0f, 0.88f,
-                                 0.85f, 0.95f, 1.0f, 0.95f);
-                }
-
                 if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
                              mx, my, lmb, g_LmbPrev)) {
                     g_GameManager.currentState = GameState::MAIN_MENU;
@@ -1182,12 +1160,12 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 g_TextS.Draw(L"* 일반 런 미포함 (개발용)", leftX, contentTop + 124.0f,
                              0.48f, 0.68f, 0.75f, 0.82f, 0.75f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[4] = {
-                    {L"None",-1}, {L"VOLLEY.sys",2}, {L"FORK.worm",8}, {L"SPAM.dll",3}
+                BossOpt bOpts[3] = {
+                    {L"None",-1}, {L"VOLLEY.sys",2}, {L"FORK.worm",8}
                 };
                 const float BBW = 112.0f;
-                for (int i = 0; i < 4; i++) {
-                    int col = i % 4, row = i / 4;
+                for (int i = 0; i < 3; i++) {
+                    int col = i % 3, row = i / 3;
                     float ox = leftX + col * (BBW + OBG);
                     float oy = contentTop + 144.0f + row * (OBH + 8.0f);
                     bool sel = (g_CreativeBossPick == bOpts[i].v);
@@ -1761,17 +1739,11 @@ void Scene_Victory(const SceneCtx& c) {
     BindMainShader();
     drawRect(0, 0, sw, sh, 0.02f, 0.06f, 0.04f, 0.88f * ve);
 
-    static const wchar_t* T1[3] = { L"탑 클리어!", L"TOWER CLEARED!", L"塔クリア!" };
+    static const wchar_t* T1[3] = { L"런 클리어!", L"RUN CLEARED!", L"ランクリア!" };
     int li = LangIndex();
     if (li < 0 || li > 2) li = 0;
     g_TextL.Draw(T1[li], CenterTextX(sw, g_TextL, T1[li], 1.7f), sh * 0.26f, 1.7f,
                  0.35f, 1.0f, 0.55f, 0.98f * ve);
-
-    wchar_t ascBuf[96];
-    swprintf_s(ascBuf, L"%ls  ·  Clears: %d",
-               Asc::Label(Asc::g_SelectedAscension), Asc::g_TowerClears);
-    g_TextS.Draw(ascBuf, CenterTextX(sw, g_TextS, ascBuf, 0.95f), sh * 0.36f,
-                 0.95f, 0.85f, 1.0f, 0.75f, 0.95f * ve);
 
     wchar_t scoreBuf[64], lvBuf[64], killBuf[64], coinBuf[64];
     swprintf_s(scoreBuf, L"%ls   %lld", T(StrId::FINAL_SCORE), g_GameManager.score);
@@ -1817,153 +1789,205 @@ void Scene_AugSelect(const SceneCtx& c) {
     const GameState st = g_GameManager.currentState;
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
-                // ── 카드 레이아웃 (GameManager::Render 와 동기화) ──
-                const int  nCards  = 3;
-                const float CARD_W = 280.0f;
-                const float CARD_H = 400.0f;
-                const float GAP    = 48.0f;
-                const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
-                float baseX = (sw - TOTAL_W) * 0.5f;
-                float baseY = (sh - CARD_H)  * 0.4f;
 
-                // 타이틀
-                const wchar_t* TIT = (st == GameState::DEBUFF_SELECT)
-                                     ? T(StrId::CHOOSE_DEBUFF)
-                                     : T(StrId::CHOOSE_AUG);
-                g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.0f), baseY - 56.0f, 1.0f,
-                             1,1,1,0.95f);
-                if (st == GameState::AUG_SELECT) {
-                    wchar_t slotBuf[96];
-                    swprintf_s(slotBuf, L"ID %d / %d",
-                               CountIdentitySlotsUsed(), IdentitySlotMax());
-                    g_TextS.Draw(slotBuf, CenterTextX(sw, g_TextS, slotBuf, 0.82f),
-                                 baseY - 28.0f, 0.82f, 0.75f, 0.95f, 1.0f, 0.88f);
-                }
+    // ── 진입 애니메이션 ──
+    static float     s_enterT = 1.0f;
+    static GameState s_lastSt = GameState::RUNNING;
+    if (s_lastSt != GameState::AUG_SELECT && s_lastSt != GameState::DEBUFF_SELECT)
+        s_enterT = 0.0f;
+    s_lastSt = st;
+    const float ENTER_DUR = 0.38f;
+    s_enterT = std::min(s_enterT + delta / ENTER_DUR, 1.0f);
+    auto easeOut = [](float t) -> float {
+        float inv = 1.0f - t; return 1.0f - inv * inv * inv;
+    };
 
-                // 키 힌트
-                const wchar_t* HINT = (g_HoveredAug < 0)
-                                      ? T(StrId::KEY_HINT_NO_HOVER)
-                                      : T(StrId::KEY_HINT_HOVER);
-                g_TextS.Draw(HINT, CenterTextX(sw, g_TextS, HINT, 0.85f),
-                             baseY + CARD_H + 200.0f,
-                             0.85f, 0.75f,0.75f,0.75f,0.8f);
+    // ── 레이아웃 상수 ──
+    const int   nCards  = 3;
+    const float CARD_W  = 280.0f;
+    const float CARD_H  = 430.0f;
+    const float GAP     = 40.0f;
+    const float TOTAL_W = nCards * CARD_W + (nCards - 1) * GAP;
+    const float TB      = WIN_TB;
+    float baseX = (sw - TOTAL_W) * 0.5f;
+    float baseY = (sh - CARD_H)  * 0.40f;
 
-                // 각 카드: 등급 라벨 + 이름
-                static const wchar_t* KEY_LABELS[3] = {L"[ 1 ]", L"[ 2 ]", L"[ 3 ]"};
-                for (int i = 0; i < nCards; i++) {
-                    float cardX = baseX + i * (CARD_W + GAP);
-                    float yOff  = (g_HoveredAug == i) ? -16.0f : 0.0f;
+    const bool isDebuff = (st == GameState::DEBUFF_SELECT);
 
-                    const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
-                    const wchar_t* cardName = AugName(def);
-                    float tr, tg, tb;
-                    GetRarityColor(def.rarity, tr, tg, tb);
-                    tr = std::min(1.0f, tr * 1.4f + 0.25f);
-                    tg = std::min(1.0f, tg * 1.4f + 0.25f);
-                    tb = std::min(1.0f, tb * 1.4f + 0.25f);
-                    const wchar_t* topLabel = GetAugBadge(def);
-                    GLuint icon = IconFor(def.type);
-                    if (icon) {
-                        float isz = 144.0f;
-                        DrawIcon(icon, cardX + (CARD_W - isz) * 0.5f,
-                                 baseY + yOff + CARD_H * 0.10f, isz, isz,
-                                 1.0f, 1.0f, 1.0f, 0.97f);
-                    }
-                    float rw = g_TextS.Width(topLabel, 1.0f);
-                    g_TextS.Draw(topLabel,
-                                 cardX + (CARD_W - rw) * 0.5f,
-                                 baseY + yOff + 22.0f, 1.0f, tr, tg, tb, 0.95f);
+    // ── 다크 오버레이 페이드인 ──
+    float overlayE = easeOut(s_enterT);
+    BindMainShader();
+    if (isDebuff)
+        drawRect(0, 0, sw, sh, 0.14f, 0.02f, 0.02f, overlayE * 0.72f);
+    else
+        drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.09f, overlayE * 0.72f);
+    BatchFlush();
 
-                    // 증강/무기 이름
-                    float nameSc = 1.2f;
-                    while (nameSc > 0.7f &&
-                           g_TextL.Width(cardName, nameSc) > CARD_W - 20.0f)
-                        nameSc -= 0.05f;
-                    float nw = g_TextL.Width(cardName, nameSc);
-                    g_TextL.Draw(cardName,
-                                 cardX + (CARD_W - nw) * 0.5f,
-                                 baseY + yOff + CARD_H * 0.54f, nameSc,
-                                 1,1,1,0.95f);
+    // ── 타이틀 ──
+    const wchar_t* TIT = isDebuff ? T(StrId::CHOOSE_DEBUFF) : T(StrId::CHOOSE_AUG);
+    float titA = easeOut(std::min(s_enterT * 1.6f, 1.0f));
+    g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.0f), baseY - 62.0f, 1.0f,
+                 1.0f, 1.0f, 1.0f, 0.95f * titA);
+    if (st == GameState::AUG_SELECT) {
+        wchar_t slotBuf[96];
+        swprintf_s(slotBuf, L"ID %d / %d", CountIdentitySlotsUsed(), IdentitySlotMax());
+        g_TextS.Draw(slotBuf, CenterTextX(sw, g_TextS, slotBuf, 0.80f),
+                     baseY - 32.0f, 0.80f, 0.72f, 0.92f, 1.0f, 0.85f * titA);
+    }
+    BatchFlush();
 
-                    // 키 힌트 (카드 하단)
-                    float kw = g_TextS.Width(KEY_LABELS[i], 1.0f);
-                    g_TextS.Draw(KEY_LABELS[i],
-                                 cardX + (CARD_W - kw) * 0.5f,
-                                 baseY + yOff + CARD_H - 50.0f, 1.0f,
-                                 tr, tg, tb, 0.95f);
-                }
+    // ── 카드 3장 ──
+    static const wchar_t* KEY_LABELS[3] = { L"[ 1 ]", L"[ 2 ]", L"[ 3 ]" };
+    for (int i = 0; i < nCards; i++) {
+        // 스태거 슬라이드인
+        float stag = (float)i * 0.07f;
+        float ct   = std::max(0.0f, std::min((s_enterT - stag) / (1.0f - stag), 1.0f));
+        float ce   = easeOut(ct);
+        float slideY = (1.0f - ce) * 110.0f;
+        float cardA  = ce;
 
-                // ── 하단 상세 설명 박스 (호버 카드의 전체 설명) ──
-                if (g_HoveredAug >= 0) {
-                    const wchar_t* hDesc;
-                    float hr, hg, hb;
-                    int hIdx = g_GameManager.augChoices[g_HoveredAug];
-                    if (hIdx < 0) hIdx = 0;
-                    const AugDef& hDef = ALL_AUGS[hIdx];
-                    hDesc = AugDesc(hDef);
-                    GetRarityColor(hDef.rarity, hr, hg, hb);
-                    float boxY = baseY + CARD_H + 24.0f;
-                    float boxW = TOTAL_W;
-                    float boxH = 190.0f;
-                    float boxX = (sw - boxW) * 0.5f;
+        bool  hov = (g_HoveredAug == i);
+        float cx  = baseX + i * (CARD_W + GAP);
+        float cy  = baseY + slideY + (hov ? -18.0f : 0.0f);
 
-                    // 박스 배경 — DEBUFF_SELECT 는 전체 적갈 오버레이(0.62)와 겹치면
-                    // 0.85 알파가 이중으로 쌓여 새까맣게 보임 → 더 투명하게
-                    const bool debuffPick = (st == GameState::DEBUFF_SELECT);
-                    float boxBgA = debuffPick ? 0.38f : 0.72f;
-                    float boxBr = debuffPick ? 0.12f : 0.03f;
-                    float boxBg = debuffPick ? 0.04f : 0.03f;
-                    float boxBb = debuffPick ? 0.05f : 0.05f;
-                    drawRect(boxX, boxY, boxW, boxH, boxBr, boxBg, boxBb, boxBgA);
-                    if (debuffPick) {
-                        const float bt = 1.0f;
-                        drawRect(boxX, boxY, boxW, bt, hr, hg, hb, 0.55f);
-                        drawRect(boxX, boxY + boxH - bt, boxW, bt, hr, hg, hb, 0.55f);
-                        drawRect(boxX, boxY, bt, boxH, hr, hg, hb, 0.55f);
-                        drawRect(boxX + boxW - bt, boxY, bt, boxH, hr, hg, hb, 0.55f);
-                    }
+        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
+        float tr, tg, tb2;
+        GetRarityColor(def.rarity, tr, tg, tb2);
+        float bMul = hov ? 1.55f : 1.05f;
+        float nr = std::min(1.0f, tr * bMul + 0.08f);
+        float ng = std::min(1.0f, tg * bMul + 0.08f);
+        float nb = std::min(1.0f, tb2 * bMul + 0.08f);
 
-                    // 상단 띠
-                    drawRect(boxX, boxY, boxW, 4.0f, hr, hg, hb, debuffPick ? 0.88f : 1.0f);
+        // 카드 배경
+        BindMainShader();
+        float bgMul = hov ? 0.14f : 0.09f;
+        drawRect(cx, cy, CARD_W, CARD_H,
+                 tr * bgMul, tg * bgMul, tb2 * bgMul, 0.94f * cardA);
 
-                    // 설명 ('/' 분리, 각 줄 fit)
-                    std::vector<std::wstring> lines;
-                    std::wstring cur;
-                    for (const wchar_t* p = hDesc; *p; ++p) {
-                        if (*p == L'/') {
-                            if (!cur.empty()) lines.push_back(cur);
-                            cur.clear();
-                        } else cur += *p;
-                    }
-                    if (!cur.empty()) lines.push_back(cur);
-                    for (auto& s : lines) {
-                        while (!s.empty() && (s.front() == L' ' || s.front() == L'\t'))
-                            s.erase(0, 1);
-                        while (!s.empty() && (s.back() == L' ' || s.back() == L'\t'))
-                            s.pop_back();
-                    }
+        // 타이틀바 (rarity 색 다크)
+        drawRect(cx, cy, CARD_W, TB,
+                 tr * 0.38f, tg * 0.38f, tb2 * 0.38f, 0.97f * cardA);
 
-                    int n = (int)lines.size();
-                    if (n < 1) n = 1;
-                    // 모든 줄을 같은 폰트 크기로 — 가장 긴 줄 기준 한 번만 스케일 결정(일정한 크기)
-                    float maxw = 1.0f;
-                    for (auto& ln : lines) {
-                        float w = g_TextS.Width(ln.c_str(), 1.0f);
-                        if (w > maxw) maxw = w;
-                    }
-                    float sc = 0.95f;
-                    if (maxw * sc > boxW - 40.0f) sc = (boxW - 40.0f) / maxw;
-                    if (sc < 0.6f) sc = 0.6f;
-                    float lineH = 34.0f * sc;
-                    float startY = boxY + 22.0f + (boxH - 22.0f - lineH * n) * 0.5f;
-                    for (int li = 0; li < n; li++) {
-                        const wchar_t* s = lines[li].c_str();
-                        float lw = g_TextS.Width(s, sc);
-                        g_TextS.Draw(s, boxX + (boxW - lw) * 0.5f,
-                                     startY + lineH * (float)li, sc,
-                                     1.0f, 1.0f, 1.0f, 0.95f);
-                    }
-                }
+        // 테두리
+        BatchFlush(); glEnable(GL_BLEND);
+        float bord = hov ? 1.0f : 0.60f;
+        drawNeonBorder(cx, cy, CARD_W, CARD_H, nr * bord, ng * bord, nb * bord);
+
+        // 타이틀바 텍스트 (등급 배지)
+        const wchar_t* badge = GetAugBadge(def);
+        BatchFlush();
+        float bs = 0.48f;
+        g_TextS.Draw(badge, cx + (CARD_W - g_TextS.Width(badge, bs)) * 0.5f,
+                     cy + (TB - 11.0f * bs) * 0.5f,
+                     bs, nr, ng, nb, 0.95f * cardA);
+        BatchFlush();
+
+        // 아이콘
+        GLuint icon = IconFor(def.type);
+        BindMainShader();
+        if (icon) {
+            float isz = 112.0f;
+            BatchFlush();
+            DrawIcon(icon, cx + (CARD_W - isz) * 0.5f, cy + TB + 20.0f,
+                     isz, isz, 1.0f, 1.0f, 1.0f, 0.97f * cardA);
+            BindMainShader();
+        }
+
+        // 구분선
+        drawRect(cx + 18.0f, cy + TB + 142.0f, CARD_W - 36.0f, 1.5f,
+                 nr, ng, nb, 0.40f * cardA);
+
+        // 이름
+        const wchar_t* cardName = AugName(def);
+        float nameSc = 1.05f;
+        while (nameSc > 0.66f && g_TextL.Width(cardName, nameSc) > CARD_W - 22.0f)
+            nameSc -= 0.04f;
+        BatchFlush();
+        g_TextL.Draw(cardName,
+                     cx + (CARD_W - g_TextL.Width(cardName, nameSc)) * 0.5f,
+                     cy + TB + 156.0f, nameSc, 1.0f, 1.0f, 1.0f, 0.96f * cardA);
+        BatchFlush();
+
+        // 설명 첫 줄 (카드 안)
+        const wchar_t* desc = AugDesc(def);
+        std::wstring firstLine;
+        for (const wchar_t* p = desc; *p && *p != L'/'; ++p) firstLine += *p;
+        while (!firstLine.empty() && firstLine.front() == L' ') firstLine.erase(0, 1);
+        float dsc = 0.66f;
+        while (dsc > 0.48f && g_TextS.Width(firstLine.c_str(), dsc) > CARD_W - 22.0f)
+            dsc -= 0.04f;
+        BindMainShader();
+        g_TextS.Draw(firstLine.c_str(),
+                     cx + (CARD_W - g_TextS.Width(firstLine.c_str(), dsc)) * 0.5f,
+                     cy + TB + 195.0f, dsc, 0.82f, 0.82f, 0.82f, 0.78f * cardA);
+        BatchFlush();
+
+        // 키 힌트 (카드 하단)
+        BindMainShader();
+        g_TextS.Draw(KEY_LABELS[i],
+                     cx + (CARD_W - g_TextS.Width(KEY_LABELS[i], 0.95f)) * 0.5f,
+                     cy + CARD_H - 46.0f, 0.95f,
+                     nr, ng, nb, 0.90f * cardA);
+        BatchFlush();
+    }
+
+    // ── 하단 상세 설명 박스 (항상 표시 — 호버 카드 or 0번) ──
+    {
+        int descIdx = (g_HoveredAug >= 0) ? g_HoveredAug : 0;
+        int hIdx    = g_GameManager.augChoices[descIdx];
+        if (hIdx < 0) hIdx = 0;
+        const AugDef& hDef = ALL_AUGS[hIdx];
+        float hr, hg, hb;
+        GetRarityColor(hDef.rarity, hr, hg, hb);
+        const wchar_t* hDesc = AugDesc(hDef);
+
+        float boxY = baseY + CARD_H + 18.0f;
+        float boxW = TOTAL_W;
+        float boxH = 142.0f;
+        float boxX = (sw - boxW) * 0.5f;
+        float boxA = overlayE;
+
+        BindMainShader();
+        float bgA = isDebuff ? 0.32f : 0.60f;
+        drawRect(boxX, boxY, boxW, boxH, 0.03f, 0.03f, 0.07f, bgA * boxA);
+        drawRect(boxX, boxY, boxW, 3.0f, hr, hg, hb, 0.90f * boxA);
+        BatchFlush();
+
+        std::vector<std::wstring> lines;
+        std::wstring cur;
+        for (const wchar_t* p = hDesc; *p; ++p) {
+            if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
+            else cur += *p;
+        }
+        if (!cur.empty()) lines.push_back(cur);
+        for (auto& s : lines) {
+            while (!s.empty() && s.front() == L' ') s.erase(0, 1);
+            while (!s.empty() && s.back()  == L' ') s.pop_back();
+        }
+        int n = (int)lines.size(); if (n < 1) n = 1;
+        float maxw = 1.0f;
+        for (auto& ln : lines) { float w = g_TextS.Width(ln.c_str(), 1.0f); if (w > maxw) maxw = w; }
+        float sc = 0.88f;
+        if (maxw * sc > boxW - 40.0f) sc = (boxW - 40.0f) / maxw;
+        if (sc < 0.56f) sc = 0.56f;
+        float lineH  = 30.0f * sc;
+        float startY = boxY + 14.0f + (boxH - 14.0f - lineH * n) * 0.5f;
+        for (int li = 0; li < n; li++) {
+            float lw = g_TextS.Width(lines[li].c_str(), sc);
+            g_TextS.Draw(lines[li].c_str(), boxX + (boxW - lw) * 0.5f,
+                         startY + lineH * li, sc, 1.0f, 1.0f, 1.0f, 0.90f * boxA);
+        }
+        BatchFlush();
+
+        // 키 힌트 (박스 아래)
+        const wchar_t* HINT = (g_HoveredAug < 0) ? T(StrId::KEY_HINT_NO_HOVER)
+                                                  : T(StrId::KEY_HINT_HOVER);
+        BindMainShader();
+        g_TextS.Draw(HINT, CenterTextX(sw, g_TextS, HINT, 0.80f),
+                     boxY + boxH + 12.0f, 0.80f,
+                     0.70f, 0.70f, 0.70f, 0.75f * boxA);
+        BatchFlush();
+    }
 }
 
 void Scene_AugReplace(const SceneCtx& c) {

@@ -4,7 +4,6 @@
 // ─────────────────────────────────────────────────────────────
 #include "Augment.h"
 #include "Meta.h"
-#include "Ascension.h"
 #include <vector>
 
 extern std::vector<int> g_OwnedAugs;
@@ -20,7 +19,7 @@ inline bool AugIdxUsesIdentitySlot(int idx) {
 }
 
 inline int IdentitySlotMax() {
-    int m = 8 + g_MetaLv[META_ID_SLOT] - Asc::CurrentMods().identitySlotPenalty;
+    int m = 8 + g_MetaLv[META_ID_SLOT];
     return m < 4 ? 4 : m;
 }
 

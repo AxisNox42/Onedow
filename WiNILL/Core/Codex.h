@@ -172,8 +172,8 @@ inline void MarkBossSeenPick(int pick) {
     if (!g_BossSeenPick[pick]) { g_BossSeenPick[pick] = true; g_CodexDirty = true; }
 }
 
-inline const int BOSS_CODEX_PICKS[] = { 2, 8, 3 };
-inline const int BOSS_CODEX_COUNT = 3;
+inline const int BOSS_CODEX_PICKS[] = { 2, 8 };
+inline const int BOSS_CODEX_COUNT = 2;
 
 inline bool BossCodexSeen(int idx) {
     if (CodexFullReveal() && idx >= 0 && idx < BOSS_CODEX_COUNT) return true;

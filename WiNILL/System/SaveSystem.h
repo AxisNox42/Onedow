@@ -11,7 +11,6 @@
 #include "Meta.h"
 #include "Achievements.h"
 #include "Codex.h"
-#include "Ascension.h"
 
 // ── 세이브 난독화(F25) — 평문 편집 방지. 롤링 XOR(키는 exe 내장 상수).
 //   강한 암호는 아니지만 일반 사용자가 메모장으로 점수/코인 조작 못 하게 함.
@@ -64,7 +63,6 @@ inline void SaveGame() {
         std::snprintf(ln, sizeof(ln), "meta%d=%d\n", i, g_MetaLv[i]); buf += ln;
     }
     add("bosskills=%lld\n", g_TotalBossKills);
-    add("towerclears=%lld\n", (long long)Asc::g_TowerClears);
     for (int i = 0; i < ACH_COUNT; i++) {
         std::snprintf(ln, sizeof(ln), "ach%d=%d\n", i, g_AchUnlocked[i] ? 1 : 0); buf += ln;
     }
@@ -155,7 +153,6 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "themeowned"))  g_ThemeOwned        = (int)val | 1;
         else if (!std::strcmp(key, "themesel"))    g_ThemeSel          = (int)val;
         else if (!std::strcmp(key, "bosskills")) g_TotalBossKills = val;
-        else if (!std::strcmp(key, "towerclears")) Asc::g_TowerClears = (int)val;
         else if (!std::strncmp(key, "meta", 4)) {
             int mi = atoi(key + 4);
             if (mi >= 0 && mi < META_COUNT) g_MetaLv[mi] = (int)val;
@@ -184,7 +181,6 @@ inline void LoadGame() {
 inline void ResetSaveProgress() {
     for (int i = 0; i < 3; i++) g_BestScore[i] = 0;
     g_TotalKills = 0; g_TotalGames = 0; g_TotalBossKills = 0;
-    Asc::g_TowerClears = 0;
     g_Coins = 0; g_LastRunCoins = 0;
     for (int i = 0; i < META_COUNT; i++) g_MetaLv[i] = 0;
     for (int i = 0; i < ACH_COUNT;  i++) g_AchUnlocked[i] = false;
@@ -196,9 +192,7 @@ inline void ResetSaveProgress() {
 }
 
 // 한 판 종료 시 호출 — 최고점/누적 기록 갱신 후 저장. 신기록이면 true.
-// towerClear: 탑 클리어(VICTORY) 시 추가 코인 보너스
-inline bool RecordRunResult(int difficultyIdx, long long score, long long kills,
-                            bool towerClear = false, int ascension = 0) {
+inline bool RecordRunResult(int difficultyIdx, long long score, long long kills) {
     if (difficultyIdx < 0 || difficultyIdx > 2) difficultyIdx = 1;
     bool isRecord = (score > g_BestScore[difficultyIdx]);
     if (isRecord) g_BestScore[difficultyIdx] = score;
@@ -206,9 +200,7 @@ inline bool RecordRunResult(int difficultyIdx, long long score, long long kills,
     g_TotalGames += 1;
     // 코인 적립 — 점수/1000 + 처치/2 (난이도 보너스: 보통×1.2, 어려움×1.5)
     float diffMul = (difficultyIdx == 2) ? 1.5f : (difficultyIdx == 1) ? 1.2f : 1.0f;
-    if (towerClear) diffMul *= Asc::ClearCoinBonusMul(ascension);
     long long earned = (long long)((score / 1000 + kills / 2) * diffMul);
-    if (towerClear) earned += 500 + 200 * ascension;
     g_Coins += earned;
     g_LastRunCoins = earned;
     SaveGame();

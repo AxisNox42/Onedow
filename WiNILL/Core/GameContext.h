@@ -11,10 +11,7 @@
 #include "Camera.h"
 
 class ReloadRunnerBoss;
-class PolymorphBoss;
-class BotnetBoss;
 class CentipedeBoss;
-class TotemBoss;
 
 extern GameManager         g_GameManager;
 extern MonsterManager      g_MonsterManager;
@@ -26,10 +23,7 @@ extern TextRenderer g_TextS;
 extern TextRenderer g_TextXL;
 
 extern ReloadRunnerBoss*   g_RRBoss;
-extern PolymorphBoss*      g_PolyBoss;
-extern BotnetBoss*         g_BotnetBoss;
 extern CentipedeBoss*      g_CentiBoss;
-extern TotemBoss*          g_TotemBoss;
 // ── UI / 메뉴 씬에서 참조 (main.cpp 정의) ──
 extern bool      g_LmbPrev;
 extern GameState g_SettingsReturnTo;

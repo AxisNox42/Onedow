@@ -39,7 +39,7 @@ public:
     bool  rainMissile = false;   // 탄환 세례 — 로켓 스프라이트로 렌더
     bool  silverBurn  = false;   // 은탄환 — 명중 시 화상 DoT
 
-    // (미사용 — 구 ADUN.relay 야마토용, 착탄식으로 대체됨. 향후 사거리 폭발형 탄에 재사용 가능)
+    // Unused direct blast flag. Kept for possible future range-explosion bullets.
     bool  shellKaboom   = false;
     bool  shellHandled  = false;
     float shellRadius   = 0.0f;

@@ -150,19 +150,7 @@
     <ClInclude Include="Entity\Weapons.h">
       <Filter>Entity</Filter>
     </ClInclude>
-    <ClInclude Include="Entity\Boss\BotnetBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
     <ClInclude Include="Entity\Boss\CentipedeBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
-    <ClInclude Include="Entity\Boss\SpamBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
-    <ClInclude Include="Entity\Boss\TotemBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
-    <ClInclude Include="Entity\Boss\PolymorphBoss.h">
       <Filter>Entity\Boss</Filter>
     </ClInclude>
     <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h">
