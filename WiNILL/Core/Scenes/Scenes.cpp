@@ -1790,18 +1790,44 @@ void Scene_AugSelect(const SceneCtx& c) {
     float& fireTimer = *c.fireTimer;
     const std::function<void()>& ResetForNewGame = c.reset;
 
-    // ── 진입 애니메이션 ──
-    static float s_enterT = 1.0f;
-    {
-        const GameState prev = g_GameManager.lastState;
-        if (prev != GameState::AUG_SELECT && prev != GameState::DEBUFF_SELECT)
-            s_enterT = 0.0f;
-    }
-    const float ENTER_DUR = 0.38f;
-    s_enterT = std::min(s_enterT + delta / ENTER_DUR, 1.0f);
+    // ── 진입/종료/hover 애니메이션 상태 ──
+    static float s_enterT      = 1.0f;
+    static float s_hovY[3]     = {0.f, 0.f, 0.f};  // spring-animated Y offset per card
+    static float s_pickFlash[3]= {0.f, 0.f, 0.f};  // 0→1 pick pulse per card
+    static int   s_prevHov     = -1;
+
     auto easeOut = [](float t) -> float {
         float inv = 1.0f - t; return 1.0f - inv * inv * inv;
     };
+
+    // fresh entry: reset all anim state
+    {
+        const GameState prev = g_GameManager.lastState;
+        if (prev != GameState::AUG_SELECT && prev != GameState::DEBUFF_SELECT) {
+            s_enterT = 0.0f;
+            for (int i = 0; i < 3; i++) { s_hovY[i] = 0.f; s_pickFlash[i] = 0.f; }
+            s_prevHov = -1;
+        }
+    }
+    const float ENTER_DUR = 0.38f;
+    s_enterT = std::min(s_enterT + delta / ENTER_DUR, 1.0f);
+
+    // pick flash: trigger when hover changes to a new card
+    if (g_HoveredAug != s_prevHov && g_HoveredAug >= 0 && g_HoveredAug < 3)
+        s_pickFlash[g_HoveredAug] = 1.0f;
+    s_prevHov = g_HoveredAug;
+
+    // spring hover Y + flash decay
+    for (int i = 0; i < 3; i++) {
+        float targetY = (g_HoveredAug == i) ? -18.0f : 0.0f;
+        s_hovY[i] += (targetY - s_hovY[i]) * std::min(1.0f, delta * 16.0f);
+        if (s_pickFlash[i] > 0.f) s_pickFlash[i] = std::max(0.f, s_pickFlash[i] - delta / 0.22f);
+    }
+
+    // exit animation (g_AugExitT driven by main.cpp)
+    const float EXIT_DUR = 0.30f;
+    float exitPct  = (g_AugExitT >= 0.f) ? std::min(g_AugExitT / EXIT_DUR, 1.0f) : -1.0f;
+    float exitE    = (exitPct >= 0.f) ? easeOut(exitPct) : 0.f;
 
     // ── 레이아웃 상수 ──
     const int   nCards  = 3;
@@ -1815,18 +1841,20 @@ void Scene_AugSelect(const SceneCtx& c) {
 
     const bool isDebuff = (st == GameState::DEBUFF_SELECT);
 
-    // ── 다크 오버레이 페이드인 ──
-    float overlayE = easeOut(s_enterT);
+    // ── 다크 오버레이 페이드인/아웃 ──
+    float overlayE  = easeOut(s_enterT);
+    float overlayA  = overlayE * (exitPct >= 0.f ? (1.0f - exitE) : 1.0f);
     BindMainShader();
     if (isDebuff)
-        drawRect(0, 0, sw, sh, 0.14f, 0.02f, 0.02f, overlayE * 0.72f);
+        drawRect(0, 0, sw, sh, 0.14f, 0.02f, 0.02f, overlayA * 0.72f);
     else
-        drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.09f, overlayE * 0.72f);
+        drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.09f, overlayA * 0.72f);
     BatchFlush();
 
-    // ── 타이틀 ──
+    // ── 타이틀 페이드인/아웃 ──
     const wchar_t* TIT = isDebuff ? T(StrId::CHOOSE_DEBUFF) : T(StrId::CHOOSE_AUG);
     float titA = easeOut(std::min(s_enterT * 1.6f, 1.0f));
+    if (exitPct >= 0.f) titA *= std::max(0.f, 1.0f - exitPct * 2.5f);
     g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.0f), baseY - 62.0f, 1.0f,
                  1.0f, 1.0f, 1.0f, 0.95f * titA);
     if (st == GameState::AUG_SELECT) {
@@ -1847,21 +1875,40 @@ void Scene_AugSelect(const SceneCtx& c) {
         float slideY = (1.0f - ce) * 110.0f;
         float cardA  = ce;
 
-        bool  hov = (g_HoveredAug == i);
-        float cx  = baseX + i * (CARD_W + GAP);
-        float cy  = baseY + slideY + (hov ? -18.0f : 0.0f);
+        bool  hov   = (g_HoveredAug == i);
+        bool  isConf= (exitPct >= 0.f && g_AugExitSlot == i);  // 선택 확정된 카드
+        float flash = s_pickFlash[i];   // 0→1→0 pick pulse
+
+        // exit 애니메이션 오프셋/알파
+        float exitOffY = 0.f;
+        if (exitPct >= 0.f) {
+            if (isConf) {
+                // 선택 카드: 위로 날아오르며 페이드
+                exitOffY = -exitE * 55.f;
+                cardA   *= std::max(0.f, 1.0f - exitE * 1.2f);
+            } else {
+                // 나머지: 아래로 내려가며 빠르게 페이드
+                exitOffY = exitE * 45.f;
+                cardA   *= std::max(0.f, 1.0f - exitE * 1.8f);
+            }
+        }
+
+        float cx = baseX + i * (CARD_W + GAP);
+        float cy = baseY + slideY + s_hovY[i] + exitOffY;
 
         const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
         float tr, tg, tb2;
         GetRarityColor(def.rarity, tr, tg, tb2);
-        float bMul = hov ? 1.55f : 1.05f;
+        // 선택 확정 순간 밝기 부스트 (pick flash + isConf)
+        float flashBoost = flash * 0.7f + (isConf ? exitE * (1.0f - exitE) * 4.0f * (1.0f - exitPct) : 0.0f);
+        float bMul = (hov ? 1.55f : 1.05f) + flashBoost;
         float nr = std::min(1.0f, tr * bMul + 0.08f);
         float ng = std::min(1.0f, tg * bMul + 0.08f);
         float nb = std::min(1.0f, tb2 * bMul + 0.08f);
 
         // 카드 배경
         BindMainShader();
-        float bgMul = hov ? 0.14f : 0.09f;
+        float bgMul = (hov ? 0.14f : 0.09f) + flash * 0.06f;
         drawRect(cx, cy, CARD_W, CARD_H,
                  tr * bgMul, tg * bgMul, tb2 * bgMul, 0.94f * cardA);
 
@@ -1869,9 +1916,9 @@ void Scene_AugSelect(const SceneCtx& c) {
         drawRect(cx, cy, CARD_W, TB,
                  tr * 0.38f, tg * 0.38f, tb2 * 0.38f, 0.97f * cardA);
 
-        // 테두리
+        // 테두리 (pick flash 시 잠깐 더 밝게)
         BatchFlush(); glEnable(GL_BLEND);
-        float bord = hov ? 1.0f : 0.60f;
+        float bord = (hov ? 1.0f : 0.60f) + flash * 0.5f;
         drawNeonBorder(cx, cy, CARD_W, CARD_H, nr * bord, ng * bord, nb * bord);
 
         // 타이틀바 텍스트 (등급 배지)
@@ -1946,7 +1993,7 @@ void Scene_AugSelect(const SceneCtx& c) {
         float boxW = TOTAL_W;
         float boxH = 142.0f;
         float boxX = (sw - boxW) * 0.5f;
-        float boxA = overlayE;
+        float boxA = overlayA;  // follows overlay fade (페이드아웃 포함)
 
         BindMainShader();
         float bgA = isDebuff ? 0.32f : 0.60f;

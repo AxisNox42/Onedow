@@ -96,6 +96,8 @@ wchar_t g_VolBuf[8] = {0};
 int     g_VolLen = 0;
 PlayerStats    g_Stats;
 bool g_aug1Released = true, g_aug2Released = true, g_aug3Released = true;
+float g_AugExitT    = -1.0f;
+int   g_AugExitSlot = -1;
 TextRenderer   g_TextL;   // ??湲??(利앷컯 ?대쫫, ?곹깭 ??댄?)
 TextRenderer   g_TextS;   // ?묒? 湲??(?ㅻ챸, ?뚰듃)
 TextRenderer   g_TextXL;  // 珥덈?????댄?(?쒖옉李?濡쒓퀬) ?꾩슜 ??怨좏빐?곷룄 ?섏뒪??
@@ -1566,39 +1568,56 @@ int main() {
                 }
             };
 
-            // 1/2/3 = hover (Space로 적용)
-            if (k1 == GLFW_PRESS && g_aug1Released) { g_HoveredAug = 0; g_aug1Released = false; }
-            if (k2 == GLFW_PRESS && g_aug2Released) { g_HoveredAug = 1; g_aug2Released = false; }
-            if (k3 == GLFW_PRESS && g_aug3Released) { g_HoveredAug = 2; g_aug3Released = false; }
-            if (k1 == GLFW_RELEASE) g_aug1Released = true;
-            if (k2 == GLFW_RELEASE) g_aug2Released = true;
-            if (k3 == GLFW_RELEASE) g_aug3Released = true;
+            constexpr float AUG_EXIT_DUR = 0.30f;
 
-            // Space = ?곸슜 (hover ??移대뱶留?. Enter ???쒓굅 ??Space 濡??듭씪
-            int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
-            if (kSp == GLFW_PRESS && s_augSpaceReleased && g_HoveredAug >= 0) {
-                applyAug(g_HoveredAug);
-                g_HoveredAug = -1;
-                s_augSpaceReleased = false;
-                g_GameManager.spaceReleased = false; // RUNNING 吏곹썑 pause 諛⑹?
+            // exit anim timer -- fires applyAug when done
+            bool augExitFired = false;
+            if (g_AugExitT >= 0.0f) {
+                g_AugExitT += delta;
+                if (g_AugExitT >= AUG_EXIT_DUR) {
+                    applyAug(g_AugExitSlot);
+                    g_HoveredAug  = -1;
+                    g_AugExitT    = -1.0f;
+                    g_AugExitSlot = -1;
+                    s_augSpaceReleased      = false;
+                    g_GameManager.spaceReleased = false;
+                    augExitFired = true;
+                }
             }
 
-            // 留덉슦???대┃: 移대뱶 hit-test ??hover 留?(?곸슜? Space ?ㅻ줈留?
-            if (lmb && !g_LmbPrev) {
-                const int  nCards  = 3;
-                const float CARD_W = 280.0f;
-                const float CARD_H = 430.0f;
-                const float GAP    = 40.0f;
-                const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
-                float baseX = (screenWidth  - TOTAL_W) * 0.5f;
-                float baseY = (screenHeight - CARD_H)  * 0.4f;
-                for (int i = 0; i < nCards; i++) {
-                    float cx = baseX + i * (CARD_W + GAP);
-                    float yOff = (g_HoveredAug == i) ? -20.0f : 0.0f;
-                    if (mx >= cx && mx <= cx + CARD_W &&
-                        my >= baseY + yOff && my <= baseY + yOff + CARD_H) {
-                        g_HoveredAug = i;  // ?대┃ = hover 留?(?곸슜? Space)
-                        break;
+            if (!augExitFired) {
+                // 1/2/3 = hover (exit 중 무시)
+                if (g_AugExitT < 0.0f) {
+                    if (k1 == GLFW_PRESS && g_aug1Released) { g_HoveredAug = 0; g_aug1Released = false; }
+                    if (k2 == GLFW_PRESS && g_aug2Released) { g_HoveredAug = 1; g_aug2Released = false; }
+                    if (k3 == GLFW_PRESS && g_aug3Released) { g_HoveredAug = 2; g_aug3Released = false; }
+                }
+                if (k1 == GLFW_RELEASE) g_aug1Released = true;
+                if (k2 == GLFW_RELEASE) g_aug2Released = true;
+                if (k3 == GLFW_RELEASE) g_aug3Released = true;
+
+                // Space = exit anim 시작
+                int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
+                if (kSp == GLFW_PRESS && s_augSpaceReleased && g_HoveredAug >= 0 && g_AugExitT < 0.0f) {
+                    g_AugExitT    = 0.0f;
+                    g_AugExitSlot = g_HoveredAug;
+                    s_augSpaceReleased = false;
+                    g_GameManager.spaceReleased = false;
+                }
+
+                // mouse hit-test -> hover (exit 중 무시)
+                if (lmb && !g_LmbPrev && g_AugExitT < 0.0f) {
+                    const float CARD_W = 280.0f, CARD_H = 430.0f, GAP = 40.0f;
+                    float baseX = (screenWidth  - 3.0f * CARD_W - 2.0f * GAP) * 0.5f;
+                    float baseY = (screenHeight - CARD_H) * 0.4f;
+                    for (int i = 0; i < 3; i++) {
+                        float cx   = baseX + i * (CARD_W + GAP);
+                        float yOff = (g_HoveredAug == i) ? -20.0f : 0.0f;
+                        if (mx >= cx && mx <= cx + CARD_W &&
+                            my >= baseY + yOff && my <= baseY + yOff + CARD_H) {
+                            g_HoveredAug = i;
+                            break;
+                        }
                     }
                 }
             }

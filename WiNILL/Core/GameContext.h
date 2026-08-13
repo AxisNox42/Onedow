@@ -44,6 +44,8 @@ extern bool      g_RunMelee;
 extern bool      g_RunBow;
 extern bool      g_DevUnlocked;
 extern float     g_DevToastTimer;
+extern float     g_AugExitT;     // -1 = idle, 0..AUG_EXIT_DUR = exit anim in progress
+extern int       g_AugExitSlot;  // which card slot was confirmed
 extern bool      g_VolEdit;
 extern wchar_t   g_VolBuf[8];
 extern int       g_VolLen;
