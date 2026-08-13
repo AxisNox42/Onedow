@@ -19,7 +19,7 @@ extern TextRenderer g_TextS;
 //   · 중거리~(210px+): 전면전 화력 유지
 // ─────────────────────────────────────────────────────────────
 
-enum class RRWeapon { RIFLE, SNIPER, MACHINEGUN };
+enum class RRWeapon { RIFLE, SNIPER, GRENADE, MACHINEGUN };
 enum class RRState  { ACTIVE, RELOAD_STEP, RELOAD_SPRINT, ASSAULT, OVERHEAT };
 
 class ReloadRunnerBoss {
@@ -33,7 +33,7 @@ public:
     RRState  state  = RRState::ACTIVE;
     RRWeapon weapon = RRWeapon::SNIPER;
 
-    float moveSpeed = 295.0f;
+    float moveSpeed = 330.0f;
     int   ammo = 4;
 
     float fireTimer   = 0.0f;
@@ -44,12 +44,21 @@ public:
     float assaultT    = 0.0f;
     float assaultCd   = 8.0f;
     float salvoCd     = 4.5f;
-    float grenadeCd   = 3.0f;
     float panicCd     = 0.0f;
     float overheatT   = 0.0f;
     float curveCd     = 6.0f;
     float curveShotT  = 0.0f;
     int   curveShotsLeft = 0;
+    float dashCd      = 1.2f;
+    float dashT       = 0.0f;
+    float dashVelX    = 0.0f;
+    float dashVelY    = 0.0f;
+    float glRecoilT   = 0.0f;
+    float glRecoilDur = 0.0f;
+    float glRecoilX   = 0.0f;
+    float glRecoilY   = 0.0f;
+    float glRecoilAppliedX = 0.0f;
+    float glRecoilAppliedY = 0.0f;
     float strafeT     = 0.0f;
     float strafeSign  = 1.0f;
     float spinAng     = 0.0f;
@@ -70,23 +79,44 @@ public:
     struct Trail { float x, y, life; };
     std::vector<Trail> trails;
 
+    struct GLShell {
+        float x, y;
+        float prevX, prevY;
+        float dirX, dirY;
+        float speed;
+        float age, life;
+        float wavePhase;
+        float waveAmp, waveFreq;
+        float damage;
+        float hitRadius;
+        float bendX, bendY;
+        float lastBendDist;
+        bool  tracking;
+    };
+    std::vector<GLShell> glShells;
+    struct GLPop {
+        float x, y;
+        float t, life;
+    };
+    std::vector<GLPop> glPops;
+
     static constexpr float BODY = 48.0f;
     static constexpr float MELEE_NEAR  = 112.0f;   // 붙으면 화력 OFF, 도주·장전
     static constexpr float MELEE_MID   = 215.0f;   // 이 안쪽이면 살보·스팸·ASSAULT 제한
     static constexpr float PANIC_DIST  = 88.0f;    // 강제 패닉 장전
     static constexpr float RF_MIN_DIST = 180.0f;
     static constexpr float RF_RANGE    = 620.0f;
-    static constexpr float RF_INTERVAL = 0.16f;
-    static constexpr int   RF_AMMO     = 4;
-    static constexpr float RF_BSPEED   = 760.0f;
-    static constexpr float RF_DMG      = 8.0f;
-    static constexpr float RF_JITTER   = 0.045f;
+    static constexpr float RF_INTERVAL = 0.125f;
+    static constexpr int   RF_AMMO     = 6;
+    static constexpr float RF_BSPEED   = 880.0f;
+    static constexpr float RF_DMG      = 9.0f;
+    static constexpr float RF_JITTER   = 0.035f;
 
     static constexpr float SN_KITE_RANGE = 480.0f;
-    static constexpr float SN_AIM_DELAY  = 0.38f;
-    static constexpr float SN_FREEZE     = 0.48f;
-    static constexpr float SN_BSPEED     = 1900.0f;
-    static constexpr float SN_DMG        = 34.0f;
+    static constexpr float SN_AIM_DELAY  = 0.30f;
+    static constexpr float SN_FREEZE     = 0.36f;
+    static constexpr float SN_BSPEED     = 2050.0f;
+    static constexpr float SN_DMG        = 36.0f;
 
     static constexpr float MG_WARMUP   = 1.35f;
     static constexpr int   MG_AMMO     = 42;
@@ -101,9 +131,18 @@ public:
     static constexpr float SPRINT_FIRE_INT = 0.14f;
     static constexpr float SPRINT_BSPEED   = 560.0f;
 
-    static constexpr float GRENADE_CD     = 3.7f;
-    static constexpr float GRENADE_BSPEED = 330.0f;
-    static constexpr float GRENADE_DMG    = 12.0f;
+    static constexpr int   GL_AMMO       = 3;
+    static constexpr float GL_INTERVAL   = 0.58f;
+    static constexpr float GL_BSPEED     = 275.0f;
+    static constexpr float GL_ACCEL      = 245.0f;
+    static constexpr float GL_DMG        = 23.0f;
+    static constexpr float GL_HIT_RADIUS = 18.0f;
+    static constexpr float GL_LIFE       = 4.75f;
+    static constexpr float GL_WAVE_AMP   = 92.0f;
+    static constexpr float GL_WAVE_FREQ  = 6.2f;
+    static constexpr float GL_TURN_RATE  = 2.7f;
+    static constexpr float GL_RECOIL     = 24.0f;
+    static constexpr float GL_RECOIL_DUR = 0.18f;
 
     static constexpr float CURVE_CD       = 8.5f;
     static constexpr float CURVE_INTERVAL = 0.8f;
@@ -128,11 +167,19 @@ public:
         hp = maxHp = hpInit;
         worldX = sw * 0.5f;
         worldY = sh * 0.28f;
-        equip(RRWeapon::SNIPER);
+        equip(RRWeapon::RIFLE);
     }
 
     int rifleAmmo(Difficulty difficulty) const {
-        return (difficulty == Difficulty::EASY) ? 3 : RF_AMMO;
+        if (difficulty == Difficulty::EASY) return 4;
+        if (difficulty == Difficulty::HARD) return 7;
+        return RF_AMMO;
+    }
+
+    int grenadeAmmo(Difficulty difficulty) const {
+        if (difficulty == Difficulty::EASY) return 2;
+        if (difficulty == Difficulty::HARD) return 4;
+        return GL_AMMO;
     }
 
     int machinegunAmmo(Difficulty difficulty) const {
@@ -143,12 +190,21 @@ public:
 
     RRWeapon pickNextWeapon(Difficulty difficulty) const {
         int r = rand() % 100;
-        if (!phase2) return (r < 68) ? RRWeapon::SNIPER : RRWeapon::RIFLE;
-        if (!phase3) return (r < 62) ? RRWeapon::RIFLE : RRWeapon::SNIPER;
+        if (!phase2) {
+            if (r < 52) return RRWeapon::RIFLE;
+            if (r < 76) return RRWeapon::GRENADE;
+            return RRWeapon::SNIPER;
+        }
+        if (!phase3) {
+            if (r < 42) return RRWeapon::RIFLE;
+            if (r < 72) return RRWeapon::GRENADE;
+            return RRWeapon::SNIPER;
+        }
         if (difficulty == Difficulty::EASY)
-            return (r < 56) ? RRWeapon::MACHINEGUN : RRWeapon::RIFLE;
-        if (r < 48) return RRWeapon::MACHINEGUN;
-        if (r < 78) return RRWeapon::RIFLE;
+            return (r < 48) ? RRWeapon::MACHINEGUN : ((r < 80) ? RRWeapon::RIFLE : RRWeapon::GRENADE);
+        if (r < 40) return RRWeapon::MACHINEGUN;
+        if (r < 68) return RRWeapon::RIFLE;
+        if (r < 90) return RRWeapon::GRENADE;
         return RRWeapon::SNIPER;
     }
 
@@ -170,6 +226,7 @@ public:
         switch (w) {
         case RRWeapon::RIFLE:      ammo = rifleAmmo(difficulty); break;
         case RRWeapon::SNIPER:     ammo = (difficulty == Difficulty::HARD && phase3) ? 2 : 1; break;
+        case RRWeapon::GRENADE:    ammo = grenadeAmmo(difficulty); break;
         case RRWeapon::MACHINEGUN: ammo = machinegunAmmo(difficulty); mgTelegraph = true; break;
         }
     }
@@ -255,22 +312,166 @@ public:
         }
     }
 
-    void fireGrenadeArc(std::vector<Bullet>& bullets, float px, float py,
-                        Difficulty difficulty, bool backstep = false) {
-        float lead = backstep ? 0.0f : ((difficulty == Difficulty::HARD) ? 88.0f : 56.0f);
-        float dx = px - worldX, dy = py - worldY;
-        float d = sqrtf(dx * dx + dy * dy) + 1e-3f;
-        float tx = px + dx / d * lead;
-        float ty = py + dy / d * lead;
-        Bullet b(worldX, worldY, tx, ty);
-        b.isEnemy = true;
-        b.speed = GRENADE_BSPEED * (backstep ? 0.9f : 1.0f);
-        b.color = glm::vec3(0.35f, 1.0f, 0.42f);
-        b.enemyDmg = GRENADE_DMG * ((difficulty == Difficulty::EASY) ? 0.75f : 1.0f);
-        b.sizeScale = backstep ? 1.8f : 2.1f;
-        b.launchRamp = 0.35f;
-        b.launchAccel = 1.25f;
-        bullets.push_back(b);
+    static float segDist(float ax, float ay, float bx, float by, float px, float py) {
+        float vx = bx - ax, vy = by - ay;
+        float wx = px - ax, wy = py - ay;
+        float len2 = vx * vx + vy * vy;
+        float t = (len2 > 1e-4f) ? (wx * vx + wy * vy) / len2 : 0.0f;
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        float cx = ax + vx * t, cy = ay + vy * t;
+        float dx = px - cx, dy = py - cy;
+        return sqrtf(dx * dx + dy * dy);
+    }
+
+    static float easeOutCubic(float t) {
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        float inv = 1.0f - t;
+        return 1.0f - inv * inv * inv;
+    }
+
+    void startGLRecoil(float dirX, float dirY, float dist) {
+        glRecoilT = 0.0f;
+        glRecoilDur = GL_RECOIL_DUR;
+        glRecoilX = -dirX * dist;
+        glRecoilY = -dirY * dist;
+        glRecoilAppliedX = 0.0f;
+        glRecoilAppliedY = 0.0f;
+        pushTrail();
+    }
+
+    void tickGLRecoil(float dt) {
+        if (glRecoilDur <= 0.0f || glRecoilT >= glRecoilDur) return;
+        glRecoilT += dt;
+        float u = glRecoilT / glRecoilDur;
+        float e = easeOutCubic(u);
+        float targetX = glRecoilX * e;
+        float targetY = glRecoilY * e;
+        worldX += targetX - glRecoilAppliedX;
+        worldY += targetY - glRecoilAppliedY;
+        glRecoilAppliedX = targetX;
+        glRecoilAppliedY = targetY;
+        if (glRecoilT >= glRecoilDur) {
+            glRecoilT = glRecoilDur;
+            glRecoilDur = 0.0f;
+        }
+        clampToScreen();
+    }
+
+    void spawnGLPop(float x, float y) {
+        glPops.push_back({ x, y, 0.0f, 0.24f });
+        if ((int)glPops.size() > 8) glPops.erase(glPops.begin());
+    }
+
+    void fireGrenadeLauncher(float nx, float ny, float px, float py,
+                             Difficulty difficulty, bool panicShot = false) {
+        float side = (rand() % 2) ? 1.0f : -1.0f;
+        float sx = worldX + nx * BODY * 0.62f + (-ny * side) * BODY * 0.45f;
+        float sy = worldY + ny * BODY * 0.62f + ( nx * side) * BODY * 0.45f;
+        float jitter = ((float)(rand() % 200 - 100) / 100.0f) * 0.07f;
+        float base = atan2f(ny, nx) + jitter;
+
+        float speed = GL_BSPEED;
+        float damage = GL_DMG;
+        float amp = GL_WAVE_AMP;
+        float freq = GL_WAVE_FREQ;
+        float hit = GL_HIT_RADIUS;
+        float life = GL_LIFE;
+        float recoil = GL_RECOIL;
+        if (difficulty == Difficulty::EASY) {
+            speed *= 0.88f; damage *= 0.78f;
+            amp *= 0.72f; freq *= 0.9f; recoil *= 0.72f; hit *= 0.92f;
+        } else if (difficulty == Difficulty::HARD) {
+            speed *= 1.08f; damage *= 1.08f;
+            amp *= 1.18f; freq *= 1.08f; recoil *= 1.12f;
+        }
+        if (panicShot) {
+            damage *= 0.75f;
+            amp *= 0.82f;
+            life *= 0.82f;
+            recoil *= 0.95f;
+        }
+
+        float dirX = cosf(base);
+        float dirY = sinf(base);
+        float phase = (float)(rand() % 628) * 0.01f;
+        float bdx = px - sx, bdy = py - sy;
+        float bendDist = sqrtf(bdx * bdx + bdy * bdy) + 1e-3f;
+        glShells.push_back({ sx, sy, sx, sy, dirX, dirY, speed, 0.0f, life,
+                             phase, amp, freq, damage, hit, px, py, bendDist, true });
+        if ((int)glShells.size() > 10) glShells.erase(glShells.begin());
+        startGLRecoil(dirX, dirY, recoil);
+    }
+
+    void tickGLShells(float px, float py, float dt, float& playerHP,
+                      std::vector<Bullet>& bullets, Difficulty difficulty) {
+        (void)bullets;
+        float accel = GL_ACCEL;
+        float turnRate = GL_TURN_RATE;
+        if (difficulty == Difficulty::EASY) { accel *= 0.78f; turnRate *= 0.72f; }
+        if (difficulty == Difficulty::HARD) { accel *= 1.18f; turnRate *= 1.12f; }
+
+        for (auto& s : glShells) {
+            s.prevX = s.x;
+            s.prevY = s.y;
+            s.age += dt;
+            s.speed += accel * dt;
+
+            if (s.tracking && s.age > 0.18f) {
+                float tx = s.bendX - s.x, ty = s.bendY - s.y;
+                float td = sqrtf(tx * tx + ty * ty) + 1e-3f;
+                if (td < s.lastBendDist) s.lastBendDist = td;
+                float ahead = tx * s.dirX + ty * s.dirY;
+                bool closeToBend = td <= 150.0f;
+                bool passedBend = ahead < -10.0f || td > s.lastBendDist + 28.0f;
+                bool timeout = s.age > 1.15f;
+                if (closeToBend || passedBend || timeout) {
+                    s.tracking = false;
+                } else {
+                    float curA = atan2f(s.dirY, s.dirX);
+                    float wantA = atan2f(ty / td, tx / td);
+                    float diff = wantA - curA;
+                    while (diff >  3.14159265f) diff -= 6.2831853f;
+                    while (diff < -3.14159265f) diff += 6.2831853f;
+                    float maxStep = turnRate * dt;
+                    if (diff >  maxStep) diff =  maxStep;
+                    if (diff < -maxStep) diff = -maxStep;
+                    float newA = curA + diff;
+                    s.dirX = cosf(newA);
+                    s.dirY = sinf(newA);
+                }
+            }
+
+            float wave = s.tracking ? sinf(s.age * s.waveFreq + s.wavePhase) * s.waveAmp : 0.0f;
+            float perpX = -s.dirY;
+            float perpY =  s.dirX;
+            s.x += (s.dirX * s.speed + perpX * wave) * dt;
+            s.y += (s.dirY * s.speed + perpY * wave) * dt;
+
+            if (segDist(s.prevX, s.prevY, s.x, s.y, px, py) <= s.hitRadius + 10.0f) {
+                HurtPlayer(playerHP, s.damage);
+                spawnGLPop(s.x, s.y);
+                s.life = -1.0f;
+            }
+            bool wallHit = false;
+            if (s.x < 12.0f) { s.x = 12.0f; wallHit = true; }
+            if (s.x > screenW - 12.0f) { s.x = screenW - 12.0f; wallHit = true; }
+            if (s.y < 12.0f) { s.y = 12.0f; wallHit = true; }
+            if (s.y > screenH - 12.0f) { s.y = screenH - 12.0f; wallHit = true; }
+            if (wallHit) {
+                spawnGLPop(s.x, s.y);
+                s.life = -1.0f;
+            }
+            if (s.age >= s.life) {
+                s.life = -1.0f;
+            }
+        }
+        glShells.erase(std::remove_if(glShells.begin(), glShells.end(),
+            [](const GLShell& s) { return s.life < 0.0f; }), glShells.end());
+        for (auto& p : glPops) p.t += dt;
+        glPops.erase(std::remove_if(glPops.begin(), glPops.end(),
+            [](const GLPop& p) { return p.t >= p.life; }), glPops.end());
     }
 
     void fireCurveMissile(std::vector<Bullet>& bullets, float px, float py, int shotIndex) {
@@ -334,6 +535,34 @@ public:
         if ((int)trails.size() > 10) trails.erase(trails.begin());
     }
 
+    void startCombatDash(float nx, float ny, float dist, Difficulty difficulty) {
+        float side = (rand() % 2) ? 1.0f : -1.0f;
+        float awayBias = (dist < 300.0f) ? 0.72f : 0.25f;
+        float vx = -ny * side - nx * awayBias;
+        float vy =  nx * side - ny * awayBias;
+        float len = sqrtf(vx * vx + vy * vy) + 1e-3f;
+        float sp = moveSpeed * (phase3 ? 2.45f : (phase2 ? 2.15f : 1.85f));
+        if (difficulty == Difficulty::EASY) sp *= 0.82f;
+        if (difficulty == Difficulty::HARD) sp *= 1.12f;
+        dashVelX = vx / len * sp;
+        dashVelY = vy / len * sp;
+        dashT = (difficulty == Difficulty::EASY) ? 0.12f : 0.16f;
+        dashCd = phase3 ? 1.05f : 1.28f;
+        if (difficulty == Difficulty::EASY) dashCd *= 1.55f;
+        if (difficulty == Difficulty::HARD) dashCd *= 0.72f;
+        pushTrail();
+    }
+
+    void tickCombatDash(float dt) {
+        if (dashT <= 0.0f) return;
+        pushTrail();
+        worldX += dashVelX * dt;
+        worldY += dashVelY * dt;
+        dashT -= dt;
+        if (dashT < 0.0f) dashT = 0.0f;
+        clampToScreen();
+    }
+
     void Update(float px, float py, float dt, float& playerHP,
                 std::vector<Bullet>& bullets,
                 Difficulty difficulty = Difficulty::NORMAL) {
@@ -346,9 +575,16 @@ public:
         float dist = sqrtf(dx * dx + dy * dy) + 1e-3f;
         float nx = dx / dist, ny = dy / dist;
         spinAng += dt * (phase3 ? 4.5f : (phase2 ? 3.0f : 2.0f));
-        grenadeCd -= dt;
         panicCd -= dt;
         curveCd -= dt;
+        dashCd -= dt;
+        tickGLShells(px, py, dt, playerHP, bullets, difficulty);
+        tickGLRecoil(dt);
+        if (dashT > 0.0f) tickCombatDash(dt);
+        if (dashT <= 0.0f && dashCd <= 0.0f && state == RRState::ACTIVE &&
+            !aiming && !mgTelegraph && !mgFiring) {
+            startCombatDash(nx, ny, dist, difficulty);
+        }
 
         if (dist < BODY + 10.0f)
             HurtPlayer(playerHP, (phase3 ? 9.0f : (phase2 ? 7.5f : 6.0f)) * dt);
@@ -380,7 +616,8 @@ public:
             float spamInt = SPAM_INT * 1.25f;
             spamTimer += dt;
             if (spamTimer >= spamInt && midOrFar && state == RRState::ACTIVE &&
-                weapon != RRWeapon::MACHINEGUN && curveShotsLeft <= 0) {
+                weapon != RRWeapon::MACHINEGUN && weapon != RRWeapon::GRENADE &&
+                curveShotsLeft <= 0) {
                 spamTimer = 0.0f;
                 fireSpamBurst(bullets, nx, ny);
             }
@@ -393,22 +630,13 @@ public:
             fireEdgeSalvo(bullets, px, py, difficulty);
         }
 
-        if (phase2 && grenadeCd <= 0.0f && state == RRState::ACTIVE &&
-            weapon != RRWeapon::MACHINEGUN && curveShotsLeft <= 0 && !nearMelee) {
-            fireGrenadeArc(bullets, px, py, difficulty);
-            float cd = GRENADE_CD;
-            if (difficulty == Difficulty::EASY) cd *= 1.45f;
-            if (difficulty == Difficulty::HARD) cd *= 0.82f;
-            grenadeCd = cd;
-        }
-
         if (dist < PANIC_DIST && state == RRState::ACTIVE && panicCd <= 0.0f) {
             enterReload(bullets, true, difficulty);
             panicCd = (difficulty == Difficulty::EASY) ? 3.2f : 2.4f;
             return;
         }
         if (dist < RF_MIN_DIST && state == RRState::ACTIVE && panicCd <= 0.0f) {
-            fireGrenadeArc(bullets, px, py, difficulty, true);
+            if (weapon != RRWeapon::MACHINEGUN) fireGrenadeLauncher(nx, ny, px, py, difficulty, true);
             fleeFrom(nx, ny, dt, 1.9f);
             enterReload(bullets, false, difficulty);
             panicCd = (difficulty == Difficulty::EASY) ? 4.2f : 3.0f;
@@ -561,18 +789,52 @@ public:
                 if (stopTimer >= freezeNeed) {
                     float dmg = SN_DMG * ((difficulty == Difficulty::EASY) ? 0.82f : 1.0f);
                     fireDir(bullets, nx, ny, SN_BSPEED, glm::vec3(0.25f, 1.0f, 1.0f), dmg);
-                    if (difficulty == Difficulty::HARD && phase3) {
-                        float a = atan2f(ny, nx) + 0.09f;
-                        fireDir(bullets, cosf(a), sinf(a), SN_BSPEED * 0.92f,
-                                glm::vec3(0.35f, 0.85f, 1.0f), SN_DMG * 0.75f);
-                        a = atan2f(ny, nx) - 0.09f;
-                        fireDir(bullets, cosf(a), sinf(a), SN_BSPEED * 0.88f,
-                                glm::vec3(0.2f, 0.95f, 1.0f), SN_DMG * 0.65f);
+                    int echoShots = 0;
+                    if (difficulty == Difficulty::NORMAL && phase3) echoShots = 1;
+                    if (difficulty == Difficulty::HARD && phase2) echoShots = 1;
+                    if (difficulty == Difficulty::HARD && phase3) echoShots = 2;
+                    float base = atan2f(ny, nx);
+                    if (echoShots >= 1) {
+                        float a = base + 0.085f;
+                        fireDir(bullets, cosf(a), sinf(a), SN_BSPEED * 0.9f,
+                                glm::vec3(0.35f, 0.85f, 1.0f), SN_DMG * 0.68f);
+                    }
+                    if (echoShots >= 2) {
+                        float a = base - 0.085f;
+                        fireDir(bullets, cosf(a), sinf(a), SN_BSPEED * 0.86f,
+                                glm::vec3(0.2f, 0.95f, 1.0f), SN_DMG * 0.58f);
                     }
                     aiming = false;
                     aimDelay = 0.0f;
                     if (--ammo <= 0) enterReload(bullets, false, difficulty);
                 }
+            }
+            break;
+        }
+        case RRWeapon::GRENADE: {
+            if (dist < RF_MIN_DIST * 1.22f) {
+                fleeFrom(nx, ny, dt, 1.35f);
+            } else if (dist > RF_RANGE + 130.0f) {
+                worldX += nx * moveSpeed * 0.74f * dt;
+                worldY += ny * moveSpeed * 0.74f * dt;
+                clampToScreen();
+            } else {
+                strafeMove(nx, ny, dt * 0.82f);
+                clampToScreen();
+            }
+
+            if (dist < RF_RANGE + 160.0f && dist >= MELEE_NEAR * 0.92f) {
+                fireTimer += dt;
+                float interval = GL_INTERVAL;
+                if (difficulty == Difficulty::EASY) interval *= 1.32f;
+                if (difficulty == Difficulty::HARD) interval *= 0.86f;
+                if (fireTimer >= interval) {
+                    fireTimer = 0.0f;
+                    fireGrenadeLauncher(nx, ny, px, py, difficulty);
+                    if (--ammo <= 0) enterReload(bullets, false, difficulty);
+                }
+            } else if (dist < MELEE_NEAR && ammo <= 1) {
+                enterReload(bullets, true, difficulty);
             }
             break;
         }
@@ -631,6 +893,7 @@ public:
         switch (w) {
         case RRWeapon::RIFLE:      return L"RF";
         case RRWeapon::SNIPER:     return L"SR";
+        case RRWeapon::GRENADE:    return L"GL";
         case RRWeapon::MACHINEGUN: return L"MG";
         default: return L"??";
         }
@@ -685,6 +948,33 @@ public:
         }
     }
 
+    void renderGLShells(float gt) const {
+        for (const auto& p : glPops) {
+            float u = (p.life > 0.0f) ? p.t / p.life : 1.0f;
+            if (u < 0.0f) u = 0.0f;
+            if (u > 1.0f) u = 1.0f;
+            float a = 1.0f - u;
+            drawCircle(p.x, p.y, 14.0f + 34.0f * u, 0.35f, 1.0f, 0.55f, 0.18f * a);
+            drawArcRing(p.x, p.y, 20.0f + 42.0f * u, 1.0f, 0.34f, 0.9f, 0.55f * a, 22);
+            drawCircle(p.x, p.y, 6.0f + 8.0f * u, 1.0f, 0.42f, 0.92f, 0.75f * a);
+        }
+
+        for (const auto& s : glShells) {
+            float lifeT = (s.life > 0.0f) ? s.age / s.life : 1.0f;
+            if (lifeT < 0.0f) lifeT = 0.0f;
+            if (lifeT > 1.0f) lifeT = 1.0f;
+            float pulse = 0.55f + 0.45f * sinf(gt * 18.0f + s.wavePhase);
+            drawRect(s.prevX - 4.0f, s.prevY - 4.0f, 8.0f, 8.0f,
+                     0.18f, 1.0f, 0.58f, 0.28f * (1.0f - lifeT));
+            drawCircle(s.x, s.y, s.hitRadius + 8.0f + pulse * 3.0f,
+                       0.3f, 1.0f, 0.55f, 0.18f + pulse * 0.12f);
+            drawArcRing(s.x, s.y, s.hitRadius + 13.0f,
+                        1.0f, 0.34f, 0.9f, 0.42f + pulse * 0.22f, 18);
+            drawCircle(s.x, s.y, 8.0f + pulse * 2.0f, 0.3f, 1.0f, 0.55f, 0.9f);
+            drawCircle(s.x, s.y, 4.0f, 1.0f, 0.36f, 0.9f, 0.95f);
+        }
+    }
+
     void renderWeaponBackdrop(float gt) const {
         float cx = screenW * 0.5f;
         float cy = screenH * 0.52f;
@@ -698,6 +988,11 @@ public:
             drawRect(cx - 190.0f, cy - 16.0f, 360.0f, 32.0f, 0.55f, 1.0f, 0.25f, a);
             drawRect(cx - 30.0f, cy + 14.0f, 54.0f, 90.0f, 0.55f, 1.0f, 0.25f, a * 0.8f);
             drawRect(cx - 260.0f, cy - 34.0f, 82.0f, 68.0f, 0.55f, 1.0f, 0.25f, a * 0.65f);
+        } else if (weapon == RRWeapon::GRENADE) {
+            drawRect(cx - 160.0f, cy - 28.0f, 270.0f, 56.0f, 0.3f, 1.0f, 0.55f, a * 0.85f);
+            drawCircle(cx + 110.0f, cy, 52.0f, 0.3f, 1.0f, 0.55f, a * 0.72f);
+            drawCircle(cx + 110.0f, cy, 26.0f, 1.0f, 0.38f, 0.92f, a * 0.48f);
+            drawRect(cx - 238.0f, cy + 20.0f, 74.0f, 42.0f, 0.3f, 1.0f, 0.55f, a * 0.6f);
         } else {
             drawCircle(cx - 80.0f, cy, 58.0f, 1.0f, 0.72f, 0.12f, a * 0.75f);
             drawCircle(cx,        cy, 58.0f, 1.0f, 0.72f, 0.12f, a * 0.75f);
@@ -706,12 +1001,14 @@ public:
         }
     }
 
-    void renderTelegraphs(float px, float py, float gt) const {
+    void renderTelegraphs(float px, float py, float gt, bool drawGL = true) const {
         float adx = px - worldX, ady = py - worldY;
         float ad = sqrtf(adx * adx + ady * ady) + 1e-3f;
         float baseA = atan2f(ady, adx);
 
         renderWeaponBackdrop(gt);
+
+        if (drawGL) renderGLShells(gt);
 
         drawArcRing(worldX, worldY, MELEE_NEAR, 0.25f, 0.95f, 0.85f, 0.22f);
         drawNeonBorder(worldX - MELEE_NEAR, worldY - MELEE_NEAR,
@@ -775,6 +1072,14 @@ public:
             drawArcRing(worldX, worldY, RF_RANGE, 0.55f, 1.0f, 0.25f, 0.22f * inRange);
         }
 
+        if (drawGL && state == RRState::ACTIVE && weapon == RRWeapon::GRENADE && ad < RF_RANGE + 190.0f) {
+            float ha = 0.16f;
+            float inRange = (ad < RF_RANGE + 160.0f) ? 1.0f : 0.55f;
+            drawFan(worldX, worldY, baseA - ha, baseA + ha, RF_RANGE + 160.0f,
+                    0.3f, 1.0f, 0.55f, 0.09f * inRange, 0.36f * inRange, 14);
+            drawArcRing(worldX, worldY, RF_RANGE + 160.0f, 0.3f, 1.0f, 0.55f, 0.17f * inRange);
+        }
+
         if (state == RRState::OVERHEAT) {
             float p = 0.55f + 0.45f * sinf(gt * 18.0f);
             drawCircle(worldX, worldY, BODY * (1.55f + p * 0.2f), 1.0f, 0.18f, 0.08f, 0.24f);
@@ -831,7 +1136,37 @@ public:
         else if (state == RRState::ASSAULT)       { cr = 1.0f; cg = 0.28f; cb = 0.12f; }
         else if (weapon == RRWeapon::RIFLE)       { cr = 0.55f; cg = 1.0f; cb = 0.25f; }
         else if (weapon == RRWeapon::SNIPER)      { cr = 0.22f; cg = 0.92f; cb = 1.0f; }
+        else if (weapon == RRWeapon::GRENADE)     { cr = 0.32f; cg = 1.0f; cb = 0.58f; }
         else                                      { cr = 1.0f; cg = 0.78f; cb = 0.18f; }
+
+        drawCircle(worldX, worldY, BODY * 0.92f, 0.01f, 0.015f, 0.025f, 0.54f);
+        drawRect(worldX - BODY * 0.98f, worldY - BODY * 0.78f,
+                 BODY * 1.96f, BODY * 0.18f, 0.02f, 0.025f, 0.04f, 0.92f);
+        drawNeonBorder(worldX - BODY * 0.98f, worldY - BODY * 0.78f,
+                       BODY * 1.96f, BODY * 0.18f, cr, cg, cb);
+        drawRect(worldX - BODY * 0.72f, worldY + BODY * 0.63f,
+                 BODY * 1.44f, BODY * 0.16f, 0.02f, 0.025f, 0.04f, 0.84f);
+        drawNeonBorder(worldX - BODY * 0.72f, worldY + BODY * 0.63f,
+                       BODY * 1.44f, BODY * 0.16f, cr * 0.85f, cg * 0.85f, cb * 0.85f);
+
+        drawRect(worldX - BODY * 1.55f, worldY - BODY * 0.28f,
+                 BODY * 0.72f, BODY * 0.56f, 0.05f, 0.06f, 0.09f, 0.88f);
+        drawRect(worldX + BODY * 0.83f, worldY - BODY * 0.28f,
+                 BODY * 0.72f, BODY * 0.56f, 0.05f, 0.06f, 0.09f, 0.88f);
+        drawNeonBorder(worldX - BODY * 1.55f, worldY - BODY * 0.28f,
+                       BODY * 0.72f, BODY * 0.56f, cr, cg, cb);
+        drawNeonBorder(worldX + BODY * 0.83f, worldY - BODY * 0.28f,
+                       BODY * 0.72f, BODY * 0.56f, cr, cg, cb);
+        drawRect(worldX - BODY * 0.28f, worldY + BODY * 0.48f,
+                 BODY * 0.22f, BODY * 0.55f, 1.0f, 0.42f, 0.12f, 0.25f + pulse * 0.22f);
+        drawRect(worldX + BODY * 0.06f, worldY + BODY * 0.48f,
+                 BODY * 0.22f, BODY * 0.55f, 1.0f, 0.42f, 0.12f, 0.25f + pulse * 0.22f);
+        drawCircle(worldX - BODY * 1.2f, worldY, 8.0f + pulse * 2.0f, cr, cg, cb, 0.82f);
+        drawCircle(worldX + BODY * 1.2f, worldY, 8.0f + pulse * 2.0f, cr, cg, cb, 0.82f);
+        if (curveShotsLeft > 0) {
+            drawCircle(worldX - BODY * 1.2f, worldY, 17.0f, 1.0f, 0.22f, 0.92f, 0.35f + pulse * 0.22f);
+            drawCircle(worldX + BODY * 1.2f, worldY, 17.0f, 1.0f, 0.22f, 0.92f, 0.35f + pulse * 0.22f);
+        }
 
         for (int i = 0; i < 2; i++) {
             float side = (i == 0) ? 1.0f : -1.0f;
@@ -866,6 +1201,12 @@ public:
         } else if (weapon == RRWeapon::SNIPER) {
             drawRect(bx - 1, by - 1.5f, 30, 3, cr, cg, cb, 1.0f);
             drawCircle(bx + 24, by, 4.0f, cr, cg, cb, 0.75f);
+        } else if (weapon == RRWeapon::GRENADE) {
+            drawRect(bx - 8, by - 8, 34, 16, 0.06f, 0.07f, 0.09f, 0.96f);
+            drawRect(bx + 18, by - 11, 18, 22, cr, cg, cb, 0.78f);
+            drawCircle(bx + 34, by, 13.0f, cr, cg, cb, 0.45f);
+            drawCircle(bx + 34, by, 6.0f, 1.0f, 0.36f, 0.9f, 0.82f);
+            drawRect(bx - 1, by + 8, 9, 15, cr * 0.72f, cg * 0.72f, cb * 0.72f, 0.82f);
         } else {
             for (int i = 0; i < 4; i++)
                 drawRect(bx + (float)i * 4.0f, by - 2, 3, 4, cr, cg, cb, 0.85f);

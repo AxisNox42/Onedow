@@ -5,6 +5,7 @@
 // Active boss picks:
 //   2 = VOLLEY.sys
 //   8 = FORK.worm
+//   10 = TESS.glitch
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -15,12 +16,12 @@ inline int& RotIdx() {
 inline void ResetRotation() { RotIdx() = 0; }
 
 inline bool IsLtsRosterPick(int pick) {
-    return pick == 2 || pick == 8;
+    return pick == 2 || pick == 8 || pick == 10;
 }
 
 inline int RollScorePick() {
-    static const int kRot[] = { 2, 8 };
-    return kRot[RotIdx()++ % 2];
+    static const int kRot[] = { 2, 10, 8 };
+    return kRot[RotIdx()++ % 3];
 }
 
 inline int  g_ActBossPick = -1;
@@ -60,6 +61,7 @@ inline ActRules EndlessRules() {
 inline ActRules RulesForPick(int pick) {
     switch (pick) {
     case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f, 4, 2 };
+    case 10: return { 3.5f, 6.0f, 1.10f, 1.02f, 3, 6 };
     case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };
     default: return { 2.0f, 3.0f, 1.0f,  1.0f,  2, 2 };
     }
@@ -80,6 +82,7 @@ inline int GetActNumber() {
 inline const wchar_t* DisplayName(int pick) {
     switch (pick) {
     case 8:  return L"FORK.worm";
+    case 10: return L"TESS.glitch";
     case 2:
     default: return L"VOLLEY.sys";
     }
@@ -88,6 +91,7 @@ inline const wchar_t* DisplayName(int pick) {
 inline float HpMul(int pick) {
     switch (pick) {
     case 2:  return 1.08f;
+    case 10: return 0.92f;
     case 8:  return 0.70f;
     default: return 1.0f;
     }
@@ -96,6 +100,7 @@ inline float HpMul(int pick) {
 inline glm::vec3 WarnColor(int pick) {
     switch (pick) {
     case 2:  return { 1.0f,  0.55f, 0.20f };
+    case 10: return { 0.95f, 0.35f, 1.0f  };
     case 8:  return { 0.35f, 0.88f, 0.95f };
     default: return { 1.0f,  0.55f, 0.20f };
     }
@@ -107,13 +112,16 @@ inline const wchar_t* Tagline(int pick) {
         if (li == 0) return L"프로세스 포크 - 연쇄 분열";
         return L"Fork bomb - chained child processes";
     }
+    if (pick == 10) {
+        return L"Tesseract glitch - dash through collapsing geometry";
+    }
     if (li == 0) return L"연발 포격 - 사거리 전조 표시";
     return L"Volley fire - telegraphed danger zones";
 }
 
 inline bool ActBiasSplitter()  { return g_ActBossPick == 8; }
-inline bool ActBiasSpawner()   { return g_ActBossPick == 8; }
-inline bool ActBiasRanged()    { return g_ActBossPick == 2; }
+inline bool ActBiasSpawner()   { return g_ActBossPick == 8 || g_ActBossPick == 10; }
+inline bool ActBiasRanged()    { return g_ActBossPick == 2 || g_ActBossPick == 10; }
 
 inline const wchar_t* ActLabel() {
     int li = LangIndex();

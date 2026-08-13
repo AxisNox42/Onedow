@@ -30,3 +30,5 @@ struct ExpSystem {
 };
 
 inline ExpSystem g_ExpSystem;
+
+constexpr int MAIN_LEVEL_CAP = 45;

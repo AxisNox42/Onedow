@@ -209,6 +209,7 @@
     <ClInclude Include="Entity\Bomber.h" />
     <ClInclude Include="Entity\Boss\CentipedeBoss.h" />
     <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h" />
+    <ClInclude Include="Entity\Boss\TesseractGlitchBoss.h" />
     <ClInclude Include="Core\BossDirector.h" />
     <ClInclude Include="Core\AugmentSlots.h" />
     <ClInclude Include="Core\RunIntermission.h" />

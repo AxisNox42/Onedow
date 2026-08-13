@@ -156,6 +156,9 @@
     <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h">
       <Filter>Entity\Boss</Filter>
     </ClInclude>
+    <ClInclude Include="Entity\Boss\TesseractGlitchBoss.h">
+      <Filter>Entity\Boss</Filter>
+    </ClInclude>
     <ClInclude Include="Core\BossDirector.h">
       <Filter>Core</Filter>
     </ClInclude>

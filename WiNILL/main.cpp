@@ -36,6 +36,7 @@
 #include "MonsterManager.h"
 #include "ReloadRunnerBoss.h"
 #include "CentipedeBoss.h"
+#include "TesseractGlitchBoss.h"
 #include "BossDirector.h"
 #include "AugmentSlots.h"
 #include "RunIntermission.h"
@@ -144,6 +145,7 @@ float RR_WIN_W     = 600.0f;
 float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
+float TESS_WIN_W  = 620.0f;    // TESS.glitch: tesseract grid arena
 float TOTEM_WIN_W = 760.0f;    // ADUN.relay: 대형 중계 코어 전투 공간
 float SPAM_WIN_W   = 480.0f;   // SPAM.dll: 코어 + 오류 팝업 클러터 전투 공간
 float UNKNOWN_WIN_W = 500.0f;  // UNKNOWN.sys: 창연 검 보스
@@ -290,6 +292,7 @@ static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
 
 
 CentipedeBoss* g_CentiBoss = nullptr;
+TesseractGlitchBoss* g_TessBoss = nullptr;
 // ?? 諛곕뱶 ?뱁꽣 ?щ쭩 ?붾쪟臾????꾩떆 媛먯냽 援ъ뿭(?먯긽 ?곸뿭). ?덉뿉 ?덉쑝硫??대룞?띾룄 -10% ??
 //   利됱떆 ?앷린吏 ?딄퀬 ZONE_OPEN(0.7珥???嫄몄퀜 ?먯젏 遺?앸릺???쇱쭚(grow factor = age/OPEN).
 struct SlowZone { float x, y, w, h, life, maxLife, age; };
@@ -328,6 +331,7 @@ const wchar_t* g_BossWarnName   = L"";
 float          g_BossWarnHp      = 0.0f;
 // ?섏씠利? ?곸듅?ｌ? 異붿쟻 (?듭씪 吏꾩엯 ?곗텧 1???ъ깮??
 bool g_RRWasP2 = false, g_RRWasP3 = false;
+bool g_TessWasP2 = false, g_TessWasP3 = false;
 // ?섏씠利? 吏꾩엯 ?좎뒪??("??怨쇰?????PHASE 2")
 float     g_P2ToastTimer = 0.0f;
 glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
@@ -754,6 +758,7 @@ void RunShopPurchase(int slot) {
 static bool BossFightBusy() {
     return (g_RRBoss && g_RRBoss->alive)
         || (g_CentiBoss && g_CentiBoss->alive)
+        || (g_TessBoss && g_TessBoss->alive)
         || g_BossWarnTimer > 0.0f;
 }
 
@@ -770,6 +775,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     switch (pick) {
     case 2: StartBossWarn(2, L"VOLLEY.sys", bossHpC);        break;
     case 8: StartBossWarn(8, L"FORK.worm",  bossHpC * 0.7f); break;
+    case 10: StartBossWarn(10, TesseractGlitchBoss::BOSS_NAME, bossHpC * 0.92f); break;
     case 3: StartBossWarn(3, L"SPAM.dll",   bossHpC * 0.9f); break;
     default: StartBossWarn(2, L"VOLLEY.sys", bossHpC);       break;
     }
@@ -878,6 +884,7 @@ int main() {
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
     RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
+    TESS_WIN_W *= g_Scale;
     TOTEM_WIN_W *= g_Scale;
     UNKNOWN_WIN_W *= g_Scale; UNKNOWN_WIN_H *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
@@ -1048,6 +1055,10 @@ int main() {
                 consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
             for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
         }
+        if (g_TessBoss && g_TessBoss->alive) {
+            consider(g_TessBoss->worldX, g_TessBoss->worldY);
+            for (auto& o : g_TessBoss->orbs) if (o.alive) consider(o.x, o.y);
+        }
         return found;
     };
 
@@ -1181,12 +1192,14 @@ int main() {
             g_BossRewardPicksLeft = 0;
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;
             g_RRWasP2 = g_RRWasP3 = false;
+            g_TessWasP2 = g_TessWasP3 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;
             g_NovaTimer = 0.0f;
             g_RunMelee = false; g_RunBow = false;
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+            if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
             g_BossTintT = 0.0f;
             ResetJuice();
             ResetSkills();
@@ -1336,6 +1349,7 @@ int main() {
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
                     if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY.sys");
                     if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
+                    if (g_TessBoss && g_TessBoss->alive) consider(g_TessBoss->worldX, g_TessBoss->worldY, TesseractGlitchBoss::BOSS_NAME);
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
                     const wchar_t* UNK[3] = { L"Unknown error", L"Terminated by unknown error", L"Unknown error" };
@@ -1373,9 +1387,11 @@ int main() {
                 g_Bullets.clear();
                 if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
                         if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+                if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
                 g_Turrets.clear();
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
                 g_RRWasP2 = g_RRWasP3 = false;
+                g_TessWasP2 = g_TessWasP3 = false;
                 g_LaserBeams.clear();   // ?ㅼ틪 ?덉씠? 鍮??뺣━
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭/異쒗삁 ?뺣━
                 g_NovaTimer = 0.0f;   // 諛깆떊 ?ㅼ틪 ?뺣━
@@ -1816,6 +1832,13 @@ int main() {
                         playerWin.x = wpcx - playerWin.width  * 0.5f;
                         playerWin.y = wpcy - playerWin.height * 0.5f;
                     }
+                    if (g_TessBoss && g_TessBoss->alive && g_DashInvuln <= 0.0f) {
+                        float wpcx = playerWin.x + playerWin.width  * 0.5f;
+                        float wpcy = playerWin.y + playerWin.height * 0.5f;
+                        g_TessBoss->blockMove(wpcx, wpcy, 18.0f);
+                        playerWin.x = wpcx - playerWin.width  * 0.5f;
+                        playerWin.y = wpcy - playerWin.height * 0.5f;
+                    }
                     // ?대룞 ?붿긽(afterimage) ???쇱젙 媛꾧꺽?쇰줈 ?뚮젅?댁뼱 以묒떖???낆? ?쒖븞 ?붿긽
                     static float s_trailAcc = 0.0f;
                     s_trailAcc += FIXED_DT;
@@ -1869,6 +1892,7 @@ int main() {
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) hitKB(bm->worldX, bm->worldY, bm->hp, bm->alive);
                     if (g_RRBoss && g_RRBoss->alive) { float dx=g_RRBoss->worldX-cx,dy=g_RRBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_RRBoss->hp-=dmg; if(g_RRBoss->hp<=0)g_RRBoss->alive=false;} }
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) { float dx=g_CentiBoss->worldX-cx,dy=g_CentiBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_CentiBoss->hp-=dmg; if(g_CentiBoss->hp<=0)g_CentiBoss->alive=false;} }
+                    if (g_TessBoss && g_TessBoss->alive) { float dx=g_TessBoss->worldX-cx,dy=g_TessBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TessBoss->hp-=dmg; if(g_TessBoss->hp<=0)g_TessBoss->alive=false;} }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -2104,6 +2128,10 @@ int main() {
                 if (!timeStopped && g_RRBoss && g_RRBoss->alive)
                     g_RRBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets, g_Difficulty);
 
+                if (!timeStopped && g_TessBoss && g_TessBoss->alive)
+                    g_TessBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
+                                       g_Bullets, g_Difficulty, g_DashInvuln > 0.0f);
+
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
 
                 
@@ -2154,6 +2182,16 @@ int main() {
                         p2enter(g_RRBoss->worldX, g_RRBoss->worldY, glm::vec3(1.0f, 0.22f, 0.08f));
                     }
                 } else { g_RRWasP2 = false; g_RRWasP3 = false; }
+                if (g_TessBoss && g_TessBoss->alive) {
+                    if (g_TessBoss->phase2 && !g_TessWasP2) {
+                        g_TessWasP2 = true;
+                        p2enter(g_TessBoss->worldX, g_TessBoss->worldY, glm::vec3(0.95f, 0.35f, 1.0f));
+                    }
+                    if (g_TessBoss->phase3 && !g_TessWasP3) {
+                        g_TessWasP3 = true;
+                        p2enter(g_TessBoss->worldX, g_TessBoss->worldY, glm::vec3(1.0f, 0.20f, 0.95f));
+                    }
+                } else { g_TessWasP2 = false; g_TessWasP3 = false; }
 
                 // 異⑸룎 (諛섑솚媛?= ?뚮젅?댁뼱媛 ?대쾲 ?꾨젅???쇨꺽?먮뒗吏)
                 bool hit = CollisionSystem::Update(pCX, pCY,
@@ -2197,10 +2235,63 @@ int main() {
                     }
                 }
 
+                if (g_TessBoss && g_TessBoss->alive) {
+                    auto* tb = g_TessBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        bool consumed = false;
+                        for (auto& o : tb->orbs) {
+                            if (!o.alive) continue;
+                            if (SegDist(o.x, o.y, b.prevX, b.prevY, b.x, b.y) < TesseractGlitchBoss::ORB_R + 8.0f) {
+                                float pd = glm::distance(glm::vec2(pCX, pCY), glm::vec2(o.x, o.y));
+                                float dmg;
+                                if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                                else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                                else dmg = g_Stats.GetBaseDamage()
+                                         * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                                float dealt = (dmg < o.hp) ? dmg : o.hp;
+                                o.hp -= dealt;
+                                if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                                if (o.hp <= 0.0f) {
+                                    o.alive = false;
+                                    tb->pushSpark(o.x, o.y, 0.95f, 0.35f, 1.0f);
+                                    AddKillCombo();
+                                    g_GameManager.scoreAccum += 90.0f;
+                                }
+                                if (b.remainingDmg <= 0.001f) { b.active = false; consumed = true; }
+                                break;
+                            }
+                        }
+                        if (consumed || !b.active) continue;
+                        if (SegDist(tb->worldX, tb->worldY,
+                                    b.prevX, b.prevY, b.x, b.y) < TesseractGlitchBoss::CORE_R * 0.86f) {
+                            float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                     glm::vec2(tb->worldX, tb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            float dealt = (dmg < tb->hp) ? dmg : tb->hp;
+                            tb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (tb->hp <= 0.0f) tb->alive = false;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
 
                 
                 // FORK.worm ?щ옒??踰???珥앹븣??吏곸꽑??媛濡쒖?瑜대㈃ 洹??留??ル┝.
                 //   ?쇰컲?꾩? 踰쎌뿉 留됲? ?뚮㈇(愿??X). 愿?듯깂(remainingDmg>0)? ?듦낵.
+                if (g_TessBoss && g_TessBoss->alive && !g_TessBoss->walls.empty()) {
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (g_TessBoss->hitWall(b.prevX, b.prevY, b.x, b.y) && b.remainingDmg <= 0.0f)
+                            b.active = false;
+                    }
+                }
                 if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->walls.empty()) {
                     for (auto& b : g_Bullets) {
                         if (!b.active || b.isEnemy) continue;
@@ -2435,6 +2526,26 @@ int main() {
                     OnBossKilled(8, 35);
                 }
 
+                if (g_TessBoss && !g_TessBoss->alive && !g_TessBoss->exploded) {
+                    auto* tb = g_TessBoss;
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.95f, 0.35f, 1.0f, true);
+                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.35f, 1.0f, 0.95f, true);
+                    SpawnShockWave(tb->worldX, tb->worldY, 440.0f, 0.82f, 0.95f, 0.35f, 1.0f);
+                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
+                    TriggerFlash(0.95f, 0.35f, 1.0f, 0.62f); TriggerHitStop(0.11f);
+                    tb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete tb;
+                    g_TessBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
+                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
+                    g_Bullets.clear();
+                    OnBossKilled(10, 35);
+                }
+
                 
                 
 
@@ -2491,6 +2602,11 @@ int main() {
 
                 // ?덈꺼?? xp 媛 ?꾩슂?됱쓣 ?섏쑝硫??덈꺼??(?⑥? xp ?댁썡) + AUG_SELECT
                 if (g_GameManager.currentState == GameState::RUNNING) {
+                    const bool atMainCap = !BossDir::g_ActEndless && !g_CreativeMode
+                                          && g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
+                    if (atMainCap) {
+                        g_GameManager.xp = 0;
+                    } else {
                     long long need = g_ExpSystem.Required(g_GameManager.playerLevel);
                     if (g_GameManager.xp >= need) {
                         g_GameManager.xp -= need;
@@ -2501,6 +2617,7 @@ int main() {
 
                         g_GameManager.currentState = GameState::AUG_SELECT;
                     }
+                    } // !atMainCap
                 }
 
                 // 시간 점수 (휴식·상점 중에는 정지)
@@ -2692,7 +2809,7 @@ int main() {
             if (intensity > act.intensityCap) intensity = act.intensityCap;
             float rampSpawn = (1.0f + intensity * 0.40f) * act.spawnMult;
             float rampSpd   = (1.0f + intensity * 0.09f) * act.speedMult;
-            bool  bossNow = g_RRBoss || g_CentiBoss || g_BossWarnTimer > 0.0f;
+            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_BossWarnTimer > 0.0f;
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
             float rampHp    = (1.0f + hpIntensity * 0.55f);
@@ -2720,6 +2837,7 @@ int main() {
             auto anyBossAlive = [&]() -> bool {
                 if (g_RRBoss && g_RRBoss->alive) return true;
                 if (g_CentiBoss && g_CentiBoss->alive) return true;
+                if (g_TessBoss && g_TessBoss->alive) return true;
                 return false;
             };
             bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f ||
@@ -2826,7 +2944,7 @@ int main() {
 
             // 보스 스폰 — 일반: 층 기반 / 크리에이티브: 점수 기반
             {
-                bool bossActive = g_RRBoss || g_CentiBoss || g_BossWarnTimer > 0.0f;
+                bool bossActive = g_RRBoss || g_CentiBoss || g_TessBoss || g_BossWarnTimer > 0.0f;
                 // ?쇱슫?? ??蹂댁뒪 ?덈뜦??李⑤떒: 蹂댁뒪瑜??≪븘 ?꾩쟾???뺣━?섎뒗 ?쒓컙(?쒖꽦?믩퉬?쒖꽦),
                 //   ?ㅼ쓬 蹂댁뒪 ?꾧퀎媛믪쓣 ?꾩옱 ?먯닔+20留뚯쑝濡?由щ쿋?댁뒪 ??理쒖냼 20留뚯젏 ?댁떇 蹂댁옣
                 //   (蹂댁뒪??以??볦씤 ?먯닔濡??≪옄留덉옄 ??蹂댁뒪 ?⑤뜕 ?낆닚???쒓굅).
@@ -2905,6 +3023,10 @@ int main() {
                                 g_ShakeTime = 0.4f; g_ShakeMag = 14.0f;   // ?≪닔 ?쒓컙 吏꾨룞
                             }
                             g_CentiBoss->enterSpawn();   // ?깆옣 紐⑥뀡 ???붾㈃ 諛뽰뿉??怨≪꽑 ?뚯쭊?쇰줈 ?낆옣
+                            break;
+                        case 10:
+                            g_TessBoss = new TesseractGlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            g_TessBoss->worldX = bsx; g_TessBoss->worldY = bsy;
                             break;
                         default:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -3419,6 +3541,8 @@ int main() {
                     hitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
                     hitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
+                if (g_TessBoss && g_TessBoss->alive)
+                    hitB(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
                 // 移쇰컮?????ㅼ쐷留덈떎 ?꾨갑?쇰줈 愿???ъ궗泥?(洹쇱젒???먭굅由?寃ъ젣)
@@ -3532,6 +3656,8 @@ int main() {
                         lhitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
                         lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
+                    if (g_TessBoss && g_TessBoss->alive)
+                        lhitB(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
@@ -3599,6 +3725,7 @@ int main() {
                     };
                     if (g_RRBoss && g_RRBoss->alive) nhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) nhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
+                    if (g_TessBoss && g_TessBoss->alive) nhitB(g_TessBoss->worldX,g_TessBoss->worldY,g_TessBoss->hp,g_TessBoss->alive);
                     // ?쒓컖 ???쎌갹 留?SpawnShockWave ?ъ궗?? + ?먮쭧
                     SpawnShockWave(pCX, pCY, novaR, 0.45f, 0.4f, 1.0f, 0.75f);
                     SpawnSparks(pCX, pCY, 10, 0.4f, 1.0f, 0.7f, 360.0f);
@@ -3837,6 +3964,10 @@ int main() {
             addW(g_CentiBoss->worldX, g_CentiBoss->worldY, CENTI_WIN_W, CENTI_WIN_W,
                  CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f, WIN_TB,
                  g_CentiBoss->hp / g_CentiBoss->maxHp);
+        if (g_TessBoss && g_TessBoss->alive)
+            addW(g_TessBoss->worldX, g_TessBoss->worldY, TESS_WIN_W, TESS_WIN_W,
+                 TesseractGlitchBoss::BOSS_NAME, 0.05f,0.02f,0.08f, 0.95f,0.35f,1.0f, WIN_TB,
+                 g_TessBoss->hp / g_TessBoss->maxHp);
         // trap.exe / vaccine.exe — (e.sat)에서 플레이어 창 위에 통째로 그림
         // ?ы깙 李?諛곌꼍+蹂대뜑 (理쒗븯?? ?뚮젅?댁뼱 ?뚯쑀??z-由ъ뒪??諛?
         if (g_Stats.turretMode) {
@@ -3986,6 +4117,9 @@ int main() {
         if (g_CentiBoss && g_CentiBoss->alive)
             drawBossWinContent(g_CentiBoss->worldX - CENTI_WIN_W * 0.5f,
                                g_CentiBoss->worldY - CENTI_WIN_W * 0.5f, CENTI_WIN_W, CENTI_WIN_W);
+        if (g_TessBoss && g_TessBoss->alive)
+            drawBossWinContent(g_TessBoss->worldX - TESS_WIN_W * 0.5f,
+                               g_TessBoss->worldY - TESS_WIN_W * 0.5f, TESS_WIN_W, TESS_WIN_W);
         // 遊뉖꽬 ?몃뱶(SPAWNER) 李??대? 而⑦뀗痢????몃뱶 蹂몄껜/?뚰솚 ?뚯씠 ?먭린 李쎌뿉??蹂댁씠?꾨줉 (E21)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
@@ -4057,11 +4191,21 @@ int main() {
             drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 1.0f);
             // (HP ?섏튂??醫뚯긽??HUD ???쒖떆 ???붾뱶 ?뱀뀡?먯꽌 ?띿뒪?몃? 洹몃━硫?            //  TextRenderer 媛 ?곗씠??VAO 瑜??몃컮?몃뱶???댄썑 ?뷀떚???뚮뜑媛 源⑥?誘濡?湲덉?)
             // XP
-            long long needX = g_ExpSystem.Required(g_GameManager.playerLevel);
-            float xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
-            if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
-            drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 1.0f);
-            drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
+            {
+                const bool atCap = !BossDir::g_ActEndless && !g_CreativeMode
+                                   && g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
+                float xpFrac = 1.0f;
+                if (!atCap) {
+                    long long needX = g_ExpSystem.Required(g_GameManager.playerLevel);
+                    xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
+                    if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
+                }
+                drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 1.0f);
+                if (atCap)
+                    drawRect(bx, xpY, bw, xpH, 0.75f, 0.85f, 0.55f, 0.6f);
+                else
+                    drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
+            }
         }
     
         // (c2.5) 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭 ??以묒떖?먯꽌 遺?앸릺???쇱????먯긽 釉붾줉(源쒕묀???좊땲硫붿씠??
@@ -4383,7 +4527,7 @@ int main() {
             float gtRR = (float)glfwGetTime();
             BindMainShader();
 
-            rb->renderTelegraphs(pCX, pCY, gtRR);
+            rb->renderTelegraphs(pCX, pCY, gtRR, false);
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
             WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
             rb->renderTelegraphs(pCX, pCY, gtRR);
@@ -4396,7 +4540,24 @@ int main() {
                 if (!b.active) continue;
                 drawBullet(b);
             }
+            rb->renderGLShells(gtRR);
             rb->renderBody(gtRR, pCX, pCY);
+            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        }
+
+        if (g_TessBoss && g_TessBoss->alive) {
+            float tt = (float)glfwGetTime();
+            float pCX = playerWin.x + playerWin.width  * 0.5f;
+            float pCY = playerWin.y + playerWin.height * 0.5f;
+            BatchFlush(); glEnable(GL_SCISSOR_TEST);
+            auto tessPass = [&](float wx, float wy, float ww, float wh) {
+                WorldScissor(wx, wy, ww, wh);
+                g_TessBoss->renderFx(tt, pCX, pCY);
+                g_TessBoss->renderBody(tt);
+            };
+            tessPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            tessPass(g_TessBoss->worldX - TESS_WIN_W * 0.5f,
+                     g_TessBoss->worldY - TESS_WIN_W * 0.5f, TESS_WIN_W, TESS_WIN_W);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
@@ -4570,6 +4731,8 @@ int main() {
                 bossAlive = true; tc = glm::vec3(1.0f, 0.55f, 0.2f); }
             else if (g_CentiBoss && g_CentiBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 0.95f); }
+            else if (g_TessBoss && g_TessBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.95f, 0.35f, 1.0f); }
             if (bossAlive) {
                 g_BossTintCol = tc;
                 g_BossTintT  += delta * 0.07f;          // ~14珥덉뿉 理쒕?
@@ -4597,11 +4760,15 @@ int main() {
             } else if (g_CentiBoss && g_CentiBoss->alive) {
                 bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
                 bc = glm::vec3(0.35f, 0.88f, 0.95f);
+            } else if (g_TessBoss && g_TessBoss->alive) {
+                bn = TesseractGlitchBoss::BOSS_NAME; bhf = g_TessBoss->hp / g_TessBoss->maxHp;
+                bc = glm::vec3(0.95f, 0.35f, 1.0f);
             }
             int bossPick = -1;
             if (bn) {
                 if      (bn == L"VOLLEY.sys")   bossPick = 2;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
+                else if (bn == TesseractGlitchBoss::BOSS_NAME) bossPick = 10;
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
@@ -4647,6 +4814,12 @@ int main() {
                     float rw = g_TextS.Width(rrBuf, rs);
                     g_TextS.Draw(rrBuf, bx + bw - rw - 8.0f, by - 48.0f, rs,
                                  1.0f, 0.55f, 0.2f, 0.85f);
+                } else if (g_TessBoss && g_TessBoss->alive) {
+                    const wchar_t* tb = g_TessBoss->stateTag();
+                    float ts2 = 0.55f;
+                    float tw2 = g_TextS.Width(tb, ts2);
+                    g_TextS.Draw(tb, bx + bw - tw2 - 8.0f, by - 48.0f, ts2,
+                                 0.95f, 0.35f, 1.0f, 0.88f);
                 }
                                                 // % (諛??곗륫 ???덉そ)
                 wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(bhf * 100.0f + 0.5f));
