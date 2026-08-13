@@ -14,8 +14,8 @@ extern TextRenderer g_TextS;
 
 // ─────────────────────────────────────────────────────────────
 // GATE.lock — 데이터 격리 시스템 (창 조작 보스)
-//   P1 SCAN  (100→60%) : 격자 스캔탄막 + 창 압축 + 잠금 노드
-//   P2 PUSH  ( 60→25%) : 링 탄막 + 창 드리프트
+//   P1 RING  (100→60%) : 링 탄막(6발) + 창 압축 + 잠금 노드
+//   P2 PUSH  ( 60→25%) : 링 탄막(10발) + 창 드리프트
 //   P3 LOCK  ( 25→ 0%) : 창 주위 공전 + 반사탄 + 격리 피해
 //
 //   main.cpp 역할:
@@ -48,27 +48,6 @@ public:
     float lastPx = 0.0f, lastPy = 0.0f, lastWinHalf = 200.0f;
 
     // ─────────────────────────────────────────────────────────
-    // P1: 스캔 탄막
-    // ─────────────────────────────────────────────────────────
-    struct ScanBeam {
-        float pos;      // world coord (y for horiz, x for vert)
-        float halfW;    // half-thickness (grows during warn)
-        bool  horiz;
-        float warn;     // warmup duration
-        float dur;      // active (damage) duration
-        float t;        // < 0 = warming, 0..dur = active
-        bool  hitPlayer;
-    };
-    std::vector<ScanBeam> scanBeams;
-    float scanCd   = 3.0f;
-    int   scanStep = 0;
-
-    static constexpr float SCAN_WARN = 0.72f;
-    static constexpr float SCAN_DUR  = 0.42f;
-    static constexpr float SCAN_HALF = 32.0f;
-    static constexpr float SCAN_DMG  = 22.0f;  // HP/s tick while inside
-
-    // ─────────────────────────────────────────────────────────
     // P1: 잠금 노드 (4 모서리)
     //   main.cpp가 총알 히트 체크 후 onNodeKill() 호출
     // ─────────────────────────────────────────────────────────
@@ -93,11 +72,11 @@ public:
     // ─────────────────────────────────────────────────────────
     // P2: 링 탄막
     // ─────────────────────────────────────────────────────────
-    float ringFireCd  = 1.6f;
+    float ringFireCd  = 2.5f;   // P1 첫 발사까지 여유
     float ringBaseAng = 0.0f;
     int   ringStep    = 0;
 
-    static constexpr float RING_BSPEED = 400.0f;
+    static constexpr float RING_BSPEED = 420.0f;
     static constexpr float RING_DMG    = 16.0f;
 
     // ─────────────────────────────────────────────────────────
@@ -107,7 +86,7 @@ public:
     float driftVY       = 0.0f;
     float driftSwitchT  = 0.0f;
 
-    static constexpr float DRIFT_SPEED    = 92.0f;
+    static constexpr float DRIFT_SPEED    = 125.0f;
     static constexpr float DRIFT_INTERVAL = 4.8f;
 
     // ─────────────────────────────────────────────────────────
@@ -239,7 +218,7 @@ public:
     const wchar_t* stateTag() const {
         if (phase3) return L"P3 LOCK.mode";
         if (phase2) return L"P2 PUSH.mode";
-        return              L"P1 SCAN.mode";
+        return              L"P1 RING.fire";
     }
 
     float damageMul(Difficulty d) const {
@@ -281,73 +260,6 @@ public:
     // 만료된 노드의 데미지는 main.cpp에서 직접 처리
 
     // ─────────────────────────────────────────────────────────
-    // ─ 스캔 탄막 헬퍼 ────────────────────────────────────────
-    // ─────────────────────────────────────────────────────────
-    void pushBeam(float pos, bool horiz, float warnT) {
-        ScanBeam b{};
-        b.pos       = pos;
-        b.halfW     = SCAN_HALF;
-        b.horiz     = horiz;
-        b.warn      = warnT;
-        b.dur       = SCAN_DUR;
-        b.t         = -warnT;
-        b.hitPlayer = false;
-        scanBeams.push_back(b);
-    }
-
-    void spawnScanPattern(float px, float py, Difficulty diff) {
-        float wT = SCAN_WARN * (diff==Difficulty::EASY ? 1.18f : diff==Difficulty::HARD ? 0.86f : 1.0f);
-        ++scanStep;
-        int p = scanStep % 3;
-        if (p == 0) {
-            // 수평 3줄, 가운데 gap = 플레이어 근처
-            float gap = clampf(py + randf(-60.0f, 60.0f), (float)screenH*0.2f, (float)screenH*0.8f);
-            float rows[4] = {(float)screenH*0.22f, (float)screenH*0.44f, (float)screenH*0.66f, (float)screenH*0.84f};
-            for (int i=0;i<4;i++) {
-                if (std::fabs(rows[i]-gap) < SCAN_HALF*3.0f) continue;
-                pushBeam(rows[i], true, wT);
-            }
-        } else if (p == 1) {
-            // 수직 3줄, gap = 플레이어 근처
-            float gap = clampf(px + randf(-60.0f, 60.0f), (float)screenW*0.2f, (float)screenW*0.8f);
-            float cols[4] = {(float)screenW*0.22f,(float)screenW*0.44f,(float)screenW*0.66f,(float)screenW*0.84f};
-            for (int i=0;i<4;i++) {
-                if (std::fabs(cols[i]-gap) < SCAN_HALF*3.0f) continue;
-                pushBeam(cols[i], false, wT);
-            }
-        } else {
-            // 크로스 (수평 + 수직 각 1줄), gap 두 방향 모두
-            float gapY = clampf(py+randf(-50.f,50.f),(float)screenH*0.25f,(float)screenH*0.75f);
-            float gapX = clampf(px+randf(-50.f,50.f),(float)screenW*0.25f,(float)screenW*0.75f);
-            float rows[2]={(float)screenH*0.30f,(float)screenH*0.70f};
-            float cols[2]={(float)screenW*0.30f,(float)screenW*0.70f};
-            for (int i=0;i<2;i++) { if(std::fabs(rows[i]-gapY)>SCAN_HALF*2.5f) pushBeam(rows[i],true,wT); }
-            for (int i=0;i<2;i++) { if(std::fabs(cols[i]-gapX)>SCAN_HALF*2.5f) pushBeam(cols[i],false,wT); }
-        }
-    }
-
-    void updateScan(float dt, float px, float py, float& playerHP, Difficulty diff, bool dashInvuln) {
-        float cdScale = phase2 ? 0.72f : 1.0f;
-        scanCd -= dt;
-        if (scanCd <= 0.0f) {
-            spawnScanPattern(px, py, diff);
-            scanCd = (phase2 ? 2.4f : 3.0f) + randf(-0.3f, 0.4f);
-        }
-        for (auto& b : scanBeams) {
-            b.t += dt;
-            if (b.t < 0.0f || b.t > b.warn + b.dur + 0.2f) continue;
-            bool active = (b.t >= 0.0f && b.t <= b.dur);
-            if (!active || dashInvuln) continue;
-            float coord = b.horiz ? py : px;
-            if (std::fabs(coord - b.pos) < b.halfW + 12.0f)
-                HurtPlayer(playerHP, SCAN_DMG * damageMul(diff) * dt);
-        }
-        scanBeams.erase(std::remove_if(scanBeams.begin(), scanBeams.end(),
-            [](const ScanBeam& b){ return b.t > b.warn + b.dur + 0.22f; }), scanBeams.end());
-        (void)cdScale;
-    }
-
-    // ─────────────────────────────────────────────────────────
     // P1: 잠금 노드 업데이트
     // ─────────────────────────────────────────────────────────
     void updateNodes(float dt, float& playerHP, Difficulty diff) {
@@ -385,8 +297,8 @@ public:
         bool  fan  = (ringStep % 3 == 2);
 
         if (!fan) {
-            // 원형 링 (8발, 천천히 회전)
-            int   n   = phase3 ? 10 : 8;
+            // 원형 링 — P1:6, P2:10, P3:12
+            int   n   = phase3 ? 12 : (phase2 ? 10 : 6);
             float off = ringBaseAng;
             for (int i=0;i<n;i++) {
                 float a = off + (float)i / (float)n * PI * 2.0f;
@@ -407,7 +319,7 @@ public:
                 bullets.push_back(b);
             }
         }
-        ringFireCd = phase3 ? 1.25f : (phase2 ? 1.55f : 1.80f);
+        ringFireCd = phase3 ? 1.1f : (phase2 ? 1.4f : 2.0f);
         ringFireCd += randf(-0.12f, 0.18f);
     }
 
@@ -441,7 +353,7 @@ public:
 
         // 3발을 플레이어 방향 ±스프레드로 발사
         float base = std::atan2(py - worldY, px - worldX);
-        int n = phase3 ? 4 : 3;
+        int n = phase3 ? 5 : 4;
         for (int i=0;i<n;i++) {
             float spread = (float)(i - n/2) * 0.28f;
             float a = base + spread;
@@ -454,7 +366,7 @@ public:
             bb.alive   = true;
             bounceBullets.push_back(bb);
         }
-        bounceFireCd = phase3 ? 1.35f : 1.80f;
+        bounceFireCd = phase3 ? 1.15f : 1.55f;
         bounceFireCd += randf(-0.1f, 0.2f);
     }
 
@@ -518,7 +430,6 @@ public:
         // ── 페이즈 전환 ────────────────────────────────────
         if (!phase2 && hp <= maxHp * 0.60f) {
             phase2 = true;
-            scanBeams.clear();
             buildPatrol();
             patrolWaitT = 0.0f;
             nodeCd = 14.0f;   // 잠금 노드 유지 (P2에서도 작동)
@@ -551,14 +462,9 @@ public:
         worldY = clampf(worldY, 100.0f, (float)screenH - 200.0f);
 
         // ── 공격 패턴 ─────────────────────────────────────
-        if (!phase3) {
-            updateScan(dt, px, py, playerHP, difficulty, dashInvuln);
-            updateNodes(dt, playerHP, difficulty);
-        }
-        if (phase2) {
-            updateRingFire(dt, px, py, bullets, difficulty);
-            if (!phase3) updateDrift(dt, px, py);
-        }
+        if (!phase3) updateNodes(dt, playerHP, difficulty);
+        updateRingFire(dt, px, py, bullets, difficulty);   // 전 페이즈
+        if (phase2 && !phase3) updateDrift(dt, px, py);
         if (phase3) {
             updateBounceFire(dt, px, py);
             updateBounceBullets(dt, px, py, winHalf, playerHP, dashInvuln, difficulty);
@@ -621,31 +527,6 @@ public:
     // ─────────────────────────────────────────────────────────
     void renderFx(float t) const {
         glm::vec3 col = phaseColor();
-
-        // ── 스캔 빔 ─────────────────────────────────────────
-        for (const auto& b : scanBeams) {
-            float prog = (b.t < 0.0f) ? clampf(-b.t / b.warn, 0.0f, 1.0f) : 0.0f;
-            float prog2 = (b.t < 0.0f) ? (1.0f - prog) : 0.0f;  // 0→1 as warn progresses
-            bool  active = (b.t >= 0.0f && b.t <= b.dur);
-            if (b.t > b.warn + b.dur + 0.25f) continue;
-
-            float warnProg = clampf(b.t >= 0.0f ? 1.0f : (b.t / -b.warn + 1.0f), 0.0f, 1.0f);
-            float hw = b.halfW * (0.3f + warnProg * 0.7f);
-            float alpha = active ? 0.70f : 0.18f + warnProg * 0.28f;
-            float pulse2 = 0.55f + 0.45f * std::sin(t * 22.0f);
-
-            float r = active ? 1.0f : col.r * 0.85f;
-            float g = active ? 0.18f: col.g * 0.85f;
-            float bv= active ? 0.22f: col.b * 0.85f;
-
-            if (b.horiz) {
-                drawRect(0.0f, b.pos-hw, (float)screenW, hw*2.0f, r,g,bv,alpha);
-                if (active) drawRect(0.0f, b.pos-2.0f, (float)screenW, 4.0f+pulse2*2.0f, 1.0f,0.9f,1.0f,0.65f);
-            } else {
-                drawRect(b.pos-hw, 0.0f, hw*2.0f, (float)screenH, r,g,bv,alpha);
-                if (active) drawRect(b.pos-2.0f, 0.0f, 4.0f+pulse2*2.0f, (float)screenH, 1.0f,0.9f,1.0f,0.65f);
-            }
-        }
 
         // ── 반사탄 ──────────────────────────────────────────
         for (const auto& bb : bounceBullets) {
