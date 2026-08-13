@@ -14,10 +14,14 @@ extern TextRenderer g_TextS;
 
 // ─────────────────────────────────────────────────────────────
 // GATE.lock — 데이터 격리 시스템 (창 조작 보스)
-//   3페이즈:
-//     P1 SCAN  (100% → 60%) : 중앙 정박, 격자 스캔탄막, 창 압축
-//     P2 PUSH  ( 60% → 25%) : 순찰 이동, 링 회전탄막, 창 드리프트
-//     P3 LOCK  ( 25% →  0%) : 플레이어 창 주위 공전, 반사탄, 데미지 바닥
+//   P1 SCAN  (100→60%) : 격자 스캔탄막 + 창 압축 + 잠금 노드
+//   P2 PUSH  ( 60→25%) : 링 탄막 + 창 드리프트
+//   P3 LOCK  ( 25→ 0%) : 창 주위 공전 + 반사탄 + 격리 피해
+//
+//   main.cpp 역할:
+//     - 압축(compressPauseT) / 드리프트(driftVX,driftVY) 적용
+//     - 잠금 노드 총알 히트 체크 (onNodeKill)
+//     - P3 창 크기 220px 고정
 // ─────────────────────────────────────────────────────────────
 
 class GateLockBoss {
@@ -34,39 +38,128 @@ public:
     bool phase3 = false;
 
     // ── 시각 타이머 ──────────────────────────────────────────
-    float pulseT   = 0.0f;   // 범용 맥동 축적값
-    float glitchT  = 0.0f;   // P3 글리치 강도 누적
-    float flashT   = 0.0f;   // 피격 플래시 잔량
+    float pulseT  = 0.0f;
+    float glitchT = 0.0f;
+    float flashT  = 0.0f;
 
-    // 링 각도 (0: 코어, 1: 중간 링, 2: 외곽 링)
     float ringAng[3] = { 0.0f, 0.0f, 0.0f };
 
-    // ── P1 이동: 중앙 정박 + 미세 부유 ──────────────────────
-    //   (외부 드리프트 포스가 없을 때 보스 자신은 거의 안 움직임)
+    // last-known player window center (stored each Update, used in renderFx)
+    float lastPx = 0.0f, lastPy = 0.0f, lastWinHalf = 200.0f;
 
-    // ── P2 이동: 화면 내 순찰 ─────────────────────────────────
+    // ─────────────────────────────────────────────────────────
+    // P1: 스캔 탄막
+    // ─────────────────────────────────────────────────────────
+    struct ScanBeam {
+        float pos;      // world coord (y for horiz, x for vert)
+        float halfW;    // half-thickness (grows during warn)
+        bool  horiz;
+        float warn;     // warmup duration
+        float dur;      // active (damage) duration
+        float t;        // < 0 = warming, 0..dur = active
+        bool  hitPlayer;
+    };
+    std::vector<ScanBeam> scanBeams;
+    float scanCd   = 3.0f;
+    int   scanStep = 0;
+
+    static constexpr float SCAN_WARN = 0.72f;
+    static constexpr float SCAN_DUR  = 0.42f;
+    static constexpr float SCAN_HALF = 32.0f;
+    static constexpr float SCAN_DMG  = 22.0f;  // HP/s tick while inside
+
+    // ─────────────────────────────────────────────────────────
+    // P1: 잠금 노드 (4 모서리)
+    //   main.cpp가 총알 히트 체크 후 onNodeKill() 호출
+    // ─────────────────────────────────────────────────────────
+    struct LockNode {
+        int   cx, cy;  // corner sign ±1 (world pos = px ± cx*winHalf)
+        float life;    // auto-expire timer
+        bool  alive;
+    };
+    LockNode nodes[4];
+    float    nodeCd         = 15.0f;  // time until next node batch
+    float    compressPauseT = 0.0f;   // >0 = compression paused
+    float    p3EntrySize    = 400.0f; // windowSize when P3 started, for restore on death
+
+    static constexpr float NODE_LIFE        = 15.0f;
+    static constexpr float NODE_PENALTY_HP  = 18.0f;  // damage if node expires un-hit
+    static constexpr float COMPRESS_RATE    = 12.0f;  // px/s shrink
+    static constexpr float COMPRESS_MIN_P1  = 280.0f;
+    static constexpr float COMPRESS_MIN_P3  = 220.0f;
+    static constexpr float NODE_EXPAND      = 28.0f;  // window expand on node kill
+    static constexpr float NODE_PAUSE       = 3.5f;   // compress pause duration
+
+    // ─────────────────────────────────────────────────────────
+    // P2: 링 탄막
+    // ─────────────────────────────────────────────────────────
+    float ringFireCd  = 1.6f;
+    float ringBaseAng = 0.0f;
+    int   ringStep    = 0;
+
+    static constexpr float RING_BSPEED = 400.0f;
+    static constexpr float RING_DMG    = 16.0f;
+
+    // ─────────────────────────────────────────────────────────
+    // P2: 창 드리프트 (main.cpp가 playerWin에 적용)
+    // ─────────────────────────────────────────────────────────
+    float driftVX       = 0.0f;
+    float driftVY       = 0.0f;
+    float driftSwitchT  = 0.0f;
+
+    static constexpr float DRIFT_SPEED    = 92.0f;
+    static constexpr float DRIFT_INTERVAL = 4.8f;
+
+    // ─────────────────────────────────────────────────────────
+    // P3: 반사탄
+    // ─────────────────────────────────────────────────────────
+    struct BounceBullet {
+        float x, y, vx, vy;
+        int   bounces;
+        float life;
+        bool  alive;
+    };
+    std::vector<BounceBullet> bounceBullets;
+    float bounceFireCd = 1.8f;
+
+    static constexpr int   BOUNCE_MAX   = 4;
+    static constexpr float BOUNCE_SPD   = 380.0f;
+    static constexpr float BOUNCE_DMG   = 13.0f;
+    static constexpr float BOUNCE_LIFE  = 6.0f;
+    static constexpr float BOUNCE_R     = 7.0f;
+
+    // P3: 격리 피해 (패시브 틱)
+    static constexpr float ISOLATE_DMG_BASE = 2.5f;   // HP/s
+    static constexpr float ISOLATE_DMG_ENRAGE = 5.5f; // HP/s when boss < 10% HP
+
+    // ─────────────────────────────────────────────────────────
+    // 이동
+    // ─────────────────────────────────────────────────────────
     struct PatrolPoint { float x, y; };
     static constexpr int PATROL_N = 6;
     PatrolPoint patrol[PATROL_N];
     int   patrolIdx   = 0;
-    float patrolWaitT = 0.0f;    // >0 = 현재 지점에서 대기 중
-    static constexpr float PATROL_WAIT    = 2.0f;
-    static constexpr float PATROL_SPEED   = 150.0f;
+    float patrolWaitT = 0.0f;
+    static constexpr float PATROL_WAIT  = 2.0f;
+    static constexpr float PATROL_SPEED = 150.0f;
 
-    // ── P3 이동: 플레이어 창 중심 주위 공전 ──────────────────
-    float orbitAng  = 0.0f;
-    static constexpr float ORBIT_RADIUS   = 220.0f;
-    static constexpr float ORBIT_SPEED    = 0.85f;   // rad/s
+    float orbitAng = 0.0f;
+    static constexpr float ORBIT_RADIUS = 220.0f;
+    static constexpr float ORBIT_SPEED  = 0.85f;
 
-    // ── VFX ───────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
+    // VFX
+    // ─────────────────────────────────────────────────────────
     struct Spark { float x, y, vx, vy, life; };
     std::vector<Spark> sparks;
 
-    // ── 상수 ─────────────────────────────────────────────────
-    static constexpr float CORE_HALF  = 42.0f;   // 코어 사각형 반변장
-    static constexpr float HIT_RADIUS = 48.0f;   // 총알 히트박스 반지름
-    static constexpr float RING_W[3]  = { 140.0f, 100.0f, 68.0f };  // 링 반변장
-    static constexpr float RING_SPD[3]= { 0.28f,  -0.52f,  0.88f }; // 링 회전 속도 (음수=역방향)
+    // ─────────────────────────────────────────────────────────
+    // 상수
+    // ─────────────────────────────────────────────────────────
+    static constexpr float CORE_HALF  = 42.0f;
+    static constexpr float HIT_RADIUS = 48.0f;
+    static constexpr float RING_W[3]  = { 140.0f, 100.0f, 68.0f };
+    static constexpr float RING_SPD[3]= { 0.28f, -0.52f,  0.88f };
     static constexpr float PI         = 3.1415926535f;
 
     // ─────────────────────────────────────────────────────────
@@ -75,14 +168,11 @@ public:
         hp = maxHp = hpInit;
         worldX = (float)sw * 0.5f;
         worldY = (float)sh * 0.30f;
-
-        // 링 초기 각도를 조금씩 틀어서 시작부터 생동감 있게
         ringAng[0] = randf(0.0f, PI * 2.0f);
         ringAng[1] = ringAng[0] + PI * 0.33f;
         ringAng[2] = ringAng[0] - PI * 0.17f;
-
-        orbitAng = randf(0.0f, PI * 2.0f);
-
+        orbitAng   = randf(0.0f, PI * 2.0f);
+        for (int i = 0; i < 4; i++) nodes[i] = { (i<2?-1:1), (i==0||i==3?-1:1), 0.0f, false };
         buildPatrol();
     }
 
@@ -95,49 +185,35 @@ public:
     static float randf(float lo, float hi) {
         return lo + (hi - lo) * ((float)(rand() % 10000) / 10000.0f);
     }
-    static float lenf(float x, float y) {
-        return std::sqrt(x * x + y * y);
-    }
+    static float lenf(float x, float y) { return std::sqrt(x*x + y*y); }
 
-    // 회전 사각형 (4개의 삼각형으로 채움)
     static void drawRotRect(float cx, float cy, float w, float h, float ang,
                             float r, float g, float b, float a) {
         float hx = w * 0.5f, hy = h * 0.5f;
         float c = std::cos(ang), s = std::sin(ang);
-        auto tx = [&](float x, float y) { return cx + x * c - y * s; };
-        auto ty = [&](float x, float y) { return cy + x * s + y * c; };
-        float x0 = tx(-hx,-hy), y0 = ty(-hx,-hy);
-        float x1 = tx( hx,-hy), y1 = ty( hx,-hy);
-        float x2 = tx( hx, hy), y2 = ty( hx, hy);
-        float x3 = tx(-hx, hy), y3 = ty(-hx, hy);
-        BatchTri(x0,y0, x1,y1, x2,y2, r,g,b,a);
-        BatchTri(x0,y0, x2,y2, x3,y3, r,g,b,a);
+        auto tx = [&](float x, float y) { return cx + x*c - y*s; };
+        auto ty = [&](float x, float y) { return cy + x*s + y*c; };
+        float x0=tx(-hx,-hy),y0=ty(-hx,-hy), x1=tx(hx,-hy),y1=ty(hx,-hy);
+        float x2=tx(hx,hy),  y2=ty(hx,hy),   x3=tx(-hx,hy),y3=ty(-hx,hy);
+        BatchTri(x0,y0,x1,y1,x2,y2, r,g,b,a);
+        BatchTri(x0,y0,x2,y2,x3,y3, r,g,b,a);
     }
 
-    // 선분 (두꺼운 회전사각형으로 근사)
     static void drawLine(float x0, float y0, float x1, float y1, float thick,
                          float r, float g, float b, float a) {
-        float dx = x1-x0, dy = y1-y0;
-        float l = std::sqrt(dx*dx + dy*dy);
+        float dx=x1-x0, dy=y1-y0, l=lenf(dx,dy);
         if (l < 0.5f) return;
-        drawRotRect((x0+x1)*0.5f, (y0+y1)*0.5f, l, thick,
-                    std::atan2(dy, dx), r, g, b, a);
+        drawRotRect((x0+x1)*0.5f,(y0+y1)*0.5f, l, thick, std::atan2(dy,dx), r,g,b,a);
     }
 
-    // 사각형 테두리 (4선분으로 구성된 사각 프레임)
     static void drawRectFrame(float cx, float cy, float hw, float hh, float ang,
                                float r, float g, float b, float a, float thick = 3.0f) {
-        float c = std::cos(ang), s = std::sin(ang);
-        auto tx = [&](float x, float y) { return cx + x * c - y * s; };
-        auto ty = [&](float x, float y) { return cy + x * s + y * c; };
-        float xs[4] = {-hw,  hw,  hw, -hw};
-        float ys[4] = {-hh, -hh,  hh,  hh};
-        for (int i = 0; i < 4; i++) {
-            int j = (i + 1) & 3;
-            drawLine(tx(xs[i],ys[i]), ty(xs[i],ys[i]),
-                     tx(xs[j],ys[j]), ty(xs[j],ys[j]),
-                     thick, r, g, b, a);
-        }
+        float c=std::cos(ang), s=std::sin(ang);
+        auto tx=[&](float x,float y){return cx+x*c-y*s;};
+        auto ty=[&](float x,float y){return cy+x*s+y*c;};
+        float xs[4]={-hw,hw,hw,-hw}, ys[4]={-hh,-hh,hh,hh};
+        for (int i=0;i<4;i++){int j=(i+1)&3;
+            drawLine(tx(xs[i],ys[i]),ty(xs[i],ys[i]),tx(xs[j],ys[j]),ty(xs[j],ys[j]),thick,r,g,b,a);}
     }
 
     // ─────────────────────────────────────────────────────────
@@ -145,338 +221,553 @@ public:
     // ─────────────────────────────────────────────────────────
     void pushSpark(float x, float y, float r, float g, float b, int n = 8) {
         for (int i = 0; i < n; i++) {
-            float ang  = randf(0.0f, PI * 2.0f);
-            float spd  = randf(80.0f, 320.0f);
-            sparks.push_back({ x, y, std::cos(ang)*spd, std::sin(ang)*spd, randf(0.18f, 0.42f) });
+            float a = randf(0.0f, PI*2.0f), sp = randf(80.0f, 320.0f);
+            sparks.push_back({x, y, std::cos(a)*sp, std::sin(a)*sp, randf(0.18f, 0.42f)});
         }
-        if ((int)sparks.size() > 160)
-            sparks.erase(sparks.begin(), sparks.begin() + (int)sparks.size() - 160);
+        if ((int)sparks.size() > 180)
+            sparks.erase(sparks.begin(), sparks.begin() + (int)sparks.size() - 180);
     }
 
     // ─────────────────────────────────────────────────────────
-    // 페이즈별 색상 (P1: 초록, P2: 황색, P3: 빨강)
+    // 페이즈 색상
     // ─────────────────────────────────────────────────────────
     glm::vec3 phaseColor() const {
-        if (phase3) return { 1.00f, 0.18f, 0.22f };
-        if (phase2) return { 0.92f, 0.72f, 0.18f };
-        return              { 0.22f, 0.85f, 0.48f };
+        if (phase3) return {1.00f, 0.18f, 0.22f};
+        if (phase2) return {0.92f, 0.72f, 0.18f};
+        return              {0.22f, 0.85f, 0.48f};
     }
-
     const wchar_t* stateTag() const {
         if (phase3) return L"P3 LOCK.mode";
         if (phase2) return L"P2 PUSH.mode";
         return              L"P1 SCAN.mode";
     }
 
+    float damageMul(Difficulty d) const {
+        return d == Difficulty::EASY ? 0.80f : d == Difficulty::HARD ? 1.14f : 1.0f;
+    }
+
     // ─────────────────────────────────────────────────────────
-    // 순찰 지점 생성 (P2 시작 시 / 생성자에서도 미리 준비)
+    // 순찰 지점 생성
     // ─────────────────────────────────────────────────────────
     void buildPatrol() {
-        // 화면 상단 60% + 가장자리에서 200px 안쪽 범위에 6개 분산 배치
-        float mx = (float)screenW, my = (float)screenH;
-        float mx0 = 200.0f, mx1 = mx - 200.0f;
-        float my0 = 150.0f, my1 = my * 0.60f;
-        // 2×3 그리드 배치 + 소량 랜덤 오프셋
-        float gw = (mx1 - mx0) / 2.0f, gh = (my1 - my0) / 2.0f;
-        for (int i = 0; i < PATROL_N; i++) {
-            float gx = (float)(i % 3) * gw;
-            float gy = (float)(i / 3) * gh;
-            patrol[i] = {
-                mx0 + gx + gw * 0.5f + randf(-gw * 0.25f, gw * 0.25f),
-                my0 + gy + gh * 0.5f + randf(-gh * 0.25f, gh * 0.25f)
-            };
+        float mx0=200.0f, mx1=(float)screenW-200.0f;
+        float my0=150.0f, my1=(float)screenH*0.60f;
+        float gw=(mx1-mx0)/2.0f, gh=(my1-my0)/2.0f;
+        for (int i=0;i<PATROL_N;i++) {
+            patrol[i]={mx0+(float)(i%3)*gw+gw*0.5f+randf(-gw*0.24f,gw*0.24f),
+                       my0+(float)(i/3)*gh+gh*0.5f+randf(-gh*0.24f,gh*0.24f)};
         }
-        // 첫 순찰 목적지: 현재 위치와 제일 먼 지점부터
-        int best = 0;
-        float bestD = 0.0f;
-        for (int i = 0; i < PATROL_N; i++) {
-            float d = lenf(patrol[i].x - worldX, patrol[i].y - worldY);
-            if (d > bestD) { bestD = d; best = i; }
-        }
-        patrolIdx = best;
+        int best=0; float bd=0;
+        for (int i=0;i<PATROL_N;i++){float d=lenf(patrol[i].x-worldX,patrol[i].y-worldY);if(d>bd){bd=d;best=i;}}
+        patrolIdx=best;
+    }
+    void pickNextPatrol() {
+        int next=patrolIdx, tries=0;
+        while (next==patrolIdx && tries<12) { next=rand()%PATROL_N; tries++; }
+        patrolIdx=next;
     }
 
     // ─────────────────────────────────────────────────────────
-    // 난이도 배율
+    // 잠금 노드 — main.cpp가 bullet hit 확인 후 호출
     // ─────────────────────────────────────────────────────────
-    float damageMul(Difficulty d) const {
-        if (d == Difficulty::EASY) return 0.80f;
-        if (d == Difficulty::HARD) return 1.14f;
-        return 1.0f;
+    void onNodeKill(int i) {
+        nodes[i].alive    = false;
+        compressPauseT    = NODE_PAUSE;
+        pushSpark(lastPx + nodes[i].cx * lastWinHalf,
+                  lastPy + nodes[i].cy * lastWinHalf,
+                  0.22f, 0.85f, 0.48f, 14);
+    }
+
+    // 만료된 노드의 데미지는 main.cpp에서 직접 처리
+
+    // ─────────────────────────────────────────────────────────
+    // ─ 스캔 탄막 헬퍼 ────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
+    void pushBeam(float pos, bool horiz, float warnT) {
+        ScanBeam b{};
+        b.pos       = pos;
+        b.halfW     = SCAN_HALF;
+        b.horiz     = horiz;
+        b.warn      = warnT;
+        b.dur       = SCAN_DUR;
+        b.t         = -warnT;
+        b.hitPlayer = false;
+        scanBeams.push_back(b);
+    }
+
+    void spawnScanPattern(float px, float py, Difficulty diff) {
+        float wT = SCAN_WARN * (diff==Difficulty::EASY ? 1.18f : diff==Difficulty::HARD ? 0.86f : 1.0f);
+        ++scanStep;
+        int p = scanStep % 3;
+        if (p == 0) {
+            // 수평 3줄, 가운데 gap = 플레이어 근처
+            float gap = clampf(py + randf(-60.0f, 60.0f), (float)screenH*0.2f, (float)screenH*0.8f);
+            float rows[4] = {(float)screenH*0.22f, (float)screenH*0.44f, (float)screenH*0.66f, (float)screenH*0.84f};
+            for (int i=0;i<4;i++) {
+                if (std::fabs(rows[i]-gap) < SCAN_HALF*3.0f) continue;
+                pushBeam(rows[i], true, wT);
+            }
+        } else if (p == 1) {
+            // 수직 3줄, gap = 플레이어 근처
+            float gap = clampf(px + randf(-60.0f, 60.0f), (float)screenW*0.2f, (float)screenW*0.8f);
+            float cols[4] = {(float)screenW*0.22f,(float)screenW*0.44f,(float)screenW*0.66f,(float)screenW*0.84f};
+            for (int i=0;i<4;i++) {
+                if (std::fabs(cols[i]-gap) < SCAN_HALF*3.0f) continue;
+                pushBeam(cols[i], false, wT);
+            }
+        } else {
+            // 크로스 (수평 + 수직 각 1줄), gap 두 방향 모두
+            float gapY = clampf(py+randf(-50.f,50.f),(float)screenH*0.25f,(float)screenH*0.75f);
+            float gapX = clampf(px+randf(-50.f,50.f),(float)screenW*0.25f,(float)screenW*0.75f);
+            float rows[2]={(float)screenH*0.30f,(float)screenH*0.70f};
+            float cols[2]={(float)screenW*0.30f,(float)screenW*0.70f};
+            for (int i=0;i<2;i++) { if(std::fabs(rows[i]-gapY)>SCAN_HALF*2.5f) pushBeam(rows[i],true,wT); }
+            for (int i=0;i<2;i++) { if(std::fabs(cols[i]-gapX)>SCAN_HALF*2.5f) pushBeam(cols[i],false,wT); }
+        }
+    }
+
+    void updateScan(float dt, float px, float py, float& playerHP, Difficulty diff, bool dashInvuln) {
+        float cdScale = phase2 ? 0.72f : 1.0f;
+        scanCd -= dt;
+        if (scanCd <= 0.0f) {
+            spawnScanPattern(px, py, diff);
+            scanCd = (phase2 ? 2.4f : 3.0f) + randf(-0.3f, 0.4f);
+        }
+        for (auto& b : scanBeams) {
+            b.t += dt;
+            if (b.t < 0.0f || b.t > b.warn + b.dur + 0.2f) continue;
+            bool active = (b.t >= 0.0f && b.t <= b.dur);
+            if (!active || dashInvuln) continue;
+            float coord = b.horiz ? py : px;
+            if (std::fabs(coord - b.pos) < b.halfW + 12.0f)
+                HurtPlayer(playerHP, SCAN_DMG * damageMul(diff) * dt);
+        }
+        scanBeams.erase(std::remove_if(scanBeams.begin(), scanBeams.end(),
+            [](const ScanBeam& b){ return b.t > b.warn + b.dur + 0.22f; }), scanBeams.end());
+        (void)cdScale;
     }
 
     // ─────────────────────────────────────────────────────────
-    // 업데이트 (이동 + 링 회전 + 스파크 감쇠)
-    //   공격 패턴(스캔탄막, 드리프트, 반사탄)은 별도 구현 예정.
+    // P1: 잠금 노드 업데이트
     // ─────────────────────────────────────────────────────────
-    void Update(float px, float py, float dt, float& playerHP,
-                std::vector<Bullet>& bullets, Difficulty difficulty,
-                bool dashInvuln) {
-        (void)bullets; (void)difficulty; (void)dashInvuln;
+    void updateNodes(float dt, float& playerHP, Difficulty diff) {
+        nodeCd -= dt;
+        if (nodeCd <= 0.0f) {
+            for (int i=0;i<4;i++) if (!nodes[i].alive) {
+                nodes[i].alive = true;
+                nodes[i].life  = NODE_LIFE;
+            }
+            nodeCd = NODE_LIFE + randf(-1.0f, 2.0f);
+        }
+        for (int i=0;i<4;i++) {
+            if (!nodes[i].alive) continue;
+            nodes[i].life -= dt;
+            if (nodes[i].life <= 0.0f) {
+                nodes[i].alive = false;
+                HurtPlayer(playerHP, NODE_PENALTY_HP * damageMul(diff));
+                pushSpark(lastPx + nodes[i].cx*lastWinHalf,
+                          lastPy + nodes[i].cy*lastWinHalf, 1.0f,0.18f,0.22f, 10);
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // P2: 링 탄막
+    // ─────────────────────────────────────────────────────────
+    void updateRingFire(float dt, float px, float py,
+                        std::vector<Bullet>& bullets, Difficulty diff) {
+        ringFireCd -= dt;
+        if (ringFireCd > 0.0f) return;
+
+        ++ringStep;
+        float dmg  = RING_DMG * damageMul(diff);
+        float spd  = RING_BSPEED;
+        bool  fan  = (ringStep % 3 == 2);
+
+        if (!fan) {
+            // 원형 링 (8발, 천천히 회전)
+            int   n   = phase3 ? 10 : 8;
+            float off = ringBaseAng;
+            for (int i=0;i<n;i++) {
+                float a = off + (float)i / (float)n * PI * 2.0f;
+                Bullet b(worldX, worldY, worldX + std::cos(a), worldY + std::sin(a));
+                b.speed = spd; b.isEnemy = true; b.enemyDmg = dmg;
+                b.color = phase3 ? glm::vec3(1.0f,0.18f,0.22f) : glm::vec3(0.92f,0.72f,0.18f);
+                bullets.push_back(b);
+            }
+            ringBaseAng += 0.38f;
+        } else {
+            // 플레이어 조준 부채꼴 (5발)
+            float base = std::atan2(py - worldY, px - worldX);
+            for (int i=-2;i<=2;i++) {
+                float a = base + (float)i * 0.20f;
+                Bullet b(worldX, worldY, worldX + std::cos(a), worldY + std::sin(a));
+                b.speed = spd * 1.15f; b.isEnemy = true; b.enemyDmg = dmg;
+                b.color = phase3 ? glm::vec3(1.0f,0.18f,0.22f) : glm::vec3(0.92f,0.72f,0.18f);
+                bullets.push_back(b);
+            }
+        }
+        ringFireCd = phase3 ? 1.25f : (phase2 ? 1.55f : 1.80f);
+        ringFireCd += randf(-0.12f, 0.18f);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // P2: 드리프트 방향 업데이트 (벡터만 계산, 적용은 main.cpp)
+    // ─────────────────────────────────────────────────────────
+    void updateDrift(float dt, float px, float py) {
+        driftSwitchT -= dt;
+        if (driftSwitchT > 0.0f) return;
+        driftSwitchT = DRIFT_INTERVAL + randf(-0.6f, 1.0f);
+
+        // 현재 플레이어 창과 화면 엣지 중 가장 먼 방향으로 밀기
+        float toL = px, toR = (float)screenW - px;
+        float toT = py, toB = (float)screenH - py;
+        // 각 방향 중 가장 '멀리' 밀 수 있는 방향 선택 (공간이 남아있는 쪽)
+        float mx = (toR > toL) ? 1.0f : -1.0f;
+        float my = (toB > toT) ? 1.0f : -1.0f;
+        // 수평/수직 중 랜덤 선택
+        bool useH = (rand() % 2) == 0;
+        float spd = DRIFT_SPEED * (phase3 ? 1.0f : 1.0f);  // P3은 orbit으로 대체
+        driftVX = useH ? mx * spd : 0.0f;
+        driftVY = useH ? 0.0f    : my * spd;
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // P3: 반사탄 발사
+    // ─────────────────────────────────────────────────────────
+    void updateBounceFire(float dt, float px, float py) {
+        bounceFireCd -= dt;
+        if (bounceFireCd > 0.0f) return;
+
+        // 3발을 플레이어 방향 ±스프레드로 발사
+        float base = std::atan2(py - worldY, px - worldX);
+        int n = phase3 ? 4 : 3;
+        for (int i=0;i<n;i++) {
+            float spread = (float)(i - n/2) * 0.28f;
+            float a = base + spread;
+            BounceBullet bb{};
+            bb.x  = worldX; bb.y = worldY;
+            bb.vx = std::cos(a) * BOUNCE_SPD;
+            bb.vy = std::sin(a) * BOUNCE_SPD;
+            bb.bounces = 0;
+            bb.life    = BOUNCE_LIFE;
+            bb.alive   = true;
+            bounceBullets.push_back(bb);
+        }
+        bounceFireCd = phase3 ? 1.35f : 1.80f;
+        bounceFireCd += randf(-0.1f, 0.2f);
+    }
+
+    // P3: 반사탄 업데이트 (이동 + 반사 + 플레이어 히트)
+    void updateBounceBullets(float dt, float px, float py, float winHalf,
+                             float& playerHP, bool dashInvuln, Difficulty diff) {
+        float wx0 = px - winHalf, wx1 = px + winHalf;
+        float wy0 = py - winHalf, wy1 = py + winHalf;
+        float dmg = BOUNCE_DMG * damageMul(diff);
+
+        for (auto& bb : bounceBullets) {
+            if (!bb.alive) continue;
+            bb.life -= dt;
+            if (bb.life <= 0.0f) { bb.alive = false; continue; }
+
+            bb.x += bb.vx * dt;
+            bb.y += bb.vy * dt;
+
+            // playerWin 경계 반사
+            if (bb.bounces < BOUNCE_MAX) {
+                if (bb.x < wx0 && bb.vx < 0.0f) { bb.vx = -bb.vx; bb.x = wx0; bb.bounces++; }
+                if (bb.x > wx1 && bb.vx > 0.0f) { bb.vx = -bb.vx; bb.x = wx1; bb.bounces++; }
+                if (bb.y < wy0 && bb.vy < 0.0f) { bb.vy = -bb.vy; bb.y = wy0; bb.bounces++; }
+                if (bb.y > wy1 && bb.vy > 0.0f) { bb.vy = -bb.vy; bb.y = wy1; bb.bounces++; }
+            } else {
+                bb.alive = false; continue;
+            }
+
+            // 플레이어 히트 (창 중심 기준)
+            if (!dashInvuln) {
+                float dx = bb.x - px, dy = bb.y - py;
+                if (dx*dx + dy*dy < (BOUNCE_R + 14.0f)*(BOUNCE_R + 14.0f)) {
+                    HurtPlayer(playerHP, dmg);
+                    bb.alive = false;
+                    pushSpark(bb.x, bb.y, 1.0f, 0.18f, 0.22f, 6);
+                }
+            }
+        }
+        bounceBullets.erase(std::remove_if(bounceBullets.begin(), bounceBullets.end(),
+            [](const BounceBullet& b){ return !b.alive; }), bounceBullets.end());
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // P3: 격리 피해 (패시브)
+    // ─────────────────────────────────────────────────────────
+    void applyIsolationDamage(float dt, float& playerHP, Difficulty diff) {
+        float rate = (hp / maxHp < 0.10f) ? ISOLATE_DMG_ENRAGE : ISOLATE_DMG_BASE;
+        HurtPlayer(playerHP, rate * damageMul(diff) * dt);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 업데이트
+    //   winHalf = playerWin.width * 0.5f  (main.cpp에서 전달)
+    // ─────────────────────────────────────────────────────────
+    void Update(float px, float py, float winHalf, float dt, float& playerHP,
+                std::vector<Bullet>& bullets, Difficulty difficulty, bool dashInvuln) {
         if (!alive) return;
+
+        lastPx = px; lastPy = py; lastWinHalf = winHalf;
 
         // ── 페이즈 전환 ────────────────────────────────────
         if (!phase2 && hp <= maxHp * 0.60f) {
             phase2 = true;
-            buildPatrol();   // 순찰 지점 새로 뽑기
+            scanBeams.clear();
+            buildPatrol();
             patrolWaitT = 0.0f;
+            nodeCd = 14.0f;   // 잠금 노드 유지 (P2에서도 작동)
+            driftSwitchT = 0.0f;
             pushSpark(worldX, worldY, 0.92f, 0.72f, 0.18f, 16);
         }
         if (!phase3 && hp <= maxHp * 0.25f) {
             phase3 = true;
-            orbitAng = std::atan2(worldY - py, worldX - px); // 현재 상대 각도 유지
+            bounceBullets.clear();
+            for (int i=0;i<4;i++) nodes[i].alive = false;
+            orbitAng = std::atan2(worldY - py, worldX - px);
+            driftVX = driftVY = 0.0f;
             pushSpark(worldX, worldY, 1.0f, 0.18f, 0.22f, 24);
         }
 
-        // ── 시각 타이머 ────────────────────────────────────
+        // ── 시각 ──────────────────────────────────────────
         pulseT += dt;
         if (phase3) glitchT += dt;
         if (flashT > 0.0f) flashT -= dt;
 
-        // ── 링 회전 (페이즈 진행에 따라 가속) ────────────
         float phaseMult = phase3 ? 2.4f : (phase2 ? 1.55f : 1.0f);
-        for (int i = 0; i < 3; i++)
-            ringAng[i] += dt * RING_SPD[i] * phaseMult;
+        for (int i=0;i<3;i++) ringAng[i] += dt * RING_SPD[i] * phaseMult;
 
         // ── 이동 ──────────────────────────────────────────
-        if (!phase2) {
-            moveHover(dt);
-        } else if (!phase3) {
-            movePatrol(dt);
-        } else {
-            moveOrbit(dt, px, py);
-        }
+        if (!phase2) moveHover(dt);
+        else if (!phase3) movePatrol(dt);
+        else moveOrbit(dt, px, py);
 
-        // 화면 경계 클램프
         worldX = clampf(worldX, 140.0f, (float)screenW - 140.0f);
         worldY = clampf(worldY, 100.0f, (float)screenH - 200.0f);
 
-        // ── 근접 데미지 (코어에 직접 닿았을 때) ──────────
+        // ── 공격 패턴 ─────────────────────────────────────
+        if (!phase3) {
+            updateScan(dt, px, py, playerHP, difficulty, dashInvuln);
+            updateNodes(dt, playerHP, difficulty);
+        }
+        if (phase2) {
+            updateRingFire(dt, px, py, bullets, difficulty);
+            if (!phase3) updateDrift(dt, px, py);
+        }
+        if (phase3) {
+            updateBounceFire(dt, px, py);
+            updateBounceBullets(dt, px, py, winHalf, playerHP, dashInvuln, difficulty);
+            applyIsolationDamage(dt, playerHP, difficulty);
+        }
+
+        // ── 근접 접촉 피해 ────────────────────────────────
         {
-            float dx = px - worldX, dy = py - worldY;
-            if (!dashInvuln && dx*dx + dy*dy < HIT_RADIUS * HIT_RADIUS)
+            float dx=px-worldX, dy=py-worldY;
+            if (!dashInvuln && dx*dx+dy*dy < HIT_RADIUS*HIT_RADIUS)
                 HurtPlayer(playerHP, 9.0f * dt);
         }
 
-        // ── 스파크 감쇠 ───────────────────────────────────
+        // ── 스파크 ────────────────────────────────────────
         for (auto& s : sparks) {
-            s.x += s.vx * dt; s.y += s.vy * dt;
-            s.vx *= 0.87f; s.vy *= 0.87f;
-            s.life -= dt;
+            s.x+=s.vx*dt; s.y+=s.vy*dt; s.vx*=0.87f; s.vy*=0.87f; s.life-=dt;
         }
         sparks.erase(std::remove_if(sparks.begin(), sparks.end(),
-            [](const Spark& s) { return s.life <= 0.0f; }), sparks.end());
+            [](const Spark& s){ return s.life<=0.0f; }), sparks.end());
     }
 
     // ─────────────────────────────────────────────────────────
-    // 이동 구현 — P1: 미세 부유
+    // 이동 구현
     // ─────────────────────────────────────────────────────────
     void moveHover(float dt) {
-        // 화면 중앙 기준으로 sin/cos 경로를 천천히 부유
-        float targX = (float)screenW * 0.5f
-                    + std::sin(pulseT * 0.55f) * 28.0f;
-        float targY = (float)screenH * 0.28f
-                    + std::cos(pulseT * 0.42f) * 16.0f;
-        worldX += (targX - worldX) * 1.2f * dt;
-        worldY += (targY - worldY) * 1.2f * dt;
+        float tx = (float)screenW*0.5f + std::sin(pulseT*0.55f)*28.0f;
+        float ty = (float)screenH*0.28f + std::cos(pulseT*0.42f)*16.0f;
+        worldX += (tx-worldX)*1.2f*dt;
+        worldY += (ty-worldY)*1.2f*dt;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // 이동 구현 — P2: 6점 순찰
-    // ─────────────────────────────────────────────────────────
     void movePatrol(float dt) {
         if (patrolWaitT > 0.0f) {
-            // 현재 지점에서 대기
             patrolWaitT -= dt;
-            // 대기 중에도 미세 부유 적용
-            float bx = patrol[patrolIdx].x, by = patrol[patrolIdx].y;
-            worldX += (bx - worldX) * 3.0f * dt;
-            worldY += (by - worldY) * 3.0f * dt;
+            worldX += (patrol[patrolIdx].x-worldX)*3.0f*dt;
+            worldY += (patrol[patrolIdx].y-worldY)*3.0f*dt;
             return;
         }
-
-        // 목적지로 이동
-        float tx = patrol[patrolIdx].x, ty = patrol[patrolIdx].y;
-        float dx = tx - worldX, dy = ty - worldY;
-        float dist = lenf(dx, dy);
+        float tx=patrol[patrolIdx].x, ty=patrol[patrolIdx].y;
+        float dx=tx-worldX, dy=ty-worldY, dist=lenf(dx,dy);
         if (dist < 6.0f) {
-            // 도착 → 대기 시작 + 다음 목적지 선택
             patrolWaitT = PATROL_WAIT + randf(-0.3f, 0.5f);
             pickNextPatrol();
         } else {
-            float spd = PATROL_SPEED * (phase3 ? 1.0f : 1.0f); // P3은 orbit으로 대체
-            float move = std::min(spd * dt, dist);
-            worldX += (dx / dist) * move;
-            worldY += (dy / dist) * move;
+            float mv = std::min(PATROL_SPEED*dt, dist);
+            worldX += (dx/dist)*mv; worldY += (dy/dist)*mv;
         }
     }
 
-    // 다음 순찰 지점: 현재 지점과 최소 거리 이상인 곳을 랜덤 선택
-    void pickNextPatrol() {
-        int attempts = 0;
-        int next = patrolIdx;
-        while (next == patrolIdx && attempts < 12) {
-            next = rand() % PATROL_N;
-            attempts++;
-        }
-        patrolIdx = next;
-    }
-
-    // ─────────────────────────────────────────────────────────
-    // 이동 구현 — P3: 플레이어 창 중심 공전
-    // ─────────────────────────────────────────────────────────
     void moveOrbit(float dt, float px, float py) {
         orbitAng += ORBIT_SPEED * dt;
-        float targX = px + std::cos(orbitAng) * ORBIT_RADIUS;
-        float targY = py + std::sin(orbitAng) * ORBIT_RADIUS;
-        // 빠르게 추적 (공전 궤도에 즉시 스냅되게)
-        worldX += (targX - worldX) * 6.0f * dt;
-        worldY += (targY - worldY) * 6.0f * dt;
+        float tx = px + std::cos(orbitAng)*ORBIT_RADIUS;
+        float ty = py + std::sin(orbitAng)*ORBIT_RADIUS;
+        worldX += (tx-worldX)*6.0f*dt;
+        worldY += (ty-worldY)*6.0f*dt;
     }
 
     // ─────────────────────────────────────────────────────────
-    // 렌더 — 배경 이펙트 (스캔라인 노이즈 등, 현재는 스파크만)
+    // 렌더 — 이펙트 (스캔 빔 + 반사탄 + 노드 + 스파크)
     // ─────────────────────────────────────────────────────────
     void renderFx(float t) const {
         glm::vec3 col = phaseColor();
 
-        // 스파크 잔불
+        // ── 스캔 빔 ─────────────────────────────────────────
+        for (const auto& b : scanBeams) {
+            float prog = (b.t < 0.0f) ? clampf(-b.t / b.warn, 0.0f, 1.0f) : 0.0f;
+            float prog2 = (b.t < 0.0f) ? (1.0f - prog) : 0.0f;  // 0→1 as warn progresses
+            bool  active = (b.t >= 0.0f && b.t <= b.dur);
+            if (b.t > b.warn + b.dur + 0.25f) continue;
+
+            float warnProg = clampf(b.t >= 0.0f ? 1.0f : (b.t / -b.warn + 1.0f), 0.0f, 1.0f);
+            float hw = b.halfW * (0.3f + warnProg * 0.7f);
+            float alpha = active ? 0.70f : 0.18f + warnProg * 0.28f;
+            float pulse2 = 0.55f + 0.45f * std::sin(t * 22.0f);
+
+            float r = active ? 1.0f : col.r * 0.85f;
+            float g = active ? 0.18f: col.g * 0.85f;
+            float bv= active ? 0.22f: col.b * 0.85f;
+
+            if (b.horiz) {
+                drawRect(0.0f, b.pos-hw, (float)screenW, hw*2.0f, r,g,bv,alpha);
+                if (active) drawRect(0.0f, b.pos-2.0f, (float)screenW, 4.0f+pulse2*2.0f, 1.0f,0.9f,1.0f,0.65f);
+            } else {
+                drawRect(b.pos-hw, 0.0f, hw*2.0f, (float)screenH, r,g,bv,alpha);
+                if (active) drawRect(b.pos-2.0f, 0.0f, 4.0f+pulse2*2.0f, (float)screenH, 1.0f,0.9f,1.0f,0.65f);
+            }
+        }
+
+        // ── 반사탄 ──────────────────────────────────────────
+        for (const auto& bb : bounceBullets) {
+            if (!bb.alive) continue;
+            float a = clampf(bb.life / BOUNCE_LIFE, 0.0f, 1.0f);
+            float pulse2 = 0.6f + 0.4f * std::sin(t * 18.0f + bb.x * 0.01f);
+            drawCircle(bb.x, bb.y, BOUNCE_R * pulse2,  1.0f, 0.18f, 0.22f, a * 0.9f);
+            drawCircle(bb.x, bb.y, BOUNCE_R * 0.5f,   1.0f, 0.88f, 0.92f, a * 0.75f);
+        }
+
+        // ── 잠금 노드 (lastPx/Py/WinHalf 사용) ──────────────
+        for (int i=0;i<4;i++) {
+            const auto& nd = nodes[i];
+            if (!nd.alive) continue;
+            float nx = lastPx + nd.cx * lastWinHalf;
+            float ny = lastPy + nd.cy * lastWinHalf;
+            float lifeFrac = nd.life / NODE_LIFE;
+            float flicker = 0.55f + 0.45f * std::sin(t * 12.0f + (float)i * 1.57f);
+            float urgency = 1.0f - lifeFrac;            // 0 = fresh, 1 = about to expire
+            float nr = 0.22f + urgency * 0.78f;
+            float ng = 0.85f - urgency * 0.67f;
+            float nb = 0.48f - urgency * 0.30f;
+            float na = 0.75f + flicker * 0.15f;
+            // 외곽 글로우
+            drawCircle(nx, ny, 18.0f * flicker, nr, ng, nb, 0.20f);
+            // 다이아몬드
+            drawRotRect(nx, ny, 14.0f, 14.0f, PI*0.25f, nr, ng, nb, na);
+            drawRectFrame(nx, ny, 8.0f, 8.0f, PI*0.25f, 1.0f, 1.0f, 1.0f, 0.55f, 1.5f);
+        }
+
+        // ── 스파크 ──────────────────────────────────────────
         for (const auto& s : sparks) {
             float a = clampf(s.life / 0.40f, 0.0f, 1.0f);
             float sz = 5.0f + 6.0f * a;
-            drawRotRect(s.x, s.y, sz, sz,
-                        t * 4.5f + s.x * 0.012f,
-                        col.r, col.g, col.b, a * 0.85f);
+            drawRotRect(s.x, s.y, sz, sz, t*4.5f+s.x*0.012f, col.r,col.g,col.b, a*0.85f);
         }
     }
 
     // ─────────────────────────────────────────────────────────
-    // 렌더 — 보스 본체
-    //   구조: 외곽 링 → 중간 링 → 내부 링 → 코어 패널 → 자물쇠 아이콘
+    // 렌더 — 본체
     // ─────────────────────────────────────────────────────────
     void renderBody(float t) const {
-        glm::vec3 col  = phaseColor();
-        float pulse    = 0.5f + 0.5f * std::sin(t * (phase3 ? 11.0f : 6.5f));
-        float flash    = clampf(flashT / 0.16f, 0.0f, 1.0f);
+        glm::vec3 col = phaseColor();
+        float pulse = 0.5f + 0.5f * std::sin(t * (phase3 ? 11.0f : 6.5f));
+        float flash = clampf(flashT / 0.16f, 0.0f, 1.0f);
 
-        // P3 글리치 오프셋 (보스 본체가 흔들림)
         float gx = 0.0f, gy = 0.0f;
         if (phase3) {
-            gx = std::sin(glitchT * 31.0f) * 5.0f;
-            gy = std::cos(glitchT * 23.0f) * 3.5f;
+            gx = std::sin(glitchT*31.0f)*5.0f;
+            gy = std::cos(glitchT*23.0f)*3.5f;
         }
-        float cx = worldX + gx, cy = worldY + gy;
+        float cx = worldX+gx, cy = worldY+gy;
 
-        // ── 외곽 글로우 (반지름 크게, 투명하게) ──────────
+        // 외곽 글로우
         float glowR = RING_W[0] * (1.1f + pulse * 0.08f);
-        drawRect(cx - glowR, cy - glowR, glowR * 2.0f, glowR * 2.0f,
-                 col.r * 0.12f, col.g * 0.12f, col.b * 0.12f, 0.45f);
+        drawRect(cx-glowR, cy-glowR, glowR*2.0f, glowR*2.0f,
+                 col.r*0.12f, col.g*0.12f, col.b*0.12f, 0.45f);
 
-        // ── 링 0: 외곽 링 (가장 크고 느림) ───────────────
+        // 링 2: 외곽
         {
-            float thick = phase3 ? 4.5f : 3.0f;
-            float alpha = 0.45f + pulse * 0.12f;
-            drawRectFrame(cx, cy, RING_W[0], RING_W[0], ringAng[2],
-                          col.r * 0.6f, col.g * 0.6f, col.b * 0.6f, alpha, thick);
-            // 코너 액센트 (각 꼭짓점에 작은 사각형)
-            float c2 = std::cos(ringAng[2]), s2 = std::sin(ringAng[2]);
-            for (int i = 0; i < 4; i++) {
-                float ai = ringAng[2] + PI * 0.5f * (float)i + PI * 0.25f;
-                float ex = cx + std::cos(ai) * RING_W[0] * 1.41f;
-                float ey = cy + std::sin(ai) * RING_W[0] * 1.41f;
-                drawRotRect(ex, ey, 9.0f, 9.0f, ringAng[2] + PI * 0.25f,
-                            col.r, col.g, col.b, 0.60f + pulse * 0.20f);
+            float tk = phase3 ? 4.5f : 3.0f;
+            float al = 0.45f + pulse*0.12f;
+            drawRectFrame(cx,cy, RING_W[0],RING_W[0], ringAng[2], col.r*0.6f,col.g*0.6f,col.b*0.6f, al, tk);
+            for (int i=0;i<4;i++) {
+                float ai = ringAng[2] + PI*0.5f*(float)i + PI*0.25f;
+                float ex = cx + std::cos(ai)*RING_W[0]*1.41f;
+                float ey = cy + std::sin(ai)*RING_W[0]*1.41f;
+                drawRotRect(ex,ey, 9.0f,9.0f, ringAng[2]+PI*0.25f, col.r,col.g,col.b, 0.60f+pulse*0.20f);
             }
         }
-
-        // ── 링 1: 중간 링 (역방향 회전) ──────────────────
+        // 링 1: 중간
         {
-            float thick = phase3 ? 5.0f : 3.5f;
-            float alpha = 0.60f + pulse * 0.15f;
-            drawRectFrame(cx, cy, RING_W[1], RING_W[1], ringAng[1],
-                          col.r * 0.80f, col.g * 0.80f, col.b * 0.80f, alpha, thick);
-            // 사변 중앙에 작은 노치 (연결 포인트 느낌)
-            for (int i = 0; i < 4; i++) {
-                float ai = ringAng[1] + PI * 0.5f * (float)i;
-                float ex = cx + std::cos(ai) * RING_W[1];
-                float ey = cy + std::sin(ai) * RING_W[1];
-                drawRotRect(ex, ey, 12.0f, 5.0f, ringAng[1],
-                            col.r, col.g, col.b, 0.70f);
+            float tk = phase3 ? 5.0f : 3.5f;
+            drawRectFrame(cx,cy, RING_W[1],RING_W[1], ringAng[1], col.r*0.80f,col.g*0.80f,col.b*0.80f, 0.60f+pulse*0.15f, tk);
+            for (int i=0;i<4;i++) {
+                float ai = ringAng[1] + PI*0.5f*(float)i;
+                float ex = cx + std::cos(ai)*RING_W[1], ey = cy + std::sin(ai)*RING_W[1];
+                drawRotRect(ex,ey, 12.0f,5.0f, ringAng[1], col.r,col.g,col.b, 0.70f);
             }
         }
-
-        // ── 링 2: 내부 링 (빠르고 밝음) ─────────────────
+        // 링 0: 내부
         {
-            float thick = phase3 ? 6.0f : (phase2 ? 4.5f : 3.5f);
-            float alpha = 0.75f + pulse * 0.18f;
-            drawRectFrame(cx, cy, RING_W[2], RING_W[2], ringAng[0],
-                          col.r, col.g, col.b, alpha, thick);
+            float tk = phase3?6.0f:(phase2?4.5f:3.5f);
+            drawRectFrame(cx,cy, RING_W[2],RING_W[2], ringAng[0], col.r,col.g,col.b, 0.75f+pulse*0.18f, tk);
         }
 
-        // ── 코어 패널 (Win32 다이얼로그 스타일) ──────────
-        // 다크 배경 패널
-        drawRotRect(cx, cy, CORE_HALF * 2.0f, CORE_HALF * 2.0f, 0.0f,
-                    0.04f, 0.05f, 0.06f, 0.96f);
-        // 패널 테두리 (얇고 밝음)
-        drawRectFrame(cx, cy, CORE_HALF, CORE_HALF, 0.0f,
-                      col.r, col.g, col.b, 0.85f + flash * 0.15f, 2.0f);
-        // 타이틀바 (패널 상단의 얇은 색띠)
+        // 코어 패널
+        drawRotRect(cx,cy, CORE_HALF*2.0f,CORE_HALF*2.0f, 0.0f, 0.04f,0.05f,0.06f, 0.96f);
+        drawRectFrame(cx,cy, CORE_HALF,CORE_HALF, 0.0f, col.r,col.g,col.b, 0.85f+flash*0.15f, 2.0f);
         float tbH = 8.0f;
-        drawRect(cx - CORE_HALF, cy - CORE_HALF - tbH, CORE_HALF * 2.0f, tbH,
-                 col.r * 0.9f, col.g * 0.9f, col.b * 0.9f, 0.80f);
-
-        // 피격 플래시 (코어 전체를 하얗게)
+        drawRect(cx-CORE_HALF, cy-CORE_HALF-tbH, CORE_HALF*2.0f, tbH, col.r*0.9f,col.g*0.9f,col.b*0.9f, 0.80f);
         if (flash > 0.0f)
-            drawRotRect(cx, cy, CORE_HALF * 2.2f, CORE_HALF * 2.2f, 0.0f,
-                        1.0f, 1.0f, 1.0f, flash * 0.55f);
+            drawRotRect(cx,cy, CORE_HALF*2.2f,CORE_HALF*2.2f, 0.0f, 1.0f,1.0f,1.0f, flash*0.55f);
 
-        // ── 자물쇠 아이콘 ─────────────────────────────────
-        drawLockIcon(cx, cy + 4.0f, col, pulse, t);
+        // 자물쇠 아이콘
+        drawLockIcon(cx, cy+4.0f, col, pulse);
 
-        // ── 보스 이름 태그 (코어 아래) ───────────────────
+        // 상태 태그
         const wchar_t* tag = stateTag();
         float tw = g_TextS.Width(tag, 0.46f);
-        g_TextS.Draw(tag,
-                     cx - tw * 0.5f,
-                     cy + CORE_HALF + 14.0f,
-                     0.46f,
-                     col.r, col.g, col.b, 0.90f);
+        g_TextS.Draw(tag, cx-tw*0.5f, cy+CORE_HALF+14.0f, 0.46f, col.r,col.g,col.b, 0.90f);
 
-        // ── HP 바 (보스 이름 아래) ───────────────────────
+        // HP 바
         {
-            float bw = CORE_HALF * 2.4f, bh = 4.0f;
-            float bx = cx - bw * 0.5f;
-            float by = cy + CORE_HALF + 36.0f;
-            float frac = clampf(hp / maxHp, 0.0f, 1.0f);
-            drawRect(bx, by, bw, bh, 0.12f, 0.12f, 0.14f, 0.90f);
-            drawRect(bx, by, bw * frac, bh, col.r, col.g, col.b, 0.95f);
+            float bw=CORE_HALF*2.4f, bh=4.0f;
+            float bx=cx-bw*0.5f, by=cy+CORE_HALF+36.0f;
+            float frac=clampf(hp/maxHp, 0.0f, 1.0f);
+            drawRect(bx, by, bw, bh, 0.12f,0.12f,0.14f, 0.90f);
+            drawRect(bx, by, bw*frac, bh, col.r,col.g,col.b, 0.95f);
         }
     }
 
 private:
-    // ── 자물쇠 아이콘 드로우 ─────────────────────────────────
-    //   락 바디: 작은 사각형 (cx, cy+4 기준)
-    //   걸쇠(shackle): 역 U자 — 두 수직선 + 상단 연결선
-    void drawLockIcon(float cx, float cy, glm::vec3 col, float pulse, float t) const {
-        (void)t;
-        float br  = col.r, bg = col.g, bb  = col.b;
-        float alpha = 0.80f + pulse * 0.14f;
-
-        // 락 바디 (채워진 사각형)
-        float bw = 18.0f, bh = 14.0f;
-        drawRotRect(cx, cy + 6.0f, bw, bh, 0.0f, br, bg, bb, alpha);
-
-        // 락 걸쇠 — 두 수직선 + 상단 수평선
-        float shW = 11.0f, shH = 12.0f, shThick = 3.5f;
-        float lx = cx - shW * 0.5f, rx = cx + shW * 0.5f;
-        float top = cy - 4.0f, bot = cy;
-        drawLine(lx, bot, lx, top,        shThick, br, bg, bb, alpha); // 왼쪽
-        drawLine(rx, bot, rx, top,        shThick, br, bg, bb, alpha); // 오른쪽
-        drawLine(lx, top, rx, top,        shThick, br, bg, bb, alpha); // 상단 연결
-        (void)shH;
-
-        // 키홀 (락 바디 중앙 작은 구멍 — 어두운 원형 근사)
-        drawRotRect(cx, cy + 6.0f, 5.5f, 7.0f, 0.0f,
-                    0.04f, 0.05f, 0.06f, 0.92f);
+    void drawLockIcon(float cx, float cy, glm::vec3 col, float pulse) const {
+        float al = 0.80f + pulse*0.14f;
+        float bw=18.0f, bh=14.0f;
+        drawRotRect(cx, cy+6.0f, bw, bh, 0.0f, col.r,col.g,col.b, al);
+        float shW=11.0f, shThick=3.5f;
+        float lx=cx-shW*0.5f, rx=cx+shW*0.5f, top=cy-4.0f, bot=cy;
+        drawLine(lx,bot,lx,top, shThick, col.r,col.g,col.b, al);
+        drawLine(rx,bot,rx,top, shThick, col.r,col.g,col.b, al);
+        drawLine(lx,top,rx,top, shThick, col.r,col.g,col.b, al);
+        drawRotRect(cx, cy+6.0f, 5.5f,7.0f, 0.0f, 0.04f,0.05f,0.06f, 0.92f);
     }
 };

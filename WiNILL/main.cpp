@@ -1860,6 +1860,24 @@ int main() {
                     }
                 }
 
+                // GATE.lock: P2 window drift
+                if (g_GateBoss && g_GateBoss->alive && g_GateBoss->phase2 && !g_GateBoss->phase3) {
+                    playerWin.x += g_GateBoss->driftVX * FIXED_DT;
+                    playerWin.y += g_GateBoss->driftVY * FIXED_DT;
+                }
+                // GATE.lock: window compression / P3 lock
+                if (g_GateBoss && g_GateBoss->alive) {
+                    if (!g_GateBoss->phase3) {
+                        if (g_GateBoss->compressPauseT <= 0.0f) {
+                            g_Stats.windowSize -= GateLockBoss::COMPRESS_RATE * FIXED_DT;
+                            if (g_Stats.windowSize < GateLockBoss::COMPRESS_MIN_P1)
+                                g_Stats.windowSize = GateLockBoss::COMPRESS_MIN_P1;
+                        }
+                    } else {
+                        g_Stats.windowSize = GateLockBoss::COMPRESS_MIN_P3;
+                    }
+                }
+
                 // ?뚮젅?댁뼱 罹먮┃??李?以묒븰)媛 蹂댁씠???곸뿭 諛뽰쑝濡??섍?吏 紐삵븯寃??대옩??
                 // 以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???붾뱶媛 ?볦뼱吏誘濡??대룞 援ъ뿭??媛숈씠 ?뺤옣.
                 // (zoom=1 ?대㈃ ?뺥솗??[0, screen] ??湲곗〈怨??숈씪)
@@ -2143,7 +2161,8 @@ int main() {
                                        g_Bullets, g_Difficulty, g_DashInvuln > 0.0f);
 
                 if (!timeStopped && g_GateBoss && g_GateBoss->alive)
-                    g_GateBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
+                    g_GateBoss->Update(pCX, pCY, playerWin.width * 0.5f, enemyDt,
+                                       g_GameManager.playerHP,
                                        g_Bullets, g_Difficulty, g_DashInvuln > 0.0f);
 
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
@@ -2325,6 +2344,30 @@ int main() {
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (gb->hp <= 0.0f) gb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+                // GATE.lock: lock node bullet collision
+                if (g_GateBoss && g_GateBoss->alive) {
+                    auto* gb2 = g_GateBoss;
+                    float gWH = playerWin.width * 0.5f;
+                    float gPX = playerWin.x + gWH;
+                    float gPY = playerWin.y + gWH;
+                    for (int ni = 0; ni < 4; ni++) {
+                        auto& nd = gb2->nodes[ni];
+                        if (!nd.alive) continue;
+                        float nx = gPX + (float)nd.cx * gWH;
+                        float ny = gPY + (float)nd.cy * gWH;
+                        for (auto& b : g_Bullets) {
+                            if (!b.active || b.isEnemy) continue;
+                            float dx = b.x - nx, dy = b.y - ny;
+                            if (dx*dx + dy*dy < 20.0f * 20.0f) {
+                                b.active = false;
+                                gb2->onNodeKill(ni);
+                                g_Stats.windowSize = std::min(
+                                    g_Stats.windowSize + GateLockBoss::NODE_EXPAND, 400.0f);
+                                break;
+                            }
                         }
                     }
                 }
