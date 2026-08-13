@@ -36,6 +36,12 @@ inline void ResetAct() {
 
 inline void SetActTheme(int pick) { g_ActBossPick = pick; }
 
+// 메인 모드 보스 등장 순서 (FORK → VOLLEY → TESS)
+// 최종 보스 추가 시 여기에 pick 번호 추가 + MAIN_ACT_TOTAL 증가
+inline constexpr int MAIN_ACT_TOTAL        = 3;
+inline constexpr int MAIN_SEQUENCE[]       = { 8, 2, 10 };
+inline constexpr float MAIN_SCORE_STEP     = 200000.0f;  // 보스 간 점수 간격
+
 inline void OnBossDefeated() {
     ++g_ActClears;
     if (g_ActClears >= 5) g_ActEndless = true;

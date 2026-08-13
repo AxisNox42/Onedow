@@ -2998,6 +2998,23 @@ int main() {
                         QueueCreativeBossPick(g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2,
                                               bossHpC, polyHpC);
                     }
+                    // 메인 모드: 순차 보스 스폰 (점수 기반)
+                    else if (!g_CreativeMode && !BossDir::g_ActEndless
+                             && BossDir::g_ActClears < BossDir::MAIN_ACT_TOTAL
+                             && !g_InBossIntermission
+                             && g_GameManager.score >= g_NextBossScore) {
+                        g_NextBossScore += (long long)BossDir::MAIN_SCORE_STEP;
+                        int pick = BossDir::MAIN_SEQUENCE[BossDir::g_ActClears];
+                        float sc  = 1.0f + (float)BossDir::g_ActClears * 0.9f;
+                        float bossHp = bossHpC * sc * BossDir::HpMul(pick);
+                        startWarn(pick, BossDir::DisplayName(pick), bossHp);
+                    }
+                    // 메인 모드: 클리어 조건 — 마지막 보스 처치 후 인터미션 종료 시
+                    else if (!g_CreativeMode && !BossDir::g_ActEndless
+                             && BossDir::g_ActClears >= BossDir::MAIN_ACT_TOTAL
+                             && !g_InBossIntermission) {
+                        TriggerVictory();
+                    }
                     else if (g_CreativeMode && g_GameManager.score >= g_NextBossScore) {
                         g_NextBossScore += 200000;
                         float sc = 0.36f + (float)g_GameManager.score / 300000.0f;
