@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include <vector>
+#include <deque>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <glm/glm.hpp>
@@ -37,7 +39,7 @@ public:
     bool  shakePulse = false;
     int   dashCount  = 0;
 
-    std::vector<glm::vec2> trail;  // 癒몃━ 沅ㅼ쟻(?멸렇癒쇳듃 異붿쥌)
+    std::deque<glm::vec2> trail;   // 癒몃━ 沅ㅼ쟻(?멸렇癒쇳듃 異붿쥌)
 
     static constexpr int   NSEG       = 18;      // 瑗щ━ ?멸렇癒쇳듃 ???꾩껌 湲멸쾶)
     static constexpr int   SEG_STEP   = 6;       // ?멸렇癒쇳듃 媛?沅ㅼ쟻 ?몃뜳??媛꾧꺽(?묒쓣?섎줉 珥섏킌)
@@ -82,7 +84,7 @@ public:
     float cannonCd = 0.0f, cannonT = 0.0f;
     int   cannonIdx = 0;
     // ?? ?먯떇 ?꾨줈?몄뒪 ???묒? 泥댁씤 adds(?먯껜 愿由? ??
-    struct MiniBug { float x, y, heading, hp; bool alive; std::vector<glm::vec2> trail;
+    struct MiniBug { float x, y, heading, hp; bool alive; std::deque<glm::vec2> trail;
                      float wt; int lungeState; float lungeT; };
     std::vector<MiniBug> minis;
     static constexpr float SUMMON_INT  = 9.0f;
@@ -134,32 +136,29 @@ public:
     }
 
     void spawnGhost(float x, float y, float r) {
-        if ((int)ghosts.size() >= MAX_GHOST)
-            ghosts.erase(ghosts.begin());
+        if ((int)ghosts.size() >= MAX_GHOST) return;
         GhostEcho g;
         g.x = x; g.y = y; g.r = r; g.maxLife = g.life = 0.5f;
         ghosts.push_back(g);
     }
 
     void tickVfx(float dt) {
-        for (size_t i = 0; i < segFlashes.size(); ) {
-            segFlashes[i].t -= dt;
-            if (segFlashes[i].t <= 0.0f) segFlashes.erase(segFlashes.begin() + i);
-            else ++i;
-        }
-        for (size_t i = 0; i < ghosts.size(); ) {
-            ghosts[i].life -= dt;
-            if (ghosts[i].life <= 0.0f) ghosts.erase(ghosts.begin() + i);
-            else ++i;
-        }
-        for (size_t i = 0; i < hitSparks.size(); ) {
-            HitSpark& sp = hitSparks[i];
+        for (auto& f : segFlashes) f.t -= dt;
+        segFlashes.erase(std::remove_if(segFlashes.begin(), segFlashes.end(),
+            [](const SegFlash& f){ return f.t <= 0.0f; }), segFlashes.end());
+
+        for (auto& g : ghosts) g.life -= dt;
+        ghosts.erase(std::remove_if(ghosts.begin(), ghosts.end(),
+            [](const GhostEcho& g){ return g.life <= 0.0f; }), ghosts.end());
+
+        for (auto& sp : hitSparks) {
             sp.life -= dt;
             sp.x += sp.vx * dt; sp.y += sp.vy * dt;
             sp.vx *= 0.90f; sp.vy *= 0.90f;
-            if (sp.life <= 0.0f) hitSparks.erase(hitSparks.begin() + i);
-            else ++i;
         }
+        hitSparks.erase(std::remove_if(hitSparks.begin(), hitSparks.end(),
+            [](const HitSpark& sp){ return sp.life <= 0.0f; }), hitSparks.end());
+
         if (glitchOverlay > 0.0f) glitchOverlay -= dt;
     }
 
@@ -540,7 +539,7 @@ public:
             }
             mb.x += cosf(mb.heading) * spd * dt;
             mb.y += sinf(mb.heading) * spd * dt;
-            mb.trail.insert(mb.trail.begin(), glm::vec2(mb.x, mb.y));
+            mb.trail.push_front(glm::vec2(mb.x, mb.y));
             if ((int)mb.trail.size() > MINI_NSEG*MINI_STEP + 2) mb.trail.pop_back();
             if (d < MINI_HEAD + 14.0f) HurtPlayer(playerHP, 6.0f * dt);
         }
@@ -558,9 +557,8 @@ public:
                 }
             }
         }
-        for (size_t i = 0; i < minis.size(); ) {
-            if (!minis[i].alive) minis.erase(minis.begin() + i); else ++i;
-        }
+        minis.erase(std::remove_if(minis.begin(), minis.end(),
+            [](const MiniBug& m){ return !m.alive; }), minis.end());
 
         // ?? 二쎌? 吏??踰?????源롮씤 ?꾩쟻?됰쭏???붾㈃ 媛濡쒖?瑜대뒗 吏곸꽑 李⑤떒踰??앹꽦 ??
         if (lastWallHp < 0.0f) lastWallHp = hp;             // 泥??꾨젅??湲곗?
@@ -849,9 +847,11 @@ public:
                 }
                 h.life = 0.0f;
             }
-            if (h.life <= 0.0f) hazards.erase(hazards.begin() + i);
-            else ++i;
+            if (h.life <= 0.0f) { ++i; continue; }
+            ++i;
         }
+        hazards.erase(std::remove_if(hazards.begin(), hazards.end(),
+            [](const Hazard& h){ return h.life <= 0.0f; }), hazards.end());
 
         // ?? 硫붾え由??꾩닔 ?붿긽 + 瑗щ━ ?ы겕諛곗텧 + VFX ????
         {
@@ -877,9 +877,8 @@ public:
                 errorNodes.push_back(en);
             }
         }
-        for (size_t i = 0; i < errorNodes.size(); ) {
-            ErrorNode& en = errorNodes[i];
-            if (!en.alive) { errorNodes.erase(errorNodes.begin() + i); continue; }
+        for (auto& en : errorNodes) {
+            if (!en.alive) continue;
             en.fuse -= dt;
             if (en.fuse <= 0.0f) {
                 for (int d = 0; d < 4; d++) {
@@ -900,13 +899,13 @@ public:
                 hazards.push_back(h);
                 en.alive = false;
             }
-            if (!en.alive) errorNodes.erase(errorNodes.begin() + i);
-            else ++i;
         }
+        errorNodes.erase(std::remove_if(errorNodes.begin(), errorNodes.end(),
+            [](const ErrorNode& en){ return !en.alive; }), errorNodes.end());
         tickVfx(dt);
 
         // 沅ㅼ쟻 湲곕줉
-        trail.insert(trail.begin(), glm::vec2(worldX, worldY));
+        trail.push_front(glm::vec2(worldX, worldY));
         if ((int)trail.size() > NSEG * SEG_STEP + 8) trail.pop_back();
 
         // ?묒큺 ?곕?吏 (?좊났 ?좎닔/?덇퀬 以묒뿉??蹂몄껜媛 ?놁쓬 = 臾댁젒珥?
