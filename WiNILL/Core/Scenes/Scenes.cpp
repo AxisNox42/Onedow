@@ -1791,11 +1791,12 @@ void Scene_AugSelect(const SceneCtx& c) {
     const std::function<void()>& ResetForNewGame = c.reset;
 
     // ── 진입 애니메이션 ──
-    static float     s_enterT = 1.0f;
-    static GameState s_lastSt = GameState::RUNNING;
-    if (s_lastSt != GameState::AUG_SELECT && s_lastSt != GameState::DEBUFF_SELECT)
-        s_enterT = 0.0f;
-    s_lastSt = st;
+    static float s_enterT = 1.0f;
+    {
+        const GameState prev = g_GameManager.lastState;
+        if (prev != GameState::AUG_SELECT && prev != GameState::DEBUFF_SELECT)
+            s_enterT = 0.0f;
+    }
     const float ENTER_DUR = 0.38f;
     s_enterT = std::min(s_enterT + delta / ENTER_DUR, 1.0f);
     auto easeOut = [](float t) -> float {
