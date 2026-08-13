@@ -2040,58 +2040,159 @@ void Scene_AugSelect(const SceneCtx& c) {
 
 void Scene_AugReplace(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
+    const float delta = c.delta;
     int newIdx = g_GameManager.pendingAugIdx;
     if (newIdx < 0 || newIdx >= AUG_TOTAL) return;
+
+    // ── 애니메이션 상태 ──
+    static float s_enterT      = 0.0f;
+    static float s_hovY[32]    = {};
+    static float s_pickFlash[32] = {};
+    static int   s_prevHov     = -1;
+
+    auto easeOut = [](float t) -> float {
+        float inv = 1.0f - t; return 1.0f - inv * inv * inv;
+    };
+
+    // 새 진입 감지
+    const GameState prev = g_GameManager.lastState;
+    if (prev != GameState::AUG_REPLACE) {
+        s_enterT = 0.0f;
+        std::fill(std::begin(s_hovY),      std::end(s_hovY),      0.f);
+        std::fill(std::begin(s_pickFlash), std::end(s_pickFlash), 0.f);
+        s_prevHov = -1;
+    }
+    s_enterT = std::min(s_enterT + delta / 0.32f, 1.0f);
+
+    // pick flash 트리거
+    if (g_HoveredAug != s_prevHov && g_HoveredAug >= 0 && g_HoveredAug < 32)
+        s_pickFlash[g_HoveredAug] = 1.0f;
+    s_prevHov = g_HoveredAug;
+
+    // hover spring + flash decay
+    int n = g_GameManager.replaceChoiceCount;
+    for (int i = 0; i < n && i < 32; i++) {
+        float targetY = (g_HoveredAug == i) ? -10.0f : 0.0f;
+        s_hovY[i] += (targetY - s_hovY[i]) * std::min(1.0f, delta * 16.0f);
+        if (s_pickFlash[i] > 0.f) s_pickFlash[i] = std::max(0.f, s_pickFlash[i] - delta / 0.20f);
+    }
+
+    // exit anim
+    const float EXIT_DUR = 0.28f;
+    float exitPct = (g_RepExitT >= 0.f) ? std::min(g_RepExitT / EXIT_DUR, 1.0f) : -1.0f;
+    float exitE   = (exitPct >= 0.f) ? easeOut(exitPct) : 0.f;
+    bool  isCancelExit = (g_RepExitSlot == -2);
+
+    float enterE = easeOut(s_enterT);
+
+    int li = LangIndex();
+    if (li < 0 || li > 2) li = 0;
+
+    // ── 오버레이 ──
+    float overlayA = enterE * (exitPct >= 0.f ? (1.0f - exitE) : 1.0f);
+    BindMainShader();
+    drawRect(0, 0, sw, sh, 0.03f, 0.02f, 0.08f, overlayA * 0.68f);
+    BatchFlush();
+
+    // ── 타이틀 ──
+    float titA = enterE;
+    if (exitPct >= 0.f) titA *= std::max(0.f, 1.0f - exitPct * 2.5f);
 
     const wchar_t* TIT[3] = {
         L"식별 슬롯 가득 — 교체할 증강 선택",
         L"Identity slots full — pick one to replace",
         L"識別スロット満杯 — 交換する強化を選択" };
-    int li = LangIndex();
-    if (li < 0 || li > 2) li = 0;
     g_TextL.Draw(TIT[li], CenterTextX(sw, g_TextL, TIT[li], 0.95f), sh * 0.12f,
-                 0.95f, 1, 1, 1, 0.95f);
+                 0.95f, 1, 1, 1, 0.95f * titA);
 
+    // NEW 증강 표시
     wchar_t newLine[160];
     swprintf_s(newLine, L"NEW: [%ls] %ls",
                GetAugBadge(ALL_AUGS[newIdx]), AugName(ALL_AUGS[newIdx]));
     g_TextS.Draw(newLine, CenterTextX(sw, g_TextS, newLine, 0.88f), sh * 0.18f,
-                 0.88f, 0.9f, 1.0f, 0.7f, 0.95f);
+                 0.88f, 0.9f, 1.0f, 0.7f, 0.95f * titA);
+    BatchFlush();
 
+    // ── 카드 목록 ──
     const float CARD_W = 260.0f, CARD_H = 120.0f, GAP = 16.0f;
-    int n = g_GameManager.replaceChoiceCount;
     float totalW = (float)n * CARD_W + (float)(n > 0 ? n - 1 : 0) * GAP;
     if (totalW > sw - 40.0f) totalW = sw - 40.0f;
     float baseX = (sw - totalW) * 0.5f;
     float baseY = sh * 0.32f;
 
-    for (int i = 0; i < n; i++) {
+    static const wchar_t* KEYS[9] = { L"[1]",L"[2]",L"[3]",L"[4]",L"[5]",L"[6]",L"[7]",L"[8]",L"[9]" };
+
+    for (int i = 0; i < n && i < 32; i++) {
         int idx = g_GameManager.replaceChoices[i];
         if (idx < 0 || idx >= AUG_TOTAL) continue;
+
+        // 슬라이드인 스태거
+        float stag = (float)i * 0.04f;
+        float ct   = std::max(0.f, std::min((s_enterT - stag) / (1.0f - stag + 0.001f), 1.0f));
+        float cardA = easeOut(ct);
+        float slideY = (1.0f - easeOut(ct)) * 60.0f;
+
+        bool  isConf = (exitPct >= 0.f && g_RepExitSlot == i);
+        float flash  = s_pickFlash[i];
+
+        // exit 오프셋
+        float exitOffY = 0.f;
+        if (exitPct >= 0.f) {
+            if (isCancelExit) {
+                exitOffY = exitE * 50.0f;
+                cardA   *= std::max(0.f, 1.0f - exitE * 1.6f);
+            } else if (isConf) {
+                exitOffY = -exitE * 50.0f;
+                cardA   *= std::max(0.f, 1.0f - exitE * 1.2f);
+            } else {
+                exitOffY = exitE * 40.0f;
+                cardA   *= std::max(0.f, 1.0f - exitE * 1.8f);
+            }
+        }
+
         float cx = baseX + i * (CARD_W + GAP);
-        float yOff = (g_HoveredAug == i) ? -8.0f : 0.0f;
+        float cy = baseY + slideY + s_hovY[i] + exitOffY;
+
         const AugDef& def = ALL_AUGS[idx];
         float tr, tg, tb;
         GetRarityColor(def.rarity, tr, tg, tb);
+        float flashBoost = flash * 0.5f + (isConf ? exitE * (1.0f - exitE) * 3.0f * (1.0f - exitPct) : 0.0f);
+        bool  hov = (g_HoveredAug == i);
+
         BindMainShader();
-        drawRect(cx, baseY + yOff, CARD_W, CARD_H, tr * 0.35f, tg * 0.35f, tb * 0.35f, 0.92f);
+        float bgMul = (hov ? 0.42f : 0.28f) + flash * 0.12f;
+        drawRect(cx, cy, CARD_W, CARD_H, tr * bgMul, tg * bgMul, tb * bgMul, 0.92f * cardA);
+
+        BatchFlush(); glEnable(GL_BLEND);
+        float bord = (hov ? 1.0f : 0.55f) + flash * 0.5f + flashBoost;
+        float nr = std::min(1.0f, tr * (1.4f + flashBoost) + 0.08f);
+        float ng = std::min(1.0f, tg * (1.4f + flashBoost) + 0.08f);
+        float nb = std::min(1.0f, tb * (1.4f + flashBoost) + 0.08f);
+        drawNeonBorder(cx, cy, CARD_W, CARD_H, nr * bord, ng * bord, nb * bord);
+
         wchar_t lbl[128];
         swprintf_s(lbl, L"[%d] %ls", i + 1, AugName(def));
         float lsc = 0.78f;
         while (lsc > 0.52f && g_TextL.Width(lbl, lsc) > CARD_W - 16.0f) lsc -= 0.04f;
-        g_TextL.Draw(lbl, cx + 10.0f, baseY + yOff + 16.0f, lsc, 1, 1, 1, 0.95f);
-        static const wchar_t* KEYS[9] = { L"[1]",L"[2]",L"[3]",L"[4]",L"[5]",L"[6]",L"[7]",L"[8]",L"[9]" };
-        if (i < 9)
-            g_TextS.Draw(KEYS[i], cx + 10.0f, baseY + yOff + CARD_H - 32.0f, 0.85f,
-                         tr, tg, tb, 0.95f);
+        BatchFlush();
+        g_TextL.Draw(lbl, cx + 10.0f, cy + 16.0f, lsc, 1, 1, 1, 0.95f * cardA);
+        if (i < 9) {
+            BatchFlush();
+            g_TextS.Draw(KEYS[i], cx + 10.0f, cy + CARD_H - 32.0f, 0.85f,
+                         nr, ng, nb, 0.90f * cardA);
+        }
+        BatchFlush();
     }
 
+    // ── 키 힌트 ──
     const wchar_t* HINT[3] = {
         L"1~9: 선택 · Space: 교체 · Esc: 새 증강 포기",
         L"1~9: select · Space: replace · Esc: skip new augment",
         L"1~9: 選択 · Space: 交換 · Esc: 新規強化を見送り" };
+    BindMainShader();
     g_TextS.Draw(HINT[li], CenterTextX(sw, g_TextS, HINT[li], 0.82f), sh * 0.78f,
-                 0.82f, 0.75f, 0.75f, 0.75f, 0.85f);
+                 0.82f, 0.75f, 0.75f, 0.75f, 0.85f * overlayA);
+    BatchFlush();
 }
 
 void Scene_RunShop(const SceneCtx& c) {

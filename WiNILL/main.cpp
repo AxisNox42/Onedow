@@ -98,6 +98,8 @@ PlayerStats    g_Stats;
 bool g_aug1Released = true, g_aug2Released = true, g_aug3Released = true;
 float g_AugExitT    = -1.0f;
 int   g_AugExitSlot = -1;
+float g_RepExitT    = -1.0f;
+int   g_RepExitSlot = -3;
 TextRenderer   g_TextL;   // ??湲??(利앷컯 ?대쫫, ?곹깭 ??댄?)
 TextRenderer   g_TextS;   // ?묒? 湲??(?ㅻ챸, ?뚰듃)
 TextRenderer   g_TextXL;  // 珥덈?????댄?(?쒖옉李?濡쒓퀬) ?꾩슜 ??怨좏빐?곷룄 ?섏뒪??
@@ -1624,33 +1626,53 @@ int main() {
         }
 
         if (g_GameManager.currentState == GameState::AUG_REPLACE) {
-            int kEsc = glfwGetKey(window, GLFW_KEY_ESCAPE);
-            static bool s_repEsc = true;
-            if (kEsc == GLFW_PRESS && s_repEsc) {
-                CancelAugReplaceFlow();
-                s_repEsc = false;
-            }
-            if (kEsc == GLFW_RELEASE) s_repEsc = true;
-
+            constexpr float REP_EXIT_DUR = 0.28f;
+            static bool s_repEsc   = true;
             static bool s_repSpace = true;
+            static bool s_repKeys[9] = { true,true,true,true,true,true,true,true,true };
+
+            int kEsc   = glfwGetKey(window, GLFW_KEY_ESCAPE);
             int kSpRep = glfwGetKey(window, GLFW_KEY_SPACE);
-            if (kSpRep == GLFW_RELEASE) s_repSpace = true;
-            if (kSpRep == GLFW_PRESS && s_repSpace && g_HoveredAug >= 0 &&
-                g_HoveredAug < g_GameManager.replaceChoiceCount) {
-                CompleteAugReplaceFlow(g_HoveredAug, screenWidth, screenHeight);
-                g_HoveredAug = -1;
-                s_repSpace = false;
+            if (kEsc   == GLFW_RELEASE) s_repEsc   = true;
+            if (kSpRep == GLFW_RELEASE) s_repSpace  = true;
+            for (int ki = 0; ki < 9; ki++)
+                if (glfwGetKey(window, GLFW_KEY_1 + ki) == GLFW_RELEASE) s_repKeys[ki] = true;
+
+            bool repExitFired = false;
+            if (g_RepExitT >= 0.0f) {
+                g_RepExitT += delta;
+                if (g_RepExitT >= REP_EXIT_DUR) {
+                    if (g_RepExitSlot == -2)
+                        CancelAugReplaceFlow();
+                    else {
+                        CompleteAugReplaceFlow(g_RepExitSlot, screenWidth, screenHeight);
+                        g_HoveredAug = -1;
+                    }
+                    g_RepExitT    = -1.0f;
+                    g_RepExitSlot = -3;
+                    repExitFired  = true;
+                }
             }
 
-            for (int ki = 0; ki < 9; ki++) {
-                int key = GLFW_KEY_1 + ki;
-                static bool s_repKeys[9] = { true,true,true,true,true,true,true,true,true };
-                if (ki >= g_GameManager.replaceChoiceCount) break;
-                if (glfwGetKey(window, key) == GLFW_PRESS && s_repKeys[ki]) {
-                    g_HoveredAug = ki;
-                    s_repKeys[ki] = false;
+            if (!repExitFired && g_RepExitT < 0.0f) {
+                if (kEsc == GLFW_PRESS && s_repEsc) {
+                    g_RepExitT    = 0.0f;
+                    g_RepExitSlot = -2;
+                    s_repEsc = false;
                 }
-                if (glfwGetKey(window, key) == GLFW_RELEASE) s_repKeys[ki] = true;
+                if (kSpRep == GLFW_PRESS && s_repSpace && g_HoveredAug >= 0 &&
+                    g_HoveredAug < g_GameManager.replaceChoiceCount) {
+                    g_RepExitT    = 0.0f;
+                    g_RepExitSlot = g_HoveredAug;
+                    s_repSpace = false;
+                }
+                for (int ki = 0; ki < 9; ki++) {
+                    if (ki >= g_GameManager.replaceChoiceCount) break;
+                    if (glfwGetKey(window, GLFW_KEY_1 + ki) == GLFW_PRESS && s_repKeys[ki]) {
+                        g_HoveredAug = ki;
+                        s_repKeys[ki] = false;
+                    }
+                }
             }
         }
 
