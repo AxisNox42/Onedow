@@ -780,6 +780,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     case 2: StartBossWarn(2, L"VOLLEY.sys", bossHpC);        break;
     case 8: StartBossWarn(8, L"FORK.worm",  bossHpC * 0.7f); break;
     case 10: StartBossWarn(10, TesseractGlitchBoss::BOSS_NAME, bossHpC * 0.92f); break;
+    case 4:  StartBossWarn(4, GateLockBoss::BOSS_NAME,        bossHpC * 1.15f); break;
     case 3: StartBossWarn(3, L"SPAM.dll",   bossHpC * 0.9f); break;
     default: StartBossWarn(2, L"VOLLEY.sys", bossHpC);       break;
     }
