@@ -13,7 +13,6 @@
 class ReloadRunnerBoss;
 class CentipedeBoss;
 class TesseractGlitchBoss;
-class GateLockBoss;
 
 extern GameManager         g_GameManager;
 extern MonsterManager      g_MonsterManager;
@@ -27,7 +26,6 @@ extern TextRenderer g_TextXL;
 extern ReloadRunnerBoss*    g_RRBoss;
 extern CentipedeBoss*       g_CentiBoss;
 extern TesseractGlitchBoss* g_TessBoss;
-extern GateLockBoss*        g_GateBoss;
 // ── UI / 메뉴 씬에서 참조 (main.cpp 정의) ──
 extern bool      g_LmbPrev;
 extern GameState g_SettingsReturnTo;

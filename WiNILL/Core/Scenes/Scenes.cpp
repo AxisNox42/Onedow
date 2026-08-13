@@ -1160,12 +1160,12 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 g_TextS.Draw(L"* 일반 런 미포함 (개발용)", leftX, contentTop + 124.0f,
                              0.48f, 0.68f, 0.75f, 0.82f, 0.75f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[5] = {
+                BossOpt bOpts[4] = {
                     {L"None",-1}, {L"VOLLEY.sys",2}, {L"TESS.glitch",10},
-                    {L"FORK.worm",8}, {L"GATE.lock",4}
+                    {L"FORK.worm",8}
                 };
                 const float BBW = 112.0f;
-                for (int i = 0; i < 5; i++) {
+                for (int i = 0; i < 4; i++) {
                     int col = i % 3, row = i / 3;
                     float ox = leftX + col * (BBW + OBG);
                     float oy = contentTop + 144.0f + row * (OBH + 8.0f);

@@ -37,7 +37,6 @@
 #include "ReloadRunnerBoss.h"
 #include "CentipedeBoss.h"
 #include "TesseractGlitchBoss.h"
-#include "GateLockBoss.h"
 #include "BossDirector.h"
 #include "AugmentSlots.h"
 #include "RunIntermission.h"
@@ -250,7 +249,6 @@ static constexpr long long FIRST_BOSS_SCORE = 50000;
 long long g_NextBossScore  = FIRST_BOSS_SCORE;
 bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss  = nullptr;
-GateLockBoss*     g_GateBoss = nullptr;
 
 static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
                                      float dx, float dy) {
@@ -334,7 +332,6 @@ float          g_BossWarnHp      = 0.0f;
 // ?섏씠利? ?곸듅?ｌ? 異붿쟻 (?듭씪 吏꾩엯 ?곗텧 1???ъ깮??
 bool g_RRWasP2 = false, g_RRWasP3 = false;
 bool g_TessWasP2 = false, g_TessWasP3 = false;
-bool g_GateWasP2 = false, g_GateWasP3 = false;
 // ?섏씠利? 吏꾩엯 ?좎뒪??("??怨쇰?????PHASE 2")
 float     g_P2ToastTimer = 0.0f;
 glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
@@ -762,7 +759,6 @@ static bool BossFightBusy() {
     return (g_RRBoss && g_RRBoss->alive)
         || (g_CentiBoss && g_CentiBoss->alive)
         || (g_TessBoss && g_TessBoss->alive)
-        || (g_GateBoss && g_GateBoss->alive)
         || g_BossWarnTimer > 0.0f;
 }
 
@@ -780,7 +776,6 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     case 2: StartBossWarn(2, L"VOLLEY.sys", bossHpC);        break;
     case 8: StartBossWarn(8, L"FORK.worm",  bossHpC * 0.7f); break;
     case 10: StartBossWarn(10, TesseractGlitchBoss::BOSS_NAME, bossHpC * 0.92f); break;
-    case 4:  StartBossWarn(4, GateLockBoss::BOSS_NAME,        bossHpC * 1.15f); break;
     case 3: StartBossWarn(3, L"SPAM.dll",   bossHpC * 0.9f); break;
     default: StartBossWarn(2, L"VOLLEY.sys", bossHpC);       break;
     }
@@ -1064,8 +1059,6 @@ int main() {
             consider(g_TessBoss->worldX, g_TessBoss->worldY);
             for (auto& o : g_TessBoss->orbs) if (o.alive) consider(o.x, o.y);
         }
-        if (g_GateBoss && g_GateBoss->alive)
-            consider(g_GateBoss->worldX, g_GateBoss->worldY);
         return found;
     };
 
@@ -1200,7 +1193,6 @@ int main() {
             g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;
             g_RRWasP2 = g_RRWasP3 = false;
             g_TessWasP2 = g_TessWasP3 = false;
-            g_GateWasP2 = g_GateWasP3 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;
             g_NovaTimer = 0.0f;
@@ -1208,7 +1200,6 @@ int main() {
             if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
-            if (g_GateBoss)  { delete g_GateBoss;  g_GateBoss  = nullptr; }
             g_BossTintT = 0.0f;
             ResetJuice();
             ResetSkills();
@@ -1397,12 +1388,10 @@ int main() {
                 if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
                         if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
                 if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
-                if (g_GateBoss)  { delete g_GateBoss;  g_GateBoss  = nullptr; }
                 g_Turrets.clear();
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
                 g_RRWasP2 = g_RRWasP3 = false;
                 g_TessWasP2 = g_TessWasP3 = false;
-                g_GateWasP2 = g_GateWasP3 = false;
                 g_LaserBeams.clear();   // ?ㅼ틪 ?덉씠? 鍮??뺣━
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 諛곕뱶 ?뱁꽣 媛먯냽 援ъ뿭/異쒗삁 ?뺣━
                 g_NovaTimer = 0.0f;   // 諛깆떊 ?ㅼ틪 ?뺣━
@@ -1861,24 +1850,6 @@ int main() {
                     }
                 }
 
-                // GATE.lock: P2 window drift
-                if (g_GateBoss && g_GateBoss->alive && g_GateBoss->phase2 && !g_GateBoss->phase3) {
-                    playerWin.x += g_GateBoss->driftVX * FIXED_DT;
-                    playerWin.y += g_GateBoss->driftVY * FIXED_DT;
-                }
-                // GATE.lock: window compression / P3 lock
-                if (g_GateBoss && g_GateBoss->alive) {
-                    if (!g_GateBoss->phase3) {
-                        if (g_GateBoss->compressPauseT <= 0.0f) {
-                            g_Stats.windowSize -= GateLockBoss::COMPRESS_RATE * FIXED_DT;
-                            if (g_Stats.windowSize < GateLockBoss::COMPRESS_MIN_P1)
-                                g_Stats.windowSize = GateLockBoss::COMPRESS_MIN_P1;
-                        }
-                    } else {
-                        g_Stats.windowSize = GateLockBoss::COMPRESS_MIN_P3;
-                    }
-                }
-
                 // ?뚮젅?댁뼱 罹먮┃??李?以묒븰)媛 蹂댁씠???곸뿭 諛뽰쑝濡??섍?吏 紐삵븯寃??대옩??
                 // 以뚯븘???대━紐⑦봽 2?섏씠利??섎㈃ 蹂댁씠???붾뱶媛 ?볦뼱吏誘濡??대룞 援ъ뿭??媛숈씠 ?뺤옣.
                 // (zoom=1 ?대㈃ ?뺥솗??[0, screen] ??湲곗〈怨??숈씪)
@@ -2161,10 +2132,6 @@ int main() {
                     g_TessBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
                                        g_Bullets, g_Difficulty, g_DashInvuln > 0.0f);
 
-                if (!timeStopped && g_GateBoss && g_GateBoss->alive)
-                    g_GateBoss->Update(pCX, pCY, playerWin.width * 0.5f, enemyDt,
-                                       g_GameManager.playerHP,
-                                       g_Bullets, g_Difficulty, g_DashInvuln > 0.0f);
 
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
 
@@ -2188,6 +2155,34 @@ int main() {
                         TriggerFlash(1.0f, 1.0f, 1.0f, 0.28f);
                         TriggerHitStop(0.05f);
                         g_ShakeTime = 0.18f; g_ShakeMag = 12.0f;
+                    }
+                }
+
+                // TESS.glitch breath bullets are destructible by player shots.
+                for (size_t ei = 0; ei < g_Bullets.size(); ++ei) {
+                    Bullet& eb = g_Bullets[ei];
+                    if (!eb.active || !eb.isEnemy || !eb.shootableEnemy) continue;
+                    float enemyHitR = 7.0f * eb.sizeScale + 6.0f;
+
+                    for (size_t pi = 0; pi < g_Bullets.size(); ++pi) {
+                        if (pi == ei) continue;
+                        Bullet& pb = g_Bullets[pi];
+                        if (!pb.active || pb.isEnemy) continue;
+
+                        float playerHitR = 6.0f * pb.sizeScale;
+                        float d1 = SegDist(eb.x, eb.y, pb.prevX, pb.prevY, pb.x, pb.y);
+                        float d2 = SegDist(pb.x, pb.y, eb.prevX, eb.prevY, eb.x, eb.y);
+                        if (std::min(d1, d2) >= enemyHitR + playerHitR) continue;
+
+                        eb.active = false;
+                        if (pb.remainingDmg > 0.001f) {
+                            pb.remainingDmg -= std::max(1.0f, eb.shootableHp);
+                            if (pb.remainingDmg <= 0.001f) pb.active = false;
+                        } else {
+                            pb.active = false;
+                        }
+                        SpawnSparks(eb.x, eb.y, 4, 0.48f, 1.0f, 0.86f, 230.0f);
+                        break;
                     }
                 }
 
@@ -2226,16 +2221,6 @@ int main() {
                         p2enter(g_TessBoss->worldX, g_TessBoss->worldY, glm::vec3(1.0f, 0.20f, 0.95f));
                     }
                 } else { g_TessWasP2 = false; g_TessWasP3 = false; }
-                if (g_GateBoss && g_GateBoss->alive) {
-                    if (g_GateBoss->phase2 && !g_GateWasP2) {
-                        g_GateWasP2 = true;
-                        p2enter(g_GateBoss->worldX, g_GateBoss->worldY, glm::vec3(0.92f, 0.72f, 0.18f));
-                    }
-                    if (g_GateBoss->phase3 && !g_GateWasP3) {
-                        g_GateWasP3 = true;
-                        p2enter(g_GateBoss->worldX, g_GateBoss->worldY, glm::vec3(1.0f, 0.18f, 0.22f));
-                    }
-                } else { g_GateWasP2 = false; g_GateWasP3 = false; }
 
                 // 異⑸룎 (諛섑솚媛?= ?뚮젅?댁뼱媛 ?대쾲 ?꾨젅???쇨꺽?먮뒗吏)
                 bool hit = CollisionSystem::Update(pCX, pCY,
@@ -2325,53 +2310,6 @@ int main() {
                     }
                 }
 
-
-                if (g_GateBoss && g_GateBoss->alive) {
-                    auto* gb = g_GateBoss;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        if (SegDist(gb->worldX, gb->worldY,
-                                    b.prevX, b.prevY, b.x, b.y) < GateLockBoss::HIT_RADIUS) {
-                            float pd = glm::distance(glm::vec2(pCX, pCY),
-                                                     glm::vec2(gb->worldX, gb->worldY));
-                            float dmg;
-                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
-                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
-                            else dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
-                            float dealt = (dmg < gb->hp) ? dmg : gb->hp;
-                            gb->hp -= dealt;
-                            gb->flashT = 0.16f;
-                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
-                            if (gb->hp <= 0.0f) gb->alive = false;
-                            if (b.remainingDmg <= 0.001f) b.active = false;
-                        }
-                    }
-                }
-                // GATE.lock: lock node bullet collision
-                if (g_GateBoss && g_GateBoss->alive) {
-                    auto* gb2 = g_GateBoss;
-                    float gWH = playerWin.width * 0.5f;
-                    float gPX = playerWin.x + gWH;
-                    float gPY = playerWin.y + gWH;
-                    for (int ni = 0; ni < 4; ni++) {
-                        auto& nd = gb2->nodes[ni];
-                        if (!nd.alive) continue;
-                        float nx = gPX + (float)nd.cx * gWH;
-                        float ny = gPY + (float)nd.cy * gWH;
-                        for (auto& b : g_Bullets) {
-                            if (!b.active || b.isEnemy) continue;
-                            float dx = b.x - nx, dy = b.y - ny;
-                            if (dx*dx + dy*dy < 20.0f * 20.0f) {
-                                b.active = false;
-                                gb2->onNodeKill(ni);
-                                g_Stats.windowSize = std::min(
-                                    g_Stats.windowSize + GateLockBoss::NODE_EXPAND, 400.0f);
-                                break;
-                            }
-                        }
-                    }
-                }
 
                 
                 // FORK.worm ?щ옒??踰???珥앹븣??吏곸꽑??媛濡쒖?瑜대㈃ 洹??留??ル┝.
@@ -2637,26 +2575,6 @@ int main() {
                     OnBossKilled(10, 35);
                 }
 
-                if (g_GateBoss && !g_GateBoss->alive && !g_GateBoss->exploded) {
-                    auto* gb = g_GateBoss;
-                    SpawnEnemyExplosion(gb->worldX, gb->worldY, 0.22f, 0.85f, 0.48f, true);
-                    SpawnEnemyExplosion(gb->worldX, gb->worldY, 1.0f,  0.18f, 0.22f, true);
-                    SpawnShockWave(gb->worldX, gb->worldY, 440.0f, 0.85f, 0.22f, 0.85f, 0.48f);
-                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
-                    TriggerFlash(0.22f, 0.85f, 0.48f, 0.62f); TriggerHitStop(0.11f);
-                    gb->exploded = true;
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete gb;
-                    g_GateBoss = nullptr;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                    g_Bullets.clear();
-                    OnBossKilled(4, 35);
-                }
-
                 
                 
 
@@ -2920,7 +2838,7 @@ int main() {
             if (intensity > act.intensityCap) intensity = act.intensityCap;
             float rampSpawn = (1.0f + intensity * 0.40f) * act.spawnMult;
             float rampSpd   = (1.0f + intensity * 0.09f) * act.speedMult;
-            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_GateBoss || g_BossWarnTimer > 0.0f;
+            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_BossWarnTimer > 0.0f;
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
             float rampHp    = (1.0f + hpIntensity * 0.55f);
@@ -3134,10 +3052,6 @@ int main() {
                                 g_ShakeTime = 0.4f; g_ShakeMag = 14.0f;   // ?≪닔 ?쒓컙 吏꾨룞
                             }
                             g_CentiBoss->enterSpawn();   // ?깆옣 紐⑥뀡 ???붾㈃ 諛뽰뿉??怨≪꽑 ?뚯쭊?쇰줈 ?낆옣
-                            break;
-                        case 4:
-                            g_GateBoss = new GateLockBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_GateBoss->worldX = bsx; g_GateBoss->worldY = bsy;
                             break;
                         case 10:
                             g_TessBoss = new TesseractGlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -4676,24 +4590,6 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
-        if (g_GateBoss && g_GateBoss->alive) {
-            float gt = (float)glfwGetTime();
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            constexpr float GATE_WIN_W = 320.0f;
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            auto gatePass = [&](float wx, float wy, float ww, float wh) {
-                WorldScissor(wx, wy, ww, wh);
-                g_GateBoss->renderFx(gt);
-                g_GateBoss->renderBody(gt);
-            };
-            gatePass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            gatePass(g_GateBoss->worldX - GATE_WIN_W * 0.5f,
-                     g_GateBoss->worldY - GATE_WIN_W * 0.5f, GATE_WIN_W, GATE_WIN_W);
-            (void)pCX; (void)pCY;
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-        }
-
 
 
         // (g4f) FORK.worm ???뚮씪利덈쭏 泥댁씤: 媛吏?李?scissor ?덉뿉 蹂몄껜쨌adds쨌FX
@@ -5007,13 +4903,6 @@ int main() {
                     float a = t * 2.0f + (float)i * 1.571f;
                     drawRect(cx + cosf(a) * 34.0f - 3, cy + sinf(a) * 22.0f - 3,
                              6, 6, 1.0f, 0.45f, 0.12f, 0.35f + 0.2f * prog);
-                }
-            } break;
-            case 4: {
-                for (int i = 0; i < 3; i++) {
-                    float r = (80.0f + i * 120.0f) + prog * 200.0f;
-                    drawCircle(sw2 * 0.5f, sh2 * 0.5f, r, wc.r, wc.g, wc.b,
-                               (0.05f + 0.05f * blink) * (1.0f - (float)i * 0.25f));
                 }
             } break;
             case 7: {
