@@ -4367,32 +4367,20 @@ int main() {
             float ct = (float)glfwGetTime();
             float centiAimX = playerWin.x + playerWin.width  * 0.5f;
             float centiAimY = playerWin.y + playerWin.height * 0.5f;
-            float cbx = g_CentiBoss->worldX, cby = g_CentiBoss->worldY;
             BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            // FX (ghosts/sparks/nodes) only for windows near the boss — skips distant monster windows
-            auto fxPass = [&](float wx, float wy, float ww, float wh) {
-                float margin = 480.0f;
-                if (cbx + margin < wx || cbx - margin > wx + ww ||
-                    cby + margin < wy || cby - margin > wy + wh) return;
+            auto centiPass = [&](float wx, float wy, float ww, float wh) {
                 WorldScissor(wx, wy, ww, wh);
                 g_CentiBoss->renderFx(ct, centiAimX, centiAimY);
-            };
-            // Body + minis per every window so segments clip correctly across windows
-            auto bodyPass = [&](float wx, float wy, float ww, float wh) {
-                WorldScissor(wx, wy, ww, wh);
                 g_CentiBoss->renderBody(ct);
                 for (auto& mb : g_CentiBoss->minis)
                     if (mb.alive) g_CentiBoss->drawMini(mb);
             };
-            for (auto& fw : zwins) { fxPass(fw.x, fw.y, fw.w, fw.h); bodyPass(fw.x, fw.y, fw.w, fw.h); }
-            fxPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            bodyPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+            for (auto& fw : zwins) centiPass(fw.x, fw.y, fw.w, fw.h);
+            centiPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
             if (g_Stats.turretMode)
-                for (auto& tr : g_Turrets) {
-                    float tx = tr.x - TURRET_WIN_W*0.5f, ty = tr.y - TURRET_WIN_H*0.5f;
-                    fxPass(tx, ty, TURRET_WIN_W, TURRET_WIN_H);
-                    bodyPass(tx, ty, TURRET_WIN_W, TURRET_WIN_H);
-                }
+                for (auto& tr : g_Turrets)
+                    centiPass(tr.x - TURRET_WIN_W*0.5f, tr.y - TURRET_WIN_H*0.5f,
+                              TURRET_WIN_W, TURRET_WIN_H);
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
