@@ -122,25 +122,25 @@ inline const JobDef JOB_DEFS[JOB_COUNT] = {
         { L"리볼버 — 치명타 보유 시작, 정확한 단발 처형 빌드",
           L"Revolver — starts with Critical Strike, precise single-shot execution",
           L"リボルバー — クリティカル所持、精密単発処刑" },
-        ACH_CRIT_SCORE, { AugType::CRIT }, 1, 0, (int)StartWeapon::REVOLVER },
+        ACH_CRIT_SCORE, {}, 0, 0, (int)StartWeapon::REVOLVER },
     /* JOB_BERSERKER */ {
         { L"광전사", L"Berserker", L"バーサーカー" },
         { L"샷건 — 광전사 + 유리대포 보유 시작 (고위험·고화력 근접전)",
           L"Shotgun — starts with Berserk + Glass Cannon (high risk close-range)",
           L"ショットガン — バーサーク + ガラスの大砲 (高リスク近接)" },
-        ACH_KILLS_500, { AugType::BERSERK, AugType::GLASS_CANNON }, 2, 0, (int)StartWeapon::SHOTGUN },
+        ACH_KILLS_500, {}, 0, 0, (int)StartWeapon::SHOTGUN },
     /* JOB_BOMBARDIER */ {
         { L"폭격수", L"Bombardier", L"ボンバー" },
         { L"대포 — 연쇄 폭발 보유 시작, 광역 폭발 빌드",
           L"Cannon — starts with Death Blast, area explosion build",
           L"大砲 — 連鎖爆発所持、範囲爆発ビルド" },
-        ACH_DEATHBLAST_KILLS, { AugType::DEATH_BLAST }, 1, 0, (int)StartWeapon::CANNON },
+        ACH_DEATHBLAST_KILLS, {}, 0, 0, (int)StartWeapon::CANNON },
     /* JOB_VAMPIRE */ {
         { L"흡혈귀", L"Vampire", L"吸血鬼" },
         { L"기관단총 — 흡혈탄 + 흡혈마 보유 시작, 연사로 흡혈량 극대화",
           L"SMG — starts with Lifesteal + Vampire, rapid fire maximizes drain",
           L"サブマシンガン — 吸血弾 + 吸血鬼所持、連射で吸血最大化" },
-        ACH_BOSS_3, { AugType::LIFESTEAL, AugType::VAMPIRE }, 2, 0, (int)StartWeapon::SMG },
+        ACH_BOSS_3, {}, 0, 0, (int)StartWeapon::SMG },
     /* JOB_SWORDSMAN */ {
         { L"검객", L"Swordsman", L"剣士" },
         { L"근접 칼 — 조준 방향 호 스윙 (근거리 고화력)",
@@ -160,6 +160,7 @@ inline bool      g_AchUnlocked[ACH_COUNT] = {};
 inline long long g_TotalBossKills = 0;     // 누적 보스 처치 (저장됨)
 inline int       g_SelectedJob    = JOB_NONE; // 현재 런 선택 직업 (저장 안 함)
 inline bool      g_AchSaveNeeded  = false; // 해금 발생 → main 에서 SaveGame 호출
+inline bool      g_JobBought[JOB_COUNT] = {}; // 골드로 구매한 직업 해금 (저장됨)
 
 // 해금 토스트 (in-game 배너)
 inline int       g_AchToastId    = -1;
@@ -190,10 +191,11 @@ inline int AugIndexOf(AugType t) {
     return -1;
 }
 
-// 직업 해금 여부
+// 직업 해금 여부 (항상 해금 or 골드 구매 or 업적)
 inline bool JobUnlocked(int j) {
     if (j == JOB_NONE) return true;
     if (j < 0 || j >= JOB_COUNT) return false;
+    if (g_JobBought[j]) return true;
     int a = JOB_DEFS[j].unlockAch;
     return (a < 0) || (a < ACH_COUNT && g_AchUnlocked[a]);
 }

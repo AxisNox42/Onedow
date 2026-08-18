@@ -447,7 +447,7 @@ void GameManager::PickRandomAugIndices(int* outArr, int n,
 
 void GameManager::AddScore(float amount) {
     if (currentState != GameState::RUNNING) return;
-    scoreAccum += amount;
+    scoreAccum += amount * TrialScoreMult();
     score = (long long)scoreAccum;
 }
 

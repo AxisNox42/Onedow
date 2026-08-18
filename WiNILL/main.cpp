@@ -37,6 +37,7 @@
 #include "ReloadRunnerBoss.h"
 #include "CentipedeBoss.h"
 #include "TesseractGlitchBoss.h"
+#include "EtherSwordBoss.h"
 #include "BossDirector.h"
 #include "AugmentSlots.h"
 #include "RunIntermission.h"
@@ -146,6 +147,7 @@ float POLY_WIN_W   = 840.0f;
 float BOTNET_WIN_W = 880.0f;   // C2_RELAY: 터미널 + 호스트 맵
 float CENTI_WIN_W = 600.0f;    // FORK.worm: 본체 가짜 창(PID 체인 창 별도 렌더)
 float TESS_WIN_W  = 620.0f;    // TESS.glitch: tesseract grid arena
+float ETHER_WIN_W = 900.0f;    // ETHER_SWORD_MASTER.sys: 아레나 고정 창
 float TOTEM_WIN_W = 760.0f;    // ADUN.relay: 대형 중계 코어 전투 공간
 float SPAM_WIN_W   = 480.0f;   // SPAM.dll: 코어 + 오류 팝업 클러터 전투 공간
 float UNKNOWN_WIN_W = 500.0f;  // UNKNOWN.sys: 창연 검 보스
@@ -249,6 +251,7 @@ static constexpr long long FIRST_BOSS_SCORE = 50000;
 long long g_NextBossScore  = FIRST_BOSS_SCORE;
 bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss  = nullptr;
+EtherSwordBoss*   g_EtherBoss = nullptr;
 
 static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
                                      float dx, float dy) {
@@ -759,6 +762,7 @@ static bool BossFightBusy() {
     return (g_RRBoss && g_RRBoss->alive)
         || (g_CentiBoss && g_CentiBoss->alive)
         || (g_TessBoss && g_TessBoss->alive)
+        || (g_EtherBoss && g_EtherBoss->alive)
         || g_BossWarnTimer > 0.0f;
 }
 
@@ -776,6 +780,7 @@ static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     case 2: StartBossWarn(2, L"VOLLEY.sys", bossHpC);        break;
     case 8: StartBossWarn(8, L"FORK.worm",  bossHpC * 0.7f); break;
     case 10: StartBossWarn(10, TesseractGlitchBoss::BOSS_NAME, bossHpC * 0.92f); break;
+    case 20: StartBossWarn(20, EtherSwordBoss::BOSS_NAME, bossHpC * 3.2f);      break;
     case 3: StartBossWarn(3, L"SPAM.dll",   bossHpC * 0.9f); break;
     default: StartBossWarn(2, L"VOLLEY.sys", bossHpC);       break;
     }
@@ -884,7 +889,8 @@ int main() {
     TURRET_WIN_W *= g_Scale; TURRET_WIN_H *= g_Scale;
     RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
     CENTI_WIN_W *= g_Scale;
-    TESS_WIN_W *= g_Scale;
+    TESS_WIN_W  *= g_Scale;
+    ETHER_WIN_W *= g_Scale;
     TOTEM_WIN_W *= g_Scale;
     UNKNOWN_WIN_W *= g_Scale; UNKNOWN_WIN_H *= g_Scale;
     SPAWNER_WIN_W *= g_Scale;
@@ -896,33 +902,16 @@ int main() {
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
 
-    // 폰트: Jua(한글) + KosugiMaru(일본어·라틴 폴백)
-#ifdef _WIN32
-    auto loadRc = [&](const char* resName, int& outSize) -> const unsigned char* {
-        HMODULE hMod = GetModuleHandleA(nullptr);
-        HRSRC   hRes = FindResourceA(hMod, resName, (LPCSTR)RT_RCDATA);
-        if (!hRes) { outSize = 0; return nullptr; }
-        outSize = (int)SizeofResource(hMod, hRes);
-        HGLOBAL hData = LoadResource(hMod, hRes);
-        return (const unsigned char*)LockResource(hData);
-    };
-    int szJ = 0, szK = 0;
-    const unsigned char* datas[2] = {
-        loadRc("JUA_FONT", szJ), loadRc("KOSUGI_FONT", szK)
-    };
-    int sizes[2] = { szJ, szK };
-    g_TextL.InitFromMemory(datas, sizes, 2, 36, screenWidth, screenHeight);
-    g_TextS.InitFromMemory(datas, sizes, 2, 22, screenWidth, screenHeight);
-    g_TextXL.InitFromMemory(datas, sizes, 2, 100, screenWidth, screenHeight);
-#else
+    // 폰트: ChakraPetch(라틴·숫자 주폰트) + Orbit(한글 폴백)
     {
-        const char* chain[2];
-        int nc = LanguageFontChain(g_Language, chain);
-        g_TextL.InitFromFiles(chain, nc, 36, screenWidth, screenHeight);
-        g_TextS.InitFromFiles(chain, nc, 22, screenWidth, screenHeight);
-        g_TextXL.InitFromFiles(chain, nc, 100, screenWidth, screenHeight);
+        const char* chain[2] = {
+            "../../Resource/Font/ChakraPetch-Regular.ttf",
+            "../../Resource/Font/Orbit-Regular.ttf"
+        };
+        g_TextL.InitFromFiles(chain, 2, 36,  screenWidth, screenHeight);
+        g_TextS.InitFromFiles(chain, 2, 22,  screenWidth, screenHeight);
+        g_TextXL.InitFromFiles(chain, 2, 100, screenWidth, screenHeight);
     }
-#endif
 
     BatchFlush(); glEnable(GL_BLEND);
     // RGB: ?쒖? ?뚰뙆釉붾젋??/ Alpha: ?꾨젅?꾨쾭???뚰뙆媛??щ컮瑜닿쾶 ?꾩쟻
@@ -1179,6 +1168,7 @@ int main() {
             g_NextBossScore = FIRST_BOSS_SCORE;
             BossDir::ResetRotation();
             BossDir::ResetAct();
+            ResetTrials();
             g_RunGold           = 0;
             g_InBossIntermission = false;
             g_IntermissionTimer = 0.0f;
@@ -1197,9 +1187,10 @@ int main() {
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;
             g_NovaTimer = 0.0f;
             g_RunMelee = false; g_RunBow = false;
-            if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
+            if (g_RRBoss)    { delete g_RRBoss;    g_RRBoss    = nullptr; }
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
+            if (g_EtherBoss) { delete g_EtherBoss; g_EtherBoss = nullptr; }
             g_BossTintT = 0.0f;
             ResetJuice();
             ResetSkills();
@@ -1385,9 +1376,10 @@ int main() {
                 // 紐⑤뱺 ?겶룸낫?ㅒ룸텇?댁껜쨌珥앹븣쨌?ы깙??利됱떆 ?꾩쟾 ??젣 ??UpdateAll(RUNNING ?꾩슜)??                //   留↔린硫?DYING/GAMEOVER ?숈븞 ?먭굅由?紐?李??깆씠 ?뺤? ?곹깭濡??⑥쑝誘濡??ш린???쒓굅.
                 g_MonsterManager.Clear();   // monsters/ranged/bombers/boss ?꾨? delete + clear
                 g_Bullets.clear();
-                if (g_RRBoss)     { delete g_RRBoss;     g_RRBoss     = nullptr; }
-                        if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+                if (g_RRBoss)    { delete g_RRBoss;    g_RRBoss    = nullptr; }
+                if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
                 if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
+                if (g_EtherBoss) { delete g_EtherBoss; g_EtherBoss = nullptr; }
                 g_Turrets.clear();
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?щ쭩 ???湲?以??꾩“ 痍⑥냼
                 g_RRWasP2 = g_RRWasP3 = false;
@@ -1820,6 +1812,10 @@ int main() {
                             if (pcx >= zx - hw && pcx <= zx + hw &&
                                 pcy >= zy - hh && pcy <= zy + hh) { zoneSlow = 0.90f; break; }
                         }
+                        if (g_EtherBoss && g_EtherBoss->alive &&
+                            g_EtherBoss->IsBadSector(pcx, pcy)) {
+                            zoneSlow = std::min(zoneSlow, 0.50f);
+                        }
                     }
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
@@ -2132,6 +2128,11 @@ int main() {
                     g_TessBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
                                        g_Bullets, g_Difficulty, g_DashInvuln > 0.0f);
 
+                if (!timeStopped && g_EtherBoss && g_EtherBoss->alive)
+                    g_EtherBoss->Update(pCX, pCY, g_EtherBoss->arenaRadius,
+                                        enemyDt, g_GameManager.playerHP,
+                                        g_Bullets, g_Difficulty, g_Stats.maxHP);
+
 
                 // ?대━紐⑦봽 ?낅뜲?댄듃 (??蹂??+ ?몃え/?덉씠?/李⑦겕?? + ?섏씠利? ?붾㈃ ?뺤옣
 
@@ -2157,37 +2158,6 @@ int main() {
                         g_ShakeTime = 0.18f; g_ShakeMag = 12.0f;
                     }
                 }
-
-                // TESS.glitch breath bullets are destructible by player shots.
-                for (size_t ei = 0; ei < g_Bullets.size(); ++ei) {
-                    Bullet& eb = g_Bullets[ei];
-                    if (!eb.active || !eb.isEnemy || !eb.shootableEnemy) continue;
-                    float enemyHitR = 7.0f * eb.sizeScale + 6.0f;
-
-                    for (size_t pi = 0; pi < g_Bullets.size(); ++pi) {
-                        if (pi == ei) continue;
-                        Bullet& pb = g_Bullets[pi];
-                        if (!pb.active || pb.isEnemy) continue;
-
-                        float playerHitR = 6.0f * pb.sizeScale;
-                        float d1 = SegDist(eb.x, eb.y, pb.prevX, pb.prevY, pb.x, pb.y);
-                        float d2 = SegDist(pb.x, pb.y, eb.prevX, eb.prevY, eb.x, eb.y);
-                        if (std::min(d1, d2) >= enemyHitR + playerHitR) continue;
-
-                        eb.active = false;
-                        if (pb.remainingDmg > 0.001f) {
-                            pb.remainingDmg -= std::max(1.0f, eb.shootableHp);
-                            if (pb.remainingDmg <= 0.001f) pb.active = false;
-                        } else {
-                            pb.active = false;
-                        }
-                        SpawnSparks(eb.x, eb.y, 4, 0.48f, 1.0f, 0.86f, 230.0f);
-                        break;
-                    }
-                }
-
-                
-                
 
                 // ── 보스 페이즈 진입 (상승음?) ── 공통 등장 연출 + 보스별 처리 ──
                 auto p2enter = [&](float bx, float by, glm::vec3 col) {
@@ -2314,6 +2284,34 @@ int main() {
                 
                 // FORK.worm ?щ옒??踰???珥앹븣??吏곸꽑??媛濡쒖?瑜대㈃ 洹??留??ル┝.
                 //   ?쇰컲?꾩? 踰쎌뿉 留됲? ?뚮㈇(愿??X). 愿?듯깂(remainingDmg>0)? ?듦낵.
+                if (g_EtherBoss && g_EtherBoss->alive && !g_EtherBoss->BodyInvulnerable()) {
+                    auto* eb = g_EtherBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        float dx = eb->worldX - b.x, dy = eb->worldY - b.y;
+                        if (dx*dx + dy*dy < EtherSwordBoss::HIT_RADIUS * EtherSwordBoss::HIT_RADIUS) {
+                            float pd  = glm::distance(glm::vec2(pCX, pCY), glm::vec2(eb->worldX, eb->worldY));
+                            float dmg;
+                            if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                            else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                            else dmg = g_Stats.GetBaseDamage()
+                                     * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg *= eb->PlayerDamageToBossMul(pCX, pCY);
+                            float killFloor = eb->taskKillHp();
+                            float dealt = std::min(dmg, std::max(0.0f, eb->hp - killFloor));
+                            eb->hp -= dealt;
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (eb->hp <= killFloor) {
+                                eb->hp = killFloor;
+                                b.active = false;
+                                eb->BeginTaskKill(pCX, pCY, g_Bullets);
+                                break;
+                            }
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
+
                 if (g_TessBoss && g_TessBoss->alive && !g_TessBoss->walls.empty()) {
                     for (auto& b : g_Bullets) {
                         if (!b.active || b.isEnemy) continue;
@@ -2575,8 +2573,28 @@ int main() {
                     OnBossKilled(10, 35);
                 }
 
-                
-                
+                if (g_EtherBoss && !g_EtherBoss->alive && !g_EtherBoss->exploded) {
+                    auto* eb = g_EtherBoss;
+                    SpawnEnemyExplosion(eb->worldX, eb->worldY, 0.55f, 0.80f, 1.0f, true);
+                    SpawnEnemyExplosion(eb->worldX, eb->worldY, 0.80f, 1.0f, 0.55f, true);
+                    SpawnShockWave(eb->worldX, eb->worldY, 600.0f, 0.55f, 0.80f, 1.0f, 0.3f);
+                    g_ShakeTime = 0.8f; g_ShakeMag = 36.0f;
+                    TriggerFlash(0.55f, 0.80f, 1.0f, 0.65f); TriggerHitStop(0.14f);
+                    eb->exploded = true;
+                    g_GameManager.scoreAccum += 50000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete eb;
+                    g_EtherBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3)  TryUnlockAch(ACH_BOSS_3);
+                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
+                    g_Bullets.clear();
+                    OnBossKilled(20, 50);
+                }
+
+
+
 
                 // ?대━紐⑦봽 ?щ쭩 ???붾㈃ ?먮났 + 利앷컯 3媛?+ ?먯닔 50% 異붽?
 
@@ -2736,6 +2754,10 @@ int main() {
                         if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
                     }
                 }
+                if (g_EtherBoss && g_EtherBoss->alive &&
+                    g_EtherBoss->IsBadSector(pcx, pcy)) {
+                    HurtPlayer(g_GameManager.playerHP, 3.5f * delta);
+                }
             }
 
             // ?꾧컧 諛쒓껄 ???먭굅由??먰룺蹂?(議댁옱?섎㈃ 諛쒓껄 泥섎━)
@@ -2838,7 +2860,7 @@ int main() {
             if (intensity > act.intensityCap) intensity = act.intensityCap;
             float rampSpawn = (1.0f + intensity * 0.40f) * act.spawnMult;
             float rampSpd   = (1.0f + intensity * 0.09f) * act.speedMult;
-            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_BossWarnTimer > 0.0f;
+            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss || g_BossWarnTimer > 0.0f;
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
             float rampHp    = (1.0f + hpIntensity * 0.55f);
@@ -2867,6 +2889,7 @@ int main() {
                 if (g_RRBoss && g_RRBoss->alive) return true;
                 if (g_CentiBoss && g_CentiBoss->alive) return true;
                 if (g_TessBoss && g_TessBoss->alive) return true;
+                if (g_EtherBoss && g_EtherBoss->alive) return true;
                 return false;
             };
             bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f ||
@@ -2973,7 +2996,7 @@ int main() {
 
             // 보스 스폰 — 일반: 층 기반 / 크리에이티브: 점수 기반
             {
-                bool bossActive = g_RRBoss || g_CentiBoss || g_TessBoss || g_BossWarnTimer > 0.0f;
+                bool bossActive = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss || g_BossWarnTimer > 0.0f;
                 // ?쇱슫?? ??蹂댁뒪 ?덈뜦??李⑤떒: 蹂댁뒪瑜??≪븘 ?꾩쟾???뺣━?섎뒗 ?쒓컙(?쒖꽦?믩퉬?쒖꽦),
                 //   ?ㅼ쓬 蹂댁뒪 ?꾧퀎媛믪쓣 ?꾩옱 ?먯닔+20留뚯쑝濡?由щ쿋?댁뒪 ??理쒖냼 20留뚯젏 ?댁떇 蹂댁옣
                 //   (蹂댁뒪??以??볦씤 ?먯닔濡??≪옄留덉옄 ??蹂댁뒪 ?⑤뜕 ?낆닚???쒓굅).
@@ -3073,6 +3096,12 @@ int main() {
                         case 10:
                             g_TessBoss = new TesseractGlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_TessBoss->worldX = bsx; g_TessBoss->worldY = bsy;
+                            break;
+                        case 20:
+                            g_EtherBoss = new EtherSwordBoss(screenWidth, screenHeight, g_BossWarnHp);
+                            // EtherSword spawns at screen center (arena center)
+                            g_EtherBoss->worldX = screenWidth  * 0.5f;
+                            g_EtherBoss->worldY = screenHeight * 0.32f;
                             break;
                         default:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
@@ -4014,6 +4043,11 @@ int main() {
             addW(g_TessBoss->worldX, g_TessBoss->worldY, TESS_WIN_W, TESS_WIN_W,
                  TesseractGlitchBoss::BOSS_NAME, 0.05f,0.02f,0.08f, 0.95f,0.35f,1.0f, WIN_TB,
                  g_TessBoss->hp / g_TessBoss->maxHp);
+        if (g_EtherBoss && g_EtherBoss->alive && !g_EtherBoss->taskKillActive)
+            addW(g_EtherBoss->worldX, g_EtherBoss->worldY,
+                 ETHER_WIN_W, ETHER_WIN_W,
+                 EtherSwordBoss::BOSS_NAME, 0.02f,0.04f,0.08f, 0.55f,0.80f,1.0f, WIN_TB,
+                 g_EtherBoss->hp / g_EtherBoss->maxHp);
         // trap.exe / vaccine.exe — (e.sat)에서 플레이어 창 위에 통째로 그림
         // ?ы깙 李?諛곌꼍+蹂대뜑 (理쒗븯?? ?뚮젅?댁뼱 ?뚯쑀??z-由ъ뒪??諛?
         if (g_Stats.turretMode) {
@@ -4166,6 +4200,10 @@ int main() {
         if (g_TessBoss && g_TessBoss->alive)
             drawBossWinContent(g_TessBoss->worldX - TESS_WIN_W * 0.5f,
                                g_TessBoss->worldY - TESS_WIN_W * 0.5f, TESS_WIN_W, TESS_WIN_W);
+        if (g_EtherBoss && g_EtherBoss->alive && !g_EtherBoss->taskKillActive)
+            drawBossWinContent(g_EtherBoss->worldX - ETHER_WIN_W * 0.5f,
+                               g_EtherBoss->worldY - ETHER_WIN_W * 0.5f,
+                               ETHER_WIN_W, ETHER_WIN_W);
         // 遊뉖꽬 ?몃뱶(SPAWNER) 李??대? 而⑦뀗痢????몃뱶 蹂몄껜/?뚰솚 ?뚯씠 ?먭린 李쎌뿉??蹂댁씠?꾨줉 (E21)
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
@@ -4607,7 +4645,38 @@ int main() {
             BatchFlush(); glDisable(GL_SCISSOR_TEST);
         }
 
+        if (g_EtherBoss && g_EtherBoss->alive) {
+            float et = (float)glfwGetTime();
+            if (g_EtherBoss->taskKillActive) {
+                BatchFlush();
+                glDisable(GL_SCISSOR_TEST);
+                g_EtherBoss->renderTaskKill(et);
+                BatchFlush();
+            } else {
+                BatchFlush(); glEnable(GL_SCISSOR_TEST);
+                auto etherPass = [&](float wx, float wy, float ww, float wh) {
+                    WorldScissor(wx, wy, ww, wh);
+                    g_EtherBoss->renderBody(et);
+                };
+                // player window pass
+                etherPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
+                // boss window (보스 위치 추적)
+                etherPass(g_EtherBoss->worldX - ETHER_WIN_W * 0.5f,
+                          g_EtherBoss->worldY - ETHER_WIN_W * 0.5f,
+                          ETHER_WIN_W, ETHER_WIN_W);
+                BatchFlush(); glDisable(GL_SCISSOR_TEST);
 
+                float pct = std::max(0.0f, g_EtherBoss->hp / g_EtherBoss->maxHp);
+                float bW = 440.0f, bH = 13.0f;
+                float bX = screenWidth  * 0.5f - bW * 0.5f;
+                float bY = 16.0f;
+                drawRect(bX-2.0f, bY-2.0f, bW+4.0f, bH+4.0f, 0.0f,0.0f,0.0f, 0.72f);
+                drawRect(bX, bY, bW, bH, 0.04f,0.07f,0.12f, 0.88f);
+                if (pct > 0.0f) drawRect(bX, bY, bW*pct, bH, 0.45f,0.72f,1.0f, 0.88f);
+                drawNeonBorder(bX, bY, bW, bH, 0.45f, 0.70f, 1.0f);
+                BatchFlush();
+            }
+        }
 
         // (g4f) FORK.worm ???뚮씪利덈쭏 泥댁씤: 媛吏?李?scissor ?덉뿉 蹂몄껜쨌adds쨌FX
         //   李쎈쭏??scissor ?⑥뒪 ???ㅻⅨ 李쎌뿉?쒕룄 蹂댁씠?? 媛吏쒖갹 諛??щ쭑????洹몃┝.

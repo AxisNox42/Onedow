@@ -41,101 +41,165 @@ void Scene_MainMenu(const SceneCtx& c) {
     const bool lmb = c.lmb;
     const float delta = c.delta;
     GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-                int li2 = LangIndex();
-                bool booting = (g_BootAnim > 0.0f);
+    const GameState st = g_GameManager.currentState; (void)st;
+    (void)*c.fireTimer;
+    int li2 = LangIndex();
+    bool booting = (g_BootAnim > 0.0f);
 
-                // 배경을 칠하지 않음 → 투명 프레임버퍼라 "진짜 윈도우 바탕화면"이
-                //   그대로 비친다 (Wallpaper Engine 등 라이브 배경도 그대로 보임).
-                //   가독성을 위해 아주 옅은 상/하단 비네트만 깐다.
-                BindMainShader();
-                drawRect(0, 0, sw, 130.0f, 0.0f, 0.0f, 0.0f, 0.18f);
-                drawRect(0, sh - 150.0f, sw, 150.0f, 0.0f, 0.0f, 0.0f, 0.22f);
+    // ── 앰비언트 — 파티클 + 스캔라인 (바탕화면 위) ──
+    {
+        float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
+        BindMainShader();
+        struct AP { float x, y, vx, vy, sz, tw; };
+        static AP a_ps[55]; static bool ap_init = false;
+        if (!ap_init) { ap_init = true;
+            for (int i = 0; i < 55; i++) {
+                a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
+                float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
+                a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
+                a_ps[i].sz = 1.2f + (rand()%26)*0.1f; a_ps[i].tw = (rand()%628)*0.01f;
+            }
+        }
+        for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
+            p.x += p.vx*dtp; p.y += p.vy*dtp;
+            if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
+            if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
+            p.tw += dtp*1.6f;
+            drawCircle(p.x, p.y, p.sz, 0.55f, 0.78f, 1.0f, 0.10f + 0.10f*sinf(p.tw));
+        }
+        for (float yy = 0.0f; yy < sh; yy += 4.0f)
+            drawRect(0.0f, yy, sw, 1.0f, 0.40f, 0.70f, 1.0f, 0.022f);
+    }
 
-                // ── 앰비언트 — 은은한 빛 입자 + 스캔라인 (진짜 바탕화면 위) ──
-                {
-                    float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
-                    BindMainShader();
-                    struct AP { float x, y, vx, vy, sz, tw; };
-                    static AP a_ps[55]; static bool ap_init = false;
-                    if (!ap_init) { ap_init = true;
-                        for (int i = 0; i < 55; i++) {
-                            a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
-                            float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
-                            a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
-                            a_ps[i].sz = 1.2f + (rand()%26)*0.1f; a_ps[i].tw = (rand()%628)*0.01f;
-                        }
-                    }
-                    for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
-                        p.x += p.vx*dtp; p.y += p.vy*dtp;
-                        if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
-                        if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
-                        p.tw += dtp*1.6f;
-                        float a = 0.10f + 0.10f*sinf(p.tw);
-                        drawCircle(p.x, p.y, p.sz, 0.55f, 0.78f, 1.0f, a);
-                    }
-                    // 스캔라인 (시네마틱) — 옅은 가로줄
-                    for (float yy = 0.0f; yy < sh; yy += 4.0f)
-                        drawRect(0.0f, yy, sw, 1.0f, 0.40f, 0.70f, 1.0f, 0.025f);
-                }
+    // 상하 비네트
+    BindMainShader();
+    drawRect(0, 0, sw, 110.0f, 0.0f, 0.0f, 0.0f, 0.20f);
+    drawRect(0, sh - 90.0f, sw, 90.0f, 0.0f, 0.0f, 0.0f, 0.20f);
 
-                // ── 중앙 로고 + 부제 ──
-                const wchar_t* TITLE = T(StrId::GAME_TITLE);
-                float logoY = sh * 0.28f;
-                // 로고는 고해상도 전용 렌더러(g_TextXL, 100px)로 — 기존 g_TextL 3배
-                //   확대 시 비트맵이 뭉개지던 화질 문제 fix.
-                g_TextXL.Draw(TITLE, CenterTextX(sw, g_TextXL, TITLE, 1.05f), logoY, 1.05f,
-                              0.6f, 0.85f, 1.0f, 0.96f);
-                {
-                    const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
-                    float subw = g_TextS.Width(SUBT[li2], 1.05f);
-                    // 로고 실제 높이 아래로 — 겹침 방지
-                    float subY = logoY + g_TextXL.Height(TITLE, 1.05f) + 18.0f;
-                    g_TextS.Draw(SUBT[li2], (sw - subw) * 0.5f, subY, 1.05f,
-                                 0.5f, 0.68f, 0.9f, 0.8f);
-                }
+    // ── 상단 중앙 로고 ──
+    {
+        const wchar_t* TITLE = T(StrId::GAME_TITLE);
+        float titleSc = 1.05f;
+        g_TextXL.Draw(TITLE, CenterTextX(sw, g_TextXL, TITLE, titleSc),
+                      sh * 0.10f, titleSc, 0.6f, 0.85f, 1.0f, 0.96f);
+        const wchar_t* SUBT[3] = { L"데스크톱 디펜스", L"Desktop Defense", L"デスクトップ防衛" };
+        float subSc = 0.78f;
+        float subW  = g_TextS.Width(SUBT[li2], subSc);
+        g_TextS.Draw(SUBT[li2], (sw - subW) * 0.5f,
+                     sh * 0.10f + g_TextXL.Height(TITLE, titleSc) + 12.0f,
+                     subSc, 0.50f, 0.68f, 0.90f, 0.75f);
+    }
 
-                // ── PLAY 버튼 (맥동 글로우) → onedow.exe 부팅 → 난이도 선택 ──
-                {
-                    float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 2.5f);
-                    const float PW = 320.0f, PH = 76.0f;
-                    float px = (sw - PW) * 0.5f, py = sh * 0.49f;
-                    BindMainShader();
-                    drawRect(px - 7, py - 7, PW + 14, PH + 14,
-                             0.30f, 0.70f, 1.0f, 0.08f + 0.10f * pulse);   // 글로우
-                    const wchar_t* PLAYL[3] = { L"실행", L"PLAY", L"実行" };
-                    if (UIButton(px, py, PW, PH, PLAYL[li2], mx, my, lmb, g_LmbPrev) && !booting) {
-                        LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f);
-                    }
-                }
+    // ── 중앙 버튼 목록 (Mindustry + Rain World 하이브리드) ──
+    struct SBtnDef { const wchar_t* label[3]; float ir, ig, ib; };
+    static const SBtnDef kBtns[] = {
+        { { L"시작",      L"Start",    L"スタート"  }, 0.35f, 0.90f, 0.55f },
+        { { L"상점",      L"Shop",     L"ショップ"  }, 0.95f, 0.80f, 0.25f },
+        { { L"도감",      L"Codex",    L"図鑑"      }, 0.45f, 0.72f, 0.95f },
+        { { L"설정",      L"Config",   L"設定"      }, 0.75f, 0.75f, 0.85f },
+        { { L"게임 종료", L"Quit",     L"終了"      }, 0.90f, 0.38f, 0.35f },
+    };
+    static float kHoverT[5] = {};
+    const int   kBtnCount = 5;
+    const float BW = 450.0f, BH = 70.0f, BGAP = 30.0f;
+    const float HOVER_DW = 30.0f;  // 호버 시 가로만 확장
+    float totalBH = kBtnCount * BH + (kBtnCount - 1) * BGAP;
+    float btnX0   = (sw - BW) * 0.5f;
+    // 로고 아래부터 시작 — 화면 남은 공간 중앙
+    float logoBot = sh * 0.10f + g_TextXL.Height(T(StrId::GAME_TITLE), 1.05f) + 36.0f;
+    float btnY0   = logoBot + ((sh - logoBot) - totalBH) * 0.5f;
 
-                // ── 보조 버튼 행: 상점 · 도감 · 튜토리얼 · 설정 · 종료 ──
-                {
-                    const float bw2 = 128.0f, bh2 = 48.0f, gap2 = 10.0f;
-                    float totalW = bw2 * 5 + gap2 * 4;
-                    float bx2 = (sw - totalW) * 0.5f, by2 = sh * 0.49f + 100.0f;
-                    const wchar_t* SHOPL[3] = { L"상점", L"Shop",  L"ショップ" };
-                    const wchar_t* CODL [3] = { L"도감", L"Codex", L"図鑑" };
-                    const wchar_t* TUTL [3] = { L"튜토리얼", L"Tutorial", L"チュートリアル" };
-                    const wchar_t* CFGL [3] = { L"설정", L"Config", L"設定" };
-                    // 서브창(상점/도감/튜토리얼/설정)은 부팅 로딩 없이 즉시 — 창 열림 애니메이션만
-                    if (UIButton(bx2 + 0*(bw2+gap2), by2, bw2, bh2, SHOPL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        g_GameManager.currentState = GameState::SHOP;
-                    if (UIButton(bx2 + 1*(bw2+gap2), by2, bw2, bh2, CODL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        g_GameManager.currentState = GameState::CODEX;
-                    if (UIButton(bx2 + 2*(bw2+gap2), by2, bw2, bh2, TUTL[li2], mx,my,lmb,g_LmbPrev) && !booting)
-                        g_GameManager.currentState = GameState::TUTORIAL;
-                    if (UIButton(bx2 + 3*(bw2+gap2), by2, bw2, bh2, CFGL[li2], mx,my,lmb,g_LmbPrev) && !booting) {
-                        g_SettingsReturnTo = GameState::MAIN_MENU;
-                        g_GameManager.currentState = GameState::SETTINGS;
-                    }
-                    if (UIButton(bx2 + 4*(bw2+gap2), by2, bw2, bh2, T(StrId::BTN_QUIT), mx,my,lmb,g_LmbPrev) && !booting)
-                        glfwSetWindowShouldClose(window, GLFW_TRUE);
-                }
+    // 가로 육각형 채우기 (fan 분해)
+    auto hexFill = [&](float hx, float hy, float hW, float hH,
+                        float r, float g, float b, float a) {
+        float cut = hH * 0.38f;
+        float cx = hx + hW * 0.5f, cy = hy + hH * 0.5f;
+        float vx[6] = { hx+cut, hx+hW-cut, hx+hW,      hx+hW-cut, hx+cut,  hx     };
+        float vy[6] = { hy,     hy,         hy+hH*0.5f, hy+hH,     hy+hH,   hy+hH*0.5f };
+        for (int k = 0; k < 6; k++) {
+            int n = (k + 1) % 6;
+            BatchTri(cx, cy, vx[k], vy[k], vx[n], vy[n], r, g, b, a);
+        }
+    };
+    // 가로 육각형 테두리 (각 변을 얇은 쿼드로)
+    auto hexBorder = [&](float hx, float hy, float hW, float hH,
+                          float r, float g, float b, float a, float BL) {
+        float cut = hH * 0.38f;
+        float vx[6] = { hx+cut, hx+hW-cut, hx+hW,      hx+hW-cut, hx+cut,  hx     };
+        float vy[6] = { hy,     hy,         hy+hH*0.5f, hy+hH,     hy+hH,   hy+hH*0.5f };
+        for (int k = 0; k < 6; k++) {
+            int  n  = (k + 1) % 6;
+            float ex = vx[n]-vx[k], ey = vy[n]-vy[k];
+            float len = sqrtf(ex*ex + ey*ey); if (len < 1.0f) continue;
+            float nx = -ey/len * BL*0.5f, ny = ex/len * BL*0.5f;
+            BatchTri(vx[k]-nx, vy[k]-ny, vx[n]-nx, vy[n]-ny, vx[n]+nx, vy[n]+ny, r,g,b,a);
+            BatchTri(vx[k]-nx, vy[k]-ny, vx[n]+nx, vy[n]+ny, vx[k]+nx, vy[k]+ny, r,g,b,a);
+        }
+    };
+    // 육각형 내부 히트테스트
+    auto hexHit = [&](float px, float py, float hx, float hy, float hW, float hH) -> bool {
+        if (px < hx || px > hx+hW || py < hy || py > hy+hH) return false;
+        float cut = hH * 0.38f;
+        float d = fabsf(py - (hy + hH * 0.5f)) / (hH * 0.5f);
+        return px >= hx + cut*d && px <= hx + hW - cut*d;
+    };
 
-                // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
+    for (int i = 0; i < kBtnCount; i++) {
+        float baseBx = btnX0, baseBy = btnY0 + i * (BH + BGAP);
+        bool hov = (!booting && hexHit((float)mx, (float)my, baseBx, baseBy, BW, BH));
+
+        // 호버 애니메이션 t (0→1), 가로 중앙 기준 확장
+        float spd = delta * 8.0f; if (spd > 1.0f) spd = 1.0f;
+        kHoverT[i] += ((hov ? 1.0f : 0.0f) - kHoverT[i]) * spd;
+        float t  = kHoverT[i];
+        float dw = HOVER_DW * t;
+        float bx = baseBx - dw * 0.5f, by = baseBy;
+        float bW = BW + dw,             bH = BH;
+
+        BindMainShader();
+
+        // 호버 글로우 (본체 뒤, 3단 확산)
+        if (t > 0.01f) {
+            const float GR = 0.35f, GG = 0.72f, GB = 1.0f;
+            hexFill(bx-14, by-7,   bW+28, bH+14, GR, GG, GB, 0.035f * t);
+            hexFill(bx- 8, by-4,   bW+16, bH+ 8, GR, GG, GB, 0.065f * t);
+            hexFill(bx- 3, by-1.5f,bW+ 6, bH+ 3, GR, GG, GB, 0.10f  * t);
+        }
+
+        // 육각형 본체 (소프트 블랙, 완전 불투명)
+        hexFill(bx, by, bW, bH, 0.067f, 0.078f, 0.094f, 1.0f);
+
+        // 테두리: gray → 시안-블루 lerp
+        float bcR = 0.58f + (0.35f - 0.58f) * t;
+        float bcG = 0.60f + (0.72f - 0.60f) * t;
+        float bcB = 0.65f + (1.00f - 0.65f) * t;
+        float bcA = 0.32f + (0.88f - 0.32f) * t;
+        hexBorder(bx, by, bW, bH, bcR, bcG, bcB, bcA, 3.0f);
+
+        // 라벨 중앙 정렬
+        float labelSc = 0.95f;
+        const wchar_t* lbl = kBtns[i].label[li2];
+        float labelX  = bx + (bW - g_TextL.Width(lbl, labelSc)) * 0.5f;
+        float labelY  = by + (bH - g_TextL.Height(lbl, labelSc)) * 0.5f;
+        g_TextL.Draw(lbl, labelX, labelY, labelSc,
+                     1.0f, 1.0f, 1.0f, hov ? 1.0f : 0.72f);
+
+        // 클릭
+        if (hov && lmb && !g_LmbPrev) {
+            switch (i) {
+            case 0: LaunchApp(GameState::DIFFICULTY_SELECT, L"onedow.exe", 0.30f, 0.80f, 1.00f); break;
+            case 1: g_GameManager.currentState = GameState::SHOP;    break;
+            case 2: g_GameManager.currentState = GameState::CODEX;   break;
+            case 3:
+                g_SettingsReturnTo = GameState::MAIN_MENU;
+                g_GameManager.currentState = GameState::SETTINGS;
+                break;
+            case 4: glfwSetWindowShouldClose(window, GLFW_TRUE);     break;
+            }
+        }
+    }
+
+    // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
                 if (g_BootAnim > 0.0f) {
                     g_BootAnim -= delta;
                     float prog = 1.0f - g_BootAnim / BOOT_DUR;        // 0→1
@@ -978,8 +1042,10 @@ void Scene_JobSelect(const SceneCtx& c) {
                 const float TX = 14.0f;
                 float bx = fx + (FW - BW) * 0.5f;
                 float by = hintY + g_TextS.Height(HN, hintSc) + 36.0f;
-                for (int j = 0; j < JOB_PLAYABLE; j++) {   // 전 직업 노출 — 각자 고정 무기/조작
-                    float y = by + j * (BH + BG);
+                static const int kShownJobs[] = { JOB_NONE, JOB_SWORDSMAN, JOB_ARCHER };
+                for (int jRow = 0; jRow < 3; jRow++) {
+                    int j = kShownJobs[jRow];
+                    float y = by + jRow * (BH + BG);
                     bool unlocked = JobUnlocked(j);
                     bool sel = (g_SelectedJob == j);
                     bool clicked = false;
@@ -1035,90 +1101,274 @@ void Scene_DifficultySelect(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
-    const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
+    (void)c.delta; (void)c.window;
     const std::function<void()>& ResetForNewGame = c.reset;
-                BindMainShader();
-                const float FW = FLOW_PANEL_W, FH = FLOW_PANEL_H;
-                float fx, fy, fcy;
-                SceneFlowWindow(sw, sh, FW, FH, L"onedow.exe", 0.30f, 0.8f, 1.0f, fx, fy, fcy);
-                const float backY = FlowBackY(fy, FH);
 
-                const wchar_t* TIT = T(StrId::DIFF_TITLE);
-                float titSc = 1.35f;
-                float titleY = fcy + 28.0f;
-                float titH = g_TextL.Height(TIT, titSc);
-                g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, titSc)) * 0.5f,
-                             titleY, titSc, 1.0f, 1.0f, 1.0f, 1.0f);
+    if (!g_TrialPoolReady) RerollTrialPool();
 
-                struct DiffBtn { Difficulty d; StrId label; StrId desc; float r, g, b; };
-                DiffBtn btns[3] = {
-                    { Difficulty::EASY,   StrId::DIFF_EASY,   StrId::DIFF_EASY_DESC,
-                      0.3f, 0.85f, 0.4f },
-                    { Difficulty::NORMAL, StrId::DIFF_NORMAL, StrId::DIFF_NORMAL_DESC,
-                      0.4f, 0.6f, 1.0f },
-                    { Difficulty::HARD,   StrId::DIFF_HARD,   StrId::DIFF_HARD_DESC,
-                      1.0f, 0.4f, 0.4f },
-                };
+    BindMainShader();
+    const float FW = FLOW_PANEL_W, FH = FLOW_PANEL_H;
+    float fx, fy, fcy;
+    SceneFlowWindow(sw, sh, FW, FH, L"onedow.exe", 0.30f, 0.8f, 1.0f, fx, fy, fcy);
+    const float backY = FlowBackY(fy, FH);
+    int li = LangIndex();
 
-                const float BW = 680.0f, BH = 96.0f, BG = 28.0f;
-                float bx = fx + (FW - BW) * 0.5f;
-                float blockH = 3.0f * BH + 2.0f * BG;
-                float by = titleY + titH + 40.0f +
-                           (FlowContentH(FH) - titH - 40.0f - blockH) * 0.32f;
+    // ── 타이틀 ──
+    const wchar_t* TIT = L"RUN CONFIG";
+    float titSc = 1.30f;
+    float titY  = fcy + 18.0f;
+    g_TextL.Draw(TIT, fx + (FW - g_TextL.Width(TIT, titSc)) * 0.5f,
+                 titY, titSc, 0.55f, 0.80f, 1.0f, 1.0f);
 
-                for (int i = 0; i < 3; i++) {
-                    float y = by + i * (BH + BG);
-                    bool sel = (g_Difficulty == btns[i].d);
-                    if (UIButton(bx, y, BW, BH, L"", mx, my, lmb, g_LmbPrev, sel)) {
-                        g_Difficulty = btns[i].d;
-                        if (g_CreativeMode) {
-                            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
-                        } else {
-                            g_GameManager.currentState = GameState::JOB_SELECT;
-                        }
-                    }
-                    const wchar_t* lbl = T(btns[i].label);
-                    float lsc = 0.95f;
-                    while (lsc > 0.65f && g_TextL.Width(lbl, lsc) > BW - 24.0f) lsc -= 0.05f;
-                    float lw = g_TextL.Width(lbl, lsc);
-                    g_TextL.Draw(lbl, bx + (BW - lw) * 0.5f, y + 16.0f, lsc, 1, 1, 1, 0.98f);
-                    const wchar_t* desc = T(btns[i].desc);
-                    float dsc = 0.82f;
-                    while (dsc > 0.58f && g_TextS.Width(desc, dsc) > BW - 24.0f) dsc -= 0.04f;
-                    float dw = g_TextS.Width(desc, dsc);
-                    g_TextS.Draw(desc, bx + (BW - dw) * 0.5f, y + BH - 34.0f, dsc,
-                                 btns[i].r, btns[i].g, btns[i].b, 0.88f);
-                }
+    // 우상단 코인 잔액
+    wchar_t coinBuf[32]; swprintf_s(coinBuf, L"COIN  %lld", g_Coins);
+    float coinSc = 0.78f;
+    g_TextS.Draw(coinBuf,
+                 fx + FW - g_TextS.Width(coinBuf, coinSc) - 24.0f,
+                 titY + 8.0f, coinSc, 1.0f, 0.88f, 0.30f, 0.90f);
 
-                if (g_DevUnlocked) {
-                    const wchar_t* CLBL = g_CreativeMode
-                        ? T(StrId::CREATIVE_ON)
-                        : T(StrId::CREATIVE_OFF);
-                    float cby = by + blockH + 28.0f;
-                    if (cby + 72.0f > backY - 12.0f) cby = backY - 84.0f;
-                    float cbw = BW, cbh = 72.0f;
-                    float cbx = bx;
-                    if (UIButton(cbx, cby, cbw, cbh, CLBL,
-                                 mx, my, lmb, g_LmbPrev, g_CreativeMode)) {
-                        g_CreativeMode = !g_CreativeMode;
-                    }
-                    // 설명 — 버튼 아래쪽에 (버튼 안과 겹치지 않게)
-                    const wchar_t* CDESC = g_CreativeMode
-                        ? T(StrId::CREATIVE_DESC_ON)
-                        : T(StrId::CREATIVE_DESC_OFF);
-                    float cdw = g_TextS.Width(CDESC, 0.78f);
-                    g_TextS.Draw(CDESC, cbx + (cbw - cdw) * 0.5f,
-                                 cby + cbh + 10.0f, 0.78f,
-                                 0.85f, 0.95f, 0.6f, 0.85f);
-                }
+    // ── LOADOUT ─────────────────────────────────────────────────────────
+    struct WCardDef {
+        int          job;
+        const wchar_t* name[2];   // [0]=KR [1]=EN
+        const wchar_t* desc[2];
+        long long    cost;        // 0 = 무료
+    };
+    static const WCardDef kWC[] = {
+        { JOB_NONE,      { L"소총",   L"RIFLE"    },
+          { L"균형형 — 보너스 없음",      L"Balanced · no bonus"         }, 0   },
+        { JOB_ASSASSIN,  { L"리볼버", L"REVOLVER" },
+          { L"치명타 보유 시작",            L"Starts with Critical Strike" }, 500 },
+        { JOB_BERSERKER, { L"샷건",   L"SHOTGUN"  },
+          { L"광전사 + 유리대포 시작",     L"Starts with Berserk + Glass" }, 800 },
+        { JOB_VAMPIRE,   { L"SMG",    L"SMG"      },
+          { L"흡혈탄 + 흡혈마 시작",       L"Starts with Lifesteal + Vamp"}, 800 },
+    };
+    static const int kWCCount = 4;
+    static int s_WeaponSel = 0;
 
-                if (UIButton(fx + 32.0f, backY, 160.0f, 48.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
+    float secSc = 0.76f;
+    float loadSecY = titY + g_TextL.Height(TIT, titSc) + 16.0f;
+    BindMainShader();
+    g_TextS.Draw(L"LOADOUT", fx + 64.0f, loadSecY, secSc,
+                 0.42f, 0.58f, 0.78f, 0.68f);
+
+    const float WCW = 300.0f, WCH = 118.0f, WCGAP = 18.0f;
+    float wcTotal = kWCCount * WCW + (kWCCount - 1) * WCGAP;
+    float wcX0    = fx + (FW - wcTotal) * 0.5f;
+    float wcY0    = loadSecY + g_TextS.Height(L"A", secSc) + 10.0f;
+
+    for (int i = 0; i < kWCCount; i++) {
+        float cx = wcX0 + i * (WCW + WCGAP);
+        float cy = wcY0;
+        bool sel     = (s_WeaponSel == i);
+        bool unl     = JobUnlocked(kWC[i].job);
+        bool hov     = (mx >= cx && mx <= cx + WCW && my >= cy && my <= cy + WCH);
+        bool canBuy  = (!unl && kWC[i].cost > 0 && g_Coins >= kWC[i].cost);
+
+        if (hov && lmb && !g_LmbPrev) {
+            if (unl) {
+                s_WeaponSel = i;
+            } else if (canBuy) {
+                g_Coins -= kWC[i].cost;
+                g_JobBought[kWC[i].job] = true;
+                s_WeaponSel = i;
+                SaveGame();
+            }
+        }
+
+        BindMainShader();
+
+        // 선택 글로우
+        if (sel) {
+            drawRect(cx - 6, cy - 6, WCW + 12, WCH + 12, 0.35f, 0.72f, 1.0f, 0.07f);
+            drawRect(cx - 3, cy - 3, WCW +  6, WCH +  6, 0.35f, 0.72f, 1.0f, 0.11f);
+        }
+
+        // 카드 바디
+        float selF = sel ? 1.5f : 1.0f;
+        float dimF = unl ? 1.0f : 0.55f;
+        drawRect(cx, cy, WCW, WCH,
+                 0.047f * selF * dimF,
+                 0.060f * selF * dimF,
+                 0.090f * selF, 0.96f);
+
+        // 테두리
+        const float bL = 2.0f;
+        float bR = sel ? 0.35f : (unl ? 0.38f : 0.22f);
+        float bG = sel ? 0.72f : (unl ? 0.44f : 0.28f);
+        float bB = sel ? 1.00f : (unl ? 0.58f : 0.38f);
+        float bA = sel ? 0.88f : (unl ? 0.30f : 0.18f);
+        drawRect(cx,           cy,           WCW, bL, bR, bG, bB, bA);
+        drawRect(cx,           cy + WCH - bL,WCW, bL, bR, bG, bB, bA);
+        drawRect(cx,           cy,           bL, WCH, bR, bG, bB, bA);
+        drawRect(cx + WCW - bL,cy,           bL, WCH, bR, bG, bB, bA);
+
+        // 무기 이름
+        int nli = (li == 0) ? 0 : 1;
+        float nSc = 0.95f;
+        g_TextL.Draw(kWC[i].name[nli], cx + 16.0f, cy + 12.0f, nSc,
+                     sel ? 1.0f : (unl ? 0.88f : 0.50f),
+                     sel ? 1.0f : (unl ? 0.90f : 0.53f),
+                     sel ? 1.0f : (unl ? 0.92f : 0.58f), 1.0f);
+
+        // 구분선
+        BindMainShader();
+        drawRect(cx + 14.0f, cy + 50.0f, WCW - 28.0f, 1.0f,
+                 sel ? 0.35f : 0.28f, sel ? 0.72f : 0.38f, sel ? 1.0f : 0.52f,
+                 sel ? 0.42f : 0.14f);
+
+        // 무기 설명 or 잠김 안내
+        if (unl) {
+            float dSc = 0.70f;
+            g_TextS.Draw(kWC[i].desc[nli], cx + 16.0f, cy + 58.0f, dSc,
+                         sel ? 0.72f : 0.52f, sel ? 0.86f : 0.64f, sel ? 1.0f : 0.74f, 0.88f);
+        } else {
+            wchar_t priceBuf[48];
+            swprintf_s(priceBuf, L"LOCKED  %lldG", kWC[i].cost);
+            float dSc = 0.70f;
+            g_TextS.Draw(priceBuf, cx + 16.0f, cy + 58.0f, dSc,
+                         canBuy ? 1.0f : 0.78f,
+                         canBuy ? 0.82f : 0.50f,
+                         canBuy ? 0.25f : 0.35f, 0.92f);
+            if (canBuy) {
+                const wchar_t* BUY = (li == 0) ? L"클릭하여 구매" : L"click to unlock";
+                float bSc = 0.62f;
+                float bW  = g_TextS.Width(BUY, bSc);
+                g_TextS.Draw(BUY, cx + (WCW - bW) * 0.5f, cy + WCH - 22.0f, bSc,
+                             1.0f, 0.90f, 0.30f, 0.80f);
+            }
+        }
+
+        // 선택 표시
+        if (sel) {
+            const wchar_t* ONLBL = L"[ SELECTED ]";
+            float onSc = 0.64f;
+            float onW  = g_TextS.Width(ONLBL, onSc);
+            g_TextS.Draw(ONLBL, cx + (WCW - onW) * 0.5f, cy + WCH - 20.0f, onSc,
+                         0.35f, 0.90f, 0.55f, 1.0f);
+        }
+    }
+
+    // ── 구분선 ──────────────────────────────────────────────────────────
+    float divY = wcY0 + WCH + 18.0f;
+    BindMainShader();
+    drawRect(fx + 60.0f, divY, FW - 120.0f, 1.0f, 0.28f, 0.40f, 0.58f, 0.22f);
+
+    // ── TRIAL ────────────────────────────────────────────────────────────
+    float trialSecY = divY + 10.0f;
+    g_TextS.Draw(L"TRIAL", fx + 64.0f, trialSecY, secSc,
+                 0.42f, 0.58f, 0.78f, 0.68f);
+
+    const float TCW = 362.0f, TCH = 172.0f, TCGAP = 27.0f;
+    float tcTotal = 3.0f * TCW + 2.0f * TCGAP;
+    float tcX0    = fx + (FW - tcTotal) * 0.5f;
+    float tcY0    = trialSecY + g_TextS.Height(L"A", secSc) + 10.0f;
+
+    for (int i = 0; i < 3; i++) {
+        float cx = tcX0 + i * (TCW + TCGAP);
+        float cy = tcY0;
+        bool sel = g_TrialSelected[i];
+        const TrialDef& td = TRIAL_DEFS[g_TrialPool[i]];
+        bool hov = (mx >= cx && mx <= cx + TCW && my >= cy && my <= cy + TCH);
+        if (hov && lmb && !g_LmbPrev)
+            g_TrialSelected[i] = !g_TrialSelected[i];
+
+        BindMainShader();
+        drawRect(cx, cy, TCW, TCH,
+                 sel ? 0.08f : 0.05f,
+                 sel ? 0.11f : 0.06f,
+                 sel ? 0.16f : 0.09f, 0.96f);
+
+        const float BL = 2.0f;
+        float br = sel ? 0.35f : 0.40f, bg = sel ? 0.72f : 0.45f;
+        float bb = sel ? 1.00f : 0.55f, ba = sel ? 0.92f : 0.26f;
+        drawRect(cx,           cy,           TCW, BL, br, bg, bb, ba);
+        drawRect(cx,           cy + TCH - BL,TCW, BL, br, bg, bb, ba);
+        drawRect(cx,           cy,           BL, TCH, br, bg, bb, ba);
+        drawRect(cx + TCW - BL,cy,           BL, TCH, br, bg, bb, ba);
+
+        if (sel) {
+            drawRect(cx - 4, cy - 4,  TCW + 8, 4,   0.35f, 0.72f, 1.0f, 0.10f);
+            drawRect(cx - 4, cy + TCH,TCW + 8, 4,   0.35f, 0.72f, 1.0f, 0.06f);
+            drawRect(cx - 4, cy,      4, TCH,        0.35f, 0.72f, 1.0f, 0.08f);
+            drawRect(cx + TCW,cy,     4, TCH,        0.35f, 0.72f, 1.0f, 0.08f);
+        }
+
+        float idSc = 0.80f;
+        float idW  = g_TextL.Width(td.id, idSc);
+        g_TextL.Draw(td.id, cx + (TCW - idW) * 0.5f, cy + 17.0f, idSc,
+                     sel ? 1.0f : 0.72f, sel ? 1.0f : 0.78f, sel ? 1.0f : 0.85f, 1.0f);
+
+        BindMainShader();
+        drawRect(cx + 18.0f, cy + 54.0f, TCW - 36.0f, 1.0f,
+                 sel ? 0.35f : 0.30f, sel ? 0.72f : 0.42f, sel ? 1.0f : 0.55f,
+                 sel ? 0.50f : 0.16f);
+
+        const wchar_t* desc = td.desc[li == 0 ? 0 : 1];
+        float dSc = 0.74f;
+        float dW  = g_TextS.Width(desc, dSc);
+        g_TextS.Draw(desc, cx + (TCW - dW) * 0.5f, cy + 64.0f, dSc,
+                     sel ? 0.65f : 0.50f, sel ? 0.82f : 0.60f, sel ? 1.0f : 0.70f, 0.90f);
+
+        if (sel) {
+            const wchar_t* ONLBL = L"[ ACTIVE ]";
+            float onSc = 0.68f;
+            float onW  = g_TextS.Width(ONLBL, onSc);
+            g_TextS.Draw(ONLBL, cx + (TCW - onW) * 0.5f, cy + TCH - 28.0f, onSc,
+                         0.35f, 0.90f, 0.55f, 1.0f);
+        }
+    }
+
+    // ── SCORE RATE ──
+    float rateY  = tcY0 + TCH + 18.0f;
+    float mult   = TrialScoreMult();
+    wchar_t rateBuf[32];
+    swprintf_s(rateBuf, L"SCORE RATE  x%.2f", mult);
+    float rateSc  = 1.05f;
+    float rateCol = (mult > 1.0f) ? 1.0f : 0.65f;
+    g_TextL.Draw(rateBuf,
+                 fx + (FW - g_TextL.Width(rateBuf, rateSc)) * 0.5f,
+                 rateY, rateSc, rateCol * 0.55f, rateCol * 0.85f, rateCol, 1.0f);
+
+    BindMainShader();
+    const wchar_t* HINT = (li == 0)
+        ? L"1개 x1.20   2개 x1.35   3개 x1.50"
+        : L"1 trial x1.20   2 trials x1.35   3 trials x1.50";
+    float hintSc = 0.66f;
+    g_TextS.Draw(HINT, fx + (FW - g_TextS.Width(HINT, hintSc)) * 0.5f,
+                 rateY + g_TextL.Height(rateBuf, rateSc) + 4.0f,
+                 hintSc, 0.50f, 0.62f, 0.78f, 0.70f);
+
+    // ── 버튼 ──
+    float btnY = backY;
+    float btnH = 48.0f;
+    float btnW = 200.0f;
+    float midX = fx + FW * 0.5f;
+
+    if (UIButton(midX - btnW - 16.0f, btnY, btnW, btnH, L"REROLL",
+                 mx, my, lmb, g_LmbPrev)) {
+        RerollTrialPool();
+    }
+
+    if (UIButton(midX + 16.0f, btnY, btnW, btnH, L"EXECUTE",
+                 mx, my, lmb, g_LmbPrev)) {
+        // 잠긴 무기가 선택된 경우 안전 폴백
+        if (!JobUnlocked(kWC[s_WeaponSel].job)) s_WeaponSel = 0;
+        g_Difficulty  = Difficulty::NORMAL;
+        g_SelectedJob = kWC[s_WeaponSel].job;
+        if (g_CreativeMode) {
+            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+        } else {
+            ResetForNewGame();
+            FinalizeLoadout(c, FixedWeaponForSelectedJob());
+        }
+    }
+
+    if (UIButton(fx + 32.0f, btnY, 160.0f, btnH, T(StrId::BTN_BACK),
+                 mx, my, lmb, g_LmbPrev)) {
+        g_GameManager.currentState = GameState::MAIN_MENU;
+    }
 }
 
 void Scene_CreativeConfig(const SceneCtx& c) {
@@ -1160,12 +1410,12 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 g_TextS.Draw(L"* 일반 런 미포함 (개발용)", leftX, contentTop + 124.0f,
                              0.48f, 0.68f, 0.75f, 0.82f, 0.75f);
                 struct BossOpt { const wchar_t* l; int v; };
-                BossOpt bOpts[4] = {
+                BossOpt bOpts[5] = {
                     {L"None",-1}, {L"VOLLEY.sys",2}, {L"TESS.glitch",10},
-                    {L"FORK.worm",8}
+                    {L"FORK.worm",8}, {L"ETHER_SWORD",20}
                 };
                 const float BBW = 112.0f;
-                for (int i = 0; i < 4; i++) {
+                for (int i = 0; i < 5; i++) {
                     int col = i % 3, row = i / 3;
                     float ox = leftX + col * (BBW + OBG);
                     float oy = contentTop + 144.0f + row * (OBH + 8.0f);
@@ -1270,7 +1520,8 @@ void Scene_CreativeConfig(const SceneCtx& c) {
 
                 if (UIButton((sw - 280.0f) * 0.5f, footY, 280.0f, 52.0f,
                              L"START", mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::JOB_SELECT;
+                    ResetForNewGame();
+                    FinalizeLoadout(c, FixedWeaponForSelectedJob());
                 }
 
                 if (UIButton(40.0f, footY, 160.0f, 48.0f, T(StrId::BTN_BACK),

@@ -87,6 +87,55 @@ inline DifficultyParams GetDifficultyParams(Difficulty d) {
     return { 0.0f, 5.0f, 5, 1e9f, 1e9f, 8500.0f };
 }
 
+// ─── 시련 시스템 ─────────────────────────────────────────────────────────────
+struct TrialDef {
+    const wchar_t* id;
+    const wchar_t* desc[2];   // [0]=KO [1]=EN
+};
+inline const TrialDef TRIAL_DEFS[] = {
+    { L"OVERCLOCK",     { L"적 이동속도 +20%",    L"Enemy speed +20%"   } },
+    { L"MEMORY_LEAK",   { L"최대 HP -25%",         L"Max HP -25%"        } },
+    { L"FIREWALL",      { L"보스 체력 +25%",       L"Boss HP +25%"       } },
+    { L"CORRUPT_DROP",  { L"런 상점 가격 +30%",    L"Shop price +30%"    } },
+    { L"PROCESS_LIMIT", { L"증강 선택지 2장",      L"Only 2 aug choices" } },
+    { L"LOW_BANDWIDTH", { L"스킬 쿨타임 +25%",     L"Skill CD +25%"      } },
+    { L"HARDENED",      { L"적 체력 +30%",         L"Enemy HP +30%"      } },
+    { L"SURGE",         { L"적 속도·체력 +20%",    L"Speed & HP +20%"    } },
+};
+inline constexpr int TRIAL_DEF_COUNT = 8;
+
+inline int  g_TrialPool[3]     = { 0, 1, 2 };
+inline bool g_TrialSelected[3] = { false, false, false };
+inline bool g_TrialPoolReady   = false;
+
+inline int TrialCount() {
+    return (g_TrialSelected[0]?1:0) + (g_TrialSelected[1]?1:0) + (g_TrialSelected[2]?1:0);
+}
+inline float TrialScoreMult() {
+    switch (TrialCount()) {
+    case 1: return 1.20f;
+    case 2: return 1.35f;
+    case 3: return 1.50f;
+    default: return 1.00f;
+    }
+}
+inline void RerollTrialPool() {
+    int idx[TRIAL_DEF_COUNT];
+    for (int i = 0; i < TRIAL_DEF_COUNT; i++) idx[i] = i;
+    for (int i = 0; i < 3; i++) {
+        int j = i + rand() % (TRIAL_DEF_COUNT - i);
+        int tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
+        g_TrialPool[i] = idx[i];
+    }
+    g_TrialSelected[0] = g_TrialSelected[1] = g_TrialSelected[2] = false;
+    g_TrialPoolReady = true;
+}
+inline void ResetTrials() {
+    g_TrialPool[0] = 0; g_TrialPool[1] = 1; g_TrialPool[2] = 2;
+    g_TrialSelected[0] = g_TrialSelected[1] = g_TrialSelected[2] = false;
+    g_TrialPoolReady = false;
+}
+
 // 크리에이티브 모드 (난이도 선택 화면에서 토글)
 //   ON: 게임 시작 시 score=100,000 (보스 즉시 등장)
 //       RUNNING 중 F 키로 AUG_SELECT 즉시 열기

@@ -26,6 +26,9 @@ public:
     float turretDmg = 0.0f;
     // 적 총알 데미지 (>0 이면 플레이어 피격 시 이 값. 0 = 기본 10). 반사 총알용.
     float enemyDmg = 0.0f;
+    // 플레이어 탄으로 지울 수 있는 적 탄환. 일부 보스 패턴 전용.
+    bool  shootableEnemy = false;
+    float shootableHp    = 1.0f;
     // 직전 프레임 위치 — 스윕(레이캐스트) 충돌 판정용
     float prevX = 0.0f, prevY = 0.0f;
     // 연쇄 작용(리코셰) — 남은 튕김 횟수 + 튕긴 후 고정 데미지(>0 이면 거리 재계산 안 함)
@@ -38,6 +41,7 @@ public:
     int pierceBonusPct = 0;  // 집중 조준 등 일회성 관통 보너스
     bool  rainMissile = false;   // 탄환 세례 — 로켓 스프라이트로 렌더
     bool  silverBurn  = false;   // 은탄환 — 명중 시 화상 DoT
+    bool  crescentBlade = false; // 초승달 검기 — arc 모양 렌더
 
     // Unused direct blast flag. Kept for possible future range-explosion bullets.
     bool  shellKaboom   = false;

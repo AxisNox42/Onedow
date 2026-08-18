@@ -72,6 +72,8 @@ inline void SaveGame() {
         if (g_MobSeen[i]) { std::snprintf(ln, sizeof(ln), "mobseen%d=1\n", i); buf += ln; }
     for (int i = 0; i < 11; i++)
         if (g_BossSeenPick[i]) { std::snprintf(ln, sizeof(ln), "bossseen%d=1\n", i); buf += ln; }
+    for (int i = 1; i < JOB_COUNT; i++)
+        if (g_JobBought[i]) { std::snprintf(ln, sizeof(ln), "jobbought%d=1\n", i); buf += ln; }
 
     // 2) 난독화 후 바이너리(매직+암호문)로 기록
     OdwCrypt(buf);
@@ -173,6 +175,10 @@ inline void LoadGame() {
             int bi = atoi(key + 8);
             if (bi >= 0 && bi < 11) g_BossSeenPick[bi] = (val != 0);
         }
+        else if (!std::strncmp(key, "jobbought", 9)) {
+            int ji = atoi(key + 9);
+            if (ji >= 1 && ji < JOB_COUNT) g_JobBought[ji] = (val != 0);
+        }
     }
 }
 
@@ -188,6 +194,7 @@ inline void ResetSaveProgress() {
     for (int i = 0; i < CM_COUNT;   i++) g_MobSeen[i] = false;
     for (int i = 0; i < 11; i++) g_BossSeenPick[i] = false;
     g_ThemeOwned = 1; g_ThemeSel = 0; ApplyAccentTheme();
+    for (int i = 0; i < JOB_COUNT; i++) g_JobBought[i] = false;
     SaveGame();
 }
 

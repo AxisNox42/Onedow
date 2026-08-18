@@ -59,6 +59,52 @@ void drawBullet(const Bullet& b) {
         BindMainShader();
         return;
     }
+    if (b.crescentBlade) {
+        float spinAng   = atan2f(b.dirY, b.dirX) + 1.5708f;
+        float grow      = 1.0f + b.traveled / 160.0f;
+        if (grow > 3.8f) grow = 3.8f;
+        float outerR  = r * 3.5f * grow;
+        float innerR  = r * 1.5f * grow;
+        float sweep   = 2.5f;
+        int   segs    = 14;
+        for (int i = 0; i < segs; i++) {
+            float a0 = spinAng - sweep*0.5f + sweep*(float)i/segs;
+            float a1 = spinAng - sweep*0.5f + sweep*(float)(i+1)/segs;
+            BatchTri(b.x+cosf(a0)*innerR*0.4f, b.y+sinf(a0)*innerR*0.4f,
+                     b.x+cosf(a0)*(outerR+12.f), b.y+sinf(a0)*(outerR+12.f),
+                     b.x+cosf(a1)*(outerR+12.f), b.y+sinf(a1)*(outerR+12.f),
+                     b.color.r, b.color.g, b.color.b, 0.07f);
+            BatchTri(b.x+cosf(a0)*innerR*0.4f, b.y+sinf(a0)*innerR*0.4f,
+                     b.x+cosf(a1)*(outerR+12.f), b.y+sinf(a1)*(outerR+12.f),
+                     b.x+cosf(a1)*innerR*0.4f, b.y+sinf(a1)*innerR*0.4f,
+                     b.color.r, b.color.g, b.color.b, 0.07f);
+        }
+        for (int i = 0; i < segs; i++) {
+            float a0 = spinAng - sweep*0.5f + sweep*(float)i/segs;
+            float a1 = spinAng - sweep*0.5f + sweep*(float)(i+1)/segs;
+            BatchTri(b.x+cosf(a0)*innerR, b.y+sinf(a0)*innerR,
+                     b.x+cosf(a0)*outerR, b.y+sinf(a0)*outerR,
+                     b.x+cosf(a1)*outerR, b.y+sinf(a1)*outerR,
+                     b.color.r, b.color.g, b.color.b, 0.90f);
+            BatchTri(b.x+cosf(a0)*innerR, b.y+sinf(a0)*innerR,
+                     b.x+cosf(a1)*outerR, b.y+sinf(a1)*outerR,
+                     b.x+cosf(a1)*innerR, b.y+sinf(a1)*innerR,
+                     b.color.r, b.color.g, b.color.b, 0.90f);
+        }
+        for (int i = 0; i < segs; i++) {
+            float a0 = spinAng - sweep*0.5f + sweep*(float)i/segs;
+            float a1 = spinAng - sweep*0.5f + sweep*(float)(i+1)/segs;
+            BatchTri(b.x+cosf(a0)*outerR,        b.y+sinf(a0)*outerR,
+                     b.x+cosf(a0)*(outerR+3.5f),  b.y+sinf(a0)*(outerR+3.5f),
+                     b.x+cosf(a1)*(outerR+3.5f),  b.y+sinf(a1)*(outerR+3.5f),
+                     1.0f, 1.0f, 1.0f, 0.62f);
+            BatchTri(b.x+cosf(a0)*outerR,        b.y+sinf(a0)*outerR,
+                     b.x+cosf(a1)*(outerR+3.5f),  b.y+sinf(a1)*(outerR+3.5f),
+                     b.x+cosf(a1)*outerR,         b.y+sinf(a1)*outerR,
+                     1.0f, 1.0f, 1.0f, 0.62f);
+        }
+        return;
+    }
     if (!b.isEnemy) {
         float trailLen = b.speed * 0.020f;
         if (trailLen > 5.0f) {
@@ -68,6 +114,10 @@ void drawBullet(const Bullet& b) {
             float v[6] = { b.x + px, b.y + py, b.x - px, b.y - py, tx, ty };
             BatchVerts(v, 3, b.color.r, b.color.g, b.color.b, 0.38f);
         }
+    } else if (b.shootableEnemy) {
+        float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 18.0f + b.x * 0.02f);
+        drawCircle(b.x, b.y, r * (1.75f + pulse * 0.20f), 0.34f, 1.0f, 0.82f, 0.14f + pulse * 0.10f);
+        drawCircle(b.x, b.y, r * 1.28f, 0.86f, 1.0f, 0.96f, 0.20f);
     }
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
