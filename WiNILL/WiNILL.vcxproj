@@ -252,4 +252,12 @@
           DestinationFolder="$(OutDir)Resource\Audio\%(RecursiveDir)"
           SkipUnchangedFiles="true" />
   </Target>
+  <Target Name="CopyFontAssets" AfterTargets="Build">
+    <ItemGroup>
+      <FontAssets Include="$(ProjectDir)..\Resource\Font\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FontAssets)"
+          DestinationFolder="$(OutDir)Resource\Font\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

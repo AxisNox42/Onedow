@@ -39,6 +39,10 @@ static const char* kMainFragSrc =
     "        vec2 d = uv - vec2(0.5);\n"
     "        c.rgb *= (1.0 - dot(d, d) * 0.50);\n"
     "        c.rgb = clamp(c.rgb, 0.0, 1.0);\n"
+    "    } else if (uFx == 2) {\n"
+    "        float lum = max(c.r, max(c.g, c.b));\n"
+    "        c.rgb += c.rgb * smoothstep(0.38, 1.0, lum) * 0.70;\n"
+    "        c.rgb = clamp(c.rgb, 0.0, 1.0);\n"
     "    }\n"
     "    FragColor = c;\n"
     "}\n";

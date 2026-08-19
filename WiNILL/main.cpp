@@ -1,4 +1,4 @@
-﻿// Windows ?ㅻ뜑瑜?glad蹂대떎 癒쇱? ??APIENTRY 留ㅽ겕濡?以묐났 ?뺤쓽 諛⑹?
+// Windows ?ㅻ뜑瑜?glad蹂대떎 癒쇱? ??APIENTRY 留ㅽ겕濡?以묐났 ?뺤쓽 諛⑹?
 #ifdef _WIN32
   #include <windows.h>
   #include <dwmapi.h>   // DwmIsCompositionEnabled (吏꾨떒??
@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cstdarg>
+#include <cstdio>
 #include <string>
 #include <cstring>
 #include <cwctype>
@@ -177,6 +178,22 @@ static const float CHAKRAM_RADIUS = 130.0f;   // 踰꾪봽: ?볦? 怨듭쟾 (怨
 static const float CHAKRAM_SIZE   = 30.0f;    // 踰꾪봽: ??移쇰궇
 
 float g_BulletRainTimer = 0.0f;
+float g_BossLifestealDamageBank = 0.0f;
+static constexpr float BOSS_LIFESTEAL_DAMAGE_STEP = 200.0f;
+
+static void ApplyBossLifestealFromDamage(float dealt) {
+    if (dealt <= 0.0f) return;
+    float heal = g_Stats.GetLifestealPerKill();
+    if (g_Stats.vampire || g_Stats.lifesteal2)
+        heal = std::max(heal, 0.12f);
+    if (heal <= 0.0f || g_Stats.maxHP <= 0.0f) return;
+
+    g_BossLifestealDamageBank += dealt;
+    while (g_BossLifestealDamageBank >= BOSS_LIFESTEAL_DAMAGE_STEP) {
+        g_BossLifestealDamageBank -= BOSS_LIFESTEAL_DAMAGE_STEP;
+        g_GameManager.playerHP = std::min(g_Stats.maxHP, g_GameManager.playerHP + heal);
+    }
+}
 
 // 痍⑦븿 (?붾쾭?? ??20珥??ъ씠??以?5珥덇컙 ?쒕뜡 諛⑺뼢 ?ш꺽
 float g_DrunkCycle  = 0.0f;
@@ -252,6 +269,24 @@ long long g_NextBossScore  = FIRST_BOSS_SCORE;
 bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss  = nullptr;
 EtherSwordBoss*   g_EtherBoss = nullptr;
+
+static void HitEtherBossDirect(float dmg, float px, float py, bool crit = false) {
+    auto* eb = g_EtherBoss;
+    if (!eb || !eb->alive || eb->BodyInvulnerable()) return;
+
+    dmg *= eb->PlayerDamageToBossMul(px, py);
+    float killFloor = eb->taskKillHp();
+    float dealt = std::min(dmg, std::max(0.0f, eb->hp - killFloor));
+    if (dealt > 0.0f) {
+        eb->hp -= dealt;
+        SpawnDamageNumber(eb->worldX, eb->worldY, dealt, dealt >= 40.0f || crit);
+        ApplyBossLifestealFromDamage(dealt);
+    }
+    if (eb->hp <= killFloor) {
+        eb->hp = killFloor;
+        eb->BeginTaskKill(px, py, g_Bullets);
+    }
+}
 
 static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
                                      float dx, float dy) {
@@ -424,6 +459,7 @@ static void ResetSkills() {
     g_DashBoostShotsLeft = 0;
     g_PlayerShield = 0.0f; g_PlayerShieldTimer = 0.0f;
     g_TimeStopTimer = 0; g_HyperFocusTimer = 0;
+    g_BossLifestealDamageBank = 0.0f;
 }
 // 蹂댁뒪 ?앹〈 ?숈븞 ?붾㈃ ?꾩껜瑜?蹂댁뒪 怨좎쑀?됱쑝濡??먯젏 臾쇰뱾?대뒗 ?곗텧
 float     g_BossTintT   = 0.0f;                     // 0..1 (?앹〈 ???곸듅, ?щ쭩 ???섍컯)
@@ -568,6 +604,8 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH) {
     g_Stats.baseFireInterval = g_Stats.fireInterval;
 
     memset(g_TypeOwned, 0, sizeof(g_TypeOwned));
+    if (weapon >= 0 && weapon < (int)StartWeapon::_COUNT)
+        MarkStartWeaponOwnedType((StartWeapon)weapon);
     memset(g_GameManager.takenOnce, 0, sizeof(g_GameManager.takenOnce));
 
     g_OwnedAugs.clear();
@@ -771,7 +809,9 @@ static void StartBossWarn(int pick, const wchar_t* name, float hp) {
     g_BossWarnPick = pick;
     g_BossWarnName = name;
     g_BossWarnHp   = hp;
-    g_BossWarnTimer = g_CreativeMode ? 0.35f : BOSS_WARN_DUR;
+    float warnDur = g_CreativeMode ? 0.35f : BOSS_WARN_DUR * TrialBossWarningMult();
+    if (warnDur < 0.25f) warnDur = 0.25f;
+    g_BossWarnTimer = warnDur;
 }
 
 static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
@@ -902,15 +942,58 @@ int main() {
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
 
-    // 폰트: ChakraPetch(라틴·숫자 주폰트) + Orbit(한글 폴백)
+    // 폰트: exe 위치에 따라 Resource 상대 경로가 달라질 수 있어 실제 존재하는 경로를 고른다.
     {
-        const char* chain[2] = {
-            "../../Resource/Font/ChakraPetch-Regular.ttf",
-            "../../Resource/Font/Orbit-Regular.ttf"
+        auto fileExists = [](const char* path) -> bool {
+#ifdef _MSC_VER
+            FILE* fp = nullptr;
+            if (fopen_s(&fp, path, "rb") != 0 || !fp) return false;
+#else
+            FILE* fp = std::fopen(path, "rb");
+            if (!fp) return false;
+#endif
+            std::fclose(fp);
+            return true;
         };
-        g_TextL.InitFromFiles(chain, 2, 36,  screenWidth, screenHeight);
-        g_TextS.InitFromFiles(chain, 2, 22,  screenWidth, screenHeight);
-        g_TextXL.InitFromFiles(chain, 2, 100, screenWidth, screenHeight);
+        auto pickFont = [&](const char* a, const char* b, const char* c,
+                            const char* d = nullptr) -> const char* {
+            if (a && fileExists(a)) return a;
+            if (b && fileExists(b)) return b;
+            if (c && fileExists(c)) return c;
+            if (d && fileExists(d)) return d;
+            return nullptr;
+        };
+
+        const char* chain[6] = {};
+        int nFonts = 0;
+        auto addFont = [&](const char* path) {
+            if (path && nFonts < (int)(sizeof(chain) / sizeof(chain[0])))
+                chain[nFonts++] = path;
+        };
+
+        addFont(pickFont("Resource/Font/ChakraPetch-Regular.ttf",
+                         "../Resource/Font/ChakraPetch-Regular.ttf",
+                         "../../Resource/Font/ChakraPetch-Regular.ttf"));
+        addFont(pickFont("Resource/Font/Orbit-Regular.ttf",
+                         "../Resource/Font/Orbit-Regular.ttf",
+                         "../../Resource/Font/Orbit-Regular.ttf"));
+        addFont(pickFont("Resource/Font/Jua-Regular.ttf",
+                         "../Resource/Font/Jua-Regular.ttf",
+                         "../../Resource/Font/Jua-Regular.ttf",
+                         "C:/Windows/Fonts/malgun.ttf"));
+        addFont(pickFont("Resource/Font/KosugiMaru-Regular.ttf",
+                         "../Resource/Font/KosugiMaru-Regular.ttf",
+                         "../../Resource/Font/KosugiMaru-Regular.ttf",
+                         "C:/Windows/Fonts/meiryo.ttc"));
+        if (nFonts == 0) {
+            addFont(pickFont("C:/Windows/Fonts/malgun.ttf",
+                             "C:/Windows/Fonts/arial.ttf",
+                             "C:/Windows/Fonts/meiryo.ttc"));
+        }
+
+        g_TextL.InitFromFiles(chain, nFonts, 36,  screenWidth, screenHeight);
+        g_TextS.InitFromFiles(chain, nFonts, 22,  screenWidth, screenHeight);
+        g_TextXL.InitFromFiles(chain, nFonts, 100, screenWidth, screenHeight);
     }
 
     BatchFlush(); glEnable(GL_BLEND);
@@ -1198,7 +1281,9 @@ int main() {
             g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // 以??먮났
             g_ZoomCX = g_ZoomCY = 0.0f;
-            rangedSpawnTimer = GetDifficultyParams(g_Difficulty).rangedSpawnInitialDelay;
+            g_Difficulty = Difficulty::NORMAL;
+            rangedSpawnTimer = TrialRangedInitialDelay(
+                GetDifficultyParams(Difficulty::NORMAL).rangedSpawnInitialDelay);
             spawnTimer        = 0.0f;
             g_DyingTimer      = 0.0f;
             g_DeathBoomDone   = false;
@@ -1514,6 +1599,8 @@ int main() {
                     memset(g_GameManager.takenOnce, 0,
                            sizeof(g_GameManager.takenOnce));
                     memset(g_TypeOwned, 0, sizeof(g_TypeOwned));   // 議고빀 ?덉떆??蹂댁쑀??珥덇린??                    //   (?놁쑝硫??붾툝 ?껋뿀?붾뜲 '愿???띾뫁?? 議고빀???⑤뜕 踰꾧렇)
+                    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
+                        MarkStartWeaponOwnedType((StartWeapon)g_CurrentWeapon);
                     g_GameManager.maxHP = g_Stats.maxHP;
                     if (g_GameManager.playerHP > g_Stats.maxHP)
                         g_GameManager.playerHP = g_Stats.maxHP;
@@ -1769,9 +1856,8 @@ int main() {
             if (kB == GLFW_PRESS && s_bkeyReleased &&
                 g_GameManager.currentState == GameState::RUNNING) {
                 if (!BossFightBusy()) {
-                    float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
-                    float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
-                                  : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
+                    float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult();
+                    float polyHpC = 30000.0f * TrialBossHpMult();
                     int pick = g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2;
                     QueueCreativeBossPick(pick, bossHpC, polyHpC);
                 }
@@ -1858,7 +1944,11 @@ int main() {
                 float pCY = playerWin.y + playerWin.height * 0.5f;
                 if (pCX < ccX - halfW) pCX = ccX - halfW;
                 if (pCX > ccX + halfW) pCX = ccX + halfW;
-                if (pCY < ccY - halfH) pCY = ccY - halfH;
+                // 상단: 플레이어 중심이 타이틀바 아래에 위치
+                {
+                    float topLimit = ccY + (BROWSER_CHROME_H - ccY) / zoomNow;
+                    if (pCY < topLimit) pCY = topLimit;
+                }
                 // C17: ?섎떒 ?묒뾽?쒖떆以??멸쾶??媛吏?諛?+ ?ㅼ젣 OS ?묒뾽?쒖떆以? 移⑤쾾 諛⑹? ??                //   ?묒뾽?쒖떆以꾩? '?ㅽ겕由? ?섎떒 怨좎젙 ?쎌??대씪, 以뚯븘???먯닔 ?뺤옣)?섎㈃ ?붾뱶 ?⑥쐞濡?                //   barTotal/zoom 留뚰겮 李⑥??? 蹂댁씠???곸뿭 ?섎떒(ccY+halfH)?먯꽌 洹몃쭔???꾧? ?쒓퀎 ??                //   ?곷떒 ?뺤옣怨??移?씠 ?섎룄濡?湲곗〈??sh-barTotal 怨좎젙?대씪 ?섎떒留????섏뼱?ъ쓬).
                 float barTotal    = g_GameBarH + (float)g_TaskbarH;
                 float bottomLimit = ccY + halfH - barTotal / zoomNow;
@@ -1886,9 +1976,25 @@ int main() {
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  hitKB(m->worldX,  m->worldY,  m->hp,  m->alive);
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  hitKB(r->worldX,  r->worldY,  r->hp,  r->alive);
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) hitKB(bm->worldX, bm->worldY, bm->hp, bm->alive);
-                    if (g_RRBoss && g_RRBoss->alive) { float dx=g_RRBoss->worldX-cx,dy=g_RRBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_RRBoss->hp-=dmg; if(g_RRBoss->hp<=0)g_RRBoss->alive=false;} }
-                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) { float dx=g_CentiBoss->worldX-cx,dy=g_CentiBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_CentiBoss->hp-=dmg; if(g_CentiBoss->hp<=0)g_CentiBoss->alive=false;} }
-                    if (g_TessBoss && g_TessBoss->alive) { float dx=g_TessBoss->worldX-cx,dy=g_TessBoss->worldY-cy; if(dx*dx+dy*dy<r2){g_TessBoss->hp-=dmg; if(g_TessBoss->hp<=0)g_TessBoss->alive=false;} }
+                    auto hitBossBlast = [&](float ex, float ey, float& hp, bool& al) {
+                        float dx = ex - cx, dy = ey - cy;
+                        if (dx*dx + dy*dy >= r2) return;
+                        float dealt = std::min(dmg, hp);
+                        hp -= dealt;
+                        SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f);
+                        ApplyBossLifestealFromDamage(dealt);
+                        if (hp <= 0.0f) al = false;
+                    };
+                    if (g_RRBoss && g_RRBoss->alive)
+                        hitBossBlast(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
+                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
+                        hitBossBlast(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
+                    if (g_TessBoss && g_TessBoss->alive)
+                        hitBossBlast(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
+                    if (g_EtherBoss && g_EtherBoss->alive) {
+                        float dx = g_EtherBoss->worldX - cx, dy = g_EtherBoss->worldY - cy;
+                        if (dx*dx + dy*dy < r2) HitEtherBossDirect(dmg, cx, cy, false);
+                    }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -1954,7 +2060,8 @@ int main() {
                     g_DashToY   = pCY + ddy * DASH_DIST;
                     if (g_DashToX < ccX-halfW) g_DashToX = ccX-halfW;
                     if (g_DashToX > ccX+halfW) g_DashToX = ccX+halfW;
-                    if (g_DashToY < ccY-halfH) g_DashToY = ccY-halfH;
+                    { float dtl = ccY + (BROWSER_CHROME_H - ccY) / zoomNow;
+                      if (g_DashToY < dtl) g_DashToY = dtl; }
                     if (g_DashToY > ccY+halfH) g_DashToY = ccY+halfH;
                     g_DashActive = true; g_DashT = 0.0f;
                     g_DashCd = dashCdMax;
@@ -2211,6 +2318,14 @@ int main() {
                     g_GameManager.playerHP < hpAtStep)
                     g_GameManager.playerHP = hpAtStep;
 
+                auto silverBossBonus = [&](const Bullet& b, float pd) -> float {
+                    if (!b.silverBurn || b.remainingDmg > 0.0f || b.turretDmg > 0.0f)
+                        return 0.0f;
+                    return g_Stats.GetBaseDamage()
+                         * g_Stats.GetDamageMultiplier(pd)
+                         * b.dmgMult * 1.20f;
+                };
+
                 // 由щ줈???щ꼫 蹂몄껜 vs ?뚮젅?댁뼱 珥앹븣 (?ㅼ쐲 ?먯젙)
                 if (g_RRBoss && g_RRBoss->alive) {
                     auto* rb = g_RRBoss;
@@ -2225,8 +2340,10 @@ int main() {
                             else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                             else dmg = g_Stats.GetBaseDamage()
                                      * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg += silverBossBonus(b, pd);
                             float dealt = (dmg < rb->hp) ? dmg : rb->hp;
                             rb->hp -= dealt;
+                            ApplyBossLifestealFromDamage(dealt);
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (rb->hp <= 0.0f) rb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
@@ -2248,8 +2365,10 @@ int main() {
                                 else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                                 else dmg = g_Stats.GetBaseDamage()
                                          * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                                dmg += silverBossBonus(b, pd);
                                 float dealt = (dmg < o.hp) ? dmg : o.hp;
                                 o.hp -= dealt;
+                                ApplyBossLifestealFromDamage(dealt);
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                                 if (o.hp <= 0.0f) {
                                     o.alive = false;
@@ -2271,8 +2390,10 @@ int main() {
                             else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                             else dmg = g_Stats.GetBaseDamage()
                                      * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg += silverBossBonus(b, pd);
                             float dealt = (dmg < tb->hp) ? dmg : tb->hp;
                             tb->hp -= dealt;
+                            ApplyBossLifestealFromDamage(dealt);
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (tb->hp <= 0.0f) tb->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
@@ -2296,10 +2417,12 @@ int main() {
                             else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                             else dmg = g_Stats.GetBaseDamage()
                                      * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg += silverBossBonus(b, pd);
                             dmg *= eb->PlayerDamageToBossMul(pCX, pCY);
                             float killFloor = eb->taskKillHp();
                             float dealt = std::min(dmg, std::max(0.0f, eb->hp - killFloor));
                             eb->hp -= dealt;
+                            ApplyBossLifestealFromDamage(dealt);
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (eb->hp <= killFloor) {
                                 eb->hp = killFloor;
@@ -2339,8 +2462,10 @@ int main() {
                                 if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
                                 else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                                 else dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                                dmg += silverBossBonus(b, pd);
                                 float dealt = (dmg < mb.hp) ? dmg : mb.hp;
                                 mb.hp -= dealt;
+                                ApplyBossLifestealFromDamage(dealt);
                                 if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                                 if (mb.hp <= 0.0f) {
                                     mb.alive = false;
@@ -2382,9 +2507,11 @@ int main() {
                             else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
                             else dmg = g_Stats.GetBaseDamage()
                                      * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                            dmg += silverBossBonus(b, pd);
                             dmg *= cb2->dmgTakenMult;   // ?꾨줈?좏??? 蹂댄넻 ?쇳빐 媛먯냼
                             float dealt = (dmg < cb2->hp) ? dmg : cb2->hp;
                             cb2->hp -= dealt;
+                            ApplyBossLifestealFromDamage(dealt);
                             if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
                             if (cb2->hp <= 0.0f) cb2->alive = false;
                             if (b.remainingDmg <= 0.001f) b.active = false;
@@ -2429,7 +2556,7 @@ int main() {
                                                           g_Stats.splitterBoost);
                             TryHackFirewallOnKill(m->kind, g_Stats);
                             float rwm = MobRewardMult(m->kind); xpB *= rwm; scB *= rwm;
-                            creditKill(xpB + (float)g_Stats.meleeXpBonus, scB);
+                            creditKill(xpB + MobDebuffXpBonus(m->kind, m->elite, g_Stats), scB);
                             if (m->elite) g_RunGold += 1;
                         }
                         SpawnEnemyExplosion(m->worldX, m->worldY,
@@ -2606,7 +2733,7 @@ int main() {
                         //   洹몃━怨??꾩쭅 ?뺤궛 ???먯쑝硫?愿묒뿭 泥섏튂 ?? 蹂댁긽 吏湲?
                         if (!bm->scored && !blast) {
                             bm->scored = true;
-                            creditKill(25.0f + (float)g_Stats.meleeXpBonus, 200.0f);
+                            creditKill(25.0f + (float)g_Stats.bomberXpBonus, 200.0f);
                         }
                         if (blast) {
                             // ?먰룺: ?뚮젅?댁뼱 二쎌쓬湲???컻 (?ㅻ컻 + ?댁쨷 異⑷꺽??
@@ -2729,11 +2856,6 @@ int main() {
                 g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * delta;
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
-            }
-            // 異쒗삁(D_BLEED) ??珥덈떦 HP 媛먯냼 (?ъ깮?쇰줈 ?곸뇙 媛?? 二쎌????딆쓬 ?섑븳 1)
-            if (g_Stats.bleedPerSec > 0.0f && g_GameManager.playerHP > 1.0f) {
-                g_GameManager.playerHP -= g_Stats.bleedPerSec * delta;
-                if (g_GameManager.playerHP < 1.0f) g_GameManager.playerHP = 1.0f;
             }
             // 諛곕뱶 ?뱁꽣 異쒗삁 ??媛먯냽 援ъ뿭 ?덉씠硫?異쒗삁 ??대㉧ 2珥덈줈 媛깆떊, 鍮좎졇?섏????붾쪟
             {
@@ -2870,6 +2992,10 @@ int main() {
             int   elitePct   = (int)(std::min(40.0f,
                                    (float)g_GameManager.score / 12000.0f * g_Stats.eliteChanceMult)
                                + (float)act.eliteBias);
+            varietyPct += TrialVarietyBiasBonus(g_GameManager.score);
+            elitePct   += TrialEliteBiasBonus(g_GameManager.score);
+            if (varietyPct > 60) varietyPct = 60;
+            if (elitePct > 55) elitePct = 55;
             (void)rampSpd;
 
             // ?ㅽ룿 ?곸뿭 ??2?섏씠利?以뚯븘?????뺤옣??蹂댁씠?? ?곸뿭 紐⑥꽌由ъ뿉???ㅽ룿.
@@ -2878,11 +3004,10 @@ int main() {
 
             // ?〓す ?ㅽ룿 (D_MOB_SPAWN ?????먯＜ + cap +200, D_MOB_HP ??HP+, ?먯닔 ?⑦봽)
             spawnTimer += delta;
-            float spawnInterval = 0.3f * g_Stats.mobSpawnMult / (p2mult * rampSpawn);
+            float spawnInterval = 0.3f * g_Stats.mobSpawnMult
+                                / (p2mult * rampSpawn * TrialSpawnRateMult(g_GameManager.score));
             if (bossNow) spawnInterval *= 2.5f;   // 蹂댁뒪?? ?몃옒???ㅽ룿 ???媛먯냼
-            float effHpMul = 1.0f;
-            if (g_Difficulty == Difficulty::EASY) { spawnInterval *= 1.6f; effHpMul = 0.65f; }
-            else if (g_Difficulty == Difficulty::HARD) { effHpMul = 1.1f; }
+            float effHpMul = TrialEnemyHpMult(g_GameManager.score);
             // 蹂댁뒪 ?꾨㈃?????쒖꽦 蹂댁뒪媛 ?덉쑝硫??먯뿰 ?〓す/?먭굅由??먰룺 ?ㅽ룿 ?꾩쟾 ?뺤?
             //   (蹂댁뒪媛 吏곸젒 ?뚰솚?섎뒗 adds ??媛?蹂댁뒪 ?대옒???대??먯꽌留?
             auto anyBossAlive = [&]() -> bool {
@@ -3006,9 +3131,8 @@ int main() {
                     if (g_NextBossScore < rebase) g_NextBossScore = rebase;
                 }
                 s_prevBossActive = bossActive;
-                float bossHpC = GetDifficultyParams(g_Difficulty).bossHp;
-                float polyHpC = (g_Difficulty == Difficulty::EASY) ? 10000.0f
-                              : (g_Difficulty == Difficulty::HARD) ? 75000.0f : 30000.0f;
+                float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult();
+                float polyHpC = 30000.0f * TrialBossHpMult();
 
                 // 예고 시작 — pick·이름·HP 확정 후 짧은 경고(크리에이티브 0.35s)
                 auto startWarn = [&](int pick, const wchar_t* name, float hp) {
@@ -3043,7 +3167,7 @@ int main() {
                         float sc = 0.36f + (float)g_GameManager.score / 300000.0f;
                         if (sc > 9.0f) sc = 9.0f;
                         sc *= (1.0f + (float)g_GameManager.playerLevel * 0.022f);
-                        float bossHp = GetDifficultyParams(g_Difficulty).bossHp * sc;
+                        float bossHp = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult() * sc;
                         {
                             int pick = BossDir::RollScorePick();
                             startWarn(pick, BossDir::DisplayName(pick),
@@ -3126,10 +3250,11 @@ int main() {
             }
 
             // ?먰룺蹂?spawn (?쒖씠?꾨퀎 ?쒖옉 ?쒓컙/二쇨린, ?ъ?? ???섏샂)
-            DifficultyParams dp = GetDifficultyParams(g_Difficulty);
-            if (g_GameTime >= dp.bomberStartTime && !bossDuel) {
+            DifficultyParams dp = GetDifficultyParams(Difficulty::NORMAL);
+            if (g_GameTime >= TrialBomberStartTime(dp.bomberStartTime) && !bossDuel) {
                 g_BomberSpawnTimer += delta;
-                float bomberInt = dp.bomberInterval / (p2mult * rampSpawn);
+                float bomberInt = (dp.bomberInterval * TrialBomberIntervalMult(g_GameManager.score))
+                                / (p2mult * rampSpawn * TrialSpawnRateMult(g_GameManager.score));
                 if (bossNow) bomberInt *= 2.0f;
                 if (g_BomberSpawnTimer >= bomberInt) {
                     g_MonsterManager.SpawnBomber(screenWidth, screenHeight,
@@ -3143,11 +3268,12 @@ int main() {
 
             // ?먭굅由?紐??ㅽ룿 ???쒖씠?꾨퀎 + ?붾쾭??(D_RMOB_MAX, rmobSpawnDelayBonus)
             rangedSpawnTimer += delta;
-            float rangedInterval = dp.rangedSpawnInterval - g_Stats.rmobSpawnDelayBonus;
+            float rangedInterval = dp.rangedSpawnInterval * TrialRangedIntervalMult(g_GameManager.score)
+                                  - g_Stats.rmobSpawnDelayBonus;
             if (rangedInterval < 1.0f) rangedInterval = 1.0f;
             rangedInterval /= (p2mult * rampSpawn);
             if (bossNow) rangedInterval *= 2.0f;
-            int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus) * p2mult
+            int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus + TrialRangedMaxBonus(g_GameManager.score)) * p2mult
                                   + intensity * 2.0f);           // ?먯닔???숈떆 +2
             if (rangedMax > 16) rangedMax = 16;   // 李?媛쒖닔 = scissor ?⑥뒪 ?????곹븳 (?깅뒫)
             if (rangedSpawnTimer > rangedInterval && !bossDuel) {
@@ -3325,9 +3451,9 @@ int main() {
 
             if (g_Stats.bulletRain) {
                 g_BulletRainTimer += delta;
-                // 臾댄븳 ?몃?(?좏솕) ??泥섏튂留덈떎 荑⑤떎??吏꾪뻾 媛??0.4s/泥섏튂). 誘몃낫????泥섏튂 移댁슫?몃쭔 鍮꾩?.
+                // 무한 세례(신화): 처치마다 쿨다운 진행 0.2초 가속. 최소 3초 쿨은 유지.
                 if (g_Stats.rainKillReduce && g_RainKillAccum > 0.0f) {
-                    float killBoost = g_RainKillAccum * 0.4f;
+                    float killBoost = g_RainKillAccum * 0.2f;
                     float maxBoost = g_Stats.bulletRainCooldown - 3.0f - g_BulletRainTimer;
                     if (maxBoost < 0.0f) maxBoost = 0.0f;
                     if (killBoost > maxBoost) killBoost = maxBoost;
@@ -3572,7 +3698,7 @@ int main() {
                                                       g_Stats.splitterBoost);
                         TryHackFirewallOnKill(m->kind, g_Stats);
                         float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
-                        g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                        g_GameManager.xp += (long long)((bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         SpawnWormSplit(m, swingBorn);
@@ -3599,7 +3725,7 @@ int main() {
                     SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || crit);
                     if (bm->hp <= 0.0f) {
                         bm->alive = false; bm->scored = true; AddKillCombo();
-                        g_GameManager.xp += (long long)((25.0f + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                        g_GameManager.xp += (long long)((25.0f + (float)g_Stats.bomberXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += 200.0f;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         onKill();
@@ -3610,6 +3736,7 @@ int main() {
                     if (!inCone(ex, ey)) return;
                     float dealt = (dmg < hp) ? dmg : hp; hp -= dealt;
                     SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || crit);
+                    ApplyBossLifestealFromDamage(dealt);
                     if (hp <= 0.0f) al = false;
                 };
                 if (g_RRBoss && g_RRBoss->alive)
@@ -3618,6 +3745,8 @@ int main() {
                     hitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
                 if (g_TessBoss && g_TessBoss->alive)
                     hitB(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
+                if (g_EtherBoss && g_EtherBoss->alive && inCone(g_EtherBoss->worldX, g_EtherBoss->worldY))
+                    HitEtherBossDirect(dmg, pCX, pCY, crit);
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
                 // 移쇰컮?????ㅼ쐷留덈떎 ?꾨갑?쇰줈 愿???ъ궗泥?(洹쇱젒???먭굅由?寃ъ젣)
@@ -3661,8 +3790,9 @@ int main() {
                         if (hf < 0.0f) hf = 0.0f; else if (hf > 1.0f) hf = 1.0f;
                         lbm = 1.0f + (1.0f - hf) * 0.6f;
                     }
+                    float laserDmgMult = (g_Stats.laserTier >= 3) ? 1.2f : 1.4f;
                     float ldmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier(0.0f)
-                               * 1.4f * lcm * lbm;   // ?덊봽: 2.5 ??1.4 (?〓す ?뺣━?? 蹂댁뒪 移?理쒖냼)
+                               * laserDmgMult * lcm * lbm;
                     auto lOnKill = [&]() {
                         if (g_Stats.lifestealPerKill > 0.0f) {
                             g_GameManager.playerHP += g_Stats.lifestealPerKill;
@@ -3692,7 +3822,7 @@ int main() {
                                                       g_Stats.splitterBoost);
                             TryHackFirewallOnKill(m->kind, g_Stats);
                             float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
-                            g_GameManager.xp += (long long)((bx + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                            g_GameManager.xp += (long long)((bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
                             g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum;
                             SpawnWormSplit(m, laserBorn); SpawnBadSectorZone(m); lOnKill();
@@ -3716,7 +3846,7 @@ int main() {
                         SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || lcrit);
                         if (bm->hp <= 0.0f) {
                             bm->alive = false; bm->scored = true; AddKillCombo();
-                            g_GameManager.xp += (long long)((25.0f + (float)g_Stats.meleeXpBonus) * g_Stats.xpMult);
+                            g_GameManager.xp += (long long)((25.0f + (float)g_Stats.bomberXpBonus) * g_Stats.xpMult);
                             g_Stats.killCount++; g_GameManager.scoreAccum += 200.0f;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
                         }
@@ -3725,6 +3855,7 @@ int main() {
                         if (!inLine(ex, ey)) return;
                         float dealt = (ldmg < hp) ? ldmg : hp; hp -= dealt;
                         SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || lcrit);
+                        ApplyBossLifestealFromDamage(dealt);
                         if (hp <= 0.0f) al = false;
                     };
                     if (g_RRBoss && g_RRBoss->alive)
@@ -3733,6 +3864,8 @@ int main() {
                         lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
                     if (g_TessBoss && g_TessBoss->alive)
                         lhitB(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
+                    if (g_EtherBoss && g_EtherBoss->alive && inLine(g_EtherBoss->worldX, g_EtherBoss->worldY))
+                        HitEtherBossDirect(ldmg, pCX, pCY, lcrit);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
@@ -3765,7 +3898,7 @@ int main() {
                                                            g_Stats.splitterBoost);
                                 TryHackFirewallOnKill(m->kind, g_Stats);
                                 float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
-                                g_GameManager.xp += (long long)((bx+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
+                                g_GameManager.xp += (long long)((bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill();
                             }
@@ -3777,7 +3910,7 @@ int main() {
                         if (dx*dx+dy*dy < r2) {
                             bmb->hp -= dmg;
                             if (bmb->hp<=0.0f && !bmb->scored){ bmb->alive=false; bmb->scored=true; AddKillCombo();
-                                g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.meleeXpBonus)*g_Stats.xpMult);
+                                g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.bomberXpBonus)*g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum+=200.0f;
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill(); }
                         }
@@ -3796,11 +3929,22 @@ int main() {
                     // 蹂댁뒪 ??踰붿쐞 ?대㈃ ??諛?移?蹂댁뒪 泥대젰????＜ ?녾쾶 怨좎젙??
                     auto nhitB = [&](float ex, float ey, float& hp, bool& al) {
                         float dx=ex-pCX, dy=ey-pCY;
-                        if (dx*dx+dy*dy < (novaR+70.0f)*(novaR+70.0f)) { hp -= dmg * 2.0f; if (hp<=0.0f) al=false; }
+                        if (dx*dx+dy*dy < (novaR+70.0f)*(novaR+70.0f)) {
+                            float bdmg = dmg * 2.0f;
+                            float dealt = std::min(bdmg, hp);
+                            hp -= dealt;
+                            ApplyBossLifestealFromDamage(dealt);
+                            if (hp<=0.0f) al=false;
+                        }
                     };
                     if (g_RRBoss && g_RRBoss->alive) nhitB(g_RRBoss->worldX,g_RRBoss->worldY,g_RRBoss->hp,g_RRBoss->alive);
                     if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) nhitB(g_CentiBoss->worldX,g_CentiBoss->worldY,g_CentiBoss->hp,g_CentiBoss->alive);
                     if (g_TessBoss && g_TessBoss->alive) nhitB(g_TessBoss->worldX,g_TessBoss->worldY,g_TessBoss->hp,g_TessBoss->alive);
+                    if (g_EtherBoss && g_EtherBoss->alive) {
+                        float dx = g_EtherBoss->worldX - pCX, dy = g_EtherBoss->worldY - pCY;
+                        if (dx*dx + dy*dy < (novaR+70.0f)*(novaR+70.0f))
+                            HitEtherBossDirect(dmg * 2.0f, pCX, pCY, false);
+                    }
                     // ?쒓컖 ???쎌갹 留?SpawnShockWave ?ъ궗?? + ?먮쭧
                     SpawnShockWave(pCX, pCY, novaR, 0.45f, 0.4f, 1.0f, 0.75f);
                     SpawnSparks(pCX, pCY, 10, 0.4f, 1.0f, 0.7f, 360.0f);
@@ -3827,17 +3971,17 @@ int main() {
                     bool bowHold = g_AutoFire ? (g_ArcherCharge < 1.0f && g_PostPickGrace <= 0.0f)
                                               : lmb;
                     if (bowHold) {
-                        // 媛뺢턿(40% 鍮좊쫫) + ?곗궗利앷컯 蹂??bowChargeRateMult)
-                        g_ArcherCharge += delta / (BOW_CHARGE_TIME * (g_Stats.powerDraw ? 0.6f : 1.0f))
+                        // Power Draw shortens charge time by 28%; bowChargeRateMult stacks after it.
+                        g_ArcherCharge += delta / (BOW_CHARGE_TIME * (g_Stats.powerDraw ? 0.72f : 1.0f))
                                           * g_Stats.bowChargeRateMult;
                         if (g_ArcherCharge > 1.0f) g_ArcherCharge = 1.0f;
                     } else if (g_ArcherCharge > 0.001f) {
                         float charge = g_ArcherCharge;
                         float atx, aty; if (!aimTarget(atx, aty)) { atx = wmx; aty = wmy; }
                         float ang = atan2f(aty - pCY, atx - pCX);
-                        // ?꾩땐 ?꾨젰 (湲곕낯 4.1횞 / 媛뺢턿 5.1횞) + 怨듦꺽?μ쬆媛?蹂??bowChargeCapBonus)
+                        // Full charge multiplier: base 4.1x, Power Draw 4.7x before cap bonuses.
                         float chMult = 0.5f + charge *
-                                       ((g_Stats.powerDraw ? 4.6f : 3.6f) + g_Stats.bowChargeCapBonus);
+                                       ((g_Stats.powerDraw ? 4.2f : 3.6f) + g_Stats.bowChargeCapBonus);
                         float arrowDmg = g_Stats.GetBaseDamage()
                                        * g_Stats.GetDamageMultiplier(0.0f) * chMult;
                         if (g_Stats.berserk) {
@@ -3846,11 +3990,11 @@ int main() {
                             if (hf < 0.0f) hf = 0.0f; else if (hf > 1.0f) hf = 1.0f;
                             arrowDmg *= (1.0f + (1.0f - hf) * 0.6f);
                         }
-                        auto fireArrow = [&](float a) {
+                        auto fireArrow = [&](float a, float dmgScale = 1.0f) {
                             Bullet nb(pCX, pCY, pCX + cosf(a) * 200.0f, pCY + sinf(a) * 200.0f);
                             nb.speed       = effSpeed;
                             nb.maxRange    = 1500.0f;
-                            nb.remainingDmg= arrowDmg;
+                            nb.remainingDmg= arrowDmg * dmgScale;
                             nb.sizeScale   = 1.0f + charge * 3.0f;     // 理쒕? 4諛??ш린
                             nb.color       = glm::vec3(0.75f, 0.95f, 0.45f);
                             g_Bullets.push_back(nb);
@@ -3858,8 +4002,8 @@ int main() {
                         // ?ㅼ쨷 ?ш꺽: ?꾩땐(>0.85) 諛쒖궗 ??3諛?遺梨꾧섦
                         if (g_Stats.multishot && charge > 0.85f) {
                             fireArrow(ang);
-                            fireArrow(ang + 0.16f);
-                            fireArrow(ang - 0.16f);
+                            fireArrow(ang + 0.16f, 0.58f);
+                            fireArrow(ang - 0.16f, 0.58f);
                         } else {
                             fireArrow(ang);
                         }
@@ -4949,7 +5093,8 @@ int main() {
         if (g_BossWarnTimer > 0.0f &&
             (g_GameManager.currentState == GameState::RUNNING ||
              g_GameManager.currentState == GameState::PAUSED)) {
-            float warnDur = g_CreativeMode ? 0.35f : BOSS_WARN_DUR;
+            float warnDur = g_CreativeMode ? 0.35f : BOSS_WARN_DUR * TrialBossWarningMult();
+            if (warnDur < 0.25f) warnDur = 0.25f;
             float prog = 1.0f - g_BossWarnTimer / warnDur;   // 0→1
             if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
             float t = (float)glfwGetTime();
@@ -5162,6 +5307,24 @@ int main() {
         {
             float sw = (float)screenWidth, sh = (float)screenHeight;
             auto  st = g_GameManager.currentState;
+
+            // ── 씬 페이드 업데이트 ────────────────────────────────────────
+            if (g_FadeDir == 1) {               // 페이드 아웃 (검정으로)
+                g_FadeAlpha += delta / FADE_OUT_DUR;
+                if (g_FadeAlpha >= 1.0f) {
+                    g_FadeAlpha = 1.0f;
+                    g_GameManager.currentState = g_FadeTarget;
+                    st = g_FadeTarget;
+                    g_AppOpen = 0.0f;
+                    g_FadeDir = -1;
+                }
+            } else if (g_FadeDir == -1) {       // 페이드 인 (검정 → 투명)
+                g_FadeAlpha -= delta / FADE_IN_DUR;
+                if (g_FadeAlpha <= 0.0f) {
+                    g_FadeAlpha = 0.0f;
+                    g_FadeDir   = 0;
+                }
+            }
     
     
             // ??李?shop/codex/config) 吏꾩엯 ???대┝ ?좊땲硫붿씠???쒖옉 ??留??꾨젅??吏꾪뻾
@@ -5230,14 +5393,16 @@ int main() {
             //    RUNNING/DYING(?쒖닔 ?멸쾶?????ъ씠 ?놁쑝??而⑦뀓?ㅽ듃 援ъ꽦 ?먯껜瑜?嫄대꼫?.
             if (st != GameState::RUNNING && st != GameState::DYING) {
                 std::function<void()> resetFn = ResetForNewGame;
-                SceneCtx ctx{ sw, sh, mx, my, lmb, delta, window, &fireTimer, resetFn };
+                // 브라우저 크롬 영역(상단 64px) 안의 클릭은 씬에 전달하지 않음
+                bool sceneLmb = (my >= BROWSER_CHROME_H) ? lmb : false;
+                SceneCtx ctx{ sw, sh, mx, my, sceneLmb, delta, window, &fireTimer, resetFn };
                 switch (st) {
                 case GameState::MAIN_MENU:         Scene_MainMenu(ctx);         break;
                 case GameState::SHOP:              Scene_Shop(ctx);             break;
                 case GameState::CODEX:             Scene_Codex(ctx);            break;
                 case GameState::TUTORIAL:          Scene_Tutorial(ctx);         break;
                 case GameState::JOB_SELECT:        Scene_JobSelect(ctx);        break;
-                case GameState::DIFFICULTY_SELECT: Scene_DifficultySelect(ctx); break;
+                case GameState::RUN_CONFIG: Scene_RunConfig(ctx); break;
                 case GameState::CREATIVE_CONFIG:   Scene_CreativeConfig(ctx);   break;
                 case GameState::SETTINGS:          Scene_Settings(ctx);         break;
                 case GameState::READY:             Scene_Ready(ctx);            break;
@@ -5264,9 +5429,9 @@ int main() {
                 st == GameState::RUN_SHOP ||
                 (st == GameState::RUNNING && g_InBossIntermission)) {
 #ifdef __APPLE__
-                const float hudTopY = 8.0f + 30.0f;
+                const float hudTopY = BROWSER_CHROME_H + 8.0f + 30.0f;
 #else
-                const float hudTopY = 8.0f;
+                const float hudTopY = BROWSER_CHROME_H + 4.0f;
 #endif
                 // 醫뚯긽?? Lv. + HP ?レ옄 (?쒓컖 諛붾뒗 ?뚮젅?댁뼱 李쎌뿉 遺李⑸맖)
                 {
@@ -5499,6 +5664,41 @@ int main() {
                     ++slot;
                 }
             }
+            // ── 브라우저 크롬 (항상 최상단 렌더) ──
+            {
+                GameState nextSt = st;
+
+                // 타이틀바 진행바 계산
+                float barRatio = 0.0f, bR = 0.35f, bG = 0.72f, bB = 1.0f;
+                bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
+                               st == GameState::DYING   || st == GameState::AUG_SELECT ||
+                               st == GameState::DEBUFF_SELECT || st == GameState::RUN_SHOP);
+                if (inGame) {
+                    float bossHp = -1.0f, bossMaxHp = 1.0f; int bossPick = -1;
+                    if      (g_RRBoss    && g_RRBoss->alive)    { bossHp = g_RRBoss->hp;    bossMaxHp = g_RRBoss->maxHp;    bossPick = 2;  }
+                    else if (g_CentiBoss && g_CentiBoss->alive)  { bossHp = g_CentiBoss->hp;  bossMaxHp = g_CentiBoss->maxHp;  bossPick = 8;  }
+                    else if (g_TessBoss  && g_TessBoss->alive)   { bossHp = g_TessBoss->hp;   bossMaxHp = g_TessBoss->maxHp;   bossPick = 10; }
+                    else if (g_EtherBoss && g_EtherBoss->alive)  { bossHp = g_EtherBoss->hp;  bossMaxHp = g_EtherBoss->maxHp;  bossPick = 20; }
+
+                    if (bossPick >= 0 && bossMaxHp > 0.0f) {
+                        barRatio = bossHp / bossMaxHp;
+                        if (barRatio < 0.0f) barRatio = 0.0f;
+                        auto c = BossDir::WarnColor(bossPick);
+                        bR = c.x; bG = c.y; bB = c.z;
+                    } else if (g_NextBossScore > 0) {
+                        long long prev = g_NextBossScore - (long long)BossDir::MAIN_SCORE_STEP;
+                        if (prev < 0LL) prev = 0LL;
+                        barRatio = (float)(g_GameManager.score - prev) / BossDir::MAIN_SCORE_STEP;
+                        if (barRatio < 0.0f) barRatio = 0.0f;
+                        bR = 0.35f; bG = 0.72f; bB = 1.0f;
+                    }
+                }
+
+                DrawBrowserChrome(sw, sh, st, mx, my, lmb, g_LmbPrev, nextSt, barRatio, bR, bG, bB);
+                if (nextSt != st)
+                    g_GameManager.currentState = nextSt;
+            }
+
         }
 
         g_LmbPrev = lmb;

@@ -10,6 +10,16 @@
 extern PlayerStats g_Stats;   // 최대치 도달 증강 게이팅용 (main.cpp 정의)
 extern int         g_CurrentWeapon;
 
+static bool DebuffCandidateAllowed(AugType t) {
+    if (t == AugType::D_TROJAN_BOOST && !g_TypeOwned[(int)AugType::D_BLINKER])
+        return false;
+    if (t == AugType::D_BLEED && g_Stats.regenPerSec <= 0.0f)
+        return false;
+    if (t == AugType::D_APPROACH && g_Stats.approachStacks >= 3)
+        return false;
+    return true;
+}
+
 static const char* gm_vert =
     "#version 330 core\n"
     "layout (location = 0) in vec2 aPos;\n"
@@ -108,7 +118,7 @@ void GameManager::HandleInput(GLFWwindow* window) {
         if      (currentState == GameState::READY)    currentState = GameState::RUNNING;
         else if (currentState == GameState::RUNNING)  currentState = GameState::PAUSED;
         else if (currentState == GameState::PAUSED)   currentState = GameState::RUNNING;
-        // MAIN_MENU/DIFFICULTY_SELECT/SETTINGS 는 마우스 버튼으로만 진행
+        // MAIN_MENU/RUN_CONFIG/SETTINGS 는 마우스 버튼으로만 진행
         spaceReleased = false;
     }
     if (sp == GLFW_RELEASE) spaceReleased = true;
@@ -242,6 +252,7 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::HE_SHELLS_2       && !hasOwnedType(AugType::HE_SHELLS)) continue;
             if (t == AugType::REVOLVER_SILVER   && !hasOwnedType(AugType::REVOLVER_OVERLOAD)) continue;
             if (t == AugType::D_SPLITTER_BOOST  && !hasOwnedType(AugType::D_SPLITTER)) continue;
+            if (!DebuffCandidateAllowed(t)) continue;
             // 1런 1신화 — 이미 신화 보유 시 다른 신화 제외
             if (ALL_AUGS[i].rarity == AugRarity::MYTHIC && hasAnyMythicOwned()) continue;
             // 흡혈탄 스택 상한
@@ -250,6 +261,7 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::SHOTGUN_SPREAD     && !g_Stats.shotgun)  continue;
             if (t == AugType::REVOLVER_OVERLOAD  && !g_Stats.revolver) continue;
             if (t == AugType::HE_SHELLS          && !g_Stats.cannon)   continue;
+            if (t == AugType::SNIPER             && g_Stats.sniper)    continue;
             if (t == AugType::SKILL_FOCUS        && !playerHasSniper()) continue;
             if (t == AugType::SMG_COMPRESSOR    && !playerHasSMG())   continue;
             if (t == AugType::RIFLE_STABILITY   && !playerHasRifle()) continue;
@@ -263,7 +275,6 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::VISION_UP && g_Stats.visionStacks >= 5) continue;
             if (t == AugType::CRIT      && g_Stats.critChance   >= 75) continue;
             // 쉬움: 자폭병 관련 증강 제외 (#107)
-            if (g_Difficulty == Difficulty::EASY && t == AugType::HACK_BOMBER) continue;
             pool[poolSize++] = i;
         }
         if (poolSize > 0)
@@ -279,13 +290,10 @@ static int RollOneDebuff(const bool* takenOnce = nullptr) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
         if (AugRemoved(t)) continue;   // 취함/병렬처리 등 삭제된 디버프 제외 (디버프 선택 페이지)
+        if (!DebuffCandidateAllowed(t)) continue;
         // 한 번만 뜨는 디버프(적 출현형)는 이미 보유 시 제외
         if (takenOnce && AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
         // 쉬움: 자폭병 디버프 제외 (#107)
-        if (g_Difficulty == Difficulty::EASY &&
-            (t == AugType::D_BOMBER_BLAST ||
-             t == AugType::D_BOMBER_BUFF  ||
-             t == AugType::D_BOMBER_SPEED)) continue;
         pool[poolSize++] = i;
     }
     if (poolSize == 0) return 0;
@@ -374,16 +382,14 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
 }
 
 void GameManager::PickRandomDebuffIndices(int* outArr, int n) {
-    // ALL_AUGS 의 모든 DEBUFF 등급 인덱스 수집 (쉬움: 자폭병 디버프 제외)
+    // ALL_AUGS 의 모든 DEBUFF 등급 인덱스 수집
     int pool[AUG_TOTAL]; int poolSize = 0;
     for (int i = 0; i < AUG_TOTAL; i++) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
         if (AugRemoved(t)) continue;   // 병렬처리/취함 등 제거된 디버프 제외
-        if (g_Difficulty == Difficulty::EASY &&
-            (t == AugType::D_BOMBER_BLAST ||
-             t == AugType::D_BOMBER_BUFF  ||
-             t == AugType::D_BOMBER_SPEED)) continue;
+        if (!DebuffCandidateAllowed(t)) continue;
+        if (AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
         pool[poolSize++] = i;
     }
     if (poolSize == 0) {

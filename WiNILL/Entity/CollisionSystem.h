@@ -186,7 +186,7 @@ public:
                         float rwm = MobRewardMult(m->kind);
                         baseXp *= rwm;
                         baseScore *= rwm;
-                        float gained = (baseXp + (float)stats.meleeXpBonus)
+                        float gained = (baseXp + MobDebuffXpBonus(m->kind, m->elite, stats))
                                      * stats.xpMult;
                         xp              += (long long)gained;
                         stats.killCount += 1;
@@ -258,7 +258,7 @@ public:
                             bm->scored = true;       // 총알 처치 — 보상 지급 완료 표시
                             AddKillCombo();
                             TriggerHitStop(0.03f);   // 자폭병 처치 — 짧은 크런치
-                            float gained = (25.0f + (float)stats.meleeXpBonus)
+                            float gained = (25.0f + (float)stats.bomberXpBonus)
                                          * stats.xpMult;
                             xp              += (long long)gained;
                             stats.killCount += 1;

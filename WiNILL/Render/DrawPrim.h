@@ -28,6 +28,7 @@ inline GLint  g_MainProjLoc = -1;
 inline float  g_MainOrtho[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
 
 inline std::vector<float> g_Batch;   // [x,y,r,g,b,a] × n
+inline float g_BatchAlpha = 1.0f;   // 씬 전역 알파 배율 (1.0 = 정상)
 
 inline void BindMainShader() {
     if (g_MainShader == 0) return;
@@ -68,7 +69,7 @@ inline void BatchVtx(float x, float y, float r, float g, float b, float a) {
     if (!GfxVertOk(x, y)) return;
     g_Batch.push_back(x); g_Batch.push_back(y);
     g_Batch.push_back(r); g_Batch.push_back(g);
-    g_Batch.push_back(b); g_Batch.push_back(a);
+    g_Batch.push_back(b); g_Batch.push_back(a * g_BatchAlpha);
 }
 inline void BatchTri(float x1, float y1, float x2, float y2, float x3, float y3,
                      float r, float g, float b, float a) {
@@ -168,6 +169,49 @@ inline void drawDiamond(float cx, float cy, float size,
     BatchTri(cx, cy, ri, cy, cx, bo, r, g, b, a);   // 우-하
     BatchTri(cx, cy, cx, bo, le, cy, r, g, b, a);   // 하-좌
     BatchTri(cx, cy, le, cy, cx, t,  r, g, b, a);   // 좌-상
+}
+
+// MainShader.cpp 에서 정의 — glow fx 유니폼 위치
+extern GLint g_MainFxLoc;
+
+// uFx==2 (UI 글로우) 토글 — 호출 전 BatchFlush() 필수
+inline void SetGlowFx(bool on) {
+    if (g_MainFxLoc >= 0)
+        glUniform1i(g_MainFxLoc, on ? 2 : 0);
+}
+
+// 별자리 스타일 프레임 — 코너 브래킷 + 다이아몬드 노드 [+ 옵션 엣지 라인]
+// cLen: 코너 선 길이   nSz: 노드 크기   edgeA: 엣지 라인 알파 (0=없음)
+inline void drawConstellFrame(float x, float y, float w, float h,
+                               float r, float g, float b, float a,
+                               float cLen, float nSz, float edgeA = 0.0f) {
+    const float t = 1.3f;
+    // top-left
+    drawRect(x,        y,        cLen, t,    r, g, b, a);
+    drawRect(x,        y,        t,    cLen, r, g, b, a);
+    // top-right
+    drawRect(x+w-cLen, y,        cLen, t,    r, g, b, a);
+    drawRect(x+w-t,    y,        t,    cLen, r, g, b, a);
+    // bottom-left
+    drawRect(x,        y+h-t,    cLen, t,    r, g, b, a);
+    drawRect(x,        y+h-cLen, t,    cLen, r, g, b, a);
+    // bottom-right
+    drawRect(x+w-cLen, y+h-t,    cLen, t,    r, g, b, a);
+    drawRect(x+w-t,    y+h-cLen, t,    cLen, r, g, b, a);
+    // 코너 노드
+    if (nSz > 0.0f) {
+        drawDiamond(x,   y,   nSz, r, g, b, a);
+        drawDiamond(x+w, y,   nSz, r, g, b, a);
+        drawDiamond(x,   y+h, nSz, r, g, b, a);
+        drawDiamond(x+w, y+h, nSz, r, g, b, a);
+    }
+    // 엣지 라인 (선택)
+    if (edgeA > 0.0f) {
+        drawRect(x+cLen,  y,      w-cLen*2.0f, t,           r, g, b, edgeA);
+        drawRect(x+cLen,  y+h-t,  w-cLen*2.0f, t,           r, g, b, edgeA);
+        drawRect(x,       y+cLen, t,            h-cLen*2.0f, r, g, b, edgeA);
+        drawRect(x+w-t,   y+cLen, t,            h-cLen*2.0f, r, g, b, edgeA);
+    }
 }
 
 // 사이버펑크 네온 터미널 보더 — 또렷한 라인 + 코너 브래킷

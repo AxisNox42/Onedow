@@ -274,7 +274,7 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(prog_);
     glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
-    glUniform4f(uCol_, r, g, b, a);
+    glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(VAO_);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);

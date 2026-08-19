@@ -101,39 +101,195 @@ inline const TrialDef TRIAL_DEFS[] = {
     { L"LOW_BANDWIDTH", { L"스킬 쿨타임 +25%",     L"Skill CD +25%"      } },
     { L"HARDENED",      { L"적 체력 +30%",         L"Enemy HP +30%"      } },
     { L"SURGE",         { L"적 속도·체력 +20%",    L"Speed & HP +20%"    } },
+    { L"EARLY_RUSH",    { L"초반 원거리몹이 더 빨리 등장", L"Ranged mobs arrive earlier" } },
+    { L"PACKET_STORM",  { L"초반 일반 몹 스폰 압박 증가",   L"Early normal spawn pressure up" } },
+    { L"COLD_BOOT",     { L"시작 최대 체력 감소",            L"Lower starting max HP" } },
+    { L"ELITE_BLOOM",   { L"중반 특수/정예 몹 비율 증가",    L"Midgame special and elite bias up" } },
+    { L"BOMBER_TRACE",  { L"자폭병이 더 빨리, 자주 등장",    L"Bombers arrive earlier and faster" } },
+    { L"PROCESS_NOISE", { L"중반 원거리몹 상한 증가",        L"Midgame ranged mob cap up" } },
+    { L"LATE_OVERRUN",  { L"후반 스폰 램프 강화",            L"Late spawn ramp up" } },
+    { L"HARDENED_CORE", { L"후반 몹 체력 램프 강화",         L"Late enemy HP ramp up" } },
+    { L"SIGNAL_DRIFT",  { L"후반 원거리 압박 강화",          L"Late ranged pressure up" } },
+    { L"FIREWALL_CORE", { L"보스 체력 크게 증가",            L"Boss HP greatly increased" } },
+    { L"NOISY_ARENA",   { L"보스전 주변 압박 감소폭 완화",   L"Less spawn relief around bosses" } },
+    { L"SIGNAL_LOSS",   { L"보스 경고 시간이 짧아짐",        L"Shorter boss warning time" } },
 };
-inline constexpr int TRIAL_DEF_COUNT = 8;
+inline constexpr int TRIAL_DEF_COUNT = 20;
 
-inline int  g_TrialPool[3]     = { 0, 1, 2 };
-inline bool g_TrialSelected[3] = { false, false, false };
-inline bool g_TrialPoolReady   = false;
+enum class TrialStage { EARLY, MID, LATE, BOSS };
+
+inline constexpr int TRIAL_SLOT_COUNT = 4;
+inline int  g_TrialPool[TRIAL_SLOT_COUNT]     = { 8, 11, 14, 17 };
+inline bool g_TrialSelected[TRIAL_SLOT_COUNT] = { false, false, false, false };
+inline bool g_TrialPoolReady                  = false;
+
+inline TrialStage TrialStageForDef(int idx) {
+    if (idx >= 8  && idx <= 10) return TrialStage::EARLY;
+    if (idx >= 11 && idx <= 13) return TrialStage::MID;
+    if (idx >= 14 && idx <= 16) return TrialStage::LATE;
+    if (idx >= 17 && idx <= 19) return TrialStage::BOSS;
+    if (idx == 2) return TrialStage::BOSS;
+    if (idx == 6 || idx == 7) return TrialStage::LATE;
+    return TrialStage::EARLY;
+}
+
+inline const wchar_t* TrialStageLabel(TrialStage stage, int langIdx) {
+    bool ko = (langIdx == 0);
+    switch (stage) {
+    case TrialStage::EARLY: return ko ? L"초반" : L"EARLY";
+    case TrialStage::MID:   return ko ? L"중반" : L"MID";
+    case TrialStage::LATE:  return ko ? L"후반" : L"LATE";
+    case TrialStage::BOSS:  return ko ? L"보스" : L"BOSS";
+    }
+    return ko ? L"시련" : L"TRIAL";
+}
+
+inline float TrialScoreBonusForDef(int idx) {
+    switch (idx) {
+    case 8:  return 0.14f;
+    case 9:  return 0.16f;
+    case 10: return 0.18f;
+    case 11: return 0.18f;
+    case 12: return 0.20f;
+    case 13: return 0.17f;
+    case 14: return 0.22f;
+    case 15: return 0.24f;
+    case 16: return 0.21f;
+    case 17: return 0.24f;
+    case 18: return 0.22f;
+    case 19: return 0.20f;
+    default: return 0.15f;
+    }
+}
+
+inline bool TrialActive(int defIdx) {
+    for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
+        if (g_TrialSelected[i] && g_TrialPool[i] == defIdx)
+            return true;
+    }
+    return false;
+}
 
 inline int TrialCount() {
-    return (g_TrialSelected[0]?1:0) + (g_TrialSelected[1]?1:0) + (g_TrialSelected[2]?1:0);
+    int count = 0;
+    for (int i = 0; i < TRIAL_SLOT_COUNT; ++i)
+        if (g_TrialSelected[i]) ++count;
+    return count;
 }
+
 inline float TrialScoreMult() {
-    switch (TrialCount()) {
-    case 1: return 1.20f;
-    case 2: return 1.35f;
-    case 3: return 1.50f;
-    default: return 1.00f;
+    float mult = 1.0f;
+    for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
+        if (g_TrialSelected[i])
+            mult += TrialScoreBonusForDef(g_TrialPool[i]);
     }
+    return mult;
 }
+
 inline void RerollTrialPool() {
-    int idx[TRIAL_DEF_COUNT];
-    for (int i = 0; i < TRIAL_DEF_COUNT; i++) idx[i] = i;
-    for (int i = 0; i < 3; i++) {
-        int j = i + rand() % (TRIAL_DEF_COUNT - i);
-        int tmp = idx[i]; idx[i] = idx[j]; idx[j] = tmp;
-        g_TrialPool[i] = idx[i];
+    static const int stagePools[TRIAL_SLOT_COUNT][3] = {
+        { 8,  9, 10 },
+        { 11, 12, 13 },
+        { 14, 15, 16 },
+        { 17, 18, 19 },
+    };
+    for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
+        g_TrialPool[i] = stagePools[i][rand() % 3];
+        g_TrialSelected[i] = false;
     }
-    g_TrialSelected[0] = g_TrialSelected[1] = g_TrialSelected[2] = false;
     g_TrialPoolReady = true;
 }
+
 inline void ResetTrials() {
-    g_TrialPool[0] = 0; g_TrialPool[1] = 1; g_TrialPool[2] = 2;
-    g_TrialSelected[0] = g_TrialSelected[1] = g_TrialSelected[2] = false;
+    g_TrialPool[0] = 8;
+    g_TrialPool[1] = 11;
+    g_TrialPool[2] = 14;
+    g_TrialPool[3] = 17;
+    for (int i = 0; i < TRIAL_SLOT_COUNT; ++i)
+        g_TrialSelected[i] = false;
     g_TrialPoolReady = false;
+}
+
+inline float TrialPlayerMaxHpMult() {
+    float m = 1.0f;
+    if (TrialActive(10)) m *= 0.82f;
+    return m;
+}
+
+inline float TrialSpawnRateMult(long long score) {
+    float m = 1.0f;
+    if (TrialActive(9))  m *= 1.18f;
+    if (TrialActive(11)) m *= 1.08f;
+    if (TrialActive(14) && score >= 220000) m *= 1.24f;
+    if (TrialActive(16) && score >= 320000) m *= 1.12f;
+    return m;
+}
+
+inline float TrialEnemyHpMult(long long score) {
+    float m = 1.0f;
+    if (TrialActive(11)) m *= 1.08f;
+    if (TrialActive(15) && score >= 220000) m *= 1.28f;
+    return m;
+}
+
+inline int TrialEliteBiasBonus(long long score) {
+    int bonus = 0;
+    if (TrialActive(11) && score >= 90000) bonus += 8;
+    if (TrialActive(15) && score >= 260000) bonus += 4;
+    return bonus;
+}
+
+inline int TrialVarietyBiasBonus(long long score) {
+    int bonus = 0;
+    if (TrialActive(11) && score >= 70000) bonus += 9;
+    if (TrialActive(16) && score >= 300000) bonus += 6;
+    return bonus;
+}
+
+inline float TrialRangedInitialDelay(float base) {
+    if (TrialActive(8)) return base + 3.4f;
+    return base;
+}
+
+inline float TrialRangedIntervalMult(long long score) {
+    float m = 1.0f;
+    if (TrialActive(8))  m *= 0.78f;
+    if (TrialActive(13) && score >= 90000) m *= 0.86f;
+    if (TrialActive(16) && score >= 280000) m *= 0.82f;
+    if (TrialActive(18)) m *= 0.90f;
+    return m;
+}
+
+inline int TrialRangedMaxBonus(long long score) {
+    int bonus = 0;
+    if (TrialActive(13) && score >= 90000) bonus += 2;
+    if (TrialActive(16) && score >= 280000) bonus += 2;
+    if (TrialActive(18)) bonus += 1;
+    return bonus;
+}
+
+inline float TrialBomberStartTime(float base) {
+    if (TrialActive(12)) base -= 10.0f;
+    if (base < 6.0f) base = 6.0f;
+    return base;
+}
+
+inline float TrialBomberIntervalMult(long long score) {
+    float m = 1.0f;
+    if (TrialActive(12)) m *= 0.76f;
+    if (TrialActive(14) && score >= 220000) m *= 0.88f;
+    return m;
+}
+
+inline float TrialBossHpMult() {
+    float m = 1.0f;
+    if (TrialActive(17)) m *= 1.35f;
+    if (TrialActive(18)) m *= 1.15f;
+    return m;
+}
+
+inline float TrialBossWarningMult() {
+    return TrialActive(19) ? 0.72f : 1.0f;
 }
 
 // 크리에이티브 모드 (난이도 선택 화면에서 토글)

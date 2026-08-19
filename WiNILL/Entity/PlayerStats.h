@@ -21,8 +21,13 @@ struct PlayerStats {
     float xpMult           = 1.0f;   // 전체 EXP 곱연산 (유리심장, 총알걸림, 취함)
     float bulletSpread     = 0.0f;   // 발사 시 각도 흔들기 (라디안). 0 = 정확
     int   pierceChance     = 30;     // PIERCE 활성 시 관통 확률 (%). MINIGUN 등이 덮어씀
-    int   meleeXpBonus     = 0;      // 잡몹 처치 추가 EXP (잡몹 폭주)
-    int   rangedXpBonus    = 0;      // 원거리 처치 추가 EXP (원거리 디버프들)
+    static constexpr int MOB_KIND_XP_SLOTS = 16;
+    int   mobXpBonus       = 0;      // Process kill EXP bonus for generic mob debuffs.
+    int   mobKindXpBonus[MOB_KIND_XP_SLOTS] = {};
+    int   eliteXpBonus     = 0;      // Extra EXP only when an elite variant is killed.
+    int   specialMobXpBonus = 0;     // Extra EXP only when a non-normal mob type is killed.
+    int   bomberXpBonus    = 0;      // Bomber kill EXP bonus.
+    int   rangedXpBonus    = 0;      // Ranged mob kill EXP bonus.
     float xpPerSec         = 0.0f;   // 초당 누적 EXP (다가오는 죽음, 잡몹 가속)
     float rmobSpawnDelayBonus = 0.0f;// 원거리 몹 스폰 가속 (초)
     int   mobCapBonus      = 0;      // 잡몹 동시 존재 한도 추가
@@ -99,8 +104,8 @@ struct PlayerStats {
 
     // ── 희귀/전설 (티어드) ───────────────────────────────
     bool  drone        = false;
-    int   droneCount   = 0;       // 1 = DRONE (RARE), 2 = DRONE_2 (LEGENDARY)
-    bool  droneRapid   = false;   // 군집 지능(신화) — 드론 초고속 사격
+    int   droneCount   = 0;       // 1 = DRONE, 2 = DRONE_2, 4 = DRONE_HIVE
+    bool  droneRapid   = false;   // 예전 군집 지능 연사 가속 플래그(현재 비활성)
     bool  laser        = false;   // 스캔 레이저 — 주기적 관통 빔 (군중제어)
     int   laserTier    = 1;       // 1 = LASER, 2 = LASER_2 (간격↓·사거리↑)
     int   purgeNova    = 0;       // 백신 스캔 — 주기적 범위 펄스 (중첩 시 강화)
@@ -157,7 +162,6 @@ struct PlayerStats {
     float eliteChanceMult = 1.0f;  // 엘리트 변종 출현 확률 배율
     float varietyChanceMult = 1.0f;// 특수 잡몹(돌진/회피/거대) 출현 확률 배율
     // 핵앤슬래쉬 디버프
-    float bleedPerSec     = 0.0f;  // 초당 HP 감소 (출혈)
 
 
     // 일반(COMMON) 증강 = 가산(flat) — 곱연산 복리 폭주(원펀맨) 방지.
@@ -210,7 +214,7 @@ struct PlayerStats {
         case AugType::LIGHT_AMMO:
             fireInterval     /= 1.10f;   // 연사 +10%
             bulletSpeed      *= 1.30f;
-            damageMultiplier *= 0.80f;   // 공격력 -20%
+            damageMultiplier *= 0.85f;   // 공격력 -15%
             break;
         case AugType::LIGHT_STEP:
             lightStep      = true;
@@ -254,7 +258,7 @@ struct PlayerStats {
             moveSpeedMult *= 0.60f;
             playerSizeMult *= 1.50f;
             maxHP         *= 2.0f;
-            regenPerSec   += 1.0f;
+            regenPerSec   += 0.7f;
             break;
         case AugType::PIERCE:
             pierce = true;
@@ -407,7 +411,7 @@ struct PlayerStats {
             break;
         case AugType::CB_WARLORD:       // 광전사 + 연쇄폭발 → 전쟁군주 (영혼 수확 능력)
             damageMultiplier *= 1.15f;
-            soulHarvest       = true;   // 100킬마다 영구 누적 (영혼수확 이전)
+            soulHarvest       = true;   // 1000킬마다 영구 누적
             break;
         case AugType::CB_TEMPEST:       // 차크람 + 드론 → 난기류
             if (chakramCount < 3) ++chakramCount;
@@ -418,15 +422,15 @@ struct PlayerStats {
             flatDamageBonus  += 35.0f;
             damageMultiplier *= 1.12f;
             break;
-        case AugType::BULLET_RAIN_ETERNAL:   // 신화 — 무한 세례 (III 쿨 유지 + 처치 가속)
+        case AugType::BULLET_RAIN_ETERNAL:   // 신화 — 무한 세례 (4초 쿨 + 처치 가속)
             bulletRain         = true;
             rainKillReduce     = true;
-            if (bulletRainCooldown > 8.0f) bulletRainCooldown = 8.0f;
+            bulletRainCooldown = 4.0f;
             break;
         case AugType::DRONE_HIVE:            // 신화 — 군집 지능
             drone      = true;
-            droneCount = 2;                  // 최대치(MAX_DRONES)
-            droneRapid = true;               // main: 드론 발사 간격 대폭 단축
+            droneCount = 4;
+            droneRapid = false;
             break;
         case AugType::LASER_CONVERGE:        // 신화 — 수렴
             laser     = true;
@@ -473,6 +477,7 @@ struct PlayerStats {
             break;
         case AugType::TWIN_2:
             twin = true;  twinCount = 3;     // 트리플 샷
+            damageMultiplier *= 0.88f;
             break;
         // ── 클래스 전용 (검객/궁수) ──
         case AugType::MELEE_WIDE:  meleeWide = true; break;
@@ -513,152 +518,150 @@ struct PlayerStats {
         case AugType::D_RMOB_MAX:
             if (rmobMaxBonus < 2) ++rmobMaxBonus;
             rmobSpawnDelayBonus += 0.5f;
-            rangedXpBonus       += 12;     // (너프: 25 → 12)
+            rangedXpBonus       += 12;
             break;
         case AugType::D_RMOB_HP:
             rmobHpMult     *= 1.20f;
             rmobDmgMult    *= 1.20f;
-            rangedXpBonus  += 6;           // (너프: 12 → 6)
+            rangedXpBonus  += 6;
             break;
         case AugType::D_RMOB_DELAY:
-            if (rmobDelayStacks < 10) {     // 10 제한 (13쯤부터 너무 빨라 화면 밖으로 사라짐)
+            if (rmobDelayStacks < 10) {
                 rmobDelayMult *= 0.80f;
                 ++rmobDelayStacks;
             }
-            rangedXpBonus  += 5;           // (너프: 10 → 5)
+            rangedXpBonus  += 5;
             break;
         case AugType::D_MOB_SPAWN:
             mobSpawnMult   *= 0.70f;
             mobCapBonus    += 200;
-            meleeXpBonus   += 1;
+            mobXpBonus     += 1;
             break;
-        case AugType::D_SPLITTER:    // 웜 침투 (죽으면 쪼개짐) · 처치 EXP +2
+        case AugType::D_SPLITTER:
             splitterMobs   = true;
-            meleeXpBonus   += 2;
+            mobKindXpBonus[1] += 2;
             break;
         case AugType::D_SPLITTER_BOOST:
             splitterMobs   = true;
             splitterBoost  = true;
             break;
-        case AugType::D_BLINKER:     // 트로이목마 침투 (순간이동 추격) · 처치 EXP +3
+        case AugType::D_BLINKER:
             blinkerMobs    = true;
-            meleeXpBonus   += 3;           // (너프: 6 → 3)
+            mobKindXpBonus[2] += 3;
             break;
-        case AugType::D_ORBITER:     // 공전체 출현 (스파이럴 인) · 처치 EXP +5
+        case AugType::D_ORBITER:
             orbiterMobs    = true;
-            meleeXpBonus   += 5;
+            mobKindXpBonus[6] += 5;
             break;
-        case AugType::D_SPAWNER:     // 소환체 출현 (잡몹 소환) · 처치 EXP +7
+        case AugType::D_SPAWNER:
             spawnerMobs    = true;
-            meleeXpBonus   += 7;
+            mobKindXpBonus[7] += 7;
             break;
-        case AugType::D_SHIELDED:    // 보호막체 출현 (주기 방패) · 처치 EXP +5
+        case AugType::D_SHIELDED:
             shieldedMobs   = true;
-            meleeXpBonus   += 5;
+            mobKindXpBonus[8] += 5;
             break;
         case AugType::D_APPROACH:
             approachingDeath = true;
-            ++approachStacks;
-            xpPerSec       += 0.5f;        // (너프: 1.0 → 0.5)
+            if (approachStacks < 3) {
+                ++approachStacks;
+                xpPerSec   += 0.5f;
+            }
             break;
         case AugType::D_MOB_SPEED:
             mobSpeedMult   *= 1.10f;
-            xpPerSec       += 0.5f;        // (너프: 1.0 → 0.5)
+            xpPerSec       += 0.5f;
             break;
         case AugType::D_GLASS_HEART:
             maxHP          *= 0.80f;
-            xpMult         *= 1.05f;       // (너프: 10% → 5%)
+            xpMult         *= 1.03f;
             break;
         case AugType::D_BULLET_STUCK:
-            fireInterval   *= 1.25f;
-            xpMult         *= 1.05f;       // (너프: 10% → 5%)
+            fireInterval   /= 0.90f;
+            xpMult         *= 1.05f;
             break;
         case AugType::D_DRUNK:
             if (!drunk) {
-                // 첫 픽
                 drunk = true;
             } else {
-                // 중복 픽: 활성 지속 +1s, 쿨타임 -2s (최소 4s)
                 drunkActiveDuration += 1.0f;
                 drunkCooldown = std::max(4.0f, drunkCooldown - 2.0f);
             }
-            xpMult *= 1.05f;              // (너프: 20% → 10% → 5%; 활성 중 데미지 -40% 페널티 추가)
+            xpMult *= 1.05f;
             break;
-        // ── 자폭병 디버프 ──
         case AugType::D_BOMBER_BLAST:
             bomberBlastMult *= 1.50f;
-            meleeXpBonus    += 12;         // (너프: 25 → 12)
+            bomberXpBonus   += 12;
             break;
         case AugType::D_BOMBER_BUFF:
             bomberHpMult    *= 1.50f;
-            meleeXpBonus    += 5;          // (너프: 10 → 5)
+            bomberXpBonus   += 5;
             break;
         case AugType::D_BOMBER_SPEED:
             bomberSpeedMult *= 1.30f;
-            meleeXpBonus    += 3;          // (너프: 5 → 3)
+            bomberXpBonus   += 3;
             break;
-        // ── 잡몹/플레이어 디버프 ──
         case AugType::D_MOB_HP:
-            monsterHpMult   *= 1.45f;        // 잡몹 체력 증가량 ↑ (1.20 → 1.45)
-            meleeXpBonus    += 2;
+            monsterHpMult   *= 1.30f;
+            mobXpBonus      += 2;
             break;
         case AugType::D_SLOW_MOVE:
             moveSpeedMult   *= 0.95f;
-            xpMult          *= 1.10f;      // (너프: 20% → 10%)
+            xpMult          *= 1.03f;
             break;
-        // ── 핵앤슬래쉬 디버프 ──
         case AugType::D_BLEED:
-            bleedPerSec     += 0.8f;       // 초당 HP -0.8
+            regenPerSec      = std::max(0.0f, regenPerSec - 1.0f);
             xpMult          *= 1.12f;
             break;
         case AugType::D_WEAKEN:
-            damageMultiplier *= 0.88f;     // 공격력 -12%
+            damageMultiplier *= 0.88f;
             xpMult           *= 1.10f;
             break;
-        // ── 프로세스류(잡몹) 출현 디버프 (확장) ──
-        case AugType::D_MOB_PACK:          // 군집 스폰 (스폰당 +2)
+        case AugType::D_MOB_PACK:
             mobPackBonus    += 2;
-            meleeXpBonus    += 6;
+            mobXpBonus      += 6;
             break;
-        case AugType::D_MOB_ELITE:         // 권한 상승 — 엘리트 변종(변종개체) 확률 ↑
+        case AugType::D_MOB_ELITE:
             eliteChanceMult *= 2.2f;
-            meleeXpBonus    += 3;          // (너프: 5 → 3)
+            eliteXpBonus    += 3;
             break;
-        case AugType::D_MOB_FRENZY:        // 특수 잡몹 확률 ↑
+        case AugType::D_MOB_FRENZY:
             varietyChanceMult *= 1.8f;
-            meleeXpBonus    += 4;
+            mobKindXpBonus[3] += 4;
+            mobKindXpBonus[4] += 4;
+            mobKindXpBonus[5] += 4;
             break;
-        case AugType::D_SCHEDULER:         // 스케쥴러 강화 — 특수 잡몹 HP +10%
+        case AugType::D_SCHEDULER:
             specialMobHpMult *= 1.10f;
-            meleeXpBonus    += 2;          // (너프: 3 → 2)
+            specialMobXpBonus += 2;
             break;
-        case AugType::D_TROJAN_BOOST:      // 트로이목마 강화 — 점멸 쿨다운 단축
+        case AugType::D_TROJAN_BOOST:
             trojanBoost     = true;
-            meleeXpBonus    += 2;          // (너프: 4 → 2)
+            mobKindXpBonus[2] += 2;
             break;
-        case AugType::D_CRASHER_BOOST:     // 크래셔 강화 — 돌진 중 받는 피해 -10%
+        case AugType::D_CRASHER_BOOST:
             crasherBoost    = true;
-            meleeXpBonus    += 4;
+            mobKindXpBonus[3] += 4;
             break;
-        case AugType::D_BADSECTOR:         // 배드 섹터 출현
+        case AugType::D_BADSECTOR:
             badsectorMobs   = true;
-            meleeXpBonus    += 8;
+            mobKindXpBonus[10] += 8;
             break;
-        case AugType::D_REGERROR:          // 레지스트리 에러 출현
+        case AugType::D_REGERROR:
             regerrorMobs    = true;
-            meleeXpBonus    += 10;
+            mobKindXpBonus[11] += 10;
             break;
         case AugType::D_DDOS:
             ddosMobs        = true;
-            meleeXpBonus    += 4;
+            mobKindXpBonus[9] += 4;
             break;
         case AugType::D_WEAVER_BOOST:
             weaverBoost     = true;
-            meleeXpBonus    += 3;
+            mobKindXpBonus[4] += 3;
             break;
         case AugType::D_BRUTE_BOOST:
             bruteBoost      = true;
-            meleeXpBonus    += 4;
+            mobKindXpBonus[5] += 4;
             break;
         case AugType::LIFESTEAL_2:
             lifesteal2      = true;
@@ -670,10 +673,11 @@ struct PlayerStats {
         case AugType::CHAIN_2:
             ricochetMax     = 3;
             ricochetChance  = 100;
-            ricochetDmgMult = 0.80f;
+            ricochetDmgMult = 0.85f;
             break;
         case AugType::SHOTGUN_SPREAD:
             shotgunSpread   = true;
+            fireInterval   *= 1.12f;
             break;
         case AugType::REVOLVER_OVERLOAD:
             revolverOverload = true;
@@ -694,7 +698,7 @@ struct PlayerStats {
             break;
         case AugType::RIFLE_STABILITY:
             bulletSpread    = 0.0f;
-            flatDamageBonus += 12.0f;
+            flatDamageBonus += 8.0f;
             break;
         case AugType::SNIPER_AMPLIFIER:
             sniperDistBonusPct += 0.30f;
@@ -747,9 +751,9 @@ struct PlayerStats {
         if (bayonet && distFromPlayer < 200.0f)
             m *= 1.5f;
 
-        // 영혼 수확: 1500킬당 +5% (최대 7스택)
+        // 영혼 수확: 1000킬당 +5% (최대 7스택)
         if (soulHarvest) {
-            int souls = (int)(killCount / 1500); if (souls > 7) souls = 7;
+            int souls = (int)(killCount / 1000); if (souls > 7) souls = 7;
             m *= (1.0f + (float)souls * 0.05f);
         }
 
@@ -771,7 +775,7 @@ struct PlayerStats {
     float GetFireIntervalMult() const {
         float mult = 1.0f;
         if (soulHarvest) {
-            int souls = (int)(killCount / 1500); if (souls > 7) souls = 7;
+            int souls = (int)(killCount / 1000); if (souls > 7) souls = 7;
             mult /= (1.0f + (float)souls * 0.02f);
         }
         if (miniaturize)
@@ -781,7 +785,7 @@ struct PlayerStats {
     float GetBulletSpeedBonus() const {
         float b = 0.0f;
         if (soulHarvest) {
-            int souls = (int)(killCount / 1500); if (souls > 7) souls = 7;
+            int souls = (int)(killCount / 1000); if (souls > 7) souls = 7;
             b += bulletSpeed * (float)souls * 0.02f;
         }
         return b;
@@ -800,9 +804,9 @@ struct PlayerStats {
         return v;
     }
 
-    // 일반 증강 초반 부스트 (최대 3회 ×1.08)
+    // 일반 증강 초반 부스트 (첫 일반 증강 1회만)
     void ApplyCommonMultBoost() {
-        if (commonMultBoosts < 3) {
+        if (commonMultBoosts < 1) {
             damageMultiplier *= 1.08f;
             ++commonMultBoosts;
         }
@@ -811,9 +815,9 @@ struct PlayerStats {
     // 현재 이동속도 배율 (가벼운 발걸음·건러너 상태 반영)
     float GetMoveMultiplier(bool isFiring) const {
         float m = moveSpeedMult;
-        // 가벼운 발걸음: 피격 후 비활성 동안 50% 보너스 제거
+        // 가벼운 발걸음: 피격 후 비활성 동안 30% 보너스만 제거
         if (lightStep && lightStepDisableTimer > 0.0f)
-            m /= 1.50f;
+            m /= 1.30f;
         // 건 앤 러너: 미사격 시 +80%
         if (gunRunner && !isFiring)
             m *= 1.80f;

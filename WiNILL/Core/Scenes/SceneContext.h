@@ -1,9 +1,8 @@
 #pragma once
 #include <functional>
+#include "GameManager.h"
 
 struct GLFWwindow;
-
-enum class GameState;
 
 struct SceneCtx {
     float  sw, sh;
@@ -26,3 +25,17 @@ constexpr float APP_OPEN_DUR  = 0.22f;
 
 void LaunchApp(GameState target, const wchar_t* name,
                float ar, float ag, float ab);
+
+// ── 씬 페이드 전환 ───────────────────────────────────────────────
+inline float     g_FadeAlpha  = 0.0f;
+inline int       g_FadeDir    = 0;          // 1=fadeout, -1=fadein, 0=idle
+inline GameState g_FadeTarget = GameState::MAIN_MENU;
+constexpr float  FADE_OUT_DUR = 0.35f;
+constexpr float  FADE_IN_DUR  = 0.35f;
+
+inline void StartSceneFade(GameState target) {
+    if (g_FadeDir != 0) return;
+    g_FadeTarget = target;
+    g_FadeDir    = 1;
+    g_FadeAlpha  = 0.0f;
+}

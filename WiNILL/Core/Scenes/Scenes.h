@@ -6,7 +6,7 @@ void Scene_Shop(const SceneCtx& c);
 void Scene_Codex(const SceneCtx& c);
 void Scene_Tutorial(const SceneCtx& c);
 void Scene_JobSelect(const SceneCtx& c);
-void Scene_DifficultySelect(const SceneCtx& c);
+void Scene_RunConfig(const SceneCtx& c);
 void Scene_CreativeConfig(const SceneCtx& c);
 void Scene_Settings(const SceneCtx& c);
 void Scene_Ready(const SceneCtx& c);

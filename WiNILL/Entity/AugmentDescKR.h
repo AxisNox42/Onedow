@@ -21,7 +21,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::GLASS_CANNON:
         return L"공격력 +50% / 최대 체력 -35% / 한 방 화력 극대화·생존 리스크 동반 (1회만 획득)";
     case AugType::LIGHT_AMMO:
-        return L"연사 +10% · 탄속 +30% / 공격력 -20% / 가볍고 빠른 탄환 빌드 (1회만 획득)";
+        return L"연사 +10% · 탄속 +30% / 공격력 -15% / 가볍고 빠른 탄환 빌드 (1회만 획득)";
     case AugType::LIGHT_STEP:
         return L"이동 속도 +30% / 피격 시 10초간 보너스 해제 / 기동전·카이팅에 유리 (1회만 획득)";
     case AugType::GUN_RUNNER:
@@ -49,7 +49,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::MINIATURIZE:
         return L"최대 체력 1/2 · 크기 -20% · 이동 +20% / 보유 증강 1개당 공격 +10·연사 +2% / 작고 빠른 스케일링 빌드";
     case AugType::GIGANTIFY:
-        return L"최대 체력 ×2 · 크기 +50% / 재생 +1.0/s · 이동 -40% / 거대·탱커 생존 빌드";
+        return L"최대 체력 ×2 · 크기 +50% / 재생 +0.7/s · 이동 -40% / 거대·탱커 생존 빌드";
     case AugType::PIERCE:
         return L"명중 시 30% 확률로 적·장애물 관통 / 밀집 적 관통 처리 / 관통 II·조합과 시너지";
     case AugType::TWIN:
@@ -101,7 +101,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::RANDOM_AUG:
         return L"등급 무관 랜덤 버프 3개 즉시 획득 / 디버프는 포함되지 않음 / 한 번에 빌드 다각화";
     case AugType::SOUL_HARVEST:
-        return L"1500킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택) / 장기전 스노우볼 성장 / 영구 누적";
+        return L"1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택) / 장기전 스노우볼 성장 / 영구 누적";
     case AugType::MK2:
         return L"사망 시 공격력 비례 대폭발 + 풀 HP 부활 / 1회 한정·페널티 없음 / 최후의 안전장치";
     case AugType::HACK_BOMBER:
@@ -127,13 +127,13 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::D_MOB_SPAWN:
         return L"잡몹 스폰 빈도 증가 · 동시 한도 +200 / 잡몹 처치 EXP +1 / 화면 혼잡·경험치 소량 보상";
     case AugType::D_APPROACH:
-        return L"무적 빨간 오브가 영원히 추격 / 초당 EXP +0.5 / 중복 시 오브 속도 +20% — 고위험·고보상";
+        return L"무적 붉은 오브가 계속 추적 / 초당 EXP +0.5 / 최대 3회까지 중복, 중복 시 오브 속도 +20%";
     case AugType::D_MOB_SPEED:
         return L"잡몹 이동 속도 +10% / 초당 EXP +0.5 / 빠른 잡몹 러시·지속 경험치 보상";
     case AugType::D_GLASS_HEART:
-        return L"최대 체력 -20% / 전체 EXP +5% / 얇은 체력·빠른 성장 트레이드오프";
+        return L"최대 체력 -20% / 전체 EXP +3% / 체력 증가 수단이 적어 리스크가 큰 선택지";
     case AugType::D_BULLET_STUCK:
-        return L"연사 속도 -20% / 전체 EXP +5% / 느린 사격·경험치 보상";
+        return L"연사 속도 -10% / 전체 EXP +5% / 공격 템포가 느려지는 대신 경험치 보상";
     case AugType::D_DRUNK:
         return L"20초마다 5초간 조준 랜덤·피해 -40% / 전체 EXP +5% / 중복: 지속 +1초·쿨 -2초";
     case AugType::D_BOMBER_BLAST:
@@ -143,31 +143,31 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::D_BOMBER_SPEED:
         return L"자폭병 이동 속도 +30% / 자폭병 처치 EXP +3 / 빠른 접근 자폭병";
     case AugType::D_MOB_HP:
-        return L"잡몹 체력 +45% / 잡몹 처치 EXP +2 / 단단한 잡몹·보상 소폭 상향";
+        return L"프로세스 체력 +30% / 프로세스 처치 EXP +2 / 기본 적 전체가 단단해짐";
     case AugType::D_SLOW_MOVE:
-        return L"플레이어 이동 속도 -5% / 전체 EXP +10% / 둔한 기동·높은 경험치";
+        return L"플레이어 이동 속도 -5% / 전체 EXP +3% / 기동성 리스크가 낮은 보상으로 조정";
     case AugType::D_SPLITTER:
-        return L"일부 프로세스가 웜으로 변이 / 처치 시 작은 2마리로 분열 (2세대까지) / 처치 EXP +2";
+        return L"일부 프로세스가 웜으로 변이 / 죽으면 분열 / 웜 처치 EXP +2";
     case AugType::D_SPLITTER_BOOST:
         return L"웜 분열 3세대까지 · 분열된 개체마다 처치 보상 별도 / 디버프 EXP 보너스 없음 / 선행: 웜 침투";
     case AugType::D_BLINKER:
-        return L"일부 프로세스가 트로이목마로 변이 / 잔상 예고 후 순간이동 추격 / 처치 EXP +3";
+        return L"일부 프로세스가 트로이목마로 변이 / 경고 후 순간이동 / 트로이목마 처치 EXP +3";
     case AugType::D_ORBITER:
-        return L"일부 프로세스가 스파이웨어로 변이 / 주위를 돌며 서서히 좁혀옴 / 처치 EXP +5";
+        return L"일부 프로세스가 스파이웨어로 변이 / 플레이어 주변을 공전하며 압박 / 스파이웨어 처치 EXP +5";
     case AugType::D_SPAWNER:
-        return L"일부 프로세스가 봇넷으로 변이 / 작은 프로세스를 계속 소환 / 처치 EXP +7";
+        return L"일부 프로세스가 봇넷으로 변이 / 작은 프로세스를 계속 소환 / 봇넷 처치 EXP +7";
     case AugType::D_SHIELDED:
-        return L"일부 프로세스가 방화벽으로 변이 / 방패 ON 시 피해 대폭 감소·주기적 OFF / 처치 EXP +5";
+        return L"일부 프로세스가 방화벽으로 변이 / 보호막 주기 ON-OFF / 방화벽 처치 EXP +5";
     case AugType::D_BLEED:
-        return L"초당 체력 0.8 감소 (재생으로 상쇄 가능) / 전체 EXP +12% / 지속 피해·높은 경험치";
+        return L"체력 회복 -1.0/s / 회복이 0이면 감소하지 않고 카드도 등장하지 않음 / 전체 EXP +12%";
     case AugType::D_WEAKEN:
         return L"공격력 -12% / 전체 EXP +10% / 약화·경험치 보상";
     case AugType::D_MOB_PACK:
         return L"잡몹 스폰 시 추가 +2마리 동시 등장 / 잡몹 처치 EXP +6 / 개체 수 폭증·보상↑";
     case AugType::D_MOB_ELITE:
-        return L"엘리트 변종(신속/강인/폭발) 출현 확률 대폭↑ / 잡몹 처치 EXP +3 / 변종 난이도·보상";
+        return L"엘리트 변이 출현 확률 증가 / 엘리트 처치 EXP +3 / 변이 적을 잡을 때만 보상";
     case AugType::D_MOB_FRENZY:
-        return L"특수 잡몹(돌진/회피/거대) 출현 확률↑ / 잡몹 처치 EXP +4 / 다양한 위협·보상";
+        return L"크래셔/위버/브루트 출현 확률 증가 / 해당 특수몹 처치 EXP +4";
 
     // ── Special ──
     case AugType::S_CHAOS:
@@ -189,7 +189,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::CB_GLASS_REAPER:
         return L"[조합] 유리대포+흡혈탄 / 공격 ×1.2 · 처치당 흡혈 +0.2 · 최대 HP +20 / 유리 리스크 완화";
     case AugType::CB_WARLORD:
-        return L"[조합] 광전사+연쇄폭발+연쇄 II / 공격력 +15% · 영혼 수확 능력 부여 / 장기전 스케일링 군주";
+        return L"[조합] 광전사+연쇄폭발+연쇄 II / 공격력 +15% · 1000킬마다 영혼 수확 능력 부여(최대 7) / 장기전 스케일링 군주";
     case AugType::CB_TEMPEST:
         return L"[조합] 차크람+드론 / 차크람 +1 · 드론 +1 · 연사 +10% / 공전 오케스트라 난기류";
     case AugType::CB_OVERLORD:
@@ -214,9 +214,9 @@ inline const wchar_t* AugDescKR(AugType t) {
 
     // ── Mythic ──
     case AugType::BULLET_RAIN_ETERNAL:
-        return L"탄환 세례 쿨 최대 8초 / 적 처치마다 쿨다운 0.4초 감소 / 몰아칠수록 세례가 더 자주 — 무한 세례";
+        return L"탄환 세례 쿨다운 4초 / 적 처치마다 쿨다운 0.2초 감소(최소 3초) / 몰아칠수록 더 자주 — 무한 세례";
     case AugType::DRONE_HIVE:
-        return L"드론 최대 2기 고정 / 초고속 사격 (발사 간격 대폭 단축) / 군집 지능 오토 화력";
+        return L"드론 4기 운용 / 각 드론 화력 50% 유지 / 안정적인 군집 화력";
     case AugType::LASER_CONVERGE:
         return L"스캔 레이저 거의 연속 발사 (0.18초) / 초장거리·광폭 빔 / 직선 일소 수렴";
     case AugType::PIERCE_RAILSLUG:
@@ -226,27 +226,27 @@ inline const wchar_t* AugDescKR(AugType t) {
 
     // ── Debuff (extended) ──
     case AugType::D_SCHEDULER:
-        return L"특수 잡몹(돌진/회피/거대 등) 체력 +10% (중첩) / 잡몹 처치 EXP +2 / 스케줄러 강화";
+        return L"특수 프로세스 체력 +10% / 비-NORMAL 프로세스 처치 EXP +2 / 특수몹을 잡을 때만 보상";
     case AugType::D_TROJAN_BOOST:
-        return L"[트로이목마 침투 보유 시] 트로이 점멸 쿨다운 단축 / 잡몹 처치 EXP +2 / 더 빠른 순간이동";
+        return L"선행: 트로이목마 침투 / 트로이목마 점멸 쿨다운 감소 / 트로이목마 처치 EXP +2";
     case AugType::D_CRASHER_BOOST:
-        return L"크래셔 돌진 중 받는 피해 -10% / 잡몹 처치 EXP +4 / 단단한 돌진체";
+        return L"크래셔가 돌진 중 받는 피해 -10% / 크래셔 처치 EXP +4";
     case AugType::D_BADSECTOR:
-        return L"배드 섹터 프로세스 출현 / 처치 시 잠시 감속 구역 잔류 / 잡몹 처치 EXP +8";
+        return L"배드 섹터 프로세스 출현 / 사망 시 감속 구역 생성 / 배드 섹터 처치 EXP +8";
     case AugType::D_REGERROR:
-        return L"레지스트리 에러 노드 출현 / 주변 적 강화 오라 / 잡몹 처치 EXP +10";
+        return L"레지스트리 에러 노드 출현 / 주변 적 강화 / 레지스트리 에러 처치 EXP +10";
     case AugType::D_DDOS:
-        return L"디도스 프로세스 창(스웜) 출현 / 다수 소형 위협 / 잡몹 처치 EXP +4";
+        return L"DDoS 프로세스 무리 출현 / 소형 다수 압박 / DDoS 처치 EXP +4";
     case AugType::D_WEAVER_BOOST:
-        return L"회피체(위버) 지그재그·속도 +15% / 잡몹 처치 EXP +3 / 회피 난이도↑";
+        return L"위버 지그재그 속도와 폭 증가 / 위버 처치 EXP +3";
     case AugType::D_BRUTE_BOOST:
-        return L"거대체 HP +25% · 접촉 피해 +20% / 잡몹 처치 EXP +4 / 브루트 강화";
+        return L"브루트 HP +25% 및 접촉 피해 +20% / 브루트 처치 EXP +4";
 
     // ── Tier / Weapon / Skill ──
     case AugType::LIFESTEAL_2:
         return L"흡혈 한도 0.24 → 0.36 / 10킬마다 HP +1 (흡혈마와 연동) / 선행: 흡혈탄 (1회만)";
     case AugType::CHAIN_2:
-        return L"튕김 2회 → 3회 · 총알 피해 -30% → -20% / 선행: 연쇄 작용 / 연쇄 II 완성";
+        return L"튕김 2회 → 3회 · 총알 피해 -30% → -15% / 선행: 연쇄 작용 / 연쇄 II 완성";
     case AugType::SHOTGUN_SPREAD:
         return L"[샷건] 펠릿 5→7발 / 사거리 700→630 (-10%) / 산탄 확장·근거리 화력";
     case AugType::REVOLVER_OVERLOAD:
@@ -264,7 +264,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::SMG_COMPRESSOR:
         return L"[SMG] 탄 흩어짐 -50% / 연사 +8% / 근거리 탄막 정밀도·연사";
     case AugType::RIFLE_STABILITY:
-        return L"[소총] 흩어짐 완전 제거 / 공격력 +12 (가산) / 정조준 원거리 화력";
+        return L"[소총] 흩어짐 완전 제거 / 공격력 +8 (가산) / 정조준 원거리 화력";
     case AugType::SNIPER_AMPLIFIER:
         return L"[저격] 거리 보너스 +30%p / 저격총·저격 증강과 시너지 / 장거리 일격 강화";
 
@@ -272,7 +272,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::HP_UP:
         return L"최대 체력 +15 (중첩 가능) / 생존 여유·흡혈·재생 효율 상승 / 기본 탱킹";
     case AugType::FIREWALL:
-        return L"받는 피해 -12%p (중첩 가능) / 감소 효율 점감·최대 35% / 방어 스택 (1회만)";
+        return L"받는 피해 -12% / 1회만 획득 / 안정적인 방어 보강";
     case AugType::REGEN_2:
         return L"재생 +0.45/s / 체력 40% 이하 시 재생 ×2 / 재생 빌드 핵심 (1회만)";
 

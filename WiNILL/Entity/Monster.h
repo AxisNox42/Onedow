@@ -52,6 +52,18 @@ inline float MobRewardMult(MobKind k) {
     return 1.0f;
 }
 
+inline float MobDebuffXpBonus(MobKind k, int elite, const PlayerStats& stats) {
+    float bonus = (float)stats.mobXpBonus;
+    int idx = (int)k;
+    if (idx >= 0 && idx < PlayerStats::MOB_KIND_XP_SLOTS)
+        bonus += (float)stats.mobKindXpBonus[idx];
+    if (k != MobKind::NORMAL)
+        bonus += (float)stats.specialMobXpBonus;
+    if (elite)
+        bonus += (float)stats.eliteXpBonus;
+    return bonus;
+}
+
 class Monster {
 public:
     float worldX, worldY;

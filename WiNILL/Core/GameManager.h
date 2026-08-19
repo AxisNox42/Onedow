@@ -9,7 +9,7 @@
 
 enum class GameState {
     MAIN_MENU,         // 시작 메뉴 (시작/설정/종료)
-    DIFFICULTY_SELECT, // 난이도 선택 (쉬움/보통/어려움)
+    RUN_CONFIG,        // run setup: loadout + optional trials
     CREATIVE_CONFIG,   // 크리에이티브 설정 (시작점수/보스/시작증강)
     SHOP,              // 메타 상점 (코인 → 영구 업그레이드)
     CODEX,             // 도감 (적/증강 발견 목록)

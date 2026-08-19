@@ -85,12 +85,13 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
     case StartWeapon::SMG:
         s.fireInterval     *= 0.50f;
         s.damageMultiplier *= 0.50f;
-        s.bulletSpread      = 0.18f;
+        s.bulletSpread      = 0.15f;
         break;
     case StartWeapon::SNIPER:
         s.fireInterval     *= 1.90f;   // 연사 너프 (1.5 → 1.9)
-        s.damageMultiplier *= 2.0f;
+        s.damageMultiplier *= 1.75f;
         s.bulletSpeed      *= 1.8f;
+        s.sniper           = true;
         s.pierce           = true;
         s.pierceChance     = 40;
         s.bulletSpread     = 0.0f;
@@ -119,3 +120,18 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
     }
 }
 
+inline void MarkStartWeaponOwnedType(StartWeapon w) {
+    switch (w) {
+    case StartWeapon::SNIPER:
+        g_TypeOwned[(int)AugType::SNIPER] = true;
+        break;
+    case StartWeapon::SHOTGUN:
+        g_TypeOwned[(int)AugType::SHOTGUN] = true;
+        break;
+    case StartWeapon::CANNON:
+        g_TypeOwned[(int)AugType::CANNON] = true;
+        break;
+    default:
+        break;
+    }
+}
