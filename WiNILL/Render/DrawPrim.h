@@ -182,35 +182,50 @@ inline void SetGlowFx(bool on) {
 
 // 별자리 스타일 프레임 — 코너 브래킷 + 다이아몬드 노드 [+ 옵션 엣지 라인]
 // cLen: 코너 선 길이   nSz: 노드 크기   edgeA: 엣지 라인 알파 (0=없음)
+// edgeProg: 0→1 시 엣지 라인이 코너→중앙으로 연장 (입장 애니메이션용)
 inline void drawConstellFrame(float x, float y, float w, float h,
                                float r, float g, float b, float a,
-                               float cLen, float nSz, float edgeA = 0.0f) {
+                               float cLen, float nSz, float edgeA = 0.0f,
+                               float edgeProg = 1.0f) {
     const float t = 1.3f;
+    // 코너 브래킷 — edgeProg 초기엔 빠르게 나타남
+    float ba = a * (edgeProg < 1.0f ? std::min(1.0f, edgeProg * 5.0f) : 1.0f);
     // top-left
-    drawRect(x,        y,        cLen, t,    r, g, b, a);
-    drawRect(x,        y,        t,    cLen, r, g, b, a);
+    drawRect(x,        y,        cLen, t,    r, g, b, ba);
+    drawRect(x,        y,        t,    cLen, r, g, b, ba);
     // top-right
-    drawRect(x+w-cLen, y,        cLen, t,    r, g, b, a);
-    drawRect(x+w-t,    y,        t,    cLen, r, g, b, a);
+    drawRect(x+w-cLen, y,        cLen, t,    r, g, b, ba);
+    drawRect(x+w-t,    y,        t,    cLen, r, g, b, ba);
     // bottom-left
-    drawRect(x,        y+h-t,    cLen, t,    r, g, b, a);
-    drawRect(x,        y+h-cLen, t,    cLen, r, g, b, a);
+    drawRect(x,        y+h-t,    cLen, t,    r, g, b, ba);
+    drawRect(x,        y+h-cLen, t,    cLen, r, g, b, ba);
     // bottom-right
-    drawRect(x+w-cLen, y+h-t,    cLen, t,    r, g, b, a);
-    drawRect(x+w-t,    y+h-cLen, t,    cLen, r, g, b, a);
+    drawRect(x+w-cLen, y+h-t,    cLen, t,    r, g, b, ba);
+    drawRect(x+w-t,    y+h-cLen, t,    cLen, r, g, b, ba);
     // 코너 노드
     if (nSz > 0.0f) {
-        drawDiamond(x,   y,   nSz, r, g, b, a);
-        drawDiamond(x+w, y,   nSz, r, g, b, a);
-        drawDiamond(x,   y+h, nSz, r, g, b, a);
-        drawDiamond(x+w, y+h, nSz, r, g, b, a);
+        drawDiamond(x,   y,   nSz, r, g, b, ba);
+        drawDiamond(x+w, y,   nSz, r, g, b, ba);
+        drawDiamond(x,   y+h, nSz, r, g, b, ba);
+        drawDiamond(x+w, y+h, nSz, r, g, b, ba);
     }
-    // 엣지 라인 (선택)
-    if (edgeA > 0.0f) {
-        drawRect(x+cLen,  y,      w-cLen*2.0f, t,           r, g, b, edgeA);
-        drawRect(x+cLen,  y+h-t,  w-cLen*2.0f, t,           r, g, b, edgeA);
-        drawRect(x,       y+cLen, t,            h-cLen*2.0f, r, g, b, edgeA);
-        drawRect(x+w-t,   y+cLen, t,            h-cLen*2.0f, r, g, b, edgeA);
+    // 엣지 라인 — 코너에서 중앙으로 연장 (edgeProg < 1 시 애니메이션)
+    if (edgeA > 0.0f && edgeProg > 0.0f) {
+        float ea  = edgeA * std::min(1.0f, edgeProg * 3.0f);
+        float hW  = (w - cLen * 2.0f) * 0.5f * edgeProg;
+        float hH  = (h - cLen * 2.0f) * 0.5f * edgeProg;
+        if (hW > 0.5f) {
+            drawRect(x+cLen,       y,     hW, t, r, g, b, ea);  // top: 좌→우
+            drawRect(x+w-cLen-hW,  y,     hW, t, r, g, b, ea);  // top: 우→좌
+            drawRect(x+cLen,       y+h-t, hW, t, r, g, b, ea);  // bot: 좌→우
+            drawRect(x+w-cLen-hW,  y+h-t, hW, t, r, g, b, ea);  // bot: 우→좌
+        }
+        if (hH > 0.5f) {
+            drawRect(x,     y+cLen,       t, hH, r, g, b, ea);  // left: 위→아래
+            drawRect(x,     y+h-cLen-hH,  t, hH, r, g, b, ea);  // left: 아래→위
+            drawRect(x+w-t, y+cLen,       t, hH, r, g, b, ea);  // right: 위→아래
+            drawRect(x+w-t, y+h-cLen-hH,  t, hH, r, g, b, ea);  // right: 아래→위
+        }
     }
 }
 

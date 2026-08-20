@@ -15,6 +15,99 @@
 
 ## Shared Handoff
 
+### 2026-08-20 / Claude — Settings 씬 UI 폴리시 (별자리 비주얼 언어 통일)
+
+**작업 개요**
+
+Gemini 외부 리뷰 피드백 기반 Settings 씬 UI 품질 개선. 별자리 비주얼 언어가 버튼 단위까지 일관되게 적용됨.  
+빌드 결과: Release|x64 오류 0개, 기존 경고(APIENTRY) 1건.
+
+**변경 내용**
+
+- **segment 버튼**: `drawBorder` 전체 테두리 → 코너 브래킷 8선 + 꼭짓점 다이아몬드 4개 (selected 시 노드 4.5px, 비선택 시 3.0px)
+- **boolRow ON/OFF 토글**: `○———○` 노드 → `⌜ ON ⌟   OFF` / `ON   ⌜ OFF ⌟` 텍스트 브래킷 하이라이트. 활성 옵션만 코너 브래킷 + 탭색 배경, 비활성은 텍스트만. hover 시 비활성 쪽 옅은 브래킷 프리뷰. 레이블 고정 `L"ON"` / `L"OFF"` (언어 무관 영문)
+- **탭 텍스트 계층 뒤집기**: 스트립 내부 한글 소(0.40f) + 스트립 아래 영문 대(0.82f). 좌측 카드·우측 패널 헤더 동일 적용
+- **SETTINGS 헤더**: 한국어 조건부 제거 → 항상 `L"SETTINGS"`. 폰트 크기 1.15f → 0.88f (장평 왜곡 방지)
+- **탭-패널 연결선**: 선택된 탭 우측 끝 → 우측 패널 좌측 끝 1.5px 수평선 + 양 끝 다이아몬드 4.5px. `s_tabFocus * rightWake * cardWake` 연동
+- **infoRow 컨트롤 박스**: `drawBorder` → 코너 브래킷 + 꼭짓점 다이아몬드 (활성 0.26f, disabled 0.10f 알파)
+- **disabledMeterRow 컨트롤 박스**: 동일 브래킷 스타일 (0.12f 알파)
+- **rowShell 행 테두리**: 기본 0.16f → 0.10f, hover 0.32f → 0.24f (무거운 느낌 다이어트)
+
+관련 파일:
+- `WiNILL/Core/Scenes/Scenes.cpp`
+
+---
+
+### 2026-08-20 / Claude — Settings 씬 전면 재구현 + 인코딩 부패 복구
+
+**작업 개요**
+
+Settings 씬 (3탭: GAME / AUDIO / SYSTEM) 진입 애니메이션 포함 전면 재구현 완료.
+빌드 결과: Release|x64 오류 0개, 기존 경고(APIENTRY) 1건만 존재.
+
+**구현 내용**
+
+- `g_SettingsEntryT` 전역 + `ResetSettingsUi()` 추가
+- 상태 전환 2곳에서 `ResetSettingsUi()` 호출 (메인메뉴→설정, 일시정지→설정)
+- `Scene_Settings` 완전 재구현 — RUN CONFIG 동일 레이아웃 기준:
+  - 3탭 정의 (`kTabs[]`): GAME(청), AUDIO(황), SYSTEM(적)
+  - 진입 애니메이션: 헤더 슬라이드다운(`wake`), 카드 스태거 슬라이드인(`cardWake[3]`), 우측 패널 슬라이드인(`rightWake`)
+  - `drawConstellFrame` + `SetGlowFx` 탭 카드·우측 패널 전체 적용
+  - 탭 전환 시 `s_panelT` 리셋 → 패널 콘텐츠 슬라이드인 트랜지션
+  - GAME 탭: 화면 비율 세그먼트 토글, 언어 세그먼트 토글
+  - AUDIO 탭: 마스터·BGM·SFX 볼륨 슬라이더 (`g_VolEdit` 가드, `s_tab != 1` 조건)
+  - SYSTEM 탭: 리셋 다이얼로그 (`s_resetDialog`, `s_resetDialogJustOpened` 새로고침 가드), 완료 오버레이 (`s_resetDone`)
+  - `modalActive` 가드: 다이얼로그 열린 동안 배경 인터랙션 차단
+  - 게임 중 열기(`settingsOverlay`) vs 메인메뉴에서 열기 분기 — 오버레이 시 배경 그리기 생략
+
+**사고: PowerShell 인코딩 부패 (이전 세션 잔재)**
+
+원인: 이전 세션에서 PowerShell 5.1 `Get-Content -Raw | Set-Content` 사용 시 `-Encoding UTF8` 누락.  
+파일 원본은 UTF-8 without BOM이었으나, 한국어 Windows 기본 코드페이지(CP949)로 읽어 다시 쓰면서 UTF-8 3바이트 한글 시퀀스가 CP949 쌍바이트 해석으로 모두 깨짐. 일부 깨진 바이트가 `0x22`(따옴표)를 포함해 와이드 스트링 리터럴을 중간에 닫아버려 C2001 "문자열 리터럴 내 개행" 오류 40건+ 발생. `grep 설정` 0건으로 한글 전체 소실 확인.
+
+복구 절차:
+1. `git checkout HEAD -- WiNILL/Core/Scenes/Scenes.cpp` 로 클린 상태 복원
+2. 한글 리터럴을 유니코드 이스케이프(`\xXXXX`)로 작성한 임시 파일 생성 후 PowerShell 배열 splice로 삽입
+3. `[System.IO.File]::WriteAllLines(..., New-Object System.Text.UTF8Encoding($false))` 로 BOM 없는 UTF-8 유지
+4. 빌드 통과 확인
+
+향후 주의: `Scenes.cpp`는 **UTF-8 without BOM**. PowerShell에서 건드릴 때 반드시 `-Encoding UTF8` 지정. 가급적 Edit 툴 사용.
+
+관련 파일:
+- `WiNILL/Core/Scenes/Scenes.cpp`
+
+---
+
+### 2026-08-20 / Codex
+
+**게임 스폰 구조 1차 밸런스 변경 — 초반 저밀도 + 시간 기반 증가**
+
+- 일반 몹 스폰 램프를 `score` 중심에서 `g_GameTime` 중심으로 변경.
+- 초반 일반 몹 동시 존재 cap을 1마리부터 시작해 시간에 따라 천천히 증가하도록 변경.
+- 기본 스폰 간격을 기존 `0.3초` 기반에서 `1.15초 / 시간 램프` 기반으로 변경해 초반 물량을 크게 줄임.
+- `D_MOB_SPAWN`의 `mobCapBonus +200`은 즉시 전량 적용하지 않고 시간 램프에 따라 점진 적용.
+- `D_MOB_PACK`의 추가 군집 스폰도 초반에는 막고, 120초 이후 시간에 따라 점진 적용.
+- 자연 군집 스폰은 240초 이후 +1, 480초 이후 +1로 늦게 열리도록 변경.
+- 일반/원거리/자폭병 HP에 쓰이는 `rampHp`를 시간 기반으로 강화해 한 마리 체급을 높임.
+- 몹 이동 속도 램프도 점수 대신 시간 기반으로 조정.
+- 빌드 중 Claude UI 작업 구간의 `rWk` 미정의 오류를 `rightWake` 사용으로 최소 수정.
+- 마지막 확인 빌드:
+  - `MSBuild Debug|x64`
+  - 오류 0개
+  - 기존 경고: `APIENTRY` 재정의, `LIBCMT` 링크 충돌
+
+관련 파일:
+
+- `WiNILL/main.cpp`
+- `WiNILL/Core/Scenes/Scenes.cpp`
+
+주의:
+
+- 몹 보상/보스 등장 점수(`MAIN_SCORE_STEP`)는 아직 조정하지 않았다. 몹 수가 줄어든 만큼 실제 플레이에서 보스 등장 타이밍이 늦게 느껴질 수 있다.
+- 이번 변경은 스폰 곡선 1차 조정이므로 실제 플레이 후 `spawnInterval`, `effCap`, `rampHp`, 보상 값을 같이 재조정하는 것이 좋다.
+
+---
+
 ### 2026-08-20 / Claude
 
 **RUN CONFIG 씬 전면 재설계 — 별자리 UI + 레이더 차트 + 무기 전환 애니메이션**
@@ -165,6 +258,11 @@
 
 ### Current State
 
+- 2026-08-20 스폰 밸런스 1차 변경:
+  - 초반 일반몹 cap 1부터 시작
+  - 시간 기반 스폰 밀도 증가
+  - 시간 기반 HP/속도 램프 적용
+  - `D_MOB_SPAWN`, `D_MOB_PACK` 초반 폭증 방지
 - 런 설정 UI:
   - 왼쪽: 총기 선택 및 선택한 총기 상세
   - 가운데: 4축 시련 모듈
@@ -184,12 +282,16 @@
 
 ### Open Issues
 
+- 몹 수를 줄였기 때문에 점수/경험치 수급과 보스 등장 타이밍이 늦어질 가능성이 큼.
+- 다음 밸런스 테스트에서 `MobKillReward`, `MAIN_SCORE_STEP`, 보스 HP 스케일을 함께 확인해야 함.
 - 런 설정 화면은 빌드만 확인했고, 실제 클릭/화면 배치 플레이 검증은 아직 별도로 하지 않았다.
 - `Difficulty` 완전 삭제는 보스 코드와 저장 기록 구조까지 포함하는 별도 작업으로 분리하는 편이 안전하다.
 - 시련 설명과 실제 효과의 체감 밸런스는 플레이 테스트 후 재조정 필요.
 
 ### Next Candidates
 
+- 새 스폰 곡선 기준 5분/10분 생존 테스트
+- 몹 보상량 또는 보스 등장 점수 재조정
 - 런 설정 화면 실제 실행 테스트
 - 시련별 수치 밸런스 리포트 작성
 - `RUN_CONFIG`에 맞춰 문서/주석의 난이도 표현 정리
@@ -208,12 +310,15 @@
 - 전역 알파: `g_BatchAlpha` (DrawPrim + TextRenderer 적용)
 - DEV MODE: RUN CONFIG 씬 하단 우측 토글 버튼
 - **RUN CONFIG UI**: 별자리 프레임 + 블룸 셰이더 + 헥사곤 레이더 차트 + 무기 전환 모핑 애니메이션 완료
+- **Settings UI**: 3탭 (GAME/AUDIO/SYSTEM), 진입 애니메이션 (헤더·카드 스태거·우측 패널), 리셋 다이얼로그, 완료 오버레이 구현 완료
+- **Settings UI 폴리시**: 코너 브래킷 버튼·ON/OFF 텍스트 토글·탭-패널 연결선·텍스트 계층(영문 메인/한글 서브)·행 테두리 다이어트 적용
 
 ### Open Issues
 
 - `g_BatchAlpha` 페이드인이 현재 `Scene_DifficultySelect`에만 적용됨. 다른 씬 전환에도 적용하려면 씬별로 추가 작업 필요.
 - 메뉴 씬들의 전체화면 딤을 제거했는데, 패널 바깥 가장자리 배경이 메인메뉴와 완전히 동일한지 시각 검증 필요.
-- Settings 씬은 게임 오버레이 여부(`settingsOverlay`)에 따라 배경 처리가 분기됨 — 게임 중 설정 열기 시 정상 동작 확인 필요.
+- Settings 씬 진입 애니메이션 (슬라이드인, 별자리 edgeProg) 실 화면 시각 검증 미완.
+- Settings 씬 게임 중 오버레이 모드(`settingsOverlay`) 정상 동작 확인 필요.
 - RUN CONFIG 씬 레이아웃 실 플레이 검증 (클릭 동작, 화면 배치) 미완.
 
 ### Next Candidates
@@ -238,6 +343,36 @@
 ---
 
 ## Change Log
+
+### 2026-08-20 / Claude — Settings 씬 UI 폴리시
+
+- `segment` 버튼 코너 브래킷 + 다이아몬드 노드 (drawBorder 전체 테두리 대체)
+- `boolRow` → `⌜ ON ⌟ / ⌜ OFF ⌟` 텍스트 브래킷 하이라이트 (레이블 영문 고정)
+- 탭 카드·우측 패널 헤더 텍스트 계층: 한글 소(strip) + 영문 대(strip 아래)
+- SETTINGS 헤더 항상 영문 고정, 폰트 1.15f → 0.88f
+- 선택 탭-패널 연결선 + 양 끝 다이아몬드 노드
+- `infoRow` / `disabledMeterRow` 컨트롤 박스 코너 브래킷으로 교체
+- `rowShell` 행 테두리 불투명도 다이어트
+- Release|x64 빌드 통과
+
+### 2026-08-20 / Claude — Settings 씬
+
+- `g_SettingsEntryT` 전역 + `ResetSettingsUi()` 추가, 상태 전환 2곳에 호출
+- `Scene_Settings` 전면 재구현: 3탭(GAME/AUDIO/SYSTEM), 별자리 UI, 진입 애니메이션
+- GAME 탭: 화면 비율·언어 세그먼트 토글
+- AUDIO 탭: 마스터·BGM·SFX 슬라이더 (`s_tab != 1` 가드)
+- SYSTEM 탭: 리셋 다이얼로그 + 완료 오버레이, `modalActive` 인터랙션 차단
+- `settingsOverlay` 분기 (게임 중 오픈 vs 메인메뉴에서 오픈)
+- PowerShell 인코딩 부패 → `git checkout HEAD` 복원 + UTF-8-no-BOM 재기록
+- Release|x64 빌드 통과 (오류 0, 기존 경고 1건)
+
+### 2026-08-20 / Codex
+
+- 일반몹 스폰 곡선을 시간 기반 저밀도 구조로 변경.
+- 일반몹 cap, 군집 스폰, 디버프 스폰 보너스를 시간 램프에 맞춰 점진 적용.
+- 몹 HP/속도 램프를 시간 기반으로 보정.
+- `Scenes.cpp`의 `rWk` 미정의 빌드 오류를 `rightWake` 사용으로 최소 수정.
+- `MSBuild Debug|x64` 빌드 통과 확인.
 
 ### 2026-08-20 / Claude
 

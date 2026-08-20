@@ -39,6 +39,7 @@ constexpr float SCENE_BG_ALPHA = 0.0f;
 static int   g_RunConfigStep   = 0;   // 0=loadout, 1=trials/summary
 static float g_RunConfigEntryT = 0.0f;
 static float g_RunConfigFocusT[3] = { 0.0f, 0.0f, 0.0f };
+static float g_SettingsEntryT  = 0.0f;
 static float s_RadarCur[6]     = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 static float s_PanelFadeT      = 1.0f;   // 0→1: 우측 패널 콘텐츠 페이드인
 static int   s_PanelPrevSel    = -1;     // 마지막으로 표시된 무기 인덱스
@@ -58,6 +59,10 @@ static void ResetRunConfigUi() {
     s_PanelFadeT   = 1.0f;
     s_PanelPrevSel = -1;
     ResetTrials();
+}
+
+static void ResetSettingsUi() {
+    g_SettingsEntryT = 0.0f;
 }
 
 // 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 비네트)
@@ -259,6 +264,7 @@ void Scene_MainMenu(const SceneCtx& c) {
             case 2: g_GameManager.currentState = GameState::CODEX;   break;
             case 3:
                 g_SettingsReturnTo = GameState::MAIN_MENU;
+                ResetSettingsUi();
                 g_GameManager.currentState = GameState::SETTINGS;
                 break;
             case 4: glfwSetWindowShouldClose(window, GLFW_TRUE);     break;
@@ -1970,75 +1976,87 @@ void Scene_Settings(const SceneCtx& c) {
     (void)c.fireTimer;
     (void)c.reset;
 
-    static int s_tab = 0;
-    static int s_prevTab = 0;
-    static float s_tabHover[6] = {};
-    static float s_tabFocus[6] = {};
-    static float s_entryT = 0.0f;
-    static float s_panelT = 1.0f;
-    static bool s_resetConfirm = false;
-    static bool s_showCredits = false;
-    static bool s_bsPrev = false;
-    static bool s_enPrev = false;
+    static int   s_tab         = 0;
+    static int   s_prevTab     = 0;
+    static float s_tabHover[3] = {};
+    static float s_tabFocus[3] = {};
+    static float s_panelT      = 1.0f;
+    static bool  s_showCredits = false;
+    static bool  s_bsPrev      = false;
+    static bool  s_enPrev      = false;
+    static bool  s_resetDialog          = false;
+    static bool  s_resetDialogJustOpened = false;
+    static bool  s_resetItems[4] = {};
+    static bool  s_resetDone   = false;
 
     struct SettingsTabDef {
         const wchar_t* id;
-        const wchar_t* name[3];
-        const wchar_t* brief[3];
+        const wchar_t* name[2];
+        const wchar_t* brief[2];
         float r, g, b;
     };
     static const SettingsTabDef kTabs[] = {
-        { L"DISPLAY",  { L"표시",   L"Display",  L"表示" },
-          { L"화면, 언어, 시각 효과", L"Screen, language, visual effects", L"画面と言語" },
-          0.35f, 0.72f, 1.00f },
-        { L"GAMEPLAY", { L"게임",   L"Gameplay", L"ゲーム" },
-          { L"전투 보조와 HUD 표시", L"Combat assist and HUD", L"戦闘補助とHUD" },
-          0.42f, 0.94f, 0.62f },
-        { L"CONTROL",  { L"조작",   L"Control",  L"操作" },
-          { L"입력 방식과 키 안내", L"Input method and bindings", L"入力方式" },
-          0.88f, 0.70f, 1.00f },
-        { L"AUDIO",    { L"오디오", L"Audio",    L"オーディオ" },
-          { L"볼륨과 사운드 채널", L"Volume and sound channels", L"音量" },
+        { L"GAME",   { L"게임",   L"GAME"   },
+          { L"화면, 언어, 전투 보조, HUD",    L"Screen, language, combat assist, HUD" },
+          0.42f, 0.62f, 1.00f },
+        { L"AUDIO",  { L"오디오", L"AUDIO"  },
+          { L"음량과 사운드 채널",          L"Volume and sound channels" },
           1.00f, 0.76f, 0.30f },
-        { L"ACCESS",   { L"접근성", L"Access",   L"補助" },
-          { L"시인성과 피로도 완화", L"Visibility and comfort", L"視認性" },
-          0.70f, 0.95f, 1.00f },
-        { L"DATA",     { L"데이터", L"Data",     L"データ" },
-          { L"저장, 기록, 크레딧", L"Save, records, credits", L"保存と記録" },
+        { L"SYSTEM", { L"시스템", L"SYSTEM" },
+          { L"저장 기록, 리셋, 크레딧", L"Save, records, reset, credits" },
           1.00f, 0.45f, 0.42f },
     };
-    constexpr int kTabCount = 6;
+    constexpr int kTabCount = 3;
     if (s_tab < 0 || s_tab >= kTabCount) s_tab = 0;
 
     const bool settingsOverlay = (g_SettingsReturnTo == GameState::PAUSED);
     if (!settingsOverlay) DrawMenuBackground(sw, sh, delta);
 
-    const float WW = std::min(sw * 0.95f, 1520.0f);
-    const float WH = std::min(sh * 0.93f, 900.0f);
-    float wx = 0.0f, wy = 0.0f;
-    SceneAppWindow(sw, sh, WW, WH, L"setting.odw", 0.70f, 0.75f, 0.88f, wx, wy,
-                   settingsOverlay, 0.0f);
-    if (g_AppOpen < 0.999f) {
-        s_entryT = 0.0f;
-        return;
-    }
-    s_entryT = UiApproach(s_entryT, 1.0f, delta, 5.8f);
-    const float enterT = Smoothstep(s_entryT);
-    const float now = (float)glfwGetTime();
+    // Entry animation timer
+    float dt = delta; if (dt > 0.05f) dt = 0.05f;
+    g_SettingsEntryT += dt;
+    if (g_SettingsEntryT > 1.0f) g_SettingsEntryT = 1.0f;
+    const float now  = (float)glfwGetTime();
+
+    const float wake = Smoothstep(std::min(1.0f, g_SettingsEntryT / 0.52f));
+    float cardWake[3];
+    for (int i = 0; i < 3; ++i)
+        cardWake[i] = Smoothstep(std::min(1.0f,
+            std::max(0.0f, g_SettingsEntryT - (float)i * 0.09f) / 0.40f));
+    const float rightWake = Smoothstep(std::min(1.0f,
+        std::max(0.0f, g_SettingsEntryT - 0.10f) / 0.44f));
 
     int li = LangIndex();
     if (li < 0 || li >= 3) li = 0;
+    const int nli = (li == 0) ? 0 : 1;
 
-    float uiS = std::min(WW / 1280.0f, WH / 820.0f);
-    if (uiS > 1.10f) uiS = 1.10f;
-    if (uiS < 0.72f) uiS = 0.72f;
+    // RunConfig-style raw panel layout
+    const float TARGET_W = 1640.0f;
+    const float TARGET_H = 910.0f;
+    float uiS = std::max(0.72f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
+    if (uiS > 1.30f) uiS = 1.30f;
+    const float panelW  = TARGET_W * uiS;
+    const float panelH  = TARGET_H * uiS;
+    const float panelX  = (sw - panelW) * 0.5f;
+    const float panelY  = (sh - panelH) * 0.5f;
+    const float headerH = 86.0f * uiS;
+    const float footerH = 72.0f * uiS;
+    const float bodyY   = panelY + headerH;
+    const float bodyH   = panelH - headerH - footerH;
+    const float leftW   = panelW * 0.235f;
+    const float colGap  = 20.0f * uiS;
+    const float leftX   = panelX;
+    const float rightX  = leftX + leftW + colGap;
+    const float rightW  = panelW - leftW - colGap;
+    const float footY   = panelY + panelH - footerH + 14.0f * uiS;
+
+    const SettingsTabDef& tab = kTabs[s_tab];
 
     auto hit = [&](float x, float y, float w, float h) {
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
     };
-    auto clampVol = [](int v) {
-        return v < 0 ? 0 : (v > 100 ? 100 : v);
-    };
+    const bool modalActive = s_resetDialog || s_resetDone;
+    auto clampVol = [](int v) { return v < 0 ? 0 : (v > 100 ? 100 : v); };
     auto commitVol = [&]() {
         int v = 0;
         for (int i = 0; i < g_VolLen; ++i) v = v * 10 + (g_VolBuf[i] - L'0');
@@ -2069,50 +2087,46 @@ void Scene_Settings(const SceneCtx& c) {
                        bool selected, float r, float g, float b, bool enabled = true) {
         bool hov = enabled && hit(x, y, w, h);
         float dim = enabled ? 1.0f : 0.36f;
-        float ctlA = enterT * (0.58f + 0.42f * Smoothstep(s_panelT));
+        float ctlA = rightWake * (0.58f + 0.42f * Smoothstep(s_panelT));
         BindMainShader();
         drawRect(x, y, w, h,
                  (0.045f + r * (selected ? 0.105f : 0.030f)) * dim,
                  (0.052f + g * (selected ? 0.085f : 0.028f)) * dim,
                  (0.070f + b * (selected ? 0.070f : 0.024f)) * dim,
                  (enabled ? 0.94f : 0.64f) * ctlA);
-        drawBorder(x, y, w, h, r, g, b,
-                   (enabled ? (selected ? 0.82f : (hov ? 0.52f : 0.22f)) : 0.12f) * ctlA,
-                   1.4f * uiS);
+        // Corner brackets + diamond nodes instead of full border
+        float ba = (enabled ? (selected ? 0.88f : (hov ? 0.55f : 0.24f)) : 0.12f) * ctlA;
+        float cL = std::min(w * 0.28f, 9.0f * uiS);
+        float ct = 1.3f * uiS;
+        drawRect(x,       y,       cL, ct, r, g, b, ba);
+        drawRect(x,       y,       ct, cL, r, g, b, ba);
+        drawRect(x+w-cL,  y,       cL, ct, r, g, b, ba);
+        drawRect(x+w-ct,  y,       ct, cL, r, g, b, ba);
+        drawRect(x,       y+h-ct,  cL, ct, r, g, b, ba);
+        drawRect(x,       y+h-cL,  ct, cL, r, g, b, ba);
+        drawRect(x+w-cL,  y+h-ct,  cL, ct, r, g, b, ba);
+        drawRect(x+w-ct,  y+h-cL,  ct, cL, r, g, b, ba);
+        float ns = (selected ? 4.5f : 3.0f) * uiS;
+        drawDiamond(x,   y,   ns, r, g, b, ba);
+        drawDiamond(x+w, y,   ns, r, g, b, ba);
+        drawDiamond(x,   y+h, ns, r, g, b, ba);
+        drawDiamond(x+w, y+h, ns, r, g, b, ba);
         drawCenterS(label, x, y + 12.0f * uiS, w, 0.45f * uiS,
                     enabled ? (selected ? 1.0f : 0.70f) : 0.40f,
                     enabled ? (selected ? 1.0f : 0.78f) : 0.44f,
                     enabled ? (selected ? 1.0f : 0.90f) : 0.52f,
                     (enabled ? 0.96f : 0.52f) * ctlA);
-        return hov && lmb && !g_LmbPrev;
+        return hov && lmb && !g_LmbPrev && !modalActive;
     };
 
     if (s_prevTab != s_tab) {
         s_prevTab = s_tab;
-        s_panelT = 0.0f;
+        s_panelT  = 0.0f;
     }
     s_panelT = UiApproach(s_panelT, 1.0f, delta, 10.0f);
-    if (s_tab != 3 && g_VolEdit) commitVol();
+    if (s_tab != 1 && g_VolEdit) commitVol();
 
-    const float pad = 38.0f * uiS;
-    const float headerY = wy + 40.0f * uiS;
-    const float bodyY = wy + 120.0f * uiS;
-    const float footY = wy + WH - 66.0f * uiS;
-    const float bodyH = footY - bodyY - 18.0f * uiS;
-    const float tabW = 238.0f * uiS;
-    const float gap = 22.0f * uiS;
-    const float leftX = wx + pad;
-    const float detailX = leftX + tabW + gap;
-    const float detailW = wx + WW - pad - detailX;
-    const float detailH = bodyH;
-
-    const SettingsTabDef& tab = kTabs[s_tab];
-    const wchar_t* title[3] = { L"설정", L"SETTINGS", L"設定" };
-    const wchar_t* subtitle[3] = {
-        L"게임 표시, 조작, 오디오 옵션을 한 곳에서 조정",
-        L"Display, control, and audio options in one panel",
-        L"表示、操作、音量を調整"
-    };
+    // === HEADER ===
     const wchar_t* langShort[3] = { L"KR", L"EN", L"JP" };
     wchar_t fpsBuf[24];
     if (g_FpsCap == 0) swprintf_s(fpsBuf, L"VSYNC");
@@ -2120,136 +2134,207 @@ void Scene_Settings(const SceneCtx& c) {
     wchar_t profileBuf[96];
     swprintf_s(profileBuf, L"%ls / %ls / SOUND %d", langShort[li], fpsBuf, g_SoundVol);
 
+    const float hSlide = (1.0f - wake) * 16.0f * uiS;
     BindMainShader();
-    g_TextL.Draw(title[li], leftX, headerY - (1.0f - enterT) * 10.0f * uiS,
-                 1.18f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * enterT);
-    drawFitS(subtitle[li], leftX, headerY + 43.0f * uiS, detailX - leftX - 12.0f * uiS,
-             0.50f * uiS, 0.38f * uiS, 0.56f, 0.68f, 0.86f, 0.78f * enterT);
-    float profileW = 340.0f * uiS;
-    float profileX = wx + WW - pad - profileW;
-    drawRect(profileX, headerY + 4.0f * uiS, profileW, 44.0f * uiS,
-             0.045f, 0.055f, 0.075f, 0.84f * enterT);
-    drawBorder(profileX, headerY + 4.0f * uiS, profileW, 44.0f * uiS,
-               tab.r, tab.g, tab.b, (0.28f + 0.10f * sinf(now * 2.2f) * 0.5f + 0.05f) * enterT, 1.2f * uiS);
-    drawCenterS(profileBuf, profileX, headerY + 17.0f * uiS, profileW,
-                0.44f * uiS, 0.76f, 0.86f, 1.0f, 0.88f * enterT);
+    g_TextL.Draw(L"SETTINGS",
+                 leftX, panelY + 8.0f * uiS - hSlide,
+                 0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
+    g_TextS.Draw(nli == 0
+                 ? L"\xD654\xBA74, \xC5B8\xC5B4, \xC624\xB514\xC624 \xC124\xC815\xACFC \xAE30\xD0C0 \xACF5\xD1B5\xC5D0 \xB300\xD55C \xC635\xC158"
+                 : L"Display, control, and audio options in one panel",
+                 leftX, panelY + 52.0f * uiS - hSlide,
+                 0.50f * uiS, 0.48f, 0.58f, 0.78f, 0.72f * wake);
+    float profileW = 330.0f * uiS;
+    float profileX = panelX + panelW - profileW + (1.0f - wake) * 50.0f * uiS;
+    drawRect(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
+             0.040f, 0.050f, 0.070f, 0.82f * wake);
+    drawBorder(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
+               tab.r, tab.g, tab.b,
+               (0.24f + 0.08f * sinf(now * 2.2f)) * wake, 1.2f * uiS);
+    drawCenterS(profileBuf, profileX, panelY + 20.0f * uiS, profileW,
+                0.44f * uiS, 0.76f, 0.86f, 1.0f, 0.88f * wake);
 
-    float tabGap = 10.0f * uiS;
-    float tabH = (bodyH - tabGap * (kTabCount - 1)) / kTabCount;
-    if (tabH > 66.0f * uiS) tabH = 66.0f * uiS;
-    if (tabH < 52.0f * uiS) tabH = 52.0f * uiS;
+    // === LEFT COLUMN: Tab cards ===
+    const float tabCardGap = 16.0f * uiS;
+    const float tabCardH   = (bodyH - tabCardGap * (kTabCount - 1)) / (float)kTabCount;
+
     for (int i = 0; i < kTabCount; ++i) {
-        float ty = bodyY + i * (tabH + tabGap);
-        bool hov = hit(leftX, ty, tabW, tabH);
-        s_tabHover[i] = UiApproach(s_tabHover[i], hov ? 1.0f : 0.0f, delta, 10.0f);
-        s_tabFocus[i] = UiApproach(s_tabFocus[i], i == s_tab ? 1.0f : 0.0f, delta, 8.5f);
-        if (hov && lmb && !g_LmbPrev) {
-            if (g_VolEdit) commitVol();
-            if (s_tab != i) {
-                s_tab = i;
-                s_prevTab = i;
-                s_panelT = 0.0f;
-            }
-            s_resetConfirm = false;
-        }
         const SettingsTabDef& td = kTabs[i];
-        bool selected = (i == s_tab);
-        float hv = s_tabHover[i];
-        float focus = s_tabFocus[i];
-        float tabXAnim = leftX + (4.0f * focus - 2.0f * hv) * uiS;
-        float glow = std::max(focus, hv * 0.55f);
-        BindMainShader();
-        drawRect(tabXAnim - 4.0f * uiS, ty - 3.0f * uiS,
-                 tabW + 8.0f * uiS, tabH + 6.0f * uiS,
-                 td.r, td.g, td.b, ((0.02f + 0.065f * glow) * enterT));
-        drawRect(tabXAnim, ty, tabW, tabH,
-                 0.040f + td.r * (0.020f + 0.055f * focus + 0.018f * hv),
-                 0.050f + td.g * (0.017f + 0.043f * focus + 0.015f * hv),
-                 0.070f + td.b * (0.017f + 0.035f * focus + 0.015f * hv),
-                 (0.82f + 0.14f * focus) * enterT);
-        drawBorder(tabXAnim, ty, tabW, tabH, td.r, td.g, td.b,
-                   (0.18f + 0.56f * focus + 0.30f * hv) * enterT, 1.5f * uiS);
-        if (focus > 0.01f) {
-            float barH = tabH * (0.30f + 0.70f * focus);
-            drawRect(tabXAnim, ty + (tabH - barH) * 0.5f,
-                     6.0f * uiS, barH, td.r, td.g, td.b, 0.92f * focus * enterT);
-            float pulseW = tabW * (0.18f + 0.05f * sinf(now * 5.0f));
-            drawRect(tabXAnim + 8.0f * uiS, ty + tabH - 3.0f * uiS,
-                     pulseW, 2.0f * uiS, td.r, td.g, td.b, 0.35f * focus * enterT);
+        float cardY  = bodyY + (float)i * (tabCardH + tabCardGap);
+        float cwi    = cardWake[i];
+        float cxOff  = (1.0f - cwi) * 62.0f * uiS;
+        float cxBase = leftX - cxOff;
+        bool sel = (i == s_tab);
+        bool hov = hit(leftX, cardY, leftW, tabCardH);
+        s_tabHover[i] = UiApproach(s_tabHover[i], hov ? 1.0f : 0.0f, delta, 10.0f);
+        s_tabFocus[i] = UiApproach(s_tabFocus[i], sel ? 1.0f : 0.0f, delta, 8.5f);
+        float foc = s_tabFocus[i];
+        float hv  = s_tabHover[i];
+        if (hov && lmb && !g_LmbPrev && !sel && !modalActive) {
+            if (g_VolEdit) commitVol();
+            s_tab = i; s_prevTab = i; s_panelT = 0.0f;
+            s_resetDialog = false;
         }
-        g_TextL.Draw(td.name[li], tabXAnim + 18.0f * uiS, ty + 12.0f * uiS,
-                     0.62f * uiS, 1.0f, 1.0f, 1.0f, (0.70f + 0.26f * focus) * enterT);
-        drawFitS(td.id, tabXAnim + 18.0f * uiS, ty + 39.0f * uiS,
-                 tabW - 34.0f * uiS, 0.36f * uiS, 0.30f * uiS,
-                 td.r, td.g, td.b, (0.48f + 0.34f * focus) * enterT);
+        BindMainShader();
+        drawRect(cxBase + 7.0f*uiS, cardY + 9.0f*uiS, leftW, tabCardH,
+                 0.0f, 0.0f, 0.0f, (0.16f + 0.10f*foc)*cwi);
+        drawRect(cxBase, cardY, leftW, tabCardH,
+                 0.025f + td.r*(0.018f + 0.055f*foc + 0.015f*hv),
+                 0.032f + td.g*(0.015f + 0.044f*foc + 0.012f*hv),
+                 0.052f + td.b*(0.015f + 0.036f*foc + 0.012f*hv),
+                 (0.82f + 0.14f*foc)*cwi);
+        drawRect(cxBase, cardY, leftW, 30.0f*uiS,
+                 td.r*(0.22f + 0.36f*foc),
+                 td.g*(0.22f + 0.36f*foc),
+                 td.b*(0.24f + 0.36f*foc), 0.94f*cwi);
+        drawRect(cxBase, cardY + 30.0f*uiS, leftW, 2.0f*uiS,
+                 td.r, td.g, td.b, (0.22f + 0.55f*foc)*cwi);
+        drawBorder(cxBase, cardY, leftW, tabCardH, td.r, td.g, td.b,
+                   (0.16f + 0.56f*foc + 0.28f*hv)*cwi, 1.5f*uiS);
+        if (foc > 0.01f) {
+            float barH = tabCardH * (0.30f + 0.70f*foc);
+            drawRect(cxBase, cardY + (tabCardH - barH)*0.5f,
+                     5.0f*uiS, barH, td.r, td.g, td.b, 0.88f*foc*cwi);
+        }
+        float bsz = 9.0f*uiS, bby = cardY + 11.0f*uiS;
+        float bbx = cxBase + leftW - 14.0f*uiS;
+        drawRect(bbx - 2.0f*(bsz+6.0f*uiS), bby, bsz, bsz, 1,1,1, (0.10f+0.14f*foc)*cwi);
+        drawRect(bbx - (bsz+6.0f*uiS),      bby, bsz, bsz, 1,1,1, (0.10f+0.14f*foc)*cwi);
+        drawRect(bbx,                         bby, bsz, bsz, 0.9f,0.25f,0.25f, (0.20f+0.42f*foc)*cwi);
+        // Korean sub (small, in colored strip)
+        g_TextS.Draw(td.name[nli], cxBase + 10.0f*uiS, cardY + 8.0f*uiS,
+                     0.40f*uiS, 1.0f, 1.0f, 1.0f, (0.50f+0.32f*foc)*cwi);
+        // English ID (large, primary)
+        g_TextL.Draw(td.id, cxBase + 14.0f*uiS, cardY + 36.0f*uiS,
+                     0.82f*uiS,
+                     0.86f + td.r*0.14f*foc, 0.90f + td.g*0.10f*foc, 1.0f,
+                     (0.72f+0.26f*foc)*cwi);
+        drawFitS(td.brief[nli], cxBase + 14.0f*uiS, cardY + 72.0f*uiS,
+                 leftW - 28.0f*uiS, 0.40f*uiS, 0.30f*uiS,
+                 td.r, td.g, td.b, (0.44f+0.32f*foc)*cwi);
+        float frameProg = std::min(foc > 0.01f ? 1.0f : cwi, cwi);
+        if (frameProg > 0.02f) {
+            BatchFlush(); SetGlowFx(true);
+            drawConstellFrame(cxBase, cardY, leftW, tabCardH,
+                              td.r, td.g, td.b,
+                              (foc > 0.05f ? 0.55f*foc : 0.22f)*cwi,
+                              14.0f*uiS, 4.0f*uiS,
+                              foc > 0.05f ? 0.20f : 0.10f, frameProg);
+            BatchFlush(); SetGlowFx(false);
+        }
     }
 
+    // === RIGHT PANEL: Content window ===
     float panelE = Smoothstep(s_panelT);
-    float panelShift = (1.0f - panelE) * 42.0f * uiS;
-    float px = detailX + panelShift;
-    BindMainShader();
-    drawRect(px + 10.0f * uiS, bodyY + 12.0f * uiS, detailW, detailH,
-             0.0f, 0.0f, 0.0f, 0.20f * enterT);
-    drawRect(px, bodyY, detailW, detailH, 0.030f, 0.038f, 0.058f, 0.88f * enterT);
-    drawBorder(px, bodyY, detailW, detailH, tab.r, tab.g, tab.b,
-               (0.24f + 0.42f * panelE) * enterT, 1.5f * uiS);
-    drawRect(px, bodyY, detailW, 34.0f * uiS,
-             tab.r * 0.22f, tab.g * 0.22f, tab.b * 0.24f, 0.84f * enterT);
-    float sweepW = detailW * 0.28f;
-    float sweepX = px + fmodf(now * 185.0f, detailW + sweepW) - sweepW;
-    drawRect(sweepX, bodyY + 32.0f * uiS, sweepW, 2.0f * uiS,
-             tab.r, tab.g, tab.b, 0.18f * panelE * enterT);
-    float scanY = bodyY + 44.0f * uiS + fmodf(now * 115.0f, std::max(1.0f, detailH - 56.0f * uiS));
-    drawRect(px + 2.0f * uiS, scanY, detailW - 4.0f * uiS, 1.0f * uiS,
-             tab.r, tab.g, tab.b, 0.045f * panelE * enterT);
-    g_TextS.Draw(tab.id, px + 14.0f * uiS, bodyY + 9.0f * uiS,
-                 0.42f * uiS, 0.86f, 0.94f, 1.0f, 0.80f * enterT);
-    g_TextL.Draw(tab.name[li], px + 24.0f * uiS, bodyY + 54.0f * uiS,
-                 1.00f * uiS, 1.0f, 1.0f, 1.0f, 0.96f * panelE * enterT);
-    drawFitS(tab.brief[li], px + 24.0f * uiS, bodyY + 91.0f * uiS,
-             detailW - 48.0f * uiS, 0.48f * uiS, 0.36f * uiS,
-             tab.r, tab.g, tab.b, 0.76f * panelE * enterT);
+    float entryShift = (1.0f - rightWake) * 70.0f * uiS;
+    float panelShift = (1.0f - panelE) * 40.0f * uiS;
+    float rpx = rightX + entryShift + panelShift;
 
-    const float rowX = px + 24.0f * uiS;
-    const float rowW = detailW - 48.0f * uiS;
-    const float rowH = 72.0f * uiS;
-    const float rowGap = 12.0f * uiS;
-    const float rowStart = bodyY + 128.0f * uiS;
-    const float ctlW = 420.0f * uiS;
-    const float ctlH = 42.0f * uiS;
+    // Tab → panel connector: 선택된 탭 우측 끝 → 우측 패널 좌측 끝 가이드라인
+    {
+        float connFoc = s_tabFocus[s_tab];
+        float connCwi = cardWake[s_tab];
+        float connA   = connFoc * rightWake * connCwi;
+        if (connA > 0.01f) {
+            float selCardY = bodyY + (float)s_tab * (tabCardH + tabCardGap);
+            float connY    = selCardY + tabCardH * 0.5f;
+            float cx0      = leftX + leftW;
+            float cx1      = rpx;
+            float connH    = 1.5f * uiS;
+            BindMainShader();
+            drawRect(cx0, connY - connH*0.5f, cx1 - cx0, connH,
+                     tab.r, tab.g, tab.b, 0.40f * connA);
+            drawDiamond(cx0, connY, 4.5f*uiS, tab.r, tab.g, tab.b, 0.70f * connA);
+            drawDiamond(cx1, connY, 4.5f*uiS, tab.r, tab.g, tab.b, 0.70f * connA);
+        }
+    }
+
+    BindMainShader();
+    drawRect(rpx + 9.0f*uiS, bodyY + 11.0f*uiS, rightW, bodyH,
+             0.0f, 0.0f, 0.0f, (0.16f + 0.10f*panelE)*rightWake);
+    drawRect(rpx, bodyY, rightW, bodyH,
+             0.025f + tab.r*0.012f,
+             0.032f + tab.g*0.010f,
+             0.052f + tab.b*0.010f, (0.86f + 0.10f*panelE)*rightWake);
+    drawRect(rpx, bodyY, rightW, 30.0f*uiS,
+             tab.r*(0.20f + 0.38f*panelE),
+             tab.g*(0.20f + 0.38f*panelE),
+             tab.b*(0.22f + 0.38f*panelE), 0.94f*rightWake);
+    drawRect(rpx, bodyY + 30.0f*uiS, rightW, 2.0f*uiS,
+             tab.r, tab.g, tab.b, (0.22f + 0.55f*panelE)*rightWake);
+    float sweepW = rightW * 0.28f;
+    float sweepX = rpx + fmodf(now * 180.0f, rightW + sweepW) - sweepW;
+    drawRect(sweepX, bodyY + 30.0f*uiS, sweepW, 2.0f*uiS,
+             tab.r, tab.g, tab.b, 0.18f*panelE*rightWake);
+    float scanY = bodyY + 44.0f*uiS + fmodf(now * 110.0f, std::max(1.0f, bodyH - 56.0f*uiS));
+    drawRect(rpx + 2.0f*uiS, scanY, rightW - 4.0f*uiS, 1.0f*uiS,
+             tab.r, tab.g, tab.b, 0.045f*panelE*rightWake);
+    drawBorder(rpx, bodyY, rightW, bodyH, tab.r, tab.g, tab.b,
+               (0.22f + 0.44f*panelE)*rightWake, 1.5f*uiS);
+    if (rightWake > 0.02f) {
+        BatchFlush(); SetGlowFx(true);
+        drawConstellFrame(rpx, bodyY, rightW, bodyH,
+                          tab.r, tab.g, tab.b, 0.22f*panelE*rightWake,
+                          22.0f*uiS, 6.0f*uiS, 0.14f, rightWake);
+        BatchFlush(); SetGlowFx(false);
+    }
+    float bsz2 = 10.0f*uiS, bb2y = bodyY + 10.0f*uiS;
+    float bb2x = rpx + rightW - 18.0f*uiS;
+    BindMainShader();
+    drawRect(bb2x - 2.0f*(bsz2+7.0f*uiS), bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
+    drawRect(bb2x - (bsz2+7.0f*uiS),      bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
+    drawRect(bb2x,                          bb2y, bsz2, bsz2, 0.9f,0.25f,0.25f, (0.20f+0.40f*panelE)*rightWake);
+    // Korean sub (small, in colored strip)
+    g_TextS.Draw(tab.name[nli], rpx + 14.0f*uiS, bodyY + 9.0f*uiS,
+                 0.44f*uiS, 1.0f, 1.0f, 1.0f, 0.68f*rightWake);
+    // English ID (large, primary)
+    g_TextL.Draw(tab.id, rpx + 20.0f*uiS, bodyY + 40.0f*uiS,
+                 1.05f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*panelE*rightWake);
+    drawFitS(tab.brief[nli], rpx + 24.0f*uiS, bodyY + 83.0f*uiS,
+             rightW - 48.0f*uiS, 0.46f*uiS, 0.34f*uiS,
+             tab.r, tab.g, tab.b, 0.72f*panelE*rightWake);
+
+    // === ROW LAYOUT ===
+    const float rowX    = rpx + 22.0f * uiS;
+    const float rowW    = rightW - 44.0f * uiS;
+    const float rowH    = 72.0f * uiS;
+    const float rowGap  = 12.0f * uiS;
+    const float rowStart = bodyY + 120.0f * uiS;
+    const float ctlW    = 420.0f * uiS;
+    const float ctlH    = 42.0f * uiS;
+
     auto rowShell = [&](float y, const wchar_t* label, const wchar_t* desc,
                         bool disabled, float h) {
-        bool hov = !disabled && hit(rowX, y, rowW, h);
+        bool hov = !disabled && !modalActive && hit(rowX, y, rowW, h);
         float rowIdx = (y - rowStart) / (rowH + rowGap);
         if (rowIdx < 0.0f) rowIdx = 0.0f;
         float revealRaw = panelE * 1.22f - rowIdx * 0.075f;
         if (revealRaw < 0.0f) revealRaw = 0.0f;
         if (revealRaw > 1.0f) revealRaw = 1.0f;
-        float rowA = Smoothstep(revealRaw) * enterT;
+        float rowA = Smoothstep(revealRaw) * rightWake;
         float dim = disabled ? 0.48f : 1.0f;
         BindMainShader();
         drawRect(rowX, y, rowW, h,
-                 (0.044f + tab.r * (hov ? 0.018f : 0.008f)) * dim,
-                 (0.052f + tab.g * (hov ? 0.016f : 0.007f)) * dim,
-                 0.074f + tab.b * (hov ? 0.015f : 0.006f), (disabled ? 0.56f : 0.88f) * rowA);
-        drawRect(rowX, y, 5.0f * uiS, h, tab.r, tab.g, tab.b,
-                 (disabled ? 0.22f : 0.48f + 0.18f * (hov ? 1.0f : 0.0f)) * rowA);
+                 (0.044f + tab.r*(hov ? 0.018f : 0.008f)) * dim,
+                 (0.052f + tab.g*(hov ? 0.016f : 0.007f)) * dim,
+                 0.074f + tab.b*(hov ? 0.015f : 0.006f), (disabled ? 0.56f : 0.88f)*rowA);
+        drawRect(rowX, y, 5.0f*uiS, h, tab.r, tab.g, tab.b,
+                 (disabled ? 0.22f : 0.48f + 0.18f*(hov ? 1.0f : 0.0f))*rowA);
         drawBorder(rowX, y, rowW, h, tab.r, tab.g, tab.b,
-                   (disabled ? 0.10f : 0.16f + 0.16f * (hov ? 1.0f : 0.0f)) * rowA,
-                   1.0f * uiS);
+                   (disabled ? 0.07f : 0.10f + 0.14f*(hov ? 1.0f : 0.0f))*rowA, 1.0f*uiS);
         if (hov && !disabled) {
             float sweep = rowW * (0.16f + 0.08f * sinf(now * 4.0f + rowIdx));
-            drawRect(rowX + 7.0f * uiS, y + h - 3.0f * uiS,
-                     sweep, 2.0f * uiS, tab.r, tab.g, tab.b, 0.22f * rowA);
+            drawRect(rowX + 7.0f*uiS, y + h - 3.0f*uiS,
+                     sweep, 2.0f*uiS, tab.r, tab.g, tab.b, 0.22f*rowA);
         }
-        float labelMax = rowW - ctlW - 54.0f * uiS;
-        drawFitS(label, rowX + 20.0f * uiS, y + 13.0f * uiS, labelMax,
-                 0.56f * uiS, 0.40f * uiS,
+        float labelMax = rowW - ctlW - 54.0f*uiS;
+        drawFitS(label, rowX + 20.0f*uiS, y + 13.0f*uiS, labelMax,
+                 0.56f*uiS, 0.40f*uiS,
                  disabled ? 0.45f : 0.92f, disabled ? 0.48f : 0.96f, disabled ? 0.56f : 1.0f,
-                 (disabled ? 0.55f : 0.94f) * rowA);
-        drawFitS(desc, rowX + 20.0f * uiS, y + 41.0f * uiS, labelMax,
-                 0.40f * uiS, 0.31f * uiS,
-                 0.50f, 0.60f, 0.74f, (disabled ? 0.38f : 0.66f) * rowA);
+                 (disabled ? 0.55f : 0.94f)*rowA);
+        drawFitS(desc, rowX + 20.0f*uiS, y + 41.0f*uiS, labelMax,
+                 0.40f*uiS, 0.31f*uiS,
+                 0.50f, 0.60f, 0.74f, (disabled ? 0.38f : 0.66f)*rowA);
     };
     auto rowShellStd = [&](float y, const wchar_t* label, const wchar_t* desc,
                            bool disabled = false) {
@@ -2257,31 +2342,60 @@ void Scene_Settings(const SceneCtx& c) {
     };
     auto boolRow = [&](float y, const wchar_t* label, const wchar_t* desc, bool& value) {
         rowShellStd(y, label, desc);
-        float bx = rowX + rowW - ctlW - 16.0f * uiS;
-        float by = y + (rowH - ctlH) * 0.5f;
-        float bw = (ctlW - 8.0f * uiS) * 0.5f;
-        if (segment(bx, by, bw, ctlH, T(StrId::OPT_ON), value, tab.r, tab.g, tab.b)) value = true;
-        if (segment(bx + bw + 8.0f * uiS, by, bw, ctlH, T(StrId::OPT_OFF), !value, tab.r, tab.g, tab.b)) value = false;
-    };
-    auto toggleRow = [&](float y, const wchar_t* label, const wchar_t* desc,
-                         bool current, auto setValue) {
-        rowShellStd(y, label, desc);
-        float bx = rowX + rowW - ctlW - 16.0f * uiS;
-        float by = y + (rowH - ctlH) * 0.5f;
-        float bw = (ctlW - 8.0f * uiS) * 0.5f;
-        if (segment(bx, by, bw, ctlH, T(StrId::OPT_ON), current, tab.r, tab.g, tab.b)) setValue(true);
-        if (segment(bx + bw + 8.0f * uiS, by, bw, ctlH, T(StrId::OPT_OFF), !current, tab.r, tab.g, tab.b)) setValue(false);
+        float bx   = rowX + rowW - ctlW - 16.0f*uiS;
+        float by   = y + (rowH - ctlH)*0.5f;
+        float bw   = (ctlW - 10.0f*uiS) * 0.5f;
+        float offX = bx + bw + 10.0f*uiS;
+        float ctlA = rightWake * (0.58f + 0.42f * Smoothstep(s_panelT));
+        bool hovOn  = !modalActive && hit(bx,   by, bw, ctlH);
+        bool hovOff = !modalActive && hit(offX, by, bw, ctlH);
+        if (hovOn  && lmb && !g_LmbPrev) value = true;
+        if (hovOff && lmb && !g_LmbPrev) value = false;
+
+        // Corner-bracket highlight helper (inline lambda ok in C++17)
+        auto drawBkt = [&](float ox, bool active, bool hov) {
+            float ba = active ? 0.86f * ctlA : (hov ? 0.30f * ctlA : 0.0f);
+            if (ba < 0.004f) return;
+            float cL = std::min(bw * 0.28f, 9.0f * uiS), ct = 1.3f * uiS;
+            drawRect(ox,      by,        cL, ct, tab.r, tab.g, tab.b, ba);
+            drawRect(ox,      by,        ct, cL, tab.r, tab.g, tab.b, ba);
+            drawRect(ox+bw-cL,by,        cL, ct, tab.r, tab.g, tab.b, ba);
+            drawRect(ox+bw-ct,by,        ct, cL, tab.r, tab.g, tab.b, ba);
+            drawRect(ox,      by+ctlH-ct,cL, ct, tab.r, tab.g, tab.b, ba);
+            drawRect(ox,      by+ctlH-cL,ct, cL, tab.r, tab.g, tab.b, ba);
+            drawRect(ox+bw-cL,by+ctlH-ct,cL, ct, tab.r, tab.g, tab.b, ba);
+            drawRect(ox+bw-ct,by+ctlH-cL,ct, cL, tab.r, tab.g, tab.b, ba);
+            float ns = (active ? 3.5f : 2.5f) * uiS;
+            drawDiamond(ox,    by,      ns, tab.r, tab.g, tab.b, ba);
+            drawDiamond(ox+bw, by,      ns, tab.r, tab.g, tab.b, ba);
+            drawDiamond(ox,    by+ctlH, ns, tab.r, tab.g, tab.b, ba);
+            drawDiamond(ox+bw, by+ctlH, ns, tab.r, tab.g, tab.b, ba);
+        };
+
+        BindMainShader();
+        if (value)
+            drawRect(bx,   by, bw, ctlH, tab.r*0.08f, tab.g*0.07f, tab.b*0.07f, 0.90f * ctlA);
+        else if (!value)
+            drawRect(offX, by, bw, ctlH, tab.r*0.08f, tab.g*0.07f, tab.b*0.07f, 0.90f * ctlA);
+        drawBkt(bx,   value,  hovOn);
+        drawBkt(offX, !value, hovOff);
+        drawCenterS(L"ON", bx, by + 12.0f*uiS, bw, 0.48f*uiS,
+                    value  ? 1.0f : 0.44f, value  ? 1.0f : 0.48f, value  ? 1.0f : 0.58f,
+                    (value  ? 0.96f : 0.50f) * ctlA);
+        drawCenterS(L"OFF", offX, by + 12.0f*uiS, bw, 0.48f*uiS,
+                    !value ? 1.0f : 0.44f, !value ? 1.0f : 0.48f, !value ? 1.0f : 0.58f,
+                    (!value ? 0.96f : 0.50f) * ctlA);
     };
     auto choiceRow = [&](float y, const wchar_t* label, const wchar_t* desc,
                          const wchar_t* const* labels, const int* values, int count,
                          int current, auto setValue) {
         rowShellStd(y, label, desc);
-        float bx = rowX + rowW - ctlW - 16.0f * uiS;
-        float by = y + (rowH - ctlH) * 0.5f;
-        float sg = 8.0f * uiS;
-        float bw = (ctlW - sg * (count - 1)) / (float)count;
+        float bx = rowX + rowW - ctlW - 16.0f*uiS;
+        float by = y + (rowH - ctlH)*0.5f;
+        float sg = 8.0f*uiS;
+        float bw = (ctlW - sg*(count-1)) / (float)count;
         for (int i = 0; i < count; ++i) {
-            if (segment(bx + i * (bw + sg), by, bw, ctlH, labels[i],
+            if (segment(bx + i*(bw+sg), by, bw, ctlH, labels[i],
                         current == values[i], tab.r, tab.g, tab.b))
                 setValue(values[i]);
         }
@@ -2289,90 +2403,105 @@ void Scene_Settings(const SceneCtx& c) {
     auto infoRow = [&](float y, const wchar_t* label, const wchar_t* desc,
                        const wchar_t* value, bool disabled = false) {
         rowShellStd(y, label, desc, disabled);
-        float infoA = enterT * (0.58f + 0.42f * panelE);
-        float bx = rowX + rowW - ctlW - 16.0f * uiS;
-        float by = y + (rowH - ctlH) * 0.5f;
+        float infoA = rightWake * (0.58f + 0.42f*panelE);
+        float bx = rowX + rowW - ctlW - 16.0f*uiS;
+        float by = y + (rowH - ctlH)*0.5f;
         BindMainShader();
-        drawRect(bx, by, ctlW, ctlH, 0.050f, 0.058f, 0.075f, (disabled ? 0.50f : 0.82f) * infoA);
-        drawBorder(bx, by, ctlW, ctlH, tab.r, tab.g, tab.b, (disabled ? 0.10f : 0.22f) * infoA, 1.0f * uiS);
-        drawCenterS(value, bx, by + 12.0f * uiS, ctlW,
-                    0.45f * uiS,
-                    disabled ? 0.48f : 0.82f,
-                    disabled ? 0.50f : 0.90f,
-                    disabled ? 0.56f : 1.0f,
-                    (disabled ? 0.52f : 0.90f) * infoA);
+        drawRect(bx, by, ctlW, ctlH, 0.050f, 0.058f, 0.075f, (disabled ? 0.50f : 0.82f)*infoA);
+        {   // Corner brackets
+            float ba = (disabled ? 0.10f : 0.26f) * infoA;
+            float cL = std::min(ctlW * 0.22f, 10.0f * uiS), ct = 1.3f * uiS;
+            drawRect(bx,        by,        cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by,        ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-cL,by,        cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-ct,by,        ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-cL,by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-ct,by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
+            float ns = 3.0f * uiS;
+            drawDiamond(bx,       by,       ns, tab.r,tab.g,tab.b, ba);
+            drawDiamond(bx+ctlW,  by,       ns, tab.r,tab.g,tab.b, ba);
+            drawDiamond(bx,       by+ctlH,  ns, tab.r,tab.g,tab.b, ba);
+            drawDiamond(bx+ctlW,  by+ctlH,  ns, tab.r,tab.g,tab.b, ba);
+        }
+        drawCenterS(value, bx, by + 12.0f*uiS, ctlW, 0.45f*uiS,
+                    disabled ? 0.48f : 0.82f, disabled ? 0.50f : 0.90f, disabled ? 0.56f : 1.0f,
+                    (disabled ? 0.52f : 0.90f)*infoA);
     };
     auto volumeRow = [&](float y, const wchar_t* label, const wchar_t* desc, int& vol) {
         rowShellStd(y, label, desc);
-        float volA = enterT * (0.58f + 0.42f * panelE);
-        float bx = rowX + rowW - ctlW - 16.0f * uiS;
-        float by = y + (rowH - ctlH) * 0.5f;
-        float smallW = 42.0f * uiS;
+        float volA = rightWake * (0.58f + 0.42f*panelE);
+        float bx = rowX + rowW - ctlW - 16.0f*uiS;
+        float by = y + (rowH - ctlH)*0.5f;
+        float smallW = 42.0f*uiS;
         if (segment(bx, by, smallW, ctlH, L"-", false, tab.r, tab.g, tab.b)) {
-            g_VolEdit = false;
-            vol = clampVol(vol - 5);
+            g_VolEdit = false; vol = clampVol(vol - 5);
         }
-        float barX = bx + smallW + 12.0f * uiS;
-        float fieldW = 76.0f * uiS;
-        float plusX = bx + ctlW - fieldW - smallW - 16.0f * uiS;
-        float barW = plusX - barX - 12.0f * uiS;
-        float trackY = by + ctlH * 0.5f;
-        float fillW = barW * (vol / 100.0f);
+        float barX  = bx + smallW + 12.0f*uiS;
+        float fieldW = 76.0f*uiS;
+        float plusX  = bx + ctlW - fieldW - smallW - 16.0f*uiS;
+        float barW   = plusX - barX - 12.0f*uiS;
+        float trackY = by + ctlH*0.5f;
+        float fillW  = barW * (vol / 100.0f);
         BindMainShader();
-        drawRect(barX, trackY - 4.0f * uiS, barW, 8.0f * uiS, 0.11f, 0.12f, 0.16f, 0.96f * volA);
-        drawRect(barX, trackY - 4.0f * uiS, fillW, 8.0f * uiS, tab.r, tab.g, tab.b, 0.90f * volA);
+        drawRect(barX, trackY-4.0f*uiS, barW, 8.0f*uiS, 0.11f,0.12f,0.16f, 0.96f*volA);
+        drawRect(barX, trackY-4.0f*uiS, fillW, 8.0f*uiS, tab.r,tab.g,tab.b, 0.90f*volA);
         float knobX = barX + fillW;
-        drawCircle(knobX, trackY, 10.0f * uiS, tab.r, tab.g, tab.b, 0.92f * volA);
-        drawCircle(knobX, trackY, 5.2f * uiS, 0.96f, 0.98f, 1.0f, 0.96f * volA);
-        bool barHover = hit(barX, by, barW, ctlH);
+        drawCircle(knobX, trackY, 10.0f*uiS, tab.r,tab.g,tab.b, 0.92f*volA);
+        drawCircle(knobX, trackY, 5.2f*uiS, 0.96f,0.98f,1.0f, 0.96f*volA);
+        bool barHover = !modalActive && hit(barX, by, barW, ctlH);
         if (lmb && barHover) {
             g_VolEdit = false;
             vol = clampVol((int)(((float)mx - barX) / barW * 100.0f + 0.5f));
         }
         if (segment(plusX, by, smallW, ctlH, L"+", false, tab.r, tab.g, tab.b)) {
-            g_VolEdit = false;
-            vol = clampVol(vol + 5);
+            g_VolEdit = false; vol = clampVol(vol + 5);
         }
-
         float fieldX = bx + ctlW - fieldW;
         bool fieldHover = hit(fieldX, by, fieldW, ctlH);
         BindMainShader();
         drawRect(fieldX, by, fieldW, ctlH,
-                 g_VolEdit ? 0.15f : 0.060f,
-                 g_VolEdit ? 0.17f : 0.068f,
-                 g_VolEdit ? 0.22f : 0.090f, 0.92f * volA);
+                 g_VolEdit?0.15f:0.060f, g_VolEdit?0.17f:0.068f,
+                 g_VolEdit?0.22f:0.090f, 0.92f*volA);
         drawBorder(fieldX, by, fieldW, ctlH, tab.r, tab.g, tab.b,
-                   (g_VolEdit ? 0.72f : (fieldHover ? 0.38f : 0.18f)) * volA, 1.2f * uiS);
-        if (lmb && !g_LmbPrev) {
-            if (fieldHover) {
-                g_VolEdit = true;
-                g_VolLen = 0;
-                g_VolBuf[0] = 0;
-            } else if (g_VolEdit) {
-                commitVol();
-            }
+                   (g_VolEdit?0.72f:(fieldHover?0.38f:0.18f))*volA, 1.2f*uiS);
+        if (lmb && !g_LmbPrev && !modalActive) {
+            if (fieldHover) { g_VolEdit = true; g_VolLen = 0; g_VolBuf[0] = 0; }
+            else if (g_VolEdit) commitVol();
         }
         wchar_t shown[16];
         if (g_VolEdit) {
-            bool caret = (((int)(glfwGetTime() * 2.0)) & 1) == 0;
+            bool caret = (((int)(glfwGetTime()*2.0)) & 1) == 0;
             swprintf_s(shown, L"%ls%ls", g_VolLen ? g_VolBuf : L"", caret ? L"|" : L"");
         } else {
             swprintf_s(shown, L"%d", vol);
         }
-        drawCenterS(shown, fieldX, by + 12.0f * uiS, fieldW,
-                    0.46f * uiS, 1.0f, 1.0f, 1.0f, 0.94f * volA);
+        drawCenterS(shown, fieldX, by + 12.0f*uiS, fieldW, 0.46f*uiS, 1.0f,1.0f,1.0f, 0.94f*volA);
     };
     auto disabledMeterRow = [&](float y, const wchar_t* label, const wchar_t* desc) {
         rowShellStd(y, label, desc, true);
-        float meterA = enterT * (0.58f + 0.42f * panelE);
-        float bx = rowX + rowW - ctlW - 16.0f * uiS;
-        float by = y + (rowH - ctlH) * 0.5f;
+        float meterA = rightWake * (0.58f + 0.42f*panelE);
+        float bx = rowX + rowW - ctlW - 16.0f*uiS;
+        float by = y + (rowH - ctlH)*0.5f;
         BindMainShader();
-        drawRect(bx, by, ctlW, ctlH, 0.045f, 0.048f, 0.060f, 0.50f * meterA);
-        drawBorder(bx, by, ctlW, ctlH, tab.r, tab.g, tab.b, 0.10f * meterA, 1.0f * uiS);
-        drawCenterS((li == 0) ? L"MASTER와 연동" : (li == 1) ? L"LINKED TO MASTER" : L"MASTER連動",
-                    bx, by + 12.0f * uiS, ctlW, 0.42f * uiS,
-                    0.48f, 0.52f, 0.62f, 0.62f * meterA);
+        drawRect(bx, by, ctlW, ctlH, 0.045f,0.048f,0.060f, 0.50f*meterA);
+        {   // Corner brackets (disabled style)
+            float ba = 0.12f * meterA;
+            float cL = std::min(ctlW * 0.22f, 10.0f * uiS), ct = 1.3f * uiS;
+            drawRect(bx,        by,        cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by,        ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-cL,by,        cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-ct,by,        ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-cL,by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
+            drawRect(bx+ctlW-ct,by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
+        }
+        drawCenterS((li==0) ? L"MASTER\xC5D0 \xC5F0\xB3D9"
+                            : (li==1) ? L"LINKED TO MASTER"
+                                      : L"MASTERに連動",
+                    bx, by+12.0f*uiS, ctlW, 0.42f*uiS, 0.48f,0.52f,0.62f, 0.62f*meterA);
     };
 
     if (g_VolEdit) {
@@ -2392,138 +2521,67 @@ void Scene_Settings(const SceneCtx& c) {
         const wchar_t* fpsLabels[5] = { L"VSYNC", L"30", L"60", L"144", L"300" };
         const int fpsVals[5] = { 0, 30, 60, 144, 300 };
         choiceRow(y, T(StrId::SET_FPS),
-                  (li == 0) ? L"프레임 제한과 수직동기화" : (li == 1) ? L"Frame cap and vertical sync" : L"FPS制限",
+                  nli == 0 ? L"\xD504\xB808\xC784 \xC81C\xD55C\xACFC \xC218\xC9C1\xB3D9\xAE30\xD654"
+                           : L"Frame cap and vertical sync",
                   fpsLabels, fpsVals, 5, g_FpsCap, [&](int v) {
                       g_FpsCap = v;
                       glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
                   });
         y += rowH + rowGap;
-        const wchar_t* langLabels[3] = { L"한국어", L"English", L"日本語" };
-        const int langVals[3] = { 0, 1, 2 };
+        const wchar_t* langLabels[2] = { L"\xD55C\xAD6D\xC5B4", L"English" };
+        const int langVals[2] = { 0, 1 };
         choiceRow(y, T(StrId::SET_LANG),
-                  (li == 0) ? L"UI 표시 언어" : (li == 1) ? L"Interface language" : L"表示言語",
-                  langLabels, langVals, 3, (int)g_Language, [&](int v) {
+                  nli == 0 ? L"UI \xD45C\xC2DC \xC5B8\xC5B4" : L"Interface language",
+                  langLabels, langVals, 2, std::min((int)g_Language, 1), [&](int v) {
                       if (v >= 0 && v < LANG_COUNT) g_Language = (Language)v;
                   });
         y += rowH + rowGap;
         boolRow(y,
-                (li == 0) ? L"CRT 셰이더" : (li == 1) ? L"CRT Shader" : L"CRTシェーダー",
-                (li == 0) ? L"스캔라인과 화면 후처리" : (li == 1) ? L"Scanline and screen post effect" : L"画面効果",
+                nli == 0 ? L"CRT \xC170\xC774\xB354" : L"CRT Shader",
+                nli == 0 ? L"\xC2A4\xCE94\xB77C\xC778\xACFC \xD654\xBA74 \xD3EC\xC2A4\xD2B8 \xC774\xD399\xD2B8"
+                         : L"Scanline and screen post effect",
                 g_ShaderFx);
         y += rowH + rowGap;
-        const wchar_t* mobLabels[2] = {
-            (li == 0) ? L"기본" : (li == 1) ? L"Classic" : L"通常",
-            (li == 0) ? L"부드럽" : (li == 1) ? L"Soft" : L"ソフト"
-        };
         const int twoVals[2] = { 0, 1 };
+        const wchar_t* vfxLabels[2] = { nli == 0 ? L"\xC804\xCCB4" : L"Full",
+                                        nli == 0 ? L"\xAC10\xC18C" : L"Reduced" };
         choiceRow(y,
-                  (li == 0) ? L"몹 외형" : (li == 1) ? L"Mob Look" : L"敵表示",
-                  (li == 0) ? L"적 실루엣 렌더링 스타일" : (li == 1) ? L"Enemy silhouette rendering style" : L"敵の見た目",
-                  mobLabels, twoVals, 2, (int)g_MobVisualStyle, [&](int v) {
-                      g_MobVisualStyle = (v == 0) ? MobVisualStyle::CLASSIC : MobVisualStyle::SOFT;
-                  });
-        y += rowH + rowGap;
-        const wchar_t* vfxLabels[2] = {
-            (li == 0) ? L"보통" : (li == 1) ? L"Full" : L"通常",
-            (li == 0) ? L"절약" : (li == 1) ? L"Reduced" : L"軽量"
-        };
-        choiceRow(y,
-                  (li == 0) ? L"위성 VFX" : (li == 1) ? L"Satellite VFX" : L"衛星VFX",
-                  (li == 0) ? L"반복 이펙트 밀도" : (li == 1) ? L"Repeated effect density" : L"効果密度",
+                  nli == 0 ? L"VFX \xBC00\xB3C4" : L"VFX Density",
+                  nli == 0 ? L"\xBC18\xBCF5 \xC774\xD399\xD2B8 \xBC00\xB3C4" : L"Repeated effect density",
                   vfxLabels, twoVals, 2, (int)g_VfxDensity, [&](int v) {
                       g_VfxDensity = (v == 0) ? VfxDensity::FULL : VfxDensity::REDUCED;
                   });
-    } else if (s_tab == 1) {
+        y += rowH + rowGap;
         boolRow(y,
-                (li == 0) ? L"자동 발사" : (li == 1) ? L"Auto-Fire" : L"自動発射",
-                (li == 0) ? L"조준 중 자동으로 기본 공격" : (li == 1) ? L"Primary fire while aiming" : L"照準中に攻撃",
+                nli == 0 ? L"\xC790\xB3D9 \xBC1C\xC0AC" : L"Auto-Fire",
+                nli == 0 ? L"\xC870\xC900 \xC2DC \xC790\xB3D9\xC73C\xB85C \xAE30\xBCF8 \xACF5\xACA9"
+                         : L"Primary fire while aiming",
                 g_AutoFire);
         y += rowH + rowGap;
-        boolRow(y,
-                (li == 0) ? L"자동 스킬" : (li == 1) ? L"Auto-Skill" : L"自動スキル",
-                (li == 0) ? L"쿨타임이 끝난 스킬 자동 사용" : (li == 1) ? L"Auto cast ready skills" : L"スキル自動使用",
-                g_AutoSkill);
-        y += rowH + rowGap;
         boolRow(y, T(StrId::SET_CROSSHAIR),
-                (li == 0) ? L"커서 중심 조준 표시" : (li == 1) ? L"Cursor aim indicator" : L"照準表示",
+                nli == 0 ? L"\xCEE4\xC11C \xC870\xC900 \xC778\xB514\xCF00\xC774\xD130" : L"Cursor aim indicator",
                 g_ShowCrosshair);
         y += rowH + rowGap;
         boolRow(y, T(StrId::SET_DMGNUM),
-                (li == 0) ? L"타격 피해량 표시" : (li == 1) ? L"Show hit damage values" : L"ダメージ表示",
+                nli == 0 ? L"\xBC1B\xC740 \xD53C\xD574\xB7C9 \xD45C\xC2DC" : L"Show hit damage values",
                 g_ShowDamageNumbers);
-        y += rowH + rowGap;
-        boolRow(y, T(StrId::SET_COMBO),
-                (li == 0) ? L"연속 처치 카운터 표시" : (li == 1) ? L"Show kill chain counter" : L"コンボ表示",
-                g_ShowCombo);
-    } else if (s_tab == 2) {
-        infoRow(y,
-                (li == 0) ? L"이동" : (li == 1) ? L"Move" : L"移動",
-                (li == 0) ? L"현재 입력 방식" : (li == 1) ? L"Current input binding" : L"現在の入力",
-                L"W / A / S / D");
-        y += rowH + rowGap;
-        infoRow(y,
-                (li == 0) ? L"조준" : (li == 1) ? L"Aim" : L"照準",
-                (li == 0) ? L"마우스 커서 방향" : (li == 1) ? L"Mouse cursor direction" : L"マウス方向",
-                (li == 0) ? L"마우스" : (li == 1) ? L"Mouse" : L"マウス");
-        y += rowH + rowGap;
-        infoRow(y,
-                (li == 0) ? L"기본 공격" : (li == 1) ? L"Primary Fire" : L"通常攻撃",
-                (li == 0) ? L"자동 발사 OFF일 때 사용" : (li == 1) ? L"Used when Auto-Fire is off" : L"自動発射OFF時",
-                L"LMB");
-        y += rowH + rowGap;
-        infoRow(y,
-                (li == 0) ? L"스킬" : (li == 1) ? L"Skills" : L"スキル",
-                (li == 0) ? L"현재 고정 단축키" : (li == 1) ? L"Current fixed shortcuts" : L"固定キー",
-                L"Q / E / R");
-        y += rowH + rowGap;
-        infoRow(y,
-                (li == 0) ? L"키 변경" : (li == 1) ? L"Rebind Keys" : L"キー変更",
-                (li == 0) ? L"추후 조작 설정 확장 슬롯" : (li == 1) ? L"Reserved for future input options" : L"今後追加",
-                (li == 0) ? L"준비중" : (li == 1) ? L"COMING SOON" : L"準備中",
-                true);
-    } else if (s_tab == 3) {
+    } else if (s_tab == 1) {
         volumeRow(y,
-                  (li == 0) ? L"마스터 볼륨" : (li == 1) ? L"Master Volume" : L"マスター音量",
-                  (li == 0) ? L"전체 사운드 출력" : (li == 1) ? L"Overall sound output" : L"全体音量",
+                  nli == 0 ? L"\xB9C8\xC2A4\xD130 \xBCFC\xB968" : L"Master Volume",
+                  nli == 0 ? L"\xC804\xCCB4 \xC18C\xB9AC \xCD9C\xB825" : L"Overall sound output",
                   g_SoundVol);
         y += rowH + rowGap;
         disabledMeterRow(y,
-                         (li == 0) ? L"BGM 볼륨" : (li == 1) ? L"BGM Volume" : L"BGM音量",
-                         (li == 0) ? L"사운드 분리 작업 후 연결" : (li == 1) ? L"Reserved for channel split" : L"今後分離");
+                         nli == 0 ? L"BGM \xBCFC\xB968" : L"BGM Volume",
+                         nli == 0 ? L"\xC608\xC57D \xC911: \xCC44\xB110 \xBD84\xB9AC \xC608\xC815" : L"Reserved for channel split");
         y += rowH + rowGap;
         disabledMeterRow(y,
-                         (li == 0) ? L"SFX 볼륨" : (li == 1) ? L"SFX Volume" : L"効果音",
-                         (li == 0) ? L"효과음 채널 자리 확보" : (li == 1) ? L"Reserved effect channel" : L"効果音チャンネル");
+                         nli == 0 ? L"SFX \xBCFC\xB968" : L"SFX Volume",
+                         nli == 0 ? L"\xC608\xC57D \xC774\xD399\xD2B8 \xCC44\xB110" : L"Reserved effect channel");
         y += rowH + rowGap;
         disabledMeterRow(y,
-                         (li == 0) ? L"UI 볼륨" : (li == 1) ? L"UI Volume" : L"UI音量",
-                         (li == 0) ? L"버튼음 추가 시 사용" : (li == 1) ? L"Reserved for UI sounds" : L"UI音用");
-    } else if (s_tab == 4) {
-        toggleRow(y,
-                  (li == 0) ? L"VFX 절약" : (li == 1) ? L"Reduced VFX" : L"軽量VFX",
-                  (li == 0) ? L"반복 이펙트 밀도를 낮춤" : (li == 1) ? L"Lower repeated effect density" : L"効果密度を低下",
-                  g_VfxDensity == VfxDensity::REDUCED, [&](bool on) {
-                      g_VfxDensity = on ? VfxDensity::REDUCED : VfxDensity::FULL;
-                  });
-        y += rowH + rowGap;
-        toggleRow(y,
-                  (li == 0) ? L"CRT 효과 줄이기" : (li == 1) ? L"Reduce CRT Effect" : L"CRT軽減",
-                  (li == 0) ? L"스캔라인 후처리 비활성화" : (li == 1) ? L"Disable scanline post effect" : L"画面効果OFF",
-                  !g_ShaderFx, [&](bool on) { g_ShaderFx = !on; });
-        y += rowH + rowGap;
-        boolRow(y, T(StrId::SET_CROSSHAIR),
-                (li == 0) ? L"조준 기준점 표시" : (li == 1) ? L"Show aim reference" : L"照準表示",
-                g_ShowCrosshair);
-        y += rowH + rowGap;
-        boolRow(y, T(StrId::SET_DMGNUM),
-                (li == 0) ? L"화면 정보량 조절" : (li == 1) ? L"Control combat text density" : L"情報量調整",
-                g_ShowDamageNumbers);
-        y += rowH + rowGap;
-        infoRow(y,
-                (li == 0) ? L"플래시 완화" : (li == 1) ? L"Reduced Flash" : L"フラッシュ軽減",
-                (li == 0) ? L"추후 화면 효과 분리 시 연결" : (li == 1) ? L"Reserved for effect split" : L"今後追加",
-                (li == 0) ? L"준비중" : (li == 1) ? L"COMING SOON" : L"準備中",
-                true);
+                         nli == 0 ? L"UI \xBCFC\xB968" : L"UI Volume",
+                         nli == 0 ? L"\xC608\xC57D UI \xC0AC\xC6B4\xB4DC" : L"Reserved for UI sounds");
     } else {
         wchar_t bestBuf[128];
         swprintf_s(bestBuf, L"E %lld / N %lld / H %lld", g_BestScore[0], g_BestScore[1], g_BestScore[2]);
@@ -2532,81 +2590,208 @@ void Scene_Settings(const SceneCtx& c) {
         wchar_t coinBuf[64];
         swprintf_s(coinBuf, L"%lld G", g_Coins);
         infoRow(y,
-                (li == 0) ? L"저장 방식" : (li == 1) ? L"Save Mode" : L"保存方式",
-                (li == 0) ? L"뒤로가기와 주요 진행 시 자동 저장" : (li == 1) ? L"Saved on exit and progress events" : L"自動保存",
-                (li == 0) ? L"자동 저장" : (li == 1) ? L"AUTO SAVE" : L"自動保存");
+                nli == 0 ? L"\xC800\xC7A5 \xBC29\xC2DD" : L"Save Mode",
+                nli == 0 ? L"\xC885\xB8CC\xC2DC\xB098 \xC911\xC694 \xC2E4\xD589 \xB54C \xC790\xB3D9 \xC800\xC7A5"
+                         : L"Saved on exit and progress events",
+                nli == 0 ? L"\xC790\xB3D9 \xC800\xC7A5" : L"AUTO SAVE");
         y += rowH + rowGap;
         infoRow(y,
-                (li == 0) ? L"최고 기록" : (li == 1) ? L"Best Score" : L"最高記録",
-                (li == 0) ? L"난이도별 최고 점수" : (li == 1) ? L"Best score by difficulty" : L"難易度別",
+                nli == 0 ? L"\xCD5C\xACE0 \xAE30\xB85D" : L"Best Score",
+                nli == 0 ? L"\xB09C\xC774\xB3C4\xBCC4 \xCD5C\xACE0 \xC810\xC218" : L"Best score by difficulty",
                 bestBuf);
         y += rowH + rowGap;
         infoRow(y,
-                (li == 0) ? L"누적 기록" : (li == 1) ? L"Run Record" : L"累積記録",
-                (li == 0) ? L"처치 수와 플레이 횟수" : (li == 1) ? L"Total kills and run count" : L"撃破と回数",
+                nli == 0 ? L"\xB204\xC801 \xAE30\xB85D" : L"Run Record",
+                nli == 0 ? L"\xCD1D\xD569 \xCC98\xCE58 \xD69F\xC218\xC640 \xD310\xC218" : L"Total kills and run count",
                 recordBuf);
         y += rowH + rowGap;
         infoRow(y,
-                (li == 0) ? L"보유 코인" : (li == 1) ? L"Coin" : L"コイン",
-                (li == 0) ? L"상점과 해금에 사용" : (li == 1) ? L"Used for shop and unlocks" : L"ショップ用",
+                nli == 0 ? L"\xBCF4\xC720 \xCF54\xC778" : L"Coin",
+                nli == 0 ? L"\xC0C1\xC810\xACFC \xD574\xAE08\xC5D0 \xC0AC\xC6A9" : L"Used for shop and unlocks",
                 coinBuf);
         y += rowH + rowGap;
-        int fw = 0, fh = 0;
-        glfwGetFramebufferSize(window, &fw, &fh);
-        std::wstring s1 = GetSystemSpecLine1();
-        std::wstring s2 = GetSystemSpecLine2(fw, fh);
-        rowShell(y,
-                 (li == 0) ? L"PC 사양" : (li == 1) ? L"System Specs" : L"PC情報",
-                 (li == 0) ? L"피드백용 표시 정보" : (li == 1) ? L"For feedback and reports" : L"報告用",
-                 false, 94.0f * uiS);
-        float bx = rowX + rowW - ctlW - 16.0f * uiS;
-        drawFitS(s1.c_str(), bx, y + 18.0f * uiS, ctlW,
-                 0.42f * uiS, 0.32f * uiS, 0.74f, 0.84f, 0.96f, 0.84f);
-        drawFitS(s2.c_str(), bx, y + 45.0f * uiS, ctlW,
-                 0.42f * uiS, 0.32f * uiS, 0.66f, 0.76f, 0.90f, 0.78f);
+        rowShellStd(y,
+                    nli == 0 ? L"\xAE30\xB85D \xCD08\xAE30\xD654" : L"Reset Records",
+                    nli == 0 ? L"\xD56D\xBAA9 \xBC94\xC704\xB97C \xC120\xD0DD \xD6C4 \xCD08\xAE30\xD654 \xC2E4\xD589"
+                             : L"Select scope and confirm reset");
+        {
+            float bx = rowX + rowW - ctlW - 16.0f * uiS;
+            float by2 = y + (rowH - ctlH) * 0.5f;
+            bool rHov = hit(bx, by2, ctlW, ctlH);
+            BindMainShader();
+            drawRect(bx, by2, ctlW, ctlH,
+                     0.28f + (rHov ? 0.08f : 0.0f), 0.04f, 0.04f, 0.92f);
+            BatchFlush(); SetGlowFx(true);
+            drawConstellFrame(bx, by2, ctlW, ctlH, 1.0f, 0.35f, 0.35f,
+                              rHov ? 0.90f : 0.52f, 10.0f*uiS, 3.0f*uiS);
+            BatchFlush(); SetGlowFx(false);
+            drawCenterS(nli == 0 ? L"\xCD08\xAE30\xD654 \xC120\xD0DD..." : L"Select Range...",
+                        bx, by2 + 12.0f*uiS, ctlW, 0.45f*uiS, 1.0f, 0.55f, 0.55f, 0.96f);
+            if (rHov && lmb && !g_LmbPrev) {
+                s_resetDialog           = true;
+                s_resetDialogJustOpened = true;
+                s_resetDone   = false;
+                s_resetItems[0] = s_resetItems[1] = s_resetItems[2] = s_resetItems[3] = false;
+            }
+        }
+        y += rowH + rowGap;
+        rowShellStd(y,
+                    nli == 0 ? L"\xD06C\xB808\xB515" : L"Credits",
+                    nli == 0 ? L"\xC0AC\xC6A9 \xB77C\xC774\xBE0C\xB7EC\xB9AC\xC640 \xBE4C\xB4DC \xC815\xBCF4"
+                             : L"Libraries and build info");
+        {
+            float bx = rowX + rowW - ctlW - 16.0f * uiS;
+            float by2 = y + (rowH - ctlH) * 0.5f;
+            if (segment(bx, by2, ctlW, ctlH,
+                        nli == 0 ? L"\xBCF4\xAE30" : L"View", false, tab.r, tab.g, tab.b))
+                s_showCredits = true;
+        }
     }
 
     const float backW = 178.0f * uiS;
-    const float resetW = 230.0f * uiS;
-    const float credW = 158.0f * uiS;
-    const float footGap = 16.0f * uiS;
-    const float footTotal = backW + resetW + credW + footGap * 2.0f;
-    const float footX = wx + (WW - footTotal) * 0.5f;
+    const float footX = panelX + (panelW - backW) * 0.5f;
+    const bool lmbMain = lmb && !modalActive;
     if (UIButton(footX, footY, backW, 48.0f * uiS, T(StrId::BTN_BACK),
-                 mx, my, lmb, g_LmbPrev)) {
+                 mx, my, lmbMain, g_LmbPrev)) {
         if (g_VolEdit) commitVol();
         SaveGame();
         g_GameManager.currentState = g_SettingsReturnTo;
     }
 
-    float resetX = footX + backW + footGap;
-    bool resetHov = hit(resetX, footY, resetW, 48.0f * uiS);
-    const wchar_t* resetLabel = s_resetConfirm
-        ? ((li == 0) ? L"정말? 다시 클릭" : (li == 1) ? L"Sure? Click Again" : L"もう一度クリック")
-        : ((li == 0) ? L"세이브 초기화" : (li == 1) ? L"Reset Save" : L"セーブ初期化");
-    BindMainShader();
-    drawRect(resetX, footY, resetW, 48.0f * uiS,
-             s_resetConfirm ? 0.38f : 0.16f, 0.045f, 0.050f, resetHov ? 0.98f : 0.88f);
-    drawBorder(resetX, footY, resetW, 48.0f * uiS,
-               1.0f, 0.30f, 0.30f, s_resetConfirm ? 0.86f : (resetHov ? 0.55f : 0.25f), 1.5f * uiS);
-    drawCenterS(resetLabel, resetX, footY + 15.0f * uiS, resetW,
-                0.50f * uiS, 1.0f, 0.70f, 0.68f, 0.96f);
-    if (lmb && !g_LmbPrev) {
-        if (resetHov) {
-            if (!s_resetConfirm) s_resetConfirm = true;
-            else {
-                ResetSaveProgress();
-                s_resetConfirm = false;
-            }
-        } else {
-            s_resetConfirm = false;
-        }
+    if (modalActive) {
+        BindMainShader();
+        drawRect(panelX, panelY, panelW, panelH, 0.0f, 0.0f, 0.0f, 0.52f);
     }
 
-    const wchar_t* creditsLabel = (li == 0) ? L"크레딧" : (li == 1) ? L"Credits" : L"クレジット";
-    if (UIButton(resetX + resetW + footGap, footY, credW, 48.0f * uiS,
-                 creditsLabel, mx, my, lmb, g_LmbPrev))
-        s_showCredits = true;
+    if (s_resetDialog) {
+        const float dW = 560.0f * uiS, dH = 380.0f * uiS;
+        const float dX = (sw - dW) * 0.5f, dY = (sh - dH) * 0.5f;
+        BindMainShader();
+        drawRect(dX + 8.0f*uiS, dY + 10.0f*uiS, dW, dH, 0.0f, 0.0f, 0.0f, 0.32f);
+        drawRect(dX, dY, dW, dH, 0.032f, 0.040f, 0.060f, 0.97f);
+        BatchFlush(); SetGlowFx(true);
+        drawConstellFrame(dX, dY, dW, dH, 1.0f, 0.35f, 0.35f, 0.72f, 16.0f*uiS, 5.0f*uiS, 0.22f);
+        BatchFlush(); SetGlowFx(false);
+
+        const wchar_t* dlgTitle = nli == 0 ? L"\xCD08\xAE30\xD654 \xBC94\xC704 \xC120\xD0DD" : L"SELECT RESET SCOPE";
+        float tw = g_TextL.Width(dlgTitle, 0.80f*uiS);
+        BindMainShader();
+        g_TextL.Draw(dlgTitle, dX + (dW - tw) * 0.5f, dY + 18.0f*uiS, 0.80f*uiS, 1.0f, 0.55f, 0.55f, 0.96f);
+        drawRect(dX + 20.0f*uiS, dY + 54.0f*uiS, dW - 40.0f*uiS, 1.0f*uiS, 1.0f, 0.4f, 0.4f, 0.30f);
+
+        const wchar_t* itemLabels[2][4] = {
+            { L"\xCD5C\xACE0 \xAE30\xB85D (\xB09C\xC774\xB3C4\xBCC4)", L"\xB204\xC801 \xAE30\xB85D (\xCD1D\xD569/\xD310)", L"\xBCF4\xC720 \xCF54\xC778", L"\xD574\xAE08 \xD56D\xBAA9" },
+            { L"Best Score",        L"Run Records",        L"Coins",         L"Unlocks"   },
+        };
+        for (int i = 0; i < 4; ++i) {
+            float iy = dY + 72.0f*uiS + (float)i * 56.0f*uiS;
+            float cbX = dX + 28.0f*uiS, cbY = iy + 8.0f*uiS;
+            float cbS = 26.0f*uiS;
+            bool cbHov = hit(cbX, cbY, cbS, cbS);
+            BindMainShader();
+            drawRect(cbX, cbY, cbS, cbS,
+                     s_resetItems[i] ? 0.60f : 0.06f,
+                     s_resetItems[i] ? 0.10f : 0.06f,
+                     s_resetItems[i] ? 0.10f : 0.06f, 0.94f);
+            BatchFlush(); SetGlowFx(true);
+            drawConstellFrame(cbX, cbY, cbS, cbS, 1.0f, 0.40f, 0.40f,
+                              s_resetItems[i] ? 0.90f : (cbHov ? 0.55f : 0.28f),
+                              7.0f*uiS, 2.5f*uiS);
+            BatchFlush(); SetGlowFx(false);
+            if (s_resetItems[i]) {
+                drawDiamond(cbX + cbS*0.5f, cbY + cbS*0.5f, cbS*0.45f, 1.0f, 0.55f, 0.55f, 0.92f);
+            }
+            if (cbHov && lmb && !g_LmbPrev) s_resetItems[i] = !s_resetItems[i];
+            g_TextS.Draw(itemLabels[nli][i], cbX + cbS + 14.0f*uiS, iy + 12.0f*uiS,
+                         0.52f*uiS, 0.92f, 0.92f, 1.0f, 0.90f);
+        }
+
+        const float btnY = dY + dH - 62.0f*uiS;
+        const float btnH = 42.0f*uiS, btnW = 180.0f*uiS;
+        const float cancelX = dX + dW * 0.5f - btnW - 12.0f*uiS;
+        const float execX   = dX + dW * 0.5f + 12.0f*uiS;
+        bool anyItem = s_resetItems[0] || s_resetItems[1] || s_resetItems[2] || s_resetItems[3];
+
+        if (UIButton(cancelX, btnY, btnW, btnH, nli == 0 ? L"\xCDE8\xC18C" : L"Cancel",
+                     mx, my, lmb, g_LmbPrev)) {
+            s_resetDialog = false;
+        }
+
+        bool execHov = anyItem && hit(execX, btnY, btnW, btnH);
+        BindMainShader();
+        drawRect(execX, btnY, btnW, btnH,
+                 anyItem ? (0.30f + (execHov ? 0.08f : 0.0f)) : 0.08f,
+                 0.03f, 0.03f, anyItem ? 0.94f : 0.50f);
+        BatchFlush(); SetGlowFx(true);
+        drawConstellFrame(execX, btnY, btnW, btnH, 1.0f, 0.35f, 0.35f,
+                          anyItem ? (execHov ? 0.90f : 0.55f) : 0.18f,
+                          10.0f*uiS, 3.0f*uiS);
+        BatchFlush(); SetGlowFx(false);
+        drawCenterS(nli == 0 ? L"\xCD08\xAE30\xD654 \xC2E4\xD589" : L"Confirm Reset",
+                    execX, btnY + 12.0f*uiS, btnW, 0.46f*uiS,
+                    1.0f, anyItem ? 0.50f : 0.35f, anyItem ? 0.50f : 0.35f,
+                    anyItem ? 0.96f : 0.42f);
+
+        if (execHov && anyItem && lmb && !g_LmbPrev) {
+            if (s_resetItems[0]) { g_BestScore[0] = g_BestScore[1] = g_BestScore[2] = 0; }
+            if (s_resetItems[1]) { g_TotalKills = 0; g_TotalGames = 0; }
+            if (s_resetItems[2]) { g_Coins = 0; }
+            if (s_resetItems[3]) { ResetSaveProgress(); }
+            SaveGame();
+            s_resetDialog = false;
+            s_resetDone   = true;
+        }
+
+        bool justOpened = s_resetDialogJustOpened;
+        s_resetDialogJustOpened = false;
+        if (!justOpened && lmb && !g_LmbPrev && !hit(dX, dY, dW, dH))
+            s_resetDialog = false;
+    }
+
+    if (s_resetDone) {
+        const float nW = 460.0f*uiS, nH = 210.0f*uiS;
+        const float nX = (sw - nW) * 0.5f, nY = (sh - nH) * 0.5f;
+        BindMainShader();
+        drawRect(nX + 7.0f*uiS, nY + 9.0f*uiS, nW, nH, 0.0f, 0.0f, 0.0f, 0.32f);
+        drawRect(nX, nY, nW, nH, 0.032f, 0.040f, 0.060f, 0.97f);
+        BatchFlush(); SetGlowFx(true);
+        drawConstellFrame(nX, nY, nW, nH, 1.0f, 0.35f, 0.35f, 0.72f, 16.0f*uiS, 5.0f*uiS, 0.22f);
+        BatchFlush(); SetGlowFx(false);
+        const wchar_t* doneTitle = nli == 0 ? L"\xCD08\xAE30\xD654 \xC644\xB8CC" : L"Reset Complete";
+        float dtw = g_TextL.Width(doneTitle, 0.80f*uiS);
+        BindMainShader();
+        g_TextL.Draw(doneTitle, nX + (nW - dtw)*0.5f, nY + 20.0f*uiS,
+                     0.80f*uiS, 1.0f, 0.55f, 0.55f, 0.96f);
+        drawRect(nX + 20.0f*uiS, nY + 58.0f*uiS, nW - 40.0f*uiS, 1.0f*uiS,
+                 1.0f, 0.4f, 0.4f, 0.28f);
+        const wchar_t* line1 = nli==0
+            ? L"\xC120\xD0DD\xD55C \xAE30\xB85D\xC774 \xCD08\xAE30\xD654\xB418\xC5C8\xC2B5\xB2C8\xB2E4."
+            : L"Selected records have been reset.";
+        const wchar_t* line2 = nli==0
+            ? L"\xBCC0\xACBD \xC0AC\xD56D\xC744 \xC801\xC6A9\xD558\xB824\xBA74 \xAC8C\xC784\xC744 \xC7AC\xC2DC\xC791\xD558\xC138\xC694."
+            : L"Restart the game to apply changes.";
+        float sc1 = 0.48f*uiS;
+        while (sc1 > 0.34f*uiS && g_TextS.Width(line1, sc1) > nW - 60.0f*uiS) sc1 -= 0.02f*uiS;
+        float sc2 = 0.44f*uiS;
+        while (sc2 > 0.30f*uiS && g_TextS.Width(line2, sc2) > nW - 60.0f*uiS) sc2 -= 0.02f*uiS;
+        g_TextS.Draw(line1, nX + (nW - g_TextS.Width(line1, sc1))*0.5f,
+                     nY + 72.0f*uiS, sc1, 0.88f, 0.92f, 1.0f, 0.90f);
+        g_TextS.Draw(line2, nX + (nW - g_TextS.Width(line2, sc2))*0.5f,
+                     nY + 102.0f*uiS, sc2, 0.56f, 0.64f, 0.80f, 0.76f);
+        const float qW = 160.0f*uiS, qH = 44.0f*uiS;
+        const float qX = nX + (nW - qW)*0.5f, qY = nY + nH - 60.0f*uiS;
+        bool qHov = hit(qX, qY, qW, qH);
+        BindMainShader();
+        drawRect(qX, qY, qW, qH, 0.28f+(qHov?0.08f:0.0f), 0.04f, 0.04f, 0.92f);
+        BatchFlush(); SetGlowFx(true);
+        drawConstellFrame(qX, qY, qW, qH, 1.0f, 0.35f, 0.35f,
+                          qHov ? 0.90f : 0.55f, 10.0f*uiS, 3.0f*uiS);
+        BatchFlush(); SetGlowFx(false);
+        drawCenterS(nli==0 ? L"\xC885\xB8CC" : L"Quit", qX, qY + 12.0f*uiS, qW,
+                    0.48f*uiS, 1.0f, 0.60f, 0.60f, 0.96f);
+        if (qHov && lmb && !g_LmbPrev)
+            glfwSetWindowShouldClose(window, 1);
+    }
 
     if (s_showCredits) {
         BindMainShader();
@@ -2997,6 +3182,7 @@ void Scene_Paused(const SceneCtx& c) {
                 if (UIButton(bx, by + 1*(BH+BG), BW, BH, T(StrId::BTN_SETTINGS),
                              mx, my, lmb, g_LmbPrev)) {
                     g_SettingsReturnTo = GameState::PAUSED;
+                    ResetSettingsUi();
                     g_GameManager.currentState = GameState::SETTINGS;
                 }
                 if (UIButton(bx, by + 2*(BH+BG), BW, BH, T(StrId::BTN_MAIN_MENU),

@@ -2170,11 +2170,12 @@ int main() {
 
                 // 紐ъ뒪???낅뜲?댄듃 (?붾쾭??multiplier ?곸슜) ???쒓컙 ?뺤? 以묒뿏 ??硫덉땄
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 ????鍮좊쫫
-                // ?먯닔 湲곕컲 ?띾룄 ?⑦봽 (ACT 테마 반영)
+                // Time-based speed ramp. Density is lower now, so enemy pressure should not depend
+                // only on score gained from kills.
                 BossDir::ActRules actSpd = BossDir::GetActRules();
-                float si = (float)g_GameManager.score / 100000.0f;
+                float si = g_GameTime / 240.0f;
                 if (si > actSpd.intensityCap) si = actSpd.intensityCap;
-                float mobSpdRamp = (1.0f + si * 0.09f) * actSpd.speedMult;
+                float mobSpdRamp = (1.0f + si * 0.075f) * actSpd.speedMult;
                 // 특이점 — 몹 AI 전에 끌어당김·소각, AI 후 플레이어 밀어내기
                 if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
                     const float pullR2 = 220.0f * 220.0f;
@@ -2976,27 +2977,46 @@ int main() {
 
             const float p2mult = 1.0f;
 
-            // ?먯닔 湲곕컲 ?쒖씠???⑦봽 — ACT 테마 (BossDirector)
+            // Time-based low-density spawn curve. Early game starts with only a few stronger mobs,
+            // then density opens gradually by elapsed run time instead of score.
             BossDir::ActRules act = BossDir::GetActRules();
             float intensity = (float)g_GameManager.score / 100000.0f;
             if (intensity > act.intensityCap) intensity = act.intensityCap;
-            float rampSpawn = (1.0f + intensity * 0.40f) * act.spawnMult;
-            float rampSpd   = (1.0f + intensity * 0.09f) * act.speedMult;
+            float elapsedSec = g_GameTime;
+            float spawnT = elapsedSec / 300.0f;
+            if (spawnT > 1.0f) spawnT = 1.0f;
+            if (spawnT < 0.0f) spawnT = 0.0f;
+            float lateSpawnT = (elapsedSec - 300.0f) / 300.0f;
+            if (lateSpawnT > 1.0f) lateSpawnT = 1.0f;
+            if (lateSpawnT < 0.0f) lateSpawnT = 0.0f;
+            float capT = elapsedSec / 420.0f;
+            if (capT > 1.0f) capT = 1.0f;
+            if (capT < 0.0f) capT = 0.0f;
+            float rampSpawn = (0.52f + spawnT * 1.75f + lateSpawnT * 0.55f) * act.spawnMult;
             bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss || g_BossWarnTimer > 0.0f;
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
-            float rampHp    = (1.0f + hpIntensity * 0.55f);
-            int   varietyPct = (int)(std::min(45.0f * g_Stats.varietyChanceMult,
-                                   (float)g_GameManager.score / 3000.0f * g_Stats.varietyChanceMult)
+            float hpT = elapsedSec / 300.0f;
+            if (hpT > 1.0f) hpT = 1.0f;
+            if (hpT < 0.0f) hpT = 0.0f;
+            float hpLateT = (elapsedSec - 300.0f) / 300.0f;
+            if (hpLateT > 1.0f) hpLateT = 1.0f;
+            if (hpLateT < 0.0f) hpLateT = 0.0f;
+            float scoreHpRamp = 1.0f + hpIntensity * 0.15f;
+            float rampHp = (1.22f + hpT * 1.05f + hpLateT * 0.70f) * scoreHpRamp;
+            int   varietyPct = (int)(std::min(42.0f * g_Stats.varietyChanceMult,
+                                   spawnT * 34.0f * g_Stats.varietyChanceMult)
                                + (float)act.varietyBias);
-            int   elitePct   = (int)(std::min(40.0f,
-                                   (float)g_GameManager.score / 12000.0f * g_Stats.eliteChanceMult)
+            float eliteT = (elapsedSec - 75.0f) / 300.0f;
+            if (eliteT > 1.0f) eliteT = 1.0f;
+            if (eliteT < 0.0f) eliteT = 0.0f;
+            int   elitePct   = (int)(std::min(34.0f,
+                                   eliteT * 26.0f * g_Stats.eliteChanceMult)
                                + (float)act.eliteBias);
             varietyPct += TrialVarietyBiasBonus(g_GameManager.score);
             elitePct   += TrialEliteBiasBonus(g_GameManager.score);
             if (varietyPct > 60) varietyPct = 60;
             if (elitePct > 55) elitePct = 55;
-            (void)rampSpd;
 
             // ?ㅽ룿 ?곸뿭 ??2?섏씠利?以뚯븘?????뺤옣??蹂댁씠?? ?곸뿭 紐⑥꽌由ъ뿉???ㅽ룿.
             float saX = 0.0f, saY = 0.0f;
@@ -3004,7 +3024,7 @@ int main() {
 
             // ?〓す ?ㅽ룿 (D_MOB_SPAWN ?????먯＜ + cap +200, D_MOB_HP ??HP+, ?먯닔 ?⑦봽)
             spawnTimer += delta;
-            float spawnInterval = 0.3f * g_Stats.mobSpawnMult
+            float spawnInterval = 1.15f * g_Stats.mobSpawnMult
                                 / (p2mult * rampSpawn * TrialSpawnRateMult(g_GameManager.score));
             if (bossNow) spawnInterval *= 2.5f;   // 蹂댁뒪?? ?몃옒???ㅽ룿 ???媛먯냼
             float effHpMul = TrialEnemyHpMult(g_GameManager.score);
@@ -3021,9 +3041,14 @@ int main() {
                               g_InBossIntermission;
             if (bossDuel) spawnInterval = 1e9f;
             if (spawnTimer > spawnInterval) {
-                // ?덈? ?곹븳 ???대━2?섏씠利댠쀬젏?섎옩?꾨줈 ?쒕룄媛 1000+ 源뚯? ??＜?섎뜕 寃?諛⑹? (?깅뒫)
-                int effCap = (int)((100 + g_Stats.mobCapBonus) * p2mult * rampSpawn);
-                if (effCap > 180) effCap = 180;
+                float capBonusT = elapsedSec / 360.0f;
+                if (capBonusT > 1.0f) capBonusT = 1.0f;
+                if (capBonusT < 0.0f) capBonusT = 0.0f;
+                int scaledCapBonus = (int)((float)g_Stats.mobCapBonus * capBonusT * capBonusT);
+                int effCap = 1 + (int)(4.0f * spawnT + 45.0f * capT * capT + 30.0f * lateSpawnT)
+                           + scaledCapBonus;
+                if (effCap < 1) effCap = 1;
+                if (effCap > 160) effCap = 160;
                 // ??留덈━ ?ㅽ룿 + ?붾쾭??蹂??(D_MOB_PACK ??援곗쭛?쇰줈 ?щ윭 踰?
                 auto spawnOne = [&]() {
                     size_t mbefore = g_MonsterManager.monsters.size();
@@ -3109,8 +3134,15 @@ int main() {
                         }
                     }
                 };
-                int packN = 1 + g_Stats.mobPackBonus;       // D_MOB_PACK: 援곗쭛 ?ㅽ룿
-                for (int p = 0; p < packN; p++) spawnOne();
+                float packBonusT = (elapsedSec - 120.0f) / 360.0f;
+                if (packBonusT > 1.0f) packBonusT = 1.0f;
+                if (packBonusT < 0.0f) packBonusT = 0.0f;
+                int packN = 1 + (int)((float)g_Stats.mobPackBonus * packBonusT);
+                if (elapsedSec >= 240.0f) ++packN;
+                if (elapsedSec >= 480.0f) ++packN;
+                if (packN > 5) packN = 5;
+                for (int p = 0; p < packN && (int)g_MonsterManager.monsters.size() < effCap; p++)
+                    spawnOne();
                 spawnTimer = 0.0f;
             }
 
