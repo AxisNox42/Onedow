@@ -15,6 +15,91 @@
 
 ## Shared Handoff
 
+### 2026-08-21 / Claude — Codex 씬 전면 재구현 (별자리 비주얼 언어 통일)
+
+- Scope: `WiNILL/Core/Scenes/Scenes.cpp` only (+ g_CodexEntryT 전역 추가).
+- 구버전 AppWindow(`codex.db`) + 그리드 + 하단 hover strip 방식을 전면 제거.
+- Settings 씬과 동일한 raw panel 레이아웃으로 재구현:
+  - Header: "CODEX.DB" 타이틀 + 진입 wake 애니메이션
+  - 상단 탭 3개 (ENEMIES / AUGMENTS / BOSSES) — constellation `segment` 버튼 (corner bracket + diamond node)
+  - 좌측 패널 (27%): 카테고리별 스크롤 목록, corner bracket 선택 행, 스크롤바
+  - 우측 패널 (73%): 클릭 고정 상세 패널 (Settings 우측 패널 동일 구조 — sweep line, scan line, constellation frame, glow)
+- 카테고리별 좌측 목록 그룹:
+  - ENEMIES: BASIC (9종) / EXTENDED (5종)
+  - AUGMENTS: 티어별 헤더 (AugTierIndexLess 정렬)
+  - BOSSES: ACTIVE ROSTER (3종)
+- 우측 상세 패널 내용:
+  - 미선택: 힌트 텍스트 + 앰비언트 다이아몬드
+  - ENEMY: 아이콘 프레임 + 적 스프라이트(크게) + 이름 + 설명
+  - AUGMENT: 다이아몬드 아이콘 + 뱃지 + 이름 + 레어도 + 설명 + COMBO 레시피
+  - BOSS: 보스 미니 카드 + 이름 + 설명
+- 미발견 항목은 `???` 표시, 클릭 불가
+- 진입 애니메이션: `g_CodexEntryT` (Settings 동일 패턴 wake/rightWake)
+- BACK 버튼: corner bracket 스타일
+- Build: Release|x64 0 errors, 기존 APIENTRY 경고만.
+
+### 2026-08-21 / Codex - RUN CONFIG trial count then selection page
+
+- Scope: `WiNILL/Core/Scenes/Scenes.cpp` only.
+- Changed the trial flow per user direction:
+  - Base RUN CONFIG no longer shows the 4 trial choices inline.
+  - Turning TRIAL MODULE on now shows a small `<  NN  >` count stepper.
+  - Pressing `SELECT TRIALS` opens a dedicated `TRIAL SELECT` page.
+  - Dedicated page requires selecting exactly the chosen number of trials before `EXECUTE RUN` is enabled.
+- OFF still clears selected trials to avoid hidden active penalties.
+- Build: `MSBuild Debug|x64` passed with existing warnings only (`APIENTRY`, `LIBCMT`).
+
+### 2026-08-21 / Codex - RUN CONFIG trial selection page
+
+- Scope: `WiNILL/Core/Scenes/Scenes.cpp` only.
+- Added the actual 4-slot trial selection UI under the trial module row.
+- Uses existing runtime data:
+  - `g_TrialPool[TRIAL_SLOT_COUNT]`
+  - `g_TrialSelected[TRIAL_SLOT_COUNT]`
+  - `TRIAL_DEFS`
+  - `TrialScoreBonusForDef`
+- Trial module OFF now clears all selected trials so disabled UI cannot leave hidden active penalties.
+- RUN CONFIG path text now distinguishes:
+  - `WEAPON_SELECT`
+  - `LOADOUT_READY`
+  - `TRIAL_SELECT`
+  - `TRIALS_ARMED`
+- Build: `MSBuild Debug|x64` passed. Existing warning only: `APIENTRY`.
+
+### 2026-08-20 / Codex - RUN CONFIG trial toggle terminal row
+
+- Scope: `WiNILL/Core/Scenes/Scenes.cpp` only.
+- Reworked the trial module area to avoid looking like another framed weapon card/button.
+- Removed the large constellation frame around the trial toggle area.
+- The whole row now behaves like a terminal option line:
+  - OFF: dim `[   ] TRIAL MODULE : DISABLED`
+  - ON: highlighted `[   ] TRIAL MODULE : ACTIVE` with a small filled square primitive inside the brackets.
+- Score multiplier remains on the right side as `xN.NN`.
+- Build: `MSBuild Debug|x64` passed with existing warnings only (`APIENTRY`, `LIBCMT`).
+
+### 2026-08-20 / Codex - RUN CONFIG system polish pass
+
+- Scope: `WiNILL/Core/Scenes/Scenes.cpp` only.
+- Changed RUN CONFIG subtitle into an OS-style path string:
+  - `C:\ONEDOW\RUN_CONFIG > WEAPON_SELECT`
+  - `C:\ONEDOW\RUN_CONFIG > LOADOUT_READY`
+  - `C:\ONEDOW\RUN_CONFIG > TRIALS_ARMED`
+- Changed floating `COIN` text into a framed `CREDITS :: 000000` resource panel.
+- Radar stat morph speed increased from 7.0 to 12.0 for a sharper 0.1-0.2s feel.
+- Added short stat-value glitch/hex rolling during weapon selection transitions.
+- Build: `MSBuild Debug|x64` passed. Existing warning only: `APIENTRY`.
+
+### 2026-08-20 / Codex - RUN CONFIG Gemini UI polish
+
+- Scope: `WiNILL/Core/Scenes/Scenes.cpp` only.
+- Applied Gemini feedback for RUN CONFIG:
+  - Radar vertex labels and stat labels are brighter.
+  - Unselected weapon cards are dimmed to roughly 30-40% alpha.
+  - Trial ON/OFF toggle now uses bracket-style text and corner frame instead of a filled box.
+  - EXECUTE RUN uses selected weapon accent color, glow frame, and hover contrast.
+  - Header subtitle moved down slightly; a thin divider was added between radar and stat values.
+- Build: `MSBuild Debug|x64` passed with existing warnings only (`APIENTRY`, `LIBCMT`).
+
 ### 2026-08-20 / Claude — Settings 씬 UI 폴리시 (별자리 비주얼 언어 통일)
 
 **작업 개요**
@@ -343,6 +428,36 @@ Settings 씬 (3탭: GAME / AUDIO / SYSTEM) 진입 애니메이션 포함 전면 
 ---
 
 ## Change Log
+
+### 2026-08-21 / Codex
+
+- RUN CONFIG trial flow rework.
+- `Scenes.cpp`: base screen now uses trial ON/OFF + `< NN >` target count; `SELECT TRIALS` opens a dedicated trial selection page; confirm requires exactly the requested trial count.
+- Build: `MSBuild Debug|x64` passed with existing warnings only.
+
+### 2026-08-21 / Codex
+
+- RUN CONFIG trial selection page.
+- `Scenes.cpp`: moved trial enabled state to resettable UI state, added 4 selectable trial rows connected to `g_TrialSelected`, and cleared selections when the module is turned off.
+- Build: `MSBuild Debug|x64` passed with existing `APIENTRY` warning only.
+
+### 2026-08-20 / Codex
+
+- RUN CONFIG trial toggle redesign.
+- `Scenes.cpp`: replaced framed trial toggle/card with a terminal-style clickable row and bracket checkbox indicator.
+- Build: `MSBuild Debug|x64` passed with existing warnings only.
+
+### 2026-08-20 / Codex
+
+- RUN CONFIG second UI polish pass.
+- `Scenes.cpp`: OS-path subtitle, framed credits panel, faster radar morph, stat-value glitch roll on weapon transition.
+- Build: `MSBuild Debug|x64` passed with existing `APIENTRY` warning only.
+
+### 2026-08-20 / Codex
+
+- RUN CONFIG UI polish from Gemini review.
+- `Scenes.cpp`: brighter radar/stat labels, dimmer unselected weapon cards, bracket-style trial toggle, accent glow execute button, title/subtitle spacing, radar/stat divider.
+- Build: `MSBuild Debug|x64` passed with existing warnings only.
 
 ### 2026-08-20 / Claude — Settings 씬 UI 폴리시
 

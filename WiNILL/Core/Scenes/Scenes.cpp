@@ -1,4 +1,4 @@
-#include "Scenes.h"
+﻿#include "Scenes.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "GameManager.h"
@@ -40,7 +40,13 @@ static int   g_RunConfigStep   = 0;   // 0=loadout, 1=trials/summary
 static float g_RunConfigEntryT = 0.0f;
 static float g_RunConfigFocusT[3] = { 0.0f, 0.0f, 0.0f };
 static float g_SettingsEntryT  = 0.0f;
+static float g_CodexEntryT     = 0.0f;
 static float s_RadarCur[6]     = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+static float s_StatGlitchT     = 1.0f;
+static bool  s_TrialsEnabled   = false;
+static bool  s_TrialSelectPage = false;
+static int   s_TrialTargetCount = 1;
+static float s_TrialHover[TRIAL_SLOT_COUNT] = {};
 static float s_PanelFadeT      = 1.0f;   // 0→1: 우측 패널 콘텐츠 페이드인
 static int   s_PanelPrevSel    = -1;     // 마지막으로 표시된 무기 인덱스
 
@@ -56,6 +62,11 @@ static void ResetRunConfigUi() {
     g_RunConfigEntryT = 0.0f;
     g_RunConfigFocusT[0] = g_RunConfigFocusT[1] = g_RunConfigFocusT[2] = 0.0f;
     for (int i = 0; i < 6; ++i) s_RadarCur[i] = 0.0f;
+    s_StatGlitchT = 1.0f;
+    s_TrialsEnabled = false;
+    s_TrialSelectPage = false;
+    s_TrialTargetCount = 1;
+    for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) s_TrialHover[i] = 0.0f;
     s_PanelFadeT   = 1.0f;
     s_PanelPrevSel = -1;
     ResetTrials();
@@ -63,6 +74,10 @@ static void ResetRunConfigUi() {
 
 static void ResetSettingsUi() {
     g_SettingsEntryT = 0.0f;
+}
+
+static void ResetCodexUi() {
+    g_CodexEntryT = 0.0f;
 }
 
 // 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 비네트)
@@ -261,7 +276,7 @@ void Scene_MainMenu(const SceneCtx& c) {
                 StartSceneFade(GameState::RUN_CONFIG);
                 break;
             case 1: g_GameManager.currentState = GameState::SHOP;    break;
-            case 2: g_GameManager.currentState = GameState::CODEX;   break;
+            case 2: ResetCodexUi(); g_GameManager.currentState = GameState::CODEX; break;
             case 3:
                 g_SettingsReturnTo = GameState::MAIN_MENU;
                 ResetSettingsUi();
@@ -486,405 +501,613 @@ void Scene_Codex(const SceneCtx& c) {
     const bool lmb = c.lmb;
     const float delta = c.delta;
     GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-                // codex.db = 검색 가능한 위키 스타일 앱 창
-                const float WW = std::min(sw * 0.92f, 1480.0f);
-                const float WH = std::min(sh * 0.90f, 980.0f);
-                float wx, wy;
-                DrawMenuBackground(sw, sh, delta);
-                SceneAppWindow(sw, sh, WW, WH, L"codex.db", 0.40f, 0.90f, 0.50f, wx, wy, false, 0.0f);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
-                int li = LangIndex();
+    (void)c.fireTimer; (void)c.reset;
 
-                // 백스페이스 (검색어 편집)
-                {
-                    static bool s_bsPrev = false;
-                    bool bs = (glfwGetKey(window, GLFW_KEY_BACKSPACE) == GLFW_PRESS);
-                    if (bs && !s_bsPrev && g_CodexSearchLen > 0)
-                        g_CodexSearch[--g_CodexSearchLen] = 0;
-                    s_bsPrev = bs;
+    // ── State ─────────────────────────────────────────────────────────────
+    static int   s_cat         = 0;
+    static int   s_prevCat     = -1;
+    static float s_catHover[3] = {};
+    static float s_catFocus[3] = {};
+    static float s_panelT      = 1.0f;
+    static int   s_sel[3]      = { -1, -1, -1 };
+    static float s_scroll[3]   = {};
+    static float s_detailFadeT = 0.0f;
+    static int   s_prevSel     = -2;
+
+    DrawMenuBackground(sw, sh, delta);
+
+    float dt = delta; if (dt > 0.05f) dt = 0.05f;
+    g_CodexEntryT += dt;
+    if (g_CodexEntryT > 1.0f) g_CodexEntryT = 1.0f;
+    const float now = (float)glfwGetTime();
+
+    const float wake      = Smoothstep(std::min(1.0f, g_CodexEntryT / 0.50f));
+    const float rightWake = Smoothstep(std::min(1.0f,
+        std::max(0.0f, g_CodexEntryT - 0.10f) / 0.44f));
+
+    int li = LangIndex(); if (li < 0 || li >= 3) li = 0;
+    const int nli = (li == 0) ? 0 : 1;
+
+    // ── Layout ────────────────────────────────────────────────────────────
+    const float TARGET_W = 1640.0f, TARGET_H = 910.0f;
+    float uiS = std::max(0.72f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
+    if (uiS > 1.30f) uiS = 1.30f;
+    const float panelW  = TARGET_W * uiS;
+    const float panelH  = TARGET_H * uiS;
+    const float panelX  = (sw - panelW) * 0.5f;
+    const float panelY  = (sh - panelH) * 0.5f;
+    const float headerH = 86.0f * uiS;
+    const float footerH = 64.0f * uiS;
+    const float bodyY   = panelY + headerH;
+    const float bodyH   = panelH - headerH - footerH;
+    const float footY   = panelY + panelH - footerH + 14.0f * uiS;
+    const float leftW   = panelW * 0.27f;
+    const float colGap  = 18.0f * uiS;
+    const float leftX   = panelX;
+    const float rightX  = leftX + leftW + colGap;
+    const float rightW  = panelW - leftW - colGap;
+
+    // ── Category definitions ──────────────────────────────────────────────
+    struct CatDef { const wchar_t* id; const wchar_t* name[2]; float r, g, b; };
+    static const CatDef kCats[] = {
+        { L"ENEMIES",  { L"\xC801",  L"ENEMIES"  }, 1.00f, 0.42f, 0.38f },
+        { L"AUGMENTS", { L"\xC99D\xAC15", L"AUGMENTS" }, 0.38f, 0.82f, 1.00f },
+        { L"BOSSES",   { L"\xBCF4\xC2A4", L"BOSSES"   }, 0.96f, 0.72f, 0.22f },
+    };
+    const int kCatCount = 3;
+    const CatDef& cat = kCats[s_cat];
+
+    auto hit = [&](float x, float y, float w, float h) -> bool {
+        return mx >= x && mx <= x + w && my >= y && my <= y + h;
+    };
+
+    // ── Transitions ───────────────────────────────────────────────────────
+    if (s_prevCat != s_cat) { s_prevCat = s_cat; s_panelT = 0.0f; }
+    s_panelT = UiApproach(s_panelT, 1.0f, delta, 10.0f);
+
+    int curSel = s_sel[s_cat];
+    if (curSel != s_prevSel) { s_prevSel = curSel; s_detailFadeT = 0.0f; }
+    s_detailFadeT = UiApproach(s_detailFadeT, 1.0f, delta, 8.0f);
+
+    // ── Helper lambdas ────────────────────────────────────────────────────
+    auto drawBorder = [](float x, float y, float w, float h,
+                         float r, float g, float b, float a, float t) {
+        drawRect(x, y, w, t, r, g, b, a);
+        drawRect(x, y + h - t, w, t, r, g, b, a);
+        drawRect(x, y, t, h, r, g, b, a);
+        drawRect(x + w - t, y, t, h, r, g, b, a);
+    };
+    auto drawCenterS = [&](const wchar_t* text, float x, float y, float w,
+                           float sc, float r, float g, float b, float a) {
+        while (sc > 0.36f * uiS && g_TextS.Width(text, sc) > w - 12.0f * uiS)
+            sc -= 0.025f * uiS;
+        float tw = g_TextS.Width(text, sc);
+        g_TextS.Draw(text, x + (w - tw) * 0.5f, y, sc, r, g, b, a);
+    };
+    auto drawFitS = [&](const wchar_t* text, float x, float y, float maxW,
+                        float sc, float minSc, float r, float g, float b, float a) {
+        while (sc > minSc && g_TextS.Width(text, sc) > maxW)
+            sc -= 0.025f * uiS;
+        g_TextS.Draw(text, x, y, sc, r, g, b, a);
+    };
+    auto drawCBkt = [&](float x, float y, float w, float h,
+                        float r, float g, float b, float a) {
+        float cL = std::min(w * 0.24f, 10.0f * uiS), ct = 1.3f * uiS;
+        drawRect(x,       y,       cL, ct, r, g, b, a);
+        drawRect(x,       y,       ct, cL, r, g, b, a);
+        drawRect(x+w-cL,  y,       cL, ct, r, g, b, a);
+        drawRect(x+w-ct,  y,       ct, cL, r, g, b, a);
+        drawRect(x,       y+h-ct,  cL, ct, r, g, b, a);
+        drawRect(x,       y+h-cL,  ct, cL, r, g, b, a);
+        drawRect(x+w-cL,  y+h-ct,  cL, ct, r, g, b, a);
+        drawRect(x+w-ct,  y+h-cL,  ct, cL, r, g, b, a);
+        float ns = 3.0f * uiS;
+        drawDiamond(x,   y,   ns, r, g, b, a);
+        drawDiamond(x+w, y,   ns, r, g, b, a);
+        drawDiamond(x,   y+h, ns, r, g, b, a);
+        drawDiamond(x+w, y+h, ns, r, g, b, a);
+    };
+
+    // ── HEADER ────────────────────────────────────────────────────────────
+    const float hSlide = (1.0f - wake) * 14.0f * uiS;
+    BindMainShader();
+    g_TextL.Draw(L"CODEX.DB",
+                 leftX, panelY + 8.0f * uiS - hSlide,
+                 0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
+    g_TextS.Draw(nli == 0
+        ? L"\xBC1C\xACAC\xD55C \xC801\xC640 \xC99D\xAC15\xC758 \xAE30\xB85D \xB370\xC774\xD130\xBCA0\xC774\xC2A4"
+        : L"Database of discovered enemies, augments, and bosses",
+                 leftX, panelY + 52.0f * uiS - hSlide,
+                 0.44f * uiS, 0.48f, 0.58f, 0.78f, 0.72f * wake);
+
+    // Category tabs (segment buttons, right side of header)
+    const float tabW  = 170.0f * uiS;
+    const float tabH  = 46.0f * uiS;
+    const float tabGp = 10.0f * uiS;
+    const float tabsX = panelX + panelW - (tabW * kCatCount + tabGp * (kCatCount - 1));
+    const float tabsY = panelY + 20.0f * uiS - hSlide;
+
+    for (int i = 0; i < kCatCount; ++i) {
+        float tx = tabsX + (float)i * (tabW + tabGp);
+        float ty = tabsY;
+        bool hov = hit(tx, ty, tabW, tabH);
+        s_catHover[i] = UiApproach(s_catHover[i], hov ? 1.0f : 0.0f, delta, 10.0f);
+        s_catFocus[i] = UiApproach(s_catFocus[i], (i == s_cat) ? 1.0f : 0.0f, delta, 8.5f);
+        if (hov && lmb && !g_LmbPrev && i != s_cat) s_cat = i;
+        bool sel = (i == s_cat);
+        const CatDef& cd = kCats[i];
+        BindMainShader();
+        drawRect(tx, ty, tabW, tabH,
+                 0.045f + cd.r*(sel ? 0.105f : 0.030f),
+                 0.052f + cd.g*(sel ? 0.085f : 0.028f),
+                 0.070f + cd.b*(sel ? 0.070f : 0.024f), 0.94f * wake);
+        float ba  = (sel ? 0.88f : (hov ? 0.55f : 0.24f)) * wake;
+        float cL2 = std::min(tabW * 0.22f, 9.0f * uiS), ct2 = 1.3f * uiS;
+        drawRect(tx,        ty,        cL2, ct2, cd.r, cd.g, cd.b, ba);
+        drawRect(tx,        ty,        ct2, cL2, cd.r, cd.g, cd.b, ba);
+        drawRect(tx+tabW-cL2,ty,       cL2, ct2, cd.r, cd.g, cd.b, ba);
+        drawRect(tx+tabW-ct2,ty,       ct2, cL2, cd.r, cd.g, cd.b, ba);
+        drawRect(tx,        ty+tabH-ct2,cL2, ct2, cd.r, cd.g, cd.b, ba);
+        drawRect(tx,        ty+tabH-cL2,ct2, cL2, cd.r, cd.g, cd.b, ba);
+        drawRect(tx+tabW-cL2,ty+tabH-ct2,cL2,ct2, cd.r, cd.g, cd.b, ba);
+        drawRect(tx+tabW-ct2,ty+tabH-cL2,ct2,cL2, cd.r, cd.g, cd.b, ba);
+        float ns2 = (sel ? 4.5f : 3.0f) * uiS;
+        drawDiamond(tx,      ty,      ns2, cd.r, cd.g, cd.b, ba);
+        drawDiamond(tx+tabW, ty,      ns2, cd.r, cd.g, cd.b, ba);
+        drawDiamond(tx,      ty+tabH, ns2, cd.r, cd.g, cd.b, ba);
+        drawDiamond(tx+tabW, ty+tabH, ns2, cd.r, cd.g, cd.b, ba);
+        g_TextS.Draw(cd.name[nli], tx + 10.0f*uiS, ty + 5.0f*uiS,
+                     0.36f*uiS, 1.0f, 1.0f, 1.0f, (sel ? 0.82f : 0.52f) * wake);
+        drawCenterS(cd.id, tx, ty + 20.0f*uiS, tabW, 0.48f*uiS,
+                    sel ? 1.0f : 0.72f, sel ? 1.0f : 0.80f, sel ? 1.0f : 0.92f,
+                    (sel ? 0.96f : 0.74f) * wake);
+    }
+
+    // ── LEFT PANEL ────────────────────────────────────────────────────────
+    float panelE = Smoothstep(s_panelT);
+
+    BindMainShader();
+    drawRect(panelX + 8.0f*uiS, bodyY + 10.0f*uiS, leftW, bodyH,
+             0.0f, 0.0f, 0.0f, 0.14f * wake);
+    drawRect(panelX, bodyY, leftW, bodyH,
+             0.025f + cat.r*0.010f, 0.032f + cat.g*0.008f, 0.052f + cat.b*0.010f,
+             0.88f * wake);
+    drawRect(panelX, bodyY, leftW, 28.0f*uiS,
+             cat.r*0.20f, cat.g*0.20f, cat.b*0.22f, 0.94f * wake);
+    drawRect(panelX, bodyY + 28.0f*uiS, leftW, 1.5f*uiS,
+             cat.r, cat.g, cat.b, 0.28f * panelE * wake);
+    drawBorder(panelX, bodyY, leftW, bodyH, cat.r, cat.g, cat.b,
+               (0.16f + 0.30f*panelE) * wake, 1.2f*uiS);
+    if (wake > 0.02f) {
+        BatchFlush(); SetGlowFx(true);
+        drawConstellFrame(panelX, bodyY, leftW, bodyH,
+                          cat.r, cat.g, cat.b, 0.12f * panelE * wake,
+                          14.0f*uiS, 3.5f*uiS, 0.12f, wake);
+        BatchFlush(); SetGlowFx(false);
+    }
+    BindMainShader();
+    g_TextS.Draw(cat.name[nli], panelX + 10.0f*uiS, bodyY + 7.0f*uiS,
+                 0.40f*uiS, 1.0f, 1.0f, 1.0f, 0.65f * wake);
+    g_TextL.Draw(cat.id, panelX + 10.0f*uiS, bodyY + 30.0f*uiS,
+                 0.54f*uiS, cat.r, cat.g, cat.b, 0.80f * panelE * wake);
+
+    // List layout constants
+    const float listX     = panelX + 10.0f * uiS;
+    const float listW2    = leftW  - 20.0f * uiS;
+    const float listTopY  = bodyY  + 68.0f * uiS;
+    const float listBotY  = bodyY  + bodyH - 12.0f * uiS;
+    const float listViewH = listBotY - listTopY;
+    const float itemH     = 30.0f * uiS;
+    const float grpH      = 22.0f * uiS;
+
+    // Build item list for current category
+    struct ListItem {
+        bool           isGroup;
+        int            dataIdx;
+        const wchar_t* label;
+        bool           seen;
+        float          r, g, b;
+    };
+    static ListItem s_items[512];
+    int nItems = 0;
+    float contentH = 0.0f;
+
+    if (s_cat == 0) {
+        struct MobGroup { const wchar_t* name; int ids[9]; int count; float r, g, b; };
+        static const MobGroup MGRPS[] = {
+            { L"BASIC",
+              { CM_NORMAL, CM_SPLITTER, CM_BLINKER, CM_CHARGER,
+                CM_WEAVER, CM_BRUTE, CM_ORBITER, CM_SPAWNER, CM_SHIELDED },
+              9, 0.88f, 0.52f, 0.52f },
+            { L"EXTENDED",
+              { CM_RANGED, CM_BOMBER, CM_DDOS, CM_BADSECTOR, CM_REGERROR, 0, 0, 0, 0 },
+              5, 0.72f, 0.48f, 0.90f },
+        };
+        for (int gi = 0; gi < 2; ++gi) {
+            const MobGroup& mg = MGRPS[gi];
+            ListItem& lh = s_items[nItems++];
+            lh.isGroup = true; lh.dataIdx = -1; lh.seen = true;
+            lh.label = mg.name; lh.r = mg.r; lh.g = mg.g; lh.b = mg.b;
+            contentH += grpH;
+            for (int j = 0; j < mg.count; ++j) {
+                int id = mg.ids[j];
+                ListItem& litem = s_items[nItems++];
+                litem.isGroup = false; litem.dataIdx = id;
+                litem.seen = CodexMobSeen(id);
+                litem.label = litem.seen ? MobName(id) : L"???";
+                litem.r = mg.r; litem.g = mg.g; litem.b = mg.b;
+                contentH += itemH;
+            }
+        }
+    } else if (s_cat == 1) {
+        int sorted[AUG_TOTAL], ns_aug = 0;
+        for (int i = 0; i < AUG_TOTAL; ++i)
+            if (!AugRemoved(ALL_AUGS[i].type)) sorted[ns_aug++] = i;
+        std::sort(sorted, sorted + ns_aug,
+                  [](int a, int b) { return AugTierIndexLess(a, b); });
+        AugRarity prevR = (AugRarity)-1;
+        for (int k = 0; k < ns_aug; ++k) {
+            int i = sorted[k];
+            AugRarity rar = ALL_AUGS[i].rarity;
+            if (rar != prevR) {
+                float rr, rg, rb; GetRarityColor(rar, rr, rg, rb);
+                ListItem& lh = s_items[nItems++];
+                lh.isGroup = true; lh.dataIdx = -1; lh.seen = true;
+                lh.label = GetRarityKR(rar); lh.r = rr; lh.g = rg; lh.b = rb;
+                prevR = rar; contentH += grpH;
+            }
+            float rr, rg, rb; GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
+            ListItem& litem = s_items[nItems++];
+            litem.isGroup = false; litem.dataIdx = i;
+            litem.seen = CodexAugSeen(i);
+            litem.label = litem.seen ? AugName(ALL_AUGS[i]) : L"???";
+            litem.r = rr; litem.g = rg; litem.b = rb;
+            contentH += itemH;
+        }
+    } else {
+        ListItem& lh = s_items[nItems++];
+        lh.isGroup = true; lh.dataIdx = -1; lh.seen = true;
+        lh.label = L"ACTIVE ROSTER";
+        lh.r = cat.r; lh.g = cat.g; lh.b = cat.b;
+        contentH += grpH;
+        for (int i = 0; i < BOSS_CODEX_COUNT; ++i) {
+            int pick = BossCodexPick(i);
+            glm::vec3 wc = BossDir::WarnColor(pick);
+            ListItem& litem = s_items[nItems++];
+            litem.isGroup = false; litem.dataIdx = i;
+            litem.seen = BossCodexSeen(i);
+            litem.label = litem.seen ? BossCodexName(i) : L"???";
+            litem.r = wc.r; litem.g = wc.g; litem.b = wc.b;
+            contentH += itemH;
+        }
+    }
+
+    // Scroll
+    float& scroll = s_scroll[s_cat];
+    float maxScroll = std::max(0.0f, contentH - listViewH);
+    bool overList = (mx >= listX && mx <= listX + listW2 &&
+                     my >= listTopY && my <= listBotY);
+    if (overList && g_ScrollAccum != 0.0f)
+        scroll -= g_ScrollAccum * itemH * 1.3f;
+    g_ScrollAccum = 0.0f;
+    scroll = std::max(0.0f, std::min(scroll, maxScroll));
+
+    // Render list (scissored)
+    BatchFlush();
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((GLint)listX, (GLint)(sh - listBotY), (GLint)listW2, (GLint)listViewH);
+
+    float ry = listTopY - scroll;
+    for (int k = 0; k < nItems; ++k) {
+        const ListItem& litem = s_items[k];
+        float ih = litem.isGroup ? grpH : itemH;
+        if (ry + ih < listTopY) { ry += ih; continue; }
+        if (ry > listBotY)      break;
+
+        if (litem.isGroup) {
+            BindMainShader();
+            float mid = ry + grpH * 0.5f;
+            drawRect(listX, mid - 0.75f*uiS, listW2, 1.5f*uiS,
+                     litem.r, litem.g, litem.b, 0.18f * wake);
+            drawDiamond(listX,          mid, 4.0f*uiS, litem.r, litem.g, litem.b, 0.60f * wake);
+            drawDiamond(listX + listW2, mid, 4.0f*uiS, litem.r, litem.g, litem.b, 0.60f * wake);
+            g_TextS.Draw(litem.label, listX + 14.0f*uiS, ry + 4.0f*uiS,
+                         0.38f*uiS, litem.r, litem.g, litem.b, 0.82f * wake);
+        } else {
+            bool isSel = (s_sel[s_cat] == litem.dataIdx);
+            bool hov2  = overList && hit(listX, ry, listW2, itemH);
+            if (hov2 && lmb && !g_LmbPrev && litem.seen)
+                s_sel[s_cat] = litem.dataIdx;
+
+            float ia = wake * (0.65f + 0.35f * panelE);
+            BindMainShader();
+            drawRect(listX, ry, listW2, itemH,
+                     0.040f + litem.r*(isSel ? 0.080f : hov2 ? 0.030f : 0.010f),
+                     0.048f + litem.g*(isSel ? 0.065f : hov2 ? 0.024f : 0.008f),
+                     0.068f + litem.b*(isSel ? 0.052f : hov2 ? 0.020f : 0.006f),
+                     (isSel ? 0.94f : hov2 ? 0.80f : 0.64f) * ia);
+            drawRect(listX, ry, 3.5f*uiS, itemH, litem.r, litem.g, litem.b,
+                     (isSel ? 0.90f : hov2 ? 0.52f : 0.24f) * ia);
+            if (isSel || hov2)
+                drawCBkt(listX, ry, listW2, itemH, litem.r, litem.g, litem.b,
+                         (isSel ? 0.78f : 0.32f) * ia);
+            g_TextS.Draw(litem.label, listX + 14.0f*uiS, ry + 7.0f*uiS, 0.42f*uiS,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.92f : 0.78f) : 0.38f,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.94f : 0.82f) : 0.38f,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.98f : 0.90f) : 0.42f,
+                         (litem.seen ? (isSel ? 0.98f : hov2 ? 0.86f : 0.72f) : 0.36f) * ia);
+        }
+        ry += ih;
+    }
+
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+
+    // Scrollbar
+    if (maxScroll > 0.0f) {
+        BindMainShader();
+        float tkX = panelX + leftW - 5.0f*uiS;
+        drawRect(tkX, listTopY, 3.5f*uiS, listViewH,
+                 0.10f, 0.10f, 0.14f, 0.50f * wake);
+        float thumbH = listViewH * (listViewH / contentH);
+        if (thumbH < 18.0f*uiS) thumbH = 18.0f*uiS;
+        float thumbY = listTopY + (listViewH - thumbH) * (scroll / maxScroll);
+        drawRect(tkX, thumbY, 3.5f*uiS, thumbH, cat.r, cat.g, cat.b, 0.80f * wake);
+    }
+
+    // ── RIGHT PANEL ───────────────────────────────────────────────────────
+    float detailA    = Smoothstep(s_detailFadeT) * rightWake;
+    float entryShift = (1.0f - rightWake) * 70.0f * uiS;
+    float rpx        = rightX + entryShift;
+
+    BindMainShader();
+    drawRect(rpx + 9.0f*uiS, bodyY + 11.0f*uiS, rightW, bodyH,
+             0.0f, 0.0f, 0.0f, (0.14f + 0.10f*panelE)*rightWake);
+    drawRect(rpx, bodyY, rightW, bodyH,
+             0.025f + cat.r*0.012f, 0.032f + cat.g*0.010f, 0.052f + cat.b*0.010f,
+             (0.86f + 0.10f*panelE)*rightWake);
+    drawRect(rpx, bodyY, rightW, 30.0f*uiS,
+             cat.r*(0.20f + 0.38f*panelE),
+             cat.g*(0.20f + 0.38f*panelE),
+             cat.b*(0.22f + 0.38f*panelE), 0.94f*rightWake);
+    drawRect(rpx, bodyY + 30.0f*uiS, rightW, 2.0f*uiS,
+             cat.r, cat.g, cat.b, (0.22f + 0.55f*panelE)*rightWake);
+    float sweepW = rightW * 0.28f;
+    float sweepX = rpx + fmodf(now * 180.0f, rightW + sweepW) - sweepW;
+    drawRect(sweepX, bodyY + 30.0f*uiS, sweepW, 2.0f*uiS,
+             cat.r, cat.g, cat.b, 0.18f*panelE*rightWake);
+    float scanY2 = bodyY + 44.0f*uiS + fmodf(now * 110.0f,
+                   std::max(1.0f, bodyH - 56.0f*uiS));
+    drawRect(rpx + 2.0f*uiS, scanY2, rightW - 4.0f*uiS, 1.0f*uiS,
+             cat.r, cat.g, cat.b, 0.045f*panelE*rightWake);
+    drawBorder(rpx, bodyY, rightW, bodyH, cat.r, cat.g, cat.b,
+               (0.20f + 0.44f*panelE)*rightWake, 1.5f*uiS);
+    if (rightWake > 0.02f) {
+        BatchFlush(); SetGlowFx(true);
+        drawConstellFrame(rpx, bodyY, rightW, bodyH,
+                          cat.r, cat.g, cat.b, 0.20f*panelE*rightWake,
+                          22.0f*uiS, 6.0f*uiS, 0.14f, rightWake);
+        BatchFlush(); SetGlowFx(false);
+    }
+    BindMainShader();
+    float bsz2 = 10.0f*uiS, bb2y = bodyY + 10.0f*uiS;
+    float bb2x = rpx + rightW - 18.0f*uiS;
+    drawRect(bb2x - 2.0f*(bsz2+7.0f*uiS), bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
+    drawRect(bb2x - (bsz2+7.0f*uiS),      bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
+    drawRect(bb2x,                          bb2y, bsz2, bsz2, 0.9f,0.25f,0.25f, (0.20f+0.40f*panelE)*rightWake);
+    g_TextS.Draw(cat.name[nli], rpx + 14.0f*uiS, bodyY + 9.0f*uiS,
+                 0.44f*uiS, 1.0f, 1.0f, 1.0f, 0.68f*rightWake);
+    g_TextL.Draw(cat.id, rpx + 20.0f*uiS, bodyY + 40.0f*uiS,
+                 1.05f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*panelE*rightWake);
+
+    // Content area
+    int selItem = s_sel[s_cat];
+    const float cntX = rpx + 22.0f*uiS;
+    const float cntY = bodyY + 100.0f*uiS;
+    const float cntW = rightW - 44.0f*uiS;
+
+    if (selItem < 0) {
+        const wchar_t* hint[2] = {
+            L"\xBAA9\xB85D\xC5D0\xC11C \xD56D\xBAA9\xC744 \xD074\xB9AD\xD558\xBA74 \xC815\xBCF4\xAC00 \xD45C\xC2DC\xB429\xB2C8\xB2E4",
+            L"Click an entry in the list to view details"
+        };
+        BindMainShader();
+        float hw = g_TextS.Width(hint[nli], 0.48f*uiS);
+        g_TextS.Draw(hint[nli], rpx + (rightW - hw) * 0.5f,
+                     bodyY + bodyH * 0.5f - 10.0f*uiS,
+                     0.48f*uiS, 0.36f, 0.46f, 0.60f, 0.55f*rightWake);
+        float cx0 = rpx + rightW*0.5f, cy0 = bodyY + bodyH*0.5f + 28.0f*uiS;
+        drawDiamond(cx0, cy0, (5.0f + 1.5f*sinf(now*1.6f))*uiS,
+                    cat.r, cat.g, cat.b, 0.18f*rightWake);
+    } else {
+        const float iconSz = 130.0f * uiS;
+        const float iconX  = cntX;
+        const float iconY  = cntY;
+        const float txtX   = iconX + iconSz + 26.0f*uiS;
+        const float txtW   = cntW  - iconSz - 26.0f*uiS;
+
+        BindMainShader();
+        drawRect(iconX, iconY, iconSz, iconSz,
+                 0.040f + cat.r*0.040f, 0.048f + cat.g*0.032f, 0.068f + cat.b*0.032f,
+                 0.92f * detailA);
+        drawCBkt(iconX, iconY, iconSz, iconSz, cat.r, cat.g, cat.b, 0.56f * detailA);
+
+        if (s_cat == 0) {
+            // ── Enemy detail ──────────────────────────────────────────────
+            bool seen = CodexMobSeen(selItem);
+            float ccx = iconX + iconSz*0.5f, ccy = iconY + iconSz*0.46f;
+            if (seen) {
+                if (selItem <= (int)MobKind::SHIELDED) {
+                    Monster pm(ccx, ccy);
+                    if (selItem > 0) pm.MakeKind((MobKind)selItem);
+                    pm.worldX = ccx; pm.worldY = ccy;
+                    if (selItem == 0) pm.color = glm::vec3(0.75f, 0.75f, 0.8f);
+                    pm.sizeScale = (selItem == (int)MobKind::BRUTE) ? 2.2f : 2.8f;
+                    drawMob(&pm);
+                } else if (selItem == CM_RANGED) {
+                    BindMainShader();
+                    drawDiamond(ccx, ccy, 40.0f, 0.85f, 0.0f, 0.85f, 1.0f);
+                    drawDiamond(ccx, ccy, 16.0f, 1,1,1, 0.9f);
+                } else if (selItem == CM_BOMBER) {
+                    BindMainShader();
+                    drawPentagon(ccx, ccy, 44.0f, 1.0f, 0.5f, 0.1f, 1.0f);
+                } else if (selItem == CM_DDOS) {
+                    BindMainShader();
+                    for (int t = 0; t < 3; t++) {
+                        float ang = (float)t * 2.0944f;
+                        drawTriangle(ccx + cosf(ang)*18.0f, ccy + sinf(ang)*18.0f,
+                                     18.0f, 1.0f, 0.35f, 0.55f, 1.0f);
+                    }
+                } else if (selItem == CM_BADSECTOR) {
+                    BindMainShader();
+                    drawPentagon(ccx, ccy, 40.0f, 0.7f, 0.25f, 0.85f, 1.0f);
+                    drawPentagon(ccx, ccy, 17.0f, 0.1f, 0.05f, 0.2f, 1.0f);
+                } else {
+                    BindMainShader();
+                    drawDiamond(ccx,      ccy,      36.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                    drawDiamond(ccx + 24, ccy,      13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                    drawDiamond(ccx - 24, ccy,      13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                    drawDiamond(ccx,      ccy + 24, 13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
+                    drawDiamond(ccx,      ccy - 24, 13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
                 }
-
-                // 검색창 (위키 느낌) — 항상 입력 활성
-                float searchX = wx + 40.0f, searchY = wy + 46.0f, searchW = 460.0f, searchH = 40.0f;
+            } else {
                 BindMainShader();
-                drawRect(searchX, searchY, searchW, searchH, 0.12f, 0.14f, 0.18f, 1.0f);
-                drawRect(searchX, searchY, searchW, 2.0f, 0.4f, 0.9f, 0.5f, 0.9f);
-                if (g_CodexSearchLen > 0) {
-                    g_TextS.Draw(g_CodexSearch, searchX + 14.0f, searchY + 10.0f, 0.85f,
-                                 1.0f, 1.0f, 1.0f, 1.0f);
-                } else {
-                    const wchar_t* PH[3] = { L"검색...", L"Search...", L"検索..." };
-                    g_TextS.Draw(PH[li], searchX + 14.0f, searchY + 10.0f, 0.85f,
-                                 0.5f, 0.55f, 0.6f, 0.9f);
-                }
-                // 깜빡이는 캐럿
-                if (((int)(glfwGetTime() * 2.0) & 1) == 0) {
-                    float cwid = g_CodexSearchLen ? g_TextS.Width(g_CodexSearch, 0.85f) : 0.0f;
-                    BindMainShader();
-                    drawRect(searchX + 14.0f + cwid + 2.0f, searchY + 8.0f, 2.0f, 24.0f,
-                             0.9f, 0.95f, 1.0f, 0.9f);
-                }
-                // 개발 모드 해금 토스트 (이스터에그) — 검색창 아래 잠깐 표시
-                if (g_DevToastTimer > 0.0f) {
-                    g_DevToastTimer -= delta;
-                    float a = g_DevToastTimer > 2.5f ? (3.0f - g_DevToastTimer) / 0.5f
-                                                     : (g_DevToastTimer > 1.0f ? 1.0f : g_DevToastTimer);
-                    if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
-                    g_TextS.Draw(L"* DEV MODE UNLOCKED - 난이도 화면에서 크리에이티브 활성",
-                                 searchX, searchY + searchH + 8.0f, 0.8f,
-                                 0.4f, 1.0f, 0.55f, a);
-                }
+                float qw = g_TextL.Width(L"?", 1.6f*uiS);
+                g_TextL.Draw(L"?", iconX + (iconSz - qw)*0.5f, iconY + iconSz*0.38f,
+                             1.6f*uiS, 0.4f, 0.4f, 0.45f, 0.9f * detailA);
+            }
+            BindMainShader();
+            g_TextS.Draw(L"ENEMY", txtX, cntY + 4.0f*uiS,
+                         0.38f*uiS, cat.r, cat.g, cat.b, 0.68f*detailA);
+            g_TextL.Draw(MobName(selItem), txtX, cntY + 22.0f*uiS,
+                         0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
+            drawRect(txtX, cntY + 78.0f*uiS, txtW, 1.5f*uiS,
+                     cat.r, cat.g, cat.b, 0.28f*detailA);
+            drawFitS(seen ? MobDesc(selItem) : L"???",
+                     txtX, cntY + 90.0f*uiS, txtW,
+                     0.44f*uiS, 0.32f*uiS, 0.82f, 0.90f, 1.0f, 0.88f*detailA);
 
-                static int s_tab = 0;   // 0 적 / 1 증강 / 2 보스
-                static int s_codexAugSort = 0;  // 0=티어순(기본) 1=분류순
-                const wchar_t* TAB_MOB[3] = { L"적", L"Enemies", L"敵" };
-                const wchar_t* TAB_AUG[3] = { L"증강", L"Augments", L"強化" };
-                const wchar_t* TAB_BOS[3] = { L"보스", L"Bosses", L"ボス" };
-                if (UIButton(wx + 520.0f, searchY, 120.0f, searchH, TAB_MOB[li],
-                             mx, my, lmb, g_LmbPrev, s_tab == 0)) s_tab = 0;
-                if (UIButton(wx + 648.0f, searchY, 120.0f, searchH, TAB_AUG[li],
-                             mx, my, lmb, g_LmbPrev, s_tab == 1)) s_tab = 1;
-                if (UIButton(wx + 776.0f, searchY, 120.0f, searchH, TAB_BOS[li],
-                             mx, my, lmb, g_LmbPrev, s_tab == 2)) s_tab = 2;
-
-                // 증강 탭 — 정렬: 티어(기본) / 분류
-                if (s_tab == 1) {
-                    const wchar_t* ST_T[3] = { L"티어순", L"By tier", L"ティア順" };
-                    const wchar_t* ST_C[3] = { L"분류순", L"By type", L"分類順" };
-                    float sx = wx + WW - 248.0f;
-                    if (UIButton(sx, searchY, 112.0f, searchH, ST_T[li],
-                                 mx, my, lmb, g_LmbPrev, s_codexAugSort == 0))
-                        s_codexAugSort = 0;
-                    if (UIButton(sx + 120.0f, searchY, 112.0f, searchH, ST_C[li],
-                                 mx, my, lmb, g_LmbPrev, s_codexAugSort == 1))
-                        s_codexAugSort = 1;
-                }
-
-                float gTop = wy + 110.0f;          // 그리드 상단
-                float detailY = wy + WH - 170.0f;  // 상세(article) 영역
-                int hoverItem = -1;                // 실제 데이터 인덱스
-
-                if (s_tab == 0) {
-                    // 적 — 검색 필터링 후 재배치
-                    const int COLS = 6; const float CELL = 150.0f;
-                    int vis[CM_COUNT], nv = 0;
-                    for (int i = 0; i < CM_COUNT; i++)
-                        if (g_CodexSearchLen == 0 || (CodexMobSeen(i) && CodexMatch(MobName(i))))
-                            vis[nv++] = i;
-                    float gx = wx + (WW - COLS*CELL) * 0.5f;
-                    for (int k = 0; k < nv; k++) {
-                        int i = vis[k];
-                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
-                        float cw = CELL - 14.0f;
-                        bool seen = CodexMobSeen(i);
-                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+cw);
-                        if (hv) hoverItem = i;
+        } else if (s_cat == 1) {
+            // ── Augment detail ────────────────────────────────────────────
+            bool seen = (selItem >= 0 && selItem < AUG_TOTAL && CodexAugSeen(selItem));
+            if (seen) {
+                const AugDef& d = ALL_AUGS[selItem];
+                float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
+                float ccx = iconX + iconSz*0.5f, ccy = iconY + iconSz*0.46f;
+                BindMainShader();
+                drawDiamond(ccx, ccy, 38.0f*uiS, rr, rg, rb, 0.88f * detailA);
+                const wchar_t* badge = GetAugBadge(d);
+                float bsc = 0.62f*uiS;
+                float bw3 = g_TextS.Width(badge, bsc);
+                g_TextS.Draw(badge, ccx - bw3*0.5f, ccy - 13.0f*uiS,
+                             bsc, 1.0f, 1.0f, 1.0f, 0.96f * detailA);
+                BindMainShader();
+                g_TextS.Draw(L"AUGMENT", txtX, cntY + 4.0f*uiS,
+                             0.38f*uiS, rr, rg, rb, 0.68f*detailA);
+                g_TextL.Draw(AugName(d), txtX, cntY + 22.0f*uiS,
+                             0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
+                wchar_t rarLine[64];
+                swprintf_s(rarLine, L"[%ls]  %ls", badge, GetRarityKR(d.rarity));
+                g_TextS.Draw(rarLine, txtX, cntY + 70.0f*uiS,
+                             0.42f*uiS, rr, rg, rb, 0.80f*detailA);
+                drawRect(txtX, cntY + 88.0f*uiS, txtW, 1.5f*uiS,
+                         rr, rg, rb, 0.28f*detailA);
+                drawFitS(AugDesc(d), txtX, cntY + 100.0f*uiS, txtW,
+                         0.44f*uiS, 0.32f*uiS, 0.82f, 0.90f, 1.0f, 0.88f*detailA);
+                if (d.rarity == AugRarity::COMBO) {
+                    for (int ci = 0; ci < COMBO_COUNT; ++ci) {
+                        if (COMBO_DEFS[ci].result != d.type) continue;
+                        const ComboDef& cd2 = COMBO_DEFS[ci];
+                        int ia = AugIndexOfType(cd2.reqs[0]);
+                        int ib = AugIndexOfType(cd2.reqs[1]);
+                        int ic = cd2.reqCount >= 3 ? AugIndexOfType(cd2.reqs[2]) : -1;
+                        wchar_t rc[192];
+                        if (cd2.reqCount >= 3)
+                            swprintf_s(rc, L"RECIPE: %ls + %ls + %ls",
+                                       ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
+                                       ib>=0 ? AugName(ALL_AUGS[ib]) : L"?",
+                                       ic>=0 ? AugName(ALL_AUGS[ic]) : L"?");
+                        else
+                            swprintf_s(rc, L"RECIPE: %ls + %ls",
+                                       ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
+                                       ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
                         BindMainShader();
-                        drawRect(cxp, cyp, cw, cw, hv?0.13f:0.06f, 0.10f, 0.15f, 0.95f);
-                        float ccx = cxp + cw*0.5f, ccy = cyp + cw*0.42f;
-                        if (seen) {
-                            if (i <= CM_SHIELDED) {
-                                Monster pm(ccx, ccy);
-                                if (i > 0) pm.MakeKind((MobKind)i);
-                                pm.worldX = ccx; pm.worldY = ccy;
-                                if (i == 0) pm.color = glm::vec3(0.75f,0.75f,0.8f);
-                                pm.sizeScale = (i == (int)MobKind::BRUTE) ? 1.3f : 1.7f;
-                                drawMob(&pm);
-                            } else if (i == CM_RANGED) {
-                                drawDiamond(ccx, ccy, 28.0f, 0.85f, 0.0f, 0.85f, 1.0f);
-                                drawDiamond(ccx, ccy, 11.0f, 1,1,1, 0.9f);
-                            } else if (i == CM_BOMBER) {
-                                drawPentagon(ccx, ccy, 32.0f, 1.0f, 0.5f, 0.1f, 1.0f);
-                            } else if (i == CM_DDOS) {
-                                for (int t = 0; t < 3; t++) {
-                                    float a = (float)t * 2.0944f;
-                                    drawTriangle(ccx + cosf(a)*13.0f, ccy + sinf(a)*13.0f,
-                                                 14.0f, 1.0f, 0.35f, 0.55f, 1.0f);
-                                }
-                            } else if (i == CM_BADSECTOR) {
-                                drawPentagon(ccx, ccy, 30.0f, 0.7f, 0.25f, 0.85f, 1.0f);
-                                drawPentagon(ccx, ccy, 13.0f, 0.1f, 0.05f, 0.2f, 1.0f);
-                            } else {   // CM_REGERROR — X형 노드
-                                drawDiamond(ccx, ccy, 26.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx + 17, ccy, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx - 17, ccy, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx, ccy + 17, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                                drawDiamond(ccx, ccy - 17, 9.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                            }
-                            BindMainShader();
-                            const wchar_t* nm = MobName(i);
-                            float nw = g_TextS.Width(nm, 0.8f);
-                            g_TextS.Draw(nm, cxp + (cw - nw)*0.5f, cyp + cw - 34.0f, 0.8f,
-                                         0.9f, 0.95f, 1.0f, 0.95f);
-                        } else {
-                            float qw = g_TextL.Width(L"?", 1.3f);
-                            g_TextL.Draw(L"?", ccx - qw*0.5f, ccy - 22.0f, 1.3f,
-                                         0.4f, 0.4f, 0.45f, 0.9f);
-                        }
-                    }
-                    if (hoverItem >= 0 && CodexMobSeen(hoverItem)) {
-                        const wchar_t* nm = MobName(hoverItem);
-                        const wchar_t* d  = MobDesc(hoverItem);
-                        g_TextL.Draw(nm, wx + 40.0f, detailY, 1.0f, 0.6f, 0.95f, 0.7f, 1.0f);
-                        g_TextS.Draw(d,  wx + 40.0f, detailY + 54.0f, 0.9f, 0.85f, 0.95f, 1.0f, 0.95f);
-                    }
-                } else if (s_tab == 1) {
-                    // 증강 — 스크롤 리스트 (기본: 티어순 / 선택: 분류순)
-                    int vis[AUG_TOTAL], nv = 0;
-                    for (int i = 0; i < AUG_TOTAL; i++) {
-                        if (AugRemoved(ALL_AUGS[i].type)) continue;
-                        if (g_CodexSearchLen > 0) {
-                            if (!CodexMatch(AugName(ALL_AUGS[i]))) continue;
-                            if (!CodexFullReveal() && !g_AugSeen[i]) continue;
-                        }
-                        vis[nv++] = i;
-                    }
-                    const bool byCategory = (s_codexAugSort == 1);
-                    std::sort(vis, vis + nv, [byCategory](int a, int b) {
-                        return byCategory ? AugListIndexLess(a, b) : AugTierIndexLess(a, b);
-                    });
-
-                    const float LIST_W = WW - 160.0f;
-                    const float LIST_X = wx + (WW - LIST_W) * 0.5f;
-                    const float ROW_H  = 24.0f;
-                    const float HDR_H  = 22.0f;
-                    const float listTop = gTop;
-                    const float listBottom = detailY - 12.0f;
-                    const float viewH = listBottom - listTop;
-                    int hdrCount = 0;
-                    if (byCategory) {
-                        AugListGroup prevGrp = (AugListGroup)-1;
-                        for (int k = 0; k < nv; k++) {
-                            AugListGroup g = AugListGroupOf(ALL_AUGS[vis[k]]);
-                            if (g != prevGrp) { hdrCount++; prevGrp = g; }
-                        }
-                    } else {
-                        AugRarity prevR = (AugRarity)-1;
-                        for (int k = 0; k < nv; k++) {
-                            AugRarity r = ALL_AUGS[vis[k]].rarity;
-                            if (r != prevR) { hdrCount++; prevR = r; }
-                        }
-                    }
-                    const float contentH = (float)nv * ROW_H + (float)hdrCount * HDR_H;
-                    static float s_codexAugScroll = 0.0f;
-                    bool overList = (mx >= LIST_X && mx <= LIST_X + LIST_W &&
-                                     my >= listTop && my <= listBottom);
-                    if (overList && g_ScrollAccum != 0.0f)
-                        s_codexAugScroll -= g_ScrollAccum * ROW_H * 1.5f;
-                    g_ScrollAccum = 0.0f;
-                    float maxScroll = (contentH > viewH) ? (contentH - viewH) : 0.0f;
-                    if (s_codexAugScroll < 0.0f) s_codexAugScroll = 0.0f;
-                    if (s_codexAugScroll > maxScroll) s_codexAugScroll = maxScroll;
-
-                    BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                    glScissor((GLint)LIST_X, (GLint)(sh - listBottom),
-                              (GLint)LIST_W, (GLint)viewH);
-                    float ry = listTop - s_codexAugScroll;
-                    if (byCategory) {
-                        AugListGroup prevGrp = (AugListGroup)-1;
-                        for (int k = 0; k < nv; k++) {
-                            int i = vis[k];
-                            AugListGroup grp = AugListGroupOf(ALL_AUGS[i]);
-                            if (grp != prevGrp) {
-                                if (ry >= listTop - HDR_H && ry <= listBottom)
-                                    g_TextS.Draw(AugListGroupLabel(grp), LIST_X, ry, 0.74f,
-                                                 0.55f, 0.75f, 0.95f, 0.88f);
-                                ry += HDR_H;
-                                prevGrp = grp;
-                            }
-                            if (ry >= listTop - ROW_H && ry <= listBottom) {
-                                bool seen = CodexAugSeen(i);
-                                bool hv = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
-                                if (hv) hoverItem = i;
-                                float rr, rg, rb;
-                                GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
-                                if (hv) {
-                                    BindMainShader();
-                                    drawRect(LIST_X, ry - 2.0f, LIST_W, ROW_H,
-                                             0.15f, 0.16f, 0.26f, 0.55f);
-                                }
-                                wchar_t line[128];
-                                if (seen)
-                                    swprintf_s(line, L"· [%ls] %ls",
-                                               GetAugBadge(ALL_AUGS[i]), AugName(ALL_AUGS[i]));
-                                else
-                                    swprintf_s(line, L"· ???");
-                                float rowSc = 0.80f;
-                                while (rowSc > 0.64f &&
-                                       g_TextS.Width(line, rowSc) > LIST_W - 8.0f) rowSc -= 0.03f;
-                                if (seen)
-                                    g_TextS.Draw(line, LIST_X + 2.0f, ry, rowSc, rr, rg, rb, 0.92f);
-                                else
-                                    g_TextS.Draw(line, LIST_X + 2.0f, ry, rowSc,
-                                                 0.45f, 0.45f, 0.5f, 0.85f);
-                            }
-                            ry += ROW_H;
-                        }
-                    } else {
-                        AugRarity prevR = (AugRarity)-1;
-                        for (int k = 0; k < nv; k++) {
-                            int i = vis[k];
-                            AugRarity rar = ALL_AUGS[i].rarity;
-                            if (rar != prevR) {
-                                if (ry >= listTop - HDR_H && ry <= listBottom) {
-                                    wchar_t rh[48];
-                                    swprintf_s(rh, L"-- %ls --", GetRarityKR(rar));
-                                    g_TextS.Draw(rh, LIST_X, ry, 0.74f,
-                                                 0.55f, 0.75f, 0.95f, 0.88f);
-                                }
-                                ry += HDR_H;
-                                prevR = rar;
-                            }
-                            if (ry >= listTop - ROW_H && ry <= listBottom) {
-                                bool seen = CodexAugSeen(i);
-                                bool hv = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
-                                if (hv) hoverItem = i;
-                                float rr, rg, rb;
-                                GetRarityColor(ALL_AUGS[i].rarity, rr, rg, rb);
-                                if (hv) {
-                                    BindMainShader();
-                                    drawRect(LIST_X, ry - 2.0f, LIST_W, ROW_H,
-                                             0.15f, 0.16f, 0.26f, 0.55f);
-                                }
-                                wchar_t line[128];
-                                if (seen)
-                                    swprintf_s(line, L"· [%ls] %ls",
-                                               GetAugBadge(ALL_AUGS[i]), AugName(ALL_AUGS[i]));
-                                else
-                                    swprintf_s(line, L"· ???");
-                                float rowSc = 0.80f;
-                                while (rowSc > 0.64f &&
-                                       g_TextS.Width(line, rowSc) > LIST_W - 8.0f) rowSc -= 0.03f;
-                                if (seen)
-                                    g_TextS.Draw(line, LIST_X + 2.0f, ry, rowSc, rr, rg, rb, 0.92f);
-                                else
-                                    g_TextS.Draw(line, LIST_X + 2.0f, ry, rowSc,
-                                                 0.45f, 0.45f, 0.5f, 0.85f);
-                            }
-                            ry += ROW_H;
-                        }
-                    }
-                    BatchFlush(); glDisable(GL_SCISSOR_TEST);
-                    if (nv == 0 && g_CodexSearchLen > 0) {
-                        const wchar_t* nh[3] = {
-                            L"검색 결과 없음 — 검색창을 비우거나 다른 키워드를 입력하세요",
-                            L"No results — clear search or try another keyword",
-                            L"結果なし — 検索をクリアするか別の語句を入力" };
-                        g_TextS.Draw(nh[li], LIST_X, listTop + 24.0f, 0.82f,
-                                     0.65f, 0.75f, 0.85f, 0.92f);
-                    }
-                    if (maxScroll > 0.0f) {
-                        BindMainShader();
-                        float trackX = LIST_X + LIST_W + 6.0f;
-                        drawRect(trackX, listTop, 5.0f, viewH, 0.12f, 0.12f, 0.16f, 0.6f);
-                        float thumbH = viewH * (viewH / contentH);
-                        float thumbY = listTop + (viewH - thumbH) * (s_codexAugScroll / maxScroll);
-                        drawRect(trackX, thumbY, 5.0f, thumbH, 0.5f, 0.6f, 0.8f, 0.9f);
-                    }
-                    // 상세(article)
-                    BindMainShader();
-                    if (hoverItem >= 0 && CodexAugSeen(hoverItem)) {
-                        const AugDef& d = ALL_AUGS[hoverItem];
-                        float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
-                        wchar_t hd[96];
-                        swprintf_s(hd, L"[%ls] %ls", GetAugBadge(d), AugName(d));
-                        g_TextL.Draw(hd, wx + 40.0f, detailY, 0.95f,
-                                     std::min(1.0f, rr*1.4f+0.3f), std::min(1.0f, rg*1.4f+0.3f),
-                                     std::min(1.0f, rb*1.4f+0.3f), 1.0f);
-                        const wchar_t* ds = AugDesc(d);
-                        g_TextS.Draw(ds, wx + 40.0f, detailY + 54.0f, 0.85f,
-                                     0.85f, 0.92f, 1.0f, 0.95f);
-                        if (d.rarity == AugRarity::COMBO) {
-                            for (int c = 0; c < COMBO_COUNT; c++)
-                                if (COMBO_DEFS[c].result == d.type) {
-                                    const ComboDef& cd = COMBO_DEFS[c];
-                                    int ia = AugIndexOfType(cd.reqs[0]);
-                                    int ib = AugIndexOfType(cd.reqs[1]);
-                                    int ic = cd.reqCount >= 3 ? AugIndexOfType(cd.reqs[2]) : -1;
-                                    wchar_t rc[192];
-                                    if (cd.reqCount >= 3)
-                                        swprintf_s(rc, L"%ls + %ls + %ls",
-                                                   ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
-                                                   ib>=0 ? AugName(ALL_AUGS[ib]) : L"?",
-                                                   ic>=0 ? AugName(ALL_AUGS[ic]) : L"?");
-                                    else
-                                        swprintf_s(rc, L"%ls + %ls",
-                                                   ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
-                                                   ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
-                                    g_TextS.Draw(rc, wx + 40.0f, detailY + 92.0f, 0.85f,
-                                                 0.1f, 0.85f, 0.8f, 0.95f);
-                                    break;
-                                }
-                        }
-                    } else if (hoverItem >= 0) {
-                        const wchar_t* q[3] = { L"??? - 미발견 (획득 시 공개)",
-                                                L"??? - Undiscovered (unlock by acquiring)",
-                                                L"??? - 未発見 (取得で公開)" };
-                        g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
-                    }
-                } else {
-                    // 보스 — 활성 로스터 (VOLLEY / FORK / SPAM)
-                    const int COLS = 5; const float CELL = 200.0f;
-                    int vis[BOSS_CODEX_COUNT], nv = 0;
-                    for (int i = 0; i < BOSS_CODEX_COUNT; i++)
-                        if (g_CodexSearchLen == 0 || (BossCodexSeen(i) && CodexMatch(BossCodexName(i))))
-                            vis[nv++] = i;
-                    float gx = wx + (WW - COLS*CELL) * 0.5f;
-                    for (int k = 0; k < nv; k++) {
-                        int i = vis[k];
-                        float cxp = gx + (k % COLS) * CELL, cyp = gTop + (k / COLS) * CELL;
-                        float cw = CELL - 16.0f, ch = CELL - 8.0f;
-                        bool seen = BossCodexSeen(i);
-                        bool hv = (mx >= cxp && mx < cxp+cw && my >= cyp && my < cyp+ch);
-                        if (hv) hoverItem = i;
-                        BindMainShader();
-                        drawRect(cxp, cyp, cw, ch, hv?0.13f:0.06f, 0.10f, 0.15f, 0.95f);
-                        if (seen) {
-                            int pick = BossCodexPick(i);
-                            glm::vec3 wc = BossDir::WarnColor(pick);
-                            float ww = cw * 0.72f, wh = ch * 0.58f;
-                            float wx0 = cxp + (cw - ww) * 0.5f;
-                            float wy0 = cyp + (ch - wh) * 0.38f;
-                            drawRect(wx0, wy0, ww, wh, 0.10f, 0.11f, 0.14f, 0.92f);
-                            drawRect(wx0, wy0, ww, 18.0f, wc.r*0.75f, wc.g*0.75f, wc.b*0.75f, 0.95f);
-                            drawNeonBorder(wx0, wy0, ww, wh, wc.r, wc.g, wc.b);
-                            const wchar_t* nm = BossCodexName(i);
-                            float nw = g_TextS.Width(nm, 0.72f);
-                            if (nw > ww - 8.0f) nw = ww - 8.0f;
-                            g_TextS.Draw(nm, wx0 + (ww - nw)*0.5f, cyp + ch - 28.0f, 0.72f,
-                                         0.9f, 0.95f, 1.0f, 0.95f);
-                        } else {
-                            float ccx = cxp + cw*0.5f, ccy = cyp + ch*0.45f;
-                            float qw = g_TextL.Width(L"?", 1.4f);
-                            g_TextL.Draw(L"?", ccx - qw*0.5f, ccy - 24.0f, 1.4f,
-                                         0.4f, 0.4f, 0.45f, 0.9f);
-                        }
-                    }
-                    if (hoverItem >= 0 && BossCodexSeen(hoverItem)) {
-                        int pick = BossCodexPick(hoverItem);
-                        glm::vec3 wc = BossDir::WarnColor(pick);
-                        g_TextL.Draw(BossCodexName(hoverItem), wx + 40.0f, detailY, 1.0f,
-                                     wc.r, wc.g, wc.b, 1.0f);
-                        g_TextS.Draw(BossCodexDesc(hoverItem), wx + 40.0f, detailY + 54.0f, 0.9f,
-                                     0.85f, 0.92f, 1.0f, 0.95f);
-                    } else if (hoverItem >= 0) {
-                        const wchar_t* q[3] = { L"??? - 미발견 (보스 조우 시 공개)",
-                                                L"??? - Undiscovered (encounter the boss)",
-                                                L"??? - 未発見 (ボス遭遇で公開)" };
-                        g_TextL.Draw(q[li], wx + 40.0f, detailY, 0.9f, 0.5f, 0.5f, 0.55f, 0.9f);
+                        drawRect(txtX, cntY + 158.0f*uiS, txtW, 1.5f*uiS,
+                                 0.10f, 0.88f, 0.78f, 0.28f*detailA);
+                        drawFitS(rc, txtX, cntY + 170.0f*uiS, txtW,
+                                 0.42f*uiS, 0.30f*uiS,
+                                 0.12f, 0.92f, 0.82f, 0.90f*detailA);
+                        break;
                     }
                 }
+            } else {
+                BindMainShader();
+                float qw = g_TextL.Width(L"?", 1.6f*uiS);
+                g_TextL.Draw(L"?", iconX + (iconSz - qw)*0.5f, iconY + iconSz*0.38f,
+                             1.6f*uiS, 0.4f, 0.4f, 0.45f, 0.9f * detailA);
+                const wchar_t* q[2] = { L"\xBBF8\xBC1C\xACAC \xAE4C\xC9C0 \xBE44\xACF5\xAC1C",
+                                         L"Undiscovered — unlock by acquiring" };
+                g_TextS.Draw(q[nli], txtX, cntY + 40.0f*uiS,
+                             0.46f*uiS, 0.50f, 0.50f, 0.55f, 0.80f*detailA);
+            }
+        } else {
+            // ── Boss detail ───────────────────────────────────────────────
+            bool seen = (selItem >= 0 && selItem < BOSS_CODEX_COUNT &&
+                         BossCodexSeen(selItem));
+            if (seen) {
+                int pick = BossCodexPick(selItem);
+                glm::vec3 wc = BossDir::WarnColor(pick);
+                float cww = iconSz*0.72f, cwh = iconSz*0.60f;
+                float cwx = iconX + (iconSz - cww)*0.5f;
+                float cwy = iconY + (iconSz - cwh)*0.40f;
+                BindMainShader();
+                drawRect(cwx, cwy, cww, cwh, 0.08f, 0.09f, 0.12f, 0.92f * detailA);
+                drawRect(cwx, cwy, cww, 18.0f*uiS,
+                         wc.r*0.72f, wc.g*0.72f, wc.b*0.72f, 0.95f * detailA);
+                drawNeonBorder(cwx, cwy, cww, cwh, wc.r, wc.g, wc.b);
+                BindMainShader();
+                g_TextS.Draw(L"BOSS", txtX, cntY + 4.0f*uiS,
+                             0.38f*uiS, wc.r, wc.g, wc.b, 0.68f*detailA);
+                g_TextL.Draw(BossCodexName(selItem), txtX, cntY + 22.0f*uiS,
+                             0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
+                drawRect(txtX, cntY + 78.0f*uiS, txtW, 1.5f*uiS,
+                         wc.r, wc.g, wc.b, 0.28f*detailA);
+                drawFitS(BossCodexDesc(selItem), txtX, cntY + 90.0f*uiS, txtW,
+                         0.44f*uiS, 0.32f*uiS, 0.82f, 0.90f, 1.0f, 0.88f*detailA);
+            } else {
+                BindMainShader();
+                float qw = g_TextL.Width(L"?", 1.6f*uiS);
+                g_TextL.Draw(L"?", iconX + (iconSz - qw)*0.5f, iconY + iconSz*0.38f,
+                             1.6f*uiS, 0.4f, 0.4f, 0.45f, 0.9f * detailA);
+                const wchar_t* q[2] = {
+                    L"\xBBF8\xBC1C\xACAC \x2014 \xBCF4\xC2A4 \xC870\xC6B0 \xC2DC \xACF5\xAC1C",
+                    L"Undiscovered — encounter the boss" };
+                g_TextS.Draw(q[nli], txtX, cntY + 40.0f*uiS,
+                             0.46f*uiS, 0.50f, 0.50f, 0.55f, 0.80f*detailA);
+            }
+        }
+    }
 
-                if (UIButton(wx + WW - 220.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    CodexSearchClear();
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                }   // close: g_AppOpen open guard
+    // ── FOOTER: BACK button ───────────────────────────────────────────────
+    const wchar_t* backLbl[2] = { L"\xB4A4\xB85C", L"BACK" };
+    float bw = 160.0f*uiS, bh = 40.0f*uiS;
+    float bx = panelX, by = footY;
+    bool backHov = hit(bx, by, bw, bh);
+    BindMainShader();
+    drawRect(bx, by, bw, bh,
+             0.038f + cat.r*(backHov ? 0.036f : 0.012f),
+             0.044f + cat.g*(backHov ? 0.030f : 0.010f),
+             0.062f + cat.b*(backHov ? 0.026f : 0.008f), 0.90f * wake);
+    drawCBkt(bx, by, bw, bh, cat.r, cat.g, cat.b, (backHov ? 0.68f : 0.28f) * wake);
+    drawCenterS(backLbl[nli], bx, by + 10.0f*uiS, bw, 0.46f*uiS,
+                backHov ? 1.0f : 0.78f, backHov ? 1.0f : 0.84f, backHov ? 1.0f : 0.96f,
+                0.96f * wake);
+    if (backHov && lmb && !g_LmbPrev) {
+        CodexSearchClear();
+        g_GameManager.currentState = GameState::MAIN_MENU;
+    }
 }
+
 
 void Scene_Tutorial(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
@@ -1384,13 +1607,12 @@ void Scene_RunConfig(const SceneCtx& c) {
     };
     static int   s_WeaponSel      = 0;
     static float s_WeaponHover[3] = {};
-    static bool  s_TrialsEnabled  = false;
     if (s_WeaponSel < 0 || s_WeaponSel >= kWCCount) s_WeaponSel = 0;
 
     // 레이더 차트 애니메이션: 선택된 무기 norm 값으로 매 프레임 접근
     {
         const float* tgt = kWeaponDetail[s_WeaponSel].norm;
-        float spd = (g_RunConfigStep >= 1) ? 7.0f : 0.0f;
+        float spd = (g_RunConfigStep >= 1) ? 12.0f : 0.0f;
         for (int i = 0; i < 6; ++i)
             s_RadarCur[i] = UiApproach(s_RadarCur[i], tgt[i], dt, spd);
     }
@@ -1398,28 +1620,233 @@ void Scene_RunConfig(const SceneCtx& c) {
     // 무기 전환 트랜지션: 선택이 바뀌면 패널 콘텐츠를 페이드아웃 후 인
     if (g_RunConfigStep >= 1 && s_WeaponSel != s_PanelPrevSel) {
         s_PanelFadeT   = 0.0f;
+        s_StatGlitchT  = 0.0f;
         s_PanelPrevSel = s_WeaponSel;
     }
     s_PanelFadeT = std::min(1.0f, s_PanelFadeT + dt * 5.5f);
+    s_StatGlitchT = std::min(1.0f, s_StatGlitchT + dt * 8.0f);
     const float panelContentA = Smoothstep(s_PanelFadeT);
 
     const float accentR = (g_RunConfigStep >= 1) ? kWeaponDetail[s_WeaponSel].r : 0.42f;
     const float accentG = (g_RunConfigStep >= 1) ? kWeaponDetail[s_WeaponSel].g : 0.28f;
     const float accentB = (g_RunConfigStep >= 1) ? kWeaponDetail[s_WeaponSel].b : 1.00f;
 
-    wchar_t coinBuf[32];
-    swprintf_s(coinBuf, L"COIN  %lld", g_Coins);
+    auto clearTrialSelection = [&]() {
+        for (int i = 0; i < TRIAL_SLOT_COUNT; ++i)
+            g_TrialSelected[i] = false;
+    };
+
+    auto startConfiguredRun = [&]() {
+        if (!s_TrialsEnabled)
+            clearTrialSelection();
+        if (!JobUnlocked(kWC[s_WeaponSel].job))
+            s_WeaponSel = 0;
+        g_SelectedJob = kWC[s_WeaponSel].job;
+        g_Difficulty = Difficulty::NORMAL;
+        s_TrialSelectPage = false;
+        if (g_CreativeMode) {
+            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+        } else {
+            ResetForNewGame();
+            FinalizeLoadout(c, FixedWeaponForSelectedJob());
+        }
+    };
+
+    if (s_TrialTargetCount < 1) s_TrialTargetCount = 1;
+    if (s_TrialTargetCount > TRIAL_SLOT_COUNT) s_TrialTargetCount = TRIAL_SLOT_COUNT;
+
+    if (s_TrialSelectPage) {
+        s_TrialsEnabled = true;
+
+        const float pageW = std::min(panelW * 0.72f, 1040.0f * uiS);
+        const float pageH = 620.0f * uiS;
+        const float pageX = (sw - pageW) * 0.5f;
+        const float pageY = (sh - pageH) * 0.5f;
+        const float pagePad = 30.0f * uiS;
+        const float rowH = 82.0f * uiS;
+        const float rowG = 12.0f * uiS;
+
+        BindMainShader();
+        drawRect(pageX + 10.0f*uiS, pageY + 12.0f*uiS, pageW, pageH,
+                 0.0f, 0.0f, 0.0f, 0.30f);
+        drawRect(pageX, pageY, pageW, pageH,
+                 0.020f + accentR * 0.012f,
+                 0.026f + accentG * 0.010f,
+                 0.042f + accentB * 0.012f, 0.94f);
+        drawRect(pageX, pageY, pageW, 3.0f*uiS, accentR, accentG, accentB, 0.82f);
+        BatchFlush();
+        SetGlowFx(true);
+        drawConstellFrame(pageX, pageY, pageW, pageH, accentR, accentG, accentB,
+                          0.70f, 22.0f*uiS, 6.0f*uiS, 0.12f);
+        BatchFlush();
+        SetGlowFx(false);
+
+        g_TextL.Draw(L"TRIAL SELECT", pageX + pagePad, pageY + 24.0f*uiS,
+                     0.96f*uiS, 0.92f, 0.96f, 1.0f, 0.98f);
+        g_TextS.Draw(L"C:\\ONEDOW\\RUN_CONFIG > TRIAL_SELECT",
+                     pageX + pagePad, pageY + 66.0f*uiS,
+                     0.46f*uiS, 0.48f, 0.58f, 0.78f, 0.84f);
+
+        wchar_t needBuf[48];
+        swprintf_s(needBuf, L"%d / %d", TrialCount(), s_TrialTargetCount);
+        const float needSc = 0.66f*uiS;
+        g_TextL.Draw(needBuf, pageX + pageW - pagePad - g_TextL.Width(needBuf, needSc),
+                     pageY + 29.0f*uiS, needSc,
+                     TrialCount() == s_TrialTargetCount ? 0.60f : 1.0f,
+                     TrialCount() == s_TrialTargetCount ? 0.96f : 0.64f,
+                     TrialCount() == s_TrialTargetCount ? 0.54f : 0.42f, 0.96f);
+
+        const float listX = pageX + pagePad;
+        const float listY = pageY + 110.0f*uiS;
+        const float listW = pageW - pagePad * 2.0f;
+        for (int slot = 0; slot < TRIAL_SLOT_COUNT; ++slot) {
+            const float sx = listX;
+            const float sy = listY + (float)slot * (rowH + rowG);
+            const int defIdx = std::max(0, std::min(TRIAL_DEF_COUNT - 1, g_TrialPool[slot]));
+            const bool hovSlot = hit(sx, sy, listW, rowH);
+            if (hovSlot && lmb && !g_LmbPrev) {
+                if (g_TrialSelected[slot]) {
+                    g_TrialSelected[slot] = false;
+                } else if (TrialCount() < s_TrialTargetCount) {
+                    g_TrialSelected[slot] = true;
+                }
+            }
+
+            s_TrialHover[slot] = UiApproach(s_TrialHover[slot], hovSlot ? 1.0f : 0.0f, dt, 12.0f);
+            const float hvSlot = s_TrialHover[slot];
+            const bool picked = g_TrialSelected[slot];
+            const bool locked = !picked && TrialCount() >= s_TrialTargetCount;
+            const float rowA = locked ? 0.20f : (picked ? 0.58f : 0.34f + 0.10f * hvSlot);
+            const float lineA = locked ? 0.10f : (picked ? 0.82f : 0.22f + 0.24f * hvSlot);
+
+            BindMainShader();
+            drawRect(sx, sy, listW, rowH,
+                     0.014f + accentR * (picked ? 0.050f : 0.012f),
+                     0.018f + accentG * (picked ? 0.044f : 0.010f),
+                     0.030f + accentB * (picked ? 0.038f : 0.010f), rowA);
+            drawRect(sx, sy, 4.0f*uiS, rowH, accentR, accentG, accentB, lineA);
+            drawRect(sx, sy + rowH - 1.0f*uiS, listW, 1.0f*uiS,
+                     accentR, accentG, accentB, lineA * 0.55f);
+
+            const float cbx = sx + 22.0f*uiS;
+            const float cby = sy + 14.0f*uiS;
+            g_TextS.Draw(L"[   ]", cbx, cby, 0.50f*uiS,
+                         locked ? 0.36f : 0.78f,
+                         locked ? 0.40f : 0.86f,
+                         locked ? 0.48f : 0.94f,
+                         locked ? 0.34f : 0.88f);
+            if (picked) {
+                BindMainShader();
+                drawRect(cbx + 8.0f*uiS, cby + 7.0f*uiS,
+                         7.0f*uiS, 7.0f*uiS, accentR, accentG, accentB, 0.94f);
+            }
+
+            wchar_t titleBuf[96];
+            swprintf_s(titleBuf, L"%ls / %ls",
+                       TrialStageLabel(TrialStageForDef(defIdx), nli),
+                       TRIAL_DEFS[defIdx].id);
+            const int bonusPct = (int)(TrialScoreBonusForDef(defIdx) * 100.0f + 0.5f);
+            wchar_t bonusBuf[24];
+            swprintf_s(bonusBuf, L"+%02d%%", bonusPct);
+
+            const float textX = sx + 86.0f*uiS;
+            const float bonusSc = 0.62f*uiS;
+            const float bonusW = g_TextL.Width(bonusBuf, bonusSc);
+            const float bonusX = sx + listW - bonusW - 24.0f*uiS;
+            drawFitS(titleBuf, textX, sy + 13.0f*uiS,
+                     bonusX - textX - 24.0f*uiS, 0.56f*uiS, 0.40f*uiS,
+                     picked ? accentR : 0.74f,
+                     picked ? accentG : 0.84f,
+                     picked ? accentB : 0.98f,
+                     locked ? 0.36f : (picked ? 0.98f : 0.82f));
+            drawFitS(TRIAL_DEFS[defIdx].desc[nli], textX, sy + 45.0f*uiS,
+                     bonusX - textX - 24.0f*uiS, 0.42f*uiS, 0.30f*uiS,
+                     0.48f, 0.58f, 0.76f,
+                     locked ? 0.26f : (picked ? 0.72f : 0.56f));
+            g_TextL.Draw(bonusBuf, bonusX, sy + 24.0f*uiS, bonusSc,
+                         picked ? 0.72f : 0.48f,
+                         picked ? 1.0f  : 0.62f,
+                         picked ? 0.58f : 0.78f,
+                         locked ? 0.34f : 0.88f);
+        }
+
+        const float backW = 168.0f*uiS;
+        const float btnH = 50.0f*uiS;
+        const float btnY = pageY + pageH - pagePad - btnH;
+        const float confirmW = 292.0f*uiS;
+        const float confirmX = pageX + pageW - pagePad - confirmW;
+        const bool backHov = hit(pageX + pagePad, btnY, backW, btnH);
+        const bool ready = TrialCount() == s_TrialTargetCount;
+        const bool confirmHov = ready && hit(confirmX, btnY, confirmW, btnH);
+        if (backHov && lmb && !g_LmbPrev) {
+            clearTrialSelection();
+            s_TrialSelectPage = false;
+        }
+        if (confirmHov && g_LmbPrev && !lmb)
+            startConfiguredRun();
+
+        BindMainShader();
+        drawRect(pageX + pagePad, btnY, backW, btnH, 0.028f, 0.034f, 0.052f, 0.72f);
+        drawBorder(pageX + pagePad, btnY, backW, btnH,
+                   0.50f, 0.60f, 0.78f, backHov ? 0.70f : 0.34f, 1.3f*uiS);
+        drawCenterS(L"BACK", pageX + pagePad, btnY + 15.0f*uiS, backW, 0.48f*uiS,
+                    0.78f, 0.86f, 1.0f, 0.88f);
+
+        drawRect(confirmX, btnY, confirmW, btnH,
+                 (0.028f + accentR * 0.026f) * (ready ? 1.0f : 0.34f),
+                 (0.034f + accentG * 0.022f) * (ready ? 1.0f : 0.34f),
+                 (0.052f + accentB * 0.020f) * (ready ? 1.0f : 0.34f),
+                 ready ? 0.84f : 0.46f);
+        BatchFlush();
+        SetGlowFx(true);
+        drawConstellFrame(confirmX, btnY, confirmW, btnH, accentR, accentG, accentB,
+                          ready ? (confirmHov ? 1.0f : 0.78f) : 0.18f,
+                          16.0f*uiS, 5.0f*uiS, ready ? 0.16f : 0.0f);
+        BatchFlush();
+        SetGlowFx(false);
+        const wchar_t* confirmLabel = ready ? L"EXECUTE RUN" : L"SELECT REQUIRED";
+        drawCenterL(confirmLabel, confirmX,
+                    btnY + (btnH - g_TextL.Height(confirmLabel, 0.70f*uiS)) * 0.5f,
+                    confirmW, 0.70f*uiS, 1.0f, 1.0f, 1.0f, ready ? 0.98f : 0.42f);
+
+        BatchFlush();
+        g_BatchAlpha = 1.0f;
+        return;
+    }
+
+    wchar_t coinBuf[64];
+    swprintf_s(coinBuf, L"CREDITS :: %06lld", g_Coins);
 
     BindMainShader();
     g_TextL.Draw(L"RUN CONFIG", panelX, panelY + 8.0f * uiS, 1.00f * uiS,
                  0.72f, 0.82f, 1.0f, 0.98f);
-    g_TextS.Draw((li == 0) ? L"무기 선택  →  시련 설정  →  실행"
-                           : L"SELECT WEAPON  →  SET TRIALS  →  EXECUTE",
-                 panelX, panelY + 50.0f * uiS, 0.56f * uiS,
-                 0.35f, 0.42f, 0.68f, 0.72f);
-    float coinSc = 0.66f * uiS;
-    g_TextS.Draw(coinBuf, panelX + panelW - g_TextS.Width(coinBuf, coinSc),
-                 panelY + 10.0f * uiS, coinSc, 1.0f, 0.88f, 0.30f, 0.92f);
+    const wchar_t* pathText = L"C:\\ONEDOW\\RUN_CONFIG > WEAPON_SELECT";
+    if (g_RunConfigStep >= 1) {
+        if (s_TrialsEnabled)
+            pathText = L"C:\\ONEDOW\\RUN_CONFIG > TRIAL_COUNT";
+        else
+            pathText = L"C:\\ONEDOW\\RUN_CONFIG > LOADOUT_READY";
+    }
+    g_TextS.Draw(pathText,
+                 panelX, panelY + 58.0f * uiS, 0.56f * uiS,
+                 0.48f, 0.58f, 0.78f, 0.86f);
+    float coinSc = 0.58f * uiS;
+    const float coinH = 34.0f * uiS;
+    const float coinW = g_TextS.Width(coinBuf, coinSc) + 48.0f * uiS;
+    const float coinX = panelX + panelW - coinW;
+    const float coinY = panelY + 10.0f * uiS;
+    drawRect(coinX, coinY, coinW, coinH, 0.030f, 0.034f, 0.050f, 0.62f);
+    BatchFlush();
+    SetGlowFx(true);
+    drawConstellFrame(coinX, coinY, coinW, coinH, 1.0f, 0.84f, 0.22f,
+                      0.58f, 8.0f * uiS, 2.4f * uiS, 0.08f);
+    drawDiamond(coinX + 17.0f * uiS, coinY + coinH * 0.5f,
+                4.0f * uiS, 1.0f, 0.84f, 0.22f, 0.86f);
+    BatchFlush();
+    SetGlowFx(false);
+    g_TextS.Draw(coinBuf, coinX + 30.0f * uiS,
+                 coinY + (coinH - g_TextS.Height(coinBuf, coinSc)) * 0.5f,
+                 coinSc, 1.0f, 0.88f, 0.34f, 0.94f);
 
     // ── 좌측: 무기 선택 카드 목록 (고정 높이, 여유 간격) ─────────
     const float cH      = 100.0f * uiS;
@@ -1437,23 +1864,28 @@ void Scene_RunConfig(const SceneCtx& c) {
 
         const WDetailDef& wd = kWeaponDetail[i];
         float hv = s_WeaponHover[i];
+        const float inactiveA = selected ? 1.0f : (0.30f + 0.10f * hv);
+        const float inactiveR = selected ? 1.0f : 0.56f;
+        const float inactiveG = selected ? 1.0f : 0.60f;
+        const float inactiveB = selected ? 1.0f : 0.68f;
 
         // 카드 바디 (어두운 배경 — non-glow)
         BindMainShader();
         drawRect(cx - 5.0f*uiS, cy - 5.0f*uiS, leftW + 10.0f*uiS, cH + 10.0f*uiS,
-                 wd.r, wd.g, wd.b, selected ? 0.10f : 0.04f * hv);
+                 wd.r, wd.g, wd.b, selected ? 0.10f : 0.018f * hv);
         drawRect(cx, cy, leftW, cH,
                  0.038f + wd.r * (selected ? 0.022f : 0.008f),
                  0.044f + wd.g * (selected ? 0.016f : 0.006f),
-                 0.066f + wd.b * (selected ? 0.016f : 0.006f), 0.78f);
+                 0.066f + wd.b * (selected ? 0.016f : 0.006f),
+                 selected ? 0.78f : (0.42f + 0.08f * hv));
 
         // 컬러 스트라이프 + 별자리 프레임 (glow on)
         BatchFlush();
         SetGlowFx(true);
         drawRect(cx, cy, 5.0f*uiS, cH, wd.r, wd.g, wd.b,
-                 selected ? 0.95f : 0.42f + 0.32f * hv);
+                 selected ? 0.95f : 0.14f + 0.18f * hv);
         drawConstellFrame(cx, cy, leftW, cH, wd.r, wd.g, wd.b,
-                          selected ? 0.80f : 0.24f + 0.36f * hv,
+                          selected ? 0.80f : 0.12f + 0.22f * hv,
                           14.0f * uiS, 4.5f * uiS,
                           selected ? 0.14f : 0.0f);
         BatchFlush();
@@ -1461,14 +1893,21 @@ void Scene_RunConfig(const SceneCtx& c) {
 
         // 텍스트
         g_TextL.Draw(kWC[i].name[nli], cx + cPad, cy + 13.0f*uiS,
-                     0.96f * uiS, 1.0f, 1.0f, 1.0f,
-                     selected ? 0.98f : 0.70f + 0.22f * hv);
+                     0.96f * uiS, inactiveR, inactiveG, inactiveB,
+                     selected ? 0.98f : inactiveA);
         drawFitS(kWC[i].desc[nli], cx + cPad, cy + 52.0f*uiS,
                  leftW - cPad - 14.0f*uiS, 0.46f*uiS, 0.34f*uiS,
-                 0.60f, 0.72f, 0.90f, 0.58f + 0.22f * hv);
+                 selected ? 0.60f : 0.46f,
+                 selected ? 0.72f : 0.50f,
+                 selected ? 0.90f : 0.58f,
+                 selected ? 0.76f : inactiveA);
         float roleW = g_TextS.Width(kWeaponRole[i][nli], 0.46f*uiS);
         g_TextS.Draw(kWeaponRole[i][nli], cx + leftW - roleW - cPad,
-                     cy + cH - 20.0f*uiS, 0.46f*uiS, wd.r, wd.g, wd.b, 0.70f);
+                     cy + cH - 20.0f*uiS, 0.46f*uiS,
+                     selected ? wd.r : 0.50f,
+                     selected ? wd.g : 0.54f,
+                     selected ? wd.b : 0.62f,
+                     selected ? 0.70f : inactiveA);
         if (selected) {
             float msw = g_TextS.Width(L"SELECTED", 0.40f*uiS);
             g_TextS.Draw(L"SELECTED", cx + leftW - msw - cPad, cy + 13.0f*uiS,
@@ -1657,13 +2096,16 @@ void Scene_RunConfig(const SceneCtx& c) {
             float lh = g_TextS.Height(kWeaponStatLabels[i][nli], sc);
             float tx = lx - lw * (0.5f - tox * 0.5f);
             float ty = ly - lh * (0.5f - toy * 0.5f);
-            g_TextS.Draw(kWeaponStatLabels[i][nli], tx, ty, sc, wr, wg, wb, 0.52f);
+            g_TextS.Draw(kWeaponStatLabels[i][nli], tx, ty, sc, 0.92f, 0.96f, 1.0f, 0.84f);
         }
 
         // 우측 수치 리스트 (6행)
         const float listX  = rDX + rPad + radarSW + 10.0f*uiS;
         const float listW  = fullW - radarSW - 10.0f*uiS;
         const float listRH = radarH / 6.0f;
+        BindMainShader();
+        drawRect(listX - 8.0f*uiS, statsY + 10.0f*uiS, 1.0f*uiS, radarH - 20.0f*uiS,
+                 0.82f, 0.90f, 1.0f, 0.18f);
         for (int i = 0; i < 6; ++i) {
             float lry = statsY + (float)i * listRH;
             BindMainShader();
@@ -1672,69 +2114,136 @@ void Scene_RunConfig(const SceneCtx& c) {
             drawRect(listX, lry + 2.0f*uiS, 3.0f*uiS, listRH - 4.0f*uiS,
                      wr, wg, wb, 0.52f);
             g_TextS.Draw(kWeaponStatLabels[i][nli], listX + 10.0f*uiS, lry + 5.0f*uiS,
-                         0.36f*uiS, 0.50f, 0.62f, 0.80f, 0.62f);
-            drawFitS(wd.stat[nli][i], listX + 10.0f*uiS, lry + listRH * 0.42f,
+                         0.36f*uiS, 0.78f, 0.88f, 1.0f, 0.82f);
+            const wchar_t* statText = wd.stat[nli][i];
+            wchar_t glitchBuf[64];
+            float statValueA = 0.90f;
+            if (s_StatGlitchT < 1.0f) {
+                const wchar_t* glyphs = L"0123456789ABCDEF";
+                int tick = (int)(now * 54.0f);
+                int p = 0;
+                for (; statText[p] && p < 63; ++p) {
+                    wchar_t ch = statText[p];
+                    bool digit = (ch >= L'0' && ch <= L'9');
+                    bool upper = (ch >= L'A' && ch <= L'Z');
+                    bool lower = (ch >= L'a' && ch <= L'z');
+                    if (digit || ((upper || lower) && s_StatGlitchT < 0.72f)) {
+                        glitchBuf[p] = glyphs[(tick + s_WeaponSel * 17 + i * 11 + p * 5) & 15];
+                    } else {
+                        glitchBuf[p] = ch;
+                    }
+                }
+                glitchBuf[p] = 0;
+                statText = glitchBuf;
+                statValueA = 0.76f + 0.18f * (float)((tick + i) & 1);
+            }
+            drawFitS(statText, listX + 10.0f*uiS, lry + listRH * 0.42f,
                      listW - 16.0f*uiS, 0.48f*uiS, 0.34f*uiS,
-                     0.92f, 0.96f, 1.0f, 0.90f);
+                     0.92f, 0.96f, 1.0f, statValueA);
         }
 
         // ── 시련 토글 서브카드 ────────────────────────────────────
         const float trialCardY = statsY + radarH + 16.0f * uiS;
         const float trialCardH = 66.0f * uiS;
         const float trialW     = rDW - rPad * 2.0f;
-        BindMainShader();
-        drawRect(rDX + rPad, trialCardY, trialW, trialCardH,
-                 0.028f, 0.034f, 0.052f, 0.72f);
-        BatchFlush();
-        SetGlowFx(true);
-        drawConstellFrame(rDX + rPad, trialCardY, trialW, trialCardH,
-                          0.52f, 0.66f, 0.88f, 0.36f, 12.0f*uiS, 3.5f*uiS);
+        const float trialX     = rDX + rPad;
+        const float stepW      = 154.0f * uiS;
+        const float stepH      = 38.0f * uiS;
+        const float stepX      = trialX + trialW - stepW - 18.0f * uiS;
+        const float stepY      = trialCardY + (trialCardH - stepH) * 0.5f;
+        const float arrowW     = 36.0f * uiS;
+        const bool decHov      = s_TrialsEnabled && hit(stepX, stepY, arrowW, stepH);
+        const bool incHov      = s_TrialsEnabled && hit(stepX + stepW - arrowW, stepY, arrowW, stepH);
+        const bool stepHov     = s_TrialsEnabled && hit(stepX, stepY, stepW, stepH);
+        const float toggleW    = trialW - (s_TrialsEnabled ? (stepW + 34.0f * uiS) : 0.0f);
+        bool trialToggleHov = hit(trialX, trialCardY, toggleW, trialCardH);
+        bool trialHov = trialToggleHov || stepHov;
+        if (trialToggleHov && lmb && !g_LmbPrev) {
+            s_TrialsEnabled = !s_TrialsEnabled;
+            if (!s_TrialsEnabled) {
+                clearTrialSelection();
+                s_TrialSelectPage = false;
+            }
+        }
+        if (s_TrialsEnabled && lmb && !g_LmbPrev) {
+            if (decHov) {
+                s_TrialTargetCount = std::max(1, s_TrialTargetCount - 1);
+                clearTrialSelection();
+            } else if (incHov) {
+                s_TrialTargetCount = std::min(TRIAL_SLOT_COUNT, s_TrialTargetCount + 1);
+                clearTrialSelection();
+            }
+        }
 
-        BatchFlush();
-        SetGlowFx(false);
-
-        const float tbW = 108.0f * uiS, tbH = 44.0f * uiS;
-        const float tbX = rDX + rDW - rPad - tbW;
-        const float tbY = trialCardY + (trialCardH - tbH) * 0.5f;
-        bool tbHov = hit(tbX, tbY, tbW, tbH);
-        if (tbHov && lmb && !g_LmbPrev) s_TrialsEnabled = !s_TrialsEnabled;
-
-        float tR = s_TrialsEnabled ? 0.42f : 0.28f;
-        float tG = s_TrialsEnabled ? 0.28f : 0.30f;
-        float tB = s_TrialsEnabled ? 1.00f : 0.55f;
-        BindMainShader();
-        drawRect(tbX, tbY, tbW, tbH,
-                 0.042f + tR*0.08f, 0.042f + tG*0.04f, 0.068f + tB*0.06f, 0.92f);
-        BatchFlush();
-        SetGlowFx(true);
-        drawConstellFrame(tbX, tbY, tbW, tbH, tR, tG, tB,
-                          s_TrialsEnabled ? 0.85f : (tbHov ? 0.44f : 0.24f),
-                          10.0f*uiS, 3.0f*uiS);
-        BatchFlush();
-        SetGlowFx(false);
-        drawCenterL(s_TrialsEnabled ? L"ON" : L"OFF",
-                    tbX, tbY + (tbH - g_TextL.Height(L"ON", 0.55f*uiS)) * 0.5f,
-                    tbW, 0.55f*uiS, 1.0f, 1.0f, 1.0f,
-                    s_TrialsEnabled ? 0.98f : 0.45f);
-
-        const float tLabelX = rDX + rPad + 14.0f*uiS;
-        const float tLabelY = trialCardY + (trialCardH - g_TextS.Height(L"A", 0.52f*uiS) * 2.0f - 8.0f*uiS) * 0.5f;
-        g_TextS.Draw((li == 0) ? L"시련 모듈" : L"TRIAL MODULE",
-                     tLabelX, tLabelY, 0.52f*uiS, 0.52f, 0.66f, 0.88f, 0.86f);
-        g_TextS.Draw((li == 0) ? L"시련을 적용하면 점수 배율이 증가합니다"
-                               : L"Enabling trials increases score multiplier",
-                     tLabelX, tLabelY + 24.0f*uiS,
-                     0.43f*uiS, 0.44f, 0.54f, 0.72f, 0.68f);
-
-        float scoreMult = s_TrialsEnabled ? TrialScoreMult() : 1.0f;
+        float scoreMult = 1.0f;
         wchar_t rateBuf[32];
         swprintf_s(rateBuf, L"x%.2f", scoreMult);
         float rateSc = 0.52f*uiS;
-        g_TextL.Draw(rateBuf, tbX - g_TextL.Width(rateBuf, rateSc) - 14.0f*uiS,
-                     tbY + (tbH - g_TextL.Height(rateBuf, rateSc)) * 0.5f, rateSc,
-                     scoreMult > 1.0f ? 0.60f : 0.38f,
-                     scoreMult > 1.0f ? 0.90f : 0.54f,
-                     scoreMult > 1.0f ? 0.40f : 0.72f, 0.92f);
+
+        BindMainShader();
+        drawRect(trialX, trialCardY, trialW, trialCardH,
+                 0.018f, 0.022f, 0.036f, trialHov ? 0.46f : 0.34f);
+        drawRect(trialX, trialCardY, trialW, 1.0f*uiS,
+                 wr, wg, wb, s_TrialsEnabled ? 0.34f : 0.10f);
+        drawRect(trialX, trialCardY + trialCardH - 1.0f*uiS, trialW, 1.0f*uiS,
+                 wr, wg, wb, s_TrialsEnabled ? 0.22f : 0.06f);
+        if (s_TrialsEnabled) {
+            drawRect(trialX, trialCardY, 4.0f*uiS, trialCardH,
+                     wr, wg, wb, 0.52f);
+        }
+        const float checkSc = 0.58f * uiS;
+        const float checkX = trialX + 18.0f * uiS;
+        const float checkY = trialCardY + 12.0f * uiS;
+        const wchar_t* checkText = L"[   ]";
+        g_TextS.Draw(checkText, checkX, checkY, checkSc,
+                     s_TrialsEnabled ? 0.94f : 0.46f,
+                     s_TrialsEnabled ? 1.00f : 0.50f,
+                     s_TrialsEnabled ? 1.00f : 0.58f,
+                     s_TrialsEnabled ? 0.96f : 0.54f);
+        if (s_TrialsEnabled) {
+            BindMainShader();
+            drawRect(checkX + 8.0f*uiS, checkY + 7.0f*uiS,
+                     7.0f*uiS, 7.0f*uiS, wr, wg, wb, 0.92f);
+        }
+
+        const wchar_t* stateText = s_TrialsEnabled
+            ? L"TRIAL MODULE : ACTIVE"
+            : L"TRIAL MODULE : DISABLED";
+        const wchar_t* hintText = s_TrialsEnabled
+            ? L"SET TRIAL COUNT BEFORE LAUNCH"
+            : L"OPTIONAL RISK LAYER STANDBY";
+        const float stateX = checkX + 72.0f * uiS;
+        const float rateW = g_TextL.Width(rateBuf, rateSc);
+        const float rateX = trialX + trialW - rateW - 64.0f*uiS;
+        const float textLimitX = s_TrialsEnabled ? stepX : rateX;
+        drawFitS(stateText, stateX, checkY,
+                 textLimitX - stateX - 18.0f*uiS, 0.52f*uiS, 0.38f*uiS,
+                 s_TrialsEnabled ? wr : 0.52f,
+                 s_TrialsEnabled ? wg : 0.58f,
+                 s_TrialsEnabled ? wb : 0.68f,
+                 s_TrialsEnabled ? 0.96f : 0.62f);
+        drawFitS(hintText, stateX, trialCardY + 38.0f*uiS,
+                 textLimitX - stateX - 18.0f*uiS, 0.40f*uiS, 0.32f*uiS,
+                 0.50f, 0.60f, 0.78f, s_TrialsEnabled ? 0.70f : 0.44f);
+
+        BindMainShader();
+        if (s_TrialsEnabled) {
+            drawRect(stepX, stepY, stepW, stepH, 0.018f, 0.024f, 0.038f, stepHov ? 0.64f : 0.46f);
+            drawRect(stepX, stepY, stepW, 1.0f*uiS, wr, wg, wb, 0.34f);
+            drawRect(stepX, stepY + stepH - 1.0f*uiS, stepW, 1.0f*uiS, wr, wg, wb, 0.22f);
+            drawCenterL(L"<", stepX, stepY + 5.0f*uiS, arrowW, 0.58f*uiS,
+                        decHov ? 1.0f : 0.58f, decHov ? 1.0f : 0.70f, decHov ? 1.0f : 0.90f, 0.92f);
+            drawCenterL(L">", stepX + stepW - arrowW, stepY + 5.0f*uiS, arrowW, 0.58f*uiS,
+                        incHov ? 1.0f : 0.58f, incHov ? 1.0f : 0.70f, incHov ? 1.0f : 0.90f, 0.92f);
+            wchar_t countBuf[16];
+            swprintf_s(countBuf, L"%02d", s_TrialTargetCount);
+            drawCenterL(countBuf, stepX + arrowW, stepY + 4.0f*uiS, stepW - arrowW * 2.0f,
+                        0.60f*uiS, wr, wg, wb, 0.98f);
+        } else {
+            g_TextL.Draw(rateBuf, rateX,
+                         trialCardY + (trialCardH - g_TextL.Height(rateBuf, rateSc)) * 0.5f, rateSc,
+                         0.38f, 0.54f, 0.72f, 0.92f);
+        }
 
         // 전환 페이드 복구
         BatchFlush();
@@ -1756,29 +2265,52 @@ void Scene_RunConfig(const SceneCtx& c) {
     const bool execHov = execReady && hit(execX, execY, execW, execH);
     const bool execClick = execReady && execHov && g_LmbPrev && !lmb;
     BindMainShader();
-    if (execHov)
-        drawRect(execX - 6.0f * uiS, execY - 5.0f * uiS,
-                 execW + 12.0f * uiS, execH + 10.0f * uiS,
-                 accentR, accentG, accentB, 0.10f);
     float eDim = execReady ? 1.0f : 0.36f;
+    if (execReady) {
+        drawRect(execX - 9.0f * uiS, execY - 7.0f * uiS,
+                 execW + 18.0f * uiS, execH + 14.0f * uiS,
+                 accentR, accentG, accentB, execHov ? 0.18f : 0.08f);
+    }
     drawRect(execX, execY, execW, execH,
-             (0.06f + accentR * 0.060f) * eDim,
-             (0.07f + accentG * 0.050f) * eDim,
-             (0.09f + accentB * 0.045f) * eDim, 0.96f);
-    drawBorder(execX, execY, execW, execH,
-               accentR, accentG, accentB, execReady ? (execHov ? 0.94f : 0.68f) : 0.20f, 2.0f * uiS);
-    drawCenterL(execReady ? L"EXECUTE RUN" : L"CONFIG LOCKED",
-                execX, execY + (execH - g_TextL.Height(L"EXECUTE RUN", 0.80f * uiS)) * 0.5f,
-                execW, 0.80f * uiS, 1.0f, 1.0f, 1.0f, execReady ? 0.98f : 0.42f);
+             (0.028f + accentR * 0.026f) * eDim,
+             (0.034f + accentG * 0.022f) * eDim,
+             (0.052f + accentB * 0.020f) * eDim,
+             execReady ? 0.84f : 0.52f);
+    if (execHov) {
+        drawRect(execX + 4.0f * uiS, execY + 4.0f * uiS,
+                 execW - 8.0f * uiS, execH - 8.0f * uiS,
+                 accentR, accentG, accentB, 0.58f);
+    }
+    BatchFlush();
+    SetGlowFx(true);
+    drawConstellFrame(execX, execY, execW, execH, accentR, accentG, accentB,
+                      execReady ? (execHov ? 1.00f : 0.78f) : 0.20f,
+                      16.0f * uiS, 5.0f * uiS,
+                      execReady ? (execHov ? 0.26f : 0.16f) : 0.03f);
+    if (execReady) {
+        drawRect(execX + 18.0f*uiS, execY + execH - 8.0f*uiS,
+                 execW - 36.0f*uiS, 2.0f*uiS,
+                 accentR, accentG, accentB, execHov ? 0.92f : 0.54f);
+    }
+    BatchFlush();
+    SetGlowFx(false);
+    const wchar_t* execLabel = execReady
+        ? (s_TrialsEnabled ? L"SELECT TRIALS" : L"EXECUTE RUN")
+        : L"CONFIG LOCKED";
+    const float execSc = 0.78f * uiS;
+    drawCenterL(execLabel,
+                execX, execY + (execH - g_TextL.Height(execLabel, execSc)) * 0.5f,
+                execW, execSc,
+                execHov ? 0.04f : 1.0f,
+                execHov ? 0.06f : 1.0f,
+                execHov ? 0.08f : 1.0f,
+                execReady ? 0.99f : 0.42f);
     if (execClick) {
-        if (!JobUnlocked(kWC[s_WeaponSel].job)) s_WeaponSel = 0;
-        g_SelectedJob = kWC[s_WeaponSel].job;
-        g_Difficulty = Difficulty::NORMAL;
-        if (g_CreativeMode) {
-            g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+        if (s_TrialsEnabled) {
+            clearTrialSelection();
+            s_TrialSelectPage = true;
         } else {
-            ResetForNewGame();
-            FinalizeLoadout(c, FixedWeaponForSelectedJob());
+            startConfiguredRun();
         }
     }
 
