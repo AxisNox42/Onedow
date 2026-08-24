@@ -35,19 +35,6 @@ public:
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         Monster* nm = new Monster(sx, sy, hpMul);
-        if (varietyPct > 0 && (rand() % 100) < varietyPct) {
-            int r = rand() % 10;                       // 45% 돌진 / 45% 회피 / 10% 거대(너프: 20→10)
-            MobKind k = (r < 5) ? MobKind::CHARGER
-                      : (r < 9) ? MobKind::WEAVER
-                                : MobKind::BRUTE;
-            // 거대체(커널 프로세스)는 동시 상한 — 안 죽는 탱커가 누적돼 화면을 채우던 문제
-            if (k == MobKind::BRUTE) {
-                int brutes = 0;
-                for (auto* m : monsters) if (m->alive && m->kind == MobKind::BRUTE) ++brutes;
-                if (brutes >= 4) k = MobKind::WEAVER;   // 4마리 넘으면 회피체로 대체
-            }
-            nm->MakeKind(k);
-        }
         // 엘리트 변종 (드물게) — 신속/강인 (폭발성 e==3 제거: 빨강 자폭류 빼달라 요청)
         if (elitePct > 0 && (rand() % 100) < elitePct)
             nm->MakeElite(1 + rand() % 2);
@@ -88,18 +75,60 @@ public:
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
                       gateWX, gateWY, gateWW, gateWH);
 
-        // ── 소환체(SPAWNER) — 주기마다 작은 잡몹 2마리 (전체 몹 수 제한) ──
+        // ── Hive FSM: ORBIT → OPEN → SPAWN → CLOSE ──
         {
+            static constexpr float ORBIT_DURATION = 5.5f;
+            static constexpr float OPEN_SPEED     = 2.2f;   // factor/s → ~0.45s to open
+            static constexpr float SPAWN_HOLD     = 0.45f;
+            static constexpr float CLOSE_SPEED    = 2.8f;   // factor/s → ~0.36s to close
+            static constexpr int   SPAWN_COUNT    = 4;
+
             std::vector<Monster*> born;
             int total = (int)monsters.size();
+
             for (auto m : monsters) {
                 if (!m->alive || m->kind != MobKind::SPAWNER) continue;
-                m->spawnTimer -= dt;
-                if (m->spawnTimer <= 0.0f && total + (int)born.size() < 140) {
-                    m->spawnTimer = 5.0f;          // 소환률 감소 (3.0 → 5.0)
-                    float a = (float)(rand() % 628) * 0.01f;   // 1마리만 (2 → 1)
-                    born.push_back(new Monster(m->worldX + cosf(a) * 32.0f,
-                                               m->worldY + sinf(a) * 32.0f, 0.5f));
+
+                if (m->hivePhase == 0) {                    // ORBIT: 기다림
+                    m->spawnTimer += dt;
+                    if (m->spawnTimer >= ORBIT_DURATION) {
+                        m->hivePhase = 1;
+                        m->spawnTimer = 0.0f;
+                    }
+                } else if (m->hivePhase == 1) {             // OPEN: 괄호 확장
+                    m->hiveOpenFactor += OPEN_SPEED * dt;
+                    if (m->hiveOpenFactor >= 1.0f) {
+                        m->hiveOpenFactor = 1.0f;
+                        m->hivePhase  = 2;
+                        m->spawnTimer = 0.0f;
+                        m->hiveSpawned = false;
+                    }
+                } else if (m->hivePhase == 2) {             // SPAWN: Rotor 출현
+                    if (!m->hiveSpawned && total + (int)born.size() < 130) {
+                        for (int k = 0; k < SPAWN_COUNT; k++) {
+                            float a = (float)(rand() % 628) * 0.01f
+                                    + (float)k * (6.2832f / SPAWN_COUNT);
+                            Monster* child = new Monster(
+                                m->worldX + cosf(a) * 55.0f,
+                                m->worldY + sinf(a) * 55.0f,
+                                0.55f);
+                            // Rotor (NORMAL) — use default orange-red color
+                            born.push_back(child);
+                        }
+                        m->hiveSpawned = true;
+                    }
+                    m->spawnTimer += dt;
+                    if (m->spawnTimer >= SPAWN_HOLD) {
+                        m->hivePhase  = 3;
+                        m->spawnTimer = 0.0f;
+                    }
+                } else {                                     // CLOSE: 괄호 수축
+                    m->hiveOpenFactor -= CLOSE_SPEED * dt;
+                    if (m->hiveOpenFactor <= 0.0f) {
+                        m->hiveOpenFactor = 0.0f;
+                        m->hivePhase  = 0;
+                        m->spawnTimer = 0.0f;
+                    }
                 }
             }
             for (auto* b : born) monsters.push_back(b);

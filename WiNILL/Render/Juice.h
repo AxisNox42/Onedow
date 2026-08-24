@@ -46,17 +46,10 @@ inline int JuiceTrailCap() {
 }
 
 inline void SpawnDamageNumber(float x, float y, float amount, bool crit) {
-    if (amount < 1.0f) return;
-    if ((int)g_DmgNumbers.size() >= JuiceDmgCap()) return;
-    DamageNumber d;
-    d.x  = x + (float)((rand() % 24) - 12);
-    d.y  = y - 8.0f;
-    d.vx = (float)((rand() % 50) - 25);
-    d.vy = -80.0f - (float)(rand() % 40);
-    d.maxLife = d.life = crit ? 0.85f : 0.6f;
-    d.amount  = (int)(amount + 0.5f);
-    d.crit    = crit;
-    g_DmgNumbers.push_back(d);
+    (void)x;
+    (void)y;
+    (void)amount;
+    (void)crit;
 }
 
 // ── 타격 스파크 (명중/피격 불꽃) ──
@@ -163,6 +156,32 @@ inline void SpawnEnemyExplosion(float ex, float ey,
             ++placed;
         }
         ++j;
+    }
+}
+
+// ── Node 사망 연출 — 다이아몬드 4선이 각자 분리되어 페이드아웃 ──
+inline void SpawnNodeDeath(float ex, float ey, float cr, float cg, float cb) {
+    // 4 edges at 45°/135°/225°/315° — each edge sends 3 particles drifting outward
+    for (int i = 0; i < 4; i++) {
+        float edgeAng = (float)i * 1.5708f + 0.7854f;   // midpoint direction of each edge
+        float ox = cosf(edgeAng), oy = sinf(edgeAng);   // outward
+        float px = -oy, py =  ox;                        // perpendicular (along edge)
+        for (int j = -1; j <= 1; j++) {
+            int slot = -1;
+            for (int k = 0; k < MAX_ENEMY_PARTS; k++) {
+                if (!g_EnemyParts[k].active) { slot = k; break; }
+            }
+            if (slot < 0) return;
+            float spread = (float)j * 6.0f;
+            float spd = 55.0f + (float)(rand() % 45);
+            g_EnemyParts[slot] = {
+                ex + ox * 10.0f + px * spread,
+                ey + oy * 10.0f + py * spread,
+                ox * spd + px * (float)j * 12.0f,
+                oy * spd + py * (float)j * 12.0f,
+                0.55f, 0.55f, 2.2f, cr, cg, cb, true
+            };
+        }
     }
 }
 

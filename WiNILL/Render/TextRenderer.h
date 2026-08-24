@@ -32,6 +32,7 @@ public:
 
     float Width(const wchar_t* text, float scale = 1.0f);
     float Height(const wchar_t* text, float scale = 1.0f);
+    void SetMinScale(float scale) { minScale_ = scale; }
 
     void Draw(const wchar_t* text, float x, float y, float scale,
               float r, float g, float b, float a = 1.0f);
@@ -58,12 +59,16 @@ private:
     float  emPx_        = 24.0f;
     float  ascentPx_    = 0.0f;
     float  lineHeightPx_= 0.0f;
+    float  minScale_    = 0.0f;
 
     int    FaceForCodepoint(int cp) const;
     Glyph& GetGlyph(int cp);
     bool   FinishInit(int ptSize, int sw, int sh);
     GLuint Compile(GLenum type, const char* src);
     bool   InitGLPipeline();
+    float  EffectiveScale(float scale) const {
+        return (scale > 0.0f && minScale_ > 0.0f && scale < minScale_) ? minScale_ : scale;
+    }
 };
 
 // ═══════════════════════ GL 파이프라인 ════════════════════════════════════
@@ -248,18 +253,21 @@ inline void TextRenderer::Cleanup() {
 
 inline float TextRenderer::Width(const wchar_t* text, float scale)
 {
+    scale = EffectiveScale(scale);
     float w = 0.0f;
     for (const wchar_t* p = text; *p; ++p) w += GetGlyph((int)*p).advance;
     return w * scale;
 }
 inline float TextRenderer::Height(const wchar_t* /*text*/, float scale)
 {
+    scale = EffectiveScale(scale);
     return lineHeightPx_ * scale;
 }
 
 inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scale,
                                float r, float g, float b, float a)
 {
+    scale = EffectiveScale(scale);
     const bool entering = (g_GfxPass != GfxPass::Text);
     if (entering)
         BatchFlush();

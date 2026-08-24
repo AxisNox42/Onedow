@@ -18,6 +18,30 @@ static void ApplyMobStyleTint(float& r, float& g, float& b) {
     b = b * 0.72f + 0.20f;
 }
 
+static void drawLineQuad(float x1, float y1, float x2, float y2, float width,
+                         float r, float g, float b, float a) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    float len = sqrtf(dx * dx + dy * dy);
+    if (len < 0.001f) return;
+    float px = -dy / len * width * 0.5f;
+    float py =  dx / len * width * 0.5f;
+    BatchTri(x1 + px, y1 + py, x2 + px, y2 + py, x2 - px, y2 - py, r, g, b, a);
+    BatchTri(x1 + px, y1 + py, x2 - px, y2 - py, x1 - px, y1 - py, r, g, b, a);
+}
+
+static void drawRotTriangle(float cx, float cy, float size, float angle,
+                            float r, float g, float b, float a) {
+    float rr = size * 0.58f;
+    float a0 = angle - 1.5708f;
+    float a1 = angle + 0.5236f;
+    float a2 = angle + 2.6180f;
+    BatchTri(cx + cosf(a0) * rr, cy + sinf(a0) * rr,
+             cx + cosf(a1) * rr, cy + sinf(a1) * rr,
+             cx + cosf(a2) * rr, cy + sinf(a2) * rr,
+             r, g, b, a);
+}
+
 void DrawApproachOrb(float x, float y) {
     drawRectCol3(x - 18.0f, y - 18.0f, 36.0f, 36.0f, UiCol::APPROACH_ORB_OUTER, 0.30f);
     drawRectCol3(x - 14.0f, y - 14.0f, 28.0f, 28.0f, UiCol::APPROACH_ORB_INNER, 1.0f);
@@ -137,9 +161,7 @@ void SpawnWormSplit(Monster* m, std::vector<Monster*>& born) {
 
 void drawMob(const Monster* m) {
     MarkMobSeen(m->kind);
-    if      (m->kind == MobKind::DDOS)      MarkMobSeenId(CM_DDOS);
-    else if (m->kind == MobKind::BADSECTOR) MarkMobSeenId(CM_BADSECTOR);
-    else if (m->kind == MobKind::REGERROR)  MarkMobSeenId(CM_REGERROR);
+    if (m->kind == MobKind::DDOS) MarkMobSeenId(CM_DDOS);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     if (m->elite) {
         float gr, gg, gb;
@@ -151,120 +173,83 @@ void drawMob(const Monster* m) {
         drawCircle(m->worldX, m->worldY, base * 1.85f, gr, gg, gb, 0.10f + 0.16f * pulse);
         drawCircle(m->worldX, m->worldY, base * 1.35f, gr, gg, gb, 0.14f + 0.14f * pulse);
     }
-    if (m->kind == MobKind::SPLITTER) {
-        drawCircle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawCircle(m->worldX, m->worldY, base*0.42f, 0.05f, 0.22f, 0.08f, 0.9f);
-        if (m->burnTimer > 0.0f) {
-            float pulse = 0.35f + 0.25f * sinf((float)glfwGetTime() * 14.0f);
-            drawCircle(m->worldX, m->worldY, base * 1.25f, 1.0f, 0.55f, 0.12f, pulse);
-        }
-    } else if (m->kind == MobKind::BLINKER) {
-        if (m->blinkWarn) {
-            float a = 0.18f + 0.22f * (m->blinkWarnT / Monster::BLINK_WARN);
-            drawDiamond(m->blinkTargetX, m->blinkTargetY, base*1.15f,
-                        m->color.r, m->color.g, m->color.b, a);
-        }
-        drawDiamond(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(m->worldX, m->worldY, base*0.4f, 1.0f, 1.0f, 1.0f, 0.9f);
-    } else if (m->kind == MobKind::CHARGER) {
-        if (m->chargeState == 1) {
-            float p = 0.5f + 0.5f * sinf((float)glfwGetTime() * 28.0f);
-            drawTriangle(m->worldX, m->worldY, base * (1.5f + 0.4f * p),
-                         1.0f, 0.85f, 0.25f, 0.35f);
-        } else if (m->chargeState == 2) {
-            drawCircle(m->worldX, m->worldY, base * 1.2f, 1.0f, 0.5f, 0.1f, 0.35f);
-        }
-        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawTriangle(m->worldX, m->worldY, base*0.4f, 1.0f, 0.95f, 0.7f, 0.9f);
-    } else if (m->kind == MobKind::WEAVER) {
-        drawDiamond(m->worldX, m->worldY, base*0.95f, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(m->worldX, m->worldY, base*0.35f, 1.0f, 1.0f, 1.0f, 0.85f);
-    } else if (m->kind == MobKind::BRUTE) {
+    if (m->kind == MobKind::SPAWNER) {
+        // Hive: 6 bracket [ ] fragments, orbit expands during OPEN/SPAWN phase
         float x = m->worldX, y = m->worldY;
-        drawDiamond(x, y, base*1.15f, m->color.r*0.55f, m->color.g*0.55f, m->color.b*0.55f, 1.0f);
-        drawDiamond(x, y, base*0.85f, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.40f, 1.0f, 0.6f, 0.45f, 0.95f);
-        float s = base*0.28f, o = base*0.50f;
-        drawRect(x - o - s*0.5f, y - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-        drawRect(x + o - s*0.5f, y - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-        drawRect(x - s*0.5f, y - o - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-        drawRect(x - s*0.5f, y + o - s*0.5f, s, s, 0.2f, 0.04f, 0.05f, 1.0f);
-    } else if (m->kind == MobKind::ORBITER) {
-        float x = m->worldX, y = m->worldY;
-        float bw = base*1.7f, th = base*0.42f;
-        drawRect(x - bw*0.5f, y - th*0.5f, bw, th, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawRect(x - th*0.5f, y - bw*0.5f, th, bw, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.6f, 1.0f, 1.0f, 0.85f, 0.95f);
-    } else if (m->kind == MobKind::SPAWNER) {
-        float x = m->worldX, y = m->worldY;
-        float ph = (float)glfwGetTime() * 1.2f;
-        for (int k = 0; k < 3; k++) {
-            float a = ph + (float)k * 2.0944f;
-            drawTriangle(x + cosf(a) * base*1.35f, y + sinf(a) * base*1.35f,
-                         base*0.45f, m->color.r*1.3f, m->color.g*1.2f, m->color.b*1.2f, 0.95f);
+        float cr = m->color.r, cg = m->color.g, cb = m->color.b;
+        float t = (float)glfwGetTime();
+        float ph = t * 0.35f;
+        float expand = 1.0f + m->hiveOpenFactor * 1.1f;   // 1.0 → 2.1 when open
+        float Ro = base * 1.55f * expand;
+        float bh = base * 0.38f;
+        float cl = base * (0.28f + m->hiveOpenFactor * 0.18f);  // caps grow inward when open
+        // SPAWN phase: pulse glow on brackets
+        float spawnFlash = (m->hivePhase == 2)
+            ? (0.5f + 0.5f * sinf(t * 20.0f)) : 0.0f;
+        for (int k = 0; k < 6; k++) {
+            float a  = ph + (float)k * 1.0472f;
+            float ox = x + cosf(a) * Ro;
+            float oy = y + sinf(a) * Ro;
+            float tx = -sinf(a), ty = cosf(a);
+            float rx = -cosf(a), ry = -sinf(a);
+            float bx1 = ox + tx*bh, by1 = oy + ty*bh;
+            float bx2 = ox - tx*bh, by2 = oy - ty*bh;
+            float coreA = 0.88f + spawnFlash * 0.12f;
+            // back edge
+            drawLineQuad(bx1,by1, bx2,by2, 3.5f, cr,cg,cb, 0.10f + spawnFlash*0.12f);
+            drawLineQuad(bx1,by1, bx2,by2, 1.2f, cr,cg,cb, coreA);
+            // end caps
+            drawLineQuad(bx1,by1, bx1+rx*cl,by1+ry*cl, 3.5f, cr,cg,cb, 0.10f + spawnFlash*0.12f);
+            drawLineQuad(bx1,by1, bx1+rx*cl,by1+ry*cl, 1.2f, cr,cg,cb, coreA);
+            drawLineQuad(bx2,by2, bx2+rx*cl,by2+ry*cl, 3.5f, cr,cg,cb, 0.10f + spawnFlash*0.12f);
+            drawLineQuad(bx2,by2, bx2+rx*cl,by2+ry*cl, 1.2f, cr,cg,cb, coreA);
         }
-        drawDiamond(x, y, base*1.05f, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.5f, 0.04f, 0.18f, 0.13f, 0.95f);
-    } else if (m->kind == MobKind::SHIELDED) {
-        float x = m->worldX, y = m->worldY;
-        if (m->shieldActive) {
-            float ang = atan2f(m->dashDirY, m->dashDirX);
-            float pulse = 0.4f + 0.15f * sinf((float)glfwGetTime() * 8.0f);
-            drawConeFan(x, y, base*2.0f, ang, 1.0f, 0.35f, 0.75f, 1.0f, pulse);
-        }
-        drawDiamond(x, y, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawDiamond(x, y, base*0.4f, 1.0f, 1.0f, 1.0f, 0.85f);
+        // Core — red during SPAWN, normal otherwise
+        float coreR = (m->hivePhase == 2) ? (0.9f + spawnFlash*0.1f) : 0.82f;
+        float coreG = (m->hivePhase == 2) ? (0.3f - spawnFlash*0.2f) : 1.0f;
+        float coreBl = (m->hivePhase == 2) ? 0.2f : 0.92f;
+        drawDiamond(x, y, base*0.22f, coreR, coreG, coreBl, 0.95f);
     } else if (m->kind == MobKind::DDOS) {
-        drawTriangle(m->worldX, m->worldY, base, m->color.r, m->color.g, m->color.b, 1.0f);
-        drawTriangle(m->worldX, m->worldY, base*0.42f, 1.0f, 0.85f, 0.9f, 0.9f);
-    } else if (m->kind == MobKind::BADSECTOR) {
+        // Node: thin 1px diamond wireframe ◇, slow CW drift
+        float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         float x = m->worldX, y = m->worldY;
-        for (int ring = 0; ring < 2; ring++) {
-            float rr = base * (ring == 0 ? 1.0f : 0.5f);
-            float cr = ring == 0 ? m->color.r : 0.1f;
-            float cg = ring == 0 ? m->color.g : 0.05f;
-            float cb = ring == 0 ? m->color.b : 0.2f;
-            float vx[6], vy[6];
-            for (int s = 0; s < 6; s++) {
-                float a = (float)s * 1.0471976f + 0.5236f;
-                vx[s] = x + cosf(a) * rr; vy[s] = y + sinf(a) * rr;
-            }
-            for (int s = 0; s < 6; s++) {
-                int n = (s + 1) % 6;
-                float v[6] = { x, y, vx[s], vy[s], vx[n], vy[n] };
-                BatchVerts(v, 3, cr, cg, cb, 1.0f);
-            }
-        }
-    } else if (m->kind == MobKind::REGERROR) {
-        float x = m->worldX, y = m->worldY;
-        float ww = 290.0f;
-        drawRect(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.5f, 0.1f, 0.1f, 0.09f);
-        drawNeonBorder(x - ww*0.5f, y - ww*0.5f, ww, ww, 0.9f, 0.3f, 0.3f);
-        float ph = (float)glfwGetTime() * 1.6f;
+        float phOff = (float)((size_t)m % 628) * 0.01f;
+        float ph  = (float)glfwGetTime() * 0.524f + phOff + 0.785f;
+        float R   = base * 0.95f;
+        float vx[4], vy[4];
         for (int k = 0; k < 4; k++) {
-            float a  = ph + (float)k * 1.5708f;
-            float sx = x + cosf(a) * base * 1.5f;
-            float sy = y + sinf(a) * base * 1.5f;
-            float s  = base * 0.36f;
-            drawRect(sx - s*0.5f, sy - s*0.5f, s, s, 1.0f, 0.55f, 0.2f, 0.95f);
+            float a = ph + (float)k * 1.5708f;
+            vx[k] = x + cosf(a) * R;
+            vy[k] = y + sinf(a) * R;
         }
-        float xr = ph * 0.6f;
-        for (int d = 0; d < 2; d++) {
-            float a = 0.7854f + (float)d * 1.5708f + xr;
-            float dx = cosf(a), dy = sinf(a), px = -dy, py = dx;
-            float L = base, T = base * 0.28f;
-            float v1x=x+dx*L+px*T, v1y=y+dy*L+py*T, v2x=x+dx*L-px*T, v2y=y+dy*L-py*T;
-            float v3x=x-dx*L+px*T, v3y=y-dy*L+py*T, v4x=x-dx*L-px*T, v4y=y-dy*L-py*T;
-            float va[12]={v1x,v1y,v2x,v2y,v3x,v3y, v2x,v2y,v4x,v4y,v3x,v3y};
-            BatchVerts(va, 6, m->color.r, m->color.g, m->color.b, 1.0f);
+        for (int k = 0; k < 4; k++) {
+            int kn = (k+1)%4;
+            drawLineQuad(vx[k],vy[k], vx[kn],vy[kn], 0.9f, cr,cg,cb, 0.70f);
         }
-        drawCircle(x, y, base*0.32f, 1.0f, 0.9f, 0.6f, 1.0f);
+        drawDiamond(x, y, base*0.08f, 0.80f, 0.08f, 0.08f, 0.90f);
     } else {
+        // Rotor (NORMAL): 8-vertex star outline, fast CCW rotation
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         ApplyMobStyleTint(cr, cg, cb);
-        drawTriangle(m->worldX, m->worldY, base, cr, cg, cb, 1.0f);
+        float x = m->worldX, y = m->worldY;
+        float phOff = (float)((size_t)m % 628) * 0.01f;
+        float ph  = (float)glfwGetTime() * -5.236f + phOff;
+        float R1  = base * 1.0f;   // outer tips
+        float R2  = base * 0.38f;  // inner concave points
+        float svx[8], svy[8];
+        for (int k = 0; k < 8; k++) {
+            float a = ph + (float)k * 0.7854f;   // 45° steps
+            float r = (k % 2 == 0) ? R1 : R2;
+            svx[k] = x + cosf(a) * r;
+            svy[k] = y + sinf(a) * r;
+        }
+        for (int k = 0; k < 8; k++) {
+            int kn = (k+1)%8;
+            drawLineQuad(svx[k],svy[k], svx[kn],svy[kn], 3.5f, cr,cg,cb, 0.12f);
+            drawLineQuad(svx[k],svy[k], svx[kn],svy[kn], 1.2f, cr,cg,cb, 0.88f);
+        }
     }
-    if (m->burnTimer > 0.0f && m->kind != MobKind::SPLITTER) {
+    if (m->burnTimer > 0.0f) {
         float pulse = 0.35f + 0.25f * sinf((float)glfwGetTime() * 14.0f);
         drawCircle(m->worldX, m->worldY, base * 1.2f, 1.0f, 0.55f, 0.12f, pulse);
     }

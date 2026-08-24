@@ -305,7 +305,7 @@ inline bool      g_CreativeGodmode    = false;   // G 키 무적 토글 (런타�
 inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤엔 디버프 페이지 스킵
 
 // 손맛 표시 토글 (설정에서 ON/OFF)
-inline bool g_ShowDamageNumbers = true;   // 데미지 숫자(딜 계산) 표시
+inline bool g_ShowDamageNumbers = false;  // Deprecated: damage number display is removed.
 inline bool g_ShowCombo         = true;   // 콤보 카운터 표시
 inline int  g_SoundVol          = 100;    // 사운드 마스터 볼륨 (0=끄기 ~ 100)
 

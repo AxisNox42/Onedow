@@ -116,7 +116,7 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
     /* SPAWNER */ {
         { L"봇넷", L"Botnet", L"ボットネット" },
         { L"느리지만 작은 프로세스를 계속 소환",
-          L"Slow, but keeps spawning small processes",
+          L"Slow, but keeps spawning DDoS swarm shards",
           L"低速だが小プロセスを召喚し続ける" } },
     /* SHIELDED */ {
         { L"방화벽", L"Firewall", L"ファイアウォール" },
@@ -136,7 +136,7 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
     /* DDOS */ {
         { L"디도스", L"DDoS", L"DDoS" },
         { L"한 번에 떼로 몰려오는 약한 프로세스 (물량 압박)",
-          L"Weak processes that swarm in large numbers",
+          L"Weak star-stream shards that swarm in large numbers",
           L"大量に押し寄せる弱小プロセス" } },
     /* BADSECTOR */ {
         { L"배드 섹터", L"Bad Sector", L"バッドセクタ" },

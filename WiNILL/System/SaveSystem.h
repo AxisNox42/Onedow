@@ -42,7 +42,6 @@ inline void SaveGame() {
     add("lang=%lld\n",      (int)g_Language);
     add("fps=%lld\n",       g_FpsCap);
     add("crosshair=%lld\n", g_ShowCrosshair     ? 1 : 0);
-    add("dmgnum=%lld\n",    g_ShowDamageNumbers ? 1 : 0);
     add("combo=%lld\n",     g_ShowCombo         ? 1 : 0);
     add("soundvol=%lld\n",  g_SoundVol);
     add("autofire=%lld\n",  g_AutoFire  ? 1 : 0);
@@ -137,7 +136,7 @@ inline void LoadGame() {
         if      (!std::strcmp(key, "lang"))        { int l = (int)val; if (l >= 0 && l < LANG_COUNT) g_Language = (Language)l; }
         else if (!std::strcmp(key, "fps"))         g_FpsCap            = (int)val;
         else if (!std::strcmp(key, "crosshair"))   g_ShowCrosshair     = (val != 0);
-        else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = (val != 0);
+        else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = false;
         else if (!std::strcmp(key, "combo"))       g_ShowCombo         = (val != 0);
         else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
         else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);

@@ -100,6 +100,10 @@ public:
     float   orbitRadius = 0.0f;
     float   spawnTimer  = 0.0f;
     bool    anchored    = false;   // SPAWNER(봇넷 노드) — 사정거리 도달 후 고정(추격 X)
+    // Hive FSM (SPAWNER 전용)
+    int     hivePhase      = 0;     // 0=ORBIT 1=OPEN 2=SPAWN 3=CLOSE
+    float   hiveOpenFactor = 0.0f;  // 괄호 궤도 확장 (0=닫힘, 1=완전 개방)
+    bool    hiveSpawned    = false; // 현재 사이클 소환 완료 여부
     bool    shieldActive = true;
     float   shieldTimer  = 0.0f;
     float   burnTimer    = 0.0f;   // 은탄환 화상 DoT
@@ -116,11 +120,7 @@ public:
         hp    *= hpMul;
         speed  = (120.0f + (float)(rand() % 61)) * speedMul; // 120~180
         summoned = isSummoned;
-        color = glm::vec3(
-            (rand() % 60 + 40) / 100.0f,
-            (rand() % 60 + 40) / 100.0f,
-            (rand() % 60 + 40) / 100.0f
-        );
+        color = glm::vec3(1.0f, 0.27f, 0.0f);   // Rotor: orange-red default
         if (summoned) color = glm::vec3(0.9f, 0.3f, 0.3f);
     }
 
@@ -159,19 +159,21 @@ public:
             orbitRadius = 270.0f + (float)(rand() % 90);
             orbitAngle  = (float)(rand() % 628) * 0.01f;
         } else if (k == MobKind::SPAWNER) {
-            color = glm::vec3(0.2f, 0.75f, 0.55f);      // 청록 — 작은 잡몹 소환
-            hp   *= 2.4f;
-            speed *= 0.5f;
-            spawnTimer = 2.5f;
+            color = glm::vec3(0.2f, 0.75f, 0.55f);
+            hp   *= 3.5f;
+            speed *= 0.35f;
+            sizeScale = scale * 1.8f;
+            spawnTimer = 0.0f;
+            hivePhase = 0; hiveOpenFactor = 0.0f; hiveSpawned = false;
         } else if (k == MobKind::SHIELDED) {
             color = glm::vec3(0.3f, 0.5f, 1.0f);        // 파랑 — 주기적 보호막
             speed *= 0.85f;
             shieldActive = true; shieldTimer = 0.0f;
         } else if (k == MobKind::DDOS) {
-            color = glm::vec3(1.0f, 0.35f, 0.55f);      // 분홍빨강 — 작은 프로세스 떼
-            hp   *= 0.35f;                              // 매우 약함 (물량)
+            color = glm::vec3(0.55f, 0.0f, 0.0f);       // 버건디 — 작은 노드 떼
+            hp   *= 0.35f;
             speed *= 1.05f;
-            sizeScale = scale * 0.72f;                  // 작지만 보이게
+            sizeScale = scale * 0.50f;
         } else if (k == MobKind::BADSECTOR) {
             color = glm::vec3(0.6f, 0.25f, 0.85f);      // 보라 — 손상 섹터(육각)
             hp   *= 1.3f;

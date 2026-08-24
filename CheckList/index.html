@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiNILL 120일 스팀 데모 로드맵</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #7d8590;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --orange: #e3b341;
+    --pink: #ff7b72;
+    --teal: #39d353;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .header-top {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .header h1 { font-size: 17px; font-weight: 700; color: var(--blue); }
+  .header-sub { font-size: 12px; color: var(--muted); }
+
+  .progress-wrap { display: flex; align-items: center; gap: 12px; }
+
+  .progress-bar {
+    flex: 1; height: 5px;
+    background: var(--surface2);
+    border-radius: 3px; overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--blue));
+    border-radius: 3px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  .progress-label {
+    font-size: 12px; color: var(--muted);
+    white-space: nowrap; min-width: 130px; text-align: right;
+  }
+
+  /* ── Stats ── */
+  .container { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px; margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; text-align: center;
+  }
+
+  .stat-num { font-size: 24px; font-weight: 700; color: var(--blue); line-height: 1; }
+  .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Phase ── */
+  .phase {
+    margin-bottom: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+
+  .phase-header {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    padding: 13px 20px;
+    background: var(--surface2);
+    cursor: pointer; user-select: none;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+
+  .phase-header:hover { background: #2d333b; }
+
+  .phase-left { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; }
+
+  .phase-badge {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 10px;
+    color: #000; letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  .phase-days { font-size: 11px; color: var(--muted); font-weight: 400; }
+
+  .phase-right { display: flex; align-items: center; gap: 12px; }
+
+  .phase-mini-bar {
+    width: 72px; height: 4px;
+    background: var(--border);
+    border-radius: 2px; overflow: hidden;
+  }
+
+  .phase-mini-fill { height: 100%; border-radius: 2px; transition: width 0.3s; width: 0%; }
+  .phase-count { font-size: 11px; color: var(--muted); min-width: 32px; text-align: right; }
+  .phase-arrow { font-size: 10px; color: var(--muted); transition: transform 0.2s; }
+  .phase-arrow.up { transform: rotate(180deg); }
+
+  /* ── Day Items ── */
+  .phase-body { display: block; }
+  .phase-body.hidden { display: none; }
+
+  .day-item {
+    display: flex; align-items: flex-start;
+    gap: 12px; padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+  }
+
+  .day-item:last-child { border-bottom: none; }
+  .day-item:hover { background: var(--surface2); }
+  .day-item.done { opacity: 0.4; }
+  .day-item.done .task-text { text-decoration: line-through; color: var(--muted); }
+
+  .day-item.today {
+    background: rgba(88, 166, 255, 0.06);
+    border-left: 3px solid var(--blue);
+  }
+
+  .day-item.today .day-num::after {
+    content: ' ← TODAY';
+    color: var(--blue); font-weight: 700; font-size: 9px;
+  }
+
+  .day-checkbox {
+    width: 15px; height: 15px; min-width: 15px;
+    margin-top: 4px; cursor: pointer;
+    accent-color: var(--green);
+  }
+
+  .day-meta { flex: 1; }
+  .day-num { font-size: 10px; color: var(--muted); margin-bottom: 1px; }
+  .task-text { font-size: 13px; line-height: 1.5; }
+
+  .tag {
+    display: inline-block;
+    font-size: 9px; font-weight: 700;
+    padding: 1px 6px; border-radius: 4px;
+    margin-right: 5px; vertical-align: middle;
+    color: #000;
+  }
+
+  .tag-design { background: #bc8cff; color: #fff; }
+  .tag-code   { background: #58a6ff; color: #000; }
+  .tag-art    { background: #e3b341; color: #000; }
+  .tag-test   { background: #3fb950; color: #000; }
+  .tag-steam  { background: #1a9fff; color: #fff; }
+  .tag-del    { background: #f85149; color: #fff; }
+
+  .day-date {
+    font-size: 10px; color: var(--muted);
+    white-space: nowrap; padding-top: 4px;
+  }
+
+  /* Phase color map */
+  .p1 .phase-badge { background: #f85149; }
+  .p1 .phase-mini-fill { background: #f85149; }
+
+  .p2 .phase-badge { background: #e3b341; }
+  .p2 .phase-mini-fill { background: #e3b341; }
+
+  .p3 .phase-badge { background: #bc8cff; }
+  .p3 .phase-mini-fill { background: #bc8cff; }
+
+  .p4 .phase-badge { background: #58a6ff; }
+  .p4 .phase-mini-fill { background: #58a6ff; }
+
+  .p5 .phase-badge { background: #3fb950; }
+  .p5 .phase-mini-fill { background: #3fb950; }
+
+  .p6 .phase-badge { background: #1a9fff; }
+  .p6 .phase-mini-fill { background: #1a9fff; }
+
+  .p7 .phase-badge { background: #39d353; }
+  .p7 .phase-mini-fill { background: #39d353; }
+
+  /* Legend */
+  .legend {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+
+  .footer-actions { text-align: center; margin-top: 32px; }
+
+  .btn-reset {
+    background: none; border: 1px solid var(--border);
+    color: var(--muted); padding: 8px 20px;
+    border-radius: 6px; cursor: pointer; font-size: 12px;
+    transition: all 0.2s;
+  }
+
+  .btn-reset:hover { border-color: var(--red); color: var(--red); }
+
+  @media (max-width: 600px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .header { padding: 14px 16px; }
+    .phase-mini-bar { display: none; }
+    .legend { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <h1>⚔ WiNILL 120일 스팀 데모 로드맵</h1>
+    <span class="header-sub" id="dateRange"></span>
+  </div>
+  <div class="progress-wrap">
+    <div class="progress-bar"><div class="progress-fill" id="pFill"></div></div>
+    <div class="progress-label" id="pLabel">0 / 120 완료 (0%)</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="stats">
+    <div class="stat-card"><div class="stat-num" id="sDone">0</div><div class="stat-label">완료</div></div>
+    <div class="stat-card"><div class="stat-num" id="sRemain">120</div><div class="stat-label">남음</div></div>
+    <div class="stat-card"><div class="stat-num" id="sStreak">0</div><div class="stat-label">연속 완료</div></div>
+    <div class="stat-card"><div class="stat-num" id="sDday">D-120</div><div class="stat-label">데모까지</div></div>
+  </div>
+
+  <div class="legend">
+    <span style="font-weight:600;color:var(--text)">태그:</span>
+    <span class="legend-item"><span class="tag tag-design">기획</span> 설계/문서</span>
+    <span class="legend-item"><span class="tag tag-code">코드</span> 구현</span>
+    <span class="legend-item"><span class="tag tag-art">아트</span> 텍스처/비주얼</span>
+    <span class="legend-item"><span class="tag tag-test">테스트</span> QA/밸런스</span>
+    <span class="legend-item"><span class="tag tag-steam">Steam</span> 스팀 관련</span>
+    <span class="legend-item"><span class="tag tag-del">삭제</span> 제거 작업</span>
+  </div>
+
+  <div id="phaseContainer"></div>
+
+  <div class="footer-actions">
+    <button class="btn-reset" onclick="resetAll()">전체 초기화</button>
+  </div>
+</div>
+
+<script>
+const START = new Date('2026-08-11');
+const TOTAL = 120;
+const KEY = 'winill_v2_checklist';
+
+const PHASES = [
+  {
+    id: 1, cls: 'p1', name: '코어 루프 확립',
+    tasks: [
+      { tag: 'del',    text: 'SPAM 보스 코드 완전 제거' },
+      { tag: 'design', text: '메인 모드 / 무한 모드 구조 설계 문서 작성' },
+      { tag: 'design', text: '메인 모드 보스 등장 순서 설계 (FORK → VOLLEY → 새보스1 → 새보스2 → 최종보스)' },
+      { tag: 'design', text: '메인 모드 레벨 상한 수치 결정 (증강 최대 픽 횟수)' },
+      { tag: 'code',   text: '보스 처치 → 증강 픽 이벤트 트리거 연결 확인 및 수정' },
+      { tag: 'code',   text: '증강 픽 UI 구현 (3개 후보 중 1개 선택)' },
+      { tag: 'code',   text: '증강 픽 UI 애니메이션 및 스타일' },
+      { tag: 'test',   text: '픽된 증강이 플레이어에 즉시 적용되는지 테스트' },
+      { tag: 'code',   text: '메인 모드 레벨 상한 구현' },
+      { tag: 'code',   text: '메인 모드 클리어 조건 기초 구현 (최종 보스 처치 시)' },
+      { tag: 'code',   text: '무한 모드 분리 — 기존 무한 루프 구조 유지' },
+      { tag: 'code',   text: '모드 선택 UI 기초 구현 (메인 모드 / 무한 모드)' },
+      { tag: 'code',   text: '클리어 화면 기초 구현 (스코어, 획득 증강 목록)' },
+      { tag: 'code',   text: '사망 리포트 화면 기초 구현 (선택 증강, 스코어, 생존 시간)' },
+      { tag: 'code',   text: 'Seed 시스템 구현 (srand → 재현 가능한 RNG로 교체)' },
+      { tag: 'code',   text: 'RNG 시드 기록 기능 구현' },
+      { tag: 'test',   text: '코어 루프 통합 테스트 — 메인 모드 (시작 → 보스 → 픽 → 클리어)' },
+      { tag: 'test',   text: '코어 루프 통합 테스트 — 무한 모드 (시작 → 반복 → 사망)' },
+      { tag: 'test',   text: '코어 루프 버그 수정' },
+      { tag: 'code',   text: '코어 루프 커밋 및 정리' },
+    ]
+  },
+  {
+    id: 2, cls: 'p2', name: '보스 정비 & 신규 보스',
+    tasks: [
+      { tag: 'test',   text: 'FORK 현재 밸런스 문제 목록화' },
+      { tag: 'test',   text: 'FORK 탄막 패턴 밸런싱' },
+      { tag: 'test',   text: 'FORK HP / 공격력 수치 조정' },
+      { tag: 'test',   text: 'FORK 최종 플레이 테스트' },
+      { tag: 'design', text: 'VOLLEY 리워크 설계 — 소총 / 미니건 / 스나이퍼 페이즈 정의' },
+      { tag: 'code',   text: 'VOLLEY 기존 코드 정리 및 페이즈 구조로 리팩토링' },
+      { tag: 'code',   text: 'VOLLEY 페이즈 1 구현 — 스나이퍼 (느린 고위력 정밀탄)' },
+      { tag: 'code',   text: 'VOLLEY 페이즈 2 구현 — 소총 (버스트, 중간 속도)' },
+      { tag: 'code',   text: 'VOLLEY 페이즈 3 구현 — 미니건 (빠른 난사, 생존 압박)' },
+      { tag: 'code',   text: 'VOLLEY 페이즈 전환 연출 (HP 임계치 기반)' },
+      { tag: 'art',    text: 'VOLLEY 텍스처 리소스 제작' },
+      { tag: 'test',   text: 'VOLLEY 밸런싱 테스트' },
+      { tag: 'design', text: '새 보스 1 — 기획 문서 작성 (컨셉, 패턴, 난이도 포지션)' },
+      { tag: 'code',   text: '새 보스 1 — 기본 구조 구현' },
+      { tag: 'code',   text: '새 보스 1 — 공격 패턴 구현 (배치 1)' },
+      { tag: 'code',   text: '새 보스 1 — 공격 패턴 구현 (배치 2)' },
+      { tag: 'art',    text: '새 보스 1 — 텍스처 제작 및 적용' },
+      { tag: 'test',   text: '새 보스 1 — 밸런싱 테스트' },
+      { tag: 'design', text: '새 보스 2 — 기획 문서 작성 (컨셉, 패턴, 난이도 포지션)' },
+      { tag: 'code',   text: '새 보스 2 — 기본 구조 구현' },
+      { tag: 'code',   text: '새 보스 2 — 공격 패턴 구현 (배치 1)' },
+      { tag: 'code',   text: '새 보스 2 — 공격 패턴 구현 (배치 2)' },
+      { tag: 'art',    text: '새 보스 2 — 텍스처 제작 및 적용' },
+      { tag: 'test',   text: '새 보스 2 — 밸런싱 테스트' },
+      { tag: 'design', text: '최종 보스 — 기획 문서 작성 (컨셉, 멀티 페이즈, 연출)' },
+      { tag: 'code',   text: '최종 보스 — 기본 구조 구현' },
+      { tag: 'code',   text: '최종 보스 — 페이즈 1 구현' },
+      { tag: 'code',   text: '최종 보스 — 페이즈 2 구현' },
+      { tag: 'code',   text: '최종 보스 — 페이즈 3 구현 (클라이맥스 패턴)' },
+      { tag: 'art',    text: '최종 보스 — 텍스처 제작 및 적용' },
+      { tag: 'test',   text: '최종 보스 — 밸런싱 테스트' },
+      { tag: 'code',   text: '보스 등장 순서 (로테이션) 최종 확정 및 구현' },
+      { tag: 'test',   text: '전체 보스 통합 테스트 (메인 모드 처음부터 끝까지)' },
+      { tag: 'test',   text: '보스 밸런스 최종 조정' },
+      { tag: 'code',   text: '보스 작업 커밋' },
+    ]
+  },
+  {
+    id: 3, cls: 'p3', name: '기술 부채 해소',
+    tasks: [
+      { tag: 'design', text: 'main.cpp 분리 계획 — RunState, BossController, WorldState 범위 확정' },
+      { tag: 'code',   text: 'RunState 클래스 분리 구현' },
+      { tag: 'code',   text: 'BossController 클래스 분리 구현' },
+      { tag: 'code',   text: 'WorldState 분리 구현' },
+      { tag: 'test',   text: '분리 후 빌드 및 통합 테스트' },
+      { tag: 'code',   text: 'MonsterManager — raw pointer → unique_ptr 전환' },
+      { tag: 'code',   text: '보스 포인터 — raw new/delete → unique_ptr 전환' },
+      { tag: 'test',   text: '메모리 누수 테스트' },
+      { tag: 'code',   text: '셰이더 컴파일/링크 실패 로그 추가' },
+      { tag: 'code',   text: '폰트 / 아이콘 초기화 실패 로그 추가' },
+      { tag: 'code',   text: '렌더링 초기화 반환값 무시 부분 에러 핸들링 정리' },
+      { tag: 'test',   text: '기술 부채 해소 통합 테스트' },
+      { tag: 'test',   text: '성능 프로파일링' },
+      { tag: 'code',   text: '렌더링 최적화' },
+      { tag: 'code',   text: '기술 부채 커밋' },
+    ]
+  },
+  {
+    id: 4, cls: 'p4', name: 'UI 개편',
+    tasks: [
+      { tag: 'design', text: '메인화면 새 레이아웃 와이어프레임 (상단 타이틀 + 왼쪽 슬라이드바)' },
+      { tag: 'code',   text: '상단 게임 타이틀 영역 렌더링 구현' },
+      { tag: 'code',   text: '왼쪽 슬라이드바 기본 틀 구현' },
+      { tag: 'code',   text: '슬라이드바 내 버튼 배치 및 폰트 통일 (튜토리얼 버튼 포함)' },
+      { tag: 'code',   text: '슬라이드바 열기/닫기 애니메이션' },
+      { tag: 'code',   text: '메인화면 뒷배경 맵 렌더링' },
+      { tag: 'code',   text: '모드 선택 UI 완성 (메인 모드 / 무한 모드)' },
+      { tag: 'code',   text: '난이도 설정 페이지 구현' },
+      { tag: 'code',   text: '난이도별 게임 파라미터 연결' },
+      { tag: 'code',   text: '클리어 화면 완성 (스코어, 증강 목록, 클리어 시간)' },
+      { tag: 'code',   text: '사망 리포트 화면 완성 (받은 피해 원인, 증강 목록, 최고 DPS)' },
+      { tag: 'art',    text: 'UI 전체 색상 / 스타일 통일' },
+      { tag: 'test',   text: 'UI 통합 테스트' },
+      { tag: 'code',   text: '여러 해상도 지원 (UI 스케일링)' },
+      { tag: 'test',   text: '해상도별 렌더링 테스트' },
+      { tag: 'code',   text: '화질 깨짐 증상 원인 분석 및 수정' },
+      { tag: 'code',   text: '셰이더 추가 (블룸, 글로우 등)' },
+      { tag: 'test',   text: 'UI & 비주얼 통합 테스트' },
+      { tag: 'code',   text: 'UI 작업 커밋' },
+      { tag: 'test',   text: 'UI 피드백 반영 및 최종 점검' },
+    ]
+  },
+  {
+    id: 5, cls: 'p5', name: '콘텐츠 & 메타 진행',
+    tasks: [
+      { tag: 'design', text: '스킬 트리 설계 (노드 종류, 의존성, 해금 조건)' },
+      { tag: 'code',   text: '스킬 트리 노드 구현 (기존 상점 대체)' },
+      { tag: 'code',   text: '스킬 트리 UI 구현' },
+      { tag: 'code',   text: '코인 → 스킬 트리 연동' },
+      { tag: 'code',   text: '보스 전리품 → 강화 노드 해금 연동' },
+      { tag: 'code',   text: '증강 뽑기 UI 개선 (봉인 해제 뽑기 버튼)' },
+      { tag: 'art',    text: '잡몹 텍스처화' },
+      { tag: 'design', text: '업적 시스템 확장 (11개 → 추가 설계)' },
+      { tag: 'code',   text: '업적 시스템 구현' },
+      { tag: 'design', text: '메타 업그레이드 확장 (6종 → 추가 설계)' },
+      { tag: 'code',   text: '메타 업그레이드 구현' },
+      { tag: 'test',   text: '콘텐츠 통합 테스트' },
+      { tag: 'code',   text: '콘텐츠 커밋' },
+    ]
+  },
+  {
+    id: 6, cls: 'p6', name: 'Steam 데모 준비',
+    tasks: [
+      { tag: 'steam',  text: 'Win32 DWM 오버레이 ↔ Steam 오버레이 충돌 여부 테스트' },
+      { tag: 'steam',  text: 'Steamworks SDK 연동 계획 수립' },
+      { tag: 'steam',  text: 'Steamworks SDK 초기화 구현' },
+      { tag: 'steam',  text: 'Steam 스코어보드 연동' },
+      { tag: 'steam',  text: 'Steam 업적 연동' },
+      { tag: 'design', text: '데모 빌드 스코프 확정 (플레이 시간 제한 등)' },
+      { tag: 'code',   text: '데모 전용 제한 구현 (필요시)' },
+      { tag: 'art',    text: '스팀 스토어 페이지용 스크린샷 제작' },
+      { tag: 'art',    text: '게임 트레일러 / 캡슐 이미지 준비' },
+      { tag: 'steam',  text: '스팀 스토어 페이지 초안 작성' },
+      { tag: 'test',   text: '다른 PC에서 호환성 테스트 (DWM 투명 오버레이 포함)' },
+      { tag: 'test',   text: '데모 빌드 전체 플레이 테스트' },
+      { tag: 'test',   text: '데모 빌드 버그 수정' },
+      { tag: 'code',   text: '빌드 최적화 및 릴리스 빌드 생성' },
+      { tag: 'steam',  text: 'Steam 데모 빌드 업로드 테스트' },
+    ]
+  },
+  {
+    id: 7, cls: 'p7', name: '최종 마무리',
+    tasks: [
+      { tag: 'test',   text: '전체 시스템 최종 통합 테스트' },
+      { tag: 'test',   text: '발견된 버그 수정' },
+      { tag: 'code',   text: '코드 정리 및 불필요한 코드 제거' },
+      { tag: 'test',   text: '최종 플레이 테스트 (처음부터 클리어까지)' },
+      { tag: 'steam',  text: '버전 태깅 및 Steam 데모 정식 배포' },
+    ]
+  }
+];
+
+const TAG_MAP = {
+  design: 'tag-design',
+  code:   'tag-code',
+  art:    'tag-art',
+  test:   'tag-test',
+  steam:  'tag-steam',
+  del:    'tag-del',
+};
+
+const TAG_LABEL = {
+  design: '기획',
+  code:   '코드',
+  art:    '아트',
+  test:   '테스트',
+  steam:  'Steam',
+  del:    '삭제',
+};
+
+function dayDate(n) {
+  const d = new Date(START);
+  d.setDate(d.getDate() + n - 1);
+  return d;
+}
+
+function fmtDate(d) {
+  return d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', weekday: 'short' });
+}
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function save(data) { localStorage.setItem(KEY, JSON.stringify(data)); }
+
+let checked = load();
+
+function todayDayNum() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const s = new Date(START); s.setHours(0,0,0,0);
+  const diff = Math.round((today - s) / 86400000) + 1;
+  return (diff >= 1 && diff <= TOTAL) ? diff : -1;
+}
+
+function buildAll() {
+  const container = document.getElementById('phaseContainer');
+  container.innerHTML = '';
+  let dayN = 1;
+  const today = todayDayNum();
+
+  PHASES.forEach(phase => {
+    const total = phase.tasks.length;
+    const startDay = dayN;
+    const endDay = dayN + total - 1;
+    let done = 0;
+    for (let i = startDay; i <= endDay; i++) if (checked[`d${i}`]) done++;
+
+    const div = document.createElement('div');
+    div.className = `phase ${phase.cls}`;
+    div.id = `phase_${phase.id}`;
+
+    div.innerHTML = `
+      <div class="phase-header" onclick="togglePhase(${phase.id})">
+        <div class="phase-left">
+          <span class="phase-badge">Phase ${phase.id}</span>
+          ${phase.name}
+          <span class="phase-days">Day ${startDay}–${endDay}</span>
+        </div>
+        <div class="phase-right">
+          <div class="phase-mini-bar">
+            <div class="phase-mini-fill" id="pmf_${phase.id}" style="width:${total>0?Math.round(done/total*100):0}%"></div>
+          </div>
+          <span class="phase-count" id="pc_${phase.id}">${done}/${total}</span>
+          <span class="phase-arrow up" id="pa_${phase.id}">▼</span>
+        </div>
+      </div>
+      <div class="phase-body" id="pb_${phase.id}">
+        ${phase.tasks.map((t, i) => {
+          const n = startDay + i;
+          const isDone = !!checked[`d${n}`];
+          const isToday = n === today;
+          const tagCls = TAG_MAP[t.tag] || '';
+          const tagLbl = TAG_LABEL[t.tag] || '';
+          return `
+            <div class="day-item${isDone?' done':''}${isToday?' today':''}" id="di_${n}">
+              <input type="checkbox" class="day-checkbox" ${isDone?'checked':''} onchange="toggle(${n},this)">
+              <div class="day-meta">
+                <div class="day-num">Day ${n}</div>
+                <div class="task-text"><span class="tag ${tagCls}">${tagLbl}</span>${t.text}</div>
+              </div>
+              <div class="day-date">${fmtDate(dayDate(n))}</div>
+            </div>`;
+        }).join('')}
+      </div>
+    `;
+
+    container.appendChild(div);
+    dayN += total;
+  });
+
+  const endD = dayDate(TOTAL);
+  document.getElementById('dateRange').textContent =
+    `${fmtDate(START)} ~ ${fmtDate(endD)}`;
+
+  updateGlobal();
+}
+
+function togglePhase(id) {
+  const body = document.getElementById(`pb_${id}`);
+  const arrow = document.getElementById(`pa_${id}`);
+  body.classList.toggle('hidden');
+  arrow.classList.toggle('up');
+}
+
+function toggle(n, cb) {
+  if (cb.checked) checked[`d${n}`] = 1;
+  else delete checked[`d${n}`];
+  save(checked);
+
+  const item = document.getElementById(`di_${n}`);
+  item.classList.toggle('done', cb.checked);
+
+  updatePhase(n);
+  updateGlobal();
+}
+
+function updatePhase(dayN) {
+  let start = 1;
+  for (const phase of PHASES) {
+    const total = phase.tasks.length;
+    const end = start + total - 1;
+    if (dayN >= start && dayN <= end) {
+      let done = 0;
+      for (let i = start; i <= end; i++) if (checked[`d${i}`]) done++;
+      document.getElementById(`pmf_${phase.id}`).style.width = Math.round(done/total*100) + '%';
+      document.getElementById(`pc_${phase.id}`).textContent = `${done}/${total}`;
+      break;
+    }
+    start += total;
+  }
+}
+
+function updateGlobal() {
+  const done = Object.keys(checked).length;
+  const pct = Math.round(done / TOTAL * 100);
+
+  document.getElementById('pFill').style.width = pct + '%';
+  document.getElementById('pLabel').textContent = `${done} / ${TOTAL} 완료 (${pct}%)`;
+  document.getElementById('sDone').textContent = done;
+  document.getElementById('sRemain').textContent = TOTAL - done;
+
+  let streak = 0;
+  for (let i = 1; i <= TOTAL; i++) {
+    if (checked[`d${i}`]) streak++;
+    else break;
+  }
+  document.getElementById('sStreak').textContent = streak;
+
+  const end = dayDate(TOTAL); end.setHours(0,0,0,0);
+  const now = new Date(); now.setHours(0,0,0,0);
+  const diff = Math.ceil((end - now) / 86400000);
+  document.getElementById('sDday').textContent =
+    diff > 0 ? `D-${diff}` : diff === 0 ? 'D-Day!' : '완료!';
+}
+
+function resetAll() {
+  if (!confirm('모든 체크를 초기화할까요?')) return;
+  checked = {}; save(checked); buildAll();
+}
+
+buildAll();
+</script>
+</body>
+</html>

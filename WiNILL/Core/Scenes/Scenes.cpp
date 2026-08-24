@@ -29,6 +29,7 @@
 #include "RunIntermission.h"
 #include "BossDirector.h"
 #include "AugmentSlots.h"
+#include "../../Render/Juice.h"
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -39,8 +40,10 @@ constexpr float SCENE_BG_ALPHA = 0.0f;
 static int   g_RunConfigStep   = 0;   // 0=loadout, 1=trials/summary
 static float g_RunConfigEntryT = 0.0f;
 static float g_RunConfigFocusT[3] = { 0.0f, 0.0f, 0.0f };
+static float g_MainMenuEntryT  = 0.0f;
 static float g_SettingsEntryT  = 0.0f;
 static float g_CodexEntryT     = 0.0f;
+static float g_ShopEntryT      = 0.0f;
 static float s_RadarCur[6]     = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 static float s_StatGlitchT     = 1.0f;
 static bool  s_TrialsEnabled   = false;
@@ -80,13 +83,25 @@ static void ResetCodexUi() {
     g_CodexEntryT = 0.0f;
 }
 
-// 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 비네트)
-static void DrawMenuBackground(float sw, float sh, float delta) {
+static void ResetShopUi() {
+    g_ShopEntryT = 0.0f;
+}
+
+static void ResetMainMenuUi() {
+    g_MainMenuEntryT = 0.0f;
+}
+
+// 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 선택적 비네트)
+static void DrawMenuBackground(float sw, float sh, float delta, float darkenAmount = 1.0f) {
     float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
     BindMainShader();
+    if (darkenAmount < 0.0f) darkenAmount = 0.0f;
+    if (darkenAmount > 1.0f) darkenAmount = 1.0f;
 
-    // 딥 네이비 반투명 — 배경화면이 비치도록
-    drawRect(0, 0, sw, sh, 0.04f, 0.06f, 0.14f, 0.20f);
+    if (darkenAmount > 0.0f) {
+        // 딥 네이비 반투명 — 배경화면이 비치도록
+        drawRect(0, 0, sw, sh, 0.04f, 0.06f, 0.14f, 0.20f * darkenAmount);
+    }
 
     struct AP { float x, y, vx, vy, sz, tw; };
     static AP a_ps[55]; static bool ap_init = false;
@@ -113,9 +128,11 @@ static void DrawMenuBackground(float sw, float sh, float delta) {
     // 성운 보라 스캔라인
     for (float yy = 0.0f; yy < sh; yy += 4.0f)
         drawRect(0.0f, yy, sw, 1.0f, 0.35f, 0.20f, 0.85f, 0.018f);
-    // 상하 비네트
-    drawRect(0, 0, sw, 110.0f, 0.0f, 0.0f, 0.0f, 0.28f);
-    drawRect(0, sh - 90.0f, sw, 90.0f, 0.0f, 0.0f, 0.0f, 0.28f);
+    if (darkenAmount > 0.0f) {
+        // 상하 비네트
+        drawRect(0, 0, sw, 110.0f, 0.0f, 0.0f, 0.0f, 0.28f * darkenAmount);
+        drawRect(0, sh - 90.0f, sw, 90.0f, 0.0f, 0.0f, 0.0f, 0.28f * darkenAmount);
+    }
 }
 
 void Scene_MainMenu(const SceneCtx& c) {
@@ -130,41 +147,34 @@ void Scene_MainMenu(const SceneCtx& c) {
     bool booting = (g_BootAnim > 0.0f);
     float uiA = 1.0f - g_FadeAlpha; if (uiA < 0.0f) uiA = 0.0f;
 
-    DrawMenuBackground(sw, sh, delta);
+    float menuBgDarken = 1.0f;
+    if (g_FadeDir == 1 && g_FadeTarget == GameState::RUN_CONFIG)
+        menuBgDarken = 1.0f - Smoothstep(g_FadeAlpha);
+    DrawMenuBackground(sw, sh, delta, menuBgDarken);
 
-    // ── 인트로 애니메이션 상태 ─────────────────────────────────────
+    // Intro animation (original)
     static float s_introT = 0.0f;
-    constexpr float kTitleDur  = 0.55f;   // 타이틀 페이드인
-    constexpr float kBtnDur    = 0.45f;   // 버튼 1개 확장 시간
-    constexpr float kBtnStag   = 0.09f;   // 버튼 간 시작 지연
-    constexpr float kTextStart = kTitleDur + 4.0f * kBtnStag + kBtnDur;  // 텍스트 시작 (5개 기준)
+    constexpr float kTitleDur  = 0.55f;
+    constexpr float kBtnDur    = 0.45f;
+    constexpr float kBtnStag   = 0.09f;
+    constexpr float kTextStart = kTitleDur + 4.0f * kBtnStag + kBtnDur;
     constexpr float kTextDur   = 0.35f;
     constexpr float kIntroDone = kTextStart + kTextDur;
 
     bool introWasActive = (s_introT < kIntroDone);
     if (!booting && lmb && !g_LmbPrev && introWasActive)
-        s_introT = kIntroDone;   // 클릭 시 즉시 스킵
+        s_introT = kIntroDone;
     if (!booting && s_introT < kIntroDone)
         s_introT = std::min(s_introT + delta, kIntroDone);
-
     const bool introActive = (s_introT < kIntroDone);
 
     float titlePhA = std::min(s_introT / kTitleDur, 1.0f);
     const float titleA = Smoothstep(titlePhA) * uiA;
-
     float textPhA  = (s_introT > kTextStart)
         ? std::min((s_introT - kTextStart) / kTextDur, 1.0f) : 0.0f;
-    const float textA  = Smoothstep(textPhA) * uiA;
+    const float textA = Smoothstep(textPhA) * uiA;
 
-    // ── 상단 중앙 로고 ──
-    {
-        const wchar_t* TITLE = T(StrId::GAME_TITLE);
-        float titleSc = 1.05f;
-        g_TextXL.Draw(TITLE, CenterTextX(sw, g_TextXL, TITLE, titleSc),
-                      sh * 0.10f, titleSc, 0.72f, 0.82f, 1.0f, 0.96f * titleA);
-    }
-
-    // ── 중앙 버튼 목록 (Mindustry + Rain World 하이브리드) ──
+    // Button layout constants
     struct SBtnDef { const wchar_t* label[3]; float ir, ig, ib; };
     static const SBtnDef kBtns[] = {
         { { L"시작",      L"Start",    L"スタート"  }, 0.35f, 0.90f, 0.55f },
@@ -175,15 +185,13 @@ void Scene_MainMenu(const SceneCtx& c) {
     };
     static float kHoverT[5] = {};
     const int   kBtnCount = 5;
-    const float BW = 450.0f, BH = 70.0f, BGAP = 30.0f;
-    const float HOVER_DW = 30.0f;  // 호버 시 가로만 확장
+    const float BW = 520.0f, BH = 76.0f, BGAP = 16.0f;
     float totalBH = kBtnCount * BH + (kBtnCount - 1) * BGAP;
     float btnX0   = (sw - BW) * 0.5f;
-    // 로고 아래부터 시작 — 화면 남은 공간 중앙
     float logoBot = sh * 0.10f + g_TextXL.Height(T(StrId::GAME_TITLE), 1.05f) + 36.0f;
     float btnY0   = logoBot + ((sh - logoBot) - totalBH) * 0.5f;
 
-    // 가로 육각형 채우기 (fan 분해)
+    // hex helpers (original)
     auto hexFill = [&](float hx, float hy, float hW, float hH,
                         float r, float g, float b, float a) {
         float cut = hH * 0.38f;
@@ -195,7 +203,6 @@ void Scene_MainMenu(const SceneCtx& c) {
             BatchTri(cx, cy, vx[k], vy[k], vx[n], vy[n], r, g, b, a);
         }
     };
-    // 가로 육각형 테두리 (각 변을 얇은 쿼드로)
     auto hexBorder = [&](float hx, float hy, float hW, float hH,
                           float r, float g, float b, float a, float BL) {
         float cut = hH * 0.38f;
@@ -210,85 +217,127 @@ void Scene_MainMenu(const SceneCtx& c) {
             BatchTri(vx[k]-nx, vy[k]-ny, vx[n]+nx, vy[n]+ny, vx[k]+nx, vy[k]+ny, r,g,b,a);
         }
     };
-    // 육각형 내부 히트테스트
-    auto hexHit = [&](float px, float py, float hx, float hy, float hW, float hH) -> bool {
-        if (px < hx || px > hx+hW || py < hy || py > hy+hH) return false;
+    auto hexHit = [&](float hpx, float hpy, float hx, float hy, float hW, float hH) -> bool {
+        if (hpx < hx || hpx > hx+hW || hpy < hy || hpy > hy+hH) return false;
         float cut = hH * 0.38f;
-        float d = fabsf(py - (hy + hH * 0.5f)) / (hH * 0.5f);
-        return px >= hx + cut*d && px <= hx + hW - cut*d;
+        float d = fabsf(hpy - (hy + hH * 0.5f)) / (hH * 0.5f);
+        return hpx >= hx + cut*d && hpx <= hx + hW - cut*d;
+    };
+    auto rectHit = [&](float hpx, float hpy, float rx, float ry, float rw, float rh) -> bool {
+        return hpx >= rx && hpx <= rx + rw && hpy >= ry && hpy <= ry + rh;
+    };
+    auto drawRunBorder = [&](float x, float y, float w, float h,
+                             float r, float g, float b, float a, float thick) {
+        drawRect(x, y, w, thick, r, g, b, a);
+        drawRect(x, y + h - thick, w, thick, r, g, b, a);
+        drawRect(x, y, thick, h, r, g, b, a);
+        drawRect(x + w - thick, y, thick, h, r, g, b, a);
+    };
+    auto drawRunCorners = [&](float x, float y, float w, float h,
+                              float r, float g, float b, float a, float len, float thick) {
+        drawRect(x, y, len, thick, r, g, b, a);
+        drawRect(x, y, thick, len, r, g, b, a);
+        drawRect(x + w - len, y, len, thick, r, g, b, a);
+        drawRect(x + w - thick, y, thick, len, r, g, b, a);
+        drawRect(x, y + h - thick, len, thick, r, g, b, a);
+        drawRect(x, y + h - len, thick, len, r, g, b, a);
+        drawRect(x + w - len, y + h - thick, len, thick, r, g, b, a);
+        drawRect(x + w - thick, y + h - len, thick, len, r, g, b, a);
     };
 
+    // ── Constellation: 타이틀 좌우 다이아몬드 액센트 ──────────────────
+    {
+        const wchar_t* TITLE = T(StrId::GAME_TITLE);
+        float titleSc = 1.05f;
+        float titleX  = CenterTextX(sw, g_TextXL, TITLE, titleSc);
+        float titleY  = sh * 0.10f;
+        float midY    = titleY + g_TextXL.Height(TITLE, titleSc) * 0.5f;
+        float titleW  = g_TextXL.Width(TITLE, titleSc);
+        BindMainShader();
+        drawDiamond(titleX - 22.0f, midY, 7.0f, 0.42f, 0.30f, 0.92f, 0.88f * titleA);
+        drawDiamond(titleX - 22.0f, midY, 3.0f, 0.04f, 0.05f, 0.08f,          titleA);
+        drawRect(titleX - 12.0f, midY - 0.9f, 10.0f, 1.8f, 0.42f, 0.30f, 0.92f, 0.50f * titleA);
+        drawDiamond(titleX + titleW + 22.0f, midY, 7.0f, 0.42f, 0.30f, 0.92f, 0.88f * titleA);
+        drawDiamond(titleX + titleW + 22.0f, midY, 3.0f, 0.04f, 0.05f, 0.08f,          titleA);
+        drawRect(titleX + titleW + 2.0f, midY - 0.9f, 10.0f, 1.8f, 0.42f, 0.30f, 0.92f, 0.50f * titleA);
+        g_TextXL.Draw(TITLE, titleX, titleY, titleSc, 0.72f, 0.82f, 1.0f, 0.96f * titleA);
+    }
+
+    // ── Constellation: 버튼 그룹 외곽 프레임 ─────────────────────────
+    {
+        const float pad = 28.0f;
+        float fx = btnX0 - pad, fy = btnY0 - pad;
+        float fw = BW + pad * 2.0f, fh = totalBH + pad * 2.0f;
+        BindMainShader();
+        drawRect(fx + 8.0f, fy + 10.0f, fw, fh, 0.0f, 0.0f, 0.0f, 0.32f * titleA);
+        drawRect(fx, fy, fw, fh, 0.010f, 0.014f, 0.028f, 0.94f * titleA);
+        drawRunBorder(fx, fy, fw, fh, 0.42f, 0.62f, 0.88f, 0.34f * titleA, 1.4f);
+        drawRunCorners(fx, fy, fw, fh, 0.55f, 0.85f, 1.0f, 0.62f * titleA, 34.0f, 2.4f);
+        drawConstellFrame(fx, fy, fw, fh,
+                          0.45f, 0.70f, 1.0f, 0.20f * titleA,
+                          18.0f, 4.5f, 0.03f * titleA, titlePhA);
+    }
+
+    // ── OS module buttons ───────────────────────────────────────────────
     for (int i = 0; i < kBtnCount; i++) {
         float baseBx = btnX0, baseBy = btnY0 + i * (BH + BGAP);
-        // 인트로 중엔 호버 비활성 + 스킵 클릭도 버튼 동작 안 함
         bool hov = (!booting && !introActive && !introWasActive && g_FadeDir == 0
-                    && hexHit((float)mx, (float)my, baseBx, baseBy, BW, BH));
-
-        // 호버 애니메이션 t (0→1)
+                    && rectHit((float)mx, (float)my, baseBx, baseBy, BW, BH));
         float spd = delta * 8.0f; if (spd > 1.0f) spd = 1.0f;
         kHoverT[i] += ((hov ? 1.0f : 0.0f) - kHoverT[i]) * spd;
-        float t  = kHoverT[i];
-
-        // 버튼 확장 애니메이션: 중앙 사각형 → 좌우로 늘어나며 육각형
+        float t = kHoverT[i];
         float rawBtnPh = (s_introT - kTitleDur - (float)i * kBtnStag) / kBtnDur;
         rawBtnPh = std::max(0.0f, std::min(rawBtnPh, 1.0f));
         float btnExpand = Smoothstep(rawBtnPh);
         float animBW = std::max(2.0f, BW * btnExpand);
         float animBX = baseBx + (BW - animBW) * 0.5f;
-
-        float dw = HOVER_DW * t;
-        float bx = animBX - dw * 0.5f, by = baseBy;
-        float bW = animBW + dw,         bH = BH;
-
+        float bx = animBX, by = baseBy;
+        float bW = animBW, bH = BH;
+        float ar = kBtns[i].ir, ag = kBtns[i].ig, ab = kBtns[i].ib;
         BindMainShader();
-
-        // 호버 글로우 (본체 뒤, 3단 확산) — 바이올렛
+        drawRect(bx, by, bW, bH,
+                 0.018f + ar * (0.012f + 0.014f * t),
+                 0.024f + ag * (0.010f + 0.012f * t),
+                 0.040f + ab * (0.010f + 0.012f * t),
+                 (0.88f + 0.08f * t) * uiA);
         if (t > 0.01f) {
-            const float GR = 0.42f, GG = 0.22f, GB = 0.95f;
-            hexFill(bx-14, by-7,   bW+28, bH+14, GR, GG, GB, 0.035f * t * uiA);
-            hexFill(bx- 8, by-4,   bW+16, bH+ 8, GR, GG, GB, 0.065f * t * uiA);
-            hexFill(bx- 3, by-1.5f,bW+ 6, bH+ 3, GR, GG, GB, 0.10f  * t * uiA);
+            drawRect(bx + 5.0f, by + 5.0f, bW - 10.0f, bH - 10.0f,
+                     ar, ag, ab, 0.12f * t * uiA);
         }
-
-        // 육각형 본체 — 딥 네이비 틴트
-        hexFill(bx, by, bW, bH, 0.055f, 0.062f, 0.130f, uiA);
-
-        // 테두리: 다크 바이올렛 → 마젠타 lerp
-        float bcR = 0.32f + (0.92f - 0.32f) * t;
-        float bcG = 0.22f + (0.22f - 0.22f) * t;
-        float bcB = 0.62f + (0.78f - 0.62f) * t;
-        float bcA = 0.32f + (0.90f - 0.32f) * t;
-        hexBorder(bx, by, bW, bH, bcR, bcG, bcB, bcA * uiA, 3.0f);
-
-        // 라벨 중앙 정렬
-        float labelSc = 0.95f;
+        drawRunBorder(bx, by, bW, bH, ar, ag, ab, (0.28f + 0.32f * t) * uiA, 1.3f);
+        drawRunCorners(bx, by, bW, bH, ar, ag, ab, (0.52f + 0.34f * t) * uiA,
+                       28.0f, 2.2f);
+        drawDiamond(bx + 18.0f, by + bH * 0.5f, (4.0f + 1.2f * t), ar, ag, ab,
+                    (0.54f + 0.28f * t) * uiA);
         const wchar_t* lbl = kBtns[i].label[li2];
-        float labelX  = bx + (bW - g_TextL.Width(lbl, labelSc)) * 0.5f;
-        float labelY  = by + (bH - g_TextL.Height(lbl, labelSc)) * 0.5f;
+        float labelSc = 0.96f;
+        float labelX = bx + (bW - g_TextL.Width(lbl, labelSc)) * 0.5f;
+        float labelY = by + (bH - g_TextL.Height(lbl, labelSc)) * 0.5f;
         g_TextL.Draw(lbl, labelX, labelY, labelSc,
-                     1.0f, 1.0f, 1.0f, (hov ? 1.0f : 0.72f) * textA);
-
-        // 클릭
+                     1.0f, 1.0f, 1.0f, (hov ? 1.0f : 0.84f) * textA);
         if (hov && lmb && !g_LmbPrev) {
             switch (i) {
             case 0:
                 ResetRunConfigUi();
-                StartSceneFade(GameState::RUN_CONFIG);
+                g_FadeAlpha = 0.0f;
+                g_FadeDir = 0;
+                g_GameManager.currentState = GameState::RUN_CONFIG;
                 break;
-            case 1: g_GameManager.currentState = GameState::SHOP;    break;
+            case 1: ResetShopUi();  g_GameManager.currentState = GameState::SHOP;  break;
             case 2: ResetCodexUi(); g_GameManager.currentState = GameState::CODEX; break;
             case 3:
                 g_SettingsReturnTo = GameState::MAIN_MENU;
                 ResetSettingsUi();
                 g_GameManager.currentState = GameState::SETTINGS;
                 break;
-            case 4: glfwSetWindowShouldClose(window, GLFW_TRUE);     break;
+            case 4: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
             }
         }
     }
 
-    // ── 실행(부팅) 스플래시 — 앱 아이콘 클릭 시 창이 열리며 로딩 로그 ──
-                if (g_BootAnim > 0.0f) {
+
+
+                        if (g_BootAnim > 0.0f) {
                     g_BootAnim -= delta;
                     float prog = 1.0f - g_BootAnim / BOOT_DUR;        // 0→1
                     if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
@@ -308,12 +357,7 @@ void Scene_MainMenu(const SceneCtx& c) {
                         drawRect(0, sweepY - 40.0f, sw, 40.0f, ar, ag, ab, 0.05f * ease);
                     }
                     drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
-                    drawRect(wx, wy, cw, 28.0f, ar*0.55f, ag*0.55f, ab*0.6f, 1.0f); // 타이틀바
-                    drawRect(wx, wy+28.0f, cw, 2.0f, ar, ag, ab, 0.9f);      // 강조 라인
-                    drawRect(wx+cw-22, wy+8, 12, 12, 0.9f, 0.25f, 0.25f, 0.95f); // [X]
                     if (ease > 0.9f) {
-                        g_TextS.Draw(g_BootName, wx + 12.0f, wy + 6.0f, 0.6f,
-                                     0.95f, 0.97f, 1.0f, 1.0f);
                         // 부팅 로그 — 진행도에 따라 한 줄씩 나타남
                         static const wchar_t* LOG[6] = {
                             L"> mounting modules ...",
@@ -325,7 +369,7 @@ void Scene_MainMenu(const SceneCtx& c) {
                         int shown = (int)(prog * 6.5f); if (shown > 6) shown = 6;
                         for (int i = 0; i < shown; i++) {
                             bool last = (i == 5);
-                            g_TextS.Draw(LOG[i], wx + 22.0f, wy + 44.0f + i * 24.0f, 0.6f,
+                            g_TextS.Draw(LOG[i], wx + 22.0f, wy + 14.0f + i * 24.0f, 0.6f,
                                          last ? ag : 0.65f, last ? 1.0f : 0.78f,
                                          last ? ag : 0.7f, 0.95f);
                         }
@@ -350,149 +394,533 @@ void Scene_Shop(const SceneCtx& c) {
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
     const float delta = c.delta;
-    GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-                const float WW = std::min(sw * 0.88f, 840.0f);
-                const float WH = std::min(sh * 0.88f, 920.0f);
-                float wx, wy;
-                DrawMenuBackground(sw, sh, delta);
-                SceneAppWindow(sw, sh, WW, WH, L"shop.exe", 1.0f, 0.80f, 0.20f, wx, wy, false, 0.0f);
-                if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
+    // ── State ──────────────────────────────────────────────────────────
+    static constexpr int SHOP_TAB_COUNT = 4;
+    static int   s_tab        = 0;
+    static float s_tabHov[SHOP_TAB_COUNT] = {};
+    static int   s_selKey     = -1;
+    static float s_scroll     = 0.0f;
+    static float s_detailT    = 0.0f;
+    static int   s_prevKey    = -2;
+    static int   s_prevTab    = -1;
 
-                const wchar_t* TIT = T(StrId::BTN_SHOP);
-                float titSc = 1.3f;
-                float titleY = wy + 48.0f;
-                float tw0 = g_TextL.Width(TIT, titSc);
-                g_TextL.Draw(TIT, wx + (WW - tw0) * 0.5f, titleY, titSc, 1, 1, 1, 1);
-                wchar_t cbuf[48]; swprintf_s(cbuf, L"COIN  %lld", g_Coins);
-                float coinSc = 1.0f;
-                float coinY = titleY + g_TextL.Height(TIT, titSc) + 18.0f;
-                float cw0 = g_TextL.Width(cbuf, coinSc);
-                g_TextL.Draw(cbuf, wx + (WW - cw0) * 0.5f, coinY, coinSc, 1.0f, 0.9f, 0.3f, 1.0f);
+    struct SLItem {
+        bool           isGroup;
+        int            key;
+        const wchar_t* label;
+        float          r, g, b;
+    };
+    static SLItem s_items[300];
+    static int    s_itemCount = 0;
 
-                const float RW = 640.0f, RH = 56.0f, RG = 10.0f;
-                float rx = wx + (WW - RW) * 0.5f;
-                float ry0 = coinY + g_TextL.Height(cbuf, coinSc) + 28.0f;
-                for (int i = 0; i < META_COUNT; i++) {
-                    float ry = ry0 + i * (RH + RG);
+    const float now = (float)glfwGetTime();
+    DrawMenuBackground(sw, sh, delta, false);
+
+    float dt = delta; if (dt > 0.05f) dt = 0.05f;
+    g_ShopEntryT += dt;
+    if (g_ShopEntryT > 1.0f) g_ShopEntryT = 1.0f;
+
+    const float wake      = Smoothstep(std::min(1.0f, g_ShopEntryT / 0.50f));
+    const float rightWake = Smoothstep(std::min(1.0f,
+        std::max(0.0f, g_ShopEntryT - 0.10f) / 0.44f));
+
+    int li = LangIndex(); if (li < 0 || li >= 3) li = 0;
+    const int nli = (li == 0) ? 0 : 1;
+    if (s_tab < 0 || s_tab >= SHOP_TAB_COUNT) { s_tab = 0; s_prevTab = -1; }
+
+    // ── Layout ─────────────────────────────────────────────────────────
+    const float TARGET_W = 1640.0f, TARGET_H = 910.0f;
+    float uiS = std::max(0.72f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
+    if (uiS > 1.30f) uiS = 1.30f;
+    const float panelW    = TARGET_W * uiS;
+    const float panelH    = TARGET_H * uiS;
+    const float panelX    = (sw - panelW) * 0.5f;
+    const float panelY    = (sh - panelH) * 0.5f;
+    const float headerH   = 86.0f * uiS;
+    const float footerH   = 64.0f * uiS;
+    const float tabH      = 44.0f * uiS;
+    const float leftW     = panelW * 0.27f;
+    const float colGap    = 18.0f * uiS;
+    const float leftX     = panelX;
+    const float rightX    = leftX + leftW + colGap;
+    const float rightW    = panelW - leftW - colGap;
+    const float tabY      = panelY + headerH;
+    const float listAreaY = tabY + tabH + 4.0f * uiS;
+    const float listAreaH = panelH - headerH - tabH - footerH - 4.0f * uiS;
+    const float footY     = panelY + panelH - footerH + 14.0f * uiS;
+
+    static constexpr int KEY_META  = 0;
+    static constexpr int KEY_THEME = 100;
+    static constexpr int KEY_AUG   = 1000;
+
+    auto augWeapCat = [](AugType t) -> int {
+        switch (t) {
+        case AugType::RIFLE_STABILITY:
+            return 0;
+        case AugType::SNIPER:
+        case AugType::SMG_COMPRESSOR:
+        case AugType::SNIPER_AMPLIFIER:
+        case AugType::SKILL_FOCUS:
+        case AugType::REVOLVER_OVERLOAD:
+        case AugType::REVOLVER_SILVER:
+            return 0;
+        case AugType::STATIC_FIELD:
+        case AugType::STATIC_FIELD_2:
+        case AugType::EMP_PULSE:
+        case AugType::PATCH_MINE:
+        case AugType::TRAP_EXE:
+        case AugType::POPUP_ALLY:
+        case AugType::GLUE_SYNC:
+            return 1;
+        default:
+            return -1;
+        }
+    };
+
+    if (s_prevTab != s_tab) {
+        s_prevTab   = s_tab;
+        s_itemCount = 0;
+        s_scroll    = 0.0f;
+
+        auto addGroup = [&](const wchar_t* lbl, float r, float g2, float b) {
+            if (s_itemCount < 300) s_items[s_itemCount++] = { true, -1, lbl, r, g2, b };
+        };
+        auto addItem = [&](int key, const wchar_t* lbl, float r, float g2, float b) {
+            if (s_itemCount < 300) s_items[s_itemCount++] = { false, key, lbl, r, g2, b };
+        };
+
+        if (s_tab == 0 || s_tab == 1) {
+            addGroup(nli == 0 ? L"\xCF54\xC5B4 \xD574\xAE08" : L"CORE UNLOCKS", 0.38f, 0.82f, 1.00f);
+            for (int i = 0; i < META_COUNT; i++)
+                addItem(KEY_META + i, MetaName(i), 0.38f, 0.82f, 1.00f);
+        }
+        if (s_tab == 0 || s_tab == 2) {
+            addGroup(nli == 0 ? L"\xC18C\xCD1D \xC2DC\xC2A4\xD15C" : L"RIFLE SYSTEMS", 0.72f, 0.92f, 0.42f);
+            for (int i = 0; i < AUG_TOTAL; i++)
+                if (!AugRemoved(ALL_AUGS[i].type) && augWeapCat(ALL_AUGS[i].type) == 0)
+                    addItem(KEY_AUG + i, ALL_AUGS[i].locName[li], 0.72f, 0.92f, 0.42f);
+        }
+        if (s_tab == 0 || s_tab == 3) {
+            addGroup(nli == 0 ? L"\xC704\xC131 \xBC30\xC5F4" : L"FIELD ARRAY", 0.62f, 0.48f, 1.00f);
+            for (int i = 0; i < AUG_TOTAL; i++)
+                if (!AugRemoved(ALL_AUGS[i].type) && augWeapCat(ALL_AUGS[i].type) == 1)
+                    addItem(KEY_AUG + i, ALL_AUGS[i].locName[li], 0.62f, 0.48f, 1.00f);
+        }
+
+        s_selKey = -1;
+        for (int i = 0; i < s_itemCount; i++)
+            if (!s_items[i].isGroup) { s_selKey = s_items[i].key; break; }
+    }
+
+    if (s_selKey != s_prevKey) { s_prevKey = s_selKey; s_detailT = 0.0f; }
+    s_detailT = UiApproach(s_detailT, 1.0f, dt, 6.0f);
+
+    // ── Header ─────────────────────────────────────────────────────────
+    float hSlide = (1.0f - wake) * 30.0f * uiS;
+    BindMainShader();
+    g_TextL.Draw(L"ARMORY", leftX, panelY + 8.0f * uiS - hSlide,
+                 0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
+
+    wchar_t coinBuf[64]; swprintf_s(coinBuf, L"CREDITS :: %06lld", g_Coins);
+    const float coinSc = 0.50f * uiS;
+    const float coinH  = 34.0f * uiS;
+    const float coinW  = g_TextS.Width(coinBuf, coinSc) + 48.0f * uiS;
+    const float coinX  = panelX + panelW - coinW - 8.0f * uiS;
+    const float coinY  = panelY + 14.0f * uiS - hSlide;
+    drawRect(coinX, coinY, coinW, coinH, 0.030f, 0.034f, 0.050f, 0.62f * wake);
+    BatchFlush();
+    SetGlowFx(true);
+    drawConstellFrame(coinX, coinY, coinW, coinH, 1.0f, 0.84f, 0.22f,
+                      0.58f * wake, 8.0f * uiS, 2.4f * uiS, 0.08f * wake);
+    drawDiamond(coinX + 17.0f * uiS, coinY + coinH * 0.5f,
+                4.0f * uiS, 1.0f, 0.84f, 0.22f, 0.86f * wake);
+    BatchFlush();
+    SetGlowFx(false);
+    g_TextS.Draw(coinBuf, coinX + 30.0f * uiS,
+                 coinY + (coinH - g_TextS.Height(coinBuf, coinSc)) * 0.5f,
+                 coinSc, 1.0f, 0.88f, 0.34f, 0.94f * wake);
+    BindMainShader();
+    drawRect(leftX, panelY + headerH - 2.0f * uiS, panelW, 1.5f * uiS,
+             g_AccentR, g_AccentG, g_AccentB, 0.35f * wake);
+
+    // ── Tabs ────────────────────────────────────────────────────────────
+    static const wchar_t* kTabLbl[SHOP_TAB_COUNT][2] = {
+        { L"\xC804\xCCB4", L"ALL"    },
+        { L"\xD574\xAE08", L"UNLOCK" },
+        { L"\xC18C\xCD1D", L"RIFLE"  },
+        { L"\xC704\xC131", L"FIELD"  },
+    };
+    static const float kTR[SHOP_TAB_COUNT] = { 0.70f, 0.38f, 0.72f, 0.62f };
+    static const float kTG[SHOP_TAB_COUNT] = { 0.70f, 0.82f, 0.92f, 0.48f };
+    static const float kTB[SHOP_TAB_COUNT] = { 0.70f, 1.00f, 0.42f, 1.00f };
+
+    float tW = leftW / (float)SHOP_TAB_COUNT;
+    for (int i = 0; i < SHOP_TAB_COUNT; i++) {
+        float tx = leftX + i * tW;
+        bool hov = (mx >= tx && mx < tx + tW && my >= tabY && my < tabY + tabH);
+        s_tabHov[i] = UiApproach(s_tabHov[i], hov ? 1.0f : 0.0f, dt, 8.0f);
+        bool sel = (s_tab == i);
+        if (hov && lmb && !g_LmbPrev) { s_tab = i; s_prevTab = -1; }
+        BindMainShader();
+        drawRect(tx, tabY, tW, tabH, 0.030f, 0.036f, 0.055f, 0.98f * wake);
+        drawRect(tx, tabY, tW, tabH, kTR[i], kTG[i], kTB[i],
+                 (sel ? 0.36f : 0.12f + s_tabHov[i] * 0.14f) * wake);
+        if (sel)
+            drawRect(tx, tabY + tabH - 2.0f * uiS, tW, 2.0f * uiS,
+                     kTR[i], kTG[i], kTB[i], 0.90f * wake);
+        const wchar_t* tlbl = kTabLbl[i][nli == 0 ? 0 : 1];
+        float tlblW = g_TextS.Width(tlbl, 0.38f * uiS);
+        float tlblY = tabY + (tabH - g_TextS.Height(tlbl, 0.38f * uiS)) * 0.5f;
+        g_TextS.Draw(tlbl, tx + (tW - tlblW) * 0.5f, tlblY, 0.38f * uiS,
+                     kTR[i], kTG[i], kTB[i],
+                     (sel ? 1.0f : 0.45f + s_tabHov[i] * 0.35f) * wake);
+    }
+
+    // ── Left panel (list) ───────────────────────────────────────────────
+    BindMainShader();
+    drawRect(leftX, listAreaY, leftW, listAreaH, 0.006f, 0.009f, 0.018f, 0.99f * wake);
+    drawRect(leftX, listAreaY, leftW, listAreaH, 0.052f, 0.062f, 0.104f, 0.96f * wake);
+    drawConstellFrame(leftX, listAreaY, leftW, listAreaH,
+                      g_AccentR, g_AccentG, g_AccentB, 0.50f * wake,
+                      20.0f * uiS, 4.0f * uiS, 0.10f * wake, 1.0f);
+
+    const float itemH  = 40.0f * uiS;
+    const float grpH   = 30.0f * uiS;
+    const float listX  = leftX + 6.0f * uiS;
+    const float listW2 = leftW - 12.0f * uiS;
+
+    float totalH = 0.0f;
+    for (int i = 0; i < s_itemCount; i++)
+        totalH += s_items[i].isGroup ? grpH : itemH;
+    float maxScroll = std::max(0.0f, totalH - listAreaH + 16.0f * uiS);
+
+    bool overList = (mx >= leftX && mx < leftX + leftW
+                  && my >= listAreaY && my < listAreaY + listAreaH);
+    if (overList && g_ScrollAccum != 0.0f)
+        s_scroll -= g_ScrollAccum * 36.0f * uiS;
+    g_ScrollAccum = 0.0f;
+    if (s_scroll < 0.0f) s_scroll = 0.0f;
+    if (s_scroll > maxScroll) s_scroll = maxScroll;
+
+    BatchFlush();
+    glEnable(GL_SCISSOR_TEST);
+    {
+        int scX = (int)leftX, scY = (int)(sh - (listAreaY + listAreaH));
+        int scW = (int)leftW, scH = (int)listAreaH;
+        if (scX < 0) scX = 0; if (scY < 0) scY = 0;
+        glScissor(scX, scY, scW, scH);
+    }
+
+    float curY = listAreaY + 6.0f * uiS - s_scroll;
+    for (int i = 0; i < s_itemCount; i++) {
+        const SLItem& itm = s_items[i];
+        float rh = itm.isGroup ? grpH : itemH;
+        float ry = curY; curY += rh;
+        if (ry + rh < listAreaY || ry > listAreaY + listAreaH) continue;
+
+        if (itm.isGroup) {
+            BindMainShader();
+            float mid = ry + grpH * 0.5f;
+            drawRect(listX, ry + 2.0f*uiS, listW2, grpH - 4.0f*uiS,
+                     0.020f + itm.r * 0.030f,
+                     0.024f + itm.g * 0.024f,
+                     0.036f + itm.b * 0.020f, 0.84f * wake);
+            drawRect(listX + 11.0f*uiS, mid - 0.75f*uiS, listW2 - 17.0f*uiS, 1.5f*uiS,
+                     itm.r, itm.g, itm.b, 0.32f * wake);
+            drawDiamond(listX + 5.5f*uiS, mid, 5.5f*uiS, itm.r, itm.g, itm.b, 0.80f * wake);
+            drawDiamond(listX + 5.5f*uiS, mid, 2.8f*uiS, 0.04f, 0.05f, 0.08f, wake);
+            drawDiamond(listX + listW2 - 4.0f*uiS, mid, 3.5f*uiS, itm.r, itm.g, itm.b, 0.52f * wake);
+            g_TextS.Draw(itm.label, listX + 17.0f*uiS, ry + 4.0f*uiS,
+                         0.42f*uiS, itm.r, itm.g, itm.b, 0.96f * wake);
+        } else {
+            bool isSel = (s_selKey == itm.key);
+            bool hov2  = (mx >= leftX && mx < leftX + leftW && my >= ry && my < ry + itemH);
+            if (hov2 && lmb && !g_LmbPrev) s_selKey = itm.key;
+            BindMainShader();
+            drawRect(listX, ry, listW2, itemH,
+                     0.016f + itm.r * (isSel ? 0.090f : 0.030f),
+                     0.020f + itm.g * (isSel ? 0.076f : 0.026f),
+                     0.032f + itm.b * (isSel ? 0.064f : 0.024f),
+                     isSel ? 0.98f * wake : (hov2 ? 0.92f : 0.78f) * wake);
+            if (isSel)
+                drawRect(listX, ry, listW2, itemH, itm.r, itm.g, itm.b, 0.32f * wake);
+            else if (hov2)
+                drawRect(listX, ry, listW2, itemH, itm.r, itm.g, itm.b, 0.16f * wake);
+            float ndy = ry + itemH * 0.5f;
+            float ndx = listX + 7.0f*uiS;
+            drawDiamond(ndx, ndy, (isSel ? 3.5f : 2.2f)*uiS, itm.r, itm.g, itm.b,
+                        (isSel ? 0.90f : hov2 ? 0.58f : 0.28f) * wake);
+            if (isSel || hov2)
+                drawRect(ndx + (isSel ? 3.5f : 2.2f)*uiS, ndy - 0.5f*uiS,
+                         5.0f*uiS, 1.0f*uiS,
+                         itm.r, itm.g, itm.b, (isSel ? 0.70f : 0.35f) * wake);
+            float tsc = 0.48f * uiS;
+            g_TextS.Draw(itm.label, listX + 18.0f*uiS,
+                         ry + (itemH - g_TextS.Height(itm.label, tsc)) * 0.5f,
+                         tsc, itm.r, itm.g, itm.b,
+                         (isSel ? 1.0f : hov2 ? 0.88f : 0.72f) * wake);
+        }
+    }
+
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+
+    // ── Right panel ─────────────────────────────────────────────────────
+    BindMainShader();
+    drawRect(rightX, listAreaY, rightW, listAreaH, 0.050f, 0.060f, 0.100f, 0.90f * rightWake);
+    drawConstellFrame(rightX, listAreaY, rightW, listAreaH,
+                      g_AccentR, g_AccentG, g_AccentB, 0.50f * rightWake,
+                      28.0f * uiS, 5.5f * uiS, 0.12f * rightWake, 1.0f);
+
+    const float rPad = 28.0f * uiS;
+    const float rInX = rightX + rPad;
+    const float rInY = listAreaY + rPad;
+    const float rInH = listAreaH - rPad * 2.0f;
+
+    if (s_selKey >= 0 && rightWake > 0.02f) {
+        float da = s_detailT * rightWake;
+
+        if (s_selKey < KEY_THEME) {
+            // ── META upgrade ──────────────────────────────────────────────
+            int mi = s_selKey - KEY_META;
+            if (mi >= 0 && mi < META_COUNT) {
+                const MetaDef& md = META_DEFS[mi];
+                int curLv = g_MetaLv[mi];
+                long long cost = MetaNextCost(mi);
+
+                BindMainShader();
+                g_TextS.Draw(L"UNLOCK", rInX, rInY, 0.42f*uiS,
+                             0.38f, 0.82f, 1.00f, 0.80f * da);
+                g_TextL.Draw(MetaName(mi), rInX, rInY + 22.0f*uiS,
+                             0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.95f * da);
+
+                float barY = rInY + 82.0f*uiS;
+                float barW = rightW * 0.42f;
+                float prog = (md.maxLv > 0) ? (float)curLv / (float)md.maxLv : 1.0f;
+                wchar_t lvBuf[32]; swprintf_s(lvBuf, L"Lv %d / %d", curLv, md.maxLv);
+                g_TextS.Draw(lvBuf, rInX, barY - 22.0f*uiS, 0.43f*uiS,
+                             0.70f, 0.80f, 0.95f, 0.80f * da);
+                BindMainShader();
+                drawRect(rInX, barY, barW, 8.0f*uiS, 0.10f, 0.12f, 0.18f, 0.90f * da);
+                drawRect(rInX, barY, barW * prog, 8.0f*uiS, 0.38f, 0.82f, 1.00f, da);
+
+                float btnX = rInX, btnY = barY + 20.0f*uiS;
+                float btnW = 200.0f*uiS, btnH = 42.0f*uiS;
+
+                if (curLv >= md.maxLv) {
+                    drawRect(btnX, btnY, btnW, btnH, 0.10f, 0.20f, 0.12f, 0.80f * da);
+                    float mw = g_TextS.Width(L"MAX", 0.48f*uiS);
+                    g_TextS.Draw(L"MAX", btnX + (btnW - mw)*0.5f, btnY + 10.0f*uiS,
+                                 0.48f*uiS, 0.40f, 0.90f, 0.45f, da);
+                } else {
+                    bool canBuy = (g_Coins >= cost);
+                    bool bHov   = (mx >= btnX && mx < btnX+btnW && my >= btnY && my < btnY+btnH);
+                    bool bClick = bHov && lmb && !g_LmbPrev;
                     BindMainShader();
-                    drawRect(rx, ry, RW, RH, 0.07f, 0.07f, 0.11f, 0.9f);
-                    wchar_t nm[96];
-                    swprintf_s(nm, L"%ls   Lv %d/%d", MetaName(i), g_MetaLv[i], META_DEFS[i].maxLv);
-                    g_TextS.Draw(nm, rx + 16.0f, ry + 16.0f, 0.95f, 0.9f, 0.95f, 1.0f, 1.0f);
-                    long long cost = MetaNextCost(i);
-                    float btX = rx + RW - 170.0f;
-                    if (cost < 0) {
-                        g_TextS.Draw(L"MAX", btX + 50.0f, ry + 16.0f, 0.9f, 0.6f, 1.0f, 0.6f, 1.0f);
-                    } else {
-                        wchar_t bb[32]; swprintf_s(bb, L"%lld", cost);
-                        bool can = (g_Coins >= cost);
-                        if (can) {
-                            if (UIButton(btX, ry + 6.0f, 154.0f, RH - 12.0f, bb,
-                                         mx, my, lmb, g_LmbPrev, false)) {
-                                g_Coins -= cost;
-                                g_MetaLv[i]++;
-                                SaveGame();
-                            }
-                        } else {
-                            BindMainShader();
-                            drawRect(btX, ry + 6.0f, 154.0f, RH - 12.0f, 0.18f, 0.06f, 0.06f, 0.9f);
-                            float tw = g_TextS.Width(bb, 0.9f);
-                            g_TextS.Draw(bb, btX + (154.0f - tw) * 0.5f, ry + 18.0f, 0.9f,
-                                         0.95f, 0.4f, 0.4f, 1.0f);
-                        }
+                    drawRect(btnX, btnY, btnW, btnH,
+                             canBuy ? (bHov ? 0.18f : 0.12f) : 0.12f,
+                             canBuy ? (bHov ? 0.28f : 0.18f) : 0.10f,
+                             canBuy ? (bHov ? 0.48f : 0.34f) : 0.10f,
+                             0.90f * da);
+                    drawConstellFrame(btnX, btnY, btnW, btnH,
+                                      0.38f, 0.82f, 1.00f,
+                                      (canBuy ? (bHov ? 0.90f : 0.50f) : 0.22f) * da,
+                                      10.0f*uiS, 2.5f*uiS);
+                    wchar_t btnLbl[64]; swprintf_s(btnLbl, L"UPGRADE  %lld", cost);
+                    float bw2 = g_TextS.Width(btnLbl, 0.48f*uiS);
+                    g_TextS.Draw(btnLbl, btnX + (btnW - bw2)*0.5f, btnY + 11.0f*uiS,
+                                 0.48f*uiS,
+                                 canBuy ? 0.70f : 0.38f,
+                                 canBuy ? 0.90f : 0.38f,
+                                 canBuy ? 1.00f : 0.42f, da);
+                    if (bClick && canBuy) {
+                        g_Coins -= cost; g_MetaLv[mi]++; SaveGame();
                     }
                 }
 
-                // ── 액센트 테마 (네온 색) 코스메틱 — 스와치 행 ──
-                float themeBottom;
+                wchar_t hintBuf[80];
+                swprintf_s(hintBuf, L"Base cost: %lld  x1.6 per level", md.baseCost);
+                g_TextS.Draw(hintBuf, rInX, btnY + btnH + 12.0f*uiS,
+                             0.38f*uiS, 0.50f, 0.60f, 0.74f, 0.62f * da);
+                // ── 티어 시각화 (diamond 5칸) ──
                 {
-                    int li4 = LangIndex();
-                    const wchar_t* TTIT[3] = { L"테마  (창 네온 색)", L"Theme  (window neon)", L"テーマ  (窓ネオン)" };
-                    float ty0 = ry0 + META_COUNT * (RH + RG) + 16.0f;
-                    BindMainShader();
-                    g_TextS.Draw(TTIT[li4], rx, ty0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
-                    float swY = ty0 + 30.0f;
-                    float gap = 8.0f;
-                    float swW = (RW - gap * (ACCENT_COUNT - 1)) / (float)ACCENT_COUNT;
-                    float swH = 64.0f;
-                    for (int i = 0; i < ACCENT_COUNT; i++) {
-                        const AccentTheme& th = ACCENT_THEMES[i];
-                        float sx = rx + i * (swW + gap);
-                        bool owned = ThemeOwned(i);
-                        bool sel   = (g_ThemeSel == i);
-                        bool hover = (mx >= sx && mx <= sx + swW && my >= swY && my <= swY + swH);
-                        bool clicked = hover && lmb && !g_LmbPrev;
-                        BindMainShader();
-                        // 색 스와치 (미보유는 어둡게)
-                        float dim = owned ? 1.0f : 0.30f;
-                        drawRect(sx, swY, swW, swH, th.r * dim, th.g * dim, th.b * dim, 1.0f);
-                        // 테두리 — 선택=흰색 두껍게 / 호버=옅게
-                        float br = sel ? 1.0f : (hover ? 0.85f : 0.35f);
-                        float bt = sel ? 3.0f : 1.5f;
-                        drawRect(sx, swY, swW, bt, br, br, br, 1.0f);
-                        drawRect(sx, swY + swH - bt, swW, bt, br, br, br, 1.0f);
-                        drawRect(sx, swY, bt, swH, br, br, br, 1.0f);
-                        drawRect(sx + swW - bt, swY, bt, swH, br, br, br, 1.0f);
-                        // 라벨 / 비용
-                        if (owned) {
-                            if (sel) {
-                                float ew = g_TextS.Width(L"*", 0.7f);
-                                g_TextS.Draw(L"*", sx + (swW - ew) * 0.5f, swY + swH * 0.5f - 10.0f,
-                                             0.7f, 0.05f, 0.05f, 0.08f, 1.0f);
-                            }
-                        } else {
-                            wchar_t cb[24]; swprintf_s(cb, L"%lld", th.cost);
-                            float cwd = g_TextS.Width(cb, 0.62f);
-                            g_TextS.Draw(cb, sx + (swW - cwd) * 0.5f, swY + swH * 0.5f - 9.0f,
-                                         0.62f, 1.0f, 0.95f, 0.5f, 1.0f);
-                        }
-                        // 이름 (아래)
-                        float nwd = g_TextS.Width(AccentName(i), 0.55f);
-                        g_TextS.Draw(AccentName(i), sx + (swW - nwd) * 0.5f, swY + swH + 3.0f,
-                                     0.55f, 0.85f, 0.9f, 0.95f, owned ? 1.0f : 0.6f);
-                        // 클릭 처리 — 보유면 장착, 미보유면 코인 충분 시 구매+장착
-                        if (clicked) {
-                            if (owned) {
-                                g_ThemeSel = i; ApplyAccentTheme(); SaveGame();
-                            } else if (g_Coins >= th.cost) {
-                                g_Coins -= th.cost;
-                                g_ThemeOwned |= (1 << i);
-                                g_ThemeSel = i; ApplyAccentTheme(); SaveGame();
-                            }
-                        }
+                    float tierY = btnY + btnH + 36.0f*uiS;
+                    drawRect(rInX, tierY - 6.0f*uiS, rightW - rPad*2.0f, 1.0f*uiS,
+                             0.38f, 0.82f, 1.00f, 0.16f * da);
+                    for (int di = 0; di < md.maxLv && di < 8; ++di) {
+                        bool filled = (di < curLv);
+                        float dA = filled ? 0.80f : 0.18f;
+                        drawDiamond(rInX + di * 20.0f*uiS + 8.0f*uiS, tierY + 8.0f*uiS,
+                                    (filled ? 7.0f : 5.5f)*uiS, 0.38f, 0.82f, 1.00f, dA * da);
                     }
-                    themeBottom = swY + swH + 22.0f;
+                    // next tier highlight
+                    if (curLv < md.maxLv) {
+                        float nhX = rInX + curLv * 20.0f*uiS + 8.0f*uiS;
+                        float nhPulse = 0.6f + 0.4f * sinf(now * 3.0f);
+                        drawDiamond(nhX, tierY + 8.0f*uiS, 7.0f*uiS,
+                                    0.38f, 0.82f, 1.00f, 0.45f * nhPulse * da);
+                    }
+                }
+            }
+
+        } else if (s_selKey < KEY_AUG) {
+            // ── THEME cosmetic ────────────────────────────────────────────
+            int ti = s_selKey - KEY_THEME;
+            if (ti >= 0 && ti < ACCENT_COUNT) {
+                const AccentTheme& th = ACCENT_THEMES[ti];
+                bool owned = ThemeOwned(ti);
+                bool isCur = (g_ThemeSel == ti);
+
+                BindMainShader();
+                g_TextS.Draw(L"COSMETIC", rInX, rInY, 0.34f*uiS,
+                             0.92f, 0.72f, 0.22f, 0.80f * da);
+                g_TextL.Draw(AccentName(ti), rInX, rInY + 22.0f*uiS,
+                             0.78f*uiS, th.r, th.g, th.b, 0.95f * da);
+
+                float swY = rInY + 82.0f*uiS;
+                float swW = 130.0f*uiS, swH = 64.0f*uiS;
+                BindMainShader();
+                drawRect(rInX, swY, swW, swH,
+                         th.r * (owned ? 1.0f : 0.28f),
+                         th.g * (owned ? 1.0f : 0.28f),
+                         th.b * (owned ? 1.0f : 0.28f), da);
+                drawConstellFrame(rInX, swY, swW, swH, th.r, th.g, th.b,
+                                  0.65f * da, 12.0f*uiS, 3.0f*uiS);
+
+                float btnX = rInX, btnY = swY + swH + 16.0f*uiS;
+                float btnW = 200.0f*uiS, btnH = 42.0f*uiS;
+
+                if (isCur && owned) {
+                    drawRect(btnX, btnY, btnW, btnH, 0.10f, 0.20f, 0.12f, 0.80f * da);
+                    drawConstellFrame(btnX, btnY, btnW, btnH,
+                                      th.r, th.g, th.b, 0.55f * da, 10.0f*uiS, 2.5f*uiS);
+                    float ew = g_TextS.Width(L"EQUIPPED", 0.42f*uiS);
+                    g_TextS.Draw(L"EQUIPPED", btnX + (btnW - ew)*0.5f, btnY + 11.0f*uiS,
+                                 0.42f*uiS, th.r, th.g, th.b, da);
+                } else if (owned) {
+                    bool bHov   = (mx >= btnX && mx < btnX+btnW && my >= btnY && my < btnY+btnH);
+                    bool bClick = bHov && lmb && !g_LmbPrev;
+                    BindMainShader();
+                    drawRect(btnX, btnY, btnW, btnH,
+                             bHov ? 0.14f : 0.08f, bHov ? 0.20f : 0.12f,
+                             bHov ? 0.16f : 0.10f, 0.90f * da);
+                    drawConstellFrame(btnX, btnY, btnW, btnH, th.r, th.g, th.b,
+                                      (bHov ? 0.85f : 0.48f) * da, 10.0f*uiS, 2.5f*uiS);
+                    float ew = g_TextS.Width(L"EQUIP", 0.42f*uiS);
+                    g_TextS.Draw(L"EQUIP", btnX + (btnW - ew)*0.5f, btnY + 11.0f*uiS,
+                                 0.42f*uiS, th.r, th.g, th.b, da);
+                    if (bClick) { g_ThemeSel = ti; ApplyAccentTheme(); SaveGame(); }
+                } else {
+                    bool canBuy = (g_Coins >= th.cost);
+                    bool bHov   = (mx >= btnX && mx < btnX+btnW && my >= btnY && my < btnY+btnH);
+                    bool bClick = bHov && lmb && !g_LmbPrev;
+                    BindMainShader();
+                    drawRect(btnX, btnY, btnW, btnH,
+                             canBuy ? (bHov ? 0.18f : 0.11f) : 0.09f,
+                             canBuy ? (bHov ? 0.14f : 0.08f) : 0.06f,
+                             canBuy ? (bHov ? 0.08f : 0.05f) : 0.04f,
+                             0.90f * da);
+                    drawConstellFrame(btnX, btnY, btnW, btnH, th.r, th.g, th.b,
+                                      (canBuy ? (bHov ? 0.90f : 0.48f) : 0.20f) * da,
+                                      10.0f*uiS, 2.5f*uiS);
+                    wchar_t buyLbl[48]; swprintf_s(buyLbl, L"BUY  %lld", th.cost);
+                    float bw3 = g_TextS.Width(buyLbl, 0.42f*uiS);
+                    g_TextS.Draw(buyLbl, btnX + (btnW - bw3)*0.5f, btnY + 11.0f*uiS,
+                                 0.42f*uiS, th.r, th.g, th.b, (canBuy ? 1.0f : 0.38f) * da);
+                    if (bClick && canBuy) {
+                        g_Coins -= th.cost;
+                        g_ThemeOwned |= (1 << ti);
+                        g_ThemeSel = ti; ApplyAccentTheme(); SaveGame();
+                    }
+                }
+            }
+
+        } else {
+            // ── AUG catalog ───────────────────────────────────────────────
+            int ai = s_selKey - KEY_AUG;
+            if (ai >= 0 && ai < AUG_TOTAL) {
+                const AugDef& ad = ALL_AUGS[ai];
+                float cr2, cg2, cb2;
+                GetRarityColor(ad.rarity, cr2, cg2, cb2);
+
+                BindMainShader();
+                g_TextS.Draw(GetAugBadge(ad), rInX, rInY, 0.42f*uiS,
+                             cr2, cg2, cb2, 0.85f * da);
+                const wchar_t* augName = ad.locName[li];
+                g_TextL.Draw(augName, rInX + 6.0f*uiS, rInY + 22.0f*uiS,
+                             0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.95f * da);
+                drawRect(rInX, rInY + 22.0f*uiS,
+                         3.0f*uiS, g_TextL.Height(augName, 0.90f*uiS),
+                         cr2, cg2, cb2, 0.70f * da);
+
+                const wchar_t* desc = AugDesc(ad);
+                if (desc && desc[0]) {
+                    float dY = rInY + 92.0f*uiS;
+                    float dsc = 0.48f * uiS;
+                    float lineH = dsc * 19.0f;
+                    std::wstring ds(desc);
+                    size_t pos = 0; int ln = 0;
+                    while (pos < ds.size() && ln < 8) {
+                        size_t sl = ds.find(L" / ", pos);
+                        std::wstring seg = (sl == std::wstring::npos)
+                            ? ds.substr(pos) : ds.substr(pos, sl - pos);
+                        pos = (sl == std::wstring::npos) ? ds.size() : sl + 3;
+                        g_TextS.Draw(seg.c_str(), rInX + 6.0f*uiS, dY + ln * lineH,
+                                     dsc, 0.80f, 0.85f, 0.90f, 0.82f * da);
+                        ln++;
+                    }
                 }
 
-                // ── 업적 목록 (테마 행 아래, 3열) ──
+                // ── 기하 미리보기 장식 ──
                 {
-                    int li3 = LangIndex();
-                    const wchar_t* ATIT[3] = { L"업적", L"Achievements", L"実績" };
-                    float ay0 = themeBottom;
+                    float geoX = rInX + (rightW - rPad * 2.0f) * 0.5f;
+                    float geoY = rInY + rInH * 0.68f;
+                    float geoR  = 32.0f * uiS;
+                    float geoR2 = 54.0f * uiS;
+                    float geoPulse = 0.75f + 0.25f * sinf(now * 1.9f);
+                    float ang1 = now * 0.52f, ang2 = -now * 0.36f + 0.785f;
                     BindMainShader();
-                    g_TextS.Draw(ATIT[li3], rx, ay0, 1.0f, 0.8f, 0.9f, 1.0f, 1.0f);
-                    float colW = RW / 3.0f;
-                    float rowH = 28.0f;
-                    for (int i = 0; i < ACH_COUNT; i++) {
-                        bool got = g_AchUnlocked[i];
-                        int  col = i / 4, row = i % 4;
-                        float ax = rx + col * colW;
-                        float ay = ay0 + 32.0f + row * rowH;
-                        wchar_t ab[96];
-                        swprintf_s(ab, L"%ls %ls", got ? L"*" : L"-", AchName(i));
-                        if (got) g_TextS.Draw(ab, ax, ay, 0.72f, 0.5f, 0.95f, 0.55f, 1.0f);
-                        else     g_TextS.Draw(ab, ax, ay, 0.72f, 0.55f, 0.55f, 0.6f, 0.9f);
+                    for (int n = 0; n < 4; ++n) {
+                        float a = ang1 + n * 1.5708f;
+                        drawDiamond(geoX + cosf(a)*geoR, geoY + sinf(a)*geoR,
+                                    5.5f*uiS, cr2, cg2, cb2, 0.70f * geoPulse * da);
                     }
+                    for (int n = 0; n < 6; ++n) {
+                        float a = ang2 + n * 1.0472f;
+                        drawDiamond(geoX + cosf(a)*geoR2, geoY + sinf(a)*geoR2,
+                                    3.5f*uiS, cr2, cg2, cb2, 0.38f * da);
+                    }
+                    drawDiamond(geoX, geoY, 12.0f*uiS, cr2, cg2, cb2, 0.85f * geoPulse * da);
+                    drawDiamond(geoX, geoY,  5.0f*uiS, 0.04f, 0.05f, 0.08f, da);
                 }
+                g_TextS.Draw(L"CATALOG \x2014 in-run pick only",
+                             rInX, rInY + rInH - 26.0f*uiS,
+                             0.38f*uiS, 0.48f, 0.56f, 0.66f, 0.62f * da);
+            }
+        }
+    }
 
-                if (UIButton(wx + 40.0f, wy + WH - 62.0f, 180.0f, 46.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                }   // close: g_AppOpen open guard
+    // ── Footer ──────────────────────────────────────────────────────────
+    BindMainShader();
+    drawRect(leftX, footY - 14.0f*uiS, panelW, 1.5f*uiS,
+             g_AccentR, g_AccentG, g_AccentB, 0.22f * wake);
+
+    bool backHov = (mx >= leftX && mx < leftX + 160.0f*uiS
+                 && my >= footY && my < footY + 38.0f*uiS);
+    drawRect(leftX, footY, 160.0f*uiS, 38.0f*uiS,
+             0.045f + g_AccentR * (backHov ? 0.10f : 0.04f),
+             0.052f + g_AccentG * (backHov ? 0.08f : 0.03f),
+             0.078f + g_AccentB * (backHov ? 0.07f : 0.03f),
+             0.88f * wake);
+    drawConstellFrame(leftX, footY, 160.0f*uiS, 38.0f*uiS,
+                      g_AccentR, g_AccentG, g_AccentB, (backHov ? 0.80f : 0.38f) * wake,
+                      14.0f*uiS, 3.0f*uiS);
+    const wchar_t* backText = T(StrId::BTN_BACK);
+    float bkW = g_TextS.Width(backText, 0.42f*uiS);
+    g_TextS.Draw(backText, leftX + (160.0f*uiS - bkW)*0.5f, footY + 9.0f*uiS,
+                 0.42f*uiS, g_AccentR, g_AccentG, g_AccentB, (backHov ? 1.0f : 0.70f) * wake);
+    if (backHov && lmb && !g_LmbPrev)
+        g_GameManager.currentState = GameState::MAIN_MENU;
 }
 
 void Scene_Codex(const SceneCtx& c) {
@@ -514,7 +942,7 @@ void Scene_Codex(const SceneCtx& c) {
     static float s_detailFadeT = 0.0f;
     static int   s_prevSel     = -2;
 
-    DrawMenuBackground(sw, sh, delta);
+    DrawMenuBackground(sw, sh, delta, false);
 
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
     g_CodexEntryT += dt;
@@ -550,9 +978,9 @@ void Scene_Codex(const SceneCtx& c) {
     // ── Category definitions ──────────────────────────────────────────────
     struct CatDef { const wchar_t* id; const wchar_t* name[2]; float r, g, b; };
     static const CatDef kCats[] = {
-        { L"ENEMIES",  { L"\xC801",  L"ENEMIES"  }, 1.00f, 0.42f, 0.38f },
-        { L"AUGMENTS", { L"\xC99D\xAC15", L"AUGMENTS" }, 0.38f, 0.82f, 1.00f },
-        { L"BOSSES",   { L"\xBCF4\xC2A4", L"BOSSES"   }, 0.96f, 0.72f, 0.22f },
+        { L"ENTITIES", { L"\xAD00\xCE21\xCCB4", L"ENTITIES" }, 1.00f, 0.42f, 0.38f },
+        { L"MODULES",  { L"\xBAA8\xB4C8",  L"MODULES"  }, 0.38f, 0.82f, 1.00f },
+        { L"APEX",     { L"\xC815\xC810",  L"APEX"     }, 0.96f, 0.72f, 0.22f },
     };
     const int kCatCount = 3;
     const CatDef& cat = kCats[s_cat];
@@ -611,14 +1039,9 @@ void Scene_Codex(const SceneCtx& c) {
     // ── HEADER ────────────────────────────────────────────────────────────
     const float hSlide = (1.0f - wake) * 14.0f * uiS;
     BindMainShader();
-    g_TextL.Draw(L"CODEX.DB",
+    g_TextL.Draw(L"ASTRAL_LOG",
                  leftX, panelY + 8.0f * uiS - hSlide,
                  0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
-    g_TextS.Draw(nli == 0
-        ? L"\xBC1C\xACAC\xD55C \xC801\xC640 \xC99D\xAC15\xC758 \xAE30\xB85D \xB370\xC774\xD130\xBCA0\xC774\xC2A4"
-        : L"Database of discovered enemies, augments, and bosses",
-                 leftX, panelY + 52.0f * uiS - hSlide,
-                 0.44f * uiS, 0.48f, 0.58f, 0.78f, 0.72f * wake);
 
     // Category tabs (segment buttons, right side of header)
     const float tabW  = 170.0f * uiS;
@@ -638,9 +1061,9 @@ void Scene_Codex(const SceneCtx& c) {
         const CatDef& cd = kCats[i];
         BindMainShader();
         drawRect(tx, ty, tabW, tabH,
-                 0.045f + cd.r*(sel ? 0.105f : 0.030f),
-                 0.052f + cd.g*(sel ? 0.085f : 0.028f),
-                 0.070f + cd.b*(sel ? 0.070f : 0.024f), 0.94f * wake);
+                 0.062f + cd.r*(sel ? 0.120f : 0.042f),
+                 0.070f + cd.g*(sel ? 0.100f : 0.038f),
+                 0.092f + cd.b*(sel ? 0.090f : 0.034f), 0.96f * wake);
         float ba  = (sel ? 0.88f : (hov ? 0.55f : 0.24f)) * wake;
         float cL2 = std::min(tabW * 0.22f, 9.0f * uiS), ct2 = 1.3f * uiS;
         drawRect(tx,        ty,        cL2, ct2, cd.r, cd.g, cd.b, ba);
@@ -656,9 +1079,9 @@ void Scene_Codex(const SceneCtx& c) {
         drawDiamond(tx+tabW, ty,      ns2, cd.r, cd.g, cd.b, ba);
         drawDiamond(tx,      ty+tabH, ns2, cd.r, cd.g, cd.b, ba);
         drawDiamond(tx+tabW, ty+tabH, ns2, cd.r, cd.g, cd.b, ba);
-        g_TextS.Draw(cd.name[nli], tx + 10.0f*uiS, ty + 5.0f*uiS,
-                     0.36f*uiS, 1.0f, 1.0f, 1.0f, (sel ? 0.82f : 0.52f) * wake);
-        drawCenterS(cd.id, tx, ty + 20.0f*uiS, tabW, 0.48f*uiS,
+        const float idSc = 0.50f * uiS;
+        const float idY  = ty + (tabH - g_TextS.Height(cd.id, idSc)) * 0.5f;
+        drawCenterS(cd.id, tx, idY, tabW, idSc,
                     sel ? 1.0f : 0.72f, sel ? 1.0f : 0.80f, sel ? 1.0f : 0.92f,
                     (sel ? 0.96f : 0.74f) * wake);
     }
@@ -668,14 +1091,10 @@ void Scene_Codex(const SceneCtx& c) {
 
     BindMainShader();
     drawRect(panelX + 8.0f*uiS, bodyY + 10.0f*uiS, leftW, bodyH,
-             0.0f, 0.0f, 0.0f, 0.14f * wake);
+             0.0f, 0.0f, 0.0f, 0.07f * wake);
     drawRect(panelX, bodyY, leftW, bodyH,
-             0.025f + cat.r*0.010f, 0.032f + cat.g*0.008f, 0.052f + cat.b*0.010f,
-             0.88f * wake);
-    drawRect(panelX, bodyY, leftW, 28.0f*uiS,
-             cat.r*0.20f, cat.g*0.20f, cat.b*0.22f, 0.94f * wake);
-    drawRect(panelX, bodyY + 28.0f*uiS, leftW, 1.5f*uiS,
-             cat.r, cat.g, cat.b, 0.28f * panelE * wake);
+             0.052f + cat.r*0.018f, 0.060f + cat.g*0.014f, 0.095f + cat.b*0.016f,
+             0.94f * wake);
     drawBorder(panelX, bodyY, leftW, bodyH, cat.r, cat.g, cat.b,
                (0.16f + 0.30f*panelE) * wake, 1.2f*uiS);
     if (wake > 0.02f) {
@@ -686,15 +1105,15 @@ void Scene_Codex(const SceneCtx& c) {
         BatchFlush(); SetGlowFx(false);
     }
     BindMainShader();
-    g_TextS.Draw(cat.name[nli], panelX + 10.0f*uiS, bodyY + 7.0f*uiS,
-                 0.40f*uiS, 1.0f, 1.0f, 1.0f, 0.65f * wake);
-    g_TextL.Draw(cat.id, panelX + 10.0f*uiS, bodyY + 30.0f*uiS,
-                 0.54f*uiS, cat.r, cat.g, cat.b, 0.80f * panelE * wake);
+    g_TextL.Draw(cat.id, panelX + 14.0f*uiS, bodyY + 18.0f*uiS,
+                 0.62f*uiS, cat.r, cat.g, cat.b, 0.84f * panelE * wake);
+    drawRect(panelX + 12.0f*uiS, bodyY + 58.0f*uiS, leftW - 24.0f*uiS, 1.2f*uiS,
+             cat.r, cat.g, cat.b, 0.22f * panelE * wake);
 
     // List layout constants
     const float listX     = panelX + 10.0f * uiS;
     const float listW2    = leftW  - 20.0f * uiS;
-    const float listTopY  = bodyY  + 68.0f * uiS;
+    const float listTopY  = bodyY  + 74.0f * uiS;
     const float listBotY  = bodyY  + bodyH - 12.0f * uiS;
     const float listViewH = listBotY - listTopY;
     const float itemH     = 30.0f * uiS;
@@ -715,11 +1134,11 @@ void Scene_Codex(const SceneCtx& c) {
     if (s_cat == 0) {
         struct MobGroup { const wchar_t* name; int ids[9]; int count; float r, g, b; };
         static const MobGroup MGRPS[] = {
-            { L"BASIC",
+            { L"CLASS-I",
               { CM_NORMAL, CM_SPLITTER, CM_BLINKER, CM_CHARGER,
                 CM_WEAVER, CM_BRUTE, CM_ORBITER, CM_SPAWNER, CM_SHIELDED },
               9, 0.88f, 0.52f, 0.52f },
-            { L"EXTENDED",
+            { L"CLASS-II",
               { CM_RANGED, CM_BOMBER, CM_DDOS, CM_BADSECTOR, CM_REGERROR, 0, 0, 0, 0 },
               5, 0.72f, 0.48f, 0.90f },
         };
@@ -767,7 +1186,7 @@ void Scene_Codex(const SceneCtx& c) {
     } else {
         ListItem& lh = s_items[nItems++];
         lh.isGroup = true; lh.dataIdx = -1; lh.seen = true;
-        lh.label = L"ACTIVE ROSTER";
+        lh.label = L"DETECTED";
         lh.r = cat.r; lh.g = cat.g; lh.b = cat.b;
         contentH += grpH;
         for (int i = 0; i < BOSS_CODEX_COUNT; ++i) {
@@ -807,12 +1226,16 @@ void Scene_Codex(const SceneCtx& c) {
         if (litem.isGroup) {
             BindMainShader();
             float mid = ry + grpH * 0.5f;
-            drawRect(listX, mid - 0.75f*uiS, listW2, 1.5f*uiS,
-                     litem.r, litem.g, litem.b, 0.18f * wake);
-            drawDiamond(listX,          mid, 4.0f*uiS, litem.r, litem.g, litem.b, 0.60f * wake);
-            drawDiamond(listX + listW2, mid, 4.0f*uiS, litem.r, litem.g, litem.b, 0.60f * wake);
-            g_TextS.Draw(litem.label, listX + 14.0f*uiS, ry + 4.0f*uiS,
-                         0.38f*uiS, litem.r, litem.g, litem.b, 0.82f * wake);
+            // Constellation ○───● line
+            drawRect(listX + 11.0f*uiS, mid - 0.75f*uiS, listW2 - 17.0f*uiS, 1.5f*uiS,
+                     litem.r, litem.g, litem.b, 0.22f * wake);
+            // Left hollow node (outer + inner dark)
+            drawDiamond(listX + 5.5f*uiS, mid, 5.5f*uiS, litem.r, litem.g, litem.b, 0.80f * wake);
+            drawDiamond(listX + 5.5f*uiS, mid, 2.8f*uiS, 0.04f, 0.05f, 0.08f, wake);
+            // Right filled node
+            drawDiamond(listX + listW2 - 4.0f*uiS, mid, 3.5f*uiS, litem.r, litem.g, litem.b, 0.52f * wake);
+            g_TextS.Draw(litem.label, listX + 17.0f*uiS, ry + 4.0f*uiS,
+                         0.37f*uiS, litem.r, litem.g, litem.b, 0.82f * wake);
         } else {
             bool isSel = (s_sel[s_cat] == litem.dataIdx);
             bool hov2  = overList && hit(listX, ry, listW2, itemH);
@@ -822,20 +1245,26 @@ void Scene_Codex(const SceneCtx& c) {
             float ia = wake * (0.65f + 0.35f * panelE);
             BindMainShader();
             drawRect(listX, ry, listW2, itemH,
-                     0.040f + litem.r*(isSel ? 0.080f : hov2 ? 0.030f : 0.010f),
-                     0.048f + litem.g*(isSel ? 0.065f : hov2 ? 0.024f : 0.008f),
-                     0.068f + litem.b*(isSel ? 0.052f : hov2 ? 0.020f : 0.006f),
-                     (isSel ? 0.94f : hov2 ? 0.80f : 0.64f) * ia);
-            drawRect(listX, ry, 3.5f*uiS, itemH, litem.r, litem.g, litem.b,
-                     (isSel ? 0.90f : hov2 ? 0.52f : 0.24f) * ia);
+                     0.060f + litem.r*(isSel ? 0.100f : hov2 ? 0.044f : 0.018f),
+                     0.068f + litem.g*(isSel ? 0.082f : hov2 ? 0.036f : 0.014f),
+                     0.092f + litem.b*(isSel ? 0.068f : hov2 ? 0.030f : 0.012f),
+                     (isSel ? 0.98f : hov2 ? 0.88f : 0.76f) * ia);
+            // Constellation node dot (replaces vertical bar)
+            float ndy = ry + itemH * 0.5f;
+            float ndx = listX + 7.0f*uiS;
+            drawDiamond(ndx, ndy, (isSel ? 3.5f : 2.2f)*uiS, litem.r, litem.g, litem.b,
+                        (isSel ? 0.90f : hov2 ? 0.58f : 0.28f) * ia);
+            if (isSel || hov2)
+                drawRect(ndx + (isSel ? 3.5f : 2.2f)*uiS, ndy - 0.5f*uiS, 5.0f*uiS, 1.0f*uiS,
+                         litem.r, litem.g, litem.b, (isSel ? 0.65f : 0.30f) * ia);
             if (isSel || hov2)
                 drawCBkt(listX, ry, listW2, itemH, litem.r, litem.g, litem.b,
                          (isSel ? 0.78f : 0.32f) * ia);
-            g_TextS.Draw(litem.label, listX + 14.0f*uiS, ry + 7.0f*uiS, 0.42f*uiS,
-                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.92f : 0.78f) : 0.38f,
-                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.94f : 0.82f) : 0.38f,
-                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.98f : 0.90f) : 0.42f,
-                         (litem.seen ? (isSel ? 0.98f : hov2 ? 0.86f : 0.72f) : 0.36f) * ia);
+            g_TextS.Draw(litem.label, listX + 18.0f*uiS, ry + 7.0f*uiS, 0.42f*uiS,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.92f : 0.78f) : 0.52f,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.94f : 0.82f) : 0.52f,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.98f : 0.90f) : 0.58f,
+                         (litem.seen ? (isSel ? 0.98f : hov2 ? 0.86f : 0.72f) : 0.62f) * ia);
         }
         ry += ih;
     }
@@ -862,22 +1291,16 @@ void Scene_Codex(const SceneCtx& c) {
 
     BindMainShader();
     drawRect(rpx + 9.0f*uiS, bodyY + 11.0f*uiS, rightW, bodyH,
-             0.0f, 0.0f, 0.0f, (0.14f + 0.10f*panelE)*rightWake);
+             0.0f, 0.0f, 0.0f, (0.08f + 0.05f*panelE)*rightWake);
     drawRect(rpx, bodyY, rightW, bodyH,
-             0.025f + cat.r*0.012f, 0.032f + cat.g*0.010f, 0.052f + cat.b*0.010f,
-             (0.86f + 0.10f*panelE)*rightWake);
-    drawRect(rpx, bodyY, rightW, 30.0f*uiS,
-             cat.r*(0.20f + 0.38f*panelE),
-             cat.g*(0.20f + 0.38f*panelE),
-             cat.b*(0.22f + 0.38f*panelE), 0.94f*rightWake);
-    drawRect(rpx, bodyY + 30.0f*uiS, rightW, 2.0f*uiS,
-             cat.r, cat.g, cat.b, (0.22f + 0.55f*panelE)*rightWake);
+             0.052f + cat.r*0.020f, 0.060f + cat.g*0.016f, 0.095f + cat.b*0.018f,
+             (0.92f + 0.06f*panelE)*rightWake);
     float sweepW = rightW * 0.28f;
     float sweepX = rpx + fmodf(now * 180.0f, rightW + sweepW) - sweepW;
-    drawRect(sweepX, bodyY + 30.0f*uiS, sweepW, 2.0f*uiS,
+    drawRect(sweepX, bodyY + 1.0f*uiS, sweepW, 1.5f*uiS,
              cat.r, cat.g, cat.b, 0.18f*panelE*rightWake);
-    float scanY2 = bodyY + 44.0f*uiS + fmodf(now * 110.0f,
-                   std::max(1.0f, bodyH - 56.0f*uiS));
+    float scanY2 = bodyY + 18.0f*uiS + fmodf(now * 110.0f,
+                   std::max(1.0f, bodyH - 30.0f*uiS));
     drawRect(rpx + 2.0f*uiS, scanY2, rightW - 4.0f*uiS, 1.0f*uiS,
              cat.r, cat.g, cat.b, 0.045f*panelE*rightWake);
     drawBorder(rpx, bodyY, rightW, bodyH, cat.r, cat.g, cat.b,
@@ -890,20 +1313,13 @@ void Scene_Codex(const SceneCtx& c) {
         BatchFlush(); SetGlowFx(false);
     }
     BindMainShader();
-    float bsz2 = 10.0f*uiS, bb2y = bodyY + 10.0f*uiS;
-    float bb2x = rpx + rightW - 18.0f*uiS;
-    drawRect(bb2x - 2.0f*(bsz2+7.0f*uiS), bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
-    drawRect(bb2x - (bsz2+7.0f*uiS),      bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
-    drawRect(bb2x,                          bb2y, bsz2, bsz2, 0.9f,0.25f,0.25f, (0.20f+0.40f*panelE)*rightWake);
-    g_TextS.Draw(cat.name[nli], rpx + 14.0f*uiS, bodyY + 9.0f*uiS,
-                 0.44f*uiS, 1.0f, 1.0f, 1.0f, 0.68f*rightWake);
-    g_TextL.Draw(cat.id, rpx + 20.0f*uiS, bodyY + 40.0f*uiS,
+    g_TextL.Draw(cat.id, rpx + 20.0f*uiS, bodyY + 28.0f*uiS,
                  1.05f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*panelE*rightWake);
 
     // Content area
     int selItem = s_sel[s_cat];
     const float cntX = rpx + 22.0f*uiS;
-    const float cntY = bodyY + 100.0f*uiS;
+    const float cntY = bodyY + 88.0f*uiS;
     const float cntW = rightW - 44.0f*uiS;
 
     if (selItem < 0) {
@@ -920,100 +1336,165 @@ void Scene_Codex(const SceneCtx& c) {
         drawDiamond(cx0, cy0, (5.0f + 1.5f*sinf(now*1.6f))*uiS,
                     cat.r, cat.g, cat.b, 0.18f*rightWake);
     } else {
-        const float iconSz = 130.0f * uiS;
-        const float iconX  = cntX;
-        const float iconY  = cntY;
-        const float txtX   = iconX + iconSz + 26.0f*uiS;
-        const float txtW   = cntW  - iconSz - 26.0f*uiS;
+        // Layout: left viz panel (38%) | right info block (62%)
+        const float cntH   = bodyH - 110.0f*uiS;
+        const float vizW   = cntW * 0.38f;
+        const float vizH   = std::min(vizW * 1.05f, cntH);
+        const float vizX   = cntX;
+        const float vizCX  = vizX + vizW * 0.5f;
+        const float vizCY  = cntY + vizH * 0.5f;
+        const float infoX  = cntX + vizW + 20.0f*uiS;
+        const float infoW  = cntW - vizW - 20.0f*uiS;
 
+        // Viz panel background
         BindMainShader();
-        drawRect(iconX, iconY, iconSz, iconSz,
-                 0.040f + cat.r*0.040f, 0.048f + cat.g*0.032f, 0.068f + cat.b*0.032f,
-                 0.92f * detailA);
-        drawCBkt(iconX, iconY, iconSz, iconSz, cat.r, cat.g, cat.b, 0.56f * detailA);
+        drawRect(vizX, cntY, vizW, vizH,
+                 0.018f + cat.r*0.010f, 0.022f + cat.g*0.008f, 0.040f + cat.b*0.010f,
+                 0.88f * detailA);
+        drawCBkt(vizX, cntY, vizW, vizH, cat.r, cat.g, cat.b, 0.40f * detailA);
+        float vzScan = cntY + fmodf(now * 55.0f, std::max(1.0f, vizH));
+        drawRect(vizX + 2.0f*uiS, vzScan, vizW - 4.0f*uiS, 1.0f*uiS,
+                 cat.r, cat.g, cat.b, 0.038f * detailA);
+
+        // Rotating constellation node viewer
+        {
+            int nNodes = (s_cat == 0) ? 5 : (s_cat == 1) ? 6 : 4;
+            float orbR  = std::min(vizW, vizH) * 0.28f;
+            float spd   = (s_cat == 0) ? 0.28f : (s_cat == 1) ? 0.18f : 0.14f;
+            float baseA = now * spd + (float)(selItem % 13) * 0.61f;
+            float innerR = orbR * 0.46f;
+            float baseA2 = -now * spd * 0.55f + (float)(selItem % 7) * 1.13f;
+
+            float px[8], py[8];
+            for (int ni = 0; ni < nNodes; ++ni) {
+                float ang = baseA + (float)ni * (6.2832f / (float)nNodes);
+                px[ni] = vizCX + cosf(ang) * orbR;
+                py[ni] = vizCY + sinf(ang) * orbR;
+            }
+            // Outer ring edges (constellation dashes)
+            BindMainShader();
+            for (int ni = 0; ni < nNodes; ++ni) {
+                int nj = (ni + 1) % nNodes;
+                float dx2 = px[nj]-px[ni], dy2 = py[nj]-py[ni];
+                float len2 = sqrtf(dx2*dx2+dy2*dy2);
+                int nd = std::max(2,(int)(len2/(6.0f*uiS)));
+                for (int d=1; d<nd; ++d) {
+                    float t = (float)d/(float)nd;
+                    drawDiamond(px[ni]+dx2*t, py[ni]+dy2*t, 1.1f*uiS,
+                                cat.r, cat.g, cat.b, 0.44f*detailA);
+                }
+            }
+            // Center spokes (every other node)
+            for (int ni = 0; ni < nNodes; ni += 2) {
+                float dx2 = px[ni]-vizCX, dy2 = py[ni]-vizCY;
+                float len2 = sqrtf(dx2*dx2+dy2*dy2);
+                int nd = std::max(2,(int)(len2/(7.0f*uiS)));
+                for (int d=1; d<nd; ++d) {
+                    float t = (float)d/(float)nd;
+                    drawDiamond(vizCX+dx2*t, vizCY+dy2*t, 0.9f*uiS,
+                                cat.r, cat.g, cat.b, 0.26f*detailA);
+                }
+            }
+            // Inner counter-rotating ring
+            int nInner = (s_cat == 1) ? 3 : 2;
+            for (int ni = 0; ni < nInner; ++ni) {
+                float ang = baseA2 + (float)ni*(6.2832f/(float)nInner);
+                float ipx = vizCX + cosf(ang)*innerR;
+                float ipy = vizCY + sinf(ang)*innerR;
+                float dx2 = ipx-vizCX, dy2 = ipy-vizCY;
+                float len2 = sqrtf(dx2*dx2+dy2*dy2);
+                int nd = std::max(2,(int)(len2/(6.0f*uiS)));
+                for (int d=1; d<nd; ++d) {
+                    float t = (float)d/(float)nd;
+                    drawDiamond(vizCX+dx2*t, vizCY+dy2*t, 1.0f*uiS,
+                                cat.r, cat.g, cat.b, 0.20f*detailA);
+                }
+                BindMainShader();
+                drawDiamond(ipx, ipy, 2.5f*uiS, cat.r, cat.g, cat.b, 0.55f*detailA);
+            }
+            // Outer node diamonds
+            BindMainShader();
+            for (int ni = 0; ni < nNodes; ++ni) {
+                float nsz = (ni == 0) ? 5.0f : 3.5f;
+                drawDiamond(px[ni], py[ni], nsz*uiS, cat.r, cat.g, cat.b,
+                            (ni==0 ? 0.90f : 0.68f)*detailA);
+            }
+            // Center node
+            drawDiamond(vizCX, vizCY, 4.0f*uiS, cat.r, cat.g, cat.b, 0.80f*detailA);
+            drawDiamond(vizCX, vizCY, 2.0f*uiS, 1.0f, 1.0f, 1.0f, 0.42f*detailA);
+        }
 
         if (s_cat == 0) {
-            // ── Enemy detail ──────────────────────────────────────────────
+            // ── Entity detail ─────────────────────────────────────────────
             bool seen = CodexMobSeen(selItem);
-            float ccx = iconX + iconSz*0.5f, ccy = iconY + iconSz*0.46f;
-            if (seen) {
-                if (selItem <= (int)MobKind::SHIELDED) {
-                    Monster pm(ccx, ccy);
-                    if (selItem > 0) pm.MakeKind((MobKind)selItem);
-                    pm.worldX = ccx; pm.worldY = ccy;
-                    if (selItem == 0) pm.color = glm::vec3(0.75f, 0.75f, 0.8f);
-                    pm.sizeScale = (selItem == (int)MobKind::BRUTE) ? 2.2f : 2.8f;
-                    drawMob(&pm);
-                } else if (selItem == CM_RANGED) {
-                    BindMainShader();
-                    drawDiamond(ccx, ccy, 40.0f, 0.85f, 0.0f, 0.85f, 1.0f);
-                    drawDiamond(ccx, ccy, 16.0f, 1,1,1, 0.9f);
-                } else if (selItem == CM_BOMBER) {
-                    BindMainShader();
-                    drawPentagon(ccx, ccy, 44.0f, 1.0f, 0.5f, 0.1f, 1.0f);
-                } else if (selItem == CM_DDOS) {
-                    BindMainShader();
-                    for (int t = 0; t < 3; t++) {
-                        float ang = (float)t * 2.0944f;
-                        drawTriangle(ccx + cosf(ang)*18.0f, ccy + sinf(ang)*18.0f,
-                                     18.0f, 1.0f, 0.35f, 0.55f, 1.0f);
-                    }
-                } else if (selItem == CM_BADSECTOR) {
-                    BindMainShader();
-                    drawPentagon(ccx, ccy, 40.0f, 0.7f, 0.25f, 0.85f, 1.0f);
-                    drawPentagon(ccx, ccy, 17.0f, 0.1f, 0.05f, 0.2f, 1.0f);
-                } else {
-                    BindMainShader();
-                    drawDiamond(ccx,      ccy,      36.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                    drawDiamond(ccx + 24, ccy,      13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                    drawDiamond(ccx - 24, ccy,      13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                    drawDiamond(ccx,      ccy + 24, 13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                    drawDiamond(ccx,      ccy - 24, 13.0f, 1.0f, 0.3f, 0.3f, 1.0f);
-                }
-            } else {
-                BindMainShader();
-                float qw = g_TextL.Width(L"?", 1.6f*uiS);
-                g_TextL.Draw(L"?", iconX + (iconSz - qw)*0.5f, iconY + iconSz*0.38f,
-                             1.6f*uiS, 0.4f, 0.4f, 0.45f, 0.9f * detailA);
-            }
             BindMainShader();
-            g_TextS.Draw(L"ENEMY", txtX, cntY + 4.0f*uiS,
-                         0.38f*uiS, cat.r, cat.g, cat.b, 0.68f*detailA);
-            g_TextL.Draw(MobName(selItem), txtX, cntY + 22.0f*uiS,
+            g_TextS.Draw(L"ENTITY", infoX, cntY + 4.0f*uiS,
+                         0.44f*uiS, cat.r, cat.g, cat.b, 0.78f*detailA);
+            g_TextL.Draw(MobName(selItem), infoX, cntY + 22.0f*uiS,
                          0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
-            drawRect(txtX, cntY + 78.0f*uiS, txtW, 1.5f*uiS,
+            drawRect(infoX, cntY + 78.0f*uiS, infoW, 1.5f*uiS,
                      cat.r, cat.g, cat.b, 0.28f*detailA);
             drawFitS(seen ? MobDesc(selItem) : L"???",
-                     txtX, cntY + 90.0f*uiS, txtW,
-                     0.44f*uiS, 0.32f*uiS, 0.82f, 0.90f, 1.0f, 0.88f*detailA);
+                     infoX, cntY + 90.0f*uiS, infoW,
+                     0.52f*uiS, 0.38f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
+            // ── 시스템 로그 블록 ──
+            if (seen) {
+                float logY = cntY + 168.0f*uiS;
+                drawRect(infoX, logY - 7.0f*uiS, infoW, 1.0f*uiS,
+                         cat.r, cat.g, cat.b, 0.18f*detailA);
+                const wchar_t* threatLv = (selItem >= CM_BRUTE) ? L"HIGH" : L"MODERATE";
+                wchar_t pidBuf[16]; swprintf_s(pidBuf, L"0x%02X", (selItem * 17 + 0x40) & 0xFF);
+                struct { const wchar_t* k; const wchar_t* v; } logR[] = {
+                    { L"THREAT_LV  ", threatLv },
+                    { L"PATTERN_ID ", pidBuf   },
+                    { L"STATUS     ", L"CATALOGUED" },
+                };
+                for (int ll = 0; ll < 3; ++ll) {
+                    float ly = logY + ll * 22.0f * uiS;
+                    g_TextS.Draw(logR[ll].k, infoX,              ly, 0.36f*uiS, cat.r, cat.g, cat.b, 0.58f*detailA);
+                    g_TextS.Draw(L": ",       infoX+98.0f*uiS,   ly, 0.36f*uiS, cat.r, cat.g, cat.b, 0.46f*detailA);
+                    g_TextS.Draw(logR[ll].v,  infoX+112.0f*uiS,  ly, 0.37f*uiS, 1.0f, 1.0f, 1.0f, 0.78f*detailA);
+                }
+            }
 
         } else if (s_cat == 1) {
-            // ── Augment detail ────────────────────────────────────────────
+            // ── Module detail ─────────────────────────────────────────────
             bool seen = (selItem >= 0 && selItem < AUG_TOTAL && CodexAugSeen(selItem));
             if (seen) {
                 const AugDef& d = ALL_AUGS[selItem];
                 float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
-                float ccx = iconX + iconSz*0.5f, ccy = iconY + iconSz*0.46f;
                 BindMainShader();
-                drawDiamond(ccx, ccy, 38.0f*uiS, rr, rg, rb, 0.88f * detailA);
-                const wchar_t* badge = GetAugBadge(d);
-                float bsc = 0.62f*uiS;
-                float bw3 = g_TextS.Width(badge, bsc);
-                g_TextS.Draw(badge, ccx - bw3*0.5f, ccy - 13.0f*uiS,
-                             bsc, 1.0f, 1.0f, 1.0f, 0.96f * detailA);
-                BindMainShader();
-                g_TextS.Draw(L"AUGMENT", txtX, cntY + 4.0f*uiS,
-                             0.38f*uiS, rr, rg, rb, 0.68f*detailA);
-                g_TextL.Draw(AugName(d), txtX, cntY + 22.0f*uiS,
+                g_TextS.Draw(L"MODULE", infoX, cntY + 4.0f*uiS,
+                             0.44f*uiS, rr, rg, rb, 0.78f*detailA);
+                g_TextL.Draw(AugName(d), infoX, cntY + 22.0f*uiS,
                              0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
+                const wchar_t* badge = GetAugBadge(d);
                 wchar_t rarLine[64];
                 swprintf_s(rarLine, L"[%ls]  %ls", badge, GetRarityKR(d.rarity));
-                g_TextS.Draw(rarLine, txtX, cntY + 70.0f*uiS,
-                             0.42f*uiS, rr, rg, rb, 0.80f*detailA);
-                drawRect(txtX, cntY + 88.0f*uiS, txtW, 1.5f*uiS,
+                g_TextS.Draw(rarLine, infoX, cntY + 70.0f*uiS,
+                             0.50f*uiS, rr, rg, rb, 0.88f*detailA);
+                drawRect(infoX, cntY + 88.0f*uiS, infoW, 1.5f*uiS,
                          rr, rg, rb, 0.28f*detailA);
-                drawFitS(AugDesc(d), txtX, cntY + 100.0f*uiS, txtW,
-                         0.44f*uiS, 0.32f*uiS, 0.82f, 0.90f, 1.0f, 0.88f*detailA);
+                drawFitS(AugDesc(d), infoX, cntY + 100.0f*uiS, infoW,
+                         0.52f*uiS, 0.38f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
+                // ── 모듈 데이터 블록 ──
+                {
+                    float mlogY = cntY + 178.0f*uiS;
+                    drawRect(infoX, mlogY - 7.0f*uiS, infoW, 1.0f*uiS,
+                             rr, rg, rb, 0.18f*detailA);
+                    wchar_t tidBuf[24]; swprintf_s(tidBuf, L"0x%03X", (int)d.type & 0xFFF);
+                    struct { const wchar_t* k; const wchar_t* v; } mlogR[] = {
+                        { L"MODULE_CLASS", GetRarityKR(d.rarity) },
+                        { L"TYPE_ID     ", tidBuf },
+                        { L"ACQUISITION ", L"IN-RUN PICK" },
+                    };
+                    for (int ml = 0; ml < 3; ++ml) {
+                        float mly = mlogY + ml * 22.0f*uiS;
+                        g_TextS.Draw(mlogR[ml].k, infoX,             mly, 0.36f*uiS, rr, rg, rb, 0.58f*detailA);
+                        g_TextS.Draw(L": ", infoX + 98.0f*uiS,       mly, 0.36f*uiS, rr, rg, rb, 0.46f*detailA);
+                        g_TextS.Draw(mlogR[ml].v, infoX + 112.0f*uiS, mly, 0.37f*uiS, 1.0f, 1.0f, 1.0f, 0.78f*detailA);
+                    }
+                }
                 if (d.rarity == AugRarity::COMBO) {
                     for (int ci = 0; ci < COMBO_COUNT; ++ci) {
                         if (COMBO_DEFS[ci].result != d.type) continue;
@@ -1032,9 +1513,9 @@ void Scene_Codex(const SceneCtx& c) {
                                        ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
                                        ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
                         BindMainShader();
-                        drawRect(txtX, cntY + 158.0f*uiS, txtW, 1.5f*uiS,
+                        drawRect(infoX, cntY + 158.0f*uiS, infoW, 1.5f*uiS,
                                  0.10f, 0.88f, 0.78f, 0.28f*detailA);
-                        drawFitS(rc, txtX, cntY + 170.0f*uiS, txtW,
+                        drawFitS(rc, infoX, cntY + 170.0f*uiS, infoW,
                                  0.42f*uiS, 0.30f*uiS,
                                  0.12f, 0.92f, 0.82f, 0.90f*detailA);
                         break;
@@ -1042,64 +1523,67 @@ void Scene_Codex(const SceneCtx& c) {
                 }
             } else {
                 BindMainShader();
-                float qw = g_TextL.Width(L"?", 1.6f*uiS);
-                g_TextL.Draw(L"?", iconX + (iconSz - qw)*0.5f, iconY + iconSz*0.38f,
-                             1.6f*uiS, 0.4f, 0.4f, 0.45f, 0.9f * detailA);
                 const wchar_t* q[2] = { L"\xBBF8\xBC1C\xACAC \xAE4C\xC9C0 \xBE44\xACF5\xAC1C",
                                          L"Undiscovered — unlock by acquiring" };
-                g_TextS.Draw(q[nli], txtX, cntY + 40.0f*uiS,
-                             0.46f*uiS, 0.50f, 0.50f, 0.55f, 0.80f*detailA);
+                g_TextS.Draw(q[nli], infoX, cntY + 40.0f*uiS,
+                             0.54f*uiS, 0.56f, 0.58f, 0.66f, 0.86f*detailA);
             }
         } else {
-            // ── Boss detail ───────────────────────────────────────────────
+            // ── Apex detail ───────────────────────────────────────────────
             bool seen = (selItem >= 0 && selItem < BOSS_CODEX_COUNT &&
                          BossCodexSeen(selItem));
             if (seen) {
                 int pick = BossCodexPick(selItem);
                 glm::vec3 wc = BossDir::WarnColor(pick);
-                float cww = iconSz*0.72f, cwh = iconSz*0.60f;
-                float cwx = iconX + (iconSz - cww)*0.5f;
-                float cwy = iconY + (iconSz - cwh)*0.40f;
                 BindMainShader();
-                drawRect(cwx, cwy, cww, cwh, 0.08f, 0.09f, 0.12f, 0.92f * detailA);
-                drawRect(cwx, cwy, cww, 18.0f*uiS,
-                         wc.r*0.72f, wc.g*0.72f, wc.b*0.72f, 0.95f * detailA);
-                drawNeonBorder(cwx, cwy, cww, cwh, wc.r, wc.g, wc.b);
-                BindMainShader();
-                g_TextS.Draw(L"BOSS", txtX, cntY + 4.0f*uiS,
-                             0.38f*uiS, wc.r, wc.g, wc.b, 0.68f*detailA);
-                g_TextL.Draw(BossCodexName(selItem), txtX, cntY + 22.0f*uiS,
+                g_TextS.Draw(L"APEX", infoX, cntY + 4.0f*uiS,
+                             0.44f*uiS, wc.r, wc.g, wc.b, 0.78f*detailA);
+                g_TextL.Draw(BossCodexName(selItem), infoX, cntY + 22.0f*uiS,
                              0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
-                drawRect(txtX, cntY + 78.0f*uiS, txtW, 1.5f*uiS,
+                drawRect(infoX, cntY + 78.0f*uiS, infoW, 1.5f*uiS,
                          wc.r, wc.g, wc.b, 0.28f*detailA);
-                drawFitS(BossCodexDesc(selItem), txtX, cntY + 90.0f*uiS, txtW,
-                         0.44f*uiS, 0.32f*uiS, 0.82f, 0.90f, 1.0f, 0.88f*detailA);
+                drawFitS(BossCodexDesc(selItem), infoX, cntY + 90.0f*uiS, infoW,
+                         0.52f*uiS, 0.38f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
+                // ── APEX 위협 데이터 ──
+                {
+                    float alogY = cntY + 170.0f*uiS;
+                    drawRect(infoX, alogY - 7.0f*uiS, infoW, 1.0f*uiS,
+                             wc.r, wc.g, wc.b, 0.18f*detailA);
+                    wchar_t apidBuf[24]; swprintf_s(apidBuf, L"0x%02X", (selItem * 31 + 0x70) & 0xFF);
+                    struct { const wchar_t* k; const wchar_t* v; } alogR[] = {
+                        { L"CLASS      ", L"APEX / BOSS" },
+                        { L"SIGNAL_ID  ", apidBuf },
+                        { L"THREAT_LV  ", L"CRITICAL" },
+                    };
+                    for (int al = 0; al < 3; ++al) {
+                        float aly = alogY + al * 22.0f*uiS;
+                        g_TextS.Draw(alogR[al].k, infoX,             aly, 0.36f*uiS, wc.r, wc.g, wc.b, 0.58f*detailA);
+                        g_TextS.Draw(L": ", infoX + 98.0f*uiS,       aly, 0.36f*uiS, wc.r, wc.g, wc.b, 0.46f*detailA);
+                        g_TextS.Draw(alogR[al].v, infoX + 112.0f*uiS, aly, 0.37f*uiS, 1.0f, 1.0f, 1.0f, 0.78f*detailA);
+                    }
+                }
             } else {
                 BindMainShader();
-                float qw = g_TextL.Width(L"?", 1.6f*uiS);
-                g_TextL.Draw(L"?", iconX + (iconSz - qw)*0.5f, iconY + iconSz*0.38f,
-                             1.6f*uiS, 0.4f, 0.4f, 0.45f, 0.9f * detailA);
                 const wchar_t* q[2] = {
                     L"\xBBF8\xBC1C\xACAC \x2014 \xBCF4\xC2A4 \xC870\xC6B0 \xC2DC \xACF5\xAC1C",
                     L"Undiscovered — encounter the boss" };
-                g_TextS.Draw(q[nli], txtX, cntY + 40.0f*uiS,
-                             0.46f*uiS, 0.50f, 0.50f, 0.55f, 0.80f*detailA);
+                g_TextS.Draw(q[nli], infoX, cntY + 40.0f*uiS,
+                             0.54f*uiS, 0.56f, 0.58f, 0.66f, 0.86f*detailA);
             }
         }
     }
 
     // ── FOOTER: BACK button ───────────────────────────────────────────────
-    const wchar_t* backLbl[2] = { L"\xB4A4\xB85C", L"BACK" };
     float bw = 160.0f*uiS, bh = 40.0f*uiS;
     float bx = panelX, by = footY;
     bool backHov = hit(bx, by, bw, bh);
     BindMainShader();
     drawRect(bx, by, bw, bh,
-             0.038f + cat.r*(backHov ? 0.036f : 0.012f),
-             0.044f + cat.g*(backHov ? 0.030f : 0.010f),
-             0.062f + cat.b*(backHov ? 0.026f : 0.008f), 0.90f * wake);
+             0.058f + cat.r*(backHov ? 0.052f : 0.024f),
+             0.066f + cat.g*(backHov ? 0.044f : 0.020f),
+             0.092f + cat.b*(backHov ? 0.040f : 0.018f), 0.94f * wake);
     drawCBkt(bx, by, bw, bh, cat.r, cat.g, cat.b, (backHov ? 0.68f : 0.28f) * wake);
-    drawCenterS(backLbl[nli], bx, by + 10.0f*uiS, bw, 0.46f*uiS,
+    drawCenterS(T(StrId::BTN_BACK), bx, by + 10.0f*uiS, bw, 0.46f*uiS,
                 backHov ? 1.0f : 0.78f, backHov ? 1.0f : 0.84f, backHov ? 1.0f : 0.96f,
                 0.96f * wake);
     if (backHov && lmb && !g_LmbPrev) {
@@ -1159,10 +1643,10 @@ void Scene_Tutorial(const SceneCtx& c) {
     const float sideW = 210.0f;
     const float pad = 24.0f;
     float sideX = wx + pad;
-    float sideY = wy + 46.0f;
+    float sideY = wy + 16.0f;
     float contentX = wx + sideW + pad * 2.0f;
     float contentW = WW - sideW - pad * 3.0f;
-    float contentY = wy + 46.0f;
+    float contentY = wy + 16.0f;
 
     BindMainShader();
     drawRect(sideX, sideY, sideW, WH - 120.0f, 0.10f, 0.12f, 0.16f, 0.95f);
@@ -1332,7 +1816,7 @@ void Scene_JobSelect(const SceneCtx& c) {
                 const wchar_t* LOCKED[3] = { L"잠김 — ", L"Locked — ", L"未解放 — " };
                 const wchar_t* TIT = JTIT[li];
                 float titSc = 1.35f;
-                float titleY = fcy + 28.0f;
+                float titleY = fcy + 16.0f;
                 float titW = g_TextL.Width(TIT, titSc);
                 g_TextL.Draw(TIT, fx + (FW - titW) * 0.5f, titleY, titSc, 1, 1, 1, 1);
                 const wchar_t* HN = JHINT[li];
@@ -1415,10 +1899,11 @@ void Scene_RunConfig(const SceneCtx& c) {
     if (dt > 0.05f) dt = 0.05f;
     g_RunConfigEntryT += dt;
     if (g_RunConfigEntryT > 1.0f) g_RunConfigEntryT = 1.0f;
-    const float wake = Smoothstep(g_RunConfigEntryT / 0.55f);
+    const float dimWake = Smoothstep(std::min(1.0f, g_RunConfigEntryT / 0.42f));
+    const float wake = Smoothstep(std::min(1.0f, (g_RunConfigEntryT - 0.08f) / 0.50f));
     const float now = (float)glfwGetTime();
 
-    DrawMenuBackground(sw, sh, c.delta);
+    DrawMenuBackground(sw, sh, c.delta, dimWake);
 
     { float ua = 1.0f - g_FadeAlpha; if (ua < 0.0f) ua = 0.0f; g_BatchAlpha = ua; }
 
@@ -1428,14 +1913,14 @@ void Scene_RunConfig(const SceneCtx& c) {
     const float panelW = TARGET_W * uiS;
     const float panelH = TARGET_H * uiS;
     const float panelX = (sw - panelW) * 0.5f;
-    const float panelY = (sh - panelH) * 0.5f;
-    const float headerH = 88.0f * uiS;
+    const float panelY = (sh - panelH) * 0.5f + (1.0f - wake) * 24.0f * uiS;
+    const float headerH = 82.0f * uiS;
     const float footerH = 74.0f * uiS;
     const float gap = 20.0f * uiS;
     const float colY = panelY + headerH;
     const float colH = panelH - headerH - footerH;
-    const float leftW = panelW * 0.335f;
-    const float midW = panelW * 0.385f;
+    const float leftW = panelW * 0.260f;
+    const float midW = panelW * 0.460f;
     const float rightW = panelW - leftW - midW - gap * 2.0f;
     const float leftX = panelX;
     const float midX = leftX + leftW + gap;
@@ -1526,17 +2011,10 @@ void Scene_RunConfig(const SceneCtx& c) {
     static const WCardDef kWC[] = {
         { JOB_NONE,      { L"소총",     L"RIFLE"        },
           { L"표준 연사 / 균형 범용",          L"Standard auto fire / balanced"   }, 0 },
-        { JOB_BERSERKER, { L"화포",     L"CANNON"       },
-          { L"고화력 단발 포격",               L"Heavy single-shot artillery"     }, 0 },
         { JOB_VAMPIRE,   { L"정전기장", L"STATIC FIELD" },
           { L"범위 전기장 지속 피해",          L"Area electric field / sustained" }, 0 },
     };
-    static const int kWCCount = 3;
-    static const wchar_t* kWeaponRole[][2] = {
-        { L"균형형", L"BALANCED" },
-        { L"단발형", L"BURST"    },
-        { L"범위형", L"AREA"     },
-    };
+    static const int kWCCount = 2;
     static const wchar_t* kWeaponStatLabels[6][2] = {
         { L"피해량",   L"DAMAGE"    },
         { L"공격속도", L"FIRE RATE" },
@@ -1570,23 +2048,6 @@ void Scene_RunConfig(const SceneCtx& c) {
             0.35f, 0.72f, 1.00f,
             { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f }
         },
-        {   // 화포 — 피해+정밀 극대, 속도 극소
-            { L"한 발로 전선을 바꾸는 중포격기", L"One shot that reshapes the front" },
-            {
-                { L"단발 피해량이 소총의 약 5배",
-                  L"느린 재장전 — 헛발 하나가 치명적",
-                  L"군집 포격 시 가장 강력한 순간 화력" },
-                { L"Single-shot damage ~5x that of rifle",
-                  L"Slow reload — each miss is costly",
-                  L"Most effective against clustered enemies" }
-            },
-            {
-                { L"240", L"0.67/s", L"1.50s", L"800", L"0 rad", L"표준" },
-                { L"240", L"0.67/s", L"1.50s", L"800", L"0 rad", L"Standard" }
-            },
-            1.00f, 0.55f, 0.18f,
-            { 1.00f, 0.18f, 0.12f, 0.42f, 1.00f, 0.52f }
-        },
         {   // 정전기장 — 속도·연사 극대, 피해·사거리 극소
             { L"탄환 없이 전장을 전기로 지배한다", L"Control the field with no ammunition" },
             {
@@ -1606,7 +2067,7 @@ void Scene_RunConfig(const SceneCtx& c) {
         },
     };
     static int   s_WeaponSel      = 0;
-    static float s_WeaponHover[3] = {};
+    static float s_WeaponHover[kWCCount] = {};
     if (s_WeaponSel < 0 || s_WeaponSel >= kWCCount) s_WeaponSel = 0;
 
     // 레이더 차트 애니메이션: 선택된 무기 norm 값으로 매 프레임 접근
@@ -1639,8 +2100,6 @@ void Scene_RunConfig(const SceneCtx& c) {
     auto startConfiguredRun = [&]() {
         if (!s_TrialsEnabled)
             clearTrialSelection();
-        if (!JobUnlocked(kWC[s_WeaponSel].job))
-            s_WeaponSel = 0;
         g_SelectedJob = kWC[s_WeaponSel].job;
         g_Difficulty = Difficulty::NORMAL;
         s_TrialSelectPage = false;
@@ -1683,9 +2142,6 @@ void Scene_RunConfig(const SceneCtx& c) {
 
         g_TextL.Draw(L"TRIAL SELECT", pageX + pagePad, pageY + 24.0f*uiS,
                      0.96f*uiS, 0.92f, 0.96f, 1.0f, 0.98f);
-        g_TextS.Draw(L"C:\\ONEDOW\\RUN_CONFIG > TRIAL_SELECT",
-                     pageX + pagePad, pageY + 66.0f*uiS,
-                     0.46f*uiS, 0.48f, 0.58f, 0.78f, 0.84f);
 
         wchar_t needBuf[48];
         swprintf_s(needBuf, L"%d / %d", TrialCount(), s_TrialTargetCount);
@@ -1789,7 +2245,7 @@ void Scene_RunConfig(const SceneCtx& c) {
         drawRect(pageX + pagePad, btnY, backW, btnH, 0.028f, 0.034f, 0.052f, 0.72f);
         drawBorder(pageX + pagePad, btnY, backW, btnH,
                    0.50f, 0.60f, 0.78f, backHov ? 0.70f : 0.34f, 1.3f*uiS);
-        drawCenterS(L"BACK", pageX + pagePad, btnY + 15.0f*uiS, backW, 0.48f*uiS,
+        drawCenterS(T(StrId::BTN_BACK), pageX + pagePad, btnY + 15.0f*uiS, backW, 0.48f*uiS,
                     0.78f, 0.86f, 1.0f, 0.88f);
 
         drawRect(confirmX, btnY, confirmW, btnH,
@@ -1804,7 +2260,9 @@ void Scene_RunConfig(const SceneCtx& c) {
                           16.0f*uiS, 5.0f*uiS, ready ? 0.16f : 0.0f);
         BatchFlush();
         SetGlowFx(false);
-        const wchar_t* confirmLabel = ready ? L"EXECUTE RUN" : L"SELECT REQUIRED";
+        const wchar_t* confirmLabel = ready
+            ? ((li == 0) ? L"시작" : L"PLAY")
+            : ((li == 0) ? L"시련 선택 필요" : L"SELECT REQUIRED");
         drawCenterL(confirmLabel, confirmX,
                     btnY + (btnH - g_TextL.Height(confirmLabel, 0.70f*uiS)) * 0.5f,
                     confirmW, 0.70f*uiS, 1.0f, 1.0f, 1.0f, ready ? 0.98f : 0.42f);
@@ -1814,45 +2272,21 @@ void Scene_RunConfig(const SceneCtx& c) {
         return;
     }
 
-    wchar_t coinBuf[64];
-    swprintf_s(coinBuf, L"CREDITS :: %06lld", g_Coins);
-
     BindMainShader();
-    g_TextL.Draw(L"RUN CONFIG", panelX, panelY + 8.0f * uiS, 1.00f * uiS,
+    g_TextL.Draw(L"RUN CONFIG", panelX, panelY + 4.0f * uiS, 1.16f * uiS,
                  0.72f, 0.82f, 1.0f, 0.98f);
-    const wchar_t* pathText = L"C:\\ONEDOW\\RUN_CONFIG > WEAPON_SELECT";
-    if (g_RunConfigStep >= 1) {
-        if (s_TrialsEnabled)
-            pathText = L"C:\\ONEDOW\\RUN_CONFIG > TRIAL_COUNT";
-        else
-            pathText = L"C:\\ONEDOW\\RUN_CONFIG > LOADOUT_READY";
-    }
-    g_TextS.Draw(pathText,
-                 panelX, panelY + 58.0f * uiS, 0.56f * uiS,
-                 0.48f, 0.58f, 0.78f, 0.86f);
-    float coinSc = 0.58f * uiS;
-    const float coinH = 34.0f * uiS;
-    const float coinW = g_TextS.Width(coinBuf, coinSc) + 48.0f * uiS;
-    const float coinX = panelX + panelW - coinW;
-    const float coinY = panelY + 10.0f * uiS;
-    drawRect(coinX, coinY, coinW, coinH, 0.030f, 0.034f, 0.050f, 0.62f);
     BatchFlush();
     SetGlowFx(true);
-    drawConstellFrame(coinX, coinY, coinW, coinH, 1.0f, 0.84f, 0.22f,
-                      0.58f, 8.0f * uiS, 2.4f * uiS, 0.08f);
-    drawDiamond(coinX + 17.0f * uiS, coinY + coinH * 0.5f,
-                4.0f * uiS, 1.0f, 0.84f, 0.22f, 0.86f);
+    drawRect(panelX, panelY + headerH - 10.0f * uiS, panelW, 1.0f * uiS,
+             accentR, accentG, accentB, 0.18f);
     BatchFlush();
     SetGlowFx(false);
-    g_TextS.Draw(coinBuf, coinX + 30.0f * uiS,
-                 coinY + (coinH - g_TextS.Height(coinBuf, coinSc)) * 0.5f,
-                 coinSc, 1.0f, 0.88f, 0.34f, 0.94f);
 
     // ── 좌측: 무기 선택 카드 목록 (고정 높이, 여유 간격) ─────────
-    const float cH      = 100.0f * uiS;
-    const float cGap    = 24.0f * uiS;
-    const float cTopPad = 24.0f * uiS;
-    const float cPad    = 20.0f * uiS;
+    const float cH      = 118.0f * uiS;
+    const float cGap    = 28.0f * uiS;
+    const float cTopPad = 34.0f * uiS;
+    const float cPad    = 22.0f * uiS;
 
     for (int i = 0; i < kWCCount; ++i) {
         float cx = leftX;
@@ -1864,55 +2298,55 @@ void Scene_RunConfig(const SceneCtx& c) {
 
         const WDetailDef& wd = kWeaponDetail[i];
         float hv = s_WeaponHover[i];
-        const float inactiveA = selected ? 1.0f : (0.30f + 0.10f * hv);
-        const float inactiveR = selected ? 1.0f : 0.56f;
-        const float inactiveG = selected ? 1.0f : 0.60f;
-        const float inactiveB = selected ? 1.0f : 0.68f;
+        const float focus = selected ? 1.0f : hv;
+        const float pulse = selected ? (0.55f + 0.45f * sinf(now * 3.4f + (float)i * 0.8f)) : hv;
+        const float inactiveA = selected ? 1.0f : (0.56f + 0.18f * hv);
+        const float inactiveR = selected ? 1.0f : 0.72f;
+        const float inactiveG = selected ? 1.0f : 0.78f;
+        const float inactiveB = selected ? 1.0f : 0.88f;
 
         // 카드 바디 (어두운 배경 — non-glow)
         BindMainShader();
-        drawRect(cx - 5.0f*uiS, cy - 5.0f*uiS, leftW + 10.0f*uiS, cH + 10.0f*uiS,
-                 wd.r, wd.g, wd.b, selected ? 0.10f : 0.018f * hv);
+        drawRect(cx - 7.0f*uiS, cy - 7.0f*uiS, leftW + 14.0f*uiS, cH + 14.0f*uiS,
+                 0.0f, 0.0f, 0.0f, selected ? 0.38f : 0.26f + 0.10f * hv);
+        drawRect(cx - 3.0f*uiS, cy - 3.0f*uiS, leftW + 6.0f*uiS, cH + 6.0f*uiS,
+                 wd.r, wd.g, wd.b, selected ? 0.18f + 0.08f * pulse : 0.04f + 0.10f * hv);
         drawRect(cx, cy, leftW, cH,
-                 0.038f + wd.r * (selected ? 0.022f : 0.008f),
-                 0.044f + wd.g * (selected ? 0.016f : 0.006f),
-                 0.066f + wd.b * (selected ? 0.016f : 0.006f),
-                 selected ? 0.78f : (0.42f + 0.08f * hv));
+                 0.050f + wd.r * (selected ? 0.045f : 0.020f + 0.018f * hv),
+                 0.058f + wd.g * (selected ? 0.036f : 0.016f + 0.016f * hv),
+                 0.082f + wd.b * (selected ? 0.032f : 0.014f + 0.014f * hv),
+                 selected ? 0.94f : (0.68f + 0.12f * hv));
 
         // 컬러 스트라이프 + 별자리 프레임 (glow on)
         BatchFlush();
         SetGlowFx(true);
-        drawRect(cx, cy, 5.0f*uiS, cH, wd.r, wd.g, wd.b,
-                 selected ? 0.95f : 0.14f + 0.18f * hv);
+        drawDiamond(cx + 14.0f*uiS, cy + 15.0f*uiS, (4.5f + 1.2f * pulse) * uiS,
+                    wd.r, wd.g, wd.b, selected ? 0.90f : 0.42f + 0.30f * hv);
+        drawDiamond(cx + leftW - 14.0f*uiS, cy + cH - 14.0f*uiS, (4.0f + 1.0f * pulse) * uiS,
+                    wd.r, wd.g, wd.b, selected ? 0.76f : 0.28f + 0.28f * hv);
         drawConstellFrame(cx, cy, leftW, cH, wd.r, wd.g, wd.b,
-                          selected ? 0.80f : 0.12f + 0.22f * hv,
-                          14.0f * uiS, 4.5f * uiS,
-                          selected ? 0.14f : 0.0f);
+                          selected ? 0.92f : 0.26f + 0.34f * hv,
+                          16.0f * uiS, 5.0f * uiS,
+                          selected ? 0.20f + 0.08f * pulse : 0.04f * hv);
         BatchFlush();
         SetGlowFx(false);
 
         // 텍스트
-        g_TextL.Draw(kWC[i].name[nli], cx + cPad, cy + 13.0f*uiS,
-                     0.96f * uiS, inactiveR, inactiveG, inactiveB,
+        const wchar_t* stateTag = selected ? L"ACTIVE" : (hov ? L"READY" : L"IDLE");
+        float tagSc = 0.44f * uiS;
+        float tagW = g_TextS.Width(stateTag, tagSc);
+        g_TextS.Draw(stateTag, cx + leftW - tagW - cPad, cy + 12.0f*uiS,
+                     tagSc, selected ? wd.r : 0.58f, selected ? wd.g : 0.66f, selected ? wd.b : 0.82f,
+                     selected ? 0.92f : 0.42f + 0.28f * hv);
+        g_TextL.Draw(kWC[i].name[nli], cx + cPad, cy + 14.0f*uiS,
+                     1.08f * uiS, inactiveR, inactiveG, inactiveB,
                      selected ? 0.98f : inactiveA);
-        drawFitS(kWC[i].desc[nli], cx + cPad, cy + 52.0f*uiS,
-                 leftW - cPad - 14.0f*uiS, 0.46f*uiS, 0.34f*uiS,
-                 selected ? 0.60f : 0.46f,
-                 selected ? 0.72f : 0.50f,
-                 selected ? 0.90f : 0.58f,
-                 selected ? 0.76f : inactiveA);
-        float roleW = g_TextS.Width(kWeaponRole[i][nli], 0.46f*uiS);
-        g_TextS.Draw(kWeaponRole[i][nli], cx + leftW - roleW - cPad,
-                     cy + cH - 20.0f*uiS, 0.46f*uiS,
-                     selected ? wd.r : 0.50f,
-                     selected ? wd.g : 0.54f,
-                     selected ? wd.b : 0.62f,
-                     selected ? 0.70f : inactiveA);
-        if (selected) {
-            float msw = g_TextS.Width(L"SELECTED", 0.40f*uiS);
-            g_TextS.Draw(L"SELECTED", cx + leftW - msw - cPad, cy + 13.0f*uiS,
-                         0.40f*uiS, wd.r, wd.g, wd.b, 0.80f);
-        }
+        drawFitS(kWC[i].desc[nli], cx + cPad, cy + 84.0f*uiS,
+                 leftW - cPad * 2.0f, 0.58f*uiS, 0.42f*uiS,
+                 selected ? 0.72f : 0.56f,
+                 selected ? 0.84f : 0.64f,
+                 selected ? 1.00f : 0.76f,
+                 selected ? 0.88f : 0.58f + 0.22f * hv);
     }
 
     // ── 우측: 무기 상세 패널 (배경 카드 통합) ─────────────────────
@@ -1934,7 +2368,7 @@ void Scene_RunConfig(const SceneCtx& c) {
 
     if (g_RunConfigStep < 1) {
         const wchar_t* ph = (li == 0) ? L"무기를 선택하세요" : L"SELECT A WEAPON";
-        float phSc = 0.80f * uiS;
+        float phSc = 0.94f * uiS;
         float phW  = g_TextL.Width(ph, phSc);
         g_TextL.Draw(ph, rDX + (rDW - phW) * 0.5f, colY + colH * 0.44f,
                      phSc, 0.32f, 0.38f, 0.58f, 0.48f);
@@ -1948,33 +2382,31 @@ void Scene_RunConfig(const SceneCtx& c) {
         BatchFlush();
         g_BatchAlpha = panelContentA;
 
-        // 무기명 대형 + 역할 태그
+        // 무기명 대형
         BindMainShader();
-        g_TextL.Draw(wc.name[nli], rDX + rPad, ry, 1.10f*uiS, wr, wg, wb, 0.98f);
-        g_TextS.Draw(kWeaponRole[s_WeaponSel][nli], rDX + rPad, ry + 44.0f*uiS,
-                     0.48f*uiS, wr, wg, wb, 0.62f);
+        g_TextL.Draw(wc.name[nli], rDX + rPad, ry, 1.24f*uiS, wr, wg, wb, 0.98f);
 
         // 프로파일 서브카드
-        const float profY = ry + 66.0f * uiS;
-        const float profH = 40.0f * uiS;
+        const float profY = ry + 74.0f * uiS;
+        const float profH = 52.0f * uiS;
         const float profW = rDW - rPad * 2.0f;
         BindMainShader();
         drawRect(rDX + rPad, profY, profW, profH, 0.028f, 0.034f, 0.052f, 0.72f);
-        drawRect(rDX + rPad, profY, 4.0f*uiS, profH, wr, wg, wb, 0.55f);
         BatchFlush();
         SetGlowFx(true);
         drawConstellFrame(rDX + rPad, profY, profW, profH, wr, wg, wb, 0.36f,
                           10.0f*uiS, 3.0f*uiS);
         BatchFlush();
         SetGlowFx(false);
+        const float profileSc = 0.66f * uiS;
         drawFitS(wd.profile[nli],
                  rDX + rPad + 16.0f*uiS,
-                 profY + (profH - g_TextS.Height(wd.profile[nli], 0.52f*uiS)) * 0.5f,
-                 profW - 26.0f*uiS, 0.52f*uiS, 0.40f*uiS,
+                 profY + (profH - g_TextS.Height(wd.profile[nli], profileSc)) * 0.5f,
+                 profW - 26.0f*uiS, profileSc, 0.46f*uiS,
                  0.68f, 0.80f, 0.96f, 0.84f);
 
         // 구분선 (glow)
-        float divY1 = profY + profH + 16.0f * uiS;
+        float divY1 = profY + profH + 24.0f * uiS;
         BatchFlush();
         SetGlowFx(true);
         drawRect(rDX + rPad, divY1, rDW - rPad * 2.0f, 1.0f*uiS, wr, wg, wb, 0.22f);
@@ -1982,9 +2414,9 @@ void Scene_RunConfig(const SceneCtx& c) {
         SetGlowFx(false);
 
         // 노트 서브카드
-        const float noteCardY = divY1 + 10.0f * uiS;
-        const float noteLineH = 30.0f * uiS;
-        const float noteCardH = 3.0f * noteLineH + 16.0f * uiS;
+        const float noteCardY = divY1 + 16.0f * uiS;
+        const float noteLineH = 38.0f * uiS;
+        const float noteCardH = 3.0f * noteLineH + 24.0f * uiS;
         const float noteW     = rDW - rPad * 2.0f;
         BindMainShader();
         drawRect(rDX + rPad, noteCardY, noteW, noteCardH, 0.028f, 0.034f, 0.052f, 0.68f);
@@ -1994,21 +2426,21 @@ void Scene_RunConfig(const SceneCtx& c) {
                           10.0f*uiS, 3.0f*uiS);
         // bullet 다이아몬드
         for (int i = 0; i < 3; ++i) {
-            float ny = noteCardY + 8.0f*uiS + (float)i * noteLineH;
+            float ny = noteCardY + 12.0f*uiS + (float)i * noteLineH;
             drawDiamond(rDX + rPad + 14.0f*uiS, ny + noteLineH * 0.5f - 2.0f*uiS,
-                        5.0f*uiS, wr, wg, wb, 0.62f);
+                        5.5f*uiS, wr, wg, wb, 0.62f);
         }
         BatchFlush();
         SetGlowFx(false);
         for (int i = 0; i < 3; ++i) {
-            float ny = noteCardY + 8.0f*uiS + (float)i * noteLineH;
-            drawFitS(wd.notes[nli][i], rDX + rPad + 26.0f*uiS, ny + 6.0f*uiS,
-                     noteW - 36.0f*uiS, 0.50f*uiS, 0.38f*uiS,
+            float ny = noteCardY + 12.0f*uiS + (float)i * noteLineH;
+            drawFitS(wd.notes[nli][i], rDX + rPad + 28.0f*uiS, ny + 6.0f*uiS,
+                     noteW - 40.0f*uiS, 0.62f*uiS, 0.46f*uiS,
                      0.68f, 0.78f, 0.96f, 0.84f);
         }
 
         // 구분선 (glow)
-        float divY2 = noteCardY + noteCardH + 14.0f * uiS;
+        float divY2 = noteCardY + noteCardH + 24.0f * uiS;
         BatchFlush();
         SetGlowFx(true);
         drawRect(rDX + rPad, divY2, rDW - rPad * 2.0f, 1.0f*uiS, wr, wg, wb, 0.18f);
@@ -2016,13 +2448,13 @@ void Scene_RunConfig(const SceneCtx& c) {
         SetGlowFx(false);
 
         // ── 레이더 차트 + 우측 수치 리스트 ────────────────────────
-        const float statsY  = divY2 + 10.0f * uiS;
+        const float statsY  = divY2 + 18.0f * uiS;
         const float fullW   = rDW - rPad * 2.0f;
         const float radarSW = fullW * 0.46f;
-        const float radarH  = 210.0f * uiS;
+        const float radarH  = 238.0f * uiS;
         const float radarCX = rDX + rPad + radarSW * 0.5f;
         const float radarCY = statsY + radarH * 0.5f;
-        const float radarR  = 72.0f * uiS;
+        const float radarR  = 84.0f * uiS;
 
         // 6축 각도 + 최대점 좌표
         const int RN = 6;
@@ -2089,32 +2521,32 @@ void Scene_RunConfig(const SceneCtx& c) {
         // 축 레이블 (각 꼭짓점 바깥)
         for (int i = 0; i < RN; ++i) {
             float tox = cosf(axAng[i]), toy = sinf(axAng[i]);
-            float lx = radarCX + tox * (radarR + 14.0f*uiS);
-            float ly = radarCY + toy * (radarR + 14.0f*uiS);
-            float sc = 0.36f * uiS;
+            float lx = radarCX + tox * (radarR + 28.0f*uiS);
+            float ly = radarCY + toy * (radarR + 28.0f*uiS);
+            float sc = 0.62f * uiS;
             float lw = g_TextS.Width(kWeaponStatLabels[i][nli], sc);
             float lh = g_TextS.Height(kWeaponStatLabels[i][nli], sc);
             float tx = lx - lw * (0.5f - tox * 0.5f);
             float ty = ly - lh * (0.5f - toy * 0.5f);
-            g_TextS.Draw(kWeaponStatLabels[i][nli], tx, ty, sc, 0.92f, 0.96f, 1.0f, 0.84f);
+            g_TextS.Draw(kWeaponStatLabels[i][nli], tx, ty, sc, 0.94f, 0.98f, 1.0f, 0.92f);
         }
 
-        // 우측 수치 리스트 (6행)
-        const float listX  = rDX + rPad + radarSW + 10.0f*uiS;
-        const float listW  = fullW - radarSW - 10.0f*uiS;
+        // 우측 수치 리스트 (레이더와 동기화되는 막대 그래프)
+        const float listX  = rDX + rPad + radarSW + 18.0f*uiS;
+        const float listW  = fullW - radarSW - 18.0f*uiS;
         const float listRH = radarH / 6.0f;
         BindMainShader();
-        drawRect(listX - 8.0f*uiS, statsY + 10.0f*uiS, 1.0f*uiS, radarH - 20.0f*uiS,
-                 0.82f, 0.90f, 1.0f, 0.18f);
+        drawRect(listX - 10.0f*uiS, statsY + 8.0f*uiS, 3.0f*uiS, radarH - 16.0f*uiS,
+                 wr, wg, wb, 0.44f);
         for (int i = 0; i < 6; ++i) {
-            float lry = statsY + (float)i * listRH;
+            float lry  = statsY + (float)i * listRH;
+            float rowY = lry + 3.0f*uiS;
+            float rowH = listRH - 6.0f*uiS;
             BindMainShader();
-            drawRect(listX, lry + 2.0f*uiS, listW, listRH - 4.0f*uiS,
-                     0.028f + wr*0.010f, 0.034f + wg*0.008f, 0.052f + wb*0.008f, 0.70f);
-            drawRect(listX, lry + 2.0f*uiS, 3.0f*uiS, listRH - 4.0f*uiS,
-                     wr, wg, wb, 0.52f);
-            g_TextS.Draw(kWeaponStatLabels[i][nli], listX + 10.0f*uiS, lry + 5.0f*uiS,
-                         0.36f*uiS, 0.78f, 0.88f, 1.0f, 0.82f);
+            drawRect(listX, rowY, listW, rowH,
+                     0.018f + wr*0.014f, 0.024f + wg*0.010f, 0.040f + wb*0.010f, 0.58f);
+            g_TextS.Draw(kWeaponStatLabels[i][nli], listX + 12.0f*uiS, rowY + 2.0f*uiS,
+                         0.60f*uiS, 0.84f, 0.92f, 1.0f, 0.92f);
             const wchar_t* statText = wd.stat[nli][i];
             wchar_t glitchBuf[64];
             float statValueA = 0.90f;
@@ -2137,16 +2569,51 @@ void Scene_RunConfig(const SceneCtx& c) {
                 statText = glitchBuf;
                 statValueA = 0.76f + 0.18f * (float)((tick + i) & 1);
             }
-            drawFitS(statText, listX + 10.0f*uiS, lry + listRH * 0.42f,
-                     listW - 16.0f*uiS, 0.48f*uiS, 0.34f*uiS,
-                     0.92f, 0.96f, 1.0f, statValueA);
+
+            float valueSc = 0.64f * uiS;
+            float valueW = g_TextS.Width(statText, valueSc);
+            const float valueMaxW = listW * 0.42f;
+            while (valueW > valueMaxW && valueSc > 0.36f*uiS) {
+                valueSc *= 0.94f;
+                valueW = g_TextS.Width(statText, valueSc);
+            }
+            g_TextS.Draw(statText, listX + listW - valueW - 12.0f*uiS, rowY + 3.0f*uiS,
+                         valueSc, 0.94f, 0.98f, 1.0f, statValueA);
+
+            const float barX = listX + 12.0f * uiS;
+            const float barW = listW - 24.0f * uiS;
+            const float barH = 6.0f * uiS;
+            const float barY = rowY + rowH - 9.0f * uiS;
+            float barT = s_RadarCur[i];
+            if (barT < 0.0f) barT = 0.0f;
+            if (barT > 1.0f) barT = 1.0f;
+            barT = Smoothstep(barT);
+
+            BindMainShader();
+            drawRect(barX, barY, barW, barH, wr, wg, wb, 0.08f);
+            drawRect(barX, barY, barW * 0.35f, barH, wr, wg, wb, 0.08f);
+            drawRect(barX + barW * 0.70f, barY, 1.0f*uiS, barH, wr, wg, wb, 0.18f);
+            BatchFlush();
+            SetGlowFx(true);
+            drawRect(barX, barY, barW * barT, barH, wr, wg, wb, 0.70f);
+            if (barT > 0.02f) {
+                drawDiamond(barX + barW * barT, barY + barH * 0.5f,
+                            3.8f*uiS, wr, wg, wb, 0.88f);
+            }
+            BatchFlush();
+            SetGlowFx(false);
         }
 
         // ── 시련 토글 서브카드 ────────────────────────────────────
         const float trialCardY = statsY + radarH + 16.0f * uiS;
         const float trialCardH = 66.0f * uiS;
-        const float trialW     = rDW - rPad * 2.0f;
         const float trialX     = rDX + rPad;
+        const float actionGap  = 18.0f * uiS;
+        const float actionW    = 286.0f * uiS;
+        const float actionX    = rDX + rDW - rPad - actionW;
+        const float actionY    = trialCardY;
+        const float actionH    = trialCardH;
+        const float trialW     = actionX - actionGap - trialX;
         const float stepW      = 154.0f * uiS;
         const float stepH      = 38.0f * uiS;
         const float stepX      = trialX + trialW - stepW - 18.0f * uiS;
@@ -2178,7 +2645,7 @@ void Scene_RunConfig(const SceneCtx& c) {
         float scoreMult = 1.0f;
         wchar_t rateBuf[32];
         swprintf_s(rateBuf, L"x%.2f", scoreMult);
-        float rateSc = 0.52f*uiS;
+        float rateSc = 0.62f*uiS;
 
         BindMainShader();
         drawRect(trialX, trialCardY, trialW, trialCardH,
@@ -2191,10 +2658,10 @@ void Scene_RunConfig(const SceneCtx& c) {
             drawRect(trialX, trialCardY, 4.0f*uiS, trialCardH,
                      wr, wg, wb, 0.52f);
         }
-        const float checkSc = 0.58f * uiS;
+        const float checkSc = 0.66f * uiS;
         const float checkX = trialX + 18.0f * uiS;
-        const float checkY = trialCardY + 12.0f * uiS;
         const wchar_t* checkText = L"[   ]";
+        const float checkY = trialCardY + (trialCardH - g_TextS.Height(checkText, checkSc)) * 0.5f;
         g_TextS.Draw(checkText, checkX, checkY, checkSc,
                      s_TrialsEnabled ? 0.94f : 0.46f,
                      s_TrialsEnabled ? 1.00f : 0.50f,
@@ -2202,47 +2669,84 @@ void Scene_RunConfig(const SceneCtx& c) {
                      s_TrialsEnabled ? 0.96f : 0.54f);
         if (s_TrialsEnabled) {
             BindMainShader();
-            drawRect(checkX + 8.0f*uiS, checkY + 7.0f*uiS,
-                     7.0f*uiS, 7.0f*uiS, wr, wg, wb, 0.92f);
+            drawRect(checkX + 9.0f*uiS, checkY + 8.0f*uiS,
+                     8.0f*uiS, 8.0f*uiS, wr, wg, wb, 0.92f);
         }
 
         const wchar_t* stateText = s_TrialsEnabled
             ? L"TRIAL MODULE : ACTIVE"
             : L"TRIAL MODULE : DISABLED";
-        const wchar_t* hintText = s_TrialsEnabled
-            ? L"SET TRIAL COUNT BEFORE LAUNCH"
-            : L"OPTIONAL RISK LAYER STANDBY";
-        const float stateX = checkX + 72.0f * uiS;
+        const float stateSc = 0.66f * uiS;
+        const float stateY = trialCardY + (trialCardH - g_TextS.Height(stateText, stateSc)) * 0.5f;
+        const float stateX = checkX + 78.0f * uiS;
         const float rateW = g_TextL.Width(rateBuf, rateSc);
         const float rateX = trialX + trialW - rateW - 64.0f*uiS;
         const float textLimitX = s_TrialsEnabled ? stepX : rateX;
-        drawFitS(stateText, stateX, checkY,
-                 textLimitX - stateX - 18.0f*uiS, 0.52f*uiS, 0.38f*uiS,
+        drawFitS(stateText, stateX, stateY,
+                 textLimitX - stateX - 18.0f*uiS, stateSc, 0.38f*uiS,
                  s_TrialsEnabled ? wr : 0.52f,
                  s_TrialsEnabled ? wg : 0.58f,
                  s_TrialsEnabled ? wb : 0.68f,
                  s_TrialsEnabled ? 0.96f : 0.62f);
-        drawFitS(hintText, stateX, trialCardY + 38.0f*uiS,
-                 textLimitX - stateX - 18.0f*uiS, 0.40f*uiS, 0.32f*uiS,
-                 0.50f, 0.60f, 0.78f, s_TrialsEnabled ? 0.70f : 0.44f);
 
         BindMainShader();
         if (s_TrialsEnabled) {
             drawRect(stepX, stepY, stepW, stepH, 0.018f, 0.024f, 0.038f, stepHov ? 0.64f : 0.46f);
             drawRect(stepX, stepY, stepW, 1.0f*uiS, wr, wg, wb, 0.34f);
             drawRect(stepX, stepY + stepH - 1.0f*uiS, stepW, 1.0f*uiS, wr, wg, wb, 0.22f);
-            drawCenterL(L"<", stepX, stepY + 5.0f*uiS, arrowW, 0.58f*uiS,
+            drawCenterL(L"<", stepX, stepY + 4.0f*uiS, arrowW, 0.64f*uiS,
                         decHov ? 1.0f : 0.58f, decHov ? 1.0f : 0.70f, decHov ? 1.0f : 0.90f, 0.92f);
-            drawCenterL(L">", stepX + stepW - arrowW, stepY + 5.0f*uiS, arrowW, 0.58f*uiS,
+            drawCenterL(L">", stepX + stepW - arrowW, stepY + 4.0f*uiS, arrowW, 0.64f*uiS,
                         incHov ? 1.0f : 0.58f, incHov ? 1.0f : 0.70f, incHov ? 1.0f : 0.90f, 0.92f);
             wchar_t countBuf[16];
             swprintf_s(countBuf, L"%02d", s_TrialTargetCount);
-            drawCenterL(countBuf, stepX + arrowW, stepY + 4.0f*uiS, stepW - arrowW * 2.0f,
-                        0.60f*uiS, wr, wg, wb, 0.98f);
+            drawCenterL(countBuf, stepX + arrowW, stepY + 3.0f*uiS, stepW - arrowW * 2.0f,
+                        0.68f*uiS, wr, wg, wb, 0.98f);
         } else {
             g_TextL.Draw(rateBuf, rateX,
                          trialCardY + (trialCardH - g_TextL.Height(rateBuf, rateSc)) * 0.5f, rateSc,
                          0.38f, 0.54f, 0.72f, 0.92f);
+        }
+
+        const bool actionHov = hit(actionX, actionY, actionW, actionH);
+        const bool actionClick = actionHov && g_LmbPrev && !lmb;
+        const wchar_t* actionLabel = s_TrialsEnabled
+            ? ((li == 0) ? L"시련 선택" : L"SELECT TRIALS")
+            : ((li == 0) ? L"시작" : L"PLAY");
+        BindMainShader();
+        drawRect(actionX, actionY, actionW, actionH,
+                 0.014f + wr * 0.020f,
+                 0.018f + wg * 0.018f,
+                 0.028f + wb * 0.018f, actionHov ? 1.0f : 0.96f);
+        if (actionHov) {
+            drawRect(actionX + 4.0f*uiS, actionY + 4.0f*uiS,
+                     actionW - 8.0f*uiS, actionH - 8.0f*uiS,
+                     wr, wg, wb, 0.14f);
+        }
+        drawBorder(actionX, actionY, actionW, actionH, wr, wg, wb,
+                   actionHov ? 0.86f : 0.66f, 1.4f * uiS);
+        const float cornerL = 28.0f * uiS;
+        const float cornerT = 2.4f * uiS;
+        drawRect(actionX, actionY, cornerL, cornerT, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        drawRect(actionX, actionY, cornerT, cornerL, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        drawRect(actionX + actionW - cornerL, actionY, cornerL, cornerT, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        drawRect(actionX + actionW - cornerT, actionY, cornerT, cornerL, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        drawRect(actionX, actionY + actionH - cornerT, cornerL, cornerT, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        drawRect(actionX, actionY + actionH - cornerL, cornerT, cornerL, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        drawRect(actionX + actionW - cornerL, actionY + actionH - cornerT, cornerL, cornerT, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        drawRect(actionX + actionW - cornerT, actionY + actionH - cornerL, cornerT, cornerL, wr, wg, wb, actionHov ? 0.96f : 0.78f);
+        const float actionSc = 0.92f * uiS;
+        drawCenterL(actionLabel,
+                    actionX, actionY + (actionH - g_TextL.Height(actionLabel, actionSc)) * 0.5f,
+                    actionW, actionSc,
+                    1.0f, 1.0f, 1.0f, 0.99f);
+        if (actionClick) {
+            if (s_TrialsEnabled) {
+                clearTrialSelection();
+                s_TrialSelectPage = true;
+            } else {
+                startConfiguredRun();
+            }
         }
 
         // 전환 페이드 복구
@@ -2257,65 +2761,8 @@ void Scene_RunConfig(const SceneCtx& c) {
         g_GameManager.currentState = GameState::MAIN_MENU;
     }
 
-    const float execW = 292.0f * uiS;
-    const float execH = 54.0f * uiS;
-    const float execX = panelX + panelW - execW;
-    const float execY = footY - 2.0f * uiS;
-    const bool execReady = (g_RunConfigStep >= 1);
-    const bool execHov = execReady && hit(execX, execY, execW, execH);
-    const bool execClick = execReady && execHov && g_LmbPrev && !lmb;
-    BindMainShader();
-    float eDim = execReady ? 1.0f : 0.36f;
-    if (execReady) {
-        drawRect(execX - 9.0f * uiS, execY - 7.0f * uiS,
-                 execW + 18.0f * uiS, execH + 14.0f * uiS,
-                 accentR, accentG, accentB, execHov ? 0.18f : 0.08f);
-    }
-    drawRect(execX, execY, execW, execH,
-             (0.028f + accentR * 0.026f) * eDim,
-             (0.034f + accentG * 0.022f) * eDim,
-             (0.052f + accentB * 0.020f) * eDim,
-             execReady ? 0.84f : 0.52f);
-    if (execHov) {
-        drawRect(execX + 4.0f * uiS, execY + 4.0f * uiS,
-                 execW - 8.0f * uiS, execH - 8.0f * uiS,
-                 accentR, accentG, accentB, 0.58f);
-    }
-    BatchFlush();
-    SetGlowFx(true);
-    drawConstellFrame(execX, execY, execW, execH, accentR, accentG, accentB,
-                      execReady ? (execHov ? 1.00f : 0.78f) : 0.20f,
-                      16.0f * uiS, 5.0f * uiS,
-                      execReady ? (execHov ? 0.26f : 0.16f) : 0.03f);
-    if (execReady) {
-        drawRect(execX + 18.0f*uiS, execY + execH - 8.0f*uiS,
-                 execW - 36.0f*uiS, 2.0f*uiS,
-                 accentR, accentG, accentB, execHov ? 0.92f : 0.54f);
-    }
-    BatchFlush();
-    SetGlowFx(false);
-    const wchar_t* execLabel = execReady
-        ? (s_TrialsEnabled ? L"SELECT TRIALS" : L"EXECUTE RUN")
-        : L"CONFIG LOCKED";
-    const float execSc = 0.78f * uiS;
-    drawCenterL(execLabel,
-                execX, execY + (execH - g_TextL.Height(execLabel, execSc)) * 0.5f,
-                execW, execSc,
-                execHov ? 0.04f : 1.0f,
-                execHov ? 0.06f : 1.0f,
-                execHov ? 0.08f : 1.0f,
-                execReady ? 0.99f : 0.42f);
-    if (execClick) {
-        if (s_TrialsEnabled) {
-            clearTrialSelection();
-            s_TrialSelectPage = true;
-        } else {
-            startConfiguredRun();
-        }
-    }
-
     const float devW = 128.0f * uiS;
-    const float devX = execX - devW - 18.0f * uiS;
+    const float devX = panelX + panelW - devW;
     bool devHov = hit(devX, footY, devW, 50.0f * uiS);
     if (devHov && lmb && !g_LmbPrev)
         g_CreativeMode = !g_CreativeMode;
@@ -2330,8 +2777,8 @@ void Scene_RunConfig(const SceneCtx& c) {
                devOn ? 0.55f : 0.40f,
                devOn ? 0.10f : 0.55f,
                devOn ? 0.86f : (devHov ? 0.34f : 0.20f), 1.5f * uiS);
-    drawCenterS(devOn ? L"DEV ON" : L"DEV OFF", devX, footY + 15.0f * uiS, devW,
-                0.54f * uiS,
+    drawCenterS(devOn ? L"DEV ON" : L"DEV OFF", devX, footY + 14.0f * uiS, devW,
+                0.60f * uiS,
                 devOn ? 1.0f : 0.55f,
                 devOn ? 0.68f : 0.62f,
                 devOn ? 0.18f : 0.78f, 0.90f);
@@ -2542,7 +2989,7 @@ void Scene_Settings(const SceneCtx& c) {
     if (s_tab < 0 || s_tab >= kTabCount) s_tab = 0;
 
     const bool settingsOverlay = (g_SettingsReturnTo == GameState::PAUSED);
-    if (!settingsOverlay) DrawMenuBackground(sw, sh, delta);
+    if (!settingsOverlay) DrawMenuBackground(sw, sh, delta, false);
 
     // Entry animation timer
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
@@ -2615,6 +3062,39 @@ void Scene_Settings(const SceneCtx& c) {
         float tw = g_TextS.Width(text, sc);
         g_TextS.Draw(text, x + (w - tw) * 0.5f, y, sc, r, g, b, a);
     };
+    auto drawAngularTabFrame = [&](float x, float y, float w, float h,
+                                   float r, float g, float b,
+                                   float a, float active, float hover) {
+        const float t = (0.8f + 0.35f * active + 0.25f * hover) * uiS;
+        const float capW = (30.0f + 5.0f * active) * uiS;
+        const float capH = (22.0f + 3.0f * hover) * uiS;
+        const float inset = (8.0f - 2.0f * active) * uiS;
+        const float notch = (14.0f + 8.0f * hover + 8.0f * active) * uiS;
+        const float sweep = fmodf(now * (0.34f + 0.38f * hover + 0.20f * active), 1.0f);
+        const float sx = x + inset + (w - inset * 2.0f - notch) * sweep;
+
+        BindMainShader();
+        drawRect(x, y, w, h,
+                 0.036f + r * (0.025f + 0.040f * active),
+                 0.044f + g * (0.022f + 0.034f * active),
+                 0.066f + b * (0.020f + 0.030f * active),
+                 (0.74f + 0.10f * active + 0.03f * hover) * a);
+        drawRect(x, y + inset, capW, t * 1.35f, r, g, b, (0.62f + 0.26f * active + 0.12f * hover) * a);
+        drawRect(x, y + inset, t * 1.55f, capH, r, g, b, (0.62f + 0.26f * active + 0.12f * hover) * a);
+        drawRect(x, y + h - inset - t * 1.35f, capW, t * 1.35f, r, g, b, (0.58f + 0.22f * active + 0.12f * hover) * a);
+        drawRect(x, y + h - inset - capH, t * 1.55f, capH, r, g, b, (0.58f + 0.22f * active + 0.12f * hover) * a);
+
+        drawRect(x + w - capW, y + inset, capW, t * 1.35f, r, g, b, (0.62f + 0.26f * active + 0.12f * hover) * a);
+        drawRect(x + w - t * 1.55f, y + inset, t * 1.55f, capH, r, g, b, (0.62f + 0.26f * active + 0.12f * hover) * a);
+        drawRect(x + w - capW, y + h - inset - t * 1.35f, capW, t * 1.35f, r, g, b, (0.58f + 0.22f * active + 0.12f * hover) * a);
+        drawRect(x + w - t * 1.55f, y + h - inset - capH, t * 1.55f, capH, r, g, b, (0.58f + 0.22f * active + 0.12f * hover) * a);
+
+        if (hover > 0.01f) {
+            drawRect(sx, y + inset, notch, t * 1.35f, r, g, b, (0.34f * hover) * a);
+            drawRect(x + w - inset - notch - (sx - x - inset), y + h - inset - t * 1.35f,
+                     notch, t * 1.35f, r, g, b, (0.28f * hover) * a);
+        }
+    };
     auto segment = [&](float x, float y, float w, float h, const wchar_t* label,
                        bool selected, float r, float g, float b, bool enabled = true) {
         bool hov = enabled && hit(x, y, w, h);
@@ -2643,7 +3123,7 @@ void Scene_Settings(const SceneCtx& c) {
         drawDiamond(x+w, y,   ns, r, g, b, ba);
         drawDiamond(x,   y+h, ns, r, g, b, ba);
         drawDiamond(x+w, y+h, ns, r, g, b, ba);
-        drawCenterS(label, x, y + 12.0f * uiS, w, 0.45f * uiS,
+        drawCenterS(label, x, y + 7.0f * uiS, w, 0.76f * uiS,
                     enabled ? (selected ? 1.0f : 0.70f) : 0.40f,
                     enabled ? (selected ? 1.0f : 0.78f) : 0.44f,
                     enabled ? (selected ? 1.0f : 0.90f) : 0.52f,
@@ -2671,11 +3151,6 @@ void Scene_Settings(const SceneCtx& c) {
     g_TextL.Draw(L"SETTINGS",
                  leftX, panelY + 8.0f * uiS - hSlide,
                  0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
-    g_TextS.Draw(nli == 0
-                 ? L"\xD654\xBA74, \xC5B8\xC5B4, \xC624\xB514\xC624 \xC124\xC815\xACFC \xAE30\xD0C0 \xACF5\xD1B5\xC5D0 \xB300\xD55C \xC635\xC158"
-                 : L"Display, control, and audio options in one panel",
-                 leftX, panelY + 52.0f * uiS - hSlide,
-                 0.50f * uiS, 0.48f, 0.58f, 0.78f, 0.72f * wake);
     float profileW = 330.0f * uiS;
     float profileX = panelX + panelW - profileW + (1.0f - wake) * 50.0f * uiS;
     drawRect(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
@@ -2715,12 +3190,6 @@ void Scene_Settings(const SceneCtx& c) {
                  0.032f + td.g*(0.015f + 0.044f*foc + 0.012f*hv),
                  0.052f + td.b*(0.015f + 0.036f*foc + 0.012f*hv),
                  (0.82f + 0.14f*foc)*cwi);
-        drawRect(cxBase, cardY, leftW, 30.0f*uiS,
-                 td.r*(0.22f + 0.36f*foc),
-                 td.g*(0.22f + 0.36f*foc),
-                 td.b*(0.24f + 0.36f*foc), 0.94f*cwi);
-        drawRect(cxBase, cardY + 30.0f*uiS, leftW, 2.0f*uiS,
-                 td.r, td.g, td.b, (0.22f + 0.55f*foc)*cwi);
         drawBorder(cxBase, cardY, leftW, tabCardH, td.r, td.g, td.b,
                    (0.16f + 0.56f*foc + 0.28f*hv)*cwi, 1.5f*uiS);
         if (foc > 0.01f) {
@@ -2728,32 +3197,13 @@ void Scene_Settings(const SceneCtx& c) {
             drawRect(cxBase, cardY + (tabCardH - barH)*0.5f,
                      5.0f*uiS, barH, td.r, td.g, td.b, 0.88f*foc*cwi);
         }
-        float bsz = 9.0f*uiS, bby = cardY + 11.0f*uiS;
-        float bbx = cxBase + leftW - 14.0f*uiS;
-        drawRect(bbx - 2.0f*(bsz+6.0f*uiS), bby, bsz, bsz, 1,1,1, (0.10f+0.14f*foc)*cwi);
-        drawRect(bbx - (bsz+6.0f*uiS),      bby, bsz, bsz, 1,1,1, (0.10f+0.14f*foc)*cwi);
-        drawRect(bbx,                         bby, bsz, bsz, 0.9f,0.25f,0.25f, (0.20f+0.42f*foc)*cwi);
-        // Korean sub (small, in colored strip)
-        g_TextS.Draw(td.name[nli], cxBase + 10.0f*uiS, cardY + 8.0f*uiS,
-                     0.40f*uiS, 1.0f, 1.0f, 1.0f, (0.50f+0.32f*foc)*cwi);
         // English ID (large, primary)
-        g_TextL.Draw(td.id, cxBase + 14.0f*uiS, cardY + 36.0f*uiS,
-                     0.82f*uiS,
+        const float tabIdSc = 0.92f * uiS;
+        const float tabIdY  = cardY + (tabCardH - g_TextL.Height(td.id, tabIdSc)) * 0.5f;
+        g_TextL.Draw(td.id, cxBase + 14.0f*uiS, tabIdY,
+                     tabIdSc,
                      0.86f + td.r*0.14f*foc, 0.90f + td.g*0.10f*foc, 1.0f,
                      (0.72f+0.26f*foc)*cwi);
-        drawFitS(td.brief[nli], cxBase + 14.0f*uiS, cardY + 72.0f*uiS,
-                 leftW - 28.0f*uiS, 0.40f*uiS, 0.30f*uiS,
-                 td.r, td.g, td.b, (0.44f+0.32f*foc)*cwi);
-        float frameProg = std::min(foc > 0.01f ? 1.0f : cwi, cwi);
-        if (frameProg > 0.02f) {
-            BatchFlush(); SetGlowFx(true);
-            drawConstellFrame(cxBase, cardY, leftW, tabCardH,
-                              td.r, td.g, td.b,
-                              (foc > 0.05f ? 0.55f*foc : 0.22f)*cwi,
-                              14.0f*uiS, 4.0f*uiS,
-                              foc > 0.05f ? 0.20f : 0.10f, frameProg);
-            BatchFlush(); SetGlowFx(false);
-        }
     }
 
     // === RIGHT PANEL: Content window ===
@@ -2788,19 +3238,6 @@ void Scene_Settings(const SceneCtx& c) {
              0.025f + tab.r*0.012f,
              0.032f + tab.g*0.010f,
              0.052f + tab.b*0.010f, (0.86f + 0.10f*panelE)*rightWake);
-    drawRect(rpx, bodyY, rightW, 30.0f*uiS,
-             tab.r*(0.20f + 0.38f*panelE),
-             tab.g*(0.20f + 0.38f*panelE),
-             tab.b*(0.22f + 0.38f*panelE), 0.94f*rightWake);
-    drawRect(rpx, bodyY + 30.0f*uiS, rightW, 2.0f*uiS,
-             tab.r, tab.g, tab.b, (0.22f + 0.55f*panelE)*rightWake);
-    float sweepW = rightW * 0.28f;
-    float sweepX = rpx + fmodf(now * 180.0f, rightW + sweepW) - sweepW;
-    drawRect(sweepX, bodyY + 30.0f*uiS, sweepW, 2.0f*uiS,
-             tab.r, tab.g, tab.b, 0.18f*panelE*rightWake);
-    float scanY = bodyY + 44.0f*uiS + fmodf(now * 110.0f, std::max(1.0f, bodyH - 56.0f*uiS));
-    drawRect(rpx + 2.0f*uiS, scanY, rightW - 4.0f*uiS, 1.0f*uiS,
-             tab.r, tab.g, tab.b, 0.045f*panelE*rightWake);
     drawBorder(rpx, bodyY, rightW, bodyH, tab.r, tab.g, tab.b,
                (0.22f + 0.44f*panelE)*rightWake, 1.5f*uiS);
     if (rightWake > 0.02f) {
@@ -2810,33 +3247,23 @@ void Scene_Settings(const SceneCtx& c) {
                           22.0f*uiS, 6.0f*uiS, 0.14f, rightWake);
         BatchFlush(); SetGlowFx(false);
     }
-    float bsz2 = 10.0f*uiS, bb2y = bodyY + 10.0f*uiS;
-    float bb2x = rpx + rightW - 18.0f*uiS;
     BindMainShader();
-    drawRect(bb2x - 2.0f*(bsz2+7.0f*uiS), bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
-    drawRect(bb2x - (bsz2+7.0f*uiS),      bb2y, bsz2, bsz2, 1,1,1, (0.10f+0.14f*panelE)*rightWake);
-    drawRect(bb2x,                          bb2y, bsz2, bsz2, 0.9f,0.25f,0.25f, (0.20f+0.40f*panelE)*rightWake);
-    // Korean sub (small, in colored strip)
-    g_TextS.Draw(tab.name[nli], rpx + 14.0f*uiS, bodyY + 9.0f*uiS,
-                 0.44f*uiS, 1.0f, 1.0f, 1.0f, 0.68f*rightWake);
     // English ID (large, primary)
-    g_TextL.Draw(tab.id, rpx + 20.0f*uiS, bodyY + 40.0f*uiS,
+    g_TextL.Draw(tab.id, rpx + 20.0f*uiS, bodyY + 12.0f*uiS,
                  1.05f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*panelE*rightWake);
-    drawFitS(tab.brief[nli], rpx + 24.0f*uiS, bodyY + 83.0f*uiS,
-             rightW - 48.0f*uiS, 0.46f*uiS, 0.34f*uiS,
-             tab.r, tab.g, tab.b, 0.72f*panelE*rightWake);
 
     // === ROW LAYOUT ===
     const float rowX    = rpx + 22.0f * uiS;
     const float rowW    = rightW - 44.0f * uiS;
-    const float rowH    = 72.0f * uiS;
+    const float rowH    = 86.0f * uiS;
     const float rowGap  = 12.0f * uiS;
-    const float rowStart = bodyY + 120.0f * uiS;
+    const float rowStart = bodyY + 80.0f * uiS;
     const float ctlW    = 420.0f * uiS;
     const float ctlH    = 42.0f * uiS;
 
     auto rowShell = [&](float y, const wchar_t* label, const wchar_t* desc,
                         bool disabled, float h) {
+        (void)desc;
         bool hov = !disabled && !modalActive && hit(rowX, y, rowW, h);
         float rowIdx = (y - rowStart) / (rowH + rowGap);
         if (rowIdx < 0.0f) rowIdx = 0.0f;
@@ -2845,28 +3272,23 @@ void Scene_Settings(const SceneCtx& c) {
         if (revealRaw > 1.0f) revealRaw = 1.0f;
         float rowA = Smoothstep(revealRaw) * rightWake;
         float dim = disabled ? 0.48f : 1.0f;
-        BindMainShader();
-        drawRect(rowX, y, rowW, h,
-                 (0.044f + tab.r*(hov ? 0.018f : 0.008f)) * dim,
-                 (0.052f + tab.g*(hov ? 0.016f : 0.007f)) * dim,
-                 0.074f + tab.b*(hov ? 0.015f : 0.006f), (disabled ? 0.56f : 0.88f)*rowA);
-        drawRect(rowX, y, 5.0f*uiS, h, tab.r, tab.g, tab.b,
-                 (disabled ? 0.22f : 0.48f + 0.18f*(hov ? 1.0f : 0.0f))*rowA);
-        drawBorder(rowX, y, rowW, h, tab.r, tab.g, tab.b,
-                   (disabled ? 0.07f : 0.10f + 0.14f*(hov ? 1.0f : 0.0f))*rowA, 1.0f*uiS);
-        if (hov && !disabled) {
-            float sweep = rowW * (0.16f + 0.08f * sinf(now * 4.0f + rowIdx));
-            drawRect(rowX + 7.0f*uiS, y + h - 3.0f*uiS,
-                     sweep, 2.0f*uiS, tab.r, tab.g, tab.b, 0.22f*rowA);
+        const float hovF = (hov && !disabled) ? 1.0f : 0.0f;
+        drawAngularTabFrame(rowX, y, rowW, h, tab.r, tab.g, tab.b,
+                            rowA * dim, 0.0f, hovF);
+        if (hovF > 0.0f) {
+            BatchFlush(); SetGlowFx(true);
+            drawAngularTabFrame(rowX, y, rowW, h, tab.r, tab.g, tab.b,
+                                0.20f * rowA, 0.0f, 1.0f);
+            BatchFlush(); SetGlowFx(false);
         }
+        BindMainShader();
         float labelMax = rowW - ctlW - 54.0f*uiS;
-        drawFitS(label, rowX + 20.0f*uiS, y + 13.0f*uiS, labelMax,
-                 0.56f*uiS, 0.40f*uiS,
+        const float labelSc = 0.86f * uiS;
+        const float labelY = y + (h - g_TextS.Height(label, labelSc)) * 0.5f;
+        drawFitS(label, rowX + 20.0f*uiS, labelY, labelMax,
+                 labelSc, 0.62f*uiS,
                  disabled ? 0.45f : 0.92f, disabled ? 0.48f : 0.96f, disabled ? 0.56f : 1.0f,
                  (disabled ? 0.55f : 0.94f)*rowA);
-        drawFitS(desc, rowX + 20.0f*uiS, y + 41.0f*uiS, labelMax,
-                 0.40f*uiS, 0.31f*uiS,
-                 0.50f, 0.60f, 0.74f, (disabled ? 0.38f : 0.66f)*rowA);
     };
     auto rowShellStd = [&](float y, const wchar_t* label, const wchar_t* desc,
                            bool disabled = false) {
@@ -2911,10 +3333,10 @@ void Scene_Settings(const SceneCtx& c) {
             drawRect(offX, by, bw, ctlH, tab.r*0.08f, tab.g*0.07f, tab.b*0.07f, 0.90f * ctlA);
         drawBkt(bx,   value,  hovOn);
         drawBkt(offX, !value, hovOff);
-        drawCenterS(L"ON", bx, by + 12.0f*uiS, bw, 0.48f*uiS,
+        drawCenterS(L"ON", bx, by + 7.0f*uiS, bw, 0.76f*uiS,
                     value  ? 1.0f : 0.44f, value  ? 1.0f : 0.48f, value  ? 1.0f : 0.58f,
                     (value  ? 0.96f : 0.50f) * ctlA);
-        drawCenterS(L"OFF", offX, by + 12.0f*uiS, bw, 0.48f*uiS,
+        drawCenterS(L"OFF", offX, by + 7.0f*uiS, bw, 0.76f*uiS,
                     !value ? 1.0f : 0.44f, !value ? 1.0f : 0.48f, !value ? 1.0f : 0.58f,
                     (!value ? 0.96f : 0.50f) * ctlA);
     };
@@ -2957,7 +3379,7 @@ void Scene_Settings(const SceneCtx& c) {
             drawDiamond(bx,       by+ctlH,  ns, tab.r,tab.g,tab.b, ba);
             drawDiamond(bx+ctlW,  by+ctlH,  ns, tab.r,tab.g,tab.b, ba);
         }
-        drawCenterS(value, bx, by + 12.0f*uiS, ctlW, 0.45f*uiS,
+        drawCenterS(value, bx, by + 7.0f*uiS, ctlW, 0.76f*uiS,
                     disabled ? 0.48f : 0.82f, disabled ? 0.50f : 0.90f, disabled ? 0.56f : 1.0f,
                     (disabled ? 0.52f : 0.90f)*infoA);
     };
@@ -3009,7 +3431,7 @@ void Scene_Settings(const SceneCtx& c) {
         } else {
             swprintf_s(shown, L"%d", vol);
         }
-        drawCenterS(shown, fieldX, by + 12.0f*uiS, fieldW, 0.46f*uiS, 1.0f,1.0f,1.0f, 0.94f*volA);
+        drawCenterS(shown, fieldX, by + 7.0f*uiS, fieldW, 0.74f*uiS, 1.0f,1.0f,1.0f, 0.94f*volA);
     };
     auto disabledMeterRow = [&](float y, const wchar_t* label, const wchar_t* desc) {
         rowShellStd(y, label, desc, true);
@@ -3033,7 +3455,7 @@ void Scene_Settings(const SceneCtx& c) {
         drawCenterS((li==0) ? L"MASTER\xC5D0 \xC5F0\xB3D9"
                             : (li==1) ? L"LINKED TO MASTER"
                                       : L"MASTERに連動",
-                    bx, by+12.0f*uiS, ctlW, 0.42f*uiS, 0.48f,0.52f,0.62f, 0.62f*meterA);
+                    bx, by+8.0f*uiS, ctlW, 0.64f*uiS, 0.48f,0.52f,0.62f, 0.62f*meterA);
     };
 
     if (g_VolEdit) {
@@ -3053,8 +3475,7 @@ void Scene_Settings(const SceneCtx& c) {
         const wchar_t* fpsLabels[5] = { L"VSYNC", L"30", L"60", L"144", L"300" };
         const int fpsVals[5] = { 0, 30, 60, 144, 300 };
         choiceRow(y, T(StrId::SET_FPS),
-                  nli == 0 ? L"\xD504\xB808\xC784 \xC81C\xD55C\xACFC \xC218\xC9C1\xB3D9\xAE30\xD654"
-                           : L"Frame cap and vertical sync",
+                  L"FRAME",
                   fpsLabels, fpsVals, 5, g_FpsCap, [&](int v) {
                       g_FpsCap = v;
                       glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
@@ -3063,15 +3484,14 @@ void Scene_Settings(const SceneCtx& c) {
         const wchar_t* langLabels[2] = { L"\xD55C\xAD6D\xC5B4", L"English" };
         const int langVals[2] = { 0, 1 };
         choiceRow(y, T(StrId::SET_LANG),
-                  nli == 0 ? L"UI \xD45C\xC2DC \xC5B8\xC5B4" : L"Interface language",
+                  L"LANG",
                   langLabels, langVals, 2, std::min((int)g_Language, 1), [&](int v) {
                       if (v >= 0 && v < LANG_COUNT) g_Language = (Language)v;
                   });
         y += rowH + rowGap;
         boolRow(y,
                 nli == 0 ? L"CRT \xC170\xC774\xB354" : L"CRT Shader",
-                nli == 0 ? L"\xC2A4\xCE94\xB77C\xC778\xACFC \xD654\xBA74 \xD3EC\xC2A4\xD2B8 \xC774\xD399\xD2B8"
-                         : L"Scanline and screen post effect",
+                L"FX",
                 g_ShaderFx);
         y += rowH + rowGap;
         const int twoVals[2] = { 0, 1 };
@@ -3079,41 +3499,36 @@ void Scene_Settings(const SceneCtx& c) {
                                         nli == 0 ? L"\xAC10\xC18C" : L"Reduced" };
         choiceRow(y,
                   nli == 0 ? L"VFX \xBC00\xB3C4" : L"VFX Density",
-                  nli == 0 ? L"\xBC18\xBCF5 \xC774\xD399\xD2B8 \xBC00\xB3C4" : L"Repeated effect density",
+                  L"VFX",
                   vfxLabels, twoVals, 2, (int)g_VfxDensity, [&](int v) {
                       g_VfxDensity = (v == 0) ? VfxDensity::FULL : VfxDensity::REDUCED;
                   });
         y += rowH + rowGap;
         boolRow(y,
                 nli == 0 ? L"\xC790\xB3D9 \xBC1C\xC0AC" : L"Auto-Fire",
-                nli == 0 ? L"\xC870\xC900 \xC2DC \xC790\xB3D9\xC73C\xB85C \xAE30\xBCF8 \xACF5\xACA9"
-                         : L"Primary fire while aiming",
+                L"AUTO",
                 g_AutoFire);
         y += rowH + rowGap;
         boolRow(y, T(StrId::SET_CROSSHAIR),
-                nli == 0 ? L"\xCEE4\xC11C \xC870\xC900 \xC778\xB514\xCF00\xC774\xD130" : L"Cursor aim indicator",
+                L"AIM",
                 g_ShowCrosshair);
-        y += rowH + rowGap;
-        boolRow(y, T(StrId::SET_DMGNUM),
-                nli == 0 ? L"\xBC1B\xC740 \xD53C\xD574\xB7C9 \xD45C\xC2DC" : L"Show hit damage values",
-                g_ShowDamageNumbers);
     } else if (s_tab == 1) {
         volumeRow(y,
                   nli == 0 ? L"\xB9C8\xC2A4\xD130 \xBCFC\xB968" : L"Master Volume",
-                  nli == 0 ? L"\xC804\xCCB4 \xC18C\xB9AC \xCD9C\xB825" : L"Overall sound output",
+                  L"MASTER",
                   g_SoundVol);
         y += rowH + rowGap;
         disabledMeterRow(y,
                          nli == 0 ? L"BGM \xBCFC\xB968" : L"BGM Volume",
-                         nli == 0 ? L"\xC608\xC57D \xC911: \xCC44\xB110 \xBD84\xB9AC \xC608\xC815" : L"Reserved for channel split");
+                         L"SYNC");
         y += rowH + rowGap;
         disabledMeterRow(y,
                          nli == 0 ? L"SFX \xBCFC\xB968" : L"SFX Volume",
-                         nli == 0 ? L"\xC608\xC57D \xC774\xD399\xD2B8 \xCC44\xB110" : L"Reserved effect channel");
+                         L"SYNC");
         y += rowH + rowGap;
         disabledMeterRow(y,
                          nli == 0 ? L"UI \xBCFC\xB968" : L"UI Volume",
-                         nli == 0 ? L"\xC608\xC57D UI \xC0AC\xC6B4\xB4DC" : L"Reserved for UI sounds");
+                         L"SYNC");
     } else {
         wchar_t bestBuf[128];
         swprintf_s(bestBuf, L"E %lld / N %lld / H %lld", g_BestScore[0], g_BestScore[1], g_BestScore[2]);
@@ -3123,29 +3538,27 @@ void Scene_Settings(const SceneCtx& c) {
         swprintf_s(coinBuf, L"%lld G", g_Coins);
         infoRow(y,
                 nli == 0 ? L"\xC800\xC7A5 \xBC29\xC2DD" : L"Save Mode",
-                nli == 0 ? L"\xC885\xB8CC\xC2DC\xB098 \xC911\xC694 \xC2E4\xD589 \xB54C \xC790\xB3D9 \xC800\xC7A5"
-                         : L"Saved on exit and progress events",
+                L"SAVE",
                 nli == 0 ? L"\xC790\xB3D9 \xC800\xC7A5" : L"AUTO SAVE");
         y += rowH + rowGap;
         infoRow(y,
                 nli == 0 ? L"\xCD5C\xACE0 \xAE30\xB85D" : L"Best Score",
-                nli == 0 ? L"\xB09C\xC774\xB3C4\xBCC4 \xCD5C\xACE0 \xC810\xC218" : L"Best score by difficulty",
+                L"BEST",
                 bestBuf);
         y += rowH + rowGap;
         infoRow(y,
                 nli == 0 ? L"\xB204\xC801 \xAE30\xB85D" : L"Run Record",
-                nli == 0 ? L"\xCD1D\xD569 \xCC98\xCE58 \xD69F\xC218\xC640 \xD310\xC218" : L"Total kills and run count",
+                L"RUN",
                 recordBuf);
         y += rowH + rowGap;
         infoRow(y,
                 nli == 0 ? L"\xBCF4\xC720 \xCF54\xC778" : L"Coin",
-                nli == 0 ? L"\xC0C1\xC810\xACFC \xD574\xAE08\xC5D0 \xC0AC\xC6A9" : L"Used for shop and unlocks",
+                L"CREDIT",
                 coinBuf);
         y += rowH + rowGap;
         rowShellStd(y,
                     nli == 0 ? L"\xAE30\xB85D \xCD08\xAE30\xD654" : L"Reset Records",
-                    nli == 0 ? L"\xD56D\xBAA9 \xBC94\xC704\xB97C \xC120\xD0DD \xD6C4 \xCD08\xAE30\xD654 \xC2E4\xD589"
-                             : L"Select scope and confirm reset");
+                    L"RESET");
         {
             float bx = rowX + rowW - ctlW - 16.0f * uiS;
             float by2 = y + (rowH - ctlH) * 0.5f;
@@ -3158,7 +3571,7 @@ void Scene_Settings(const SceneCtx& c) {
                               rHov ? 0.90f : 0.52f, 10.0f*uiS, 3.0f*uiS);
             BatchFlush(); SetGlowFx(false);
             drawCenterS(nli == 0 ? L"\xCD08\xAE30\xD654 \xC120\xD0DD..." : L"Select Range...",
-                        bx, by2 + 12.0f*uiS, ctlW, 0.45f*uiS, 1.0f, 0.55f, 0.55f, 0.96f);
+                        bx, by2 + 8.0f*uiS, ctlW, 0.70f*uiS, 1.0f, 0.55f, 0.55f, 0.96f);
             if (rHov && lmb && !g_LmbPrev) {
                 s_resetDialog           = true;
                 s_resetDialogJustOpened = true;
@@ -3168,9 +3581,8 @@ void Scene_Settings(const SceneCtx& c) {
         }
         y += rowH + rowGap;
         rowShellStd(y,
-                    nli == 0 ? L"\xD06C\xB808\xB515" : L"Credits",
-                    nli == 0 ? L"\xC0AC\xC6A9 \xB77C\xC774\xBE0C\xB7EC\xB9AC\xC640 \xBE4C\xB4DC \xC815\xBCF4"
-                             : L"Libraries and build info");
+                    nli == 0 ? L"\xD06C\xB808\xB527" : L"Credits",
+                    L"INFO");
         {
             float bx = rowX + rowW - ctlW - 16.0f * uiS;
             float by2 = y + (rowH - ctlH) * 0.5f;
@@ -3206,9 +3618,9 @@ void Scene_Settings(const SceneCtx& c) {
         BatchFlush(); SetGlowFx(false);
 
         const wchar_t* dlgTitle = nli == 0 ? L"\xCD08\xAE30\xD654 \xBC94\xC704 \xC120\xD0DD" : L"SELECT RESET SCOPE";
-        float tw = g_TextL.Width(dlgTitle, 0.80f*uiS);
+        float tw = g_TextL.Width(dlgTitle, 0.88f*uiS);
         BindMainShader();
-        g_TextL.Draw(dlgTitle, dX + (dW - tw) * 0.5f, dY + 18.0f*uiS, 0.80f*uiS, 1.0f, 0.55f, 0.55f, 0.96f);
+        g_TextL.Draw(dlgTitle, dX + (dW - tw) * 0.5f, dY + 18.0f*uiS, 0.88f*uiS, 1.0f, 0.55f, 0.55f, 0.98f);
         drawRect(dX + 20.0f*uiS, dY + 54.0f*uiS, dW - 40.0f*uiS, 1.0f*uiS, 1.0f, 0.4f, 0.4f, 0.30f);
 
         const wchar_t* itemLabels[2][4] = {
@@ -3290,26 +3702,26 @@ void Scene_Settings(const SceneCtx& c) {
         drawConstellFrame(nX, nY, nW, nH, 1.0f, 0.35f, 0.35f, 0.72f, 16.0f*uiS, 5.0f*uiS, 0.22f);
         BatchFlush(); SetGlowFx(false);
         const wchar_t* doneTitle = nli == 0 ? L"\xCD08\xAE30\xD654 \xC644\xB8CC" : L"Reset Complete";
-        float dtw = g_TextL.Width(doneTitle, 0.80f*uiS);
+        float dtw = g_TextL.Width(doneTitle, 0.92f*uiS);
         BindMainShader();
-        g_TextL.Draw(doneTitle, nX + (nW - dtw)*0.5f, nY + 20.0f*uiS,
-                     0.80f*uiS, 1.0f, 0.55f, 0.55f, 0.96f);
-        drawRect(nX + 20.0f*uiS, nY + 58.0f*uiS, nW - 40.0f*uiS, 1.0f*uiS,
-                 1.0f, 0.4f, 0.4f, 0.28f);
+        g_TextL.Draw(doneTitle, nX + (nW - dtw)*0.5f, nY + 18.0f*uiS,
+                     0.92f*uiS, 1.0f, 0.55f, 0.55f, 0.98f);
+        drawRect(nX + 20.0f*uiS, nY + 60.0f*uiS, nW - 40.0f*uiS, 1.5f*uiS,
+                 1.0f, 0.4f, 0.4f, 0.36f);
         const wchar_t* line1 = nli==0
             ? L"\xC120\xD0DD\xD55C \xAE30\xB85D\xC774 \xCD08\xAE30\xD654\xB418\xC5C8\xC2B5\xB2C8\xB2E4."
             : L"Selected records have been reset.";
         const wchar_t* line2 = nli==0
             ? L"\xBCC0\xACBD \xC0AC\xD56D\xC744 \xC801\xC6A9\xD558\xB824\xBA74 \xAC8C\xC784\xC744 \xC7AC\xC2DC\xC791\xD558\xC138\xC694."
             : L"Restart the game to apply changes.";
-        float sc1 = 0.48f*uiS;
-        while (sc1 > 0.34f*uiS && g_TextS.Width(line1, sc1) > nW - 60.0f*uiS) sc1 -= 0.02f*uiS;
-        float sc2 = 0.44f*uiS;
-        while (sc2 > 0.30f*uiS && g_TextS.Width(line2, sc2) > nW - 60.0f*uiS) sc2 -= 0.02f*uiS;
+        float sc1 = 0.46f*uiS;
+        while (sc1 > 0.32f*uiS && g_TextS.Width(line1, sc1) > nW - 60.0f*uiS) sc1 -= 0.02f*uiS;
+        float sc2 = 0.40f*uiS;
+        while (sc2 > 0.28f*uiS && g_TextS.Width(line2, sc2) > nW - 60.0f*uiS) sc2 -= 0.02f*uiS;
         g_TextS.Draw(line1, nX + (nW - g_TextS.Width(line1, sc1))*0.5f,
-                     nY + 72.0f*uiS, sc1, 0.88f, 0.92f, 1.0f, 0.90f);
+                     nY + 74.0f*uiS, sc1, 0.88f, 0.92f, 1.0f, 0.86f);
         g_TextS.Draw(line2, nX + (nW - g_TextS.Width(line2, sc2))*0.5f,
-                     nY + 102.0f*uiS, sc2, 0.56f, 0.64f, 0.80f, 0.76f);
+                     nY + 104.0f*uiS, sc2, 0.50f, 0.58f, 0.72f, 0.62f);
         const float qW = 160.0f*uiS, qH = 44.0f*uiS;
         const float qX = nX + (nW - qW)*0.5f, qY = nY + nH - 60.0f*uiS;
         bool qHov = hit(qX, qY, qW, qH);
@@ -3443,8 +3855,7 @@ static void Scene_Settings_Legacy_UNUSED(const SceneCtx& c) {
                                          (g_Language==Language::JP)?L"CRTシェーダー":L"CRT 셰이더";
                 float tY0 = wy + 96.0f + rowH * 2;
                 toggleAt(colL, colL + btnXL, tY0,            T(StrId::SET_CROSSHAIR), g_ShowCrosshair, btnXL - 8.0f);
-                toggleAt(colL, colL + btnXL, tY0 + rowH,     T(StrId::SET_DMGNUM),    g_ShowDamageNumbers, btnXL - 8.0f);
-                toggleAt(colL, colL + btnXL, tY0 + rowH * 2,  T(StrId::SET_COMBO),     g_ShowCombo, btnXL - 8.0f);
+                toggleAt(colL, colL + btnXL, tY0 + rowH,     T(StrId::SET_COMBO),     g_ShowCombo, btnXL - 8.0f);
                 toggleAt(colR, colR + btnXR, tY0,            afLabel, g_AutoFire, btnXR - 8.0f);
                 toggleAt(colR, colR + btnXR, tY0 + rowH,     asLabel, g_AutoSkill, btnXR - 8.0f);
                 toggleAt(colR, colR + btnXR, tY0 + rowH * 2, sfLabel, g_ShaderFx, btnXR - 8.0f);
@@ -3874,10 +4285,20 @@ void Scene_AugSelect(const SceneCtx& c) {
     const std::function<void()>& ResetForNewGame = c.reset;
 
     // ── 진입/종료/hover 애니메이션 상태 ──
-    static float s_enterT      = 1.0f;
-    static float s_hovY[3]     = {0.f, 0.f, 0.f};  // spring-animated Y offset per card
-    static float s_pickFlash[3]= {0.f, 0.f, 0.f};  // 0→1 pick pulse per card
-    static int   s_prevHov     = -1;
+    static float s_enterT       = 1.0f;
+    static float s_entryElapsed = 0.0f;             // 진입 후 경과 시간(초)
+    static float s_scanT[3]     = {0.f, 0.f, 0.f}; // 카드별 스캔라인 진행도 0→1
+    static float s_hovY[3]      = {0.f, 0.f, 0.f};
+    static float s_pickFlash[3] = {0.f, 0.f, 0.f};
+    static int   s_prevHov      = -1;
+    static float s_shockR       = -1.0f;  // 충격파 링 반경 (-1=비활성)
+
+    // ── 종료 파티클 (screen-space) ──
+    struct AugExPart { float x,y,vx,vy,life,maxLife,size,r,g,b,spawnT; bool active; };
+    static constexpr int MAX_AEP = 56;
+    static AugExPart s_AEP[MAX_AEP];
+    static bool s_exitPartsSpawned = false;
+    static bool s_supernovaSpawned = false;
 
     auto easeOut = [](float t) -> float {
         float inv = 1.0f - t; return 1.0f - inv * inv * inv;
@@ -3888,12 +4309,32 @@ void Scene_AugSelect(const SceneCtx& c) {
         const GameState prev = g_GameManager.lastState;
         if (prev != GameState::AUG_SELECT && prev != GameState::DEBUFF_SELECT) {
             s_enterT = 0.0f;
-            for (int i = 0; i < 3; i++) { s_hovY[i] = 0.f; s_pickFlash[i] = 0.f; }
+            s_entryElapsed = 0.0f;
+            for (int i = 0; i < 3; i++) {
+                s_hovY[i] = 0.f; s_pickFlash[i] = 0.f; s_scanT[i] = 0.f;
+            }
             s_prevHov = -1;
+            s_shockR  = 0.0f;   // 진입 즉시 충격파 시작
+            for (int i = 0; i < MAX_AEP; i++) s_AEP[i].active = false;
+            s_exitPartsSpawned  = false;
+            s_supernovaSpawned  = false;
         }
     }
     const float ENTER_DUR = 0.38f;
     s_enterT = std::min(s_enterT + delta / ENTER_DUR, 1.0f);
+
+    // 경과 시간 + 카드별 스캔 진행도
+    s_entryElapsed += delta;
+    {
+        constexpr float SCAN_START   = 0.08f;  // 첫 카드 스캔 시작
+        constexpr float SCAN_STAGGER = 0.07f;  // 카드 간 딜레이
+        constexpr float SCAN_DUR     = 0.20f;  // 카드 1장 스캔 소요
+        for (int i = 0; i < 3; i++) {
+            float st = SCAN_START + (float)i * SCAN_STAGGER;
+            float e  = s_entryElapsed - st;
+            s_scanT[i] = (e >= 0.0f) ? std::min(1.0f, e / SCAN_DUR) : 0.0f;
+        }
+    }
 
     // pick flash: trigger when hover changes to a new card
     if (g_HoveredAug != s_prevHov && g_HoveredAug >= 0 && g_HoveredAug < 3)
@@ -3908,76 +4349,312 @@ void Scene_AugSelect(const SceneCtx& c) {
     }
 
     // exit animation (g_AugExitT driven by main.cpp)
-    const float EXIT_DUR = 0.30f;
+    const float EXIT_DUR = 1.35f;
     float exitPct  = (g_AugExitT >= 0.f) ? std::min(g_AugExitT / EXIT_DUR, 1.0f) : -1.0f;
     float exitE    = (exitPct >= 0.f) ? easeOut(exitPct) : 0.f;
 
     // ── 레이아웃 상수 ──
     const int   nCards  = 3;
-    const float CARD_W  = 280.0f;
-    const float CARD_H  = 430.0f;
-    const float GAP     = 40.0f;
+    const float CARD_W  = 320.0f;
+    const float CARD_H  = 480.0f;
+    const float GAP     = 36.0f;
     const float TOTAL_W = nCards * CARD_W + (nCards - 1) * GAP;
-    const float TB      = WIN_TB;
     float baseX = (sw - TOTAL_W) * 0.5f;
-    float baseY = (sh - CARD_H)  * 0.40f;
+    float baseY = (sh - CARD_H)  * 0.38f;
 
     const bool isDebuff = (st == GameState::DEBUFF_SELECT);
+    const float now = (float)glfwGetTime();
 
     // ── 다크 오버레이 페이드인/아웃 ──
     float overlayE  = easeOut(s_enterT);
     float overlayA  = overlayE * (exitPct >= 0.f ? (1.0f - exitE) : 1.0f);
     BindMainShader();
     if (isDebuff)
-        drawRect(0, 0, sw, sh, 0.14f, 0.02f, 0.02f, overlayA * 0.72f * SCENE_BG_ALPHA);
+        drawRect(0, 0, sw, sh, 0.10f, 0.01f, 0.01f, overlayA * 0.94f * SCENE_BG_ALPHA);
     else
-        drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.09f, overlayA * 0.72f * SCENE_BG_ALPHA);
+        drawRect(0, 0, sw, sh, 0.01f, 0.01f, 0.06f, overlayA * 0.94f * SCENE_BG_ALPHA);
     BatchFlush();
 
-    // ── 타이틀 페이드인/아웃 ──
+    // ── 충격파 링 (빅뱅 — 중앙에서 방사형 확장) ──
+    {
+        constexpr float SHOCK_DUR   = 0.30f;
+        constexpr float SHOCK_MAX_R = 580.0f;
+        if (s_shockR >= 0.0f && exitPct < 0.0f) {
+            s_shockR += delta * (SHOCK_MAX_R / SHOCK_DUR);
+            if (s_shockR >= SHOCK_MAX_R) {
+                s_shockR = -1.0f;   // 완료
+            } else {
+                float ringT  = s_shockR / SHOCK_MAX_R;          // 0→1
+                float ringA  = (1.0f - ringT);                  // 불투명→투명
+                float scx    = sw * 0.5f, scy = sh * 0.5f;
+                float thickG = 36.0f * (1.0f - ringT * 0.55f); // glow 두께 (감소)
+                float thickC = 4.0f;                            // 코어 링 두께
+
+                BindMainShader();
+                SetGlowFx(true);
+                constexpr int N = 72;
+                for (int k = 0; k < N; k++) {
+                    float a0 = (float)k       / N * 6.2832f;
+                    float a1 = (float)(k + 1) / N * 6.2832f;
+                    float c0 = cosf(a0), s0 = sinf(a0);
+                    float c1 = cosf(a1), s1 = sinf(a1);
+                    float R = s_shockR;
+                    // glow 패스 (두껍고 흐림)
+                    BatchTri(scx+c0*(R-thickG), scy+s0*(R-thickG),
+                             scx+c0*R,           scy+s0*R,
+                             scx+c1*R,           scy+s1*R,
+                             1.0f, 0.96f, 0.82f, ringA * 0.22f);
+                    BatchTri(scx+c0*(R-thickG), scy+s0*(R-thickG),
+                             scx+c1*R,           scy+s1*R,
+                             scx+c1*(R-thickG), scy+s1*(R-thickG),
+                             1.0f, 0.96f, 0.82f, ringA * 0.22f);
+                    // 코어 링 (얇고 선명)
+                    BatchTri(scx+c0*(R-thickC), scy+s0*(R-thickC),
+                             scx+c0*R,           scy+s0*R,
+                             scx+c1*R,           scy+s1*R,
+                             1.0f, 1.0f, 1.0f, ringA * 0.88f);
+                    BatchTri(scx+c0*(R-thickC), scy+s0*(R-thickC),
+                             scx+c1*R,           scy+s1*R,
+                             scx+c1*(R-thickC), scy+s1*(R-thickC),
+                             1.0f, 1.0f, 1.0f, ringA * 0.88f);
+                }
+                BatchFlush();
+                SetGlowFx(false);
+            }
+        }
+    }
+
+    // ── 종료 파티클 spawn (선택 확정 첫 프레임) ──
+    if (g_AugExitT >= 0.0f && !s_exitPartsSpawned) {
+        s_exitPartsSpawned = true;
+        float selCX = baseX + g_AugExitSlot * (CARD_W + GAP) + CARD_W * 0.5f;
+        float selCY = baseY + CARD_H * 0.5f + s_hovY[g_AugExitSlot];
+        const AugDef& selDef = ALL_AUGS[g_GameManager.augChoices[g_AugExitSlot]];
+        float pr, pg, pb2;
+        GetRarityColor(selDef.rarity, pr, pg, pb2);
+        for (int k = 0; k < MAX_AEP; k++) {
+            float a    = (float)k / (float)MAX_AEP * 6.2832f;
+            float spd  = 200.0f + (float)(rand() % 260);
+            float lifeT= 0.24f + (float)(rand() % 12) * 0.01f;
+            s_AEP[k] = { selCX, selCY,
+                          cosf(a)*spd, sinf(a)*spd,
+                          lifeT, lifeT,
+                          2.5f + (float)(rand() % 4),
+                          pr, pg, pb2, 0.0f, true };
+        }
+        TriggerFlash(pr, pg, pb2, 0.52f);
+    }
+
+    // ── 헤더 (터미널 스타일) ──
     const wchar_t* TIT = isDebuff ? T(StrId::CHOOSE_DEBUFF) : T(StrId::CHOOSE_AUG);
     float titA = easeOut(std::min(s_enterT * 1.6f, 1.0f));
     if (exitPct >= 0.f) titA *= std::max(0.f, 1.0f - exitPct * 2.5f);
-    g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.0f), baseY - 62.0f, 1.0f,
-                 1.0f, 1.0f, 1.0f, 0.95f * titA);
-    if (st == GameState::AUG_SELECT) {
-        wchar_t slotBuf[96];
-        swprintf_s(slotBuf, L"ID %d / %d", CountIdentitySlotsUsed(), IdentitySlotMax());
-        g_TextS.Draw(slotBuf, CenterTextX(sw, g_TextS, slotBuf, 0.80f),
-                     baseY - 32.0f, 0.80f, 0.72f, 0.92f, 1.0f, 0.85f * titA);
+    {
+        float headY = baseY - 52.0f;
+        const wchar_t* PFX = L"> ";
+        float pfxW = g_TextS.Width(PFX, 0.56f);
+        g_TextS.Draw(PFX, baseX, headY, 0.56f, 0.38f, 0.72f, 1.0f, 0.78f * titA);
+        g_TextS.Draw(TIT, baseX + pfxW, headY, 0.56f, 0.92f, 0.96f, 1.0f, 0.94f * titA);
+        float titLineW = pfxW + g_TextS.Width(TIT, 0.56f);
+        if (st == GameState::AUG_SELECT) {
+            wchar_t slotBuf[48];
+            swprintf_s(slotBuf, L"ID %d / %d", CountIdentitySlotsUsed(), IdentitySlotMax());
+            float slotW = g_TextS.Width(slotBuf, 0.52f);
+            g_TextS.Draw(slotBuf, baseX + TOTAL_W - slotW, headY, 0.52f,
+                         0.52f, 0.76f, 1.0f, 0.82f * titA);
+            BatchFlush();
+            BindMainShader();
+            float lx0 = baseX + titLineW + 12.0f, lx1 = baseX + TOTAL_W - slotW - 12.0f;
+            if (lx1 > lx0)
+                drawRect(lx0, headY + 10.0f, lx1 - lx0, 1.2f,
+                         0.32f, 0.58f, 0.88f, 0.28f * titA);
+        }
+        BatchFlush();
     }
-    BatchFlush();
 
     // ── 카드 3장 ──
+    // ── 별자리 기하 도형 아이콘 람다 ──
+    auto drawAugGeo = [&](float gcx, float gcy, AugRarity rar,
+                          float cr, float cg, float cb, float alpha, bool hov, float t) {
+        float pulse = 0.84f + 0.16f * sinf(t * 1.9f);
+        float hb    = hov ? 1.0f : 0.0f;
+        BindMainShader();
+        switch (rar) {
+        case AugRarity::COMMON: {
+            float ds = 52.0f + 6.0f*hb, arm = 104.0f + 8.0f*hb, at = 2.5f;
+            drawDiamond(gcx, gcy, ds, cr, cg, cb, 0.84f * alpha * pulse);
+            drawDiamond(gcx, gcy, ds * 0.44f, 0.04f, 0.05f, 0.08f, alpha);
+            // secondary inner ring
+            drawDiamond(gcx, gcy, ds * 0.78f, cr, cg, cb, 0.30f * alpha);
+            float off = ds * 0.72f;
+            drawRect(gcx - arm, gcy - at*0.5f, arm - off, at, cr, cg, cb, 0.48f*alpha);
+            drawRect(gcx + off,  gcy - at*0.5f, arm - off, at, cr, cg, cb, 0.48f*alpha);
+            drawRect(gcx - at*0.5f, gcy - arm, at, arm - off, cr, cg, cb, 0.48f*alpha);
+            drawRect(gcx - at*0.5f, gcy + off,  at, arm - off, cr, cg, cb, 0.48f*alpha);
+            drawDiamond(gcx - arm, gcy, 10.0f, cr, cg, cb, 0.65f*alpha);
+            drawDiamond(gcx + arm, gcy, 10.0f, cr, cg, cb, 0.65f*alpha);
+            drawDiamond(gcx, gcy - arm, 10.0f, cr, cg, cb, 0.65f*alpha);
+            drawDiamond(gcx, gcy + arm, 10.0f, cr, cg, cb, 0.65f*alpha);
+            // mid-arm accent diamonds
+            float ma = arm * 0.55f;
+            drawDiamond(gcx - ma, gcy, 5.0f, cr, cg, cb, 0.40f*alpha);
+            drawDiamond(gcx + ma, gcy, 5.0f, cr, cg, cb, 0.40f*alpha);
+            drawDiamond(gcx, gcy - ma, 5.0f, cr, cg, cb, 0.40f*alpha);
+            drawDiamond(gcx, gcy + ma, 5.0f, cr, cg, cb, 0.40f*alpha);
+            break;
+        }
+        case AugRarity::RARE: {
+            float r1 = 70.0f + 6.0f*hb, r2 = 108.0f + 8.0f*hb;
+            float a1 = t * 0.55f, a2 = -t * 0.38f + 0.785f;
+            for (int n = 0; n < 4; n++) {
+                float a = a1 + n * 1.5708f;
+                drawDiamond(gcx + r1*cosf(a), gcy + r1*sinf(a), 12.0f, cr, cg, cb, 0.84f*alpha);
+            }
+            for (int n = 0; n < 4; n++) {
+                float a = a2 + n * 1.5708f;
+                drawDiamond(gcx + r2*cosf(a), gcy + r2*sinf(a),  8.0f, cr, cg, cb, 0.54f*alpha);
+            }
+            // intermediate 8-node ring
+            float r1b = (r1 + r2) * 0.5f;
+            float a1b = a1 + 0.3927f;
+            for (int n = 0; n < 8; n++) {
+                float a = a1b + n * 0.7854f;
+                drawDiamond(gcx + r1b*cosf(a), gcy + r1b*sinf(a), 3.5f, cr, cg, cb, 0.30f*alpha);
+            }
+            float len = r1 * 0.72f, at = 2.5f;
+            drawRect(gcx - len, gcy - at*0.5f, len*2.0f, at, cr, cg, cb, 0.28f*alpha);
+            drawRect(gcx - at*0.5f, gcy - len, at, len*2.0f, cr, cg, cb, 0.28f*alpha);
+            drawDiamond(gcx, gcy, 22.0f, cr, cg, cb, 0.96f*alpha*pulse);
+            drawDiamond(gcx, gcy,  9.0f, 0.04f, 0.05f, 0.08f, alpha);
+            break;
+        }
+        case AugRarity::EPIC:
+        case AugRarity::LEGENDARY:
+        case AugRarity::MYTHIC:
+        case AugRarity::COMBO:
+        case AugRarity::SPECIAL: {
+            float r1 = 80.0f + 7.0f*hb, r2 = 44.0f + 4.0f*hb, r3 = 118.0f + 9.0f*hb;
+            float a1 = t * 0.38f, a2 = -t * 0.26f;
+            for (int n = 0; n < 8; n++) {
+                float a  = a1 + n * 0.7854f;
+                bool maj = (n % 2 == 0);
+                float rr = maj ? r1 : r2;
+                float sz = maj ? 13.0f : 7.0f;
+                float al = maj ? 0.88f * pulse : 0.66f;
+                drawDiamond(gcx + rr*cosf(a), gcy + rr*sinf(a), sz, cr, cg, cb, al*alpha);
+            }
+            // mid ring between star points
+            float r1m = (r1 + r2) * 0.5f;
+            for (int n = 0; n < 8; n++) {
+                float a = a1 + n * 0.7854f + 0.3927f;
+                drawDiamond(gcx + r1m*cosf(a), gcy + r1m*sinf(a), 3.5f, cr, cg, cb, 0.28f*alpha);
+            }
+            for (int n = 0; n < 6; n++) {
+                float a  = a2 + n * 1.0472f;
+                bool maj = (n % 3 == 0);
+                drawDiamond(gcx + r3*cosf(a), gcy + r3*sinf(a),
+                            maj ? 8.0f : 4.0f, cr, cg, cb, (maj ? 0.68f : 0.32f)*alpha);
+            }
+            float at = 2.5f, len = r2 * 0.65f;
+            drawRect(gcx - len, gcy - at*0.5f, len*2.0f, at, cr, cg, cb, 0.22f*alpha);
+            drawRect(gcx - at*0.5f, gcy - len, at, len*2.0f, cr, cg, cb, 0.22f*alpha);
+            drawDiamond(gcx, gcy, 26.0f, cr, cg, cb, alpha*pulse);
+            drawDiamond(gcx, gcy, 11.0f, 0.04f, 0.05f, 0.08f, alpha);
+            break;
+        }
+        case AugRarity::DEBUFF: {
+            float ts = 92.0f + 8.0f*hb, p2 = 0.70f + 0.30f*sinf(t * 2.2f);
+            float topY = gcy - ts*0.55f, botY = gcy + ts*0.36f;
+            drawDiamond(gcx,      topY, 14.0f, cr, cg, cb, 0.90f*alpha*p2);
+            drawDiamond(gcx - ts, botY, 14.0f, cr, cg, cb, 0.90f*alpha*p2);
+            drawDiamond(gcx + ts, botY, 14.0f, cr, cg, cb, 0.90f*alpha*p2);
+            drawRect(gcx - ts, botY - 1.0f, ts*2.0f, 2.0f, cr, cg, cb, 0.60f*alpha);
+            drawRect(gcx - 1.0f, topY, 2.0f, (botY - topY)*0.52f, cr, cg, cb, 0.50f*alpha);
+            // inner accent nodes
+            float mi = ts * 0.5f;
+            drawDiamond(gcx - mi, botY, 7.0f, cr, cg, cb, 0.50f*alpha*p2);
+            drawDiamond(gcx + mi, botY, 7.0f, cr, cg, cb, 0.50f*alpha*p2);
+            drawDiamond(gcx, gcy + 8.0f, 20.0f, cr, cg, cb, 0.88f*alpha*p2);
+            drawDiamond(gcx, gcy + 8.0f,  8.0f, 0.08f, 0.02f, 0.02f, alpha);
+            break;
+        }
+        }
+    };
+
+    // 카드 발사 원점 (특이점 = 화면 중앙)
+    const float ORIGIN_X = sw * 0.5f - CARD_W * 0.5f;
+    const float ORIGIN_Y = sh * 0.5f - CARD_H * 0.5f;
+
     static const wchar_t* KEY_LABELS[3] = { L"[ 1 ]", L"[ 2 ]", L"[ 3 ]" };
     for (int i = 0; i < nCards; i++) {
-        // 스태거 슬라이드인
-        float stag = (float)i * 0.07f;
+        // 중앙 특이점 → 최종 위치 방사형 (스태거 0.10씩)
+        float stag = (float)i * 0.10f;
         float ct   = std::max(0.0f, std::min((s_enterT - stag) / (1.0f - stag), 1.0f));
         float ce   = easeOut(ct);
-        float slideY = (1.0f - ce) * 110.0f;
         float cardA  = ce;
 
         bool  hov   = (g_HoveredAug == i);
-        bool  isConf= (exitPct >= 0.f && g_AugExitSlot == i);  // 선택 확정된 카드
-        float flash = s_pickFlash[i];   // 0→1→0 pick pulse
+        bool  isConf= (exitPct >= 0.f && g_AugExitSlot == i);
+        float flash = s_pickFlash[i];
 
-        // exit 애니메이션 오프셋/알파
-        float exitOffY = 0.f;
+        // ── Phase 2 알파 채널 (항성/행성 분리 연출) ──
+        float bgAlpha   = cardA;
+        float textAlpha = cardA;
+        float frmAlpha  = cardA;
+        float iconAlpha = cardA;
         if (exitPct >= 0.f) {
             if (isConf) {
-                // 선택 카드: 위로 날아오르며 페이드
-                exitOffY = -exitE * 55.f;
-                cardA   *= std::max(0.f, 1.0f - exitE * 1.2f);
+                // 항성: 유지 → Phase 4(0.85s~) 페이드아웃
+                if (g_AugExitT > 0.85f) {
+                    float ft = std::min((g_AugExitT - 0.85f) / 0.50f, 1.0f);
+                    bgAlpha = textAlpha = frmAlpha = iconAlpha = cardA * (1.0f - ft);
+                }
+                hov = false;
             } else {
-                // 나머지: 아래로 내려가며 빠르게 페이드
-                exitOffY = exitE * 45.f;
-                cardA   *= std::max(0.f, 1.0f - exitE * 1.8f);
+                // 행성: 텍스트/bg 즉시 소멸, 프레임/아이콘은 Phase3 궤도 수렴 중 소멸
+                textAlpha = 0.0f;
+                bgAlpha   = cardA * std::max(0.0f, 1.0f - g_AugExitT / 0.15f);
+                hov = false;
+
+                if (g_AugExitT < 0.42f) {
+                    // Phase 2: 제자리 유지 (항성 수렴 대기)
+                    frmAlpha  = cardA;
+                    iconAlpha = cardA;
+                } else {
+                    // Phase 3: 나선 수렴 중 페이드 (위치는 아래 position 블록에서 결정)
+                    float p3T = std::min((g_AugExitT - 0.42f) / 0.43f, 1.0f);
+                    frmAlpha  = cardA * (1.0f - p3T);
+                    iconAlpha = frmAlpha;
+                }
             }
         }
 
-        float cx = baseX + i * (CARD_W + GAP);
-        float cy = baseY + slideY + s_hovY[i] + exitOffY;
+        // 위치 계산: 등장 방사형 + 항성 수렴
+        float fx = baseX + (float)i * (CARD_W + GAP);
+        float fy = baseY;
+        float cx = ORIGIN_X + (fx - ORIGIN_X) * ce;
+        float cy = ORIGIN_Y + (fy - ORIGIN_Y) * ce + s_hovY[i];
+        if (exitPct >= 0.f && isConf) {
+            float lerpT = std::min(g_AugExitT / 0.42f, 1.0f);
+            float lerpE = easeOut(lerpT);
+            cx = fx + (sw * 0.5f - CARD_W * 0.5f - fx) * lerpE;
+            cy = fy + (sh * 0.5f - CARD_H * 0.5f - fy) * lerpE;
+        }
+        // Phase 3 planet: 항성 주위 나선 수렴
+        if (exitPct >= 0.f && !isConf && g_AugExitT >= 0.42f) {
+            float p3T    = std::min((g_AugExitT - 0.42f) / 0.43f, 1.0f);
+            float p3ease = p3T * p3T;
+            float cardCX = fx + CARD_W * 0.5f;
+            float cardCY = fy + CARD_H * 0.5f;
+            float ddx = cardCX - sw * 0.5f;
+            float ddy = cardCY - sh * 0.5f;
+            float startR = sqrtf(ddx * ddx + ddy * ddy);
+            float startA = atan2f(ddy, ddx);
+            float radius = startR * (1.0f - p3ease);
+            float orbitA = startA + p3T * 3.14159f;
+            cx = sw * 0.5f - CARD_W * 0.5f + cosf(orbitA) * radius;
+            cy = sh * 0.5f - CARD_H * 0.5f + sinf(orbitA) * radius;
+        }
 
         const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
         float tr, tg, tb2;
@@ -3989,76 +4666,175 @@ void Scene_AugSelect(const SceneCtx& c) {
         float ng = std::min(1.0f, tg * bMul + 0.08f);
         float nb = std::min(1.0f, tb2 * bMul + 0.08f);
 
-        // 카드 배경
+        // ── 배경 + 배지 마커 ──
         BindMainShader();
-        float bgMul = (hov ? 0.14f : 0.09f) + flash * 0.06f;
+        float tc = hov ? 0.10f : 0.06f;
         drawRect(cx, cy, CARD_W, CARD_H,
-                 tr * bgMul, tg * bgMul, tb2 * bgMul, 0.94f * cardA);
+                 0.05f + tr  * tc + flash * 0.04f,
+                 0.06f + tg  * tc + flash * 0.03f,
+                 0.10f + tb2 * tc + flash * 0.03f,
+                 0.96f * bgAlpha);
+        drawDiamond(cx + 15.0f, cy + 17.0f, 5.0f, nr, ng, nb, 0.85f * bgAlpha);
 
-        // 타이틀바 (rarity 색 다크)
-        drawRect(cx, cy, CARD_W, TB,
-                 tr * 0.38f, tg * 0.38f, tb2 * 0.38f, 0.97f * cardA);
-
-        // 테두리 (pick flash 시 잠깐 더 밝게)
-        BatchFlush(); glEnable(GL_BLEND);
-        float bord = (hov ? 1.0f : 0.60f) + flash * 0.5f;
-        drawNeonBorder(cx, cy, CARD_W, CARD_H, nr * bord, ng * bord, nb * bord);
-
-        // 타이틀바 텍스트 (등급 배지)
+        // ── 등급 배지 텍스트 (좌상단) ──
         const wchar_t* badge = GetAugBadge(def);
         BatchFlush();
-        float bs = 0.48f;
-        g_TextS.Draw(badge, cx + (CARD_W - g_TextS.Width(badge, bs)) * 0.5f,
-                     cy + (TB - 11.0f * bs) * 0.5f,
-                     bs, nr, ng, nb, 0.95f * cardA);
+        g_TextS.Draw(badge, cx + 26.0f, cy + 10.0f, 0.42f, nr, ng, nb, 0.88f * bgAlpha);
         BatchFlush();
 
-        // 아이콘
-        GLuint icon = IconFor(def.type);
+        // ── 별자리 기하 도형 아이콘 (상단 60% 중앙) ──
+        drawAugGeo(cx + CARD_W * 0.5f, cy + 148.0f,
+                   def.rarity, nr, ng, nb, iconAlpha, hov, now);
+
+        // ── 구분선 (하단 40% 경계, diamond 포인트) ──
         BindMainShader();
-        if (icon) {
-            float isz = 112.0f;
+        {
+            float sepY = cy + 295.0f;
+            float sepX = cx + 22.0f, sepW = CARD_W - 44.0f;
+            drawRect(sepX, sepY, sepW, 1.2f, nr, ng, nb, 0.28f * iconAlpha);
+            drawDiamond(cx + CARD_W * 0.5f, sepY, 3.5f, nr, ng, nb, 0.55f * iconAlpha);
+            drawDiamond(sepX,          sepY, 3.0f, nr, ng, nb, 0.42f * iconAlpha);
+            drawDiamond(sepX + sepW,   sepY, 3.0f, nr, ng, nb, 0.42f * iconAlpha);
+        }
+
+        // ── 이름 (하단 40% 그룹 — 좌측 컬러 바 + 텍스트) ──
+        const wchar_t* cardName = AugName(def);
+        float nameSc = 0.92f;
+        while (nameSc > 0.58f && g_TextL.Width(cardName, nameSc) > CARD_W - 40.0f)
+            nameSc -= 0.04f;
+        float nameY = cy + 312.0f;
+        float nameH = g_TextL.Height(cardName, nameSc);
+        drawRect(cx + 14.0f, nameY, 3.0f, nameH + 2.0f, nr, ng, nb, 0.80f * textAlpha);
+        BatchFlush();
+        g_TextL.Draw(cardName, cx + 24.0f, nameY, nameSc,
+                     1.0f, 1.0f, 1.0f, 0.96f * textAlpha);
+
+        // ── 설명 (최대 2줄) ──
+        const wchar_t* desc = AugDesc(def);
+        std::wstring dl[2]; int dli2 = 0;
+        for (const wchar_t* p = desc; *p; ++p) {
+            if (*p == L'/' && dli2 < 1) { dli2++; continue; }
+            if (dli2 < 2) dl[dli2] += *p;
+        }
+        for (auto& s2 : dl) { while (!s2.empty() && s2.front()==L' ') s2.erase(0,1); while (!s2.empty() && s2.back()==L' ') s2.pop_back(); }
+        float dY2 = nameY + nameH + 8.0f;
+        for (int k = 0; k < 2 && !dl[k].empty(); ++k) {
+            float ksc = (k == 0) ? 0.58f : 0.52f;
+            while (ksc > 0.38f && g_TextS.Width(dl[k].c_str(), ksc) > CARD_W - 38.0f) ksc -= 0.04f;
+            g_TextS.Draw(dl[k].c_str(), cx + 24.0f, dY2, ksc,
+                         0.76f, 0.84f, 0.92f, (k == 0 ? 0.80f : 0.60f) * textAlpha);
+            dY2 += ksc * 20.0f + 4.0f;
+        }
+
+        // ── 키 힌트 (하단) ──
+        {
+            float klW = g_TextS.Width(KEY_LABELS[i], 0.88f);
+            g_TextS.Draw(KEY_LABELS[i],
+                         cx + (CARD_W - klW) * 0.5f, cy + CARD_H - 40.0f,
+                         0.88f, nr, ng, nb, 0.90f * textAlpha);
+        }
+        BatchFlush();
+
+        // ── 호버 내부 테두리 glow ──
+        if (hov || flash > 0.1f) {
+            BindMainShader();
+            SetGlowFx(true);
+            float bA = ((hov ? 0.46f : 0.0f) + flash * 0.24f) * frmAlpha;
+            if (bA > 0.01f) {
+                float iX = cx+3.5f, iY = cy+3.5f, iW = CARD_W-7.0f, iH = CARD_H-7.0f;
+                drawRect(iX, iY,          iW, 2.5f, nr, ng, nb, bA);
+                drawRect(iX, iY+iH-2.5f,  iW, 2.5f, nr, ng, nb, bA);
+                drawRect(iX, iY,          2.5f, iH,  nr, ng, nb, bA);
+                drawRect(iX+iW-2.5f, iY,  2.5f, iH,  nr, ng, nb, bA);
+            }
             BatchFlush();
-            DrawIcon(icon, cx + (CARD_W - isz) * 0.5f, cy + TB + 20.0f,
-                     isz, isz, 1.0f, 1.0f, 1.0f, 0.97f * cardA);
+            SetGlowFx(false);
             BindMainShader();
         }
 
-        // 구분선
-        drawRect(cx + 18.0f, cy + TB + 142.0f, CARD_W - 36.0f, 1.5f,
-                 nr, ng, nb, 0.40f * cardA);
-
-        // 이름
-        const wchar_t* cardName = AugName(def);
-        float nameSc = 1.05f;
-        while (nameSc > 0.66f && g_TextL.Width(cardName, nameSc) > CARD_W - 22.0f)
-            nameSc -= 0.04f;
-        BatchFlush();
-        g_TextL.Draw(cardName,
-                     cx + (CARD_W - g_TextL.Width(cardName, nameSc)) * 0.5f,
-                     cy + TB + 156.0f, nameSc, 1.0f, 1.0f, 1.0f, 0.96f * cardA);
-        BatchFlush();
-
-        // 설명 첫 줄 (카드 안)
-        const wchar_t* desc = AugDesc(def);
-        std::wstring firstLine;
-        for (const wchar_t* p = desc; *p && *p != L'/'; ++p) firstLine += *p;
-        while (!firstLine.empty() && firstLine.front() == L' ') firstLine.erase(0, 1);
-        float dsc = 0.66f;
-        while (dsc > 0.48f && g_TextS.Width(firstLine.c_str(), dsc) > CARD_W - 22.0f)
-            dsc -= 0.04f;
+        // ── Constellation frame (hover 시 glow + 두꺼워진 코너) ──
         BindMainShader();
-        g_TextS.Draw(firstLine.c_str(),
-                     cx + (CARD_W - g_TextS.Width(firstLine.c_str(), dsc)) * 0.5f,
-                     cy + TB + 195.0f, dsc, 0.82f, 0.82f, 0.82f, 0.78f * cardA);
         BatchFlush();
+        SetGlowFx(hov || flash > 0.15f);
+        drawConstellFrame(cx, cy, CARD_W, CARD_H,
+                          nr, ng, nb,
+                          ((hov ? 0.90f : 0.44f) + flash * 0.28f) * frmAlpha,
+                          hov ? 30.0f : 22.0f, hov ? 7.0f : 5.5f,
+                          ((hov ? 0.40f : 0.06f) + flash * 0.14f) * frmAlpha,
+                          1.0f);
+        BatchFlush();
+        SetGlowFx(false);
 
-        // 키 힌트 (카드 하단)
+        // ── 진입 스캔 마스크 + 빔 (decode 연출) ──
+        if (s_scanT[i] < 1.0f && exitPct < 0.0f) {
+            BatchFlush();
+            BindMainShader();
+            float revealH = s_scanT[i] * CARD_H;
+            // 미공개 영역 오버레이 색으로 덮기
+            float bgR = isDebuff ? 0.10f : 0.01f;
+            float bgG = 0.01f;
+            float bgB = isDebuff ? 0.01f : 0.06f;
+            drawRect(cx, cy + revealH, CARD_W, CARD_H - revealH + 1.0f,
+                     bgR, bgG, bgB, overlayA * 0.96f + 0.04f);
+            // 스캔 빔
+            if (s_scanT[i] > 0.0f) {
+                float flk = 0.70f + 0.30f * sinf(s_entryElapsed * 92.0f + (float)i * 2.8f);
+                drawRect(cx, cy + revealH - 14.0f, CARD_W, 14.0f, nr, ng, nb, 0.18f * flk * cardA);
+                drawRect(cx, cy + revealH - 2.5f,  CARD_W,  3.5f, 1.0f, 1.0f, 1.0f, 0.90f * flk * cardA);
+            }
+            BatchFlush();
+        }
+    }
+
+    // ── Phase 4: 초신성 폭발 파티클 (0.85s) ──
+    if (g_AugExitT > 0.85f && !s_supernovaSpawned) {
+        s_supernovaSpawned = true;
+        int selIdx = (g_AugExitSlot >= 0) ? g_GameManager.augChoices[g_AugExitSlot] : 0;
+        const AugDef& snDef = ALL_AUGS[selIdx];
+        float sr, sgc, sbc;
+        GetRarityColor(snDef.rarity, sr, sgc, sbc);
+        int placed = 0;
+        for (int k = 0; k < MAX_AEP && placed < 48; k++) {
+            if (s_AEP[k].active) continue;
+            float ang = (float)placed / 48.0f * 6.2832f;
+            float spd = 350.0f + (float)(rand() % 450);
+            s_AEP[k] = { sw * 0.5f, sh * 0.5f,
+                          cosf(ang) * spd, sinf(ang) * spd,
+                          0.65f, 0.65f,
+                          5.0f + (float)(rand() % 8),
+                          sr, sgc, sbc,
+                          g_AugExitT,  // spawnT — 0.14s 후 수렴 시작
+                          true };
+            placed++;
+        }
+        TriggerFlash(sr, sgc, sbc, 0.90f);
+    }
+
+    // ── 종료 파티클 업데이트 + 드로우 ──
+    if (exitPct >= 0.0f) {
+        const float tgt_x = sw * 0.5f;
+        const float tgt_y = sh * 0.5f;
         BindMainShader();
-        g_TextS.Draw(KEY_LABELS[i],
-                     cx + (CARD_W - g_TextS.Width(KEY_LABELS[i], 0.95f)) * 0.5f,
-                     cy + CARD_H - 46.0f, 0.95f,
-                     nr, ng, nb, 0.90f * cardA);
+        for (int k = 0; k < MAX_AEP; k++) {
+            AugExPart& p = s_AEP[k];
+            if (!p.active) continue;
+            p.life -= delta;
+            if (p.life <= 0.0f) { p.active = false; continue; }
+            // spawnT 기준 0.14s 이후 화면 중앙 수렴
+            if ((g_AugExitT - p.spawnT) > 0.14f) {
+                float dx = tgt_x - p.x, dy = tgt_y - p.y;
+                float d  = sqrtf(dx*dx + dy*dy) + 1.0f;
+                float pull = (g_AugExitT - p.spawnT - 0.14f) * 3200.0f;
+                p.vx += (dx / d) * pull * delta;
+                p.vy += (dy / d) * pull * delta;
+            }
+            p.x  += p.vx * delta;
+            p.y  += p.vy * delta;
+            p.vx *= (1.0f - 3.2f * delta);
+            p.vy *= (1.0f - 3.2f * delta);
+            float fr = p.life / p.maxLife;
+            drawDiamond(p.x, p.y, p.size * (0.4f + 0.6f * fr), p.r, p.g, p.b, fr * 0.88f);
+        }
         BatchFlush();
     }
 
@@ -4072,16 +4848,18 @@ void Scene_AugSelect(const SceneCtx& c) {
         GetRarityColor(hDef.rarity, hr, hg, hb);
         const wchar_t* hDesc = AugDesc(hDef);
 
-        float boxY = baseY + CARD_H + 18.0f;
+        float boxY = baseY + CARD_H + 14.0f;
         float boxW = TOTAL_W;
-        float boxH = 142.0f;
+        float boxH = 128.0f;
         float boxX = (sw - boxW) * 0.5f;
-        float boxA = overlayA;  // follows overlay fade (페이드아웃 포함)
+        float boxA = overlayA;
 
         BindMainShader();
-        float bgA = isDebuff ? 0.32f : 0.60f;
-        drawRect(boxX, boxY, boxW, boxH, 0.03f, 0.03f, 0.07f, bgA * boxA);
-        drawRect(boxX, boxY, boxW, 3.0f, hr, hg, hb, 0.90f * boxA);
+        drawRect(boxX, boxY, boxW, boxH, 0.028f, 0.034f, 0.072f, 0.82f * boxA);
+        drawRect(boxX, boxY, 4.0f, boxH, hr, hg, hb, 0.90f * boxA);
+        drawConstellFrame(boxX, boxY, boxW, boxH,
+                          hr, hg, hb, 0.50f * boxA,
+                          16.0f, 3.5f, 0.0f, 1.0f);
         BatchFlush();
 
         std::vector<std::wstring> lines;
@@ -4098,25 +4876,25 @@ void Scene_AugSelect(const SceneCtx& c) {
         int n = (int)lines.size(); if (n < 1) n = 1;
         float maxw = 1.0f;
         for (auto& ln : lines) { float w = g_TextS.Width(ln.c_str(), 1.0f); if (w > maxw) maxw = w; }
-        float sc = 0.88f;
-        if (maxw * sc > boxW - 40.0f) sc = (boxW - 40.0f) / maxw;
-        if (sc < 0.56f) sc = 0.56f;
-        float lineH  = 30.0f * sc;
-        float startY = boxY + 14.0f + (boxH - 14.0f - lineH * n) * 0.5f;
+        float sc = 0.84f;
+        if (maxw * sc > boxW - 56.0f) sc = (boxW - 56.0f) / maxw;
+        if (sc < 0.50f) sc = 0.50f;
+        float lineH  = 28.0f * sc;
+        float startY = boxY + 10.0f + (boxH - 10.0f - lineH * n) * 0.5f;
         for (int li = 0; li < n; li++) {
             float lw = g_TextS.Width(lines[li].c_str(), sc);
-            g_TextS.Draw(lines[li].c_str(), boxX + (boxW - lw) * 0.5f,
-                         startY + lineH * li, sc, 1.0f, 1.0f, 1.0f, 0.90f * boxA);
+            g_TextS.Draw(lines[li].c_str(),
+                         boxX + 18.0f + (boxW - 18.0f - lw) * 0.5f,
+                         startY + lineH * li, sc, 1.0f, 1.0f, 1.0f, 0.92f * boxA);
         }
         BatchFlush();
 
-        // 키 힌트 (박스 아래)
         const wchar_t* HINT = (g_HoveredAug < 0) ? T(StrId::KEY_HINT_NO_HOVER)
                                                   : T(StrId::KEY_HINT_HOVER);
         BindMainShader();
-        g_TextS.Draw(HINT, CenterTextX(sw, g_TextS, HINT, 0.80f),
-                     boxY + boxH + 12.0f, 0.80f,
-                     0.70f, 0.70f, 0.70f, 0.75f * boxA);
+        g_TextS.Draw(HINT, CenterTextX(sw, g_TextS, HINT, 0.76f),
+                     boxY + boxH + 10.0f, 0.76f,
+                     0.60f, 0.66f, 0.76f, 0.70f * boxA);
         BatchFlush();
     }
 }

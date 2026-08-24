@@ -63,6 +63,10 @@ inline const wchar_t* CurrentWeaponLabel() {
         static const wchar_t* B[3] = { L"궁수 (활)", L"Archer (Bow)", L"弓師 (弓)" };
         return B[CurLangIdx()];
     }
+    if (g_CurrentWeapon == (int)StartWeapon::SMG) {
+        static const wchar_t* S[3] = { L"정전기장", L"Static Field", L"Static Field" };
+        return S[CurLangIdx()];
+    }
     if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
         return WeaponName(ALL_WEAPONS[g_CurrentWeapon]);
     static const wchar_t* None[3] = { L"(없음)", L"(none)", L"(なし)" };
@@ -73,6 +77,14 @@ inline const wchar_t* CurrentWeaponDescText() {
     if (g_Stats.meleeWeapon || g_Stats.bowWeapon) {
         static const wchar_t* C[3] = { L"클래스 전용 무기", L"Class weapon", L"クラス専用武器" };
         return C[CurLangIdx()];
+    }
+    if (g_CurrentWeapon == (int)StartWeapon::SMG) {
+        static const wchar_t* S[3] = {
+            L"플레이어 주변을 지속 전기장으로 제압하는 범위형 무기",
+            L"Area weapon that controls nearby space with a sustained electric field",
+            L"Area weapon that controls nearby space with a sustained electric field"
+        };
+        return S[CurLangIdx()];
     }
     if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
         return WeaponDesc(ALL_WEAPONS[g_CurrentWeapon]);
@@ -122,14 +134,8 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
 
 inline void MarkStartWeaponOwnedType(StartWeapon w) {
     switch (w) {
-    case StartWeapon::SNIPER:
-        g_TypeOwned[(int)AugType::SNIPER] = true;
-        break;
-    case StartWeapon::SHOTGUN:
-        g_TypeOwned[(int)AugType::SHOTGUN] = true;
-        break;
-    case StartWeapon::CANNON:
-        g_TypeOwned[(int)AugType::CANNON] = true;
+    case StartWeapon::SMG:
+        g_TypeOwned[(int)AugType::STATIC_FIELD] = true;
         break;
     default:
         break;

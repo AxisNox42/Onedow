@@ -789,13 +789,29 @@ inline int AugIndexOfType(AugType t) {
 //   삭제됨: 고장난조준선/백신/건러너/병렬처리/취함/영혼수확(→전쟁군주로 이전)
 //   조합 제거: 처형자·관통쌍둥이·폭풍소환사·난기류·오버클럭·유리사신·지옥불
 //   광폭베기/칼바람/강궁/다중사격 — 검객/궁수 정식 활성화로 전용 트리 해금(더 이상 제외 안 함)
-//   대포 관련 증강은 무기 삭제 상태라 선택 풀/조합 결과에서 제외한다.
+//   현재 활성 무기는 소총/정전기장 2종만 유지한다.
+//   저격/샷건/리볼버/미니건/구 SMG 계열 증강은 선택 풀/조합 결과에서 제외한다.
 inline bool AugRemoved(AugType t) {
     switch (t) {
+    // Demo weapon set: Cannon and its dedicated chain are disabled.
     case AugType::CANNON:
     case AugType::HE_SHELLS:
     case AugType::HE_SHELLS_2:
     case AugType::CB_TURRET:
+    case AugType::SNIPER:
+    case AugType::SHOTGUN:
+    case AugType::MINIGUN:
+    case AugType::MINIGUN_2:
+    case AugType::MINIGUN_CYCLONE:
+    case AugType::SHOTGUN_SPREAD:
+    case AugType::REVOLVER_OVERLOAD:
+    case AugType::REVOLVER_SILVER:
+    case AugType::SKILL_FOCUS:
+    case AugType::SMG_COMPRESSOR:
+    case AugType::SNIPER_AMPLIFIER:
+    case AugType::CB_RAILGUN:
+    case AugType::CB_TANWOO:
+    case AugType::BAYONET:
     case AugType::BROKEN_SIGHT:
     case AugType::PURGE_NOVA:
     case AugType::GUN_RUNNER:
@@ -809,14 +825,32 @@ inline bool AugRemoved(AugType t) {
     case AugType::CB_OVERLORD:       // 공격력 가산 합친 것뿐
     case AugType::CB_GLASS_REAPER:   // 유리 사신
     case AugType::CB_HELLFIRE:       // 지옥불
-    // 위성 FIELD/DROP/SUMMON 일괄 제거 (포탑 배치 CB_TURRET만 유지)
-    case AugType::STATIC_FIELD:
-    case AugType::STATIC_FIELD_2:
+    // 위성 FIELD/DROP/SUMMON 일괄 제거
     case AugType::EMP_PULSE:
     case AugType::PATCH_MINE:
     case AugType::TRAP_EXE:
     case AugType::POPUP_ALLY:
     case AugType::GLUE_SYNC:
+    // Constellation roster 이외 적 전용 디버프·증강 제거
+    // (활성 roster: Process/NORMAL · Adware/RangedMob · DDoS · Botnet/SPAWNER)
+    case AugType::D_SPLITTER:       // Worm → SPLITTER 퇴역
+    case AugType::D_BLINKER:        // Trojan → BLINKER 퇴역
+    case AugType::D_ORBITER:        // Spyware → ORBITER 퇴역
+    case AugType::D_SPAWNER:        // 봇넷 침투 증강 제거
+    case AugType::D_SHIELDED:       // Firewall → SHIELDED 퇴역
+    case AugType::D_BADSECTOR:      // Bad Sector 퇴역
+    case AugType::D_REGERROR:       // Registry Error 퇴역
+    case AugType::D_SPLITTER_BOOST: // D_SPLITTER 선행 필요
+    case AugType::D_TROJAN_BOOST:   // D_BLINKER 선행 필요
+    case AugType::D_CRASHER_BOOST:  // Crasher(CHARGER) 퇴역
+    case AugType::D_WEAVER_BOOST:   // WEAVER 퇴역
+    case AugType::D_BRUTE_BOOST:    // BRUTE(Kernel) 퇴역
+    case AugType::D_MOB_FRENZY:     // CHARGER/WEAVER/BRUTE 대상, 모두 퇴역
+    case AugType::D_BOMBER_BLAST:   // Bomber/Ransomware 퇴역
+    case AugType::D_BOMBER_BUFF:
+    case AugType::D_BOMBER_SPEED:
+    case AugType::HACK_BOMBER:      // Bomber 처치 트리거, Bomber 퇴역
+    case AugType::HACK_FIREWALL:    // SHIELDED 처치 트리거, SHIELDED 퇴역
         return true;
     default:
         return false;

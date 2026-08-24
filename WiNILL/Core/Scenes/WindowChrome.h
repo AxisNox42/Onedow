@@ -4,7 +4,7 @@
 // onedow.exe 흐름(난이도·직업·무기) — 세 페이지 공통 패널 크기
 constexpr float FLOW_PANEL_W = 1440.0f;
 constexpr float FLOW_PANEL_H = 800.0f;
-constexpr float FLOW_CHROME_TOP = 40.0f;   // 타이틀바+강조선 아래 여백
+constexpr float FLOW_CHROME_TOP = 10.0f;   // 타이틀바 제거 후 상단 여백
 constexpr float FLOW_FOOT_H     = 76.0f;   // 하단(뒤로) 예약 높이
 
 inline float FlowContentH(float panelH) {
@@ -15,7 +15,7 @@ inline float FlowBackY(float panelY, float panelH) {
 }
 
 // ── 브라우저 크롬 ──────────────────────────────────────────────────
-constexpr float BROWSER_CHROME_H = 31.0f;   // 타이틀바 (주소창 단일 행)
+constexpr float BROWSER_CHROME_H = 0.0f;    // 타이틀바 제거
 
 inline const wchar_t* BrowserUrl(GameState st) {
     using GS = GameState;

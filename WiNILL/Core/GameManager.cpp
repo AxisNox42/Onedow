@@ -115,9 +115,18 @@ void GameManager::HandleInput(GLFWwindow* window) {
     int esc = glfwGetKey(window, GLFW_KEY_ESCAPE);
 
     if (sp == GLFW_PRESS && spaceReleased) {
-        if      (currentState == GameState::READY)    currentState = GameState::RUNNING;
-        else if (currentState == GameState::RUNNING)  currentState = GameState::PAUSED;
-        else if (currentState == GameState::PAUSED)   currentState = GameState::RUNNING;
+        if (currentState == GameState::READY) {
+            currentState = GameState::RUNNING;
+        } else if (currentState == GameState::RUNNING) {
+            if (augReady) {
+                currentState = GameState::AUG_SELECT;
+                augReady = false;
+            } else {
+                currentState = GameState::PAUSED;
+            }
+        } else if (currentState == GameState::PAUSED) {
+            currentState = GameState::RUNNING;
+        }
         // MAIN_MENU/RUN_CONFIG/SETTINGS 는 마우스 버튼으로만 진행
         spaceReleased = false;
     }
