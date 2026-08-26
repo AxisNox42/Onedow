@@ -32,8 +32,7 @@
 
 - WiNILL/Core/Scenes/Scenes.cpp is the highest-risk conflict file: RUN CONFIG, Settings, and Codex UI changes are concentrated there.
 - Any block that changes g_BatchAlpha must restore it to 1.0f before leaving the scene function.
-- bin_verify/ is a previous verification output folder, not source.
-- WiNILL/main.cpp.bak and WiNILL/main_temp.cpp are not build targets; avoid touching them unless explicitly needed.
+- Temporary verification and scratch files were removed on 2026-08-25: bin_verify/, WiNILL/main.cpp.bak, WiNILL/main_temp.cpp, root patch/find scripts, and Docs/orca-paste screenshots.
 - RUN CONFIG and TRIAL SELECT are build-verified, but still need real screen/click QA.
 
 ### Key Files
@@ -59,6 +58,7 @@
 - Player weapon visuals now replace the full player body per weapon: Rifle uses Layered Cross-Star dual 4-point frames + slow outer orbit brackets/dashed nodes, Static Field uses Resonance Beacon counter-rotating triangle/hex + field zaps.
 - Active weapon presentation is narrowed to Rifle and Static Field. Cannon is removed from RUN CONFIG/ARMORY and disabled through AugRemoved for compatibility.
 - The in-run player unique window no longer redraws a late titlebar chrome pass.
+- ARMORY now opens as an in-Main-Menu panel: clicking ARMORY keeps GameState::MAIN_MENU, immediately starts the menu-to-tree animation, and returns through the same reverse path with BACK/ESC/right-click.
 - Latest Debug|x64 build passed.
 
 ### Open Issues
@@ -66,11 +66,11 @@
 - Visual/click QA still needed for RUN CONFIG and TRIAL SELECT.
 - Trial descriptions and actual effect severity need playtest validation.
 - Verify ON/OFF, Back, target-count changes, and launch-time clearing behavior.
-- Decide whether to remove bin_verify/.
 
 ### Next Candidates
 
 - Screenshot-based RUN CONFIG/TRIAL SELECT polish.
+- Visual QA for ARMORY Main Menu expansion timing and tree spacing.
 - Decide whether trial page needs REROLL, locked slots, or risk-tier labels.
 - 5-minute and 10-minute spawn-curve survival tests.
 - Trial multiplier and difficulty report after playtesting.
@@ -120,6 +120,63 @@
 ---
 
 ## Change Log
+
+### 2026-08-26
+
+#### Codex
+
+- Fixed Main Menu re-entry after RUN_CONFIG Back: cleared the delayed menu selection state after scene fade dispatch and reset Main Menu UI state from the RUN_CONFIG Back path.
+- Applied A-lite UI family pass: shared left/radial vignette layers across RUN_CONFIG, ARMORY, ASTRAL_LOG, and SETTINGS, plus stronger constellation map lines/nodes with dark underlays.
+- Polished Main/Sub-scene continuity: added Main Menu anchor line, reduced left-list panel fill weight in RUN_CONFIG/ARMORY/ASTRAL_LOG, and unified Settings title to CALIBRATION.
+- Started floating UI redesign pass: ARMORY/ASTRAL_LOG/CALIBRATION left-side cards now lean on invisible hitboxes, anchor lines, focus markers, scanlines, and reduced panel fills; RUN_CONFIG weapon cards were lightly de-boxed while preserving layout.
+- Restored ARMORY right-panel structure without returning to heavy cards: added product-code title anchors, terminal-style spec/quote rows, gold cost emphasis, and command-style transaction buttons with hover scan/slash feedback.
+- Reframed ARMORY closer to Main Menu expansion: stronger left vignette, floating category/list treatment, lighter right-side hologram canvas, product-code anchors, and terminal quote rows while preserving existing hitboxes.
+- Reworked ARMORY into a cascading text-tree layout: vertical root commands, depth-2 item branches with wide invisible hitboxes, a large constellation canvas, and a compact data-tag transaction readout instead of a heavy shop panel.
+- Shifted ARMORY toward an in-Main-Menu expansion feel: Main Menu ARMORY now enters SHOP without black scene fade, and SHOP renders the ONEDOW/menu ghost sliding left while the ARMORY tree unfolds from that row.
+- Build: MSBuild Debug|x64 passed.
+
+---
+
+### 2026-08-25
+
+#### Codex
+
+- Reworked Main Menu toward the current RUN CONFIG constellation style: vertex ONEDOW logo, large framed command panel, row-card menu layout, hover emphasis, constellation nodes/lines.
+- Refined Main Menu hierarchy: stronger opaque command panel/cards, larger primary START row, unified button color, removed slider-like internal lines.
+- Reworked Main Menu into an asymmetric title layout: removed the central command box visual, shifted menu commands left, made English system codes primary with Korean subtitles, added minimal hover guides, reactive right-side constellation morphs, and delayed click collapse before scene fade.
+- Improved Main Menu readability: added a global left-side vignette for floating command text and reinforced the right constellation canvas with radial darkening, dark edge underlays, and layered node glow/white cores.
+- Reworked ARMORY right panel toward RUN CONFIG style: credits moved into the detail panel, selected item detail gains stats/action layout plus constellation visualization.
+- Reworked ARMORY readability after screenshot review: made tabs/detail surfaces more opaque, replaced the sparse dark detail pane with a brighter grouped layout, and added an empty-category state.
+- Rebased ARMORY onto the actual RUN CONFIG layout math: same header/footer/left-mid-right column proportions, right detail panel starts at colY, category strip fills the left-only Y offset, and item rows render as compact RUN CONFIG-style cards.
+- Tuned ARMORY after screenshot pass: larger category strip, brighter item card surfaces without changing text colors, selected-card pulse treatment, raised credits card, and larger Back button label.
+- Adjusted ARMORY list readability: item/group text now uses white text while category/rarity color is carried by card fills, frames, markers, and selected-card pulse nodes.
+- Changed ARMORY group headers into larger section cards so labels like RIFLE SYSTEMS are readable and visually bind the following item rows.
+- Reduced ARMORY left-panel color saturation to sit closer to inactive RUN CONFIG rows: darker neutral tab/item surfaces, weaker rarity fills, and subtler frames/markers.
+- Removed ARMORY left-list slider-like vertical bars from group headers and selected item cards.
+- Improved ARMORY visibility pass: brighter selected-list focus, light-gray data labels, brighter module trace label, and boxed augment description text.
+- Added ARMORY astral-map detail pass: STARDUST currency label, celestial data labels, constellation map naming, RA/DEC metadata, and subtle orbit arcs on detail frames.
+- Localized active ARMORY astral-map labels for Korean/English switching; Japanese currently follows the existing English fallback in this scene.
+- Reworked ASTRAL_LOG layout: moved category tabs above the left list, removed duplicate category titles from left/right panels, and replaced the empty detail hint with a faint astrolabe orbit grid.
+- Matched ASTRAL_LOG category tabs to the RUN CONFIG/ARMORY strip language: contiguous dark tabs, low-saturation fills, selected bottom line, and subdued inactive text.
+- Forced ASTRAL_LOG into the RUN CONFIG family look: removed closed rectangle borders from its main panels, rolled panel/frame colors back to cyan/teal, and converted the left codex list into wide selectable card rows.
+- Enlarged ASTRAL_LOG scene panels: increased overall screen coverage, reduced header/footer dead space, and widened the left card-list column.
+- Shifted ASTRAL_LOG closer to ARMORY layout: wider scene canvas, ARMORY-like header/footer proportions, category strip at the top of the left column, list panel below it, and a larger right detail panel.
+- Polished ASTRAL_LOG density/readability: reduced the left/right gap, added a faint master frame, enlarged the left constellation viewer inside the right detail panel, and grouped title/description/stat text into translucent info containers.
+- Removed redundant ASTRAL_LOG module rarity text from the detail title box; rarity remains available in existing module metadata.
+- Enlarged the ASTRAL_LOG module detail title and added width-based scaling so long module names stay inside the title box.
+- Increased ASTRAL_LOG left list/category text sizes and raised right-detail titles while enlarging description/data text for readability.
+- Brightened ASTRAL_LOG panel, list-card, selected-row, and info-box surfaces slightly to improve readability without changing the overall cyan constellation style.
+- ASTRAL_LOG panels now inherit the active category color, and each category's entry animation only plays once per game process.
+- Settings scene first readability pass: brighter left tab/right panel surfaces, stronger row controls, larger tab/header text, and removed the left-tab slider-like selection bar.
+- Reworked Settings into SYS_CALIBRATION: GAME now uses DISPLAY/CONTROL/LANGUAGE groups with code labels and segmented controls; AUDIO/SYSTEM use matching grouped preview layouts.
+- Refined SYS_CALIBRATION OS theme: compact top-aligned tabs, cyan-fixed master frames/controls, tab color limited to small markers/tags, red limited to DANGER ZONE/reset, and added a non-interactive calibration node decoration.
+- Expanded SYS_CALIBRATION layout, reordered SYSTEM groups to place DANGER ZONE last, replaced AUTO SAVE with a system-status log row, and added calibration-node click pulse feedback.
+- Localized SYS_CALIBRATION primary labels for Korean/English switching: tabs, section headers, row names, toggle states, language options, linked-channel text, and system-status copy now react to the selected language.
+- Build fix: restored missing AUG_SELECT orbit variables used by the constellation augmentation selection layout.
+- Cleaned temporary workspace files and added ignore rules for verification folders, backup/temp C++ files, pasted screenshots, and ad hoc patch/find scripts.
+- Build: MSBuild Debug|x64 passed.
+
+---
 
 ### 2026-08-24
 
@@ -211,3 +268,16 @@
 #### Claude
 
 - Worked on main menu/difficulty UI direction and enemy concept notes.
+
+---
+
+### 2026-08-26
+
+#### Codex
+
+- RUN_CONFIG 중앙 데이터 영역에 `네모 텍스처.png`를 패널 배경 마스크로 적용하고, 중앙 스탯 영역보다 넓게 배치.
+- 패널 텍스처 알파 보정 로더 추가: PNG 내부의 낮은 알파를 2.5배 보정하여 면이 배경에 묻히지 않도록 처리.
+- `ICON_CONFIG_PANEL`을 `Resource.rc`의 RCDATA로 등록하고 exe 내장 리소스를 우선 로드하도록 변경. 외부 파일 경로는 폴백으로 유지.
+- 텍스처 파일을 `WiNILL/Icons/CONFIG_PANEL.png`에 추가하고, `Resource/Icons` 및 `bin/Resource/Icons`에도 실행용 파일 배치.
+- 중앙 패널 렌더 순서를 텍스처 배경 -> 브라켓 -> 텍스트/스탯 순으로 정리하고 검정색 대비 면으로 조정.
+- Build: MSBuild Debug|x64 `BUILD_OK`.

@@ -1,4 +1,4 @@
-﻿#include "Scenes.h"
+#include "Scenes.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "GameManager.h"
@@ -19,6 +19,8 @@
 #include "ExpSystem.h"
 #include "SaveSystem.h"
 #include "DrawPrim.h"
+#include "../../Render/PlanetShader.h"
+#include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
@@ -44,6 +46,15 @@ static float g_MainMenuEntryT  = 0.0f;
 static float g_SettingsEntryT  = 0.0f;
 static float g_CodexEntryT     = 0.0f;
 static float g_ShopEntryT      = 0.0f;
+static bool  s_ShopBackRequested = false;
+static bool  s_CodexBackRequested = false;
+static bool  s_MainMenuArmoryPanel = false;
+static bool  s_MainMenuCodexPanel = false;
+static bool  s_MainMenuSettingsPanel = false;
+static bool  s_MainMenuRunConfigPanel = false;
+static bool  s_MainMenuResumeFromPanel = false;
+static void Scene_RunConfigInline(const SceneCtx& c);
+static void Scene_SettingsInline(const SceneCtx& c);
 static float s_RadarCur[6]     = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 static float s_StatGlitchT     = 1.0f;
 static bool  s_TrialsEnabled   = false;
@@ -81,14 +92,21 @@ static void ResetSettingsUi() {
 
 static void ResetCodexUi() {
     g_CodexEntryT = 0.0f;
+    s_CodexBackRequested = false;
 }
 
 static void ResetShopUi() {
     g_ShopEntryT = 0.0f;
+    s_ShopBackRequested = false;
 }
 
 static void ResetMainMenuUi() {
     g_MainMenuEntryT = 0.0f;
+    s_MainMenuArmoryPanel = false;
+    s_MainMenuCodexPanel = false;
+    s_MainMenuSettingsPanel = false;
+    s_MainMenuRunConfigPanel = false;
+    s_MainMenuResumeFromPanel = false;
 }
 
 // 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 선택적 비네트)
@@ -135,6 +153,257 @@ static void DrawMenuBackground(float sw, float sh, float delta, float darkenAmou
     }
 }
 
+static float MainLogoTop(float sh) {
+    return sh * 0.105f + 50.0f;
+}
+
+static float MainLogoHeight(float sh) {
+    float h = sh * 0.118f;
+    if (h < 86.0f) h = 86.0f;
+    if (h > 132.0f) h = 132.0f;
+    return h;
+}
+
+static float LogoClamp01(float v) {
+    if (v < 0.0f) return 0.0f;
+    if (v > 1.0f) return 1.0f;
+    return v;
+}
+
+static void LogoLine(float x1, float y1, float x2, float y2,
+                     float thick, float r, float g, float b, float a) {
+    float dx = x2 - x1, dy = y2 - y1;
+    float len = sqrtf(dx * dx + dy * dy);
+    if (len < 0.5f || thick <= 0.0f || a <= 0.0f) return;
+    float nx = -dy / len * thick * 0.5f;
+    float ny =  dx / len * thick * 0.5f;
+    BatchTri(x1 + nx, y1 + ny, x1 - nx, y1 - ny, x2 + nx, y2 + ny, r, g, b, a);
+    BatchTri(x1 - nx, y1 - ny, x2 - nx, y2 - ny, x2 + nx, y2 + ny, r, g, b, a);
+}
+
+static void DrawSceneLeftVignette(float sw, float sh, float alpha) {
+    if (alpha <= 0.001f) return;
+    DrawLinearGradient(0.0f, 0.0f, sw * 0.60f, sh,
+                       0.002f, 0.006f, 0.016f, alpha);
+}
+
+static void DrawSceneRadialVignette(float cx, float cy, float radius, float alpha) {
+    if (alpha <= 0.001f || radius <= 1.0f) return;
+    DrawRadialGradient(cx, cy, radius, 0.0f, 0.0f, 0.012f, alpha * 0.65f);
+}
+
+static void DrawVisibleConstellLine(float x1, float y1, float x2, float y2,
+                                    float thick, float r, float g, float b, float a) {
+    if (a <= 0.001f) return;
+    LogoLine(x1, y1, x2, y2, thick * 2.75f, 0.0f, 0.0f, 0.012f, 0.42f * a);
+    LogoLine(x1, y1, x2, y2, thick, r, g, b, a);
+}
+
+static void DrawVisibleConstellNode(float x, float y, float size,
+                                    float r, float g, float b, float a) {
+    if (a <= 0.001f) return;
+    drawCircle(x, y, size * 3.25f, 0.0f, 0.0f, 0.012f, 0.34f * a);
+    drawCircle(x, y, size * 2.05f, r * 0.08f, g * 0.08f, b * 0.10f, 0.26f * a);
+    drawDiamond(x, y, size * 1.20f, r, g, b, 0.74f * a);
+    drawDiamond(x, y, size * 0.42f, 0.96f, 1.0f, 1.0f, 0.88f * a);
+}
+
+static void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
+                               float centerXOverride = -1.0f, float heightMul = 1.0f) {
+    if (alpha <= 0.001f) return;
+
+    struct Pt { float x, y; };
+    struct Edge { int a, b; };
+    struct Glyph {
+        const Pt* pts;
+        int ptCount;
+        const Edge* edges;
+        int edgeCount;
+        float w;
+    };
+
+    static const Pt O_P[] = {
+        {0.16f, 0.00f}, {0.74f, 0.00f}, {0.92f, 0.18f}, {0.92f, 0.82f},
+        {0.74f, 1.00f}, {0.16f, 1.00f}, {0.00f, 0.82f}, {0.00f, 0.18f}
+    };
+    static const Edge O_E[] = {
+        {0,1}, {1,2}, {2,3}, {3,4}, {4,5}, {5,6}, {6,7}, {7,0}
+    };
+    static const Pt N_P[] = {
+        {0.00f, 1.00f}, {0.00f, 0.00f}, {0.82f, 1.00f}, {0.82f, 0.00f}
+    };
+    static const Edge N_E[] = { {0,1}, {1,2}, {2,3} };
+    static const Pt E_P[] = {
+        {0.00f, 0.00f}, {0.00f, 0.50f}, {0.00f, 1.00f},
+        {0.78f, 0.00f}, {0.64f, 0.50f}, {0.78f, 1.00f}
+    };
+    static const Edge E_E[] = { {0,2}, {0,3}, {1,4}, {2,5} };
+    static const Pt D_P[] = {
+        {0.00f, 0.00f}, {0.58f, 0.00f}, {0.88f, 0.26f},
+        {0.88f, 0.74f}, {0.58f, 1.00f}, {0.00f, 1.00f}
+    };
+    static const Edge D_E[] = { {0,1}, {1,2}, {2,3}, {3,4}, {4,5}, {5,0} };
+    static const Pt W_P[] = {
+        {0.00f, 0.00f}, {0.18f, 1.00f}, {0.52f, 0.48f},
+        {0.86f, 1.00f}, {1.08f, 0.00f}
+    };
+    static const Edge W_E[] = { {0,1}, {1,2}, {2,3}, {3,4} };
+    static const Glyph glyphs[] = {
+        { O_P, 8, O_E, 8, 0.92f },
+        { N_P, 4, N_E, 3, 0.82f },
+        { E_P, 6, E_E, 4, 0.78f },
+        { D_P, 6, D_E, 6, 0.88f },
+        { O_P, 8, O_E, 8, 0.92f },
+        { W_P, 5, W_E, 4, 1.08f },
+    };
+
+    const int glyphCount = (int)(sizeof(glyphs) / sizeof(glyphs[0]));
+    const float gap = 0.19f;
+    float unitW = -gap;
+    int totalEdges = 0;
+    for (int i = 0; i < glyphCount; ++i) {
+        unitW += glyphs[i].w + gap;
+        totalEdges += glyphs[i].edgeCount;
+    }
+
+    float logoH = MainLogoHeight(sh) * heightMul;
+    float logoW = unitW * logoH;
+    const float maxW = sw * 0.66f;
+    if (logoW > maxW) {
+        logoW = maxW;
+        logoH = logoW / unitW;
+    }
+
+    float logoCenterX = (centerXOverride > 0.0f) ? centerXOverride : sw * 0.5f;
+    float x0 = logoCenterX - logoW * 0.5f;
+    if (x0 < 28.0f) x0 = 28.0f;
+    if (x0 + logoW > sw - 28.0f) x0 = sw - logoW - 28.0f;
+    const float y0 = MainLogoTop(sh);
+    const float cx = x0 + logoW * 0.5f;
+    const float cy = y0 + logoH * 0.52f;
+    const float now = (float)glfwGetTime();
+    const float trace = Smoothstep(LogoClamp01(reveal * 1.10f));
+    const float settle = Smoothstep(LogoClamp01((reveal - 0.42f) / 0.58f));
+    const float stroke = std::max(6.0f, logoH * 0.082f);
+
+    BindMainShader();
+
+    int edgeIndex = 0;
+    float cursor = 0.0f;
+    for (int gi = 0; gi < glyphCount; ++gi) {
+        const Glyph& gl = glyphs[gi];
+        for (int ei = 0; ei < gl.edgeCount; ++ei, ++edgeIndex) {
+            const Pt& pa = gl.pts[gl.edges[ei].a];
+            const Pt& pb = gl.pts[gl.edges[ei].b];
+            float et = Smoothstep(LogoClamp01(trace * (float)totalEdges - (float)edgeIndex));
+            if (et <= 0.001f) continue;
+            float ax = x0 + (cursor + pa.x) * logoH;
+            float ay = y0 + pa.y * logoH;
+            float bx = x0 + (cursor + pb.x) * logoH;
+            float by = y0 + pb.y * logoH;
+            bx = ax + (bx - ax) * et;
+            by = ay + (by - ay) * et;
+
+            LogoLine(ax, ay, bx, by, stroke * 1.55f, 0.03f, 0.06f, 0.10f, 0.82f * alpha);
+            LogoLine(ax, ay, bx, by, stroke * 1.08f, 0.07f, 0.21f, 0.34f, 0.92f * alpha);
+            LogoLine(ax, ay, bx, by, stroke * 0.54f, 0.70f, 0.92f, 1.00f, 0.94f * alpha);
+        }
+        cursor += gl.w + gap;
+    }
+
+    // Sparse orbital constellation around the solid logo.
+    const float orbitA = alpha * settle;
+    if (orbitA > 0.001f) {
+        const float rx0 = logoW * 0.60f;
+        const float ry0 = logoH * 0.84f;
+        const float rot0 = now * 0.22f;
+        const float rot1 = -now * 0.15f + 1.35f;
+
+        auto orbitPoint = [&](float ang, float rx, float ry, float rot, float& ox, float& oy) {
+            float ca = cosf(ang), sa = sinf(ang);
+            float cr = cosf(rot), sr = sinf(rot);
+            float lx = ca * rx;
+            float ly = sa * ry;
+            ox = cx + lx * cr - ly * sr;
+            oy = cy + lx * sr + ly * cr;
+        };
+
+        const int arcSteps = 42;
+        for (int i = 0; i < arcSteps; ++i) {
+            if ((i % 4) == 1) continue;
+            float a0 = (float)i / (float)arcSteps * 6.2831853f;
+            float a1 = ((float)i + 0.55f) / (float)arcSteps * 6.2831853f;
+            float x1, y1, x2, y2;
+            orbitPoint(a0, rx0, ry0, rot0, x1, y1);
+            orbitPoint(a1, rx0, ry0, rot0, x2, y2);
+            LogoLine(x1, y1, x2, y2, 1.1f, 0.38f, 0.82f, 1.0f, 0.22f * orbitA);
+        }
+
+        const int nodeCount = 7;
+        float px[nodeCount], py[nodeCount];
+        for (int i = 0; i < nodeCount; ++i) {
+            float ang = (float)i / (float)nodeCount * 6.2831853f + now * 0.18f;
+            float rx = rx0 * (0.86f + 0.08f * sinf((float)i * 1.7f));
+            float ry = ry0 * (0.88f + 0.07f * cosf((float)i * 1.3f));
+            orbitPoint(ang, rx, ry, rot1, px[i], py[i]);
+        }
+        for (int i = 0; i < nodeCount; ++i) {
+            int j = (i + 2) % nodeCount;
+            if ((i % 2) == 0)
+                LogoLine(px[i], py[i], px[j], py[j], 0.95f, 0.42f, 0.62f, 1.0f, 0.12f * orbitA);
+        }
+        for (int i = 0; i < nodeCount; ++i) {
+            float tw = 0.78f + 0.22f * sinf(now * 2.5f + (float)i * 0.9f);
+            float sz = (i == 0 || i == 3) ? 7.0f : 4.6f;
+            drawDiamond(px[i], py[i], sz, 0.42f, 0.82f, 1.0f, (0.58f + 0.18f * tw) * orbitA);
+            drawDiamond(px[i], py[i], sz * 0.42f, 1.0f, 1.0f, 1.0f, 0.55f * orbitA);
+        }
+
+        float lY = y0 + logoH + 18.0f;
+        LogoLine(x0 + logoW * 0.08f, lY, x0 + logoW * 0.43f, lY,
+                 1.4f, 0.38f, 0.82f, 1.0f, 0.28f * orbitA);
+        LogoLine(x0 + logoW * 0.57f, lY, x0 + logoW * 0.92f, lY,
+                 1.4f, 0.38f, 0.82f, 1.0f, 0.28f * orbitA);
+        drawDiamond(cx, lY, 5.5f, 0.72f, 0.48f, 1.0f, 0.54f * orbitA);
+    }
+}
+
+static void DrawMenuCommandFeedback(float x, float y, float w, float h,
+                                    float r, float g, float b, float alpha,
+                                    float active, float pulse, float now) {
+    if (active <= 0.01f || alpha <= 0.001f) return;
+    BindMainShader();
+    const float lineH = 20.0f + 42.0f * active + 10.0f * pulse;
+    drawRect(x - 18.0f, y + h * 0.5f - lineH * 0.5f,
+             2.2f, lineH, r, g, b, (0.24f + 0.55f * active + 0.12f * pulse) * alpha);
+    const float scanY = y + h * (0.34f + 0.32f * fmodf(now * 0.55f, 1.0f));
+    drawRect(x - 4.0f, scanY, w * (0.58f + 0.24f * active), 1.1f,
+             r, g, b, (0.050f + 0.090f * active) * alpha);
+    drawDiamond(x - 17.0f, y + h * 0.5f,
+                3.0f + 2.6f * active + 1.8f * pulse,
+                r, g, b, (0.40f + 0.34f * active + 0.16f * pulse) * alpha);
+}
+
+static void DrawExpandingBracket(float x, float y, float w, float h, float expandT,
+                                 float r, float g, float b, float alpha) {
+    if (alpha <= 0.001f) return;
+    const float e = std::max(0.0f, std::min(1.0f, expandT));
+    const float push = 42.0f * e;
+    const float len = 26.0f + 18.0f * e;
+    const float t = 1.6f;
+    const float x0 = x - push, y0 = y - push * 0.55f;
+    const float x1 = x + w + push, y1 = y + h + push * 0.55f;
+    BindMainShader();
+    drawRect(x0, y0, len, t, r, g, b, alpha);
+    drawRect(x0, y0, t, len, r, g, b, alpha);
+    drawRect(x1 - len, y0, len, t, r, g, b, alpha);
+    drawRect(x1 - t, y0, t, len, r, g, b, alpha);
+    drawRect(x0, y1 - t, len, t, r, g, b, alpha);
+    drawRect(x0, y1 - len, t, len, r, g, b, alpha);
+    drawRect(x1 - len, y1 - t, len, t, r, g, b, alpha);
+    drawRect(x1 - t, y1 - len, t, len, r, g, b, alpha);
+}
+
 void Scene_MainMenu(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
@@ -151,15 +420,59 @@ void Scene_MainMenu(const SceneCtx& c) {
     if (g_FadeDir == 1 && g_FadeTarget == GameState::RUN_CONFIG)
         menuBgDarken = 1.0f - Smoothstep(g_FadeAlpha);
     DrawMenuBackground(sw, sh, delta, menuBgDarken);
+    if (s_MainMenuArmoryPanel) {
+        Scene_Shop(c);
+        return;
+    }
+    if (s_MainMenuCodexPanel) {
+        Scene_Codex(c);
+        return;
+    }
+    if (s_MainMenuSettingsPanel) {
+        Scene_SettingsInline(c);
+        return;
+    }
+    if (s_MainMenuRunConfigPanel) {
+        Scene_RunConfigInline(c);
+        return;
+    }
 
     // Intro animation (original)
     static float s_introT = 0.0f;
+    static int   s_menuSelect = -1;
+    static float s_menuExitT  = 0.0f;
+    static float s_canvasX[10] = {};
+    static float s_canvasY[10] = {};
+    static bool  s_canvasInit = false;
+    static float kHoverT[5] = {};
     constexpr float kTitleDur  = 0.55f;
     constexpr float kBtnDur    = 0.45f;
     constexpr float kBtnStag   = 0.09f;
     constexpr float kTextStart = kTitleDur + 4.0f * kBtnStag + kBtnDur;
     constexpr float kTextDur   = 0.35f;
     constexpr float kIntroDone = kTextStart + kTextDur;
+
+    if (g_MainMenuEntryT <= 0.0f) {
+        s_introT = 0.0f;
+        s_menuSelect = -1;
+        s_menuExitT = 0.0f;
+        s_canvasInit = false;
+        for (int i = 0; i < 5; ++i) kHoverT[i] = 0.0f;
+        g_MainMenuEntryT = 0.001f;
+    } else {
+        g_MainMenuEntryT += delta;
+    }
+    if (s_MainMenuResumeFromPanel) {
+        s_menuSelect = -1;
+        s_menuExitT = 0.0f;
+        for (int i = 0; i < 5; ++i) kHoverT[i] = 0.0f;
+        s_MainMenuResumeFromPanel = false;
+    }
+    const bool exitActive = (s_menuSelect >= 0);
+    if (exitActive) {
+        s_menuExitT += delta;
+        if (s_menuExitT > 0.70f) s_menuExitT = 0.70f;
+    }
 
     bool introWasActive = (s_introT < kIntroDone);
     if (!booting && lmb && !g_LmbPrev && introWasActive)
@@ -175,54 +488,28 @@ void Scene_MainMenu(const SceneCtx& c) {
     const float textA = Smoothstep(textPhA) * uiA;
 
     // Button layout constants
-    struct SBtnDef { const wchar_t* label[3]; float ir, ig, ib; };
+    struct SBtnDef {
+        const wchar_t* label[3];
+        const wchar_t* route[3];
+        float ir, ig, ib;
+    };
     static const SBtnDef kBtns[] = {
-        { { L"시작",      L"Start",    L"スタート"  }, 0.35f, 0.90f, 0.55f },
-        { { L"상점",      L"Shop",     L"ショップ"  }, 0.95f, 0.80f, 0.25f },
-        { { L"도감",      L"Codex",    L"図鑑"      }, 0.45f, 0.72f, 0.95f },
-        { { L"설정",      L"Setting",  L"設定"      }, 0.75f, 0.75f, 0.85f },
-        { { L"게임 종료", L"Quit",     L"終了"      }, 0.90f, 0.38f, 0.35f },
+        { { L"시작",      L"Start",    L"スタート"  }, { L"RUN_CONFIG",  L"RUN_CONFIG",  L"RUN_CONFIG"  }, 0.48f, 0.82f, 1.00f },
+        { { L"상점",      L"Armory",   L"武器庫"    }, { L"ARMORY",      L"ARMORY",      L"ARMORY"      }, 0.48f, 0.82f, 1.00f },
+        { { L"도감",      L"Astral Log", L"星界記録" }, { L"ASTRAL_LOG",  L"ASTRAL_LOG",  L"ASTRAL_LOG"  }, 0.48f, 0.82f, 1.00f },
+        { { L"설정",      L"Setting",  L"設定"      }, { L"CALIBRATION", L"CALIBRATION", L"CALIBRATION" }, 0.48f, 0.82f, 1.00f },
+        { { L"게임 종료", L"Exit",     L"終了"      }, { L"SHUTDOWN",    L"SHUTDOWN",    L"SHUTDOWN"    }, 0.48f, 0.82f, 1.00f },
     };
-    static float kHoverT[5] = {};
     const int   kBtnCount = 5;
-    const float BW = 520.0f, BH = 76.0f, BGAP = 16.0f;
+    const float BW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
+    const float BH = 70.0f;
+    const float BGAP = 15.0f;
     float totalBH = kBtnCount * BH + (kBtnCount - 1) * BGAP;
-    float btnX0   = (sw - BW) * 0.5f;
-    float logoBot = sh * 0.10f + g_TextXL.Height(T(StrId::GAME_TITLE), 1.05f) + 36.0f;
-    float btnY0   = logoBot + ((sh - logoBot) - totalBH) * 0.5f;
+    float btnX0   = std::max(58.0f, sw * 0.075f);
+    float btnY0   = sh * 0.48f;
+    if (btnY0 + totalBH > sh - 54.0f) btnY0 = sh - totalBH - 54.0f;
+    if (btnY0 < MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f) btnY0 = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
 
-    // hex helpers (original)
-    auto hexFill = [&](float hx, float hy, float hW, float hH,
-                        float r, float g, float b, float a) {
-        float cut = hH * 0.38f;
-        float cx = hx + hW * 0.5f, cy = hy + hH * 0.5f;
-        float vx[6] = { hx+cut, hx+hW-cut, hx+hW,      hx+hW-cut, hx+cut,  hx     };
-        float vy[6] = { hy,     hy,         hy+hH*0.5f, hy+hH,     hy+hH,   hy+hH*0.5f };
-        for (int k = 0; k < 6; k++) {
-            int n = (k + 1) % 6;
-            BatchTri(cx, cy, vx[k], vy[k], vx[n], vy[n], r, g, b, a);
-        }
-    };
-    auto hexBorder = [&](float hx, float hy, float hW, float hH,
-                          float r, float g, float b, float a, float BL) {
-        float cut = hH * 0.38f;
-        float vx[6] = { hx+cut, hx+hW-cut, hx+hW,      hx+hW-cut, hx+cut,  hx     };
-        float vy[6] = { hy,     hy,         hy+hH*0.5f, hy+hH,     hy+hH,   hy+hH*0.5f };
-        for (int k = 0; k < 6; k++) {
-            int  n  = (k + 1) % 6;
-            float ex = vx[n]-vx[k], ey = vy[n]-vy[k];
-            float len = sqrtf(ex*ex + ey*ey); if (len < 1.0f) continue;
-            float nx = -ey/len * BL*0.5f, ny = ex/len * BL*0.5f;
-            BatchTri(vx[k]-nx, vy[k]-ny, vx[n]-nx, vy[n]-ny, vx[n]+nx, vy[n]+ny, r,g,b,a);
-            BatchTri(vx[k]-nx, vy[k]-ny, vx[n]+nx, vy[n]+ny, vx[k]+nx, vy[k]+ny, r,g,b,a);
-        }
-    };
-    auto hexHit = [&](float hpx, float hpy, float hx, float hy, float hW, float hH) -> bool {
-        if (hpx < hx || hpx > hx+hW || hpy < hy || hpy > hy+hH) return false;
-        float cut = hH * 0.38f;
-        float d = fabsf(hpy - (hy + hH * 0.5f)) / (hH * 0.5f);
-        return hpx >= hx + cut*d && hpx <= hx + hW - cut*d;
-    };
     auto rectHit = [&](float hpx, float hpy, float rx, float ry, float rw, float rh) -> bool {
         return hpx >= rx && hpx <= rx + rw && hpy >= ry && hpy <= ry + rh;
     };
@@ -244,94 +531,215 @@ void Scene_MainMenu(const SceneCtx& c) {
         drawRect(x + w - len, y + h - thick, len, thick, r, g, b, a);
         drawRect(x + w - thick, y + h - len, thick, len, r, g, b, a);
     };
-
-    // ── Constellation: 타이틀 좌우 다이아몬드 액센트 ──────────────────
+    DrawSceneLeftVignette(sw, sh, Smoothstep(LogoClamp01((s_introT - 0.12f) / 0.58f)) * uiA);
     {
-        const wchar_t* TITLE = T(StrId::GAME_TITLE);
-        float titleSc = 1.05f;
-        float titleX  = CenterTextX(sw, g_TextXL, TITLE, titleSc);
-        float titleY  = sh * 0.10f;
-        float midY    = titleY + g_TextXL.Height(TITLE, titleSc) * 0.5f;
-        float titleW  = g_TextXL.Width(TITLE, titleSc);
+        const float anchorX = btnX0 - 36.0f;
+        const float anchorY = std::max(22.0f, MainLogoTop(sh) - 20.0f);
+        const float anchorH = std::min(sh - anchorY - 26.0f, totalBH + 170.0f);
+        const float anchorA = Smoothstep(LogoClamp01((s_introT - 0.28f) / 0.48f)) * uiA;
         BindMainShader();
-        drawDiamond(titleX - 22.0f, midY, 7.0f, 0.42f, 0.30f, 0.92f, 0.88f * titleA);
-        drawDiamond(titleX - 22.0f, midY, 3.0f, 0.04f, 0.05f, 0.08f,          titleA);
-        drawRect(titleX - 12.0f, midY - 0.9f, 10.0f, 1.8f, 0.42f, 0.30f, 0.92f, 0.50f * titleA);
-        drawDiamond(titleX + titleW + 22.0f, midY, 7.0f, 0.42f, 0.30f, 0.92f, 0.88f * titleA);
-        drawDiamond(titleX + titleW + 22.0f, midY, 3.0f, 0.04f, 0.05f, 0.08f,          titleA);
-        drawRect(titleX + titleW + 2.0f, midY - 0.9f, 10.0f, 1.8f, 0.42f, 0.30f, 0.92f, 0.50f * titleA);
-        g_TextXL.Draw(TITLE, titleX, titleY, titleSc, 0.72f, 0.82f, 1.0f, 0.96f * titleA);
+        drawRect(anchorX, anchorY, 1.2f, anchorH,
+                 0.48f, 0.82f, 1.0f, 0.17f * anchorA);
+        drawDiamond(anchorX + 0.6f, anchorY + 4.0f, 2.8f,
+                    0.48f, 0.82f, 1.0f, 0.22f * anchorA);
+        drawDiamond(anchorX + 0.6f, anchorY + anchorH - 4.0f, 2.8f,
+                    0.48f, 0.82f, 1.0f, 0.18f * anchorA);
     }
-
-    // ── Constellation: 버튼 그룹 외곽 프레임 ─────────────────────────
-    {
-        const float pad = 28.0f;
-        float fx = btnX0 - pad, fy = btnY0 - pad;
-        float fw = BW + pad * 2.0f, fh = totalBH + pad * 2.0f;
-        BindMainShader();
-        drawRect(fx + 8.0f, fy + 10.0f, fw, fh, 0.0f, 0.0f, 0.0f, 0.32f * titleA);
-        drawRect(fx, fy, fw, fh, 0.010f, 0.014f, 0.028f, 0.94f * titleA);
-        drawRunBorder(fx, fy, fw, fh, 0.42f, 0.62f, 0.88f, 0.34f * titleA, 1.4f);
-        drawRunCorners(fx, fy, fw, fh, 0.55f, 0.85f, 1.0f, 0.62f * titleA, 34.0f, 2.4f);
-        drawConstellFrame(fx, fy, fw, fh,
-                          0.45f, 0.70f, 1.0f, 0.20f * titleA,
-                          18.0f, 4.5f, 0.03f * titleA, titlePhA);
-    }
-
-    // ── OS module buttons ───────────────────────────────────────────────
+    DrawMainOnedowLogo(sw, sh, titleA, titlePhA, sw * 0.30f, 0.82f);
+    const float now = (float)glfwGetTime();
     for (int i = 0; i < kBtnCount; i++) {
-        float baseBx = btnX0, baseBy = btnY0 + i * (BH + BGAP);
-        bool hov = (!booting && !introActive && !introWasActive && g_FadeDir == 0
-                    && rectHit((float)mx, (float)my, baseBx, baseBy, BW, BH));
-        float spd = delta * 8.0f; if (spd > 1.0f) spd = 1.0f;
+        float baseBx = btnX0;
+        float baseBy = btnY0 + (float)i * (BH + BGAP);
+        bool hov = (!booting && !introActive && !introWasActive && !exitActive && g_FadeDir == 0
+                    && rectHit((float)mx, (float)my, baseBx - 26.0f, baseBy, BW + 58.0f, BH));
+        float spd = delta * 10.0f; if (spd > 1.0f) spd = 1.0f;
         kHoverT[i] += ((hov ? 1.0f : 0.0f) - kHoverT[i]) * spd;
         float t = kHoverT[i];
         float rawBtnPh = (s_introT - kTitleDur - (float)i * kBtnStag) / kBtnDur;
         rawBtnPh = std::max(0.0f, std::min(rawBtnPh, 1.0f));
-        float btnExpand = Smoothstep(rawBtnPh);
-        float animBW = std::max(2.0f, BW * btnExpand);
-        float animBX = baseBx + (BW - animBW) * 0.5f;
-        float bx = animBX, by = baseBy;
-        float bW = animBW, bH = BH;
+        float reveal = Smoothstep(rawBtnPh);
+        bool selected = (s_menuSelect == i);
+        float exitP = Smoothstep(std::min(1.0f, s_menuExitT / 0.50f));
+        float rowA = reveal * uiA;
+        if (exitActive && !selected) rowA *= (1.0f - exitP * 0.86f);
+        float slide = (1.0f - reveal) * 34.0f;
+        float bx = baseBx + slide - 10.0f * t;
+        float by = baseBy + (exitActive && !selected ? exitP * 28.0f : 0.0f);
         float ar = kBtns[i].ir, ag = kBtns[i].ig, ab = kBtns[i].ib;
-        BindMainShader();
-        drawRect(bx, by, bW, bH,
-                 0.018f + ar * (0.012f + 0.014f * t),
-                 0.024f + ag * (0.010f + 0.012f * t),
-                 0.040f + ab * (0.010f + 0.012f * t),
-                 (0.88f + 0.08f * t) * uiA);
-        if (t > 0.01f) {
-            drawRect(bx + 5.0f, by + 5.0f, bW - 10.0f, bH - 10.0f,
-                     ar, ag, ab, 0.12f * t * uiA);
-        }
-        drawRunBorder(bx, by, bW, bH, ar, ag, ab, (0.28f + 0.32f * t) * uiA, 1.3f);
-        drawRunCorners(bx, by, bW, bH, ar, ag, ab, (0.52f + 0.34f * t) * uiA,
-                       28.0f, 2.2f);
-        drawDiamond(bx + 18.0f, by + bH * 0.5f, (4.0f + 1.2f * t), ar, ag, ab,
-                    (0.54f + 0.28f * t) * uiA);
-        const wchar_t* lbl = kBtns[i].label[li2];
-        float labelSc = 0.96f;
-        float labelX = bx + (bW - g_TextL.Width(lbl, labelSc)) * 0.5f;
-        float labelY = by + (bH - g_TextL.Height(lbl, labelSc)) * 0.5f;
-        g_TextL.Draw(lbl, labelX, labelY, labelSc,
-                     1.0f, 1.0f, 1.0f, (hov ? 1.0f : 0.84f) * textA);
+        float selectPulse = selected ? (0.50f + 0.50f * sinf(now * 18.0f)) * exitP : 0.0f;
+        float activeT = std::max(t, selected ? exitP : 0.0f);
+
+        DrawMenuCommandFeedback(bx, by, BW, BH, ar, ag, ab,
+                                rowA, activeT, selectPulse, now + (float)i * 0.17f);
+
+        const wchar_t* route = kBtns[i].route[li2];
+        const wchar_t* sub = kBtns[i].label[0];
+        float routeSc = 1.04f;
+        while (routeSc > 0.82f && g_TextL.Width(route, routeSc) > BW)
+            routeSc -= 0.04f;
+        float subSc = 0.48f;
+        float routeY = by + 2.0f;
+        float subY = routeY + g_TextL.Height(route, routeSc) - 3.0f;
+        float tr = 1.0f + (ar - 1.0f) * activeT;
+        float tg = 1.0f + (ag - 1.0f) * activeT;
+        float tb = 1.0f + (ab - 1.0f) * activeT;
+        if (selected) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
+        g_TextL.Draw(route, bx, routeY, routeSc,
+                     tr, tg, tb, (0.82f + 0.16f * activeT + 0.18f * selectPulse) * rowA);
+        g_TextS.Draw(sub, bx + 4.0f, subY, subSc,
+                     0.70f + 0.18f * activeT, 0.75f + 0.16f * activeT, 0.82f + 0.12f * activeT,
+                     (0.70f + 0.20f * activeT) * rowA);
+
         if (hov && lmb && !g_LmbPrev) {
-            switch (i) {
-            case 0:
+            if (i == 0) {
                 ResetRunConfigUi();
-                g_FadeAlpha = 0.0f;
-                g_FadeDir = 0;
-                g_GameManager.currentState = GameState::RUN_CONFIG;
-                break;
-            case 1: ResetShopUi();  g_GameManager.currentState = GameState::SHOP;  break;
-            case 2: ResetCodexUi(); g_GameManager.currentState = GameState::CODEX; break;
-            case 3:
-                g_SettingsReturnTo = GameState::MAIN_MENU;
-                ResetSettingsUi();
-                g_GameManager.currentState = GameState::SETTINGS;
-                break;
-            case 4: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
+                s_MainMenuRunConfigPanel = true;
+                return;
             }
+            if (i == 1) {
+                ResetShopUi();
+                s_MainMenuArmoryPanel = true;
+                return;
+            }
+            if (i == 2) {
+                ResetCodexUi();
+                s_MainMenuCodexPanel = true;
+                return;
+            }
+            if (i == 3) {
+                ResetSettingsUi();
+                s_MainMenuSettingsPanel = true;
+                return;
+            }
+            s_menuSelect = i;
+            s_menuExitT = 0.0f;
+        }
+    }
+
+    {
+        int morphIdx = -1;
+        float bestHover = 0.18f;
+        for (int i = 0; i < kBtnCount; ++i) {
+            if (kHoverT[i] > bestHover) { bestHover = kHoverT[i]; morphIdx = i; }
+        }
+        if (s_menuSelect >= 0) morphIdx = s_menuSelect;
+
+        struct NodeDef { float x, y; };
+        static const NodeDef shapes[6][10] = {
+            { {0.50f,0.18f},{0.68f,0.27f},{0.78f,0.47f},{0.66f,0.68f},{0.47f,0.78f},{0.28f,0.63f},{0.22f,0.40f},{0.36f,0.24f},{0.53f,0.49f},{0.58f,0.58f} },
+            { {0.50f,0.16f},{0.68f,0.26f},{0.71f,0.48f},{0.62f,0.68f},{0.50f,0.82f},{0.38f,0.68f},{0.29f,0.48f},{0.32f,0.26f},{0.50f,0.43f},{0.50f,0.55f} },
+            { {0.32f,0.24f},{0.50f,0.16f},{0.69f,0.25f},{0.78f,0.47f},{0.62f,0.72f},{0.38f,0.75f},{0.25f,0.56f},{0.44f,0.42f},{0.56f,0.42f},{0.50f,0.58f} },
+            { {0.50f,0.14f},{0.76f,0.32f},{0.79f,0.63f},{0.54f,0.82f},{0.24f,0.70f},{0.18f,0.40f},{0.37f,0.20f},{0.50f,0.36f},{0.50f,0.58f},{0.64f,0.49f} },
+            { {0.50f,0.18f},{0.72f,0.22f},{0.82f,0.44f},{0.74f,0.68f},{0.52f,0.78f},{0.28f,0.72f},{0.18f,0.50f},{0.28f,0.28f},{0.50f,0.48f},{0.64f,0.48f} },
+            { {0.50f,0.10f},{0.64f,0.30f},{0.88f,0.34f},{0.70f,0.52f},{0.78f,0.80f},{0.50f,0.64f},{0.22f,0.80f},{0.30f,0.52f},{0.12f,0.34f},{0.36f,0.30f} },
+        };
+        static const int edges[6][14][2] = {
+            { {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,0},{0,8},{8,4},{2,8},{5,9},{9,1},{-1,-1} },
+            { {0,8},{8,4},{1,8},{8,7},{2,9},{9,6},{3,4},{5,6},{0,1},{1,2},{6,7},{7,0},{-1,-1},{-1,-1} },
+            { {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,0},{0,7},{7,8},{8,2},{7,9},{9,3},{-1,-1},{-1,-1} },
+            { {0,7},{7,8},{8,3},{1,7},{7,5},{2,9},{9,6},{3,4},{4,5},{5,6},{6,0},{1,2},{-1,-1},{-1,-1} },
+            { {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,0},{0,8},{8,4},{2,9},{9,6},{7,8},{1,9} },
+            { {0,5},{1,5},{2,5},{3,5},{4,5},{5,6},{5,7},{5,8},{5,9},{1,2},{3,4},{6,7},{8,9},{-1,-1} },
+        };
+        int shapeIdx = (morphIdx >= 0) ? (morphIdx + 1) : 0;
+        const float canvasReveal = Smoothstep(LogoClamp01((s_introT - kTitleDur - 0.18f) / 0.70f)) * uiA;
+        const float collapse = exitActive ? Smoothstep(std::min(1.0f, s_menuExitT / 0.50f)) : 0.0f;
+        const float cx = sw * 0.69f;
+        const float cy = sh * 0.53f;
+        const float cw = sw * 0.48f;
+        const float ch = sh * 0.66f;
+        auto drawNodeGlow = [&](float x, float y, float size, float a) {
+            if (a <= 0.001f) return;
+            drawCircle(x, y, size * 3.4f, 0.0f, 0.0f, 0.010f, 0.30f * a);
+            drawCircle(x, y, size * 2.15f, 0.020f, 0.060f, 0.100f, 0.24f * a);
+            drawDiamond(x, y, size * 1.28f, 0.48f, 0.82f, 1.0f, 0.70f * a);
+            drawDiamond(x, y, size * 0.46f, 0.96f, 1.0f, 1.0f, 0.88f * a);
+        };
+        if (!s_canvasInit) {
+            for (int i = 0; i < 10; ++i) {
+                s_canvasX[i] = shapes[shapeIdx][i].x;
+                s_canvasY[i] = shapes[shapeIdx][i].y;
+            }
+            s_canvasInit = true;
+        }
+        for (int i = 0; i < 10; ++i) {
+            s_canvasX[i] = UiApproach(s_canvasX[i], shapes[shapeIdx][i].x, delta, 3.6f + bestHover * 4.5f);
+            s_canvasY[i] = UiApproach(s_canvasY[i], shapes[shapeIdx][i].y, delta, 3.6f + bestHover * 4.5f);
+        }
+
+        float px[10], py[10];
+        for (int i = 0; i < 10; ++i) {
+            float ox = cx + (s_canvasX[i] - 0.5f) * cw;
+            float oy = cy + (s_canvasY[i] - 0.5f) * ch;
+            float spin = now * (0.035f + 0.020f * bestHover);
+            float dx = ox - cx, dy = oy - cy;
+            float cr = cosf(spin), sr = sinf(spin);
+            ox = cx + dx * cr - dy * sr;
+            oy = cy + dx * sr + dy * cr;
+            px[i] = ox + (cx - ox) * collapse;
+            py[i] = oy + (cy - oy) * collapse;
+        }
+
+        DrawRadialGradient(cx, cy, cw * 0.50f, 0.0f, 0.0f, 0.012f,
+                          0.52f * canvasReveal * (1.0f - collapse * 0.35f));
+        for (int i = 0; i < 36; ++i) {
+            if ((i % 4) == 2) continue;
+            float a0 = (float)i / 36.0f * 6.2831853f + now * 0.05f;
+            float a1 = a0 + 0.080f;
+            float rx = cw * (0.36f + 0.04f * sinf(now * 0.4f));
+            float ry = ch * 0.30f;
+            float x0 = cx + cosf(a0) * rx;
+            float y0 = cy + sinf(a0) * ry;
+            float x1 = cx + cosf(a1) * rx;
+            float y1 = cy + sinf(a1) * ry;
+            LogoLine(x0, y0, x1, y1,
+                     2.6f, 0.0f, 0.0f, 0.012f, 0.20f * canvasReveal * (1.0f - collapse));
+            LogoLine(cx + cosf(a0) * rx, cy + sinf(a0) * ry,
+                     cx + cosf(a1) * rx, cy + sinf(a1) * ry,
+                     0.95f, 0.42f, 0.82f, 1.0f, 0.080f * canvasReveal * (1.0f - collapse));
+        }
+        for (int e = 0; e < 14; ++e) {
+            int a = edges[shapeIdx][e][0], b = edges[shapeIdx][e][1];
+            if (a < 0 || b < 0) break;
+            float edgeA = (0.18f + 0.20f * bestHover + 0.38f * collapse) * canvasReveal;
+            LogoLine(px[a], py[a], px[b], py[b],
+                     4.0f + collapse * 3.4f, 0.0f, 0.0f, 0.012f, 0.42f * edgeA);
+            LogoLine(px[a], py[a], px[b], py[b],
+                     1.45f + collapse * 2.4f, 0.48f, 0.82f, 1.0f, edgeA);
+        }
+        for (int i = 0; i < 10; ++i) {
+            float ns = ((i == 0 || i == 4 || i == 8) ? 5.2f : 3.5f) * (1.0f + collapse * 1.6f);
+            drawNodeGlow(px[i], py[i], ns,
+                         (0.48f + 0.22f * bestHover + 0.46f * collapse) * canvasReveal);
+        }
+        if (collapse > 0.01f)
+            drawCircle(cx, cy, 18.0f + 52.0f * collapse, 0.48f, 0.82f, 1.0f, 0.080f * collapse * canvasReveal);
+    }
+
+    if (s_menuSelect >= 0 && s_menuExitT >= 0.52f && g_FadeDir == 0) {
+        int selectedMenu = s_menuSelect;
+        s_menuSelect = -1;
+        s_menuExitT = 0.0f;
+        switch (selectedMenu) {
+        case 0:
+            ResetRunConfigUi();
+            s_MainMenuRunConfigPanel = true;
+            break;
+        case 1:
+            ResetShopUi();
+            s_MainMenuArmoryPanel = true;
+            break;
+        case 2:
+            ResetCodexUi();
+            s_MainMenuCodexPanel = true;
+            break;
+        case 3:
+            ResetSettingsUi();
+            s_MainMenuSettingsPanel = true;
+            break;
+        case 4:
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+            break;
         }
     }
 
@@ -398,11 +806,18 @@ void Scene_Shop(const SceneCtx& c) {
     static constexpr int SHOP_TAB_COUNT = 4;
     static int   s_tab        = 0;
     static float s_tabHov[SHOP_TAB_COUNT] = {};
+    static float s_backHov = 0.0f;
     static int   s_selKey     = -1;
     static float s_scroll     = 0.0f;
     static float s_detailT    = 0.0f;
     static int   s_prevKey    = -2;
     static int   s_prevTab    = -1;
+    static bool  s_backExit   = false;
+    static float s_backOutT   = 0.0f;
+    static bool  s_prevRmb    = false;
+    static bool  s_prevEsc    = false;
+    static int   s_prevTagKey = -2;
+    static float s_tagFlickerT = 1.0f;
 
     struct SLItem {
         bool           isGroup;
@@ -414,15 +829,48 @@ void Scene_Shop(const SceneCtx& c) {
     static int    s_itemCount = 0;
 
     const float now = (float)glfwGetTime();
-    DrawMenuBackground(sw, sh, delta, false);
+    if (!s_MainMenuArmoryPanel)
+        DrawMenuBackground(sw, sh, delta, false);
 
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
     g_ShopEntryT += dt;
     if (g_ShopEntryT > 1.0f) g_ShopEntryT = 1.0f;
 
-    const float wake      = Smoothstep(std::min(1.0f, g_ShopEntryT / 0.50f));
-    const float rightWake = Smoothstep(std::min(1.0f,
-        std::max(0.0f, g_ShopEntryT - 0.10f) / 0.44f));
+    const bool rawRmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool rmbClick = rawRmb && !s_prevRmb;
+    s_prevRmb = rawRmb;
+    const bool rawEsc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool escClick = rawEsc && !s_prevEsc;
+    s_prevEsc = rawEsc;
+
+    const bool inputReady = !s_backExit && g_ShopEntryT >= 0.55f;
+    auto beginBack = [&]() {
+        if (!inputReady) return;
+        s_backExit = true;
+        s_backOutT = 0.0f;
+        s_ShopBackRequested = false;
+    };
+    if (s_ShopBackRequested) {
+        if (inputReady) beginBack();
+        else s_ShopBackRequested = false;
+    }
+    if (rmbClick || escClick) beginBack();
+    bool finishBackAfterRender = false;
+    if (s_backExit) {
+        s_backOutT += dt;
+        if (s_backOutT >= 0.42f) {
+            s_backOutT = 0.42f;
+            finishBackAfterRender = true;
+        }
+    }
+
+    const float entryOldOut = Smoothstep(LogoClamp01(g_ShopEntryT / 0.35f));
+    const float entryTreeIn = Smoothstep(LogoClamp01((g_ShopEntryT - 0.20f) / 0.35f));
+    const float entryDetailIn = Smoothstep(LogoClamp01((g_ShopEntryT - 0.34f) / 0.30f));
+    const float backP = s_backExit ? Smoothstep(LogoClamp01(s_backOutT / 0.42f)) : 0.0f;
+    const float oldMenuA = s_backExit ? backP : (1.0f - entryOldOut);
+    const float wake = s_backExit ? (1.0f - backP) : entryTreeIn;
+    const float rightWake = s_backExit ? (1.0f - backP) : entryDetailIn;
 
     int li = LangIndex(); if (li < 0 || li >= 3) li = 0;
     const int nli = (li == 0) ? 0 : 1;
@@ -430,24 +878,66 @@ void Scene_Shop(const SceneCtx& c) {
 
     // ── Layout ─────────────────────────────────────────────────────────
     const float TARGET_W = 1640.0f, TARGET_H = 910.0f;
-    float uiS = std::max(0.72f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
-    if (uiS > 1.30f) uiS = 1.30f;
-    const float panelW    = TARGET_W * uiS;
-    const float panelH    = TARGET_H * uiS;
-    const float panelX    = (sw - panelW) * 0.5f;
-    const float panelY    = (sh - panelH) * 0.5f;
-    const float headerH   = 86.0f * uiS;
-    const float footerH   = 64.0f * uiS;
-    const float tabH      = 44.0f * uiS;
-    const float leftW     = panelW * 0.27f;
-    const float colGap    = 18.0f * uiS;
-    const float leftX     = panelX;
-    const float rightX    = leftX + leftW + colGap;
-    const float rightW    = panelW - leftW - colGap;
-    const float tabY      = panelY + headerH;
-    const float listAreaY = tabY + tabH + 4.0f * uiS;
-    const float listAreaH = panelH - headerH - tabH - footerH - 4.0f * uiS;
-    const float footY     = panelY + panelH - footerH + 14.0f * uiS;
+    const float uiS = std::max(0.70f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
+    const float panelW = TARGET_W * uiS;
+    const float panelH = TARGET_H * uiS;
+    const float panelX = (sw - panelW) * 0.5f;
+    const float panelY = (sh - panelH) * 0.5f + (1.0f - wake) * 24.0f * uiS;
+    const float headerH = 82.0f * uiS;
+    const float footerH = 74.0f * uiS;
+    const float gap = 20.0f * uiS;
+    const float colY = panelY + headerH;
+    const float colH = panelH - headerH - footerH;
+    const float leftW = panelW * 0.260f;
+    const float midW = panelW * 0.460f;
+    const float runRightW = panelW - leftW - midW - gap * 2.0f;
+    const float leftX = panelX;
+    const float midX = leftX + leftW + gap;
+    const float runRightX = midX + midW + gap;
+    const float rightX = std::max(sw * 0.56f, panelX + panelW * 0.56f);
+    const float rightW = (panelX + panelW) - rightX - 8.0f * uiS;
+    const float rightAreaY = colY;
+    const float rightAreaH = colH;
+    const float tabH = 54.0f * uiS;
+    const float tabY = colY;
+    const float listAreaY = colY + 64.0f * uiS;
+    const float listAreaH = colH - 64.0f * uiS;
+    const float footY = panelY + panelH - footerH + 12.0f * uiS;
+    (void)runRightW;
+    (void)runRightX;
+    const float leftVignetteA = s_backExit
+        ? (0.74f + 0.26f * backP)
+        : (s_MainMenuArmoryPanel ? 0.74f : 0.64f * wake);
+    DrawSceneLeftVignette(sw, sh, leftVignetteA);
+    if (s_MainMenuArmoryPanel)
+        DrawSceneLeftVignette(sw, sh, 0.18f * wake);
+    DrawSceneRadialVignette(rightX + rightW * 0.56f, rightAreaY + rightAreaH * 0.52f,
+                            std::min(rightW, rightAreaH) * 0.62f, 0.46f * rightWake);
+
+    const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
+    const float mainBH = 70.0f;
+    const float mainGap = 15.0f;
+    const float mainTotalH = 5.0f * mainBH + 4.0f * mainGap;
+    const float mainX = std::max(58.0f, sw * 0.075f);
+    float mainY = sh * 0.48f;
+    if (mainY + mainTotalH > sh - 54.0f) mainY = sh - mainTotalH - 54.0f;
+    if (mainY < MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f)
+        mainY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
+    const float armoryY = mainY + (mainBH + mainGap);
+    const float armoryMidY = armoryY + mainBH * 0.5f;
+
+    const float rootX = mainX + (s_backExit ? backP * 180.0f * uiS : -(1.0f - wake) * 82.0f * uiS);
+    const float rootY = mainY + (1.0f - wake) * 18.0f * uiS;
+    const float rootW = std::min(340.0f * uiS, mainBW * 0.66f);
+    const float rootH = mainBH;
+    const float rootGap = mainGap;
+    const float depth2X = rootX + std::min(345.0f * uiS, mainBW * 0.64f);
+    const float depth2Y = std::max(panelY + headerH + 34.0f * uiS,
+        rootY + (float)s_tab * (rootH + rootGap) - 34.0f * uiS);
+    const float depth2W = std::max(300.0f * uiS,
+        std::min(470.0f * uiS, rightX - depth2X - 32.0f * uiS));
+    const float depth2H = std::max(280.0f * uiS,
+        std::min(panelY + panelH - footerH - depth2Y - 18.0f * uiS, 620.0f * uiS));
 
     static constexpr int KEY_META  = 0;
     static constexpr int KEY_THEME = 100;
@@ -513,37 +1003,73 @@ void Scene_Shop(const SceneCtx& c) {
     }
 
     if (s_selKey != s_prevKey) { s_prevKey = s_selKey; s_detailT = 0.0f; }
+    if (s_selKey != s_prevTagKey) { s_prevTagKey = s_selKey; s_tagFlickerT = 0.0f; }
     s_detailT = UiApproach(s_detailT, 1.0f, dt, 6.0f);
+    s_tagFlickerT = UiApproach(s_tagFlickerT, 1.0f, dt, 16.0f);
 
-    // ── Header ─────────────────────────────────────────────────────────
-    float hSlide = (1.0f - wake) * 30.0f * uiS;
-    BindMainShader();
-    g_TextL.Draw(L"ARMORY", leftX, panelY + 8.0f * uiS - hSlide,
-                 0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
+    // ── Main-menu expansion ghost ──────────────────────────────────────
+    const float oldOut = 1.0f - oldMenuA;
+    const float returnLogoA = s_backExit ? (0.42f + 0.58f * backP) : 0.42f;
+    DrawMainOnedowLogo(sw, sh,
+                       returnLogoA * oldMenuA + 0.08f * wake,
+                       LogoClamp01(oldMenuA + 0.22f * wake),
+                       sw * 0.30f - 160.0f * oldOut,
+                       0.82f);
+    {
+        struct GhostDef { const wchar_t* route; const wchar_t* sub; };
+        static const GhostDef kGhostMenu[5] = {
+            { L"RUN_CONFIG",  L"\uC2DC\uC791" },
+            { L"ARMORY",      L"\uC0C1\uC810" },
+            { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
+            { L"CALIBRATION", L"\uC124\uC815" },
+            { L"SHUTDOWN",    L"\uAC8C\uC784 \uC885\uB8CC" },
+        };
+        const float ghostSlide = 250.0f * oldOut;
+        const float anchorX = mainX - ghostSlide - 36.0f;
+        BindMainShader();
+        drawRect(anchorX, std::max(22.0f, MainLogoTop(sh) - 20.0f),
+                 1.2f, mainTotalH + 170.0f,
+                 0.48f, 0.82f, 1.0f, 0.12f * oldMenuA);
+        for (int i = 0; i < 5; ++i) {
+            const bool focus = (!s_backExit && i == 1);
+            const float rowY = mainY + (float)i * (mainBH + mainGap);
+            const float rowX = mainX - ghostSlide - (focus ? 0.0f : 26.0f * oldOut);
+            const float rowA = (s_backExit ? 0.82f : focus ? 0.76f : 0.18f) * oldMenuA;
+            const float active = focus ? 1.0f : 0.0f;
+            if (focus) {
+                drawRect(rowX - 18.0f, rowY + mainBH * 0.5f - 31.0f,
+                         2.0f, 62.0f, 0.48f, 0.82f, 1.0f, 0.56f * oldMenuA);
+                drawRect(rowX - 4.0f, rowY + mainBH * 0.50f,
+                         mainBW * 0.42f, 1.1f, 0.48f, 0.82f, 1.0f, 0.12f * oldMenuA);
+                drawDiamond(rowX - 17.0f, rowY + mainBH * 0.5f,
+                            5.0f, 0.48f, 0.82f, 1.0f, 0.72f * oldMenuA);
+            }
+            float routeSc = 1.04f;
+            while (routeSc > 0.82f && g_TextL.Width(kGhostMenu[i].route, routeSc) > mainBW)
+                routeSc -= 0.04f;
+            const float subSc = 0.48f;
+            const float routeY = rowY + 2.0f;
+            const float subY = routeY + g_TextL.Height(kGhostMenu[i].route, routeSc) - 3.0f;
+            const float gr = s_backExit ? 1.0f : 1.0f - 0.52f * (1.0f - active);
+            const float gg = s_backExit ? 1.0f : 1.0f - 0.18f * (1.0f - active);
+            const float gb = 1.0f;
+            g_TextL.Draw(kGhostMenu[i].route, rowX, routeY, routeSc,
+                         gr, gg, gb, rowA);
+            g_TextS.Draw(kGhostMenu[i].sub, rowX + 4.0f, subY, subSc,
+                         0.70f + 0.16f * active,
+                         0.75f + 0.14f * active,
+                         0.82f + 0.10f * active,
+                         (s_backExit ? 0.70f : focus ? 0.82f : 0.26f) * oldMenuA);
+        }
+        const float bridgeA = std::min(oldMenuA, wake);
+        LogoLine(mainX - ghostSlide + mainBW * 0.42f, armoryMidY,
+                 rootX - 26.0f * uiS, armoryMidY,
+                 1.1f * uiS, 0.48f, 0.82f, 1.0f, 0.28f * bridgeA);
+        drawDiamond(rootX - 26.0f * uiS, armoryMidY,
+                    3.5f * uiS, 0.48f, 0.82f, 1.0f, 0.52f * bridgeA);
+    }
 
-    wchar_t coinBuf[64]; swprintf_s(coinBuf, L"CREDITS :: %06lld", g_Coins);
-    const float coinSc = 0.50f * uiS;
-    const float coinH  = 34.0f * uiS;
-    const float coinW  = g_TextS.Width(coinBuf, coinSc) + 48.0f * uiS;
-    const float coinX  = panelX + panelW - coinW - 8.0f * uiS;
-    const float coinY  = panelY + 14.0f * uiS - hSlide;
-    drawRect(coinX, coinY, coinW, coinH, 0.030f, 0.034f, 0.050f, 0.62f * wake);
-    BatchFlush();
-    SetGlowFx(true);
-    drawConstellFrame(coinX, coinY, coinW, coinH, 1.0f, 0.84f, 0.22f,
-                      0.58f * wake, 8.0f * uiS, 2.4f * uiS, 0.08f * wake);
-    drawDiamond(coinX + 17.0f * uiS, coinY + coinH * 0.5f,
-                4.0f * uiS, 1.0f, 0.84f, 0.22f, 0.86f * wake);
-    BatchFlush();
-    SetGlowFx(false);
-    g_TextS.Draw(coinBuf, coinX + 30.0f * uiS,
-                 coinY + (coinH - g_TextS.Height(coinBuf, coinSc)) * 0.5f,
-                 coinSc, 1.0f, 0.88f, 0.34f, 0.94f * wake);
-    BindMainShader();
-    drawRect(leftX, panelY + headerH - 2.0f * uiS, panelW, 1.5f * uiS,
-             g_AccentR, g_AccentG, g_AccentB, 0.35f * wake);
-
-    // ── Tabs ────────────────────────────────────────────────────────────
+    // ── Cascading text tree: root commands ─────────────────────────────
     static const wchar_t* kTabLbl[SHOP_TAB_COUNT][2] = {
         { L"\xC804\xCCB4", L"ALL"    },
         { L"\xD574\xAE08", L"UNLOCK" },
@@ -554,48 +1080,102 @@ void Scene_Shop(const SceneCtx& c) {
     static const float kTG[SHOP_TAB_COUNT] = { 0.70f, 0.82f, 0.92f, 0.48f };
     static const float kTB[SHOP_TAB_COUNT] = { 0.70f, 1.00f, 0.42f, 1.00f };
 
-    float tW = leftW / (float)SHOP_TAB_COUNT;
-    for (int i = 0; i < SHOP_TAB_COUNT; i++) {
-        float tx = leftX + i * tW;
-        bool hov = (mx >= tx && mx < tx + tW && my >= tabY && my < tabY + tabH);
-        s_tabHov[i] = UiApproach(s_tabHov[i], hov ? 1.0f : 0.0f, dt, 8.0f);
-        bool sel = (s_tab == i);
-        if (hov && lmb && !g_LmbPrev) { s_tab = i; s_prevTab = -1; }
+    BindMainShader();
+    drawRect(rootX - 36.0f, rootY - 20.0f,
+             1.2f, rootH * 5.0f + rootGap * 4.0f + 40.0f,
+             0.48f, 0.82f, 1.00f, 0.16f * wake);
+
+    const int ROOT_COUNT = SHOP_TAB_COUNT + 1;
+    for (int i = 0; i < ROOT_COUNT; i++) {
+        const bool isBack = (i == SHOP_TAB_COUNT);
+        const float tx = rootX;
+        const float ty = rootY + (float)i * (rootH + rootGap);
+        const float hitX = tx - 26.0f;
+        const float hitRight = std::min(tx + rootW + 18.0f * uiS, depth2X - 34.0f * uiS);
+        const bool hov = inputReady
+                       && (mx >= hitX && mx < hitRight
+                       && my >= ty && my < ty + rootH);
+        float& hovT = isBack ? s_backHov : s_tabHov[i];
+        float rootSpd = dt * 10.0f; if (rootSpd > 1.0f) rootSpd = 1.0f;
+        hovT += ((hov ? 1.0f : 0.0f) - hovT) * rootSpd;
+
+        if (hov && lmb && !g_LmbPrev) {
+            if (isBack) {
+                beginBack();
+            } else {
+                s_tab = i;
+                s_prevTab = -1;
+            }
+        }
+
+        const bool sel = (!isBack && s_tab == i);
+        const float rr = isBack ? 0.42f : kTR[i];
+        const float gg = isBack ? 0.62f : kTG[i];
+        const float bb = isBack ? 0.78f : kTB[i];
+        const wchar_t* route = isBack ? L"BACK" : kTabLbl[i][1];
+        const wchar_t* sub = isBack ? L"\uB4A4\uB85C" : kTabLbl[i][0];
+        const float rawRootPh = s_backExit
+            ? wake
+            : LogoClamp01((g_ShopEntryT - 0.20f - (float)i * 0.09f) / 0.45f);
+        const float reveal = Smoothstep(rawRootPh);
+        const float rowA = reveal * wake;
+        const float activeT = std::max(hovT, sel ? 1.0f : 0.0f);
+        const float selectPulse = sel ? (0.16f + 0.16f * sinf(now * 4.0f)) : 0.0f;
+        const float slide = (1.0f - reveal) * 34.0f;
+        const float bx = tx + slide - 10.0f * hovT;
+        const float by = ty;
+
         BindMainShader();
-        drawRect(tx, tabY, tW, tabH, 0.030f, 0.036f, 0.055f, 0.98f * wake);
-        drawRect(tx, tabY, tW, tabH, kTR[i], kTG[i], kTB[i],
-                 (sel ? 0.36f : 0.12f + s_tabHov[i] * 0.14f) * wake);
-        if (sel)
-            drawRect(tx, tabY + tabH - 2.0f * uiS, tW, 2.0f * uiS,
-                     kTR[i], kTG[i], kTB[i], 0.90f * wake);
-        const wchar_t* tlbl = kTabLbl[i][nli == 0 ? 0 : 1];
-        float tlblW = g_TextS.Width(tlbl, 0.38f * uiS);
-        float tlblY = tabY + (tabH - g_TextS.Height(tlbl, 0.38f * uiS)) * 0.5f;
-        g_TextS.Draw(tlbl, tx + (tW - tlblW) * 0.5f, tlblY, 0.38f * uiS,
-                     kTR[i], kTG[i], kTB[i],
-                     (sel ? 1.0f : 0.45f + s_tabHov[i] * 0.35f) * wake);
+        if (activeT > 0.01f) {
+            const float lineH = 20.0f + 42.0f * activeT + 10.0f * selectPulse;
+            drawRect(bx - 18.0f, by + rootH * 0.5f - lineH * 0.5f,
+                     2.2f, lineH, rr, gg, bb, (0.24f + 0.55f * activeT) * rowA);
+            const float scanY = by + rootH * (0.34f + 0.32f * fmodf(now * 0.55f + (float)i * 0.17f, 1.0f));
+            drawRect(bx - 4.0f, scanY, mainBW * (0.58f + 0.24f * activeT), 1.1f,
+                     rr, gg, bb, (0.050f + 0.090f * activeT) * rowA);
+            drawDiamond(bx - 17.0f, by + rootH * 0.5f,
+                        3.0f + 2.6f * activeT, rr, gg, bb, (0.40f + 0.34f * activeT) * rowA);
+        }
+
+        float routeSc = 1.04f;
+        while (routeSc > 0.82f && g_TextL.Width(route, routeSc) > mainBW)
+            routeSc -= 0.04f;
+        const float subSc = 0.48f;
+        const float routeY = by + 2.0f;
+        const float subY = routeY + g_TextL.Height(route, routeSc) - 3.0f;
+        float tr = 1.0f + (rr - 1.0f) * activeT;
+        float tg = 1.0f + (gg - 1.0f) * activeT;
+        float tb = 1.0f + (bb - 1.0f) * activeT;
+        if (sel) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
+        g_TextL.Draw(route, bx, routeY, routeSc,
+                     tr, tg, tb, (0.82f + 0.16f * activeT + 0.18f * selectPulse) * rowA);
+        g_TextS.Draw(sub, bx + 4.0f, subY, subSc,
+                     0.70f + 0.18f * activeT,
+                     0.75f + 0.16f * activeT,
+                     0.82f + 0.12f * activeT,
+                     (0.70f + 0.20f * activeT) * rowA);
     }
 
-    // ── Left panel (list) ───────────────────────────────────────────────
+    // ── Depth 2: item branches ─────────────────────────────────────────
     BindMainShader();
-    drawRect(leftX, listAreaY, leftW, listAreaH, 0.006f, 0.009f, 0.018f, 0.99f * wake);
-    drawRect(leftX, listAreaY, leftW, listAreaH, 0.052f, 0.062f, 0.104f, 0.96f * wake);
-    drawConstellFrame(leftX, listAreaY, leftW, listAreaH,
-                      g_AccentR, g_AccentG, g_AccentB, 0.50f * wake,
-                      20.0f * uiS, 4.0f * uiS, 0.10f * wake, 1.0f);
+    const float parentY = rootY + (float)s_tab * (rootH + rootGap) + rootH * 0.5f;
+    const float trunkX = depth2X - 26.0f * uiS;
+    LogoLine(rootX + rootW + 18.0f * uiS, parentY, trunkX, parentY,
+             1.0f * uiS, kTR[s_tab], kTG[s_tab], kTB[s_tab], 0.34f * wake);
 
-    const float itemH  = 40.0f * uiS;
-    const float grpH   = 30.0f * uiS;
-    const float listX  = leftX + 6.0f * uiS;
-    const float listW2 = leftW - 12.0f * uiS;
+    const float itemH  = 50.0f * uiS;
+    const float grpH   = 40.0f * uiS;
+    const float listX  = depth2X;
+    const float listW2 = depth2W;
 
     float totalH = 0.0f;
     for (int i = 0; i < s_itemCount; i++)
         totalH += s_items[i].isGroup ? grpH : itemH;
-    float maxScroll = std::max(0.0f, totalH - listAreaH + 16.0f * uiS);
+    float maxScroll = std::max(0.0f, totalH - depth2H + 16.0f * uiS);
 
-    bool overList = (mx >= leftX && mx < leftX + leftW
-                  && my >= listAreaY && my < listAreaY + listAreaH);
+    bool overList = inputReady
+                 && (mx >= depth2X - 38.0f * uiS && mx < depth2X + depth2W + 26.0f * uiS
+                  && my >= depth2Y && my < depth2Y + depth2H);
     if (overList && g_ScrollAccum != 0.0f)
         s_scroll -= g_ScrollAccum * 36.0f * uiS;
     g_ScrollAccum = 0.0f;
@@ -605,79 +1185,104 @@ void Scene_Shop(const SceneCtx& c) {
     BatchFlush();
     glEnable(GL_SCISSOR_TEST);
     {
-        int scX = (int)leftX, scY = (int)(sh - (listAreaY + listAreaH));
-        int scW = (int)leftW, scH = (int)listAreaH;
+        int scX = (int)(depth2X - 42.0f * uiS), scY = (int)(sh - (depth2Y + depth2H));
+        int scW = (int)(depth2W + 70.0f * uiS), scH = (int)depth2H;
         if (scX < 0) scX = 0; if (scY < 0) scY = 0;
         glScissor(scX, scY, scW, scH);
     }
 
-    float curY = listAreaY + 6.0f * uiS - s_scroll;
+    float curY = depth2Y + 6.0f * uiS - s_scroll;
+    const float treeTop = curY;
+    const float treeBot = curY + totalH - 8.0f * uiS;
+    BindMainShader();
+    LogoLine(trunkX, std::min(parentY, treeTop + 12.0f * uiS),
+             trunkX, std::max(parentY, treeBot),
+             0.9f * uiS, kTR[s_tab], kTG[s_tab], kTB[s_tab], 0.22f * wake);
     for (int i = 0; i < s_itemCount; i++) {
         const SLItem& itm = s_items[i];
         float rh = itm.isGroup ? grpH : itemH;
         float ry = curY; curY += rh;
-        if (ry + rh < listAreaY || ry > listAreaY + listAreaH) continue;
+        if (ry + rh < depth2Y || ry > depth2Y + depth2H) continue;
 
         if (itm.isGroup) {
             BindMainShader();
             float mid = ry + grpH * 0.5f;
-            drawRect(listX, ry + 2.0f*uiS, listW2, grpH - 4.0f*uiS,
-                     0.020f + itm.r * 0.030f,
-                     0.024f + itm.g * 0.024f,
-                     0.036f + itm.b * 0.020f, 0.84f * wake);
-            drawRect(listX + 11.0f*uiS, mid - 0.75f*uiS, listW2 - 17.0f*uiS, 1.5f*uiS,
-                     itm.r, itm.g, itm.b, 0.32f * wake);
-            drawDiamond(listX + 5.5f*uiS, mid, 5.5f*uiS, itm.r, itm.g, itm.b, 0.80f * wake);
-            drawDiamond(listX + 5.5f*uiS, mid, 2.8f*uiS, 0.04f, 0.05f, 0.08f, wake);
-            drawDiamond(listX + listW2 - 4.0f*uiS, mid, 3.5f*uiS, itm.r, itm.g, itm.b, 0.52f * wake);
-            g_TextS.Draw(itm.label, listX + 17.0f*uiS, ry + 4.0f*uiS,
-                         0.42f*uiS, itm.r, itm.g, itm.b, 0.96f * wake);
+            float grpPulse = 0.72f + 0.28f * sinf(now * 2.2f + (float)i * 0.41f);
+            LogoLine(trunkX, mid, listX - 8.0f * uiS, mid,
+                     0.9f * uiS, itm.r, itm.g, itm.b, 0.28f * wake);
+            drawRect(listX + 4.0f*uiS, mid - 0.5f*uiS,
+                     listW2 * 0.96f, 1.0f*uiS,
+                     itm.r, itm.g, itm.b, (0.11f + 0.030f * grpPulse) * wake);
+            drawDiamond(listX - 8.0f*uiS, mid,
+                        (3.8f + 0.6f * grpPulse) * uiS,
+                        itm.r, itm.g, itm.b, 0.58f * wake);
+            const float gsc = 0.58f * uiS;
+            g_TextS.Draw(itm.label, listX + 14.0f*uiS,
+                         ry + (grpH - g_TextS.Height(itm.label, gsc)) * 0.5f,
+                         gsc, 0.86f, 0.94f, 1.0f, 0.74f * wake);
         } else {
             bool isSel = (s_selKey == itm.key);
-            bool hov2  = (mx >= leftX && mx < leftX + leftW && my >= ry && my < ry + itemH);
+            bool hov2  = inputReady
+                       && (mx >= listX - 24.0f * uiS && mx < listX + listW2 + 18.0f * uiS
+                       && my >= ry - 4.0f * uiS && my < ry + itemH + 5.0f * uiS);
             if (hov2 && lmb && !g_LmbPrev) s_selKey = itm.key;
             BindMainShader();
-            drawRect(listX, ry, listW2, itemH,
-                     0.016f + itm.r * (isSel ? 0.090f : 0.030f),
-                     0.020f + itm.g * (isSel ? 0.076f : 0.026f),
-                     0.032f + itm.b * (isSel ? 0.064f : 0.024f),
-                     isSel ? 0.98f * wake : (hov2 ? 0.92f : 0.78f) * wake);
-            if (isSel)
-                drawRect(listX, ry, listW2, itemH, itm.r, itm.g, itm.b, 0.32f * wake);
-            else if (hov2)
-                drawRect(listX, ry, listW2, itemH, itm.r, itm.g, itm.b, 0.16f * wake);
-            float ndy = ry + itemH * 0.5f;
-            float ndx = listX + 7.0f*uiS;
+            const float cardY = ry + 2.0f * uiS;
+            const float cardH = itemH - 4.0f * uiS;
+            const float cardPulse = isSel ? (0.60f + 0.40f * sinf(now * 3.2f + (float)i * 0.31f)) : 0.0f;
+            const float ndy = cardY + cardH * 0.5f;
+            LogoLine(trunkX, ndy, listX - 12.0f * uiS, ndy,
+                     0.8f * uiS, itm.r, itm.g, itm.b, (isSel ? 0.40f : 0.16f) * wake);
+            if (isSel || hov2) {
+                drawRect(listX + 24.0f * uiS, cardY + cardH * 0.5f,
+                         listW2 - 26.0f * uiS, 1.1f * uiS,
+                         itm.r, itm.g, itm.b, (isSel ? 0.15f + 0.040f * cardPulse : 0.070f) * wake);
+            }
+            if (isSel) {
+                drawRect(listX - 2.0f * uiS, cardY + 7.0f * uiS,
+                         2.0f * uiS, cardH - 14.0f * uiS,
+                         itm.r, itm.g, itm.b, (0.72f + 0.16f * cardPulse) * wake);
+                const float cursorSc = 0.66f * uiS;
+                g_TextS.Draw(L">", listX + 7.0f * uiS,
+                             cardY + (cardH - g_TextS.Height(L">", cursorSc)) * 0.5f,
+                             cursorSc, itm.r, itm.g, itm.b, 0.96f * wake);
+            } else if (hov2) {
+                drawRect(listX - 1.0f * uiS, cardY + 10.0f * uiS,
+                         1.4f * uiS, cardH - 20.0f * uiS,
+                         itm.r, itm.g, itm.b, 0.34f * wake);
+            }
+            if (isSel) {
+                drawDiamond(listX + listW2 - 13.0f * uiS, cardY + 13.0f * uiS,
+                    (3.2f + 1.0f * cardPulse) * uiS,
+                            1.0f, 1.0f, 1.0f, 0.44f * wake);
+                drawDiamond(listX + listW2 - 13.0f * uiS, cardY + cardH - 13.0f * uiS,
+                    (2.8f + 0.8f * cardPulse) * uiS,
+                            1.0f, 1.0f, 1.0f, 0.30f * wake);
+            }
+            float ndx = listX - 12.0f*uiS;
             drawDiamond(ndx, ndy, (isSel ? 3.5f : 2.2f)*uiS, itm.r, itm.g, itm.b,
-                        (isSel ? 0.90f : hov2 ? 0.58f : 0.28f) * wake);
-            if (isSel || hov2)
-                drawRect(ndx + (isSel ? 3.5f : 2.2f)*uiS, ndy - 0.5f*uiS,
-                         5.0f*uiS, 1.0f*uiS,
-                         itm.r, itm.g, itm.b, (isSel ? 0.70f : 0.35f) * wake);
-            float tsc = 0.48f * uiS;
-            g_TextS.Draw(itm.label, listX + 18.0f*uiS,
-                         ry + (itemH - g_TextS.Height(itm.label, tsc)) * 0.5f,
-                         tsc, itm.r, itm.g, itm.b,
-                         (isSel ? 1.0f : hov2 ? 0.88f : 0.72f) * wake);
+                        (isSel ? 0.66f : hov2 ? 0.34f : 0.16f) * wake);
+            float tsc = 0.56f * uiS;
+            g_TextS.Draw(itm.label, listX + (isSel ? 27.0f : 16.0f)*uiS,
+                         cardY + (cardH - g_TextS.Height(itm.label, tsc)) * 0.5f,
+                         tsc,
+                         isSel ? 1.0f : hov2 ? 0.82f : 0.54f,
+                         isSel ? 1.0f : hov2 ? 0.88f : 0.62f,
+                         isSel ? 1.0f : hov2 ? 0.98f : 0.72f,
+                         (isSel ? 1.0f : hov2 ? 0.78f : 0.48f) * wake);
         }
     }
 
     BatchFlush();
     glDisable(GL_SCISSOR_TEST);
 
-    // ── Right panel ─────────────────────────────────────────────────────
-    BindMainShader();
-    drawRect(rightX, listAreaY, rightW, listAreaH, 0.050f, 0.060f, 0.100f, 0.90f * rightWake);
-    drawConstellFrame(rightX, listAreaY, rightW, listAreaH,
-                      g_AccentR, g_AccentG, g_AccentB, 0.50f * rightWake,
-                      28.0f * uiS, 5.5f * uiS, 0.12f * rightWake, 1.0f);
-
+    // ── Right panel metrics ─────────────────────────────────────────────
     const float rPad = 28.0f * uiS;
     const float rInX = rightX + rPad;
-    const float rInY = listAreaY + rPad;
-    const float rInH = listAreaH - rPad * 2.0f;
+    const float rInY = rightAreaY + rPad;
+    const float rInH = rightAreaH - rPad * 2.0f;
 
-    if (s_selKey >= 0 && rightWake > 0.02f) {
+    if (false && s_selKey >= 0 && rightWake > 0.02f) {
         float da = s_detailT * rightWake;
 
         if (s_selKey < KEY_THEME) {
@@ -900,30 +1505,1554 @@ void Scene_Shop(const SceneCtx& c) {
         }
     }
 
-    // ── Footer ──────────────────────────────────────────────────────────
-    BindMainShader();
-    drawRect(leftX, footY - 14.0f*uiS, panelW, 1.5f*uiS,
-             g_AccentR, g_AccentG, g_AccentB, 0.22f * wake);
+    // Right panel: readable ARMORY detail view.
+    {
+        float da = std::max(0.0f, std::min(1.0f, s_detailT * rightWake));
+        float sr = 0.38f, sg = 0.82f, sb = 1.00f;
+        if (s_selKey >= KEY_THEME && s_selKey < KEY_AUG) {
+            int ti = s_selKey - KEY_THEME;
+            if (ti >= 0 && ti < ACCENT_COUNT) {
+                sr = ACCENT_THEMES[ti].r; sg = ACCENT_THEMES[ti].g; sb = ACCENT_THEMES[ti].b;
+            }
+        } else if (s_selKey >= KEY_AUG) {
+            int ai = s_selKey - KEY_AUG;
+            if (ai >= 0 && ai < AUG_TOTAL)
+                GetRarityColor(ALL_AUGS[ai].rarity, sr, sg, sb);
+        }
 
-    bool backHov = (mx >= leftX && mx < leftX + 160.0f*uiS
-                 && my >= footY && my < footY + 38.0f*uiS);
-    drawRect(leftX, footY, 160.0f*uiS, 38.0f*uiS,
-             0.045f + g_AccentR * (backHov ? 0.10f : 0.04f),
-             0.052f + g_AccentG * (backHov ? 0.08f : 0.03f),
-             0.078f + g_AccentB * (backHov ? 0.07f : 0.03f),
-             0.88f * wake);
-    drawConstellFrame(leftX, footY, 160.0f*uiS, 38.0f*uiS,
-                      g_AccentR, g_AccentG, g_AccentB, (backHov ? 0.80f : 0.38f) * wake,
-                      14.0f*uiS, 3.0f*uiS);
-    const wchar_t* backText = T(StrId::BTN_BACK);
-    float bkW = g_TextS.Width(backText, 0.42f*uiS);
-    g_TextS.Draw(backText, leftX + (160.0f*uiS - bkW)*0.5f, footY + 9.0f*uiS,
-                 0.42f*uiS, g_AccentR, g_AccentG, g_AccentB, (backHov ? 1.0f : 0.70f) * wake);
-    if (backHov && lmb && !g_LmbPrev)
+        const float rInW = rightW - rPad * 2.0f;
+        const float headerY = rInY + 10.0f * uiS;
+        const float titleY = rInY + 10.0f * uiS;
+        const float bodyY = rInY + 110.0f * uiS;
+        const float bodyH = rInH - 150.0f * uiS;
+        const float vizW = std::min(600.0f * uiS, rInW * 0.58f);
+        const float vizH = std::min(500.0f * uiS, bodyH * 0.78f);
+        const float vizX = rInX + rInW * 0.42f;
+        const float vizY = bodyY + 18.0f * uiS;
+        const float infoX = rInX;
+        const float infoW = rInW - vizW - 32.0f * uiS;
+
+        auto L10n = [&](const wchar_t* kr, const wchar_t* en) -> const wchar_t* {
+            return nli == 0 ? kr : en;
+        };
+
+        auto drawOrbitCornerArcs = [&](float x, float y, float w, float h,
+                                       float r, float g, float b, float a) {
+            if (a <= 0.001f) return;
+            const float arcR = std::max(18.0f * uiS,
+                std::min(std::min(w, h) * 0.10f, 44.0f * uiS));
+            const float thick = std::max(0.75f, 0.90f * uiS);
+            struct ArcDef { float cx, cy, a0, a1; };
+            const ArcDef arcs[4] = {
+                { x + arcR,     y + arcR,     3.1415926f, 4.7123890f },
+                { x + w - arcR, y + arcR,     4.7123890f, 6.2831853f },
+                { x + w - arcR, y + h - arcR, 0.0000000f, 1.5707963f },
+                { x + arcR,     y + h - arcR, 1.5707963f, 3.1415926f },
+            };
+            for (int k = 0; k < 4; ++k) {
+                for (int s = 0; s < 7; ++s) {
+                    if ((s % 3) == 1) continue;
+                    float t0 = (float)s / 7.0f;
+                    float t1 = ((float)s + 0.62f) / 7.0f;
+                    float aa0 = arcs[k].a0 + (arcs[k].a1 - arcs[k].a0) * t0;
+                    float aa1 = arcs[k].a0 + (arcs[k].a1 - arcs[k].a0) * t1;
+                    LogoLine(arcs[k].cx + cosf(aa0) * arcR,
+                             arcs[k].cy + sinf(aa0) * arcR,
+                             arcs[k].cx + cosf(aa1) * arcR,
+                             arcs[k].cy + sinf(aa1) * arcR,
+                             thick, r, g, b, a * 0.55f);
+                }
+            }
+        };
+
+        auto drawAstralMeta = [&](int seed, float r, float g, float b, float a) {
+            if (a <= 0.001f) return;
+            if (seed < 0) seed = 0;
+            const int raH = (seed * 7 + 14) % 24;
+            const int raM = (seed * 13 + 29) % 60;
+            const int dec = ((seed * 19 + 62) % 125) - 62;
+            const int decM = (seed * 11 + 40) % 60;
+            const float lum = 0.62f + (float)((seed * 17 + 27) % 78) * 0.01f;
+            const float mass = 0.84f + (float)((seed * 23 + 51) % 96) * 0.01f;
+            wchar_t coordBuf[96];
+            wchar_t physBuf[96];
+            swprintf_s(coordBuf, L"RA %02dh %02dm / DEC %+03d\x00B0 %02d'", raH, raM, dec, decM);
+            if (nli == 0)
+                swprintf_s(physBuf, L"\uAD11\uB3C4 %.2f / \uC9C8\uB7C9 %.2f", lum, mass);
+            else
+                swprintf_s(physBuf, L"LUMINOSITY %.2f / MASS %.2f", lum, mass);
+            const float sc = 0.34f * uiS;
+            const float x = rInX + 18.0f * uiS;
+            const float y = rightAreaY + rightAreaH - 52.0f * uiS;
+            BindMainShader();
+            drawRect(x - 10.0f * uiS, y - 8.0f * uiS,
+                     430.0f * uiS, 42.0f * uiS,
+                     0.014f, 0.020f, 0.034f, 0.36f * a);
+            drawDiamond(x - 2.0f * uiS, y + 7.0f * uiS,
+                        2.6f * uiS, r, g, b, 0.38f * a);
+            g_TextS.Draw(coordBuf, x + 10.0f * uiS, y,
+                         sc, 0.58f, 0.66f, 0.80f, 0.68f * a);
+            g_TextS.Draw(physBuf, x + 10.0f * uiS, y + 18.0f * uiS,
+                         sc, 0.58f, 0.66f, 0.80f, 0.56f * a);
+        };
+
+        auto drawPanelBase = [&]() {
+            BindMainShader();
+            drawRect(rInX, headerY + 34.0f * uiS, rInW, 2.0f * uiS,
+                     sr, sg, sb, 0.22f * rightWake);
+            LogoLine(rInX, rightAreaY + rightAreaH - 28.0f * uiS,
+                     rInX + rInW * 0.34f, rightAreaY + rightAreaH - 28.0f * uiS,
+                     1.0f * uiS, sr, sg, sb, 0.11f * rightWake);
+            LogoLine(vizX - 26.0f * uiS, vizY + vizH * 0.5f,
+                     vizX - 4.0f * uiS, vizY + vizH * 0.5f,
+                     1.0f * uiS, sr, sg, sb, 0.18f * rightWake);
+        };
+
+        auto drawCredits = [&]() {
+            wchar_t creditBuf[64];
+            swprintf_s(creditBuf, nli == 0 ? L"\uBCC4\uAC00\uB8E8 :: %06lld" : L"STARDUST :: %06lld", g_Coins);
+            const float sc = 0.50f * uiS;
+            const float h = 42.0f * uiS;
+            const float w = g_TextS.Width(creditBuf, sc) + 52.0f * uiS;
+            const float x = rightX + rightW - rPad - w;
+            const float y = rightAreaY + 16.0f * uiS;
+            BindMainShader();
+            drawRect(x, y + h * 0.50f, w, 1.0f * uiS,
+                     1.00f, 0.84f, 0.20f, 0.18f * rightWake);
+            drawConstellFrame(x, y, w, h, 1.00f, 0.84f, 0.20f,
+                              0.38f * rightWake, 10.0f * uiS, 2.5f * uiS, 0.0f, 1.0f);
+            drawDiamond(x + 18.0f * uiS, y + h * 0.5f,
+                        4.2f * uiS, 1.00f, 0.84f, 0.20f, 0.90f * rightWake);
+            g_TextS.Draw(creditBuf, x + 32.0f * uiS,
+                         y + (h - g_TextS.Height(creditBuf, sc)) * 0.5f,
+                         sc, 1.0f, 0.88f, 0.36f, 0.98f * rightWake);
+        };
+
+        auto drawDataBox = [&](float x, float y, float w, const wchar_t* label,
+                               const wchar_t* value, float r, float g, float b, float a) {
+            const float h = 62.0f * uiS;
+            BindMainShader();
+            drawRect(x, y, w, h, 0.028f, 0.036f, 0.056f, 0.10f * a);
+            drawRect(x, y, 2.0f * uiS, h, r, g, b, 0.70f * a);
+            drawRect(x + 10.0f * uiS, y + h - 1.5f * uiS, w - 20.0f * uiS, 1.5f * uiS,
+                     r, g, b, 0.22f * a);
+            g_TextS.Draw(label, x + 14.0f * uiS, y + 8.0f * uiS,
+                         0.38f * uiS, 0.78f, 0.83f, 0.96f, 0.90f * a);
+            g_TextS.Draw(value, x + 14.0f * uiS, y + 31.0f * uiS,
+                         0.54f * uiS, 0.92f, 0.96f, 1.0f, 0.98f * a);
+        };
+        (void)drawDataBox;
+
+        auto drawHoloCross = [&](float x, float y, float s, float r, float g, float b, float a) {
+            if (a <= 0.001f) return;
+            BindMainShader();
+            drawRect(x - s, y - 0.5f * uiS, s * 2.0f, 1.0f * uiS, r, g, b, a);
+            drawRect(x - 0.5f * uiS, y - s, 1.0f * uiS, s * 2.0f, r, g, b, a);
+        };
+
+        auto drawProductHeader = [&](const wchar_t* code, const wchar_t* title,
+                                     float r, float g, float b, float a) {
+            const float x = infoX;
+            const float y = titleY;
+            const float w = infoW;
+            const float h = 92.0f * uiS;
+            BindMainShader();
+            drawRect(x, y + 55.0f * uiS, w, 1.5f * uiS, r, g, b, 0.30f * a);
+            drawRect(x, y + 57.0f * uiS, w * 0.28f, 1.0f * uiS, 1.0f, 1.0f, 1.0f, 0.18f * a);
+            drawHoloCross(x, y + 2.0f * uiS, 5.0f * uiS, r, g, b, 0.34f * a);
+            drawHoloCross(x + w, y + 2.0f * uiS, 5.0f * uiS, r, g, b, 0.26f * a);
+            drawHoloCross(x, y + h, 5.0f * uiS, r, g, b, 0.22f * a);
+            drawHoloCross(x + w, y + h, 5.0f * uiS, r, g, b, 0.30f * a);
+            g_TextS.Draw(code, x, y, 0.40f * uiS,
+                         0.58f, 0.66f, 0.78f, 0.72f * a);
+            float titleSc = 1.10f * uiS;
+            while (titleSc > 0.82f * uiS && g_TextL.Width(title, titleSc) > w - 16.0f * uiS)
+                titleSc -= 0.04f * uiS;
+            g_TextL.Draw(title, x, y + 28.0f * uiS,
+                         titleSc, 1.0f, 1.0f, 1.0f, 0.98f * a);
+        };
+
+        auto drawTerminalRow = [&](float x, float y, float w,
+                                   const wchar_t* label, const wchar_t* value,
+                                   float r, float g, float b, float a,
+                                   bool costValue = false) {
+            if (a <= 0.001f) return;
+            const float rowH = 34.0f * uiS;
+            const float labelSc = 0.46f * uiS;
+            const float valueSc = 0.54f * uiS;
+            const float valueX = x + 190.0f * uiS;
+            BindMainShader();
+            drawRect(x, y + rowH - 3.0f * uiS, w, 1.0f * uiS,
+                     r, g, b, 0.13f * a);
+            drawRect(x, y + 7.0f * uiS, 2.0f * uiS, rowH - 13.0f * uiS,
+                     r, g, b, 0.52f * a);
+            drawDiamond(x + 9.0f * uiS, y + rowH * 0.5f,
+                        2.6f * uiS, r, g, b, 0.46f * a);
+            g_TextS.Draw(label, x + 22.0f * uiS, y + 5.0f * uiS,
+                         labelSc, 0.68f, 0.76f, 0.88f, 0.88f * a);
+            g_TextS.Draw(value, valueX, y + 2.0f * uiS,
+                         valueSc,
+                         costValue ? 1.0f : 0.92f,
+                         costValue ? 0.86f : 0.96f,
+                         costValue ? 0.36f : 1.0f,
+                         0.98f * a);
+        };
+
+        auto metaNodeCode = [&](int id) -> const wchar_t* {
+            switch (id) {
+            case META_HP:       return L"SYS_NODE : HP_UPGRADE";
+            case META_DMG:      return L"SYS_NODE : DAMAGE_CORE";
+            case META_MOVE:     return L"SYS_NODE : MOBILITY_DRIVE";
+            case META_VISION:   return L"SYS_NODE : SIGHT_ARRAY";
+            case META_STARTAUG: return L"SYS_NODE : START_MODULE";
+            case META_ID_SLOT:  return L"SYS_NODE : IDENTITY_SOCKET";
+            default:            return L"SYS_NODE : UNKNOWN";
+            }
+        };
+
+        auto drawNodeMap = [&](int filled, int total, const wchar_t* label,
+                               float r, float g, float b, float a) {
+            BindMainShader();
+            g_TextS.Draw(label, vizX + 18.0f * uiS, vizY + 16.0f * uiS,
+                         0.42f * uiS, 0.78f, 0.83f, 0.96f, 0.56f * a);
+            drawRect(vizX + 18.0f * uiS, vizY + 46.0f * uiS, vizW - 36.0f * uiS,
+                     1.0f * uiS, r, g, b, 0.18f * a);
+
+            int nodes = std::max(3, std::min(total, 8));
+            float cx = vizX + vizW * 0.50f;
+            float cy = vizY + vizH * 0.56f;
+            float rad = std::min(vizW, vizH) * 0.34f;
+            float px[8] = {}, py[8] = {};
+            DrawSceneRadialVignette(cx, cy, rad * 2.10f, 0.42f * a);
+            BindMainShader();
+            for (int i = 0; i < nodes; ++i) {
+                float ang = -1.5708f + (float)i / (float)nodes * 6.2831853f + now * 0.10f;
+                px[i] = cx + cosf(ang) * rad;
+                py[i] = cy + sinf(ang) * rad;
+            }
+            for (int i = 0; i < nodes; ++i) {
+                int j = (i + 1) % nodes;
+                bool on = (i < filled || j < filled);
+                DrawVisibleConstellLine(px[i], py[i], px[j], py[j], 1.20f * uiS, r, g, b,
+                                        (on ? 0.58f : 0.20f) * a);
+                DrawVisibleConstellLine(cx, cy, px[i], py[i], 0.82f * uiS, r, g, b,
+                                        (i < filled ? 0.30f : 0.10f) * a);
+            }
+            DrawVisibleConstellNode(cx, cy, 10.5f * uiS, r, g, b, 0.88f * a);
+            for (int i = 0; i < nodes; ++i) {
+                bool on = i < filled;
+                bool next = i == filled && filled < total;
+                float pulse = next ? 0.74f + 0.26f * sinf(now * 4.0f) : 1.0f;
+                DrawVisibleConstellNode(px[i], py[i], (on ? 7.2f : 5.2f) * uiS,
+                                        r, g, b, (on ? 0.92f : next ? 0.62f * pulse : 0.28f) * a);
+            }
+        };
+
+        auto drawActionButton = [&](float x, float y, float w, float h, const wchar_t* label,
+                                    bool enabled, float r, float g, float b, float a) -> bool {
+            bool hov = inputReady && (mx >= x && mx < x + w && my >= y && my < y + h);
+            BindMainShader();
+            drawRect(x, y, w, h,
+                     r * (hov && enabled ? 0.12f : 0.04f),
+                     g * (hov && enabled ? 0.10f : 0.035f),
+                     b * (hov && enabled ? 0.08f : 0.030f),
+                     (hov && enabled ? 0.52f : 0.18f) * a);
+            if (hov && enabled) {
+                const float slashGap = 18.0f * uiS;
+                for (float sx = x - h; sx < x + w + h; sx += slashGap) {
+                    LogoLine(sx, y + h - 5.0f * uiS,
+                             sx + 22.0f * uiS, y + 5.0f * uiS,
+                             1.0f * uiS, r, g, b, 0.18f * a);
+                }
+                float scanX = x + fmodf(now * 260.0f, w + 80.0f * uiS) - 40.0f * uiS;
+                drawRect(scanX, y + 3.0f * uiS, 24.0f * uiS, h - 6.0f * uiS,
+                         r, g, b, 0.12f * a);
+            }
+            drawConstellFrame(x, y, w, h, r, g, b,
+                              (enabled ? (hov ? 0.92f : 0.62f) : 0.38f) * a,
+                              15.0f * uiS, 3.5f * uiS, 0.04f * a);
+            float sc = 0.60f * uiS;
+            while (sc > 0.42f * uiS && g_TextS.Width(label, sc) > w - 28.0f * uiS)
+                sc -= 0.025f * uiS;
+            float tw = g_TextS.Width(label, sc);
+            g_TextS.Draw(label, x + (w - tw) * 0.5f,
+                         y + (h - g_TextS.Height(label, sc)) * 0.5f,
+                         sc,
+                         enabled ? 0.92f : 0.64f,
+                         enabled ? 0.98f : 0.70f,
+                         enabled ? 1.00f : 0.78f,
+                         0.96f * a);
+            return enabled && hov && lmb && !g_LmbPrev;
+        };
+
+        drawPanelBase();
+        drawCredits();
+
+        auto drawMiniTagFrame = [&](float x, float y, float w, float h,
+                                    float r, float g, float b, float a) {
+            if (a <= 0.001f) return;
+            const float l = 26.0f * uiS;
+            const float t = 1.0f * uiS;
+            BindMainShader();
+            drawRect(x, y, l, t, r, g, b, 0.42f * a);
+            drawRect(x, y, t, h, r, g, b, 0.34f * a);
+            drawRect(x, y + h - t, l, t, r, g, b, 0.36f * a);
+            drawRect(x + w - l, y + h - t, l, t, r, g, b, 0.26f * a);
+        };
+
+        auto drawDataTag = [&](const wchar_t* id, const wchar_t* title,
+                               const wchar_t* desc, const wchar_t* stat,
+                               const wchar_t* cmd, bool enabled,
+                               float r, float g, float b, float a) -> bool {
+            const float tagW = std::min(610.0f * uiS, rightW * 0.48f);
+            const float tagH = 128.0f * uiS;
+            const float tagX = vizX + 20.0f * uiS;
+            const float tagY = vizY + vizH + 16.0f * uiS;
+            const float flick = Smoothstep(s_tagFlickerT);
+            const float tagA = a * (0.58f + 0.42f * flick);
+            const float sc0 = 0.40f * uiS;
+            const float sc1 = 0.48f * uiS;
+            bool cmdHov = inputReady && enabled
+                && mx >= tagX && mx < tagX + tagW
+                && my >= tagY + 84.0f * uiS && my < tagY + tagH + 14.0f * uiS;
+
+            drawMiniTagFrame(tagX, tagY, tagW, tagH, r, g, b, tagA);
+            BindMainShader();
+            if (s_tagFlickerT < 0.98f) {
+                const float scanY = tagY + 10.0f * uiS + (tagH - 22.0f * uiS) * flick;
+                drawRect(tagX + 8.0f * uiS, scanY, tagW - 18.0f * uiS, 1.0f * uiS,
+                         r, g, b, 0.34f * a * (1.0f - flick));
+            }
+            drawDiamond(tagX + 10.0f * uiS, tagY + 17.0f * uiS,
+                        2.8f * uiS, r, g, b, 0.70f * tagA);
+            g_TextS.Draw(id, tagX + 24.0f * uiS, tagY + 6.0f * uiS,
+                         sc0, 0.62f, 0.72f, 0.86f, 0.72f * tagA);
+            g_TextS.Draw(title, tagX + 24.0f * uiS, tagY + 28.0f * uiS,
+                         sc1, 0.92f, 0.96f, 1.0f, 0.94f * tagA);
+            if (desc && desc[0]) {
+                g_TextS.Draw(desc, tagX + 24.0f * uiS, tagY + 56.0f * uiS,
+                             0.40f * uiS, 0.66f, 0.75f, 0.88f, 0.70f * tagA);
+            }
+            g_TextS.Draw(stat, tagX + 24.0f * uiS, tagY + 83.0f * uiS,
+                         0.42f * uiS,
+                         0.86f, 0.91f, 0.98f, 0.86f * tagA);
+            if (cmd) {
+                if (cmdHov) {
+                    drawRect(tagX + 22.0f * uiS, tagY + 112.0f * uiS,
+                             std::min(tagW - 44.0f * uiS, g_TextS.Width(cmd, 0.42f * uiS) + 24.0f * uiS),
+                             1.2f * uiS, r, g, b, 0.54f * tagA);
+                }
+                g_TextS.Draw(cmd, tagX + 24.0f * uiS, tagY + 108.0f * uiS,
+                             0.42f * uiS,
+                             enabled ? (cmdHov ? 1.0f : 0.86f) : 0.48f,
+                             enabled ? (cmdHov ? 1.0f : 0.92f) : 0.54f,
+                             enabled ? 1.0f : 0.60f,
+                             (enabled ? 0.92f : 0.48f) * tagA);
+            }
+            return cmdHov && lmb && !g_LmbPrev;
+        };
+
+        {
+            int filled = 0, total = 5;
+            const wchar_t* mapLabel = L"CONSTELLATION MAP";
+            const wchar_t* id = L"ID: EMPTY";
+            const wchar_t* title = L"UNASSIGNED NODE";
+            const wchar_t* desc = L"DESC: SELECT TREE BRANCH";
+            wchar_t statBuf[128]; swprintf_s(statBuf, L"STAT: [ - ]");
+            const wchar_t* cmd = nullptr;
+            bool cmdEnabled = false;
+
+            if (s_selKey >= 0 && s_selKey < KEY_THEME) {
+                int mi = s_selKey - KEY_META;
+                if (mi >= 0 && mi < META_COUNT) {
+                    const MetaDef& md = META_DEFS[mi];
+                    int curLv = g_MetaLv[mi];
+                    long long cost = MetaNextCost(mi);
+                    bool maxed = curLv >= md.maxLv;
+                    filled = curLv; total = md.maxLv;
+                    id = metaNodeCode(mi);
+                    title = MetaName(mi);
+                    desc = nli == 0 ? L"DESC: \uC601\uAD6C \uD574\uAE08 \uB178\uB4DC" : L"DESC: PERMANENT UNLOCK NODE";
+                    if (maxed)
+                        swprintf_s(statBuf, L"STAT: [ LV %d/%d ] | [ COST: MAX ]", curLv, md.maxLv);
+                    else
+                        swprintf_s(statBuf, L"STAT: [ LV %d/%d ] | [ COST: %lld SD ]", curLv, md.maxLv, cost);
+                    cmd = maxed ? L"CMD : [ MAXED ]" : L"CMD : [> INITIATE_UNLOCK ]";
+                    cmdEnabled = !maxed && g_Coins >= cost;
+                    if (drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled, sr, sg, sb, da)) {
+                        g_Coins -= cost;
+                        g_MetaLv[mi]++;
+                        SaveGame();
+                    }
+                }
+            } else if (s_selKey >= KEY_THEME && s_selKey < KEY_AUG) {
+                int ti = s_selKey - KEY_THEME;
+                if (ti >= 0 && ti < ACCENT_COUNT) {
+                    const AccentTheme& th = ACCENT_THEMES[ti];
+                    bool owned = ThemeOwned(ti);
+                    bool isCur = (g_ThemeSel == ti);
+                    filled = owned ? 5 : 2; total = 5;
+                    id = L"CHROMA_NODE : PALETTE";
+                    title = AccentName(ti);
+                    desc = L"DESC: VISUAL ACCENT PALETTE";
+                    swprintf_s(statBuf, L"STAT: [ %ls ] | [ COST: %lld SD ]",
+                               owned ? L"OWNED" : L"LOCKED", th.cost);
+                    cmd = isCur ? L"CMD : [ EQUIPPED ]"
+                        : owned ? L"CMD : [> EQUIP_SET ]" : L"CMD : [> PURCHASE_INITIATE ]";
+                    cmdEnabled = owned || g_Coins >= th.cost;
+                    if (drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled, th.r, th.g, th.b, da)) {
+                        if (owned && !isCur) {
+                            g_ThemeSel = ti;
+                            ApplyAccentTheme();
+                            SaveGame();
+                        } else if (!owned && g_Coins >= th.cost) {
+                            g_Coins -= th.cost;
+                            g_ThemeOwned |= (1 << ti);
+                            g_ThemeSel = ti;
+                            ApplyAccentTheme();
+                            SaveGame();
+                        }
+                    }
+                    sr = th.r; sg = th.g; sb = th.b;
+                    mapLabel = L"ASTRAL PALETTE";
+                }
+            } else if (s_selKey >= KEY_AUG) {
+                int ai = s_selKey - KEY_AUG;
+                if (ai >= 0 && ai < AUG_TOTAL) {
+                    const AugDef& ad = ALL_AUGS[ai];
+                    GetRarityColor(ad.rarity, sr, sg, sb);
+                    filled = 4; total = 6;
+                    id = L"SYS_NODE : MODULE_CATALOG";
+                    title = ad.locName[li];
+                    desc = AugDesc(ad);
+                    if (!desc || !desc[0]) desc = L"DESC: IN-RUN MODULE";
+                    swprintf_s(statBuf, L"STAT: [ TYPE: MODULE ] | [ SOURCE: RUN ORBIT ]");
+                    cmd = L"CMD : [ CHARTED_ONLY ]";
+                    cmdEnabled = false;
+                    drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled, sr, sg, sb, da);
+                    mapLabel = L"MODULE TRACE";
+                }
+            }
+
+            drawNodeMap(filled, total, mapLabel, sr, sg, sb, s_selKey < 0 ? rightWake * 0.62f : da);
+            drawAstralMeta(s_selKey, sr, sg, sb, rightWake * 0.70f);
+        }
+
+        if (false) {
+        if (s_selKey < 0) {
+            float a = rightWake;
+            drawProductHeader(L"SYS_NODE : EMPTY", L10n(L"\uBE48 \uBCC4\uC790\uB9AC \uC9C0\uB3C4", L"EMPTY STAR FIELD"),
+                              sr, sg, sb, 0.92f * a);
+            g_TextS.Draw(L10n(L"\uB2E4\uB978 \uADA4\uB3C4\uB97C \uC120\uD0DD", L"SELECT ANOTHER ORBIT"), rInX, bodyY + 28.0f * uiS,
+                         0.58f * uiS, 0.64f, 0.74f, 0.88f, 0.72f * a);
+            drawNodeMap(0, 5, L10n(L"\uBE48 \uD558\uB298", L"EMPTY SKY"), sr, sg, sb, 0.75f * a);
+        } else if (s_selKey < KEY_THEME) {
+            int mi = s_selKey - KEY_META;
+            if (mi >= 0 && mi < META_COUNT) {
+                const MetaDef& md = META_DEFS[mi];
+                int curLv = g_MetaLv[mi];
+                long long cost = MetaNextCost(mi);
+                float prog = (md.maxLv > 0) ? (float)curLv / (float)md.maxLv : 1.0f;
+                bool maxed = curLv >= md.maxLv;
+                bool canBuy = !maxed && g_Coins >= cost;
+
+                drawProductHeader(metaNodeCode(mi), MetaName(mi), sr, sg, sb, da);
+
+                wchar_t lvBuf[32]; swprintf_s(lvBuf, L"Lv %d / %d", curLv, md.maxLv);
+                wchar_t costBuf[48];
+                if (maxed) swprintf_s(costBuf, L"%ls", L10n(L"\uCD5C\uB300", L"MAX"));
+                else swprintf_s(costBuf, L"%lld SD", cost);
+                const float gridX = infoX + 18.0f * uiS;
+                const float gridW = infoW - 36.0f * uiS;
+                drawTerminalRow(gridX, bodyY + 2.0f * uiS, gridW,
+                                L"[ CAPACITY ]", lvBuf, sr, sg, sb, da);
+                drawTerminalRow(gridX, bodyY + 42.0f * uiS, gridW,
+                                L"[ COST     ]", costBuf, sr, sg, sb, da, true);
+                drawTerminalRow(gridX, bodyY + 82.0f * uiS, gridW,
+                                L"[ STATUS   ]",
+                                maxed ? L"COMPLETE" : L"READY", sr, sg, sb, da);
+
+                float barX = infoX + 18.0f * uiS;
+                float barY = bodyY + 132.0f * uiS;
+                float barW = infoW - 36.0f * uiS;
+                float barH = 12.0f * uiS;
+                BindMainShader();
+                drawRect(barX, barY, barW, barH, 0.10f, 0.14f, 0.20f, 0.96f * da);
+                drawRect(barX, barY, barW * prog, barH, sr, sg, sb, 0.82f * da);
+                drawDiamond(barX + barW * prog, barY + barH * 0.5f,
+                            4.5f * uiS, sr, sg, sb, 0.90f * da);
+
+                float btnX = infoX + 18.0f * uiS;
+                float btnY = bodyY + 178.0f * uiS;
+                float btnW = std::min(430.0f * uiS, infoW - 36.0f * uiS);
+                float btnH = 62.0f * uiS;
+                if (drawActionButton(btnX, btnY, btnW, btnH,
+                                     maxed ? L"[ MAXED ]" : L10n(L"[> \uD574\uAE08 \uC2E4\uD589 ]", L"[> UNLOCK_INITIATE ]"),
+                                     canBuy || maxed, sr, sg, sb, da) && canBuy) {
+                    g_Coins -= cost;
+                    g_MetaLv[mi]++;
+                    SaveGame();
+                }
+
+                wchar_t hintBuf[96];
+                swprintf_s(hintBuf, nli == 0 ? L"\uAE30\uC900 %lld  /  \uBCC4\uAC00\uB8E8 x1.6" : L"BASE %lld  /  STARDUST x1.6", md.baseCost);
+                g_TextS.Draw(hintBuf, btnX, btnY + btnH + 18.0f * uiS,
+                             0.46f * uiS, 0.66f, 0.76f, 0.90f, 0.80f * da);
+                drawNodeMap(curLv, md.maxLv, L10n(L"\uC131\uB3C4", L"CONSTELLATION MAP"), sr, sg, sb, da);
+            }
+        } else if (s_selKey < KEY_AUG) {
+            int ti = s_selKey - KEY_THEME;
+            if (ti >= 0 && ti < ACCENT_COUNT) {
+                const AccentTheme& th = ACCENT_THEMES[ti];
+                bool owned = ThemeOwned(ti);
+                bool isCur = (g_ThemeSel == ti);
+                bool canBuy = !owned && g_Coins >= th.cost;
+
+                drawProductHeader(L"CHROMA_NODE : PALETTE", AccentName(ti), th.r, th.g, th.b, da);
+
+                wchar_t costBuf[48]; swprintf_s(costBuf, L"%lld SD", th.cost);
+                const float gridX = infoX + 18.0f * uiS;
+                const float gridW = infoW - 36.0f * uiS;
+                drawTerminalRow(gridX, bodyY + 2.0f * uiS, gridW,
+                                L"[ STATUS   ]", owned ? L"OWNED" : L"LOCKED", th.r, th.g, th.b, da);
+                drawTerminalRow(gridX, bodyY + 42.0f * uiS, gridW,
+                                L"[ COST     ]", owned ? L"-" : costBuf, th.r, th.g, th.b, da, true);
+                drawTerminalRow(gridX, bodyY + 82.0f * uiS, gridW,
+                                L"[ EQUIP    ]", isCur ? L"ACTIVE" : L"READY", th.r, th.g, th.b, da);
+
+                const wchar_t* btnLabel = isCur ? L"[ EQUIPPED ]"
+                    : owned ? L"[> EQUIP_SET ]" : L10n(L"[> \uAD6C\uC785 \uC2E4\uD589 ]", L"[> PURCHASE_INITIATE ]");
+                if (drawActionButton(infoX + 18.0f * uiS, bodyY + 178.0f * uiS,
+                                     std::min(430.0f * uiS, infoW - 36.0f * uiS),
+                                     62.0f * uiS, btnLabel,
+                                     owned || canBuy, th.r, th.g, th.b, da)) {
+                    if (owned && !isCur) {
+                        g_ThemeSel = ti;
+                        ApplyAccentTheme();
+                        SaveGame();
+                    } else if (!owned && canBuy) {
+                        g_Coins -= th.cost;
+                        g_ThemeOwned |= (1 << ti);
+                        g_ThemeSel = ti;
+                        ApplyAccentTheme();
+                        SaveGame();
+                    }
+                }
+                drawNodeMap(owned ? 5 : 2, 5, L10n(L"\uC131\uC6B4 \uD314\uB808\uD2B8", L"ASTRAL PALETTE"), th.r, th.g, th.b, da);
+            }
+        } else {
+            int ai = s_selKey - KEY_AUG;
+            if (ai >= 0 && ai < AUG_TOTAL) {
+                const AugDef& ad = ALL_AUGS[ai];
+                float cr2, cg2, cb2;
+                GetRarityColor(ad.rarity, cr2, cg2, cb2);
+
+                const wchar_t* augName = ad.locName[li];
+                drawProductHeader(L"SYS_NODE : MODULE_CATALOG", augName, cr2, cg2, cb2, da);
+
+                const float gridX = infoX + 18.0f * uiS;
+                const float gridW = infoW - 36.0f * uiS;
+                drawTerminalRow(gridX, bodyY + 2.0f * uiS, gridW,
+                                L"[ TYPE     ]", L"MODULE", cr2, cg2, cb2, da);
+                drawTerminalRow(gridX, bodyY + 42.0f * uiS, gridW,
+                                L"[ SOURCE   ]", L"RUN ORBIT", cr2, cg2, cb2, da);
+                drawTerminalRow(gridX, bodyY + 82.0f * uiS, gridW,
+                                L"[ STATUS   ]", L"MAPPED", cr2, cg2, cb2, da);
+
+                const wchar_t* desc = AugDesc(ad);
+                if (desc && desc[0]) {
+                    std::wstring ds(desc);
+                    size_t pos = 0;
+                    float descX = infoX + 18.0f * uiS;
+                    float descY = bodyY + 132.0f * uiS;
+                    float descW = infoW - 36.0f * uiS;
+                    float descH = 178.0f * uiS;
+                    float dY = descY + 22.0f * uiS;
+                    int ln = 0;
+                    BindMainShader();
+                    drawRect(descX, descY, descW, descH,
+                             0.028f, 0.038f, 0.058f, 0.92f * da);
+                    drawRect(descX, descY, descW, descH,
+                             cr2, cg2, cb2, 0.040f * da);
+                    drawConstellFrame(descX, descY, descW, descH,
+                                      cr2, cg2, cb2, 0.22f * da,
+                                      14.0f * uiS, 3.0f * uiS, 0.0f, 1.0f);
+                    drawOrbitCornerArcs(descX, descY, descW, descH,
+                                        cr2, cg2, cb2, 0.16f * da);
+                    while (pos < ds.size() && ln < 6) {
+                        size_t sl = ds.find(L" / ", pos);
+                        std::wstring seg = (sl == std::wstring::npos)
+                            ? ds.substr(pos) : ds.substr(pos, sl - pos);
+                        pos = (sl == std::wstring::npos) ? ds.size() : sl + 3;
+                        while (!seg.empty() && seg.front() == L' ') seg.erase(0, 1);
+                        while (!seg.empty() && seg.back() == L' ') seg.pop_back();
+                        float lineY = dY + ln * 26.0f * uiS;
+                        BindMainShader();
+                        drawDiamond(descX + 16.0f * uiS, lineY + 9.0f * uiS,
+                                    2.8f * uiS, cr2, cg2, cb2, 0.50f * da);
+                        g_TextS.Draw(seg.c_str(), descX + 30.0f * uiS,
+                                     lineY,
+                                     0.50f * uiS, 0.84f, 0.90f, 0.98f, 0.88f * da);
+                        ++ln;
+                    }
+                }
+
+                drawActionButton(infoX + 18.0f * uiS, bodyY + 300.0f * uiS,
+                                 std::min(430.0f * uiS, infoW - 36.0f * uiS),
+                                 58.0f * uiS, L"[ CHARTED_ONLY ]",
+                                 false, cr2, cg2, cb2, da);
+                drawNodeMap(4, 6, L10n(L"\uC131\uB3C4", L"CONSTELLATION MAP"), cr2, cg2, cb2, da);
+            }
+        }
+        drawAstralMeta(s_selKey, sr, sg, sb, rightWake * 0.92f);
+        }
+    }
+
+    if (false)
+    {
+        float da = s_detailT * rightWake;
+        float sr = 0.38f, sg = 0.82f, sb = 1.00f;
+        if (s_selKey >= KEY_THEME && s_selKey < KEY_AUG) {
+            int ti = s_selKey - KEY_THEME;
+            if (ti >= 0 && ti < ACCENT_COUNT) {
+                sr = ACCENT_THEMES[ti].r; sg = ACCENT_THEMES[ti].g; sb = ACCENT_THEMES[ti].b;
+            }
+        } else if (s_selKey >= KEY_AUG) {
+            int ai = s_selKey - KEY_AUG;
+            if (ai >= 0 && ai < AUG_TOTAL)
+                GetRarityColor(ALL_AUGS[ai].rarity, sr, sg, sb);
+        }
+
+        const float rInW = rightW - rPad * 2.0f;
+        const float topH = 56.0f * uiS;
+        const float contentY = rInY + topH + 18.0f * uiS;
+        const float vizW = std::min(430.0f * uiS, rInW * 0.38f);
+        const float vizH = std::min(410.0f * uiS, rInH - topH - 68.0f * uiS);
+        const float vizX = rInX + rInW - vizW;
+        const float vizY = contentY + 8.0f * uiS;
+        const float infoX = rInX;
+        const float infoW = rInW - vizW - 34.0f * uiS;
+
+        auto drawMiniStat = [&](float x, float y, float w, const wchar_t* label,
+                                const wchar_t* value, float r, float g, float b, float a) {
+            const float h = 54.0f * uiS;
+            BindMainShader();
+            drawRect(x, y, w, h, 0.018f, 0.024f, 0.038f, 0.92f * a);
+            drawRect(x, y, 2.5f * uiS, h, r, g, b, 0.70f * a);
+            drawConstellFrame(x, y, w, h, r, g, b, 0.22f * a, 9.0f * uiS, 2.0f * uiS);
+            g_TextS.Draw(label, x + 12.0f * uiS, y + 7.0f * uiS, 0.34f * uiS,
+                         r, g, b, 0.66f * a);
+            g_TextS.Draw(value, x + 12.0f * uiS, y + 27.0f * uiS, 0.46f * uiS,
+                         0.92f, 0.96f, 1.0f, 0.95f * a);
+        };
+
+        auto drawVizBase = [&](float x, float y, float w, float h,
+                               const wchar_t* title, float r, float g, float b, float a) {
+            BindMainShader();
+            drawRect(x + 8.0f * uiS, y + 10.0f * uiS, w, h,
+                     0.0f, 0.0f, 0.0f, 0.28f * a);
+            drawRect(x, y, w, h, 0.006f, 0.012f, 0.024f, 0.96f * a);
+            drawRect(x + 14.0f * uiS, y + 46.0f * uiS, w - 28.0f * uiS, 1.2f * uiS,
+                     r, g, b, 0.22f * a);
+            BatchFlush();
+            SetGlowFx(true);
+            drawConstellFrame(x, y, w, h, r, g, b, 0.50f * a,
+                              18.0f * uiS, 4.0f * uiS, 0.07f * a);
+            SetGlowFx(false);
+            g_TextS.Draw(title, x + 18.0f * uiS, y + 16.0f * uiS,
+                         0.42f * uiS, r, g, b, 0.82f * a);
+        };
+
+        auto drawLevelConstellation = [&](int curLv, int maxLv, float r, float g, float b, float a) {
+            drawVizBase(vizX, vizY, vizW, vizH, L"UNLOCK MAP", r, g, b, a);
+            BindMainShader();
+            int nodes = std::max(3, maxLv);
+            float cx = vizX + vizW * 0.5f;
+            float cy = vizY + vizH * 0.54f;
+            float rad = std::min(vizW, vizH) * 0.29f;
+            float px[8] = {}, py[8] = {};
+            for (int i = 0; i < nodes && i < 8; ++i) {
+                float ang = -1.5708f + (float)i / (float)nodes * 6.2831853f + now * 0.12f;
+                px[i] = cx + cosf(ang) * rad;
+                py[i] = cy + sinf(ang) * rad;
+            }
+            for (int i = 0; i < nodes && i < 8; ++i) {
+                int j = (i + 1) % nodes;
+                LogoLine(px[i], py[i], px[j], py[j], 1.0f * uiS,
+                         r, g, b, (i < curLv || j < curLv ? 0.42f : 0.13f) * a);
+                LogoLine(cx, cy, px[i], py[i], 0.8f * uiS,
+                         r, g, b, (i < curLv ? 0.22f : 0.07f) * a);
+            }
+            drawDiamond(cx, cy, 12.0f * uiS, r, g, b, 0.78f * a);
+            drawDiamond(cx, cy, 5.0f * uiS, 0.02f, 0.04f, 0.08f, 0.92f * a);
+            for (int i = 0; i < nodes && i < 8; ++i) {
+                bool filled = i < curLv;
+                bool next = i == curLv && curLv < maxLv;
+                float pulse = next ? (0.68f + 0.32f * sinf(now * 3.8f)) : 1.0f;
+                drawDiamond(px[i], py[i], (filled ? 9.0f : 6.0f) * uiS,
+                            r, g, b, (filled ? 0.86f : next ? 0.56f * pulse : 0.22f) * a);
+                drawDiamond(px[i], py[i], (filled ? 3.4f : 2.4f) * uiS,
+                            1.0f, 1.0f, 1.0f, (filled ? 0.42f : 0.14f) * a);
+            }
+            wchar_t lvText[32]; swprintf_s(lvText, L"%d / %d", curLv, maxLv);
+            float lvSc = 0.70f * uiS;
+            g_TextS.Draw(lvText, cx - g_TextS.Width(lvText, lvSc) * 0.5f,
+                         vizY + vizH - 54.0f * uiS, lvSc,
+                         0.92f, 0.96f, 1.0f, 0.90f * a);
+        };
+
+        auto drawAugConstellation = [&](const wchar_t* title, float r, float g, float b, float a) {
+            drawVizBase(vizX, vizY, vizW, vizH, title, r, g, b, a);
+            BindMainShader();
+            float cx = vizX + vizW * 0.5f;
+            float cy = vizY + vizH * 0.55f;
+            float inner = std::min(vizW, vizH) * 0.18f;
+            float outer = std::min(vizW, vizH) * 0.31f;
+            float pulse = 0.72f + 0.28f * sinf(now * 2.0f);
+            for (int i = 0; i < 6; ++i) {
+                float a0 = now * 0.36f + (float)i * 1.0472f;
+                float a1 = now * 0.36f + (float)((i + 1) % 6) * 1.0472f;
+                float x0 = cx + cosf(a0) * outer, y0 = cy + sinf(a0) * outer;
+                float x1 = cx + cosf(a1) * outer, y1 = cy + sinf(a1) * outer;
+                LogoLine(x0, y0, x1, y1, 0.9f * uiS, r, g, b, 0.20f * a);
+                if ((i % 2) == 0)
+                    LogoLine(cx, cy, x0, y0, 0.8f * uiS, r, g, b, 0.13f * a);
+                drawDiamond(x0, y0, 4.8f * uiS, r, g, b, 0.48f * a);
+            }
+            for (int i = 0; i < 4; ++i) {
+                float a0 = -now * 0.52f + (float)i * 1.5708f + 0.785f;
+                drawDiamond(cx + cosf(a0) * inner, cy + sinf(a0) * inner,
+                            6.5f * uiS, r, g, b, 0.62f * pulse * a);
+            }
+            drawDiamond(cx, cy, 14.0f * uiS, r, g, b, 0.88f * pulse * a);
+            drawDiamond(cx, cy, 5.5f * uiS, 0.02f, 0.04f, 0.08f, 0.94f * a);
+        };
+
+        BindMainShader();
+        drawRect(rightX + 9.0f * uiS, listAreaY + 11.0f * uiS, rightW, listAreaH,
+                 0.0f, 0.0f, 0.0f, 0.34f * rightWake);
+        drawRect(rightX, listAreaY, rightW, listAreaH,
+                 0.006f + sr * 0.006f, 0.010f + sg * 0.005f, 0.020f + sb * 0.005f,
+                 0.985f * rightWake);
+        drawRect(rightX + rPad, listAreaY + topH + 2.0f * uiS, rightW - rPad * 2.0f,
+                 1.4f * uiS, sr, sg, sb, 0.22f * rightWake);
+        BatchFlush();
+        SetGlowFx(true);
+        drawConstellFrame(rightX, listAreaY, rightW, listAreaH,
+                          sr, sg, sb, 0.50f * rightWake,
+                          28.0f * uiS, 5.0f * uiS, 0.08f * rightWake);
+        SetGlowFx(false);
+
+        wchar_t creditBuf[64]; swprintf_s(creditBuf, L"CREDITS :: %06lld", g_Coins);
+        float creditSc = 0.48f * uiS;
+        float creditH = 42.0f * uiS;
+        float creditW = g_TextS.Width(creditBuf, creditSc) + 52.0f * uiS;
+        float creditX = rightX + rightW - rPad - creditW;
+        float creditY = rInY;
+        BindMainShader();
+        drawRect(creditX, creditY, creditW, creditH,
+                 0.038f, 0.036f, 0.020f, 0.94f * rightWake);
+        drawRect(creditX, creditY, creditW, creditH,
+                 1.0f, 0.84f, 0.22f, 0.070f * rightWake);
+        BatchFlush();
+        SetGlowFx(true);
+        drawConstellFrame(creditX, creditY, creditW, creditH,
+                          1.0f, 0.84f, 0.22f, 0.60f * rightWake,
+                          10.0f * uiS, 2.6f * uiS, 0.04f * rightWake);
+        SetGlowFx(false);
+        BindMainShader();
+        drawDiamond(creditX + 18.0f * uiS, creditY + creditH * 0.5f,
+                    4.2f * uiS, 1.0f, 0.84f, 0.22f, 0.86f * rightWake);
+        g_TextS.Draw(creditBuf, creditX + 32.0f * uiS,
+                     creditY + (creditH - g_TextS.Height(creditBuf, creditSc)) * 0.5f,
+                     creditSc, 1.0f, 0.88f, 0.34f, 0.96f * rightWake);
+
+        if (s_selKey >= 0 && rightWake > 0.02f) {
+            if (s_selKey < KEY_THEME) {
+                int mi = s_selKey - KEY_META;
+                if (mi >= 0 && mi < META_COUNT) {
+                    const MetaDef& md = META_DEFS[mi];
+                    int curLv = g_MetaLv[mi];
+                    long long cost = MetaNextCost(mi);
+                    float prog = (md.maxLv > 0) ? (float)curLv / (float)md.maxLv : 1.0f;
+                    drawLevelConstellation(curLv, md.maxLv, sr, sg, sb, da);
+
+                    g_TextS.Draw(L"UNLOCK NODE", infoX, contentY, 0.46f * uiS,
+                                 sr, sg, sb, 0.82f * da);
+                    g_TextL.Draw(MetaName(mi), infoX, contentY + 28.0f * uiS,
+                                 1.02f * uiS, 1.0f, 1.0f, 1.0f, 0.96f * da);
+
+                    wchar_t lvBuf[32]; swprintf_s(lvBuf, L"Lv %d / %d", curLv, md.maxLv);
+                    wchar_t costBuf[48];
+                    if (curLv >= md.maxLv) swprintf_s(costBuf, L"MAX");
+                    else swprintf_s(costBuf, L"%lld C", cost);
+                    drawMiniStat(infoX, contentY + 98.0f * uiS, infoW * 0.31f,
+                                 L"LEVEL", lvBuf, sr, sg, sb, da);
+                    drawMiniStat(infoX + infoW * 0.34f, contentY + 98.0f * uiS, infoW * 0.31f,
+                                 L"COST", costBuf, sr, sg, sb, da);
+                    drawMiniStat(infoX + infoW * 0.68f, contentY + 98.0f * uiS, infoW * 0.32f,
+                                 L"STATE", curLv >= md.maxLv ? L"COMPLETE" : L"AVAILABLE", sr, sg, sb, da);
+
+                    float barX = infoX;
+                    float barY = contentY + 176.0f * uiS;
+                    float barW = infoW;
+                    float barH = 10.0f * uiS;
+                    BindMainShader();
+                    drawRect(barX, barY, barW, barH, 0.09f, 0.12f, 0.18f, 0.92f * da);
+                    drawRect(barX, barY, barW * prog, barH, sr, sg, sb, 0.78f * da);
+                    drawDiamond(barX + barW * prog, barY + barH * 0.5f,
+                                4.2f * uiS, sr, sg, sb, 0.80f * da);
+
+                    float btnX = infoX;
+                    float btnY = contentY + 220.0f * uiS;
+                    float btnW = std::min(380.0f * uiS, infoW * 0.68f);
+                    float btnH = 58.0f * uiS;
+                    bool maxed = curLv >= md.maxLv;
+                    bool canBuy = !maxed && g_Coins >= cost;
+                    bool bHov = (mx >= btnX && mx < btnX + btnW && my >= btnY && my < btnY + btnH);
+                    BindMainShader();
+                    drawRect(btnX, btnY, btnW, btnH,
+                             canBuy ? (bHov ? 0.075f : 0.045f) : 0.030f,
+                             canBuy ? (bHov ? 0.130f : 0.085f) : 0.034f,
+                             canBuy ? (bHov ? 0.190f : 0.135f) : 0.045f,
+                             0.96f * da);
+                    BatchFlush();
+                    SetGlowFx(true);
+                    drawConstellFrame(btnX, btnY, btnW, btnH,
+                                      sr, sg, sb, (canBuy ? (bHov ? 0.96f : 0.62f) : 0.28f) * da,
+                                      14.0f * uiS, 3.4f * uiS, (canBuy ? 0.07f : 0.0f) * da);
+                    SetGlowFx(false);
+                    const wchar_t* btnLabel = maxed ? L"MAXED" : L"UNLOCK";
+                    float bSc = 0.58f * uiS;
+                    float bTw = g_TextS.Width(btnLabel, bSc);
+                    g_TextS.Draw(btnLabel, btnX + (btnW - bTw) * 0.5f,
+                                 btnY + (btnH - g_TextS.Height(btnLabel, bSc)) * 0.5f,
+                                 bSc, canBuy || maxed ? 0.92f : 0.42f,
+                                 canBuy || maxed ? 0.98f : 0.46f,
+                                 canBuy || maxed ? 1.0f : 0.52f, 0.94f * da);
+                    if (bHov && lmb && !g_LmbPrev && canBuy) {
+                        g_Coins -= cost;
+                        g_MetaLv[mi]++;
+                        SaveGame();
+                    }
+
+                    wchar_t hintBuf[96];
+                    swprintf_s(hintBuf, L"base %lld  /  cost grows x1.6 per level", md.baseCost);
+                    g_TextS.Draw(hintBuf, infoX, btnY + btnH + 16.0f * uiS,
+                                 0.42f * uiS, 0.58f, 0.66f, 0.78f, 0.72f * da);
+                }
+            } else if (s_selKey < KEY_AUG) {
+                int ti = s_selKey - KEY_THEME;
+                if (ti >= 0 && ti < ACCENT_COUNT) {
+                    const AccentTheme& th = ACCENT_THEMES[ti];
+                    bool owned = ThemeOwned(ti);
+                    bool isCur = (g_ThemeSel == ti);
+                    drawAugConstellation(L"THEME ARRAY", th.r, th.g, th.b, da);
+
+                    g_TextS.Draw(L"COSMETIC NODE", infoX, contentY, 0.46f * uiS,
+                                 th.r, th.g, th.b, 0.82f * da);
+                    g_TextL.Draw(AccentName(ti), infoX, contentY + 28.0f * uiS,
+                                 1.02f * uiS, th.r, th.g, th.b, 0.96f * da);
+
+                    wchar_t costBuf[48]; swprintf_s(costBuf, L"%lld C", th.cost);
+                    drawMiniStat(infoX, contentY + 98.0f * uiS, infoW * 0.31f,
+                                 L"STATE", owned ? L"OWNED" : L"LOCKED", th.r, th.g, th.b, da);
+                    drawMiniStat(infoX + infoW * 0.34f, contentY + 98.0f * uiS, infoW * 0.31f,
+                                 L"COST", owned ? L"-" : costBuf, th.r, th.g, th.b, da);
+                    drawMiniStat(infoX + infoW * 0.68f, contentY + 98.0f * uiS, infoW * 0.32f,
+                                 L"EQUIP", isCur ? L"ACTIVE" : L"READY", th.r, th.g, th.b, da);
+
+                    float btnX = infoX;
+                    float btnY = contentY + 220.0f * uiS;
+                    float btnW = std::min(380.0f * uiS, infoW * 0.68f);
+                    float btnH = 58.0f * uiS;
+                    bool canBuy = !owned && g_Coins >= th.cost;
+                    bool bHov = (mx >= btnX && mx < btnX + btnW && my >= btnY && my < btnY + btnH);
+                    const wchar_t* btnLabel = isCur ? L"EQUIPPED" : owned ? L"EQUIP" : L"BUY";
+                    BindMainShader();
+                    drawRect(btnX, btnY, btnW, btnH,
+                             th.r * (bHov ? 0.13f : 0.08f),
+                             th.g * (bHov ? 0.11f : 0.07f),
+                             th.b * (bHov ? 0.09f : 0.06f), 0.94f * da);
+                    drawConstellFrame(btnX, btnY, btnW, btnH, th.r, th.g, th.b,
+                                      (bHov ? 0.82f : 0.52f) * da, 14.0f * uiS, 3.4f * uiS);
+                    float bSc = 0.58f * uiS;
+                    float bTw = g_TextS.Width(btnLabel, bSc);
+                    g_TextS.Draw(btnLabel, btnX + (btnW - bTw) * 0.5f,
+                                 btnY + (btnH - g_TextS.Height(btnLabel, bSc)) * 0.5f,
+                                 bSc, th.r, th.g, th.b, (!owned && !canBuy ? 0.42f : 0.96f) * da);
+                    if (bHov && lmb && !g_LmbPrev) {
+                        if (owned && !isCur) {
+                            g_ThemeSel = ti;
+                            ApplyAccentTheme();
+                            SaveGame();
+                        } else if (!owned && canBuy) {
+                            g_Coins -= th.cost;
+                            g_ThemeOwned |= (1 << ti);
+                            g_ThemeSel = ti;
+                            ApplyAccentTheme();
+                            SaveGame();
+                        }
+                    }
+                }
+            } else {
+                int ai = s_selKey - KEY_AUG;
+                if (ai >= 0 && ai < AUG_TOTAL) {
+                    const AugDef& ad = ALL_AUGS[ai];
+                    float cr2, cg2, cb2;
+                    GetRarityColor(ad.rarity, cr2, cg2, cb2);
+                    drawAugConstellation(L"MODULE TRACE", cr2, cg2, cb2, da);
+
+                    g_TextS.Draw(GetAugBadge(ad), infoX, contentY, 0.46f * uiS,
+                                 cr2, cg2, cb2, 0.86f * da);
+                    const wchar_t* augName = ad.locName[li];
+                    g_TextL.Draw(augName, infoX, contentY + 28.0f * uiS,
+                                 1.02f * uiS, 1.0f, 1.0f, 1.0f, 0.96f * da);
+
+                    drawMiniStat(infoX, contentY + 98.0f * uiS, infoW * 0.31f,
+                                 L"TYPE", L"AUGMENT", cr2, cg2, cb2, da);
+                    drawMiniStat(infoX + infoW * 0.34f, contentY + 98.0f * uiS, infoW * 0.31f,
+                                 L"SOURCE", L"IN RUN", cr2, cg2, cb2, da);
+                    drawMiniStat(infoX + infoW * 0.68f, contentY + 98.0f * uiS, infoW * 0.32f,
+                                 L"STATE", L"CATALOG", cr2, cg2, cb2, da);
+
+                    const wchar_t* desc = AugDesc(ad);
+                    if (desc && desc[0]) {
+                        std::wstring ds(desc);
+                        size_t pos = 0;
+                        float dY = contentY + 184.0f * uiS;
+                        float dSc = 0.48f * uiS;
+                        int ln = 0;
+                        while (pos < ds.size() && ln < 5) {
+                            size_t sl = ds.find(L" / ", pos);
+                            std::wstring seg = (sl == std::wstring::npos)
+                                ? ds.substr(pos) : ds.substr(pos, sl - pos);
+                            pos = (sl == std::wstring::npos) ? ds.size() : sl + 3;
+                            while (!seg.empty() && seg.front() == L' ') seg.erase(0, 1);
+                            while (!seg.empty() && seg.back() == L' ') seg.pop_back();
+                            g_TextS.Draw(seg.c_str(), infoX, dY + ln * 27.0f * uiS,
+                                         dSc, 0.82f, 0.88f, 0.96f, 0.82f * da);
+                            ++ln;
+                        }
+                    }
+
+                    float btnX = infoX;
+                    float btnY = contentY + 344.0f * uiS;
+                    float btnW = std::min(380.0f * uiS, infoW * 0.68f);
+                    float btnH = 50.0f * uiS;
+                    BindMainShader();
+                    drawRect(btnX, btnY, btnW, btnH,
+                             0.026f, 0.032f, 0.048f, 0.88f * da);
+                    drawConstellFrame(btnX, btnY, btnW, btnH,
+                                      cr2, cg2, cb2, 0.36f * da,
+                                      12.0f * uiS, 3.0f * uiS);
+                    const wchar_t* note = L"CATALOG ONLY";
+                    float nSc = 0.48f * uiS;
+                    float nW = g_TextS.Width(note, nSc);
+                    g_TextS.Draw(note, btnX + (btnW - nW) * 0.5f,
+                                 btnY + (btnH - g_TextS.Height(note, nSc)) * 0.5f,
+                                 nSc, cr2, cg2, cb2, 0.74f * da);
+                }
+            }
+        }
+    }
+
+    // ── Footer ──────────────────────────────────────────────────────────
+    (void)leftX;
+    (void)footY;
+    if (finishBackAfterRender) {
+        s_backExit = false;
+        s_backOutT = 0.0f;
+        s_ShopBackRequested = false;
+        s_MainMenuArmoryPanel = false;
+        s_MainMenuResumeFromPanel = true;
+        g_MainMenuEntryT = 1.0f;
         g_GameManager.currentState = GameState::MAIN_MENU;
+    }
+}
+
+static void Scene_CodexInline(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    (void)c.fireTimer; (void)c.reset;
+
+    static constexpr int CAT_COUNT = 3;
+    static int   s_cat = 0;
+    static float s_rootHover[CAT_COUNT + 1] = {};
+    static int   s_sel[CAT_COUNT] = { -1, -1, -1 };
+    static float s_scroll[CAT_COUNT] = {};
+    static bool  s_backExit = false;
+    static float s_backOutT = 0.0f;
+    static bool  s_prevRmb = false;
+    static bool  s_prevEsc = false;
+    static int   s_prevCat = -1;
+    static int   s_prevSel = -9999;
+    static float s_decryptT = 1.0f;
+
+    float dt = delta; if (dt > 0.05f) dt = 0.05f;
+    g_CodexEntryT += dt;
+    if (g_CodexEntryT > 1.0f) g_CodexEntryT = 1.0f;
+    const float now = (float)glfwGetTime();
+
+    const bool rawRmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool rmbClick = rawRmb && !s_prevRmb;
+    s_prevRmb = rawRmb;
+    const bool rawEsc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool escClick = rawEsc && !s_prevEsc;
+    s_prevEsc = rawEsc;
+
+    const bool inputReady = !s_backExit && g_CodexEntryT >= 0.55f;
+    auto beginBack = [&]() {
+        if (!inputReady) return;
+        s_backExit = true;
+        s_backOutT = 0.0f;
+        s_CodexBackRequested = false;
+    };
+    if (s_CodexBackRequested) {
+        if (inputReady) beginBack();
+        else s_CodexBackRequested = false;
+    }
+    if (rmbClick || escClick) beginBack();
+
+    bool finishBackAfterRender = false;
+    if (s_backExit) {
+        s_backOutT += dt;
+        if (s_backOutT >= 0.42f) {
+            s_backOutT = 0.42f;
+            finishBackAfterRender = true;
+        }
+    }
+
+    const float entryOldOut = Smoothstep(LogoClamp01(g_CodexEntryT / 0.35f));
+    const float entryTreeIn = Smoothstep(LogoClamp01((g_CodexEntryT - 0.20f) / 0.35f));
+    const float entryDetailIn = Smoothstep(LogoClamp01((g_CodexEntryT - 0.34f) / 0.30f));
+    const float backP = s_backExit ? Smoothstep(LogoClamp01(s_backOutT / 0.42f)) : 0.0f;
+    const float oldMenuA = s_backExit ? backP : (1.0f - entryOldOut);
+    const float wake = s_backExit ? (1.0f - backP) : entryTreeIn;
+    const float rightWake = s_backExit ? (1.0f - backP) : entryDetailIn;
+
+    int li = LangIndex(); if (li < 0 || li >= 3) li = 0;
+    const int nli = (li == 0) ? 0 : 1;
+
+    const float uiS = std::max(0.70f, std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
+    const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
+    const float mainBH = 70.0f;
+    const float mainGap = 15.0f;
+    const float mainTotalH = 5.0f * mainBH + 4.0f * mainGap;
+    const float mainX = std::max(58.0f, sw * 0.075f);
+    float mainY = sh * 0.48f;
+    if (mainY + mainTotalH > sh - 54.0f) mainY = sh - mainTotalH - 54.0f;
+    if (mainY < MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f)
+        mainY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
+    const float astralY = mainY + 2.0f * (mainBH + mainGap);
+    const float astralMidY = astralY + mainBH * 0.5f;
+
+    const float rootX = mainX + (s_backExit ? backP * 180.0f * uiS : -(1.0f - wake) * 82.0f * uiS);
+    const float rootY = mainY;
+    const float rootW = std::min(360.0f * uiS, mainBW * 0.70f);
+    const float rootH = mainBH;
+    const float rootGap = mainGap;
+    const float depth2X = rootX + std::min(365.0f * uiS, mainBW * 0.68f);
+    const float depth2Y = std::max(110.0f * uiS, rootY + (float)s_cat * (rootH + rootGap) - 28.0f * uiS);
+    const float depth2W = std::max(330.0f * uiS, std::min(500.0f * uiS, sw * 0.50f - depth2X));
+    const float depth2H = std::min(620.0f * uiS, sh - depth2Y - 98.0f * uiS);
+    const float rightX = std::max(sw * 0.55f, depth2X + depth2W + 52.0f * uiS);
+    const float rightW = sw - rightX - 72.0f * uiS;
+    const float rightY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f + 30.0f * uiS;
+    const float rightH = sh - rightY - 92.0f * uiS;
+
+    const float leftVignetteA = s_backExit ? (0.76f + 0.22f * backP) : 0.76f;
+    DrawSceneLeftVignette(sw, sh, leftVignetteA);
+    DrawSceneRadialVignette(rightX + rightW * 0.52f, rightY + rightH * 0.48f,
+                            std::min(rightW, rightH) * 0.70f, 0.48f * rightWake);
+
+    struct RootDef { const wchar_t* route; const wchar_t* sub; float r, g, b; };
+    static const RootDef ROOTS[CAT_COUNT + 1] = {
+        { L"ENTITIES", L"\uAD00\uCE21\uCCB4", 0.48f, 0.82f, 1.00f },
+        { L"MODULES",  L"\uBAA8\uB4C8",       0.62f, 0.52f, 1.00f },
+        { L"APEX",     L"\uC815\uC810",       0.96f, 0.76f, 0.30f },
+        { L"BACK",     L"\uB4A4\uB85C",       0.42f, 0.62f, 0.78f },
+    };
+
+    // Main-menu expansion ghost.
+    const float oldOut = 1.0f - oldMenuA;
+    const float returnLogoA = s_backExit ? (0.42f + 0.58f * backP) : 0.42f;
+    DrawMainOnedowLogo(sw, sh,
+                       returnLogoA * oldMenuA + 0.08f * wake,
+                       LogoClamp01(oldMenuA + 0.22f * wake),
+                       sw * 0.30f - 160.0f * oldOut,
+                       0.82f);
+    {
+        struct GhostDef { const wchar_t* route; const wchar_t* sub; };
+        static const GhostDef kGhostMenu[5] = {
+            { L"RUN_CONFIG",  L"\uC2DC\uC791" },
+            { L"ARMORY",      L"\uC0C1\uC810" },
+            { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
+            { L"CALIBRATION", L"\uC124\uC815" },
+            { L"SHUTDOWN",    L"\uAC8C\uC784 \uC885\uB8CC" },
+        };
+        const float ghostSlide = 250.0f * oldOut;
+        const float anchorX = mainX - ghostSlide - 36.0f;
+        BindMainShader();
+        drawRect(anchorX, std::max(22.0f, MainLogoTop(sh) - 20.0f),
+                 1.2f, mainTotalH + 170.0f,
+                 0.48f, 0.82f, 1.0f, 0.12f * oldMenuA);
+        for (int i = 0; i < 5; ++i) {
+            const bool focus = (!s_backExit && i == 2);
+            const float rowY = mainY + (float)i * (mainBH + mainGap);
+            const float rowX = mainX - ghostSlide - (focus ? 0.0f : 26.0f * oldOut);
+            const float rowA = (s_backExit ? 0.82f : focus ? 0.76f : 0.18f) * oldMenuA;
+            const float active = focus ? 1.0f : 0.0f;
+            if (focus) {
+                drawRect(rowX - 18.0f, rowY + mainBH * 0.5f - 31.0f,
+                         2.0f, 62.0f, 0.48f, 0.82f, 1.0f, 0.56f * oldMenuA);
+                drawRect(rowX - 4.0f, rowY + mainBH * 0.50f,
+                         mainBW * 0.42f, 1.1f, 0.48f, 0.82f, 1.0f, 0.12f * oldMenuA);
+                drawDiamond(rowX - 17.0f, rowY + mainBH * 0.5f,
+                            5.0f, 0.48f, 0.82f, 1.0f, 0.72f * oldMenuA);
+            }
+            float routeSc = 1.04f;
+            while (routeSc > 0.82f && g_TextL.Width(kGhostMenu[i].route, routeSc) > mainBW)
+                routeSc -= 0.04f;
+            const float routeY2 = rowY + 2.0f;
+            const float subY = routeY2 + g_TextL.Height(kGhostMenu[i].route, routeSc) - 3.0f;
+            const float gr = s_backExit ? 1.0f : 1.0f - 0.52f * (1.0f - active);
+            const float gg = s_backExit ? 1.0f : 1.0f - 0.18f * (1.0f - active);
+            g_TextL.Draw(kGhostMenu[i].route, rowX, routeY2, routeSc, gr, gg, 1.0f, rowA);
+            g_TextS.Draw(kGhostMenu[i].sub, rowX + 4.0f, subY, 0.48f,
+                         0.70f + 0.16f * active,
+                         0.75f + 0.14f * active,
+                         0.82f + 0.10f * active,
+                         (s_backExit ? 0.70f : focus ? 0.82f : 0.26f) * oldMenuA);
+        }
+        const float bridgeA = std::min(oldMenuA, wake);
+        LogoLine(mainX - ghostSlide + mainBW * 0.42f, astralMidY,
+                 rootX - 26.0f * uiS, astralMidY,
+                 1.0f * uiS, 0.48f, 0.82f, 1.0f, 0.22f * bridgeA);
+        drawDiamond(rootX - 26.0f * uiS, astralMidY,
+                    3.3f * uiS, 0.48f, 0.82f, 1.0f, 0.46f * bridgeA);
+    }
+
+    if (s_prevCat != s_cat) {
+        s_prevCat = s_cat;
+        s_decryptT = 0.0f;
+    }
+
+    // Depth 1 root.
+    BindMainShader();
+    drawRect(rootX - 36.0f, rootY - 20.0f,
+             1.2f, rootH * 4.0f + rootGap * 3.0f + 40.0f,
+             0.48f, 0.82f, 1.00f, 0.13f * wake);
+    for (int i = 0; i < CAT_COUNT + 1; ++i) {
+        const bool isBack = (i == CAT_COUNT);
+        const float tx = rootX;
+        const float ty = rootY + (float)i * (rootH + rootGap);
+        const float hitX = tx - 26.0f;
+        const float hitRight = std::min(tx + rootW + 18.0f * uiS, depth2X - 34.0f * uiS);
+        const bool hov = inputReady
+            && (mx >= hitX && mx < hitRight && my >= ty && my < ty + rootH);
+        float spd = dt * 10.0f; if (spd > 1.0f) spd = 1.0f;
+        s_rootHover[i] += ((hov ? 1.0f : 0.0f) - s_rootHover[i]) * spd;
+
+        if (hov && lmb && !g_LmbPrev) {
+            if (isBack) beginBack();
+            else if (s_cat != i) s_cat = i;
+        }
+
+        const bool sel = (!isBack && s_cat == i);
+        const RootDef& rd = ROOTS[i];
+        const float rawRootPh = s_backExit
+            ? wake
+            : LogoClamp01((g_CodexEntryT - 0.20f - (float)i * 0.09f) / 0.45f);
+        const float reveal = Smoothstep(rawRootPh);
+        const float rowA = reveal * wake;
+        const float activeT = std::max(s_rootHover[i], sel ? 1.0f : 0.0f);
+        const float selectPulse = sel ? (0.12f + 0.12f * sinf(now * 3.3f)) : 0.0f;
+        const float bx = tx + (1.0f - reveal) * 34.0f - 10.0f * s_rootHover[i];
+        const float by = ty;
+
+        BindMainShader();
+        if (activeT > 0.01f) {
+            const float lineH = 20.0f + 42.0f * activeT + 8.0f * selectPulse;
+            drawRect(bx - 18.0f, by + rootH * 0.5f - lineH * 0.5f,
+                     2.0f, lineH, rd.r, rd.g, rd.b, (0.20f + 0.48f * activeT) * rowA);
+            drawRect(bx - 4.0f, by + rootH * 0.50f,
+                     rootW * (0.46f + 0.16f * activeT), 1.0f * uiS,
+                     rd.r, rd.g, rd.b, (0.040f + 0.055f * activeT) * rowA);
+            drawDiamond(bx - 17.0f, by + rootH * 0.5f,
+                        3.0f + 2.2f * activeT, rd.r, rd.g, rd.b,
+                        (0.34f + 0.30f * activeT) * rowA);
+        }
+
+        float routeSc = 1.02f;
+        while (routeSc > 0.80f && g_TextL.Width(rd.route, routeSc) > rootW)
+            routeSc -= 0.04f;
+        const float routeY = by + 2.0f;
+        const float subY = routeY + g_TextL.Height(rd.route, routeSc) - 3.0f;
+        float tr = 1.0f + (rd.r - 1.0f) * activeT;
+        float tg = 1.0f + (rd.g - 1.0f) * activeT;
+        float tb = 1.0f + (rd.b - 1.0f) * activeT;
+        if (sel) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
+        g_TextL.Draw(rd.route, bx, routeY, routeSc, tr, tg, tb,
+                     (0.80f + 0.15f * activeT + selectPulse) * rowA);
+        g_TextS.Draw(rd.sub, bx + 4.0f, subY, 0.48f,
+                     0.70f + 0.16f * activeT,
+                     0.75f + 0.14f * activeT,
+                     0.82f + 0.10f * activeT,
+                     (0.68f + 0.18f * activeT) * rowA);
+    }
+
+    struct CItem {
+        bool isGroup;
+        int key;
+        const wchar_t* label;
+        bool seen;
+        float r, g, b;
+    };
+    CItem items[512];
+    int itemCount = 0;
+    auto addGroup = [&](const wchar_t* label, float r, float g, float b) {
+        if (itemCount < 512) items[itemCount++] = { true, -1, label, true, r, g, b };
+    };
+    auto addItem = [&](int key, const wchar_t* label, bool seen, float r, float g, float b) {
+        if (itemCount < 512) items[itemCount++] = { false, key, label, seen, r, g, b };
+    };
+
+    if (s_cat == 0) {
+        addGroup(L"SIGNAL CLASS", 0.48f, 0.82f, 1.00f);
+        for (int i = 0; i < CM_COUNT; ++i)
+            addItem(i, CodexMobSeen(i) ? MobName(i) : L"???", CodexMobSeen(i),
+                    0.48f, 0.82f, 1.00f);
+    } else if (s_cat == 1) {
+        int sorted[AUG_TOTAL], n = 0;
+        for (int i = 0; i < AUG_TOTAL; ++i)
+            if (!AugRemoved(ALL_AUGS[i].type)) sorted[n++] = i;
+        std::sort(sorted, sorted + n, [](int a, int b) { return AugTierIndexLess(a, b); });
+        AugRarity prevR = (AugRarity)-1;
+        for (int k = 0; k < n; ++k) {
+            int i = sorted[k];
+            AugRarity rar = ALL_AUGS[i].rarity;
+            float rr, rg, rb; GetRarityColor(rar, rr, rg, rb);
+            if (rar != prevR) {
+                addGroup(GetRarityKR(rar), rr, rg, rb);
+                prevR = rar;
+            }
+            addItem(i, CodexAugSeen(i) ? AugName(ALL_AUGS[i]) : L"???",
+                    CodexAugSeen(i), rr, rg, rb);
+        }
+    } else {
+        addGroup(L"APEX SIGNAL", 0.96f, 0.76f, 0.30f);
+        for (int i = 0; i < BOSS_CODEX_COUNT; ++i)
+            addItem(i, BossCodexSeen(i) ? BossCodexName(i) : L"???",
+                    BossCodexSeen(i), 0.96f, 0.76f, 0.30f);
+    }
+
+    if (s_sel[s_cat] < 0) {
+        for (int i = 0; i < itemCount; ++i) {
+            if (!items[i].isGroup) { s_sel[s_cat] = items[i].key; break; }
+        }
+    }
+    if (s_sel[s_cat] != s_prevSel) {
+        s_prevSel = s_sel[s_cat];
+        s_decryptT = 0.0f;
+    }
+    s_decryptT = UiApproach(s_decryptT, 1.0f, dt, 8.0f);
+
+    // Depth 2 list.
+    BindMainShader();
+    const RootDef& curRoot = ROOTS[s_cat];
+    const float parentY = rootY + (float)s_cat * (rootH + rootGap) + rootH * 0.5f;
+    const float trunkX = depth2X - 26.0f * uiS;
+    LogoLine(rootX + rootW + 14.0f * uiS, parentY, trunkX, parentY,
+             0.80f * uiS, curRoot.r, curRoot.g, curRoot.b, 0.22f * wake);
+
+    const float itemH = 48.0f * uiS;
+    const float grpH = 36.0f * uiS;
+    float totalH = 0.0f;
+    for (int i = 0; i < itemCount; ++i)
+        totalH += items[i].isGroup ? grpH : itemH;
+    float& scroll = s_scroll[s_cat];
+    const float maxScroll = std::max(0.0f, totalH - depth2H + 16.0f * uiS);
+    const bool overList = inputReady
+        && (mx >= depth2X - 36.0f * uiS && mx < depth2X + depth2W + 22.0f * uiS
+         && my >= depth2Y && my < depth2Y + depth2H);
+    if (overList && g_ScrollAccum != 0.0f)
+        scroll -= g_ScrollAccum * 36.0f * uiS;
+    g_ScrollAccum = 0.0f;
+    scroll = std::max(0.0f, std::min(scroll, maxScroll));
+
+    BatchFlush();
+    glEnable(GL_SCISSOR_TEST);
+    {
+        int scX = (int)(depth2X - 42.0f * uiS);
+        int scY = (int)(sh - (depth2Y + depth2H));
+        int scW = (int)(depth2W + 70.0f * uiS);
+        int scH = (int)depth2H;
+        if (scX < 0) scX = 0; if (scY < 0) scY = 0;
+        glScissor(scX, scY, scW, scH);
+    }
+    float curY = depth2Y + 6.0f * uiS - scroll;
+    const float treeTop = curY;
+    const float treeBot = curY + totalH - 8.0f * uiS;
+    BindMainShader();
+    LogoLine(trunkX, std::min(parentY, treeTop + 12.0f * uiS),
+             trunkX, std::max(parentY, treeBot),
+             0.72f * uiS, curRoot.r, curRoot.g, curRoot.b, 0.16f * wake);
+
+    for (int i = 0; i < itemCount; ++i) {
+        const CItem& itm = items[i];
+        const float rh = itm.isGroup ? grpH : itemH;
+        const float ry = curY;
+        curY += rh;
+        if (ry + rh < depth2Y || ry > depth2Y + depth2H) continue;
+
+        if (itm.isGroup) {
+            const float mid = ry + grpH * 0.5f;
+            BindMainShader();
+            LogoLine(trunkX, mid, depth2X - 8.0f * uiS, mid,
+                     0.72f * uiS, itm.r, itm.g, itm.b, 0.20f * wake);
+            drawRect(depth2X + 4.0f * uiS, mid - 0.5f * uiS,
+                     depth2W * 0.92f, 1.0f * uiS,
+                     itm.r, itm.g, itm.b, 0.080f * wake);
+            drawDiamond(depth2X - 8.0f * uiS, mid,
+                        3.3f * uiS, itm.r, itm.g, itm.b, 0.46f * wake);
+            g_TextS.Draw(itm.label, depth2X + 14.0f * uiS,
+                         ry + (grpH - g_TextS.Height(itm.label, 0.54f * uiS)) * 0.5f,
+                         0.54f * uiS, 0.80f, 0.90f, 1.0f, 0.64f * wake);
+        } else {
+            const bool isSel = (s_sel[s_cat] == itm.key);
+            const bool hov = inputReady
+                && (mx >= depth2X - 24.0f * uiS && mx < depth2X + depth2W + 18.0f * uiS
+                 && my >= ry - 4.0f * uiS && my < ry + itemH + 5.0f * uiS);
+            if (hov && lmb && !g_LmbPrev)
+                s_sel[s_cat] = itm.key;
+
+            const float cardY = ry + 2.0f * uiS;
+            const float cardH = itemH - 4.0f * uiS;
+            const float ndy = cardY + cardH * 0.5f;
+            BindMainShader();
+            LogoLine(trunkX, ndy, depth2X - 12.0f * uiS, ndy,
+                     0.68f * uiS, itm.r, itm.g, itm.b, (isSel ? 0.30f : 0.10f) * wake);
+            if (isSel || hov) {
+                drawRect(depth2X + 24.0f * uiS, cardY + cardH * 0.5f,
+                         depth2W - 26.0f * uiS, 1.0f * uiS,
+                         itm.r, itm.g, itm.b, (isSel ? 0.095f : 0.050f) * wake);
+            }
+            if (isSel) {
+                drawRect(depth2X - 2.0f * uiS, cardY + 8.0f * uiS,
+                         2.0f * uiS, cardH - 16.0f * uiS,
+                         itm.r, itm.g, itm.b, 0.58f * wake);
+                g_TextS.Draw(L">", depth2X + 7.0f * uiS,
+                             cardY + (cardH - g_TextS.Height(L">", 0.62f * uiS)) * 0.5f,
+                             0.62f * uiS, itm.r, itm.g, itm.b, 0.90f * wake);
+            }
+            drawDiamond(depth2X - 12.0f * uiS, ndy,
+                        (isSel ? 3.3f : 2.0f) * uiS,
+                        itm.r, itm.g, itm.b, (isSel ? 0.58f : hov ? 0.32f : 0.14f) * wake);
+            float tsc = 0.54f * uiS;
+            while (tsc > 0.43f * uiS && g_TextS.Width(itm.label, tsc) > depth2W - 54.0f * uiS)
+                tsc -= 0.025f * uiS;
+            g_TextS.Draw(itm.label, depth2X + (isSel ? 27.0f : 16.0f) * uiS,
+                         cardY + (cardH - g_TextS.Height(itm.label, tsc)) * 0.5f,
+                         tsc,
+                         isSel ? 1.0f : hov ? 0.84f : itm.seen ? 0.60f : 0.42f,
+                         isSel ? 1.0f : hov ? 0.90f : itm.seen ? 0.68f : 0.46f,
+                         isSel ? 1.0f : hov ? 1.00f : itm.seen ? 0.78f : 0.52f,
+                         (isSel ? 0.96f : hov ? 0.78f : 0.50f) * wake);
+        }
+    }
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+
+    auto scramble = [&](const wchar_t* src, int seed) -> std::wstring {
+        static const wchar_t* glyphs = L"01/\\#*@+-=_";
+        if (!src) return L"";
+        std::wstring out(src);
+        int gCount = 10;
+        int tick = (int)(now * 90.0f);
+        for (size_t i = 0; i < out.size(); ++i) {
+            if (out[i] == L' ' || out[i] == L':' || out[i] == L'|' || out[i] == L'[' || out[i] == L']')
+                continue;
+            out[i] = glyphs[(seed + tick + (int)i * 7) % gCount];
+        }
+        return out;
+    };
+    auto drawScanTextS = [&](const wchar_t* text, float x, float y, float sc,
+                             float r, float g, float b, float a, int seed) {
+        if (s_decryptT < 0.36f) {
+            std::wstring t = scramble(text, seed);
+            g_TextS.Draw(t.c_str(), x, y, sc, r, g, b, a * (0.72f + 0.28f * s_decryptT));
+        } else {
+            g_TextS.Draw(text, x, y, sc, r, g, b, a);
+        }
+    };
+    auto drawScanTextL = [&](const wchar_t* text, float x, float y, float sc,
+                             float r, float g, float b, float a, int seed) {
+        if (s_decryptT < 0.36f) {
+            std::wstring t = scramble(text, seed);
+            g_TextL.Draw(t.c_str(), x, y, sc, r, g, b, a * (0.72f + 0.28f * s_decryptT));
+        } else {
+            g_TextL.Draw(text, x, y, sc, r, g, b, a);
+        }
+    };
+
+    auto selectedSeen = [&]() -> bool {
+        int key = s_sel[s_cat];
+        if (key < 0) return false;
+        if (s_cat == 0) return CodexMobSeen(key);
+        if (s_cat == 1) return key >= 0 && key < AUG_TOTAL && CodexAugSeen(key);
+        return key >= 0 && key < BOSS_CODEX_COUNT && BossCodexSeen(key);
+    };
+    auto selectedTitle = [&]() -> const wchar_t* {
+        int key = s_sel[s_cat];
+        if (key < 0) return L"UNASSIGNED";
+        if (s_cat == 0) return selectedSeen() ? MobName(key) : L"???";
+        if (s_cat == 1) return selectedSeen() ? AugName(ALL_AUGS[key]) : L"???";
+        return selectedSeen() ? BossCodexName(key) : L"???";
+    };
+    auto selectedDesc = [&]() -> const wchar_t* {
+        int key = s_sel[s_cat];
+        if (!selectedSeen()) return nli == 0 ? L"\uBBF8\uBC1C\uACAC \uAE30\uB85D" : L"UNDISCOVERED SIGNAL";
+        if (s_cat == 0) return MobDesc(key);
+        if (s_cat == 1) return AugDesc(ALL_AUGS[key]);
+        return BossCodexDesc(key);
+    };
+
+    // Depth 3 constellation canvas.
+    const int selKey = s_sel[s_cat] < 0 ? 0 : s_sel[s_cat];
+    const bool seen = selectedSeen();
+    float cr = curRoot.r, cg = curRoot.g, cb = curRoot.b;
+    if (s_cat == 1 && selKey >= 0 && selKey < AUG_TOTAL)
+        GetRarityColor(ALL_AUGS[selKey].rarity, cr, cg, cb);
+
+    BindMainShader();
+    const float cx = rightX + rightW * 0.50f;
+    const float cy = rightY + rightH * 0.45f;
+    const float rad = std::min(rightW, rightH) * (s_cat == 2 ? 0.34f : 0.30f);
+    const float canvasA = rightWake * (seen ? 1.0f : 0.55f);
+    DrawSceneRadialVignette(cx, cy, rad * 2.15f, 0.46f * rightWake);
+    BindMainShader();
+
+    if (s_cat == 0) {
+        const int n = 7;
+        float px[8], py[8];
+        for (int i = 0; i < n; ++i) {
+            float a = now * 0.10f + (float)i / (float)n * 6.2831853f;
+            float jitter = 0.78f + 0.20f * sinf(now * 2.0f + (float)(i + selKey) * 1.17f);
+            px[i] = cx + cosf(a) * rad * jitter;
+            py[i] = cy + sinf(a) * rad * (0.66f + 0.10f * cosf((float)i * 0.9f));
+        }
+        for (int i = 0; i < n; ++i) {
+            int j = (i + 2 + (selKey % 2)) % n;
+            DrawVisibleConstellLine(px[i], py[i], px[j], py[j],
+                                    1.0f * uiS, cr, cg, cb, 0.20f * canvasA);
+        }
+        for (int i = 0; i < n; ++i)
+            DrawVisibleConstellNode(px[i], py[i], (i == 0 ? 5.2f : 3.4f) * uiS,
+                                    cr, cg, cb, (i == 0 ? 0.66f : 0.42f) * canvasA);
+    } else if (s_cat == 1) {
+        const int n = 6;
+        float px[6], py[6];
+        for (int i = 0; i < n; ++i) {
+            float a = now * 0.06f + (float)i / (float)n * 6.2831853f;
+            px[i] = cx + cosf(a) * rad;
+            py[i] = cy + sinf(a) * rad;
+        }
+        for (int i = 0; i < n; ++i) {
+            DrawVisibleConstellLine(px[i], py[i], px[(i + 1) % n], py[(i + 1) % n],
+                                    1.1f * uiS, cr, cg, cb, 0.28f * canvasA);
+            if ((i % 2) == 0)
+                DrawVisibleConstellLine(cx, cy, px[i], py[i],
+                                        0.82f * uiS, cr, cg, cb, 0.16f * canvasA);
+        }
+        for (int i = 0; i < 3; ++i) {
+            float a = -now * 0.16f + (float)i / 3.0f * 6.2831853f;
+            DrawVisibleConstellNode(cx + cosf(a) * rad * 0.42f,
+                                    cy + sinf(a) * rad * 0.42f,
+                                    3.4f * uiS, cr, cg, cb, 0.46f * canvasA);
+        }
+        DrawVisibleConstellNode(cx, cy, 7.0f * uiS, cr, cg, cb, 0.72f * canvasA);
+        for (int i = 0; i < n; ++i)
+            DrawVisibleConstellNode(px[i], py[i], 4.0f * uiS, cr, cg, cb, 0.56f * canvasA);
+    } else {
+        const int n = 8;
+        for (int r = 0; r < 3; ++r) {
+            float rr = rad * (0.54f + 0.20f * r);
+            for (int i = 0; i < n; ++i) {
+                if ((i + r) % 3 == 1) continue;
+                float a0 = now * (0.025f + 0.010f * r) + (float)i / (float)n * 6.2831853f;
+                float a1 = a0 + 0.18f;
+                DrawVisibleConstellLine(cx + cosf(a0) * rr, cy + sinf(a0) * rr * 0.72f,
+                                        cx + cosf(a1) * rr, cy + sinf(a1) * rr * 0.72f,
+                                        1.2f * uiS, cr, cg, cb, 0.25f * canvasA);
+            }
+        }
+        DrawVisibleConstellNode(cx, cy, 12.0f * uiS, cr, cg, cb, 0.82f * canvasA);
+        for (int i = 0; i < 5; ++i) {
+            float a = now * 0.04f + (float)i / 5.0f * 6.2831853f;
+            DrawVisibleConstellNode(cx + cosf(a) * rad * 0.84f,
+                                    cy + sinf(a) * rad * 0.58f,
+                                    5.2f * uiS, cr, cg, cb, 0.48f * canvasA);
+        }
+    }
+
+    // Compact read-only data tag.
+    const float tagW = std::min(640.0f * uiS, rightW * 0.58f);
+    const float tagH = 132.0f * uiS;
+    const float tagX = cx - tagW * 0.32f;
+    const float tagY = cy + rad * 0.88f;
+    BindMainShader();
+    drawRect(tagX, tagY, tagW, 1.1f * uiS, cr, cg, cb, 0.28f * rightWake);
+    drawRect(tagX, tagY, 1.1f * uiS, tagH, cr, cg, cb, 0.22f * rightWake);
+    drawRect(tagX, tagY + tagH, tagW * 0.42f, 1.1f * uiS, cr, cg, cb, 0.18f * rightWake);
+    if (s_decryptT < 0.96f) {
+        float scanY = tagY + 8.0f * uiS + (tagH - 18.0f * uiS) * Smoothstep(s_decryptT);
+        drawRect(tagX + 10.0f * uiS, scanY, tagW - 18.0f * uiS, 1.0f * uiS,
+                 cr, cg, cb, 0.22f * rightWake * (1.0f - Smoothstep(s_decryptT)));
+    }
+
+    wchar_t idBuf[96];
+    if (s_cat == 0) swprintf_s(idBuf, L"ID : ENTITY_%02d", selKey);
+    else if (s_cat == 1) swprintf_s(idBuf, L"ID : MODULE_%03d", selKey);
+    else swprintf_s(idBuf, L"ID : APEX_%02d", selKey);
+    wchar_t statBuf[128];
+    if (s_cat == 0)
+        swprintf_s(statBuf, L"CLASS : HOSTILE_SIGNAL | STATUS : %ls", seen ? L"CATALOGUED" : L"NO_DATA");
+    else if (s_cat == 1)
+        swprintf_s(statBuf, L"CLASS : MODULE_ARCHIVE | STATUS : %ls", seen ? L"ACQUIRED" : L"NO_DATA");
+    else
+        swprintf_s(statBuf, L"CLASS : APEX_ENTITY | STATUS : %ls", seen ? L"OBSERVED" : L"NO_DATA");
+
+    drawScanTextS(idBuf, tagX + 24.0f * uiS, tagY + 9.0f * uiS,
+                  0.42f * uiS, 0.62f, 0.72f, 0.86f, 0.72f * rightWake, selKey + s_cat * 31);
+    drawScanTextL(selectedTitle(), tagX + 24.0f * uiS, tagY + 34.0f * uiS,
+                  0.62f * uiS, 0.94f, 0.98f, 1.0f, 0.96f * rightWake, selKey + 7);
+    drawScanTextS(selectedDesc(), tagX + 24.0f * uiS, tagY + 66.0f * uiS,
+                  0.38f * uiS, 0.70f, 0.78f, 0.90f, 0.70f * rightWake, selKey + 13);
+    drawScanTextS(statBuf, tagX + 24.0f * uiS, tagY + 92.0f * uiS,
+                  0.40f * uiS, 0.84f, 0.90f, 0.98f, 0.86f * rightWake, selKey + 19);
+    g_TextS.Draw(L"[ ARCHIVE_READ_ONLY ]", tagX + 24.0f * uiS, tagY + 114.0f * uiS,
+                 0.40f * uiS, cr, cg, cb, 0.72f * rightWake);
+
+    if (finishBackAfterRender) {
+        s_backExit = false;
+        s_backOutT = 0.0f;
+        s_CodexBackRequested = false;
+        s_MainMenuCodexPanel = false;
+        s_MainMenuResumeFromPanel = true;
+        g_MainMenuEntryT = 1.0f;
+        g_GameManager.currentState = GameState::MAIN_MENU;
+    }
 }
 
 void Scene_Codex(const SceneCtx& c) {
+    if (s_MainMenuCodexPanel) {
+        Scene_CodexInline(c);
+        return;
+    }
+
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
@@ -937,6 +3066,7 @@ void Scene_Codex(const SceneCtx& c) {
     static float s_catHover[3] = {};
     static float s_catFocus[3] = {};
     static float s_panelT      = 1.0f;
+    static bool  s_catLoaded[3]= {};
     static int   s_sel[3]      = { -1, -1, -1 };
     static float s_scroll[3]   = {};
     static float s_detailFadeT = 0.0f;
@@ -957,54 +3087,61 @@ void Scene_Codex(const SceneCtx& c) {
     const int nli = (li == 0) ? 0 : 1;
 
     // ── Layout ────────────────────────────────────────────────────────────
-    const float TARGET_W = 1640.0f, TARGET_H = 910.0f;
-    float uiS = std::max(0.72f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
+    const float TARGET_W = 1760.0f, TARGET_H = 930.0f;
+    float uiS = std::max(0.72f, std::min(sw * 0.975f / TARGET_W, sh * 0.920f / TARGET_H));
     if (uiS > 1.30f) uiS = 1.30f;
     const float panelW  = TARGET_W * uiS;
     const float panelH  = TARGET_H * uiS;
     const float panelX  = (sw - panelW) * 0.5f;
     const float panelY  = (sh - panelH) * 0.5f;
-    const float headerH = 86.0f * uiS;
-    const float footerH = 64.0f * uiS;
+    const float headerH = 82.0f * uiS;
+    const float footerH = 74.0f * uiS;
     const float bodyY   = panelY + headerH;
     const float bodyH   = panelH - headerH - footerH;
-    const float footY   = panelY + panelH - footerH + 14.0f * uiS;
-    const float leftW   = panelW * 0.27f;
-    const float colGap  = 18.0f * uiS;
+    const float footY   = panelY + panelH - footerH + 12.0f * uiS;
+    const float leftW   = panelW * 0.260f;
+    const float colGap  = 14.0f * uiS;
     const float leftX   = panelX;
     const float rightX  = leftX + leftW + colGap;
-    const float rightW  = panelW - leftW - colGap;
+    const float rightW  = (panelX + panelW) - rightX - 8.0f * uiS;
+    const float tabH    = 54.0f * uiS;
+    const float listAreaY = bodyY + 64.0f * uiS;
+    const float listAreaH = bodyH - 64.0f * uiS;
+    DrawSceneLeftVignette(sw, sh, 0.64f * wake);
+    DrawSceneRadialVignette(rightX + rightW * 0.44f, bodyY + bodyH * 0.50f,
+                            std::min(rightW, bodyH) * 0.60f, 0.44f * rightWake);
 
     // ── Category definitions ──────────────────────────────────────────────
     struct CatDef { const wchar_t* id; const wchar_t* name[2]; float r, g, b; };
     static const CatDef kCats[] = {
-        { L"ENTITIES", { L"\xAD00\xCE21\xCCB4", L"ENTITIES" }, 1.00f, 0.42f, 0.38f },
-        { L"MODULES",  { L"\xBAA8\xB4C8",  L"MODULES"  }, 0.38f, 0.82f, 1.00f },
-        { L"APEX",     { L"\xC815\xC810",  L"APEX"     }, 0.96f, 0.72f, 0.22f },
+        { L"ENTITIES", { L"\xAD00\xCE21\xCCB4", L"ENTITIES" }, 0.48f, 0.82f, 1.00f },
+        { L"MODULES",  { L"\xBAA8\xB4C8",  L"MODULES"  }, 0.62f, 0.52f, 1.00f },
+        { L"APEX",     { L"\xC815\xC810",  L"APEX"     }, 0.96f, 0.76f, 0.30f },
     };
     const int kCatCount = 3;
     const CatDef& cat = kCats[s_cat];
+    const float uiR = cat.r, uiG = cat.g, uiB = cat.b;
+    const float inkR = 0.88f, inkG = 0.94f, inkB = 1.00f;
+    const float idleR = 0.50f, idleG = 0.62f, idleB = 0.76f;
 
     auto hit = [&](float x, float y, float w, float h) -> bool {
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
     };
 
     // ── Transitions ───────────────────────────────────────────────────────
-    if (s_prevCat != s_cat) { s_prevCat = s_cat; s_panelT = 0.0f; }
+    if (s_prevCat != s_cat) {
+        s_prevCat = s_cat;
+        s_panelT = s_catLoaded[s_cat] ? 1.0f : 0.0f;
+    }
     s_panelT = UiApproach(s_panelT, 1.0f, delta, 10.0f);
+    if (s_panelT > 0.995f)
+        s_catLoaded[s_cat] = true;
 
     int curSel = s_sel[s_cat];
     if (curSel != s_prevSel) { s_prevSel = curSel; s_detailFadeT = 0.0f; }
     s_detailFadeT = UiApproach(s_detailFadeT, 1.0f, delta, 8.0f);
 
     // ── Helper lambdas ────────────────────────────────────────────────────
-    auto drawBorder = [](float x, float y, float w, float h,
-                         float r, float g, float b, float a, float t) {
-        drawRect(x, y, w, t, r, g, b, a);
-        drawRect(x, y + h - t, w, t, r, g, b, a);
-        drawRect(x, y, t, h, r, g, b, a);
-        drawRect(x + w - t, y, t, h, r, g, b, a);
-    };
     auto drawCenterS = [&](const wchar_t* text, float x, float y, float w,
                            float sc, float r, float g, float b, float a) {
         while (sc > 0.36f * uiS && g_TextS.Width(text, sc) > w - 12.0f * uiS)
@@ -1035,20 +3172,83 @@ void Scene_Codex(const SceneCtx& c) {
         drawDiamond(x,   y+h, ns, r, g, b, a);
         drawDiamond(x+w, y+h, ns, r, g, b, a);
     };
+    auto drawAstrolabeGrid = [&](float x, float y, float w, float h,
+                                 float r, float g, float b, float a) {
+        if (a <= 0.001f) return;
+        const float cx = x + w * 0.50f;
+        const float cy = y + h * 0.50f;
+        const float rad = std::min(w, h) * 0.31f;
+        const float tLine = std::max(0.70f, 0.82f * uiS);
+        auto ep = [&](float ang, float rx, float ry, float rot, float& ox, float& oy) {
+            float ca = cosf(ang), sa = sinf(ang);
+            float cr = cosf(rot), sr2 = sinf(rot);
+            float lx = ca * rx;
+            float ly = sa * ry;
+            ox = cx + lx * cr - ly * sr2;
+            oy = cy + lx * sr2 + ly * cr;
+        };
+
+        DrawSceneRadialVignette(cx, cy, rad * 1.95f, 0.34f * a);
+        BindMainShader();
+        for (int axis = 0; axis < 8; ++axis) {
+            float a0 = now * 0.035f + (float)axis * 0.7853982f;
+            DrawVisibleConstellLine(cx, cy,
+                                    cx + cosf(a0) * rad * 0.82f,
+                                    cy + sinf(a0) * rad * 0.82f,
+                                    tLine, r, g, b, 0.050f * a);
+        }
+
+        for (int ring = 0; ring < 4; ++ring) {
+            const float rx = rad * (0.66f + 0.13f * (float)ring);
+            const float ry = rad * ((ring == 0) ? 0.66f : (0.23f + 0.10f * (float)ring));
+            const float rot = now * (0.07f + 0.018f * (float)ring) + (float)ring * 0.72f;
+            const int steps = 72;
+            for (int s = 0; s < steps; ++s) {
+                if (((s + ring) % 5) == 2) continue;
+                float p0 = (float)s / (float)steps;
+                float p1 = ((float)s + 0.56f) / (float)steps;
+                float x0, y0, x1, y1;
+                ep(p0 * 6.2831853f, rx, ry, rot, x0, y0);
+                ep(p1 * 6.2831853f, rx, ry, rot, x1, y1);
+                DrawVisibleConstellLine(x0, y0, x1, y1, tLine, r, g, b,
+                                        (ring == 0 ? 0.155f : 0.105f) * a);
+            }
+        }
+
+        for (int n = 0; n < 12; ++n) {
+            float ang = now * 0.11f + (float)n * 0.5235988f;
+            float nr = rad * (0.48f + 0.42f * ((n % 3) / 2.0f));
+            DrawVisibleConstellNode(cx + cosf(ang) * nr,
+                                    cy + sinf(ang) * nr,
+                                    ((n % 4) == 0 ? 3.7f : 2.5f) * uiS,
+                                    r, g, b, ((n % 4) == 0 ? 0.30f : 0.20f) * a);
+        }
+        DrawVisibleConstellNode(cx, cy, 7.0f * uiS, r, g, b, 0.36f * a);
+    };
+    auto drawInfoQuad = [&](float x, float y, float w, float h, float a) {
+        if (a <= 0.001f) return;
+        BindMainShader();
+        drawRect(x + 5.0f*uiS, y + 6.0f*uiS, w, h, 0.0f, 0.0f, 0.0f, 0.12f * a);
+        drawRect(x, y, w, h, 0.038f, 0.054f, 0.078f, 0.38f * a);
+        drawRect(x, y, w, h, uiR, uiG, uiB, 0.052f * a);
+        drawCBkt(x, y, w, h, uiR, uiG, uiB, 0.26f * a);
+    };
 
     // ── HEADER ────────────────────────────────────────────────────────────
-    const float hSlide = (1.0f - wake) * 14.0f * uiS;
+    const float hSlide = (1.0f - wake) * 30.0f * uiS;
     BindMainShader();
     g_TextL.Draw(L"ASTRAL_LOG",
-                 leftX, panelY + 8.0f * uiS - hSlide,
-                 0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
+                 leftX, panelY + 4.0f * uiS - hSlide,
+                 1.16f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
 
-    // Category tabs (segment buttons, right side of header)
-    const float tabW  = 170.0f * uiS;
-    const float tabH  = 46.0f * uiS;
-    const float tabGp = 10.0f * uiS;
-    const float tabsX = panelX + panelW - (tabW * kCatCount + tabGp * (kCatCount - 1));
-    const float tabsY = panelY + 20.0f * uiS - hSlide;
+    drawRect(leftX, panelY + headerH - 2.0f * uiS, panelW, 1.5f * uiS,
+             uiR, uiG, uiB, 0.30f * wake);
+
+    // Category tabs: same quiet strip language as RUN CONFIG / ARMORY.
+    const float tabGp = 0.0f;
+    const float tabW  = (leftW - tabGp * (float)(kCatCount - 1)) / (float)kCatCount;
+    const float tabsX = leftX;
+    const float tabsY = bodyY;
 
     for (int i = 0; i < kCatCount; ++i) {
         float tx = tabsX + (float)i * (tabW + tabGp);
@@ -1060,64 +3260,66 @@ void Scene_Codex(const SceneCtx& c) {
         bool sel = (i == s_cat);
         const CatDef& cd = kCats[i];
         BindMainShader();
-        drawRect(tx, ty, tabW, tabH,
-                 0.062f + cd.r*(sel ? 0.120f : 0.042f),
-                 0.070f + cd.g*(sel ? 0.100f : 0.038f),
-                 0.092f + cd.b*(sel ? 0.090f : 0.034f), 0.96f * wake);
-        float ba  = (sel ? 0.88f : (hov ? 0.55f : 0.24f)) * wake;
-        float cL2 = std::min(tabW * 0.22f, 9.0f * uiS), ct2 = 1.3f * uiS;
-        drawRect(tx,        ty,        cL2, ct2, cd.r, cd.g, cd.b, ba);
-        drawRect(tx,        ty,        ct2, cL2, cd.r, cd.g, cd.b, ba);
-        drawRect(tx+tabW-cL2,ty,       cL2, ct2, cd.r, cd.g, cd.b, ba);
-        drawRect(tx+tabW-ct2,ty,       ct2, cL2, cd.r, cd.g, cd.b, ba);
-        drawRect(tx,        ty+tabH-ct2,cL2, ct2, cd.r, cd.g, cd.b, ba);
-        drawRect(tx,        ty+tabH-cL2,ct2, cL2, cd.r, cd.g, cd.b, ba);
-        drawRect(tx+tabW-cL2,ty+tabH-ct2,cL2,ct2, cd.r, cd.g, cd.b, ba);
-        drawRect(tx+tabW-ct2,ty+tabH-cL2,ct2,cL2, cd.r, cd.g, cd.b, ba);
-        float ns2 = (sel ? 4.5f : 3.0f) * uiS;
-        drawDiamond(tx,      ty,      ns2, cd.r, cd.g, cd.b, ba);
-        drawDiamond(tx+tabW, ty,      ns2, cd.r, cd.g, cd.b, ba);
-        drawDiamond(tx,      ty+tabH, ns2, cd.r, cd.g, cd.b, ba);
-        drawDiamond(tx+tabW, ty+tabH, ns2, cd.r, cd.g, cd.b, ba);
-        const float idSc = 0.50f * uiS;
-        const float idY  = ty + (tabH - g_TextS.Height(cd.id, idSc)) * 0.5f;
-        drawCenterS(cd.id, tx, idY, tabW, idSc,
-                    sel ? 1.0f : 0.72f, sel ? 1.0f : 0.80f, sel ? 1.0f : 0.92f,
-                    (sel ? 0.96f : 0.74f) * wake);
+        if (sel || hov) {
+            drawRect(tx + 8.0f * uiS, ty + tabH * 0.52f, tabW - 16.0f * uiS,
+                     1.1f * uiS, cd.r, cd.g, cd.b,
+                     (sel ? 0.070f : 0.035f + s_catHover[i] * 0.030f) * wake);
+        }
+        if (sel) {
+            drawRect(tx, ty + tabH - 2.0f * uiS, tabW, 2.0f * uiS,
+                     cd.r, cd.g, cd.b, 0.56f * wake);
+            drawDiamond(tx + 15.0f * uiS, ty + tabH * 0.5f,
+                        3.0f * uiS, cd.r, cd.g, cd.b, 0.72f * wake);
+        }
+        const wchar_t* tabLabel = kCats[i].name[nli];
+        const float idSc = 0.56f * uiS;
+        const float idY  = ty + (tabH - g_TextS.Height(tabLabel, idSc)) * 0.5f;
+        drawCenterS(tabLabel, tx, idY, tabW, idSc,
+                    sel ? inkR : idleR,
+                    sel ? inkG : idleG,
+                    sel ? inkB : idleB,
+                    (sel ? 0.92f : 0.48f + s_catHover[i] * 0.20f) * wake);
     }
 
     // ── LEFT PANEL ────────────────────────────────────────────────────────
     float panelE = Smoothstep(s_panelT);
 
     BindMainShader();
-    drawRect(panelX + 8.0f*uiS, bodyY + 10.0f*uiS, leftW, bodyH,
-             0.0f, 0.0f, 0.0f, 0.07f * wake);
-    drawRect(panelX, bodyY, leftW, bodyH,
-             0.052f + cat.r*0.018f, 0.060f + cat.g*0.014f, 0.095f + cat.b*0.016f,
-             0.94f * wake);
-    drawBorder(panelX, bodyY, leftW, bodyH, cat.r, cat.g, cat.b,
-               (0.16f + 0.30f*panelE) * wake, 1.2f*uiS);
+    {
+        const float masterX = leftX - 8.0f * uiS;
+        const float masterY = bodyY - 6.0f * uiS;
+        const float masterW = (rightX + rightW) - masterX;
+        const float masterH = bodyH + 10.0f * uiS;
+        drawRect(masterX + 12.0f*uiS, masterY + 13.0f*uiS, masterW, masterH,
+                 0.0f, 0.0f, 0.0f, 0.035f * wake);
+        drawConstellFrame(masterX, masterY, masterW, masterH,
+                          uiR, uiG, uiB, 0.070f * panelE * wake,
+                          24.0f * uiS, 2.4f * uiS, 0.010f * wake, 0.34f);
+    }
+    drawRect(leftX + 8.0f*uiS, listAreaY + 10.0f*uiS, leftW, listAreaH,
+             0.0f, 0.0f, 0.0f, 0.030f * wake);
+    drawRect(leftX, listAreaY, leftW, listAreaH,
+             0.030f, 0.042f, 0.062f, 0.055f * wake);
+    drawRect(leftX + 8.0f*uiS, listAreaY + 8.0f*uiS,
+             leftW - 16.0f*uiS, listAreaH - 16.0f*uiS,
+             0.052f, 0.072f, 0.098f, 0.050f * wake);
+    drawRect(leftX + 2.0f * uiS, listAreaY, 1.2f * uiS, listAreaH,
+             uiR, uiG, uiB, 0.14f * wake);
     if (wake > 0.02f) {
         BatchFlush(); SetGlowFx(true);
-        drawConstellFrame(panelX, bodyY, leftW, bodyH,
-                          cat.r, cat.g, cat.b, 0.12f * panelE * wake,
-                          14.0f*uiS, 3.5f*uiS, 0.12f, wake);
+        drawConstellFrame(leftX, listAreaY, leftW, listAreaH,
+                          uiR, uiG, uiB, 0.070f * panelE * wake,
+                          18.0f*uiS, 2.4f*uiS, 0.010f * wake, 0.42f);
         BatchFlush(); SetGlowFx(false);
     }
-    BindMainShader();
-    g_TextL.Draw(cat.id, panelX + 14.0f*uiS, bodyY + 18.0f*uiS,
-                 0.62f*uiS, cat.r, cat.g, cat.b, 0.84f * panelE * wake);
-    drawRect(panelX + 12.0f*uiS, bodyY + 58.0f*uiS, leftW - 24.0f*uiS, 1.2f*uiS,
-             cat.r, cat.g, cat.b, 0.22f * panelE * wake);
-
     // List layout constants
-    const float listX     = panelX + 10.0f * uiS;
-    const float listW2    = leftW  - 20.0f * uiS;
-    const float listTopY  = bodyY  + 74.0f * uiS;
-    const float listBotY  = bodyY  + bodyH - 12.0f * uiS;
+    const float listX     = leftX + 6.0f * uiS;
+    const float listW2    = leftW  - 12.0f * uiS;
+    const float listTopY  = listAreaY + 8.0f * uiS;
+    const float listBotY  = listAreaY + listAreaH - 8.0f * uiS;
     const float listViewH = listBotY - listTopY;
-    const float itemH     = 30.0f * uiS;
-    const float grpH      = 22.0f * uiS;
+    const float itemH     = 58.0f * uiS;
+    const float grpH      = 54.0f * uiS;
 
     // Build item list for current category
     struct ListItem {
@@ -1137,10 +3339,10 @@ void Scene_Codex(const SceneCtx& c) {
             { L"CLASS-I",
               { CM_NORMAL, CM_SPLITTER, CM_BLINKER, CM_CHARGER,
                 CM_WEAVER, CM_BRUTE, CM_ORBITER, CM_SPAWNER, CM_SHIELDED },
-              9, 0.88f, 0.52f, 0.52f },
+              9, 0.48f, 0.82f, 1.00f },
             { L"CLASS-II",
               { CM_RANGED, CM_BOMBER, CM_DDOS, CM_BADSECTOR, CM_REGERROR, 0, 0, 0, 0 },
-              5, 0.72f, 0.48f, 0.90f },
+              5, 0.62f, 0.80f, 0.96f },
         };
         for (int gi = 0; gi < 2; ++gi) {
             const MobGroup& mg = MGRPS[gi];
@@ -1190,13 +3392,11 @@ void Scene_Codex(const SceneCtx& c) {
         lh.r = cat.r; lh.g = cat.g; lh.b = cat.b;
         contentH += grpH;
         for (int i = 0; i < BOSS_CODEX_COUNT; ++i) {
-            int pick = BossCodexPick(i);
-            glm::vec3 wc = BossDir::WarnColor(pick);
             ListItem& litem = s_items[nItems++];
             litem.isGroup = false; litem.dataIdx = i;
             litem.seen = BossCodexSeen(i);
             litem.label = litem.seen ? BossCodexName(i) : L"???";
-            litem.r = wc.r; litem.g = wc.g; litem.b = wc.b;
+            litem.r = uiR; litem.g = uiG; litem.b = uiB;
             contentH += itemH;
         }
     }
@@ -1225,46 +3425,64 @@ void Scene_Codex(const SceneCtx& c) {
 
         if (litem.isGroup) {
             BindMainShader();
-            float mid = ry + grpH * 0.5f;
-            // Constellation ○───● line
-            drawRect(listX + 11.0f*uiS, mid - 0.75f*uiS, listW2 - 17.0f*uiS, 1.5f*uiS,
-                     litem.r, litem.g, litem.b, 0.22f * wake);
-            // Left hollow node (outer + inner dark)
-            drawDiamond(listX + 5.5f*uiS, mid, 5.5f*uiS, litem.r, litem.g, litem.b, 0.80f * wake);
-            drawDiamond(listX + 5.5f*uiS, mid, 2.8f*uiS, 0.04f, 0.05f, 0.08f, wake);
-            // Right filled node
-            drawDiamond(listX + listW2 - 4.0f*uiS, mid, 3.5f*uiS, litem.r, litem.g, litem.b, 0.52f * wake);
-            g_TextS.Draw(litem.label, listX + 17.0f*uiS, ry + 4.0f*uiS,
-                         0.37f*uiS, litem.r, litem.g, litem.b, 0.82f * wake);
+            const float gy = ry + 3.0f * uiS;
+            const float gh = grpH - 6.0f * uiS;
+            const float mid = gy + gh * 0.5f;
+            drawRect(listX + 9.0f*uiS, mid - 0.5f*uiS,
+                     listW2 - 28.0f*uiS, 1.0f*uiS,
+                     uiR, uiG, uiB, 0.12f * wake);
+            drawRect(listX + 4.0f*uiS, gy + 7.0f*uiS, 1.6f*uiS, gh - 14.0f*uiS,
+                     litem.r, litem.g, litem.b, 0.48f * wake);
+            drawDiamond(listX + 5.0f*uiS, mid, 3.4f*uiS,
+                        litem.r, litem.g, litem.b, 0.62f * wake);
+            const float groupSc = 0.50f * uiS;
+            g_TextS.Draw(litem.label, listX + 22.0f*uiS,
+                         gy + (gh - g_TextS.Height(litem.label, groupSc)) * 0.5f,
+                         groupSc, 0.82f, 0.92f, 1.0f, 0.90f * wake);
         } else {
             bool isSel = (s_sel[s_cat] == litem.dataIdx);
-            bool hov2  = overList && hit(listX, ry, listW2, itemH);
+            const float cardY = ry + 4.0f * uiS;
+            const float cardH = itemH - 8.0f * uiS;
+            bool hov2  = overList && hit(listX, cardY, listW2, cardH);
             if (hov2 && lmb && !g_LmbPrev && litem.seen)
                 s_sel[s_cat] = litem.dataIdx;
 
             float ia = wake * (0.65f + 0.35f * panelE);
             BindMainShader();
-            drawRect(listX, ry, listW2, itemH,
-                     0.060f + litem.r*(isSel ? 0.100f : hov2 ? 0.044f : 0.018f),
-                     0.068f + litem.g*(isSel ? 0.082f : hov2 ? 0.036f : 0.014f),
-                     0.092f + litem.b*(isSel ? 0.068f : hov2 ? 0.030f : 0.012f),
-                     (isSel ? 0.98f : hov2 ? 0.88f : 0.76f) * ia);
-            // Constellation node dot (replaces vertical bar)
-            float ndy = ry + itemH * 0.5f;
-            float ndx = listX + 7.0f*uiS;
-            drawDiamond(ndx, ndy, (isSel ? 3.5f : 2.2f)*uiS, litem.r, litem.g, litem.b,
-                        (isSel ? 0.90f : hov2 ? 0.58f : 0.28f) * ia);
-            if (isSel || hov2)
-                drawRect(ndx + (isSel ? 3.5f : 2.2f)*uiS, ndy - 0.5f*uiS, 5.0f*uiS, 1.0f*uiS,
-                         litem.r, litem.g, litem.b, (isSel ? 0.65f : 0.30f) * ia);
-            if (isSel || hov2)
-                drawCBkt(listX, ry, listW2, itemH, litem.r, litem.g, litem.b,
-                         (isSel ? 0.78f : 0.32f) * ia);
-            g_TextS.Draw(litem.label, listX + 18.0f*uiS, ry + 7.0f*uiS, 0.42f*uiS,
-                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.92f : 0.78f) : 0.52f,
-                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.94f : 0.82f) : 0.52f,
-                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.98f : 0.90f) : 0.58f,
-                         (litem.seen ? (isSel ? 0.98f : hov2 ? 0.86f : 0.72f) : 0.62f) * ia);
+            const float focus = isSel ? 1.0f : (hov2 ? 0.55f : 0.0f);
+            if (isSel || hov2) {
+                drawRect(listX + 22.0f * uiS, cardY + cardH * 0.5f,
+                         listW2 - 30.0f * uiS, 1.1f * uiS,
+                         uiR, uiG, uiB, (isSel ? 0.115f : 0.055f) * ia);
+            }
+            if (isSel) {
+                drawRect(listX + 4.0f * uiS, cardY + 7.0f * uiS,
+                         2.0f * uiS, cardH - 14.0f * uiS,
+                         uiR, uiG, uiB, 0.74f * ia);
+                g_TextS.Draw(L">", listX + 12.0f * uiS,
+                             cardY + (cardH - g_TextS.Height(L">", 0.60f * uiS)) * 0.5f,
+                             0.60f * uiS, uiR, uiG, uiB, 0.96f * ia);
+            } else if (hov2) {
+                drawRect(listX + 5.0f * uiS, cardY + 10.0f * uiS,
+                         1.4f * uiS, cardH - 20.0f * uiS,
+                         uiR, uiG, uiB, 0.34f * ia);
+            }
+
+            const float ndy = cardY + cardH * 0.5f;
+            const float ndx = listX + 6.0f*uiS;
+            drawDiamond(ndx, ndy, (isSel ? 4.4f : 3.0f)*uiS,
+                        litem.r, litem.g, litem.b,
+                        (isSel ? 0.92f : hov2 ? 0.62f : 0.32f) * ia);
+
+            float itemSc = 0.57f * uiS;
+            while (itemSc > 0.46f * uiS && g_TextS.Width(litem.label, itemSc) > listW2 - 54.0f * uiS)
+                itemSc -= 0.025f * uiS;
+            const float textY = cardY + (cardH - g_TextS.Height(litem.label, itemSc)) * 0.5f;
+            g_TextS.Draw(litem.label, listX + (isSel ? 34.0f : 22.0f)*uiS, textY, itemSc,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.94f : 0.68f) : 0.46f,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 0.97f : 0.76f) : 0.48f,
+                         litem.seen ? (isSel ? 1.0f : hov2 ? 1.00f : 0.86f) : 0.54f,
+                         (litem.seen ? (isSel ? 0.98f : hov2 ? 0.86f : 0.64f) : 0.52f) * ia);
         }
         ry += ih;
     }
@@ -1281,7 +3499,7 @@ void Scene_Codex(const SceneCtx& c) {
         float thumbH = listViewH * (listViewH / contentH);
         if (thumbH < 18.0f*uiS) thumbH = 18.0f*uiS;
         float thumbY = listTopY + (listViewH - thumbH) * (scroll / maxScroll);
-        drawRect(tkX, thumbY, 3.5f*uiS, thumbH, cat.r, cat.g, cat.b, 0.80f * wake);
+        drawRect(tkX, thumbY, 3.5f*uiS, thumbH, uiR, uiG, uiB, 0.80f * wake);
     }
 
     // ── RIGHT PANEL ───────────────────────────────────────────────────────
@@ -1291,78 +3509,66 @@ void Scene_Codex(const SceneCtx& c) {
 
     BindMainShader();
     drawRect(rpx + 9.0f*uiS, bodyY + 11.0f*uiS, rightW, bodyH,
-             0.0f, 0.0f, 0.0f, (0.08f + 0.05f*panelE)*rightWake);
+             0.0f, 0.0f, 0.0f, (0.045f + 0.035f*panelE)*rightWake);
     drawRect(rpx, bodyY, rightW, bodyH,
-             0.052f + cat.r*0.020f, 0.060f + cat.g*0.016f, 0.095f + cat.b*0.018f,
-             (0.92f + 0.06f*panelE)*rightWake);
+             0.026f, 0.038f, 0.058f, (0.26f + 0.08f*panelE)*rightWake);
+    drawRect(rpx + 14.0f*uiS, bodyY + 14.0f*uiS,
+             rightW - 28.0f*uiS, bodyH - 28.0f*uiS,
+             0.050f, 0.070f, 0.096f, 0.070f * rightWake);
     float sweepW = rightW * 0.28f;
     float sweepX = rpx + fmodf(now * 180.0f, rightW + sweepW) - sweepW;
     drawRect(sweepX, bodyY + 1.0f*uiS, sweepW, 1.5f*uiS,
-             cat.r, cat.g, cat.b, 0.18f*panelE*rightWake);
+             uiR, uiG, uiB, 0.12f*panelE*rightWake);
     float scanY2 = bodyY + 18.0f*uiS + fmodf(now * 110.0f,
                    std::max(1.0f, bodyH - 30.0f*uiS));
     drawRect(rpx + 2.0f*uiS, scanY2, rightW - 4.0f*uiS, 1.0f*uiS,
-             cat.r, cat.g, cat.b, 0.045f*panelE*rightWake);
-    drawBorder(rpx, bodyY, rightW, bodyH, cat.r, cat.g, cat.b,
-               (0.20f + 0.44f*panelE)*rightWake, 1.5f*uiS);
+             uiR, uiG, uiB, 0.040f*panelE*rightWake);
     if (rightWake > 0.02f) {
         BatchFlush(); SetGlowFx(true);
         drawConstellFrame(rpx, bodyY, rightW, bodyH,
-                          cat.r, cat.g, cat.b, 0.20f*panelE*rightWake,
-                          22.0f*uiS, 6.0f*uiS, 0.14f, rightWake);
+                          uiR, uiG, uiB, 0.22f*panelE*rightWake,
+                          24.0f*uiS, 5.5f*uiS, 0.040f * rightWake, 0.40f);
         BatchFlush(); SetGlowFx(false);
     }
-    BindMainShader();
-    g_TextL.Draw(cat.id, rpx + 20.0f*uiS, bodyY + 28.0f*uiS,
-                 1.05f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*panelE*rightWake);
-
     // Content area
     int selItem = s_sel[s_cat];
     const float cntX = rpx + 22.0f*uiS;
-    const float cntY = bodyY + 88.0f*uiS;
+    const float cntY = bodyY + 34.0f*uiS;
     const float cntW = rightW - 44.0f*uiS;
 
     if (selItem < 0) {
-        const wchar_t* hint[2] = {
-            L"\xBAA9\xB85D\xC5D0\xC11C \xD56D\xBAA9\xC744 \xD074\xB9AD\xD558\xBA74 \xC815\xBCF4\xAC00 \xD45C\xC2DC\xB429\xB2C8\xB2E4",
-            L"Click an entry in the list to view details"
-        };
-        BindMainShader();
-        float hw = g_TextS.Width(hint[nli], 0.48f*uiS);
-        g_TextS.Draw(hint[nli], rpx + (rightW - hw) * 0.5f,
-                     bodyY + bodyH * 0.5f - 10.0f*uiS,
-                     0.48f*uiS, 0.36f, 0.46f, 0.60f, 0.55f*rightWake);
-        float cx0 = rpx + rightW*0.5f, cy0 = bodyY + bodyH*0.5f + 28.0f*uiS;
-        drawDiamond(cx0, cy0, (5.0f + 1.5f*sinf(now*1.6f))*uiS,
-                    cat.r, cat.g, cat.b, 0.18f*rightWake);
+        drawAstrolabeGrid(rpx, bodyY, rightW, bodyH, uiR, uiG, uiB,
+                          panelE * rightWake);
     } else {
         // Layout: left viz panel (38%) | right info block (62%)
-        const float cntH   = bodyH - 110.0f*uiS;
-        const float vizW   = cntW * 0.38f;
-        const float vizH   = std::min(vizW * 1.05f, cntH);
+        const float cntH   = bodyH - 70.0f*uiS;
+        const float vizW   = std::min(cntW * 0.46f, 560.0f * uiS);
+        const float vizH   = cntH;
         const float vizX   = cntX;
         const float vizCX  = vizX + vizW * 0.5f;
         const float vizCY  = cntY + vizH * 0.5f;
-        const float infoX  = cntX + vizW + 20.0f*uiS;
-        const float infoW  = cntW - vizW - 20.0f*uiS;
+        const float infoX  = cntX + vizW + 24.0f*uiS;
+        const float infoW  = cntW - vizW - 24.0f*uiS;
 
         // Viz panel background
         BindMainShader();
         drawRect(vizX, cntY, vizW, vizH,
-                 0.018f + cat.r*0.010f, 0.022f + cat.g*0.008f, 0.040f + cat.b*0.010f,
-                 0.88f * detailA);
-        drawCBkt(vizX, cntY, vizW, vizH, cat.r, cat.g, cat.b, 0.40f * detailA);
+                 0.014f, 0.022f, 0.036f,
+                 0.18f * detailA);
+        drawRect(vizX + 8.0f*uiS, cntY + 8.0f*uiS, vizW - 16.0f*uiS, vizH - 16.0f*uiS,
+                 uiR, uiG, uiB, 0.018f * detailA);
+        drawCBkt(vizX, cntY, vizW, vizH, uiR, uiG, uiB, 0.40f * detailA);
         float vzScan = cntY + fmodf(now * 55.0f, std::max(1.0f, vizH));
         drawRect(vizX + 2.0f*uiS, vzScan, vizW - 4.0f*uiS, 1.0f*uiS,
-                 cat.r, cat.g, cat.b, 0.038f * detailA);
+                 uiR, uiG, uiB, 0.038f * detailA);
 
         // Rotating constellation node viewer
         {
             int nNodes = (s_cat == 0) ? 5 : (s_cat == 1) ? 6 : 4;
-            float orbR  = std::min(vizW, vizH) * 0.28f;
+            float orbR  = std::min(vizW, vizH) * 0.36f;
             float spd   = (s_cat == 0) ? 0.28f : (s_cat == 1) ? 0.18f : 0.14f;
             float baseA = now * spd + (float)(selItem % 13) * 0.61f;
-            float innerR = orbR * 0.46f;
+            float innerR = orbR * 0.42f;
             float baseA2 = -now * spd * 0.55f + (float)(selItem % 7) * 1.13f;
 
             float px[8], py[8];
@@ -1381,7 +3587,7 @@ void Scene_Codex(const SceneCtx& c) {
                 for (int d=1; d<nd; ++d) {
                     float t = (float)d/(float)nd;
                     drawDiamond(px[ni]+dx2*t, py[ni]+dy2*t, 1.1f*uiS,
-                                cat.r, cat.g, cat.b, 0.44f*detailA);
+                                uiR, uiG, uiB, 0.44f*detailA);
                 }
             }
             // Center spokes (every other node)
@@ -1392,7 +3598,7 @@ void Scene_Codex(const SceneCtx& c) {
                 for (int d=1; d<nd; ++d) {
                     float t = (float)d/(float)nd;
                     drawDiamond(vizCX+dx2*t, vizCY+dy2*t, 0.9f*uiS,
-                                cat.r, cat.g, cat.b, 0.26f*detailA);
+                                uiR, uiG, uiB, 0.26f*detailA);
                 }
             }
             // Inner counter-rotating ring
@@ -1407,41 +3613,49 @@ void Scene_Codex(const SceneCtx& c) {
                 for (int d=1; d<nd; ++d) {
                     float t = (float)d/(float)nd;
                     drawDiamond(vizCX+dx2*t, vizCY+dy2*t, 1.0f*uiS,
-                                cat.r, cat.g, cat.b, 0.20f*detailA);
+                                uiR, uiG, uiB, 0.20f*detailA);
                 }
                 BindMainShader();
-                drawDiamond(ipx, ipy, 2.5f*uiS, cat.r, cat.g, cat.b, 0.55f*detailA);
+                drawDiamond(ipx, ipy, 2.5f*uiS, uiR, uiG, uiB, 0.55f*detailA);
             }
             // Outer node diamonds
             BindMainShader();
             for (int ni = 0; ni < nNodes; ++ni) {
                 float nsz = (ni == 0) ? 5.0f : 3.5f;
-                drawDiamond(px[ni], py[ni], nsz*uiS, cat.r, cat.g, cat.b,
+                drawDiamond(px[ni], py[ni], nsz*uiS, uiR, uiG, uiB,
                             (ni==0 ? 0.90f : 0.68f)*detailA);
             }
             // Center node
-            drawDiamond(vizCX, vizCY, 4.0f*uiS, cat.r, cat.g, cat.b, 0.80f*detailA);
+            drawDiamond(vizCX, vizCY, 4.0f*uiS, uiR, uiG, uiB, 0.80f*detailA);
             drawDiamond(vizCX, vizCY, 2.0f*uiS, 1.0f, 1.0f, 1.0f, 0.42f*detailA);
         }
+
+        const float infoGap   = 18.0f * uiS;
+        const float titleBoxY = cntY;
+        const float titleBoxH = 104.0f * uiS;
+        const float descBoxY  = titleBoxY + titleBoxH + infoGap;
+        const float descBoxH  = 150.0f * uiS;
+        const float logBoxY   = descBoxY + descBoxH + infoGap;
+        const float logBoxH   = std::max(132.0f * uiS, cntY + cntH - logBoxY);
 
         if (s_cat == 0) {
             // ── Entity detail ─────────────────────────────────────────────
             bool seen = CodexMobSeen(selItem);
             BindMainShader();
-            g_TextS.Draw(L"ENTITY", infoX, cntY + 4.0f*uiS,
-                         0.44f*uiS, cat.r, cat.g, cat.b, 0.78f*detailA);
-            g_TextL.Draw(MobName(selItem), infoX, cntY + 22.0f*uiS,
+            drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
+            g_TextS.Draw(L"ENTITY", infoX + 18.0f*uiS, titleBoxY + 10.0f*uiS,
+                         0.44f*uiS, uiR, uiG, uiB, 0.78f*detailA);
+            g_TextL.Draw(MobName(selItem), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,
                          0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
-            drawRect(infoX, cntY + 78.0f*uiS, infoW, 1.5f*uiS,
-                     cat.r, cat.g, cat.b, 0.28f*detailA);
+            drawRect(infoX + 18.0f*uiS, titleBoxY + titleBoxH - 16.0f*uiS, infoW - 36.0f*uiS, 1.5f*uiS,
+                     uiR, uiG, uiB, 0.28f*detailA);
+            drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
             drawFitS(seen ? MobDesc(selItem) : L"???",
-                     infoX, cntY + 90.0f*uiS, infoW,
-                     0.52f*uiS, 0.38f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
+                     infoX + 18.0f*uiS, descBoxY + 24.0f*uiS, infoW - 36.0f*uiS,
+                     0.60f*uiS, 0.44f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
             // ── 시스템 로그 블록 ──
             if (seen) {
-                float logY = cntY + 168.0f*uiS;
-                drawRect(infoX, logY - 7.0f*uiS, infoW, 1.0f*uiS,
-                         cat.r, cat.g, cat.b, 0.18f*detailA);
+                drawInfoQuad(infoX, logBoxY, infoW, logBoxH, detailA);
                 const wchar_t* threatLv = (selItem >= CM_BRUTE) ? L"HIGH" : L"MODERATE";
                 wchar_t pidBuf[16]; swprintf_s(pidBuf, L"0x%02X", (selItem * 17 + 0x40) & 0xFF);
                 struct { const wchar_t* k; const wchar_t* v; } logR[] = {
@@ -1450,10 +3664,10 @@ void Scene_Codex(const SceneCtx& c) {
                     { L"STATUS     ", L"CATALOGUED" },
                 };
                 for (int ll = 0; ll < 3; ++ll) {
-                    float ly = logY + ll * 22.0f * uiS;
-                    g_TextS.Draw(logR[ll].k, infoX,              ly, 0.36f*uiS, cat.r, cat.g, cat.b, 0.58f*detailA);
-                    g_TextS.Draw(L": ",       infoX+98.0f*uiS,   ly, 0.36f*uiS, cat.r, cat.g, cat.b, 0.46f*detailA);
-                    g_TextS.Draw(logR[ll].v,  infoX+112.0f*uiS,  ly, 0.37f*uiS, 1.0f, 1.0f, 1.0f, 0.78f*detailA);
+                    float ly = logBoxY + 28.0f*uiS + ll * 38.0f * uiS;
+                    g_TextS.Draw(logR[ll].k, infoX + 18.0f*uiS,              ly, 0.46f*uiS, uiR, uiG, uiB, 0.72f*detailA);
+                    g_TextS.Draw(L": ",       infoX + 150.0f*uiS,            ly, 0.46f*uiS, uiR, uiG, uiB, 0.54f*detailA);
+                    g_TextS.Draw(logR[ll].v,  infoX + 172.0f*uiS,            ly, 0.48f*uiS, 1.0f, 1.0f, 1.0f, 0.88f*detailA);
                 }
             }
 
@@ -1464,24 +3678,19 @@ void Scene_Codex(const SceneCtx& c) {
                 const AugDef& d = ALL_AUGS[selItem];
                 float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
                 BindMainShader();
-                g_TextS.Draw(L"MODULE", infoX, cntY + 4.0f*uiS,
-                             0.44f*uiS, rr, rg, rb, 0.78f*detailA);
-                g_TextL.Draw(AugName(d), infoX, cntY + 22.0f*uiS,
+                drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
+                g_TextS.Draw(L"MODULE", infoX + 18.0f*uiS, titleBoxY + 10.0f*uiS,
+                             0.44f*uiS, uiR, uiG, uiB, 0.78f*detailA);
+                g_TextL.Draw(AugName(d), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,
                              0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
-                const wchar_t* badge = GetAugBadge(d);
-                wchar_t rarLine[64];
-                swprintf_s(rarLine, L"[%ls]  %ls", badge, GetRarityKR(d.rarity));
-                g_TextS.Draw(rarLine, infoX, cntY + 70.0f*uiS,
-                             0.50f*uiS, rr, rg, rb, 0.88f*detailA);
-                drawRect(infoX, cntY + 88.0f*uiS, infoW, 1.5f*uiS,
-                         rr, rg, rb, 0.28f*detailA);
-                drawFitS(AugDesc(d), infoX, cntY + 100.0f*uiS, infoW,
-                         0.52f*uiS, 0.38f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
+                drawRect(infoX + 18.0f*uiS, titleBoxY + titleBoxH - 16.0f*uiS, infoW - 36.0f*uiS, 1.5f*uiS,
+                         uiR, uiG, uiB, 0.28f*detailA);
+                drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
+                drawFitS(AugDesc(d), infoX + 18.0f*uiS, descBoxY + 24.0f*uiS, infoW - 36.0f*uiS,
+                         0.60f*uiS, 0.44f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
                 // ── 모듈 데이터 블록 ──
                 {
-                    float mlogY = cntY + 178.0f*uiS;
-                    drawRect(infoX, mlogY - 7.0f*uiS, infoW, 1.0f*uiS,
-                             rr, rg, rb, 0.18f*detailA);
+                    drawInfoQuad(infoX, logBoxY, infoW, logBoxH, detailA);
                     wchar_t tidBuf[24]; swprintf_s(tidBuf, L"0x%03X", (int)d.type & 0xFFF);
                     struct { const wchar_t* k; const wchar_t* v; } mlogR[] = {
                         { L"MODULE_CLASS", GetRarityKR(d.rarity) },
@@ -1489,10 +3698,10 @@ void Scene_Codex(const SceneCtx& c) {
                         { L"ACQUISITION ", L"IN-RUN PICK" },
                     };
                     for (int ml = 0; ml < 3; ++ml) {
-                        float mly = mlogY + ml * 22.0f*uiS;
-                        g_TextS.Draw(mlogR[ml].k, infoX,             mly, 0.36f*uiS, rr, rg, rb, 0.58f*detailA);
-                        g_TextS.Draw(L": ", infoX + 98.0f*uiS,       mly, 0.36f*uiS, rr, rg, rb, 0.46f*detailA);
-                        g_TextS.Draw(mlogR[ml].v, infoX + 112.0f*uiS, mly, 0.37f*uiS, 1.0f, 1.0f, 1.0f, 0.78f*detailA);
+                        float mly = logBoxY + 28.0f*uiS + ml * 38.0f*uiS;
+                        g_TextS.Draw(mlogR[ml].k, infoX + 18.0f*uiS,  mly, 0.46f*uiS, uiR, uiG, uiB, 0.72f*detailA);
+                        g_TextS.Draw(L": ", infoX + 164.0f*uiS,       mly, 0.46f*uiS, uiR, uiG, uiB, 0.54f*detailA);
+                        g_TextS.Draw(mlogR[ml].v, infoX + 188.0f*uiS, mly, 0.48f*uiS, 1.0f, 1.0f, 1.0f, 0.88f*detailA);
                     }
                 }
                 if (d.rarity == AugRarity::COMBO) {
@@ -1513,11 +3722,9 @@ void Scene_Codex(const SceneCtx& c) {
                                        ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
                                        ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
                         BindMainShader();
-                        drawRect(infoX, cntY + 158.0f*uiS, infoW, 1.5f*uiS,
-                                 0.10f, 0.88f, 0.78f, 0.28f*detailA);
-                        drawFitS(rc, infoX, cntY + 170.0f*uiS, infoW,
-                                 0.42f*uiS, 0.30f*uiS,
-                                 0.12f, 0.92f, 0.82f, 0.90f*detailA);
+                        drawFitS(rc, infoX + 18.0f*uiS, logBoxY + 150.0f*uiS, infoW - 36.0f*uiS,
+                                 0.48f*uiS, 0.34f*uiS,
+                                 0.82f, 0.94f, 1.0f, 0.90f*detailA);
                         break;
                     }
                 }
@@ -1525,30 +3732,29 @@ void Scene_Codex(const SceneCtx& c) {
                 BindMainShader();
                 const wchar_t* q[2] = { L"\xBBF8\xBC1C\xACAC \xAE4C\xC9C0 \xBE44\xACF5\xAC1C",
                                          L"Undiscovered — unlock by acquiring" };
-                g_TextS.Draw(q[nli], infoX, cntY + 40.0f*uiS,
-                             0.54f*uiS, 0.56f, 0.58f, 0.66f, 0.86f*detailA);
+                drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
+                g_TextS.Draw(q[nli], infoX + 18.0f*uiS, titleBoxY + 32.0f*uiS,
+                             0.60f*uiS, 0.62f, 0.66f, 0.76f, 0.88f*detailA);
             }
         } else {
             // ── Apex detail ───────────────────────────────────────────────
             bool seen = (selItem >= 0 && selItem < BOSS_CODEX_COUNT &&
                          BossCodexSeen(selItem));
             if (seen) {
-                int pick = BossCodexPick(selItem);
-                glm::vec3 wc = BossDir::WarnColor(pick);
                 BindMainShader();
-                g_TextS.Draw(L"APEX", infoX, cntY + 4.0f*uiS,
-                             0.44f*uiS, wc.r, wc.g, wc.b, 0.78f*detailA);
-                g_TextL.Draw(BossCodexName(selItem), infoX, cntY + 22.0f*uiS,
+                drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
+                g_TextS.Draw(L"APEX", infoX + 18.0f*uiS, titleBoxY + 10.0f*uiS,
+                             0.44f*uiS, uiR, uiG, uiB, 0.78f*detailA);
+                g_TextL.Draw(BossCodexName(selItem), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,
                              0.90f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*detailA);
-                drawRect(infoX, cntY + 78.0f*uiS, infoW, 1.5f*uiS,
-                         wc.r, wc.g, wc.b, 0.28f*detailA);
-                drawFitS(BossCodexDesc(selItem), infoX, cntY + 90.0f*uiS, infoW,
-                         0.52f*uiS, 0.38f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
+                drawRect(infoX + 18.0f*uiS, titleBoxY + titleBoxH - 16.0f*uiS, infoW - 36.0f*uiS, 1.5f*uiS,
+                         uiR, uiG, uiB, 0.28f*detailA);
+                drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
+                drawFitS(BossCodexDesc(selItem), infoX + 18.0f*uiS, descBoxY + 24.0f*uiS, infoW - 36.0f*uiS,
+                         0.60f*uiS, 0.44f*uiS, 0.86f, 0.92f, 1.0f, 0.92f*detailA);
                 // ── APEX 위협 데이터 ──
                 {
-                    float alogY = cntY + 170.0f*uiS;
-                    drawRect(infoX, alogY - 7.0f*uiS, infoW, 1.0f*uiS,
-                             wc.r, wc.g, wc.b, 0.18f*detailA);
+                    drawInfoQuad(infoX, logBoxY, infoW, logBoxH, detailA);
                     wchar_t apidBuf[24]; swprintf_s(apidBuf, L"0x%02X", (selItem * 31 + 0x70) & 0xFF);
                     struct { const wchar_t* k; const wchar_t* v; } alogR[] = {
                         { L"CLASS      ", L"APEX / BOSS" },
@@ -1556,10 +3762,10 @@ void Scene_Codex(const SceneCtx& c) {
                         { L"THREAT_LV  ", L"CRITICAL" },
                     };
                     for (int al = 0; al < 3; ++al) {
-                        float aly = alogY + al * 22.0f*uiS;
-                        g_TextS.Draw(alogR[al].k, infoX,             aly, 0.36f*uiS, wc.r, wc.g, wc.b, 0.58f*detailA);
-                        g_TextS.Draw(L": ", infoX + 98.0f*uiS,       aly, 0.36f*uiS, wc.r, wc.g, wc.b, 0.46f*detailA);
-                        g_TextS.Draw(alogR[al].v, infoX + 112.0f*uiS, aly, 0.37f*uiS, 1.0f, 1.0f, 1.0f, 0.78f*detailA);
+                        float aly = logBoxY + 28.0f*uiS + al * 38.0f*uiS;
+                        g_TextS.Draw(alogR[al].k, infoX + 18.0f*uiS,  aly, 0.46f*uiS, uiR, uiG, uiB, 0.72f*detailA);
+                        g_TextS.Draw(L": ", infoX + 150.0f*uiS,       aly, 0.46f*uiS, uiR, uiG, uiB, 0.54f*detailA);
+                        g_TextS.Draw(alogR[al].v, infoX + 172.0f*uiS, aly, 0.48f*uiS, 1.0f, 1.0f, 1.0f, 0.88f*detailA);
                     }
                 }
             } else {
@@ -1567,8 +3773,9 @@ void Scene_Codex(const SceneCtx& c) {
                 const wchar_t* q[2] = {
                     L"\xBBF8\xBC1C\xACAC \x2014 \xBCF4\xC2A4 \xC870\xC6B0 \xC2DC \xACF5\xAC1C",
                     L"Undiscovered — encounter the boss" };
-                g_TextS.Draw(q[nli], infoX, cntY + 40.0f*uiS,
-                             0.54f*uiS, 0.56f, 0.58f, 0.66f, 0.86f*detailA);
+                drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
+                g_TextS.Draw(q[nli], infoX + 18.0f*uiS, titleBoxY + 32.0f*uiS,
+                             0.60f*uiS, 0.62f, 0.66f, 0.76f, 0.88f*detailA);
             }
         }
     }
@@ -1579,10 +3786,10 @@ void Scene_Codex(const SceneCtx& c) {
     bool backHov = hit(bx, by, bw, bh);
     BindMainShader();
     drawRect(bx, by, bw, bh,
-             0.058f + cat.r*(backHov ? 0.052f : 0.024f),
-             0.066f + cat.g*(backHov ? 0.044f : 0.020f),
-             0.092f + cat.b*(backHov ? 0.040f : 0.018f), 0.94f * wake);
-    drawCBkt(bx, by, bw, bh, cat.r, cat.g, cat.b, (backHov ? 0.68f : 0.28f) * wake);
+             0.020f + uiR*(backHov ? 0.045f : 0.018f),
+             0.030f + uiG*(backHov ? 0.035f : 0.014f),
+             0.046f + uiB*(backHov ? 0.030f : 0.012f), 0.94f * wake);
+    drawCBkt(bx, by, bw, bh, uiR, uiG, uiB, (backHov ? 0.68f : 0.28f) * wake);
     drawCenterS(T(StrId::BTN_BACK), bx, by + 10.0f*uiS, bw, 0.46f*uiS,
                 backHov ? 1.0f : 0.78f, backHov ? 1.0f : 0.84f, backHov ? 1.0f : 0.96f,
                 0.96f * wake);
@@ -1926,6 +4133,9 @@ void Scene_RunConfig(const SceneCtx& c) {
     const float midX = leftX + leftW + gap;
     const float rightX = midX + midW + gap;
     const float footY = panelY + panelH - footerH + 12.0f * uiS;
+    DrawSceneLeftVignette(sw, sh, 0.34f * wake);
+    DrawSceneRadialVignette(midX + (panelW - leftW - gap) * 0.50f, colY + colH * 0.54f,
+                            std::min(panelW - leftW, colH) * 0.42f, 0.36f * wake);
 
     int li = LangIndex();
     int nli = (li == 0) ? 0 : 1;
@@ -2308,14 +4518,14 @@ void Scene_RunConfig(const SceneCtx& c) {
         // 카드 바디 (어두운 배경 — non-glow)
         BindMainShader();
         drawRect(cx - 7.0f*uiS, cy - 7.0f*uiS, leftW + 14.0f*uiS, cH + 14.0f*uiS,
-                 0.0f, 0.0f, 0.0f, selected ? 0.38f : 0.26f + 0.10f * hv);
+                 0.0f, 0.0f, 0.0f, selected ? 0.11f : 0.045f + 0.030f * hv);
         drawRect(cx - 3.0f*uiS, cy - 3.0f*uiS, leftW + 6.0f*uiS, cH + 6.0f*uiS,
-                 wd.r, wd.g, wd.b, selected ? 0.18f + 0.08f * pulse : 0.04f + 0.10f * hv);
+                 wd.r, wd.g, wd.b, selected ? 0.080f + 0.040f * pulse : 0.025f + 0.045f * hv);
         drawRect(cx, cy, leftW, cH,
                  0.050f + wd.r * (selected ? 0.045f : 0.020f + 0.018f * hv),
                  0.058f + wd.g * (selected ? 0.036f : 0.016f + 0.016f * hv),
                  0.082f + wd.b * (selected ? 0.032f : 0.014f + 0.014f * hv),
-                 selected ? 0.94f : (0.68f + 0.12f * hv));
+                 selected ? 0.24f : (0.10f + 0.08f * hv));
 
         // 컬러 스트라이프 + 별자리 프레임 (glow on)
         BatchFlush();
@@ -2325,9 +4535,9 @@ void Scene_RunConfig(const SceneCtx& c) {
         drawDiamond(cx + leftW - 14.0f*uiS, cy + cH - 14.0f*uiS, (4.0f + 1.0f * pulse) * uiS,
                     wd.r, wd.g, wd.b, selected ? 0.76f : 0.28f + 0.28f * hv);
         drawConstellFrame(cx, cy, leftW, cH, wd.r, wd.g, wd.b,
-                          selected ? 0.92f : 0.26f + 0.34f * hv,
-                          16.0f * uiS, 5.0f * uiS,
-                          selected ? 0.20f + 0.08f * pulse : 0.04f * hv);
+                          selected ? 0.58f : 0.10f + 0.22f * hv,
+                          16.0f * uiS, 3.2f * uiS,
+                          selected ? 0.070f + 0.035f * pulse : 0.020f * hv);
         BatchFlush();
         SetGlowFx(false);
 
@@ -2341,6 +4551,14 @@ void Scene_RunConfig(const SceneCtx& c) {
         g_TextL.Draw(kWC[i].name[nli], cx + cPad, cy + 14.0f*uiS,
                      1.08f * uiS, inactiveR, inactiveG, inactiveB,
                      selected ? 0.98f : inactiveA);
+        if (selected) {
+            g_TextS.Draw(L">", cx + 7.0f * uiS, cy + 47.0f * uiS,
+                         0.64f * uiS, wd.r, wd.g, wd.b, 0.90f);
+            BindMainShader();
+            drawRect(cx + 28.0f * uiS, cy + cH - 20.0f * uiS,
+                     leftW - 42.0f * uiS, 1.1f * uiS,
+                     wd.r, wd.g, wd.b, (0.11f + 0.04f * pulse));
+        }
         drawFitS(kWC[i].desc[nli], cx + cPad, cy + 84.0f*uiS,
                  leftW - cPad * 2.0f, 0.58f*uiS, 0.42f*uiS,
                  selected ? 0.72f : 0.56f,
@@ -2758,6 +4976,7 @@ void Scene_RunConfig(const SceneCtx& c) {
     if (UIButton(panelX, footY, 168.0f * uiS, 50.0f * uiS, T(StrId::BTN_BACK),
                  mx, my, lmb, g_LmbPrev)) {
         ResetRunConfigUi();
+        ResetMainMenuUi();
         g_GameManager.currentState = GameState::MAIN_MENU;
     }
 
@@ -2946,7 +5165,479 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 }
 }
 
+static void Scene_RunConfigInline(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, dt = std::min(c.delta, 0.05f);
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    static float entry = 0.0f;
+    static float exitT = 0.0f;
+    static bool exiting = false;
+    static bool playExit = false;
+    static float playT = 0.0f;
+    static bool prevEsc = false, prevRmb = false;
+    static int weapon = 0;
+    static float weaponHover[2] = {};
+    static float statT[6] = { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f };
+    static float radarT[6] = { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f };
+    static const float barTargets[2][6] = {
+        { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
+        { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
+    };
+    static float constellationT = 0.0f;
+
+    if (entry <= 0.0f && !exiting) weapon = std::max(0, std::min(1, weapon));
+    entry = std::min(1.0f, entry + dt);
+    if (playExit) playT = std::min(0.50f, playT + dt);
+    const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool rmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool backInput = (esc && !prevEsc) || (rmb && !prevRmb);
+    prevEsc = esc; prevRmb = rmb;
+    const float oldOut = Smoothstep(LogoClamp01(entry / 0.35f));
+    const float contentIn = Smoothstep(LogoClamp01((entry - 0.20f) / 0.35f));
+    if (backInput && !exiting && entry >= 0.55f) exiting = true;
+    if (exiting) exitT = std::min(0.42f, exitT + dt);
+    const float backP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
+    const float oldA = exiting ? backP : 1.0f - oldOut;
+    const float playCollapse = Smoothstep(LogoClamp01((playT - 0.30f) / 0.20f));
+    const float playGlow = Smoothstep(LogoClamp01((playT - 0.10f) / 0.20f))
+        * (1.0f - Smoothstep(LogoClamp01((playT - 0.30f) / 0.20f)));
+    const float contentA = contentIn * (1.0f - backP) * (1.0f - playCollapse);
+    const bool ready = !exiting && !playExit && entry >= 0.55f;
+    const float uiS = std::max(0.70f, std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
+    const float mainX = std::max(58.0f, sw * 0.075f);
+    const float mainY = sh * 0.48f;
+    const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
+    const float mainBH = 70.0f, mainGap = 15.0f;
+    const float leftX = mainX + 82.0f * uiS * (1.0f - contentIn) + 180.0f * uiS * backP;
+    const float leftY = mainY;
+    const float leftW = std::min(340.0f * uiS, mainBW * 0.70f);
+    const float centerX = leftX + 390.0f * uiS;
+    const float centerW = std::max(360.0f * uiS, sw * 0.30f);
+    const float rightX = std::max(sw * 0.70f, centerX + centerW + 30.0f * uiS);
+    const float rightW = sw - rightX - 70.0f * uiS;
+    const float topY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f + 32.0f * uiS;
+    const float now = (float)glfwGetTime();
+
+    DrawSceneLeftVignette(sw, sh, 0.76f * std::max(oldA, contentA));
+    DrawSceneRadialVignette(rightX + rightW * 0.5f, topY + 210.0f * uiS,
+                            std::max(160.0f * uiS, rightW * 0.72f), 0.44f * contentA);
+
+    static const wchar_t* menu[5] = { L"RUN_CONFIG", L"ARMORY", L"ASTRAL_LOG", L"CALIBRATION", L"SHUTDOWN" };
+    static const wchar_t* sub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
+    for (int i = 0; i < 5; ++i) {
+        const float y = mainY + i * (mainBH + mainGap);
+        const float x = mainX - 250.0f * (1.0f - oldA) - 24.0f * (i != 0) * (1.0f - oldA);
+        g_TextL.Draw(menu[i], x, y + 2.0f, 1.04f, 1.0f, 1.0f, 1.0f,
+                     (i == 0 ? 0.82f : 0.18f) * oldA);
+        g_TextS.Draw(sub[i], x + 4.0f, y + 43.0f, 0.48f, 0.72f, 0.77f, 0.84f,
+                     (i == 0 ? 0.74f : 0.22f) * oldA);
+    }
+
+    static const wchar_t* weapons[2] = { L"RIFLE", L"STATIC FIELD" };
+    static const wchar_t* weaponSub[2] = { L"PRECISION FIRE / SINGLE TARGET", L"AREA CONTROL / SUSTAINED" };
+    static const wchar_t* statNames[6] = { L"DAMAGE", L"FIRE RATE", L"INTERVAL", L"SPEED", L"SPREAD", L"RANGE" };
+    static const wchar_t* statVals[2][6] = {
+        { L"50", L"5.00/s", L"0.20s", L"1200", L"0.04 rad", L"STANDARD" },
+        { L"18/tick", L"CONTINUOUS", L"0.08s", L"INSTANT", L"-", L"180 px" }
+    };
+    const float wr = weapon == 0 ? 0.35f : 0.55f;
+    const float wg = weapon == 0 ? 0.72f : 0.90f;
+    const float wb = 1.0f;
+    const float weaponH = 64.0f * uiS;
+    for (int i = 0; i < 2; ++i) {
+        const float y = leftY + i * (weaponH + 16.0f * uiS);
+        const bool hov = ready && mx >= leftX - 28.0f && mx < centerX - 30.0f && my >= y && my < y + weaponH;
+        weaponHover[i] = UiApproach(weaponHover[i], hov ? 1.0f : 0.0f, dt, 11.0f);
+        if (hov && lmb && !g_LmbPrev) weapon = i;
+        const float active = std::max(weaponHover[i], weapon == i ? 1.0f : 0.0f);
+        const float a = Smoothstep(LogoClamp01((entry - 0.20f - i * 0.14f) / 0.32f)) * contentA;
+        DrawMenuCommandFeedback(leftX - 10.0f * weaponHover[i], y, leftW, weaponH,
+                                wr, wg, wb, a, active, weapon == i ? 0.18f : 0.0f, now + i * 0.17f);
+        const float cr = 1.0f + (wr - 1.0f) * active;
+        const float cg = 1.0f + (wg - 1.0f) * active;
+        g_TextL.Draw(weapons[i], leftX - 10.0f * weaponHover[i], y + 2.0f, 0.90f,
+                     cr, cg, 1.0f, (0.84f + 0.16f * active) * a);
+        g_TextS.Draw(weaponSub[i], leftX + 4.0f - 10.0f * weaponHover[i], y + 39.0f, 0.42f,
+                     0.70f, 0.78f, 0.88f, 0.76f * a);
+    }
+
+    const float backY = leftY + 2.0f * (weaponH + 16.0f * uiS) + 18.0f * uiS;
+    const bool backHov = ready && mx >= leftX - 28.0f && mx < centerX - 30.0f
+        && my >= backY && my < backY + weaponH;
+    DrawMenuCommandFeedback(leftX, backY, leftW, weaponH, 0.48f, 0.82f, 1.0f,
+                            contentA, backHov ? 1.0f : 0.0f, 0.0f, now + 0.46f);
+    g_TextL.Draw(L"BACK", leftX, backY + 2.0f, 0.90f,
+                 backHov ? 0.48f : 0.86f, backHov ? 0.82f : 0.90f, 1.0f,
+                 0.90f * contentA);
+    if (backHov && lmb && !g_LmbPrev) exiting = true;
+
+    const float detailA = contentA * (0.72f + 0.28f * Smoothstep(s_PanelFadeT));
+    const float configFrameX = centerX - 24.0f * uiS;
+    const float configFrameY = topY - 18.0f * uiS;
+    const float configFrameW = centerW + 104.0f * uiS;
+    const float configFrameH = 492.0f * uiS;
+    if (g_ConfigPanelTex) {
+        // Use the supplied alpha-mask as a dark contrast plate behind the stat rows.
+        DrawIcon(g_ConfigPanelTex, centerX - 52.0f * uiS, topY - 32.0f * uiS,
+                 centerW + 160.0f * uiS, 548.0f * uiS,
+                 0.0f, 0.0f, 0.0f, 0.95f * detailA);
+    }
+    DrawExpandingBracket(configFrameX, configFrameY, configFrameW, configFrameH,
+                         Smoothstep(LogoClamp01(playT / 0.15f)), wr, wg, wb,
+                         (0.28f + 0.72f * playGlow) * (detailA + playCollapse * 0.45f));
+    g_TextS.Draw(L"RUN CONFIG / LOADOUT", centerX, topY, 0.54f,
+                 0.48f, 0.82f, 1.0f, 0.74f * contentA);
+    g_TextL.Draw(weapons[weapon], centerX, topY + 38.0f, 1.12f,
+                 1.0f, 1.0f, 1.0f, 0.98f * contentA);
+    g_TextS.Draw(weaponSub[weapon], centerX, topY + 78.0f, 0.48f,
+                 0.70f, 0.78f, 0.88f, 0.84f * detailA);
+    LogoLine(centerX, topY + 108.0f, centerX + centerW * 0.84f, topY + 108.0f,
+             1.0f, wr, wg, wb, 0.30f * detailA);
+    const float barW = centerW * 0.78f;
+    for (int i = 0; i < 6; ++i) {
+        const float y = topY + 142.0f * uiS + i * 55.0f * uiS;
+        statT[i] = UiApproach(statT[i], barTargets[weapon][i], dt, 8.0f);
+        g_TextS.Draw(statNames[i], centerX, y, 0.58f * uiS,
+                     0.92f, 0.96f, 1.0f, 0.90f * detailA);
+        g_TextS.Draw(statVals[weapon][i], centerX + barW + 16.0f * uiS, y,
+                     0.54f * uiS, 0.92f, 0.96f, 1.0f, 0.90f * detailA);
+        drawRect(centerX, y + 25.0f * uiS, barW, 6.0f * uiS, wr, wg, wb, 0.10f * detailA);
+        drawRect(centerX, y + 25.0f * uiS, barW * std::max(0.0f, std::min(1.0f, statT[i])), 6.0f * uiS,
+                 wr, wg, wb, 0.76f * detailA);
+    }
+
+    const float radarTargets[2][6] = {
+        { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
+        { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
+    };
+    for (int i = 0; i < 6; ++i)
+        radarT[i] = UiApproach(radarT[i], radarTargets[weapon][i], dt, 9.0f);
+    const float targetShape[6][2] = {
+        { 0.50f, 0.12f }, { 0.84f, 0.30f }, { 0.76f, 0.78f },
+        { 0.50f, 0.92f }, { 0.24f, 0.78f }, { 0.16f, 0.30f }
+    };
+    const float rcx = rightX + rightW * 0.5f;
+    const float rcy = topY + 255.0f * uiS;
+    const float rr = std::min(rightW * 0.38f, 150.0f * uiS);
+    constellationT = UiApproach(constellationT, 1.0f, dt, 4.0f);
+    for (int i = 0; i < 6; ++i) {
+        const float px = rcx + (targetShape[i][0] - 0.5f) * rr * 2.0f * radarT[i];
+        const float py = rcy + (targetShape[i][1] - 0.5f) * rr * 2.0f * radarT[i];
+        const int j = (i + 1) % 6;
+        const float qx = rcx + (targetShape[j][0] - 0.5f) * rr * 2.0f * radarT[j];
+        const float qy = rcy + (targetShape[j][1] - 0.5f) * rr * 2.0f * radarT[j];
+        const float dx = qx - px, dy = qy - py;
+        const float edgeLen = sqrtf(dx * dx + dy * dy);
+        const float edgeAng = atan2f(dy, dx);
+        if (g_ConstellationLineTex && edgeLen > 1.0f) {
+            DrawIconRot(g_ConstellationLineTex, (px + qx) * 0.5f, (py + qy) * 0.5f,
+                        edgeLen * 0.5f, 7.0f * uiS, edgeAng,
+                        wr, wg, wb, 0.78f * detailA);
+        }
+        LogoLine(px, py, qx, qy, 1.0f * uiS, wr, wg, wb,
+                 (g_ConstellationLineTex ? 0.22f : 0.64f) * detailA);
+        LogoLine(rcx, rcy, px, py, 0.8f * uiS, wr, wg, wb, 0.28f * detailA);
+        if (g_ConstellationCircleTex) {
+            DrawIcon(g_ConstellationCircleTex, px - 12.0f * uiS, py - 12.0f * uiS,
+                     24.0f * uiS, 24.0f * uiS, wr, wg, wb, 0.82f * detailA);
+        }
+        drawDiamond(px, py, 4.0f * uiS, 1.0f, 1.0f, 1.0f, 0.94f * detailA);
+    }
+    for (int ring = 1; ring <= 4; ++ring) {
+        const float ringR = rr * (float)ring * 0.25f;
+        for (int i = 0; i < 6; ++i) {
+            const int j = (i + 1) % 6;
+            const float a0 = -1.5707963f + i * 1.0471976f;
+            const float a1 = -1.5707963f + j * 1.0471976f;
+            LogoLine(rcx + cosf(a0) * ringR, rcy + sinf(a0) * ringR,
+                     rcx + cosf(a1) * ringR, rcy + sinf(a1) * ringR,
+                     0.75f * uiS, wr, wg, wb, (0.10f + ring * 0.025f) * detailA);
+        }
+    }
+    if (g_ConstellationCircleTex)
+        DrawIcon(g_ConstellationCircleTex, rcx - 18.0f * uiS, rcy - 18.0f * uiS,
+                 36.0f * uiS, 36.0f * uiS, 1.0f, 1.0f, 1.0f, 0.92f * detailA);
+    drawDiamond(rcx, rcy, 7.0f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * detailA);
+    g_TextS.Draw(L"POWER PROFILE", rightX, rcy + rr + 46.0f * uiS, 0.54f * uiS,
+                 0.48f, 0.82f, 1.0f, 0.74f * detailA);
+    g_TextS.Draw(weapon == 0 ? L"PRECISION FIRE" : L"FIELD CONTROL",
+                 rightX, rcy + rr + 72.0f * uiS, 0.62f * uiS,
+                 0.92f, 0.96f, 1.0f, 0.90f * detailA);
+
+    const float playW = 260.0f * uiS, playH = 58.0f * uiS;
+    const float playX = sw - 70.0f * uiS - playW;
+    const float playY = sh - 92.0f * uiS;
+    const bool playHov = ready && mx >= playX && mx < playX + playW && my >= playY && my < playY + playH;
+    DrawMenuCommandFeedback(playX + 18.0f, playY, playW, playH, wr, wg, wb,
+                            contentA, playHov ? 1.0f : 0.0f, playHov ? 0.22f : 0.0f, now);
+    g_TextL.Draw(L"PLAY", playX + 18.0f, playY + 5.0f, 0.92f,
+                 playHov ? wr : 1.0f, playHov ? wg : 1.0f, 1.0f, 0.98f * contentA);
+    if (playHov && lmb && !g_LmbPrev && ready) {
+        playExit = true;
+        playT = 0.0f;
+    }
+    g_BatchAlpha = 1.0f;
+    if (playExit && playT >= 0.50f) {
+        g_SelectedJob = weapon == 0 ? JOB_NONE : JOB_VAMPIRE;
+        if (g_CreativeMode) g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+        else { c.reset(); FinalizeLoadout(c, FixedWeaponForSelectedJob()); }
+        playExit = false;
+        playT = 0.0f;
+    }
+    if (exiting && exitT >= 0.42f) {
+        s_MainMenuRunConfigPanel = false;
+        s_MainMenuResumeFromPanel = true;
+        ResetRunConfigUi();
+        g_MainMenuEntryT = 1.0f;
+        entry = 0.0f;
+        exiting = false;
+        playExit = false;
+        playT = 0.0f;
+    }
+}
+
+static void Scene_SettingsInline(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const float dt = std::min(c.delta, 0.05f);
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float now = (float)glfwGetTime();
+    static int tab = 0;
+    static int group = 0;
+    static float entry = 0.0f;
+    static float exitT = 0.0f;
+    static bool exiting = false;
+    static bool prevEsc = false;
+    static bool prevRmb = false;
+    static float pulse = 0.0f;
+    static float rootHover[4] = {};
+    static float groupHover[3] = {};
+    static bool wasInline = false;
+    if (!wasInline) {
+        entry = 0.0f;
+        exitT = 0.0f;
+        exiting = false;
+        prevEsc = false;
+        prevRmb = false;
+        wasInline = true;
+    }
+    entry = std::min(1.0f, entry + dt);
+    pulse = std::max(0.0f, pulse - dt * 2.0f);
+
+    const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool rmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool backInput = (esc && !prevEsc) || (rmb && !prevRmb);
+    prevEsc = esc; prevRmb = rmb;
+    const float entryOldOut = Smoothstep(LogoClamp01(entry / 0.35f));
+    const float entryTreeIn = Smoothstep(LogoClamp01((entry - 0.20f) / 0.35f));
+    if (backInput && !exiting && entry >= 0.55f) exiting = true;
+    if (exiting) exitT = std::min(0.42f, exitT + dt);
+    const float outP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
+    const float treeA = entryTreeIn * (1.0f - outP);
+    const float oldA = exiting ? outP : (1.0f - entryOldOut);
+    const bool ready = !exiting && entry >= 0.55f;
+
+    // Main-menu inline panels return before Scene_MainMenu's vignette pass.
+    // Keep the same left-side contrast veil used by ARMORY and ASTRAL_LOG.
+    DrawSceneLeftVignette(sw, sh, 0.76f * std::max(treeA, oldA));
+
+    const float uiS = std::max(0.70f, std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
+    const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
+    const float mainBH = 70.0f, mainGap = 15.0f;
+    const float mainTotal = mainBH * 5.0f + mainGap * 4.0f;
+    const float mainX = std::max(58.0f, sw * 0.075f);
+    float mainY = sh * 0.48f;
+    if (mainY + mainTotal > sh - 54.0f) mainY = sh - mainTotal - 54.0f;
+    // Settings rows enter from the right, matching the inline ARMORY/CODEX motion.
+    const float rootX = mainX + 82.0f * uiS * (1.0f - treeA) + 180.0f * uiS * outP;
+    // Inline tabs occupy the same left command rail as the other main-menu panels.
+    const float rootY = mainY;
+    const float rootW = std::min(360.0f * uiS, mainBW * 0.70f);
+    const float rootH = mainBH;
+    const float depthX = rootX + std::min(365.0f * uiS, mainBW * 0.68f);
+    const float depthY = std::max(110.0f * uiS, rootY - 28.0f * uiS);
+    const float detailX = std::max(sw * 0.58f, depthX + 390.0f * uiS);
+    const float detailY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f + 30.0f * uiS;
+    const float detailW = sw - detailX - 70.0f * uiS;
+
+    DrawSceneRadialVignette(detailX + detailW * 0.5f, detailY + sh * 0.23f,
+                            std::min(detailW, sh * 0.65f) * 0.72f, 0.34f * treeA);
+    if (s_MainMenuSettingsPanel)
+        DrawMainOnedowLogo(sw, sh, 0.42f * oldA + 0.08f * treeA,
+                           LogoClamp01(oldA + 0.20f * treeA), sw * 0.30f - 160.0f * (1.0f - oldA), 0.82f);
+
+    // \uC88C\uCE21 ghost \uBC84\uD2BC \u2014 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0 \uB530\uB77C \uBA54\uC778\uBA54\uB274 vs \uC77C\uC2DC\uC815\uC9C0 \uBA54\uB274
+    if (s_MainMenuSettingsPanel) {
+        static const wchar_t* menu[5] = { L"RUN_CONFIG", L"ARMORY", L"ASTRAL_LOG", L"CALIBRATION", L"SHUTDOWN" };
+        static const wchar_t* menuSub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
+        for (int i = 0; i < 5; ++i) {
+            const float y = mainY + i * (mainBH + mainGap);
+            const bool focus = i == 3;
+            const float x = mainX - 250.0f * (1.0f - oldA) - (focus ? 0.0f : 24.0f * (1.0f - oldA));
+            const float a = (focus ? 0.82f : 0.34f) * oldA;
+            g_TextL.Draw(menu[i], x, y + 2.0f, 1.04f, 1.0f, 1.0f, 1.0f, a);
+            g_TextS.Draw(menuSub[i], x + 4.0f, y + 43.0f, 0.48f, 0.72f, 0.77f, 0.84f, a * 0.9f);
+        }
+    } else {
+        static const wchar_t* menu[4] = { L"RESUME", L"CALIBRATION", L"RETURN_TO_HUB", L"TERMINATE" };
+        static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uBA54\uC778 \uBA54\uB274", L"\uAC8C\uC784 \uC885\uB8CC" };
+        for (int i = 0; i < 4; ++i) {
+            const float y = mainY + i * (mainBH + mainGap);
+            const bool focus = i == 1;
+            const float x = mainX - 250.0f * (1.0f - oldA) - (focus ? 0.0f : 24.0f * (1.0f - oldA));
+            const float a = (focus ? 0.82f : 0.34f) * oldA;
+            g_TextL.Draw(menu[i], x, y + 2.0f, 1.04f, 1.0f, 1.0f, 1.0f, a);
+            g_TextS.Draw(menuSub[i], x + 4.0f, y + 43.0f, 0.48f, 0.72f, 0.77f, 0.84f, a * 0.9f);
+        }
+    }
+
+    struct Root { const wchar_t* en; const wchar_t* kr; };
+    static const Root roots[4] = {
+        { L"GAME", L"\uAC8C\uC784" }, { L"AUDIO", L"\uC624\uB514\uC624" },
+        { L"SYSTEM", L"\uC2DC\uC2A4\uD15C" }, { L"BACK", L"\uB4A4\uB85C" }
+    };
+    for (int i = 0; i < 4; ++i) {
+        const float y = rootY + i * (rootH + mainGap);
+        const bool hov = ready && mx >= rootX - 28.0f && mx < depthX - 36.0f && my >= y && my < y + rootH;
+        const float hoverSpeed = std::min(1.0f, dt * 11.0f);
+        rootHover[i] += ((hov ? 1.0f : 0.0f) - rootHover[i]) * hoverSpeed;
+        if (hov && lmb && !g_LmbPrev) {
+            if (i == 3) exiting = true;
+            else { tab = i; group = 0; pulse = 1.0f; }
+        }
+        const bool selected = i == tab && i < 3;
+        const float active = std::max(rootHover[i], selected ? 1.0f : 0.0f);
+        // Keep the shared entry start, but give each settings row enough air to read.
+        // Explicit top-to-bottom order: GAME -> AUDIO -> SYSTEM -> BACK.
+        const float rowDelay = 0.20f + (float)i * 0.14f;
+        const float revealT = Smoothstep(LogoClamp01((entry - rowDelay) / 0.32f));
+        const float rowA = revealT * treeA;
+        const float x = rootX + (1.0f - revealT) * 34.0f - 10.0f * rootHover[i];
+        const float clickFlash = (i == tab && pulse > 0.0f) ? pulse : 0.0f;
+        DrawMenuCommandFeedback(x, y, rootW, rootH,
+                                0.48f, 0.82f, 1.0f, rowA,
+                                active, clickFlash, now + (float)i * 0.17f);
+        const float colorT = std::max(rootHover[i], selected ? 0.82f : 0.0f);
+        const float textR = 1.0f + (0.48f - 1.0f) * colorT;
+        const float textG = 1.0f + (0.82f - 1.0f) * colorT;
+        const float textB = 1.0f;
+        g_TextL.Draw(roots[i].en, x, y + 2.0f, 1.02f,
+                     textR, textG, textB, (0.86f + 0.14f * active) * rowA);
+        g_TextS.Draw(roots[i].kr, x + 4.0f, y + 43.0f, 0.48f,
+                     0.70f + 0.14f * active, 0.75f + 0.13f * active, 0.82f + 0.10f * active,
+                     (0.78f + 0.18f * active) * rowA);
+    }
+
+    static const wchar_t* gameGroups[] = { L"DISPLAY", L"CONTROL", L"LANGUAGE" };
+    static const wchar_t* audioGroups[] = { L"MASTER", L"CHANNELS" };
+    static const wchar_t* systemGroups[] = { L"SAVE DATA", L"INFO", L"DANGER ZONE" };
+    const wchar_t** groups = tab == 0 ? gameGroups : (tab == 1 ? audioGroups : systemGroups);
+    const int groupCount = tab == 0 ? 3 : (tab == 1 ? 2 : 3);
+    if (group >= groupCount) group = 0;
+    const float branchX = depthX - 25.0f * uiS;
+    LogoLine(rootX + rootW + 12.0f, rootY + tab * (rootH + mainGap) + rootH * 0.5f,
+             branchX, depthY + rootH * 0.5f, 1.0f, 0.48f, 0.82f, 1.0f, 0.25f * treeA);
+    for (int i = 0; i < groupCount; ++i) {
+        const float y = depthY + i * 62.0f * uiS;
+        const bool hov = ready && mx >= depthX - 34.0f && mx < detailX - 30.0f && my >= y && my < y + 50.0f * uiS;
+        const float groupSpeed = std::min(1.0f, dt * 11.0f);
+        groupHover[i] += ((hov ? 1.0f : 0.0f) - groupHover[i]) * groupSpeed;
+        if (hov && lmb && !g_LmbPrev) { group = i; pulse = 1.0f; }
+        const bool sel = group == i;
+        const float groupActive = std::max(groupHover[i], sel ? 0.82f : 0.0f);
+        LogoLine(branchX, y + 24.0f * uiS, depthX + 4.0f, y + 24.0f * uiS,
+                 0.8f, 0.48f, 0.82f, 1.0f, 0.18f * treeA);
+        const float groupR = 1.0f + (0.48f - 1.0f) * groupActive;
+        const float groupG = 1.0f + (0.82f - 1.0f) * groupActive;
+        g_TextL.Draw((sel ? L"> " : L"  "), depthX - 8.0f * groupHover[i], y + 2.0f, 0.78f,
+                     groupR, groupG, 1.0f, (0.76f + 0.20f * groupActive) * treeA);
+        g_TextL.Draw(groups[i], depthX + 25.0f - 8.0f * groupHover[i], y + 2.0f, 0.82f,
+                     groupR, groupG, 1.0f, (0.78f + 0.18f * groupActive) * treeA);
+        if (groupActive > 0.01f) {
+            drawRect(depthX + 9.0f - 8.0f * groupHover[i], y + 41.0f * uiS,
+                     170.0f * uiS * groupActive, 1.0f,
+                     0.48f, 0.82f, 1.0f, 0.16f * groupActive * treeA);
+        }
+    }
+
+    const float dA = treeA * (0.78f + 0.22f * (1.0f - pulse));
+    drawRect(detailX - 12.0f, detailY + 56.0f, 2.0f, 420.0f,
+             0.48f, 0.82f, 1.0f, 0.40f * dA);
+    const wchar_t* tabName = roots[tab].en;
+    g_TextS.Draw(L"SYS_CALIBRATION", detailX, detailY, 0.56f,
+                 0.48f, 0.82f, 1.0f, 0.70f * dA);
+    g_TextL.Draw(tabName, detailX, detailY + 38.0f, 1.08f,
+                     1.0f, 1.0f, 1.0f, 0.98f * dA);
+    const float lineY = detailY + 98.0f;
+    LogoLine(detailX, lineY, detailX + detailW * 0.84f, lineY,
+             1.0f, 0.48f, 0.82f, 1.0f, 0.30f * dA);
+
+    const wchar_t* labels[6] = {};
+    int labelCount = 0;
+    if (tab == 0) {
+        if (group == 0) { labels[0] = L"FPS LIMIT     VSYNC / 30 / 60 / 144 / 300"; labels[1] = L"CRT FX       OFF / LOW / MID / HIGH"; labels[2] = L"VFX DENSITY   FULL / REDUCED"; labelCount = 3; }
+        else if (group == 1) { labels[0] = L"AUTO FIRE    ACTIVE / IDLE"; labels[1] = L"CROSSHAIR    ACTIVE / IDLE"; labelCount = 2; }
+        else { labels[0] = L"LANG PACK     KOR / ENG"; labelCount = 1; }
+    } else if (tab == 1) {
+        labels[0] = L"MASTER VOL    0 - 100"; labels[1] = L"BGM / SFX / UI  MASTER LINKED"; labelCount = 2;
+    } else {
+        if (group == 0) { labels[0] = L"BEST RECORD   READ ONLY"; labels[1] = L"RUN RECORD    READ ONLY"; labelCount = 2; }
+        else if (group == 1) { labels[0] = L"BUILD         DEBUG x64"; labels[1] = L"LANGUAGE      ACTIVE"; labelCount = 2; }
+        else { labels[0] = L"RESET DATA    HOLD TO CONFIRM"; labelCount = 1; }
+    }
+    if (ready && lmb && !g_LmbPrev && mx >= detailX && mx < detailX + detailW * 0.86f) {
+        const int row = (int)((my - (lineY + 42.0f)) / 58.0f);
+        if (row >= 0 && row < labelCount) {
+            if (tab == 0 && group == 0 && row == 0) {
+                const int fps[] = { 0, 30, 60, 144, 300 };
+                int next = 0;
+                for (int i = 0; i < 5; ++i) if (g_FpsCap == fps[i]) next = (i + 1) % 5;
+                g_FpsCap = fps[next];
+                glfwSwapInterval(g_FpsCap == 0 ? 1 : 0);
+            } else if (tab == 0 && group == 0 && row == 1) {
+                g_ShaderFx = !g_ShaderFx;
+            } else if (tab == 0 && group == 0 && row == 2) {
+                g_VfxDensity = (g_VfxDensity == VfxDensity::FULL)
+                    ? VfxDensity::REDUCED : VfxDensity::FULL;
+            } else if (tab == 0 && group == 1 && row == 0) {
+                g_AutoFire = !g_AutoFire;
+            } else if (tab == 0 && group == 1 && row == 1) {
+                g_ShowCrosshair = !g_ShowCrosshair;
+            } else if (tab == 0 && group == 2) {
+                g_Language = (g_Language == Language::EN) ? Language::KR : Language::EN;
+            } else if (tab == 1 && group == 0 && row == 0) {
+                g_SoundVol = (g_SoundVol >= 100) ? 0 : std::min(100, g_SoundVol + 10);
+            }
+        }
+    }
+    for (int i = 0; i < labelCount; ++i) {
+        const float y = lineY + 48.0f + i * 58.0f;
+        g_TextL.Draw(labels[i], detailX + 18.0f, y, 0.66f,
+                     0.92f, 0.95f, 1.0f, 0.88f * dA);
+        LogoLine(detailX + 18.0f, y + 35.0f, detailX + detailW * 0.78f, y + 35.0f,
+                 0.8f, 0.48f, 0.82f, 1.0f, 0.16f * dA);
+    }
+    g_TextS.Draw(L"[ ESC / RMB ] BACK", detailX, sh - 72.0f, 0.50f,
+                 0.66f, 0.75f, 0.84f, 0.72f * dA);
+
+    if (exiting && exitT >= 0.42f) {
+        if (s_MainMenuSettingsPanel) {
+            s_MainMenuSettingsPanel = false;
+            s_MainMenuResumeFromPanel = true;
+            g_MainMenuEntryT = 1.0f;
+        } else {
+            g_GameManager.currentState = GameState::PAUSED;
+        }
+        ResetSettingsUi();
+        wasInline = false;
+    }
+}
+
 void Scene_Settings(const SceneCtx& c) {
+    if (s_MainMenuSettingsPanel || g_SettingsReturnTo == GameState::PAUSED) {
+        Scene_SettingsInline(c);
+        return;
+    }
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
@@ -2967,6 +5658,8 @@ void Scene_Settings(const SceneCtx& c) {
     static bool  s_resetDialogJustOpened = false;
     static bool  s_resetItems[4] = {};
     static bool  s_resetDone   = false;
+    static int   s_crtFxLevel  = 100;
+    static float s_nodePulse   = 0.0f;
 
     struct SettingsTabDef {
         const wchar_t* id;
@@ -3008,11 +5701,14 @@ void Scene_Settings(const SceneCtx& c) {
     int li = LangIndex();
     if (li < 0 || li >= 3) li = 0;
     const int nli = (li == 0) ? 0 : 1;
+    auto SettingsText = [&](const wchar_t* kr, const wchar_t* en) -> const wchar_t* {
+        return (nli == 0) ? kr : en;
+    };
 
-    // RunConfig-style raw panel layout
+    // Main-menu family layout: floating left commands and an open detail field.
     const float TARGET_W = 1640.0f;
     const float TARGET_H = 910.0f;
-    float uiS = std::max(0.72f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
+    float uiS = std::max(0.72f, std::min(sw * 0.985f / TARGET_W, sh * 0.965f / TARGET_H));
     if (uiS > 1.30f) uiS = 1.30f;
     const float panelW  = TARGET_W * uiS;
     const float panelH  = TARGET_H * uiS;
@@ -3022,14 +5718,22 @@ void Scene_Settings(const SceneCtx& c) {
     const float footerH = 72.0f * uiS;
     const float bodyY   = panelY + headerH;
     const float bodyH   = panelH - headerH - footerH;
-    const float leftW   = panelW * 0.235f;
-    const float colGap  = 20.0f * uiS;
+    const float leftW   = panelW * 0.255f;
+    const float colGap  = 34.0f * uiS;
     const float leftX   = panelX;
     const float rightX  = leftX + leftW + colGap;
     const float rightW  = panelW - leftW - colGap;
     const float footY   = panelY + panelH - footerH + 14.0f * uiS;
+    if (!settingsOverlay) {
+        DrawSceneLeftVignette(sw, sh, 0.62f * wake);
+        DrawSceneRadialVignette(rightX + rightW * 0.52f, bodyY + bodyH * 0.52f,
+                                std::min(rightW, bodyH) * 0.56f, 0.30f * rightWake);
+    }
 
     const SettingsTabDef& tab = kTabs[s_tab];
+    const float baseR = 0.48f, baseG = 0.82f, baseB = 1.00f;
+    // Normalize legacy language saves before laying out translated controls.
+    if (s_tab == 0 && (int)g_Language > 1) g_Language = Language::KR;
 
     auto hit = [&](float x, float y, float w, float h) {
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
@@ -3075,10 +5779,10 @@ void Scene_Settings(const SceneCtx& c) {
 
         BindMainShader();
         drawRect(x, y, w, h,
-                 0.036f + r * (0.025f + 0.040f * active),
-                 0.044f + g * (0.022f + 0.034f * active),
-                 0.066f + b * (0.020f + 0.030f * active),
-                 (0.74f + 0.10f * active + 0.03f * hover) * a);
+                 0.050f + r * (0.030f + 0.050f * active),
+                 0.060f + g * (0.026f + 0.042f * active),
+                 0.085f + b * (0.024f + 0.038f * active),
+                 (0.82f + 0.10f * active + 0.04f * hover) * a);
         drawRect(x, y + inset, capW, t * 1.35f, r, g, b, (0.62f + 0.26f * active + 0.12f * hover) * a);
         drawRect(x, y + inset, t * 1.55f, capH, r, g, b, (0.62f + 0.26f * active + 0.12f * hover) * a);
         drawRect(x, y + h - inset - t * 1.35f, capW, t * 1.35f, r, g, b, (0.58f + 0.22f * active + 0.12f * hover) * a);
@@ -3102,12 +5806,12 @@ void Scene_Settings(const SceneCtx& c) {
         float ctlA = rightWake * (0.58f + 0.42f * Smoothstep(s_panelT));
         BindMainShader();
         drawRect(x, y, w, h,
-                 (0.045f + r * (selected ? 0.105f : 0.030f)) * dim,
-                 (0.052f + g * (selected ? 0.085f : 0.028f)) * dim,
-                 (0.070f + b * (selected ? 0.070f : 0.024f)) * dim,
-                 (enabled ? 0.94f : 0.64f) * ctlA);
+                 (0.058f + r * (selected ? 0.125f : 0.040f)) * dim,
+                 (0.066f + g * (selected ? 0.102f : 0.034f)) * dim,
+                 (0.088f + b * (selected ? 0.086f : 0.030f)) * dim,
+                 (enabled ? 0.96f : 0.68f) * ctlA);
         // Corner brackets + diamond nodes instead of full border
-        float ba = (enabled ? (selected ? 0.88f : (hov ? 0.55f : 0.24f)) : 0.12f) * ctlA;
+        float ba = (enabled ? (selected ? 0.94f : (hov ? 0.64f : 0.30f)) : 0.16f) * ctlA;
         float cL = std::min(w * 0.28f, 9.0f * uiS);
         float ct = 1.3f * uiS;
         drawRect(x,       y,       cL, ct, r, g, b, ba);
@@ -3136,6 +5840,7 @@ void Scene_Settings(const SceneCtx& c) {
         s_panelT  = 0.0f;
     }
     s_panelT = UiApproach(s_panelT, 1.0f, delta, 10.0f);
+    if (s_nodePulse > 0.0f) s_nodePulse = std::max(0.0f, s_nodePulse - dt);
     if (s_tab != 1 && g_VolEdit) commitVol();
 
     // === HEADER ===
@@ -3148,22 +5853,23 @@ void Scene_Settings(const SceneCtx& c) {
 
     const float hSlide = (1.0f - wake) * 16.0f * uiS;
     BindMainShader();
-    g_TextL.Draw(L"SETTINGS",
+    g_TextL.Draw(L"CALIBRATION",
                  leftX, panelY + 8.0f * uiS - hSlide,
-                 0.88f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
+                 1.16f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
     float profileW = 330.0f * uiS;
     float profileX = panelX + panelW - profileW + (1.0f - wake) * 50.0f * uiS;
     drawRect(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
              0.040f, 0.050f, 0.070f, 0.82f * wake);
-    drawBorder(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
-               tab.r, tab.g, tab.b,
-               (0.24f + 0.08f * sinf(now * 2.2f)) * wake, 1.2f * uiS);
+    drawConstellFrame(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
+                      baseR, baseG, baseB,
+                      (0.24f + 0.08f * sinf(now * 2.2f)) * wake,
+                      10.0f * uiS, 2.0f * uiS);
     drawCenterS(profileBuf, profileX, panelY + 20.0f * uiS, profileW,
                 0.44f * uiS, 0.76f, 0.86f, 1.0f, 0.88f * wake);
 
     // === LEFT COLUMN: Tab cards ===
     const float tabCardGap = 16.0f * uiS;
-    const float tabCardH   = (bodyH - tabCardGap * (kTabCount - 1)) / (float)kTabCount;
+    const float tabCardH   = 66.0f * uiS;
 
     for (int i = 0; i < kTabCount; ++i) {
         const SettingsTabDef& td = kTabs[i];
@@ -3180,30 +5886,75 @@ void Scene_Settings(const SceneCtx& c) {
         if (hov && lmb && !g_LmbPrev && !sel && !modalActive) {
             if (g_VolEdit) commitVol();
             s_tab = i; s_prevTab = i; s_panelT = 0.0f;
+            s_nodePulse = 0.5f;
             s_resetDialog = false;
         }
         BindMainShader();
-        drawRect(cxBase + 7.0f*uiS, cardY + 9.0f*uiS, leftW, tabCardH,
-                 0.0f, 0.0f, 0.0f, (0.16f + 0.10f*foc)*cwi);
-        drawRect(cxBase, cardY, leftW, tabCardH,
-                 0.025f + td.r*(0.018f + 0.055f*foc + 0.015f*hv),
-                 0.032f + td.g*(0.015f + 0.044f*foc + 0.012f*hv),
-                 0.052f + td.b*(0.015f + 0.036f*foc + 0.012f*hv),
-                 (0.82f + 0.14f*foc)*cwi);
-        drawBorder(cxBase, cardY, leftW, tabCardH, td.r, td.g, td.b,
-                   (0.16f + 0.56f*foc + 0.28f*hv)*cwi, 1.5f*uiS);
-        if (foc > 0.01f) {
-            float barH = tabCardH * (0.30f + 0.70f*foc);
-            drawRect(cxBase, cardY + (tabCardH - barH)*0.5f,
-                     5.0f*uiS, barH, td.r, td.g, td.b, 0.88f*foc*cwi);
+        if (i == 0)
+            drawRect(leftX + 2.0f * uiS, bodyY, 1.2f * uiS, bodyH,
+                     baseR, baseG, baseB, 0.13f * wake);
+        // The old card remains a logical hitbox only; the visible UI is floating.
+        if (sel || hov) {
+            drawRect(cxBase + 28.0f * uiS, cardY + tabCardH * 0.78f,
+                     leftW - 54.0f * uiS, 1.0f * uiS,
+                     baseR, baseG, baseB, (0.06f + 0.09f*foc + 0.04f*hv) * cwi);
+            drawRect(cxBase + 6.0f*uiS, cardY + 10.0f*uiS,
+                     1.4f*uiS, tabCardH - 20.0f*uiS,
+                     td.r, td.g, td.b, (0.24f + 0.50f*foc + 0.18f*hv) * cwi);
         }
-        // English ID (large, primary)
-        const float tabIdSc = 0.92f * uiS;
-        const float tabIdY  = cardY + (tabCardH - g_TextL.Height(td.id, tabIdSc)) * 0.5f;
-        g_TextL.Draw(td.id, cxBase + 14.0f*uiS, tabIdY,
+        if (sel)
+            g_TextS.Draw(L">", cxBase + 13.0f * uiS,
+                         cardY + (tabCardH - g_TextS.Height(L">", 0.62f * uiS)) * 0.5f,
+                         0.62f * uiS, td.r, td.g, td.b, 0.94f * cwi);
+        drawDiamond(cxBase + 6.0f*uiS, cardY + tabCardH * 0.5f,
+                    (3.0f + 1.5f*foc) * uiS, td.r, td.g, td.b,
+                    (0.30f + 0.48f*foc + 0.18f*hv) * cwi);
+        const wchar_t* tabTitle = (nli == 0) ? td.name[0] : td.id;
+        const float tabIdSc = 0.98f * uiS;
+        const float tabIdY  = cardY + (tabCardH - g_TextL.Height(tabTitle, tabIdSc)) * 0.5f;
+        g_TextL.Draw(tabTitle, cxBase + (sel ? 34.0f : 22.0f)*uiS, tabIdY,
                      tabIdSc,
-                     0.86f + td.r*0.14f*foc, 0.90f + td.g*0.10f*foc, 1.0f,
-                     (0.72f+0.26f*foc)*cwi);
+                     0.86f + baseR*0.14f*foc, 0.90f + baseG*0.10f*foc, 1.0f,
+                     (0.78f+0.20f*foc)*cwi);
+    }
+
+    // Non-interactive calibration node decoration under compact tabs.
+    {
+        float decoY = bodyY + (tabCardH + tabCardGap) * kTabCount + 36.0f * uiS;
+        float decoH = std::max(0.0f, bodyH - (decoY - bodyY) - 18.0f * uiS);
+        if (decoH > 90.0f * uiS) {
+            const float cx = leftX + leftW * 0.50f;
+            const float cy = decoY + decoH * 0.46f;
+            const float rad = std::min(leftW, decoH) * 0.34f;
+            const float pulseT = Smoothstep(std::min(1.0f, s_nodePulse / 0.5f));
+            const float pulseA = 1.0f + pulseT * 2.4f;
+            const float pulseSize = 1.0f + pulseT * 0.35f;
+            float px[7], py[7];
+            BindMainShader();
+            drawRect(leftX + 18.0f*uiS, decoY, leftW - 36.0f*uiS, 1.0f*uiS,
+                     baseR, baseG, baseB, 0.085f * pulseA * wake);
+            for (int i = 0; i < 7; ++i) {
+                float a = now * 0.055f + (float)i * 0.8975979f;
+                float rr = rad * (0.70f + 0.24f * ((i % 3) / 2.0f));
+                px[i] = cx + cosf(a) * rr;
+                py[i] = cy + sinf(a) * rr;
+            }
+            for (int i = 0; i < 7; ++i) {
+                int j = (i + 2) % 7;
+                LogoLine(px[i], py[i], px[j], py[j], 0.80f*uiS,
+                         baseR, baseG, baseB, 0.070f * pulseA * wake);
+            }
+            for (int i = 0; i < 7; ++i)
+                drawDiamond(px[i], py[i], ((i % 3) == 0 ? 3.2f : 2.2f) * uiS,
+                            baseR, baseG, baseB,
+                            ((i % 3) == 0 ? 0.18f : 0.11f) * pulseA * wake);
+            if (pulseT > 0.01f) {
+                drawCircle(cx, cy, rad * pulseSize, baseR, baseG, baseB, 0.035f * pulseT * wake);
+                drawDiamond(cx, cy, 5.0f * pulseSize * uiS, baseR, baseG, baseB, 0.32f * pulseT * wake);
+            }
+            g_TextS.Draw(L"CALIBRATION NODE", leftX + 22.0f*uiS, decoY + decoH - 34.0f*uiS,
+                         0.34f*uiS, 0.42f, 0.55f, 0.68f, (0.30f + 0.22f * pulseT) * wake);
+        }
     }
 
     // === RIGHT PANEL: Content window ===
@@ -3225,45 +5976,72 @@ void Scene_Settings(const SceneCtx& c) {
             float connH    = 1.5f * uiS;
             BindMainShader();
             drawRect(cx0, connY - connH*0.5f, cx1 - cx0, connH,
-                     tab.r, tab.g, tab.b, 0.40f * connA);
-            drawDiamond(cx0, connY, 4.5f*uiS, tab.r, tab.g, tab.b, 0.70f * connA);
-            drawDiamond(cx1, connY, 4.5f*uiS, tab.r, tab.g, tab.b, 0.70f * connA);
+                     baseR, baseG, baseB, 0.34f * connA);
+            drawDiamond(cx0, connY, 4.5f*uiS, baseR, baseG, baseB, 0.62f * connA);
+            drawDiamond(cx1, connY, 4.5f*uiS, baseR, baseG, baseB, 0.62f * connA);
         }
     }
 
     BindMainShader();
     drawRect(rpx + 9.0f*uiS, bodyY + 11.0f*uiS, rightW, bodyH,
-             0.0f, 0.0f, 0.0f, (0.16f + 0.10f*panelE)*rightWake);
+             0.0f, 0.0f, 0.0f, 0.035f*panelE*rightWake);
     drawRect(rpx, bodyY, rightW, bodyH,
-             0.025f + tab.r*0.012f,
-             0.032f + tab.g*0.010f,
-             0.052f + tab.b*0.010f, (0.86f + 0.10f*panelE)*rightWake);
-    drawBorder(rpx, bodyY, rightW, bodyH, tab.r, tab.g, tab.b,
-               (0.22f + 0.44f*panelE)*rightWake, 1.5f*uiS);
+             0.044f + baseR*0.018f,
+             0.052f + baseG*0.015f,
+             0.074f + baseB*0.014f, 0.10f*panelE*rightWake);
     if (rightWake > 0.02f) {
         BatchFlush(); SetGlowFx(true);
         drawConstellFrame(rpx, bodyY, rightW, bodyH,
-                          tab.r, tab.g, tab.b, 0.22f*panelE*rightWake,
+                           baseR, baseG, baseB, 0.20f*panelE*rightWake,
                           22.0f*uiS, 6.0f*uiS, 0.14f, rightWake);
         BatchFlush(); SetGlowFx(false);
     }
     BindMainShader();
-    // English ID (large, primary)
-    g_TextL.Draw(tab.id, rpx + 20.0f*uiS, bodyY + 12.0f*uiS,
-                 1.05f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*panelE*rightWake);
+    // Master detail title
+    g_TextL.Draw(L"CALIBRATION", rpx + 20.0f*uiS, bodyY + 12.0f*uiS,
+                 0.94f*uiS, 1.0f, 1.0f, 1.0f, 0.96f*panelE*rightWake);
+    wchar_t tabTag[32];
+    swprintf_s(tabTag, L"[ %ls ]", (nli == 0) ? tab.name[0] : tab.id);
+    const float tagSc = 0.54f * uiS;
+    const float tagW = g_TextS.Width(tabTag, tagSc);
+    g_TextS.Draw(tabTag, rpx + rightW - 30.0f*uiS - tagW, bodyY + 28.0f*uiS,
+                 tagSc, tab.r, tab.g, tab.b, 0.88f*panelE*rightWake);
 
     // === ROW LAYOUT ===
     const float rowX    = rpx + 22.0f * uiS;
     const float rowW    = rightW - 44.0f * uiS;
-    const float rowH    = 86.0f * uiS;
-    const float rowGap  = 12.0f * uiS;
-    const float rowStart = bodyY + 80.0f * uiS;
+    const float rowH    = 64.0f * uiS;
+    const float rowGap  = 8.0f * uiS;
+    const float rowStart = bodyY + 92.0f * uiS;
     const float ctlW    = 420.0f * uiS;
     const float ctlH    = 42.0f * uiS;
 
+    auto groupBox = [&](float y, float h, const wchar_t* title,
+                        float r, float g, float b, bool danger = false) {
+        float a = rightWake * (0.62f + 0.38f * panelE);
+        BindMainShader();
+        drawRect(rowX, y, rowW, h,
+                 danger ? 0.070f : 0.040f,
+                 danger ? 0.026f : 0.052f,
+                 danger ? 0.030f : 0.074f,
+                 0.14f * a);
+        drawRect(rowX, y, rowW, h,
+                 r, g, b, danger ? 0.026f * a : 0.045f * a);
+        drawRect(rowX, y, 4.0f * uiS, h, r, g, b,
+                 (danger ? 0.86f : 0.72f) * a);
+        drawRect(rowX + 18.0f*uiS, y + 42.0f*uiS,
+                 rowW - 36.0f*uiS, 1.2f*uiS, r, g, b,
+                 (danger ? 0.24f : 0.20f) * a);
+        g_TextS.Draw(title, rowX + 20.0f*uiS, y + 13.0f*uiS,
+                     0.52f*uiS,
+                     danger ? 1.0f : 0.82f,
+                     danger ? 0.56f : 0.90f,
+                     danger ? 0.56f : 1.0f,
+                     0.90f * a);
+    };
+
     auto rowShell = [&](float y, const wchar_t* label, const wchar_t* desc,
                         bool disabled, float h) {
-        (void)desc;
         bool hov = !disabled && !modalActive && hit(rowX, y, rowW, h);
         float rowIdx = (y - rowStart) / (rowH + rowGap);
         if (rowIdx < 0.0f) rowIdx = 0.0f;
@@ -3273,20 +6051,26 @@ void Scene_Settings(const SceneCtx& c) {
         float rowA = Smoothstep(revealRaw) * rightWake;
         float dim = disabled ? 0.48f : 1.0f;
         const float hovF = (hov && !disabled) ? 1.0f : 0.0f;
-        drawAngularTabFrame(rowX, y, rowW, h, tab.r, tab.g, tab.b,
-                            rowA * dim, 0.0f, hovF);
-        if (hovF > 0.0f) {
-            BatchFlush(); SetGlowFx(true);
-            drawAngularTabFrame(rowX, y, rowW, h, tab.r, tab.g, tab.b,
-                                0.20f * rowA, 0.0f, 1.0f);
-            BatchFlush(); SetGlowFx(false);
-        }
         BindMainShader();
+        drawRect(rowX + 10.0f*uiS, y, rowW - 20.0f*uiS, h,
+                 0.018f + baseR * (hovF ? 0.030f : 0.010f),
+                 0.024f + baseG * (hovF ? 0.024f : 0.008f),
+                 0.036f + baseB * (hovF ? 0.020f : 0.007f),
+                 (disabled ? 0.10f : 0.12f + 0.10f * hovF) * rowA * dim);
+        drawRect(rowX + 20.0f*uiS, y + h - 1.0f*uiS,
+                 rowW - 40.0f*uiS, 1.0f*uiS, baseR, baseG, baseB,
+                 (disabled ? 0.030f : 0.070f + 0.100f * hovF) * rowA);
         float labelMax = rowW - ctlW - 54.0f*uiS;
-        const float labelSc = 0.86f * uiS;
-        const float labelY = y + (h - g_TextS.Height(label, labelSc)) * 0.5f;
-        drawFitS(label, rowX + 20.0f*uiS, labelY, labelMax,
-                 labelSc, 0.62f*uiS,
+        const float codeSc = 0.34f * uiS;
+        if (desc && desc[0]) {
+            g_TextS.Draw(desc, rowX + 24.0f*uiS, y + 9.0f*uiS,
+                         codeSc, baseR, baseG, baseB,
+                         (disabled ? 0.34f : 0.62f) * rowA);
+        }
+        const float labelSc = 0.70f * uiS;
+        const float labelY = y + 28.0f * uiS;
+        drawFitS(label, rowX + 24.0f*uiS, labelY, labelMax,
+                 labelSc, 0.54f*uiS,
                  disabled ? 0.45f : 0.92f, disabled ? 0.48f : 0.96f, disabled ? 0.56f : 1.0f,
                  (disabled ? 0.55f : 0.94f)*rowA);
     };
@@ -3311,32 +6095,32 @@ void Scene_Settings(const SceneCtx& c) {
             float ba = active ? 0.86f * ctlA : (hov ? 0.30f * ctlA : 0.0f);
             if (ba < 0.004f) return;
             float cL = std::min(bw * 0.28f, 9.0f * uiS), ct = 1.3f * uiS;
-            drawRect(ox,      by,        cL, ct, tab.r, tab.g, tab.b, ba);
-            drawRect(ox,      by,        ct, cL, tab.r, tab.g, tab.b, ba);
-            drawRect(ox+bw-cL,by,        cL, ct, tab.r, tab.g, tab.b, ba);
-            drawRect(ox+bw-ct,by,        ct, cL, tab.r, tab.g, tab.b, ba);
-            drawRect(ox,      by+ctlH-ct,cL, ct, tab.r, tab.g, tab.b, ba);
-            drawRect(ox,      by+ctlH-cL,ct, cL, tab.r, tab.g, tab.b, ba);
-            drawRect(ox+bw-cL,by+ctlH-ct,cL, ct, tab.r, tab.g, tab.b, ba);
-            drawRect(ox+bw-ct,by+ctlH-cL,ct, cL, tab.r, tab.g, tab.b, ba);
+            drawRect(ox,      by,        cL, ct, baseR, baseG, baseB, ba);
+            drawRect(ox,      by,        ct, cL, baseR, baseG, baseB, ba);
+            drawRect(ox+bw-cL,by,        cL, ct, baseR, baseG, baseB, ba);
+            drawRect(ox+bw-ct,by,        ct, cL, baseR, baseG, baseB, ba);
+            drawRect(ox,      by+ctlH-ct,cL, ct, baseR, baseG, baseB, ba);
+            drawRect(ox,      by+ctlH-cL,ct, cL, baseR, baseG, baseB, ba);
+            drawRect(ox+bw-cL,by+ctlH-ct,cL, ct, baseR, baseG, baseB, ba);
+            drawRect(ox+bw-ct,by+ctlH-cL,ct, cL, baseR, baseG, baseB, ba);
             float ns = (active ? 3.5f : 2.5f) * uiS;
-            drawDiamond(ox,    by,      ns, tab.r, tab.g, tab.b, ba);
-            drawDiamond(ox+bw, by,      ns, tab.r, tab.g, tab.b, ba);
-            drawDiamond(ox,    by+ctlH, ns, tab.r, tab.g, tab.b, ba);
-            drawDiamond(ox+bw, by+ctlH, ns, tab.r, tab.g, tab.b, ba);
+            drawDiamond(ox,    by,      ns, baseR, baseG, baseB, ba);
+            drawDiamond(ox+bw, by,      ns, baseR, baseG, baseB, ba);
+            drawDiamond(ox,    by+ctlH, ns, baseR, baseG, baseB, ba);
+            drawDiamond(ox+bw, by+ctlH, ns, baseR, baseG, baseB, ba);
         };
 
         BindMainShader();
         if (value)
-            drawRect(bx,   by, bw, ctlH, tab.r*0.08f, tab.g*0.07f, tab.b*0.07f, 0.90f * ctlA);
+            drawRect(bx,   by, bw, ctlH, baseR*0.08f, baseG*0.07f, baseB*0.07f, 0.90f * ctlA);
         else if (!value)
-            drawRect(offX, by, bw, ctlH, tab.r*0.08f, tab.g*0.07f, tab.b*0.07f, 0.90f * ctlA);
+            drawRect(offX, by, bw, ctlH, baseR*0.08f, baseG*0.07f, baseB*0.07f, 0.90f * ctlA);
         drawBkt(bx,   value,  hovOn);
         drawBkt(offX, !value, hovOff);
-        drawCenterS(L"ON", bx, by + 7.0f*uiS, bw, 0.76f*uiS,
+        drawCenterS(SettingsText(L"활성", L"ACTIVE"), bx, by + 7.0f*uiS, bw, 0.64f*uiS,
                     value  ? 1.0f : 0.44f, value  ? 1.0f : 0.48f, value  ? 1.0f : 0.58f,
                     (value  ? 0.96f : 0.50f) * ctlA);
-        drawCenterS(L"OFF", offX, by + 7.0f*uiS, bw, 0.76f*uiS,
+        drawCenterS(SettingsText(L"대기", L"IDLE"), offX, by + 7.0f*uiS, bw, 0.64f*uiS,
                     !value ? 1.0f : 0.44f, !value ? 1.0f : 0.48f, !value ? 1.0f : 0.58f,
                     (!value ? 0.96f : 0.50f) * ctlA);
     };
@@ -3350,7 +6134,7 @@ void Scene_Settings(const SceneCtx& c) {
         float bw = (ctlW - sg*(count-1)) / (float)count;
         for (int i = 0; i < count; ++i) {
             if (segment(bx + i*(bw+sg), by, bw, ctlH, labels[i],
-                        current == values[i], tab.r, tab.g, tab.b))
+                        current == values[i], baseR, baseG, baseB))
                 setValue(values[i]);
         }
     };
@@ -3365,23 +6149,35 @@ void Scene_Settings(const SceneCtx& c) {
         {   // Corner brackets
             float ba = (disabled ? 0.10f : 0.26f) * infoA;
             float cL = std::min(ctlW * 0.22f, 10.0f * uiS), ct = 1.3f * uiS;
-            drawRect(bx,        by,        cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx,        by,        ct, cL, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-cL,by,        cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-ct,by,        ct, cL, tab.r,tab.g,tab.b, ba);
-            drawRect(bx,        by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx,        by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-cL,by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-ct,by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by,        cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx,        by,        ct, cL, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-cL,by,        cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-ct,by,        ct, cL, baseR,baseG,baseB, ba);
+            drawRect(bx,        by+ctlH-ct,cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx,        by+ctlH-cL,ct, cL, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-cL,by+ctlH-ct,cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-ct,by+ctlH-cL,ct, cL, baseR,baseG,baseB, ba);
             float ns = 3.0f * uiS;
-            drawDiamond(bx,       by,       ns, tab.r,tab.g,tab.b, ba);
-            drawDiamond(bx+ctlW,  by,       ns, tab.r,tab.g,tab.b, ba);
-            drawDiamond(bx,       by+ctlH,  ns, tab.r,tab.g,tab.b, ba);
-            drawDiamond(bx+ctlW,  by+ctlH,  ns, tab.r,tab.g,tab.b, ba);
+            drawDiamond(bx,       by,       ns, baseR,baseG,baseB, ba);
+            drawDiamond(bx+ctlW,  by,       ns, baseR,baseG,baseB, ba);
+            drawDiamond(bx,       by+ctlH,  ns, baseR,baseG,baseB, ba);
+            drawDiamond(bx+ctlW,  by+ctlH,  ns, baseR,baseG,baseB, ba);
         }
         drawCenterS(value, bx, by + 7.0f*uiS, ctlW, 0.76f*uiS,
                     disabled ? 0.48f : 0.82f, disabled ? 0.50f : 0.90f, disabled ? 0.56f : 1.0f,
                     (disabled ? 0.52f : 0.90f)*infoA);
+    };
+    auto systemLogRow = [&](float y, const wchar_t* text) {
+        float rowA = rightWake * (0.58f + 0.42f * panelE);
+        BindMainShader();
+        drawRect(rowX + 10.0f*uiS, y, rowW - 20.0f*uiS, rowH,
+                 0.018f, 0.024f, 0.036f, 0.24f * rowA);
+        drawRect(rowX + 24.0f*uiS, y + rowH - 1.0f*uiS,
+                 rowW - 48.0f*uiS, 1.0f*uiS, baseR, baseG, baseB, 0.040f * rowA);
+        g_TextS.Draw(L"[SYS_STATUS]", rowX + 24.0f*uiS, y + 9.0f*uiS,
+                     0.34f*uiS, baseR, baseG, baseB, 0.36f * rowA);
+        g_TextS.Draw(text, rowX + 24.0f*uiS, y + 30.0f*uiS,
+                     0.46f*uiS, 0.42f, 0.48f, 0.58f, 0.72f * rowA);
     };
     auto volumeRow = [&](float y, const wchar_t* label, const wchar_t* desc, int& vol) {
         rowShellStd(y, label, desc);
@@ -3389,7 +6185,7 @@ void Scene_Settings(const SceneCtx& c) {
         float bx = rowX + rowW - ctlW - 16.0f*uiS;
         float by = y + (rowH - ctlH)*0.5f;
         float smallW = 42.0f*uiS;
-        if (segment(bx, by, smallW, ctlH, L"-", false, tab.r, tab.g, tab.b)) {
+        if (segment(bx, by, smallW, ctlH, L"-", false, baseR, baseG, baseB)) {
             g_VolEdit = false; vol = clampVol(vol - 5);
         }
         float barX  = bx + smallW + 12.0f*uiS;
@@ -3400,16 +6196,16 @@ void Scene_Settings(const SceneCtx& c) {
         float fillW  = barW * (vol / 100.0f);
         BindMainShader();
         drawRect(barX, trackY-4.0f*uiS, barW, 8.0f*uiS, 0.11f,0.12f,0.16f, 0.96f*volA);
-        drawRect(barX, trackY-4.0f*uiS, fillW, 8.0f*uiS, tab.r,tab.g,tab.b, 0.90f*volA);
+        drawRect(barX, trackY-4.0f*uiS, fillW, 8.0f*uiS, baseR,baseG,baseB, 0.90f*volA);
         float knobX = barX + fillW;
-        drawCircle(knobX, trackY, 10.0f*uiS, tab.r,tab.g,tab.b, 0.92f*volA);
+        drawCircle(knobX, trackY, 10.0f*uiS, baseR,baseG,baseB, 0.92f*volA);
         drawCircle(knobX, trackY, 5.2f*uiS, 0.96f,0.98f,1.0f, 0.96f*volA);
         bool barHover = !modalActive && hit(barX, by, barW, ctlH);
         if (lmb && barHover) {
             g_VolEdit = false;
             vol = clampVol((int)(((float)mx - barX) / barW * 100.0f + 0.5f));
         }
-        if (segment(plusX, by, smallW, ctlH, L"+", false, tab.r, tab.g, tab.b)) {
+        if (segment(plusX, by, smallW, ctlH, L"+", false, baseR, baseG, baseB)) {
             g_VolEdit = false; vol = clampVol(vol + 5);
         }
         float fieldX = bx + ctlW - fieldW;
@@ -3418,7 +6214,7 @@ void Scene_Settings(const SceneCtx& c) {
         drawRect(fieldX, by, fieldW, ctlH,
                  g_VolEdit?0.15f:0.060f, g_VolEdit?0.17f:0.068f,
                  g_VolEdit?0.22f:0.090f, 0.92f*volA);
-        drawBorder(fieldX, by, fieldW, ctlH, tab.r, tab.g, tab.b,
+        drawBorder(fieldX, by, fieldW, ctlH, baseR, baseG, baseB,
                    (g_VolEdit?0.72f:(fieldHover?0.38f:0.18f))*volA, 1.2f*uiS);
         if (lmb && !g_LmbPrev && !modalActive) {
             if (fieldHover) { g_VolEdit = true; g_VolLen = 0; g_VolBuf[0] = 0; }
@@ -3443,18 +6239,16 @@ void Scene_Settings(const SceneCtx& c) {
         {   // Corner brackets (disabled style)
             float ba = 0.12f * meterA;
             float cL = std::min(ctlW * 0.22f, 10.0f * uiS), ct = 1.3f * uiS;
-            drawRect(bx,        by,        cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx,        by,        ct, cL, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-cL,by,        cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-ct,by,        ct, cL, tab.r,tab.g,tab.b, ba);
-            drawRect(bx,        by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx,        by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-cL,by+ctlH-ct,cL, ct, tab.r,tab.g,tab.b, ba);
-            drawRect(bx+ctlW-ct,by+ctlH-cL,ct, cL, tab.r,tab.g,tab.b, ba);
+            drawRect(bx,        by,        cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx,        by,        ct, cL, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-cL,by,        cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-ct,by,        ct, cL, baseR,baseG,baseB, ba);
+            drawRect(bx,        by+ctlH-ct,cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx,        by+ctlH-cL,ct, cL, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-cL,by+ctlH-ct,cL, ct, baseR,baseG,baseB, ba);
+            drawRect(bx+ctlW-ct,by+ctlH-cL,ct, cL, baseR,baseG,baseB, ba);
         }
-        drawCenterS((li==0) ? L"MASTER\xC5D0 \xC5F0\xB3D9"
-                            : (li==1) ? L"LINKED TO MASTER"
-                                      : L"MASTERに連動",
+        drawCenterS(SettingsText(L"마스터 연동", L"MASTER LINKED"),
                     bx, by+8.0f*uiS, ctlW, 0.64f*uiS, 0.48f,0.52f,0.62f, 0.62f*meterA);
     };
 
@@ -3470,95 +6264,145 @@ void Scene_Settings(const SceneCtx& c) {
         s_enPrev = false;
     }
 
+    const float groupHead = 52.0f * uiS;
+    const float groupPadB = 12.0f * uiS;
+    const float groupGap = 16.0f * uiS;
     float y = rowStart;
     if (s_tab == 0) {
+        const float displayH = groupHead + rowH * 3.0f + rowGap * 2.0f + groupPadB;
+        const float controlH = groupHead + rowH * 2.0f + rowGap + groupPadB;
+        const float langH    = groupHead + rowH + groupPadB;
+
         const wchar_t* fpsLabels[5] = { L"VSYNC", L"30", L"60", L"144", L"300" };
         const int fpsVals[5] = { 0, 30, 60, 144, 300 };
-        choiceRow(y, T(StrId::SET_FPS),
-                  L"FRAME",
+        groupBox(y, displayH, SettingsText(L"화면", L"DISPLAY"), baseR, baseG, baseB);
+        y += groupHead;
+        choiceRow(y, SettingsText(L"FPS 제한", L"FPS LIMIT"),
+                  L"[FRAME_CAP]",
                   fpsLabels, fpsVals, 5, g_FpsCap, [&](int v) {
                       g_FpsCap = v;
                       glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
                   });
         y += rowH + rowGap;
-        const wchar_t* langLabels[2] = { L"\xD55C\xAD6D\xC5B4", L"English" };
-        const int langVals[2] = { 0, 1 };
-        choiceRow(y, T(StrId::SET_LANG),
-                  L"LANG",
-                  langLabels, langVals, 2, std::min((int)g_Language, 1), [&](int v) {
-                      if (v >= 0 && v < LANG_COUNT) g_Language = (Language)v;
+
+        const wchar_t* crtLabelsKr[3] = { L"꺼짐", L"50", L"100" };
+        const wchar_t* crtLabelsEn[3] = { L"OFF", L"50", L"100" };
+        // Four fixed presets keep the shader output in known-good visual ranges.
+        const wchar_t* crtPresetKr[4] = { L"\xAFBC\xC9D0", L"\xB0AE\xC74C", L"\xC911\xAC04", L"\xB192\xC74C" };
+        const wchar_t* crtPresetEn[4] = { L"OFF", L"LOW", L"MID", L"HIGH" };
+        const wchar_t* const* crtLabels = (nli == 0) ? crtPresetKr : crtPresetEn;
+        const int crtVals[4] = { 0, 30, 60, 85 };
+        int crtCurrent = g_ShaderFx ? s_crtFxLevel : 0;
+        if (crtCurrent != 0 && crtCurrent != 30 && crtCurrent != 60 && crtCurrent != 85) crtCurrent = 85;
+        choiceRow(y, SettingsText(L"CRT 셰이더", L"CRT_FX"),
+                  L"[CRT_FX]",
+                  crtLabels, crtVals, 4, crtCurrent, [&](int v) {
+                      s_crtFxLevel = v;
+                      g_ShaderFx = (v > 0);
                   });
         y += rowH + rowGap;
-        boolRow(y,
-                nli == 0 ? L"CRT \xC170\xC774\xB354" : L"CRT Shader",
-                L"FX",
-                g_ShaderFx);
-        y += rowH + rowGap;
+
         const int twoVals[2] = { 0, 1 };
-        const wchar_t* vfxLabels[2] = { nli == 0 ? L"\xC804\xCCB4" : L"Full",
-                                        nli == 0 ? L"\xAC10\xC18C" : L"Reduced" };
-        choiceRow(y,
-                  nli == 0 ? L"VFX \xBC00\xB3C4" : L"VFX Density",
-                  L"VFX",
+        const wchar_t* vfxLabelsKr[2] = { L"전체", L"감소" };
+        const wchar_t* vfxLabelsEn[2] = { L"FULL", L"REDUCED" };
+        const wchar_t* const* vfxLabels = (nli == 0) ? vfxLabelsKr : vfxLabelsEn;
+        choiceRow(y, SettingsText(L"VFX 밀도", L"VFX_DENS"),
+                  L"[VFX_DENS]",
                   vfxLabels, twoVals, 2, (int)g_VfxDensity, [&](int v) {
                       g_VfxDensity = (v == 0) ? VfxDensity::FULL : VfxDensity::REDUCED;
                   });
-        y += rowH + rowGap;
-        boolRow(y,
-                nli == 0 ? L"\xC790\xB3D9 \xBC1C\xC0AC" : L"Auto-Fire",
-                L"AUTO",
+
+        y = rowStart + displayH + groupGap;
+        groupBox(y, controlH, SettingsText(L"조작", L"CONTROL"), baseR, baseG, baseB);
+        y += groupHead;
+        boolRow(y, SettingsText(L"자동 발사", L"AUTO_FIRE"),
+                L"[AUTO_FIRE]",
                 g_AutoFire);
         y += rowH + rowGap;
-        boolRow(y, T(StrId::SET_CROSSHAIR),
-                L"AIM",
+        boolRow(y, SettingsText(L"조준선", L"CROSSHAIR"),
+                L"[AIM_CURSOR]",
                 g_ShowCrosshair);
+
+        y = rowStart + displayH + groupGap + controlH + groupGap;
+        groupBox(y, langH, SettingsText(L"언어", L"LANGUAGE"), baseR, baseG, baseB);
+        y += groupHead;
+        const wchar_t* langLabelsKr[2] = { L"한국어", L"영어" };
+        const wchar_t* langLabelsEn[2] = { L"KOR", L"ENG" };
+        const wchar_t* const* langLabels = (nli == 0) ? langLabelsKr : langLabelsEn;
+        const int langVals[2] = { 0, 1 };
+        choiceRow(y, SettingsText(L"언어팩", L"LANG_PACK"),
+                  L"[LANG_PACK]",
+                  langLabels, langVals, 2, std::min((int)g_Language, 1), [&](int v) {
+                      if (v >= 0 && v < 2) g_Language = (Language)v;
+                  });
     } else if (s_tab == 1) {
+        const float masterH = groupHead + rowH + groupPadB;
+        const float channelH = groupHead + rowH * 3.0f + rowGap * 2.0f + groupPadB;
+        groupBox(y, masterH, SettingsText(L"마스터", L"MASTER"), baseR, baseG, baseB);
+        y += groupHead;
         volumeRow(y,
-                  nli == 0 ? L"\xB9C8\xC2A4\xD130 \xBCFC\xB968" : L"Master Volume",
-                  L"MASTER",
+                  SettingsText(L"마스터 볼륨", L"MASTER VOL"),
+                  L"[MASTER_VOL]",
                   g_SoundVol);
+
+        y = rowStart + masterH + groupGap;
+        groupBox(y, channelH, SettingsText(L"채널", L"CHANNELS"), baseR, baseG, baseB);
+        y += groupHead;
+        disabledMeterRow(y,
+                         SettingsText(L"BGM 볼륨", L"BGM VOL"),
+                         L"[BGM_VOL]");
         y += rowH + rowGap;
         disabledMeterRow(y,
-                         nli == 0 ? L"BGM \xBCFC\xB968" : L"BGM Volume",
-                         L"SYNC");
+                         SettingsText(L"효과음 볼륨", L"SFX VOL"),
+                         L"[SFX_VOL]");
         y += rowH + rowGap;
         disabledMeterRow(y,
-                         nli == 0 ? L"SFX \xBCFC\xB968" : L"SFX Volume",
-                         L"SYNC");
-        y += rowH + rowGap;
-        disabledMeterRow(y,
-                         nli == 0 ? L"UI \xBCFC\xB968" : L"UI Volume",
-                         L"SYNC");
+                         SettingsText(L"UI 볼륨", L"UI VOL"),
+                         L"[UI_VOL]");
     } else {
+        const float saveH = groupHead + rowH * 3.0f + rowGap * 2.0f + groupPadB;
+        const float infoH = groupHead + rowH * 2.0f + rowGap + groupPadB;
+        const float dangerH = groupHead + rowH + groupPadB;
         wchar_t bestBuf[128];
         swprintf_s(bestBuf, L"E %lld / N %lld / H %lld", g_BestScore[0], g_BestScore[1], g_BestScore[2]);
         wchar_t recordBuf[96];
         swprintf_s(recordBuf, L"KILLS %lld / RUNS %lld", g_TotalKills, g_TotalGames);
         wchar_t coinBuf[64];
         swprintf_s(coinBuf, L"%lld G", g_Coins);
-        infoRow(y,
-                nli == 0 ? L"\xC800\xC7A5 \xBC29\xC2DD" : L"Save Mode",
-                L"SAVE",
-                nli == 0 ? L"\xC790\xB3D9 \xC800\xC7A5" : L"AUTO SAVE");
+        groupBox(y, saveH, SettingsText(L"저장 기록", L"SAVE DATA"), baseR, baseG, baseB);
+        y += groupHead;
+        systemLogRow(y, SettingsText(L"[ 시스템 상태 : 자동 저장 활성화 ]", L"[ SYS_STATUS : CLOUD AUTO-SYNC ACTIVE ]"));
         y += rowH + rowGap;
-        infoRow(y,
-                nli == 0 ? L"\xCD5C\xACE0 \xAE30\xB85D" : L"Best Score",
-                L"BEST",
+        infoRow(y, SettingsText(L"최고 기록", L"BEST RECORD"),
+                L"[BEST_SCORE]",
                 bestBuf);
         y += rowH + rowGap;
-        infoRow(y,
-                nli == 0 ? L"\xB204\xC801 \xAE30\xB85D" : L"Run Record",
-                L"RUN",
+        infoRow(y, SettingsText(L"누적 기록", L"RUN RECORD"),
+                L"[RUN_DATA]",
                 recordBuf);
-        y += rowH + rowGap;
-        infoRow(y,
-                nli == 0 ? L"\xBCF4\xC720 \xCF54\xC778" : L"Coin",
-                L"CREDIT",
+
+        y = rowStart + saveH + groupGap;
+        groupBox(y, infoH, SettingsText(L"정보", L"INFO"), baseR, baseG, baseB);
+        y += groupHead;
+        infoRow(y, SettingsText(L"별가루", L"STARDUST"),
+                L"[CREDIT_POOL]",
                 coinBuf);
         y += rowH + rowGap;
-        rowShellStd(y,
-                    nli == 0 ? L"\xAE30\xB85D \xCD08\xAE30\xD654" : L"Reset Records",
-                    L"RESET");
+        rowShellStd(y, SettingsText(L"제작진", L"CREDITS"),
+                    L"[BUILD_INFO]");
+        {
+            float bx = rowX + rowW - ctlW - 16.0f * uiS;
+            float by2 = y + (rowH - ctlH) * 0.5f;
+            if (segment(bx, by2, ctlW, ctlH,
+                        nli == 0 ? L"\xBCF4\xAE30" : L"View", false, baseR, baseG, baseB))
+                s_showCredits = true;
+        }
+
+        y = rowStart + saveH + groupGap + infoH + groupGap;
+        groupBox(y, dangerH, SettingsText(L"위험 구역", L"DANGER ZONE"), 1.0f, 0.35f, 0.35f, true);
+        y += groupHead;
+        rowShellStd(y, SettingsText(L"데이터 초기화", L"RESET DATA"),
+                    L"[DANGER_ZONE]");
         {
             float bx = rowX + rowW - ctlW - 16.0f * uiS;
             float by2 = y + (rowH - ctlH) * 0.5f;
@@ -3579,27 +6423,28 @@ void Scene_Settings(const SceneCtx& c) {
                 s_resetItems[0] = s_resetItems[1] = s_resetItems[2] = s_resetItems[3] = false;
             }
         }
-        y += rowH + rowGap;
-        rowShellStd(y,
-                    nli == 0 ? L"\xD06C\xB808\xB527" : L"Credits",
-                    L"INFO");
-        {
-            float bx = rowX + rowW - ctlW - 16.0f * uiS;
-            float by2 = y + (rowH - ctlH) * 0.5f;
-            if (segment(bx, by2, ctlW, ctlH,
-                        nli == 0 ? L"\xBCF4\xAE30" : L"View", false, tab.r, tab.g, tab.b))
-                s_showCredits = true;
-        }
     }
 
     const float backW = 178.0f * uiS;
     const float footX = panelX + (panelW - backW) * 0.5f;
     const bool lmbMain = lmb && !modalActive;
-    if (UIButton(footX, footY, backW, 48.0f * uiS, T(StrId::BTN_BACK),
-                 mx, my, lmbMain, g_LmbPrev)) {
+    const float backH = 48.0f * uiS;
+    const bool backHover = hit(footX, footY, backW, backH);
+    if (backHover && lmbMain && !g_LmbPrev) {
         if (g_VolEdit) commitVol();
         SaveGame();
         g_GameManager.currentState = g_SettingsReturnTo;
+    }
+    // Main-menu style command text: retain the wide hitbox without a solid button.
+    const float backA = (backHover ? 1.0f : 0.72f) * wake;
+    g_TextL.Draw(L"<", footX + 8.0f*uiS, footY + 7.0f*uiS,
+                 0.78f*uiS, baseR, baseG, baseB, backA);
+    g_TextS.Draw(T(StrId::BTN_BACK), footX + 30.0f*uiS, footY + 13.0f*uiS,
+                  0.62f*uiS, 0.82f, 0.92f, 1.0f, backA);
+    if (backHover) {
+        BindMainShader();
+        drawRect(footX + 28.0f*uiS, footY + backH - 4.0f*uiS,
+                 backW - 34.0f*uiS, 1.0f*uiS, baseR, baseG, baseB, 0.42f*backA);
     }
 
     if (modalActive) {
@@ -4100,44 +6945,169 @@ void Scene_Paused(const SceneCtx& c) {
     const bool lmb = c.lmb;
     const float delta = c.delta;
     GLFWwindow* window = c.window;
-    const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
-                // 전체 화면 딤 — 보스 창/엔티티가 메뉴 뒤로 비치지 않게
-                BatchFlush();
-                glDisable(GL_SCISSOR_TEST);
-                glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
-                memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
-                BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.86f * SCENE_BG_ALPHA);
-                const wchar_t* T1 = T(StrId::PAUSED);
-                g_TextL.Draw(T1, CenterTextX(sw, g_TextL, T1, 1.4f), sh*0.22f, 1.4f, 1,1,1,0.95f);
+    (void)*c.fireTimer;
+    (void)c.reset;
 
-                // 버튼 4개: 재개 / 설정 / 메뉴로 / 종료
-                const float BW = 280.0f, BH = 64.0f, BG = 16.0f;
-                float bx = (sw - BW) * 0.5f;
-                float by = sh * 0.36f;
+    static float  s_EntryT    = 0.0f;
+    static float  s_HoverT[4] = {};
+    static int    s_ExitSel   = -1;
+    static float  s_ExitT     = 0.0f;
+    static double s_LastCall  = 0.0;
 
-                if (UIButton(bx, by + 0*(BH+BG), BW, BH, T(StrId::BTN_RESUME),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::RUNNING;
-                }
-                if (UIButton(bx, by + 1*(BH+BG), BW, BH, T(StrId::BTN_SETTINGS),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_SettingsReturnTo = GameState::PAUSED;
-                    ResetSettingsUi();
-                    g_GameManager.currentState = GameState::SETTINGS;
-                }
-                if (UIButton(bx, by + 2*(BH+BG), BW, BH, T(StrId::BTN_MAIN_MENU),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::MAIN_MENU;
-                }
-                if (UIButton(bx, by + 3*(BH+BG), BW, BH, T(StrId::BTN_QUIT),
-                             mx, my, lmb, g_LmbPrev)) {
-                    glfwSetWindowShouldClose(window, GLFW_TRUE);
-                }
+    const double curTime = glfwGetTime();
+    if (curTime - s_LastCall > 0.12) {
+        s_EntryT = 0.0f;
+        for (int i = 0; i < 4; ++i) s_HoverT[i] = 0.0f;
+        s_ExitSel = -1;
+        s_ExitT   = 0.0f;
+    }
+    s_LastCall  = curTime;
+    s_EntryT   += delta;
+    if (s_ExitSel >= 0) {
+        s_ExitT += delta;
+        if (s_ExitT > 0.65f) s_ExitT = 0.65f;
+    }
+
+    const float entryFade  = Smoothstep(std::min(s_EntryT / 0.38f, 1.0f));
+    const float fnow       = (float)curTime;
+    const bool  exitActive = (s_ExitSel >= 0);
+    const float exitP      = exitActive ? Smoothstep(std::min(s_ExitT / 0.45f, 1.0f)) : 0.0f;
+
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+    glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
+    memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
+    BindMainShader();
+
+    // 전체 미세 딤 — 게임 일시정지 인식용
+    drawRect(0, 0, sw, sh, 0.01f, 0.01f, 0.02f, 0.44f * entryFade);
+
+    // 좌측 비네트 — 메인메뉴와 동일 스타일, 패널 없이 어둠으로 가시성 확보
+    DrawSceneLeftVignette(sw, sh, 0.68f * entryFade);
+
+    // 레이아웃 — 메인메뉴 기준 좌측 정렬
+    const float BW      = std::min(520.0f, sw * 0.38f);
+    const float BH      = 70.0f;
+    const float BGAP    = 15.0f;
+    const int   NBTN    = 4;
+    const float totalBH = (float)NBTN * BH + (float)(NBTN - 1) * BGAP;
+    const float btnX0   = std::max(58.0f, sw * 0.075f);
+    const float btnY0   = sh * 0.42f;
+    const float titleY  = sh * 0.24f;
+
+    // 좌측 앵커 라인 + 다이아몬드 (메인메뉴와 동일)
+    {
+        const float anchorX = btnX0 - 36.0f;
+        const float anchorY = titleY - 12.0f;
+        const float anchorH = std::min(sh - anchorY - 30.0f, totalBH + 130.0f);
+        const float anchorA = Smoothstep(std::min(std::max(0.0f, (s_EntryT - 0.10f) / 0.42f), 1.0f)) * entryFade;
+        BindMainShader();
+        drawRect(anchorX, anchorY, 1.2f, anchorH, 0.48f, 0.82f, 1.0f, 0.17f * anchorA);
+        drawDiamond(anchorX + 0.6f, anchorY + 4.0f, 2.8f, 0.48f, 0.82f, 1.0f, 0.22f * anchorA);
+        drawDiamond(anchorX + 0.6f, anchorY + anchorH - 4.0f, 2.8f, 0.48f, 0.82f, 1.0f, 0.18f * anchorA);
+    }
+
+    // 타이틀
+    {
+        float titleA = Smoothstep(std::min(s_EntryT / 0.28f, 1.0f)) * entryFade;
+        const wchar_t* hdr = L"SYSTEM  PAUSED";
+        float hdrSc = 1.2f;
+        g_TextL.Draw(hdr, btnX0, titleY, hdrSc, 0.50f, 0.82f, 1.0f, 0.92f * titleA);
+        const wchar_t* sub = L"PROCESS 0x004F : SUSPENDED";
+        g_TextS.Draw(sub, btnX0, titleY + g_TextL.Height(hdr, hdrSc) + 2.0f, 0.50f,
+                     0.38f, 0.60f, 0.80f, 0.60f * titleA);
+        BindMainShader();
+        drawRect(btnX0, titleY + g_TextL.Height(hdr, hdrSc) + 26.0f,
+                 BW * 0.52f, 1.0f, 0.30f, 0.78f, 1.0f, 0.22f * titleA);
+    }
+
+    // 버튼
+    struct PBtnDef { const wchar_t* route; const wchar_t* sub; };
+    static const PBtnDef kPBtns[4] = {
+        { L"RESUME",        L"재개"      },
+        { L"CALIBRATION",   L"설정"      },
+        { L"RETURN_TO_HUB", L"메인 메뉴" },
+        { L"TERMINATE",     L"게임 종료"  },
+    };
+
+    const float ar = 0.48f, ag = 0.82f, ab = 1.0f;
+
+    auto rectHit = [](float hpx, float hpy,
+                      float rx, float ry, float rw, float rh) -> bool {
+        return hpx >= rx && hpx <= rx + rw && hpy >= ry && hpy <= ry + rh;
+    };
+
+    for (int i = 0; i < NBTN; ++i) {
+        float rawPh = (s_EntryT - 0.18f - (float)i * 0.08f) / 0.32f;
+        float reveal = Smoothstep(std::max(0.0f, std::min(rawPh, 1.0f)));
+
+        float baseBx = btnX0;
+        float baseBy = btnY0 + (float)i * (BH + BGAP);
+        bool hov = (!exitActive &&
+                    (bool)rectHit((float)mx, (float)my, baseBx - 26.0f, baseBy, BW + 58.0f, BH));
+        float spd = delta * 10.0f; if (spd > 1.0f) spd = 1.0f;
+        s_HoverT[i] += ((hov ? 1.0f : 0.0f) - s_HoverT[i]) * spd;
+        float t = s_HoverT[i];
+
+        bool  selected    = (s_ExitSel == i);
+        float selectPulse = selected ? (0.50f + 0.50f * sinf(fnow * 18.0f)) * exitP : 0.0f;
+        float activeT     = std::max(t, selected ? exitP : 0.0f);
+
+        float rowA = reveal * entryFade;
+        if (exitActive && !selected) rowA *= (1.0f - exitP * 0.86f);
+        float slide = (1.0f - reveal) * 34.0f;
+        float bx    = baseBx + slide - 10.0f * t;
+        float by    = baseBy + (exitActive && !selected ? exitP * 28.0f : 0.0f);
+
+        BindMainShader();
+        DrawMenuCommandFeedback(bx, by, BW, BH, ar, ag, ab,
+                                rowA, activeT, selectPulse, fnow + (float)i * 0.17f);
+
+        float routeSc = 1.04f;
+        while (routeSc > 0.82f && g_TextL.Width(kPBtns[i].route, routeSc) > BW)
+            routeSc -= 0.04f;
+        float routeY = by + 2.0f;
+        float subY   = routeY + g_TextL.Height(kPBtns[i].route, routeSc) - 3.0f;
+        float tr = 1.0f + (ar - 1.0f) * activeT;
+        float tg = 1.0f + (ag - 1.0f) * activeT;
+        float tb = 1.0f + (ab - 1.0f) * activeT;
+        if (selected) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
+        g_TextL.Draw(kPBtns[i].route, bx, routeY, routeSc,
+                     tr, tg, tb, (0.82f + 0.16f * activeT + 0.18f * selectPulse) * rowA);
+        g_TextS.Draw(kPBtns[i].sub, bx + 4.0f, subY, 0.48f,
+                     0.70f + 0.18f * activeT, 0.75f + 0.16f * activeT, 0.82f + 0.12f * activeT,
+                     (0.70f + 0.20f * activeT) * rowA);
+
+        if (hov && lmb && !g_LmbPrev && s_ExitSel < 0) {
+            s_ExitSel = i;
+            s_ExitT   = 0.0f;
+        }
+    }
+
+    if (s_ExitSel >= 0 && s_ExitT >= 0.50f) {
+        int sel   = s_ExitSel;
+        s_ExitSel = -1;
+        s_ExitT   = 0.0f;
+        switch (sel) {
+        case 0: g_GameManager.currentState = GameState::RUNNING; break;
+        case 1:
+            g_SettingsReturnTo = GameState::PAUSED;
+            ResetSettingsUi();
+            g_GameManager.currentState = GameState::SETTINGS;
+            break;
+        case 2: g_GameManager.currentState = GameState::MAIN_MENU; break;
+        case 3: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
+        }
+        return;
+    }
+
+    {
+        float hintA = Smoothstep(std::min(std::max(0.0f, s_EntryT - 0.50f) / 0.30f, 1.0f)) * entryFade;
+        const wchar_t* hint = L"[SPACE / ESC]  재개";
+        g_TextS.Draw(hint, btnX0, sh * 0.88f, 0.58f,
+                     0.42f, 0.62f, 0.82f, 0.55f * hintA);
+    }
 }
-
 void Scene_GameOver(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
@@ -4276,629 +7246,494 @@ void Scene_Victory(const SceneCtx& c) {
 
 void Scene_AugSelect(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
-    const double mx = c.mx, my = c.my;
-    const bool lmb = c.lmb;
     const float delta = c.delta;
-    GLFWwindow* window = c.window;
     const GameState st = g_GameManager.currentState;
-    float& fireTimer = *c.fireTimer;
-    const std::function<void()>& ResetForNewGame = c.reset;
 
-    // ── 진입/종료/hover 애니메이션 상태 ──
-    static float s_enterT       = 1.0f;
-    static float s_entryElapsed = 0.0f;             // 진입 후 경과 시간(초)
-    static float s_scanT[3]     = {0.f, 0.f, 0.f}; // 카드별 스캔라인 진행도 0→1
-    static float s_hovY[3]      = {0.f, 0.f, 0.f};
-    static float s_pickFlash[3] = {0.f, 0.f, 0.f};
-    static int   s_prevHov      = -1;
-    static float s_shockR       = -1.0f;  // 충격파 링 반경 (-1=비활성)
-
-    // ── 종료 파티클 (screen-space) ──
-    struct AugExPart { float x,y,vx,vy,life,maxLife,size,r,g,b,spawnT; bool active; };
-    static constexpr int MAX_AEP = 56;
-    static AugExPart s_AEP[MAX_AEP];
-    static bool s_exitPartsSpawned = false;
-    static bool s_supernovaSpawned = false;
-
-    auto easeOut = [](float t) -> float {
-        float inv = 1.0f - t; return 1.0f - inv * inv * inv;
+    auto easeOut = [](float t) -> float { float i=1.f-t; return 1.f-i*i*i; };
+    auto easeIn  = [](float t) -> float { return t*t*t; };
+    auto drawSeg = [](float x1,float y1,float x2,float y2,float t,
+                      float lr,float lg,float lb,float la) {
+        float dx=x2-x1, dy=y2-y1, len=sqrtf(dx*dx+dy*dy);
+        if (len < 0.5f) return;
+        float nx=-dy/len*t*0.5f, ny=dx/len*t*0.5f;
+        BatchTri(x1+nx,y1+ny, x1-nx,y1-ny, x2-nx,y2-ny, lr,lg,lb,la);
+        BatchTri(x1+nx,y1+ny, x2-nx,y2-ny, x2+nx,y2+ny, lr,lg,lb,la);
     };
 
-    // fresh entry: reset all anim state
+    // ── 정적 상태 ──
+    static float s_spawnT    = 0.0f;
+    static float s_dimT[3]   = {1,1,1};
+    static float s_flashT[3] = {};
+    static float s_pullT[3]  = {};
+    static bool  s_lmbPrev   = false;
+    static float s_panelA    = 0.0f;
+    static int   s_prevHov   = -1;
+
+    struct SNPart { float x,y,vx,vy,life; float r,g,b; bool active; };
+    static constexpr int SN_MAX = 72;
+    static SNPart s_sn[SN_MAX];
+    static bool   s_snSpawned = false;
+
+    // 진입 리셋
     {
         const GameState prev = g_GameManager.lastState;
         if (prev != GameState::AUG_SELECT && prev != GameState::DEBUFF_SELECT) {
-            s_enterT = 0.0f;
-            s_entryElapsed = 0.0f;
-            for (int i = 0; i < 3; i++) {
-                s_hovY[i] = 0.f; s_pickFlash[i] = 0.f; s_scanT[i] = 0.f;
-            }
-            s_prevHov = -1;
-            s_shockR  = 0.0f;   // 진입 즉시 충격파 시작
-            for (int i = 0; i < MAX_AEP; i++) s_AEP[i].active = false;
-            s_exitPartsSpawned  = false;
-            s_supernovaSpawned  = false;
-        }
-    }
-    const float ENTER_DUR = 0.38f;
-    s_enterT = std::min(s_enterT + delta / ENTER_DUR, 1.0f);
-
-    // 경과 시간 + 카드별 스캔 진행도
-    s_entryElapsed += delta;
-    {
-        constexpr float SCAN_START   = 0.08f;  // 첫 카드 스캔 시작
-        constexpr float SCAN_STAGGER = 0.07f;  // 카드 간 딜레이
-        constexpr float SCAN_DUR     = 0.20f;  // 카드 1장 스캔 소요
-        for (int i = 0; i < 3; i++) {
-            float st = SCAN_START + (float)i * SCAN_STAGGER;
-            float e  = s_entryElapsed - st;
-            s_scanT[i] = (e >= 0.0f) ? std::min(1.0f, e / SCAN_DUR) : 0.0f;
+            s_spawnT    = 0.0f;
+            s_prevHov   = -1;
+            s_panelA    = 0.0f;
+            s_snSpawned = false;
+            for (int i=0; i<3; i++) { s_dimT[i]=1.f; s_flashT[i]=0.f; s_pullT[i]=0.f; }
+            s_lmbPrev = false;
+            for (auto& p: s_sn) p.active=false;
         }
     }
 
-    // pick flash: trigger when hover changes to a new card
+    const bool  isDebuff = (st == GameState::DEBUFF_SELECT);
+    const float now      = (float)glfwGetTime();
+
+    constexpr float COLLAPSE_END = 0.65f;
+    constexpr float SN_START     = 0.65f;
+    constexpr float SN_END       = 1.20f;
+
+    const bool  inExit     = (g_AugExitT >= 0.0f);
+    const float collapseT  = inExit ? std::min(g_AugExitT / COLLAPSE_END, 1.0f) : 0.0f;
+    const float collapseE  = easeOut(collapseT);
+    const float supernovaT = inExit
+        ? std::max(0.0f, std::min((g_AugExitT - SN_START)/(SN_END - SN_START), 1.0f))
+        : 0.0f;
+
+    if (!inExit)
+        s_spawnT = std::min(s_spawnT + delta / 0.55f, 1.0f);
+    const bool inFocus = (s_spawnT >= 1.0f && !inExit);
+
     if (g_HoveredAug != s_prevHov && g_HoveredAug >= 0 && g_HoveredAug < 3)
-        s_pickFlash[g_HoveredAug] = 1.0f;
+        s_flashT[g_HoveredAug] = 1.0f;
     s_prevHov = g_HoveredAug;
 
-    // spring hover Y + flash decay
-    for (int i = 0; i < 3; i++) {
-        float targetY = (g_HoveredAug == i) ? -18.0f : 0.0f;
-        s_hovY[i] += (targetY - s_hovY[i]) * std::min(1.0f, delta * 16.0f);
-        if (s_pickFlash[i] > 0.f) s_pickFlash[i] = std::max(0.f, s_pickFlash[i] - delta / 0.22f);
+    for (int i=0; i<3; i++) {
+        float dimTgt  = (g_HoveredAug >= 0 && g_HoveredAug != i && inFocus) ? 0.38f : 1.0f;
+        float pullTgt = (g_HoveredAug == i && inFocus) ? 1.0f : 0.0f;
+        s_dimT[i]  += (dimTgt  - s_dimT[i])  * std::min(1.0f, delta * 10.0f);
+        s_pullT[i] += (pullTgt - s_pullT[i])  * std::min(1.0f, delta * 5.0f);
+        if (s_flashT[i] > 0.f) s_flashT[i] = std::max(0.f, s_flashT[i] - delta / 0.20f);
+    }
+    {
+        float panelTgt = (inFocus && g_HoveredAug >= 0) ? 1.0f : 0.0f;
+        s_panelA += (panelTgt - s_panelA) * std::min(1.0f, delta * 12.0f);
     }
 
-    // exit animation (g_AugExitT driven by main.cpp)
-    const float EXIT_DUR = 1.35f;
-    float exitPct  = (g_AugExitT >= 0.f) ? std::min(g_AugExitT / EXIT_DUR, 1.0f) : -1.0f;
-    float exitE    = (exitPct >= 0.f) ? easeOut(exitPct) : 0.f;
+    // ── 공전 궤도 ──
+    static float s_orbitT = 0.0f;
+    if (!inExit) s_orbitT += delta * 0.22f;
+    const float ORB_CX  = sw * 0.50f;
+    const float ORB_CY  = sh * 0.46f;
+    const float ORBIT_R = std::min(sw, sh) * 0.210f;
+    const float BASE_R  = 46.0f;
+    auto OrbPos = [&](int idx, float& ox, float& oy) {
+        float a = s_orbitT + (float)idx * (6.2832f / 3.0f);
+        ox = ORB_CX + cosf(a) * ORBIT_R;
+        oy = ORB_CY + sinf(a) * ORBIT_R;
+    };
 
-    // ── 레이아웃 상수 ──
-    const int   nCards  = 3;
-    const float CARD_W  = 320.0f;
-    const float CARD_H  = 480.0f;
-    const float GAP     = 36.0f;
-    const float TOTAL_W = nCards * CARD_W + (nCards - 1) * GAP;
-    float baseX = (sw - TOTAL_W) * 0.5f;
-    float baseY = (sh - CARD_H)  * 0.38f;
-
-    const bool isDebuff = (st == GameState::DEBUFF_SELECT);
-    const float now = (float)glfwGetTime();
-
-    // ── 다크 오버레이 페이드인/아웃 ──
-    float overlayE  = easeOut(s_enterT);
-    float overlayA  = overlayE * (exitPct >= 0.f ? (1.0f - exitE) : 1.0f);
-    BindMainShader();
-    if (isDebuff)
-        drawRect(0, 0, sw, sh, 0.10f, 0.01f, 0.01f, overlayA * 0.94f * SCENE_BG_ALPHA);
-    else
-        drawRect(0, 0, sw, sh, 0.01f, 0.01f, 0.06f, overlayA * 0.94f * SCENE_BG_ALPHA);
-    BatchFlush();
-
-    // ── 충격파 링 (빅뱅 — 중앙에서 방사형 확장) ──
+    // ── 마우스 클릭 판정 (궤도 기반) ──
     {
-        constexpr float SHOCK_DUR   = 0.30f;
-        constexpr float SHOCK_MAX_R = 580.0f;
-        if (s_shockR >= 0.0f && exitPct < 0.0f) {
-            s_shockR += delta * (SHOCK_MAX_R / SHOCK_DUR);
-            if (s_shockR >= SHOCK_MAX_R) {
-                s_shockR = -1.0f;   // 완료
-            } else {
-                float ringT  = s_shockR / SHOCK_MAX_R;          // 0→1
-                float ringA  = (1.0f - ringT);                  // 불투명→투명
-                float scx    = sw * 0.5f, scy = sh * 0.5f;
-                float thickG = 36.0f * (1.0f - ringT * 0.55f); // glow 두께 (감소)
-                float thickC = 4.0f;                            // 코어 링 두께
-
-                BindMainShader();
-                SetGlowFx(true);
-                constexpr int N = 72;
-                for (int k = 0; k < N; k++) {
-                    float a0 = (float)k       / N * 6.2832f;
-                    float a1 = (float)(k + 1) / N * 6.2832f;
-                    float c0 = cosf(a0), s0 = sinf(a0);
-                    float c1 = cosf(a1), s1 = sinf(a1);
-                    float R = s_shockR;
-                    // glow 패스 (두껍고 흐림)
-                    BatchTri(scx+c0*(R-thickG), scy+s0*(R-thickG),
-                             scx+c0*R,           scy+s0*R,
-                             scx+c1*R,           scy+s1*R,
-                             1.0f, 0.96f, 0.82f, ringA * 0.22f);
-                    BatchTri(scx+c0*(R-thickG), scy+s0*(R-thickG),
-                             scx+c1*R,           scy+s1*R,
-                             scx+c1*(R-thickG), scy+s1*(R-thickG),
-                             1.0f, 0.96f, 0.82f, ringA * 0.22f);
-                    // 코어 링 (얇고 선명)
-                    BatchTri(scx+c0*(R-thickC), scy+s0*(R-thickC),
-                             scx+c0*R,           scy+s0*R,
-                             scx+c1*R,           scy+s1*R,
-                             1.0f, 1.0f, 1.0f, ringA * 0.88f);
-                    BatchTri(scx+c0*(R-thickC), scy+s0*(R-thickC),
-                             scx+c1*R,           scy+s1*R,
-                             scx+c1*(R-thickC), scy+s1*(R-thickC),
-                             1.0f, 1.0f, 1.0f, ringA * 0.88f);
+        bool lmbClick = c.lmb && !s_lmbPrev;
+        if (lmbClick && !inExit && inFocus) {
+            int   best  = -1;
+            float bestD2 = 1e9f;
+            for (int i = 0; i < 3; i++) {
+                float ox, oy; OrbPos(i, ox, oy);
+                float pe = easeOut(s_pullT[i]);
+                float rpx = ox + (ORB_CX - ox) * pe;
+                float rpy = oy + (ORB_CY - oy) * pe;
+                float dx = (float)c.mx - rpx;
+                float dy = (float)c.my - rpy;
+                float d2 = dx*dx + dy*dy;
+                if (d2 < bestD2) { bestD2 = d2; best = i; }
+            }
+            float hitR = BASE_R * (1.0f + easeOut(s_pullT[best >= 0 ? best : 0]) * 1.5f) * 1.4f;
+            if (best >= 0 && bestD2 < hitR * hitR) {
+                if (g_HoveredAug == best && g_AugExitT < 0.0f) {
+                    // 항성(이미 선택) 재클릭 → 확정
+                    g_AugExitT    = 0.0f;
+                    g_AugExitSlot = best;
+                } else {
+                    g_HoveredAug = best;
                 }
-                BatchFlush();
-                SetGlowFx(false);
             }
         }
+        s_lmbPrev = c.lmb;
     }
 
-    // ── 종료 파티클 spawn (선택 확정 첫 프레임) ──
-    if (g_AugExitT >= 0.0f && !s_exitPartsSpawned) {
-        s_exitPartsSpawned = true;
-        float selCX = baseX + g_AugExitSlot * (CARD_W + GAP) + CARD_W * 0.5f;
-        float selCY = baseY + CARD_H * 0.5f + s_hovY[g_AugExitSlot];
-        const AugDef& selDef = ALL_AUGS[g_GameManager.augChoices[g_AugExitSlot]];
-        float pr, pg, pb2;
-        GetRarityColor(selDef.rarity, pr, pg, pb2);
-        for (int k = 0; k < MAX_AEP; k++) {
-            float a    = (float)k / (float)MAX_AEP * 6.2832f;
-            float spd  = 200.0f + (float)(rand() % 260);
-            float lifeT= 0.24f + (float)(rand() % 12) * 0.01f;
-            s_AEP[k] = { selCX, selCY,
-                          cosf(a)*spd, sinf(a)*spd,
-                          lifeT, lifeT,
-                          2.5f + (float)(rand() % 4),
-                          pr, pg, pb2, 0.0f, true };
-        }
-        TriggerFlash(pr, pg, pb2, 0.52f);
-    }
-
-    // ── 헤더 (터미널 스타일) ──
-    const wchar_t* TIT = isDebuff ? T(StrId::CHOOSE_DEBUFF) : T(StrId::CHOOSE_AUG);
-    float titA = easeOut(std::min(s_enterT * 1.6f, 1.0f));
-    if (exitPct >= 0.f) titA *= std::max(0.f, 1.0f - exitPct * 2.5f);
+    // ── 배경 Dim ──
     {
-        float headY = baseY - 52.0f;
-        const wchar_t* PFX = L"> ";
-        float pfxW = g_TextS.Width(PFX, 0.56f);
-        g_TextS.Draw(PFX, baseX, headY, 0.56f, 0.38f, 0.72f, 1.0f, 0.78f * titA);
-        g_TextS.Draw(TIT, baseX + pfxW, headY, 0.56f, 0.92f, 0.96f, 1.0f, 0.94f * titA);
-        float titLineW = pfxW + g_TextS.Width(TIT, 0.56f);
+        float dimA = easeOut(std::min(s_spawnT * 1.8f, 1.0f));
+        if (inExit) dimA *= std::max(0.f, 1.0f - collapseT * 2.0f);
+        drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, dimA * 0.62f);
+        BatchFlush();
+    }
+
+    // ── 헤더 ──
+    {
+        float titA = easeOut(std::min(s_spawnT * 2.0f, 1.0f));
+        if (inExit) titA *= std::max(0.f, 1.0f - collapseT * 3.0f);
+        const wchar_t* TIT = isDebuff ? T(StrId::CHOOSE_DEBUFF) : T(StrId::CHOOSE_AUG);
+        BatchFlush();
+        g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.0f),
+                     sh * 0.07f, 1.0f, 1.f, 1.f, 1.f, 0.92f * titA);
         if (st == GameState::AUG_SELECT) {
-            wchar_t slotBuf[48];
+            wchar_t slotBuf[64];
             swprintf_s(slotBuf, L"ID %d / %d", CountIdentitySlotsUsed(), IdentitySlotMax());
-            float slotW = g_TextS.Width(slotBuf, 0.52f);
-            g_TextS.Draw(slotBuf, baseX + TOTAL_W - slotW, headY, 0.52f,
-                         0.52f, 0.76f, 1.0f, 0.82f * titA);
-            BatchFlush();
-            BindMainShader();
-            float lx0 = baseX + titLineW + 12.0f, lx1 = baseX + TOTAL_W - slotW - 12.0f;
-            if (lx1 > lx0)
-                drawRect(lx0, headY + 10.0f, lx1 - lx0, 1.2f,
-                         0.32f, 0.58f, 0.88f, 0.28f * titA);
+            g_TextS.Draw(slotBuf, CenterTextX(sw, g_TextS, slotBuf, 0.76f),
+                         sh * 0.07f + 34.0f, 0.76f, 0.72f, 0.92f, 1.f, 0.78f * titA);
         }
         BatchFlush();
     }
 
-    // ── 카드 3장 ──
-    // ── 별자리 기하 도형 아이콘 람다 ──
-    auto drawAugGeo = [&](float gcx, float gcy, AugRarity rar,
-                          float cr, float cg, float cb, float alpha, bool hov, float t) {
-        float pulse = 0.84f + 0.16f * sinf(t * 1.9f);
-        float hb    = hov ? 1.0f : 0.0f;
-        BindMainShader();
-        switch (rar) {
-        case AugRarity::COMMON: {
-            float ds = 52.0f + 6.0f*hb, arm = 104.0f + 8.0f*hb, at = 2.5f;
-            drawDiamond(gcx, gcy, ds, cr, cg, cb, 0.84f * alpha * pulse);
-            drawDiamond(gcx, gcy, ds * 0.44f, 0.04f, 0.05f, 0.08f, alpha);
-            // secondary inner ring
-            drawDiamond(gcx, gcy, ds * 0.78f, cr, cg, cb, 0.30f * alpha);
-            float off = ds * 0.72f;
-            drawRect(gcx - arm, gcy - at*0.5f, arm - off, at, cr, cg, cb, 0.48f*alpha);
-            drawRect(gcx + off,  gcy - at*0.5f, arm - off, at, cr, cg, cb, 0.48f*alpha);
-            drawRect(gcx - at*0.5f, gcy - arm, at, arm - off, cr, cg, cb, 0.48f*alpha);
-            drawRect(gcx - at*0.5f, gcy + off,  at, arm - off, cr, cg, cb, 0.48f*alpha);
-            drawDiamond(gcx - arm, gcy, 10.0f, cr, cg, cb, 0.65f*alpha);
-            drawDiamond(gcx + arm, gcy, 10.0f, cr, cg, cb, 0.65f*alpha);
-            drawDiamond(gcx, gcy - arm, 10.0f, cr, cg, cb, 0.65f*alpha);
-            drawDiamond(gcx, gcy + arm, 10.0f, cr, cg, cb, 0.65f*alpha);
-            // mid-arm accent diamonds
-            float ma = arm * 0.55f;
-            drawDiamond(gcx - ma, gcy, 5.0f, cr, cg, cb, 0.40f*alpha);
-            drawDiamond(gcx + ma, gcy, 5.0f, cr, cg, cb, 0.40f*alpha);
-            drawDiamond(gcx, gcy - ma, 5.0f, cr, cg, cb, 0.40f*alpha);
-            drawDiamond(gcx, gcy + ma, 5.0f, cr, cg, cb, 0.40f*alpha);
-            break;
+    // ── 별자리 외곽 프레임 ──
+    {
+        float frameA = easeOut(std::min(s_spawnT, 1.0f));
+        if (inExit) frameA *= std::max(0.f, 1.0f - collapseT * 1.5f);
+        if (frameA > 0.01f) {
+            drawConstellFrame(16.f, 16.f, sw - 32.f, sh - 32.f,
+                              0.30f, 0.62f, 0.92f, frameA * 0.72f,
+                              24.f, 8.f, frameA * 0.40f, s_spawnT);
+            BatchFlush();
         }
-        case AugRarity::RARE: {
-            float r1 = 70.0f + 6.0f*hb, r2 = 108.0f + 8.0f*hb;
-            float a1 = t * 0.55f, a2 = -t * 0.38f + 0.785f;
-            for (int n = 0; n < 4; n++) {
-                float a = a1 + n * 1.5708f;
-                drawDiamond(gcx + r1*cosf(a), gcy + r1*sinf(a), 12.0f, cr, cg, cb, 0.84f*alpha);
-            }
-            for (int n = 0; n < 4; n++) {
-                float a = a2 + n * 1.5708f;
-                drawDiamond(gcx + r2*cosf(a), gcy + r2*sinf(a),  8.0f, cr, cg, cb, 0.54f*alpha);
-            }
-            // intermediate 8-node ring
-            float r1b = (r1 + r2) * 0.5f;
-            float a1b = a1 + 0.3927f;
-            for (int n = 0; n < 8; n++) {
-                float a = a1b + n * 0.7854f;
-                drawDiamond(gcx + r1b*cosf(a), gcy + r1b*sinf(a), 3.5f, cr, cg, cb, 0.30f*alpha);
-            }
-            float len = r1 * 0.72f, at = 2.5f;
-            drawRect(gcx - len, gcy - at*0.5f, len*2.0f, at, cr, cg, cb, 0.28f*alpha);
-            drawRect(gcx - at*0.5f, gcy - len, at, len*2.0f, cr, cg, cb, 0.28f*alpha);
-            drawDiamond(gcx, gcy, 22.0f, cr, cg, cb, 0.96f*alpha*pulse);
-            drawDiamond(gcx, gcy,  9.0f, 0.04f, 0.05f, 0.08f, alpha);
-            break;
-        }
-        case AugRarity::EPIC:
-        case AugRarity::LEGENDARY:
-        case AugRarity::MYTHIC:
-        case AugRarity::COMBO:
-        case AugRarity::SPECIAL: {
-            float r1 = 80.0f + 7.0f*hb, r2 = 44.0f + 4.0f*hb, r3 = 118.0f + 9.0f*hb;
-            float a1 = t * 0.38f, a2 = -t * 0.26f;
-            for (int n = 0; n < 8; n++) {
-                float a  = a1 + n * 0.7854f;
-                bool maj = (n % 2 == 0);
-                float rr = maj ? r1 : r2;
-                float sz = maj ? 13.0f : 7.0f;
-                float al = maj ? 0.88f * pulse : 0.66f;
-                drawDiamond(gcx + rr*cosf(a), gcy + rr*sinf(a), sz, cr, cg, cb, al*alpha);
-            }
-            // mid ring between star points
-            float r1m = (r1 + r2) * 0.5f;
-            for (int n = 0; n < 8; n++) {
-                float a = a1 + n * 0.7854f + 0.3927f;
-                drawDiamond(gcx + r1m*cosf(a), gcy + r1m*sinf(a), 3.5f, cr, cg, cb, 0.28f*alpha);
-            }
-            for (int n = 0; n < 6; n++) {
-                float a  = a2 + n * 1.0472f;
-                bool maj = (n % 3 == 0);
-                drawDiamond(gcx + r3*cosf(a), gcy + r3*sinf(a),
-                            maj ? 8.0f : 4.0f, cr, cg, cb, (maj ? 0.68f : 0.32f)*alpha);
-            }
-            float at = 2.5f, len = r2 * 0.65f;
-            drawRect(gcx - len, gcy - at*0.5f, len*2.0f, at, cr, cg, cb, 0.22f*alpha);
-            drawRect(gcx - at*0.5f, gcy - len, at, len*2.0f, cr, cg, cb, 0.22f*alpha);
-            drawDiamond(gcx, gcy, 26.0f, cr, cg, cb, alpha*pulse);
-            drawDiamond(gcx, gcy, 11.0f, 0.04f, 0.05f, 0.08f, alpha);
-            break;
-        }
-        case AugRarity::DEBUFF: {
-            float ts = 92.0f + 8.0f*hb, p2 = 0.70f + 0.30f*sinf(t * 2.2f);
-            float topY = gcy - ts*0.55f, botY = gcy + ts*0.36f;
-            drawDiamond(gcx,      topY, 14.0f, cr, cg, cb, 0.90f*alpha*p2);
-            drawDiamond(gcx - ts, botY, 14.0f, cr, cg, cb, 0.90f*alpha*p2);
-            drawDiamond(gcx + ts, botY, 14.0f, cr, cg, cb, 0.90f*alpha*p2);
-            drawRect(gcx - ts, botY - 1.0f, ts*2.0f, 2.0f, cr, cg, cb, 0.60f*alpha);
-            drawRect(gcx - 1.0f, topY, 2.0f, (botY - topY)*0.52f, cr, cg, cb, 0.50f*alpha);
-            // inner accent nodes
-            float mi = ts * 0.5f;
-            drawDiamond(gcx - mi, botY, 7.0f, cr, cg, cb, 0.50f*alpha*p2);
-            drawDiamond(gcx + mi, botY, 7.0f, cr, cg, cb, 0.50f*alpha*p2);
-            drawDiamond(gcx, gcy + 8.0f, 20.0f, cr, cg, cb, 0.88f*alpha*p2);
-            drawDiamond(gcx, gcy + 8.0f,  8.0f, 0.08f, 0.02f, 0.02f, alpha);
-            break;
-        }
+    }
+
+    // ── 등급별 색상 (마스터 기획서 고정값) ──
+    auto RarColor = [&](AugRarity r, float& cr, float& cg, float& cb) {
+        switch (r) {
+        case AugRarity::COMMON:    cr=1.0f; cg=1.0f; cb=1.0f; return;
+        case AugRarity::RARE:      cr=0.2f; cg=0.9f; cb=0.3f; return;
+        case AugRarity::EPIC:      cr=0.7f; cg=0.2f; cb=1.0f; return;
+        case AugRarity::LEGENDARY: { float p=sinf(now*3.5f)*0.5f+0.5f;
+                                     cr=1.0f; cg=0.80f+p*0.05f; cb=p*0.15f; return; }
+        case AugRarity::MYTHIC:    cr=1.0f; cg=0.2f; cb=0.8f; return;
+        case AugRarity::COMBO:     cr=0.0f; cg=0.9f; cb=1.0f; return;
+        case AugRarity::SPECIAL:   cr=1.0f; cg=1.0f; cb=1.0f; return;
+        case AugRarity::DEBUFF:    cr=1.0f; cg=0.1f; cb=0.1f; return;
+        default:                   cr=1.0f; cg=1.0f; cb=1.0f; return;
         }
     };
 
-    // 카드 발사 원점 (특이점 = 화면 중앙)
-    const float ORIGIN_X = sw * 0.5f - CARD_W * 0.5f;
-    const float ORIGIN_Y = sh * 0.5f - CARD_H * 0.5f;
+    // ── 별자리 기하 데이터 ──
+    struct CsVtx  { float ang, frac; };
+    struct CsEdge { int a, b; };
 
+    // OFFENSE: 별 윤곽 + 내부 오각형(pentagram) — 이중 별 구조
+    static const CsVtx kOffV[] = {
+        {-90.f,1.00f},{-18.f,0.96f},{ 54.f,1.00f},{128.f,0.93f},{200.f,0.97f},  // outer tips
+        {-54.f,0.40f},{ 18.f,0.38f},{ 91.f,0.42f},{163.f,0.38f},{235.f,0.40f},  // inner concave
+    };
+    static const CsEdge kOffE[] = {
+        {0,5},{5,1},{1,6},{6,2},{2,7},{7,3},{3,8},{8,4},{4,9},{9,0},  // 별 윤곽
+        {5,7},{7,9},{9,6},{6,8},{8,5},                                  // 내부 pentagram
+    };
+    // DEFENSE: 헥사그램(다윗의 별) + 중심 — 요새 구조
+    static const CsVtx kDefV[] = {
+        {-90.f,1.00f},{-30.f,1.00f},{ 30.f,1.00f},{ 90.f,1.00f},{150.f,1.00f},{210.f,1.00f}, // outer hex (0-5)
+        {-60.f,0.52f},{ 60.f,0.52f},{180.f,0.52f},  // inner triangle (6-8)
+        {  0.f,0.00f},                               // center (9)
+    };
+    static const CsEdge kDefE[] = {
+        {0,1},{1,2},{2,3},{3,4},{4,5},{5,0},          // outer hex
+        {6,7},{7,8},{8,6},                            // inner triangle
+        {0,8},{1,6},{2,6},{3,7},{4,7},{5,8},          // spokes hex→triangle
+        {6,9},{7,9},{8,9},                            // center spokes
+    };
+    // UTILITY: Dipper(국자) — 비대칭 머리+굽은 손잡이
+    static const CsVtx kUtlV[] = {
+        {-65.f,0.92f},{-15.f,1.00f},{ 38.f,0.84f},  // bowl top (0-2)
+        {-32.f,0.52f},{ 22.f,0.50f},               // bowl bottom (3-4)
+        { 90.f,0.64f},{145.f,0.76f},               // handle mid (5-6)
+        {190.f,0.58f},{222.f,0.82f},               // handle tip (7-8)
+    };
+    static const CsEdge kUtlE[] = {
+        {0,1},{1,2},{2,4},{4,3},{3,0},  // bowl outline
+        {0,4},{1,3},                     // bowl diagonals
+        {4,5},{5,6},{6,7},{7,8},         // handle chain
+    };
+
+    enum class CS : uint8_t { OFFENSE, DEFENSE, UTILITY };
+    auto ShapeOf = [](AugRarity r) -> CS {
+        switch(r) {
+        case AugRarity::RARE:
+        case AugRarity::LEGENDARY:
+        case AugRarity::DEBUFF:  return CS::OFFENSE;
+        case AugRarity::EPIC:
+        case AugRarity::MYTHIC:  return CS::DEFENSE;
+        default:                 return CS::UTILITY;
+        }
+    };
+
+    auto DrawConstell = [&](float cx, float cy, float radius,
+                             float cr, float cg, float cb,
+                             float alpha, CS shape, AugRarity rar, float selfRot) {
+        DrawNebulaGlow(cx, cy, radius*1.65f, cr,cg,cb,
+                       alpha*0.68f, now, rar == AugRarity::SPECIAL);
+
+        const CsVtx*  vt  = kUtlV; const CsEdge* ed = kUtlE;
+        int nvt = (int)(sizeof(kUtlV)/sizeof(kUtlV[0]));
+        int ned = (int)(sizeof(kUtlE)/sizeof(kUtlE[0]));
+        if (shape == CS::OFFENSE) {
+            vt=kOffV; ed=kOffE;
+            nvt=(int)(sizeof(kOffV)/sizeof(kOffV[0]));
+            ned=(int)(sizeof(kOffE)/sizeof(kOffE[0]));
+        } else if (shape == CS::DEFENSE) {
+            vt=kDefV; ed=kDefE;
+            nvt=(int)(sizeof(kDefV)/sizeof(kDefV[0]));
+            ned=(int)(sizeof(kDefE)/sizeof(kDefE[0]));
+        }
+
+        float vx[12], vy[12];
+        for (int j=0; j<nvt && j<12; j++) {
+            float rad = vt[j].ang * (float)M_PI / 180.0f + selfRot;
+            vx[j] = cx + cosf(rad) * radius * vt[j].frac;
+            vy[j] = cy + sinf(rad) * radius * vt[j].frac;
+        }
+        for (int j=0; j<ned; j++)
+            drawSeg(vx[ed[j].a],vy[ed[j].a], vx[ed[j].b],vy[ed[j].b], 2.2f, cr,cg,cb, alpha*0.82f);
+
+        for (int j=0; j<nvt; j++)
+            if (vt[j].frac >= 0.45f)
+                drawDiamond(vx[j], vy[j], 8.0f, cr,cg,cb, alpha*0.90f);
+
+        float coreSz = 20.0f;
+        if      (rar == AugRarity::LEGENDARY) coreSz = 26.0f + sinf(now*3.5f)*3.0f;
+        else if (rar == AugRarity::MYTHIC)    coreSz = 24.0f;
+        else if (rar == AugRarity::COMBO)     coreSz = 16.0f;
+        drawDiamond(cx, cy, coreSz, cr,cg,cb, alpha);
+
+        BatchFlush();
+    };
+
+    // ── 궤도 연결선 (삼각형) ──
+    {
+        float lineA = easeOut(std::min(s_spawnT * 1.5f, 1.0f));
+        if (inExit) lineA *= std::max(0.f, 1.0f - collapseT * 2.0f);
+        if (lineA > 0.01f) {
+            float ox[3], oy[3];
+            for (int _i=0; _i<3; _i++) OrbPos(_i, ox[_i], oy[_i]);
+            drawSeg(ox[0],oy[0], ox[1],oy[1], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            drawSeg(ox[1],oy[1], ox[2],oy[2], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            drawSeg(ox[2],oy[2], ox[0],oy[0], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            BatchFlush();
+        }
+    }
+
+    // ── 별자리 3개 렌더 ──
     static const wchar_t* KEY_LABELS[3] = { L"[ 1 ]", L"[ 2 ]", L"[ 3 ]" };
-    for (int i = 0; i < nCards; i++) {
-        // 중앙 특이점 → 최종 위치 방사형 (스태거 0.10씩)
-        float stag = (float)i * 0.10f;
-        float ct   = std::max(0.0f, std::min((s_enterT - stag) / (1.0f - stag), 1.0f));
-        float ce   = easeOut(ct);
-        float cardA  = ce;
 
-        bool  hov   = (g_HoveredAug == i);
-        bool  isConf= (exitPct >= 0.f && g_AugExitSlot == i);
-        float flash = s_pickFlash[i];
-
-        // ── Phase 2 알파 채널 (항성/행성 분리 연출) ──
-        float bgAlpha   = cardA;
-        float textAlpha = cardA;
-        float frmAlpha  = cardA;
-        float iconAlpha = cardA;
-        if (exitPct >= 0.f) {
-            if (isConf) {
-                // 항성: 유지 → Phase 4(0.85s~) 페이드아웃
-                if (g_AugExitT > 0.85f) {
-                    float ft = std::min((g_AugExitT - 0.85f) / 0.50f, 1.0f);
-                    bgAlpha = textAlpha = frmAlpha = iconAlpha = cardA * (1.0f - ft);
-                }
-                hov = false;
-            } else {
-                // 행성: 텍스트/bg 즉시 소멸, 프레임/아이콘은 Phase3 궤도 수렴 중 소멸
-                textAlpha = 0.0f;
-                bgAlpha   = cardA * std::max(0.0f, 1.0f - g_AugExitT / 0.15f);
-                hov = false;
-
-                if (g_AugExitT < 0.42f) {
-                    // Phase 2: 제자리 유지 (항성 수렴 대기)
-                    frmAlpha  = cardA;
-                    iconAlpha = cardA;
-                } else {
-                    // Phase 3: 나선 수렴 중 페이드 (위치는 아래 position 블록에서 결정)
-                    float p3T = std::min((g_AugExitT - 0.42f) / 0.43f, 1.0f);
-                    frmAlpha  = cardA * (1.0f - p3T);
-                    iconAlpha = frmAlpha;
-                }
-            }
-        }
-
-        // 위치 계산: 등장 방사형 + 항성 수렴
-        float fx = baseX + (float)i * (CARD_W + GAP);
-        float fy = baseY;
-        float cx = ORIGIN_X + (fx - ORIGIN_X) * ce;
-        float cy = ORIGIN_Y + (fy - ORIGIN_Y) * ce + s_hovY[i];
-        if (exitPct >= 0.f && isConf) {
-            float lerpT = std::min(g_AugExitT / 0.42f, 1.0f);
-            float lerpE = easeOut(lerpT);
-            cx = fx + (sw * 0.5f - CARD_W * 0.5f - fx) * lerpE;
-            cy = fy + (sh * 0.5f - CARD_H * 0.5f - fy) * lerpE;
-        }
-        // Phase 3 planet: 항성 주위 나선 수렴
-        if (exitPct >= 0.f && !isConf && g_AugExitT >= 0.42f) {
-            float p3T    = std::min((g_AugExitT - 0.42f) / 0.43f, 1.0f);
-            float p3ease = p3T * p3T;
-            float cardCX = fx + CARD_W * 0.5f;
-            float cardCY = fy + CARD_H * 0.5f;
-            float ddx = cardCX - sw * 0.5f;
-            float ddy = cardCY - sh * 0.5f;
-            float startR = sqrtf(ddx * ddx + ddy * ddy);
-            float startA = atan2f(ddy, ddx);
-            float radius = startR * (1.0f - p3ease);
-            float orbitA = startA + p3T * 3.14159f;
-            cx = sw * 0.5f - CARD_W * 0.5f + cosf(orbitA) * radius;
-            cy = sh * 0.5f - CARD_H * 0.5f + sinf(orbitA) * radius;
-        }
-
+    for (int i=0; i<3; i++) {
         const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
-        float tr, tg, tb2;
-        GetRarityColor(def.rarity, tr, tg, tb2);
-        // 선택 확정 순간 밝기 부스트 (pick flash + isConf)
-        float flashBoost = flash * 0.7f + (isConf ? exitE * (1.0f - exitE) * 4.0f * (1.0f - exitPct) : 0.0f);
-        float bMul = (hov ? 1.55f : 1.05f) + flashBoost;
-        float nr = std::min(1.0f, tr * bMul + 0.08f);
-        float ng = std::min(1.0f, tg * bMul + 0.08f);
-        float nb = std::min(1.0f, tb2 * bMul + 0.08f);
-
-        // ── 배경 + 배지 마커 ──
-        BindMainShader();
-        float tc = hov ? 0.10f : 0.06f;
-        drawRect(cx, cy, CARD_W, CARD_H,
-                 0.05f + tr  * tc + flash * 0.04f,
-                 0.06f + tg  * tc + flash * 0.03f,
-                 0.10f + tb2 * tc + flash * 0.03f,
-                 0.96f * bgAlpha);
-        drawDiamond(cx + 15.0f, cy + 17.0f, 5.0f, nr, ng, nb, 0.85f * bgAlpha);
-
-        // ── 등급 배지 텍스트 (좌상단) ──
-        const wchar_t* badge = GetAugBadge(def);
-        BatchFlush();
-        g_TextS.Draw(badge, cx + 26.0f, cy + 10.0f, 0.42f, nr, ng, nb, 0.88f * bgAlpha);
-        BatchFlush();
-
-        // ── 별자리 기하 도형 아이콘 (상단 60% 중앙) ──
-        drawAugGeo(cx + CARD_W * 0.5f, cy + 148.0f,
-                   def.rarity, nr, ng, nb, iconAlpha, hov, now);
-
-        // ── 구분선 (하단 40% 경계, diamond 포인트) ──
-        BindMainShader();
-        {
-            float sepY = cy + 295.0f;
-            float sepX = cx + 22.0f, sepW = CARD_W - 44.0f;
-            drawRect(sepX, sepY, sepW, 1.2f, nr, ng, nb, 0.28f * iconAlpha);
-            drawDiamond(cx + CARD_W * 0.5f, sepY, 3.5f, nr, ng, nb, 0.55f * iconAlpha);
-            drawDiamond(sepX,          sepY, 3.0f, nr, ng, nb, 0.42f * iconAlpha);
-            drawDiamond(sepX + sepW,   sepY, 3.0f, nr, ng, nb, 0.42f * iconAlpha);
+        float cr, cg, cb;
+        RarColor(def.rarity, cr, cg, cb);
+        if (inFocus && g_HoveredAug >= 0 && g_HoveredAug != i) {
+            float bt = ((1.0f - s_dimT[i]) / (1.0f - 0.38f)) * 0.75f;
+            cr = cr * (1.0f - bt) + 0.20f * bt;
+            cg = cg * (1.0f - bt) + 0.55f * bt;
+            cb = cb * (1.0f - bt) + 0.85f * bt;
         }
 
-        // ── 이름 (하단 40% 그룹 — 좌측 컬러 바 + 텍스트) ──
-        const wchar_t* cardName = AugName(def);
-        float nameSc = 0.92f;
-        while (nameSc > 0.58f && g_TextL.Width(cardName, nameSc) > CARD_W - 40.0f)
-            nameSc -= 0.04f;
-        float nameY = cy + 312.0f;
-        float nameH = g_TextL.Height(cardName, nameSc);
-        drawRect(cx + 14.0f, nameY, 3.0f, nameH + 2.0f, nr, ng, nb, 0.80f * textAlpha);
-        BatchFlush();
-        g_TextL.Draw(cardName, cx + 24.0f, nameY, nameSc,
-                     1.0f, 1.0f, 1.0f, 0.96f * textAlpha);
+        const CS   shape   = ShapeOf(def.rarity);
+        const bool hov     = (g_HoveredAug == i && inFocus);
+        const bool isConf  = (inExit && g_AugExitSlot == i);
+        const bool isOther = (inExit && g_AugExitSlot != i);
+        const float flash  = s_flashT[i];
 
-        // ── 설명 (최대 2줄) ──
-        const wchar_t* desc = AugDesc(def);
-        std::wstring dl[2]; int dli2 = 0;
-        for (const wchar_t* p = desc; *p; ++p) {
-            if (*p == L'/' && dli2 < 1) { dli2++; continue; }
-            if (dli2 < 2) dl[dli2] += *p;
-        }
-        for (auto& s2 : dl) { while (!s2.empty() && s2.front()==L' ') s2.erase(0,1); while (!s2.empty() && s2.back()==L' ') s2.pop_back(); }
-        float dY2 = nameY + nameH + 8.0f;
-        for (int k = 0; k < 2 && !dl[k].empty(); ++k) {
-            float ksc = (k == 0) ? 0.58f : 0.52f;
-            while (ksc > 0.38f && g_TextS.Width(dl[k].c_str(), ksc) > CARD_W - 38.0f) ksc -= 0.04f;
-            g_TextS.Draw(dl[k].c_str(), cx + 24.0f, dY2, ksc,
-                         0.76f, 0.84f, 0.92f, (k == 0 ? 0.80f : 0.60f) * textAlpha);
-            dY2 += ksc * 20.0f + 4.0f;
-        }
+        float spawnStag = std::max(0.0f, std::min((s_spawnT-(float)i*0.10f)/0.75f, 1.0f));
+        float spawnE    = easeOut(spawnStag);
 
-        // ── 키 힌트 (하단) ──
-        {
-            float klW = g_TextS.Width(KEY_LABELS[i], 0.88f);
-            g_TextS.Draw(KEY_LABELS[i],
-                         cx + (CARD_W - klW) * 0.5f, cy + CARD_H - 40.0f,
-                         0.88f, nr, ng, nb, 0.90f * textAlpha);
-        }
-        BatchFlush();
+        float opx, opy;
+        OrbPos(i, opx, opy);
+        float pullE = easeOut(s_pullT[i]);
+        // 항성 풀: 궤도 위치 → 중앙으로
+        float tpx = opx + (ORB_CX - opx) * pullE;
+        float tpy = opy + (ORB_CY - opy) * pullE;
+        // SPAWN: 중심에서 팽창
+        float px = ORB_CX + (tpx - ORB_CX) * spawnE;
+        float py = ORB_CY + (tpy - ORB_CY) * spawnE;
+        float alpha = spawnE * s_dimT[i];
 
-        // ── 호버 내부 테두리 glow ──
-        if (hov || flash > 0.1f) {
-            BindMainShader();
-            SetGlowFx(true);
-            float bA = ((hov ? 0.46f : 0.0f) + flash * 0.24f) * frmAlpha;
-            if (bA > 0.01f) {
-                float iX = cx+3.5f, iY = cy+3.5f, iW = CARD_W-7.0f, iH = CARD_H-7.0f;
-                drawRect(iX, iY,          iW, 2.5f, nr, ng, nb, bA);
-                drawRect(iX, iY+iH-2.5f,  iW, 2.5f, nr, ng, nb, bA);
-                drawRect(iX, iY,          2.5f, iH,  nr, ng, nb, bA);
-                drawRect(iX+iW-2.5f, iY,  2.5f, iH,  nr, ng, nb, bA);
+        float radius = BASE_R;
+        if (def.rarity == AugRarity::LEGENDARY)
+            radius *= 1.0f + (sinf(now*3.5f)*0.5f+0.5f)*0.08f;
+        radius *= (1.0f + flash*0.04f);
+        radius *= (1.0f + pullE * 1.5f);   // 항성화: 최대 2.5x
+
+        // selfRot 먼저 계산 (isOther 내부에서 가속 추가 가능)
+        float selfRot = now * 0.45f + (float)i * (6.2832f / 3.0f);
+
+        if (isConf) {
+            px     = opx + (sw*0.5f - opx) * collapseE;
+            py     = opy + (sh*0.5f - opy) * collapseE;
+            radius = BASE_R * (1.0f + collapseE * 0.55f);
+            alpha  = spawnE;
+            if (supernovaT > 0.0f) {
+                float snE = easeOut(supernovaT);
+                radius = BASE_R * (1.0f + snE * 4.2f);
+                alpha  = spawnE * (1.0f - snE*snE);
+                cr=1.f; cg=1.f; cb=1.f;
             }
-            BatchFlush();
-            SetGlowFx(false);
-            BindMainShader();
+        } else if (isOther) {
+            int ci = g_AugExitSlot;
+            // 확정 별자리 초기 궤도 위치 (고정) → 공전 기준각 계산
+            float confOx = ORB_CX, confOy = ORB_CY;
+            if (ci>=0&&ci<3) OrbPos(ci, confOx, confOy);
+            // 확정 별자리 현재 위치 (중앙으로 이동 중) → 공전 중심 추적
+            float cpx = confOx + (sw*0.5f - confOx) * collapseE;
+            float cpy = confOy + (sh*0.5f - confOy) * collapseE;
+            float absorb = easeIn(std::min(g_AugExitT / COLLAPSE_END, 1.0f));
+            // 초기 각도: other 위치 → 확정 위치 방향
+            float initAng  = atan2f(opy - confOy, opx - confOx);
+            float initDist = sqrtf((opx-confOx)*(opx-confOx)+(opy-confOy)*(opy-confOy));
+            // 빠른 공전 + 나선형 수렴
+            float orbitAng = initAng + g_AugExitT * 12.0f;
+            float spiralR  = initDist * (1.0f - absorb);
+            px     = cpx + cosf(orbitAng) * spiralR;
+            py     = cpy + sinf(orbitAng) * spiralR;
+            radius = BASE_R * (1.0f - absorb * 0.95f);
+            alpha  = spawnE * (1.0f - absorb * absorb);
         }
 
-        // ── Constellation frame (hover 시 glow + 두꺼워진 코너) ──
-        BindMainShader();
-        BatchFlush();
-        SetGlowFx(hov || flash > 0.15f);
-        drawConstellFrame(cx, cy, CARD_W, CARD_H,
-                          nr, ng, nb,
-                          ((hov ? 0.90f : 0.44f) + flash * 0.28f) * frmAlpha,
-                          hov ? 30.0f : 22.0f, hov ? 7.0f : 5.5f,
-                          ((hov ? 0.40f : 0.06f) + flash * 0.14f) * frmAlpha,
-                          1.0f);
-        BatchFlush();
-        SetGlowFx(false);
-
-        // ── 진입 스캔 마스크 + 빔 (decode 연출) ──
-        if (s_scanT[i] < 1.0f && exitPct < 0.0f) {
+        if (alpha < 0.005f || radius < 2.0f) continue;
+        if (def.rarity == AugRarity::COMBO) {
+            float off = radius * 0.36f;
+            DrawConstell(px-off, py, radius*0.70f, cr,cg,cb, alpha, CS::DEFENSE, def.rarity, selfRot);
+            DrawConstell(px+off, py, radius*0.70f, cr,cg,cb, alpha, CS::OFFENSE, def.rarity, selfRot);
+            drawSeg(px-off, py, px+off, py, 2.8f, cr,cg,cb, alpha*0.62f);
             BatchFlush();
-            BindMainShader();
-            float revealH = s_scanT[i] * CARD_H;
-            // 미공개 영역 오버레이 색으로 덮기
-            float bgR = isDebuff ? 0.10f : 0.01f;
-            float bgG = 0.01f;
-            float bgB = isDebuff ? 0.01f : 0.06f;
-            drawRect(cx, cy + revealH, CARD_W, CARD_H - revealH + 1.0f,
-                     bgR, bgG, bgB, overlayA * 0.96f + 0.04f);
-            // 스캔 빔
-            if (s_scanT[i] > 0.0f) {
-                float flk = 0.70f + 0.30f * sinf(s_entryElapsed * 92.0f + (float)i * 2.8f);
-                drawRect(cx, cy + revealH - 14.0f, CARD_W, 14.0f, nr, ng, nb, 0.18f * flk * cardA);
-                drawRect(cx, cy + revealH - 2.5f,  CARD_W,  3.5f, 1.0f, 1.0f, 1.0f, 0.90f * flk * cardA);
-            }
+        } else {
+            DrawConstell(px, py, radius, cr, cg, cb, alpha, shape, def.rarity, selfRot);
+        }
+
+        if (!inExit && spawnE > 0.5f) {
+            float kA  = spawnE * 0.82f;
+            float klW = g_TextS.Width(KEY_LABELS[i], 0.76f);
+            BatchFlush();
+            g_TextS.Draw(KEY_LABELS[i], px - klW*0.5f, py + BASE_R + 30.0f,
+                         0.76f, 0.58f,0.80f,1.00f, kA);
             BatchFlush();
         }
     }
 
-    // ── Phase 4: 초신성 폭발 파티클 (0.85s) ──
-    if (g_AugExitT > 0.85f && !s_supernovaSpawned) {
-        s_supernovaSpawned = true;
-        int selIdx = (g_AugExitSlot >= 0) ? g_GameManager.augChoices[g_AugExitSlot] : 0;
-        const AugDef& snDef = ALL_AUGS[selIdx];
-        float sr, sgc, sbc;
-        GetRarityColor(snDef.rarity, sr, sgc, sbc);
-        int placed = 0;
-        for (int k = 0; k < MAX_AEP && placed < 48; k++) {
-            if (s_AEP[k].active) continue;
-            float ang = (float)placed / 48.0f * 6.2832f;
-            float spd = 350.0f + (float)(rand() % 450);
-            s_AEP[k] = { sw * 0.5f, sh * 0.5f,
-                          cosf(ang) * spd, sinf(ang) * spd,
-                          0.65f, 0.65f,
-                          5.0f + (float)(rand() % 8),
-                          sr, sgc, sbc,
-                          g_AugExitT,  // spawnT — 0.14s 후 수렴 시작
-                          true };
-            placed++;
+    // ── 우측 데이터 태그 패널 ──
+    {
+        if (s_panelA > 0.01f && !inExit) {
+            int idx = (g_HoveredAug>=0 && g_HoveredAug<3) ? g_HoveredAug : 0;
+            const AugDef& hovDef = ALL_AUGS[g_GameManager.augChoices[idx]];
+            float hr, hg, hb;
+            RarColor(hovDef.rarity, hr, hg, hb);
+            float pA = s_panelA;
+
+            const float PX = sw * 0.680f;
+            const float PY = sh * 0.220f;
+            const float PW = sw - PX - 18.0f;
+
+            drawSeg(PX - 8.0f, PY, PX - 8.0f, PY + sh * 0.42f, 2.0f, hr,hg,hb, pA * 0.65f);
+            BatchFlush();
+
+            float ty = PY;
+
+            // [ CLASS : badge ]
+            const wchar_t* badge = GetAugBadge(hovDef);
+            wchar_t classLine[64];
+            swprintf_s(classLine, L"[ CLASS : %ls ]", badge);
+            g_TextS.Draw(classLine, PX, ty, 0.52f, hr,hg,hb, 0.90f*pA);
+            ty += 26.0f;
+            BatchFlush();
+
+            // > 증강명
+            const wchar_t* name = AugName(hovDef);
+            float nSc = 0.84f;
+            while (nSc > 0.52f && g_TextL.Width(name, nSc) > PW) nSc -= 0.04f;
+            wchar_t nameLine[256];
+            swprintf_s(nameLine, L"> %ls", name);
+            g_TextL.Draw(nameLine, PX, ty, nSc, 1.f,1.f,1.f, 0.96f*pA);
+            ty += nSc * 32.0f + 10.0f;
+            BatchFlush();
+
+            drawSeg(PX, ty, PX + PW * 0.65f, ty, 1.5f, 0.30f,0.62f,0.92f, pA * 0.30f);
+            ty += 14.0f;
+            BatchFlush();
+
+            // STAT: 핵심 수치
+            {
+                const wchar_t* statVal = AugStat(hovDef);
+                wchar_t statLine[128];
+                swprintf_s(statLine, L"STAT: %ls", statVal);
+                float ssc = 0.60f;
+                while (ssc > 0.44f && g_TextS.Width(statLine, ssc) > PW) ssc -= 0.04f;
+                g_TextS.Draw(statLine, PX, ty, ssc, 0.70f,0.95f,0.72f, 0.92f*pA);
+                ty += ssc * 22.0f + 8.0f;
+                BatchFlush();
+            }
+
+            // DESC: 간단 설명 (locDesc 직접 — AugDescKR 장문 제외)
+            {
+                const wchar_t* desc = hovDef.locDesc[CurLangIdx()];
+                float dsc = 0.60f;
+                while (dsc > 0.44f && g_TextS.Width(desc, dsc) > PW) dsc -= 0.04f;
+                wchar_t descLine[256];
+                swprintf_s(descLine, L"DESC: %ls", desc);
+                g_TextS.Draw(descLine, PX, ty, dsc, 0.78f,0.88f,0.96f, 0.82f*pA);
+                ty += dsc * 22.0f + 4.0f;
+                BatchFlush();
+            }
+
+            ty += 8.0f;
+            drawSeg(PX, ty, PX + PW * 0.65f, ty, 1.5f, 0.30f,0.62f,0.92f, pA * 0.18f);
+            ty += 12.0f;
+            BatchFlush();
+
+            const wchar_t* HINT = T(StrId::KEY_HINT_HOVER);
+            g_TextS.Draw(HINT, PX, ty, 0.58f, 0.48f,0.68f,0.80f, 0.72f*pA);
+            BatchFlush();
+
+        } else if (!inExit && s_spawnT > 0.4f) {
+            const wchar_t* HINT = T(StrId::KEY_HINT_NO_HOVER);
+            BatchFlush();
+            g_TextS.Draw(HINT, CenterTextX(sw, g_TextS, HINT, 0.72f),
+                         sh*0.88f, 0.72f, 0.52f,0.60f,0.72f, 0.62f*easeOut(s_spawnT));
+            BatchFlush();
         }
-        TriggerFlash(sr, sgc, sbc, 0.90f);
     }
 
-    // ── 종료 파티클 업데이트 + 드로우 ──
-    if (exitPct >= 0.0f) {
-        const float tgt_x = sw * 0.5f;
-        const float tgt_y = sh * 0.5f;
+    // ── SUPERNOVA 파티클 ──
+    if (g_AugExitT >= SN_START) {
+        if (!s_snSpawned) {
+            s_snSpawned = true;
+            int confIdx = (g_AugExitSlot>=0) ? g_GameManager.augChoices[g_AugExitSlot] : 0;
+            float pr, pg2, pb;
+            RarColor(ALL_AUGS[confIdx].rarity, pr, pg2, pb);
+            float spawnX = ORB_CX, spawnY = ORB_CY;
+            if (g_AugExitSlot>=0&&g_AugExitSlot<3) OrbPos(g_AugExitSlot, spawnX, spawnY);
+            for (int k=0; k<SN_MAX; k++) {
+                float ang = (float)k/SN_MAX*6.2832f + now*0.1f;
+                float spd = 140.0f + (float)(rand()%340);
+                s_sn[k] = { spawnX, spawnY,
+                             cosf(ang)*spd, sinf(ang)*spd,
+                             0.60f, pr, pg2, pb, true };
+            }
+            TriggerFlash(pr, pg2, pb, 0.90f);
+        }
         BindMainShader();
-        for (int k = 0; k < MAX_AEP; k++) {
-            AugExPart& p = s_AEP[k];
+        for (auto& p : s_sn) {
             if (!p.active) continue;
             p.life -= delta;
-            if (p.life <= 0.0f) { p.active = false; continue; }
-            // spawnT 기준 0.14s 이후 화면 중앙 수렴
-            if ((g_AugExitT - p.spawnT) > 0.14f) {
-                float dx = tgt_x - p.x, dy = tgt_y - p.y;
-                float d  = sqrtf(dx*dx + dy*dy) + 1.0f;
-                float pull = (g_AugExitT - p.spawnT - 0.14f) * 3200.0f;
-                p.vx += (dx / d) * pull * delta;
-                p.vy += (dy / d) * pull * delta;
-            }
+            if (p.life <= 0.f) { p.active=false; continue; }
             p.x  += p.vx * delta;
             p.y  += p.vy * delta;
-            p.vx *= (1.0f - 3.2f * delta);
-            p.vy *= (1.0f - 3.2f * delta);
-            float fr = p.life / p.maxLife;
-            drawDiamond(p.x, p.y, p.size * (0.4f + 0.6f * fr), p.r, p.g, p.b, fr * 0.88f);
+            p.vx *= (1.0f - 2.2f*delta);
+            p.vy *= (1.0f - 2.2f*delta);
+            float fr = p.life / 0.60f;
+            drawDiamond(p.x, p.y, 4.5f*fr+0.5f, p.r,p.g,p.b, fr*0.90f);
         }
-        BatchFlush();
-    }
-
-    // ── 하단 상세 설명 박스 (항상 표시 — 호버 카드 or 0번) ──
-    {
-        int descIdx = (g_HoveredAug >= 0) ? g_HoveredAug : 0;
-        int hIdx    = g_GameManager.augChoices[descIdx];
-        if (hIdx < 0) hIdx = 0;
-        const AugDef& hDef = ALL_AUGS[hIdx];
-        float hr, hg, hb;
-        GetRarityColor(hDef.rarity, hr, hg, hb);
-        const wchar_t* hDesc = AugDesc(hDef);
-
-        float boxY = baseY + CARD_H + 14.0f;
-        float boxW = TOTAL_W;
-        float boxH = 128.0f;
-        float boxX = (sw - boxW) * 0.5f;
-        float boxA = overlayA;
-
-        BindMainShader();
-        drawRect(boxX, boxY, boxW, boxH, 0.028f, 0.034f, 0.072f, 0.82f * boxA);
-        drawRect(boxX, boxY, 4.0f, boxH, hr, hg, hb, 0.90f * boxA);
-        drawConstellFrame(boxX, boxY, boxW, boxH,
-                          hr, hg, hb, 0.50f * boxA,
-                          16.0f, 3.5f, 0.0f, 1.0f);
-        BatchFlush();
-
-        std::vector<std::wstring> lines;
-        std::wstring cur;
-        for (const wchar_t* p = hDesc; *p; ++p) {
-            if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
-            else cur += *p;
-        }
-        if (!cur.empty()) lines.push_back(cur);
-        for (auto& s : lines) {
-            while (!s.empty() && s.front() == L' ') s.erase(0, 1);
-            while (!s.empty() && s.back()  == L' ') s.pop_back();
-        }
-        int n = (int)lines.size(); if (n < 1) n = 1;
-        float maxw = 1.0f;
-        for (auto& ln : lines) { float w = g_TextS.Width(ln.c_str(), 1.0f); if (w > maxw) maxw = w; }
-        float sc = 0.84f;
-        if (maxw * sc > boxW - 56.0f) sc = (boxW - 56.0f) / maxw;
-        if (sc < 0.50f) sc = 0.50f;
-        float lineH  = 28.0f * sc;
-        float startY = boxY + 10.0f + (boxH - 10.0f - lineH * n) * 0.5f;
-        for (int li = 0; li < n; li++) {
-            float lw = g_TextS.Width(lines[li].c_str(), sc);
-            g_TextS.Draw(lines[li].c_str(),
-                         boxX + 18.0f + (boxW - 18.0f - lw) * 0.5f,
-                         startY + lineH * li, sc, 1.0f, 1.0f, 1.0f, 0.92f * boxA);
-        }
-        BatchFlush();
-
-        const wchar_t* HINT = (g_HoveredAug < 0) ? T(StrId::KEY_HINT_NO_HOVER)
-                                                  : T(StrId::KEY_HINT_HOVER);
-        BindMainShader();
-        g_TextS.Draw(HINT, CenterTextX(sw, g_TextS, HINT, 0.76f),
-                     boxY + boxH + 10.0f, 0.76f,
-                     0.60f, 0.66f, 0.76f, 0.70f * boxA);
         BatchFlush();
     }
 }
-
 void Scene_AugReplace(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const float delta = c.delta;
@@ -5387,7 +8222,7 @@ bool TryEscNavigateBack() {
     GameState& st = g_GameManager.currentState;
     switch (st) {
     case GS::SHOP:
-        st = GS::MAIN_MENU;
+        s_ShopBackRequested = true;
         return true;
     case GS::CODEX:
         CodexSearchClear();

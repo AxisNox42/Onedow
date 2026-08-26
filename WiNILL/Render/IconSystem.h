@@ -196,6 +196,19 @@ inline GLuint IconLoadFile(const char* path) {
     stbi_image_free(d);
     return t;
 }
+inline GLuint IconLoadFileAlphaBoost(const char* path, float boost) {
+    int w, h, n;
+    unsigned char* d = stbi_load(path, &w, &h, &n, 4);
+    if (!d) return 0;
+    const int pixels = w * h;
+    for (int i = 0; i < pixels; ++i) {
+        const int a = (int)((float)d[i * 4 + 3] * boost);
+        d[i * 4 + 3] = (unsigned char)(a > 255 ? 255 : a);
+    }
+    GLuint t = IconTexFromRGBA(d, w, h);
+    stbi_image_free(d);
+    return t;
+}
 #ifdef _WIN32
 // 임베디드 리소스 "ICON_<name>" (RCDATA) → 텍스처
 inline GLuint IconLoadResourceName(const char* resName) {
@@ -208,6 +221,26 @@ inline GLuint IconLoadResourceName(const char* resName) {
     DWORD sz = SizeofResource(hm, hr);
     if (!p || sz == 0) return 0;
     return IconLoadMem((const unsigned char*)p, (int)sz);
+}
+inline GLuint IconLoadResourceAlphaBoost(const char* resName, float boost) {
+    HMODULE hm = GetModuleHandleW(NULL);
+    HRSRC hr = FindResourceA(hm, resName, MAKEINTRESOURCEA(10));
+    if (!hr) return 0;
+    HGLOBAL hg = LoadResource(hm, hr);
+    const void* p = hg ? LockResource(hg) : nullptr;
+    DWORD sz = hg ? SizeofResource(hm, hr) : 0;
+    if (!p || sz == 0) return 0;
+    int w, h, n;
+    unsigned char* d = stbi_load_from_memory((const unsigned char*)p, (int)sz, &w, &h, &n, 4);
+    if (!d) return 0;
+    const int pixels = w * h;
+    for (int i = 0; i < pixels; ++i) {
+        const int a = (int)((float)d[i * 4 + 3] * boost);
+        d[i * 4 + 3] = (unsigned char)(a > 255 ? 255 : a);
+    }
+    GLuint t = IconTexFromRGBA(d, w, h);
+    stbi_image_free(d);
+    return t;
 }
 #endif
 
@@ -260,6 +293,9 @@ inline void ResolveIconDir() {
 // 직업 아이콘 — 인덱스 = JobId 순서 (Achievements.h 의 enum 과 동일 순서로 유지)
 //   0:NONE(없음) 1:ASSASSIN 2:BERSERKER 3:BOMBARDIER 4:VAMPIRE 5:SWORDSMAN 6:ARCHER
 inline GLuint g_JobIconTex[8] = { 0 };
+inline GLuint g_ConstellationLineTex = 0;
+inline GLuint g_ConstellationCircleTex = 0;
+inline GLuint g_ConfigPanelTex = 0;
 inline const char* const g_JobIconNames[7] = {
     "",                // JOB_NONE — 아이콘 없음
     "JOB_ASSASSIN", "JOB_BERSERKER", "JOB_BOMBARDIER",
@@ -280,6 +316,27 @@ inline void LoadIcons() {
     }
     for (int j = 1; j < 7; j++)
         g_JobIconTex[j] = IconLoad(g_JobIconNames[j]);
+
+    // White alpha masks used by the RUN_CONFIG constellation renderer.
+    const char* linePaths[] = { "Resource/Icons/LineTexture.png", "../Resource/Icons/LineTexture.png", "Icons/LineTexture.png" };
+    const char* circlePaths[] = { "Resource/Icons/CircleTexture.png", "../Resource/Icons/CircleTexture.png", "Icons/CircleTexture.png" };
+    for (const char* path : linePaths) {
+        g_ConstellationLineTex = IconLoadFile(path);
+        if (g_ConstellationLineTex) break;
+    }
+    for (const char* path : circlePaths) {
+        g_ConstellationCircleTex = IconLoadFile(path);
+        if (g_ConstellationCircleTex) break;
+    }
+    const char* panelPaths[] = { "Resource/Icons/PanelTexture.png", "../Resource/Icons/PanelTexture.png", "Icons/PanelTexture.png" };
+#ifdef _WIN32
+    g_ConfigPanelTex = IconLoadResourceAlphaBoost("ICON_CONFIG_PANEL", 2.5f);
+#endif
+    if (g_ConfigPanelTex) return;
+    for (const char* path : panelPaths) {
+        g_ConfigPanelTex = IconLoadFileAlphaBoost(path, 2.5f);
+        if (g_ConfigPanelTex) break;
+    }
 }
 
 inline GLuint JobIcon(int jobId) {
