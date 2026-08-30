@@ -6642,6 +6642,11 @@ void Scene_Settings(const SceneCtx& c) {
     const float tabCardGap = 16.0f * uiS;
     const float tabCardH   = 66.0f * uiS;
 
+    // Solid left column background
+    BindMainShader();
+    drawRect(leftX, bodyY, leftW, bodyH,
+             0.030f, 0.040f, 0.062f, 0.50f * wake);
+
     for (int i = 0; i < kTabCount; ++i) {
         const SettingsTabDef& td = kTabs[i];
         float cardY  = bodyY + (float)i * (tabCardH + tabCardGap);
@@ -6759,7 +6764,14 @@ void Scene_Settings(const SceneCtx& c) {
     drawRect(rpx, bodyY, rightW, bodyH,
              0.044f + baseR*0.018f,
              0.052f + baseG*0.015f,
-             0.074f + baseB*0.014f, 0.10f*panelE*rightWake);
+             0.074f + baseB*0.014f, 0.55f*panelE*rightWake);
+    if (panelE < 0.96f && rightWake > 0.02f) {
+        const float scanY = bodyY + bodyH * panelE;
+        drawRect(rpx, scanY - 1.5f*uiS, rightW, 3.0f*uiS,
+                 baseR, baseG, baseB, 0.38f*(1.0f - panelE)*rightWake);
+    }
+    LogoLine(rpx, bodyY, rpx + rightW, bodyY,
+             0.8f*uiS, baseR, baseG, baseB, 0.24f*panelE*rightWake);
     if (rightWake > 0.02f) {
         BatchFlush(); SetGlowFx(true);
         drawConstellFrame(rpx, bodyY, rightW, bodyH,
