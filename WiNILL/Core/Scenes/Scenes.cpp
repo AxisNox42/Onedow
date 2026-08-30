@@ -19,6 +19,7 @@
 #include "ExpSystem.h"
 #include "SaveSystem.h"
 #include "DrawPrim.h"
+#include "../../Render/UiColors.h"
 #include "../../Render/PlanetShader.h"
 #include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
@@ -70,6 +71,72 @@ static float UiApproach(float v, float target, float dt, float speed) {
     return v + (target - v) * k;
 }
 
+struct ConstellationMotionProfile {
+    float rotationSpeed;
+    float radialPull;
+    float edgeAlpha;
+    float nodePulse;
+    float alignmentStrength;
+};
+
+struct ConstellationMotionState {
+    ConstellationMotionProfile current{};
+    ConstellationMotionProfile target{};
+    float phase = 0.0f;
+    bool initialized = false;
+};
+
+static ConstellationMotionState s_MainMenuConstellationMotion;
+
+static ConstellationMotionProfile MainMenuMotionProfile(int menuIndex) {
+    static constexpr ConstellationMotionProfile kIdle =
+        { 1.35f,  0.00f, 0.74f, 0.64f, 0.10f };
+    static constexpr ConstellationMotionProfile kProfiles[5] = {
+        { 1.90f, -0.08f, 0.90f, 1.00f, 0.12f }, // RUN_CONFIG: core convergence
+        { 1.72f,  0.10f, 1.00f, 0.92f, 0.08f }, // ARMORY: radial expansion
+        { 0.92f,  0.01f, 0.82f, 0.62f, 0.20f }, // ASTRAL_LOG: stable observation
+        { 1.12f,  0.00f, 0.88f, 0.72f, 0.78f }, // CALIBRATION: orbital alignment
+        { 0.34f, -0.06f, 0.46f, 0.28f, 0.42f }, // SHUTDOWN: motion decay
+    };
+    return (menuIndex >= 0 && menuIndex < 5) ? kProfiles[menuIndex] : kIdle;
+}
+
+static bool MotionProfileSettled(const ConstellationMotionProfile& a,
+                                 const ConstellationMotionProfile& b) {
+    return std::abs(a.rotationSpeed - b.rotationSpeed) < 0.005f
+        && std::abs(a.radialPull - b.radialPull) < 0.005f
+        && std::abs(a.edgeAlpha - b.edgeAlpha) < 0.003f
+        && std::abs(a.nodePulse - b.nodePulse) < 0.003f
+        && std::abs(a.alignmentStrength - b.alignmentStrength) < 0.005f;
+}
+
+static void UpdateMainMenuConstellationMotion(int menuIndex, float dt) {
+    ConstellationMotionState& state = s_MainMenuConstellationMotion;
+    state.target = MainMenuMotionProfile(menuIndex);
+    if (!state.initialized) {
+        state.current = state.target;
+        state.initialized = true;
+    } else {
+        const float clampedDt = std::min(dt, 0.05f);
+        const float follow = 1.0f - expf(-7.5f * clampedDt);
+        auto approach = [follow](float current, float target) {
+            return current + (target - current) * follow;
+        };
+        state.current.rotationSpeed = approach(state.current.rotationSpeed, state.target.rotationSpeed);
+        state.current.radialPull = approach(state.current.radialPull, state.target.radialPull);
+        state.current.edgeAlpha = approach(state.current.edgeAlpha, state.target.edgeAlpha);
+        state.current.nodePulse = approach(state.current.nodePulse, state.target.nodePulse);
+        state.current.alignmentStrength = approach(state.current.alignmentStrength,
+                                                   state.target.alignmentStrength);
+        if (MotionProfileSettled(state.current, state.target))
+            state.current = state.target;
+    }
+
+    constexpr float kTau = 6.28318530717958647692f;
+    state.phase = fmodf(state.phase
+                        + state.current.rotationSpeed * std::min(dt, 0.05f), kTau);
+}
+
 static void ResetRunConfigUi() {
     g_RunConfigStep = 0;
     g_Difficulty = Difficulty::NORMAL;
@@ -107,6 +174,7 @@ static void ResetMainMenuUi() {
     s_MainMenuSettingsPanel = false;
     s_MainMenuRunConfigPanel = false;
     s_MainMenuResumeFromPanel = false;
+    s_MainMenuConstellationMotion = {};
 }
 
 // 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 선택적 비네트)
@@ -118,13 +186,14 @@ static void DrawMenuBackground(float sw, float sh, float delta, float darkenAmou
 
     if (darkenAmount > 0.0f) {
         // 딥 네이비 반투명 — 배경화면이 비치도록
-        drawRect(0, 0, sw, sh, 0.04f, 0.06f, 0.14f, 0.20f * darkenAmount);
+        drawRect(0, 0, sw, sh, 0.04f, 0.06f, 0.14f, 0.16f * darkenAmount);
     }
 
     struct AP { float x, y, vx, vy, sz, tw; };
-    static AP a_ps[55]; static bool ap_init = false;
+    constexpr int kParticleCount = 30;
+    static AP a_ps[kParticleCount]; static bool ap_init = false;
     if (!ap_init) { ap_init = true;
-        for (int i = 0; i < 55; i++) {
+        for (int i = 0; i < kParticleCount; i++) {
             a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
             float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
             a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
@@ -135,21 +204,27 @@ static void DrawMenuBackground(float sw, float sh, float delta, float darkenAmou
     static const float kNebR[3] = { 0.42f, 0.92f, 0.72f };
     static const float kNebG[3] = { 0.28f, 0.22f, 0.82f };
     static const float kNebB[3] = { 1.00f, 0.78f, 1.00f };
-    for (int i = 0; i < 55; i++) { AP& p = a_ps[i];
+    const int visibleParticles = (g_VfxDensity == VfxDensity::REDUCED) ? 18 : kParticleCount;
+    for (int i = 0; i < visibleParticles; i++) { AP& p = a_ps[i];
         p.x += p.vx*dtp; p.y += p.vy*dtp;
         if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
         if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
         p.tw += dtp*1.6f;
         int ci = i % 3;
-        drawCircle(p.x, p.y, p.sz, kNebR[ci], kNebG[ci], kNebB[ci], 0.12f + 0.10f*sinf(p.tw));
+        drawCircle(p.x, p.y, p.sz, kNebR[ci], kNebG[ci], kNebB[ci],
+                   PulsedAmbientAlpha(0.050f, 0.025f, p.tw));
     }
-    // 성운 보라 스캔라인
-    for (float yy = 0.0f; yy < sh; yy += 4.0f)
-        drawRect(0.0f, yy, sw, 1.0f, 0.35f, 0.20f, 0.85f, 0.018f);
+    // The post-process CRT shader already supplies scanlines. Keep this
+    // decorative pass only when CRT is off so thin menu geometry is not doubled.
+    if (!g_ShaderFx) {
+        const float scanlineA = (g_VfxDensity == VfxDensity::REDUCED) ? 0.008f : 0.012f;
+        for (float yy = 0.0f; yy < sh; yy += 4.0f)
+            drawRect(0.0f, yy, sw, 1.0f, 0.35f, 0.20f, 0.85f, scanlineA);
+    }
     if (darkenAmount > 0.0f) {
         // 상하 비네트
-        drawRect(0, 0, sw, 110.0f, 0.0f, 0.0f, 0.0f, 0.28f * darkenAmount);
-        drawRect(0, sh - 90.0f, sw, 90.0f, 0.0f, 0.0f, 0.0f, 0.28f * darkenAmount);
+        drawRect(0, 0, sw, 110.0f, 0.0f, 0.0f, 0.0f, 0.22f * darkenAmount);
+        drawRect(0, sh - 90.0f, sw, 90.0f, 0.0f, 0.0f, 0.0f, 0.22f * darkenAmount);
     }
 }
 
@@ -183,27 +258,148 @@ static void LogoLine(float x1, float y1, float x2, float y2,
 
 static void DrawSceneLeftVignette(float sw, float sh, float alpha) {
     if (alpha <= 0.001f) return;
+    const UiThemePalette& theme = GetUiTheme();
     DrawLinearGradient(0.0f, 0.0f, sw * 0.60f, sh,
-                       0.002f, 0.006f, 0.016f, alpha);
+                       theme.Dim.r, theme.Dim.g, theme.Dim.b, alpha * theme.Dim.a);
 }
 
 static void DrawSceneRadialVignette(float cx, float cy, float radius, float alpha) {
     if (alpha <= 0.001f || radius <= 1.0f) return;
-    DrawRadialGradient(cx, cy, radius, 0.0f, 0.0f, 0.012f, alpha * 0.65f);
+    const UiThemePalette& theme = GetUiTheme();
+    DrawRadialGradient(cx, cy, radius, theme.Dim.r, theme.Dim.g, theme.Dim.b,
+                       alpha * theme.Dim.a * 0.96f);
+}
+
+static float MainMenuCommandStartY(float sh) {
+    constexpr float kRowH = 70.0f;
+    constexpr float kGap = 15.0f;
+    constexpr float kRowCount = 5.0f;
+    const float totalH = kRowCount * kRowH + (kRowCount - 1.0f) * kGap;
+    float y = sh * 0.48f;
+    if (y + totalH > sh - 54.0f) y = sh - totalH - 54.0f;
+    const float logoFloor = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
+    if (y < logoFloor) y = logoFloor;
+    return y;
+}
+
+static void DrawSharedMenuDim(float sw, float sh,
+                              float commandX, float commandY,
+                              float commandW, float commandH,
+                              float alpha) {
+    if (alpha <= 0.001f) return;
+    DrawSceneLeftVignette(sw, sh, alpha);
+    DrawSceneRadialVignette(commandX + commandW * 0.32f,
+                            commandY + commandH * 0.50f,
+                            std::max(commandW, commandH) * 0.72f,
+                            0.36f * alpha);
+}
+
+static void DrawReadableSurface(float x, float y, float w, float h, float alpha) {
+    if (alpha <= 0.001f || w <= 1.0f || h <= 1.0f) return;
+    const UiThemePalette& theme = GetUiTheme();
+    const float featherX = std::min(40.0f, w * 0.08f);
+    const float featherY = std::min(28.0f, h * 0.10f);
+
+    // Keep a restrained opacity floor so labels near the panel edges do not
+    // fall back onto the scene background as the radial mask fades out.
+    BindMainShader();
+    drawRect(x, y, w, h,
+             theme.Panel.r, theme.Panel.g, theme.Panel.b,
+             alpha * theme.Panel.a * 0.52f);
+    DrawRadialGradientRect(x - featherX, y - featherY,
+                           w + featherX * 2.0f, h + featherY * 2.0f,
+                           theme.Panel.r, theme.Panel.g, theme.Panel.b,
+                           alpha * theme.Panel.a * 0.92f);
+}
+
+static void DrawAstralDataPlate(float x, float y, float w, float h,
+                                float r, float g, float b, float alpha) {
+    if (alpha <= 0.001f || w <= 1.0f || h <= 1.0f) return;
+    const float cut = std::min(34.0f, std::min(w, h) * 0.08f);
+    // Data surfaces stay neutral black in every theme. Accent color belongs
+    // to text, markers, and brackets; tinting the fill reduces contrast.
+    const float baseR = 0.004f;
+    const float baseG = 0.006f;
+    const float baseB = 0.010f;
+    const float innerR = 0.002f;
+    const float innerG = 0.004f;
+    const float innerB = 0.008f;
+    BindMainShader();
+    // Keep the plate readable on bright backgrounds. The texture is only an
+    // edge treatment; using its opaque center as the panel fill creates a
+    // large pale glow when stretched over wide detail regions.
+    drawRect(x, y, w, h, baseR, baseG, baseB, 0.54f * alpha);
+    if (g_ConfigPanelTex) {
+        DrawIcon(g_ConfigPanelTex, x, y, w, h,
+                 innerR, innerG, innerB, 0.13f * alpha);
+    } else {
+        drawRect(x + 5.0f, y + 5.0f, w - 10.0f, h - 10.0f,
+                 innerR, innerG, innerB, 0.18f * alpha);
+    }
+    drawRect(x + cut, y, w * 0.42f, 1.4f, r, g, b, 0.38f * alpha);
+    drawRect(x + w - cut - w * 0.20f, y + h - 1.4f,
+             w * 0.20f, 1.4f, r, g, b, 0.22f * alpha);
+    drawRect(x, y + cut, 1.4f, h * 0.30f, r, g, b, 0.34f * alpha);
+    drawRect(x + w - 1.4f, y + h * 0.60f,
+             1.4f, h * 0.20f, r, g, b, 0.20f * alpha);
+    LogoLine(x, y + cut, x + cut, y, 1.2f, r, g, b, 0.46f * alpha);
+    LogoLine(x + w - cut, y + h, x + w, y + h - cut,
+             1.2f, r, g, b, 0.30f * alpha);
+    drawDiamond(x + cut, y, 2.8f, r, g, b, 0.62f * alpha);
+    drawDiamond(x + w - cut, y + h, 2.4f, r, g, b, 0.40f * alpha);
+}
+
+static void DrawShadowedText(TextRenderer& renderer, const wchar_t* text,
+                             float x, float y, float scale,
+                             float r, float g, float b, float alpha,
+                             float shadowAlpha = 0.68f) {
+    if (!text || alpha <= 0.001f) return;
+    renderer.Draw(text, x + 1.5f, y + 1.5f, scale,
+                  0.0f, 0.0f, 0.012f, alpha * shadowAlpha);
+    renderer.Draw(text, x, y, scale, r, g, b, alpha);
 }
 
 static void DrawVisibleConstellLine(float x1, float y1, float x2, float y2,
                                     float thick, float r, float g, float b, float a) {
     if (a <= 0.001f) return;
+    if (g_ConstellationLineTex) {
+        const float dx = x2 - x1, dy = y2 - y1;
+        const float len = sqrtf(dx * dx + dy * dy);
+        if (len > 0.5f) {
+            const float ang = atan2f(dy, dx);
+            DrawIconRot(g_ConstellationLineTex,
+                        (x1 + x2) * 0.5f, (y1 + y2) * 0.5f,
+                        len * 0.5f, thick * 2.4f, ang,
+                        0.0f, 0.0f, 0.012f, 0.30f * a);
+            DrawIconRot(g_ConstellationLineTex,
+                        (x1 + x2) * 0.5f, (y1 + y2) * 0.5f,
+                        len * 0.5f, thick * 0.72f, ang,
+                        r, g, b, a);
+            return;
+        }
+    }
     LogoLine(x1, y1, x2, y2, thick * 2.75f, 0.0f, 0.0f, 0.012f, 0.42f * a);
     LogoLine(x1, y1, x2, y2, thick, r, g, b, a);
+}
+
+static void DrawConstellationDisc(float x, float y, float radius,
+                                  float r, float g, float b, float a) {
+    if (a <= 0.001f || radius <= 0.1f) return;
+    if (g_ConstellationCircleTex) {
+        DrawIcon(g_ConstellationCircleTex,
+                 x - radius, y - radius, radius * 2.0f, radius * 2.0f,
+                 r, g, b, a);
+    } else {
+        drawCircle(x, y, radius, r, g, b, a);
+    }
 }
 
 static void DrawVisibleConstellNode(float x, float y, float size,
                                     float r, float g, float b, float a) {
     if (a <= 0.001f) return;
-    drawCircle(x, y, size * 3.25f, 0.0f, 0.0f, 0.012f, 0.34f * a);
-    drawCircle(x, y, size * 2.05f, r * 0.08f, g * 0.08f, b * 0.10f, 0.26f * a);
+    DrawConstellationDisc(x, y, size * 3.25f, 0.0f, 0.0f, 0.012f, 0.34f * a);
+    DrawConstellationDisc(x, y, size * 2.05f, r * 0.08f, g * 0.08f, b * 0.10f, 0.26f * a);
+    DrawConstellationDisc(x, y, size * 0.88f, r, g, b, 0.58f * a);
     drawDiamond(x, y, size * 1.20f, r, g, b, 0.74f * a);
     drawDiamond(x, y, size * 0.42f, 0.96f, 1.0f, 1.0f, 0.88f * a);
 }
@@ -305,8 +501,8 @@ static void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
             by = ay + (by - ay) * et;
 
             LogoLine(ax, ay, bx, by, stroke * 1.55f, 0.03f, 0.06f, 0.10f, 0.82f * alpha);
-            LogoLine(ax, ay, bx, by, stroke * 1.08f, 0.07f, 0.21f, 0.34f, 0.92f * alpha);
-            LogoLine(ax, ay, bx, by, stroke * 0.54f, 0.70f, 0.92f, 1.00f, 0.94f * alpha);
+            LogoLine(ax, ay, bx, by, stroke * 1.08f, 0.04f, 0.18f, 0.34f, 0.94f * alpha);
+            LogoLine(ax, ay, bx, by, stroke * 0.54f, 0.32f, 0.72f, 1.00f, 0.98f * alpha);
         }
         cursor += gl.w + gap;
     }
@@ -336,7 +532,7 @@ static void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
             float x1, y1, x2, y2;
             orbitPoint(a0, rx0, ry0, rot0, x1, y1);
             orbitPoint(a1, rx0, ry0, rot0, x2, y2);
-            LogoLine(x1, y1, x2, y2, 1.1f, 0.38f, 0.82f, 1.0f, 0.22f * orbitA);
+            LogoLine(x1, y1, x2, y2, 1.1f, 0.18f, 0.62f, 0.96f, 0.28f * orbitA);
         }
 
         const int nodeCount = 7;
@@ -355,8 +551,13 @@ static void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
         for (int i = 0; i < nodeCount; ++i) {
             float tw = 0.78f + 0.22f * sinf(now * 2.5f + (float)i * 0.9f);
             float sz = (i == 0 || i == 3) ? 7.0f : 4.6f;
-            drawDiamond(px[i], py[i], sz, 0.42f, 0.82f, 1.0f, (0.58f + 0.18f * tw) * orbitA);
-            drawDiamond(px[i], py[i], sz * 0.42f, 1.0f, 1.0f, 1.0f, 0.55f * orbitA);
+            DrawConstellationDisc(px[i], py[i], sz * 1.75f,
+                                  0.0f, 0.018f, 0.050f, 0.30f * orbitA);
+            DrawConstellationDisc(px[i], py[i], sz,
+                                  0.42f, 0.82f, 1.0f,
+                                  (0.58f + 0.18f * tw) * orbitA);
+            DrawConstellationDisc(px[i], py[i], sz * 0.34f,
+                                  1.0f, 1.0f, 1.0f, 0.62f * orbitA);
         }
 
         float lY = y0 + logoH + 18.0f;
@@ -382,6 +583,559 @@ static void DrawMenuCommandFeedback(float x, float y, float w, float h,
     drawDiamond(x - 17.0f, y + h * 0.5f,
                 3.0f + 2.6f * active + 1.8f * pulse,
                 r, g, b, (0.40f + 0.34f * active + 0.16f * pulse) * alpha);
+}
+
+static float UpdateMenuCommandHover(float current, bool hovered, float dt) {
+    const float step = std::min(1.0f, dt * 10.0f);
+    return current + ((hovered ? 1.0f : 0.0f) - current) * step;
+}
+
+static float MenuCommandReveal(float timeline, int row,
+                               float start = 0.20f, float stagger = 0.14f,
+                               float duration = 0.32f) {
+    return Smoothstep(LogoClamp01((timeline - start - (float)row * stagger) / duration));
+}
+
+static void DrawUnifiedMenuCommand(const wchar_t* route, const wchar_t* sub,
+                                   float x, float y, float w, float h,
+                                   float r, float g, float b, float alpha,
+                                   float hover, bool selected, float pulse, float now,
+                                   float routeScale = 1.04f, float subScale = 0.48f) {
+    const float active = std::max(hover, selected ? 1.0f : 0.0f);
+    DrawMenuCommandFeedback(x, y, w, h, r, g, b, alpha,
+                            active, pulse, now);
+
+    while (routeScale > 0.72f && g_TextL.Width(route, routeScale) > w)
+        routeScale -= 0.04f;
+    const float routeY = y + 2.0f;
+    const float subY = routeY + g_TextL.Height(route, routeScale) - 3.0f;
+    float tr = 1.0f + (r - 1.0f) * active;
+    float tg = 1.0f + (g - 1.0f) * active;
+    float tb = 1.0f + (b - 1.0f) * active;
+    if (selected) tr = tg = tb = 1.0f;
+
+    DrawShadowedText(g_TextL, route, x, routeY, routeScale,
+                     tr, tg, tb,
+                     (0.90f + 0.10f * active + 0.16f * pulse) * alpha, 0.86f);
+    if (sub && sub[0] != L'\0') {
+        DrawShadowedText(g_TextS, sub, x + 4.0f, subY, subScale,
+                         0.70f + 0.18f * active,
+                         0.75f + 0.16f * active,
+                         0.82f + 0.12f * active,
+                         (0.76f + 0.18f * active) * alpha, 0.70f);
+    }
+}
+
+static void DrawMainMenuAstralVeil(float sw, float sh,
+                                   float menuX, float menuY,
+                                   float menuW, float menuH,
+                                   const float focusWeights[5],
+                                   float alpha) {
+    if (alpha <= 0.001f) return;
+    const UiThemePalette& theme = GetUiTheme();
+    float focus = 0.0f;
+    for (int i = 0; i < 5; ++i) focus = std::max(focus, focusWeights[i]);
+
+    // These oversized soft fields extend beyond the menu bounds, so the
+    // result reads as a translucent celestial medium rather than a panel.
+    DrawRadialGradientRect(menuX - sw * 0.16f, menuY - sh * 0.22f,
+                           menuW + sw * 0.38f, menuH + sh * 0.42f,
+                           theme.Dim.r, theme.Dim.g, theme.Dim.b,
+                           (0.28f + focus * 0.06f) * alpha);
+    DrawRadialGradientRect(menuX + menuW * 0.10f, menuY - sh * 0.12f,
+                           sw * 0.56f, menuH + sh * 0.26f,
+                           theme.Accent.r * 0.10f,
+                           theme.Accent.g * 0.08f,
+                           theme.Accent.b * 0.13f,
+                           (0.12f + focus * 0.04f) * alpha);
+
+}
+
+struct InlineThreeColumnLayout {
+    float rootX, rootY, rootW, rootH;
+    float contentX, contentY, contentW, contentH;
+    float detailX, detailY, detailW, detailH;
+    float bottomY;
+};
+
+static InlineThreeColumnLayout BuildInlineThreeColumnLayout(float sw, float sh, float uiS,
+                                                             float rootX, float rootY,
+                                                             float rootW, float rootH) {
+    const float sideMargin = std::max(54.0f, 66.0f * uiS);
+    const float columnGap = std::max(30.0f, 38.0f * uiS);
+    const float contentX = std::max(sw * 0.29f, rootX + rootW + columnGap);
+    const float detailX = std::max(sw * 0.65f, contentX + 430.0f * uiS);
+    const float topY = rootY - 12.0f * uiS;
+    const float bottomY = sh - std::max(48.0f, 58.0f * uiS);
+
+    InlineThreeColumnLayout out{};
+    out.rootX = rootX;
+    out.rootY = rootY;
+    out.rootW = rootW;
+    out.rootH = rootH;
+    out.contentX = contentX;
+    out.contentY = topY;
+    out.contentW = std::max(280.0f * uiS, detailX - contentX - columnGap);
+    out.contentH = std::max(260.0f * uiS, bottomY - topY);
+    out.detailX = detailX;
+    out.detailY = topY;
+    out.detailW = std::max(280.0f * uiS, sw - sideMargin - detailX);
+    out.detailH = out.contentH;
+    out.bottomY = bottomY;
+    return out;
+}
+
+struct ProjectedOrbitPoint {
+    float x, y, z;
+};
+
+static ProjectedOrbitPoint ProjectOrbitalPoint(float cx, float cy, float radius,
+                                               float angle, float tilt, float roll,
+                                               float phase) {
+    const float a = angle + phase;
+    const float lx = cosf(a) * radius;
+    const float ly = sinf(a) * radius * sinf(tilt);
+    const float lz = sinf(a) * radius * cosf(tilt);
+    const float cr = cosf(roll), sr = sinf(roll);
+    const float rx = lx * cr - ly * sr;
+    const float ry = lx * sr + ly * cr;
+    const float perspective = 1.0f + lz / std::max(1.0f, radius * 5.5f);
+    return { cx + rx * perspective, cy + ry * perspective, lz };
+}
+
+static void DrawOrbitalPowerSphere(float cx, float cy, float radius,
+                                   int weapon, float now, float alpha, float uiS,
+                                   float r, float g, float b) {
+    if (alpha <= 0.001f) return;
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kOrbitSpeedScale = 1.80f;
+    const float motionT = now * kOrbitSpeedScale;
+
+    // Dense inner globe. These fine lines stay batched while the prominent
+    // orbital paths and stars use the supplied texture masks.
+    const float globeR = radius * 0.36f;
+    const float globeSpin = motionT * (weapon == 0 ? 0.22f : -0.14f);
+    for (int lat = -3; lat <= 3; ++lat) {
+        const float latN = (float)lat / 4.0f;
+        const float bandY = latN * globeR;
+        const float bandR = globeR * sqrtf(std::max(0.0f, 1.0f - latN * latN));
+        float prevX = 0.0f, prevY = 0.0f;
+        for (int s = 0; s <= 28; ++s) {
+            const float a = 2.0f * kPi * (float)s / 28.0f + globeSpin;
+            const float z = sinf(a) * bandR;
+            const float x = cx + cosf(a) * bandR;
+            const float y = cy + bandY + z * 0.18f;
+            if (s > 0) {
+                const float lineA = (0.12f + 0.09f * (z / globeR + 1.0f)) * alpha;
+                LogoLine(prevX, prevY, x, y, 1.35f * uiS,
+                         0.0f, 0.0f, 0.018f, 0.42f * lineA);
+                LogoLine(prevX, prevY, x, y, 0.58f * uiS,
+                         r, g, b, lineA);
+            }
+            prevX = x; prevY = y;
+        }
+    }
+    for (int lon = 0; lon < 9; ++lon) {
+        const float az = 2.0f * kPi * (float)lon / 9.0f + globeSpin;
+        float prevX = 0.0f, prevY = 0.0f;
+        for (int s = 0; s <= 24; ++s) {
+            const float a = -kPi * 0.5f + kPi * (float)s / 24.0f;
+            const float ringR = cosf(a) * globeR;
+            const float z = sinf(az) * ringR;
+            const float x = cx + cosf(az) * ringR;
+            const float y = cy + sinf(a) * globeR + z * 0.18f;
+            if (s > 0) {
+                const float lineA = (0.11f + 0.08f * (z / globeR + 1.0f)) * alpha;
+                LogoLine(prevX, prevY, x, y, 1.28f * uiS,
+                         0.0f, 0.0f, 0.018f, 0.40f * lineA);
+                LogoLine(prevX, prevY, x, y, 0.54f * uiS,
+                         r, g, b, lineA);
+            }
+            prevX = x; prevY = y;
+        }
+    }
+
+    struct OrbitDef { float radius, tilt, roll, speed, phase; };
+    const OrbitDef orbits[3] = {
+        { 1.05f, 0.30f,  0.18f,  0.15f, 0.0f },
+        { 1.18f, 0.72f, -0.86f, -0.10f, 1.7f },
+        { 1.27f, 1.04f,  0.94f,  0.07f, 3.4f },
+    };
+    for (int o = 0; o < 3; ++o) {
+        const OrbitDef& od = orbits[o];
+        const float rr = radius * od.radius;
+        const float phase = od.phase + motionT * od.speed * (weapon == 0 ? 1.0f : 0.72f);
+        ProjectedOrbitPoint prev = ProjectOrbitalPoint(cx, cy, rr, 0.0f,
+                                                       od.tilt, od.roll, phase);
+        for (int s = 1; s <= 32; ++s) {
+            const float a = 2.0f * kPi * (float)s / 32.0f;
+            const ProjectedOrbitPoint p = ProjectOrbitalPoint(cx, cy, rr, a,
+                                                              od.tilt, od.roll, phase);
+            const float depth = LogoClamp01(0.5f + p.z / (rr * 2.0f));
+            DrawVisibleConstellLine(prev.x, prev.y, p.x, p.y, 0.66f * uiS,
+                                   r, g, b, (0.10f + 0.22f * depth) * alpha);
+            prev = p;
+        }
+    }
+
+    // Fixed samples avoid per-frame noise flicker while the slow phase shift
+    // gives the dust cloud the same orbital motion as the reference.
+    for (int i = 0; i < 54; ++i) {
+        const int orbitIndex = i % 3;
+        const OrbitDef& od = orbits[orbitIndex];
+        const float jitter = 1.0f + 0.055f * sinf((float)i * 12.9898f);
+        const float rr = radius * od.radius * jitter;
+        const float a = (float)i * 2.399963f + motionT * od.speed * 0.52f;
+        const ProjectedOrbitPoint p = ProjectOrbitalPoint(cx, cy, rr, a,
+                                                          od.tilt, od.roll,
+                                                          od.phase);
+        const float depth = LogoClamp01(0.5f + p.z / (rr * 2.0f));
+        const float size = (0.75f + depth * 1.15f) * uiS;
+        DrawConstellationDisc(p.x, p.y, size, r, g, b,
+                              (0.08f + depth * 0.18f) * alpha);
+    }
+
+    const int starOrbit[4] = { 0, 1, 2, 1 };
+    const float starAngle[4] = { 0.25f, 1.82f, 3.72f, 5.18f };
+    for (int i = 0; i < 4; ++i) {
+        const OrbitDef& od = orbits[starOrbit[i]];
+        const float rr = radius * od.radius;
+        const ProjectedOrbitPoint p = ProjectOrbitalPoint(
+            cx, cy, rr, starAngle[i] + motionT * od.speed,
+            od.tilt, od.roll, od.phase);
+        const float twinkle = 0.72f + 0.28f * sinf(motionT * (2.7f + i * 0.31f) + i * 1.7f);
+        DrawConstellationDisc(p.x, p.y, (13.0f + 4.0f * twinkle) * uiS,
+                              0.0f, 0.0f, 0.012f, 0.34f * alpha);
+        DrawConstellationDisc(p.x, p.y, (7.0f + 3.0f * twinkle) * uiS,
+                              r, g, b, 0.22f * alpha);
+        DrawConstellationDisc(p.x, p.y, (2.8f + 1.8f * twinkle) * uiS,
+                              0.96f, 1.0f, 1.0f, 0.92f * alpha);
+    }
+}
+
+static void DrawMainMenuOrbitalInstrument(float cx, float cy, float radius,
+                                          int focusIndex, const float focusWeights[5],
+                                          float hoverT,
+                                          const ConstellationMotionProfile& motion,
+                                          float motionT, float alpha, float uiS,
+                                          float r, float g, float b) {
+    if (alpha <= 0.001f) return;
+    constexpr float kTau = 6.28318530717958647692f;
+    radius *= 1.0f + motion.radialPull;
+    const int activeOrbit = std::max(0, std::min(focusIndex, 4));
+
+    // A restrained particle shell establishes volume before the brighter
+    // armillary paths are drawn over it.
+    constexpr float kGolden = 2.39996322972865332f;
+    for (int i = 0; i < 84; ++i) {
+        const float v = -1.0f + 2.0f * ((float)i + 0.5f) / 84.0f;
+        const float shell = sqrtf(std::max(0.0f, 1.0f - v * v));
+        const float a = (float)i * kGolden + motionT * (0.035f + (i % 3) * 0.008f);
+        const float jitter = 0.88f + 0.18f * sinf((float)i * 7.31f);
+        const float rr = radius * 1.34f * jitter;
+        const float z = sinf(a) * shell;
+        const float px = cx + cosf(a) * shell * rr + z * radius * 0.10f;
+        const float py = cy + v * rr * 0.88f + z * radius * 0.045f;
+        const float depth = LogoClamp01(0.5f + z * 0.5f);
+        const float dustA = (0.040f + depth * 0.040f)
+                          * motion.edgeAlpha * alpha;
+        DrawConstellationDisc(px, py, (0.65f + depth * 1.10f) * uiS,
+                              r, g, b, dustA);
+    }
+
+    struct MenuOrbit {
+        float scale, tilt, roll, speed, phase;
+    };
+    const MenuOrbit orbits[5] = {
+        {0.92f, 0.24f,  0.08f,  0.34f, 0.20f},
+        {1.05f, 0.50f, -0.72f, -0.27f, 1.35f},
+        {1.17f, 0.78f,  0.84f,  0.22f, 2.45f},
+        {1.28f, 1.02f, -1.08f, -0.18f, 3.65f},
+        {1.39f, 0.64f,  1.42f,  0.15f, 4.80f},
+    };
+
+    for (int o = 0; o < 5; ++o) {
+        const MenuOrbit& od = orbits[o];
+        float activeT = LogoClamp01(focusWeights[o]);
+        if (o == activeOrbit) activeT = std::max(activeT, hoverT);
+        activeT = Smoothstep(activeT);
+        const float rr = radius * od.scale * (1.0f + 0.025f * activeT);
+        const float alignedRoll = -0.90f + (float)o * 0.45f;
+        const float tilt = od.tilt + ((0.62f + (float)(o - 2) * 0.07f) - od.tilt)
+                                     * motion.alignmentStrength;
+        const float roll = od.roll + (alignedRoll - od.roll)
+                                     * motion.alignmentStrength;
+        const float phase = od.phase + motionT * od.speed
+                          * (1.0f + activeT * 0.38f);
+        ProjectedOrbitPoint prev = ProjectOrbitalPoint(cx, cy, rr, 0.0f,
+                                                       tilt, roll, phase);
+        for (int s = 1; s <= 42; ++s) {
+            const float a = kTau * (float)s / 42.0f;
+            const ProjectedOrbitPoint p = ProjectOrbitalPoint(cx, cy, rr, a,
+                                                              tilt, roll, phase);
+            const float depth = LogoClamp01(0.5f + p.z / std::max(1.0f, rr * 2.0f));
+            const float pathA = (0.065f + activeT * 0.42f)
+                              * (0.62f + depth * 0.60f)
+                              * motion.edgeAlpha * alpha;
+            const float midX = (prev.x + p.x) * 0.5f - cx;
+            const float midY = (prev.y + p.y) * 0.5f - cy;
+            const bool behindCore = depth < 0.46f
+                                 && midX * midX + midY * midY < radius * radius * 0.092f;
+            if (!behindCore)
+                DrawVisibleConstellLine(prev.x, prev.y, p.x, p.y,
+                                        (0.56f + activeT * 0.62f) * uiS,
+                                        r, g, b, pathA);
+            prev = p;
+        }
+
+        const float starA = phase + 0.42f + (float)o * 0.61f;
+        const ProjectedOrbitPoint star = ProjectOrbitalPoint(cx, cy, rr, starA,
+                                                             tilt, roll, 0.0f);
+        const float pulseAmount = 0.18f * motion.nodePulse;
+        const float pulse = 1.0f - pulseAmount
+                          + pulseAmount * sinf(motionT * 2.2f + o * 1.4f);
+        if (activeT > 0.04f) {
+            for (int trail = 4; trail >= 1; --trail) {
+                const float trailAngle = starA - od.speed * (float)trail * 0.11f;
+                const ProjectedOrbitPoint tail = ProjectOrbitalPoint(
+                    cx, cy, rr, trailAngle, tilt, roll, 0.0f);
+                const float tailA = activeT * alpha * (0.045f + (4 - trail) * 0.035f);
+                DrawConstellationDisc(tail.x, tail.y,
+                                      (0.9f + (4 - trail) * 0.35f) * uiS,
+                                      r, g, b, tailA);
+            }
+        }
+        const float starSize = (3.0f + activeT * 7.2f) * pulse * uiS;
+        DrawConstellationDisc(star.x, star.y, starSize * 2.05f,
+                               0.0f, 0.0f, 0.014f, (0.055f + activeT * 0.105f) * alpha);
+        DrawConstellationDisc(star.x, star.y, starSize * 1.28f,
+                               r, g, b, (0.12f + activeT * 0.20f)
+                               * motion.edgeAlpha * alpha);
+        DrawConstellationDisc(star.x, star.y, std::max(1.4f, starSize * 0.34f),
+                              0.98f, 1.0f, 1.0f, (0.54f + activeT * 0.42f) * alpha);
+    }
+
+    // The compact inner body gives the five orbital planes a clear anchor.
+    const float coreR = radius * 0.27f;
+    DrawConstellationDisc(cx, cy, coreR * 1.22f,
+                           0.0f, 0.0f, 0.014f, 0.20f * alpha);
+    DrawConstellationDisc(cx, cy, coreR * 0.92f,
+                          r, g, b, 0.10f * alpha);
+    for (int lat = -3; lat <= 3; ++lat) {
+        const float n = (float)lat / 4.0f;
+        const float y = cy + n * coreR;
+        const float bandR = coreR * sqrtf(std::max(0.0f, 1.0f - n * n));
+        float lastX = 0.0f, lastY = 0.0f;
+        for (int s = 0; s <= 28; ++s) {
+            const float a = kTau * (float)s / 28.0f + motionT * 0.21f;
+            const float z = sinf(a) * bandR;
+            const float x = cx + cosf(a) * bandR;
+            const float py = y + z * 0.16f;
+            if (s > 0) {
+                LogoLine(lastX, lastY, x, py, 1.20f * uiS,
+                         0.0f, 0.0f, 0.014f, 0.18f * alpha);
+                LogoLine(lastX, lastY, x, py, 0.52f * uiS,
+                         r, g, b, (0.16f + 0.11f * (z / coreR + 1.0f)) * alpha);
+            }
+            lastX = x;
+            lastY = py;
+        }
+    }
+    for (int lon = 0; lon < 7; ++lon) {
+        const float roll = (float)lon * kTau / 7.0f + motionT * 0.13f;
+        float lastX = 0.0f, lastY = 0.0f;
+        for (int s = 0; s <= 24; ++s) {
+            const float a = -1.5707963f + 3.1415926f * (float)s / 24.0f;
+            const float ringR = cosf(a) * coreR;
+            const float z = sinf(roll) * ringR;
+            const float x = cx + cosf(roll) * ringR;
+            const float y = cy + sinf(a) * coreR + z * 0.16f;
+            if (s > 0) {
+                LogoLine(lastX, lastY, x, y, 1.10f * uiS,
+                         0.0f, 0.0f, 0.014f, 0.16f * alpha);
+                LogoLine(lastX, lastY, x, y, 0.48f * uiS,
+                         r, g, b, (0.12f + 0.10f * (z / coreR + 1.0f)) * alpha);
+            }
+            lastX = x;
+            lastY = y;
+        }
+    }
+    DrawConstellationDisc(cx, cy, (5.8f + 1.4f * sinf(motionT * 2.6f)) * uiS,
+                          r, g, b, 0.62f * motion.nodePulse * alpha);
+    DrawConstellationDisc(cx, cy, 2.1f * uiS,
+                          1.0f, 1.0f, 1.0f, 0.96f * alpha);
+}
+
+static void DrawWeaponPowerConstellation(float cx, float cy, float radius,
+                                         const float values[6],
+                                         const wchar_t* const names[6],
+                                         const wchar_t* const labels[6],
+                                         int weapon, float now, float alpha, float uiS,
+                                         float r, float g, float b) {
+    if (alpha <= 0.001f) return;
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr int kAxes = 6;
+    float ux[kAxes], uy[kAxes];
+    float px[kAxes], py[kAxes];
+
+    // A local optical well keeps the power diagram readable without turning
+    // the center of the screen into another rectangular application panel.
+    DrawSceneRadialVignette(cx, cy, radius * 1.72f, 0.78f * alpha);
+    DrawOrbitalPowerSphere(cx, cy, radius, weapon, now, 0.82f * alpha, uiS,
+                           r, g, b);
+
+    for (int ring = 1; ring <= 3; ++ring) {
+        const float rr = radius * ((float)ring / 3.0f);
+        const float ringA = (0.08f + 0.035f * (float)ring) * alpha;
+        for (int i = 0; i < kAxes; ++i) {
+            const float a0 = -kPi * 0.5f + (2.0f * kPi * (float)i / (float)kAxes);
+            const float a1 = -kPi * 0.5f + (2.0f * kPi * (float)(i + 1) / (float)kAxes);
+            LogoLine(cx + cosf(a0) * rr, cy + sinf(a0) * rr,
+                     cx + cosf(a1) * rr, cy + sinf(a1) * rr,
+                     0.80f * uiS, r, g, b, ringA);
+        }
+    }
+
+    // Weapon-specific background constellation — identifies the weapon by shape
+    if (weapon == 0) {
+        // RIFLE — LANCE: narrow spear, 6 nodes, apex-base axis, precision feel
+        constexpr int nL = 6;
+        const float lAng[nL] = {
+            -kPi * 0.50f,                    // apex (top)
+            -kPi * 0.50f - 0.52f,            // upper-left wing
+            -kPi * 0.50f + 0.52f,            // upper-right wing
+            -kPi * 0.50f + kPi - 0.55f,      // lower-left base
+            -kPi * 0.50f + kPi + 0.55f,      // lower-right base
+            -kPi * 0.50f + kPi               // base anchor (bottom)
+        };
+        const float lRad[nL] = { 1.26f, 1.16f, 1.16f, 1.22f, 1.22f, 1.28f };
+        const float lSpin = now * 0.05f;
+        float lx[nL], ly[nL];
+        for (int i = 0; i < nL; ++i) {
+            lx[i] = cx + cosf(lAng[i] + lSpin) * radius * lRad[i];
+            ly[i] = cy + sinf(lAng[i] + lSpin) * radius * lRad[i];
+        }
+        constexpr int lEdgeCount = 7;
+        const int lEdges[lEdgeCount][2] = { {0,1},{0,2},{1,3},{2,4},{3,5},{4,5},{1,2} };
+        for (int e = 0; e < lEdgeCount; ++e)
+            DrawVisibleConstellLine(lx[lEdges[e][0]], ly[lEdges[e][0]],
+                                    lx[lEdges[e][1]], ly[lEdges[e][1]],
+                                    0.60f * uiS, r, g, b, 0.22f * alpha);
+        const float lp = 0.5f + 0.5f * sinf(now * 6.8f);
+        for (int i = 0; i < nL; ++i) {
+            const bool isKey = (i == 0 || i == 5);
+            DrawVisibleConstellNode(lx[i], ly[i],
+                                    (isKey ? 4.2f + lp * 1.8f : 3.4f) * uiS,
+                                    r, g, b, (isKey ? 0.68f + lp * 0.22f : 0.44f) * alpha);
+        }
+    } else {
+        // STATIC FIELD — CORONA: 7-node web ring, slow breathing, area feel
+        constexpr int nC = 7;
+        const float cRad[nC] = { 1.28f, 1.16f, 1.30f, 1.14f, 1.25f, 1.20f, 1.32f };
+        const float cSpin = now * -0.055f;
+        float cnx[nC], cny[nC];
+        for (int i = 0; i < nC; ++i) {
+            const float a = cSpin - kPi * 0.5f + 2.0f * kPi * (float)i / (float)nC;
+            cnx[i] = cx + cosf(a) * radius * cRad[i];
+            cny[i] = cy + sinf(a) * radius * cRad[i];
+        }
+        for (int i = 0; i < nC; ++i) {
+            const int j = (i + 1) % nC;
+            DrawVisibleConstellLine(cnx[i], cny[i], cnx[j], cny[j],
+                                    0.60f * uiS, r, g, b, 0.20f * alpha);
+        }
+        for (int i = 0; i < nC; ++i) {
+            const int k = (i + 3) % nC;
+            DrawVisibleConstellLine(cnx[i], cny[i], cnx[k], cny[k],
+                                    0.42f * uiS, r, g, b, 0.10f * alpha);
+        }
+        const float cp = 0.5f + 0.5f * sinf(now * 3.2f);
+        for (int i = 0; i < nC; ++i)
+            DrawVisibleConstellNode(cnx[i], cny[i],
+                                    (3.2f + cp * 1.4f) * uiS,
+                                    r, g, b, (0.40f + cp * 0.16f) * alpha);
+    }
+
+    for (int i = 0; i < kAxes; ++i) {
+        const float ang = -kPi * 0.5f + (2.0f * kPi * (float)i / (float)kAxes);
+        ux[i] = cosf(ang);
+        uy[i] = sinf(ang);
+        const float valueRadius = radius * (0.22f + 0.78f * LogoClamp01(values[i]));
+        px[i] = cx + ux[i] * valueRadius;
+        py[i] = cy + uy[i] * valueRadius;
+        LogoLine(cx, cy, cx + ux[i] * radius, cy + uy[i] * radius,
+                 0.72f * uiS, r, g, b, 0.13f * alpha);
+        for (int tick = 1; tick <= 4; ++tick) {
+            const float tr = radius * (float)tick / 4.0f;
+            const float tx = cx + ux[i] * tr;
+            const float ty = cy + uy[i] * tr;
+            const float tickHalf = (tick == 4 ? 5.0f : 3.2f) * uiS;
+            LogoLine(tx - uy[i] * tickHalf, ty + ux[i] * tickHalf,
+                     tx + uy[i] * tickHalf, ty - ux[i] * tickHalf,
+                     0.85f * uiS, r, g, b,
+                     (tick == 4 ? 0.34f : 0.18f) * alpha);
+        }
+    }
+
+    // Filled polygon — triangle fan from center so data shape is readable
+    for (int i = 0; i < kAxes; ++i) {
+        const int j = (i + 1) % kAxes;
+        BatchTri(cx, cy, px[i], py[i], px[j], py[j], r, g, b, 0.11f * alpha);
+    }
+
+    for (int i = 0; i < kAxes; ++i) {
+        const int j = (i + 1) % kAxes;
+        DrawVisibleConstellLine(px[i], py[i], px[j], py[j], 1.35f * uiS,
+                               r, g, b, 0.82f * alpha);
+        DrawVisibleConstellNode(px[i], py[i], 4.8f * uiS,
+                               r, g, b, 0.92f * alpha);
+    }
+
+    const float pulse = 0.5f + 0.5f * sinf(now * (weapon == 0 ? 7.0f : 3.4f));
+    const float spin = now * (weapon == 0 ? 0.72f : -0.38f);
+    const float orbitR = 25.0f * uiS + pulse * 4.0f * uiS;
+    for (int i = 0; i < 6; ++i) {
+        const float a0 = spin + 2.0f * kPi * (float)i / 6.0f;
+        const float a1 = a0 + 0.34f;
+        LogoLine(cx + cosf(a0) * orbitR, cy + sinf(a0) * orbitR,
+                 cx + cosf(a1) * orbitR, cy + sinf(a1) * orbitR,
+                 1.35f * uiS, r, g, b, (0.32f + 0.24f * pulse) * alpha);
+    }
+    DrawConstellationDisc(cx, cy, (29.0f + 6.0f * pulse) * uiS,
+                          0.0f, 0.0f, 0.012f, 0.32f * alpha);
+    DrawConstellationDisc(cx, cy, (20.0f + 5.0f * pulse) * uiS,
+                          r, g, b, 0.12f * alpha);
+    DrawConstellationDisc(cx, cy, 7.0f * uiS,
+                          r, g, b, 0.70f * alpha);
+    drawDiamond(cx, cy, 11.0f * uiS, r, g, b, 0.86f * alpha);
+    drawDiamond(cx, cy, 4.2f * uiS, 0.96f, 1.0f, 1.0f, 0.96f * alpha);
+
+    for (int i = 0; i < kAxes; ++i) {
+        const float labelR = radius + 34.0f * uiS;
+        const float anchor = cx + ux[i] * labelR;
+        const float ty = cy + uy[i] * labelR - 8.0f * uiS;
+        const float nameScale = 0.43f * uiS;
+        const float valueScale = 0.52f * uiS;
+        const float nameW = g_TextS.Width(names[i], nameScale);
+        const float valueW = g_TextS.Width(labels[i], valueScale);
+        // Each string aligns to anchor independently — value width cannot shift name position
+        float nameX, valX;
+        if (ux[i] < -0.25f) {
+            const float re = anchor - 4.0f * uiS;
+            nameX = re - nameW;
+            valX  = re - valueW;
+        } else if (fabsf(ux[i]) <= 0.25f) {
+            nameX = anchor - nameW  * 0.5f;
+            valX  = anchor - valueW * 0.5f;
+        } else {
+            nameX = anchor + 4.0f * uiS;
+            valX  = anchor + 4.0f * uiS;
+        }
+        DrawShadowedText(g_TextS, names[i], nameX, ty, nameScale,
+                         0.66f, 0.76f, 0.86f, 0.76f * alpha, 0.70f);
+        DrawShadowedText(g_TextS, labels[i], valX, ty + 18.0f * uiS, valueScale,
+                         0.94f, 0.98f, 1.0f, 0.96f * alpha, 0.76f);
+    }
 }
 
 static void DrawExpandingBracket(float x, float y, float w, float h, float expandT,
@@ -416,10 +1170,9 @@ void Scene_MainMenu(const SceneCtx& c) {
     bool booting = (g_BootAnim > 0.0f);
     float uiA = 1.0f - g_FadeAlpha; if (uiA < 0.0f) uiA = 0.0f;
 
-    float menuBgDarken = 1.0f;
-    if (g_FadeDir == 1 && g_FadeTarget == GameState::RUN_CONFIG)
-        menuBgDarken = 1.0f - Smoothstep(g_FadeAlpha);
-    DrawMenuBackground(sw, sh, delta, menuBgDarken);
+    // Inline panels own their local reveal; keep the shared background stable
+    // during the handoff so the old fade cannot create a brightness flash.
+    DrawMenuBackground(sw, sh, delta, 1.0f);
     if (s_MainMenuArmoryPanel) {
         Scene_Shop(c);
         return;
@@ -441,13 +1194,10 @@ void Scene_MainMenu(const SceneCtx& c) {
     static float s_introT = 0.0f;
     static int   s_menuSelect = -1;
     static float s_menuExitT  = 0.0f;
-    static float s_canvasX[10] = {};
-    static float s_canvasY[10] = {};
-    static bool  s_canvasInit = false;
     static float kHoverT[5] = {};
     constexpr float kTitleDur  = 0.55f;
     constexpr float kBtnDur    = 0.45f;
-    constexpr float kBtnStag   = 0.09f;
+    constexpr float kBtnStag   = 0.14f;
     constexpr float kTextStart = kTitleDur + 4.0f * kBtnStag + kBtnDur;
     constexpr float kTextDur   = 0.35f;
     constexpr float kIntroDone = kTextStart + kTextDur;
@@ -456,7 +1206,6 @@ void Scene_MainMenu(const SceneCtx& c) {
         s_introT = 0.0f;
         s_menuSelect = -1;
         s_menuExitT = 0.0f;
-        s_canvasInit = false;
         for (int i = 0; i < 5; ++i) kHoverT[i] = 0.0f;
         g_MainMenuEntryT = 0.001f;
     } else {
@@ -494,11 +1243,11 @@ void Scene_MainMenu(const SceneCtx& c) {
         float ir, ig, ib;
     };
     static const SBtnDef kBtns[] = {
-        { { L"시작",      L"Start",    L"スタート"  }, { L"RUN_CONFIG",  L"RUN_CONFIG",  L"RUN_CONFIG"  }, 0.48f, 0.82f, 1.00f },
-        { { L"상점",      L"Armory",   L"武器庫"    }, { L"ARMORY",      L"ARMORY",      L"ARMORY"      }, 0.48f, 0.82f, 1.00f },
-        { { L"도감",      L"Astral Log", L"星界記録" }, { L"ASTRAL_LOG",  L"ASTRAL_LOG",  L"ASTRAL_LOG"  }, 0.48f, 0.82f, 1.00f },
-        { { L"설정",      L"Setting",  L"設定"      }, { L"CALIBRATION", L"CALIBRATION", L"CALIBRATION" }, 0.48f, 0.82f, 1.00f },
-        { { L"게임 종료", L"Exit",     L"終了"      }, { L"SHUTDOWN",    L"SHUTDOWN",    L"SHUTDOWN"    }, 0.48f, 0.82f, 1.00f },
+        { { L"시작",      L"Start",    L"スタート"  }, { L"RUN_CONFIG",  L"RUN_CONFIG",  L"RUN_CONFIG"  }, 0.18f, 0.62f, 0.96f },
+        { { L"상점",      L"Armory",   L"武器庫"    }, { L"ARMORY",      L"ARMORY",      L"ARMORY"      }, 0.18f, 0.62f, 0.96f },
+        { { L"도감",      L"Astral Log", L"星界記録" }, { L"ASTRAL_LOG",  L"ASTRAL_LOG",  L"ASTRAL_LOG"  }, 0.18f, 0.62f, 0.96f },
+        { { L"설정",      L"Setting",  L"設定"      }, { L"CALIBRATION", L"CALIBRATION", L"CALIBRATION" }, 0.18f, 0.62f, 0.96f },
+        { { L"게임 종료", L"Exit",     L"終了"      }, { L"SHUTDOWN",    L"SHUTDOWN",    L"SHUTDOWN"    }, 0.18f, 0.62f, 0.96f },
     };
     const int   kBtnCount = 5;
     const float BW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
@@ -506,9 +1255,7 @@ void Scene_MainMenu(const SceneCtx& c) {
     const float BGAP = 15.0f;
     float totalBH = kBtnCount * BH + (kBtnCount - 1) * BGAP;
     float btnX0   = std::max(58.0f, sw * 0.075f);
-    float btnY0   = sh * 0.48f;
-    if (btnY0 + totalBH > sh - 54.0f) btnY0 = sh - totalBH - 54.0f;
-    if (btnY0 < MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f) btnY0 = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
+    float btnY0   = MainMenuCommandStartY(sh);
 
     auto rectHit = [&](float hpx, float hpy, float rx, float ry, float rw, float rh) -> bool {
         return hpx >= rx && hpx <= rx + rw && hpy >= ry && hpy <= ry + rh;
@@ -531,29 +1278,33 @@ void Scene_MainMenu(const SceneCtx& c) {
         drawRect(x + w - len, y + h - thick, len, thick, r, g, b, a);
         drawRect(x + w - thick, y + h - len, thick, len, r, g, b, a);
     };
-    DrawSceneLeftVignette(sw, sh, Smoothstep(LogoClamp01((s_introT - 0.12f) / 0.58f)) * uiA);
+    const float now = (float)glfwGetTime();
+    const float menuFieldA = Smoothstep(LogoClamp01((s_introT - 0.10f) / 0.62f)) * uiA;
+    DrawMainMenuAstralVeil(sw, sh, btnX0, btnY0, BW, totalBH,
+                           kHoverT, menuFieldA);
+    DrawSharedMenuDim(sw, sh, btnX0, btnY0, BW, totalBH,
+                      Smoothstep(LogoClamp01((s_introT - 0.12f) / 0.58f)) * uiA);
     {
+        const UiThemePalette& theme = GetUiTheme();
         const float anchorX = btnX0 - 36.0f;
         const float anchorY = std::max(22.0f, MainLogoTop(sh) - 20.0f);
         const float anchorH = std::min(sh - anchorY - 26.0f, totalBH + 170.0f);
         const float anchorA = Smoothstep(LogoClamp01((s_introT - 0.28f) / 0.48f)) * uiA;
         BindMainShader();
         drawRect(anchorX, anchorY, 1.2f, anchorH,
-                 0.48f, 0.82f, 1.0f, 0.17f * anchorA);
+                 theme.Frame.r, theme.Frame.g, theme.Frame.b, 0.17f * anchorA);
         drawDiamond(anchorX + 0.6f, anchorY + 4.0f, 2.8f,
-                    0.48f, 0.82f, 1.0f, 0.22f * anchorA);
+                    theme.Frame.r, theme.Frame.g, theme.Frame.b, 0.22f * anchorA);
         drawDiamond(anchorX + 0.6f, anchorY + anchorH - 4.0f, 2.8f,
-                    0.48f, 0.82f, 1.0f, 0.18f * anchorA);
+                    theme.Frame.r, theme.Frame.g, theme.Frame.b, 0.18f * anchorA);
     }
     DrawMainOnedowLogo(sw, sh, titleA, titlePhA, sw * 0.30f, 0.82f);
-    const float now = (float)glfwGetTime();
     for (int i = 0; i < kBtnCount; i++) {
         float baseBx = btnX0;
         float baseBy = btnY0 + (float)i * (BH + BGAP);
         bool hov = (!booting && !introActive && !introWasActive && !exitActive && g_FadeDir == 0
-                    && rectHit((float)mx, (float)my, baseBx - 26.0f, baseBy, BW + 58.0f, BH));
-        float spd = delta * 10.0f; if (spd > 1.0f) spd = 1.0f;
-        kHoverT[i] += ((hov ? 1.0f : 0.0f) - kHoverT[i]) * spd;
+                    && rectHit((float)mx, (float)my, baseBx - 12.0f, baseBy, BW + 24.0f, BH));
+        kHoverT[i] = UpdateMenuCommandHover(kHoverT[i], hov, delta);
         float t = kHoverT[i];
         float rawBtnPh = (s_introT - kTitleDur - (float)i * kBtnStag) / kBtnDur;
         rawBtnPh = std::max(0.0f, std::min(rawBtnPh, 1.0f));
@@ -566,51 +1317,22 @@ void Scene_MainMenu(const SceneCtx& c) {
         float bx = baseBx + slide - 10.0f * t;
         float by = baseBy + (exitActive && !selected ? exitP * 28.0f : 0.0f);
         float ar = kBtns[i].ir, ag = kBtns[i].ig, ab = kBtns[i].ib;
+        if (i == 4) {
+            // Keep the idle command in the shared family color. The warmer
+            // warning hue appears only while SHUTDOWN is actively targeted.
+            const float warnT = std::max(t, selected ? exitP : 0.0f);
+            ar += (0.96f - ar) * warnT;
+            ag += (0.72f - ag) * warnT;
+            ab += (0.28f - ab) * warnT;
+        }
         float selectPulse = selected ? (0.50f + 0.50f * sinf(now * 18.0f)) * exitP : 0.0f;
-        float activeT = std::max(t, selected ? exitP : 0.0f);
-
-        DrawMenuCommandFeedback(bx, by, BW, BH, ar, ag, ab,
-                                rowA, activeT, selectPulse, now + (float)i * 0.17f);
-
         const wchar_t* route = kBtns[i].route[li2];
-        const wchar_t* sub = kBtns[i].label[0];
-        float routeSc = 1.04f;
-        while (routeSc > 0.82f && g_TextL.Width(route, routeSc) > BW)
-            routeSc -= 0.04f;
-        float subSc = 0.48f;
-        float routeY = by + 2.0f;
-        float subY = routeY + g_TextL.Height(route, routeSc) - 3.0f;
-        float tr = 1.0f + (ar - 1.0f) * activeT;
-        float tg = 1.0f + (ag - 1.0f) * activeT;
-        float tb = 1.0f + (ab - 1.0f) * activeT;
-        if (selected) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
-        g_TextL.Draw(route, bx, routeY, routeSc,
-                     tr, tg, tb, (0.82f + 0.16f * activeT + 0.18f * selectPulse) * rowA);
-        g_TextS.Draw(sub, bx + 4.0f, subY, subSc,
-                     0.70f + 0.18f * activeT, 0.75f + 0.16f * activeT, 0.82f + 0.12f * activeT,
-                     (0.70f + 0.20f * activeT) * rowA);
+        const wchar_t* sub = kBtns[i].label[li2];
+        DrawUnifiedMenuCommand(route, sub, bx, by, BW, BH,
+                               ar, ag, ab, rowA, t, selected, selectPulse,
+                               now + (float)i * 0.17f);
 
         if (hov && lmb && !g_LmbPrev) {
-            if (i == 0) {
-                ResetRunConfigUi();
-                s_MainMenuRunConfigPanel = true;
-                return;
-            }
-            if (i == 1) {
-                ResetShopUi();
-                s_MainMenuArmoryPanel = true;
-                return;
-            }
-            if (i == 2) {
-                ResetCodexUi();
-                s_MainMenuCodexPanel = true;
-                return;
-            }
-            if (i == 3) {
-                ResetSettingsUi();
-                s_MainMenuSettingsPanel = true;
-                return;
-            }
             s_menuSelect = i;
             s_menuExitT = 0.0f;
         }
@@ -624,99 +1346,52 @@ void Scene_MainMenu(const SceneCtx& c) {
         }
         if (s_menuSelect >= 0) morphIdx = s_menuSelect;
 
-        struct NodeDef { float x, y; };
-        static const NodeDef shapes[6][10] = {
-            { {0.50f,0.18f},{0.68f,0.27f},{0.78f,0.47f},{0.66f,0.68f},{0.47f,0.78f},{0.28f,0.63f},{0.22f,0.40f},{0.36f,0.24f},{0.53f,0.49f},{0.58f,0.58f} },
-            { {0.50f,0.16f},{0.68f,0.26f},{0.71f,0.48f},{0.62f,0.68f},{0.50f,0.82f},{0.38f,0.68f},{0.29f,0.48f},{0.32f,0.26f},{0.50f,0.43f},{0.50f,0.55f} },
-            { {0.32f,0.24f},{0.50f,0.16f},{0.69f,0.25f},{0.78f,0.47f},{0.62f,0.72f},{0.38f,0.75f},{0.25f,0.56f},{0.44f,0.42f},{0.56f,0.42f},{0.50f,0.58f} },
-            { {0.50f,0.14f},{0.76f,0.32f},{0.79f,0.63f},{0.54f,0.82f},{0.24f,0.70f},{0.18f,0.40f},{0.37f,0.20f},{0.50f,0.36f},{0.50f,0.58f},{0.64f,0.49f} },
-            { {0.50f,0.18f},{0.72f,0.22f},{0.82f,0.44f},{0.74f,0.68f},{0.52f,0.78f},{0.28f,0.72f},{0.18f,0.50f},{0.28f,0.28f},{0.50f,0.48f},{0.64f,0.48f} },
-            { {0.50f,0.10f},{0.64f,0.30f},{0.88f,0.34f},{0.70f,0.52f},{0.78f,0.80f},{0.50f,0.64f},{0.22f,0.80f},{0.30f,0.52f},{0.12f,0.34f},{0.36f,0.30f} },
+        UpdateMainMenuConstellationMotion(morphIdx, delta);
+        const int focusIdx = morphIdx >= 0 ? morphIdx : 0;
+        const float palette[5][3] = {
+            {0.18f, 0.62f, 0.96f}, {0.08f, 0.70f, 0.82f},
+            {0.70f, 0.62f, 1.00f}, {0.96f, 0.78f, 0.34f},
+            {0.52f, 0.64f, 0.78f}
         };
-        static const int edges[6][14][2] = {
-            { {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,0},{0,8},{8,4},{2,8},{5,9},{9,1},{-1,-1} },
-            { {0,8},{8,4},{1,8},{8,7},{2,9},{9,6},{3,4},{5,6},{0,1},{1,2},{6,7},{7,0},{-1,-1},{-1,-1} },
-            { {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,0},{0,7},{7,8},{8,2},{7,9},{9,3},{-1,-1},{-1,-1} },
-            { {0,7},{7,8},{8,3},{1,7},{7,5},{2,9},{9,6},{3,4},{4,5},{5,6},{6,0},{1,2},{-1,-1},{-1,-1} },
-            { {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,0},{0,8},{8,4},{2,9},{9,6},{7,8},{1,9} },
-            { {0,5},{1,5},{2,5},{3,5},{4,5},{5,6},{5,7},{5,8},{5,9},{1,2},{3,4},{6,7},{8,9},{-1,-1} },
-        };
-        int shapeIdx = (morphIdx >= 0) ? (morphIdx + 1) : 0;
+        const int colorIdx = focusIdx % 5;
+        const float colR = palette[colorIdx][0];
+        const float colG = palette[colorIdx][1];
+        const float colB = palette[colorIdx][2];
+        // Preserve the shared cyan family while allowing the focused command
+        // to tint the constellation's active geometry.
+        const float paletteMix = 0.12f + 0.20f * bestHover;
+        const float lineR = 0.18f + (colR - 0.18f) * paletteMix;
+        const float lineG = 0.62f + (colG - 0.62f) * paletteMix;
+        const float lineB = 1.00f + (colB - 1.00f) * paletteMix;
         const float canvasReveal = Smoothstep(LogoClamp01((s_introT - kTitleDur - 0.18f) / 0.70f)) * uiA;
         const float collapse = exitActive ? Smoothstep(std::min(1.0f, s_menuExitT / 0.50f)) : 0.0f;
-        const float cx = sw * 0.69f;
-        const float cy = sh * 0.53f;
-        const float cw = sw * 0.48f;
-        const float ch = sh * 0.66f;
-        auto drawNodeGlow = [&](float x, float y, float size, float a) {
-            if (a <= 0.001f) return;
-            drawCircle(x, y, size * 3.4f, 0.0f, 0.0f, 0.010f, 0.30f * a);
-            drawCircle(x, y, size * 2.15f, 0.020f, 0.060f, 0.100f, 0.24f * a);
-            drawDiamond(x, y, size * 1.28f, 0.48f, 0.82f, 1.0f, 0.70f * a);
-            drawDiamond(x, y, size * 0.46f, 0.96f, 1.0f, 1.0f, 0.88f * a);
-        };
-        if (!s_canvasInit) {
-            for (int i = 0; i < 10; ++i) {
-                s_canvasX[i] = shapes[shapeIdx][i].x;
-                s_canvasY[i] = shapes[shapeIdx][i].y;
-            }
-            s_canvasInit = true;
-        }
-        for (int i = 0; i < 10; ++i) {
-            s_canvasX[i] = UiApproach(s_canvasX[i], shapes[shapeIdx][i].x, delta, 3.6f + bestHover * 4.5f);
-            s_canvasY[i] = UiApproach(s_canvasY[i], shapes[shapeIdx][i].y, delta, 3.6f + bestHover * 4.5f);
-        }
-
-        float px[10], py[10];
-        for (int i = 0; i < 10; ++i) {
-            float ox = cx + (s_canvasX[i] - 0.5f) * cw;
-            float oy = cy + (s_canvasY[i] - 0.5f) * ch;
-            float spin = now * (0.035f + 0.020f * bestHover);
-            float dx = ox - cx, dy = oy - cy;
-            float cr = cosf(spin), sr = sinf(spin);
-            ox = cx + dx * cr - dy * sr;
-            oy = cy + dx * sr + dy * cr;
-            px[i] = ox + (cx - ox) * collapse;
-            py[i] = oy + (cy - oy) * collapse;
-        }
-
-        DrawRadialGradient(cx, cy, cw * 0.50f, 0.0f, 0.0f, 0.012f,
+        const float canvasLeft = btnX0 + BW + 40.0f;
+        const float canvasRight = std::max(canvasLeft + 280.0f, sw - 30.0f);
+        const float availableCanvasW = canvasRight - canvasLeft;
+        const float cw = std::min(sw * 0.48f, availableCanvasW);
+        const float ch = std::min(sh * 0.66f, cw * 0.78f);
+        const float parallaxX = ((float)mx - sw * 0.5f) * -0.012f;
+        const float parallaxY = ((float)my - sh * 0.5f) * -0.009f;
+        const float cx = canvasLeft + availableCanvasW * 0.5f + parallaxX;
+        const float cy = sh * 0.53f + parallaxY;
+        DrawRadialGradient(cx, cy, cw * 0.54f, 0.0f, 0.0f, 0.012f,
                           0.52f * canvasReveal * (1.0f - collapse * 0.35f));
-        for (int i = 0; i < 36; ++i) {
-            if ((i % 4) == 2) continue;
-            float a0 = (float)i / 36.0f * 6.2831853f + now * 0.05f;
-            float a1 = a0 + 0.080f;
-            float rx = cw * (0.36f + 0.04f * sinf(now * 0.4f));
-            float ry = ch * 0.30f;
-            float x0 = cx + cosf(a0) * rx;
-            float y0 = cy + sinf(a0) * ry;
-            float x1 = cx + cosf(a1) * rx;
-            float y1 = cy + sinf(a1) * ry;
-            LogoLine(x0, y0, x1, y1,
-                     2.6f, 0.0f, 0.0f, 0.012f, 0.20f * canvasReveal * (1.0f - collapse));
-            LogoLine(cx + cosf(a0) * rx, cy + sinf(a0) * ry,
-                     cx + cosf(a1) * rx, cy + sinf(a1) * ry,
-                     0.95f, 0.42f, 0.82f, 1.0f, 0.080f * canvasReveal * (1.0f - collapse));
-        }
-        for (int e = 0; e < 14; ++e) {
-            int a = edges[shapeIdx][e][0], b = edges[shapeIdx][e][1];
-            if (a < 0 || b < 0) break;
-            float edgeA = (0.18f + 0.20f * bestHover + 0.38f * collapse) * canvasReveal;
-            LogoLine(px[a], py[a], px[b], py[b],
-                     4.0f + collapse * 3.4f, 0.0f, 0.0f, 0.012f, 0.42f * edgeA);
-            LogoLine(px[a], py[a], px[b], py[b],
-                     1.45f + collapse * 2.4f, 0.48f, 0.82f, 1.0f, edgeA);
-        }
-        for (int i = 0; i < 10; ++i) {
-            float ns = ((i == 0 || i == 4 || i == 8) ? 5.2f : 3.5f) * (1.0f + collapse * 1.6f);
-            drawNodeGlow(px[i], py[i], ns,
-                         (0.48f + 0.22f * bestHover + 0.46f * collapse) * canvasReveal);
-        }
+        const float sphereRadius = std::min(cw, ch) * 0.345f
+                                 * (1.0f + 0.045f * bestHover);
+        const float sphereA = (0.72f + 0.20f * bestHover)
+                            * canvasReveal * (1.0f - 0.84f * collapse);
+        DrawMainMenuOrbitalInstrument(cx, cy, sphereRadius, focusIdx,
+                                      kHoverT, bestHover,
+                                      s_MainMenuConstellationMotion.current,
+                                      s_MainMenuConstellationMotion.phase,
+                                      sphereA, 1.0f,
+                                      lineR, lineG, lineB);
         if (collapse > 0.01f)
-            drawCircle(cx, cy, 18.0f + 52.0f * collapse, 0.48f, 0.82f, 1.0f, 0.080f * collapse * canvasReveal);
+            drawCircle(cx, cy, 18.0f + 52.0f * collapse, lineR, lineG, lineB, 0.080f * collapse * canvasReveal);
     }
 
-    if (s_menuSelect >= 0 && s_menuExitT >= 0.52f && g_FadeDir == 0) {
+    const float kExitDelay = (s_menuSelect == 4) ? 0.52f : 0.18f;
+    if (s_menuSelect >= 0 && s_menuExitT >= kExitDelay && g_FadeDir == 0) {
         int selectedMenu = s_menuSelect;
         s_menuSelect = -1;
         s_menuExitT = 0.0f;
@@ -757,7 +1432,7 @@ void Scene_MainMenu(const SceneCtx& c) {
                     float wx = sw * 0.5f - cw * 0.5f;
                     float wy = sh * 0.5f - chh * 0.5f;
                     BindMainShader();
-                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease * SCENE_BG_ALPHA);  // 배경 딤
+                    drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, 0.45f * ease);  // 배경 딤
                     // 시네마틱 — 아래로 훑는 스캔 스윕 라인 (화이트 플래시는 눈 아파서 제거)
                     {
                         float sweepY = fmodf(prog * 1.3f, 1.0f) * sh;
@@ -767,19 +1442,39 @@ void Scene_MainMenu(const SceneCtx& c) {
                     drawRect(wx, wy, cw, chh, 0.06f, 0.07f, 0.10f, 0.99f);   // 창 본체
                     if (ease > 0.9f) {
                         // 부팅 로그 — 진행도에 따라 한 줄씩 나타남
-                        static const wchar_t* LOG[6] = {
-                            L"> mounting modules ...",
-                            L"> loading assets        [ OK ]",
-                            L"> init renderer         [ OK ]",
-                            L"> linking onedow.dll    [ OK ]",
-                            L"> verify save data      [ OK ]",
-                            L"> ready." };
+                        static const wchar_t* LOG[3][6] = {
+                            {
+                                L"> 모듈 마운트 중 ...",
+                                L"> 애셋 로드             [ OK ]",
+                                L"> 렌더러 초기화         [ OK ]",
+                                L"> onedow.dll 연결       [ OK ]",
+                                L"> 저장 데이터 검증      [ OK ]",
+                                L"> 준비 완료."
+                            },
+                            {
+                                L"> mounting modules ...",
+                                L"> loading assets        [ OK ]",
+                                L"> init renderer         [ OK ]",
+                                L"> linking onedow.dll    [ OK ]",
+                                L"> verify save data      [ OK ]",
+                                L"> ready."
+                            },
+                            {
+                                L"> モジュールをマウント ...",
+                                L"> アセット読込          [ OK ]",
+                                L"> レンダラー初期化      [ OK ]",
+                                L"> onedow.dll 接続       [ OK ]",
+                                L"> セーブデータ検証      [ OK ]",
+                                L"> 準備完了。"
+                            }
+                        };
                         int shown = (int)(prog * 6.5f); if (shown > 6) shown = 6;
                         for (int i = 0; i < shown; i++) {
                             bool last = (i == 5);
-                            g_TextS.Draw(LOG[i], wx + 22.0f, wy + 14.0f + i * 24.0f, 0.6f,
-                                         last ? ag : 0.65f, last ? 1.0f : 0.78f,
-                                         last ? ag : 0.7f, 0.95f);
+                            DrawShadowedText(g_TextS, LOG[li2][i],
+                                             wx + 22.0f, wy + 14.0f + i * 24.0f, 0.6f,
+                                             last ? ag : 0.65f, last ? 1.0f : 0.78f,
+                                             last ? ag : 0.7f, 0.95f, 0.70f);
                         }
                         // 진행 바 (창 하단)
                         float barW = cw - 44.0f, barX = wx + 22.0f, barY = wy + chh - 30.0f;
@@ -787,8 +1482,9 @@ void Scene_MainMenu(const SceneCtx& c) {
                         drawRect(barX, barY, barW, 14.0f, 0.12f, 0.14f, 0.20f, 1.0f);
                         drawRect(barX, barY, barW * prog, 14.0f, ar, ag, ab, 1.0f);
                         wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(prog * 100.0f));
-                        g_TextS.Draw(pct, barX + barW - 44.0f, barY - 22.0f, 0.6f,
-                                     0.8f, 0.9f, 1.0f, 1.0f);
+                        DrawShadowedText(g_TextS, pct,
+                                         barX + barW - 44.0f, barY - 22.0f, 0.6f,
+                                         0.8f, 0.9f, 1.0f, 1.0f, 0.70f);
                     }
                     if (g_BootAnim <= 0.0f) {
                         g_BootAnim = 0.0f;
@@ -806,6 +1502,7 @@ void Scene_Shop(const SceneCtx& c) {
     static constexpr int SHOP_TAB_COUNT = 4;
     static int   s_tab        = 0;
     static float s_tabHov[SHOP_TAB_COUNT] = {};
+    static float s_itemHov[300] = {};
     static float s_backHov = 0.0f;
     static int   s_selKey     = -1;
     static float s_scroll     = 0.0f;
@@ -818,6 +1515,9 @@ void Scene_Shop(const SceneCtx& c) {
     static bool  s_prevEsc    = false;
     static int   s_prevTagKey = -2;
     static float s_tagFlickerT = 1.0f;
+    static bool  s_browseItems = false;
+    static float s_browseT = 0.0f;
+    static bool  s_browseInputLock = false;
 
     struct SLItem {
         bool           isGroup;
@@ -833,6 +1533,11 @@ void Scene_Shop(const SceneCtx& c) {
         DrawMenuBackground(sw, sh, delta, false);
 
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
+    if (g_ShopEntryT <= 0.001f) {
+        s_browseItems = false;
+        s_browseT = 0.0f;
+        s_browseInputLock = false;
+    }
     g_ShopEntryT += dt;
     if (g_ShopEntryT > 1.0f) g_ShopEntryT = 1.0f;
 
@@ -843,7 +1548,11 @@ void Scene_Shop(const SceneCtx& c) {
     const bool escClick = rawEsc && !s_prevEsc;
     s_prevEsc = rawEsc;
 
-    const bool inputReady = !s_backExit && g_ShopEntryT >= 0.55f;
+    const float browseTarget = s_browseItems ? 1.0f : 0.0f;
+    s_browseT = UiApproach(s_browseT, browseTarget, dt, 9.0f);
+    if (s_browseInputLock && std::abs(s_browseT - browseTarget) < 0.035f)
+        s_browseInputLock = false;
+    const bool inputReady = !s_backExit && !s_browseInputLock && g_ShopEntryT >= 0.55f;
     auto beginBack = [&]() {
         if (!inputReady) return;
         s_backExit = true;
@@ -854,7 +1563,14 @@ void Scene_Shop(const SceneCtx& c) {
         if (inputReady) beginBack();
         else s_ShopBackRequested = false;
     }
-    if (rmbClick || escClick) beginBack();
+    if (rmbClick || escClick) {
+        if (inputReady && s_browseItems) {
+            s_browseItems = false;
+            s_browseInputLock = true;
+        } else {
+            beginBack();
+        }
+    }
     bool finishBackAfterRender = false;
     if (s_backExit) {
         s_backOutT += dt;
@@ -894,51 +1610,60 @@ void Scene_Shop(const SceneCtx& c) {
     const float leftX = panelX;
     const float midX = leftX + leftW + gap;
     const float runRightX = midX + midW + gap;
-    const float rightX = std::max(sw * 0.56f, panelX + panelW * 0.56f);
-    const float rightW = (panelX + panelW) - rightX - 8.0f * uiS;
-    const float rightAreaY = colY;
-    const float rightAreaH = colH;
-    const float tabH = 54.0f * uiS;
-    const float tabY = colY;
-    const float listAreaY = colY + 64.0f * uiS;
-    const float listAreaH = colH - 64.0f * uiS;
-    const float footY = panelY + panelH - footerH + 12.0f * uiS;
     (void)runRightW;
     (void)runRightX;
-    const float leftVignetteA = s_backExit
-        ? (0.74f + 0.26f * backP)
-        : (s_MainMenuArmoryPanel ? 0.74f : 0.64f * wake);
-    DrawSceneLeftVignette(sw, sh, leftVignetteA);
-    if (s_MainMenuArmoryPanel)
-        DrawSceneLeftVignette(sw, sh, 0.18f * wake);
-    DrawSceneRadialVignette(rightX + rightW * 0.56f, rightAreaY + rightAreaH * 0.52f,
-                            std::min(rightW, rightAreaH) * 0.62f, 0.46f * rightWake);
-
     const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
     const float mainBH = 70.0f;
     const float mainGap = 15.0f;
     const float mainTotalH = 5.0f * mainBH + 4.0f * mainGap;
     const float mainX = std::max(58.0f, sw * 0.075f);
-    float mainY = sh * 0.48f;
-    if (mainY + mainTotalH > sh - 54.0f) mainY = sh - mainTotalH - 54.0f;
-    if (mainY < MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f)
-        mainY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
+    const float mainY = MainMenuCommandStartY(sh);
     const float armoryY = mainY + (mainBH + mainGap);
     const float armoryMidY = armoryY + mainBH * 0.5f;
 
     const float rootX = mainX + (s_backExit ? backP * 180.0f * uiS : -(1.0f - wake) * 82.0f * uiS);
-    const float rootY = mainY + (1.0f - wake) * 18.0f * uiS;
+    const float rootY = mainY;
     const float rootW = std::min(340.0f * uiS, mainBW * 0.66f);
     const float rootH = mainBH;
     const float rootGap = mainGap;
-    const float depth2X = rootX + std::min(345.0f * uiS, mainBW * 0.64f);
-    const float depth2Y = std::max(panelY + headerH + 34.0f * uiS,
-        rootY + (float)s_tab * (rootH + rootGap) - 34.0f * uiS);
-    const float depth2W = std::max(300.0f * uiS,
-        std::min(470.0f * uiS, rightX - depth2X - 32.0f * uiS));
-    const float depth2H = std::max(280.0f * uiS,
-        std::min(panelY + panelH - footerH - depth2Y - 18.0f * uiS, 620.0f * uiS));
-
+    DrawSharedMenuDim(sw, sh, mainX, mainY, mainBW, mainTotalH,
+                      std::max(oldMenuA, wake));
+    const InlineThreeColumnLayout columns = BuildInlineThreeColumnLayout(
+        sw, sh, uiS, rootX, rootY, rootW, rootH);
+    // ARMORY uses two zones only. The left command slot transforms from
+    // categories into items; the remaining width belongs to one detail plate.
+    const float depth2X = rootX;
+    const float depth2Y = rootY + 78.0f * uiS;
+    const float depth2W = rootW + 54.0f * uiS;
+    const float depth2H = std::min(columns.contentH, sh - depth2Y - 66.0f * uiS);
+    const float rightX = columns.contentX + 26.0f * uiS;
+    const float rightW = std::min(860.0f * uiS,
+                                  std::max(520.0f * uiS, sw - rightX - 54.0f * uiS));
+    const float rightAreaY = columns.detailY + 34.0f * uiS;
+    const float rightAreaH = std::min(columns.detailH - 34.0f * uiS, 310.0f * uiS);
+    const float tabH = 54.0f * uiS;
+    const float tabY = columns.contentY;
+    const float listAreaY = columns.contentY + 64.0f * uiS;
+    const float listAreaH = columns.contentH - 64.0f * uiS;
+    const float footY = columns.bottomY;
+    // These surfaces are intentionally borderless and bounded to readable
+    // content. A real fill is required on bright desktop/game backgrounds;
+    // text shadows alone cannot establish enough local contrast.
+    const float categoryA = s_browseT >= 0.94f
+        ? 0.0f : 1.0f - Smoothstep(LogoClamp01(s_browseT / 0.94f));
+    const float itemA = s_browseT <= 0.04f
+        ? 0.0f : Smoothstep(LogoClamp01((s_browseT - 0.04f) / 0.90f));
+    // Category selection is intentionally a single-focus screen. The detail
+    // plate only enters after the left command rail has transformed into the
+    // item browser, avoiding the old category + list + detail overload.
+    const float detailWake = rightWake * itemA;
+    if (detailWake > 0.002f) {
+        DrawAstralDataPlate(depth2X - 20.0f * uiS, depth2Y - 8.0f * uiS,
+                            depth2W + 32.0f * uiS, depth2H + 16.0f * uiS,
+                            0.38f, 0.82f, 1.0f, 0.72f * detailWake);
+        DrawAstralDataPlate(rightX, rightAreaY, rightW, rightAreaH,
+                            0.38f, 0.82f, 1.0f, 0.88f * detailWake);
+    }
     static constexpr int KEY_META  = 0;
     static constexpr int KEY_THEME = 100;
     static constexpr int KEY_AUG   = 1000;
@@ -971,6 +1696,7 @@ void Scene_Shop(const SceneCtx& c) {
         s_prevTab   = s_tab;
         s_itemCount = 0;
         s_scroll    = 0.0f;
+        for (float& hover : s_itemHov) hover = 0.0f;
 
         auto addGroup = [&](const wchar_t* lbl, float r, float g2, float b) {
             if (s_itemCount < 300) s_items[s_itemCount++] = { true, -1, lbl, r, g2, b };
@@ -1011,7 +1737,7 @@ void Scene_Shop(const SceneCtx& c) {
     const float oldOut = 1.0f - oldMenuA;
     const float returnLogoA = s_backExit ? (0.42f + 0.58f * backP) : 0.42f;
     DrawMainOnedowLogo(sw, sh,
-                       returnLogoA * oldMenuA + 0.08f * wake,
+                       returnLogoA * oldMenuA,
                        LogoClamp01(oldMenuA + 0.22f * wake),
                        sw * 0.30f - 160.0f * oldOut,
                        0.82f);
@@ -1080,24 +1806,24 @@ void Scene_Shop(const SceneCtx& c) {
     static const float kTG[SHOP_TAB_COUNT] = { 0.70f, 0.82f, 0.92f, 0.48f };
     static const float kTB[SHOP_TAB_COUNT] = { 0.70f, 1.00f, 0.42f, 1.00f };
 
+    const float categoryWake = wake * categoryA;
     BindMainShader();
     drawRect(rootX - 36.0f, rootY - 20.0f,
              1.2f, rootH * 5.0f + rootGap * 4.0f + 40.0f,
-             0.48f, 0.82f, 1.00f, 0.16f * wake);
+             0.48f, 0.82f, 1.00f, 0.16f * categoryWake);
 
     const int ROOT_COUNT = SHOP_TAB_COUNT + 1;
     for (int i = 0; i < ROOT_COUNT; i++) {
         const bool isBack = (i == SHOP_TAB_COUNT);
-        const float tx = rootX;
+        const float tx = rootX - 58.0f * itemA;
         const float ty = rootY + (float)i * (rootH + rootGap);
         const float hitX = tx - 26.0f;
-        const float hitRight = std::min(tx + rootW + 18.0f * uiS, depth2X - 34.0f * uiS);
-        const bool hov = inputReady
+        const float hitRight = tx + rootW + 18.0f * uiS;
+        const bool hov = inputReady && !s_browseItems
                        && (mx >= hitX && mx < hitRight
                        && my >= ty && my < ty + rootH);
         float& hovT = isBack ? s_backHov : s_tabHov[i];
-        float rootSpd = dt * 10.0f; if (rootSpd > 1.0f) rootSpd = 1.0f;
-        hovT += ((hov ? 1.0f : 0.0f) - hovT) * rootSpd;
+        hovT = UpdateMenuCommandHover(hovT, hov, dt);
 
         if (hov && lmb && !g_LmbPrev) {
             if (isBack) {
@@ -1105,6 +1831,8 @@ void Scene_Shop(const SceneCtx& c) {
             } else {
                 s_tab = i;
                 s_prevTab = -1;
+                s_browseItems = true;
+                s_browseInputLock = true;
             }
         }
 
@@ -1114,49 +1842,38 @@ void Scene_Shop(const SceneCtx& c) {
         const float bb = isBack ? 0.78f : kTB[i];
         const wchar_t* route = isBack ? L"BACK" : kTabLbl[i][1];
         const wchar_t* sub = isBack ? L"\uB4A4\uB85C" : kTabLbl[i][0];
-        const float rawRootPh = s_backExit
-            ? wake
-            : LogoClamp01((g_ShopEntryT - 0.20f - (float)i * 0.09f) / 0.45f);
-        const float reveal = Smoothstep(rawRootPh);
-        const float rowA = reveal * wake;
-        const float activeT = std::max(hovT, sel ? 1.0f : 0.0f);
+        const float reveal = s_backExit ? wake : MenuCommandReveal(g_ShopEntryT, i);
+        const float rowA = reveal * categoryWake;
         const float selectPulse = sel ? (0.16f + 0.16f * sinf(now * 4.0f)) : 0.0f;
         const float slide = (1.0f - reveal) * 34.0f;
         const float bx = tx + slide - 10.0f * hovT;
         const float by = ty;
 
-        BindMainShader();
-        if (activeT > 0.01f) {
-            const float lineH = 20.0f + 42.0f * activeT + 10.0f * selectPulse;
-            drawRect(bx - 18.0f, by + rootH * 0.5f - lineH * 0.5f,
-                     2.2f, lineH, rr, gg, bb, (0.24f + 0.55f * activeT) * rowA);
-            const float scanY = by + rootH * (0.34f + 0.32f * fmodf(now * 0.55f + (float)i * 0.17f, 1.0f));
-            drawRect(bx - 4.0f, scanY, mainBW * (0.58f + 0.24f * activeT), 1.1f,
-                     rr, gg, bb, (0.050f + 0.090f * activeT) * rowA);
-            drawDiamond(bx - 17.0f, by + rootH * 0.5f,
-                        3.0f + 2.6f * activeT, rr, gg, bb, (0.40f + 0.34f * activeT) * rowA);
-        }
-
-        float routeSc = 1.04f;
-        while (routeSc > 0.82f && g_TextL.Width(route, routeSc) > mainBW)
-            routeSc -= 0.04f;
-        const float subSc = 0.48f;
-        const float routeY = by + 2.0f;
-        const float subY = routeY + g_TextL.Height(route, routeSc) - 3.0f;
-        float tr = 1.0f + (rr - 1.0f) * activeT;
-        float tg = 1.0f + (gg - 1.0f) * activeT;
-        float tb = 1.0f + (bb - 1.0f) * activeT;
-        if (sel) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
-        g_TextL.Draw(route, bx, routeY, routeSc,
-                     tr, tg, tb, (0.82f + 0.16f * activeT + 0.18f * selectPulse) * rowA);
-        g_TextS.Draw(sub, bx + 4.0f, subY, subSc,
-                     0.70f + 0.18f * activeT,
-                     0.75f + 0.16f * activeT,
-                     0.82f + 0.12f * activeT,
-                     (0.70f + 0.20f * activeT) * rowA);
+        DrawUnifiedMenuCommand(route, sub, bx, by, rootW, rootH,
+                               rr, gg, bb, rowA, hovT, sel, selectPulse,
+                               now + (float)i * 0.17f);
     }
 
     // ── Depth 2: item branches ─────────────────────────────────────────
+    const float itemWake = wake * itemA;
+    const float itemSlideX = (1.0f - itemA) * 54.0f * uiS;
+    const float itemListX = depth2X + itemSlideX;
+    const float itemBackY = rootY;
+    const bool itemBackHov = inputReady && s_browseItems
+        && mx >= rootX - 24.0f * uiS && mx < rootX + rootW + 28.0f * uiS
+        && my >= itemBackY && my < itemBackY + rootH;
+    s_backHov = UpdateMenuCommandHover(s_backHov, itemBackHov, dt);
+    if (itemBackHov && lmb && !g_LmbPrev) {
+        s_browseItems = false;
+        s_browseInputLock = true;
+    }
+    wchar_t armoryPath[80];
+    swprintf_s(armoryPath, L"ARMORY / %ls", kTabLbl[s_tab][1]);
+    DrawUnifiedMenuCommand(armoryPath, nli == 0 ? L"\xCE74\xD14C\xACE0\xB9AC" : L"CATEGORY",
+                           rootX - 10.0f * s_backHov, itemBackY, rootW, rootH,
+                           kTR[s_tab], kTG[s_tab], kTB[s_tab], itemWake,
+                           s_backHov, true, 0.10f + 0.08f * sinf(now * 4.0f), now);
+
     BindMainShader();
     const float parentY = rootY + (float)s_tab * (rootH + rootGap) + rootH * 0.5f;
     const float trunkX = depth2X - 26.0f * uiS;
@@ -1165,7 +1882,7 @@ void Scene_Shop(const SceneCtx& c) {
 
     const float itemH  = 50.0f * uiS;
     const float grpH   = 40.0f * uiS;
-    const float listX  = depth2X;
+    const float listX  = itemListX;
     const float listW2 = depth2W;
 
     float totalH = 0.0f;
@@ -1173,7 +1890,7 @@ void Scene_Shop(const SceneCtx& c) {
         totalH += s_items[i].isGroup ? grpH : itemH;
     float maxScroll = std::max(0.0f, totalH - depth2H + 16.0f * uiS);
 
-    bool overList = inputReady
+    bool overList = inputReady && s_browseItems
                  && (mx >= depth2X - 38.0f * uiS && mx < depth2X + depth2W + 26.0f * uiS
                   && my >= depth2Y && my < depth2Y + depth2H);
     if (overList && g_ScrollAccum != 0.0f)
@@ -1197,79 +1914,101 @@ void Scene_Shop(const SceneCtx& c) {
     BindMainShader();
     LogoLine(trunkX, std::min(parentY, treeTop + 12.0f * uiS),
              trunkX, std::max(parentY, treeBot),
-             0.9f * uiS, kTR[s_tab], kTG[s_tab], kTB[s_tab], 0.22f * wake);
+             0.9f * uiS, kTR[s_tab], kTG[s_tab], kTB[s_tab], 0.22f * itemWake);
     for (int i = 0; i < s_itemCount; i++) {
         const SLItem& itm = s_items[i];
         float rh = itm.isGroup ? grpH : itemH;
         float ry = curY; curY += rh;
-        if (ry + rh < depth2Y || ry > depth2Y + depth2H) continue;
+        if (ry + rh < depth2Y || ry > depth2Y + depth2H) {
+            s_itemHov[i] = UpdateMenuCommandHover(s_itemHov[i], false, dt);
+            continue;
+        }
 
         if (itm.isGroup) {
             BindMainShader();
             float mid = ry + grpH * 0.5f;
             float grpPulse = 0.72f + 0.28f * sinf(now * 2.2f + (float)i * 0.41f);
             LogoLine(trunkX, mid, listX - 8.0f * uiS, mid,
-                     0.9f * uiS, itm.r, itm.g, itm.b, 0.28f * wake);
+                     0.9f * uiS, itm.r, itm.g, itm.b, 0.28f * itemWake);
             drawRect(listX + 4.0f*uiS, mid - 0.5f*uiS,
                      listW2 * 0.96f, 1.0f*uiS,
-                     itm.r, itm.g, itm.b, (0.11f + 0.030f * grpPulse) * wake);
+                     itm.r, itm.g, itm.b, (0.11f + 0.030f * grpPulse) * itemWake);
             drawDiamond(listX - 8.0f*uiS, mid,
                         (3.8f + 0.6f * grpPulse) * uiS,
-                        itm.r, itm.g, itm.b, 0.58f * wake);
+                        itm.r, itm.g, itm.b, 0.58f * itemWake);
             const float gsc = 0.58f * uiS;
-            g_TextS.Draw(itm.label, listX + 14.0f*uiS,
-                         ry + (grpH - g_TextS.Height(itm.label, gsc)) * 0.5f,
-                         gsc, 0.86f, 0.94f, 1.0f, 0.74f * wake);
+            DrawShadowedText(g_TextS, itm.label, listX + 14.0f*uiS,
+                             ry + (grpH - g_TextS.Height(itm.label, gsc)) * 0.5f,
+                             gsc, 0.86f, 0.94f, 1.0f, 0.74f * itemWake, 0.62f);
         } else {
             bool isSel = (s_selKey == itm.key);
-            bool hov2  = inputReady
+            bool hov2  = inputReady && s_browseItems
                        && (mx >= listX - 24.0f * uiS && mx < listX + listW2 + 18.0f * uiS
                        && my >= ry - 4.0f * uiS && my < ry + itemH + 5.0f * uiS);
+            s_itemHov[i] = UpdateMenuCommandHover(s_itemHov[i], hov2, dt);
+            const float itemActive = std::max(s_itemHov[i], isSel ? 1.0f : 0.0f);
             if (hov2 && lmb && !g_LmbPrev) s_selKey = itm.key;
             BindMainShader();
             const float cardY = ry + 2.0f * uiS;
             const float cardH = itemH - 4.0f * uiS;
             const float cardPulse = isSel ? (0.60f + 0.40f * sinf(now * 3.2f + (float)i * 0.31f)) : 0.0f;
             const float ndy = cardY + cardH * 0.5f;
-            LogoLine(trunkX, ndy, listX - 12.0f * uiS, ndy,
-                     0.8f * uiS, itm.r, itm.g, itm.b, (isSel ? 0.40f : 0.16f) * wake);
-            if (isSel || hov2) {
-                drawRect(listX + 24.0f * uiS, cardY + cardH * 0.5f,
-                         listW2 - 26.0f * uiS, 1.1f * uiS,
-                         itm.r, itm.g, itm.b, (isSel ? 0.15f + 0.040f * cardPulse : 0.070f) * wake);
-            }
+
+            // Faint background — selected only, Ambient tier
             if (isSel) {
-                drawRect(listX - 2.0f * uiS, cardY + 7.0f * uiS,
-                         2.0f * uiS, cardH - 14.0f * uiS,
-                         itm.r, itm.g, itm.b, (0.72f + 0.16f * cardPulse) * wake);
-                const float cursorSc = 0.66f * uiS;
-                g_TextS.Draw(L">", listX + 7.0f * uiS,
-                             cardY + (cardH - g_TextS.Height(L">", cursorSc)) * 0.5f,
-                             cursorSc, itm.r, itm.g, itm.b, 0.96f * wake);
-            } else if (hov2) {
-                drawRect(listX - 1.0f * uiS, cardY + 10.0f * uiS,
-                         1.4f * uiS, cardH - 20.0f * uiS,
-                         itm.r, itm.g, itm.b, 0.34f * wake);
+                drawRect(listX, cardY, listW2, cardH,
+                         itm.r * 0.15f, itm.g * 0.12f, itm.b * 0.18f,
+                         (0.048f + 0.016f * cardPulse) * itemWake);
             }
+
+            // Branch connector
+            LogoLine(trunkX, ndy, listX - 12.0f * uiS, ndy,
+                     0.8f * uiS, itm.r, itm.g, itm.b, (isSel ? 0.40f : 0.16f) * itemWake);
+
+            // Drifting scan line — Structural tier, no static centering
+            if (itemActive > 0.01f) {
+                const float scanY = cardY + cardH * (0.34f + 0.32f * fmodf(now * 0.55f + (float)i * 0.23f, 1.0f));
+                drawRect(listX + 20.0f * uiS, scanY, listW2 - 22.0f * uiS, 1.0f * uiS,
+                         itm.r, itm.g, itm.b,
+                         PulsedStructuralAlpha(0.055f * itemActive, 0.030f * itemActive,
+                                               now * 1.1f + (float)i) * itemWake);
+            }
+
+            // Left accent bar — grows with active state
+            {
+                const float barH = cardH * (0.40f + 0.35f * itemActive) - 8.0f * uiS;
+                const float barA = isSel ? (0.68f + 0.14f * cardPulse)
+                                         : 0.28f * s_itemHov[i];
+                if (barA > 0.01f)
+                    drawRect(listX - 2.0f * uiS, ndy - barH * 0.5f,
+                             1.8f * uiS, barH, itm.r, itm.g, itm.b, barA * itemWake);
+            }
+
+            // Left connector diamond
+            drawDiamond(listX - 12.0f * uiS, ndy,
+                        (2.2f + 1.3f * itemActive) * uiS,
+                        itm.r, itm.g, itm.b,
+                        (0.16f + 0.50f * itemActive) * itemWake);
+
+            // Right-edge corner diamonds — item color (not white)
             if (isSel) {
                 drawDiamond(listX + listW2 - 13.0f * uiS, cardY + 13.0f * uiS,
-                    (3.2f + 1.0f * cardPulse) * uiS,
-                            1.0f, 1.0f, 1.0f, 0.44f * wake);
+                            (3.0f + 0.8f * cardPulse) * uiS,
+                            itm.r, itm.g, itm.b, (0.42f + 0.12f * cardPulse) * itemWake);
                 drawDiamond(listX + listW2 - 13.0f * uiS, cardY + cardH - 13.0f * uiS,
-                    (2.8f + 0.8f * cardPulse) * uiS,
-                            1.0f, 1.0f, 1.0f, 0.30f * wake);
+                            (2.6f + 0.6f * cardPulse) * uiS,
+                            itm.r, itm.g, itm.b, (0.28f + 0.10f * cardPulse) * itemWake);
             }
-            float ndx = listX - 12.0f*uiS;
-            drawDiamond(ndx, ndy, (isSel ? 3.5f : 2.2f)*uiS, itm.r, itm.g, itm.b,
-                        (isSel ? 0.66f : hov2 ? 0.34f : 0.16f) * wake);
+
+            // Label text
             float tsc = 0.56f * uiS;
-            g_TextS.Draw(itm.label, listX + (isSel ? 27.0f : 16.0f)*uiS,
-                         cardY + (cardH - g_TextS.Height(itm.label, tsc)) * 0.5f,
-                         tsc,
-                         isSel ? 1.0f : hov2 ? 0.82f : 0.54f,
-                         isSel ? 1.0f : hov2 ? 0.88f : 0.62f,
-                         isSel ? 1.0f : hov2 ? 0.98f : 0.72f,
-                         (isSel ? 1.0f : hov2 ? 0.78f : 0.48f) * wake);
+            DrawShadowedText(g_TextS, itm.label, listX + (isSel ? 20.0f : 14.0f) * uiS,
+                             cardY + (cardH - g_TextS.Height(itm.label, tsc)) * 0.5f,
+                             tsc,
+                             0.54f + 0.46f * itemActive,
+                             0.62f + 0.38f * itemActive,
+                             0.72f + 0.28f * itemActive,
+                             (0.48f + 0.52f * itemActive) * itemWake, 0.66f);
         }
     }
 
@@ -1507,7 +2246,7 @@ void Scene_Shop(const SceneCtx& c) {
 
     // Right panel: readable ARMORY detail view.
     {
-        float da = std::max(0.0f, std::min(1.0f, s_detailT * rightWake));
+        float da = std::max(0.0f, std::min(1.0f, s_detailT * detailWake));
         float sr = 0.38f, sg = 0.82f, sb = 1.00f;
         if (s_selKey >= KEY_THEME && s_selKey < KEY_AUG) {
             int ti = s_selKey - KEY_THEME;
@@ -1623,9 +2362,9 @@ void Scene_Shop(const SceneCtx& c) {
                               0.38f * rightWake, 10.0f * uiS, 2.5f * uiS, 0.0f, 1.0f);
             drawDiamond(x + 18.0f * uiS, y + h * 0.5f,
                         4.2f * uiS, 1.00f, 0.84f, 0.20f, 0.90f * rightWake);
-            g_TextS.Draw(creditBuf, x + 32.0f * uiS,
-                         y + (h - g_TextS.Height(creditBuf, sc)) * 0.5f,
-                         sc, 1.0f, 0.88f, 0.36f, 0.98f * rightWake);
+            DrawShadowedText(g_TextS, creditBuf, x + 32.0f * uiS,
+                             y + (h - g_TextS.Height(creditBuf, sc)) * 0.5f,
+                             sc, 1.0f, 0.88f, 0.36f, 0.98f * rightWake, 0.74f);
         };
 
         auto drawDataBox = [&](float x, float y, float w, const wchar_t* label,
@@ -1636,10 +2375,10 @@ void Scene_Shop(const SceneCtx& c) {
             drawRect(x, y, 2.0f * uiS, h, r, g, b, 0.70f * a);
             drawRect(x + 10.0f * uiS, y + h - 1.5f * uiS, w - 20.0f * uiS, 1.5f * uiS,
                      r, g, b, 0.22f * a);
-            g_TextS.Draw(label, x + 14.0f * uiS, y + 8.0f * uiS,
-                         0.38f * uiS, 0.78f, 0.83f, 0.96f, 0.90f * a);
-            g_TextS.Draw(value, x + 14.0f * uiS, y + 31.0f * uiS,
-                         0.54f * uiS, 0.92f, 0.96f, 1.0f, 0.98f * a);
+            DrawShadowedText(g_TextS, label, x + 14.0f * uiS, y + 8.0f * uiS,
+                             0.38f * uiS, 0.78f, 0.83f, 0.96f, 0.90f * a, 0.60f);
+            DrawShadowedText(g_TextS, value, x + 14.0f * uiS, y + 31.0f * uiS,
+                             0.54f * uiS, 0.92f, 0.96f, 1.0f, 0.98f * a, 0.70f);
         };
         (void)drawDataBox;
 
@@ -1663,13 +2402,13 @@ void Scene_Shop(const SceneCtx& c) {
             drawHoloCross(x + w, y + 2.0f * uiS, 5.0f * uiS, r, g, b, 0.26f * a);
             drawHoloCross(x, y + h, 5.0f * uiS, r, g, b, 0.22f * a);
             drawHoloCross(x + w, y + h, 5.0f * uiS, r, g, b, 0.30f * a);
-            g_TextS.Draw(code, x, y, 0.40f * uiS,
-                         0.58f, 0.66f, 0.78f, 0.72f * a);
+            DrawShadowedText(g_TextS, code, x, y, 0.40f * uiS,
+                             0.58f, 0.66f, 0.78f, 0.72f * a, 0.58f);
             float titleSc = 1.10f * uiS;
             while (titleSc > 0.82f * uiS && g_TextL.Width(title, titleSc) > w - 16.0f * uiS)
                 titleSc -= 0.04f * uiS;
-            g_TextL.Draw(title, x, y + 28.0f * uiS,
-                         titleSc, 1.0f, 1.0f, 1.0f, 0.98f * a);
+            DrawShadowedText(g_TextL, title, x, y + 28.0f * uiS,
+                             titleSc, 1.0f, 1.0f, 1.0f, 0.98f * a, 0.78f);
         };
 
         auto drawTerminalRow = [&](float x, float y, float w,
@@ -1688,14 +2427,14 @@ void Scene_Shop(const SceneCtx& c) {
                      r, g, b, 0.52f * a);
             drawDiamond(x + 9.0f * uiS, y + rowH * 0.5f,
                         2.6f * uiS, r, g, b, 0.46f * a);
-            g_TextS.Draw(label, x + 22.0f * uiS, y + 5.0f * uiS,
-                         labelSc, 0.68f, 0.76f, 0.88f, 0.88f * a);
-            g_TextS.Draw(value, valueX, y + 2.0f * uiS,
-                         valueSc,
-                         costValue ? 1.0f : 0.92f,
-                         costValue ? 0.86f : 0.96f,
-                         costValue ? 0.36f : 1.0f,
-                         0.98f * a);
+            DrawShadowedText(g_TextS, label, x + 22.0f * uiS, y + 5.0f * uiS,
+                             labelSc, 0.68f, 0.76f, 0.88f, 0.88f * a, 0.60f);
+            DrawShadowedText(g_TextS, value, valueX, y + 2.0f * uiS,
+                             valueSc,
+                             costValue ? 1.0f : 0.92f,
+                             costValue ? 0.86f : 0.96f,
+                             costValue ? 0.36f : 1.0f,
+                             0.98f * a, 0.70f);
         };
 
         auto metaNodeCode = [&](int id) -> const wchar_t* {
@@ -1775,13 +2514,13 @@ void Scene_Shop(const SceneCtx& c) {
             while (sc > 0.42f * uiS && g_TextS.Width(label, sc) > w - 28.0f * uiS)
                 sc -= 0.025f * uiS;
             float tw = g_TextS.Width(label, sc);
-            g_TextS.Draw(label, x + (w - tw) * 0.5f,
-                         y + (h - g_TextS.Height(label, sc)) * 0.5f,
-                         sc,
-                         enabled ? 0.92f : 0.64f,
-                         enabled ? 0.98f : 0.70f,
-                         enabled ? 1.00f : 0.78f,
-                         0.96f * a);
+            DrawShadowedText(g_TextS, label, x + (w - tw) * 0.5f,
+                             y + (h - g_TextS.Height(label, sc)) * 0.5f,
+                             sc,
+                             enabled ? 0.92f : 0.64f,
+                             enabled ? 0.98f : 0.70f,
+                             enabled ? 1.00f : 0.78f,
+                             0.96f * a, 0.70f);
             return enabled && hov && lmb && !g_LmbPrev;
         };
 
@@ -1804,17 +2543,20 @@ void Scene_Shop(const SceneCtx& c) {
                                const wchar_t* desc, const wchar_t* stat,
                                const wchar_t* cmd, bool enabled,
                                float r, float g, float b, float a) -> bool {
-            const float tagW = std::min(610.0f * uiS, rightW * 0.48f);
-            const float tagH = 128.0f * uiS;
-            const float tagX = vizX + 20.0f * uiS;
-            const float tagY = vizY + vizH + 16.0f * uiS;
+            // Constellations no longer own this panel. Anchor the compact
+            // quotation/readout directly to the detail plate instead of the
+            // removed visualization bounds.
+            const float tagW = std::min(760.0f * uiS, rInW - 48.0f * uiS);
+            const float tagH = 142.0f * uiS;
+            const float tagX = rInX + 24.0f * uiS;
+            const float tagY = rInY + 104.0f * uiS;
             const float flick = Smoothstep(s_tagFlickerT);
             const float tagA = a * (0.58f + 0.42f * flick);
             const float sc0 = 0.40f * uiS;
             const float sc1 = 0.48f * uiS;
             bool cmdHov = inputReady && enabled
                 && mx >= tagX && mx < tagX + tagW
-                && my >= tagY + 84.0f * uiS && my < tagY + tagH + 14.0f * uiS;
+                && my >= tagY + 92.0f * uiS && my < tagY + tagH + 8.0f * uiS;
 
             drawMiniTagFrame(tagX, tagY, tagW, tagH, r, g, b, tagA);
             BindMainShader();
@@ -1825,29 +2567,28 @@ void Scene_Shop(const SceneCtx& c) {
             }
             drawDiamond(tagX + 10.0f * uiS, tagY + 17.0f * uiS,
                         2.8f * uiS, r, g, b, 0.70f * tagA);
-            g_TextS.Draw(id, tagX + 24.0f * uiS, tagY + 6.0f * uiS,
-                         sc0, 0.62f, 0.72f, 0.86f, 0.72f * tagA);
-            g_TextS.Draw(title, tagX + 24.0f * uiS, tagY + 28.0f * uiS,
-                         sc1, 0.92f, 0.96f, 1.0f, 0.94f * tagA);
+            DrawShadowedText(g_TextS, id, tagX + 24.0f * uiS, tagY + 6.0f * uiS,
+                             sc0, 0.62f, 0.72f, 0.86f, 0.72f * tagA, 0.58f);
+            DrawShadowedText(g_TextS, title, tagX + 24.0f * uiS, tagY + 28.0f * uiS,
+                             sc1, 0.92f, 0.96f, 1.0f, 0.94f * tagA, 0.72f);
             if (desc && desc[0]) {
-                g_TextS.Draw(desc, tagX + 24.0f * uiS, tagY + 56.0f * uiS,
-                             0.40f * uiS, 0.66f, 0.75f, 0.88f, 0.70f * tagA);
+                DrawShadowedText(g_TextS, desc, tagX + 24.0f * uiS, tagY + 56.0f * uiS,
+                                 0.40f * uiS, 0.66f, 0.75f, 0.88f, 0.70f * tagA, 0.58f);
             }
-            g_TextS.Draw(stat, tagX + 24.0f * uiS, tagY + 83.0f * uiS,
-                         0.42f * uiS,
-                         0.86f, 0.91f, 0.98f, 0.86f * tagA);
+            DrawShadowedText(g_TextS, stat, tagX + 24.0f * uiS, tagY + 83.0f * uiS,
+                             0.42f * uiS, 0.86f, 0.91f, 0.98f, 0.86f * tagA, 0.66f);
             if (cmd) {
                 if (cmdHov) {
                     drawRect(tagX + 22.0f * uiS, tagY + 112.0f * uiS,
                              std::min(tagW - 44.0f * uiS, g_TextS.Width(cmd, 0.42f * uiS) + 24.0f * uiS),
                              1.2f * uiS, r, g, b, 0.54f * tagA);
                 }
-                g_TextS.Draw(cmd, tagX + 24.0f * uiS, tagY + 108.0f * uiS,
-                             0.42f * uiS,
-                             enabled ? (cmdHov ? 1.0f : 0.86f) : 0.48f,
-                             enabled ? (cmdHov ? 1.0f : 0.92f) : 0.54f,
-                             enabled ? 1.0f : 0.60f,
-                             (enabled ? 0.92f : 0.48f) * tagA);
+                DrawShadowedText(g_TextS, cmd, tagX + 24.0f * uiS, tagY + 114.0f * uiS,
+                                 0.42f * uiS,
+                                 enabled ? (cmdHov ? 1.0f : 0.86f) : 0.48f,
+                                 enabled ? (cmdHov ? 1.0f : 0.92f) : 0.54f,
+                                 enabled ? 1.0f : 0.60f,
+                                 (enabled ? 0.92f : 0.48f) * tagA, 0.68f);
             }
             return cmdHov && lmb && !g_LmbPrev;
         };
@@ -1934,8 +2675,8 @@ void Scene_Shop(const SceneCtx& c) {
                 }
             }
 
-            drawNodeMap(filled, total, mapLabel, sr, sg, sb, s_selKey < 0 ? rightWake * 0.62f : da);
-            drawAstralMeta(s_selKey, sr, sg, sb, rightWake * 0.70f);
+            // The detail panel is intentionally text-only. Constellation maps
+            // are reserved for the main menu and gameplay presentation.
         }
 
         if (false) {
@@ -2101,10 +2842,8 @@ void Scene_Shop(const SceneCtx& c) {
                                  std::min(430.0f * uiS, infoW - 36.0f * uiS),
                                  58.0f * uiS, L"[ CHARTED_ONLY ]",
                                  false, cr2, cg2, cb2, da);
-                drawNodeMap(4, 6, L10n(L"\uC131\uB3C4", L"CONSTELLATION MAP"), cr2, cg2, cb2, da);
             }
         }
-        drawAstralMeta(s_selKey, sr, sg, sb, rightWake * 0.92f);
         }
     }
 
@@ -2490,6 +3229,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     static int   s_prevCat = -1;
     static int   s_prevSel = -9999;
     static float s_decryptT = 1.0f;
+    static float s_itemHover[512] = {};
 
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
     g_CodexEntryT += dt;
@@ -2542,10 +3282,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float mainGap = 15.0f;
     const float mainTotalH = 5.0f * mainBH + 4.0f * mainGap;
     const float mainX = std::max(58.0f, sw * 0.075f);
-    float mainY = sh * 0.48f;
-    if (mainY + mainTotalH > sh - 54.0f) mainY = sh - mainTotalH - 54.0f;
-    if (mainY < MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f)
-        mainY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
+    const float mainY = MainMenuCommandStartY(sh);
     const float astralY = mainY + 2.0f * (mainBH + mainGap);
     const float astralMidY = astralY + mainBH * 0.5f;
 
@@ -2554,19 +3291,22 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float rootW = std::min(360.0f * uiS, mainBW * 0.70f);
     const float rootH = mainBH;
     const float rootGap = mainGap;
-    const float depth2X = rootX + std::min(365.0f * uiS, mainBW * 0.68f);
-    const float depth2Y = std::max(110.0f * uiS, rootY + (float)s_cat * (rootH + rootGap) - 28.0f * uiS);
-    const float depth2W = std::max(330.0f * uiS, std::min(500.0f * uiS, sw * 0.50f - depth2X));
-    const float depth2H = std::min(620.0f * uiS, sh - depth2Y - 98.0f * uiS);
-    const float rightX = std::max(sw * 0.55f, depth2X + depth2W + 52.0f * uiS);
-    const float rightW = sw - rightX - 72.0f * uiS;
-    const float rightY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f + 30.0f * uiS;
-    const float rightH = sh - rightY - 92.0f * uiS;
+    const InlineThreeColumnLayout columns = BuildInlineThreeColumnLayout(
+        sw, sh, uiS, rootX, rootY, rootW, rootH);
+    const float depth2X = columns.contentX;
+    const float depth2Y = columns.contentY;
+    const float depth2W = columns.contentW;
+    const float depth2H = columns.contentH;
+    const float rightX = columns.detailX;
+    const float rightW = columns.detailW;
+    const float rightY = columns.detailY;
+    const float rightH = columns.detailH;
 
-    const float leftVignetteA = s_backExit ? (0.76f + 0.22f * backP) : 0.76f;
-    DrawSceneLeftVignette(sw, sh, leftVignetteA);
-    DrawSceneRadialVignette(rightX + rightW * 0.52f, rightY + rightH * 0.48f,
-                            std::min(rightW, rightH) * 0.70f, 0.48f * rightWake);
+    DrawSharedMenuDim(sw, sh, mainX, mainY, mainBW, mainTotalH,
+                      std::max(oldMenuA, wake));
+    DrawAstralDataPlate(depth2X - 18.0f * uiS, depth2Y - 4.0f * uiS,
+                        depth2W + 24.0f * uiS, depth2H + 8.0f * uiS,
+                        0.48f, 0.82f, 1.0f, 0.78f * wake);
 
     struct RootDef { const wchar_t* route; const wchar_t* sub; float r, g, b; };
     static const RootDef ROOTS[CAT_COUNT + 1] = {
@@ -2580,7 +3320,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float oldOut = 1.0f - oldMenuA;
     const float returnLogoA = s_backExit ? (0.42f + 0.58f * backP) : 0.42f;
     DrawMainOnedowLogo(sw, sh,
-                       returnLogoA * oldMenuA + 0.08f * wake,
+                       returnLogoA * oldMenuA,
                        LogoClamp01(oldMenuA + 0.22f * wake),
                        sw * 0.30f - 160.0f * oldOut,
                        0.82f);
@@ -2638,6 +3378,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     if (s_prevCat != s_cat) {
         s_prevCat = s_cat;
         s_decryptT = 0.0f;
+        for (float& hover : s_itemHover) hover = 0.0f;
     }
 
     // Depth 1 root.
@@ -2653,8 +3394,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float hitRight = std::min(tx + rootW + 18.0f * uiS, depth2X - 34.0f * uiS);
         const bool hov = inputReady
             && (mx >= hitX && mx < hitRight && my >= ty && my < ty + rootH);
-        float spd = dt * 10.0f; if (spd > 1.0f) spd = 1.0f;
-        s_rootHover[i] += ((hov ? 1.0f : 0.0f) - s_rootHover[i]) * spd;
+        s_rootHover[i] = UpdateMenuCommandHover(s_rootHover[i], hov, dt);
 
         if (hov && lmb && !g_LmbPrev) {
             if (isBack) beginBack();
@@ -2663,45 +3403,15 @@ static void Scene_CodexInline(const SceneCtx& c) {
 
         const bool sel = (!isBack && s_cat == i);
         const RootDef& rd = ROOTS[i];
-        const float rawRootPh = s_backExit
-            ? wake
-            : LogoClamp01((g_CodexEntryT - 0.20f - (float)i * 0.09f) / 0.45f);
-        const float reveal = Smoothstep(rawRootPh);
+        const float reveal = s_backExit ? wake : MenuCommandReveal(g_CodexEntryT, i);
         const float rowA = reveal * wake;
-        const float activeT = std::max(s_rootHover[i], sel ? 1.0f : 0.0f);
         const float selectPulse = sel ? (0.12f + 0.12f * sinf(now * 3.3f)) : 0.0f;
         const float bx = tx + (1.0f - reveal) * 34.0f - 10.0f * s_rootHover[i];
         const float by = ty;
 
-        BindMainShader();
-        if (activeT > 0.01f) {
-            const float lineH = 20.0f + 42.0f * activeT + 8.0f * selectPulse;
-            drawRect(bx - 18.0f, by + rootH * 0.5f - lineH * 0.5f,
-                     2.0f, lineH, rd.r, rd.g, rd.b, (0.20f + 0.48f * activeT) * rowA);
-            drawRect(bx - 4.0f, by + rootH * 0.50f,
-                     rootW * (0.46f + 0.16f * activeT), 1.0f * uiS,
-                     rd.r, rd.g, rd.b, (0.040f + 0.055f * activeT) * rowA);
-            drawDiamond(bx - 17.0f, by + rootH * 0.5f,
-                        3.0f + 2.2f * activeT, rd.r, rd.g, rd.b,
-                        (0.34f + 0.30f * activeT) * rowA);
-        }
-
-        float routeSc = 1.02f;
-        while (routeSc > 0.80f && g_TextL.Width(rd.route, routeSc) > rootW)
-            routeSc -= 0.04f;
-        const float routeY = by + 2.0f;
-        const float subY = routeY + g_TextL.Height(rd.route, routeSc) - 3.0f;
-        float tr = 1.0f + (rd.r - 1.0f) * activeT;
-        float tg = 1.0f + (rd.g - 1.0f) * activeT;
-        float tb = 1.0f + (rd.b - 1.0f) * activeT;
-        if (sel) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
-        g_TextL.Draw(rd.route, bx, routeY, routeSc, tr, tg, tb,
-                     (0.80f + 0.15f * activeT + selectPulse) * rowA);
-        g_TextS.Draw(rd.sub, bx + 4.0f, subY, 0.48f,
-                     0.70f + 0.16f * activeT,
-                     0.75f + 0.14f * activeT,
-                     0.82f + 0.10f * activeT,
-                     (0.68f + 0.18f * activeT) * rowA);
+        DrawUnifiedMenuCommand(rd.route, rd.sub, bx, by, rootW, rootH,
+                               rd.r, rd.g, rd.b, rowA, s_rootHover[i], sel,
+                               selectPulse, now + (float)i * 0.17f, 1.02f, 0.48f);
     }
 
     struct CItem {
@@ -2806,7 +3516,10 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float rh = itm.isGroup ? grpH : itemH;
         const float ry = curY;
         curY += rh;
-        if (ry + rh < depth2Y || ry > depth2Y + depth2H) continue;
+        if (ry + rh < depth2Y || ry > depth2Y + depth2H) {
+            s_itemHover[i] = UpdateMenuCommandHover(s_itemHover[i], false, dt);
+            continue;
+        }
 
         if (itm.isGroup) {
             const float mid = ry + grpH * 0.5f;
@@ -2818,14 +3531,16 @@ static void Scene_CodexInline(const SceneCtx& c) {
                      itm.r, itm.g, itm.b, 0.080f * wake);
             drawDiamond(depth2X - 8.0f * uiS, mid,
                         3.3f * uiS, itm.r, itm.g, itm.b, 0.46f * wake);
-            g_TextS.Draw(itm.label, depth2X + 14.0f * uiS,
-                         ry + (grpH - g_TextS.Height(itm.label, 0.54f * uiS)) * 0.5f,
-                         0.54f * uiS, 0.80f, 0.90f, 1.0f, 0.64f * wake);
+            DrawShadowedText(g_TextS, itm.label, depth2X + 14.0f * uiS,
+                             ry + (grpH - g_TextS.Height(itm.label, 0.54f * uiS)) * 0.5f,
+                             0.54f * uiS, 0.80f, 0.90f, 1.0f, 0.64f * wake, 0.62f);
         } else {
             const bool isSel = (s_sel[s_cat] == itm.key);
             const bool hov = inputReady
                 && (mx >= depth2X - 24.0f * uiS && mx < depth2X + depth2W + 18.0f * uiS
                  && my >= ry - 4.0f * uiS && my < ry + itemH + 5.0f * uiS);
+            s_itemHover[i] = UpdateMenuCommandHover(s_itemHover[i], hov, dt);
+            const float itemActive = std::max(s_itemHover[i], isSel ? 1.0f : 0.0f);
             if (hov && lmb && !g_LmbPrev)
                 s_sel[s_cat] = itm.key;
 
@@ -2834,11 +3549,13 @@ static void Scene_CodexInline(const SceneCtx& c) {
             const float ndy = cardY + cardH * 0.5f;
             BindMainShader();
             LogoLine(trunkX, ndy, depth2X - 12.0f * uiS, ndy,
-                     0.68f * uiS, itm.r, itm.g, itm.b, (isSel ? 0.30f : 0.10f) * wake);
-            if (isSel || hov) {
+                     0.68f * uiS, itm.r, itm.g, itm.b,
+                     (0.10f + 0.20f * itemActive) * wake);
+            if (itemActive > 0.01f) {
                 drawRect(depth2X + 24.0f * uiS, cardY + cardH * 0.5f,
                          depth2W - 26.0f * uiS, 1.0f * uiS,
-                         itm.r, itm.g, itm.b, (isSel ? 0.095f : 0.050f) * wake);
+                         itm.r, itm.g, itm.b,
+                         (0.050f * itemActive + (isSel ? 0.045f : 0.0f)) * wake);
             }
             if (isSel) {
                 drawRect(depth2X - 2.0f * uiS, cardY + 8.0f * uiS,
@@ -2849,18 +3566,19 @@ static void Scene_CodexInline(const SceneCtx& c) {
                              0.62f * uiS, itm.r, itm.g, itm.b, 0.90f * wake);
             }
             drawDiamond(depth2X - 12.0f * uiS, ndy,
-                        (isSel ? 3.3f : 2.0f) * uiS,
-                        itm.r, itm.g, itm.b, (isSel ? 0.58f : hov ? 0.32f : 0.14f) * wake);
+                        (2.0f + 1.3f * itemActive) * uiS,
+                        itm.r, itm.g, itm.b, (0.14f + 0.44f * itemActive) * wake);
             float tsc = 0.54f * uiS;
             while (tsc > 0.43f * uiS && g_TextS.Width(itm.label, tsc) > depth2W - 54.0f * uiS)
                 tsc -= 0.025f * uiS;
-            g_TextS.Draw(itm.label, depth2X + (isSel ? 27.0f : 16.0f) * uiS,
-                         cardY + (cardH - g_TextS.Height(itm.label, tsc)) * 0.5f,
-                         tsc,
-                         isSel ? 1.0f : hov ? 0.84f : itm.seen ? 0.60f : 0.42f,
-                         isSel ? 1.0f : hov ? 0.90f : itm.seen ? 0.68f : 0.46f,
-                         isSel ? 1.0f : hov ? 1.00f : itm.seen ? 0.78f : 0.52f,
-                         (isSel ? 0.96f : hov ? 0.78f : 0.50f) * wake);
+            DrawShadowedText(g_TextS, itm.label,
+                             depth2X + (isSel ? 27.0f : 16.0f) * uiS,
+                             cardY + (cardH - g_TextS.Height(itm.label, tsc)) * 0.5f,
+                             tsc,
+                             (itm.seen ? 0.60f : 0.42f) + (1.0f - (itm.seen ? 0.60f : 0.42f)) * itemActive,
+                             (itm.seen ? 0.68f : 0.46f) + (1.0f - (itm.seen ? 0.68f : 0.46f)) * itemActive,
+                             (itm.seen ? 0.78f : 0.52f) + (1.0f - (itm.seen ? 0.78f : 0.52f)) * itemActive,
+                             (0.50f + 0.46f * itemActive) * wake, 0.66f);
         }
     }
     BatchFlush();
@@ -2883,18 +3601,20 @@ static void Scene_CodexInline(const SceneCtx& c) {
                              float r, float g, float b, float a, int seed) {
         if (s_decryptT < 0.36f) {
             std::wstring t = scramble(text, seed);
-            g_TextS.Draw(t.c_str(), x, y, sc, r, g, b, a * (0.72f + 0.28f * s_decryptT));
+            DrawShadowedText(g_TextS, t.c_str(), x, y, sc, r, g, b,
+                             a * (0.72f + 0.28f * s_decryptT), 0.62f);
         } else {
-            g_TextS.Draw(text, x, y, sc, r, g, b, a);
+            DrawShadowedText(g_TextS, text, x, y, sc, r, g, b, a, 0.66f);
         }
     };
     auto drawScanTextL = [&](const wchar_t* text, float x, float y, float sc,
                              float r, float g, float b, float a, int seed) {
         if (s_decryptT < 0.36f) {
             std::wstring t = scramble(text, seed);
-            g_TextL.Draw(t.c_str(), x, y, sc, r, g, b, a * (0.72f + 0.28f * s_decryptT));
+            DrawShadowedText(g_TextL, t.c_str(), x, y, sc, r, g, b,
+                             a * (0.72f + 0.28f * s_decryptT), 0.68f);
         } else {
-            g_TextL.Draw(text, x, y, sc, r, g, b, a);
+            DrawShadowedText(g_TextL, text, x, y, sc, r, g, b, a, 0.74f);
         }
     };
 
@@ -2920,89 +3640,24 @@ static void Scene_CodexInline(const SceneCtx& c) {
         return BossCodexDesc(key);
     };
 
-    // Depth 3 constellation canvas.
+    // The read-only codex keeps the right side as a clean information field.
+    // Constellation geometry belongs to the main-menu canvas, not this panel.
     const int selKey = s_sel[s_cat] < 0 ? 0 : s_sel[s_cat];
     const bool seen = selectedSeen();
     float cr = curRoot.r, cg = curRoot.g, cb = curRoot.b;
     if (s_cat == 1 && selKey >= 0 && selKey < AUG_TOTAL)
         GetRarityColor(ALL_AUGS[selKey].rarity, cr, cg, cb);
 
-    BindMainShader();
-    const float cx = rightX + rightW * 0.50f;
-    const float cy = rightY + rightH * 0.45f;
-    const float rad = std::min(rightW, rightH) * (s_cat == 2 ? 0.34f : 0.30f);
-    const float canvasA = rightWake * (seen ? 1.0f : 0.55f);
-    DrawSceneRadialVignette(cx, cy, rad * 2.15f, 0.46f * rightWake);
-    BindMainShader();
-
-    if (s_cat == 0) {
-        const int n = 7;
-        float px[8], py[8];
-        for (int i = 0; i < n; ++i) {
-            float a = now * 0.10f + (float)i / (float)n * 6.2831853f;
-            float jitter = 0.78f + 0.20f * sinf(now * 2.0f + (float)(i + selKey) * 1.17f);
-            px[i] = cx + cosf(a) * rad * jitter;
-            py[i] = cy + sinf(a) * rad * (0.66f + 0.10f * cosf((float)i * 0.9f));
-        }
-        for (int i = 0; i < n; ++i) {
-            int j = (i + 2 + (selKey % 2)) % n;
-            DrawVisibleConstellLine(px[i], py[i], px[j], py[j],
-                                    1.0f * uiS, cr, cg, cb, 0.20f * canvasA);
-        }
-        for (int i = 0; i < n; ++i)
-            DrawVisibleConstellNode(px[i], py[i], (i == 0 ? 5.2f : 3.4f) * uiS,
-                                    cr, cg, cb, (i == 0 ? 0.66f : 0.42f) * canvasA);
-    } else if (s_cat == 1) {
-        const int n = 6;
-        float px[6], py[6];
-        for (int i = 0; i < n; ++i) {
-            float a = now * 0.06f + (float)i / (float)n * 6.2831853f;
-            px[i] = cx + cosf(a) * rad;
-            py[i] = cy + sinf(a) * rad;
-        }
-        for (int i = 0; i < n; ++i) {
-            DrawVisibleConstellLine(px[i], py[i], px[(i + 1) % n], py[(i + 1) % n],
-                                    1.1f * uiS, cr, cg, cb, 0.28f * canvasA);
-            if ((i % 2) == 0)
-                DrawVisibleConstellLine(cx, cy, px[i], py[i],
-                                        0.82f * uiS, cr, cg, cb, 0.16f * canvasA);
-        }
-        for (int i = 0; i < 3; ++i) {
-            float a = -now * 0.16f + (float)i / 3.0f * 6.2831853f;
-            DrawVisibleConstellNode(cx + cosf(a) * rad * 0.42f,
-                                    cy + sinf(a) * rad * 0.42f,
-                                    3.4f * uiS, cr, cg, cb, 0.46f * canvasA);
-        }
-        DrawVisibleConstellNode(cx, cy, 7.0f * uiS, cr, cg, cb, 0.72f * canvasA);
-        for (int i = 0; i < n; ++i)
-            DrawVisibleConstellNode(px[i], py[i], 4.0f * uiS, cr, cg, cb, 0.56f * canvasA);
-    } else {
-        const int n = 8;
-        for (int r = 0; r < 3; ++r) {
-            float rr = rad * (0.54f + 0.20f * r);
-            for (int i = 0; i < n; ++i) {
-                if ((i + r) % 3 == 1) continue;
-                float a0 = now * (0.025f + 0.010f * r) + (float)i / (float)n * 6.2831853f;
-                float a1 = a0 + 0.18f;
-                DrawVisibleConstellLine(cx + cosf(a0) * rr, cy + sinf(a0) * rr * 0.72f,
-                                        cx + cosf(a1) * rr, cy + sinf(a1) * rr * 0.72f,
-                                        1.2f * uiS, cr, cg, cb, 0.25f * canvasA);
-            }
-        }
-        DrawVisibleConstellNode(cx, cy, 12.0f * uiS, cr, cg, cb, 0.82f * canvasA);
-        for (int i = 0; i < 5; ++i) {
-            float a = now * 0.04f + (float)i / 5.0f * 6.2831853f;
-            DrawVisibleConstellNode(cx + cosf(a) * rad * 0.84f,
-                                    cy + sinf(a) * rad * 0.58f,
-                                    5.2f * uiS, cr, cg, cb, 0.48f * canvasA);
-        }
-    }
-
     // Compact read-only data tag.
     const float tagW = std::min(640.0f * uiS, rightW * 0.58f);
     const float tagH = 132.0f * uiS;
-    const float tagX = cx - tagW * 0.32f;
-    const float tagY = cy + rad * 0.88f;
+    const float tagX = rightX + rightW * 0.08f;
+    // Keep the archive readout on the shared detail-column baseline instead
+    // of leaving it detached near the bottom-right corner.
+    const float tagY = rightY + 18.0f * uiS;
+    DrawAstralDataPlate(tagX - 18.0f * uiS, tagY - 8.0f * uiS,
+                        tagW + 26.0f * uiS, tagH + 16.0f * uiS,
+                        cr, cg, cb, 0.82f * rightWake);
     BindMainShader();
     drawRect(tagX, tagY, tagW, 1.1f * uiS, cr, cg, cb, 0.28f * rightWake);
     drawRect(tagX, tagY, 1.1f * uiS, tagH, cr, cg, cb, 0.22f * rightWake);
@@ -4973,11 +5628,21 @@ void Scene_RunConfig(const SceneCtx& c) {
     }
 
 
-    if (UIButton(panelX, footY, 168.0f * uiS, 50.0f * uiS, T(StrId::BTN_BACK),
-                 mx, my, lmb, g_LmbPrev)) {
-        ResetRunConfigUi();
-        ResetMainMenuUi();
-        g_GameManager.currentState = GameState::MAIN_MENU;
+    {
+        static float s_rcBackHov = 0.0f;
+        const float BW = 168.0f * uiS, BH = 50.0f * uiS;
+        const bool hov = (mx >= panelX - 12.0f * uiS && mx <= panelX + BW + 12.0f * uiS &&
+                          my >= footY && my <= footY + BH);
+        s_rcBackHov += ((hov ? 1.0f : 0.0f) - s_rcBackHov) * std::min(1.0f, dt * 10.0f);
+        DrawUnifiedMenuCommand(T(StrId::BTN_BACK), nullptr,
+                               panelX, footY, BW, BH,
+                               0.48f, 0.82f, 1.0f, wake,
+                               s_rcBackHov, false, 0.0f, now, 0.72f * uiS);
+        if (hov && lmb && !g_LmbPrev) {
+            ResetRunConfigUi();
+            ResetMainMenuUi();
+            g_GameManager.currentState = GameState::MAIN_MENU;
+        }
     }
 
     const float devW = 128.0f * uiS;
@@ -5149,19 +5814,34 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                         ry += ROW_H;
                     }
                     BatchFlush(); glDisable(GL_SCISSOR_TEST);
-                    wchar_t cb[48]; swprintf_s(cb, L"selected: %d", (int)g_CreativeStartAugList.size());
-                    g_TextS.Draw(cb, gx, gBottom + 10.0f, 0.85f, 1.0f, 0.9f, 0.4f, 0.95f);
                 }
 
-                if (UIButton((sw - 280.0f) * 0.5f, footY, 280.0f, 52.0f,
-                             L"START", mx, my, lmb, g_LmbPrev)) {
-                    ResetForNewGame();
-                    FinalizeLoadout(c, FixedWeaponForSelectedJob());
-                }
+                {
+                    static float s_creStartHov = 0.0f, s_creBackHov = 0.0f;
+                    const float fnow = (float)glfwGetTime();
+                    const float fdt  = std::min(delta, 0.05f);
 
-                if (UIButton(40.0f, footY, 160.0f, 48.0f, T(StrId::BTN_BACK),
-                             mx, my, lmb, g_LmbPrev)) {
-                    g_GameManager.currentState = GameState::RUN_CONFIG;
+                    const float SW = 280.0f, SH = 52.0f, SX = (sw - SW) * 0.5f;
+                    const bool sHov = (mx >= SX - 12.0f && mx <= SX + SW + 12.0f &&
+                                       my >= footY && my <= footY + SH);
+                    s_creStartHov += ((sHov ? 1.0f : 0.0f) - s_creStartHov) * std::min(1.0f, fdt * 10.0f);
+                    DrawUnifiedMenuCommand(L"START", nullptr, SX, footY, SW, SH,
+                                          0.38f, 0.95f, 0.62f, 1.0f,
+                                          s_creStartHov, false, 0.0f, fnow);
+                    if (sHov && lmb && !g_LmbPrev) {
+                        ResetForNewGame();
+                        FinalizeLoadout(c, FixedWeaponForSelectedJob());
+                    }
+
+                    const float BW = 160.0f, BH = 48.0f, BX = 40.0f;
+                    const bool bHov = (mx >= BX - 12.0f && mx <= BX + BW + 12.0f &&
+                                       my >= footY && my <= footY + BH);
+                    s_creBackHov += ((bHov ? 1.0f : 0.0f) - s_creBackHov) * std::min(1.0f, fdt * 10.0f);
+                    DrawUnifiedMenuCommand(T(StrId::BTN_BACK), nullptr, BX, footY, BW, BH,
+                                          0.48f, 0.82f, 1.0f, 1.0f,
+                                          s_creBackHov, false, 0.0f, fnow + 0.17f);
+                    if (bHov && lmb && !g_LmbPrev)
+                        g_GameManager.currentState = GameState::RUN_CONFIG;
                 }
 }
 
@@ -5177,15 +5857,19 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     static bool prevEsc = false, prevRmb = false;
     static int weapon = 0;
     static float weaponHover[2] = {};
+    static float backHover = 0.0f;
+    static float playHover = 0.0f;
     static float statT[6] = { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f };
-    static float radarT[6] = { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f };
     static const float barTargets[2][6] = {
         { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
         { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
     };
-    static float constellationT = 0.0f;
 
-    if (entry <= 0.0f && !exiting) weapon = std::max(0, std::min(1, weapon));
+    if (entry <= 0.0f && !exiting) {
+        weapon = std::max(0, std::min(1, weapon));
+        weaponHover[0] = weaponHover[1] = 0.0f;
+        backHover = playHover = 0.0f;
+    }
     entry = std::min(1.0f, entry + dt);
     if (playExit) playT = std::min(0.50f, playT + dt);
     const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
@@ -5199,179 +5883,230 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float backP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
     const float oldA = exiting ? backP : 1.0f - oldOut;
     const float playCollapse = Smoothstep(LogoClamp01((playT - 0.30f) / 0.20f));
-    const float playGlow = Smoothstep(LogoClamp01((playT - 0.10f) / 0.20f))
-        * (1.0f - Smoothstep(LogoClamp01((playT - 0.30f) / 0.20f)));
     const float contentA = contentIn * (1.0f - backP) * (1.0f - playCollapse);
     const bool ready = !exiting && !playExit && entry >= 0.55f;
     const float uiS = std::max(0.70f, std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
     const float mainX = std::max(58.0f, sw * 0.075f);
-    const float mainY = sh * 0.48f;
+    const float mainY = MainMenuCommandStartY(sh);
     const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
     const float mainBH = 70.0f, mainGap = 15.0f;
     const float leftX = mainX + 82.0f * uiS * (1.0f - contentIn) + 180.0f * uiS * backP;
     const float leftY = mainY;
     const float leftW = std::min(340.0f * uiS, mainBW * 0.70f);
-    const float centerX = leftX + 390.0f * uiS;
-    const float centerW = std::max(360.0f * uiS, sw * 0.30f);
-    const float rightX = std::max(sw * 0.70f, centerX + centerW + 30.0f * uiS);
-    const float rightW = sw - rightX - 70.0f * uiS;
-    const float topY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f + 32.0f * uiS;
+    const float canvasLeft = std::max(sw * 0.28f, leftX + leftW + 18.0f * uiS);
+    const float canvasRight = sw - std::max(32.0f, 36.0f * uiS);
+    const float canvasTop = std::max(74.0f, sh * 0.12f);
+    const float canvasBottom = sh - std::max(88.0f, 104.0f * uiS);
+    // Radar on RIGHT; stat bars on LEFT
+    const float centerX = canvasLeft + (canvasRight - canvasLeft) * 0.76f;
+    const float centerY = canvasTop + (canvasBottom - canvasTop) * 0.44f;
+    const float profileRadius = std::min((canvasRight - centerX) * 0.72f,
+                                         (canvasBottom - canvasTop) * 0.26f);
     const float now = (float)glfwGetTime();
 
-    DrawSceneLeftVignette(sw, sh, 0.76f * std::max(oldA, contentA));
-    DrawSceneRadialVignette(rightX + rightW * 0.5f, topY + 210.0f * uiS,
-                            std::max(160.0f * uiS, rightW * 0.72f), 0.44f * contentA);
+    DrawSceneLeftVignette(sw, sh, 0.86f * std::max(oldA, contentA));
+    DrawSceneRadialVignette(centerX, centerY,
+                            std::max(260.0f * uiS, profileRadius * 1.60f),
+                            0.40f * contentA);
 
     static const wchar_t* menu[5] = { L"RUN_CONFIG", L"ARMORY", L"ASTRAL_LOG", L"CALIBRATION", L"SHUTDOWN" };
     static const wchar_t* sub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
     for (int i = 0; i < 5; ++i) {
         const float y = mainY + i * (mainBH + mainGap);
         const float x = mainX - 250.0f * (1.0f - oldA) - 24.0f * (i != 0) * (1.0f - oldA);
-        g_TextL.Draw(menu[i], x, y + 2.0f, 1.04f, 1.0f, 1.0f, 1.0f,
-                     (i == 0 ? 0.82f : 0.18f) * oldA);
-        g_TextS.Draw(sub[i], x + 4.0f, y + 43.0f, 0.48f, 0.72f, 0.77f, 0.84f,
-                     (i == 0 ? 0.74f : 0.22f) * oldA);
+        DrawShadowedText(g_TextL, menu[i], x, y + 2.0f, 1.04f,
+                         1.0f, 1.0f, 1.0f, (i == 0 ? 0.82f : 0.18f) * oldA, 0.70f);
+        DrawShadowedText(g_TextS, sub[i], x + 4.0f, y + 43.0f, 0.48f,
+                         0.72f, 0.77f, 0.84f, (i == 0 ? 0.74f : 0.22f) * oldA, 0.62f);
     }
 
     static const wchar_t* weapons[2] = { L"RIFLE", L"STATIC FIELD" };
     static const wchar_t* weaponSub[2] = { L"PRECISION FIRE / SINGLE TARGET", L"AREA CONTROL / SUSTAINED" };
     static const wchar_t* statNames[6] = { L"DAMAGE", L"FIRE RATE", L"INTERVAL", L"SPEED", L"SPREAD", L"RANGE" };
     static const wchar_t* statVals[2][6] = {
-        { L"50", L"5.00/s", L"0.20s", L"1200", L"0.04 rad", L"STANDARD" },
-        { L"18/tick", L"CONTINUOUS", L"0.08s", L"INSTANT", L"-", L"180 px" }
+        { L"50",  L"5.0/s",  L"0.20s", L"1200", L"0.04", L"—"  },
+        { L"18",  L"CONT.",  L"0.08s", L"—",    L"—",    L"180" }
     };
     const float wr = weapon == 0 ? 0.35f : 0.55f;
     const float wg = weapon == 0 ? 0.72f : 0.90f;
     const float wb = 1.0f;
     const float weaponH = 64.0f * uiS;
+    // Canvas panel: top-to-bottom scan reveal
+    {
+        const float panelReveal = Smoothstep(LogoClamp01((entry - 0.22f) / 0.42f));
+        const float cW = canvasRight - canvasLeft;
+        const float cH = canvasBottom - canvasTop;
+        drawRect(canvasLeft, canvasTop, cW, cH * panelReveal,
+                 0.04f, 0.055f, 0.08f, 0.62f * contentA);
+        // Scan line at leading edge — fades as it nears bottom
+        if (panelReveal > 0.004f && panelReveal < 0.998f) {
+            const float scanY = canvasTop + cH * panelReveal;
+            const float scanFade = 1.0f - Smoothstep(LogoClamp01((panelReveal - 0.80f) / 0.20f));
+            drawRect(canvasLeft, scanY - 1.5f * uiS, cW, 3.0f * uiS,
+                     wr, wg, wb, 0.58f * scanFade * contentA);
+        }
+        // Top border appears with panel
+        LogoLine(canvasLeft, canvasTop, canvasRight, canvasTop,
+                 0.8f * uiS, wr, wg, wb, 0.28f * panelReveal * contentA);
+    }
+    // WEAPON section header + separator
+    DrawShadowedText(g_TextS, L"WEAPON", leftX, leftY - 28.0f * uiS, 0.44f * uiS,
+                     wr, wg, wb, 0.86f * contentA, 0.54f);
+    LogoLine(leftX, leftY - 9.0f * uiS, leftX + leftW * 0.52f, leftY - 9.0f * uiS,
+             0.7f * uiS, wr, wg, wb, 0.38f * contentA);
     for (int i = 0; i < 2; ++i) {
         const float y = leftY + i * (weaponH + 16.0f * uiS);
-        const bool hov = ready && mx >= leftX - 28.0f && mx < centerX - 30.0f && my >= y && my < y + weaponH;
-        weaponHover[i] = UiApproach(weaponHover[i], hov ? 1.0f : 0.0f, dt, 11.0f);
-        if (hov && lmb && !g_LmbPrev) weapon = i;
-        const float active = std::max(weaponHover[i], weapon == i ? 1.0f : 0.0f);
-        const float a = Smoothstep(LogoClamp01((entry - 0.20f - i * 0.14f) / 0.32f)) * contentA;
-        DrawMenuCommandFeedback(leftX - 10.0f * weaponHover[i], y, leftW, weaponH,
-                                wr, wg, wb, a, active, weapon == i ? 0.18f : 0.0f, now + i * 0.17f);
-        const float cr = 1.0f + (wr - 1.0f) * active;
-        const float cg = 1.0f + (wg - 1.0f) * active;
-        g_TextL.Draw(weapons[i], leftX - 10.0f * weaponHover[i], y + 2.0f, 0.90f,
-                     cr, cg, 1.0f, (0.84f + 0.16f * active) * a);
-        g_TextS.Draw(weaponSub[i], leftX + 4.0f - 10.0f * weaponHover[i], y + 39.0f, 0.42f,
-                     0.70f, 0.78f, 0.88f, 0.76f * a);
+        const bool hov = ready && mx >= leftX - 18.0f && mx < leftX + leftW + 18.0f
+            && my >= y && my < y + weaponH;
+        weaponHover[i] = UpdateMenuCommandHover(weaponHover[i], hov, dt);
+        if (hov && lmb && !g_LmbPrev && weapon != i) weapon = i;
+        const bool isSel = (weapon == i);
+        const float selMul = isSel ? 1.0f : 0.54f;
+        const float a = MenuCommandReveal(entry, i) * contentA * selMul;
+        DrawUnifiedMenuCommand(weapons[i], weaponSub[i],
+                               leftX - 10.0f * weaponHover[i], y, leftW, weaponH,
+                               wr, wg, wb, a, weaponHover[i], isSel,
+                               isSel ? 0.18f : 0.0f, now + i * 0.17f,
+                               0.90f, 0.42f);
     }
 
     const float backY = leftY + 2.0f * (weaponH + 16.0f * uiS) + 18.0f * uiS;
-    const bool backHov = ready && mx >= leftX - 28.0f && mx < centerX - 30.0f
+    // Thin separator between weapon selection and BACK
+    LogoLine(leftX, backY - 10.0f * uiS, leftX + leftW, backY - 10.0f * uiS,
+             0.7f * uiS, 0.48f, 0.82f, 1.0f, 0.14f * contentA);
+    const bool backHov = ready && mx >= leftX - 18.0f && mx < leftX + leftW + 18.0f
         && my >= backY && my < backY + weaponH;
-    DrawMenuCommandFeedback(leftX, backY, leftW, weaponH, 0.48f, 0.82f, 1.0f,
-                            contentA, backHov ? 1.0f : 0.0f, 0.0f, now + 0.46f);
-    g_TextL.Draw(L"BACK", leftX, backY + 2.0f, 0.90f,
-                 backHov ? 0.48f : 0.86f, backHov ? 0.82f : 0.90f, 1.0f,
-                 0.90f * contentA);
+    backHover = UpdateMenuCommandHover(backHover, backHov, dt);
+    DrawUnifiedMenuCommand(L"BACK", L"", leftX - 10.0f * backHover, backY,
+                           leftW, weaponH, 0.48f, 0.82f, 1.0f,
+                           MenuCommandReveal(entry, 2) * contentA,
+                           backHover, false, 0.0f, now + 0.46f, 0.90f, 0.42f);
     if (backHov && lmb && !g_LmbPrev) exiting = true;
 
     const float detailA = contentA * (0.72f + 0.28f * Smoothstep(s_PanelFadeT));
-    const float configFrameX = centerX - 24.0f * uiS;
-    const float configFrameY = topY - 18.0f * uiS;
-    const float configFrameW = centerW + 104.0f * uiS;
-    const float configFrameH = 492.0f * uiS;
-    if (g_ConfigPanelTex) {
-        // Use the supplied alpha-mask as a dark contrast plate behind the stat rows.
-        DrawIcon(g_ConfigPanelTex, centerX - 52.0f * uiS, topY - 32.0f * uiS,
-                 centerW + 160.0f * uiS, 548.0f * uiS,
-                 0.0f, 0.0f, 0.0f, 0.95f * detailA);
-    }
-    DrawExpandingBracket(configFrameX, configFrameY, configFrameW, configFrameH,
-                         Smoothstep(LogoClamp01(playT / 0.15f)), wr, wg, wb,
-                         (0.28f + 0.72f * playGlow) * (detailA + playCollapse * 0.45f));
-    g_TextS.Draw(L"RUN CONFIG / LOADOUT", centerX, topY, 0.54f,
-                 0.48f, 0.82f, 1.0f, 0.74f * contentA);
-    g_TextL.Draw(weapons[weapon], centerX, topY + 38.0f, 1.12f,
-                 1.0f, 1.0f, 1.0f, 0.98f * contentA);
-    g_TextS.Draw(weaponSub[weapon], centerX, topY + 78.0f, 0.48f,
-                 0.70f, 0.78f, 0.88f, 0.84f * detailA);
-    LogoLine(centerX, topY + 108.0f, centerX + centerW * 0.84f, topY + 108.0f,
-             1.0f, wr, wg, wb, 0.30f * detailA);
-    const float barW = centerW * 0.78f;
     for (int i = 0; i < 6; ++i) {
-        const float y = topY + 142.0f * uiS + i * 55.0f * uiS;
         statT[i] = UiApproach(statT[i], barTargets[weapon][i], dt, 8.0f);
-        g_TextS.Draw(statNames[i], centerX, y, 0.58f * uiS,
-                     0.92f, 0.96f, 1.0f, 0.90f * detailA);
-        g_TextS.Draw(statVals[weapon][i], centerX + barW + 16.0f * uiS, y,
-                     0.54f * uiS, 0.92f, 0.96f, 1.0f, 0.90f * detailA);
-        drawRect(centerX, y + 25.0f * uiS, barW, 6.0f * uiS, wr, wg, wb, 0.10f * detailA);
-        drawRect(centerX, y + 25.0f * uiS, barW * std::max(0.0f, std::min(1.0f, statT[i])), 6.0f * uiS,
-                 wr, wg, wb, 0.76f * detailA);
     }
+    const float headerX = canvasLeft + 8.0f * uiS;
+    const float headerY = canvasTop;
+    // Header — above the bar section
+    DrawSceneRadialVignette(headerX + 100.0f * uiS, headerY + 48.0f * uiS,
+                            200.0f * uiS, 0.72f * detailA);
+    DrawShadowedText(g_TextS, L"WEAPON POWER ALIGNMENT", headerX, headerY, 0.50f * uiS,
+                     wr, wg, wb, 0.78f * detailA, 0.66f);
+    DrawShadowedText(g_TextL, weapons[weapon], headerX, headerY + 30.0f * uiS, 1.05f * uiS,
+                     1.0f, 1.0f, 1.0f, 0.98f * detailA, 0.78f);
+    DrawShadowedText(g_TextS, weaponSub[weapon], headerX, headerY + 72.0f * uiS, 0.46f * uiS,
+                     0.70f, 0.78f, 0.88f, 0.82f * detailA, 0.66f);
 
-    const float radarTargets[2][6] = {
-        { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
-        { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
-    };
-    for (int i = 0; i < 6; ++i)
-        radarT[i] = UiApproach(radarT[i], radarTargets[weapon][i], dt, 9.0f);
-    const float targetShape[6][2] = {
-        { 0.50f, 0.12f }, { 0.84f, 0.30f }, { 0.76f, 0.78f },
-        { 0.50f, 0.92f }, { 0.24f, 0.78f }, { 0.16f, 0.30f }
-    };
-    const float rcx = rightX + rightW * 0.5f;
-    const float rcy = topY + 255.0f * uiS;
-    const float rr = std::min(rightW * 0.38f, 150.0f * uiS);
-    constellationT = UiApproach(constellationT, 1.0f, dt, 4.0f);
-    for (int i = 0; i < 6; ++i) {
-        const float px = rcx + (targetShape[i][0] - 0.5f) * rr * 2.0f * radarT[i];
-        const float py = rcy + (targetShape[i][1] - 0.5f) * rr * 2.0f * radarT[i];
-        const int j = (i + 1) % 6;
-        const float qx = rcx + (targetShape[j][0] - 0.5f) * rr * 2.0f * radarT[j];
-        const float qy = rcy + (targetShape[j][1] - 0.5f) * rr * 2.0f * radarT[j];
-        const float dx = qx - px, dy = qy - py;
-        const float edgeLen = sqrtf(dx * dx + dy * dy);
-        const float edgeAng = atan2f(dy, dx);
-        if (g_ConstellationLineTex && edgeLen > 1.0f) {
-            DrawIconRot(g_ConstellationLineTex, (px + qx) * 0.5f, (py + qy) * 0.5f,
-                        edgeLen * 0.5f, 7.0f * uiS, edgeAng,
-                        wr, wg, wb, 0.78f * detailA);
-        }
-        LogoLine(px, py, qx, qy, 1.0f * uiS, wr, wg, wb,
-                 (g_ConstellationLineTex ? 0.22f : 0.64f) * detailA);
-        LogoLine(rcx, rcy, px, py, 0.8f * uiS, wr, wg, wb, 0.28f * detailA);
-        if (g_ConstellationCircleTex) {
-            DrawIcon(g_ConstellationCircleTex, px - 12.0f * uiS, py - 12.0f * uiS,
-                     24.0f * uiS, 24.0f * uiS, wr, wg, wb, 0.82f * detailA);
-        }
-        drawDiamond(px, py, 4.0f * uiS, 1.0f, 1.0f, 1.0f, 0.94f * detailA);
-    }
-    for (int ring = 1; ring <= 4; ++ring) {
-        const float ringR = rr * (float)ring * 0.25f;
+    // Stat bar graph — LEFT portion of canvas
+    {
+        const float barSectionW = (canvasRight - canvasLeft) * 0.44f;
+        const float labelW      = 110.0f * uiS;
+        const float valW        = 76.0f * uiS;
+        const float barTrackL   = headerX + labelW;
+        const float barTrackW   = barSectionW - labelW - valW;
+        const float rowH        = 46.0f * uiS;
+        const float barH        = 6.0f * uiS;
+        // Vertically center bar block on radar centerY
+        const float barBaseY    = std::max(headerY + 108.0f * uiS,
+                                           centerY - 3.0f * rowH);
+        const float nScale      = 0.52f * uiS;   // ×1.4 vs old 0.37
+        const float vScale      = 0.56f * uiS;   // ×1.4 vs old 0.40
+
+        // Separator line under header
+        LogoLine(headerX, headerY + 98.0f * uiS,
+                 headerX + barSectionW, headerY + 98.0f * uiS,
+                 1.0f * uiS, wr, wg, wb, 0.24f * detailA);
+
         for (int i = 0; i < 6; ++i) {
-            const int j = (i + 1) % 6;
-            const float a0 = -1.5707963f + i * 1.0471976f;
-            const float a1 = -1.5707963f + j * 1.0471976f;
-            LogoLine(rcx + cosf(a0) * ringR, rcy + sinf(a0) * ringR,
-                     rcx + cosf(a1) * ringR, rcy + sinf(a1) * ringR,
-                     0.75f * uiS, wr, wg, wb, (0.10f + ring * 0.025f) * detailA);
+            const float midY   = barBaseY + i * rowH + rowH * 0.5f;
+            const float filled = barTrackW * statT[i];
+
+            DrawShadowedText(g_TextS, statNames[i], headerX, midY - 12.0f * uiS,
+                             nScale, 0.62f, 0.74f, 0.86f, 0.72f * detailA, 0.48f);
+
+            // Background track
+            drawRect(barTrackL, midY - barH * 0.5f, barTrackW, barH,
+                     wr, wg, wb, 0.10f * detailA);
+
+            // Filled solid bar
+            if (filled > 1.0f)
+                drawRect(barTrackL, midY - barH * 0.5f, filled, barH,
+                         wr, wg, wb, 0.72f * detailA);
+
+            // Tick marks at 0%, 25%, 50%, 75%, 100%
+            for (int t = 0; t <= 4; ++t) {
+                const float tx  = barTrackL + barTrackW * (float)t * 0.25f;
+                const bool  lit = statT[i] >= (float)t * 0.25f - 0.01f;
+                LogoLine(tx, midY - 6.0f * uiS, tx, midY + 6.0f * uiS,
+                         0.7f * uiS, wr, wg, wb, (lit ? 0.36f : 0.14f) * detailA);
+            }
+
+            // Leading node at fill endpoint
+            if (statT[i] > 0.02f)
+                drawDiamond(barTrackL + filled, midY,
+                            4.0f * uiS, wr, wg, wb, 0.88f * detailA);
+
+            // Value text
+            DrawShadowedText(g_TextS, statVals[weapon][i],
+                             barTrackL + barTrackW + 10.0f * uiS, midY - 12.0f * uiS,
+                             vScale, 0.92f, 0.96f, 1.0f, 0.90f * detailA, 0.68f);
         }
     }
-    if (g_ConstellationCircleTex)
-        DrawIcon(g_ConstellationCircleTex, rcx - 18.0f * uiS, rcy - 18.0f * uiS,
-                 36.0f * uiS, 36.0f * uiS, 1.0f, 1.0f, 1.0f, 0.92f * detailA);
-    drawDiamond(rcx, rcy, 7.0f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * detailA);
-    g_TextS.Draw(L"POWER PROFILE", rightX, rcy + rr + 46.0f * uiS, 0.54f * uiS,
-                 0.48f, 0.82f, 1.0f, 0.74f * detailA);
-    g_TextS.Draw(weapon == 0 ? L"PRECISION FIRE" : L"FIELD CONTROL",
-                 rightX, rcy + rr + 72.0f * uiS, 0.62f * uiS,
-                 0.92f, 0.96f, 1.0f, 0.90f * detailA);
 
-    const float playW = 260.0f * uiS, playH = 58.0f * uiS;
-    const float playX = sw - 70.0f * uiS - playW;
-    const float playY = sh - 92.0f * uiS;
+    // Radar chart — RIGHT portion; labels suppressed (bars carry that info)
+    static const wchar_t* kNoLabel[6] = { L"", L"", L"", L"", L"", L"" };
+    DrawWeaponPowerConstellation(centerX, centerY, profileRadius,
+                                 statT, kNoLabel, kNoLabel, weapon,
+                                 now, detailA, uiS, wr, wg, wb);
+
+    const float playW  = 300.0f * uiS, playH = 82.0f * uiS;
+    const float playCX = (canvasLeft + canvasRight) * 0.5f;   // full-canvas center
+    const float playX  = playCX - playW * 0.5f;
+    const float playY  = canvasBottom - playH - 14.0f * uiS;
+    // Selected weapon summary — centered above PLAY
+    {
+        const float sw1 = g_TextS.Width(L"SELECTED WEAPON", 0.36f * uiS);
+        const float sw2 = g_TextS.Width(weapons[weapon], 0.46f * uiS);
+        DrawShadowedText(g_TextS, L"SELECTED WEAPON", playCX - sw1 * 0.5f, playY - 42.0f * uiS,
+                         0.36f * uiS, wr, wg, wb, 0.56f * contentA, 0.42f);
+        DrawShadowedText(g_TextS, weapons[weapon], playCX - sw2 * 0.5f, playY - 22.0f * uiS,
+                         0.46f * uiS, 1.0f, 1.0f, 1.0f, 0.92f * contentA, 0.72f);
+    }
     const bool playHov = ready && mx >= playX && mx < playX + playW && my >= playY && my < playY + playH;
-    DrawMenuCommandFeedback(playX + 18.0f, playY, playW, playH, wr, wg, wb,
-                            contentA, playHov ? 1.0f : 0.0f, playHov ? 0.22f : 0.0f, now);
-    g_TextL.Draw(L"PLAY", playX + 18.0f, playY + 5.0f, 0.92f,
-                 playHov ? wr : 1.0f, playHov ? wg : 1.0f, 1.0f, 0.98f * contentA);
+    playHover = UpdateMenuCommandHover(playHover, playHov, dt);
+    // Corner-bracket frame — always visible so the button reads as a distinct clickable area
+    {
+        const float fa = (0.42f + 0.32f * playHover) * contentA;
+        const float fi = (0.06f + 0.10f * playHover) * contentA;
+        const float cw = 22.0f * uiS;
+        drawRect(playX, playY, playW, playH, wr, wg, wb, fi);
+        LogoLine(playX,           playY,          playX + cw,        playY,          1.1f*uiS, wr,wg,wb, fa);
+        LogoLine(playX,           playY,          playX,             playY + cw,     1.1f*uiS, wr,wg,wb, fa);
+        LogoLine(playX + playW,   playY,          playX+playW - cw,  playY,          1.1f*uiS, wr,wg,wb, fa);
+        LogoLine(playX + playW,   playY,          playX+playW,       playY + cw,     1.1f*uiS, wr,wg,wb, fa);
+        LogoLine(playX,           playY + playH,  playX + cw,        playY + playH,  1.1f*uiS, wr,wg,wb, fa);
+        LogoLine(playX,           playY + playH,  playX,             playY+playH-cw, 1.1f*uiS, wr,wg,wb, fa);
+        LogoLine(playX + playW,   playY + playH,  playX+playW - cw,  playY + playH,  1.1f*uiS, wr,wg,wb, fa);
+        LogoLine(playX + playW,   playY + playH,  playX+playW,       playY+playH-cw, 1.1f*uiS, wr,wg,wb, fa);
+        drawDiamond(playX + playW * 0.5f, playY,         3.5f*uiS, wr,wg,wb, fa * 0.72f);
+        drawDiamond(playX + playW * 0.5f, playY + playH, 3.5f*uiS, wr,wg,wb, fa * 0.72f);
+    }
+    DrawMenuCommandFeedback(playX, playY, playW, playH, wr, wg, wb, contentA,
+                            playHover, playHov ? 0.22f : 0.0f, now);
+    {
+        const float tScale = 0.92f * uiS;
+        const float tW = g_TextL.Width(L"PLAY", tScale);
+        const float tH = g_TextL.Height(L"PLAY", tScale);
+        const float tX = playX + (playW - tW) * 0.5f;
+        const float tY = playY + (playH - tH) * 0.5f;
+        DrawShadowedText(g_TextL, L"PLAY", tX, tY, tScale,
+                         1.0f + (wr - 1.0f) * playHover,
+                         1.0f + (wg - 1.0f) * playHover,
+                         1.0f,
+                         (0.92f + 0.08f * playHover) * contentA, 0.86f);
+    }
     if (playHov && lmb && !g_LmbPrev && ready) {
         playExit = true;
         playT = 0.0f;
@@ -5437,33 +6172,37 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     const float oldA = exiting ? outP : (1.0f - entryOldOut);
     const bool ready = !exiting && entry >= 0.55f;
 
-    // Main-menu inline panels return before Scene_MainMenu's vignette pass.
-    // Keep the same left-side contrast veil used by ARMORY and ASTRAL_LOG.
-    DrawSceneLeftVignette(sw, sh, 0.76f * std::max(treeA, oldA));
-
     const float uiS = std::max(0.70f, std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
     const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
     const float mainBH = 70.0f, mainGap = 15.0f;
     const float mainTotal = mainBH * 5.0f + mainGap * 4.0f;
     const float mainX = std::max(58.0f, sw * 0.075f);
-    float mainY = sh * 0.48f;
-    if (mainY + mainTotal > sh - 54.0f) mainY = sh - mainTotal - 54.0f;
+    const float mainY = MainMenuCommandStartY(sh);
     // Settings rows enter from the right, matching the inline ARMORY/CODEX motion.
     const float rootX = mainX + 82.0f * uiS * (1.0f - treeA) + 180.0f * uiS * outP;
     // Inline tabs occupy the same left command rail as the other main-menu panels.
     const float rootY = mainY;
     const float rootW = std::min(360.0f * uiS, mainBW * 0.70f);
     const float rootH = mainBH;
-    const float depthX = rootX + std::min(365.0f * uiS, mainBW * 0.68f);
-    const float depthY = std::max(110.0f * uiS, rootY - 28.0f * uiS);
-    const float detailX = std::max(sw * 0.58f, depthX + 390.0f * uiS);
-    const float detailY = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f + 30.0f * uiS;
-    const float detailW = sw - detailX - 70.0f * uiS;
+    DrawSharedMenuDim(sw, sh, mainX, mainY, mainBW, mainTotal,
+                      std::max(treeA, oldA));
+    const InlineThreeColumnLayout columns = BuildInlineThreeColumnLayout(
+        sw, sh, uiS, rootX, rootY, rootW, rootH);
+    const float depthX = columns.contentX;
+    const float depthY = columns.contentY;
+    const float detailX = columns.detailX;
+    const float detailY = columns.detailY;
+    const float detailW = columns.detailW;
 
-    DrawSceneRadialVignette(detailX + detailW * 0.5f, detailY + sh * 0.23f,
-                            std::min(detailW, sh * 0.65f) * 0.72f, 0.34f * treeA);
+    DrawAstralDataPlate(depthX - 22.0f * uiS, depthY - 12.0f * uiS,
+                        columns.contentW + 28.0f * uiS,
+                        226.0f * uiS, 0.48f, 0.82f, 1.0f, 0.70f * treeA);
+    DrawAstralDataPlate(detailX - 30.0f * uiS, detailY - 12.0f * uiS,
+                        detailW + 24.0f * uiS,
+                        columns.detailH + 12.0f * uiS,
+                        0.48f, 0.82f, 1.0f, 0.82f * treeA);
     if (s_MainMenuSettingsPanel)
-        DrawMainOnedowLogo(sw, sh, 0.42f * oldA + 0.08f * treeA,
+        DrawMainOnedowLogo(sw, sh, 0.42f * oldA,
                            LogoClamp01(oldA + 0.20f * treeA), sw * 0.30f - 160.0f * (1.0f - oldA), 0.82f);
 
     // \uC88C\uCE21 ghost \uBC84\uD2BC \u2014 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0 \uB530\uB77C \uBA54\uC778\uBA54\uB274 vs \uC77C\uC2DC\uC815\uC9C0 \uBA54\uB274
@@ -5475,8 +6214,10 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             const bool focus = i == 3;
             const float x = mainX - 250.0f * (1.0f - oldA) - (focus ? 0.0f : 24.0f * (1.0f - oldA));
             const float a = (focus ? 0.82f : 0.34f) * oldA;
-            g_TextL.Draw(menu[i], x, y + 2.0f, 1.04f, 1.0f, 1.0f, 1.0f, a);
-            g_TextS.Draw(menuSub[i], x + 4.0f, y + 43.0f, 0.48f, 0.72f, 0.77f, 0.84f, a * 0.9f);
+            DrawShadowedText(g_TextL, menu[i], x, y + 2.0f, 1.04f,
+                             1.0f, 1.0f, 1.0f, a, 0.70f);
+            DrawShadowedText(g_TextS, menuSub[i], x + 4.0f, y + 43.0f, 0.48f,
+                             0.72f, 0.77f, 0.84f, a * 0.9f, 0.62f);
         }
     } else {
         static const wchar_t* menu[4] = { L"RESUME", L"CALIBRATION", L"RETURN_TO_HUB", L"TERMINATE" };
@@ -5486,8 +6227,10 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             const bool focus = i == 1;
             const float x = mainX - 250.0f * (1.0f - oldA) - (focus ? 0.0f : 24.0f * (1.0f - oldA));
             const float a = (focus ? 0.82f : 0.34f) * oldA;
-            g_TextL.Draw(menu[i], x, y + 2.0f, 1.04f, 1.0f, 1.0f, 1.0f, a);
-            g_TextS.Draw(menuSub[i], x + 4.0f, y + 43.0f, 0.48f, 0.72f, 0.77f, 0.84f, a * 0.9f);
+            DrawShadowedText(g_TextL, menu[i], x, y + 2.0f, 1.04f,
+                             1.0f, 1.0f, 1.0f, a, 0.70f);
+            DrawShadowedText(g_TextS, menuSub[i], x + 4.0f, y + 43.0f, 0.48f,
+                             0.72f, 0.77f, 0.84f, a * 0.9f, 0.62f);
         }
     }
 
@@ -5499,33 +6242,19 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     for (int i = 0; i < 4; ++i) {
         const float y = rootY + i * (rootH + mainGap);
         const bool hov = ready && mx >= rootX - 28.0f && mx < depthX - 36.0f && my >= y && my < y + rootH;
-        const float hoverSpeed = std::min(1.0f, dt * 11.0f);
-        rootHover[i] += ((hov ? 1.0f : 0.0f) - rootHover[i]) * hoverSpeed;
+        rootHover[i] = UpdateMenuCommandHover(rootHover[i], hov, dt);
         if (hov && lmb && !g_LmbPrev) {
             if (i == 3) exiting = true;
             else { tab = i; group = 0; pulse = 1.0f; }
         }
         const bool selected = i == tab && i < 3;
-        const float active = std::max(rootHover[i], selected ? 1.0f : 0.0f);
-        // Keep the shared entry start, but give each settings row enough air to read.
-        // Explicit top-to-bottom order: GAME -> AUDIO -> SYSTEM -> BACK.
-        const float rowDelay = 0.20f + (float)i * 0.14f;
-        const float revealT = Smoothstep(LogoClamp01((entry - rowDelay) / 0.32f));
+        const float revealT = MenuCommandReveal(entry, i);
         const float rowA = revealT * treeA;
         const float x = rootX + (1.0f - revealT) * 34.0f - 10.0f * rootHover[i];
         const float clickFlash = (i == tab && pulse > 0.0f) ? pulse : 0.0f;
-        DrawMenuCommandFeedback(x, y, rootW, rootH,
-                                0.48f, 0.82f, 1.0f, rowA,
-                                active, clickFlash, now + (float)i * 0.17f);
-        const float colorT = std::max(rootHover[i], selected ? 0.82f : 0.0f);
-        const float textR = 1.0f + (0.48f - 1.0f) * colorT;
-        const float textG = 1.0f + (0.82f - 1.0f) * colorT;
-        const float textB = 1.0f;
-        g_TextL.Draw(roots[i].en, x, y + 2.0f, 1.02f,
-                     textR, textG, textB, (0.86f + 0.14f * active) * rowA);
-        g_TextS.Draw(roots[i].kr, x + 4.0f, y + 43.0f, 0.48f,
-                     0.70f + 0.14f * active, 0.75f + 0.13f * active, 0.82f + 0.10f * active,
-                     (0.78f + 0.18f * active) * rowA);
+        DrawUnifiedMenuCommand(roots[i].en, roots[i].kr, x, y, rootW, rootH,
+                               0.48f, 0.82f, 1.0f, rowA, rootHover[i], selected,
+                               clickFlash, now + (float)i * 0.17f, 1.02f, 0.48f);
     }
 
     static const wchar_t* gameGroups[] = { L"DISPLAY", L"CONTROL", L"LANGUAGE" };
@@ -5540,8 +6269,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     for (int i = 0; i < groupCount; ++i) {
         const float y = depthY + i * 62.0f * uiS;
         const bool hov = ready && mx >= depthX - 34.0f && mx < detailX - 30.0f && my >= y && my < y + 50.0f * uiS;
-        const float groupSpeed = std::min(1.0f, dt * 11.0f);
-        groupHover[i] += ((hov ? 1.0f : 0.0f) - groupHover[i]) * groupSpeed;
+        groupHover[i] = UpdateMenuCommandHover(groupHover[i], hov, dt);
         if (hov && lmb && !g_LmbPrev) { group = i; pulse = 1.0f; }
         const bool sel = group == i;
         const float groupActive = std::max(groupHover[i], sel ? 0.82f : 0.0f);
@@ -5549,10 +6277,12 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                  0.8f, 0.48f, 0.82f, 1.0f, 0.18f * treeA);
         const float groupR = 1.0f + (0.48f - 1.0f) * groupActive;
         const float groupG = 1.0f + (0.82f - 1.0f) * groupActive;
-        g_TextL.Draw((sel ? L"> " : L"  "), depthX - 8.0f * groupHover[i], y + 2.0f, 0.78f,
-                     groupR, groupG, 1.0f, (0.76f + 0.20f * groupActive) * treeA);
-        g_TextL.Draw(groups[i], depthX + 25.0f - 8.0f * groupHover[i], y + 2.0f, 0.82f,
-                     groupR, groupG, 1.0f, (0.78f + 0.18f * groupActive) * treeA);
+        DrawShadowedText(g_TextL, (sel ? L"> " : L"  "),
+                         depthX - 8.0f * groupHover[i], y + 2.0f, 0.78f,
+                         groupR, groupG, 1.0f, (0.76f + 0.20f * groupActive) * treeA, 0.66f);
+        DrawShadowedText(g_TextL, groups[i],
+                         depthX + 25.0f - 8.0f * groupHover[i], y + 2.0f, 0.82f,
+                         groupR, groupG, 1.0f, (0.78f + 0.18f * groupActive) * treeA, 0.70f);
         if (groupActive > 0.01f) {
             drawRect(depthX + 9.0f - 8.0f * groupHover[i], y + 41.0f * uiS,
                      170.0f * uiS * groupActive, 1.0f,
@@ -5564,10 +6294,10 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     drawRect(detailX - 12.0f, detailY + 56.0f, 2.0f, 420.0f,
              0.48f, 0.82f, 1.0f, 0.40f * dA);
     const wchar_t* tabName = roots[tab].en;
-    g_TextS.Draw(L"SYS_CALIBRATION", detailX, detailY, 0.56f,
-                 0.48f, 0.82f, 1.0f, 0.70f * dA);
-    g_TextL.Draw(tabName, detailX, detailY + 38.0f, 1.08f,
-                     1.0f, 1.0f, 1.0f, 0.98f * dA);
+    DrawShadowedText(g_TextS, L"SYS_CALIBRATION", detailX, detailY, 0.56f,
+                     0.48f, 0.82f, 1.0f, 0.70f * dA, 0.66f);
+    DrawShadowedText(g_TextL, tabName, detailX, detailY + 38.0f, 1.08f,
+                     1.0f, 1.0f, 1.0f, 0.98f * dA, 0.78f);
     const float lineY = detailY + 98.0f;
     LogoLine(detailX, lineY, detailX + detailW * 0.84f, lineY,
              1.0f, 0.48f, 0.82f, 1.0f, 0.30f * dA);
@@ -5612,13 +6342,13 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     }
     for (int i = 0; i < labelCount; ++i) {
         const float y = lineY + 48.0f + i * 58.0f;
-        g_TextL.Draw(labels[i], detailX + 18.0f, y, 0.66f,
-                     0.92f, 0.95f, 1.0f, 0.88f * dA);
+        DrawShadowedText(g_TextL, labels[i], detailX + 18.0f, y, 0.66f,
+                         0.92f, 0.95f, 1.0f, 0.88f * dA, 0.70f);
         LogoLine(detailX + 18.0f, y + 35.0f, detailX + detailW * 0.78f, y + 35.0f,
                  0.8f, 0.48f, 0.82f, 1.0f, 0.16f * dA);
     }
-    g_TextS.Draw(L"[ ESC / RMB ] BACK", detailX, sh - 72.0f, 0.50f,
-                 0.66f, 0.75f, 0.84f, 0.72f * dA);
+    DrawShadowedText(g_TextS, L"[ ESC / RMB ] BACK", detailX, sh - 72.0f, 0.50f,
+                     0.66f, 0.75f, 0.84f, 0.72f * dA, 0.62f);
 
     if (exiting && exitT >= 0.42f) {
         if (s_MainMenuSettingsPanel) {
@@ -5731,7 +6461,8 @@ void Scene_Settings(const SceneCtx& c) {
     }
 
     const SettingsTabDef& tab = kTabs[s_tab];
-    const float baseR = 0.48f, baseG = 0.82f, baseB = 1.00f;
+    const UiThemePalette& uiTheme = GetUiTheme();
+    const float baseR = uiTheme.Frame.r, baseG = uiTheme.Frame.g, baseB = uiTheme.Frame.b;
     // Normalize legacy language saves before laying out translated controls.
     if (s_tab == 0 && (int)g_Language > 1) g_Language = Language::KR;
 
@@ -5858,14 +6589,10 @@ void Scene_Settings(const SceneCtx& c) {
                  1.16f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
     float profileW = 330.0f * uiS;
     float profileX = panelX + panelW - profileW + (1.0f - wake) * 50.0f * uiS;
-    drawRect(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
-             0.040f, 0.050f, 0.070f, 0.82f * wake);
-    drawConstellFrame(profileX, panelY + 8.0f * uiS, profileW, 44.0f * uiS,
-                      baseR, baseG, baseB,
-                      (0.24f + 0.08f * sinf(now * 2.2f)) * wake,
-                      10.0f * uiS, 2.0f * uiS);
-    drawCenterS(profileBuf, profileX, panelY + 20.0f * uiS, profileW,
-                0.44f * uiS, 0.76f, 0.86f, 1.0f, 0.88f * wake);
+    drawCenterS(profileBuf, profileX, panelY + 16.0f * uiS, profileW,
+                0.44f * uiS, 0.72f, 0.84f, 1.0f, 0.82f * wake);
+    drawRect(profileX + 12.0f*uiS, panelY + 46.0f*uiS, profileW - 24.0f*uiS, 1.0f*uiS,
+             baseR, baseG, baseB, 0.20f * wake);
 
     // === LEFT COLUMN: Tab cards ===
     const float tabCardGap = 16.0f * uiS;
@@ -6269,7 +6996,7 @@ void Scene_Settings(const SceneCtx& c) {
     const float groupGap = 16.0f * uiS;
     float y = rowStart;
     if (s_tab == 0) {
-        const float displayH = groupHead + rowH * 3.0f + rowGap * 2.0f + groupPadB;
+        const float displayH = groupHead + rowH * 4.0f + rowGap * 3.0f + groupPadB;
         const float controlH = groupHead + rowH * 2.0f + rowGap + groupPadB;
         const float langH    = groupHead + rowH + groupPadB;
 
@@ -6310,6 +7037,17 @@ void Scene_Settings(const SceneCtx& c) {
                   L"[VFX_DENS]",
                   vfxLabels, twoVals, 2, (int)g_VfxDensity, [&](int v) {
                       g_VfxDensity = (v == 0) ? VfxDensity::FULL : VfxDensity::REDUCED;
+                  });
+
+        y += rowH + rowGap;
+        const wchar_t* themeLabelsKr[2] = { L"\xAE30\xBCF8", L"\xBC1D\xC74C" };
+        const wchar_t* themeLabelsEn[2] = { L"DARK", L"LIGHT" };
+        const wchar_t* const* themeLabels = (nli == 0) ? themeLabelsKr : themeLabelsEn;
+        const int themeVals[2] = { 0, 1 };
+        choiceRow(y, SettingsText(L"UI \xD14C\xB9C8", L"UI THEME"),
+                  L"[UI_THEME]", themeLabels, themeVals, 2,
+                  (int)g_UiThemeMode, [&](int v) {
+                      SetUiTheme(v == 1 ? UiThemeMode::Light : UiThemeMode::Dark);
                   });
 
         y = rowStart + displayH + groupGap;
@@ -7015,7 +7753,7 @@ void Scene_Paused(const SceneCtx& c) {
         g_TextL.Draw(hdr, btnX0, titleY, hdrSc, 0.50f, 0.82f, 1.0f, 0.92f * titleA);
         const wchar_t* sub = L"PROCESS 0x004F : SUSPENDED";
         g_TextS.Draw(sub, btnX0, titleY + g_TextL.Height(hdr, hdrSc) + 2.0f, 0.50f,
-                     0.38f, 0.60f, 0.80f, 0.60f * titleA);
+                     0.48f, 0.72f, 0.90f, 0.80f * titleA);
         BindMainShader();
         drawRect(btnX0, titleY + g_TextL.Height(hdr, hdrSc) + 26.0f,
                  BW * 0.52f, 1.0f, 0.30f, 0.78f, 1.0f, 0.22f * titleA);
@@ -7105,7 +7843,7 @@ void Scene_Paused(const SceneCtx& c) {
         float hintA = Smoothstep(std::min(std::max(0.0f, s_EntryT - 0.50f) / 0.30f, 1.0f)) * entryFade;
         const wchar_t* hint = L"[SPACE / ESC]  재개";
         g_TextS.Draw(hint, btnX0, sh * 0.88f, 0.58f,
-                     0.42f, 0.62f, 0.82f, 0.55f * hintA);
+                     0.50f, 0.70f, 0.90f, 0.72f * hintA);
     }
 }
 void Scene_GameOver(const SceneCtx& c) {
@@ -7123,7 +7861,7 @@ void Scene_GameOver(const SceneCtx& c) {
 
                 // 전체 화면 딤 — 보스 창/엔티티가 결과창 뒤로 비치지 않게 (페이드)
                 BindMainShader();
-                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f * ge * SCENE_BG_ALPHA);
+                drawRect(0, 0, sw, sh, 0.02f, 0.02f, 0.06f, 0.88f * ge);
                 const wchar_t* T1 = T(StrId::GAMEOVER);
                 g_TextL.Draw(T1, CenterTextX(sw, g_TextL, T1, 1.6f), sh*0.30f, 1.6f,
                              1, 0.25f, 0.25f, 0.95f * ge);
@@ -7167,25 +7905,51 @@ void Scene_GameOver(const SceneCtx& c) {
                 // (사망 시점 보유 증강은 Scene_OwnedAugPanel — 일시정지와 동일한 호버 패널로 표시.
                 //  기존 다열 목록은 제거: 패널과 겹쳐 이중 표시되던 문제 fix)
 
-                // 버튼 3개: 다시하기 / 메뉴로 / 종료 — 페이드 완료 후에만 표시/활성
-                if (gof >= 0.999f) {
-                    const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
-                    float totalW = 3 * BW + 2 * BG;
-                    float bx = (sw - totalW) * 0.5f;
-                    float by = sh * 0.72f;
+                // 버튼 3개 — 메인메뉴/일시정지와 동일한 별자리 좌정렬 스타일
+                {
+                    static float s_hovGO[3] = {};
+                    const float BW  = std::min(480.0f, sw * 0.36f);
+                    const float BH  = 68.0f, BGAP = 12.0f;
+                    const float bX0 = std::max(58.0f, sw * 0.075f);
+                    const float bY0 = sh * 0.715f;
+                    const float ar  = 0.48f, ag = 0.82f, ab = 1.0f;
+                    const float fnow = (float)glfwGetTime();
+                    const float showT = gof >= 0.999f ? 1.0f : 0.0f;
 
-                    if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        ResetForNewGame();
-                        FinalizeLoadout(c, FixedWeaponForSelectedJob());
+                    static const wchar_t* kRoute[3] = { L"RESTART",      L"RETURN_TO_HUB", L"TERMINATE" };
+                    const wchar_t*        kSub[3]   = { T(StrId::BTN_RESTART), T(StrId::BTN_MAIN_MENU), T(StrId::BTN_QUIT) };
+
+                    // 앵커 라인
+                    if (showT > 0.0f) {
+                        const float ancX = bX0 - 36.0f, ancY = bY0 - 8.0f;
+                        const float ancH = (float)(3 - 1) * (BH + BGAP) + BH + 16.0f;
+                        BindMainShader();
+                        drawRect(ancX, ancY, 1.2f, ancH, ar,ag,ab, 0.15f * ge);
+                        drawDiamond(ancX + 0.6f, ancY + 4.0f,       2.8f, ar,ag,ab, 0.20f * ge);
+                        drawDiamond(ancX + 0.6f, ancY + ancH - 4.0f, 2.8f, ar,ag,ab, 0.16f * ge);
                     }
-                    if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        g_GameManager.currentState = GameState::MAIN_MENU;
-                    }
-                    if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
-                                 mx, my, lmb, g_LmbPrev)) {
-                        glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+                    for (int i = 0; i < 3; ++i) {
+                        float by2 = bY0 + (float)i * (BH + BGAP);
+                        bool hov = (showT > 0.0f &&
+                                    mx >= bX0 - 26.0f && mx <= bX0 + BW + 32.0f &&
+                                    my >= by2 && my <= by2 + BH);
+                        s_hovGO[i] = UpdateMenuCommandHover(s_hovGO[i], hov, delta);
+                        float t   = s_hovGO[i];
+                        float rowA = showT * ge;
+                        float bx2  = bX0 - 10.0f * t;
+
+                        DrawUnifiedMenuCommand(kRoute[i], kSub[i], bx2, by2, BW, BH,
+                                               ar, ag, ab, rowA, t, false, 0.0f,
+                                               fnow + (float)i * 0.17f);
+
+                        if (hov && lmb && !g_LmbPrev) {
+                            switch (i) {
+                            case 0: ResetForNewGame(); FinalizeLoadout(c, FixedWeaponForSelectedJob()); break;
+                            case 1: g_GameManager.currentState = GameState::MAIN_MENU; break;
+                            case 2: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
+                            }
+                        }
                     }
                 }
 }
@@ -7194,6 +7958,7 @@ void Scene_Victory(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
+    const float delta = c.delta;
     GLFWwindow* window = c.window;
     const std::function<void()>& ResetForNewGame = c.reset;
 
@@ -7201,7 +7966,7 @@ void Scene_Victory(const SceneCtx& c) {
     float ve = Smoothstep(vf);
 
     BindMainShader();
-    drawRect(0, 0, sw, sh, 0.02f, 0.06f, 0.04f, 0.88f * ve * SCENE_BG_ALPHA);
+    drawRect(0, 0, sw, sh, 0.02f, 0.06f, 0.04f, 0.88f * ve);
 
     static const wchar_t* T1[3] = { L"런 클리어!", L"RUN CLEARED!", L"ランクリア!" };
     int li = LangIndex();
@@ -7223,23 +7988,50 @@ void Scene_Victory(const SceneCtx& c) {
     g_TextS.Draw(coinBuf, CenterTextX(sw, g_TextS, coinBuf, 1.0f), sh * 0.64f, 1.0f,
                  1.0f, 0.9f, 0.35f, 0.95f * ve);
 
-    if (vf >= 0.999f) {
-        const float BW = 240.0f, BH = 56.0f, BG = 16.0f;
-        float totalW = 3 * BW + 2 * BG;
-        float bx = (sw - totalW) * 0.5f;
-        float by = sh * 0.72f;
-        if (UIButton(bx + 0*(BW+BG), by, BW, BH, T(StrId::BTN_RESTART),
-                     mx, my, lmb, g_LmbPrev)) {
-            ResetForNewGame();
-            FinalizeLoadout(c, FixedWeaponForSelectedJob());
+    // 버튼 3개 — 메인메뉴/일시정지와 동일한 별자리 좌정렬 스타일
+    {
+        static float s_hovVC[3] = {};
+        const float BW  = std::min(480.0f, sw * 0.36f);
+        const float BH  = 68.0f, BGAP = 12.0f;
+        const float bX0 = std::max(58.0f, sw * 0.075f);
+        const float bY0 = sh * 0.715f;
+        const float ar  = 0.38f, ag = 1.0f, ab = 0.62f;
+        const float fnow = (float)glfwGetTime();
+        const float showT = vf >= 0.999f ? 1.0f : 0.0f;
+
+        static const wchar_t* kRoute[3] = { L"RESTART",      L"RETURN_TO_HUB", L"TERMINATE" };
+        const wchar_t*        kSub[3]   = { T(StrId::BTN_RESTART), T(StrId::BTN_MAIN_MENU), T(StrId::BTN_QUIT) };
+
+        if (showT > 0.0f) {
+            const float ancX = bX0 - 36.0f, ancY = bY0 - 8.0f;
+            const float ancH = (float)(3 - 1) * (BH + BGAP) + BH + 16.0f;
+            BindMainShader();
+            drawRect(ancX, ancY, 1.2f, ancH, ar,ag,ab, 0.15f * ve);
+            drawDiamond(ancX + 0.6f, ancY + 4.0f,        2.8f, ar,ag,ab, 0.20f * ve);
+            drawDiamond(ancX + 0.6f, ancY + ancH - 4.0f, 2.8f, ar,ag,ab, 0.16f * ve);
         }
-        if (UIButton(bx + 1*(BW+BG), by, BW, BH, T(StrId::BTN_MAIN_MENU),
-                     mx, my, lmb, g_LmbPrev)) {
-            g_GameManager.currentState = GameState::MAIN_MENU;
-        }
-        if (UIButton(bx + 2*(BW+BG), by, BW, BH, T(StrId::BTN_QUIT),
-                     mx, my, lmb, g_LmbPrev)) {
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
+
+        for (int i = 0; i < 3; ++i) {
+            float by2 = bY0 + (float)i * (BH + BGAP);
+            bool hov = (showT > 0.0f &&
+                        mx >= bX0 - 26.0f && mx <= bX0 + BW + 32.0f &&
+                        my >= by2 && my <= by2 + BH);
+            s_hovVC[i] = UpdateMenuCommandHover(s_hovVC[i], hov, delta);
+            float t    = s_hovVC[i];
+            float rowA = showT * ve;
+            float bx2  = bX0 - 10.0f * t;
+
+            DrawUnifiedMenuCommand(kRoute[i], kSub[i], bx2, by2, BW, BH,
+                                   ar, ag, ab, rowA, t, false, 0.0f,
+                                   fnow + (float)i * 0.17f);
+
+            if (hov && lmb && !g_LmbPrev) {
+                switch (i) {
+                case 0: ResetForNewGame(); FinalizeLoadout(c, FixedWeaponForSelectedJob()); break;
+                case 1: g_GameManager.currentState = GameState::MAIN_MENU; break;
+                case 2: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
+                }
+            }
         }
     }
 }
