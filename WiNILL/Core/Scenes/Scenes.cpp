@@ -1899,6 +1899,12 @@ void Scene_Shop(const SceneCtx& c) {
     if (s_scroll < 0.0f) s_scroll = 0.0f;
     if (s_scroll > maxScroll) s_scroll = maxScroll;
 
+    // Left list panel solid background for readability against bright desktops
+    BindMainShader();
+    drawRect(depth2X - 6.0f * uiS, depth2Y,
+             depth2W + 12.0f * uiS, depth2H,
+             0.030f, 0.040f, 0.062f, 0.52f * itemWake);
+
     BatchFlush();
     glEnable(GL_SCISSOR_TEST);
     {
@@ -2450,17 +2456,23 @@ void Scene_Shop(const SceneCtx& c) {
         };
 
         auto drawNodeMap = [&](int filled, int total, const wchar_t* label,
-                               float r, float g, float b, float a) {
+                               float r, float g, float b, float a,
+                               float nmX = -1.0f, float nmY = -1.0f,
+                               float nmW = -1.0f, float nmH = -1.0f) {
+            const float nx = nmX > 0.0f ? nmX : vizX;
+            const float ny = nmY > 0.0f ? nmY : vizY;
+            const float nw = nmW > 0.0f ? nmW : vizW;
+            const float nh = nmH > 0.0f ? nmH : vizH;
             BindMainShader();
-            g_TextS.Draw(label, vizX + 18.0f * uiS, vizY + 16.0f * uiS,
+            g_TextS.Draw(label, nx + 18.0f * uiS, ny + 16.0f * uiS,
                          0.42f * uiS, 0.78f, 0.83f, 0.96f, 0.56f * a);
-            drawRect(vizX + 18.0f * uiS, vizY + 46.0f * uiS, vizW - 36.0f * uiS,
+            drawRect(nx + 18.0f * uiS, ny + 46.0f * uiS, nw - 36.0f * uiS,
                      1.0f * uiS, r, g, b, 0.18f * a);
 
             int nodes = std::max(3, std::min(total, 8));
-            float cx = vizX + vizW * 0.50f;
-            float cy = vizY + vizH * 0.56f;
-            float rad = std::min(vizW, vizH) * 0.34f;
+            float cx = nx + nw * 0.50f;
+            float cy = ny + nh * 0.56f;
+            float rad = std::min(nw, nh) * 0.34f;
             float px[8] = {}, py[8] = {};
             DrawSceneRadialVignette(cx, cy, rad * 2.10f, 0.42f * a);
             BindMainShader();
@@ -2524,6 +2536,21 @@ void Scene_Shop(const SceneCtx& c) {
             return enabled && hov && lmb && !g_LmbPrev;
         };
 
+        // Right panel solid background + scan reveal
+        {
+            BindMainShader();
+            drawRect(rightX, rightAreaY, rightW, rightAreaH,
+                     0.038f, 0.050f, 0.075f, 0.58f * detailWake);
+            const float scanReveal = Smoothstep(LogoClamp01((g_ShopEntryT - 0.34f) / 0.32f));
+            if (scanReveal > 0.004f && scanReveal < 0.998f) {
+                const float scanY = rightAreaY + rightAreaH * scanReveal;
+                drawRect(rightX, scanY - 1.5f * uiS, rightW, 3.0f * uiS,
+                         sr, sg, sb, 0.48f * (1.0f - scanReveal) * detailWake);
+            }
+            LogoLine(rightX, rightAreaY, rightX + rightW, rightAreaY,
+                     0.8f * uiS, sr, sg, sb, 0.22f * scanReveal * detailWake);
+        }
+
         drawPanelBase();
         drawCredits();
 
@@ -2542,14 +2569,13 @@ void Scene_Shop(const SceneCtx& c) {
         auto drawDataTag = [&](const wchar_t* id, const wchar_t* title,
                                const wchar_t* desc, const wchar_t* stat,
                                const wchar_t* cmd, bool enabled,
-                               float r, float g, float b, float a) -> bool {
-            // Constellations no longer own this panel. Anchor the compact
-            // quotation/readout directly to the detail plate instead of the
-            // removed visualization bounds.
-            const float tagW = std::min(760.0f * uiS, rInW - 48.0f * uiS);
+                               float r, float g, float b, float a,
+                               float tagX0 = -1.0f, float tagY0 = -1.0f,
+                               float tagW0 = -1.0f) -> bool {
+            const float tagW = tagW0 > 0.0f ? tagW0 : std::min(760.0f * uiS, rInW - 48.0f * uiS);
             const float tagH = 142.0f * uiS;
-            const float tagX = rInX + 24.0f * uiS;
-            const float tagY = rInY + 104.0f * uiS;
+            const float tagX = tagX0 > 0.0f ? tagX0 : rInX + 24.0f * uiS;
+            const float tagY = tagY0 > 0.0f ? tagY0 : rInY + 104.0f * uiS;
             const float flick = Smoothstep(s_tagFlickerT);
             const float tagA = a * (0.58f + 0.42f * flick);
             const float sc0 = 0.40f * uiS;
@@ -2603,6 +2629,15 @@ void Scene_Shop(const SceneCtx& c) {
             const wchar_t* cmd = nullptr;
             bool cmdEnabled = false;
 
+            // Layout: left 56% for header + tag, right 40% for node map
+            const float tagColW  = rInW * 0.56f;
+            const float nmColX   = rInX + rInW * 0.60f;
+            const float nmColW   = rInW * 0.38f;
+            const float nmColH   = rInH;
+            const float tagX0    = rInX + 16.0f * uiS;
+            const float tagY0    = rInY + 92.0f * uiS;
+            const float tagW0    = tagColW - 16.0f * uiS;
+
             if (s_selKey >= 0 && s_selKey < KEY_THEME) {
                 int mi = s_selKey - KEY_META;
                 if (mi >= 0 && mi < META_COUNT) {
@@ -2620,11 +2655,15 @@ void Scene_Shop(const SceneCtx& c) {
                         swprintf_s(statBuf, L"STAT: [ LV %d/%d ] | [ COST: %lld SD ]", curLv, md.maxLv, cost);
                     cmd = maxed ? L"CMD : [ MAXED ]" : L"CMD : [> INITIATE_UNLOCK ]";
                     cmdEnabled = !maxed && g_Coins >= cost;
-                    if (drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled, sr, sg, sb, da)) {
+                    drawProductHeader(id, title, sr, sg, sb, da);
+                    if (drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled,
+                                    sr, sg, sb, da, tagX0, tagY0, tagW0)) {
                         g_Coins -= cost;
                         g_MetaLv[mi]++;
                         SaveGame();
                     }
+                    drawNodeMap(filled, total, mapLabel, sr, sg, sb, da,
+                                nmColX, rInY, nmColW, nmColH);
                 }
             } else if (s_selKey >= KEY_THEME && s_selKey < KEY_AUG) {
                 int ti = s_selKey - KEY_THEME;
@@ -2641,7 +2680,9 @@ void Scene_Shop(const SceneCtx& c) {
                     cmd = isCur ? L"CMD : [ EQUIPPED ]"
                         : owned ? L"CMD : [> EQUIP_SET ]" : L"CMD : [> PURCHASE_INITIATE ]";
                     cmdEnabled = owned || g_Coins >= th.cost;
-                    if (drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled, th.r, th.g, th.b, da)) {
+                    drawProductHeader(id, title, th.r, th.g, th.b, da);
+                    if (drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled,
+                                    th.r, th.g, th.b, da, tagX0, tagY0, tagW0)) {
                         if (owned && !isCur) {
                             g_ThemeSel = ti;
                             ApplyAccentTheme();
@@ -2656,6 +2697,8 @@ void Scene_Shop(const SceneCtx& c) {
                     }
                     sr = th.r; sg = th.g; sb = th.b;
                     mapLabel = L"ASTRAL PALETTE";
+                    drawNodeMap(filled, total, mapLabel, sr, sg, sb, da,
+                                nmColX, rInY, nmColW, nmColH);
                 }
             } else if (s_selKey >= KEY_AUG) {
                 int ai = s_selKey - KEY_AUG;
@@ -2670,13 +2713,14 @@ void Scene_Shop(const SceneCtx& c) {
                     swprintf_s(statBuf, L"STAT: [ TYPE: MODULE ] | [ SOURCE: RUN ORBIT ]");
                     cmd = L"CMD : [ CHARTED_ONLY ]";
                     cmdEnabled = false;
-                    drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled, sr, sg, sb, da);
+                    drawProductHeader(id, title, sr, sg, sb, da);
+                    drawDataTag(id, title, desc, statBuf, cmd, cmdEnabled,
+                                sr, sg, sb, da, tagX0, tagY0, tagW0);
                     mapLabel = L"MODULE TRACE";
+                    drawNodeMap(filled, total, mapLabel, sr, sg, sb, da,
+                                nmColX, rInY, nmColW, nmColH);
                 }
             }
-
-            // The detail panel is intentionally text-only. Constellation maps
-            // are reserved for the main menu and gameplay presentation.
         }
 
         if (false) {
