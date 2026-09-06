@@ -27,12 +27,12 @@ void SceneFlowWindow(float sw, float sh, float WW, float WH,
                      float& outX, float& outY, float& outContentY,
                      float dimAlpha, float bodyAlpha, float shadowAlpha) {
     (void)fname;
+    (void)dimAlpha;
     float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
     outX = wx;
     outY = wy;
     outContentY = wy + FLOW_CHROME_TOP;
     BindMainShader();
-    if (dimAlpha > 0.0f) drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, dimAlpha);
     drawRect(wx + 6.0f, wy + 8.0f, WW, WH, 0.0f, 0.0f, 0.0f, shadowAlpha);
     drawRect(wx, wy, WW, WH, 0.07f, 0.08f, 0.11f, bodyAlpha);
     drawRect(wx,           wy,        WW,   1.5f, ar, ag, ab, 0.5f);
@@ -46,13 +46,13 @@ void SceneAppWindow(float sw, float sh, float WW, float WH,
                     float& outX, float& outY, bool gameOverlay,
                     float dimAlpha) {
     (void)fname;
+    (void)dimAlpha;
     float wx = (sw - WW) * 0.5f, wy = (sh - WH) * 0.5f;
     outX = wx; outY = wy;
     float op = g_AppOpen; if (op < 0.0f) op = 0.0f; if (op > 1.0f) op = 1.0f;
     float e  = Smoothstep(op);
     const float bodyA = gameOverlay ? 0.86f : 0.99f;
     BindMainShader();
-    if (dimAlpha > 0.0f) drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, dimAlpha * e);
     if (e < 0.999f) {
         float dw = WW * e, dh = WH * e;
         float dx = sw*0.5f - dw*0.5f, dy = sh*0.5f - dh*0.5f;

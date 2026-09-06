@@ -1,4 +1,4 @@
-// Windows ?�더�?glad보다 먼�? ??APIENTRY 매크�?중복 ?�의 방�?
+﻿// Windows ?�더�?glad보다 먼�? ??APIENTRY 매크�?중복 ?�의 방�?
 #ifdef _WIN32
   #include <windows.h>
   #include <dwmapi.h>   // DwmIsCompositionEnabled (진단??
@@ -47,6 +47,8 @@
 #include "Augment.h"
 #include "PlayerStats.h"
 #include "TextRenderer.h"
+#include "PlanetShader.h"
+#include "NebulaGlowShader.h"
 #include "Settings.h"
 #include "UiColors.h"
 #include "ExpSystem.h"
@@ -71,7 +73,7 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "advapi32.lib")   // RegOpenKeyExA / RegQueryValueExA / RegCloseKey
 #pragma comment(lib, "winmm.lib")      // timeBeginPeriod / timeEndPeriod (FPS �??��???
-// dwmapi.lib ?� WindowFx.cpp ?�서 링크
+// dwmapi.lib ?�?WindowFx.cpp ?�서 링크
 #endif
 
 #ifdef _MSC_VER
@@ -82,14 +84,14 @@ extern "C++" {
 #endif
 
 // ?�명???�퍼??WindowFx.h/cpp �??�동
-// (EnableWindowTransparency ?� TransparencyLog 가 ?�일 기능)
+// (EnableWindowTransparency ?�?TransparencyLog 가 ?�일 기능)
 #define DBG TransparencyLog
 
 GameManager    g_GameManager;
 MonsterManager g_MonsterManager;
 std::vector<Bullet> g_Bullets;
 
-// ?�?� 개발???�리?�이?�브) 모드 ???�감 검?�창 ?�스?�에그로�??�금 ?�?�
+// ?�?�?개발???�리?�이?�브) 모드 ???�감 검?�창 ?�스?�에그로�??�금 ?�?�?
 //    출시 빌드???�리?�이?�브 진입?�이 ?�겨???�고, ?�감 검?�에 ?�크�?코드�?//    ?�력?�면 ?�금?�어 ?�이???�면???��????�장?�다. (?�반 ?�레?�어??�?�?
 bool    g_DevUnlocked   = false;
 float   g_DevToastTimer = 0.0f;            // ?�금 ?�인 ?�스??(�?
@@ -331,7 +333,7 @@ static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
 
 CentipedeBoss* g_CentiBoss = nullptr;
 TesseractGlitchBoss* g_TessBoss = nullptr;
-// ?�?� 배드 ?�터 ?�망 ?�류�????�시 감속 구역(?�상 ?�역). ?�에 ?�으�??�동?�도 -10% ?�?�
+// ?�?�?배드 ?�터 ?�망 ?�류�????�시 감속 구역(?�상 ?�역). ?�에 ?�으�??�동?�도 -10% ?�?�?
 //   즉시 ?�기지 ?�고 ZONE_OPEN(0.7�???걸쳐 ?�점 부?�되???�짐(grow factor = age/OPEN).
 struct SlowZone { float x, y, w, h, life, maxLife, age; };
 std::vector<SlowZone> g_SlowZones;
@@ -347,19 +349,19 @@ inline void SpawnBadSectorZone(const Monster* m) {
     g_SlowZones.push_back({ m->worldX - w*0.5f, m->worldY - h*0.5f, w, h, 5.0f, 5.0f, 0.0f });
 }
 
-// ?�?� ?�캔 ?�이?� (증강) ??주기??관??�?+ ?�이??비주???�?�
+// ?�?�??�캔 ?�이?�?(증강) ??주기??관??�?+ ?�이??비주???�?�?
 struct LaserBeam { float ox, oy, ex, ey, life, maxLife; float width = 1.0f; };
 std::vector<LaserBeam> g_LaserBeams;
 float          g_LaserTimer = 0.0f;
 constexpr float LASER_INT   = 0.85f;  // 발사 주기(�? ???�프: 0.7
 
-// ?�?� 백신 ?�캔 (증강) ??주기?�으�??�레?�어 주�????�화 ?�스(범위 ?�소) ?�?�
+// ?�?�?백신 ?�캔 (증강) ??주기?�으�??�레?�어 주�????�화 ?�스(범위 ?�소) ?�?�?
 //   ?�각 링�? 기존 SpawnShockWave(?�창 �? ?�사??
 float          g_NovaTimer  = 0.0f;
 constexpr float NOVA_INT    = 2.4f;    // ?�스 주기(�? 중첩 ???�축)
 constexpr float NOVA_R      = 240.0f;  // 기본 반경(중첩 ???��?)
 
-// ?�?� 보스 ?�장 ?�조(증상) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+// ?�?�?보스 ?�장 ?�조(증상) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
 //   보스 ?�폰??"결정 ??2.5�??�조(?�마 증상 + 경고 배너) ???�제 ?�성" ?�로 분리.
 //   ?�조 ?�안 게임?�레?�는 계속(?�레그래??. 만료 ??결정??보스�??�제�??�성.
 float          g_BossWarnTimer = 0.0f;          // >0 ?�면 ?�조 진행 �?(?��? ?�간)
@@ -393,10 +395,10 @@ float g_WinPrevHP     = -1.0f;    // �?축소??HP 추적
 float g_HurtVignette  = 0.0f;     // ?�격 빨간 비네???�여
 float g_HpBarPop      = 0.0f;     // ?�나비식 HP 게이지�????�격 ???�다가 ?�이??�?
 
-// ?�?� ?�티�??�킬 ?�스?????�??기본) + ?�롯 3�?증강 ?�득, �?차면 교체) ?�?�
+// ?�?�??�티�??�킬 ?�스?????�??기본) + ?�롯 3�?증강 ?�득, �?차면 교체) ?�?�?
 float g_DashCd        = 0.0f;
 float g_DashInvuln    = 0.0f;
-float g_PostPickGrace = 0.0f;      // C14: 증강 ????짧�? ?�예(무적+발사?�제)�?복�? ?�
+float g_PostPickGrace = 0.0f;      // C14: 증강 ????짧�? ?�예(무적+발사?�제)�?복�? ?�?
 float g_TimeStopTimer = 0.0f;
 float g_HyperFocusTimer = 0.0f;
 
@@ -470,10 +472,10 @@ int    g_CurrentFPS  = 0;
 double g_FpsLastTime = 0.0;
 int    g_FpsFrames   = 0;
 
-// ���� ���� �ε��� ��� (���� �������, �ߺ� ���� ����)
+// ���� ���� �ε��� ���?(���� �������? �ߺ� ���� ����)
 std::vector<int> g_OwnedAugs;
 
-// ũ������Ƽ�� ��� ���� ���� ���� ���� (�ε���). ���� ���� �� �ϰ� ����.
+// ũ������Ƽ�� ���?���� ���� ���� ���� (�ε���). ���� ���� �� �ϰ� ����.
 std::vector<int> g_CreativeStartAugList;
 bool g_CreativeStartPending = false;   // ?�용 ?��?(main 루프가 applyByIdx �?처리)
 
@@ -654,34 +656,26 @@ static void DrawPlayerZigzagLine(float x0, float y0, float x1, float y1,
     }
 }
 
-static void DrawPlayerWindowFrame(float x, float y, float w, float h) {
-    const float r = 0.38f, g = 0.94f, b = 1.0f;
-    PlayerShellKind kind = CurrentPlayerShellKind();
-    if (kind == PlayerShellKind::StaticField) {
-        float cx = x + w * 0.5f, cy = y + h * 0.5f;
-        float rad = std::min(w, h) * 0.41f;
-        float t = (float)glfwGetTime();
-        DrawPlayerHexFrame(cx, cy, rad, 0.5235988f, r, g, b, 0.62f, 2.0f, true);
-        DrawPlayerHexFrame(cx, cy, rad * 0.72f, 0.5235988f + t * 0.035f,
-                           r, g, b, 0.14f, 1.2f, false);
-        for (int i = 0; i < 6; i += 2) {
-            float th = t * 0.22f + (float)i * 1.04719755f;
-            drawDiamond(cx + cosf(th) * rad * 0.57f,
-                        cy + sinf(th) * rad * 0.57f,
-                        5.0f, r, g, b, 0.30f);
-        }
-        return;
-    }
+// In-game regions remain rectangular for scissor/collision logic, but their
+// visual identity is reduced to a light signal frame instead of a fake window.
+static void DrawInGameSignalFrame(float x, float y, float w, float h,
+                                  float r, float g, float b, float alpha) {
+    if (w < 24.0f || h < 24.0f || w != w || h != h) return;
+    const float corner = std::max(10.0f, std::min(22.0f, std::min(w, h) * 0.12f));
+    drawConstellFrame(x, y, w, h, r, g, b, alpha, corner, 3.0f, alpha * 0.12f, 1.0f);
+}
 
-    float cLen = 26.0f;
-    float node = (kind == PlayerShellKind::Cannon) ? 7.5f : 5.5f;
-    float edge = 0.16f;
-    drawConstellFrame(x, y, w, h, r, g, b, 0.78f, cLen, node, edge, 1.0f);
-
-    if (kind == PlayerShellKind::Cannon) {
-        float pad = 10.0f;
-        drawRect(x + pad, y + h * 0.28f, 4.0f, h * 0.44f, r, g, b, 0.30f);
-        drawRect(x + w - pad - 4.0f, y + h * 0.28f, 4.0f, h * 0.44f, r, g, b, 0.30f);
+static void DrawPlayerSightMarker(float cx, float cy, float radius,
+                                  float r, float g, float b, float alpha) {
+    if (radius <= 0.0f || radius != radius) return;
+    if (g_ConstellationCircleTex && g_IconProg) {
+        BatchFlush();
+        const float screenRadius = radius * std::max(0.01f, g_ViewZoom);
+        DrawIcon(g_ConstellationCircleTex, W2SX(cx) - screenRadius,
+                 W2SY(cy) - screenRadius, screenRadius * 2.0f,
+                 screenRadius * 2.0f, r, g, b, alpha);
+    } else {
+        drawCircle(cx, cy, radius, r, g, b, alpha);
     }
 }
 
@@ -1269,7 +1263,7 @@ int main() {
 
     // ?�행 ?�일 ?�더�??�업 ?�렉?�리 ?�동 (Resource/ ?��?경로 로드 보장)
     PlatformChdirToExeDir();
-    LoadGame();   // ����� ����/��� �ҷ����� (������ �⺻�� ����)
+    LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
 #if defined(__APPLE__)
     // ���� �� ���� 1ȸ: CRT OFF + VFX �淮 (�������� �ٽ� �� �� ����)
     if (!g_MacOptV1) {
@@ -1280,7 +1274,7 @@ int main() {
         SaveGame();
     }
 #endif
-    ApplyAccentTheme();   // ����� �׼�Ʈ �׸� �� g_Accent* �ݿ�
+    ApplyAccentTheme();   // �����?�׼�Ʈ �׸� �� g_Accent* �ݿ�
 
     if (!glfwInit()) return -1;
     // Sleep ?�상??1ms �?(FPS �??��??�용). Windows �??��? ?�음
@@ -1315,7 +1309,7 @@ int main() {
     // macOS ??3.2+ Core ?�서 forward-compatible 컨텍?�트 ?�수
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
     // ?�티??HiDPI) 2× 백버???�기 ???�레?�버??= �??�기(?? 1:1
-    //   좌표/?�크issor/마우?��? ?��? ???�위�??�치 ??Windows ?� ?�일?�게 ?�작
+    //   좌표/?�크issor/마우?��? ?��? ???�위�??�치 ??Windows ?�??�일?�게 ?�작
     //   (???�면 게임???�면 좌하??1/4 ?�만 그려지�??�릭 ?�치가 ?�긋??
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 #endif
@@ -1379,7 +1373,7 @@ int main() {
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
 
-    // ��Ʈ: exe ��ġ�� ���� Resource ��� ��ΰ� �޶��� �� �־� ���� �����ϴ� ��θ� ������.
+    // ��Ʈ: exe ��ġ�� ���� Resource ���?��ΰ�?�޶��� �� �־� ���� �����ϴ� ��θ�?������.
     {
         auto fileExists = [](const char* path) -> bool {
 #ifdef _MSC_VER
@@ -1432,6 +1426,23 @@ int main() {
         g_TextS.InitFromFiles(chain, nFonts, 22,  screenWidth, screenHeight);
         g_TextXL.InitFromFiles(chain, nFonts, 100, screenWidth, screenHeight);
         g_TextS.SetMinScale(0.58f);
+
+        // Warm only characters used by the game. The renderer caches glyphs
+        // lazily, so this removes first-use stalls without baking all Hangul.
+        for (int si = 0; si < (int)StrId::_COUNT; ++si) {
+            for (int li = 0; li < LANG_COUNT; ++li) {
+                g_TextL.PreloadText(kStrings[si][li]);
+                g_TextS.PreloadText(kStrings[si][li]);
+            }
+        }
+        for (int ai = 0; ai < AUG_TOTAL; ++ai) {
+            for (int li = 0; li < LANG_COUNT; ++li) {
+                g_TextL.PreloadText(ALL_AUGS[ai].locName[li]);
+                g_TextL.PreloadText(ALL_AUGS[ai].locDesc[li]);
+                g_TextS.PreloadText(ALL_AUGS[ai].locName[li]);
+                g_TextS.PreloadText(ALL_AUGS[ai].locDesc[li]);
+            }
+        }
     }
 
     BatchFlush(); glEnable(GL_BLEND);
@@ -1464,7 +1475,7 @@ int main() {
         const char* glVer    = (const char*)glGetString(GL_VERSION);
         const char* vendor   = (const char*)glGetString(GL_VENDOR);
         // AMD/ATI 감�? ??AMD ?�라?�버??GLSL 컴파?�이 ???�격?�고 ?�명 FBO 처리가
-        //   NVIDIA ?� ?�라, 벤더�?로그�??�겨 검?�?�면/?�명?�패 ?�인 추적???�용.
+        //   NVIDIA ?�??�라, 벤더�?로그�??�겨 검?�?�면/?�명?�패 ?�인 추적???�용.
         bool isAMD = false;
         if (vendor) {
             std::string vlow = vendor;
@@ -1519,6 +1530,8 @@ int main() {
 
     InitMainShaderPipeline(screenWidth, screenHeight);
     InitMainBatchGeometry(screenWidth, screenHeight);
+    InitPlanetShader(screenWidth, screenHeight);
+    InitNebulaGlowShader(screenWidth, screenHeight);
 
     // --- 게임 ?�브?�트 초기??---
     FakeWindow playerWin(0, "Onedow",
@@ -1721,8 +1734,9 @@ int main() {
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // �??�복
             g_ZoomCX = g_ZoomCY = 0.0f;
             g_Difficulty = Difficulty::NORMAL;
-            rangedSpawnTimer = TrialRangedInitialDelay(
-                GetDifficultyParams(Difficulty::NORMAL).rangedSpawnInitialDelay);
+            // Keep the first ranged-mob interval active from run start so its
+            // silhouette can be inspected without a score-based warm-up.
+            rangedSpawnTimer = 0.0f;
             spawnTimer        = 0.0f;
             g_DyingTimer      = 0.0f;
             g_DeathBoomDone   = false;
@@ -1770,7 +1784,7 @@ int main() {
         }
         g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
 
-        // ?�?� BGM ??게임?�레??중엔 메인 루프, 메뉴?�선 ?��? (보스 BGM ?� ?�일 ?�기�??�장) ?�?�
+        // ?�?�?BGM ??게임?�레??중엔 메인 루프, 메뉴?�선 ?��? (보스 BGM ?�??�일 ?�기�??�장) ?�?�?
         {
             Audio::SetEnabled(g_SoundVol > 0);            // 0 = ?�기
             Audio::SetVolume(g_SoundVol / 100.0f);        // 마스??볼륨
@@ -1782,7 +1796,7 @@ int main() {
             else       Audio::StopBgm();
         }
 
-        // ?�리?�이?�브 무적 ??�??�레??체력 ?� 고정 (?��? 죽�? ?�음)
+        // ?�리?�이?�브 무적 ??�??�레??체력 ?�?고정 (?��? 죽�? ?�음)
         if (g_CreativeGodmode && g_CreativeMode &&
             g_GameManager.currentState == GameState::RUNNING) {
             g_GameManager.playerHP = g_Stats.maxHP;
@@ -1791,7 +1805,7 @@ int main() {
         // HP 0 ??MK2 부??OR DYING (1�??�로??모션 ??GAMEOVER)
         if (g_GameManager.playerHP <= 0.0f &&
             g_GameManager.currentState == GameState::RUNNING) {
-            // MK2: 1??부????공격??비�? ??�� + ?� HP (?�널???�음)
+            // MK2: 1??부????공격??비�? ??�� + ?�?HP (?�널???�음)
             if (g_Stats.mk2 && !g_Stats.mk2Used) {
                 g_Stats.mk2Used = true;
                 float pCX = playerWin.x + playerWin.width  * 0.5f;
@@ -1824,7 +1838,7 @@ int main() {
                         if (bm->hp <= 0) bm->alive = false;
                     }
                 }
-                // �ð� ȿ�� ? ���� + ����� + ȭ�� ����
+                // �ð� ȿ�� ? ���� + �����?+ ȭ�� ����
                 SpawnEnemyExplosion(pCX, pCY, 1.0f, 0.8f, 0.3f, true);
                 SpawnEnemyExplosion(pCX, pCY, 0.4f, 1.0f, 0.8f, true);
                 SpawnShockWave(pCX, pCY, blastRad * 1.4f, 0.55f,
@@ -1833,7 +1847,7 @@ int main() {
                 TriggerFlash(1.0f, 0.9f, 0.4f, 0.8f);   // 부????강한 번쩍
                 TriggerHitStop(0.14f);                  // ?�팩???��?
 
-                // 부?????�력�??�널???�이 ?� HP �?(?�버???�음)
+                // 부?????�력�??�널???�이 ?�?HP �?(?�버???�음)
                 g_GameManager.maxHP    = g_Stats.maxHP;
                 g_GameManager.playerHP = g_Stats.maxHP;
                 g_PrevHP               = g_GameManager.playerHP;
@@ -1908,7 +1922,7 @@ int main() {
                 g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?�망 ???��?�??�조 취소
                 g_RRWasP2 = g_RRWasP3 = false;
                 g_TessWasP2 = g_TessWasP3 = false;
-                g_LaserBeams.clear();   // ?�캔 ?�이?� �??�리
+                g_LaserBeams.clear();   // ?�캔 ?�이?�?�??�리
                 g_SlowZones.clear(); g_BadSectorBleed = 0.0f;   // 배드 ?�터 감속 구역/출혈 ?�리
                 g_NovaTimer = 0.0f;   // 백신 ?�캔 ?�리
                 // ?�레?�어 중심 ?�??�� + 충격??+ ?�광 + ?�들�?+ 방사???�편
@@ -2028,7 +2042,7 @@ int main() {
                     g_Stats = PlayerStats();
                     g_Stats.windowSize *= g_Scale;          // �????�상??비�? ?��?
                     // 무기/직업 ?�체?��? ?��? ??CHAOS ??증강�??�추첨한??
-                    //   (검�?궁수가 기본 총으�?바뀌던 버그 fix. 증강?� ???�래???�에 ??��)
+                    //   (검�?궁수가 기본 총으�?바뀌던 버그 fix. 증강?�????�래???�에 ??��)
                     if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
                         ApplyWeapon(g_Stats, (StartWeapon)g_CurrentWeapon);
                     if (g_RunMelee)    { g_Stats.meleeWeapon = true; g_Stats.fireInterval = 0.26f; }
@@ -2053,7 +2067,7 @@ int main() {
                     g_GameManager.PickRandomDebuffIndices(debuffs, nDebuffs);
                     for (int k = 0; k < nBuffs;   k++) applyByIdx(buffs[k]);
                     for (int k = 0; k < nDebuffs; k++) applyByIdx(debuffs[k]);
-                    // ��ų ���� ? reroll �� ���� ��� ���� ������
+                    // ��ų ���� ? reroll �� ���� ���?���� ������
                     ReequipSkillsFromOwned(g_OwnedAugs.data(), (int)g_OwnedAugs.size());
                     // ���� �з�(����/ĸ/����)�� reroll ���� �� ���� �� ���� ? ��ȥ�� �� �ް� ����
                     g_Stats.mobSpawnMult  = std::min(g_Stats.mobSpawnMult,  saveSpawnMult);
@@ -2104,7 +2118,7 @@ int main() {
                 }
             };
 
-            constexpr float AUG_EXIT_DUR = 1.35f;
+            constexpr float AUG_EXIT_DUR = 1.70f;  // 공전 흡수(0~0.65) + 슈퍼노바(0.65~1.20) + 여유
 
             // exit anim timer -- fires applyAug when done
             bool augExitFired = false;
@@ -2141,21 +2155,7 @@ int main() {
                     g_GameManager.spaceReleased = false;
                 }
 
-                // mouse hit-test -> hover (exit �� ����)
-                if (lmb && !g_LmbPrev && g_AugExitT < 0.0f) {
-                    const float CARD_W = 280.0f, CARD_H = 430.0f, GAP = 40.0f;
-                    float baseX = (screenWidth  - 3.0f * CARD_W - 2.0f * GAP) * 0.5f;
-                    float baseY = (screenHeight - CARD_H) * 0.4f;
-                    for (int i = 0; i < 3; i++) {
-                        float cx   = baseX + i * (CARD_W + GAP);
-                        float yOff = (g_HoveredAug == i) ? -20.0f : 0.0f;
-                        if (mx >= cx && mx <= cx + CARD_W &&
-                            my >= baseY + yOff && my <= baseY + yOff + CARD_H) {
-                            g_HoveredAug = i;
-                            break;
-                        }
-                    }
-                }
+
             }
         }
 
@@ -2290,7 +2290,7 @@ int main() {
                 g_CreativeGodmode = !g_CreativeGodmode;
                 s_gkeyReleased = false;
             }
-            // B ? ���� ���� ��� ���� (None�̸� VOLLEY.sys)
+            // B ? ���� ���� ���?���� (None�̸� VOLLEY.sys)
             static bool s_bkeyReleased = true;
             int kB = glfwGetKey(window, GLFW_KEY_B);
             if (kB == GLFW_RELEASE) s_bkeyReleased = true;
@@ -2317,7 +2317,7 @@ int main() {
         while (accumulator >= FIXED_DT) {
             if (g_GameManager.ShouldUpdate()) {
                 g_PlayerDmgMult = g_Stats.GetDamageTakenMult();
-                // WASD ?�동 ???�각선 normalize (vec 모아??길이�??�눔)
+                // WASD ?�동 ???�각??normalize (vec 모아??길이�??�눔)
                 float mvX = 0.0f, mvY = 0.0f;
                 if (keys[GLFW_KEY_W]) mvY -= 1.0f;
                 if (keys[GLFW_KEY_S]) mvY += 1.0f;
@@ -2347,7 +2347,7 @@ int main() {
                     float curMove  = MOVE_SPEED * moveMult * zoneSlow;
                     playerWin.x += mvX * curMove * FIXED_DT;
                     playerWin.y += mvY * curMove * FIXED_DT;
-                    // FORK.worm ?�래??�????�반 ?�동?� 직선??막힘, ?�??무적 �????�과
+                    // FORK.worm ?�래??�????�반 ?�동?�?직선??막힘, ?�??무적 �????�과
                     if (g_CentiBoss && g_CentiBoss->alive && g_DashInvuln <= 0.0f) {
                         float wpcx = playerWin.x + playerWin.width  * 0.5f;
                         float wpcy = playerWin.y + playerWin.height * 0.5f;
@@ -2385,7 +2385,7 @@ int main() {
                 float pCY = playerWin.y + playerWin.height * 0.5f;
                 if (pCX < ccX - halfW) pCX = ccX - halfW;
                 if (pCX > ccX + halfW) pCX = ccX + halfW;
-                // ���: �÷��̾� �߽��� Ÿ��Ʋ�� �Ʒ��� ��ġ
+                // ���? �÷��̾� �߽��� Ÿ��Ʋ�� �Ʒ��� ��ġ
                 {
                     float topLimit = ccY + (BROWSER_CHROME_H - ccY) / zoomNow;
                     if (pCY < topLimit) pCY = topLimit;
@@ -2397,7 +2397,7 @@ int main() {
                 playerWin.x = pCX - playerWin.width  * 0.5f;
                 playerWin.y = pCY - playerWin.height * 0.5f;
 
-                // ?�?� ?�티�??�킬 ??쿨다??지??갱신 + ?�력(Shift ?�??/ Q·E·R ?�롯) ?�?�
+                // ?�?�??�티�??�킬 ??쿨다??지??갱신 + ?�력(Shift ?�??/ Q·E·R ?�롯) ?�?�?
                 if (g_DashCd > 0.0f)        g_DashCd        -= FIXED_DT;
                 if (g_DashInvuln > 0.0f)    g_DashInvuln    -= FIXED_DT;
                 if (g_PostPickGrace > 0.0f) g_PostPickGrace -= FIXED_DT;  // C14
@@ -2473,7 +2473,7 @@ int main() {
                 else
                     g_FocusStandTimer = 0.0f;
 
-                // �÷��� ��� ? ���� �̵� + ª�� ����
+                // �÷��� ���?? ���� �̵� + ª�� ����
                 static bool pDash=false, pQ=false, pE=false, pR=false;
                 if (g_DashActive) {
                     g_DashT += FIXED_DT / DASH_DUR;
@@ -2535,6 +2535,42 @@ int main() {
                 bool cR = keys[GLFW_KEY_R]; if (cR && !pR) useSkill(2); pR = cR;
                 // C16: ?�티�??�킬 ?�동 ?�용 ??쿨다???�난 ?�롯???�동 발동
                 if (g_AutoSkill) for (int i = 0; i < 3; i++) useSkill(i);
+
+                // GRAVIS field: one force evaluation per active station. It
+                // bends velocity only, so bullets keep their forward motion.
+                for (auto* gravis : g_MonsterManager.monsters) {
+                    if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
+                    const float fieldR = 285.0f;
+                    float gx = gravis->worldX - pCX;
+                    float gy = gravis->worldY - pCY;
+                    float gd2 = gx * gx + gy * gy;
+                    if (!g_DashActive && gd2 > 36.0f && gd2 < fieldR * fieldR) {
+                        const float gd = sqrtf(gd2);
+                        const float influence = 1.0f - gd / fieldR;
+                        const float pullStep = (24.0f + 58.0f * influence) * influence * FIXED_DT;
+                        pCX += gx / gd * pullStep;
+                        pCY += gy / gd * pullStep;
+                    }
+                    for (auto& b : g_Bullets) {
+                        if (!b.active) continue;
+                        float bx = gravis->worldX - b.x;
+                        float by = gravis->worldY - b.y;
+                        float bd2 = bx * bx + by * by;
+                        if (bd2 <= 64.0f || bd2 >= fieldR * fieldR) continue;
+                        const float bd = sqrtf(bd2);
+                        const float influence = 1.0f - bd / fieldR;
+                        const float curve = (0.34f + 1.18f * influence) * FIXED_DT;
+                        b.dirX += bx / bd * curve;
+                        b.dirY += by / bd * curve;
+                        const float dl = sqrtf(b.dirX * b.dirX + b.dirY * b.dirY);
+                        if (dl > 0.0001f) { b.dirX /= dl; b.dirY /= dl; }
+                    }
+                }
+                pCX = std::max(ccX - halfW, std::min(ccX + halfW, pCX));
+                pCY = std::max(ccY + (BROWSER_CHROME_H - ccY) / zoomNow,
+                               std::min(bottomLimit, pCY));
+                playerWin.x = pCX - playerWin.width * 0.5f;
+                playerWin.y = pCY - playerWin.height * 0.5f;
 
                 // 총알 ?�동 + ?�면 �?비활?�화 (+ ?�도??보정)
                 for (auto& b : g_Bullets) {
@@ -2600,10 +2636,10 @@ int main() {
                     }
                 }
 
-                // ?�??무적 ???�번 ?�텝 ?�작 HP ?�??(???�해??무효, ?�복?� ?��?)
+                // ?�??무적 ???�번 ?�텝 ?�작 HP ?�??(???�해??무효, ?�복?�??��?)
                 float hpAtStep = g_GameManager.playerHP;
                 TickPlayerShield(FIXED_DT);
-                //   ???��? = ?�간?��? ?�킬 OR 증강 ??직후 ~0.05s("?�이 ?�", 짧게)
+                //   ???��? = ?�간?��? ?�킬 OR 증강 ??직후 ~0.05s("?�이 ?�?, 짧게)
                 bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.45f);
                 float enemyDt = FIXED_DT;
                 if (!timeStopped && g_HyperFocusTimer > 0.0f) enemyDt *= 0.7f;
@@ -2651,6 +2687,30 @@ int main() {
                                                g_GameManager.playerHP, g_Bullets,
                                                g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
                                                rmobMoveMult * mobSpdRamp * focusSlow);
+
+                    // Large controller enemies must remain readable on-screen.
+                    // Reflect their free-drift heading when the safe viewport is
+                    // reached so they do not idle beyond the visible arena.
+                    for (auto* m : g_MonsterManager.monsters) {
+                        if (!m || !m->alive ||
+                            (m->kind != MobKind::GRAVIS && m->kind != MobKind::QUASAR)) continue;
+                        const float margin = m->kind == MobKind::GRAVIS ? 92.0f : 76.0f;
+                        const float minX = margin;
+                        const float maxX = std::max(minX, (float)screenWidth - margin);
+                        const float minY = margin;
+                        const float maxY = std::max(minY, (float)screenHeight - margin);
+                        const bool hitX = m->worldX < minX || m->worldX > maxX;
+                        const bool hitY = m->worldY < minY || m->worldY > maxY;
+                        m->worldX = std::max(minX, std::min(maxX, m->worldX));
+                        m->worldY = std::max(minY, std::min(maxY, m->worldY));
+                        if (m->kind == MobKind::GRAVIS) {
+                            if (hitX) m->gravisDriftAngle = 3.14159265f - m->gravisDriftAngle;
+                            if (hitY) m->gravisDriftAngle = -m->gravisDriftAngle;
+                        } else {
+                            if (hitX) m->quasarMoveAngle = 3.14159265f - m->quasarMoveAngle;
+                            if (hitY) m->quasarMoveAngle = -m->quasarMoveAngle;
+                        }
+                    }
                 }
                 if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
                     const float winSz = g_WindowSizeCur > 1.0f ? g_WindowSizeCur : g_Stats.windowSize;
@@ -2683,7 +2743,7 @@ int main() {
                                         g_Bullets, g_Difficulty, g_Stats.maxHP);
 
 
-                // ?�리모프 ?�데?�트 (??변??+ ?�모/?�이?�/차크?? + ?�이�? ?�면 ?�장
+                // ?�리모프 ?�데?�트 (??변??+ ?�모/?�이?�?차크?? + ?�이�? ?�면 ?�장
 
                 
                 // FORK.worm ?�데?�트 (지그재�?배회 + ?�면�??�탈?�재진입 ?�진)
@@ -2755,7 +2815,7 @@ int main() {
                     if (g_Bullets.size() > 2800)
                         g_Bullets.erase(g_Bullets.begin() + 2800, g_Bullets.end());
                 }
-                // ?�??무적 / 증강???�예(C14) ???�번 ?�텝?????�해 무효 (?�복?� ?��?)
+                // ?�??무적 / 증강???�예(C14) ???�번 ?�텝?????�해 무효 (?�복?�??��?)
                 if ((g_DashInvuln > 0.0f || g_PostPickGrace > 0.0f) &&
                     g_GameManager.playerHP < hpAtStep)
                     g_GameManager.playerHP = hpAtStep;
@@ -2846,7 +2906,7 @@ int main() {
 
                 
                 // FORK.worm ?�래??�???총알??직선??가로�?르면 �??��??�림.
-                //   ?�반?��? 벽에 막�? ?�멸(관??X). 관?�탄(remainingDmg>0)?� ?�과.
+                //   ?�반?��? 벽에 막�? ?�멸(관??X). 관?�탄(remainingDmg>0)?�??�과.
                 if (g_EtherBoss && g_EtherBoss->alive && !g_EtherBoss->BodyInvulnerable()) {
                     auto* eb = g_EtherBoss;
                     for (auto& b : g_Bullets) {
@@ -2921,7 +2981,7 @@ int main() {
                     }
                 }
 
-                // FORK.worm 몸통 ?�드 ???�격 VFX (?��?지??머리 HP ?�, ?�래?�만)
+                // FORK.worm 몸통 ?�드 ???�격 VFX (?��?지??머리 HP ?�? ?�래?�만)
                 if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) {
                     auto* cb2 = g_CentiBoss;
                     for (auto& b : g_Bullets) {
@@ -3006,7 +3066,7 @@ int main() {
                         else
                             SpawnEnemyExplosion(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b, false);
                         m->exploded = true;
-                        // 처치 ?�출 ???�로?�스 종료 ?�그 (강적?� ??�� 강조)
+                        // 처치 ?�출 ???�로?�스 종료 ?�그 (강적?�???�� 강조)
                         {
                             static const wchar_t* W[5] =
                                 { L"terminated", L"killed", L"ended", L"exited", L"0x1B" };
@@ -3172,7 +3232,7 @@ int main() {
                 for (auto bm : g_MonsterManager.bombers) {
                     if (!bm->alive && !bm->exploded) {
                         bool blast = bm->arming;
-                        // ?�폭(blast)?� 보상 ?�음. ?�레?�어가 죽인 경우(!blast)�?
+                        // ?�폭(blast)?�?보상 ?�음. ?�레?�어가 죽인 경우(!blast)�?
                         //   그리�??�직 ?�산 ???�으�?광역 처치 ?? 보상 지�?
                         if (!bm->scored && !blast) {
                             bm->scored = true;
@@ -3244,7 +3304,7 @@ int main() {
             accumulator -= FIXED_DT;
         }
 
-        // ?�?� ?�맛: ?��?지 ?�자 / 콤보 / ?�래??�??�레??갱신 (게임 진행 중에�?감쇠) ?�?�
+        // ?�?�??�맛: ?��?지 ?�자 / 콤보 / ?�래??�??�레??갱신 (게임 진행 중에�?감쇠) ?�?�?
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::DYING) {
             for (auto& d : g_DmgNumbers) {
@@ -3284,7 +3344,7 @@ int main() {
             bool  moving = keys[GLFW_KEY_W] || keys[GLFW_KEY_S] ||
                            keys[GLFW_KEY_A] || keys[GLFW_KEY_D];
 
-            // ?�?� ?�격 ?��???HP 감소 ??빨간 비네?�만 (?�야 변???�거, �??�기 고정) ?�?�
+            // ?�?�??�격 ?��???HP 감소 ??빨간 비네?�만 (?�야 변???�거, �??�기 고정) ?�?�?
             {
                 if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
                 float lost = g_WinPrevHP - g_GameManager.playerHP;
@@ -3294,7 +3354,7 @@ int main() {
             if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
             if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
 
-            // HP ��� (REGEN_UP, �Ŵ�ȭ, ��� II �� regenPerSec �ջ�)
+            // HP ���?(REGEN_UP, �Ŵ�ȭ, ���?II �� regenPerSec �ջ�)
             if (g_Stats.regenPerSec > 0.0f) {
                 g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * delta;
                 if (g_GameManager.playerHP > g_Stats.maxHP)
@@ -3329,7 +3389,7 @@ int main() {
             if (!g_MonsterManager.rangedMobs.empty()) MarkMobSeenId(CM_RANGED);
             if (!g_MonsterManager.bombers.empty())    MarkMobSeenId(CM_BOMBER);
 
-            // ?�적 조건 체크 (???�수/??보유 증강 기�? ??보스 ?�적?� 처치 ?�점?�서 처리)
+            // ?�적 조건 체크 (???�수/??보유 증강 기�? ??보스 ?�적?�?처치 ?�점?�서 처리)
             {
                 long long runScore = g_GameManager.score;
                 long long runKills = g_Stats.killCount;
@@ -3419,12 +3479,22 @@ int main() {
 
             const float p2mult = 1.0f;
 
+            // Debug runs need to reach late enemy silhouettes quickly. Keep
+            // this test-only acceleration isolated from release balance.
+#if defined(_DEBUG)
+            constexpr float kEnemySpawnTimeScale = 4.0f;
+            constexpr float kEnemySpawnIntervalScale = 0.45f;
+#else
+            constexpr float kEnemySpawnTimeScale = 1.0f;
+            constexpr float kEnemySpawnIntervalScale = 1.0f;
+#endif
+
             // Time-based low-density spawn curve. Early game starts with only a few stronger mobs,
             // then density opens gradually by elapsed run time instead of score.
             BossDir::ActRules act = BossDir::GetActRules();
             float intensity = (float)g_GameManager.score / 100000.0f;
             if (intensity > act.intensityCap) intensity = act.intensityCap;
-            float elapsedSec = g_GameTime;
+            float elapsedSec = g_GameTime * kEnemySpawnTimeScale;
             float spawnT = elapsedSec / 300.0f;
             if (spawnT > 1.0f) spawnT = 1.0f;
             if (spawnT < 0.0f) spawnT = 0.0f;
@@ -3445,29 +3515,27 @@ int main() {
             if (hpLateT > 1.0f) hpLateT = 1.0f;
             if (hpLateT < 0.0f) hpLateT = 0.0f;
             float scoreHpRamp = 1.0f + hpIntensity * 0.15f;
-            float rampHp = (1.22f + hpT * 1.05f + hpLateT * 0.70f) * scoreHpRamp;
+            // Keep the time ramp and trial multipliers meaningful, but stop
+            // the combined late-game HP from making regular mobs feel spongy.
+            constexpr float kRegularEnemyHpScale = 0.80f;
+            float rampHp = (1.22f + hpT * 1.05f + hpLateT * 0.70f)
+                         * scoreHpRamp * kRegularEnemyHpScale;
             int   varietyPct = (int)(std::min(42.0f * g_Stats.varietyChanceMult,
                                    spawnT * 34.0f * g_Stats.varietyChanceMult)
                                + (float)act.varietyBias);
-            float eliteT = (elapsedSec - 75.0f) / 300.0f;
-            if (eliteT > 1.0f) eliteT = 1.0f;
-            if (eliteT < 0.0f) eliteT = 0.0f;
-            int   elitePct   = (int)(std::min(34.0f,
-                                   eliteT * 26.0f * g_Stats.eliteChanceMult)
-                               + (float)act.eliteBias);
             varietyPct += TrialVarietyBiasBonus(g_GameManager.score);
-            elitePct   += TrialEliteBiasBonus(g_GameManager.score);
             if (varietyPct > 60) varietyPct = 60;
-            if (elitePct > 55) elitePct = 55;
 
             // ?�폰 ?�역 ??2?�이�?줌아?????�장??보이?? ?�역 모서리에???�폰.
             float saX = 0.0f, saY = 0.0f;
             int   saW = screenWidth, saH = screenHeight;
 
-            // ?�몹 ?�폰 (D_MOB_SPAWN ?????�주 + cap +200, D_MOB_HP ??HP+, ?�수 ?�프)
+            // Mob spawn: time ramp plus controlled augment pressure.
             spawnTimer += delta;
-            float spawnInterval = 0.75f * g_Stats.mobSpawnMult
+            // Keep the opening readable without making the first minute feel empty.
+            float spawnInterval = 0.55f * g_Stats.mobSpawnMult
                                 / (p2mult * rampSpawn * TrialSpawnRateMult(g_GameManager.score));
+            spawnInterval *= kEnemySpawnIntervalScale;
             if (bossNow) spawnInterval *= 2.5f;   // 보스?? ?�래???�폰 ?�??감소
             float effHpMul = TrialEnemyHpMult(g_GameManager.score);
             // 보스 ?�면?????�성 보스가 ?�으�??�연 ?�몹/?�거�??�폭 ?�폰 ?�전 ?��?
@@ -3497,36 +3565,54 @@ int main() {
                     g_MonsterManager.SpawnMob(screenWidth, screenHeight,
                                               effCap,
                                               g_Stats.monsterHpMult * rampHp * effHpMul, saX, saY, saW, saH,
-                                              varietyPct, elitePct);
+                                              varietyPct, 0);
                     // ?�버??보유 ???��? 몹을 분열�??�멸체로 (?�수 ?�몹 ????경우�?
                     if (g_MonsterManager.monsters.size() > mbefore) {
                         Monster* nm = g_MonsterManager.monsters.back();
                         if (nm->kind == MobKind::NORMAL) {
-                            // Hive spawn: score >= 50k, time-based (no augment)
-                            if (g_GameManager.score > 50000 && (rand() % 100) < 12) {
+                            int gravisCount = 0;
+                            for (auto* mm2 : g_MonsterManager.monsters)
+                                if (mm2->alive && mm2->kind == MobKind::GRAVIS)
+                                    ++gravisCount;
+                            const bool gravisReady = elapsedSec >= 150.0f;
+                            const int gravisChance = elapsedSec >= 420.0f ? 4 : 2;
+                            // QUASAR (Tier 2.5): a rare long-range lane controller.
+                            // Keep the simultaneous count low so crossing laser
+                            // telegraphs never dominate the arena.
+                            int quasarCount = 0;
+                            for (auto* mm2 : g_MonsterManager.monsters)
+                                if (mm2->alive && mm2->kind == MobKind::QUASAR)
+                                    ++quasarCount;
+                            const bool quasarReady = elapsedSec >= 45.0f;
+                            const int quasarChance = elapsedSec >= 240.0f ? 8 : 5;
+                            if (!bossDuel && gravisReady && gravisCount < 1 &&
+                                (rand() % 100) < gravisChance) {
+                                nm->MakeKind(MobKind::GRAVIS);
+                            }
+                            else if (!bossDuel && quasarReady && quasarCount < 2 &&
+                                (rand() % 100) < quasarChance) {
+                                nm->MakeKind(MobKind::QUASAR);
+                            }
+                            // Hive spawn: available from the first normal spawn.
+                            else if ((rand() % 100) < 12) {
                                 nm->MakeKind(MobKind::SPAWNER);
                                 nm->blinkTargetX = 160.0f + (float)(rand() % (screenWidth  > 360 ? screenWidth  - 320 : 1));
                                 nm->blinkTargetY = 160.0f + (float)(rand() % (screenHeight > 360 ? screenHeight - 320 : 1));
                             }
-                            // DDoS swarm (score-based)
-                            else if (!bossDuel && g_GameManager.score > 220000 &&
-                                     (rand() % 100) < (g_GameManager.score < 400000 ? 4 : 8)) {
-                                int ddosCount = 0;
-                                for (auto* mm2 : g_MonsterManager.monsters)
-                                    if (mm2->alive && mm2->kind == MobKind::DDOS) ++ddosCount;
-                                float capMul = (g_GameManager.score < 350000) ? 0.10f : 0.18f;
-                                int ddosCap = (int)((float)effCap * capMul);
-                                if (ddosCap < 2) ddosCap = 2;
-                                if (ddosCount < ddosCap) {
-                                    nm->MakeKind(MobKind::DDOS);
-                                    if (g_GameManager.score > 450000 && ddosCount + 1 < ddosCap &&
-                                        (int)g_MonsterManager.monsters.size() < effCap) {
-                                        Monster* dn = new Monster(
-                                            nm->worldX + (float)(rand() % 50 - 25),
-                                            nm->worldY + (float)(rand() % 50 - 25),
-                                            g_Stats.monsterHpMult * rampHp * effHpMul, 1.0f, false);
-                                        dn->MakeKind(MobKind::DDOS);
-                                        g_MonsterManager.monsters.push_back(dn);
+                            // DDoS swarm: available from the first normal spawn;
+                            // its probability and cap still ramp with run time.
+                            else {
+                                const float ddosT = std::min(1.0f, std::max(0.0f, elapsedSec / 300.0f));
+                                const int ddosChance = 4 + (int)(4.0f * ddosT);
+                                if (!bossDuel && (rand() % 100) < ddosChance) {
+                                    int ddosCount = 0;
+                                    for (auto* mm2 : g_MonsterManager.monsters)
+                                        if (mm2->alive && mm2->kind == MobKind::DDOS) ++ddosCount;
+                                    float capMul = 0.10f + 0.08f * ddosT;
+                                    int ddosCap = (int)((float)effCap * capMul);
+                                    if (ddosCap < 2) ddosCap = 2;
+                                    if (ddosCount < ddosCap) {
+                                        nm->MakeKind(MobKind::DDOS);
                                     }
                                 }
                             }
@@ -3553,7 +3639,7 @@ int main() {
             if (!g_CreativeMode && g_GameManager.currentState == GameState::RUNNING) {
             }
 
-            // ���� ���� ? �Ϲ�: �� ��� / ũ������Ƽ��: ���� ���
+            // ���� ���� ? �Ϲ�: �� ���?/ ũ������Ƽ��: ���� ���?
             {
                 bool bossActive = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss || g_BossWarnTimer > 0.0f;
                 // ?�운?? ??보스 ?�덩??차단: 보스�??�아 ?�전???�리?�는 ?�간(?�성?�비?�성),
@@ -3568,7 +3654,7 @@ int main() {
                 float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult();
                 float polyHpC = 30000.0f * TrialBossHpMult();
 
-                // ���� ���� ? pick���̸���HP Ȯ�� �� ª�� ���(ũ������Ƽ�� 0.35s)
+                // ���� ���� ? pick���̸���HP Ȯ�� �� ª�� ���?ũ������Ƽ�� 0.35s)
                 auto startWarn = [&](int pick, const wchar_t* name, float hp) {
                     StartBossWarn(pick, name, hp);
                 };
@@ -3579,7 +3665,7 @@ int main() {
                         QueueCreativeBossPick(g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2,
                                               bossHpC, polyHpC);
                     }
-                    // ���� ���: ���� ���� ���� (���� ���)
+                    // ���� ���? ���� ���� ���� (���� ���?
                     else if (!g_CreativeMode && !BossDir::g_ActEndless
                              && BossDir::g_ActClears < BossDir::MAIN_ACT_TOTAL
                              && !g_InBossIntermission
@@ -3590,7 +3676,7 @@ int main() {
                         float bossHp = bossHpC * sc * BossDir::HpMul(pick);
                         startWarn(pick, BossDir::DisplayName(pick), bossHp);
                     }
-                    // ���� ���: Ŭ���� ���� ? ������ ���� óġ �� ���͹̼� ���� ��
+                    // ���� ���? Ŭ���� ���� ? ������ ���� óġ �� ���͹̼� ���� ��
                     else if (!g_CreativeMode && !BossDir::g_ActEndless
                              && BossDir::g_ActClears >= BossDir::MAIN_ACT_TOTAL
                              && !g_InBossIntermission) {
@@ -3630,8 +3716,8 @@ int main() {
                         case 8:
                             g_CentiBoss = new CentipedeBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_CentiBoss->worldX = bsx; g_CentiBoss->worldY = bsy;
-                            // ?�?� ?�로?��??? ?�재 ?�몹 ?�체 체력???�수(?�한) ???�수 보스???�?�
-                            //   ?�몹?� 보스�??�수?�어 ?�라지�? 보스???�안 추�? ?�폰 ????
+                            // ?�?�??�로?��??? ?�재 ?�몹 ?�체 체력???�수(?�한) ???�수 보스???�?�?
+                            //   ?�몹?�?보스�??�수?�어 ?�라지�? 보스???�안 추�? ?�폰 ????
                             {
                                 float absorb = 0.0f;
                                 for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
@@ -3691,6 +3777,7 @@ int main() {
                                   - g_Stats.rmobSpawnDelayBonus;
             if (rangedInterval < 1.0f) rangedInterval = 1.0f;
             rangedInterval /= (p2mult * rampSpawn);
+            rangedInterval *= kEnemySpawnIntervalScale;
             rangedInterval *= 2.5f;   // Lens ���� �� ����
             if (bossNow) rangedInterval *= 2.0f;
             int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus + TrialRangedMaxBonus(g_GameManager.score)) * p2mult
@@ -3719,7 +3806,7 @@ int main() {
                 }
             }
 
-            // ?�론: ?�레?�어 주위 공전 + ?�동 발사 (?�력�?50%), 1~2�?            // ?�탑 모드 ?�성 ???�론?� 공전/발사 ?�고 ?�탑?�로 ?�체됨
+            // ?�론: ?�레?�어 주위 공전 + ?�동 발사 (?�력�?50%), 1~2�?            // ?�탑 모드 ?�성 ???�론?�?공전/발사 ?�고 ?�탑?�로 ?�체??
             if (g_Stats.drone && !g_Stats.turretMode) {
                 for (int d = 0; d < g_Stats.droneCount && d < MAX_DRONES; d++) {
                     auto& dr = g_Drones[d];
@@ -3822,7 +3909,7 @@ int main() {
                         float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
                         float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;
                         // Ư���� ? ������/�Ұ��� ����ƽ(�� AI ����). ���⼱ ��ũ�� ������.
-                        // ��� ���� ��� (Ư���� ���� ��)
+                        // ���?���� ���?(Ư���� ���� ��)
                         if (!g_Stats.chakramSingularity) {
                         for (auto m : g_MonsterManager.monsters) {
                             if (!m->alive) continue;
@@ -3871,7 +3958,7 @@ int main() {
 
             if (g_Stats.bulletRain) {
                 g_BulletRainTimer += delta;
-                // ���� ����(��ȭ): óġ���� ��ٿ� ���� 0.2�� ����. �ּ� 3�� ���� ����.
+                // ���� ����(��ȭ): óġ���� ��ٿ�?���� 0.2�� ����. �ּ� 3�� ���� ����.
                 if (g_Stats.rainKillReduce && g_RainKillAccum > 0.0f) {
                     float killBoost = g_RainKillAccum * 0.2f;
                     float maxBoost = g_Stats.bulletRainCooldown - 3.0f - g_BulletRainTimer;
@@ -4151,7 +4238,7 @@ int main() {
                         onKill();
                     }
                 }
-                // 보스�???hp�?감소 (보상/?�출?� �??�망 블록???�당)
+                // 보스�???hp�?감소 (보상/?�출?�?�??�망 블록???�당)
                 auto hitB = [&](float ex, float ey, float& hp, bool& al) {
                     if (!inCone(ex, ey)) return;
                     float dealt = (dmg < hp) ? dmg : hp; hp -= dealt;
@@ -4181,13 +4268,13 @@ int main() {
                 }
             };
 
-            // ?�?� 조�? ?��??�퍼: 좌클�?커서 ?�점?? ?�동(?�릭X)=최근???? ?�동?�데 ???�으�?false.
+            // ?�?�?조�? ?��??�퍼: 좌클�?커서 ?�점?? ?�동(?�릭X)=최근???? ?�동?�데 ???�으�?false.
             auto aimTarget = [&](float& tx, float& ty) -> bool {
                 if (lmb) { tx = wmx; ty = wmy; return true; }
                 return findNearestEnemy(pCX, pCY, tx, ty);
             };
 
-            // ?�?� ?�캔 ?�이?� (증강) ??0.7초마??조�? 방향 관??�?(군중?�어) ?�?�
+            // ?�?�??�캔 ?�이?�?(증강) ??0.7초마??조�? 방향 관??�?(군중?�어) ?�?�?
             //   meleeSwing ???��?지/처치보상 루프�?'직선 ?�정(SegDist)' 버전?�로 ?�사??
             if (g_Stats.laser) {
                 float laserInt = (g_Stats.laserTier >= 3) ? 0.18f   // ?�화 ?�렴: 거의 ?�속
@@ -4196,7 +4283,7 @@ int main() {
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);   // ?�이?�????�� 커서 방향
-                    // ?�거리는 II(760)?�서 ???�리지 ?�음. ?�화 ?�렴?� '?�비'�?강화.
+                    // ?�거리는 II(760)?�서 ???�리지 ?�음. ?�화 ?�렴?�?'?�비'�?강화.
                     float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
                     // ?�화 ?�렴(tier3): �??�비 2�???광폭 관??(?�몹 ?�인 ?�소)
@@ -4291,7 +4378,7 @@ int main() {
                 }
             }
 
-            // ?�?� 백신 ?�캔 (증강) ??주기?�으�??�레?�어 주�? ?�화 ?�스(범위 ?�소) ?�?�
+            // ?�?�?백신 ?�캔 (증강) ??주기?�으�??�레?�어 주�? ?�화 ?�스(범위 ?�소) ?�?�?
             if (g_Stats.purgeNova > 0) {
                 int   n      = g_Stats.purgeNova;
                 float novaInt = NOVA_INT / (1.0f + 0.2f * (float)(n - 1));
@@ -4377,7 +4464,7 @@ int main() {
                 //   C14 ?�예 중에??발사 ?�제(?�발 방�?). ?�동 모드�?좌클�??�??
                 bool fireHeld = (g_AutoFire || lmb) && (g_PostPickGrace <= 0.0f);
                 if (g_Stats.meleeWeapon) {       // 검�???근접 ?�윙 (총알 ?�음)
-                    // ?��? 방�?: 쿨다??effInterval)?� ?�릭/?�??무�? ??�� ?�용.
+                    // ?��? 방�?: 쿨다??effInterval)?�??�릭/?�??무�? ??�� ?�용.
                     //   (?�전??버튼 ?�면 fireTimer �?즉시 준�??�태�??�려 광클�?                    //    ?�윙 ?�도�?무한???�릴 ???�었????�?리셋???�거)
                     if (fireHeld && fireTimer >= effInterval) {
                         float tx, ty;
@@ -4482,7 +4569,7 @@ int main() {
         // ?�면 ?�들�?+ �??�용 ??game world �? HUD/text(별도 ortho)???�향 ?�음
         float orthoShake[16];
         memcpy(orthoShake, g_BaseOrtho, sizeof(g_BaseOrtho));
-        // �?중심 = ZCX/ZCY, 기본 ?�면 중앙). z=1 ?�면 base ortho ?� ?�일(identity)
+        // �?중심 = ZCX/ZCY, 기본 ?�면 중앙). z=1 ?�면 base ortho ?�??�일(identity)
         {
             float z = g_ViewZoom;
             float zcx = ZCX(), zcy = ZCY();
@@ -4530,6 +4617,37 @@ int main() {
         if (inWorldRender) {
 
         EnsurePlayerWindow(playerWin);
+
+        // Screen-edge contrast for the HUD. Keep the combat center clear and
+        // darken only the perimeter beneath entities, projectiles, and HUD.
+        BatchFlush();
+        glDisable(GL_SCISSOR_TEST);
+        glEnable(GL_BLEND);
+        glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
+        memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
+
+        constexpr int kVignetteSteps = 24;
+        constexpr float kEdgeAlpha = 0.16f;
+        const float sideW = std::min(180.0f, std::max(110.0f, screenWidth * 0.09f));
+        const float topH = std::min(220.0f, std::max(140.0f, screenHeight * 0.17f));
+        for (int i = 0; i < kVignetteSteps; ++i) {
+            const float t = (i + 0.5f) / (float)kVignetteSteps;
+            const float fade = 1.0f - t * t * (3.0f - 2.0f * t);
+            const float a = kEdgeAlpha * fade;
+            const float x0 = sideW * i / (float)kVignetteSteps;
+            const float x1 = sideW * (i + 1) / (float)kVignetteSteps;
+            const float y0 = topH * i / (float)kVignetteSteps;
+            const float y1 = topH * (i + 1) / (float)kVignetteSteps;
+            drawRect(x0, 0.0f, x1 - x0, (float)screenHeight, 0.0f, 0.0f, 0.0f, a);
+            drawRect((float)screenWidth - x1, 0.0f, x1 - x0,
+                     (float)screenHeight, 0.0f, 0.0f, 0.0f, a);
+            drawRect(0.0f, y0, (float)screenWidth, y1 - y0, 0.0f, 0.0f, 0.0f, a);
+            drawRect(0.0f, (float)screenHeight - y1, (float)screenWidth,
+                     y1 - y0, 0.0f, 0.0f, 0.0f, a);
+        }
+        BatchFlush();
+        glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, orthoShake);
+        memcpy(g_MainOrtho, orthoShake, sizeof(orthoShake));
     
         // ?�거�?�?FakeWindow ?�기 ?�수 (?�더·?�리??공용)
         const float RFW_W = g_RfwW;
@@ -4544,7 +4662,7 @@ int main() {
         // ============================================================
     
         // (a0) ?�명 배경 가리기 ??충격??배경 + ?�레그래??배경
-        //      glDisable(GL_BLEND) + 불투�??�두???�형 ???�후 FakeWindow �???��?�
+        //      glDisable(GL_BLEND) + 불투�??�두???�형 ???�후 FakeWindow �???��?�?
         BatchFlush(); glDisable(GL_BLEND);
         BindMainShader();
     
@@ -4556,18 +4674,9 @@ int main() {
             drawCircle(sw.x, sw.y, bgR, 0.08f, 0.08f, 0.10f, 1.0f);
         }
     
-        // (a) ?�거�?�?+ ?�탑 + 보스 FakeWindow 배경 ??블렌??OFF �?직접 ??��?�기
-        //     겹쳐????그려??같�? ?�이 그�?�??�여 ?�적 ?�음.
-        // ?�탑 250×250 �?배경 (?�수)
-        if (g_Stats.turretMode) {
-            for (auto& t : g_Turrets) {
-                float twx = WinOrigin(t.x, TURRET_WIN_W);
-                float twy = WinOrigin(t.y, TURRET_WIN_H);
-                drawRect(twx, twy, TURRET_WIN_W, TURRET_WIN_H,
-                         0.06f, 0.08f, 0.10f, 1.0f);
-            }
-        }
-        // ?�?� 가짜창 ?�합 z-리스??(??��?�높?? 봇넷 < ?�거�?< 보스/?�라??. 같�? ?�?��?
+        // (a) FakeWindow 영역은 아래의 스크리저를 위해 유지한다.
+        //     시각적으로는 불투명한 창 대신 얇은 신호 프레임만 사용한다.
+        // ?�?�?가짜창 ?�합 z-리스??(??��?�높?? 봇넷 < ?�거�?< 보스/?�라??. 같�? ?�?��?
         //    ?�환(벡터) ?�서 = 먼�? ?�환???��? ?�래. 배경+?�온보더�????�서�?'�??�위'
         //    �?그려, ?��? 창의 불투�?배경????? 창의 배경·?�곽?�을 ?�연????��(?�선?�위 가�?.
         //    (?�레?�어 창�? ???�에 ?�로 그려 ??�� 최상??)
@@ -4612,178 +4721,116 @@ int main() {
                  ETHER_WIN_W, ETHER_WIN_W,
                  EtherSwordBoss::BOSS_NAME, 0.02f,0.04f,0.08f, 0.55f,0.80f,1.0f, WIN_TB,
                  g_EtherBoss->hp / g_EtherBoss->maxHp);
-        // trap.exe / vaccine.exe ? (e.sat)���� �÷��̾� â ���� ��°�� �׸�
-        // ?�탑 �?배경+보더 (최하?? ?�레?�어 ?�유??z-리스??�?
+        // 터렛 신호 프레임. 실제 터렛 영역/스크리저는 그대로 유지한다.
         if (g_Stats.turretMode) {
             for (auto& t : g_Turrets) {
-                BatchFlush(); glDisable(GL_BLEND);
-                drawRect(t.x - TURRET_WIN_W*0.5f, t.y - TURRET_WIN_H*0.5f,
-                         TURRET_WIN_W, TURRET_WIN_H, 0.06f, 0.08f, 0.10f, 1.0f);
-                BatchFlush(); glEnable(GL_BLEND);
-                drawNeonBorder(t.x - TURRET_WIN_W*0.5f, t.y - TURRET_WIN_H*0.5f,
-                               TURRET_WIN_W, TURRET_WIN_H, 0.30f, 0.95f, 1.0f);
+                DrawInGameSignalFrame(t.x - TURRET_WIN_W * 0.5f,
+                                      t.y - TURRET_WIN_H * 0.5f,
+                                      TURRET_WIN_W, TURRET_WIN_H,
+                                      0.30f, 0.95f, 1.0f, 0.30f);
             }
         }
-                // z-����Ʈ ? â ������ (scissor �ܷ� �� ������ ��°�� �߸��� �� ����)
-        BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        // z-order signal layer. Scissor/collision geometry is intentionally
+        // kept below; only the heavy visual window treatment is removed.
+        BatchFlush(); glDisable(GL_SCISSOR_TEST); glEnable(GL_BLEND);
         for (auto& fw : zwins) {
-            BatchFlush(); glDisable(GL_BLEND);
             if (fw.w < 64.0f || fw.h < 64.0f || fw.w != fw.w || fw.h != fw.h) continue;
-            drawRect(fw.x, fw.y, fw.w, fw.h, fw.br, fw.bgc, fw.bbc, 1.0f);
-            if (fw.tb > 0.0f)
-                drawRect(fw.x, fw.y, fw.w, fw.tb, fw.br * 1.5f, fw.bgc * 1.5f, fw.bbc * 1.5f, 1.0f);
-            BatchFlush(); glEnable(GL_BLEND);
-            drawNeonBorder(fw.x, fw.y, fw.w, fw.h, fw.nr, fw.ngc, fw.nbc);
+            const float signalA = (fw.tb > 0.0f) ? 0.26f : 0.22f;
+            DrawInGameSignalFrame(fw.x, fw.y, fw.w, fw.h,
+                                  fw.nr, fw.ngc, fw.nbc, signalA);
             if (fw.tb > 0.0f) {
                 if (fw.gaugePct >= 0.0f) {
                     float pct = fw.gaugePct < 0.0f ? 0.0f : fw.gaugePct > 1.0f ? 1.0f : fw.gaugePct;
-                    float gh = 3.0f, gy = fw.y + fw.tb - gh;
-                    drawRect(fw.x, gy, fw.w,        gh, 0.06f, 0.06f, 0.08f, 1.0f);
-                    drawRect(fw.x, gy, fw.w * pct,  gh, fw.nr, fw.ngc, fw.nbc, 0.85f);
-                }
-                if (fw.name) {
-                    BatchFlush();
-                    float ts = (fw.tb <= 16.0f) ? 0.38f : 0.5f;
-                    float tw = g_TextS.Width(fw.name, ts);
-                    float ty = fw.y + (fw.tb - 11.0f * ts) * 0.5f;
-                    g_TextS.Draw(fw.name, fw.x + (fw.w - tw) * 0.5f, ty,
-                                 ts, fw.nr, fw.ngc, fw.nbc, 1.0f);
+                    float gy = fw.y + 4.0f;
+                    drawRect(fw.x + 10.0f, gy, fw.w - 20.0f, 2.0f,
+                             0.08f, 0.10f, 0.14f, 0.55f);
+                    drawRect(fw.x + 10.0f, gy, (fw.w - 20.0f) * pct, 2.0f,
+                             fw.nr, fw.ngc, fw.nbc, 0.90f);
                 }
             }
         }
         BatchFlush(); glEnable(GL_BLEND);  // ?�후 ?�반 ?�파 블렌??보장
     
-        // (b) ?�거�?�?+ 보스 �??��? 컨텐�?(?�몹·?�폭병·총?�·파??
-        //     �?창마??scissor ?�스. ?�이?�몬??본체??(e2)/(e3) ?�서 별도�?그림
-        BatchFlush(); glEnable(GL_SCISSOR_TEST);
-        for (auto r : g_MonsterManager.rangedMobs) {
-            if (r->deathScale <= 0.0f) continue;
-            float sc  = r->deathScale;
-            float rW  = RFW_W * sc, rH = RFW_H * sc;
-            float rwx = r->worldX - rW * 0.5f;
-            float rwy = r->worldY - rH * 0.5f;
-            WorldScissor(rwx, rwy, rW, rH);
-            // ?�몹 (보스 ?�환물�? ???? ??�?밖�? 컬링
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, rwx, rwy, rW, rH)) continue;
-                drawMob(m);
-            }
-            // ?�폭�?(5각형)
-            for (auto bm : g_MonsterManager.bombers) {
-                if (!bm->alive || !inWin(bm->worldX, bm->worldY, rwx, rwy, rW, rH)) continue;
-                drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
-                             bm->color.r, bm->color.g, bm->color.b, 1.0f);
-                // ?�화 �????�리�???�� 반경 ?�시
-                if (bm->arming) {
-                    drawCircle(bm->worldX, bm->worldY, bm->blastRadius,
-                               1.0f, 0.2f, 0.2f, 0.10f);
-                }
-            }
-            // 총알
-            for (auto& b : g_Bullets) {
-                if (!b.active || !inWin(b.x, b.y, rwx, rwy, rW, rH)) continue;
-                drawBullet(b);
-            }
-            for (auto& p : g_EnemyParts) {
-                if (!p.active || !inWin(p.x, p.y, rwx, rwy, rW, rH)) continue;
-                float a  = p.life / p.maxLife;
-                float hs = p.size * 0.5f;
-                drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
-            }
-            // ?��??�는 죽음 ?�브 (�??�에?�만)
-            for (auto& orb : g_ApproachOrbs) {
-                DrawApproachOrb(orb.x, orb.y);
-            }
-        }
-        // (b'') ?�탑 �???컨텐�?(?�수)
-        if (g_Stats.turretMode) {
-            for (auto& t : g_Turrets) {
-                float twx = WinOrigin(t.x, TURRET_WIN_W);
-                float twy = WinOrigin(t.y, TURRET_WIN_H);
-                WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
-                for (auto m : g_MonsterManager.monsters) {
-                    if (!m->alive || m->kind == MobKind::DDOS ||
-                        !inWin(m->worldX, m->worldY, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
-                    drawMob(m);
-                }
-                for (auto bm : g_MonsterManager.bombers) {
-                    if (!bm->alive || !inWin(bm->worldX, bm->worldY, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
-                    drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
-                                 bm->color.r, bm->color.g, bm->color.b, 1.0f);
-                }
-                for (auto& b : g_Bullets) {
-                    if (!b.active || !inWin(b.x, b.y, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
-                    drawBullet(b);
-                }
-                for (auto& p : g_EnemyParts) {
-                    if (!p.active || !inWin(p.x, p.y, twx, twy, TURRET_WIN_W, TURRET_WIN_H)) continue;
-                    float a  = p.life / p.maxLife;
-                    float hs = p.size * 0.5f;
-                    drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
-                }
-            }
-        }
-        // (b') 보스 �???컨텐�???같�? ?�몹/?�폭�?총알??보스 �??�역?�로???�출
-        //     모든 보스 종류(?�라??글리치/리로???�리/?�팸/?�라?�분?�체) 공통 처리.
-        //     E22: ?�전???�라??보스(g_MonsterManager.boss)�??�출???�른 보스 창에??        //          ?�몹/?�이 컬링?�어 ??보�?????보스�?�??�역마다 scissor ?�스 추�?.
-        auto drawBossWinContent = [&](float bwx, float bwy, float ww, float wh, bool withBullets = true) {
-            WorldScissor(bwx, bwy, ww, wh);
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m->alive || m->kind == MobKind::DDOS || !inWin(m->worldX, m->worldY, bwx, bwy, ww, wh)) continue;
-                drawMob(m);
-            }
-            for (auto bm : g_MonsterManager.bombers) {
-                if (!bm->alive || !inWin(bm->worldX, bm->worldY, bwx, bwy, ww, wh)) continue;
-                drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
-                             bm->color.r, bm->color.g, bm->color.b, 1.0f);
-                if (bm->arming)
-                    drawCircle(bm->worldX, bm->worldY, bm->blastRadius, 1.0f, 0.2f, 0.2f, 0.10f);
-            }
-            if (withBullets) {
-                for (auto& b : g_Bullets) {
-                    if (!b.active || !inWin(b.x, b.y, bwx, bwy, ww, wh)) continue;
-                    drawBullet(b);
-                }
-            }
-            for (auto& p : g_EnemyParts) {
-                if (!p.active || !inWin(p.x, p.y, bwx, bwy, ww, wh)) continue;
-                float a  = p.life / p.maxLife;
-                float hs = p.size * 0.5f;
-                drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
-            }
-            for (auto& orb : g_ApproachOrbs) {
-                DrawApproachOrb(orb.x, orb.y);
-            }
-        };
-        if (g_RRBoss && g_RRBoss->alive)
-            drawBossWinContent(g_RRBoss->worldX - RR_WIN_W * 0.5f,
-                               g_RRBoss->worldY - RR_WIN_W * 0.5f, RR_WIN_W, RR_WIN_W);
-        if (g_CentiBoss && g_CentiBoss->alive)
-            drawBossWinContent(g_CentiBoss->worldX - CENTI_WIN_W * 0.5f,
-                               g_CentiBoss->worldY - CENTI_WIN_W * 0.5f, CENTI_WIN_W, CENTI_WIN_W);
-        if (g_TessBoss && g_TessBoss->alive)
-            drawBossWinContent(g_TessBoss->worldX - TESS_WIN_W * 0.5f,
-                               g_TessBoss->worldY - TESS_WIN_W * 0.5f, TESS_WIN_W, TESS_WIN_W);
-        if (g_EtherBoss && g_EtherBoss->alive && !g_EtherBoss->taskKillActive)
-            drawBossWinContent(g_EtherBoss->worldX - ETHER_WIN_W * 0.5f,
-                               g_EtherBoss->worldY - ETHER_WIN_W * 0.5f,
-                               ETHER_WIN_W, ETHER_WIN_W);
-        // 봇넷 ?�드(SPAWNER) �??��? 컨텐�????�드 본체/?�환 ?�이 ?�기 창에??보이?�록 (E21)
-        for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive || m->kind != MobKind::SPAWNER) continue;
-            float w = SPAWNER_WIN_W * m->sizeScale;
-            drawBossWinContent(m->worldX - w * 0.5f, m->worldY - w * 0.5f, w, w);
-        }
-        BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        // (b) Global combat pass.
+        // The old implementation rendered the same entities through each
+        // fake window's WorldScissor. That made enemies and bullets disappear
+        // whenever they crossed a window boundary, and also multiplied draw
+        // calls. Fake windows remain visual/collision metadata only.
+        BatchFlush();
+        glDisable(GL_SCISSOR_TEST);
 
-        // (c) player FakeWindow background
-        BatchFlush(); glDisable(GL_SCISSOR_TEST); glDisable(GL_BLEND);
+        // Rear sight-field prepass. Collect all black CircleTexture markers and
+        // submit them in one icon draw before entity bodies.
+        if (g_GameManager.currentState != GameState::DYING &&
+            g_GameManager.currentState != GameState::GAMEOVER) {
+            static std::vector<EnemySightRearMarker> rearMarkers;
+            rearMarkers.clear();
+            rearMarkers.reserve(1u + g_MonsterManager.monsters.size()
+                                + g_MonsterManager.rangedMobs.size()
+                                + g_MonsterManager.bombers.size());
+            const float pCX = playerWin.x + playerWin.width * 0.5f;
+            const float pCY = playerWin.y + playerWin.height * 0.5f;
+            const float playerSize = PLAYER_SIZE * g_Stats.playerSizeMult;
+            rearMarkers.push_back({pCX, pCY, playerSize * 2.45f});
+            for (auto m : g_MonsterManager.monsters) {
+                if (!m || !m->alive || m->sizeScale <= 0.0f) continue;
+                const float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
+                const float rearScale = m->kind == MobKind::GRAVIS ? 3.35f
+                    : (m->kind == MobKind::QUASAR ? 3.05f : 2.55f);
+                rearMarkers.push_back({m->worldX, m->worldY, base * rearScale});
+            }
+            for (auto r : g_MonsterManager.rangedMobs) {
+                if (!r || r->deathScale <= 0.0f) continue;
+                const float base = RangedMob::VISUAL_BASE_PX * r->deathScale;
+                rearMarkers.push_back({r->worldX, r->worldY, base * 2.65f});
+            }
+            for (auto bm : g_MonsterManager.bombers) {
+                if (!bm || !bm->alive) continue;
+                rearMarkers.push_back({bm->worldX, bm->worldY, Bomber::SIZE_PX});
+            }
+            DrawEnemySightRearBatch(rearMarkers);
+        }
+        BatchFlush();
+
+        // Colored sight fields share one texture and now use one tinted batch.
+        // Submit them before bodies so the original visual layering is kept.
+        BeginEnemySightFrontBatch();
+        for (auto m : g_MonsterManager.monsters)
+            QueueMonsterSightFront(m);
+        for (auto r : g_MonsterManager.rangedMobs)
+            QueueRangedMobSightFront(r);
+        FlushEnemySightFrontBatch();
+        BatchFlush();
+
+        for (auto m : g_MonsterManager.monsters) {
+            if (m->alive) drawMob(m);
+        }
+        for (auto bm : g_MonsterManager.bombers) {
+            if (!bm->alive) continue;
+            drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
+                         bm->color.r, bm->color.g, bm->color.b, 1.0f);
+            if (bm->arming)
+                drawCircle(bm->worldX, bm->worldY, bm->blastRadius,
+                           1.0f, 0.2f, 0.2f, 0.10f);
+        }
+        for (auto& b : g_Bullets) {
+            if (b.active) drawBullet(b);
+        }
+        for (auto& p : g_EnemyParts) {
+            if (!p.active) continue;
+            float a = p.life / p.maxLife;
+            float hs = p.size * 0.5f;
+            drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
+        }
+        for (auto& orb : g_ApproachOrbs) {
+            DrawApproachOrb(orb.x, orb.y);
+        }
+        BatchFlush();
+
+        // (c) player playfield signal. The rectangular region itself remains
+        // available to gameplay/scissor code, but no opaque fake window is drawn.
+        BatchFlush(); glDisable(GL_SCISSOR_TEST); glEnable(GL_BLEND);
         EnsurePlayerWindow(playerWin);
-        drawRect(playerWin.x, playerWin.y, playerWin.width, playerWin.height,
-                 0.05f, 0.06f, 0.09f, 1.0f);
-        BatchFlush(); glEnable(GL_BLEND);
-        // ?�이버펑???�온 ?��??????�레?�어 �??�온 보더 (?�센???�마 ??
-        DrawPlayerWindowFrame(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
 
         if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
             float wx = g_ShopZoneX - RUN_SHOP_WIN_W * 0.5f;
@@ -4808,7 +4855,7 @@ int main() {
                            0.5f, 0.75f, 1.0f);
         }
     
-        // (c2) HP/EXP �????�레?�어 �??�단 ?�쪽??부�?(창과 ?�께 ?�동) ?�?�
+        // (c2) HP/EXP �????�레?�어 �??�단 ?�쪽??부�?(창과 ?�께 ?�동) ?�?�?
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::PAUSED ||
             g_InBossIntermission ||
@@ -4818,23 +4865,22 @@ int main() {
             g_GameManager.currentState == GameState::DYING) {
             float pad = 12.0f, bx = playerWin.x + pad;
             float bw = std::max(4.0f, playerWin.width - pad * 2.0f);
-            float hpH = 14.0f, xpH = 8.0f, gap = 3.0f;   // ?�껍�?(가?�성)
+            float hpH = 8.0f, xpH = 4.0f, gap = 3.0f;
             float hpY = playerWin.y + playerWin.height - 18.0f - hpH;   // ?�단 ?�쪽
             float xpY = hpY - gap - xpH;
-            drawRect(bx - 5, xpY - 5, bw + 10, (hpY + hpH) - (xpY) + 10, 0.03f, 0.03f, 0.05f, 0.96f);
             if (g_PlayerShield > 0.0f && g_Stats.maxHP > 0.0f) {
                 float shFrac = g_PlayerShield / g_Stats.maxHP;
                 if (shFrac > 1.0f) shFrac = 1.0f;
                 float shY = hpY - gap - 6.0f;
-                drawRect(bx, shY, bw, 5.0f, 0.08f, 0.12f, 0.22f, 1.0f);
-                drawRect(bx, shY, bw * shFrac, 5.0f, 0.35f, 0.75f, 1.0f, 0.95f);
+                drawRect(bx, shY, bw, 3.0f, 0.08f, 0.12f, 0.22f, 0.72f);
+                drawRect(bx, shY, bw * shFrac, 3.0f, 0.35f, 0.75f, 1.0f, 0.95f);
             }
             // HP
             float hpFrac = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
             if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
             float hpR = (hpFrac > 0.5f) ? 0.1f : 1.0f;
             float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
-            drawRect(bx, hpY, bw, hpH, 0.22f, 0.04f, 0.04f, 1.0f);
+            drawRect(bx, hpY, bw, hpH, 0.22f, 0.04f, 0.04f, 0.72f);
             drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 1.0f);
             // (HP ?�치??좌상??HUD ???�시 ???�드 ?�션?�서 ?�스?��? 그리�?            //  TextRenderer 가 ?�이??VAO �??�바?�드???�후 ?�티???�더가 깨�?므�?금�?)
             // XP
@@ -4847,7 +4893,7 @@ int main() {
                     xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
                     if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
                 }
-                drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 1.0f);
+                drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 0.72f);
                 if (atCap)
                     drawRect(bx, xpY, bw, xpH, 0.75f, 0.85f, 0.55f, 0.6f);
                 else
@@ -4885,7 +4931,7 @@ int main() {
             }
         }
     
-        // (c3) ?�캔 ?�이?� �????�이?�되??�?�� 관??�?(보스 ?�이?� 쿼드 ?�턴)
+        // (c3) ?�캔 ?�이?�?�????�이?�되??�?�� 관??�?(보스 ?�이?�?쿼드 ?�턴)
         if (!g_LaserBeams.empty()) {
             BindMainShader();
             for (auto& lb : g_LaserBeams) {
@@ -4963,11 +5009,15 @@ int main() {
                 }
                 float sz = PLAYER_SIZE * g_Stats.playerSizeMult;
                 float hs = sz * 0.5f;
+                // Keep the player field persistent so it reads as a HUD
+                // identity layer rather than a newly spawned projectile.
+                DrawPlayerSightMarker(pCX, pCY, sz * 2.45f,
+                                      0.28f, 0.92f, 1.0f, 0.12f);
                 DrawPlayerWeaponShell(pCX, pCY, sz, atan2f(wmy - pCY, wmx - pCX));
                 // ?�곽: ?�두???�두�?(?��?
                 // 본체: 밝�? ?�안
     
-                // ?�?� ?�나비식 HP 게이지�????�격 ???�레?�어 ?�에 ?�다 ?�이?? ????���??�시 ?�?�
+                // ?�?�??�나비식 HP 게이지�????�격 ???�레?�어 ?�에 ?�다 ?�이?? ????���??�시 ?�?�?
                 if (g_GameManager.currentState == GameState::RUNNING) {
                     float hf = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
                     if (hf < 0.0f) hf = 0.0f; if (hf > 1.0f) hf = 1.0f;
@@ -4990,126 +5040,16 @@ int main() {
             }
         }
     
-        // (e) ?�레?�어 �??��? 컨텐�???scissor (가?????�이??
-        BatchFlush(); glEnable(GL_SCISSOR_TEST);
-        WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-        {
-        float pwx = playerWin.x, pwy = playerWin.y, pww = playerWin.width, pwh = playerWin.height;
-        // ?�몹 (보스 ?�환물�? ???? ??�?�?컬링
-        for (auto m : g_MonsterManager.monsters) {
-            if (!m->alive || !inWin(m->worldX, m->worldY, pwx, pwy, pww, pwh)) continue;
-            drawMob(m);
-        }
-        for (auto bm : g_MonsterManager.bombers) {
-            if (!bm->alive || !inWin(bm->worldX, bm->worldY, pwx, pwy, pww, pwh)) continue;
-            drawPentagon(bm->worldX, bm->worldY, Bomber::SIZE_PX,
-                         bm->color.r, bm->color.g, bm->color.b, 1.0f);
-            if (bm->arming) {
-                drawCircle(bm->worldX, bm->worldY, bm->blastRadius,
-                           1.0f, 0.2f, 0.2f, 0.10f);
-            }
-        }
-        // 총알
-        for (auto& b : g_Bullets) {
-            if (!b.active || !inWin(b.x, b.y, pwx, pwy, pww, pwh)) continue;
-            drawBullet(b);
-        }
-        for (auto& p : g_EnemyParts) {
-            if (!p.active || !inWin(p.x, p.y, pwx, pwy, pww, pwh)) continue;
-            float a  = p.life / p.maxLife;
-            float hs = p.size * 0.5f;
-            drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
-        }
-        // ?��??�는 죽음 ?�브 (?�레?�어 �??�에?�만)
-        for (auto& orb : g_ApproachOrbs) {
-            DrawApproachOrb(orb.x, orb.y);
-        }
-        }
-        BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-        
-        // (e2) ?�거�?�??�이?�몬????�??�거�?�?�??�역?�서 ??�� ?�에 그림
-        BatchFlush(); glEnable(GL_SCISSOR_TEST);
+        // (e) ranged enemies share the global combat pass.
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
-            float sc  = r->deathScale;
-            float rW  = RFW_W * sc, rH = RFW_H * sc;
-            float rwx = r->worldX - rW * 0.5f;
-            float rwy = r->worldY - rH * 0.5f;
-            WorldScissor(rwx, rwy, rW, rH);
-            // Lens FSM visual: IDLE=counter-rotate, CHARGING=spin-up, BURST=merged+flash
-            bool lensCharging = (r->lensState == RangedMob::State::CHARGING);
-            bool lensBurst    = (r->lensState == RangedMob::State::BURST);
-            float lBase = RFW_W * 0.10f * sc;
-            float phOff = (float)((size_t)r % 628) * 0.01f;
-            float ang1  = r->rotAngle + phOff;
-            // BURST: layers snap together; IDLE/CHARGING: counter-rotate 45-deg offset
-            float ang2  = lensBurst ? ang1 : (-r->rotAngle + phOff + 0.7854f);
-            float cr = r->color.r, cg = r->color.g, cb = r->color.b;
-            float pcx = r->worldX, pcy = r->worldY;
-            // charging: alpha ramp (brighter as speed builds)
-            float chargeGlow = lensCharging
-                ? fminf(r->chargeAngle / (2.0f * 3.14159f * RangedMob::CHARGE_ROTATIONS), 1.0f)
-                : (lensBurst ? 1.0f : 0.0f);
-            float a1 = 0.88f + chargeGlow * 0.12f;
-            float a2 = lensBurst ? a1 : (0.72f + chargeGlow * 0.16f);
-            // Layer 1
-            float vx1[4], vy1[4];
-            for (int k = 0; k < 4; k++) {
-                float a = ang1 + (float)k * 1.5708f;
-                vx1[k] = pcx + cosf(a) * lBase; vy1[k] = pcy + sinf(a) * lBase;
-            }
-            for (int k = 0; k < 4; k++) {
-                int kn = (k+1)%4;
-                float dx=vx1[kn]-vx1[k], dy=vy1[kn]-vy1[k];
-                float dl=sqrtf(dx*dx+dy*dy)+1e-4f;
-                float nx=-dy/dl, ny=dx/dl;
-                float gx=nx*4.0f, gy=ny*4.0f, ex=nx*1.3f, ey=ny*1.3f;
-                BatchTri(vx1[k]+gx,vy1[k]+gy, vx1[kn]+gx,vy1[kn]+gy, vx1[kn]-gx,vy1[kn]-gy, cr,cg,cb, 0.10f*sc);
-                BatchTri(vx1[k]+gx,vy1[k]+gy, vx1[kn]-gx,vy1[kn]-gy, vx1[k]-gx, vy1[k]-gy,  cr,cg,cb, 0.10f*sc);
-                BatchTri(vx1[k]+ex,vy1[k]+ey, vx1[kn]+ex,vy1[kn]+ey, vx1[kn]-ex,vy1[kn]-ey, cr,cg,cb, a1*sc);
-                BatchTri(vx1[k]+ex,vy1[k]+ey, vx1[kn]-ex,vy1[kn]-ey, vx1[k]-ex, vy1[k]-ey,  cr,cg,cb, a1*sc);
-                drawDiamond(vx1[k], vy1[k], lBase*0.10f, cr, cg, cb, 0.92f*sc);
-            }
-            // Layer 2 (hidden when merged in BURST to avoid double-draw artifact)
-            if (!lensBurst) {
-                float vx2[4], vy2[4];
-                for (int k = 0; k < 4; k++) {
-                    float a = ang2 + (float)k * 1.5708f;
-                    vx2[k] = pcx + cosf(a) * lBase; vy2[k] = pcy + sinf(a) * lBase;
-                }
-                for (int k = 0; k < 4; k++) {
-                    int kn = (k+1)%4;
-                    float dx=vx2[kn]-vx2[k], dy=vy2[kn]-vy2[k];
-                    float dl=sqrtf(dx*dx+dy*dy)+1e-4f;
-                    float nx=-dy/dl, ny=dx/dl;
-                    float gx=nx*3.0f, gy=ny*3.0f, ex=nx*1.0f, ey=ny*1.0f;
-                    BatchTri(vx2[k]+gx,vy2[k]+gy, vx2[kn]+gx,vy2[kn]+gy, vx2[kn]-gx,vy2[kn]-gy, cr,cg,cb, 0.08f*sc);
-                    BatchTri(vx2[k]+gx,vy2[k]+gy, vx2[kn]-gx,vy2[kn]-gy, vx2[k]-gx, vy2[k]-gy,  cr,cg,cb, 0.08f*sc);
-                    BatchTri(vx2[k]+ex,vy2[k]+ey, vx2[kn]+ex,vy2[kn]+ey, vx2[kn]-ex,vy2[kn]-ey, cr,cg,cb, a2*sc);
-                    BatchTri(vx2[k]+ex,vy2[k]+ey, vx2[kn]-ex,vy2[kn]-ey, vx2[k]-ex, vy2[k]-ey,  cr,cg,cb, a2*sc);
-                    drawDiamond(vx2[k], vy2[k], lBase*0.08f, cr, cg, cb, 0.80f*sc);
-                }
-            }
-            // Center core ? white flash on BURST, cyan glow on CHARGING
-            if (lensBurst) {
-                float bpulse = 0.5f + 0.5f * sinf(r->burstTimer * 40.0f);
-                drawCircle(pcx, pcy, lBase * 0.28f, 1.0f, 1.0f, 1.0f, 0.18f * bpulse * sc);
-                drawDiamond(pcx, pcy, lBase * 0.14f, 1.0f, 1.0f, 1.0f, (0.9f + 0.1f * bpulse) * sc);
-            } else {
-                float coreA = 0.7f + chargeGlow * 0.3f;
-                drawDiamond(pcx, pcy, lBase * 0.10f, 1.0f, 1.0f, 1.0f, coreA * sc);
-            }
+            drawRangedMob(r);
         }
-        BatchFlush(); glDisable(GL_SCISSOR_TEST);
+        BatchFlush();
     
-        // (e2.1) ?�탑 ?�이�?+ ?�명�?(?�수) ??�?�??�역 scissor ?�에???�시
+        // (e2.1) turret bodies and gauges also use world-space coordinates.
         if (g_Stats.turretMode) {
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
             for (auto& t : g_Turrets) {
-                float twx = WinOrigin(t.x, TURRET_WIN_W);
-                float twy = WinOrigin(t.y, TURRET_WIN_H);
-                WorldScissor(twx, twy, TURRET_WIN_W, TURRET_WIN_H);
                 // ?�탑 본체 ????��??(중앙 ?�각??+ 4방향 ?�출)
                 float tc = 12.0f;
                 drawRect(t.x - tc, t.y - 4, tc*2, 8, 0.1f, 1.0f, 0.55f, 1.0f);
@@ -5118,12 +5058,14 @@ int main() {
                 float lifeRem = 1.0f - t.lifeTimer / TURRET_LIFE;
                 if (lifeRem < 0.0f) lifeRem = 0.0f;
                 float barW = TURRET_WIN_W - 24.0f;
-                drawRect(twx + 12.0f, twy + 8.0f, barW, 5.0f,
+                float barX = t.x - TURRET_WIN_W * 0.5f + 12.0f;
+                float barY = t.y - TURRET_WIN_H * 0.5f + 8.0f;
+                drawRect(barX, barY, barW, 5.0f,
                          0.12f, 0.12f, 0.18f, 0.7f);
-                drawRect(twx + 12.0f, twy + 8.0f, barW * lifeRem, 5.0f,
+                drawRect(barX, barY, barW * lifeRem, 5.0f,
                          0.1f, 1.0f, 0.55f, 0.9f);
             }
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            BatchFlush();
         }
         // (f) BrokenSight orb
         if (g_Stats.brokenSight && g_Orb.active) {
@@ -5200,38 +5142,18 @@ int main() {
             float gtRR = (float)glfwGetTime();
             BindMainShader();
 
-            rb->renderTelegraphs(pCX, pCY, gtRR, false);
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            rb->renderTelegraphs(pCX, pCY, gtRR);
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
-
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            WorldScissor(rb->worldX - RR_WIN_W * 0.5f, rb->worldY - RR_WIN_W * 0.5f,
-                         RR_WIN_W, RR_WIN_W);
-            for (auto& b : g_Bullets) {
-                if (!b.active) continue;
-                drawBullet(b);
-            }
-            rb->renderGLShells(gtRR);
+            rb->renderTelegraphs(pCX, pCY, gtRR, true);
             rb->renderBody(gtRR, pCX, pCY);
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            BatchFlush();
         }
 
         if (g_TessBoss && g_TessBoss->alive) {
             float tt = (float)glfwGetTime();
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            auto tessPass = [&](float wx, float wy, float ww, float wh) {
-                WorldScissor(wx, wy, ww, wh);
-                g_TessBoss->renderFx(tt, pCX, pCY);
-                g_TessBoss->renderBody(tt);
-            };
-            tessPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            tessPass(g_TessBoss->worldX - TESS_WIN_W * 0.5f,
-                     g_TessBoss->worldY - TESS_WIN_W * 0.5f, TESS_WIN_W, TESS_WIN_W);
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            g_TessBoss->renderFx(tt, pCX, pCY);
+            g_TessBoss->renderBody(tt);
+            BatchFlush();
         }
 
         if (g_EtherBoss && g_EtherBoss->alive) {
@@ -5242,18 +5164,7 @@ int main() {
                 g_EtherBoss->renderTaskKill(et);
                 BatchFlush();
             } else {
-                BatchFlush(); glEnable(GL_SCISSOR_TEST);
-                auto etherPass = [&](float wx, float wy, float ww, float wh) {
-                    WorldScissor(wx, wy, ww, wh);
-                    g_EtherBoss->renderBody(et);
-                };
-                // player window pass
-                etherPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-                // boss window (���� ��ġ ����)
-                etherPass(g_EtherBoss->worldX - ETHER_WIN_W * 0.5f,
-                          g_EtherBoss->worldY - ETHER_WIN_W * 0.5f,
-                          ETHER_WIN_W, ETHER_WIN_W);
-                BatchFlush(); glDisable(GL_SCISSOR_TEST);
+                g_EtherBoss->renderBody(et);
 
                 float pct = std::max(0.0f, g_EtherBoss->hp / g_EtherBoss->maxHp);
                 float bW = 440.0f, bH = 13.0f;
@@ -5267,27 +5178,16 @@ int main() {
             }
         }
 
-        // (g4f) FORK.worm ???�라즈마 체인: 가�?�?scissor ?�에 본체·adds·FX
-        //   창마??scissor ?�스 ???�른 창에?�도 보이?? 가짜창 �??�막????그림.
+        // (g4f) FORK.worm plasma chain: render body, adds, and FX globally.
         if (g_CentiBoss && g_CentiBoss->alive) {
             float ct = (float)glfwGetTime();
             float centiAimX = playerWin.x + playerWin.width  * 0.5f;
             float centiAimY = playerWin.y + playerWin.height * 0.5f;
-            BatchFlush(); glEnable(GL_SCISSOR_TEST);
-            auto centiPass = [&](float wx, float wy, float ww, float wh) {
-                WorldScissor(wx, wy, ww, wh);
-                g_CentiBoss->renderFx(ct, centiAimX, centiAimY);
-                g_CentiBoss->renderBody(ct);
-                for (auto& mb : g_CentiBoss->minis)
-                    if (mb.alive) g_CentiBoss->drawMini(mb);
-            };
-            for (auto& fw : zwins) centiPass(fw.x, fw.y, fw.w, fw.h);
-            centiPass(playerWin.x, playerWin.y, playerWin.width, playerWin.height);
-            if (g_Stats.turretMode)
-                for (auto& tr : g_Turrets)
-                    centiPass(tr.x - TURRET_WIN_W*0.5f, tr.y - TURRET_WIN_H*0.5f,
-                              TURRET_WIN_W, TURRET_WIN_H);
-            BatchFlush(); glDisable(GL_SCISSOR_TEST);
+            g_CentiBoss->renderFx(ct, centiAimX, centiAimY);
+            g_CentiBoss->renderBody(ct);
+            for (auto& mb : g_CentiBoss->minis)
+                if (mb.alive) g_CentiBoss->drawMini(mb);
+            BatchFlush();
         }
 
         // (h) ?�론 ??1~2�?(?�탑 모드 ???�론 ?�더 비활??
@@ -5312,7 +5212,7 @@ int main() {
                 if (!ch.alive) continue;
                 float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                 float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
-                // ?�안 ?�날 ?�스?????�파?�웨???��? ??��)?� ?�실??구분
+                // ?�안 ?�날 ?�스?????�파?�웨???��? ??��)?�??�실??구분
                 drawCircle(chx, chy, CHAKRAM_SIZE * 0.62f, 0.3f, 0.9f, 1.0f, 0.28f);   // 글로우
                 drawDiamond(chx, chy, CHAKRAM_SIZE * 1.15f, 0.5f, 1.0f, 1.0f, 0.45f);  // ?�전???�트
                 drawCircle(chx, chy, CHAKRAM_SIZE * 0.5f, 0.2f, 0.85f, 1.0f, 1.0f);
@@ -5327,7 +5227,7 @@ int main() {
         // ?�론/차크??배치�?지�?즉시 flush
         BatchFlush();
     
-        // ?�?� (h3) 가�?OS �??�롬 ???�?��?�?+ [X] ?�기 (?�스?�톱 ?�계관) ?�?�
+        // ?�?�?(h3) 가�?OS �??�롬 ???�?��?�?+ [X] ?�기 (?�스?�톱 ?�계관) ?�?�?
         //    "??= ?�로?�스, 창을 ?�아 종료?�다" ?�체?? ?�드 좌표(�?반영)�?그림.
         {
             GameState gst = g_GameManager.currentState;
@@ -5343,7 +5243,7 @@ int main() {
                 };
                 // 가짜창 ?�?��?�????�에??만든 z-리스????��?�높?? ?�서�?그림.
                 //   '?�기보다 ?��? �? ?�는 '?�레?�어 �????�?��?바�? ??���? ?�체�?                //   ?�기??�??�니??**겹친 가�?구간�?* ?�라?�다(부�??�리??.
-                //   ?�?��?바의 ?�로 ??y,y+TB]?� 겹치??가림창??x구간??가?�구간에??빼고,
+                //   ?�?��?바의 ?�로 ??y,y+TB]?�?겹치??가림창??x구간??가?�구간에??빼고,
                 //   ?��? 구간?�만 glScissor �??�립??그린?? (봇넷<?�거�?보스<?�레?�어,
                 //   같�? ?�?��? ?�환?�서)
                 const float TBH = 22.0f;
@@ -5394,7 +5294,7 @@ int main() {
 
         
     
-        // ?�?� ?�기부??UI/?�버?�이: 줌·흔?�기 무시?�고 ?�면 고정 좌표(base ortho)�??�?�
+        // ?�?�??�기부??UI/?�버?�이: 줌·흔?�기 무시?�고 ?�면 고정 좌표(base ortho)�??�?�?
         //    (?�리모프 2?�이�?�?0.5 ?�서 쿨다?�칸·메뉴?�·비?�트·?�래?��? 찌그?��???버그 fix)
         BatchFlush();   // ?�드(�?ortho) ?�형 ?��? 그린 ??base ortho �??�환
         glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
@@ -5625,7 +5525,7 @@ int main() {
     
             // 공통 경고 배너 (중앙 ?�단�?
             float by3 = sh2 * 0.30f;
-            // ?�름 (?�)
+            // ?�름 (?�?
             wchar_t banner[64]; swprintf_s(banner, L"!! %ls !!", g_BossWarnName);
             float nsc = 1.5f;
             float nw2 = g_TextL.Width(banner, nsc);
@@ -5670,7 +5570,7 @@ int main() {
             drawRect(0, 0, (float)screenWidth, (float)screenHeight,
                      g_FlashColor.r, g_FlashColor.g, g_FlashColor.b, a);
         }
-        // FORK.worm ?�피 ???�가??RGB 분리 글리치
+        // FORK.worm ?�피 ???��???RGB 분리 글리치
         if (g_CentiBoss && g_CentiBoss->glitchOverlay > 0.001f) {
             BindMainShader();
             float go = g_CentiBoss->glitchOverlay * 7.0f;
@@ -5721,7 +5621,7 @@ int main() {
         // [6] HUD
         g_GameManager.Render();
     
-        // ?�?� [7] ?�국???�스??+ 메뉴 ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+        // ?�?�?[7] ?�국???�스??+ 메뉴 ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
         {
             float sw = (float)screenWidth, sh = (float)screenHeight;
             auto  st = g_GameManager.currentState;
@@ -5760,15 +5660,8 @@ int main() {
                 }
             }
     
-            // ?�?� ?�게???�업?�시�???메뉴?� ?�일??OS ?�레???��? (?�스?�톱 방어 ?��??? ?�?�
-            if (st == GameState::RUNNING || st == GameState::PAUSED || st == GameState::DYING ||
-                st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT ||
-                (st == GameState::SETTINGS && g_SettingsReturnTo == GameState::PAUSED)) {
-                DrawIngameTaskbar(sw, sh,
-                    (st == GameState::SETTINGS) ? GameState::PAUSED : st);
-            }
-    
-            // ?�?� ?�적 ?�금 ?�스??(?�단 중앙 배너, 4�??�시 ???�이?? ?�?�
+            // ?�?�??�게???�업?�시�???메뉴?�??�일??OS ?�레???��? (?�스?�톱 방어 ?��??? ?�?�?
+            // ?�?�??�적 ?�금 ?�스??(?�단 중앙 배너, 4�??�시 ???�이?? ?�?�?
             if (g_AchToastTimer > 0.0f && g_AchToastId >= 0 &&
                 g_AchToastId < ACH_COUNT) {
                 g_AchToastTimer -= delta;
@@ -5790,7 +5683,7 @@ int main() {
     
             DrawKillTags(g_TextS, st == GameState::RUNNING || st == GameState::DYING);
 
-            // ?�?� ?�리?�이?�브 HUD (게임 �? ??F:증강  G:무적 ?�?�
+            // ?�?�??�리?�이?�브 HUD (게임 �? ??F:증강  G:무적 ?�?�?
             if (g_CreativeMode &&
                 (st == GameState::RUNNING || st == GameState::READY ||
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
@@ -5807,11 +5700,11 @@ int main() {
                 }
             }
     
-            // ?�?� [7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�
-            //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�.
+            // ?�?�?[7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�?
+            //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
             if (st != GameState::RUNNING && st != GameState::DYING) {
                 std::function<void()> resetFn = ResetForNewGame;
-                // ������ ũ�� ����(��� 64px) ���� Ŭ���� ���� �������� ����
+                // ������ ũ�� ����(���?64px) ���� Ŭ���� ���� �������� ����
                 bool sceneLmb = (my >= BROWSER_CHROME_H) ? lmb : false;
                 SceneCtx ctx{ sw, sh, mx, my, sceneLmb, delta, window, &fireTimer, resetFn };
                 switch (st) {
@@ -5851,17 +5744,6 @@ int main() {
 #else
                 const float hudTopY = BROWSER_CHROME_H + 4.0f;
 #endif
-                // safe-zone screen edge guideline
-                {
-                    BindMainShader();
-                    const float mg = 7.0f, mw = 1.5f, mA = 0.09f;
-                    const float bi = BottomInset();
-                    const float fr = 0.35f, fg = 0.82f, fb = 1.0f;
-                    drawRect(mg,           mg,                sw - mg*2.0f, mw, fr,fg,fb,mA);
-                    drawRect(mg,           sh - bi - mg - mw, sw - mg*2.0f, mw, fr,fg,fb,mA);
-                    drawRect(mg,           mg,                mw, sh - bi - mg*2.0f, fr,fg,fb,mA);
-                    drawRect(sw - mg - mw, mg,                mw, sh - bi - mg*2.0f, fr,fg,fb,mA);
-                }
                 // 좌상?? Lv. + HP ?�자 (?�각 바는 ?�레?�어 창에 부착됨)
                 {
                     int hpCur = (int)(g_GameManager.playerHP + 0.5f);
@@ -5919,19 +5801,24 @@ int main() {
                 // (HP/EXP ?�각 바는 ?�레?�어 �??�단??부착됨 ????(c2) 참고)
                 // ?�단 조작 ?�내 (?��??�게 ??��) ?????�레?�어가 HP/?�킬 ?�치�??�게
                 if (st == GameState::RUNNING) {
-                    const wchar_t* c =
-                        (g_Language == Language::KR)
-                            ? L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause"
-                        : (g_Language == Language::JP)
-                            ? L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause"
-                            : L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause";
+                    static const wchar_t* kCtrlHint[3] = {
+                        L"WASD 이동   마우스 사격   SHIFT 대시   Q/E/R 스킬   ESC 일시정지",
+                        L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause",
+                        L"WASD 移動   マウス 射撃   SHIFT ダッシュ   Q/E/R スキル   ESC 一時停止",
+                    };
+                    const wchar_t* c = kCtrlHint[LangIndex()];
                     float cw = g_TextS.Width(c, 0.7f);
                     g_TextS.Draw(c, CenterX(sw, cw), HudY(sh, Hud::COMBO_TEXT), 0.7f,
                                  0.7f, 0.82f, 0.95f, 0.72f);   // 가?�성 ??(?�어????보인?�는 ?�드�?
                 }
                 if (st == GameState::RUNNING && g_GameManager.augReady) {
                     float ap = 0.55f + 0.45f * sinf((float)glfwGetTime() * 4.5f);
-                    const wchar_t* hintTxt = L"[ SPACE ]  ���� ����";
+                    static const wchar_t* kAugHint[3] = {
+                        L"[ SPACE ]  증강 픽업",
+                        L"[ SPACE ]  Pick Augment",
+                        L"[ SPACE ]  強化 取得",
+                    };
+                    const wchar_t* hintTxt = kAugHint[LangIndex()];
                     float hw = g_TextL.Width(hintTxt, 0.92f);
                     float hy = (float)sh * 0.5f - 60.0f;
                     // glow pass
@@ -5941,14 +5828,14 @@ int main() {
                     g_TextL.Draw(hintTxt, CenterX(sw, hw), hy, 0.92f,
                                  0.45f, 1.0f, 0.62f, ap * 0.95f);
                 }
-                // ?�?� ?�체력 경고 ??HP 25% ?�하 ??가?�자�?부?�러???�색 ?�스 + ?�스???�?�
+                // ?�?�??�체??경고 ??HP 25% ?�하 ??가?�자�?부?�러???�색 ?�스 + ?�스???�?�?
                 if (st == GameState::RUNNING || st == GameState::PAUSED) {
                     float hpFrac = (g_Stats.maxHP > 0.0f)
                                  ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                     if (hpFrac > 0.0f && hpFrac < 0.25f) {
                         float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 6.0f);
                         float sev   = 1.0f - hpFrac / 0.25f;
-                        float a     = (0.08f + 0.13f * pulse) * (0.5f + 0.5f * sev);
+                        float a     = (0.12f + 0.22f * pulse) * (0.6f + 0.4f * sev);
                         BindMainShader();
                         float bw = 64.0f;
                         drawRect(0, 0, sw, bw, 0.9f, 0.15f, 0.15f, a);
@@ -5964,7 +5851,7 @@ int main() {
                 }
             }
     
-            // ?�?� ?�맛: ?��?지 ?�자 ?�업 + 콤보 카운??(?�제 ?�레??중에�? ?�?�
+            // ?�?�??�맛: ?��?지 ?�자 ?�업 + 콤보 카운??(?�제 ?�레??중에�? ?�?�?
             //    메뉴/?�시?��??�선 ?��? ???�스?��? 메뉴 ?�에 ?�던 버그 fix
             if (st == GameState::RUNNING || st == GameState::DYING) {
                 // ?��?지 ?�자 (?�드 ???�크�?변?????�스?? ???�정 ?��?
@@ -5996,7 +5883,7 @@ int main() {
                 }
             }
     
-            // ?�?� ?�티�??�킬 ?�롯 (좌하?? ?�시�?쿨다?????? ?�?�
+            // ?�?�??�티�??�킬 ?�롯 (좌하?? ?�시�?쿨다?????? ?�?�?
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float KW = 54.0f, KH = 48.0f, KG = 8.0f;
                 float kx0 = 16.0f, ky0 = HudY(sh, KH + Hud::SKILL_KEYS_Y);
@@ -6004,15 +5891,21 @@ int main() {
                                     float cd, float r, float g, float b) {
                     float x = kx0 + idx * (KW + KG), y = ky0;
                     bool ready = (cd <= 0.0f);
-                    drawRect(x, y, KW, KH, 0.05f, 0.05f, 0.08f, 0.88f);
-                    if (!ready) drawRect(x, y, KW, KH, 0.0f, 0.0f, 0.0f, 0.55f);
-                    drawRect(x, y, KW, 4.0f, r, g, b, ready ? 1.0f : 0.45f);
-                    g_TextS.Draw(key, x + 4.0f, y + 4.0f, 0.55f, 1, 1, 1, 0.9f);
-                    g_TextS.Draw(tag, x + 4.0f, y + KH - 17.0f, 0.5f, r, g, b, ready ? 1.0f : 0.5f);
+                    float bgA = ready ? 0.22f : 0.40f;
+                    drawRect(x, y, KW, KH, 0.02f + r*0.04f, 0.02f + g*0.03f, 0.04f + b*0.04f, bgA);
+                    drawRect(x, y, KW, 3.5f, r, g, b, ready ? 0.90f : 0.36f);
+                    const float cL = 9.0f, ct = 1.2f;
+                    float ca = ready ? 0.58f : 0.24f;
+                    drawRect(x,       y,       cL, ct, r,g,b, ca);  drawRect(x,       y,       ct, cL, r,g,b, ca);
+                    drawRect(x+KW-cL, y,       cL, ct, r,g,b, ca);  drawRect(x+KW-ct, y,       ct, cL, r,g,b, ca);
+                    drawRect(x,       y+KH-ct, cL, ct, r,g,b, ca);  drawRect(x,       y+KH-cL, ct, cL, r,g,b, ca);
+                    drawRect(x+KW-cL, y+KH-ct, cL, ct, r,g,b, ca);  drawRect(x+KW-ct, y+KH-cL, ct, cL, r,g,b, ca);
+                    g_TextS.Draw(key, x + 4.0f, y + 7.0f, 0.55f, 1,1,1, ready ? 0.90f : 0.50f);
+                    g_TextS.Draw(tag, x + 4.0f, y + KH - 17.0f, 0.5f, r,g,b, ready ? 1.0f : 0.42f);
                     if (!ready) {
                         wchar_t bf[8]; swprintf_s(bf, L"%d", (int)(cd + 0.99f));
                         float tw = g_TextL.Width(bf, 0.85f);
-                        g_TextL.Draw(bf, x + (KW - tw) * 0.5f, y + KH * 0.34f, 0.85f, 1,1,1,0.95f);
+                        g_TextL.Draw(bf, x + (KW - tw) * 0.5f, y + KH * 0.34f, 0.85f, 1,1,1,0.88f);
                     }
                 };
                 skillBox(0, L"SHIFT", g_Stats.dashUpgrade ? L"FLASH" : L"DASH",
@@ -6044,7 +5937,7 @@ int main() {
                 }
             }
     
-            // ?�?� ?�티�??�시�?쿨다??UI (좌하?? ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+            // ?�?�??�티�??�시�?쿨다??UI (좌하?? ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
             // 추후 ?�토그램 PNG 가 ?�어?�면 ?�각??placeholder ?�리???�스�??�시
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
                 const float SLOT_W = 56.0f, SLOT_H = 48.0f, SLOT_GAP = 8.0f;
@@ -6117,11 +6010,11 @@ int main() {
                     ++slot;
                 }
             }
-            // ���� ������ ũ�� (�׻� �ֻ�� ����) ����
+            // ���� ������ ũ�� (�׻� �ֻ��?����) ����
             {
                 GameState nextSt = st;
 
-                // Ÿ��Ʋ�� ����� ���
+                // Ÿ��Ʋ�� �����?���?
                 float barRatio = 0.0f, bR = 0.35f, bG = 0.72f, bB = 1.0f;
                 bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
                                st == GameState::DYING   || st == GameState::AUG_SELECT ||
@@ -6164,7 +6057,7 @@ int main() {
         BatchFlush();   // ?�레??마�?�????��? ?�형 모두 그림
         glfwSwapBuffers(window);
 
-        // ?�?� FPS �?(g_FpsCap > 0 ???�만) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�
+        // ?�?�?FPS �?(g_FpsCap > 0 ???�만) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
         // timeBeginPeriod(1) �?Sleep ?�상??1ms. 마�?�?~1ms ??busy-wait
         // C18: 과거 '무제??(-1) ?�이브는 300 ?�로 ?�램??(진짜 무제???�거).
         int capFps = (g_FpsCap < 0) ? 300 : g_FpsCap;

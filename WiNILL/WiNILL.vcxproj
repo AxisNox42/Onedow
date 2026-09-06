@@ -74,11 +74,11 @@
     <ApplicationIcon>Resource\WiNILL.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)bin\</OutDir>
+    <OutDir>$(ProjectDir)bin\</OutDir>
     <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)bin\</OutDir>
+    <OutDir>$(ProjectDir)bin\</OutDir>
     <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -181,6 +181,8 @@
     <ClCompile Include="Render\Camera.cpp" />
     <ClCompile Include="Render\EntityDraw.cpp" />
     <ClCompile Include="Render\MainShader.cpp" />
+    <ClCompile Include="Render\NebulaGlowShader.cpp" />
+    <ClCompile Include="Render\PlanetShader.cpp" />
     <ClCompile Include="Render\stb_impl.cpp" />
     <ClCompile Include="System\Audio.cpp" />
     <ClCompile Include="System\FakeWindow.cpp" />

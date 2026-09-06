@@ -34,7 +34,7 @@ inline constexpr float SCALE_REF_H = 2000.0f;   // 이 높이에서 g_Scale=1.0 
 
 // 인게임 작업표시줄 높이(px) — 메뉴와 동일한 작업표시줄을 게임 중에도 유지(데스크톱 일관성).
 //   하단 HUD(체력/경험치 바 등)는 이 작업표시줄 위로 올라가도록 함께 오프셋.
-inline constexpr float g_GameBarH = 34.0f;
+inline constexpr float g_GameBarH = 0.0f;
 
 // 플레이 영역 확장량(px, 각 변) — 폴리모프 페이즈2 줌아웃 시 보이는 영역이 넓어지므로
 //   원거리 몹 등이 확장된 구역까지 돌아다니도록 main 이 매 프레임 설정. 0 = 확장 없음.
@@ -323,7 +323,7 @@ inline bool g_AutoSkill         = false;
 #if defined(__APPLE__)
 inline bool g_ShaderFx          = false;
 #else
-inline bool g_ShaderFx          = true;
+inline bool g_ShaderFx          = false;
 #endif
 
 // 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게

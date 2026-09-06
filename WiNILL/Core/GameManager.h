@@ -82,6 +82,8 @@ public:
 
 private:
     unsigned int shaderProgram = 0;
+    int projectionLoc = -1;
+    int colorLoc = -1;
     unsigned int VAO = 0, VBO = 0, EBO = 0;
     unsigned int overlayVAO = 0, overlayVBO = 0;
 

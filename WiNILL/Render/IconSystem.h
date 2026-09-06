@@ -7,6 +7,7 @@
 #include <glad/glad.h>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 #include "stb_image.h"
 #include "Augment.h"
 #include "DrawPrim.h"   // g_MainOrtho
@@ -117,6 +118,14 @@ inline char   g_IconBaseDir[260] = "Icons";   // 런타임에 실제 폴더로 �
 
 inline GLuint g_IconProg = 0, g_IconVAO = 0, g_IconVBO = 0;
 inline GLint  g_IconProjLoc = -1, g_IconTintLoc = -1;
+inline GLuint g_IconBatchProg = 0, g_IconBatchVAO = 0, g_IconBatchVBO = 0;
+inline GLint  g_IconBatchProjLoc = -1;
+inline size_t g_IconBatchCapacityFloats = 0;
+
+struct IconBatchQuad {
+    float x, y, w, h;
+    float r, g, b, a;
+};
 
 // ── GL 파이프라인(텍스처 사각형 + 틴트) ───────────────────
 inline GLuint IconCompile(GLenum type, const char* src) {
@@ -159,12 +168,111 @@ inline void InitIconGL() {
     glGenBuffers(1, &g_IconVBO);
     glBindVertexArray(g_IconVAO);
     glBindBuffer(GL_ARRAY_BUFFER, g_IconVBO);
-    glBufferData(GL_ARRAY_BUFFER, 6 * 4 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 6 * 4 * sizeof(float), nullptr, GL_STREAM_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(2*sizeof(float)));
     glEnableVertexAttribArray(1);
     glBindVertexArray(0);
+
+    static const char* BatchVS =
+        "#version 330 core\n"
+        "layout(location=0) in vec2 aPos;\n"
+        "layout(location=1) in vec2 aUV;\n"
+        "layout(location=2) in vec4 aColor;\n"
+        "uniform mat4 proj;\n"
+        "out vec2 uv;\n"
+        "out vec4 color;\n"
+        "void main(){ gl_Position=proj*vec4(aPos,0,1); uv=aUV; color=aColor; }\n";
+    static const char* BatchFS =
+        "#version 330 core\n"
+        "in vec2 uv;\n"
+        "in vec4 color;\n"
+        "uniform sampler2D tex;\n"
+        "out vec4 fragColor;\n"
+        "void main(){\n"
+        "  vec4 t=texture(tex,uv);\n"
+        "  float a=color.a*t.a;\n"
+        "  if(a<0.002) discard;\n"
+        "  fragColor=vec4(color.rgb*t.rgb,a);\n"
+        "}\n";
+    GLuint bv = IconCompile(GL_VERTEX_SHADER, BatchVS);
+    GLuint bf = IconCompile(GL_FRAGMENT_SHADER, BatchFS);
+    g_IconBatchProg = glCreateProgram();
+    glAttachShader(g_IconBatchProg, bv); glAttachShader(g_IconBatchProg, bf);
+    glLinkProgram(g_IconBatchProg);
+    glDeleteShader(bv); glDeleteShader(bf);
+    g_IconBatchProjLoc = glGetUniformLocation(g_IconBatchProg, "proj");
+    glUseProgram(g_IconBatchProg);
+    glUniform1i(glGetUniformLocation(g_IconBatchProg, "tex"), 0);
+    glUseProgram(0);
+
+    glGenVertexArrays(1, &g_IconBatchVAO);
+    glGenBuffers(1, &g_IconBatchVBO);
+    glBindVertexArray(g_IconBatchVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, g_IconBatchVBO);
+    glBufferData(GL_ARRAY_BUFFER, 6 * 8 * sizeof(float), nullptr, GL_STREAM_DRAW);
+    g_IconBatchCapacityFloats = 6u * 8u;
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(2*sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, 8*sizeof(float), (void*)(4*sizeof(float)));
+    glEnableVertexAttribArray(2);
+    glBindVertexArray(0);
+}
+
+inline void DrawIconBatch(GLuint tex, const std::vector<IconBatchQuad>& quads,
+                          bool additive = false) {
+    if (!tex || !g_IconBatchProg || quads.empty()) return;
+
+    static std::vector<float> vertices;
+    vertices.resize(quads.size() * 6u * 8u);
+    size_t cursor = 0;
+    auto vertex = [&](float x, float y, float u, float v,
+                      const IconBatchQuad& q) {
+        vertices[cursor++] = x;
+        vertices[cursor++] = y;
+        vertices[cursor++] = u;
+        vertices[cursor++] = v;
+        vertices[cursor++] = q.r;
+        vertices[cursor++] = q.g;
+        vertices[cursor++] = q.b;
+        vertices[cursor++] = q.a;
+    };
+    for (const auto& q : quads) {
+        vertex(q.x,       q.y,       0.0f, 0.0f, q);
+        vertex(q.x + q.w, q.y,       1.0f, 0.0f, q);
+        vertex(q.x + q.w, q.y + q.h, 1.0f, 1.0f, q);
+        vertex(q.x,       q.y,       0.0f, 0.0f, q);
+        vertex(q.x + q.w, q.y + q.h, 1.0f, 1.0f, q);
+        vertex(q.x,       q.y + q.h, 0.0f, 1.0f, q);
+    }
+
+    BatchFlush();
+    g_GfxPass = GfxPass::Icon;
+    glUseProgram(g_IconBatchProg);
+    glUniformMatrix4fv(g_IconBatchProjLoc, 1, GL_FALSE, g_MainOrtho);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindVertexArray(g_IconBatchVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, g_IconBatchVBO);
+    const size_t needed = vertices.size();
+    const GLsizeiptr bytes = (GLsizeiptr)(needed * sizeof(float));
+    if (needed > g_IconBatchCapacityFloats) {
+        glBufferData(GL_ARRAY_BUFFER, bytes, vertices.data(), GL_STREAM_DRAW);
+        g_IconBatchCapacityFloats = needed;
+    } else {
+        glBufferSubData(GL_ARRAY_BUFFER, 0, bytes, vertices.data());
+    }
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, additive ? GL_ONE : GL_ONE_MINUS_SRC_ALPHA);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(needed / 8u));
+    // Geometry and UI passes expect regular alpha blending.
+    if (additive)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 // RGBA8 픽셀 → GL 텍스처
@@ -179,6 +287,16 @@ inline GLuint IconTexFromRGBA(unsigned char* d, int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindTexture(GL_TEXTURE_2D, 0);
     return t;
+}
+
+// Large soft masks are normally rendered far below their source resolution.
+// Mip levels keep those samples cache-friendly without changing screen size.
+inline void IconEnableMipmaps(GLuint tex) {
+    if (!tex) return;
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 inline GLuint IconLoadMem(const unsigned char* buf, int len) {
     int w, h, n;
@@ -295,7 +413,10 @@ inline void ResolveIconDir() {
 inline GLuint g_JobIconTex[8] = { 0 };
 inline GLuint g_ConstellationLineTex = 0;
 inline GLuint g_ConstellationCircleTex = 0;
+inline GLuint g_InGameCircleTex = 0;
 inline GLuint g_ConfigPanelTex = 0;
+inline GLuint g_LeftGradientTex = 0;
+inline constexpr float kInGameCircleAlphaBoost = 1.7f;
 inline const char* const g_JobIconNames[7] = {
     "",                // JOB_NONE — 아이콘 없음
     "JOB_ASSASSIN", "JOB_BERSERKER", "JOB_BOMBARDIER",
@@ -317,26 +438,53 @@ inline void LoadIcons() {
     for (int j = 1; j < 7; j++)
         g_JobIconTex[j] = IconLoad(g_JobIconNames[j]);
 
-    // White alpha masks used by the RUN_CONFIG constellation renderer.
+    // White alpha masks used by constellation renderers. Prefer the embedded
+    // copies so every supported launch directory produces identical visuals.
     const char* linePaths[] = { "Resource/Icons/LineTexture.png", "../Resource/Icons/LineTexture.png", "Icons/LineTexture.png" };
     const char* circlePaths[] = { "Resource/Icons/CircleTexture.png", "../Resource/Icons/CircleTexture.png", "Icons/CircleTexture.png" };
-    for (const char* path : linePaths) {
-        g_ConstellationLineTex = IconLoadFile(path);
-        if (g_ConstellationLineTex) break;
-    }
-    for (const char* path : circlePaths) {
-        g_ConstellationCircleTex = IconLoadFile(path);
-        if (g_ConstellationCircleTex) break;
-    }
+    const char* inGameCirclePaths[] = { "Resource/Icons/InGameCircleTexture.png", "../Resource/Icons/InGameCircleTexture.png", "Icons/InGameCircleTexture.png" };
     const char* panelPaths[] = { "Resource/Icons/PanelTexture.png", "../Resource/Icons/PanelTexture.png", "Icons/PanelTexture.png" };
+    const char* leftGradientPaths[] = { "Resource/Icons/LeftGradient.png", "../Resource/Icons/LeftGradient.png", "Icons/LeftGradient.png" };
 #ifdef _WIN32
-    g_ConfigPanelTex = IconLoadResourceAlphaBoost("ICON_CONFIG_PANEL", 2.5f);
+    g_ConstellationLineTex = IconLoadResourceAlphaBoost("ICON_CONSTELLATION_LINE", 1.0f);
+    g_ConstellationCircleTex = IconLoadResourceAlphaBoost("ICON_CONSTELLATION_CIRCLE", 1.0f);
+    g_InGameCircleTex = IconLoadResourceAlphaBoost("ICON_INGAME_CIRCLE", kInGameCircleAlphaBoost);
+    g_ConfigPanelTex = IconLoadResourceAlphaBoost("ICON_CONFIG_PANEL", 4.0f);
+    g_LeftGradientTex = IconLoadResourceAlphaBoost("ICON_LEFT_GRADIENT", 1.0f);
 #endif
-    if (g_ConfigPanelTex) return;
-    for (const char* path : panelPaths) {
-        g_ConfigPanelTex = IconLoadFileAlphaBoost(path, 2.5f);
-        if (g_ConfigPanelTex) break;
+    if (!g_ConstellationLineTex) {
+        for (const char* path : linePaths) {
+            g_ConstellationLineTex = IconLoadFile(path);
+            if (g_ConstellationLineTex) break;
+        }
     }
+    if (!g_ConstellationCircleTex) {
+        for (const char* path : circlePaths) {
+            g_ConstellationCircleTex = IconLoadFile(path);
+            if (g_ConstellationCircleTex) break;
+        }
+    }
+    if (!g_InGameCircleTex) {
+        for (const char* path : inGameCirclePaths) {
+            g_InGameCircleTex = IconLoadFileAlphaBoost(path, kInGameCircleAlphaBoost);
+            if (g_InGameCircleTex) break;
+        }
+    }
+    if (!g_ConfigPanelTex) {
+        for (const char* path : panelPaths) {
+            g_ConfigPanelTex = IconLoadFileAlphaBoost(path, 4.0f);
+            if (g_ConfigPanelTex) break;
+        }
+    }
+    if (!g_LeftGradientTex) {
+        for (const char* path : leftGradientPaths) {
+            g_LeftGradientTex = IconLoadFileAlphaBoost(path, 1.0f);
+            if (g_LeftGradientTex) break;
+        }
+    }
+
+    IconEnableMipmaps(g_ConstellationCircleTex);
+    IconEnableMipmaps(g_InGameCircleTex);
 }
 
 inline GLuint JobIcon(int jobId) {

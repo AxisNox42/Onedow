@@ -49,3 +49,12 @@ WiNILL/_strip_render.ps1
 
 # ── auto-backup hook 상태 ──
 .cursor/hooks/.last-backup
+
+# Temporary agent / local verification artifacts
+bin_verify/
+*.bak
+*_temp.cpp
+*_tmp.cpp
+Docs/orca-paste-*.png
+patch_*.ps1
+find_*.ps1

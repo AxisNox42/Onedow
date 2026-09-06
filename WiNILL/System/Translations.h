@@ -102,7 +102,7 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"ESC  リスタート",
     },
     /* CHOOSE_AUG */ {
-        L"증강을 선택하세요",
+        L"A U G M E N T   S E L E C T I O N",
         L"Choose an Augment",
         L"強化を選択してください",
     },
@@ -112,12 +112,12 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"デバフを選択してください  (回避不可)",
     },
     /* KEY_HINT_NO_HOVER */ {
-        L"1  /  2  /  3  키로 카드 선택  ·  Space 확정",
+        L"[ 1 ]  ·  [ 2 ]  ·  [ 3 ]   모듈 선택  |  SPACE : 확정",
         L"1  /  2  /  3  to highlight  ·  Space to confirm",
         L"1  /  2  /  3  でカード選択  ·  Space で確定",
     },
     /* KEY_HINT_HOVER */ {
-        L"Space 로 확정",
+        L"[ SPACE : 시스템 인가 ]",
         L"Press Space to confirm",
         L"Space で確定",
     },

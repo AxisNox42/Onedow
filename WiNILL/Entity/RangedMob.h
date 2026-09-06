@@ -8,9 +8,12 @@
 
 class RangedMob {
 public:
+    static constexpr float BASE_HP = 360.0f;
+    static constexpr float VISUAL_BASE_PX = 16.0f * 1.6f;
+
     float worldX, worldY;
     float targetX, targetY;
-    float hp         = 150.0f;
+    float hp         = BASE_HP;
     bool  alive      = true;
     bool  exploded   = false;
     bool  scored     = false;

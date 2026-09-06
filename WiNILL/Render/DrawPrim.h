@@ -54,7 +54,7 @@ inline void BatchFlush() {
     if (g_Batch.size() <= g_BatchVBOFloats)
         glBufferSubData(GL_ARRAY_BUFFER, 0, nbytes, g_Batch.data());
     else {
-        glBufferData(GL_ARRAY_BUFFER, nbytes, g_Batch.data(), GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, nbytes, g_Batch.data(), GL_STREAM_DRAW);
         g_BatchVBOFloats = g_Batch.size();
     }
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(g_Batch.size() / 6));
@@ -67,9 +67,12 @@ inline bool GfxVertOk(float x, float y) {
 }
 inline void BatchVtx(float x, float y, float r, float g, float b, float a) {
     if (!GfxVertOk(x, y)) return;
-    g_Batch.push_back(x); g_Batch.push_back(y);
-    g_Batch.push_back(r); g_Batch.push_back(g);
-    g_Batch.push_back(b); g_Batch.push_back(a * g_BatchAlpha);
+    const size_t base = g_Batch.size();
+    g_Batch.resize(base + 6);
+    float* out = g_Batch.data() + base;
+    out[0] = x; out[1] = y;
+    out[2] = r; out[3] = g;
+    out[4] = b; out[5] = a * g_BatchAlpha;
 }
 inline void BatchTri(float x1, float y1, float x2, float y2, float x3, float y3,
                      float r, float g, float b, float a) {
@@ -99,11 +102,17 @@ inline void drawTriangle(float cx, float cy, float size,
 inline void drawCircle(float cx, float cy, float radius,
                        float r, float g, float b, float a) {
     const int SEG = GfxCircleSegs();
-    float px = cx + radius, py = cy;   // theta=0
+    const float step = 2.0f * (float)M_PI / (float)SEG;
+    const float stepC = cosf(step), stepS = sinf(step);
+    float relX = radius, relY = 0.0f;
+    float px = cx + relX, py = cy + relY;
     for (int s = 1; s <= SEG; s++) {
-        float th = (float)s / SEG * 2.0f * (float)M_PI;
-        float nx = cx + radius * cosf(th), ny = cy + radius * sinf(th);
+        const float nextX = relX * stepC - relY * stepS;
+        const float nextY = relX * stepS + relY * stepC;
+        const float nx = (s == SEG) ? cx + radius : cx + nextX;
+        const float ny = (s == SEG) ? cy : cy + nextY;
         BatchTri(cx, cy, px, py, nx, ny, r, g, b, a);
+        relX = nextX; relY = nextY;
         px = nx; py = ny;
     }
 }
@@ -114,12 +123,16 @@ inline void drawConeFan(float cx, float cy, float radius,
                         float r, float g, float b, float a) {
     const int SEG = GfxArcSegs();
     float th0 = angCenter - halfArc;
-    float px = cx + radius * cosf(th0), py = cy + radius * sinf(th0);
+    const float step = 2.0f * halfArc / (float)SEG;
+    const float stepC = cosf(step), stepS = sinf(step);
+    float relX = radius * cosf(th0), relY = radius * sinf(th0);
+    float px = cx + relX, py = cy + relY;
     for (int s = 1; s <= SEG; s++) {
-        float t  = (float)s / SEG;
-        float th = angCenter - halfArc + 2.0f * halfArc * t;
-        float nx = cx + radius * cosf(th), ny = cy + radius * sinf(th);
+        const float nextX = relX * stepC - relY * stepS;
+        const float nextY = relX * stepS + relY * stepC;
+        const float nx = cx + nextX, ny = cy + nextY;
         BatchTri(cx, cy, px, py, nx, ny, r, g, b, a);
+        relX = nextX; relY = nextY;
         px = nx; py = ny;
     }
 }

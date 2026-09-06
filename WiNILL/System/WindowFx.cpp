@@ -25,10 +25,12 @@ void EnableWindowTransparency(GLFWwindow* window) {
     BOOL dwmOn = FALSE;
     DwmIsCompositionEnabled(&dwmOn);
     TransparencyLog("  DwmIsCompositionEnabled = %s\n", dwmOn ? "YES" : "NO");
+    // GLFW_TRANSPARENT_FRAMEBUFFER already handles per-pixel alpha.
+    // Extending DWM glass over the whole client area darkens the desktop behind UI.
 
     if (dwmOn) {
         // 클라이언트 영역 전체를 유리 프레임으로 → per-pixel 알파가 데스크탑에 합성됨
-        MARGINS m = { -1, -1, -1, -1 };
+        MARGINS m = { 0, 0, 0, 0 };
         HRESULT hrM = DwmExtendFrameIntoClientArea(hwnd, &m);
         TransparencyLog("  DwmExtendFrameIntoClientArea → 0x%08lX (%s)\n",
             (unsigned long)hrM, SUCCEEDED(hrM) ? "OK" : "FAILED");

@@ -35,9 +35,10 @@ public:
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         Monster* nm = new Monster(sx, sy, hpMul);
-        // 엘리트 변종 (드물게) — 신속/강인 (폭발성 e==3 제거: 빨강 자폭류 빼달라 요청)
-        if (elitePct > 0 && (rand() % 100) < elitePct)
-            nm->MakeElite(1 + rand() % 2);
+        // Enhanced variants are disabled. Keep the argument for call-site
+        // compatibility, but never apply Swift/Tanky stat mutations here.
+        (void)varietyPct;
+        (void)elitePct;
         monsters.push_back(nm);
     }
 
@@ -64,6 +65,31 @@ public:
         bombers.push_back(new Bomber(sx, sy, hpMul, speedMul, blastMul));
     }
 
+    // Higher-tier enemies keep their position when colliding with lower-tier
+    // enemies. The lighter enemy receives the separation displacement instead
+    // of making the important target visibly jitter or stall.
+    static int CollisionTier(const Monster* m) {
+        if (!m) return 0;
+        int tier = 0;
+        switch (m->kind) {
+        case MobKind::BRUTE:    tier = 3; break;
+        case MobKind::SPAWNER:  tier = 4; break;
+        case MobKind::GRAVIS:   tier = 3; break;
+        case MobKind::QUASAR:   tier = 3; break;
+        case MobKind::SHIELDED:
+        case MobKind::ORBITER:
+        case MobKind::BADSECTOR:
+        case MobKind::REGERROR: tier = 2; break;
+        case MobKind::SPLITTER:
+        case MobKind::BLINKER:
+        case MobKind::CHARGER:
+        case MobKind::WEAVER:   tier = 1; break;
+        default:                tier = 0; break;
+        }
+        if (m->elite == 2) ++tier;
+        return tier;
+    }
+
     // mobSpeedMult: 잡몹 추가 속도 배율 (디버프)
     // rmobMoveMult : 원거리 몹 lerp 가속 (rmobDelayMult <1 → 더 빠름 → moveMult >1)
     void UpdateAll(float playerCX, float playerCY, float dt,
@@ -78,9 +104,11 @@ public:
         // ── Hive FSM: ORBIT → OPEN → SPAWN → CLOSE ──
         {
             static constexpr float ORBIT_DURATION = 5.5f;
-            static constexpr float OPEN_SPEED     = 2.2f;   // factor/s → ~0.45s to open
-            static constexpr float SPAWN_HOLD     = 0.45f;
-            static constexpr float CLOSE_SPEED    = 2.8f;   // factor/s → ~0.36s to close
+            static constexpr float OPEN_SPEED     = 0.86f;  // deliberate preparation window
+            static constexpr float SPAWN_INITIAL_DELAY = 0.55f;
+            static constexpr float SPAWN_HOLD     = 0.65f;
+            static constexpr float SPAWN_INTERVAL  = 0.62f;
+            static constexpr float CLOSE_SPEED    = 2.2f;   // readable cooldown before reset
             static constexpr int   SPAWN_COUNT    = 4;
 
             std::vector<Monster*> born;
@@ -88,6 +116,8 @@ public:
 
             for (auto m : monsters) {
                 if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+                m->hiveOrbitAngle += dt * 0.36f;
+                m->hivePulseTimer = std::max(0.0f, m->hivePulseTimer - dt);
 
                 if (m->hivePhase == 0) {                    // ORBIT: 기다림
                     m->spawnTimer += dt;
@@ -102,25 +132,43 @@ public:
                         m->hivePhase  = 2;
                         m->spawnTimer = 0.0f;
                         m->hiveSpawned = false;
+                        m->hiveSpawnCount = 0;
                     }
-                } else if (m->hivePhase == 2) {             // SPAWN: Rotor 출현
-                    if (!m->hiveSpawned && total + (int)born.size() < 130) {
-                        for (int k = 0; k < SPAWN_COUNT; k++) {
-                            float a = (float)(rand() % 628) * 0.01f
-                                    + (float)k * (6.2832f / SPAWN_COUNT);
-                            Monster* child = new Monster(
-                                m->worldX + cosf(a) * 55.0f,
-                                m->worldY + sinf(a) * 55.0f,
-                                0.55f);
-                            // Rotor (NORMAL) — use default orange-red color
-                            born.push_back(child);
+                } else if (m->hivePhase == 2) {             // SPAWN: emit one Rotor at a time
+                    if (!m->hiveSpawned) {
+                        m->spawnTimer += dt;
+                        const float spawnDelay = m->hiveSpawnCount == 0
+                                               ? SPAWN_INITIAL_DELAY
+                                               : SPAWN_INTERVAL;
+                        const bool spawnDue = m->spawnTimer >= spawnDelay;
+                        if (spawnDue) {
+                            m->spawnTimer = 0.0f;
+                            if (m->hiveSpawnCount < SPAWN_COUNT &&
+                                total + (int)born.size() < 130) {
+                                // The two lanes stay opposite each other and
+                                // rotate with the station as a single axis.
+                                const float laneAngle = m->hiveOrbitAngle
+                                                       + ((m->hiveSpawnCount & 1) ? 3.1415926f : 0.0f);
+                                Monster* child = new Monster(
+                                    m->worldX,
+                                    m->worldY,
+                                    0.55f);
+                                child->BeginGenesisEgress(cosf(laneAngle), sinf(laneAngle));
+                                born.push_back(child);
+                                m->hivePulseTimer = 0.22f;
+                            }
+                            ++m->hiveSpawnCount;
+                            if (m->hiveSpawnCount >= SPAWN_COUNT ||
+                                total + (int)born.size() >= 130) {
+                                m->hiveSpawned = true;
+                            }
                         }
-                        m->hiveSpawned = true;
-                    }
-                    m->spawnTimer += dt;
-                    if (m->spawnTimer >= SPAWN_HOLD) {
-                        m->hivePhase  = 3;
-                        m->spawnTimer = 0.0f;
+                    } else {
+                        m->spawnTimer += dt;
+                        if (m->spawnTimer >= SPAWN_HOLD) {
+                            m->hivePhase  = 3;
+                            m->spawnTimer = 0.0f;
+                        }
                     }
                 } else {                                     // CLOSE: 괄호 수축
                     m->hiveOpenFactor -= CLOSE_SPEED * dt;
@@ -128,6 +176,7 @@ public:
                         m->hiveOpenFactor = 0.0f;
                         m->hivePhase  = 0;
                         m->spawnTimer = 0.0f;
+                        m->hiveSpawnCount = 0;
                     }
                 }
             }
@@ -140,31 +189,54 @@ public:
         const float MIN_GAP_NORM = 24.0f;
         const float MIN_GAP_SUMM = 32.0f;
         const float CRUSH_DPS    = 50.0f;
+        std::vector<int> pushCounts(monsters.size(), 0);
         for (size_t i = 0; i < monsters.size(); i++) {
             if (!monsters[i]->alive) continue;
-            int pushCount = 0;
+            const int tierI = CollisionTier(monsters[i]);
             float radi = monsters[i]->summoned ? MIN_GAP_SUMM : MIN_GAP_NORM;
-            for (size_t j = 0; j < monsters.size(); j++) {
-                if (i == j) continue;
+            for (size_t j = i + 1; j < monsters.size(); j++) {
                 if (!monsters[j]->alive) continue;
                 float dx = monsters[j]->worldX - monsters[i]->worldX;
                 float dy = monsters[j]->worldY - monsters[i]->worldY;
                 float d2 = dx*dx + dy*dy;
                 float radj = monsters[j]->summoned ? MIN_GAP_SUMM : MIN_GAP_NORM;
                 float minD = (radi + radj) * 0.5f;
-                if (d2 > 0.0001f && d2 < minD * minD) {
-                    float d  = std::sqrt(d2);
-                    float overlap = (minD - d) * 0.5f;
-                    monsters[i]->worldX -= (dx / d) * overlap * 0.5f;
-                    monsters[i]->worldY -= (dy / d) * overlap * 0.5f;
-                    pushCount++;
+                if (d2 >= minD * minD) continue;
+                float d = std::sqrt(d2);
+                if (d <= 0.0001f) {
+                    dx = ((i + j) & 1) ? 1.0f : -1.0f;
+                    dy = 0.0f;
+                    d = 1.0f;
                 }
+                const float overlap = minD - d;
+                const float nx = dx / d;
+                const float ny = dy / d;
+                const int tierJ = CollisionTier(monsters[j]);
+                if (tierI > tierJ) {
+                    monsters[j]->worldX += nx * overlap;
+                    monsters[j]->worldY += ny * overlap;
+                } else if (tierI < tierJ) {
+                    monsters[i]->worldX -= nx * overlap;
+                    monsters[i]->worldY -= ny * overlap;
+                } else {
+                    const float half = overlap * 0.5f;
+                    monsters[i]->worldX -= nx * half;
+                    monsters[i]->worldY -= ny * half;
+                    monsters[j]->worldX += nx * half;
+                    monsters[j]->worldY += ny * half;
+                }
+                ++pushCounts[i];
+                ++pushCounts[j];
             }
             // 4+ 이웃에 끼이면 압사 (디도스는 물량 swarm 정체성이라 압사 면제)
-            if (pushCount >= 4 && monsters[i]->kind != MobKind::DDOS) {
-                monsters[i]->hp -= CRUSH_DPS * dt;
-                if (monsters[i]->hp <= 0.0f) monsters[i]->alive = false;
-            }
+        }
+
+        // Apply crush damage once per frame after all pair corrections.
+        for (size_t i = 0; i < monsters.size(); ++i) {
+            if (!monsters[i]->alive || pushCounts[i] < 4 ||
+                monsters[i]->kind == MobKind::DDOS) continue;
+            monsters[i]->hp -= CRUSH_DPS * dt;
+            if (monsters[i]->hp <= 0.0f) monsters[i]->alive = false;
         }
 
         monsters.erase(

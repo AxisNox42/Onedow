@@ -12,3 +12,11 @@ extern GLint g_MainResLoc;
 
 // 메인 VAO/VBO + g_BaseOrtho / g_MainOrtho 초기화
 void InitMainBatchGeometry(int screenW, int screenH);
+
+// 방사형/선형 그라데이션 — PNG 텍스처 기반 (배칭 불필요, 내부에서 BatchFlush+복원)
+void DrawRadialGradient(float cx, float cy, float radius,
+                        float r, float g, float b, float alpha);
+void DrawRadialGradientRect(float x, float y, float w, float h,
+                            float r, float g, float b, float alpha);
+void DrawLinearGradient(float x, float y, float w, float h,
+                        float r, float g, float b, float alpha);

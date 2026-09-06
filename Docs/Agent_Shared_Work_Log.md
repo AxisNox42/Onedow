@@ -57,6 +57,7 @@
 - Trial selections are connected to the existing runtime arrays and actual gameplay effects.
 - Player weapon visuals now replace the full player body per weapon: Rifle uses Layered Cross-Star dual 4-point frames + slow outer orbit brackets/dashed nodes, Static Field uses Resonance Beacon counter-rotating triangle/hex + field zaps.
 - Active weapon presentation is narrowed to Rifle and Static Field. Cannon is removed from RUN CONFIG/ARMORY and disabled through AugRemoved for compatibility.
+- Astral enemy blueprint now includes `GRAVIS` as a 3T gravity-field elite enemy.
 - The in-run player unique window no longer redraws a late titlebar chrome pass.
 - ARMORY now opens as an in-Main-Menu panel: clicking ARMORY keeps GameState::MAIN_MENU, immediately starts the menu-to-tree animation, and returns through the same reverse path with BACK/ESC/right-click.
 - Latest Debug|x64 build passed.
@@ -94,11 +95,13 @@
 - **Settings UI 폴리시**: 코너 브래킷 버튼·ON/OFF 텍스트 토글·탭-패널 연결선·텍스트 계층(영문 메인/한글 서브)·행 테두리 다이어트 적용
 - **ASTRAL_LOG(Codex) UI**: CODEX.DB→ASTRAL_LOG 명칭 변경, 탭 ENTITIES/MODULES/APEX, 그룹 CLASS-I/CLASS-II/DETECTED, ○───● 별자리 리스트 스타일, 우측 패널 = 회전 노드 뷰어(38%) + 정보 블록(62%) 완료. 미해금 항목 밝기 조정(alpha 0.36→0.62)
 - **ARMORY(Shop) UI**: 구 AppWindow 스타일 전면 교체. 현재 4탭(전체/영구/소총/위성), 좌측 별자리 스크롤 리스트, 우측 디테일 패널 — META 업그레이드(레벨바+버튼 기능), 테마 BUY/EQUIP(기능), 증강 카탈로그(인게임 픽 전용 안내) 완료.
+- **UI 가시성 감사 + 전면 수정**: `SCENE_BG_ALPHA=0.0f` 버그 수정, 텍스트 인코딩 깨짐 수정, 다국어 힌트 추가, HP 경고·일시정지 텍스트 대비 강화, 스킬 HUD 박스 별자리 스타일화, GameOver/Victory 버튼 `DrawMenuCommandFeedback` 리뉴얼 완료. Release|x64 통과.
 
 ### Open Issues
 
 - `g_BatchAlpha` 페이드인이 일부 씬에만 적용됨. 다른 씬 전환에도 확장 필요.
 - Settings 씬 게임 중 오버레이 모드(`settingsOverlay`) 동작 미검증.
+- GameOver/Victory 버튼 실제 클릭 QA 미완 (기존 `UIButton`에서 `DrawMenuCommandFeedback`으로 교체됨).
 
 ### Next Candidates
 
@@ -120,6 +123,124 @@
 ---
 
 ## Change Log
+
+### 2026-08-31
+
+#### Codex - Shared UI Depth Task 7 Verification
+
+- Verified the merged Claude/Codex UI-depth work with a full MSBuild Debug|x64 build; `WiNILL/bin/WiNILL.exe` built successfully with no new errors.
+- Runtime-checked the Main Menu and ARMORY category-entry states at desktop resolution. Primary command text remains dominant after ambient-layer pruning, and category focus/credits remain readable.
+- Confirmed Task 8 ARMORY row behavior in source: Ambient-tier selected fill, Structural-tier drifting scanline, growing left focus bar, rarity-colored markers, and reduced text indent all use the shared depth helpers.
+- Automated capture could not reliably enter the ARMORY item row because Windows DPI/fullscreen coordinates did not match the capture harness. The moving scanline/focus-bar animation still needs one manual runtime visual check; this is not a build blocker.
+
+#### Codex - ASTRAL_LOG Archive Surface and Constellation Detail
+
+- Rebuilt the inline ASTRAL_LOG content area as one filled archive surface, binding the record list and selected-record detail into a single hierarchy.
+- Added an archive header with category, observed-record progress, and category-specific record labels.
+- Added a deterministic nine-node constellation above the detail text, with distinct entity/module/apex geometry, orbital scaffolds, depth-weighted nodes, and rarity/category accent colors.
+- Expanded the sparse detail tag into a readable record view with title, summary, class/status metadata, record type, and read-only state.
+- Kept scrolling and hit testing constrained to the list column while preserving the existing inline entry/exit flow.
+- Vertically centered the combined list/detail archive surface independently from the lower main-menu root commands, with a protected top margin for short viewports.
+- Expanded the centered archive surface vertically by up to `72px * uiS` and raised inactive/unseen list text contrast while preserving selected-item emphasis.
+- Strengthened archive constellation edges, nodes, and orbital guides; unseen records now retain a clearly readable silhouette instead of nearly disappearing.
+- Increased archive header, list, title, summary, metadata, and status text scales while retaining width-based fitting for long localized strings.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed.
+
+---
+
+### 2026-09-01
+
+#### Codex - In-game HUD Signal Layer
+
+- Kept `zwins`, WorldScissor regions, and collision geometry intact while removing opaque FakeWindow surfaces and heavy window chrome from enemy and boss regions.
+- Replaced non-boss window visuals with lightweight constellation corner signals and retained only compact identification tags and 2px gauges where useful.
+- Kept boss identity and health in the dedicated top HUD instead of duplicating it inside a world window.
+- Removed the player FakeWindow background and its enclosing HP/EXP panel; retained the player shell and slim HP/EXP gauges as gameplay HUD.
+- Replaced the in-game shop application-style window with a cyan interaction signal frame.
+- Build: MSBuild Debug|x64 passed; only pre-existing `APIENTRY` redefinition and `LNK4098` warnings remain.
+
+---
+
+### 2026-09-01
+
+#### Codex - Enemy constellation visual pass and debug spawn acceleration
+
+- Rebuilt enemy silhouettes around shared `EnemyNodeAnchor` coordinates so frame endpoints, `CircleTexture` halos, bright star centers, and core alignment use the same positions.
+- `ROTOR`: reduced to one rotating square frame with four smaller textured stars and a larger textured core.
+- `DDOS` display path: reduced to a smaller rotating triangle with three nodes and a distinct warning core.
+- `RangedMob` display path: replaced the nested triangles with a circular observation instrument using partial arcs, dotted orbit segments, four textured markers, and a larger core pulse during BURST.
+- `SPAWNER` display path: simplified to a restrained three-node generation core while preserving its existing gameplay FSM.
+- Reduced line glow width and flushed pending batch geometry before each icon draw to keep textured halos behind their owning stars and prevent pass-order artifacts.
+- Added Debug-only enemy spawn acceleration: four-times spawn-curve progression and 0.45x normal/ranged spawn intervals. Release values remain unchanged.
+- Resource check: `ICON_CONSTELLATION_LINE` and `ICON_CONSTELLATION_CIRCLE` are embedded through `WiNILL/Resource.rc`.
+- Build: MSBuild Debug|x64 `BUILD_OK`; existing `APIENTRY` and `LNK4098` warnings only.
+
+---
+
+### 2026-09-01
+
+#### Codex - Astral Enemy Visual Prototype
+
+- Reworked the existing enemy render branches without changing `MobKind`, spawn rates, HP, collision, or attack behavior.
+- Added shared `DrawEnemyWirePolygon`, `DrawEnemyNode`, and `DrawEnemyCore` helpers in `WiNILL/Render/EntityDraw.cpp`.
+- Updated `NORMAL` (The Rotor) with layered counter-rotating triangular frames, tip nodes, and a readable bright core.
+- Updated `DDOS` (The Node) with an incomplete jittering signal graph, pulsing nodes, and warning core instead of a closed static diamond.
+- Updated `SPAWNER` (The Hive) with a six-node constellation, radial links, stronger open/spawn readability, and phase-aware core feedback.
+- Routed enemy node/core halos through `g_ConstellationCircleTex` with a primitive fallback, so the prototype follows the background constellation texture path even when the packaged texture is unavailable.
+- Kept the legacy NORMAL star geometry as a hidden fallback while making the visible silhouette two counter-rotating triangular frames with tip nodes and a central core.
+- Replaced the `RangedMob` (The Lens) square-layer render path with the same triangular constellation language while preserving its idle/charging/burst state feedback.
+- Kept the existing enemy FSMs, collision, spawn behavior, and combat values unchanged; this pass is visual-only.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed for the touched source/doc files. A pre-existing malformed `Scenes.cpp` stat-string block and missing closing brace were minimally repaired to restore compilation.
+
+---
+
+### 2026-08-30
+
+#### Codex - ARMORY Two-Stage Browser and Astral Data Plates
+
+- Replaced ARMORY's simultaneous category/list/detail presentation with a two-stage flow: category selection first, then an item browser in the same left command slot plus one right-side detail readout.
+- Added forward/reverse browse interpolation, transition input locking, and hierarchical ESC/right-click behavior: items return to categories before categories return to the main menu.
+- Kept category and item hitboxes wide while preventing the left command rail from consuming the detail area.
+- Added filled `AstralDataPlate` surfaces with restrained dual-layer navy fills, cut-corner accents, partial brackets, and asymmetric markers to ARMORY, ASTRAL_LOG, and CALIBRATION information regions.
+- Anchored ARMORY's compact transaction tag directly to the detail plate after removal of the right-side constellation visualization, and reduced the plate to the actual data height.
+- Embedded `LineTexture.png` and `CircleTexture.png` into the executable resources with file-path fallback loading, so constellation masks no longer depend on the launch directory.
+- Standardized the only runtime output at `WiNILL/bin/WiNILL.exe`; the stale root-bin executable was removed by the clean rebuild so both developers no longer launch different builds.
+- Verified the rebuilt executable contains the embedded Line, Circle, Panel, and LeftGradient PNG resources at their full source byte sizes.
+- Raised Astral Data Plate fills from hardcoded near-black to theme-derived blue-gray. After runtime review, limited the embedded Panel texture to a low-alpha edge treatment instead of stretching its bright center across the full surface.
+- Reduced ARMORY's detail plate from a mostly empty full-width region to a bounded 860x310 UI-scale area while preserving the transaction tag, credit readout, and wide logical hitboxes.
+- Locked shared data-plate fills to neutral black while retaining their existing alpha.
+- Replaced the ARMORY-only vertical lift with a shared `MainMenuCommandStartY` anchor used by the main menu, ARMORY, ASTRAL_LOG, RUN_CONFIG, and inline SETTINGS.
+- Unified ARMORY, ASTRAL_LOG, and inline SETTINGS background contrast through one shared main-menu dim pass; removed their scene-specific central/right radial dim fields so inline transitions no longer change the background brightness profile.
+- Build: MSBuild Debug|x64 passed; output `WiNILL/bin/WiNILL.exe`.
+
+#### Codex - Main Menu Visual-Depth Pruning and Motion Profiles
+
+- Removed `DrawMenuCommandAstralAura` and its per-command miniature constellation, wake, and dust rendering.
+- Reduced the main-menu ambient particle pool from 55 to 30 particles (`REDUCED` VFX renders 18) and capped pulse alpha through `PulsedAmbientAlpha`.
+- Removed the 42-star/12-link layer from `DrawMainMenuAstralVeil`; retained only its readability fields so the menu no longer runs two ambient star systems simultaneously.
+- Added frame-rate-independent `ConstellationMotionState` interpolation with field-specific settle thresholds and an integrated motion phase.
+- Added menu-specific orbital behavior profiles: RUN_CONFIG convergence, ARMORY expansion, ASTRAL_LOG stabilization, CALIBRATION alignment, and SHUTDOWN decay.
+- Build: MSBuild Debug|x64 passed; output `WiNILL/bin/WiNILL.exe` updated at `2026-08-30 21:59:01`.
+
+---
+
+### 2026-08-27
+
+#### Claude
+
+- **UI 가시성 감사 보고서 작성**: Scenes.cpp·main.cpp·SceneUI.cpp·UiColors.h 분석. Critical 1건, High 3건, Medium 3건, Low 3건 도출.
+- **[C-1] SCENE_BG_ALPHA 버그 수정** (`Scenes.cpp`): `constexpr float SCENE_BG_ALPHA = 0.0f`가 GameOver·Victory 배경 딤을 완전히 무효화하던 문제 수정. `* SCENE_BG_ALPHA` 곱셈 제거 → 배경 딤 정상 동작.
+- **[H-2] 증강 힌트 텍스트 인코딩 수정** (`main.cpp`): L"[ SPACE ]  ★★★★ ★★★★" (EUC-KR 원본 "증강 픽업"이 UTF-8 재해석으로 U+FFFD×8개로 깨짐) → 다국어 배열 `kAugHint[3]` (KR/EN/JP) 로 교체.
+- **[H-3] 조작 힌트 다국어 추가** (`main.cpp`): 세 언어 모두 동일한 영어였던 조작 힌트를 `kCtrlHint[3]` 배열로 분리. KR: `WASD 이동 / 마우스 사격 / SHIFT 대시 / Q/E/R 스킬 / ESC 일시정지`, JP: 일본어 대응 추가.
+- **[M-1] HP 위험 경고 알파 강화** (`main.cpp`): 계수 `(0.08+0.13×pulse)×(0.5+0.5×sev)` → `(0.12+0.22×pulse)×(0.6+0.4×sev)`. 최대 알파 `0.21 → 0.34`.
+- **[M-2] Pause 씬 텍스트 대비 향상** (`Scenes.cpp`): 서브타이틀 알파 `0.60→0.80` + 색 밝힘, 하단 힌트 알파 `0.55→0.72` + 색 밝힘.
+- **[L-3] 안전지대 가이드라인 제거** (`main.cpp`): alpha 0.09로 사실상 보이지 않던 화면 테두리 가이드라인 블록 전면 제거.
+- **[L-2] 스킬 HUD 박스 별자리 스타일화** (`main.cpp`): `drawRect 0.88` 불투명 배경 → 투명도 `0.22~0.40` 배경 + 8-코너 브래킷. 전체 투명 오버레이 스타일과 통일.
+- **[L-1] Settings 헤더 프로필 박스 패널 제거** (`Scenes.cpp`): `drawRect+drawConstellFrame` 패널 → 플로팅 텍스트 + 1px 하단 구분선. 패널리스 방향 통일.
+- **[H-1] GameOver/Victory 버튼 리뉴얼** (`Scenes.cpp`): `UIButton` (구형 사각형 테두리) → `DrawMenuCommandFeedback` 좌정렬 별자리 스타일. GameOver=청색 accent, Victory=녹색 accent. 호버 슬라이드·앵커 라인·정적 호버 상태 포함. `Scene_Victory`에 누락된 `delta` 추출 추가.
+- Build: MSBuild Release|x64 통과. 기존 APIENTRY 경고만 존재.
+
+---
 
 ### 2026-08-26
 
@@ -281,3 +402,237 @@
 - 텍스처 파일을 `WiNILL/Icons/CONFIG_PANEL.png`에 추가하고, `Resource/Icons` 및 `bin/Resource/Icons`에도 실행용 파일 배치.
 - 중앙 패널 렌더 순서를 텍스처 배경 -> 브라켓 -> 텍스트/스탯 순으로 정리하고 검정색 대비 면으로 조정.
 - Build: MSBuild Debug|x64 `BUILD_OK`.
+
+#### Codex - Panel Texture Coverage
+
+- Reused the embedded `g_ConfigPanelTex` alpha-mask behind inline ARMORY list/detail regions.
+- Added the same mask behind ASTRAL_LOG's list and read-only data tag.
+- Added the mask behind the inline settings detail panel; existing text, constellation, and bracket layers remain above it.
+- Build: MSBuild Debug|x64 `BUILD_OK`.
+
+---
+
+### 2026-08-27
+
+#### Codex - UI Visibility Review and Fixes
+
+- Reviewed main-menu inline UI, ARMORY, ASTRAL_LOG, and RUN_CONFIG visibility/input risks without duplicating the Claude issue matrix.
+- Removed the RUN_CONFIG-specific background darkening during inline handoff to prevent brightness flashes.
+- Removed the duplicate ARMORY left vignette pass used during inline entry.
+- Tightened the RUN_CONFIG contrast texture to the stat-row bounding area and lowered its alpha.
+- Reduced main-menu and RUN_CONFIG weapon/BACK hitboxes to avoid visual-area overlap with neighboring panels.
+- Build: MSBuild Debug|x64 `BUILD_OK`.
+
+#### Codex - Shared Inline UI Readability Pass
+
+- Extended the bounded contrast and text-shadow treatment beyond the main menu.
+- RUN_CONFIG: weapon choices, BACK/PLAY, loadout title, stat labels, and values now use the shared readable-text pass.
+- ARMORY: root commands, item groups/list entries, product header, transaction rows, credits, action buttons, and compact data tags now use the same pass.
+- ASTRAL_LOG: root commands, archive groups/list entries, and decrypted detail text now retain contrast over bright backgrounds.
+- CALIBRATION: root tabs, group selectors, detail title, setting rows, and return hint now use the shared pass.
+- Added borderless, bounded dark surfaces behind the actual RUN_CONFIG stats, ARMORY list/detail, ASTRAL_LOG list/tag, and CALIBRATION selector/detail regions; these replace weak texture-only contrast on bright backgrounds.
+- Kept the pass out of the combat HUD to avoid doubling text rendering across high-frequency gameplay information.
+- Build: full MSBuild Debug|x64 rebuild passed; both executable copies updated at `2026-08-27 21:27:21`.
+
+#### Codex - Shared Menu Interaction System
+
+- Added common helpers for command-button hover interpolation, top-to-bottom reveal timing, and rendering feedback.
+- Unified the interaction style used by the main menu, ARMORY/ASTRAL_LOG/CALIBRATION root commands, RUN_CONFIG weapon/BACK/PLAY commands, and Game Over/Victory actions.
+- Standardized command entrance timing to a `0.14s` stagger and hover interpolation to the same response curve, including the left guide, scan line, node marker, and click pulse.
+- Applied the shared smooth focus transition to ARMORY and ASTRAL_LOG item lists while preserving their existing wide logical hitboxes.
+- Kept sliders and segmented selectors visually distinct because their control semantics differ, while sharing the same hover timing and active-state contrast rules.
+- Build: full MSBuild Debug|x64 rebuild passed; both executable copies updated at `2026-08-27 23:00:50`.
+
+---
+
+### 2026-08-28
+
+#### Codex - Shared Three-Column Inline Layout
+
+- Added a shared `InlineThreeColumnLayout` scaffold for non-game inline screens.
+- Repositioned ARMORY, ASTRAL_LOG, CALIBRATION, and RUN_CONFIG onto the same root/content/detail column anchors and common top/bottom bounds.
+- Removed ARMORY and ASTRAL_LOG content-column Y movement that depended on the selected category, keeping the workspace stable while the selected data changes.
+- Moved the ASTRAL_LOG read-only data tag from the detached lower-right position to the shared detail-column baseline.
+- Anchored RUN_CONFIG stat readout to the shared content column and PLAY to the shared detail-column endpoint.
+- Runtime-checked ARMORY, ASTRAL_LOG, and CALIBRATION at `2560x1599`; root navigation, content, and detail columns now follow the same spatial hierarchy.
+- Build: full MSBuild Debug|x64 rebuild passed.
+
+#### Codex - RUN_CONFIG Combat Constellation Reference
+
+- Detached inline RUN_CONFIG from the provisional shared three-column layout.
+- Replaced the rectangular stat panel and six horizontal bars with a central weapon-power constellation: three hex measurement rings, six animated stat axes, connected value nodes, and a rotating energy core.
+- Added weapon-specific abstract previews without gameplay projectile spawning: repeated linear impulses for RIFLE and expanding radial pulses for STATIC FIELD.
+- Kept the main-menu-derived left weapon/BACK controls, wide logical hitboxes, reverse exit flow, and PLAY input lock behavior intact.
+- Connected PLAY to the power core as the terminal node of the composition and retained the existing 0.5-second launch transition.
+- Added local radial contrast behind the core and weapon header instead of reintroducing a large rectangular application panel.
+- Build: full MSBuild Debug|x64 rebuild and final incremental Debug|x64 build passed.
+
+#### Codex - Constellation Texture and Density Pass
+
+- Routed shared constellation nodes through the supplied `CircleTexture.png` mask, including dark halos, colored energy discs, orbit satellites, stat nodes, and weapon-preview particles.
+- Routed shared constellation edges through `LineTexture.png` with a dark separation pass and tinted luminous pass; retained primitive fallbacks when either texture cannot load.
+- Enriched the RUN_CONFIG power profile with a counter-rotating outer hex cage, an 18-node dotted orbital belt, four measurement ticks per stat axis, and layered core energy discs.
+- Expanded the weapon behavior previews: RIFLE now carries moving textured energy packets with line trails, while STATIC FIELD emits three rotating rings of textured pulse particles.
+- Build: MSBuild Debug|x64 `BUILD_OK`.
+
+#### Codex - RUN_CONFIG Orbital Power Sphere
+
+- Added a fake-3D orbital instrument behind the six-axis weapon profile, based on the supplied spherical constellation reference.
+- The instrument combines a dense latitude/longitude wire globe, three independently tilted orbital planes, 54 stable dust particles, and four high-luminance orbit stars.
+- Added depth-weighted line/node alpha and mild perspective scaling so front and rear orbital segments separate without a 3D renderer or FBO.
+- Kept the six-axis polygon and labels as the foreground information layer, preserving actual stat readability over the new ambient structure.
+- Used stable procedural samples rather than per-frame randomness to prevent particle flicker and allocation churn.
+- Build: MSBuild Debug|x64 `BUILD_OK`.
+
+#### Codex - Main Menu Orbital Sphere Canvas
+
+- Reused the RUN_CONFIG orbital power sphere as the main menu's large right-side ambient instrument.
+- Removed the previous menu-specific 10-node morphing constellation and its coordinate/edge state entirely; the orbital sphere is now the sole primary canvas object.
+- Added two broken outer instrument rings, 24 radial calibration ticks, a focus-driven bright satellite, and a short satellite trail around the wire globe, three orbital planes, 54 dust particles, and four bright stars.
+- Connected menu focus to the sphere phase/color response and slightly expands the instrument on hover.
+- Added subtle inverse mouse parallax while preserving the existing center-collapse scene transition.
+- Removed the previous single dotted ellipse so the new orbital paths do not overlap with redundant decoration.
+- Replaced the pale cyan main-menu palette with a more saturated cobalt-blue range and updated the shared dark-theme Frame/Accent/NodeGlow tokens to match.
+- Added a dark separation pass behind the orbital globe's dense latitude/longitude lines so the instrument remains readable over bright scene backgrounds.
+- Raised all orbital motion to a shared `1.8x` speed scale: globe rotation, orbital planes, dust, bright stars, outer instrument rings, and focus satellite motion now accelerate together.
+- Rebuilt the main-menu instrument again as a cleaner five-plane armillary system: removed the outer calibration rings/ticks and fixed focus satellite.
+- Each root command now owns one orbital plane and one representative star; hover brings that plane forward with added thickness, brightness, and speed.
+- Added an 84-particle volumetric shell and a compact wireframe stellar core so the composition reads as one celestial mechanism instead of stacked UI decoration.
+- Polished menu focus as continuous per-orbit weights, allowing the previous orbit to settle while the next orbit gains thickness, brightness, and speed without snapping.
+- Added rear-orbit occlusion through the stellar core, short trails behind active stars, and longitude lines on the core to improve depth and spherical readability.
+- Kept the RUN_CONFIG power-profile renderer unchanged.
+- Build: MSBuild Debug|x64 `BUILD_OK`.
+
+#### Codex - Main Menu Astral Readability Layer
+
+- Added a borderless translucent astral veil behind the main-menu command area instead of adding individual button cards.
+- The veil uses two oversized radial fields, 42 slowly drifting ambient stars, and 12 faint constellation links so it reads as part of the scene background rather than a UI panel.
+- Added a command-local hover aura: a dark optical falloff, a restrained accent field, and a three-node micro-constellation appear behind only the focused command.
+- Raised primary and secondary command text alpha and strengthened their shadow separation while preserving the existing wide hitboxes, reveal timing, click pulse, and orbital canvas.
+- Build: MSBuild Debug|x64 passed. Runtime window creation passed; pixel capture was unavailable because desktop screenshot permission was not granted.
+- Removed the broad `LeftGradient.png` hover fill after runtime review showed it as a detached gray card; hover now uses three short `LineTexture.png` energy wakes.
+- Routed miniature constellation halos, cores, and 8 orbiting dust particles through `CircleTexture.png`; logo constellation nodes now use the same texture-backed layering instead of primitive diamonds.
+- Reduced representative-star and central-core shadow radii/alpha so texture-backed halos no longer read as large gray stains on bright desktop backgrounds.
+- Retained `LineTexture.png` for constellation links and kept primitive gradient/geometry paths only as missing-resource fallbacks.
+- Build: MSBuild Debug|x64 passed.
+
+---
+
+### 2026-08-31
+
+#### Codex - ARMORY Unified Work Surface
+
+- Reworked the active ARMORY browsing layout to use one RUN_CONFIG-sized dark work surface for the item tree and detail view.
+- Moved the item list into a dedicated center column inside that surface and added a faint divider to establish the list-to-detail reading flow.
+- Removed the duplicated list/detail panel treatment; the remaining list tint is intentionally low-alpha so it does not become a second card.
+- Kept the existing category navigation, scroll range, item hitboxes, purchase/equip transactions, node map, credit display, and action-button feedback intact.
+- Added a compact ARMORY assembly header and visible node count, and raised inactive/group item text contrast for bright-background readability.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed for `Scenes.cpp`.
+- Reordered the active ARMORY detail surface so its constellation map occupies the upper area and the selected node's data tag sits in the lower-right with a safe margin.
+- Removed the duplicate product header from the active detail path and simplified `DESC:`/`STAT:`-style metadata into a continuous readout while preserving purchase, equip, and catalog actions.
+- Build: MSBuild Debug|x64 passed.
+- Enlarged the active ARMORY detail tag typography and moved the tag left inside the detail area so it sits close to the augmentation list instead of drifting toward the corner.
+- Increased the tag's vertical breathing room and kept its purchase command hitbox aligned with the new layout.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed.
+- Moved the active ARMORY detail tag further toward the upper-left of the right detail area while leaving the category rail and constellation map positions unchanged.
+- Replaced the partial detail-tag marks with a single corner-bracket frame around the entire explanation block, keeping the existing transparent surface treatment and command hitbox.
+- Build: MSBuild Debug|x64 passed.
+- Rebalanced the active ARMORY detail column into two full-width horizontal bars: the constellation map occupies the upper bar and the selected node explanation occupies the lower bar.
+- Docked the explanation tag to the lower bar with a full-width bracket frame, while preserving the left category list, map styling, and purchase/equip hitboxes.
+- Build: MSBuild Debug|x64 passed.
+- Increased the active ARMORY header, category/list labels, constellation label, and detail-tag typography for stronger readability without changing the established layout.
+- Kept row heights and command hitboxes stable, and updated the hover underline width calculation to match the enlarged command text.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed.
+- Enlarged the active ARMORY text scale by a further 1.3x across the assembly header, node list, constellation label, and detail tag.
+- Preserved the existing panel dimensions, row spacing, and input hitboxes so the larger type does not change interaction geometry.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed.
+- Restored the ARMORY assembly/list typography to its prior scale and limited the size adjustment to the active detail explanation tag.
+- Reduced the detail tag text to approximately 85% of the previous enlarged scale while keeping its full-width lower-bar layout and input geometry unchanged.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed.
+- Reworked the RUN_CONFIG trial-count control from a filled rectangular arrow box into a lightweight bracket navigator.
+- Replaced text arrows with line-drawn chevrons, animated their hover length/brightness, and kept the existing left/right hitboxes and count display intact.
+- Build: MSBuild Debug|x64 passed; `git diff --check` passed.
+
+#### Codex - In-game CircleTexture sight markers
+
+- Removed non-boss world-window identifier text so enemies no longer display detached names near the upper-left of their regions.
+- Added large `CircleTexture` sight markers at the exact world-space center of normal, summoned, elite, and ranged enemies.
+- Rendered the textured sight marker before each enemy silhouette, leaving the core, constellation nodes, and gameplay scissor/collision regions unchanged.
+- Kept the marker low-alpha and gently pulsed so it replaces the old window backdrop without hiding the enemy body.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition and `LNK4098` warnings only.
+
+#### Codex - GENESIS Sequential Spawn and SCOPE Scale
+
+- Increased `GENESIS` (`SPAWNER`) body scale from `1.8x` to `2.2x` so its summon core and constellation frame read clearly in the arena.
+- Changed the summon phase from a four-unit burst to one `ROTOR` emitted every `0.22s` after the opening animation completes; the existing cycle repeats after the hive closes.
+- Matched `SCOPE` body and rear sight sizing to the `ROTOR` visual baseline instead of the oversized fake-window width calculation.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition warning only.
+
+#### Codex - SCOPE and SWARM Balance Pass
+
+- Increased `SCOPE` (`RangedMob`) visual baseline from `16px` to `25.6px` (`1.6x`) and centralized the value as `RangedMob::VISUAL_BASE_PX` for both body and rear sight rendering.
+- Increased `SCOPE` base HP from `150` to `360` (`2.4x`) so its ranged role is not erased by a single early attack cycle.
+- Increased `SWARM` (`DDOS`) size scale from `0.5x` to `1.0x`, matching the regular `ROTOR` body scale while preserving its smaller-node constellation design.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition and `LNK4098` warnings only.
+
+---
+
+### 2026-09-02
+
+#### Codex - Early Enemy Roster Visibility
+
+- Removed score gates for `SPAWNER/GENESIS` and `DDOS/SWARM` so all four active enemy silhouettes can appear from the first run.
+- Removed the ranged-mob warm-up delay; ranged enemies now follow their normal spawn interval from run start.
+- Kept conversion probabilities, time-based DDoS pressure/cap ramp, boss suppression, and roster caps so the opening does not flood immediately.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition and `LNK4098` warnings only.
+
+- Increased the enemy sight-marker radius by roughly 25% and raised its base alpha from `0.10` to `0.16`, while preserving the core/node halo levels.
+- Build: MSBuild Debug|x64 passed.
+- Added a centered player `CircleTexture` sight marker behind the weapon shell, with a restrained cyan pulse and no change to player hitboxes or gameplay coordinates.
+- Kept enemy markers low-alpha so the player remains the strongest readable gameplay anchor instead of making every enemy equally bright.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition warning only.
+- Removed the idle pulse from enemy and player sight textures so `CircleTexture` reads as a persistent identity field instead of a projectile appearing and disappearing.
+- Ranged enemies only raise the marker alpha during `BURST`; normal gameplay keeps a fixed low-alpha field.
+- Build: MSBuild Debug|x64 passed; existing `LNK4098` warning only.
+
+#### Codex - Global In-Game Enemy/Bullet Visibility
+
+- Replaced the per-fake-window enemy, bomber, bullet, enemy-part, and approach-orb scissor passes with one global world-space combat pass.
+- Removed the player-window, ranged-window, and turret-window clipping from those render paths; `zwins` remains available for collision, gauges, and signal-frame metadata.
+- Converted turret body/gauge rendering to world-space coordinates so the turret remains visible without its window scissor.
+- Converted VOLLEY, Tesseract, Ether Sword, and FORK.worm rendering to single full-arena passes, preserving boss telegraphs and task-kill rendering.
+- Build: MSBuild Debug|x64 passed; existing `LNK4098` linker warning only.
+
+---
+
+### 2026-09-01
+
+#### Codex - Dual CircleTexture Sight Separation
+
+- Added a black rear `CircleTexture` behind enemy and player sight markers at 1.8x the foreground marker size, using the same world-space center to prevent visual drift.
+- Preserved the colored foreground `CircleTexture`; texture-free fallback now uses the same two-layer order with circles.
+- Removed the visible player fake-window/layout frame while keeping `playerWin` for gameplay coordinates, collision, and sizing logic.
+- Build: MSBuild Debug|x64 passed; existing `LNK4098` linker warning only.
+- Fixed the dark rear-layer path: it now requires both the embedded `CircleTexture` and icon shader, otherwise it falls back to world-space circles instead of silently disappearing.
+- Raised rear-layer alpha independently to `clamp(alpha * 1.6, 0.16, 0.42)` so the black 1.8x separation layer remains visible instead of inheriting near-zero foreground alpha.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition and `LNK4098` warnings only.
+- Isolated the black rear-layer diagnostic to the player only; enemy rear layers are disabled for this test.
+- Forced the player's rear `CircleTexture` tint alpha to `1.0` while retaining the 1.8x size, so a missing ring now indicates a texture/resource, shader, blend, or dark-background issue rather than low alpha.
+- Verified the source `CircleTexture.png` has an opaque center (`alpha 255`) with a feathered edge; the asset itself is not uniformly low-alpha.
+- Build: MSBuild Debug|x64 passed; latest standalone launch reached the gameplay window for visual inspection.
+
+#### Codex - Global Enemy Rear CircleTexture Prepass
+
+- Split the black rear CircleTexture from the player marker so the player rear field is rendered separately from the colored foreground marker.
+- Added a global rear-field prepass before enemy bodies: player, normal/summoned/elite monsters, ranged mobs, and bombers all receive a black CircleTexture at `1.8x` their foreground sight-field radius.
+- Kept rear fields out of per-entity body rendering, preventing one mob's black field from drawing over neighboring mob silhouettes.
+- Preserved the existing colored foreground CircleTexture, enemy constellation shapes, player weapon shell, and gameplay hitboxes.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition and `LNK4098` warnings only.
+- Tuned the black rear CircleTexture opacity from `1.0` to `0.5` while keeping the `1.8x` radius and global prepass ordering unchanged.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition warning only.
+- Adjusted the black rear CircleTexture to alpha `0.7` and reduced its shared radius scale from `1.8x` to `1.4x`, including the player marker.
+- Reduced the shared regular-enemy HP ramp to `0.80x`; this affects normal, special, elite, and ranged mob spawn HP while leaving boss HP and progression/trial multipliers unchanged.
+- Disabled enhanced mob variants such as Swift/Tanky in the runtime spawn path; the legacy `MakeElite` API remains only for compatibility and is no longer invoked.
+- Replaced per-entity rear CircleTexture flushes with one batched icon draw and viewport culling, preserving the player/enemy marker sizes and draw order while reducing frame-time spikes.
+- Reused the rear-marker CPU buffers across frames to avoid repeated heap allocations while the mob count changes.
+- Build: MSBuild Debug|x64 passed; existing `APIENTRY` redefinition and `LNK4098` warnings only.

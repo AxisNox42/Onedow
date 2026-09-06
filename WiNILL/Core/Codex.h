@@ -51,7 +51,7 @@ enum CodexMobId {
     CM_NORMAL, CM_SPLITTER, CM_BLINKER, CM_CHARGER, CM_WEAVER, CM_BRUTE,
     CM_ORBITER, CM_SPAWNER, CM_SHIELDED,   // == (int)MobKind 0..8
     CM_RANGED, CM_BOMBER,
-    CM_DDOS, CM_BADSECTOR, CM_REGERROR,    // 확장 적 (꼬리 추가 — 세이브 인덱스 보존)
+    CM_DDOS, CM_BADSECTOR, CM_REGERROR, CM_GRAVIS, // append-only save indices
     CM_COUNT
 };
 inline bool g_MobSeen[CM_COUNT] = { false };
@@ -148,6 +148,11 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
         { L"가짜창 내부의 적을 강화(이속·공격·체력↑)하는 X형 노드",
           L"X-node that buffs enemies inside its window (speed/atk/HP)",
           L"窓内の敵を強化するX字ノード" } },
+    /* GRAVIS */ {
+        { L"그라비스", L"Gravis", L"グラビス" },
+        { L"중력장으로 플레이어와 탄환의 궤도를 끌어당기는 3티어 정예 천체",
+          L"Tier-3 elite body that bends player and bullet trajectories with gravity",
+          L"重力場でプレイヤーと弾道を曲げるTier-3精鋭天体" } },
 };
 
 inline const wchar_t* MobName(int id) {

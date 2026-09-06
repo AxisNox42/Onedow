@@ -1,5 +1,6 @@
 #include "MainShader.h"
 #include "DrawPrim.h"
+#include "stb_image.h"
 #include <cstdio>
 #include <cstring>
 #ifdef _WIN32
@@ -9,6 +10,94 @@
 float  g_BaseOrtho[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
 GLint  g_MainFxLoc  = -1;
 GLint  g_MainResLoc = -1;
+
+// ── 방사형 그라데이션 (PNG 텍스처 기반, 수학식 밴딩 없음) ──
+static GLuint g_RadGradProg    = 0;
+static GLuint g_RadGradTex     = 0;
+static GLuint g_LinGradTex     = 0;
+static GLint  g_RadGradProjLoc = -1;
+static GLint  g_RadGradTexLoc  = -1;
+static GLint  g_RadGradColLoc  = -1;
+static GLint  g_RadGradAlpLoc  = -1;
+
+static const char* kRadGradVS =
+    "#version 330 core\n"
+    "layout(location=0) in vec2 aPos;\n"
+    "layout(location=1) in vec4 aColor;\n"
+    "uniform mat4 projection;\n"
+    "out vec2 vUV;\n"
+    "void main() { vUV = aColor.xy; gl_Position = projection * vec4(aPos,0.0,1.0); }\n";
+
+static const char* kRadGradFS =
+    "#version 330 core\n"
+    "in vec2 vUV;\n"
+    "out vec4 FragColor;\n"
+    "uniform sampler2D uTex;\n"
+    "uniform vec3  uColor;\n"
+    "uniform float uAlpha;\n"
+    "void main() {\n"
+    "    float luma = texture(uTex, vUV).r;\n"
+    "    float a = (1.0 - luma) * uAlpha;\n"
+    "    FragColor = vec4(uColor, clamp(a, 0.0, 1.0));\n"
+    "}\n";
+
+static void LoadRadGradTexture() {
+    int w = 0, h = 0, n = 0;
+    unsigned char* d = stbi_load("Resource/bg_radial.png", &w, &h, &n, 1);
+    if (!d) { std::fprintf(stderr,"[RadGrad] Resource/bg_radial.png not found\n"); return; }
+    glGenTextures(1, &g_RadGradTex);
+    glBindTexture(GL_TEXTURE_2D, g_RadGradTex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, d);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(d);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+static void LoadLinGradTexture() {
+    int w = 0, h = 0, n = 0;
+    unsigned char* d = stbi_load("Resource/bg_linear.png", &w, &h, &n, 1);
+    if (!d) { std::fprintf(stderr,"[LinGrad] Resource/bg_linear.png not found\n"); return; }
+    glGenTextures(1, &g_LinGradTex);
+    glBindTexture(GL_TEXTURE_2D, g_LinGradTex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, d);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(d);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+static void InitRadialGradShader() {
+    GLuint vs = CompileGlShader(GL_VERTEX_SHADER,   kRadGradVS);
+    GLuint fs = CompileGlShader(GL_FRAGMENT_SHADER, kRadGradFS);
+    g_RadGradProg = glCreateProgram();
+    glAttachShader(g_RadGradProg, vs);
+    glAttachShader(g_RadGradProg, fs);
+    glLinkProgram(g_RadGradProg);
+    { GLint lok = 0;
+      glGetProgramiv(g_RadGradProg, GL_LINK_STATUS, &lok);
+      if (!lok) {
+          char log[512] = {};
+          glGetProgramInfoLog(g_RadGradProg, sizeof(log), NULL, log);
+          std::fprintf(stderr, "[RadGrad LINK FAIL] %s\n", log);
+      } }
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    g_RadGradProjLoc = glGetUniformLocation(g_RadGradProg, "projection");
+    g_RadGradTexLoc  = glGetUniformLocation(g_RadGradProg, "uTex");
+    g_RadGradColLoc  = glGetUniformLocation(g_RadGradProg, "uColor");
+    g_RadGradAlpLoc  = glGetUniformLocation(g_RadGradProg, "uAlpha");
+    LoadRadGradTexture();
+    LoadLinGradTexture();
+}
 
 static const char* kMainVertSrc =
     "#version 330 core\n"
@@ -27,17 +116,10 @@ static const char* kMainFragSrc =
     "void main() {\n"
     "    vec4 c = vColor;\n"
     "    if (uFx == 1) {\n"
-    "        vec2 uv = gl_FragCoord.xy / max(uRes, vec2(1.0));\n"
     "        float luma = dot(c.rgb, vec3(0.299, 0.587, 0.114));\n"
-    "        c.rgb = mix(vec3(luma), c.rgb, 1.30);\n"
-    "        vec3 topTint = vec3(0.92, 1.00, 1.06);\n"
-    "        vec3 botTint = vec3(1.04, 0.94, 1.06);\n"
-    "        c.rgb *= mix(botTint, topTint, uv.y);\n"
+    "        c.rgb = mix(vec3(luma), c.rgb, 1.16);\n"
     "        float lum = max(c.r, max(c.g, c.b));\n"
-    "        c.rgb += c.rgb * smoothstep(0.55, 1.0, lum) * 0.35;\n"
-    "        c.rgb *= 0.94 + 0.06 * (0.5 + 0.5 * sin(gl_FragCoord.y * 3.14159));\n"
-    "        vec2 d = uv - vec2(0.5);\n"
-    "        c.rgb *= (1.0 - dot(d, d) * 0.50);\n"
+    "        c.rgb += c.rgb * smoothstep(0.55, 1.0, lum) * 0.18;\n"
     "        c.rgb = clamp(c.rgb, 0.0, 1.0);\n"
     "    } else if (uFx == 2) {\n"
     "        float lum = max(c.r, max(c.g, c.b));\n"
@@ -92,6 +174,8 @@ void InitMainShaderPipeline(int screenW, int screenH) {
 
     glUseProgram(shader);
     glUniform2f(g_MainResLoc, (float)screenW, (float)screenH);
+
+    InitRadialGradShader();
 }
 
 void InitMainBatchGeometry(int screenW, int screenH) {
@@ -118,11 +202,74 @@ void InitMainBatchGeometry(int screenW, int screenH) {
     glGenBuffers(1, &g_VBO);
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
-    glBufferData(GL_ARRAY_BUFFER, 65536 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 65536 * sizeof(float), NULL, GL_STREAM_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
     g_MainVAO = VAO;
     g_Batch.reserve(131072);
+}
+
+void DrawRadialGradient(float cx, float cy, float radius,
+                        float r, float g, float b, float alpha) {
+    DrawRadialGradientRect(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f,
+                           r, g, b, alpha);
+}
+
+void DrawRadialGradientRect(float x, float y, float w, float h,
+                            float r, float g, float b, float alpha) {
+    if (alpha <= 0.0f || w <= 0.0f || h <= 0.0f || g_RadGradProg == 0 || g_RadGradTex == 0) return;
+    BatchFlush();
+
+    float x0 = x, y0 = y;
+    float x1 = x + w, y1 = y + h;
+
+    glUseProgram(g_RadGradProg);
+    glBindVertexArray(g_MainVAO);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_RadGradTex);
+    glUniform1i(g_RadGradTexLoc, 0);
+    glUniformMatrix4fv(g_RadGradProjLoc, 1, GL_FALSE, g_BaseOrtho);
+    glUniform3f(g_RadGradColLoc, r, g, b);
+    glUniform1f(g_RadGradAlpLoc, alpha);
+
+    float verts[36] = {
+        x0,y0, 0,0, 0,0,  x1,y0, 1,0, 0,0,  x1,y1, 1,1, 0,0,
+        x0,y0, 0,0, 0,0,  x1,y1, 1,1, 0,0,  x0,y1, 0,1, 0,0
+    };
+    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    BindMainShader();
+}
+
+void DrawLinearGradient(float x, float y, float w, float h,
+                        float r, float g, float b, float alpha) {
+    if (alpha <= 0.0f || w <= 0.0f || h <= 0.0f || g_RadGradProg == 0 || g_LinGradTex == 0) return;
+    BatchFlush();
+
+    float x0 = x, y0 = y, x1 = x + w, y1 = y + h;
+
+    glUseProgram(g_RadGradProg);
+    glBindVertexArray(g_MainVAO);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_LinGradTex);
+    glUniform1i(g_RadGradTexLoc, 0);
+    glUniformMatrix4fv(g_RadGradProjLoc, 1, GL_FALSE, g_BaseOrtho);
+    glUniform3f(g_RadGradColLoc, r, g, b);
+    glUniform1f(g_RadGradAlpLoc, alpha);
+
+    float verts[36] = {
+        x0,y0, 0,0, 0,0,  x1,y0, 1,0, 0,0,  x1,y1, 1,1, 0,0,
+        x0,y0, 0,0, 0,0,  x1,y1, 1,1, 0,0,  x0,y1, 0,1, 0,0
+    };
+    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    BindMainShader();
 }

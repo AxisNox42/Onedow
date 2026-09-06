@@ -16,7 +16,9 @@ enum class MobKind {
     // 확장 (인덱스 9~) — MarkMobSeen(<9) 대상 아님. 도감은 CodexMobId 로 별도 추적.
     DDOS,        // 디도스 — 점수 비례 물량 swarm (프로세스 1→3). 능력 없음
     BADSECTOR,   // 배드 섹터 — 육각형, 죽으면 임시 감속 구역 생성 (디버프/자연 스폰)
-    REGERROR     // 레지스트리 에러 — X본체+공전, 가짜창 내 적 강화 오라 (디버프/자연 스폰)
+    REGERROR,    // 레지스트리 에러 — X본체+공전, 가짜창 내 적 강화 오라 (디버프/자연 스폰)
+    GRAVIS,      // Tier 3 gravity-field station controller
+    QUASAR       // Tier 2.5 long-range line controller
 };
 
 // 엘리트 변종 — 0 없음 / 1 신속 / 2 강인 / 3 폭발성. 어떤 잡몹에든 드물게 부여.
@@ -42,6 +44,8 @@ inline void MobKillReward(MobKind k, int splitGen, int elite,
     case MobKind::DDOS:     xpBase = 0.12f; scoreBase = 12.0f;  break;  // 물량형 — 보상 최저
     case MobKind::BADSECTOR:xpBase = 30.0f;scoreBase = 350.0f; break;
     case MobKind::REGERROR: xpBase = 40.0f;scoreBase = 500.0f; break;
+    case MobKind::GRAVIS:   xpBase = 11.0f; scoreBase = 520.0f; break;
+    case MobKind::QUASAR:   xpBase = 9.0f; scoreBase = 480.0f; break;
     default: break;
     }
     if (elite) { xpBase *= 2.5f; scoreBase *= 2.5f; }
@@ -104,14 +108,41 @@ public:
     int     hivePhase      = 0;     // 0=ORBIT 1=OPEN 2=SPAWN 3=CLOSE
     float   hiveOpenFactor = 0.0f;  // 괄호 궤도 확장 (0=닫힘, 1=완전 개방)
     bool    hiveSpawned    = false; // 현재 사이클 소환 완료 여부
+    int     hiveSpawnCount = 0;     // SPAWN phase emits one child per interval
+    float   hiveOrbitAngle = 0.0f;  // shared rigid rotation for shell, scope, and egress axis
+    float   hivePulseTimer = 0.0f;  // short primary sight-texture pulse after each summon
+    bool    genesisEgress = false;  // summoned child exits through one of two fixed lanes
+    float   genesisEgressX = 0.0f, genesisEgressY = 0.0f;
+    float   genesisEgressTimer = 0.0f;
     bool    shieldActive = true;
     float   shieldTimer  = 0.0f;
     float   burnTimer    = 0.0f;   // 은탄환 화상 DoT
     float   burnDps      = 0.0f;
 
+    // QUASAR FSM: cooldown -> acquire -> precision lock -> beam -> recovery.
+    int     quasarState  = 0;
+    float   quasarTimer  = 0.0f;
+    float   quasarAimX   = 1.0f, quasarAimY = 0.0f;
+    float   quasarVisualAngle = 0.0f;
+    float   quasarMoveAngle = 0.0f;
+    float   quasarMoveTurn = 0.0f;
+    float   quasarMoveTimer = 0.0f;
+    float   gravisVisualAngle = 0.0f;
+    float   gravisDriftAngle = 0.0f;
+    float   gravisDriftTimer = 0.0f;
+
     static constexpr float BLINK_INTERVAL = 1.8f;   // 점멸 주기
     static constexpr float BLINK_WARN      = 0.40f; // 점멸 전 잔상 경고
     static constexpr float BLINK_CLOSE     = 0.55f; // 플레이어 쪽으로 55% 점프
+
+    void BeginGenesisEgress(float dirX, float dirY) {
+        const float len = std::sqrt(dirX * dirX + dirY * dirY);
+        if (len <= 0.0001f) return;
+        genesisEgressX = dirX / len;
+        genesisEgressY = dirY / len;
+        genesisEgressTimer = 0.0f;
+        genesisEgress = true;
+    }
 
     Monster(float startX, float startY,
             float hpMul = 1.0f, float speedMul = 1.0f,
@@ -162,9 +193,11 @@ public:
             color = glm::vec3(0.2f, 0.75f, 0.55f);
             hp   *= 3.5f;
             speed *= 0.35f;
-            sizeScale = scale * 1.8f;
+            sizeScale = scale * 2.2f;
             spawnTimer = 0.0f;
             hivePhase = 0; hiveOpenFactor = 0.0f; hiveSpawned = false;
+            hiveSpawnCount = 0;
+            hiveOrbitAngle = (float)(rand() % 628) * 0.01f;
         } else if (k == MobKind::SHIELDED) {
             color = glm::vec3(0.3f, 0.5f, 1.0f);        // 파랑 — 주기적 보호막
             speed *= 0.85f;
@@ -173,7 +206,7 @@ public:
             color = glm::vec3(0.55f, 0.0f, 0.0f);       // 버건디 — 작은 노드 떼
             hp   *= 0.35f;
             speed *= 1.05f;
-            sizeScale = scale * 0.50f;
+            sizeScale = scale * 1.0f;
         } else if (k == MobKind::BADSECTOR) {
             color = glm::vec3(0.6f, 0.25f, 0.85f);      // 보라 — 손상 섹터(육각)
             hp   *= 1.3f;
@@ -185,6 +218,27 @@ public:
             speed *= 0.6f;
             sizeScale = scale * 1.25f;
             orbitAngle = 0.0f;
+        } else if (k == MobKind::GRAVIS) {
+            color = glm::vec3(0.58f, 0.42f, 1.0f);
+            hp *= 8.0f;
+            speed *= 0.24f;
+            sizeScale = scale * 2.65f;
+            contactDmg = 6.0f;
+            gravisVisualAngle = (float)(rand() % 628) * 0.01f;
+            gravisDriftAngle = (float)(rand() % 628) * 0.01f;
+            gravisDriftTimer = 1.0f + (float)(rand() % 120) * 0.01f;
+        } else if (k == MobKind::QUASAR) {
+            color = glm::vec3(0.42f, 0.56f, 1.0f);
+            hp *= 6.4f;                 // 576 base HP, roughly 1.6x SCOPE
+            speed *= 0.52f;
+            sizeScale = scale * 3.15f;
+            contactDmg = 4.0f;
+            quasarState = 0;
+            quasarTimer = (float)(rand() % 120) * 0.01f;
+            quasarVisualAngle = (float)(rand() % 628) * 0.01f;
+            quasarMoveAngle = (float)(rand() % 628) * 0.01f;
+            quasarMoveTurn = ((float)(rand() % 121) - 60.0f) * 0.01f;
+            quasarMoveTimer = 0.8f + (float)(rand() % 101) * 0.01f;
         }
     }
 
@@ -230,6 +284,141 @@ public:
         float dx = playerCX - worldX;
         float dy = playerCY - worldY;
         float dist = std::sqrt(dx * dx + dy * dy) + 1e-4f;
+
+        if (kind == MobKind::GRAVIS) {
+            gravisVisualAngle += deltaTime * 0.72f;
+            gravisDriftTimer -= deltaTime;
+            if (gravisDriftTimer <= 0.0f) {
+                gravisDriftAngle += ((float)(rand() % 101) - 50.0f) * 0.012f;
+                gravisDriftTimer = 1.2f + (float)(rand() % 140) * 0.01f;
+            }
+            worldX += cosf(gravisDriftAngle) * speed * speedMult * deltaTime;
+            worldY += sinf(gravisDriftAngle) * speed * speedMult * deltaTime;
+            TryContact(dist, playerHP, contactDmg, deltaTime);
+            return;
+        }
+
+        if (kind == MobKind::QUASAR) {
+            static constexpr float COOLDOWN_TIME = 3.2f;
+            static constexpr float LOCK_TIME     = 0.55f;
+            static constexpr float BEAM_TIME     = 2.50f;
+            static constexpr float BEAM_GROW_TIME = 0.70f;
+            static constexpr float RECOVER_TIME  = 1.4f;
+            static constexpr float BEAM_LENGTH   = 6000.0f;
+            static constexpr float BEAM_RADIUS   = 34.0f;
+            static constexpr float BEAM_DPS      = 34.0f;
+
+            quasarTimer += deltaTime;
+            // The body always spins at the same rate. Attack states only alter
+            // the firing axis, not the self-rotation cadence.
+            quasarVisualAngle += deltaTime * 0.3f;
+
+            auto turnTowardPlayer = [&](float radiansPerSecond) {
+                float targetX = dx / dist;
+                float targetY = dy / dist;
+                // The beam is an axis, so use the nearer of the two polar directions.
+                if (quasarAimX * targetX + quasarAimY * targetY < 0.0f) {
+                    targetX = -targetX;
+                    targetY = -targetY;
+                }
+                const float current = atan2f(quasarAimY, quasarAimX);
+                const float target = atan2f(targetY, targetX);
+                float delta = target - current;
+                while (delta > 3.14159265f) delta -= 6.28318531f;
+                while (delta < -3.14159265f) delta += 6.28318531f;
+                const float maxStep = radiansPerSecond * deltaTime;
+                delta = std::max(-maxStep, std::min(maxStep, delta));
+                const float next = current + delta;
+                quasarAimX = cosf(next);
+                quasarAimY = sinf(next);
+            };
+
+            if (quasarState == 0) {
+                // Free drift: movement is intentionally unrelated to the player.
+                quasarMoveTimer -= deltaTime;
+                if (quasarMoveTimer <= 0.0f) {
+                    quasarMoveTurn = ((float)(rand() % 121) - 60.0f) * 0.01f;
+                    quasarMoveTimer = 0.8f + (float)(rand() % 101) * 0.01f;
+                }
+                quasarMoveAngle += quasarMoveTurn * deltaTime;
+                worldX += cosf(quasarMoveAngle) * speed * speedMult * deltaTime;
+                worldY += sinf(quasarMoveAngle) * speed * speedMult * deltaTime;
+                if (quasarTimer >= COOLDOWN_TIME) {
+                    // Start charging from the current polar axis. The weapon may
+                    // fire before it fully faces the player, keeping the sweep
+                    // readable instead of snapping into an unavoidable lock.
+                    quasarState = 1;
+                    quasarTimer = 0.0f;
+                }
+            } else if (quasarState == 1) {
+                // Rotate the polar axis until its infinite beam lane actually
+                // intersects the player. It can begin from any facing angle.
+                turnTowardPlayer(0.82f);
+                const float laneDistance = fabsf(dx * quasarAimY - dy * quasarAimX);
+                if (laneDistance <= BEAM_RADIUS * 0.85f) {
+                    quasarState = 2;
+                    quasarTimer = 0.0f;
+                }
+            } else if (quasarState == 2) {
+                if (quasarTimer >= LOCK_TIME) {
+                    quasarState = 3;
+                    quasarTimer = 0.0f;
+                }
+            } else if (quasarState == 3) {
+                // Keep a slight live sweep without erasing the player's dodge.
+                // Over the full 0.55s beam this can rotate by roughly 5.7 degrees.
+                turnTowardPlayer(0.18f);
+                // The beam grows out of the core instead of appearing across
+                // the arena in one frame. Cubic easing starts restrained and
+                // then releases the lane at high speed.
+                const float growT = std::min(1.0f, quasarTimer / BEAM_GROW_TIME);
+                const float reachT = growT * growT * growT;
+                const float reach = BEAM_LENGTH * reachT;
+                const float ax = worldX - quasarAimX * reach;
+                const float ay = worldY - quasarAimY * reach;
+                const float bx = worldX + quasarAimX * reach;
+                const float by = worldY + quasarAimY * reach;
+                const float abx = bx - ax, aby = by - ay;
+                const float len2 = abx * abx + aby * aby;
+                if (len2 > 0.001f) {
+                    float u = ((playerCX - ax) * abx +
+                               (playerCY - ay) * aby) / len2;
+                    u = std::max(0.0f, std::min(1.0f, u));
+                    const float hx = ax + abx * u - playerCX;
+                    const float hy = ay + aby * u - playerCY;
+                    if (hx * hx + hy * hy <= BEAM_RADIUS * BEAM_RADIUS)
+                        HurtPlayer(playerHP, BEAM_DPS * deltaTime);
+                }
+
+                if (quasarTimer >= BEAM_TIME) {
+                    quasarState = 4;
+                    quasarTimer = 0.0f;
+                }
+            } else if (quasarTimer >= RECOVER_TIME) {
+                quasarState = 0;
+                quasarTimer = 0.0f;
+            }
+
+            TryContact(dist, playerHP, contactDmg, deltaTime, -1.0f,
+                       gateWX, gateWY, gateWW, gateWH);
+            return;
+        }
+
+        // GENESIS children are born at the core, then use the current open
+        // lane before returning to their normal player-seeking behavior.
+        if (genesisEgress) {
+            genesisEgressTimer += deltaTime;
+            const float egressSpeed = speed * 1.55f * speedMult;
+            worldX += genesisEgressX * egressSpeed * deltaTime;
+            worldY += genesisEgressY * egressSpeed * deltaTime;
+            if (genesisEgressTimer >= 0.62f) {
+                genesisEgressTimer = 0.0f;
+                genesisEgress = false;
+            }
+            TryContact(dist, playerHP, contactDmg, deltaTime, -1.0f,
+                       gateWX, gateWY, gateWW, gateWH);
+            return;
+        }
 
         if (kind == MobKind::BLINKER) {
             // 점멸체 — 평소 느리게 표류, 주기마다 잔상 경고 후 플레이어 쪽으로 순간이동

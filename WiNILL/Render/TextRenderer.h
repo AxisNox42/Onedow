@@ -32,6 +32,8 @@ public:
 
     float Width(const wchar_t* text, float scale = 1.0f);
     float Height(const wchar_t* text, float scale = 1.0f);
+    // Warm glyph textures before the first interactive frame.
+    void PreloadText(const wchar_t* text);
     void SetMinScale(float scale) { minScale_ = scale; }
 
     void Draw(const wchar_t* text, float x, float y, float scale,
@@ -89,6 +91,7 @@ inline bool TextRenderer::InitGLPipeline()
         "out vec4 fragColor;\n"
         "void main(){\n"
         "  float a = texture(tex,uv).r;\n"
+        "  if (a * col.a < 0.002) discard;\n"
         "  fragColor = vec4(col.rgb, col.a*a);\n"
         "}\n";
 
@@ -109,7 +112,7 @@ inline bool TextRenderer::InitGLPipeline()
     glGenBuffers(1, &VBO_);
     glBindVertexArray(VAO_);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);
-    glBufferData(GL_ARRAY_BUFFER, 6 * 4 * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 6 * 4 * sizeof(float), nullptr, GL_STREAM_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(2*sizeof(float)));
@@ -258,6 +261,13 @@ inline float TextRenderer::Width(const wchar_t* text, float scale)
     for (const wchar_t* p = text; *p; ++p) w += GetGlyph((int)*p).advance;
     return w * scale;
 }
+inline void TextRenderer::PreloadText(const wchar_t* text)
+{
+    if (!text) return;
+    for (const wchar_t* p = text; *p; ++p)
+        (void)GetGlyph((int)*p);
+}
+
 inline float TextRenderer::Height(const wchar_t* /*text*/, float scale)
 {
     scale = EffectiveScale(scale);

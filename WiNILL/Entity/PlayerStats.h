@@ -533,8 +533,9 @@ struct PlayerStats {
             rangedXpBonus  += 5;
             break;
         case AugType::D_MOB_SPAWN:
-            mobSpawnMult   *= 0.70f;
-            mobCapBonus    += 200;
+            // Controlled pressure increase; do not unlock the full cap at once.
+            mobSpawnMult   *= 0.84f;
+            mobCapBonus    += 12;
             mobXpBonus     += 1;
             break;
         case AugType::D_SPLITTER:
@@ -618,7 +619,8 @@ struct PlayerStats {
             xpMult           *= 1.10f;
             break;
         case AugType::D_MOB_PACK:
-            mobPackBonus    += 2;
+            // The time curve already increases wave size, so one extra body is enough.
+            mobPackBonus    += 1;
             mobXpBonus      += 6;
             break;
         case AugType::D_MOB_ELITE:

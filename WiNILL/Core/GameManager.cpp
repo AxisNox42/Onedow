@@ -62,6 +62,9 @@ void GameManager::initShaders() {
     glLinkProgram(shaderProgram);
     glDeleteShader(v);
     glDeleteShader(f);
+
+    projectionLoc = glGetUniformLocation(shaderProgram, "projection");
+    colorLoc = glGetUniformLocation(shaderProgram, "color");
 }
 
 void GameManager::initRenderData() {
@@ -71,7 +74,7 @@ void GameManager::initRenderData() {
     glGenVertexArrays(1, &VAO); glGenBuffers(1, &VBO); glGenBuffers(1, &EBO);
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idx), idx, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
@@ -105,7 +108,7 @@ void GameManager::drawQuad(float x, float y, float w, float h,
     float verts[] = { x,y, x+w,y, x+w,y+h, x,y+h };
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-    glUniform4f(glGetUniformLocation(shaderProgram, "color"), r, g, b, a);
+    glUniform4f(colorLoc, r, g, b, a);
     glBindVertexArray(VAO);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
@@ -503,9 +506,6 @@ void GameManager::Render() {
                         GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(shaderProgram);
 
-    int projLoc  = glGetUniformLocation(shaderProgram, "projection");
-    int colorLoc = glGetUniformLocation(shaderProgram, "color");
-
     // --- 상태별 전체화면 어두운 오버레이 ---
     //   GAMEOVER 는 main.cpp 가 페이드인 딤을 직접 그림.
     //   MAIN_MENU 는 "진짜 바탕화면"을 비추기 위해 어둡게 덮지 않음.
@@ -516,11 +516,11 @@ void GameManager::Render() {
         !(currentState == GameState::SETTINGS &&
           g_SettingsReturnTo == GameState::PAUSED)) {
         float identity[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, identity);
+        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, identity);
 
         float oR = 0.0f, oG = 0.0f, oB = 0.0f, overlayA = 0.5f;
         if (currentState == GameState::GAMEOVER)     { overlayA = 0.60f; }
-        if (currentState == GameState::AUG_SELECT)   { overlayA = 0.75f; }
+        if (currentState == GameState::AUG_SELECT)   { overlayA = 0.45f; }
         if (currentState == GameState::AUG_REPLACE)  { overlayA = 0.78f; }
         // 디버프 — 적갈색 틴트. 오버레이가 너무 진하면(0.80) 하단 설명 박스(0.85)와
         //   겹쳐 새까맣게 보여 "알파 고장"처럼 느껴짐 → 0.62 로 낮춰 가독성 확보.
@@ -530,49 +530,10 @@ void GameManager::Render() {
         glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
-    // --- AUG_SELECT / DEBUFF_SELECT: 3 또는 4-card picker ----------
-    if (currentState == GameState::AUG_SELECT ||
-        currentState == GameState::DEBUFF_SELECT ||
-        currentState == GameState::AUG_REPLACE) {
-        setOrtho(projLoc);
-
-        const int         nCards  = 3;
-        const float CARD_W  = 280.0f;
-        const float CARD_H  = 400.0f;
-        const float GAP     = 48.0f;
-        const float INSET   = 10.0f;
-        const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards-1) * GAP;
-        float baseX = (screenW - TOTAL_W) * 0.5f;
-        float baseY = (screenH - CARD_H)  * 0.4f;
-
-        for (int i = 0; i < nCards; i++) {
-            float cx     = baseX + i * (CARD_W + GAP);
-            bool  hover  = (hoveredCard == i);
-
-            float cr, cg, cb;
-            AugRarity rar = ALL_AUGS[augChoices[i]].rarity;
-            GetRarityColor(rar, cr, cg, cb);
-
-            // 호버 시: 16px 위로 부유 + glow 외곽
-            float yOff = hover ? -16.0f : 0.0f;
-            if (hover) {
-                // 외곽 glow
-                drawQuad(cx - 8, baseY + yOff - 8, CARD_W + 16, CARD_H + 16,
-                         cr, cg, cb, 0.35f);
-            }
-
-            // 카드 배경
-            drawQuad(cx, baseY + yOff, CARD_W, CARD_H,
-                     cr * 0.45f, cg * 0.45f, cb * 0.45f, 0.95f);
-            // 내부 강조 (등급 컬러 반투명)
-            drawQuad(cx + INSET, baseY + yOff + INSET,
-                     CARD_W - 2*INSET, CARD_H - 2*INSET,
-                     cr, cg, cb, hover ? 0.32f : 0.18f);
-        }
-    }
+    // AUG_SELECT / DEBUFF_SELECT 카드 픽커 — Scene_AugSelect(행성 UI)로 대체됨, 제거
 
     // --- 픽셀 좌표계 UI ---
-    setOrtho(projLoc);
+    setOrtho(projectionLoc);
 
     // (HP 바는 이제 플레이어 창 하단에 부착됨 — main.cpp 의 (c2) 참고. 여기선 안 그림)
 

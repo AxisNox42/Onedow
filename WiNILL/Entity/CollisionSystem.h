@@ -11,7 +11,7 @@
 
 // 점 P 와 선분 AB(이전위치→현재위치) 사이 최단 거리 — 스윕(레이캐스트) 충돌 판정
 //   탄속이 빨라 프레임 사이에 적을 지나쳐도, 경로 선분으로 판정해 명중 처리
-static inline float SegDist(float px, float py, float ax, float ay, float bx, float by) {
+static inline float SegDistSq(float px, float py, float ax, float ay, float bx, float by) {
     float abx = bx - ax, aby = by - ay;
     float len2 = abx*abx + aby*aby;
     float t = 0.0f;
@@ -21,7 +21,11 @@ static inline float SegDist(float px, float py, float ax, float ay, float bx, fl
     }
     float cx = ax + abx*t, cy = ay + aby*t;
     float dx = px - cx, dy = py - cy;
-    return std::sqrt(dx*dx + dy*dy);
+    return dx*dx + dy*dy;
+}
+
+static inline float SegDist(float px, float py, float ax, float ay, float bx, float by) {
+    return std::sqrt(SegDistSq(px, py, ax, ay, bx, by));
 }
 
 // HE탄 — 대포 관통 종료 시 소형 폭발
@@ -118,8 +122,9 @@ public:
                 // 적 총알 → 플레이어 (스윕 판정)
                 //   탄막(불릿헬) 회피 가독성 — 피격 판정을 비주얼보다 작은
                 //   '중심 코어' 크기로 축소 (기존 20 → 10, 면적 1/4)
-                float dist = SegDist(playerCX, playerCY, b.prevX, b.prevY, b.x, b.y);
-                if (dist < 10.0f * stats.playerSizeMult) {
+                const float hitRadius = 10.0f * stats.playerSizeMult;
+                if (SegDistSq(playerCX, playerCY, b.prevX, b.prevY, b.x, b.y)
+                    < hitRadius * hitRadius) {
                     float ed = (b.enemyDmg > 0.0f) ? b.enemyDmg : 10.0f;
                     HurtPlayer(playerHP, ed * stats.rmobDmgMult);
                     b.active  = false;
@@ -129,11 +134,19 @@ public:
             }
 
             // 플레이어 총알 vs 잡몹
+            const float segMinX = std::min(b.prevX, b.x);
+            const float segMaxX = std::max(b.prevX, b.x);
+            const float segMinY = std::min(b.prevY, b.y);
+            const float segMaxY = std::max(b.prevY, b.y);
             bool consumed = false;
             for (auto m : mm.monsters) {
                 if (!m->alive) continue;
-                float d = SegDist(m->worldX, m->worldY, b.prevX, b.prevY, b.x, b.y);
-                if (d < 15.0f * m->sizeScale) {   // 분열체 등 큰 몹은 히트박스도 큼
+                const float hitRadius = 15.0f * m->sizeScale;
+                if (m->worldX < segMinX - hitRadius || m->worldX > segMaxX + hitRadius ||
+                    m->worldY < segMinY - hitRadius || m->worldY > segMaxY + hitRadius)
+                    continue;
+                if (SegDistSq(m->worldX, m->worldY, b.prevX, b.prevY, b.x, b.y)
+                    < hitRadius * hitRadius) {   // 분열체 등 큰 몹은 히트박스도 큼
                     float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                              glm::vec2(m->worldX, m->worldY));
                     // CANNON: remainingDmg / 포탑: turretDmg / 그 외: 일반 계산
@@ -233,8 +246,11 @@ public:
             if (!consumed) {
                 for (auto bm : mm.bombers) {
                     if (!bm->alive) continue;
-                    float d = SegDist(bm->worldX, bm->worldY, b.prevX, b.prevY, b.x, b.y);
-                    if (d < 18.0f) {
+                    if (bm->worldX < segMinX - 18.0f || bm->worldX > segMaxX + 18.0f ||
+                        bm->worldY < segMinY - 18.0f || bm->worldY > segMaxY + 18.0f)
+                        continue;
+                    if (SegDistSq(bm->worldX, bm->worldY, b.prevX, b.prevY, b.x, b.y)
+                        < 18.0f * 18.0f) {
                         float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                                  glm::vec2(bm->worldX, bm->worldY));
                         float baseDealt;
@@ -335,8 +351,11 @@ public:
             if (!consumed) {
                 for (auto r : mm.rangedMobs) {
                     if (!r->alive) continue;
-                    float d = SegDist(r->worldX, r->worldY, b.prevX, b.prevY, b.x, b.y);
-                    if (d < 20.0f) {
+                    if (r->worldX < segMinX - 20.0f || r->worldX > segMaxX + 20.0f ||
+                        r->worldY < segMinY - 20.0f || r->worldY > segMaxY + 20.0f)
+                        continue;
+                    if (SegDistSq(r->worldX, r->worldY, b.prevX, b.prevY, b.x, b.y)
+                        < 20.0f * 20.0f) {
                         float pd = glm::distance(glm::vec2(playerCX, playerCY),
                                                  glm::vec2(r->worldX, r->worldY));
                         float baseDealt;
