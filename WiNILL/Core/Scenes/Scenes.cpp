@@ -1069,6 +1069,11 @@ static void DrawMainMenuOrbitalInstrument(float cx, float cy, float radius,
     const float coreR = radius * 0.27f;
     DrawConstellationDisc(cx, cy, coreR * 1.22f,
                            0.0f, 0.0f, 0.014f, 0.20f * alpha);
+    // Soft CircleTexture bloom anchors the right-side menu constellation.
+    DrawConstellationDisc(cx, cy, coreR * 1.75f,
+                          r, g, b, 0.075f * alpha);
+    DrawConstellationDisc(cx, cy, coreR * 1.05f,
+                          r, g, b, 0.16f * alpha);
     DrawConstellationDisc(cx, cy, coreR * 0.92f,
                           r, g, b, 0.10f * alpha);
     for (int lat = -3; lat <= 3; ++lat) {
@@ -1397,11 +1402,11 @@ void Scene_MainMenu(const SceneCtx& c) {
         float ir, ig, ib;
     };
     static const SBtnDef kBtns[] = {
-        { { L"시작",      L"Start",    L"スタート"  }, { L"RUN_CONFIG",  L"RUN_CONFIG",  L"RUN_CONFIG"  }, 0.18f, 0.62f, 0.96f },
+        { { L"시작",      L"Start",    L"スタート"  }, { L"PLAY",        L"PLAY",        L"PLAY"        }, 0.18f, 0.62f, 0.96f },
         { { L"상점",      L"Armory",   L"武器庫"    }, { L"ARMORY",      L"ARMORY",      L"ARMORY"      }, 0.18f, 0.62f, 0.96f },
         { { L"도감",      L"Astral Log", L"星界記録" }, { L"ASTRAL_LOG",  L"ASTRAL_LOG",  L"ASTRAL_LOG"  }, 0.18f, 0.62f, 0.96f },
-        { { L"설정",      L"Setting",  L"設定"      }, { L"CALIBRATION", L"CALIBRATION", L"CALIBRATION" }, 0.18f, 0.62f, 0.96f },
-        { { L"게임 종료", L"Exit",     L"終了"      }, { L"SHUTDOWN",    L"SHUTDOWN",    L"SHUTDOWN"    }, 0.18f, 0.62f, 0.96f },
+        { { L"설정",      L"Setting",  L"設定"      }, { L"SETTING",     L"SETTING",     L"SETTING"     }, 0.18f, 0.62f, 0.96f },
+        { { L"게임 종료", L"Exit",     L"終了"      }, { L"EXIT",        L"EXIT",        L"EXIT"        }, 0.18f, 0.62f, 0.96f },
     };
     const int   kBtnCount = 5;
     const float BW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
