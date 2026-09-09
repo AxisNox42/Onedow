@@ -3404,6 +3404,18 @@ static void Scene_CodexInline(const SceneCtx& c) {
     static int   s_prevSel = -9999;
     static float s_decryptT = 1.0f;
     static float s_itemHover[512] = {};
+    static float s_orbitAngle[CAT_COUNT] = {};
+    static float s_orbitTarget[CAT_COUNT] = {};
+    static float s_orbitVelocity[CAT_COUNT] = {};
+    static float s_displaySlot[CAT_COUNT] = {};
+    static float s_displayTarget[CAT_COUNT] = {};
+    static bool  s_prevUp = false;
+    static bool  s_prevDown = false;
+    static bool  s_prevEnter = false;
+    static bool  s_dragging = false;
+    static bool  s_dragMoved = false;
+    static float s_dragAccum = 0.0f;
+    static double s_dragLastY = 0.0;
 
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
     g_CodexEntryT += dt;
@@ -3504,16 +3516,10 @@ static void Scene_CodexInline(const SceneCtx& c) {
     };
     const RootDef& curRoot = ROOTS[s_cat];
 
-    // One archive surface binds the index and selected record together.
-    DrawAstralDataPlate(archiveX, archiveY, archiveW, archiveH,
-                        curRoot.r, curRoot.g, curRoot.b, 0.86f * wake);
+    // Keep the archive on the main-menu canvas.  The hierarchy is carried by
+    // the root rail, orbital chart and typography instead of a window-shaped
+    // data plate.
     BindMainShader();
-    drawRect(depth2X, depth2Y + archiveHeaderH - 10.0f * uiS,
-             archiveRight - depth2X - 18.0f * uiS, 1.0f * uiS,
-             curRoot.r, curRoot.g, curRoot.b, 0.20f * wake);
-    drawRect(rightX - 18.0f * uiS, listY,
-             1.0f * uiS, listH,
-             curRoot.r, curRoot.g, curRoot.b, 0.14f * wake);
 
     // Main-menu expansion ghost.
     const float oldOut = 1.0f - oldMenuA;
@@ -3669,20 +3675,10 @@ static void Scene_CodexInline(const SceneCtx& c) {
     wchar_t archiveProgress[64];
     swprintf_s(archivePath, L"ASTRAL ARCHIVE / %ls", ROOTS[s_cat].route);
     swprintf_s(archiveProgress, L"%02d / %02d OBSERVED", observedCount, recordCount);
-    DrawShadowedText(g_TextS, archivePath,
-                     depth2X + 8.0f * uiS, depth2Y + 12.0f * uiS,
-                     0.56f * uiS, curRoot.r, curRoot.g, curRoot.b,
-                     0.88f * wake, 0.64f);
-    DrawShadowedText(g_TextS, archiveProgress,
-                     archiveRight - 178.0f * uiS, depth2Y + 12.0f * uiS,
-                     0.48f * uiS, 0.78f, 0.86f, 0.96f,
-                     0.72f * wake, 0.60f);
-    DrawShadowedText(g_TextS,
-                     s_cat == 0 ? L"HOSTILE SIGNAL RECORDS" :
-                     s_cat == 1 ? L"ACQUIRED MODULE RECORDS" : L"APEX OBSERVATION RECORDS",
-                     depth2X + 8.0f * uiS, depth2Y + 38.0f * uiS,
-                     0.44f * uiS, 0.60f, 0.68f, 0.80f,
-                     0.62f * wake, 0.56f);
+    // The restored layout deliberately carries no page header or enclosing
+    // archive panel: the root commands, orbit, and record itself are enough.
+    (void)archivePath;
+    (void)archiveProgress;
 
     if (s_sel[s_cat] < 0) {
         for (int i = 0; i < itemCount; ++i) {
@@ -3695,6 +3691,176 @@ static void Scene_CodexInline(const SceneCtx& c) {
     }
     s_decryptT = UiApproach(s_decryptT, 1.0f, dt, 8.0f);
 
+    // Orbital record list.  Selection owns one angular target; rendering reads
+    // only the damped angle so labels and miniature constellations never apply
+    // a second, conflicting interpolation.
+    int recordSlots[512] = {};
+    int recordSlotCount = 0;
+    int selectedSlot = 0;
+    for (int i = 0; i < itemCount; ++i) {
+        if (items[i].isGroup) continue;
+        if (items[i].key == s_sel[s_cat]) selectedSlot = recordSlotCount;
+        recordSlots[recordSlotCount++] = i;
+    }
+    if (recordSlotCount > 0 && s_sel[s_cat] < 0) {
+        s_sel[s_cat] = items[recordSlots[0]].key;
+        selectedSlot = 0;
+    }
+    if (s_displaySlot[s_cat] == 0.0f && s_displayTarget[s_cat] == 0.0f && selectedSlot != 0) {
+        s_displaySlot[s_cat] = s_displayTarget[s_cat] = (float)selectedSlot;
+    }
+
+    const bool keyUpNow = c.window &&
+        (glfwGetKey(c.window, GLFW_KEY_UP) == GLFW_PRESS ||
+         glfwGetKey(c.window, GLFW_KEY_W) == GLFW_PRESS);
+    const bool keyDownNow = c.window &&
+        (glfwGetKey(c.window, GLFW_KEY_DOWN) == GLFW_PRESS ||
+         glfwGetKey(c.window, GLFW_KEY_S) == GLFW_PRESS);
+    const bool keyEnterNow = c.window && glfwGetKey(c.window, GLFW_KEY_ENTER) == GLFW_PRESS;
+    int stepRequest = 0;
+    if (inputReady && keyUpNow && !s_prevUp) stepRequest = -1;
+    if (inputReady && keyDownNow && !s_prevDown) stepRequest = 1;
+    s_prevUp = keyUpNow;
+    s_prevDown = keyDownNow;
+    s_prevEnter = keyEnterNow;
+
+    const float chartCX = sw;
+    const float chartCY = sh * 0.51f;
+    const float chartR = std::max(sh * 0.58f, sw * 0.44f);
+    const float itemR = sw * 0.70f;
+    const float rowStep = 142.0f * uiS;
+    const bool overOrbit = inputReady && mx >= depth2X - 30.0f * uiS &&
+        mx <= sw && my >= archivePanelY && my <= archivePanelBottom;
+    if (overOrbit && lmb && !g_LmbPrev) {
+        s_dragging = true;
+        s_dragMoved = false;
+        s_dragAccum = 0.0f;
+        s_dragLastY = my;
+    } else if (!lmb) {
+        s_dragging = false;
+        s_dragAccum = 0.0f;
+    }
+    if (s_dragging && lmb) {
+        s_dragAccum += (float)(my - s_dragLastY);
+        s_dragLastY = my;
+        // Dragging is intentionally less sensitive than wheel/keyboard input:
+        // require almost a full visual row before advancing one record.
+        const float dragStepThreshold = rowStep * 0.88f;
+        if (fabsf(s_dragAccum) >= dragStepThreshold) {
+            // Drag direction follows the reversed wheel convention.
+            stepRequest = s_dragAccum > 0.0f ? -1 : 1;
+            s_dragAccum += s_dragAccum > 0.0f ? -dragStepThreshold : dragStepThreshold;
+            s_dragMoved = true;
+        }
+    }
+    if (overOrbit && g_ScrollAccum != 0.0f)
+        stepRequest = g_ScrollAccum > 0.0f ? -1 : 1; // reversed wheel direction
+    g_ScrollAccum = 0.0f;
+    if (recordSlotCount > 0 && stepRequest != 0) {
+        selectedSlot = (selectedSlot + stepRequest + recordSlotCount) % recordSlotCount;
+        s_sel[s_cat] = items[recordSlots[selectedSlot]].key;
+        s_displayTarget[s_cat] += (float)stepRequest;
+    }
+    {
+        const float diff = s_displayTarget[s_cat] - s_displaySlot[s_cat];
+        const float speed = 10.0f;
+        s_displaySlot[s_cat] += diff * std::min(1.0f, dt * speed);
+        if (fabsf(diff) < 0.002f) {
+            s_displaySlot[s_cat] = s_displayTarget[s_cat];
+        }
+    }
+
+    // The real CircleTexture pair is deliberately behind chart and copy.
+    DrawConstellationDisc(chartCX - chartR * 0.12f, chartCY, chartR * 1.48f,
+                          0.0f, 0.0f, 0.0f, 0.68f * rightWake);
+    DrawConstellationDisc(chartCX - chartR * 0.30f, chartCY, chartR * 0.64f,
+                          0.34f, 0.14f, 0.58f, 0.12f * rightWake);
+    BindMainShader();
+    for (int ring = 0; ring < 4; ++ring) {
+        const float rr = chartR * (0.56f + 0.145f * (float)ring);
+        const int segments = 72;
+        for (int j = 0; j < segments; ++j) {
+            if ((j + ring * 2) % 6 == 3) continue;
+            const float a0 = (float)j * 6.2831853f / (float)segments;
+            const float a1 = ((float)j + 0.64f) * 6.2831853f / (float)segments;
+            LogoLine(chartCX + cosf(a0) * rr, chartCY + sinf(a0) * rr,
+                     chartCX + cosf(a1) * rr, chartCY + sinf(a1) * rr,
+                     (ring == 3 ? 1.0f : 0.65f) * uiS,
+                     curRoot.r, curRoot.g, curRoot.b,
+                     (ring == 3 ? 0.16f : 0.075f) * wake);
+        }
+    }
+    // Selection datum: no radial spokes across the chart interior.
+    LogoLine(chartCX - chartR, chartCY, chartCX - chartR * 0.72f, chartCY,
+             1.1f * uiS, curRoot.r, curRoot.g, curRoot.b, 0.42f * wake);
+    drawDiamond(chartCX - chartR, chartCY, 4.0f * uiS,
+                curRoot.r, curRoot.g, curRoot.b, 0.78f * wake);
+
+    // Connected observation rail. Entries slide one row at a time along this
+    // datum, including the wrapped first↔last transition.
+    auto railXAt = [&](float row) {
+        const float dy = row * rowStep;
+        const float span = std::max(40.0f, itemR * itemR - dy * dy);
+        return chartCX - sqrtf(span);
+    };
+    for (int r = -5; r < 5; ++r) {
+        LogoLine(railXAt((float)r), chartCY + (float)r * rowStep,
+                 railXAt((float)(r + 1)), chartCY + (float)(r + 1) * rowStep,
+                 0.72f * uiS, curRoot.r, curRoot.g, curRoot.b, 0.12f * wake);
+    }
+
+    for (int slot = 0; slot < recordSlotCount; ++slot) {
+        float relF = (float)slot - s_displaySlot[s_cat];
+        while (relF > (float)recordSlotCount * 0.5f) relF -= (float)recordSlotCount;
+        while (relF < -(float)recordSlotCount * 0.5f) relF += (float)recordSlotCount;
+        const int rel = (int)std::round(relF);
+        if (rel < -5 || rel > 5) continue;
+        const CItem& itm = items[recordSlots[slot]];
+        const float ax = railXAt(relF);
+        const float ay = chartCY + relF * rowStep;
+        const float distanceFade = std::max(0.0f, 1.0f - fabsf((float)rel) / 6.0f);
+        const bool isSel = (rel == 0);
+        const float hitW = 440.0f * uiS;
+        const float hitH = 100.0f * uiS;
+        const bool hov = inputReady && mx >= ax - 80.0f * uiS && mx <= ax + hitW &&
+                         my >= ay - hitH * 0.5f && my <= ay + hitH * 0.5f;
+        if (hov && lmb && !g_LmbPrev && !s_dragMoved && itm.seen) {
+            float jump = (float)slot - (float)selectedSlot;
+            while (jump > (float)recordSlotCount * 0.5f) jump -= (float)recordSlotCount;
+            while (jump < -(float)recordSlotCount * 0.5f) jump += (float)recordSlotCount;
+            s_sel[s_cat] = itm.key;
+            selectedSlot = slot;
+            s_displayTarget[s_cat] += jump;
+        }
+        const float active = isSel ? 1.0f : (hov ? 0.72f : distanceFade * 0.38f);
+        const float miniX = ax;
+        const float miniR = (isSel ? 62.0f : 42.0f) * uiS;
+        DrawArchiveConstellation(miniX, ay, miniR, s_cat, itm.key,
+                                 now * 0.18f, itm.r, itm.g, itm.b,
+                                 (0.28f + 0.66f * active) * wake, uiS);
+        const float lineEndX = ax + (isSel ? 380.0f : 250.0f) * uiS;
+        LogoLine(miniX + miniR * 0.68f, ay, lineEndX, ay,
+                 (isSel ? 1.05f : 0.72f) * uiS, itm.r, itm.g, itm.b,
+                 (0.12f + 0.34f * active) * wake);
+        DrawVisibleConstellNode(lineEndX, ay, (isSel ? 4.0f : 2.8f) * uiS,
+                                itm.r, itm.g, itm.b,
+                                (0.20f + 0.54f * active) * wake);
+        if (isSel)
+            drawRect(ax + 118.0f * uiS, ay - 22.0f * uiS, 2.0f * uiS, 44.0f * uiS,
+                     itm.r, itm.g, itm.b, 0.76f * wake);
+        float tsc = (isSel ? 0.66f : 0.52f) * uiS;
+        DrawShadowedText(g_TextS, itm.label, ax + 132.0f * uiS,
+                         ay - g_TextS.Height(itm.label, tsc) * 0.5f,
+                         tsc,
+                         itm.seen ? 0.84f + 0.16f * active : 0.58f,
+                         itm.seen ? 0.88f + 0.12f * active : 0.62f,
+                         itm.seen ? 0.94f + 0.06f * active : 0.70f,
+                         (0.38f + 0.60f * active) * wake, 0.68f);
+    }
+
+#if 0
+    // Legacy vertical tree retained temporarily for reference while the
+    // archive data is shared with the orbital renderer above.
     // Depth 2 list.
     BindMainShader();
     const float parentY = rootY + (float)s_cat * (rootH + rootGap) + rootH * 0.5f;
@@ -3807,6 +3973,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     }
     BatchFlush();
     glDisable(GL_SCISSOR_TEST);
+#endif
 
     auto scramble = [&](const wchar_t* src, int seed) -> std::wstring {
         static const wchar_t* glyphs = L"01/\\#*@+-=_";
@@ -3870,28 +4037,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
     if (s_cat == 1 && selKey >= 0 && selKey < AUG_TOTAL)
         GetRarityColor(ALL_AUGS[selKey].rarity, cr, cg, cb);
 
-    const float detailPad = 26.0f * uiS;
-    const float detailX = rightX + detailPad;
-    const float detailW = std::max(220.0f * uiS, rightW - detailPad * 2.0f);
-    const float mapTop = listY + 8.0f * uiS;
-    const float mapH = std::min(300.0f * uiS, rightH * 0.43f);
-    const float mapCX = detailX + detailW * 0.5f;
-    const float mapCY = mapTop + mapH * 0.52f;
-    const float mapRadius = std::min(detailW * 0.40f, mapH * 0.46f);
-
-    DrawShadowedText(g_TextS, L"CONSTELLATION RECORD",
-                     detailX, mapTop, 0.50f * uiS,
-                     cr, cg, cb, 0.82f * rightWake, 0.58f);
-    LogoLine(detailX, mapTop + 24.0f * uiS,
-             detailX + detailW, mapTop + 24.0f * uiS,
-             0.8f * uiS, cr, cg, cb, 0.18f * rightWake);
-    DrawSceneRadialVignette(mapCX, mapCY, mapRadius * 1.28f,
-                            0.30f * rightWake);
-    DrawArchiveConstellation(mapCX, mapCY + 8.0f * uiS, mapRadius,
-                             s_cat, selKey, now, cr, cg, cb,
-                             (seen ? 1.0f : 0.55f) * rightWake, uiS);
-
-    const float infoY = mapTop + mapH + 14.0f * uiS;
+    // Fixed record block inside the chart, matching the original wide-open
+    // composition.  It does not move with the orbit or label animation.
+    const float detailX = sw * 0.70f;
+    const float detailW = std::max(320.0f * uiS,
+                                   std::min(sw * 0.25f, sw - detailX - 54.0f * uiS));
+    const float infoY = sh * 0.42f;
     BindMainShader();
     drawRect(detailX, infoY, detailW, 1.1f * uiS,
              cr, cg, cb, 0.28f * rightWake);
@@ -3955,7 +4106,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         swprintf_s(recordBuf, L"RECORD TYPE : AUGMENT MODULE | SOURCE : IN-RUN");
     else
         swprintf_s(recordBuf, L"RECORD TYPE : APEX ENCOUNTER | ACCESS : READ ONLY");
-    drawScanTextS(recordBuf, detailX, metaY + 25.0f * uiS,
+        drawScanTextS(recordBuf, detailX, metaY + 25.0f * uiS,
                   0.42f * uiS, 0.62f, 0.70f, 0.82f,
                   0.70f * rightWake, selKey + 23);
     g_TextS.Draw(L"[ ARCHIVE_READ_ONLY ]", detailX, metaY + 52.0f * uiS,
@@ -6200,10 +6351,11 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float canvasTop = std::max(74.0f, sh * 0.12f);
     const float canvasBottom = sh - std::max(88.0f, 104.0f * uiS);
     const float innerRight   = canvasRight;
-    const float centerX = canvasLeft + (innerRight - canvasLeft) * 0.76f;
-    const float centerY = canvasTop + (canvasBottom - canvasTop) * 0.44f;
-    const float profileRadius = std::min((innerRight - centerX) * 0.72f,
-                                         (canvasBottom - canvasTop) * 0.26f);
+    const float centerX = canvasLeft + (innerRight - canvasLeft) * 0.50f;
+    const float centerY = canvasTop + (canvasBottom - canvasTop) * 0.46f;
+    const float profileRadius = std::min(
+        (innerRight - canvasLeft) * 0.17f,
+        (canvasBottom - canvasTop) * 0.26f);
     const float trialCX = canvasLeft + (innerRight - canvasLeft) * 0.28f;
     const float now = (float)glfwGetTime();
 
@@ -6237,21 +6389,23 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float wg = weapon == 0 ? 0.72f : 0.90f;
     const float wb = 1.0f;
     const float weaponH = 64.0f * uiS;
-    // Canvas panel: scan reveal (full width including arrow zone)
+    // Canvas 코너 브라켓
     {
-        const float panelReveal = Smoothstep(LogoClamp01((entry - 0.22f) / 0.42f));
-        const float cW = canvasRight - canvasLeft;
-        const float cH = canvasBottom - canvasTop;
-        drawRect(canvasLeft, canvasTop, cW, cH * panelReveal,
-                 0.04f, 0.055f, 0.08f, 0.74f * contentA);
-        if (panelReveal > 0.004f && panelReveal < 0.998f) {
-            const float scanY = canvasTop + cH * panelReveal;
-            const float scanFade = 1.0f - Smoothstep(LogoClamp01((panelReveal - 0.80f) / 0.20f));
-            drawRect(canvasLeft, scanY - 1.5f * uiS, cW, 3.0f * uiS,
-                     wr, wg, wb, 0.58f * scanFade * contentA);
-        }
-        LogoLine(canvasLeft, canvasTop, canvasRight, canvasTop,
-                 0.8f * uiS, wr, wg, wb, 0.42f * panelReveal * contentA);
+        const float la = Smoothstep(LogoClamp01((entry - 0.22f) / 0.42f)) * contentA;
+        const float cw = 28.0f * uiS, lw = 1.0f * uiS;
+        const float cR = canvasRight, cB = canvasBottom;
+        LogoLine(canvasLeft, canvasTop, canvasLeft+cw, canvasTop, lw, wr,wg,wb, 0.50f*la);
+        LogoLine(canvasLeft, canvasTop, canvasLeft, canvasTop+cw, lw, wr,wg,wb, 0.50f*la);
+        LogoLine(cR, canvasTop, cR-cw, canvasTop, lw, wr,wg,wb, 0.50f*la);
+        LogoLine(cR, canvasTop, cR, canvasTop+cw, lw, wr,wg,wb, 0.50f*la);
+        LogoLine(canvasLeft, cB, canvasLeft+cw, cB, lw, wr,wg,wb, 0.50f*la);
+        LogoLine(canvasLeft, cB, canvasLeft, cB-cw, lw, wr,wg,wb, 0.50f*la);
+        LogoLine(cR, cB, cR-cw, cB, lw, wr,wg,wb, 0.50f*la);
+        LogoLine(cR, cB, cR, cB-cw, lw, wr,wg,wb, 0.50f*la);
+        drawDiamond(canvasLeft, canvasTop, 3.0f*uiS, wr,wg,wb, 0.65f*la);
+        drawDiamond(cR,         canvasTop, 3.0f*uiS, wr,wg,wb, 0.65f*la);
+        drawDiamond(canvasLeft, cB,        3.0f*uiS, wr,wg,wb, 0.65f*la);
+        drawDiamond(cR,         cB,        3.0f*uiS, wr,wg,wb, 0.65f*la);
     }
     // WEAPON section header + separator
     DrawShadowedText(g_TextS, L"WEAPON", leftX, leftY - 28.0f * uiS, 0.44f * uiS,
@@ -6312,54 +6466,101 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     // ── WEAPONS page ─────────────────────────────────────────────────
     if (weaponsA > 0.004f) {
         const float detailA = weaponsA * (0.84f + 0.16f * Smoothstep(s_PanelFadeT));
-        DrawSceneRadialVignette(headerX + 100.0f * uiS, headerY + 48.0f * uiS,
-                                200.0f * uiS, 0.72f * detailA);
         DrawShadowedText(g_TextS, L"WEAPON POWER ALIGNMENT", headerX, headerY, 0.50f * uiS,
                          wr, wg, wb, 0.78f * detailA, 0.66f);
         DrawShadowedText(g_TextL, weapons[weapon], headerX, headerY + 30.0f * uiS, 1.05f * uiS,
                          1.0f, 1.0f, 1.0f, 0.98f * detailA, 0.78f);
         DrawShadowedText(g_TextS, weaponSub[weapon], headerX, headerY + 72.0f * uiS, 0.46f * uiS,
                          0.70f, 0.78f, 0.88f, 0.82f * detailA, 0.66f);
+        LogoLine(headerX, headerY + 98.0f * uiS,
+                 centerX - profileRadius - 20.0f * uiS, headerY + 98.0f * uiS,
+                 1.0f * uiS, wr, wg, wb, 0.22f * detailA);
 
-        // Stat bar graph — LEFT portion of canvas
+        // ── 스탯 바 (별자리 왼쪽) ──────────────────────────────────────
         {
-            const float barSectionW = (innerRight - canvasLeft) * 0.44f;
-            const float labelW      = 110.0f * uiS;
-            const float valW        = 76.0f * uiS;
-            const float barTrackL   = headerX + labelW;
-            const float barTrackW   = barSectionW - labelW - valW;
-            const float rowH        = 46.0f * uiS;
-            const float barH        = 6.0f * uiS;
-            const float barBaseY    = std::max(headerY + 108.0f * uiS, centerY - 3.0f * rowH);
-            const float nScale      = 0.52f * uiS;
-            const float vScale      = 0.56f * uiS;
-            LogoLine(headerX, headerY + 98.0f * uiS,
-                     headerX + barSectionW, headerY + 98.0f * uiS,
-                     1.0f * uiS, wr, wg, wb, 0.24f * detailA);
+            const float barsRight  = centerX - profileRadius - 18.0f * uiS;
+            const float barsLeft   = canvasLeft + 8.0f * uiS;
+            const float labelW     = 86.0f * uiS;
+            const float valW       = 54.0f * uiS;
+            const float barTrackL  = barsLeft + labelW;
+            const float barTrackW  = barsRight - barTrackL - valW - 6.0f * uiS;
+            const float rowH       = 46.0f * uiS;
+            const float barH       = 5.0f * uiS;
+            const float barBaseY   = centerY - 3.0f * rowH + rowH * 0.5f;
+            const float nScale     = 0.46f * uiS;
+            const float vScale     = 0.50f * uiS;
             for (int i = 0; i < 6; ++i) {
-                const float midY   = barBaseY + i * rowH + rowH * 0.5f;
+                const float midY   = barBaseY + i * rowH;
                 const float filled = barTrackW * statT[i];
-                DrawShadowedText(g_TextS, statNames[i], headerX, midY - 12.0f * uiS,
-                                 nScale, 0.62f, 0.74f, 0.86f, 0.84f * detailA, 0.48f);
+                DrawShadowedText(g_TextS, statNames[i], barsLeft, midY - 11.0f * uiS,
+                                 nScale, 0.62f, 0.74f, 0.86f, 0.82f * detailA, 0.48f);
                 drawRect(barTrackL, midY - barH * 0.5f, barTrackW, barH,
-                         wr, wg, wb, 0.16f * detailA);
+                         wr, wg, wb, 0.14f * detailA);
                 if (filled > 1.0f)
                     drawRect(barTrackL, midY - barH * 0.5f, filled, barH,
-                             wr, wg, wb, 0.82f * detailA);
+                             wr, wg, wb, 0.78f * detailA);
                 for (int t = 0; t <= 4; ++t) {
                     const float tx  = barTrackL + barTrackW * (float)t * 0.25f;
                     const bool  lit = statT[i] >= (float)t * 0.25f - 0.01f;
-                    LogoLine(tx, midY - 6.0f * uiS, tx, midY + 6.0f * uiS,
-                             0.7f * uiS, wr, wg, wb, (lit ? 0.46f : 0.18f) * detailA);
+                    LogoLine(tx, midY - 5.5f*uiS, tx, midY + 5.5f*uiS,
+                             0.7f*uiS, wr, wg, wb, (lit ? 0.44f : 0.16f) * detailA);
                 }
                 if (statT[i] > 0.02f)
-                    drawDiamond(barTrackL + filled, midY, 4.0f * uiS, wr, wg, wb, 0.88f * detailA);
+                    drawDiamond(barTrackL + filled, midY, 3.5f*uiS, wr, wg, wb, 0.86f * detailA);
                 DrawShadowedText(g_TextS, statVals[weapon][i],
-                                 barTrackL + barTrackW + 10.0f * uiS, midY - 12.0f * uiS,
-                                 vScale, 0.92f, 0.96f, 1.0f, 0.90f * detailA, 0.68f);
+                                 barTrackL + barTrackW + 8.0f*uiS, midY - 11.0f*uiS,
+                                 vScale, 0.92f, 0.96f, 1.0f, 0.88f * detailA, 0.66f);
             }
         }
 
+        // ── 정보 카드 4개 (별자리 오른쪽) ──────────────────────────────
+        {
+            const float cardX   = centerX + profileRadius + 22.0f * uiS;
+            const float cardW   = innerRight - cardX - 14.0f * uiS;
+            const float cardH   = 52.0f * uiS;
+            const float cardGap = 10.0f * uiS;
+            const float totalH  = 4.0f * cardH + 3.0f * cardGap;
+            const float cardY0  = centerY - totalH * 0.5f;
+            static const wchar_t* cardLabels[4] = {
+                L"BEST SCORE", L"BEST KILLS", L"TOTAL KILLS", L"TOTAL RUNS"
+            };
+            const long long cardData[2][4] = {
+                { g_WeaponBestScore[0], g_WeaponBestKills[0], g_WeaponTotalKills[0], g_WeaponRunCount[0] },
+                { g_WeaponBestScore[1], g_WeaponBestKills[1], g_WeaponTotalKills[1], g_WeaponRunCount[1] }
+            };
+            for (int i = 0; i < 4; ++i) {
+                const float cy  = cardY0 + i * (cardH + cardGap);
+                const float cym = cy + cardH * 0.5f;
+                // 연결선
+                LogoLine(centerX, centerY, cardX - 2.0f*uiS, cym,
+                         0.6f*uiS, conR, conG, conB, 0.16f * detailA);
+                drawDiamond(cardX - 2.0f*uiS, cym, 2.8f*uiS, conR, conG, conB, 0.48f * detailA);
+                // 카드 배경
+                drawRect(cardX, cy, cardW, cardH, conR * 0.3f, conG * 0.3f, conB * 0.3f, 0.06f * detailA);
+                // 카드 테두리 (코너 브라켓)
+                const float cc = 9.0f * uiS;
+                LogoLine(cardX,        cy,        cardX+cc,      cy,        0.8f*uiS, conR,conG,conB, 0.44f*detailA);
+                LogoLine(cardX,        cy,        cardX,         cy+cc,     0.8f*uiS, conR,conG,conB, 0.44f*detailA);
+                LogoLine(cardX+cardW,  cy,        cardX+cardW-cc,cy,        0.8f*uiS, conR,conG,conB, 0.44f*detailA);
+                LogoLine(cardX+cardW,  cy,        cardX+cardW,   cy+cc,     0.8f*uiS, conR,conG,conB, 0.44f*detailA);
+                LogoLine(cardX,        cy+cardH,  cardX+cc,      cy+cardH,  0.8f*uiS, conR,conG,conB, 0.44f*detailA);
+                LogoLine(cardX,        cy+cardH,  cardX,         cy+cardH-cc,0.8f*uiS,conR,conG,conB, 0.44f*detailA);
+                LogoLine(cardX+cardW,  cy+cardH,  cardX+cardW-cc,cy+cardH,  0.8f*uiS, conR,conG,conB, 0.44f*detailA);
+                LogoLine(cardX+cardW,  cy+cardH,  cardX+cardW,   cy+cardH-cc,0.8f*uiS,conR,conG,conB, 0.44f*detailA);
+                // 라벨
+                DrawShadowedText(g_TextS, cardLabels[i],
+                                 cardX + 8.0f*uiS, cy + 6.0f*uiS,
+                                 0.34f*uiS, 0.58f, 0.68f, 0.80f, 0.70f * detailA, 0.46f);
+                // 수치
+                wchar_t valBuf[32];
+                long long v = cardData[weapon][i];
+                if (v == 0) wcscpy_s(valBuf, L"—");
+                else        swprintf_s(valBuf, L"%lld", v);
+                DrawShadowedText(g_TextS, valBuf,
+                                 cardX + 8.0f*uiS, cy + cardH - 22.0f*uiS,
+                                 0.52f*uiS, 0.94f, 0.98f, 1.0f, 0.94f * detailA, 0.74f);
+            }
+        }
     }
 
     // ── TRIALS page ──────────────────────────────────────────────────
@@ -6428,12 +6629,17 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
                              (0.22f + 0.38f*onT + 0.14f*hovF) * trialsA, 0.40f);
         }
     }
-    DrawSceneRadialVignette(animCX, centerY,
+    // 대형 네뷸라 글로우 — 별자리 뒤 배경 조명
+    DrawConstellationDisc(centerX, centerY, profileRadius * 6.4f, 0.0f, 0.0f, 0.0f, 0.72f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 3.2f, conR, conG, conB, 0.05f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 2.0f, conR, conG, conB, 0.09f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 1.3f, conR, conG, conB, 0.12f * contentA);
+    DrawSceneRadialVignette(centerX, centerY,
                             std::max(260.0f * uiS, profileRadius * 1.60f),
-                            0.40f * contentA);
+                            0.38f * contentA);
     {
         static const wchar_t* kNoLabel[6] = { L"", L"", L"", L"", L"", L"" };
-        DrawWeaponPowerConstellation(animCX, centerY, profileRadius,
+        DrawWeaponPowerConstellation(centerX, centerY, profileRadius,
                                      statT, kNoLabel, kNoLabel, weapon,
                                      now, animBrightness * contentA, uiS,
                                      conR, conG, conB);
@@ -6459,16 +6665,16 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
                     const float a1  = (s + 1) * (2.0f * kPi / ps);
                     const float am  = (a0 + a1) * 0.5f;
                     const float dep = 0.5f + 0.5f * sinf(am);
-                    const float x0  = animCX + cosf(a0)*rx*ci - sinf(a0)*ry*si;
+                    const float x0  = centerX + cosf(a0)*rx*ci - sinf(a0)*ry*si;
                     const float y0  = centerY + cosf(a0)*rx*si + sinf(a0)*ry*ci;
-                    const float x1  = animCX + cosf(a1)*rx*ci - sinf(a1)*ry*si;
+                    const float x1  = centerX + cosf(a1)*rx*ci - sinf(a1)*ry*si;
                     const float y1  = centerY + cosf(a1)*rx*si + sinf(a1)*ry*ci;
                     LogoLine(x0, y0, x1, y1, 0.6f * uiS,
                              ocR, ocG, ocB, (0.08f + 0.18f * dep) * onT * contentA);
                 }
                 // 공전체 위치 (회전 타원)
                 const float ang = now * kOrbitSpd[i] + kOrbitPh[i];
-                const float ox  = animCX + cosf(ang)*rx*ci - sinf(ang)*ry*si;
+                const float ox  = centerX + cosf(ang)*rx*ci - sinf(ang)*ry*si;
                 const float oy  = centerY + cosf(ang)*rx*si + sinf(ang)*ry*ci;
                 // 깊이 계수
                 const float dep  = 0.5f + 0.5f * sinf(ang);
