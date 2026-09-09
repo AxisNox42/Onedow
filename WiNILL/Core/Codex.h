@@ -162,11 +162,50 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
 
 inline const wchar_t* MobName(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-    return MOB_INFO[id].name[li];
+    // Canonical active-roster names from Astral Enemy Blueprints v6.
+    static const wchar_t* activeNames[5][3] = {
+        { L"ROTOR",   L"ROTOR",   L"ローター" },
+        { L"GENESIS", L"GENESIS", L"ジェネシス" },
+        { L"SCOPE",   L"SCOPE",   L"スコープ" },
+        { L"SWARM",   L"SWARM",   L"スウォーム" },
+        { L"GRAVIS",  L"GRAVIS",  L"グラヴィス" },
+    };
+    switch (id) {
+    case CM_NORMAL:  return activeNames[0][li];
+    case CM_SPAWNER: return activeNames[1][li];
+    case CM_RANGED:  return activeNames[2][li];
+    case CM_DDOS:    return activeNames[3][li];
+    case CM_GRAVIS:  return activeNames[4][li];
+    default:         return MOB_INFO[id].name[li];
+    }
 }
 inline const wchar_t* MobDesc(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-    return MOB_INFO[id].desc[li];
+    static const wchar_t* activeDesc[5][3] = {
+        { L"단일 회전 프레임으로 플레이어를 집요하게 추적하는 기본 신호",
+          L"Basic signal that relentlessly tracks the player with a single rotating frame",
+          L"単一の回転フレームでプレイヤーを追跡する基本シグナル" },
+        { L"전장에 고정되어 DDoS 신호 조각을 생성하는 생성 코어",
+          L"Anchored genesis core that generates DDoS signal shards",
+          L"戦場に固定されDDoS信号片を生成するジェネシスコア" },
+        { L"중앙 코어와 조준선으로 원거리에서 공격하는 감시 신호",
+          L"Ranged surveillance signal that attacks from afar with a central core and aim lanes",
+          L"中央コアと照準線で遠距離攻撃する監視シグナル" },
+        { L"작은 신호 조각이 무리를 이루어 압박하는 물량형 신호",
+          L"Swarm signal made of small shards that pressure the arena in large numbers",
+          L"小さな信号片の群れで戦場を圧迫する物量型シグナル" },
+        { L"중력장으로 이동과 탄도 궤적을 왜곡하는 3T 정예 신호",
+          L"Tier-3 elite signal that bends movement and bullet trajectories with gravity",
+          L"重力場で移動と弾道を歪めるTier-3エリートシグナル" },
+    };
+    switch (id) {
+    case CM_NORMAL:  return activeDesc[0][li];
+    case CM_SPAWNER: return activeDesc[1][li];
+    case CM_RANGED:  return activeDesc[2][li];
+    case CM_DDOS:    return activeDesc[3][li];
+    case CM_GRAVIS:  return activeDesc[4][li];
+    default:         return MOB_INFO[id].desc[li];
+    }
 }
 
 // CodexMobId(0..8) → MobKind (프리뷰 렌더용)
