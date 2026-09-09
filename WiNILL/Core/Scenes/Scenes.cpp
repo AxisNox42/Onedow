@@ -1836,8 +1836,10 @@ void Scene_Shop(const SceneCtx& c) {
     const float itemA = Smoothstep(LogoClamp01((g_ShopEntryT - 0.20f) / 0.55f));
     const float detailWake = rightWake * itemA;
     if (detailWake > 0.002f) {
+        // Keep ARMORY surface-free like the codex: only the connecting
+        // constellation rules remain, with no opaque work plate behind them.
         DrawAstralDataPlate(workX, workY, workW, workH,
-                            0.38f, 0.82f, 1.0f, 0.94f * detailWake);
+                            0.38f, 0.82f, 1.0f, 0.0f);
         BindMainShader();
         drawRect(workX + 20.0f * uiS, workY + workHeaderH - 10.0f * uiS,
                  workW - 40.0f * uiS, 1.0f * uiS,
@@ -2117,7 +2119,7 @@ void Scene_Shop(const SceneCtx& c) {
     BindMainShader();
     drawRect(depth2X - 6.0f * uiS, depth2Y,
              depth2W + 12.0f * uiS, depth2H,
-             0.030f, 0.040f, 0.062f, 0.14f * itemWake);
+             0.030f, 0.040f, 0.062f, 0.0f);
 
     BatchFlush();
     glEnable(GL_SCISSOR_TEST);
@@ -2763,7 +2765,7 @@ void Scene_Shop(const SceneCtx& c) {
             BindMainShader();
             drawRect(rightX, rightAreaY + workHeaderH,
                      rightW, rightAreaH - workHeaderH,
-                     0.038f, 0.050f, 0.075f, 0.08f * detailWake);
+                     0.038f, 0.050f, 0.075f, 0.0f);
             const float scanReveal = Smoothstep(LogoClamp01((g_ShopEntryT - 0.34f) / 0.32f));
             if (scanReveal > 0.004f && scanReveal < 0.998f) {
                 const float scanY = rightAreaY + workHeaderH
@@ -3235,10 +3237,10 @@ void Scene_Shop(const SceneCtx& c) {
 
         BindMainShader();
         drawRect(rightX + 9.0f * uiS, listAreaY + 11.0f * uiS, rightW, listAreaH,
-                 0.0f, 0.0f, 0.0f, 0.34f * rightWake);
+                 0.0f, 0.0f, 0.0f, 0.0f);
         drawRect(rightX, listAreaY, rightW, listAreaH,
                  0.006f + sr * 0.006f, 0.010f + sg * 0.005f, 0.020f + sb * 0.005f,
-                 0.985f * rightWake);
+                 0.0f);
         drawRect(rightX + rPad, listAreaY + topH + 2.0f * uiS, rightW - rPad * 2.0f,
                  1.4f * uiS, sr, sg, sb, 0.22f * rightWake);
         BatchFlush();
