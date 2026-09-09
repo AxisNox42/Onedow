@@ -321,7 +321,7 @@ public:
             quasarTimer += deltaTime;
             // The body always spins at the same rate. Attack states only alter
             // the firing axis, not the self-rotation cadence.
-            quasarVisualAngle += deltaTime * 0.03f;
+            quasarVisualAngle += deltaTime * 0.08f;
 
             auto turnTowardPlayer = [&](float radiansPerSecond) {
                 float targetX = dx / dist;
