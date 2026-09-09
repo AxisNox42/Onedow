@@ -1886,10 +1886,21 @@ void Scene_Shop(const SceneCtx& c) {
             if (s_itemCount < 300) s_items[s_itemCount++] = { false, key, lbl, r, g2, b };
         };
 
-        if (s_tab == 0 || s_tab == 1) {
-            addGroup(nli == 0 ? L"\xCF54\xC5B4 \xD574\xAE08" : L"CORE UNLOCKS", 0.38f, 0.82f, 1.00f);
+        // Keep the first shop category focused on the special run-start
+        // modules. General permanent upgrades live in the separate UNLOCK
+        // category so the first start module can never be hidden in the list.
+        if (s_tab == 0) {
+            addGroup(nli == 0 ? L"\xC2\xDC\xC791 \xBAA8\xB4C8" : L"START MODULES",
+                     0.38f, 0.82f, 1.00f);
+            addItem(KEY_META + META_STARTAUG, MetaName(META_STARTAUG),
+                    0.38f, 0.82f, 1.00f);
+        }
+        if (s_tab == 1) {
+            addGroup(nli == 0 ? L"\xCF54\xC5B4 \xD574\xAE08" : L"CORE UNLOCKS",
+                     0.38f, 0.82f, 1.00f);
             for (int i = 0; i < META_COUNT; i++)
-                addItem(KEY_META + i, MetaName(i), 0.38f, 0.82f, 1.00f);
+                if (i != META_STARTAUG)
+                    addItem(KEY_META + i, MetaName(i), 0.38f, 0.82f, 1.00f);
         }
         if (s_tab == 2) {
             addGroup(nli == 0 ? L"\xC18C\xCD1D \xC2DC\xC2A4\xD15C" : L"RIFLE SYSTEMS", 0.72f, 0.92f, 0.42f);
