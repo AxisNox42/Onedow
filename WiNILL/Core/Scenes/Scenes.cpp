@@ -4732,6 +4732,12 @@ void Scene_Codex(const SceneCtx& c) {
         drawRect(vizX + 2.0f*uiS, vzScan, vizW - 4.0f*uiS, 1.0f*uiS,
                  uiR, uiG, uiB, 0.038f * detailA);
 
+        if (s_cat == 0) {
+            // Entity previews use the exact gameplay silhouettes (ROTOR,
+            // GENESIS, SCOPE, SWARM and GRAVIS).
+            const float previewScale = std::max(2.4f, std::min(vizW, vizH) / 72.0f);
+            drawCodexMobPreview(selItem, vizCX, vizCY, previewScale);
+        } else {
         // Rotating constellation node viewer
         {
             int nNodes = (s_cat == 0) ? 5 : (s_cat == 1) ? 6 : 4;
@@ -4798,6 +4804,7 @@ void Scene_Codex(const SceneCtx& c) {
             // Center node
             drawDiamond(vizCX, vizCY, 4.0f*uiS, uiR, uiG, uiB, 0.80f*detailA);
             drawDiamond(vizCX, vizCY, 2.0f*uiS, 1.0f, 1.0f, 1.0f, 0.42f*detailA);
+        }
         }
 
         const float infoGap   = 18.0f * uiS;

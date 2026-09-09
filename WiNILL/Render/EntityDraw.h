@@ -9,6 +9,8 @@ class Bomber;
 void drawBullet(const Bullet& b);
 void drawMob(const Monster* m);
 void drawRangedMob(const RangedMob* r);
+// Render an Astral Log entity preview with the same silhouette as gameplay.
+void drawCodexMobPreview(int codexId, float x, float y, float scale = 3.0f);
 void DrawEnemySightRear(float x, float y, float foregroundRadius,
                         float alpha = 0.7f);
 struct EnemySightRearMarker {

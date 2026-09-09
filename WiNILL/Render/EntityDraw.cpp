@@ -991,3 +991,32 @@ void drawRangedMob(const RangedMob* r) {
                       0.84f + 0.16f * chargeT);
     }
 }
+
+void drawCodexMobPreview(int codexId, float x, float y, float scale) {
+    // Codex previews must not count as discoveries while reusing gameplay draw
+    // code.  This keeps the preview silhouette and its animation in lockstep
+    // with the live enemy renderer.
+    const bool wasSuppressed = g_SuppressMobSeen;
+    g_SuppressMobSeen = true;
+    if (codexId == CM_RANGED) {
+        RangedMob preview(x, y, 1920, 1080);
+        preview.rotAngle = (float)glfwGetTime() * RangedMob::IDLE_ROT;
+        drawRangedMob(&preview);              // SCOPE
+    } else {
+        MobKind kind = MobKind::NORMAL;
+        switch (codexId) {
+        case CM_SPAWNER: kind = MobKind::SPAWNER; break; // GENESIS
+        case CM_DDOS:    kind = MobKind::DDOS;    break; // SWARM
+        case CM_GRAVIS:  kind = MobKind::GRAVIS;  break;
+        default: break;                                // ROTOR
+        }
+        Monster preview(x, y, 1.0f, 1.0f, false);
+        preview.MakeKind(kind);
+        preview.sizeScale = scale;
+        const float t = (float)glfwGetTime();
+        preview.hiveOrbitAngle = t * 0.36f;
+        preview.gravisVisualAngle = t * 0.18f;
+        drawMob(&preview);
+    }
+    g_SuppressMobSeen = wasSuppressed;
+}
