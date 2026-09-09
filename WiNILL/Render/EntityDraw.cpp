@@ -1000,7 +1000,9 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
     const bool wasSuppressed = g_SuppressMobSeen;
     const float wasFieldScale = g_CodexPreviewFieldScale;
     g_SuppressMobSeen = true;
-    g_CodexPreviewFieldScale = 0.22f;
+    // Keep Gravis' gameplay field proportional to the animated preview size;
+    // the base 0.22 factor only compresses its very large in-game radius.
+    g_CodexPreviewFieldScale = 0.22f * std::max(0.8f, scale);
     if (codexId == CM_RANGED) {
         RangedMob preview(x, y, 1920, 1080);
         preview.rotAngle = (float)glfwGetTime() * RangedMob::IDLE_ROT;
