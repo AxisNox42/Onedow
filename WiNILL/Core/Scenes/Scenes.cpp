@@ -406,13 +406,18 @@ static void DrawConstellationDisc(float x, float y, float radius,
 }
 
 static void DrawVisibleConstellNode(float x, float y, float size,
-                                    float r, float g, float b, float a) {
+                                    float r, float g, float b, float a,
+                                    bool whiteSpark = true) {
     if (a <= 0.001f) return;
     DrawConstellationDisc(x, y, size * 3.25f, 0.0f, 0.0f, 0.012f, 0.34f * a);
     DrawConstellationDisc(x, y, size * 2.05f, r * 0.08f, g * 0.08f, b * 0.10f, 0.26f * a);
     DrawConstellationDisc(x, y, size * 0.88f, r, g, b, 0.58f * a);
     drawDiamond(x, y, size * 1.20f, r, g, b, 0.74f * a);
-    drawDiamond(x, y, size * 0.42f, 0.96f, 1.0f, 1.0f, 0.88f * a);
+    drawDiamond(x, y, size * 0.42f,
+                whiteSpark ? 0.96f : r,
+                whiteSpark ? 1.0f  : g,
+                whiteSpark ? 1.0f  : b,
+                0.88f * a);
 }
 
 static void DrawArchiveConstellation(float cx, float cy, float radius,
@@ -479,14 +484,14 @@ static void DrawArchiveConstellation(float cx, float cy, float radius,
             DrawVisibleConstellLine(cx, cy, px[i], py[i], 0.64f * uiS,
                                     r, g, b, 0.20f * alpha);
         DrawConstellationDisc(cx, cy, 18.0f * uiS, 0.0f, 0.0f, 0.01f, 0.28f * alpha);
-        DrawVisibleConstellNode(cx, cy, 5.0f * uiS, r, g, b, 0.92f * alpha);
+        DrawVisibleConstellNode(cx, cy, 5.0f * uiS, r, g, b, 0.92f * alpha, false);
     }
 
     for (int i = 0; i < kNodeCount; ++i) {
         const float twinkle = 0.80f + 0.20f * sinf(now * 2.1f + (float)i * 1.7f);
         const float size = (3.0f + 1.15f * (depth[i] + 1.0f)) * uiS;
         DrawVisibleConstellNode(px[i], py[i], size, r, g, b,
-                                twinkle * alpha * (depth[i] > 0.55f ? 1.0f : 0.86f));
+                                twinkle * alpha * (depth[i] > 0.55f ? 1.0f : 0.86f), false);
     }
 }
 
@@ -3863,11 +3868,11 @@ static void Scene_CodexInline(const SceneCtx& c) {
                  (0.12f + 0.34f * active) * wake);
         DrawVisibleConstellNode(lineEndX, ay, (isSel ? 4.0f : 2.8f) * uiS,
                                 itm.r, itm.g, itm.b,
-                                (0.20f + 0.54f * active) * wake);
+                                (0.20f + 0.54f * active) * wake, false);
         if (isSel)
             drawRect(ax + 118.0f * uiS, ay - 22.0f * uiS, 2.0f * uiS, 44.0f * uiS,
                      itm.r, itm.g, itm.b, 0.76f * wake);
-        float tsc = (isSel ? 0.66f : 0.52f) * uiS;
+        float tsc = (isSel ? 0.68f : 0.58f) * uiS;
         DrawShadowedText(g_TextS, itm.label, ax + 132.0f * uiS,
                          ay - g_TextS.Height(itm.label, tsc) * 0.5f,
                          tsc,
