@@ -495,6 +495,65 @@ static void DrawArchiveConstellation(float cx, float cy, float radius,
     }
 }
 
+// Fixed ASTRAL_LOG signature constellation. Unlike record previews this shape
+// never changes with selection; only its restrained phase/pulse animates.
+static void DrawAstralCoreConstellation(float cx, float cy, float radius,
+                                        float r, float g, float b,
+                                        float now, float alpha, float uiS) {
+    if (alpha <= 0.001f || radius <= 4.0f) return;
+    static const float kNodes[8][2] = {
+        { 0.00f, -0.92f }, { 0.58f, -0.54f }, { 0.84f, 0.08f },
+        { 0.46f,  0.68f }, { -0.12f, 0.88f }, { -0.72f, 0.52f },
+        { -0.86f,-0.14f }, { -0.48f,-0.66f }
+    };
+    static const int kEdges[10][2] = {
+        {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,0},{1,6},{2,5}
+    };
+    const float phase = now * 0.045f;
+    const float pulse = 0.92f + 0.08f * sinf(now * 1.7f);
+    float px[8], py[8];
+    const float cs = cosf(phase), sn = sinf(phase);
+    for (int i = 0; i < 8; ++i) {
+        const float lx = kNodes[i][0] * radius;
+        const float ly = kNodes[i][1] * radius;
+        px[i] = cx + lx * cs - ly * sn;
+        py[i] = cy + lx * sn + ly * cs;
+    }
+    for (int i = 0; i < 10; ++i) {
+        const int a = kEdges[i][0], d = kEdges[i][1];
+        DrawVisibleConstellLine(px[a], py[a], px[d], py[d],
+                                1.15f * uiS, r, g, b, 0.42f * alpha);
+    }
+    // Two broken orbital rings keep the core legible without radial spokes.
+    for (int ring = 0; ring < 2; ++ring) {
+        const float rr = radius * (0.44f + 0.22f * (float)ring);
+        float ox = cx + cosf(phase + 0.42f) * rr;
+        float oy = cy + sinf(phase + 0.42f) * rr * 0.72f;
+        for (int s = 1; s <= 36; ++s) {
+            const float a = phase + 0.42f + 6.2831853f * (float)s / 36.0f;
+            const float nx = cx + cosf(a) * rr;
+            const float ny = cy + sinf(a) * rr * 0.72f;
+            if ((s + ring) % 4 != 1)
+                LogoLine(ox, oy, nx, ny, 0.62f * uiS, r, g, b,
+                         (0.12f - 0.025f * (float)ring) * alpha);
+            ox = nx; oy = ny;
+        }
+    }
+    for (int i = 0; i < 8; ++i) {
+        const float size = (i == 0 || i == 4 ? 6.2f : 4.3f) * uiS;
+        DrawVisibleConstellNode(px[i], py[i], size, r, g, b,
+                                pulse * 0.72f * alpha, false);
+    }
+    DrawConstellationDisc(cx, cy, radius * 0.42f,
+                          r, g, b, 0.16f * pulse * alpha);
+    DrawConstellationDisc(cx, cy, radius * 0.17f,
+                          r, g, b, 0.42f * pulse * alpha);
+    DrawVisibleConstellNode(cx, cy, 8.0f * uiS, r, g, b,
+                            0.96f * pulse * alpha, false);
+    drawDiamond(cx, cy, 2.5f * uiS, 0.86f, 0.92f, 0.98f,
+                0.72f * pulse * alpha);
+}
+
 static void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
                                float centerXOverride = -1.0f, float heightMul = 1.0f) {
     if (alpha <= 0.001f) return;
@@ -3817,10 +3876,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float heroR = std::min(270.0f * uiS, chartR * 0.30f);
     DrawConstellationDisc(heroCX, heroCY, heroR * 1.85f,
                           0.0f, 0.0f, 0.0f, 0.24f * rightWake);
-    DrawArchiveConstellation(heroCX, heroCY, heroR,
-                             s_cat, s_sel[s_cat] < 0 ? 0 : s_sel[s_cat], now,
-                             curRoot.r, curRoot.g, curRoot.b,
-                             0.26f * rightWake, uiS);
+    DrawAstralCoreConstellation(heroCX, heroCY, heroR,
+                                curRoot.r, curRoot.g, curRoot.b,
+                                now, 0.34f * rightWake, uiS);
 
     // Connected observation rail. Entries slide one row at a time along this
     // datum, including the wrapped first↔last transition.
