@@ -3875,7 +3875,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
                                 itm.r, itm.g, itm.b,
                                 (0.20f + 0.54f * active) * wake, false);
         if (isSel)
-            drawRect(ax + (100.0f + 36.0f * s_itemHover[slot]) * uiS,
+            // The vertical selection datum is a stable anchor; hover only
+            // changes the horizontal line length and must not shift this bar.
+            drawRect(ax + 118.0f * uiS,
                      ay - 22.0f * uiS, 2.0f * uiS, 44.0f * uiS,
                      itm.r, itm.g, itm.b, 0.76f * wake);
         float tsc = (isSel ? 0.68f : 0.58f) * uiS;
