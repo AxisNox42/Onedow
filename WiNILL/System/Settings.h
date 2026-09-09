@@ -326,6 +326,9 @@ inline bool g_ShaderFx          = false;
 inline bool g_ShaderFx          = false;
 #endif
 
+// Strong readability overlay for out-of-game menu backgrounds.
+inline bool g_StrongMenuDim     = false;
+
 // 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게
 enum class MobVisualStyle { CLASSIC, SOFT };
 inline MobVisualStyle g_MobVisualStyle = MobVisualStyle::CLASSIC;

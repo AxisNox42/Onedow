@@ -30,6 +30,12 @@ inline long long g_TotalKills   = 0;             // 누적 처치 수
 inline long long g_TotalGames   = 0;             // 누적 플레이 횟수
 inline long long g_LastRunCoins = 0;             // 직전 판 획득 코인 (GAMEOVER 표시용)
 
+// 무기별 기록 [0]=RIFLE [1]=STATIC FIELD
+inline long long g_WeaponBestScore[2]  = { 0, 0 };
+inline long long g_WeaponBestKills[2]  = { 0, 0 };  // 한 판 최다 처치
+inline long long g_WeaponTotalKills[2] = { 0, 0 };  // 누적 처치
+inline long long g_WeaponRunCount[2]   = { 0, 0 };  // 플레이 횟수
+
 inline const char* SaveFilePath() { return "onedow_save.cfg"; }
 
 inline void SaveGame() {
@@ -46,6 +52,7 @@ inline void SaveGame() {
     add("soundvol=%lld\n",  g_SoundVol);
     add("autofire=%lld\n",  g_AutoFire  ? 1 : 0);
     add("autoskill=%lld\n", g_AutoSkill ? 1 : 0);
+    add("strongmenudim=%lld\n", g_StrongMenuDim ? 1 : 0);
     add("shaderfx=%lld\n",  g_ShaderFx  ? 1 : 0);
     add("mobstyle=%lld\n",  (int)g_MobVisualStyle);
     add("vfxdens=%lld\n",   (int)g_VfxDensity);
@@ -56,6 +63,12 @@ inline void SaveGame() {
     add("kills=%lld\n",   g_TotalKills);
     add("games=%lld\n",   g_TotalGames);
     add("coins=%lld\n",   g_Coins);
+    for (int i = 0; i < 2; i++) {
+        std::snprintf(ln, sizeof(ln), "wbscore%d=%lld\n",  i, g_WeaponBestScore[i]);  buf += ln;
+        std::snprintf(ln, sizeof(ln), "wbkills%d=%lld\n",  i, g_WeaponBestKills[i]);  buf += ln;
+        std::snprintf(ln, sizeof(ln), "wtkills%d=%lld\n",  i, g_WeaponTotalKills[i]); buf += ln;
+        std::snprintf(ln, sizeof(ln), "wruns%d=%lld\n",    i, g_WeaponRunCount[i]);    buf += ln;
+    }
     add("themeowned=%lld\n", (long long)g_ThemeOwned);
     add("themesel=%lld\n",   (long long)g_ThemeSel);
     for (int i = 0; i < META_COUNT; i++) {
@@ -141,6 +154,7 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
         else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);
         else if (!std::strcmp(key, "autoskill"))   g_AutoSkill         = (val != 0);
+        else if (!std::strcmp(key, "strongmenudim")) g_StrongMenuDim    = (val != 0);
         else if (!std::strcmp(key, "shaderfx"))    g_ShaderFx          = (val != 0);
         else if (!std::strcmp(key, "mobstyle"))   { int v = (int)val; if (v >= 0 && v <= 1) g_MobVisualStyle = (MobVisualStyle)v; }
         else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 1) g_VfxDensity = (VfxDensity)v; }
@@ -150,6 +164,10 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val;
         else if (!std::strcmp(key, "kills"))       g_TotalKills        = val;
         else if (!std::strcmp(key, "games"))       g_TotalGames        = val;
+        else if (!std::strncmp(key, "wbscore", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestScore[i]  = val; }
+        else if (!std::strncmp(key, "wbkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestKills[i]  = val; }
+        else if (!std::strncmp(key, "wtkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponTotalKills[i] = val; }
+        else if (!std::strncmp(key, "wruns",   5))  { int i = atoi(key+5); if (i>=0&&i<2) g_WeaponRunCount[i]   = val; }
         else if (!std::strcmp(key, "coins"))       g_Coins             = val;
         else if (!std::strcmp(key, "themeowned"))  g_ThemeOwned        = (int)val | 1;
         else if (!std::strcmp(key, "themesel"))    g_ThemeSel          = (int)val;
@@ -186,6 +204,9 @@ inline void LoadGame() {
 inline void ResetSaveProgress() {
     for (int i = 0; i < 3; i++) g_BestScore[i] = 0;
     g_TotalKills = 0; g_TotalGames = 0; g_TotalBossKills = 0;
+    for (int i = 0; i < 2; i++) {
+        g_WeaponBestScore[i] = g_WeaponBestKills[i] = g_WeaponTotalKills[i] = g_WeaponRunCount[i] = 0;
+    }
     g_Coins = 0; g_LastRunCoins = 0;
     for (int i = 0; i < META_COUNT; i++) g_MetaLv[i] = 0;
     for (int i = 0; i < ACH_COUNT;  i++) g_AchUnlocked[i] = false;
@@ -198,12 +219,19 @@ inline void ResetSaveProgress() {
 }
 
 // 한 판 종료 시 호출 — 최고점/누적 기록 갱신 후 저장. 신기록이면 true.
-inline bool RecordRunResult(int difficultyIdx, long long score, long long kills) {
+// weaponIdx: 0=RIFLE, 1=STATIC FIELD, -1=미지정
+inline bool RecordRunResult(int difficultyIdx, long long score, long long kills, int weaponIdx = -1) {
     if (difficultyIdx < 0 || difficultyIdx > 2) difficultyIdx = 1;
     bool isRecord = (score > g_BestScore[difficultyIdx]);
     if (isRecord) g_BestScore[difficultyIdx] = score;
     g_TotalKills += kills;
     g_TotalGames += 1;
+    if (weaponIdx >= 0 && weaponIdx < 2) {
+        if (score > g_WeaponBestScore[weaponIdx])  g_WeaponBestScore[weaponIdx]  = score;
+        if (kills > g_WeaponBestKills[weaponIdx])  g_WeaponBestKills[weaponIdx]  = kills;
+        g_WeaponTotalKills[weaponIdx] += kills;
+        g_WeaponRunCount[weaponIdx]   += 1;
+    }
     // 코인 적립 — 점수/1000 + 처치/2 (난이도 보너스: 보통×1.2, 어려움×1.5)
     float diffMul = (difficultyIdx == 2) ? 1.5f : (difficultyIdx == 1) ? 1.2f : 1.0f;
     long long earned = (long long)((score / 1000 + kills / 2) * diffMul);

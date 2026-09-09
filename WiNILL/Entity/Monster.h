@@ -51,6 +51,17 @@ inline void MobKillReward(MobKind k, int splitGen, int elite,
     if (elite) { xpBase *= 2.5f; scoreBase *= 2.5f; }
 }
 
+inline int StardustRewardFor(MobKind kind) {
+    switch (kind) {
+    case MobKind::NORMAL:  return 1;
+    case MobKind::DDOS:    return 1;
+    case MobKind::SPAWNER: return 15;
+    case MobKind::GRAVIS:  return 15;
+    case MobKind::QUASAR:  return 7;
+    default:               return 0;
+    }
+}
+
 inline float MobRewardMult(MobKind k) {
     if (k == MobKind::DDOS) return 0.20f;
     return 1.0f;
@@ -302,7 +313,6 @@ public:
             static constexpr float COOLDOWN_TIME = 3.2f;
             static constexpr float LOCK_TIME     = 0.55f;
             static constexpr float BEAM_TIME     = 2.50f;
-            static constexpr float BEAM_GROW_TIME = 0.70f;
             static constexpr float RECOVER_TIME  = 1.4f;
             static constexpr float BEAM_LENGTH   = 6000.0f;
             static constexpr float BEAM_RADIUS   = 34.0f;
@@ -365,13 +375,16 @@ public:
                     quasarTimer = 0.0f;
                 }
             } else if (quasarState == 3) {
-                // Keep a slight live sweep without erasing the player's dodge.
-                // Over the full 0.55s beam this can rotate by roughly 5.7 degrees.
-                turnTowardPlayer(0.18f);
-                // The beam grows out of the core instead of appearing across
-                // the arena in one frame. Cubic easing starts restrained and
-                // then releases the lane at high speed.
-                const float growT = std::min(1.0f, quasarTimer / BEAM_GROW_TIME);
+                // Limit the beam's tangential movement in world space. With a
+                // fixed angular velocity, a distant player sees v = r * omega
+                // grow with distance, making the laser sweep unfairly fast.
+                // The inverse-distance angular cap keeps the visible sweep
+                // readable while preserving the original near-range cadence.
+                const float sweepLinearSpeed = 260.0f;
+                const float sweepAngularSpeed = std::max(0.035f,
+                    std::min(0.18f, sweepLinearSpeed / std::max(dist, 180.0f)));
+                turnTowardPlayer(sweepAngularSpeed);
+                const float growT = std::min(1.0f, quasarTimer / 0.70f);
                 const float reachT = growT * growT * growT;
                 const float reach = BEAM_LENGTH * reachT;
                 const float ax = worldX - quasarAimX * reach;

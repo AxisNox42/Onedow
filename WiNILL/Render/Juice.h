@@ -265,3 +265,31 @@ inline void ResetJuice() {
     g_FlashIntensity = 0.0f;
     ResetEnemyFx();
 }
+
+// ── 별가루 픽업 ──
+struct StardustPickup {
+    float x, y;
+    float vx, vy;
+    float age   = 0.0f;
+    int   value = 1;
+    bool  alive = true;
+};
+inline std::vector<StardustPickup> g_StardustPickups;
+inline float g_StardustHudPulse = 0.0f;
+
+inline void SpawnStardust(float x, float y, int totalValue, float /*playerX*/, float /*playerY*/) {
+    if (totalValue <= 0) return;
+    for (int denomination : { 10, 5, 1 }) {
+        while (totalValue >= denomination) {
+            totalValue -= denomination;
+            // 0.18s 동안 사방으로 퍼졌다가 즉시 플레이어 추적 시작
+            const float angle = (float)(rand() % 628) * 0.01f;
+            const float speed = 120.0f + (float)(rand() % 80);
+            g_StardustPickups.push_back({
+                x, y,
+                cosf(angle) * speed, sinf(angle) * speed,
+                0.0f, denomination, true
+            });
+        }
+    }
+}

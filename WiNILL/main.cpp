@@ -355,6 +355,7 @@ std::vector<LaserBeam> g_LaserBeams;
 float          g_LaserTimer = 0.0f;
 constexpr float LASER_INT   = 0.85f;  // 발사 주기(�? ???�프: 0.7
 
+
 // ?�?�?백신 ?�캔 (증강) ??주기?�으�??�레?�어 주�????�화 ?�스(범위 ?�소) ?�?�?
 //   ?�각 링�? 기존 SpawnShockWave(?�창 �? ?�사??
 float          g_NovaTimer  = 0.0f;
@@ -1176,7 +1177,8 @@ static void TriggerVictory() {
     g_AchSaveNeeded = true;
     g_LastRunRecord = RecordRunResult((int)g_Difficulty,
                                       g_GameManager.score,
-                                      g_Stats.killCount);
+                                      g_Stats.killCount,
+                                      (g_SelectedJob == JOB_NONE ? 0 : 1));
     g_GameManager.currentState = GameState::VICTORY;
     g_VictoryFade = 0.0f;
 }
@@ -1719,6 +1721,7 @@ int main() {
             g_RRWasP2 = g_RRWasP3 = false;
             g_TessWasP2 = g_TessWasP3 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;
+            g_StardustPickups.clear(); g_StardustHudPulse = 0.0f;
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;
             g_NovaTimer = 0.0f;
             g_RunMelee = false; g_RunBow = false;
@@ -1966,7 +1969,8 @@ int main() {
                 if (!g_CreativeMode) {
                     g_LastRunRecord = RecordRunResult((int)g_Difficulty,
                                                       g_GameManager.score,
-                                                      g_Stats.killCount);
+                                                      g_Stats.killCount,
+                                                      (g_SelectedJob == JOB_NONE ? 0 : 1));
                     if (g_TotalGames >= 10) TryUnlockAch(ACH_GAMES_10);
                     if (g_AchSaveNeeded) { SaveGame(); g_AchSaveNeeded = false; }
                 } else {
@@ -3054,6 +3058,7 @@ int main() {
                     if (!m->alive && !m->exploded) {
                         if (!m->scored) {       // ?�직 보상 ??받�? 죽음 ???�산
                             m->scored = true;
+                            SpawnStardust(m->worldX, m->worldY, StardustRewardFor(m->kind), pCX, pCY);
                             float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB,
                                                           g_Stats.splitterBoost);
                             TryHackFirewallOnKill(m->kind, g_Stats);
@@ -3130,6 +3135,7 @@ int main() {
                     if (!r->alive && !r->exploded) {
                         if (!r->scored) {
                             r->scored = true;
+                            SpawnStardust(r->worldX, r->worldY, 3, pCX, pCY);
                             creditKill(25.0f + (float)g_Stats.rangedXpBonus, 300.0f);
                         }
                         SpawnEnemyExplosion(r->worldX, r->worldY,
@@ -3426,6 +3432,45 @@ int main() {
             for (auto& lb : g_LaserBeams) lb.life -= delta;
             g_LaserBeams.erase(std::remove_if(g_LaserBeams.begin(), g_LaserBeams.end(),
                 [](const LaserBeam& b){ return b.life <= 0.0f; }), g_LaserBeams.end());
+
+            // 별가루: 스폰 직후 약간 퍼진 뒤 매 프레임 플레이어 방향으로 재조향 — 무조건 수집.
+            g_StardustHudPulse = std::max(0.0f, g_StardustHudPulse - delta * 3.8f);
+            for (auto& dust : g_StardustPickups) {
+                if (!dust.alive) continue;
+                dust.age += delta;
+
+                // 수집 판정
+                float dx = pCX - dust.x, dy = pCY - dust.y;
+                float dist = sqrtf(dx * dx + dy * dy);
+                if (dist < 60.0f) {
+                    g_Coins += dust.value;
+                    g_StardustHudPulse = 1.0f;
+                    SpawnSparks(dust.x, dust.y, dust.value >= 5 ? 6 : 3,
+                                1.0f, 0.85f, 0.30f, 180.0f);
+                    dust.alive = false;
+                    continue;
+                }
+
+                // 초기 0.4s: 퍼짐 (초기 vx/vy 방향 유지하되 감속)
+                if (dust.age < 0.40f) {
+                    const float drag = 1.0f - delta * 4.5f;
+                    dust.vx *= drag;
+                    dust.vy *= drag;
+                } else {
+                    // 이후: 매 프레임 플레이어 방향으로 속도 재조향 (무조건 추적)
+                    const float speed = 520.0f + std::min(280.0f, dust.age * 400.0f);
+                    if (dist > 0.001f) {
+                        dust.vx = (dx / dist) * speed;
+                        dust.vy = (dy / dist) * speed;
+                    }
+                }
+
+                dust.x += dust.vx * delta;
+                dust.y += dust.vy * delta;
+            }
+            g_StardustPickups.erase(std::remove_if(g_StardustPickups.begin(), g_StardustPickups.end(),
+                [](const StardustPickup& d) { return !d.alive || d.age > 6.0f; }),
+                g_StardustPickups.end());
 
             // 배드 ?�터 감속 구역 ?�명 + 부???�산
             for (auto& z : g_SlowZones) { z.life -= delta; z.age += delta; }
@@ -4201,6 +4246,7 @@ int main() {
                     SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
                     if (m->hp <= 0.0f) {
                         m->alive = false; m->scored = true; AddKillCombo();
+                        SpawnStardust(m->worldX, m->worldY, StardustRewardFor(m->kind), pCX, pCY);
                         float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs,
                                                       g_Stats.splitterBoost);
                         TryHackFirewallOnKill(m->kind, g_Stats);
@@ -4220,6 +4266,7 @@ int main() {
                     SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || crit);
                     if (rr->hp <= 0.0f) {
                         rr->alive = false; rr->scored = true; AddKillCombo();
+                        SpawnStardust(rr->worldX, rr->worldY, 3, pCX, pCY);
                         g_GameManager.xp += (long long)((25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
                         g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -4325,6 +4372,7 @@ int main() {
                         SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || lcrit);
                         if (m->hp <= 0.0f) {
                             m->alive = false; m->scored = true; AddKillCombo();
+                            SpawnStardust(m->worldX, m->worldY, StardustRewardFor(m->kind), pCX, pCY);
                             float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs,
                                                       g_Stats.splitterBoost);
                             TryHackFirewallOnKill(m->kind, g_Stats);
@@ -4342,6 +4390,7 @@ int main() {
                         SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || lcrit);
                         if (rr->hp <= 0.0f) {
                             rr->alive = false; rr->scored = true; AddKillCombo();
+                            SpawnStardust(rr->worldX, rr->worldY, 3, pCX, pCY);
                             g_GameManager.xp += (long long)((25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
                             g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
@@ -4401,6 +4450,8 @@ int main() {
                             m->hp -= dmg;
                             if (m->hp <= 0.0f && !m->scored) {
                                 m->alive=false; m->scored=true; AddKillCombo();
+                                SpawnStardust(m->worldX, m->worldY,
+                                              StardustRewardFor(m->kind), pCX, pCY);
                                 float bx,bs; MobKillReward(m->kind,m->splitGen,m->elite,bx,bs,
                                                            g_Stats.splitterBoost);
                                 TryHackFirewallOnKill(m->kind, g_Stats);
@@ -4428,6 +4479,7 @@ int main() {
                         if (dx*dx+dy*dy < r2) {
                             r->hp -= dmg;
                             if (r->hp<=0.0f && !r->scored){ r->alive=false; r->scored=true; AddKillCombo();
+                                SpawnStardust(r->worldX, r->worldY, 3, pCX, pCY);
                                 g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.rangedXpBonus)*g_Stats.xpMult);
                                 g_Stats.killCount++; g_GameManager.scoreAccum+=300.0f;
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill(); }
@@ -4645,10 +4697,14 @@ int main() {
             drawRect(0.0f, (float)screenHeight - y1, (float)screenWidth,
                      y1 - y0, 0.0f, 0.0f, 0.0f, a);
         }
+        if (g_StrongMenuDim) {
+            drawRect(0.0f, 0.0f, (float)screenWidth, (float)screenHeight,
+                     0.0f, 0.0f, 0.0f, 0.58f);
+        }
         BatchFlush();
         glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, orthoShake);
         memcpy(g_MainOrtho, orthoShake, sizeof(orthoShake));
-    
+
         // ?�거�?�?FakeWindow ?�기 ?�수 (?�더·?�리??공용)
         const float RFW_W = g_RfwW;
         const float RFW_H = g_RfwH;
@@ -5014,6 +5070,32 @@ int main() {
                 DrawPlayerSightMarker(pCX, pCY, sz * 2.45f,
                                       0.28f, 0.92f, 1.0f, 0.12f);
                 DrawPlayerWeaponShell(pCX, pCY, sz, atan2f(wmy - pCY, wmx - pCX));
+
+                // Pickups are combat foreground objects. Draw them after the player field
+                // so sight masks and projectile batches cannot hide their short burst.
+                for (const auto& dust : g_StardustPickups) {
+                    if (!dust.alive) continue;
+                    const float pulse = 0.85f + 0.15f * sinf(dust.age * 8.0f);
+                    if (dust.value >= 10) {
+                        // 대형 (10+): 금빛 다이아몬드
+                        drawCircle(dust.x, dust.y, 22.0f, 0.0f, 0.0f, 0.0f, 0.32f);
+                        drawCircle(dust.x, dust.y, 16.0f, 1.0f, 0.72f, 0.12f, 0.18f);
+                        drawDiamond(dust.x, dust.y, 13.0f * pulse, 1.0f, 0.80f, 0.18f, 1.0f);
+                        drawDiamond(dust.x, dust.y, 6.0f, 1.0f, 1.0f, 0.82f, 1.0f);
+                    } else if (dust.value >= 5) {
+                        // 중형 (5): 청록 십자
+                        drawCircle(dust.x, dust.y, 17.0f, 0.0f, 0.0f, 0.0f, 0.32f);
+                        drawCircle(dust.x, dust.y, 12.0f, 0.30f, 0.80f, 1.0f, 0.16f);
+                        drawDiamond(dust.x, dust.y, 10.0f * pulse, 0.48f, 0.94f, 1.0f, 1.0f);
+                        drawRect(dust.x - 1.5f, dust.y - 11.0f, 3.0f, 22.0f,
+                                 0.82f, 1.0f, 1.0f, 0.75f);
+                    } else {
+                        // 소형 (1): 흰 다이아몬드
+                        drawCircle(dust.x, dust.y, 13.0f, 0.0f, 0.0f, 0.0f, 0.28f);
+                        drawCircle(dust.x, dust.y, 9.0f, 0.70f, 0.90f, 1.0f, 0.14f);
+                        drawDiamond(dust.x, dust.y, 7.5f * pulse, 0.82f, 0.98f, 1.0f, 1.0f);
+                    }
+                }
                 // ?�곽: ?�두???�두�?(?��?
                 // 본체: 밝�? ?�안
     
@@ -5753,6 +5835,17 @@ int main() {
                                T(StrId::LV_PREFIX), g_GameManager.playerLevel, hpCur, hpMax);
                     g_TextS.Draw(lvBuf2, 12.0f, hudTopY, 0.85f, 0.7f, 1.0f, 0.7f, 0.9f);
                 }
+                {
+                    wchar_t dustBuf[64];
+                    const wchar_t* dustLabel = LangIndex() == 0 ? L"별가루" : L"STARDUST";
+                    swprintf_s(dustBuf, L"%ls  %06lld", dustLabel, g_Coins);
+                    const float pulse = g_StardustHudPulse;
+                    g_TextS.Draw(dustBuf, 12.0f, hudTopY + 22.0f,
+                                 0.72f + pulse * 0.08f,
+                                 0.72f + pulse * 0.28f,
+                                 0.88f + pulse * 0.10f,
+                                 1.0f, 0.88f + pulse * 0.12f);
+                }
     
                 // ?�단 중앙: Score
                 wchar_t scoreBuf[64];
@@ -5771,7 +5864,7 @@ int main() {
                 if (st == GameState::RUNNING || st == GameState::RUN_SHOP ||
                     g_InBossIntermission) {
                     const wchar_t* floorLbl = BossDir::ActLabel();
-                    g_TextS.Draw(floorLbl, 12.0f, hudTopY + 22.0f, 0.72f,
+                    g_TextS.Draw(floorLbl, 12.0f, hudTopY + 42.0f, 0.72f,
                                  0.82f, 0.92f, 1.0f, 0.82f);
                     wchar_t goldHud[32];
                     swprintf_s(goldHud, L"G  %lld", g_RunGold);

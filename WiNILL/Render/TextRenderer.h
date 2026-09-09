@@ -38,6 +38,8 @@ public:
 
     void Draw(const wchar_t* text, float x, float y, float scale,
               float r, float g, float b, float a = 1.0f);
+    void DrawRotated(const wchar_t* text, float x, float y, float scale, float angle,
+                     float r, float g, float b, float a = 1.0f);
     void Draw(const char* utf8, float x, float y, float scale,
               float r, float g, float b, float a = 1.0f);
 
@@ -314,6 +316,60 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
             glDrawArrays(GL_TRIANGLES, 0, 6);
         }
         penX += gph.advance * scale;
+    }
+    glBindVertexArray(0);
+    glUseProgram(0);
+}
+
+inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
+                                      float scale, float angle,
+                                      float r, float g, float b, float a)
+{
+    scale = EffectiveScale(scale);
+    if (g_GfxPass != GfxPass::Text) BatchFlush();
+    g_GfxPass = GfxPass::Text;
+    float P[16] = {
+         2.0f / screenW_,  0,               0, 0,
+         0,               -2.0f / screenH_, 0, 0,
+         0,                0,              -1, 0,
+        -1,                1,               0, 1
+    };
+    glEnable(GL_BLEND);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(prog_);
+    glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
+    glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(VAO_);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_);
+
+    const float ca = std::cos(angle), sa = std::sin(angle);
+    const float baseline = ascentPx_ * scale;
+    float pen = 0.0f;
+    auto rotatePoint = [&](float lx, float ly, float& ox, float& oy) {
+        ox = x + lx * ca - ly * sa;
+        oy = y + lx * sa + ly * ca;
+    };
+    for (const wchar_t* p = text; *p; ++p) {
+        Glyph& gph = GetGlyph((int)*p);
+        if (gph.tex) {
+            const float gx = pen + gph.xoff * scale;
+            const float gy = baseline + gph.yoff * scale;
+            const float gw = gph.w * scale, gh = gph.h * scale;
+            float x0, y0, x1, y1, x2, y2, x3, y3;
+            rotatePoint(gx,      gy,      x0, y0);
+            rotatePoint(gx + gw, gy,      x1, y1);
+            rotatePoint(gx + gw, gy + gh, x2, y2);
+            rotatePoint(gx,      gy + gh, x3, y3);
+            float v[24] = {
+                x0,y0,0,0, x1,y1,1,0, x2,y2,1,1,
+                x0,y0,0,0, x2,y2,1,1, x3,y3,0,1,
+            };
+            glBindTexture(GL_TEXTURE_2D, gph.tex);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+        pen += gph.advance * scale;
     }
     glBindVertexArray(0);
     glUseProgram(0);

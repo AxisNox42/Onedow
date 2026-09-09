@@ -124,6 +124,19 @@
 
 ## Change Log
 
+### 2026-09-06
+
+#### Codex - Outgame UI Contrast Foundation
+
+- Created rollback checkpoint `38d567c` before the redesign pass.
+- Added shared `UiContrast` tokens for neutral surfaces, focus wash, text shadows, and inactive text visibility.
+- Strengthened ARMORY and ASTRAL_LOG data plates against bright, dark, and saturated backgrounds without tinting their base material.
+- Unified CALIBRATION's main information surface with the same neutral black astral data plate.
+- Added a soft open-ended focus wash to `DrawUnifiedMenuCommand`; existing hitboxes and bracket/diamond feedback remain unchanged.
+- Build: MSBuild `Debug|x64` passed; `WiNILL/bin/WiNILL.exe` updated at `2026-09-06 13:01:47`.
+
+---
+
 ### 2026-08-31
 
 #### Codex - Shared UI Depth Task 7 Verification

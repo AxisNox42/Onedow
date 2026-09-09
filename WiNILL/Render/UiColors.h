@@ -89,6 +89,17 @@ namespace UiDepth {
     constexpr float HiddenOption   = 0.14f;   // locked/unrevealed item (structural presence only)
 }
 
+// Background-independent contrast values shared by every out-of-game screen.
+// These are material values, not accent colors: panels remain neutral so the
+// same UI is readable over bright, dark, or saturated scene backgrounds.
+namespace UiContrast {
+    constexpr float SurfaceAlpha       = 0.72f;
+    constexpr float SurfaceInnerAlpha  = 0.10f;
+    constexpr float HoverWashAlpha     = 0.16f;
+    constexpr float TextShadowAlpha    = 0.84f;
+    constexpr float InactiveTextFloor  = 0.46f;
+}
+
 inline float ClampUiAlpha(float alpha, float maxAlpha) {
     if (alpha < 0.0f) return 0.0f;
     if (alpha > maxAlpha) return maxAlpha;

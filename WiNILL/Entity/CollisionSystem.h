@@ -192,6 +192,8 @@ public:
                         m->scored = true;   // 총알 처치 — 보상 지급 완료 표시
                         TryHackFirewallOnKill(m->kind, stats);
                         AddKillCombo();
+                        SpawnStardust(m->worldX, m->worldY,
+                                      StardustRewardFor(m->kind), playerCX, playerCY);
                         // 종류별 기본 EXP/점수 (공용 테이블, 엘리트 ×2.5)
                         float baseXp, baseScore;
                         MobKillReward(m->kind, m->splitGen, m->elite, baseXp, baseScore,
@@ -384,6 +386,7 @@ public:
                             r->alive = false;
                             r->scored = true;        // 총알 처치 — 보상 지급 완료 표시
                             AddKillCombo();
+                            SpawnStardust(r->worldX, r->worldY, 3, playerCX, playerCY);
                             TriggerHitStop(0.03f);   // 원거리 몹 처치 — 짧은 크런치
                             float gained = (25.0f + (float)stats.rangedXpBonus)
                                          * stats.xpMult;

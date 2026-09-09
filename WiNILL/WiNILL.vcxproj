@@ -178,6 +178,7 @@
     <ClCompile Include="Core\Scenes\Scenes.cpp" />
     <ClCompile Include="Core\Scenes\WindowChrome.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Render\BlurShader.cpp" />
     <ClCompile Include="Render\Camera.cpp" />
     <ClCompile Include="Render\EntityDraw.cpp" />
     <ClCompile Include="Render\MainShader.cpp" />
