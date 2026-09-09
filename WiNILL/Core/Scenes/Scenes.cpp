@@ -3775,6 +3775,15 @@ static void Scene_CodexInline(const SceneCtx& c) {
                           0.0f, 0.0f, 0.0f, 0.68f * rightWake);
     DrawConstellationDisc(chartCX - chartR * 0.30f, chartCY, chartR * 0.64f,
                           0.34f, 0.14f, 0.58f, 0.12f * rightWake);
+    // A dedicated contrast field keeps the wrapped record rail readable on
+    // white/bright gameplay backgrounds. It overlaps the main sight field so
+    // the list feels embedded in the constellation instead of boxed in.
+    const float listFieldCX = chartCX - itemR + 180.0f * uiS;
+    DrawConstellationDisc(listFieldCX, chartCY, 860.0f * uiS,
+                          0.0f, 0.0f, 0.0f, 0.46f * rightWake);
+    DrawConstellationDisc(listFieldCX + 90.0f * uiS, chartCY, 510.0f * uiS,
+                          curRoot.r * 0.10f, curRoot.g * 0.10f, curRoot.b * 0.12f,
+                          0.075f * rightWake);
     BindMainShader();
     for (int ring = 0; ring < 4; ++ring) {
         const float rr = chartR * (0.56f + 0.145f * (float)ring);
