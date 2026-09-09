@@ -3846,7 +3846,11 @@ static void Scene_CodexInline(const SceneCtx& c) {
             selectedSlot = slot;
             s_displayTarget[s_cat] += jump;
         }
-        const float active = isSel ? 1.0f : (hov ? 0.72f : distanceFade * 0.38f);
+        const float targetFocus = isSel ? 1.0f : (hov ? 0.72f : 0.0f);
+        // Per-record focus smoothing makes the horizontal datum grow/shrink
+        // instead of snapping when the active record changes.
+        s_itemHover[slot] = UiApproach(s_itemHover[slot], targetFocus, dt, 8.0f);
+        const float active = std::max(s_itemHover[slot], distanceFade * 0.38f);
         const float miniX = ax;
         const float miniR = (isSel ? 62.0f : 42.0f) * uiS;
         // Local black halo around each record keeps the constellation core
@@ -3862,15 +3866,17 @@ static void Scene_CodexInline(const SceneCtx& c) {
         DrawArchiveConstellation(miniX, ay, miniR, s_cat, itm.key,
                                  now * 0.18f, itm.r, itm.g, itm.b,
                                  (0.28f + 0.66f * active) * wake, uiS);
-        const float lineEndX = ax + (isSel ? 380.0f : 250.0f) * uiS;
+        const float lineLength = (250.0f + 130.0f * s_itemHover[slot]) * uiS;
+        const float lineEndX = ax + lineLength;
         LogoLine(miniX + miniR * 0.68f, ay, lineEndX, ay,
-                 (isSel ? 1.05f : 0.72f) * uiS, itm.r, itm.g, itm.b,
+                 (0.96f + 0.56f * s_itemHover[slot]) * uiS, itm.r, itm.g, itm.b,
                  (0.12f + 0.34f * active) * wake);
         DrawVisibleConstellNode(lineEndX, ay, (isSel ? 4.0f : 2.8f) * uiS,
                                 itm.r, itm.g, itm.b,
                                 (0.20f + 0.54f * active) * wake, false);
         if (isSel)
-            drawRect(ax + 118.0f * uiS, ay - 22.0f * uiS, 2.0f * uiS, 44.0f * uiS,
+            drawRect(ax + (100.0f + 36.0f * s_itemHover[slot]) * uiS,
+                     ay - 22.0f * uiS, 2.0f * uiS, 44.0f * uiS,
                      itm.r, itm.g, itm.b, 0.76f * wake);
         float tsc = (isSel ? 0.68f : 0.58f) * uiS;
         DrawShadowedText(g_TextS, itm.label, ax + 132.0f * uiS,
