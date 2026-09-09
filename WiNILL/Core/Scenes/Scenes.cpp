@@ -3716,7 +3716,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     if (s_cat == 0) {
         addGroup(L"SIGNAL CLASS", 0.48f, 0.82f, 1.00f);
         static const int activeMobIds[] = {
-            CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS
+            CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR
         };
         for (int i : activeMobIds)
             addItem(i, CodexMobSeen(i) ? MobName(i) : L"???", CodexMobSeen(i),
@@ -4526,8 +4526,8 @@ void Scene_Codex(const SceneCtx& c) {
         struct MobGroup { const wchar_t* name; int ids[9]; int count; float r, g, b; };
         static const MobGroup MGRPS[] = {
             { L"ACTIVE SIGNALS",
-              { CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, 0, 0, 0, 0 },
-              5, 0.48f, 0.82f, 1.00f },
+              { CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR, 0, 0, 0 },
+              6, 0.48f, 0.82f, 1.00f },
         };
         for (int gi = 0; gi < 1; ++gi) {
             const MobGroup& mg = MGRPS[gi];

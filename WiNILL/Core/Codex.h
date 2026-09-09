@@ -163,12 +163,13 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
 inline const wchar_t* MobName(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
     // Canonical active-roster names from Astral Enemy Blueprints v6.
-    static const wchar_t* activeNames[5][3] = {
+    static const wchar_t* activeNames[6][3] = {
         { L"\uB85C\uD130",     L"ROTOR",   L"\u30ED\u30FC\u30BF\u30FC" },
         { L"\uC81C\uB124\uC2DC\uC2A4", L"GENESIS", L"\u30B8\u30A7\u30CD\u30B7\u30B9" },
         { L"\uC2A4\uCF54\uD504",   L"SCOPE",   L"\u30B9\u30B3\u30FC\u30D7" },
         { L"\uC2A4\uC6DC",     L"SWARM",   L"\u30B9\u30A6\u30A9\u30FC\u30E0" },
         { L"\uADF8\uB77C\uBE44\uC2A4",  L"GRAVIS",  L"\u30B0\u30E9\u30F4\u30A3\u30B9" },
+        { L"\uD034\uC774\uC0AC", L"QUASAR", L"\u30AF\u30A8\u30FC\u30B5\u30FC" },
     };
     switch (id) {
     case CM_NORMAL:  return activeNames[0][li];
@@ -176,12 +177,13 @@ inline const wchar_t* MobName(int id) {
     case CM_RANGED:  return activeNames[2][li];
     case CM_DDOS:    return activeNames[3][li];
     case CM_GRAVIS:  return activeNames[4][li];
+    case CM_QUASAR:  return activeNames[5][li];
     default:         return MOB_INFO[id].name[li];
     }
 }
 inline const wchar_t* MobDesc(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-    static const wchar_t* activeDesc[5][3] = {
+    static const wchar_t* activeDesc[6][3] = {
         { L"단일 회전 프레임으로 플레이어를 집요하게 추적하는 기본 신호",
           L"Basic signal that relentlessly tracks the player with a single rotating frame",
           L"単一の回転フレームでプレイヤーを追跡する基本シグナル" },
@@ -197,6 +199,9 @@ inline const wchar_t* MobDesc(int id) {
         { L"중력장으로 이동과 탄도 궤적을 왜곡하는 3T 정예 신호",
           L"Tier-3 elite signal that bends movement and bullet trajectories with gravity",
           L"重力場で移動と弾道を歪めるTier-3エリートシグナル" },
+        { L"장거리 조준선을 교차시켜 전장을 통제하는 희귀 신호",
+          L"Rare long-range signal that controls the arena with crossing aim lanes",
+          L"交差する照準線で戦場を制御する希少シグナル" },
     };
     switch (id) {
     case CM_NORMAL:  return activeDesc[0][li];
@@ -204,6 +209,7 @@ inline const wchar_t* MobDesc(int id) {
     case CM_RANGED:  return activeDesc[2][li];
     case CM_DDOS:    return activeDesc[3][li];
     case CM_GRAVIS:  return activeDesc[4][li];
+    case CM_QUASAR:  return activeDesc[5][li];
     default:         return MOB_INFO[id].desc[li];
     }
 }
