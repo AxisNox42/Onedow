@@ -59,6 +59,7 @@ static bool  s_MainMenuResumeFromPanel = false;
 static void Scene_RunConfigInline(const SceneCtx& c);
 static void Scene_TrialSelectInline(const SceneCtx& c);
 static void Scene_SettingsInline(const SceneCtx& c);
+static void Scene_ShopRedesign(const SceneCtx& c);
 static int   s_RcWeapon        = 0;
 static bool  s_RcTrialNodes[6] = {};
 static float s_RcNodeHover[6]  = {};
@@ -1338,7 +1339,7 @@ void Scene_MainMenu(const SceneCtx& c) {
     // during the handoff so the old fade cannot create a brightness flash.
     DrawMenuBackground(sw, sh, delta, 1.0f);
     if (s_MainMenuArmoryPanel) {
-        Scene_Shop(c);
+        Scene_ShopRedesign(c);
         return;
     }
     if (s_MainMenuCodexPanel) {
@@ -1659,6 +1660,108 @@ void Scene_MainMenu(const SceneCtx& c) {
                         g_GameManager.currentState = g_BootTarget;
                     }
                 }
+}
+
+// ARMORY redesign: a surface-free constellation marketplace. The left rail
+// keeps the codex command language, while products and transaction data live
+// directly on the starfield as connected nodes.
+static void Scene_ShopRedesign(const SceneCtx& c) {
+    static constexpr int KEY_META = 0;
+    static constexpr int KEY_AUG = 1000;
+    const float sw = c.sw, sh = c.sh;
+    const float dt = std::min(c.delta, 0.05f);
+    const double mx = c.mx, my = c.my;
+    const bool click = c.lmb && !g_LmbPrev;
+    static int tab = 0;
+    static int selected = 0;
+    static float entry = 0.0f;
+    entry = std::min(1.0f, entry + dt * 3.2f);
+    const float in = Smoothstep(entry);
+    DrawMenuBackground(sw, sh, c.delta, false);
+
+    const float ui = std::max(0.70f, std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
+    const float leftX = std::max(58.0f, sw * 0.075f);
+    const float topY = MainMenuCommandStartY(sh);
+    const float rowW = std::min(340.0f * ui, sw * 0.25f);
+    const float rowH = 70.0f * ui;
+    const float rowGap = 15.0f * ui;
+    static const wchar_t* labels[5][2] = {
+        { L"START", L"\xC2\xDC\xC791 \xBA\xA8\xB4\xC8" },
+        { L"UNLOCK", L"\xC77C\xBC18 \xD574\xAE08" },
+        { L"RIFLE", L"\xC18C\xCD1D \xC99D\xAC15" },
+        { L"FIELD", L"\xC804\xC7A5 \xC99D\xAC15" },
+        { L"BACK", L"\xB4\xA4\xB85C" },
+    };
+    static const float colors[4][3] = {
+        {0.35f,0.86f,1.0f}, {0.60f,0.48f,1.0f},
+        {1.0f,0.72f,0.28f}, {0.44f,0.92f,0.68f}
+    };
+
+    // Persistent codex-style category rail (the only inherited layout rule).
+    BindMainShader();
+    drawRect(leftX - 26.0f*ui, topY - 18.0f*ui, 1.2f*ui,
+             rowH*5.0f + rowGap*4.0f + 36.0f*ui,
+             0.42f,0.78f,0.94f,0.18f*in);
+    for (int i=0;i<5;++i) {
+        const bool back = i==4;
+        const bool hov = mx >= leftX-46.0f*ui && mx < leftX+rowW+18.0f*ui &&
+                         my >= topY+i*(rowH+rowGap) && my < topY+i*(rowH+rowGap)+rowH;
+        if (hov && click) {
+            if (back) { g_GameManager.currentState = GameState::MAIN_MENU; return; }
+            if (tab != i) { tab=i; selected=0; }
+        }
+        const float r = back ? 0.42f : colors[i][0];
+        const float g = back ? 0.62f : colors[i][1];
+        const float b = back ? 0.80f : colors[i][2];
+        const bool active = !back && tab==i;
+        DrawUnifiedMenuCommand(labels[i][0], labels[i][1], leftX, topY+i*(rowH+rowGap),
+                               rowW,rowH,r,g,b,in*(active?1.0f:0.72f),
+                               hov?1.0f:0.0f,active,active?0.18f:0.0f,(float)i);
+    }
+
+    std::vector<int> items;
+    if (tab==0) items.push_back(KEY_META + META_STARTAUG);
+    else if (tab==1) for (int i=0;i<META_COUNT;++i) if(i!=META_STARTAUG) items.push_back(KEY_META+i);
+    else for (int i=0;i<AUG_TOTAL;++i) if(!AugRemoved(ALL_AUGS[i].type)) items.push_back(KEY_AUG+i);
+    if (selected >= (int)items.size()) selected = std::max(0,(int)items.size()-1);
+
+    const float listX = leftX + rowW + 150.0f*ui;
+    const float listY = topY + 20.0f*ui;
+    const float detailX = sw * 0.66f;
+    const float detailW = sw - detailX - 80.0f*ui;
+    const float cr=colors[std::min(tab,3)][0], cg=colors[std::min(tab,3)][1], cb=colors[std::min(tab,3)][2];
+    DrawShadowedText(g_TextL, L"ARMORY", listX, topY-12.0f*ui, 0.86f*ui, 0.9f,0.96f,1.0f,0.9f*in,0.7f);
+    DrawShadowedText(g_TextS, labels[tab][1], listX, topY+34.0f*ui, 0.48f*ui, cr,cg,cb,0.82f*in,0.6f);
+    LogoLine(listX, topY+62.0f*ui, sw-70.0f*ui, topY+62.0f*ui, 1.2f*ui, cr,cg,cb,0.28f*in);
+
+    for (int i=0;i<(int)items.size();++i) {
+        const float y=listY+94.0f*ui+i*92.0f*ui;
+        const bool hov=mx>=listX-22.0f*ui&&mx<detailX-44.0f*ui&&my>=y-26.0f*ui&&my<y+42.0f*ui;
+        if(hov&&click) selected=i;
+        const bool active=i==selected;
+        const float a=in*(active?1.0f:0.46f);
+        LogoLine(listX-22.0f*ui,y,detailX-44.0f*ui,y,active?2.2f*ui:0.8f*ui,cr,cg,cb,(active?0.72f:0.18f)*a);
+        DrawVisibleConstellNode(listX,y,(active?10.0f:5.0f)*ui,cr,cg,cb,(active?0.95f:0.45f)*a);
+        const wchar_t* name = items[i] < KEY_AUG ? MetaName(items[i]-KEY_META) : ALL_AUGS[items[i]-KEY_AUG].locName[LangIndex()];
+        DrawShadowedText(g_TextS,name,listX+26.0f*ui,y-13.0f*ui,(active?0.72f:0.60f)*ui,1.0f,1.0f,1.0f,(active?0.98f:0.70f)*a,0.65f);
+    }
+
+    // Detail is deliberately typographic and line-based; only the selected
+    // node receives a local dark halo for contrast against bright starfields.
+    const float dy=topY+150.0f*ui;
+    const int key=items.empty()? -1 : items[selected];
+    DrawSceneRadialVignette(detailX+detailW*0.42f,dy+120.0f*ui,210.0f*ui,0.34f*in);
+    LogoLine(detailX,topY+62.0f*ui,detailX,sh-110.0f*ui,1.0f*ui,cr,cg,cb,0.20f*in);
+    if(key>=0){
+        const wchar_t* title = key<KEY_AUG ? MetaName(key-KEY_META) : ALL_AUGS[key-KEY_AUG].locName[LangIndex()];
+        DrawShadowedText(g_TextS,key<KEY_AUG?L"START MODULE NODE":L"IN-RUN MODULE NODE",detailX+26.0f*ui,dy,0.48f*ui,cr,cg,cb,0.80f*in,0.6f);
+        DrawShadowedText(g_TextL,title,detailX+26.0f*ui,dy+34.0f*ui,1.08f*ui,1.0f,1.0f,1.0f,0.98f*in,0.75f);
+        LogoLine(detailX+26.0f*ui,dy+94.0f*ui,detailX+detailW,dy+94.0f*ui,1.4f*ui,cr,cg,cb,0.34f*in);
+        DrawShadowedText(g_TextS,key<KEY_AUG?L"Special ability applied at run start":AugDesc(ALL_AUGS[key-KEY_AUG]),detailX+26.0f*ui,dy+120.0f*ui,0.54f*ui,0.78f,0.86f,0.96f,0.86f*in,0.62f);
+        wchar_t cost[64]; swprintf_s(cost,L"STARDUST  ::  %06lld",g_Coins);
+        DrawShadowedText(g_TextS,cost,detailX+26.0f*ui,dy+190.0f*ui,0.50f*ui,1.0f,0.86f,0.30f,0.92f*in,0.62f);
+        DrawShadowedText(g_TextS,L"[ BUY / ASSEMBLE ]",detailX+26.0f*ui,dy+248.0f*ui,0.62f*ui,cr,cg,cb,0.92f*in,0.64f);
+    }
 }
 
 void Scene_Shop(const SceneCtx& c) {
@@ -6557,23 +6660,24 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float wg = weapon == 0 ? 0.72f : 0.90f;
     const float wb = 1.0f;
     const float weaponH = 64.0f * uiS;
-    // Canvas 코너 브라켓
+    // Canvas 코너 브라켓 — dark on light
     {
         const float la = Smoothstep(LogoClamp01((entry - 0.22f) / 0.42f)) * contentA;
         const float cw = 28.0f * uiS, lw = 1.0f * uiS;
         const float cR = canvasRight, cB = canvasBottom;
-        LogoLine(canvasLeft, canvasTop, canvasLeft+cw, canvasTop, lw, wr,wg,wb, 0.50f*la);
-        LogoLine(canvasLeft, canvasTop, canvasLeft, canvasTop+cw, lw, wr,wg,wb, 0.50f*la);
-        LogoLine(cR, canvasTop, cR-cw, canvasTop, lw, wr,wg,wb, 0.50f*la);
-        LogoLine(cR, canvasTop, cR, canvasTop+cw, lw, wr,wg,wb, 0.50f*la);
-        LogoLine(canvasLeft, cB, canvasLeft+cw, cB, lw, wr,wg,wb, 0.50f*la);
-        LogoLine(canvasLeft, cB, canvasLeft, cB-cw, lw, wr,wg,wb, 0.50f*la);
-        LogoLine(cR, cB, cR-cw, cB, lw, wr,wg,wb, 0.50f*la);
-        LogoLine(cR, cB, cR, cB-cw, lw, wr,wg,wb, 0.50f*la);
-        drawDiamond(canvasLeft, canvasTop, 3.0f*uiS, wr,wg,wb, 0.65f*la);
-        drawDiamond(cR,         canvasTop, 3.0f*uiS, wr,wg,wb, 0.65f*la);
-        drawDiamond(canvasLeft, cB,        3.0f*uiS, wr,wg,wb, 0.65f*la);
-        drawDiamond(cR,         cB,        3.0f*uiS, wr,wg,wb, 0.65f*la);
+        const float dr = 0.18f, dg = 0.22f, db = 0.28f;
+        LogoLine(canvasLeft, canvasTop, canvasLeft+cw, canvasTop, lw, dr,dg,db, 0.45f*la);
+        LogoLine(canvasLeft, canvasTop, canvasLeft, canvasTop+cw, lw, dr,dg,db, 0.45f*la);
+        LogoLine(cR, canvasTop, cR-cw, canvasTop, lw, dr,dg,db, 0.45f*la);
+        LogoLine(cR, canvasTop, cR, canvasTop+cw, lw, dr,dg,db, 0.45f*la);
+        LogoLine(canvasLeft, cB, canvasLeft+cw, cB, lw, dr,dg,db, 0.45f*la);
+        LogoLine(canvasLeft, cB, canvasLeft, cB-cw, lw, dr,dg,db, 0.45f*la);
+        LogoLine(cR, cB, cR-cw, cB, lw, dr,dg,db, 0.45f*la);
+        LogoLine(cR, cB, cR, cB-cw, lw, dr,dg,db, 0.45f*la);
+        drawDiamond(canvasLeft, canvasTop, 3.0f*uiS, dr,dg,db, 0.55f*la);
+        drawDiamond(cR,         canvasTop, 3.0f*uiS, dr,dg,db, 0.55f*la);
+        drawDiamond(canvasLeft, cB,        3.0f*uiS, dr,dg,db, 0.55f*la);
+        drawDiamond(cR,         cB,        3.0f*uiS, dr,dg,db, 0.55f*la);
     }
     // WEAPON section header + separator
     DrawShadowedText(g_TextS, L"WEAPON", leftX, leftY - 28.0f * uiS, 0.44f * uiS,
@@ -6631,101 +6735,66 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float headerX = canvasLeft + 8.0f * uiS;
     const float headerY = canvasTop;
 
-    // 캔버스 전체 대비 필드 — 배경색 무관 가시성 보장 (Codex 패턴)
-    {
-        const float cw = innerRight - canvasLeft;
-        const float ch = canvasBottom - canvasTop;
-        const float contrastR = std::max(cw, ch) * 0.62f;
-        DrawConstellationDisc(centerX, centerY, contrastR, 0.0f, 0.0f, 0.0f, 0.36f * contentA);
-    }
-    // 별자리 중심 광원
-    DrawConstellationDisc(centerX, centerY, profileRadius * 6.4f, 0.0f, 0.0f, 0.0f, 0.55f * contentA);
-    DrawConstellationDisc(centerX, centerY, profileRadius * 3.2f, conR, conG, conB, 0.05f * contentA);
-    DrawConstellationDisc(centerX, centerY, profileRadius * 2.0f, conR, conG, conB, 0.09f * contentA);
-    DrawConstellationDisc(centerX, centerY, profileRadius * 1.3f, conR, conG, conB, 0.12f * contentA);
-    DrawSceneRadialVignette(centerX, centerY,
-                            std::max(260.0f * uiS, profileRadius * 1.60f),
-                            0.38f * contentA);
+    // 별자리 색상 광원 — 밝은 배경 위 minimal glow
+    DrawConstellationDisc(centerX, centerY, profileRadius * 2.8f, conR, conG, conB, 0.05f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 1.7f, conR, conG, conB, 0.09f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 1.1f, conR, conG, conB, 0.12f * contentA);
 
     // ── WEAPONS page ─────────────────────────────────────────────────
     if (weaponsA > 0.004f) {
         const float detailA = weaponsA * (0.84f + 0.16f * Smoothstep(s_PanelFadeT));
-        DrawShadowedText(g_TextS, L"WEAPON POWER ALIGNMENT", headerX, headerY, 0.50f * uiS,
-                         wr, wg, wb, 0.78f * detailA, 0.66f);
-        DrawShadowedText(g_TextL, weapons[weapon], headerX, headerY + 30.0f * uiS, 1.05f * uiS,
-                         1.0f, 1.0f, 1.0f, 0.98f * detailA, 0.78f);
-        DrawShadowedText(g_TextS, weaponSub[weapon], headerX, headerY + 72.0f * uiS, 0.46f * uiS,
-                         0.70f, 0.78f, 0.88f, 0.82f * detailA, 0.66f);
-        LogoLine(headerX, headerY + 98.0f * uiS,
-                 centerX - profileRadius - 20.0f * uiS, headerY + 98.0f * uiS,
-                 1.0f * uiS, wr, wg, wb, 0.22f * detailA);
+        // 헤더 — dark text on light background
+        DrawShadowedText(g_TextS, L"WEAPON POWER ALIGNMENT", headerX, headerY, 0.44f * uiS,
+                         0.24f, 0.28f, 0.36f, 0.65f * detailA, 0.0f);
+        DrawShadowedText(g_TextL, weapons[weapon], headerX, headerY + 26.0f * uiS, 1.00f * uiS,
+                         0.08f, 0.10f, 0.14f, 0.92f * detailA, 0.0f);
+        DrawShadowedText(g_TextS, weaponSub[weapon], headerX, headerY + 68.0f * uiS, 0.42f * uiS,
+                         0.32f, 0.36f, 0.44f, 0.72f * detailA, 0.0f);
+        // 헤더 하단 구분선 (무기 고유색 accent)
+        LogoLine(headerX, headerY + 90.0f * uiS,
+                 centerX - profileRadius - 20.0f * uiS, headerY + 90.0f * uiS,
+                 0.8f * uiS, conR, conG, conB, 0.35f * detailA);
 
-        // ── 스탯 바 (별자리 왼쪽) ──────────────────────────────────────
+        // ── 스탯 테이블 (별자리 왼쪽) ────────────────────────────────────
         {
-            const float barsRight  = centerX - profileRadius - 18.0f * uiS;
-            const float barsLeft   = canvasLeft + 8.0f * uiS;
-            const float labelW     = 82.0f * uiS;
-            const float barTrackL  = barsLeft + labelW;
-            const float barTrackW  = barsRight - barTrackL;
-            const float rowH       = 46.0f * uiS;
-            const float barH       = 5.0f * uiS;
-            const float barBaseY   = centerY - 3.0f * rowH + rowH * 0.5f;
-            const float nScale     = 0.38f * uiS;
-            const float vScale     = 0.46f * uiS;
-            // 스탯 바 칼럼 전용 대비 필드
-            {
-                const float barsAreaW = barsRight - barsLeft;
-                const float barsAreaH = 6.0f * rowH;
-                const float fieldCX   = (barsLeft + barsRight) * 0.5f;
-                DrawConstellationDisc(fieldCX, centerY,
-                                      std::max(barsAreaW, barsAreaH) * 0.60f,
-                                      0.0f, 0.0f, 0.0f, 0.26f * detailA);
-                DrawConstellationDisc(fieldCX, centerY,
-                                      std::max(barsAreaW, barsAreaH) * 0.32f,
-                                      conR, conG, conB, 0.04f * detailA);
-            }
+            const float tRight = centerX - profileRadius - 18.0f * uiS;
+            const float tLeft  = canvasLeft + 8.0f * uiS;
+            const float valX   = tRight - 6.0f * uiS;  // 수치 우정렬 기준
+            const float rowH   = 38.0f * uiS;
+            const float tTop   = centerY - 3.0f * rowH;
+            const float lbSc   = 0.38f * uiS;
+            const float vlSc   = 0.44f * uiS;
+            // 세로 accent 바 (무기 고유색)
+            drawRect(tLeft, tTop, 1.5f * uiS, 6.0f * rowH, conR, conG, conB, 0.50f * detailA);
+            // 상단 구분선
+            LogoLine(tLeft, tTop, tRight, tTop, 0.6f*uiS, 0.18f, 0.22f, 0.28f, 0.22f * detailA);
             for (int i = 0; i < 6; ++i) {
-                const float midY   = barBaseY + i * rowH;
-                const float filled = barTrackW * statT[i];
-                // 스탯 이름 — 왼쪽 상단
-                DrawShadowedText(g_TextS, statNames[i], barsLeft, midY - 20.0f * uiS,
-                                 nScale, 0.60f, 0.72f, 0.86f, 0.70f * detailA, 0.44f);
-                // 수치 — 스탯 이름 아래 (왼쪽)
-                DrawShadowedText(g_TextS, statVals[weapon][i], barsLeft, midY - 4.0f * uiS,
-                                 vScale, conR * 0.6f + 0.4f, conG * 0.6f + 0.4f, conB * 0.6f + 0.4f,
-                                 0.92f * detailA, 0.70f);
-                // 바 트랙 (무기 고유색 dim)
-                drawRect(barTrackL, midY - barH * 0.5f, barTrackW, barH,
-                         conR, conG, conB, 0.12f * detailA);
-                if (filled > 1.0f) {
-                    // 소프트 글로우 halo
-                    drawRect(barTrackL, midY - barH * 2.2f, filled, barH * 4.4f,
-                             conR, conG, conB, 0.09f * detailA);
-                    // 코어 필
-                    drawRect(barTrackL, midY - barH * 0.5f, filled, barH,
-                             conR, conG, conB, 0.88f * detailA);
+                const float rowY = tTop + i * rowH;
+                const float midY = rowY + rowH * 0.5f;
+                // 행 구분선
+                LogoLine(tLeft + 8.0f*uiS, rowY + rowH, tRight, rowY + rowH,
+                         0.5f*uiS, 0.18f, 0.22f, 0.28f, 0.14f * detailA);
+                // 라벨 (dark gray)
+                DrawShadowedText(g_TextS, statNames[i],
+                                 tLeft + 10.0f*uiS, midY - g_TextS.Height(statNames[i], lbSc) * 0.5f,
+                                 lbSc, 0.26f, 0.30f, 0.38f, 0.72f * detailA, 0.0f);
+                // 수치 (near-black, 우정렬)
+                const float vw = g_TextS.Width(statVals[weapon][i], vlSc);
+                DrawShadowedText(g_TextS, statVals[weapon][i],
+                                 valX - vw, midY - g_TextS.Height(statVals[weapon][i], vlSc) * 0.5f,
+                                 vlSc, 0.08f, 0.10f, 0.14f, 0.88f * detailA, 0.0f);
+                // 선택 행 — 무기색 수평선
+                if (i == 0) {
+                    LogoLine(tLeft + 8.0f*uiS, rowY + rowH,
+                             tRight, rowY + rowH,
+                             1.0f*uiS, conR, conG, conB, 0.38f * detailA);
+                    drawDiamond(tLeft + 4.0f*uiS, midY, 2.8f*uiS, conR, conG, conB, 0.70f * detailA);
                 }
-                // 틱 마크
-                for (int t = 0; t <= 4; ++t) {
-                    const float tx  = barTrackL + barTrackW * (float)t * 0.25f;
-                    const bool  lit = statT[i] >= (float)t * 0.25f - 0.01f;
-                    LogoLine(tx, midY - 5.5f*uiS, tx, midY + 5.5f*uiS,
-                             0.7f*uiS, conR, conG, conB, (lit ? 0.50f : 0.14f) * detailA);
-                }
-                if (statT[i] > 0.02f)
-                    drawDiamond(barTrackL + filled, midY, 3.5f*uiS,
-                                conR, conG, conB, 0.92f * detailA);
             }
         }
 
-        // ── 정보 카드 4개 (별자리 오른쪽) ──────────────────────────────
+        // ── 정보 테이블 (별자리 오른쪽) ──────────────────────────────────
         {
-            const float cardX   = centerX + profileRadius + 22.0f * uiS;
-            const float cardW   = innerRight - cardX - 14.0f * uiS;
-            const float cardH   = 52.0f * uiS;
-            const float cardGap = 10.0f * uiS;
-            const float totalH  = 4.0f * cardH + 3.0f * cardGap;
-            const float cardY0  = centerY - totalH * 0.5f;
             static const wchar_t* cardLabels[4] = {
                 L"BEST SCORE", L"BEST KILLS", L"TOTAL KILLS", L"TOTAL RUNS"
             };
@@ -6733,42 +6802,42 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
                 { g_WeaponBestScore[0], g_WeaponBestKills[0], g_WeaponTotalKills[0], g_WeaponRunCount[0] },
                 { g_WeaponBestScore[1], g_WeaponBestKills[1], g_WeaponTotalKills[1], g_WeaponRunCount[1] }
             };
+            const float tLeft  = centerX + profileRadius + 22.0f * uiS;
+            const float tRight = innerRight - 14.0f * uiS;
+            const float valX   = tRight;
+            const float rowH   = 38.0f * uiS;
+            const float tTop   = centerY - 2.0f * rowH;
+            const float lbSc   = 0.36f * uiS;
+            const float vlSc   = 0.44f * uiS;
+            // 세로 accent 바
+            drawRect(tRight - 1.5f*uiS, tTop, 1.5f*uiS, 4.0f*rowH, conR, conG, conB, 0.50f * detailA);
+            // 상단 구분선
+            LogoLine(tLeft, tTop, tRight, tTop, 0.6f*uiS, 0.18f, 0.22f, 0.28f, 0.22f * detailA);
             for (int i = 0; i < 4; ++i) {
-                const float cy  = cardY0 + i * (cardH + cardGap);
-                const float cym = cy + cardH * 0.5f;
-                // 카드 로컬 대비 disc (Codex 패턴 — 카드 뒤 어둠으로 가시성 보장)
-                DrawConstellationDisc(cardX + cardW * 0.5f, cym, cardH * 1.5f,
-                                      0.0f, 0.0f, 0.0f, 0.28f * detailA);
-                DrawConstellationDisc(cardX + cardW * 0.5f, cym, cardH * 0.85f,
-                                      conR, conG, conB, 0.05f * detailA);
-                // 연결선
-                LogoLine(centerX, centerY, cardX - 2.0f*uiS, cym,
-                         0.6f*uiS, conR, conG, conB, 0.16f * detailA);
-                drawDiamond(cardX - 2.0f*uiS, cym, 2.8f*uiS, conR, conG, conB, 0.48f * detailA);
-                // 카드 배경
-                drawRect(cardX, cy, cardW, cardH, conR * 0.3f, conG * 0.3f, conB * 0.3f, 0.06f * detailA);
-                // 카드 테두리 (코너 브라켓)
-                const float cc = 9.0f * uiS;
-                LogoLine(cardX,        cy,        cardX+cc,      cy,        0.8f*uiS, conR,conG,conB, 0.44f*detailA);
-                LogoLine(cardX,        cy,        cardX,         cy+cc,     0.8f*uiS, conR,conG,conB, 0.44f*detailA);
-                LogoLine(cardX+cardW,  cy,        cardX+cardW-cc,cy,        0.8f*uiS, conR,conG,conB, 0.44f*detailA);
-                LogoLine(cardX+cardW,  cy,        cardX+cardW,   cy+cc,     0.8f*uiS, conR,conG,conB, 0.44f*detailA);
-                LogoLine(cardX,        cy+cardH,  cardX+cc,      cy+cardH,  0.8f*uiS, conR,conG,conB, 0.44f*detailA);
-                LogoLine(cardX,        cy+cardH,  cardX,         cy+cardH-cc,0.8f*uiS,conR,conG,conB, 0.44f*detailA);
-                LogoLine(cardX+cardW,  cy+cardH,  cardX+cardW-cc,cy+cardH,  0.8f*uiS, conR,conG,conB, 0.44f*detailA);
-                LogoLine(cardX+cardW,  cy+cardH,  cardX+cardW,   cy+cardH-cc,0.8f*uiS,conR,conG,conB, 0.44f*detailA);
+                const float rowY = tTop + i * rowH;
+                const float midY = rowY + rowH * 0.5f;
+                // 행 구분선
+                LogoLine(tLeft, rowY + rowH, tRight - 8.0f*uiS, rowY + rowH,
+                         0.5f*uiS, 0.18f, 0.22f, 0.28f, 0.14f * detailA);
                 // 라벨
                 DrawShadowedText(g_TextS, cardLabels[i],
-                                 cardX + 8.0f*uiS, cy + 6.0f*uiS,
-                                 0.34f*uiS, 0.58f, 0.68f, 0.80f, 0.70f * detailA, 0.46f);
-                // 수치
+                                 tLeft, midY - g_TextS.Height(cardLabels[i], lbSc) * 0.5f,
+                                 lbSc, 0.26f, 0.30f, 0.38f, 0.72f * detailA, 0.0f);
+                // 수치 (우정렬)
                 wchar_t valBuf[32];
                 long long v = cardData[weapon][i];
                 if (v == 0) wcscpy_s(valBuf, L"—");
                 else        swprintf_s(valBuf, L"%lld", v);
+                const float vw = g_TextS.Width(valBuf, vlSc);
                 DrawShadowedText(g_TextS, valBuf,
-                                 cardX + 8.0f*uiS, cy + cardH - 22.0f*uiS,
-                                 0.52f*uiS, 0.94f, 0.98f, 1.0f, 0.94f * detailA, 0.74f);
+                                 valX - vw - 8.0f*uiS, midY - g_TextS.Height(valBuf, vlSc) * 0.5f,
+                                 vlSc, 0.08f, 0.10f, 0.14f, 0.88f * detailA, 0.0f);
+                // 하이라이트 행
+                if (i == 0) {
+                    LogoLine(tLeft, rowY + rowH, tRight - 8.0f*uiS, rowY + rowH,
+                             1.0f*uiS, conR, conG, conB, 0.38f * detailA);
+                    drawDiamond(tRight - 4.0f*uiS, midY, 2.8f*uiS, conR, conG, conB, 0.70f * detailA);
+                }
             }
         }
     }
