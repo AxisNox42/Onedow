@@ -164,11 +164,11 @@ inline const wchar_t* MobName(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
     // Canonical active-roster names from Astral Enemy Blueprints v6.
     static const wchar_t* activeNames[5][3] = {
-        { L"ROTOR",   L"ROTOR",   L"ローター" },
-        { L"GENESIS", L"GENESIS", L"ジェネシス" },
-        { L"SCOPE",   L"SCOPE",   L"スコープ" },
-        { L"SWARM",   L"SWARM",   L"スウォーム" },
-        { L"GRAVIS",  L"GRAVIS",  L"グラヴィス" },
+        { L"\uB85C\uD130",     L"ROTOR",   L"\u30ED\u30FC\u30BF\u30FC" },
+        { L"\uC81C\uB124\uC2DC\uC2A4", L"GENESIS", L"\u30B8\u30A7\u30CD\u30B7\u30B9" },
+        { L"\uC2A4\uCF54\uD504",   L"SCOPE",   L"\u30B9\u30B3\u30FC\u30D7" },
+        { L"\uC2A4\uC6DC",     L"SWARM",   L"\u30B9\u30A6\u30A9\u30FC\u30E0" },
+        { L"\uADF8\uB77C\uBE44\uC2A4",  L"GRAVIS",  L"\u30B0\u30E9\u30F4\u30A3\u30B9" },
     };
     switch (id) {
     case CM_NORMAL:  return activeNames[0][li];
@@ -185,9 +185,9 @@ inline const wchar_t* MobDesc(int id) {
         { L"단일 회전 프레임으로 플레이어를 집요하게 추적하는 기본 신호",
           L"Basic signal that relentlessly tracks the player with a single rotating frame",
           L"単一の回転フレームでプレイヤーを追跡する基本シグナル" },
-        { L"전장에 고정되어 DDoS 신호 조각을 생성하는 생성 코어",
-          L"Anchored genesis core that generates DDoS signal shards",
-          L"戦場に固定されDDoS信号片を生成するジェネシスコア" },
+        { L"전장에 고정되어 SWARM 신호 조각을 생성하는 생성 코어",
+          L"Anchored genesis core that generates SWARM signal shards",
+          L"戦場に固定されSWARM信号片を生成するジェネシスコア" },
         { L"중앙 코어와 조준선으로 원거리에서 공격하는 감시 신호",
           L"Ranged surveillance signal that attacks from afar with a central core and aim lanes",
           L"中央コアと照準線で遠距離攻撃する監視シグナル" },
