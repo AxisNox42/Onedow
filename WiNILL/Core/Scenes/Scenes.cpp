@@ -426,6 +426,13 @@ static void DrawArchiveConstellation(float cx, float cy, float radius,
                                      float alpha, float uiS) {
     if (alpha <= 0.001f || radius <= 4.0f) return;
 
+    // Entity entries reuse the gameplay renderer so the archive miniature is
+    // the same ROTOR/GENESIS/SCOPE/SWARM/GRAVIS silhouette seen in a run.
+    if (category == 0) {
+        drawCodexMobPreview(key, cx, cy, std::max(1.8f, radius / 18.0f));
+        return;
+    }
+
     constexpr int kNodeCount = 9;
     float px[kNodeCount] = {};
     float py[kNodeCount] = {};
