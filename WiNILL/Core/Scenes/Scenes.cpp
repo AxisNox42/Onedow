@@ -3813,11 +3813,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
             stepRequest = navDir; // immediate first move
         } else {
             s_navHoldT += dt;
-            // Hold for ~0.7s, then accelerate by shrinking the repeat interval.
-            if (s_navHoldT >= 0.70f) {
+            // Hold for ~0.4s, then accelerate by shrinking the repeat interval.
+            if (s_navHoldT >= 0.40f) {
                 s_navRepeatT += dt;
-                const float repeatInterval = std::max(0.075f,
-                    0.26f - (s_navHoldT - 0.70f) * 0.075f);
+                // Cap the navigation rate so long holds never skip too fast.
+                const float repeatInterval = std::max(0.12f,
+                    0.26f - (s_navHoldT - 0.40f) * 0.075f);
                 if (s_navRepeatT >= repeatInterval) {
                     s_navRepeatT = 0.0f;
                     stepRequest = navDir;
@@ -6505,8 +6506,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float centerX = canvasLeft + (innerRight - canvasLeft) * 0.50f;
     const float centerY = canvasTop + (canvasBottom - canvasTop) * 0.46f;
     const float profileRadius = std::min(
-        (innerRight - canvasLeft) * 0.17f,
-        (canvasBottom - canvasTop) * 0.26f);
+        (innerRight - canvasLeft) * 0.13f,
+        (canvasBottom - canvasTop) * 0.20f);
     const float trialCX = canvasLeft + (innerRight - canvasLeft) * 0.28f;
     const float now = (float)glfwGetTime();
 
