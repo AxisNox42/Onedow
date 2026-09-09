@@ -1891,13 +1891,13 @@ void Scene_Shop(const SceneCtx& c) {
             for (int i = 0; i < META_COUNT; i++)
                 addItem(KEY_META + i, MetaName(i), 0.38f, 0.82f, 1.00f);
         }
-        if (s_tab == 0 || s_tab == 2) {
+        if (s_tab == 2) {
             addGroup(nli == 0 ? L"\xC18C\xCD1D \xC2DC\xC2A4\xD15C" : L"RIFLE SYSTEMS", 0.72f, 0.92f, 0.42f);
             for (int i = 0; i < AUG_TOTAL; i++)
                 if (!AugRemoved(ALL_AUGS[i].type) && augWeapCat(ALL_AUGS[i].type) == 0)
                     addItem(KEY_AUG + i, ALL_AUGS[i].locName[li], 0.72f, 0.92f, 0.42f);
         }
-        if (s_tab == 0 || s_tab == 3) {
+        if (s_tab == 3) {
             addGroup(nli == 0 ? L"\xC704\xC131 \xBC30\xC5F4" : L"FIELD ARRAY", 0.62f, 0.48f, 1.00f);
             for (int i = 0; i < AUG_TOTAL; i++)
                 if (!AugRemoved(ALL_AUGS[i].type) && augWeapCat(ALL_AUGS[i].type) == 1)
@@ -1978,7 +1978,7 @@ void Scene_Shop(const SceneCtx& c) {
 
     // ── Cascading text tree: root commands ─────────────────────────────
     static const wchar_t* kTabLbl[SHOP_TAB_COUNT][2] = {
-        { L"\xC804\xCCB4", L"ALL"    },
+        { L"\xC2DC\xC791 \xBAA8\xB4C8", L"START" },
         { L"\xD574\xAE08", L"UNLOCK" },
         { L"\xC18C\xCD1D", L"RIFLE"  },
         { L"\xC704\xC131", L"FIELD"  },
@@ -6641,36 +6641,45 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         {
             const float barsRight  = centerX - profileRadius - 18.0f * uiS;
             const float barsLeft   = canvasLeft + 8.0f * uiS;
-            const float labelW     = 86.0f * uiS;
-            const float valW       = 54.0f * uiS;
+            const float labelW     = 82.0f * uiS;
             const float barTrackL  = barsLeft + labelW;
-            const float barTrackW  = barsRight - barTrackL - valW - 6.0f * uiS;
+            const float barTrackW  = barsRight - barTrackL;
             const float rowH       = 46.0f * uiS;
             const float barH       = 5.0f * uiS;
             const float barBaseY   = centerY - 3.0f * rowH + rowH * 0.5f;
-            const float nScale     = 0.46f * uiS;
-            const float vScale     = 0.50f * uiS;
+            const float nScale     = 0.38f * uiS;
+            const float vScale     = 0.46f * uiS;
             for (int i = 0; i < 6; ++i) {
                 const float midY   = barBaseY + i * rowH;
                 const float filled = barTrackW * statT[i];
-                DrawShadowedText(g_TextS, statNames[i], barsLeft, midY - 11.0f * uiS,
-                                 nScale, 0.62f, 0.74f, 0.86f, 0.82f * detailA, 0.48f);
+                // 스탯 이름 — 왼쪽 상단
+                DrawShadowedText(g_TextS, statNames[i], barsLeft, midY - 20.0f * uiS,
+                                 nScale, 0.60f, 0.72f, 0.86f, 0.70f * detailA, 0.44f);
+                // 수치 — 스탯 이름 아래 (왼쪽)
+                DrawShadowedText(g_TextS, statVals[weapon][i], barsLeft, midY - 4.0f * uiS,
+                                 vScale, conR * 0.6f + 0.4f, conG * 0.6f + 0.4f, conB * 0.6f + 0.4f,
+                                 0.92f * detailA, 0.70f);
+                // 바 트랙 (무기 고유색 dim)
                 drawRect(barTrackL, midY - barH * 0.5f, barTrackW, barH,
-                         wr, wg, wb, 0.14f * detailA);
-                if (filled > 1.0f)
+                         conR, conG, conB, 0.12f * detailA);
+                if (filled > 1.0f) {
+                    // 소프트 글로우 halo
+                    drawRect(barTrackL, midY - barH * 2.2f, filled, barH * 4.4f,
+                             conR, conG, conB, 0.09f * detailA);
+                    // 코어 필
                     drawRect(barTrackL, midY - barH * 0.5f, filled, barH,
-                             wr, wg, wb, 0.78f * detailA);
+                             conR, conG, conB, 0.88f * detailA);
+                }
+                // 틱 마크
                 for (int t = 0; t <= 4; ++t) {
                     const float tx  = barTrackL + barTrackW * (float)t * 0.25f;
                     const bool  lit = statT[i] >= (float)t * 0.25f - 0.01f;
                     LogoLine(tx, midY - 5.5f*uiS, tx, midY + 5.5f*uiS,
-                             0.7f*uiS, wr, wg, wb, (lit ? 0.44f : 0.16f) * detailA);
+                             0.7f*uiS, conR, conG, conB, (lit ? 0.50f : 0.14f) * detailA);
                 }
                 if (statT[i] > 0.02f)
-                    drawDiamond(barTrackL + filled, midY, 3.5f*uiS, wr, wg, wb, 0.86f * detailA);
-                DrawShadowedText(g_TextS, statVals[weapon][i],
-                                 barTrackL + barTrackW + 8.0f*uiS, midY - 11.0f*uiS,
-                                 vScale, 0.92f, 0.96f, 1.0f, 0.88f * detailA, 0.66f);
+                    drawDiamond(barTrackL + filled, midY, 3.5f*uiS,
+                                conR, conG, conB, 0.92f * detailA);
             }
         }
 
