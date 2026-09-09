@@ -1702,9 +1702,12 @@ void Scene_Shop(const SceneCtx& c) {
 
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
     if (g_ShopEntryT <= 0.001f) {
-        s_browseItems = false;
+        // Open ARMORY directly on the first category. The start-module node
+        // should be visible as soon as the shop finishes entering; requiring
+        // an extra click on the already-selected tab made it look missing.
+        s_browseItems = true;
         s_browseT = 0.0f;
-        s_browseInputLock = false;
+        s_browseInputLock = true;
     }
     g_ShopEntryT += dt;
     if (g_ShopEntryT > 1.0f) g_ShopEntryT = 1.0f;
