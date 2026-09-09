@@ -3939,8 +3939,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
         // Keep the gameplay silhouette readable, but compact enough that the
         // wider entity row spacing still shows roughly 3-4 records per page.
         const float focusScale = std::max(0.0f, std::min(1.0f, s_itemHover[slot]));
-        const float miniBase = (s_cat == 1) ? 26.0f : 18.0f;
-        const float miniFocus = (s_cat == 1) ? 30.0f : 24.0f;
+        const float miniBase = (s_cat == 1) ? 34.0f : 18.0f;
+        const float miniFocus = (s_cat == 1) ? 38.0f : 24.0f;
         const float miniR = (miniBase + miniFocus * focusScale) *
                            (0.58f + 0.42f * reveal) * uiS;
         // Local black halo around each record keeps the constellation core
@@ -6588,6 +6588,15 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float headerX = canvasLeft + 8.0f * uiS;
     const float headerY = canvasTop;
 
+    // 대형 네뷸라 글로우 — bars/cards 보다 먼저 렌더해야 텍스트가 위에 보임
+    DrawConstellationDisc(centerX, centerY, profileRadius * 6.4f, 0.0f, 0.0f, 0.0f, 0.72f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 3.2f, conR, conG, conB, 0.05f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 2.0f, conR, conG, conB, 0.09f * contentA);
+    DrawConstellationDisc(centerX, centerY, profileRadius * 1.3f, conR, conG, conB, 0.12f * contentA);
+    DrawSceneRadialVignette(centerX, centerY,
+                            std::max(260.0f * uiS, profileRadius * 1.60f),
+                            0.38f * contentA);
+
     // ── WEAPONS page ─────────────────────────────────────────────────
     if (weaponsA > 0.004f) {
         const float detailA = weaponsA * (0.84f + 0.16f * Smoothstep(s_PanelFadeT));
@@ -6754,14 +6763,6 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
                              (0.22f + 0.38f*onT + 0.14f*hovF) * trialsA, 0.40f);
         }
     }
-    // 대형 네뷸라 글로우 — 별자리 뒤 배경 조명
-    DrawConstellationDisc(centerX, centerY, profileRadius * 6.4f, 0.0f, 0.0f, 0.0f, 0.72f * contentA);
-    DrawConstellationDisc(centerX, centerY, profileRadius * 3.2f, conR, conG, conB, 0.05f * contentA);
-    DrawConstellationDisc(centerX, centerY, profileRadius * 2.0f, conR, conG, conB, 0.09f * contentA);
-    DrawConstellationDisc(centerX, centerY, profileRadius * 1.3f, conR, conG, conB, 0.12f * contentA);
-    DrawSceneRadialVignette(centerX, centerY,
-                            std::max(260.0f * uiS, profileRadius * 1.60f),
-                            0.38f * contentA);
     {
         static const wchar_t* kNoLabel[6] = { L"", L"", L"", L"", L"", L"" };
         DrawWeaponPowerConstellation(centerX, centerY, profileRadius,
