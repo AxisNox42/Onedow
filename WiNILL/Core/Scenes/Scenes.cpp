@@ -1057,7 +1057,7 @@ static void DrawMainMenuOrbitalInstrument(float cx, float cy, float radius,
         }
         const float starSize = (3.0f + activeT * 7.2f) * pulse * uiS;
         DrawConstellationDisc(star.x, star.y, starSize * 2.05f,
-                               0.0f, 0.0f, 0.014f, (0.055f + activeT * 0.105f) * alpha);
+                               0.0f, 0.0f, 0.014f, (0.13f + activeT * 0.12f) * alpha);
         DrawConstellationDisc(star.x, star.y, starSize * 1.28f,
                                r, g, b, (0.12f + activeT * 0.20f)
                                * motion.edgeAlpha * alpha);
@@ -1067,15 +1067,14 @@ static void DrawMainMenuOrbitalInstrument(float cx, float cy, float radius,
 
     // The compact inner body gives the five orbital planes a clear anchor.
     const float coreR = radius * 0.27f;
-    DrawConstellationDisc(cx, cy, coreR * 1.22f,
-                           0.0f, 0.0f, 0.014f, 0.20f * alpha);
-    // Soft CircleTexture bloom anchors the right-side menu constellation.
-    DrawConstellationDisc(cx, cy, coreR * 1.75f,
+    // Three-layer CircleTexture treatment: broad dark contrast, a restrained
+    // field for the surrounding small constellations, and a focused center.
+    DrawConstellationDisc(cx, cy, coreR * 2.45f,
+                          0.0f, 0.0f, 0.014f, 0.34f * alpha);
+    DrawConstellationDisc(cx, cy, coreR * 1.58f,
                           r, g, b, 0.075f * alpha);
-    DrawConstellationDisc(cx, cy, coreR * 1.05f,
-                          r, g, b, 0.16f * alpha);
-    DrawConstellationDisc(cx, cy, coreR * 0.92f,
-                          r, g, b, 0.10f * alpha);
+    DrawConstellationDisc(cx, cy, coreR * 0.88f,
+                          r, g, b, 0.21f * alpha);
     for (int lat = -3; lat <= 3; ++lat) {
         const float n = (float)lat / 4.0f;
         const float y = cy + n * coreR;
