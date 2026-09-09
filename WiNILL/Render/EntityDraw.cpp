@@ -1014,6 +1014,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         case CM_SPAWNER: kind = MobKind::SPAWNER; break; // GENESIS
         case CM_DDOS:    kind = MobKind::DDOS;    break; // SWARM
         case CM_GRAVIS:  kind = MobKind::GRAVIS;  break;
+        case CM_QUASAR:  kind = MobKind::QUASAR;  break; // QUASAR
         default: break;                                // ROTOR
         }
         Monster preview(x, y, 1.0f, 1.0f, false);
