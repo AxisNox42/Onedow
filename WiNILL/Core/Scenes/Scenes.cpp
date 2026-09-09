@@ -3810,6 +3810,18 @@ static void Scene_CodexInline(const SceneCtx& c) {
     drawDiamond(chartCX - chartR, chartCY, 4.0f * uiS,
                 curRoot.r, curRoot.g, curRoot.b, 0.78f * wake);
 
+    // Representative constellation inside the sight field keeps the large
+    // chart from feeling hollow while remaining behind the readout/list.
+    const float heroCX = chartCX - chartR * 0.34f;
+    const float heroCY = chartCY;
+    const float heroR = std::min(270.0f * uiS, chartR * 0.30f);
+    DrawConstellationDisc(heroCX, heroCY, heroR * 1.85f,
+                          0.0f, 0.0f, 0.0f, 0.24f * rightWake);
+    DrawArchiveConstellation(heroCX, heroCY, heroR,
+                             s_cat, s_sel[s_cat] < 0 ? 0 : s_sel[s_cat], now,
+                             curRoot.r, curRoot.g, curRoot.b,
+                             0.26f * rightWake, uiS);
+
     // Connected observation rail. Entries slide one row at a time along this
     // datum, including the wrapped first↔last transition.
     auto railXAt = [&](float row) {
