@@ -3851,9 +3851,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float miniR = (isSel ? 62.0f : 42.0f) * uiS;
         // Local black halo around each record keeps the constellation core
         // legible without darkening the entire archive surface.
-        DrawConstellationDisc(miniX, ay, miniR * 2.35f,
+        DrawConstellationDisc(miniX, ay, miniR * 2.80f,
                               0.0f, 0.0f, 0.0f,
-                              (0.10f + 0.08f * active) * wake);
+                              (0.16f + 0.10f * active) * wake);
         // Category-colored core light: every record gets a restrained glow,
         // while the selected record naturally becomes brighter via `active`.
         DrawConstellationDisc(miniX, ay, miniR * 1.14f,
