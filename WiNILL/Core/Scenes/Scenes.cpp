@@ -429,7 +429,10 @@ static void DrawArchiveConstellation(float cx, float cy, float radius,
     // Entity entries reuse the gameplay renderer so the archive miniature is
     // the same ROTOR/GENESIS/SCOPE/SWARM/GRAVIS silhouette seen in a run.
     if (category == 0) {
-        drawCodexMobPreview(key, cx, cy, std::max(1.8f, radius / 18.0f));
+        float previewScale = std::max(1.8f, radius / 18.0f);
+        // Genesis has a larger station footprint than compact process forms.
+        if (key == CM_SPAWNER) previewScale *= 1.18f;
+        drawCodexMobPreview(key, cx, cy, previewScale);
         return;
     }
 
@@ -3808,7 +3811,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     // Entity silhouettes use their gameplay footprint (Gravis includes a
     // wide gravity field), so give that category more vertical breathing room.
     const float itemR = sw * 0.70f;
-    const float rowStep = (s_cat == 0 ? 220.0f : 142.0f) * uiS;
+    const float rowStep = (s_cat == 0 ? 245.0f : 142.0f) * uiS;
     const bool overOrbit = inputReady && mx >= depth2X - 30.0f * uiS &&
         mx <= sw && my >= archivePanelY && my <= archivePanelBottom;
     if (overOrbit && lmb && !g_LmbPrev) {
