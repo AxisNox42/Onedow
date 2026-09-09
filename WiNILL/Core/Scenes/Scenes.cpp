@@ -3779,8 +3779,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
     // white/bright gameplay backgrounds. It overlaps the main sight field so
     // the list feels embedded in the constellation instead of boxed in.
     const float listFieldCX = chartCX - itemR + 180.0f * uiS;
-    DrawConstellationDisc(listFieldCX, chartCY, 860.0f * uiS,
-                          0.0f, 0.0f, 0.0f, 0.46f * rightWake);
+    DrawConstellationDisc(listFieldCX, chartCY, 700.0f * uiS,
+                          0.0f, 0.0f, 0.0f, 0.22f * rightWake);
     DrawConstellationDisc(listFieldCX + 90.0f * uiS, chartCY, 510.0f * uiS,
                           curRoot.r * 0.10f, curRoot.g * 0.10f, curRoot.b * 0.12f,
                           0.075f * rightWake);
@@ -3844,6 +3844,16 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float active = isSel ? 1.0f : (hov ? 0.72f : distanceFade * 0.38f);
         const float miniX = ax;
         const float miniR = (isSel ? 62.0f : 42.0f) * uiS;
+        // Local black halo around each record keeps the constellation core
+        // legible without darkening the entire archive surface.
+        DrawConstellationDisc(miniX, ay, miniR * 2.35f,
+                              0.0f, 0.0f, 0.0f,
+                              (0.10f + 0.08f * active) * wake);
+        // Category-colored core light: every record gets a restrained glow,
+        // while the selected record naturally becomes brighter via `active`.
+        DrawConstellationDisc(miniX, ay, miniR * 0.82f,
+                              itm.r, itm.g, itm.b,
+                              (0.10f + 0.16f * active) * wake);
         DrawArchiveConstellation(miniX, ay, miniR, s_cat, itm.key,
                                  now * 0.18f, itm.r, itm.g, itm.b,
                                  (0.28f + 0.66f * active) * wake, uiS);
