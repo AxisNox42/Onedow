@@ -3779,7 +3779,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     DrawConstellationDisc(chartCX - chartR * 0.12f, chartCY, chartR * 1.48f,
                           0.0f, 0.0f, 0.0f, 0.68f * rightWake);
     DrawConstellationDisc(chartCX - chartR * 0.30f, chartCY, chartR * 0.64f,
-                          0.34f, 0.14f, 0.58f, 0.42f * rightWake);
+                          0.22f, 0.30f, 0.38f, 0.42f * rightWake);
     // A dedicated contrast field keeps the wrapped record rail readable on
     // white/bright gameplay backgrounds. It overlaps the main sight field so
     // the list feels embedded in the constellation instead of boxed in.
