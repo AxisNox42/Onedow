@@ -3813,12 +3813,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
             stepRequest = navDir; // immediate first move
         } else {
             s_navHoldT += dt;
-            // Hold for ~0.4s, then accelerate by shrinking the repeat interval.
-            if (s_navHoldT >= 0.40f) {
+            // Hold for ~0.25s, then accelerate by shrinking the repeat interval.
+            if (s_navHoldT >= 0.25f) {
                 s_navRepeatT += dt;
                 // Cap the navigation rate so long holds never skip too fast.
-                const float repeatInterval = std::max(0.12f,
-                    0.26f - (s_navHoldT - 0.40f) * 0.075f);
+                const float repeatInterval = std::max(0.05f,
+                    0.26f - (s_navHoldT - 0.25f) * 0.075f);
                 if (s_navRepeatT >= repeatInterval) {
                     s_navRepeatT = 0.0f;
                     stepRequest = navDir;
