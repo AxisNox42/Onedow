@@ -3929,7 +3929,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float miniX = ax;
         // Keep the gameplay silhouette readable, but compact enough that the
         // wider entity row spacing still shows roughly 3-4 records per page.
-        const float miniR = (isSel ? 42.0f : 18.0f) * uiS;
+        const float focusScale = std::max(0.0f, std::min(1.0f, s_itemHover[slot]));
+        const float miniR = (18.0f + 24.0f * focusScale) * uiS;
         // Local black halo around each record keeps the constellation core
         // legible without darkening the entire archive surface.
         DrawConstellationDisc(miniX, ay, miniR * 2.80f,

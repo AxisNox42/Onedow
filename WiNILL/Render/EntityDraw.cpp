@@ -15,6 +15,7 @@
 
 extern TextRenderer g_TextS;
 extern float g_RfwW;
+static float g_CodexPreviewFieldScale = 1.0f;
 
 static void ApplyMobStyleTint(float& r, float& g, float& b) {
     if (g_MobVisualStyle != MobVisualStyle::SOFT) return;
@@ -765,7 +766,7 @@ void drawMob(const Monster* m) {
         ApplyMobStyleTint(cr, cg, cb);
         const float x = m->worldX, y = m->worldY;
         const float phase = m->gravisVisualAngle;
-        const float fieldR = 285.0f;
+        const float fieldR = 285.0f * g_CodexPreviewFieldScale;
         const float pulse = 0.5f + 0.5f * sinf(visualTime * 2.4f);
 
         drawCircle(x, y, fieldR, cr, cg, cb, 0.035f + pulse * 0.018f);
@@ -997,7 +998,9 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
     // code.  This keeps the preview silhouette and its animation in lockstep
     // with the live enemy renderer.
     const bool wasSuppressed = g_SuppressMobSeen;
+    const float wasFieldScale = g_CodexPreviewFieldScale;
     g_SuppressMobSeen = true;
+    g_CodexPreviewFieldScale = 0.22f;
     if (codexId == CM_RANGED) {
         RangedMob preview(x, y, 1920, 1080);
         preview.rotAngle = (float)glfwGetTime() * RangedMob::IDLE_ROT;
@@ -1021,5 +1024,6 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         preview.gravisVisualAngle = t * 0.18f;
         drawMob(&preview);
     }
+    g_CodexPreviewFieldScale = wasFieldScale;
     g_SuppressMobSeen = wasSuppressed;
 }
