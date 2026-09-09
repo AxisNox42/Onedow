@@ -3482,6 +3482,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     static int   s_prevSel = -9999;
     static float s_decryptT = 1.0f;
     static float s_itemHover[512] = {};
+    static float s_itemReveal[512] = {};
     static float s_orbitAngle[CAT_COUNT] = {};
     static float s_orbitTarget[CAT_COUNT] = {};
     static float s_orbitVelocity[CAT_COUNT] = {};
@@ -3662,6 +3663,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         s_prevCat = s_cat;
         s_decryptT = 0.0f;
         for (float& hover : s_itemHover) hover = 0.0f;
+        for (float& reveal : s_itemReveal) reveal = 0.0f;
     }
 
     // Depth 1 root.
@@ -3906,7 +3908,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         while (relF > (float)recordSlotCount * 0.5f) relF -= (float)recordSlotCount;
         while (relF < -(float)recordSlotCount * 0.5f) relF += (float)recordSlotCount;
         const int rel = (int)std::round(relF);
-        if (rel < -5 || rel > 5) continue;
+        if (rel < -6 || rel > 6) continue;
         const CItem& itm = items[recordSlots[slot]];
         const float ax = railXAt(relF);
         const float ay = chartCY + relF * rowStep;
@@ -3928,39 +3930,44 @@ static void Scene_CodexInline(const SceneCtx& c) {
         // Per-record focus smoothing makes the horizontal datum grow/shrink
         // instead of snapping when the active record changes.
         s_itemHover[slot] = UiApproach(s_itemHover[slot], targetFocus, dt, 8.0f);
+        const float targetReveal = (fabsf(relF) <= 5.0f) ? 1.0f : 0.0f;
+        s_itemReveal[slot] = UiApproach(s_itemReveal[slot], targetReveal, dt, 6.5f);
+        const float reveal = s_itemReveal[slot] * wake;
+        if (reveal <= 0.005f) continue;
         const float active = std::max(s_itemHover[slot], distanceFade * 0.38f);
         const float miniX = ax;
         // Keep the gameplay silhouette readable, but compact enough that the
         // wider entity row spacing still shows roughly 3-4 records per page.
         const float focusScale = std::max(0.0f, std::min(1.0f, s_itemHover[slot]));
-        const float miniR = (18.0f + 24.0f * focusScale) * uiS;
+        const float miniR = (18.0f + 24.0f * focusScale) *
+                           (0.58f + 0.42f * reveal) * uiS;
         // Local black halo around each record keeps the constellation core
         // legible without darkening the entire archive surface.
         DrawConstellationDisc(miniX, ay, miniR * 2.80f,
                               0.0f, 0.0f, 0.0f,
-                              (0.16f + 0.10f * active) * wake);
+                              (0.16f + 0.10f * active) * reveal);
         // Category-colored core light: every record gets a restrained glow,
         // while the selected record naturally becomes brighter via `active`.
         DrawConstellationDisc(miniX, ay, miniR * 1.14f,
                               itm.r, itm.g, itm.b,
-                              (0.055f + 0.095f * active) * wake);
+                              (0.055f + 0.095f * active) * reveal);
         DrawArchiveConstellation(miniX, ay, miniR, s_cat, itm.key,
                                  now * 0.18f, itm.r, itm.g, itm.b,
-                                 (0.28f + 0.66f * active) * wake, uiS);
+                                 (0.28f + 0.66f * active) * reveal, uiS);
         const float lineLength = (250.0f + 130.0f * s_itemHover[slot]) * uiS;
         const float lineEndX = ax + lineLength;
         LogoLine(miniX + miniR * 0.68f, ay, lineEndX, ay,
                  (0.96f + 0.56f * s_itemHover[slot]) * uiS, itm.r, itm.g, itm.b,
-                 (0.12f + 0.34f * active) * wake);
+                 (0.12f + 0.34f * active) * reveal);
         DrawVisibleConstellNode(lineEndX, ay, (isSel ? 4.0f : 2.8f) * uiS,
                                 itm.r, itm.g, itm.b,
-                                (0.20f + 0.54f * active) * wake, false);
+                                (0.20f + 0.54f * active) * reveal, false);
         if (isSel)
             // The vertical selection datum is a stable anchor; hover only
             // changes the horizontal line length and must not shift this bar.
             drawRect(ax + 118.0f * uiS,
                      ay - 22.0f * uiS, 2.0f * uiS, 44.0f * uiS,
-                     itm.r, itm.g, itm.b, 0.76f * wake);
+                     itm.r, itm.g, itm.b, 0.76f * reveal);
         float tsc = (isSel ? 0.68f : 0.58f) * uiS;
         DrawShadowedText(g_TextS, itm.label, ax + 132.0f * uiS,
                          ay - g_TextS.Height(itm.label, tsc) * 0.5f,
@@ -3968,7 +3975,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
                          itm.seen ? 0.84f + 0.16f * active : 0.58f,
                          itm.seen ? 0.88f + 0.12f * active : 0.62f,
                          itm.seen ? 0.94f + 0.06f * active : 0.70f,
-                         (0.38f + 0.60f * active) * wake, 0.68f);
+                         (0.38f + 0.60f * active) * reveal, 0.68f);
     }
 
 #if 0
