@@ -1001,6 +1001,9 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
     if (codexId == CM_RANGED) {
         RangedMob preview(x, y, 1920, 1080);
         preview.rotAngle = (float)glfwGetTime() * RangedMob::IDLE_ROT;
+        // RangedMob's gameplay base is 25.6px; normalize it to the Monster
+        // base (18px) so the miniature preserves cross-enemy size ratios.
+        preview.deathScale = scale / (RangedMob::VISUAL_BASE_PX / 18.0f);
         drawRangedMob(&preview);              // SCOPE
     } else {
         MobKind kind = MobKind::NORMAL;

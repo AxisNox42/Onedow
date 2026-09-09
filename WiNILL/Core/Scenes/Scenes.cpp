@@ -3805,8 +3805,10 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float chartCX = sw;
     const float chartCY = sh * 0.51f;
     const float chartR = std::max(sh * 0.58f, sw * 0.44f);
-    const float itemR = sw * 0.70f;
-    const float rowStep = 142.0f * uiS;
+    // Entity silhouettes use their gameplay footprint (Gravis includes a
+    // wide gravity field), so give that category more vertical breathing room.
+    const float itemR = sw * (s_cat == 0 ? 0.78f : 0.70f);
+    const float rowStep = (s_cat == 0 ? 220.0f : 142.0f) * uiS;
     const bool overOrbit = inputReady && mx >= depth2X - 30.0f * uiS &&
         mx <= sw && my >= archivePanelY && my <= archivePanelBottom;
     if (overOrbit && lmb && !g_LmbPrev) {
