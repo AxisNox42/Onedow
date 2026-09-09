@@ -3807,7 +3807,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float chartR = std::max(sh * 0.58f, sw * 0.44f);
     // Entity silhouettes use their gameplay footprint (Gravis includes a
     // wide gravity field), so give that category more vertical breathing room.
-    const float itemR = sw * (s_cat == 0 ? 0.78f : 0.70f);
+    const float itemR = sw * 0.70f;
     const float rowStep = (s_cat == 0 ? 220.0f : 142.0f) * uiS;
     const bool overOrbit = inputReady && mx >= depth2X - 30.0f * uiS &&
         mx <= sw && my >= archivePanelY && my <= archivePanelBottom;
@@ -3927,7 +3927,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
         s_itemHover[slot] = UiApproach(s_itemHover[slot], targetFocus, dt, 8.0f);
         const float active = std::max(s_itemHover[slot], distanceFade * 0.38f);
         const float miniX = ax;
-        const float miniR = (isSel ? 62.0f : 42.0f) * uiS;
+        // Keep the gameplay silhouette readable, but compact enough that the
+        // wider entity row spacing still shows roughly 3-4 records per page.
+        const float miniR = (isSel ? 42.0f : 28.0f) * uiS;
         // Local black halo around each record keeps the constellation core
         // legible without darkening the entire archive surface.
         DrawConstellationDisc(miniX, ay, miniR * 2.80f,
