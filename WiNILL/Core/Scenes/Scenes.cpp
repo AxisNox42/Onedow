@@ -1915,11 +1915,11 @@ void Scene_Shop(const SceneCtx& c) {
     {
         struct GhostDef { const wchar_t* route; const wchar_t* sub; };
         static const GhostDef kGhostMenu[5] = {
-            { L"RUN_CONFIG",  L"\uC2DC\uC791" },
+            { L"PLAY",        L"\uC2DC\uC791" },
             { L"ARMORY",      L"\uC0C1\uC810" },
             { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
-            { L"CALIBRATION", L"\uC124\uC815" },
-            { L"SHUTDOWN",    L"\uAC8C\uC784 \uC885\uB8CC" },
+            { L"SETTING",     L"\uC124\uC815" },
+            { L"EXIT",        L"\uAC8C\uC784 \uC885\uB8CC" },
         };
         const float ghostSlide = 250.0f * oldOut;
         const float anchorX = mainX - ghostSlide - 36.0f;
@@ -3600,11 +3600,11 @@ static void Scene_CodexInline(const SceneCtx& c) {
     {
         struct GhostDef { const wchar_t* route; const wchar_t* sub; };
         static const GhostDef kGhostMenu[5] = {
-            { L"RUN_CONFIG",  L"\uC2DC\uC791" },
+            { L"PLAY",        L"\uC2DC\uC791" },
             { L"ARMORY",      L"\uC0C1\uC810" },
             { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
-            { L"CALIBRATION", L"\uC124\uC815" },
-            { L"SHUTDOWN",    L"\uAC8C\uC784 \uC885\uB8CC" },
+            { L"SETTING",     L"\uC124\uC815" },
+            { L"EXIT",        L"\uAC8C\uC784 \uC885\uB8CC" },
         };
         const float ghostSlide = 250.0f * oldOut;
         const float anchorX = mainX - ghostSlide - 36.0f;
@@ -6456,7 +6456,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
 
     DrawSceneLeftVignette(sw, sh, 0.86f * std::max(oldA, contentA));
 
-    static const wchar_t* menu[5] = { L"RUN_CONFIG", L"ARMORY", L"ASTRAL_LOG", L"CALIBRATION", L"SHUTDOWN" };
+    static const wchar_t* menu[5] = { L"PLAY", L"ARMORY", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
     static const wchar_t* sub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
     for (int i = 0; i < 5; ++i) {
         const float y = mainY + i * (mainBH + mainGap);
@@ -6996,7 +6996,7 @@ static void Scene_TrialSelectInline(const SceneCtx& c) {
     DrawSceneLeftVignette(sw, sh, 0.86f * std::max(oldA, contentA));
 
     // Ghost menu list
-    static const wchar_t* menu[5] = { L"RUN_CONFIG", L"ARMORY", L"ASTRAL_LOG", L"CALIBRATION", L"SHUTDOWN" };
+    static const wchar_t* menu[5] = { L"PLAY", L"ARMORY", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
     static const wchar_t* sub[5]  = { L"시작", L"상점", L"도감", L"설정", L"게임 종료" };
     for (int i = 0; i < 5; ++i) {
         const float y = mainY + i * (mainBH + mainGap);
@@ -7344,7 +7344,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
 
     // \uC88C\uCE21 ghost \uBC84\uD2BC \u2014 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0 \uB530\uB77C \uBA54\uC778\uBA54\uB274 vs \uC77C\uC2DC\uC815\uC9C0 \uBA54\uB274
     if (s_MainMenuSettingsPanel) {
-        static const wchar_t* menu[5] = { L"RUN_CONFIG", L"ARMORY", L"ASTRAL_LOG", L"CALIBRATION", L"SHUTDOWN" };
+        static const wchar_t* menu[5] = { L"PLAY", L"ARMORY", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
         static const wchar_t* menuSub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 5; ++i) {
             const float y = mainY + i * (mainBH + mainGap);
