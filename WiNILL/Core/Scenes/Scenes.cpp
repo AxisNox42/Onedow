@@ -1494,7 +1494,7 @@ void Scene_MainMenu(const SceneCtx& c) {
             ab += (0.28f - ab) * warnT;
         }
         float selectPulse = selected ? (0.50f + 0.50f * sinf(now * 18.0f)) * exitP : 0.0f;
-        const wchar_t* route = kBtns[i].route[li2];
+        const wchar_t* route = (i == 1) ? L"SHOP" : kBtns[i].route[li2];
         const wchar_t* sub = kBtns[i].label[li2];
         DrawUnifiedMenuCommand(route, sub, bx, by, BW, BH,
                                ar, ag, ab, rowA, t, selected, selectPulse,
@@ -1940,7 +1940,7 @@ void Scene_Shop(const SceneCtx& c) {
         struct GhostDef { const wchar_t* route; const wchar_t* sub; };
         static const GhostDef kGhostMenu[5] = {
             { L"PLAY",        L"\uC2DC\uC791" },
-            { L"ARMORY",      L"\uC0C1\uC810" },
+            { L"SHOP",        L"\uC0C1\uC810" },
             { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
             { L"SETTING",     L"\uC124\uC815" },
             { L"EXIT",        L"\uAC8C\uC784 \uC885\uB8CC" },
@@ -2063,7 +2063,7 @@ void Scene_Shop(const SceneCtx& c) {
         s_browseInputLock = true;
     }
     wchar_t armoryPath[80];
-    swprintf_s(armoryPath, L"ARMORY / %ls", kTabLbl[s_tab][1]);
+    swprintf_s(armoryPath, L"SHOP / %ls", kTabLbl[s_tab][1]);
     if (!s_browseItems) {
         DrawUnifiedMenuCommand(armoryPath, nli == 0 ? L"\xCE74\xD14C\xACE0\xB9AC" : L"CATEGORY",
                                rootX - 10.0f * s_backHov, itemBackY, rootW, rootH,
@@ -2078,7 +2078,7 @@ void Scene_Shop(const SceneCtx& c) {
         wchar_t indexBuf[64];
         swprintf_s(indexBuf, nli == 0 ? L"%02d \uAC1C \uB178\uB4DC" : L"%02d NODES", visibleItems);
         DrawShadowedText(g_TextS,
-                         nli == 0 ? L"ARMORY \uC870\uB9BD \uBAA9\uB85D" : L"ARMORY ASSEMBLY INDEX",
+                         nli == 0 ? L"SHOP \uC870\uB9BD \uBAA9\uB85D" : L"SHOP ASSEMBLY INDEX",
                          depth2X, workY + 22.0f * uiS,
                          0.52f * uiS, 0.68f, 0.80f, 0.94f,
                          0.78f * detailWake, 0.62f);
@@ -3631,7 +3631,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         struct GhostDef { const wchar_t* route; const wchar_t* sub; };
         static const GhostDef kGhostMenu[5] = {
             { L"PLAY",        L"\uC2DC\uC791" },
-            { L"ARMORY",      L"\uC0C1\uC810" },
+            { L"SHOP",        L"\uC0C1\uC810" },
             { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
             { L"SETTING",     L"\uC124\uC815" },
             { L"EXIT",        L"\uAC8C\uC784 \uC885\uB8CC" },
@@ -6529,7 +6529,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
 
     DrawSceneLeftVignette(sw, sh, 0.86f * std::max(oldA, contentA));
 
-    static const wchar_t* menu[5] = { L"PLAY", L"ARMORY", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
+    static const wchar_t* menu[5] = { L"PLAY", L"SHOP", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
     static const wchar_t* sub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
     for (int i = 0; i < 5; ++i) {
         const float y = mainY + i * (mainBH + mainGap);
@@ -7103,7 +7103,7 @@ static void Scene_TrialSelectInline(const SceneCtx& c) {
     DrawSceneLeftVignette(sw, sh, 0.86f * std::max(oldA, contentA));
 
     // Ghost menu list
-    static const wchar_t* menu[5] = { L"PLAY", L"ARMORY", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
+    static const wchar_t* menu[5] = { L"PLAY", L"SHOP", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
     static const wchar_t* sub[5]  = { L"시작", L"상점", L"도감", L"설정", L"게임 종료" };
     for (int i = 0; i < 5; ++i) {
         const float y = mainY + i * (mainBH + mainGap);
@@ -7451,7 +7451,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
 
     // \uC88C\uCE21 ghost \uBC84\uD2BC \u2014 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0 \uB530\uB77C \uBA54\uC778\uBA54\uB274 vs \uC77C\uC2DC\uC815\uC9C0 \uBA54\uB274
     if (s_MainMenuSettingsPanel) {
-        static const wchar_t* menu[5] = { L"PLAY", L"ARMORY", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
+        static const wchar_t* menu[5] = { L"PLAY", L"SHOP", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
         static const wchar_t* menuSub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 5; ++i) {
             const float y = mainY + i * (mainBH + mainGap);
