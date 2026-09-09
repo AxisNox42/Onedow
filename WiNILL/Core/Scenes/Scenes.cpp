@@ -3491,6 +3491,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
     static bool  s_prevUp = false;
     static bool  s_prevDown = false;
     static bool  s_prevEnter = false;
+    static int   s_navHoldDir = 0;
+    static float s_navHoldT = 0.0f;
+    static float s_navRepeatT = 0.0f;
     static bool  s_dragging = false;
     static bool  s_dragMoved = false;
     static float s_dragAccum = 0.0f;
@@ -3801,8 +3804,31 @@ static void Scene_CodexInline(const SceneCtx& c) {
          glfwGetKey(c.window, GLFW_KEY_S) == GLFW_PRESS);
     const bool keyEnterNow = c.window && glfwGetKey(c.window, GLFW_KEY_ENTER) == GLFW_PRESS;
     int stepRequest = 0;
-    if (inputReady && keyUpNow && !s_prevUp) stepRequest = -1;
-    if (inputReady && keyDownNow && !s_prevDown) stepRequest = 1;
+    const int navDir = keyUpNow == keyDownNow ? 0 : (keyUpNow ? -1 : 1);
+    if (inputReady && navDir != 0) {
+        if (navDir != s_navHoldDir) {
+            s_navHoldDir = navDir;
+            s_navHoldT = 0.0f;
+            s_navRepeatT = 0.0f;
+            stepRequest = navDir; // immediate first move
+        } else {
+            s_navHoldT += dt;
+            // Hold for ~0.7s, then accelerate by shrinking the repeat interval.
+            if (s_navHoldT >= 0.70f) {
+                s_navRepeatT += dt;
+                const float repeatInterval = std::max(0.075f,
+                    0.26f - (s_navHoldT - 0.70f) * 0.075f);
+                if (s_navRepeatT >= repeatInterval) {
+                    s_navRepeatT = 0.0f;
+                    stepRequest = navDir;
+                }
+            }
+        }
+    } else {
+        s_navHoldDir = 0;
+        s_navHoldT = 0.0f;
+        s_navRepeatT = 0.0f;
+    }
     s_prevUp = keyUpNow;
     s_prevDown = keyDownNow;
     s_prevEnter = keyEnterNow;
