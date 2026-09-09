@@ -3879,17 +3879,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
     // Single monumental archive core: one focal light is clearer than another
     // competing constellation inside the already dense sight field.
     const float corePulse = 0.94f + 0.06f * sinf(now * 1.45f);
-    DrawConstellationDisc(heroCX, heroCY, heroR * 1.90f,
-                          0.0f, 0.0f, 0.0f, 0.30f * rightWake);
     DrawConstellationDisc(heroCX, heroCY, heroR * 1.22f,
                           curRoot.r, curRoot.g, curRoot.b,
                           0.10f * corePulse * rightWake);
     DrawConstellationDisc(heroCX, heroCY, heroR * 0.72f,
                           curRoot.r, curRoot.g, curRoot.b,
                           0.22f * corePulse * rightWake);
-    DrawVisibleConstellNode(heroCX, heroCY, heroR * 0.22f,
-                            curRoot.r, curRoot.g, curRoot.b,
-                            0.92f * corePulse * rightWake, false);
 
     // Connected observation rail. Entries slide one row at a time along this
     // datum, including the wrapped first↔last transition.
