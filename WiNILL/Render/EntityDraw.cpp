@@ -713,6 +713,7 @@ void drawMob(const Monster* m) {
     MarkMobSeen(m->kind);
     if (m->kind == MobKind::DDOS) MarkMobSeenId(CM_DDOS);
     if (m->kind == MobKind::GRAVIS) MarkMobSeenId(CM_GRAVIS);
+    if (m->kind == MobKind::QUASAR) MarkMobSeenId(CM_QUASAR);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     const float visualTime = (float)glfwGetTime();
     if (m->elite) {

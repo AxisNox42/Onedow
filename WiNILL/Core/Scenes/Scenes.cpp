@@ -3705,7 +3705,10 @@ static void Scene_CodexInline(const SceneCtx& c) {
 
     if (s_cat == 0) {
         addGroup(L"SIGNAL CLASS", 0.48f, 0.82f, 1.00f);
-        for (int i = 0; i < CM_COUNT; ++i)
+        static const int activeMobIds[] = {
+            CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR
+        };
+        for (int i : activeMobIds)
             addItem(i, CodexMobSeen(i) ? MobName(i) : L"???", CodexMobSeen(i),
                     0.48f, 0.82f, 1.00f);
     } else if (s_cat == 1) {
@@ -4507,15 +4510,11 @@ void Scene_Codex(const SceneCtx& c) {
     if (s_cat == 0) {
         struct MobGroup { const wchar_t* name; int ids[9]; int count; float r, g, b; };
         static const MobGroup MGRPS[] = {
-            { L"CLASS-I",
-              { CM_NORMAL, CM_SPLITTER, CM_BLINKER, CM_CHARGER,
-                CM_WEAVER, CM_BRUTE, CM_ORBITER, CM_SPAWNER, CM_SHIELDED },
-              9, 0.48f, 0.82f, 1.00f },
-            { L"CLASS-II",
-              { CM_RANGED, CM_BOMBER, CM_DDOS, CM_BADSECTOR, CM_REGERROR, CM_GRAVIS, 0, 0, 0 },
-              6, 0.62f, 0.80f, 0.96f },
+            { L"ACTIVE SIGNALS",
+              { CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR, 0, 0, 0 },
+              6, 0.48f, 0.82f, 1.00f },
         };
-        for (int gi = 0; gi < 2; ++gi) {
+        for (int gi = 0; gi < 1; ++gi) {
             const MobGroup& mg = MGRPS[gi];
             ListItem& lh = s_items[nItems++];
             lh.isGroup = true; lh.dataIdx = -1; lh.seen = true;
