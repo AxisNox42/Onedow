@@ -1829,13 +1829,11 @@ void Scene_Shop(const SceneCtx& c) {
     // These surfaces are intentionally borderless and bounded to readable
     // content. A real fill is required on bright desktop/game backgrounds;
     // text shadows alone cannot establish enough local contrast.
-    const float categoryA = s_browseT >= 0.94f
-        ? 0.0f : 1.0f - Smoothstep(LogoClamp01(s_browseT / 0.94f));
-    const float itemA = s_browseT <= 0.04f
-        ? 0.0f : Smoothstep(LogoClamp01((s_browseT - 0.04f) / 0.90f));
-    // Category selection is intentionally a single-focus screen. Browsing
-    // reveals one shared surface so the category rail, item list, and selected
-    // node read as a single left-to-right workflow.
+    // ARMORY uses the codex-style persistent category rail: categories stay
+    // visible on the left while the selected tab's nodes remain visible beside
+    // it. The first tab is selected by default, but is not a separate screen.
+    const float categoryA = 1.0f;
+    const float itemA = Smoothstep(LogoClamp01((g_ShopEntryT - 0.20f) / 0.55f));
     const float detailWake = rightWake * itemA;
     if (detailWake > 0.002f) {
         DrawAstralDataPlate(workX, workY, workW, workH,
@@ -2014,7 +2012,7 @@ void Scene_Shop(const SceneCtx& c) {
         const float ty = rootY + (float)i * (rootH + rootGap);
         const float hitX = tx - 26.0f;
         const float hitRight = tx + rootW + 18.0f * uiS;
-        const bool hov = inputReady && !s_browseItems
+        const bool hov = inputReady
                        && (mx >= hitX && mx < hitRight
                        && my >= ty && my < ty + rootH);
         float& hovT = isBack ? s_backHov : s_tabHov[i];
@@ -2054,7 +2052,7 @@ void Scene_Shop(const SceneCtx& c) {
     const float itemSlideX = (1.0f - itemA) * 54.0f * uiS;
     const float itemListX = depth2X + itemSlideX;
     const float itemBackY = rootY;
-    const bool itemBackHov = inputReady && s_browseItems
+    const bool itemBackHov = inputReady && !s_browseItems
         && mx >= rootX - 24.0f * uiS && mx < rootX + rootW + 28.0f * uiS
         && my >= itemBackY && my < itemBackY + rootH;
     s_backHov = UpdateMenuCommandHover(s_backHov, itemBackHov, dt);
@@ -2064,10 +2062,12 @@ void Scene_Shop(const SceneCtx& c) {
     }
     wchar_t armoryPath[80];
     swprintf_s(armoryPath, L"ARMORY / %ls", kTabLbl[s_tab][1]);
-    DrawUnifiedMenuCommand(armoryPath, nli == 0 ? L"\xCE74\xD14C\xACE0\xB9AC" : L"CATEGORY",
-                           rootX - 10.0f * s_backHov, itemBackY, rootW, rootH,
-                           kTR[s_tab], kTG[s_tab], kTB[s_tab], itemWake,
-                           s_backHov, true, 0.10f + 0.08f * sinf(now * 4.0f), now);
+    if (!s_browseItems) {
+        DrawUnifiedMenuCommand(armoryPath, nli == 0 ? L"\xCE74\xD14C\xACE0\xB9AC" : L"CATEGORY",
+                               rootX - 10.0f * s_backHov, itemBackY, rootW, rootH,
+                               kTR[s_tab], kTG[s_tab], kTB[s_tab], itemWake,
+                               s_backHov, true, 0.10f + 0.08f * sinf(now * 4.0f), now);
+    }
 
     if (detailWake > 0.002f) {
         int visibleItems = 0;
@@ -6629,8 +6629,15 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     const float headerX = canvasLeft + 8.0f * uiS;
     const float headerY = canvasTop;
 
-    // 대형 네뷸라 글로우 — bars/cards 보다 먼저 렌더해야 텍스트가 위에 보임
-    DrawConstellationDisc(centerX, centerY, profileRadius * 6.4f, 0.0f, 0.0f, 0.0f, 0.72f * contentA);
+    // 캔버스 전체 대비 필드 — 배경색 무관 가시성 보장 (Codex 패턴)
+    {
+        const float cw = innerRight - canvasLeft;
+        const float ch = canvasBottom - canvasTop;
+        const float contrastR = std::max(cw, ch) * 0.62f;
+        DrawConstellationDisc(centerX, centerY, contrastR, 0.0f, 0.0f, 0.0f, 0.36f * contentA);
+    }
+    // 별자리 중심 광원
+    DrawConstellationDisc(centerX, centerY, profileRadius * 6.4f, 0.0f, 0.0f, 0.0f, 0.55f * contentA);
     DrawConstellationDisc(centerX, centerY, profileRadius * 3.2f, conR, conG, conB, 0.05f * contentA);
     DrawConstellationDisc(centerX, centerY, profileRadius * 2.0f, conR, conG, conB, 0.09f * contentA);
     DrawConstellationDisc(centerX, centerY, profileRadius * 1.3f, conR, conG, conB, 0.12f * contentA);
@@ -6663,6 +6670,18 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             const float barBaseY   = centerY - 3.0f * rowH + rowH * 0.5f;
             const float nScale     = 0.38f * uiS;
             const float vScale     = 0.46f * uiS;
+            // 스탯 바 칼럼 전용 대비 필드
+            {
+                const float barsAreaW = barsRight - barsLeft;
+                const float barsAreaH = 6.0f * rowH;
+                const float fieldCX   = (barsLeft + barsRight) * 0.5f;
+                DrawConstellationDisc(fieldCX, centerY,
+                                      std::max(barsAreaW, barsAreaH) * 0.60f,
+                                      0.0f, 0.0f, 0.0f, 0.26f * detailA);
+                DrawConstellationDisc(fieldCX, centerY,
+                                      std::max(barsAreaW, barsAreaH) * 0.32f,
+                                      conR, conG, conB, 0.04f * detailA);
+            }
             for (int i = 0; i < 6; ++i) {
                 const float midY   = barBaseY + i * rowH;
                 const float filled = barTrackW * statT[i];
@@ -6715,6 +6734,11 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             for (int i = 0; i < 4; ++i) {
                 const float cy  = cardY0 + i * (cardH + cardGap);
                 const float cym = cy + cardH * 0.5f;
+                // 카드 로컬 대비 disc (Codex 패턴 — 카드 뒤 어둠으로 가시성 보장)
+                DrawConstellationDisc(cardX + cardW * 0.5f, cym, cardH * 1.5f,
+                                      0.0f, 0.0f, 0.0f, 0.28f * detailA);
+                DrawConstellationDisc(cardX + cardW * 0.5f, cym, cardH * 0.85f,
+                                      conR, conG, conB, 0.05f * detailA);
                 // 연결선
                 LogoLine(centerX, centerY, cardX - 2.0f*uiS, cym,
                          0.6f*uiS, conR, conG, conB, 0.16f * detailA);
