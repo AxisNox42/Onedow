@@ -169,7 +169,7 @@ inline const wchar_t* MobName(int id) {
         { L"\uC2A4\uCF54\uD504",   L"SCOPE",   L"\u30B9\u30B3\u30FC\u30D7" },
         { L"\uC2A4\uC6DC",     L"SWARM",   L"\u30B9\u30A6\u30A9\u30FC\u30E0" },
         { L"\uADF8\uB77C\uBE44\uC2A4",  L"GRAVIS",  L"\u30B0\u30E9\u30F4\u30A3\u30B9" },
-        { L"\uD034\uC774\uC0AC", L"QUASAR", L"\u30AF\u30A8\u30FC\u30B5\u30FC" },
+        { L"\uD018\uC774\uC0AC", L"QUASAR", L"\u30AF\u30A8\u30FC\u30B5\u30FC" },
     };
     switch (id) {
     case CM_NORMAL:  return activeNames[0][li];

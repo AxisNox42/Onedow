@@ -1023,6 +1023,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         const float t = (float)glfwGetTime();
         preview.hiveOrbitAngle = t * 0.36f;
         preview.gravisVisualAngle = t * 0.18f;
+        preview.quasarVisualAngle = t * 0.03f;
         drawMob(&preview);
     }
     g_CodexPreviewFieldScale = wasFieldScale;
