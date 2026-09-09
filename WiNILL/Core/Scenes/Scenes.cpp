@@ -3851,9 +3851,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
                               (0.10f + 0.08f * active) * wake);
         // Category-colored core light: every record gets a restrained glow,
         // while the selected record naturally becomes brighter via `active`.
-        DrawConstellationDisc(miniX, ay, miniR * 0.82f,
+        DrawConstellationDisc(miniX, ay, miniR * 1.14f,
                               itm.r, itm.g, itm.b,
-                              (0.10f + 0.16f * active) * wake);
+                              (0.055f + 0.095f * active) * wake);
         DrawArchiveConstellation(miniX, ay, miniR, s_cat, itm.key,
                                  now * 0.18f, itm.r, itm.g, itm.b,
                                  (0.28f + 0.66f * active) * wake, uiS);
