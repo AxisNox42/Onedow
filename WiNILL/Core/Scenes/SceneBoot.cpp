@@ -2,7 +2,7 @@
 #include "GameManager.h"
 
 float          g_BootAnim   = 0.0f;
-GameState      g_BootTarget = GameState::RUN_CONFIG;
+GameState      g_BootTarget = GameState::MAIN_MENU;
 const wchar_t* g_BootName   = L"onedow.exe";
 float          g_BootAr     = 0.30f;
 float          g_BootAg     = 0.80f;

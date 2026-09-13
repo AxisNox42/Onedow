@@ -247,7 +247,8 @@ void DrawRadialGradientRect(float x, float y, float w, float h,
 }
 
 void DrawLinearGradient(float x, float y, float w, float h,
-                        float r, float g, float b, float alpha) {
+                        float r, float g, float b, float alpha,
+                        bool mirrorX) {
     if (alpha <= 0.0f || w <= 0.0f || h <= 0.0f || g_RadGradProg == 0 || g_LinGradTex == 0) return;
     BatchFlush();
 
@@ -262,9 +263,60 @@ void DrawLinearGradient(float x, float y, float w, float h,
     glUniform3f(g_RadGradColLoc, r, g, b);
     glUniform1f(g_RadGradAlpLoc, alpha);
 
+    const float u0 = mirrorX ? 1.0f : 0.0f;
+    const float u1 = mirrorX ? 0.0f : 1.0f;
     float verts[36] = {
-        x0,y0, 0,0, 0,0,  x1,y0, 1,0, 0,0,  x1,y1, 1,1, 0,0,
-        x0,y0, 0,0, 0,0,  x1,y1, 1,1, 0,0,  x0,y1, 0,1, 0,0
+        x0,y0, u0,0, 0,0,  x1,y0, u1,0, 0,0,  x1,y1, u1,1, 0,0,
+        x0,y0, u0,0, 0,0,  x1,y1, u1,1, 0,0,  x0,y1, u0,1, 0,0
+    };
+    glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    BindMainShader();
+}
+
+void DrawLinearGradientRibbon(float x, float y, float w, float h,
+                              float cut, float r, float g, float b,
+                              float alpha, bool mirrorX) {
+    if (alpha <= 0.0f || w <= 0.0f || h <= 0.0f
+        || g_RadGradProg == 0 || g_LinGradTex == 0) return;
+    BatchFlush();
+
+    float cutPx = cut;
+    if (cutPx < 0.0f) cutPx = 0.0f;
+    if (cutPx > w * 0.28f) cutPx = w * 0.28f;
+
+    // Mirror the actual silhouette as well as the gradient.  The previous
+    // implementation only flipped UVs, so the button still had its slant on
+    // the right edge even when callers requested a mirrored ribbon.
+    // Keep both side edges parallel.  This is the actual 120-60-120-60
+    // parallelogram silhouette: top/bottom are equal, and the two slanted
+    // sides share the same offset.  The whole shape remains inside x..x+w.
+    const float topLeft = mirrorX ? x + cutPx : x;
+    const float topRight = mirrorX ? x + w : x + w - cutPx;
+    const float bottomLeft = mirrorX ? x : x + cutPx;
+    const float bottomRight = mirrorX ? x + w - cutPx : x + w;
+    const float y0 = y;
+    const float y1 = y + h;
+    const float u0 = mirrorX ? 1.0f : 0.0f;
+    const float u1 = mirrorX ? 0.0f : 1.0f;
+
+    glUseProgram(g_RadGradProg);
+    glBindVertexArray(g_MainVAO);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_LinGradTex);
+    glUniform1i(g_RadGradTexLoc, 0);
+    glUniformMatrix4fv(g_RadGradProjLoc, 1, GL_FALSE, g_BaseOrtho);
+    glUniform3f(g_RadGradColLoc, r, g, b);
+    glUniform1f(g_RadGradAlpLoc, alpha);
+
+    // The paired slanted edges turn the rectangular texture into a true
+    // directional parallelogram while preserving the full gradient range.
+    float verts[36] = {
+        topLeft,y0,  u0,0, 0,0,  topRight,y0,   u1,0, 0,0,  bottomRight,y1, u1,1, 0,0,
+        topLeft,y0,  u0,0, 0,0,  bottomRight,y1, u1,1, 0,0,  bottomLeft,y1,  u0,1, 0,0
     };
     glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);

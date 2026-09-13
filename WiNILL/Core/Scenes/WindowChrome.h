@@ -21,7 +21,6 @@ inline const wchar_t* BrowserUrl(GameState st) {
     using GS = GameState;
     switch (st) {
     case GS::MAIN_MENU:         return L"wallpaper.gif";
-    case GS::RUN_CONFIG:        return L"runconfig.odw";
     case GS::CREATIVE_CONFIG:   return L"debug.odw";
     case GS::SHOP:              return L"shop.odw";
     case GS::CODEX:             return L"codex.odw";

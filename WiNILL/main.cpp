@@ -1,4 +1,4 @@
-﻿// Windows ?�더�?glad보다 먼�? ??APIENTRY 매크�?중복 ?�의 방�?
+// Windows ?�더�?glad보다 먼�? ??APIENTRY 매크�?중복 ?�의 방�?
 #ifdef _WIN32
   #include <windows.h>
   #include <dwmapi.h>   // DwmIsCompositionEnabled (진단??
@@ -5795,7 +5795,6 @@ int main() {
                 case GameState::CODEX:             Scene_Codex(ctx);            break;
                 case GameState::TUTORIAL:          Scene_Tutorial(ctx);         break;
                 case GameState::JOB_SELECT:        Scene_JobSelect(ctx);        break;
-                case GameState::RUN_CONFIG: Scene_RunConfig(ctx); break;
                 case GameState::CREATIVE_CONFIG:   Scene_CreativeConfig(ctx);   break;
                 case GameState::SETTINGS:          Scene_Settings(ctx);         break;
                 case GameState::READY:             Scene_Ready(ctx);            break;

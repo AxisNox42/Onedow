@@ -53,6 +53,8 @@ inline void SaveGame() {
     add("autofire=%lld\n",  g_AutoFire  ? 1 : 0);
     add("autoskill=%lld\n", g_AutoSkill ? 1 : 0);
     add("strongmenudim=%lld\n", g_StrongMenuDim ? 1 : 0);
+    add("backdropblur=%lld\n", g_BackdropBlurEnabled ? 1 : 0);
+    add("backdropblurpct=%lld\n", g_BackdropBlurStrength);
     add("shaderfx=%lld\n",  g_ShaderFx  ? 1 : 0);
     add("mobstyle=%lld\n",  (int)g_MobVisualStyle);
     add("vfxdens=%lld\n",   (int)g_VfxDensity);
@@ -155,6 +157,13 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);
         else if (!std::strcmp(key, "autoskill"))   g_AutoSkill         = (val != 0);
         else if (!std::strcmp(key, "strongmenudim")) g_StrongMenuDim    = (val != 0);
+        else if (!std::strcmp(key, "backdropblur")) g_BackdropBlurEnabled = (val != 0);
+        else if (!std::strcmp(key, "backdropblurpct")) {
+            int v = (int)val;
+            if (v < 10) v = 10;
+            if (v > 60) v = 60;
+            g_BackdropBlurStrength = v;
+        }
         else if (!std::strcmp(key, "shaderfx"))    g_ShaderFx          = (val != 0);
         else if (!std::strcmp(key, "mobstyle"))   { int v = (int)val; if (v >= 0 && v <= 1) g_MobVisualStyle = (MobVisualStyle)v; }
         else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 1) g_VfxDensity = (VfxDensity)v; }

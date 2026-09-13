@@ -36,14 +36,6 @@ enum class StrId {
     BTN_RESTART,
     BTN_MAIN_MENU,
     BTN_BACK,
-    // ── 난이도 ──
-    DIFF_TITLE,
-    DIFF_EASY,
-    DIFF_NORMAL,
-    DIFF_HARD,
-    DIFF_EASY_DESC,
-    DIFF_NORMAL_DESC,
-    DIFF_HARD_DESC,
     // ── 설정 ──
     SET_TITLE,
     SET_FPS,
@@ -182,33 +174,6 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
     },
     /* BTN_BACK */ {
         L"뒤로", L"Back", L"戻る",
-    },
-    /* DIFF_TITLE */ {
-        L"난이도 선택", L"Choose Difficulty", L"難易度を選択",
-    },
-    /* DIFF_EASY */ {
-        L"쉬움", L"Easy", L"イージー",
-    },
-    /* DIFF_NORMAL */ {
-        L"보통", L"Normal", L"ノーマル",
-    },
-    /* DIFF_HARD */ {
-        L"어려움", L"Hard", L"ハード",
-    },
-    /* DIFF_EASY_DESC */ {
-        L"원거리 프로세스 5초 지연 등장 / 동시 최대 2개 / 첫 런·연습용",
-        L"Ranged spawn delayed 5s / max 2 on field / good for learning",
-        L"遠距離敵 5秒遅延 / 最大2体 / 練習向け",
-    },
-    /* DIFF_NORMAL_DESC */ {
-        L"기본 밸런스 / 원거리·보스 패턴 표준 / 대부분의 해금·업적 기준",
-        L"Default balance / standard ranged & bosses / unlock baseline",
-        L"標準バランス / 遠距離・ボス通常 / 解除の基準",
-    },
-    /* DIFF_HARD_DESC */ {
-        L"원거리 즉시 등장 / 동시 최대 8개 / 스폰 2배 / 고점수·고보상 도전",
-        L"Ranged spawn immediately / max 8 / 2x spawn rate / high risk reward",
-        L"遠距離即出現 / 最大8体 / 出現2倍 / 高難度・高報酬",
     },
     /* SET_TITLE */ {
         L"설정", L"Settings", L"設定",

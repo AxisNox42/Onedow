@@ -130,7 +130,7 @@ void GameManager::HandleInput(GLFWwindow* window) {
         } else if (currentState == GameState::PAUSED) {
             currentState = GameState::RUNNING;
         }
-        // MAIN_MENU/RUN_CONFIG/SETTINGS 는 마우스 버튼으로만 진행
+        // MAIN_MENU/SETTINGS 는 마우스 버튼으로만 진행
         spaceReleased = false;
     }
     if (sp == GLFW_RELEASE) spaceReleased = true;

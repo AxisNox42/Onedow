@@ -118,6 +118,7 @@ inline char   g_IconBaseDir[260] = "Icons";   // 런타임에 실제 폴더로 �
 
 inline GLuint g_IconProg = 0, g_IconVAO = 0, g_IconVBO = 0;
 inline GLint  g_IconProjLoc = -1, g_IconTintLoc = -1;
+inline GLint  g_IconDarkenLoc = -1;
 inline GLuint g_IconBatchProg = 0, g_IconBatchVAO = 0, g_IconBatchVBO = 0;
 inline GLint  g_IconBatchProjLoc = -1;
 inline size_t g_IconBatchCapacityFloats = 0;
@@ -147,10 +148,19 @@ inline void InitIconGL() {
         "in vec2 uv;\n"
         "uniform sampler2D tex;\n"
         "uniform vec4 tint;\n"
+        "uniform float darkenMode;\n"
         "out vec4 fragColor;\n"
         "void main(){\n"
         "  vec4 t = texture(tex, uv);\n"
-        "  fragColor = vec4(tint.rgb * t.rgb, t.a * tint.a);\n"
+        "  float a = t.a * tint.a;\n"
+        "  if (a < 0.002) discard;\n"
+        "  if (darkenMode > 0.5) {\n"
+        "    float darkenA = a * 0.42;\n"
+        "    vec3 darkenColor = mix(vec3(1.0), tint.rgb * t.rgb, darkenA);\n"
+        "    fragColor = vec4(darkenColor, darkenA);\n"
+        "  } else {\n"
+        "    fragColor = vec4(tint.rgb * t.rgb, a);\n"
+        "  }\n"
         "}\n";
     GLuint v = IconCompile(GL_VERTEX_SHADER, VS);
     GLuint f = IconCompile(GL_FRAGMENT_SHADER, FS);
@@ -160,6 +170,7 @@ inline void InitIconGL() {
     glDeleteShader(v); glDeleteShader(f);
     g_IconProjLoc = glGetUniformLocation(g_IconProg, "proj");
     g_IconTintLoc = glGetUniformLocation(g_IconProg, "tint");
+    g_IconDarkenLoc = glGetUniformLocation(g_IconProg, "darkenMode");
     glUseProgram(g_IconProg);
     glUniform1i(glGetUniformLocation(g_IconProg, "tex"), 0);
     glUseProgram(0);
@@ -559,6 +570,7 @@ inline void DrawIcon(GLuint tex, float x, float y, float w, float h,
     glUseProgram(g_IconProg);
     glUniformMatrix4fv(g_IconProjLoc, 1, GL_FALSE, g_MainOrtho);
     glUniform4f(g_IconTintLoc, r, g, b, a);
+    if (g_IconDarkenLoc >= 0) glUniform1f(g_IconDarkenLoc, 0.0f);
     float vv[] = {
         x,     y,     0.0f, 0.0f,
         x + w, y,     1.0f, 0.0f,
@@ -579,6 +591,44 @@ inline void DrawIcon(GLuint tex, float x, float y, float w, float h,
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+// CircleTexture contrast pass. The fragment shader maps transparent pixels
+// toward white, then GL_MIN keeps the darker RGB value already on screen.
+// This lets a strong black field remain dark when another CircleTexture
+// overlaps it without changing the normal icon/text alpha blend path.
+inline void DrawIconDarken(GLuint tex, float x, float y, float w, float h,
+                           float r, float g, float b, float a) {
+    if (!tex || !g_IconProg) return;
+    if (g_GfxPass != GfxPass::Icon)
+        BatchFlush();
+    g_GfxPass = GfxPass::Icon;
+    glUseProgram(g_IconProg);
+    glUniformMatrix4fv(g_IconProjLoc, 1, GL_FALSE, g_MainOrtho);
+    glUniform4f(g_IconTintLoc, r, g, b, a);
+    if (g_IconDarkenLoc >= 0) glUniform1f(g_IconDarkenLoc, 1.0f);
+    float vv[] = {
+        x,     y,     0.0f, 0.0f,
+        x + w, y,     1.0f, 0.0f,
+        x + w, y + h, 1.0f, 1.0f,
+        x,     y,     0.0f, 0.0f,
+        x + w, y + h, 1.0f, 1.0f,
+        x,     y + h, 0.0f, 1.0f,
+    };
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glBindVertexArray(g_IconVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, g_IconVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vv), vv);
+    glEnable(GL_BLEND);
+    glBlendEquationSeparate(GL_MIN, GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (g_IconDarkenLoc >= 0) glUniform1f(g_IconDarkenLoc, 0.0f);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 // 중심 기준 회전 텍스처 쿼드 (탄환 세례 미사일 스프라이트 등). 화면(y-down) 좌표.
 inline void DrawIconRot(GLuint tex, float cx, float cy, float halfW, float halfH,
                         float angle, float r, float g, float b, float a) {
@@ -589,6 +639,7 @@ inline void DrawIconRot(GLuint tex, float cx, float cy, float halfW, float halfH
     glUseProgram(g_IconProg);
     glUniformMatrix4fv(g_IconProjLoc, 1, GL_FALSE, g_MainOrtho);
     glUniform4f(g_IconTintLoc, r, g, b, a);
+    if (g_IconDarkenLoc >= 0) glUniform1f(g_IconDarkenLoc, 0.0f);
     float ca = std::cos(angle), sa = std::sin(angle);
     auto rot = [&](float ox, float oy, float& X, float& Y){ X = cx + ox*ca - oy*sa; Y = cy + ox*sa + oy*ca; };
     float x0,y0,x1,y1,x2,y2,x3,y3;

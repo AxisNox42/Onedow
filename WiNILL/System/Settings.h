@@ -329,6 +329,12 @@ inline bool g_ShaderFx          = false;
 // Strong readability overlay for out-of-game menu backgrounds.
 inline bool g_StrongMenuDim     = false;
 
+// Optional soft backdrop blur used by transparent outgame pages such as SHOP.
+// Keep the range deliberately restrained so the live background remains part
+// of the composition instead of becoming an opaque panel.
+inline bool g_BackdropBlurEnabled = true;
+inline int  g_BackdropBlurStrength = 30; // 10..60 percent
+
 // 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게
 enum class MobVisualStyle { CLASSIC, SOFT };
 inline MobVisualStyle g_MobVisualStyle = MobVisualStyle::CLASSIC;

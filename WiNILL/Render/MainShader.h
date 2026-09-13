@@ -19,4 +19,8 @@ void DrawRadialGradient(float cx, float cy, float radius,
 void DrawRadialGradientRect(float x, float y, float w, float h,
                             float r, float g, float b, float alpha);
 void DrawLinearGradient(float x, float y, float w, float h,
-                        float r, float g, float b, float alpha);
+                        float r, float g, float b, float alpha,
+                        bool mirrorX = false);
+void DrawLinearGradientRibbon(float x, float y, float w, float h,
+                              float cut, float r, float g, float b,
+                              float alpha, bool mirrorX = false);
