@@ -27,6 +27,7 @@
 #include "TextRenderer.h"
 #include "IconSystem.h"
 #include "../System/SystemInfo.h"
+#include "../../System/WindowFx.h"
 #include "Camera.h"
 #include "EntityDraw.h"
 #include "Monster.h"
@@ -66,6 +67,11 @@ static bool  s_RcTrialNodes[6] = {};
 static float s_RcNodeHover[6]  = {};
 static float s_RcTrialTypeT[6] = {};
 static int   s_TrialTargetCount = 1;
+// PLAY owns a full trial catalogue.  The gameplay system still has four
+// slots; this UI state is the 20-item catalogue selection before PLAY packs
+// the enabled definitions into those slots.
+static bool  s_RcTrialEnabled[TRIAL_DEF_COUNT] = {};
+static bool  s_RcTrialStateLoaded = false;
 
 static float UiApproach(float v, float target, float dt, float speed) {
     float k = dt * speed;
@@ -145,6 +151,8 @@ static void ResetRunConfigUi() {
     ResetTrials();
     s_RcWeapon = 0;
     s_MainMenuTrialSelectPanel = false;
+    s_RcTrialStateLoaded = false;
+    for (int i = 0; i < TRIAL_DEF_COUNT; ++i) s_RcTrialEnabled[i] = false;
     for (int i = 0; i < 6; ++i) { s_RcTrialNodes[i] = false; s_RcNodeHover[i] = 0.0f; s_RcTrialTypeT[i] = 0.0f; }
 }
 
@@ -156,6 +164,8 @@ static void ResetSettingsUi() {
 static void ResetCodexUi() {
     g_CodexEntryT = 0.0f;
     s_CodexBackRequested = false;
+    CodexSearchClear();
+    g_CodexSearchInputEnabled = false;
 }
 
 static void ResetShopUi() {
@@ -270,11 +280,51 @@ static void DrawPersistentSceneLeftVignette(float sw, float sh, float alpha) {
     DrawSceneLeftVignette(sw, sh, alpha);
 }
 
+// Wide paired side fields for settings and other information-heavy pages.
+// The mirrored texture keeps the center open while both edges receive the
+// same deep contrast treatment used by the PLAY composition.
+static constexpr float kWideSceneLinearWidth = 0.58f;
+static constexpr float kWideSceneLinearAlpha = 0.68f;
+
+static void DrawPersistentSceneSideVignettes(float sw, float sh, float alpha) {
+    if (alpha <= 0.001f) return;
+    const UiThemePalette& theme = GetUiTheme();
+    const float fieldW = sw * kWideSceneLinearWidth;
+    // bg_linear is already a darkening mask; applying the theme alpha again
+    // made it disappear against the menu background.
+    const float fieldA = alpha;
+    DrawLinearGradient(0.0f, 0.0f, fieldW, sh,
+                       theme.Dim.r, theme.Dim.g, theme.Dim.b,
+                       fieldA, false);
+    DrawLinearGradient(sw - fieldW, 0.0f, fieldW, sh,
+                       theme.Dim.r, theme.Dim.g, theme.Dim.b,
+                       fieldA, true);
+}
+
 static void DrawSceneRadialVignette(float cx, float cy, float radius, float alpha) {
     if (alpha <= 0.001f || radius <= 1.0f) return;
     const UiThemePalette& theme = GetUiTheme();
     DrawRadialGradient(cx, cy, radius, theme.Dim.r, theme.Dim.g, theme.Dim.b,
                        alpha * theme.Dim.a * 0.96f);
+}
+
+static void DrawSettingsOrbitArc(float cx, float cy, float radiusX,
+                                  float radiusY, float startAngle,
+                                  float endAngle, float r, float g, float b,
+                                  float thickness, float alpha) {
+    if (alpha <= 0.001f || radiusX <= 1.0f || radiusY <= 1.0f) return;
+    constexpr int kSegments = 48;
+    float prevX = cx + cosf(startAngle) * radiusX;
+    float prevY = cy + sinf(startAngle) * radiusY;
+    for (int i = 1; i <= kSegments; ++i) {
+        const float t = (float)i / (float)kSegments;
+        const float a = startAngle + (endAngle - startAngle) * t;
+        const float x = cx + cosf(a) * radiusX;
+        const float y = cy + sinf(a) * radiusY;
+        LogoLine(prevX, prevY, x, y, thickness, r, g, b, alpha);
+        prevX = x;
+        prevY = y;
+    }
 }
 
 static float MainMenuCommandStartY(float sh) {
@@ -382,25 +432,16 @@ static void DrawShadowedTextImmediate(TextRenderer& renderer, const wchar_t* tex
                                       float shadowAlpha) {
     if (!text || alpha <= 0.001f) return;
 
-    // Text is a UI signal, not part of the scene's light field.  The
-    // constellation halos behind it can move from a dark area to a bright
-    // one, so relying on the surrounding glow for contrast makes the same
-    // label look opaque on one tab and washed out on another.  Keep a small,
-    // fixed dark keyline around every scene label.  It follows the text's
-    // page-fade alpha, but never derives its visibility from any CircleTexture
-    // or scene lighting.
-    const float keylineAlpha = std::min(0.38f, alpha * 0.46f);
-    const float keyline = std::max(0.75f, std::min(1.35f, scale * 1.05f));
-    renderer.Draw(text, x - keyline, y, scale,
-                  0.0f, 0.0f, 0.008f, keylineAlpha);
-    renderer.Draw(text, x + keyline, y, scale,
-                  0.0f, 0.0f, 0.008f, keylineAlpha);
-    renderer.Draw(text, x, y - keyline, scale,
-                  0.0f, 0.0f, 0.008f, keylineAlpha);
-    renderer.Draw(text, x, y + keyline, scale,
-                  0.0f, 0.0f, 0.008f, keylineAlpha);
-    renderer.Draw(text, x + 1.5f, y + 1.5f, scale,
-                  0.0f, 0.0f, 0.012f, alpha * shadowAlpha);
+    // Text is a UI signal, not part of the scene's light field.  The old
+    // four-direction keyline drew almost a complete second glyph around every
+    // label, which made small text look dirty and noticeably darker over the
+    // page textures.  Keep only a restrained offset shadow for separation;
+    // the actual label is still emitted last at its requested colour/alpha.
+    const float shadowOffset = std::max(0.60f, std::min(1.00f, scale * 0.72f));
+    const float readableShadowAlpha = std::min(0.16f,
+                                               alpha * shadowAlpha * 0.24f);
+    renderer.Draw(text, x + shadowOffset, y + shadowOffset, scale,
+                  0.0f, 0.0f, 0.012f, readableShadowAlpha);
     renderer.Draw(text, x, y, scale, r, g, b, alpha);
 }
 
@@ -528,16 +569,20 @@ static ShopDetailLayout MakeShopDetailLayout(float x, float top,
     // Detail content starts at the title and ends at the lower-right action.
     // The purchase control owns the bottom edge of the readout rather than
     // floating beside the level/cost rows.
-    layout.copyY = layout.titleY + 104.0f * uiS;
-    layout.actionY = bottom - 31.0f * uiS;
-    layout.tradeY = layout.actionY - 114.0f * uiS;
-    layout.actionX = x + width * 0.48f;
-    layout.actionW = width * 0.52f;
+    layout.copyY = layout.titleY + 78.0f * uiS;
+    layout.actionY = bottom - 36.0f * uiS;
+    // Keep the purchase readout close to the action control. The order inside
+    // the block is LEVEL -> COST -> BALANCE -> verdict -> button.
+    layout.tradeY = layout.actionY - 158.0f * uiS;
+    // Keep the action anchored to the right edge, but give its label a wider
+    // reading lane so long states do not collapse into a narrow ribbon.
+    layout.actionX = x + width * 0.30f;
+    layout.actionW = width * 0.70f;
     layout.fieldY = layout.copyY + (layout.actionY - layout.copyY) * 0.54f;
 
     // On a short viewport, pull the middle rows upward while preserving the
     // title and the button's bottom-edge ownership.
-    const float minTradeY = layout.copyY + 70.0f * uiS;
+    const float minTradeY = layout.copyY + 96.0f * uiS;
     if (layout.tradeY < minTradeY) {
         layout.tradeY = minTradeY;
         layout.fieldY = layout.copyY + (layout.actionY - layout.copyY) * 0.54f;
@@ -679,6 +724,74 @@ static void DrawArchiveConstellation(float cx, float cy, float radius,
         DrawVisibleConstellNode(px[i], py[i], size, r, g, b,
                                 nodeAlpha, false, drawNodeFields);
     }
+}
+
+// A deliberately non-identifying placeholder for records that have not been
+// encountered yet. It must not reuse the gameplay silhouette: even a dimmed
+// version would leak the entity's shape through the archive.
+static void DrawUnknownConstellation(float cx, float cy, float radius,
+                                     float now, float alpha, float uiS,
+                                     int seed) {
+    if (alpha <= 0.001f || radius <= 4.0f) return;
+
+    static const float kX[6] = { -0.82f, -0.24f, 0.52f, 0.80f, 0.12f, -0.58f };
+    static const float kY[6] = { -0.08f, -0.70f, -0.44f,  0.34f, 0.76f,  0.42f };
+    static const int kEdges[7][2] = {
+        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 },
+        { 4, 5 }, { 5, 0 }, { 1, 4 }
+    };
+    const float phase = (float)(seed % 7) * 0.17f + now * 0.035f;
+    // Dark enough to read as unresolved, but bright enough that the viewer
+    // can immediately tell a constellation is occupying this slot.
+    const float cr = 0.42f, cg = 0.50f, cb = 0.62f;
+
+    DrawConstellationDisc(cx, cy, radius * 1.16f,
+                          0.0f, 0.0f, 0.006f, 0.42f * alpha);
+    DrawConstellationDisc(cx, cy, radius * 0.54f,
+                          0.02f, 0.028f, 0.045f, 0.34f * alpha);
+
+    float px[6] = {}, py[6] = {};
+    for (int i = 0; i < 6; ++i) {
+        const float a = phase + (float)i * 0.055f;
+        const float x = kX[i] * radius;
+        const float y = kY[i] * radius;
+        px[i] = cx + x * cosf(a) - y * sinf(a);
+        py[i] = cy + x * sinf(a) + y * cosf(a);
+    }
+    for (const auto& edge : kEdges) {
+        DrawVisibleConstellLine(px[edge[0]], py[edge[0]],
+                                px[edge[1]], py[edge[1]],
+                                0.52f * uiS, cr, cg, cb,
+                                0.58f * alpha);
+    }
+
+    // Broken orbital fragments keep the placeholder alive without forming a
+    // recognizable category-specific shape.
+    for (int i = 0; i < 3; ++i) {
+        const float start = phase + 0.65f + (float)i * 2.08f;
+        const float end = start + 0.32f + 0.05f * (float)(seed % 3);
+        const float x0 = cx + cosf(start) * radius * 0.92f;
+        const float y0 = cy + sinf(start) * radius * 0.92f;
+        const float x1 = cx + cosf(end) * radius * 0.92f;
+        const float y1 = cy + sinf(end) * radius * 0.92f;
+        DrawVisibleConstellLine(x0, y0, x1, y1,
+                                0.42f * uiS, cr, cg, cb,
+                                0.42f * alpha);
+    }
+
+    for (int i = 0; i < 6; ++i) {
+        const float pulse = 0.78f + 0.22f * sinf(now * 1.7f + (float)i * 1.4f);
+        DrawVisibleConstellNode(px[i], py[i],
+                                (3.0f + 0.70f * (float)(i & 1)) * uiS,
+                                cr, cg, cb, pulse * 0.82f * alpha,
+                                false, true);
+    }
+    DrawConstellationDisc(cx, cy, radius * 0.18f,
+                          0.02f, 0.028f, 0.045f, 0.42f * alpha);
+    DrawVisibleConstellNode(cx, cy, 4.0f * uiS, cr, cg, cb,
+                            0.88f * alpha, false, true);
+    drawDiamond(cx, cy, 2.2f * uiS, 0.68f, 0.76f, 0.88f,
+                0.64f * alpha);
 }
 
 // Fixed ASTRAL_LOG signature constellation. Unlike record previews this shape
@@ -907,18 +1020,44 @@ static void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
 
 static void DrawMenuCommandFeedback(float x, float y, float w, float h,
                                     float r, float g, float b, float alpha,
-                                    float active, float pulse, float now) {
+                                    float active, float pulse, float now,
+                                    PanelButtonSlideSide slideSide =
+                                        PanelButtonSlideSide::Both) {
     if (active <= 0.01f || alpha <= 0.001f) return;
     BindMainShader();
     const float lineH = 20.0f + 42.0f * active + 10.0f * pulse;
-    drawRect(x - 18.0f, y + h * 0.5f - lineH * 0.5f,
-             2.2f, lineH, r, g, b, (0.24f + 0.55f * active + 0.12f * pulse) * alpha);
-    const float scanY = y + h * (0.34f + 0.32f * fmodf(now * 0.55f, 1.0f));
-    drawRect(x - 4.0f, scanY, w * (0.58f + 0.24f * active), 1.1f,
-             r, g, b, (0.050f + 0.090f * active) * alpha);
-    drawDiamond(x - 17.0f, y + h * 0.5f,
-                3.0f + 2.6f * active + 1.8f * pulse,
-                r, g, b, (0.40f + 0.34f * active + 0.16f * pulse) * alpha);
+    const float barA = (0.24f + 0.55f * active + 0.12f * pulse) * alpha;
+    const bool showLeft = slideSide == PanelButtonSlideSide::Left
+                       || slideSide == PanelButtonSlideSide::Both;
+    const bool showRight = slideSide == PanelButtonSlideSide::Right
+                        || slideSide == PanelButtonSlideSide::Both;
+    if (showLeft || showRight) {
+        // Bottom commands use paired slidebars. Their offset grows with the
+        // eased hover value, making the bars visibly travel outward instead
+        // of appearing as static brackets.
+        const float slide = 10.0f + 14.0f * active + 3.0f * pulse;
+        if (showLeft) {
+            drawRect(x - slide, y + h * 0.5f - lineH * 0.5f,
+                     2.2f, lineH, r, g, b, barA);
+            drawDiamond(x - slide - 6.0f, y + h * 0.5f,
+                        3.0f + 2.6f * active + 1.8f * pulse,
+                        r, g, b,
+                        (0.40f + 0.34f * active + 0.16f * pulse) * alpha);
+        }
+        if (showRight) {
+            drawRect(x + w + slide - 2.2f, y + h * 0.5f - lineH * 0.5f,
+                     2.2f, lineH, r, g, b, barA);
+            drawDiamond(x + w + slide + 4.0f, y + h * 0.5f,
+                        3.0f + 2.6f * active + 1.8f * pulse,
+                        r, g, b,
+                        (0.40f + 0.34f * active + 0.16f * pulse) * alpha);
+        }
+    }
+    if (slideSide != PanelButtonSlideSide::None) {
+        const float scanY = y + h * (0.34f + 0.32f * fmodf(now * 0.55f, 1.0f));
+        drawRect(x - 4.0f, scanY, w * (0.58f + 0.24f * active), 1.1f,
+                 r, g, b, (0.050f + 0.090f * active) * alpha);
+    }
 }
 
 static float UpdateMenuCommandHover(float current, bool hovered, float dt) {
@@ -932,19 +1071,26 @@ static float MenuCommandReveal(float timeline, int row,
     return Smoothstep(LogoClamp01((timeline - start - (float)row * stagger) / duration));
 }
 
-static void DrawUnifiedMenuCommand(const wchar_t* route, const wchar_t* sub,
-                                   float x, float y, float w, float h,
-                                   float r, float g, float b, float alpha,
-                                   float hover, bool selected, float pulse, float now,
-                                   float routeScale = 1.04f, float subScale = 0.48f,
-                                   bool keepTextReadable = false) {
+static void DrawPanelButtonCore(const wchar_t* route, const wchar_t* sub,
+                                float x, float y, float w, float h,
+                                float r, float g, float b, float alpha,
+                                float hover, bool selected, float pulse, float now,
+                                float routeScale = 1.04f, float subScale = 0.48f,
+                                bool keepTextReadable = false,
+                                PanelButtonSlideSide slideSide =
+                                    PanelButtonSlideSide::Both,
+                                bool centerText = false,
+                                bool centerSingleLine = false) {
     const float active = std::max(hover, selected ? 1.0f : 0.0f);
     DrawMenuCommandFeedback(x, y, w, h, r, g, b, alpha,
-                            active, pulse, now);
+                            active, pulse, now, slideSide);
 
     while (routeScale > 0.72f && g_TextL.Width(route, routeScale) > w)
         routeScale -= 0.04f;
-    const float routeY = y + 2.0f;
+    const bool hasSub = sub && sub[0] != L'\0';
+    const float routeY = centerSingleLine && !hasSub
+        ? y + (h - g_TextL.Height(route, routeScale)) * 0.5f
+        : y + 2.0f;
     const float subY = routeY + g_TextL.Height(route, routeScale) - 3.0f;
     float tr = 1.0f + (r - 1.0f) * active;
     float tg = 1.0f + (g - 1.0f) * active;
@@ -959,14 +1105,20 @@ static void DrawUnifiedMenuCommand(const wchar_t* route, const wchar_t* sub,
     }
     if (selected) tr = tg = tb = 1.0f;
 
-    DrawShadowedText(g_TextL, route, x, routeY, routeScale,
+    const float routeTextW = g_TextL.Width(route, routeScale);
+    const float routeX = centerText
+        ? x + (w - routeTextW) * 0.5f : x;
+    DrawShadowedText(g_TextL, route, routeX, routeY, routeScale,
                      tr, tg, tb,
                      (keepTextReadable
                           ? (0.98f + 0.06f * active + 0.10f * pulse)
                           : (0.90f + 0.10f * active + 0.16f * pulse)) * alpha,
                      0.86f);
     if (sub && sub[0] != L'\0') {
-        DrawShadowedText(g_TextS, sub, x + 4.0f, subY, subScale,
+        const float subTextW = g_TextS.Width(sub, subScale);
+        const float subX = centerText
+            ? x + (w - subTextW) * 0.5f : x + 4.0f;
+        DrawShadowedText(g_TextS, sub, subX, subY, subScale,
                          keepTextReadable
                              ? (0.84f + 0.10f * active)
                              : (0.70f + 0.18f * active),
@@ -981,6 +1133,60 @@ static void DrawUnifiedMenuCommand(const wchar_t* route, const wchar_t* sub,
                               : (0.76f + 0.18f * active)) * alpha,
                          0.70f);
     }
+}
+
+// Canonical panel-button surface. Scene code should use this entry point
+// instead of assembling a frame, feedback bars, and text independently.
+static void DrawPanelButton(const wchar_t* route, const wchar_t* sub,
+                            float x, float y, float w, float h,
+                            float r, float g, float b, float alpha,
+                            float hover, bool selected, float pulse, float now,
+                            float routeScale = 1.04f, float subScale = 0.48f,
+                            bool keepTextReadable = false,
+                            PanelButtonSlideSide slideSide =
+                                PanelButtonSlideSide::Both,
+                            bool centerText = false,
+                            bool centerSingleLine = false) {
+    DrawPanelButtonCore(route, sub, x, y, w, h, r, g, b, alpha,
+                        hover, selected, pulse, now,
+                        routeScale, subScale, keepTextReadable,
+                        slideSide, centerText, centerSingleLine);
+}
+
+// Compatibility alias for older scene paths. All calls still flow through
+// DrawPanelButton, so there is only one visual implementation to maintain.
+static void DrawUnifiedMenuCommand(const wchar_t* route, const wchar_t* sub,
+                                   float x, float y, float w, float h,
+                                   float r, float g, float b, float alpha,
+                                   float hover, bool selected, float pulse, float now,
+                                   float routeScale = 1.04f, float subScale = 0.48f,
+                                   bool keepTextReadable = false,
+                                   bool bothSides = true,
+                                   bool centerText = false,
+                                   bool centerSingleLine = false) {
+    const PanelButtonSlideSide slideSide = bothSides
+        ? PanelButtonSlideSide::Both : PanelButtonSlideSide::Left;
+    DrawPanelButton(route, sub, x, y, w, h, r, g, b, alpha,
+                    hover, selected, pulse, now,
+                    routeScale, subScale, keepTextReadable,
+                    slideSide, centerText, centerSingleLine);
+}
+
+static bool PanelButtonHit(double mx, double my,
+                           float x, float y, float w, float h,
+                           float hitPadding = 0.0f) {
+    return mx >= x - hitPadding && mx <= x + w + hitPadding
+        && my >= y - hitPadding && my <= y + h + hitPadding;
+}
+
+static bool UpdatePanelButtonHover(float& hover, bool enabled,
+                                   double mx, double my,
+                                   float x, float y, float w, float h,
+                                   float dt, float hitPadding = 0.0f) {
+    const bool hovered = enabled && PanelButtonHit(mx, my, x, y, w, h,
+                                                    hitPadding);
+    hover = UpdateMenuCommandHover(hover, hovered, dt);
+    return hovered;
 }
 
 static void DrawMainMenuAstralVeil(float sw, float sh,
@@ -1618,35 +1824,27 @@ void Scene_MainMenu(const SceneCtx& c) {
         { { L"설정",      L"Setting",  L"設定"      }, { L"SETTING",     L"SETTING",     L"SETTING"     }, 0.18f, 0.62f, 0.96f },
         { { L"게임 종료", L"Exit",     L"終了"      }, { L"EXIT",        L"EXIT",        L"EXIT"        }, 0.18f, 0.62f, 0.96f },
     };
+    // The lobby uses a large route label plus a smaller descriptor. Keep
+    // both layers in the active language; route IDs must not leak through
+    // as English-only text when Korean or Japanese is selected.
+    static const wchar_t* kMenuRoutes[3][5] = {
+        { L"플레이", L"상점", L"도감", L"설정", L"종료" },
+        { L"PLAY", L"SHOP", L"ASTRAL LOG", L"SETTINGS", L"EXIT" },
+        { L"スタート", L"ショップ", L"星界記録", L"設定", L"終了" },
+    };
     const int   kBtnCount = 5;
     const float BW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
     const float BH = 70.0f;
     const float BGAP = 15.0f;
     float totalBH = kBtnCount * BH + (kBtnCount - 1) * BGAP;
     float btnX0   = std::max(58.0f, sw * 0.075f);
-    float btnY0   = MainMenuCommandStartY(sh);
+    // The lobby command rail belongs to the lower-left corner, matching the
+    // navigation language used by the other pages. Keep a responsive bottom
+    // margin, but never let the rail climb into the logo on short windows.
+    float btnY0 = sh - totalBH - std::max(52.0f, sh * 0.075f);
+    const float logoFloor = MainLogoTop(sh) + MainLogoHeight(sh) * 0.82f;
+    if (btnY0 < logoFloor) btnY0 = logoFloor;
 
-    auto rectHit = [&](float hpx, float hpy, float rx, float ry, float rw, float rh) -> bool {
-        return hpx >= rx && hpx <= rx + rw && hpy >= ry && hpy <= ry + rh;
-    };
-    auto drawRunBorder = [&](float x, float y, float w, float h,
-                             float r, float g, float b, float a, float thick) {
-        drawRect(x, y, w, thick, r, g, b, a);
-        drawRect(x, y + h - thick, w, thick, r, g, b, a);
-        drawRect(x, y, thick, h, r, g, b, a);
-        drawRect(x + w - thick, y, thick, h, r, g, b, a);
-    };
-    auto drawRunCorners = [&](float x, float y, float w, float h,
-                              float r, float g, float b, float a, float len, float thick) {
-        drawRect(x, y, len, thick, r, g, b, a);
-        drawRect(x, y, thick, len, r, g, b, a);
-        drawRect(x + w - len, y, len, thick, r, g, b, a);
-        drawRect(x + w - thick, y, thick, len, r, g, b, a);
-        drawRect(x, y + h - thick, len, thick, r, g, b, a);
-        drawRect(x, y + h - len, thick, len, r, g, b, a);
-        drawRect(x + w - len, y + h - thick, len, thick, r, g, b, a);
-        drawRect(x + w - thick, y + h - len, thick, len, r, g, b, a);
-    };
     const float now = (float)glfwGetTime();
     const float menuFieldA = Smoothstep(LogoClamp01((s_introT - 0.10f) / 0.62f)) * uiA;
     DrawMainMenuAstralVeil(sw, sh, btnX0, btnY0, BW, totalBH,
@@ -1671,9 +1869,12 @@ void Scene_MainMenu(const SceneCtx& c) {
     for (int i = 0; i < kBtnCount; i++) {
         float baseBx = btnX0;
         float baseBy = btnY0 + (float)i * (BH + BGAP);
-        bool hov = (!booting && !introActive && !introWasActive && !exitActive && g_FadeDir == 0
-                    && rectHit((float)mx, (float)my, baseBx - 12.0f, baseBy, BW + 24.0f, BH));
-        kHoverT[i] = UpdateMenuCommandHover(kHoverT[i], hov, delta);
+        const bool buttonReady = !booting && !introActive && !introWasActive
+                              && !exitActive && g_FadeDir == 0;
+        bool hov = UpdatePanelButtonHover(kHoverT[i], buttonReady,
+                                          mx, my,
+                                          baseBx, baseBy, BW, BH,
+                                          delta, 12.0f);
         float t = kHoverT[i];
         float rawBtnPh = (s_introT - kTitleDur - (float)i * kBtnStag) / kBtnDur;
         rawBtnPh = std::max(0.0f, std::min(rawBtnPh, 1.0f));
@@ -1695,11 +1896,16 @@ void Scene_MainMenu(const SceneCtx& c) {
             ab += (0.28f - ab) * warnT;
         }
         float selectPulse = selected ? (0.50f + 0.50f * sinf(now * 18.0f)) * exitP : 0.0f;
-        const wchar_t* route = (i == 1) ? L"SHOP" : kBtns[i].route[li2];
-        const wchar_t* sub = kBtns[i].label[li2];
-        DrawUnifiedMenuCommand(route, sub, bx, by, BW, BH,
-                               ar, ag, ab, rowA, t, selected, selectPulse,
-                               now + (float)i * 0.17f);
+        const wchar_t* route = kMenuRoutes[li2][i];
+        // Lobby commands do not need a translated explanatory subtitle.
+        // Keep the primary command localized while using the compact English
+        // identifier as its consistent secondary label in Korean mode.
+        const wchar_t* sub = (li2 == 0) ? kBtns[i].label[1] : kBtns[i].label[li2];
+        DrawPanelButton(route, sub, bx, by, BW, BH,
+                        ar, ag, ab, rowA, t, selected, selectPulse,
+                        now + (float)i * 0.17f,
+                        1.04f, 0.48f, false,
+                        PanelButtonSlideSide::Left);
 
         if (hov && lmb && !g_LmbPrev) {
             s_menuSelect = i;
@@ -1816,7 +2022,7 @@ void Scene_MainMenu(const SceneCtx& c) {
                                 L"> 모듈 마운트 중 ...",
                                 L"> 애셋 로드             [ OK ]",
                                 L"> 렌더러 초기화         [ OK ]",
-                                L"> onedow.dll 연결       [ OK ]",
+                                L"> 별자리 격자 연결     [ OK ]",
                                 L"> 저장 데이터 검증      [ OK ]",
                                 L"> 준비 완료."
                             },
@@ -1824,7 +2030,7 @@ void Scene_MainMenu(const SceneCtx& c) {
                                 L"> mounting modules ...",
                                 L"> loading assets        [ OK ]",
                                 L"> init renderer         [ OK ]",
-                                L"> linking onedow.dll    [ OK ]",
+                                L"> linking star lattice    [ OK ]",
                                 L"> verify save data      [ OK ]",
                                 L"> ready."
                             },
@@ -1832,7 +2038,7 @@ void Scene_MainMenu(const SceneCtx& c) {
                                 L"> モジュールをマウント ...",
                                 L"> アセット読込          [ OK ]",
                                 L"> レンダラー初期化      [ OK ]",
-                                L"> onedow.dll 接続       [ OK ]",
+                                L"> 星座ラティス接続       [ OK ]",
                                 L"> セーブデータ検証      [ OK ]",
                                 L"> 準備完了。"
                             }
@@ -1867,6 +2073,8 @@ void Scene_Shop(const SceneCtx& c) {
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
     const float delta = c.delta;
+    const bool systemBackdrop = ConfigureWindowBackdropBlur(
+        c.window, g_BackdropBlurEnabled);
     // ── State ──────────────────────────────────────────────────────────
     static constexpr int SHOP_TAB_COUNT = 4;
     static int   s_tab        = 0;
@@ -2016,32 +2224,50 @@ void Scene_Shop(const SceneCtx& c) {
     const float rootW = std::min(340.0f * uiS, mainBW * 0.66f);
     const float rootH = mainBH;
     const float rootGap = mainGap;
-    DrawSharedMenuDim(sw, sh, mainX, mainY, mainBW, mainTotalH,
+    // SHOP keeps its content layout anchored to the original rootY, but the
+    // category rail itself lives in the lower-left corner.
+    const float shopRailY = sh - mainTotalH - 48.0f * uiS;
+    DrawSharedMenuDim(sw, sh, mainX, shopRailY, mainBW, mainTotalH,
                       std::max(oldMenuA, wake), true);
 
     // SHOP keeps the live background visible, but an optional soft backdrop
     // blur removes the high-frequency text/windows that compete with the
     // constellation labels. Capture only after the persistent dim layer and
     // before any SHOP UI is drawn, so the UI itself always stays sharp.
-    if (g_BackdropBlurEnabled) {
-        static int s_blurW = 0;
-        static int s_blurH = 0;
+    static int s_blurW = 0;
+    static int s_blurH = 0;
+    static int s_blurCadence = 0;
+    static bool s_blurCacheValid = false;
+    static bool s_blurWasEnabled = false;
+    if (g_BackdropBlurEnabled && !systemBackdrop) {
         const int blurW = std::max(1, (int)sw);
         const int blurH = std::max(1, (int)sh);
-        if (s_blurW != blurW || s_blurH != blurH) {
+        const bool sizeChanged = s_blurW != blurW || s_blurH != blurH;
+        if (sizeChanged) {
             InitBlurSystem(blurW, blurH);
             s_blurW = blurW;
             s_blurH = blurH;
+            s_blurCacheValid = false;
         }
-        CaptureBackdrop();
-        int blurPct = g_BackdropBlurStrength;
-        if (blurPct < 10) blurPct = 10;
-        if (blurPct > 60) blurPct = 60;
-        const float blurAlpha = 0.10f
-            + (float)(blurPct - 10) / 50.0f * 0.50f;
+        const bool transitionActive = wake < 0.995f
+                                   || oldMenuA < 0.995f
+                                   || s_backExit;
+        const bool refresh = !s_blurCacheValid
+                          || !s_blurWasEnabled
+                          || transitionActive
+                          || ((s_blurCadence++ & 3) == 0);
+        if (refresh) {
+            CaptureBackdrop();
+            s_blurCacheValid = true;
+        }
+        s_blurWasEnabled = true;
         DrawBlurPanel(0.0f, 0.0f, sw, sh,
-                      blurAlpha * std::max(oldMenuA, wake),
+                      0.16f * std::max(oldMenuA, wake),
                       0.004f, 0.010f, 0.020f);
+    } else {
+        s_blurCacheValid = false;
+        s_blurWasEnabled = false;
+        s_blurCadence = 0;
     }
     const InlineThreeColumnLayout columns = BuildInlineThreeColumnLayout(
         sw, sh, uiS, rootX, rootY, rootW, rootH);
@@ -2084,17 +2310,23 @@ void Scene_Shop(const SceneCtx& c) {
         // constellation rules remain, with no opaque work plate behind them.
         DrawAstralDataPlate(workX, workY, workW, workH,
                             0.38f, 0.82f, 1.0f, 0.0f);
-        BindMainShader();
-        drawRect(workX + 20.0f * uiS, workY + workHeaderH - 10.0f * uiS,
-                 workW - 40.0f * uiS, 1.0f * uiS,
-                 0.38f, 0.82f, 1.0f, 0.18f * detailWake);
-        drawRect(rightX - 10.0f * uiS, workY + workHeaderH,
-                 1.0f * uiS, workH - workHeaderH - 18.0f * uiS,
-                 0.38f, 0.82f, 1.0f, 0.14f * detailWake);
     }
     static constexpr int KEY_META  = 0;
     static constexpr int KEY_THEME = 100;
     static constexpr int KEY_AUG   = 1000;
+
+    // SHOP ownership is independent from PLAY loadout state. A core module
+    // becomes owned after its first level; profiles use their save bit.
+    auto shopItemPurchased = [&](int key) {
+        if (key >= KEY_AUG) return false;
+        if (key >= KEY_THEME) {
+            const int themeId = key - KEY_THEME;
+            return themeId >= 0 && themeId < ACCENT_COUNT
+                && ThemeOwned(themeId);
+        }
+        const int metaId = key - KEY_META;
+        return metaId >= 0 && metaId < META_COUNT && g_MetaLv[metaId] > 0;
+    };
 
     auto augWeapCat = [](AugType t) -> int {
         switch (t) {
@@ -2145,7 +2377,7 @@ void Scene_Shop(const SceneCtx& c) {
         // modules. General permanent upgrades live in the separate UNLOCK
         // category so the first start module can never be hidden in the list.
         if (s_tab == 0) {
-            addGroup(nli == 0 ? L"\xC2\xDC\xC791 \xBAA8\xB4C8" : L"START MODULES",
+            addGroup(nli == 0 ? L"\xC2DC\xC791 \xBAA8\xB4C8" : L"START MODULES",
                      0.38f, 0.82f, 1.00f);
             addItem(KEY_META + META_STARTAUG, MetaName(META_STARTAUG),
                     0.38f, 0.82f, 1.00f);
@@ -2163,7 +2395,7 @@ void Scene_Shop(const SceneCtx& c) {
                         ACCENT_THEMES[i].r, ACCENT_THEMES[i].g, ACCENT_THEMES[i].b);
         }
         if (s_tab == 2) {
-            addGroup(nli == 0 ? L"\xC18C\xCD1D \xC2DC\xC2A4\xD15C" : L"RIFLE SYSTEMS", 0.72f, 0.92f, 0.42f);
+            addGroup(nli == 0 ? L"\xC18C\xCD1D \xC2DC\xC2A4\xD15C" : L"RIFLE CONSTELLATION", 0.72f, 0.92f, 0.42f);
             for (int i = 0; i < AUG_TOTAL; i++)
                 if (!AugRemoved(ALL_AUGS[i].type) && augWeapCat(ALL_AUGS[i].type) == 0)
                     addItem(KEY_AUG + i, ALL_AUGS[i].locName[li], 0.72f, 0.92f, 0.42f);
@@ -2231,6 +2463,12 @@ void Scene_Shop(const SceneCtx& c) {
         const float fieldB = s_fieldColorB;
         const float goldR = 1.00f, goldG = 0.76f, goldB = 0.24f;
         const float whiteR = 0.88f, whiteG = 0.94f, whiteB = 1.00f;
+        // Let the item explanation lead the hierarchy. Purchase/status copy
+        // stays readable but subordinate, while constellation labels use the
+        // same larger explanatory scale.
+        const float detailDescriptionSc = 0.96f * ui;
+        const float purchaseInfoSc = 0.82f * ui;
+        const float purchaseButtonSc = 0.70f * ui;
         const bool lmbClick = lmb && !g_LmbPrev;
 
         auto drawFit = [&](const wchar_t* text, float x, float y, float scale,
@@ -2295,9 +2533,10 @@ void Scene_Shop(const SceneCtx& c) {
             static float actionEnabledT = 1.0f;
             static bool actionColorReady = false;
             // Give the action a little more vertical breathing room. The
-            // hitbox remains unchanged; only the visual treatment grows.
-            const float top = y - 46.0f * ui;
-            const float bottom = y + 32.0f * ui;
+            // matching hitbox is expanded below so the larger ribbon remains
+            // comfortable to click.
+            const float top = y - 54.0f * ui;
+            const float bottom = y + 40.0f * ui;
             float buttonR = r, buttonG = g2, buttonB = b;
             if (state == SHOP_ACTION_READY) {
                 buttonR = 0.28f; buttonG = 0.88f; buttonB = 1.00f;
@@ -2326,7 +2565,7 @@ void Scene_Shop(const SceneCtx& c) {
                                         enabled ? 1.0f : 0.0f, dt, 8.0f);
             const float aa = 0.28f + 0.44f * actionEnabledT
                            + 0.28f * actionEnabledT * actionHoverT;
-            const float cut = std::min(48.0f * ui, w * 0.24f);
+            const float cut = std::min(56.0f * ui, w * 0.24f);
             const float fillA = (0.34f + 0.18f * actionHoverT)
                               * aa * designA;
             // A soft dark ribbon beneath the coloured one separates the
@@ -2347,7 +2586,18 @@ void Scene_Shop(const SceneCtx& c) {
             DrawLinearGradientRibbon(x, top, w, bottom - top, cut,
                                      actionColorR, actionColorG, actionColorB,
                                      fillA, true);
-            float textSc = 0.58f * ui;
+            // A small lock-on node gives the action endpoint a game-like
+            // interaction cue without changing the ribbon geometry.
+            const float actionNodeX = x + w - cut * 0.42f;
+            const float actionNodePulse = 0.30f + 0.26f * actionHoverT;
+            DrawVisibleConstellNode(actionNodeX, y + 1.0f * ui,
+                                    (2.6f + 1.0f * actionHoverT) * ui,
+                                    actionColorR, actionColorG, actionColorB,
+                                    actionNodePulse * aa * designA, false);
+            // The action label uses one stable high-contrast colour. State
+            // colours belong to the ribbon itself; changing them on the text
+            // makes the control look disabled or errored at a glance.
+            float textSc = purchaseButtonSc;
             float textW = g_TextS.Width(label, textSc);
             const float textRight = x + w - cut * 0.56f - 18.0f * ui;
             const float textMaxW = std::max(48.0f * ui,
@@ -2356,12 +2606,9 @@ void Scene_Shop(const SceneCtx& c) {
                 textSc *= textMaxW / textW;
                 textW = g_TextS.Width(label, textSc);
             }
-            const float textR = state == SHOP_ACTION_BLOCKED
-                ? 1.0f : (state == SHOP_ACTION_CATALOGUE ? 0.70f : 0.96f);
-            const float textG = state == SHOP_ACTION_BLOCKED
-                ? 0.68f : (state == SHOP_ACTION_CATALOGUE ? 0.78f : 0.99f);
-            const float textB = state == SHOP_ACTION_BLOCKED
-                ? 0.70f : (state == SHOP_ACTION_CATALOGUE ? 0.90f : 1.0f);
+            const float textR = 0.94f;
+            const float textG = 0.98f;
+            const float textB = 1.00f;
             DrawShadowedText(g_TextS, label, textRight - textW,
                              y - 20.0f * ui, textSc, textR, textG, textB,
                              0.56f + 0.42f * actionEnabledT, 0.84f);
@@ -2372,7 +2619,7 @@ void Scene_Shop(const SceneCtx& c) {
         // Keep this loop byte-for-byte in the same visual family as the other
         // pages' shared root commands.
         static const wchar_t* kShopRoute[SHOP_TAB_COUNT][2] = {
-            { L"\xC2\xDC\xC791 \xBAA8\xB4C8", L"START" },
+            { L"\xC2DC\xC791 \xBAA8\xB4C8", L"START" },
             { L"\xD574\xAE08", L"UNLOCK" },
             { L"\xC18C\xCD1D", L"RIFLE" },
             { L"\xC704\xC131", L"FIELD" },
@@ -2381,7 +2628,7 @@ void Scene_Shop(const SceneCtx& c) {
         static const float kShopG[SHOP_TAB_COUNT] = { 0.70f, 0.82f, 0.92f, 0.48f };
         static const float kShopB[SHOP_TAB_COUNT] = { 0.70f, 1.00f, 0.42f, 1.00f };
         const float railX = rootX;
-        const float railY = rootY;
+        const float railY = shopRailY;
         const float railW = rootW;
         const float railH = rootH;
         const float categoryWake = wake * categoryA;
@@ -2428,20 +2675,20 @@ void Scene_Shop(const SceneCtx& c) {
         }
 
         float detailR = cyanR, detailG = cyanG, detailB = cyanB;
-        const wchar_t* detailTitle = L"NO MODULE";
-        const wchar_t* detailType = L"SHOP RECORD";
+        const wchar_t* detailTitle = L"모듈 없음";
+        const wchar_t* detailType = L"상점 항목";
         bool detailIsMeta = false, detailIsTheme = false, detailIsAug = false;
         int detailId = -1;
         if (s_selKey >= 0) {
             if (s_selKey < KEY_THEME) {
                 detailIsMeta = true; detailId = s_selKey - KEY_META;
-                detailType = L"CORE MODULE";
+                detailType = L"코어 모듈";
                 if (detailId >= 0 && detailId < META_COUNT) {
                     detailTitle = MetaName(detailId);
                 }
             } else if (s_selKey < KEY_AUG) {
                 detailIsTheme = true; detailId = s_selKey - KEY_THEME;
-                detailType = L"DISPLAY PROFILE";
+                detailType = L"화면 프로필";
                 if (detailId >= 0 && detailId < ACCENT_COUNT) {
                     detailTitle = AccentName(detailId);
                     detailR = ACCENT_THEMES[detailId].r;
@@ -2450,7 +2697,7 @@ void Scene_Shop(const SceneCtx& c) {
                 }
             } else {
                 detailIsAug = true; detailId = s_selKey - KEY_AUG;
-                detailType = L"PAYLOAD MODULE";
+                detailType = L"페이로드 모듈";
                 if (detailId >= 0 && detailId < AUG_TOTAL) {
                     detailTitle = ALL_AUGS[detailId].locName[li];
                     GetRarityColor(ALL_AUGS[detailId].rarity,
@@ -2459,21 +2706,21 @@ void Scene_Shop(const SceneCtx& c) {
             }
         }
 
-        // Codex-like chart, moved above and right of the category rail. Keep the five visible
-        // records on one shared orbit so the selected record remains a true
-        // middle entry instead of appearing at the edge of a three-item rail.
-        const float chartCX = sw * 0.28f;
-        const float chartCY = sh * 0.075f;
-        const float chartR = std::min(sw * 0.44f, sh * 0.78f);
+        // The shop constellation is intentionally oversized and right-biased,
+        // like the Codex's corner-anchored chart. Its origin sits near the
+        // upper-right edge while the visible product rail falls inward as a
+        // giant lower semicircle. This makes the constellation the stage
+        // instead of a small illustration floating between the UI columns.
+        const float chartCX = sw * 0.30f;
+        const float chartCY = sh * 0.10f;
+        const float chartR = std::min(sw * 0.52f, sh * 0.70f);
         const float itemR = chartR * 0.94f;
-        const float rowStep = std::min(210.0f * ui, sh * 0.19f);
-        // The catalogue follows the outer Codex orbit itself. Five records
-        // are distributed by equal angular distance over the same upper-right
-        // arc used by the guide ring. This leaves a clean gutter beside the
-        // category rail while making better use of the otherwise empty top.
-        const float railRadius = chartR * 0.90f;
+        const float rowStep = std::min(250.0f * ui, sh * 0.24f);
+        // The catalogue follows one clean lower semicircle. The screen-space
+        // Y axis grows downward, so 0 -> PI draws only the lower half.
+        const float railRadius = chartR * 0.68f;
         const float railStartAngle = 0.02f;
-        const float railSweep = 1.32f;
+        const float railSweep = 3.10f;
         const auto railXAt = [&](float row) {
             const float angle = railStartAngle + railSweep * (row / 4.0f);
             return chartCX + cosf(angle) * railRadius;
@@ -2637,6 +2884,12 @@ void Scene_Shop(const SceneCtx& c) {
                 return (float)(offset + 2);
             };
             const bool listTransitionActive = hasFrom && listEase < 0.995f;
+            // Input remains live while records travel.  Only the candidate
+            // resolution is consolidated so overlapping animated hit regions
+            // cannot let render-loop order change the selected item.
+            const bool listClickReady = inputReady;
+            int clickSlot = -1;
+            float clickDist2 = 1.0e30f;
             // These fields belong to the SHOP viewport itself. They must not
             // inherit s_detailT, because selecting another record should not
             // make the fixed chart/background CircleTextures fade and redraw
@@ -2706,13 +2959,13 @@ void Scene_Shop(const SceneCtx& c) {
             }
 
             // Secondary Codex-style orbit system: three smaller elliptical
-            // tracks, offset from the main arc, plus anchor lights. This adds
-            // depth without turning the transparent scene into a solid panel.
+            // tracks that repeat the same lower-half silhouette, plus anchor
+            // lights. There is deliberately no upper-half track.
             for (int track = 0; track < 3; ++track) {
                 const float rx = chartR * (0.28f + 0.105f * (float)track);
                 const float ry = rx * (0.54f + 0.07f * (float)track);
-                const float start = -0.42f + 0.07f * (float)track;
-                const float sweep = 2.02f - 0.10f * (float)track;
+                const float start = 0.08f + 0.05f * (float)track;
+                const float sweep = 2.96f - 0.10f * (float)track;
                 const int segments = 24;
                 for (int seg = 0; seg < segments; ++seg) {
                     if ((seg + track * 2) % 5 == 2) continue;
@@ -2766,14 +3019,15 @@ void Scene_Shop(const SceneCtx& c) {
                 const bool isCoreNode = item.key < KEY_THEME;
                 const bool isProfileNode = item.key >= KEY_THEME
                                         && item.key < KEY_AUG;
-                // Core unlocks are the gameplay-critical records. They get a
-                // visibly larger focal body; profiles and payloads stay in
-                // the supporting orbital scale.
+                // Core unlocks are the gameplay-critical records. The whole
+                // shop chart is large, so give its product constellations a
+                // matching scale instead of leaving tiny nodes on a giant
+                // field. Profiles and payloads remain slightly lighter.
                 // Reduce the constellation body itself, including the
                 // selected middle entry. Hover only changes emphasis/alpha;
                 // it must never make a constellation grow again.
-                const float baseMiniR = (isCoreNode ? 74.0f : 60.0f)
-                                      + (isCoreNode ? 66.0f : 50.0f) * focus;
+                const float baseMiniR = (isCoreNode ? 88.0f : 72.0f)
+                                      + (isCoreNode ? 78.0f : 58.0f) * focus;
                 // Hover is a readability state, not a scale-up state. Keep a
                 // small shrink while the pointer rests on a record so the
                 // constellation never swells against its label.
@@ -2782,6 +3036,16 @@ void Scene_Shop(const SceneCtx& c) {
                 const float miniRadius = miniR * ui;
                 const float drawAx = railXAt(drawRel);
                 const float drawAy = railYAt(drawRel);
+                const bool itemPurchased = shopItemPurchased(item.key);
+                // Purchased entries retain their own palette. Unpurchased
+                // entries stay neutral; the selected one receives only a
+                // restrained cyan focus so it does not read as owned.
+                const float visualR = itemPurchased ? item.r
+                    : (newSelected ? cyanR : 0.42f);
+                const float visualG = itemPurchased ? item.g
+                    : (newSelected ? cyanG : 0.52f);
+                const float visualB = itemPurchased ? item.b
+                    : (newSelected ? cyanB : 0.62f);
                 const float labelW = std::max(180.0f * ui,
                                               std::min(300.0f * ui,
                                                        sw * 0.18f));
@@ -2797,15 +3061,17 @@ void Scene_Shop(const SceneCtx& c) {
                               && my >= drawAy - hitRadiusY
                               && my <= drawAy + hitRadiusY;
                 s_itemHov[itemIndex] = UpdateMenuCommandHover(s_itemHov[itemIndex], hov, dt);
-                if (hov && lmbClick && !s_dragMoved) {
-                    const int deltaSlot = slot - selectedSlot;
-                    s_listTransitionDir = (deltaSlot >= 0) ? 1.0f : -1.0f;
-                    if (s_selKey != item.key) {
-                        s_listFromKey = s_selKey;
-                        s_listTransitionT = 0.0f;
+                if (hov && lmbClick && listClickReady && !s_dragMoved) {
+                    // Multiple large constellations may touch at their edge.
+                    // Resolve the press once, by nearest node, instead of
+                    // allowing iteration order to decide which item wins.
+                    const float dx = (float)mx - drawAx;
+                    const float dy = (float)my - drawAy;
+                    const float dist2 = dx * dx + dy * dy;
+                    if (dist2 < clickDist2) {
+                        clickDist2 = dist2;
+                        clickSlot = slot;
                     }
-                    s_selKey = item.key;
-                    s_detailT = 0.0f;
                 }
                 const bool fullItemFields = !listTransitionActive
                                           || oldSelected || newSelected;
@@ -2817,8 +3083,11 @@ void Scene_Shop(const SceneCtx& c) {
                 const float nodeFieldA = designA
                     * ((oldVisible && newVisible) ? 1.0f : itemFade);
                 DrawConstellationDisc(drawAx, drawAy, miniRadius * 0.90f,
-                                      item.r, item.g, item.b,
-                                      (0.100f + 0.060f * focus) * nodeFieldA);
+                                      visualR, visualG, visualB,
+                                      (itemPurchased
+                                           ? (0.100f + 0.060f * focus)
+                                           : (0.018f + 0.052f * focus))
+                                          * nodeFieldA);
                 DrawConstellationDisc(drawAx, drawAy, miniRadius * 1.32f,
                                       0.0f, 0.0f, 0.0f,
                                       (0.14f + 0.06f * active) * nodeFieldA,
@@ -2829,8 +3098,10 @@ void Scene_Shop(const SceneCtx& c) {
                 DrawArchiveConstellation(drawAx, drawAy, miniRadius,
                                          isCoreNode ? 3 : (item.key >= KEY_AUG ? 2 : 1),
                                          item.key, now * 0.18f,
-                                         item.r, item.g, item.b,
-                                         (0.34f + 0.48f * focus + 0.28f * hover)
+                                         visualR, visualG, visualB,
+                                         (itemPurchased
+                                              ? (0.34f + 0.48f * focus + 0.28f * hover)
+                                              : (0.20f + 0.34f * focus + 0.16f * hover))
                                              * designA * itemFade,
                                          ui, fullItemFields);
                 DrawVisibleConstellLine(drawAx + miniRadius * 0.74f,
@@ -2838,36 +3109,40 @@ void Scene_Shop(const SceneCtx& c) {
                                         drawAx + miniRadius + 15.0f * ui,
                                         drawAy,
                                         (0.68f + 0.72f * focus) * ui,
-                                        item.r, item.g, item.b,
-                                        (0.18f + 0.44f * focus + 0.18f * hover)
+                                        visualR, visualG, visualB,
+                                        (itemPurchased
+                                             ? (0.18f + 0.44f * focus + 0.18f * hover)
+                                             : (0.10f + 0.30f * focus + 0.12f * hover))
                                             * designA * itemFade);
                 DrawVisibleConstellNode(drawAx + miniRadius + 15.0f * ui, drawAy,
                                         (2.6f + 1.4f * focus) * ui,
-                                        item.r, item.g, item.b,
-                                        (0.34f + 0.52f * focus + 0.22f * hover)
+                                        visualR, visualG, visualB,
+                                        (itemPurchased
+                                             ? (0.34f + 0.52f * focus + 0.22f * hover)
+                                             : (0.18f + 0.38f * focus + 0.14f * hover))
                                             * designA * itemFade,
                                         false);
                 const float labelContrast = isCoreNode
                     ? (0.66f + 0.34f * focus)
                     : (0.54f + 0.46f * focus);
-                const float labelR = item.r + (whiteR - item.r) * labelContrast;
-                const float labelG = item.g + (whiteG - item.g) * labelContrast;
-                const float labelB = item.b + (whiteB - item.b) * labelContrast;
+                const float labelR = visualR + (whiteR - visualR) * labelContrast;
+                const float labelG = visualG + (whiteG - visualG) * labelContrast;
+                const float labelB = visualB + (whiteB - visualB) * labelContrast;
                 drawFit(item.label, drawAx + miniRadius + 25.0f * ui,
                         drawAy - 12.0f * ui,
-                        (isCoreNode ? 0.50f : 0.46f) * ui
+                        (isCoreNode ? 0.68f : 0.62f) * ui
                             + 0.22f * focus * ui,
                         labelW, labelR, labelG, labelB,
                         (0.64f + 0.38f * focus + 0.18f * hover) * itemFade);
-                const float typeR = item.r + (whiteR - item.r) * 0.34f;
-                const float typeG = item.g + (whiteG - item.g) * 0.34f;
-                const float typeB = item.b + (whiteB - item.b) * 0.34f;
+                const float typeR = visualR + (whiteR - visualR) * 0.34f;
+                const float typeG = visualG + (whiteG - visualG) * 0.34f;
+                const float typeB = visualB + (whiteB - visualB) * 0.34f;
                 DrawShadowedText(g_TextS,
-                                 isCoreNode ? L"CORE"
-                                 : (isProfileNode ? L"PROFILE" : L"PAYLOAD"),
+                                 isCoreNode ? L"코어"
+                                 : (isProfileNode ? L"프로필" : L"페이로드"),
                                  drawAx + miniRadius + 25.0f * ui,
                                  drawAy + 13.0f * ui,
-                                 (isCoreNode ? 0.34f : 0.30f) * ui
+                                 (isCoreNode ? 0.42f : 0.38f) * ui
                                      + 0.06f * focus * ui,
                                   typeR, typeG, typeB,
                                   (0.48f + 0.38f * focus + 0.20f * hover)
@@ -2882,13 +3157,26 @@ void Scene_Shop(const SceneCtx& c) {
                     if (chainSlot >= 0 && chainSlot < 5) {
                         chainX[chainSlot] = drawAx;
                         chainY[chainSlot] = drawAy;
-                        chainR[chainSlot] = item.r;
-                        chainG[chainSlot] = item.g;
-                        chainB[chainSlot] = item.b;
+                        chainR[chainSlot] = visualR;
+                        chainG[chainSlot] = visualG;
+                        chainB[chainSlot] = visualB;
                         chainA[chainSlot] = itemFade;
                         chainValid[chainSlot] = true;
                     }
                 }
+            }
+            if (clickSlot >= 0 && clickSlot != selectedSlot) {
+                int deltaSlot = clickSlot - selectedSlot;
+                // Follow the shortest direction around the circular list.
+                // Without wrapping this sign, clicking an item near either
+                // end can animate through the wrong side of the catalogue.
+                if (deltaSlot > itemTotal / 2) deltaSlot -= itemTotal;
+                if (deltaSlot < -itemTotal / 2) deltaSlot += itemTotal;
+                s_listTransitionDir = (deltaSlot >= 0) ? 1.0f : -1.0f;
+                s_listFromKey = s_selKey;
+                s_listTransitionT = 0.0f;
+                s_selKey = s_items[itemIndices[clickSlot]].key;
+                s_detailT = 0.0f;
             }
             for (int chainSlot = 1; chainSlot < 5; ++chainSlot) {
                 if (!chainValid[chainSlot - 1] || !chainValid[chainSlot]) continue;
@@ -2898,37 +3186,31 @@ void Scene_Shop(const SceneCtx& c) {
                                         chainR[chainSlot], chainG[chainSlot], chainB[chainSlot],
                                         0.16f * designA * chainA[chainSlot]);
             }
-            // The selected record owns a single data tether into the detail
-            // readout. The elbow keeps the relationship readable without
-            // drawing a bright line through the entire constellation field.
-            const float tetherStartX = selectedNodeX + 118.0f * ui;
-            const float tetherElbowX = detailX - 116.0f * ui;
-            const float tetherY = detailLayout.titleY - 7.0f * ui;
-            const float tetherAnchorX = detailX - 28.0f * ui;
-            DrawVisibleConstellLine(tetherStartX, selectedNodeY,
-                                    tetherElbowX, selectedNodeY,
-                                    0.86f * ui, detailR, detailG, detailB,
-                                    0.30f * detailA);
-            DrawVisibleConstellLine(tetherElbowX, selectedNodeY,
-                                    tetherElbowX, tetherY,
-                                    0.86f * ui, detailR, detailG, detailB,
-                                    0.24f * detailA);
-            DrawVisibleConstellLine(tetherElbowX, tetherY,
-                                    tetherAnchorX, tetherY,
-                                    0.86f * ui, detailR, detailG, detailB,
-                                    0.34f * detailA);
-            DrawVisibleConstellNode(tetherAnchorX, tetherY,
-                                    3.8f * ui, detailR, detailG, detailB,
-                                    0.74f * detailA, false);
         }
 
         // Fixed right-center record block. Keep the field borderless; the
         // CircleTexture supplies contrast while typography carries the read.
-        const float detailFieldCX = detailX + detailW * 0.48f;
-        const float detailFieldCY = detailLayout.fieldY;
+        // The detail glow is a fixed UI light, independent of the selected
+        // item colour, and is anchored around the action button.
+        const float detailFieldRCol = cyanR;
+        const float detailFieldGCol = cyanG;
+        const float detailFieldBCol = cyanB;
+        const float detailFieldCX = detailLayout.actionX
+                                  + detailLayout.actionW * 0.50f;
+        const float detailFieldCY = detailLayout.actionY;
         const float detailFieldR = std::max(300.0f * ui, detailW * 0.98f);
+        // Give the lower-right readout the same chromatic depth as the
+        // constellation field. Keep the light behind the dark contrast layer
+        // so the copy remains readable over bright gameplay backgrounds.
+        DrawConstellationDisc(detailFieldCX, detailFieldCY, detailFieldR * 0.92f,
+                              detailFieldRCol, detailFieldGCol, detailFieldBCol,
+                              0.040f * staticFieldA);
         DrawConstellationDisc(detailFieldCX, detailFieldCY, detailFieldR * 0.78f,
-                              detailR, detailG, detailB, 0.050f * staticFieldA);
+                              detailFieldRCol, detailFieldGCol, detailFieldBCol,
+                              0.032f * staticFieldA);
+        DrawConstellationDisc(detailFieldCX, detailFieldCY, detailFieldR * 0.44f,
+                              detailFieldRCol, detailFieldGCol, detailFieldBCol,
+                              0.022f * staticFieldA);
         DrawConstellationDisc(detailFieldCX, detailFieldCY, detailFieldR,
                               0.0f, 0.0f, 0.012f, 0.14f * staticFieldA,
                               false);
@@ -2938,7 +3220,7 @@ void Scene_Shop(const SceneCtx& c) {
         // the bright background, so the right edge is now the only anchor.
         drawRightFit(g_TextS, detailType, detailRight,
                      detailLayout.titleY - 38.0f * ui,
-                     0.38f * ui, detailW, detailR, detailG, detailB,
+                     0.44f * ui, detailW, detailR, detailG, detailB,
                      0.96f * detailA, 0.72f);
         float titleSc = 1.08f * ui;
         while (titleSc > 0.74f * ui && g_TextL.Width(detailTitle, titleSc) > detailW)
@@ -2949,12 +3231,12 @@ void Scene_Shop(const SceneCtx& c) {
 
         const float copyY = detailLayout.copyY;
         if (detailIsMeta) {
-            drawRightFit(g_TextS, L"APPLIES BEFORE DEPLOYMENT",
-                         detailRight, copyY, 0.52f * ui, detailW,
+            drawRightFit(g_TextS, L"출격 전 적용",
+                         detailRight, copyY, detailDescriptionSc, detailW,
                          0.82f, 0.90f, 0.98f, 0.90f * detailA, 0.88f);
         } else if (detailIsTheme) {
-            drawRightFit(g_TextS, L"ROUTES THE OUTGAME PALETTE",
-                         detailRight, copyY, 0.52f * ui, detailW,
+            drawRightFit(g_TextS, L"아웃게임 색상 적용",
+                         detailRight, copyY, detailDescriptionSc, detailW,
                          detailR, detailG, detailB, 0.88f * detailA, 0.86f);
         } else if (detailIsAug && detailId >= 0 && detailId < AUG_TOTAL) {
             const wchar_t* desc = AugDesc(ALL_AUGS[detailId]);
@@ -2970,8 +3252,8 @@ void Scene_Shop(const SceneCtx& c) {
                     while (!segment.empty() && segment.front() == L' ') segment.erase(0, 1);
                     while (!segment.empty() && segment.back() == L' ') segment.pop_back();
                     drawRightFit(g_TextS, segment.c_str(), detailRight,
-                                 copyY + line * 29.0f * ui,
-                                 0.50f * ui, detailW,
+                                 copyY + line * 32.0f * ui,
+                                 detailDescriptionSc, detailW,
                                  0.76f, 0.84f, 0.94f, 0.82f, 0.86f);
                     ++line;
                 }
@@ -2982,72 +3264,84 @@ void Scene_Shop(const SceneCtx& c) {
         const float actionX = detailLayout.actionX;
         const float actionW = detailLayout.actionW;
         const float actionY = detailLayout.actionY;
+        // PLAY's readout uses a much larger information scale. Keep the
+        // transaction/status copy at that same visual weight instead of
+        // leaving level, balance, and purchase-result lines in tiny helper
+        // text.
+        const float detailInfoSc = purchaseInfoSc;
         auto drawWalletSummary = [&](float y, long long cost,
                                      bool canAfford, bool owned,
                                      bool finished) {
+            auto drawStatusMarker = [&](const wchar_t* label, float markerY) {
+                const float labelW = g_TextS.Width(label, detailInfoSc);
+                DrawVisibleConstellNode(detailRight - labelW - 15.0f * ui,
+                                        markerY + 6.0f * ui, 2.3f * ui,
+                                        detailFieldRCol, detailFieldGCol,
+                                        detailFieldBCol,
+                                        0.58f * detailA, false);
+            };
             wchar_t balanceBuf[64];
-            swprintf_s(balanceBuf, L"BALANCE  %lld STARDUST", g_Coins);
-            drawRightFit(g_TextS, balanceBuf, detailRight, y + 8.0f * ui,
-                         0.42f * ui, detailW, whiteR, whiteG, whiteB,
+            swprintf_s(balanceBuf, L"보유 별가루  %lld", g_Coins);
+            drawRightFit(g_TextS, balanceBuf, detailRight, y + 12.0f * ui,
+                         detailInfoSc, detailW, whiteR, whiteG, whiteB,
                          0.78f * detailA, 0.60f);
 
             if (finished) {
-                drawRightFit(g_TextS, L"FULLY TUNED", detailRight,
-                             y - 24.0f * ui, 0.48f * ui, detailW,
+                drawStatusMarker(L"최대 레벨", y - 30.0f * ui);
+                drawRightFit(g_TextS, L"최대 레벨", detailRight,
+                             y - 30.0f * ui, detailInfoSc, detailW,
                              detailR, detailG, detailB,
                              0.92f * detailA, 0.64f);
                 return;
             }
             if (owned) {
-                drawRightFit(g_TextS, L"PROFILE OWNED / READY",
-                             detailRight, y - 24.0f * ui, 0.48f * ui,
+                drawStatusMarker(L"구매 완료", y - 30.0f * ui);
+                drawRightFit(g_TextS, L"구매 완료",
+                             detailRight, y - 30.0f * ui, detailInfoSc,
                              detailW, detailR, detailG, detailB,
                              0.92f * detailA, 0.64f);
                 return;
             }
 
             wchar_t costBuf[64];
-            swprintf_s(costBuf, L"COST  %lld STARDUST", cost);
-            drawRightFit(g_TextS, costBuf, detailRight, y - 24.0f * ui,
-                         0.48f * ui, detailW, goldR, goldG, goldB,
+            swprintf_s(costBuf, L"비용  %lld 별가루", cost);
+            drawRightFit(g_TextS, costBuf, detailRight, y - 30.0f * ui,
+                         detailInfoSc, detailW, goldR, goldG, goldB,
                          0.98f * detailA, 0.64f);
 
-            wchar_t verdictBuf[64];
             if (canAfford) {
-                swprintf_s(verdictBuf, L"AFTER PURCHASE  %lld STARDUST",
+                wchar_t verdictBuf[64];
+                swprintf_s(verdictBuf, L"구매 후  %lld 별가루",
                            g_Coins - cost);
-            } else {
-                swprintf_s(verdictBuf, L"INSUFFICIENT STARDUST");
+                drawRightFit(g_TextS, verdictBuf, detailRight,
+                             y + 52.0f * ui, detailInfoSc, detailW,
+                             detailR, detailG, detailB,
+                             0.86f * detailA, 0.62f);
             }
-            drawRightFit(g_TextS, verdictBuf, detailRight,
-                         y + 40.0f * ui, 0.40f * ui, detailW,
-                         canAfford ? detailR : 1.0f,
-                         canAfford ? detailG : 0.30f,
-                         canAfford ? detailB : 0.30f,
-                         0.86f * detailA, 0.62f);
         };
         if (detailIsMeta && detailId >= 0 && detailId < META_COUNT) {
             const MetaDef& md = META_DEFS[detailId];
             const int curLv = g_MetaLv[detailId];
             const long long cost = MetaNextCost(detailId);
-            wchar_t levelBuf[48]; swprintf_s(levelBuf, L"LEVEL  %d / %d", curLv, md.maxLv);
-            drawRightFit(g_TextS, levelBuf, detailRight, tradeY - 52.0f * ui,
-                         0.47f * ui, detailW, whiteR, whiteG, whiteB,
+            wchar_t levelBuf[48]; swprintf_s(levelBuf, L"레벨  %d / %d", curLv, md.maxLv);
+            drawRightFit(g_TextS, levelBuf, detailRight, tradeY - 60.0f * ui,
+                         detailInfoSc, detailW, whiteR, whiteG, whiteB,
                          0.82f * detailA, 0.60f);
             const bool canBuy = cost >= 0 && g_Coins >= cost && curLv < md.maxLv;
-            drawWalletSummary(tradeY + 12.0f * ui, cost, canBuy, false,
+            drawWalletSummary(tradeY, cost, canBuy, false,
                               curLv >= md.maxLv || cost < 0);
             const bool actionHover = inputReady && mx >= actionX
                                    && mx <= actionX + actionW
-                                   && my >= actionY - 42.0f * ui
-                                   && my <= actionY + 42.0f * ui;
+                                   && my >= actionY - 52.0f * ui
+                                   && my <= actionY + 52.0f * ui;
             if (actionHover && lmbClick && canBuy) {
                 g_Coins -= cost; ++g_MetaLv[detailId]; SaveGame();
             }
             wchar_t actionBuf[64];
-            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"MODULE MAXED");
-            else if (!canBuy) swprintf_s(actionBuf, L"INSUFFICIENT STARDUST");
-            else swprintf_s(actionBuf, L"TUNE MODULE");
+            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"최대 레벨");
+            else if (!canBuy) swprintf_s(actionBuf, L"별가루 부족");
+            else if (curLv <= 0) swprintf_s(actionBuf, L"구매");
+            else swprintf_s(actionBuf, L"모듈 강화");
             drawFixedAction(actionX, actionY, actionW, actionBuf,
                             detailR, detailG, detailB,
                             canBuy || curLv >= md.maxLv, actionHover,
@@ -3057,57 +3351,40 @@ void Scene_Shop(const SceneCtx& c) {
         } else if (detailIsTheme && detailId >= 0 && detailId < ACCENT_COUNT) {
             const AccentTheme& theme = ACCENT_THEMES[detailId];
             const bool owned = ThemeOwned(detailId);
-            const bool equipped = owned && g_ThemeSel == detailId;
             const long long cost = theme.cost;
-            drawRightFit(g_TextS, equipped ? L"ACTIVE PROFILE"
-                              : (owned ? L"OWNED / READY" : L"LOCKED PROFILE"),
-                         detailRight, tradeY - 52.0f * ui, 0.47f * ui,
-                         detailW, whiteR, whiteG, whiteB,
-                         0.82f * detailA, 0.60f);
-            const bool canUse = !equipped && (owned || g_Coins >= cost);
-            drawWalletSummary(tradeY + 12.0f * ui, cost,
-                              owned || g_Coins >= cost, owned, false);
+            const bool canBuy = !owned && g_Coins >= cost;
+            // Shop owns purchase only. Loadout/equip remains a PLAY action.
+            drawWalletSummary(tradeY, cost, canBuy, owned, false);
             const bool actionHover = inputReady && mx >= actionX
                                    && mx <= actionX + actionW
-                                   && my >= actionY - 42.0f * ui
-                                   && my <= actionY + 42.0f * ui;
-            if (actionHover && lmbClick && canUse) {
-                if (!owned) { g_Coins -= cost; g_ThemeOwned |= (1 << detailId); }
-                g_ThemeSel = detailId; ApplyAccentTheme(); SaveGame();
+                                   && my >= actionY - 52.0f * ui
+                                   && my <= actionY + 52.0f * ui;
+            if (actionHover && lmbClick && canBuy) {
+                g_Coins -= cost;
+                g_ThemeOwned |= (1 << detailId);
+                SaveGame();
             }
             drawFixedAction(actionX, actionY, actionW,
-                            equipped ? L"PROFILE ACTIVE"
-                                : (owned ? L"ROUTE PROFILE"
-                                         : (canUse ? L"INSTALL PROFILE"
-                                                   : L"INSUFFICIENT STARDUST")),
+                            owned ? L"구매 완료"
+                                  : (canBuy ? L"구매" : L"별가루 부족"),
                             detailR, detailG, detailB,
-                            canUse || equipped, actionHover,
-                            equipped ? SHOP_ACTION_ACTIVE
-                                : (canUse ? SHOP_ACTION_READY
-                                          : SHOP_ACTION_BLOCKED));
+                            canBuy, actionHover,
+                            owned ? SHOP_ACTION_ACTIVE
+                                  : (canBuy ? SHOP_ACTION_READY
+                                            : SHOP_ACTION_BLOCKED));
         } else if (detailIsAug) {
-            drawRightFit(g_TextS, L"NO TRANSACTION",
+            drawRightFit(g_TextS, L"패시브 효과",
                          detailRight, tradeY - 20.0f * ui,
-                         0.48f * ui, detailW, whiteR, whiteG, whiteB,
+                         detailDescriptionSc, detailW, whiteR, whiteG, whiteB,
                          0.82f * detailA, 0.60f);
-            drawFixedAction(actionX, actionY, actionW, L"CATALOGUE ONLY",
+            drawFixedAction(actionX, actionY, actionW, L"패시브",
                             detailR, detailG, detailB, false, false,
                             SHOP_ACTION_CATALOGUE);
         }
 
-        wchar_t dustBuf[64]; swprintf_s(dustBuf, L"STARDUST  %06lld", g_Coins);
-        const float dustSc = 0.52f * ui;
-        const float dustW = g_TextS.Width(dustBuf, dustSc);
-        DrawVisibleConstellNode(sw - std::max(74.0f, sw * 0.075f) - dustW - 22.0f * ui,
-                                std::max(72.0f, sh * 0.105f), 5.0f * ui,
-                                goldR, goldG, goldB, 0.94f * designA, false);
-        DrawShadowedText(g_TextS, dustBuf,
-                         sw - std::max(74.0f, sw * 0.075f) - dustW,
-                         std::max(72.0f, sh * 0.105f) - 7.0f * ui,
-                         dustSc, goldR, goldG, goldB, 0.98f * designA, 0.72f);
-        DrawShadowedText(g_TextS, L"ESC / RMB  RETURN",
+        DrawShadowedText(g_TextS, L"ESC / RMB  뒤로가기",
                          sw - std::max(74.0f, sw * 0.075f) -
-                         g_TextS.Width(L"ESC / RMB  RETURN", 0.31f * ui),
+                         g_TextS.Width(L"ESC / RMB  뒤로가기", 0.31f * ui),
                          sh - 48.0f * ui, 0.31f * ui,
                          0.52f, 0.68f, 0.82f, 0.60f * designA, 0.58f);
 
@@ -3177,20 +3454,20 @@ void Scene_Shop(const SceneCtx& c) {
                                    float r, float g2, float b,
                                    bool enabled, bool hovered) {
             const float aa = enabled ? (hovered ? 1.0f : 0.72f) : 0.28f;
-            drawFit(label, x, y - 21.0f * ui, 0.54f * ui, w,
-                    r, g2, b, enabled ? 0.98f : 0.44f);
+            drawFit(label, x, y - 25.0f * ui, 0.76f * ui, w,
+                    0.94f, 0.98f, 1.00f, enabled ? 0.98f : 0.44f);
             DrawVisibleConstellLine(x, y + 14.0f * ui,
                                     x + w * 0.70f, y + 14.0f * ui,
-                                    1.8f * ui, r, g2, b, aa * designA);
+                                    2.2f * ui, r, g2, b, aa * designA);
             DrawVisibleConstellNode(x + w * 0.70f, y + 14.0f * ui,
-                                    4.5f * ui, r, g2, b, aa * designA, false);
+                                    5.2f * ui, r, g2, b, aa * designA, false);
         };
 
         DrawSceneLeftVignette(sw, sh, 0.06f * designA);
 
         // Exact shared command rail used by the other outgame pages.
         static const wchar_t* kShopRoute[SHOP_TAB_COUNT][2] = {
-            { L"\xC2\xDC\xC791 \xBAA8\xB4C8", L"START" },
+            { L"\xC2DC\xC791 \xBAA8\xB4C8", L"START" },
             { L"\xD574\xAE08", L"UNLOCK" },
             { L"\xC18C\xCD1D", L"RIFLE" },
             { L"\xC704\xC131", L"FIELD" },
@@ -3469,8 +3746,8 @@ void Scene_Shop(const SceneCtx& c) {
 
         const float tradeY = infoY + 174.0f * ui;
         const float priceX = detailX;
-        const float actionX = detailX + detailW * 0.52f;
-        const float actionW = std::max(150.0f * ui, detailW * 0.44f);
+        const float actionX = detailX + detailW * 0.46f;
+        const float actionW = std::max(170.0f * ui, detailW * 0.50f);
         if (detailIsMeta && detailId >= 0 && detailId < META_COUNT) {
             const MetaDef& md = META_DEFS[detailId];
             const int curLv = g_MetaLv[detailId];
@@ -3480,7 +3757,7 @@ void Scene_Shop(const SceneCtx& c) {
                              0.40f * ui, whiteR, whiteG, whiteB,
                              0.80f * detailA, 0.60f);
             wchar_t costBuf[64];
-            if (cost < 0) swprintf_s(costBuf, L"FULLY TUNED");
+            if (cost < 0) swprintf_s(costBuf, L"MAX LEVEL");
             else swprintf_s(costBuf, L"%lld  STARDUST", cost);
             DrawShadowedText(g_TextS, costBuf, priceX, tradeY + 3.0f * ui,
                              0.43f * ui, goldR, goldG, goldB,
@@ -3488,14 +3765,14 @@ void Scene_Shop(const SceneCtx& c) {
             const bool canBuy = cost >= 0 && g_Coins >= cost && curLv < md.maxLv;
             const bool actionHover = inputReady && mx >= actionX
                                   && mx <= actionX + actionW
-                                  && my >= tradeY - 42.0f * ui
-                                  && my <= tradeY + 42.0f * ui;
+                                  && my >= tradeY - 52.0f * ui
+                                  && my <= tradeY + 52.0f * ui;
             if (actionHover && lmbClick && canBuy) {
                 g_Coins -= cost; ++g_MetaLv[detailId]; SaveGame();
             }
             wchar_t actionBuf[64];
-            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"MODULE MAXED");
-            else swprintf_s(actionBuf, L"TUNE MODULE  %lld", cost);
+            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"MAX LEVEL");
+            else swprintf_s(actionBuf, L"UPGRADE MODULE  %lld", cost);
             drawFixedAction(actionX, tradeY, actionW, actionBuf,
                             detailR, detailG, detailB,
                             canBuy || curLv >= md.maxLv, actionHover);
@@ -3504,8 +3781,8 @@ void Scene_Shop(const SceneCtx& c) {
             const bool owned = ThemeOwned(detailId);
             const bool equipped = owned && g_ThemeSel == detailId;
             const long long cost = theme.cost;
-            DrawShadowedText(g_TextS, equipped ? L"ACTIVE PROFILE"
-                              : (owned ? L"OWNED / READY" : L"LOCKED PROFILE"),
+            DrawShadowedText(g_TextS, equipped ? L"EQUIPPED"
+                              : (owned ? L"OWNED" : L"LOCKED"),
                              priceX, tradeY - 31.0f * ui, 0.40f * ui,
                              whiteR, whiteG, whiteB, 0.80f * detailA, 0.60f);
             wchar_t priceBuf[64];
@@ -3517,22 +3794,22 @@ void Scene_Shop(const SceneCtx& c) {
             const bool canUse = !equipped && (owned || g_Coins >= cost);
             const bool actionHover = inputReady && mx >= actionX
                                   && mx <= actionX + actionW
-                                  && my >= tradeY - 42.0f * ui
-                                  && my <= tradeY + 42.0f * ui;
+                                  && my >= tradeY - 52.0f * ui
+                                  && my <= tradeY + 52.0f * ui;
             if (actionHover && lmbClick && canUse) {
                 if (!owned) { g_Coins -= cost; g_ThemeOwned |= (1 << detailId); }
                 g_ThemeSel = detailId; ApplyAccentTheme(); SaveGame();
             }
             drawFixedAction(actionX, tradeY,
-                            actionW, equipped ? L"PROFILE ACTIVE"
-                                : (owned ? L"ROUTE PROFILE" : L"INSTALL PROFILE"),
+                            actionW, equipped ? L"EQUIPPED"
+                                : (owned ? L"EQUIP" : L"UNLOCK"),
                             detailR, detailG, detailB,
                             canUse || equipped, actionHover);
         } else if (detailIsAug) {
-            DrawShadowedText(g_TextS, L"CATALOGUE ONLY / FIELD PAYLOAD",
+            DrawShadowedText(g_TextS, L"PASSIVE EFFECT / FIELD PAYLOAD",
                              priceX, tradeY - 31.0f * ui, 0.40f * ui,
                              whiteR, whiteG, whiteB, 0.80f * detailA, 0.60f);
-            drawFixedAction(actionX, tradeY, actionW, L"CATALOGUE ONLY",
+            drawFixedAction(actionX, tradeY, actionW, L"PASSIVE",
                             detailR, detailG, detailB, false, false);
         }
 
@@ -3953,7 +4230,7 @@ void Scene_Shop(const SceneCtx& c) {
                              0.42f * ui, whiteR, whiteG, whiteB,
                              0.82f * detailA, 0.62f);
             wchar_t costBuf[64];
-            if (cost < 0) swprintf_s(costBuf, L"FULLY TUNED");
+            if (cost < 0) swprintf_s(costBuf, L"MAX LEVEL");
             else swprintf_s(costBuf, L"%lld  STARDUST", cost);
             DrawShadowedText(g_TextS, costBuf, infoX, tradeY + 22.0f * ui,
                              0.43f * ui, goldR, goldG, goldB,
@@ -3961,16 +4238,16 @@ void Scene_Shop(const SceneCtx& c) {
             const bool canBuy = cost >= 0 && g_Coins >= cost && curLv < md.maxLv;
             const bool actionHover = inputReady && mx >= actionX
                                   && mx <= actionX + actionW
-                                  && my >= tradeY - 42.0f * ui
-                                  && my <= tradeY + 42.0f * ui;
+                                  && my >= tradeY - 52.0f * ui
+                                  && my <= tradeY + 52.0f * ui;
             if (actionHover && lmbClick && canBuy) {
                 g_Coins -= cost;
                 ++g_MetaLv[detailId];
                 SaveGame();
             }
             wchar_t actionBuf[64];
-            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"MODULE MAXED");
-            else swprintf_s(actionBuf, L"TUNE MODULE  %lld", cost);
+            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"MAX LEVEL");
+            else swprintf_s(actionBuf, L"UPGRADE MODULE  %lld", cost);
             drawTradeAction(actionX, tradeY, actionW, actionBuf,
                             detailR, detailG, detailB,
                             canBuy || curLv >= md.maxLv, actionHover);
@@ -3979,8 +4256,8 @@ void Scene_Shop(const SceneCtx& c) {
             const bool owned = ThemeOwned(detailId);
             const bool equipped = owned && g_ThemeSel == detailId;
             const long long cost = theme.cost;
-            const wchar_t* status = equipped ? L"ACTIVE PROFILE"
-                                : (owned ? L"OWNED / READY" : L"LOCKED PROFILE");
+            const wchar_t* status = equipped ? L"EQUIPPED"
+                                : (owned ? L"OWNED" : L"LOCKED");
             DrawShadowedText(g_TextS, status, infoX, tradeY - 30.0f * ui,
                              0.42f * ui, whiteR, whiteG, whiteB,
                              0.82f * detailA, 0.62f);
@@ -3993,8 +4270,8 @@ void Scene_Shop(const SceneCtx& c) {
             const bool actionEnabled = !equipped && (owned || g_Coins >= cost);
             const bool actionHover = inputReady && mx >= actionX
                                   && mx <= actionX + actionW
-                                  && my >= tradeY - 42.0f * ui
-                                  && my <= tradeY + 42.0f * ui;
+                                  && my >= tradeY - 52.0f * ui
+                                  && my <= tradeY + 52.0f * ui;
             if (actionHover && lmbClick && actionEnabled) {
                 if (!owned) {
                     g_Coins -= cost;
@@ -4004,8 +4281,8 @@ void Scene_Shop(const SceneCtx& c) {
                 ApplyAccentTheme();
                 SaveGame();
             }
-            const wchar_t* actionLabel = equipped ? L"PROFILE ACTIVE"
-                                    : (owned ? L"ROUTE PROFILE" : L"INSTALL PROFILE");
+            const wchar_t* actionLabel = equipped ? L"EQUIPPED"
+                                    : (owned ? L"EQUIP" : L"UNLOCK");
             drawTradeAction(actionX, tradeY, actionW, actionLabel,
                             detailR, detailG, detailB,
                             actionEnabled || equipped, actionHover);
@@ -4032,7 +4309,7 @@ void Scene_Shop(const SceneCtx& c) {
                     ++line;
                 }
             }
-            drawTradeAction(actionX, tradeY, actionW, L"CATALOGUE ONLY",
+            drawTradeAction(actionX, tradeY, actionW, L"PASSIVE",
                             detailR, detailG, detailB, false, false);
         }
 
@@ -4184,7 +4461,7 @@ void Scene_Shop(const SceneCtx& c) {
                                 0.58f * designA, false);
 
         static const wchar_t* kTabLbl[SHOP_TAB_COUNT][2] = {
-            { L"\xC2\xDC\xC791 \xBAA8\xB4C8", L"START" },
+            { L"\xC2DC\xC791 \xBAA8\xB4C8", L"START" },
             { L"\xD574\xAE08", L"UNLOCK" },
             { L"\xC18C\xCD1D", L"RIFLE"  },
             { L"\xC704\xC131", L"FIELD"  },
@@ -4520,7 +4797,7 @@ void Scene_Shop(const SceneCtx& c) {
                              detailX, infoY + 58.0f * ui, 0.36f * ui,
                              0.58f, 0.72f, 0.84f, 0.68f * detailA, 0.58f);
             wchar_t costBuf[64];
-            if (cost < 0) swprintf_s(costBuf, L"CORE MODULE FULLY TUNED");
+            if (cost < 0) swprintf_s(costBuf, L"CORE MODULE MAX LEVEL");
             else swprintf_s(costBuf, L"NEXT TUNE   %lld STARDUST", cost);
             DrawShadowedText(g_TextS, costBuf, detailX, infoY + 90.0f * ui,
                              0.44f * ui, detailR, detailG, detailB,
@@ -4537,8 +4814,8 @@ void Scene_Shop(const SceneCtx& c) {
                 SaveGame();
             }
             wchar_t actionBuf[64];
-            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"MODULE MAXED");
-            else swprintf_s(actionBuf, L"TUNE MODULE   %lld", cost);
+            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"MAX LEVEL");
+            else swprintf_s(actionBuf, L"UPGRADE MODULE   %lld", cost);
             drawAction(detailX, actionY, std::min(310.0f * ui, infoW),
                        actionBuf, detailR, detailG, detailB,
                        canBuy || curLv >= md.maxLv, actionHover);
@@ -4578,7 +4855,7 @@ void Scene_Shop(const SceneCtx& c) {
                      std::min(280.0f * ui, detailW * 0.72f),
                      theme.r, theme.g, theme.b, 0.76f);
             const wchar_t* ownership = equipped ? L"CURRENTLY ROUTED"
-                                  : (owned ? L"OWNED / READY TO ROUTE" : L"LOCKED / PURCHASE TO ROUTE");
+                                  : (owned ? L"OWNED / READY" : L"LOCKED / PURCHASE TO UNLOCK");
             DrawShadowedText(g_TextS, ownership, detailX, infoY + 90.0f * ui,
                              0.40f * ui, theme.r, theme.g, theme.b,
                              0.88f * detailA, 0.60f);
@@ -4603,8 +4880,8 @@ void Scene_Shop(const SceneCtx& c) {
                 ApplyAccentTheme();
                 SaveGame();
             }
-            const wchar_t* actionLabel = equipped ? L"PROFILE ACTIVE"
-                                    : (owned ? L"ROUTE PROFILE" : L"INSTALL PROFILE");
+            const wchar_t* actionLabel = equipped ? L"EQUIPPED"
+                                    : (owned ? L"EQUIP" : L"UNLOCK");
             drawAction(detailX, actionY, std::min(310.0f * ui, infoW),
                        actionLabel, theme.r, theme.g, theme.b,
                        actionEnabled || equipped, actionHover);
@@ -4670,7 +4947,7 @@ void Scene_Shop(const SceneCtx& c) {
                              detailR, detailG, detailB, 0.78f * detailA, 0.60f);
             drawAction(detailX, contentBottom - 48.0f * ui,
                        std::min(310.0f * ui, infoW),
-                       L"CATALOGUE ONLY", detailR, detailG, detailB, false, false);
+                       L"PASSIVE", detailR, detailG, detailB, false, false);
         } else {
             DrawShadowedText(g_TextS, L"SELECT A MODULE TO PREPARE THE RUN",
                              detailX, infoY, 0.44f * ui,
@@ -5458,13 +5735,13 @@ void Scene_Shop(const SceneCtx& c) {
 
         auto metaNodeCode = [&](int id) -> const wchar_t* {
             switch (id) {
-            case META_HP:       return L"SYS_NODE : HP_UPGRADE";
-            case META_DMG:      return L"SYS_NODE : DAMAGE_CORE";
-            case META_MOVE:     return L"SYS_NODE : MOBILITY_DRIVE";
-            case META_VISION:   return L"SYS_NODE : SIGHT_ARRAY";
-            case META_STARTAUG: return L"SYS_NODE : START_MODULE";
-            case META_ID_SLOT:  return L"SYS_NODE : IDENTITY_SOCKET";
-            default:            return L"SYS_NODE : UNKNOWN";
+            case META_HP:       return L"STAR NODE : HP UPLINK";
+            case META_DMG:      return L"STAR NODE : DAMAGE CORE";
+            case META_MOVE:     return L"STAR NODE : MOBILITY DRIVE";
+            case META_VISION:   return L"STAR NODE : SIGHT ARRAY";
+            case META_STARTAUG: return L"STAR NODE : START MODULE";
+            case META_ID_SLOT:  return L"STAR NODE : IDENTITY SOCKET";
+            default:            return L"STAR NODE : UNKNOWN";
             }
         };
 
@@ -5737,7 +6014,7 @@ void Scene_Shop(const SceneCtx& c) {
                     const AugDef& ad = ALL_AUGS[ai];
                     GetRarityColor(ad.rarity, sr, sg, sb);
                     filled = 4; total = 6;
-                    id = L"SYS_NODE : MODULE_CATALOG";
+                    id = L"STAR NODE : MODULE CATALOG";
                     title = ad.locName[li];
                     desc = AugDesc(ad);
                     if (!desc || !desc[0]) desc = L"IN-RUN MODULE";
@@ -5756,7 +6033,7 @@ void Scene_Shop(const SceneCtx& c) {
         if (false) {
         if (s_selKey < 0) {
             float a = rightWake;
-            drawProductHeader(L"SYS_NODE : EMPTY", L10n(L"\uBE48 \uBCC4\uC790\uB9AC \uC9C0\uB3C4", L"EMPTY STAR FIELD"),
+            drawProductHeader(L"STAR NODE : EMPTY", L10n(L"\uBE48 \uBCC4\uC790\uB9AC \uC9C0\uB3C4", L"EMPTY STAR FIELD"),
                               sr, sg, sb, 0.92f * a);
             g_TextS.Draw(L10n(L"\uB2E4\uB978 \uADA4\uB3C4\uB97C \uC120\uD0DD", L"SELECT ANOTHER ORBIT"), rInX, bodyY + 28.0f * uiS,
                          0.58f * uiS, 0.64f, 0.74f, 0.88f, 0.72f * a);
@@ -5863,7 +6140,7 @@ void Scene_Shop(const SceneCtx& c) {
                 GetRarityColor(ad.rarity, cr2, cg2, cb2);
 
                 const wchar_t* augName = ad.locName[li];
-                drawProductHeader(L"SYS_NODE : MODULE_CATALOG", augName, cr2, cg2, cb2, da);
+                drawProductHeader(L"STAR NODE : MODULE CATALOG", augName, cr2, cg2, cb2, da);
 
                 const float gridX = infoX + 18.0f * uiS;
                 const float gridW = infoW - 36.0f * uiS;
@@ -6320,6 +6597,14 @@ static void Scene_CodexInline(const SceneCtx& c) {
     static bool  s_dragMoved = false;
     static float s_dragAccum = 0.0f;
     static double s_dragLastY = 0.0;
+    static bool  s_prevSearchBackspace = false;
+    static float s_searchBackspaceT = 0.0f;
+    static bool  s_searchBackspaceRepeating = false;
+    static float s_searchHover = 0.0f;
+    static bool  s_searchFocused = false;
+    static std::wstring s_prevSearch;
+
+    g_CodexSearchInputEnabled = s_searchFocused && !s_backExit;
 
     float dt = delta; if (dt > 0.05f) dt = 0.05f;
     g_CodexEntryT += dt;
@@ -6332,6 +6617,38 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const bool rawEsc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
     const bool escClick = rawEsc && !s_prevEsc;
     s_prevEsc = rawEsc;
+
+    const bool rawSearchBackspace = c.window &&
+        glfwGetKey(c.window, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
+    if (!s_searchFocused || !rawSearchBackspace) {
+        s_searchBackspaceT = 0.0f;
+        s_searchBackspaceRepeating = false;
+    } else if (!s_prevSearchBackspace) {
+        if (g_CodexSearchLen > 0)
+            g_CodexSearch[--g_CodexSearchLen] = 0;
+        s_searchBackspaceT = 0.0f;
+        s_searchBackspaceRepeating = false;
+    } else if (g_CodexSearchLen > 0) {
+        s_searchBackspaceT += dt;
+        const float repeatDelay = s_searchBackspaceRepeating ? 0.055f : 0.30f;
+        if (s_searchBackspaceT >= repeatDelay) {
+            g_CodexSearch[--g_CodexSearchLen] = 0;
+            s_searchBackspaceT = 0.0f;
+            s_searchBackspaceRepeating = true;
+        }
+    }
+    s_prevSearchBackspace = rawSearchBackspace;
+
+    const std::wstring currentSearch(g_CodexSearch);
+    if (currentSearch != s_prevSearch) {
+        s_prevSearch = currentSearch;
+        for (int i = 0; i < CAT_COUNT; ++i) {
+            s_displaySlot[i] = 0.0f;
+            s_displayTarget[i] = 0.0f;
+        }
+        s_prevSel = -9999;
+        s_decryptT = 0.0f;
+    }
 
     const bool inputReady = !s_backExit && g_CodexEntryT >= 0.55f;
     auto beginBack = [&]() {
@@ -6389,6 +6706,10 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float rootW = std::min(360.0f * uiS, mainBW * 0.70f);
     const float rootH = mainBH;
     const float rootGap = mainGap;
+    // Keep the archive columns anchored to the existing canvas, while the
+    // left command rail itself sits in the lower-left corner.
+    const float rootTotalH = rootH * (CAT_COUNT + 1) + rootGap * CAT_COUNT;
+    const float railY = sh - rootTotalH - 48.0f * uiS;
     const InlineThreeColumnLayout columns = BuildInlineThreeColumnLayout(
         sw, sh, uiS, rootX, rootY, rootW, rootH);
     // Match the RUN_CONFIG canvas bounds so both inline screens carry the
@@ -6416,7 +6737,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float archiveW = archiveRight - archiveX;
     const float archiveH = depth2H + 8.0f * uiS;
 
-    DrawSharedMenuDim(sw, sh, mainX, mainY, mainBW, mainTotalH,
+    DrawSharedMenuDim(sw, sh, mainX, railY, mainBW, mainTotalH,
                       std::max(oldMenuA, wake), true);
 
     struct RootDef { const wchar_t* route; const wchar_t* sub; float r, g, b; };
@@ -6501,13 +6822,13 @@ static void Scene_CodexInline(const SceneCtx& c) {
 
     // Depth 1 root.
     BindMainShader();
-    drawRect(rootX - 36.0f, rootY - 20.0f,
+    drawRect(rootX - 36.0f, railY - 20.0f,
              1.2f, rootH * 4.0f + rootGap * 3.0f + 40.0f,
              0.48f, 0.82f, 1.00f, 0.13f * wake);
     for (int i = 0; i < CAT_COUNT + 1; ++i) {
         const bool isBack = (i == CAT_COUNT);
         const float tx = rootX;
-        const float ty = rootY + (float)i * (rootH + rootGap);
+        const float ty = railY + (float)i * (rootH + rootGap);
         const float hitX = tx - 26.0f;
         const float hitRight = std::min(tx + rootW + 18.0f * uiS, depth2X - 34.0f * uiS);
         const bool hov = inputReady
@@ -6541,20 +6862,25 @@ static void Scene_CodexInline(const SceneCtx& c) {
     };
     CItem items[512];
     int itemCount = 0;
+    static const int kCodexMobIds[] = {
+        CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR
+    };
     auto addGroup = [&](const wchar_t* label, float r, float g, float b) {
         if (itemCount < 512) items[itemCount++] = { true, -1, label, true, r, g, b };
     };
-    auto addItem = [&](int key, const wchar_t* label, bool seen, float r, float g, float b) {
+    auto addItem = [&](int key, const wchar_t* label, bool seen,
+                       const wchar_t* const* searchNames, int searchNameCount,
+                       float r, float g, float b) {
+        if (g_CodexSearchLen > 0 && (!seen ||
+            !CodexMatchAny(searchNames, searchNameCount))) return;
         if (itemCount < 512) items[itemCount++] = { false, key, label, seen, r, g, b };
     };
 
     if (s_cat == 0) {
         addGroup(L"SIGNAL CLASS", 0.48f, 0.82f, 1.00f);
-        static const int activeMobIds[] = {
-            CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR
-        };
-        for (int i : activeMobIds)
+        for (int i : kCodexMobIds)
             addItem(i, CodexMobSeen(i) ? MobName(i) : L"???", CodexMobSeen(i),
+                    MobLocalizedNames(i), LANG_COUNT,
                     0.48f, 0.82f, 1.00f);
     } else if (s_cat == 1) {
         int sorted[AUG_TOTAL], n = 0;
@@ -6571,14 +6897,29 @@ static void Scene_CodexInline(const SceneCtx& c) {
                 prevR = rar;
             }
             addItem(i, CodexAugSeen(i) ? AugName(ALL_AUGS[i]) : L"???",
-                    CodexAugSeen(i), rr, rg, rb);
+                    CodexAugSeen(i), ALL_AUGS[i].locName, LANG_COUNT, rr, rg, rb);
         }
     } else {
         addGroup(L"APEX SIGNAL", 0.96f, 0.76f, 0.30f);
         for (int i = 0; i < BOSS_CODEX_COUNT; ++i)
             addItem(i, BossCodexSeen(i) ? BossCodexName(i) : L"???",
-                    BossCodexSeen(i), 0.96f, 0.76f, 0.30f);
+                     BossCodexSeen(i), BossCodexLocalizedNames(i), LANG_COUNT,
+                     0.96f, 0.76f, 0.30f);
     }
+
+    int unlockTotal[CAT_COUNT] = {
+        (int)(sizeof(kCodexMobIds) / sizeof(kCodexMobIds[0])), 0, BOSS_CODEX_COUNT
+    };
+    int unlockSeen[CAT_COUNT] = {};
+    for (int id : kCodexMobIds)
+        if (CodexMobSeen(id)) ++unlockSeen[0];
+    for (int i = 0; i < AUG_TOTAL; ++i) {
+        if (AugRemoved(ALL_AUGS[i].type)) continue;
+        ++unlockTotal[1];
+        if (CodexAugSeen(i)) ++unlockSeen[1];
+    }
+    for (int i = 0; i < BOSS_CODEX_COUNT; ++i)
+        if (BossCodexSeen(i)) ++unlockSeen[2];
 
     int observedCount = 0;
     int recordCount = 0;
@@ -6594,7 +6935,157 @@ static void Scene_CodexInline(const SceneCtx& c) {
     // The restored layout deliberately carries no page header or enclosing
     // archive panel: the root commands, orbit, and record itself are enough.
     (void)archivePath;
-    (void)archiveProgress;
+
+    // Use the open upper-left canvas for search and a compact global unlock
+    // summary. Search filters only discovered records in the active category.
+    auto codexText = [&](const wchar_t* kr, const wchar_t* en) -> const wchar_t* {
+        return nli == 0 ? kr : en;
+    };
+    const float utilityX = mainX;
+    const float utilityW = std::min(sw * 0.40f, rootW + 120.0f * uiS);
+    const float searchW = std::max(180.0f * uiS,
+                                   std::min(420.0f * uiS,
+                                            utilityW - 24.0f * uiS));
+    const float utilityY = std::max(76.0f, sh * 0.11f);
+    const float searchY = utilityY + 30.0f * uiS;
+    const float searchH = 46.0f * uiS;
+    const bool searchHover = inputReady && mx >= utilityX && mx <= utilityX + searchW
+        && my >= searchY && my <= searchY + searchH;
+    s_searchHover = UiApproach(s_searchHover, searchHover ? 1.0f : 0.0f, dt, 10.0f);
+    const float clearW = 32.0f * uiS;
+    const bool hasSearch = g_CodexSearchLen > 0;
+    const bool clearHover = hasSearch && inputReady
+        && mx >= utilityX + searchW - clearW && mx <= utilityX + searchW
+        && my >= searchY && my <= searchY + searchH;
+    const bool searchClick = (searchHover || clearHover) && lmb && !g_LmbPrev;
+    if (searchClick)
+        s_searchFocused = true;
+    else if (lmb && !g_LmbPrev)
+        s_searchFocused = false;
+    if (clearHover && searchClick)
+        CodexSearchClear();
+    g_CodexSearchInputEnabled = s_searchFocused && !s_backExit;
+
+    BindMainShader();
+    const wchar_t* searchTitle = s_searchFocused
+        ? codexText(L"\uAC80\uC0C9 / \uC785\uB825\uC911", L"SEARCH / ACTIVE")
+        : codexText(L"\uAC80\uC0C9", L"SEARCH");
+    DrawShadowedText(g_TextS, searchTitle,
+                     utilityX, utilityY, 0.46f * uiS,
+                     curRoot.r, curRoot.g, curRoot.b,
+                     (0.72f + 0.18f * s_searchFocused) * wake, 0.58f);
+    drawRect(utilityX, searchY, searchW, searchH,
+             0.010f, 0.020f, 0.038f,
+             (0.24f + 0.05f * s_searchHover + 0.06f * s_searchFocused) * wake);
+    drawConstellFrame(utilityX, searchY, searchW, searchH,
+                      curRoot.r, curRoot.g, curRoot.b,
+                      (0.28f + 0.22f * s_searchHover +
+                       0.18f * s_searchFocused) * wake,
+                      12.0f * uiS, 2.2f * uiS,
+                      0.025f * s_searchFocused * wake);
+    const float searchMidY = searchY + searchH * 0.50f;
+    const float searchIconX = utilityX + 20.0f * uiS;
+    DrawVisibleConstellNode(searchIconX, searchMidY, 4.0f * uiS,
+                            curRoot.r, curRoot.g, curRoot.b,
+                            (0.56f + 0.24f * s_searchFocused) * wake,
+                            false);
+    LogoLine(searchIconX + 3.0f * uiS, searchMidY + 3.0f * uiS,
+             searchIconX + 9.0f * uiS, searchMidY + 9.0f * uiS,
+             1.2f * uiS, curRoot.r, curRoot.g, curRoot.b,
+             (0.54f + 0.22f * s_searchFocused) * wake);
+    std::wstring searchDisplay;
+    if (hasSearch)
+        searchDisplay = std::wstring(g_CodexSearch);
+    else if (!s_searchFocused)
+        searchDisplay = std::wstring(codexText(L"\uC785\uB825\uD558\uC5EC \uAC80\uC0C9", L"TYPE TO FILTER"));
+    const bool searchCaretOn = s_searchFocused && (((int)(now * 2.0f)) & 1) == 0;
+    if (searchCaretOn)
+        searchDisplay += L"|";
+    float searchSc = 0.48f * uiS;
+    const float searchMaxW = std::max(30.0f * uiS, searchW - clearW - 58.0f * uiS);
+    while (searchSc > 0.30f * uiS &&
+           g_TextS.Width(searchDisplay.c_str(), searchSc) > searchMaxW)
+        searchSc -= 0.025f * uiS;
+    const float searchTextX = utilityX + 40.0f * uiS;
+    const float searchTextY = searchMidY
+        - g_TextS.Height(searchDisplay.c_str(), searchSc) * 0.50f;
+    DrawShadowedText(g_TextS, searchDisplay.c_str(),
+                     searchTextX, searchTextY,
+                     searchSc,
+                     hasSearch ? 0.92f : 0.42f,
+                     hasSearch ? 0.96f : 0.56f,
+                     hasSearch ? 1.00f : 0.70f,
+                     (hasSearch ? 0.92f : 0.70f) * wake, 0.62f);
+    if (hasSearch) {
+        const float clearSc = 0.42f * uiS;
+        DrawShadowedText(g_TextS, L"X",
+                         utilityX + searchW - clearW * 0.68f,
+                         searchMidY - g_TextS.Height(L"X", clearSc) * 0.50f,
+                         clearSc,
+                         clearHover ? 1.0f : 0.58f,
+                         clearHover ? 1.0f : 0.70f,
+                         clearHover ? 1.0f : 0.82f,
+                         (clearHover ? 0.98f : 0.62f) * wake, 0.60f);
+    }
+
+    const float progressTitleY = searchY + searchH + 24.0f * uiS;
+    DrawShadowedText(g_TextS,
+                     codexText(L"\uB3C4\uAC10 \uD574\uAE08 \uBAA9\uB85D", L"UNLOCK PROGRESS"),
+                     utilityX, progressTitleY, 0.48f * uiS,
+                     curRoot.r, curRoot.g, curRoot.b, 0.84f * wake, 0.58f);
+    const float progressBarX = utilityX;
+    const float progressBarW = std::max(48.0f * uiS,
+                                        std::min(320.0f * uiS,
+                                                 utilityW - 16.0f * uiS));
+    const float resultSc = 0.32f * uiS;
+    const float resultW = g_TextS.Width(archiveProgress, resultSc);
+    DrawShadowedText(g_TextS, archiveProgress,
+                     progressBarX + progressBarW - resultW, progressTitleY + 2.0f * uiS,
+                     resultSc, 0.62f, 0.72f, 0.86f, 0.66f * wake, 0.52f);
+    // Give each unlock entry its own two-line block: a large readout first,
+    // then the archive line directly underneath it.  This keeps the progress
+    // data legible without competing with the search field above.
+    const float progressRowY = progressTitleY + 32.0f * uiS;
+    const float progressRowStep = 68.0f * uiS;
+    for (int i = 0; i < CAT_COUNT; ++i) {
+        const float rowY = progressRowY + (float)i * progressRowStep;
+        const RootDef& progressRoot = ROOTS[i];
+        DrawShadowedText(g_TextS, progressRoot.route,
+                         utilityX, rowY, 0.62f * uiS,
+                         progressRoot.r, progressRoot.g, progressRoot.b,
+                         (s_cat == i ? 0.98f : 0.72f) * wake, 0.54f);
+        wchar_t progressBuf[32];
+        swprintf_s(progressBuf, L"%02d / %02d", unlockSeen[i], unlockTotal[i]);
+        const float progressSc = 0.52f * uiS;
+        const float progressW = g_TextS.Width(progressBuf, progressSc);
+        DrawShadowedText(g_TextS, progressBuf,
+                         progressBarX + progressBarW - progressW, rowY, progressSc,
+                         0.86f, 0.92f, 1.00f, 0.88f * wake, 0.54f);
+        const float trackY = rowY + 32.0f * uiS;
+        const float fillW = progressBarW * (unlockTotal[i] > 0
+            ? (float)unlockSeen[i] / (float)unlockTotal[i] : 0.0f);
+        DrawVisibleConstellLine(progressBarX, trackY,
+                                progressBarX + progressBarW, trackY,
+                                0.75f * uiS, progressRoot.r, progressRoot.g, progressRoot.b,
+                                0.18f * wake);
+        if (fillW > 0.0f)
+            DrawVisibleConstellLine(progressBarX, trackY,
+                                    progressBarX + fillW, trackY,
+                                    1.7f * uiS, progressRoot.r, progressRoot.g, progressRoot.b,
+                                    0.76f * wake);
+        DrawVisibleConstellNode(progressBarX + fillW, trackY, 2.4f * uiS,
+                                progressRoot.r, progressRoot.g, progressRoot.b,
+                                0.64f * wake, false);
+    }
+
+    bool selectedVisible = false;
+    for (int i = 0; i < itemCount; ++i) {
+        if (!items[i].isGroup && items[i].key == s_sel[s_cat]) {
+            selectedVisible = true;
+            break;
+        }
+    }
+    if (!selectedVisible) s_sel[s_cat] = -1;
 
     if (s_sel[s_cat] < 0) {
         for (int i = 0; i < itemCount; ++i) {
@@ -6775,7 +7266,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float hitH = 100.0f * uiS;
         const bool hov = inputReady && mx >= ax - 80.0f * uiS && mx <= ax + hitW &&
                          my >= ay - hitH * 0.5f && my <= ay + hitH * 0.5f;
-        if (hov && lmb && !g_LmbPrev && !s_dragMoved && itm.seen) {
+        if (hov && lmb && !g_LmbPrev && !s_dragMoved) {
             float jump = (float)slot - (float)selectedSlot;
             while (jump > (float)recordSlotCount * 0.5f) jump -= (float)recordSlotCount;
             while (jump < -(float)recordSlotCount * 0.5f) jump += (float)recordSlotCount;
@@ -6800,6 +7291,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float miniFocus = (s_cat == 1) ? 38.0f : 24.0f;
         const float miniR = (miniBase + miniFocus * focusScale) *
                            (0.58f + 0.42f * reveal) * uiS;
+        const float signalR = itm.seen ? itm.r : 0.26f;
+        const float signalG = itm.seen ? itm.g : 0.32f;
+        const float signalB = itm.seen ? itm.b : 0.40f;
         // Local black halo around each record keeps the constellation core
         // legible without darkening the entire archive surface.
         DrawConstellationDisc(miniX, ay, miniR * 2.80f,
@@ -6808,25 +7302,36 @@ static void Scene_CodexInline(const SceneCtx& c) {
         // Category-colored core light: every record gets a restrained glow,
         // while the selected record naturally becomes brighter via `active`.
         DrawConstellationDisc(miniX, ay, miniR * 1.14f,
-                              itm.r, itm.g, itm.b,
-                              (0.055f + 0.095f * active) * reveal);
-        DrawArchiveConstellation(miniX, ay, miniR, s_cat, itm.key,
-                                 now * 0.18f, itm.r, itm.g, itm.b,
-                                 (0.28f + 0.66f * active) * reveal, uiS);
+                              signalR, signalG, signalB,
+                              (itm.seen ? (0.055f + 0.095f * active)
+                                        : (0.018f + 0.030f * active)) * reveal);
+        if (s_cat == 0 && !itm.seen) {
+            DrawUnknownConstellation(miniX, ay, miniR * 1.12f,
+                                     now * 0.18f, (0.58f + 0.30f * active)
+                                     * reveal, uiS, itm.key);
+        } else {
+            DrawArchiveConstellation(miniX, ay, miniR, s_cat, itm.key,
+                                     now * 0.18f, signalR, signalG, signalB,
+                                     (0.28f + 0.66f * active) * reveal, uiS);
+        }
         const float lineLength = (250.0f + 130.0f * s_itemHover[slot]) * uiS;
         const float lineEndX = ax + lineLength;
         LogoLine(miniX + miniR * 0.68f, ay, lineEndX, ay,
-                 (0.96f + 0.56f * s_itemHover[slot]) * uiS, itm.r, itm.g, itm.b,
-                 (0.12f + 0.34f * active) * reveal);
+                 (0.96f + 0.56f * s_itemHover[slot]) * uiS,
+                 signalR, signalG, signalB,
+                 (itm.seen ? 0.12f : 0.06f
+                     + 0.12f * active) * reveal);
         DrawVisibleConstellNode(lineEndX, ay, (isSel ? 4.0f : 2.8f) * uiS,
-                                itm.r, itm.g, itm.b,
-                                (0.20f + 0.54f * active) * reveal, false);
+                                signalR, signalG, signalB,
+                                (itm.seen ? 0.20f : 0.10f
+                                    + 0.24f * active) * reveal, false);
         if (isSel)
             // The vertical selection datum is a stable anchor; hover only
             // changes the horizontal line length and must not shift this bar.
             drawRect(ax + 118.0f * uiS,
                      ay - 22.0f * uiS, 2.0f * uiS, 44.0f * uiS,
-                     itm.r, itm.g, itm.b, 0.76f * reveal);
+                     signalR, signalG, signalB,
+                     (itm.seen ? 0.76f : 0.42f) * reveal);
         float tsc = (isSel ? 0.68f : 0.58f) * uiS;
         DrawShadowedText(g_TextS, itm.label, ax + 132.0f * uiS,
                          ay - g_TextS.Height(itm.label, tsc) * 0.5f,
@@ -7004,7 +7509,14 @@ static void Scene_CodexInline(const SceneCtx& c) {
     };
     auto selectedDesc = [&]() -> const wchar_t* {
         int key = s_sel[s_cat];
-        if (!selectedSeen()) return nli == 0 ? L"\uBBF8\uBC1C\uACAC \uAE30\uB85D" : L"UNDISCOVERED SIGNAL";
+        if (!selectedSeen()) {
+            static const wchar_t* kUnknownDesc[3] = {
+                L"\uBBF8\uD655\uC778 \uC2E0\uD638",
+                L"UNDISCOVERED SIGNAL",
+                L"\u672A\u78BA\u8A8D\u30B7\u30B0\u30CA\u30EB"
+            };
+            return kUnknownDesc[std::max(0, std::min(2, li))];
+        }
         if (s_cat == 0) return MobDesc(key);
         if (s_cat == 1) return AugDesc(ALL_AUGS[key]);
         return BossCodexDesc(key);
@@ -7035,12 +7547,17 @@ static void Scene_CodexInline(const SceneCtx& c) {
     }
 
     wchar_t idBuf[96];
-    if (s_cat == 0) swprintf_s(idBuf, L"ID : ENTITY_%02d", selKey);
+    if (s_cat == 0) {
+        if (seen) swprintf_s(idBuf, L"ID : ENTITY_%02d", selKey);
+        else      swprintf_s(idBuf, L"ID : ENTITY_??");
+    }
     else if (s_cat == 1) swprintf_s(idBuf, L"ID : MODULE_%03d", selKey);
     else swprintf_s(idBuf, L"ID : APEX_%02d", selKey);
     wchar_t statBuf[128];
     if (s_cat == 0)
-        swprintf_s(statBuf, L"CLASS : HOSTILE_SIGNAL | STATUS : %ls", seen ? L"CATALOGUED" : L"NO_DATA");
+        swprintf_s(statBuf, seen
+            ? L"CLASS : HOSTILE_SIGNAL | STATUS : CATALOGUED"
+            : L"CLASS : UNKNOWN_SIGNAL | STATUS : UNRESOLVED");
     else if (s_cat == 1)
         swprintf_s(statBuf, L"CLASS : MODULE_ARCHIVE | STATUS : %ls", seen ? L"ACQUIRED" : L"NO_DATA");
     else
@@ -7079,8 +7596,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
                   0.88f * rightWake, selKey + 19);
 
     wchar_t recordBuf[128];
-    if (s_cat == 0)
-        swprintf_s(recordBuf, L"RECORD TYPE : HOSTILE ENTITY | ACCESS : READ ONLY");
+    if (s_cat == 0) {
+        if (seen) swprintf_s(recordBuf,
+                             L"RECORD TYPE : HOSTILE ENTITY | ACCESS : READ ONLY");
+        else swprintf_s(recordBuf,
+                        L"RECORD TYPE : UNKNOWN SIGNAL | ACCESS : LOCKED");
+    }
     else if (s_cat == 1)
         swprintf_s(recordBuf, L"RECORD TYPE : AUGMENT MODULE | SOURCE : IN-RUN");
     else
@@ -7095,6 +7616,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
         s_backExit = false;
         s_backOutT = 0.0f;
         s_CodexBackRequested = false;
+        s_searchFocused = false;
+        g_CodexSearchInputEnabled = false;
         s_MainMenuCodexPanel = false;
         s_MainMenuResumeFromPanel = true;
         g_MainMenuEntryT = 1.0f;
@@ -7854,6 +8377,7 @@ void Scene_Codex(const SceneCtx& c) {
                 0.96f * wake);
     if (backHov && lmb && !g_LmbPrev) {
         CodexSearchClear();
+        g_CodexSearchInputEnabled = false;
         g_GameManager.currentState = GameState::MAIN_MENU;
     }
 }
@@ -8029,7 +8553,7 @@ void FinalizeLoadout(const SceneCtx& c, int wIdx) {
                 g_GameManager.takenOnce[aidx] = true;
             ApplyAugmentSideEffects(atype, (int)sw, (int)sh);
         }
-        SyncPlayerWindowAfterLoadout();
+        SyncPlayerBoundsAfterLoadout();
     }
     float trialHpMul = TrialPlayerMaxHpMult();
     if (trialHpMul < 0.999f)
@@ -8039,10 +8563,12 @@ void FinalizeLoadout(const SceneCtx& c, int wIdx) {
     g_PrevHP               = g_Stats.maxHP;
     int startAugs = g_MetaStartAugs + ((g_CreativeMode) ? g_CreativeStartAugs : 0);
     if (startAugs > 0) {
-        g_BossRewardPicksLeft = startAugs;
-        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                     g_Stats.distAugTaken, g_CreativeMode);
-        g_GameManager.currentState = GameState::AUG_SELECT;
+        g_GameManager.ClearAugmentRewardQueue();
+        for (int i = 0; i < startAugs; i++)
+            g_GameManager.QueueAugmentReward(false, g_CreativeMode);
+        g_BossRewardPicksLeft = 0;
+        if (!g_GameManager.ActivateNextAugmentReward())
+            g_GameManager.currentState = GameState::READY;
     } else {
         g_GameManager.currentState = GameState::READY;
     }
@@ -8070,7 +8596,7 @@ void Scene_JobSelect(const SceneCtx& c) {
                 const float FW = FLOW_PANEL_W, FH = FLOW_PANEL_H;
                 float fx, fy, fcy;
                 DrawMenuBackground(sw, sh, delta);
-                SceneFlowWindow(sw, sh, FW, FH, L"career.exe", 0.55f, 0.7f, 1.0f, fx, fy, fcy, 0.0f);
+                SceneFlowWindow(sw, sh, FW, FH, L"ASTRAL CAREER", 0.55f, 0.7f, 1.0f, fx, fy, fcy, 0.0f);
                 const float backY = FlowBackY(fy, FH);
 
                 int li = LangIndex();
@@ -8193,8 +8719,8 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                              0.48f, 0.68f, 0.75f, 0.82f, 0.75f);
                 struct BossOpt { const wchar_t* l; int v; };
                 BossOpt bOpts[5] = {
-                    {L"None",-1}, {L"VOLLEY.sys",2}, {L"TESS.glitch",10},
-                    {L"FORK.worm",8}, {L"ETHER_SWORD",20}
+                    {L"None",-1}, {L"VOLLEY",2}, {L"TESSERACT",10},
+                    {L"FORK",8}, {L"ETHER SWORD",20}
                 };
                 const float BBW = 112.0f;
                 for (int i = 0; i < 5; i++) {
@@ -8329,7 +8855,1875 @@ void Scene_CreativeConfig(const SceneCtx& c) {
 
 // PLAY 패널 — "STAR CHART": 무기 성좌(좌) + 굴레 궤도 띠(중) + 런 요약/LAUNCH(우).
 // 모든 선택지는 별 노드로 표현하고, 글로우는 선택된 별에만 제한한다.
+static void Scene_RunConfigInlineOld(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, dt = std::min(c.delta, 0.05f);
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const bool lmbClick = lmb && !g_LmbPrev;
+
+    static float entry = 0.0f;
+    static float exitT = 0.0f;
+    static bool exiting = false;
+    static bool launchExit = false;
+    static float launchT = 0.0f;
+    static bool prevEsc = false, prevRmb = false;
+    static int weapon = 0;
+    static float weaponHover[2] = {};
+    static float trialHover[6] = {};
+    static float backHover = 0.0f;
+    static float launchHover = 0.0f;
+    static float statT[6] = { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f };
+    static const float kStatTargets[2][6] = {
+        { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
+        { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
+    };
+
+    if (entry <= 0.0f && !exiting) {
+        weapon = std::max(0, std::min(1, s_RcWeapon));
+        for (int i = 0; i < 2; ++i) weaponHover[i] = 0.0f;
+        for (int i = 0; i < 6; ++i) trialHover[i] = 0.0f;
+        backHover = launchHover = 0.0f;
+        int activeTrialCount = 0;
+        for (int i = 0; i < 6; ++i)
+            if (s_RcTrialNodes[i]) ++activeTrialCount;
+        if (activeTrialCount == 0 && s_TrialTargetCount > 0) {
+            s_RcTrialNodes[0] = true;
+            activeTrialCount = 1;
+        }
+        s_TrialTargetCount = activeTrialCount;
+        launchExit = false;
+        launchT = 0.0f;
+    }
+
+    entry = std::min(1.0f, entry + dt);
+    if (launchExit) launchT = std::min(0.50f, launchT + dt);
+
+    const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool rmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool backInput = (esc && !prevEsc) || (rmb && !prevRmb);
+    prevEsc = esc;
+    prevRmb = rmb;
+
+    const float entryIn = Smoothstep(LogoClamp01((entry - 0.16f) / 0.42f));
+    const float entryHeader = Smoothstep(LogoClamp01((entry - 0.04f) / 0.34f));
+    if (backInput && !exiting && !launchExit && entry >= 0.55f)
+        exiting = true;
+    if (exiting) exitT = std::min(0.42f, exitT + dt);
+    const float backP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
+    const float launchP = Smoothstep(LogoClamp01((launchT - 0.28f) / 0.22f));
+    const float contentA = entryIn * (1.0f - backP) * (1.0f - launchP);
+    const bool ready = !exiting && !launchExit && entry >= 0.55f;
+
+    SetSceneTextureReveal(exiting
+        ? std::max(0.0f, 1.0f - backP)
+        : Smoothstep(LogoClamp01((entry - 0.02f) / 0.72f)));
+
+    const int li = std::max(0, std::min(2, LangIndex()));
+    const float uiS = std::max(0.70f,
+        std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
+    const float pageL = std::max(42.0f, 72.0f * uiS);
+    const float pageR = sw - std::max(42.0f, 72.0f * uiS);
+    const float pageW = std::max(420.0f, pageR - pageL);
+    const float headerY = std::max(30.0f, 48.0f * uiS);
+    const float footerY = sh - std::max(62.0f, 84.0f * uiS);
+    const float footerH = 42.0f * uiS;
+    const float bodyTop = headerY + 76.0f * uiS;
+    const float bodyBottom = footerY - 26.0f * uiS;
+    const float infoX = pageL + pageW * 0.75f;
+    const float infoW = std::max(210.0f, pageR - infoX);
+    const float centerL = pageL;
+    const float centerR = infoX - 46.0f * uiS;
+    const float centerW = std::max(320.0f, centerR - centerL);
+    const float centerY = bodyTop + (bodyBottom - bodyTop) * 0.50f;
+    // One central hero chart replaces the previous left constellation column.
+    // The right column remains reserved for the secondary trial controls.
+    const float chartCX = centerL + centerW * 0.46f;
+    const float chartCY = bodyTop + (bodyBottom - bodyTop) * 0.38f;
+    const float chartR = std::min(310.0f * uiS,
+        std::min(centerW * 0.24f, (bodyBottom - bodyTop) * 0.30f));
+    const float now = (float)glfwGetTime();
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr float kTau = 6.28318530717958647692f;
+
+    static const wchar_t* kWeaponNames[2][3] = {
+        { L"소총", L"RIFLE", L"ライフル" },
+        { L"정전기장", L"STATIC FIELD", L"静電場" }
+    };
+    static const wchar_t* kWeaponRoutes[2] = { L"RIFLE", L"FIELD" };
+    static const wchar_t* kWeaponSub[2][3] = {
+        { L"정밀 단일 대상", L"PRECISION / SINGLE TARGET", L"精密 / 単体" },
+        { L"지속 범위 제압", L"AREA CONTROL / SUSTAINED", L"範囲制圧 / 継続" }
+    };
+    static const wchar_t* kStatNames[3][6] = {
+        { L"공격력", L"연사", L"간격", L"탄속", L"퍼짐", L"사거리" },
+        { L"DAMAGE", L"FIRE RATE", L"INTERVAL", L"SPEED", L"SPREAD", L"RANGE" },
+        { L"攻撃力", L"連射", L"間隔", L"弾速", L"拡散", L"射程" }
+    };
+    static const wchar_t* kStatValues[2][6] = {
+        { L"50", L"5.0/s", L"0.20s", L"1200", L"0.04", L"900" },
+        { L"18", L"CONT.", L"0.08s", L"320", L"0.15", L"180" }
+    };
+    static const wchar_t* kTrialNames[6][3] = {
+        { L"압도", L"OVERWHELMING", L"圧倒" },
+        { L"끈질김", L"RELENTLESS", L"執拗" },
+        { L"취약", L"FRAGILE", L"脆弱" },
+        { L"실명", L"BLIND", L"盲目" },
+        { L"가속", L"ACCELERATE", L"加速" },
+        { L"엘리트", L"ELITE", L"エリート" }
+    };
+    static const wchar_t* kTrialDesc[6][3] = {
+        { L"적 수 증가", L"MORE HOSTILES", L"敵数増加" },
+        { L"체력 회복 없음", L"NO RECOVERY", L"回復なし" },
+        { L"받는 피해 증가", L"DAMAGE TAKEN UP", L"被ダメージ増加" },
+        { L"시야 축소", L"REDUCED SIGHT", L"視界縮小" },
+        { L"적 이동속도 증가", L"FASTER HOSTILES", L"敵速度上昇" },
+        { L"엘리트만 등장", L"ELITES ONLY", L"エリートのみ" }
+    };
+    const float weaponR = weapon == 0 ? 0.28f : 1.00f;
+    const float weaponG = weapon == 0 ? 0.90f : 0.72f;
+    const float weaponB = weapon == 0 ? 1.00f : 0.24f;
+    const float trialR = 1.00f, trialG = 0.60f, trialB = 0.22f;
+    const int trialCount = std::max(0, std::min(6, s_TrialTargetCount));
+
+    for (int i = 0; i < 6; ++i)
+        statT[i] = UiApproach(statT[i], kStatTargets[weapon][i], dt, 8.0f);
+
+    // The persistent left field is the only page-wide contrast treatment.
+    // All other fields are local CircleTexture layers owned by this page.
+    DrawPersistentSceneLeftVignette(sw, sh, 0.26f);
+    BatchFlush();
+    DrawConstellationDisc(chartCX, chartCY, chartR * 1.42f,
+                          0.0f, 0.0f, 0.012f, 0.23f * contentA);
+    DrawConstellationDisc(chartCX, chartCY, chartR * 0.84f,
+                          weaponR * 0.10f, weaponG * 0.10f, weaponB * 0.12f,
+                          0.065f * contentA);
+    const float infoCX = infoX + infoW * 0.54f;
+    const float infoCY = bodyTop + (bodyBottom - bodyTop) * 0.52f;
+    const float infoFieldR = std::max(infoW * 0.92f, (bodyBottom - bodyTop) * 0.62f);
+    DrawConstellationDisc(infoCX, infoCY, infoFieldR,
+                          0.0f, 0.0f, 0.012f, 0.60f * contentA);
+    DrawConstellationDisc(infoCX - infoW * 0.05f, infoCY - 4.0f * uiS,
+                          infoFieldR * 0.58f,
+                          weaponR * 0.13f, weaponG * 0.13f, weaponB * 0.16f,
+                          0.10f * contentA);
+
+    // Header: text and one quiet datum line, with no enclosing surface.
+    DrawShadowedText(g_TextL, L"PLAY", pageL, headerY,
+                     1.16f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * entryHeader, 0.74f);
+    DrawShadowedText(g_TextS, L"// RUN PREPARATION", pageL + 78.0f * uiS,
+                     headerY + 9.0f * uiS, 0.50f * uiS,
+                     weaponR, weaponG, weaponB, 0.78f * entryHeader, 0.58f);
+    const wchar_t* escLabel[3] = { L"[ESC]", L"[ESC]", L"[ESC]" };
+    const float escW = g_TextS.Width(escLabel[li], 0.46f * uiS);
+    DrawShadowedText(g_TextS, escLabel[li], pageR - escW, headerY + 8.0f * uiS,
+                     0.46f * uiS, 0.68f, 0.78f, 0.88f, 0.72f * entryHeader, 0.54f);
+    LogoLine(pageL, headerY + 42.0f * uiS, pageR, headerY + 42.0f * uiS,
+             0.7f * uiS, weaponR, weaponG, weaponB, 0.12f * contentA);
+
+    // The constellation is the single central hero. Weapon selection is
+    // intentionally owned by the lower-left route, so this visual remains
+    // decorative and never becomes a second clickable control.
+    // CircleTexture is the hero's local contrast field: a soft dark core
+    // keeps the constellation readable on bright desktop content, while the
+    // colored passes make the selected weapon feel illuminated.
+    DrawConstellationDisc(chartCX, chartCY, chartR * 1.62f,
+                          0.0f, 0.0f, 0.012f, 0.30f * contentA);
+    DrawConstellationDisc(chartCX, chartCY, chartR * 1.38f,
+                          weaponR * 0.10f, weaponG * 0.10f, weaponB * 0.12f,
+                          (0.10f + 0.025f * sinf(now * 1.4f)) * contentA,
+                          false);
+    DrawConstellationDisc(chartCX, chartCY, chartR * 1.08f,
+                          weaponR * 0.12f, weaponG * 0.12f, weaponB * 0.15f,
+                          0.14f * contentA, false);
+    static const wchar_t* kNoLabel[6] = { L"", L"", L"", L"", L"", L"" };
+    const float heroBrightness = 0.52f + 0.12f * (0.5f + 0.5f * sinf(now * 1.7f));
+    DrawWeaponPowerConstellation(chartCX, chartCY, chartR,
+                                  statT, kNoLabel, kNoLabel, weapon,
+                                  now, heroBrightness * contentA, uiS,
+                                  weaponR, weaponG, weaponB);
+
+    // Legacy orbit/list layout retained as source fallback only; the active
+    // PLAY layout uses the right-side ON/OFF list below.
+    if (false) {
+    // Legacy shackle orbit. It is intentionally unreachable; the right-side
+    // trial rows below own the preparation input in the current layout.
+    const float orbitCX = chartCX + centerW * 0.27f;
+    const float orbitCY = chartCY;
+    const float orbitRX = std::min(184.0f * uiS, centerW * 0.18f);
+    const float orbitRY = std::min(96.0f * uiS, (bodyBottom - bodyTop) * 0.15f);
+    for (int ring = 0; ring < 2; ++ring) {
+        const float rx = orbitRX * (0.78f + 0.22f * ring);
+        const float ry = orbitRY * (0.78f + 0.22f * ring);
+        float px = orbitCX + cosf(now * (ring ? -0.04f : 0.05f)) * rx;
+        float py = orbitCY + sinf(now * (ring ? -0.04f : 0.05f)) * ry;
+        for (int s = 1; s <= 48; ++s) {
+            const float a = kTau * (float)s / 48.0f + now * (ring ? -0.04f : 0.05f);
+            const float nx = orbitCX + cosf(a) * rx;
+            const float ny = orbitCY + sinf(a) * ry;
+            if ((s + ring) % 5 != 2)
+                DrawVisibleConstellLine(px, py, nx, ny, 0.58f * uiS,
+                                        trialR, trialG, trialB,
+                                        (ring ? 0.09f : 0.15f) * contentA);
+            px = nx;
+            py = ny;
+        }
+    }
+    float trialX[6] = {}, trialY[6] = {};
+    for (int i = 0; i < 6; ++i) {
+        const float a = -kPi * 0.5f + kTau * (float)i / 6.0f + now * 0.045f;
+        trialX[i] = orbitCX + cosf(a) * orbitRX * 0.92f;
+        trialY[i] = orbitCY + sinf(a) * orbitRY * 0.92f;
+        const bool selected = i < trialCount;
+        const float nodeA = (selected ? 0.76f : 0.36f + 0.24f * trialHover[i]) * contentA;
+        if (selected)
+            DrawConstellationDisc(trialX[i], trialY[i],
+                                  (11.0f + 2.5f * sinf(now * 2.2f + i)) * uiS,
+                                  trialR, trialG, trialB, 0.09f * nodeA);
+        DrawVisibleConstellNode(trialX[i], trialY[i],
+                                (selected ? 5.2f : 3.6f + trialHover[i]) * uiS,
+                                trialR, trialG, trialB, nodeA,
+                                selected, selected);
+        wchar_t slotLabel[8];
+        swprintf_s(slotLabel, L"S%d", i + 1);
+        const float labelW = g_TextS.Width(slotLabel, 0.34f * uiS);
+        DrawShadowedText(g_TextS, slotLabel, trialX[i] - labelW * 0.5f,
+                         trialY[i] + 17.0f * uiS, 0.34f * uiS,
+                         selected ? trialR : 0.60f, selected ? trialG : 0.68f,
+                         selected ? trialB : 0.78f,
+                          (selected ? 0.72f : 0.40f + trialHover[i] * 0.18f) * contentA, 0.46f);
+        if (selected && i > 0)
+            DrawVisibleConstellLine(trialX[i - 1], trialY[i - 1], trialX[i], trialY[i],
+                                    0.7f * uiS, trialR, trialG, trialB, 0.20f * contentA);
+    }
+    DrawShadowedText(g_TextS, li == 0 ? L"클릭 또는 휠로 개수 조정" :
+                     li == 2 ? L"クリックまたはホイールで変更" :
+                               L"CLICK OR SCROLL TO SET COUNT",
+                     orbitCX - orbitRX * 0.66f, orbitCY + orbitRY + 35.0f * uiS,
+                     0.34f * uiS, 0.68f, 0.76f, 0.86f,
+                      0.54f * contentA, 0.46f);
+
+    const bool overOrbit = ready && mx >= orbitCX - orbitRX - 28.0f * uiS
+        && mx <= orbitCX + orbitRX + 28.0f * uiS
+        && my >= orbitCY - orbitRY - 28.0f * uiS
+        && my <= orbitCY + orbitRY + 28.0f * uiS;
+    if (overOrbit && g_ScrollAccum != 0.0f) {
+        s_TrialTargetCount += g_ScrollAccum > 0.0f ? -1 : 1;
+        s_TrialTargetCount = std::max(1, std::min(6, s_TrialTargetCount));
+    }
+    g_ScrollAccum = 0.0f;
+    for (int i = 0; i < 6; ++i) {
+        const bool hov = ready && mx >= trialX[i] - 26.0f * uiS && mx <= trialX[i] + 26.0f * uiS
+            && my >= trialY[i] - 26.0f * uiS && my <= trialY[i] + 26.0f * uiS;
+        trialHover[i] = UpdateMenuCommandHover(trialHover[i], hov, dt);
+        if (hov && lmbClick) {
+            s_TrialTargetCount = i + 1;
+            s_TrialTargetCount = std::max(1, std::min(6, s_TrialTargetCount));
+        }
+    }
+
+    // Right information readout. CircleTexture is already behind this text;
+    // there are no card fills or frame rectangles in this region.
+    const float infoTextX = infoX + 18.0f * uiS;
+    const float infoRight = pageR - 6.0f * uiS;
+    DrawShadowedText(g_TextS, L"WEAPON", infoTextX, bodyTop,
+                     0.42f * uiS, weaponR, weaponG, weaponB, 0.78f * contentA, 0.54f);
+    const wchar_t* weaponName = kWeaponNames[weapon][li];
+    const float weaponNameScale = 0.86f * uiS;
+    const float weaponNameW = g_TextL.Width(weaponName, weaponNameScale);
+    DrawShadowedText(g_TextL, weaponName, infoRight - weaponNameW,
+                     bodyTop - 5.0f * uiS, weaponNameScale,
+                     1.0f, 1.0f, 1.0f, 0.96f * contentA, 0.70f);
+    LogoLine(infoTextX, bodyTop + 35.0f * uiS, infoRight,
+             bodyTop + 35.0f * uiS, 0.8f * uiS,
+             weaponR, weaponG, weaponB, 0.28f * contentA);
+
+    const float statY = bodyTop + 58.0f * uiS;
+    const float statStep = 31.0f * uiS;
+    const float statBarX = infoTextX + infoW * 0.43f;
+    const float statBarW = std::max(60.0f * uiS, infoW * 0.28f);
+    for (int i = 0; i < 6; ++i) {
+        const float y = statY + i * statStep;
+        DrawShadowedText(g_TextS, kStatNames[li][i], infoTextX, y,
+                         0.38f * uiS, 0.70f, 0.80f, 0.90f, 0.76f * contentA, 0.48f);
+        LogoLine(statBarX, y + 12.0f * uiS,
+                 statBarX + statBarW, y + 12.0f * uiS,
+                 0.7f * uiS, 0.42f, 0.52f, 0.66f, 0.24f * contentA);
+        LogoLine(statBarX, y + 12.0f * uiS,
+                 statBarX + statBarW * LogoClamp01(statT[i]), y + 12.0f * uiS,
+                 1.4f * uiS, weaponR, weaponG, weaponB, 0.72f * contentA);
+        DrawVisibleConstellNode(statBarX + statBarW * LogoClamp01(statT[i]),
+                                y + 12.0f * uiS, 2.7f * uiS,
+                                weaponR, weaponG, weaponB, 0.82f * contentA, false, false);
+        const float valueScale = 0.43f * uiS;
+        const float valueW = g_TextS.Width(kStatValues[weapon][i], valueScale);
+        DrawShadowedText(g_TextS, kStatValues[weapon][i], infoRight - valueW, y,
+                         valueScale, 0.92f, 0.96f, 1.0f, 0.90f * contentA, 0.54f);
+    }
+
+    const float shackY = statY + 6.0f * statStep + 25.0f * uiS;
+    LogoLine(infoTextX, shackY - 11.0f * uiS, infoRight, shackY - 11.0f * uiS,
+             0.8f * uiS, trialR, trialG, trialB, 0.24f * contentA);
+    wchar_t shackTitle[32];
+    swprintf_s(shackTitle, L"SHACKLES  +%d", trialCount);
+    DrawShadowedText(g_TextS, shackTitle, infoTextX, shackY,
+                     0.48f * uiS, trialR, trialG, trialB, 0.90f * contentA, 0.58f);
+    for (int i = 0; i < trialCount; ++i) {
+        const float y = shackY + 29.0f * uiS + i * 30.0f * uiS;
+        DrawVisibleConstellNode(infoTextX + 5.0f * uiS, y + 5.0f * uiS,
+                                3.1f * uiS, trialR, trialG, trialB,
+                                0.84f * contentA, false, false);
+        wchar_t slot[8];
+        swprintf_s(slot, L"S%d", i + 1);
+        DrawShadowedText(g_TextS, slot, infoTextX + 15.0f * uiS, y,
+                         0.34f * uiS, trialR, trialG, trialB, 0.82f * contentA, 0.46f);
+        DrawShadowedText(g_TextS, kTrialNames[i][li], infoTextX + 43.0f * uiS, y,
+                         0.40f * uiS, 0.94f, 0.96f, 1.0f, 0.88f * contentA, 0.52f);
+        DrawShadowedText(g_TextS, kTrialDesc[i][li], infoTextX + 43.0f * uiS,
+                         y + 14.0f * uiS, 0.31f * uiS,
+                         trialR, trialG, trialB, 0.62f * contentA, 0.42f);
+    }
+
+    const float summaryY = bodyBottom - 68.0f * uiS;
+    LogoLine(infoTextX, summaryY - 14.0f * uiS, infoRight, summaryY - 14.0f * uiS,
+             0.8f * uiS, weaponR, weaponG, weaponB, 0.22f * contentA);
+    DrawShadowedText(g_TextS, L"RUN SUMMARY", infoTextX, summaryY,
+                     0.38f * uiS, weaponR, weaponG, weaponB, 0.72f * contentA, 0.48f);
+    DrawShadowedText(g_TextS, L"WEAPON", infoTextX, summaryY + 23.0f * uiS,
+                     0.34f * uiS, 0.66f, 0.76f, 0.86f, 0.62f * contentA, 0.42f);
+    DrawShadowedText(g_TextS, weaponName, infoRight - weaponNameW * 0.78f,
+                     summaryY + 19.0f * uiS, 0.42f * uiS,
+                     0.92f, 0.96f, 1.0f, 0.84f * contentA, 0.50f);
+    DrawShadowedText(g_TextS, L"SHACKLES", infoTextX, summaryY + 47.0f * uiS,
+                     0.34f * uiS, 0.66f, 0.76f, 0.86f, 0.62f * contentA, 0.42f);
+    DrawShadowedText(g_TextS, shackTitle, infoRight - g_TextS.Width(shackTitle, 0.42f * uiS),
+                     summaryY + 43.0f * uiS, 0.42f * uiS,
+                     trialR, trialG, trialB, 0.90f * contentA, 0.50f);
+
+    }
+
+    // The title and values belong to the hero chart instead of living in a
+    // detached center column. This keeps the weapon readout as one visual
+    // object, matching the constellation's selected silhouette.
+    const float heroTextL = chartCX - chartR * 0.68f;
+    const float heroTextR = chartCX + chartR * 0.68f;
+    const wchar_t* heroName = kWeaponNames[weapon][li];
+    const float heroSystemScale = 0.42f * uiS;
+    const float heroSystemW = g_TextS.Width(L"WEAPON CONSTELLATION", heroSystemScale);
+    DrawShadowedText(g_TextS, L"WEAPON CONSTELLATION", chartCX - heroSystemW * 0.5f,
+                     bodyTop + 10.0f * uiS, heroSystemScale,
+                     weaponR, weaponG, weaponB, 0.80f * contentA, 0.54f);
+    const float heroNameScale = 0.92f * uiS;
+    const float heroNameW = g_TextL.Width(heroName, heroNameScale);
+    DrawShadowedText(g_TextL, heroName, chartCX - heroNameW * 0.5f,
+                     bodyTop + 43.0f * uiS, heroNameScale,
+                     1.0f, 1.0f, 1.0f, 0.96f * contentA, 0.72f);
+    const float heroSubScale = 0.42f * uiS;
+    const float heroSubW = g_TextS.Width(kWeaponSub[weapon][li], heroSubScale);
+    DrawShadowedText(g_TextS, kWeaponSub[weapon][li], chartCX - heroSubW * 0.5f,
+                     bodyTop + 78.0f * uiS, heroSubScale,
+                     weaponR, weaponG, weaponB, 0.82f * contentA, 0.52f);
+    LogoLine(heroTextL, bodyTop + 103.0f * uiS, heroTextR,
+             bodyTop + 103.0f * uiS, 0.8f * uiS,
+             weaponR, weaponG, weaponB, 0.24f * contentA);
+
+    // Six values form a compact telemetry strip under the constellation.
+    // Three columns keep the readout attached to the hero without creating a
+    // second panel or competing with the right-side trials list.
+    const float statAreaL = centerL + centerW * 0.27f;
+    const float statAreaW = centerW * 0.54f;
+    const float statColW = statAreaW / 3.0f;
+    const float detailStatY = chartCY + chartR + 18.0f * uiS;
+    const float detailStatStep = 36.0f * uiS;
+    for (int i = 0; i < 6; ++i) {
+        const int col = i % 3;
+        const int row = i / 3;
+        const float x = statAreaL + col * statColW;
+        const float y = detailStatY + row * detailStatStep;
+        const float valueScale = 0.42f * uiS;
+        const float valueW = g_TextS.Width(kStatValues[weapon][i], valueScale);
+        const float valueX = x + statColW - valueW - 8.0f * uiS;
+        const float barX = x + 78.0f * uiS;
+        const float barW = std::max(52.0f * uiS, valueX - barX - 12.0f * uiS);
+        DrawShadowedText(g_TextS, kStatNames[li][i], x, y,
+                         0.36f * uiS, 0.70f, 0.80f, 0.90f,
+                         0.82f * contentA, 0.50f);
+        LogoLine(barX, y + 12.0f * uiS,
+                 barX + barW, y + 12.0f * uiS,
+                 0.8f * uiS, 0.38f, 0.48f, 0.60f, 0.24f * contentA);
+        LogoLine(barX, y + 12.0f * uiS,
+                 barX + barW * LogoClamp01(statT[i]), y + 12.0f * uiS,
+                 1.5f * uiS, weaponR, weaponG, weaponB, 0.76f * contentA);
+        DrawVisibleConstellNode(barX + barW * LogoClamp01(statT[i]),
+                                y + 12.0f * uiS, 2.8f * uiS,
+                                weaponR, weaponG, weaponB, 0.84f * contentA,
+                                false, false);
+        DrawShadowedText(g_TextS, kStatValues[weapon][i], valueX, y,
+                         valueScale, 0.94f, 0.97f, 1.0f,
+                         0.94f * contentA, 0.56f);
+    }
+
+    // Right-side trial list. Each modifier is an independent ON/OFF control;
+    // the list is the only trial selection surface on PLAY.
+    const float trialListX = infoX + 18.0f * uiS;
+    const float trialListRight = pageR - 6.0f * uiS;
+    const float trialListW = std::max(190.0f * uiS, trialListRight - trialListX);
+    DrawShadowedText(g_TextS, L"TRIALS", trialListX, bodyTop,
+                     0.44f * uiS, trialR, trialG, trialB,
+                     0.84f * contentA, 0.56f);
+    wchar_t activeTrialLabel[24];
+    swprintf_s(activeTrialLabel, L"%d / 6 ACTIVE", trialCount);
+    const float activeW = g_TextS.Width(activeTrialLabel, 0.52f * uiS);
+    DrawShadowedText(g_TextL, activeTrialLabel, trialListRight - activeW,
+                     bodyTop - 5.0f * uiS, 0.52f * uiS,
+                     trialR, trialG, trialB, 0.92f * contentA, 0.68f);
+    LogoLine(trialListX, bodyTop + 35.0f * uiS, trialListRight,
+             bodyTop + 35.0f * uiS, 0.8f * uiS,
+             trialR, trialG, trialB, 0.30f * contentA);
+
+    const float trialRowY = bodyTop + 58.0f * uiS;
+    const float trialRowH = 58.0f * uiS;
+    const float trialHitX = trialListX - 12.0f * uiS;
+    const float trialHitW = trialListW + 24.0f * uiS;
+    for (int i = 0; i < 6; ++i) {
+        const float y = trialRowY + i * trialRowH;
+        const bool on = s_RcTrialNodes[i];
+        const bool rowHov = ready && mx >= trialHitX && mx <= trialHitX + trialHitW
+            && my >= y && my <= y + trialRowH - 5.0f * uiS;
+        trialHover[i] = UpdateMenuCommandHover(trialHover[i], rowHov, dt);
+        const float rowA = (on ? 0.76f : 0.44f) + 0.16f * trialHover[i];
+        if (on || trialHover[i] > 0.02f)
+            drawRect(trialListX - 5.0f * uiS, y - 4.0f * uiS,
+                     trialListW + 10.0f * uiS, trialRowH - 7.0f * uiS,
+                     trialR, trialG, trialB,
+                     (on ? 0.045f : 0.020f) + 0.035f * trialHover[i]);
+        DrawVisibleConstellNode(trialListX + 4.0f * uiS, y + 16.0f * uiS,
+                                (on ? 4.6f : 3.4f + trialHover[i]) * uiS,
+                                trialR, trialG, trialB, rowA * contentA,
+                                on, on);
+        DrawShadowedText(g_TextS, kTrialNames[i][li], trialListX + 20.0f * uiS, y,
+                         0.43f * uiS, on ? 0.96f : 0.68f, on ? 0.96f : 0.72f,
+                         on ? 1.0f : 0.82f, rowA * contentA, 0.52f);
+        DrawShadowedText(g_TextS, kTrialDesc[i][li], trialListX + 20.0f * uiS,
+                         y + 18.0f * uiS, 0.32f * uiS,
+                         trialR, trialG, trialB, (on ? 0.68f : 0.42f) * contentA, 0.42f);
+        const wchar_t* toggleLabel = on ? L"ON" : L"OFF";
+        const float toggleScale = 0.44f * uiS;
+        const float toggleW = g_TextS.Width(toggleLabel, toggleScale);
+        DrawShadowedText(g_TextS, toggleLabel, trialListRight - toggleW, y + 5.0f * uiS,
+                         toggleScale, on ? trialR : 0.56f, on ? trialG : 0.64f,
+                         on ? trialB : 0.74f, (on ? 0.94f : 0.56f) * contentA, 0.56f);
+        LogoLine(trialListX, y + trialRowH - 8.0f * uiS,
+                 trialListRight, y + trialRowH - 8.0f * uiS,
+                 0.65f * uiS, trialR, trialG, trialB,
+                 (on ? 0.22f : 0.11f) * contentA);
+        if (rowHov && lmbClick) {
+            s_RcTrialNodes[i] = !s_RcTrialNodes[i];
+            int activeCount = 0;
+            for (int j = 0; j < 6; ++j)
+                if (s_RcTrialNodes[j]) ++activeCount;
+            s_TrialTargetCount = activeCount;
+        }
+    }
+    g_ScrollAccum = 0.0f;
+
+    // Other pages keep their route controls as a vertical lower-left rail.
+    // Play follows that same grammar: only this rail owns weapon selection.
+    const float routeX = pageL;
+    const float routeW = std::min(300.0f * uiS, centerW * 0.30f);
+    const float routeH = 64.0f * uiS;
+    const float routeGap = 9.0f * uiS;
+    const float routeTotalH = routeH * 3.0f + routeGap * 2.0f;
+    const float routeBottom = footerY + footerH * 0.18f;
+    const float routeY = routeBottom - routeTotalH;
+    const float routeHitX = routeX - 28.0f * uiS;
+    const float routeHitW = routeW + 44.0f * uiS;
+    const float playW = 270.0f * uiS;
+    const float playH = 66.0f * uiS;
+    const float playX = chartCX - playW * 0.5f;
+    const float playY = bodyBottom - playH - 4.0f * uiS;
+
+    // Keep the weapon route's local runway, but leave the central PLAY action
+    // free of the paired bg_linear side treatment.
+    const float railPulse = 0.72f + 0.28f * (0.5f + 0.5f * sinf(now * 1.15f));
+    const float railLightA = 0.11f * railPulse * (1.0f - backP) * (1.0f - launchP);
+    DrawLinearGradientRibbon(routeX - 24.0f * uiS, routeY - 18.0f * uiS,
+                             routeW + 48.0f * uiS, routeTotalH + 30.0f * uiS,
+                             24.0f * uiS, weaponR, weaponG, weaponB,
+                             railLightA, false);
+    DrawVisibleConstellLine(routeX - 19.0f * uiS, routeY - 8.0f * uiS,
+                            routeX - 19.0f * uiS, routeBottom + 4.0f * uiS,
+                            0.9f * uiS, weaponR, weaponG, weaponB,
+                            (0.16f + 0.04f * sinf(now * 1.1f)) * contentA);
+    DrawShadowedText(g_TextS, L"WEAPONS", routeX, routeY - 30.0f * uiS,
+                     0.40f * uiS, weaponR, weaponG, weaponB,
+                     0.76f * contentA, 0.50f);
+
+    const bool rifleHov = ready && mx >= routeHitX && mx <= routeHitX + routeHitW
+        && my >= routeY && my <= routeY + routeH;
+    const bool fieldHov = ready && mx >= routeHitX && mx <= routeHitX + routeHitW
+        && my >= routeY + routeH + routeGap
+        && my <= routeY + routeH * 2.0f + routeGap;
+    const bool backHov = ready && mx >= routeHitX && mx <= routeHitX + routeHitW
+        && my >= routeY + (routeH + routeGap) * 2.0f
+        && my <= routeY + (routeH + routeGap) * 2.0f + routeH;
+    const bool playHov = ready && mx >= playX && mx <= playX + playW
+        && my >= playY - 12.0f * uiS && my <= playY + playH + 8.0f * uiS;
+    weaponHover[0] = UpdateMenuCommandHover(weaponHover[0], rifleHov, dt);
+    weaponHover[1] = UpdateMenuCommandHover(weaponHover[1], fieldHov, dt);
+    backHover = UpdateMenuCommandHover(backHover, backHov, dt);
+    launchHover = UpdateMenuCommandHover(launchHover, playHov, dt);
+
+    const wchar_t* backSub[3] = { L"뒤로", L"RETURN", L"戻る" };
+    DrawUnifiedMenuCommand(kWeaponRoutes[0], kWeaponSub[0][li],
+                           routeX, routeY, routeW, routeH,
+                           0.28f, 0.90f, 1.0f, contentA,
+                           weaponHover[0], weapon == 0,
+                           weapon == 0 ? 0.10f + 0.08f * sinf(now * 2.0f) : 0.0f,
+                           now, 0.78f, 0.40f, true);
+    DrawUnifiedMenuCommand(kWeaponRoutes[1], kWeaponSub[1][li],
+                           routeX, routeY + routeH + routeGap, routeW, routeH,
+                           1.0f, 0.72f, 0.24f, contentA,
+                           weaponHover[1], weapon == 1,
+                           weapon == 1 ? 0.10f + 0.08f * sinf(now * 2.0f) : 0.0f,
+                           now + 0.17f, 0.78f, 0.40f, true);
+    DrawUnifiedMenuCommand(L"BACK", backSub[li],
+                           routeX, routeY + (routeH + routeGap) * 2.0f,
+                           routeW, routeH, 0.48f, 0.82f, 1.0f, contentA,
+                           backHover, false, 0.0f, now + 0.34f,
+                           0.78f, 0.40f, true);
+    wchar_t readyLabel[64];
+    swprintf_s(readyLabel, L"READY  //  %d TRIAL%s ACTIVE",
+                trialCount, trialCount == 1 ? L"" : L"S");
+    const float readyScale = 0.36f * uiS;
+    const float readyW = g_TextS.Width(readyLabel, readyScale);
+    DrawShadowedText(g_TextS, readyLabel, chartCX - readyW * 0.5f,
+                     playY - 22.0f * uiS, readyScale,
+                     weaponR, weaponG, weaponB, 0.76f * contentA, 0.48f);
+    DrawUnifiedMenuCommand(L"PLAY", L"START RUN",
+                           playX, playY, playW, playH,
+                           weaponR, weaponG, weaponB, contentA,
+                           launchHover, true,
+                           0.12f + 0.10f * sinf(now * 2.2f), now + 0.51f,
+                           0.78f, 0.40f, true);
+
+    if (backHov && lmbClick && ready)
+        exiting = true;
+    if ((rifleHov || fieldHov) && lmbClick && ready) {
+        weapon = fieldHov ? 1 : 0;
+        s_RcWeapon = weapon;
+    }
+    if (playHov && lmbClick && ready) {
+        launchExit = true;
+        launchT = 0.0f;
+    }
+
+    g_BatchAlpha = 1.0f;
+    if (launchExit && launchT >= 0.50f) {
+        g_SelectedJob = weapon == 0 ? JOB_NONE : JOB_VAMPIRE;
+        s_RcWeapon = weapon;
+        s_MainMenuRunConfigPanel = false;
+        if (g_CreativeMode) g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+        else { c.reset(); FinalizeLoadout(c, FixedWeaponForSelectedJob()); }
+        launchExit = false;
+        launchT = 0.0f;
+    }
+    if (exiting && exitT >= 0.42f) {
+        s_MainMenuRunConfigPanel = false;
+        s_MainMenuResumeFromPanel = true;
+        ResetRunConfigUi();
+        g_MainMenuEntryT = 1.0f;
+        entry = 0.0f;
+        exitT = 0.0f;
+        exiting = false;
+        launchExit = false;
+        launchT = 0.0f;
+        g_GameManager.currentState = GameState::MAIN_MENU;
+    }
+}
+
+// PLAY v2: the catalogue is intentionally separate from the legacy six-node
+// screen above.  It keeps the page interaction model small: weapon tabs at
+// the top-left, a hero constellation in the middle, a scrollable trial
+// catalogue on the right, and the common BACK rail at the bottom-left.
 static void Scene_RunConfigInline(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, dt = std::min(c.delta, 0.05f);
+    const double mx = c.mx, my = c.my;
+    const bool ko = LangIndex() == 0;
+    auto PlayText = [&](const wchar_t* kr, const wchar_t* en) -> const wchar_t* {
+        return ko ? kr : en;
+    };
+    const bool lmb = c.lmb;
+    const bool lmbClick = lmb && !g_LmbPrev;
+
+    static float entry = 0.0f;
+    static float exitT = 0.0f;
+    static bool exiting = false;
+    static bool launchExit = false;
+    static float launchT = 0.0f;
+    static bool prevEsc = false, prevRmb = false;
+    static int weapon = 0;
+    static int trialFocus = 0;
+    static int trialSelectedSlot = 0;
+    static float trialDisplaySlot = 0.0f;
+    static float trialTargetSlot = 0.0f;
+    static int trialNavHoldDir = 0;
+    static float trialNavHoldT = 0.0f;
+    static float trialNavRepeatT = 0.0f;
+    static bool trialDragging = false;
+    static bool trialDragMoved = false;
+    static float trialDragLastY = 0.0f;
+    static float trialDragLastX = 0.0f;
+    static int trialPressedId = -1;
+    static float detailScroll = 0.0f;
+    static float detailScrollTarget = 0.0f;
+    static bool detailDragging = false;
+    static bool detailDragMoved = false;
+    static float detailDragLastY = 0.0f;
+    static float trialHover[TRIAL_DEF_COUNT] = {};
+    static float weaponHover[2] = {};
+    static float backHover = 0.0f;
+    static float playHover = 0.0f;
+    static float resetHover = 0.0f;
+    static float statT[6] = { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f };
+    static const float kStatTargets[2][6] = {
+        { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
+        { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
+    };
+
+    static const int kTrialOrder[TRIAL_DEF_COUNT] = {
+        // EARLY
+        0, 1, 3, 4, 5, 8, 9, 10,
+        // MID
+        11, 12, 13,
+        // LATE
+        6, 7, 14, 15, 16,
+        // BOSS
+        2, 17, 18, 19
+    };
+    static const wchar_t* kTrialTags[TRIAL_DEF_COUNT] = {
+        L"SPEED UP  /  SCORE +15%", L"SURVIVAL DOWN  /  SCORE +15%",
+        L"BOSS UP  /  SCORE +15%",  L"ECONOMY UP  /  SCORE +15%",
+        L"BUILD DOWN  /  SCORE +15%",L"COOLING DOWN  /  SCORE +15%",
+        L"DURABILITY UP  /  SCORE +15%",L"PRESSURE UP  /  SCORE +15%",
+        L"EARLY  /  SCORE +14%",     L"EARLY  /  SCORE +16%",
+        L"OPENING DOWN  /  SCORE +18%",L"MID  /  SCORE +18%",
+        L"MID  /  SCORE +20%",        L"MID  /  SCORE +17%",
+        L"LATE  /  SCORE +22%",       L"LATE  /  SCORE +24%",
+        L"LATE  /  SCORE +21%",       L"BOSS  /  SCORE +24%",
+        L"BOSS  /  SCORE +22%",       L"BOSS  /  SCORE +20%"
+    };
+    static const wchar_t* kTrialTagsKR[TRIAL_DEF_COUNT] = {
+        L"속도 증가  /  점수 +15%", L"생존력 감소  /  점수 +15%",
+        L"보스 강화  /  점수 +15%", L"경제 악화  /  점수 +15%",
+        L"빌드 제약  /  점수 +15%", L"쿨다운 증가  /  점수 +15%",
+        L"내구도 증가  /  점수 +15%", L"압박 증가  /  점수 +15%",
+        L"초반  /  점수 +14%", L"초반  /  점수 +16%",
+        L"시작 제약  /  점수 +18%", L"중반  /  점수 +18%",
+        L"중반  /  점수 +20%", L"중반  /  점수 +17%",
+        L"후반  /  점수 +22%", L"후반  /  점수 +24%",
+        L"후반  /  점수 +21%", L"보스  /  점수 +24%",
+        L"보스  /  점수 +22%", L"보스  /  점수 +20%"
+    };
+    static const wchar_t* kTrialDetail[TRIAL_DEF_COUNT] = {
+        L"Hostile movement speed is increased by 20 percent from the start of the run.",
+        L"Your maximum HP is reduced by 25 percent. Recovery cannot restore the missing capacity.",
+        L"Boss encounters gain 25 percent more HP, extending the final damage window.",
+        L"All run shop prices are increased by 30 percent. Economy upgrades become a real trade-off.",
+        L"Augment choices are limited to two cards whenever a selection is generated.",
+        L"All skill cooldowns are increased by 25 percent. Timing becomes part of the build.",
+        L"All enemies gain 30 percent HP, making sustained damage and target priority matter more.",
+        L"Enemy speed and HP both rise by 20 percent. The whole arena becomes less forgiving.",
+        L"Ranged enemies begin appearing earlier than normal, before the build is fully online.",
+        L"The early normal spawn pressure is increased, compressing the opening economy window.",
+        L"Starting maximum HP is reduced. The first few rooms become the cost of entry.",
+        L"Special and elite enemies receive a stronger midgame appearance bias.",
+        L"Bombers arrive earlier and appear more frequently, changing safe movement routes.",
+        L"The midgame ranged enemy cap is raised, creating more simultaneous firing lanes.",
+        L"The late-game spawn ramp is strengthened. Pressure keeps climbing after the build stabilizes.",
+        L"Late enemies receive a stronger HP ramp, so damage scaling must keep pace.",
+        L"Late ranged pressure is increased, reducing the value of standing still or holding one lane.",
+        L"Boss HP is greatly increased. This is a deliberate long-fight score multiplier.",
+        L"The spawn relief around bosses is reduced, so the arena remains dangerous during the encounter.",
+        L"Boss warning time is shorter. Read the signal early or enter the encounter unprepared."
+    };
+    static const wchar_t* kTrialDetailKR[TRIAL_DEF_COUNT] = {
+        L"런 시작부터 적의 이동 속도가 20퍼센트 증가합니다.",
+        L"최대 체력이 25퍼센트 감소합니다. 회복으로 잃은 최대치를 되돌릴 수 없습니다.",
+        L"보스의 체력이 25퍼센트 증가해 최종 피해 구간이 길어집니다.",
+        L"모든 런 상점의 가격이 30퍼센트 증가합니다. 경제 강화의 선택이 더 까다로워집니다.",
+        L"증강 선택이 생성될 때 선택지가 2장으로 제한됩니다.",
+        L"모든 스킬의 쿨다운이 25퍼센트 증가합니다. 빌드에 타이밍 관리가 필요해집니다.",
+        L"모든 적의 체력이 30퍼센트 증가해 지속 피해와 우선 처치가 중요해집니다.",
+        L"적의 속도와 체력이 모두 20퍼센트 증가합니다. 전장이 전반적으로 더 가혹해집니다.",
+        L"원거리 적이 평소보다 일찍 등장해 빌드가 완성되기 전부터 압박을 줍니다.",
+        L"초반 일반 적의 스폰 압력이 증가해 초반 경제를 정비할 시간이 줄어듭니다.",
+        L"시작 최대 체력이 감소합니다. 첫 방들이 입장 비용이 됩니다.",
+        L"특수 및 정예 적이 중반에 등장할 확률이 증가합니다.",
+        L"봄버가 더 일찍, 더 자주 등장해 안전한 이동 경로가 달라집니다.",
+        L"중반 원거리 적 수 제한이 증가해 동시에 유지해야 할 사선이 많아집니다.",
+        L"후반 스폰 증가 폭이 커집니다. 빌드가 안정된 뒤에도 압박이 계속 상승합니다.",
+        L"후반 적의 체력 증가 폭이 커지므로 피해량 성장도 발맞춰야 합니다.",
+        L"후반 원거리 압박이 증가해 한 자리에 머물거나 한 방향만 지키기 어려워집니다.",
+        L"보스의 체력이 크게 증가합니다. 장기전을 감수하고 점수 배율을 얻는 시련입니다.",
+        L"보스 주변의 스폰 완화가 줄어들어 전투 중에도 전장이 위험하게 유지됩니다.",
+        L"보스 경고 시간이 짧아집니다. 신호를 일찍 읽지 않으면 준비되지 않은 채 전투에 들어갑니다."
+    };
+    static const wchar_t* kStageLabels[4] = { L"EARLY", L"MID", L"LATE", L"BOSS" };
+    static const wchar_t* kStageLabelsKR[4] = { L"초반", L"중반", L"후반", L"보스" };
+    static const wchar_t* kTrialNamesKR[TRIAL_DEF_COUNT] = {
+        L"오버클럭", L"메모리 누수", L"방화벽", L"부패한 드롭",
+        L"프로세스 제한", L"낮은 대역폭", L"강화", L"급증",
+        L"조기 돌입", L"패킷 폭풍", L"콜드 부트", L"엘리트 개화",
+        L"봄버 추적", L"프로세스 노이즈", L"후반 초과", L"강화 코어",
+        L"신호 변위", L"방화벽 코어", L"소음 경기장", L"신호 손실"
+    };
+    static const wchar_t* kWeaponNames[2] = { L"RIFLE", L"FIELD" };
+    static const wchar_t* kWeaponNamesKR[2] = { L"소총", L"전기장" };
+    static const wchar_t* kWeaponSub[2] = {
+        L"PRECISION / SINGLE TARGET", L"AREA CONTROL / SUSTAINED"
+    };
+    static const wchar_t* kWeaponSubKR[2] = {
+        L"정밀 / 단일 대상", L"범위 제어 / 지속"
+    };
+    static const wchar_t* kStatNames[6] = {
+        L"DAMAGE", L"FIRE RATE", L"INTERVAL", L"SPEED", L"SPREAD", L"RANGE"
+    };
+    static const wchar_t* kStatNamesKR[6] = {
+        L"공격력", L"연사 속도", L"간격", L"탄속", L"퍼짐", L"사거리"
+    };
+    static const wchar_t* kStatValues[2][6] = {
+        { L"50", L"5.0/s", L"0.20s", L"1200", L"0.04", L"900" },
+        { L"18", L"CONT.", L"0.08s", L"320", L"0.15", L"180" }
+    };
+    static const wchar_t* kStatValuesKR[2][6] = {
+        { L"50", L"5.0/s", L"0.20초", L"1200", L"0.04", L"900" },
+        { L"18", L"연속", L"0.08초", L"320", L"0.15", L"180" }
+    };
+    auto trialName = [&](int id) -> const wchar_t* {
+        return ko ? kTrialNamesKR[id] : TRIAL_DEFS[id].id;
+    };
+    auto trialCompact = [&](int id) -> const wchar_t* {
+        return TRIAL_DEFS[id].desc[ko ? 0 : 1];
+    };
+    auto trialTag = [&](int id) -> const wchar_t* {
+        return ko ? kTrialTagsKR[id] : kTrialTags[id];
+    };
+    auto trialDetail = [&](int id) -> const wchar_t* {
+        return ko ? kTrialDetailKR[id] : kTrialDetail[id];
+    };
+    auto stageLabel = [&](int stage) -> const wchar_t* {
+        return ko ? kStageLabelsKR[stage] : kStageLabels[stage];
+    };
+    auto weaponName = [&](int id) -> const wchar_t* {
+        return ko ? kWeaponNamesKR[id] : kWeaponNames[id];
+    };
+    auto weaponSub = [&](int id) -> const wchar_t* {
+        return ko ? kWeaponSubKR[id] : kWeaponSub[id];
+    };
+    auto statName = [&](int id) -> const wchar_t* {
+        return ko ? kStatNamesKR[id] : kStatNames[id];
+    };
+    auto statValue = [&](int weaponId, int statId) -> const wchar_t* {
+        return ko ? kStatValuesKR[weaponId][statId] : kStatValues[weaponId][statId];
+    };
+
+    auto countEnabled = [&]() {
+        int count = 0;
+        for (int i = 0; i < TRIAL_DEF_COUNT; ++i)
+            if (s_RcTrialEnabled[i]) ++count;
+        return count;
+    };
+    auto stageIndex = [&](int defId) {
+        switch (TrialStageForDef(defId)) {
+        case TrialStage::EARLY: return 0;
+        case TrialStage::MID:   return 1;
+        case TrialStage::LATE:  return 2;
+        case TrialStage::BOSS:  return 3;
+        }
+        return 0;
+    };
+    auto syncTrialsToGame = [&]() {
+        int slot = 0;
+        for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
+            if (!s_RcTrialEnabled[id] || slot >= TRIAL_SLOT_COUNT) continue;
+            g_TrialPool[slot] = id;
+            g_TrialSelected[slot] = true;
+            ++slot;
+        }
+        const int selectedCount = slot;
+        for (; slot < TRIAL_SLOT_COUNT; ++slot)
+            g_TrialSelected[slot] = false;
+        s_TrialTargetCount = selectedCount;
+        g_TrialPoolReady = true;
+    };
+
+    if (entry <= 0.0f && !exiting) {
+        weapon = std::max(0, std::min(1, s_RcWeapon));
+        trialFocus = 0;
+        trialSelectedSlot = 0;
+        trialDisplaySlot = 0.0f;
+        trialTargetSlot = 0.0f;
+        trialNavHoldDir = 0;
+        trialNavHoldT = 0.0f;
+        trialNavRepeatT = 0.0f;
+        trialDragging = false;
+        trialDragMoved = false;
+        trialDragLastY = 0.0f;
+        trialDragLastX = 0.0f;
+        trialPressedId = -1;
+        detailScroll = 0.0f;
+        detailScrollTarget = 0.0f;
+        detailDragging = false;
+        detailDragMoved = false;
+        detailDragLastY = 0.0f;
+        for (int i = 0; i < 2; ++i) weaponHover[i] = 0.0f;
+        for (int i = 0; i < TRIAL_DEF_COUNT; ++i) trialHover[i] = 0.0f;
+        backHover = playHover = 0.0f;
+        resetHover = 0.0f;
+        if (!s_RcTrialStateLoaded) {
+            for (int i = 0; i < TRIAL_DEF_COUNT; ++i) s_RcTrialEnabled[i] = false;
+            for (int slot = 0; slot < TRIAL_SLOT_COUNT; ++slot) {
+                const int id = g_TrialPool[slot];
+                if (g_TrialSelected[slot] && id >= 0 && id < TRIAL_DEF_COUNT)
+                    s_RcTrialEnabled[id] = true;
+            }
+            s_RcTrialStateLoaded = true;
+        }
+        for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
+            if (s_RcTrialEnabled[id]) { trialFocus = id; break; }
+        }
+        for (int i = 0; i < TRIAL_DEF_COUNT; ++i) {
+            if (kTrialOrder[i] == trialFocus) {
+                trialSelectedSlot = i;
+                break;
+            }
+        }
+        trialDisplaySlot = trialTargetSlot = (float)trialSelectedSlot;
+        s_TrialTargetCount = countEnabled();
+        launchExit = false;
+        launchT = 0.0f;
+    }
+
+    entry = std::min(1.0f, entry + dt);
+    if (launchExit) launchT = std::min(0.50f, launchT + dt);
+
+    const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool rmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool backInput = (esc && !prevEsc) || (rmb && !prevRmb);
+    prevEsc = esc;
+    prevRmb = rmb;
+
+    const float entryIn = Smoothstep(LogoClamp01((entry - 0.12f) / 0.42f));
+    const float entryHeader = Smoothstep(LogoClamp01((entry - 0.04f) / 0.34f));
+    if (backInput && !exiting && !launchExit && entry >= 0.55f)
+        exiting = true;
+    if (exiting) exitT = std::min(0.42f, exitT + dt);
+    const float backP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
+    const float launchP = Smoothstep(LogoClamp01((launchT - 0.28f) / 0.22f));
+    const float contentA = entryIn * (1.0f - backP) * (1.0f - launchP);
+    const bool ready = !exiting && !launchExit && entry >= 0.55f;
+
+    SetSceneTextureReveal(exiting
+        ? std::max(0.0f, 1.0f - backP)
+        : Smoothstep(LogoClamp01((entry - 0.02f) / 0.72f)));
+
+    const float uiS = std::max(0.70f,
+        std::min(sw * 0.94f / 1640.0f, sh * 0.90f / 910.0f));
+    const float pageL = std::max(42.0f, 72.0f * uiS);
+    const float pageR = sw - std::max(42.0f, 72.0f * uiS);
+    const float pageW = std::max(420.0f, pageR - pageL);
+    const float headerY = std::max(30.0f, 48.0f * uiS);
+    const float footerY = sh - std::max(62.0f, 84.0f * uiS);
+    const float footerH = 42.0f * uiS;
+    const float bodyTop = headerY + 76.0f * uiS;
+    const float bodyBottom = footerY - 26.0f * uiS;
+    const float detailW = std::min(286.0f * uiS, pageW * 0.23f);
+    // PLAY uses a denser information layout than the other menu pages, so
+    // keep its text comfortably above the small renderer's minimum scale and
+    // give each catalogue row a clear title/effect/tag hierarchy.
+    const float playMetaScale = 0.60f * uiS;
+    const float playBodyScale = 0.70f * uiS;
+    const float trialTitleScale = 0.68f * uiS;
+    const float trialEffectScale = 0.62f * uiS;
+    const float trialTagScale = 0.56f * uiS;
+    const float trialListShiftLeft = 54.0f * uiS;
+    const float trialListX = pageR - std::max(330.0f * uiS, pageW * 0.245f)
+                           - trialListShiftLeft;
+    const float trialListRight = pageR - 6.0f * uiS - trialListShiftLeft;
+    const float centerL = pageL + detailW + 34.0f * uiS;
+    const float centerR = trialListX - 38.0f * uiS;
+    const float centerW = std::max(330.0f * uiS, centerR - centerL);
+    const float chartCX = centerL + centerW * 0.50f;
+    const float chartCY = bodyTop + (bodyBottom - bodyTop) * 0.44f;
+    const float chartR = std::min(244.0f * uiS,
+        std::min(centerW * 0.34f, (bodyBottom - bodyTop) * 0.29f));
+    const float trialListW = std::max(230.0f * uiS, trialListRight - trialListX);
+    // Keep all three bottom commands on one shared baseline. The trial reset
+    // uses the catalogue's left X anchor, so it reads as the action belonging
+    // to the list instead of another header control.
+    const float routeX = pageL;
+    const float routeW = std::min(188.0f * uiS, detailW * 0.88f);
+    const float routeH = 58.0f * uiS;
+    const float routeBottom = footerY + footerH * 0.18f;
+    const float routeY = routeBottom - routeH;
+    const float playW = 270.0f * uiS;
+    const float playH = 62.0f * uiS;
+    const float playX = chartCX - playW * 0.5f;
+    const float playY = routeY - 1.0f * uiS;
+    const wchar_t* resetLabel = PlayText(L"시련 초기화", L"TRIAL RESET");
+    const float resetW = std::min(230.0f * uiS, trialListW);
+    const float resetX = trialListRight - resetW;
+    const float resetY = routeY;
+    const float now = (float)glfwGetTime();
+    const float weaponR = weapon == 0 ? 0.28f : 1.00f;
+    const float weaponG = weapon == 0 ? 0.90f : 0.72f;
+    const float weaponB = weapon == 0 ? 1.00f : 0.24f;
+    const float trialR = 1.00f, trialG = 0.60f, trialB = 0.22f;
+    const int activeCount = countEnabled();
+
+    for (int i = 0; i < 6; ++i)
+        statT[i] = UiApproach(statT[i], kStatTargets[weapon][i], dt, 8.0f);
+
+    // The trial catalogue is an infinite list on a restrained \ rail. The
+    // list owns the full right column, so records keep flowing through the
+    // available space instead of being re-centered when one is clicked.
+    const float trialRowStep = 108.0f * uiS;
+    // The visual row is shorter than the carousel step. Let adjacent rows'
+    // hit regions meet at their centers' midpoint so there is no dead strip
+    // between two trial entries.
+    const float trialRowHitHalf = trialRowStep * 0.50f;
+    const float trialViewTop = bodyTop + 58.0f * uiS;
+    // Stop the catalogue above the shared bottom action rail. This leaves the
+    // third command visibly owned by the list and prevents rows from entering
+    // the BACK / PLAY / TRIAL RESET area.
+    const float trialViewBottom = std::max(trialViewTop,
+                                           resetY - 18.0f * uiS);
+    const float trialViewH = std::max(0.0f, trialViewBottom - trialViewTop);
+    const float trialViewCenterY = trialViewTop + trialViewH * 0.50f;
+    const float trialDiagonal = std::min(72.0f * uiS, trialListW * 0.18f);
+    const float trialRailTopX = trialListX - 4.0f * uiS;
+    const float trialRailLeft = trialRailTopX - 30.0f * uiS;
+    const int trialVisibleRadius = std::max(3,
+        (int)(trialViewH / (trialRowStep * 2.0f)) + 2);
+    auto trialRailXAt = [&](float y) {
+        const float t = std::max(0.0f,
+            std::min(1.0f, (y - trialViewTop) / trialViewH));
+        return trialRailTopX + trialDiagonal * t;
+    };
+    // Keep the infinite carousel's internal coordinates close to the active
+    // slot. The visible result still wraps forever, but a long drag can never
+    // grow the float values until the wrapping loops become expensive.
+    auto normalizeTrialSlots = [&]() {
+        const float relativeTarget = trialTargetSlot
+                                   - (float)trialSelectedSlot;
+        const float cycles = std::round(
+            relativeTarget / (float)TRIAL_DEF_COUNT);
+        if (fabsf(cycles) > 0.0f) {
+            const float offset = cycles * (float)TRIAL_DEF_COUNT;
+            trialTargetSlot -= offset;
+            trialDisplaySlot -= offset;
+        }
+    };
+    const bool resetHov = ready
+        && mx >= resetX - 22.0f * uiS
+        && mx <= resetX + resetW + 22.0f * uiS
+        && my >= resetY - 8.0f * uiS
+        && my <= resetY + routeH + 10.0f * uiS;
+    resetHover = UpdateMenuCommandHover(resetHover, resetHov, dt);
+    if (resetHov && lmbClick) {
+        for (int id = 0; id < TRIAL_DEF_COUNT; ++id)
+            s_RcTrialEnabled[id] = false;
+        s_TrialTargetCount = 0;
+        trialFocus = 0;
+        detailScroll = 0.0f;
+        detailScrollTarget = 0.0f;
+        detailDragging = false;
+        detailDragMoved = false;
+    }
+    const float detailX = pageL + 8.0f * uiS;
+    const float detailTop = bodyTop + 150.0f * uiS;
+    const float detailViewTop = detailTop + 92.0f * uiS;
+    // Leave a clear dead zone above the shared BACK/PLAY action rail. The
+    // active-trial copy can scroll, but it must never appear underneath the
+    // bottom commands.
+    const float detailViewBottom = std::min(bodyBottom - 34.0f * uiS,
+                                            footerY - 150.0f * uiS);
+    const bool overTrialList = ready && mx >= trialRailLeft - 26.0f * uiS
+        && mx <= trialListRight + 8.0f * uiS && my >= trialViewTop && my <= trialViewBottom;
+    const bool overDetail = ready && mx >= detailX - 16.0f * uiS
+        && mx <= detailX + detailW + 16.0f * uiS
+        && my >= detailViewTop && my <= detailViewBottom;
+
+    // The explanation column is a real scroll surface as well as a readable
+    // list.  Keep the press/drag state separate from the trial catalogue so
+    // grabbing the copy never toggles a trial by accident.
+    if (lmbClick && overDetail && !trialDragging) {
+        detailDragging = true;
+        detailDragMoved = false;
+        detailDragLastY = (float)my;
+        detailScrollTarget = detailScroll;
+    }
+    if (!lmb && detailDragging) {
+        detailDragging = false;
+        detailDragMoved = false;
+    }
+    if (detailDragging && lmb) {
+        const float dy = (float)my - detailDragLastY;
+        const float dragThreshold = 3.5f * uiS;
+        if (!detailDragMoved && fabsf(dy) >= dragThreshold)
+            detailDragMoved = true;
+        if (detailDragMoved) {
+            detailScrollTarget -= dy;
+            detailDragLastY = (float)my;
+        }
+    }
+
+    const bool keyUpNow = c.window &&
+        (glfwGetKey(c.window, GLFW_KEY_UP) == GLFW_PRESS ||
+         glfwGetKey(c.window, GLFW_KEY_W) == GLFW_PRESS);
+    const bool keyDownNow = c.window &&
+        (glfwGetKey(c.window, GLFW_KEY_DOWN) == GLFW_PRESS ||
+         glfwGetKey(c.window, GLFW_KEY_S) == GLFW_PRESS);
+    int trialStepRequest = 0;
+    if (!lmb && trialDragging) {
+        // A press/release without a meaningful pointer movement is the
+        // toggle gesture. Dragging the same row never reaches this branch.
+        if (!trialDragMoved && trialPressedId >= 0
+            && trialPressedId < TRIAL_DEF_COUNT) {
+            const bool wasOn = s_RcTrialEnabled[trialPressedId];
+            if (!wasOn && countEnabled() >= TRIAL_SLOT_COUNT) {
+            } else {
+                s_RcTrialEnabled[trialPressedId] = !wasOn;
+                s_TrialTargetCount = countEnabled();
+                detailScroll = 0.0f;
+                detailScrollTarget = 0.0f;
+            }
+        }
+        trialDragging = false;
+        trialDragMoved = false;
+        trialPressedId = -1;
+    }
+    if (trialDragging && lmb) {
+        const float dx = (float)mx - trialDragLastX;
+        const float dy = (float)my - trialDragLastY;
+        const float dragThreshold = 3.5f * uiS;
+        if (!trialDragMoved && dx * dx + dy * dy
+            >= dragThreshold * dragThreshold)
+            trialDragMoved = true;
+        if (trialDragMoved && fabsf(dy) > 0.0001f) {
+            // Keep the press point until the gesture is confirmed. That way
+            // the few pixels used to cross the threshold are not discarded,
+            // which makes the rail feel responsive instead of sticky.
+            const float dragDelta = -(dy / trialRowStep) * 1.12f;
+            // Move the display directly with the pointer. The target is kept
+            // in the same unbounded coordinate space so wrapping remains
+            // seamless when the drag crosses the first/last trial.
+            trialTargetSlot += dragDelta;
+            trialDisplaySlot += dragDelta;
+            trialDragMoved = true;
+            int nearestSlot = (int)std::round(trialTargetSlot)
+                            % TRIAL_DEF_COUNT;
+            if (nearestSlot < 0) nearestSlot += TRIAL_DEF_COUNT;
+            if (nearestSlot != trialSelectedSlot) {
+                trialSelectedSlot = nearestSlot;
+                trialFocus = kTrialOrder[trialSelectedSlot];
+            }
+            normalizeTrialSlots();
+        }
+        if (trialDragMoved) {
+            trialDragLastY = (float)my;
+            trialDragLastX = (float)mx;
+        }
+    }
+    const int trialNavDir = keyUpNow == keyDownNow
+        ? 0 : (keyUpNow ? -1 : 1);
+    if (!trialDragging && ready && trialNavDir != 0) {
+        if (trialNavDir != trialNavHoldDir) {
+            trialNavHoldDir = trialNavDir;
+            trialNavHoldT = 0.0f;
+            trialNavRepeatT = 0.0f;
+            trialStepRequest = trialNavDir;
+        } else {
+            trialNavHoldT += dt;
+            if (trialNavHoldT >= 0.25f) {
+                trialNavRepeatT += dt;
+                const float repeatInterval = std::max(0.055f,
+                    0.24f - (trialNavHoldT - 0.25f) * 0.070f);
+                if (trialNavRepeatT >= repeatInterval) {
+                    trialNavRepeatT = 0.0f;
+                    trialStepRequest = trialNavDir;
+                }
+            }
+        }
+    } else {
+        trialNavHoldDir = 0;
+        trialNavHoldT = 0.0f;
+        trialNavRepeatT = 0.0f;
+    }
+    if (g_ScrollAccum != 0.0f) {
+        if (!trialDragging && overTrialList)
+            trialStepRequest = g_ScrollAccum > 0.0f ? -1 : 1;
+        else if (overDetail)
+            detailScrollTarget -= g_ScrollAccum * 34.0f * uiS;
+        g_ScrollAccum = 0.0f;
+    }
+    if (trialStepRequest != 0) {
+        trialSelectedSlot = (trialSelectedSlot + trialStepRequest
+                             + TRIAL_DEF_COUNT) % TRIAL_DEF_COUNT;
+        trialTargetSlot += (float)trialStepRequest;
+        trialFocus = kTrialOrder[trialSelectedSlot];
+        normalizeTrialSlots();
+    }
+    {
+        const float diff = trialTargetSlot - trialDisplaySlot;
+        trialDisplaySlot += diff * std::min(1.0f, dt * 10.0f);
+        if (fabsf(diff) < 0.002f)
+            trialDisplaySlot = trialTargetSlot;
+    }
+    // PLAY shares the same wide, mirrored side fields as Settings. The
+    // transparent scene remains visible through the center while the edges
+    // receive a consistent dark contrast treatment.
+    BatchFlush();
+    DrawPersistentSceneSideVignettes(sw, sh,
+                                     kWideSceneLinearAlpha * contentA);
+    // The radial texture is the hero's light source: a colored outer corona
+    // makes the constellation read as a focal object, while a small dark core
+    // keeps the weapon title and node geometry crisp over bright backdrops.
+    DrawRadialGradient(chartCX, chartCY, chartR * 1.88f,
+                       weaponR * 0.56f, weaponG * 0.56f, weaponB * 0.56f,
+                       0.34f * contentA);
+    DrawRadialGradient(chartCX, chartCY, chartR * 1.08f,
+                       0.0f, 0.0f, 0.008f,
+                       0.26f * contentA);
+    // CircleTexture carries the constellation's depth, while the broad edge
+    // linear fields and hero radial fields provide the page contrast.
+    DrawConstellationDisc(chartCX, chartCY, chartR * 1.74f,
+                          0.0f, 0.0f, 0.012f, 0.28f * contentA);
+    DrawConstellationDisc(chartCX, chartCY, chartR * 1.34f,
+                          weaponR * 0.08f, weaponG * 0.08f, weaponB * 0.10f,
+                          (0.10f + 0.025f * sinf(now * 1.2f)) * contentA, false);
+    DrawConstellationDisc(trialListX + trialListW * 0.62f,
+                          (trialViewTop + trialViewBottom) * 0.52f,
+                          trialListW * 0.72f, 0.0f, 0.0f, 0.012f,
+                          0.38f * contentA);
+
+    DrawShadowedText(g_TextL, PlayText(L"플레이", L"PLAY"), pageL, headerY,
+                     1.52f * uiS, 1.0f, 1.0f, 1.0f,
+                     0.98f * entryHeader, 0.74f);
+    const float escW = g_TextS.Width(L"[ESC]", playMetaScale);
+    DrawShadowedText(g_TextS, L"[ESC]", pageR - escW, headerY + 8.0f * uiS,
+                     playMetaScale, 0.68f, 0.78f, 0.88f,
+                     0.72f * entryHeader, 0.54f);
+    LogoLine(pageL, headerY + 58.0f * uiS, pageR, headerY + 58.0f * uiS,
+             0.7f * uiS, weaponR, weaponG, weaponB, 0.12f * contentA);
+
+    // Weapon choice is a small editorial tab in the upper-left. This is the
+    // only weapon selection surface; the bottom rail is reserved for BACK.
+    const float tabsY = bodyTop + 12.0f * uiS;
+    const float tabScale = 0.86f * uiS;
+    float tabX[2] = { detailX, detailX + 170.0f * uiS };
+    for (int i = 0; i < 2; ++i) {
+        const float tabW = g_TextL.Width(weaponName(i), tabScale);
+        const bool hov = ready && mx >= tabX[i] - 8.0f * uiS
+            && mx <= tabX[i] + tabW + 12.0f * uiS
+            && my >= tabsY - 16.0f * uiS && my <= tabsY + 42.0f * uiS;
+        weaponHover[i] = UpdateMenuCommandHover(weaponHover[i], hov, dt);
+        const bool selected = weapon == i;
+        DrawShadowedText(g_TextL, weaponName(i), tabX[i], tabsY,
+                         tabScale,
+                         selected ? weaponR : 0.58f,
+                         selected ? weaponG : 0.68f,
+                         selected ? weaponB : 0.78f,
+                         (selected ? 0.96f : 0.64f + 0.18f * weaponHover[i]) * contentA,
+                         0.50f);
+        if (hov && lmbClick) { weapon = i; s_RcWeapon = weapon; }
+    }
+    LogoLine(detailX, tabsY + 48.0f * uiS, detailX + detailW,
+             tabsY + 48.0f * uiS, 0.8f * uiS,
+             weaponR, weaponG, weaponB, 0.18f * contentA);
+
+    // Hero copy is attached to the constellation, keeping the selected
+    // weapon readable before the player reads either side column.
+    const float heroNameY = chartCY - chartR - 58.0f * uiS;
+    const float heroNameScale = 0.98f * uiS;
+    const float heroNameW = g_TextL.Width(weaponName(weapon), heroNameScale);
+    const wchar_t* heroSystemLabel = PlayText(L"무기 별자리", L"WEAPON CONSTELLATION");
+    DrawShadowedText(g_TextS, heroSystemLabel,
+                     chartCX - g_TextS.Width(heroSystemLabel, playMetaScale) * 0.5f,
+                     heroNameY - 32.0f * uiS, playMetaScale,
+                     weaponR, weaponG, weaponB, 0.78f * contentA, 0.52f);
+    DrawShadowedText(g_TextL, weaponName(weapon), chartCX - heroNameW * 0.5f,
+                     heroNameY, heroNameScale,
+                     1.0f, 1.0f, 1.0f, 0.96f * contentA, 0.72f);
+    const float subW = g_TextS.Width(weaponSub(weapon), playMetaScale);
+    DrawShadowedText(g_TextS, weaponSub(weapon), chartCX - subW * 0.5f,
+                     heroNameY + 58.0f * uiS, playMetaScale,
+                     weaponR, weaponG, weaponB, 0.76f * contentA, 0.50f);
+
+    // A shallow perspective network gives the hero a dimensional read. The
+    // nodes are depth-scaled and the ellipses rotate at different speeds, so
+    // RIFLE and FIELD share the language but retain distinct silhouettes.
+    auto drawHeroNetwork = [&]() {
+        constexpr int kNodeCount = 18;
+        float px[kNodeCount] = {}, py[kNodeCount] = {}, depth[kNodeCount] = {};
+        const float spin = now * (weapon == 0 ? 0.045f : -0.032f);
+        const float yScale = weapon == 0 ? 0.70f : 0.52f;
+        for (int i = 0; i < kNodeCount; ++i) {
+            const float a = spin + 6.2831853f * (float)i / (float)kNodeCount;
+            const float wave = sinf(now * 0.34f + i * 1.73f);
+            const float ring = 0.64f + 0.24f * (0.5f + 0.5f * sinf(i * 2.11f + 0.7f));
+            depth[i] = wave;
+            px[i] = chartCX + cosf(a) * chartR * ring;
+            py[i] = chartCY + sinf(a) * chartR * ring * yScale
+                   + wave * chartR * 0.055f;
+        }
+        for (int ring = 0; ring < 3; ++ring) {
+            const float rx = chartR * (0.55f + ring * 0.18f);
+            const float ry = chartR * yScale * (0.36f + ring * 0.16f);
+            const float phase = spin * (ring == 1 ? -0.8f : 0.55f)
+                              + (ring == 2 ? 0.22f : 0.0f);
+            float lastX = chartCX + cosf(phase) * rx;
+            float lastY = chartCY + sinf(phase) * ry;
+            for (int n = 1; n <= 32; ++n) {
+                const float a = phase + 6.2831853f * (float)n / 32.0f;
+                const float x = chartCX + cosf(a) * rx;
+                const float y = chartCY + sinf(a) * ry;
+                if ((n + ring) % (ring == 2 ? 4 : 3) != 0)
+                    DrawVisibleConstellLine(lastX, lastY, x, y,
+                                            (0.52f + ring * 0.10f) * uiS,
+                                            weaponR, weaponG, weaponB,
+                                            (0.08f + ring * 0.025f) * contentA);
+                lastX = x; lastY = y;
+            }
+        }
+        for (int i = 0; i < kNodeCount; ++i) {
+            const int next = (i + 1) % kNodeCount;
+            const int cross = (i + 5 + weapon) % kNodeCount;
+            const float edgeA = (0.15f + 0.12f * (depth[i] + 1.0f) * 0.5f) * contentA;
+            DrawVisibleConstellLine(px[i], py[i], px[next], py[next],
+                                    0.78f * uiS, weaponR, weaponG, weaponB, edgeA);
+            if ((i + weapon) % 2 == 0)
+                DrawVisibleConstellLine(px[i], py[i], px[cross], py[cross],
+                                        0.56f * uiS, weaponR, weaponG, weaponB,
+                                        edgeA * 0.62f);
+            const float nodeSize = (2.3f + 1.7f * (depth[i] + 1.0f) * 0.5f) * uiS;
+            if (depth[i] > 0.12f)
+                DrawConstellationDisc(px[i], py[i], nodeSize * 2.2f,
+                                      weaponR, weaponG, weaponB, 0.08f * contentA);
+            DrawVisibleConstellNode(px[i], py[i], nodeSize,
+                                    weaponR, weaponG, weaponB,
+                                    (0.42f + 0.24f * (depth[i] + 1.0f) * 0.5f) * contentA,
+                                    false, depth[i] > -0.35f);
+        }
+        // FIELD keeps its wider corona. RIFLE uses only the constellation
+        // network; the former targeting spine read as unrelated stray lines.
+        if (weapon != 0) {
+            for (int i = 0; i < 8; ++i) {
+                const float a = now * -0.08f + 6.2831853f * i / 8.0f;
+                DrawVisibleConstellLine(chartCX, chartCY,
+                                        chartCX + cosf(a) * chartR * 0.72f,
+                                        chartCY + sinf(a) * chartR * 0.72f * yScale,
+                                        0.62f * uiS, weaponR, weaponG, weaponB,
+                                        0.18f * contentA);
+            }
+        }
+        for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
+            if (!s_RcTrialEnabled[id]) continue;
+            const int node = (id * 7 + weapon * 3) % kNodeCount;
+            DrawVisibleConstellLine(chartCX, chartCY, px[node], py[node],
+                                    1.10f * uiS, trialR, trialG, trialB,
+                                    0.24f * contentA);
+            DrawConstellationDisc(px[node], py[node], 13.0f * uiS,
+                                  trialR, trialG, trialB, 0.10f * contentA);
+            DrawVisibleConstellNode(px[node], py[node], 4.2f * uiS,
+                                    trialR, trialG, trialB, 0.86f * contentA,
+                                    true, true);
+        }
+        const float pulse = 0.5f + 0.5f * sinf(now * (weapon == 0 ? 5.6f : 3.0f));
+        DrawConstellationDisc(chartCX, chartCY, (32.0f + pulse * 8.0f) * uiS,
+                              0.0f, 0.0f, 0.012f, 0.36f * contentA);
+        DrawConstellationDisc(chartCX, chartCY, (17.0f + pulse * 4.0f) * uiS,
+                              weaponR, weaponG, weaponB, 0.18f * contentA, false);
+        drawDiamond(chartCX, chartCY, (9.0f + pulse * 2.0f) * uiS,
+                    weaponR, weaponG, weaponB, 0.86f * contentA);
+        drawDiamond(chartCX, chartCY, 3.8f * uiS,
+                    0.96f, 1.0f, 1.0f, 0.94f * contentA);
+    };
+    drawHeroNetwork();
+
+    // Compact telemetry stays under the hero as a 3 x 2 readout. The larger
+    // type makes the values scannable without creating a second information
+    // panel beside the weapon hero.
+    const float statY = chartCY + chartR + 26.0f * uiS;
+    const float statRowStep = 60.0f * uiS;
+    const float statColumnGap = 30.0f * uiS;
+    const float statLabelScale = 0.72f * uiS;
+    const float statValueScale = 0.76f * uiS;
+    const float statW = std::max(96.0f * uiS,
+        (centerW - statColumnGap * 2.0f) / 3.0f);
+    for (int i = 0; i < 6; ++i) {
+        const int col = i % 3;
+        const int row = i / 3;
+        const float x = centerL + col * (statW + statColumnGap);
+        const float y = statY + row * statRowStep;
+        const float valueW = g_TextS.Width(statValue(weapon, i), statValueScale);
+        const float textInset = 4.0f * uiS;
+        // The track follows the same left/right bounds as the metric text:
+        // label starts at barX and the value ends at barRight.
+        const float barX = x + textInset;
+        const float barRight = x + statW - textInset;
+        DrawShadowedText(g_TextS, statName(i), x + textInset, y,
+                         statLabelScale, 0.72f, 0.82f, 0.92f,
+                         0.78f * contentA, 0.46f);
+        DrawShadowedText(g_TextS, statValue(weapon, i),
+                         x + statW - valueW - textInset, y,
+                         statValueScale, 0.92f, 0.96f, 1.0f,
+                         0.90f * contentA, 0.52f);
+        // Give the telemetry a little air: the track is inset and sits below
+        // the labels instead of competing with the enlarged text.
+        LogoLine(barX, y + 31.0f * uiS, barRight,
+                 y + 31.0f * uiS, 0.95f * uiS,
+                 0.34f, 0.44f, 0.56f, 0.22f * contentA);
+        LogoLine(barX, y + 31.0f * uiS,
+                 barX + (barRight - barX) * LogoClamp01(statT[i]),
+                 y + 31.0f * uiS, 1.75f * uiS,
+                 weaponR, weaponG, weaponB, 0.70f * contentA);
+    }
+
+    // Left active-trial readout: this is intentionally independent of the
+    // hovered catalogue row. It reports every enabled trial, while the
+    // catalogue remains free to browse without rewriting the explanation.
+    DrawShadowedText(g_TextS,
+                     activeCount > 0 ? PlayText(L"활성 시련", L"ACTIVE TRIALS")
+                                     : PlayText(L"활성 시련 없음", L"NO ACTIVE TRIALS"),
+                     detailX, detailTop, playBodyScale,
+                     trialR, trialG, trialB, 0.82f * contentA, 0.52f);
+    wchar_t activeReadout[32];
+    swprintf_s(activeReadout, ko ? L"%d / %d 활성화" : L"%d / %d ENABLED",
+               activeCount, TRIAL_SLOT_COUNT);
+    const float activeReadoutScale = playMetaScale;
+    DrawShadowedText(g_TextS, activeReadout,
+                     detailX,
+                     detailTop + 34.0f * uiS, activeReadoutScale,
+                     0.64f, 0.74f, 0.84f, 0.72f * contentA, 0.42f);
+    LogoLine(detailX, detailTop + 70.0f * uiS,
+             detailX + detailW, detailTop + 70.0f * uiS,
+             0.75f * uiS, trialR, trialG, trialB, 0.26f * contentA);
+    const wchar_t* detailHint = PlayText(L"마우스로 잡고 이동  //  휠 스크롤",
+                                         L"DRAG TO SCROLL  //  MOUSE WHEEL");
+    float detailHintScale = 0.34f * uiS;
+    while (detailHintScale > 0.26f * uiS
+           && g_TextS.Width(detailHint, detailHintScale) > detailW)
+        detailHintScale -= 0.02f * uiS;
+    const float detailHintW = g_TextS.Width(detailHint, detailHintScale);
+    DrawShadowedText(g_TextS, detailHint,
+                     detailX + detailW - detailHintW,
+                     detailViewTop - 12.0f * uiS, detailHintScale,
+                     0.42f, 0.70f, 0.80f, 0.68f * contentA, 0.40f);
+    // Give the active build an objective, compact readout before the prose
+    // descriptions.  These values mirror the multipliers used by the run
+    // code; conditional late-game effects are shown as start -> peak rather
+    // than pretending they are active from the first room.
+    struct ActiveSummaryRow {
+        std::wstring label;
+        std::wstring value;
+        bool buff = false;
+    };
+    std::vector<ActiveSummaryRow> summaryRows;
+    const auto selected = [&](int id) {
+        return id >= 0 && id < TRIAL_DEF_COUNT && s_RcTrialEnabled[id];
+    };
+    auto formatPercent = [](float mult) {
+        wchar_t buf[32] = {};
+        swprintf_s(buf, L"%+.1f%%", (mult - 1.0f) * 100.0f);
+        return std::wstring(buf);
+    };
+    auto formatPercentRange = [&](float startMult, float peakMult) {
+        if (fabsf(startMult - peakMult) < 0.0005f)
+            return formatPercent(startMult);
+        wchar_t buf[64] = {};
+        swprintf_s(buf, L"%+.1f%% !92 %+.1f%%",
+                   (startMult - 1.0f) * 100.0f,
+                   (peakMult - 1.0f) * 100.0f);
+        return std::wstring(buf);
+    };
+    auto formatCountRange = [&](int startCount, int peakCount) {
+        wchar_t buf[32] = {};
+        if (startCount == peakCount)
+            swprintf_s(buf, L"+%d", startCount);
+        else
+            swprintf_s(buf, L"+%d !92 +%d", startCount, peakCount);
+        return std::wstring(buf);
+    };
+    auto addPercentMetric = [&](const wchar_t* label, float startMult,
+                                float peakMult, bool buff) {
+        if (fabsf(startMult - 1.0f) < 0.0005f
+            && fabsf(peakMult - 1.0f) < 0.0005f)
+            return;
+        summaryRows.push_back({ label,
+                                formatPercentRange(startMult, peakMult),
+                                buff });
+    };
+
+    float scoreMult = 1.0f;
+    for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
+        if (selected(id)) scoreMult += TrialScoreBonusForDef(id);
+    }
+    if (activeCount > 0) {
+        wchar_t scoreBuf[48] = {};
+        swprintf_s(scoreBuf, L"x%.2f  (%+.1f%%)", scoreMult,
+                   (scoreMult - 1.0f) * 100.0f);
+        summaryRows.push_back({ PlayText(L"점수 배율", L"SCORE MULTIPLIER"),
+                                scoreBuf, true });
+    }
+
+    float playerHpMult = 1.0f;
+    if (selected(10)) playerHpMult *= 0.82f;
+    addPercentMetric(PlayText(L"플레이어 최대 HP", L"PLAYER MAX HP"),
+                     1.0f, playerHpMult, false);
+
+    float enemyHpStart = 1.0f, enemyHpPeak = 1.0f;
+    if (selected(11)) enemyHpStart *= 1.08f;
+    if (selected(15)) enemyHpPeak *= 1.28f;
+    enemyHpPeak *= enemyHpStart;
+    addPercentMetric(PlayText(L"일반 적 체력", L"ENEMY HP"),
+                     enemyHpStart, enemyHpPeak, false);
+
+    float spawnStart = 1.0f, spawnPeak = 1.0f;
+    if (selected(9))  spawnStart *= 1.18f;
+    if (selected(11)) spawnStart *= 1.08f;
+    spawnPeak = spawnStart;
+    if (selected(14)) spawnPeak *= 1.24f;
+    if (selected(16)) spawnPeak *= 1.12f;
+    addPercentMetric(PlayText(L"일반 스폰 빈도", L"SPAWN FREQUENCY"),
+                     spawnStart, spawnPeak, false);
+
+    float rangedStart = 1.0f, rangedPeak = 1.0f;
+    if (selected(8))  rangedStart *= 0.78f;
+    if (selected(18)) rangedStart *= 0.90f;
+    rangedPeak = rangedStart;
+    if (selected(13)) rangedPeak *= 0.86f;
+    if (selected(16)) rangedPeak *= 0.82f;
+    addPercentMetric(PlayText(L"원거리 스폰 간격", L"RANGED INTERVAL"),
+                     rangedStart, rangedPeak, false);
+
+    int rangedMaxStart = selected(18) ? 1 : 0;
+    int rangedMaxPeak = rangedMaxStart
+                      + (selected(13) ? 2 : 0)
+                      + (selected(16) ? 2 : 0);
+    if (rangedMaxStart > 0 || rangedMaxPeak > 0)
+        summaryRows.push_back({ PlayText(L"원거리 최대 수", L"RANGED MAX"),
+                                formatCountRange(rangedMaxStart, rangedMaxPeak),
+                                false });
+
+    float bomberStart = 1.0f, bomberPeak = 1.0f;
+    if (selected(12)) bomberStart *= 0.76f;
+    bomberPeak = bomberStart;
+    if (selected(14)) bomberPeak *= 0.88f;
+    if (selected(12))
+        summaryRows.push_back({ PlayText(L"자폭병 첫 등장", L"BOMBER FIRST SPAWN"),
+                                PlayText(L"-10.0초", L"-10.0s"), false });
+    addPercentMetric(PlayText(L"자폭병 스폰 간격", L"BOMBER INTERVAL"),
+                     bomberStart, bomberPeak, false);
+
+    float bossHpMult = 1.0f;
+    if (selected(17)) bossHpMult *= 1.35f;
+    if (selected(18)) bossHpMult *= 1.15f;
+    addPercentMetric(PlayText(L"보스 체력", L"BOSS HP"),
+                     bossHpMult, bossHpMult, false);
+
+    if (selected(19))
+        summaryRows.push_back({ PlayText(L"보스 경고 시간", L"BOSS WARNING"),
+                                PlayText(L"-28.0%", L"-28.0%"), false });
+
+    const float summaryTitleScale = 0.66f * uiS;
+    const float summaryTitleH = 29.0f * uiS;
+    const float summaryRowH = 32.0f * uiS;
+    const float summaryBottomGap = 15.0f * uiS;
+    const float summaryBlockH = summaryTitleH
+                              + std::max<size_t>(1, summaryRows.size()) * summaryRowH
+                              + summaryBottomGap;
+    struct ActiveDetailLine {
+        std::wstring text;
+        int kind;
+        int tone;
+    };
+    std::vector<ActiveDetailLine> detailLines;
+    auto appendLine = [&](const std::wstring& text, int kind, int tone) {
+        detailLines.push_back({ text, kind, tone });
+    };
+    auto appendWrapped = [&](const std::wstring& text, int kind, int tone) {
+        std::wstring line;
+        std::wstring word;
+        for (size_t i = 0; i <= text.size(); ++i) {
+            const bool end = i == text.size();
+            const wchar_t ch = end ? L' ' : text[i];
+            if (ch != L' ') { word.push_back(ch); continue; }
+            std::wstring candidate = line.empty() ? word : line + L" " + word;
+            if (!line.empty() && g_TextS.Width(candidate.c_str(), playBodyScale) > detailW) {
+                appendLine(line, kind, tone);
+                line = word;
+            } else if (!word.empty()) {
+                line = candidate;
+            }
+            word.clear();
+        }
+        if (!line.empty()) appendLine(line, kind, tone);
+    };
+    if (activeCount <= 0) {
+        appendWrapped(PlayText(L"시련 목록에서 시련을 활성화해 런 설정을 구성하세요.",
+                               L"Enable trials from the catalogue to build the run modifier set."),
+                      0, 0);
+    } else {
+        for (int order = 0; order < TRIAL_DEF_COUNT; ++order) {
+            const int id = kTrialOrder[order];
+            if (!s_RcTrialEnabled[id]) continue;
+            appendLine(std::wstring(trialName(id)), 1, 0);
+            std::wstring stageLine = ko ? L"단계  //  " : L"STAGE  //  ";
+            stageLine += stageLabel(stageIndex(id));
+            appendLine(stageLine, 2, 0);
+            appendLine(PlayText(L"효과", L"EFFECT"), 2, 0);
+            appendWrapped(std::wstring(trialDetail(id)), 0, -1);
+            appendLine(PlayText(L"간단 요약", L"COMPACT READOUT"), 2, 0);
+            appendWrapped(std::wstring(trialCompact(id)), 0, -1);
+            appendLine(PlayText(L"보상 / 압박", L"PAYOFF / PRESSURE"), 2, 0);
+            appendWrapped(std::wstring(trialTag(id)), 0, 1);
+            appendLine(L"", 3, 0);
+        }
+    }
+    const float detailLineH = 31.0f * uiS;
+    const float detailContentH = summaryBlockH + detailLines.size() * detailLineH;
+    const float detailMaxScroll = std::max(0.0f,
+        detailContentH - (detailViewBottom - detailViewTop) + 6.0f * uiS);
+    detailScrollTarget = std::max(0.0f,
+                                  std::min(detailScrollTarget, detailMaxScroll));
+    const float detailScrollEase = std::min(1.0f, dt * 14.0f);
+    detailScroll += (detailScrollTarget - detailScroll) * detailScrollEase;
+    if (fabsf(detailScrollTarget - detailScroll) < 0.08f)
+        detailScroll = detailScrollTarget;
+    BatchFlush();
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((GLint)(detailX - 6.0f * uiS),
+              (GLint)(sh - detailViewBottom),
+              (GLint)(detailW + 18.0f * uiS),
+              (GLint)(detailViewBottom - detailViewTop));
+    float detailY = detailViewTop - detailScroll;
+    DrawShadowedText(g_TextS,
+                     PlayText(L"현재 적용 합계", L"ACTIVE EFFECT TOTAL"),
+                     detailX, detailY, summaryTitleScale,
+                     0.68f, 0.88f, 0.96f, 0.86f * contentA, 0.50f);
+    detailY += summaryTitleH;
+    if (summaryRows.empty()) {
+        DrawShadowedText(g_TextS,
+                         PlayText(L"선택된 시련 없음", L"NO ACTIVE MODIFIERS"),
+                         detailX, detailY, 0.58f * uiS,
+                         0.72f, 0.78f, 0.84f, 0.72f * contentA, 0.46f);
+        detailY += summaryRowH;
+    } else {
+        for (const ActiveSummaryRow& row : summaryRows) {
+            float valueScale = 0.58f * uiS;
+            const float maxValueW = detailW * 0.48f;
+            while (valueScale > 0.42f * uiS
+                   && g_TextS.Width(row.value.c_str(), valueScale) > maxValueW)
+                valueScale -= 0.02f * uiS;
+            const float valueW = g_TextS.Width(row.value.c_str(), valueScale);
+            const float labelMaxW = std::max(20.0f * uiS,
+                detailW - valueW - 11.0f * uiS);
+            float labelScale = 0.56f * uiS;
+            while (labelScale > 0.40f * uiS
+                   && g_TextS.Width(row.label.c_str(), labelScale) > labelMaxW)
+                labelScale -= 0.02f * uiS;
+            DrawShadowedText(g_TextS, row.label.c_str(), detailX, detailY,
+                             labelScale,
+                             0.70f, 0.78f, 0.86f, 0.86f * contentA, 0.44f);
+            DrawShadowedText(g_TextS, row.value.c_str(),
+                             detailX + detailW - valueW, detailY,
+                             valueScale,
+                             row.buff ? 0.20f : 1.0f,
+                             row.buff ? 0.92f : 0.28f,
+                             row.buff ? 1.0f : 0.28f,
+                             0.94f * contentA, 0.50f);
+            LogoLine(detailX, detailY + 19.0f * uiS,
+                     detailX + detailW, detailY + 19.0f * uiS,
+                     0.45f * uiS, 0.18f, 0.28f, 0.34f,
+                     0.28f * contentA);
+            detailY += summaryRowH;
+        }
+    }
+    detailY += summaryBottomGap;
+    for (size_t i = 0; i < detailLines.size(); ++i) {
+        const ActiveDetailLine& detailLine = detailLines[i];
+        if (detailLine.kind == 3 && detailLine.text.empty()) {
+            detailY += detailLineH;
+            continue;
+        }
+        const bool title = detailLine.kind == 1;
+        const bool heading = detailLine.kind == 2;
+        const bool buff = detailLine.tone > 0;
+        const bool nerf = detailLine.tone < 0;
+        DrawShadowedText(g_TextS, detailLine.text.c_str(), detailX, detailY,
+                         title ? 0.68f * uiS : heading ? playMetaScale : playBodyScale,
+                         title ? 1.0f : heading ? trialR : buff ? 0.20f : nerf ? 1.0f : 0.80f,
+                         title ? 1.0f : heading ? trialG : buff ? 0.92f : nerf ? 0.28f : 0.87f,
+                         title ? 1.0f : heading ? trialB : buff ? 1.0f : nerf ? 0.28f : 0.94f,
+                         (title ? 0.92f : heading ? 0.72f : 0.86f) * contentA,
+                         title ? 0.64f : heading ? 0.50f : 0.54f);
+        detailY += detailLineH;
+    }
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+    if (detailMaxScroll > 0.0f) {
+        const float barX = detailX + detailW + 5.0f * uiS;
+        const float thumbH = std::max(24.0f * uiS,
+            (detailViewBottom - detailViewTop)
+            * ((detailViewBottom - detailViewTop) / detailContentH));
+        const float thumbY = detailViewTop
+            + (detailViewBottom - detailViewTop - thumbH)
+            * (detailScroll / detailMaxScroll);
+        drawRect(barX, detailViewTop, 2.0f * uiS,
+                 detailViewBottom - detailViewTop,
+                 0.10f, 0.16f, 0.20f, 0.38f * contentA);
+        drawRect(barX, thumbY, 2.0f * uiS, thumbH,
+                 trialR, trialG, trialB, 0.66f * contentA);
+    }
+
+    // Right codex list: compact rows communicate the decision; the full
+    // sentence is reserved for the scrollable detail column on the left.
+    DrawShadowedText(g_TextS, PlayText(L"시련 목록", L"TRIAL CATALOGUE"), trialListX, bodyTop,
+                     playBodyScale, trialR, trialG, trialB,
+                     1.0f * contentA, 0.56f);
+    wchar_t activeLabel[32];
+    swprintf_s(activeLabel, ko ? L"%d / %d 활성" : L"%d / %d ACTIVE",
+               activeCount, TRIAL_SLOT_COUNT);
+    const float activeW = g_TextS.Width(activeLabel, 0.76f * uiS);
+    DrawShadowedText(g_TextL, activeLabel, trialListRight - activeW,
+                     bodyTop - 7.0f * uiS, 0.76f * uiS,
+                     trialR, trialG, trialB, 1.0f * contentA, 0.66f);
+    LogoLine(trialListX, bodyTop + 35.0f * uiS,
+             trialListRight, bodyTop + 35.0f * uiS,
+             0.8f * uiS, trialR, trialG, trialB, 0.30f * contentA);
+    // A quiet cyan linear field follows the catalogue's \ rail. The slanted
+    // texture keeps the list's motion language intact without becoming a
+    // heavy card behind the readable rows.
+    BatchFlush();
+    const float trialFieldX = trialListX - 16.0f * uiS;
+    const float trialFieldTop = trialViewTop - 14.0f * uiS;
+    const float trialFieldW = trialListW + 32.0f * uiS;
+    const float trialFieldH = trialViewBottom - trialViewTop + 28.0f * uiS;
+    DrawLinearGradientRibbon(trialFieldX, trialFieldTop,
+                             trialFieldW, trialFieldH,
+                             std::min((trialDiagonal + 18.0f * uiS),
+                                      trialFieldW * 0.18f),
+                             0.06f, 0.48f, 0.62f,
+                             0.075f * contentA, false);
+    // The catalogue is an infinite diagonal rail. Visible slots stay evenly
+    // spaced while their data wraps through the 20 definitions. This keeps
+    // the motion legible and gives the right side the requested \ silhouette
+    // without sending a curved orbit through the hero.
+    const float railTopY = trialViewTop + 6.0f * uiS;
+    const float railBottomY = trialViewBottom - 6.0f * uiS;
+    const float railBottomX = trialRailTopX + trialDiagonal;
+    LogoLine(trialRailTopX, railTopY, railBottomX, railBottomY,
+             0.78f * uiS, weaponR, weaponG, weaponB,
+             0.15f * contentA);
+    LogoLine(trialRailTopX + 13.0f * uiS, railTopY,
+             railBottomX + 13.0f * uiS, railBottomY,
+             0.42f * uiS, weaponR, weaponG, weaponB,
+             0.065f * contentA);
+    DrawVisibleConstellNode(trialRailTopX, railTopY, 2.2f * uiS,
+                            weaponR, weaponG, weaponB, 0.46f * contentA,
+                            false, false);
+    DrawVisibleConstellNode(railBottomX, railBottomY, 2.2f * uiS,
+                            weaponR, weaponG, weaponB, 0.46f * contentA,
+                            false, false);
+
+    BatchFlush();
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((GLint)(trialRailLeft - 26.0f * uiS),
+              (GLint)(sh - trialViewBottom),
+              (GLint)(trialListRight - trialRailLeft + 44.0f * uiS),
+              (GLint)trialViewH);
+    for (int slot = 0; slot < TRIAL_DEF_COUNT; ++slot) {
+        float relF = (float)slot - trialDisplaySlot;
+        while (relF > (float)TRIAL_DEF_COUNT * 0.5f)
+            relF -= (float)TRIAL_DEF_COUNT;
+        while (relF < -(float)TRIAL_DEF_COUNT * 0.5f)
+            relF += (float)TRIAL_DEF_COUNT;
+        const int rel = (int)std::round(relF);
+        if (rel < -trialVisibleRadius || rel > trialVisibleRadius) continue;
+        const int id = kTrialOrder[slot];
+        const float rowCenter = trialViewCenterY + relF * trialRowStep;
+        const float rowY = rowCenter - 43.0f * uiS;
+        if (rowCenter + trialRowHitHalf < trialViewTop - 8.0f * uiS
+            || rowCenter - trialRowHitHalf > trialViewBottom + 8.0f * uiS) {
+            trialHover[id] = UpdateMenuCommandHover(trialHover[id], false, dt);
+            continue;
+        }
+        const float rowX = trialRailXAt(rowCenter);
+        const bool on = s_RcTrialEnabled[id];
+        const bool rowHov = ready && overTrialList
+            && mx >= rowX - 34.0f * uiS
+            && mx <= trialListRight + 8.0f * uiS
+            && my >= rowCenter - trialRowHitHalf
+            && my <= rowCenter + trialRowHitHalf;
+        trialHover[id] = UpdateMenuCommandHover(trialHover[id], rowHov, dt);
+        if (rowHov && trialFocus != id) {
+            trialFocus = id;
+        }
+        const float hover = trialHover[id];
+        // PLAY keeps each trial anchored to the diagonal rail. Hover nudges
+        // the readable row to the right, never across the rail into the hero.
+        // An enabled trial intentionally keeps that same visual hover state
+        // even when the pointer leaves the catalogue, so the active build is
+        // scannable at a glance.
+        const float visualHover = std::max(hover, on ? 1.0f : 0.0f);
+        const float itemX = rowX + 22.0f * visualHover;
+        const float rowA = (on ? 0.84f : 0.68f) + 0.16f * visualHover;
+        if (visualHover > 0.02f) {
+            const float hoverA = visualHover;
+            const float hoverR = on ? trialR : weaponR;
+            const float hoverG = on ? trialG : weaponG;
+            const float hoverB = on ? trialB : weaponB;
+            DrawConstellationDisc(itemX - 2.0f * uiS,
+                                  rowY + 39.0f * uiS,
+                                  (13.0f + 8.0f * hoverA) * uiS,
+                                  hoverR, hoverG, hoverB,
+                                  0.07f * hoverA * contentA);
+        }
+        if (visualHover > 0.02f)
+            DrawVisibleConstellLine(rowX, rowCenter,
+                                    itemX + 5.0f * uiS, rowCenter,
+                                    0.58f * uiS,
+                                    on ? trialR : weaponR, on ? trialG : weaponG,
+                                    on ? trialB : weaponB,
+                                    (0.10f + 0.24f * visualHover) * contentA);
+        DrawVisibleConstellNode(itemX + 5.0f * uiS, rowY + 32.0f * uiS,
+                                (on ? 4.2f : 3.0f + visualHover) * uiS,
+                                on ? trialR : weaponR, on ? trialG : weaponG,
+                                on ? trialB : weaponB,
+                                rowA * contentA, on, on);
+        const float textLift = std::min(1.0f, visualHover * 1.25f);
+        const float titleR = on ? 1.0f : 0.94f + 0.06f * textLift;
+        const float titleG = on ? 0.78f : 0.97f + 0.03f * textLift;
+        const float titleB = on ? 0.42f : 1.0f;
+        const float titleMaxW = std::max(2.0f,
+            trialListRight - (itemX + 20.0f * uiS) - 16.0f * uiS);
+        float titleScale = trialTitleScale;
+        while (titleScale > 0.58f * uiS
+               && g_TextS.Width(trialName(id), titleScale) > titleMaxW)
+            titleScale -= 0.025f * uiS;
+        DrawShadowedText(g_TextS, trialName(id),
+                         itemX + 20.0f * uiS, rowY + 1.0f * uiS,
+                         titleScale, titleR, titleG, titleB,
+                         ((on ? 1.0f : 0.94f) + 0.06f * visualHover) * contentA,
+                         0.56f);
+        // The effect line is the challenge/debuff, so keep it red even when
+        // the row is not selected.  The score payoff below is the player
+        // benefit and is always cyan for quick scanning.
+        const float compactR = 1.0f;
+        const float compactG = 0.28f + 0.08f * textLift;
+        const float compactB = 0.28f + 0.08f * textLift;
+        DrawShadowedText(g_TextS, trialCompact(id),
+                         itemX + 20.0f * uiS, rowY + 30.0f * uiS,
+                         trialEffectScale, compactR, compactG, compactB,
+                         ((on ? 1.0f : 0.90f) + 0.10f * visualHover) * contentA,
+                         0.46f);
+        const float tagY = rowY + 60.0f * uiS;
+        const float tagAlpha = ((on ? 1.0f : 0.88f) + 0.12f * visualHover)
+                             * contentA;
+        std::wstring stageText = std::wstring(stageLabel(stageIndex(id)))
+                                + L"  //";
+        DrawShadowedText(g_TextS, stageText.c_str(),
+                         itemX + 20.0f * uiS, tagY, trialTagScale,
+                         0.66f, 0.76f, 0.84f, tagAlpha, 0.42f);
+        wchar_t scoreBuf[32] = {};
+        const int scorePct = (int)(TrialScoreBonusForDef(id) * 100.0f + 0.5f);
+        swprintf_s(scoreBuf, ko ? L"점수 +%d%%" : L"SCORE +%d%%", scorePct);
+        const float stageW = g_TextS.Width(stageText.c_str(), trialTagScale);
+        DrawShadowedText(g_TextS, scoreBuf,
+                         itemX + 20.0f * uiS + stageW + 9.0f * uiS,
+                         tagY, trialTagScale,
+                         0.20f, 0.92f, 1.0f, tagAlpha, 0.46f);
+        LogoLine(itemX, rowY + 88.0f * uiS,
+                 trialListRight, rowY + 88.0f * uiS,
+                 0.55f * uiS, trialR, trialG, trialB,
+                 (on ? 0.20f : 0.10f) * contentA);
+        if (rowHov && lmbClick) {
+            // The whole row is one gesture surface. Release without movement
+            // toggles this trial; movement turns the same press into a drag.
+            trialDragging = true;
+            trialDragMoved = false;
+            trialPressedId = id;
+            trialDragLastY = (float)my;
+            trialDragLastX = (float)mx;
+            trialFocus = id;
+            detailScroll = 0.0f;
+        }
+    }
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+
+    // Shared bottom rail: BACK | PLAY | TRIAL RESET. Each command keeps its
+    // own column anchor, while the third command is aligned with the trial
+    // catalogue above it.
+    const float routeHitX = routeX - 22.0f * uiS;
+    const float routeHitW = routeW + 44.0f * uiS;
+    const bool backHov = ready && mx >= routeHitX && mx <= routeHitX + routeHitW
+        && my >= routeY && my <= routeY + routeH;
+    const bool playHov = ready && mx >= playX && mx <= playX + playW
+        && my >= playY - 12.0f * uiS && my <= playY + playH + 10.0f * uiS;
+    backHover = UpdateMenuCommandHover(backHover, backHov, dt);
+    playHover = UpdateMenuCommandHover(playHover, playHov, dt);
+    DrawUnifiedMenuCommand(PlayText(L"뒤로", L"BACK"), PlayText(L"돌아가기", L"RETURN"),
+                           routeX, routeY, routeW, routeH,
+                           0.48f, 0.82f, 1.0f, contentA,
+                           backHover, false, 0.0f, now,
+                           0.92f, 0.58f, true, true, true);
+    DrawUnifiedMenuCommand(PlayText(L"플레이", L"PLAY"), nullptr,
+                           playX, playY, playW, playH,
+                           weaponR, weaponG, weaponB, contentA,
+                           playHover, true,
+                           0.12f + 0.10f * sinf(now * 2.2f), now + 0.51f,
+                           0.92f, 0.58f, true, true, true, true);
+    DrawUnifiedMenuCommand(resetLabel, PlayText(L"활성 시련 해제", L"CLEAR ACTIVE"),
+                           resetX, resetY, resetW, routeH,
+                           trialR, trialG, trialB, contentA,
+                           resetHover, false,
+                           0.08f + 0.08f * sinf(now * 1.8f), now + 0.86f,
+                           0.92f, 0.58f, true, true, true);
+
+    if (backHov && lmbClick && ready) exiting = true;
+    if (playHov && lmbClick && ready) {
+        syncTrialsToGame();
+        launchExit = true;
+        launchT = 0.0f;
+    }
+
+    g_BatchAlpha = 1.0f;
+    if (launchExit && launchT >= 0.50f) {
+        g_SelectedJob = weapon == 0 ? JOB_NONE : JOB_VAMPIRE;
+        s_RcWeapon = weapon;
+        s_MainMenuRunConfigPanel = false;
+        if (g_CreativeMode) g_GameManager.currentState = GameState::CREATIVE_CONFIG;
+        else { c.reset(); FinalizeLoadout(c, FixedWeaponForSelectedJob()); }
+        launchExit = false;
+        launchT = 0.0f;
+    }
+    if (exiting && exitT >= 0.42f) {
+        s_MainMenuRunConfigPanel = false;
+        s_MainMenuResumeFromPanel = true;
+        ResetRunConfigUi();
+        g_MainMenuEntryT = 1.0f;
+        entry = 0.0f;
+        exitT = 0.0f;
+        exiting = false;
+        launchExit = false;
+        launchT = 0.0f;
+        g_GameManager.currentState = GameState::MAIN_MENU;
+    }
+}
+
+static void Scene_RunConfigInlineLegacy(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh, dt = std::min(c.delta, 0.05f);
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
@@ -9120,27 +11514,17 @@ static void Scene_TrialSelectInline(const SceneCtx& c) {
 
     // REROLL 버튼
     {
-        const bool rrHov = ready && mx >= rrX2 && mx < rrX2 + rrW2
-                        && my >= btnRowY && my < btnRowY + btnRowH;
-        rerollHover = UpdateMenuCommandHover(rerollHover, rrHov, dt);
-        const float rfa = (0.38f + 0.30f * rerollHover) * contentA;
-        const float cw2 = 16.0f * uiS;
-        drawRect(rrX2, btnRowY, rrW2, btnRowH, tr, tg, tb, (0.04f + 0.07f * rerollHover) * contentA);
-        LogoLine(rrX2,         btnRowY,           rrX2 + cw2,         btnRowY,              0.9f*uiS, tr,tg,tb, rfa);
-        LogoLine(rrX2,         btnRowY,           rrX2,               btnRowY + cw2,        0.9f*uiS, tr,tg,tb, rfa);
-        LogoLine(rrX2 + rrW2,  btnRowY,           rrX2+rrW2-cw2,      btnRowY,              0.9f*uiS, tr,tg,tb, rfa);
-        LogoLine(rrX2 + rrW2,  btnRowY,           rrX2 + rrW2,        btnRowY + cw2,        0.9f*uiS, tr,tg,tb, rfa);
-        LogoLine(rrX2,         btnRowY + btnRowH, rrX2 + cw2,         btnRowY + btnRowH,    0.9f*uiS, tr,tg,tb, rfa);
-        LogoLine(rrX2,         btnRowY + btnRowH, rrX2,               btnRowY+btnRowH-cw2,  0.9f*uiS, tr,tg,tb, rfa);
-        LogoLine(rrX2 + rrW2,  btnRowY + btnRowH, rrX2+rrW2-cw2,      btnRowY + btnRowH,    0.9f*uiS, tr,tg,tb, rfa);
-        LogoLine(rrX2 + rrW2,  btnRowY + btnRowH, rrX2 + rrW2,        btnRowY+btnRowH-cw2,  0.9f*uiS, tr,tg,tb, rfa);
-        const float rlW = g_TextS.Width(L"REROLL", 0.62f * uiS);
-        const float rlH = g_TextS.Height(L"REROLL", 0.62f * uiS);
-        DrawShadowedText(g_TextS, L"REROLL",
-                         rrX2 + (rrW2 - rlW) * 0.5f, btnRowY + (btnRowH - rlH) * 0.5f,
-                         0.62f * uiS,
-                         1.0f + (tr - 1.0f) * rerollHover, 1.0f + (tg - 1.0f) * rerollHover, 1.0f,
-                         (0.82f + 0.16f * rerollHover) * contentA, 0.70f);
+        const bool rrHov = UpdatePanelButtonHover(rerollHover, ready,
+                                                  mx, my,
+                                                  rrX2, btnRowY,
+                                                  rrW2, btnRowH, dt,
+                                                  8.0f * uiS);
+        DrawPanelButton(L"REROLL", nullptr,
+                        rrX2, btnRowY, rrW2, btnRowH,
+                        tr, tg, tb, contentA,
+                        rerollHover, false, 0.0f, now + 0.18f,
+                        0.62f * uiS, 0.48f * uiS,
+                        false, PanelButtonSlideSide::Both, true, true);
         if (rrHov && lmb && !g_LmbPrev && ready) {
             int idx[6] = {0,1,2,3,4,5};
             for (int i = 5; i > 0; --i) { int j = rand() % (i+1); std::swap(idx[i], idx[j]); }
@@ -9168,38 +11552,20 @@ static void Scene_TrialSelectInline(const SceneCtx& c) {
                          btnRowCX - tl2 * 0.5f, btnRowY - 22.0f * uiS,
                          0.46f * uiS, 1.0f, 1.0f, 1.0f, 0.92f * contentA, 0.72f);
     }
-    const bool startHov = ready && mx >= startX && mx < startX + startW && my >= startY && my < startY + startH;
-    startHover = UpdateMenuCommandHover(startHover, startHov, dt);
-    {
-        const float fa = (0.42f + 0.32f * startHover) * contentA;
-        const float fi = (0.06f + 0.10f * startHover) * contentA;
-        const float cw = 22.0f * uiS;
-        drawRect(startX, startY, startW, startH, tr, tg, tb, fi);
-        LogoLine(startX,            startY,            startX + cw,          startY,            1.1f*uiS, tr,tg,tb, fa);
-        LogoLine(startX,            startY,            startX,               startY + cw,       1.1f*uiS, tr,tg,tb, fa);
-        LogoLine(startX + startW,   startY,            startX + startW - cw, startY,            1.1f*uiS, tr,tg,tb, fa);
-        LogoLine(startX + startW,   startY,            startX + startW,      startY + cw,       1.1f*uiS, tr,tg,tb, fa);
-        LogoLine(startX,            startY + startH,   startX + cw,          startY + startH,   1.1f*uiS, tr,tg,tb, fa);
-        LogoLine(startX,            startY + startH,   startX,               startY + startH - cw, 1.1f*uiS, tr,tg,tb, fa);
-        LogoLine(startX + startW,   startY + startH,   startX + startW - cw, startY + startH,   1.1f*uiS, tr,tg,tb, fa);
-        LogoLine(startX + startW,   startY + startH,   startX + startW,      startY + startH - cw, 1.1f*uiS, tr,tg,tb, fa);
-        drawDiamond(startX + startW * 0.5f, startY,          3.5f*uiS, tr,tg,tb, fa * 0.72f);
-        drawDiamond(startX + startW * 0.5f, startY + startH, 3.5f*uiS, tr,tg,tb, fa * 0.72f);
-    }
-    DrawMenuCommandFeedback(startX, startY, startW, startH, tr, tg, tb, contentA,
-                            startHover, startHov ? 0.22f : 0.0f, now);
-    {
-        wchar_t startLabel[32];
-        swprintf_s(startLabel, L"START  +%d", s_TrialTargetCount);
-        const float tScale = 0.92f * uiS;
-        const float tW = g_TextL.Width(startLabel, tScale);
-        const float tH = g_TextL.Height(startLabel, tScale);
-        DrawShadowedText(g_TextL, startLabel,
-                         startX + (startW - tW) * 0.5f, startY + (startH - tH) * 0.5f,
-                         tScale,
-                         1.0f + (tr - 1.0f) * startHover, 1.0f + (tg - 1.0f) * startHover, 1.0f,
-                         (0.92f + 0.08f * startHover) * contentA, 0.86f);
-    }
+    const bool startHov = UpdatePanelButtonHover(startHover, ready,
+                                                 mx, my,
+                                                 startX, startY,
+                                                 startW, startH, dt,
+                                                 8.0f * uiS);
+    wchar_t startLabel[32];
+    swprintf_s(startLabel, L"START  +%d", s_TrialTargetCount);
+    DrawPanelButton(startLabel, nullptr,
+                    startX, startY, startW, startH,
+                    tr, tg, tb, contentA,
+                    startHover, false,
+                    startHov ? 0.22f : 0.0f, now + 0.42f,
+                    0.92f * uiS, 0.48f * uiS,
+                    false, PanelButtonSlideSide::Both, true, true);
     if (startHov && lmb && !g_LmbPrev && ready) {
         playExit = true;
         playT    = 0.0f;
@@ -9229,6 +11595,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
     const float now = (float)glfwGetTime();
+    const bool inGameSettings = (g_SettingsReturnTo == GameState::PAUSED);
     static int   tab = 0;          // 0=DISPLAY 1=AUDIO 2=CONTROL 3=SYSTEM
     static float entry = 0.0f;
     static float exitT = 0.0f;
@@ -9239,10 +11606,36 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     static int   pulseRow = -1;
     static float tabSwitchT   = 0.0f;
     static bool  s_volDrag    = false;
-    static float rootHover[5] = {};
-    static float rowHover[6]  = {};
-    static float optHover[6][8] = {};
+    static float listHover[32] = {};
+    static float rowHover[4][6]  = {};
+    static float optHover[4][6][8] = {};
     static float holdT = 0.0f;
+    static int listCursor = 1;
+    // Shared normalized scroll position for the left index and right board.
+    // Each pane maps the same 0..1 value to its own row geometry.
+    static float settingsScroll = 0.0f;
+    static float settingsScrollTarget = 0.0f;
+    static bool prevListW = false;
+    static bool prevListS = false;
+    static int detailRow = 0;
+    struct SettingsSnapshot {
+        int fps = 60;
+        VfxDensity density = VfxDensity::FULL;
+        bool shaderFx = false;
+        MobVisualStyle mobStyle = MobVisualStyle::CLASSIC;
+        bool combo = true;
+        bool backdropBlur = true;
+        int soundVol = 100;
+        bool autoFire = true;
+        bool autoSkill = false;
+        bool crosshair = true;
+        Language language = Language::KR;
+    };
+    static SettingsSnapshot savedSettings = {};
+    static bool savedSettingsValid = false;
+    static bool confirmBack = false;
+    static bool confirmAbandon = false;
+    static bool settingsDirty = false;
     static bool  wasInline = false;
     if (!wasInline || s_SettingsInlineNeedsReset) {
         entry = 0.0f;
@@ -9255,9 +11648,25 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         tabSwitchT = 0.0f;
         s_volDrag  = false;
         holdT = 0.0f;
-        for (auto& h : rootHover) h = 0.0f;
-        for (auto& h : rowHover)  h = 0.0f;
-        for (auto& row : optHover) for (auto& h : row) h = 0.0f;
+        listCursor = 1;
+        settingsScroll = 0.0f;
+        settingsScrollTarget = 0.0f;
+        prevListW = false;
+        prevListS = false;
+        detailRow = 0;
+        savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
+                          g_ShowCombo, g_BackdropBlurEnabled, g_SoundVol,
+                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_Language };
+        savedSettingsValid = true;
+        confirmBack = false;
+        confirmAbandon = false;
+        settingsDirty = false;
+        for (auto& h : listHover) h = 0.0f;
+        for (auto& category : rowHover)
+            for (auto& h : category) h = 0.0f;
+        for (auto& category : optHover)
+            for (auto& row : category)
+                for (auto& h : row) h = 0.0f;
         wasInline = true;
         s_SettingsInlineNeedsReset = false;
     }
@@ -9265,18 +11674,51 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     pulse = std::max(0.0f, pulse - dt * 2.0f);
     tabSwitchT += dt;
 
+    auto restoreSettings = [&]() {
+        if (!savedSettingsValid) return;
+        g_FpsCap = savedSettings.fps;
+        g_VfxDensity = savedSettings.density;
+        g_ShaderFx = savedSettings.shaderFx;
+        g_MobVisualStyle = savedSettings.mobStyle;
+        g_ShowCombo = savedSettings.combo;
+        g_BackdropBlurEnabled = savedSettings.backdropBlur;
+        g_SoundVol = savedSettings.soundVol;
+        g_AutoFire = savedSettings.autoFire;
+        g_AutoSkill = savedSettings.autoSkill;
+        g_ShowCrosshair = savedSettings.crosshair;
+        g_Language = savedSettings.language;
+    };
+    auto settingsChanged = [&]() {
+        if (!savedSettingsValid) return false;
+        return g_FpsCap != savedSettings.fps
+            || g_VfxDensity != savedSettings.density
+            || g_ShaderFx != savedSettings.shaderFx
+            || g_MobVisualStyle != savedSettings.mobStyle
+            || g_ShowCombo != savedSettings.combo
+            || g_BackdropBlurEnabled != savedSettings.backdropBlur
+            || g_SoundVol != savedSettings.soundVol
+            || g_AutoFire != savedSettings.autoFire
+            || g_AutoSkill != savedSettings.autoSkill
+            || g_ShowCrosshair != savedSettings.crosshair
+            || g_Language != savedSettings.language;
+    };
+
     const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
     const bool rmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     const bool backInput = (esc && !prevEsc) || (rmb && !prevRmb);
     prevEsc = esc; prevRmb = rmb;
     const float entryOldOut = Smoothstep(LogoClamp01(entry / 0.35f));
     const float entryTreeIn = Smoothstep(LogoClamp01((entry - 0.20f) / 0.35f));
-    if (backInput && !exiting && entry >= 0.55f) exiting = true;
+    if (backInput && !exiting && !confirmAbandon && entry >= 0.55f) {
+        if (settingsDirty) confirmBack = true;
+        else exiting = true;
+    }
     if (exiting) exitT = std::min(0.42f, exitT + dt);
     const float outP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
     const float treeA = entryTreeIn * (1.0f - outP);
     const float oldA = exiting ? outP : (1.0f - entryOldOut);
     const bool ready = !exiting && entry >= 0.55f;
+    const bool inputReady = ready && !confirmBack && !confirmAbandon;
     SetSceneTextureReveal(exiting
         ? std::max(0.0f, 1.0f - outP)
         : Smoothstep(LogoClamp01((entry - 0.04f) / 0.74f)));
@@ -9287,64 +11729,58 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     const float mainTotal = mainBH * 5.0f + mainGap * 4.0f;
     const float mainX = std::max(58.0f, sw * 0.075f);
     const float mainY = MainMenuCommandStartY(sh);
-    // Settings rows enter from the right, matching the inline ARMORY/CODEX motion.
-    const float rootX = mainX + 82.0f * uiS * (1.0f - treeA) + 180.0f * uiS * outP;
-    // Inline tabs occupy the same left command rail as the other main-menu panels.
-    const float rootY = mainY;
-    const float rootW = std::min(360.0f * uiS, mainBW * 0.70f);
-    const float rootH = mainBH;
-    DrawSharedMenuDim(sw, sh, mainX, mainY, mainBW, mainTotal,
-                      std::max(treeA, oldA), true);
-    const InlineThreeColumnLayout columns = BuildInlineThreeColumnLayout(
-        sw, sh, uiS, rootX, rootY, rootW, rootH);
-    const float depthX = columns.contentX;
-    const float depthY = columns.contentY;
-    const float detailX = columns.detailX;
-    const float detailY = columns.detailY;
-    const float detailW = columns.detailW;
+    // Settings uses its own full-canvas composition. The generic inline
+    // layout is intentionally not used here because it compresses the page
+    // into a small center panel.
+    const float depthX = sw * 0.30f;
+    const float depthY = std::max(112.0f * uiS, sh * 0.13f);
+    const float detailX = sw * 0.55f;
+    const float detailY = depthY;
+    const float detailW = std::max(300.0f * uiS, sw - detailX - 64.0f * uiS);
+    const float detailH = sh - depthY - 112.0f * uiS;
 
     // ── Large atmospheric backdrop ─────────────────────────────────
     // The field is intentionally left open; the live background is the page.
 
     // Canvas panel — solid core + feathered edges
-    const float panelReveal = Smoothstep(LogoClamp01((entry - 0.22f) / 0.42f));
-    {
-        const float cnvX = depthX - 14.0f;
-        const float cnvY = depthY - 14.0f;
-        const float cnvW = detailX + detailW - cnvX;
-        const float cnvH = columns.detailH + 28.0f;
-        LogoLine(cnvX, cnvY, cnvX + cnvW, cnvY,
-                 0.8f * uiS, 0.48f, 0.82f, 1.0f, 0.55f * panelReveal * treeA);
-    }
-
     // Tab accent color — shared by sphere motif and option chips
     const float tabR = tab == 0 ? 0.35f : tab == 1 ? 1.00f : tab == 2 ? 0.35f : 0.72f;
     const float tabG = tab == 0 ? 0.72f : tab == 1 ? 0.72f : tab == 2 ? 0.92f : 0.52f;
     const float tabB = tab == 0 ? 1.00f : tab == 1 ? 0.30f : tab == 2 ? 0.55f : 1.00f;
+    const bool korean = LangIndex() == 0;
 
-    DrawPersistentSceneLeftVignette(sw, sh, 0.08f);
+    DrawPersistentSceneSideVignettes(sw, sh, kWideSceneLinearAlpha);
     {
         const float cW  = detailX + detailW - depthX;
-        const float cH  = columns.detailH;
+        const float cH  = detailH;
         // Center at 78% of the panel width — large enough radius that rings bleed outside
-        const float mCX = depthX + cW * 0.78f;
+        const float mCX = depthX + cW * 0.24f;
         const float mCY = depthY + cH * 0.50f;
-        const float mR  = std::min(cH * 0.50f, cW * 0.38f);
+        const float mR  = std::min(cH * 0.28f, cW * 0.17f);
 
-        const float tabFade   = Smoothstep(std::min(tabSwitchT / 0.30f, 1.0f));
-        const float sphereA   = treeA * 0.52f * tabFade;
-
-        DrawSceneRadialVignette(mCX, mCY, mR * 2.2f, 0.08f * treeA);
-        DrawOrbitalPowerSphere(mCX, mCY, mR, 0, now, sphereA, uiS, tabR, tabG, tabB);
+        // Settings is a calibration screen, not a constellation browser.
+        // Keep only a very soft focal field behind the values; constellation
+        // nodes and the globe are intentionally omitted here.
+        DrawSceneRadialVignette(mCX, mCY, mR * 2.2f, 0.035f * treeA);
     }
 
     if (s_MainMenuSettingsPanel)
         DrawMainOnedowLogo(sw, sh, 0.42f * oldA,
                            LogoClamp01(oldA + 0.20f * treeA), sw * 0.30f - 160.0f * (1.0f - oldA), 0.82f);
 
+    DrawShadowedText(g_TextL, korean ? L"설정" : L"SETTINGS", mainX, 48.0f * uiS,
+                     1.16f, 1.0f, 1.0f, 1.0f, 0.94f * treeA, 0.72f);
+    DrawShadowedText(g_TextS, korean ? L"시스템 보정" : L"SYSTEM CALIBRATION",
+                     mainX + 4.0f * uiS, 86.0f * uiS,
+                     0.52f, 0.35f, 0.76f, 1.0f, 0.72f * treeA, 0.58f);
+
     // \uC88C\uCE21 ghost \uBC84\uD2BC \u2014 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0 \uB530\uB77C \uBA54\uC778\uBA54\uB274 vs \uC77C\uC2DC\uC815\uC9C0 \uBA54\uB274
     if (s_MainMenuSettingsPanel) {
-        static const wchar_t* menu[5] = { L"PLAY", L"SHOP", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
+        const wchar_t* menu[5] = { korean ? L"플레이" : L"PLAY",
+                                   korean ? L"상점" : L"SHOP",
+                                   korean ? L"성도 기록" : L"ASTRAL_LOG",
+                                   korean ? L"설정" : L"SETTING",
+                                   korean ? L"종료" : L"EXIT" };
         static const wchar_t* menuSub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 5; ++i) {
             const float y = mainY + i * (mainBH + mainGap);
@@ -9357,8 +11793,11 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                              0.72f, 0.77f, 0.84f, a * 0.9f, 0.62f);
         }
     } else {
-        static const wchar_t* menu[4] = { L"RESUME", L"CALIBRATION", L"RETURN_TO_HUB", L"TERMINATE" };
-        static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uBA54\uC778 \uBA54\uB274", L"\uAC8C\uC784 \uC885\uB8CC" };
+        const wchar_t* menu[4] = { korean ? L"재개" : L"RESUME",
+                                   korean ? L"설정" : L"CALIBRATION",
+                                   korean ? L"\uD3EC\uAE30\uD558\uAE30" : L"ABANDON RUN",
+                                   korean ? L"종료" : L"TERMINATE" };
+        static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uB7F0 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 4; ++i) {
             const float y = mainY + i * (mainBH + mainGap);
             const bool focus = i == 1;
@@ -9377,15 +11816,38 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         { L"DISPLAY",  L"\uD654\uBA74"       },
         { L"AUDIO",    L"\uC18C\uB9AC"       },
         { L"GAMEPLAY", L"\uAC8C\uC784\uD50C\uB808\uC774" },
-        { L"SYSTEM",   L"\uC2DC\uC2A4\uD15C" },
+        { L"ARCHIVE",  L"\uAE30\uB85D" },
         { L"BACK",     L"\uB4A4\uB85C"       },
     };
     if (tab >= 4) tab = 0;
 
+    // The integrated list below is the only settings navigation surface.
+    // The former orbit-tab controls were non-interactive and duplicated it.
+#if 0
+    const float orbitCX = mainX - 68.0f * uiS;
+    const float orbitCY = sh * 0.56f;
+    const float orbitRX = std::min(236.0f * uiS, sw * 0.145f);
+    const float orbitRY = sh * 0.39f;
+    const float orbitStart = -1.16f;
+    const float orbitEnd = 1.16f;
+    const float orbitR = 0.34f;
+    const float orbitG = 0.72f;
+    const float orbitB = 1.00f;
+    DrawSettingsOrbitArc(orbitCX, orbitCY, orbitRX, orbitRY,
+                 orbitStart, orbitEnd, orbitR, orbitG, orbitB,
+                 0.78f * uiS, 0.0f);
+    DrawSettingsOrbitArc(orbitCX, orbitCY, orbitRX * 0.87f, orbitRY * 0.87f,
+                 orbitStart + 0.08f, orbitEnd - 0.08f,
+                 orbitR, orbitG, orbitB,
+                 0.48f * uiS, 0.0f);
+
     for (int i = 0; i < 5; ++i) {
-        const float y = rootY + i * (rootH + mainGap);
-        const bool hov = ready && mx >= rootX - 28.0f && mx < depthX - 36.0f
-                       && my >= y && my < y + rootH;
+        const float t = (float)i / 4.0f;
+        const float angle = orbitStart + (orbitEnd - orbitStart) * t;
+        const float nodeX = orbitCX + cosf(angle) * orbitRX;
+        const float nodeY = orbitCY + sinf(angle) * orbitRY;
+        const float nodeSize = 5.4f * uiS;
+        const bool hov = false;
         rootHover[i] = UpdateMenuCommandHover(rootHover[i], hov, dt);
         if (hov && lmb && !g_LmbPrev) {
             if (i == 4) {
@@ -9402,38 +11864,62 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         }
         const bool selected = (i == tab && i < 4);
         const float revealT = MenuCommandReveal(entry, i);
-        const float rowA    = revealT * treeA;
-        const float x       = rootX + (1.0f - revealT) * 34.0f - 10.0f * rootHover[i];
+        const float rowA    = 0.0f;
+        const float x       = nodeX + 18.0f * uiS - 8.0f * rootHover[i];
         const float cFlash  = (i == tab && pulse > 0.0f && i < 4) ? pulse : 0.0f;
-        DrawUnifiedMenuCommand(tabs[i].en, tabs[i].kr, x, y, rootW, rootH,
-                               0.48f, 0.82f, 1.0f, rowA, rootHover[i], selected,
-                               cFlash, now + (float)i * 0.17f, 1.14f, 0.54f);
+        const float nodeR = selected ? 0.34f : orbitR;
+        const float nodeG = selected ? 0.92f : orbitG;
+        const float nodeB = selected ? 1.00f : orbitB;
+        DrawVisibleConstellNode(nodeX, nodeY,
+                                nodeSize * (selected ? 1.24f : 0.92f),
+                                nodeR, nodeG, nodeB,
+                                rowA * (selected ? 1.0f : 0.64f),
+                                true, true);
+        DrawUnifiedMenuCommand(tabs[i].en, tabs[i].kr, x,
+                               nodeY - rootH * 0.42f, rootW, rootH,
+                               nodeR, nodeG, nodeB, rowA,
+                               rootHover[i], selected,
+                               cFlash, now + (float)i * 0.17f,
+                               0.94f, 0.46f, true);
     }
 
     // Connector: active tab \u2192 right panel header
-    LogoLine(rootX + rootW + 10.0f, rootY + tab * (rootH + mainGap) + rootH * 0.5f,
-             depthX - 6.0f,          depthY + rootH * 0.5f,
-             1.0f, 0.48f, 0.82f, 1.0f, 0.20f * treeA);
+    // The former orbit block is kept disabled while the integrated catalogue
+    // below owns all category navigation.
+#endif
+    // The open field intentionally has no active-tab bridge line.
 
     // \u2550\u2550\u2550 RIGHT PANEL \u2014 SETTINGS ROWS \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
     const float dA   = treeA * (0.78f + 0.22f * (1.0f - pulse));
+    // The settings body owns the full area to the right of the category
+    // rail, split into a readable list column and a dedicated readout column.
     const float rpX  = depthX;
-    const float rpW  = detailX + detailW - depthX;
+    const float rpW  = detailX + detailW - rpX;
 
-    // Header
-    DrawShadowedText(g_TextS, L"SYS_CALIBRATION", rpX, depthY, 0.56f,
+    // Header: category context stays quiet so the selected setting can own
+    // the visual hierarchy below it.
+    DrawShadowedText(g_TextS, korean ? L"관측소 보정" : L"OBSERVATORY CALIBRATION", rpX, depthY, 0.56f,
                      0.48f, 0.82f, 1.0f, 0.70f * dA, 0.66f);
-    DrawShadowedText(g_TextL, tabs[tab].en, rpX, depthY + 38.0f, 1.08f,
-                     1.0f, 1.0f, 1.0f, 0.98f * dA, 0.78f);
-    const float sepY = depthY + 86.0f;
-    LogoLine(rpX, sepY, rpX + rpW * 0.82f, sepY,
-             1.0f, 0.48f, 0.82f, 1.0f, 0.30f * dA);
+    DrawShadowedText(g_TextS, korean ? L"전체 설정" : L"ALL SETTINGS", rpX, depthY + 34.0f, 0.72f,
+                     tabR, tabG, tabB, 0.90f * dA, 0.68f);
+    const float sepY = depthY + 68.0f;
+    LogoLine(rpX, sepY, rpX + rpW * 0.92f, sepY,
+             0.76f * uiS, tabR, tabG, tabB, 0.22f * dA);
 
     // Row layout constants (5행 탭은 높이 줄임)
-    const float rRowH   = (tab == 0) ? 62.0f : 72.0f;
-    const float rFirstY = sepY + 14.0f;
-    const float rLabelX = rpX + 30.0f;
-    const float rClickW = std::min(rpW * 0.90f, 860.0f);
+    // Use the available vertical field instead of compressing every tab into
+    // the same short block. Sparse tabs therefore breathe, while DISPLAY
+    // still keeps enough rows visible without creating a second duplicate UI.
+    const float rRowH   = 220.0f;
+    const float rFirstY = detailY + 92.0f;
+    const float rLabelX = rpX;
+    // Let the control column use the full available width. The old 900px cap
+    // forced FPS options to shrink and made read-only values collide with the
+    // description column on wider layouts.
+    // Keep the interaction/readout panel inside its own right-side bounds.
+    // The old minimum width could push the last option past the canvas on
+    // narrow windows.
+    const float rClickW = std::max(1.0f, rpW - 20.0f * uiS);
 
     if (pulse <= 0.01f) pulseRow = -1;
 
@@ -9449,8 +11935,12 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         int optCount   = 0;
         int optCur     = 0;                 // 현재 선택된 인덱스
     };
+    SRow settingsRows[4][6] = {};
+    const int rowCounts[4] = { 4, 5, 3, 2 };
+    // Kept as a compatibility buffer for the legacy single-row block below;
+    // the integrated board reads settingsRows instead.
     SRow rows[6] = {};
-    int  rowCount = 0;
+    int rowCount = 0;
 
     static wchar_t s_volBuf[8];
     static wchar_t s_scoreBuf[24];
@@ -9464,22 +11954,19 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                     { L"VSYNC", L"30", L"60", L"144", L"300", L"UNLIM" }, 6, fpsCur };
         rows[1] = { L"GRAPHICS",   nullptr, false, false, false, false,
                     { L"FULL", L"REDUCED" }, 2, g_VfxDensity == VfxDensity::FULL ? 0 : 1 };
-        rows[2] = { L"CRT EFFECT", nullptr, false, false, false, false,
-                    { L"ON", L"OFF" }, 2, g_ShaderFx ? 0 : 1 };
-        rows[3] = { L"MOB STYLE",  nullptr, false, false, false, false,
-                    { L"CLASSIC", L"SOFT" }, 2, g_MobVisualStyle == MobVisualStyle::CLASSIC ? 0 : 1 };
-        rows[4] = { L"COMBO HUD",  nullptr, false, false, false, false,
+        rows[2] = { L"COMBO HUD",  nullptr, false, false, false, false,
                     { L"ON", L"OFF" }, 2, g_ShowCombo ? 0 : 1 };
-        rows[5] = { L"BACKDROP BLUR", nullptr, false, false, false, false,
-                    { L"OFF", L"10", L"20", L"30", L"40", L"50", L"60" }, 7,
-                    g_BackdropBlurEnabled
-                        ? std::max(1, std::min(6, g_BackdropBlurStrength / 10))
-                        : 0 };
-        rowCount = 6;
+        rows[3] = { L"BACKDROP BLUR", nullptr, false, false, false, false,
+                    { L"OFF", L"ON" }, 2, g_BackdropBlurEnabled ? 1 : 0 };
+        rowCount = 4;
     } else if (tab == 1) { // AUDIO
         swprintf_s(s_volBuf, L"%d", g_SoundVol);
         rows[0] = { L"MASTER VOL", s_volBuf, false, true, false, false };
-        rowCount = 1;
+        rows[1] = { L"BGM BUS",     L"ACTIVE",          true, false, false, false };
+        rows[2] = { L"SFX BUS",     L"ACTIVE",          true, false, false, false };
+        rows[3] = { L"OUTPUT",      L"STEREO",          true, false, false, false };
+        rows[4] = { L"AUDIO ENGINE",L"MINIAUDIO",       true, false, false, false };
+        rowCount = 5;
     } else if (tab == 2) { // GAMEPLAY
         rows[0] = { L"AUTO FIRE",  nullptr, false, false, false, false,
                     { L"ON", L"OFF" }, 2, g_AutoFire ? 0 : 1 };
@@ -9502,54 +11989,445 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         rowCount = 2;
     }
 
+    const float optionStartX = rpX + 28.0f * uiS;
+    const wchar_t* rowDescription[6] = {};
+    if (tab == 0) {
+        static const wchar_t* d[4] = {
+            L"Frame pacing target",
+            L"Scene detail density",
+            L"Combat combo signal",
+            L"Background detail filter"
+        };
+        for (int i = 0; i < 4; ++i) rowDescription[i] = d[i];
+    } else if (tab == 1) {
+        static const wchar_t* d[5] = {
+            L"Master output level",
+            L"Background music routing",
+            L"Combat sound routing",
+            L"Output channel layout",
+            L"Active audio runtime"
+        };
+        for (int i = 0; i < 5; ++i) rowDescription[i] = d[i];
+    } else if (tab == 2) {
+        static const wchar_t* d[3] = {
+            L"Automatic target fire",
+            L"Automatic skill trigger",
+            L"In-run aiming reticle"
+        };
+        for (int i = 0; i < 3; ++i) rowDescription[i] = d[i];
+    } else {
+        rowDescription[0] = L"Interface language";
+        rowDescription[1] = L"Erase local progress";
+    }
+
     // \u2500\u2500 Render rows \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // Build the same setting rows for every category so the right side can
+    // render one continuous board instead of replacing the view per tab.
+    swprintf_s(s_volBuf, L"%d", g_SoundVol);
+    const int allLangCur = g_Language == Language::KR ? 0 :
+                           g_Language == Language::EN ? 1 : 2;
+    const int allFpsCur =
+        g_FpsCap == 0 ? 0 : g_FpsCap == 30 ? 1 : g_FpsCap == 60 ? 2 :
+        g_FpsCap == 144 ? 3 : g_FpsCap == 300 ? 4 : 5;
+    settingsRows[0][0] = { korean ? L"FPS 제한" : L"FPS CAP", nullptr, false, false, false, false,
+                           { korean ? L"동기화" : L"VSYNC", L"30", L"60", L"144", L"300",
+                             korean ? L"무제한" : L"UNLIM" }, 6, allFpsCur };
+    settingsRows[0][1] = { korean ? L"그래픽 품질" : L"GRAPHICS", nullptr, false, false, false, false,
+                           { korean ? L"전체" : L"FULL", korean ? L"감소" : L"REDUCED" },
+                           2, g_VfxDensity == VfxDensity::FULL ? 0 : 1 };
+    settingsRows[0][2] = { korean ? L"콤보 HUD" : L"COMBO HUD", nullptr, false, false, false, false,
+                           { korean ? L"켜짐" : L"ON", korean ? L"꺼짐" : L"OFF" }, 2, g_ShowCombo ? 0 : 1 };
+    settingsRows[0][3] = { korean ? L"배경 블러" : L"BACKDROP BLUR", nullptr, false, false, false, false,
+                           { korean ? L"꺼짐" : L"OFF", korean ? L"켜짐" : L"ON" },
+                           2, g_BackdropBlurEnabled ? 1 : 0 };
+    settingsRows[1][0] = { korean ? L"마스터 볼륨" : L"MASTER VOL", s_volBuf, false, true, false, false };
+    settingsRows[1][1] = { korean ? L"BGM 채널" : L"BGM BUS", korean ? L"활성" : L"ACTIVE", true, false, false, false };
+    settingsRows[1][2] = { korean ? L"효과음 채널" : L"SFX BUS", korean ? L"활성" : L"ACTIVE", true, false, false, false };
+    settingsRows[1][3] = { korean ? L"출력" : L"OUTPUT", korean ? L"스테레오" : L"STEREO", true, false, false, false };
+    settingsRows[1][4] = { korean ? L"오디오 엔진" : L"AUDIO ENGINE", L"MINIAUDIO", true, false, false, false };
+    settingsRows[2][0] = { korean ? L"자동 발사" : L"AUTO FIRE", nullptr, false, false, false, false,
+                           { korean ? L"켜짐" : L"ON", korean ? L"꺼짐" : L"OFF" }, 2, g_AutoFire ? 0 : 1 };
+    settingsRows[2][1] = { korean ? L"자동 스킬" : L"AUTO SKILL", nullptr, false, false, false, false,
+                           { korean ? L"켜짐" : L"ON", korean ? L"꺼짐" : L"OFF" }, 2, g_AutoSkill ? 0 : 1 };
+    settingsRows[2][2] = { korean ? L"조준선" : L"CROSSHAIR", nullptr, false, false, false, false,
+                           { korean ? L"켜짐" : L"ON", korean ? L"꺼짐" : L"OFF" }, 2, g_ShowCrosshair ? 0 : 1 };
+    settingsRows[3][0] = { korean ? L"언어" : L"LANGUAGE", nullptr, false, false, false, false,
+                           { korean ? L"한국어" : L"KOR", korean ? L"영어" : L"ENG", korean ? L"일본어" : L"JPN" },
+                           3, allLangCur };
+    settingsRows[3][1] = { korean ? L"데이터 초기화" : L"RESET DATA", nullptr, false, false, true, true };
+
+    const wchar_t* allDescriptions[4][6] = {};
+    const wchar_t* allDisplayDesc[4] = {
+        korean ? L"프레임 동기화 기준" : L"Frame pacing target",
+        korean ? L"장면 디테일 밀도" : L"Scene detail density",
+        korean ? L"전투 콤보 표시" : L"Combat combo signal",
+        korean ? L"배경 디테일 필터" : L"Background detail filter" };
+    const wchar_t* allAudioDesc[5] = {
+        korean ? L"전체 출력 음량" : L"Master output level",
+        korean ? L"배경 음악 채널" : L"Background music routing",
+        korean ? L"전투 효과음 채널" : L"Combat sound routing",
+        korean ? L"출력 채널 구성" : L"Output channel layout",
+        korean ? L"사용 중인 오디오 엔진" : L"Active audio runtime" };
+    const wchar_t* allGameplayDesc[3] = {
+        korean ? L"자동 조준 발사" : L"Automatic target fire",
+        korean ? L"자동 스킬 발동" : L"Automatic skill trigger",
+        korean ? L"플레이 중 조준선" : L"In-run aiming reticle" };
+    for (int i = 0; i < 4; ++i) allDescriptions[0][i] = allDisplayDesc[i];
+    for (int i = 0; i < 5; ++i) allDescriptions[1][i] = allAudioDesc[i];
+    for (int i = 0; i < 3; ++i) allDescriptions[2][i] = allGameplayDesc[i];
+    allDescriptions[3][0] = korean ? L"인터페이스 언어" : L"Interface language";
+    allDescriptions[3][1] = korean ? L"로컬 진행도 삭제" : L"Erase local progress";
+
+    auto settingChanged = [&](int category, int row) {
+        if (!savedSettingsValid) return false;
+        if (category == 0) {
+            if (row == 0) return g_FpsCap != savedSettings.fps;
+            if (row == 1) return g_VfxDensity != savedSettings.density;
+            if (row == 2) return g_ShowCombo != savedSettings.combo;
+            if (row == 3) return g_BackdropBlurEnabled != savedSettings.backdropBlur;
+        } else if (category == 1) {
+            return row == 0 && g_SoundVol != savedSettings.soundVol;
+        } else if (category == 2) {
+            if (row == 0) return g_AutoFire != savedSettings.autoFire;
+            if (row == 1) return g_AutoSkill != savedSettings.autoSkill;
+            if (row == 2) return g_ShowCrosshair != savedSettings.crosshair;
+        } else if (category == 3) {
+            return row == 0 && g_Language != savedSettings.language;
+        }
+        return false;
+    };
+
+    // Integrated settings catalogue: category headers and setting entries
+    // share one scrollable stream in the diagonal left pane.
+    struct SettingsListEntry { int category; int row; bool header; const wchar_t* label; };
+    SettingsListEntry list[32] = {};
+    int listCount = 0;
+    auto addHeader = [&](int cat, const wchar_t* label) {
+        list[listCount++] = { cat, -1, true, label };
+    };
+    auto addItem = [&](int cat, int row, const wchar_t* label) {
+        list[listCount++] = { cat, row, false, label };
+    };
+    const wchar_t* displayLabels[4] = {
+        korean ? L"FPS 제한" : L"FPS CAP",
+        korean ? L"그래픽 품질" : L"GRAPHICS",
+        korean ? L"콤보 HUD" : L"COMBO HUD",
+        korean ? L"배경 블러" : L"BACKDROP BLUR" };
+    const wchar_t* audioLabels[5] = {
+        korean ? L"마스터 볼륨" : L"MASTER VOL",
+        korean ? L"BGM 채널" : L"BGM BUS",
+        korean ? L"효과음 채널" : L"SFX BUS",
+        korean ? L"출력" : L"OUTPUT",
+        korean ? L"오디오 엔진" : L"AUDIO ENGINE" };
+    const wchar_t* gameplayLabels[3] = {
+        korean ? L"자동 발사" : L"AUTO FIRE",
+        korean ? L"자동 스킬" : L"AUTO SKILL",
+        korean ? L"조준선" : L"CROSSHAIR" };
+    const wchar_t* archiveLabels[2] = {
+        korean ? L"언어" : L"LANGUAGE",
+        korean ? L"데이터 초기화" : L"RESET DATA" };
+    addHeader(0, korean ? L"화면" : L"DISPLAY");
+    for (int i = 0; i < 4; ++i) addItem(0, i, displayLabels[i]);
+    addHeader(1, korean ? L"소리" : L"AUDIO");
+    for (int i = 0; i < 5; ++i) addItem(1, i, audioLabels[i]);
+    addHeader(2, korean ? L"게임플레이" : L"GAMEPLAY");
+    for (int i = 0; i < 3; ++i) addItem(2, i, gameplayLabels[i]);
+    addHeader(3, korean ? L"기록" : L"ARCHIVE");
+    for (int i = 0; i < 2; ++i) addItem(3, i, archiveLabels[i]);
+
+    bool focusChanged = false;
+
+    auto isListItem = [&](int index) {
+        return index >= 0 && index < listCount && !list[index].header;
+    };
+    auto stepListCursor = [&](int direction) {
+        int next = listCursor;
+        do {
+            next += direction;
+            if (next < 0) next = listCount - 1;
+            if (next >= listCount) next = 0;
+        } while (!isListItem(next));
+        listCursor = next;
+    };
+    if (!isListItem(listCursor)) listCursor = 1;
+
+    const float listX = mainX + 14.0f * uiS;
+    const float listTop = depthY + 8.0f * uiS;
+    const float listW = std::max(250.0f * uiS, depthX - listX - 38.0f * uiS);
+    const float listBottom = sh - 154.0f * uiS;
+    const float listH = std::max(220.0f * uiS, listBottom - listTop);
+    const float listRowH = 52.0f * uiS;
+    // The rendered y positions are pixels, so their scroll range must be
+    // pixels too.  Row-count values here capped the previous list movement
+    // to only a handful of pixels.
+    const float leftMaxScroll = std::max(0.0f,
+        (float)listCount * listRowH - listH);
+    const float rightListTop = sepY + 34.0f * uiS;
+    const float rightListBottom = sh - 206.0f * uiS;
+    const float rightListH = std::max(260.0f * uiS, rightListBottom - rightListTop);
+    const float rightRowH = 112.0f * uiS;
+    const float rightMaxScroll = std::max(0.0f,
+        (float)listCount * rightRowH - rightListH);
+    settingsScrollTarget = std::max(0.0f, std::min(1.0f, settingsScrollTarget));
+    // The current scroll value deliberately trails the requested position.
+    // This single shared easing drives the left index, right board and both
+    // scroll thumbs together.
+    settingsScroll += (settingsScrollTarget - settingsScroll)
+                    * std::min(1.0f, dt * 15.0f);
+    settingsScroll = std::max(0.0f, std::min(1.0f, settingsScroll));
+    const float leftScroll = settingsScroll * leftMaxScroll;
+    const float rightScroll = settingsScroll * rightMaxScroll;
+    const float listRailTopX = listX - 4.0f * uiS;
+    const float listRailDiagonal = std::min(72.0f * uiS, listW * 0.18f);
+    const float listRailBottomX = listRailTopX + listRailDiagonal;
+    auto listRailXAt = [&](float y) {
+        const float t = std::max(0.0f,
+            std::min(1.0f, (y - listTop) / std::max(1.0f, listH)));
+        return listRailTopX + listRailDiagonal * t;
+    };
+    const bool overList = inputReady && mx >= listX - 24.0f * uiS
+                       && mx < listX + listW + 28.0f * uiS
+                       && my >= listTop && my < listBottom;
+    const bool overRightList = inputReady && mx >= rpX - 10.0f * uiS
+                            && mx < rpX + rClickW
+                            && my >= rightListTop && my < rightListBottom;
+    // The board is one continuous document.  Let the wheel work anywhere in
+    // its central canvas, including category separators, so AUDIO/GAMEPLAY/
+    // ARCHIVE never depend on a narrow hit strip.
+    const bool overSettingsCanvas = inputReady
+                                 && mx >= listX - 30.0f * uiS
+                                 && mx < rpX + rpW + 24.0f * uiS
+                                 && my >= listTop && my < rightListBottom;
+    if (overSettingsCanvas && g_ScrollAccum != 0.0f) {
+        settingsScrollTarget -= g_ScrollAccum * 0.085f;
+        settingsScrollTarget = std::max(0.0f, std::min(1.0f, settingsScrollTarget));
+        g_ScrollAccum = 0.0f;
+    }
+    const bool listWKey = c.window && glfwGetKey(c.window, GLFW_KEY_W) == GLFW_PRESS;
+    const bool listSKey = c.window && glfwGetKey(c.window, GLFW_KEY_S) == GLFW_PRESS;
+    const int cursorBeforeKeys = listCursor;
+    if ((overList || overRightList) && listWKey && !prevListW) stepListCursor(-1);
+    if ((overList || overRightList) && listSKey && !prevListS) stepListCursor(1);
+    focusChanged = listCursor != cursorBeforeKeys;
+    prevListW = listWKey;
+    prevListS = listSKey;
+    auto revealFocus = [&]() {
+        if (rightMaxScroll <= 0.0f) {
+            settingsScrollTarget = 0.0f;
+            return;
+        }
+        const float target = std::max(0.0f, std::min(rightMaxScroll,
+            (float)listCursor * rightRowH - rightListH * 0.42f));
+        settingsScrollTarget = target / rightMaxScroll;
+    };
+    if (focusChanged) revealFocus();
+    if (isListItem(listCursor)) {
+        const SettingsListEntry& selectedEntry = list[listCursor];
+        if (selectedEntry.category != tab || selectedEntry.row != detailRow) {
+            tab = selectedEntry.category;
+            detailRow = selectedEntry.row;
+            focusChanged = true;
+            pulse = 1.0f;
+            tabSwitchT = 0.0f;
+            for (auto& category : rowHover)
+                for (auto& h : category) h = 0.0f;
+            for (auto& category : optHover)
+                for (auto& row : category)
+                    for (auto& h : row) h = 0.0f;
+        }
+    }
+    if (focusChanged) revealFocus();
+
+    // The left catalogue uses the same diagonal constellation language as the
+    // PLAY trial list. Rows grow from one restrained  rail instead of sitting
+    // on a rigid text column.
+    BatchFlush();
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((GLint)(listX - 34.0f * uiS),
+              (GLint)(sh - listBottom),
+              (GLint)(listW + 72.0f * uiS),
+              (GLint)(listBottom - listTop));
+    LogoLine(listRailTopX, listTop - 8.0f * uiS,
+             listRailBottomX, listBottom + 8.0f * uiS,
+             0.82f * uiS, 0.34f, 0.72f, 1.0f, 0.24f * dA);
+    LogoLine(listRailTopX + 13.0f * uiS, listTop - 8.0f * uiS,
+             listRailBottomX + 13.0f * uiS, listBottom + 8.0f * uiS,
+             0.40f * uiS, 0.34f, 0.72f, 1.0f, 0.08f * dA);
+    DrawVisibleConstellNode(listRailTopX, listTop - 8.0f * uiS,
+                            2.2f * uiS, 0.34f, 0.72f, 1.0f,
+                            0.48f * dA, false, false);
+    DrawVisibleConstellNode(listRailBottomX, listBottom + 8.0f * uiS,
+                            2.2f * uiS, 0.34f, 0.72f, 1.0f,
+                            0.48f * dA, false, false);
+    for (int i = 0; i < listCount; ++i) {
+        const float y = listTop + i * listRowH - leftScroll;
+        if (y < listTop - listRowH || y > listBottom) {
+            listHover[i] = UpdateMenuCommandHover(listHover[i], false, dt);
+            continue;
+        }
+        const float rowCenter = y + listRowH * 0.50f;
+        const float railX = listRailXAt(rowCenter);
+        const bool hov = overList && mx >= listX - 10.0f * uiS
+                      && mx < listX + listW + 18.0f * uiS
+                      && my >= y && my < y + listRowH;
+        if (hov && lmb && !g_LmbPrev) {
+            int targetIndex = i;
+            if (list[i].header) {
+                for (int k = i + 1; k < listCount; ++k) {
+                    if (!list[k].header && list[k].category == list[i].category) {
+                        targetIndex = k;
+                        break;
+                    }
+                }
+            }
+            if (!list[targetIndex].header) {
+                listCursor = targetIndex;
+                detailRow = list[targetIndex].row;
+                focusChanged = true;
+                if (tab != list[targetIndex].category) {
+                    tab = list[targetIndex].category;
+                    pulse = 1.0f;
+                    tabSwitchT = 0.0f;
+                    detailRow = list[targetIndex].row;
+                    for (auto& category : rowHover)
+                        for (auto& h : category) h = 0.0f;
+                    for (auto& category : optHover)
+                        for (auto& row : category)
+                            for (auto& h : row) h = 0.0f;
+                }
+            }
+        }
+        listHover[i] = UpdateMenuCommandHover(listHover[i], hov && !list[i].header, dt);
+        if (list[i].header) {
+            const float headerX = railX + 20.0f * uiS;
+            DrawShadowedText(g_TextS, list[i].label, headerX,
+                             y + 3.0f * uiS, 1.10f,
+                             0.34f, 0.72f, 1.0f, 0.78f * dA, 0.56f);
+            LogoLine(headerX, y + listRowH - 2.0f * uiS,
+                     listX + listW * 0.78f, y + listRowH - 2.0f * uiS,
+                     0.7f * uiS, 0.34f, 0.72f, 1.0f, 0.16f * dA);
+        } else {
+            const bool changed = settingChanged(list[i].category, list[i].row);
+            // Clicking is navigation only.  Persistent colour is reserved
+            // for an actually changed value; hover remains transient.
+            const float visual = std::max(listHover[i], changed ? 0.72f : 0.0f);
+            const float itemX = railX + 22.0f * visual;
+            const float nodeX = itemX + 5.0f * uiS;
+            const float a = changed ? (0.86f + 0.14f * visual)
+                                    : (0.42f + 0.20f * visual);
+            const float r = changed ? 1.0f : 0.68f + 0.10f * visual;
+            const float g = changed ? 0.68f : 0.76f + 0.12f * visual;
+            const float b = changed ? 0.32f : 1.0f;
+            if (visual > 0.02f)
+                DrawConstellationDisc(nodeX, rowCenter,
+                                      (11.0f + 7.0f * visual) * uiS,
+                                      r, g, b, 0.07f * visual * dA);
+            DrawVisibleConstellLine(railX, rowCenter, nodeX, rowCenter,
+                                    0.56f * uiS, r, g, b,
+                                    (0.08f + 0.22f * visual) * dA);
+            DrawVisibleConstellNode(nodeX, rowCenter,
+                                    (2.8f + 1.0f * visual) * uiS,
+                                    r, g, b, a * dA,
+                                    false, false);
+            const float textA = changed
+                ? (0.98f + 0.02f * visual)
+                : (0.92f + 0.08f * visual);
+            DrawShadowedText(g_TextL, list[i].label,
+                             itemX + 20.0f * uiS, y + 8.0f * uiS, 0.66f,
+                             changed ? 1.0f : 1.0f,
+                             changed ? 0.68f : 1.0f,
+                             changed ? 0.32f : 1.0f, textA * dA, 0.62f);
+        }
+    }
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+    if (leftMaxScroll > 0.0f) {
+        const float trackX = listX + listW + 12.0f * uiS;
+        const float leftTotalH = listCount * listRowH;
+        const float thumbH = std::max(28.0f * uiS, listH * (listH / leftTotalH));
+        const float thumbY = listTop + (listH - thumbH) * settingsScroll;
+        LogoLine(trackX, listTop, trackX, listBottom,
+                 0.7f * uiS, 0.34f, 0.72f, 1.0f, 0.12f * dA);
+        LogoLine(trackX, thumbY, trackX, thumbY + thumbH,
+                 1.8f * uiS, 0.34f, 0.82f, 1.0f, 0.55f * dA);
+    }
+
+ #if 0
     int curHoverRow = -1;
     int curHoverOpt = -1; // which option chip is hovered within curHoverRow
     for (int i = 0; i < rowCount; ++i) {
-        const float ry = rFirstY + i * rRowH;
+        if (i != detailRow) {
+            rowHover[i] = 0.0f;
+            continue;
+        }
+        // Detail is a fixed readout slot. The selected row index belongs to
+        // the left catalogue only and must never move the right-side design.
+        const float ry = rFirstY;
         // 행마다 stagger: 탭 전환 후 순차 페이드인
-        const float rReveal = Smoothstep(LogoClamp01((tabSwitchT - i * 0.055f) / 0.18f));
+        const float rReveal = Smoothstep(LogoClamp01(tabSwitchT / 0.18f));
         const float rA = dA * rReveal;
+        // Every setting follows the same vertical grammar: title, description,
+        // then the actual control. Keep the control band comfortably below the
+        // description so long labels never collide with their values.
+        const float rowControlY = ry + 132.0f * uiS;
+        const float controlHitY = rowControlY - 30.0f * uiS;
+        const float controlHitH = 60.0f * uiS;
 
-        const bool hov = ready && !rows[i].readOnly
+        const bool hov = inputReady && !rows[i].readOnly
                        && mx >= rpX && mx < rpX + rClickW
-                       && my >= ry && my < ry + rRowH - 2.0f;
+                       && my >= controlHitY && my < controlHitY + controlHitH;
         if (hov) curHoverRow = i;
         rowHover[i] = UpdateMenuCommandHover(rowHover[i], hov, dt);
 
-        // Row highlight background
-        if (rowHover[i] > 0.01f)
-            drawRect(rpX + 2.0f, ry + 2.0f, rClickW - 4.0f, rRowH - 5.0f,
-                     0.48f, 0.82f, 1.0f, 0.055f * rowHover[i] * rA);
+        // A restrained interaction rail replaces heavy cards. The row stays
+        // transparent, but the hovered control gains a soft cyan trace so
+        // the three columns read as one connected setting.
+        const float rowFocus = rowHover[i];
+        if (rowFocus > 0.001f) {
+            drawRect(rpX, ry + rRowH - 10.0f,
+                     rClickW, 1.0f,
+                     0.34f, 0.72f, 1.0f, 0.12f * rowFocus * rA);
+            drawDiamond(rLabelX - 16.0f, rowControlY,
+                        2.8f + 1.8f * rowFocus,
+                        0.34f, 0.72f, 1.0f,
+                        0.42f * rowFocus * rA);
+        }
 
+        // Fixed satellite slot: rows remain broad hit targets, while their
+        // visual identity is a constellation node rather than a card.
         // Label
-        const float lA  = rows[i].readOnly ? 0.42f : (0.84f + 0.14f * rowHover[i]);
+        const float lA  = rows[i].readOnly ? 0.68f : (0.84f + 0.14f * rowHover[i]);
         const float lR  = rows[i].isDanger ? 1.0f  : 1.0f;
         const float lG  = rows[i].isDanger ? 0.36f : 1.0f;
         const float lB  = rows[i].isDanger ? 0.30f : 1.0f;
         DrawShadowedText(g_TextL, rows[i].label,
-                         rLabelX, ry + 20.0f, 0.96f,
+                         rLabelX, ry + 6.0f, 1.18f,
                          lR, lG, lB, lA * rA, 0.66f);
-
-        // Separator
-        LogoLine(rLabelX, ry + rRowH - 3.0f,
-                 rpX + rClickW * 0.78f, ry + rRowH - 3.0f,
-                 0.8f, 0.48f, 0.82f, 1.0f, 0.12f * rA);
+        if (rowDescription[i]) {
+            DrawShadowedText(g_TextS, rowDescription[i],
+                             rLabelX, ry + 56.0f, 0.72f,
+                             0.66f, 0.74f, 0.84f,
+                             0.76f * rA, 0.58f);
+        }
+        LogoLine(rLabelX, ry + 92.0f * uiS,
+                 rpX + rClickW, ry + 92.0f * uiS,
+                 0.62f * uiS, tabR, tabG, tabB, 0.16f * rA);
 
         const float flash = (pulseRow == i) ? pulse : 0.0f;
 
         if (rows[i].isVolume) {
-            const float slX  = rpX + rClickW * 0.36f;
-            const float slW  = rClickW * 0.50f;
-            const float slCY = ry + rRowH * 0.52f;
+            const float slX  = rpX + 28.0f * uiS;
+            const float slW  = std::max(180.0f * uiS,
+                                       rpX + rClickW - slX - 96.0f * uiS);
+            const float slCY = rowControlY;
             const float slH  = 8.0f;
             const float vol01 = g_SoundVol / 100.0f;
 
             // 드래그 처리
-            const bool inBar = ready
+            const bool inBar = inputReady
                 && (double)mx >= slX - 6.0 && (double)mx <= slX + slW + 6.0
                 && (double)my >= slCY - 14.0 && (double)my <= slCY + 14.0;
-            if (ready && lmb && (inBar || s_volDrag)) {
+            if (inputReady && lmb && (inBar || s_volDrag)) {
                 s_volDrag = true;
                 const float t = std::max(0.0f, std::min(1.0f, (float)((double)mx - slX) / slW));
                 g_SoundVol = (int)(t * 100.0f + 0.5f);
@@ -9575,14 +12453,15 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             // 수치 (슬라이더 오른쪽)
             wchar_t vbuf[8];
             swprintf_s(vbuf, L"%d", g_SoundVol);
-            DrawShadowedText(g_TextL, vbuf, slX + slW + 16.0f, ry + 20.0f, 0.88f,
+            DrawShadowedText(g_TextL, vbuf, slX + slW + 16.0f,
+                             rowControlY - 14.0f, 0.88f,
                              0.48f, 0.82f, 1.0f, (0.72f + 0.24f * glow) * rA, 0.58f);
         } else if (rows[i].isHold) {
             // Hold-to-confirm bar (RESET DATA)
             const float barH = 30.0f;
             const float barW = 240.0f;
             const float barX = rpX + rClickW - barW - 12.0f;
-            const float barY = ry + (rRowH - barH) * 0.5f;
+            const float barY = rowControlY - barH * 0.5f;
             const float showA = std::max(rowHover[i], holdT > 0.01f ? 1.0f : 0.0f);
             drawRect(barX, barY, barW, barH,
                      0.18f, 0.04f, 0.04f, 0.55f * showA * rA);
@@ -9598,69 +12477,626 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                              (0.72f + 0.26f * rowHover[i]) * rA, 0.58f);
         } else if (rows[i].optCount > 0) {
             // 각 옵션을 독립적으로 클릭 가능한 칩으로 렌더링
-            const float optSc = 0.82f;
-            const float chipPadX = 6.0f, chipPadY = 6.0f;
-            const float chipGap  = 10.0f;
+            // Option values are the actual controls, so they must read larger
+            // than the helper descriptions while still fitting long rows.
+            // FPS has six values and needs a compact rail; short binary
+            // options keep the larger control scale for readability.
+            float optSc = 0.96f;
+            const float chipPadX = 8.0f;
+            const float chipGap  = (i == 0) ? 9.0f : 14.0f;
             // 전체 너비 계산 (우→좌)
-            float ox = rpX + rClickW - 14.0f;
-            for (int j = rows[i].optCount - 1; j >= 0; --j) {
-                const float ow = g_TextL.Width(rows[i].opts[j], optSc);
-                if (j < rows[i].optCount - 1) ox -= chipGap;
-                ox -= ow + chipPadX * 2.0f;
+            const float optionStart = optionStartX;
+            const float optionEnd = rpX + rClickW - 12.0f;
+            float longestW = 0.0f;
+            for (int j = 0; j < rows[i].optCount; ++j)
+                longestW = std::max(longestW, g_TextL.Width(rows[i].opts[j], optSc));
+            float cellW = longestW + chipPadX * 2.0f;
+            float totalW = cellW * rows[i].optCount + chipGap * (rows[i].optCount - 1);
+            const float availableW = std::max(80.0f, optionEnd - optionStart);
+            if (totalW > availableW) {
+                const float fit = std::max(i == 0 ? 0.55f : 0.68f,
+                                           availableW / totalW);
+                optSc *= fit;
+                longestW = 0.0f;
+                for (int j = 0; j < rows[i].optCount; ++j)
+                    longestW = std::max(longestW, g_TextL.Width(rows[i].opts[j], optSc));
+                cellW = longestW + chipPadX * 2.0f;
+                totalW = cellW * rows[i].optCount + chipGap * (rows[i].optCount - 1);
             }
+            float ox = optionStart;
             // 좌→우 렌더링
             for (int j = 0; j < rows[i].optCount; ++j) {
                 const float ow  = g_TextL.Width(rows[i].opts[j], optSc);
                 const float chipX = ox;
-                const float chipW = ow + chipPadX * 2.0f;
-                const float chipY = ry + chipPadY + 6.0f;
-                const float chipH = rRowH - chipPadY * 2.0f - 12.0f;
+                const float chipW = cellW;
 
                 const bool isCur = (j == rows[i].optCur);
-                const bool ohov  = ready
-                                && mx >= chipX && mx < chipX + chipW
-                                && my >= ry    && my < ry + rRowH - 2.0f;
+                const bool ohov  = inputReady
+                                 && mx >= chipX && mx < chipX + chipW
+                                 && my >= controlHitY
+                                 && my < controlHitY + controlHitH;
                 optHover[i][j] = UpdateMenuCommandHover(optHover[i][j], ohov, dt);
                 if (ohov) { curHoverRow = i; curHoverOpt = j; }
 
                 float oR = tabR, oG = tabG, oB = tabB;
 
                 // 칩 배경
-                const float chipBgA = isCur ? 0.30f : 0.10f * optHover[i][j];
-                if (chipBgA > 0.005f)
-                    drawRect(chipX, chipY, chipW, chipH, oR, oG, oB, chipBgA * rA);
+                const float chipBgA = 0.0f;
+                (void)chipBgA;
                 // 칩 테두리 (선택된 경우)
                 if (isCur) {
-                    LogoLine(chipX, chipY,        chipX + chipW, chipY,        0.7f, oR, oG, oB, 0.40f * rA);
-                    LogoLine(chipX, chipY + chipH, chipX + chipW, chipY + chipH, 0.7f, oR, oG, oB, 0.40f * rA);
-                    LogoLine(chipX, chipY,        chipX,         chipY + chipH,  0.7f, oR, oG, oB, 0.40f * rA);
-                    LogoLine(chipX + chipW, chipY, chipX + chipW, chipY + chipH, 0.7f, oR, oG, oB, 0.40f * rA);
+                    drawDiamond(chipX - 8.0f * uiS, rowControlY,
+                                3.4f * uiS, oR, oG, oB, 0.78f * rA);
+                    LogoLine(chipX, rowControlY + 17.0f * uiS,
+                             chipX + chipW, rowControlY + 17.0f * uiS,
+                             0.75f * uiS, oR, oG, oB, 0.34f * rA);
                 }
 
                 const float oA = isCur
                     ? (0.90f + 0.10f * optHover[i][j] + 0.14f * flash)
                     : (0.45f + 0.35f * optHover[i][j]);
                 DrawShadowedText(g_TextL, rows[i].opts[j],
-                                 chipX + chipPadX, ry + 20.0f, optSc,
+                                 chipX + (chipW - ow) * 0.5f, rowControlY, optSc,
                                  oR, oG, oB, oA * rA, 0.58f);
                 ox += chipW + chipGap;
             }
         } else if (rows[i].value) {
             // 단순 값 표시 (read-only 또는 볼륨 수치)
             const float vAlpha = rows[i].readOnly
-                               ? 0.42f : (0.76f + 0.22f * rowHover[i] + 0.16f * flash);
-            const float dvR = rows[i].readOnly ? 0.55f : 0.48f;
-            const float dvG = rows[i].readOnly ? 0.60f : 0.82f;
-            const float dvB = rows[i].readOnly ? 0.65f : 1.0f;
+                               ? 0.68f : (0.76f + 0.22f * rowHover[i] + 0.16f * flash);
+            const float dvR = rows[i].readOnly ? 0.62f : 0.48f;
+            const float dvG = rows[i].readOnly ? 0.70f : 0.82f;
+            const float dvB = rows[i].readOnly ? 0.78f : 1.0f;
             DrawShadowedText(g_TextL, rows[i].value,
-                             rpX + rClickW - 180.0f, ry + 20.0f, 0.94f,
+                              rpX + 28.0f * uiS,
+                             rowControlY, 0.88f,
                              dvR, dvG, dvB, vAlpha * rA, 0.58f);
         }
     }
     for (int i = rowCount; i < 6; ++i) rowHover[i] = 0.0f;
+ #endif
 
+    // Right settings board: every category remains present in one continuous
+    // scroll stream. Its logical rows use the same cursor/scroll as the left
+    // catalogue, while the larger row geometry keeps the existing type scale.
+    int hoverCategory = -1;
+    int hoverSettingRow = -1;
+    int hoverSettingOpt = -1;
+    bool resetPressed = false;
+    const float rightRowX = rpX + 18.0f * uiS;
+    const float rightRowW = rClickW - 18.0f * uiS;
+    // Controls are a left-anchored column inside the settings panel. This
+    // leaves a comfortable readout area while avoiding the old far-right,
+    // centered-looking option placement.
+    const float rightControlInset = std::min(
+        rpW * 0.34f, std::max(0.0f, rClickW - 160.0f * uiS));
+    const float rightControlX = rpX + rightControlInset;
+    const float rightControlEnd = rpX + rClickW - 18.0f * uiS;
+    const float rightControlW = std::max(1.0f,
+                                         rightControlEnd - rightControlX);
+    auto categoryColor = [&](int category, float& r, float& g, float& b) {
+        if (category == 0) { r = 0.35f; g = 0.72f; b = 1.00f; }
+        else if (category == 1) { r = 1.00f; g = 0.72f; b = 0.30f; }
+        else if (category == 2) { r = 0.35f; g = 0.92f; b = 0.55f; }
+        else { r = 0.72f; g = 0.52f; b = 1.00f; }
+    };
+
+    // Every option row shares one control grid. Measuring each row on its own
+    // made the second option drift whenever a label such as "부드럽게" was
+    // wider than ON/OFF. Measure the longest localized label per slot once,
+    // then reuse those columns for FPS, toggles, and language choices.
+    auto optionLabelForLanguage = [&](int category, int row,
+                                      int optionLanguage, int optionIndex)
+                                      -> const wchar_t* {
+        if (category == 0) {
+            if (row == 0) {
+                static const wchar_t* fps[3][6] = {
+                    { L"동기화", L"30", L"60", L"144", L"300", L"무제한" },
+                    { L"VSYNC", L"30", L"60", L"144", L"300", L"UNLIM" },
+                    { L"同期", L"30", L"60", L"144", L"300", L"無制限" }
+                };
+                return fps[optionLanguage][optionIndex];
+            }
+            if (row == 1) {
+                static const wchar_t* graphics[3][2] = {
+                    { L"전체", L"감소" }, { L"FULL", L"REDUCED" }, { L"全体", L"削減" }
+                };
+                return graphics[optionLanguage][optionIndex];
+            }
+            if (row == 2) {
+                static const wchar_t* toggle[3][2] = {
+                    { L"켜짐", L"꺼짐" }, { L"ON", L"OFF" }, { L"オン", L"オフ" }
+                };
+                return toggle[optionLanguage][optionIndex];
+            }
+            if (row == 3) {
+                static const wchar_t* blur[3][2] = {
+                    { L"꺼짐", L"켜짐" }, { L"OFF", L"ON" }, { L"オフ", L"オン" }
+                };
+                return blur[optionLanguage][optionIndex];
+            }
+        } else if (category == 2 && row < 3) {
+            static const wchar_t* toggle[3][2] = {
+                { L"켜짐", L"꺼짐" }, { L"ON", L"OFF" }, { L"オン", L"オフ" }
+            };
+            return toggle[optionLanguage][optionIndex];
+        } else if (category == 3 && row == 0) {
+            static const wchar_t* language[3][3] = {
+                { L"한국어", L"영어", L"일본어" },
+                { L"KOR", L"ENG", L"JPN" },
+                { L"韓国語", L"英語", L"日本語" }
+            };
+            return language[optionLanguage][optionIndex];
+        }
+        return nullptr;
+    };
+
+    const float commonOptionSc = 0.96f;
+    const float commonChipPadX = 8.0f * uiS;
+    const float commonChipGap = 12.0f * uiS;
+    float commonOptionCellW[8] = {};
+    int commonOptionCount = 0;
+    for (int category = 0; category < 4; ++category) {
+        for (int row = 0; row < 6; ++row) {
+            const SRow& setting = settingsRows[category][row];
+            if (setting.optCount <= 0) continue;
+            commonOptionCount = std::max(commonOptionCount, setting.optCount);
+            for (int j = 0; j < setting.optCount; ++j) {
+                float widest = g_TextL.Width(setting.opts[j], commonOptionSc);
+                for (int language = 0; language < 3; ++language) {
+                    const wchar_t* localized = optionLabelForLanguage(
+                        category, row, language, j);
+                    if (localized)
+                        widest = std::max(widest,
+                                          g_TextL.Width(localized, commonOptionSc));
+                }
+                commonOptionCellW[j] = std::max(
+                    commonOptionCellW[j], widest + commonChipPadX * 2.0f);
+            }
+        }
+    }
+    float commonOptionTotalW = 0.0f;
+    for (int j = 0; j < commonOptionCount; ++j)
+        commonOptionTotalW += commonOptionCellW[j];
+    if (commonOptionCount > 1)
+        commonOptionTotalW += commonChipGap * (commonOptionCount - 1);
+    float commonOptionScale = commonOptionSc;
+    if (commonOptionTotalW > rightControlW && commonOptionTotalW > 1.0f) {
+        commonOptionScale *= std::max(0.55f, rightControlW / commonOptionTotalW);
+        for (int j = 0; j < commonOptionCount; ++j)
+            commonOptionCellW[j] = commonOptionCellW[j]
+                * (commonOptionScale / commonOptionSc);
+    }
+
+    BatchFlush();
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((GLint)rpX,
+              (GLint)(sh - rightListBottom),
+              (GLint)rClickW,
+              (GLint)(rightListBottom - rightListTop));
+    for (int i = 0; i < listCount; ++i) {
+        const float y = rightListTop + i * rightRowH - rightScroll;
+        if (y < rightListTop - rightRowH || y > rightListBottom) continue;
+
+        const SettingsListEntry& entry = list[i];
+        float catR = 0.35f, catG = 0.72f, catB = 1.0f;
+        categoryColor(entry.category, catR, catG, catB);
+        if (entry.header) {
+            const bool headerHover = overRightList
+                                  && mx >= rightRowX - 12.0f * uiS
+                                  && mx < rightRowX + rightRowW
+                                  && my >= y && my < y + rightRowH;
+            if (headerHover && lmb && !g_LmbPrev) {
+                for (int k = 0; k < listCount; ++k) {
+                    if (!list[k].header && list[k].category == entry.category) {
+                        listCursor = k;
+                        detailRow = list[k].row;
+                        break;
+                    }
+                }
+                tab = entry.category;
+                focusChanged = true;
+                pulse = 1.0f;
+                tabSwitchT = 0.0f;
+            }
+            DrawShadowedText(g_TextS, entry.label, rightRowX,
+                             y + 1.0f * uiS, 1.65f,
+                             catR, catG, catB,
+                             1.0f * dA, 0.56f);
+            const float headerRuleY = y + 62.0f * uiS;
+            LogoLine(rightRowX, headerRuleY,
+                     rightControlEnd, headerRuleY,
+                     1.05f * uiS, catR, catG, catB, 0.34f * dA);
+            DrawVisibleConstellNode(rightRowX, headerRuleY,
+                                    2.6f * uiS, catR, catG, catB,
+                                    0.62f * dA, false, false);
+            continue;
+        }
+
+        const int category = entry.category;
+        const int row = entry.row;
+        SRow& setting = settingsRows[category][row];
+        const bool changed = settingChanged(category, row);
+        const bool itemHover = overRightList
+                            && mx >= rightRowX - 12.0f * uiS
+                            && mx < rightRowX + rightRowW
+                            && my >= y && my < y + rightRowH;
+        if (itemHover) {
+            hoverCategory = category;
+            hoverSettingRow = row;
+            if (lmb && !g_LmbPrev) {
+                listCursor = i;
+                tab = category;
+                detailRow = row;
+                focusChanged = true;
+            }
+        }
+        rowHover[category][row] = UpdateMenuCommandHover(
+            rowHover[category][row], itemHover && !setting.readOnly, dt);
+        const float focus = rowHover[category][row];
+        const float rowA = dA * (0.72f + 0.28f * Smoothstep(
+            LogoClamp01((rightListTop + rightListH - y) / std::max(1.0f, rightListH))));
+
+        if (changed || focus > 0.01f) {
+            const float bgA = changed ? 0.12f : 0.035f;
+            drawRect(rightRowX, y + 4.0f * uiS, rightRowW,
+                     rightRowH - 14.0f * uiS,
+                     changed ? 0.52f : 0.20f,
+                     changed ? 0.30f : 0.34f,
+                     changed ? 0.08f : 0.44f,
+                     bgA * rowA);
+        }
+        if (focus > 0.01f) {
+            drawRect(rightRowX, y + rightRowH - 10.0f * uiS,
+                     rightRowW, 1.0f,
+                     0.34f, 0.72f, 1.0f, 0.16f * focus * rowA);
+        }
+
+        const float titleR = changed ? 1.0f : 0.82f;
+        const float titleG = changed ? 0.68f : 0.86f;
+        const float titleB = changed ? 0.32f : 1.0f;
+        DrawShadowedText(g_TextL, setting.label,
+                         rightRowX + 20.0f * uiS, y + 12.0f * uiS, 1.18f,
+                         titleR, titleG, titleB,
+                         1.0f * rowA,
+                         0.66f);
+        if (allDescriptions[category][row]) {
+            DrawShadowedText(g_TextS, allDescriptions[category][row],
+                             rightRowX + 20.0f * uiS, y + 57.0f * uiS, 0.72f,
+                             0.72f, 0.80f, 0.90f, 1.0f * rowA, 0.58f);
+        }
+        if (changed) {
+            DrawConstellationDisc(rightRowX + 5.0f * uiS,
+                                  y + rightRowH * 0.50f,
+                                  13.0f * uiS, 1.0f, 0.56f, 0.18f,
+                                  0.10f * rowA);
+            DrawVisibleConstellNode(rightRowX + 5.0f * uiS,
+                                    y + rightRowH * 0.50f, 3.6f * uiS,
+                                    1.0f, 0.64f, 0.26f,
+                                    0.88f * rowA, false, true);
+        }
+
+        const float controlY = y + 47.0f * uiS;
+        const float controlHitY = controlY - 30.0f * uiS;
+        const float controlHitH = 60.0f * uiS;
+        if (setting.isVolume) {
+            const float slX = rightControlX;
+            const float slW = std::max(120.0f * uiS, rightControlW - 62.0f * uiS);
+            const float vol01 = g_SoundVol / 100.0f;
+            const bool inBar = inputReady
+                && mx >= slX - 8.0f * uiS && mx <= slX + slW + 46.0f * uiS
+                && my >= controlY - 18.0f * uiS && my <= controlY + 18.0f * uiS;
+            if (inputReady && lmb && (inBar || s_volDrag)) {
+                s_volDrag = true;
+                const float t = std::max(0.0f, std::min(1.0f,
+                    ((float)mx - slX) / std::max(1.0f, slW)));
+                g_SoundVol = (int)(t * 100.0f + 0.5f);
+            }
+            const float glow = s_volDrag ? 1.0f : focus;
+            drawRect(slX, controlY - 4.0f * uiS, slW, 8.0f * uiS,
+                     0.18f, 0.24f, 0.34f, 0.50f * rowA);
+            drawRect(slX, controlY - 4.0f * uiS, slW * vol01, 8.0f * uiS,
+                     0.48f, 0.82f, 1.0f, (0.60f + 0.28f * glow) * rowA);
+            drawDiamond(slX + slW * vol01, controlY,
+                        (6.0f + 3.5f * glow) * uiS,
+                        0.76f + 0.24f * glow, 0.90f + 0.10f * glow,
+                        1.0f, (0.86f + 0.14f * glow) * rowA);
+            wchar_t vbuf[8];
+            swprintf_s(vbuf, L"%d", g_SoundVol);
+            DrawShadowedText(g_TextL, vbuf, slX + slW + 16.0f * uiS,
+                             controlY - 14.0f * uiS, 0.88f,
+                             0.48f, 0.82f, 1.0f,
+                             (0.72f + 0.24f * glow) * rowA, 0.58f);
+        } else if (setting.isHold) {
+            const float barW = std::min(250.0f * uiS, rightControlW);
+            const float barH = 30.0f * uiS;
+            const float barX = rightControlX;
+            const float barY = controlY - barH * 0.5f;
+            const bool resetHover = inputReady
+                && mx >= barX && mx < barX + barW
+                && my >= controlHitY && my < controlHitY + controlHitH;
+            if (resetHover) {
+                hoverCategory = category;
+                hoverSettingRow = row;
+                resetPressed = lmb;
+            }
+            const float showA = std::max(rowHover[category][row],
+                                        holdT > 0.01f ? 1.0f : 0.0f);
+            drawRect(barX, barY, barW, barH,
+                     0.18f, 0.04f, 0.04f, 0.55f * showA * rowA);
+            if (holdT > 0.01f) {
+                drawRect(barX + 2.0f, barY + 2.0f,
+                         (barW - 4.0f) * (holdT / 1.5f), barH - 4.0f,
+                         1.0f, 0.22f, 0.14f, 0.92f * rowA);
+            }
+            DrawShadowedText(g_TextS,
+                             holdT > 0.01f
+                             ? (korean ? L"삭제 중..." : L"ERASING...")
+                                 : (korean ? L"길게 눌러 초기화" : L"HOLD TO RESET"),
+                             barX + 12.0f * uiS, barY + 6.0f * uiS, 0.74f,
+                             1.0f, 0.36f, 0.30f,
+                             1.0f * rowA,
+                             0.58f);
+        } else if (setting.optCount > 0) {
+            // Use the shared option grid measured above. Each row now starts
+            // and continues at the same x positions regardless of whether its
+            // labels are ON/OFF, CLASSIC/SOFT, or longer localized strings.
+            const float optSc = commonOptionScale;
+            const float chipPadX = commonChipPadX;
+            const float chipGap = commonChipGap;
+            float ox = rightControlX;
+            for (int j = 0; j < setting.optCount; ++j) {
+                const float cellW = commonOptionCellW[j];
+                const bool optionHover = inputReady
+                    && mx >= ox && mx < ox + cellW
+                    && my >= controlHitY && my < controlHitY + controlHitH;
+                optHover[category][row][j] = UpdateMenuCommandHover(
+                    optHover[category][row][j], optionHover, dt);
+                if (optionHover) {
+                    hoverCategory = category;
+                    hoverSettingRow = row;
+                    hoverSettingOpt = j;
+                }
+                const bool current = j == setting.optCur;
+                const float optionHoverT = optHover[category][row][j];
+                // The selected value must read as state, not just as a tiny
+                // marker. Keep it near-white at full alpha; non-selected
+                // values remain visible but recede until hovered.
+                const float optionA = current
+                    ? 1.0f
+                    : (0.32f + 0.44f * optionHoverT);
+                const float optionR = current
+                    ? catR * 0.42f + 0.58f
+                    : catR * (0.68f + 0.18f * optionHoverT);
+                const float optionG = current
+                    ? catG * 0.42f + 0.58f
+                    : catG * (0.68f + 0.18f * optionHoverT);
+                const float optionB = current
+                    ? catB * 0.42f + 0.58f
+                    : catB * (0.68f + 0.18f * optionHoverT);
+                DrawShadowedText(g_TextL, setting.opts[j],
+                                 ox + chipPadX,
+                                 controlY, optSc,
+                                 optionR, optionG, optionB,
+                                 optionA * rowA, current ? 0.44f : 0.30f);
+                if (current) {
+                    drawDiamond(ox - 8.0f * uiS, controlY,
+                                (3.8f + 0.8f * optionHoverT) * uiS,
+                                optionR, optionG, optionB,
+                                0.96f * rowA);
+                }
+                ox += cellW + chipGap;
+            }
+        } else if (setting.value) {
+            DrawShadowedText(g_TextL, setting.value,
+                             rightControlX, controlY, 0.88f,
+                             0.70f, 0.78f, 0.88f, 1.0f * rowA, 0.58f);
+        }
+    }
+    if (!lmb) s_volDrag = false;
+    BatchFlush();
+    glDisable(GL_SCISSOR_TEST);
+    if (rightMaxScroll > 0.0f) {
+        const float rightTotalH = listCount * rightRowH;
+        const float thumbH = std::max(32.0f * uiS,
+                                      rightListH * (rightListH / rightTotalH));
+        const float thumbY = rightListTop
+            + (rightListH - thumbH) * settingsScroll;
+        const float trackX = rightControlEnd + 12.0f * uiS;
+        LogoLine(trackX, rightListTop, trackX, rightListBottom,
+                 0.7f * uiS, 0.34f, 0.72f, 1.0f, 0.12f * dA);
+        LogoLine(trackX, thumbY, trackX, thumbY + thumbH,
+                 1.8f * uiS, 0.34f, 0.82f, 1.0f, 0.55f * dA);
+    }
+
+    if (focusChanged) revealFocus();
+
+    // Commit controls live below the detail readout. Changes are applied
+    // provisionally while browsing, but only this button writes them.
+    settingsDirty = settingsChanged();
+    const float backX = mainX;
+    const float backY = sh - 126.0f * uiS;
+    const float backW = 286.0f * uiS;
+    const float backH = 64.0f * uiS;
+    const float saveX = detailX + 42.0f * uiS;
+    const float saveY = sh - 162.0f * uiS;
+    const float saveW = std::min(486.0f * uiS, detailW * 0.82f);
+    const float saveH = 64.0f * uiS;
+    const bool backHit = ready && !confirmBack && !confirmAbandon
+                       && mx >= backX && mx < backX + backW
+                       && my >= backY && my < backY + backH;
+    const bool saveHit = ready && !confirmBack && !confirmAbandon
+                       && mx >= saveX && mx < saveX + saveW
+                       && my >= saveY && my < saveY + saveH;
+
+    const float restartX = mainX;
+    const float restartY = backY - (backH + 14.0f * uiS);
+    const float restartW = backW;
+    const float restartH = backH;
+    const bool restartHit = inGameSettings && ready && !confirmBack && !confirmAbandon
+                          && mx >= restartX && mx < restartX + restartW
+                          && my >= restartY && my < restartY + restartH;
+    const float abandonX = mainX;
+    const float abandonY = restartY - (restartH + 14.0f * uiS);
+    const float abandonW = restartW;
+    const float abandonH = restartH;
+    const bool abandonHit = inGameSettings && ready && !confirmBack && !confirmAbandon
+                          && mx >= abandonX && mx < abandonX + abandonW
+                          && my >= abandonY && my < abandonY + abandonH;
+
+    if (inGameSettings) {
+        DrawUnifiedMenuCommand(
+            korean ? L"\uD3EC\uAE30\uD558\uAE30" : L"ABANDON RUN",
+            korean ? L"\uACB0\uACFC \uD654\uBA74\uC73C\uB85C \uC774\uB3D9" : L"OPEN RUN REPORT",
+            abandonX, abandonY, abandonW, abandonH,
+            1.0f, 0.30f, 0.28f, treeA,
+            0.0f, abandonHit, 0.0f, now + 0.04f,
+            0.82f, 0.40f, true, true, true);
+        DrawUnifiedMenuCommand(
+            korean ? L"런 재시작" : L"RESTART RUN",
+            korean ? L"현재 장비 유지" : L"KEEP CURRENT LOADOUT",
+            restartX, restartY, restartW, restartH,
+            1.0f, 0.48f, 0.32f, treeA,
+            0.0f, restartHit, 0.0f, now + 0.12f,
+            0.82f, 0.40f, true, true, true);
+    }
+
+    DrawUnifiedMenuCommand(korean ? L"뒤로" : L"BACK",
+                           korean ? L"설정" : L"SETTINGS",
+                           backX, backY, backW, backH,
+                           0.34f, 0.72f, 1.0f, treeA,
+                           0.0f, backHit, 0.0f, now,
+                           0.88f, 0.42f, true, true, true);
+    DrawUnifiedMenuCommand(korean ? L"변경 저장" : L"SAVE CHANGES",
+                           settingsDirty
+                               ? (korean ? L"설정 기록" : L"WRITE CONFIGURATION")
+                               : (korean ? L"변경 없음" : L"NO CHANGES"),
+                           saveX, saveY, saveW, saveH,
+                           0.34f, 0.82f, 1.0f,
+                           treeA * (settingsDirty ? 1.0f : 0.24f),
+                           0.0f, saveHit && settingsDirty, 0.0f, now + 0.2f,
+                            0.78f, 0.38f, true, true, true);
+
+    if (abandonHit && lmb && !g_LmbPrev) {
+        confirmAbandon = true;
+    }
+    if (restartHit && lmb && !g_LmbPrev) {
+        if (c.restartRun) c.restartRun();
+        ResetSettingsUi();
+        wasInline = false;
+        return;
+    }
+    if (ready && !confirmBack && lmb && !g_LmbPrev && backHit) {
+        if (settingsDirty) confirmBack = true;
+        else exiting = true;
+    }
+    if (ready && !confirmBack && lmb && !g_LmbPrev && saveHit && settingsDirty) {
+        SaveGame();
+        savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
+                          g_ShowCombo, g_BackdropBlurEnabled, g_SoundVol,
+                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_Language };
+        savedSettingsValid = true;
+        settingsDirty = false;
+        pulse = 1.0f;
+    }
+
+    if (confirmBack) {
+        const float cx = sw * 0.50f;
+        const float cy = sh * 0.52f;
+        drawRect(0.0f, 0.0f, sw, sh, 0.01f, 0.02f, 0.04f, 0.56f * treeA);
+        DrawShadowedText(g_TextL, L"UNSAVED CHANGES", cx - 168.0f * uiS,
+                         cy - 66.0f * uiS, 0.96f, 1.0f, 1.0f, 1.0f,
+                         0.98f * treeA, 0.72f);
+        DrawShadowedText(g_TextS, L"SAVE SETTINGS BEFORE EXIT?",
+                         cx - 132.0f * uiS, cy - 28.0f * uiS, 0.58f,
+                         0.60f, 0.72f, 0.86f, 0.82f * treeA, 0.58f);
+        const float dialogY = cy + 26.0f * uiS;
+        const float dialogW = 210.0f * uiS;
+        const float dialogH = 48.0f * uiS;
+        const bool saveBackHit = mx >= cx - dialogW - 12.0f * uiS
+                              && mx < cx - 12.0f * uiS
+                              && my >= dialogY && my < dialogY + dialogH;
+        const bool discardHit = mx >= cx + 12.0f * uiS
+                              && mx < cx + dialogW + 12.0f * uiS
+                              && my >= dialogY && my < dialogY + dialogH;
+        DrawUnifiedMenuCommand(L"SAVE & BACK", nullptr,
+                               cx - dialogW - 12.0f * uiS, dialogY,
+                               dialogW, dialogH, 0.34f, 0.82f, 1.0f,
+                               treeA, 0.0f, saveBackHit, 0.0f, now,
+                               0.70f, 0.36f, true, true, true);
+        DrawUnifiedMenuCommand(L"DISCARD", nullptr,
+                               cx + 12.0f * uiS, dialogY,
+                               dialogW, dialogH, 1.0f, 0.32f, 0.28f,
+                               treeA, 0.0f, discardHit, 0.0f, now + 0.2f,
+                               0.76f, 0.36f, true, true, true);
+        if (lmb && !g_LmbPrev && saveBackHit) {
+            SaveGame();
+            savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
+                              g_ShowCombo, g_BackdropBlurEnabled, g_SoundVol,
+                              g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_Language };
+            settingsDirty = false;
+            confirmBack = false;
+            exiting = true;
+        } else if (lmb && !g_LmbPrev && discardHit) {
+            restoreSettings();
+            glfwSwapInterval(g_FpsCap == 0 ? 1 : 0);
+            settingsDirty = false;
+            confirmBack = false;
+            exiting = true;
+        }
+    }
+
+    if (confirmAbandon) {
+        const float cx = sw * 0.50f;
+        const float cy = sh * 0.52f;
+        drawRect(0.0f, 0.0f, sw, sh, 0.01f, 0.02f, 0.04f,
+                 0.62f * treeA);
+        DrawShadowedText(g_TextL,
+                         korean ? L"\uB7F0 \uD3EC\uAE30" : L"ABANDON RUN?",
+                         cx - 150.0f * uiS, cy - 66.0f * uiS,
+                         0.96f, 1.0f, 0.42f, 0.38f,
+                         0.98f * treeA, 0.72f);
+        DrawShadowedText(g_TextS,
+                         korean ? L"\uD604\uC7AC \uB7F0\uC744 \uC885\uB8CC\uD558\uACE0 \uACB0\uACFC \uD654\uBA74\uC73C\uB85C \uC774\uB3D9\uD569\uB2C8\uB2E4"
+                                : L"END THE CURRENT RUN AND OPEN THE RESULT SCREEN",
+                         cx - 174.0f * uiS, cy - 28.0f * uiS,
+                         0.58f, 0.76f, 0.82f, 0.90f,
+                         0.84f * treeA, 0.58f);
+        const float dialogY = cy + 26.0f * uiS;
+        const float dialogW = 220.0f * uiS;
+        const float dialogH = 50.0f * uiS;
+        const bool cancelHit = mx >= cx - dialogW - 12.0f * uiS
+                            && mx < cx - 12.0f * uiS
+                            && my >= dialogY && my < dialogY + dialogH;
+        const bool abandonConfirmHit = mx >= cx + 12.0f * uiS
+                                    && mx < cx + dialogW + 12.0f * uiS
+                                    && my >= dialogY && my < dialogY + dialogH;
+        DrawUnifiedMenuCommand(korean ? L"\uCDE8\uC18C" : L"CANCEL", nullptr,
+                               cx - dialogW - 12.0f * uiS, dialogY,
+                               dialogW, dialogH, 0.34f, 0.72f, 1.0f,
+                               treeA, 0.0f, cancelHit, 0.0f, now,
+                               0.72f, 0.36f, true, true, true);
+        DrawUnifiedMenuCommand(korean ? L"\uD3EC\uAE30\uD558\uAE30" : L"ABANDON",
+                               nullptr, cx + 12.0f * uiS, dialogY,
+                               dialogW, dialogH, 1.0f, 0.30f, 0.28f,
+                               treeA, 0.0f, abandonConfirmHit, 0.0f, now + 0.2f,
+                               0.72f, 0.36f, true, true, true);
+        if (lmb && !g_LmbPrev && cancelHit) {
+            confirmAbandon = false;
+        } else if (lmb && !g_LmbPrev && abandonConfirmHit) {
+            if (c.abandonRun) c.abandonRun();
+            confirmAbandon = false;
+            ResetSettingsUi();
+            wasInline = false;
+            return;
+        }
+    }
+
+    // Context readout: the lower-right area is reserved for the setting that
+    // currently owns the user's attention. This gives short tabs such as
+    // AUDIO and SYSTEM useful structure without inventing more controls.
     // SYSTEM \ud0ed \ud558\ub2e8 \uc815\ubcf4 \uc601\uc5ed (\uc77d\uae30 \uc804\uc6a9, \ud589 \ub8e8\ud504 \ubc16)
-    if (tab == 3) {
+    if (false && tab == 3) {
         const float infoY = rFirstY + rowCount * rRowH + 20.0f;
         // \uad6c\ubd84\uc120
         LogoLine(rLabelX, infoY, rpX + rClickW * 0.78f, infoY,
@@ -9673,74 +13109,64 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         // BUILD
         DrawShadowedText(g_TextS, L"BUILD", rLabelX, infoY + 48.0f, 0.52f,
                          0.55f, 0.62f, 0.72f, 0.52f * dA, 0.55f);
-        DrawShadowedText(g_TextL, L"DEBUG x64", rpX + rClickW - 180.0f, infoY + 46.0f, 0.76f,
+        DrawShadowedText(g_TextL, L"DEVELOPER SIGNAL", rpX + rClickW - 180.0f, infoY + 46.0f, 0.76f,
                          0.55f, 0.62f, 0.72f, 0.52f * dA, 0.55f);
     }
 
     // \u2500\u2500 Click handling \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    // Option chip direct-select click
-    if (ready && lmb && !g_LmbPrev && curHoverRow >= 0 && curHoverOpt >= 0) {
-        const int r = curHoverRow;
-        const int j = curHoverOpt;
-        pulseRow = r; pulse = 1.0f;
-        if (tab == 0) {
-            if (r == 0) {
-                const int fps[] = { 0, 30, 60, 144, 300, -1 };
-                g_FpsCap = fps[j];
-                glfwSwapInterval(g_FpsCap == 0 ? 1 : 0);
-            } else if (r == 1) {
-                g_VfxDensity = (j == 0) ? VfxDensity::FULL : VfxDensity::REDUCED;
-            } else if (r == 2) {
-                g_ShaderFx = (j == 0);
-            } else if (r == 3) {
-                g_MobVisualStyle = (j == 0) ? MobVisualStyle::CLASSIC : MobVisualStyle::SOFT;
-            } else if (r == 4) {
-                g_ShowCombo = (j == 0);
-            } else if (r == 5) {
-                g_BackdropBlurEnabled = (j != 0);
-                if (j > 0) g_BackdropBlurStrength = j * 10;
+     // Apply option clicks using the category/row that owns the hovered
+     // control. The right board is no longer filtered by the current tab.
+     if (inputReady && lmb && !g_LmbPrev
+         && hoverCategory >= 0 && hoverSettingRow >= 0
+         && hoverSettingOpt >= 0) {
+         const int category = hoverCategory;
+         const int row = hoverSettingRow;
+         const int option = hoverSettingOpt;
+         pulseRow = row;
+         pulse = 1.0f;
+         tab = category;
+         detailRow = row;
+         if (category == 0) {
+             if (row == 0) {
+                 const int fps[] = { 0, 30, 60, 144, 300, -1 };
+                 g_FpsCap = fps[option];
+                 glfwSwapInterval(g_FpsCap == 0 ? 1 : 0);
+             } else if (row == 1) {
+                 g_VfxDensity = (option == 0) ? VfxDensity::FULL : VfxDensity::REDUCED;
+            } else if (row == 2) {
+                g_ShowCombo = option == 0;
+            } else if (row == 3) {
+                g_BackdropBlurEnabled = option != 0;
             }
-        } else if (tab == 2) {
-            if (r == 0) {
-                g_AutoFire = (j == 0);
-            } else if (r == 1) {
-                g_AutoSkill = (j == 0);
-            } else if (r == 2) {
-                g_ShowCrosshair = (j == 0);
-            }
-        } else if (tab == 3) {
-            if (r == 0) {
-                g_Language = (j == 0) ? Language::KR :
-                             (j == 1) ? Language::EN  : Language::JP;
-            }
-            // r==1 RESET DATA: handled by holdT below
-        }
-    }
+         } else if (category == 2) {
+             if (row == 0) g_AutoFire = option == 0;
+             else if (row == 1) g_AutoSkill = option == 0;
+             else if (row == 2) g_ShowCrosshair = option == 0;
+         } else if (category == 3 && row == 0) {
+             g_Language = option == 0 ? Language::KR :
+                          option == 1 ? Language::EN : Language::JP;
+         }
+     }
 
-    // RESET DATA hold-to-confirm (row[1])
-    if (tab == 3 && ready) {
-        const float ry3 = rFirstY + 1 * rRowH;
-        const bool onReset = lmb
-                          && mx >= rpX && mx < rpX + rClickW
-                          && my >= ry3 && my < ry3 + rRowH - 2.0f;
-        if (onReset) {
-            holdT = std::min(holdT + dt, 1.5f);
-            if (holdT >= 1.5f) {
-                ResetSaveProgress();
-                SaveGame();
-                holdT = 0.0f;
-            }
-        } else {
-            holdT = std::max(0.0f, holdT - dt * 3.0f);
-        }
-    } else {
-        holdT = std::max(0.0f, holdT - dt * 4.0f);
-    }
+     // RESET DATA is armed only while the visible reset control is held.
+     if (inputReady && resetPressed) {
+         holdT = std::min(holdT + dt, 1.5f);
+         if (holdT >= 1.5f) {
+             ResetSaveProgress();
+             SaveGame();
+             holdT = 0.0f;
+         }
+     } else if (inputReady) {
+         holdT = std::max(0.0f, holdT - dt * 3.0f);
+     } else {
+         holdT = std::max(0.0f, holdT - dt * 4.0f);
+     }
 
-    DrawShadowedText(g_TextS, L"[ ESC / RMB ] BACK", rpX, sh - 72.0f, 0.50f,
-                     0.66f, 0.75f, 0.84f, 0.72f * dA, 0.62f);
+    DrawShadowedText(g_TextS, korean ? L"ESC / RMB  뒤로" : L"ESC / RMB  BACK", backX, sh - 48.0f * uiS,
+                     0.44f, 0.52f, 0.62f, 0.72f, 0.58f * dA, 0.56f);
 
     if (exiting && exitT >= 0.42f) {
+        // Settings are persisted only by SAVE CHANGES or SAVE & BACK.
         if (s_MainMenuSettingsPanel) {
             s_MainMenuSettingsPanel = false;
             s_MainMenuResumeFromPanel = true;
@@ -9794,7 +13220,7 @@ void Scene_Settings(const SceneCtx& c) {
         { L"AUDIO",  { L"오디오", L"AUDIO"  },
           { L"음량과 사운드 채널",          L"Volume and sound channels" },
           1.00f, 0.76f, 0.30f },
-        { L"SYSTEM", { L"시스템", L"SYSTEM" },
+        { L"ARCHIVE", { L"기록", L"ARCHIVE" },
           { L"저장 기록, 리셋, 크레딧", L"Save, records, reset, credits" },
           1.00f, 0.45f, 0.42f },
     };
@@ -10226,7 +13652,7 @@ void Scene_Settings(const SceneCtx& c) {
         BindMainShader();
         drawRect(rowX + 24.0f*uiS, y + rowH - 1.0f*uiS,
                  rowW - 48.0f*uiS, 1.0f*uiS, baseR, baseG, baseB, 0.040f * rowA);
-        g_TextS.Draw(L"[SYS_STATUS]", rowX + 24.0f*uiS, y + 9.0f*uiS,
+        g_TextS.Draw(L"[STAR_STATUS]", rowX + 24.0f*uiS, y + 9.0f*uiS,
                      0.34f*uiS, baseR, baseG, baseB, 0.36f * rowA);
         g_TextS.Draw(text, rowX + 24.0f*uiS, y + 30.0f*uiS,
                      0.46f*uiS, 0.42f, 0.48f, 0.58f, 0.72f * rowA);
@@ -10377,22 +13803,19 @@ void Scene_Settings(const SceneCtx& c) {
                       SetUiTheme(v == 1 ? UiThemeMode::Light : UiThemeMode::Dark);
                   });
         y += rowH + rowGap;
-        const wchar_t* blurLabelsKr[7] = {
-            L"OFF", L"10%", L"20%", L"30%", L"40%", L"50%", L"60%"
+        const wchar_t* blurLabelsKr[2] = {
+            L"OFF", L"ON"
         };
-        const wchar_t* blurLabelsEn[7] = {
-            L"OFF", L"10%", L"20%", L"30%", L"40%", L"50%", L"60%"
+        const wchar_t* blurLabelsEn[2] = {
+            L"OFF", L"ON"
         };
         const wchar_t* const* blurLabels = (nli == 0) ? blurLabelsKr : blurLabelsEn;
-        const int blurVals[7] = { 0, 10, 20, 30, 40, 50, 60 };
-        const int blurCurrent = g_BackdropBlurEnabled
-                              ? std::max(10, std::min(60, g_BackdropBlurStrength))
-                              : 0;
+        const int blurVals[2] = { 0, 1 };
+        const int blurCurrent = g_BackdropBlurEnabled ? 1 : 0;
         choiceRow(y, SettingsText(L"배경 블러", L"BACKDROP BLUR"),
-                  L"[BACKDROP_BLUR]", blurLabels, blurVals, 7, blurCurrent,
+                  L"[BACKDROP_BLUR]", blurLabels, blurVals, 2, blurCurrent,
                   [&](int v) {
-                      g_BackdropBlurEnabled = (v > 0);
-                      if (v > 0) g_BackdropBlurStrength = v;
+                      g_BackdropBlurEnabled = (v != 0);
                   });
 
         y = rowStart + displayH + groupGap;
@@ -10454,7 +13877,7 @@ void Scene_Settings(const SceneCtx& c) {
         swprintf_s(coinBuf, L"%lld G", g_Coins);
         groupBox(y, saveH, SettingsText(L"저장 기록", L"SAVE DATA"), baseR, baseG, baseB);
         y += groupHead;
-        systemLogRow(y, SettingsText(L"[ 시스템 상태 : 자동 저장 활성화 ]", L"[ SYS_STATUS : CLOUD AUTO-SYNC ACTIVE ]"));
+        systemLogRow(y, SettingsText(L"[ 별자리 상태 : 관측 기록 자동 저장 ]", L"[ STAR_STATUS : OBSERVATION AUTO-SAVE ACTIVE ]"));
         y += rowH + rowGap;
         infoRow(y, SettingsText(L"최고 기록", L"BEST RECORD"),
                 L"[BEST_SCORE]",
@@ -10657,7 +14080,7 @@ void Scene_Settings(const SceneCtx& c) {
         g_TextL.Draw(ct, cx + (cw - g_TextL.Width(ct, 1.04f * uiS)) * 0.5f,
                      cy + 28.0f * uiS, 1.04f * uiS, 1.0f, 1.0f, 1.0f, 0.98f);
         const wchar_t* lines[] = {
-            L"ONEDOW - Desktop Defense",
+            L"ONEDOW - ASTRAL DEFENSE",
             L"Fonts: Jua / Kosugi Maru / Chakra Petch / Orbit",
             L"Icons: game-icons.net",
             L"Audio engine: miniaudio",
@@ -10691,7 +14114,7 @@ static void Scene_Settings_Legacy_UNUSED(const SceneCtx& c) {
                 float wx, wy;
                 const bool settingsOverlay = (g_SettingsReturnTo == GameState::PAUSED);
                 if (!settingsOverlay) DrawMenuBackground(sw, sh, delta);
-                SceneAppWindow(sw, sh, WW, WH, L"setting.odw", 0.70f, 0.75f, 0.88f, wx, wy,
+                SceneAppWindow(sw, sh, WW, WH, L"OBSERVATORY", 0.70f, 0.75f, 0.88f, wx, wy,
                                settingsOverlay, 0.0f);
                 if (g_AppOpen >= 0.999f) {           // 완전히 열린 뒤에만 콘텐츠
                 // ── 중앙 정렬 2열 그리드 (좌: 표시·그래픽 / 우: 조작·효과) ──
@@ -10861,9 +14284,9 @@ static void Scene_Settings_Legacy_UNUSED(const SceneCtx& c) {
 
                 // PC 사양 — 베타 피드백용 (설정 하단)
                 {
-                    const wchar_t* specTitle = (g_Language==Language::EN)?L"System specs (for feedback)":
-                                               (g_Language==Language::JP)?L"PCスペック (フィードバック用)":
-                                               L"PC 사양 (피드백용)";
+                    const wchar_t* specTitle = (g_Language==Language::EN)?L"Telemetry profile":
+                                               (g_Language==Language::JP)?L"観測テレメトリ":
+                                               L"관측 텔레메트리";
                     float sy = wy + WH - 118.0f;
                     g_TextS.Draw(specTitle, cx0, sy, 0.72f, 0.62f, 0.72f, 0.82f, 0.88f);
                     int fw = 0, fh = 0;
@@ -10930,7 +14353,7 @@ static void Scene_Settings_Legacy_UNUSED(const SceneCtx& c) {
                     const wchar_t* CT = L"CREDITS";
                     g_TextL.Draw(CT, CX + (CW - g_TextL.Width(CT,1.1f))*0.5f, CY + 24.0f, 1.1f, 1,1,1,1);
                     const wchar_t* lines[] = {
-                        L"ONEDOW  —  Desktop Defense",
+                        L"ONEDOW  —  ASTRAL DEFENSE",
                         L"",
                         L"Fonts:  Jua / Kosugi Maru  (SIL OFL)",
                         L"Icons:  game-icons.net  (CC BY 3.0)",
@@ -11008,9 +14431,10 @@ void Scene_Paused(const SceneCtx& c) {
     GLFWwindow* window = c.window;
     (void)*c.fireTimer;
     (void)c.reset;
+    const std::function<void()>& RestartCurrentRun = c.restartRun;
 
     static float  s_EntryT    = 0.0f;
-    static float  s_HoverT[4] = {};
+    static float  s_HoverT[5] = {};
     static int    s_ExitSel   = -1;
     static float  s_ExitT     = 0.0f;
     static double s_LastCall  = 0.0;
@@ -11018,7 +14442,7 @@ void Scene_Paused(const SceneCtx& c) {
     const double curTime = glfwGetTime();
     if (curTime - s_LastCall > 0.12) {
         s_EntryT = 0.0f;
-        for (int i = 0; i < 4; ++i) s_HoverT[i] = 0.0f;
+        for (int i = 0; i < 5; ++i) s_HoverT[i] = 0.0f;
         s_ExitSel = -1;
         s_ExitT   = 0.0f;
     }
@@ -11050,7 +14474,7 @@ void Scene_Paused(const SceneCtx& c) {
     const float BW      = std::min(520.0f, sw * 0.38f);
     const float BH      = 70.0f;
     const float BGAP    = 15.0f;
-    const int   NBTN    = 4;
+    const int   NBTN    = 5;
     const float totalBH = (float)NBTN * BH + (float)(NBTN - 1) * BGAP;
     const float btnX0   = std::max(58.0f, sw * 0.075f);
     const float btnY0   = sh * 0.42f;
@@ -11068,13 +14492,20 @@ void Scene_Paused(const SceneCtx& c) {
         drawDiamond(anchorX + 0.6f, anchorY + anchorH - 4.0f, 2.8f, 0.48f, 0.82f, 1.0f, 0.18f * anchorA);
     }
 
-    // 타이틀
+    // 타이틀은 로비의 RUN/PLAY 용어와 같은 어휘를 사용한다.
     {
         float titleA = Smoothstep(std::min(s_EntryT / 0.28f, 1.0f)) * entryFade;
-        const wchar_t* hdr = L"SYSTEM  PAUSED";
+        const int li = std::max(0, std::min(2, LangIndex()));
+        static const wchar_t* kPauseHeader[3] = {
+            L"런 일시정지", L"RUN PAUSED", L"ラン一時停止"
+        };
+        static const wchar_t* kPauseStatus[3] = {
+            L"런 상태 : 일시정지", L"RUN STATE : PAUSED", L"ラン状態 : 一時停止"
+        };
+        const wchar_t* hdr = kPauseHeader[li];
         float hdrSc = 1.2f;
         g_TextL.Draw(hdr, btnX0, titleY, hdrSc, 0.50f, 0.82f, 1.0f, 0.92f * titleA);
-        const wchar_t* sub = L"PROCESS 0x004F : SUSPENDED";
+        const wchar_t* sub = kPauseStatus[li];
         g_TextS.Draw(sub, btnX0, titleY + g_TextL.Height(hdr, hdrSc) + 2.0f, 0.50f,
                      0.48f, 0.72f, 0.90f, 0.80f * titleA);
         BindMainShader();
@@ -11084,19 +14515,19 @@ void Scene_Paused(const SceneCtx& c) {
 
     // 버튼
     struct PBtnDef { const wchar_t* route; const wchar_t* sub; };
-    static const PBtnDef kPBtns[4] = {
-        { L"RESUME",        L"재개"      },
-        { L"CALIBRATION",   L"설정"      },
-        { L"RETURN_TO_HUB", L"메인 메뉴" },
-        { L"TERMINATE",     L"게임 종료"  },
+    static const wchar_t* kPauseRoutes[3][5] = {
+        { L"재개", L"설정", L"재시작", L"\uD3EC\uAE30\uD558\uAE30", L"종료" },
+        { L"RESUME", L"SETTINGS", L"RESTART", L"ABANDON RUN", L"EXIT" },
+        { L"再開", L"設定", L"再起動", L"\u30E9\u30F3\u3092\u653E\u68C4", L"終了" },
     };
+    static const wchar_t* kPauseSubs[3][5] = {
+        { L"재개", L"설정", L"현재 런 재시작", L"현재 런 포기", L"게임 종료" },
+        { L"Resume", L"Settings", L"Restart current run", L"Abandon current run", L"Exit game" },
+        { L"再開", L"設定", L"現在のランを再起動", L"現在のランを放棄", L"ゲーム終了" },
+    };
+    const int pauseLang = std::max(0, std::min(2, LangIndex()));
 
     const float ar = 0.48f, ag = 0.82f, ab = 1.0f;
-
-    auto rectHit = [](float hpx, float hpy,
-                      float rx, float ry, float rw, float rh) -> bool {
-        return hpx >= rx && hpx <= rx + rw && hpy >= ry && hpy <= ry + rh;
-    };
 
     for (int i = 0; i < NBTN; ++i) {
         float rawPh = (s_EntryT - 0.18f - (float)i * 0.08f) / 0.32f;
@@ -11104,10 +14535,12 @@ void Scene_Paused(const SceneCtx& c) {
 
         float baseBx = btnX0;
         float baseBy = btnY0 + (float)i * (BH + BGAP);
-        bool hov = (!exitActive &&
-                    (bool)rectHit((float)mx, (float)my, baseBx - 26.0f, baseBy, BW + 58.0f, BH));
-        float spd = delta * 10.0f; if (spd > 1.0f) spd = 1.0f;
-        s_HoverT[i] += ((hov ? 1.0f : 0.0f) - s_HoverT[i]) * spd;
+        const PBtnDef pbtn = { kPauseRoutes[pauseLang][i],
+                               kPauseSubs[pauseLang][i] };
+        bool hov = UpdatePanelButtonHover(s_HoverT[i], !exitActive,
+                                          mx, my,
+                                          baseBx, baseBy, BW, BH,
+                                          delta, 26.0f);
         float t = s_HoverT[i];
 
         bool  selected    = (s_ExitSel == i);
@@ -11120,24 +14553,15 @@ void Scene_Paused(const SceneCtx& c) {
         float bx    = baseBx + slide - 10.0f * t;
         float by    = baseBy + (exitActive && !selected ? exitP * 28.0f : 0.0f);
 
-        BindMainShader();
-        DrawMenuCommandFeedback(bx, by, BW, BH, ar, ag, ab,
-                                rowA, activeT, selectPulse, fnow + (float)i * 0.17f);
-
         float routeSc = 1.04f;
-        while (routeSc > 0.82f && g_TextL.Width(kPBtns[i].route, routeSc) > BW)
+        while (routeSc > 0.82f && g_TextL.Width(pbtn.route, routeSc) > BW)
             routeSc -= 0.04f;
-        float routeY = by + 2.0f;
-        float subY   = routeY + g_TextL.Height(kPBtns[i].route, routeSc) - 3.0f;
-        float tr = 1.0f + (ar - 1.0f) * activeT;
-        float tg = 1.0f + (ag - 1.0f) * activeT;
-        float tb = 1.0f + (ab - 1.0f) * activeT;
-        if (selected) { tr = 1.0f; tg = 1.0f; tb = 1.0f; }
-        g_TextL.Draw(kPBtns[i].route, bx, routeY, routeSc,
-                     tr, tg, tb, (0.82f + 0.16f * activeT + 0.18f * selectPulse) * rowA);
-        g_TextS.Draw(kPBtns[i].sub, bx + 4.0f, subY, 0.48f,
-                     0.70f + 0.18f * activeT, 0.75f + 0.16f * activeT, 0.82f + 0.12f * activeT,
-                     (0.70f + 0.20f * activeT) * rowA);
+        DrawPanelButton(pbtn.route, pbtn.sub, bx, by, BW, BH,
+                        ar, ag, ab, rowA,
+                        activeT, selected, selectPulse,
+                        fnow + (float)i * 0.17f,
+                        routeSc, 0.48f, false,
+                        PanelButtonSlideSide::Both);
 
         if (hov && lmb && !g_LmbPrev && s_ExitSel < 0) {
             s_ExitSel = i;
@@ -11150,14 +14574,22 @@ void Scene_Paused(const SceneCtx& c) {
         s_ExitSel = -1;
         s_ExitT   = 0.0f;
         switch (sel) {
-        case 0: g_GameManager.currentState = GameState::RUNNING; break;
+        case 0:
+            g_GameManager.currentState = g_GameManager.pauseResumeState;
+            g_GameManager.pauseResumeState = GameState::RUNNING;
+            break;
         case 1:
             g_SettingsReturnTo = GameState::PAUSED;
             ResetSettingsUi();
             g_GameManager.currentState = GameState::SETTINGS;
             break;
-        case 2: g_GameManager.currentState = GameState::MAIN_MENU; break;
-        case 3: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
+        case 2:
+            if (RestartCurrentRun) RestartCurrentRun();
+            break;
+        case 3:
+            if (c.abandonRun) c.abandonRun();
+            break;
+        case 4: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
         }
         return;
     }
@@ -11169,7 +14601,7 @@ void Scene_Paused(const SceneCtx& c) {
                      0.50f, 0.70f, 0.90f, 0.72f * hintA);
     }
 }
-void Scene_GameOver(const SceneCtx& c) {
+void Scene_GameOverLegacy(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
@@ -11277,6 +14709,404 @@ void Scene_GameOver(const SceneCtx& c) {
                 }
 }
 
+void Scene_GameOver(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const double mx = c.mx, my = c.my;
+    const bool lmb = c.lmb;
+    const float delta = c.delta;
+    GLFWwindow* window = c.window;
+    const std::function<void()>& ResetForNewGame = c.reset;
+    static int s_focusedModule = -1;
+    float gof = std::max(0.0f, std::min(1.0f, g_GameOverFade));
+    if (gof < 0.05f) s_focusedModule = -1;
+    bool skippedCinematic = false;
+    if (gof < 0.999f && lmb && !g_LmbPrev) {
+        // A click during the collapse is a skip request, never a menu action.
+        g_GameOverFade = 1.0f;
+        gof = 1.0f;
+        skippedCinematic = true;
+    }
+    const float ge = Smoothstep(gof);
+    const float now = (float)glfwGetTime();
+    const int li = std::max(0, std::min(2, LangIndex()));
+    const float uiS = std::max(0.72f, std::min(sw / 1640.0f, sh / 910.0f));
+
+    static const wchar_t* kRunTitle[3] = {
+        L"\uB7F0 \uC885\uB8CC", L"RUN ENDED", L"\u30E9\u30F3\u7D42\u4E86"
+    };
+    static const wchar_t* kDeathLabel[3] = {
+        L"\uC0AC\uB9DD \uC6D0\uC778", L"DEATH SIGNAL", L"\u6B7B\u56E0"
+    };
+    static const wchar_t* kReportLabel[3] = {
+        L"\uB7F0 \uB9AC\uD3EC\uD2B8", L"RUN REPORT", L"\u30E9\u30F3 \u30EC\u30DD\u30FC\u30C8"
+    };
+    static const wchar_t* kBestLabel[3] = {
+        L"\uCD5C\uACE0 \uAE30\uB85D", L"BEST SCORE", L"\u30D9\u30B9\u30C8\u30B9\u30B3\u30A2"
+    };
+    static const wchar_t* kStardustLabel[3] = {
+        L"\uD68D\uB4DD \uBCC4\uAC00\uB8E8", L"STARDUST GAINED", L"\u7372\u5F97\u30B9\u30BF\u30FC\u30C0\u30B9\u30C8"
+    };
+    static const wchar_t* kCoinLabel[3] = {
+        L"\uD68D\uB4DD \uCF54\uC778", L"COINS EARNED", L"\u7372\u5F97\u30B3\u30A4\u30F3"
+    };
+    static const wchar_t* kTotalLabel[3] = {
+        L"\uBCF4\uC720 \uCF54\uC778", L"TOTAL COINS", L"\u6240\u6301\u30B3\u30A4\u30F3"
+    };
+    static const wchar_t* kBuildLabel[3] = {
+        L"\uBE4C\uB4DC \uBCC4\uC790\uB9AC", L"BUILD CONSTELLATION", L"\u30D3\u30EB\u30C9\u661F\u5EA7"
+    };
+    static const wchar_t* kModulesLabel[3] = {
+        L"\uAE30\uB85D\uB41C \uBAA8\uB4C8", L"MODULES RECORDED", L"\u8A18\u9332\u30E2\u30B8\u30E5\u30FC\u30EB"
+    };
+    static const wchar_t* kNoModules[3] = {
+        L"\uAE30\uB85D\uB41C \uBAA8\uB4C8 \uC5C6\uC74C", L"NO MODULES RECORDED", L"\u8A18\u9332\u30E2\u30B8\u30E5\u30FC\u306A\u3057"
+    };
+    static const wchar_t* kSelectedModule[3] = {
+        L"\uC120\uD0DD\uB41C \uBCC4\uC790\uB9AC", L"SELECTED CONSTELLATION", L"\u9078\u629E\u3057\u305F\u661F\u5EA7"
+    };
+    static const wchar_t* kNewRecord[3] = {
+        L"* \uC2E0\uAE30\uB85D *", L"* NEW RECORD *", L"* \u65B0\u8A18\u9332 *"
+    };
+    static const wchar_t* kRoute[3][3] = {
+        { L"\uC7AC\uC2DC\uC791", L"\uB4A4\uB85C", L"\uC885\uB8CC" },
+        { L"RESTART", L"BACK", L"EXIT" },
+        { L"\u518D\u8D77\u52D5", L"\u623B\u308B", L"\u7D42\u4E86" }
+    };
+    static const wchar_t* kSub[3][3] = {
+        { L"\uD604\uC7AC \uB7F0 \uC720\uC9C0", L"\uB85C\uBE44\uB85C", L"\uAC8C\uC784 \uC885\uB8CC" },
+        { L"KEEP CURRENT RUN SETUP", L"RETURN TO LOBBY", L"EXIT GAME" },
+        { L"\u73FE\u5728\u306E\u30E9\u30F3\u8A2D\u5B9A\u3092\u7DAD\u6301", L"\u30ED\u30D3\u30FC\u3078", L"\u30B2\u30FC\u30E0\u7D42\u4E86" }
+    };
+
+    // The report owns the full frame, so the build constellation is always
+    // visible even when the page texture reveal was left at a low value.
+    SetSceneTextureReveal(1.0f);
+    BindMainShader();
+    drawRect(0.0f, 0.0f, sw, sh, 0.012f, 0.026f, 0.060f, 0.52f * ge);
+    DrawSceneLeftVignette(sw, sh, 0.34f * ge);
+    DrawSceneRadialVignette(sw * 0.72f, sh * 0.44f,
+                            std::max(sw, sh) * 0.76f, 0.12f * ge);
+
+    const float leftX = std::max(42.0f, sw * 0.085f);
+    const float leftW = std::min(680.0f, std::max(300.0f, sw * 0.49f));
+    const float titleY = std::max(58.0f, sh * 0.14f);
+    const float deathY = titleY + 62.0f;
+    const float reportY = deathY + 58.0f;
+    const float metricY = reportY + 28.0f;
+    const float metricRowH = std::max(76.0f, std::min(96.0f, sh * 0.102f));
+    const float metricGap = leftW * 0.52f;
+    const float accentR = 0.32f, accentG = 0.82f, accentB = 1.0f;
+
+    g_TextL.Draw(kRunTitle[li], leftX, titleY, 1.62f,
+                 1.0f, 0.30f, 0.32f, 0.96f * ge);
+    g_TextS.Draw(kDeathLabel[li], leftX, deathY, 0.68f,
+                 0.72f, 0.76f, 0.86f, 0.82f * ge);
+    if (g_DeathReason[0]) {
+        float reasonScale = 0.92f;
+        while (reasonScale > 0.54f &&
+               g_TextS.Width(g_DeathReason, reasonScale) > leftW)
+            reasonScale -= 0.04f;
+        g_TextS.Draw(g_DeathReason, leftX, deathY + 25.0f, reasonScale,
+                     1.0f, 0.46f, 0.43f, 0.90f * ge);
+    }
+
+    g_TextS.Draw(kReportLabel[li], leftX, reportY, 0.86f,
+                 accentR, accentG, accentB, 0.92f * ge);
+    LogoLine(leftX, reportY + 27.0f, leftX + leftW, reportY + 27.0f,
+             1.0f, accentR, accentG, accentB, 0.20f * ge);
+    if (g_LastRunRecord) {
+        const float blink = 0.62f + 0.38f * sinf(now * 6.0f);
+        g_TextS.Draw(kNewRecord[li], leftX + leftW - 198.0f, reportY,
+                     0.62f, 1.0f, 0.84f, 0.28f, blink * ge);
+    }
+
+    float countF = std::min(1.0f, gof / 0.72f);
+    countF = Smoothstep(countF);
+    const long long score = (long long)(g_GameManager.score * countF);
+    const long long bestValue = g_BestScore[(int)g_Difficulty];
+    const long long best = g_LastRunRecord
+        ? (long long)(bestValue * countF) : bestValue;
+    const long long stardust = (long long)(g_RunStardust * countF);
+    const long long coins = (long long)(g_LastRunCoins * countF);
+
+    auto drawMetric = [&](const wchar_t* label, long long value,
+                          float x, float y, float valueScale,
+                          float rr, float gg, float bb) {
+        g_TextS.Draw(label, x, y, 0.68f,
+                     0.64f, 0.76f, 0.88f, 0.88f * ge);
+        wchar_t valueBuf[64];
+        swprintf_s(valueBuf, L"%lld", value);
+        g_TextL.Draw(valueBuf, x, y + 30.0f, valueScale,
+                     rr, gg, bb, 0.94f * ge);
+    };
+
+    drawMetric(T(StrId::FINAL_SCORE), score, leftX, metricY, 1.08f,
+               1.0f, 0.94f, 0.58f);
+    drawMetric(kBestLabel[li], best, leftX + metricGap, metricY, 0.98f,
+               1.0f, 0.78f, 0.34f);
+    drawMetric(T(StrId::REACHED_LEVEL), g_GameManager.playerLevel,
+               leftX, metricY + metricRowH, 0.90f,
+               0.68f, 0.92f, 1.0f);
+    drawMetric(T(StrId::KILL_COUNT), (long long)g_Stats.killCount,
+               leftX + metricGap, metricY + metricRowH, 0.90f,
+               0.70f, 1.0f, 0.78f);
+    drawMetric(kStardustLabel[li], stardust, leftX,
+               metricY + metricRowH * 2.0f, 0.90f,
+               0.72f, 0.88f, 1.0f);
+    drawMetric(kCoinLabel[li], coins, leftX + metricGap,
+               metricY + metricRowH * 2.0f, 0.90f,
+               1.0f, 0.86f, 0.30f);
+    wchar_t totalCoinBuf[64];
+    swprintf_s(totalCoinBuf, L"%ls  %lld", kTotalLabel[li], g_Coins);
+    g_TextS.Draw(totalCoinBuf, leftX + metricGap,
+                 metricY + metricRowH * 2.0f + 60.0f, 0.50f,
+                 0.55f, 0.62f, 0.72f, 0.72f * ge);
+
+    // The owned augment list becomes a compact, rarity-colored constellation.
+    const float chartCX = sw * 0.76f;
+    const float chartCY = sh * 0.43f;
+    const float chartR = std::max(88.0f, std::min(sw * 0.18f, sh * 0.25f));
+    const float chartA = Smoothstep(std::min(1.0f,
+        std::max(0.0f, (gof - 0.12f) / 0.64f)));
+    const float pi = 3.1415927f;
+    const float chartSpin = now * 0.075f;
+
+    DrawSceneRadialVignette(chartCX, chartCY, chartR * 1.70f,
+                            0.24f * chartA);
+    DrawConstellationDisc(chartCX, chartCY, chartR * 1.18f,
+                          0.0f, 0.0f, 0.012f, 0.32f * chartA);
+    DrawSettingsOrbitArc(chartCX, chartCY, chartR, chartR * 0.68f,
+                         chartSpin - pi * 0.92f, chartSpin + pi * 0.92f,
+                         0.28f, 0.72f, 1.0f, 0.72f * uiS,
+                         0.24f * chartA);
+    DrawSettingsOrbitArc(chartCX, chartCY, chartR * 0.70f, chartR * 0.44f,
+                         -chartSpin + 0.24f, -chartSpin + pi * 1.76f,
+                         0.30f, 0.62f, 0.92f, 0.52f * uiS,
+                         0.14f * chartA);
+
+    // Keep the selected character as the constellation's identity anchor.
+    // Job icons are the same visual designs used on the loadout screen.
+    const int playerJob = (g_SelectedJob >= 0 && g_SelectedJob < JOB_COUNT)
+                        ? g_SelectedJob : JOB_NONE;
+    const GLuint playerIcon = JobIcon(playerJob);
+    const float playerCoreR = chartR * 0.25f;
+    DrawConstellationDisc(chartCX, chartCY, playerCoreR * 1.30f,
+                          0.015f, 0.055f, 0.095f, 0.58f * chartA);
+    DrawSettingsOrbitArc(chartCX, chartCY, playerCoreR * 1.18f,
+                         playerCoreR * 0.82f, chartSpin,
+                         chartSpin + pi * 2.0f,
+                         0.44f, 0.86f, 1.0f, 0.85f * uiS,
+                         0.42f * chartA);
+    if (playerIcon) {
+        BindMainShader();
+        DrawIcon(playerIcon, chartCX - playerCoreR, chartCY - playerCoreR,
+                 playerCoreR * 2.0f, playerCoreR * 2.0f,
+                 1.0f, 1.0f, 1.0f, 0.96f * chartA);
+    } else {
+        BindMainShader();
+        DrawPlayerWeaponShell(chartCX, chartCY,
+                              std::max(12.0f, chartR * 0.075f),
+                              chartSpin + pi * 0.5f);
+    }
+
+    const wchar_t* chartTitle = kBuildLabel[li];
+    g_TextS.Draw(chartTitle,
+                 chartCX - g_TextS.Width(chartTitle, 0.66f) * 0.5f,
+                 chartCY - chartR * 1.34f, 0.66f,
+                 accentR, accentG, accentB, 0.94f * chartA);
+
+    std::vector<int> modules;
+    modules.reserve(64);
+    for (int idx : g_OwnedAugs) {
+        if (idx >= 0 && idx < AUG_TOTAL && modules.size() < 64)
+            modules.push_back(idx);
+    }
+    const int moduleCount = (int)modules.size();
+    const int visibleModules = std::min(moduleCount, 8);
+    if (s_focusedModule < 0 || s_focusedModule >= visibleModules)
+        s_focusedModule = -1;
+    wchar_t moduleCountBuf[64];
+    swprintf_s(moduleCountBuf, L"%ls  %d", kModulesLabel[li], moduleCount);
+    g_TextS.Draw(moduleCountBuf,
+                 chartCX - g_TextS.Width(moduleCountBuf, 0.42f) * 0.5f,
+                 chartCY + chartR * 1.22f, 0.48f,
+                 0.58f, 0.68f, 0.80f, 0.76f * chartA);
+
+    int hoveredModule = -1;
+    if (visibleModules > 0) {
+        float px[8] = {}, py[8] = {};
+        const float kAngles[8] = {
+            -1.56f, -0.83f, -0.12f, 0.58f,
+             1.42f,  2.18f,  2.88f, 3.72f
+        };
+        const float kRadii[8] = {
+            0.62f, 0.78f, 0.56f, 0.76f,
+            0.66f, 0.82f, 0.55f, 0.74f
+        };
+        for (int i = 0; i < visibleModules; ++i) {
+            const float angle = chartSpin * 0.72f + kAngles[i];
+            const float radius = chartR * kRadii[i];
+            px[i] = chartCX + cosf(angle) * radius;
+            py[i] = chartCY + sinf(angle) * radius * (0.64f + 0.04f * (i & 1));
+        }
+
+        const bool allowConstellationInput = gof >= 0.999f && !skippedCinematic;
+        if (allowConstellationInput) {
+            const float hitR = std::max(15.0f, 13.0f * uiS);
+            for (int i = 0; i < visibleModules; ++i) {
+                const float dx = (float)mx - px[i];
+                const float dy = (float)my - py[i];
+                if (dx * dx + dy * dy <= hitR * hitR) {
+                    hoveredModule = i;
+                    break;
+                }
+            }
+            if (hoveredModule >= 0 && lmb && !g_LmbPrev)
+                s_focusedModule = hoveredModule;
+        }
+        const int detailModule = hoveredModule >= 0
+                               ? hoveredModule : s_focusedModule;
+
+        // Avoid a regular polygon: the uneven ring and selective chords make
+        // each build read as a different constellation instead of a wheel.
+        for (int i = 0; i < visibleModules; ++i) {
+            const int next = (i + 1) % visibleModules;
+            float rr, gg, bb;
+            GetRarityColor(ALL_AUGS[modules[i]].rarity, rr, gg, bb);
+            DrawVisibleConstellLine(px[i], py[i], px[next], py[next],
+                                    1.35f * uiS, rr, gg, bb,
+                                    0.62f * chartA);
+        }
+        const int chordPairs[][2] = {
+            { 0, 3 }, { 2, 5 }, { 4, 7 }, { 6, 1 }
+        };
+        const int chordCount = (visibleModules >= 6) ? 4
+                             : (visibleModules >= 4) ? 2 : 0;
+        for (int i = 0; i < chordCount; ++i) {
+            const int a = chordPairs[i][0] % visibleModules;
+            const int b = chordPairs[i][1] % visibleModules;
+            float rr, gg, bb;
+            GetRarityColor(ALL_AUGS[modules[a]].rarity, rr, gg, bb);
+            DrawVisibleConstellLine(px[a], py[a], px[b], py[b],
+                                    0.85f * uiS, rr, gg, bb,
+                                    0.30f * chartA);
+        }
+        for (int i = 0; i < visibleModules; ++i) {
+            float rr, gg, bb;
+            GetRarityColor(ALL_AUGS[modules[i]].rarity, rr, gg, bb);
+            const bool focused = i == detailModule;
+            DrawVisibleConstellNode(px[i], py[i],
+                                    (focused ? 9.0f : 7.0f) * uiS,
+                                    rr, gg, bb, chartA, focused, true);
+            if (focused) {
+                DrawSettingsOrbitArc(px[i], py[i], 15.0f * uiS,
+                                     9.0f * uiS, chartSpin,
+                                     chartSpin + pi * 2.0f,
+                                     rr, gg, bb, 0.85f * uiS,
+                                     0.72f * chartA);
+            }
+        }
+        const int overflow = moduleCount - visibleModules;
+        if (overflow > 0) {
+            wchar_t moreBuf[48];
+            swprintf_s(moreBuf, L"+%d MORE", overflow);
+            g_TextS.Draw(moreBuf,
+                         chartCX + chartR * 0.48f,
+                         chartCY + chartR * 1.22f, 0.44f,
+                         0.62f, 0.76f, 0.90f, 0.82f * chartA);
+        }
+
+        if (detailModule >= 0 && detailModule < visibleModules) {
+            const AugDef& selected = ALL_AUGS[modules[detailModule]];
+            const wchar_t* moduleName = selected.locName[li];
+            const wchar_t* moduleDesc = selected.locDesc[li];
+            const float detailY = chartCY + chartR * 0.82f;
+            const float detailW = chartR * 1.92f;
+            LogoLine(chartCX - detailW * 0.5f, detailY - 10.0f,
+                     chartCX + detailW * 0.5f, detailY - 10.0f,
+                     0.8f, accentR, accentG, accentB, 0.20f * chartA);
+            g_TextS.Draw(kSelectedModule[li],
+                         chartCX - g_TextS.Width(kSelectedModule[li], 0.48f) * 0.5f,
+                         detailY, 0.48f,
+                         accentR, accentG, accentB, 0.88f * chartA);
+            float nameScale = 0.68f;
+            while (nameScale > 0.48f &&
+                   g_TextL.Width(moduleName, nameScale) > detailW)
+                nameScale -= 0.04f;
+            g_TextL.Draw(moduleName,
+                         chartCX - g_TextL.Width(moduleName, nameScale) * 0.5f,
+                         detailY + 22.0f, nameScale,
+                         0.92f, 0.98f, 1.0f, 0.94f * chartA);
+            if (moduleDesc && moduleDesc[0]) {
+                float descScale = 0.42f;
+                while (descScale > 0.30f &&
+                       g_TextS.Width(moduleDesc, descScale) > detailW)
+                    descScale -= 0.03f;
+                g_TextS.Draw(moduleDesc,
+                             chartCX - g_TextS.Width(moduleDesc, descScale) * 0.5f,
+                             detailY + 53.0f, descScale,
+                             0.62f, 0.74f, 0.84f, 0.78f * chartA);
+            }
+        }
+    } else {
+        g_TextS.Draw(kNoModules[li],
+                     chartCX - g_TextS.Width(kNoModules[li], 0.44f) * 0.5f,
+                     chartCY + chartR * 0.78f, 0.44f,
+                     0.62f, 0.76f, 0.90f, 0.82f * chartA);
+    }
+
+    static float s_hovGO[3] = {};
+    const float BW = std::min(520.0f, std::max(280.0f, sw * 0.38f));
+    const float BH = std::max(48.0f, std::min(68.0f, sh * 0.075f));
+    const float BGAP = std::max(10.0f, sh * 0.013f);
+    const float totalBH = 3.0f * BH + 2.0f * BGAP;
+    const float bX0 = leftX;
+    const float statsBottom = metricY + metricRowH * 3.0f + 8.0f;
+    const float bY0 = std::max(statsBottom + 30.0f,
+                               sh - totalBH - std::max(44.0f, sh * 0.06f));
+    const bool showButtons = gof >= 0.999f && !skippedCinematic;
+
+    if (showButtons) {
+        const float ancX = bX0 - 36.0f;
+        const float ancY = bY0 - 8.0f;
+        const float ancH = totalBH + 16.0f;
+        BindMainShader();
+        drawRect(ancX, ancY, 1.2f, ancH, accentR, accentG, accentB,
+                 0.15f * ge);
+        drawDiamond(ancX + 0.6f, ancY + 4.0f, 2.8f,
+                    accentR, accentG, accentB, 0.20f * ge);
+        drawDiamond(ancX + 0.6f, ancY + ancH - 4.0f, 2.8f,
+                    accentR, accentG, accentB, 0.16f * ge);
+    }
+    for (int i = 0; i < 3; ++i) {
+        const float by = bY0 + (float)i * (BH + BGAP);
+        const bool hov = showButtons &&
+            mx >= bX0 - 26.0f && mx <= bX0 + BW + 32.0f &&
+            my >= by && my <= by + BH;
+        s_hovGO[i] = UpdateMenuCommandHover(s_hovGO[i], hov, delta);
+        const float rowA = (showButtons ? 1.0f : 0.0f) * ge;
+        DrawUnifiedMenuCommand(kRoute[li][i], kSub[li][i],
+                               bX0 - 10.0f * s_hovGO[i], by, BW, BH,
+                               accentR, accentG, accentB, rowA,
+                               s_hovGO[i], false, 0.0f,
+                               now + (float)i * 0.17f);
+        if (hov && lmb && !g_LmbPrev) {
+            switch (i) {
+            case 0:
+                ResetForNewGame();
+                FinalizeLoadout(c, FixedWeaponForSelectedJob());
+                break;
+            case 1:
+                g_GameManager.currentState = GameState::MAIN_MENU;
+                break;
+            case 2:
+                glfwSetWindowShouldClose(window, GLFW_TRUE);
+                break;
+            }
+        }
+    }
+}
+
 void Scene_Victory(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
@@ -11359,10 +15189,542 @@ void Scene_Victory(const SceneCtx& c) {
     }
 }
 
+struct TarotCardPose {
+    float cx = 0.0f;
+    float cy = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    float angle = 0.0f;
+};
+
+static float TarotClamp01(float v) {
+    return std::max(0.0f, std::min(1.0f, v));
+}
+
+static float TarotEaseOut(float t) {
+    const float inv = 1.0f - TarotClamp01(t);
+    return 1.0f - inv * inv * inv;
+}
+
+static TarotCardPose TarotBasePose(int index, int count, float sw, float sh,
+                                   float cardW, float cardH, float centerX,
+                                   float centerY) {
+    TarotCardPose p;
+    const float middle = (float)(count - 1) * 0.5f;
+    const float gap = count <= 3 ? cardW * 0.14f : cardW * 0.08f;
+    const float spread = cardW + gap;
+    const float offset = (float)index - middle;
+    p.cx = centerX + offset * spread;
+    p.cy = centerY;
+    p.w = cardW;
+    p.h = cardH;
+    p.angle = 0.0f;
+    (void)sw;
+    (void)sh;
+    return p;
+}
+
+static void TarotPoint(const TarotCardPose& p, float lx, float ly,
+                       float& x, float& y) {
+    const float cs = cosf(p.angle);
+    const float sn = sinf(p.angle);
+    x = p.cx + lx * cs - ly * sn;
+    y = p.cy + lx * sn + ly * cs;
+}
+
+static void TarotFill(const TarotCardPose& p, float w, float h,
+                      float r, float g, float b, float a) {
+    float x0, y0, x1, y1, x2, y2, x3, y3;
+    TarotPoint(p, -w * 0.5f, -h * 0.5f, x0, y0);
+    TarotPoint(p,  w * 0.5f, -h * 0.5f, x1, y1);
+    TarotPoint(p,  w * 0.5f,  h * 0.5f, x2, y2);
+    TarotPoint(p, -w * 0.5f,  h * 0.5f, x3, y3);
+    BatchTri(x0, y0, x1, y1, x2, y2, r, g, b, a);
+    BatchTri(x0, y0, x2, y2, x3, y3, r, g, b, a);
+}
+
+static void TarotSegment(float x1, float y1, float x2, float y2, float width,
+                         float r, float g, float b, float a) {
+    const float dx = x2 - x1;
+    const float dy = y2 - y1;
+    const float len = sqrtf(dx * dx + dy * dy);
+    if (len < 0.5f) return;
+    const float nx = -dy / len * width * 0.5f;
+    const float ny =  dx / len * width * 0.5f;
+    BatchTri(x1 + nx, y1 + ny, x1 - nx, y1 - ny,
+             x2 - nx, y2 - ny, r, g, b, a);
+    BatchTri(x1 + nx, y1 + ny, x2 - nx, y2 - ny,
+             x2 + nx, y2 + ny, r, g, b, a);
+}
+
+static void TarotStroke(const TarotCardPose& p, float w, float h, float width,
+                        float r, float g, float b, float a) {
+    float x0, y0, x1, y1, x2, y2, x3, y3;
+    TarotPoint(p, -w * 0.5f, -h * 0.5f, x0, y0);
+    TarotPoint(p,  w * 0.5f, -h * 0.5f, x1, y1);
+    TarotPoint(p,  w * 0.5f,  h * 0.5f, x2, y2);
+    TarotPoint(p, -w * 0.5f,  h * 0.5f, x3, y3);
+    TarotSegment(x0, y0, x1, y1, width, r, g, b, a);
+    TarotSegment(x1, y1, x2, y2, width, r, g, b, a);
+    TarotSegment(x2, y2, x3, y3, width, r, g, b, a);
+    TarotSegment(x3, y3, x0, y0, width, r, g, b, a);
+}
+
+static bool TarotHit(const TarotCardPose& p, double mx, double my, float pad) {
+    const float dx = (float)mx - p.cx;
+    const float dy = (float)my - p.cy;
+    const float cs = cosf(p.angle);
+    const float sn = sinf(p.angle);
+    const float lx = dx * cs + dy * sn;
+    const float ly = -dx * sn + dy * cs;
+    return fabsf(lx) <= p.w * 0.5f + pad &&
+           fabsf(ly) <= p.h * 0.5f + pad;
+}
+
+static void DrawTarotEmblem(const AugDef& def, float cx, float cy, float size,
+                            float r, float g, float b, float a, float now) {
+    const AugListGroup group = AugListGroupOf(def);
+    const float pulse = 1.0f + sinf(now * 2.7f) * 0.035f;
+    const float outer = size * 0.50f * pulse;
+    const float inner = size * 0.34f;
+    drawCircle(cx, cy, outer, r * 0.18f, g * 0.18f, b * 0.18f, a * 0.56f);
+    TarotSegment(cx - outer, cy, cx + outer, cy, 1.0f, r, g, b, a * 0.34f);
+    TarotSegment(cx, cy - outer, cx, cy + outer, 1.0f, r, g, b, a * 0.34f);
+
+    if (def.rarity == AugRarity::COMBO) {
+        drawDiamond(cx - size * 0.20f, cy, size * 0.38f, r, g, b, a * 0.82f);
+        drawDiamond(cx + size * 0.20f, cy, size * 0.38f, r, g, b, a * 0.82f);
+        TarotSegment(cx - size * 0.10f, cy, cx + size * 0.10f, cy,
+                     2.5f, r, g, b, a);
+    } else if (def.rarity == AugRarity::DEBUFF) {
+        const float q = inner * 0.92f;
+        BatchTri(cx, cy + q, cx - q, cy - q * 0.72f,
+                 cx + q, cy - q * 0.72f, r, g, b, a * 0.78f);
+        drawDiamond(cx, cy - size * 0.04f, size * 0.28f,
+                    1.0f, 0.28f, 0.28f, a);
+    } else {
+        const int points = (group == AugListGroup::SKILL ||
+                            group == AugListGroup::COMBO) ? 6 : 4;
+        for (int i = 0; i < points; ++i) {
+            const float ang = -M_PI * 0.5f + (float)i * 2.0f * M_PI / points;
+            const float x = cx + cosf(ang) * inner;
+            const float y = cy + sinf(ang) * inner;
+            TarotSegment(cx, cy, x, y, 2.0f, r, g, b, a * 0.72f);
+            drawDiamond(x, y, size * 0.14f, r, g, b, a * 0.90f);
+        }
+        if (group == AugListGroup::ORBIT || group == AugListGroup::MYTHIC)
+            drawCircle(cx, cy, inner * 0.52f, r, g, b, a * 0.60f);
+        drawDiamond(cx, cy, size * 0.30f, r, g, b, a);
+    }
+    BatchFlush();
+}
+
+static void DrawTarotCardSurface(const TarotCardPose& p, float r, float g,
+                                 float b, float alpha, float hover,
+                                 float flash, bool selected, float now) {
+    // Historical augment cards were square to the screen: a dark body, a
+    // rarity-colored title bar, full neon border, and a small constellation
+    // corner frame. Keep the pose parameter so the animation code can still
+    // own movement/scale, but render the card in this deliberately flat style.
+    const float left = p.cx - p.w * 0.5f;
+    const float top = p.cy - p.h * 0.5f;
+    const float topBar = std::max(38.0f, p.w * 0.16f);
+    const float inner = std::max(4.0f, p.w * 0.018f);
+    const float shimmer = 0.15f + 0.10f * (sinf(now * 3.2f) * 0.5f + 0.5f);
+    const float glow = 0.78f + hover * 0.26f + flash * 0.25f;
+
+    BindMainShader();
+    drawRect(left + 8.0f, top + 10.0f, p.w, p.h,
+             0.0f, 0.0f, 0.02f, alpha * 0.44f);
+    drawRect(left, top, p.w, p.h,
+             0.018f, 0.024f, 0.052f, alpha * 0.98f);
+    drawRect(left + inner, top + inner, p.w - inner * 2.0f,
+             p.h - inner * 2.0f,
+             0.035f + r * 0.06f, 0.045f + g * 0.04f,
+             0.082f + b * 0.04f, alpha * 0.92f);
+    drawRect(left, top, p.w, topBar,
+             r * 0.38f, g * 0.38f, b * 0.38f,
+             alpha * (0.46f + hover * 0.16f + flash * 0.12f));
+
+    const float borderR = std::min(1.0f, r * (1.4f + shimmer) + flash * 0.55f);
+    const float borderG = std::min(1.0f, g * (1.4f + shimmer) + flash * 0.55f);
+    const float borderB = std::min(1.0f, b * (1.4f + shimmer) + flash * 0.55f);
+    const float borderA = alpha * glow;
+    drawRect(left, top, p.w, 1.8f, borderR, borderG, borderB, borderA);
+    drawRect(left, top + p.h - 1.8f, p.w, 1.8f,
+             borderR, borderG, borderB, borderA);
+    drawRect(left, top, 1.8f, p.h, borderR, borderG, borderB, borderA);
+    drawRect(left + p.w - 1.8f, top, 1.8f, p.h,
+             borderR, borderG, borderB, borderA);
+    drawConstellFrame(left + inner, top + inner, p.w - inner * 2.0f,
+                      p.h - inner * 2.0f, r, g, b,
+                      alpha * (0.26f + hover * 0.24f),
+                      14.0f, 4.0f, alpha * 0.12f);
+
+    // The old card reserves the upper half for the icon. This matches the
+    // icon slot used by the content pass below, so the divider never cuts
+    // through the glyph at smaller window scales.
+    const float dividerY = top + topBar + p.w * 0.54f;
+    drawRect(left + p.w * 0.10f, dividerY,
+             p.w * 0.80f, 1.5f, r, g, b,
+             alpha * (0.26f + hover * 0.18f));
+    drawRect(left + p.w * 0.10f, top + p.h - p.w * 0.24f,
+             p.w * 0.80f, 1.0f, r, g, b, alpha * 0.18f);
+
+    drawDiamond(left + 10.0f, top + 10.0f, 6.0f + hover * 2.0f,
+                borderR, borderG, borderB, alpha * 0.88f);
+    drawDiamond(left + p.w - 10.0f, top + 10.0f,
+                6.0f + hover * 2.0f, borderR, borderG, borderB,
+                alpha * 0.88f);
+    drawDiamond(left + 10.0f, top + p.h - 10.0f, 4.5f,
+                r, g, b, alpha * 0.52f);
+    drawDiamond(left + p.w - 10.0f, top + p.h - 10.0f, 4.5f,
+                r, g, b, alpha * 0.52f);
+
+    if (selected) {
+        drawRect(left - 5.0f, top - 5.0f, p.w + 10.0f, 2.6f,
+                 1.0f, 1.0f, 1.0f, alpha * 0.78f);
+        drawRect(left - 5.0f, top + p.h + 2.4f, p.w + 10.0f, 2.6f,
+                 1.0f, 1.0f, 1.0f, alpha * 0.78f);
+        drawRect(left - 5.0f, top - 5.0f, 2.6f, p.h + 10.0f,
+                 1.0f, 1.0f, 1.0f, alpha * 0.78f);
+        drawRect(left + p.w + 2.4f, top - 5.0f, 2.6f, p.h + 10.0f,
+                 1.0f, 1.0f, 1.0f, alpha * 0.78f);
+    }
+    BatchFlush();
+}
+
+static std::vector<std::wstring> TarotWrap(const wchar_t* src, float scale,
+                                            float maxWidth) {
+    std::vector<std::wstring> lines;
+    std::wstring segment;
+    const wchar_t* text = src ? src : L"";
+    auto flush = [&]() {
+        while (!segment.empty() && segment.front() == L' ') segment.erase(segment.begin());
+        if (!segment.empty()) lines.push_back(segment);
+        segment.clear();
+    };
+    for (const wchar_t* p = text; *p; ++p) {
+        if (*p == L'/') { flush(); continue; }
+        std::wstring test = segment;
+        test.push_back(*p);
+        if (!segment.empty() && g_TextS.Width(test.c_str(), scale) > maxWidth)
+            flush();
+        segment.push_back(*p);
+    }
+    flush();
+    return lines;
+}
+
+static void DrawTarotDetailPanel(const AugDef& def, float x, float y, float w,
+                                 float h, float alpha) {
+    float r, g, b;
+    GetRarityColor(def.rarity, r, g, b);
+    BindMainShader();
+    drawRect(x + 7.0f, y + 8.0f, w, h, 0.0f, 0.0f, 0.02f, alpha * 0.36f);
+    drawRect(x, y, w, h, 0.018f, 0.024f, 0.052f, alpha * 0.94f);
+    drawRect(x, y, w, 4.0f, r, g, b, alpha * 0.95f);
+    drawConstellFrame(x, y, w, h, r, g, b, alpha * 0.52f,
+                      16.0f, 5.0f, alpha * 0.20f);
+    BatchFlush();
+
+    g_TextS.Draw(GetAugBadge(def), x + 18.0f, y + 16.0f, 0.64f,
+                 std::min(1.0f, r * 1.35f + 0.20f),
+                 std::min(1.0f, g * 1.35f + 0.20f),
+                 std::min(1.0f, b * 1.35f + 0.20f), alpha * 0.95f);
+    const wchar_t* name = AugName(def);
+    float nameScale = 0.90f;
+    while (nameScale > 0.54f && g_TextL.Width(name, nameScale) > w - 36.0f)
+        nameScale -= 0.04f;
+    g_TextL.Draw(name, x + 18.0f, y + 45.0f, nameScale,
+                 1.0f, 1.0f, 1.0f, alpha * 0.98f);
+    BatchFlush();
+
+    const wchar_t* stat = AugStat(def);
+    g_TextS.Draw(stat, x + 18.0f, y + 82.0f, 0.62f,
+                 0.72f, 1.0f, 0.82f, alpha * 0.92f);
+    BatchFlush();
+
+    const float descScale = 0.58f;
+    const float maxWidth = w - 36.0f;
+    const std::vector<std::wstring> lines = TarotWrap(AugDesc(def), descScale, maxWidth);
+    float dy = y + 116.0f;
+    for (const std::wstring& line : lines) {
+        if (dy > y + h - 22.0f) break;
+        g_TextS.Draw(line.c_str(), x + 18.0f, dy, descScale,
+                     0.80f, 0.88f, 0.98f, alpha * 0.84f);
+        dy += 22.0f;
+    }
+    BatchFlush();
+}
+
+struct TarotBurstParticle {
+    float x = 0.0f, y = 0.0f;
+    float vx = 0.0f, vy = 0.0f;
+    float life = 0.0f;
+    float r = 1.0f, g = 1.0f, b = 1.0f;
+};
+
+static void Scene_AugSelectCards(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, delta = c.delta;
+    const GameState state = g_GameManager.currentState;
+    const int nCards = std::max(0, std::min(3, g_GameManager.augChoiceCount));
+    const float now = (float)glfwGetTime();
+    const bool isDebuff = state == GameState::DEBUFF_SELECT;
+    const bool inExit = g_AugExitT >= 0.0f;
+
+    static int seenSerial = -1;
+    static float enterT = 0.0f;
+    static float hoverT[3] = {};
+    static float flashT[3] = {};
+    static bool lmbPrev = false;
+    static int prevHover = -1;
+    static double prevMx = -1.0, prevMy = -1.0;
+    static bool burstSpawned = false;
+    static TarotBurstParticle burst[96];
+
+    if (seenSerial != g_GameManager.augmentSelectionSerial) {
+        seenSerial = g_GameManager.augmentSelectionSerial;
+        enterT = 0.0f;
+        prevHover = -1;
+        prevMx = c.mx;
+        prevMy = c.my;
+        lmbPrev = false;
+        burstSpawned = false;
+        for (int i = 0; i < 3; ++i) { hoverT[i] = 0.0f; flashT[i] = 0.0f; }
+        for (auto& p : burst) p.life = 0.0f;
+    }
+
+    if (!inExit) enterT = std::min(1.0f, enterT + delta / 0.48f);
+    const float enterE = TarotEaseOut(enterT);
+    const bool inputReady = enterT >= 0.98f && !inExit;
+    const bool pointerMoved = prevMx < 0.0 ||
+        fabs(c.mx - prevMx) > 0.5 || fabs(c.my - prevMy) > 0.5;
+    if (pointerMoved) g_GameManager.augmentKeyboardFocus = false;
+    prevMx = c.mx;
+    prevMy = c.my;
+
+    const float ui = std::min(1.0f, std::min(sw / 1800.0f, sh / 1000.0f));
+    const float cardW = 340.0f * ui;
+    const float cardH = 500.0f * ui;
+    const float centerX = sw * 0.50f;
+    const float centerY = sh * 0.535f;
+    const float panelW = std::min(sw * 0.86f, 1040.0f * ui);
+    const float panelX = (sw - panelW) * 0.5f;
+    const float panelY = centerY + cardH * 0.5f + 24.0f * ui;
+    const float panelAvailable = sh - panelY - 34.0f * ui;
+    const float panelH = std::max(100.0f, std::min(222.0f * ui, panelAvailable));
+
+    TarotCardPose base[3];
+    for (int i = 0; i < nCards; ++i)
+        base[i] = TarotBasePose(i, nCards, sw, sh, cardW, cardH, centerX, centerY);
+
+    if (inputReady && (!g_GameManager.augmentKeyboardFocus || pointerMoved)) {
+        int hover = -1;
+        for (int i = nCards - 1; i >= 0; --i) {
+            if (TarotHit(base[i], c.mx, c.my, 12.0f)) { hover = i; break; }
+        }
+        g_HoveredAug = hover;
+    }
+    if (g_HoveredAug != prevHover && g_HoveredAug >= 0 && g_HoveredAug < nCards)
+        flashT[g_HoveredAug] = 1.0f;
+    prevHover = g_HoveredAug;
+
+    for (int i = 0; i < 3; ++i) {
+        const float target = inputReady && g_HoveredAug == i ? 1.0f : 0.0f;
+        hoverT[i] += (target - hoverT[i]) * std::min(1.0f, delta * 11.0f);
+        flashT[i] = std::max(0.0f, flashT[i] - delta / 0.22f);
+    }
+
+    if (inputReady && c.lmb && !lmbPrev &&
+        g_HoveredAug >= 0 && g_HoveredAug < nCards) {
+        g_GameManager.augmentKeyboardFocus = false;
+        g_AugExitT = 0.0f;
+        g_AugExitSlot = g_HoveredAug;
+    }
+    lmbPrev = c.lmb;
+
+    float overlay = TarotEaseOut(std::min(1.0f, enterT * 1.35f));
+    if (inExit) overlay *= std::max(0.0f, 1.0f - TarotClamp01(g_AugExitT / 0.72f));
+    BindMainShader();
+    drawRect(0, 0, sw, sh, 0.004f, 0.006f, 0.016f, overlay * 0.72f);
+    drawConstellFrame(16.0f, 16.0f, sw - 32.0f, sh - 32.0f,
+                      isDebuff ? 0.90f : 0.30f, isDebuff ? 0.20f : 0.62f,
+                      isDebuff ? 0.20f : 0.92f, overlay * 0.66f,
+                      24.0f, 8.0f, overlay * 0.30f, enterT);
+    BatchFlush();
+
+    const wchar_t* title = isDebuff ? T(StrId::CHOOSE_DEBUFF) : T(StrId::CHOOSE_AUG);
+    float titleAlpha = overlay * std::max(0.0f, 1.0f - (inExit ? g_AugExitT * 2.0f : 0.0f));
+    g_TextL.Draw(title, CenterTextX(sw, g_TextL, title, 1.0f), sh * 0.065f,
+                 1.0f, 1.0f, 1.0f, 1.0f, titleAlpha);
+    if (!isDebuff) {
+        wchar_t slots[64];
+        swprintf_s(slots, L"ID %d / %d", CountIdentitySlotsUsed(), IdentitySlotMax());
+        g_TextS.Draw(slots, CenterTextX(sw, g_TextS, slots, 0.70f),
+                     sh * 0.065f + 34.0f, 0.70f,
+                     0.72f, 0.92f, 1.0f, titleAlpha * 0.84f);
+    }
+    BatchFlush();
+
+    for (int i = 0; i < nCards; ++i) {
+        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
+        float r, g, b;
+        GetRarityColor(def.rarity, r, g, b);
+        const bool hovered = inputReady && g_HoveredAug == i;
+        const bool selected = inExit && g_AugExitSlot == i;
+        const bool other = inExit && !selected;
+        const float hT = TarotEaseOut(hoverT[i]);
+        const float stagger = TarotEaseOut(TarotClamp01((enterT - i * 0.08f) / 0.78f));
+        TarotCardPose p = base[i];
+        p.cx = centerX + (p.cx - centerX) * stagger;
+        p.cy = centerY + (p.cy - centerY) * stagger + (1.0f - stagger) * 90.0f;
+        p.cy -= hT * 18.0f;
+        p.w *= 1.0f + hT * 0.045f;
+        p.h *= 1.0f + hT * 0.045f;
+        p.angle *= 1.0f - hT * 0.20f;
+        float alpha = stagger * (g_HoveredAug >= 0 && g_HoveredAug != i ? 0.42f : 1.0f);
+
+        if (selected) {
+            const float t = TarotEaseOut(TarotClamp01(g_AugExitT / 0.72f));
+            p.cx += (sw * 0.50f - p.cx) * t;
+            p.cy += (sh * 0.49f - p.cy) * t;
+            p.w *= 1.0f + t * 0.42f;
+            p.h *= 1.0f + t * 0.42f;
+            p.angle *= 1.0f - t;
+            const float fade = TarotClamp01((g_AugExitT - 0.56f) / 0.54f);
+            alpha *= 1.0f - fade * 0.92f;
+        } else if (other) {
+            const float t = TarotEaseOut(TarotClamp01(g_AugExitT / 0.42f));
+            p.cy += (i % 2 == 0 ? 1.0f : -1.0f) * t * 44.0f;
+            p.cx += (i - g_AugExitSlot) * t * 20.0f;
+            alpha *= 1.0f - t;
+        }
+        if (alpha <= 0.01f) continue;
+
+        DrawTarotCardSurface(p, r, g, b, alpha, hT, flashT[i], selected, now);
+        const float left = p.cx - p.w * 0.5f;
+        const float top = p.cy - p.h * 0.5f;
+        const float topBar = std::max(38.0f, p.w * 0.16f);
+        const wchar_t* badge = GetAugBadge(def);
+        const float badgeScale = 0.62f;
+        const float badgeW = g_TextS.Width(badge, badgeScale);
+        g_TextS.Draw(badge, p.cx - badgeW * 0.5f, top + topBar * 0.28f,
+                     badgeScale,
+                     std::min(1.0f, r * 1.45f + 0.20f),
+                     std::min(1.0f, g * 1.45f + 0.20f),
+                     std::min(1.0f, b * 1.45f + 0.20f), alpha * 0.94f);
+        wchar_t key[16];
+        swprintf_s(key, L"[%d]", i + 1);
+        const float keyW = g_TextS.Width(key, 0.60f);
+        g_TextS.Draw(key, p.cx - keyW * 0.5f, top + p.h - 38.0f,
+                     0.60f, 0.72f, 0.82f, 0.96f, alpha * 0.84f);
+        BatchFlush();
+
+        const float iconSize = std::min(p.w * 0.44f, 150.0f * ui);
+        const float iconX = p.cx - iconSize * 0.5f;
+        const float iconY = top + topBar + 18.0f * ui;
+        GLuint icon = IconFor(def.type);
+        if (icon) {
+            BatchFlush();
+            DrawIcon(icon, iconX, iconY, iconSize, iconSize,
+                     1.0f, 1.0f, 1.0f,
+                     alpha * (0.90f + hT * 0.10f));
+            BindMainShader();
+        } else {
+            DrawTarotEmblem(def, p.cx, iconY + iconSize * 0.5f,
+                            iconSize, r, g, b,
+                            alpha * (0.88f + hT * 0.12f), now);
+        }
+        const float dividerY = iconY + iconSize + 16.0f * ui;
+        const float nameY = dividerY + 14.0f * ui;
+        const wchar_t* name = AugName(def);
+        float nameScale = 0.82f;
+        while (nameScale > 0.54f && g_TextL.Width(name, nameScale) > p.w - 34.0f)
+            nameScale -= 0.04f;
+        const float nameW = g_TextL.Width(name, nameScale);
+        g_TextL.Draw(name, p.cx - nameW * 0.5f, nameY,
+                     nameScale, 1.0f, 1.0f, 1.0f, alpha * 0.98f);
+        const wchar_t* stat = AugStat(def);
+        float statScale = 0.56f;
+        while (statScale > 0.40f && g_TextS.Width(stat, statScale) > p.w - 28.0f)
+            statScale -= 0.04f;
+        const float statW = g_TextS.Width(stat, statScale);
+        g_TextS.Draw(stat, p.cx - statW * 0.5f, nameY + 36.0f * ui,
+                     statScale, 0.72f, 1.0f, 0.82f, alpha * 0.92f);
+        BatchFlush();
+
+        std::vector<std::wstring> shortLines = TarotWrap(AugDesc(def), 0.48f,
+                                                         p.w - 30.0f);
+        if (!shortLines.empty()) {
+            const std::wstring& line = shortLines.front();
+            g_TextS.Draw(line.c_str(), p.cx - g_TextS.Width(line.c_str(), 0.48f) * 0.5f,
+                         top + p.h - 54.0f, 0.48f,
+                         0.76f, 0.84f, 0.94f, alpha * 0.72f);
+        }
+        BatchFlush();
+    }
+
+    if (!inExit && inputReady && nCards > 0) {
+        const int detailSlot = g_HoveredAug >= 0 && g_HoveredAug < nCards
+            ? g_HoveredAug : 0;
+        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[detailSlot]];
+        DrawTarotDetailPanel(def, panelX, panelY, panelW, panelH, enterE);
+        if (g_HoveredAug < 0) {
+            const wchar_t* hint = T(StrId::KEY_HINT_NO_HOVER);
+            g_TextS.Draw(hint, CenterTextX(sw, g_TextS, hint, 0.68f),
+                         sh * 0.965f, 0.68f,
+                         0.52f, 0.64f, 0.80f, enterE * 0.68f);
+            BatchFlush();
+        }
+    } else if (!inExit && enterT > 0.68f) {
+        const wchar_t* hint = T(StrId::KEY_HINT_NO_HOVER);
+        g_TextS.Draw(hint, CenterTextX(sw, g_TextS, hint, 0.68f), sh * 0.965f,
+                     0.68f, 0.52f, 0.64f, 0.80f, enterE * 0.68f);
+        BatchFlush();
+    }
+
+    if (nCards > 0 && inExit && g_AugExitT >= 0.54f && !burstSpawned) {
+        burstSpawned = true;
+        const int slot = std::max(0, std::min(nCards - 1, g_AugExitSlot));
+        float r, g, b;
+        GetRarityColor(ALL_AUGS[g_GameManager.augChoices[slot]].rarity, r, g, b);
+        for (int i = 0; i < 96; ++i) {
+            const float ang = (float)i / 96.0f * 2.0f * M_PI;
+            const float speed = 100.0f + (float)(rand() % 260);
+            burst[i] = { sw * 0.50f, sh * 0.49f, cosf(ang) * speed,
+                         sinf(ang) * speed, 0.72f, r, g, b };
+        }
+        TriggerFlash(r, g, b, 0.78f);
+    }
+    if (nCards > 0 && inExit && g_AugExitT >= 0.54f) {
+        for (auto& particle : burst) {
+            if (particle.life <= 0.0f) continue;
+            particle.life -= delta;
+            particle.x += particle.vx * delta;
+            particle.y += particle.vy * delta;
+            particle.vx *= 1.0f - std::min(1.0f, delta * 2.0f);
+            particle.vy *= 1.0f - std::min(1.0f, delta * 2.0f);
+            const float a = TarotClamp01(particle.life / 0.72f);
+            drawDiamond(particle.x, particle.y, 5.0f * a + 1.0f,
+                        particle.r, particle.g, particle.b, a * 0.9f);
+        }
+        BatchFlush();
+        TarotSegment(sw * 0.50f - 80.0f, sh * 0.49f,
+                     sw * 0.50f + 80.0f, sh * 0.49f, 2.0f,
+                     1.0f, 1.0f, 1.0f,
+                     TarotClamp01((g_AugExitT - 0.54f) / 0.18f) * 0.72f);
+        BatchFlush();
+    }
+}
+
 void Scene_AugSelect(const SceneCtx& c) {
+    Scene_AugSelectCards(c);
+    return;
     const float sw = c.sw, sh = c.sh;
     const float delta = c.delta;
     const GameState st = g_GameManager.currentState;
+    const int nCards = std::max(0, std::min(3, g_GameManager.augChoiceCount));
 
     auto easeOut = [](float t) -> float { float i=1.f-t; return 1.f-i*i*i; };
     auto easeIn  = [](float t) -> float { return t*t*t; };
@@ -11383,6 +15745,8 @@ void Scene_AugSelect(const SceneCtx& c) {
     static bool  s_lmbPrev   = false;
     static float s_panelA    = 0.0f;
     static int   s_prevHov   = -1;
+    static int   s_seenSerial = -1;
+    static double s_prevMx = -1.0, s_prevMy = -1.0;
 
     struct SNPart { float x,y,vx,vy,life; float r,g,b; bool active; };
     static constexpr int SN_MAX = 72;
@@ -11391,14 +15755,16 @@ void Scene_AugSelect(const SceneCtx& c) {
 
     // 진입 리셋
     {
-        const GameState prev = g_GameManager.lastState;
-        if (prev != GameState::AUG_SELECT && prev != GameState::DEBUFF_SELECT) {
+        if (s_seenSerial != g_GameManager.augmentSelectionSerial) {
+            s_seenSerial  = g_GameManager.augmentSelectionSerial;
             s_spawnT    = 0.0f;
             s_prevHov   = -1;
             s_panelA    = 0.0f;
             s_snSpawned = false;
             for (int i=0; i<3; i++) { s_dimT[i]=1.f; s_flashT[i]=0.f; s_pullT[i]=0.f; }
             s_lmbPrev = false;
+            s_prevMx = c.mx;
+            s_prevMy = c.my;
             for (auto& p: s_sn) p.active=false;
         }
     }
@@ -11421,7 +15787,7 @@ void Scene_AugSelect(const SceneCtx& c) {
         s_spawnT = std::min(s_spawnT + delta / 0.55f, 1.0f);
     const bool inFocus = (s_spawnT >= 1.0f && !inExit);
 
-    if (g_HoveredAug != s_prevHov && g_HoveredAug >= 0 && g_HoveredAug < 3)
+    if (g_HoveredAug != s_prevHov && g_HoveredAug >= 0 && g_HoveredAug < nCards)
         s_flashT[g_HoveredAug] = 1.0f;
     s_prevHov = g_HoveredAug;
 
@@ -11450,13 +15816,41 @@ void Scene_AugSelect(const SceneCtx& c) {
         oy = ORB_CY + sinf(a) * ORBIT_R;
     };
 
+    // Continuous pointer hover keeps the visual focus and click target in sync.
+    const bool pointerMoved = (s_prevMx < 0.0 ||
+        fabs(c.mx - s_prevMx) > 0.5 || fabs(c.my - s_prevMy) > 0.5);
+    if (pointerMoved) g_GameManager.augmentKeyboardFocus = false;
+    s_prevMx = c.mx;
+    s_prevMy = c.my;
+    if (!inExit && inFocus && (!g_GameManager.augmentKeyboardFocus || pointerMoved)) {
+        int best = -1;
+        float bestD2 = 1e9f;
+        for (int i = 0; i < nCards; i++) {
+            float ox, oy; OrbPos(i, ox, oy);
+            float pe = easeOut(s_pullT[i]);
+            float px = ox + (ORB_CX - ox) * pe;
+            float py = oy + (ORB_CY - oy) * pe;
+            float dx = (float)c.mx - px;
+            float dy = (float)c.my - py;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < bestD2) { bestD2 = d2; best = i; }
+        }
+        if (best >= 0) {
+            float hitR = BASE_R * (1.0f + easeOut(s_pullT[best]) * 1.5f) * 1.4f;
+            g_HoveredAug = (bestD2 < hitR * hitR) ? best : -1;
+        } else {
+            g_HoveredAug = -1;
+        }
+    }
+
     // ── 마우스 클릭 판정 (궤도 기반) ──
     {
         bool lmbClick = c.lmb && !s_lmbPrev;
         if (lmbClick && !inExit && inFocus) {
+            g_GameManager.augmentKeyboardFocus = false;
             int   best  = -1;
             float bestD2 = 1e9f;
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < nCards; i++) {
                 float ox, oy; OrbPos(i, ox, oy);
                 float pe = easeOut(s_pullT[i]);
                 float rpx = ox + (ORB_CX - ox) * pe;
@@ -11468,12 +15862,11 @@ void Scene_AugSelect(const SceneCtx& c) {
             }
             float hitR = BASE_R * (1.0f + easeOut(s_pullT[best >= 0 ? best : 0]) * 1.5f) * 1.4f;
             if (best >= 0 && bestD2 < hitR * hitR) {
+                g_HoveredAug = best;
                 if (g_HoveredAug == best && g_AugExitT < 0.0f) {
                     // 항성(이미 선택) 재클릭 → 확정
                     g_AugExitT    = 0.0f;
                     g_AugExitSlot = best;
-                } else {
-                    g_HoveredAug = best;
                 }
             }
         }
@@ -11630,10 +16023,13 @@ void Scene_AugSelect(const SceneCtx& c) {
         if (inExit) lineA *= std::max(0.f, 1.0f - collapseT * 2.0f);
         if (lineA > 0.01f) {
             float ox[3], oy[3];
-            for (int _i=0; _i<3; _i++) OrbPos(_i, ox[_i], oy[_i]);
-            drawSeg(ox[0],oy[0], ox[1],oy[1], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
-            drawSeg(ox[1],oy[1], ox[2],oy[2], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
-            drawSeg(ox[2],oy[2], ox[0],oy[0], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            for (int _i=0; _i<nCards; _i++) OrbPos(_i, ox[_i], oy[_i]);
+            if (nCards >= 2)
+                drawSeg(ox[0],oy[0], ox[1],oy[1], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            if (nCards >= 3) {
+                drawSeg(ox[1],oy[1], ox[2],oy[2], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+                drawSeg(ox[2],oy[2], ox[0],oy[0], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            }
             BatchFlush();
         }
     }
@@ -11641,7 +16037,7 @@ void Scene_AugSelect(const SceneCtx& c) {
     // ── 별자리 3개 렌더 ──
     static const wchar_t* KEY_LABELS[3] = { L"[ 1 ]", L"[ 2 ]", L"[ 3 ]" };
 
-    for (int i=0; i<3; i++) {
+    for (int i=0; i<nCards; i++) {
         const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
         float cr, cg, cb;
         RarColor(def.rarity, cr, cg, cb);
@@ -11728,7 +16124,7 @@ void Scene_AugSelect(const SceneCtx& c) {
             float kA  = spawnE * 0.82f;
             float klW = g_TextS.Width(KEY_LABELS[i], 0.76f);
             BatchFlush();
-            g_TextS.Draw(KEY_LABELS[i], px - klW*0.5f, py + BASE_R + 30.0f,
+            g_TextS.Draw(KEY_LABELS[i], px - klW*0.5f, py + radius + 30.0f,
                          0.76f, 0.58f,0.80f,1.00f, kA);
             BatchFlush();
         }
@@ -11736,8 +16132,8 @@ void Scene_AugSelect(const SceneCtx& c) {
 
     // ── 우측 데이터 태그 패널 ──
     {
-        if (s_panelA > 0.01f && !inExit) {
-            int idx = (g_HoveredAug>=0 && g_HoveredAug<3) ? g_HoveredAug : 0;
+        if (s_panelA > 0.01f && !inExit && nCards > 0) {
+            int idx = (g_HoveredAug>=0 && g_HoveredAug<nCards) ? g_HoveredAug : 0;
             const AugDef& hovDef = ALL_AUGS[g_GameManager.augChoices[idx]];
             float hr, hg, hb;
             RarColor(hovDef.rarity, hr, hg, hb);
@@ -11790,11 +16186,33 @@ void Scene_AugSelect(const SceneCtx& c) {
             {
                 const wchar_t* desc = hovDef.locDesc[CurLangIdx()];
                 float dsc = 0.60f;
-                while (dsc > 0.44f && g_TextS.Width(desc, dsc) > PW) dsc -= 0.04f;
-                wchar_t descLine[256];
-                swprintf_s(descLine, L"DESC: %ls", desc);
-                g_TextS.Draw(descLine, PX, ty, dsc, 0.78f,0.88f,0.96f, 0.82f*pA);
-                ty += dsc * 22.0f + 4.0f;
+                std::wstring text = desc ? desc : L"";
+                if (text.rfind(L"DESC:", 0) == 0) text.erase(0, 5);
+                std::vector<std::wstring> descLines;
+                std::wstring line;
+                auto flushLine = [&]() {
+                    if (!line.empty()) descLines.push_back(line);
+                    line.clear();
+                };
+                for (wchar_t ch : text) {
+                    if (ch == L'/') { flushLine(); continue; }
+                    std::wstring test = line;
+                    test += ch;
+                    while (dsc > 0.44f && g_TextS.Width(test.c_str(), dsc) > PW)
+                        dsc -= 0.04f;
+                    if (!line.empty() && g_TextS.Width(test.c_str(), dsc) > PW) {
+                        flushLine();
+                    }
+                    line += ch;
+                }
+                flushLine();
+                const float descLineH = dsc * 22.0f;
+                for (const std::wstring& descLine : descLines) {
+                    g_TextS.Draw(descLine.c_str(), PX, ty, dsc,
+                                 0.78f,0.88f,0.96f, 0.82f*pA);
+                    ty += descLineH;
+                }
+                ty += 4.0f;
                 BatchFlush();
             }
 
@@ -11820,11 +16238,13 @@ void Scene_AugSelect(const SceneCtx& c) {
     if (g_AugExitT >= SN_START) {
         if (!s_snSpawned) {
             s_snSpawned = true;
-            int confIdx = (g_AugExitSlot>=0) ? g_GameManager.augChoices[g_AugExitSlot] : 0;
+            int confSlot = (g_AugExitSlot >= 0 && g_AugExitSlot < nCards)
+                         ? g_AugExitSlot : 0;
+            int confIdx = (nCards > 0) ? g_GameManager.augChoices[confSlot] : 0;
             float pr, pg2, pb;
             RarColor(ALL_AUGS[confIdx].rarity, pr, pg2, pb);
             float spawnX = ORB_CX, spawnY = ORB_CY;
-            if (g_AugExitSlot>=0&&g_AugExitSlot<3) OrbPos(g_AugExitSlot, spawnX, spawnY);
+            if (g_AugExitSlot>=0&&g_AugExitSlot<nCards) OrbPos(g_AugExitSlot, spawnX, spawnY);
             for (int k=0; k<SN_MAX; k++) {
                 float ang = (float)k/SN_MAX*6.2832f + now*0.1f;
                 float spd = 140.0f + (float)(rand()%340);
@@ -11849,7 +16269,166 @@ void Scene_AugSelect(const SceneCtx& c) {
         BatchFlush();
     }
 }
+static void Scene_AugReplaceCards(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, delta = c.delta;
+    const int newIdx = g_GameManager.pendingAugIdx;
+    if (newIdx < 0 || newIdx >= AUG_TOTAL) return;
+
+    static int seenSerial = -1;
+    static float enterT = 0.0f;
+    static float hoverT[32] = {};
+    static float flashT[32] = {};
+    static bool lmbPrev = false;
+    static double prevMx = -1.0, prevMy = -1.0;
+
+    if (seenSerial != g_GameManager.augmentSelectionSerial) {
+        seenSerial = g_GameManager.augmentSelectionSerial;
+        enterT = 0.0f;
+        lmbPrev = false;
+        prevMx = c.mx;
+        prevMy = c.my;
+        g_HoveredAug = -1;
+        for (int i = 0; i < 32; ++i) { hoverT[i] = 0.0f; flashT[i] = 0.0f; }
+    }
+    enterT = std::min(1.0f, enterT + delta / 0.36f);
+    const bool exiting = g_RepExitT >= 0.0f;
+    const float exitT = exiting ? TarotEaseOut(TarotClamp01(g_RepExitT / 0.28f)) : 0.0f;
+    const int n = std::max(0, std::min(32, g_GameManager.replaceChoiceCount));
+    const int visible = std::min(n, 9);
+    const bool pointerMoved = prevMx < 0.0 ||
+        fabs(c.mx - prevMx) > 0.5 || fabs(c.my - prevMy) > 0.5;
+    if (pointerMoved) g_GameManager.augmentKeyboardFocus = false;
+    prevMx = c.mx;
+    prevMy = c.my;
+
+    const float ui = std::min(1.0f, std::min(sw / 1600.0f, sh / 900.0f));
+    const float panelX = sw * 0.705f;
+    const float panelW = std::max(230.0f, sw - panelX - 24.0f);
+    const float cardAreaW = std::max(420.0f, panelX - 34.0f);
+    const int cols = std::max(1, std::min(3, visible));
+    const int rows = std::max(1, (visible + cols - 1) / cols);
+    const float gap = 16.0f * ui;
+    const float cardW = std::min(225.0f * ui, (cardAreaW - gap * (cols - 1)) / cols);
+    const float cardH = std::min(302.0f * ui, (sh * 0.64f - gap * (rows - 1)) / rows);
+    const float gridW = cardW * cols + gap * (cols - 1);
+    const float baseX = (cardAreaW - gridW) * 0.5f;
+    const float baseY = sh * 0.255f;
+
+    auto PoseFor = [&](int i, float yOffset = 0.0f) {
+        const int col = i % cols;
+        const int row = i / cols;
+        TarotCardPose p;
+        p.cx = baseX + col * (cardW + gap) + cardW * 0.5f;
+        p.cy = baseY + row * (cardH + gap) + cardH * 0.5f + yOffset;
+        p.w = cardW;
+        p.h = cardH;
+        p.angle = 0.0f;
+        return p;
+    };
+
+    if (!exiting && enterT > 0.95f &&
+        (!g_GameManager.augmentKeyboardFocus || pointerMoved)) {
+        int hover = -1;
+        for (int i = visible - 1; i >= 0; --i)
+            if (TarotHit(PoseFor(i), c.mx, c.my, 10.0f)) { hover = i; break; }
+        g_HoveredAug = hover;
+    }
+    if (g_HoveredAug >= 0 && g_HoveredAug < 32 &&
+        g_HoveredAug < g_GameManager.replaceChoiceCount)
+        flashT[g_HoveredAug] = std::max(flashT[g_HoveredAug], 0.18f);
+    for (int i = 0; i < 32; ++i) {
+        const float target = (!exiting && g_HoveredAug == i) ? 1.0f : 0.0f;
+        hoverT[i] += (target - hoverT[i]) * std::min(1.0f, delta * 13.0f);
+        flashT[i] = std::max(0.0f, flashT[i] - delta);
+    }
+    if (!exiting && c.lmb && !lmbPrev && g_HoveredAug >= 0 &&
+        g_HoveredAug < visible) {
+        g_RepExitT = 0.0f;
+        g_RepExitSlot = g_HoveredAug;
+    }
+    lmbPrev = c.lmb;
+
+    const float enterE = TarotEaseOut(enterT);
+    const float overlay = enterE * (1.0f - exitT);
+    BindMainShader();
+    drawRect(0, 0, sw, sh, 0.025f, 0.010f, 0.045f, overlay * 0.78f);
+    drawConstellFrame(16.0f, 16.0f, sw - 32.0f, sh - 32.0f,
+                      0.72f, 0.30f, 0.96f, overlay * 0.60f,
+                      24.0f, 8.0f, overlay * 0.24f, enterT);
+    BatchFlush();
+
+    const wchar_t* title = L"IDENTITY SLOT // REPLACE";
+    g_TextL.Draw(title, 24.0f, sh * 0.075f, 0.92f,
+                 1.0f, 0.96f, 1.0f, overlay * 0.96f);
+    wchar_t newLine[160];
+    swprintf_s(newLine, L"NEW  [%ls] %ls", GetAugBadge(ALL_AUGS[newIdx]),
+               AugName(ALL_AUGS[newIdx]));
+    g_TextS.Draw(newLine, 26.0f, sh * 0.125f, 0.66f,
+                 0.82f, 0.92f, 1.0f, overlay * 0.88f);
+    BatchFlush();
+
+    for (int i = 0; i < visible; ++i) {
+        const int idx = g_GameManager.replaceChoices[i];
+        if (idx < 0 || idx >= AUG_TOTAL) continue;
+        const AugDef& def = ALL_AUGS[idx];
+        float r, g, b;
+        GetRarityColor(def.rarity, r, g, b);
+        const float stagger = TarotEaseOut(TarotClamp01((enterT - i * 0.05f) / 0.72f));
+        TarotCardPose p = PoseFor(i, (1.0f - stagger) * 54.0f);
+        const float hT = TarotEaseOut(hoverT[i]);
+        p.cy -= hT * 14.0f;
+        p.w *= 1.0f + hT * 0.045f;
+        p.h *= 1.0f + hT * 0.045f;
+        const bool selected = exiting && g_RepExitSlot == i;
+        const bool other = exiting && !selected;
+        float alpha = stagger * (g_HoveredAug >= 0 && g_HoveredAug != i ? 0.42f : 1.0f);
+        if (selected) {
+            p.cx += (sw * 0.50f - p.cx) * exitT;
+            p.cy += (sh * 0.49f - p.cy) * exitT;
+            p.w *= 1.0f + exitT * 0.25f;
+            p.h *= 1.0f + exitT * 0.25f;
+            alpha *= 1.0f - exitT * 0.78f;
+        } else if (other) {
+            p.cy += (i & 1 ? -1.0f : 1.0f) * exitT * 30.0f;
+            alpha *= 1.0f - exitT;
+        }
+        DrawTarotCardSurface(p, r, g, b, alpha, hT, flashT[i], selected,
+                             (float)glfwGetTime());
+        const float left = p.cx - p.w * 0.5f;
+        const float top = p.cy - p.h * 0.5f;
+        wchar_t key[16];
+        swprintf_s(key, L"[%d]", i + 1);
+        g_TextS.Draw(key, left + 14.0f, top + 11.0f, 0.54f,
+                     0.80f, 0.86f, 1.0f, alpha * 0.86f);
+        const wchar_t* name = AugName(def);
+        float nameScale = 0.68f;
+        while (nameScale > 0.44f && g_TextL.Width(name, nameScale) > p.w - 26.0f)
+            nameScale -= 0.04f;
+        const float nameW = g_TextL.Width(name, nameScale);
+        g_TextL.Draw(name, p.cx - nameW * 0.5f, top + 38.0f,
+                     nameScale, 1.0f, 1.0f, 1.0f, alpha * 0.96f);
+        BatchFlush();
+        DrawTarotEmblem(def, p.cx, p.cy - 8.0f, p.w * 0.40f,
+                        r, g, b, alpha * 0.86f, (float)glfwGetTime());
+        const wchar_t* stat = AugStat(def);
+        const float statW = g_TextS.Width(stat, 0.46f);
+        g_TextS.Draw(stat, p.cx - statW * 0.5f, top + p.h - 46.0f,
+                     0.46f, 0.72f, 1.0f, 0.82f, alpha * 0.84f);
+        BatchFlush();
+    }
+
+    const float detailY = sh * 0.245f;
+    DrawTarotDetailPanel(ALL_AUGS[newIdx], panelX, detailY, panelW,
+                         std::min(sh * 0.48f, 390.0f), overlay * 0.96f);
+    const wchar_t* hint = L"1-9 SELECT   SPACE REPLACE   ESC CANCEL";
+    g_TextS.Draw(hint, 24.0f, sh * 0.92f, 0.64f,
+                 0.62f, 0.72f, 0.88f, overlay * 0.80f);
+    BatchFlush();
+}
+
 void Scene_AugReplace(const SceneCtx& c) {
+    Scene_AugReplaceCards(c);
+    return;
     const float sw = c.sw, sh = c.sh;
     const float delta = c.delta;
     int newIdx = g_GameManager.pendingAugIdx;
@@ -11860,18 +16439,23 @@ void Scene_AugReplace(const SceneCtx& c) {
     static float s_hovY[32]    = {};
     static float s_pickFlash[32] = {};
     static int   s_prevHov     = -1;
+    static int   s_seenSerial  = -1;
+    static double s_prevMx = -1.0, s_prevMy = -1.0;
 
     auto easeOut = [](float t) -> float {
         float inv = 1.0f - t; return 1.0f - inv * inv * inv;
     };
 
     // 새 진입 감지
-    const GameState prev = g_GameManager.lastState;
-    if (prev != GameState::AUG_REPLACE) {
+    if (s_seenSerial != g_GameManager.augmentSelectionSerial) {
+        s_seenSerial = g_GameManager.augmentSelectionSerial;
         s_enterT = 0.0f;
         std::fill(std::begin(s_hovY),      std::end(s_hovY),      0.f);
         std::fill(std::begin(s_pickFlash), std::end(s_pickFlash), 0.f);
         s_prevHov = -1;
+        s_prevMx = c.mx;
+        s_prevMy = c.my;
+        g_HoveredAug = -1;
     }
     s_enterT = std::min(s_enterT + delta / 0.32f, 1.0f);
 
@@ -11932,6 +16516,34 @@ void Scene_AugReplace(const SceneCtx& c) {
     float baseY = sh * 0.32f;
 
     static const wchar_t* KEYS[9] = { L"[1]",L"[2]",L"[3]",L"[4]",L"[5]",L"[6]",L"[7]",L"[8]",L"[9]" };
+
+    const bool pointerMoved = (s_prevMx < 0.0 ||
+        fabs(c.mx - s_prevMx) > 0.5 || fabs(c.my - s_prevMy) > 0.5);
+    if (pointerMoved) g_GameManager.augmentKeyboardFocus = false;
+    s_prevMx = c.mx;
+    s_prevMy = c.my;
+    if (g_RepExitT < 0.0f && (!g_GameManager.augmentKeyboardFocus || pointerMoved)) {
+        int hover = -1;
+        for (int i = 0; i < n && i < 32; i++) {
+            float stag = (float)i * 0.04f;
+            float ct = std::max(0.f, std::min((s_enterT - stag) /
+                                               (1.0f - stag + 0.001f), 1.0f));
+            float cy = baseY + (1.0f - easeOut(ct)) * 60.0f + s_hovY[i];
+            float cx = baseX + i * (CARD_W + GAP);
+            if (c.mx >= cx && c.mx <= cx + CARD_W &&
+                c.my >= cy && c.my <= cy + CARD_H) {
+                hover = i;
+                break;
+            }
+        }
+        g_HoveredAug = hover;
+    }
+    if (c.lmb && !g_LmbPrev && g_RepExitT < 0.0f &&
+        g_HoveredAug >= 0 && g_HoveredAug < n && g_HoveredAug < 32) {
+        g_GameManager.augmentKeyboardFocus = false;
+        g_RepExitT = 0.0f;
+        g_RepExitSlot = g_HoveredAug;
+    }
 
     for (int i = 0; i < n && i < 32; i++) {
         int idx = g_GameManager.replaceChoices[i];
@@ -12006,7 +16618,159 @@ void Scene_AugReplace(const SceneCtx& c) {
     BatchFlush();
 }
 
+static void Scene_RunShopCards(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, delta = c.delta;
+    constexpr int nCards = 4;
+    static int seenShop = -1;
+    static float enterT = 0.0f;
+    static float hoverT[nCards] = {};
+    static float flashT[nCards] = {};
+    static double prevMx = -1.0, prevMy = -1.0;
+    static bool lmbPrev = false;
+
+    int stockSerial = 17;
+    for (int i = 0; i < nCards; ++i)
+        stockSerial = stockSerial * 131 + g_RunShopStock[i] + 2;
+    if (seenShop != stockSerial) {
+        seenShop = stockSerial;
+        enterT = 0.0f;
+        prevMx = c.mx;
+        prevMy = c.my;
+        lmbPrev = false;
+        for (int i = 0; i < nCards; ++i) { hoverT[i] = 0.0f; flashT[i] = 0.0f; }
+    }
+    enterT = std::min(1.0f, enterT + delta / 0.42f);
+    const float enterE = TarotEaseOut(enterT);
+    const bool pointerMoved = prevMx < 0.0 ||
+        fabs(c.mx - prevMx) > 0.5 || fabs(c.my - prevMy) > 0.5;
+    prevMx = c.mx;
+    prevMy = c.my;
+
+    const float ui = std::min(1.0f, std::min(sw / 1600.0f, sh / 900.0f));
+    const float cardW = 242.0f * ui;
+    const float cardH = 368.0f * ui;
+    const float centerX = sw * 0.50f;
+    const float centerY = sh * 0.49f;
+    TarotCardPose base[nCards];
+    for (int i = 0; i < nCards; ++i)
+        base[i] = TarotBasePose(i, nCards, sw, sh, cardW, cardH, centerX, centerY);
+
+    if (pointerMoved || g_HoveredAug < 0 || g_HoveredAug >= nCards) {
+        int hover = -1;
+        for (int i = nCards - 1; i >= 0; --i)
+            if (TarotHit(base[i], c.mx, c.my, 12.0f)) { hover = i; break; }
+        if (pointerMoved || hover >= 0) g_HoveredAug = hover;
+    }
+    if (c.lmb && !lmbPrev) {
+        for (int i = nCards - 1; i >= 0; --i) {
+            if (TarotHit(base[i], c.mx, c.my, 12.0f)) {
+                g_HoveredAug = i;
+                break;
+            }
+        }
+    }
+    lmbPrev = c.lmb;
+
+    for (int i = 0; i < nCards; ++i) {
+        const float target = g_HoveredAug == i ? 1.0f : 0.0f;
+        hoverT[i] += (target - hoverT[i]) * std::min(1.0f, delta * 11.0f);
+        flashT[i] = std::max(0.0f, flashT[i] - delta / 0.22f);
+    }
+
+    BindMainShader();
+    drawRect(0, 0, sw, sh, 0.006f, 0.008f, 0.018f, enterE * 0.55f);
+    drawConstellFrame(16.0f, 16.0f, sw - 32.0f, sh - 32.0f,
+                      0.92f, 0.64f, 0.24f, enterE * 0.52f,
+                      24.0f, 8.0f, enterE * 0.20f, enterT);
+    BatchFlush();
+
+    const wchar_t* title = L"RUN SHOP // AUGMENT RELICS";
+    g_TextL.Draw(title, CenterTextX(sw, g_TextL, title, 0.94f), sh * 0.065f,
+                 0.94f, 1.0f, 0.98f, 0.90f, enterE * 0.96f);
+    wchar_t gold[48];
+    swprintf_s(gold, L"G  %lld", g_RunGold);
+    const float goldW = g_TextL.Width(gold, 0.84f);
+    g_TextL.Draw(gold, sw - goldW - 28.0f, sh * 0.065f, 0.84f,
+                 1.0f, 0.84f, 0.30f, enterE * 0.96f);
+    BatchFlush();
+
+    for (int i = 0; i < nCards; ++i) {
+        const int idx = g_RunShopStock[i];
+        TarotCardPose p = base[i];
+        const float hT = TarotEaseOut(hoverT[i]);
+        p.cy -= hT * 18.0f;
+        p.w *= 1.0f + hT * 0.045f;
+        p.h *= 1.0f + hT * 0.045f;
+        const bool sold = idx < 0 || idx >= AUG_TOTAL;
+        float r = sold ? 0.35f : 0.0f;
+        float g = sold ? 0.35f : 0.0f;
+        float b = sold ? 0.40f : 0.0f;
+        if (!sold) GetRarityColor(ALL_AUGS[idx].rarity, r, g, b);
+        const float alpha = enterE * (g_HoveredAug >= 0 && g_HoveredAug != i ? 0.42f : 1.0f);
+        DrawTarotCardSurface(p, r, g, b, alpha, hT, flashT[i], false,
+                             (float)glfwGetTime());
+        const float top = p.cy - p.h * 0.5f;
+        wchar_t key[16];
+        swprintf_s(key, L"[%d]", i + 1);
+        g_TextS.Draw(key, p.cx - g_TextS.Width(key, 0.56f) * 0.5f,
+                     top + 13.0f, 0.56f, 0.75f, 0.84f, 0.96f, alpha * 0.86f);
+        if (sold) {
+            const wchar_t* soldText = L"SOLD";
+            g_TextL.Draw(soldText, p.cx - g_TextL.Width(soldText, 0.94f) * 0.5f,
+                         p.cy - 16.0f, 0.94f, 0.55f, 0.55f, 0.62f, alpha * 0.78f);
+            BatchFlush();
+            continue;
+        }
+
+        const AugDef& def = ALL_AUGS[idx];
+        const wchar_t* badge = GetAugBadge(def);
+        g_TextS.Draw(badge, p.cx - g_TextS.Width(badge, 0.56f) * 0.5f,
+                     top + 40.0f, 0.56f,
+                     std::min(1.0f, r * 1.45f + 0.20f),
+                     std::min(1.0f, g * 1.45f + 0.20f),
+                     std::min(1.0f, b * 1.45f + 0.20f), alpha * 0.92f);
+        const wchar_t* name = AugName(def);
+        float nameScale = 0.72f;
+        while (nameScale > 0.46f && g_TextL.Width(name, nameScale) > p.w - 26.0f)
+            nameScale -= 0.04f;
+        g_TextL.Draw(name, p.cx - g_TextL.Width(name, nameScale) * 0.5f,
+                     top + 69.0f, nameScale, 1.0f, 1.0f, 1.0f, alpha * 0.96f);
+        BatchFlush();
+        DrawTarotEmblem(def, p.cx, p.cy - 22.0f, p.w * 0.40f,
+                        r, g, b, alpha * 0.88f, (float)glfwGetTime());
+
+        wchar_t price[32];
+        swprintf_s(price, L"G  %d", g_RunShopPrice[i]);
+        const bool afford = g_RunGold >= g_RunShopPrice[i];
+        g_TextS.Draw(price, p.cx - g_TextS.Width(price, 0.72f) * 0.5f,
+                     top + p.h - 62.0f, 0.72f,
+                     afford ? 1.0f : 0.55f, afford ? 0.84f : 0.42f,
+                     0.30f, alpha * 0.98f);
+        const wchar_t* buy = L"SPACE  BUY";
+        g_TextS.Draw(buy, p.cx - g_TextS.Width(buy, 0.50f) * 0.5f,
+                     top + p.h - 35.0f, 0.50f,
+                     0.70f, 0.80f, 0.94f, alpha * 0.78f);
+        BatchFlush();
+    }
+
+    if (g_HoveredAug >= 0 && g_HoveredAug < nCards &&
+        g_RunShopStock[g_HoveredAug] >= 0 &&
+        g_RunShopStock[g_HoveredAug] < AUG_TOTAL) {
+        const int idx = g_RunShopStock[g_HoveredAug];
+        const float detailW = std::min(760.0f, sw * 0.70f);
+        const float detailX = (sw - detailW) * 0.5f;
+        DrawTarotDetailPanel(ALL_AUGS[idx], detailX, sh * 0.805f,
+                             detailW, std::min(116.0f, sh * 0.14f), enterE);
+    }
+    const wchar_t* hint = L"1-4 SELECT   SPACE BUY   ESC LEAVE";
+    g_TextS.Draw(hint, CenterTextX(sw, g_TextS, hint, 0.62f), sh * 0.965f,
+                 0.62f, 0.60f, 0.68f, 0.82f, enterE * 0.76f);
+    BatchFlush();
+}
+
 void Scene_RunShop(const SceneCtx& c) {
+    Scene_RunShopCards(c);
+    return;
     const float sw = c.sw, sh = c.sh;
     const GameState st = g_GameManager.currentState;
 
@@ -12336,6 +17100,14 @@ bool TryEscNavigateBack() {
     using GS = GameState;
     GameState& st = g_GameManager.currentState;
     switch (st) {
+    case GS::AUG_SELECT:
+    case GS::DEBUFF_SELECT:
+    case GS::AUG_REPLACE:
+        // Keep the selection screen as the resume target. ESC pauses the
+        // run here; it must not cancel or consume the pending choice.
+        g_GameManager.pauseResumeState = st;
+        st = GS::PAUSED;
+        return true;
     case GS::SHOP:
         s_ShopBackRequested = true;
         return true;

@@ -18,6 +18,7 @@
 #include <glm/glm.hpp>
 #include <iostream>
 #include <vector>
+#include <deque>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
@@ -393,8 +394,10 @@ static float ClampPlayerWinSize(float sz) {
 }
 
 float g_WinPrevHP     = -1.0f;    // �?축소??HP 추적
+float g_HpGhost       = -1.0f;    // Delayed gray HP afterimage
 float g_HurtVignette  = 0.0f;     // ?�격 빨간 비네???�여
 float g_HpBarPop      = 0.0f;     // ?�나비식 HP 게이지�????�격 ???�다가 ?�이??�?
+float g_XpBarPop       = 0.0f;     // XP pickup feedback pulse
 
 // ?�?�??�티�??�킬 ?�스?????�??기본) + ?�롯 3�?증강 ?�득, �?차면 교체) ?�?�?
 float g_DashCd        = 0.0f;
@@ -403,7 +406,7 @@ float g_PostPickGrace = 0.0f;      // C14: 증강 ????짧�? ?�예(무적+발
 float g_TimeStopTimer = 0.0f;
 float g_HyperFocusTimer = 0.0f;
 
-void SyncPlayerWindowSize(FakeWindow& pw, float delta, bool animate) {
+void SyncPlayerBoundsSize(SpatialBounds& pw, float delta, bool animate) {
     if (g_Stats.windowSize < 64.0f)
         g_Stats.windowSize = std::max(400.0f * g_Scale, 64.0f);
     float targetWin = g_Stats.windowSize *
@@ -428,8 +431,8 @@ void SyncPlayerWindowSize(FakeWindow& pw, float delta, bool animate) {
     pw.y = cy - pwSz * 0.5f;
 }
 
-static void EnsurePlayerWindow(FakeWindow& pw) {
-    SyncPlayerWindowSize(pw, 1.0f, false);
+static void EnsurePlayerBounds(SpatialBounds& pw) {
+    SyncPlayerBoundsSize(pw, 1.0f, false);
 }
 
 static constexpr float DASH_CD = 2.9f, DASH_DIST = 300.0f, DASH_INVULN = 0.20f;
@@ -479,6 +482,8 @@ std::vector<int> g_OwnedAugs;
 // ũ������Ƽ�� ���?���� ���� ���� ���� (�ε���). ���� ���� �� �ϰ� ����.
 std::vector<int> g_CreativeStartAugList;
 bool g_CreativeStartPending = false;   // ?�용 ?��?(main 루프가 applyByIdx �?처리)
+std::deque<int> g_AugEffectQueue;
+bool g_AugEffectProcessing = false;
 
 // 증강 ?�택 hover state (-1 = 미선?? 0/1/2 = 카드 ?�덱??
 int  g_HoveredAug    = -1;
@@ -540,6 +545,95 @@ static void DrawPlayerLine(float x0, float y0, float x1, float y1, float thick,
     if (len < 0.5f) return;
     DrawPlayerRotRect((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, len, thick,
                       atan2f(dy, dx), r, g, b, a);
+}
+
+static void DrawPlayerArc(float cx, float cy, float radius,
+                          float startAngle, float sweepAngle, float thick,
+                          float r, float g, float b, float a) {
+    if (radius <= 0.0f || thick <= 0.0f || fabsf(sweepAngle) < 0.001f ||
+        radius != radius || sweepAngle != sweepAngle) return;
+    const float sweepAbs = fabsf(sweepAngle);
+    const int segments = std::max(4, std::min(96,
+        (int)ceilf(sweepAbs * radius / 9.0f)));
+    const float step = sweepAngle / (float)segments;
+    float angle = startAngle;
+    float px = cx + cosf(angle) * radius;
+    float py = cy + sinf(angle) * radius;
+    for (int i = 1; i <= segments; ++i) {
+        angle = startAngle + step * (float)i;
+        float nx = cx + cosf(angle) * radius;
+        float ny = cy + sinf(angle) * radius;
+        DrawPlayerLine(px, py, nx, ny, thick, r, g, b, a);
+        px = nx;
+        py = ny;
+    }
+}
+
+static void DrawPlayerRadialGauge(float cx, float cy, float radius, float fraction,
+                                  float startAngle, float sweepAngle, float thick,
+                                  float r, float g, float b, float alpha,
+                                  int tickCount, float ghostFraction = -1.0f,
+                                  float orbitPhase = -1.0f) {
+    fraction = std::max(0.0f, std::min(1.0f, fraction));
+    if (ghostFraction >= 0.0f)
+        ghostFraction = std::max(fraction, std::min(1.0f, ghostFraction));
+
+    // The unfilled portion is a neutral gray track. It stays visible at all
+    // times so the gauge reads as a complete instrument, not only as an
+    // event flash.
+    DrawPlayerArc(cx, cy, radius, startAngle, sweepAngle,
+                  std::max(0.8f, thick * 0.72f),
+                  0.34f, 0.39f, 0.47f, 0.16f);
+
+    // Instrument ticks turn the progress arc into a compact radial graph.
+    if (tickCount > 0) {
+        for (int i = 0; i < tickCount; ++i) {
+            const float angle = startAngle + sweepAngle * (float)i / (float)tickCount;
+            const bool lit = fraction > ((float)i / (float)tickCount);
+            const float inner = radius - thick * 0.95f;
+            const float outer = radius + thick * 0.95f;
+            DrawPlayerLine(cx + cosf(angle) * inner, cy + sinf(angle) * inner,
+                           cx + cosf(angle) * outer, cy + sinf(angle) * outer,
+                           std::max(0.8f, thick * 0.42f),
+                           lit ? r : 0.34f,
+                           lit ? g : 0.34f,
+                           lit ? b : 0.42f,
+                           lit ? alpha * 0.72f : 0.12f);
+        }
+    }
+
+    // Damage afterimage: the pre-hit HP stays gray behind the live green HP,
+    // then contracts toward the current value as ghostFraction eases down.
+    if (ghostFraction > fraction + 0.0001f) {
+        DrawPlayerArc(cx, cy, radius, startAngle,
+                      sweepAngle * ghostFraction, thick * 1.05f,
+                      0.52f, 0.56f, 0.62f, alpha * 0.78f);
+    }
+
+    if (fraction > 0.001f) {
+        const float progress = sweepAngle * fraction;
+        DrawPlayerArc(cx, cy, radius, startAngle, progress, thick,
+                      r, g, b, alpha);
+        const float endAngle = startAngle + progress;
+        drawDiamond(cx + cosf(endAngle) * radius,
+                    cy + sinf(endAngle) * radius,
+                    std::max(3.5f, thick * 2.7f), r, g, b, alpha * 1.05f);
+    }
+
+    // The track itself rotates slowly; this small constellation scanner keeps
+    // moving along the outer edge so the gauge still feels alive at idle.
+    if (orbitPhase >= 0.0f) {
+        orbitPhase -= floorf(orbitPhase);
+        const float markerAngle = startAngle + sweepAngle * orbitPhase;
+        const float markerRadius = radius + 5.0f;
+        const float mx = cx + cosf(markerAngle) * markerRadius;
+        const float my = cy + sinf(markerAngle) * markerRadius;
+        const float tailSweep = (sweepAngle < 0.0f) ? -0.16f : 0.16f;
+        DrawPlayerArc(cx, cy, markerRadius, markerAngle, tailSweep,
+                      std::max(0.65f, thick * 0.48f), r, g, b, alpha * 0.62f);
+        drawDiamond(mx, my, std::max(2.2f, thick * 1.7f),
+                    r, g, b, alpha * 0.88f);
+    }
 }
 
 static void DrawPlayerHexFrame(float cx, float cy, float rad, float ang,
@@ -680,7 +774,7 @@ static void DrawPlayerSightMarker(float cx, float cy, float radius,
     }
 }
 
-static void DrawPlayerWeaponShell(float cx, float cy, float sz, float aimAng) {
+void DrawPlayerWeaponShell(float cx, float cy, float sz, float aimAng) {
     if (!(aimAng == aimAng)) aimAng = 0.0f;
 
     const float r = 0.34f, g = 1.0f, b = 1.0f;
@@ -952,7 +1046,7 @@ float g_DeathCX = 0, g_DeathCY = 0;
 float g_DeathFlash = 0.0f; // ??�� ?�광 (1.0 ??0.0)
 wchar_t g_DeathReason[96] = {0};   // ?�망 ?�인 ("?�○ ???�해 종료??)
 
-static FakeWindow* s_PlayerWinRef = nullptr;
+static SpatialBounds* s_PlayerBoundsRef = nullptr;
 
 static void InitChakramsFromStats() {
     if (!g_Stats.chakram || g_Stats.chakramCount <= 0) return;
@@ -969,12 +1063,12 @@ static void InitChakramsFromStats() {
 }
 
 void ApplyAugmentSideEffects(AugType atype, int scrW, int scrH) {
-    float oldWS  = s_PlayerWinRef ? s_PlayerWinRef->width : g_Stats.windowSize;
-    float oldPCX = s_PlayerWinRef
-        ? s_PlayerWinRef->x + s_PlayerWinRef->width  * 0.5f
+    float oldWS  = s_PlayerBoundsRef ? s_PlayerBoundsRef->width : g_Stats.windowSize;
+    float oldPCX = s_PlayerBoundsRef
+        ? s_PlayerBoundsRef->x + s_PlayerBoundsRef->width  * 0.5f
         : (float)scrW * 0.5f;
-    float oldPCY = s_PlayerWinRef
-        ? s_PlayerWinRef->y + s_PlayerWinRef->height * 0.5f
+    float oldPCY = s_PlayerBoundsRef
+        ? s_PlayerBoundsRef->y + s_PlayerBoundsRef->height * 0.5f
         : (float)scrH * 0.5f;
 
     if (atype == AugType::CHAKRAM || atype == AugType::CHAKRAM_2 ||
@@ -1000,26 +1094,30 @@ void ApplyAugmentSideEffects(AugType atype, int scrW, int scrH) {
         else                { orb.x = (float)scrW + 40.0f;     orb.y = (float)(rand() % scrH); }
         g_ApproachOrbs.push_back(orb);
     }
-    if (g_Stats.windowSize != oldWS && s_PlayerWinRef) {
-        s_PlayerWinRef->width  = g_Stats.windowSize;
-        s_PlayerWinRef->height = g_Stats.windowSize;
-        s_PlayerWinRef->x = oldPCX - g_Stats.windowSize * 0.5f;
-        s_PlayerWinRef->y = oldPCY - g_Stats.windowSize * 0.5f;
+    if (g_Stats.windowSize != oldWS && s_PlayerBoundsRef) {
+        s_PlayerBoundsRef->width  = g_Stats.windowSize;
+        s_PlayerBoundsRef->height = g_Stats.windowSize;
+        s_PlayerBoundsRef->x = oldPCX - g_Stats.windowSize * 0.5f;
+        s_PlayerBoundsRef->y = oldPCY - g_Stats.windowSize * 0.5f;
         g_WindowSizeCur = g_Stats.windowSize;
     }
 }
 
-void SyncPlayerWindowAfterLoadout() {
+void SyncPlayerBoundsAfterLoadout() {
     g_WindowSizeCur = g_Stats.windowSize;
-    if (s_PlayerWinRef) EnsurePlayerWindow(*s_PlayerWinRef);
+    if (s_PlayerBoundsRef) EnsurePlayerBounds(*s_PlayerBoundsRef);
     if (g_Stats.chakram) InitChakramsFromStats();
 }
 
-static void RebuildPlayerStatsFromOwned(int scrW, int scrH) {
+static void RebuildPlayerStatsFromOwned(int scrW, int scrH, bool preserveRuntime = true) {
     int weapon = g_CurrentWeapon;
     bool melee = g_RunMelee;
     bool bow   = g_RunBow;
     std::vector<int> owned = g_OwnedAugs;
+    const long long keepKillCount = g_Stats.killCount;
+    const int keepVampireKillStreak = g_Stats.vampireKillStreak;
+    const bool keepMk2Used = g_Stats.mk2Used;
+    const float keepLightStepDisableTimer = g_Stats.lightStepDisableTimer;
 
     g_Stats = PlayerStats();
     ApplyMeta(g_Stats);
@@ -1045,6 +1143,12 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH) {
     for (int c = 0; c < MAX_CHAKRAMS; c++) g_Chakrams[c] = ChakramState{};
     g_Turrets.clear();
     g_LaserBeams.clear();
+    g_Orb = BrokenSightOrb{};
+    g_ApproachOrbs.clear();
+    g_TurretDeployTimer = 0.0f;
+    g_TurretStats = PlayerStats();
+    g_DrunkCycle = 0.0f;
+    g_DrunkActive = false;
     ResetSkills();
 
     bool needTurretDeploy = false;
@@ -1066,6 +1170,13 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH) {
     if (needTurretDeploy) g_TurretDeployTimer = TURRET_DEPLOY;
     if (g_Stats.chakram) InitChakramsFromStats();
     ReequipSkillsFromOwned(g_OwnedAugs.data(), (int)g_OwnedAugs.size());
+
+    if (preserveRuntime) {
+        g_Stats.killCount = keepKillCount;
+        g_Stats.vampireKillStreak = keepVampireKillStreak;
+        g_Stats.mk2Used = keepMk2Used;
+        g_Stats.lightStepDisableTimer = keepLightStepDisableTimer;
+    }
 
     g_GameManager.maxHP = g_Stats.maxHP;
     if (g_GameManager.playerHP > g_Stats.maxHP)
@@ -1105,28 +1216,169 @@ static void BeginAugReplaceFlow(int newIdx, bool fromShop, int shopSlot) {
         g_GameManager.replaceChoices[g_GameManager.replaceChoiceCount++] = oi;
     }
     g_HoveredAug = -1;
+    g_GameManager.augmentKeyboardFocus = false;
     g_GameManager.currentState = GameState::AUG_REPLACE;
+    ++g_GameManager.augmentSelectionSerial;
 }
 
-static void ContinueAfterBuffPick() {
-    if (g_BossRewardPicksLeft > 0) {
-        --g_BossRewardPicksLeft;
-        if (g_BossRewardPicksLeft > 0) {
-            g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                         g_Stats.distAugTaken, g_CreativeMode);
-            g_GameManager.currentState = GameState::AUG_SELECT;
-        } else {
-            g_GameManager.currentState = GameState::RUNNING;
-        }
-    } else if (g_Stats.mk2SkipDebuff || g_CreativeFreeGrab) {
-        g_CreativeFreeGrab = false;
-        g_GameManager.currentState = GameState::RUNNING;
-    } else {
-        g_GameManager.PickDebuffChoices();
-        g_GameManager.currentState = GameState::DEBUFF_SELECT;
+static void ProcessAugEffectQueue(int scrW, int scrH);
+static void FinishAugmentEffects();
+
+static void PushAugEffectsFront(const int* effects, int count) {
+    for (int i = count - 1; i >= 0; --i) {
+        if (effects[i] >= 0 && effects[i] < AUG_TOTAL)
+            g_AugEffectQueue.push_front(effects[i]);
     }
-    if (g_GameManager.currentState == GameState::RUNNING)
+}
+
+static void ResetAugmentDerivedRuntime() {
+    g_Orb = BrokenSightOrb{};
+    g_ApproachOrbs.clear();
+    for (int d = 0; d < MAX_DRONES; d++) g_Drones[d] = DroneState{};
+    for (int c = 0; c < MAX_CHAKRAMS; c++) g_Chakrams[c] = ChakramState{};
+    g_Turrets.clear();
+    g_TurretDeployTimer = 0.0f;
+    g_TurretStats = PlayerStats();
+    g_LaserBeams.clear();
+    g_DrunkCycle = 0.0f;
+    g_DrunkActive = false;
+    ResetSkills();
+}
+
+static void FinishCurrentAugmentReward() {
+    if (g_GameManager.augmentRewardActive &&
+        !g_GameManager.augmentRewardQueue.empty()) {
+        g_GameManager.augmentRewardQueue.pop_front();
+    }
+    g_GameManager.augmentRewardActive = false;
+    g_GameManager.augmentRewardInternalDebuff = false;
+    g_GameManager.augmentRewardInDebuff = false;
+    if (!g_GameManager.ActivateNextAugmentReward()) {
+        g_GameManager.currentState = GameState::RUNNING;
         g_PostPickGrace = 0.5f;
+    }
+}
+
+static void FinishAugmentEffects() {
+    if (g_GameManager.augmentRewardActive &&
+        !g_GameManager.augmentRewardQueue.empty()) {
+        const AugmentRewardEntry& entry = g_GameManager.augmentRewardQueue.front();
+        if (entry.needsDebuff && !g_GameManager.augmentRewardInternalDebuff &&
+            !g_Stats.mk2SkipDebuff) {
+            g_GameManager.PickDebuffChoices();
+            if (g_GameManager.augChoiceCount > 0) {
+                g_GameManager.augmentRewardInDebuff = true;
+                ++g_GameManager.augmentSelectionSerial;
+                g_GameManager.currentState = GameState::DEBUFF_SELECT;
+                g_HoveredAug = -1;
+                return;
+            }
+        }
+        FinishCurrentAugmentReward();
+        return;
+    }
+
+    g_GameManager.currentState = GameState::RUNNING;
+    g_PostPickGrace = 0.5f;
+}
+
+static void ProcessAugEffectQueue(int scrW, int scrH) {
+    while (!g_AugEffectQueue.empty()) {
+        const int idx = g_AugEffectQueue.front();
+        g_AugEffectQueue.pop_front();
+        if (idx < 0 || idx >= AUG_TOTAL) continue;
+
+        const AugType atype = ALL_AUGS[idx].type;
+        MarkAugSeen(idx);
+
+        if (atype == AugType::S_CHAOS) {
+            const int prevAugs = std::min((int)g_OwnedAugs.size(), 60);
+            const long long keepKillCount = g_Stats.killCount;
+            const int keepVampireKillStreak = g_Stats.vampireKillStreak;
+            const bool keepMk2Used = g_Stats.mk2Used;
+            const float keepLightStepDisableTimer = g_Stats.lightStepDisableTimer;
+            const float oldWindowSize = g_Stats.windowSize;
+
+            ResetAugmentDerivedRuntime();
+            g_Stats = PlayerStats();
+            ApplyMeta(g_Stats);
+            g_Stats.windowSize *= g_Scale;
+            if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
+                ApplyWeapon(g_Stats, (StartWeapon)g_CurrentWeapon);
+            if (g_RunMelee) {
+                g_Stats.meleeWeapon = true;
+                g_Stats.fireInterval = 0.26f;
+            } else if (g_RunBow) {
+                g_Stats.bowWeapon = true;
+                g_Stats.bulletSpeed *= 1.4f;
+            }
+            g_Stats.baseFireInterval = g_Stats.fireInterval;
+            g_Stats.killCount = keepKillCount;
+            g_Stats.vampireKillStreak = keepVampireKillStreak;
+            g_Stats.mk2Used = keepMk2Used;
+            g_Stats.lightStepDisableTimer = keepLightStepDisableTimer;
+
+            g_OwnedAugs.clear();
+            memset(g_GameManager.takenOnce, 0, sizeof(g_GameManager.takenOnce));
+            memset(g_TypeOwned, 0, sizeof(g_TypeOwned));
+            if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
+                MarkStartWeaponOwnedType((StartWeapon)g_CurrentWeapon);
+            g_GameManager.maxHP = g_Stats.maxHP;
+            if (g_GameManager.playerHP > g_Stats.maxHP)
+                g_GameManager.playerHP = g_Stats.maxHP;
+            if (s_PlayerBoundsRef && oldWindowSize != g_Stats.windowSize) {
+                const float cx = s_PlayerBoundsRef->x + s_PlayerBoundsRef->width * 0.5f;
+                const float cy = s_PlayerBoundsRef->y + s_PlayerBoundsRef->height * 0.5f;
+                s_PlayerBoundsRef->width = g_Stats.windowSize;
+                s_PlayerBoundsRef->height = g_Stats.windowSize;
+                s_PlayerBoundsRef->x = cx - g_Stats.windowSize * 0.5f;
+                s_PlayerBoundsRef->y = cy - g_Stats.windowSize * 0.5f;
+            }
+            g_WindowSizeCur = g_Stats.windowSize;
+
+            const int nDebuffs = std::max(0, (prevAugs * 2 + 2) / 5);
+            const int nBuffs = prevAugs - nDebuffs;
+            int buffs[64] = {}, debuffs[64] = {};
+            const int gotBuffs = g_GameManager.PickRandomAugIndices(
+                buffs, nBuffs, false, false, true, false, false);
+            const int gotDebuffs = g_GameManager.PickRandomDebuffIndices(
+                debuffs, nDebuffs);
+            if (gotDebuffs > 0)
+                g_GameManager.augmentRewardInternalDebuff = true;
+            PushAugEffectsFront(debuffs, gotDebuffs);
+            PushAugEffectsFront(buffs, gotBuffs);
+            continue;
+        }
+
+        if (atype == AugType::S_PANDORA) {
+            int buffs[3] = {}, debuffs[2] = {};
+            const int gotBuffs = g_GameManager.PickRandomAugIndices(
+                buffs, 3, g_Stats.sizeAugTaken, g_Stats.distAugTaken,
+                true, false, false);
+            const int gotDebuffs = g_GameManager.PickRandomDebuffIndices(
+                debuffs, 2);
+            if (gotDebuffs > 0)
+                g_GameManager.augmentRewardInternalDebuff = true;
+            PushAugEffectsFront(debuffs, gotDebuffs);
+            PushAugEffectsFront(buffs, gotBuffs);
+            continue;
+        }
+
+        if (atype == AugType::RANDOM_AUG) {
+            int picks[3] = {};
+            const int got = g_GameManager.PickRandomAugIndices(
+                picks, 3, g_Stats.sizeAugTaken, g_Stats.distAugTaken,
+                true, false, false);
+            PushAugEffectsFront(picks, got);
+            continue;
+        }
+
+        if (NeedsReplaceForAug(idx)) {
+            BeginAugReplaceFlow(idx, false, -1);
+            return;
+        }
+        ApplySingleAugIdx(idx, scrW, scrH);
+    }
 }
 
 static void CompleteAugReplaceFlow(int replaceSlot, int scrW, int scrH) {
@@ -1155,7 +1407,12 @@ static void CompleteAugReplaceFlow(int replaceSlot, int scrW, int scrH) {
         g_GameManager.currentState = GameState::RUN_SHOP;
         return;
     }
-    ContinueAfterBuffPick();
+    if (g_AugEffectProcessing) {
+        ProcessAugEffectQueue(scrW, scrH);
+        if (g_GameManager.currentState == GameState::AUG_REPLACE) return;
+        g_AugEffectProcessing = false;
+    }
+    FinishAugmentEffects();
 }
 
 static void CancelAugReplaceFlow() {
@@ -1166,7 +1423,12 @@ static void CancelAugReplaceFlow() {
         g_GameManager.currentState = GameState::RUN_SHOP;
         return;
     }
-    ContinueAfterBuffPick();
+    if (g_AugEffectProcessing) {
+        ProcessAugEffectQueue(g_GameManager.screenW, g_GameManager.screenH);
+        if (g_GameManager.currentState == GameState::AUG_REPLACE) return;
+        g_AugEffectProcessing = false;
+    }
+    FinishAugmentEffects();
 }
 
 static void TriggerVictory() {
@@ -1188,7 +1450,7 @@ static void OnBossKilled(int bossPick, long long goldBonus) {
                    g_GameManager.screenW, g_GameManager.screenH);
 }
 
-static void ApplyPurchasedAug(int idx, FakeWindow& playerWin, int scrW, int scrH) {
+static void ApplyPurchasedAug(int idx, SpatialBounds& playerWin, int scrW, int scrH) {
     (void)playerWin;
     AugType atype = ALL_AUGS[idx].type;
 
@@ -1213,7 +1475,7 @@ static void ApplyPurchasedAug(int idx, FakeWindow& playerWin, int scrW, int scrH
 }
 
 void RunShopPurchase(int slot) {
-    if (!s_PlayerWinRef || slot < 0 || slot >= 4) return;
+    if (!s_PlayerBoundsRef || slot < 0 || slot >= 4) return;
     int idx = g_RunShopStock[slot];
     if (idx < 0) return;
     int price = g_RunShopPrice[slot];
@@ -1224,7 +1486,7 @@ void RunShopPurchase(int slot) {
         return;
     }
     g_RunGold -= price;
-    ApplyPurchasedAug(idx, *s_PlayerWinRef, g_GameManager.screenW, g_GameManager.screenH);
+    ApplyPurchasedAug(idx, *s_PlayerBoundsRef, g_GameManager.screenW, g_GameManager.screenH);
     g_RunShopStock[slot] = -1;
     g_RunShopPrice[slot]  = 0;
 }
@@ -1250,12 +1512,12 @@ static void StartBossWarn(int pick, const wchar_t* name, float hp) {
 static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
     (void)polyHpC;
     switch (pick) {
-    case 2: StartBossWarn(2, L"VOLLEY.sys", bossHpC);        break;
-    case 8: StartBossWarn(8, L"FORK.worm",  bossHpC * 0.7f); break;
+    case 2: StartBossWarn(2, L"VOLLEY", bossHpC);        break;
+    case 8: StartBossWarn(8, L"FORK",  bossHpC * 0.7f); break;
     case 10: StartBossWarn(10, TesseractGlitchBoss::BOSS_NAME, bossHpC * 0.92f); break;
     case 20: StartBossWarn(20, EtherSwordBoss::BOSS_NAME, bossHpC * 3.2f);      break;
-    case 3: StartBossWarn(3, L"SPAM.dll",   bossHpC * 0.9f); break;
-    default: StartBossWarn(2, L"VOLLEY.sys", bossHpC);       break;
+    case 3: StartBossWarn(3, L"SPAM",   bossHpC * 0.9f); break;
+    default: StartBossWarn(2, L"VOLLEY", bossHpC);       break;
     }
 }
 
@@ -1536,11 +1798,10 @@ int main() {
     InitNebulaGlowShader(screenWidth, screenHeight);
 
     // --- 게임 ?�브?�트 초기??---
-    FakeWindow playerWin(0, "Onedow",
+    SpatialBounds playerWin(
         (screenWidth  - g_Stats.windowSize) * 0.5f,
         (screenHeight - g_Stats.windowSize) * 0.5f,
         g_Stats.windowSize, g_Stats.windowSize);
-    playerWin.isFocused = true;
 
     const float PLAYER_SIZE = 25.0f;
     const float MOVE_SPEED  = 400.0f;
@@ -1591,7 +1852,7 @@ int main() {
     // 메인 루프
     // ============================================================
     while (!glfwWindowShouldClose(window)) {
-        s_PlayerWinRef = &playerWin;
+        s_PlayerBoundsRef = &playerWin;
         float now   = (float)glfwGetTime();
         float delta = now - lastFrame;
         if (delta > 0.1f) delta = 0.1f;
@@ -1615,8 +1876,10 @@ int main() {
             static bool s_wasFocused = true;
             bool focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
             if (!focused && s_wasFocused &&
-                g_GameManager.currentState == GameState::RUNNING)
+                g_GameManager.currentState == GameState::RUNNING) {
+                g_GameManager.pauseResumeState = GameState::RUNNING;
                 g_GameManager.currentState = GameState::PAUSED;
+            }
             s_wasFocused = focused;
         }
 
@@ -1668,6 +1931,25 @@ int main() {
         GameState prevState = g_GameManager.currentState;
         g_GameManager.HandleInput(window);
 
+        // Keep the OS pointer out of the combat view while the custom
+        // crosshair is active. Pause/settings screens use normal input, so
+        // the pointer must remain available for their clickable controls.
+        auto UpdateCursorVisibility = [&]() {
+            const GameState cursorState = g_GameManager.currentState;
+            const bool hideCursor = g_ShowCrosshair &&
+                (cursorState == GameState::RUNNING ||
+                 cursorState == GameState::DYING);
+            static bool cursorModeInitialized = false;
+            static bool cursorHidden = false;
+            if (!cursorModeInitialized || cursorHidden != hideCursor) {
+                glfwSetInputMode(window, GLFW_CURSOR,
+                                 hideCursor ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL);
+                cursorHidden = hideCursor;
+                cursorModeInitialized = true;
+            }
+        };
+        UpdateCursorVisibility();
+
         // ??게임 리셋 ?�다 (GAMEOVER ??READY, ?�이???�택 ?? ?�시?�기 버튼 ?�에???�출)
         auto ResetForNewGame = [&]() {
             g_Stats        = PlayerStats();
@@ -1695,7 +1977,9 @@ int main() {
             g_CurrentWeapon    = -1;
             g_PauseSelectedAug = -1;
             g_GameTime         = 0.0f;
-            g_GameManager.augReady = false;
+            g_GameManager.ClearAugmentRewardQueue();
+            g_AugEffectQueue.clear();
+            g_AugEffectProcessing = false;
             g_BomberSpawnTimer = 0.0f;
             for (int i = 0; i < MAX_SHOCKS; i++) g_ShockWaves[i].active = false;
             for (int i = 0; i < MAX_SLASH; i++) g_Slashes[i].active = false;
@@ -1707,6 +1991,7 @@ int main() {
             BossDir::ResetAct();
             ResetTrials();
             g_RunGold           = 0;
+            g_RunStardust       = 0;
             g_InBossIntermission = false;
             g_IntermissionTimer = 0.0f;
             g_ShopZoneHold      = 0.0f;
@@ -1722,6 +2007,7 @@ int main() {
             g_TessWasP2 = g_TessWasP3 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;
             g_StardustPickups.clear(); g_StardustHudPulse = 0.0f;
+            g_XpBarPop = 0.0f;
             g_SlowZones.clear(); g_BadSectorBleed = 0.0f;
             g_NovaTimer = 0.0f;
             g_RunMelee = false; g_RunBow = false;
@@ -1733,7 +2019,9 @@ int main() {
             ResetJuice();
             ResetSkills();
             g_WindowSizeCur = g_Stats.windowSize;
-            g_WinPrevHP = -1.0f; g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
+            g_WinPrevHP = -1.0f; g_HpGhost = -1.0f;
+            g_PlayerDamagePulse = 0.0f;
+            g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // �??�복
             g_ZoomCX = g_ZoomCY = 0.0f;
             g_Difficulty = Difficulty::NORMAL;
@@ -1775,6 +2063,139 @@ int main() {
             g_GameManager.lastState = GameState::READY;
         };
 
+        // Restart the current run without returning to the PLAY screen.
+        // Keep the selected loadout and run modifiers, then rebuild the
+        // combat state so the next frame starts from a clean arena.
+        auto RestartCurrentRun = [&]() {
+            const int savedWeapon = g_CurrentWeapon;
+            const bool savedMelee = g_RunMelee;
+            const bool savedBow = g_RunBow;
+            const Difficulty savedDifficulty = g_Difficulty;
+            const bool savedGodmode = g_CreativeGodmode;
+            const std::vector<int> savedOwnedAugs = g_OwnedAugs;
+            const bool savedTrialPoolReady = g_TrialPoolReady;
+            int savedTrialPool[TRIAL_SLOT_COUNT] = {};
+            bool savedTrialSelected[TRIAL_SLOT_COUNT] = {};
+            for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
+                savedTrialPool[i] = g_TrialPool[i];
+                savedTrialSelected[i] = g_TrialSelected[i];
+            }
+
+            // This clears enemies, projectiles, drops, boss instances,
+            // timers, run currencies, score/XP and the death presentation.
+            ResetForNewGame();
+
+            // Restore the setup that ResetForNewGame intentionally clears.
+            g_CurrentWeapon = savedWeapon;
+            g_RunMelee = savedMelee;
+            g_RunBow = savedBow;
+            g_Difficulty = savedDifficulty;
+            g_CreativeGodmode = savedGodmode;
+            g_OwnedAugs = savedOwnedAugs;
+            g_TrialPoolReady = savedTrialPoolReady;
+            for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
+                g_TrialPool[i] = savedTrialPool[i];
+                g_TrialSelected[i] = savedTrialSelected[i];
+            }
+
+            // Re-applying the owned augment list restores the exact build,
+            // including class/creative augments and their side effects.
+            RebuildPlayerStatsFromOwned(screenWidth, screenHeight, false);
+            const float trialHpMul = TrialPlayerMaxHpMult();
+            if (trialHpMul < 0.999f)
+                g_Stats.maxHP *= trialHpMul;
+            g_GameManager.maxHP = g_Stats.maxHP;
+            g_GameManager.playerHP = g_Stats.maxHP;
+
+            for (int i = 0; i < 4; ++i) {
+                g_RunShopStock[i] = -1;
+                g_RunShopPrice[i] = 0;
+            }
+            g_CreativeStartPending = false;
+            g_GameManager.conversionAug = -1;
+            g_GameManager.hoveredCard = -1;
+            g_GameManager.pendingAugIdx = -1;
+            g_GameManager.replaceChoiceCount = 0;
+            g_GameManager.replaceFromShop = false;
+            g_GameManager.replaceShopSlot = -1;
+            g_GameManager.augChoiceCount = 0;
+            for (int i = 0; i < 3; ++i) g_GameManager.augChoices[i] = -1;
+            g_AugExitT = -1.0f;
+            g_AugExitSlot = -1;
+            g_RepExitT = -1.0f;
+            g_RepExitSlot = -3;
+            g_GameManager.ClearAugmentRewardQueue();
+            g_AugEffectQueue.clear();
+            g_AugEffectProcessing = false;
+            g_GameManager.spaceReleased = true;
+            g_GameManager.escReleased = true;
+            g_GameManager.pauseResumeState = GameState::RUNNING;
+            g_GameManager.currentState = GameState::RUNNING;
+            g_GameManager.lastState = GameState::RUNNING;
+        };
+
+        // End the current run without rebuilding it. Abandoning from pause or
+        // settings should use the same report screen as a normal death while
+        // preserving the score, build, level, kills, and earned stardust.
+        auto AbandonCurrentRun = [&]() {
+            if (g_GameManager.currentState == GameState::GAMEOVER ||
+                g_GameManager.currentState == GameState::VICTORY)
+                return;
+
+            g_MonsterManager.Clear();
+            g_Bullets.clear();
+            if (g_RRBoss)    { delete g_RRBoss;    g_RRBoss    = nullptr; }
+            if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
+            if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
+            if (g_EtherBoss) { delete g_EtherBoss; g_EtherBoss = nullptr; }
+            g_Turrets.clear();
+            g_LaserBeams.clear();
+            g_SlowZones.clear();
+            g_ApproachOrbs.clear();
+            g_StardustPickups.clear();
+            g_Orb.active = false;
+            g_MuzzleTimer = 0.0f;
+            g_ShakeTime = 0.0f;
+            g_ShakeMag = 0.0f;
+            for (int d = 0; d < MAX_DRONES;   ++d) g_Drones[d]   = DroneState{};
+            for (int c = 0; c < MAX_CHAKRAMS; ++c) g_Chakrams[c] = ChakramState{};
+            for (int i = 0; i < MAX_SHOCKS; ++i) g_ShockWaves[i].active = false;
+            for (int i = 0; i < MAX_SLASH;  ++i) g_Slashes[i].active = false;
+            ResetJuice();
+
+            g_GameManager.playerHP = 0.0f;
+            g_GameManager.pauseResumeState = GameState::RUNNING;
+            g_DyingTimer = 0.0f;
+            g_DeathBoomDone = true;
+            g_DeathFlash = 0.0f;
+            g_GameOverFade = 0.0f;
+            Audio::StopBgm();
+
+            const int li = std::max(0, std::min(2, LangIndex()));
+            const wchar_t* abandoned[3] = {
+                L"런 포기", L"RUN ABANDONED", L"ランを放棄"
+            };
+            wcscpy_s(g_DeathReason, abandoned[li]);
+
+            if (!g_CreativeMode) {
+                g_LastRunRecord = RecordRunResult(
+                    (int)g_Difficulty,
+                    g_GameManager.score,
+                    g_Stats.killCount,
+                    (g_SelectedJob == JOB_NONE ? 0 : 1));
+                if (g_TotalGames >= 10) TryUnlockAch(ACH_GAMES_10);
+                if (g_AchSaveNeeded) {
+                    SaveGame();
+                    g_AchSaveNeeded = false;
+                }
+            } else {
+                g_LastRunRecord = false;
+                g_LastRunCoins = 0;
+            }
+
+            g_GameManager.currentState = GameState::GAMEOVER;
+        };
+
         // GAMEOVER?�READY ?�동 감�? (ESC ?�으�?직접 ?�환??경우)
         if (prevState == GameState::GAMEOVER &&
             g_GameManager.currentState == GameState::READY) {
@@ -1786,6 +2207,12 @@ int main() {
             g_PauseSelectedAug = -1;
         }
         g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
+        if (prevState == GameState::RUNNING &&
+            g_GameManager.currentState == GameState::AUG_SELECT &&
+            !g_GameManager.augmentRewardActive) {
+            if (!g_GameManager.ActivateNextAugmentReward())
+                g_GameManager.currentState = GameState::RUNNING;
+        }
 
         // ?�?�?BGM ??게임?�레??중엔 메인 루프, 메뉴?�선 ?��? (보스 BGM ?�??�일 ?�기�??�장) ?�?�?
         {
@@ -1879,11 +2306,11 @@ int main() {
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName((int)m->kind));
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_RANGED));
                     for (auto bm : g_MonsterManager.bombers)    if (bm->alive) consider(bm->worldX, bm->worldY, MobName(CM_BOMBER));
-                    if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY.sys");
-                    if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK.worm");
+                    if (g_RRBoss     && g_RRBoss->alive)     consider(g_RRBoss->worldX,     g_RRBoss->worldY,     L"VOLLEY");
+                    if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK");
                     if (g_TessBoss && g_TessBoss->alive) consider(g_TessBoss->worldX, g_TessBoss->worldY, TesseractGlitchBoss::BOSS_NAME);
                     int li = LangIndex();
-                    const wchar_t* FMT[3] = { L"%ls: process ended", L"Terminated by %ls", L"%ls ended" };
+                    const wchar_t* FMT[3] = { L"%ls: signal dispersed", L"Dispersed by %ls", L"%ls dispersed" };
                     const wchar_t* UNK[3] = { L"Unknown error", L"Terminated by unknown error", L"Unknown error" };
                     if (nm) swprintf_s(g_DeathReason, FMT[li], nm);
                     else    wcscpy_s(g_DeathReason, UNK[li]);
@@ -2032,6 +2459,10 @@ int main() {
             int k3 = glfwGetKey(window, GLFW_KEY_3);
 
             // ?�일 증강 ?�용 ?�퍼 (?��?????RANDOM_AUG/PANDORA 가 ?�출)
+            // Special effects are processed by ProcessAugEffectQueue below.
+            // Keep the legacy recursive implementation disabled for reference
+            // until the queue path has shipped through a full playtest.
+#if 0
             std::function<void(int)> applyByIdx;
             applyByIdx = [&](int idx) {
                 AugType atype = ALL_AUGS[idx].type;
@@ -2108,14 +2539,23 @@ int main() {
                 ApplySingleAugIdx(idx, screenWidth, screenHeight);
             };
 
+#endif
             auto applyAug = [&](int slot) {
-                bool wasBuff  = (g_GameManager.currentState == GameState::AUG_SELECT);
-                applyByIdx(g_GameManager.augChoices[slot]);
+                if (slot < 0 || slot >= g_GameManager.augChoiceCount) return;
+                const bool wasBuff = (g_GameManager.currentState == GameState::AUG_SELECT);
+                const int selectedIdx = g_GameManager.augChoices[slot];
+                if (selectedIdx < 0 || selectedIdx >= AUG_TOTAL) return;
+                g_AugEffectQueue.push_back(selectedIdx);
+                g_AugEffectProcessing = true;
+                ProcessAugEffectQueue(screenWidth, screenHeight);
                 if (g_GameManager.currentState == GameState::AUG_REPLACE)
                     return;
+                g_AugEffectProcessing = false;
                 g_GameManager.maxHP = g_Stats.maxHP;
-                if (wasBuff) {
-                    ContinueAfterBuffPick();
+                if (g_GameManager.augmentRewardInDebuff) {
+                    FinishCurrentAugmentReward();
+                } else if (wasBuff) {
+                    FinishAugmentEffects();
                 } else {
                     g_GameManager.currentState = GameState::RUNNING;
                     g_PostPickGrace = 0.5f;
@@ -2142,9 +2582,18 @@ int main() {
             if (!augExitFired) {
                 // 1/2/3 = hover (exit �� ����)
                 if (g_AugExitT < 0.0f) {
-                    if (k1 == GLFW_PRESS && g_aug1Released) { g_HoveredAug = 0; g_aug1Released = false; }
-                    if (k2 == GLFW_PRESS && g_aug2Released) { g_HoveredAug = 1; g_aug2Released = false; }
-                    if (k3 == GLFW_PRESS && g_aug3Released) { g_HoveredAug = 2; g_aug3Released = false; }
+                    if (k1 == GLFW_PRESS && g_aug1Released && g_GameManager.augChoiceCount > 0) {
+                        g_HoveredAug = 0; g_GameManager.augmentKeyboardFocus = true;
+                        g_AugExitT = 0.0f; g_AugExitSlot = 0; g_aug1Released = false;
+                    }
+                    if (k2 == GLFW_PRESS && g_aug2Released && g_GameManager.augChoiceCount > 1) {
+                        g_HoveredAug = 1; g_GameManager.augmentKeyboardFocus = true;
+                        g_AugExitT = 0.0f; g_AugExitSlot = 1; g_aug2Released = false;
+                    }
+                    if (k3 == GLFW_PRESS && g_aug3Released && g_GameManager.augChoiceCount > 2) {
+                        g_HoveredAug = 2; g_GameManager.augmentKeyboardFocus = true;
+                        g_AugExitT = 0.0f; g_AugExitSlot = 2; g_aug3Released = false;
+                    }
                 }
                 if (k1 == GLFW_RELEASE) g_aug1Released = true;
                 if (k2 == GLFW_RELEASE) g_aug2Released = true;
@@ -2152,7 +2601,9 @@ int main() {
 
                 // Space = exit anim ����
                 int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
-                if (kSp == GLFW_PRESS && s_augSpaceReleased && g_HoveredAug >= 0 && g_AugExitT < 0.0f) {
+                if (kSp == GLFW_PRESS && s_augSpaceReleased &&
+                    g_HoveredAug >= 0 && g_HoveredAug < g_GameManager.augChoiceCount &&
+                    g_AugExitT < 0.0f) {
                     g_AugExitT    = 0.0f;
                     g_AugExitSlot = g_HoveredAug;
                     s_augSpaceReleased = false;
@@ -2208,6 +2659,7 @@ int main() {
                     if (ki >= g_GameManager.replaceChoiceCount) break;
                     if (glfwGetKey(window, GLFW_KEY_1 + ki) == GLFW_PRESS && s_repKeys[ki]) {
                         g_HoveredAug = ki;
+                        g_GameManager.augmentKeyboardFocus = true;
                         s_repKeys[ki] = false;
                     }
                 }
@@ -2276,14 +2728,14 @@ int main() {
             int kF = glfwGetKey(window, GLFW_KEY_F);
             if (kF == GLFW_RELEASE) s_fkeyReleased = true;
             if (kF == GLFW_PRESS && s_fkeyReleased &&
-                g_GameManager.currentState == GameState::RUNNING) {
+                g_GameManager.currentState == GameState::RUNNING &&
+                !g_GameManager.augReady) {
                 // ?�드박스: ?�버?�도 카드 ?�???�어??무엇?�든 집을 ???�게
                  ++g_GameManager.playerLevel;
                  g_GameManager.xp = 0;
-                g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                             g_Stats.distAugTaken, /*allowDebuff=*/true);
-                g_CreativeFreeGrab = true;
-                g_GameManager.currentState = GameState::AUG_SELECT;
+                g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
+                g_GameManager.ActivateNextAugmentReward();
+                g_CreativeFreeGrab = false;
                 s_fkeyReleased = false;
             }
             // G ??무적 ON/OFF ?��?
@@ -3028,9 +3480,9 @@ int main() {
 
                 // 처치 보상 ?�산 ??총알/근접???�닌 모든 죽음(?�쇄??��·?�킬·MK2·?�킹 ??�� ??
                 //   ???�기????번씩 EXP/?�수/콤보/?�혈??받는??(scored ?�래그로 중복 방�?).
-                auto creditKill = [&](float xpBase, float scoreBase) {
+                // Kill XP is carried by the spawned stardust and awarded on pickup.
+                auto creditKill = [&](float scoreBase) {
                     AddKillCombo();
-                    g_GameManager.xp        += (long long)(xpBase * g_Stats.xpMult);
                     g_Stats.killCount       += 1;
                     g_GameManager.scoreAccum += scoreBase;
                     g_GameManager.score      = (long long)g_GameManager.scoreAccum;
@@ -3058,12 +3510,16 @@ int main() {
                     if (!m->alive && !m->exploded) {
                         if (!m->scored) {       // ?�직 보상 ??받�? 죽음 ???�산
                             m->scored = true;
-                            SpawnStardust(m->worldX, m->worldY, StardustRewardFor(m->kind), pCX, pCY);
                             float xpB, scB; MobKillReward(m->kind, m->splitGen, m->elite, xpB, scB,
                                                           g_Stats.splitterBoost);
                             TryHackFirewallOnKill(m->kind, g_Stats);
                             float rwm = MobRewardMult(m->kind); xpB *= rwm; scB *= rwm;
-                            creditKill(xpB + MobDebuffXpBonus(m->kind, m->elite, g_Stats), scB);
+                            const long long pickupXp = (long long)(
+                                (xpB + MobDebuffXpBonus(m->kind, m->elite, g_Stats))
+                                * g_Stats.xpMult);
+                            SpawnStardust(m->worldX, m->worldY,
+                                          StardustRewardFor(m->kind), pCX, pCY, pickupXp);
+                            creditKill(scB);
                             if (m->elite) g_RunGold += 1;
                         }
                         if (m->kind == MobKind::DDOS)
@@ -3135,8 +3591,11 @@ int main() {
                     if (!r->alive && !r->exploded) {
                         if (!r->scored) {
                             r->scored = true;
-                            SpawnStardust(r->worldX, r->worldY, 3, pCX, pCY);
-                            creditKill(25.0f + (float)g_Stats.rangedXpBonus, 300.0f);
+                            const long long pickupXp = (long long)(
+                                (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                            SpawnStardust(r->worldX, r->worldY, 3,
+                                          pCX, pCY, pickupXp);
+                            creditKill(300.0f);
                         }
                         SpawnEnemyExplosion(r->worldX, r->worldY,
                                             r->color.r, r->color.g, r->color.b,
@@ -3242,7 +3701,11 @@ int main() {
                         //   그리�??�직 ?�산 ???�으�?광역 처치 ?? 보상 지�?
                         if (!bm->scored && !blast) {
                             bm->scored = true;
-                            creditKill(25.0f + (float)g_Stats.bomberXpBonus, 200.0f);
+                            const long long pickupXp = (long long)(
+                                (25.0f + (float)g_Stats.bomberXpBonus) * g_Stats.xpMult);
+                            SpawnStardust(bm->worldX, bm->worldY, 3,
+                                          pCX, pCY, pickupXp);
+                            creditKill(200.0f);
                         }
                         if (blast) {
                             // ?�폭: ?�레?�어 죽음�???�� (?�발 + ?�중 충격??
@@ -3295,10 +3758,7 @@ int main() {
                         g_GameManager.xp -= need;
                         ++g_GameManager.playerLevel;
                         // (?�벨???�?�크�??�래???�거 ???��??? AUG_SELECT 카드�?충분???�내)
-                        g_GameManager.PickAugChoices(g_Stats.sizeAugTaken,
-                                                     g_Stats.distAugTaken);
-
-                        g_GameManager.augReady = true;
+                        g_GameManager.QueueAugmentReward(true, false);
                     }
                     } // !atMainCap
                 }
@@ -3340,7 +3800,61 @@ int main() {
             if (ws == GameState::RUNNING || ws == GameState::PAUSED ||
                 ws == GameState::READY  || ws == GameState::AUG_SELECT ||
                 ws == GameState::DEBUFF_SELECT || ws == GameState::DYING) {
-                SyncPlayerWindowSize(playerWin, delta, ws == GameState::RUNNING);
+                SyncPlayerBoundsSize(playerWin, delta, ws == GameState::RUNNING);
+            }
+        }
+
+        // Keep a delayed HP value for the radial afterimage.  Damage snaps
+        // the gray layer to the pre-hit HP; it then eases toward live HP.
+        // Non-combat screens synchronize immediately so upgrades or resets
+        // cannot be mistaken for damage.
+        {
+            const GameState hpState = g_GameManager.currentState;
+            const bool hpAnimActive = hpState == GameState::RUNNING ||
+                                      hpState == GameState::DYING;
+            const float hpNow = std::max(0.0f, g_GameManager.playerHP);
+            if (!hpAnimActive) {
+                g_WinPrevHP = hpNow;
+                g_HpGhost = hpNow;
+            } else {
+                if (g_WinPrevHP < 0.0f) {
+                    g_WinPrevHP = hpNow;
+                    g_HpGhost = hpNow;
+                }
+
+                const float hpBefore = g_WinPrevHP;
+                const float hpDelta = hpNow - hpBefore;
+                if (g_PlayerDamagePulse > 0.0f) {
+                    g_HpBarPop = std::max(g_HpBarPop, g_PlayerDamagePulse);
+                    g_PlayerDamagePulse = 0.0f;
+                }
+                if (hpDelta < -0.0001f) {
+                    // Preserve an older afterimage if another hit lands
+                    // before it has finished catching up.
+                    g_HpGhost = std::max(g_HpGhost, hpBefore);
+                    g_HurtVignette = 0.5f;
+                    g_HpBarPop = 2.2f;
+                } else if (hpDelta > 0.0001f) {
+                    // Healing moves the live gauge immediately; do not leave
+                    // a misleading gray damage segment behind it.
+                    g_HpGhost = hpNow;
+                }
+                g_WinPrevHP = hpNow;
+
+                if (g_HpGhost < 0.0f) g_HpGhost = hpNow;
+                if (g_HpGhost > hpNow) {
+                    const float follow = 1.0f - expf(-7.5f * delta);
+                    g_HpGhost += (hpNow - g_HpGhost) * follow;
+                }
+
+                if (g_HurtVignette > 0.0f) {
+                    g_HurtVignette -= delta * 1.6f;
+                    if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f;
+                }
+                if (g_HpBarPop > 0.0f) {
+                    g_HpBarPop -= delta;
+                    if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f;
+                }
             }
         }
 
@@ -3351,15 +3865,6 @@ int main() {
                            keys[GLFW_KEY_A] || keys[GLFW_KEY_D];
 
             // ?�?�??�격 ?��???HP 감소 ??빨간 비네?�만 (?�야 변???�거, �??�기 고정) ?�?�?
-            {
-                if (g_WinPrevHP < 0.0f) g_WinPrevHP = g_GameManager.playerHP;
-                float lost = g_WinPrevHP - g_GameManager.playerHP;
-                if (lost > 0.5f) { g_HurtVignette = 0.5f; g_HpBarPop = 2.2f; }
-                g_WinPrevHP = g_GameManager.playerHP;
-            }
-            if (g_HurtVignette > 0.0f) { g_HurtVignette -= delta * 1.6f; if (g_HurtVignette < 0.0f) g_HurtVignette = 0.0f; }
-            if (g_HpBarPop > 0.0f) { g_HpBarPop -= delta; if (g_HpBarPop < 0.0f) g_HpBarPop = 0.0f; }
-
             // HP ���?(REGEN_UP, �Ŵ�ȭ, ���?II �� regenPerSec �ջ�)
             if (g_Stats.regenPerSec > 0.0f) {
                 g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * delta;
@@ -3435,6 +3940,7 @@ int main() {
 
             // 별가루: 스폰 직후 약간 퍼진 뒤 매 프레임 플레이어 방향으로 재조향 — 무조건 수집.
             g_StardustHudPulse = std::max(0.0f, g_StardustHudPulse - delta * 3.8f);
+            g_XpBarPop = std::max(0.0f, g_XpBarPop - delta * 2.2f);
             for (auto& dust : g_StardustPickups) {
                 if (!dust.alive) continue;
                 dust.age += delta;
@@ -3443,7 +3949,11 @@ int main() {
                 float dx = pCX - dust.x, dy = pCY - dust.y;
                 float dist = sqrtf(dx * dx + dy * dy);
                 if (dist < 60.0f) {
+                    g_GameManager.xp += dust.xpValue;
+                    if (dust.xpValue > 0)
+                        g_XpBarPop = std::max(g_XpBarPop, 1.15f);
                     g_Coins += dust.value;
+                    g_RunStardust += dust.value;
                     g_StardustHudPulse = 1.0f;
                     SpawnSparks(dust.x, dust.y, dust.value >= 5 ? 6 : 3,
                                 1.0f, 0.85f, 0.30f, 180.0f);
@@ -4246,12 +4756,14 @@ int main() {
                     SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || crit);
                     if (m->hp <= 0.0f) {
                         m->alive = false; m->scored = true; AddKillCombo();
-                        SpawnStardust(m->worldX, m->worldY, StardustRewardFor(m->kind), pCX, pCY);
                         float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs,
                                                       g_Stats.splitterBoost);
                         TryHackFirewallOnKill(m->kind, g_Stats);
                         float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
-                        g_GameManager.xp += (long long)((bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
+                        const long long pickupXp = (long long)(
+                            (bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
+                        SpawnStardust(m->worldX, m->worldY,
+                                      StardustRewardFor(m->kind), pCX, pCY, pickupXp);
                         g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         SpawnWormSplit(m, swingBorn);
@@ -4266,8 +4778,10 @@ int main() {
                     SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || crit);
                     if (rr->hp <= 0.0f) {
                         rr->alive = false; rr->scored = true; AddKillCombo();
-                        SpawnStardust(rr->worldX, rr->worldY, 3, pCX, pCY);
-                        g_GameManager.xp += (long long)((25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                        const long long pickupXp = (long long)(
+                            (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                        SpawnStardust(rr->worldX, rr->worldY, 3,
+                                      pCX, pCY, pickupXp);
                         g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         onKill();
@@ -4279,7 +4793,10 @@ int main() {
                     SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || crit);
                     if (bm->hp <= 0.0f) {
                         bm->alive = false; bm->scored = true; AddKillCombo();
-                        g_GameManager.xp += (long long)((25.0f + (float)g_Stats.bomberXpBonus) * g_Stats.xpMult);
+                        const long long pickupXp = (long long)(
+                            (25.0f + (float)g_Stats.bomberXpBonus) * g_Stats.xpMult);
+                        SpawnStardust(bm->worldX, bm->worldY, 3,
+                                      pCX, pCY, pickupXp);
                         g_Stats.killCount++; g_GameManager.scoreAccum += 200.0f;
                         g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         onKill();
@@ -4372,12 +4889,14 @@ int main() {
                         SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || lcrit);
                         if (m->hp <= 0.0f) {
                             m->alive = false; m->scored = true; AddKillCombo();
-                            SpawnStardust(m->worldX, m->worldY, StardustRewardFor(m->kind), pCX, pCY);
                             float bx, bs; MobKillReward(m->kind, m->splitGen, m->elite, bx, bs,
                                                       g_Stats.splitterBoost);
                             TryHackFirewallOnKill(m->kind, g_Stats);
                             float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
-                            g_GameManager.xp += (long long)((bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
+                            const long long pickupXp = (long long)(
+                                (bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
+                            SpawnStardust(m->worldX, m->worldY,
+                                          StardustRewardFor(m->kind), pCX, pCY, pickupXp);
                             g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum;
                             SpawnWormSplit(m, laserBorn); SpawnBadSectorZone(m); lOnKill();
@@ -4390,8 +4909,10 @@ int main() {
                         SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || lcrit);
                         if (rr->hp <= 0.0f) {
                             rr->alive = false; rr->scored = true; AddKillCombo();
-                            SpawnStardust(rr->worldX, rr->worldY, 3, pCX, pCY);
-                            g_GameManager.xp += (long long)((25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                            const long long pickupXp = (long long)(
+                                (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                            SpawnStardust(rr->worldX, rr->worldY, 3,
+                                          pCX, pCY, pickupXp);
                             g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
                         }
@@ -4402,7 +4923,10 @@ int main() {
                         SpawnDamageNumber(bm->worldX, bm->worldY, dealt, dealt >= 40.0f || lcrit);
                         if (bm->hp <= 0.0f) {
                             bm->alive = false; bm->scored = true; AddKillCombo();
-                            g_GameManager.xp += (long long)((25.0f + (float)g_Stats.bomberXpBonus) * g_Stats.xpMult);
+                            const long long pickupXp = (long long)(
+                                (25.0f + (float)g_Stats.bomberXpBonus) * g_Stats.xpMult);
+                            SpawnStardust(bm->worldX, bm->worldY, 3,
+                                          pCX, pCY, pickupXp);
                             g_Stats.killCount++; g_GameManager.scoreAccum += 200.0f;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
                         }
@@ -4450,13 +4974,14 @@ int main() {
                             m->hp -= dmg;
                             if (m->hp <= 0.0f && !m->scored) {
                                 m->alive=false; m->scored=true; AddKillCombo();
-                                SpawnStardust(m->worldX, m->worldY,
-                                              StardustRewardFor(m->kind), pCX, pCY);
                                 float bx,bs; MobKillReward(m->kind,m->splitGen,m->elite,bx,bs,
                                                            g_Stats.splitterBoost);
                                 TryHackFirewallOnKill(m->kind, g_Stats);
                                 float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
-                                g_GameManager.xp += (long long)((bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
+                                const long long pickupXp = (long long)(
+                                    (bx + MobDebuffXpBonus(m->kind, m->elite, g_Stats)) * g_Stats.xpMult);
+                                SpawnStardust(m->worldX, m->worldY,
+                                              StardustRewardFor(m->kind), pCX, pCY, pickupXp);
                                 g_Stats.killCount++; g_GameManager.scoreAccum += bs;
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill();
                             }
@@ -4468,7 +4993,9 @@ int main() {
                         if (dx*dx+dy*dy < r2) {
                             bmb->hp -= dmg;
                             if (bmb->hp<=0.0f && !bmb->scored){ bmb->alive=false; bmb->scored=true; AddKillCombo();
-                                g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.bomberXpBonus)*g_Stats.xpMult);
+                                const long long pickupXp = (long long)((25.0f+(float)g_Stats.bomberXpBonus)*g_Stats.xpMult);
+                                SpawnStardust(bmb->worldX, bmb->worldY, 3,
+                                              pCX, pCY, pickupXp);
                                 g_Stats.killCount++; g_GameManager.scoreAccum+=200.0f;
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill(); }
                         }
@@ -4479,8 +5006,9 @@ int main() {
                         if (dx*dx+dy*dy < r2) {
                             r->hp -= dmg;
                             if (r->hp<=0.0f && !r->scored){ r->alive=false; r->scored=true; AddKillCombo();
-                                SpawnStardust(r->worldX, r->worldY, 3, pCX, pCY);
-                                g_GameManager.xp+=(long long)((25.0f+(float)g_Stats.rangedXpBonus)*g_Stats.xpMult);
+                                const long long pickupXp = (long long)((25.0f+(float)g_Stats.rangedXpBonus)*g_Stats.xpMult);
+                                SpawnStardust(r->worldX, r->worldY, 3,
+                                              pCX, pCY, pickupXp);
                                 g_Stats.killCount++; g_GameManager.scoreAccum+=300.0f;
                                 g_GameManager.score=(long long)g_GameManager.scoreAccum; nOnKill(); }
                         }
@@ -4668,7 +5196,7 @@ int main() {
                                g_SettingsReturnTo == GameState::PAUSED));
         if (inWorldRender) {
 
-        EnsurePlayerWindow(playerWin);
+        EnsurePlayerBounds(playerWin);
 
         // Screen-edge contrast for the HUD. Keep the combat center clear and
         // darken only the perimeter beneath entities, projectiles, and HUD.
@@ -4749,20 +5277,20 @@ int main() {
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::SPAWNER) continue;
             float w = SPAWNER_WIN_W * m->sizeScale;
-            addW(m->worldX, m->worldY, w, w, L"hive.sys", 0.06f,0.10f,0.09f, 0.20f,0.85f,0.65f);
+            addW(m->worldX, m->worldY, w, w, L"HIVE", 0.06f,0.10f,0.09f, 0.20f,0.85f,0.65f);
         }
         // DDOS ??DrawAppWindow ?�합 ?�스 (e3) ?�서�??�더
         // ?�거�?�?(?�환 ?�서)
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
             float sc = r->deathScale;
-            addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"lens.sys", 0.05f,0.07f,0.12f, 0.20f,0.75f,0.88f);
+            addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"LENS", 0.05f,0.07f,0.12f, 0.20f,0.75f,0.88f);
         }
         // GLITCH.exe: ���� �÷��̾� â���� �Ϲ� drawMob
         // 보스/분열�?(?�단)
         if (g_RRBoss && g_RRBoss->alive)
             addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
-                 L"VOLLEY.sys", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f, WIN_TB,
+                 L"VOLLEY", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f, WIN_TB,
                  g_RRBoss->hp / g_RRBoss->maxHp);
         if (g_CentiBoss && g_CentiBoss->alive)
             addW(g_CentiBoss->worldX, g_CentiBoss->worldY, CENTI_WIN_W, CENTI_WIN_W,
@@ -4886,12 +5414,12 @@ int main() {
         // (c) player playfield signal. The rectangular region itself remains
         // available to gameplay/scissor code, but no opaque fake window is drawn.
         BatchFlush(); glDisable(GL_SCISSOR_TEST); glEnable(GL_BLEND);
-        EnsurePlayerWindow(playerWin);
+        EnsurePlayerBounds(playerWin);
 
         if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
             float wx = g_ShopZoneX - RUN_SHOP_WIN_W * 0.5f;
             float wy = g_ShopZoneY - RUN_SHOP_WIN_H * 0.5f;
-            DrawAppWindow(wx, wy, RUN_SHOP_WIN_W, RUN_SHOP_WIN_H, L"AUGMENT.store");
+            DrawAppWindow(wx, wy, RUN_SHOP_WIN_W, RUN_SHOP_WIN_H, L"AUGMENT CACHE");
         }
         if (g_InBossIntermission &&
             g_GameManager.currentState != GameState::RUN_SHOP) {
@@ -4919,25 +5447,42 @@ int main() {
             g_GameManager.currentState == GameState::AUG_SELECT ||
             g_GameManager.currentState == GameState::DEBUFF_SELECT ||
             g_GameManager.currentState == GameState::DYING) {
-            float pad = 12.0f, bx = playerWin.x + pad;
-            float bw = std::max(4.0f, playerWin.width - pad * 2.0f);
-            float hpH = 8.0f, xpH = 4.0f, gap = 3.0f;
-            float hpY = playerWin.y + playerWin.height - 18.0f - hpH;   // ?�단 ?�쪽
-            float xpY = hpY - gap - xpH;
-            if (g_PlayerShield > 0.0f && g_Stats.maxHP > 0.0f) {
-                float shFrac = g_PlayerShield / g_Stats.maxHP;
-                if (shFrac > 1.0f) shFrac = 1.0f;
-                float shY = hpY - gap - 6.0f;
-                drawRect(bx, shY, bw, 3.0f, 0.08f, 0.12f, 0.22f, 0.72f);
-                drawRect(bx, shY, bw * shFrac, 3.0f, 0.35f, 0.75f, 1.0f, 0.95f);
-            }
+            const float pCX = playerWin.x + playerWin.width * 0.5f;
+            const float pCY = playerWin.y + playerWin.height * 0.5f;
+            const float sz = PLAYER_SIZE * g_Stats.playerSizeMult;
+            const float hpRadius = std::max(66.0f, sz * 2.72f);
+            const float xpRadius = hpRadius + 12.0f;
+            // HP occupies the lower half around the player. XP mirrors it
+            // vertically while keeping the same left-to-right reading flow.
+            // The shared slow spin keeps both halves aligned as one radial
+            // instrument while preserving their opposite positions.
+            const float radialSpin = (float)glfwGetTime() * 0.12f;
+            const float hpStartAngle = 3.1415927f + radialSpin;
+            const float hpSweepAngle = -3.1415927f;
+            const float xpStartAngle = 3.1415927f + radialSpin;
+            const float xpSweepAngle =  3.1415927f;
+            // One half-orbit takes about 14 seconds. The data arcs remain fixed;
+            // only their small outer constellation scanner moves.
+            const float orbitPhase = fmodf((float)glfwGetTime() * 0.07f, 1.0f);
+
             // HP
             float hpFrac = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
             if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
-            float hpR = (hpFrac > 0.5f) ? 0.1f : 1.0f;
-            float hpG = (hpFrac > 0.5f) ? 1.0f : hpFrac * 2.0f;
-            drawRect(bx, hpY, bw, hpH, 0.22f, 0.04f, 0.04f, 0.72f);
-            drawRect(bx, hpY, bw * hpFrac, hpH, hpR, hpG, 0.1f, 1.0f);
+            float hpGhostFrac = (g_Stats.maxHP > 0.0f) ? g_HpGhost / g_Stats.maxHP : hpFrac;
+            if (hpGhostFrac < hpFrac) hpGhostFrac = hpFrac;
+            if (hpGhostFrac > 1.0f) hpGhostFrac = 1.0f;
+            const float hpImpact = std::min(1.0f, g_HpBarPop / 0.45f);
+            const bool lowHp = hpFrac <= 0.25f;
+            const float hpR = 0.16f;
+            const float hpG = 1.0f;
+            const float hpPulse = (g_HpBarPop > 0.0f)
+                ? (0.72f + 0.28f * std::min(1.0f, g_HpBarPop / 2.2f)) : 1.0f;
+            // Always-on baseline is quiet; damage and low HP temporarily lift it.
+            const float radialAlpha = 0.16f + hpImpact * 0.52f + (lowHp ? 0.18f : 0.0f);
+            DrawPlayerRadialGauge(pCX, pCY, hpRadius, hpFrac,
+                                  hpStartAngle, hpSweepAngle, 1.15f,
+                                  hpR, hpG, 0.28f, radialAlpha * hpPulse,
+                                  10, hpGhostFrac, orbitPhase);
             // (HP ?�치??좌상??HUD ???�시 ???�드 ?�션?�서 ?�스?��? 그리�?            //  TextRenderer 가 ?�이??VAO �??�바?�드???�후 ?�티???�더가 깨�?므�?금�?)
             // XP
             {
@@ -4949,11 +5494,25 @@ int main() {
                     xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
                     if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
                 }
-                drawRect(bx, xpY, bw, xpH, 0.06f, 0.10f, 0.07f, 0.72f);
-                if (atCap)
-                    drawRect(bx, xpY, bw, xpH, 0.75f, 0.85f, 0.55f, 0.6f);
-                else
-                    drawRect(bx, xpY, bw * xpFrac, xpH, 0.4f, 1.0f, 0.55f, 1.0f);
+                const float xr = atCap ? 1.0f : 0.32f;
+                const float xg = atCap ? 0.86f : 0.94f;
+                const float xb = atCap ? 0.36f : 1.0f;
+                const float xpImpact = std::min(1.0f, g_XpBarPop / 1.15f);
+                const float xpAlpha = 0.15f + 0.75f * xpImpact;
+                DrawPlayerRadialGauge(pCX, pCY, xpRadius, xpFrac,
+                                      xpStartAngle, xpSweepAngle, 0.9f,
+                                      xr, xg, xb, xpAlpha * (atCap ? 0.72f : 0.82f),
+                                      12, -1.0f, fmodf(orbitPhase + 0.5f, 1.0f));
+            }
+
+            // A temporary shield becomes a thin outer orbit, preserving the
+            // old shield information without bringing back a bar.
+            if (g_PlayerShield > 0.0f && g_Stats.maxHP > 0.0f) {
+                const float shieldFrac = std::max(0.0f,
+                    std::min(1.0f, g_PlayerShield / g_Stats.maxHP));
+                DrawPlayerRadialGauge(pCX, pCY, xpRadius + 9.0f, shieldFrac,
+                                      hpStartAngle, hpSweepAngle, 0.9f,
+                                      0.34f, 0.78f, 1.0f, radialAlpha * 0.72f, 8);
             }
         }
     
@@ -5110,13 +5669,7 @@ int main() {
                     if (vis > 1.0f) vis = 1.0f; if (vis < 0.0f) vis = 0.0f;
                     if (vis > 0.01f) {
                         // ?�고 ?�레?�어??가깝게 ???�쪽 ?�을 ??가리도�?(가린다???�드�?
-                        float bw = 46.0f * g_Stats.playerSizeMult, bh = 5.0f;
-                        float bx = pCX - bw * 0.5f, by = pCY - hs - 15.0f;
-                        drawRect(bx - 1.5f, by - 1.5f, bw + 3, bh + 3, 0.0f, 0.0f, 0.0f, 0.6f * vis);
-                        drawRect(bx, by, bw, bh, 0.25f, 0.05f, 0.05f, 0.7f * vis);
-                        float r = hf > 0.5f ? 0.2f : 1.0f;
-                        float g = hf > 0.5f ? 1.0f : hf * 2.0f;
-                        drawRect(bx, by, bw * hf, bh, r, g, 0.15f, 0.92f * vis);
+                        // HP is represented by the radial gauge around the player.
                     }
                 }
             }
@@ -5414,7 +5967,7 @@ int main() {
             const wchar_t* bn = nullptr;
             float bhf = 0.0f; glm::vec3 bc(1.0f, 1.0f, 1.0f);
             if (g_RRBoss && g_RRBoss->alive) {
-                bn = L"VOLLEY.sys";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
+                bn = L"VOLLEY";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
                 bc = glm::vec3(1.0f, 0.55f, 0.2f);
             } else if (g_CentiBoss && g_CentiBoss->alive) {
                 bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
@@ -5425,7 +5978,7 @@ int main() {
             }
             int bossPick = -1;
             if (bn) {
-                if      (bn == L"VOLLEY.sys")   bossPick = 2;
+                if      (bn == L"VOLLEY")   bossPick = 2;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
                 else if (bn == TesseractGlitchBoss::BOSS_NAME) bossPick = 10;
             }
@@ -5784,11 +6337,24 @@ int main() {
     
             // ?�?�?[7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�?
             //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
-            if (st != GameState::RUNNING && st != GameState::DYING) {
+            // Keep the backdrop compositor state at the window level so the
+            // same setting remains active while the game is running. DWM
+            // blurs the content behind the transparent window; it does not
+            // soften the rendered game/UI layers themselves.
+            const bool backdropBlurActive = g_BackdropBlurEnabled;
+            ConfigureWindowBackdropBlur(
+                window, backdropBlurActive);
+
+            const bool outgameBackdrop =
+                st != GameState::RUNNING && st != GameState::DYING;
+            if (outgameBackdrop) {
                 std::function<void()> resetFn = ResetForNewGame;
+                std::function<void()> restartRunFn = RestartCurrentRun;
+                std::function<void()> abandonRunFn = AbandonCurrentRun;
                 // ������ ũ�� ����(���?64px) ���� Ŭ���� ���� �������� ����
                 bool sceneLmb = (my >= BROWSER_CHROME_H) ? lmb : false;
-                SceneCtx ctx{ sw, sh, mx, my, sceneLmb, delta, window, &fireTimer, resetFn };
+                SceneCtx ctx{ sw, sh, mx, my, sceneLmb, delta, window, &fireTimer,
+                              resetFn, restartRunFn, abandonRunFn };
                 switch (st) {
                 case GameState::MAIN_MENU:         Scene_MainMenu(ctx);         break;
                 case GameState::SHOP:              Scene_Shop(ctx);             break;
@@ -5809,11 +6375,14 @@ int main() {
                 }
                 if (st == GameState::PAUSED || st == GameState::AUG_SELECT ||
                     st == GameState::DEBUFF_SELECT || st == GameState::AUG_REPLACE ||
-                    st == GameState::GAMEOVER || st == GameState::VICTORY ||
+                    st == GameState::VICTORY ||
                     st == GameState::RUN_SHOP)
                     Scene_OwnedAugPanel(ctx);
             }
-    
+            // Scene_Paused can switch to SETTINGS during this render pass.
+            // Apply the new state immediately instead of waiting one frame.
+            UpdateCursorVisibility();
+
             // ?�단 HUD ???�제 게임 진행 ?�태?�서�?(메뉴/?�감/?�점?????�게)
             if (st == GameState::RUNNING || st == GameState::PAUSED ||
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
@@ -5827,25 +6396,11 @@ int main() {
 #endif
                 // 좌상?? Lv. + HP ?�자 (?�각 바는 ?�레?�어 창에 부착됨)
                 {
-                    int hpCur = (int)(g_GameManager.playerHP + 0.5f);
-                    int hpMax = (int)(g_Stats.maxHP + 0.5f);
                     wchar_t lvBuf2[64];
-                    swprintf_s(lvBuf2, L"%ls%d    HP %d/%d",
-                               T(StrId::LV_PREFIX), g_GameManager.playerLevel, hpCur, hpMax);
+                    swprintf_s(lvBuf2, L"%ls%d",
+                               T(StrId::LV_PREFIX), g_GameManager.playerLevel);
                     g_TextS.Draw(lvBuf2, 12.0f, hudTopY, 0.85f, 0.7f, 1.0f, 0.7f, 0.9f);
                 }
-                {
-                    wchar_t dustBuf[64];
-                    const wchar_t* dustLabel = LangIndex() == 0 ? L"별가루" : L"STARDUST";
-                    swprintf_s(dustBuf, L"%ls  %06lld", dustLabel, g_Coins);
-                    const float pulse = g_StardustHudPulse;
-                    g_TextS.Draw(dustBuf, 12.0f, hudTopY + 22.0f,
-                                 0.72f + pulse * 0.08f,
-                                 0.72f + pulse * 0.28f,
-                                 0.88f + pulse * 0.10f,
-                                 1.0f, 0.88f + pulse * 0.12f);
-                }
-    
                 // ?�단 중앙: Score
                 wchar_t scoreBuf[64];
                 swprintf_s(scoreBuf, L"%ls  %lld", T(StrId::SCORE), g_GameManager.score);
@@ -5865,10 +6420,11 @@ int main() {
                     const wchar_t* floorLbl = BossDir::ActLabel();
                     g_TextS.Draw(floorLbl, 12.0f, hudTopY + 42.0f, 0.72f,
                                  0.82f, 0.92f, 1.0f, 0.82f);
-                    wchar_t goldHud[32];
-                    swprintf_s(goldHud, L"G  %lld", g_RunGold);
-                    float gdw = g_TextS.Width(goldHud, 0.82f);
-                    g_TextS.Draw(goldHud, sw - gdw - 12.0f, hudTopY + 22.0f, 0.82f,
+                    wchar_t runDustHud[64];
+                    const wchar_t* runDustLabel = LangIndex() == 0 ? L"현재 별가루" : L"RUN STARDUST";
+                    swprintf_s(runDustHud, L"%ls  %lld", runDustLabel, g_RunStardust);
+                    float gdw = g_TextS.Width(runDustHud, 0.82f);
+                    g_TextS.Draw(runDustHud, sw - gdw - 12.0f, hudTopY + 22.0f, 0.82f,
                                  1.0f, 0.86f, 0.32f, 0.9f);
                 }
                 if (g_InBossIntermission && st != GameState::RUN_SHOP) {
@@ -5880,9 +6436,9 @@ int main() {
                     g_TextL.Draw(tbuf, (sw - tw) * 0.5f, hudTopY + 48.0f, 0.95f,
                                  1.0f, 0.92f, 0.45f, 0.92f);
                     const wchar_t* zhint[3] = {
-                        L"\uC911\uC559 AUGMENT.store ? \uC7A0\uC2DC \uBA38\uBB3C\uBA74 \uC0C1\uC810 \u00B7 \uC624\uB978\uCABD = \uC2A4\uD0B5",
-                        L"Center AUGMENT.store ? hold to shop \u00B7 right zone = skip",
-                        L"\u4E2D\u592E AUGMENT.store ? \u7559\u307E\u308B\u3068\u30B7\u30E7\u30C3\u30D7 \u00B7 \u53F3=\u30B9\u30AD\u30C3\u30D7" };
+                        L"\uC911\uC559 ASTRAL CACHE ? \uC7A0\uC2DC \uBA38\uBB3C\uBA74 \uC0C1\uC810 \u00B7 \uC624\uB978\uCABD = \uC2A4\uD0B5",
+                        L"Center ASTRAL CACHE ? hold to shop \u00B7 right zone = skip",
+                        L"\u4E2D\u592E ASTRAL CACHE ? \u7559\u307E\u308B\u3068\u30B7\u30E7\u30C3\u30D7 \u00B7 \u53F3=\u30B9\u30AD\u30C3\u30D7" };
                     int zli = LangIndex();
                     if (zli < 0 || zli > 2) zli = 0;
                     float zw = g_TextS.Width(zhint[zli], 0.78f);
@@ -5947,7 +6503,6 @@ int main() {
             //    메뉴/?�시?��??�선 ?��? ???�스?��? 메뉴 ?�에 ?�던 버그 fix
             if (st == GameState::RUNNING || st == GameState::DYING) {
                 // ?��?지 ?�자 (?�드 ???�크�?변?????�스?? ???�정 ?��?
-                if (g_ShowDamageNumbers)
                 for (auto& d : g_DmgNumbers) {
                     float t  = d.life / d.maxLife;                   // 1 ??0
                     float sx = W2SX(d.x), sy = W2SY(d.y);
@@ -6176,6 +6731,7 @@ int main() {
         }
     }
 
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     glDeleteVertexArrays(1, &g_MainVAO);
     glDeleteBuffers(1, &g_VBO);
     glDeleteProgram(g_MainShader);
