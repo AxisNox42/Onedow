@@ -192,8 +192,6 @@ public:
                         m->scored = true;   // 총알 처치 — 보상 지급 완료 표시
                         TryHackFirewallOnKill(m->kind, stats);
                         AddKillCombo();
-                        SpawnStardust(m->worldX, m->worldY,
-                                      StardustRewardFor(m->kind), playerCX, playerCY);
                         // 종류별 기본 EXP/점수 (공용 테이블, 엘리트 ×2.5)
                         float baseXp, baseScore;
                         MobKillReward(m->kind, m->splitGen, m->elite, baseXp, baseScore,
@@ -203,7 +201,9 @@ public:
                         baseScore *= rwm;
                         float gained = (baseXp + MobDebuffXpBonus(m->kind, m->elite, stats))
                                      * stats.xpMult;
-                        xp              += (long long)gained;
+                        SpawnStardust(m->worldX, m->worldY,
+                                      StardustRewardFor(m->kind), playerCX, playerCY,
+                                      (long long)gained);
                         stats.killCount += 1;
                         scoreAccum      += baseScore;
                         score = (long long)scoreAccum;
@@ -278,7 +278,8 @@ public:
                             TriggerHitStop(0.03f);   // 자폭병 처치 — 짧은 크런치
                             float gained = (25.0f + (float)stats.bomberXpBonus)
                                          * stats.xpMult;
-                            xp              += (long long)gained;
+                            SpawnStardust(bm->worldX, bm->worldY, 3,
+                                          playerCX, playerCY, (long long)gained);
                             stats.killCount += 1;
                             scoreAccum      += 200.0f;
                             score = (long long)scoreAccum;
@@ -386,11 +387,11 @@ public:
                             r->alive = false;
                             r->scored = true;        // 총알 처치 — 보상 지급 완료 표시
                             AddKillCombo();
-                            SpawnStardust(r->worldX, r->worldY, 3, playerCX, playerCY);
                             TriggerHitStop(0.03f);   // 원거리 몹 처치 — 짧은 크런치
                             float gained = (25.0f + (float)stats.rangedXpBonus)
                                          * stats.xpMult;
-                            xp              += (long long)gained;
+                            SpawnStardust(r->worldX, r->worldY, 3,
+                                          playerCX, playerCY, (long long)gained);
                             stats.killCount += 1;
                             scoreAccum      += 300.0f;
                             score = (long long)scoreAccum;

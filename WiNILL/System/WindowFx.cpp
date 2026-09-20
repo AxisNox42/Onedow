@@ -42,11 +42,104 @@ void EnableWindowTransparency(GLFWwindow* window) {
     TransparencyLog("================================\n\n");
 }
 
+namespace {
+enum AccentState {
+    ACCENT_DISABLED = 0,
+    ACCENT_ENABLE_BLURBEHIND = 3,
+};
+
+enum WindowCompositionAttribute {
+    WCA_ACCENT_POLICY = 19,
+};
+
+struct AccentPolicy {
+    int accentState;
+    int accentFlags;
+    unsigned long gradientColor;
+    int animationId;
+};
+
+struct WindowCompositionAttributeData {
+    WindowCompositionAttribute attribute;
+    void* data;
+    size_t sizeOfData;
+};
+
+using SetWindowCompositionAttributeProc = BOOL (WINAPI *)(
+    HWND, WindowCompositionAttributeData*);
+
+static HWND s_blurHwnd = nullptr;
+static bool s_blurEnabled = false;
+static bool s_blurApplied = false;
+
+static SetWindowCompositionAttributeProc ResolveBackdropProc() {
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) return nullptr;
+    return reinterpret_cast<SetWindowCompositionAttributeProc>(
+        GetProcAddress(user32, "SetWindowCompositionAttribute"));
+}
+}
+
+bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled) {
+    if (!window) return false;
+    HWND hwnd = glfwGetWin32Window(window);
+    if (!hwnd) return false;
+
+    if (hwnd == s_blurHwnd && enabled == s_blurEnabled) {
+        return enabled && s_blurApplied;
+    }
+
+    const SetWindowCompositionAttributeProc setComposition = ResolveBackdropProc();
+    if (!setComposition) {
+        s_blurHwnd = hwnd;
+        s_blurEnabled = enabled;
+        s_blurApplied = false;
+        return false;
+    }
+
+    AccentPolicy policy = {};
+    if (enabled) {
+        // Use regular DWM blur only. The user-facing control is binary so
+        // the visual result stays predictable.
+        policy.accentState = ACCENT_ENABLE_BLURBEHIND;
+        policy.accentFlags = 0;
+        // AABBGGRR. Keep the fixed veil subtle; ON/OFF controls the effect.
+        policy.gradientColor = (0x18ul << 24)
+                             | (0x18ul << 16)
+                             | (0x10ul << 8)
+                             | 0x08ul;
+    } else {
+        policy.accentState = ACCENT_DISABLED;
+        policy.accentFlags = 0;
+        policy.gradientColor = 0;
+    }
+
+    WindowCompositionAttributeData data = {};
+    data.attribute = WCA_ACCENT_POLICY;
+    data.data = &policy;
+    data.sizeOfData = sizeof(policy);
+    const BOOL ok = setComposition(hwnd, &data);
+    if (ok) {
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                     SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+
+    s_blurHwnd = hwnd;
+    s_blurEnabled = enabled;
+    s_blurApplied = ok == TRUE;
+    return enabled && s_blurApplied;
+}
+
 #else
 // ═══════════════════════ macOS / Linux ═════════════════════════════════════════
 //   투명도는 glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE) 가 처리.
 //   (Cocoa: NSWindow opaque=NO / X11: 32bit visual). 추가 OS 호출 불필요.
 void EnableWindowTransparency(GLFWwindow* /*window*/) {
     TransparencyLog("=== EnableWindowTransparency (non-Windows: GLFW hint) ===\n");
+}
+
+bool ConfigureWindowBackdropBlur(GLFWwindow* /*window*/, bool /*enabled*/) {
+    return false;
 }
 #endif

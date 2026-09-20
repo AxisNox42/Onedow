@@ -29,6 +29,7 @@ inline long long g_BestScore[3] = { 0, 0, 0 };   // 난이도별 최고 점수 (
 inline long long g_TotalKills   = 0;             // 누적 처치 수
 inline long long g_TotalGames   = 0;             // 누적 플레이 횟수
 inline long long g_LastRunCoins = 0;             // 직전 판 획득 코인 (GAMEOVER 표시용)
+inline long long g_RunStardust  = 0;             // 현재 런에서 획득한 별가루
 
 // 무기별 기록 [0]=RIFLE [1]=STATIC FIELD
 inline long long g_WeaponBestScore[2]  = { 0, 0 };
@@ -54,7 +55,7 @@ inline void SaveGame() {
     add("autoskill=%lld\n", g_AutoSkill ? 1 : 0);
     add("strongmenudim=%lld\n", g_StrongMenuDim ? 1 : 0);
     add("backdropblur=%lld\n", g_BackdropBlurEnabled ? 1 : 0);
-    add("backdropblurpct=%lld\n", g_BackdropBlurStrength);
+    add("debugmode=%lld\n",    g_DebugMode ? 1 : 0);
     add("shaderfx=%lld\n",  g_ShaderFx  ? 1 : 0);
     add("mobstyle=%lld\n",  (int)g_MobVisualStyle);
     add("vfxdens=%lld\n",   (int)g_VfxDensity);
@@ -151,19 +152,14 @@ inline void LoadGame() {
         if      (!std::strcmp(key, "lang"))        { int l = (int)val; if (l >= 0 && l < LANG_COUNT) g_Language = (Language)l; }
         else if (!std::strcmp(key, "fps"))         g_FpsCap            = (int)val;
         else if (!std::strcmp(key, "crosshair"))   g_ShowCrosshair     = (val != 0);
-        else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = false;
+        else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = true;
         else if (!std::strcmp(key, "combo"))       g_ShowCombo         = (val != 0);
         else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
         else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);
         else if (!std::strcmp(key, "autoskill"))   g_AutoSkill         = (val != 0);
         else if (!std::strcmp(key, "strongmenudim")) g_StrongMenuDim    = (val != 0);
         else if (!std::strcmp(key, "backdropblur")) g_BackdropBlurEnabled = (val != 0);
-        else if (!std::strcmp(key, "backdropblurpct")) {
-            int v = (int)val;
-            if (v < 10) v = 10;
-            if (v > 60) v = 60;
-            g_BackdropBlurStrength = v;
-        }
+        else if (!std::strcmp(key, "debugmode"))    g_DebugMode = (val != 0);
         else if (!std::strcmp(key, "shaderfx"))    g_ShaderFx          = (val != 0);
         else if (!std::strcmp(key, "mobstyle"))   { int v = (int)val; if (v >= 0 && v <= 1) g_MobVisualStyle = (MobVisualStyle)v; }
         else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 1) g_VfxDensity = (VfxDensity)v; }
@@ -246,6 +242,7 @@ inline bool RecordRunResult(int difficultyIdx, long long score, long long kills,
     long long earned = (long long)((score / 1000 + kills / 2) * diffMul);
     g_Coins += earned;
     g_LastRunCoins = earned;
+    g_RunStardust += earned;
     SaveGame();
     return isRecord;
 }

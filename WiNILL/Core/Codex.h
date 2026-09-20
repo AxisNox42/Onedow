@@ -16,19 +16,29 @@ inline bool CodexFullReveal() {
     return g_CreativeMode || g_DevUnlocked;
 }
 
-extern wchar_t g_CodexSearch[32];
+extern wchar_t g_CodexSearch[64];
 extern int     g_CodexSearchLen;
+inline bool    g_CodexSearchInputEnabled = false;
 
 inline void CodexSearchClear() { g_CodexSearch[0] = 0; g_CodexSearchLen = 0; }
 
 inline bool CodexMatch(const wchar_t* name) {
     if (g_CodexSearchLen == 0) return true;
+    if (!name || !name[0]) return false;
     std::wstring a(name), b(g_CodexSearch);
     auto lc = [](std::wstring s) {
         for (auto& c : s) if (c < 128) c = (wchar_t)towlower(c);
         return s;
     };
     return lc(a).find(lc(b)) != std::wstring::npos;
+}
+
+inline bool CodexMatchAny(const wchar_t* const* names, int count) {
+    if (g_CodexSearchLen == 0) return true;
+    if (!names || count <= 0) return false;
+    for (int i = 0; i < count; ++i)
+        if (CodexMatch(names[i])) return true;
+    return false;
 }
 
 // ── 증강 발견 (ALL_AUGS 인덱스 기준) ──
@@ -79,10 +89,10 @@ inline bool CodexMobSeen(int id) {
 struct MobInfo { const wchar_t* name[3]; const wchar_t* desc[3]; };
 inline const MobInfo MOB_INFO[CM_COUNT] = {
     /* NORMAL */ {
-        { L"프로세스", L"Process", L"プロセス" },
-        { L"플레이어를 향해 곧장 돌진하는 기본 프로세스",
-          L"Basic process that charges straight at you",
-          L"プレイヤーへ直進する基本プロセス" } },
+        { L"침입체", L"Intruder", L"侵入体" },
+        { L"플레이어를 향해 곧장 돌진하는 기본 침입체",
+          L"Basic intruder that charges straight at you",
+          L"プレイヤーへ直進する基本侵入体" } },
     /* SPLITTER */ {
         { L"웜", L"Worm", L"ワーム" },
         { L"자가복제 — 처치 시 작은 둘로 쪼개짐 (2세대까지)",
@@ -104,7 +114,7 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
           L"Zig-zags side to side while closing in",
           L"左右に蛇行しながら接近" } },
     /* BRUTE */ {
-        { L"커널 프로세스", L"Kernel", L"カーネル" },
+        { L"거대 침입체", L"Titan", L"タイタン" },
         { L"크고 느리지만 체력이 매우 높음 (보상 큼)",
           L"Big and slow but very high HP (big reward)",
           L"大きく遅いが体力が非常に高い" } },
@@ -115,9 +125,9 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
           L"周囲を回り徐々に接近する" } },
     /* SPAWNER */ {
         { L"봇넷", L"Botnet", L"ボットネット" },
-        { L"느리지만 작은 프로세스를 계속 소환",
-          L"Slow, but keeps spawning DDoS swarm shards",
-          L"低速だが小プロセスを召喚し続ける" } },
+        { L"느리지만 작은 파편을 계속 소환",
+          L"Slow, but keeps spawning DDoS star shards",
+          L"低速だが小さな星片を召喚し続ける" } },
     /* SHIELDED */ {
         { L"방화벽", L"Firewall", L"ファイアウォール" },
         { L"방패 ON 동안 피해 대폭 감소, 주기적으로 OFF (광역엔 무력)",
@@ -145,9 +155,9 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
           L"撃破時にその場へ一時的な減速領域を残す" } },
     /* REGERROR */ {
         { L"레지스트리 에러", L"Registry Error", L"レジストリエラー" },
-        { L"가짜창 내부의 적을 강화(이속·공격·체력↑)하는 X형 노드",
-          L"X-node that buffs enemies inside its window (speed/atk/HP)",
-          L"窓内の敵を強化するX字ノード" } },
+        { L"별자리 영역의 적을 강화(이속·공격·체력↑)하는 X형 노드",
+          L"X-node that buffs enemies inside its constellation field (speed/atk/HP)",
+          L"星座領域の敵を強化するX字ノード" } },
     /* GRAVIS */ {
         { L"그라비스", L"Gravis", L"グラビス" },
         { L"중력장으로 플레이어와 탄환의 궤도를 끌어당기는 3티어 정예 천체",
@@ -155,15 +165,15 @@ inline const MobInfo MOB_INFO[CM_COUNT] = {
           L"重力場でプレイヤーと弾道を曲げるTier-3精鋭天体" } },
     /* QUASAR */ {
         { L"퀘이사", L"Quasar", L"クエーサー" },
-        { L"장거리 조준선을 교차시켜 전장을 통제하는 희귀 프로세스",
-          L"Rare long-range process that controls the arena with crossing aim lanes",
-          L"交差する照準レーンで戦場を制御する希少プロセス" } },
+        { L"장거리 조준선을 교차시켜 전장을 통제하는 희귀 천체",
+          L"Rare long-range astral entity that controls the arena with crossing aim lanes",
+          L"交差する照準レーンで戦場を制御する希少天体" } },
 };
 
-inline const wchar_t* MobName(int id) {
-    int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
-    // Canonical active-roster names from Astral Enemy Blueprints v6.
-    static const wchar_t* activeNames[6][3] = {
+inline const wchar_t* const* MobLocalizedNames(int id) {
+    // Keep the canonical active-roster aliases together so search can find
+    // the same signal from any supported display language.
+    static const wchar_t* const activeNames[6][3] = {
         { L"\uB85C\uD130",     L"ROTOR",   L"\u30ED\u30FC\u30BF\u30FC" },
         { L"\uC81C\uB124\uC2DC\uC2A4", L"GENESIS", L"\u30B8\u30A7\u30CD\u30B7\u30B9" },
         { L"\uC2A4\uCF54\uD504",   L"SCOPE",   L"\u30B9\u30B3\u30FC\u30D7" },
@@ -171,15 +181,21 @@ inline const wchar_t* MobName(int id) {
         { L"\uADF8\uB77C\uBE44\uC2A4",  L"GRAVIS",  L"\u30B0\u30E9\u30F4\u30A3\u30B9" },
         { L"\uD018\uC774\uC0AC", L"QUASAR", L"\u30AF\u30A8\u30FC\u30B5\u30FC" },
     };
+    if (id < 0 || id >= CM_COUNT) return nullptr;
     switch (id) {
-    case CM_NORMAL:  return activeNames[0][li];
-    case CM_SPAWNER: return activeNames[1][li];
-    case CM_RANGED:  return activeNames[2][li];
-    case CM_DDOS:    return activeNames[3][li];
-    case CM_GRAVIS:  return activeNames[4][li];
-    case CM_QUASAR:  return activeNames[5][li];
-    default:         return MOB_INFO[id].name[li];
+    case CM_NORMAL:  return activeNames[0];
+    case CM_SPAWNER: return activeNames[1];
+    case CM_RANGED:  return activeNames[2];
+    case CM_DDOS:    return activeNames[3];
+    case CM_GRAVIS:  return activeNames[4];
+    case CM_QUASAR:  return activeNames[5];
+    default:         return MOB_INFO[id].name;
     }
+}
+inline const wchar_t* MobName(int id) {
+    int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
+    const wchar_t* const* names = MobLocalizedNames(id);
+    return names ? names[li] : L"???";
 }
 inline const wchar_t* MobDesc(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
@@ -241,6 +257,15 @@ inline int BossCodexPick(int idx) {
 }
 inline const wchar_t* BossCodexName(int idx) {
     return BossDir::DisplayName(BossCodexPick(idx));
+}
+inline const wchar_t* const* BossCodexLocalizedNames(int idx) {
+    static const wchar_t* const names[BOSS_CODEX_COUNT][3] = {
+        { L"VOLLEY",    L"VOLLEY",    L"\u30DC\u30EC\u30FC" },
+        { L"TESSERACT", L"TESSERACT", L"\u30C6\u30C3\u30BB\u30E9\u30AF\u30C8" },
+        { L"FORK",      L"FORK",      L"\u30D5\u30A9\u30FC\u30AF" },
+    };
+    if (idx < 0 || idx >= BOSS_CODEX_COUNT) return nullptr;
+    return names[idx];
 }
 inline const wchar_t* BossCodexDesc(int idx) {
     return BossDir::Tagline(BossCodexPick(idx));

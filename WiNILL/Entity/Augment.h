@@ -50,7 +50,7 @@ enum class AugType {
     CB_BLOODLORD,     // 흡혈탄 + 흡혈마
     CB_PIERCE_TWIN,   // 더블 + 관통
     CB_STORMCALLER,   // 탄환세례 + 드론
-    // ── 프로세스류(잡몹) 전용 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
+    // ── 로터류(잡몹) 전용 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
     D_MOB_PACK,    // 군집 스폰 (한 번에 여러 마리)
     D_MOB_ELITE,   // 엘리트 변종 출현 확률 ↑
     D_MOB_FRENZY,  // 특수 잡몹(돌진/회피/거대) 출현 확률 ↑
@@ -70,13 +70,13 @@ enum class AugType {
     CB_TURRET,           // 대포 + 드론 II → 포탑 배치 (드론 공전 대체)
     // ── 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
     D_SCHEDULER,         // 스케쥴러 강화 — 특수 잡몹 HP +10% (처치 XP +3)
-    D_TROJAN_BOOST,      // 트로이목마 강화 — [트로이목마 침투 보유] 점멸 쿨다운 단축
+    D_TROJAN_BOOST,      // 퇴역 — 트로이목마 계열 강화
     D_CRASHER_BOOST,     // 크래셔 강화 — 돌진 중 받는 피해 -10%
     // ── 적 출현 디버프 (확장 — 신규 적) ──
     D_BADSECTOR,         // 배드 섹터 출현 (죽으면 감속 구역)
     D_REGERROR,          // 레지스트리 에러 출현 (강화 오라 노드)
     // ── 확장 (끝에 추가 — 세이브 인덱스 보존) ──
-    D_DDOS,              // 디도스 침투
+    D_DDOS,              // 적 무리 증가
     D_WEAVER_BOOST,      // 위버 강화
     D_BRUTE_BOOST,       // 브루트 강화
     LIFESTEAL_2,         // 흡혈탄 II (에픽 티어)
@@ -169,9 +169,9 @@ static const AugDef ALL_AUGS[] = {
       L"이동 +5%" },
     { AugType::VISION_UP,     AugRarity::COMMON,    AugUnique::NONE, "VISION+70",
       { L"시야 증가", L"Vision Up", L"視界アップ" },
-      { L"시야(창 크기) +70  /  최대 5중첩 (+350)",
-        L"View (window) +70  /  max 5 stacks (+350)",
-        L"視界(ウィンドウ) +70  /  最大5重 (+350)" },
+      { L"시야(필드 크기) +70  /  최대 5중첩 (+350)",
+        L"View (field) +70  /  max 5 stacks (+350)",
+        L"視界(フィールド) +70  /  最大5重 (+350)" },
       L"시야 +70  /  최대 5중첩" },
     { AugType::REGEN_UP,      AugRarity::COMMON,    AugUnique::NONE, "REGEN",
       { L"체력 재생", L"Regeneration", L"体力リジェネ" },
@@ -359,7 +359,7 @@ static const AugDef ALL_AUGS[] = {
       { L"해킹: 원거리", L"Hack: Ranged", L"ハック: 遠距離" },
       { L"원거리 몹 처치 시 20% 확률로 유도탄 5발  (적에게만 피해)",
         L"On ranged-mob kill, 20% chance: 5 homing shots  (enemy-only dmg)",
-        L"遠距離敵 撃破時20%で誘導弾5発  (敵のみ)" },
+        L"遠距離敵撃破時20%で誘導弾5発  (敵のみ)" },
       L"원거리 처치 20%  /  유도탄 ×5" },
     { AugType::PROB_CHAIN,    AugRarity::EPIC,      AugUnique::NONE, "PROBCHAIN",
       { L"확률적 연쇄 작용", L"Chance Ricochet", L"確率的連鎖" },
@@ -451,25 +451,25 @@ static const AugDef ALL_AUGS[] = {
       { L"원거리 몹 증원", L"Ranged Reinforce", L"遠距離増援" },
       { L"원거리 몹 최대 수 +1 · 스폰 0.5초 빨라짐 · 원거리 처치 EXP +12",
         L"Ranged max +1 · spawn 0.5s faster · ranged-kill EXP +12",
-        L"遠距離敵 最大+1・スポーン0.5秒短縮・遠距離撃破EXP +12" },
+        L"遠距離敵の最大数+1・出現0.5秒短縮・撃破EXP +12" },
       L"원거리몹 최대 +1  /  EXP +12" },
     { AugType::D_RMOB_HP,     AugRarity::DEBUFF,    AugUnique::NONE, "D_RMOBPOW",
       { L"원거리 몹 강화", L"Ranged Empower", L"遠距離強化" },
       { L"원거리 몹 체력·공격력 +20% · 원거리 처치 EXP +6",
         L"Ranged HP·ATK +20% · ranged-kill EXP +6",
-        L"遠距離敵 体力・攻撃+20%・遠距離撃破EXP +6" },
+        L"遠距離敵の体力・攻撃+20%・撃破EXP +6" },
       L"원거리몹 HP·ATK +20%  /  EXP +6" },
     { AugType::D_RMOB_DELAY,  AugRarity::DEBUFF,    AugUnique::NONE, "D_RMOBDELAY",
       { L"원거리 몹 가속", L"Ranged Haste", L"遠距離加速" },
       { L"원거리 몹 이동 속도 +20% · 원거리 처치 EXP +5",
-        L"Ranged move +20% · ranged-kill EXP +5",
-        L"遠距離敵 移動+20%・遠距離撃破EXP +5" },
+        L"Ranged move speed +20% · ranged-kill EXP +5",
+        L"遠距離敵の移動+20%・撃破EXP +5" },
       L"원거리몹 이동 +20%  /  EXP +5" },
     { AugType::D_MOB_SPAWN,   AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBSPAWN",
-      { L"잡몹 폭주", L"Mob Surge", L"雑魚暴走" },
-      { L"잡몹 생성 빈도 증가 · 동시 한도 +200 · 처치 EXP +1",
-        L"Mobs spawn 16% more often · cap +12 · kill EXP +1",
-        L"雑魚の出現頻度増加・同時上限+200・撃破EXP +1" },
+      { L"로터 폭주", L"Rotor Surge", L"ローター暴走" },
+      { L"로터 생성 빈도 증가 · 동시 한도 +12 · 처치 EXP +1",
+        L"Rotor spawn frequency increased · cap +12 · kill EXP +1",
+        L"ローター出現頻度増加・同時上限+12・撃破EXP +1" },
       L"생성 빈도 ↑  /  EXP +1" },
     { AugType::D_APPROACH,    AugRarity::DEBUFF,    AugUnique::NONE, "D_APPROACH",
       { L"다가오는 죽음", L"Approaching Death", L"Approaching Death" },
@@ -478,11 +478,11 @@ static const AugDef ALL_AUGS[] = {
         L"Invincible red orb chases you - EXP +0.5/s - max 3" },
       L"무적 오브 추적  /  EXP +0.5/s" },
     { AugType::D_MOB_SPEED,   AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBSPD",
-      { L"잡몹 가속", L"Mob Haste", L"雑魚加速" },
-      { L"잡몹 이동 속도 +10% · 초당 EXP +0.5",
-        L"Mob move speed +10% · EXP +0.5/s",
-        L"雑魚の移動+10%・毎秒EXP +0.5" },
-      L"잡몹 이동 +10%  /  EXP +0.5/s" },
+      { L"로터 가속", L"Rotor Haste", L"ローター加速" },
+      { L"로터 이동 속도 +10% · 초당 EXP +0.5",
+        L"Rotor move speed +10% · EXP +0.5/s",
+        L"ローター移動速度+10%・毎秒EXP +0.5" },
+      L"로터 이동 +10%  /  EXP +0.5/s" },
     { AugType::D_GLASS_HEART, AugRarity::DEBUFF,    AugUnique::NONE, "D_GLASS",
       { L"유리 심장", L"Glass Heart", L"Glass Heart" },
       { L"최대 체력 -20% - 전체 EXP +3%", L"Max HP -20% - all EXP +3%", L"Max HP -20% - all EXP +3%" },
@@ -516,43 +516,45 @@ static const AugDef ALL_AUGS[] = {
         L"自爆兵の移動+30%・自爆兵撃破EXP +3" },
       L"자폭병 이동 +30%  /  EXP +3" },
     { AugType::D_MOB_HP,      AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBHP",
-      { L"프로세스 체력 강화", L"Tough Mobs", L"Tough Mobs" },
-      { L"프로세스 체력 +30% - 프로세스 처치 EXP +2", L"Mob HP +30% - process kill EXP +2", L"Mob HP +30% - process kill EXP +2" },
-      L"잡몹 HP +30%  /  EXP +2" },
+      { L"로터 체력 강화", L"Rotor HP Up", L"ローター体力強化" },
+      { L"로터 체력 +30% · 로터 처치 EXP +2",
+        L"Rotor HP +30% · Rotor kill EXP +2",
+        L"ローター体力+30%・ローター撃破EXP +2" },
+      L"로터 HP +30%  /  EXP +2" },
     { AugType::D_SLOW_MOVE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_SLOWMV",
       { L"무거운 다리", L"Heavy Legs", L"Heavy Legs" },
       { L"플레이어 이동 속도 -5% - 전체 EXP +3%", L"Player move speed -5% - all EXP +3%", L"Player move speed -5% - all EXP +3%" },
       L"이동 -5%  /  전체EXP +3%" },
     { AugType::D_SPLITTER,    AugRarity::DEBUFF,    AugUnique::NONE, "D_SPLITTER",
-      { L"웜 침투", L"Worm Infection", L"ワーム侵入" },
-      { L"일부 프로세스가 웜으로 변이 (처치 시 작은 2마리로 자가복제, 2세대까지) · 처치 EXP +2",
-        L"Some processes mutate into worms (self-replicate into 2 on death) · kill EXP +2",
-        L"一部プロセスがワームに変異 (撃破で2体に自己複製)・撃破EXP +2" },
-      L"웜 침투  /  EXP +2" },
+      { L"퇴역: 웜 변이", L"RETIRED: WORM MUTATION", L"退役: ワーム変異" },
+      { L"현재 선택 풀에서 제외된 변이 계열 증강",
+        L"Retired mutation augment; excluded from the current pick pool",
+        L"現在の選択プールから除外された変異系強化" },
+      L"퇴역 카드" },
     { AugType::D_BLINKER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_BLINKER",
-      { L"트로이목마 침투", L"Trojan Infection", L"トロイ侵入" },
-      { L"일부 프로세스가 트로이목마로 변이 (잔상 경고 후 순간이동) · 처치 EXP +3",
-        L"Some processes become trojans (teleport toward you after a telegraph) · kill EXP +3",
-        L"一部プロセスがトロイに変異 (残像予告後に瞬間移動)・撃破EXP +3" },
-      L"트로이 침투  /  EXP +3" },
+      { L"퇴역: 트로이 변이", L"RETIRED: TROJAN MUTATION", L"退役: トロイ変異" },
+      { L"현재 선택 풀에서 제외된 변이 계열 증강",
+        L"Retired mutation augment; excluded from the current pick pool",
+        L"現在の選択プールから除外された変異系強化" },
+      L"퇴역 카드" },
     { AugType::D_ORBITER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_ORBITER",
-      { L"스파이웨어 침투", L"Spyware Infection", L"スパイウェア侵入" },
-      { L"일부 프로세스가 스파이웨어로 변이 (주위를 돌며 서서히 좁혀옴) · 처치 EXP +5",
-        L"Some processes become spyware (circle you, spiraling inward) · kill EXP +5",
-        L"一部プロセスがスパイウェアに (周囲を回り接近)・撃破EXP +5" },
-      L"스파이웨어 침투  /  EXP +5" },
+      { L"퇴역: 공전체 변이", L"RETIRED: ORBITER MUTATION", L"退役: オービター変異" },
+      { L"현재 선택 풀에서 제외된 변이 계열 증강",
+        L"Retired mutation augment; excluded from the current pick pool",
+        L"現在の選択プールから除外された変異系強化" },
+      L"퇴역 카드" },
     { AugType::D_SPAWNER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_SPAWNER",
-      { L"봇넷 침투", L"Botnet Infection", L"ボットネット侵入" },
-      { L"일부 프로세스가 봇넷으로 변이 (느리지만 작은 프로세스를 계속 소환) · 처치 EXP +7",
-        L"Some processes become botnets (slow, keep spawning small ones) · kill EXP +7",
-        L"一部プロセスがボットネットに (小プロセスを召喚)・撃破EXP +7" },
-      L"봇넷 침투  /  EXP +7" },
+      { L"퇴역: 봇넷 변이", L"RETIRED: BOTNET MUTATION", L"退役: ボットネット変異" },
+      { L"현재 선택 풀에서 제외된 변이 계열 증강",
+        L"Retired mutation augment; excluded from the current pick pool",
+        L"現在の選択プールから除外された変異系強化" },
+      L"퇴역 카드" },
     { AugType::D_SHIELDED,    AugRarity::DEBUFF,    AugUnique::NONE, "D_SHIELDED",
-      { L"방화벽 침투", L"Firewall Infection", L"ファイアウォール侵入" },
-      { L"일부 프로세스가 방화벽으로 변이 (방패 ON 동안 피해 대폭 감소, 주기적 OFF) · 처치 EXP +5",
-        L"Some processes become firewalls (huge dmg cut while shielded, cycles off) · kill EXP +5",
-        L"一部プロセスがファイアウォールに (盾ON中は被害激減)・撃破EXP +5" },
-      L"방화벽 침투  /  EXP +5" },
+      { L"퇴역: 보호막 변이", L"RETIRED: SHIELDED MUTATION", L"退役: シールド変異" },
+      { L"현재 선택 풀에서 제외된 변이 계열 증강",
+        L"Retired mutation augment; excluded from the current pick pool",
+        L"現在の選択プールから除外された変異系強化" },
+      L"퇴역 카드" },
     { AugType::D_BLEED,       AugRarity::DEBUFF,    AugUnique::NONE, "D_BLEED",
       { L"출혈", L"Bleed", L"Bleed" },
       { L"체력 회복 -1.0/s - 회복이 0이면 등장하지 않음 - 전체 EXP +12%",
@@ -563,13 +565,13 @@ static const AugDef ALL_AUGS[] = {
       { L"약화", L"Weaken", L"弱体化" },
       { L"공격력 -12% · 전체 EXP +10%", L"Attack -12% · all EXP +10%", L"攻撃力 -12%・全EXP +10%" },
       L"ATK -12%  /  전체EXP +10%" },
-    // ── 프로세스류(잡몹) 전용 디버프 (확장, 중첩 가능) ──
+    // ── 로터류(잡몹) 전용 디버프 (확장, 중첩 가능) ──
     { AugType::D_MOB_PACK,    AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBPACK",
       { L"병렬 처리", L"Parallel Spawn", L"並列処理" },
-      { L"잡몹이 나올 때마다 한꺼번에 3마리씩 등장 (개체 수 ↑) · 처치 EXP +6",
-        L"Each spawn brings 1 extra mob · kill EXP +6",
-        L"出現の度に3体まとめて出る (敵増加)・撃破EXP +6" },
-      L"동시 ×3  /  EXP +6" },
+      { L"로터가 나올 때마다 추가 개체 1마리 등장 · 처치 EXP +6",
+        L"Each Rotor spawn brings 1 extra unit · kill EXP +6",
+        L"ローター出現時に追加1体・撃破EXP +6" },
+      L"동시 +1  /  EXP +6" },
     { AugType::D_MOB_ELITE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBELITE",
       { L"권한 상승", L"Privilege Escalation", L"権限昇格" },
       { L"엘리트 변종(신속/강인/폭발) 출현 확률 대폭 ↑ · 처치 EXP +3",
@@ -586,9 +588,9 @@ static const AugDef ALL_AUGS[] = {
     // ── 특수 ───────────────────────────────────────────
     { AugType::S_CHAOS,       AugRarity::SPECIAL,   AugUnique::NONE, "CHAOS",
       { L"대혼란", L"Chaos", L"大混乱" },
-      { L"보유 증강을 모두 잊고 같은 개수만큼 랜덤 재배분  (약 60% 버프 / 40% 디버프)",
-        L"Forget all augments, redistribute the same count randomly  (~60% buff / 40% debuff)",
-        L"所持強化を全て忘れ、同数をランダム再配分  (約60%バフ / 40%デバフ)" },
+      { L"보유 증강을 모두 잊고 같은 개수만큼 무작위 재배열  (약 60% 버프 / 40% 디버프)",
+        L"Forget all augments and randomly recompose the same count  (~60% buffs / 40% debuffs)",
+        L"所持強化を全て忘れ、同数をランダムに再構成  (約60%バフ / 40%デバフ)" },
       L"—  (전체 재배분)" },
     { AugType::S_PANDORA,     AugRarity::SPECIAL,   AugUnique::NONE, "PANDORA",
       { L"판도라의 상자", L"Pandora's Box", L"パンドラの箱" },
@@ -693,14 +695,14 @@ static const AugDef ALL_AUGS[] = {
       { L"스케쥴러 강화", L"Scheduler Boost", L"スケジューラ強化" },
       { L"특수 잡몹 유형 체력 +10%  (처치 경험치 +2)",
         L"Special mob types +10% HP  (kill XP +2)",
-        L"特殊雑魚タイプ 体力+10%  (撃破経験値+2)" },
+        L"特殊敵 体力+10%  (撃破経験値+2)" },
       L"특수몹 HP +10%  /  EXP +2" },
     { AugType::D_TROJAN_BOOST, AugRarity::DEBUFF,  AugUnique::NONE, "D_TROJANB",
-      { L"트로이목마 강화", L"Trojan Boost", L"Trojan Boost" },
-      { L"선행: 트로이목마 침투 - 점멸 쿨다운 감소 - 트로이목마 처치 EXP +2",
-        L"Req: Trojan Infection - shorter blink cooldown - Trojan kill EXP +2",
-        L"Req: Trojan Infection - shorter blink cooldown - Trojan kill EXP +2" },
-      L"트로이 쿨 단축  /  EXP +2" },
+      { L"퇴역: 트로이 강화", L"RETIRED: TROJAN BOOST", L"退役: トロイ強化" },
+      { L"현재 선택 풀에서 제외된 변이 계열 증강",
+        L"Retired mutation augment; excluded from the current pick pool",
+        L"現在の選択プールから除外された変異系強化" },
+      L"퇴역 카드" },
     { AugType::D_CRASHER_BOOST, AugRarity::DEBUFF, AugUnique::NONE, "D_CRASHB",
       { L"크래셔 강화", L"Crasher Boost", L"クラッシャー強化" },
       { L"크래셔가 돌진하는 동안 받는 피해 -10%  (처치 경험치 +4)",
@@ -720,11 +722,11 @@ static const AugDef ALL_AUGS[] = {
         L"レジストリエラー出現 — 周囲の敵を強化するノード  (撃破経験値+10)" },
       L"레지에러 출현  /  EXP +10" },
     { AugType::D_DDOS,        AugRarity::DEBUFF,   AugUnique::NONE, "D_DDOS",
-      { L"디도스 침투", L"DDoS Infection", L"DDoS侵入" },
-      { L"디도스 프로세스 창(1→3 swarm) 등장  (처치 경험치 +4)",
-        L"DDoS window swarms appear (1→3)  (kill XP +4)",
-        L"DDoS窓スウォーム出現  (撃破経験値+4)" },
-      L"DDoS 창 스웜  /  EXP +4" },
+      { L"적 무리 증가", L"Enemy Swarm", L"敵群増加" },
+      { L"약한 적 무리(1→3)가 등장  (처치 경험치 +4)",
+        L"Weak enemy swarms appear (1→3)  (kill XP +4)",
+        L"弱い敵群(1→3)が出現  (撃破経験値+4)" },
+      L"적 무리  /  EXP +4" },
     { AugType::D_WEAVER_BOOST, AugRarity::DEBUFF,  AugUnique::NONE, "D_WEAVERB",
       { L"위버 강화", L"Weaver Boost", L"ウィーバー強化" },
       { L"회피체 지그재그·속도 +15%  (처치 경험치 +3)",
@@ -741,7 +743,7 @@ static const AugDef ALL_AUGS[] = {
       { L"흡혈탄 II", L"Lifesteal II", L"吸血弾 II" },
       { L"흡혈 한도 0.24→0.36 · 10킬마다 HP +1  (요구: 흡혈탄)",
         L"Lifesteal cap 0.24→0.36 · +1 HP per 10 kills  (req: Lifesteal)",
-        L"吸血上限0.24→0.36 · 10キル毎HP+1  (要:吸血弾)" },
+        L"吸収上限0.24→0.36 · 10キル毎HP+1  (要:吸収弾)" },
       L"흡혈 상한 0.24→0.36" },
     { AugType::CHAIN_2,       AugRarity::LEGENDARY, AugUnique::NONE, "CHAIN2",
       { L"연쇄 작용 II", L"Chain Reaction II", L"連鎖反応 II" },
@@ -878,11 +880,11 @@ static const AugDef ALL_AUGS[] = {
         L"[大砲] 爆発25%→35% · 範囲80→110  (要:HE弾)" },
       L"폭발 25%→35%  /  반경 +30" },
     { AugType::D_SPLITTER_BOOST, AugRarity::DEBUFF, AugUnique::NONE, "D_SPLTB",
-      { L"스플리터 강화", L"Splitter Boost", L"スプリッター強化" },
-      { L"웜 분열 3세대까지 · 분열된 개체마다 처치 보상 별도  (요구: 웜 침투)",
-        L"Worms split to 3rd gen · each offspring grants its own kill reward  (req: Worm)",
-        L"ワーム3世代まで · 分裂体ごとに撃破報酬  (要:ワーム侵入)" },
-      L"웜 3세대  /  개별 EXP" },
+      { L"퇴역: 웜 분열", L"RETIRED: WORM SPLIT", L"退役: ワーム分裂" },
+      { L"현재 선택 풀에서 제외된 변이 계열 증강",
+        L"Retired mutation augment; excluded from the current pick pool",
+        L"現在の選択プールから除外された変異系強化" },
+      L"퇴역 카드" },
 };
 
 static constexpr int AUG_TOTAL = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
@@ -942,7 +944,6 @@ inline bool AugRemoved(AugType t) {
     case AugType::BROKEN_SIGHT:
     case AugType::PURGE_NOVA:
     case AugType::GUN_RUNNER:
-    case AugType::D_MOB_PACK:
     case AugType::D_DRUNK:
     case AugType::SOUL_HARVEST:
     case AugType::CB_EXECUTIONER:    // 치명+광전 스탯 합 — 재료만으로 충분
@@ -959,11 +960,12 @@ inline bool AugRemoved(AugType t) {
     case AugType::POPUP_ALLY:
     case AugType::GLUE_SYNC:
     // Constellation roster 이외 적 전용 디버프·증강 제거
-    // (활성 roster: Process/NORMAL · Adware/RangedMob · DDoS · Botnet/SPAWNER)
+    // (활성 roster: Rotor, RangedMob/SCOPE, DDoS/SWARM, and global hazards)
+    // 로터의 체력·이동속도·물량 강화는 현재 선택 풀에서 활성화한다.
     case AugType::D_SPLITTER:       // Worm → SPLITTER 퇴역
     case AugType::D_BLINKER:        // Trojan → BLINKER 퇴역
     case AugType::D_ORBITER:        // Spyware → ORBITER 퇴역
-    case AugType::D_SPAWNER:        // 봇넷 침투 증강 제거
+    case AugType::D_SPAWNER:        // 봇넷 변이 증강 제거
     case AugType::D_SHIELDED:       // Firewall → SHIELDED 퇴역
     case AugType::D_BADSECTOR:      // Bad Sector 퇴역
     case AugType::D_REGERROR:       // Registry Error 퇴역
@@ -972,7 +974,6 @@ inline bool AugRemoved(AugType t) {
     case AugType::D_CRASHER_BOOST:  // Crasher(CHARGER) 퇴역
     case AugType::D_WEAVER_BOOST:   // WEAVER 퇴역
     case AugType::D_BRUTE_BOOST:    // BRUTE(Kernel) 퇴역
-    case AugType::D_MOB_FRENZY:     // CHARGER/WEAVER/BRUTE 대상, 모두 퇴역
     case AugType::D_BOMBER_BLAST:   // Bomber/Ransomware 퇴역
     case AugType::D_BOMBER_BUFF:
     case AugType::D_BOMBER_SPEED:

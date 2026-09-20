@@ -2,6 +2,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <vector>
+#include <deque>
 #include <cstring>
 #include "MonsterManager.h"
 #include "Bullet.h"
@@ -20,10 +21,16 @@ enum class GameState {
     RUN_SHOP            // 런 골드 상점 (증강 구매)
 };
 
+struct AugmentRewardEntry {
+    bool needsDebuff = false;
+    bool allowDebuff = false;
+};
+
 class GameManager {
 public:
     GameState currentState = GameState::MAIN_MENU;
     GameState lastState    = GameState::MAIN_MENU;
+    GameState pauseResumeState = GameState::RUNNING;
 
     float     playerHP   = 100.0f;
     float     maxHP      = 100.0f;   // mirrors PlayerStats::maxHP for HUD
@@ -32,7 +39,10 @@ public:
 
     long long xp           = 0;        // 현재 레벨 안에서 누적된 EXP
     int       playerLevel  = 1;        // 레벨 (시작 1)
-    int       augChoices[3] = {0,0,0}; // indices into ALL_AUGS for current pick
+    int       augChoices[3] = {-1,-1,-1}; // indices into ALL_AUGS for current pick
+    int       augChoiceCount = 0;
+    int       augmentSelectionSerial = 0;
+    bool      augmentKeyboardFocus = false;
     int       conversionAug = -1;      // 변환 4번째 카드 (-1=없음)
     int       hoveredCard  = -1;       // AUG/DEBUFF_SELECT 호버 인덱스 (-1=none, 3=변환 카드)
     int       pendingAugIdx = -1;      // AUG_REPLACE: 장착 대기 중인 신규 증강
@@ -40,6 +50,10 @@ public:
     int       replaceChoiceCount = 0;
     bool      replaceFromShop = false; // 상점 구매 경로에서 진입
     int       replaceShopSlot = -1;
+    std::deque<AugmentRewardEntry> augmentRewardQueue;
+    bool      augmentRewardActive = false;
+    bool      augmentRewardInternalDebuff = false;
+    bool      augmentRewardInDebuff = false;
     bool      takenOnce[AUG_TOTAL] = {}; // EPIC/LEGENDARY 한 번만
 
     bool augReady      = false; // 레벨업 후 SPACE 대기 중
@@ -62,12 +76,15 @@ public:
     // 디버프 카드 3장 픽 (DEBUFF 등급만)
     void PickDebuffChoices();
     // n장만 픽 (RANDOM_AUG·PANDORA·CHAOS용)
-    void PickRandomAugIndices(int* outArr, int n,
+    int  PickRandomAugIndices(int* outArr, int n,
                               bool sizeTaken = false, bool distTaken = false,
                               bool allowUnique = true, bool allowSpecial = false,
                               bool allowDebuff = false);
     // 디버프만 n개 픽 (PANDORA / CHAOS 의 디버프 슬롯용)
-    void PickRandomDebuffIndices(int* outArr, int n);
+    int  PickRandomDebuffIndices(int* outArr, int n);
+    void QueueAugmentReward(bool needsDebuff, bool allowDebuff = false);
+    bool ActivateNextAugmentReward();
+    void ClearAugmentRewardQueue();
     // 런 상점 — 버프만, 가격은 RunShopPriceFor 로 채움
     void PickRunShopStock(int* outIdx, int* outPrice, int n,
                           bool sizeTaken, bool distTaken);

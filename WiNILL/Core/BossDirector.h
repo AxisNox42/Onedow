@@ -3,10 +3,10 @@
 #include "Settings.h"
 
 // Active boss picks:
-//   2  = VOLLEY.sys
-//   8  = FORK.worm
-//   10 = TESS.glitch
-//   20 = ETHER_SWORD_MASTER.sys
+//   2  = VOLLEY
+//   8  = FORK
+//   10 = TESSERACT
+//   20 = ETHER SWORD
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -91,11 +91,11 @@ inline int GetActNumber() {
 
 inline const wchar_t* DisplayName(int pick) {
     switch (pick) {
-    case 8:  return L"FORK.worm";
-    case 10: return L"TESS.glitch";
-    case 20: return L"ETHER_SWORD_MASTER.sys";
+    case 8:  return L"FORK";
+    case 10: return L"TESSERACT";
+    case 20: return L"ETHER SWORD";
     case 2:
-    default: return L"VOLLEY.sys";
+    default: return L"VOLLEY";
     }
 }
 
@@ -122,15 +122,15 @@ inline glm::vec3 WarnColor(int pick) {
 inline const wchar_t* Tagline(int pick) {
     int li = LangIndex();
     if (pick == 8) {
-        if (li == 0) return L"프로세스 포크 - 연쇄 분열";
-        return L"Fork bomb - chained child processes";
+        if (li == 0) return L"별자리 포크 - 연쇄 분열";
+        return L"Constellation split - chained star fragments";
     }
     if (pick == 10) {
-        return L"Tesseract glitch - dash through collapsing geometry";
+        return L"Tesseract fracture - dash through collapsing geometry";
     }
     if (pick == 20) {
-        if (li == 0) return L"Task terminated — no survivors expected";
-        return L"Task terminated — no survivors expected";
+        if (li == 0) return L"신호 소멸 — 생존자 없음";
+        return L"Signal extinguished — no survivors expected";
     }
     if (li == 0) return L"연발 포격 - 사거리 전조 표시";
     return L"Volley fire - telegraphed danger zones";

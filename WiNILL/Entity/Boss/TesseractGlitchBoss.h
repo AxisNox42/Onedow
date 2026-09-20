@@ -14,7 +14,7 @@ extern TextRenderer g_TextS;
 
 class TesseractGlitchBoss {
 public:
-    static constexpr const wchar_t* BOSS_NAME = L"TESS.glitch";
+    static constexpr const wchar_t* BOSS_NAME = L"TESSERACT";
 
     float worldX, worldY;
     float hp, maxHp;

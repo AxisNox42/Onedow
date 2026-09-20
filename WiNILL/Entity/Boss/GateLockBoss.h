@@ -26,7 +26,7 @@ extern TextRenderer g_TextS;
 
 class GateLockBoss {
 public:
-    static constexpr const wchar_t* BOSS_NAME = L"GATE.lock";
+    static constexpr const wchar_t* BOSS_NAME = L"GATE";
 
     float worldX = 0.0f, worldY = 0.0f;
     float hp = 0.0f, maxHp = 0.0f;
@@ -216,8 +216,8 @@ public:
         return              {0.22f, 0.85f, 0.48f};
     }
     const wchar_t* stateTag() const {
-        if (phase3) return L"P3 LOCK.mode";
-        if (phase2) return L"P2 PUSH.mode";
+        if (phase3) return L"P3 LOCK";
+        if (phase2) return L"P2 PUSH";
         return              L"P1 RING.fire";
     }
 

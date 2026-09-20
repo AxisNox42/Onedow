@@ -172,7 +172,7 @@ public:
     static constexpr float CONTACT_DPS = 12.0f;
     static constexpr float ARENA_FACTOR = 0.42f;
     static constexpr float TASK_KILL_HP_FRAC = 0.01f;
-    static constexpr const wchar_t* BOSS_NAME = L"ETHER_SWORD_MASTER.sys";
+    static constexpr const wchar_t* BOSS_NAME = L"ETHER SWORD";
 
     EtherSwordBoss(int sw, int sh, float hpInit)
         : screenW(sw), screenH(sh)

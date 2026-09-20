@@ -632,23 +632,6 @@ static void DrawGenesisStationRing(float cx, float cy, float base,
                      r, g, b, alpha * (i % 3 == 0 ? 0.58f : 0.34f));
     }
 
-    // Four short reticle brackets add the reference-image instrument feel
-    // without introducing another closed polygon around the station.
-    for (int i = 0; i < 4; ++i) {
-        const float a = phase * -0.58f + 0.7853982f + (float)i * 1.5707963f;
-        const float dx = cosf(a), dy = sinf(a);
-        const float tx = -dy, ty = dx;
-        const float p = innerRadius * 0.47f;
-        const float q = innerRadius * 0.64f;
-        const float half = base * 0.035f;
-        drawLineQuad(cx + dx * p + tx * half, cy + dy * p + ty * half,
-                     cx + dx * q + tx * half, cy + dy * q + ty * half,
-                     0.80f, r, g, b, alpha * 0.48f);
-        drawLineQuad(cx + dx * p - tx * half, cy + dy * p - ty * half,
-                     cx + dx * q - tx * half, cy + dy * q - ty * half,
-                     0.80f, r, g, b, alpha * 0.48f);
-    }
-
     DrawGenesisInnerMechanism(cx, cy, base, phase, time,
                               hivePhase, openFactor, r, g, b, alpha);
 
@@ -967,9 +950,6 @@ void drawRangedMob(const RangedMob* r) {
                  burst ? 5.85f : 4.55f, 36,
                  cr, cg, cb, burst ? 0.18f : 0.42f + 0.12f * chargeT,
                  0.72f, false);
-    DrawEnemyArc(x, y, instrumentR * 1.24f, phase * 0.35f,
-                 5.8f, 40, cr, cg, cb, 0.26f, 0.65f, true);
-
     EnemyNodeAnchor nodes[4];
     for (int i = 0; i < 4; ++i) {
         const float a = phase + (float)i * 1.5707963f;

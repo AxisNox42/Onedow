@@ -8,6 +8,7 @@
 struct GLFWwindow;
 
 void EnableWindowTransparency(GLFWwindow* window);
+bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled);
 
 // transparency_debug.txt 에 로그 기록 (printf 스타일, 크로스플랫폼)
 void TransparencyLog(const char* fmt, ...);

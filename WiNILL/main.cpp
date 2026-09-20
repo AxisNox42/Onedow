@@ -2227,7 +2227,7 @@ int main() {
         }
 
         // ?�리?�이?�브 무적 ??�??�레??체력 ?�?고정 (?��? 죽�? ?�음)
-        if (g_CreativeGodmode && g_CreativeMode &&
+        if (g_CreativeGodmode && (g_CreativeMode || g_DebugMode) &&
             g_GameManager.currentState == GameState::RUNNING) {
             g_GameManager.playerHP = g_Stats.maxHP;
         }
@@ -2445,7 +2445,7 @@ int main() {
             }
         }
 
-        // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 ?�로 ?�택 ---
+        // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 focus, SPACE confirm ---
         // s_augSpaceReleased: 블록 바깥?�서??release 감�??�도�?static ?�언
         static bool s_augSpaceReleased = true;
         {
@@ -2580,26 +2580,26 @@ int main() {
             }
 
             if (!augExitFired) {
-                // 1/2/3 = hover (exit �� ����)
+                // 1/2/3 focuses a card; SPACE starts the confirmation exit.
                 if (g_AugExitT < 0.0f) {
                     if (k1 == GLFW_PRESS && g_aug1Released && g_GameManager.augChoiceCount > 0) {
                         g_HoveredAug = 0; g_GameManager.augmentKeyboardFocus = true;
-                        g_AugExitT = 0.0f; g_AugExitSlot = 0; g_aug1Released = false;
+                        g_aug1Released = false;
                     }
                     if (k2 == GLFW_PRESS && g_aug2Released && g_GameManager.augChoiceCount > 1) {
                         g_HoveredAug = 1; g_GameManager.augmentKeyboardFocus = true;
-                        g_AugExitT = 0.0f; g_AugExitSlot = 1; g_aug2Released = false;
+                        g_aug2Released = false;
                     }
                     if (k3 == GLFW_PRESS && g_aug3Released && g_GameManager.augChoiceCount > 2) {
                         g_HoveredAug = 2; g_GameManager.augmentKeyboardFocus = true;
-                        g_AugExitT = 0.0f; g_AugExitSlot = 2; g_aug3Released = false;
+                        g_aug3Released = false;
                     }
                 }
                 if (k1 == GLFW_RELEASE) g_aug1Released = true;
                 if (k2 == GLFW_RELEASE) g_aug2Released = true;
                 if (k3 == GLFW_RELEASE) g_aug3Released = true;
 
-                // Space = exit anim ����
+                // SPACE = confirm the focused constellation.
                 int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
                 if (kSp == GLFW_PRESS && s_augSpaceReleased &&
                     g_HoveredAug >= 0 && g_HoveredAug < g_GameManager.augChoiceCount &&
@@ -2723,7 +2723,7 @@ int main() {
         }
 
         // --- ?�리?�이?�브 모드: F = 증강 그랩(?�버???�함 ?�드박스), G = 무적 ?��? ---
-        if (g_CreativeMode) {
+        if (g_CreativeMode || g_DebugMode) {
             static bool s_fkeyReleased = true;
             int kF = glfwGetKey(window, GLFW_KEY_F);
             if (kF == GLFW_RELEASE) s_fkeyReleased = true;
@@ -2733,7 +2733,11 @@ int main() {
                 // ?�드박스: ?�버?�도 카드 ?�???�어??무엇?�든 집을 ???�게
                  ++g_GameManager.playerLevel;
                  g_GameManager.xp = 0;
-                g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
+                if (g_CreativeMode) {
+                    g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
+                } else {
+                    g_GameManager.QueueAugmentReward(true, /*allowDebuff=*/false);
+                }
                 g_GameManager.ActivateNextAugmentReward();
                 g_CreativeFreeGrab = false;
                 s_fkeyReleased = false;
@@ -2742,7 +2746,8 @@ int main() {
             static bool s_gkeyReleased = true;
             int kG = glfwGetKey(window, GLFW_KEY_G);
             if (kG == GLFW_RELEASE) s_gkeyReleased = true;
-            if (kG == GLFW_PRESS && s_gkeyReleased) {
+            if (kG == GLFW_PRESS && s_gkeyReleased &&
+                g_GameManager.currentState == GameState::RUNNING) {
                 g_CreativeGodmode = !g_CreativeGodmode;
                 s_gkeyReleased = false;
             }
@@ -2750,7 +2755,7 @@ int main() {
             static bool s_bkeyReleased = true;
             int kB = glfwGetKey(window, GLFW_KEY_B);
             if (kB == GLFW_RELEASE) s_bkeyReleased = true;
-            if (kB == GLFW_PRESS && s_bkeyReleased &&
+            if (kB == GLFW_PRESS && s_bkeyReleased && g_CreativeMode &&
                 g_GameManager.currentState == GameState::RUNNING) {
                 if (!BossFightBusy()) {
                     float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult();
@@ -6334,17 +6339,47 @@ int main() {
                     g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f, 1.0f, 0.85f, 0.2f, blink);
                 }
             }
+            if (g_DebugMode && !g_CreativeMode &&
+                (st == GameState::RUNNING || st == GameState::READY ||
+                 st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
+                int li3 = LangIndex();
+                const wchar_t* DBG[3] = {
+                    L"\uB514\uBC84\uADF8   F: \uB808\uBCA8\uC5C5   G: \uBB34\uC801",
+                    L"DEBUG   F: LEVEL UP   G: GODMODE",
+                    L"\u30C7\u30D0\u30C3\u30B0   F: \u30EC\u30D9\u30EB\u30A2\u30C3\u30D7   G: \u7121\u6575"
+                };
+                g_TextS.Draw(DBG[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL),
+                             0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
+                if (g_CreativeGodmode) {
+                    const wchar_t* GOD[3] = { L"* \uBB34\uC801 ON", L"* GODMODE ON", L"* \u30B4\u30C3\u30C9 ON" };
+                    float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
+                    g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f,
+                                 1.0f, 0.85f, 0.2f, blink);
+                }
+            }
     
             // ?�?�?[7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�?
             //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
-            // Keep the backdrop compositor state at the window level so the
-            // same setting remains active while the game is running. DWM
-            // blurs the content behind the transparent window; it does not
-            // soften the rendered game/UI layers themselves.
-            const bool backdropBlurActive = g_BackdropBlurEnabled;
-            ConfigureWindowBackdropBlur(
-                window, backdropBlurActive);
+            // DWM backdrop blur applies to the whole transparent window.
+            // During a run that window reaches the auto-hidden taskbar area,
+            // so the taskbar would be blurred when it slides into view.
+            // Keep OS-level blur for outgame compositions only; the in-game
+            // UI must never affect the taskbar or other shell surfaces.
+            const bool inGameComposition =
+                st == GameState::READY          ||
+                st == GameState::RUNNING        ||
+                st == GameState::DYING          ||
+                st == GameState::PAUSED         ||
+                st == GameState::AUG_SELECT     ||
+                st == GameState::DEBUFF_SELECT  ||
+                st == GameState::AUG_REPLACE    ||
+                st == GameState::RUN_SHOP       ||
+                st == GameState::BOSS_INTERMISSION;
+            const bool backdropBlurActive = g_BackdropBlurEnabled && !inGameComposition;
+            ConfigureWindowBackdropBlur(window, backdropBlurActive);
 
+            // Scene_* dispatch still includes READY and the in-run menus;
+            // this flag only controls which state gets the scene composition.
             const bool outgameBackdrop =
                 st != GameState::RUNNING && st != GameState::DYING;
             if (outgameBackdrop) {
@@ -6569,18 +6604,6 @@ int main() {
                     default: break;
                     }
                     skillBox(i + 1, keys3[i], tag, g_Skills[i].cd, r, g, b);
-                }
-                // dashboard connector: HP panel bottom -> skill key row
-                {
-                    BindMainShader();
-                    float bxS  = W2SX(playerWin.x + 12.0f);
-                    float bwS  = (playerWin.width - 24.0f) * g_ViewZoom;
-                    float ctop = W2SY(playerWin.y + playerWin.height - 35.0f) + 3.0f;
-                    float cbot = ky0;
-                    if (cbot > ctop + 8.0f && bxS > -100.0f && bxS < sw + 100.0f) {
-                        float cx = bxS + bwS * 0.5f;
-                        drawRect(cx - 0.5f, ctop, 1.5f, cbot - ctop, 0.35f, 0.82f, 1.0f, 0.11f);
-                    }
                 }
             }
     

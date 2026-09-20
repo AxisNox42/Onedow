@@ -12,6 +12,8 @@ struct SceneCtx {
     GLFWwindow* window;
     float* fireTimer;
     std::function<void()> reset;
+    std::function<void()> restartRun;
+    std::function<void()> abandonRun;
 };
 
 // 앱 부팅 / 창 열림 애니메이션

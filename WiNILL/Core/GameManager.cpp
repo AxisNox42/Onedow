@@ -125,10 +125,12 @@ void GameManager::HandleInput(GLFWwindow* window) {
                 currentState = GameState::AUG_SELECT;
                 augReady = false;
             } else {
+                pauseResumeState = GameState::RUNNING;
                 currentState = GameState::PAUSED;
             }
         } else if (currentState == GameState::PAUSED) {
-            currentState = GameState::RUNNING;
+            currentState = pauseResumeState;
+            pauseResumeState = GameState::RUNNING;
         }
         // MAIN_MENU/SETTINGS 는 마우스 버튼으로만 진행
         spaceReleased = false;
@@ -137,8 +139,14 @@ void GameManager::HandleInput(GLFWwindow* window) {
 
     if (esc == GLFW_PRESS && escReleased) {
         if (!TryEscNavigateBack()) {
-            if      (currentState == GameState::RUNNING) currentState = GameState::PAUSED;
-            else if (currentState == GameState::PAUSED)  currentState = GameState::RUNNING;
+            if (currentState == GameState::RUNNING) {
+                pauseResumeState = GameState::RUNNING;
+                currentState = GameState::PAUSED;
+            }
+            else if (currentState == GameState::PAUSED) {
+                currentState = pauseResumeState;
+                pauseResumeState = GameState::RUNNING;
+            }
             else if (currentState == GameState::RUN_SHOP) {
                 CloseRunShop();
                 g_HoveredAug = -1;
@@ -185,7 +193,9 @@ static int RarityWeight(int rarity, int level) {
 static int RollOneAug(const bool* takenOnce,
                       bool sizeTaken, bool distTaken,
                       bool allowSpecial, int level,
-                      bool allowDebuff = false) {
+                      bool allowDebuff = false,
+                      const bool* excluded = nullptr,
+                      bool excludeRandom = false) {
     for (int attempt = 0; attempt < 200; attempt++) {
         // 등급 추첨 (레벨 비례 가중치) — MYTHIC(7)까지 포함. COMBO(6)는 주입식이라 가중치 0.
         int total = 0;
@@ -194,7 +204,7 @@ static int RollOneAug(const bool* takenOnce,
             if (!allowDebuff  && r == (int)AugRarity::DEBUFF)  continue;
             total += RarityWeight(r, level);
         }
-        if (total <= 0) return 0;
+        if (total <= 0) return -1;
         int roll = rand() % total;
         int acc  = 0;
         AugRarity chosen = AugRarity::COMMON;
@@ -234,8 +244,10 @@ static int RollOneAug(const bool* takenOnce,
         // 해당 등급의 후보 수집
         int pool[AUG_TOTAL]; int poolSize = 0;
         for (int i = 0; i < AUG_TOTAL; i++) {
+            if (excluded && excluded[i]) continue;
             if (ALL_AUGS[i].rarity != chosen) continue;
             AugType t = ALL_AUGS[i].type;
+            if (excludeRandom && t == AugType::RANDOM_AUG) continue;
             // 한 번만 뽑힐 증강 (EPIC/LEG/COMBO·티어드·불리언 플래그·적출현 디버프)
             if (AugOnceOnly(t, ALL_AUGS[i].rarity) && takenOnce[i]) continue;
             // 고유 카테고리 잠금 (SIZE/DISTANCE)
@@ -281,7 +293,7 @@ static int RollOneAug(const bool* takenOnce,
             // 검객/궁수 전용 트리 — 해당 클래스가 아니면 제외
             if ((t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND) && !g_Stats.meleeWeapon) continue;
             if ((t == AugType::POWER_DRAW || t == AugType::MULTISHOT) && !g_Stats.bowWeapon)   continue;
-            // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/병렬처리/취함/영혼수확/클래스)
+            // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/취함/영혼수확/클래스)
             if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
             if (t == AugType::VISION_UP && g_Stats.visionStacks >= 5) continue;
@@ -292,23 +304,25 @@ static int RollOneAug(const bool* takenOnce,
         if (poolSize > 0)
             return pool[rand() % poolSize];
     }
-    return 0;
+    return -1;
 }
 
 // 디버프 등급 한 장 추첨 (디버프 등급 내에서만 무작위)
-static int RollOneDebuff(const bool* takenOnce = nullptr) {
+static int RollOneDebuff(const bool* takenOnce = nullptr,
+                         const bool* excluded = nullptr) {
     int pool[AUG_TOTAL]; int poolSize = 0;
     for (int i = 0; i < AUG_TOTAL; i++) {
+        if (excluded && excluded[i]) continue;
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
-        if (AugRemoved(t)) continue;   // 취함/병렬처리 등 삭제된 디버프 제외 (디버프 선택 페이지)
+        if (AugRemoved(t)) continue;   // 취함 등 삭제된 디버프 제외 (디버프 선택 페이지)
         if (!DebuffCandidateAllowed(t)) continue;
         // 한 번만 뜨는 디버프(적 출현형)는 이미 보유 시 제외
         if (takenOnce && AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
         // 쉬움: 자폭병 디버프 제외 (#107)
         pool[poolSize++] = i;
     }
-    if (poolSize == 0) return 0;
+    if (poolSize == 0) return -1;
     return pool[rand() % poolSize];
 }
 
@@ -321,7 +335,9 @@ void GameManager::PickRunShopStock(int* outIdx, int* outPrice, int n,
         for (int attempt = 0; attempt < 60; attempt++) {
             int idx = RollOneAug(takenOnce, sizeTaken, distTaken,
                                  /*allowSpecial=*/false, playerLevel,
-                                 /*allowDebuff=*/false);
+                                 /*allowDebuff=*/false, used,
+                                 /*excludeRandom=*/true);
+            if (idx < 0) break;
             if (used[idx]) continue;
             AugRarity r = ALL_AUGS[idx].rarity;
             if (r == AugRarity::DEBUFF || r == AugRarity::SPECIAL ||
@@ -339,33 +355,40 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
     // 3장 — 같은 카드 안 나오게 중복 방지, SPECIAL 포함
     //   allowDebuff (크리에이티브 샌드박스) 면 디버프도 카드 풀에 섞임
     bool used[AUG_TOTAL] = {};
+    augChoiceCount = 0;
+    for (int i = 0; i < 3; i++) augChoices[i] = -1;
+    bool gotSize = sizeTaken;
+    bool gotDist = distTaken;
     for (int i = 0; i < 3; i++) {
-        int idx = 0;
+        int idx = -1;
         for (int attempt = 0; attempt < 50; attempt++) {
-            idx = RollOneAug(takenOnce, sizeTaken, distTaken,
-                             /*allowSpecial=*/true, playerLevel, allowDebuff);
-            if (!used[idx]) break;
+            idx = RollOneAug(takenOnce, gotSize, gotDist,
+                             /*allowSpecial=*/true, playerLevel, allowDebuff,
+                             used);
+            if (idx >= 0 && !used[idx]) break;
         }
+        if (idx < 0) break;
         used[idx] = true;
-        augChoices[i] = idx;
+        augChoices[augChoiceCount++] = idx;
+        if (ALL_AUGS[idx].unique == AugUnique::SIZE)     gotSize = true;
+        if (ALL_AUGS[idx].unique == AugUnique::DISTANCE) gotDist = true;
     }
 
     // L1~2: 3장 중 최소 1장 희귀 이상 보장 (초반 파워 스파이크)
     if (playerLevel <= 2) {
         bool hasRarePlus = false;
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < augChoiceCount; i++)
             if (ALL_AUGS[augChoices[i]].rarity >= AugRarity::RARE)
                 hasRarePlus = true;
         if (!hasRarePlus) {
             for (int attempt = 0; attempt < 80; attempt++) {
-                int idx = RollOneAug(takenOnce, sizeTaken, distTaken,
-                                     true, playerLevel, allowDebuff);
+                int idx = RollOneAug(takenOnce, gotSize, gotDist,
+                                     true, playerLevel, allowDebuff, used);
+                if (idx < 0) break;
                 if (ALL_AUGS[idx].rarity < AugRarity::RARE) continue;
-                bool dup = false;
-                for (int j = 0; j < 3; j++)
-                    if (augChoices[j] == idx) { dup = true; break; }
-                if (dup) continue;
-                augChoices[0] = idx;
+                used[idx] = true;
+                if (augChoiceCount > 0) augChoices[0] = idx;
+                else augChoices[augChoiceCount++] = idx;
                 break;
             }
         }
@@ -387,80 +410,138 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
         if (eligCount > 0 && (rand() % 100) < 10) {
             AugType res = COMBO_DEFS[eligible[rand() % eligCount]].result;
             int ridx = AugIndexOfType(res);
-            if (ridx >= 0)
-                augChoices[rand() % 3] = ridx;
+            if (ridx >= 0 && !used[ridx]) {
+                if (augChoiceCount < 3) augChoices[augChoiceCount++] = ridx;
+                else augChoices[rand() % augChoiceCount] = ridx;
+            }
         }
     }
 }
 
-void GameManager::PickRandomDebuffIndices(int* outArr, int n) {
+int GameManager::PickRandomDebuffIndices(int* outArr, int n) {
     // ALL_AUGS 의 모든 DEBUFF 등급 인덱스 수집
     int pool[AUG_TOTAL]; int poolSize = 0;
     for (int i = 0; i < AUG_TOTAL; i++) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
-        if (AugRemoved(t)) continue;   // 병렬처리/취함 등 제거된 디버프 제외
+        if (AugRemoved(t)) continue;   // 취함 등 제거된 디버프 제외
         if (!DebuffCandidateAllowed(t)) continue;
         if (AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
         pool[poolSize++] = i;
     }
-    if (poolSize == 0) {
-        for (int i = 0; i < n; i++) outArr[i] = 0;
-        return;
-    }
+    if (poolSize == 0) return 0;
     // 중복 없이 n 개 (n > poolSize 면 중복 허용)
     bool used[AUG_TOTAL] = {};
+    int filled = 0;
     for (int i = 0; i < n; i++) {
-        int idx = 0;
+        int idx = -1;
         for (int attempt = 0; attempt < 30; attempt++) {
             idx = pool[rand() % poolSize];
             if (!used[idx]) break;
         }
+        if (idx < 0 || used[idx]) break;
         used[idx] = true;
         outArr[i] = idx;
+        filled++;
     }
+    return filled;
 }
 
 void GameManager::PickDebuffChoices() {
     bool used[AUG_TOTAL] = {};
+    augChoiceCount = 0;
+    for (int i = 0; i < 3; i++) augChoices[i] = -1;
     for (int i = 0; i < 3; i++) {
-        int idx = 0;
+        int idx = -1;
         for (int attempt = 0; attempt < 50; attempt++) {
-            idx = RollOneDebuff(takenOnce);
-            if (!used[idx]) break;
+            idx = RollOneDebuff(takenOnce, used);
+            if (idx >= 0 && !used[idx]) break;
         }
+        if (idx < 0) break;
         used[idx] = true;
-        augChoices[i] = idx;
+        augChoices[augChoiceCount++] = idx;
     }
 }
 
-void GameManager::PickRandomAugIndices(int* outArr, int n,
-                                       bool sizeTaken, bool distTaken,
-                                       bool allowUnique, bool allowSpecial,
-                                       bool allowDebuff) {
+int GameManager::PickRandomAugIndices(int* outArr, int n,
+                                      bool sizeTaken, bool distTaken,
+                                      bool allowUnique, bool allowSpecial,
+                                      bool allowDebuff) {
     bool used[AUG_TOTAL] = {};
     // 이번 배치에서 이미 뽑은 SIZE/DISTANCE 고유 카테고리 추적 —
     //   대혼란이 거대화+축소화를 동시에 주던 버그 fix (상호 배타)
     bool gotSize = sizeTaken, gotDist = distTaken;
+    int filled = 0;
     for (int i = 0; i < n; i++) {
-        int idx = 0;
+        int idx = -1;
         for (int attempt = 0; attempt < 80; attempt++) {
             idx = RollOneAug(takenOnce,
                              allowUnique ? gotSize : true,
                              allowUnique ? gotDist : true,
                              allowSpecial, playerLevel,
-                             allowDebuff);
+                             allowDebuff, used, /*excludeRandom=*/true);
             // RANDOM_AUG 자기 자신 제외
+            if (idx < 0) break;
             if (ALL_AUGS[idx].type == AugType::RANDOM_AUG) continue;
             if (!used[idx]) break;
         }
+        if (idx < 0 || used[idx]) break;
         used[idx] = true;
         outArr[i] = idx;
+        filled++;
         if (allowUnique) {
             if (ALL_AUGS[idx].unique == AugUnique::SIZE)     gotSize = true;
             if (ALL_AUGS[idx].unique == AugUnique::DISTANCE) gotDist = true;
         }
     }
+    return filled;
+}
+
+void GameManager::QueueAugmentReward(bool needsDebuff, bool allowDebuff) {
+    augmentRewardQueue.push_back({needsDebuff, allowDebuff});
+    augReady = true;
+}
+
+bool GameManager::ActivateNextAugmentReward() {
+    if (augmentRewardActive) return true;
+
+    while (!augmentRewardQueue.empty()) {
+        const AugmentRewardEntry entry = augmentRewardQueue.front();
+        PickAugChoices(g_Stats.sizeAugTaken, g_Stats.distAugTaken,
+                       entry.allowDebuff);
+        if (augChoiceCount <= 0) {
+            augmentRewardQueue.pop_front();
+            continue;
+        }
+
+        augmentRewardActive = true;
+        augmentRewardInternalDebuff = false;
+        augmentRewardInDebuff = false;
+        augReady = false;
+        augmentKeyboardFocus = false;
+        ++augmentSelectionSerial;
+        currentState = GameState::AUG_SELECT;
+        g_HoveredAug = -1;
+        g_AugExitT = -1.0f;
+        g_AugExitSlot = -1;
+        g_RepExitT = -1.0f;
+        g_RepExitSlot = -3;
+        return true;
+    }
+
+    augReady = false;
+    return false;
+}
+
+void GameManager::ClearAugmentRewardQueue() {
+    augmentRewardQueue.clear();
+    augmentRewardActive = false;
+    augmentRewardInternalDebuff = false;
+    augmentRewardInDebuff = false;
+    augChoiceCount = 0;
+    for (int i = 0; i < 3; i++) augChoices[i] = -1;
+    augReady = false;
+    augmentKeyboardFocus = false;
 }
 
 void GameManager::AddScore(float amount) {
@@ -475,12 +556,13 @@ void GameManager::UpdateTitle(GLFWwindow* window) {
         currentState == GameState::DEBUFF_SELECT ||
         currentState == GameState::AUG_REPLACE) {
         std::string t = (currentState == GameState::DEBUFF_SELECT)
-                        ? "CHOOSE DEBUFF >> [1] " : "CHOOSE AUG >> [1] ";
-        t += ALL_AUGS[augChoices[0]].name;
-        t += "  [2] ";
-        t += ALL_AUGS[augChoices[1]].name;
-        t += "  [3] ";
-        t += ALL_AUGS[augChoices[2]].name;
+                        ? "CHOOSE DEBUFF >> " : "CHOOSE AUG >> ";
+        for (int i = 0; i < augChoiceCount; i++) {
+            if (i > 0) t += "  ";
+            t += "[" + std::to_string(i + 1) + "] ";
+            if (augChoices[i] >= 0 && augChoices[i] < AUG_TOTAL)
+                t += ALL_AUGS[augChoices[i]].name;
+        }
         glfwSetWindowTitle(window, t.c_str());
         return;
     }

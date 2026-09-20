@@ -15,7 +15,7 @@
 // ?????????????????????????????????????????????????????????????
 class CentipedeBoss {
 public:
-    static constexpr const wchar_t* BOSS_NAME = L"FORK.worm";
+    static constexpr const wchar_t* BOSS_NAME = L"FORK";
     float worldX, worldY;          // 癒몃━ ?꾩튂
     float hp, maxHp;
     bool  alive = true;
@@ -97,7 +97,7 @@ public:
     static constexpr float MINI_WIN_W  = 300.0f;
     static constexpr float MINI_WIN_H  = 210.0f;
     static constexpr float MINI_WIN_TB = 14.0f;
-    static constexpr wchar_t MINI_WIN_NAME[] = L"child.exe";
+    static constexpr wchar_t MINI_WIN_NAME[] = L"CHILD STAR";
     float summonCd = 0.0f;
 
     // ?? VFX (Gemini 媛?대뱶 ??OS UI ?놁씠 ?쒖닔 ?댄럺?? ??

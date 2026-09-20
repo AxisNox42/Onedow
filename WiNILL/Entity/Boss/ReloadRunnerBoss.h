@@ -13,7 +13,7 @@
 extern TextRenderer g_TextS;
 
 // ─────────────────────────────────────────────────────────────
-// VOLLEY.sys — 기동 화력 드론 (전면전 보스)
+// VOLLEY — 기동 화력 드론 (전면전 보스)
 //   3종 무기 로테이션 + 장전 질주 + 화면 가장자리 포격 + ASSAULT 돌격
 //   · 근접(110px 이내): 탄막·ASSAULT·살보 OFF → 도주·장전 = 딜 타임
 //   · 중거리~(210px+): 전면전 화력 유지
@@ -899,7 +899,7 @@ public:
         }
     }
 
-    static const wchar_t* BossName() { return L"VOLLEY.sys"; }
+    static const wchar_t* BossName() { return L"VOLLEY"; }
 
     static void drawFan(float ox, float oy, float a0, float a1, float len,
                         float r, float g, float b, float fillA, float edgeA, int segs = 24) {

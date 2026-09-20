@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <cmath>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <glm/glm.hpp>
@@ -46,10 +47,20 @@ inline int JuiceTrailCap() {
 }
 
 inline void SpawnDamageNumber(float x, float y, float amount, bool crit) {
-    (void)x;
-    (void)y;
-    (void)amount;
-    (void)crit;
+    // Keep even fractional/DoT hits visible as at least "1".
+    if (amount <= 0.0f) return;
+    if ((int)g_DmgNumbers.size() >= JuiceDmgCap())
+        g_DmgNumbers.erase(g_DmgNumbers.begin());
+
+    DamageNumber d;
+    d.x = x + (float)((rand() % 17) - 8);
+    d.y = y - 14.0f;
+    d.vx = (float)((rand() % 41) - 20);
+    d.vy = -90.0f - (float)(rand() % 35);
+    d.maxLife = d.life = crit ? 0.75f : 0.62f;
+    d.amount = std::max(1, (int)std::floor(amount + 0.5f));
+    d.crit = crit;
+    g_DmgNumbers.push_back(d);
 }
 
 // ── 타격 스파크 (명중/피격 불꽃) ──
@@ -272,13 +283,23 @@ struct StardustPickup {
     float vx, vy;
     float age   = 0.0f;
     int   value = 1;
+    long long xpValue = 0;
     bool  alive = true;
 };
 inline std::vector<StardustPickup> g_StardustPickups;
 inline float g_StardustHudPulse = 0.0f;
 
-inline void SpawnStardust(float x, float y, int totalValue, float /*playerX*/, float /*playerY*/) {
-    if (totalValue <= 0) return;
+inline void SpawnStardust(float x, float y, int totalValue,
+                          float /*playerX*/, float /*playerY*/,
+                          long long xpReward = 0) {
+    // XP를 지급해야 하는 처치라면, 기존에 화폐 별가루를 주지 않던 몹도
+    // XP를 담은 최소 1개 조각을 반드시 생성한다.
+    if (totalValue <= 0) {
+        if (xpReward <= 0) return;
+        totalValue = 1;
+    }
+    const int totalDustValue = totalValue;
+    const std::size_t pickupBegin = g_StardustPickups.size();
     for (int denomination : { 10, 5, 1 }) {
         while (totalValue >= denomination) {
             totalValue -= denomination;
@@ -288,8 +309,27 @@ inline void SpawnStardust(float x, float y, int totalValue, float /*playerX*/, f
             g_StardustPickups.push_back({
                 x, y,
                 cosf(angle) * speed, sinf(angle) * speed,
-                0.0f, denomination, true
+                0.0f, denomination, 0, true
             });
         }
+    }
+
+    // 여러 조각으로 나뉘어도 XP가 조각마다 중복 지급되지 않도록 비례 분배한다.
+    if (xpReward <= 0 || pickupBegin >= g_StardustPickups.size()) return;
+    long long remainingXp = xpReward;
+    int remainingValue = totalDustValue;
+    const std::size_t pickupEnd = g_StardustPickups.size();
+    for (std::size_t i = pickupBegin; i < pickupEnd && remainingXp > 0; ++i) {
+        const int pieceValue = g_StardustPickups[i].value;
+        const bool isLast = (i + 1 == pickupEnd);
+        long long pieceXp = isLast
+            ? remainingXp
+            : (remainingXp * (long long)pieceValue + remainingValue / 2)
+              / remainingValue;
+        if (pieceXp < 0) pieceXp = 0;
+        if (pieceXp > remainingXp) pieceXp = remainingXp;
+        g_StardustPickups[i].xpValue = pieceXp;
+        remainingXp -= pieceXp;
+        remainingValue -= pieceValue;
     }
 }

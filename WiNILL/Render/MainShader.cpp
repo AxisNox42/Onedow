@@ -279,7 +279,8 @@ void DrawLinearGradient(float x, float y, float w, float h,
 
 void DrawLinearGradientRibbon(float x, float y, float w, float h,
                               float cut, float r, float g, float b,
-                              float alpha, bool mirrorX) {
+                              float alpha, bool mirrorX, bool mirrorY,
+                              bool flatLeft) {
     if (alpha <= 0.0f || w <= 0.0f || h <= 0.0f
         || g_RadGradProg == 0 || g_LinGradTex == 0) return;
     BatchFlush();
@@ -294,14 +295,18 @@ void DrawLinearGradientRibbon(float x, float y, float w, float h,
     // Keep both side edges parallel.  This is the actual 120-60-120-60
     // parallelogram silhouette: top/bottom are equal, and the two slanted
     // sides share the same offset.  The whole shape remains inside x..x+w.
-    const float topLeft = mirrorX ? x + cutPx : x;
+    const float topLeft = mirrorX
+        ? (flatLeft ? x : x + cutPx) : x;
     const float topRight = mirrorX ? x + w : x + w - cutPx;
-    const float bottomLeft = mirrorX ? x : x + cutPx;
+    const float bottomLeft = mirrorX
+        ? x : (flatLeft ? x : x + cutPx);
     const float bottomRight = mirrorX ? x + w - cutPx : x + w;
     const float y0 = y;
     const float y1 = y + h;
     const float u0 = mirrorX ? 1.0f : 0.0f;
     const float u1 = mirrorX ? 0.0f : 1.0f;
+    const float v0 = mirrorY ? 1.0f : 0.0f;
+    const float v1 = mirrorY ? 0.0f : 1.0f;
 
     glUseProgram(g_RadGradProg);
     glBindVertexArray(g_MainVAO);
@@ -315,8 +320,8 @@ void DrawLinearGradientRibbon(float x, float y, float w, float h,
     // The paired slanted edges turn the rectangular texture into a true
     // directional parallelogram while preserving the full gradient range.
     float verts[36] = {
-        topLeft,y0,  u0,0, 0,0,  topRight,y0,   u1,0, 0,0,  bottomRight,y1, u1,1, 0,0,
-        topLeft,y0,  u0,0, 0,0,  bottomRight,y1, u1,1, 0,0,  bottomLeft,y1,  u0,1, 0,0
+        topLeft,y0,  u0,v0, 0,0,  topRight,y0,   u1,v0, 0,0,  bottomRight,y1, u1,v1, 0,0,
+        topLeft,y0,  u0,v0, 0,0,  bottomRight,y1, u1,v1, 0,0,  bottomLeft,y1,  u0,v1, 0,0
     };
     glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);

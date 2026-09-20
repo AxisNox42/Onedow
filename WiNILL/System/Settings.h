@@ -297,6 +297,7 @@ inline float TrialBossWarningMult() {
 //       RUNNING 중 F 키로 AUG_SELECT 즉시 열기
 //       DEBUFF_SELECT 항상 스킵
 inline bool g_CreativeMode = false;
+inline bool g_DebugMode = false;
 // 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
 inline long long g_CreativeStartScore = 0;       // 시작 점수
 inline int       g_CreativeBossPick   = -1;      // -1=없음. 1·4=크리에이티브 전용, LTS=2·7·8·9
@@ -305,7 +306,7 @@ inline bool      g_CreativeGodmode    = false;   // G 키 무적 토글 (런타�
 inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤엔 디버프 페이지 스킵
 
 // 손맛 표시 토글 (설정에서 ON/OFF)
-inline bool g_ShowDamageNumbers = false;  // Deprecated: damage number display is removed.
+inline bool g_ShowDamageNumbers = true;
 inline bool g_ShowCombo         = true;   // 콤보 카운터 표시
 inline int  g_SoundVol          = 100;    // 사운드 마스터 볼륨 (0=끄기 ~ 100)
 
@@ -329,11 +330,10 @@ inline bool g_ShaderFx          = false;
 // Strong readability overlay for out-of-game menu backgrounds.
 inline bool g_StrongMenuDim     = false;
 
-// Optional soft backdrop blur used by transparent outgame pages such as SHOP.
+// Optional soft backdrop blur used by transparent outgame pages.
 // Keep the range deliberately restrained so the live background remains part
 // of the composition instead of becoming an opaque panel.
 inline bool g_BackdropBlurEnabled = true;
-inline int  g_BackdropBlurStrength = 30; // 10..60 percent
 
 // 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게
 enum class MobVisualStyle { CLASSIC, SOFT };

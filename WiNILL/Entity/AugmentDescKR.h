@@ -125,11 +125,11 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::D_RMOB_DELAY:
         return L"원거리 몹 이동 속도 +20% (최대 10중첩) / 원거리 처치 EXP +5 / 빠른 원거리 위협";
     case AugType::D_MOB_SPAWN:
-        return L"잡몹 스폰 빈도 증가 · 동시 한도 +200 / 잡몹 처치 EXP +1 / 화면 혼잡·경험치 소량 보상";
+        return L"로터 생성 빈도 증가 · 동시 한도 +12 / 로터 처치 EXP +1 / 로터 물량 압박";
     case AugType::D_APPROACH:
         return L"무적 붉은 오브가 계속 추적 / 초당 EXP +0.5 / 최대 3회까지 중복, 중복 시 오브 속도 +20%";
     case AugType::D_MOB_SPEED:
-        return L"잡몹 이동 속도 +10% / 초당 EXP +0.5 / 빠른 잡몹 러시·지속 경험치 보상";
+        return L"로터 이동 속도 +10% / 초당 EXP +0.5 / 빠른 로터 러시·지속 경험치 보상";
     case AugType::D_GLASS_HEART:
         return L"최대 체력 -20% / 전체 EXP +3% / 체력 증가 수단이 적어 리스크가 큰 선택지";
     case AugType::D_BULLET_STUCK:
@@ -143,27 +143,27 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::D_BOMBER_SPEED:
         return L"자폭병 이동 속도 +30% / 자폭병 처치 EXP +3 / 빠른 접근 자폭병";
     case AugType::D_MOB_HP:
-        return L"프로세스 체력 +30% / 프로세스 처치 EXP +2 / 기본 적 전체가 단단해짐";
+        return L"로터 체력 +30% / 로터 처치 EXP +2 / 기본 적 전체가 단단해짐";
     case AugType::D_SLOW_MOVE:
         return L"플레이어 이동 속도 -5% / 전체 EXP +3% / 기동성 리스크가 낮은 보상으로 조정";
     case AugType::D_SPLITTER:
-        return L"일부 프로세스가 웜으로 변이 / 죽으면 분열 / 웜 처치 EXP +2";
+        return L"퇴역된 변이 계열 증강 / 현재 선택 풀에서 제외됨";
     case AugType::D_SPLITTER_BOOST:
-        return L"웜 분열 3세대까지 · 분열된 개체마다 처치 보상 별도 / 디버프 EXP 보너스 없음 / 선행: 웜 침투";
+        return L"퇴역된 변이 계열 증강 / 현재 선택 풀에서 제외됨";
     case AugType::D_BLINKER:
-        return L"일부 프로세스가 트로이목마로 변이 / 경고 후 순간이동 / 트로이목마 처치 EXP +3";
+        return L"퇴역된 변이 계열 증강 / 현재 선택 풀에서 제외됨";
     case AugType::D_ORBITER:
-        return L"일부 프로세스가 스파이웨어로 변이 / 플레이어 주변을 공전하며 압박 / 스파이웨어 처치 EXP +5";
+        return L"퇴역된 변이 계열 증강 / 현재 선택 풀에서 제외됨";
     case AugType::D_SPAWNER:
-        return L"일부 프로세스가 봇넷으로 변이 / 작은 프로세스를 계속 소환 / 봇넷 처치 EXP +7";
+        return L"퇴역된 변이 계열 증강 / 현재 선택 풀에서 제외됨";
     case AugType::D_SHIELDED:
-        return L"일부 프로세스가 방화벽으로 변이 / 보호막 주기 ON-OFF / 방화벽 처치 EXP +5";
+        return L"퇴역된 변이 계열 증강 / 현재 선택 풀에서 제외됨";
     case AugType::D_BLEED:
         return L"체력 회복 -1.0/s / 회복이 0이면 감소하지 않고 카드도 등장하지 않음 / 전체 EXP +12%";
     case AugType::D_WEAKEN:
         return L"공격력 -12% / 전체 EXP +10% / 약화·경험치 보상";
     case AugType::D_MOB_PACK:
-        return L"잡몹 스폰 시 추가 +2마리 동시 등장 / 잡몹 처치 EXP +6 / 개체 수 폭증·보상↑";
+        return L"로터 스폰 시 추가 +1마리 동시 등장 / 로터 처치 EXP +6 / 개체 수 증가·보상↑";
     case AugType::D_MOB_ELITE:
         return L"엘리트 변이 출현 확률 증가 / 엘리트 처치 EXP +3 / 변이 적을 잡을 때만 보상";
     case AugType::D_MOB_FRENZY:
@@ -228,7 +228,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::D_SCHEDULER:
         return L"특수 프로세스 체력 +10% / 비-NORMAL 프로세스 처치 EXP +2 / 특수몹을 잡을 때만 보상";
     case AugType::D_TROJAN_BOOST:
-        return L"선행: 트로이목마 침투 / 트로이목마 점멸 쿨다운 감소 / 트로이목마 처치 EXP +2";
+        return L"퇴역된 변이 계열 증강 / 현재 선택 풀에서 제외됨";
     case AugType::D_CRASHER_BOOST:
         return L"크래셔가 돌진 중 받는 피해 -10% / 크래셔 처치 EXP +4";
     case AugType::D_BADSECTOR:

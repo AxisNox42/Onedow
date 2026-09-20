@@ -831,6 +831,7 @@ struct PlayerStats {
 inline float g_PlayerDmgMult = 1.0f;
 inline float g_PlayerShield     = 0.0f;
 inline float g_PlayerShieldTimer = 0.0f;
+inline float g_PlayerDamagePulse = 0.0f;
 
 inline void GrantPlayerShield(float amount, float durationSec) {
     if (amount <= 0.0f || durationSec <= 0.0f) return;
@@ -860,4 +861,7 @@ inline void HurtPlayer(float& hp, float raw) {
         g_PlayerShield = 0.0f;
     }
     hp -= dmg;
+    // Notify the combat HUD at the source of the hit, including tiny hits
+    // that can be obscured by several fixed-step updates in one frame.
+    g_PlayerDamagePulse = std::max(g_PlayerDamagePulse, 2.2f);
 }

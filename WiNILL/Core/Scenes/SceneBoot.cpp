@@ -3,7 +3,7 @@
 
 float          g_BootAnim   = 0.0f;
 GameState      g_BootTarget = GameState::MAIN_MENU;
-const wchar_t* g_BootName   = L"onedow.exe";
+const wchar_t* g_BootName   = L"ORBITAL CORE";
 float          g_BootAr     = 0.30f;
 float          g_BootAg     = 0.80f;
 float          g_BootAb     = 1.00f;

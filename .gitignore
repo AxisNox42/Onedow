@@ -10,6 +10,7 @@ Debug/
 Release/
 build/
 *.exe
+!WiNILL/bin/WiNILL.exe
 *.obj
 *.pdb
 *.ilk

@@ -96,6 +96,32 @@ struct ConstellationMotionState {
 
 static ConstellationMotionState s_MainMenuConstellationMotion;
 
+// One source of truth for labels that remain visible while a page is being
+// entered or exited.  Transition overlays used to carry their own legacy
+// English route IDs, which caused names such as ASTRAL_LOG to flash before the
+// localized page title appeared.
+static const wchar_t* MainMenuRouteLabel(int language, int index) {
+    static const wchar_t* kRoutes[3][5] = {
+        { L"플레이", L"상점", L"도감", L"설정", L"종료" },
+        { L"PLAY", L"SHOP", L"ASTRAL LOG", L"SETTINGS", L"EXIT" },
+        { L"スタート", L"ショップ", L"星界記録", L"設定", L"終了" },
+    };
+    const int li = std::max(0, std::min(2, language));
+    const int mi = std::max(0, std::min(4, index));
+    return kRoutes[li][mi];
+}
+
+static const wchar_t* MainMenuSubtitleLabel(int language, int index) {
+    static const wchar_t* kSubtitles[3][5] = {
+        { L"Start", L"Armory", L"Astral Log", L"Setting", L"Exit" },
+        { L"Start", L"Armory", L"Astral Log", L"Setting", L"Exit" },
+        { L"スタート", L"武器庫", L"星界記録", L"設定", L"終了" },
+    };
+    const int li = std::max(0, std::min(2, language));
+    const int mi = std::max(0, std::min(4, index));
+    return kSubtitles[li][mi];
+}
+
 static ConstellationMotionProfile MainMenuMotionProfile(int menuIndex) {
     static constexpr ConstellationMotionProfile kIdle =
         { 1.35f,  0.00f, 0.74f, 0.64f, 0.10f };
@@ -335,6 +361,20 @@ static float MainMenuCommandStartY(float sh) {
     float y = sh * 0.48f;
     if (y + totalH > sh - 54.0f) y = sh - totalH - 54.0f;
     const float logoFloor = MainLogoTop(sh) + MainLogoHeight(sh) * 0.72f;
+    if (y < logoFloor) y = logoFloor;
+    return y;
+}
+
+// The lobby command rail is the canonical home for the main-menu buttons.
+// Scene transition ghosts must use this same anchor; keeping the old centered
+// command Y here makes the previous button stack flash before it exits.
+static float MainMenuButtonRailStartY(float sh) {
+    constexpr float kRowH = 70.0f;
+    constexpr float kGap = 15.0f;
+    constexpr float kRowCount = 5.0f;
+    const float totalH = kRowCount * kRowH + (kRowCount - 1.0f) * kGap;
+    float y = sh - totalH - std::max(52.0f, sh * 0.075f);
+    const float logoFloor = MainLogoTop(sh) + MainLogoHeight(sh) * 0.82f;
     if (y < logoFloor) y = logoFloor;
     return y;
 }
@@ -1827,11 +1867,6 @@ void Scene_MainMenu(const SceneCtx& c) {
     // The lobby uses a large route label plus a smaller descriptor. Keep
     // both layers in the active language; route IDs must not leak through
     // as English-only text when Korean or Japanese is selected.
-    static const wchar_t* kMenuRoutes[3][5] = {
-        { L"플레이", L"상점", L"도감", L"설정", L"종료" },
-        { L"PLAY", L"SHOP", L"ASTRAL LOG", L"SETTINGS", L"EXIT" },
-        { L"スタート", L"ショップ", L"星界記録", L"設定", L"終了" },
-    };
     const int   kBtnCount = 5;
     const float BW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
     const float BH = 70.0f;
@@ -1841,9 +1876,7 @@ void Scene_MainMenu(const SceneCtx& c) {
     // The lobby command rail belongs to the lower-left corner, matching the
     // navigation language used by the other pages. Keep a responsive bottom
     // margin, but never let the rail climb into the logo on short windows.
-    float btnY0 = sh - totalBH - std::max(52.0f, sh * 0.075f);
-    const float logoFloor = MainLogoTop(sh) + MainLogoHeight(sh) * 0.82f;
-    if (btnY0 < logoFloor) btnY0 = logoFloor;
+    float btnY0 = MainMenuButtonRailStartY(sh);
 
     const float now = (float)glfwGetTime();
     const float menuFieldA = Smoothstep(LogoClamp01((s_introT - 0.10f) / 0.62f)) * uiA;
@@ -1896,11 +1929,8 @@ void Scene_MainMenu(const SceneCtx& c) {
             ab += (0.28f - ab) * warnT;
         }
         float selectPulse = selected ? (0.50f + 0.50f * sinf(now * 18.0f)) * exitP : 0.0f;
-        const wchar_t* route = kMenuRoutes[li2][i];
-        // Lobby commands do not need a translated explanatory subtitle.
-        // Keep the primary command localized while using the compact English
-        // identifier as its consistent secondary label in Korean mode.
-        const wchar_t* sub = (li2 == 0) ? kBtns[i].label[1] : kBtns[i].label[li2];
+        const wchar_t* route = MainMenuRouteLabel(li2, i);
+        const wchar_t* sub = MainMenuSubtitleLabel(li2, i);
         DrawPanelButton(route, sub, bx, by, BW, BH,
                         ar, ag, ab, rowA, t, selected, selectPulse,
                         now + (float)i * 0.17f,
@@ -4992,15 +5022,9 @@ void Scene_Shop(const SceneCtx& c) {
                        sw * 0.30f - 160.0f * oldOut,
                        0.82f);
     {
-        struct GhostDef { const wchar_t* route; const wchar_t* sub; };
-        static const GhostDef kGhostMenu[5] = {
-            { L"PLAY",        L"\uC2DC\uC791" },
-            { L"SHOP",        L"\uC0C1\uC810" },
-            { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
-            { L"SETTING",     L"\uC124\uC815" },
-            { L"EXIT",        L"\uAC8C\uC784 \uC885\uB8CC" },
-        };
+        const int ghostLang = LangIndex();
         const float ghostSlide = 250.0f * oldOut;
+        const float ghostRailY = MainMenuButtonRailStartY(sh);
         const float anchorX = mainX - ghostSlide - 36.0f;
         BindMainShader();
         drawRect(anchorX, std::max(22.0f, MainLogoTop(sh) - 20.0f),
@@ -5008,7 +5032,7 @@ void Scene_Shop(const SceneCtx& c) {
                  0.48f, 0.82f, 1.0f, 0.12f * oldMenuA);
         for (int i = 0; i < 5; ++i) {
             const bool focus = (!s_backExit && i == 1);
-            const float rowY = mainY + (float)i * (mainBH + mainGap);
+            const float rowY = ghostRailY + (float)i * (mainBH + mainGap);
             const float rowX = mainX - ghostSlide - (focus ? 0.0f : 26.0f * oldOut);
             const float rowA = (s_backExit ? 0.82f : focus ? 0.76f : 0.18f) * oldMenuA;
             const float active = focus ? 1.0f : 0.0f;
@@ -5021,17 +5045,19 @@ void Scene_Shop(const SceneCtx& c) {
                             5.0f, 0.48f, 0.82f, 1.0f, 0.72f * oldMenuA);
             }
             float routeSc = 1.04f;
-            while (routeSc > 0.82f && g_TextL.Width(kGhostMenu[i].route, routeSc) > mainBW)
+            while (routeSc > 0.82f &&
+                   g_TextL.Width(MainMenuRouteLabel(ghostLang, i), routeSc) > mainBW)
                 routeSc -= 0.04f;
             const float subSc = 0.48f;
             const float routeY = rowY + 2.0f;
-            const float subY = routeY + g_TextL.Height(kGhostMenu[i].route, routeSc) - 3.0f;
+            const float subY = routeY +
+                               g_TextL.Height(MainMenuRouteLabel(ghostLang, i), routeSc) - 3.0f;
             const float gr = s_backExit ? 1.0f : 1.0f - 0.52f * (1.0f - active);
             const float gg = s_backExit ? 1.0f : 1.0f - 0.18f * (1.0f - active);
             const float gb = 1.0f;
-            g_TextL.Draw(kGhostMenu[i].route, rowX, routeY, routeSc,
+            g_TextL.Draw(MainMenuRouteLabel(ghostLang, i), rowX, routeY, routeSc,
                          gr, gg, gb, rowA);
-            g_TextS.Draw(kGhostMenu[i].sub, rowX + 4.0f, subY, subSc,
+            g_TextS.Draw(MainMenuSubtitleLabel(ghostLang, i), rowX + 4.0f, subY, subSc,
                          0.70f + 0.16f * active,
                          0.75f + 0.14f * active,
                          0.82f + 0.10f * active,
@@ -6763,15 +6789,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
                        sw * 0.30f - 160.0f * oldOut,
                        0.82f);
     {
-        struct GhostDef { const wchar_t* route; const wchar_t* sub; };
-        static const GhostDef kGhostMenu[5] = {
-            { L"PLAY",        L"\uC2DC\uC791" },
-            { L"SHOP",        L"\uC0C1\uC810" },
-            { L"ASTRAL_LOG",  L"\uB3C4\uAC10" },
-            { L"SETTING",     L"\uC124\uC815" },
-            { L"EXIT",        L"\uAC8C\uC784 \uC885\uB8CC" },
-        };
+        const int ghostLang = LangIndex();
         const float ghostSlide = 250.0f * oldOut;
+        const float ghostRailY = MainMenuButtonRailStartY(sh);
         const float anchorX = mainX - ghostSlide - 36.0f;
         BindMainShader();
         drawRect(anchorX, std::max(22.0f, MainLogoTop(sh) - 20.0f),
@@ -6779,7 +6799,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
                  0.48f, 0.82f, 1.0f, 0.12f * oldMenuA);
         for (int i = 0; i < 5; ++i) {
             const bool focus = (!s_backExit && i == 2);
-            const float rowY = mainY + (float)i * (mainBH + mainGap);
+            const float rowY = ghostRailY + (float)i * (mainBH + mainGap);
             const float rowX = mainX - ghostSlide - (focus ? 0.0f : 26.0f * oldOut);
             const float rowA = (s_backExit ? 0.82f : focus ? 0.76f : 0.18f) * oldMenuA;
             const float active = focus ? 1.0f : 0.0f;
@@ -6792,14 +6812,17 @@ static void Scene_CodexInline(const SceneCtx& c) {
                             5.0f, 0.48f, 0.82f, 1.0f, 0.72f * oldMenuA);
             }
             float routeSc = 1.04f;
-            while (routeSc > 0.82f && g_TextL.Width(kGhostMenu[i].route, routeSc) > mainBW)
+            while (routeSc > 0.82f &&
+                   g_TextL.Width(MainMenuRouteLabel(ghostLang, i), routeSc) > mainBW)
                 routeSc -= 0.04f;
             const float routeY2 = rowY + 2.0f;
-            const float subY = routeY2 + g_TextL.Height(kGhostMenu[i].route, routeSc) - 3.0f;
+            const float subY = routeY2 +
+                               g_TextL.Height(MainMenuRouteLabel(ghostLang, i), routeSc) - 3.0f;
             const float gr = s_backExit ? 1.0f : 1.0f - 0.52f * (1.0f - active);
             const float gg = s_backExit ? 1.0f : 1.0f - 0.18f * (1.0f - active);
-            g_TextL.Draw(kGhostMenu[i].route, rowX, routeY2, routeSc, gr, gg, 1.0f, rowA);
-            g_TextS.Draw(kGhostMenu[i].sub, rowX + 4.0f, subY, 0.48f,
+            g_TextL.Draw(MainMenuRouteLabel(ghostLang, i), rowX, routeY2, routeSc,
+                         gr, gg, 1.0f, rowA);
+            g_TextS.Draw(MainMenuSubtitleLabel(ghostLang, i), rowX + 4.0f, subY, 0.48f,
                          0.70f + 0.16f * active,
                          0.75f + 0.14f * active,
                          0.82f + 0.10f * active,
@@ -7815,8 +7838,10 @@ void Scene_Codex(const SceneCtx& c) {
 
     // ── HEADER ────────────────────────────────────────────────────────────
     const float hSlide = (1.0f - wake) * 30.0f * uiS;
+    const wchar_t* archiveTitle = (li == 0) ? L"도감"
+        : (li == 1) ? L"ASTRAL LOG" : L"星界記録";
     BindMainShader();
-    g_TextL.Draw(L"ASTRAL_LOG",
+    g_TextL.Draw(archiveTitle,
                  leftX, panelY + 4.0f * uiS - hSlide,
                  1.16f * uiS, 1.0f, 1.0f, 1.0f, 0.98f * wake);
 
@@ -10817,14 +10842,13 @@ static void Scene_RunConfigInlineLegacy(const SceneCtx& c) {
 
     DrawPersistentSceneLeftVignette(sw, sh, 0.86f);
 
-    static const wchar_t* menu[5] = { L"PLAY", L"SHOP", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
-    static const wchar_t* sub[5] = { L"시작", L"상점", L"도감", L"설정", L"게임 종료" };
+    const int ghostLang = LangIndex();
     for (int i = 0; i < 5; ++i) {
-        const float y = mainY + i * (mainBH + mainGap);
+        const float y = MainMenuButtonRailStartY(sh) + i * (mainBH + mainGap);
         const float x = mainX - 250.0f * (1.0f - oldA) - 24.0f * (i != 0) * (1.0f - oldA);
-        DrawShadowedText(g_TextL, menu[i], x, y + 2.0f, 1.04f,
+        DrawShadowedText(g_TextL, MainMenuRouteLabel(ghostLang, i), x, y + 2.0f, 1.04f,
                          1.0f, 1.0f, 1.0f, (i == 0 ? 0.82f : 0.18f) * oldA, 0.70f);
-        DrawShadowedText(g_TextS, sub[i], x + 4.0f, y + 43.0f, 0.48f,
+        DrawShadowedText(g_TextS, MainMenuSubtitleLabel(ghostLang, i), x + 4.0f, y + 43.0f, 0.48f,
                          0.72f, 0.77f, 0.84f, (i == 0 ? 0.74f : 0.22f) * oldA, 0.62f);
     }
 
@@ -11364,14 +11388,13 @@ static void Scene_TrialSelectInline(const SceneCtx& c) {
     DrawPersistentSceneLeftVignette(sw, sh, 0.86f);
 
     // Ghost menu list
-    static const wchar_t* menu[5] = { L"PLAY", L"SHOP", L"ASTRAL_LOG", L"SETTING", L"EXIT" };
-    static const wchar_t* sub[5]  = { L"시작", L"상점", L"도감", L"설정", L"게임 종료" };
+    const int ghostLang = LangIndex();
     for (int i = 0; i < 5; ++i) {
-        const float y = mainY + i * (mainBH + mainGap);
+        const float y = MainMenuButtonRailStartY(sh) + i * (mainBH + mainGap);
         const float x = mainX - 250.0f * (1.0f - oldA) - 24.0f * (i != 0) * (1.0f - oldA);
-        DrawShadowedText(g_TextL, menu[i], x, y + 2.0f, 1.04f,
+        DrawShadowedText(g_TextL, MainMenuRouteLabel(ghostLang, i), x, y + 2.0f, 1.04f,
                          1.0f, 1.0f, 1.0f, (i == 0 ? 0.82f : 0.18f) * oldA, 0.70f);
-        DrawShadowedText(g_TextS, sub[i],  x + 4.0f, y + 43.0f, 0.48f,
+        DrawShadowedText(g_TextS, MainMenuSubtitleLabel(ghostLang, i), x + 4.0f, y + 43.0f, 0.48f,
                          0.72f, 0.77f, 0.84f, (i == 0 ? 0.74f : 0.22f) * oldA, 0.62f);
     }
 
@@ -11629,6 +11652,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         bool autoFire = true;
         bool autoSkill = false;
         bool crosshair = true;
+        bool debugMode = false;
         Language language = Language::KR;
     };
     static SettingsSnapshot savedSettings = {};
@@ -11656,7 +11680,8 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         detailRow = 0;
         savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
                           g_ShowCombo, g_BackdropBlurEnabled, g_SoundVol,
-                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_Language };
+                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_DebugMode,
+                          g_Language };
         savedSettingsValid = true;
         confirmBack = false;
         confirmAbandon = false;
@@ -11686,6 +11711,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         g_AutoFire = savedSettings.autoFire;
         g_AutoSkill = savedSettings.autoSkill;
         g_ShowCrosshair = savedSettings.crosshair;
+        g_DebugMode = savedSettings.debugMode;
         g_Language = savedSettings.language;
     };
     auto settingsChanged = [&]() {
@@ -11700,6 +11726,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             || g_AutoFire != savedSettings.autoFire
             || g_AutoSkill != savedSettings.autoSkill
             || g_ShowCrosshair != savedSettings.crosshair
+            || g_DebugMode != savedSettings.debugMode
             || g_Language != savedSettings.language;
     };
 
@@ -11783,13 +11810,13 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                                    korean ? L"종료" : L"EXIT" };
         static const wchar_t* menuSub[5] = { L"\uC2DC\uC791", L"\uC0C1\uC810", L"\uB3C4\uAC10", L"\uC124\uC815", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 5; ++i) {
-            const float y = mainY + i * (mainBH + mainGap);
+            const float y = MainMenuButtonRailStartY(sh) + i * (mainBH + mainGap);
             const bool focus = i == 3;
             const float x = mainX - 250.0f * (1.0f - oldA) - (focus ? 0.0f : 24.0f * (1.0f - oldA));
             const float a = (focus ? 0.82f : 0.34f) * oldA;
-            DrawShadowedText(g_TextL, menu[i], x, y + 2.0f, 1.04f,
+            DrawShadowedText(g_TextL, MainMenuRouteLabel(LangIndex(), i), x, y + 2.0f, 1.04f,
                              1.0f, 1.0f, 1.0f, a, 0.70f);
-            DrawShadowedText(g_TextS, menuSub[i], x + 4.0f, y + 43.0f, 0.48f,
+            DrawShadowedText(g_TextS, MainMenuSubtitleLabel(LangIndex(), i), x + 4.0f, y + 43.0f, 0.48f,
                              0.72f, 0.77f, 0.84f, a * 0.9f, 0.62f);
         }
     } else {
@@ -11799,7 +11826,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                                    korean ? L"종료" : L"TERMINATE" };
         static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uB7F0 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 4; ++i) {
-            const float y = mainY + i * (mainBH + mainGap);
+            const float y = MainMenuButtonRailStartY(sh) + i * (mainBH + mainGap);
             const bool focus = i == 1;
             const float x = mainX - 250.0f * (1.0f - oldA) - (focus ? 0.0f : 24.0f * (1.0f - oldA));
             const float a = (focus ? 0.82f : 0.34f) * oldA;
@@ -11936,7 +11963,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         int optCur     = 0;                 // 현재 선택된 인덱스
     };
     SRow settingsRows[4][6] = {};
-    const int rowCounts[4] = { 4, 5, 3, 2 };
+    const int rowCounts[4] = { 4, 5, 4, 2 };
     // Kept as a compatibility buffer for the legacy single-row block below;
     // the integrated board reads settingsRows instead.
     SRow rows[6] = {};
@@ -12051,6 +12078,8 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                            { korean ? L"켜짐" : L"ON", korean ? L"꺼짐" : L"OFF" }, 2, g_AutoSkill ? 0 : 1 };
     settingsRows[2][2] = { korean ? L"조준선" : L"CROSSHAIR", nullptr, false, false, false, false,
                            { korean ? L"켜짐" : L"ON", korean ? L"꺼짐" : L"OFF" }, 2, g_ShowCrosshair ? 0 : 1 };
+    settingsRows[2][3] = { korean ? L"\uB514\uBC84\uAE45 \uBAA8\uB4DC" : L"DEBUG MODE", nullptr, false, false, false, false,
+                           { korean ? L"\uCF1C\uC9D0" : L"ON", korean ? L"\uB04C\uC9D0" : L"OFF" }, 2, g_DebugMode ? 0 : 1 };
     settingsRows[3][0] = { korean ? L"언어" : L"LANGUAGE", nullptr, false, false, false, false,
                            { korean ? L"한국어" : L"KOR", korean ? L"영어" : L"ENG", korean ? L"일본어" : L"JPN" },
                            3, allLangCur };
@@ -12068,13 +12097,14 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         korean ? L"전투 효과음 채널" : L"Combat sound routing",
         korean ? L"출력 채널 구성" : L"Output channel layout",
         korean ? L"사용 중인 오디오 엔진" : L"Active audio runtime" };
-    const wchar_t* allGameplayDesc[3] = {
+    const wchar_t* allGameplayDesc[4] = {
         korean ? L"자동 조준 발사" : L"Automatic target fire",
         korean ? L"자동 스킬 발동" : L"Automatic skill trigger",
-        korean ? L"플레이 중 조준선" : L"In-run aiming reticle" };
+        korean ? L"플레이 중 조준선" : L"In-run aiming reticle",
+        korean ? L"F 레벨업 / G 무적 단축키" : L"F level-up / G godmode hotkeys" };
     for (int i = 0; i < 4; ++i) allDescriptions[0][i] = allDisplayDesc[i];
     for (int i = 0; i < 5; ++i) allDescriptions[1][i] = allAudioDesc[i];
-    for (int i = 0; i < 3; ++i) allDescriptions[2][i] = allGameplayDesc[i];
+    for (int i = 0; i < 4; ++i) allDescriptions[2][i] = allGameplayDesc[i];
     allDescriptions[3][0] = korean ? L"인터페이스 언어" : L"Interface language";
     allDescriptions[3][1] = korean ? L"로컬 진행도 삭제" : L"Erase local progress";
 
@@ -12091,6 +12121,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             if (row == 0) return g_AutoFire != savedSettings.autoFire;
             if (row == 1) return g_AutoSkill != savedSettings.autoSkill;
             if (row == 2) return g_ShowCrosshair != savedSettings.crosshair;
+            if (row == 3) return g_DebugMode != savedSettings.debugMode;
         } else if (category == 3) {
             return row == 0 && g_Language != savedSettings.language;
         }
@@ -12119,10 +12150,11 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         korean ? L"효과음 채널" : L"SFX BUS",
         korean ? L"출력" : L"OUTPUT",
         korean ? L"오디오 엔진" : L"AUDIO ENGINE" };
-    const wchar_t* gameplayLabels[3] = {
+    const wchar_t* gameplayLabels[4] = {
         korean ? L"자동 발사" : L"AUTO FIRE",
         korean ? L"자동 스킬" : L"AUTO SKILL",
-        korean ? L"조준선" : L"CROSSHAIR" };
+        korean ? L"조준선" : L"CROSSHAIR",
+        korean ? L"\uB514\uBC84\uAE45 \uBAA8\uB4DC" : L"DEBUG MODE" };
     const wchar_t* archiveLabels[2] = {
         korean ? L"언어" : L"LANGUAGE",
         korean ? L"데이터 초기화" : L"RESET DATA" };
@@ -12131,7 +12163,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     addHeader(1, korean ? L"소리" : L"AUDIO");
     for (int i = 0; i < 5; ++i) addItem(1, i, audioLabels[i]);
     addHeader(2, korean ? L"게임플레이" : L"GAMEPLAY");
-    for (int i = 0; i < 3; ++i) addItem(2, i, gameplayLabels[i]);
+    for (int i = 0; i < 4; ++i) addItem(2, i, gameplayLabels[i]);
     addHeader(3, korean ? L"기록" : L"ARCHIVE");
     for (int i = 0; i < 2; ++i) addItem(3, i, archiveLabels[i]);
 
@@ -12615,7 +12647,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                 };
                 return blur[optionLanguage][optionIndex];
             }
-        } else if (category == 2 && row < 3) {
+        } else if (category == 2 && row < 4) {
             static const wchar_t* toggle[3][2] = {
                 { L"켜짐", L"꺼짐" }, { L"ON", L"OFF" }, { L"オン", L"オフ" }
             };
@@ -12994,7 +13026,8 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         SaveGame();
         savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
                           g_ShowCombo, g_BackdropBlurEnabled, g_SoundVol,
-                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_Language };
+                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_DebugMode,
+                          g_Language };
         savedSettingsValid = true;
         settingsDirty = false;
         pulse = 1.0f;
@@ -13033,7 +13066,8 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             SaveGame();
             savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
                               g_ShowCombo, g_BackdropBlurEnabled, g_SoundVol,
-                              g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_Language };
+                              g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_DebugMode,
+                              g_Language };
             settingsDirty = false;
             confirmBack = false;
             exiting = true;
@@ -13142,6 +13176,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
              if (row == 0) g_AutoFire = option == 0;
              else if (row == 1) g_AutoSkill = option == 0;
              else if (row == 2) g_ShowCrosshair = option == 0;
+             else if (row == 3) g_DebugMode = option == 0;
          } else if (category == 3 && row == 0) {
              g_Language = option == 0 ? Language::KR :
                           option == 1 ? Language::EN : Language::JP;
@@ -15281,6 +15316,156 @@ static bool TarotHit(const TarotCardPose& p, double mx, double my, float pad) {
            fabsf(ly) <= p.h * 0.5f + pad;
 }
 
+static void DrawAugmentConstellation(const AugDef& def, float cx, float cy,
+                                     float radius, float r, float g, float b,
+                                     float alpha, float now, float uiS) {
+    const AugListGroup group = AugListGroupOf(def);
+    int category = 1;
+    switch (group) {
+    case AugListGroup::SKILL:
+    case AugListGroup::WEAPON:
+        category = 2;
+        break;
+    case AugListGroup::ORBIT:
+    case AugListGroup::COMBO:
+    case AugListGroup::MYTHIC:
+    case AugListGroup::SPECIAL:
+    case AugListGroup::DEBUFF:
+        category = 3;
+        break;
+    default:
+        category = 1;
+        break;
+    }
+
+    // Reuse the game's constellation language, but seed each augment with its
+    // own type so two cards never look like a generic repeated icon.
+    DrawArchiveConstellation(cx, cy, radius, category,
+                              static_cast<int>(def.type), now,
+                              r, g, b, alpha, uiS, true);
+}
+
+static void DrawAugmentOrbitRing(float cx, float cy, float rx, float ry,
+                                 float phase, float r, float g, float b,
+                                 float alpha, float uiS) {
+    if (alpha <= 0.001f || rx <= 2.0f || ry <= 2.0f) return;
+    constexpr int kSegments = 48;
+    float prevX = cx + cosf(phase) * rx;
+    float prevY = cy + sinf(phase) * ry;
+    for (int i = 1; i <= kSegments; ++i) {
+        const float a = phase + 2.0f * (float)M_PI *
+                        (float)i / (float)kSegments;
+        const float x = cx + cosf(a) * rx;
+        const float y = cy + sinf(a) * ry;
+        if ((i % 8) != 0) {
+            DrawVisibleConstellLine(prevX, prevY, x, y,
+                                    0.72f * uiS, r, g, b, alpha);
+        }
+        prevX = x;
+        prevY = y;
+    }
+    for (int i = 0; i < 4; ++i) {
+        const float a = phase + (float)i * (float)M_PI * 0.5f;
+        DrawVisibleConstellNode(cx + cosf(a) * rx,
+                                cy + sinf(a) * ry,
+                                2.8f * uiS, r, g, b,
+                                alpha * 0.76f, false, true);
+    }
+}
+
+static void DrawAugmentCylinderField(float x, float y, float w, float h,
+                                     float r, float g, float b, float alpha,
+                                     float reveal, float phase) {
+    if (alpha <= 0.001f || w <= 8.0f || h <= 8.0f) return;
+    reveal = TarotClamp01(reveal);
+    const float midX = x + w * 0.50f;
+    const float midY = y + h * 0.52f;
+    const float fieldA = alpha * (0.72f + reveal * 0.28f);
+
+    BindMainShader();
+    drawRect(x + 12.0f, y + 14.0f, w, h,
+             0.0f, 0.0f, 0.018f, alpha * 0.36f);
+    drawRect(x, y, w, h,
+             0.006f, 0.010f, 0.028f, alpha * 0.74f);
+    drawRect(x + w * 0.08f, y + h * 0.08f,
+             w * 0.84f, h * 0.84f,
+             r * 0.018f, g * 0.022f, b * 0.034f,
+             alpha * 0.20f);
+    BatchFlush();
+
+    // Curved side rails are the silhouette of the rotating cylinder. They
+    // stay dark at the edges and expose more of the colored field as reveal
+    // advances, matching the "촤라락" opening in the reference sketch.
+    const int railSteps = 36;
+    const float leftRail = x + w * 0.15f;
+    const float rightRail = x + w * 0.85f;
+    float prevLX = leftRail, prevRX = rightRail;
+    float prevY = y;
+    for (int i = 1; i <= railSteps; ++i) {
+        const float t = (float)i / (float)railSteps;
+        const float yy = y + h * t;
+        const float curve = sinf(t * (float)M_PI) * w * 0.065f;
+        const float lx = leftRail + curve;
+        const float rx = rightRail - curve;
+        const float railReveal = TarotClamp01((reveal - t * 0.18f) / 0.82f);
+        DrawVisibleConstellLine(prevLX, prevY, lx, yy,
+                                2.4f, 0.0f, 0.0f, 0.012f,
+                                alpha * (0.62f + 0.24f * railReveal));
+        DrawVisibleConstellLine(prevRX, prevY, rx, yy,
+                                2.4f, 0.0f, 0.0f, 0.012f,
+                                alpha * (0.62f + 0.24f * railReveal));
+        DrawVisibleConstellLine(prevLX + 3.5f, prevY, lx + 3.5f, yy,
+                                0.85f, r, g, b, alpha * 0.18f * railReveal);
+        DrawVisibleConstellLine(prevRX - 3.5f, prevY, rx - 3.5f, yy,
+                                0.85f, r, g, b, alpha * 0.18f * railReveal);
+        prevLX = lx; prevRX = rx; prevY = yy;
+    }
+
+    // Elliptical orbit bands establish the cylinder depth. The phase is
+    // intentionally slow; the field should feel alive without rotating the
+    // labels or making the choices hard to read.
+    const int orbitSteps = 48;
+    for (int ring = 0; ring < 3; ++ring) {
+        const float rx = w * (0.22f + 0.075f * (float)ring);
+        const float ry = h * (0.16f + 0.065f * (float)ring);
+        const float ringPhase = phase * (ring == 1 ? -0.65f : 0.42f)
+                              + (float)ring * 0.78f;
+        float prevX = midX + cosf(ringPhase) * rx;
+        float prevY2 = midY + sinf(ringPhase) * ry;
+        for (int i = 1; i <= orbitSteps; ++i) {
+            const float a = ringPhase + 2.0f * (float)M_PI *
+                            (float)i / (float)orbitSteps;
+            const float nx = midX + cosf(a) * rx;
+            const float ny = midY + sinf(a) * ry;
+            const bool gap = ((i + ring * 3) % 7) == 0;
+            if (!gap) {
+                DrawVisibleConstellLine(prevX, prevY2, nx, ny,
+                                        0.62f + 0.18f * (float)ring,
+                                        r, g, b,
+                                        alpha * (0.12f - 0.018f * (float)ring));
+            }
+            prevX = nx; prevY2 = ny;
+        }
+    }
+
+    const float sweep = phase * 0.8f;
+    for (int i = 0; i < 5; ++i) {
+        const float a = sweep + (float)i * 1.256637f;
+        const float px = midX + cosf(a) * w * 0.34f;
+        const float py = midY + sinf(a) * h * 0.37f;
+        DrawVisibleConstellNode(px, py, 2.0f + (i & 1),
+                                r, g, b,
+                                alpha * (0.24f + 0.08f *
+                                         sinf(phase * 2.0f + (float)i)),
+                                false, true);
+    }
+    DrawConstellationDisc(midX, midY, h * 0.15f,
+                          r, g, b, alpha * 0.10f);
+    DrawVisibleConstellNode(midX, midY, h * 0.035f,
+                            r, g, b, fieldA * 0.82f, false, true);
+    BatchFlush();
+}
+
 static void DrawTarotEmblem(const AugDef& def, float cx, float cy, float size,
                             float r, float g, float b, float a, float now) {
     const AugListGroup group = AugListGroupOf(def);
@@ -15621,22 +15806,15 @@ static void Scene_AugSelectCards(const SceneCtx& c) {
                      0.60f, 0.72f, 0.82f, 0.96f, alpha * 0.84f);
         BatchFlush();
 
-        const float iconSize = std::min(p.w * 0.44f, 150.0f * ui);
-        const float iconX = p.cx - iconSize * 0.5f;
+        const float constellationSize = std::min(p.w * 0.44f, 150.0f * ui);
         const float iconY = top + topBar + 18.0f * ui;
-        GLuint icon = IconFor(def.type);
-        if (icon) {
-            BatchFlush();
-            DrawIcon(icon, iconX, iconY, iconSize, iconSize,
-                     1.0f, 1.0f, 1.0f,
-                     alpha * (0.90f + hT * 0.10f));
-            BindMainShader();
-        } else {
-            DrawTarotEmblem(def, p.cx, iconY + iconSize * 0.5f,
-                            iconSize, r, g, b,
-                            alpha * (0.88f + hT * 0.12f), now);
-        }
-        const float dividerY = iconY + iconSize + 16.0f * ui;
+        DrawAugmentConstellation(def, p.cx,
+                                 iconY + constellationSize * 0.5f,
+                                 constellationSize * 0.48f,
+                                 r, g, b,
+                                 alpha * (0.86f + hT * 0.14f), now, ui);
+        BindMainShader();
+        const float dividerY = iconY + constellationSize + 16.0f * ui;
         const float nameY = dividerY + 14.0f * ui;
         const wchar_t* name = AugName(def);
         float nameScale = 0.82f;
@@ -15718,8 +15896,2280 @@ static void Scene_AugSelectCards(const SceneCtx& c) {
     }
 }
 
+enum class AugPreviewMetric {
+    ATTACK,
+    FIRE_RATE,
+    BULLET_SPEED,
+    MOVE_SPEED,
+    MAX_HP,
+    VISION,
+    COUNT
+};
+
+static PlayerStats MakeAugPreviewBaseStats();
+static PlayerStats MakeAugPreviewTrialStats();
+static PlayerStats MakeAugPreviewOwnedStats();
+static PlayerStats MakeAugPreviewCandidateStats(const PlayerStats& owned,
+                                                const AugDef& candidate);
+static float AugPreviewMetricValue(const PlayerStats& stats,
+                                   AugPreviewMetric metric);
+
+enum class AugVisualFamily {
+    STRIKE,
+    WARD,
+    MOTION,
+    ORBITAL,
+    UTILITY,
+    FRACTURED,
+    DUAL
+};
+
+struct AugSelectionLayout {
+    float ui = 1.0f;
+    float textUi = 1.0f;
+    float orbitCX = 0.0f;
+    float orbitCY = 0.0f;
+    float orbitR = 0.0f;
+    float baseR = 0.0f;
+    float panelX = 0.0f;
+    float panelY = 0.0f;
+    float panelW = 0.0f;
+    float panelH = 0.0f;
+};
+
+struct AugShapeVertex {
+    float angleDeg;
+    float radius;
+};
+
+struct AugShapeEdge {
+    int a;
+    int b;
+};
+
+struct AugImpactRow {
+    AugPreviewMetric metric = AugPreviewMetric::ATTACK;
+    float before = 0.0f;
+    float after = 0.0f;
+};
+
+static float AugSelectionClamp(float v) {
+    return std::max(0.0f, std::min(1.0f, v));
+}
+
+static float AugSelectionEase(float v) {
+    const float t = AugSelectionClamp(v);
+    const float inv = 1.0f - t;
+    return 1.0f - inv * inv * inv;
+}
+
+static float AugSelectionSmooth(float speed, float delta) {
+    return 1.0f - expf(-std::max(0.0f, speed) *
+                       std::max(0.0f, delta));
+}
+
+static AugSelectionLayout MakeAugSelectionLayout(float sw, float sh) {
+    AugSelectionLayout layout;
+    layout.ui = std::max(0.72f, std::min(1.15f,
+        std::min(sw / 1920.0f, sh / 1080.0f)));
+    layout.textUi = std::max(0.86f, layout.ui);
+    const float aspect = sh > 1.0f ? sw / sh : 1.777f;
+    layout.orbitCX = sw * (aspect < 1.50f ? 0.34f : 0.36f);
+    layout.orbitCY = sh * 0.50f;
+    layout.panelX = sw * (aspect < 1.50f ? 0.66f : 0.69f);
+    layout.panelY = sh * 0.19f;
+    layout.panelW = std::max(230.0f * layout.ui,
+                             sw - layout.panelX - 42.0f * layout.ui);
+    layout.panelH = sh * 0.67f;
+    layout.orbitR = std::min(sw * 0.20f, sh * 0.29f);
+    layout.orbitR = std::min(layout.orbitR,
+        std::max(120.0f * layout.ui,
+                 layout.panelX - layout.orbitCX - 116.0f * layout.ui));
+    layout.baseR = std::max(42.0f * layout.ui,
+        std::min(64.0f * layout.ui, std::min(sw, sh) * 0.060f));
+    return layout;
+}
+
+static bool AugIsWardVisual(AugType type) {
+    switch (type) {
+    case AugType::REGEN_UP:
+    case AugType::LIFESTEAL:
+    case AugType::VAMPIRE:
+    case AugType::MK2:
+    case AugType::HP_UP:
+    case AugType::FIREWALL:
+    case AugType::REGEN_2:
+    case AugType::CB_BASTION:
+    case AugType::CB_LIFEBUOY:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool AugIsMotionVisual(AugType type) {
+    switch (type) {
+    case AugType::MOVE_UP:
+    case AugType::VISION_UP:
+    case AugType::LIGHT_AMMO:
+    case AugType::LIGHT_STEP:
+    case AugType::GUN_RUNNER:
+    case AugType::MINIATURIZE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool AugIsStrikeVisual(AugType type) {
+    switch (type) {
+    case AugType::DMG_UP:
+    case AugType::RATE_UP:
+    case AugType::SPD_UP:
+    case AugType::CRIT:
+    case AugType::OVERDRIVE:
+    case AugType::CORE_OVERLOAD:
+    case AugType::PIERCE:
+    case AugType::PIERCE_2:
+    case AugType::TWIN:
+    case AugType::TWIN_2:
+    case AugType::CHAIN:
+    case AugType::CHAIN_2:
+    case AugType::DEATH_BLAST:
+    case AugType::DEATH_BLAST_2:
+    case AugType::POWER_SURGE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static AugVisualFamily AugVisualFamilyOf(const AugDef& def) {
+    if (def.rarity == AugRarity::DEBUFF) return AugVisualFamily::FRACTURED;
+    if (def.rarity == AugRarity::COMBO) return AugVisualFamily::DUAL;
+    const AugListGroup group = AugListGroupOf(def);
+    if (group == AugListGroup::ORBIT) return AugVisualFamily::ORBITAL;
+    if (group == AugListGroup::WEAPON) return AugVisualFamily::STRIKE;
+    if (group == AugListGroup::SKILL || group == AugListGroup::SPECIAL)
+        return AugVisualFamily::UTILITY;
+    if (AugIsWardVisual(def.type)) return AugVisualFamily::WARD;
+    if (AugIsMotionVisual(def.type)) return AugVisualFamily::MOTION;
+    if (AugIsStrikeVisual(def.type)) return AugVisualFamily::STRIKE;
+    return AugVisualFamily::UTILITY;
+}
+
+static const wchar_t* AugVisualFamilyLabel(AugVisualFamily family) {
+    switch (family) {
+    case AugVisualFamily::STRIKE:    return L"STRIKE";
+    case AugVisualFamily::WARD:      return L"WARD";
+    case AugVisualFamily::MOTION:    return L"MOTION";
+    case AugVisualFamily::ORBITAL:   return L"ORBITAL";
+    case AugVisualFamily::UTILITY:   return L"UTILITY";
+    case AugVisualFamily::FRACTURED: return L"FRACTURED";
+    case AugVisualFamily::DUAL:      return L"DUAL";
+    default:                         return L"UNKNOWN";
+    }
+}
+
+static void DrawAugSelectionConstellation(const AugDef& def,
+                                          AugVisualFamily family,
+                                          float cx, float cy, float radius,
+                                          float lineR, float lineG, float lineB,
+                                          float accentR, float accentG,
+                                          float accentB, float alpha,
+                                          float reveal, float rotation,
+                                          float ui, bool focused,
+                                          float now) {
+    static const AugShapeVertex strikeV[] = {
+        {-90,1.00f},{-54,0.42f},{-18,0.96f},{18,0.40f},{54,1.00f},
+        {90,0.42f},{126,0.94f},{162,0.40f},{198,0.98f},{234,0.42f}
+    };
+    static const AugShapeEdge strikeE[] = {
+        {0,1},{1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,8},{8,9},{9,0},
+        {1,5},{5,9},{9,3},{3,7},{7,1}
+    };
+    static const AugShapeVertex wardV[] = {
+        {-90,1.00f},{-30,1.00f},{30,1.00f},{90,1.00f},{150,1.00f},{210,1.00f},
+        {-60,0.50f},{60,0.50f},{180,0.50f},{0,0.00f}
+    };
+    static const AugShapeEdge wardE[] = {
+        {0,1},{1,2},{2,3},{3,4},{4,5},{5,0},{6,7},{7,8},{8,6},
+        {0,8},{1,6},{2,6},{3,7},{4,7},{5,8},{6,9},{7,9},{8,9}
+    };
+    static const AugShapeVertex motionV[] = {
+        {-72,0.96f},{-24,1.00f},{25,0.82f},{-38,0.55f},{18,0.48f},
+        {72,0.62f},{126,0.78f},{176,0.58f},{220,0.88f}
+    };
+    static const AugShapeEdge motionE[] = {
+        {0,1},{1,2},{2,4},{4,3},{3,0},{0,4},{1,3},{4,5},{5,6},{6,7},{7,8}
+    };
+    static const AugShapeVertex orbitalV[] = {
+        {0,0.00f},{-90,1.00f},{-45,0.88f},{0,1.00f},{45,0.88f},
+        {90,1.00f},{135,0.88f},{180,1.00f},{225,0.88f}
+    };
+    static const AugShapeEdge orbitalE[] = {
+        {1,2},{2,3},{3,4},{4,5},{5,6},{6,7},{7,8},{8,1},
+        {0,1},{0,3},{0,5},{0,7}
+    };
+    static const AugShapeVertex utilityV[] = {
+        {-90,0.94f},{-45,0.58f},{0,0.84f},{45,0.54f},{90,0.92f},
+        {150,0.62f},{205,0.98f},{232,0.52f},{268,0.82f}
+    };
+    static const AugShapeEdge utilityE[] = {
+        {0,1},{1,2},{2,3},{3,4},{1,5},{5,6},{3,7},{7,8},{5,7},{2,7}
+    };
+    static const AugShapeVertex fracturedV[] = {
+        {-92,1.00f},{-48,0.55f},{-8,0.92f},{38,0.48f},{78,1.00f},
+        {126,0.56f},{168,0.90f},{210,0.44f},{252,0.86f}
+    };
+    static const AugShapeEdge fracturedE[] = {
+        {0,1},{1,2},{3,4},{4,5},{5,6},{7,8},{8,0},{1,5},{2,7},{4,7}
+    };
+
+    if (family == AugVisualFamily::DUAL) {
+        DrawAugSelectionConstellation(def, AugVisualFamily::WARD,
+            cx - radius * 0.28f, cy, radius * 0.70f,
+            lineR, lineG, lineB, accentR, accentG, accentB,
+            alpha, reveal, rotation - 0.18f, ui, focused, now);
+        DrawAugSelectionConstellation(def, AugVisualFamily::STRIKE,
+            cx + radius * 0.28f, cy, radius * 0.70f,
+            lineR, lineG, lineB, accentR, accentG, accentB,
+            alpha, reveal, rotation + 0.18f, ui, focused, now);
+        DrawVisibleConstellLine(cx - radius * 0.24f, cy,
+                                cx + radius * 0.24f, cy,
+                                (focused ? 2.4f : 1.7f) * ui,
+                                accentR, accentG, accentB,
+                                alpha * 0.62f * reveal);
+        BatchFlush();
+        return;
+    }
+
+    const AugShapeVertex* vertices = utilityV;
+    const AugShapeEdge* edges = utilityE;
+    int vertexCount = (int)(sizeof(utilityV) / sizeof(utilityV[0]));
+    int edgeCount = (int)(sizeof(utilityE) / sizeof(utilityE[0]));
+    switch (family) {
+    case AugVisualFamily::STRIKE:
+        vertices = strikeV; edges = strikeE;
+        vertexCount = (int)(sizeof(strikeV) / sizeof(strikeV[0]));
+        edgeCount = (int)(sizeof(strikeE) / sizeof(strikeE[0]));
+        break;
+    case AugVisualFamily::WARD:
+        vertices = wardV; edges = wardE;
+        vertexCount = (int)(sizeof(wardV) / sizeof(wardV[0]));
+        edgeCount = (int)(sizeof(wardE) / sizeof(wardE[0]));
+        break;
+    case AugVisualFamily::MOTION:
+        vertices = motionV; edges = motionE;
+        vertexCount = (int)(sizeof(motionV) / sizeof(motionV[0]));
+        edgeCount = (int)(sizeof(motionE) / sizeof(motionE[0]));
+        break;
+    case AugVisualFamily::ORBITAL:
+        vertices = orbitalV; edges = orbitalE;
+        vertexCount = (int)(sizeof(orbitalV) / sizeof(orbitalV[0]));
+        edgeCount = (int)(sizeof(orbitalE) / sizeof(orbitalE[0]));
+        break;
+    case AugVisualFamily::FRACTURED:
+        vertices = fracturedV; edges = fracturedE;
+        vertexCount = (int)(sizeof(fracturedV) / sizeof(fracturedV[0]));
+        edgeCount = (int)(sizeof(fracturedE) / sizeof(fracturedE[0]));
+        break;
+    default:
+        break;
+    }
+
+    DrawConstellationDisc(cx, cy, radius * 1.48f,
+                          0.0f, 0.0f, 0.008f, alpha * 0.38f);
+    DrawNebulaGlow(cx, cy, radius * (focused ? 1.85f : 1.56f),
+                   lineR, lineG, lineB,
+                   alpha * (focused ? 0.42f : 0.22f), now,
+                   def.rarity == AugRarity::SPECIAL);
+
+    float px[16] = {};
+    float py[16] = {};
+    const unsigned seed = ((unsigned)((int)def.type + 1) * 2654435761u);
+    const float baseJitter = (((seed >> 4) & 255u) / 255.0f - 0.5f) * 0.12f;
+    for (int i = 0; i < vertexCount && i < 16; ++i) {
+        const unsigned bits = (seed >> ((i * 3) & 15)) ^ (seed * (unsigned)(i + 3));
+        const float angleJitter = (((bits >> 5) & 15u) / 15.0f - 0.5f) * 0.10f;
+        const float radialJitter = 0.94f + ((bits >> 9) & 15u) / 15.0f * 0.12f;
+        const float angle = vertices[i].angleDeg * (float)M_PI / 180.0f +
+                            rotation + baseJitter + angleJitter;
+        const float vr = radius * vertices[i].radius * radialJitter;
+        px[i] = cx + cosf(angle) * vr;
+        py[i] = cy + sinf(angle) * vr;
+    }
+
+    const float edgeProgress = AugSelectionClamp(reveal) * (float)edgeCount;
+    for (int e = 0; e < edgeCount; ++e) {
+        const float local = AugSelectionClamp(edgeProgress - (float)e);
+        if (local <= 0.001f) continue;
+        const int a = edges[e].a;
+        const int b = edges[e].b;
+        const float ex = px[a] + (px[b] - px[a]) * local;
+        const float ey = py[a] + (py[b] - py[a]) * local;
+        DrawVisibleConstellLine(px[a], py[a], ex, ey,
+                                (focused ? 2.35f : 1.72f) * ui,
+                                lineR, lineG, lineB,
+                                alpha * (focused ? 0.90f : 0.68f));
+    }
+
+    const float nodeProgress = AugSelectionClamp(reveal * 1.20f) *
+                               (float)vertexCount;
+    for (int i = 0; i < vertexCount; ++i) {
+        const float local = AugSelectionClamp(nodeProgress - (float)i);
+        if (local <= 0.001f) continue;
+        const bool centerNode = vertices[i].radius < 0.10f;
+        const float size = (centerNode ? 5.8f : (focused ? 4.8f : 3.6f)) *
+                           ui * (0.70f + local * 0.30f);
+        DrawVisibleConstellNode(px[i], py[i], size,
+                                centerNode ? accentR : lineR,
+                                centerNode ? accentG : lineG,
+                                centerNode ? accentB : lineB,
+                                alpha * (0.72f + local * 0.24f),
+                                focused || centerNode, true);
+    }
+
+    const float pulse = 0.5f + 0.5f * sinf(now * 3.2f + baseJitter * 8.0f);
+    DrawVisibleConstellNode(cx, cy,
+        (focused ? 9.0f + pulse * 2.2f : 6.5f + pulse * 1.0f) * ui,
+        accentR, accentG, accentB,
+        alpha * AugSelectionClamp(reveal * 1.35f), true, true);
+    BatchFlush();
+}
+
+static int BuildAugImpactRows(const AugDef& def, AugImpactRow* rows,
+                              int maxRows) {
+    if (!rows || maxRows <= 0) return 0;
+    const PlayerStats owned = MakeAugPreviewOwnedStats();
+    const PlayerStats result = MakeAugPreviewCandidateStats(owned, def);
+    int count = 0;
+    for (int i = 0; i < (int)AugPreviewMetric::COUNT && count < maxRows; ++i) {
+        const AugPreviewMetric metric = (AugPreviewMetric)i;
+        const float before = AugPreviewMetricValue(owned, metric);
+        const float after = AugPreviewMetricValue(result, metric);
+        if (fabsf(after - before) <= 0.05f) continue;
+        rows[count++] = { metric, before, after };
+    }
+    return count;
+}
+
+static const wchar_t* AugMetricLabel(AugPreviewMetric metric) {
+    static const wchar_t* labels[3][(int)AugPreviewMetric::COUNT] = {
+        { L"공격", L"연사", L"탄속", L"이동", L"최대 HP", L"시야" },
+        { L"ATTACK", L"FIRE RATE", L"BULLET SPD", L"MOVE", L"MAX HP", L"VISION" },
+        { L"攻撃", L"連射", L"弾速", L"移動", L"最大HP", L"視界" }
+    };
+    int lang = CurLangIdx();
+    if (lang < 0 || lang > 2) lang = 0;
+    int idx = (int)metric;
+    if (idx < 0 || idx >= (int)AugPreviewMetric::COUNT) idx = 0;
+    return labels[lang][idx];
+}
+
+static void FormatAugMetricValue(wchar_t* out, size_t outCount,
+                                 AugPreviewMetric metric, float value,
+                                 bool signedValue) {
+    if (!out || outCount == 0) return;
+    if (metric == AugPreviewMetric::FIRE_RATE) {
+        swprintf_s(out, outCount, signedValue ? L"%+.1f/s" : L"%.1f/s", value);
+    } else if (metric == AugPreviewMetric::MOVE_SPEED) {
+        swprintf_s(out, outCount, signedValue ? L"%+.1f%%" : L"%.1f%%", value);
+    } else {
+        swprintf_s(out, outCount, signedValue ? L"%+.0f" : L"%.0f", value);
+    }
+}
+
+static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, delta = c.delta;
+    const bool isDebuff = g_GameManager.currentState == GameState::DEBUFF_SELECT;
+    const int count = std::max(0, std::min(3, g_GameManager.augChoiceCount));
+    const bool inExit = g_AugExitT >= 0.0f;
+    const float now = (float)glfwGetTime();
+    const AugSelectionLayout layout = MakeAugSelectionLayout(sw, sh);
+
+    static int seenSerial = -1;
+    static float enterT = 0.0f;
+    static float orbitPhase = 0.0f;
+    static float orbitSpeed = 0.0f;
+    static float shapePhase[3] = {};
+    static float focusT[3] = {};
+    static float dimT[3] = { 1.0f, 1.0f, 1.0f };
+    static float flashT[3] = {};
+    static float panelT = 0.0f;
+    static int previousFocus = -1;
+    static bool lmbPrev = false;
+    static double previousMx = -1.0;
+    static double previousMy = -1.0;
+    struct Particle { float x,y,vx,vy,life,r,g,b; };
+    static Particle particles[72];
+    static bool particlesSpawned = false;
+
+    if (seenSerial != g_GameManager.augmentSelectionSerial) {
+        seenSerial = g_GameManager.augmentSelectionSerial;
+        enterT = 0.0f;
+        orbitSpeed = 0.0f;
+        for (int i = 0; i < 3; ++i)
+            shapePhase[i] = (float)i * 2.0944f;
+        panelT = 0.0f;
+        previousFocus = -1;
+        lmbPrev = false;
+        previousMx = c.mx;
+        previousMy = c.my;
+        particlesSpawned = false;
+        g_HoveredAug = -1;
+        for (int i = 0; i < 3; ++i) {
+            focusT[i] = 0.0f;
+            dimT[i] = 1.0f;
+            flashT[i] = 0.0f;
+        }
+        for (auto& p : particles) p.life = 0.0f;
+    }
+
+    if (!inExit) enterT = std::min(1.0f, enterT + delta / 1.20f);
+    const float enterE = AugSelectionEase(enterT);
+    const bool inputReady = enterT >= 0.66f && !inExit;
+    const int focus = g_HoveredAug >= 0 && g_HoveredAug < count
+        ? g_HoveredAug : -1;
+
+    if (focus != previousFocus && focus >= 0) flashT[focus] = 1.0f;
+    previousFocus = focus;
+    for (int i = 0; i < 3; ++i) {
+        const float focusTarget = inputReady && focus == i ? 1.0f : 0.0f;
+        // Keep every candidate's own hue. Non-focused constellations only lose
+        // light, so focus reads as depth instead of a palette/state change.
+        const float dimTarget = focus >= 0 && focus != i ? 0.24f : 1.0f;
+        focusT[i] += (focusTarget - focusT[i]) *
+                     AugSelectionSmooth(8.5f, delta);
+        dimT[i] += (dimTarget - dimT[i]) *
+                   AugSelectionSmooth(9.0f, delta);
+        flashT[i] = std::max(0.0f, flashT[i] - delta / 0.22f);
+    }
+    panelT += ((focus >= 0 && !inExit ? 1.0f : 0.0f) - panelT) *
+              AugSelectionSmooth(10.0f, delta);
+
+    const float decel = AugSelectionEase(
+        AugSelectionClamp((enterT - 0.12f) / 0.78f));
+    const float entrySpeed = 0.90f + (0.065f - 0.90f) * decel;
+    const float targetSpeed = focus >= 0 ? 0.004f : entrySpeed;
+    orbitSpeed += (targetSpeed - orbitSpeed) *
+                  AugSelectionSmooth(focus >= 0 ? 7.5f : 4.5f, delta);
+    if (!inExit) orbitPhase += orbitSpeed * delta;
+    for (int i = 0; i < count; ++i) {
+        // The constellation's local rotation is continuous across hover
+        // changes. Focus may scale/pull it during confirmation, but never
+        // re-seed its angle from a different time-based multiplier.
+        const float localSpeed = 0.10f;
+        if (!inExit) shapePhase[i] += localSpeed * delta;
+        if (shapePhase[i] > 2.0f * (float)M_PI)
+            shapePhase[i] -= 2.0f * (float)M_PI;
+    }
+
+    float orbitX[3] = {};
+    float orbitY[3] = {};
+    float drawX[3] = {};
+    float drawY[3] = {};
+    float drawR[3] = {};
+    float reveal[3] = {};
+    for (int i = 0; i < count; ++i) {
+        float angle = -(float)M_PI * 0.50f;
+        if (count > 1)
+            angle += orbitPhase + (float)i * (2.0f * (float)M_PI / (float)count);
+        const float radiusScale = count == 1 ? 0.72f : 1.0f;
+        orbitX[i] = layout.orbitCX + cosf(angle) * layout.orbitR * radiusScale;
+        orbitY[i] = layout.orbitCY + sinf(angle) * layout.orbitR * radiusScale;
+        reveal[i] = AugSelectionEase(
+            AugSelectionClamp((enterT - (float)i * 0.07f) / 0.62f));
+        const float grow = AugSelectionEase(focusT[i]);
+        // Hover magnifies the constellation exactly where it lives on the
+        // orbit. Only confirmation is allowed to pull it into the centre.
+        drawX[i] = layout.orbitCX + (orbitX[i] - layout.orbitCX) * reveal[i];
+        drawY[i] = layout.orbitCY + (orbitY[i] - layout.orbitCY) * reveal[i];
+        drawR[i] = layout.baseR * (1.0f + grow * 0.64f + flashT[i] * 0.05f);
+    }
+
+    const bool pointerMoved = previousMx < 0.0 ||
+        fabs(c.mx - previousMx) > 3.0 || fabs(c.my - previousMy) > 3.0;
+    if (pointerMoved) g_GameManager.augmentKeyboardFocus = false;
+    previousMx = c.mx;
+    previousMy = c.my;
+    auto hitCandidate = [&]() -> int {
+        int best = -1;
+        float bestD2 = 1e30f;
+        for (int i = 0; i < count; ++i) {
+            const float dx = (float)c.mx - drawX[i];
+            const float dy = (float)c.my - drawY[i];
+            const float d2 = dx * dx + dy * dy;
+            const float hitR = std::max(layout.baseR * 1.55f,
+                                        drawR[i] * 1.15f);
+            if (d2 <= hitR * hitR && d2 < bestD2) {
+                best = i;
+                bestD2 = d2;
+            }
+        }
+        return best;
+    };
+    if (inputReady && pointerMoved &&
+        !g_GameManager.augmentKeyboardFocus) {
+        const int hovered = hitCandidate();
+        if (hovered >= 0) g_HoveredAug = hovered;
+    }
+    const bool lmbClick = c.lmb && !lmbPrev;
+    if (inputReady && lmbClick) {
+        const int clicked = hitCandidate();
+        if (clicked >= 0) {
+            g_HoveredAug = clicked;
+            g_GameManager.augmentKeyboardFocus = false;
+        }
+    }
+    lmbPrev = c.lmb;
+
+    const int activeFocus = g_HoveredAug >= 0 && g_HoveredAug < count
+        ? g_HoveredAug : -1;
+    const float stateR = isDebuff ? 0.96f : 0.16f;
+    const float stateG = isDebuff ? 0.14f : 0.84f;
+    const float stateB = isDebuff ? 0.18f : 0.98f;
+    const float collapseT = inExit
+        ? AugSelectionEase(AugSelectionClamp(g_AugExitT / 0.55f)) : 0.0f;
+    const float novaT = inExit
+        ? AugSelectionEase(AugSelectionClamp((g_AugExitT - 0.55f) / 0.40f)) : 0.0f;
+    const float sceneAlpha = inExit
+        ? 1.0f - AugSelectionClamp((g_AugExitT - 1.12f) / 0.50f) : 1.0f;
+
+    BindMainShader();
+    drawRect(0.0f, 0.0f, sw, sh,
+             isDebuff ? 0.018f : 0.003f,
+             isDebuff ? 0.004f : 0.008f,
+             isDebuff ? 0.008f : 0.022f,
+             enterE * 0.68f * sceneAlpha);
+    drawRect(layout.panelX - 30.0f * layout.ui,
+             layout.panelY - 28.0f * layout.ui,
+             layout.panelW + 18.0f * layout.ui,
+             layout.panelH + 38.0f * layout.ui,
+             0.0f, 0.006f, 0.016f,
+             enterE * sceneAlpha * 0.20f);
+    BatchFlush();
+
+    const float frameA = enterE * sceneAlpha;
+    drawConstellFrame(18.0f * layout.ui, 18.0f * layout.ui,
+                      sw - 36.0f * layout.ui,
+                      sh - 36.0f * layout.ui,
+                      stateR, stateG, stateB, frameA * 0.16f,
+                      24.0f * layout.ui, 7.0f * layout.ui,
+                      frameA * 0.10f, enterE);
+    BatchFlush();
+
+    const wchar_t* title = isDebuff ? T(StrId::CHOOSE_DEBUFF)
+                                    : T(StrId::CHOOSE_AUG);
+    const float titleScale = 0.94f * layout.textUi;
+    g_TextL.Draw(title,
+        layout.orbitCX - g_TextL.Width(title, titleScale) * 0.5f,
+        sh * 0.060f, titleScale,
+        0.96f, 0.98f, 1.0f, enterE * sceneAlpha * 0.94f);
+    if (!isDebuff) {
+        wchar_t slots[64];
+        swprintf_s(slots, L"ID %d / %d",
+                   CountIdentitySlotsUsed(), IdentitySlotMax());
+        const float slotScale = 0.54f * layout.textUi;
+        g_TextS.Draw(slots,
+            layout.orbitCX - g_TextS.Width(slots, slotScale) * 0.5f,
+            sh * 0.060f + 35.0f * layout.ui, slotScale,
+            0.58f, 0.76f, 0.88f, enterE * sceneAlpha * 0.72f);
+    }
+    BatchFlush();
+
+    if (count > 1) {
+        for (int i = 0; i < count; ++i) {
+            const int next = (i + 1) % count;
+            if (count == 2 && i == 1) break;
+            const bool related = activeFocus == i || activeFocus == next;
+            DrawVisibleConstellLine(drawX[i], drawY[i],
+                                    drawX[next], drawY[next],
+                                    (related ? 1.30f : 0.92f) * layout.ui,
+                                    stateR, stateG, stateB,
+                                    enterE * sceneAlpha *
+                                    (related ? 0.30f : 0.13f));
+        }
+        BatchFlush();
+    }
+
+    for (int i = 0; i < count; ++i) {
+        const int augIdx = g_GameManager.augChoices[i];
+        if (augIdx < 0 || augIdx >= AUG_TOTAL) continue;
+        const AugDef& def = ALL_AUGS[augIdx];
+        const bool focused = activeFocus == i && !inExit;
+        const bool selected = inExit && g_AugExitSlot == i;
+        const bool other = inExit && g_AugExitSlot != i;
+        float px = drawX[i];
+        float py = drawY[i];
+        float radius = drawR[i];
+        float alpha = reveal[i] * dimT[i] * sceneAlpha;
+        if (selected) {
+            px += (layout.orbitCX - px) * collapseT;
+            py += (layout.orbitCY - py) * collapseT;
+            radius = layout.baseR * (1.0f + collapseT * 0.72f + novaT * 3.4f);
+            alpha *= 1.0f - novaT * novaT;
+        } else if (other) {
+            int selectedSlot = std::max(0, std::min(count - 1, g_AugExitSlot));
+            const float centerX = drawX[selectedSlot] +
+                                  (layout.orbitCX - drawX[selectedSlot]) * collapseT;
+            const float centerY = drawY[selectedSlot] +
+                                  (layout.orbitCY - drawY[selectedSlot]) * collapseT;
+            const float initialAngle = atan2f(drawY[i] - drawY[selectedSlot],
+                                              drawX[i] - drawX[selectedSlot]);
+            const float initialDist = sqrtf(
+                (drawX[i] - drawX[selectedSlot]) * (drawX[i] - drawX[selectedSlot]) +
+                (drawY[i] - drawY[selectedSlot]) * (drawY[i] - drawY[selectedSlot]));
+            const float spiralR = initialDist * (1.0f - collapseT);
+            const float spiralA = initialAngle + g_AugExitT * 10.5f;
+            px = centerX + cosf(spiralA) * spiralR;
+            py = centerY + sinf(spiralA) * spiralR;
+            radius *= 1.0f - collapseT * 0.92f;
+            alpha *= 1.0f - collapseT;
+        }
+        if (alpha <= 0.004f || radius <= 2.0f) continue;
+
+        float rarityR, rarityG, rarityB;
+        GetRarityColor(def.rarity, rarityR, rarityG, rarityB);
+        const float lineR = stateR * 0.82f + rarityR * 0.18f;
+        const float lineG = stateG * 0.82f + rarityG * 0.18f;
+        const float lineB = stateB * 0.82f + rarityB * 0.18f;
+        const AugVisualFamily family = AugVisualFamilyOf(def);
+        DrawAugSelectionConstellation(def, family, px, py, radius,
+            selected && novaT > 0.0f ? 1.0f : lineR,
+            selected && novaT > 0.0f ? 1.0f : lineG,
+            selected && novaT > 0.0f ? 1.0f : lineB,
+            rarityR, rarityG, rarityB,
+            alpha, reveal[i], shapePhase[i], layout.ui,
+            focused || selected, now);
+
+        if (focused) {
+            DrawAugmentOrbitRing(px, py, radius * 1.28f, radius * 0.58f,
+                                 now * 0.20f, stateR, stateG, stateB,
+                                 alpha * 0.25f, layout.ui);
+        }
+
+        if (!inExit && reveal[i] > 0.42f) {
+            wchar_t label[192];
+            swprintf_s(label, L"[%d]  %ls", i + 1, AugName(def));
+            float labelScale = 0.50f * layout.textUi;
+            const float maxLabelW = layout.orbitR * 1.12f;
+            while (labelScale > 0.38f &&
+                   g_TextS.Width(label, labelScale) > maxLabelW)
+                labelScale -= 0.025f;
+            const float labelY = focused
+                ? py + (py < layout.orbitCY ? radius + 21.0f * layout.ui
+                                             : -radius - 29.0f * layout.ui)
+                : py + (py < layout.orbitCY ? -radius - 26.0f * layout.ui
+                                             : radius + 14.0f * layout.ui);
+            DrawShadowedText(g_TextS, label,
+                px - g_TextS.Width(label, labelScale) * 0.5f,
+                labelY, labelScale,
+                focused ? 1.0f : 0.82f,
+                focused ? 1.0f : 0.90f,
+                focused ? 1.0f : 0.98f,
+                alpha * (focused ? 0.98f : 0.82f), 0.60f);
+            BatchFlush();
+        }
+    }
+
+    const float panelBaseA = enterE * sceneAlpha;
+    DrawVisibleConstellLine(layout.panelX - 14.0f * layout.ui,
+                            layout.panelY - 8.0f * layout.ui,
+                            layout.panelX - 14.0f * layout.ui,
+                            layout.panelY + layout.panelH,
+                            1.35f * layout.ui,
+                            stateR, stateG, stateB,
+                            panelBaseA * (activeFocus >= 0 ? 0.50f : 0.20f));
+    DrawVisibleConstellNode(layout.panelX - 14.0f * layout.ui,
+                            layout.panelY - 8.0f * layout.ui,
+                            3.2f * layout.ui,
+                            stateR, stateG, stateB,
+                            panelBaseA * 0.56f, true, true);
+    BatchFlush();
+
+    if (!inExit && activeFocus >= 0) {
+        const int augIdx = g_GameManager.augChoices[activeFocus];
+        if (augIdx >= 0 && augIdx < AUG_TOTAL) {
+            const AugDef& def = ALL_AUGS[augIdx];
+            const AugVisualFamily family = AugVisualFamilyOf(def);
+            float rarityR, rarityG, rarityB;
+            GetRarityColor(def.rarity, rarityR, rarityG, rarityB);
+            const float a = panelT * panelBaseA;
+            float y = layout.panelY;
+            const wchar_t* panelKind = isDebuff ? L"TRIAL COST" : L"BUFF AUGMENT";
+            g_TextS.Draw(panelKind, layout.panelX, y,
+                         0.50f * layout.textUi,
+                         stateR, stateG, stateB, a * 0.90f);
+            wchar_t classText[128];
+            swprintf_s(classText, L"%ls  //  %ls",
+                       GetAugBadge(def), AugVisualFamilyLabel(family));
+            const float classScale = 0.38f * layout.textUi;
+            const float classW = g_TextS.Width(classText, classScale);
+            g_TextS.Draw(classText,
+                         layout.panelX + layout.panelW - classW, y,
+                         classScale, rarityR, rarityG, rarityB, a * 0.84f);
+            y += 33.0f * layout.ui;
+
+            const wchar_t* name = AugName(def);
+            float nameScale = 0.88f * layout.textUi;
+            while (nameScale > 0.56f &&
+                   g_TextL.Width(name, nameScale) > layout.panelW)
+                nameScale -= 0.04f;
+            DrawShadowedText(g_TextL, name, layout.panelX, y,
+                             nameScale, 0.98f, 0.99f, 1.0f, a, 0.62f);
+            y += 45.0f * layout.ui;
+
+            const wchar_t* stat = AugStat(def);
+            float statScale = 0.56f * layout.textUi;
+            while (statScale > 0.40f &&
+                   g_TextS.Width(stat, statScale) > layout.panelW)
+                statScale -= 0.03f;
+            g_TextS.Draw(stat, layout.panelX, y, statScale,
+                         stateR, stateG, stateB, a * 0.95f);
+            y += 35.0f * layout.ui;
+
+            DrawVisibleConstellLine(layout.panelX, y,
+                                    layout.panelX + layout.panelW, y,
+                                    0.75f * layout.ui,
+                                    stateR, stateG, stateB, a * 0.28f);
+            BatchFlush();
+            y += 18.0f * layout.ui;
+
+            AugImpactRow rows[3];
+            const int rowCount = BuildAugImpactRows(def, rows, 3);
+            if (rowCount > 0) {
+                g_TextS.Draw(L"STAT DELTA", layout.panelX, y,
+                             0.38f * layout.textUi,
+                             0.56f, 0.68f, 0.82f, a * 0.72f);
+                y += 25.0f * layout.ui;
+                for (int row = 0; row < rowCount; ++row) {
+                    wchar_t before[32], after[32], deltaText[32];
+                    FormatAugMetricValue(before, 32, rows[row].metric,
+                                         rows[row].before, false);
+                    FormatAugMetricValue(after, 32, rows[row].metric,
+                                         rows[row].after, false);
+                    const float diff = rows[row].after - rows[row].before;
+                    FormatAugMetricValue(deltaText, 32, rows[row].metric,
+                                         diff, true);
+                    const wchar_t* label = AugMetricLabel(rows[row].metric);
+                    const float metricScale = 0.43f * layout.textUi;
+                    g_TextS.Draw(label, layout.panelX, y, metricScale,
+                                 0.70f, 0.80f, 0.90f, a * 0.86f);
+                    wchar_t values[96];
+                    swprintf_s(values, L"%ls  →  %ls", before, after);
+                    const float valuesW = g_TextS.Width(values, metricScale);
+                    g_TextS.Draw(values,
+                        layout.panelX + layout.panelW * 0.70f - valuesW,
+                        y, metricScale,
+                        0.88f, 0.94f, 1.0f, a * 0.92f);
+                    const float deltaW = g_TextS.Width(deltaText, metricScale);
+                    const bool positive = diff > 0.0f;
+                    g_TextS.Draw(deltaText,
+                        layout.panelX + layout.panelW - deltaW,
+                        y, metricScale,
+                        positive ? 0.14f : 0.98f,
+                        positive ? 0.84f : 0.16f,
+                        positive ? 0.98f : 0.20f,
+                        a * 0.98f);
+                    y += 27.0f * layout.ui;
+                }
+            } else {
+                g_TextS.Draw(isDebuff ? L"ENEMY MODIFIER" : L"MECHANIC",
+                             layout.panelX, y,
+                             0.42f * layout.textUi,
+                             stateR, stateG, stateB, a * 0.86f);
+                y += 27.0f * layout.ui;
+            }
+
+            y += 8.0f * layout.ui;
+            const float descScale = 0.47f * layout.textUi;
+            const std::vector<std::wstring> lines =
+                TarotWrap(def.locDesc[CurLangIdx()], descScale, layout.panelW);
+            int drawn = 0;
+            for (const std::wstring& line : lines) {
+                if (drawn >= 3 || y > layout.panelY + layout.panelH - 64.0f * layout.ui)
+                    break;
+                g_TextS.Draw(line.c_str(), layout.panelX, y, descScale,
+                             0.76f, 0.84f, 0.94f, a * 0.82f);
+                y += 23.0f * layout.ui;
+                ++drawn;
+            }
+            BatchFlush();
+        }
+    } else if (!inExit) {
+        const wchar_t* guide = CurLangIdx() == 0
+            ? L"1 / 2 / 3 또는 별자리를 선택"
+            : (CurLangIdx() == 2
+                ? L"1 / 2 / 3 または星座を選択"
+                : L"SELECT A CONSTELLATION OR PRESS 1 / 2 / 3");
+        g_TextS.Draw(guide, layout.panelX, layout.panelY,
+                     0.48f * layout.textUi,
+                     0.54f, 0.66f, 0.80f, panelBaseA * 0.72f);
+        BatchFlush();
+    }
+
+    if (!inExit) {
+        const wchar_t* controls = L"1 / 2 / 3  FOCUS     SPACE  CONFIRM";
+        g_TextS.Draw(controls, layout.panelX, sh * 0.925f,
+                     0.47f * layout.textUi,
+                     0.54f, 0.66f, 0.82f, panelBaseA * 0.76f);
+        BatchFlush();
+    }
+
+    if (inExit && g_AugExitT >= 0.55f && !particlesSpawned &&
+        g_AugExitSlot >= 0 && g_AugExitSlot < count) {
+        particlesSpawned = true;
+        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[g_AugExitSlot]];
+        float r, g, b;
+        GetRarityColor(def.rarity, r, g, b);
+        for (int i = 0; i < 72; ++i) {
+            const float angle = (float)i / 72.0f * 2.0f * (float)M_PI;
+            const float speed = 120.0f + (float)(rand() % 300);
+            particles[i] = { layout.orbitCX, layout.orbitCY,
+                cosf(angle) * speed, sinf(angle) * speed,
+                0.66f, r, g, b };
+        }
+        TriggerFlash(r, g, b, 0.78f);
+    }
+    if (particlesSpawned) {
+        BindMainShader();
+        for (auto& p : particles) {
+            if (p.life <= 0.0f) continue;
+            p.life -= delta;
+            p.x += p.vx * delta;
+            p.y += p.vy * delta;
+            const float drag = std::max(0.0f, 1.0f - delta * 2.2f);
+            p.vx *= drag;
+            p.vy *= drag;
+            const float a = AugSelectionClamp(p.life / 0.66f);
+            drawDiamond(p.x, p.y, 4.2f * a + 0.8f,
+                        p.r, p.g, p.b, a * 0.86f);
+        }
+        BatchFlush();
+    }
+}
+
+static void Scene_AugSelectConstellationOriginal(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh;
+    const float delta = c.delta;
+    const GameState st = g_GameManager.currentState;
+
+    auto easeOut = [](float t) -> float { float i=1.f-t; return 1.f-i*i*i; };
+    auto easeIn  = [](float t) -> float { return t*t*t; };
+    auto drawSeg = [](float x1,float y1,float x2,float y2,float t,
+                      float lr,float lg,float lb,float la) {
+        float dx=x2-x1, dy=y2-y1, len=sqrtf(dx*dx+dy*dy);
+        if (len < 0.5f) return;
+        float nx=-dy/len*t*0.5f, ny=dx/len*t*0.5f;
+        BatchTri(x1+nx,y1+ny, x1-nx,y1-ny, x2-nx,y2-ny, lr,lg,lb,la);
+        BatchTri(x1+nx,y1+ny, x2-nx,y2-ny, x2+nx,y2+ny, lr,lg,lb,la);
+    };
+
+    // ── 정적 상태 ──
+    static float s_spawnT    = 0.0f;
+    static float s_dimT[3]   = {1,1,1};
+    static float s_flashT[3] = {};
+    static float s_pullT[3]  = {};
+    static bool  s_lmbPrev   = false;
+    static float s_panelA    = 0.0f;
+    static int   s_prevHov   = -1;
+
+    struct SNPart { float x,y,vx,vy,life; float r,g,b; bool active; };
+    static constexpr int SN_MAX = 72;
+    static SNPart s_sn[SN_MAX];
+    static bool   s_snSpawned = false;
+
+    // 진입 리셋
+    {
+        const GameState prev = g_GameManager.lastState;
+        if (prev != GameState::AUG_SELECT && prev != GameState::DEBUFF_SELECT) {
+            s_spawnT    = 0.0f;
+            s_prevHov   = -1;
+            s_panelA    = 0.0f;
+            s_snSpawned = false;
+            for (int i=0; i<3; i++) { s_dimT[i]=1.f; s_flashT[i]=0.f; s_pullT[i]=0.f; }
+            s_lmbPrev = false;
+            for (auto& p: s_sn) p.active=false;
+        }
+    }
+
+    const bool  isDebuff = (st == GameState::DEBUFF_SELECT);
+    const float now      = (float)glfwGetTime();
+
+    constexpr float COLLAPSE_END = 0.65f;
+    constexpr float SN_START     = 0.65f;
+    constexpr float SN_END       = 1.20f;
+
+    const bool  inExit     = (g_AugExitT >= 0.0f);
+    const float collapseT  = inExit ? std::min(g_AugExitT / COLLAPSE_END, 1.0f) : 0.0f;
+    const float collapseE  = easeOut(collapseT);
+    const float supernovaT = inExit
+        ? std::max(0.0f, std::min((g_AugExitT - SN_START)/(SN_END - SN_START), 1.0f))
+        : 0.0f;
+
+    if (!inExit)
+        s_spawnT = std::min(s_spawnT + delta / 0.55f, 1.0f);
+    const bool inFocus = (s_spawnT >= 1.0f && !inExit);
+
+    if (g_HoveredAug != s_prevHov && g_HoveredAug >= 0 && g_HoveredAug < 3)
+        s_flashT[g_HoveredAug] = 1.0f;
+    s_prevHov = g_HoveredAug;
+
+    for (int i=0; i<3; i++) {
+        float dimTgt  = (g_HoveredAug >= 0 && g_HoveredAug != i && inFocus) ? 0.38f : 1.0f;
+        float pullTgt = (g_HoveredAug == i && inFocus) ? 1.0f : 0.0f;
+        s_dimT[i]  += (dimTgt  - s_dimT[i])  * std::min(1.0f, delta * 10.0f);
+        s_pullT[i] += (pullTgt - s_pullT[i])  * std::min(1.0f, delta * 5.0f);
+        if (s_flashT[i] > 0.f) s_flashT[i] = std::max(0.f, s_flashT[i] - delta / 0.20f);
+    }
+    {
+        float panelTgt = (inFocus && g_HoveredAug >= 0) ? 1.0f : 0.0f;
+        s_panelA += (panelTgt - s_panelA) * std::min(1.0f, delta * 12.0f);
+    }
+
+    // ── 공전 궤도 ──
+    static float s_orbitT = 0.0f;
+    if (!inExit) s_orbitT += delta * 0.22f;
+    const float ORB_CX  = sw * 0.50f;
+    const float ORB_CY  = sh * 0.46f;
+    const float ORBIT_R = std::min(sw, sh) * 0.210f;
+    const float BASE_R  = 46.0f;
+    auto OrbPos = [&](int idx, float& ox, float& oy) {
+        float a = s_orbitT + (float)idx * (6.2832f / 3.0f);
+        ox = ORB_CX + cosf(a) * ORBIT_R;
+        oy = ORB_CY + sinf(a) * ORBIT_R;
+    };
+
+    // ── 마우스 클릭 판정 (궤도 기반) ──
+    {
+        bool lmbClick = c.lmb && !s_lmbPrev;
+        if (lmbClick && !inExit && inFocus) {
+            int   best  = -1;
+            float bestD2 = 1e9f;
+            for (int i = 0; i < 3; i++) {
+                float ox, oy; OrbPos(i, ox, oy);
+                float pe = easeOut(s_pullT[i]);
+                float rpx = ox + (ORB_CX - ox) * pe;
+                float rpy = oy + (ORB_CY - oy) * pe;
+                float dx = (float)c.mx - rpx;
+                float dy = (float)c.my - rpy;
+                float d2 = dx*dx + dy*dy;
+                if (d2 < bestD2) { bestD2 = d2; best = i; }
+            }
+            float hitR = BASE_R * (1.0f + easeOut(s_pullT[best >= 0 ? best : 0]) * 1.5f) * 1.4f;
+            if (best >= 0 && bestD2 < hitR * hitR) {
+                if (g_HoveredAug == best && g_AugExitT < 0.0f) {
+                    // 항성(이미 선택) 재클릭 → 확정
+                    g_AugExitT    = 0.0f;
+                    g_AugExitSlot = best;
+                } else {
+                    g_HoveredAug = best;
+                }
+            }
+        }
+        s_lmbPrev = c.lmb;
+    }
+
+    // ── 배경 Dim ──
+    {
+        float dimA = easeOut(std::min(s_spawnT * 1.8f, 1.0f));
+        if (inExit) dimA *= std::max(0.f, 1.0f - collapseT * 2.0f);
+        drawRect(0, 0, sw, sh, 0.0f, 0.0f, 0.0f, dimA * 0.62f);
+        BatchFlush();
+    }
+
+    // ── 헤더 ──
+    {
+        float titA = easeOut(std::min(s_spawnT * 2.0f, 1.0f));
+        if (inExit) titA *= std::max(0.f, 1.0f - collapseT * 3.0f);
+        const wchar_t* TIT = isDebuff ? T(StrId::CHOOSE_DEBUFF) : T(StrId::CHOOSE_AUG);
+        BatchFlush();
+        g_TextL.Draw(TIT, CenterTextX(sw, g_TextL, TIT, 1.0f),
+                     sh * 0.07f, 1.0f, 1.f, 1.f, 1.f, 0.92f * titA);
+        if (st == GameState::AUG_SELECT) {
+            wchar_t slotBuf[64];
+            swprintf_s(slotBuf, L"ID %d / %d", CountIdentitySlotsUsed(), IdentitySlotMax());
+            g_TextS.Draw(slotBuf, CenterTextX(sw, g_TextS, slotBuf, 0.76f),
+                         sh * 0.07f + 34.0f, 0.76f, 0.72f, 0.92f, 1.f, 0.78f * titA);
+        }
+        BatchFlush();
+    }
+
+    // ── 별자리 외곽 프레임 ──
+    {
+        float frameA = easeOut(std::min(s_spawnT, 1.0f));
+        if (inExit) frameA *= std::max(0.f, 1.0f - collapseT * 1.5f);
+        if (frameA > 0.01f) {
+            drawConstellFrame(16.f, 16.f, sw - 32.f, sh - 32.f,
+                              0.30f, 0.62f, 0.92f, frameA * 0.72f,
+                              24.f, 8.f, frameA * 0.40f, s_spawnT);
+            BatchFlush();
+        }
+    }
+
+    // ── 등급별 색상 (마스터 기획서 고정값) ──
+    auto RarColor = [&](AugRarity r, float& cr, float& cg, float& cb) {
+        switch (r) {
+        case AugRarity::COMMON:    cr=1.0f; cg=1.0f; cb=1.0f; return;
+        case AugRarity::RARE:      cr=0.2f; cg=0.9f; cb=0.3f; return;
+        case AugRarity::EPIC:      cr=0.7f; cg=0.2f; cb=1.0f; return;
+        case AugRarity::LEGENDARY: { float p=sinf(now*3.5f)*0.5f+0.5f;
+                                     cr=1.0f; cg=0.80f+p*0.05f; cb=p*0.15f; return; }
+        case AugRarity::MYTHIC:    cr=1.0f; cg=0.2f; cb=0.8f; return;
+        case AugRarity::COMBO:     cr=0.0f; cg=0.9f; cb=1.0f; return;
+        case AugRarity::SPECIAL:   cr=1.0f; cg=1.0f; cb=1.0f; return;
+        case AugRarity::DEBUFF:    cr=1.0f; cg=0.1f; cb=0.1f; return;
+        default:                   cr=1.0f; cg=1.0f; cb=1.0f; return;
+        }
+    };
+
+    // ── 별자리 기하 데이터 ──
+    struct CsVtx  { float ang, frac; };
+    struct CsEdge { int a, b; };
+
+    // OFFENSE: 별 윤곽 + 내부 오각형(pentagram) — 이중 별 구조
+    static const CsVtx kOffV[] = {
+        {-90.f,1.00f},{-18.f,0.96f},{ 54.f,1.00f},{128.f,0.93f},{200.f,0.97f},  // outer tips
+        {-54.f,0.40f},{ 18.f,0.38f},{ 91.f,0.42f},{163.f,0.38f},{235.f,0.40f},  // inner concave
+    };
+    static const CsEdge kOffE[] = {
+        {0,5},{5,1},{1,6},{6,2},{2,7},{7,3},{3,8},{8,4},{4,9},{9,0},  // 별 윤곽
+        {5,7},{7,9},{9,6},{6,8},{8,5},                                  // 내부 pentagram
+    };
+    // DEFENSE: 헥사그램(다윗의 별) + 중심 — 요새 구조
+    static const CsVtx kDefV[] = {
+        {-90.f,1.00f},{-30.f,1.00f},{ 30.f,1.00f},{ 90.f,1.00f},{150.f,1.00f},{210.f,1.00f}, // outer hex (0-5)
+        {-60.f,0.52f},{ 60.f,0.52f},{180.f,0.52f},  // inner triangle (6-8)
+        {  0.f,0.00f},                               // center (9)
+    };
+    static const CsEdge kDefE[] = {
+        {0,1},{1,2},{2,3},{3,4},{4,5},{5,0},          // outer hex
+        {6,7},{7,8},{8,6},                            // inner triangle
+        {0,8},{1,6},{2,6},{3,7},{4,7},{5,8},          // spokes hex→triangle
+        {6,9},{7,9},{8,9},                            // center spokes
+    };
+    // UTILITY: Dipper(국자) — 비대칭 머리+굽은 손잡이
+    static const CsVtx kUtlV[] = {
+        {-65.f,0.92f},{-15.f,1.00f},{ 38.f,0.84f},  // bowl top (0-2)
+        {-32.f,0.52f},{ 22.f,0.50f},               // bowl bottom (3-4)
+        { 90.f,0.64f},{145.f,0.76f},               // handle mid (5-6)
+        {190.f,0.58f},{222.f,0.82f},               // handle tip (7-8)
+    };
+    static const CsEdge kUtlE[] = {
+        {0,1},{1,2},{2,4},{4,3},{3,0},  // bowl outline
+        {0,4},{1,3},                     // bowl diagonals
+        {4,5},{5,6},{6,7},{7,8},         // handle chain
+    };
+
+    enum class CS : uint8_t { OFFENSE, DEFENSE, UTILITY };
+    auto ShapeOf = [](AugRarity r) -> CS {
+        switch(r) {
+        case AugRarity::RARE:
+        case AugRarity::LEGENDARY:
+        case AugRarity::DEBUFF:  return CS::OFFENSE;
+        case AugRarity::EPIC:
+        case AugRarity::MYTHIC:  return CS::DEFENSE;
+        default:                 return CS::UTILITY;
+        }
+    };
+
+    auto DrawConstell = [&](float cx, float cy, float radius,
+                             float cr, float cg, float cb,
+                             float alpha, CS shape, AugRarity rar, float selfRot) {
+        DrawNebulaGlow(cx, cy, radius*1.65f, cr,cg,cb,
+                       alpha*0.68f, now, rar == AugRarity::SPECIAL);
+
+        const CsVtx*  vt  = kUtlV; const CsEdge* ed = kUtlE;
+        int nvt = (int)(sizeof(kUtlV)/sizeof(kUtlV[0]));
+        int ned = (int)(sizeof(kUtlE)/sizeof(kUtlE[0]));
+        if (shape == CS::OFFENSE) {
+            vt=kOffV; ed=kOffE;
+            nvt=(int)(sizeof(kOffV)/sizeof(kOffV[0]));
+            ned=(int)(sizeof(kOffE)/sizeof(kOffE[0]));
+        } else if (shape == CS::DEFENSE) {
+            vt=kDefV; ed=kDefE;
+            nvt=(int)(sizeof(kDefV)/sizeof(kDefV[0]));
+            ned=(int)(sizeof(kDefE)/sizeof(kDefE[0]));
+        }
+
+        float vx[12], vy[12];
+        for (int j=0; j<nvt && j<12; j++) {
+            float rad = vt[j].ang * (float)M_PI / 180.0f + selfRot;
+            vx[j] = cx + cosf(rad) * radius * vt[j].frac;
+            vy[j] = cy + sinf(rad) * radius * vt[j].frac;
+        }
+        for (int j=0; j<ned; j++)
+            drawSeg(vx[ed[j].a],vy[ed[j].a], vx[ed[j].b],vy[ed[j].b], 2.2f, cr,cg,cb, alpha*0.82f);
+
+        for (int j=0; j<nvt; j++)
+            if (vt[j].frac >= 0.45f)
+                drawDiamond(vx[j], vy[j], 8.0f, cr,cg,cb, alpha*0.90f);
+
+        float coreSz = 20.0f;
+        if      (rar == AugRarity::LEGENDARY) coreSz = 26.0f + sinf(now*3.5f)*3.0f;
+        else if (rar == AugRarity::MYTHIC)    coreSz = 24.0f;
+        else if (rar == AugRarity::COMBO)     coreSz = 16.0f;
+        drawDiamond(cx, cy, coreSz, cr,cg,cb, alpha);
+
+        BatchFlush();
+    };
+
+    // ── 궤도 연결선 (삼각형) ──
+    {
+        float lineA = easeOut(std::min(s_spawnT * 1.5f, 1.0f));
+        if (inExit) lineA *= std::max(0.f, 1.0f - collapseT * 2.0f);
+        if (lineA > 0.01f) {
+            float ox[3], oy[3];
+            for (int _i=0; _i<3; _i++) OrbPos(_i, ox[_i], oy[_i]);
+            drawSeg(ox[0],oy[0], ox[1],oy[1], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            drawSeg(ox[1],oy[1], ox[2],oy[2], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            drawSeg(ox[2],oy[2], ox[0],oy[0], 1.4f, 0.30f,0.62f,0.92f, lineA*0.20f);
+            BatchFlush();
+        }
+    }
+
+    // ── 별자리 3개 렌더 ──
+    static const wchar_t* KEY_LABELS[3] = { L"[ 1 ]", L"[ 2 ]", L"[ 3 ]" };
+
+    for (int i=0; i<3; i++) {
+        const AugDef& def = ALL_AUGS[g_GameManager.augChoices[i]];
+        float cr, cg, cb;
+        RarColor(def.rarity, cr, cg, cb);
+        if (inFocus && g_HoveredAug >= 0 && g_HoveredAug != i) {
+            float bt = ((1.0f - s_dimT[i]) / (1.0f - 0.38f)) * 0.75f;
+            cr = cr * (1.0f - bt) + 0.20f * bt;
+            cg = cg * (1.0f - bt) + 0.55f * bt;
+            cb = cb * (1.0f - bt) + 0.85f * bt;
+        }
+
+        const CS   shape   = ShapeOf(def.rarity);
+        const bool hov     = (g_HoveredAug == i && inFocus);
+        const bool isConf  = (inExit && g_AugExitSlot == i);
+        const bool isOther = (inExit && g_AugExitSlot != i);
+        const float flash  = s_flashT[i];
+
+        float spawnStag = std::max(0.0f, std::min((s_spawnT-(float)i*0.10f)/0.75f, 1.0f));
+        float spawnE    = easeOut(spawnStag);
+
+        float opx, opy;
+        OrbPos(i, opx, opy);
+        float pullE = easeOut(s_pullT[i]);
+        // 항성 풀: 궤도 위치 → 중앙으로
+        float tpx = opx + (ORB_CX - opx) * pullE;
+        float tpy = opy + (ORB_CY - opy) * pullE;
+        // SPAWN: 중심에서 팽창
+        float px = ORB_CX + (tpx - ORB_CX) * spawnE;
+        float py = ORB_CY + (tpy - ORB_CY) * spawnE;
+        float alpha = spawnE * s_dimT[i];
+
+        float radius = BASE_R;
+        if (def.rarity == AugRarity::LEGENDARY)
+            radius *= 1.0f + (sinf(now*3.5f)*0.5f+0.5f)*0.08f;
+        radius *= (1.0f + flash*0.04f);
+        radius *= (1.0f + pullE * 1.5f);   // 항성화: 최대 2.5x
+
+        // selfRot 먼저 계산 (isOther 내부에서 가속 추가 가능)
+        float selfRot = now * 0.45f + (float)i * (6.2832f / 3.0f);
+
+        if (isConf) {
+            px     = opx + (sw*0.5f - opx) * collapseE;
+            py     = opy + (sh*0.5f - opy) * collapseE;
+            radius = BASE_R * (1.0f + collapseE * 0.55f);
+            alpha  = spawnE;
+            if (supernovaT > 0.0f) {
+                float snE = easeOut(supernovaT);
+                radius = BASE_R * (1.0f + snE * 4.2f);
+                alpha  = spawnE * (1.0f - snE*snE);
+                cr=1.f; cg=1.f; cb=1.f;
+            }
+        } else if (isOther) {
+            int ci = g_AugExitSlot;
+            // 확정 별자리 초기 궤도 위치 (고정) → 공전 기준각 계산
+            float confOx = ORB_CX, confOy = ORB_CY;
+            if (ci>=0&&ci<3) OrbPos(ci, confOx, confOy);
+            // 확정 별자리 현재 위치 (중앙으로 이동 중) → 공전 중심 추적
+            float cpx = confOx + (sw*0.5f - confOx) * collapseE;
+            float cpy = confOy + (sh*0.5f - confOy) * collapseE;
+            float absorb = easeIn(std::min(g_AugExitT / COLLAPSE_END, 1.0f));
+            // 초기 각도: other 위치 → 확정 위치 방향
+            float initAng  = atan2f(opy - confOy, opx - confOx);
+            float initDist = sqrtf((opx-confOx)*(opx-confOx)+(opy-confOy)*(opy-confOy));
+            // 빠른 공전 + 나선형 수렴
+            float orbitAng = initAng + g_AugExitT * 12.0f;
+            float spiralR  = initDist * (1.0f - absorb);
+            px     = cpx + cosf(orbitAng) * spiralR;
+            py     = cpy + sinf(orbitAng) * spiralR;
+            radius = BASE_R * (1.0f - absorb * 0.95f);
+            alpha  = spawnE * (1.0f - absorb * absorb);
+        }
+
+        if (alpha < 0.005f || radius < 2.0f) continue;
+        if (def.rarity == AugRarity::COMBO) {
+            float off = radius * 0.36f;
+            DrawConstell(px-off, py, radius*0.70f, cr,cg,cb, alpha, CS::DEFENSE, def.rarity, selfRot);
+            DrawConstell(px+off, py, radius*0.70f, cr,cg,cb, alpha, CS::OFFENSE, def.rarity, selfRot);
+            drawSeg(px-off, py, px+off, py, 2.8f, cr,cg,cb, alpha*0.62f);
+            BatchFlush();
+        } else {
+            DrawConstell(px, py, radius, cr, cg, cb, alpha, shape, def.rarity, selfRot);
+        }
+
+        if (!inExit && spawnE > 0.5f) {
+            float kA  = spawnE * 0.82f;
+            float klW = g_TextS.Width(KEY_LABELS[i], 0.76f);
+            BatchFlush();
+            g_TextS.Draw(KEY_LABELS[i], px - klW*0.5f, py + BASE_R + 30.0f,
+                         0.76f, 0.58f,0.80f,1.00f, kA);
+            BatchFlush();
+        }
+    }
+
+    // ── 우측 데이터 태그 패널 ──
+    {
+        if (s_panelA > 0.01f && !inExit) {
+            int idx = (g_HoveredAug>=0 && g_HoveredAug<3) ? g_HoveredAug : 0;
+            const AugDef& hovDef = ALL_AUGS[g_GameManager.augChoices[idx]];
+            float hr, hg, hb;
+            RarColor(hovDef.rarity, hr, hg, hb);
+            float pA = s_panelA;
+
+            const float PX = sw * 0.680f;
+            const float PY = sh * 0.220f;
+            const float PW = sw - PX - 18.0f;
+
+            drawSeg(PX - 8.0f, PY, PX - 8.0f, PY + sh * 0.42f, 2.0f, hr,hg,hb, pA * 0.65f);
+            BatchFlush();
+
+            float ty = PY;
+
+            // [ CLASS : badge ]
+            const wchar_t* badge = GetAugBadge(hovDef);
+            wchar_t classLine[64];
+            swprintf_s(classLine, L"[ CLASS : %ls ]", badge);
+            g_TextS.Draw(classLine, PX, ty, 0.52f, hr,hg,hb, 0.90f*pA);
+            ty += 26.0f;
+            BatchFlush();
+
+            // > 증강명
+            const wchar_t* name = AugName(hovDef);
+            float nSc = 0.84f;
+            while (nSc > 0.52f && g_TextL.Width(name, nSc) > PW) nSc -= 0.04f;
+            wchar_t nameLine[256];
+            swprintf_s(nameLine, L"> %ls", name);
+            g_TextL.Draw(nameLine, PX, ty, nSc, 1.f,1.f,1.f, 0.96f*pA);
+            ty += nSc * 32.0f + 10.0f;
+            BatchFlush();
+
+            drawSeg(PX, ty, PX + PW * 0.65f, ty, 1.5f, 0.30f,0.62f,0.92f, pA * 0.30f);
+            ty += 14.0f;
+            BatchFlush();
+
+            // STAT: 핵심 수치
+            {
+                const wchar_t* statVal = AugStat(hovDef);
+                wchar_t statLine[128];
+                swprintf_s(statLine, L"STAT: %ls", statVal);
+                float ssc = 0.60f;
+                while (ssc > 0.44f && g_TextS.Width(statLine, ssc) > PW) ssc -= 0.04f;
+                g_TextS.Draw(statLine, PX, ty, ssc, 0.70f,0.95f,0.72f, 0.92f*pA);
+                ty += ssc * 22.0f + 8.0f;
+                BatchFlush();
+            }
+
+            // DESC: 간단 설명 (locDesc 직접 — AugDescKR 장문 제외)
+            {
+                const wchar_t* desc = hovDef.locDesc[CurLangIdx()];
+                float dsc = 0.60f;
+                while (dsc > 0.44f && g_TextS.Width(desc, dsc) > PW) dsc -= 0.04f;
+                wchar_t descLine[256];
+                swprintf_s(descLine, L"DESC: %ls", desc);
+                g_TextS.Draw(descLine, PX, ty, dsc, 0.78f,0.88f,0.96f, 0.82f*pA);
+                ty += dsc * 22.0f + 4.0f;
+                BatchFlush();
+            }
+
+            ty += 8.0f;
+            drawSeg(PX, ty, PX + PW * 0.65f, ty, 1.5f, 0.30f,0.62f,0.92f, pA * 0.18f);
+            ty += 12.0f;
+            BatchFlush();
+
+            const wchar_t* HINT = T(StrId::KEY_HINT_HOVER);
+            g_TextS.Draw(HINT, PX, ty, 0.58f, 0.48f,0.68f,0.80f, 0.72f*pA);
+            BatchFlush();
+
+        } else if (!inExit && s_spawnT > 0.4f) {
+            const wchar_t* HINT = T(StrId::KEY_HINT_NO_HOVER);
+            BatchFlush();
+            g_TextS.Draw(HINT, CenterTextX(sw, g_TextS, HINT, 0.72f),
+                         sh*0.88f, 0.72f, 0.52f,0.60f,0.72f, 0.62f*easeOut(s_spawnT));
+            BatchFlush();
+        }
+    }
+
+    // ── SUPERNOVA 파티클 ──
+    if (g_AugExitT >= SN_START) {
+        if (!s_snSpawned) {
+            s_snSpawned = true;
+            int confIdx = (g_AugExitSlot>=0) ? g_GameManager.augChoices[g_AugExitSlot] : 0;
+            float pr, pg2, pb;
+            RarColor(ALL_AUGS[confIdx].rarity, pr, pg2, pb);
+            float spawnX = ORB_CX, spawnY = ORB_CY;
+            if (g_AugExitSlot>=0&&g_AugExitSlot<3) OrbPos(g_AugExitSlot, spawnX, spawnY);
+            for (int k=0; k<SN_MAX; k++) {
+                float ang = (float)k/SN_MAX*6.2832f + now*0.1f;
+                float spd = 140.0f + (float)(rand()%340);
+                s_sn[k] = { spawnX, spawnY,
+                             cosf(ang)*spd, sinf(ang)*spd,
+                             0.60f, pr, pg2, pb, true };
+            }
+            TriggerFlash(pr, pg2, pb, 0.90f);
+        }
+        BindMainShader();
+        for (auto& p : s_sn) {
+            if (!p.active) continue;
+            p.life -= delta;
+            if (p.life <= 0.f) { p.active=false; continue; }
+            p.x  += p.vx * delta;
+            p.y  += p.vy * delta;
+            p.vx *= (1.0f - 2.2f*delta);
+            p.vy *= (1.0f - 2.2f*delta);
+            float fr = p.life / 0.60f;
+            drawDiamond(p.x, p.y, 4.5f*fr+0.5f, p.r,p.g,p.b, fr*0.90f);
+        }
+        BatchFlush();
+    }
+}
+
+static void Scene_AugSelectConstellationLegacy(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, delta = c.delta;
+    const GameState state = g_GameManager.currentState;
+    const bool isDebuff = state == GameState::DEBUFF_SELECT;
+    const int nCandidates = std::max(0, std::min(3, g_GameManager.augChoiceCount));
+    const float now = (float)glfwGetTime();
+    const bool inExit = g_AugExitT >= 0.0f;
+
+    static int seenSerial = -1;
+    static GameState previousState = GameState::MAIN_MENU;
+    static int lockedBuffIdx = -1;
+    static float enterT = 0.0f;
+    static float hoverT[3] = {};
+    static float flashT[3] = {};
+    static bool lmbPrev = false;
+    static double prevMx = -1.0, prevMy = -1.0;
+    static int prevHover = -1;
+    static bool burstSpawned = false;
+    static TarotBurstParticle burst[96];
+
+    if (state != previousState) {
+        // The selected buff survives only into the immediately following
+        // DEBUFF_SELECT phase. A later reward starts with a clean field.
+        if (state == GameState::AUG_SELECT)
+            lockedBuffIdx = -1;
+        previousState = state;
+    }
+    if (!isDebuff && inExit && g_AugExitSlot >= 0 &&
+        g_AugExitSlot < nCandidates) {
+        lockedBuffIdx = g_GameManager.augChoices[g_AugExitSlot];
+    }
+
+    if (seenSerial != g_GameManager.augmentSelectionSerial) {
+        seenSerial = g_GameManager.augmentSelectionSerial;
+        enterT = 0.0f;
+        prevMx = c.mx;
+        prevMy = c.my;
+        prevHover = -1;
+        lmbPrev = false;
+        burstSpawned = false;
+        for (int i = 0; i < 3; ++i) {
+            hoverT[i] = 0.0f;
+            flashT[i] = 0.0f;
+        }
+        for (auto& p : burst) p.life = 0.0f;
+        g_HoveredAug = -1;
+    }
+
+    if (!inExit)
+        enterT = std::min(1.0f, enterT + delta / 0.62f);
+    const float enterE = TarotEaseOut(enterT);
+    const float exitE = inExit
+        ? TarotEaseOut(TarotClamp01(g_AugExitT / 1.70f)) : 0.0f;
+    const bool inputReady = enterT >= 0.96f && !inExit;
+    const bool pointerMoved = prevMx < 0.0 ||
+        fabs(c.mx - prevMx) > 0.5 || fabs(c.my - prevMy) > 0.5;
+    if (pointerMoved) g_GameManager.augmentKeyboardFocus = false;
+    prevMx = c.mx;
+    prevMy = c.my;
+
+    const float ui = std::min(1.0f, std::min(sw / 1800.0f, sh / 1000.0f));
+    // The constellation cylinder is the whole selection surface. Text and
+    // readouts float above it; there is no separate card frame or bracket.
+    const float fieldW = sw;
+    const float fieldH = sh;
+    const float fieldX = 0.0f;
+    const float fieldY = 0.0f;
+    const float fieldCX = fieldX + fieldW * 0.5f;
+    const float fieldCY = fieldY + fieldH * 0.52f;
+    const bool hasLockedBuff = isDebuff && lockedBuffIdx >= 0 &&
+        lockedBuffIdx < AUG_TOTAL;
+
+    TarotCardPose candidates[3];
+    const float candidateX[3] = {
+        hasLockedBuff ? 0.48f : 0.24f,
+        hasLockedBuff ? 0.68f : 0.50f,
+        hasLockedBuff ? 0.86f : 0.76f
+    };
+    const float hitW = fieldW * (hasLockedBuff ? 0.18f : 0.22f);
+    const float hitH = fieldH * 0.76f;
+    const float orbitPhase = now * 0.20f;
+    for (int i = 0; i < nCandidates; ++i) {
+        candidates[i].cx = fieldX + fieldW * candidateX[i];
+        const float arc = (candidateX[i] - 0.50f) * (float)M_PI * 0.92f
+                        + orbitPhase;
+        candidates[i].cy = fieldCY + sinf(arc) * fieldH * 0.18f;
+        candidates[i].w = hitW;
+        candidates[i].h = hitH;
+        candidates[i].angle = 0.0f;
+    }
+
+    if (inputReady && (!g_GameManager.augmentKeyboardFocus || pointerMoved)) {
+        int hover = -1;
+        for (int i = nCandidates - 1; i >= 0; --i) {
+            if (TarotHit(candidates[i], c.mx, c.my, 10.0f)) {
+                hover = i;
+                break;
+            }
+        }
+        g_HoveredAug = hover;
+    }
+    if (g_HoveredAug != prevHover && g_HoveredAug >= 0 &&
+        g_HoveredAug < nCandidates) {
+        flashT[g_HoveredAug] = 1.0f;
+    }
+    prevHover = g_HoveredAug;
+
+    for (int i = 0; i < 3; ++i) {
+        const float target = inputReady && g_HoveredAug == i ? 1.0f : 0.0f;
+        hoverT[i] += (target - hoverT[i]) *
+                     std::min(1.0f, delta * 11.0f);
+        flashT[i] = std::max(0.0f, flashT[i] - delta / 0.22f);
+    }
+
+    if (inputReady && c.lmb && !lmbPrev && g_HoveredAug >= 0 &&
+        g_HoveredAug < nCandidates) {
+        g_GameManager.augmentKeyboardFocus = false;
+        g_AugExitT = 0.0f;
+        g_AugExitSlot = g_HoveredAug;
+    }
+    lmbPrev = c.lmb;
+
+    const float ar = isDebuff ? 0.95f : 0.18f;
+    const float ag = isDebuff ? 0.16f : 0.86f;
+    const float ab = isDebuff ? 0.18f : 0.42f;
+    const float sceneAlpha = std::max(0.0f, 1.0f - exitE * 0.20f);
+    const float phase = now * 0.24f + (isDebuff ? 0.72f : 0.0f);
+
+    BindMainShader();
+    drawRect(0.0f, 0.0f, sw, sh,
+             isDebuff ? 0.018f : 0.004f,
+             isDebuff ? 0.004f : 0.010f,
+             isDebuff ? 0.008f : 0.026f,
+             sceneAlpha * 0.72f);
+    BatchFlush();
+
+    const wchar_t* title = isDebuff ? T(StrId::CHOOSE_DEBUFF)
+                                    : T(StrId::CHOOSE_AUG);
+    const float titleAlpha = sceneAlpha *
+        std::max(0.0f, 1.0f - exitE * 1.45f);
+    g_TextL.Draw(title, CenterTextX(sw, g_TextL, title, 1.0f),
+                 sh * 0.065f, 1.0f,
+                 1.0f, 1.0f, 1.0f, titleAlpha);
+    wchar_t status[160];
+    if (isDebuff) {
+        swprintf_s(status, L"RED FIELD  //  CHOOSE THE COST");
+    } else {
+        swprintf_s(status, L"GREEN FIELD  //  CHOOSE YOUR AUGMENT");
+    }
+    g_TextS.Draw(status, CenterTextX(sw, g_TextS, status, 0.62f),
+                 sh * 0.065f + 34.0f, 0.62f,
+                 ar, ag, ab, titleAlpha * 0.82f);
+    if (!isDebuff) {
+        wchar_t slots[64];
+        swprintf_s(slots, L"ID %d / %d",
+                   CountIdentitySlotsUsed(), IdentitySlotMax());
+        g_TextS.Draw(slots, CenterTextX(sw, g_TextS, slots, 0.64f),
+                     sh * 0.065f + 58.0f, 0.64f,
+                     0.72f, 0.92f, 1.0f, titleAlpha * 0.72f);
+    }
+    BatchFlush();
+
+    DrawAugmentCylinderField(fieldX, fieldY, fieldW, fieldH,
+                             ar, ag, ab, sceneAlpha, enterE, phase);
+
+    if (hasLockedBuff) {
+        const AugDef& locked = ALL_AUGS[lockedBuffIdx];
+        const float lr = 0.18f;
+        const float lg = 0.86f;
+        const float lb = 0.42f;
+        const float lockCX = fieldX + fieldW * 0.135f;
+        const float lockCY = fieldCY;
+        const float lockRadius = std::min(fieldH * 0.13f, fieldW * 0.075f);
+        const float lockAlpha = sceneAlpha * TarotEaseOut(
+            TarotClamp01(enterT * 1.30f));
+        DrawAugmentConstellation(locked, lockCX, lockCY, lockRadius,
+                                 lr, lg, lb, lockAlpha * 0.96f,
+                                 now, ui * 0.92f);
+        DrawAugmentOrbitRing(lockCX, lockCY,
+                             lockRadius * 1.65f, lockRadius * 0.82f,
+                             phase - 0.45f, lr, lg, lb,
+                             lockAlpha * 0.62f, ui * 0.92f);
+        BindMainShader();
+        const wchar_t* lockLabel = L"LOCKED";
+        g_TextS.Draw(lockLabel,
+                     lockCX - g_TextS.Width(lockLabel, 0.46f) * 0.5f,
+                     lockCY + lockRadius * 1.65f, 0.46f,
+                     lr, lg, lb, lockAlpha * 0.90f);
+        const wchar_t* lockName = AugName(locked);
+        float lockNameScale = 0.52f;
+        while (lockNameScale > 0.38f &&
+               g_TextS.Width(lockName, lockNameScale) > fieldW * 0.22f) {
+            lockNameScale -= 0.03f;
+        }
+        g_TextS.Draw(lockName,
+                     lockCX - g_TextS.Width(lockName, lockNameScale) * 0.5f,
+                     lockCY + lockRadius * 1.65f + 20.0f * ui,
+                     lockNameScale, 0.92f, 0.96f, 1.0f,
+                     lockAlpha * 0.78f);
+        DrawVisibleConstellLine(lockCX + lockRadius * 1.65f, lockCY,
+                                fieldX + fieldW * 0.36f, fieldCY,
+                                1.15f, lr, lg, lb, lockAlpha * 0.40f);
+        BatchFlush();
+    }
+
+    for (int i = 0; i < nCandidates; ++i) {
+        const int idx = g_GameManager.augChoices[i];
+        if (idx < 0 || idx >= AUG_TOTAL) continue;
+        const AugDef& def = ALL_AUGS[idx];
+        const float r = isDebuff ? 0.95f : 0.18f;
+        const float g = isDebuff ? 0.16f : 0.86f;
+        const float b = isDebuff ? 0.18f : 0.42f;
+        const bool focused = inputReady && g_HoveredAug == i;
+        const bool selected = inExit && g_AugExitSlot == i;
+        const bool other = inExit && !selected;
+        const float hT = TarotEaseOut(hoverT[i]);
+        const float stagger = TarotEaseOut(TarotClamp01(
+            (enterT - (float)i * 0.07f) / 0.72f));
+        TarotCardPose p = candidates[i];
+        p.cx = fieldCX + (p.cx - fieldCX) * stagger;
+        p.cy = fieldCY + (p.cy - fieldCY) * stagger +
+               (1.0f - stagger) * 72.0f * ui;
+        p.w *= 1.0f + hT * 0.08f;
+        p.h *= 1.0f + hT * 0.08f;
+        p.cy -= hT * 8.0f * ui;
+
+        float alpha = stagger * sceneAlpha *
+            (g_HoveredAug >= 0 && g_HoveredAug != i ? 0.34f : 1.0f);
+        if (selected) {
+            const float t = exitE;
+            const float targetX = isDebuff
+                ? fieldX + fieldW * 0.88f
+                : fieldX + fieldW * 0.135f;
+            p.cx += (targetX - p.cx) * t;
+            p.cy += (fieldCY - p.cy) * t;
+            p.w *= 1.0f - t * 0.34f;
+            p.h *= 1.0f - t * 0.34f;
+            alpha *= 1.0f - t * 0.18f;
+        } else if (other) {
+            p.cy += ((i & 1) ? -1.0f : 1.0f) * exitE * 28.0f * ui;
+            alpha *= 1.0f - exitE;
+        }
+        if (alpha <= 0.01f) continue;
+
+        const float radius = std::min(p.w * 0.38f,
+                                      fieldH * (hasLockedBuff ? 0.145f : 0.17f));
+        const float constellationAlpha = alpha *
+            (0.62f + hT * 0.30f + (selected ? 0.08f : 0.0f));
+        DrawAugmentConstellation(def, p.cx, p.cy, radius,
+                                 r, g, b, constellationAlpha, now,
+                                 ui * (0.88f + hT * 0.12f));
+        DrawAugmentOrbitRing(p.cx, p.cy,
+                             radius * (1.34f + hT * 0.10f),
+                             radius * 0.72f,
+                             phase + (float)i * 0.86f,
+                             r, g, b,
+                             alpha * (0.48f + hT * 0.32f),
+                             ui * (0.88f + hT * 0.12f));
+
+        BindMainShader();
+        const float frameR = std::min(1.0f, r * 1.25f + hT * 0.18f);
+        const float frameG = std::min(1.0f, g * 1.25f + hT * 0.18f);
+        const float frameB = std::min(1.0f, b * 1.25f + hT * 0.18f);
+
+        wchar_t key[16];
+        swprintf_s(key, L"[%d]", i + 1);
+        const float keyScale = 0.60f;
+        g_TextS.Draw(key,
+                     p.cx - g_TextS.Width(key, keyScale) * 0.5f,
+                     p.cy - radius * 1.42f, keyScale,
+                     frameR, frameG, frameB, alpha * 0.94f);
+
+        const wchar_t* name = AugName(def);
+        float nameScale = hasLockedBuff ? 0.54f : 0.62f;
+        const float nameMaxW = hitW * 0.92f;
+        while (nameScale > 0.38f &&
+               g_TextS.Width(name, nameScale) > nameMaxW) {
+            nameScale -= 0.03f;
+        }
+        g_TextS.Draw(name,
+                     p.cx - g_TextS.Width(name, nameScale) * 0.5f,
+                     p.cy + radius * 1.28f, nameScale,
+                     0.96f, 0.98f, 1.0f, alpha * 0.94f);
+        const wchar_t* stat = AugStat(def);
+        float statScale = hasLockedBuff ? 0.42f : 0.48f;
+        while (statScale > 0.32f &&
+               g_TextS.Width(stat, statScale) > nameMaxW) {
+            statScale -= 0.03f;
+        }
+        g_TextS.Draw(stat,
+                     p.cx - g_TextS.Width(stat, statScale) * 0.5f,
+                     p.cy + radius * 1.28f + 20.0f * ui,
+                     statScale, 0.70f, 0.96f, 0.82f, alpha * 0.82f);
+        BatchFlush();
+    }
+
+    if (!inExit && inputReady && nCandidates > 0) {
+        const int detailSlot = g_HoveredAug >= 0 &&
+                               g_HoveredAug < nCandidates
+            ? g_HoveredAug : 0;
+        const AugDef& detail = ALL_AUGS[g_GameManager.augChoices[detailSlot]];
+        float detailR = isDebuff ? 0.95f : 0.18f;
+        float detailG = isDebuff ? 0.16f : 0.86f;
+        float detailB = isDebuff ? 0.18f : 0.42f;
+        const float detailY = sh * 0.855f;
+        const wchar_t* detailName = AugName(detail);
+        g_TextL.Draw(detailName,
+                     CenterTextX(sw, g_TextL, detailName, 0.78f),
+                     detailY, 0.78f,
+                     0.96f, 0.98f, 1.0f, sceneAlpha * 0.96f);
+        const wchar_t* detailStat = AugStat(detail);
+        g_TextS.Draw(detailStat,
+                     CenterTextX(sw, g_TextS, detailStat, 0.54f),
+                     detailY + 30.0f * ui, 0.54f,
+                     detailR, detailG, detailB, sceneAlpha * 0.92f);
+        const std::vector<std::wstring> detailLines =
+            TarotWrap(AugDesc(detail), 0.48f, sw * 0.70f);
+        float descY = detailY + 58.0f * ui;
+        for (const std::wstring& line : detailLines) {
+            if (descY > sh * 0.94f) break;
+            g_TextS.Draw(line.c_str(),
+                         CenterTextX(sw, g_TextS, line.c_str(), 0.48f),
+                         descY, 0.48f,
+                         0.76f, 0.84f, 0.94f, sceneAlpha * 0.78f);
+            descY += 21.0f * ui;
+        }
+        const wchar_t* hint = T(StrId::KEY_HINT_NO_HOVER);
+        g_TextS.Draw(hint, CenterTextX(sw, g_TextS, hint, 0.64f),
+                     sh * 0.975f, 0.64f,
+                     0.52f, 0.64f, 0.80f, sceneAlpha * enterE * 0.68f);
+        BatchFlush();
+    }
+
+    if (nCandidates > 0 && inExit && g_AugExitT >= 0.38f &&
+        !burstSpawned) {
+        burstSpawned = true;
+        const int slot = std::max(0, std::min(nCandidates - 1,
+                                               g_AugExitSlot));
+        float r, g, b;
+        GetRarityColor(ALL_AUGS[g_GameManager.augChoices[slot]].rarity,
+                       r, g, b);
+        for (int i = 0; i < 96; ++i) {
+            const float a = (float)i / 96.0f * 2.0f * (float)M_PI;
+            const float speed = 90.0f + (float)(rand() % 240);
+            burst[i] = { fieldCX, fieldCY,
+                         cosf(a) * speed, sinf(a) * speed,
+                         0.72f, r, g, b };
+        }
+        TriggerFlash(r, g, b, 0.72f);
+    }
+    if (nCandidates > 0 && inExit && g_AugExitT >= 0.38f) {
+        BindMainShader();
+        for (auto& particle : burst) {
+            if (particle.life <= 0.0f) continue;
+            particle.life -= delta;
+            particle.x += particle.vx * delta;
+            particle.y += particle.vy * delta;
+            particle.vx *= 1.0f - std::min(1.0f, delta * 2.0f);
+            particle.vy *= 1.0f - std::min(1.0f, delta * 2.0f);
+            const float a = TarotClamp01(particle.life / 0.72f);
+            drawDiamond(particle.x, particle.y, 4.0f * a + 1.0f,
+                        particle.r, particle.g, particle.b, a * 0.82f);
+        }
+        BatchFlush();
+    }
+}
+
+static PlayerStats MakeAugPreviewBaseStats() {
+    PlayerStats base;
+    ApplyMeta(base);
+    base.windowSize *= g_Scale;
+
+    if (g_CurrentWeapon >= 0 &&
+        g_CurrentWeapon < (int)StartWeapon::_COUNT) {
+        ApplyWeapon(base, (StartWeapon)g_CurrentWeapon);
+    }
+    if (g_RunMelee) {
+        base.meleeWeapon = true;
+        base.fireInterval = 0.26f;
+    } else if (g_RunBow) {
+        base.bowWeapon = true;
+        base.bulletSpeed *= 1.4f;
+    }
+    base.baseFireInterval = base.fireInterval;
+    return base;
+}
+
+static PlayerStats MakeAugPreviewTrialStats() {
+    PlayerStats trial = MakeAugPreviewBaseStats();
+    const float trialHp = TrialPlayerMaxHpMult();
+    if (trialHp < 0.999f)
+        trial.maxHP *= trialHp;
+    return trial;
+}
+
+static PlayerStats MakeAugPreviewOwnedStats() {
+    PlayerStats owned = MakeAugPreviewTrialStats();
+    for (int idx : g_OwnedAugs) {
+        if (idx < 0 || idx >= AUG_TOTAL) continue;
+        owned.Apply(ALL_AUGS[idx].type);
+        if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
+            owned.ApplyCommonMultBoost();
+    }
+    return owned;
+}
+
+static PlayerStats MakeAugPreviewCandidateStats(const PlayerStats& owned,
+                                                const AugDef& candidate) {
+    PlayerStats preview = owned;
+    preview.Apply(candidate.type);
+    if (candidate.rarity == AugRarity::COMMON)
+        preview.ApplyCommonMultBoost();
+    return preview;
+}
+
+static float AugPreviewMetricValue(const PlayerStats& stats,
+                                   AugPreviewMetric metric) {
+    switch (metric) {
+    case AugPreviewMetric::ATTACK:
+        return stats.GetBaseDamage() * stats.damageMultiplier;
+    case AugPreviewMetric::FIRE_RATE:
+        return stats.fireInterval > 0.0001f
+            ? 1.0f / stats.fireInterval : 0.0f;
+    case AugPreviewMetric::BULLET_SPEED:
+        return stats.bulletSpeed;
+    case AugPreviewMetric::MOVE_SPEED:
+        return stats.moveSpeedMult * 100.0f;
+    case AugPreviewMetric::MAX_HP:
+        return stats.maxHP;
+    case AugPreviewMetric::VISION:
+        return stats.windowSize;
+    default:
+        return 0.0f;
+    }
+}
+
+static float AugmentCentralOrbitX(float centerX, float t, float bend,
+                                  float phase) {
+    const float arc = sinf(t * (float)M_PI);
+    const float drift = sinf(phase + t * 4.2f) * 1.6f;
+    return centerX + arc * bend + drift;
+}
+
+static void DrawAugmentCentralOrbitLine(float centerX, float topY,
+                                        float bottomY, float bend,
+                                        float phase, float r, float g, float b,
+                                        float alpha, float ui) {
+    if (alpha <= 0.001f || bottomY <= topY) return;
+    constexpr int kSteps = 192;
+    constexpr float dashPeriod = 12.0f;
+    constexpr float dashLength = 7.0f;
+    constexpr float dashFeather = 0.75f;
+    const float dashTravel = fmodf(phase * 6.0f, dashPeriod);
+    float prevX = AugmentCentralOrbitX(centerX, 0.0f, bend, phase);
+    float prevY = topY;
+    for (int i = 1; i <= kSteps; ++i) {
+        const float t = (float)i / (float)kSteps;
+        const float x = AugmentCentralOrbitX(centerX, t, bend, phase);
+        const float y = topY + (bottomY - topY) * t;
+        // Move the dash phase continuously. Using a float here avoids the
+        // one-segment snapping that made the travelling pattern feel jerky.
+        const float dashCoord = fmodf((float)(i - 1) + dashTravel +
+                                      dashPeriod, dashPeriod);
+        float dashAlpha = 0.0f;
+        if (dashCoord < dashLength) {
+            const float fadeIn = std::min(1.0f, dashCoord / dashFeather);
+            const float fadeOut = std::min(1.0f,
+                (dashLength - dashCoord) / dashFeather);
+            dashAlpha = std::min(fadeIn, fadeOut);
+        }
+
+        // Keep both terminal ends visibly connected even when the moving
+        // dash pattern would otherwise finish on a gap.
+        const bool terminal = i <= 7 || i > kSteps - 7;
+        if (terminal) dashAlpha = std::max(dashAlpha, 1.0f);
+        if (dashAlpha > 0.001f) {
+            DrawVisibleConstellLine(prevX, prevY, x, y,
+                                    2.15f * ui, r, g, b,
+                                    alpha * dashAlpha);
+        }
+        prevX = x;
+        prevY = y;
+    }
+
+    // Small travelling sparks are part of the line, not separate orbit rings.
+    for (int i = 0; i < 4; ++i) {
+        const float t = fmodf(phase * 0.035f + 0.16f +
+                              (float)i * 0.27f, 0.92f);
+        const float x = AugmentCentralOrbitX(centerX, t, bend, phase);
+        const float y = topY + (bottomY - topY) * t;
+        DrawVisibleConstellNode(x, y, (2.0f + (i & 1)) * ui,
+                                r, g, b, alpha * 0.72f, false, true);
+    }
+    BatchFlush();
+}
+
+static void Scene_AugSelectConstellation(const SceneCtx& c) {
+    const float sw = c.sw, sh = c.sh, delta = c.delta;
+    const GameState state = g_GameManager.currentState;
+    const bool isDebuff = state == GameState::DEBUFF_SELECT;
+    const int nCandidates = std::max(0, std::min(3, g_GameManager.augChoiceCount));
+    const float now = (float)glfwGetTime();
+    const bool inExit = g_AugExitT >= 0.0f;
+
+    static int seenSerial = -1;
+    static float enterT = 0.0f;
+    static float hoverT[3] = {};
+    static float flashT[3] = {};
+    static bool lmbPrev = false;
+    static double prevMx = -1.0, prevMy = -1.0;
+    static int prevHover = -1;
+    static bool burstSpawned = false;
+    static TarotBurstParticle burst[96];
+
+    if (seenSerial != g_GameManager.augmentSelectionSerial) {
+        seenSerial = g_GameManager.augmentSelectionSerial;
+        enterT = 0.0f;
+        prevMx = c.mx;
+        prevMy = c.my;
+        prevHover = -1;
+        lmbPrev = false;
+        burstSpawned = false;
+        for (int i = 0; i < 3; ++i) {
+            hoverT[i] = 0.0f;
+            flashT[i] = 0.0f;
+        }
+        for (auto& p : burst) p.life = 0.0f;
+        g_HoveredAug = -1;
+    }
+
+    if (!inExit)
+        enterT = std::min(1.0f, enterT + delta / 0.62f);
+    const float enterE = TarotEaseOut(enterT);
+    const float exitE = inExit
+        ? TarotEaseOut(TarotClamp01(g_AugExitT / 1.70f)) : 0.0f;
+    const bool inputReady = enterT >= 0.96f && !inExit;
+    const bool pointerMoved = prevMx < 0.0 ||
+        fabs(c.mx - prevMx) > 0.5 || fabs(c.my - prevMy) > 0.5;
+    if (pointerMoved) g_GameManager.augmentKeyboardFocus = false;
+    prevMx = c.mx;
+    prevMy = c.my;
+
+    const float ui = std::max(0.55f,
+                              std::min(1.0f, std::min(sw / 1800.0f,
+                                                     sh / 1000.0f)));
+    const float ar = isDebuff ? 0.95f : 0.12f;
+    const float ag = isDebuff ? 0.16f : 0.82f;
+    const float ab = isDebuff ? 0.18f : 0.98f;
+    const float sceneAlpha = std::max(0.0f, 1.0f - exitE * 0.20f);
+    const float phase = now * 0.16f + (isDebuff ? 0.72f : 0.0f);
+
+    // The orbit is an edge-on, oversized vertical rail: one continuous line
+    // through the middle of the scene rather than a closed circular ring.
+    const float orbitCX = sw * 0.47f;
+    const float orbitTop = sh * 0.12f;
+    const float orbitBottom = sh * 0.91f;
+    const float orbitCY = (orbitTop + orbitBottom) * 0.50f;
+    const float orbitBend = sw * 0.065f;
+    const float detailX = sw * 0.70f;
+    const float detailW = sw * 0.25f;
+    const float detailY = sh * 0.67f;
+    const float detailAnchorX = detailX - 22.0f * ui;
+    const float detailAnchorY = detailY + 10.0f * ui;
+    const float nodeRadius = std::max(48.0f, 92.0f * ui);
+    const float slotT[3] = {
+        0.56f, 0.69f, 0.82f
+    };
+
+    TarotCardPose candidates[3];
+    for (int i = 0; i < nCandidates; ++i) {
+        const float t = slotT[i];
+        candidates[i].cx = AugmentCentralOrbitX(orbitCX, t,
+                                                orbitBend, phase);
+        candidates[i].cy = orbitTop + (orbitBottom - orbitTop) * t;
+        candidates[i].w = nodeRadius * 2.55f;
+        candidates[i].h = nodeRadius * 2.55f;
+        candidates[i].angle = 0.0f;
+    }
+
+    if (inputReady && (!g_GameManager.augmentKeyboardFocus || pointerMoved)) {
+        int hover = -1;
+        for (int i = nCandidates - 1; i >= 0; --i) {
+            if (TarotHit(candidates[i], c.mx, c.my, 8.0f * ui)) {
+                hover = i;
+                break;
+            }
+        }
+        g_HoveredAug = hover;
+    }
+    if (g_HoveredAug != prevHover && g_HoveredAug >= 0 &&
+        g_HoveredAug < nCandidates) {
+        flashT[g_HoveredAug] = 1.0f;
+    }
+    prevHover = g_HoveredAug;
+
+    for (int i = 0; i < 3; ++i) {
+        const float target = inputReady && g_HoveredAug == i ? 1.0f : 0.0f;
+        hoverT[i] += (target - hoverT[i]) *
+                     std::min(1.0f, delta * 11.0f);
+        flashT[i] = std::max(0.0f, flashT[i] - delta / 0.22f);
+    }
+
+    if (inputReady && c.lmb && !lmbPrev && g_HoveredAug >= 0 &&
+        g_HoveredAug < nCandidates) {
+        g_GameManager.augmentKeyboardFocus = false;
+        g_AugExitT = 0.0f;
+        g_AugExitSlot = g_HoveredAug;
+    }
+    lmbPrev = c.lmb;
+
+    BindMainShader();
+    drawRect(0.0f, 0.0f, sw, sh,
+             isDebuff ? 0.018f : 0.004f,
+             isDebuff ? 0.004f : 0.010f,
+             isDebuff ? 0.008f : 0.026f,
+             sceneAlpha * 0.80f);
+    BatchFlush();
+
+    const wchar_t* title = isDebuff ? T(StrId::CHOOSE_DEBUFF)
+                                    : T(StrId::CHOOSE_AUG);
+    const float titleAlpha = sceneAlpha *
+        std::max(0.0f, 1.0f - exitE * 1.45f);
+    g_TextL.Draw(title, CenterTextX(sw, g_TextL, title, 1.0f),
+                 sh * 0.065f, 1.0f,
+                 1.0f, 1.0f, 1.0f, titleAlpha);
+
+    wchar_t status[160];
+    if (isDebuff) {
+        swprintf_s(status, L"DEBUFF PATH  //  OBJECTIVE COST");
+    } else {
+        swprintf_s(status, L"BUFF PATH  //  OBJECTIVE STAT DELTA");
+    }
+    g_TextS.Draw(status, CenterTextX(sw, g_TextS, status, 0.62f),
+                 sh * 0.065f + 34.0f, 0.62f,
+                 ar, ag, ab, titleAlpha * 0.82f);
+
+    wchar_t slots[96];
+    swprintf_s(slots, L"%ls   //   %d CANDIDATES",
+               isDebuff ? L"RED ORBIT" : L"CYAN ORBIT", nCandidates);
+    g_TextS.Draw(slots, sw * 0.08f, sh * 0.145f, 0.54f,
+                 ar, ag, ab, titleAlpha * 0.76f);
+    if (!isDebuff) {
+        wchar_t identity[64];
+        swprintf_s(identity, L"ID %d / %d",
+                   CountIdentitySlotsUsed(), IdentitySlotMax());
+        g_TextS.Draw(identity, sw * 0.59f, sh * 0.145f, 0.54f,
+                     0.72f, 0.92f, 1.0f, titleAlpha * 0.70f);
+    }
+    BatchFlush();
+
+    // Exactly one orbit is visible in either phase.
+    DrawAugmentCentralOrbitLine(orbitCX, orbitTop, orbitBottom,
+                                orbitBend, phase, ar, ag, ab,
+                                sceneAlpha * 0.78f, ui);
+
+    // The upper-right readout is a composition, not a generic description:
+    // BASE -> selected PLAY trials -> already owned augments -> current pick.
+    // Every column is derived from an isolated PlayerStats copy so hovering a
+    // candidate never mutates the live run.
+    const PlayerStats previewBase = MakeAugPreviewBaseStats();
+    const PlayerStats previewTrial = MakeAugPreviewTrialStats();
+    const PlayerStats previewOwned = MakeAugPreviewOwnedStats();
+    const float statsX = sw * 0.56f;
+    const float statsW = sw * 0.38f;
+    const float statsY = sh * 0.16f;
+    const float statsLabelW = 86.0f * ui;
+    const float statsColW = (statsW - statsLabelW) / 5.0f;
+    const wchar_t* metricLabels[(int)AugPreviewMetric::COUNT] = {
+        L"ATTACK", L"FIRE RATE", L"BULLET SPD", L"MOVE", L"MAX HP", L"VISION"
+    };
+    const wchar_t* metricHeaders[5] = {
+        L"BASE", L"TRIAL", L"OWNED", L"PICK", L"RESULT"
+    };
+    const int previewSlot = (g_HoveredAug >= 0 &&
+                             g_HoveredAug < nCandidates)
+        ? g_HoveredAug : (nCandidates > 0 ? 0 : -1);
+
+    auto drawPreviewCell = [&](float x, float y, float w, float value,
+                               bool deltaValue, AugPreviewMetric metric) {
+        wchar_t valueText[40];
+        if (deltaValue && fabsf(value) < 0.05f) {
+            swprintf_s(valueText, L"—");
+        } else if (metric == AugPreviewMetric::MOVE_SPEED) {
+            swprintf_s(valueText, deltaValue ? L"%+.1f%%" : L"%.1f%%", value);
+        } else if (metric == AugPreviewMetric::FIRE_RATE) {
+            swprintf_s(valueText, deltaValue ? L"%+.1f/s" : L"%.1f/s", value);
+        } else {
+            swprintf_s(valueText, deltaValue ? L"%+.0f" : L"%.0f", value);
+        }
+
+        float vr = 0.88f, vg = 0.94f, vb = 1.0f;
+        if (deltaValue) {
+            if (value > 0.05f) {
+                vr = 0.12f; vg = 0.82f; vb = 0.98f;
+            } else if (value < -0.05f) {
+                vr = 0.98f; vg = 0.16f; vb = 0.18f;
+            } else {
+                vr = 0.48f; vg = 0.58f; vb = 0.70f;
+            }
+        }
+        const float scale = 0.39f * ui;
+        const float tw = g_TextS.Width(valueText, scale);
+        DrawShadowedText(g_TextS, valueText, x + w - tw, y, scale,
+                         vr, vg, vb, sceneAlpha * 0.88f, 0.48f);
+    };
+
+    BindMainShader();
+    g_TextS.Draw(L"STAT COMPOSITION", statsX, statsY, 0.58f * ui,
+                 0.88f, 0.94f, 1.0f, sceneAlpha * 0.92f);
+    g_TextS.Draw(L"BASE  +  TRIAL  +  OWNED AUGMENTS  +  CURRENT PICK",
+                 statsX, statsY + 24.0f * ui, 0.34f * ui,
+                 0.52f, 0.66f, 0.82f, sceneAlpha * 0.74f);
+    LogoLine(statsX, statsY + 48.0f * ui,
+             statsX + statsW, statsY + 48.0f * ui,
+             0.75f * ui, ar, ag, ab, sceneAlpha * 0.32f);
+    for (int col = 0; col < 5; ++col) {
+        const float x = statsX + statsLabelW + statsColW * (float)col;
+        const float tw = g_TextS.Width(metricHeaders[col], 0.31f * ui);
+        g_TextS.Draw(metricHeaders[col], x + statsColW - tw,
+                     statsY + 59.0f * ui, 0.31f * ui,
+                     col == 3 ? ar : 0.62f,
+                     col == 3 ? ag : 0.72f,
+                     col == 3 ? ab : 0.86f,
+                     sceneAlpha * 0.76f);
+    }
+
+    const float statsRowY = statsY + 84.0f * ui;
+    const float statsRowH = 27.0f * ui;
+    for (int mi = 0; mi < (int)AugPreviewMetric::COUNT; ++mi) {
+        const AugPreviewMetric metric = (AugPreviewMetric)mi;
+        const float baseValue = AugPreviewMetricValue(previewBase, metric);
+        const float trialValue = AugPreviewMetricValue(previewTrial, metric);
+        const float ownedValue = AugPreviewMetricValue(previewOwned, metric);
+        float candidateValue = ownedValue;
+        if (previewSlot >= 0 && previewSlot < nCandidates) {
+            const int idx = g_GameManager.augChoices[previewSlot];
+            if (idx >= 0 && idx < AUG_TOTAL) {
+                const PlayerStats candidateStats =
+                    MakeAugPreviewCandidateStats(previewOwned, ALL_AUGS[idx]);
+                candidateValue = AugPreviewMetricValue(candidateStats, metric);
+            }
+        }
+
+        const float y = statsRowY + statsRowH * (float)mi;
+        g_TextS.Draw(metricLabels[mi], statsX, y, 0.34f * ui,
+                     0.72f, 0.82f, 0.92f, sceneAlpha * 0.82f);
+        const float colX = statsX + statsLabelW;
+        drawPreviewCell(colX, y, statsColW, baseValue, false, metric);
+        drawPreviewCell(colX + statsColW, y, statsColW,
+                        trialValue - baseValue, true, metric);
+        drawPreviewCell(colX + statsColW * 2.0f, y, statsColW,
+                        ownedValue - trialValue, true, metric);
+        drawPreviewCell(colX + statsColW * 3.0f, y, statsColW,
+                        candidateValue - ownedValue, true, metric);
+        drawPreviewCell(colX + statsColW * 4.0f, y, statsColW,
+                        candidateValue, false, metric);
+    }
+    BatchFlush();
+
+    for (int i = 0; i < nCandidates; ++i) {
+        const int idx = g_GameManager.augChoices[i];
+        if (idx < 0 || idx >= AUG_TOTAL) continue;
+        const AugDef& def = ALL_AUGS[idx];
+        const bool focused = inputReady && g_HoveredAug == i;
+        const bool selected = inExit && g_AugExitSlot == i;
+        const bool other = inExit && !selected;
+        const float hT = TarotEaseOut(hoverT[i]);
+        const float stagger = TarotEaseOut(TarotClamp01(
+            (enterT - (float)i * 0.10f) / 0.70f));
+        TarotCardPose p = candidates[i];
+        p.cx = orbitCX + (p.cx - orbitCX) * stagger;
+        p.cy = orbitCY + (p.cy - orbitCY) * stagger +
+               (1.0f - stagger) * 52.0f * ui;
+        const float drawRadius = nodeRadius *
+            (1.0f + hT * 0.12f + flashT[i] * 0.06f);
+
+        float alpha = stagger * sceneAlpha *
+            (g_HoveredAug >= 0 && g_HoveredAug != i ? 0.32f : 1.0f);
+        if (selected) {
+            p.cx += (detailX + detailW * 0.12f - p.cx) * exitE;
+            p.cy += (detailY + 32.0f * ui - p.cy) * exitE;
+            alpha *= 1.0f - exitE * 0.16f;
+        } else if (other) {
+            p.cy += ((i & 1) ? -1.0f : 1.0f) * exitE * 24.0f * ui;
+            alpha *= 1.0f - exitE;
+        }
+        if (alpha <= 0.01f) continue;
+
+        const float constellationAlpha = alpha *
+            (0.66f + hT * 0.28f + flashT[i] * 0.16f);
+        DrawAugmentConstellation(def, p.cx, p.cy, drawRadius,
+                                 ar, ag, ab, constellationAlpha, now,
+                                 ui * (0.90f + hT * 0.10f));
+        DrawVisibleConstellNode(p.cx, p.cy, 3.8f * ui,
+                                ar, ag, ab, alpha * (focused ? 0.95f : 0.64f),
+                                true, true);
+
+        BindMainShader();
+        wchar_t key[16];
+        swprintf_s(key, L"[%d]", i + 1);
+        g_TextS.Draw(key,
+                     p.cx - g_TextS.Width(key, 0.58f) * 0.5f,
+                     p.cy - drawRadius * 1.42f,
+                     0.58f, ar, ag, ab, alpha * 0.96f);
+
+        const wchar_t* name = AugName(def);
+        float nameScale = 0.60f;
+        const float nameMaxW = sw * 0.18f;
+        while (nameScale > 0.38f &&
+               g_TextS.Width(name, nameScale) > nameMaxW) {
+            nameScale -= 0.03f;
+        }
+        g_TextS.Draw(name,
+                     p.cx - g_TextS.Width(name, nameScale) * 0.5f,
+                     p.cy + drawRadius * 1.27f,
+                     nameScale, 0.96f, 0.98f, 1.0f, alpha * 0.94f);
+
+        const wchar_t* stat = AugStat(def);
+        float statScale = 0.46f;
+        while (statScale > 0.32f &&
+               g_TextS.Width(stat, statScale) > nameMaxW) {
+            statScale -= 0.03f;
+        }
+        g_TextS.Draw(stat,
+                     p.cx - g_TextS.Width(stat, statScale) * 0.5f,
+                     p.cy + drawRadius * 1.27f + 20.0f * ui,
+                     statScale, ar, ag, ab, alpha * 0.88f);
+        BatchFlush();
+    }
+
+    if (!inExit && inputReady && nCandidates > 0) {
+        const int detailSlot = g_HoveredAug >= 0 &&
+                               g_HoveredAug < nCandidates
+            ? g_HoveredAug : 0;
+        const int detailIdx = g_GameManager.augChoices[detailSlot];
+        if (detailIdx >= 0 && detailIdx < AUG_TOTAL) {
+            const AugDef& detail = ALL_AUGS[detailIdx];
+            const float detailAlpha = sceneAlpha * 0.96f;
+            const float detailNodeX = candidates[detailSlot].cx +
+                                     nodeRadius * 0.88f;
+            const float detailNodeY = candidates[detailSlot].cy;
+
+            DrawVisibleConstellLine(detailNodeX, detailNodeY,
+                                    detailAnchorX, detailAnchorY,
+                                    1.10f * ui, ar, ag, ab,
+                                    detailAlpha * 0.50f);
+            DrawVisibleConstellNode(detailAnchorX, detailAnchorY,
+                                    4.2f * ui, ar, ag, ab,
+                                    detailAlpha * 0.86f, true, true);
+            BatchFlush();
+
+            BindMainShader();
+            g_TextS.Draw(isDebuff ? L"OBJECTIVE COST" : L"OBJECTIVE STAT DELTA",
+                         detailX, detailY - 38.0f * ui, 0.54f,
+                         ar, ag, ab, detailAlpha * 0.88f);
+
+            const wchar_t* detailName = AugName(detail);
+            float detailNameScale = 0.94f;
+            while (detailNameScale > 0.56f &&
+                   g_TextL.Width(detailName, detailNameScale) > detailW) {
+                detailNameScale -= 0.04f;
+            }
+            g_TextL.Draw(detailName, detailX, detailY,
+                         detailNameScale, 1.0f, 1.0f, 1.0f,
+                         detailAlpha);
+
+            const wchar_t* detailStat = AugStat(detail);
+            g_TextS.Draw(detailStat, detailX, detailY + 48.0f * ui,
+                         0.68f, ar, ag, ab, detailAlpha);
+
+            const std::vector<std::wstring> detailLines =
+                TarotWrap(AugDesc(detail), 0.54f, detailW);
+            float descY = detailY + 84.0f * ui;
+            for (const std::wstring& line : detailLines) {
+                if (descY > sh * 0.91f) break;
+                g_TextS.Draw(line.c_str(), detailX, descY, 0.54f,
+                             0.78f, 0.86f, 0.96f,
+                             detailAlpha * 0.84f);
+                descY += 23.0f * ui;
+            }
+            BatchFlush();
+        }
+    }
+
+    BindMainShader();
+    g_TextS.Draw(L"1 / 2 / 3  FOCUS     SPACE  CONFIRM",
+                 detailX, sh * 0.93f, 0.56f,
+                 0.54f, 0.66f, 0.82f,
+                 sceneAlpha * enterE * 0.78f);
+    BatchFlush();
+
+    if (nCandidates > 0 && inExit && g_AugExitT >= 0.38f &&
+        !burstSpawned) {
+        burstSpawned = true;
+        const int slot = std::max(0, std::min(nCandidates - 1,
+                                               g_AugExitSlot));
+        float rr, gg, bb;
+        GetRarityColor(ALL_AUGS[g_GameManager.augChoices[slot]].rarity,
+                       rr, gg, bb);
+        for (int i = 0; i < 96; ++i) {
+            const float a = (float)i / 96.0f * 2.0f * (float)M_PI;
+            const float speed = 90.0f + (float)(rand() % 240);
+            burst[i] = { candidates[slot].cx, candidates[slot].cy,
+                         cosf(a) * speed, sinf(a) * speed,
+                         0.72f, rr, gg, bb };
+        }
+        TriggerFlash(rr, gg, bb, 0.72f);
+    }
+    if (nCandidates > 0 && inExit && g_AugExitT >= 0.38f) {
+        BindMainShader();
+        for (auto& particle : burst) {
+            if (particle.life <= 0.0f) continue;
+            particle.life -= delta;
+            particle.x += particle.vx * delta;
+            particle.y += particle.vy * delta;
+            particle.vx *= 1.0f - std::min(1.0f, delta * 2.0f);
+            particle.vy *= 1.0f - std::min(1.0f, delta * 2.0f);
+            const float a = TarotClamp01(particle.life / 0.72f);
+            drawDiamond(particle.x, particle.y, 4.0f * a + 1.0f,
+                        particle.r, particle.g, particle.b, a * 0.82f);
+        }
+        BatchFlush();
+    }
+}
+
 void Scene_AugSelect(const SceneCtx& c) {
-    Scene_AugSelectCards(c);
+    // Polished version of the original three-constellation orbit selector.
+    // Inactive historical renderers remain below for visual reference.
+    Scene_AugSelectConstellationPolished(c);
     return;
     const float sw = c.sw, sh = c.sh;
     const float delta = c.delta;

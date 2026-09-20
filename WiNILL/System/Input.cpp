@@ -10,7 +10,7 @@
 bool  keys[1024] = {};
 float g_ScrollAccum = 0.0f;
 
-wchar_t g_CodexSearch[32] = {0};
+wchar_t g_CodexSearch[64] = {0};
 int     g_CodexSearchLen  = 0;
 
 static const wchar_t* DEV_CODE = L"develop_mod";
@@ -30,8 +30,9 @@ static void InputCharCallback(GLFWwindow*, unsigned int cp) {
         }
         return;
     }
-    if (g_GameManager.currentState != GameState::CODEX) return;
-    if (cp >= 32 && g_CodexSearchLen < 31) {
+    if (g_GameManager.currentState != GameState::CODEX &&
+        !g_CodexSearchInputEnabled) return;
+    if (cp >= 32 && g_CodexSearchLen < 63) {
         g_CodexSearch[g_CodexSearchLen++] = (wchar_t)cp;
         g_CodexSearch[g_CodexSearchLen]   = 0;
         if (!g_DevUnlocked) {

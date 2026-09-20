@@ -17,9 +17,9 @@ inline const wchar_t* kReadyTitle[LANG_COUNT] = {
     L"作戦開始",
 };
 inline const wchar_t* kReadyBrief[LANG_COUNT] = {
-    L"가짜 OS 창 안에서 적 프로세스를 막아내세요 / WASD·마우스·SHIFT·QER로 싸우고, 레벨업마다 증강을 고릅니다",
-    L"Stop rogue processes inside fake OS windows / WASD·mouse·SHIFT·QER — pick augments each level-up",
-    L"偽OSウィンドウ内で敵プロセスを阻止 / WASD·マウス·SHIFT·QER — レベルアップで強化選択",
+    L"별자리 영역 안에서 침입 신호를 막아내세요 / WASD·마우스·SHIFT·QER로 싸우고, 레벨업마다 증강을 고릅니다",
+    L"Stop rogue signals inside the starfield / WASD·mouse·SHIFT·QER — pick augments each level-up",
+    L"星座領域内で侵入信号を阻止 / WASD·マウス·SHIFT·QER — レベルアップで強化選択",
 };
 inline const wchar_t* kReadyHint[LANG_COUNT] = {
     L"자세한 설명 → 메인 메뉴 「튜토리얼」",
@@ -33,9 +33,9 @@ inline const wchar_t* ReadyHint()   { return kReadyHint[LangIndexTutorial()]; }
 
 // ── 튜토리얼 창 (페이지별) ──
 inline const wchar_t* kTutorialWinTitle[LANG_COUNT] = {
-    L"tutorial.chm",
-    L"tutorial.chm",
-    L"tutorial.chm",
+    L"ASTRAL FIELD GUIDE",
+    L"ASTRAL FIELD GUIDE",
+    L"ASTRAL FIELD GUIDE",
 };
 
 inline const wchar_t* kTutorialPageTitle[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
@@ -50,13 +50,13 @@ inline const wchar_t* kTutorialPageTitle[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
 inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
     /* KR */
     {
-        L"Onedow는 Win32 데스크톱 위에 겹쳐지는 투명 오버레이 게임입니다 / "
-        L"바탕화면·다른 앱 창이 그대로 비치고, 게임은 「가짜 OS 창」 안에서만 펼쳐집니다 / "
-        L"당신은 onedow.exe — 창을 드래그해 이동하며 침입한 프로세스(적)를 막아냅니다 / "
-        L"창 밖은 시야 밖입니다. 보이는 창 영역 안에서만 전투·피격·이펙트가 일어납니다 / "
+        L"Onedow는 별빛 위에 펼쳐지는 투명한 천문 관측 게임입니다 / "
+        L"별빛과 성운이 비치고, 게임은 항해 가능한 별자리 영역 안에서 펼쳐집니다 / "
+        L"당신은 항성 함선 — 관측 영역을 이동하며 침입한 신호(적)를 막아냅니다 / "
+        L"영역 밖은 시야 밖입니다. 보이는 별자리 영역 안에서만 전투·피격·이펙트가 일어납니다 / "
         L"목표: 웨이브를 버티고 보스를 격파한 뒤, 최대한 오래 생존하며 점수·코인을 모으세요",
 
-        L"WASD — onedow.exe 창(플레이어) 이동 / 마우스 — 조준 방향, 좌클릭 유지 시 연사 / "
+        L"WASD — 항성 함선 이동 / 마우스 — 조준 방향, 좌클릭 유지 시 연사 / "
         L"SHIFT — 대시(짧은 무적·쿨다운). 위험한 탄막을 뚫을 때 사용 / "
         L"Q · E · R — 액티브 스킬 슬롯. 증강으로 해금되며 최대 3개까지 장착 / "
         L"ESC — 일시정지(재개·설정·메뉴) / Space — READY 화면에서 전투 시작, 일시정지 중 재개 / "
@@ -80,9 +80,9 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"선택 화면 설명을 읽고 플레이에 맞는 무기를 고르세요 / "
         L"크리에이티브 모드에서는 시작 조건과 시작 증강을 직접 설정할 수 있습니다",
 
-        L"보스는 VOLLEY.sys, FORK.worm 이 별도 창으로 등장합니다 / "
-        L"보스 창 안에서만 패턴이 펼쳐지며, 체력바를 깎아 격파합니다 / "
-        L"탄막, 소환, 장판 패턴을 읽고 SHIFT 대시와 창 위치로 회피하세요 / "
+        L"보스 VOLLEY, FORK가 각자의 성운 영역에 등장합니다 / "
+        L"보스 영역 안에서만 패턴이 펼쳐지며, 체력바를 깎아 격파합니다 / "
+        L"탄막, 소환, 장판 패턴을 읽고 SHIFT 대시와 필드 위치로 회피하세요 / "
         L"보스 처치 후 짧은 휴식(인터미션)과 런 골드 상점이 열립니다 / "
         L"보스마다 공략이 다릅니다 - 도감에서 정보를 해금하세요",
 
@@ -95,18 +95,18 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"재료 증강 3종을 모으고 Lv10 이상이면 「조합 증강」이 등장합니다 / "
         L"조합은 강력하지만 재료를 차지하므로 계획적으로 모으세요 / "
         L"메인 메뉴 도감 — 적·증강·보스 정보 검색(위키 스타일) / "
-        L"설정에서 언어·볼륨·창 동작을 바꿀 수 있습니다 / "
+        L"설정에서 언어·볼륨·관측 필드 동작을 바꿀 수 있습니다 / "
         L"패배 후에도 코인·도감·업적 진행은 유지됩니다. 반복 플레이로 빌드를 완성하세요",
     },
     /* EN */
     {
-        L"Onedow is a transparent overlay on your real Windows desktop / "
-        L"Your wallpaper and apps show through; combat happens only inside fake OS windows / "
-        L"You are onedow.exe — drag your window to move and stop invading processes (enemies) / "
-        L"Outside visible windows is out of play: no combat, hits, or effects there / "
+        L"Onedow is a transparent observatory spread across the starfield / "
+        L"The cosmos shows through; combat happens inside navigable constellation zones / "
+        L"You are the astral vessel — move through the field and stop invading signals (enemies) / "
+        L"Outside the visible constellation zones is out of play: no combat, hits, or effects there / "
         L"Goal: survive waves, defeat bosses, and farm score·coins as long as you can",
 
-        L"WASD — move your onedow.exe window / Mouse — aim; hold LMB to fire / "
+        L"WASD — move your astral vessel / Mouse — aim; hold LMB to fire / "
         L"SHIFT — dash with brief i-frames and cooldown / "
         L"Q · E · R — active skills from augments (max 3 slots) / "
         L"ESC — pause menu / Space — start from READY, resume from pause / "
@@ -130,9 +130,9 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Read the select-screen text and pick what fits your style / "
         L"Creative mode lets you set start conditions and starting augments",
 
-        L"Bosses VOLLEY.sys and FORK.worm spawn in their own windows / "
-        L"Patterns play inside the boss window; burn the HP bar to win / "
-        L"Dodge with SHIFT and window positioning / "
+        L"Bosses VOLLEY and FORK spawn in their own constellation zones / "
+        L"Patterns play inside the boss field; burn the HP bar to win / "
+        L"Dodge with SHIFT and field positioning / "
         L"After each boss: short intermission and run gold shop / "
         L"Each boss plays differently - unlock tips in the Codex",
 
@@ -145,18 +145,18 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Collect 3 combo ingredient augments + reach Lv10 → combo augment appears / "
         L"Combos are strong but cost ingredient slots — plan ahead / "
         L"Main menu Codex — searchable wiki for enemies, augments, bosses / "
-        L"Settings: language, volume, window behavior / "
+        L"Settings: language, volume, observatory behavior / "
         L"Death keeps coins, codex, and achievements — iterate your build",
     },
     /* JP */
     {
-        L"OnedowはWindowsデスクトップ上の透明オーバーレイゲームです / "
-        L"壁紙や他アプリが透けて見え、戦闘は「偽OSウィンドウ」内だけで行われます / "
-        L"あなたはonedow.exe — 窓を動かし侵入プロセス(敵)を阻止します / "
-        L"見えない窓の外は戦闘範囲外 — 攻撃·被弾·演出は窓内のみ / "
+        L"Onedowは星空に広がる透明な天文観測ゲームです / "
+        L"星雲が透けて見え、戦闘は航行可能な星座領域で行われます / "
+        L"あなたは星の船 — フィールドを移動し侵入信号(敵)を阻止します / "
+        L"星座領域の外は戦闘範囲外 — 攻撃·被弾·演出は領域内のみ / "
         L"目標: ウェーブを凌ぎボスを倒し、できるだけ長くスコア·コインを稼ぐ",
 
-        L"WASD — onedow.exe(プレイヤー)移動 / マウス — 照準、左クリック長押しで連射 / "
+        L"WASD — 星の船(プレイヤー)移動 / マウス — 照準、左クリック長押しで連射 / "
         L"SHIFT — 短い無敵付きダッシュ(クールダウンあり) / "
         L"Q · E · R — 強化で解放するアクティブスキル(最大3) / "
         L"ESC — 一時停止 / Space — READYから開始、停止中は再開 / "
@@ -180,9 +180,9 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"選択画面の説明を読み、自分に合う武器を選ぶ / "
         L"クリエイティブモードで開始条件·開始強化を設定可能",
 
-        L"VOLLEY.sys、FORK.worm のボスが別窓で出現 / "
-        L"窓内でパターンが展開、HPバーを削って撃破 / "
-        L"SHIFTダッシュと窓位置で回避 / "
+        L"VOLLEY、FORK のボスが星座領域に出現 / "
+        L"領域内でパターンが展開、HPバーを削って撃破 / "
+        L"SHIFTダッシュとフィールド位置で回避 / "
         L"撃破後は短い休憩とランゴールドショップ / "
         L"ボスごとに攻略が異なる - 図鑑で情報解禁",
 

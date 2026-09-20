@@ -7,7 +7,6 @@
 
 static int    s_W = 1, s_H = 1;
 static int    s_qW = 1, s_qH = 1;      // quarter-res dimensions
-static GLuint s_capTex = 0;             // full-res framebuffer capture
 static GLuint s_fboA = 0, s_texA = 0;  // quarter-res ping-pong A (holds final result)
 static GLuint s_fboB = 0, s_texB = 0;  // quarter-res ping-pong B
 static GLuint s_blurProg = 0;
@@ -138,16 +137,6 @@ void InitBlurSystem(int screenW, int screenH) {
     s_qW = std::max(1, s_W / 2);
     s_qH = std::max(1, s_H / 2);
 
-    if (s_capTex) glDeleteTextures(1, &s_capTex);
-    glGenTextures(1, &s_capTex);
-    glBindTexture(GL_TEXTURE_2D, s_capTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, s_W, s_H, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
     MakeFBOTex(s_fboA, s_texA, s_qW, s_qH);
     MakeFBOTex(s_fboB, s_texB, s_qW, s_qH);
 
@@ -179,26 +168,31 @@ void CaptureBackdrop() {
     GLint savedVP[4] = {};
     glGetIntegerv(GL_VIEWPORT, savedVP);
 
-    // ── 현재 프레임버퍼 → capTex 복사 ────────────────────────────────────
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, s_capTex);
-    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 0, 0, s_W, s_H, 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    GLint savedReadFbo = 0, savedDrawFbo = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &savedReadFbo);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &savedDrawFbo);
+    const GLboolean blendOn = glIsEnabled(GL_BLEND);
+    const GLboolean depthOn = glIsEnabled(GL_DEPTH_TEST);
 
-    // FBO 패스 세팅 — scissor 반드시 꺼야 전체 FBO를 채울 수 있음
     if (scissorOn) glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
+    if (depthOn) glDisable(GL_DEPTH_TEST);
+
+    // ── 현재 프레임버퍼 → capTex 복사 ────────────────────────────────────
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, savedReadFbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, s_fboA);
+    glViewport(0, 0, s_qW, s_qH);
+    glBlitFramebuffer(0, 0, s_W, s_H,
+                      0, 0, s_qW, s_qH,
+                      GL_COLOR_BUFFER_BIT, GL_LINEAR);
+
+    // FBO 패스 세팅 — scissor 반드시 꺼야 전체 FBO를 채울 수 있음
     glUseProgram(s_blurProg);
     glUniform1i(s_blurTexLoc, 0);
     glActiveTexture(GL_TEXTURE0);
 
     // Pass 1 — H 다운샘플: capTex(full) → fboA(quarter)
     // 결과: texA
-    glBindFramebuffer(GL_FRAMEBUFFER, s_fboA);
-    glViewport(0, 0, s_qW, s_qH);
-    glBindTexture(GL_TEXTURE_2D, s_capTex);
-    glUniform2f(s_blurDirLoc, 2.0f / (float)s_W, 0.0f);
-    DrawNdcQuad();
 
     // Pass 2~3 — 1× H+V 블러 (half-res ping-pong A↔B)
     // σ ≈ 27px (full-res): 배경 실루엣은 보이되 디테일은 뭉개지는 frosted glass
@@ -219,10 +213,16 @@ void CaptureBackdrop() {
 
     // ── GL 상태 복원 ───────────────────────────────────────────────────────
     glBindTexture(GL_TEXTURE_2D, 0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, savedReadFbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, savedDrawFbo);
     glViewport(savedVP[0], savedVP[1], savedVP[2], savedVP[3]);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (blendOn) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        glDisable(GL_BLEND);
+    }
+    if (depthOn) glEnable(GL_DEPTH_TEST);
 
     if (scissorOn) {
         glEnable(GL_SCISSOR_TEST);
