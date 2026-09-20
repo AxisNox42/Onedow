@@ -13,6 +13,7 @@
 #endif
 
 #include "Platform.h"
+#include "EmbeddedResource.h"
 #include "CrashHandler.h"
 
 #include <glm/glm.hpp>
@@ -1659,36 +1660,73 @@ int main() {
             return nullptr;
         };
 
-        const char* chain[6] = {};
-        int nFonts = 0;
-        auto addFont = [&](const char* path) {
-            if (path && nFonts < (int)(sizeof(chain) / sizeof(chain[0])))
-                chain[nFonts++] = path;
+        // Windows releases use the exact fonts compiled into the executable.
+        // This prevents a stale Resource/Font folder from changing the UI
+        // after a user downloads only WiNILL.exe from GitHub.
+        const char* embeddedFontNames[] = {
+            "FONT_CHAKRA", "FONT_ORBIT", "FONT_JUA", "FONT_KOSUGI"
         };
-
-        addFont(pickFont("Resource/Font/ChakraPetch-Regular.ttf",
-                         "../Resource/Font/ChakraPetch-Regular.ttf",
-                         "../../Resource/Font/ChakraPetch-Regular.ttf"));
-        addFont(pickFont("Resource/Font/Orbit-Regular.ttf",
-                         "../Resource/Font/Orbit-Regular.ttf",
-                         "../../Resource/Font/Orbit-Regular.ttf"));
-        addFont(pickFont("Resource/Font/Jua-Regular.ttf",
-                         "../Resource/Font/Jua-Regular.ttf",
-                         "../../Resource/Font/Jua-Regular.ttf",
-                         "C:/Windows/Fonts/malgun.ttf"));
-        addFont(pickFont("Resource/Font/KosugiMaru-Regular.ttf",
-                         "../Resource/Font/KosugiMaru-Regular.ttf",
-                         "../../Resource/Font/KosugiMaru-Regular.ttf",
-                         "C:/Windows/Fonts/meiryo.ttc"));
-        if (nFonts == 0) {
-            addFont(pickFont("C:/Windows/Fonts/malgun.ttf",
-                             "C:/Windows/Fonts/arial.ttf",
-                             "C:/Windows/Fonts/meiryo.ttc"));
+        const unsigned char* memoryFonts[4] = {};
+        int memoryFontSizes[4] = {};
+        int memoryFontCount = 0;
+        for (const char* name : embeddedFontNames) {
+            EmbeddedResourceView view;
+            if (LoadEmbeddedResource(name, view)) {
+                memoryFonts[memoryFontCount] = view.data;
+                memoryFontSizes[memoryFontCount] = view.size;
+                ++memoryFontCount;
+            }
         }
 
-        g_TextL.InitFromFiles(chain, nFonts, 36,  screenWidth, screenHeight);
-        g_TextS.InitFromFiles(chain, nFonts, 22,  screenWidth, screenHeight);
-        g_TextXL.InitFromFiles(chain, nFonts, 100, screenWidth, screenHeight);
+        bool fontsInitialized = false;
+        if (memoryFontCount > 0) {
+            fontsInitialized =
+                g_TextL.InitFromMemory(memoryFonts, memoryFontSizes,
+                                       memoryFontCount, 36,
+                                       screenWidth, screenHeight) &&
+                g_TextS.InitFromMemory(memoryFonts, memoryFontSizes,
+                                       memoryFontCount, 22,
+                                       screenWidth, screenHeight) &&
+                g_TextXL.InitFromMemory(memoryFonts, memoryFontSizes,
+                                        memoryFontCount, 100,
+                                        screenWidth, screenHeight);
+        }
+
+        if (!fontsInitialized) {
+            const char* chain[6] = {};
+            int nFonts = 0;
+            auto addFont = [&](const char* path) {
+                if (path && nFonts < (int)(sizeof(chain) / sizeof(chain[0])))
+                    chain[nFonts++] = path;
+            };
+
+            addFont(pickFont("Resource/Font/ChakraPetch-Regular.ttf",
+                             "../Resource/Font/ChakraPetch-Regular.ttf",
+                             "../../Resource/Font/ChakraPetch-Regular.ttf"));
+            addFont(pickFont("Resource/Font/Orbit-Regular.ttf",
+                             "../Resource/Font/Orbit-Regular.ttf",
+                             "../../Resource/Font/Orbit-Regular.ttf"));
+            addFont(pickFont("Resource/Font/Jua-Regular.ttf",
+                             "../Resource/Font/Jua-Regular.ttf",
+                             "../../Resource/Font/Jua-Regular.ttf",
+                             "C:/Windows/Fonts/malgun.ttf"));
+            addFont(pickFont("Resource/Font/KosugiMaru-Regular.ttf",
+                             "../Resource/Font/KosugiMaru-Regular.ttf",
+                             "../../Resource/Font/KosugiMaru-Regular.ttf",
+                             "C:/Windows/Fonts/meiryo.ttc"));
+            if (nFonts == 0) {
+                addFont(pickFont("C:/Windows/Fonts/malgun.ttf",
+                                 "C:/Windows/Fonts/arial.ttf",
+                                 "C:/Windows/Fonts/meiryo.ttc"));
+            }
+
+            g_TextL.InitFromFiles(chain, nFonts, 36,
+                                  screenWidth, screenHeight);
+            g_TextS.InitFromFiles(chain, nFonts, 22,
+                                  screenWidth, screenHeight);
+            g_TextXL.InitFromFiles(chain, nFonts, 100,
+                                   screenWidth, screenHeight);
+        }
         g_TextS.SetMinScale(0.58f);
 
         // Warm only characters used by the game. The renderer caches glyphs

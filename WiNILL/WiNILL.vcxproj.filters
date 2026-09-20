@@ -168,6 +168,9 @@
     <ClInclude Include="System\CrashHandler.h">
       <Filter>System</Filter>
     </ClInclude>
+    <ClInclude Include="System\EmbeddedResource.h">
+      <Filter>System</Filter>
+    </ClInclude>
     <ClInclude Include="System\FakeWindow.h">
       <Filter>System</Filter>
     </ClInclude>

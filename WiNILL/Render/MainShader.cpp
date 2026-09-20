@@ -1,5 +1,6 @@
 #include "MainShader.h"
 #include "DrawPrim.h"
+#include "EmbeddedResource.h"
 #include "stb_image.h"
 #include <cstdio>
 #include <cstring>
@@ -41,9 +42,23 @@ static const char* kRadGradFS =
     "    FragColor = vec4(uColor, clamp(a, 0.0, 1.0));\n"
     "}\n";
 
+static unsigned char* LoadMaskTexture(const char* embeddedName,
+                                      const char* filePath,
+                                      int* w, int* h, int* n) {
+    EmbeddedResourceView embedded;
+    if (LoadEmbeddedResource(embeddedName, embedded)) {
+        unsigned char* data = stbi_load_from_memory(
+            embedded.data, embedded.size, w, h, n, 1);
+        if (data) return data;
+    }
+    return stbi_load(filePath, w, h, n, 1);
+}
+
 static void LoadRadGradTexture() {
     int w = 0, h = 0, n = 0;
-    unsigned char* d = stbi_load("Resource/bg_radial.png", &w, &h, &n, 1);
+    unsigned char* d = LoadMaskTexture("IMAGE_BG_RADIAL",
+                                       "Resource/bg_radial.png",
+                                       &w, &h, &n);
     if (!d) { std::fprintf(stderr,"[RadGrad] Resource/bg_radial.png not found\n"); return; }
     glGenTextures(1, &g_RadGradTex);
     glBindTexture(GL_TEXTURE_2D, g_RadGradTex);
@@ -60,7 +75,9 @@ static void LoadRadGradTexture() {
 
 static void LoadLinGradTexture() {
     int w = 0, h = 0, n = 0;
-    unsigned char* d = stbi_load("Resource/bg_linear.png", &w, &h, &n, 1);
+    unsigned char* d = LoadMaskTexture("IMAGE_BG_LINEAR",
+                                       "Resource/bg_linear.png",
+                                       &w, &h, &n);
     if (!d) { std::fprintf(stderr,"[LinGrad] Resource/bg_linear.png not found\n"); return; }
     glGenTextures(1, &g_LinGradTex);
     glBindTexture(GL_TEXTURE_2D, g_LinGradTex);

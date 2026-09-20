@@ -8,6 +8,7 @@
 #define MA_NO_GENERATION
 #include "miniaudio.h"
 #include "Audio.h"
+#include "EmbeddedResource.h"
 #include <cstring>
 #include <cstdlib>
 #include <string>
@@ -28,7 +29,12 @@ namespace {
     }
     std::string FullPath(const char* rel) { return g_base + rel; }
 
-    struct SfxSlot { ma_sound snd; bool ok = false; };
+    struct SfxSlot {
+        ma_sound snd;
+        ma_decoder decoder;
+        bool decoderActive = false;
+        bool ok = false;
+    };
     SfxSlot g_sfx[(int)Audio::Sfx::COUNT];
 
     struct SfxDef { const char* path; float vol; unsigned minMs; bool pitchVary; };
@@ -42,13 +48,44 @@ namespace {
     unsigned long long g_sfxLastMs[(int)Audio::Sfx::COUNT] = {0};
 
     ma_sound g_bgm;
+    ma_decoder g_bgmDecoder;
+    bool     g_bgmDecoderActive = false;
     bool     g_bgmActive = false;
     char     g_bgmPath[64] = "";
 
     void StartBgm(const char* path, float vol) {
         if (!g_inited || !g_enabled) return;
         if (g_bgmActive && std::strcmp(g_bgmPath, path) == 0) return;  // 이미 같은 곡
-        if (g_bgmActive) { ma_sound_uninit(&g_bgm); g_bgmActive = false; g_bgmPath[0] = 0; }
+        if (g_bgmActive) {
+            ma_sound_uninit(&g_bgm);
+            g_bgmActive = false;
+        }
+        if (g_bgmDecoderActive) {
+            ma_decoder_uninit(&g_bgmDecoder);
+            g_bgmDecoderActive = false;
+        }
+        g_bgmPath[0] = 0;
+
+        EmbeddedResourceView embedded;
+        if (LoadEmbeddedResource("AUDIO_BGM_MAIN", embedded) &&
+            ma_decoder_init_memory(embedded.data, (size_t)embedded.size,
+                                   nullptr, &g_bgmDecoder) == MA_SUCCESS) {
+            g_bgmDecoderActive = true;
+            if (ma_sound_init_from_data_source(&g_engine, &g_bgmDecoder,
+                                               MA_SOUND_FLAG_STREAM, nullptr,
+                                               &g_bgm) == MA_SUCCESS) {
+                ma_sound_set_looping(&g_bgm, MA_TRUE);
+                ma_sound_set_volume(&g_bgm, vol);
+                ma_sound_start(&g_bgm);
+                g_bgmActive = true;
+                std::strncpy(g_bgmPath, path, 63);
+                g_bgmPath[63] = 0;
+                return;
+            }
+            ma_decoder_uninit(&g_bgmDecoder);
+            g_bgmDecoderActive = false;
+        }
+
         std::string full = FullPath(path);
         if (ma_sound_init_from_file(&g_engine, full.c_str(), MA_SOUND_FLAG_STREAM,
                                     NULL, NULL, &g_bgm) == MA_SUCCESS) {
@@ -69,19 +106,52 @@ void Audio::Init() {
     ResolveBase();
     for (int i = 0; i < (int)Sfx::COUNT; i++) {
         std::string full = FullPath(SFX_DEFS[i].path);
-        if (ma_sound_init_from_file(&g_engine, full.c_str(),
-                MA_SOUND_FLAG_DECODE, NULL, NULL, &g_sfx[i].snd) == MA_SUCCESS) {
-            ma_sound_set_volume(&g_sfx[i].snd, SFX_DEFS[i].vol);
+        const char* embeddedName = nullptr;
+        switch ((Sfx)i) {
+        case Sfx::Shoot: embeddedName = "AUDIO_SFX_SHOOT"; break;
+        case Sfx::Kill:  embeddedName = "AUDIO_SFX_KILL";  break;
+        default: break;
+        }
+
+        EmbeddedResourceView embedded;
+        if (embeddedName && LoadEmbeddedResource(embeddedName, embedded) &&
+            ma_decoder_init_memory(embedded.data, (size_t)embedded.size,
+                                   nullptr, &g_sfx[i].decoder) == MA_SUCCESS) {
+            g_sfx[i].decoderActive = true;
+            g_sfx[i].ok =
+                ma_sound_init_from_data_source(&g_engine, &g_sfx[i].decoder,
+                                               MA_SOUND_FLAG_DECODE, nullptr,
+                                               &g_sfx[i].snd) == MA_SUCCESS;
+            if (!g_sfx[i].ok) {
+                ma_decoder_uninit(&g_sfx[i].decoder);
+                g_sfx[i].decoderActive = false;
+            }
+        }
+        if (!g_sfx[i].ok &&
+            ma_sound_init_from_file(&g_engine, full.c_str(),
+                                    MA_SOUND_FLAG_DECODE, NULL, NULL,
+                                    &g_sfx[i].snd) == MA_SUCCESS) {
             g_sfx[i].ok = true;
         }
+        if (g_sfx[i].ok)
+            ma_sound_set_volume(&g_sfx[i].snd, SFX_DEFS[i].vol);
     }
 }
 
 void Audio::Shutdown() {
     if (!g_inited) return;
     if (g_bgmActive) { ma_sound_uninit(&g_bgm); g_bgmActive = false; }
-    for (int i = 0; i < (int)Sfx::COUNT; i++)
+    if (g_bgmDecoderActive) {
+        ma_decoder_uninit(&g_bgmDecoder);
+        g_bgmDecoderActive = false;
+    }
+    for (int i = 0; i < (int)Sfx::COUNT; i++) {
         if (g_sfx[i].ok) ma_sound_uninit(&g_sfx[i].snd);
+        if (g_sfx[i].decoderActive) {
+            ma_decoder_uninit(&g_sfx[i].decoder);
+            g_sfx[i].decoderActive = false;
+        }
+    }
     ma_engine_uninit(&g_engine);
     g_inited = false;
 }
@@ -115,7 +185,12 @@ void Audio::PlaySfx(Sfx s) {
 void Audio::PlayBgmMain() { StartBgm("Resource/Audio/bgm_main.mp3", 0.50f); }
 
 void Audio::StopBgm() {
-    if (g_bgmActive) { ma_sound_uninit(&g_bgm); g_bgmActive = false; g_bgmPath[0] = 0; }
+    if (g_bgmActive) { ma_sound_uninit(&g_bgm); g_bgmActive = false; }
+    if (g_bgmDecoderActive) {
+        ma_decoder_uninit(&g_bgmDecoder);
+        g_bgmDecoderActive = false;
+    }
+    g_bgmPath[0] = 0;
 }
 
 void Audio::SetEnabled(bool on) { g_enabled = on; if (!on) StopBgm(); }

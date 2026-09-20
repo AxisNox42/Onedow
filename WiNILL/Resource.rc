@@ -11,9 +11,22 @@
 IDI_APP_ICON ICON "Resource\\WiNILL.ico"
 
 // 폰트 폴백 체인 — stb_truetype (InitFromMemory).
-//   한글=Jua / 일본어·라틴 폴백=KosugiMaru
-JUA_FONT        RCDATA      "Font\\Jua-Regular.ttf"
-KOSUGI_FONT     RCDATA      "Font\\KosugiMaru-Regular.ttf"
+//   최신 배포 폰트는 저장소 루트 Resource/Font 에서 직접 임베드한다.
+FONT_CHAKRA     RCDATA      "..\\Resource\\Font\\ChakraPetch-Regular.ttf"
+FONT_ORBIT      RCDATA      "..\\Resource\\Font\\Orbit-Regular.ttf"
+FONT_JUA        RCDATA      "..\\Resource\\Font\\Jua-Regular.ttf"
+FONT_KOSUGI     RCDATA      "..\\Resource\\Font\\KosugiMaru-Regular.ttf"
+
+// 배경 마스크 — 외부 Resource/ 폴더 없이도 메뉴 셰이더가 초기화되도록 임베드.
+IMAGE_BG_RADIAL RCDATA      "bin\\Resource\\bg_radial.png"
+IMAGE_BG_LINEAR RCDATA      "bin\\Resource\\bg_linear.png"
+
+// 오디오 — miniaudio가 메모리 디코더로 직접 재생한다.
+AUDIO_BGM_MAIN  RCDATA      "Resource\\Audio\\bgm_main.mp3"
+AUDIO_SFX_SHOOT RCDATA      "Resource\\Audio\\sfx_shoot.wav"
+AUDIO_SFX_KILL  RCDATA      "Resource\\Audio\\sfx_kill.wav"
+AUDIO_SFX_HURT  RCDATA      "Resource\\Audio\\sfx_hurt.wav"
+AUDIO_SFX_DEATH RCDATA      "Resource\\Audio\\sfx_death.wav"
 
 // 증강/직업 픽토그램 (game-icons.net, CC BY 3.0) — IconSystem 이 "ICON_<이넘명>" 으로 로드
 ICON_BAYONET            RCDATA      "Icons\\BAYONET.png"

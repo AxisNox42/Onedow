@@ -235,6 +235,7 @@
     <ClInclude Include="Render\TextRenderer.h" />
     <ClInclude Include="System\Audio.h" />
     <ClInclude Include="System\CrashHandler.h" />
+    <ClInclude Include="System\EmbeddedResource.h" />
     <ClInclude Include="System\FakeWindow.h" />
     <ClInclude Include="System\Input.h" />
     <ClInclude Include="System\miniaudio.h" />
