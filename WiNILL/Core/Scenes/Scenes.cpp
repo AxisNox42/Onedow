@@ -27,7 +27,6 @@
 #include "TextRenderer.h"
 #include "IconSystem.h"
 #include "../System/SystemInfo.h"
-#include "../../System/WindowFx.h"
 #include "Camera.h"
 #include "EntityDraw.h"
 #include "Monster.h"
@@ -2103,8 +2102,6 @@ void Scene_Shop(const SceneCtx& c) {
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
     const float delta = c.delta;
-    const bool systemBackdrop = ConfigureWindowBackdropBlur(
-        c.window, g_BackdropBlurEnabled);
     // ── State ──────────────────────────────────────────────────────────
     static constexpr int SHOP_TAB_COUNT = 4;
     static int   s_tab        = 0;
@@ -2269,7 +2266,7 @@ void Scene_Shop(const SceneCtx& c) {
     static int s_blurCadence = 0;
     static bool s_blurCacheValid = false;
     static bool s_blurWasEnabled = false;
-    if (g_BackdropBlurEnabled && !systemBackdrop) {
+    if (g_BackdropBlurEnabled) {
         const int blurW = std::max(1, (int)sw);
         const int blurH = std::max(1, (int)sh);
         const bool sizeChanged = s_blurW != blurW || s_blurH != blurH;
@@ -16292,6 +16289,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     static float enterT = 0.0f;
     static float orbitPhase = 0.0f;
     static float orbitSpeed = 0.0f;
+    static float ringPhase = 0.0f;
     static float shapePhase[3] = {};
     static float focusT[3] = {};
     static float dimT[3] = { 1.0f, 1.0f, 1.0f };
@@ -16309,6 +16307,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
         seenSerial = g_GameManager.augmentSelectionSerial;
         enterT = 0.0f;
         orbitSpeed = 0.0f;
+        ringPhase = 0.0f;
         for (int i = 0; i < 3; ++i)
             shapePhase[i] = (float)i * 2.0944f;
         panelT = 0.0f;
@@ -16351,10 +16350,19 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     const float decel = AugSelectionEase(
         AugSelectionClamp((enterT - 0.12f) / 0.78f));
     const float entrySpeed = 0.90f + (0.065f - 0.90f) * decel;
-    const float targetSpeed = focus >= 0 ? 0.004f : entrySpeed;
+    // Keep hover motion alive instead of freezing the whole selector. One
+    // shared speed also prevents candidates from drifting at position-based
+    // rates while the orbit itself remains easy to read.
+    const float hoverOrbitSpeed = 0.040f;
+    const float targetSpeed = focus >= 0 ? hoverOrbitSpeed : entrySpeed;
     orbitSpeed += (targetSpeed - orbitSpeed) *
                   AugSelectionSmooth(focus >= 0 ? 7.5f : 4.5f, delta);
-    if (!inExit) orbitPhase += orbitSpeed * delta;
+    if (!inExit) {
+        orbitPhase += orbitSpeed * delta;
+        ringPhase += orbitSpeed * delta;
+        if (ringPhase > 2.0f * (float)M_PI)
+            ringPhase -= 2.0f * (float)M_PI;
+    }
     for (int i = 0; i < count; ++i) {
         // The constellation's local rotation is continuous across hover
         // changes. Focus may scale/pull it during confirmation, but never
@@ -16478,21 +16486,6 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     }
     BatchFlush();
 
-    if (count > 1) {
-        for (int i = 0; i < count; ++i) {
-            const int next = (i + 1) % count;
-            if (count == 2 && i == 1) break;
-            const bool related = activeFocus == i || activeFocus == next;
-            DrawVisibleConstellLine(drawX[i], drawY[i],
-                                    drawX[next], drawY[next],
-                                    (related ? 1.30f : 0.92f) * layout.ui,
-                                    stateR, stateG, stateB,
-                                    enterE * sceneAlpha *
-                                    (related ? 0.30f : 0.13f));
-        }
-        BatchFlush();
-    }
-
     for (int i = 0; i < count; ++i) {
         const int augIdx = g_GameManager.augChoices[i];
         if (augIdx < 0 || augIdx >= AUG_TOTAL) continue;
@@ -16543,10 +16536,15 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
             alpha, reveal[i], shapePhase[i], layout.ui,
             focused || selected, now);
 
-        if (focused) {
-            DrawAugmentOrbitRing(px, py, radius * 1.28f, radius * 0.58f,
-                                 now * 0.20f, stateR, stateG, stateB,
-                                 alpha * 0.25f, layout.ui);
+        if (!inExit) {
+            // Each candidate owns a circular orbit. The rings never connect
+            // candidates to one another; only their dash markers rotate.
+            const float ringRadius = radius * (focused ? 1.46f : 1.36f);
+            DrawAugmentOrbitRing(px, py, ringRadius, ringRadius,
+                                 ringPhase + (float)i * 0.72f,
+                                 lineR, lineG, lineB,
+                                 alpha * (focused ? 0.46f : 0.24f),
+                                 layout.ui);
         }
 
         if (!inExit && reveal[i] > 0.42f) {
