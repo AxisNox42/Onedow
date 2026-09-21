@@ -2,7 +2,8 @@
 // ─────────────────────────────────────────────────────────────
 // 아이콘(픽토그램) 시스템 — game-icons.net 흰색 PNG 를 텍스처로 로드,
 //   AugType → 텍스처 매핑, 등급색 틴트로 그리는 drawIcon 헬퍼.
-//   파일명 = AugType 이넘명 (예: Icons/DMG_UP.png). 흰색+투명배경 권장.
+//   파일명 = AugType 이넘명 (예: Resource/Icons/DMG_UP.png).
+//   흰색+투명배경 권장.
 // ─────────────────────────────────────────────────────────────
 #include <glad/glad.h>
 #include <cstdio>
@@ -114,7 +115,7 @@ inline const char* IconNameForAug(AugType t) {
 
 // (int)AugType 로 인덱싱 (이넘이 0부터 연속). Augment.h 의 AUG_TYPE_SLOTS 와 동기화.
 inline GLuint g_IconTex[AUG_TYPE_SLOTS] = { 0 };
-inline char   g_IconBaseDir[260] = "Icons";   // 런타임에 실제 폴더로 확정
+inline char   g_IconBaseDir[260] = "Resource/Icons"; // 런타임에 확정
 
 inline GLuint g_IconProg = 0, g_IconVAO = 0, g_IconVBO = 0;
 inline GLint  g_IconProjLoc = -1, g_IconTintLoc = -1;
@@ -373,7 +374,7 @@ inline GLuint IconLoadResourceAlphaBoost(const char* resName, float boost) {
 }
 #endif
 
-// 이넘명("DMG_UP") → 텍스처. 리소스 우선, 없으면 파일(Icons/) 폴백.
+// 이넘명("DMG_UP") → 텍스처. 리소스 우선, 없으면 파일(Resource/Icons/) 폴백.
 inline GLuint IconLoad(const char* name) {
     if (!name || !name[0]) return 0;
 #ifdef _WIN32
@@ -390,8 +391,8 @@ inline GLuint IconLoad(const char* name) {
 // 아이콘 폴더 확정 — 실행 위치(exe) 기준 후보 경로 중 DMG_UP.png 가 있는 곳
 inline void ResolveIconDir() {
     const char* cands[] = {
-        "Icons", "WiNILL/Icons", "../../WiNILL/Icons", "../../../WiNILL/Icons",
-        "../WiNILL/Icons"
+        "Resource/Icons", "../Resource/Icons", "../../Resource/Icons",
+        "../../../Resource/Icons", "Icons"
     };
     char probe[300];
     for (const char* base : cands) {

@@ -41,6 +41,7 @@
 #include "CentipedeBoss.h"
 #include "TesseractGlitchBoss.h"
 #include "EtherSwordBoss.h"
+#include "LeviathanBoss.h"
 #include "BossDirector.h"
 #include "AugmentSlots.h"
 #include "RunIntermission.h"
@@ -61,14 +62,17 @@
 #include "SaveSystem.h"
 #include "IconSystem.h"
 #include "Camera.h"
+#include "BlurShader.h"
 #include "MainShader.h"
 #include "EntityDraw.h"
 #include "Scenes.h"
 #include "SceneContext.h"
 #include "SceneSkills.h"
 #include "Input.h"
+#include "DebugToolkit.h"
 #include "UiLayout.h"
 #include "WindowChrome.h"
+#include "GameplayTelemetry.h"
 
 #ifdef _MSC_VER
 #pragma comment(lib, "opengl32.lib")
@@ -102,6 +106,7 @@ bool    g_VolEdit = false;
 wchar_t g_VolBuf[8] = {0};
 int     g_VolLen = 0;
 PlayerStats    g_Stats;
+GameplayTelemetry g_GameplayTelemetry;
 bool g_aug1Released = true, g_aug2Released = true, g_aug3Released = true;
 float g_AugExitT    = -1.0f;
 int   g_AugExitSlot = -1;
@@ -273,6 +278,7 @@ long long g_NextBossScore  = FIRST_BOSS_SCORE;
 bool      g_CreativeBossPending = false;
 ReloadRunnerBoss* g_RRBoss  = nullptr;
 EtherSwordBoss*   g_EtherBoss = nullptr;
+LeviathanBoss*    g_LeviathanBoss = nullptr;
 
 static void HitEtherBossDirect(float dmg, float px, float py, bool crit = false) {
     auto* eb = g_EtherBoss;
@@ -546,6 +552,78 @@ static void DrawPlayerLine(float x0, float y0, float x1, float y1, float thick,
     if (len < 0.5f) return;
     DrawPlayerRotRect((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, len, thick,
                       atan2f(dy, dx), r, g, b, a);
+}
+
+static void HitLeviathanAtPoint(float dmg, float x, float y, bool crit = false) {
+    auto* lb = g_LeviathanBoss;
+    if (!lb || !lb->alive || !lb->heartHitPoint(x, y)) return;
+    float dealt = lb->applyHeartDamage(dmg);
+    if (dealt <= 0.0f) return;
+    SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt, dealt >= 40.0f || crit);
+    ApplyBossLifestealFromDamage(dealt);
+}
+
+static void HitLeviathanOnLine(float dmg, float x0, float y0,
+                               float x1, float y1, bool crit = false) {
+    auto* lb = g_LeviathanBoss;
+    if (!lb || !lb->alive || !lb->heartHitSegment(x0, y0, x1, y1)) return;
+    float dealt = lb->applyHeartDamage(dmg);
+    if (dealt <= 0.0f) return;
+    SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt, dealt >= 40.0f || crit);
+    ApplyBossLifestealFromDamage(dealt);
+}
+
+static void HitLeviathanInRadius(float dmg, float x, float y, float radius,
+                                 bool crit = false) {
+    auto* lb = g_LeviathanBoss;
+    if (!lb || !lb->alive || !lb->heartHitRadius(x, y, radius)) return;
+    float dealt = lb->applyHeartDamage(dmg);
+    if (dealt <= 0.0f) return;
+    SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt, dealt >= 40.0f || crit);
+    ApplyBossLifestealFromDamage(dealt);
+}
+
+static void LeviathanWakeFeed() {
+    int fed = 0;
+    auto lowTier = [](MobKind k) {
+        return k == MobKind::NORMAL || k == MobKind::SPLITTER ||
+               k == MobKind::BLINKER || k == MobKind::CHARGER ||
+               k == MobKind::WEAVER;
+    };
+    auto consume = [&](float x, float y, const glm::vec3& col) {
+        SpawnEnemyExplosion(x, y, col.r, col.g, col.b, true);
+        ++fed;
+    };
+    for (auto* m : g_MonsterManager.monsters) {
+        if (fed >= 6) break;
+        if (!m->alive || m->scored || !lowTier(m->kind)) continue;
+        m->alive = false;
+        m->scored = true;
+        m->exploded = true;
+        m->noBlast = true;
+        consume(m->worldX, m->worldY, m->color);
+    }
+    for (auto* r : g_MonsterManager.rangedMobs) {
+        if (fed >= 6) break;
+        if (!r->alive || r->scored) continue;
+        r->alive = false;
+        r->scored = true;
+        r->exploded = true;
+        consume(r->worldX, r->worldY, r->color);
+    }
+    for (auto* b : g_MonsterManager.bombers) {
+        if (fed >= 6) break;
+        if (!b->alive || b->scored) continue;
+        b->alive = false;
+        b->scored = true;
+        b->exploded = true;
+        consume(b->worldX, b->worldY, b->color);
+    }
+    if (fed > 0) {
+        SpawnShockWave(g_LeviathanBoss ? g_LeviathanBoss->heartCX : 0.0f,
+                       g_LeviathanBoss ? g_LeviathanBoss->heartCY : 0.0f,
+                       260.0f, 0.38f, 0.18f, 0.72f, 0.42f);
+    }
 }
 
 static void DrawPlayerArc(float cx, float cy, float radius,
@@ -1187,6 +1265,7 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH, bool preserveRuntime
 static void ApplySingleAugIdx(int idx, int scrW, int scrH) {
     if (idx < 0 || idx >= AUG_TOTAL) return;
     AugType atype = ALL_AUGS[idx].type;
+    const PlayerStats statsBefore = g_Stats;
     bool prevTurret = g_Stats.turretMode;
     g_Stats.Apply(atype);
     if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
@@ -1204,12 +1283,15 @@ static void ApplySingleAugIdx(int idx, int scrW, int scrH) {
     if (g_GameManager.playerHP > g_Stats.maxHP)
         g_GameManager.playerHP = g_Stats.maxHP;
     ApplyAugmentSideEffects(atype, scrW, scrH);
+    g_GameplayTelemetry.RecordAugment(g_GameTime,
+                                      g_GameManager.playerLevel,
+                                      idx,
+                                      statsBefore,
+                                      g_Stats);
 }
 
-static void BeginAugReplaceFlow(int newIdx, bool fromShop, int shopSlot) {
+static void BeginAugReplaceFlow(int newIdx) {
     g_GameManager.pendingAugIdx      = newIdx;
-    g_GameManager.replaceFromShop    = fromShop;
-    g_GameManager.replaceShopSlot    = shopSlot;
     g_GameManager.replaceChoiceCount = 0;
     for (int oi : g_OwnedAugs) {
         if (!AugIdxUsesIdentitySlot(oi)) continue;
@@ -1375,7 +1457,7 @@ static void ProcessAugEffectQueue(int scrW, int scrH) {
         }
 
         if (NeedsReplaceForAug(idx)) {
-            BeginAugReplaceFlow(idx, false, -1);
+            BeginAugReplaceFlow(idx);
             return;
         }
         ApplySingleAugIdx(idx, scrW, scrH);
@@ -1386,8 +1468,6 @@ static void CompleteAugReplaceFlow(int replaceSlot, int scrW, int scrH) {
     if (replaceSlot < 0 || replaceSlot >= g_GameManager.replaceChoiceCount) return;
     int oldIdx = g_GameManager.replaceChoices[replaceSlot];
     int newIdx = g_GameManager.pendingAugIdx;
-    bool fromShop = g_GameManager.replaceFromShop;
-    int shopSlot  = g_GameManager.replaceShopSlot;
 
     for (auto it = g_OwnedAugs.begin(); it != g_OwnedAugs.end(); ++it) {
         if (*it == oldIdx) { g_OwnedAugs.erase(it); break; }
@@ -1401,13 +1481,6 @@ static void CompleteAugReplaceFlow(int replaceSlot, int scrW, int scrH) {
     g_GameManager.pendingAugIdx = -1;
     g_GameManager.replaceChoiceCount = 0;
 
-    if (fromShop && shopSlot >= 0 && shopSlot < 4) {
-        g_RunGold -= g_RunShopPrice[shopSlot];
-        g_RunShopStock[shopSlot] = -1;
-        g_RunShopPrice[shopSlot]  = 0;
-        g_GameManager.currentState = GameState::RUN_SHOP;
-        return;
-    }
     if (g_AugEffectProcessing) {
         ProcessAugEffectQueue(scrW, scrH);
         if (g_GameManager.currentState == GameState::AUG_REPLACE) return;
@@ -1417,13 +1490,8 @@ static void CompleteAugReplaceFlow(int replaceSlot, int scrW, int scrH) {
 }
 
 static void CancelAugReplaceFlow() {
-    bool fromShop = g_GameManager.replaceFromShop;
     g_GameManager.pendingAugIdx = -1;
     g_GameManager.replaceChoiceCount = 0;
-    if (fromShop) {
-        g_GameManager.currentState = GameState::RUN_SHOP;
-        return;
-    }
     if (g_AugEffectProcessing) {
         ProcessAugEffectQueue(g_GameManager.screenW, g_GameManager.screenH);
         if (g_GameManager.currentState == GameState::AUG_REPLACE) return;
@@ -1435,8 +1503,11 @@ static void CancelAugReplaceFlow() {
 static void TriggerVictory() {
     g_InBossIntermission = false;
     g_IntermissionTimer  = 0.0f;
-    if (g_GameManager.currentState == GameState::RUN_SHOP)
-        g_GameManager.currentState = GameState::RUNNING;
+    g_GameplayTelemetry.EndRun(g_GameTime,
+                               g_GameManager.playerLevel,
+                               g_GameManager.xp,
+                               g_Stats,
+                               "victory");
     g_AchSaveNeeded = true;
     g_LastRunRecord = RecordRunResult((int)g_Difficulty,
                                       g_GameManager.score,
@@ -1446,50 +1517,9 @@ static void TriggerVictory() {
     g_VictoryFade = 0.0f;
 }
 
-static void OnBossKilled(int bossPick, long long goldBonus) {
-    FinishBossKill(g_MonsterManager, bossPick, goldBonus,
+static void OnBossKilled(int bossPick) {
+    FinishBossKill(g_MonsterManager, bossPick,
                    g_GameManager.screenW, g_GameManager.screenH);
-}
-
-static void ApplyPurchasedAug(int idx, SpatialBounds& playerWin, int scrW, int scrH) {
-    (void)playerWin;
-    AugType atype = ALL_AUGS[idx].type;
-
-    bool prevTurret = g_Stats.turretMode;
-    g_Stats.Apply(atype);
-    if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
-        g_Stats.ApplyCommonMultBoost();
-    g_OwnedAugs.push_back(idx);
-    g_TypeOwned[(int)atype] = true;
-    MarkAugSeen(idx);
-    EquipSkill(SkillForAug(atype));
-    if (g_Stats.turretMode && !prevTurret) {
-        g_Turrets.clear();
-        g_TurretDeployTimer = TURRET_DEPLOY;
-    }
-    if (AugOnceOnly(atype, ALL_AUGS[idx].rarity))
-        g_GameManager.takenOnce[idx] = true;
-    if (g_GameManager.playerHP > g_Stats.maxHP)
-        g_GameManager.playerHP = g_Stats.maxHP;
-    g_GameManager.maxHP = g_Stats.maxHP;
-    ApplyAugmentSideEffects(atype, scrW, scrH);
-}
-
-void RunShopPurchase(int slot) {
-    if (!s_PlayerBoundsRef || slot < 0 || slot >= 4) return;
-    int idx = g_RunShopStock[slot];
-    if (idx < 0) return;
-    int price = g_RunShopPrice[slot];
-    if (g_RunGold < (long long)price) return;
-    if (NeedsReplaceForAug(idx)) {
-        g_GameManager.replaceShopSlot = slot;
-        BeginAugReplaceFlow(idx, true, slot);
-        return;
-    }
-    g_RunGold -= price;
-    ApplyPurchasedAug(idx, *s_PlayerBoundsRef, g_GameManager.screenW, g_GameManager.screenH);
-    g_RunShopStock[slot] = -1;
-    g_RunShopPrice[slot]  = 0;
 }
 
 static bool BossFightBusy() {
@@ -1497,10 +1527,12 @@ static bool BossFightBusy() {
         || (g_CentiBoss && g_CentiBoss->alive)
         || (g_TessBoss && g_TessBoss->alive)
         || (g_EtherBoss && g_EtherBoss->alive)
+        || (g_LeviathanBoss && g_LeviathanBoss->alive)
         || g_BossWarnTimer > 0.0f;
 }
 
 static void StartBossWarn(int pick, const wchar_t* name, float hp) {
+    if (!kBossEncountersEnabled) return;
     BossDir::SetActTheme(pick);
     g_BossWarnPick = pick;
     g_BossWarnName = name;
@@ -1511,15 +1543,76 @@ static void StartBossWarn(int pick, const wchar_t* name, float hp) {
 }
 
 static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
+    if (!kBossEncountersEnabled) return;
     (void)polyHpC;
     switch (pick) {
     case 2: StartBossWarn(2, L"VOLLEY", bossHpC);        break;
     case 8: StartBossWarn(8, L"FORK",  bossHpC * 0.7f); break;
     case 10: StartBossWarn(10, TesseractGlitchBoss::BOSS_NAME, bossHpC * 0.92f); break;
     case 20: StartBossWarn(20, EtherSwordBoss::BOSS_NAME, bossHpC * 3.2f);      break;
+    case 30: StartBossWarn(30, LeviathanBoss::BOSS_NAME, bossHpC);               break;
     case 3: StartBossWarn(3, L"SPAM",   bossHpC * 0.9f); break;
     default: StartBossWarn(2, L"VOLLEY", bossHpC);       break;
     }
+}
+
+#if defined(_DEBUG)
+static constexpr bool kCompileDebugBuild = true;
+#else
+static constexpr bool kCompileDebugBuild = false;
+#endif
+
+static void DebugSpawnLeviathanNow() {
+    if (!kBossEncountersEnabled ||
+        ((!g_DebugMode && !kCompileDebugBuild) || BossFightBusy())) return;
+    const float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp
+                        * TrialBossHpMult();
+    StartBossWarn(30, LeviathanBoss::BOSS_NAME, bossHpC);
+    // Reuse the normal warning-to-spawn path, but resolve it on the next
+    // frame so the debug key behaves like an instant test summon.
+    g_BossWarnTimer = 0.01f;
+}
+
+static void BeginGameplayTelemetryIfNeeded() {
+    if (!g_DebugMode || !g_BalanceTestMode) return;
+    if (g_GameplayTelemetry.IsActive()) return;
+
+    const GameState state = g_GameManager.currentState;
+    const bool inRunFlow = state == GameState::READY ||
+                           state == GameState::RUNNING ||
+                           state == GameState::PAUSED ||
+                           state == GameState::AUG_SELECT ||
+                           state == GameState::DEBUFF_SELECT;
+    if (!inRunFlow) return;
+
+    // FinalizeLoadout() runs from the scene layer. These flags distinguish a
+    // real prepared run from the empty READY state before the player starts a
+    // loadout, including class jobs whose weapon index is intentionally -1.
+    const bool hasLoadout = g_CurrentWeapon >= 0 || g_RunMelee || g_RunBow ||
+                            !g_OwnedAugs.empty();
+    if (!hasLoadout) return;
+
+    g_GameplayTelemetry.BeginRun(
+        g_GameTime,
+        g_GameManager.playerLevel,
+        g_GameManager.xp,
+        g_Stats,
+        g_CreativeMode ? "creative" : "normal");
+}
+
+static void SyncGameplayTelemetry() {
+    if (!g_DebugMode || !g_BalanceTestMode) {
+        if (g_GameplayTelemetry.IsActive()) {
+            g_GameplayTelemetry.EndRun(
+                g_GameTime,
+                g_GameManager.playerLevel,
+                g_GameManager.xp,
+                g_Stats,
+                g_DebugMode ? "balance_test_disabled" : "debug_mode_disabled");
+        }
+        return;
+    }
+    BeginGameplayTelemetryIfNeeded();
 }
 
 int main() {
@@ -1846,6 +1939,71 @@ int main() {
 
     g_GameManager.Init(screenWidth, screenHeight);
 
+    // Runtime debug toolkit bindings. The toolkit is inert unless the
+    // persisted DEBUG MODE setting is enabled, but its callbacks are wired
+    // once here so the normal game loop remains the single owner of state.
+    g_DebugToolkit.Configure({
+        &g_Stats,
+        &g_GameManager,
+        &g_MonsterManager,
+        &playerWin,
+        &g_WindowSizeCur,
+        screenWidth,
+        screenHeight,
+        &g_BalanceTestMode,
+        [&]() {
+            if (!std::isfinite(g_Stats.maxHP) || g_Stats.maxHP < 1.0f)
+                g_Stats.maxHP = 1.0f;
+            if (!std::isfinite(g_Stats.windowSize) || g_Stats.windowSize < 64.0f)
+                g_Stats.windowSize = 64.0f;
+            g_GameManager.maxHP = g_Stats.maxHP;
+            if (!std::isfinite(g_GameManager.playerHP))
+                g_GameManager.playerHP = g_Stats.maxHP;
+            g_GameManager.playerHP = std::max(0.0f,
+                                               std::min(g_Stats.maxHP,
+                                                        g_GameManager.playerHP));
+            g_GameManager.scoreAccum = (float)g_GameManager.score;
+            const float cx = playerWin.x + playerWin.width * 0.5f;
+            const float cy = playerWin.y + playerWin.height * 0.5f;
+            playerWin.width  = g_Stats.windowSize;
+            playerWin.height = g_Stats.windowSize;
+            playerWin.x = cx - playerWin.width * 0.5f;
+            playerWin.y = cy - playerWin.height * 0.5f;
+            g_WindowSizeCur = g_Stats.windowSize;
+            if (g_Stats.chakram) InitChakramsFromStats();
+            else for (int i = 0; i < MAX_CHAKRAMS; ++i)
+                g_Chakrams[i] = ChakramState{};
+        },
+        [&](int mobKind, int count) {
+            if (mobKind < 0 || mobKind > (int)MobKind::QUASAR) return;
+            for (int i = 0; i < count; ++i) {
+                const size_t before = g_MonsterManager.monsters.size();
+                g_MonsterManager.SpawnMob(screenWidth, screenHeight, 160,
+                                          std::max(0.01f, g_Stats.monsterHpMult));
+                if (g_MonsterManager.monsters.size() <= before) break;
+                Monster* mob = g_MonsterManager.monsters.back();
+                mob->MakeKind((MobKind)mobKind);
+                if (mob->kind != MobKind::NORMAL)
+                    mob->hp *= std::max(0.01f, g_Stats.specialMobHpMult);
+            }
+        },
+        [&](int count) {
+            for (int i = 0; i < count; ++i)
+                g_MonsterManager.SpawnRangedMob(
+                    screenWidth, screenHeight,
+                    std::max(0.01f, g_Stats.rmobHpMult), 160);
+        },
+        [&](int count) {
+            for (int i = 0; i < count; ++i)
+                g_MonsterManager.SpawnBomber(
+                    screenWidth, screenHeight,
+                    std::max(0.01f, g_Stats.bomberHpMult),
+                    std::max(0.01f, g_Stats.bomberSpeedMult),
+                    std::max(0.01f, g_Stats.bomberBlastMult),
+                    0.0f, 0.0f, -1, -1, 160);
+        }
+    });
+
     float lastFrame        = 0.0f;
     float spawnTimer       = 0.0f;
     float rangedSpawnTimer = 0.0f;
@@ -1883,6 +2041,8 @@ int main() {
             consider(g_TessBoss->worldX, g_TessBoss->worldY);
             for (auto& o : g_TessBoss->orbs) if (o.alive) consider(o.x, o.y);
         }
+        if (g_LeviathanBoss && g_LeviathanBoss->heartVulnerable())
+            consider(g_LeviathanBoss->heartCX, g_LeviathanBoss->heartCY);
         return found;
     };
 
@@ -1898,7 +2058,8 @@ int main() {
 
         // ?�래??추적 브레?�크????마�?�??�태�??�겨 강종(E23) ??로그�??�치 ?�정
         {
-            const char* bn = g_RRBoss ? "reload" : g_CentiBoss ? "centi" : "none";
+            const char* bn = g_RRBoss ? "reload" : g_CentiBoss ? "centi" :
+                             g_LeviathanBoss ? "leviathan" : "none";
             char bc[200];
             std::snprintf(bc, sizeof(bc),
                 "st=%d score=%lld lv=%d mobs=%u boss=%s",
@@ -1938,7 +2099,6 @@ int main() {
             bool inFight = (zs == GameState::RUNNING || zs == GameState::DYING ||
                             zs == GameState::PAUSED  || zs == GameState::AUG_SELECT ||
                             zs == GameState::DEBUFF_SELECT ||
-                            zs == GameState::RUN_SHOP ||
                             (zs == GameState::RUNNING && g_InBossIntermission));
             if (!inFight) { g_ViewZoom = g_ViewZoomTarget = 1.0f; }
             else {
@@ -1961,13 +2121,26 @@ int main() {
         // 마우???�태 (mx,my = ?�면 ?��? / wmx,wmy = �?보정???�드 좌표 = 조�???
         double mx, my;
         glfwGetCursorPos(window, &mx, &my);
-        bool lmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        const bool rawLmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        bool lmb = rawLmb;
         float wmx = ScreenToWorldX((float)mx);
         float wmy = ScreenToWorldY((float)my);
 
         // --- ?�력 처리 ---
         GameState prevState = g_GameManager.currentState;
-        g_GameManager.HandleInput(window);
+        const bool debugInputCaptured = g_DebugToolkit.BeginInput(
+            window, (float)screenWidth, (float)screenHeight, mx, my,
+            lmb, g_LmbPrev);
+        if (!debugInputCaptured) {
+            g_GameManager.HandleInput(window);
+        } else {
+            // Opening the toolkit also pauses simulation and consumes the
+            // pointer so gameplay and scene controls cannot leak through.
+            delta = 0.0f;
+            lmb = false;
+            wmx = ScreenToWorldX(-10000.0f);
+            wmy = ScreenToWorldY(-10000.0f);
+        }
 
         // Keep the OS pointer out of the combat view while the custom
         // crosshair is active. Pause/settings screens use normal input, so
@@ -1975,6 +2148,7 @@ int main() {
         auto UpdateCursorVisibility = [&]() {
             const GameState cursorState = g_GameManager.currentState;
             const bool hideCursor = g_ShowCrosshair &&
+                !g_DebugToolkit.IsVisible() &&
                 (cursorState == GameState::RUNNING ||
                  cursorState == GameState::DYING);
             static bool cursorModeInitialized = false;
@@ -1990,6 +2164,11 @@ int main() {
 
         // ??게임 리셋 ?�다 (GAMEOVER ??READY, ?�이???�택 ?? ?�시?�기 버튼 ?�에???�출)
         auto ResetForNewGame = [&]() {
+            g_GameplayTelemetry.EndRun(g_GameTime,
+                                       g_GameManager.playerLevel,
+                                       g_GameManager.xp,
+                                       g_Stats,
+                                       "reset_or_restart");
             g_Stats        = PlayerStats();
             g_MetaStartAugs = ApplyMeta(g_Stats);    // 메�? ?�구 ?�그?�이???�용
             g_Stats.windowSize *= g_Scale;           // ?�레?�어 �????�상??비�? 축소
@@ -2028,15 +2207,10 @@ int main() {
             BossDir::ResetRotation();
             BossDir::ResetAct();
             ResetTrials();
-            g_RunGold           = 0;
             g_RunStardust       = 0;
             g_InBossIntermission = false;
             g_IntermissionTimer = 0.0f;
-            g_ShopZoneHold      = 0.0f;
             g_SkipZoneHold      = 0.0f;
-            g_ShopMustLeave     = false;
-            g_ShopZoneX         = 0.0f;
-            g_ShopZoneY         = 0.0f;
             g_SkipZoneX         = 0.0f;
             g_SkipZoneY         = 0.0f;
             g_BossRewardPicksLeft = 0;
@@ -2053,6 +2227,7 @@ int main() {
             if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
             if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
             if (g_EtherBoss) { delete g_EtherBoss; g_EtherBoss = nullptr; }
+            if (g_LeviathanBoss) { delete g_LeviathanBoss; g_LeviathanBoss = nullptr; }
             g_BossTintT = 0.0f;
             ResetJuice();
             ResetSkills();
@@ -2108,7 +2283,6 @@ int main() {
             const int savedWeapon = g_CurrentWeapon;
             const bool savedMelee = g_RunMelee;
             const bool savedBow = g_RunBow;
-            const Difficulty savedDifficulty = g_Difficulty;
             const bool savedGodmode = g_CreativeGodmode;
             const std::vector<int> savedOwnedAugs = g_OwnedAugs;
             const bool savedTrialPoolReady = g_TrialPoolReady;
@@ -2127,7 +2301,7 @@ int main() {
             g_CurrentWeapon = savedWeapon;
             g_RunMelee = savedMelee;
             g_RunBow = savedBow;
-            g_Difficulty = savedDifficulty;
+            g_Difficulty = Difficulty::NORMAL;
             g_CreativeGodmode = savedGodmode;
             g_OwnedAugs = savedOwnedAugs;
             g_TrialPoolReady = savedTrialPoolReady;
@@ -2145,17 +2319,11 @@ int main() {
             g_GameManager.maxHP = g_Stats.maxHP;
             g_GameManager.playerHP = g_Stats.maxHP;
 
-            for (int i = 0; i < 4; ++i) {
-                g_RunShopStock[i] = -1;
-                g_RunShopPrice[i] = 0;
-            }
             g_CreativeStartPending = false;
             g_GameManager.conversionAug = -1;
             g_GameManager.hoveredCard = -1;
             g_GameManager.pendingAugIdx = -1;
             g_GameManager.replaceChoiceCount = 0;
-            g_GameManager.replaceFromShop = false;
-            g_GameManager.replaceShopSlot = -1;
             g_GameManager.augChoiceCount = 0;
             for (int i = 0; i < 3; ++i) g_GameManager.augChoices[i] = -1;
             g_AugExitT = -1.0f;
@@ -2179,6 +2347,12 @@ int main() {
             if (g_GameManager.currentState == GameState::GAMEOVER ||
                 g_GameManager.currentState == GameState::VICTORY)
                 return;
+
+            g_GameplayTelemetry.EndRun(g_GameTime,
+                                       g_GameManager.playerLevel,
+                                       g_GameManager.xp,
+                                       g_Stats,
+                                       "abandoned");
 
             g_MonsterManager.Clear();
             g_Bullets.clear();
@@ -2244,7 +2418,9 @@ int main() {
             g_GameManager.currentState != GameState::PAUSED) {
             g_PauseSelectedAug = -1;
         }
-        g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
+        if (!debugInputCaptured)
+            g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
+        SyncGameplayTelemetry();
         if (prevState == GameState::RUNNING &&
             g_GameManager.currentState == GameState::AUG_SELECT &&
             !g_GameManager.augmentRewardActive) {
@@ -2424,6 +2600,11 @@ int main() {
                 g_Debris[i].vy *= (1.0f - 1.6f * sd);
             }
             if (g_DyingTimer <= 0.0f) {
+                g_GameplayTelemetry.EndRun(g_GameTime,
+                                           g_GameManager.playerLevel,
+                                           g_GameManager.xp,
+                                           g_Stats,
+                                           "gameover");
                 g_ViewZoom = g_ViewZoomTarget = 1.0f;   // �??�복 (메뉴 ?�상??
                 g_ZoomCX = g_ZoomCY = 0.0f;             // �?중심 ?�면 중앙?�로
                 g_GameManager.currentState = GameState::GAMEOVER;
@@ -2484,100 +2665,17 @@ int main() {
         }
 
         // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 focus, SPACE confirm ---
-        // s_augSpaceReleased: 블록 바깥?�서??release 감�??�도�?static ?�언
         static bool s_augSpaceReleased = true;
         {
-            int kSpChk = glfwGetKey(window, GLFW_KEY_SPACE);
-            if (kSpChk == GLFW_RELEASE) s_augSpaceReleased = true;
+            const int spaceState = glfwGetKey(window, GLFW_KEY_SPACE);
+            if (spaceState == GLFW_RELEASE) s_augSpaceReleased = true;
         }
-        if (g_GameManager.currentState == GameState::AUG_SELECT ||
-            g_GameManager.currentState == GameState::DEBUFF_SELECT) {
-            int k1 = glfwGetKey(window, GLFW_KEY_1);
-            int k2 = glfwGetKey(window, GLFW_KEY_2);
-            int k3 = glfwGetKey(window, GLFW_KEY_3);
-
-            // ?�일 증강 ?�용 ?�퍼 (?��?????RANDOM_AUG/PANDORA 가 ?�출)
-            // Special effects are processed by ProcessAugEffectQueue below.
-            // Keep the legacy recursive implementation disabled for reference
-            // until the queue path has shipped through a full playtest.
-#if 0
-            std::function<void(int)> applyByIdx;
-            applyByIdx = [&](int idx) {
-                AugType atype = ALL_AUGS[idx].type;
-
-                // ?�수: ?�스?�치�??�행?�고 Apply ?�출 X
-                if (atype == AugType::S_CHAOS) {
-                    // ?�?��?: 보유 증강 ?�고, 같�? 개수 ?�덤. ??60% 버프 / 40% ?�버??                    // ?�제 보유 목록(중첩 ?�함) 기�??�로 카운????공격??증�?×4 같�? 중첩??모두 ?�함
-                    int prevAugs = (int)g_OwnedAugs.size();
-                    float saveSpawnMult = g_Stats.mobSpawnMult;
-                    int   saveCapBonus  = g_Stats.mobCapBonus;
-                    int   savePackBonus = g_Stats.mobPackBonus;
-                    g_Stats = PlayerStats();
-                    g_Stats.windowSize *= g_Scale;          // �????�상??비�? ?��?
-                    // 무기/직업 ?�체?��? ?��? ??CHAOS ??증강�??�추첨한??
-                    //   (검�?궁수가 기본 총으�?바뀌던 버그 fix. 증강?�????�래???�에 ??��)
-                    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
-                        ApplyWeapon(g_Stats, (StartWeapon)g_CurrentWeapon);
-                    if (g_RunMelee)    { g_Stats.meleeWeapon = true; g_Stats.fireInterval = 0.26f; }
-                    else if (g_RunBow) { g_Stats.bowWeapon = true;  g_Stats.bulletSpeed *= 1.4f; }
-                    g_Stats.baseFireInterval = g_Stats.fireInterval;
-                    g_OwnedAugs.clear();
-                    memset(g_GameManager.takenOnce, 0,
-                           sizeof(g_GameManager.takenOnce));
-                    memset(g_TypeOwned, 0, sizeof(g_TypeOwned));   // 조합 ?�시??보유??초기??                    //   (?�으�??�블 ?�었?�데 '관???�둥?? 조합???�던 버그)
-                    if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
-                        MarkStartWeaponOwnedType((StartWeapon)g_CurrentWeapon);
-                    g_GameManager.maxHP = g_Stats.maxHP;
-                    if (g_GameManager.playerHP > g_Stats.maxHP)
-                        g_GameManager.playerHP = g_Stats.maxHP;
-                    // 보유 개수 보존 ???�전??24�?캡해??40�?보유 ??반토�??�던 버그 ?�정.
-                    if (prevAugs > 60) prevAugs = 60;       // 배열 ?�한(?�유)
-                    int nDebuffs = prevAugs / 3;            // 40% ??33% (??가?�하�?
-                    int nBuffs   = prevAugs - nDebuffs;
-                    int buffs[64], debuffs[64];
-                    g_GameManager.PickRandomAugIndices(buffs, nBuffs,
-                        false, false, true, false, /*allowDebuff=*/false);
-                    g_GameManager.PickRandomDebuffIndices(debuffs, nDebuffs);
-                    for (int k = 0; k < nBuffs;   k++) applyByIdx(buffs[k]);
-                    for (int k = 0; k < nDebuffs; k++) applyByIdx(debuffs[k]);
-                    // ��ų ���� ? reroll �� ���� ���?���� ������
-                    ReequipSkillsFromOwned(g_OwnedAugs.data(), (int)g_OwnedAugs.size());
-                    // ���� �з�(����/ĸ/����)�� reroll ���� �� ���� �� ���� ? ��ȥ�� �� �ް� ����
-                    g_Stats.mobSpawnMult  = std::min(g_Stats.mobSpawnMult,  saveSpawnMult);
-                    g_Stats.mobCapBonus   = std::max(g_Stats.mobCapBonus,   saveCapBonus);
-                    g_Stats.mobPackBonus  = std::max(g_Stats.mobPackBonus,  savePackBonus);
-                    return;
-                }
-                if (atype == AugType::S_PANDORA) {
-                    // PANDORA: 5??= 3 버프 + 2 ?�버??(명시??분리)
-                    int buffs[3], debuffs[2];
-                    g_GameManager.PickRandomAugIndices(buffs, 3,
-                        g_Stats.sizeAugTaken, g_Stats.distAugTaken,
-                        true, false, /*allowDebuff=*/false);
-                    g_GameManager.PickRandomDebuffIndices(debuffs, 2);
-                    for (int k = 0; k < 3; k++) applyByIdx(buffs[k]);
-                    for (int k = 0; k < 2; k++) applyByIdx(debuffs[k]);
-                    return;
-                }
-                if (atype == AugType::RANDOM_AUG) {
-                    // RANDOM_AUG: 버프�?(?�버???�외, ?�용???�도 ?��?)
-                    int picks[3];
-                    g_GameManager.PickRandomAugIndices(picks, 3,
-                        g_Stats.sizeAugTaken, g_Stats.distAugTaken,
-                        true, /*allowSpecial=*/false,
-                        /*allowDebuff=*/false);
-                    for (int k = 0; k < 3; k++) applyByIdx(picks[k]);
-                    return;
-                }
-
-                if (NeedsReplaceForAug(idx)) {
-                    BeginAugReplaceFlow(idx, false, -1);
-                    return;
-                }
-                ApplySingleAugIdx(idx, screenWidth, screenHeight);
-            };
-
-#endif
+        if (!debugInputCaptured &&
+            (g_GameManager.currentState == GameState::AUG_SELECT ||
+             g_GameManager.currentState == GameState::DEBUFF_SELECT)) {
+            const int k1 = glfwGetKey(window, GLFW_KEY_1);
+            const int k2 = glfwGetKey(window, GLFW_KEY_2);
+            const int k3 = glfwGetKey(window, GLFW_KEY_3);            // Special effects are processed by ProcessAugEffectQueue below.
             auto applyAug = [&](int slot) {
                 if (slot < 0 || slot >= g_GameManager.augChoiceCount) return;
                 const bool wasBuff = (g_GameManager.currentState == GameState::AUG_SELECT);
@@ -2652,7 +2750,7 @@ int main() {
             }
         }
 
-        if (g_GameManager.currentState == GameState::AUG_REPLACE) {
+        if (!debugInputCaptured && g_GameManager.currentState == GameState::AUG_REPLACE) {
             constexpr float REP_EXIT_DUR = 0.28f;
             static bool s_repEsc   = true;
             static bool s_repSpace = true;
@@ -2705,63 +2803,8 @@ int main() {
         }
 
         // --- �� ���� (���� Ŭ���� ��) ---
-        if (g_GameManager.currentState == GameState::RUN_SHOP) {
-            int k1 = glfwGetKey(window, GLFW_KEY_1);
-            int k2 = glfwGetKey(window, GLFW_KEY_2);
-            int k3 = glfwGetKey(window, GLFW_KEY_3);
-            int k4 = glfwGetKey(window, GLFW_KEY_4);
-            static bool s_rs1 = true, s_rs2 = true, s_rs3 = true, s_rs4 = true;
-            static bool s_rsSpace = true;
-            if (k1 == GLFW_PRESS && s_rs1) { g_HoveredAug = 0; s_rs1 = false; }
-            if (k2 == GLFW_PRESS && s_rs2) { g_HoveredAug = 1; s_rs2 = false; }
-            if (k3 == GLFW_PRESS && s_rs3) { g_HoveredAug = 2; s_rs3 = false; }
-            if (k4 == GLFW_PRESS && s_rs4) { g_HoveredAug = 3; s_rs4 = false; }
-            if (k1 == GLFW_RELEASE) s_rs1 = true;
-            if (k2 == GLFW_RELEASE) s_rs2 = true;
-            if (k3 == GLFW_RELEASE) s_rs3 = true;
-            if (k4 == GLFW_RELEASE) s_rs4 = true;
-
-            int kSp = glfwGetKey(window, GLFW_KEY_SPACE);
-            if (kSp == GLFW_PRESS && s_rsSpace && g_HoveredAug >= 0 && g_HoveredAug < 4) {
-                RunShopPurchase(g_HoveredAug);
-                s_rsSpace = false;
-            }
-            if (kSp == GLFW_RELEASE) s_rsSpace = true;
-
-            if (lmb && !g_LmbPrev) {
-                const int  nCards  = 4;
-                const float CARD_W = 240.0f;
-                const float CARD_H = 360.0f;
-                const float GAP    = 32.0f;
-                const float TOTAL_W = (float)nCards * CARD_W + (float)(nCards - 1) * GAP;
-                float baseX = (screenWidth  - TOTAL_W) * 0.5f;
-                float baseY = (screenHeight - CARD_H)  * 0.38f;
-                for (int i = 0; i < nCards; i++) {
-                    float cx = baseX + i * (CARD_W + GAP);
-                    float yOff = (g_HoveredAug == i) ? -14.0f : 0.0f;
-                    if (mx >= cx && mx <= cx + CARD_W &&
-                        my >= baseY + yOff && my <= baseY + yOff + CARD_H) {
-                        g_HoveredAug = i;
-                        break;
-                    }
-                }
-            }
-
-            {
-                int kEsc = glfwGetKey(window, GLFW_KEY_ESCAPE);
-                static bool s_rsEsc = true;
-                if (kEsc == GLFW_PRESS && s_rsEsc) {
-                    CloseRunShop();
-                    g_HoveredAug = -1;
-                    g_GameManager.escReleased = false;
-                    s_rsEsc = false;
-                }
-                if (kEsc == GLFW_RELEASE) s_rsEsc = true;
-            }
-        }
-
         // --- ?�리?�이?�브 모드: F = 증강 그랩(?�버???�함 ?�드박스), G = 무적 ?��? ---
-        if (g_CreativeMode || g_DebugMode) {
+        if (!debugInputCaptured && (g_CreativeMode || g_DebugMode || kCompileDebugBuild)) {
             static bool s_fkeyReleased = true;
             int kF = glfwGetKey(window, GLFW_KEY_F);
             if (kF == GLFW_RELEASE) s_fkeyReleased = true;
@@ -2769,8 +2812,17 @@ int main() {
                 g_GameManager.currentState == GameState::RUNNING &&
                 !g_GameManager.augReady) {
                 // ?�드박스: ?�버?�도 카드 ?�???�어??무엇?�든 집을 ???�게
+                const int oldLevel = g_GameManager.playerLevel;
+                const long long oldXp = g_GameManager.xp;
                  ++g_GameManager.playerLevel;
                  g_GameManager.xp = 0;
+                g_GameplayTelemetry.RecordLevelUp(g_GameTime,
+                                                  oldLevel,
+                                                  g_GameManager.playerLevel,
+                                                  0,
+                                                  oldXp,
+                                                  g_GameManager.xp,
+                                                  true);
                 if (g_CreativeMode) {
                     g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
                 } else {
@@ -2793,7 +2845,7 @@ int main() {
             static bool s_bkeyReleased = true;
             int kB = glfwGetKey(window, GLFW_KEY_B);
             if (kB == GLFW_RELEASE) s_bkeyReleased = true;
-            if (kB == GLFW_PRESS && s_bkeyReleased && g_CreativeMode &&
+            if (kB == GLFW_PRESS && s_bkeyReleased && kBossEncountersEnabled && g_CreativeMode &&
                 g_GameManager.currentState == GameState::RUNNING) {
                 if (!BossFightBusy()) {
                     float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult();
@@ -2802,6 +2854,21 @@ int main() {
                     QueueCreativeBossPick(pick, bossHpC, polyHpC);
                 }
                 s_bkeyReleased = false;
+            }
+
+            // Debug-only shortcut: press 0 to summon the current test boss.
+            // The edge latch prevents a held key from spawning repeatedly.
+            static bool s_0keyReleased = true;
+            int k0 = glfwGetKey(window, GLFW_KEY_0);
+            int k0pad = glfwGetKey(window, GLFW_KEY_KP_0);
+            const bool zeroDown = (k0 == GLFW_PRESS || k0pad == GLFW_PRESS);
+            const bool zeroUp = (k0 == GLFW_RELEASE && k0pad == GLFW_RELEASE);
+            if (zeroUp) s_0keyReleased = true;
+            if (zeroDown && s_0keyReleased &&
+                kBossEncountersEnabled && (g_DebugMode || kCompileDebugBuild) &&
+                g_GameManager.currentState == GameState::RUNNING) {
+                DebugSpawnLeviathanNow();
+                s_0keyReleased = false;
             }
         }
 
@@ -2935,6 +3002,8 @@ int main() {
                         float dx = g_EtherBoss->worldX - cx, dy = g_EtherBoss->worldY - cy;
                         if (dx*dx + dy*dy < r2) HitEtherBossDirect(dmg, cx, cy, false);
                     }
+                    if (g_LeviathanBoss && g_LeviathanBoss->alive)
+                        HitLeviathanInRadius(dmg, cx, cy, rad, false);
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -3241,6 +3310,24 @@ int main() {
                                         enemyDt, g_GameManager.playerHP,
                                         g_Bullets, g_Difficulty, g_Stats.maxHP);
 
+                if (!timeStopped && g_LeviathanBoss && g_LeviathanBoss->alive) {
+                    g_LeviathanBoss->Update(pCX, pCY, enemyDt);
+                    if (g_LeviathanBoss->heartOpenedEvent) {
+                        g_LeviathanBoss->heartOpenedEvent = false;
+                        g_ShakeTime = 0.30f; g_ShakeMag = 12.0f;
+                        TriggerFlash(0.18f, 0.72f, 1.0f, 0.22f);
+                        SpawnShockWave(g_LeviathanBoss->heartCX,
+                                       g_LeviathanBoss->heartCY,
+                                       360.0f, 0.65f, 0.20f, 0.82f, 0.46f);
+                    }
+                    if (g_LeviathanBoss->heartClosedEvent) {
+                        g_LeviathanBoss->heartClosedEvent = false;
+                        SpawnShockWave(g_LeviathanBoss->heartCX,
+                                       g_LeviathanBoss->heartCY,
+                                       290.0f, 0.42f, 0.18f, 0.62f, 0.34f);
+                    }
+                }
+
 
                 // ?�리모프 ?�데?�트 (??변??+ ?�모/?�이?�?차크?? + ?�이�? ?�면 ?�장
 
@@ -3326,6 +3413,31 @@ int main() {
                          * g_Stats.GetDamageMultiplier(pd)
                          * b.dmgMult * 1.20f;
                 };
+
+                if (g_LeviathanBoss && g_LeviathanBoss->alive &&
+                    g_LeviathanBoss->heartVulnerable()) {
+                    auto* lb = g_LeviathanBoss;
+                    for (auto& b : g_Bullets) {
+                        if (!b.active || b.isEnemy) continue;
+                        if (!lb->heartHitSegment(b.prevX, b.prevY, b.x, b.y)) continue;
+                        float pd = glm::distance(glm::vec2(pCX, pCY),
+                                                 glm::vec2(lb->heartCX, lb->heartCY));
+                        float dmg;
+                        if (b.remainingDmg > 0.0f)   dmg = b.remainingDmg;
+                        else if (b.turretDmg > 0.0f) dmg = b.turretDmg;
+                        else dmg = g_Stats.GetBaseDamage()
+                                 * g_Stats.GetDamageMultiplier(pd) * b.dmgMult;
+                        dmg += silverBossBonus(b, pd);
+                        float dealt = lb->applyHeartDamage(dmg);
+                        if (dealt > 0.0f) {
+                            SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt,
+                                              dealt >= 40.0f);
+                            ApplyBossLifestealFromDamage(dealt);
+                            if (b.remainingDmg > 0.0f) b.remainingDmg -= dealt;
+                            if (b.remainingDmg <= 0.001f) b.active = false;
+                        }
+                    }
+                }
 
                 // 리로???�너 본체 vs ?�레?�어 총알 (?�윕 ?�정)
                 if (g_RRBoss && g_RRBoss->alive) {
@@ -3529,7 +3641,6 @@ int main() {
                     g_Stats.killCount       += 1;
                     g_GameManager.scoreAccum += scoreBase;
                     g_GameManager.score      = (long long)g_GameManager.scoreAccum;
-                    g_RunGold               += 1;
                     if (!g_CreativeMode)
                         if (g_Stats.GetLifestealPerKill() > 0.0f) {
                         g_GameManager.playerHP += g_Stats.GetLifestealPerKill();
@@ -3563,7 +3674,6 @@ int main() {
                             SpawnStardust(m->worldX, m->worldY,
                                           StardustRewardFor(m->kind), pCX, pCY, pickupXp);
                             creditKill(scB);
-                            if (m->elite) g_RunGold += 1;
                         }
                         if (m->kind == MobKind::DDOS)
                             SpawnNodeDeath(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b);
@@ -3666,7 +3776,7 @@ int main() {
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
                     g_Bullets.clear();
-                    OnBossKilled(2, 35);
+                    OnBossKilled(2);
                 }
 
                 
@@ -3688,7 +3798,7 @@ int main() {
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
                     g_Bullets.clear();
-                    OnBossKilled(8, 35);
+                    OnBossKilled(8);
                 }
 
                 if (g_TessBoss && !g_TessBoss->alive && !g_TessBoss->exploded) {
@@ -3708,7 +3818,7 @@ int main() {
                     if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
                     if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
                     g_Bullets.clear();
-                    OnBossKilled(10, 35);
+                    OnBossKilled(10);
                 }
 
                 if (g_EtherBoss && !g_EtherBoss->alive && !g_EtherBoss->exploded) {
@@ -3728,7 +3838,34 @@ int main() {
                     if (g_TotalBossKills >= 3)  TryUnlockAch(ACH_BOSS_3);
                     if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
                     g_Bullets.clear();
-                    OnBossKilled(20, 50);
+                    OnBossKilled(20);
+                }
+
+                if (g_LeviathanBoss && !g_LeviathanBoss->alive &&
+                    !g_LeviathanBoss->exploded) {
+                    auto* lb = g_LeviathanBoss;
+                    SpawnEnemyExplosion(lb->heartCX, lb->heartCY,
+                                        1.0f, 0.24f, 0.52f, true);
+                    SpawnEnemyExplosion(lb->heartCX, lb->heartCY,
+                                        0.22f, 0.80f, 1.0f, true);
+                    SpawnShockWave(lb->heartCX, lb->heartCY,
+                                   980.0f, 1.05f, 0.18f, 0.72f, 0.42f);
+                    SpawnShockWave(lb->heartCX, lb->heartCY,
+                                   560.0f, 0.80f, 1.0f, 0.32f, 0.62f);
+                    g_ShakeTime = 0.95f; g_ShakeMag = 40.0f;
+                    TriggerFlash(0.28f, 0.72f, 1.0f, 0.72f);
+                    TriggerHitStop(0.16f);
+                    lb->exploded = true;
+                    g_GameManager.scoreAccum += 20000.0f;
+                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
+                    delete lb;
+                    g_LeviathanBoss = nullptr;
+                    g_TotalBossKills++;
+                    TryUnlockAch(ACH_FIRST_BOSS);
+                    if (g_TotalBossKills >= 3)  TryUnlockAch(ACH_BOSS_3);
+                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
+                    g_Bullets.clear();
+                    OnBossKilled(30);
                 }
 
 
@@ -3798,8 +3935,17 @@ int main() {
                     } else {
                     long long need = g_ExpSystem.Required(g_GameManager.playerLevel);
                     if (g_GameManager.xp >= need) {
+                        const int oldLevel = g_GameManager.playerLevel;
+                        const long long oldXp = g_GameManager.xp;
                         g_GameManager.xp -= need;
                         ++g_GameManager.playerLevel;
+                        g_GameplayTelemetry.RecordLevelUp(g_GameTime,
+                                                          oldLevel,
+                                                          g_GameManager.playerLevel,
+                                                          need,
+                                                          oldXp,
+                                                          g_GameManager.xp,
+                                                          false);
                         // (?�벨???�?�크�??�래???�거 ???��??? AUG_SELECT 카드�?충분???�내)
                         g_GameManager.QueueAugmentReward(true, false);
                     }
@@ -3812,6 +3958,13 @@ int main() {
             }
             accumulator -= FIXED_DT;
         }
+
+        g_GameplayTelemetry.Update(
+            g_GameTime,
+            g_GameManager.playerLevel,
+            g_GameManager.xp,
+            g_ExpSystem.Required(g_GameManager.playerLevel),
+            g_Stats);
 
         // ?�?�??�맛: ?��?지 ?�자 / 콤보 / ?�래??�??�레??갱신 (게임 진행 중에�?감쇠) ?�?�?
         if (g_GameManager.currentState == GameState::RUNNING ||
@@ -3993,6 +4146,7 @@ int main() {
                 float dist = sqrtf(dx * dx + dy * dy);
                 if (dist < 60.0f) {
                     g_GameManager.xp += dust.xpValue;
+                    g_GameplayTelemetry.RecordExperience(dust.xpValue);
                     if (dust.xpValue > 0)
                         g_XpBarPop = std::max(g_XpBarPop, 1.15f);
                     g_Coins += dust.value;
@@ -4054,6 +4208,7 @@ int main() {
                 if (g_XpTimeAccum >= 1.0f) {
                     long long add = (long long)g_XpTimeAccum;
                     g_GameManager.xp += add;
+                    g_GameplayTelemetry.RecordExperience(add);
                     g_XpTimeAccum    -= (float)add;
                 }
             }
@@ -4103,7 +4258,8 @@ int main() {
             if (capT > 1.0f) capT = 1.0f;
             if (capT < 0.0f) capT = 0.0f;
             float rampSpawn = (0.52f + spawnT * 1.75f + lateSpawnT * 0.55f) * act.spawnMult;
-            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss || g_BossWarnTimer > 0.0f;
+            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss ||
+                            g_LeviathanBoss || g_BossWarnTimer > 0.0f;
             float hpIntensity = (float)g_GameManager.score / 100000.0f;
             if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
             float hpT = elapsedSec / 300.0f;
@@ -4143,6 +4299,7 @@ int main() {
                 if (g_CentiBoss && g_CentiBoss->alive) return true;
                 if (g_TessBoss && g_TessBoss->alive) return true;
                 if (g_EtherBoss && g_EtherBoss->alive) return true;
+                if (g_LeviathanBoss && g_LeviathanBoss->alive) return true;
                 return false;
             };
             bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f ||
@@ -4234,12 +4391,10 @@ int main() {
 
             g_GameTime += delta;
 
-            if (!g_CreativeMode && g_GameManager.currentState == GameState::RUNNING) {
-            }
-
             // ���� ���� ? �Ϲ�: �� ���?/ ũ������Ƽ��: ���� ���?
             {
-                bool bossActive = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss || g_BossWarnTimer > 0.0f;
+                bool bossActive = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss ||
+                                  g_LeviathanBoss || g_BossWarnTimer > 0.0f;
                 // ?�운?? ??보스 ?�덩??차단: 보스�??�아 ?�전???�리?�는 ?�간(?�성?�비?�성),
                 //   ?�음 보스 ?�계값을 ?�재 ?�수+20만으�?리베?�스 ??최소 20만점 ?�식 보장
                 //   (보스??�??�인 ?�수�??�자마자 ??보스 ?�던 ?�순???�거).
@@ -4257,7 +4412,7 @@ int main() {
                     StartBossWarn(pick, name, hp);
                 };
 
-                if (!bossActive) {
+                if (kBossEncountersEnabled && !bossActive) {
                     if (g_CreativeBossPending) {
                         g_CreativeBossPending = false;
                         QueueCreativeBossPick(g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2,
@@ -4345,6 +4500,11 @@ int main() {
                             g_EtherBoss->worldX = screenWidth  * 0.5f;
                             g_EtherBoss->worldY = screenHeight * 0.32f;
                             break;
+                        case 30:
+                            g_LeviathanBoss = new LeviathanBoss(screenWidth, screenHeight,
+                                                                 g_BossWarnHp);
+                            LeviathanWakeFeed();
+                            break;
                         default:
                             g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
                             g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
@@ -4354,7 +4514,13 @@ int main() {
                             MarkBossSeenPick(g_BossWarnPick);
                         // ���� ���� ����
                         g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
-                        if (!g_CentiBoss) {
+                        if (g_BossWarnPick == 30) {
+                            const float lcx = screenWidth * 0.5f;
+                            const float lcy = screenHeight * 0.48f;
+                            SpawnShockWave(lcx, lcy, 960.0f, 1.15f, 0.18f, 0.72f, 0.42f);
+                            SpawnShockWave(lcx, lcy, 560.0f, 0.82f, 0.24f, 0.90f, 0.55f);
+                            TriggerFlash(0.18f, 0.72f, 1.0f, 0.18f);
+                        } else if (!g_CentiBoss) {
                             SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
                             SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
                             for (int k = 0; k < 3; k++) {
@@ -4861,6 +5027,10 @@ int main() {
                     hitB(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
                 if (g_EtherBoss && g_EtherBoss->alive && inCone(g_EtherBoss->worldX, g_EtherBoss->worldY))
                     HitEtherBossDirect(dmg, pCX, pCY, crit);
+                if (g_LeviathanBoss && g_LeviathanBoss->alive &&
+                    inCone(g_LeviathanBoss->heartCX, g_LeviathanBoss->heartCY))
+                    HitLeviathanAtPoint(dmg, g_LeviathanBoss->heartCX,
+                                        g_LeviathanBoss->heartCY, crit);
                 SpawnSlash(pCX, pCY, ang, range);
                 TriggerHitStop(0.015f);
                 // 칼바?????�윙마다 ?�방?�로 관???�사�?(근접???�거�?견제)
@@ -4989,6 +5159,9 @@ int main() {
                         lhitB(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
                     if (g_EtherBoss && g_EtherBoss->alive && inLine(g_EtherBoss->worldX, g_EtherBoss->worldY))
                         HitEtherBossDirect(ldmg, pCX, pCY, lcrit);
+                    if (g_LeviathanBoss && g_LeviathanBoss->alive &&
+                        g_LeviathanBoss->heartHitSegment(pCX, pCY, lex, ley))
+                        HitLeviathanOnLine(ldmg, pCX, pCY, lex, ley, lcrit);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
@@ -5075,6 +5248,8 @@ int main() {
                         if (dx*dx + dy*dy < (novaR+70.0f)*(novaR+70.0f))
                             HitEtherBossDirect(dmg * 2.0f, pCX, pCY, false);
                     }
+                    if (g_LeviathanBoss && g_LeviathanBoss->alive)
+                        HitLeviathanInRadius(dmg * 2.0f, pCX, pCY, novaR + 70.0f, false);
                     // ?�각 ???�창 �?SpawnShockWave ?�사?? + ?�맛
                     SpawnShockWave(pCX, pCY, novaR, 0.45f, 0.4f, 1.0f, 0.75f);
                     SpawnSparks(pCX, pCY, 10, 0.4f, 1.0f, 0.7f, 360.0f);
@@ -5171,16 +5346,23 @@ int main() {
         if (g_InBossIntermission &&
             g_GameManager.currentState == GameState::RUNNING) {
             g_IntermissionTimer -= delta;
-            GameState preShop = g_GameManager.currentState;
             float ipCX = playerWin.x + playerWin.width  * 0.5f;
             float ipCY = playerWin.y + playerWin.height * 0.5f;
             TickIntermissionZones(ipCX, ipCY, delta);
-            if (preShop == GameState::RUNNING &&
-                g_GameManager.currentState == GameState::RUN_SHOP)
-                g_HoveredAug = -1;
         }
 
         g_GameManager.hoveredCard = g_HoveredAug;
+        const bool debugCaptureOverride = g_DebugToolkit.CaptureInProgress();
+        const GameState debugRestoreState = g_GameManager.currentState;
+        if (debugCaptureOverride) {
+            // Render each requested scene through the normal dispatch while
+            // keeping the real run state untouched between capture frames.
+            g_GameManager.currentState =
+                g_DebugToolkit.CaptureRenderState(debugRestoreState);
+            lmb = false;
+            mx = -10000.0;
+            my = -10000.0;
+        }
         // ============================================================
         // ?�더�?        // ============================================================
         glViewport(0, 0, screenWidth, screenHeight);
@@ -5232,7 +5414,7 @@ int main() {
         bool inWorldRender = (wgs == GameState::RUNNING || wgs == GameState::DYING ||
                               wgs == GameState::PAUSED  || wgs == GameState::READY  ||
                               wgs == GameState::AUG_SELECT || wgs == GameState::DEBUFF_SELECT ||
-                              wgs == GameState::RUN_SHOP ||
+                              wgs == GameState::AUG_REPLACE ||
                               (wgs == GameState::RUNNING && g_InBossIntermission) ||
                               wgs == GameState::GAMEOVER ||
                               (wgs == GameState::SETTINGS &&
@@ -5459,19 +5641,8 @@ int main() {
         BatchFlush(); glDisable(GL_SCISSOR_TEST); glEnable(GL_BLEND);
         EnsurePlayerBounds(playerWin);
 
-        if (g_InBossIntermission || g_GameManager.currentState == GameState::RUN_SHOP) {
-            float wx = g_ShopZoneX - RUN_SHOP_WIN_W * 0.5f;
-            float wy = g_ShopZoneY - RUN_SHOP_WIN_H * 0.5f;
-            DrawAppWindow(wx, wy, RUN_SHOP_WIN_W, RUN_SHOP_WIN_H, L"AUGMENT CACHE");
-        }
-        if (g_InBossIntermission &&
-            g_GameManager.currentState != GameState::RUN_SHOP) {
+        if (g_InBossIntermission) {
             float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 4.5f);
-            float holdF = g_ShopZoneHold / SHOP_ZONE_HOLD_S;
-            if (holdF > 1.0f) holdF = 1.0f;
-            float shopA = 0.08f + 0.12f * pulse + 0.22f * holdF;
-            drawCircle(g_ShopZoneX, g_ShopZoneY, SHOP_ZONE_RADIUS,
-                       1.0f, 0.82f, 0.22f, shopA);
             float skipF = g_SkipZoneHold / SKIP_ZONE_HOLD_S;
             if (skipF > 1.0f) skipF = 1.0f;
             float skipA = 0.08f + 0.10f * pulse + 0.24f * skipF;
@@ -5486,7 +5657,6 @@ int main() {
         if (g_GameManager.currentState == GameState::RUNNING ||
             g_GameManager.currentState == GameState::PAUSED ||
             g_InBossIntermission ||
-            g_GameManager.currentState == GameState::RUN_SHOP ||
             g_GameManager.currentState == GameState::AUG_SELECT ||
             g_GameManager.currentState == GameState::DEBUFF_SELECT ||
             g_GameManager.currentState == GameState::DYING) {
@@ -5868,6 +6038,15 @@ int main() {
             BatchFlush();
         }
 
+        if (g_LeviathanBoss && g_LeviathanBoss->alive) {
+            const float lt = (float)glfwGetTime();
+            BindMainShader();
+            g_LeviathanBoss->renderTelegraph(lt);
+            g_LeviathanBoss->renderBody(lt);
+            g_LeviathanBoss->renderHeart(lt);
+            BatchFlush();
+        }
+
         // (h) ?�론 ??1~2�?(?�탑 모드 ???�론 ?�더 비활??
         if (g_Stats.drone && !g_Stats.turretMode &&
             g_GameManager.currentState != GameState::GAMEOVER) {
@@ -5988,6 +6167,8 @@ int main() {
                 bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 0.95f); }
             else if (g_TessBoss && g_TessBoss->alive) {
                 bossAlive = true; tc = glm::vec3(0.95f, 0.35f, 1.0f); }
+            else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
+                bossAlive = true; tc = glm::vec3(0.20f, 0.78f, 1.0f); }
             if (bossAlive) {
                 g_BossTintCol = tc;
                 g_BossTintT  += delta * 0.07f;          // ~14초에 최�?
@@ -6018,12 +6199,16 @@ int main() {
             } else if (g_TessBoss && g_TessBoss->alive) {
                 bn = TesseractGlitchBoss::BOSS_NAME; bhf = g_TessBoss->hp / g_TessBoss->maxHp;
                 bc = glm::vec3(0.95f, 0.35f, 1.0f);
+            } else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
+                bn = LeviathanBoss::BOSS_NAME; bhf = g_LeviathanBoss->hp / g_LeviathanBoss->maxHp;
+                bc = glm::vec3(0.20f, 0.78f, 1.0f);
             }
             int bossPick = -1;
             if (bn) {
                 if      (bn == L"VOLLEY")   bossPick = 2;
                 else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
                 else if (bn == TesseractGlitchBoss::BOSS_NAME) bossPick = 10;
+                else if (bn == LeviathanBoss::BOSS_NAME) bossPick = 30;
             }
             GameState st = g_GameManager.currentState;
             bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
@@ -6075,6 +6260,12 @@ int main() {
                     float tw2 = g_TextS.Width(tb, ts2);
                     g_TextS.Draw(tb, bx + bw - tw2 - 8.0f, by - 48.0f, ts2,
                                  0.95f, 0.35f, 1.0f, 0.88f);
+                } else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
+                    const wchar_t* lb = g_LeviathanBoss->stateTag();
+                    float ls = 0.55f;
+                    float lw = g_TextS.Width(lb, ls);
+                    g_TextS.Draw(lb, bx + bw - lw - 8.0f, by - 48.0f, ls,
+                                 0.20f, 0.78f, 1.0f, 0.90f);
                 }
                                                 // % (�??�측 ???�쪽)
                 wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(bhf * 100.0f + 0.5f));
@@ -6198,6 +6389,34 @@ int main() {
                 drawTriangle(cx, cy, 30.0f + prog * 14.0f, wc.r, wc.g, wc.b, 0.14f + 0.14f * blink);
                 drawCircle(cx, cy + 12.0f, 4.0f, wc.r, wc.g, wc.b, 0.16f + 0.16f * blink);
             } break;
+            case 30: {
+                const float cx = sw2 * 0.50f, cy = sh2 * 0.46f;
+                const float len = sw2 * 0.78f, wid = sh2 * 0.18f;
+                for (int i = 0; i < 30; ++i) {
+                    const float u0 = (float)i / 30.0f;
+                    const float u1 = (float)(i + 1) / 30.0f;
+                    const float x0 = cx - len * 0.50f + u0 * len;
+                    const float x1 = cx - len * 0.50f + u1 * len;
+                    const float y0 = cy + sinf(t * 1.8f + u0 * 9.0f) * wid * 0.22f;
+                    const float y1 = cy + sinf(t * 1.8f + u1 * 9.0f) * wid * 0.22f;
+                    drawRect((x0 + x1) * 0.5f - 3.0f, (y0 + y1) * 0.5f - 3.0f,
+                             6.0f, 6.0f, wc.r, wc.g, wc.b, 0.35f + 0.28f * prog);
+                    if ((i & 1) == 0)
+                        drawRect((x0 + x1) * 0.5f - 1.0f, cy - wid * 0.48f,
+                                 2.0f, wid * 0.96f, wc.r, wc.g, wc.b,
+                                 0.12f + 0.10f * prog);
+                }
+                drawCircle(cx + len * 0.32f, cy, wid * 0.48f,
+                           wc.r, wc.g, wc.b, 0.12f + 0.10f * blink);
+                drawDiamond(cx + len * 0.34f, cy - wid * 0.06f,
+                            24.0f + 12.0f * blink, 1.0f, 0.35f, 0.55f,
+                            0.48f + 0.22f * prog);
+                for (int i = 0; i < 3; ++i) {
+                    const float rr = 90.0f + i * 42.0f + prog * 30.0f;
+                    drawCircle(cx + len * 0.34f, cy, rr,
+                               wc.r, wc.g, wc.b, 0.035f + 0.025f * blink);
+                }
+            } break;
             default: break;
             }
     
@@ -6298,6 +6517,30 @@ int main() {
 
         // [6] HUD
         g_GameManager.Render();
+
+        // [6.5] In-game modal backdrop blur. Capture after the world and the
+        // GameManager veil, then draw the sharp Scene_* UI on top.
+        {
+            const GameState blurState = g_GameManager.currentState;
+            const bool blurGameplayBackdrop = g_BackdropBlurEnabled &&
+                (blurState == GameState::READY ||
+                 blurState == GameState::PAUSED ||
+                 blurState == GameState::AUG_SELECT ||
+                 blurState == GameState::DEBUFF_SELECT ||
+                 blurState == GameState::AUG_REPLACE ||
+                 blurState == GameState::GAMEOVER ||
+                 blurState == GameState::BOSS_INTERMISSION ||
+                 (blurState == GameState::SETTINGS &&
+                  g_SettingsReturnTo == GameState::PAUSED));
+
+            if (blurGameplayBackdrop) {
+                InitBlurSystem(screenWidth, screenHeight);
+                CaptureBackdrop();
+                DrawBlurPanel(0.0f, 0.0f,
+                              (float)screenWidth, (float)screenHeight,
+                              0.72f, 0.004f, 0.010f, 0.020f);
+            }
+        }
     
         // ?�?�?[7] ?�국???�스??+ 메뉴 ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
         {
@@ -6382,9 +6625,9 @@ int main() {
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
                 int li3 = LangIndex();
                 const wchar_t* DBG[3] = {
-                    L"\uB514\uBC84\uADF8   F: \uB808\uBCA8\uC5C5   G: \uBB34\uC801",
-                    L"DEBUG   F: LEVEL UP   G: GODMODE",
-                    L"\u30C7\u30D0\u30C3\u30B0   F: \u30EC\u30D9\u30EB\u30A2\u30C3\u30D7   G: \u7121\u6575"
+                    L"\uB514\uBC84\uADF8   F: \uB808\uBCA8\uC5C5   G: \uBB34\uC801   BOSS: OFFLINE",
+                    L"DEBUG   F: LEVEL UP   G: GODMODE   BOSS: OFFLINE",
+                    L"\u30C7\u30D0\u30C3\u30B0   F: \u30EC\u30D9\u30EB\u30A2\u30C3\u30D7   G: \u7121\u6575   BOSS: OFFLINE"
                 };
                 g_TextS.Draw(DBG[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL),
                              0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
@@ -6398,23 +6641,9 @@ int main() {
     
             // ?�?�?[7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�?
             //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
-            // DWM backdrop blur applies to the whole transparent window.
-            // During a run that window reaches the auto-hidden taskbar area,
-            // so the taskbar would be blurred when it slides into view.
-            // Keep OS-level blur for outgame compositions only; the in-game
-            // UI must never affect the taskbar or other shell surfaces.
-            const bool inGameComposition =
-                st == GameState::READY          ||
-                st == GameState::RUNNING        ||
-                st == GameState::DYING          ||
-                st == GameState::PAUSED         ||
-                st == GameState::AUG_SELECT     ||
-                st == GameState::DEBUFF_SELECT  ||
-                st == GameState::AUG_REPLACE    ||
-                st == GameState::RUN_SHOP       ||
-                st == GameState::BOSS_INTERMISSION;
-            const bool backdropBlurActive = g_BackdropBlurEnabled && !inGameComposition;
-            ConfigureWindowBackdropBlur(window, backdropBlurActive);
+            // Desktop blur is a window setting, independent of the game scene.
+            // World/HUD remain sharp during play; only modal UI blurs game pixels.
+            ConfigureWindowBackdropBlur(window, g_BackdropBlurEnabled);
 
             // Scene_* dispatch still includes READY and the in-run menus;
             // this flag only controls which state gets the scene composition.
@@ -6425,7 +6654,8 @@ int main() {
                 std::function<void()> restartRunFn = RestartCurrentRun;
                 std::function<void()> abandonRunFn = AbandonCurrentRun;
                 // ������ ũ�� ����(���?64px) ���� Ŭ���� ���� �������� ����
-                bool sceneLmb = (my >= BROWSER_CHROME_H) ? lmb : false;
+                bool sceneLmb = (!g_DebugToolkit.IsInputCaptured() &&
+                                 my >= BROWSER_CHROME_H) ? lmb : false;
                 SceneCtx ctx{ sw, sh, mx, my, sceneLmb, delta, window, &fireTimer,
                               resetFn, restartRunFn, abandonRunFn };
                 switch (st) {
@@ -6433,7 +6663,6 @@ int main() {
                 case GameState::SHOP:              Scene_Shop(ctx);             break;
                 case GameState::CODEX:             Scene_Codex(ctx);            break;
                 case GameState::TUTORIAL:          Scene_Tutorial(ctx);         break;
-                case GameState::JOB_SELECT:        Scene_JobSelect(ctx);        break;
                 case GameState::CREATIVE_CONFIG:   Scene_CreativeConfig(ctx);   break;
                 case GameState::SETTINGS:          Scene_Settings(ctx);         break;
                 case GameState::READY:             Scene_Ready(ctx);            break;
@@ -6443,13 +6672,11 @@ int main() {
                 case GameState::AUG_SELECT:
                 case GameState::DEBUFF_SELECT:     Scene_AugSelect(ctx);        break;
                 case GameState::AUG_REPLACE:       Scene_AugReplace(ctx);       break;
-                case GameState::RUN_SHOP:          Scene_RunShop(ctx);          break;
                 default: break;
                 }
                 if (st == GameState::PAUSED || st == GameState::AUG_SELECT ||
                     st == GameState::DEBUFF_SELECT || st == GameState::AUG_REPLACE ||
-                    st == GameState::VICTORY ||
-                    st == GameState::RUN_SHOP)
+                    st == GameState::VICTORY)
                     Scene_OwnedAugPanel(ctx);
             }
             // Scene_Paused can switch to SETTINGS during this render pass.
@@ -6460,7 +6687,6 @@ int main() {
             if (st == GameState::RUNNING || st == GameState::PAUSED ||
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
                 st == GameState::DEBUFF_SELECT ||
-                st == GameState::RUN_SHOP ||
                 (st == GameState::RUNNING && g_InBossIntermission)) {
 #ifdef __APPLE__
                 const float hudTopY = BROWSER_CHROME_H + 8.0f + 30.0f;
@@ -6488,8 +6714,7 @@ int main() {
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
                              0.7f, 0.9f, 1.0f, 0.85f);
 
-                if (st == GameState::RUNNING || st == GameState::RUN_SHOP ||
-                    g_InBossIntermission) {
+                if (st == GameState::RUNNING || g_InBossIntermission) {
                     const wchar_t* floorLbl = BossDir::ActLabel();
                     g_TextS.Draw(floorLbl, 12.0f, hudTopY + 42.0f, 0.72f,
                                  0.82f, 0.92f, 1.0f, 0.82f);
@@ -6500,7 +6725,7 @@ int main() {
                     g_TextS.Draw(runDustHud, sw - gdw - 12.0f, hudTopY + 22.0f, 0.82f,
                                  1.0f, 0.86f, 0.32f, 0.9f);
                 }
-                if (g_InBossIntermission && st != GameState::RUN_SHOP) {
+                if (g_InBossIntermission) {
                     int sec = (int)(g_IntermissionTimer + 0.99f);
                     if (sec < 0) sec = 0;
                     wchar_t tbuf[48];
@@ -6509,9 +6734,9 @@ int main() {
                     g_TextL.Draw(tbuf, (sw - tw) * 0.5f, hudTopY + 48.0f, 0.95f,
                                  1.0f, 0.92f, 0.45f, 0.92f);
                     const wchar_t* zhint[3] = {
-                        L"\uC911\uC559 ASTRAL CACHE ? \uC7A0\uC2DC \uBA38\uBB3C\uBA74 \uC0C1\uC810 \u00B7 \uC624\uB978\uCABD = \uC2A4\uD0B5",
-                        L"Center ASTRAL CACHE ? hold to shop \u00B7 right zone = skip",
-                        L"\u4E2D\u592E ASTRAL CACHE ? \u7559\u307E\u308B\u3068\u30B7\u30E7\u30C3\u30D7 \u00B7 \u53F3=\u30B9\u30AD\u30C3\u30D7" };
+                        L"\uC911\uC559 \uC778\uD130\uBBF8\uC158 \u00B7 \uC624\uB978\uCABD = \uC2A4\uD0B5",
+                        L"Boss intermission \u00B7 right zone = skip",
+                        L"\u4E2D\u592E\u30A4\u30F3\u30BF\u30FC\u30DF\u30C3\u30B7\u30E7\u30F3 \u00B7 \u53F3=\u30B9\u30AD\u30C3\u30D7" };
                     int zli = LangIndex();
                     if (zli < 0 || zli > 2) zli = 0;
                     float zw = g_TextS.Width(zhint[zli], 0.78f);
@@ -6726,13 +6951,18 @@ int main() {
                 float barRatio = 0.0f, bR = 0.35f, bG = 0.72f, bB = 1.0f;
                 bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
                                st == GameState::DYING   || st == GameState::AUG_SELECT ||
-                               st == GameState::DEBUFF_SELECT || st == GameState::RUN_SHOP);
-                if (inGame) {
+                               st == GameState::DEBUFF_SELECT);
+                if (kBossEncountersEnabled && inGame) {
                     float bossHp = -1.0f, bossMaxHp = 1.0f; int bossPick = -1;
                     if      (g_RRBoss    && g_RRBoss->alive)    { bossHp = g_RRBoss->hp;    bossMaxHp = g_RRBoss->maxHp;    bossPick = 2;  }
                     else if (g_CentiBoss && g_CentiBoss->alive)  { bossHp = g_CentiBoss->hp;  bossMaxHp = g_CentiBoss->maxHp;  bossPick = 8;  }
                     else if (g_TessBoss  && g_TessBoss->alive)   { bossHp = g_TessBoss->hp;   bossMaxHp = g_TessBoss->maxHp;   bossPick = 10; }
                     else if (g_EtherBoss && g_EtherBoss->alive)  { bossHp = g_EtherBoss->hp;  bossMaxHp = g_EtherBoss->maxHp;  bossPick = 20; }
+                    else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
+                        bossHp = g_LeviathanBoss->hp;
+                        bossMaxHp = g_LeviathanBoss->maxHp;
+                        bossPick = 30;
+                    }
 
                     if (bossPick >= 0 && bossMaxHp > 0.0f) {
                         barRatio = bossHp / bossMaxHp;
@@ -6748,14 +6978,23 @@ int main() {
                     }
                 }
 
-                DrawBrowserChrome(sw, sh, st, mx, my, lmb, g_LmbPrev, nextSt, barRatio, bR, bG, bB);
+                const bool chromeLmb = g_DebugToolkit.IsInputCaptured() ? false : lmb;
+                DrawBrowserChrome(sw, sh, st, mx, my, chromeLmb, g_LmbPrev,
+                                  nextSt, barRatio, bR, bG, bB);
                 if (nextSt != st)
                     g_GameManager.currentState = nextSt;
             }
 
         }
 
-        g_LmbPrev = lmb;
+        if (!g_DebugToolkit.SuppressOverlayForCapture())
+            g_DebugToolkit.Render((float)screenWidth, (float)screenHeight,
+                                  g_GameManager.currentState);
+
+        // Keep the physical mouse state for edge detection. `lmb` may be
+        // cleared above when the debug toolkit captures input; storing that
+        // cleared value makes a held button look like a new click every frame.
+        g_LmbPrev = rawLmb;
 
         // ?�적 ?�금 / ?�감 발견 발생 ???�??(게임 �?즉시 ?�구??
         if (g_AchSaveNeeded || g_CodexDirty) {
@@ -6763,7 +7002,12 @@ int main() {
         }
 
         BatchFlush();   // ?�레??마�?�????��? ?�형 모두 그림
+        if (g_DebugToolkit.SuppressOverlayForCapture())
+            g_DebugToolkit.CaptureFrameAfterRender(
+                screenWidth, screenHeight, g_GameManager.currentState);
         glfwSwapBuffers(window);
+        if (debugCaptureOverride)
+            g_GameManager.currentState = debugRestoreState;
 
         // ?�?�?FPS �?(g_FpsCap > 0 ???�만) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
         // timeBeginPeriod(1) �?Sleep ?�상??1ms. 마�?�?~1ms ??busy-wait
@@ -6792,6 +7036,11 @@ int main() {
         }
     }
 
+    g_GameplayTelemetry.EndRun(g_GameTime,
+                               g_GameManager.playerLevel,
+                               g_GameManager.xp,
+                               g_Stats,
+                               "application_exit");
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     glDeleteVertexArrays(1, &g_MainVAO);
     glDeleteBuffers(1, &g_VBO);

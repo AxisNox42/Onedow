@@ -27,10 +27,12 @@ add_executable(WiNILL
     ${WINILL_DIR}/Core/Scenes/Scenes.cpp
     ${WINILL_DIR}/Core/Scenes/WindowChrome.cpp
     ${WINILL_DIR}/Render/Camera.cpp
+    ${WINILL_DIR}/Render/BlurShader.cpp
     ${WINILL_DIR}/Render/EntityDraw.cpp
     ${WINILL_DIR}/Render/MainShader.cpp
     ${WINILL_DIR}/Render/stb_impl.cpp
     ${WINILL_DIR}/System/Audio.cpp
+    ${WINILL_DIR}/System/DebugToolkit.cpp
     ${WINILL_DIR}/System/FakeWindow.cpp
     ${WINILL_DIR}/System/Input.cpp
     ${WINILL_DIR}/System/WindowFx.cpp
@@ -74,18 +76,9 @@ endif()
 
 # 실행 파일 옆 리소스 (PlatformChdirToExeDir + 상대경로)
 add_custom_command(TARGET WiNILL POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E remove_directory
+        $<TARGET_FILE_DIR:WiNILL>/Resource
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${WINILL_DIR}/Resource
         $<TARGET_FILE_DIR:WiNILL>/Resource
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${WINILL_DIR}/Icons
-        $<TARGET_FILE_DIR:WiNILL>/Icons
-    COMMENT "Copying Resource/ and Icons/ next to executable")
-
-if(EXISTS ${WINILL_DIR}/Font)
-    add_custom_command(TARGET WiNILL POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${WINILL_DIR}/Font
-            $<TARGET_FILE_DIR:WiNILL>/Font
-        COMMENT "Copying Font/ next to executable")
-endif()
+    COMMENT "Copying Resource/ next to executable")

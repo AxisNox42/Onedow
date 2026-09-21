@@ -3,7 +3,6 @@
 #include "PlayerStats.h"
 #include "Weapons.h"
 #include "GameContext.h"
-#include "RunIntermission.h"
 #include "Scenes.h"
 #include <algorithm>   // std::min (등급 가중치 게이팅)
 
@@ -146,10 +145,6 @@ void GameManager::HandleInput(GLFWwindow* window) {
             else if (currentState == GameState::PAUSED) {
                 currentState = pauseResumeState;
                 pauseResumeState = GameState::RUNNING;
-            }
-            else if (currentState == GameState::RUN_SHOP) {
-                CloseRunShop();
-                g_HoveredAug = -1;
             }
         }
         escReleased = false;
@@ -324,31 +319,6 @@ static int RollOneDebuff(const bool* takenOnce = nullptr,
     }
     if (poolSize == 0) return -1;
     return pool[rand() % poolSize];
-}
-
-void GameManager::PickRunShopStock(int* outIdx, int* outPrice, int n,
-                                   bool sizeTaken, bool distTaken) {
-    bool used[AUG_TOTAL] = {};
-    for (int i = 0; i < n; i++) {
-        outIdx[i]   = -1;
-        outPrice[i] = 0;
-        for (int attempt = 0; attempt < 60; attempt++) {
-            int idx = RollOneAug(takenOnce, sizeTaken, distTaken,
-                                 /*allowSpecial=*/false, playerLevel,
-                                 /*allowDebuff=*/false, used,
-                                 /*excludeRandom=*/true);
-            if (idx < 0) break;
-            if (used[idx]) continue;
-            AugRarity r = ALL_AUGS[idx].rarity;
-            if (r == AugRarity::DEBUFF || r == AugRarity::SPECIAL ||
-                r == AugRarity::COMBO) continue;
-            if (AugRemoved(ALL_AUGS[idx].type)) continue;
-            used[idx]     = true;
-            outIdx[i]     = idx;
-            outPrice[i]   = RunShopPriceFor(r);
-            break;
-        }
-    }
 }
 
 void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuff) {
@@ -548,37 +518,6 @@ void GameManager::AddScore(float amount) {
     if (currentState != GameState::RUNNING) return;
     scoreAccum += amount * TrialScoreMult();
     score = (long long)scoreAccum;
-}
-
-void GameManager::UpdateTitle(GLFWwindow* window) {
-    // AUG/DEBUFF_SELECT: update title every frame with choices
-    if (currentState == GameState::AUG_SELECT ||
-        currentState == GameState::DEBUFF_SELECT ||
-        currentState == GameState::AUG_REPLACE) {
-        std::string t = (currentState == GameState::DEBUFF_SELECT)
-                        ? "CHOOSE DEBUFF >> " : "CHOOSE AUG >> ";
-        for (int i = 0; i < augChoiceCount; i++) {
-            if (i > 0) t += "  ";
-            t += "[" + std::to_string(i + 1) + "] ";
-            if (augChoices[i] >= 0 && augChoices[i] < AUG_TOTAL)
-                t += ALL_AUGS[augChoices[i]].name;
-        }
-        glfwSetWindowTitle(window, t.c_str());
-        return;
-    }
-
-    static double lastTime = 0.0;
-    static int frames = 0, fps = 0;
-    double now = glfwGetTime();
-    frames++;
-    if (now - lastTime >= 1.0) {
-        fps = frames; frames = 0; lastTime += 1.0;
-        std::string t = "Onedow | FPS:" + std::to_string(fps)
-            + " | HP:" + std::to_string((int)playerHP)
-            + " | XP:" + std::to_string(xp)
-            + " | Score:" + std::to_string(score);
-        glfwSetWindowTitle(window, t.c_str());
-    }
 }
 
 void GameManager::Render() {

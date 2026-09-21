@@ -7,6 +7,7 @@
 //   8  = FORK
 //   10 = TESSERACT
 //   20 = ETHER SWORD
+//   30 = LEVIATHAN
 namespace BossDir {
 
 inline int& RotIdx() {
@@ -17,12 +18,12 @@ inline int& RotIdx() {
 inline void ResetRotation() { RotIdx() = 0; }
 
 inline bool IsLtsRosterPick(int pick) {
-    return pick == 2 || pick == 8 || pick == 10 || pick == 20;
+    return pick == 2 || pick == 8 || pick == 10 || pick == 20 || pick == 30;
 }
 
 inline int RollScorePick() {
-    static const int kRot[] = { 2, 10, 8 };
-    return kRot[RotIdx()++ % 3];
+    static const int kRot[] = { 30, 2, 10, 8 };
+    return kRot[RotIdx()++ % 4];
 }
 
 inline int  g_ActBossPick = -1;
@@ -39,10 +40,10 @@ inline void ResetAct() {
 
 inline void SetActTheme(int pick) { g_ActBossPick = pick; }
 
-// 메인 모드 보스 등장 순서 (FORK → VOLLEY → TESS)
+// 메인 모드 보스 등장 순서 (LEVIATHAN → FORK → VOLLEY → TESS)
 // 최종 보스 추가 시 여기에 pick 번호 추가 + MAIN_ACT_TOTAL 증가
 inline constexpr int MAIN_ACT_TOTAL        = 4;
-inline constexpr int MAIN_SEQUENCE[]       = { 8, 2, 10, 20 };
+inline constexpr int MAIN_SEQUENCE[]       = { 30, 8, 2, 10 };
 inline constexpr float MAIN_SCORE_STEP     = 200000.0f;  // 보스 간 점수 간격
 
 inline void OnBossDefeated() {
@@ -69,6 +70,7 @@ inline ActRules EndlessRules() {
 
 inline ActRules RulesForPick(int pick) {
     switch (pick) {
+    case 30: return { 2.8f, 4.8f, 0.95f, 0.95f, 0, 0 };
     case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f, 4, 2 };
     case 10: return { 3.5f, 6.0f, 1.10f, 1.02f, 3, 6 };
     case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };
@@ -91,6 +93,7 @@ inline int GetActNumber() {
 
 inline const wchar_t* DisplayName(int pick) {
     switch (pick) {
+    case 30: return L"LEVIATHAN";
     case 8:  return L"FORK";
     case 10: return L"TESSERACT";
     case 20: return L"ETHER SWORD";
@@ -101,6 +104,7 @@ inline const wchar_t* DisplayName(int pick) {
 
 inline float HpMul(int pick) {
     switch (pick) {
+    case 30: return 1.00f;
     case 2:  return 1.08f;
     case 10: return 0.92f;
     case 8:  return 0.70f;
@@ -111,6 +115,7 @@ inline float HpMul(int pick) {
 
 inline glm::vec3 WarnColor(int pick) {
     switch (pick) {
+    case 30: return { 0.20f,  0.78f, 1.0f   };
     case 2:  return { 1.0f,  0.55f, 0.20f };
     case 10: return { 0.95f, 0.35f, 1.0f  };
     case 8:  return { 0.35f, 0.88f, 0.95f };
@@ -121,6 +126,10 @@ inline glm::vec3 WarnColor(int pick) {
 
 inline const wchar_t* Tagline(int pick) {
     int li = LangIndex();
+    if (pick == 30) {
+        if (li == 0) return L"별자리를 삼키는 거대한 유영체";
+        return L"A star-eating leviathan crosses the constellation";
+    }
     if (pick == 8) {
         if (li == 0) return L"별자리 포크 - 연쇄 분열";
         return L"Constellation split - chained star fragments";

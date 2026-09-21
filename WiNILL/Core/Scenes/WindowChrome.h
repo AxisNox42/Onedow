@@ -1,7 +1,7 @@
 #pragma once
 #include "GameManager.h"
 
-// Astral flow (difficulty, career, weapon) — shared panel dimensions
+// Astral flow (career and weapon) — shared panel dimensions
 constexpr float FLOW_PANEL_W = 1440.0f;
 constexpr float FLOW_PANEL_H = 800.0f;
 constexpr float FLOW_CHROME_TOP = 0.0f;
@@ -29,7 +29,6 @@ inline const wchar_t* BrowserUrl(GameState st) {
     case GS::VICTORY:           return L"STARFALL REPORT";
     case GS::AUG_SELECT:
     case GS::DEBUFF_SELECT:     return L"AUGMENT SELECTION";
-    case GS::RUN_SHOP:          return L"RUN INTERMISSION";
     default:                    return L"ORBITAL CORE";
     }
 }

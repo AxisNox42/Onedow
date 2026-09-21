@@ -61,6 +61,9 @@
     <ClCompile Include="System\Audio.cpp">
       <Filter>System</Filter>
     </ClCompile>
+    <ClCompile Include="System\DebugToolkit.cpp">
+      <Filter>System</Filter>
+    </ClCompile>
     <ClCompile Include="System\FakeWindow.cpp">
       <Filter>System</Filter>
     </ClCompile>
@@ -166,6 +169,9 @@
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="System\CrashHandler.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\DebugToolkit.h">
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="System\EmbeddedResource.h">

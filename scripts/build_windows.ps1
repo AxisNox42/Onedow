@@ -1,8 +1,8 @@
-# 테스트용 Windows 빌드 → WiNILL/bin/WiNILL.exe 만
+# 테스트용 Windows 빌드 → build/windows/x64/Release/WiNILL.exe
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Vcx = Join-Path $Root "WiNILL\WiNILL.vcxproj"
-$Out = Join-Path $Root "WiNILL\bin\WiNILL.exe"
+$Out = Join-Path $Root "build\windows\x64\Release\WiNILL.exe"
 
 $Msbuild = @(
     "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",

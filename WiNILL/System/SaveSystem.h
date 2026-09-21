@@ -195,7 +195,7 @@ inline void LoadGame() {
         }
         else if (!std::strncmp(key, "bossseen", 8)) {
             int bi = atoi(key + 8);
-            if (bi >= 0 && bi < 11) g_BossSeenPick[bi] = (val != 0);
+            if (bi >= 0 && bi < 32) g_BossSeenPick[bi] = (val != 0);
         }
         else if (!std::strncmp(key, "jobbought", 9)) {
             int ji = atoi(key + 9);
@@ -217,7 +217,7 @@ inline void ResetSaveProgress() {
     for (int i = 0; i < ACH_COUNT;  i++) g_AchUnlocked[i] = false;
     for (int i = 0; i < AUG_TOTAL;  i++) g_AugSeen[i] = false;
     for (int i = 0; i < CM_COUNT;   i++) g_MobSeen[i] = false;
-    for (int i = 0; i < 11; i++) g_BossSeenPick[i] = false;
+    for (int i = 0; i < 32; i++) g_BossSeenPick[i] = false;
     g_ThemeOwned = 1; g_ThemeSel = 0; ApplyAccentTheme();
     for (int i = 0; i < JOB_COUNT; i++) g_JobBought[i] = false;
     SaveGame();

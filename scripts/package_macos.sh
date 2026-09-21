@@ -8,9 +8,8 @@ MAC_OUT="$ONEDOW/macOS"
 "$ROOT/scripts/build_macos.sh"
 
 mkdir -p "$ONEDOW/WindowsOS" "$MAC_OUT"
+rm -rf "$ONEDOW/Resource"
 cp -R "$ROOT/WiNILL/Resource" "$ONEDOW/Resource"
-cp -R "$ROOT/WiNILL/Font" "$ONEDOW/Font"
-if [ -d "$ROOT/WiNILL/Icons" ]; then cp -R "$ROOT/WiNILL/Icons" "$ONEDOW/Icons"; fi
 rm -f "$MAC_OUT/Onedow" "$MAC_OUT/README.txt"
 cp "$ROOT/build/WiNILL" "$MAC_OUT/Onedow"
 chmod +x "$MAC_OUT/Onedow"

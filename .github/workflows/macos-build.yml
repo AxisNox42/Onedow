@@ -22,8 +22,8 @@ jobs:
 
       - name: Check fonts
         run: |
-          test -f WiNILL/Font/Jua-Regular.ttf
-          test -f WiNILL/Font/KosugiMaru-Regular.ttf
+          test -f WiNILL/Resource/Font/Jua-Regular.ttf
+          test -f WiNILL/Resource/Font/KosugiMaru-Regular.ttf
 
       - name: Build GLFW (static, universal)
         run: |
@@ -52,15 +52,14 @@ jobs:
           file build/WiNILL
           lipo -info build/WiNILL | tee /dev/stderr | grep -q 'arm64' || exit 1
           test -d build/Resource
-          test -d build/Font
+          test -d build/Resource/Font
 
       - name: Package
         run: |
           ONEDOW=bin/Onedow
           mkdir -p "$ONEDOW/WindowsOS" "$ONEDOW/macOS"
+          rm -rf "$ONEDOW/Resource"
           cp -R WiNILL/Resource "$ONEDOW/Resource"
-          cp -R WiNILL/Font "$ONEDOW/Font"
-          if [ -d WiNILL/Icons ]; then cp -R WiNILL/Icons "$ONEDOW/Icons"; fi
           cp build/WiNILL "$ONEDOW/macOS/Onedow"
           chmod +x "$ONEDOW/macOS/Onedow"
           codesign --force --deep --sign - "$ONEDOW/macOS/Onedow" || true

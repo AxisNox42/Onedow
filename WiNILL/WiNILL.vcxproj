@@ -73,13 +73,21 @@
   <PropertyGroup>
     <ApplicationIcon>Resource\WiNILL.ico</ApplicationIcon>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>$(ProjectDir)..\build\windows\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\windows\obj\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>$(ProjectDir)..\build\windows\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\windows\obj\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(ProjectDir)bin\</OutDir>
-    <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)..\build\windows\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\windows\obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(ProjectDir)bin\</OutDir>
-    <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)..\build\windows\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\build\windows\obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -186,6 +194,7 @@
     <ClCompile Include="Render\PlanetShader.cpp" />
     <ClCompile Include="Render\stb_impl.cpp" />
     <ClCompile Include="System\Audio.cpp" />
+    <ClCompile Include="System\DebugToolkit.cpp" />
     <ClCompile Include="System\FakeWindow.cpp" />
     <ClCompile Include="System\Input.cpp" />
     <ClCompile Include="System\WindowFx.cpp" />
@@ -211,6 +220,7 @@
     <ClInclude Include="Entity\Augment.h" />
     <ClInclude Include="Entity\Bomber.h" />
     <ClInclude Include="Entity\Boss\CentipedeBoss.h" />
+    <ClInclude Include="Entity\Boss\LeviathanBoss.h" />
     <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h" />
     <ClInclude Include="Entity\Boss\TesseractGlitchBoss.h" />
     <ClInclude Include="Core\BossDirector.h" />
@@ -234,9 +244,11 @@
     <ClInclude Include="Render\UiLayout.h" />
     <ClInclude Include="Render\TextRenderer.h" />
     <ClInclude Include="System\Audio.h" />
+    <ClInclude Include="System\DebugToolkit.h" />
     <ClInclude Include="System\CrashHandler.h" />
     <ClInclude Include="System\EmbeddedResource.h" />
     <ClInclude Include="System\FakeWindow.h" />
+    <ClInclude Include="System\GameplayTelemetry.h" />
     <ClInclude Include="System\Input.h" />
     <ClInclude Include="System\miniaudio.h" />
     <ClInclude Include="System\Platform.h" />
@@ -248,20 +260,13 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-  <Target Name="CopyAudioAssets" AfterTargets="Build">
+  <Target Name="CopyResourceAssets" AfterTargets="Build">
     <ItemGroup>
-      <AudioAssets Include="$(ProjectDir)Resource\Audio\**\*.*" />
+      <ResourceAssets Include="$(ProjectDir)Resource\**\*.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(AudioAssets)"
-          DestinationFolder="$(OutDir)Resource\Audio\%(RecursiveDir)"
-          SkipUnchangedFiles="true" />
-  </Target>
-  <Target Name="CopyFontAssets" AfterTargets="Build">
-    <ItemGroup>
-      <FontAssets Include="$(ProjectDir)..\Resource\Font\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(FontAssets)"
-          DestinationFolder="$(OutDir)Resource\Font\%(RecursiveDir)"
+    <RemoveDir Directories="$(OutDir)Resource" />
+    <Copy SourceFiles="@(ResourceAssets)"
+          DestinationFolder="$(OutDir)Resource\%(RecursiveDir)"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

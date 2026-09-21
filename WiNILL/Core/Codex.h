@@ -233,18 +233,18 @@ inline const wchar_t* MobDesc(int id) {
 // CodexMobId(0..8) → MobKind (프리뷰 렌더용)
 inline MobKind CodexMobKind(int id) { return (MobKind)id; }
 
-// ── 보스 도감 (활성 로스터: 2,8,10 — 나머지는 크리에이티브 전용/미참전) ──
+// ── 보스 도감 (활성 로스터: LEVIATHAN, VOLLEY, TESSERACT, FORK) ──
 #include "BossDirector.h"
 
-inline bool g_BossSeenPick[11] = { false };
+inline bool g_BossSeenPick[32] = { false };
 
 inline void MarkBossSeenPick(int pick) {
-    if (pick < 0 || pick > 10) return;
+    if (pick < 0 || pick >= 32) return;
     if (!g_BossSeenPick[pick]) { g_BossSeenPick[pick] = true; g_CodexDirty = true; }
 }
 
-inline const int BOSS_CODEX_PICKS[] = { 2, 10, 8 };
-inline const int BOSS_CODEX_COUNT = 3;
+inline const int BOSS_CODEX_PICKS[] = { 30, 2, 10, 8 };
+inline const int BOSS_CODEX_COUNT = 4;
 
 inline bool BossCodexSeen(int idx) {
     if (CodexFullReveal() && idx >= 0 && idx < BOSS_CODEX_COUNT) return true;
@@ -260,6 +260,7 @@ inline const wchar_t* BossCodexName(int idx) {
 }
 inline const wchar_t* const* BossCodexLocalizedNames(int idx) {
     static const wchar_t* const names[BOSS_CODEX_COUNT][3] = {
+        { L"LEVIATHAN", L"LEVIATHAN", L"리바이어던" },
         { L"VOLLEY",    L"VOLLEY",    L"\u30DC\u30EC\u30FC" },
         { L"TESSERACT", L"TESSERACT", L"\u30C6\u30C3\u30BB\u30E9\u30AF\u30C8" },
         { L"FORK",      L"FORK",      L"\u30D5\u30A9\u30FC\u30AF" },

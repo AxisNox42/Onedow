@@ -46,6 +46,7 @@ namespace {
 enum AccentState {
     ACCENT_DISABLED = 0,
     ACCENT_ENABLE_BLURBEHIND = 3,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
 };
 
 enum WindowCompositionAttribute {
@@ -78,6 +79,8 @@ static SetWindowCompositionAttributeProc ResolveBackdropProc() {
     return reinterpret_cast<SetWindowCompositionAttributeProc>(
         GetProcAddress(user32, "SetWindowCompositionAttribute"));
 }
+
+
 }
 
 bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled) {
@@ -85,41 +88,53 @@ bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled) {
     HWND hwnd = glfwGetWin32Window(window);
     if (!hwnd) return false;
 
-    if (hwnd == s_blurHwnd && enabled == s_blurEnabled) {
+    static double nextRetry = 0.0;
+    const double now = glfwGetTime();
+    if (hwnd == s_blurHwnd && enabled == s_blurEnabled &&
+        (!enabled || s_blurApplied || now < nextRetry)) {
         return enabled && s_blurApplied;
     }
 
     const SetWindowCompositionAttributeProc setComposition = ResolveBackdropProc();
-    if (!setComposition) {
-        s_blurHwnd = hwnd;
-        s_blurEnabled = enabled;
-        s_blurApplied = false;
-        return false;
+    BOOL accentApplied = FALSE;
+    if (setComposition) {
+        AccentPolicy policy = {};
+        if (enabled) {
+            // Prefer acrylic: recent Windows builds can accept legacy blur
+            // without visibly blurring the desktop. Both paths use DWM.
+            policy.accentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+            policy.accentFlags = 0;
+            // AABBGGRR. Keep the fixed veil subtle; ON/OFF controls the effect.
+            policy.gradientColor = (0x18ul << 24)
+                                 | (0x18ul << 16)
+                                 | (0x10ul << 8)
+                                 | 0x08ul;
+        } else {
+            policy.accentState = ACCENT_DISABLED;
+            policy.accentFlags = 0;
+            policy.gradientColor = 0;
+        }
+
+        WindowCompositionAttributeData data = {};
+        data.attribute = WCA_ACCENT_POLICY;
+        data.data = &policy;
+        data.sizeOfData = sizeof(policy);
+        accentApplied = setComposition(hwnd, &data);
+        if (enabled && !accentApplied) {
+            policy.accentState = ACCENT_ENABLE_BLURBEHIND;
+            accentApplied = setComposition(hwnd, &data);
+        }
     }
 
-    AccentPolicy policy = {};
-    if (enabled) {
-        // Use regular DWM blur only. The user-facing control is binary so
-        // the visual result stays predictable.
-        policy.accentState = ACCENT_ENABLE_BLURBEHIND;
-        policy.accentFlags = 0;
-        // AABBGGRR. Keep the fixed veil subtle; ON/OFF controls the effect.
-        policy.gradientColor = (0x18ul << 24)
-                             | (0x18ul << 16)
-                             | (0x10ul << 8)
-                             | 0x08ul;
-    } else {
-        policy.accentState = ACCENT_DISABLED;
-        policy.accentFlags = 0;
-        policy.gradientColor = 0;
+    // DwmEnableBlurBehindWindow is not a blur fallback on Windows 8+.
+    // Do not disable it either: GLFW uses it for framebuffer transparency.
+    if (!accentApplied && enabled) {
+        static bool reported = false;
+        if (!reported) std::fprintf(stderr, "[Backdrop] Windows rejected blur policies\n");
+        reported = true;
     }
-
-    WindowCompositionAttributeData data = {};
-    data.attribute = WCA_ACCENT_POLICY;
-    data.data = &policy;
-    data.sizeOfData = sizeof(policy);
-    const BOOL ok = setComposition(hwnd, &data);
-    if (ok) {
+    nextRetry = now + 2.0;
+    if (accentApplied) {
         SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
                      SWP_NOACTIVATE | SWP_FRAMECHANGED);
@@ -127,7 +142,7 @@ bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled) {
 
     s_blurHwnd = hwnd;
     s_blurEnabled = enabled;
-    s_blurApplied = ok == TRUE;
+    s_blurApplied = enabled && accentApplied == TRUE;
     return enabled && s_blurApplied;
 }
 

@@ -72,9 +72,9 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"대신 디버프 구간에서는 EXP·코인 보상이 올라가 리스크=리턴 구조입니다 / "
         L"디버프는 이동·사격·체력·쿨다운 등에 불리한 효과를 줍니다 / "
         L"증강으로 상쇄하거나, 패턴에 맞춰 플레이 스타일을 바꿔 대응하세요 / "
-        L"난이도가 높을수록 디버프·적 밀도가 거칠어집니다",
+        L"모든 런은 NORMAL 수치로 시작하며, 시련이 추가 도전을 만듭니다",
 
-        L"런 시작 전 난이도를 고릅니다 / "
+        L"모든 런은 NORMAL로 시작합니다 / "
         L"이어서 랜덤 3종 중 시작 무기를 선택합니다 / "
         L"무기마다 사거리, 연사, 특수 탄환 등 스타일이 크게 달라집니다 / "
         L"선택 화면 설명을 읽고 플레이에 맞는 무기를 고르세요 / "
@@ -83,11 +83,11 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"보스 VOLLEY, FORK가 각자의 성운 영역에 등장합니다 / "
         L"보스 영역 안에서만 패턴이 펼쳐지며, 체력바를 깎아 격파합니다 / "
         L"탄막, 소환, 장판 패턴을 읽고 SHIFT 대시와 필드 위치로 회피하세요 / "
-        L"보스 처치 후 짧은 휴식(인터미션)과 런 골드 상점이 열립니다 / "
+        L"보스 처치 후 짧은 휴식(인터미션)이 열리고 오른쪽 구역에서 건너뛸 수 있습니다 / "
         L"보스마다 공략이 다릅니다 - 도감에서 정보를 해금하세요",
 
-        L"런 중 획득한 골드는 웨이브·보스 사이 「런 상점」에서 소비합니다 / "
-        L"런 상점에서는 증강을 직접 구매할 수 있어 빌드를 보완합니다 / "
+        L"런 중 획득한 스타더스트는 HUD에 표시되고 런 종료 시 정산됩니다 / "
+        L"레벨업 증강 선택으로 빌드를 보완합니다 / "
         L"런이 끝나면 일부 성과가 코인으로 정산되어 메타 상점에 쓰입니다 / "
         L"메인 메뉴 상점 — 코인으로 영구 스탯·시작 증강 슬롯·테마 등을 강화 / "
         L"업적 달성 시 코인·해금 보상이 주어집니다",
@@ -122,9 +122,9 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Debuff periods grant more XP and coins (risk vs reward) / "
         L"Debuffs hinder move speed, fire rate, HP, cooldowns, etc. / "
         L"Counter with augments or adapt your playstyle / "
-        L"Higher difficulty means harsher debuffs and enemy density",
+        L"Every run uses NORMAL values; trials provide the extra challenge",
 
-        L"Before a run: pick difficulty / "
+        L"Every run starts at NORMAL / "
         L"Then choose 1 of 3 random starting weapons / "
         L"Range, fire rate, and specials differ a lot per weapon / "
         L"Read the select-screen text and pick what fits your style / "
@@ -133,11 +133,11 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Bosses VOLLEY and FORK spawn in their own constellation zones / "
         L"Patterns play inside the boss field; burn the HP bar to win / "
         L"Dodge with SHIFT and field positioning / "
-        L"After each boss: short intermission and run gold shop / "
+        L"After each boss: a short intermission; the right zone skips it / "
         L"Each boss plays differently - unlock tips in the Codex",
 
-        L"Gold earned mid-run is spent in the run shop between waves / "
-        L"Buy augments directly to patch your build / "
+        L"Stardust earned mid-run is shown on the HUD and settled at run end / "
+        L"Use level-up augment choices to patch your build / "
         L"End of run converts some progress into meta coins / "
         L"Main menu shop — permanent stats, extra start augments, themes / "
         L"Achievements grant coins and unlocks",

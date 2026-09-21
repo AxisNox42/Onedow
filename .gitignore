@@ -1,45 +1,65 @@
-# ── 빌드 산출물 ──
-bin/*
-!bin/Onedow/
-!bin/Onedow/README.txt
-!bin/Onedow/macOS/
-!bin/Onedow/macOS/README.txt
-WiNILL/obj/
-x64/
-Debug/
-Release/
-build/
+# Generated build outputs
+/build/
+/WiNILL/bin/
+/WiNILL/obj/
+/WiNILL/WiNILL/
+/x64/
+/Debug/
+/Release/
+
+# LTS package output. Keep only the checked-in package documentation.
+/bin/*
+!/bin/Onedow/
+/bin/Onedow/*
+!/bin/Onedow/README.txt
+!/bin/Onedow/macOS/
+!/bin/Onedow/macOS/README.txt
+
+# Compiled and packaged artifacts
 *.exe
-!WiNILL/bin/WiNILL.exe
-*.obj
+*.exp
+*.lib
 *.pdb
 *.ilk
 *.idb
+*.obj
+*.iobj
+*.ipdb
+*.tlog
+*.recipe
+*.zip
+*.aps
 
-# ── Visual Studio ──
+# Visual Studio and local IDE state
 .vs/
 *.user
 *.suo
 
-# ── CMake ──
+# CMake state
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 
-# ── macOS ──
+# Platform files
 .DS_Store
 
-# ── 런타임 로그 ──
+# Local save/config/log files
+*.cfg
+*.log
+onedow_gameplay_telemetry.txt
 transparency_debug.txt
 
-# 런타임 저장 파일
-onedow_save.cfg
-*.cfg
-
-# ── 로컬 AI / 에이전트 ──
+# Local AI / agent state
 .claude/
+.cursor/hooks/.last-backup
 
-# ── main.cpp 복구용 스크래치 (커밋 제외) ──
+# Temporary verification output. The four checked-in icon previews remain tracked.
+/tmp/*
+/tmp_*.txt
+/inspect.txt
+Docs/orca-paste-*.png
+
+# Local recovery and patch helpers
 WiNILL/_recover_main.cpp
 WiNILL/_git_main_utf8.cpp
 WiNILL/_extract_render.ps1
@@ -47,15 +67,9 @@ WiNILL/_fix_main.ps1
 WiNILL/_patch_main.ps1
 WiNILL/_restore_render.ps1
 WiNILL/_strip_render.ps1
-
-# ── auto-backup hook 상태 ──
-.cursor/hooks/.last-backup
-
-# Temporary agent / local verification artifacts
 bin_verify/
 *.bak
 *_temp.cpp
 *_tmp.cpp
-Docs/orca-paste-*.png
 patch_*.ps1
 find_*.ps1

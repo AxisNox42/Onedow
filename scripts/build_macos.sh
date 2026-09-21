@@ -16,9 +16,9 @@ if ! brew list glfw >/dev/null 2>&1; then
   brew install glfw
 fi
 
-# 폰트 — WiNILL/Font/ (Jua + KosugiMaru)
-if [[ ! -f "$ROOT/WiNILL/Font/Jua-Regular.ttf" || ! -f "$ROOT/WiNILL/Font/KosugiMaru-Regular.ttf" ]]; then
-  echo "오류: WiNILL/Font/ 에 Jua-Regular.ttf, KosugiMaru-Regular.ttf 가 필요합니다."
+# 폰트 — WiNILL/Resource/Font/ (Jua + KosugiMaru)
+if [[ ! -f "$ROOT/WiNILL/Resource/Font/Jua-Regular.ttf" || ! -f "$ROOT/WiNILL/Resource/Font/KosugiMaru-Regular.ttf" ]]; then
+  echo "오류: WiNILL/Resource/Font/ 에 Jua-Regular.ttf, KosugiMaru-Regular.ttf 가 필요합니다."
   exit 1
 fi
 

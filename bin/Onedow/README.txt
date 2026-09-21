@@ -3,6 +3,6 @@ Onedow (LTS)
 
   WindowsOS/Onedow.exe   Windows
   macOS/Onedow           macOS
-  Resource/ Font/ Icons/ 공용 리소스 (macOS 실행용)
+  Resource/ 공용 리소스 (Windows/macOS 실행용)
 
-테스트용 Windows exe는 WiNILL/bin/WiNILL.exe
+테스트용 Windows exe는 build/windows/x64/Release/WiNILL.exe

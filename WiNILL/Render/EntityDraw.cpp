@@ -42,8 +42,8 @@ void DrawApproachOrb(float x, float y) {
 }
 
 void DrawAppWindow(float wx, float wy, float w, float h, const wchar_t* title, float tb) {
-    // Shop zone is a world interaction marker, not an opaque application
-    // window. Keep the bounds readable with a floating signal frame.
+    // App bounds stay readable without an opaque window so the transparent
+    // observatory background remains visible.
     drawConstellFrame(wx, wy, w, h, 0.48f, 0.88f, 1.0f, 0.36f,
                       std::max(14.0f, std::min(28.0f, std::min(w, h) * 0.12f)),
                       3.0f, 0.05f, 1.0f);

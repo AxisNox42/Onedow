@@ -8,17 +8,20 @@
 #include "Bullet.h"
 #include "Augment.h"
 
+// The permanent main-menu Armory remains available. Boss encounters stay
+// behind their separate inactive flag until they are reactivated.
+inline constexpr bool kBossEncountersEnabled = false;
+inline constexpr bool kMainMenuShopEnabled = true;
+
 enum class GameState {
     MAIN_MENU,         // 시작 메뉴 (시작/설정/종료)
     CREATIVE_CONFIG,   // 크리에이티브 설정 (시작점수/보스/시작증강)
     SHOP,              // 메타 상점 (코인 → 영구 업그레이드)
     CODEX,             // 도감 (적/증강 발견 목록)
     TUTORIAL,          // 플레이 가이드 (페이지형)
-    JOB_SELECT,        // 직업(클래스) 선택 (업적으로 해금) — 직업마다 고정 무기/조작 확정
     SETTINGS,          // 설정 화면
     READY, RUNNING, PAUSED, GAMEOVER, VICTORY, AUG_SELECT, AUG_REPLACE, DEBUFF_SELECT, DYING,
-    BOSS_INTERMISSION,  // 보스 클리어 후 휴식 (이동·상점 구역)
-    RUN_SHOP            // 런 골드 상점 (증강 구매)
+    BOSS_INTERMISSION   // boss intermission
 };
 
 struct AugmentRewardEntry {
@@ -48,8 +51,6 @@ public:
     int       pendingAugIdx = -1;      // AUG_REPLACE: 장착 대기 중인 신규 증강
     int       replaceChoices[32] = {}; // AUG_REPLACE: 교체 후보 (ALL_AUGS 인덱스)
     int       replaceChoiceCount = 0;
-    bool      replaceFromShop = false; // 상점 구매 경로에서 진입
-    int       replaceShopSlot = -1;
     std::deque<AugmentRewardEntry> augmentRewardQueue;
     bool      augmentRewardActive = false;
     bool      augmentRewardInternalDebuff = false;
@@ -85,15 +86,11 @@ public:
     void QueueAugmentReward(bool needsDebuff, bool allowDebuff = false);
     bool ActivateNextAugmentReward();
     void ClearAugmentRewardQueue();
-    // 런 상점 — 버프만, 가격은 RunShopPriceFor 로 채움
-    void PickRunShopStock(int* outIdx, int* outPrice, int n,
-                          bool sizeTaken, bool distTaken);
     bool ShouldUpdate()   const {
         return currentState == GameState::RUNNING ||
                currentState == GameState::DYING;
     }
     GameState GetState()  const { return currentState; }
-    void UpdateTitle(GLFWwindow* window);
     void Render();
 
 private:

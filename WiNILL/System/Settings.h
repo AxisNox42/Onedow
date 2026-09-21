@@ -53,18 +53,18 @@ inline const char* LanguageFace(Language /*lang*/) {
     return "Microsoft YaHei UI";
 }
 
-// 비-Windows(macOS/Linux): TTF 폴백 체인 — WiNILL/Font/ 두 파일
+// 비-Windows(macOS/Linux): TTF 폴백 체인 — Resource/Font/ 두 파일
 inline int LanguageFontChain(Language /*lang*/, const char* out[2]) {
-    out[0] = "Font/Jua-Regular.ttf";
-    out[1] = "Font/KosugiMaru-Regular.ttf";
+    out[0] = "Resource/Font/Jua-Regular.ttf";
+    out[1] = "Resource/Font/KosugiMaru-Regular.ttf";
     return 2;
 }
 
-// 난이도 (게임 시작 시 적용)
+// Difficulty values remain for saved records and boss APIs; new runs always use NORMAL.
 enum class Difficulty { EASY, NORMAL, HARD };
 inline Difficulty g_Difficulty = Difficulty::NORMAL;
 
-// 난이도 별 몹 설정 헬퍼
+// Difficulty-specific gameplay parameters retained for compatibility.
 struct DifficultyParams {
     float rangedSpawnInitialDelay; // 시작 시 spawn timer 오프셋
     float rangedSpawnInterval;     // 원거리 spawn 주기 (초)
@@ -292,12 +292,13 @@ inline float TrialBossWarningMult() {
     return TrialActive(19) ? 0.72f : 1.0f;
 }
 
-// 크리에이티브 모드 (난이도 선택 화면에서 토글)
+// 크리에이티브 모드 (런 설정 화면에서 토글)
 //   ON: 게임 시작 시 score=100,000 (보스 즉시 등장)
 //       RUNNING 중 F 키로 AUG_SELECT 즉시 열기
 //       DEBUFF_SELECT 항상 스킵
 inline bool g_CreativeMode = false;
 inline bool g_DebugMode = false;
+inline bool g_BalanceTestMode = false;
 // 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
 inline long long g_CreativeStartScore = 0;       // 시작 점수
 inline int       g_CreativeBossPick   = -1;      // -1=없음. 1·4=크리에이티브 전용, LTS=2·7·8·9

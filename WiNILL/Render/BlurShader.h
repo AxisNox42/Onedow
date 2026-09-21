@@ -2,7 +2,7 @@
 #include <glad/glad.h>
 
 // ── Backdrop Blur (Frosted-Glass 패널용) ──────────────────────────────
-// 아키텍처: full-res 캡처 → 1/4 해상도 다운샘플 → 3× H+V 블러 (7패스 총계)
+// 아키텍처: full-res 캡처 → 1/2 해상도 다운샘플 → H+V 블러
 // scissor 상태를 자동 저장/복원 — 다른 UI 오염 없음
 //
 // 사용 순서:
@@ -14,7 +14,8 @@ void InitBlurSystem(int screenW, int screenH);
 void ResizeBlurSystem(int screenW, int screenH);
 
 // 현재 프레임버퍼를 캡처하고 H→V 2-pass Gaussian blur 적용.
-// BatchFlush() 후 호출할 것.
+// BatchFlush() 후 호출할 것. OpenGL 3.3 표준 경로만 사용하므로
+// NVIDIA/AMD/Intel 및 소프트웨어 렌더러에서 동일하게 동작해야 한다.
 void CaptureBackdrop();
 
 // 블러된 배경을 screen-space 사각형에 blit.
