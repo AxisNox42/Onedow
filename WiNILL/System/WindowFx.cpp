@@ -12,11 +12,61 @@ void TransparencyLog(const char* /*fmt*/, ...) {
 // ═══════════════════════ Windows: DWM 합성 ═════════════════════════════════════
 #include <windows.h>
 #include <dwmapi.h>
+#include <shobjidl.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "uuid.lib")
+
+namespace {
+// Shell fullscreen classification is independent of the swapchain dimensions.
+// This preserves the 1px DWM-composition workaround without forcing TOPMOST
+// or changing/hiding Explorer's taskbar windows globally.
+bool MarkShellFullscreen(HWND hwnd, bool fullscreen) {
+    const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE) return false;
+    ITaskbarList2* taskbar = nullptr;
+    HRESULT result = CoCreateInstance(CLSID_TaskbarList, nullptr,
+                                     CLSCTX_INPROC_SERVER,
+                                     IID_PPV_ARGS(&taskbar));
+    if (SUCCEEDED(result)) {
+        result = taskbar->HrInit();
+        if (SUCCEEDED(result))
+            result = taskbar->MarkFullscreenWindow(hwnd, fullscreen ? TRUE : FALSE);
+        taskbar->Release();
+    }
+    if (SUCCEEDED(initialized)) CoUninitialize();
+    return SUCCEEDED(result);
+}
+}
+
+void UpdateWindowTaskbarPolicy(GLFWwindow* window) {
+    if (!window) return;
+    HWND hwnd = glfwGetWin32Window(window);
+    const bool active = GetForegroundWindow() == hwnd && !IsIconic(hwnd);
+    // Reapply on focus changes and Explorer restart; retry failures without
+    // issuing a COM request every rendered frame.
+    static HWND lastWindow = nullptr, lastShell = nullptr;
+    static bool lastActive = false;
+    static bool applied = false;
+    static double nextRetry = 0.0;
+    HWND shell = FindWindowW(L"Shell_TrayWnd", nullptr);
+    const double now = glfwGetTime();
+    if (hwnd == lastWindow && shell == lastShell && active == lastActive &&
+        (applied || now < nextRetry)) return;
+    applied = MarkShellFullscreen(hwnd, active);
+    lastWindow = hwnd;
+    lastShell = shell;
+    lastActive = active;
+    nextRetry = now + 2.0;
+}
+
+void ReleaseWindowTaskbarPolicy(GLFWwindow* window) {
+    if (window) MarkShellFullscreen(glfwGetWin32Window(window), false);
+}
 
 void EnableWindowTransparency(GLFWwindow* window) {
     HWND hwnd = glfwGetWin32Window(window);
@@ -147,6 +197,8 @@ bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled) {
 }
 
 #else
+void UpdateWindowTaskbarPolicy(GLFWwindow*) {}
+void ReleaseWindowTaskbarPolicy(GLFWwindow*) {}
 // ═══════════════════════ macOS / Linux ═════════════════════════════════════════
 //   투명도는 glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE) 가 처리.
 //   (Cocoa: NSWindow opaque=NO / X11: 32bit visual). 추가 OS 호출 불필요.

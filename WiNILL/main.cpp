@@ -1700,14 +1700,8 @@ int main() {
     // ?�단 ?�업?�시�??�이 계산 ???�?�크�??�에 ???�는 ?�업?�시줄에 ?�단 UI 가
     //   가?��?지 ?�도�? (?�업 ?�역???�면보다 ?�으�?�?차이가 ?�업?�시�??�이)
 #ifdef _WIN32
-    {
-        int fullH = GetSystemMetrics(SM_CYSCREEN);
-        RECT wa;
-        if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0)) {
-            int bottomGap = fullH - (int)wa.bottom;   // ?�단 ?�업?�시�??�이 (�????�치�?0)
-            if (bottomGap > 0 && bottomGap < 120) g_TaskbarH = bottomGap;
-        }
-    }
+    // The Shell keeps the taskbar behind our active borderless window.
+    g_TaskbarH = 0;
 #endif
 
     // ?�상??기�? ?��??????��? ?�면?�서 �??�티?��? 비�? 축소?�도�?계산 ???�괄 ?�용.
@@ -2091,6 +2085,7 @@ int main() {
         }
 
         glfwPollEvents();
+        UpdateWindowTaskbarPolicy(window);
 
         // �?부?�럽�?보간 (?�이�? ?�면 ?�장 ??
         //   ?�투/?�투?�버?�이(RUNNING/DYING/PAUSED/증강·?�버???�택)?�선 �??��? ??        //   ?�시?��? ??줌인?�는 �?부?�연?�럽?�는 ?�드�? �??�제???�작�???        //   '진짜 메뉴'�??�갈 ?�만(보스 처치 ?�엔 polyDeath 가 target=1 �?부?�럽�?복원).
@@ -7055,6 +7050,7 @@ int main() {
 #endif
     Audio::Shutdown();
     PlatformTimerEnd();
+    ReleaseWindowTaskbarPolicy(window);
     glfwTerminate();
     return 0;
 }

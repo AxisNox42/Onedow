@@ -8,6 +8,9 @@
 struct GLFWwindow;
 
 void EnableWindowTransparency(GLFWwindow* window);
+// Mark the borderless window fullscreen for the Shell while it is active.
+void UpdateWindowTaskbarPolicy(GLFWwindow* window);
+void ReleaseWindowTaskbarPolicy(GLFWwindow* window);
 bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled);
 
 // transparency_debug.txt 에 로그 기록 (printf 스타일, 크로스플랫폼)
