@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ─────────────────────────────────────────────────────────────
 // 아이콘(픽토그램) 시스템 — game-icons.net 흰색 PNG 를 텍스처로 로드,
 //   AugType → 텍스처 매핑, 등급색 틴트로 그리는 drawIcon 헬퍼.
@@ -36,15 +36,12 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::GLASS_CANNON:  return "GLASS_CANNON";
     case AugType::LIGHT_AMMO:    return "LIGHT_AMMO";
     case AugType::LIGHT_STEP:    return "LIGHT_STEP";
-    case AugType::GUN_RUNNER:    return "GUN_RUNNER";
     case AugType::BULLET_RAIN:   return "BULLET_RAIN";
     case AugType::CRIT:          return "CRIT";
     case AugType::LIFESTEAL:     return "LIFESTEAL";
     case AugType::BERSERK:       return "BERSERK";
     // 에픽
     case AugType::VAMPIRE:       return "VAMPIRE";
-    case AugType::BROKEN_SIGHT:  return "BROKEN_SIGHT";
-    case AugType::BAYONET:       return "BAYONET";
     case AugType::MINIATURIZE:   return "MINIATURIZE";
     case AugType::GIGANTIFY:     return "GIGANTIFY";
     case AugType::PIERCE:        return "PIERCE";
@@ -53,7 +50,6 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::BULLET_RAIN_2: return "BULLET_RAIN_2";
     case AugType::CHAKRAM_2:     return "CHAKRAM_2";
     case AugType::DRONE:         return "DRONE";
-    case AugType::MINIGUN:       return "MINIGUN";
     case AugType::HACK_RANGED:   return "HACK_RANGED";
     case AugType::PROB_CHAIN:    return "PROB_CHAIN";
     case AugType::DEATH_BLAST:   return "DEATH_BLAST";
@@ -61,9 +57,7 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::SKILL_OVERCLOCK: return "SKILL_OVERCLOCK";
     // 전설
     case AugType::RANDOM_AUG:    return "RANDOM_AUG";
-    case AugType::SOUL_HARVEST:  return "SOUL_HARVEST";
     case AugType::MK2:           return "MK2";
-    case AugType::HACK_BOMBER:   return "HACK_BOMBER";
     case AugType::CHAIN:         return "CHAIN";
     case AugType::SKILL_TIMESTOP:return "SKILL_TIMESTOP";
     case AugType::BULLET_RAIN_3: return "BULLET_RAIN_3";
@@ -78,34 +72,17 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::D_MOB_SPEED:   return "D_MOB_SPEED";
     case AugType::D_GLASS_HEART: return "D_GLASS_HEART";
     case AugType::D_BULLET_STUCK:return "D_BULLET_STUCK";
-    case AugType::D_DRUNK:       return "D_DRUNK";
-    case AugType::D_BOMBER_BLAST:return "D_BOMBER_BLAST";
-    case AugType::D_BOMBER_BUFF: return "D_BOMBER_BUFF";
-    case AugType::D_BOMBER_SPEED:return "D_BOMBER_SPEED";
     case AugType::D_MOB_HP:      return "D_MOB_HP";
     case AugType::D_SLOW_MOVE:   return "D_SLOW_MOVE";
-    case AugType::D_SPLITTER:    return "D_SPLITTER";
-    case AugType::D_BLINKER:     return "D_BLINKER";
-    case AugType::D_ORBITER:     return "D_ORBITER";
-    case AugType::D_SPAWNER:     return "D_SPAWNER";
-    case AugType::D_SHIELDED:    return "D_SHIELDED";
     case AugType::D_BLEED:       return "D_BLEED";
     case AugType::D_WEAKEN:      return "D_WEAKEN";
     // 특수
     case AugType::S_CHAOS:       return "S_CHAOS";
     case AugType::S_PANDORA:     return "S_PANDORA";
     // 조합
-    case AugType::CB_EXECUTIONER: return "CB_EXECUTIONER";
     case AugType::CB_BLOODLORD:   return "CB_BLOODLORD";
-    case AugType::CB_PIERCE_TWIN: return "CB_PIERCE_TWIN";
-    case AugType::CB_STORMCALLER: return "CB_STORMCALLER";
     case AugType::LASER:         return "LASER_1";
     case AugType::LASER_2:       return "LASER_2";
-    case AugType::MELEE_WIDE:    return "MELEE_WIDE";
-    case AugType::BLADE_WIND:    return "BLADE_WIND";
-    case AugType::POWER_DRAW:    return "POWER_DRAW";
-    case AugType::MULTISHOT:     return "MULTISHOT";
-    case AugType::SNIPER_AMPLIFIER:return "SNIPER_AMPLIFIER";
     case AugType::HP_UP:           return "REGEN_UP";
     case AugType::FIREWALL:        return "MK2";
     case AugType::REGEN_2:         return "REGEN_UP";
@@ -421,7 +398,7 @@ inline void ResolveIconDir() {
 }
 
 // 직업 아이콘 — 인덱스 = JobId 순서 (Achievements.h 의 enum 과 동일 순서로 유지)
-//   0:NONE(없음) 1:ASSASSIN 2:BERSERKER 3:BOMBARDIER 4:VAMPIRE 5:SWORDSMAN 6:ARCHER
+// Job icon ids are retained only for save-file compatibility.
 inline GLuint g_JobIconTex[8] = { 0 };
 inline GLuint g_ConstellationLineTex = 0;
 inline GLuint g_ConstellationCircleTex = 0;
@@ -430,9 +407,7 @@ inline GLuint g_ConfigPanelTex = 0;
 inline GLuint g_LeftGradientTex = 0;
 inline constexpr float kInGameCircleAlphaBoost = 1.7f;
 inline const char* const g_JobIconNames[7] = {
-    "",                // JOB_NONE — 아이콘 없음
-    "JOB_ASSASSIN", "JOB_BERSERKER", "JOB_BOMBARDIER",
-    "JOB_VAMPIRE", "JOB_SWORDSMAN", "JOB_ARCHER"
+    "", "", "", "", "", "", ""
 };
 
 // 모든 증강/직업 아이콘 로드 — 임베디드 리소스 우선(파일 폴백). 없으면 0 → 미표시.
@@ -448,7 +423,8 @@ inline void LoadIcons() {
         g_IconTex[idx] = IconLoad(nm);
     }
     for (int j = 1; j < 7; j++)
-        g_JobIconTex[j] = IconLoad(g_JobIconNames[j]);
+        if (g_JobIconNames[j][0] != '\0')
+            g_JobIconTex[j] = IconLoad(g_JobIconNames[j]);
 
     // White alpha masks used by constellation renderers. Prefer the embedded
     // copies so every supported launch directory produces identical visuals.
@@ -523,35 +499,15 @@ inline GLuint IconFor(AugType t) {
     case AugType::LASER_CONVERGE:return g_IconTex[(int)AugType::LASER];
     // 프로세스류 디버프 확장 — 전용 아이콘 없으면 유사 디버프 아이콘 재사용
     case AugType::D_MOB_PACK:    return g_IconTex[(int)AugType::D_MOB_SPAWN];
-    case AugType::D_MOB_ELITE:   return g_IconTex[(int)AugType::D_MOB_HP];
-    case AugType::D_MOB_FRENZY:  return g_IconTex[(int)AugType::D_MOB_SPEED];
-    case AugType::D_SCHEDULER:    return g_IconTex[(int)AugType::D_MOB_HP];
-    case AugType::D_TROJAN_BOOST: return g_IconTex[(int)AugType::D_BLINKER];
-    case AugType::D_CRASHER_BOOST:return g_IconTex[(int)AugType::D_MOB_SPEED];
-    case AugType::D_BADSECTOR:    return g_IconTex[(int)AugType::D_SLOW_MOVE];
-    case AugType::D_REGERROR:     return g_IconTex[(int)AugType::D_MOB_HP];
-    case AugType::D_DDOS:         return g_IconTex[(int)AugType::D_MOB_SPAWN];
-    case AugType::D_WEAVER_BOOST: return g_IconTex[(int)AugType::D_MOB_SPEED];
-    case AugType::D_BRUTE_BOOST:  return g_IconTex[(int)AugType::D_MOB_HP];
     case AugType::LIFESTEAL_2:    return g_IconTex[(int)AugType::LIFESTEAL];
     case AugType::CHAIN_2:        return g_IconTex[(int)AugType::CHAIN];
     case AugType::CHAKRAM_SINGULARITY: return g_IconTex[(int)AugType::CHAKRAM];
-    case AugType::HE_SHELLS:      return g_IconTex[(int)AugType::CANNON];
-    case AugType::SKILL_FOCUS:    return g_IconTex[(int)AugType::SNIPER];
     case AugType::SKILL_DASH_UP:  return g_IconTex[(int)AugType::LIGHT_STEP];
-    case AugType::SMG_COMPRESSOR: return g_IconTex[(int)AugType::MINIGUN];
-    case AugType::RIFLE_STABILITY:return g_IconTex[(int)AugType::BROKEN_SIGHT];
-    case AugType::SNIPER_AMPLIFIER:return g_IconTex[(int)AugType::SNIPER];
+    case AugType::RIFLE_STABILITY:return 0;
     case AugType::HP_UP:           return g_IconTex[(int)AugType::REGEN_UP];
     case AugType::FIREWALL:        return g_IconTex[(int)AugType::MK2];
     case AugType::REGEN_2:         return g_IconTex[(int)AugType::REGEN_UP];
-    case AugType::MINIGUN_2:       return g_IconTex[(int)AugType::MINIGUN];
-    case AugType::MINIGUN_CYCLONE: return g_IconTex[(int)AugType::MINIGUN];
     case AugType::DEATH_BLAST_2:   return g_IconTex[(int)AugType::DEATH_BLAST];
-    case AugType::HACK_FIREWALL:   return g_IconTex[(int)AugType::HACK_RANGED];
-    case AugType::REVOLVER_SILVER: return g_IconTex[(int)AugType::REVOLVER_OVERLOAD];
-    case AugType::HE_SHELLS_2:     return g_IconTex[(int)AugType::HE_SHELLS];
-    case AugType::D_SPLITTER_BOOST:return g_IconTex[(int)AugType::D_SPLITTER];
     default:                     break;
     }
     // 조합 증강 — 전용 아이콘(CB_*.png) 없으면 레시피 첫 재료 아이콘 재사용

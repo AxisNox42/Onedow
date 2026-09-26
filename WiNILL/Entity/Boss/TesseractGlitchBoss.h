@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <vector>
 #include <cmath>
 #include <cstdlib>
@@ -48,7 +48,6 @@ public:
         float hp;
         float fireT;
         float life;
-        bool  bomber;
         bool  alive;
     };
     std::vector<Orb> orbs;
@@ -514,9 +513,9 @@ public:
                             if (std::min(d1, d2) >= enemyHitR + playerHitR) continue;
 
                             eb.active = false;
-                            if (pb.remainingDmg > 0.001f) {
-                                pb.remainingDmg -= 1.0f;
-                                if (pb.remainingDmg <= 0.001f) pb.active = false;
+                            if (pb.pierceRemaining > 0.001f) {
+                                pb.pierceRemaining -= 1.0f;
+                                if (pb.pierceRemaining <= 0.001f) pb.active = false;
                             } else {
                                 pb.active = false;
                             }

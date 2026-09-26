@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <algorithm>
 #include <cmath>
 #include "Augment.h"
@@ -18,15 +18,14 @@ struct PlayerStats {
     int   vampireKillNeed  = 10;     // 흡혈마/흡혈탄 II — N킬당 HP +1
     float lightStepHitLock = 10.0f;  // 가벼운 발걸음 — 피격 후 비활성 시간(s)
     float playerSizeMult   = 1.0f;
-    float xpMult           = 1.0f;   // 전체 EXP 곱연산 (유리심장, 총알걸림, 취함)
+    float xpMult           = 1.0f;   // Global experience multiplier.
     float bulletSpread     = 0.0f;   // 발사 시 각도 흔들기 (라디안). 0 = 정확
-    int   pierceChance     = 30;     // PIERCE 활성 시 관통 확률 (%). MINIGUN 등이 덮어씀
-    static constexpr int MOB_KIND_XP_SLOTS = 16;
+    int   pierceChance     = 30;     // Pierce chance (%).
+    // The active close-range roster has five MobKind entries. Scope is the
+    // separate ranged mob and uses rangedXpBonus below.
+    static constexpr int MOB_KIND_XP_SLOTS = 5;
     int   mobXpBonus       = 0;      // Process kill EXP bonus for generic mob debuffs.
     int   mobKindXpBonus[MOB_KIND_XP_SLOTS] = {};
-    int   eliteXpBonus     = 0;      // Extra EXP only when an elite variant is killed.
-    int   specialMobXpBonus = 0;     // Extra EXP only when a non-normal mob type is killed.
-    int   bomberXpBonus    = 0;      // Bomber kill EXP bonus.
     int   rangedXpBonus    = 0;      // Ranged mob kill EXP bonus.
     float xpPerSec         = 0.0f;   // 초당 누적 EXP (다가오는 죽음, 잡몹 가속)
     float rmobSpawnDelayBonus = 0.0f;// 원거리 몹 스폰 가속 (초)
@@ -36,19 +35,14 @@ struct PlayerStats {
     int  visionStacks   = 0;          // 최대 5 (총 +350)
     int  totalAugs      = 0;
     bool sizeAugTaken   = false;
-    bool distAugTaken   = false;
 
     // ── 희귀 ───────────────────────────────────────────
     bool  lightStep            = false;
     float lightStepDisableTimer = 0.0f;  // 피격 후 카운트다운 (s)
-    bool  gunRunner            = false;
 
     // ── 에픽 ───────────────────────────────────────────
     bool  vampire     = false;   // 10킬당 HP +1
     int   vampireKillStreak = 0; // 10에 도달하면 회복 + 0 리셋
-    bool  brokenSight = false;
-    bool  sniper      = false;
-    bool  bayonet     = false;
     bool  miniaturize = false;
     bool  gigantify   = false;
     bool  pierce      = false;   // 매 hit 30% 확률 관통
@@ -62,22 +56,8 @@ struct PlayerStats {
     // 신규 (에픽/전설)
     bool  mk2          = false;  // 사망 시 1회 부활
     bool  mk2Used      = false;
-    bool  minigun      = false;  // 탄 퍼짐↑ ↔ 연사↑ (정조준과 반대 축)
-    int   minigunTier  = 0;      // 1=미니건, 2=미니건 II
-    bool  minigunCyclone = false; // 신화 — 명중 시 연사 가속
-    float minigunHitBoost = 0.0f; // 소용돌이 — fireTimer 가산(초)
-    bool  hackBomber   = false;  // 자폭병 처치 20% 폭발
     bool  hackRanged   = false;  // 원거리 처치 20% 유도탄 5
-    bool  hackFirewall = false;  // 보호막체 처치 10% 플레이어 보호막
-    bool  shotgun      = false;  // 5발 산탄 / 사거리 700
-    bool  revolver     = false;  // 리볼버 시작무기/변환
-    bool  shotgunSpread= false;  // 산탄 확장 — 7발
-    bool  revolverOverload = false;
-    bool  revolverSilver   = false;  // 은탄환 — 6번째 탄 화상 DoT
-    bool  heShells     = false;
-    bool  heShells2    = false;
     bool  dashUpgrade  = false;  // SKILL_DASH_UP — 대시 유도탄 + 3발 2배
-    float sniperDistBonusPct = 0.0f;  // SNIPER_AMPLIFIER — 거리 보너스 +%p
     int   powerSurgeStacks = 0;  // 전력 증폭 중첩 (3 이후 diminishing)
     int   commonMultBoosts = 0;  // 초반 일반 증강 ×1.08 (최대 3)
     // ── 핵앤슬래쉬 ──
@@ -90,34 +70,18 @@ struct PlayerStats {
     bool  deathBlast   = false;   // 적 사망 시 주변 폭발
     float deathBlastMult = 1.0f;  // 연쇄 폭발 반경 배율
     float deathBlastDmgPct = 0.30f; // 폭발 피해 (공격력 대비)
-    // ── 직업 무기 모드 (검객/궁수) ──
-    bool  meleeWeapon  = false;   // 검객 — 총알 대신 근접 호 스윙
-    bool  bowWeapon    = false;   // 궁수 — 관통 화살 (느리고 강함)
-    // 클래스 전용 증강
-    bool  meleeWide    = false;   // [검객] 광폭 베기 — 호·사거리 확대
-    bool  bladeWind    = false;   // [검객] 칼바람 — 스윙마다 전방 관통탄
-    bool  powerDraw    = false;   // [궁수] 강궁 — 차징 빠름·완충 위력↑
-    bool  multishot    = false;   // [궁수] 다중 사격 — 완충 3발 부채꼴
-    // 클래스 증강 변환 누적치 (검객/궁수에서 무의미한 스탯 증강을 재해석)
-    float bowChargeRateMult = 1.0f;   // [궁수] 연사 증강 → 차징 속도 배수
-    float bowChargeCapBonus = 0.0f;   // [궁수] 공격력 증강 → 풀차징 위력 한도 가산
-
-    // ── 희귀/전설 (티어드) ───────────────────────────────
+    // Player weapons are restricted to the rifle and static field.
     bool  drone        = false;
     int   droneCount   = 0;       // 1 = DRONE, 2 = DRONE_2, 4 = DRONE_HIVE
     bool  droneRapid   = false;   // 예전 군집 지능 연사 가속 플래그(현재 비활성)
     bool  laser        = false;   // 스캔 레이저 — 주기적 관통 빔 (군중제어)
     int   laserTier    = 1;       // 1 = LASER, 2 = LASER_2 (간격↓·사거리↑)
-    int   purgeNova    = 0;       // 백신 스캔 — 주기적 범위 펄스 (중첩 시 강화)
     bool  bulletRain   = false;
     float bulletRainCooldown = 15.0f; // 15 → 10 (II) → 5 (III)
     bool  rainKillReduce = false;     // 무한 세례(신화) — 처치마다 쿨다운 감소
     int   chakramCount = 0;       // 1, 2, 3 — CHAKRAM / II / III
     bool  chakramSingularity = false; // 신화 — 끌어당김
-    bool  cannon       = false;
-    bool  turretMode   = false;  // CANNON + DRONE_2 조합: 포탑 배치
-    bool  soulHarvest  = false;
-    long long killCount = 0;     // 영혼 수확용 (외부에서 +1)
+    long long killCount = 0;     // Total kills in the current run.
 
     // ── 무기/부활 ─────────────────────────────────────
     float baseFireInterval   = 0.15f; // 무기 선택 전 기본값 (변환 카드 undo 기준)
@@ -130,37 +94,14 @@ struct PlayerStats {
     float rmobDelayMult = 1.0f;  // <1.0 = 더 빠름
     int   rmobDelayStacks = 0;   // 원거리 몹 가속 누적 (10 제한 — 과다 시 화면 밖으로 사라짐)
     float mobSpawnMult  = 1.0f;  // <1.0 = 더 자주
-    bool  splitterMobs  = false; // 분열체(죽으면 분열) 등장 (디버프)
-    bool  splitterBoost = false; // 스플리터 강화 — 3세대·개체별 보상
-    bool  blinkerMobs   = false; // 점멸체(순간이동) 등장 (디버프)
-    bool  orbiterMobs   = false; // 공전체(스파이럴 인) 등장 (디버프)
-    bool  spawnerMobs   = false; // 소환체(잡몹 소환) 등장 (디버프)
-    bool  shieldedMobs  = false; // 보호막체(주기 방패) 등장 (디버프)
     float mobSpeedMult  = 1.0f;
     bool  approachingDeath = false;
     int   approachStacks   = 0;   // D_APPROACH 누적 횟수 (속도 +20%/스택)
-    bool  drunk              = false;
-    float drunkActiveDuration = 5.0f;  // 활성 지속시간 (s). 중복 픽 시 +1s
-    float drunkCooldown       = 20.0f; // 쿨타임 (s). 중복 픽 시 -2s (최소 4s)
-    // 자폭병 디버프 (몹 spawn 시 적용)
-    float bomberHpMult    = 1.0f;
-    float bomberSpeedMult = 1.0f;
-    float bomberBlastMult = 1.0f;
     // 잡몹 HP 디버프
     float monsterHpMult   = 1.0f;
     // 잡몹 강화 디버프 (확장)
-    float specialMobHpMult = 1.0f;  // 스케쥴러 강화 — 특수(비-NORMAL) 잡몹 HP 배율
-    bool  trojanBoost     = false;  // 트로이목마 강화 — 점멸 쿨다운 단축(D_BLINKER 보유 시)
-    bool  crasherBoost    = false;  // 크래셔 강화 — 돌진 중 받는 피해 -10%
-    bool  badsectorMobs   = false;  // 배드 섹터 출현 (죽으면 감속 구역)
-    bool  regerrorMobs    = false;  // 레지스트리 에러 출현 (강화 오라)
-    bool  ddosMobs        = false;  // 디도스 침투
-    bool  weaverBoost     = false;  // 위버 강화
-    bool  bruteBoost      = false;  // 브루트 강화
     // 프로세스류(잡몹) 출현 디버프 (확장, 중첩 가능)
     int   mobPackBonus    = 0;     // 스폰당 추가 마리 수 (군집)
-    float eliteChanceMult = 1.0f;  // 엘리트 변종 출현 확률 배율
-    float varietyChanceMult = 1.0f;// 특수 잡몹(돌진/회피/거대) 출현 확률 배율
     // 핵앤슬래쉬 디버프
 
 
@@ -174,18 +115,14 @@ struct PlayerStats {
         ++totalAugs;
         switch (t) {
         // ── 일반 (버프: QA 피드백 — 일반 증강이 너무 약함) ──
-        //   ※ 검객/궁수 변환: 무의미한 스탯 증강을 클래스에 맞게 재해석
         case AugType::DMG_UP:
             flatDamageBonus   += 9.0f;
             break;
         case AugType::RATE_UP:
-            if (meleeWeapon)      flatDamageBonus   += 4.0f;
-            else if (bowWeapon)   bowChargeRateMult *= 1.05f;
-            else                  fireInterval      /= 1.04f;
+            fireInterval /= 1.04f;
             break;
         case AugType::SPD_UP:
-            if (meleeWeapon)      damageMultiplier *= 1.04f;    // 검객: 탄속 무의미 → 공격력 +4%
-            else                  bulletSpeed      += 30.0f;    // 총기/궁수: 탄속 +30
+            bulletSpeed += 30.0f;
             break;
         case AugType::MOVE_UP:   moveSpeedMult    *= 1.05f; break;  // +2% → +5%
         case AugType::VISION_UP:
@@ -223,26 +160,9 @@ struct PlayerStats {
         case AugType::FIREWALL:
             damageReduction += 0.12f;
             break;
-        case AugType::GUN_RUNNER:
-            gunRunner = true;
-            break;
-
-        // ── 에픽 ──
         case AugType::VAMPIRE:
             vampire = true;
             maxHP  += 20.0f;
-            break;
-        case AugType::BROKEN_SIGHT:
-            brokenSight       = true;
-            damageMultiplier *= 3.50f;   // +250%
-            break;
-        case AugType::SNIPER:
-            sniper       = true;
-            distAugTaken = true;
-            break;
-        case AugType::BAYONET:
-            bayonet      = true;
-            distAugTaken = true;
             break;
         case AugType::MINIATURIZE:
             miniaturize    = true;
@@ -272,39 +192,6 @@ struct PlayerStats {
             chakramCount = 1;
             break;
         // ── 신규 에픽/전설 ──
-        case AugType::MINIGUN:
-            minigun       = true;
-            minigunTier   = 1;
-            fireInterval /= 1.75f;   // 연사 ↑ (정조준·소총과 반대 축)
-            bulletSpread += 0.15f;   // 탄 퍼짐 ↑ — 근거리 탄막 특화
-            break;
-        case AugType::MINIGUN_2:
-            if (!minigun) {
-                minigun       = true;
-                minigunTier   = 2;
-                fireInterval /= 1.75f;
-                bulletSpread += 0.15f;
-            } else {
-                minigunTier   = 2;
-            }
-            fireInterval /= 1.12f;     // 연사 추가 ↑
-            bulletSpread *= 0.75f;     // 퍼짐 약간 억제 (완전 정조준은 아님)
-            break;
-        case AugType::MINIGUN_CYCLONE:
-            minigunCyclone = true;
-            if (!minigun) {
-                minigun       = true;
-                minigunTier   = 2;
-                fireInterval /= 1.75f;
-                bulletSpread += 0.15f;
-                fireInterval /= 1.12f;
-                bulletSpread *= 0.75f;
-            } else if (minigunTier < 2) {
-                minigunTier   = 2;
-                fireInterval /= 1.12f;
-                bulletSpread *= 0.75f;
-            }
-            break;
         case AugType::HACK_RANGED: hackRanged = true; break;
         case AugType::PROB_CHAIN:
             if (ricochetMax < 3) ricochetMax = 3;
@@ -320,21 +207,10 @@ struct PlayerStats {
         case AugType::SKILL_CLOSE:
         case AugType::SKILL_OVERCLOCK:
         case AugType::SKILL_TIMESTOP:
-        case AugType::SKILL_FOCUS:
-            break;
         case AugType::SKILL_DASH_UP:
             dashUpgrade = true;
             break;
-        case AugType::SHOTGUN:
-            shotgun      = true;
-            distAugTaken = true;
-            fireInterval = baseFireInterval * 1.5f;  // #109: 이전 무기 공속 무시
-            break;
         case AugType::MK2:         mk2        = true; break;
-        case AugType::HACK_BOMBER: hackBomber = true; break;
-        case AugType::HACK_FIREWALL: hackFirewall = true; break;
-
-        // ── 핵앤슬래쉬 (희귀) ──
         case AugType::CRIT:
             critChance = std::min(75, critChance + 15);   // 15%/스택, 최대 75% (카드 설명과 일치)
             critMult   = 2.0f;                            // 배율 너프: 2.5 → 2.0
@@ -357,11 +233,6 @@ struct PlayerStats {
             break;
 
         // ── 조합 (COMBO) — 레시피 충족 시에만 등장 ──
-        case AugType::CB_EXECUTIONER:   // 치명타 + 광전사
-            critChance = std::min(90, critChance + 30);   // 너프: 35/100 → 30/90
-            critMult  += 1.2f;                            // 너프: +1.5 → +1.2
-            damageMultiplier *= 1.20f;
-            break;
         case AugType::CB_BLOODLORD:     // 흡혈탄 II + 흡혈마
             maxHP            += 15.0f;
             regenPerSec      += 0.25f;
@@ -377,50 +248,8 @@ struct PlayerStats {
             vampireKillNeed  = 7;
             lightStepHitLock = 6.0f;
             break;
-        case AugType::CB_TANWOO:        // 미니건 + 관통 II
-            minigun          = true;
-            if (minigunTier < 1) minigunTier = 1;
-            pierce           = true;
-            pierceChance     = std::max(pierceChance, 70);
-            fireInterval    /= 1.15f;
-            break;
-        case AugType::CB_PIERCE_TWIN:   // 더블 + 관통 (너프: 100%→60%)
-            pierce       = true;
-            if (pierceChance < 60) pierceChance = 60;
-            damageMultiplier *= 1.40f;
-            break;
-        case AugType::CB_STORMCALLER:   // 탄환세례 + 드론
-            bulletRain         = true;
-            bulletRainCooldown = 4.0f;
-            drone              = true;
-            if (droneCount < 3) ++droneCount;
-            fireInterval      /= 1.15f;
-            break;
-        case AugType::CB_RAILGUN:       // 저격 + 관통 → 레일건 (철갑탄과 분리: 확률 관통+거리)
-            sniper       = true;
-            pierce       = true;
-            pierceChance = std::min(85, pierceChance + 15);
-            sniperDistBonusPct += 0.20f;
-            damageMultiplier *= 1.30f;
-            bulletSpeed  *= 1.35f;
-            break;
-        case AugType::CB_GLASS_REAPER:  // 유리대포 + 흡혈탄 → 유리 사신
-            damageMultiplier *= 1.20f;
-            lifestealPerKill += 0.20f;
-            maxHP            += 20.0f;
-            break;
-        case AugType::CB_WARLORD:       // 광전사 + 연쇄폭발 → 전쟁군주 (영혼 수확 능력)
+        case AugType::CB_WARLORD:       // Berserk + chain explosion.
             damageMultiplier *= 1.15f;
-            soulHarvest       = true;   // 1000킬마다 영구 누적
-            break;
-        case AugType::CB_TEMPEST:       // 차크람 + 드론 → 난기류
-            if (chakramCount < 3) ++chakramCount;
-            if (droneCount   < 3) ++droneCount;
-            fireInterval     /= 1.10f;
-            break;
-        case AugType::CB_OVERLORD:      // 오버드라이브 + 코어과부하 → 과부하 군주
-            flatDamageBonus  += 35.0f;
-            damageMultiplier *= 1.12f;
             break;
         case AugType::BULLET_RAIN_ETERNAL:   // 신화 — 무한 세례 (4초 쿨 + 처치 가속)
             bulletRain         = true;
@@ -442,17 +271,6 @@ struct PlayerStats {
             flatDamageBonus += 25.0f;
             bulletSpeed     *= 1.50f;
             break;
-        case AugType::CB_HELLFIRE:      // 연쇄폭발 + 탄환세례 → 지옥불
-            deathBlast        = true;
-            deathBlastMult   *= 1.6f;
-            bulletRain        = true;
-            if (bulletRainCooldown > 5.0f) bulletRainCooldown = 5.0f;
-            break;
-        case AugType::CB_TURRET:        // 대포 + 드론 II → 포탑 배치
-            turretMode = true;          // main: 드론 공전 대신 자동 포탑 전개
-            break;
-
-        // ── 희귀: 탄환세례 / 드론 ──
         case AugType::BULLET_RAIN:
             bulletRain          = true;
             bulletRainCooldown  = 15.0f;
@@ -464,10 +282,6 @@ struct PlayerStats {
         case AugType::LASER:
             laser = true;
             break;
-        case AugType::PURGE_NOVA:
-            ++purgeNova;   // 중첩 시 주기↓·범위↑
-            break;
-        // ── 티어 연장 ──
         case AugType::LASER_2:
             laser = true;  laserTier = 2;   // 발사 간격↓·사거리↑ (main 이 tier 분기)
             break;
@@ -479,12 +293,6 @@ struct PlayerStats {
             twin = true;  twinCount = 3;     // 트리플 샷
             damageMultiplier *= 0.88f;
             break;
-        // ── 클래스 전용 (검객/궁수) ──
-        case AugType::MELEE_WIDE:  meleeWide = true; break;
-        case AugType::BLADE_WIND:  bladeWind = true; break;
-        case AugType::POWER_DRAW:  powerDraw = true; break;
-        case AugType::MULTISHOT:   multishot = true; break;
-        // ── 에픽 강화 ──
         case AugType::BULLET_RAIN_2:
             bulletRain         = true;          // 안전망 (선행 조건 우회 대비)
             bulletRainCooldown = 10.0f;
@@ -508,13 +316,6 @@ struct PlayerStats {
             break;
         // ── 전설 (기존) ──
         case AugType::RANDOM_AUG:   /* main 에서 디스패치 */ break;
-        case AugType::CANNON:
-            cannon       = true;
-            fireInterval = 1.0f;
-            break;
-        case AugType::SOUL_HARVEST: soulHarvest = true; break;
-
-        // ── 디버프 ──
         case AugType::D_RMOB_MAX:
             if (rmobMaxBonus < 2) ++rmobMaxBonus;
             rmobSpawnDelayBonus += 0.5f;
@@ -538,30 +339,6 @@ struct PlayerStats {
             mobCapBonus    += 12;
             mobXpBonus     += 1;
             break;
-        case AugType::D_SPLITTER:
-            splitterMobs   = true;
-            mobKindXpBonus[1] += 2;
-            break;
-        case AugType::D_SPLITTER_BOOST:
-            splitterMobs   = true;
-            splitterBoost  = true;
-            break;
-        case AugType::D_BLINKER:
-            blinkerMobs    = true;
-            mobKindXpBonus[2] += 3;
-            break;
-        case AugType::D_ORBITER:
-            orbiterMobs    = true;
-            mobKindXpBonus[6] += 5;
-            break;
-        case AugType::D_SPAWNER:
-            spawnerMobs    = true;
-            mobKindXpBonus[7] += 7;
-            break;
-        case AugType::D_SHIELDED:
-            shieldedMobs   = true;
-            mobKindXpBonus[8] += 5;
-            break;
         case AugType::D_APPROACH:
             approachingDeath = true;
             if (approachStacks < 3) {
@@ -580,27 +357,6 @@ struct PlayerStats {
         case AugType::D_BULLET_STUCK:
             fireInterval   /= 0.90f;
             xpMult         *= 1.05f;
-            break;
-        case AugType::D_DRUNK:
-            if (!drunk) {
-                drunk = true;
-            } else {
-                drunkActiveDuration += 1.0f;
-                drunkCooldown = std::max(4.0f, drunkCooldown - 2.0f);
-            }
-            xpMult *= 1.05f;
-            break;
-        case AugType::D_BOMBER_BLAST:
-            bomberBlastMult *= 1.50f;
-            bomberXpBonus   += 12;
-            break;
-        case AugType::D_BOMBER_BUFF:
-            bomberHpMult    *= 1.50f;
-            bomberXpBonus   += 5;
-            break;
-        case AugType::D_BOMBER_SPEED:
-            bomberSpeedMult *= 1.30f;
-            bomberXpBonus   += 3;
             break;
         case AugType::D_MOB_HP:
             monsterHpMult   *= 1.30f;
@@ -623,48 +379,6 @@ struct PlayerStats {
             mobPackBonus    += 1;
             mobXpBonus      += 6;
             break;
-        case AugType::D_MOB_ELITE:
-            eliteChanceMult *= 2.2f;
-            eliteXpBonus    += 3;
-            break;
-        case AugType::D_MOB_FRENZY:
-            varietyChanceMult *= 1.8f;
-            mobKindXpBonus[3] += 4;
-            mobKindXpBonus[4] += 4;
-            mobKindXpBonus[5] += 4;
-            break;
-        case AugType::D_SCHEDULER:
-            specialMobHpMult *= 1.10f;
-            specialMobXpBonus += 2;
-            break;
-        case AugType::D_TROJAN_BOOST:
-            trojanBoost     = true;
-            mobKindXpBonus[2] += 2;
-            break;
-        case AugType::D_CRASHER_BOOST:
-            crasherBoost    = true;
-            mobKindXpBonus[3] += 4;
-            break;
-        case AugType::D_BADSECTOR:
-            badsectorMobs   = true;
-            mobKindXpBonus[10] += 8;
-            break;
-        case AugType::D_REGERROR:
-            regerrorMobs    = true;
-            mobKindXpBonus[11] += 10;
-            break;
-        case AugType::D_DDOS:
-            ddosMobs        = true;
-            mobKindXpBonus[9] += 4;
-            break;
-        case AugType::D_WEAVER_BOOST:
-            weaverBoost     = true;
-            mobKindXpBonus[4] += 3;
-            break;
-        case AugType::D_BRUTE_BOOST:
-            bruteBoost      = true;
-            mobKindXpBonus[5] += 4;
-            break;
         case AugType::LIFESTEAL_2:
             lifesteal2      = true;
             break;
@@ -677,33 +391,9 @@ struct PlayerStats {
             ricochetChance  = 100;
             ricochetDmgMult = 0.85f;
             break;
-        case AugType::SHOTGUN_SPREAD:
-            shotgunSpread   = true;
-            fireInterval   *= 1.12f;
-            break;
-        case AugType::REVOLVER_OVERLOAD:
-            revolverOverload = true;
-            break;
-        case AugType::REVOLVER_SILVER:
-            revolverSilver = true;
-            break;
-        case AugType::HE_SHELLS:
-            heShells        = true;
-            break;
-        case AugType::HE_SHELLS_2:
-            heShells        = true;
-            heShells2       = true;
-            break;
-        case AugType::SMG_COMPRESSOR:
-            bulletSpread   *= 0.50f;
-            fireInterval   /= 1.08f;
-            break;
         case AugType::RIFLE_STABILITY:
             bulletSpread    = 0.0f;
             flatDamageBonus += 8.0f;
-            break;
-        case AugType::SNIPER_AMPLIFIER:
-            sniperDistBonusPct += 0.30f;
             break;
         case AugType::CHAKRAM_SINGULARITY:
             chakramSingularity = true;
@@ -732,68 +422,26 @@ struct PlayerStats {
 
     int GetVampireKillNeed() const { return vampireKillNeed; }
 
-    // 최종 베이스 피해량 (미니화·대포 포함)
+    // Final base damage with active size scaling.
     float GetBaseDamage() const {
         float base = baseDamage + flatDamageBonus;   // 일반 증강 가산 데미지
         if (miniaturize) base += 10.0f * (float)totalAugs;
         return base;
     }
 
-    // 최종 데미지 배율 (거리·시즈·영혼수확·미니화 연사 등)
-    float GetDamageMultiplier(float distFromPlayer) const {
-        float m = damageMultiplier;
-
-        // 저격: 거리 비례 (기본 50% + SNIPER_AMPLIFIER %p)
-        if (sniper || sniperDistBonusPct > 0.0f) {
-            float f = std::min(distFromPlayer / 1000.0f, 1.0f);
-            m *= (1.0f + f * (0.5f + sniperDistBonusPct));
-        }
-
-        // 총검: 200px 이내 +50%
-        if (bayonet && distFromPlayer < 200.0f)
-            m *= 1.5f;
-
-        // 영혼 수확: 1000킬당 +5% (최대 7스택)
-        if (soulHarvest) {
-            int souls = (int)(killCount / 1000); if (souls > 7) souls = 7;
-            m *= (1.0f + (float)souls * 0.05f);
-        }
-
-        // 대포: 연사→공격 변환 상한 +80%
-        if (cannon) {
-            float fireRateMult = 1.0f / std::max(0.001f, fireInterval);
-            float extraPct     = fireRateMult - 1.0f;
-            if (extraPct > 0.0f) {
-                float bonus = extraPct * 2.0f;
-                if (bonus > 0.80f) bonus = 0.80f;
-                m *= (1.0f + bonus);
-            }
-        }
-
-        return m;
+    // Final damage multiplier.
+    float GetDamageMultiplier() const {
+        return damageMultiplier;
     }
 
-    // 영혼 수확 연사·탄속 보너스 (외부에서 조회)
     float GetFireIntervalMult() const {
         float mult = 1.0f;
-        if (soulHarvest) {
-            int souls = (int)(killCount / 1000); if (souls > 7) souls = 7;
-            mult /= (1.0f + (float)souls * 0.02f);
-        }
         if (miniaturize)
-            mult /= (1.0f + 0.02f * (float)totalAugs);       // 너프: 5% → 2%
+            mult /= (1.0f + 0.02f * (float)totalAugs);
         return mult;
     }
-    float GetBulletSpeedBonus() const {
-        float b = 0.0f;
-        if (soulHarvest) {
-            int souls = (int)(killCount / 1000); if (souls > 7) souls = 7;
-            b += bulletSpeed * (float)souls * 0.02f;
-        }
-        return b;
-    }
+    float GetBulletSpeedBonus() const { return 0.0f; }
 
-    // 흡혈탄 티어 — 스택×0.06, 한도: 0.24 / II 0.36 / 흡혈마 0.48
     float GetLifestealCap() const {
         if (vampire)     return 0.48f;
         if (lifesteal2)  return 0.36f;
@@ -813,16 +461,11 @@ struct PlayerStats {
             ++commonMultBoosts;
         }
     }
-
-    // 현재 이동속도 배율 (가벼운 발걸음·건러너 상태 반영)
-    float GetMoveMultiplier(bool isFiring) const {
+    // Current movement multiplier.
+    float GetMoveMultiplier(bool /*isFiring*/) const {
         float m = moveSpeedMult;
-        // 가벼운 발걸음: 피격 후 비활성 동안 30% 보너스만 제거
         if (lightStep && lightStepDisableTimer > 0.0f)
             m /= 1.30f;
-        // 건 앤 러너: 미사격 시 +80%
-        if (gunRunner && !isFiring)
-            m *= 1.80f;
         return m;
     }
 };

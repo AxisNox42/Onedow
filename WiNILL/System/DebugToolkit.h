@@ -28,7 +28,6 @@ struct DebugToolkitContext {
     std::function<void()> syncRuntime;
     std::function<void(int mobKind, int count)> spawnMob;
     std::function<void(int count)> spawnRanged;
-    std::function<void(int count)> spawnBomber;
 };
 
 class DebugToolkit {

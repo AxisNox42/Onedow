@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <cstdlib>
 #include "Platform.h"
 #include "Settings.h"   // g_Language, LANG_COUNT
@@ -7,125 +7,127 @@ enum class AugType {
     // ── 일반 (7) ──────────────────────────────
     DMG_UP, RATE_UP, SPD_UP, MOVE_UP, VISION_UP, REGEN_UP,
     // ── 희귀 ──
-    GLASS_CANNON, LIGHT_AMMO, LIGHT_STEP, GUN_RUNNER,
+    GLASS_CANNON, LIGHT_AMMO, LIGHT_STEP, RESERVED_AUG_037,
     BULLET_RAIN,
-    CANNON,                // 전설 → 희귀
+    RESERVED_AUG_004, // Reserved legacy slot.
     CRIT, LIFESTEAL, BERSERK,   // 핵앤슬래쉬 (치명타/흡혈/광전사)
     OVERDRIVE,                  // 희귀 공격력 +10 (가산)
     // ── 에픽 ──
     CORE_OVERLOAD,              // 에픽 공격력 +20 (가산)
-    VAMPIRE, BROKEN_SIGHT, SNIPER, BAYONET,
+    VAMPIRE, RESERVED_AUG_003, RESERVED_AUG_057, RESERVED_AUG_001,
     MINIATURIZE, GIGANTIFY, PIERCE, TWIN, CHAKRAM,
     BULLET_RAIN_2, CHAKRAM_2,
     DRONE,                 // 희귀 → 에픽
-    MINIGUN, HACK_RANGED, SHOTGUN,    // 신규
+    RESERVED_AUG_043, HACK_RANGED, RESERVED_AUG_053, // Reserved legacy slot.
     LASER,                 // 스캔 레이저 (주기적 관통 빔 — 군중제어)
-    PURGE_NOVA,            // 백신 스캔 (주기적 범위 펄스 — 주변 일소)
-    MELEE_WIDE, BLADE_WIND,           // 검객 전용 (광폭 베기 / 칼바람)
-    POWER_DRAW, MULTISHOT,            // 궁수 전용 (강궁 / 다중 사격)
+    RESERVED_AUG_050, // Reserved legacy slot.
+    RESERVED_AUG_042, RESERVED_AUG_002, // Reserved legacy slot.
+    RESERVED_AUG_049, RESERVED_AUG_046, // Reserved legacy slot.
     LASER_2, PIERCE_2, TWIN_2,        // 티어 연장 (레이저II / 관통II / 트리플)
     PROB_CHAIN,            // 확률적 연쇄 작용 (30% 3튕김)
     DEATH_BLAST,           // 연쇄 폭발 (적 사망 시 폭발)
     SKILL_CLOSE, SKILL_OVERCLOCK,     // 액티브 스킬 (창 닫기 / 초집중 — enum명 유지)
     // ── 전설 ──
     POWER_SURGE,                // 전설 공격력 ×1.05 (유일 곱연산 스케일러)
-    RANDOM_AUG, SOUL_HARVEST,
+    RANDOM_AUG, RESERVED_AUG_059,
     BULLET_RAIN_3, DRONE_2, CHAKRAM_3,
-    MK2, HACK_BOMBER,                  // 신규
+    MK2, RESERVED_AUG_038, // Reserved legacy slot.
     CHAIN,                 // 연쇄 작용 (무조건 2튕김, -30% 데미지)
     SKILL_TIMESTOP,        // 액티브 스킬 (시간 정지)
     // ── 디버프 ──
     D_RMOB_MAX, D_RMOB_HP, D_RMOB_DELAY,
     D_MOB_SPAWN, D_APPROACH, D_MOB_SPEED,
-    D_GLASS_HEART, D_BULLET_STUCK, D_DRUNK,
-    D_BOMBER_BLAST, D_BOMBER_BUFF, D_BOMBER_SPEED,   // 신규
+    D_GLASS_HEART, D_BULLET_STUCK, RESERVED_AUG_023,
+    RESERVED_AUG_017, RESERVED_AUG_018, RESERVED_AUG_019, // Reserved legacy slot.
     D_MOB_HP, D_SLOW_MOVE,                            // 신규
-    D_SPLITTER, D_BLINKER,                            // 신규 적 — 분열체 / 점멸체
-    D_ORBITER, D_SPAWNER, D_SHIELDED,                 // 신규 적 — 공전체 / 소환체 / 보호막체
+    RESERVED_AUG_031, RESERVED_AUG_016, // Reserved legacy slot.
+    RESERVED_AUG_026, RESERVED_AUG_030, RESERVED_AUG_029, // Reserved legacy slot.
     D_BLEED, D_WEAKEN,                                // 출혈 / 약화
     // ── 특수 (2) ──────────────────────────────
     S_CHAOS, S_PANDORA,
     // ── 조합 (COMBO) — 레시피 충족 시에만 등장. 일반 추첨 X ──
-    CB_EXECUTIONER,   // 치명타 + 광전사
+    RESERVED_AUG_005, // Reserved legacy slot.
     CB_BLOODLORD,     // 흡혈탄 + 흡혈마
-    CB_PIERCE_TWIN,   // 더블 + 관통
-    CB_STORMCALLER,   // 탄환세례 + 드론
+    RESERVED_AUG_009, // Reserved legacy slot.
+    RESERVED_AUG_011, // Reserved legacy slot.
     // ── 로터류(잡몹) 전용 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
     D_MOB_PACK,    // 군집 스폰 (한 번에 여러 마리)
-    D_MOB_ELITE,   // 엘리트 변종 출현 확률 ↑
-    D_MOB_FRENZY,  // 특수 잡몹(돌진/회피/거대) 출현 확률 ↑
+    // Retired generation modifiers. Their numeric slots stay reserved so
+    // old augment ownership/save indices remain valid.
+    RESERVED_AUG_024,
+    RESERVED_AUG_025,
     // ── 조합 (COMBO) 확장 — 끝에 추가해 기존 인덱스/세이브 보존 ──
-    CB_RAILGUN,      // 저격 + 관통 → 레일건
-    CB_GLASS_REAPER, // 유리대포 + 흡혈탄 → 유리 사신
+    RESERVED_AUG_010, // Reserved legacy slot.
+    RESERVED_AUG_006, // Reserved legacy slot.
     CB_WARLORD,      // 광전사 + 연쇄폭발 → 전쟁군주
-    CB_TEMPEST,      // 차크람 + 드론 → 난기류 (공전 오케스트라)
-    CB_OVERLORD,     // 오버드라이브 + 코어과부하 → 과부하 군주
-    CB_HELLFIRE,     // 연쇄폭발 + 탄환세례 → 지옥불
+    RESERVED_AUG_013, // Reserved legacy slot.
+    RESERVED_AUG_008, // Reserved legacy slot.
+    RESERVED_AUG_007, // Reserved legacy slot.
     // ── 신화(MYTHIC) — 전설보다 높은 등급. 티어 자체가 고유 메커니즘으로 바뀜 ──
     BULLET_RAIN_ETERNAL, // 무한 세례 — 쿨다운↓ + 처치마다 쿨다운 감소(스노우볼)
     DRONE_HIVE,          // 군집 지능 — 드론 4기 운용
     LASER_CONVERGE,      // 수렴 — 레이저 거의 연속 발사 + 초장거리
     PIERCE_RAILSLUG,     // 철갑탄 — 관통 100% + 관통탄 강화
     // ── 조합 (COMBO) 추가 — 끝에 추가해 기존 인덱스/세이브 보존 ──
-    CB_TURRET,           // 대포 + 드론 II → 포탑 배치 (드론 공전 대체)
+    RESERVED_AUG_014, // Reserved legacy slot.
     // ── 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
-    D_SCHEDULER,         // 스케쥴러 강화 — 특수 잡몹 HP +10% (처치 XP +3)
-    D_TROJAN_BOOST,      // 퇴역 — 트로이목마 계열 강화
-    D_CRASHER_BOOST,     // 크래셔 강화 — 돌진 중 받는 피해 -10%
+    RESERVED_AUG_028, // Reserved legacy slot.
+    RESERVED_AUG_033, // Reserved legacy slot.
+    RESERVED_AUG_021, // Reserved legacy slot.
     // ── 적 출현 디버프 (확장 — 신규 적) ──
-    D_BADSECTOR,         // 배드 섹터 출현 (죽으면 감속 구역)
-    D_REGERROR,          // 레지스트리 에러 출현 (강화 오라 노드)
+    RESERVED_AUG_015, // Reserved legacy slot.
+    RESERVED_AUG_027, // Reserved legacy slot.
     // ── 확장 (끝에 추가 — 세이브 인덱스 보존) ──
-    D_DDOS,              // 적 무리 증가
-    D_WEAVER_BOOST,      // 위버 강화
-    D_BRUTE_BOOST,       // 브루트 강화
+    RESERVED_AUG_022, // Reserved legacy slot.
+    RESERVED_AUG_034, // Reserved legacy slot.
+    RESERVED_AUG_020, // Reserved legacy slot.
     LIFESTEAL_2,         // 흡혈탄 II (에픽 티어)
     CHAIN_2,             // 연쇄 작용 II (전설 티어)
-    SHOTGUN_SPREAD,      // 산탄 확장 (샷건 전용)
-    REVOLVER_OVERLOAD,   // 과装填 (리볼버 전용)
-    HE_SHELLS,           // HE탄 (대포 전용)
+    RESERVED_AUG_054, // Reserved legacy slot.
+    RESERVED_AUG_051, // Reserved legacy slot.
+    RESERVED_AUG_040, // Reserved legacy slot.
     CHAKRAM_SINGULARITY, // 특이점 (신화 — 차크람 III 진화)
-    SKILL_FOCUS,         // [스킬] 집중 조준 (저격 전용)
+    RESERVED_AUG_055, // Reserved legacy slot.
     SKILL_DASH_UP,       // [스킬] 대시 강화
     // ── 총기 전용 (끝에 추가 — 세이브 인덱스 보존) ──
-    SMG_COMPRESSOR,      // SMG — 흩어짐·연사
+    RESERVED_AUG_056, // Reserved legacy slot.
     RIFLE_STABILITY,     // 소총 — 정조준
-    SNIPER_AMPLIFIER,    // 저격 — 거리 보너스 강화
+    RESERVED_AUG_058, // Reserved legacy slot.
     // ── 위성/FIELD/DROP (끝에 추가 — 세이브 인덱스 보존) ──
     STATIC_FIELD,        // 정전기장 — 근접 펄스 링 DoT
     STATIC_FIELD_2,      // 정전기장 II
-    EMP_PULSE,           // EMP 구역 — 확장 충격파
-    PATCH_MINE,          // 패치 배포 — 이동 경로 지뢰
-    TRAP_EXE,            // trap.exe — 바닥 덫 창
-    POPUP_ALLY,          // popup.exe (아군) — 미니 창 사격
-    GLUE_SYNC,           // 동기화 — 위성 계열 많을수록 위성 피해 ↑
+    RESERVED_AUG_035, // Reserved legacy slot.
+    RESERVED_AUG_047, // Reserved legacy slot.
+    RESERVED_AUG_060, // Reserved legacy slot.
+    RESERVED_AUG_048, // Reserved legacy slot.
+    RESERVED_AUG_036, // Reserved legacy slot.
     // ── 생존 빌드 (끝에 추가 — 세이브 인덱스 보존) ──
     HP_UP,               // 체력 증가 (일반)
     FIREWALL,            // 방화벽 — 받는 피해 감소
     REGEN_2,             // 재생 II (에픽)
     CB_BASTION,          // 조합: 거대화 + MK2 + 방화벽
     CB_LIFEBUOY,         // 조합: 재생 II + 흡혈마 + 가벼운 발걸음
-    // ── 미니건 티어·연쇄폭발 II (끝에 추가 — 세이브 인덱스 보존) ──
-    MINIGUN_2,           // 미니건 II (에픽 티어)
-    MINIGUN_CYCLONE,     // 탄환 소용돌이 (신화)
+    // Reserved augment tier slots.
+    RESERVED_AUG_044, // Reserved legacy slot.
+    RESERVED_AUG_045, // Reserved legacy slot.
     DEATH_BLAST_2,       // 연쇄 폭발 II (전설 티어)
-    CB_TANWOO,           // 조합: 미니건 + 관통 II
+    RESERVED_AUG_012, // Reserved legacy slot.
     // ── 확장 (끝에 추가 — 세이브 인덱스 보존) ──
-    HACK_FIREWALL,       // 해킹: 방화벽 — 보호막체 처치 시 플레이어 보호막
-    REVOLVER_SILVER,     // 리볼버 II — 은탄환 (마지막 탄 화상 DoT)
-    HE_SHELLS_2,         // 대포 II — HE탄 강화
-    D_SPLITTER_BOOST,    // 스플리터 강화 — 분열 개체 각각 처치 보상
+    RESERVED_AUG_039, // Reserved legacy slot.
+    RESERVED_AUG_052, // Reserved legacy slot.
+    RESERVED_AUG_041, // Reserved legacy slot.
+    RESERVED_AUG_032, // Reserved legacy slot.
 };
 
 // (int)AugType 으로 g_TypeOwned·g_IconTex 등에 인덱싱 — enum 끝에만 추가
 static constexpr int AUG_TYPE_SLOTS = 160;
-static_assert((int)AugType::D_SPLITTER_BOOST < AUG_TYPE_SLOTS,
+static_assert((int)AugType::RESERVED_AUG_032 < AUG_TYPE_SLOTS,
               "AugType enum grew past AUG_TYPE_SLOTS — bump the constant");
 
 enum class AugRarity { COMMON, RARE, EPIC, LEGENDARY, DEBUFF, SPECIAL, COMBO, MYTHIC };
 
 // 고유 카테고리 — 같은 카테고리 내에서 1개만 선택 가능
-enum class AugUnique { NONE, SIZE, DISTANCE };
+enum class AugUnique { NONE, SIZE };
 
 // 위성/시스템 계열 (빌드 연결·동기화 판정용)
 enum class AugSubsystem { NONE, BEAM, ORBIT, BURST, FIELD, DROP, SUMMON };
@@ -197,12 +199,12 @@ static const AugDef ALL_AUGS[] = {
         L"Move speed +30%  /  disabled 10s when hit",
         L"移動速度 +30%  /  被弾時10秒間 無効" },
       L"이동 +30%  /  피격 10초 해제" },
-    { AugType::GUN_RUNNER,    AugRarity::RARE,      AugUnique::NONE, "GUNRUNNER",
-      { L"건 앤 러너", L"Gun Runner", L"ガンランナー" },
-      { L"사격하지 않는 동안 이동 속도 +80%",
-        L"Move speed +80% while not firing",
-        L"非射撃中 移動速度 +80%" },
-      L"비사격 중 이동 +80%" },
+    { AugType::RESERVED_AUG_037, AugRarity::RARE, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::BULLET_RAIN,   AugRarity::RARE,      AugUnique::NONE, "BULLETRAIN",
       { L"탄환 세례", L"Bullet Rain", L"弾幕の雨" },
       { L"15초마다 유도탄 20발 일제 발사  /  발당 데미지 50%",
@@ -243,18 +245,18 @@ static const AugDef ALL_AUGS[] = {
         L"Lifesteal cap 0.48 · Max HP +20 · +1 HP per 10 kills",
         L"吸血上限0.48 · 最大HP+20 · 10キル毎HP+1" },
       L"흡혈 상한 0.48  /  Max HP +20" },
-    { AugType::BROKEN_SIGHT,  AugRarity::EPIC,      AugUnique::NONE, "BROKENSIGHT",
-      { L"고장난 조준선", L"Broken Sight", L"壊れた照準" },
-      { L"마우스 무시, 황금 오브 방향으로 자동 발사  /  공격력 +250%",
-        L"Auto-fire toward golden orb (ignores mouse)  /  Attack +250%",
-        L"マウス無視・金色オーブへ自動射撃  /  攻撃力 +250%" },
-      L"ATK +250%  /  자동 조준" },
-    { AugType::BAYONET,       AugRarity::EPIC,      AugUnique::DISTANCE, "BAYONET",
-      { L"총검", L"Bayonet", L"銃剣" },
-      { L"200px 이내의 적에게 피해 +50%",
-        L"+50% dmg to enemies within 200px",
-        L"200px以内の敵にダメージ +50%" },
-      L"200px 이내 ATK +50%" },
+    { AugType::RESERVED_AUG_003, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_001, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::MINIATURIZE,   AugRarity::EPIC,      AugUnique::SIZE, "MINI",
       { L"축소화", L"Miniaturize", L"小型化" },
       { L"최대 체력 1/2  /  보유 증강당 공격력 +10·연사 +2%  /  이속 +20%  /  크기 -20%",
@@ -279,8 +281,8 @@ static const AugDef ALL_AUGS[] = {
       L"발사 ×2  /  ATK -40%" },
     { AugType::CHAKRAM,       AugRarity::EPIC,      AugUnique::NONE, "CHAKRAM",
       { L"차크람", L"Chakram", L"チャクラム" },
-      { L"넓게 공전하는 차크람 1개  /  닿은 잡몹·자폭병 즉사, 원거리 큰 피해·적탄 막기  /  파괴 시 6초 후 재생성",
-        L"1 wide-orbiting chakram  /  instakills mobs/bombers, big dmg to gunners, blocks bullets  /  respawns 6s",
+      { L"넓게 공전하는 차크람 1개  /  닿은 잡몹·일반 적 즉사, 원거리 적 큰 피해·적탄 막기  /  파괴 시 6초 후 재생성",
+        L"1 wide-orbiting chakram  /  instakills large mobs, big dmg to gunners, blocks bullets  /  respawns 6s",
         L"広く公転するチャクラム1個  /  雑魚・自爆兵即死, 遠距離に大ダメージ・敵弾を防ぐ  /  破壊後6秒で再生成" },
       L"차크람 ×1  /  6초 재생성" },
     { AugType::BULLET_RAIN_2, AugRarity::EPIC,      AugUnique::NONE, "BULLETRAIN II",
@@ -305,12 +307,12 @@ static const AugDef ALL_AUGS[] = {
         L"Every 0.85s, a mid-range piercing laser along your aim — clears enemies in a line",
         L"0.85秒毎に照準方向へ中距離貫通レーザー — 直線上の敵を一掃 (群衆制御)" },
       L"0.85초 관통 빔  /  사거리 560" },
-    { AugType::PURGE_NOVA,    AugRarity::EPIC,      AugUnique::NONE, "PURGE_NOVA",
-      { L"백신 스캔", L"Antivirus Pulse", L"ワクチンスキャン" },
-      { L"2.4초마다 플레이어 주변으로 정화 펄스 — 범위 내 적 일소  (중첩 시 주기↓·범위↑)",
-        L"Every 2.4s a purge pulse around you — clears nearby enemies  (stacks: faster·wider)",
-        L"2.4秒毎に自機周囲へ浄化パルス — 範囲内の敵を一掃  (重複で 周期↓·範囲↑)" },
-      L"2.4초 주변 펄스  /  반경 240" },
+    { AugType::RESERVED_AUG_050, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::LASER_2,       AugRarity::LEGENDARY, AugUnique::NONE, "LASER II",
       { L"스캔 레이저 II", L"Scan Laser II", L"スキャンレーザー II" },
       { L"레이저 발사 0.85→0.55초 · 사거리 560→760  (요구: 스캔 레이저)",
@@ -325,36 +327,36 @@ static const AugDef ALL_AUGS[] = {
       { L"트리플 샷", L"Triple Shot", L"トリプルショット" },
       { L"한 번에 2발 → 3발 · 공격력 -12%  (요구: 더블)", L"2 → 3 shots at once · Attack -12%  (req: Twin)", L"一度に2発 → 3発 · 攻撃-12%  (要: ダブル)" },
       L"발사 2→3  /  ATK -12%" },
-    { AugType::MELEE_WIDE,    AugRarity::EPIC,      AugUnique::NONE, "MELEE_WIDE",
-      { L"광폭 베기", L"Wide Slash", L"広薙ぎ" },
-      { L"스윙 범위(호)·사거리 확대",
-        L"Wider melee swing arc & longer reach",
-        L"近接斬撃の扇・射程拡大" },
-      L"근접 호·사거리 확대" },
-    { AugType::BLADE_WIND,    AugRarity::EPIC,      AugUnique::NONE, "BLADE_WIND",
-      { L"칼바람", L"Blade Wind", L"剣風" },
-      { L"스윙마다 전방으로 관통 칼바람 발사 (원거리 견제)",
-        L"Each swing launches a piercing blade-wind forward",
-        L"斬撃毎に前方へ貫通する剣風を放つ" },
-      L"스윙마다 관통 칼바람" },
-    { AugType::POWER_DRAW,    AugRarity::EPIC,      AugUnique::NONE, "POWER_DRAW",
-      { L"강궁", L"Power Draw", L"剛弓" },
-      { L"차징 시간 -28% · 완충 위력 증가",
-        L"Charge time -28% · higher full-draw power",
-        L"チャージ時間-28%・満タン威力増加" },
-      L"차징 시간 -28%" },
-    { AugType::MULTISHOT,     AugRarity::EPIC,      AugUnique::NONE, "MULTISHOT",
-      { L"다중 사격", L"Multishot", L"多重射撃" },
-      { L"완충 발사 시 3발 부채꼴 · 보조 화살 피해 58%",
-        L"Full-charge shot fires 3 projectiles in a fan · side arrows 58% damage",
-        L"満タン発射で3本の扇状射撃 · 側矢58%ダメージ" },
-      L"완충 시 3발 부채꼴" },
-    { AugType::MINIGUN,       AugRarity::EPIC,      AugUnique::NONE, "MINIGUN",
-      { L"미니건", L"Minigun", L"ミニガン" },
-      { L"연사 +75%  /  탄 퍼짐 +0.15  (정조준·소총과 반대)",
-        L"Fire rate +75%  /  spread +0.15  (opposite of marksman)",
-        L"連射+75%  /  拡散+0.15  (精密照準の逆)" },
-      L"연사 +75%  /  퍼짐 +0.15" },
+    { AugType::RESERVED_AUG_042, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_002, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_049, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_046, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_043, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::HACK_RANGED,   AugRarity::EPIC,      AugUnique::NONE, "HACK_RANGED",
       { L"해킹: 원거리", L"Hack: Ranged", L"ハック: 遠距離" },
       { L"원거리 몹 처치 시 20% 확률로 유도탄 5발  (적에게만 피해)",
@@ -399,24 +401,24 @@ static const AugDef ALL_AUGS[] = {
         L"Instantly gain 3 random buffs (any rarity, no debuff)",
         L"等級無関係のバフ3個を即獲得  (デバフ無し)" },
       L"랜덤 버프 ×3 즉시 획득" },
-    { AugType::SOUL_HARVEST,  AugRarity::LEGENDARY, AugUnique::NONE, "SOULHARVEST",
-      { L"영혼 수확", L"Soul Harvest", L"魂の収穫" },
-      { L"1000킬마다 공격력 +5% · 연사 +2% · 탄속 +2%  (최대 7스택)",
-        L"Per 1000 kills: ATK +5% · rate +2% · speed +2%  (max 7)",
-        L"1000キル毎に 攻撃+5%・連射+2%・弾速+2%  (最大7)" },
-      L"1000킬 / ATK +5%·연사 +2%" },
+    { AugType::RESERVED_AUG_059, AugRarity::LEGENDARY, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::MK2,           AugRarity::LEGENDARY, AugUnique::NONE, "MK2",
       { L"MK2 내장", L"MK2 Core", L"MK2 内蔵" },
       { L"사망 시 공격력 비례 대폭발 + 풀 HP 부활  (1회, 페널티 없음)",
         L"On death: ATK-scaled blast + full-HP revive  (once, no penalty)",
         L"死亡時 攻撃力比例の大爆発+全回復で復活  (1回・ペナルティ無)" },
       L"사망 시 1회 부활  /  대폭발" },
-    { AugType::HACK_BOMBER,   AugRarity::LEGENDARY, AugUnique::NONE, "HACK_BMBR",
-      { L"해킹: 자폭병", L"Hack: Bomber", L"ハック: 自爆兵" },
-      { L"자폭병 처치 시 20% 확률로 폭발  (적에게만 피해)",
-        L"On bomber kill, 20% chance to explode  (enemy-only dmg)",
-        L"自爆兵 撃破時20%で爆発  (敵のみ)" },
-      L"자폭병 처치 20%  /  폭발" },
+    { AugType::RESERVED_AUG_038, AugRarity::LEGENDARY, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::CHAIN,         AugRarity::LEGENDARY, AugUnique::NONE, "CHAIN",
       { L"연쇄 작용", L"Chain Reaction", L"連鎖反応" },
       { L"모든 총알이 무조건 2회 튕김  /  총알 공격력 -30%",
@@ -491,70 +493,70 @@ static const AugDef ALL_AUGS[] = {
       { L"탄 걸림", L"Jammed", L"Jammed" },
       { L"연사 속도 -10% - 전체 EXP +5%", L"Fire rate -10% - all EXP +5%", L"Fire rate -10% - all EXP +5%" },
       L"연사 -10%  /  전체EXP +5%" },
-    { AugType::D_DRUNK,       AugRarity::DEBUFF,    AugUnique::NONE, "D_DRUNK",
-      { L"취함", L"Drunk", L"酩酊" },
-      { L"20초마다 5초간 조준 랜덤+데미지 -40% · 전체 EXP +5%  (중복: 지속 +1초·쿨 -2초)",
-        L"Every 20s, 5s of random aim + -40% dmg · all EXP +5%  (stacks: +1s dur·-2s cd)",
-        L"20秒毎に5秒間 照準ランダム+ダメージ-40%・全EXP +5%  (重複: 持続+1秒・CD-2秒)" },
-      L"20초 / 5초 조준 랜덤  /  EXP +5%" },
-    { AugType::D_BOMBER_BLAST,AugRarity::DEBUFF,    AugUnique::NONE, "D_BMB_BLAST",
-      { L"자폭병 폭발 확장", L"Bigger Blast", L"自爆範囲拡大" },
-      { L"자폭병 폭발 반경 ×1.5 · 자폭병 처치 EXP +12",
-        L"Bomber blast radius ×1.5 · bomber-kill EXP +12",
-        L"自爆兵の爆発範囲 ×1.5・自爆兵撃破EXP +12" },
-      L"자폭 반경 ×1.5  /  EXP +12" },
-    { AugType::D_BOMBER_BUFF, AugRarity::DEBUFF,    AugUnique::NONE, "D_BMB_BUFF",
-      { L"자폭병 강화", L"Tough Bomber", L"自爆兵強化" },
-      { L"자폭병 체력 ×1.5 · 자폭병 처치 EXP +5",
-        L"Bomber HP ×1.5 · bomber-kill EXP +5",
-        L"自爆兵の体力 ×1.5・自爆兵撃破EXP +5" },
-      L"자폭병 HP ×1.5  /  EXP +5" },
-    { AugType::D_BOMBER_SPEED,AugRarity::DEBUFF,    AugUnique::NONE, "D_BMB_SPD",
-      { L"자폭병 가속", L"Fast Bomber", L"自爆兵加速" },
-      { L"자폭병 이동 속도 +30% · 자폭병 처치 EXP +3",
-        L"Bomber move speed +30% · bomber-kill EXP +3",
-        L"自爆兵の移動+30%・自爆兵撃破EXP +3" },
-      L"자폭병 이동 +30%  /  EXP +3" },
+    { AugType::RESERVED_AUG_023, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_017, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_018, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_019, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::D_MOB_HP,      AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBHP",
-      { L"로터 체력 강화", L"Rotor HP Up", L"ローター体力強化" },
-      { L"로터 체력 +30% · 로터 처치 EXP +2",
-        L"Rotor HP +30% · Rotor kill EXP +2",
-        L"ローター体力+30%・ローター撃破EXP +2" },
-      L"로터 HP +30%  /  EXP +2" },
+      { L"일반 적 체력 강화", L"Normal Enemy HP Up", L"通常敵体力強化" },
+      { L"일반 적 체력 +30% · 일반 적 처치 EXP +2",
+        L"All normal enemy HP +30% · normal kill EXP +2",
+        L"通常敵体力+30%・通常敵撃破EXP +2" },
+      L"일반 적 HP +30%  /  EXP +2" },
     { AugType::D_SLOW_MOVE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_SLOWMV",
       { L"무거운 다리", L"Heavy Legs", L"Heavy Legs" },
       { L"플레이어 이동 속도 -5% - 전체 EXP +3%", L"Player move speed -5% - all EXP +3%", L"Player move speed -5% - all EXP +3%" },
       L"이동 -5%  /  전체EXP +3%" },
-    { AugType::D_SPLITTER,    AugRarity::DEBUFF,    AugUnique::NONE, "D_SPLITTER",
-      { L"퇴역: 웜 변이", L"RETIRED: WORM MUTATION", L"退役: ワーム変異" },
-      { L"현재 선택 풀에서 제외된 변이 계열 증강",
-        L"Retired mutation augment; excluded from the current pick pool",
-        L"現在の選択プールから除外された変異系強化" },
-      L"퇴역 카드" },
-    { AugType::D_BLINKER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_BLINKER",
-      { L"퇴역: 트로이 변이", L"RETIRED: TROJAN MUTATION", L"退役: トロイ変異" },
-      { L"현재 선택 풀에서 제외된 변이 계열 증강",
-        L"Retired mutation augment; excluded from the current pick pool",
-        L"現在の選択プールから除外された変異系強化" },
-      L"퇴역 카드" },
-    { AugType::D_ORBITER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_ORBITER",
-      { L"퇴역: 공전체 변이", L"RETIRED: ORBITER MUTATION", L"退役: オービター変異" },
-      { L"현재 선택 풀에서 제외된 변이 계열 증강",
-        L"Retired mutation augment; excluded from the current pick pool",
-        L"現在の選択プールから除外された変異系強化" },
-      L"퇴역 카드" },
-    { AugType::D_SPAWNER,     AugRarity::DEBUFF,    AugUnique::NONE, "D_SPAWNER",
-      { L"퇴역: 봇넷 변이", L"RETIRED: BOTNET MUTATION", L"退役: ボットネット変異" },
-      { L"현재 선택 풀에서 제외된 변이 계열 증강",
-        L"Retired mutation augment; excluded from the current pick pool",
-        L"現在の選択プールから除外された変異系強化" },
-      L"퇴역 카드" },
-    { AugType::D_SHIELDED,    AugRarity::DEBUFF,    AugUnique::NONE, "D_SHIELDED",
-      { L"퇴역: 보호막 변이", L"RETIRED: SHIELDED MUTATION", L"退役: シールド変異" },
-      { L"현재 선택 풀에서 제외된 변이 계열 증강",
-        L"Retired mutation augment; excluded from the current pick pool",
-        L"現在の選択プールから除外された変異系強化" },
-      L"퇴역 카드" },
+    { AugType::RESERVED_AUG_031, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_016, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_026, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_030, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_029, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::D_BLEED,       AugRarity::DEBUFF,    AugUnique::NONE, "D_BLEED",
       { L"출혈", L"Bleed", L"Bleed" },
       { L"체력 회복 -1.0/s - 회복이 0이면 등장하지 않음 - 전체 EXP +12%",
@@ -572,20 +574,18 @@ static const AugDef ALL_AUGS[] = {
         L"Each Rotor spawn brings 1 extra unit · kill EXP +6",
         L"ローター出現時に追加1体・撃破EXP +6" },
       L"동시 +1  /  EXP +6" },
-    { AugType::D_MOB_ELITE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBELITE",
-      { L"권한 상승", L"Privilege Escalation", L"権限昇格" },
-      { L"엘리트 변종(신속/강인/폭발) 출현 확률 대폭 ↑ · 처치 EXP +3",
-        L"Elite variants (swift/tanky/volatile) appear far more often · kill EXP +3",
-        L"エリート変種の出現率が大幅↑・撃破EXP +3" },
-      L"엘리트 출현 ↑  /  EXP +3" },
-    { AugType::D_MOB_FRENZY,  AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBFRENZY",
-      { L"스케줄러 폭주", L"Scheduler Frenzy", L"スケジューラ暴走" },
-      { L"특수 잡몹(돌진/회피/거대) 출현 확률 ↑ · 처치 EXP +4",
-        L"Special mobs (charger/weaver/brute) appear more often · kill EXP +4",
-        L"特殊雑魚(突進/回避/巨大)の出現率↑・撃破EXP +4" },
-      L"특수몹 출현 ↑  /  EXP +4" },
-
-    // ── 특수 ───────────────────────────────────────────
+    { AugType::RESERVED_AUG_024, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_025, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::S_CHAOS,       AugRarity::SPECIAL,   AugUnique::NONE, "CHAOS",
       { L"대혼란", L"Chaos", L"大混乱" },
       { L"보유 증강을 모두 잊고 같은 개수만큼 무작위 재배열  (약 60% 버프 / 40% 디버프)",
@@ -598,67 +598,66 @@ static const AugDef ALL_AUGS[] = {
       L"버프 +3  /  디버프 +2" },
 
     // ── 조합 (COMBO) — 레시피 충족 시에만 카드로 등장 ───────
-    { AugType::CB_EXECUTIONER, AugRarity::COMBO,    AugUnique::NONE, "CB_EXEC",
-      { L"처형자", L"Executioner", L"処刑者" },
-      { L"[조합] 치명타 확률 +30% · 치명타 배율 +1.2 · 공격력 +20%",
-        L"[Combo] Crit chance +30% · crit mult +1.2 · attack +20%",
-        L"[組合] クリ率+30%・クリ倍率+1.2・攻撃+20%" },
-      L"크리 +30%  /  배율 +1.2  /  ATK +20%" },
+    { AugType::RESERVED_AUG_005, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::CB_BLOODLORD,   AugRarity::COMBO,    AugUnique::NONE, "CB_BLOOD",
       { L"피의 군주", L"Bloodlord", L"血の君主" },
       { L"[조합] 최대 체력 +15 · 재생 +0.25/s",
         L"[Combo] Max HP +15 · regen +0.25/s",
         L"[組合] 最大HP+15・再生+0.25/s" },
       L"Max HP +15  /  재생 +0.25/s" },
-    { AugType::CB_PIERCE_TWIN, AugRarity::COMBO,    AugUnique::NONE, "CB_PTWIN",
-      { L"관통 쌍둥이", L"Piercing Twins", L"貫通の双子" },
-      { L"[조합] 관통 확률 60% · 공격력 +40% (더블 패널티 상쇄)",
-        L"[Combo] 60% pierce chance · attack +40%",
-        L"[組合] 貫通60% · 攻撃+40%" },
-      L"관통 60%  /  ATK +40%" },
-    { AugType::CB_STORMCALLER, AugRarity::COMBO,    AugUnique::NONE, "CB_STORM",
-      { L"폭풍 소환사", L"Stormcaller", L"嵐の召喚士" },
-      { L"[조합] 탄환 세례 쿨다운 4초 · 드론 +1 · 연사 +15%",
-        L"[Combo] Bullet Rain CD 4s · +1 drone · fire rate +15%",
-        L"[組合] 弾幕の雨CD4秒・ドローン+1・連射+15%" },
-      L"세례 쿨 4초  /  드론 +1  /  연사 +15%" },
-    { AugType::CB_RAILGUN,     AugRarity::COMBO,    AugUnique::NONE, "CB_RAIL",
-      { L"레일건", L"Railgun", L"レールガン" },
-      { L"[조합] 관통 +15%p · 원거리 보너스 +20%p · 공격 +30% · 탄속 +35%",
-        L"[Combo] +15%p pierce · +20%p range bonus · attack +30% · bullet speed +35%",
-        L"[組合] 貫通+15%p · 距離ボーナス+20%p · 攻撃+30% · 弾速+35%" },
-      L"관통 +15%  /  ATK +30%  /  탄속 +35%" },
-    { AugType::CB_GLASS_REAPER, AugRarity::COMBO,   AugUnique::NONE, "CB_GREAP",
-      { L"유리 사신", L"Glass Reaper", L"硝子の死神" },
-      { L"[조합] 공격력 ×1.2 · 처치당 흡혈 +0.2 · 최대 체력 +20 (유리 리스크 완화)",
-        L"[Combo] Attack ×1.2 · lifesteal +0.2/kill · Max HP +20",
-        L"[組合] 攻撃×1.2・撃破毎吸血+0.2・最大HP+20" },
-      L"ATK ×1.2  /  처치 흡혈 +0.2" },
+    { AugType::RESERVED_AUG_009, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_011, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_010, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_006, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::CB_WARLORD,     AugRarity::COMBO,    AugUnique::NONE, "CB_WAR",
       { L"전쟁군주", L"Warlord", L"戦争君主" },
-      { L"[조합] 공격력 +15% · 1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택)",
-        L"[Combo] ATK +15% · per 1000 kills: ATK +5%·rate +2%·spd +2% (max 7)",
-        L"[組合] 攻撃+15% · 1000キル毎 攻撃+5%·連射+2%·弾速+2% (最大7)" },
-      L"ATK +15%  /  처치 스케일링" },
-    { AugType::CB_TEMPEST,     AugRarity::COMBO,    AugUnique::NONE, "CB_TEMP",
-      { L"난기류", L"Tempest", L"乱気流" },
-      { L"[조합] 차크람 +1 · 드론 +1 · 연사 +10%",
-        L"[Combo] +1 chakram · +1 drone · fire rate +10%",
-        L"[組合] チャクラム+1・ドローン+1・連射+10%" },
-      L"차크람 +1  /  드론 +1  /  연사 +10%" },
-    { AugType::CB_OVERLORD,    AugRarity::COMBO,    AugUnique::NONE, "CB_OVL",
-      { L"오버클럭", L"Overclock", L"オーバークロック" },
-      { L"[조합] 공격력 +35 (가산) · 공격력 ×1.12",
-        L"[Combo] Attack +35 (flat) · attack ×1.12",
-        L"[組合] 攻撃+35(加算)・攻撃×1.12" },
-      L"ATK +35  (가산)  /  ×1.12" },
-    { AugType::CB_HELLFIRE,    AugRarity::COMBO,    AugUnique::NONE, "CB_HELL",
-      { L"지옥불", L"Hellfire", L"地獄の炎" },
-      { L"[조합] 연쇄 폭발 반경 ×1.6 · 탄환 세례 쿨다운 5초",
-        L"[Combo] Death blast radius ×1.6 · Bullet Rain CD 5s",
-        L"[組合] 連鎖爆発範囲×1.6・弾幕の雨CD5秒" },
-      L"폭발 반경 ×1.6  /  세례 쿨 5초" },
-    // ── 신화(MYTHIC) ── 탄환 세례 III 선행 (티어가 고유 메커니즘으로 진화)
+      { L"[조합] 공격력 +15%",
+        L"[Combo] ATK +15%",
+        L"[組合] 攻撃+15%" },
+      L"ATK +15%" },
+    { AugType::RESERVED_AUG_013, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_008, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_007, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::BULLET_RAIN_ETERNAL, AugRarity::MYTHIC, AugUnique::NONE, "RAIN_ETERNAL",
       { L"무한 세례", L"Endless Rain", L"無限の雨" },
       { L"쿨다운 4초 · 적 처치마다 쿨다운 0.2초 감소 (최소 3초)",
@@ -683,62 +682,61 @@ static const AugDef ALL_AUGS[] = {
         L"90% pierce · attack +25 (flat) · bullet speed +50%",
         L"貫通90% · 攻撃+25(加算) · 弾速+50%" },
       L"관통 90%  /  ATK +25  /  탄속 +50%" },
-    // ── 조합 (COMBO) 추가 ── 대포 + 드론 II → 포탑
-    { AugType::CB_TURRET,     AugRarity::COMBO,    AugUnique::NONE, "CB_TURRET",
-      { L"포탑 배치", L"Turret Deploy", L"砲台配置" },
-      { L"[조합] 드론이 공전 대신 자동 포탑으로 전개 (5초 지속·소총 화력)",
-        L"[Combo] Drones deploy as auto-turrets instead of orbiting (5s, rifle DPS)",
-        L"[組合] ドローンが公転せず自動砲台として展開 (5秒・小銃火力)" },
-      L"드론 → 포탑  /  5초" },
-    // ── 디버프 (확장) ──
-    { AugType::D_SCHEDULER,   AugRarity::DEBUFF,   AugUnique::NONE, "D_SCHED",
-      { L"스케쥴러 강화", L"Scheduler Boost", L"スケジューラ強化" },
-      { L"특수 잡몹 유형 체력 +10%  (처치 경험치 +2)",
-        L"Special mob types +10% HP  (kill XP +2)",
-        L"特殊敵 体力+10%  (撃破経験値+2)" },
-      L"특수몹 HP +10%  /  EXP +2" },
-    { AugType::D_TROJAN_BOOST, AugRarity::DEBUFF,  AugUnique::NONE, "D_TROJANB",
-      { L"퇴역: 트로이 강화", L"RETIRED: TROJAN BOOST", L"退役: トロイ強化" },
-      { L"현재 선택 풀에서 제외된 변이 계열 증강",
-        L"Retired mutation augment; excluded from the current pick pool",
-        L"現在の選択プールから除外された変異系強化" },
-      L"퇴역 카드" },
-    { AugType::D_CRASHER_BOOST, AugRarity::DEBUFF, AugUnique::NONE, "D_CRASHB",
-      { L"크래셔 강화", L"Crasher Boost", L"クラッシャー強化" },
-      { L"크래셔가 돌진하는 동안 받는 피해 -10%  (처치 경험치 +4)",
-        L"Crashers take 10% less damage while dashing  (kill XP +4)",
-        L"クラッシャーが突進中に受けるダメージ-10%  (撃破経験値+4)" },
-      L"크래셔 피해 -10%  /  EXP +4" },
-    { AugType::D_BADSECTOR,   AugRarity::DEBUFF,   AugUnique::NONE, "D_BADSEC",
-      { L"배드 섹터 출현", L"Bad Sector Spawn", L"バッドセクタ出現" },
-      { L"배드 섹터 등장 — 처치 시 잠시 감속 구역을 남김  (처치 경험치 +8)",
-        L"Bad Sectors appear — leave a temp slow zone on death  (kill XP +8)",
-        L"バッドセクタ出現 — 撃破時に減速領域を残す  (撃破経験値+8)" },
-      L"배드섹터 출현  /  EXP +8" },
-    { AugType::D_REGERROR,    AugRarity::DEBUFF,   AugUnique::NONE, "D_REGERR",
-      { L"레지스트리 에러 출현", L"Registry Error Spawn", L"レジストリエラー出現" },
-      { L"레지스트리 에러 등장 — 주변 적을 강화하는 노드  (처치 경험치 +10)",
-        L"Registry Errors appear — nodes that buff nearby foes  (kill XP +10)",
-        L"レジストリエラー出現 — 周囲の敵を強化するノード  (撃破経験値+10)" },
-      L"레지에러 출현  /  EXP +10" },
-    { AugType::D_DDOS,        AugRarity::DEBUFF,   AugUnique::NONE, "D_DDOS",
-      { L"적 무리 증가", L"Enemy Swarm", L"敵群増加" },
-      { L"약한 적 무리(1→3)가 등장  (처치 경험치 +4)",
-        L"Weak enemy swarms appear (1→3)  (kill XP +4)",
-        L"弱い敵群(1→3)が出現  (撃破経験値+4)" },
-      L"적 무리  /  EXP +4" },
-    { AugType::D_WEAVER_BOOST, AugRarity::DEBUFF,  AugUnique::NONE, "D_WEAVERB",
-      { L"위버 강화", L"Weaver Boost", L"ウィーバー強化" },
-      { L"회피체 지그재그·속도 +15%  (처치 경험치 +3)",
-        L"Weavers weave faster & wider  (kill XP +3)",
-        L"回避体のジグザグ・速度+15%  (撃破経験値+3)" },
-      L"위버 속도 +15%  /  EXP +3" },
-    { AugType::D_BRUTE_BOOST, AugRarity::DEBUFF,   AugUnique::NONE, "D_BRUTEB",
-      { L"브루트 강화", L"Brute Boost", L"ブルート強化" },
-      { L"거대체 HP +25% · 접촉 피해 +20%  (처치 경험치 +4)",
-        L"Brutes +25% HP · +20% contact dmg  (kill XP +4)",
-        L"巨大体 HP+25% · 接触ダメ+20%  (撃破経験値+4)" },
-      L"거대체 HP +25%  /  EXP +4" },
+    // Reserved augment metadata.
+    { AugType::RESERVED_AUG_014, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_028, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_033, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_021, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_015, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_027, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_022, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_034, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_020, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::LIFESTEAL_2,   AugRarity::EPIC,     AugUnique::NONE, "LIFESTEAL2",
       { L"흡혈탄 II", L"Lifesteal II", L"吸血弾 II" },
       { L"흡혈 한도 0.24→0.36 · 10킬마다 HP +1  (요구: 흡혈탄)",
@@ -751,62 +749,60 @@ static const AugDef ALL_AUGS[] = {
         L"Ricochet 2→3 · bullet dmg -30%→-15%  (req: Chain)",
         L"跳弾2→3 · 弾-30%→-15%  (要:連鎖反応)" },
       L"튕김 2→3  /  ATK -15%" },
-    { AugType::SHOTGUN_SPREAD, AugRarity::EPIC,    AugUnique::NONE, "SG_SPREAD",
-      { L"산탄 확장", L"Spread Extension", L"散弾拡張" },
-      { L"[샷건] 펠릿 5→7 · 사거리 -10% · 연사 -12%",
-        L"[Shotgun] pellets 5→7 · range -10% · fire rate -12%",
-        L"[ショットガン] 弾数5→7 · 射程-10% · 連射-12%" },
-      L"펠릿 5→7  /  연사 -12%" },
-    { AugType::REVOLVER_OVERLOAD, AugRarity::EPIC,  AugUnique::NONE, "REV_OVLD",
-      { L"과装填", L"Overload", L"過装填" },
-      { L"[리볼버] 6발 장전 · 마지막 탄 치명타 확정",
-        L"[Revolver] 6-round cylinder · last shot always crits",
-        L"[リボルバー] 6発装填 · 最終弾クリ確定" },
-      L"6발 장전  /  최종탄 크리 확정" },
-    { AugType::HE_SHELLS,     AugRarity::EPIC,      AugUnique::NONE, "HE_SHELLS",
-      { L"HE탄", L"HE Shells", L"HE弾" },
-      { L"[대포] 관통 종료 시 작은 폭발 (공격력 25%)",
-        L"[Cannon] small blast when pierce ends (25% ATK)",
-        L"[大砲] 貫通終了時に小爆発 (攻撃25%)" },
-      L"관통 종료 시 ATK 25%" },
+    { AugType::RESERVED_AUG_054, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_051, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_040, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::CHAKRAM_SINGULARITY, AugRarity::MYTHIC, AugUnique::NONE, "CHAK_SING",
       { L"특이점", L"Singularity", L"特異点" },
       { L"차크람이 적을 끌어당김 · 접촉 지속 피해  (요구: 차크람 III)",
         L"Chakrams pull enemies in · contact DOT  (req: Chakram III)",
         L"チャクラムが敵を吸引 · 接触DoT  (要:チャクラムIII)" },
       L"흡인 + DoT" },
-    { AugType::SKILL_FOCUS,   AugRarity::EPIC,      AugUnique::NONE, "SKILL_FOCUS",
-      { L"[스킬] 집중 조준", L"[Skill] Focused Aim", L"[スキル] 集中照準" },
-      { L"0.4초 정지 후 발동 — 다음 1발 ×2.5 · 관통 +30%p  (쿨 14초 · 저격)",
-        L"After 0.4s still — next shot ×2.5 · +30% pierce  (14s CD · sniper)",
-        L"0.4秒静止後 — 次弾×2.5 · 貫通+30%p  (CD14秒 · スナイパー)" },
-      L"쿨 14초  /  다음 1발 ×2.5" },
+    { AugType::RESERVED_AUG_055, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::SKILL_DASH_UP, AugRarity::EPIC,    AugUnique::NONE, "DASH_UP",
       { L"[스킬] 섬광 돌진", L"[Skill] Flash Dash", L"[スキル] 閃光突進" },
       { L"대시 시 유도탄 3~5발 · 이후 3발 ×2 공격력  (SHIFT · 대시 강화)",
         L"Dash — 3~5 homing shots · next 3 shots ×2 dmg  (SHIFT upgrade)",
         L"ダッシュ — 誘導弾3~5 · 次3発×2  (SHIFT強化)" },
       L"대시 시 유도탄  /  이후 ×2" },
-    { AugType::SMG_COMPRESSOR, AugRarity::EPIC,     AugUnique::NONE, "SMG_COMP",
-      { L"탄뭉치 억제", L"Spray Control", L"弾束制御" },
-      { L"[SMG] 흩어짐 -50% · 연사 +8%",
-        L"[SMG] spread -50% · fire rate +8%",
-        L"[SMG] 拡散-50% · 連射+8%" },
-      L"퍼짐 -50%  /  연사 +8%" },
+    { AugType::RESERVED_AUG_056, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::RIFLE_STABILITY, AugRarity::EPIC,    AugUnique::NONE, "RIFLE_STAB",
       { L"정조준", L"Marksman", L"精密照準" },
       { L"[소총] 흩어짐 제거 · 공격력 +8",
         L"[Rifle] no spread · Attack +8",
         L"[ライフル] 拡散なし · 攻撃+8" },
       L"퍼짐 제거  /  ATK +8" },
-    { AugType::SNIPER_AMPLIFIER, AugRarity::EPIC,   AugUnique::NONE, "SNIP_AMP",
-      { L"장거리 증폭", L"Long Range Amp", L"長距離増幅" },
-      { L"[저격] 거리 보너스 +30%p  (저격총·저격 증강)",
-        L"[Sniper] distance bonus +30%p  (sniper gun/aug)",
-        L"[スナイパー] 距離ボーナス+30%p" },
-      L"거리 보너스 +30%p" },
-
-    // ── 생존 빌드 ──
+    { AugType::RESERVED_AUG_058, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::HP_UP,         AugRarity::COMMON,    AugUnique::NONE, "HP_UP",
       { L"체력 증가", L"HP Up", L"体力アップ" },
       { L"최대 체력 +15  (중첩 가능)",
@@ -837,54 +833,54 @@ static const AugDef ALL_AUGS[] = {
         L"[Combo] regen +0.25/s · move +12% · heal every 7 kills · hit lock 6s",
         L"[組合] 再生+0.25/s · 移動+12% · 7キル回復 · 被弾停止6秒" },
       L"재생 +0.25  /  이동 +12%  /  7킬 회복" },
-    { AugType::MINIGUN_2,     AugRarity::EPIC,      AugUnique::NONE, "MINIGUN2",
-      { L"미니건 II", L"Minigun II", L"ミニガン II" },
-      { L"연사 +12%p  /  탄 퍼짐 -25%  (요구: 미니건)",
-        L"Fire rate +12%p  /  spread -25%  (req: Minigun)",
-        L"連射+12%p  /  拡散-25%  (要:ミニガン)" },
-      L"연사 +12%  /  퍼짐 -25%" },
-    { AugType::MINIGUN_CYCLONE, AugRarity::MYTHIC,  AugUnique::NONE, "MG_CYCLONE",
-      { L"탄환 소용돌이", L"Bullet Cyclone", L"弾丸サイクロン" },
-      { L"명중마다 연사 쿨 0.1초 단축 (스노우볼)  (요구: 미니건 II)",
-        L"Each hit shaves 0.1s off fire CD (snowball)  (req: Minigun II)",
-        L"命中毎に連射CD0.1秒短縮  (要:ミニガンII)" },
-      L"명중마다 연사CD -0.1초" },
+    { AugType::RESERVED_AUG_044, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_045, AugRarity::MYTHIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
     { AugType::DEATH_BLAST_2, AugRarity::LEGENDARY, AugUnique::NONE, "DBLST2",
       { L"연쇄 폭발 II", L"Death Blast II", L"連鎖爆発 II" },
       { L"폭발 피해 30%→40% · 반경 +40%  (요구: 연쇄 폭발)",
         L"Blast dmg 30%→40% · radius +40%  (req: Death Blast)",
         L"爆発30%→40% · 範囲+40%  (要:連鎖爆発)" },
       L"폭발 30%→40%  /  반경 +40%" },
-    { AugType::CB_TANWOO,     AugRarity::COMBO,     AugUnique::NONE, "CB_TANWOO",
-      { L"탄우", L"Bullet Storm", L"弾雨" },
-      { L"[조합] 미니건 + 관통 II / 관통 70% · 연사 +15%",
-        L"[Combo] Minigun + Pierce II / 70% pierce · fire rate +15%",
-        L"[組合] ミニガン+貫通II / 貫通70% · 連射+15%" },
-      L"관통 70%  /  연사 +15%" },
-    { AugType::HACK_FIREWALL, AugRarity::EPIC,      AugUnique::NONE, "HACK_FW",
-      { L"해킹: 방화벽", L"Hack: Firewall", L"ハック: ファイアウォール" },
-      { L"보호막체 처치 시 10% 확률 / 3초간 최대 체력 20% 보호막",
-        L"10% on shielded kill / shield = 20% max HP for 3s",
-        L"盾持ち撃破10% / 3秒間 最大HP20%の盾" },
-      L"보호막체 처치 10%  /  3초 보호막" },
-    { AugType::REVOLVER_SILVER, AugRarity::LEGENDARY, AugUnique::NONE, "REV_SILV",
-      { L"은탄환", L"Silver Bullet", L"銀弾" },
-      { L"[리볼버] 6번째 탄 — 명중 대상에 공격력 120% 화상(1초)  (요구: 과장전)",
-        L"[Revolver] 6th shot — 120% ATK burn over 1s  (req: Overload)",
-        L"[リボルバー] 6発目 — 攻撃120%の燃焼(1秒)  (要:過装填)" },
-      L"6번째 탄  /  ATK 120% 화상" },
-    { AugType::HE_SHELLS_2,   AugRarity::LEGENDARY, AugUnique::NONE, "HE_SH2",
-      { L"HE탄 II", L"HE Shells II", L"HE弾 II" },
-      { L"[대포] 폭발 피해 25%→35% · 반경 80→110  (요구: HE탄)",
-        L"[Cannon] blast 25%→35% · radius 80→110  (req: HE Shells)",
-        L"[大砲] 爆発25%→35% · 範囲80→110  (要:HE弾)" },
-      L"폭발 25%→35%  /  반경 +30" },
-    { AugType::D_SPLITTER_BOOST, AugRarity::DEBUFF, AugUnique::NONE, "D_SPLTB",
-      { L"퇴역: 웜 분열", L"RETIRED: WORM SPLIT", L"退役: ワーム分裂" },
-      { L"현재 선택 풀에서 제외된 변이 계열 증강",
-        L"Retired mutation augment; excluded from the current pick pool",
-        L"現在の選択プールから除外された変異系強化" },
-      L"퇴역 카드" },
+    { AugType::RESERVED_AUG_012, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_039, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_052, AugRarity::LEGENDARY, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_041, AugRarity::LEGENDARY, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
+    { AugType::RESERVED_AUG_032, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
+      { L"?? ?? ?? ?? ? ? ?? ??.",
+        L"This augment is retired from the current gameplay roster.",
+        L"?? ??? ??? ??? ??? ??? ???" },
+      L"REMOVED" },
 };
 
 static constexpr int AUG_TOTAL = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
@@ -898,12 +894,9 @@ struct ComboDef {
 inline const ComboDef COMBO_DEFS[] = {
     // 재료 3개 · 최대 티어/전설 선행 — 단순 스탯 합친 조합은 AugRemoved
     { AugType::CB_BLOODLORD, { AugType::LIFESTEAL, AugType::LIFESTEAL_2, AugType::VAMPIRE }, 3 },
-    { AugType::CB_RAILGUN,   { AugType::SNIPER,    AugType::PIERCE,      AugType::PIERCE_2 }, 3 },
     { AugType::CB_WARLORD,   { AugType::BERSERK,   AugType::DEATH_BLAST, AugType::CHAIN_2  }, 3 },
-    { AugType::CB_TURRET,    { AugType::CANNON,    AugType::DRONE_2,     AugType::HE_SHELLS }, 3 },
     { AugType::CB_BASTION,   { AugType::GIGANTIFY, AugType::MK2,         AugType::FIREWALL  }, 3 },
     { AugType::CB_LIFEBUOY,  { AugType::REGEN_2,   AugType::VAMPIRE,     AugType::LIGHT_STEP }, 3 },
-    { AugType::CB_TANWOO,    { AugType::MINIGUN,   AugType::PIERCE_2 }, 2 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
 
@@ -914,71 +907,74 @@ inline int AugIndexOfType(AugType t) {
     return -1;
 }
 
-// 풀/도감에서 완전히 제외된 증강 — 단일 목록(픽 게이팅·코덱스 숨김 공용).
-//   삭제됨: 고장난조준선/백신/건러너/병렬처리/취함/영혼수확(→전쟁군주로 이전)
-//   조합 제거: 처형자·관통쌍둥이·폭풍소환사·난기류·오버클럭·유리사신·지옥불
-//   광폭베기/칼바람/강궁/다중사격 — 검객/궁수 정식 활성화로 전용 트리 해금(더 이상 제외 안 함)
-//   현재 활성 무기는 소총/정전기장 2종만 유지한다.
-//   저격/샷건/리볼버/미니건/구 SMG 계열 증강은 선택 풀/조합 결과에서 제외한다.
+// Retired augment slots stay addressable for save compatibility but never enter gameplay.
 inline bool AugRemoved(AugType t) {
     switch (t) {
-    // Demo weapon set: Cannon and its dedicated chain are disabled.
-    case AugType::CANNON:
-    case AugType::HE_SHELLS:
-    case AugType::HE_SHELLS_2:
-    case AugType::CB_TURRET:
-    case AugType::SNIPER:
-    case AugType::SHOTGUN:
-    case AugType::MINIGUN:
-    case AugType::MINIGUN_2:
-    case AugType::MINIGUN_CYCLONE:
-    case AugType::SHOTGUN_SPREAD:
-    case AugType::REVOLVER_OVERLOAD:
-    case AugType::REVOLVER_SILVER:
-    case AugType::SKILL_FOCUS:
-    case AugType::SMG_COMPRESSOR:
-    case AugType::SNIPER_AMPLIFIER:
-    case AugType::CB_RAILGUN:
-    case AugType::CB_TANWOO:
-    case AugType::BAYONET:
-    case AugType::BROKEN_SIGHT:
-    case AugType::PURGE_NOVA:
-    case AugType::GUN_RUNNER:
-    case AugType::D_DRUNK:
-    case AugType::SOUL_HARVEST:
-    case AugType::CB_EXECUTIONER:    // 치명+광전 스탯 합 — 재료만으로 충분
-    case AugType::CB_PIERCE_TWIN:    // 더블+관통 이미 최종 티어
-    case AugType::CB_STORMCALLER:    // 세례+드론 중복·과스펙
-    case AugType::CB_TEMPEST:        // 차크람+드론 +1만 — 의미 없음
-    case AugType::CB_OVERLORD:       // 공격력 가산 합친 것뿐
-    case AugType::CB_GLASS_REAPER:   // 유리 사신
-    case AugType::CB_HELLFIRE:       // 지옥불
-    // 위성 FIELD/DROP/SUMMON 일괄 제거
-    case AugType::EMP_PULSE:
-    case AugType::PATCH_MINE:
-    case AugType::TRAP_EXE:
-    case AugType::POPUP_ALLY:
-    case AugType::GLUE_SYNC:
-    // Constellation roster 이외 적 전용 디버프·증강 제거
-    // (활성 roster: Rotor, RangedMob/SCOPE, DDoS/SWARM, and global hazards)
-    // 로터의 체력·이동속도·물량 강화는 현재 선택 풀에서 활성화한다.
-    case AugType::D_SPLITTER:       // Worm → SPLITTER 퇴역
-    case AugType::D_BLINKER:        // Trojan → BLINKER 퇴역
-    case AugType::D_ORBITER:        // Spyware → ORBITER 퇴역
-    case AugType::D_SPAWNER:        // 봇넷 변이 증강 제거
-    case AugType::D_SHIELDED:       // Firewall → SHIELDED 퇴역
-    case AugType::D_BADSECTOR:      // Bad Sector 퇴역
-    case AugType::D_REGERROR:       // Registry Error 퇴역
-    case AugType::D_SPLITTER_BOOST: // D_SPLITTER 선행 필요
-    case AugType::D_TROJAN_BOOST:   // D_BLINKER 선행 필요
-    case AugType::D_CRASHER_BOOST:  // Crasher(CHARGER) 퇴역
-    case AugType::D_WEAVER_BOOST:   // WEAVER 퇴역
-    case AugType::D_BRUTE_BOOST:    // BRUTE(Kernel) 퇴역
-    case AugType::D_BOMBER_BLAST:   // Bomber/Ransomware 퇴역
-    case AugType::D_BOMBER_BUFF:
-    case AugType::D_BOMBER_SPEED:
-    case AugType::HACK_BOMBER:      // Bomber 처치 트리거, Bomber 퇴역
-    case AugType::HACK_FIREWALL:    // SHIELDED 처치 트리거, SHIELDED 퇴역
+    // Reserved legacy slot.
+    case AugType::RESERVED_AUG_004:
+    case AugType::RESERVED_AUG_040:
+    case AugType::RESERVED_AUG_041:
+    case AugType::RESERVED_AUG_014:
+    case AugType::RESERVED_AUG_057:
+    case AugType::RESERVED_AUG_053:
+    case AugType::RESERVED_AUG_043:
+    case AugType::RESERVED_AUG_044:
+    case AugType::RESERVED_AUG_045:
+    case AugType::RESERVED_AUG_054:
+    case AugType::RESERVED_AUG_051:
+    case AugType::RESERVED_AUG_052:
+    case AugType::RESERVED_AUG_055:
+    case AugType::RESERVED_AUG_056:
+    case AugType::RESERVED_AUG_058:
+    case AugType::RESERVED_AUG_010:
+    case AugType::RESERVED_AUG_012:
+    case AugType::RESERVED_AUG_001:
+    case AugType::RESERVED_AUG_042:
+    case AugType::RESERVED_AUG_002:
+    case AugType::RESERVED_AUG_049:
+    case AugType::RESERVED_AUG_046:
+    case AugType::RESERVED_AUG_003:
+    case AugType::RESERVED_AUG_050:
+    case AugType::RESERVED_AUG_037:
+    case AugType::RESERVED_AUG_023:
+    case AugType::RESERVED_AUG_059:
+    case AugType::RESERVED_AUG_005: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_009: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_011: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_013: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_008: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_006: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_007: // Reserved legacy slot.
+    // Reserved legacy slot.
+    case AugType::RESERVED_AUG_035:
+    case AugType::RESERVED_AUG_047:
+    case AugType::RESERVED_AUG_060:
+    case AugType::RESERVED_AUG_048:
+    case AugType::RESERVED_AUG_036:
+    // Reserved legacy slot.
+    // Reserved legacy slot.
+    // Reserved legacy slot.
+    case AugType::RESERVED_AUG_031: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_016: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_026: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_030: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_028: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_029: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_015: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_027: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_022: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_032: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_033: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_021: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_034: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_020: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_017: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_018:
+    case AugType::RESERVED_AUG_019:
+    case AugType::RESERVED_AUG_038: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_039: // Reserved legacy slot.
+    case AugType::RESERVED_AUG_024:
+    case AugType::RESERVED_AUG_025:
         return true;
     default:
         return false;
@@ -991,49 +987,28 @@ inline bool g_TypeOwned[AUG_TYPE_SLOTS] = { false };
 
 // 한 번만 등장해야 하는 증강/디버프 (스택 불가 플래그형) — 픽 풀에서 takenOnce 로 제외
 inline bool AugOnceOnly(AugType t, AugRarity r) {
+    // Identity-slot tiers and debuff cards are unique within a run.
     if (r == AugRarity::EPIC || r == AugRarity::LEGENDARY ||
-        r == AugRarity::COMBO || r == AugRarity::MYTHIC)
+        r == AugRarity::COMBO || r == AugRarity::MYTHIC ||
+        r == AugRarity::DEBUFF)
         return true;
+
+    // These are rare cards whose effects are explicitly non-stackable. They
+    // cannot be covered by rarity alone because other rare cards (crit,
+    // lifesteal, regen, etc.) are intentionally stackable.
     switch (t) {
-    // 티어드 (등급 무관 1회씩)
-    case AugType::BULLET_RAIN: case AugType::BULLET_RAIN_2: case AugType::BULLET_RAIN_3:
-    case AugType::DRONE:       case AugType::DRONE_2:
-    case AugType::CHAKRAM:     case AugType::CHAKRAM_2:     case AugType::CHAKRAM_3:
-    // 희귀 불리언 (중첩 의미 없음)
-    case AugType::LIGHT_STEP:  case AugType::GUN_RUNNER:    case AugType::BERSERK:
-    // 유리대포 — 중첩 시 데미지 1.5^n 폭주 + 흡혈로 체력 패널티 무력화 → 1회 제한
+    case AugType::BULLET_RAIN: // Tiered card; only the base tier once.
     case AugType::GLASS_CANNON:
-    // 경량탄 — 중첩 시 연사·탄속이 곱연산으로 폭주(5스택=탄속 3.7배) → 1회 제한
     case AugType::LIGHT_AMMO:
-    // 적 출현형 디버프 (플래그 1개 — 재등장 불필요)
-    case AugType::D_SPLITTER:  case AugType::D_BLINKER:
-    case AugType::D_ORBITER:   case AugType::D_SPAWNER:     case AugType::D_SHIELDED:
-    // 강화 디버프 — 불리언 플래그(중첩 의미 없음). 스케쥴러(D_SCHEDULER)는 HP 배율 스택이라 제외.
-    case AugType::D_TROJAN_BOOST: case AugType::D_CRASHER_BOOST:
-    // 신규 적 출현 디버프 (플래그 1개)
-    case AugType::D_BADSECTOR:    case AugType::D_REGERROR:
-    case AugType::D_DDOS:       case AugType::D_WEAVER_BOOST:
-    case AugType::D_BRUTE_BOOST:
-    case AugType::D_SPLITTER_BOOST:
-    case AugType::LIFESTEAL_2:  case AugType::CHAIN_2:
-    case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
-    case AugType::REVOLVER_SILVER:
-    case AugType::HE_SHELLS:    case AugType::HE_SHELLS_2:
-    case AugType::CHAKRAM_SINGULARITY:
-    case AugType::SKILL_FOCUS:
-    case AugType::SKILL_DASH_UP:
-    case AugType::SMG_COMPRESSOR: case AugType::RIFLE_STABILITY:
-    case AugType::SNIPER_AMPLIFIER:
-    case AugType::FIREWALL:    case AugType::REGEN_2:
-    case AugType::MINIGUN_2:  case AugType::MINIGUN_CYCLONE:
-    case AugType::DEATH_BLAST_2:
+    case AugType::LIGHT_STEP:
+    case AugType::BERSERK:
+    case AugType::FIREWALL:
         return true;
     default:
         return false;
     }
 }
 
-// 등급별 카드 색상 (배경 RGB)
 inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
     switch (r) {
     case AugRarity::COMMON:    cr = 0.15f; cg = 0.65f; cb = 0.20f; break; // 녹
@@ -1049,25 +1024,19 @@ inline void GetRarityColor(AugRarity r, float& cr, float& cg, float& cb) {
 
 // 도감·일시정지·크리에이티브 공통 — 카테고리 그룹
 enum class AugListGroup {
-    SKILL, WEAPON, ORBIT, COMBO, MYTHIC, SPECIAL, SIZE, DISTANCE, STAT, DEBUFF
+    SKILL, WEAPON, ORBIT, COMBO, MYTHIC, SPECIAL, SIZE, STAT, DEBUFF
 };
 
 inline bool AugIsSkillType(AugType t) {
     return t == AugType::SKILL_CLOSE     || t == AugType::SKILL_OVERCLOCK ||
-           t == AugType::SKILL_TIMESTOP  || t == AugType::SKILL_FOCUS     ||
+           t == AugType::SKILL_TIMESTOP  ||
            t == AugType::SKILL_DASH_UP;
 }
 
 inline bool AugIsWeaponType(AugType t) {
     switch (t) {
-    case AugType::CANNON: case AugType::MINIGUN: case AugType::SHOTGUN:
-    case AugType::SNIPER: case AugType::MK2: case AugType::HACK_RANGED:
-    case AugType::BAYONET: case AugType::MELEE_WIDE: case AugType::BLADE_WIND:
-    case AugType::POWER_DRAW: case AugType::MULTISHOT:
-    case AugType::SHOTGUN_SPREAD: case AugType::REVOLVER_OVERLOAD:
-    case AugType::REVOLVER_SILVER:
-    case AugType::HE_SHELLS: case AugType::HE_SHELLS_2: case AugType::SMG_COMPRESSOR:
-    case AugType::RIFLE_STABILITY: case AugType::SNIPER_AMPLIFIER:
+    case AugType::HACK_RANGED:
+    case AugType::RIFLE_STABILITY:
         return true;
     default:
         return false;
@@ -1082,7 +1051,6 @@ inline bool AugIsOrbitType(AugType t) {
     case AugType::LASER: case AugType::LASER_2: case AugType::LASER_CONVERGE:
     case AugType::BULLET_RAIN: case AugType::BULLET_RAIN_2:
     case AugType::BULLET_RAIN_3: case AugType::BULLET_RAIN_ETERNAL:
-    case AugType::CB_TURRET:
         return true;
     default:
         return false;
@@ -1098,7 +1066,6 @@ inline AugListGroup AugListGroupOf(const AugDef& d) {
     if (AugIsWeaponType(d.type))       return AugListGroup::WEAPON;
     if (AugIsOrbitType(d.type))        return AugListGroup::ORBIT;
     if (d.unique == AugUnique::SIZE)     return AugListGroup::SIZE;
-    if (d.unique == AugUnique::DISTANCE) return AugListGroup::DISTANCE;
     return AugListGroup::STAT;
 }
 
@@ -1111,7 +1078,6 @@ inline int AugListGroupOrder(AugListGroup g) {
     case AugListGroup::MYTHIC:   return 4;
     case AugListGroup::SPECIAL:  return 5;
     case AugListGroup::SIZE:     return 6;
-    case AugListGroup::DISTANCE: return 7;
     case AugListGroup::STAT:     return 8;
     case AugListGroup::DEBUFF:   return 9;
     default: return 99;
@@ -1135,8 +1101,6 @@ inline const wchar_t* AugListGroupLabel(AugListGroup g) {
         { static const wchar_t* s[3]={L"-- 특수 --",L"-- Special --",L"-- 特殊 --"}; return s[li]; }
     case AugListGroup::SIZE:
         { static const wchar_t* s[3]={L"-- 크기 --",L"-- Size --",L"-- サイズ --"}; return s[li]; }
-    case AugListGroup::DISTANCE:
-        { static const wchar_t* s[3]={L"-- 거리 --",L"-- Range --",L"-- 距離 --"}; return s[li]; }
     case AugListGroup::STAT:
         { static const wchar_t* s[3]={L"-- 강화 --",L"-- Stats --",L"-- 強化 --"}; return s[li]; }
     case AugListGroup::DEBUFF:
@@ -1197,19 +1161,18 @@ inline const wchar_t* GetRarityKR(AugRarity r) {
     return L"?";
 }
 
-// 카테고리 태그 (고유-거리/크기, 스킬) — 없으면 nullptr
+// 카테고리 태그 (고유 크기, 스킬) — 없으면 nullptr
 inline const wchar_t* GetAugTag(const AugDef& a) {
     int li = CurLangIdx();
-    if (a.unique == AugUnique::DISTANCE) { static const wchar_t* s[3]={L"거리",L"Range",L"距離"};  return s[li]; }
     if (a.unique == AugUnique::SIZE)     { static const wchar_t* s[3]={L"크기",L"Size",L"サイズ"}; return s[li]; }
     if (a.type == AugType::SKILL_CLOSE || a.type == AugType::SKILL_OVERCLOCK ||
-        a.type == AugType::SKILL_TIMESTOP || a.type == AugType::SKILL_FOCUS ||
+        a.type == AugType::SKILL_TIMESTOP ||
         a.type == AugType::SKILL_DASH_UP)
         { static const wchar_t* s[3]={L"스킬",L"Skill",L"スキル"}; return s[li]; }
     return nullptr;
 }
 
-// 등급 + 카테고리 배지 — "희귀|거리" / "에픽|스킬" 식. 태그 없으면 등급만.
+// 등급 + 카테고리 배지 — "희귀|크기" / "에픽|스킬" 식. 태그 없으면 등급만.
 //   (단일 정적 버퍼 — UI 단일 스레드 1회 사용 가정)
 inline const wchar_t* GetAugBadge(const AugDef& a) {
     static wchar_t buf[48];

@@ -1,4 +1,4 @@
-#include "Scenes.h"
+﻿#include "Scenes.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "GameManager.h"
@@ -60,13 +60,8 @@ static bool  s_MainMenuResumeFromPanel = false;
 static void Scene_RunConfigInline(const SceneCtx& c);
 static void Scene_SettingsInline(const SceneCtx& c);
 static int   s_RcWeapon        = 0;
-static bool  s_RcTrialNodes[6] = {};
-static float s_RcNodeHover[6]  = {};
-static float s_RcTrialTypeT[6] = {};
-static int   s_TrialTargetCount = 1;
-// PLAY owns a full trial catalogue.  The gameplay system still has four
-// slots; this UI state is the 20-item catalogue selection before PLAY packs
-// the enabled definitions into those slots.
+// PLAY owns the current trial catalogue. The gameplay system still has four
+// slots; this UI state packs enabled definitions into those slots on PLAY.
 static bool  s_RcTrialEnabled[TRIAL_DEF_COUNT] = {};
 static bool  s_RcTrialStateLoaded = false;
 
@@ -110,7 +105,7 @@ static const wchar_t* MainMenuRouteLabel(int language, int index) {
 
 static const wchar_t* MainMenuSubtitleLabel(int language, int index) {
     static const wchar_t* kSubtitles[3][5] = {
-        { L"Start", L"Armory", L"Astral Log", L"Setting", L"Exit" },
+        { L"전투 시작", L"무기고", L"도감 기록", L"설정", L"게임 종료" },
         { L"Start", L"Armory", L"Astral Log", L"Setting", L"Exit" },
         { L"スタート", L"武器庫", L"星界記録", L"設定", L"終了" },
     };
@@ -170,12 +165,10 @@ static void UpdateMainMenuConstellationMotion(int menuIndex, float dt) {
 
 static void ResetRunConfigUi() {
     g_Difficulty = Difficulty::NORMAL;
-    s_TrialTargetCount = 1;
     ResetTrials();
     s_RcWeapon = 0;
     s_RcTrialStateLoaded = false;
     for (int i = 0; i < TRIAL_DEF_COUNT; ++i) s_RcTrialEnabled[i] = false;
-    for (int i = 0; i < 6; ++i) { s_RcTrialNodes[i] = false; s_RcNodeHover[i] = 0.0f; s_RcTrialTypeT[i] = 0.0f; }
 }
 
 static void ResetSettingsUi() {
@@ -659,7 +652,7 @@ static void DrawArchiveConstellation(float cx, float cy, float radius,
     if (category == 0) {
         float previewScale = std::max(1.8f, radius / 18.0f);
         // Genesis has a larger station footprint than compact process forms.
-        if (key == CM_SPAWNER) previewScale *= 1.18f;
+        if (key == CM_GENESIS) previewScale *= 1.18f;
         drawCodexMobPreview(key, cx, cy, previewScale);
         return;
     }
@@ -2324,20 +2317,8 @@ void Scene_Shop(const SceneCtx& c) {
         switch (t) {
         case AugType::RIFLE_STABILITY:
             return 0;
-        case AugType::SNIPER:
-        case AugType::SMG_COMPRESSOR:
-        case AugType::SNIPER_AMPLIFIER:
-        case AugType::SKILL_FOCUS:
-        case AugType::REVOLVER_OVERLOAD:
-        case AugType::REVOLVER_SILVER:
-            return 0;
         case AugType::STATIC_FIELD:
         case AugType::STATIC_FIELD_2:
-        case AugType::EMP_PULSE:
-        case AugType::PATCH_MINE:
-        case AugType::TRAP_EXE:
-        case AugType::POPUP_ALLY:
-        case AugType::GLUE_SYNC:
             return 1;
         default:
             return -1;
@@ -3699,7 +3680,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     CItem items[512];
     int itemCount = 0;
     static const int kCodexMobIds[] = {
-        CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR
+        CM_ROTOR, CM_SCOPE, CM_SWARM, CM_GENESIS, CM_GRAVIS, CM_QUASAR
     };
     auto addGroup = [&](const wchar_t* label, float r, float g, float b) {
         if (itemCount < 512) items[itemCount++] = { true, -1, label, true, r, g, b };
@@ -4178,6 +4159,45 @@ static void Scene_CodexInline(const SceneCtx& c) {
                          (0.38f + 0.60f * active) * reveal, 0.68f);
     }
 
+    // A search can legitimately hide every record.  Keep this state explicit
+    // instead of rendering an "UNASSIGNED" detail panel over an empty list.
+    // The chart field is already drawn above, so the empty state sits in the
+    // same archive surface and remains readable on every background.
+    if (recordSlotCount == 0 && hasSearch) {
+        const float emptyCX = rightX + rightW * 0.50f;
+        const float emptyY = rightY + rightH * 0.46f;
+        const wchar_t* emptyTitle = codexText(L"검색 결과 없음", L"NO MATCHES");
+        const wchar_t* emptyHint = codexText(L"다른 검색어를 입력하세요", L"TRY A DIFFERENT SEARCH");
+        DrawConstellationDisc(emptyCX, emptyY, 34.0f * uiS,
+                              curRoot.r, curRoot.g, curRoot.b,
+                              0.12f * rightWake);
+        DrawVisibleConstellNode(emptyCX, emptyY, 7.0f * uiS,
+                                curRoot.r, curRoot.g, curRoot.b,
+                                0.62f * rightWake, false);
+        const float titleSc = 0.78f * uiS;
+        const float hintSc = 0.46f * uiS;
+        DrawShadowedText(g_TextL, emptyTitle,
+                         emptyCX - g_TextL.Width(emptyTitle, titleSc) * 0.5f,
+                         emptyY + 30.0f * uiS, titleSc,
+                         0.92f, 0.96f, 1.0f, 0.94f * rightWake, 0.66f);
+        DrawShadowedText(g_TextS, emptyHint,
+                         emptyCX - g_TextS.Width(emptyHint, hintSc) * 0.5f,
+                         emptyY + 62.0f * uiS, hintSc,
+                         0.64f, 0.76f, 0.88f, 0.78f * rightWake, 0.56f);
+        if (finishBackAfterRender) {
+            s_backExit = false;
+            s_backOutT = 0.0f;
+            s_CodexBackRequested = false;
+            s_searchFocused = false;
+            g_CodexSearchInputEnabled = false;
+            s_MainMenuCodexPanel = false;
+            s_MainMenuResumeFromPanel = true;
+            g_MainMenuEntryT = 1.0f;
+            g_GameManager.currentState = GameState::MAIN_MENU;
+        }
+        return;
+    }
+
 
     auto scramble = [&](const wchar_t* src, int seed) -> std::wstring {
         static const wchar_t* glyphs = L"01/\\#*@+-=_";
@@ -4638,7 +4658,7 @@ void Scene_Codex(const SceneCtx& c) {
         struct MobGroup { const wchar_t* name; int ids[9]; int count; float r, g, b; };
         static const MobGroup MGRPS[] = {
             { L"ACTIVE SIGNALS",
-              { CM_NORMAL, CM_RANGED, CM_DDOS, CM_SPAWNER, CM_GRAVIS, CM_QUASAR, 0, 0, 0 },
+              { CM_ROTOR, CM_SCOPE, CM_SWARM, CM_GENESIS, CM_GRAVIS, CM_QUASAR, 0, 0, 0 },
               6, 0.48f, 0.82f, 1.00f },
         };
         for (int gi = 0; gi < 1; ++gi) {
@@ -4960,7 +4980,7 @@ void Scene_Codex(const SceneCtx& c) {
             // ── 시스템 로그 블록 ──
             if (seen) {
                 drawInfoQuad(infoX, logBoxY, infoW, logBoxH, detailA);
-                const wchar_t* threatLv = (selItem >= CM_BRUTE) ? L"HIGH" : L"MODERATE";
+                const wchar_t* threatLv = MobThreatLabel(selItem);
                 wchar_t pidBuf[16]; swprintf_s(pidBuf, L"0x%02X", (selItem * 17 + 0x40) & 0xFF);
                 struct { const wchar_t* k; const wchar_t* v; } logR[] = {
                     { L"THREAT_LV  ", threatLv },
@@ -5126,7 +5146,13 @@ void Scene_Tutorial(const SceneCtx& c) {
         std::vector<std::wstring> lines;
         std::wstring cur;
         for (const wchar_t* p = text; *p; ++p) {
-            if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
+            // A slash surrounded by spaces is a section separator.  Keep
+            // compact rates such as "0.28/s" intact so the unit never wraps
+            // onto a line by itself.
+            if (*p == L'/' && (p == text || p[-1] == L' ' || p[1] == L' ')) {
+                if (!cur.empty()) lines.push_back(cur);
+                cur.clear();
+            }
             else cur += *p;
         }
         if (!cur.empty()) lines.push_back(cur);
@@ -5232,36 +5258,6 @@ void FinalizeLoadout(const SceneCtx& c, int wIdx) {
     g_CurrentWeapon = wIdx;
     MarkStartWeaponOwnedType((StartWeapon)wIdx);
     fireTimer = g_Stats.fireInterval;
-    bool classJob = false;
-    if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT) {
-        const JobDef& jd = JOB_DEFS[g_SelectedJob];
-        for (int a = 0; a < jd.startAugCount; a++) {
-            int ji = AugIndexOf(jd.startAugs[a]);
-            if (ji < 0) continue;
-            g_Stats.Apply(jd.startAugs[a]);
-            g_OwnedAugs.push_back(ji);
-            // 조합 레시피(g_TypeOwned)와 분리 — 런 중 획득한 증강만 조합에 사용
-            MarkAugSeen(ji);
-            if (AugOnceOnly(jd.startAugs[a], ALL_AUGS[ji].rarity))
-                g_GameManager.takenOnce[ji] = true;
-            EquipSkill(SkillForAug(jd.startAugs[a]));
-            ApplyAugmentSideEffects(jd.startAugs[a], (int)sw, (int)sh);
-        }
-        if (jd.weaponMode == 1) {           // 검객: 근접 호 스윙
-            g_Stats.meleeWeapon  = true;
-            g_Stats.fireInterval = 0.26f;
-            g_Stats.baseFireInterval = g_Stats.fireInterval;
-            g_RunMelee = true; classJob = true;
-        } else if (jd.weaponMode == 2) {    // 궁수: 차징 화살
-            g_Stats.bowWeapon    = true;
-            g_Stats.bulletSpeed *= 1.4f;
-            g_RunBow = true; classJob = true;
-        }
-        fireTimer = g_Stats.fireInterval;
-    }
-    // 검객/궁수는 총기 표기가 무의미 → 변환/게임오버 표시용 무기 제거
-    if (classJob) g_CurrentWeapon = -1;
-    // 크리에이티브: 직접 고른 시작 증강 즉시 적용 (스탯+보유목록 직접)
     if (g_CreativeMode) {
         for (int aidx : g_CreativeStartAugList) {
             if (aidx < 0 || aidx >= AUG_TOTAL) continue;
@@ -5296,10 +5292,10 @@ void FinalizeLoadout(const SceneCtx& c, int wIdx) {
     }
 }
 
-// 선택된 직업(g_SelectedJob)의 고정 무기 인덱스. 근접/활 직업은 내부적으로
-// RIFLE 을 더미 베이스로 쓰고 weaponMode 가 이후 덮어쓴다.
+// 선택된 직업의 고정 무기 인덱스.  현재 플레이 가능한 직업은 소총과
+// 전기장 두 가지이며, 예약 슬롯은 항상 기본 소총으로 폴백한다.
 static int FixedWeaponForSelectedJob() {
-    if (g_SelectedJob > 0 && g_SelectedJob < JOB_COUNT &&
+    if (IsPlayableJob(g_SelectedJob) && g_SelectedJob != JOB_NONE &&
         JOB_DEFS[g_SelectedJob].fixedWeapon >= 0)
         return JOB_DEFS[g_SelectedJob].fixedWeapon;
     return (int)StartWeapon::RIFLE;
@@ -5532,11 +5528,12 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
     };
 
-    static const int kTrialOrder[TRIAL_DEF_COUNT] = {
+    static constexpr int kTrialCatalogCount = TRIAL_DEF_COUNT - 1;
+    static const int kTrialOrder[kTrialCatalogCount] = {
         // EARLY
         0, 1, 3, 4, 5, 8, 9, 10,
         // MID
-        11, 12, 13,
+        11, 13,
         // LATE
         6, 7, 14, 15, 16,
         // BOSS
@@ -5549,7 +5546,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"DURABILITY UP  /  SCORE +15%",L"PRESSURE UP  /  SCORE +15%",
         L"EARLY  /  SCORE +14%",     L"EARLY  /  SCORE +16%",
         L"OPENING DOWN  /  SCORE +18%",L"MID  /  SCORE +18%",
-        L"MID  /  SCORE +20%",        L"MID  /  SCORE +17%",
+        L"REMOVED",                    L"MID  /  SCORE +17%",
         L"LATE  /  SCORE +22%",       L"LATE  /  SCORE +24%",
         L"LATE  /  SCORE +21%",       L"BOSS  /  SCORE +24%",
         L"BOSS  /  SCORE +22%",       L"BOSS  /  SCORE +20%"
@@ -5561,7 +5558,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"내구도 증가  /  점수 +15%", L"압박 증가  /  점수 +15%",
         L"초반  /  점수 +14%", L"초반  /  점수 +16%",
         L"시작 제약  /  점수 +18%", L"중반  /  점수 +18%",
-        L"중반  /  점수 +20%", L"중반  /  점수 +17%",
+        L"REMOVED",           L"중반  /  점수 +17%",
         L"후반  /  점수 +22%", L"후반  /  점수 +24%",
         L"후반  /  점수 +21%", L"보스  /  점수 +24%",
         L"보스  /  점수 +22%", L"보스  /  점수 +20%"
@@ -5578,8 +5575,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"Ranged enemies begin appearing earlier than normal, before the build is fully online.",
         L"The early normal spawn pressure is increased, compressing the opening economy window.",
         L"Starting maximum HP is reduced. The first few rooms become the cost of entry.",
-        L"Special and elite enemies receive a stronger midgame appearance bias.",
-        L"Bombers arrive earlier and appear more frequently, changing safe movement routes.",
+        L"Midgame enemy pressure rises by 8 percent through spawn rate and HP.",
+        L"This trial has been retired.",
         L"The midgame ranged enemy cap is raised, creating more simultaneous firing lanes.",
         L"The late-game spawn ramp is strengthened. Pressure keeps climbing after the build stabilizes.",
         L"Late enemies receive a stronger HP ramp, so damage scaling must keep pace.",
@@ -5600,8 +5597,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"원거리 적이 평소보다 일찍 등장해 빌드가 완성되기 전부터 압박을 줍니다.",
         L"초반 일반 적의 스폰 압력이 증가해 초반 경제를 정비할 시간이 줄어듭니다.",
         L"시작 최대 체력이 감소합니다. 첫 방들이 입장 비용이 됩니다.",
-        L"특수 및 정예 적이 중반에 등장할 확률이 증가합니다.",
-        L"봄버가 더 일찍, 더 자주 등장해 안전한 이동 경로가 달라집니다.",
+        L"중반 적 스폰 속도와 체력이 8% 증가합니다.",
+        L"현재 버전에서 제거된 시련입니다.",
         L"중반 원거리 적 수 제한이 증가해 동시에 유지해야 할 사선이 많아집니다.",
         L"후반 스폰 증가 폭이 커집니다. 빌드가 안정된 뒤에도 압박이 계속 상승합니다.",
         L"후반 적의 체력 증가 폭이 커지므로 피해량 성장도 발맞춰야 합니다.",
@@ -5615,8 +5612,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     static const wchar_t* kTrialNamesKR[TRIAL_DEF_COUNT] = {
         L"오버클럭", L"메모리 누수", L"방화벽", L"부패한 드롭",
         L"프로세스 제한", L"낮은 대역폭", L"강화", L"급증",
-        L"조기 돌입", L"패킷 폭풍", L"콜드 부트", L"엘리트 개화",
-        L"봄버 추적", L"프로세스 노이즈", L"후반 초과", L"강화 코어",
+        L"조기 돌입", L"패킷 폭풍", L"콜드 부트", L"중반 압박",
+        L"REMOVED", L"프로세스 노이즈", L"후반 초과", L"강화 코어",
         L"신호 변위", L"방화벽 코어", L"소음 경기장", L"신호 손실"
     };
     static const wchar_t* kWeaponNames[2] = { L"RIFLE", L"FIELD" };
@@ -5672,7 +5669,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     auto countEnabled = [&]() {
         int count = 0;
         for (int i = 0; i < TRIAL_DEF_COUNT; ++i)
-            if (s_RcTrialEnabled[i]) ++count;
+            if (i != TRIAL_REMOVED_ID && s_RcTrialEnabled[i]) ++count;
         return count;
     };
     auto stageIndex = [&](int defId) {
@@ -5687,15 +5684,14 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     auto syncTrialsToGame = [&]() {
         int slot = 0;
         for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (!s_RcTrialEnabled[id] || slot >= TRIAL_SLOT_COUNT) continue;
+            if (id == TRIAL_REMOVED_ID || !s_RcTrialEnabled[id]
+                || slot >= TRIAL_SLOT_COUNT) continue;
             g_TrialPool[slot] = id;
             g_TrialSelected[slot] = true;
             ++slot;
         }
-        const int selectedCount = slot;
         for (; slot < TRIAL_SLOT_COUNT; ++slot)
             g_TrialSelected[slot] = false;
-        s_TrialTargetCount = selectedCount;
         g_TrialPoolReady = true;
     };
 
@@ -5726,22 +5722,27 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             for (int i = 0; i < TRIAL_DEF_COUNT; ++i) s_RcTrialEnabled[i] = false;
             for (int slot = 0; slot < TRIAL_SLOT_COUNT; ++slot) {
                 const int id = g_TrialPool[slot];
-                if (g_TrialSelected[slot] && id >= 0 && id < TRIAL_DEF_COUNT)
+                if (g_TrialSelected[slot] && id >= 0 && id < TRIAL_DEF_COUNT
+                    && id != TRIAL_REMOVED_ID)
                     s_RcTrialEnabled[id] = true;
             }
             s_RcTrialStateLoaded = true;
         }
+        // A retired trial may still exist in an older saved selection.
+        s_RcTrialEnabled[TRIAL_REMOVED_ID] = false;
         for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (s_RcTrialEnabled[id]) { trialFocus = id; break; }
+            if (id != TRIAL_REMOVED_ID && s_RcTrialEnabled[id]) {
+                trialFocus = id;
+                break;
+            }
         }
-        for (int i = 0; i < TRIAL_DEF_COUNT; ++i) {
+        for (int i = 0; i < kTrialCatalogCount; ++i) {
             if (kTrialOrder[i] == trialFocus) {
                 trialSelectedSlot = i;
                 break;
             }
         }
         trialDisplaySlot = trialTargetSlot = (float)trialSelectedSlot;
-        s_TrialTargetCount = countEnabled();
         launchExit = false;
         launchT = 0.0f;
     }
@@ -5826,9 +5827,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     for (int i = 0; i < 6; ++i)
         statT[i] = UiApproach(statT[i], kStatTargets[weapon][i], dt, 8.0f);
 
-    // The trial catalogue is an infinite list on a restrained \ rail. The
-    // list owns the full right column, so records keep flowing through the
-    // available space instead of being re-centered when one is clicked.
+    // The trial catalogue is a finite list on a restrained rail. The list
+    // owns the full right column and keeps its first/last records visible.
     const float trialRowStep = 108.0f * uiS;
     // The visual row is shorter than the carousel step. Let adjacent rows'
     // hit regions meet at their centers' midpoint so there is no dead strip
@@ -5849,22 +5849,16 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         (int)(trialViewH / (trialRowStep * 2.0f)) + 2);
     auto trialRailXAt = [&](float y) {
         const float t = std::max(0.0f,
-            std::min(1.0f, (y - trialViewTop) / trialViewH));
+            std::min(1.0f, (y - trialViewTop) / std::max(1.0f, trialViewH)));
         return trialRailTopX + trialDiagonal * t;
     };
-    // Keep the infinite carousel's internal coordinates close to the active
-    // slot. The visible result still wraps forever, but a long drag can never
-    // grow the float values until the wrapping loops become expensive.
+    // Keep the catalogue in a finite range.  The previous wrapped carousel
+    // made the title/count feel inconsistent and allowed the user to scroll
+    // forever through the same trials.
     auto normalizeTrialSlots = [&]() {
-        const float relativeTarget = trialTargetSlot
-                                   - (float)trialSelectedSlot;
-        const float cycles = std::round(
-            relativeTarget / (float)TRIAL_DEF_COUNT);
-        if (fabsf(cycles) > 0.0f) {
-            const float offset = cycles * (float)TRIAL_DEF_COUNT;
-            trialTargetSlot -= offset;
-            trialDisplaySlot -= offset;
-        }
+        const float last = (float)std::max(0, kTrialCatalogCount - 1);
+        trialTargetSlot = std::max(0.0f, std::min(last, trialTargetSlot));
+        trialDisplaySlot = std::max(0.0f, std::min(last, trialDisplaySlot));
     };
     const bool resetHov = ready
         && mx >= resetX - 22.0f * uiS
@@ -5875,7 +5869,6 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     if (resetHov && lmbClick) {
         for (int id = 0; id < TRIAL_DEF_COUNT; ++id)
             s_RcTrialEnabled[id] = false;
-        s_TrialTargetCount = 0;
         trialFocus = 0;
         detailScroll = 0.0f;
         detailScrollTarget = 0.0f;
@@ -5936,7 +5929,6 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             if (!wasOn && countEnabled() >= TRIAL_SLOT_COUNT) {
             } else {
                 s_RcTrialEnabled[trialPressedId] = !wasOn;
-                s_TrialTargetCount = countEnabled();
                 detailScroll = 0.0f;
                 detailScrollTarget = 0.0f;
             }
@@ -5957,15 +5949,15 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             // the few pixels used to cross the threshold are not discarded,
             // which makes the rail feel responsive instead of sticky.
             const float dragDelta = -(dy / trialRowStep) * 1.12f;
-            // Move the display directly with the pointer. The target is kept
-            // in the same unbounded coordinate space so wrapping remains
-            // seamless when the drag crosses the first/last trial.
+            // Move the display directly with the pointer and clamp it to the
+            // first/last catalogue entry.
             trialTargetSlot += dragDelta;
             trialDisplaySlot += dragDelta;
+            normalizeTrialSlots();
             trialDragMoved = true;
-            int nearestSlot = (int)std::round(trialTargetSlot)
-                            % TRIAL_DEF_COUNT;
-            if (nearestSlot < 0) nearestSlot += TRIAL_DEF_COUNT;
+            int nearestSlot = (int)std::round(trialTargetSlot);
+            nearestSlot = std::max(0, std::min(kTrialCatalogCount - 1,
+                                                nearestSlot));
             if (nearestSlot != trialSelectedSlot) {
                 trialSelectedSlot = nearestSlot;
                 trialFocus = kTrialOrder[trialSelectedSlot];
@@ -6010,8 +6002,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         g_ScrollAccum = 0.0f;
     }
     if (trialStepRequest != 0) {
-        trialSelectedSlot = (trialSelectedSlot + trialStepRequest
-                             + TRIAL_DEF_COUNT) % TRIAL_DEF_COUNT;
+        trialSelectedSlot = std::max(0, std::min(kTrialCatalogCount - 1,
+                            trialSelectedSlot + trialStepRequest));
         trialTargetSlot += (float)trialStepRequest;
         trialFocus = kTrialOrder[trialSelectedSlot];
         normalizeTrialSlots();
@@ -6170,7 +6162,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             }
         }
         for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (!s_RcTrialEnabled[id]) continue;
+            if (id == TRIAL_REMOVED_ID || !s_RcTrialEnabled[id]) continue;
             const int node = (id * 7 + weapon * 3) % kNodeCount;
             DrawVisibleConstellLine(chartCX, chartCY, px[node], py[node],
                                     1.10f * uiS, trialR, trialG, trialB,
@@ -6273,7 +6265,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     };
     std::vector<ActiveSummaryRow> summaryRows;
     const auto selected = [&](int id) {
-        return id >= 0 && id < TRIAL_DEF_COUNT && s_RcTrialEnabled[id];
+        return id >= 0 && id < TRIAL_DEF_COUNT && id != TRIAL_REMOVED_ID
+            && s_RcTrialEnabled[id];
     };
     auto formatPercent = [](float mult) {
         wchar_t buf[32] = {};
@@ -6284,7 +6277,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         if (fabsf(startMult - peakMult) < 0.0005f)
             return formatPercent(startMult);
         wchar_t buf[64] = {};
-        swprintf_s(buf, L"%+.1f%% !92 %+.1f%%",
+        swprintf_s(buf, L"%+.1f%% → %+.1f%%",
                    (startMult - 1.0f) * 100.0f,
                    (peakMult - 1.0f) * 100.0f);
         return std::wstring(buf);
@@ -6294,7 +6287,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         if (startCount == peakCount)
             swprintf_s(buf, L"+%d", startCount);
         else
-            swprintf_s(buf, L"+%d !92 +%d", startCount, peakCount);
+            swprintf_s(buf, L"+%d → +%d", startCount, peakCount);
         return std::wstring(buf);
     };
     auto addPercentMetric = [&](const wchar_t* label, float startMult,
@@ -6358,16 +6351,6 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
                                 formatCountRange(rangedMaxStart, rangedMaxPeak),
                                 false });
 
-    float bomberStart = 1.0f, bomberPeak = 1.0f;
-    if (selected(12)) bomberStart *= 0.76f;
-    bomberPeak = bomberStart;
-    if (selected(14)) bomberPeak *= 0.88f;
-    if (selected(12))
-        summaryRows.push_back({ PlayText(L"자폭병 첫 등장", L"BOMBER FIRST SPAWN"),
-                                PlayText(L"-10.0초", L"-10.0s"), false });
-    addPercentMetric(PlayText(L"자폭병 스폰 간격", L"BOMBER INTERVAL"),
-                     bomberStart, bomberPeak, false);
-
     float bossHpMult = 1.0f;
     if (selected(17)) bossHpMult *= 1.35f;
     if (selected(18)) bossHpMult *= 1.15f;
@@ -6417,7 +6400,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
                                L"Enable trials from the catalogue to build the run modifier set."),
                       0, 0);
     } else {
-        for (int order = 0; order < TRIAL_DEF_COUNT; ++order) {
+        for (int order = 0; order < kTrialCatalogCount; ++order) {
             const int id = kTrialOrder[order];
             if (!s_RcTrialEnabled[id]) continue;
             appendLine(std::wstring(trialName(id)), 1, 0);
@@ -6558,10 +6541,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
                                       trialFieldW * 0.18f),
                              0.06f, 0.48f, 0.62f,
                              0.075f * contentA, false);
-    // The catalogue is an infinite diagonal rail. Visible slots stay evenly
-    // spaced while their data wraps through the 20 definitions. This keeps
-    // the motion legible and gives the right side the requested \ silhouette
-    // without sending a curved orbit through the hero.
+    // The catalogue is a finite diagonal rail. Visible slots stay evenly
+    // spaced and stop at the first/last real definition.
     const float railTopY = trialViewTop + 6.0f * uiS;
     const float railBottomY = trialViewBottom - 6.0f * uiS;
     const float railBottomX = trialRailTopX + trialDiagonal;
@@ -6585,12 +6566,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
               (GLint)(sh - trialViewBottom),
               (GLint)(trialListRight - trialRailLeft + 44.0f * uiS),
               (GLint)trialViewH);
-    for (int slot = 0; slot < TRIAL_DEF_COUNT; ++slot) {
+    for (int slot = 0; slot < kTrialCatalogCount; ++slot) {
         float relF = (float)slot - trialDisplaySlot;
-        while (relF > (float)TRIAL_DEF_COUNT * 0.5f)
-            relF -= (float)TRIAL_DEF_COUNT;
-        while (relF < -(float)TRIAL_DEF_COUNT * 0.5f)
-            relF += (float)TRIAL_DEF_COUNT;
         const int rel = (int)std::round(relF);
         if (rel < -trialVisibleRadius || rel > trialVisibleRadius) continue;
         const int id = kTrialOrder[slot];
@@ -6743,7 +6720,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
 
     g_BatchAlpha = 1.0f;
     if (launchExit && launchT >= 0.50f) {
-        g_SelectedJob = weapon == 0 ? JOB_NONE : JOB_VAMPIRE;
+        g_SelectedJob = weapon == 0 ? JOB_NONE : JOB_STATIC_FIELD;
         s_RcWeapon = weapon;
         s_MainMenuRunConfigPanel = false;
         if (g_CreativeMode) g_GameManager.currentState = GameState::CREATIVE_CONFIG;
@@ -7049,89 +7026,9 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         int optCur     = 0;                 // 현재 선택된 인덱스
     };
     SRow settingsRows[4][6] = {};
-    const int rowCounts[4] = { 4, 5, 4, 2 };
-    // Kept as a compatibility buffer for the legacy single-row block below;
-    // the integrated board reads settingsRows instead.
-    SRow rows[6] = {};
-    int rowCount = 0;
+    const int rowCounts[4] = { 4, 5, kDebugSettingsVisible ? 4 : 3, 2 };
 
     static wchar_t s_volBuf[8];
-    static wchar_t s_scoreBuf[24];
-
-    if (tab == 0) { // DISPLAY (5행)
-        const int fpsCur =
-            g_FpsCap ==   0 ? 0 : g_FpsCap ==  30 ? 1 :
-            g_FpsCap ==  60 ? 2 : g_FpsCap == 144 ? 3 :
-            g_FpsCap == 300 ? 4 : 5;
-        rows[0] = { L"FPS CAP",    nullptr, false, false, false, false,
-                    { L"VSYNC", L"30", L"60", L"144", L"300", L"UNLIM" }, 6, fpsCur };
-        rows[1] = { L"GRAPHICS",   nullptr, false, false, false, false,
-                    { L"FULL", L"REDUCED" }, 2, g_VfxDensity == VfxDensity::FULL ? 0 : 1 };
-        rows[2] = { L"COMBO HUD",  nullptr, false, false, false, false,
-                    { L"ON", L"OFF" }, 2, g_ShowCombo ? 0 : 1 };
-        rows[3] = { L"BACKDROP BLUR", nullptr, false, false, false, false,
-                    { L"OFF", L"ON" }, 2, g_BackdropBlurEnabled ? 1 : 0 };
-        rowCount = 4;
-    } else if (tab == 1) { // AUDIO
-        swprintf_s(s_volBuf, L"%d", g_SoundVol);
-        rows[0] = { L"MASTER VOL", s_volBuf, false, true, false, false };
-        rows[1] = { L"BGM BUS",     L"ACTIVE",          true, false, false, false };
-        rows[2] = { L"SFX BUS",     L"ACTIVE",          true, false, false, false };
-        rows[3] = { L"OUTPUT",      L"STEREO",          true, false, false, false };
-        rows[4] = { L"AUDIO ENGINE",L"MINIAUDIO",       true, false, false, false };
-        rowCount = 5;
-    } else if (tab == 2) { // GAMEPLAY
-        rows[0] = { L"AUTO FIRE",  nullptr, false, false, false, false,
-                    { L"ON", L"OFF" }, 2, g_AutoFire ? 0 : 1 };
-        rows[1] = { L"AUTO SKILL", nullptr, false, false, false, false,
-                    { L"ON", L"OFF" }, 2, g_AutoSkill ? 0 : 1 };
-        rows[2] = { L"CROSSHAIR",  nullptr, false, false, false, false,
-                    { L"ON", L"OFF" }, 2, g_ShowCrosshair ? 0 : 1 };
-        rowCount = 3;
-    } else { // SYSTEM (tab == 3)
-        const int langCur =
-            g_Language == Language::KR ? 0 :
-            g_Language == Language::EN ? 1 : 2;
-        long long bestAny = g_BestScore[0];
-        if (g_BestScore[1] > bestAny) bestAny = g_BestScore[1];
-        if (g_BestScore[2] > bestAny) bestAny = g_BestScore[2];
-        swprintf_s(s_scoreBuf, L"%lld", bestAny);
-        rows[0] = { L"LANGUAGE",   nullptr, false, false, false, false,
-                    { L"KOR", L"ENG", L"JPN" }, 3, langCur };
-        rows[1] = { L"RESET DATA", nullptr, false, false, true, true };
-        rowCount = 2;
-    }
-
-    const float optionStartX = rpX + 28.0f * uiS;
-    const wchar_t* rowDescription[6] = {};
-    if (tab == 0) {
-        static const wchar_t* d[4] = {
-            L"Frame pacing target",
-            L"Scene detail density",
-            L"Combat combo signal",
-            L"Background detail filter"
-        };
-        for (int i = 0; i < 4; ++i) rowDescription[i] = d[i];
-    } else if (tab == 1) {
-        static const wchar_t* d[5] = {
-            L"Master output level",
-            L"Background music routing",
-            L"Combat sound routing",
-            L"Output channel layout",
-            L"Active audio runtime"
-        };
-        for (int i = 0; i < 5; ++i) rowDescription[i] = d[i];
-    } else if (tab == 2) {
-        static const wchar_t* d[3] = {
-            L"Automatic target fire",
-            L"Automatic skill trigger",
-            L"In-run aiming reticle"
-        };
-        for (int i = 0; i < 3; ++i) rowDescription[i] = d[i];
-    } else {
-        rowDescription[0] = L"Interface language";
-        rowDescription[1] = L"Erase local progress";
-    }
 
     // \u2500\u2500 Render rows \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     // Build the same setting rows for every category so the right side can
@@ -7154,10 +7051,10 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                            { korean ? L"꺼짐" : L"OFF", korean ? L"켜짐" : L"ON" },
                            2, g_BackdropBlurEnabled ? 1 : 0 };
     settingsRows[1][0] = { korean ? L"마스터 볼륨" : L"MASTER VOL", s_volBuf, false, true, false, false };
-    settingsRows[1][1] = { korean ? L"BGM 채널" : L"BGM BUS", korean ? L"활성" : L"ACTIVE", true, false, false, false };
-    settingsRows[1][2] = { korean ? L"효과음 채널" : L"SFX BUS", korean ? L"활성" : L"ACTIVE", true, false, false, false };
-    settingsRows[1][3] = { korean ? L"출력" : L"OUTPUT", korean ? L"스테레오" : L"STEREO", true, false, false, false };
-    settingsRows[1][4] = { korean ? L"오디오 엔진" : L"AUDIO ENGINE", L"MINIAUDIO", true, false, false, false };
+    settingsRows[1][1] = { korean ? L"BGM 채널" : L"BGM BUS", korean ? L"활성 · 고정" : L"ACTIVE · FIXED", true, false, false, false };
+    settingsRows[1][2] = { korean ? L"효과음 채널" : L"SFX BUS", korean ? L"활성 · 고정" : L"ACTIVE · FIXED", true, false, false, false };
+    settingsRows[1][3] = { korean ? L"출력" : L"OUTPUT", korean ? L"스테레오 · 고정" : L"STEREO · FIXED", true, false, false, false };
+    settingsRows[1][4] = { korean ? L"오디오 엔진" : L"AUDIO ENGINE", L"MINIAUDIO · FIXED", true, false, false, false };
     settingsRows[2][0] = { korean ? L"자동 발사" : L"AUTO FIRE", nullptr, false, false, false, false,
                            { korean ? L"켜짐" : L"ON", korean ? L"꺼짐" : L"OFF" }, 2, g_AutoFire ? 0 : 1 };
     settingsRows[2][1] = { korean ? L"자동 스킬" : L"AUTO SKILL", nullptr, false, false, false, false,
@@ -7244,14 +7141,19 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     const wchar_t* archiveLabels[2] = {
         korean ? L"언어" : L"LANGUAGE",
         korean ? L"데이터 초기화" : L"RESET DATA" };
+    // Accordion model: every category keeps a visible header, while only
+    // the selected category expands its controls.  The old board rendered
+    // every category at once and made the settings page feel permanently
+    // expanded, especially at 1280px-wide resolutions.
     addHeader(0, korean ? L"화면" : L"DISPLAY");
-    for (int i = 0; i < 4; ++i) addItem(0, i, displayLabels[i]);
+    if (tab == 0) for (int i = 0; i < 4; ++i) addItem(0, i, displayLabels[i]);
     addHeader(1, korean ? L"소리" : L"AUDIO");
-    for (int i = 0; i < 5; ++i) addItem(1, i, audioLabels[i]);
+    if (tab == 1) for (int i = 0; i < 5; ++i) addItem(1, i, audioLabels[i]);
     addHeader(2, korean ? L"게임플레이" : L"GAMEPLAY");
-    for (int i = 0; i < 4; ++i) addItem(2, i, gameplayLabels[i]);
+    if (tab == 2) for (int i = 0; i < (kDebugSettingsVisible ? 4 : 3); ++i)
+        addItem(2, i, gameplayLabels[i]);
     addHeader(3, korean ? L"기록" : L"ARCHIVE");
-    for (int i = 0; i < 2; ++i) addItem(3, i, archiveLabels[i]);
+    if (tab == 3) for (int i = 0; i < 2; ++i) addItem(3, i, archiveLabels[i]);
 
     bool focusChanged = false;
 
@@ -7267,7 +7169,16 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         } while (!isListItem(next));
         listCursor = next;
     };
-    if (!isListItem(listCursor)) listCursor = 1;
+    if (!isListItem(listCursor) || list[listCursor].category != tab) {
+        listCursor = -1;
+        for (int i = 0; i < listCount; ++i) {
+            if (isListItem(i) && list[i].category == tab) {
+                listCursor = i;
+                break;
+            }
+        }
+        if (listCursor < 0) listCursor = 0;
+    }
 
     const float listX = mainX + 14.0f * uiS;
     const float listTop = depthY + 8.0f * uiS;
@@ -7391,12 +7302,15 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         if (hov && lmb && !g_LmbPrev) {
             int targetIndex = i;
             if (list[i].header) {
-                for (int k = i + 1; k < listCount; ++k) {
-                    if (!list[k].header && list[k].category == list[i].category) {
-                        targetIndex = k;
-                        break;
-                    }
-                }
+                // Clicking a collapsed category expands it on the next
+                // frame; the first row becomes the keyboard/detail focus.
+                tab = list[i].category;
+                detailRow = 0;
+                listCursor = i;
+                focusChanged = true;
+                pulse = 1.0f;
+                tabSwitchT = 0.0f;
+                continue;
             }
             if (!list[targetIndex].header) {
                 listCursor = targetIndex;
@@ -7802,6 +7716,40 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                 }
                 ox += cellW + chipGap;
             }
+            if (category == 0 && row == 3) {
+#ifdef _WIN32
+                const wchar_t* blurHelp[] = {
+                    korean ? L"Windows 투명 효과가 필요합니다."
+                           : L"Requires Windows transparency effects.",
+                    korean ? L"배터리 절약 모드에서는 블러가 제한됩니다."
+                           : L"Battery saver can restrict background blur.",
+                    korean ? L"블러가 안 보이면 절약 모드를 해제해주세요."
+                           : L"Disable energy saver if blur is unavailable."
+                };
+#else
+                const wchar_t* blurHelp[] = {
+                    korean ? L"게임 배경을 흐리게 하여 메뉴 가독성을 높입니다."
+                           : L"Blurs the game background to improve menu readability.",
+                    korean ? L"바탕화면 블러 지원은 운영체제에 따라 다릅니다."
+                           : L"Desktop blur support depends on the operating system."
+                };
+#endif
+                const float helpX = ox + 8.0f * uiS;
+                const float helpW = std::max(1.0f, rightControlEnd - helpX);
+                float helpScale = 0.84f;
+                for (const wchar_t* line : blurHelp) {
+                    const float width = g_TextS.Width(line, 0.84f);
+                    if (width > helpW)
+                        helpScale = std::min(helpScale, 0.84f * helpW / width);
+                }
+                float helpY = y + 20.0f * uiS;
+                for (const wchar_t* line : blurHelp) {
+                    DrawShadowedText(g_TextS, line, helpX, helpY, helpScale,
+                                     0.72f, 0.82f, 0.92f, rowA, 0.58f);
+                    helpY += std::max(22.0f * uiS,
+                                     g_TextS.Height(line, helpScale) + 3.0f * uiS);
+                }
+            }
         } else if (setting.value) {
             DrawShadowedText(g_TextL, setting.value,
                              rightControlX, controlY, 0.88f,
@@ -7844,24 +7792,6 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                        && mx >= saveX && mx < saveX + saveW
                        && my >= saveY && my < saveY + saveH;
 
-    const float restartX = mainX;
-    const float restartY = backY - (backH + 14.0f * uiS);
-    const float restartW = backW;
-    const float restartH = backH;
-    const bool restartHit = inGameSettings && ready && !confirmBack
-                          && mx >= restartX && mx < restartX + restartW
-                          && my >= restartY && my < restartY + restartH;
-
-    if (inGameSettings) {
-        DrawUnifiedMenuCommand(
-            korean ? L"런 재시작" : L"RESTART RUN",
-            korean ? L"현재 장비 유지" : L"KEEP CURRENT LOADOUT",
-            restartX, restartY, restartW, restartH,
-            1.0f, 0.48f, 0.32f, treeA,
-            0.0f, restartHit, 0.0f, now + 0.12f,
-            0.82f, 0.40f, true, true, true);
-    }
-
     DrawUnifiedMenuCommand(korean ? L"뒤로" : L"BACK",
                            korean ? L"설정" : L"SETTINGS",
                            backX, backY, backW, backH,
@@ -7878,12 +7808,6 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                            0.0f, saveHit && settingsDirty, 0.0f, now + 0.2f,
                             0.78f, 0.38f, true, true, true);
 
-    if (restartHit && lmb && !g_LmbPrev) {
-        if (c.restartRun) c.restartRun();
-        ResetSettingsUi();
-        wasInline = false;
-        return;
-    }
     if (ready && !confirmBack && lmb && !g_LmbPrev && backHit) {
         if (settingsDirty) confirmBack = true;
         else exiting = true;
@@ -8026,7 +7950,10 @@ void Scene_Ready(const SceneCtx& c) {
         std::vector<std::wstring> lines;
         std::wstring cur;
         for (const wchar_t* p = text; *p; ++p) {
-            if (*p == L'/') { if (!cur.empty()) lines.push_back(cur); cur.clear(); }
+            if (*p == L'/' && (p == text || p[-1] == L' ' || p[1] == L' ')) {
+                if (!cur.empty()) lines.push_back(cur);
+                cur.clear();
+            }
             else cur += *p;
         }
         if (!cur.empty()) lines.push_back(cur);
@@ -8181,7 +8108,10 @@ void Scene_Paused(const SceneCtx& c) {
         bool hov = UpdatePanelButtonHover(s_HoverT[i], !exitActive,
                                           mx, my,
                                           baseBx, baseBy, BW, BH,
-                                          delta, 26.0f);
+                                          // Keep adjacent pause rows distinct.  The
+                                          // old 26px slop made a click near a row
+                                          // boundary activate its neighbour.
+                                          delta, 4.0f);
         float t = s_HoverT[i];
 
         bool  selected    = (s_ExitSel == i);
@@ -8325,7 +8255,9 @@ void Scene_GameOver(const SceneCtx& c) {
     const float titleY = std::max(58.0f, sh * 0.14f);
     const float deathY = titleY + 62.0f;
     const float reportY = deathY + 58.0f;
-    const float metricY = reportY + 28.0f;
+    // Keep the metric grid below the report rule.  The previous 28px offset
+    // put the first metric label directly on that rule at 1280px height.
+    const float metricY = reportY + 52.0f;
     const float metricRowH = std::max(76.0f, std::min(96.0f, sh * 0.102f));
     const float metricGap = leftW * 0.52f;
     const float accentR = 0.32f, accentG = 0.82f, accentB = 1.0f;
@@ -8392,7 +8324,7 @@ void Scene_GameOver(const SceneCtx& c) {
     wchar_t totalCoinBuf[64];
     swprintf_s(totalCoinBuf, L"%ls  %lld", kTotalLabel[li], g_Coins);
     g_TextS.Draw(totalCoinBuf, leftX + metricGap,
-                 metricY + metricRowH * 2.0f + 60.0f, 0.50f,
+                 metricY + metricRowH * 3.0f - 12.0f, 0.50f,
                  0.55f, 0.62f, 0.72f, 0.72f * ge);
 
     // The owned augment list becomes a compact, rarity-colored constellation.
@@ -8419,7 +8351,7 @@ void Scene_GameOver(const SceneCtx& c) {
 
     // Keep the selected character as the constellation's identity anchor.
     // Job icons are the same visual designs used on the loadout screen.
-    const int playerJob = (g_SelectedJob >= 0 && g_SelectedJob < JOB_COUNT)
+    const int playerJob = IsPlayableJob(g_SelectedJob)
                         ? g_SelectedJob : JOB_NONE;
     const GLuint playerIcon = JobIcon(playerJob);
     const float playerCoreR = chartR * 0.25f;
@@ -8594,7 +8526,10 @@ void Scene_GameOver(const SceneCtx& c) {
     const float BGAP = std::max(10.0f, sh * 0.013f);
     const float totalBH = 3.0f * BH + 2.0f * BGAP;
     const float bX0 = leftX;
-    const float statsBottom = metricY + metricRowH * 3.0f + 8.0f;
+    // Reserve the full metric block, including the total-coin line.  On
+    // compact windows the old three-row estimate put the first command on
+    // top of that line and produced the QA overlap seen in GAMEOVER.
+    const float statsBottom = metricY + metricRowH * 3.0f + 18.0f;
     const float bY0 = std::max(statsBottom + 30.0f,
                                sh - totalBH - std::max(44.0f, sh * 0.06f));
     const bool showButtons = gof >= 0.999f && !skippedCinematic;
@@ -9236,14 +9171,6 @@ static PlayerStats MakeAugPreviewBaseStats() {
         g_CurrentWeapon < (int)StartWeapon::_COUNT) {
         ApplyWeapon(base, (StartWeapon)g_CurrentWeapon);
     }
-    if (g_RunMelee) {
-        base.meleeWeapon = true;
-        base.fireInterval = 0.26f;
-    } else if (g_RunBow) {
-        base.bowWeapon = true;
-        base.bulletSpeed *= 1.4f;
-    }
-    base.baseFireInterval = base.fireInterval;
     return base;
 }
 
@@ -9382,7 +9309,6 @@ static bool AugIsMotionVisual(AugType type) {
     case AugType::VISION_UP:
     case AugType::LIGHT_AMMO:
     case AugType::LIGHT_STEP:
-    case AugType::GUN_RUNNER:
     case AugType::MINIATURIZE:
         return true;
     default:

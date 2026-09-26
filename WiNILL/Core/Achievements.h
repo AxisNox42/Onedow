@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 // ─────────────────────────────────────────────────────────────
 // 업적 + 직업(클래스) 시스템
 //   업적: 특정 조건(점수/킬/보스/증강 보유) 달성 시 1회 코인 보상 + 일부는 직업 해금.
@@ -11,32 +11,35 @@
 
 // ── 직업(클래스) ───────────────────────────────────
 enum JobId {
-    JOB_NONE,        // 방랑자 — 소총, 보너스 없음 (만능/입문)
-    JOB_ASSASSIN,    // 암살자 — 리볼버, 치명타
-    JOB_BERSERKER,   // 광전사 — 샷건, 광전사 + 유리대포
-    JOB_BOMBARDIER,  // 폭격수 — 대포, 연쇄 폭발
-    JOB_VAMPIRE,     // 흡혈귀 — 기관단총, 흡혈탄 + 흡혈마
-    JOB_SWORDSMAN,   // 검객 — 근접 호 스윙 (총 대신 칼)
-    JOB_ARCHER,      // 궁수 — 관통 화살 (총 대신 활)
+    JOB_NONE,              // Standard rifle.
+    JOB_RESERVED_1,
+    JOB_RESERVED_2,
+    JOB_RESERVED_3,
+    JOB_STATIC_FIELD,      // Static field; retains the old SMG save slot.
+    JOB_RESERVED_4,
+    JOB_RESERVED_5,
     JOB_COUNT
 };
-// 직업 선택창에 노출되는 직업 수. 모든 직업은 고유 고정 무기/조작을 가지며
-// 각 직업은 서로 다른 StartWeapon(또는 근접/활)에 매핑된다 — JobDef::fixedWeapon 참고.
-inline const int JOB_PLAYABLE = JOB_COUNT;
+// Only the rifle and static field are reachable from a new run. Reserved
+// slots keep old save-file indices stable without exposing retired jobs.
+inline constexpr int JOB_PLAYABLE = 2;
+inline bool IsPlayableJob(int j) {
+    return j == JOB_NONE || j == JOB_STATIC_FIELD;
+}
 
 // ── 업적 ───────────────────────────────────────────
 enum AchId {
     ACH_FIRST_BOSS,        // 보스 1마리 처치 (누적)
-    ACH_BOSS_3,            // 보스 3마리 처치 (누적) → 흡혈귀 해금
+    ACH_BOSS_3,            // Cumulative boss defeats.
     ACH_SCORE_300K,        // 한 판 30만 점
     ACH_SCORE_1M,          // 한 판 100만 점
-    ACH_KILLS_500,         // 한 판 500 처치 → 광전사 해금
-    ACH_CRIT_SCORE,        // 치명타 보유 + 한 판 20만 점 → 암살자 해금
-    ACH_DEATHBLAST_KILLS,  // 연쇄폭발 보유 + 한 판 300 처치 → 폭격수 해금
+    ACH_KILLS_500,         // Cumulative kill milestone.
+    ACH_CRIT_SCORE,       // Crit score milestone.
+    ACH_DEATHBLAST_KILLS, // Death blast kill milestone.
     ACH_DEBUFF_5,          // 디버프 5개 동시 보유
     ACH_GAMES_10,          // 누적 10판 플레이
-    ACH_SCORE_500K,        // 한 판 50만 점 → 검객 해금
-    ACH_BOSS_10,           // 보스 10마리 처치 (누적) → 궁수 해금
+    ACH_SCORE_500K,        // Score milestone.
+    ACH_BOSS_10,           // Cumulative boss defeats.
     ACH_COUNT
 };
 
@@ -53,10 +56,10 @@ inline const AchDef ACH_DEFS[ACH_COUNT] = {
         200, -1 },
     /* ACH_BOSS_3 */ {
         { L"보스 사냥꾼", L"Boss Hunter", L"ボスハンター" },
-        { L"보스 누적 3마리 처치  ·  흡혈귀 해금",
-          L"Defeat 3 bosses total  ·  unlocks Vampire",
-          L"ボス累計3体撃破  ·  吸血鬼解放" },
-        300, JOB_VAMPIRE },
+        { L"보스 누적 3마리 처치",
+          L"Defeat 3 bosses total",
+          L"ボス累計3体撃破" },
+        300, -1 },
     /* ACH_SCORE_300K */ {
         { L"고득점", L"High Scorer", L"高得点" },
         { L"한 판에 30만 점 달성", L"Reach 300k score in one run", L"1ランで30万点達成" },
@@ -67,22 +70,22 @@ inline const AchDef ACH_DEFS[ACH_COUNT] = {
         1000, -1 },
     /* ACH_KILLS_500 */ {
         { L"학살자", L"Slaughterer", L"虐殺者" },
-        { L"한 판에 500 처치  ·  광전사 해금",
-          L"500 kills in one run  ·  unlocks Berserker",
-          L"1ランで500撃破  ·  バーサーカー解放" },
-        400, JOB_BERSERKER },
+        { L"한 판에 500 처치",
+          L"500 kills in one run",
+          L"1ランで500撃破" },
+        400, -1 },
     /* ACH_CRIT_SCORE */ {
         { L"급소 강타", L"Vital Strike", L"急所打ち" },
-        { L"치명타 보유 + 한 판 20만 점  ·  암살자 해금",
-          L"Own Crit + 200k in one run  ·  unlocks Assassin",
-          L"クリ所持 + 1ラン20万点  ·  アサシン解放" },
-        350, JOB_ASSASSIN },
+        { L"치명타 보유 + 한 판 20만 점",
+          L"Own Crit + 200k in one run",
+          L"クリ所持 + 1ラン20万点" },
+        350, -1 },
     /* ACH_DEATHBLAST_KILLS */ {
         { L"연쇄 학살", L"Chain Massacre", L"連鎖虐殺" },
-        { L"연쇄 폭발 보유 + 한 판 300 처치  ·  폭격수 해금",
-          L"Own Death Blast + 300 kills  ·  unlocks Bombardier",
-          L"連鎖爆発所持 + 300撃破  ·  ボンバー解放" },
-        400, JOB_BOMBARDIER },
+        { L"연쇄 폭발 보유 + 한 판 300 처치",
+          L"Own Death Blast + 300 kills",
+          L"連鎖爆発所持 + 300撃破" },
+        400, -1 },
     /* ACH_DEBUFF_5 */ {
         { L"위험 감수", L"Risk Taker", L"危険を冒す" },
         { L"디버프 5개를 동시에 보유", L"Hold 5 debuffs at once", L"デバフを同時に5個所持" },
@@ -107,8 +110,7 @@ struct JobDef {
     int            unlockAch;          // AchId or -1 (항상 해금)
     AugType        startAugs[4];
     int            startAugCount;
-    int            weaponMode;         // 0=총(고정 무기) 1=근접(검) 2=관통화살(활)
-    int            fixedWeapon;        // weaponMode==0 일 때 사용할 StartWeapon 인덱스 (-1=해당 없음)
+    int            fixedWeapon;        // StartWeapon 인덱스 (-1=해당 없음)
 };
 inline const JobDef JOB_DEFS[JOB_COUNT] = {
     /* JOB_NONE */ {
@@ -116,43 +118,33 @@ inline const JobDef JOB_DEFS[JOB_COUNT] = {
         { L"소총 — 표준 연사, 균형 잡힌 범용 무기",
           L"Rifle — standard fire rate, balanced all-rounder",
           L"ライフル — 標準連射、バランス型汎用武器" },
-        -1, {}, 0, 0, (int)StartWeapon::RIFLE },
-    /* JOB_ASSASSIN */ {
-        { L"암살자", L"Assassin", L"アサシン" },
-        { L"리볼버 — 낮은 연사, 강력한 단발 화력",
-          L"Revolver — low fire rate, high single-shot damage",
-          L"リボルバー — 低連射、強力な単発火力" },
-        ACH_CRIT_SCORE, {}, 0, 0, (int)StartWeapon::REVOLVER },
-    /* JOB_BERSERKER */ {
-        { L"광전사", L"Berserker", L"バーサーカー" },
-        { L"샷건 — 근거리 다중 탄환, 높은 근접 DPS",
-          L"Shotgun — multi-pellet spread, high close-range DPS",
-          L"ショットガン — 近距離多弾、高近接DPS" },
-        ACH_KILLS_500, {}, 0, 0, (int)StartWeapon::SHOTGUN },
-    /* JOB_BOMBARDIER */ {
-        { L"폭격수", L"Bombardier", L"ボンバー" },
-        { L"대포 — 느리지만 강력한 폭발탄, 광역 피해",
-          L"Cannon — slow but explosive, area splash damage",
-          L"大砲 — 遅いが強力な爆発弾、範囲ダメージ" },
-        ACH_DEATHBLAST_KILLS, {}, 0, 0, (int)StartWeapon::CANNON },
-    /* JOB_VAMPIRE */ {
-        { L"흡혈귀", L"Vampire", L"吸血鬼" },
-        { L"기관단총 — 빠른 연사, 낮은 단발 대미지",
-          L"SMG — rapid fire, low per-shot damage",
-          L"サブマシンガン — 高速連射、低単発ダメージ" },
-        ACH_BOSS_3, {}, 0, 0, (int)StartWeapon::SMG },
-    /* JOB_SWORDSMAN */ {
-        { L"검객", L"Swordsman", L"剣士" },
-        { L"근접 칼 — 조준 방향 호 스윙, 근거리 고화력",
-          L"Melee blade — directional arc swing, high close DPS",
-          L"近接剣 — 扇状の斬撃、近距離高火力" },
-        ACH_SCORE_500K, {}, 0, 1, -1 },
-    /* JOB_ARCHER */ {
-        { L"궁수", L"Archer", L"弓兵" },
-        { L"활 — 차징으로 강해지는 관통 화살 (최대 4배)",
-          L"Bow — chargeable piercing arrow, scales up to 4x power",
-          L"弓 — チャージ貫通矢、最大4倍威力" },
-        ACH_BOSS_10, {}, 0, 2, -1 },
+        -1, {}, 0, (int)StartWeapon::RIFLE },
+    /* JOB_RESERVED_1 */ {
+        { L"REMOVED", L"REMOVED", L"REMOVED" },
+        { L"This job is no longer available", L"This job is no longer available", L"This job is no longer available" },
+        -1, {}, 0, -1 },
+    /* JOB_RESERVED_2 */ {
+        { L"REMOVED", L"REMOVED", L"REMOVED" },
+        { L"This job is no longer available", L"This job is no longer available", L"This job is no longer available" },
+        -1, {}, 0, -1 },
+    /* JOB_RESERVED_3 */ {
+        { L"REMOVED", L"REMOVED", L"REMOVED" },
+        { L"This job is no longer available", L"This job is no longer available", L"This job is no longer available" },
+        -1, {}, 0, -1 },
+    /* JOB_STATIC_FIELD */ {
+        { L"정전기장", L"STATIC FIELD", L"静電場" },
+        { L"플레이어 주변을 지속 전기장으로 제압하는 범위형 무기",
+          L"Area weapon that controls nearby space with a sustained electric field",
+          L"プレイヤー周囲を持続電場で制圧する範囲武器" },
+        -1, {}, 0, (int)StartWeapon::SMG },
+    /* JOB_RESERVED_4 */ {
+        { L"REMOVED", L"REMOVED", L"REMOVED" },
+        { L"This job is no longer available", L"This job is no longer available", L"This job is no longer available" },
+        -1, {}, 0, -1 },
+    /* JOB_RESERVED_5 */ {
+        { L"REMOVED", L"REMOVED", L"REMOVED" },
+        { L"This job is no longer available", L"This job is no longer available", L"This job is no longer available" },
+        -1, {}, 0, -1 },
 };
 
 // ── 영구/런타임 상태 ────────────────────────────────
@@ -193,8 +185,9 @@ inline int AugIndexOf(AugType t) {
 
 // 직업 해금 여부 (항상 해금 or 골드 구매 or 업적)
 inline bool JobUnlocked(int j) {
-    if (j == JOB_NONE) return true;
     if (j < 0 || j >= JOB_COUNT) return false;
+    if (!IsPlayableJob(j)) return false;
+    if (j == JOB_NONE || j == JOB_STATIC_FIELD) return true;
     if (g_JobBought[j]) return true;
     int a = JOB_DEFS[j].unlockAch;
     return (a < 0) || (a < ACH_COUNT && g_AchUnlocked[a]);

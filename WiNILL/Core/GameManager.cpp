@@ -1,4 +1,4 @@
-#include "GameManager.h"
+﻿#include "GameManager.h"
 #include "Settings.h"
 #include "PlayerStats.h"
 #include "Weapons.h"
@@ -10,8 +10,6 @@ extern PlayerStats g_Stats;   // 최대치 도달 증강 게이팅용 (main.cpp 
 extern int         g_CurrentWeapon;
 
 static bool DebuffCandidateAllowed(AugType t) {
-    if (t == AugType::D_TROJAN_BOOST && !g_TypeOwned[(int)AugType::D_BLINKER])
-        return false;
     if (t == AugType::D_BLEED && g_Stats.regenPerSec <= 0.0f)
         return false;
     if (t == AugType::D_APPROACH && g_Stats.approachStacks >= 3)
@@ -186,7 +184,7 @@ static int RarityWeight(int rarity, int level) {
 // 후보 한 장 추첨: rarity 가중 → 해당 등급 내 무작위 (takenOnce 및 고유 카테고리 잠금 적용)
 // allowDebuff=false 면 DEBUFF 등급 제외 (버프 페이지용)
 static int RollOneAug(const bool* takenOnce,
-                      bool sizeTaken, bool distTaken,
+                      bool sizeTaken,
                       bool allowSpecial, int level,
                       bool allowDebuff = false,
                       const bool* excluded = nullptr,
@@ -211,10 +209,9 @@ static int RollOneAug(const bool* takenOnce,
         }
         // 보유 여부 체크 헬퍼 — 티어드 증강 선행 조건용
         auto hasOwnedType = [&](AugType wantType) -> bool {
-            for (int k = 0; k < AUG_TOTAL; k++) {
-                if (ALL_AUGS[k].type == wantType && takenOnce[k]) return true;
-            }
-            return false;
+            const int typeIndex = (int)wantType;
+            return typeIndex >= 0 && typeIndex < AUG_TYPE_SLOTS &&
+                   g_TypeOwned[typeIndex];
         };
         auto hasAnyMythicOwned = [&]() -> bool {
             for (int k = 0; k < AUG_TOTAL; k++) {
@@ -223,17 +220,11 @@ static int RollOneAug(const bool* takenOnce,
             }
             return false;
         };
-        auto playerHasSniper = [&]() -> bool {
-            return g_Stats.sniper ||
-                   g_CurrentWeapon == (int)StartWeapon::SNIPER;
-        };
         auto playerHasSMG = [&]() -> bool {
-            return !g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
-                   g_CurrentWeapon == (int)StartWeapon::SMG;
+            return g_CurrentWeapon == (int)StartWeapon::SMG;
         };
         auto playerHasRifle = [&]() -> bool {
-            return !g_Stats.meleeWeapon && !g_Stats.bowWeapon &&
-                   g_CurrentWeapon == (int)StartWeapon::RIFLE;
+            return g_CurrentWeapon == (int)StartWeapon::RIFLE;
         };
 
         // 해당 등급의 후보 수집
@@ -245,10 +236,9 @@ static int RollOneAug(const bool* takenOnce,
             if (excludeRandom && t == AugType::RANDOM_AUG) continue;
             // 한 번만 뽑힐 증강 (EPIC/LEG/COMBO·티어드·불리언 플래그·적출현 디버프)
             if (AugOnceOnly(t, ALL_AUGS[i].rarity) && takenOnce[i]) continue;
-            // 고유 카테고리 잠금 (SIZE/DISTANCE)
+            // 고유 카테고리 잠금 (SIZE)
             AugUnique u = ALL_AUGS[i].unique;
             if (u == AugUnique::SIZE     && sizeTaken) continue;
-            if (u == AugUnique::DISTANCE && distTaken) continue;
             // 티어드 강화 선행 조건
             if (t == AugType::BULLET_RAIN_2 && !hasOwnedType(AugType::BULLET_RAIN))   continue;
             if (t == AugType::BULLET_RAIN_3 && !hasOwnedType(AugType::BULLET_RAIN_2)) continue;
@@ -266,34 +256,18 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::CHAKRAM_SINGULARITY && !hasOwnedType(AugType::CHAKRAM_3)) continue;
             if (t == AugType::LIFESTEAL_2 && !hasOwnedType(AugType::LIFESTEAL)) continue;
             if (t == AugType::CHAIN_2     && !hasOwnedType(AugType::CHAIN))     continue;
-            if (t == AugType::MINIGUN_2   && !hasOwnedType(AugType::MINIGUN))  continue;
-            if (t == AugType::MINIGUN_CYCLONE && !hasOwnedType(AugType::MINIGUN_2)) continue;
-            if (t == AugType::HE_SHELLS_2       && !hasOwnedType(AugType::HE_SHELLS)) continue;
-            if (t == AugType::REVOLVER_SILVER   && !hasOwnedType(AugType::REVOLVER_OVERLOAD)) continue;
-            if (t == AugType::D_SPLITTER_BOOST  && !hasOwnedType(AugType::D_SPLITTER)) continue;
             if (!DebuffCandidateAllowed(t)) continue;
             // 1런 1신화 — 이미 신화 보유 시 다른 신화 제외
             if (ALL_AUGS[i].rarity == AugRarity::MYTHIC && hasAnyMythicOwned()) continue;
             // 흡혈탄 스택 상한
             if (t == AugType::LIFESTEAL && g_Stats.lifestealStacks >= 4) continue;
             // 무기/스킬 전용 — 해당 무기 없으면 제외
-            if (t == AugType::SHOTGUN_SPREAD     && !g_Stats.shotgun)  continue;
-            if (t == AugType::REVOLVER_OVERLOAD  && !g_Stats.revolver) continue;
-            if (t == AugType::HE_SHELLS          && !g_Stats.cannon)   continue;
-            if (t == AugType::SNIPER             && g_Stats.sniper)    continue;
-            if (t == AugType::SKILL_FOCUS        && !playerHasSniper()) continue;
-            if (t == AugType::SMG_COMPRESSOR    && !playerHasSMG())   continue;
             if (t == AugType::RIFLE_STABILITY   && !playerHasRifle()) continue;
-            if (t == AugType::SNIPER_AMPLIFIER  && !playerHasSniper()) continue;
-            // 검객/궁수 전용 트리 — 해당 클래스가 아니면 제외
-            if ((t == AugType::MELEE_WIDE || t == AugType::BLADE_WIND) && !g_Stats.meleeWeapon) continue;
-            if ((t == AugType::POWER_DRAW || t == AugType::MULTISHOT) && !g_Stats.bowWeapon)   continue;
-            // 제거/보류 증강 단일 게이트 (고장난조준선/백신/건러너/취함/영혼수확/클래스)
+            // Retired augment slots are filtered by AugRemoved.
             if (AugRemoved(t)) continue;
             // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
             if (t == AugType::VISION_UP && g_Stats.visionStacks >= 5) continue;
             if (t == AugType::CRIT      && g_Stats.critChance   >= 75) continue;
-            // 쉬움: 자폭병 관련 증강 제외 (#107)
             pool[poolSize++] = i;
         }
         if (poolSize > 0)
@@ -310,29 +284,27 @@ static int RollOneDebuff(const bool* takenOnce = nullptr,
         if (excluded && excluded[i]) continue;
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
-        if (AugRemoved(t)) continue;   // 취함 등 삭제된 디버프 제외 (디버프 선택 페이지)
+        if (AugRemoved(t)) continue;   // Retired debuffs excluded.
         if (!DebuffCandidateAllowed(t)) continue;
         // 한 번만 뜨는 디버프(적 출현형)는 이미 보유 시 제외
         if (takenOnce && AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
-        // 쉬움: 자폭병 디버프 제외 (#107)
         pool[poolSize++] = i;
     }
     if (poolSize == 0) return -1;
     return pool[rand() % poolSize];
 }
 
-void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuff) {
+void GameManager::PickAugChoices(bool sizeTaken, bool allowDebuff) {
     // 3장 — 같은 카드 안 나오게 중복 방지, SPECIAL 포함
     //   allowDebuff (크리에이티브 샌드박스) 면 디버프도 카드 풀에 섞임
     bool used[AUG_TOTAL] = {};
     augChoiceCount = 0;
     for (int i = 0; i < 3; i++) augChoices[i] = -1;
     bool gotSize = sizeTaken;
-    bool gotDist = distTaken;
     for (int i = 0; i < 3; i++) {
         int idx = -1;
         for (int attempt = 0; attempt < 50; attempt++) {
-            idx = RollOneAug(takenOnce, gotSize, gotDist,
+            idx = RollOneAug(takenOnce, gotSize,
                              /*allowSpecial=*/true, playerLevel, allowDebuff,
                              used);
             if (idx >= 0 && !used[idx]) break;
@@ -341,7 +313,6 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
         used[idx] = true;
         augChoices[augChoiceCount++] = idx;
         if (ALL_AUGS[idx].unique == AugUnique::SIZE)     gotSize = true;
-        if (ALL_AUGS[idx].unique == AugUnique::DISTANCE) gotDist = true;
     }
 
     // L1~2: 3장 중 최소 1장 희귀 이상 보장 (초반 파워 스파이크)
@@ -352,7 +323,7 @@ void GameManager::PickAugChoices(bool sizeTaken, bool distTaken, bool allowDebuf
                 hasRarePlus = true;
         if (!hasRarePlus) {
             for (int attempt = 0; attempt < 80; attempt++) {
-                int idx = RollOneAug(takenOnce, gotSize, gotDist,
+                int idx = RollOneAug(takenOnce, gotSize,
                                      true, playerLevel, allowDebuff, used);
                 if (idx < 0) break;
                 if (ALL_AUGS[idx].rarity < AugRarity::RARE) continue;
@@ -394,7 +365,7 @@ int GameManager::PickRandomDebuffIndices(int* outArr, int n) {
     for (int i = 0; i < AUG_TOTAL; i++) {
         if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
         AugType t = ALL_AUGS[i].type;
-        if (AugRemoved(t)) continue;   // 취함 등 제거된 디버프 제외
+        if (AugRemoved(t)) continue;   // Retired debuffs excluded.
         if (!DebuffCandidateAllowed(t)) continue;
         if (AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
         pool[poolSize++] = i;
@@ -434,20 +405,19 @@ void GameManager::PickDebuffChoices() {
 }
 
 int GameManager::PickRandomAugIndices(int* outArr, int n,
-                                      bool sizeTaken, bool distTaken,
+                                      bool sizeTaken,
                                       bool allowUnique, bool allowSpecial,
                                       bool allowDebuff) {
     bool used[AUG_TOTAL] = {};
-    // 이번 배치에서 이미 뽑은 SIZE/DISTANCE 고유 카테고리 추적 —
+    // 이번 배치에서 이미 뽑은 SIZE 고유 카테고리 추적 —
     //   대혼란이 거대화+축소화를 동시에 주던 버그 fix (상호 배타)
-    bool gotSize = sizeTaken, gotDist = distTaken;
+    bool gotSize = sizeTaken;
     int filled = 0;
     for (int i = 0; i < n; i++) {
         int idx = -1;
         for (int attempt = 0; attempt < 80; attempt++) {
             idx = RollOneAug(takenOnce,
                              allowUnique ? gotSize : true,
-                             allowUnique ? gotDist : true,
                              allowSpecial, playerLevel,
                              allowDebuff, used, /*excludeRandom=*/true);
             // RANDOM_AUG 자기 자신 제외
@@ -461,8 +431,7 @@ int GameManager::PickRandomAugIndices(int* outArr, int n,
         filled++;
         if (allowUnique) {
             if (ALL_AUGS[idx].unique == AugUnique::SIZE)     gotSize = true;
-            if (ALL_AUGS[idx].unique == AugUnique::DISTANCE) gotDist = true;
-        }
+            }
     }
     return filled;
 }
@@ -477,8 +446,7 @@ bool GameManager::ActivateNextAugmentReward() {
 
     while (!augmentRewardQueue.empty()) {
         const AugmentRewardEntry entry = augmentRewardQueue.front();
-        PickAugChoices(g_Stats.sizeAugTaken, g_Stats.distAugTaken,
-                       entry.allowDebuff);
+        PickAugChoices(g_Stats.sizeAugTaken, entry.allowDebuff);
         if (augChoiceCount <= 0) {
             augmentRewardQueue.pop_front();
             continue;

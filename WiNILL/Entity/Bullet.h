@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <glm/glm.hpp>
 #include <cmath>
 
@@ -15,15 +15,13 @@ public:
     float homingTurn   = 5.0f;   // 라디안/초
     // 개별 데미지 배율 (탄환 세례 등 0.5x)
     float dmgMult      = 1.0f;
-    // 대포(CANNON) 잔존 데미지 — >0 면 cannon 모드 (이 값으로 데미지 적용, 죽인 적 hp 만큼 차감, 0 될 때까지 관통)
-    float remainingDmg = 0.0f;
-    // 사거리 제한 (SHOTGUN 등). 0 = 무제한. 누적 이동거리가 maxRange 넘으면 deactivate
+    // 적 탄환과 충돌해도 유지되는 관통 잔량
+    float pierceRemaining = 0.0f;
+    // 사거리 제한 발사체. 0이면 무제한.
     float maxRange  = 0.0f;
     float traveled  = 0.0f;
-    // 렌더 크기 배율 (CANNON 총알 5배 등)
+    // 렌더 크기 배율
     float sizeScale = 1.0f;
-    // 포탑 전용 고정 데미지 (>0 이면 이 값으로 피해. 소총 기준 능력치)
-    float turretDmg = 0.0f;
     // 적 총알 데미지 (>0 이면 플레이어 피격 시 이 값. 0 = 기본 10). 반사 총알용.
     float enemyDmg = 0.0f;
     // 플레이어 탄으로 지울 수 있는 적 탄환. 일부 보스 패턴 전용.
@@ -40,14 +38,7 @@ public:
     float launchAccel = 0.0f;
     int pierceBonusPct = 0;  // 집중 조준 등 일회성 관통 보너스
     bool  rainMissile = false;   // 탄환 세례 — 로켓 스프라이트로 렌더
-    bool  silverBurn  = false;   // 은탄환 — 명중 시 화상 DoT
     bool  crescentBlade = false; // 초승달 검기 — arc 모양 렌더
-
-    // Unused direct blast flag. Kept for possible future range-explosion bullets.
-    bool  shellKaboom   = false;
-    bool  shellHandled  = false;
-    float shellRadius   = 0.0f;
-    float shellDmg      = 0.0f;
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 

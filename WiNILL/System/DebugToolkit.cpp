@@ -1,4 +1,4 @@
-#include "DebugToolkit.h"
+﻿#include "DebugToolkit.h"
 
 #include <algorithm>
 #include <array>
@@ -240,27 +240,17 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"xpMult", L"경험치 배율" },
         { L"bulletSpread", L"탄 퍼짐" },
         { L"pierceChance", L"관통 확률" },
-        { L"mobXpBonus", L"몬스터 경험치 보너스" },
-        { L"mobKindXpBonus[]", L"몬스터 종류별 경험치 보너스" },
-        { L"eliteXpBonus", L"엘리트 경험치 보너스" },
-        { L"specialMobXpBonus", L"특수 몬스터 경험치 보너스" },
-        { L"bomberXpBonus", L"폭격기 경험치 보너스" },
-        { L"rangedXpBonus", L"원거리 경험치 보너스" },
+        { L"mobXpBonus", L"전체 몬스터 경험치 보너스" },
         { L"xpPerSec", L"초당 경험치" },
         { L"rmobSpawnDelayBonus", L"원거리 생성 지연 보너스" },
         { L"mobCapBonus", L"몬스터 최대치 보너스" },
         { L"visionStacks", L"시야 스택" },
         { L"totalAugs", L"총 증강 수" },
         { L"sizeAugTaken", L"크기 증강 획득" },
-        { L"distAugTaken", L"거리 증강 획득" },
         { L"lightStep", L"라이트스텝" },
         { L"lightStepDisableTimer", L"라이트스텝 비활성 타이머" },
-        { L"gunRunner", L"건러너" },
         { L"vampire", L"흡혈" },
         { L"vampireKillStreak", L"흡혈 처치 연속" },
-        { L"brokenSight", L"브로큰 사이트" },
-        { L"sniper", L"스나이퍼" },
-        { L"bayonet", L"총검" },
         { L"miniaturize", L"소형화" },
         { L"gigantify", L"거대화" },
         { L"pierce", L"관통" },
@@ -272,22 +262,8 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"ricochetDmgMult", L"도탄 피해 배율" },
         { L"mk2", L"MK2" },
         { L"mk2Used", L"MK2 사용" },
-        { L"minigun", L"미니건" },
-        { L"minigunTier", L"미니건 단계" },
-        { L"minigunCyclone", L"미니건 사이클론" },
-        { L"minigunHitBoost", L"미니건 피격 보너스" },
-        { L"hackBomber", L"해킹 폭격기" },
         { L"hackRanged", L"해킹 원거리" },
-        { L"hackFirewall", L"해킹 방화벽" },
-        { L"shotgun", L"샷건" },
-        { L"revolver", L"리볼버" },
-        { L"shotgunSpread", L"샷건 확산" },
-        { L"revolverOverload", L"리볼버 과부하" },
-        { L"revolverSilver", L"실버 리볼버" },
-        { L"heShells", L"HE 탄" },
-        { L"heShells2", L"HE 탄 II" },
         { L"dashUpgrade", L"대시 강화" },
-        { L"sniperDistBonusPct", L"스나이퍼 거리 보너스" },
         { L"powerSurgeStacks", L"파워 서지 스택" },
         { L"commonMultBoosts", L"일반 증폭 수" },
         { L"critChance", L"치명타 확률" },
@@ -299,28 +275,16 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"deathBlast", L"죽음의 폭발" },
         { L"deathBlastMult", L"죽음의 폭발 배율" },
         { L"deathBlastDmgPct", L"죽음의 폭발 피해 비율" },
-        { L"meleeWeapon", L"근접 무기" },
-        { L"bowWeapon", L"활 무기" },
-        { L"meleeWide", L"근접 범위 강화" },
-        { L"bladeWind", L"칼날 바람" },
-        { L"powerDraw", L"파워 드로우" },
-        { L"multishot", L"다중 발사" },
-        { L"bowChargeRateMult", L"활 충전 속도 배율" },
-        { L"bowChargeCapBonus", L"활 충전 한도 보너스" },
         { L"drone", L"드론" },
         { L"droneCount", L"드론 수" },
         { L"droneRapid", L"드론 연사" },
         { L"laser", L"레이저" },
         { L"laserTier", L"레이저 단계" },
-        { L"purgeNova", L"퍼지 노바" },
         { L"bulletRain", L"탄환 비" },
         { L"bulletRainCooldown", L"탄환 비 쿨다운" },
         { L"rainKillReduce", L"탄환 비 처치 쿨다운 감소" },
         { L"chakramCount", L"차크람 수" },
         { L"chakramSingularity", L"차크람 특이점" },
-        { L"cannon", L"캐논" },
-        { L"turretMode", L"터렛 모드" },
-        { L"soulHarvest", L"영혼 수확" },
         { L"killCount", L"처치 수" },
         { L"baseFireInterval", L"기본 발사 간격" },
         { L"mk2SkipDebuff", L"MK2 디버프 무시" },
@@ -330,33 +294,11 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"rmobDelayMult", L"원거리 지연 배율" },
         { L"rmobDelayStacks", L"원거리 지연 스택" },
         { L"mobSpawnMult", L"몬스터 생성 배율" },
-        { L"splitterMobs", L"분열 몬스터" },
-        { L"splitterBoost", L"분열 강화" },
-        { L"blinkerMobs", L"점멸 몬스터" },
-        { L"orbiterMobs", L"궤도 몬스터" },
-        { L"spawnerMobs", L"생성 몬스터" },
-        { L"shieldedMobs", L"방패 몬스터" },
         { L"mobSpeedMult", L"몬스터 속도 배율" },
         { L"approachingDeath", L"죽음 접근" },
         { L"approachStacks", L"접근 스택" },
-        { L"drunk", L"취함" },
-        { L"drunkActiveDuration", L"취함 지속 시간" },
-        { L"drunkCooldown", L"취함 쿨다운" },
-        { L"bomberHpMult", L"폭격기 체력 배율" },
-        { L"bomberSpeedMult", L"폭격기 속도 배율" },
-        { L"bomberBlastMult", L"폭격기 폭발 배율" },
         { L"monsterHpMult", L"몬스터 체력 배율" },
-        { L"specialMobHpMult", L"특수 몬스터 체력 배율" },
-        { L"trojanBoost", L"트로이 목마 강화" },
-        { L"crasherBoost", L"크래셔 강화" },
-        { L"badsectorMobs", L"배드섹터 몬스터" },
-        { L"regerrorMobs", L"레그에러 몬스터" },
-        { L"ddosMobs", L"DDoS 몬스터" },
-        { L"weaverBoost", L"위버 강화" },
-        { L"bruteBoost", L"브루트 강화" },
         { L"mobPackBonus", L"몬스터 무리 보너스" },
-        { L"eliteChanceMult", L"엘리트 등장 확률 배율" },
-        { L"varietyChanceMult", L"종류 다양성 확률 배율" },
         { L"flatDamageBonus", L"고정 피해 보너스" }
     };
     for (const FieldNamePair& pair : names) {
@@ -384,47 +326,39 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
         ADD_FLOAT(regenLowHpMult); ADD_INT(vampireKillNeed);
         ADD_FLOAT(lightStepHitLock); ADD_FLOAT(playerSizeMult); ADD_FLOAT(xpMult);
         ADD_FLOAT(bulletSpread); ADD_INT(pierceChance); ADD_INT(mobXpBonus);
-        for (int i = 0; i < PlayerStats::MOB_KIND_XP_SLOTS; ++i)
-            f.push_back({ LocalizedFieldName(L"mobKindXpBonus[]"), FieldType::Int,
-                          offsetof(PlayerStats, mobKindXpBonus) + sizeof(int) * (size_t)i });
-        ADD_INT(eliteXpBonus); ADD_INT(specialMobXpBonus); ADD_INT(bomberXpBonus);
-        ADD_INT(rangedXpBonus); ADD_FLOAT(xpPerSec); ADD_FLOAT(rmobSpawnDelayBonus);
+
+        // Keep the debug list aligned with the six live monster signals. The
+        // close-range values are stored by MobKind, while Scope has its own
+        // ranged XP accumulator.
+        const auto addMobXp = [&](const wchar_t* label, MobKind kind) {
+            f.push_back({ label, FieldType::Int,
+                          offsetof(PlayerStats, mobKindXpBonus) +
+                              sizeof(int) * (size_t)static_cast<int>(kind) });
+        };
+        addMobXp(L"로터 경험치 보너스", MobKind::ROTOR);
+        f.push_back({ L"스코프 경험치 보너스", FieldType::Int,
+                      offsetof(PlayerStats, rangedXpBonus) });
+        addMobXp(L"그라비스 경험치 보너스", MobKind::GRAVIS);
+        addMobXp(L"제네시스 경험치 보너스", MobKind::GENESIS);
+        addMobXp(L"스웜 경험치 보너스", MobKind::SWARM);
+        addMobXp(L"퀘이사 경험치 보너스", MobKind::QUASAR);
+
+        ADD_FLOAT(xpPerSec); ADD_FLOAT(rmobSpawnDelayBonus);
         ADD_INT(mobCapBonus); ADD_INT(visionStacks); ADD_INT(totalAugs);
-        ADD_BOOL(sizeAugTaken); ADD_BOOL(distAugTaken);
-        ADD_BOOL(lightStep); ADD_FLOAT(lightStepDisableTimer); ADD_BOOL(gunRunner);
-        ADD_BOOL(vampire); ADD_INT(vampireKillStreak); ADD_BOOL(brokenSight);
-        ADD_BOOL(sniper); ADD_BOOL(bayonet); ADD_BOOL(miniaturize); ADD_BOOL(gigantify);
+        ADD_BOOL(sizeAugTaken);
+        ADD_BOOL(vampire); ADD_INT(vampireKillStreak);
         ADD_BOOL(pierce); ADD_BOOL(twin); ADD_INT(twinCount); ADD_BOOL(chakram);
         ADD_INT(ricochetMax); ADD_INT(ricochetChance); ADD_FLOAT(ricochetDmgMult);
-        ADD_BOOL(mk2); ADD_BOOL(mk2Used); ADD_BOOL(minigun); ADD_INT(minigunTier);
-        ADD_BOOL(minigunCyclone); ADD_FLOAT(minigunHitBoost); ADD_BOOL(hackBomber);
-        ADD_BOOL(hackRanged); ADD_BOOL(hackFirewall); ADD_BOOL(shotgun);
-        ADD_BOOL(revolver); ADD_BOOL(shotgunSpread); ADD_BOOL(revolverOverload);
-        ADD_BOOL(revolverSilver); ADD_BOOL(heShells); ADD_BOOL(heShells2);
-        ADD_BOOL(dashUpgrade); ADD_FLOAT(sniperDistBonusPct); ADD_INT(powerSurgeStacks);
+        ADD_BOOL(mk2); ADD_BOOL(mk2Used);
         ADD_INT(commonMultBoosts); ADD_INT(critChance); ADD_FLOAT(critMult);
         ADD_FLOAT(lifestealPerKill); ADD_INT(lifestealStacks); ADD_BOOL(lifesteal2);
         ADD_BOOL(berserk); ADD_BOOL(deathBlast); ADD_FLOAT(deathBlastMult);
-        ADD_FLOAT(deathBlastDmgPct); ADD_BOOL(meleeWeapon); ADD_BOOL(bowWeapon);
-        ADD_BOOL(meleeWide); ADD_BOOL(bladeWind); ADD_BOOL(powerDraw); ADD_BOOL(multishot);
-        ADD_FLOAT(bowChargeRateMult); ADD_FLOAT(bowChargeCapBonus);
         ADD_BOOL(drone); ADD_INT(droneCount); ADD_BOOL(droneRapid); ADD_BOOL(laser);
-        ADD_INT(laserTier); ADD_INT(purgeNova); ADD_BOOL(bulletRain);
+        ADD_INT(laserTier); ADD_BOOL(bulletRain);
         ADD_FLOAT(bulletRainCooldown); ADD_BOOL(rainKillReduce); ADD_INT(chakramCount);
-        ADD_BOOL(chakramSingularity); ADD_BOOL(cannon); ADD_BOOL(turretMode);
-        ADD_BOOL(soulHarvest); ADD_LL(killCount); ADD_FLOAT(baseFireInterval);
+        ADD_LL(killCount); ADD_FLOAT(baseFireInterval);
         ADD_BOOL(mk2SkipDebuff); ADD_INT(rmobMaxBonus); ADD_FLOAT(rmobHpMult);
         ADD_FLOAT(rmobDmgMult); ADD_FLOAT(rmobDelayMult); ADD_INT(rmobDelayStacks);
-        ADD_FLOAT(mobSpawnMult); ADD_BOOL(splitterMobs); ADD_BOOL(splitterBoost);
-        ADD_BOOL(blinkerMobs); ADD_BOOL(orbiterMobs); ADD_BOOL(spawnerMobs);
-        ADD_BOOL(shieldedMobs); ADD_FLOAT(mobSpeedMult); ADD_BOOL(approachingDeath);
-        ADD_INT(approachStacks); ADD_BOOL(drunk); ADD_FLOAT(drunkActiveDuration);
-        ADD_FLOAT(drunkCooldown); ADD_FLOAT(bomberHpMult); ADD_FLOAT(bomberSpeedMult);
-        ADD_FLOAT(bomberBlastMult); ADD_FLOAT(monsterHpMult); ADD_FLOAT(specialMobHpMult);
-        ADD_BOOL(trojanBoost); ADD_BOOL(crasherBoost); ADD_BOOL(badsectorMobs);
-        ADD_BOOL(regerrorMobs); ADD_BOOL(ddosMobs); ADD_BOOL(weaverBoost);
-        ADD_BOOL(bruteBoost); ADD_INT(mobPackBonus); ADD_FLOAT(eliteChanceMult);
-        ADD_FLOAT(varietyChanceMult); ADD_FLOAT(flatDamageBonus);
 
 #undef ADD_FLOAT
 #undef ADD_INT
@@ -470,10 +404,7 @@ const wchar_t* DebugToolkit::FieldTypeLabel(FieldType type) {
 
 const wchar_t* DebugToolkit::MobLabel(int index) {
     static const wchar_t* labels[] = {
-        L"일반", L"분열", L"점멸", L"돌진",
-        L"위버", L"브루트", L"궤도", L"생성",
-        L"방패", L"DDoS", L"배드섹터", L"레그에러",
-        L"그라비스", L"퀘이사", L"원거리", L"폭격기"
+        L"로터", L"제네시스", L"스웜", L"그라비스", L"퀘이사", L"스코프"
     };
     if (index < 0 || index >= (int)(sizeof(labels) / sizeof(labels[0])))
         return L"알 수 없음";
@@ -838,7 +769,7 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
         const float rowStep = SpawnGridStep(p.h);
         const float buttonW = (p.w - 48.0f) * 0.5f;
         const float gap = 16.0f;
-        for (int index = 0; index < 16; ++index) {
+        for (int index = 0; index < 6; ++index) {
             const int col = index & 1;
             const int row = index / 2;
             const float bx = p.x + 16.0f + col * (buttonW + gap);
@@ -853,12 +784,10 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
             if (selectedMob_ < 0) {
                 SetMessage(L"먼저 대상을 선택하세요");
             } else {
-                if (selectedMob_ < 14 && context_.spawnMob)
+                if (selectedMob_ < 5 && context_.spawnMob)
                     context_.spawnMob(selectedMob_, spawnCount_);
-                else if (selectedMob_ == 14 && context_.spawnRanged)
+                else if (selectedMob_ == 5 && context_.spawnRanged)
                     context_.spawnRanged(spawnCount_);
-                else if (selectedMob_ == 15 && context_.spawnBomber)
-                    context_.spawnBomber(spawnCount_);
                 std::wstring message = L"소환 완료: ";
                 message += MobLabel(selectedMob_);
                 message += L" x";
@@ -1040,7 +969,7 @@ void DebugToolkit::RenderSpawnTab(float x, float y, float w, float h,
     const float rowStep = SpawnGridStep(h);
     const float buttonW = (w - 48.0f) * 0.5f;
     const float gap = 16.0f;
-    for (int index = 0; index < 16; ++index) {
+    for (int index = 0; index < 6; ++index) {
         const int col = index & 1;
         const int row = index / 2;
         const float bx = x + 16.0f + col * (buttonW + gap);

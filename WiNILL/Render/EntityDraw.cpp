@@ -1,10 +1,9 @@
-#include "EntityDraw.h"
+﻿#include "EntityDraw.h"
 #include "Camera.h"
 #include "DrawPrim.h"
 #include "IconSystem.h"
 #include "Codex.h"
 #include "RangedMob.h"
-#include "Bomber.h"
 #include "TextRenderer.h"
 #include "UiColors.h"
 #include "Settings.h"
@@ -143,19 +142,6 @@ void drawBullet(const Bullet& b) {
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
 
-void SpawnWormSplit(Monster* m, std::vector<Monster*>& born) {
-    if (m->kind != MobKind::SPLITTER) return;
-    extern PlayerStats g_Stats;
-    int maxGen = g_Stats.splitterBoost ? 3 : 2;
-    if (m->splitGen >= maxGen) return;
-    for (int c = 0; c < 2; c++) {
-        Monster* ch = new Monster(m->worldX + (c ? 28.0f : -28.0f), m->worldY,
-                                  1.0f, 1.0f, false);
-        ch->MakeKind(MobKind::SPLITTER, m->splitGen + 1, m->sizeScale * 0.7f);
-        born.push_back(ch);
-    }
-}
-
 static void DrawEnemyWirePolygon(const float* vx, const float* vy, int count,
                                  float r, float g, float b, float alpha,
                                  float glowAlpha, float width = 1.1f) {
@@ -211,7 +197,7 @@ void QueueMonsterSightFront(const Monster* m) {
     ApplyMobStyleTint(r, g, b);
     float alpha = 0.11f;
     float radiusScale = 2.55f;
-    if (m->kind == MobKind::SPAWNER) {
+    if (m->kind == MobKind::GENESIS) {
         const float openLift = m->hivePhase == 1
             ? 0.12f * m->hiveOpenFactor : 0.0f;
         const float pulseT = std::min(m->hivePulseTimer / 0.22f, 1.0f);
@@ -341,11 +327,6 @@ void DrawRangedMobSightRear(const RangedMob* r) {
     if (!r || r->deathScale <= 0.0f) return;
     const float base = RangedMob::VISUAL_BASE_PX * r->deathScale;
     DrawBlackSightRear(r->worldX, r->worldY, base * 2.65f);
-}
-
-void DrawBomberSightRear(const Bomber* b) {
-    if (!b || !b->alive) return;
-    DrawBlackSightRear(b->worldX, b->worldY, Bomber::SIZE_PX);
 }
 
 struct EnemyNodeAnchor {
@@ -695,24 +676,12 @@ static void DrawEnemyArc(float cx, float cy, float radius,
 
 void drawMob(const Monster* m) {
     MarkMobSeen(m->kind);
-    if (m->kind == MobKind::DDOS) MarkMobSeenId(CM_DDOS);
+    if (m->kind == MobKind::SWARM) MarkMobSeenId(CM_SWARM);
     if (m->kind == MobKind::GRAVIS) MarkMobSeenId(CM_GRAVIS);
     if (m->kind == MobKind::QUASAR) MarkMobSeenId(CM_QUASAR);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     const float visualTime = (float)glfwGetTime();
-    if (m->elite) {
-        float gr, gg, gb;
-        if (m->elite == 1)      { gr = 0.35f; gg = 0.9f;  gb = 1.0f; }
-        else if (m->elite == 2) { gr = 1.0f;  gg = 0.85f; gb = 0.2f; }
-        else                    { gr = 1.0f;  gg = 0.3f;  gb = 0.1f; }
-        float pulse = (m->elite == 3)
-                    ? (0.5f + 0.5f * sinf((float)glfwGetTime() * 10.0f)) : 0.55f;
-        drawCircle(m->worldX, m->worldY, base * 1.85f,
-                   gr, gg, gb, 0.10f + 0.16f * pulse);
-        drawCircle(m->worldX, m->worldY, base * 1.35f,
-                   gr, gg, gb, 0.14f + 0.14f * pulse);
-    }
-    if (m->kind == MobKind::SPAWNER) {
+    if (m->kind == MobKind::GENESIS) {
         // Genesis: a generation station with two fixed parallel egress lanes.
         float x = m->worldX, y = m->worldY;
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
@@ -872,7 +841,7 @@ void drawMob(const Monster* m) {
             : 0.88f + charge * 0.10f;
         DrawGenesisCore(x, y, base * (0.30f + charge * 0.04f),
                         cr, cg, cb, corePulse, false);
-    } else if (m->kind == MobKind::DDOS) {
+    } else if (m->kind == MobKind::SWARM) {
         // Swarm: a smaller triangular packet, visually subordinate to Rotor.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         ApplyMobStyleTint(cr, cg, cb);
@@ -897,7 +866,7 @@ void drawMob(const Monster* m) {
             DrawEnemyNode(nodes[k], cr, cg, cb, 0.88f);
         DrawEnemyCore(x, y, base * 0.28f, cr, cg, cb, 0.94f, true);
     } else {
-        // Rotor (NORMAL): one square frame with four shared star anchors.
+        // Rotor (ROTOR): one square frame with four shared star anchors.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         ApplyMobStyleTint(cr, cg, cb);
         float x = m->worldX, y = m->worldY;
@@ -983,7 +952,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
     // Keep Gravis' gameplay field proportional to the animated preview size;
     // the base 0.22 factor only compresses its very large in-game radius.
     g_CodexPreviewFieldScale = 0.22f * std::max(0.8f, scale);
-    if (codexId == CM_RANGED) {
+    if (codexId == CM_SCOPE) {
         RangedMob preview(x, y, 1920, 1080);
         preview.rotAngle = (float)glfwGetTime() * RangedMob::IDLE_ROT;
         // RangedMob's gameplay base is 25.6px; normalize it to the Monster
@@ -991,10 +960,10 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         preview.deathScale = scale / (RangedMob::VISUAL_BASE_PX / 18.0f);
         drawRangedMob(&preview);              // SCOPE
     } else {
-        MobKind kind = MobKind::NORMAL;
+        MobKind kind = MobKind::ROTOR;
         switch (codexId) {
-        case CM_SPAWNER: kind = MobKind::SPAWNER; break; // GENESIS
-        case CM_DDOS:    kind = MobKind::DDOS;    break; // SWARM
+        case CM_GENESIS: kind = MobKind::GENESIS; break; // GENESIS
+        case CM_SWARM:    kind = MobKind::SWARM;    break; // SWARM
         case CM_GRAVIS:  kind = MobKind::GRAVIS;  break;
         case CM_QUASAR:  kind = MobKind::QUASAR;  break; // QUASAR
         default: break;                                // ROTOR

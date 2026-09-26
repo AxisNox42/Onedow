@@ -218,7 +218,6 @@
     <ClInclude Include="Core\GameManager.h" />
     <ClInclude Include="Core\Meta.h" />
     <ClInclude Include="Entity\Augment.h" />
-    <ClInclude Include="Entity\Bomber.h" />
     <ClInclude Include="Entity\Boss\CentipedeBoss.h" />
     <ClInclude Include="Entity\Boss\LeviathanBoss.h" />
     <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h" />

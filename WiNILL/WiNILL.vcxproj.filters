@@ -126,9 +126,6 @@
     <ClInclude Include="Entity\Augment.h">
       <Filter>Entity</Filter>
     </ClInclude>
-    <ClInclude Include="Entity\Bomber.h">
-      <Filter>Entity</Filter>
-    </ClInclude>
     <ClInclude Include="Entity\Bullet.h">
       <Filter>Entity</Filter>
     </ClInclude>

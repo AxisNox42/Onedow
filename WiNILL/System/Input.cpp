@@ -6,6 +6,7 @@
 #include "GameContext.h"
 #include <string>
 #include <cwctype>
+#include <cstring>
 
 bool  keys[1024] = {};
 float g_ScrollAccum = 0.0f;
@@ -56,4 +57,9 @@ void InputRegisterCallbacks(GLFWwindow* window) {
     glfwSetKeyCallback(window, InputKeyCallback);
     glfwSetCharCallback(window, InputCharCallback);
     glfwSetScrollCallback(window, InputScrollCallback);
+}
+
+void InputClearState() {
+    std::memset(keys, 0, sizeof(keys));
+    g_ScrollAccum = 0.0f;
 }

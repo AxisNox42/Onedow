@@ -1,16 +1,14 @@
-#pragma once
+﻿#pragma once
 #include <vector>
 #include <algorithm>
 #include <cstdlib>
 #include "Monster.h"
 #include "RangedMob.h"
-#include "Bomber.h"
 
 class MonsterManager {
 public:
     std::vector<Monster*>   monsters;
     std::vector<RangedMob*> rangedMobs;
-    std::vector<Bomber*>    bombers;
 
     ~MonsterManager() { Clear(); }
 
@@ -27,18 +25,12 @@ public:
         }
     }
 
-    // varietyPct: 특수 잡몹(돌진/회피/거대) 으로 스폰될 확률(%). 점수 비례로 main 이 전달.
     void SpawnMob(int screenW, int screenH, int cap = 100, float hpMul = 1.0f,
-                  float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1,
-                  int varietyPct = 0, int elitePct = 0) {
+                  float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
         if ((int)monsters.size() >= cap) return;
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
         Monster* nm = new Monster(sx, sy, hpMul);
-        // Enhanced variants are disabled. Keep the argument for call-site
-        // compatibility, but never apply Swift/Tanky stat mutations here.
-        (void)varietyPct;
-        (void)elitePct;
         monsters.push_back(nm);
     }
 
@@ -54,17 +46,6 @@ public:
         rangedMobs.push_back(rm);
     }
 
-    // 자폭병 — 영역 가장자리에서 spawn (디버프 mult 전달). cap: 동시 존재 상한
-    void SpawnBomber(int screenW, int screenH,
-                     float hpMul = 1.0f, float speedMul = 1.0f, float blastMul = 1.0f,
-                     float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1,
-                     int cap = 30) {
-        if ((int)bombers.size() >= cap) return;
-        if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
-        float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
-        bombers.push_back(new Bomber(sx, sy, hpMul, speedMul, blastMul));
-    }
-
     // Higher-tier enemies keep their position when colliding with lower-tier
     // enemies. The lighter enemy receives the separation displacement instead
     // of making the important target visibly jitter or stall.
@@ -72,21 +53,11 @@ public:
         if (!m) return 0;
         int tier = 0;
         switch (m->kind) {
-        case MobKind::BRUTE:    tier = 3; break;
-        case MobKind::SPAWNER:  tier = 4; break;
+        case MobKind::GENESIS:  tier = 4; break;
         case MobKind::GRAVIS:   tier = 3; break;
         case MobKind::QUASAR:   tier = 3; break;
-        case MobKind::SHIELDED:
-        case MobKind::ORBITER:
-        case MobKind::BADSECTOR:
-        case MobKind::REGERROR: tier = 2; break;
-        case MobKind::SPLITTER:
-        case MobKind::BLINKER:
-        case MobKind::CHARGER:
-        case MobKind::WEAVER:   tier = 1; break;
         default:                tier = 0; break;
         }
-        if (m->elite == 2) ++tier;
         return tier;
     }
 
@@ -115,7 +86,7 @@ public:
             int total = (int)monsters.size();
 
             for (auto m : monsters) {
-                if (!m->alive || m->kind != MobKind::SPAWNER) continue;
+                if (!m->alive || m->kind != MobKind::GENESIS) continue;
                 m->hiveOrbitAngle += dt * 0.36f;
                 m->hivePulseTimer = std::max(0.0f, m->hivePulseTimer - dt);
 
@@ -234,7 +205,7 @@ public:
         // Apply crush damage once per frame after all pair corrections.
         for (size_t i = 0; i < monsters.size(); ++i) {
             if (!monsters[i]->alive || pushCounts[i] < 4 ||
-                monsters[i]->kind == MobKind::DDOS) continue;
+                monsters[i]->kind == MobKind::SWARM) continue;
             monsters[i]->hp -= CRUSH_DPS * dt;
             if (monsters[i]->hp <= 0.0f) monsters[i]->alive = false;
         }
@@ -255,56 +226,6 @@ public:
                 }),
             rangedMobs.end());
 
-        for (auto b : bombers)
-            b->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
-                      gateWX, gateWY, gateWW, gateWH);
-
-        // ── 자폭병 소프트 콜리전 — 자폭병끼리 + 잡몹과도 분리 ──
-        //   예전엔 자폭병이 서로 겹쳐 쌓여 "한 마리"처럼 보였고, 들어갔다가
-        //   겹친 다수가 동시 폭발 → 즉사하던 버그. 잡몹처럼 서로 밀어내 개체 구분.
-        {
-            const float BOMB_GAP = Bomber::SIZE_PX * 0.95f;
-            for (size_t i = 0; i < bombers.size(); i++) {
-                if (!bombers[i]->alive) continue;
-                // 자폭병끼리 (서로 균등하게 밀어냄)
-                for (size_t j = i + 1; j < bombers.size(); j++) {
-                    if (!bombers[j]->alive) continue;
-                    float dx = bombers[j]->worldX - bombers[i]->worldX;
-                    float dy = bombers[j]->worldY - bombers[i]->worldY;
-                    float d2 = dx*dx + dy*dy;
-                    if (d2 > 0.0001f && d2 < BOMB_GAP * BOMB_GAP) {
-                        float d = std::sqrt(d2);
-                        float push = (BOMB_GAP - d) * 0.5f;
-                        float nx = dx / d, ny = dy / d;
-                        bombers[i]->worldX -= nx * push; bombers[i]->worldY -= ny * push;
-                        bombers[j]->worldX += nx * push; bombers[j]->worldY += ny * push;
-                    }
-                }
-                // 자폭병 vs 잡몹 (자폭병만 비켜남 — 잡몹 추격 흐름은 유지)
-                float minDM = (BOMB_GAP + MIN_GAP_NORM) * 0.5f;
-                for (size_t j = 0; j < monsters.size(); j++) {
-                    if (!monsters[j]->alive) continue;
-                    float dx = monsters[j]->worldX - bombers[i]->worldX;
-                    float dy = monsters[j]->worldY - bombers[i]->worldY;
-                    float d2 = dx*dx + dy*dy;
-                    if (d2 > 0.0001f && d2 < minDM * minDM) {
-                        float d = std::sqrt(d2);
-                        float push = (minDM - d);
-                        bombers[i]->worldX -= (dx / d) * push;
-                        bombers[i]->worldY -= (dy / d) * push;
-                    }
-                }
-            }
-        }
-        // 죽은 자폭병은 여기서 삭제하지 않음 — main.cpp 의 VFX 체크 후 ClearDeadBombers() 호출
-    }
-
-    // main.cpp 의 VFX 처리 후 호출 — 죽은 자폭병 실제 삭제
-    void ClearDeadBombers() {
-        bombers.erase(
-            std::remove_if(bombers.begin(), bombers.end(),
-                [](Bomber* b) { if (!b->alive) { delete b; return true; } return false; }),
-            bombers.end());
     }
 
     void Clear() {
@@ -312,7 +233,5 @@ public:
         monsters.clear();
         for (auto r : rangedMobs) delete r;
         rangedMobs.clear();
-        for (auto b : bombers) delete b;
-        bombers.clear();
     }
 };

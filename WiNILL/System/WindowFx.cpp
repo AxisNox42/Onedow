@@ -13,6 +13,7 @@ void TransparencyLog(const char* /*fmt*/, ...) {
 #include <windows.h>
 #include <dwmapi.h>
 #include <shobjidl.h>
+#include <shellapi.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
@@ -20,6 +21,8 @@ void TransparencyLog(const char* /*fmt*/, ...) {
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "uuid.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 namespace {
 // Shell fullscreen classification is independent of the swapchain dimensions.
@@ -123,6 +126,145 @@ static HWND s_blurHwnd = nullptr;
 static bool s_blurEnabled = false;
 static bool s_blurApplied = false;
 
+static int ReadTransparencySetting() {
+    DWORD value = 0, size = sizeof(value);
+    const LSTATUS result = RegGetValueW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"EnableTransparency", RRF_RT_REG_DWORD, nullptr, &value, &size);
+    return result == ERROR_SUCCESS ? (value != 0 ? 1 : 0) : -1;
+}
+
+static void NotifyTransparencyChanged() {
+    DWORD_PTR ignored = 0;
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
+        reinterpret_cast<LPARAM>(L"ImmersiveColorSet"),
+        SMTO_ABORTIFHUNG, 200, &ignored);
+}
+
+struct TemporaryTransparency {
+    bool restorePending = false;
+    bool originalExists = false;
+    DWORD originalValue = 0;
+
+    bool Restore() {
+        if (!restorePending) return true;
+        HKEY key = nullptr;
+        LSTATUS result = RegOpenKeyExW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            0, KEY_SET_VALUE, &key);
+        if (result == ERROR_FILE_NOT_FOUND && !originalExists) {
+            restorePending = false;
+            return true;
+        }
+        if (result != ERROR_SUCCESS) return false;
+        if (originalExists)
+            result = RegSetValueExW(key, L"EnableTransparency", 0, REG_DWORD,
+                reinterpret_cast<const BYTE*>(&originalValue), sizeof(originalValue));
+        else
+            result = RegDeleteValueW(key, L"EnableTransparency");
+        RegCloseKey(key);
+        if (result != ERROR_SUCCESS &&
+            !(result == ERROR_FILE_NOT_FOUND && !originalExists)) return false;
+        restorePending = false;
+        NotifyTransparencyChanged();
+        return true;
+    }
+
+    // Fallback for normal process exit; forced termination cannot run cleanup.
+    ~TemporaryTransparency() { Restore(); }
+};
+
+static TemporaryTransparency s_transparency;
+
+static bool EnableSystemTransparency() {
+    DWORD original = 0, size = sizeof(original);
+    const LSTATUS readResult = RegGetValueW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"EnableTransparency", RRF_RT_REG_DWORD, nullptr, &original, &size);
+    // Do not overwrite a setting we cannot read and later restore exactly.
+    if (readResult != ERROR_SUCCESS && readResult != ERROR_FILE_NOT_FOUND)
+        return false;
+    if (readResult == ERROR_SUCCESS && original != 0) return true;
+    HKEY key = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr) != ERROR_SUCCESS)
+        return false;
+    const DWORD enabled = 1;
+    const LSTATUS result = RegSetValueExW(key, L"EnableTransparency", 0,
+        REG_DWORD, reinterpret_cast<const BYTE*>(&enabled), sizeof(enabled));
+    RegCloseKey(key);
+    if (result != ERROR_SUCCESS) return false;
+    // Preserve the first snapshot if an earlier restore is still pending.
+    if (!s_transparency.restorePending) {
+        s_transparency.originalExists = readResult == ERROR_SUCCESS;
+        s_transparency.originalValue = original;
+        s_transparency.restorePending = true;
+    }
+    NotifyTransparencyChanged();
+    return ReadTransparencySetting() == 1;
+}
+
+static void OpenBlurSettings(HWND hwnd, const wchar_t* uri) {
+    const HINSTANCE result = ShellExecuteW(hwnd, L"open", uri,
+                                           nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32)
+        MessageBoxW(hwnd,
+            L"Windows 설정을 열지 못했습니다. 설정에서 투명 효과를 켜고 "
+            L"배터리/에너지 절약 모드를 꺼주세요.",
+            L"ONEDOW 블러 설정", MB_OK | MB_ICONINFORMATION);
+}
+
+// Check environmental changes even after the composition API reported success.
+// A successful policy call does not mean Windows currently permits acrylic.
+static bool RefreshBlurEnvironment(HWND hwnd, bool enabled) {
+    static bool wasEnabled = false;
+    static double nextCheck = 0.0;
+    static int lastTransparency = -2, lastSaver = -2;
+    const bool enabling = enabled && !wasEnabled;
+    const bool disabling = !enabled && wasEnabled;
+    wasEnabled = enabled;
+    const double now = glfwGetTime();
+    if (!enabled) {
+        if (disabling || now >= nextCheck) {
+            nextCheck = now + 1.0;
+            if (!s_transparency.Restore() && disabling)
+                MessageBoxW(hwnd,
+                    L"Windows 투명 효과를 원래 설정으로 복원하지 못했습니다.\n"
+                    L"Windows 설정의 투명 효과 항목을 확인해주세요.",
+                    L"ONEDOW 블러 설정", MB_OK | MB_ICONWARNING);
+        }
+        return disabling;
+    }
+    if (!enabling && now < nextCheck) return false;
+    nextCheck = now + 1.0;
+
+    if (enabling && !EnableSystemTransparency()) {
+        if (MessageBoxW(hwnd,
+            L"Windows 투명 효과를 자동으로 켜지 못했습니다.\n"
+            L"설정에서 투명 효과를 켜주세요.\n\n설정을 여시겠습니까?",
+            L"ONEDOW 블러 설정", MB_YESNO | MB_ICONINFORMATION) == IDYES)
+            OpenBlurSettings(hwnd, L"ms-settings:colors");
+    }
+    SYSTEM_POWER_STATUS power = {};
+    const int saver = GetSystemPowerStatus(&power)
+        ? (power.SystemStatusFlag == 1 ? 1 : 0) : -1;
+    const int transparency = ReadTransparencySetting();
+    const bool changed = enabling || transparency != lastTransparency ||
+                         saver != lastSaver;
+    lastTransparency = transparency;
+    lastSaver = saver;
+    // Prompt only on launch/explicit enable, never interrupt gameplay on a timer.
+    if (enabling && saver == 1) {
+        MessageBoxW(hwnd,
+            L"배터리/에너지 절약 모드가 켜져 있어 배경 블러가 제한됩니다.\n"
+            L"Windows 전원 설정에서 절약 모드를 꺼주세요.\n"
+            L"변경 후 게임으로 돌아오면 블러가 다시 적용됩니다.",
+            L"ONEDOW 블러 안내", MB_OK | MB_ICONINFORMATION);
+    }
+    return changed;
+}
+
 static SetWindowCompositionAttributeProc ResolveBackdropProc() {
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
     if (!user32) return nullptr;
@@ -139,6 +281,10 @@ bool ConfigureWindowBackdropBlur(GLFWwindow* window, bool enabled) {
     if (!hwnd) return false;
 
     static double nextRetry = 0.0;
+    if (RefreshBlurEnvironment(hwnd, enabled)) {
+        s_blurApplied = false;
+        nextRetry = 0.0;
+    }
     const double now = glfwGetTime();
     if (hwnd == s_blurHwnd && enabled == s_blurEnabled &&
         (!enabled || s_blurApplied || now < nextRetry)) {

@@ -72,13 +72,12 @@ public:
     void AddScore(float amount);
     // 등급 가중치 + takenOnce + 고유 카테고리 잠금 적용한 3장 픽
     //   allowDebuff=true (크리에이티브 샌드박스) 면 디버프도 카드 풀에 섞임
-    void PickAugChoices(bool sizeTaken = false, bool distTaken = false,
-                        bool allowDebuff = false);
+    void PickAugChoices(bool sizeTaken = false, bool allowDebuff = false);
     // 디버프 카드 3장 픽 (DEBUFF 등급만)
     void PickDebuffChoices();
     // n장만 픽 (RANDOM_AUG·PANDORA·CHAOS용)
     int  PickRandomAugIndices(int* outArr, int n,
-                              bool sizeTaken = false, bool distTaken = false,
+                              bool sizeTaken = false,
                               bool allowUnique = true, bool allowSpecial = false,
                               bool allowDebuff = false);
     // 디버프만 n개 픽 (PANDORA / CHAOS 의 디버프 슬롯용)

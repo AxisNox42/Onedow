@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // Runtime gameplay telemetry.  This intentionally has no _DEBUG/NDEBUG gate:
 // development Release builds should produce the same data as Debug builds.
@@ -42,34 +42,23 @@ public:
         int visionStacks = 0;
         int droneCount = 0;
         int chakramCount = 0;
-        int minigunTier = 0;
         int laserTier = 0;
         int critChance = 0;
         int mobXpBonus = 0;
-        int eliteXpBonus = 0;
-        int specialMobXpBonus = 0;
-        int bomberXpBonus = 0;
         int rangedXpBonus = 0;
         long long killCount = 0;
 
-        bool sniper = false;
         bool vampire = false;
         bool miniaturize = false;
         bool gigantify = false;
         bool pierce = false;
         bool twin = false;
         bool chakram = false;
-        bool minigun = false;
         bool drone = false;
         bool laser = false;
         bool bulletRain = false;
-        bool cannon = false;
-        bool shotgun = false;
-        bool revolver = false;
         bool berserk = false;
         bool deathBlast = false;
-        bool meleeWeapon = false;
-        bool bowWeapon = false;
     };
 
     GameplayTelemetry()
@@ -86,7 +75,7 @@ public:
     static StatsSnapshot Capture(const PlayerStats& stats) {
         StatsSnapshot out;
         out.baseDamage = stats.GetBaseDamage();
-        out.effectiveDamage = stats.GetBaseDamage() * stats.GetDamageMultiplier(0.0f);
+        out.effectiveDamage = stats.GetBaseDamage() * stats.GetDamageMultiplier();
         out.damageMultiplier = stats.damageMultiplier;
         out.maxHP = stats.maxHP;
         out.bulletSpeed = stats.bulletSpeed;
@@ -106,34 +95,23 @@ public:
         out.visionStacks = stats.visionStacks;
         out.droneCount = stats.droneCount;
         out.chakramCount = stats.chakramCount;
-        out.minigunTier = stats.minigunTier;
         out.laserTier = stats.laserTier;
         out.critChance = stats.critChance;
         out.mobXpBonus = stats.mobXpBonus;
-        out.eliteXpBonus = stats.eliteXpBonus;
-        out.specialMobXpBonus = stats.specialMobXpBonus;
-        out.bomberXpBonus = stats.bomberXpBonus;
         out.rangedXpBonus = stats.rangedXpBonus;
         out.killCount = stats.killCount;
 
-        out.sniper = stats.sniper;
         out.vampire = stats.vampire;
         out.miniaturize = stats.miniaturize;
         out.gigantify = stats.gigantify;
         out.pierce = stats.pierce;
         out.twin = stats.twin;
         out.chakram = stats.chakram;
-        out.minigun = stats.minigun;
         out.drone = stats.drone;
         out.laser = stats.laser;
         out.bulletRain = stats.bulletRain;
-        out.cannon = stats.cannon;
-        out.shotgun = stats.shotgun;
-        out.revolver = stats.revolver;
         out.berserk = stats.berserk;
         out.deathBlast = stats.deathBlast;
-        out.meleeWeapon = stats.meleeWeapon;
-        out.bowWeapon = stats.bowWeapon;
         return out;
     }
 
@@ -230,7 +208,7 @@ public:
                << gameTime << ",level=" << level
                << ",index=" << augmentIndex << ",code=" << code << "\n";
         WriteFloatDiff("base_damage", b.baseDamage, a.baseDamage);
-        WriteFloatDiff("effective_damage_at_zero_distance", b.effectiveDamage, a.effectiveDamage);
+        WriteFloatDiff("effective_damage", b.effectiveDamage, a.effectiveDamage);
         WriteFloatDiff("damage_multiplier", b.damageMultiplier, a.damageMultiplier);
         WriteFloatDiff("max_hp", b.maxHP, a.maxHP);
         WriteFloatDiff("bullet_speed", b.bulletSpeed, a.bulletSpeed);
@@ -250,34 +228,23 @@ public:
         WriteIntDiff("vision_stacks", b.visionStacks, a.visionStacks);
         WriteIntDiff("drone_count", b.droneCount, a.droneCount);
         WriteIntDiff("chakram_count", b.chakramCount, a.chakramCount);
-        WriteIntDiff("minigun_tier", b.minigunTier, a.minigunTier);
         WriteIntDiff("laser_tier", b.laserTier, a.laserTier);
         WriteIntDiff("crit_chance_pct", b.critChance, a.critChance);
         WriteIntDiff("mob_xp_bonus", b.mobXpBonus, a.mobXpBonus);
-        WriteIntDiff("elite_xp_bonus", b.eliteXpBonus, a.eliteXpBonus);
-        WriteIntDiff("special_mob_xp_bonus", b.specialMobXpBonus, a.specialMobXpBonus);
-        WriteIntDiff("bomber_xp_bonus", b.bomberXpBonus, a.bomberXpBonus);
         WriteIntDiff("ranged_xp_bonus", b.rangedXpBonus, a.rangedXpBonus);
         WriteIntDiff("kill_count", b.killCount, a.killCount);
 
-        WriteBoolDiff("sniper", b.sniper, a.sniper);
         WriteBoolDiff("vampire", b.vampire, a.vampire);
         WriteBoolDiff("miniaturize", b.miniaturize, a.miniaturize);
         WriteBoolDiff("gigantify", b.gigantify, a.gigantify);
         WriteBoolDiff("pierce", b.pierce, a.pierce);
         WriteBoolDiff("twin", b.twin, a.twin);
         WriteBoolDiff("chakram", b.chakram, a.chakram);
-        WriteBoolDiff("minigun", b.minigun, a.minigun);
         WriteBoolDiff("drone", b.drone, a.drone);
         WriteBoolDiff("laser", b.laser, a.laser);
         WriteBoolDiff("bullet_rain", b.bulletRain, a.bulletRain);
-        WriteBoolDiff("cannon", b.cannon, a.cannon);
-        WriteBoolDiff("shotgun", b.shotgun, a.shotgun);
-        WriteBoolDiff("revolver", b.revolver, a.revolver);
         WriteBoolDiff("berserk", b.berserk, a.berserk);
         WriteBoolDiff("death_blast", b.deathBlast, a.deathBlast);
-        WriteBoolDiff("melee_weapon", b.meleeWeapon, a.meleeWeapon);
-        WriteBoolDiff("bow_weapon", b.bowWeapon, a.bowWeapon);
         m_file.flush();
     }
 

@@ -1,7 +1,7 @@
 #pragma once
 #include "Augment.h"
 
-enum class SkillType { NONE, CLOSE_WINDOW, HYPER_FOCUS, TIME_STOP, FOCUS_AIM };
+enum class SkillType { NONE, CLOSE_WINDOW, HYPER_FOCUS, TIME_STOP };
 
 struct SkillSlot {
     SkillType type = SkillType::NONE;

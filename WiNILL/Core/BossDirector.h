@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <glm/glm.hpp>
 #include "Settings.h"
 
@@ -56,26 +56,24 @@ struct ActRules {
     float hpIntensityCap;
     float spawnMult;
     float speedMult;
-    int   eliteBias;
-    int   varietyBias;
 };
 
 inline ActRules WarmupRules() {
-    return { 0.55f, 1.2f, 0.88f, 0.92f, 0, 0 };
+    return { 0.55f, 1.2f, 0.88f, 0.92f };
 }
 
 inline ActRules EndlessRules() {
-    return { 6.0f, 18.0f, 1.08f, 1.0f, 8, 6 };
+    return { 6.0f, 18.0f, 1.08f, 1.0f };
 }
 
 inline ActRules RulesForPick(int pick) {
     switch (pick) {
-    case 30: return { 2.8f, 4.8f, 0.95f, 0.95f, 0, 0 };
-    case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f, 4, 2 };
-    case 10: return { 3.5f, 6.0f, 1.10f, 1.02f, 3, 6 };
-    case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f, 2, 10 };
-    case 20: return { 4.8f, 9.0f, 1.18f, 1.05f, 4, 8 };
-    default: return { 2.0f, 3.0f, 1.0f,  1.0f,  2, 2 };
+    case 30: return { 2.8f, 4.8f, 0.95f, 0.95f };
+    case 2:  return { 3.0f, 5.0f, 1.05f, 1.06f };
+    case 10: return { 3.5f, 6.0f, 1.10f, 1.02f };
+    case 8:  return { 4.0f, 7.0f, 1.22f, 1.04f };
+    case 20: return { 4.8f, 9.0f, 1.18f, 1.05f };
+    default: return { 2.0f, 3.0f, 1.0f,  1.0f };
     }
 }
 
@@ -146,7 +144,6 @@ inline const wchar_t* Tagline(int pick) {
 }
 
 inline bool ActBiasSplitter()  { return g_ActBossPick == 8; }
-inline bool ActBiasSpawner()   { return g_ActBossPick == 8 || g_ActBossPick == 10; }
 inline bool ActBiasRanged()    { return g_ActBossPick == 2 || g_ActBossPick == 10 || g_ActBossPick == 20; }
 
 inline const wchar_t* ActLabel() {

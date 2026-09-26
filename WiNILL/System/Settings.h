@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // ── 게임 설정 (런타임 변경 가능, 추후 설정 메뉴) ──
 
@@ -32,8 +32,8 @@ inline int g_TaskbarH = 0;
 inline float g_Scale = 1.0f;
 inline constexpr float SCALE_REF_H = 2000.0f;   // 이 높이에서 g_Scale=1.0 (값↑일수록 전체적으로 작아짐)
 
-// 인게임 작업표시줄 높이(px) — 메뉴와 동일한 작업표시줄을 게임 중에도 유지(데스크톱 일관성).
-//   하단 HUD(체력/경험치 바 등)는 이 작업표시줄 위로 올라가도록 함께 오프셋.
+// 인게임 작업표시줄 여백(px). Windows에서는 활성 창을 Shell fullscreen으로
+// 표시해 작업표시줄을 숨기므로 0을 유지한다. 하단 HUD는 전체 화면을 사용한다.
 inline constexpr float g_GameBarH = 0.0f;
 
 // 플레이 영역 확장량(px, 각 변) — 폴리모프 페이즈2 줌아웃 시 보이는 영역이 넓어지므로
@@ -41,14 +41,6 @@ inline constexpr float g_GameBarH = 0.0f;
 inline float g_ArenaExX = 0.0f;
 inline float g_ArenaExY = 0.0f;
 
-// 현재 런의 클래스(검객/궁수) 여부 — 클래스 전용 증강 추첨 게이팅용.
-//   직업 적용 시 main 이 세팅, ResetForNewGame 이 false. (RollOneAug 가 읽음)
-inline bool g_RunMelee = false;   // 검객 (근접 스윙)
-inline bool g_RunBow   = false;   // 궁수 (차징 화살)
-
-// 모든 언어 공통 폰트 — Microsoft YaHei UI (Win10+ 기본 탑재)
-//   한글/라틴은 GDI 폰트 링크(자동 폴백)로, 일본어 가나·한자도 시스템 폴백으로 표시
-//   (Windows 전용 — GDI face 이름)
 inline const char* LanguageFace(Language /*lang*/) {
     return "Microsoft YaHei UI";
 }
@@ -69,22 +61,18 @@ struct DifficultyParams {
     float rangedSpawnInitialDelay; // 시작 시 spawn timer 오프셋
     float rangedSpawnInterval;     // 원거리 spawn 주기 (초)
     int   rangedMaxBase;           // 기본 max 마릿수
-    // 자폭병
-    float bomberStartTime;         // 게임 시작 후 자폭병 첫 등장 시간 (초). 1e9 = 안 나옴
-    float bomberInterval;          // 자폭병 spawn 주기 (초)
-    // 보스 HP (검객 등)
     float bossHp;
 };
 inline DifficultyParams GetDifficultyParams(Difficulty d) {
     switch (d) {
     case Difficulty::EASY:
-        return { -5.0f, 5.0f, 2,   1e9f,  1e9f,  3800.0f };
+        return { -5.0f, 5.0f, 2, 3800.0f };
     case Difficulty::NORMAL:
-        return {  0.0f, 5.0f, 5,   30.0f, 5.0f,  8500.0f };
+        return {  0.0f, 5.0f, 5, 8500.0f };
     case Difficulty::HARD:
-        return {  4.9f, 2.5f, 8,   20.0f, 4.0f, 14000.0f };
+        return {  4.9f, 2.5f, 8, 14000.0f };
     }
-    return { 0.0f, 5.0f, 5, 1e9f, 1e9f, 8500.0f };
+    return { 0.0f, 5.0f, 5, 8500.0f };
 }
 
 // ─── 시련 시스템 ─────────────────────────────────────────────────────────────
@@ -104,8 +92,8 @@ inline const TrialDef TRIAL_DEFS[] = {
     { L"EARLY_RUSH",    { L"초반 원거리몹이 더 빨리 등장", L"Ranged mobs arrive earlier" } },
     { L"PACKET_STORM",  { L"초반 일반 몹 스폰 압박 증가",   L"Early normal spawn pressure up" } },
     { L"COLD_BOOT",     { L"시작 최대 체력 감소",            L"Lower starting max HP" } },
-    { L"ELITE_BLOOM",   { L"중반 특수/정예 몹 비율 증가",    L"Midgame special and elite bias up" } },
-    { L"BOMBER_TRACE",  { L"자폭병이 더 빨리, 자주 등장",    L"Bombers arrive earlier and faster" } },
+    { L"MID_PRESSURE",   { L"중반 적 압박 +8%",    L"Midgame enemy pressure +8%" } },
+    { L"REMOVED_TRIAL", { L"제거된 시련",                    L"Retired trial" } },
     { L"PROCESS_NOISE", { L"중반 원거리몹 상한 증가",        L"Midgame ranged mob cap up" } },
     { L"LATE_OVERRUN",  { L"후반 스폰 램프 강화",            L"Late spawn ramp up" } },
     { L"HARDENED_CORE", { L"후반 몹 체력 램프 강화",         L"Late enemy HP ramp up" } },
@@ -115,6 +103,7 @@ inline const TrialDef TRIAL_DEFS[] = {
     { L"SIGNAL_LOSS",   { L"보스 경고 시간이 짧아짐",        L"Shorter boss warning time" } },
 };
 inline constexpr int TRIAL_DEF_COUNT = 20;
+inline constexpr int TRIAL_REMOVED_ID = 12;
 
 enum class TrialStage { EARLY, MID, LATE, BOSS };
 
@@ -125,7 +114,7 @@ inline bool g_TrialPoolReady                  = false;
 
 inline TrialStage TrialStageForDef(int idx) {
     if (idx >= 8  && idx <= 10) return TrialStage::EARLY;
-    if (idx >= 11 && idx <= 13) return TrialStage::MID;
+    if (idx == 11 || idx == 13) return TrialStage::MID;
     if (idx >= 14 && idx <= 16) return TrialStage::LATE;
     if (idx >= 17 && idx <= 19) return TrialStage::BOSS;
     if (idx == 2) return TrialStage::BOSS;
@@ -145,12 +134,12 @@ inline const wchar_t* TrialStageLabel(TrialStage stage, int langIdx) {
 }
 
 inline float TrialScoreBonusForDef(int idx) {
+    if (idx == TRIAL_REMOVED_ID) return 0.0f;
     switch (idx) {
     case 8:  return 0.14f;
     case 9:  return 0.16f;
     case 10: return 0.18f;
     case 11: return 0.18f;
-    case 12: return 0.20f;
     case 13: return 0.17f;
     case 14: return 0.22f;
     case 15: return 0.24f;
@@ -163,6 +152,7 @@ inline float TrialScoreBonusForDef(int idx) {
 }
 
 inline bool TrialActive(int defIdx) {
+    if (defIdx == TRIAL_REMOVED_ID) return false;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
         if (g_TrialSelected[i] && g_TrialPool[i] == defIdx)
             return true;
@@ -173,14 +163,14 @@ inline bool TrialActive(int defIdx) {
 inline int TrialCount() {
     int count = 0;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i)
-        if (g_TrialSelected[i]) ++count;
+        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_REMOVED_ID) ++count;
     return count;
 }
 
 inline float TrialScoreMult() {
     float mult = 1.0f;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
-        if (g_TrialSelected[i])
+        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_REMOVED_ID)
             mult += TrialScoreBonusForDef(g_TrialPool[i]);
     }
     return mult;
@@ -189,12 +179,13 @@ inline float TrialScoreMult() {
 inline void RerollTrialPool() {
     static const int stagePools[TRIAL_SLOT_COUNT][3] = {
         { 8,  9, 10 },
-        { 11, 12, 13 },
+        { 11, 13,  0 },
         { 14, 15, 16 },
         { 17, 18, 19 },
     };
+    static const int stagePoolCounts[TRIAL_SLOT_COUNT] = { 3, 2, 3, 3 };
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
-        g_TrialPool[i] = stagePools[i][rand() % 3];
+        g_TrialPool[i] = stagePools[i][rand() % stagePoolCounts[i]];
         g_TrialSelected[i] = false;
     }
     g_TrialPoolReady = true;
@@ -232,20 +223,6 @@ inline float TrialEnemyHpMult(long long score) {
     return m;
 }
 
-inline int TrialEliteBiasBonus(long long score) {
-    int bonus = 0;
-    if (TrialActive(11) && score >= 90000) bonus += 8;
-    if (TrialActive(15) && score >= 260000) bonus += 4;
-    return bonus;
-}
-
-inline int TrialVarietyBiasBonus(long long score) {
-    int bonus = 0;
-    if (TrialActive(11) && score >= 70000) bonus += 9;
-    if (TrialActive(16) && score >= 300000) bonus += 6;
-    return bonus;
-}
-
 inline float TrialRangedInitialDelay(float base) {
     if (TrialActive(8)) return base + 3.4f;
     return base;
@@ -268,19 +245,6 @@ inline int TrialRangedMaxBonus(long long score) {
     return bonus;
 }
 
-inline float TrialBomberStartTime(float base) {
-    if (TrialActive(12)) base -= 10.0f;
-    if (base < 6.0f) base = 6.0f;
-    return base;
-}
-
-inline float TrialBomberIntervalMult(long long score) {
-    float m = 1.0f;
-    if (TrialActive(12)) m *= 0.76f;
-    if (TrialActive(14) && score >= 220000) m *= 0.88f;
-    return m;
-}
-
 inline float TrialBossHpMult() {
     float m = 1.0f;
     if (TrialActive(17)) m *= 1.35f;
@@ -298,6 +262,14 @@ inline float TrialBossWarningMult() {
 //       DEBUFF_SELECT 항상 스킵
 inline bool g_CreativeMode = false;
 inline bool g_DebugMode = false;
+
+// Debug switches stay persisted for compatibility, but are not exposed in
+// a release build's player-facing settings page.
+#if defined(_DEBUG)
+inline constexpr bool kDebugSettingsVisible = true;
+#else
+inline constexpr bool kDebugSettingsVisible = false;
+#endif
 inline bool g_BalanceTestMode = false;
 // 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
 inline long long g_CreativeStartScore = 0;       // 시작 점수
