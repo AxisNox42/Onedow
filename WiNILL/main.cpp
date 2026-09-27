@@ -5571,14 +5571,13 @@ int main() {
         // [6] HUD
         g_GameManager.Render();
 
-        // [6.5] In-game modal backdrop blur. Capture after the world and the
-        // GameManager veil, then draw the sharp Scene_* UI on top.
+        // [6.5] Blur only behind in-game modal screens. Running and death
+        // animations have no modal UI, so blurring them every frame needlessly
+        // captures the full window and runs several fullscreen shader passes.
         {
             const GameState blurState = g_GameManager.currentState;
             const bool blurGameplayBackdrop = g_BackdropBlurEnabled &&
-                (blurState == GameState::RUNNING ||
-                 blurState == GameState::DYING ||
-                 blurState == GameState::READY ||
+                (blurState == GameState::READY ||
                  blurState == GameState::PAUSED ||
                  blurState == GameState::AUG_SELECT ||
                  blurState == GameState::DEBUFF_SELECT ||
