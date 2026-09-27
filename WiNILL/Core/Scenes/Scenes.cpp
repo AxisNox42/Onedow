@@ -7692,9 +7692,14 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                 const float optionB = current
                     ? catB * 0.42f + 0.58f
                     : catB * (0.68f + 0.18f * optionHoverT);
+                // DrawShadowedText takes the top of the glyph box, while the
+                // option diamond and hit area are centered on controlY.  Lift
+                // every option label slightly so ON/OFF and the other choices
+                // share the same visual center without changing input bounds.
+                const float optionTextY = controlY - 8.0f * uiS;
                 DrawShadowedText(g_TextL, setting.opts[j],
                                  ox + chipPadX,
-                                 controlY, optSc,
+                                 optionTextY, optSc,
                                  optionR, optionG, optionB,
                                  optionA * rowA, current ? 0.44f : 0.30f);
                 if (current) {
