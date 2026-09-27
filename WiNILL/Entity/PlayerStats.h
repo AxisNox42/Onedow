@@ -65,7 +65,7 @@ struct PlayerStats {
     float critMult     = 2.5f;    // 치명타 데미지 배율
     float lifestealPerKill = 0.0f;// (legacy — GetLifestealPerKill() 사용)
     int   lifestealStacks  = 0;   // 흡혈탄 중첩 (최대 4)
-    bool  lifesteal2       = false; // 흡혈탄 II — 한도 0.36
+    bool  lifesteal2       = false; // 흡혈탄 II — 한도 0.48
     bool  berserk      = false;   // 체력 낮을수록 공격력 ↑ (최대 +60%)
     bool  deathBlast   = false;   // 적 사망 시 주변 폭발
     float deathBlastMult = 1.0f;  // 연쇄 폭발 반경 배율
@@ -81,6 +81,8 @@ struct PlayerStats {
     bool  rainKillReduce = false;     // 무한 세례(신화) — 처치마다 쿨다운 감소
     int   chakramCount = 0;       // 1, 2, 3 — CHAKRAM / II / III
     bool  chakramSingularity = false; // 신화 — 끌어당김
+    bool  warlord = false;        // 처치 누적형 조합 강화
+    int   warlordStacks = 0;      // 1000킬마다 강화 (최대 7)
     long long killCount = 0;     // Total kills in the current run.
 
     // ── 무기/부활 ─────────────────────────────────────
@@ -149,9 +151,9 @@ struct PlayerStats {
             maxHP            *= 0.65f;
             break;
         case AugType::LIGHT_AMMO:
-            fireInterval     /= 1.10f;   // 연사 +10%
-            bulletSpeed      *= 1.30f;
-            damageMultiplier *= 0.85f;   // 공격력 -15%
+            fireInterval     /= 1.15f;   // 연사 +15%
+            bulletSpeed      *= 1.35f;
+            damageMultiplier *= 0.88f;   // 공격력 -12%
             break;
         case AugType::LIGHT_STEP:
             lightStep      = true;
@@ -175,10 +177,10 @@ struct PlayerStats {
         case AugType::GIGANTIFY:
             gigantify      = true;
             sizeAugTaken   = true;
-            moveSpeedMult *= 0.60f;
-            playerSizeMult *= 1.50f;
+            moveSpeedMult *= 0.68f;
+            playerSizeMult *= 1.45f;
             maxHP         *= 2.0f;
-            regenPerSec   += 0.7f;
+            regenPerSec   += 1.2f;
             break;
         case AugType::PIERCE:
             pierce = true;
@@ -238,9 +240,9 @@ struct PlayerStats {
             regenPerSec      += 0.25f;
             break;
         case AugType::CB_BASTION:       // 거대화 + MK2 + 방화벽
-            maxHP            *= 1.15f;
-            regenPerSec      += 0.35f;
-            damageReduction  += 0.08f;
+            maxHP            *= 1.20f;
+            regenPerSec      += 0.45f;
+            damageReduction  += 0.10f;
             break;
         case AugType::CB_LIFEBUOY:      // 재생 II + 흡혈마 + 가벼운 발걸음
             regenPerSec      += 0.25f;
@@ -249,6 +251,7 @@ struct PlayerStats {
             lightStepHitLock = 6.0f;
             break;
         case AugType::CB_WARLORD:       // Berserk + chain explosion.
+            warlord           = true;
             damageMultiplier *= 1.15f;
             break;
         case AugType::BULLET_RAIN_ETERNAL:   // 신화 — 무한 세례 (4초 쿨 + 처치 가속)
@@ -389,7 +392,7 @@ struct PlayerStats {
         case AugType::CHAIN_2:
             ricochetMax     = 3;
             ricochetChance  = 100;
-            ricochetDmgMult = 0.85f;
+            ricochetDmgMult = 0.78f;
             break;
         case AugType::RIFLE_STABILITY:
             bulletSpread    = 0.0f;
@@ -405,6 +408,29 @@ struct PlayerStats {
         case AugType::S_CHAOS:   /* main 에서 디스패치 */ break;
         case AugType::S_PANDORA: /* main 에서 디스패치 */ break;
         }
+    }
+
+    void ApplyWarlordStack() {
+        if (!warlord || warlordStacks >= 7) return;
+        damageMultiplier *= 1.05f;
+        fireInterval     /= 1.02f;
+        bulletSpeed      *= 1.02f;
+        ++warlordStacks;
+    }
+
+    void RestoreWarlordStacks(int stacks) {
+        warlordStacks = 0;
+        stacks = std::max(0, std::min(7, stacks));
+        for (int i = 0; i < stacks; ++i) ApplyWarlordStack();
+    }
+
+    // Record a player kill in one place so every weapon path receives the
+    // same long-run Warlord milestone behavior.
+    void RegisterKill() {
+        ++killCount;
+        if (warlord && warlordStacks < 7 && killCount > 0 &&
+            (killCount % 1000) == 0)
+            ApplyWarlordStack();
     }
 
     float GetDamageTakenMult() const {
@@ -425,7 +451,7 @@ struct PlayerStats {
     // Final base damage with active size scaling.
     float GetBaseDamage() const {
         float base = baseDamage + flatDamageBonus;   // 일반 증강 가산 데미지
-        if (miniaturize) base += 10.0f * (float)totalAugs;
+        if (miniaturize) base += 6.0f * (float)totalAugs;
         return base;
     }
 
@@ -437,18 +463,18 @@ struct PlayerStats {
     float GetFireIntervalMult() const {
         float mult = 1.0f;
         if (miniaturize)
-            mult /= (1.0f + 0.02f * (float)totalAugs);
+            mult /= (1.0f + 0.01f * (float)totalAugs);
         return mult;
     }
     float GetBulletSpeedBonus() const { return 0.0f; }
 
     float GetLifestealCap() const {
-        if (vampire)     return 0.48f;
-        if (lifesteal2)  return 0.36f;
-        return 0.24f;
+        if (vampire)     return 0.60f;
+        if (lifesteal2)  return 0.48f;
+        return 0.32f;
     }
     float GetLifestealPerKill() const {
-        float v = (float)lifestealStacks * 0.06f;
+        float v = (float)lifestealStacks * 0.08f;
         float cap = GetLifestealCap();
         if (v > cap) v = cap;
         return v;

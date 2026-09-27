@@ -84,7 +84,7 @@ inline const TrialDef TRIAL_DEFS[] = {
     { L"OVERCLOCK",     { L"적 이동속도 +20%",    L"Enemy speed +20%"   } },
     { L"MEMORY_LEAK",   { L"최대 HP -25%",         L"Max HP -25%"        } },
     { L"FIREWALL",      { L"보스 체력 +25%",       L"Boss HP +25%"       } },
-    { L"CORRUPT_DROP",  { L"런 상점 가격 +30%",    L"Shop price +30%"    } },
+    { L"CORRUPT_DROP",  { L"플레이 상점 가격 +30%", L"Shop price +30%"    } },
     { L"PROCESS_LIMIT", { L"증강 선택지 2장",      L"Only 2 aug choices" } },
     { L"LOW_BANDWIDTH", { L"스킬 쿨타임 +25%",     L"Skill CD +25%"      } },
     { L"HARDENED",      { L"적 체력 +30%",         L"Enemy HP +30%"      } },
@@ -93,7 +93,8 @@ inline const TrialDef TRIAL_DEFS[] = {
     { L"PACKET_STORM",  { L"초반 일반 몹 스폰 압박 증가",   L"Early normal spawn pressure up" } },
     { L"COLD_BOOT",     { L"시작 최대 체력 감소",            L"Lower starting max HP" } },
     { L"MID_PRESSURE",   { L"중반 적 압박 +8%",    L"Midgame enemy pressure +8%" } },
-    { L"REMOVED_TRIAL", { L"제거된 시련",                    L"Retired trial" } },
+    // Reserved save slot kept at index 12 so older run records remain valid.
+    { L"TRIAL_SLOT_RESERVED", { L"", L"" } },
     { L"PROCESS_NOISE", { L"중반 원거리몹 상한 증가",        L"Midgame ranged mob cap up" } },
     { L"LATE_OVERRUN",  { L"후반 스폰 램프 강화",            L"Late spawn ramp up" } },
     { L"HARDENED_CORE", { L"후반 몹 체력 램프 강화",         L"Late enemy HP ramp up" } },
@@ -103,7 +104,7 @@ inline const TrialDef TRIAL_DEFS[] = {
     { L"SIGNAL_LOSS",   { L"보스 경고 시간이 짧아짐",        L"Shorter boss warning time" } },
 };
 inline constexpr int TRIAL_DEF_COUNT = 20;
-inline constexpr int TRIAL_REMOVED_ID = 12;
+inline constexpr int TRIAL_RESERVED_ID = 12;
 
 enum class TrialStage { EARLY, MID, LATE, BOSS };
 
@@ -134,7 +135,7 @@ inline const wchar_t* TrialStageLabel(TrialStage stage, int langIdx) {
 }
 
 inline float TrialScoreBonusForDef(int idx) {
-    if (idx == TRIAL_REMOVED_ID) return 0.0f;
+    if (idx == TRIAL_RESERVED_ID) return 0.0f;
     switch (idx) {
     case 8:  return 0.14f;
     case 9:  return 0.16f;
@@ -152,7 +153,7 @@ inline float TrialScoreBonusForDef(int idx) {
 }
 
 inline bool TrialActive(int defIdx) {
-    if (defIdx == TRIAL_REMOVED_ID) return false;
+    if (defIdx == TRIAL_RESERVED_ID) return false;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
         if (g_TrialSelected[i] && g_TrialPool[i] == defIdx)
             return true;
@@ -163,14 +164,14 @@ inline bool TrialActive(int defIdx) {
 inline int TrialCount() {
     int count = 0;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i)
-        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_REMOVED_ID) ++count;
+        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_RESERVED_ID) ++count;
     return count;
 }
 
 inline float TrialScoreMult() {
     float mult = 1.0f;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
-        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_REMOVED_ID)
+        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_RESERVED_ID)
             mult += TrialScoreBonusForDef(g_TrialPool[i]);
     }
     return mult;

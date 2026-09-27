@@ -59,6 +59,8 @@ static bool  s_MainMenuRunConfigPanel = false;
 static bool  s_MainMenuResumeFromPanel = false;
 static void Scene_RunConfigInline(const SceneCtx& c);
 static void Scene_SettingsInline(const SceneCtx& c);
+static std::vector<std::wstring> TarotWrap(const wchar_t* src, float scale,
+                                            float maxWidth);
 static int   s_RcWeapon        = 0;
 // PLAY owns the current trial catalogue. The gameplay system still has four
 // slots; this UI state packs enabled definitions into those slots on PLAY.
@@ -105,9 +107,9 @@ static const wchar_t* MainMenuRouteLabel(int language, int index) {
 
 static const wchar_t* MainMenuSubtitleLabel(int language, int index) {
     static const wchar_t* kSubtitles[3][5] = {
-        { L"전투 시작", L"무기고", L"도감 기록", L"설정", L"게임 종료" },
-        { L"Start", L"Armory", L"Astral Log", L"Setting", L"Exit" },
-        { L"スタート", L"武器庫", L"星界記録", L"設定", L"終了" },
+        { L"", L"", L"도감 기록", L"설정", L"게임 종료" },
+        { L"", L"", L"Astral Log", L"Setting", L"Exit" },
+        { L"", L"", L"星界記録", L"設定", L"終了" },
     };
     const int li = std::max(0, std::min(2, language));
     const int mi = std::max(0, std::min(4, index));
@@ -2206,31 +2208,12 @@ void Scene_Shop(const SceneCtx& c) {
     // ── Layout ─────────────────────────────────────────────────────────
     const float TARGET_W = 1640.0f, TARGET_H = 910.0f;
     const float uiS = std::max(0.70f, std::min(sw * 0.94f / TARGET_W, sh * 0.90f / TARGET_H));
-    const float panelW = TARGET_W * uiS;
-    const float panelH = TARGET_H * uiS;
-    const float panelX = (sw - panelW) * 0.5f;
-    const float panelY = (sh - panelH) * 0.5f + (1.0f - wake) * 24.0f * uiS;
-    const float headerH = 82.0f * uiS;
-    const float footerH = 74.0f * uiS;
-    const float gap = 20.0f * uiS;
-    const float colY = panelY + headerH;
-    const float colH = panelH - headerH - footerH;
-    const float leftW = panelW * 0.260f;
-    const float midW = panelW * 0.460f;
-    const float runRightW = panelW - leftW - midW - gap * 2.0f;
-    const float leftX = panelX;
-    const float midX = leftX + leftW + gap;
-    const float runRightX = midX + midW + gap;
-    (void)runRightW;
-    (void)runRightX;
     const float mainBW = std::min(560.0f, std::max(420.0f, sw * 0.34f));
     const float mainBH = 70.0f;
     const float mainGap = 15.0f;
     const float mainTotalH = 5.0f * mainBH + 4.0f * mainGap;
     const float mainX = std::max(58.0f, sw * 0.075f);
     const float mainY = MainMenuCommandStartY(sh);
-    const float armoryY = mainY + (mainBH + mainGap);
-    const float armoryMidY = armoryY + mainBH * 0.5f;
 
     const float rootX = mainX + (s_backExit ? backP * 180.0f * uiS : -(1.0f - wake) * 82.0f * uiS);
     const float rootY = mainY;
@@ -2265,22 +2248,6 @@ void Scene_Shop(const SceneCtx& c) {
     const float workX = columns.contentX - 18.0f * uiS;
     const float workRight = sw - std::max(32.0f, 38.0f * uiS);
     const float workW = std::max(780.0f * uiS, workRight - workX);
-    const float workHeaderH = 76.0f * uiS;
-    const float listColumnW = std::max(330.0f * uiS,
-        std::min(430.0f * uiS, workW * 0.34f));
-    const float depth2X = workX + 22.0f * uiS;
-    const float depth2Y = workY + workHeaderH;
-    const float depth2W = listColumnW - 44.0f * uiS;
-    const float depth2H = workH - workHeaderH - 20.0f * uiS;
-    const float rightX = workX + listColumnW + 18.0f * uiS;
-    const float rightW = std::max(440.0f * uiS, workRight - rightX);
-    const float rightAreaY = workY;
-    const float rightAreaH = workH;
-    const float tabH = 54.0f * uiS;
-    const float tabY = columns.contentY;
-    const float listAreaY = columns.contentY + 64.0f * uiS;
-    const float listAreaH = columns.contentH - 64.0f * uiS;
-    const float footY = columns.bottomY;
     // These surfaces are intentionally borderless and bounded to readable
     // content. A real fill is required on bright desktop/game backgrounds;
     // text shadows alone cannot establish enough local contrast.
@@ -2491,8 +2458,7 @@ void Scene_Shop(const SceneCtx& c) {
         enum ShopActionState {
             SHOP_ACTION_READY = 0,
             SHOP_ACTION_ACTIVE,
-            SHOP_ACTION_BLOCKED,
-            SHOP_ACTION_CATALOGUE
+            SHOP_ACTION_BLOCKED
         };
         auto drawFixedAction = [&](float x, float y, float w, const wchar_t* label,
                                    float r, float g2, float b,
@@ -2517,8 +2483,6 @@ void Scene_Shop(const SceneCtx& c) {
                 buttonR = 0.72f; buttonG = 0.98f; buttonB = 0.96f;
             } else if (state == SHOP_ACTION_BLOCKED) {
                 buttonR = 0.96f; buttonG = 0.30f; buttonB = 0.34f;
-            } else if (state == SHOP_ACTION_CATALOGUE) {
-                buttonR = 0.42f; buttonG = 0.52f; buttonB = 0.66f;
             }
             if (!actionColorReady) {
                 actionColorR = buttonR;
@@ -2705,9 +2669,9 @@ void Scene_Shop(const SceneCtx& c) {
         // The record readout is a right-center observation block. Keeping its
         // anchor above the lower HUD leaves the lower-right CircleTexture as
         // atmosphere instead of forcing every line of copy into the corner.
-        const float detailX = sw * 0.69f;
+        const float detailX = sw * 0.63f;
         const float detailW = std::max(360.0f * ui,
-                                       std::min(sw * 0.26f,
+                                       std::min(sw * 0.29f,
                                                 sw - detailX - 42.0f * ui));
         // Lift the complete readout slightly so the wallet/status rows keep
         // clear air above the bottom action ribbon.
@@ -3214,16 +3178,11 @@ void Scene_Shop(const SceneCtx& c) {
         } else if (detailIsAug && detailId >= 0 && detailId < AUG_TOTAL) {
             const wchar_t* desc = AugDesc(ALL_AUGS[detailId]);
             if (desc && desc[0]) {
-                std::wstring text(desc);
-                size_t pos = 0;
+                const std::vector<std::wstring> segments = TarotWrap(
+                    desc, detailDescriptionSc, detailW);
                 int line = 0;
-                while (pos < text.size() && line < 3) {
-                    size_t slash = text.find(L" / ", pos);
-                    std::wstring segment = slash == std::wstring::npos
-                        ? text.substr(pos) : text.substr(pos, slash - pos);
-                    pos = slash == std::wstring::npos ? text.size() : slash + 3;
-                    while (!segment.empty() && segment.front() == L' ') segment.erase(0, 1);
-                    while (!segment.empty() && segment.back() == L' ') segment.pop_back();
+                for (const std::wstring& segment : segments) {
+                    if (line >= 3) break;
                     drawRightFit(g_TextS, segment.c_str(), detailRight,
                                  copyY + line * 32.0f * ui,
                                  detailDescriptionSc, detailW,
@@ -3346,13 +3305,10 @@ void Scene_Shop(const SceneCtx& c) {
                                   : (canBuy ? SHOP_ACTION_READY
                                             : SHOP_ACTION_BLOCKED));
         } else if (detailIsAug) {
-            drawRightFit(g_TextS, L"패시브 효과",
+            drawRightFit(g_TextS, L"플레이 중 획득 효과 · 도감 전용",
                          detailRight, tradeY - 20.0f * ui,
                          detailDescriptionSc, detailW, whiteR, whiteG, whiteB,
                          0.82f * detailA, 0.60f);
-            drawFixedAction(actionX, actionY, actionW, L"패시브",
-                            detailR, detailG, detailB, false, false,
-                            SHOP_ACTION_CATALOGUE);
         }
 
         DrawShadowedText(g_TextS, L"ESC / RMB  뒤로가기",
@@ -3801,15 +3757,6 @@ static void Scene_CodexInline(const SceneCtx& c) {
                       12.0f * uiS, 2.2f * uiS,
                       0.025f * s_searchFocused * wake);
     const float searchMidY = searchY + searchH * 0.50f;
-    const float searchIconX = utilityX + 20.0f * uiS;
-    DrawVisibleConstellNode(searchIconX, searchMidY, 4.0f * uiS,
-                            curRoot.r, curRoot.g, curRoot.b,
-                            (0.56f + 0.24f * s_searchFocused) * wake,
-                            false);
-    LogoLine(searchIconX + 3.0f * uiS, searchMidY + 3.0f * uiS,
-             searchIconX + 9.0f * uiS, searchMidY + 9.0f * uiS,
-             1.2f * uiS, curRoot.r, curRoot.g, curRoot.b,
-             (0.54f + 0.22f * s_searchFocused) * wake);
     std::wstring searchDisplay;
     if (hasSearch)
         searchDisplay = std::wstring(g_CodexSearch);
@@ -3823,7 +3770,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     while (searchSc > 0.30f * uiS &&
            g_TextS.Width(searchDisplay.c_str(), searchSc) > searchMaxW)
         searchSc -= 0.025f * uiS;
-    const float searchTextX = utilityX + 40.0f * uiS;
+    const float searchTextX = utilityX + 16.0f * uiS;
     const float searchTextY = searchMidY
         - g_TextS.Height(searchDisplay.c_str(), searchSc) * 0.50f;
     DrawShadowedText(g_TextS, searchDisplay.c_str(),
@@ -4270,9 +4217,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
 
     // Fixed record block inside the chart, matching the original wide-open
     // composition.  It does not move with the orbit or label animation.
-    const float detailX = sw * 0.70f;
+    const float detailX = sw * 0.66f;
     const float detailW = std::max(320.0f * uiS,
-                                   std::min(sw * 0.25f, sw - detailX - 54.0f * uiS));
+                                   std::min(sw * 0.28f, sw - detailX - 54.0f * uiS));
     const float infoY = sh * 0.42f;
     BindMainShader();
     drawRect(detailX, infoY, detailW, 1.1f * uiS,
@@ -5540,28 +5487,28 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         2, 17, 18, 19
     };
     static const wchar_t* kTrialTags[TRIAL_DEF_COUNT] = {
-        L"SPEED UP  /  SCORE +15%", L"SURVIVAL DOWN  /  SCORE +15%",
-        L"BOSS UP  /  SCORE +15%",  L"ECONOMY UP  /  SCORE +15%",
-        L"BUILD DOWN  /  SCORE +15%",L"COOLING DOWN  /  SCORE +15%",
-        L"DURABILITY UP  /  SCORE +15%",L"PRESSURE UP  /  SCORE +15%",
-        L"EARLY  /  SCORE +14%",     L"EARLY  /  SCORE +16%",
-        L"OPENING DOWN  /  SCORE +18%",L"MID  /  SCORE +18%",
-        L"REMOVED",                    L"MID  /  SCORE +17%",
-        L"LATE  /  SCORE +22%",       L"LATE  /  SCORE +24%",
-        L"LATE  /  SCORE +21%",       L"BOSS  /  SCORE +24%",
-        L"BOSS  /  SCORE +22%",       L"BOSS  /  SCORE +20%"
+        L"SPEED UP · SCORE +15%", L"SURVIVAL DOWN · SCORE +15%",
+        L"BOSS UP · SCORE +15%",  L"ECONOMY UP · SCORE +15%",
+        L"BUILD DOWN · SCORE +15%",L"COOLING DOWN · SCORE +15%",
+        L"DURABILITY UP · SCORE +15%",L"PRESSURE UP · SCORE +15%",
+        L"EARLY · SCORE +14%",     L"EARLY · SCORE +16%",
+        L"OPENING DOWN · SCORE +18%",L"MID · SCORE +18%",
+        L"",                            L"MID · SCORE +17%",
+        L"LATE · SCORE +22%",       L"LATE · SCORE +24%",
+        L"LATE · SCORE +21%",       L"BOSS · SCORE +24%",
+        L"BOSS · SCORE +22%",       L"BOSS · SCORE +20%"
     };
     static const wchar_t* kTrialTagsKR[TRIAL_DEF_COUNT] = {
-        L"속도 증가  /  점수 +15%", L"생존력 감소  /  점수 +15%",
-        L"보스 강화  /  점수 +15%", L"경제 악화  /  점수 +15%",
-        L"빌드 제약  /  점수 +15%", L"쿨다운 증가  /  점수 +15%",
-        L"내구도 증가  /  점수 +15%", L"압박 증가  /  점수 +15%",
-        L"초반  /  점수 +14%", L"초반  /  점수 +16%",
-        L"시작 제약  /  점수 +18%", L"중반  /  점수 +18%",
-        L"REMOVED",           L"중반  /  점수 +17%",
-        L"후반  /  점수 +22%", L"후반  /  점수 +24%",
-        L"후반  /  점수 +21%", L"보스  /  점수 +24%",
-        L"보스  /  점수 +22%", L"보스  /  점수 +20%"
+        L"속도 증가 · 점수 +15%", L"생존력 감소 · 점수 +15%",
+        L"보스 강화 · 점수 +15%", L"경제 악화 · 점수 +15%",
+        L"빌드 제약 · 점수 +15%", L"쿨다운 증가 · 점수 +15%",
+        L"내구도 증가 · 점수 +15%", L"압박 증가 · 점수 +15%",
+        L"초반 · 점수 +14%", L"초반 · 점수 +16%",
+        L"시작 제약 · 점수 +18%", L"중반 · 점수 +18%",
+        L"",                    L"중반 · 점수 +17%",
+        L"후반 · 점수 +22%", L"후반 · 점수 +24%",
+        L"후반 · 점수 +21%", L"보스 · 점수 +24%",
+        L"보스 · 점수 +22%", L"보스 · 점수 +20%"
     };
     static const wchar_t* kTrialDetail[TRIAL_DEF_COUNT] = {
         L"Hostile movement speed is increased by 20 percent from the start of the run.",
@@ -5576,7 +5523,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"The early normal spawn pressure is increased, compressing the opening economy window.",
         L"Starting maximum HP is reduced. The first few rooms become the cost of entry.",
         L"Midgame enemy pressure rises by 8 percent through spawn rate and HP.",
-        L"This trial has been retired.",
+        L"",
         L"The midgame ranged enemy cap is raised, creating more simultaneous firing lanes.",
         L"The late-game spawn ramp is strengthened. Pressure keeps climbing after the build stabilizes.",
         L"Late enemies receive a stronger HP ramp, so damage scaling must keep pace.",
@@ -5586,10 +5533,10 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"Boss warning time is shorter. Read the signal early or enter the encounter unprepared."
     };
     static const wchar_t* kTrialDetailKR[TRIAL_DEF_COUNT] = {
-        L"런 시작부터 적의 이동 속도가 20퍼센트 증가합니다.",
+        L"플레이 시작부터 적의 이동 속도가 20퍼센트 증가합니다.",
         L"최대 체력이 25퍼센트 감소합니다. 회복으로 잃은 최대치를 되돌릴 수 없습니다.",
         L"보스의 체력이 25퍼센트 증가해 최종 피해 구간이 길어집니다.",
-        L"모든 런 상점의 가격이 30퍼센트 증가합니다. 경제 강화의 선택이 더 까다로워집니다.",
+        L"플레이 상점의 가격이 30퍼센트 증가합니다. 경제 강화의 선택이 더 까다로워집니다.",
         L"증강 선택이 생성될 때 선택지가 2장으로 제한됩니다.",
         L"모든 스킬의 쿨다운이 25퍼센트 증가합니다. 빌드에 타이밍 관리가 필요해집니다.",
         L"모든 적의 체력이 30퍼센트 증가해 지속 피해와 우선 처치가 중요해집니다.",
@@ -5598,7 +5545,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"초반 일반 적의 스폰 압력이 증가해 초반 경제를 정비할 시간이 줄어듭니다.",
         L"시작 최대 체력이 감소합니다. 첫 방들이 입장 비용이 됩니다.",
         L"중반 적 스폰 속도와 체력이 8% 증가합니다.",
-        L"현재 버전에서 제거된 시련입니다.",
+        L"",
         L"중반 원거리 적 수 제한이 증가해 동시에 유지해야 할 사선이 많아집니다.",
         L"후반 스폰 증가 폭이 커집니다. 빌드가 안정된 뒤에도 압박이 계속 상승합니다.",
         L"후반 적의 체력 증가 폭이 커지므로 피해량 성장도 발맞춰야 합니다.",
@@ -5613,7 +5560,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         L"오버클럭", L"메모리 누수", L"방화벽", L"부패한 드롭",
         L"프로세스 제한", L"낮은 대역폭", L"강화", L"급증",
         L"조기 돌입", L"패킷 폭풍", L"콜드 부트", L"중반 압박",
-        L"REMOVED", L"프로세스 노이즈", L"후반 초과", L"강화 코어",
+        L"", L"프로세스 노이즈", L"후반 초과", L"강화 코어",
         L"신호 변위", L"방화벽 코어", L"소음 경기장", L"신호 손실"
     };
     static const wchar_t* kWeaponNames[2] = { L"RIFLE", L"FIELD" };
@@ -5669,7 +5616,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     auto countEnabled = [&]() {
         int count = 0;
         for (int i = 0; i < TRIAL_DEF_COUNT; ++i)
-            if (i != TRIAL_REMOVED_ID && s_RcTrialEnabled[i]) ++count;
+            if (i != TRIAL_RESERVED_ID && s_RcTrialEnabled[i]) ++count;
         return count;
     };
     auto stageIndex = [&](int defId) {
@@ -5684,7 +5631,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     auto syncTrialsToGame = [&]() {
         int slot = 0;
         for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (id == TRIAL_REMOVED_ID || !s_RcTrialEnabled[id]
+            if (id == TRIAL_RESERVED_ID || !s_RcTrialEnabled[id]
                 || slot >= TRIAL_SLOT_COUNT) continue;
             g_TrialPool[slot] = id;
             g_TrialSelected[slot] = true;
@@ -5723,15 +5670,15 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             for (int slot = 0; slot < TRIAL_SLOT_COUNT; ++slot) {
                 const int id = g_TrialPool[slot];
                 if (g_TrialSelected[slot] && id >= 0 && id < TRIAL_DEF_COUNT
-                    && id != TRIAL_REMOVED_ID)
+                    && id != TRIAL_RESERVED_ID)
                     s_RcTrialEnabled[id] = true;
             }
             s_RcTrialStateLoaded = true;
         }
         // A retired trial may still exist in an older saved selection.
-        s_RcTrialEnabled[TRIAL_REMOVED_ID] = false;
+        s_RcTrialEnabled[TRIAL_RESERVED_ID] = false;
         for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (id != TRIAL_REMOVED_ID && s_RcTrialEnabled[id]) {
+            if (id != TRIAL_RESERVED_ID && s_RcTrialEnabled[id]) {
                 trialFocus = id;
                 break;
             }
@@ -6162,7 +6109,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
             }
         }
         for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (id == TRIAL_REMOVED_ID || !s_RcTrialEnabled[id]) continue;
+            if (id == TRIAL_RESERVED_ID || !s_RcTrialEnabled[id]) continue;
             const int node = (id * 7 + weapon * 3) % kNodeCount;
             DrawVisibleConstellLine(chartCX, chartCY, px[node], py[node],
                                     1.10f * uiS, trialR, trialG, trialB,
@@ -6243,8 +6190,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     LogoLine(detailX, detailTop + 70.0f * uiS,
              detailX + detailW, detailTop + 70.0f * uiS,
              0.75f * uiS, trialR, trialG, trialB, 0.26f * contentA);
-    const wchar_t* detailHint = PlayText(L"마우스로 잡고 이동  //  휠 스크롤",
-                                         L"DRAG TO SCROLL  //  MOUSE WHEEL");
+    const wchar_t* detailHint = PlayText(L"마우스로 잡고 이동 · 휠 스크롤",
+                                         L"DRAG TO SCROLL · MOUSE WHEEL");
     float detailHintScale = 0.34f * uiS;
     while (detailHintScale > 0.26f * uiS
            && g_TextS.Width(detailHint, detailHintScale) > detailW)
@@ -6265,7 +6212,7 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
     };
     std::vector<ActiveSummaryRow> summaryRows;
     const auto selected = [&](int id) {
-        return id >= 0 && id < TRIAL_DEF_COUNT && id != TRIAL_REMOVED_ID
+        return id >= 0 && id < TRIAL_DEF_COUNT && id != TRIAL_RESERVED_ID
             && s_RcTrialEnabled[id];
     };
     auto formatPercent = [](float mult) {
@@ -6922,10 +6869,12 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         DrawMainOnedowLogo(sw, sh, 0.42f * oldA,
                            LogoClamp01(oldA + 0.20f * treeA), sw * 0.30f - 160.0f * (1.0f - oldA), 0.82f);
 
-    DrawShadowedText(g_TextL, korean ? L"설정" : L"SETTINGS", mainX, 48.0f * uiS,
+    const float settingsTitleY = 42.0f * uiS;
+    DrawShadowedText(g_TextL, korean ? L"설정" : L"SETTINGS", mainX, settingsTitleY,
                      1.16f, 1.0f, 1.0f, 1.0f, 0.94f * treeA, 0.72f);
     DrawShadowedText(g_TextS, korean ? L"시스템 보정" : L"SYSTEM CALIBRATION",
-                     mainX + 4.0f * uiS, 86.0f * uiS,
+                     mainX + 4.0f * uiS,
+                     settingsTitleY + g_TextL.Height(korean ? L"설정" : L"SETTINGS", 1.16f) + 8.0f * uiS,
                      0.52f, 0.35f, 0.76f, 1.0f, 0.72f * treeA, 0.58f);
 
     // \uC88C\uCE21 ghost \uBC84\uD2BC \u2014 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0 \uB530\uB77C \uBA54\uC778\uBA54\uB274 vs \uC77C\uC2DC\uC815\uC9C0 \uBA54\uB274
@@ -6951,7 +6900,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                                    korean ? L"설정" : L"CALIBRATION",
                                    korean ? L"\uD3EC\uAE30\uD558\uAE30" : L"ABANDON RUN",
                                    korean ? L"종료" : L"TERMINATE" };
-        static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uB7F0 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
+        static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uD50C\uB808\uC774 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 4; ++i) {
             const float y = MainMenuButtonRailStartY(sh) + i * (mainBH + mainGap);
             const bool focus = i == 1;
@@ -7111,8 +7060,9 @@ static void Scene_SettingsInline(const SceneCtx& c) {
         return false;
     };
 
-    // Integrated settings catalogue: category headers and setting entries
-    // share one scrollable stream in the diagonal left pane.
+    // Integrated settings catalogue: the left pane is an accordion and only
+    // the selected category expands there. The right board is built below
+    // from a separate all-category stream so every detail remains visible.
     struct SettingsListEntry { int category; int row; bool header; const wchar_t* label; };
     SettingsListEntry list[32] = {};
     int listCount = 0;
@@ -7155,6 +7105,24 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     addHeader(3, korean ? L"기록" : L"ARCHIVE");
     if (tab == 3) for (int i = 0; i < 2; ++i) addItem(3, i, archiveLabels[i]);
 
+    SettingsListEntry rightList[32] = {};
+    int rightListCount = 0;
+    auto addRightHeader = [&](int cat, const wchar_t* label) {
+        rightList[rightListCount++] = { cat, -1, true, label };
+    };
+    auto addRightItem = [&](int cat, int row, const wchar_t* label) {
+        rightList[rightListCount++] = { cat, row, false, label };
+    };
+    addRightHeader(0, korean ? L"화면" : L"DISPLAY");
+    for (int i = 0; i < 4; ++i) addRightItem(0, i, displayLabels[i]);
+    addRightHeader(1, korean ? L"소리" : L"AUDIO");
+    for (int i = 0; i < 5; ++i) addRightItem(1, i, audioLabels[i]);
+    addRightHeader(2, korean ? L"게임플레이" : L"GAMEPLAY");
+    for (int i = 0; i < (kDebugSettingsVisible ? 4 : 3); ++i)
+        addRightItem(2, i, gameplayLabels[i]);
+    addRightHeader(3, korean ? L"기록" : L"ARCHIVE");
+    for (int i = 0; i < 2; ++i) addRightItem(3, i, archiveLabels[i]);
+
     bool focusChanged = false;
 
     auto isListItem = [&](int index) {
@@ -7196,7 +7164,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     const float rightListH = std::max(260.0f * uiS, rightListBottom - rightListTop);
     const float rightRowH = 112.0f * uiS;
     const float rightMaxScroll = std::max(0.0f,
-        (float)listCount * rightRowH - rightListH);
+        (float)rightListCount * rightRowH - rightListH);
     settingsScrollTarget = std::max(0.0f, std::min(1.0f, settingsScrollTarget));
     // The current scroll value deliberately trails the requested position.
     // This single shared easing drives the left index, right board and both
@@ -7245,8 +7213,20 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             settingsScrollTarget = 0.0f;
             return;
         }
+        int rightFocus = -1;
+        if (isListItem(listCursor)) {
+            const SettingsListEntry& focused = list[listCursor];
+            for (int i = 0; i < rightListCount; ++i) {
+                if (!rightList[i].header && rightList[i].category == focused.category
+                    && rightList[i].row == focused.row) {
+                    rightFocus = i;
+                    break;
+                }
+            }
+        }
+        if (rightFocus < 0) return;
         const float target = std::max(0.0f, std::min(rightMaxScroll,
-            (float)listCursor * rightRowH - rightListH * 0.42f));
+            (float)rightFocus * rightRowH - rightListH * 0.42f));
         settingsScrollTarget = target / rightMaxScroll;
     };
     if (focusChanged) revealFocus();
@@ -7385,9 +7365,9 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     }
 
 
-    // Right settings board: every category remains present in one continuous
-    // scroll stream. Its logical rows use the same cursor/scroll as the left
-    // catalogue, while the larger row geometry keeps the existing type scale.
+    // Right settings board: every category is always expanded in one
+    // continuous scroll stream. The left accordion controls navigation, while
+    // this board keeps the selected row's full readout available at all times.
     int hoverCategory = -1;
     int hoverSettingRow = -1;
     int hoverSettingOpt = -1;
@@ -7503,11 +7483,11 @@ static void Scene_SettingsInline(const SceneCtx& c) {
               (GLint)(sh - rightListBottom),
               (GLint)rClickW,
               (GLint)(rightListBottom - rightListTop));
-    for (int i = 0; i < listCount; ++i) {
+    for (int i = 0; i < rightListCount; ++i) {
         const float y = rightListTop + i * rightRowH - rightScroll;
         if (y < rightListTop - rightRowH || y > rightListBottom) continue;
 
-        const SettingsListEntry& entry = list[i];
+        const SettingsListEntry& entry = rightList[i];
         float catR = 0.35f, catG = 0.72f, catB = 1.0f;
         categoryColor(entry.category, catR, catG, catB);
         if (entry.header) {
@@ -7554,9 +7534,16 @@ static void Scene_SettingsInline(const SceneCtx& c) {
             hoverCategory = category;
             hoverSettingRow = row;
             if (lmb && !g_LmbPrev) {
-                listCursor = i;
                 tab = category;
                 detailRow = row;
+                listCursor = -1;
+                for (int k = 0; k < listCount; ++k) {
+                    if (!list[k].header && list[k].category == category
+                        && list[k].row == row) {
+                        listCursor = k;
+                        break;
+                    }
+                }
                 focusChanged = true;
             }
         }
@@ -7760,7 +7747,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     BatchFlush();
     glDisable(GL_SCISSOR_TEST);
     if (rightMaxScroll > 0.0f) {
-        const float rightTotalH = listCount * rightRowH;
+        const float rightTotalH = rightListCount * rightRowH;
         const float thumbH = std::max(32.0f * uiS,
                                       rightListH * (rightListH / rightTotalH));
         const float thumbY = rightListTop
@@ -7778,11 +7765,11 @@ static void Scene_SettingsInline(const SceneCtx& c) {
     // provisionally while browsing, but only this button writes them.
     settingsDirty = settingsChanged();
     const float backX = mainX;
-    const float backY = sh - 126.0f * uiS;
+    const float backY = sh - 142.0f * uiS;
     const float backW = 286.0f * uiS;
     const float backH = 64.0f * uiS;
-    const float saveX = detailX + 42.0f * uiS;
-    const float saveY = sh - 162.0f * uiS;
+    const float saveX = detailX + 24.0f * uiS;
+    const float saveY = sh - 142.0f * uiS;
     const float saveW = std::min(486.0f * uiS, detailW * 0.82f);
     const float saveH = 64.0f * uiS;
     const bool backHit = ready && !confirmBack
@@ -8065,10 +8052,10 @@ void Scene_Paused(const SceneCtx& c) {
         float titleA = Smoothstep(std::min(s_EntryT / 0.28f, 1.0f)) * entryFade;
         const int li = std::max(0, std::min(2, LangIndex()));
         static const wchar_t* kPauseHeader[3] = {
-            L"런 일시정지", L"RUN PAUSED", L"ラン一時停止"
+            L"플레이 일시정지", L"PLAY PAUSED", L"プレイ一時停止"
         };
         static const wchar_t* kPauseStatus[3] = {
-            L"런 상태 : 일시정지", L"RUN STATE : PAUSED", L"ラン状態 : 一時停止"
+            L"플레이 상태 : 일시정지", L"PLAY STATE : PAUSED", L"プレイ状態 : 一時停止"
         };
         const wchar_t* hdr = kPauseHeader[li];
         float hdrSc = 1.2f;
@@ -8089,9 +8076,9 @@ void Scene_Paused(const SceneCtx& c) {
         { L"再開", L"設定", L"再起動", L"\u30E9\u30F3\u3092\u653E\u68C4", L"終了" },
     };
     static const wchar_t* kPauseSubs[3][5] = {
-        { L"재개", L"설정", L"현재 런 재시작", L"현재 런 포기", L"게임 종료" },
-        { L"Resume", L"Settings", L"Restart current run", L"Abandon current run", L"Exit game" },
-        { L"再開", L"設定", L"現在のランを再起動", L"現在のランを放棄", L"ゲーム終了" },
+        { L"현재 플레이로 돌아가기", L"플레이 설정 열기", L"현재 플레이 재시작", L"현재 플레이 포기", L"게임 종료" },
+        { L"Return to current play", L"Open play settings", L"Restart current play", L"Abandon current play", L"Exit game" },
+        { L"現在のプレイに戻る", L"プレイ設定を開く", L"現在のプレイを再起動", L"現在のプレイを放棄", L"ゲーム終了" },
     };
     const int pauseLang = std::max(0, std::min(2, LangIndex()));
 
@@ -8195,13 +8182,13 @@ void Scene_GameOver(const SceneCtx& c) {
     const float uiS = std::max(0.72f, std::min(sw / 1640.0f, sh / 910.0f));
 
     static const wchar_t* kRunTitle[3] = {
-        L"\uB7F0 \uC885\uB8CC", L"RUN ENDED", L"\u30E9\u30F3\u7D42\u4E86"
+        L"\uD50C\uB808\uC774 \uC885\uB8CC", L"PLAY ENDED", L"\u30D7\u30EC\u30A4\u7D42\u4E86"
     };
     static const wchar_t* kDeathLabel[3] = {
         L"\uC0AC\uB9DD \uC6D0\uC778", L"DEATH SIGNAL", L"\u6B7B\u56E0"
     };
     static const wchar_t* kReportLabel[3] = {
-        L"\uB7F0 \uB9AC\uD3EC\uD2B8", L"RUN REPORT", L"\u30E9\u30F3 \u30EC\u30DD\u30FC\u30C8"
+        L"\uD50C\uB808\uC774 \uB9AC\uD3EC\uD2B8", L"PLAY REPORT", L"\u30D7\u30EC\u30A4 \u30EC\u30DD\u30FC\u30C8"
     };
     static const wchar_t* kBestLabel[3] = {
         L"\uCD5C\uACE0 \uAE30\uB85D", L"BEST SCORE", L"\u30D9\u30B9\u30C8\u30B9\u30B3\u30A2"
@@ -8236,9 +8223,9 @@ void Scene_GameOver(const SceneCtx& c) {
         { L"\u518D\u8D77\u52D5", L"\u623B\u308B", L"\u7D42\u4E86" }
     };
     static const wchar_t* kSub[3][3] = {
-        { L"\uD604\uC7AC \uB7F0 \uC720\uC9C0", L"\uB85C\uBE44\uB85C", L"\uAC8C\uC784 \uC885\uB8CC" },
-        { L"KEEP CURRENT RUN SETUP", L"RETURN TO LOBBY", L"EXIT GAME" },
-        { L"\u73FE\u5728\u306E\u30E9\u30F3\u8A2D\u5B9A\u3092\u7DAD\u6301", L"\u30ED\u30D3\u30FC\u3078", L"\u30B2\u30FC\u30E0\u7D42\u4E86" }
+        { L"\uD604\uC7AC \uD50C\uB808\uC774 \uC720\uC9C0", L"\uB85C\uBE44\uB85C", L"\uAC8C\uC784 \uC885\uB8CC" },
+        { L"KEEP CURRENT PLAY SETUP", L"RETURN TO LOBBY", L"EXIT GAME" },
+        { L"\u73FE\u5728\u306E\u30D7\u30EC\u30A4\u8A2D\u5B9A\u3092\u7DAD\u6301", L"\u30ED\u30D3\u30FC\u3078", L"\u30B2\u30FC\u30E0\u7D42\u4E86" }
     };
 
     // The report owns the full frame, so the build constellation is always
@@ -9076,7 +9063,9 @@ static std::vector<std::wstring> TarotWrap(const wchar_t* src, float scale,
         segment.clear();
     };
     for (const wchar_t* p = text; *p; ++p) {
-        if (*p == L'/') { flush(); continue; }
+        const bool spacedSlash = *p == L'/' && p > text && p[1] != L'\0'
+                              && p[-1] == L' ' && p[1] == L' ';
+        if (*p == L'\xB7' || spacedSlash) { flush(); continue; }
         std::wstring test = segment;
         test.push_back(*p);
         if (!segment.empty() && g_TextS.Width(test.c_str(), scale) > maxWidth)
@@ -9886,9 +9875,10 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
                                              : L"AUG SELECT";
         const float orbitLabelScale = 1.38f * layout.textUi;
         const float orbitLabelW = g_TextS.Width(orbitLabel, orbitLabelScale);
+        const float orbitLabelH = g_TextS.Height(orbitLabel, orbitLabelScale);
         g_TextS.Draw(orbitLabel,
                      layout.orbitCX - orbitLabelW * 0.5f,
-                     layout.orbitCY - 10.0f * layout.ui,
+                     layout.orbitCY - 26.0f * layout.ui,
                      orbitLabelScale,
                      0.95f, 0.98f, 1.0f,
                      enterE * sceneAlpha * 0.72f);
@@ -9897,7 +9887,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
         const float orbitSubW = g_TextS.Width(orbitSubLabel, orbitSubScale);
         g_TextS.Draw(orbitSubLabel,
                      layout.orbitCX - orbitSubW * 0.5f,
-                     layout.orbitCY + 18.0f * layout.ui,
+                     layout.orbitCY + orbitLabelH + 12.0f * layout.ui,
                      orbitSubScale,
                      0.52f, 0.68f, 0.80f,
                      enterE * sceneAlpha * 0.34f);
@@ -10475,8 +10465,9 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     if (rowHover) {
                         hoverAug = i; hoverRowY = ry;
                         BindMainShader();
-                        drawRect(0, ry - 2.0f, COLW, ROW_H, 0.15f, 0.16f, 0.26f, 0.6f);
-                        drawRect(0, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
+                        drawRect(PX, ry - 2.0f, COLW - PX, ROW_H,
+                                 0.15f, 0.16f, 0.26f, 0.6f);
+                        drawRect(PX, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
                     }
                     wchar_t line[128];
                     if (counts[i] > 1)
@@ -10510,8 +10501,12 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                                          std::vector<std::wstring>& out) {
                     std::vector<std::wstring> dl; std::wstring cur2;
                     for (const wchar_t* p = src; *p; ++p) {
-                        if (*p == L'/') { if (!cur2.empty()) dl.push_back(cur2); cur2.clear(); }
-                        else cur2 += *p;
+                        const bool spacedSlash = *p == L'/' && p > src && p[1] != L'\0'
+                                              && p[-1] == L' ' && p[1] == L' ';
+                        if (*p == L'\xB7' || spacedSlash) {
+                            if (!cur2.empty()) dl.push_back(cur2);
+                            cur2.clear();
+                        } else cur2 += *p;
                     }
                     if (!cur2.empty()) dl.push_back(cur2);
                     out.clear();

@@ -142,7 +142,7 @@ public:
                     SpawnStardust(monster->worldX, monster->worldY,
                                   StardustRewardFor(monster->kind), playerCX,
                                   playerCY, pickupXp);
-                    stats.killCount += 1;
+                    stats.RegisterKill();
                     scoreAccum += baseScore;
                     score = (long long)scoreAccum;
                     if (stats.vampire || stats.lifesteal2) {
@@ -204,7 +204,7 @@ public:
                         (25.0f + (float)stats.rangedXpBonus) * stats.xpMult);
                     SpawnStardust(ranged->worldX, ranged->worldY, 3,
                                   playerCX, playerCY, pickupXp);
-                    stats.killCount += 1;
+                    stats.RegisterKill();
                     scoreAccum += 300.0f;
                     score = (long long)scoreAccum;
                     if (stats.vampire || stats.lifesteal2) {

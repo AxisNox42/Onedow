@@ -5,165 +5,165 @@ inline const wchar_t* AugDescKR(AugType t) {
 
     // ── Common ──
     case AugType::DMG_UP:
-        return L"공격력 +9 (고정 가산) / 중첩마다 기본 피해가 누적 상승 / 초반·후반 모두 안정적인 화력 보강";
+        return L"공격력 +9 (고정 가산) · 중첩마다 기본 피해가 누적 상승 · 초반·후반 모두 안정적인 화력 보강";
     case AugType::RATE_UP:
-        return L"연사 속도 +4% (백분율 누적) / 중첩마다 발사 간격 단축 / 안정적인 화력 보강";
+        return L"연사 속도 +4% (백분율 누적) · 중첩마다 발사 간격 단축 · 안정적인 화력 보강";
     case AugType::SPD_UP:
-        return L"탄환 속도 +30 / 멀리 날아가는 탄의 실효 사거리·관통 체감 향상 / 중첩 가능";
+        return L"탄환 속도 +30 · 멀리 날아가는 탄의 실효 사거리·관통 체감 향상 · 중첩 가능";
     case AugType::MOVE_UP:
-        return L"이동 속도 +5% (백분율 누적) / 회피·진입·후퇴 기동성 상승 / 중첩 가능";
+        return L"이동 속도 +5% (백분율 누적) · 회피·진입·후퇴 기동성 상승 · 중첩 가능";
     case AugType::VISION_UP:
-        return L"시야(플레이어 창 크기) +70 / 최대 5중첩 (합 +350) / 넓은 시야로 적·탄·보상 탐지 유리";
+        return L"시야(플레이어 창 크기) +70 · 최대 5중첩 (합 +350) · 넓은 시야로 적·탄·보상 탐지 유리";
     case AugType::REGEN_UP:
-        return L"재생 +0.28/s (중첩 가능) / 약 3.5초마다 체력 1 회복 / 출혈 등 지속 피해를 서서히 상쇄";
+        return L"재생 +0.28/s (중첩 가능) · 약 3.5초마다 체력 1 회복 · 출혈 등 지속 피해를 서서히 상쇄";
 
     // ── Rare ──
     case AugType::GLASS_CANNON:
-        return L"공격력 +50% / 최대 체력 -35% / 한 방 화력 극대화·생존 리스크 동반 (1회만 획득)";
+        return L"공격력 +50% · 최대 체력 -35% · 한 방 화력 극대화·생존 리스크 동반 (1회만 획득)";
     case AugType::LIGHT_AMMO:
-        return L"연사 +10% · 탄속 +30% / 공격력 -15% / 가볍고 빠른 탄환 빌드 (1회만 획득)";
+        return L"연사 +15% · 탄속 +35% · 공격력 -12% · 가볍고 빠른 탄환 빌드 (1회만 획득)";
     case AugType::LIGHT_STEP:
-        return L"이동 속도 +30% / 피격 시 10초간 보너스 해제 / 기동전·카이팅에 유리 (1회만 획득)";
+        return L"이동 속도 +30% · 피격 시 10초간 보너스 해제 · 기동전·카이팅에 유리 (1회만 획득)";
     case AugType::BULLET_RAIN:
-        return L"15초마다 유도탄 20발 일제 발사 / 발당 피해 50% / 주변 적 일괄 처리·군중 제어";
+        return L"15초마다 유도탄 20발 일제 발사 · 발당 피해 50% · 주변 적 일괄 처리·군중 제어";
     case AugType::CRIT:
-        return L"치명타 확률 +15%p (최대 75%) / 치명타 배율 ×2.0 / 행운형 화력 증폭";
+        return L"치명타 확률 +15%p (최대 75%) · 치명타 배율 ×2.0 · 행운형 화력 증폭";
     case AugType::LIFESTEAL:
-        return L"처치당 HP 회복 (스택당 +0.06, 최대 4중첩) / 흡혈 한도 0.24 / 지속 전투 생존 보조";
+        return L"처치당 HP 회복 (스택당 +0.08, 최대 4중첩) · 흡혈 한도 0.32 · 지속 전투 생존 보조";
     case AugType::BERSERK:
-        return L"체력이 낮을수록 공격력 증가 / 빈사 시 최대 +60% / 위기 역전·고위험 고보상 (1회만 획득)";
+        return L"체력이 낮을수록 공격력 증가 · 빈사 시 최대 +60% · 위기 역전·고위험 고보상 (1회만 획득)";
     case AugType::OVERDRIVE:
-        return L"공격력 +14 (고정 가산) / 희귀 등급 단일 스탯 부스트 / 안정적인 화력 상승";
+        return L"공격력 +14 (고정 가산) · 희귀 등급 단일 스탯 부스트 · 안정적인 화력 상승";
 
     // ── Epic ──
     case AugType::CORE_OVERLOAD:
-        return L"공격력 +24 (고정 가산) / 에픽 등급 고화력 가산 / 오버드라이브보다 큰 일회성 화력";
+        return L"공격력 +24 (고정 가산) · 에픽 등급 고화력 가산 · 오버드라이브보다 큰 일회성 화력";
     case AugType::VAMPIRE:
-        return L"흡혈 한도 0.48로 상향 / 최대 체력 +20 / 10킬마다 HP +1 (장기 생존·흡혈 빌드 핵심)";
+        return L"흡혈 한도 0.60으로 상향 · 최대 체력 +20 · 10킬마다 HP +1 (장기 생존·흡혈 빌드 핵심)";
     case AugType::MINIATURIZE:
-        return L"최대 체력 1/2 · 크기 -20% · 이동 +20% / 보유 증강 1개당 공격 +10·연사 +2% / 작고 빠른 스케일링 빌드";
+        return L"최대 체력 1/2 · 크기 -20% · 이동 +20% · 보유 증강 1개당 공격 +6·연사 +1% · 작고 빠른 스케일링 빌드";
     case AugType::GIGANTIFY:
-        return L"최대 체력 ×2 · 크기 +50% / 재생 +0.7/s · 이동 -40% / 거대·탱커 생존 빌드";
+        return L"최대 체력 ×2 · 크기 +45% · 재생 +1.2/s · 이동 -32% · 거대·탱커 생존 빌드";
     case AugType::PIERCE:
-        return L"명중 시 30% 확률로 적·장애물 관통 / 밀집 적 관통 처리 / 관통 II·조합과 시너지";
+        return L"명중 시 30% 확률로 적·장애물 관통 · 밀집 적 관통 처리 · 관통 II·조합과 시너지";
     case AugType::TWIN:
-        return L"한 번에 2발 동시 발사 / 공격력 -40% / 화력 밀도↑·단발 위력↓";
+        return L"한 번에 2발 동시 발사 · 공격력 -40% · 화력 밀도↑·단발 위력↓";
     case AugType::CHAKRAM:
-        return L"넓게 공전하는 차크람 1개 / 잡몹·일반 적 즉사, 원거리 큰 피해·적탄 차단 / 파괴 시 6초 후 재생성";
+        return L"넓게 공전하는 차크람 1개 · 잡몹·일반 적 즉사, 원거리 큰 피해·적탄 차단 · 파괴 시 6초 후 재생성";
     case AugType::BULLET_RAIN_2:
-        return L"탄환 세례 쿨다운 15초 → 10초 / 선행: 탄환 세례 필요 / 세례 빈도 대폭 상승";
+        return L"탄환 세례 쿨다운 15초 → 10초 · 선행: 탄환 세례 필요 · 세례 빈도 대폭 상승";
     case AugType::CHAKRAM_2:
-        return L"차크람 1개 → 2개 / 선행: 차크람 필요 / 공전 커버리지·압박력 2배";
+        return L"차크람 1개 → 2개 · 선행: 차크람 필요 · 공전 커버리지·압박력 2배";
     case AugType::DRONE:
-        return L"자동 조준 드론 1기 소환 / 플레이어 연사·탄속의 50% 화력 / 손 안 쏴도 지속 딜";
+        return L"자동 조준 드론 1기 소환 · 플레이어 연사·탄속의 50% 화력 · 손 안 쏴도 지속 딜";
     case AugType::LASER:
-        return L"0.85초마다 조준 방향 관통 레이저 (사거리 560) / 직선상 적 일소·군중 제어 / 오빗 빔 계열";
+        return L"0.85초마다 조준 방향 관통 레이저 (사거리 560) · 직선상 적 일소·군중 제어 · 오빗 빔 계열";
     case AugType::LASER_2:
-        return L"레이저 간격 0.85→0.55초 · 사거리 560→760 / 선행: 스캔 레이저 / 연사·원거리 레이저 강화";
+        return L"레이저 간격 0.85→0.55초 · 사거리 560→760 · 선행: 스캔 레이저 · 연사·원거리 레이저 강화";
     case AugType::PIERCE_2:
-        return L"관통 확률 +30%p (최대 100%) / 선행: 관통 필요 / 관통 빌드 완성 단계";
+        return L"관통 확률 +30%p (최대 100%) · 선행: 관통 필요 · 관통 빌드 완성 단계";
     case AugType::TWIN_2:
-        return L"동시 발사 2발 → 3발 (트리플 샷) / 선행: 더블 필요 / 화력 밀도 최대화";
+        return L"동시 발사 2발 → 3발 (트리플 샷) · 선행: 더블 필요 · 화력 밀도 최대화";
     case AugType::HACK_RANGED:
-        return L"원거리 몹 처치 시 20% 확률 / 유도탄 5발 추가 (적에게만 피해) / 원거리 격파 연쇄";
+        return L"원거리 몹 처치 시 20% 확률 · 유도탄 5발 추가 (적에게만 피해) · 원거리 격파 연쇄";
     case AugType::PROB_CHAIN:
-        return L"명중 시 30% 확률로 가까운 적에게 튕김 / 최대 3회 연쇄 / 확률형 멀티히트";
+        return L"명중 시 30% 확률로 가까운 적에게 튕김 · 최대 3회 연쇄 · 확률형 멀티히트";
     case AugType::DEATH_BLAST:
-        return L"적 처치 시 주변 폭발 (공격력 30% 피해) / 폭발로 죽은 적은 재폭발 없음 / 연쇄 처치 유도";
+        return L"적 처치 시 주변 폭발 (공격력 30% 피해) · 폭발로 죽은 적은 재폭발 없음 · 연쇄 처치 유도";
     case AugType::SKILL_CLOSE:
-        return L"[스킬] Q/E/R 빈 슬롯에 장착 / 플레이어 중심 대폭발 (넉백+피해, 반경 380) / 재사용 16초";
+        return L"[스킬] Q/E/R 빈 슬롯에 장착 · 플레이어 중심 대폭발 (넉백+피해, 반경 380) · 재사용 16초";
     case AugType::SKILL_OVERCLOCK:
-        return L"[스킬] Q/E/R 빈 슬롯에 장착 / 5초간 시야 +50%·적·적탄 -30% 속도·대시 쿨 2초 / 재사용 20초";
+        return L"[스킬] Q/E/R 빈 슬롯에 장착 · 5초간 시야 +50%·적·적탄 -30% 속도·대시 쿨 2초 · 재사용 20초";
 
     // ── Legendary ──
     case AugType::POWER_SURGE:
-        return L"공격력 +5% (중첩) / 3스택까지 효율 좋음, 이후 스택은 +3% / 장기 화력 성장";
+        return L"공격력 +5% (중첩) · 3스택까지 효율 좋음, 이후 스택은 +3% · 장기 화력 성장";
     case AugType::RANDOM_AUG:
-        return L"등급 무관 랜덤 버프 3개 즉시 획득 / 디버프는 포함되지 않음 / 한 번에 빌드 다각화";
+        return L"등급 무관 랜덤 버프 3개 즉시 획득 · 디버프는 포함되지 않음 · 한 번에 빌드 다각화";
     case AugType::MK2:
-        return L"사망 시 공격력 비례 대폭발 + 풀 HP 부활 / 1회 한정·페널티 없음 / 최후의 안전장치";
+        return L"사망 시 공격력 비례 대폭발 + 풀 HP 부활 · 1회 한정·페널티 없음 · 최후의 안전장치";
     case AugType::CHAIN:
-        return L"모든 총알이 무조건 2회 튕김 (100%) / 총알 피해 -30% / 확실한 멀티히트·화력 트레이드오프";
+        return L"모든 총알이 무조건 2회 튕김 (100%) · 총알 피해 -30% · 확실한 멀티히트·화력 트레이드오프";
     case AugType::SKILL_TIMESTOP:
-        return L"[스킬] Q/E/R 빈 슬롯에 장착 / 1.5초간 적·적탄 정지 (본인은 행동 가능) / 재사용 28초";
+        return L"[스킬] Q/E/R 빈 슬롯에 장착 · 1.5초간 적·적탄 정지 (본인은 행동 가능) · 재사용 28초";
     case AugType::BULLET_RAIN_3:
-        return L"탄환 세례 쿨다운 10초 → 5초 / 선행: 탄환 세례 II / 고빈도 세례 완성";
+        return L"탄환 세례 쿨다운 10초 → 5초 · 선행: 탄환 세례 II · 고빈도 세례 완성";
     case AugType::DRONE_2:
-        return L"드론 1기 → 2기 / 선행: 드론 필요 / 자동 화력 2배";
+        return L"드론 1기 → 2기 · 선행: 드론 필요 · 자동 화력 2배";
     case AugType::CHAKRAM_3:
-        return L"차크람 2개 → 3개 / 선행: 차크람 II / 공전 방어막·압박 최대";
+        return L"차크람 2개 → 3개 · 선행: 차크람 II · 공전 방어막·압박 최대";
 
     // ── Debuff ──
     case AugType::D_RMOB_MAX:
-        return L"원거리 몹 동시 존재 +1 · 스폰 0.5초 가속 / 원거리 처치 EXP +12 / 원거리 압박↑·보상↑";
+        return L"원거리 몹 동시 존재 +1 · 스폰 0.5초 가속 · 원거리 처치 EXP +12 · 원거리 압박↑·보상↑";
     case AugType::D_RMOB_HP:
-        return L"원거리 몹 체력·공격력 +20% / 원거리 처치 EXP +6 / 강한 원거리 적·경험치 보상";
+        return L"원거리 몹 체력·공격력 +20% · 원거리 처치 EXP +6 · 강한 원거리 적·경험치 보상";
     case AugType::D_RMOB_DELAY:
-        return L"원거리 몹 이동 속도 +20% (최대 10중첩) / 원거리 처치 EXP +5 / 빠른 원거리 위협";
+        return L"원거리 몹 이동 속도 +20% (최대 10중첩) · 원거리 처치 EXP +5 · 빠른 원거리 위협";
     case AugType::D_MOB_SPAWN:
-        return L"로터 생성 빈도 증가 · 동시 한도 +12 / 로터 처치 EXP +1 / 로터 물량 압박";
+        return L"로터 생성 빈도 증가 · 동시 한도 +12 · 로터 처치 EXP +1 · 로터 물량 압박";
     case AugType::D_APPROACH:
-        return L"무적 붉은 오브가 계속 추적 / 초당 EXP +0.5 / 최대 3회까지 중복, 중복 시 오브 속도 +20%";
+        return L"무적 붉은 오브가 계속 추적 · 초당 EXP +0.5 · 최대 3회까지 중복, 중복 시 오브 속도 +20%";
     case AugType::D_MOB_SPEED:
-        return L"로터 이동 속도 +10% / 초당 EXP +0.5 / 빠른 로터 러시·지속 경험치 보상";
+        return L"로터 이동 속도 +10% · 초당 EXP +0.5 · 빠른 로터 러시·지속 경험치 보상";
     case AugType::D_GLASS_HEART:
-        return L"최대 체력 -20% / 전체 EXP +3% / 체력 증가 수단이 적어 리스크가 큰 선택지";
+        return L"최대 체력 -20% · 전체 EXP +3% · 체력 증가 수단이 적어 리스크가 큰 선택지";
     case AugType::D_BULLET_STUCK:
-        return L"연사 속도 -10% / 전체 EXP +5% / 공격 템포가 느려지는 대신 경험치 보상";
+        return L"연사 속도 -10% · 전체 EXP +5% · 공격 템포가 느려지는 대신 경험치 보상";
     case AugType::D_MOB_HP:
-        return L"일반 적 체력 +30% / 일반 적 처치 EXP +2 / 기본 적 전체가 단단해짐";
+        return L"일반 적 체력 +30% · 일반 적 처치 EXP +2 · 기본 적 전체가 단단해짐";
     case AugType::D_SLOW_MOVE:
-        return L"플레이어 이동 속도 -5% / 전체 EXP +3% / 기동성 리스크가 낮은 보상으로 조정";
+        return L"플레이어 이동 속도 -5% · 전체 EXP +3% · 기동성 리스크가 낮은 보상으로 조정";
     case AugType::D_BLEED:
-        return L"체력 회복 -1.0/s / 회복이 0이면 감소하지 않고 카드도 등장하지 않음 / 전체 EXP +12%";
+        return L"체력 회복 -1.0/s · 회복이 0이면 감소하지 않고 카드도 등장하지 않음 · 전체 EXP +12%";
     case AugType::D_WEAKEN:
-        return L"공격력 -12% / 전체 EXP +10% / 약화·경험치 보상";
+        return L"공격력 -12% · 전체 EXP +10% · 약화·경험치 보상";
     case AugType::D_MOB_PACK:
-        return L"로터 스폰 시 추가 +1마리 동시 등장 / 로터 처치 EXP +6 / 개체 수 증가·보상↑";
+        return L"로터 스폰 시 추가 +1마리 동시 등장 · 로터 처치 EXP +6 · 개체 수 증가·보상↑";
     // ── Special ──
     case AugType::S_CHAOS:
-        return L"보유 증강을 모두 잊고 같은 개수만큼 랜덤 재배분 / 약 60% 버프 · 40% 디버프 / 빌드 전면 리셋·도박";
+        return L"보유 증강을 모두 잊고 같은 개수만큼 랜덤 재배분 · 약 60% 버프 · 40% 디버프 · 빌드 전면 리셋·도박";
     case AugType::S_PANDORA:
-        return L"버프 3개 + 디버프 2개 즉시 획득 / 한 번에 대량 변동 / 고위험 고보상 선택";
+        return L"버프 3개 + 디버프 2개 즉시 획득 · 한 번에 대량 변동 · 고위험 고보상 선택";
 
     // ── Combo ──
     case AugType::CB_BLOODLORD:
-        return L"[조합] 흡혈탄+흡혈탄 II+흡혈마 / 최대 체력 +15 · 재생 +0.25/s / 피의 군주 생존 패키지";
+        return L"[조합] 흡혈탄+흡혈탄 II+흡혈마 · 최대 체력 +15 · 재생 +0.25/s · 피의 군주 생존 패키지";
     case AugType::CB_WARLORD:
-        return L"[조합] 광전사+연쇄폭발+연쇄 II / 공격력 +15% / 고위험 연쇄 화력 군주";
+        return L"[조합] 광전사+연쇄폭발+연쇄 II · 공격력 +15% · 1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택)";
     case AugType::CB_BASTION:
-        return L"[조합] 거대화+MK2+방화벽 / 최대 HP +15% · 재생 +0.35/s · 받는 피해 -8%p / 철벽 생존";
+        return L"[조합] 거대화+MK2+방화벽 · 최대 HP +20% · 재생 +0.45/s · 받는 피해 -10%p · 철벽 생존";
     case AugType::CB_LIFEBUOY:
-        return L"[조합] 재생 II+흡혈마+가벼운 발걸음 / 재생 +0.25/s · 이동 +12% · 7킬마다 HP+1 / 피격 시 가벼운 발걸음 6초 정지";
+        return L"[조합] 재생 II+흡혈마+가벼운 발걸음 · 재생 +0.25/s · 이동 +12% · 7킬마다 HP+1 · 피격 시 가벼운 발걸음 6초 정지";
 
     case AugType::DEATH_BLAST_2:
-        return L"처치 폭발 피해 30%→40% · 반경 +40% / 선행: 연쇄 폭발 / 연쇄폭발 완성";
+        return L"처치 폭발 피해 30%→40% · 반경 +40% · 선행: 연쇄 폭발 · 연쇄폭발 완성";
     case AugType::BULLET_RAIN_ETERNAL:
-        return L"탄환 세례 쿨다운 4초 / 적 처치마다 쿨다운 0.2초 감소(최소 3초) / 몰아칠수록 더 자주 — 무한 세례";
+        return L"탄환 세례 쿨다운 4초 · 적 처치마다 쿨다운 0.2초 감소(최소 3초) · 몰아칠수록 더 자주 — 무한 세례";
     case AugType::DRONE_HIVE:
-        return L"드론 4기 운용 / 각 드론 화력 50% 유지 / 안정적인 군집 화력";
+        return L"드론 4기 운용 · 각 드론 화력 50% 유지 · 안정적인 군집 화력";
     case AugType::LASER_CONVERGE:
-        return L"스캔 레이저 0.18초 간격 발사 · 사거리 760 · 빔 폭 2배 / 직선 일소 수렴";
+        return L"스캔 레이저 0.26초 간격 발사 · 사거리 700 · 빔 폭 +50% · 직선 일소 수렴";
     case AugType::PIERCE_RAILSLUG:
-        return L"관통 확률 90% 고정 / 공격 +25 (가산) · 탄속 +50% / 멈추지 않는 철갑탄";
+        return L"관통 확률 90% 고정 · 공격 +25 (가산) · 탄속 +50% · 멈추지 않는 철갑탄";
     case AugType::CHAKRAM_SINGULARITY:
-        return L"차크람이 적을 끌어당김 · 접촉 지속 피해 / 선행: 차크람 III / 특이점 중력·DoT";
+        return L"차크람이 적을 끌어당김 · 접촉 지속 피해 · 선행: 차크람 III · 특이점 중력·DoT";
 
     // ── Debuff (extended) ──
     case AugType::LIFESTEAL_2:
-        return L"흡혈 한도 0.24 → 0.36 / 10킬마다 HP +1 (흡혈마와 연동) / 선행: 흡혈탄 (1회만)";
+        return L"흡혈 한도 0.32 → 0.48 · 10킬마다 HP +1 (흡혈마와 연동) · 선행: 흡혈탄 (1회만)";
     case AugType::CHAIN_2:
-        return L"튕김 2회 → 3회 · 총알 피해 -30% → -15% / 선행: 연쇄 작용 / 연쇄 II 완성";
+        return L"튕김 2회 → 3회 · 총알 피해 -30% → -22% · 선행: 연쇄 작용 · 연쇄 II 완성";
     case AugType::SKILL_DASH_UP:
-        return L"[스킬] SHIFT 대시 강화 / 대시 시 유도탄 3~5발 · 이후 3발 ×2 피해 / 기동+화력 연계";
+        return L"[스킬] SHIFT 대시 강화 · 대시 시 유도탄 3~5발 · 이후 3발 ×2 피해 · 기동+화력 연계";
     case AugType::RIFLE_STABILITY:
-        return L"[소총] 흩어짐 완전 제거 / 공격력 +8 (가산) / 정조준 원거리 화력";
+        return L"[소총] 흩어짐 완전 제거 · 공격력 +8 (가산) · 정조준 원거리 화력";
     case AugType::HP_UP:
-        return L"최대 체력 +15 (중첩 가능) / 생존 여유·흡혈·재생 효율 상승 / 기본 탱킹";
+        return L"최대 체력 +15 (중첩 가능) · 생존 여유·흡혈·재생 효율 상승 · 기본 탱킹";
     case AugType::FIREWALL:
-        return L"받는 피해 -12% / 1회만 획득 / 안정적인 방어 보강";
+        return L"받는 피해 -12% · 1회만 획득 · 안정적인 방어 보강";
     case AugType::REGEN_2:
-        return L"재생 +0.45/s / 체력 40% 이하 시 재생 ×2 / 재생 빌드 핵심 (1회만)";
+        return L"재생 +0.45/s · 체력 40% 이하 시 재생 ×2 · 재생 빌드 핵심 (1회만)";
 
     default:
         return nullptr;

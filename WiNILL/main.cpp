@@ -1014,6 +1014,7 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH, bool preserveRuntime
     std::vector<int> owned = g_OwnedAugs;
     const long long keepKillCount = g_Stats.killCount;
     const int keepVampireKillStreak = g_Stats.vampireKillStreak;
+    const int keepWarlordStacks = g_Stats.warlordStacks;
     const bool keepMk2Used = g_Stats.mk2Used;
     const float keepLightStepDisableTimer = g_Stats.lightStepDisableTimer;
 
@@ -1056,6 +1057,8 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH, bool preserveRuntime
     if (preserveRuntime) {
         g_Stats.killCount = keepKillCount;
         g_Stats.vampireKillStreak = keepVampireKillStreak;
+        if (g_Stats.warlord)
+            g_Stats.RestoreWarlordStacks(keepWarlordStacks);
         g_Stats.mk2Used = keepMk2Used;
         g_Stats.lightStepDisableTimer = keepLightStepDisableTimer;
     }
@@ -1405,6 +1408,12 @@ int main() {
     // ?�행 ?�일 ?�더�??�업 ?�렉?�리 ?�동 (Resource/ ?��?경로 로드 보장)
     PlatformChdirToExeDir();
     LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
+#if !defined(_DEBUG)
+    // A legacy save may contain the developer toggle from an older build.
+    // Release builds must never expose its HUD strip or shortcuts.
+    g_DebugMode = false;
+    g_BalanceTestMode = false;
+#endif
 #if defined(__APPLE__)
     // ���� �� ���� 1ȸ: CRT OFF + VFX �淮 (�������� �ٽ� �� �� ����)
     if (!g_MacOptV1) {
@@ -1460,6 +1469,11 @@ int main() {
     // ??DWM 컴포지???�회 ???�파 ?�명??무효?? TOPMOST ?�이 ?�성 ???�동?�로 ?�정.
     glfwWindowHint(GLFW_RESIZABLE,             GLFW_FALSE);
     glfwWindowHint(GLFW_ALPHA_BITS,            8);
+    // Text and thin constellation rules are rendered from glyph textures and
+    // line primitives.  Request a modest MSAA surface so the same UI path
+    // remains readable on integrated and discrete adapters alike; drivers
+    // that cannot provide it simply fall back to the default framebuffer.
+    glfwWindowHint(GLFW_SAMPLES,                4);
 
     // ??screenHeight 가 ?��? mode->height-1 (?�에??DirectFlip ?�피??
     //   ?�면 ?�확??같�? ?�기�??�성?�면 DWM ??DirectFlip ?�로 컴포지???�회
@@ -1506,6 +1520,10 @@ int main() {
     glfwSwapInterval((g_FpsCap == 0) ? 1 : 0);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
+    GLint msaaSamples = 0;
+    glGetIntegerv(GL_SAMPLES, &msaaSamples);
+    if (msaaSamples > 0)
+        glEnable(GL_MULTISAMPLE);
 
     // ��Ʈ: exe ��ġ�� ���� Resource ���?��ΰ�?�޶��� �� �־� ���� �����ϴ� ��θ�?������.
     {
@@ -2142,7 +2160,7 @@ int main() {
 
             const int li = std::max(0, std::min(2, LangIndex()));
             const wchar_t* abandoned[3] = {
-                L"런 포기", L"RUN ABANDONED", L"ランを放棄"
+                L"플레이 포기", L"PLAY ABANDONED", L"プレイを放棄"
             };
             wcscpy_s(g_DeathReason, abandoned[li]);
 
@@ -2185,10 +2203,15 @@ int main() {
                 g_GameManager.currentState = GameState::RUNNING;
         }
 
-        // Keep the native window title synchronized with the active scene.
-        // The title is useful in task switching and diagnostics even though
-        // the shipped window is borderless.
-        if (g_GameManager.currentState != prevState) {
+        // Keep the native window title synchronized with the active scene and
+        // the live run counters.  This is intentionally throttled so title
+        // updates do not compete with rendering, while still making the
+        // borderless window useful in task switching and diagnostics.
+        static double lastTitleUpdate = -1.0;
+        const double titleNow = glfwGetTime();
+        if (g_GameManager.currentState != prevState ||
+            lastTitleUpdate < 0.0 || titleNow - lastTitleUpdate >= 0.25) {
+            lastTitleUpdate = titleNow;
             const char* scene = "Menu";
             switch (g_GameManager.currentState) {
             case GameState::READY:          scene = "Ready"; break;
@@ -2208,6 +2231,19 @@ int main() {
             default:                         break;
             }
             std::string title = std::string("Onedow - ") + scene;
+            if (g_GameManager.currentState == GameState::RUNNING ||
+                g_GameManager.currentState == GameState::DYING ||
+                g_GameManager.currentState == GameState::PAUSED ||
+                g_GameManager.currentState == GameState::AUG_SELECT ||
+                g_GameManager.currentState == GameState::DEBUFF_SELECT) {
+                title += " | FPS " + std::to_string(g_CurrentFPS);
+                title += " | HP " + std::to_string((int)std::max(0.0f, g_GameManager.playerHP));
+                title += " | XP " + std::to_string(g_GameManager.xp);
+                title += " | Score " + std::to_string(g_GameManager.score);
+                if (g_GameManager.currentState == GameState::AUG_SELECT ||
+                    g_GameManager.currentState == GameState::DEBUFF_SELECT)
+                    title += " | Choices " + std::to_string(g_GameManager.augChoiceCount);
+            }
             glfwSetWindowTitle(window, title.c_str());
         }
 
@@ -3364,7 +3400,7 @@ int main() {
                 // Kill XP is carried by the spawned stardust and awarded on pickup.
                 auto creditKill = [&](float scoreBase) {
                     AddKillCombo();
-                    g_Stats.killCount       += 1;
+                    g_Stats.RegisterKill();
                     g_GameManager.scoreAccum += scoreBase;
                     g_GameManager.score      = (long long)g_GameManager.scoreAccum;
                     if (!g_CreativeMode)
@@ -4198,6 +4234,9 @@ int main() {
                         if (findNearestEnemy(droneX, droneY, tx, ty)) {
                             Bullet nb(droneX, droneY, tx, ty);
                             nb.speed = g_Stats.bulletSpeed * 0.5f;
+                            // Hive keeps four orbiters, but each projectile
+                            // contributes half of the normal rifle damage.
+                            nb.dmgMult = 0.5f;
                             nb.color = glm::vec3(0.2f, 0.9f, 1.0f);
                             g_Bullets.push_back(nb);
                         }
@@ -4358,17 +4397,18 @@ int main() {
             // ?�?�??�캔 ?�이?�?(증강) ??0.7초마??조�? 방향 관??�?(군중?�어) ?�?�?
             // Laser sweep uses the shared segment collision path.
             if (g_Stats.laser) {
-                float laserInt = (g_Stats.laserTier >= 3) ? 0.18f   // ?�화 ?�렴: 거의 ?�속
+                float laserInt = (g_Stats.laserTier >= 3) ? 0.26f   // 수렴: 빠르지만 화면을 잠식하지 않음
                                : (g_Stats.laserTier >= 2) ? 0.55f : LASER_INT;
                 g_LaserTimer += delta;
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);   // ?�이?�????�� 커서 방향
                     // ?�거리는 II(760)?�서 ???�리지 ?�음. ?�화 ?�렴?�?'?�비'�?강화.
-                    float LASER_RANGE = (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
+                    float LASER_RANGE = (g_Stats.laserTier >= 3) ? 700.0f
+                                      : (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
                     // ?�화 ?�렴(tier3): �??�비 2�???광폭 관??(?�몹 ?�인 ?�소)
-                    const float beamW    = (g_Stats.laserTier >= 3) ? 2.0f : 1.0f;
+                    const float beamW    = (g_Stats.laserTier >= 3) ? 1.5f : 1.0f;
                     const float BEAM_HALF = 24.0f * beamW;
                     bool lcrit = false; float lcm = 1.0f;
                     if (g_Stats.critChance > 0 && (rand()%100) < g_Stats.critChance) { lcrit = true; lcm = g_Stats.critMult; }
@@ -4378,7 +4418,7 @@ int main() {
                         if (hf < 0.0f) hf = 0.0f; else if (hf > 1.0f) hf = 1.0f;
                         lbm = 1.0f + (1.0f - hf) * 0.6f;
                     }
-                    float laserDmgMult = (g_Stats.laserTier >= 3) ? 1.2f : 1.4f;
+                    float laserDmgMult = (g_Stats.laserTier >= 3) ? 1.15f : 1.4f;
                     float ldmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier()
                                * laserDmgMult * lcm * lbm;
                     auto lOnKill = [&]() {
@@ -4410,7 +4450,7 @@ int main() {
                                 (bx + MobXpBonus(m->kind, g_Stats)) * g_Stats.xpMult);
                             SpawnStardust(m->worldX, m->worldY,
                                           StardustRewardFor(m->kind), pCX, pCY, pickupXp);
-                            g_Stats.killCount++; g_GameManager.scoreAccum += bs;
+                            g_Stats.RegisterKill(); g_GameManager.scoreAccum += bs;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         }
                     }
@@ -4424,7 +4464,7 @@ int main() {
                                 (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
                             SpawnStardust(rr->worldX, rr->worldY, 3,
                                           pCX, pCY, pickupXp);
-                            g_Stats.killCount++; g_GameManager.scoreAccum += 300.0f;
+                            g_Stats.RegisterKill(); g_GameManager.scoreAccum += 300.0f;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
                         }
                     }
@@ -5796,11 +5836,25 @@ int main() {
                         float sev   = 1.0f - hpFrac / 0.25f;
                         float a     = (0.12f + 0.22f * pulse) * (0.6f + 0.4f * sev);
                         BindMainShader();
-                        float bw = 64.0f;
-                        drawRect(0, 0, sw, bw, 0.9f, 0.15f, 0.15f, a);
-                        drawRect(0, sh - bw, sw, bw, 0.9f, 0.15f, 0.15f, a);
-                        drawRect(0, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
-                        drawRect(sw - bw, 0, bw, sh, 0.9f, 0.15f, 0.15f, a);
+                        // Build the warning as nested edge bands so the
+                        // center of the arena remains readable.  The old
+                        // solid 64px frame looked like a hard red box and
+                        // became especially harsh at large resolutions.
+                        constexpr int kLowHpBands = 8;
+                        const float maxBand = 78.0f;
+                        for (int band = 0; band < kLowHpBands; ++band) {
+                            const float t = (float)(band + 1) / (float)kLowHpBands;
+                            const float bandW = maxBand * t;
+                            const float bandA = a * (1.0f - t) * 1.55f;
+                            drawRect(0.0f, 0.0f, sw, bandW,
+                                     0.92f, 0.08f, 0.10f, bandA);
+                            drawRect(0.0f, sh - bandW, sw, bandW,
+                                     0.92f, 0.08f, 0.10f, bandA);
+                            drawRect(0.0f, 0.0f, bandW, sh,
+                                     0.92f, 0.08f, 0.10f, bandA);
+                            drawRect(sw - bandW, 0.0f, bandW, sh,
+                                     0.92f, 0.08f, 0.10f, bandA);
+                        }
                         const wchar_t* LOW[3] = { L"! \uC704\uD5D8", L"! LOW HP", L"! \u5371?" };
                         int li4 = LangIndex();
                         float lw = g_TextS.Width(LOW[li4], 0.9f);
@@ -5821,8 +5875,21 @@ int main() {
                     float sc = (d.crit ? 1.05f : 0.72f) * g_ViewZoom * (0.7f + 0.3f * t);
                     float a  = (t > 0.55f) ? 1.0f : (t / 0.55f);
                     float w  = g_TextS.Width(nb, sc);
-                    if (d.crit) g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 0.85f, 0.2f, a);
-                    else        g_TextS.Draw(nb, sx - w*0.5f, sy, sc, 1.0f, 1.0f, 1.0f, a*0.9f);
+                    if (d.crit) {
+                        const int critLang = LangIndex();
+                        const wchar_t* critLabel = critLang == 0 ? L"치명타"
+                            : (critLang == 2 ? L"クリティカル" : L"CRIT");
+                        const float critSc = 0.42f * (0.80f + 0.20f * t);
+                        const float critW = g_TextS.Width(critLabel, critSc);
+                        g_TextS.Draw(critLabel, sx - critW * 0.5f,
+                                     sy - g_TextS.Height(critLabel, critSc) - 3.0f,
+                                     critSc, 1.0f, 0.74f, 0.18f, a * 0.92f);
+                        g_TextS.Draw(nb, sx - w * 0.5f, sy, sc,
+                                     1.0f, 0.85f, 0.2f, a);
+                    } else {
+                        g_TextS.Draw(nb, sx - w*0.5f, sy, sc,
+                                     1.0f, 1.0f, 1.0f, a*0.9f);
+                    }
                 }
                 // 콤보 카운??(5콤보 ?�상부?? ?�이 콤보???�라 강해�? ???�정 ?��?
                 if (g_ShowCombo && st == GameState::RUNNING && g_Combo >= 5) {

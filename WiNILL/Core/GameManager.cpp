@@ -235,7 +235,24 @@ static int RollOneAug(const bool* takenOnce,
             AugType t = ALL_AUGS[i].type;
             if (excludeRandom && t == AugType::RANDOM_AUG) continue;
             // 한 번만 뽑힐 증강 (EPIC/LEG/COMBO·티어드·불리언 플래그·적출현 디버프)
-            if (AugOnceOnly(t, ALL_AUGS[i].rarity) && takenOnce[i]) continue;
+            if (AugOnceOnly(t, ALL_AUGS[i].rarity)) {
+                const int typeIndex = (int)t;
+                bool alreadyTaken = typeIndex >= 0 && typeIndex < AUG_TYPE_SLOTS
+                                  && g_TypeOwned[typeIndex];
+                if (takenOnce) alreadyTaken = alreadyTaken || takenOnce[i];
+                // The ledger is indexed by catalogue slot for save
+                // compatibility.  A retired/duplicated metadata row can
+                // still share the same AugType, so gate by type as well.
+                if (!alreadyTaken) {
+                    for (int j = 0; takenOnce && j < AUG_TOTAL; ++j) {
+                        if (j != i && ALL_AUGS[j].type == t && takenOnce[j]) {
+                            alreadyTaken = true;
+                            break;
+                        }
+                    }
+                }
+                if (alreadyTaken) continue;
+            }
             // 고유 카테고리 잠금 (SIZE)
             AugUnique u = ALL_AUGS[i].unique;
             if (u == AugUnique::SIZE     && sizeTaken) continue;
@@ -287,7 +304,21 @@ static int RollOneDebuff(const bool* takenOnce = nullptr,
         if (AugRemoved(t)) continue;   // Retired debuffs excluded.
         if (!DebuffCandidateAllowed(t)) continue;
         // 한 번만 뜨는 디버프(적 출현형)는 이미 보유 시 제외
-        if (takenOnce && AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
+        if (AugOnceOnly(t, AugRarity::DEBUFF)) {
+            const int typeIndex = (int)t;
+            bool alreadyTaken = typeIndex >= 0 && typeIndex < AUG_TYPE_SLOTS
+                              && g_TypeOwned[typeIndex];
+            if (takenOnce) alreadyTaken = alreadyTaken || takenOnce[i];
+            if (!alreadyTaken) {
+                for (int j = 0; takenOnce && j < AUG_TOTAL; ++j) {
+                    if (j != i && ALL_AUGS[j].type == t && takenOnce[j]) {
+                        alreadyTaken = true;
+                        break;
+                    }
+                }
+            }
+            if (alreadyTaken) continue;
+        }
         pool[poolSize++] = i;
     }
     if (poolSize == 0) return -1;
@@ -367,7 +398,21 @@ int GameManager::PickRandomDebuffIndices(int* outArr, int n) {
         AugType t = ALL_AUGS[i].type;
         if (AugRemoved(t)) continue;   // Retired debuffs excluded.
         if (!DebuffCandidateAllowed(t)) continue;
-        if (AugOnceOnly(t, AugRarity::DEBUFF) && takenOnce[i]) continue;
+        if (AugOnceOnly(t, AugRarity::DEBUFF)) {
+            const int typeIndex = (int)t;
+            bool alreadyTaken = typeIndex >= 0 && typeIndex < AUG_TYPE_SLOTS
+                              && g_TypeOwned[typeIndex];
+            alreadyTaken = alreadyTaken || takenOnce[i];
+            if (!alreadyTaken) {
+                for (int j = 0; j < AUG_TOTAL; ++j) {
+                    if (j != i && ALL_AUGS[j].type == t && takenOnce[j]) {
+                        alreadyTaken = true;
+                        break;
+                    }
+                }
+            }
+            if (alreadyTaken) continue;
+        }
         pool[poolSize++] = i;
     }
     if (poolSize == 0) return 0;
