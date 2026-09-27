@@ -1409,9 +1409,9 @@ int main() {
     PlatformChdirToExeDir();
     LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
 #if !defined(_DEBUG)
-    // A legacy save may contain the developer toggle from an older build.
-    // Release builds must never expose its HUD strip or shortcuts.
-    g_DebugMode = false;
+    // DEBUG MODE is intentionally available in Release packages for QA.
+    // Keep balance telemetry opt-in to debug builds so a QA toggle cannot
+    // change normal release analytics by itself.
     g_BalanceTestMode = false;
 #endif
 #if defined(__APPLE__)

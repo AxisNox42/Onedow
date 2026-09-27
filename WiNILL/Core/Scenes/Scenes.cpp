@@ -6898,11 +6898,11 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                              0.72f, 0.77f, 0.84f, a * 0.9f, 0.62f);
         }
     } else if (!inGameSettings) {
-        const wchar_t* menu[4] = { korean ? L"재개" : L"RESUME",
+        const wchar_t* menu[4] = { korean ? L"계속하기" : L"CONTINUE",
                                    korean ? L"설정" : L"CALIBRATION",
                                    korean ? L"\uD3EC\uAE30\uD558\uAE30" : L"ABANDON RUN",
                                    korean ? L"종료" : L"TERMINATE" };
-        static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uD50C\uB808\uC774 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
+        static const wchar_t* menuSub[4] = { L"계속하기", L"\uC124\uC815", L"\uD50C\uB808\uC774 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 4; ++i) {
             const float y = MainMenuButtonRailStartY(sh) + i * (mainBH + mainGap);
             const bool focus = i == 1;
@@ -7696,7 +7696,7 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                 // option diamond and hit area are centered on controlY.  Lift
                 // every option label slightly so ON/OFF and the other choices
                 // share the same visual center without changing input bounds.
-                const float optionTextY = controlY - 8.0f * uiS;
+                const float optionTextY = controlY - 18.0f * uiS;
                 DrawShadowedText(g_TextL, setting.opts[j],
                                  ox + chipPadX,
                                  optionTextY, optSc,
@@ -7990,13 +7990,10 @@ void Scene_Paused(const SceneCtx& c) {
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
     const float delta = c.delta;
-    GLFWwindow* window = c.window;
     (void)*c.fireTimer;
-    (void)c.reset;
-    const std::function<void()>& RestartCurrentRun = c.restartRun;
 
     static float  s_EntryT    = 0.0f;
-    static float  s_HoverT[5] = {};
+    static float  s_HoverT[3] = {};
     static int    s_ExitSel   = -1;
     static float  s_ExitT     = 0.0f;
     static double s_LastCall  = 0.0;
@@ -8004,7 +8001,7 @@ void Scene_Paused(const SceneCtx& c) {
     const double curTime = glfwGetTime();
     if (curTime - s_LastCall > 0.12) {
         s_EntryT = 0.0f;
-        for (int i = 0; i < 5; ++i) s_HoverT[i] = 0.0f;
+        for (int i = 0; i < 3; ++i) s_HoverT[i] = 0.0f;
         s_ExitSel = -1;
         s_ExitT   = 0.0f;
     }
@@ -8036,7 +8033,7 @@ void Scene_Paused(const SceneCtx& c) {
     const float BW      = std::min(520.0f, sw * 0.38f);
     const float BH      = 70.0f;
     const float BGAP    = 15.0f;
-    const int   NBTN    = 5;
+    const int   NBTN    = 3;
     const float totalBH = (float)NBTN * BH + (float)(NBTN - 1) * BGAP;
     const float btnX0   = std::max(58.0f, sw * 0.075f);
     const float btnY0   = sh * 0.42f;
@@ -8077,15 +8074,15 @@ void Scene_Paused(const SceneCtx& c) {
 
     // 버튼
     struct PBtnDef { const wchar_t* route; const wchar_t* sub; };
-    static const wchar_t* kPauseRoutes[3][5] = {
-        { L"재개", L"설정", L"재시작", L"\uD3EC\uAE30\uD558\uAE30", L"종료" },
-        { L"RESUME", L"SETTINGS", L"RESTART", L"ABANDON RUN", L"EXIT" },
-        { L"再開", L"設定", L"再起動", L"\u30E9\u30F3\u3092\u653E\u68C4", L"終了" },
+    static const wchar_t* kPauseRoutes[3][3] = {
+        { L"계속하기", L"설정", L"\uD3EC\uAE30\uD558\uAE30" },
+        { L"CONTINUE", L"SETTINGS", L"ABANDON RUN" },
+        { L"続ける", L"設定", L"\u30E9\u30F3\u3092\u653E\u68C4" },
     };
-    static const wchar_t* kPauseSubs[3][5] = {
-        { L"현재 플레이로 돌아가기", L"플레이 설정 열기", L"현재 플레이 재시작", L"현재 플레이 포기", L"게임 종료" },
-        { L"Return to current play", L"Open play settings", L"Restart current play", L"Abandon current play", L"Exit game" },
-        { L"現在のプレイに戻る", L"プレイ設定を開く", L"現在のプレイを再起動", L"現在のプレイを放棄", L"ゲーム終了" },
+    static const wchar_t* kPauseSubs[3][3] = {
+        { L"현재 플레이 계속하기", L"플레이 설정 열기", L"현재 플레이 포기" },
+        { L"Continue current play", L"Open play settings", L"Abandon current play" },
+        { L"現在のプレイを続ける", L"プレイ設定を開く", L"現在のプレイを放棄" },
     };
     const int pauseLang = std::max(0, std::min(2, LangIndex()));
 
@@ -8149,20 +8146,21 @@ void Scene_Paused(const SceneCtx& c) {
             g_GameManager.currentState = GameState::SETTINGS;
             break;
         case 2:
-            if (RestartCurrentRun) RestartCurrentRun();
-            break;
-        case 3:
             if (c.abandonRun) c.abandonRun();
             break;
-        case 4: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
         }
         return;
     }
 
     {
         float hintA = Smoothstep(std::min(std::max(0.0f, s_EntryT - 0.50f) / 0.30f, 1.0f)) * entryFade;
-        const wchar_t* hint = L"[SPACE / ESC]  재개";
-        g_TextS.Draw(hint, btnX0, sh * 0.88f, 0.58f,
+        const int hintLang = std::max(0, std::min(2, LangIndex()));
+        const wchar_t* hint[3] = {
+            L"[SPACE / ESC]  계속하기",
+            L"[SPACE / ESC]  CONTINUE",
+            L"[SPACE / ESC]  続ける"
+        };
+        g_TextS.Draw(hint[hintLang], btnX0, sh * 0.88f, 0.58f,
                      0.50f, 0.70f, 0.90f, 0.72f * hintA);
     }
 }
