@@ -92,7 +92,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"메인 메뉴 상점 — 코인으로 영구 스탯·시작 증강 슬롯·테마 등을 강화 / "
         L"업적 달성 시 코인·해금 보상이 주어집니다",
 
-        L"재료 증강 3종·조건에 맞는 시작 무기를 갖추고 Lv10 이상이면 「조합 증강」이 등장합니다 / "
+        L"재료 증강 3종을 모으고 Lv10 이상이면 「조합 증강」이 등장합니다 / "
         L"조합은 강력하지만 재료를 차지하므로 계획적으로 모으세요 / "
         L"메인 메뉴 도감 — 적·증강·보스 정보 검색(위키 스타일) / "
         L"설정에서 언어·볼륨·관측 필드 동작을 바꿀 수 있습니다 / "
@@ -142,7 +142,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Main menu shop — permanent stats, extra start augments, themes / "
         L"Achievements grant coins and unlocks",
 
-        L"Collect 3 combo ingredients, use the matching starting weapon, and reach Lv10 → a combo appears / "
+        L"Collect 3 combo ingredient augments + reach Lv10 → combo augment appears / "
         L"Combos are strong but cost ingredient slots — plan ahead / "
         L"Main menu Codex — searchable wiki for enemies, augments, bosses / "
         L"Settings: language, volume, observatory behavior / "
@@ -192,7 +192,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"メニューショップ — 永久ステ·開始強化枠·テーマなど / "
         L"実績でコインと解禁報酬",
 
-        L"素材強化3種・対応する開始武器・Lv10以上で「組合強化」出現 / "
+        L"素材強化3種+Lv10以上で「組合強化」出現 / "
         L"強力だが素材枠を使う — 計画的に収集 / "
         L"メニュー図鑑 — 敵·強化·ボスを検索(ウィキ風) / "
         L"設定で言語·音量·窓動作を変更 / "

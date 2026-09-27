@@ -264,9 +264,13 @@ inline float TrialBossWarningMult() {
 inline bool g_CreativeMode = false;
 inline bool g_DebugMode = false;
 
-// Keep the debug switch visible for QA builds as well as Release packages.
-// The switch is still opt-in and does not enable debug behavior by itself.
+// Debug switches stay persisted for compatibility, but are not exposed in
+// a release build's player-facing settings page.
+#if defined(_DEBUG)
 inline constexpr bool kDebugSettingsVisible = true;
+#else
+inline constexpr bool kDebugSettingsVisible = false;
+#endif
 inline bool g_BalanceTestMode = false;
 // 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
 inline long long g_CreativeStartScore = 0;       // 시작 점수

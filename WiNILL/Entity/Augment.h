@@ -189,10 +189,10 @@ static const AugDef ALL_AUGS[] = {
       L"ATK +50%  ·  Max HP -35%" },
     { AugType::LIGHT_AMMO,    AugRarity::RARE,      AugUnique::NONE, "LIGHTAMMO",
       { L"가벼운 탄환", L"Light Ammo", L"軽量弾" },
-      { L"연사 +20%  ·  탄속 +45%  ·  공격력 -10%",
-        L"Fire rate +20%  ·  speed +45%  ·  Attack -10%",
-        L"連射 +20%  ·  弾速 +45%  ·  攻撃力 -10%" },
-      L"연사 +20%  ·  탄속 +45%  ·  ATK -10%" },
+      { L"연사 +15%  ·  탄속 +35%  ·  공격력 -12%",
+        L"Fire rate +15%  ·  speed +35%  ·  Attack -12%",
+        L"連射 +15%  ·  弾速 +35%  ·  攻撃力 -12%" },
+      L"연사 +15%  ·  탄속 +35%  ·  ATK -12%" },
     { AugType::LIGHT_STEP,    AugRarity::RARE,      AugUnique::NONE, "LIGHTSTEP",
       { L"가벼운 발걸음", L"Light Step", L"軽い足取り" },
       { L"이동 속도 +30%  ·  피격 시 10초간 이 효과 정지",
@@ -219,10 +219,10 @@ static const AugDef ALL_AUGS[] = {
       L"크리 +15%  ·  배율 ×2.0" },
     { AugType::LIFESTEAL,     AugRarity::RARE,      AugUnique::NONE, "LIFESTEAL",
       { L"흡혈탄", L"Lifesteal", L"吸血弾" },
-      { L"처치당 HP +0.10  (최대 4중첩 · 합 0.40/kill)",
-        L"Heal +0.10/kill  (max 4 stacks · 0.40 total)",
-        L"撃破毎 +0.10  (最大4重 · 合計0.40)" },
-      L"처치당 HP +0.10  (4중첩)" },
+      { L"처치당 HP +0.08  (최대 4중첩 · 합 0.32/kill)",
+        L"Heal +0.08/kill  (max 4 stacks · 0.32 total)",
+        L"撃破毎 +0.08  (最大4重 · 合計0.32)" },
+      L"처치당 HP +0.08  (4중첩)" },
     { AugType::BERSERK,       AugRarity::RARE,      AugUnique::NONE, "BERSERK",
       { L"광전사", L"Berserker", L"バーサーカー" },
       { L"체력이 낮을수록 공격력 증가  (최대 +60% · 빈사 시)",
@@ -265,10 +265,10 @@ static const AugDef ALL_AUGS[] = {
       L"Max HP 1/2  ·  증강당 ATK +6" },
     { AugType::GIGANTIFY,     AugRarity::EPIC,      AugUnique::SIZE, "GIGA",
       { L"거대화", L"Gigantify", L"巨大化" },
-      { L"최대 체력 ×2  ·  초당 체력 약 1.2 회복  ·  이속 -28%  ·  크기 +45%",
-        L"Max HP ×2  ·  ~1.2 HP/s regen  ·  move -28%  ·  size +45%",
-        L"最大体力 ×2  ·  毎秒 約1.2回復  ·  移動 -28%  ·  サイズ +45%" },
-      L"Max HP ×2  ·  재생 ~1.2/s  ·  이동 -28%" },
+      { L"최대 체력 ×2  ·  초당 체력 약 1.2 회복  ·  이속 -32%  ·  크기 +45%",
+        L"Max HP ×2  ·  ~1.2 HP/s regen  ·  move -32%  ·  size +45%",
+        L"最大体力 ×2  ·  毎秒 約1.2回復  ·  移動 -32%  ·  サイズ +45%" },
+      L"Max HP ×2  ·  재생 ~1.2/s  ·  이동 -32%" },
     { AugType::PIERCE,        AugRarity::EPIC,      AugUnique::NONE, "PIERCE",
       { L"관통", L"Pierce", L"貫通" },
       { L"명중 시 30% 확률로 적·장애물 관통",
@@ -672,10 +672,10 @@ static const AugDef ALL_AUGS[] = {
       L"드론 ×4  ·  각 화력 50%" },
     { AugType::LASER_CONVERGE, AugRarity::MYTHIC, AugUnique::NONE, "LASER_CONV",
       { L"수렴", L"Convergence", L"収束" },
-      { L"스캔 레이저 0.30초 간격 · 사거리 620 · 빔 폭 +50% (직선 일소)",
-        L"Scan laser every 0.30s · range 620 · beam width +50%",
-        L"スキャンレーザー0.30秒間隔 · 射程620 · ビーム幅+50%" },
-      L"레이저 0.30초  ·  사거리 620" },
+      { L"스캔 레이저 0.26초 간격 · 사거리 700 · 빔 폭 +50% (직선 일소)",
+        L"Scan laser every 0.26s · range 700 · beam width +50%",
+        L"スキャンレーザー0.26秒間隔 · 射程700 · ビーム幅+50%" },
+      L"레이저 0.26초  ·  사거리 700" },
     { AugType::PIERCE_RAILSLUG, AugRarity::MYTHIC, AugUnique::NONE, "PIERCE_RAIL",
       { L"철갑탄", L"Railslug", L"徹甲弾" },
       { L"관통 90% 고정 · 공격력 +25 (가산) · 탄속 +50% (멈추지 않는 탄)",
@@ -739,16 +739,16 @@ static const AugDef ALL_AUGS[] = {
       L"REMOVED" },
     { AugType::LIFESTEAL_2,   AugRarity::EPIC,     AugUnique::NONE, "LIFESTEAL2",
       { L"흡혈탄 II", L"Lifesteal II", L"吸血弾 II" },
-      { L"흡혈 한도 0.40→0.60 · 8킬마다 HP +1  (요구: 흡혈탄)",
-        L"Lifesteal cap 0.40→0.60 · +1 HP per 8 kills  (req: Lifesteal)",
-        L"吸収上限0.40→0.60 · 8キル毎HP+1  (要:吸収弾)" },
-      L"흡혈 상한 0.40→0.60" },
+      { L"흡혈 한도 0.32→0.48 · 10킬마다 HP +1  (요구: 흡혈탄)",
+        L"Lifesteal cap 0.32→0.48 · +1 HP per 10 kills  (req: Lifesteal)",
+        L"吸収上限0.32→0.48 · 10キル毎HP+1  (要:吸収弾)" },
+      L"흡혈 상한 0.32→0.48" },
     { AugType::CHAIN_2,       AugRarity::LEGENDARY, AugUnique::NONE, "CHAIN2",
       { L"연쇄 작용 II", L"Chain Reaction II", L"連鎖反応 II" },
-      { L"튕김 2→4회 · 총알 -30%→-18%  (요구: 연쇄 작용)",
-        L"Ricochet 2→4 · bullet dmg -30%→-18%  (req: Chain)",
-        L"跳弾2→4 · 弾-30%→-18%  (要:連鎖反応)" },
-      L"튕김 2→4  ·  ATK -18%" },
+      { L"튕김 2→3회 · 총알 -30%→-22%  (요구: 연쇄 작용)",
+        L"Ricochet 2→3 · bullet dmg -30%→-22%  (req: Chain)",
+        L"跳弾2→3 · 弾-30%→-22%  (要:連鎖反応)" },
+      L"튕김 2→3  ·  ATK -22%" },
     { AugType::RESERVED_AUG_054, AugRarity::EPIC, AugUnique::NONE, "REMOVED",
       { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
       { L"?? ?? ?? ?? ? ? ?? ??.",
@@ -823,10 +823,10 @@ static const AugDef ALL_AUGS[] = {
       L"재생 +0.45/s  ·  저체력 ×2" },
     { AugType::CB_BASTION,    AugRarity::COMBO,     AugUnique::NONE, "CB_BAST",
       { L"철벽", L"Bastion", L"鉄壁" },
-      { L"[조합] 최대 체력 +25% · 재생 +0.55/s · 받는 피해 -12%p",
-        L"[Combo] Max HP +25% · regen +0.55/s · damage taken -12%p",
-        L"[組合] 最大HP+25% · 再生+0.55/s · 被ダメ-12%p" },
-      L"Max HP +25%  ·  재생 +0.55  ·  피해 -12%" },
+      { L"[조합] 최대 체력 +20% · 재생 +0.45/s · 받는 피해 -10%p",
+        L"[Combo] Max HP +20% · regen +0.45/s · damage taken -10%p",
+        L"[組合] 最大HP+20% · 再生+0.45/s · 被ダメ-10%p" },
+      L"Max HP +20%  ·  재생 +0.45  ·  피해 -10%" },
     { AugType::CB_LIFEBUOY,   AugRarity::COMBO,     AugUnique::NONE, "CB_LIFE",
       { L"구명줄", L"Lifebuoy", L"救命浮輪" },
       { L"[조합] 재생 +0.25/s · 이동 +12% · 10킬→7킬 회복 · 피격 정지 6초",
@@ -885,40 +885,20 @@ static const AugDef ALL_AUGS[] = {
 
 static constexpr int AUG_TOTAL = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
 
-// ── 조합 레시피 — 재료와 시작 무기 조건을 모두 만족하면 등장 ──
-// StartWeapon is declared in Weapons.h, which includes this header.  Keep the
-// recipe metadata independent of that include cycle and resolve the concrete
-// weapon enum at the selection gate in GameManager.
-enum class ComboWeaponReq {
-    ANY_START,
-    RIFLE,
-    STATIC_FIELD,
-};
+// ── 조합 레시피 — result 는 COMBO 등급 AugType, reqs 를 모두 보유하면 등장 ──
 struct ComboDef {
     AugType result;
     AugType reqs[3];
     int     reqCount;
-    ComboWeaponReq weaponReq;
 };
 inline const ComboDef COMBO_DEFS[] = {
     // 재료 3개 · 최대 티어/전설 선행 — 단순 스탯 합친 조합은 AugRemoved
-    { AugType::CB_BLOODLORD, { AugType::LIFESTEAL, AugType::LIFESTEAL_2, AugType::VAMPIRE }, 3, ComboWeaponReq::STATIC_FIELD },
-    { AugType::CB_WARLORD,   { AugType::BERSERK,   AugType::DEATH_BLAST, AugType::CHAIN_2  }, 3, ComboWeaponReq::RIFLE },
-    { AugType::CB_BASTION,   { AugType::GIGANTIFY, AugType::MK2,         AugType::FIREWALL  }, 3, ComboWeaponReq::STATIC_FIELD },
-    { AugType::CB_LIFEBUOY,  { AugType::REGEN_2,   AugType::VAMPIRE,     AugType::LIGHT_STEP }, 3, ComboWeaponReq::ANY_START },
+    { AugType::CB_BLOODLORD, { AugType::LIFESTEAL, AugType::LIFESTEAL_2, AugType::VAMPIRE }, 3 },
+    { AugType::CB_WARLORD,   { AugType::BERSERK,   AugType::DEATH_BLAST, AugType::CHAIN_2  }, 3 },
+    { AugType::CB_BASTION,   { AugType::GIGANTIFY, AugType::MK2,         AugType::FIREWALL  }, 3 },
+    { AugType::CB_LIFEBUOY,  { AugType::REGEN_2,   AugType::VAMPIRE,     AugType::LIGHT_STEP }, 3 },
 };
 inline const int COMBO_COUNT = (int)(sizeof(COMBO_DEFS) / sizeof(COMBO_DEFS[0]));
-
-inline const wchar_t* ComboWeaponLabel(ComboWeaponReq req) {
-    static const wchar_t* kLabels[3][3] = {
-        { L"모든 시작 무기", L"Any starting weapon", L"全ての開始武器" },
-        { L"소총", L"Rifle", L"ライフル" },
-        { L"전기장", L"Static Field", L"静電場" },
-    };
-    int i = (int)req;
-    if (i < 0 || i >= 3) i = 0;
-    return kLabels[i][CurLangIdx()];
-}
 
 // ALL_AUGS 에서 특정 AugType 의 인덱스 (없으면 -1)
 inline int AugIndexOfType(AugType t) {

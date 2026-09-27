@@ -1,9 +1,8 @@
 ﻿# Blur regression checks
 
 The window compositor blurs the desktop behind every scene when the backdrop
-setting is ON. The OpenGL pass blurs the captured game/world backdrop during
-active gameplay and DYING, as well as modal run screens; the scene and HUD are
-redrawn sharply after the pass. It cannot sample the desktop.
+setting is ON. The OpenGL blur only processes game pixels behind modal UI and
+SHOP; it cannot sample the desktop. Keep gameplay entities and HUD sharp.
 
 Windows uses Acrylic first, then legacy accent blur if the request is rejected.
 Do not treat DwmEnableBlurBehindWindow as successful blur on Windows 8+:
@@ -16,8 +15,8 @@ The hidden OpenGL 3.3 test checks actual output pixels, an unrelated read FBO,
 restoration of framebuffer/culling/color-mask state, and GL errors.
 
 Verified locally on AMD Radeon 780M Graphics. Release build passed. Desktop
-screenshots confirmed blurred backgrounds with sharp menu UI and HUD. Intel and
-NVIDIA hardware have not been tested in this session.
+screenshots confirmed blurred backgrounds with sharp menu UI and active gameplay
+entities/HUD. Intel and NVIDIA hardware have not been tested in this session.
 
 Manual checks on each target machine:
 - ON/OFF in settings; return to main menu and active gameplay.

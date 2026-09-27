@@ -2669,9 +2669,9 @@ void Scene_Shop(const SceneCtx& c) {
         // The record readout is a right-center observation block. Keeping its
         // anchor above the lower HUD leaves the lower-right CircleTexture as
         // atmosphere instead of forcing every line of copy into the corner.
-        const float detailX = sw * 0.59f;
+        const float detailX = sw * 0.63f;
         const float detailW = std::max(360.0f * ui,
-                                       std::min(sw * 0.32f,
+                                       std::min(sw * 0.29f,
                                                 sw - detailX - 42.0f * ui));
         // Lift the complete readout slightly so the wallet/status rows keep
         // clear air above the bottom action ribbon.
@@ -4217,9 +4217,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
 
     // Fixed record block inside the chart, matching the original wide-open
     // composition.  It does not move with the orbit or label animation.
-    const float detailX = sw * 0.68f;
+    const float detailX = sw * 0.66f;
     const float detailW = std::max(320.0f * uiS,
-                                   std::min(sw * 0.26f, sw - detailX - 54.0f * uiS));
+                                   std::min(sw * 0.28f, sw - detailX - 54.0f * uiS));
     const float infoY = sh * 0.42f;
     BindMainShader();
     drawRect(detailX, infoY, detailW, 1.1f * uiS,
@@ -4982,18 +4982,16 @@ void Scene_Codex(const SceneCtx& c) {
                         int ia = AugIndexOfType(cd2.reqs[0]);
                         int ib = AugIndexOfType(cd2.reqs[1]);
                         int ic = cd2.reqCount >= 3 ? AugIndexOfType(cd2.reqs[2]) : -1;
-                        wchar_t rc[256];
+                        wchar_t rc[192];
                         if (cd2.reqCount >= 3)
-                            swprintf_s(rc, L"RECIPE: %ls + %ls + %ls  |  WEAPON: %ls",
+                            swprintf_s(rc, L"RECIPE: %ls + %ls + %ls",
                                        ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
                                        ib>=0 ? AugName(ALL_AUGS[ib]) : L"?",
-                                       ic>=0 ? AugName(ALL_AUGS[ic]) : L"?",
-                                       ComboWeaponLabel(cd2.weaponReq));
+                                       ic>=0 ? AugName(ALL_AUGS[ic]) : L"?");
                         else
-                            swprintf_s(rc, L"RECIPE: %ls + %ls  |  WEAPON: %ls",
+                            swprintf_s(rc, L"RECIPE: %ls + %ls",
                                        ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
-                                       ib>=0 ? AugName(ALL_AUGS[ib]) : L"?",
-                                       ComboWeaponLabel(cd2.weaponReq));
+                                       ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
                         BindMainShader();
                         drawFitS(rc, infoX + 18.0f*uiS, logBoxY + 150.0f*uiS, infoW - 36.0f*uiS,
                                  0.48f*uiS, 0.34f*uiS,
@@ -6345,8 +6343,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         if (!line.empty()) appendLine(line, kind, tone);
     };
     if (activeCount <= 0) {
-        appendWrapped(PlayText(L"시련 목록에서 시련을 활성화해 플레이 설정을 구성하세요.",
-                               L"Enable trials from the catalogue to build the play configuration."),
+        appendWrapped(PlayText(L"시련 목록에서 시련을 활성화해 런 설정을 구성하세요.",
+                               L"Enable trials from the catalogue to build the run modifier set."),
                       0, 0);
     } else {
         for (int order = 0; order < kTrialCatalogCount; ++order) {
@@ -6898,11 +6896,11 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                              0.72f, 0.77f, 0.84f, a * 0.9f, 0.62f);
         }
     } else if (!inGameSettings) {
-        const wchar_t* menu[4] = { korean ? L"계속하기" : L"CONTINUE",
+        const wchar_t* menu[4] = { korean ? L"재개" : L"RESUME",
                                    korean ? L"설정" : L"CALIBRATION",
                                    korean ? L"\uD3EC\uAE30\uD558\uAE30" : L"ABANDON RUN",
                                    korean ? L"종료" : L"TERMINATE" };
-        static const wchar_t* menuSub[4] = { L"계속하기", L"\uC124\uC815", L"\uD50C\uB808\uC774 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
+        static const wchar_t* menuSub[4] = { L"\uC7AC\uAC1C", L"\uC124\uC815", L"\uD50C\uB808\uC774 \uD3EC\uAE30", L"\uAC8C\uC784 \uC885\uB8CC" };
         for (int i = 0; i < 4; ++i) {
             const float y = MainMenuButtonRailStartY(sh) + i * (mainBH + mainGap);
             const bool focus = i == 1;
@@ -7677,9 +7675,9 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                 }
                 const bool current = j == setting.optCur;
                 const float optionHoverT = optHover[category][row][j];
-                // The selected value is conveyed by its text treatment. Keep
-                // it near-white at full alpha; non-selected values remain
-                // visible but recede until hovered.
+                // The selected value must read as state, not just as a tiny
+                // marker. Keep it near-white at full alpha; non-selected
+                // values remain visible but recede until hovered.
                 const float optionA = current
                     ? 1.0f
                     : (0.32f + 0.44f * optionHoverT);
@@ -7692,16 +7690,17 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                 const float optionB = current
                     ? catB * 0.42f + 0.58f
                     : catB * (0.68f + 0.18f * optionHoverT);
-                // DrawShadowedText takes the top of the glyph box, while the
-                // option diamond and hit area are centered on controlY.  Lift
-                // every option label slightly so ON/OFF and the other choices
-                // share the same visual center without changing input bounds.
-                const float optionTextY = controlY - 18.0f * uiS;
                 DrawShadowedText(g_TextL, setting.opts[j],
                                  ox + chipPadX,
-                                 optionTextY, optSc,
+                                 controlY, optSc,
                                  optionR, optionG, optionB,
                                  optionA * rowA, current ? 0.44f : 0.30f);
+                if (current) {
+                    drawDiamond(ox - 8.0f * uiS, controlY,
+                                (3.8f + 0.8f * optionHoverT) * uiS,
+                                optionR, optionG, optionB,
+                                0.96f * rowA);
+                }
                 ox += cellW + chipGap;
             }
             if (category == 0 && row == 3) {
@@ -7984,10 +7983,13 @@ void Scene_Paused(const SceneCtx& c) {
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
     const float delta = c.delta;
+    GLFWwindow* window = c.window;
     (void)*c.fireTimer;
+    (void)c.reset;
+    const std::function<void()>& RestartCurrentRun = c.restartRun;
 
     static float  s_EntryT    = 0.0f;
-    static float  s_HoverT[3] = {};
+    static float  s_HoverT[5] = {};
     static int    s_ExitSel   = -1;
     static float  s_ExitT     = 0.0f;
     static double s_LastCall  = 0.0;
@@ -7995,7 +7997,7 @@ void Scene_Paused(const SceneCtx& c) {
     const double curTime = glfwGetTime();
     if (curTime - s_LastCall > 0.12) {
         s_EntryT = 0.0f;
-        for (int i = 0; i < 3; ++i) s_HoverT[i] = 0.0f;
+        for (int i = 0; i < 5; ++i) s_HoverT[i] = 0.0f;
         s_ExitSel = -1;
         s_ExitT   = 0.0f;
     }
@@ -8027,7 +8029,7 @@ void Scene_Paused(const SceneCtx& c) {
     const float BW      = std::min(520.0f, sw * 0.38f);
     const float BH      = 70.0f;
     const float BGAP    = 15.0f;
-    const int   NBTN    = 3;
+    const int   NBTN    = 5;
     const float totalBH = (float)NBTN * BH + (float)(NBTN - 1) * BGAP;
     const float btnX0   = std::max(58.0f, sw * 0.075f);
     const float btnY0   = sh * 0.42f;
@@ -8068,15 +8070,15 @@ void Scene_Paused(const SceneCtx& c) {
 
     // 버튼
     struct PBtnDef { const wchar_t* route; const wchar_t* sub; };
-    static const wchar_t* kPauseRoutes[3][3] = {
-        { L"계속하기", L"설정", L"\uD3EC\uAE30\uD558\uAE30" },
-        { L"CONTINUE", L"SETTINGS", L"ABANDON RUN" },
-        { L"続ける", L"設定", L"\u30E9\u30F3\u3092\u653E\u68C4" },
+    static const wchar_t* kPauseRoutes[3][5] = {
+        { L"재개", L"설정", L"재시작", L"\uD3EC\uAE30\uD558\uAE30", L"종료" },
+        { L"RESUME", L"SETTINGS", L"RESTART", L"ABANDON RUN", L"EXIT" },
+        { L"再開", L"設定", L"再起動", L"\u30E9\u30F3\u3092\u653E\u68C4", L"終了" },
     };
-    static const wchar_t* kPauseSubs[3][3] = {
-        { L"현재 플레이 계속하기", L"플레이 설정 열기", L"현재 플레이 포기" },
-        { L"Continue current play", L"Open play settings", L"Abandon current play" },
-        { L"現在のプレイを続ける", L"プレイ設定を開く", L"現在のプレイを放棄" },
+    static const wchar_t* kPauseSubs[3][5] = {
+        { L"현재 플레이로 돌아가기", L"플레이 설정 열기", L"현재 플레이 재시작", L"현재 플레이 포기", L"게임 종료" },
+        { L"Return to current play", L"Open play settings", L"Restart current play", L"Abandon current play", L"Exit game" },
+        { L"現在のプレイに戻る", L"プレイ設定を開く", L"現在のプレイを再起動", L"現在のプレイを放棄", L"ゲーム終了" },
     };
     const int pauseLang = std::max(0, std::min(2, LangIndex()));
 
@@ -8140,21 +8142,20 @@ void Scene_Paused(const SceneCtx& c) {
             g_GameManager.currentState = GameState::SETTINGS;
             break;
         case 2:
+            if (RestartCurrentRun) RestartCurrentRun();
+            break;
+        case 3:
             if (c.abandonRun) c.abandonRun();
             break;
+        case 4: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
         }
         return;
     }
 
     {
         float hintA = Smoothstep(std::min(std::max(0.0f, s_EntryT - 0.50f) / 0.30f, 1.0f)) * entryFade;
-        const int hintLang = std::max(0, std::min(2, LangIndex()));
-        const wchar_t* hint[3] = {
-            L"[SPACE / ESC]  계속하기",
-            L"[SPACE / ESC]  CONTINUE",
-            L"[SPACE / ESC]  続ける"
-        };
-        g_TextS.Draw(hint[hintLang], btnX0, sh * 0.88f, 0.58f,
+        const wchar_t* hint = L"[SPACE / ESC]  재개";
+        g_TextS.Draw(hint, btnX0, sh * 0.88f, 0.58f,
                      0.50f, 0.70f, 0.90f, 0.72f * hintA);
     }
 }
@@ -10392,35 +10393,6 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     return AugTierIndexLess(a, b);
                 });
 
-                // Pause owns one stable catalogue selection. Hovering is a
-                // transient pointer state; keyboard/click selection keeps the
-                // detail panel anchored when the cursor leaves the list.
-                if (st == GameState::PAUSED) {
-                    bool selectedValid = false;
-                    for (int oi = 0; oi < nord; ++oi)
-                        if (ord[oi] == g_PauseSelectedAug) { selectedValid = true; break; }
-                    if (!selectedValid) g_PauseSelectedAug = nord > 0 ? ord[0] : -1;
-                }
-                static bool ownUpPrev = false, ownDownPrev = false;
-                if (st == GameState::PAUSED && window && nord > 0) {
-                    const bool up = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS ||
-                                    glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
-                    const bool down = glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS ||
-                                      glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
-                    int selectedPos = 0;
-                    for (int oi = 0; oi < nord; ++oi)
-                        if (ord[oi] == g_PauseSelectedAug) { selectedPos = oi; break; }
-                    if ((up && !ownUpPrev) || (down && !ownDownPrev)) {
-                        const int dir = up ? -1 : 1;
-                        selectedPos = (selectedPos + dir + nord) % nord;
-                        g_PauseSelectedAug = ord[selectedPos];
-                    }
-                    ownUpPrev = up;
-                    ownDownPrev = down;
-                } else {
-                    ownUpPrev = ownDownPrev = false;
-                }
-
                 const float PX  = 16.0f;
                 const float ROW_H = 24.0f;
                 const float HDR_H = 20.0f;
@@ -10466,7 +10438,6 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 // 리스트 (scissor 클립 + 스크롤)
                 int   hoverAug = -1;
                 float hoverRowY = 0.0f;
-                float selectedRowY = 0.0f;
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
                 glScissor(0, (GLint)(sh - listBottom), (GLint)(COLW + 10.0f), (GLint)viewH);
                 prevR = (AugRarity)-1;
@@ -10491,22 +10462,12 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     cg = std::min(1.0f, cg * 1.3f + 0.25f);
                     cb = std::min(1.0f, cb * 1.3f + 0.25f);
                     bool rowHover = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
-                    const bool rowSelected = (st == GameState::PAUSED && i == g_PauseSelectedAug);
-                    if (rowSelected) selectedRowY = ry;
                     if (rowHover) {
                         hoverAug = i; hoverRowY = ry;
-                        if (st == GameState::PAUSED && lmb && !g_LmbPrev)
-                            g_PauseSelectedAug = i;
-                    }
-                    if (rowSelected || rowHover) {
                         BindMainShader();
                         drawRect(PX, ry - 2.0f, COLW - PX, ROW_H,
-                                 rowSelected ? 0.20f : 0.15f,
-                                 rowSelected ? 0.22f : 0.16f,
-                                 rowSelected ? 0.34f : 0.26f,
-                                 rowSelected ? 0.82f : 0.60f);
-                        drawRect(PX, ry - 2.0f, rowSelected ? 4.0f : 3.0f,
-                                 ROW_H, cr, cg, cb, rowSelected ? 1.0f : 0.86f);
+                                 0.15f, 0.16f, 0.26f, 0.6f);
+                        drawRect(PX, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
                     }
                     wchar_t line[128];
                     if (counts[i] > 1)
@@ -10592,18 +10553,13 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     }
                 };
 
-                const int detailAug = hoverAug >= 0 ? hoverAug
-                    : ((st == GameState::PAUSED && !overWeapon)
-                       ? g_PauseSelectedAug : -1);
-                if (detailAug >= 0 && detailAug < AUG_TOTAL) {
-                    const AugDef& sd = ALL_AUGS[detailAug];
+                if (hoverAug >= 0) {
+                    const AugDef& sd = ALL_AUGS[hoverAug];
                     float hr, hg, hb;
                     GetRarityColor(sd.rarity, hr, hg, hb);
                     wchar_t hd[128];
                     swprintf_s(hd, L"[%ls] %ls", GetAugBadge(sd), AugName(sd));
-                    const float panelRowY = hoverAug >= 0 ? hoverRowY
-                        : (selectedRowY > 0.0f ? selectedRowY : listTop + 4.0f);
-                    drawSidePanel(panelRowY - 6.0f, hr, hg, hb, hd, AugDesc(sd));
+                    drawSidePanel(hoverRowY - 6.0f, hr, hg, hb, hd, AugDesc(sd));
                 } else if (overWeapon) {
                     drawSidePanel(WEAPON_Y - 4.0f, 0.35f, 0.75f, 1.0f,
                                   CurrentWeaponLabel(), CurrentWeaponDescText());

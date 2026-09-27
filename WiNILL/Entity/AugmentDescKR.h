@@ -21,7 +21,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::GLASS_CANNON:
         return L"공격력 +50% · 최대 체력 -35% · 한 방 화력 극대화·생존 리스크 동반 (1회만 획득)";
     case AugType::LIGHT_AMMO:
-        return L"연사 +20% · 탄속 +45% · 공격력 -10% · 가볍고 빠른 탄환 빌드 (1회만 획득)";
+        return L"연사 +15% · 탄속 +35% · 공격력 -12% · 가볍고 빠른 탄환 빌드 (1회만 획득)";
     case AugType::LIGHT_STEP:
         return L"이동 속도 +30% · 피격 시 10초간 보너스 해제 · 기동전·카이팅에 유리 (1회만 획득)";
     case AugType::BULLET_RAIN:
@@ -29,7 +29,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::CRIT:
         return L"치명타 확률 +15%p (최대 75%) · 치명타 배율 ×2.0 · 행운형 화력 증폭";
     case AugType::LIFESTEAL:
-        return L"처치당 HP 회복 (스택당 +0.10, 최대 4중첩) · 흡혈 한도 0.40 · 지속 전투 생존 보조";
+        return L"처치당 HP 회복 (스택당 +0.08, 최대 4중첩) · 흡혈 한도 0.32 · 지속 전투 생존 보조";
     case AugType::BERSERK:
         return L"체력이 낮을수록 공격력 증가 · 빈사 시 최대 +60% · 위기 역전·고위험 고보상 (1회만 획득)";
     case AugType::OVERDRIVE:
@@ -43,7 +43,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::MINIATURIZE:
         return L"최대 체력 1/2 · 크기 -20% · 이동 +20% · 보유 증강 1개당 공격 +6·연사 +1% · 작고 빠른 스케일링 빌드";
     case AugType::GIGANTIFY:
-        return L"최대 체력 ×2 · 크기 +45% · 재생 +1.2/s · 이동 -28% · 거대·탱커 생존 빌드";
+        return L"최대 체력 ×2 · 크기 +45% · 재생 +1.2/s · 이동 -32% · 거대·탱커 생존 빌드";
     case AugType::PIERCE:
         return L"명중 시 30% 확률로 적·장애물 관통 · 밀집 적 관통 처리 · 관통 II·조합과 시너지";
     case AugType::TWIN:
@@ -132,7 +132,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::CB_WARLORD:
         return L"[조합] 광전사+연쇄폭발+연쇄 II · 공격력 +15% · 1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택)";
     case AugType::CB_BASTION:
-        return L"[조합] 거대화+MK2+방화벽 · 최대 HP +25% · 재생 +0.55/s · 받는 피해 -12%p · 철벽 생존";
+        return L"[조합] 거대화+MK2+방화벽 · 최대 HP +20% · 재생 +0.45/s · 받는 피해 -10%p · 철벽 생존";
     case AugType::CB_LIFEBUOY:
         return L"[조합] 재생 II+흡혈마+가벼운 발걸음 · 재생 +0.25/s · 이동 +12% · 7킬마다 HP+1 · 피격 시 가벼운 발걸음 6초 정지";
 
@@ -143,7 +143,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::DRONE_HIVE:
         return L"드론 4기 운용 · 각 드론 화력 50% 유지 · 안정적인 군집 화력";
     case AugType::LASER_CONVERGE:
-        return L"스캔 레이저 0.30초 간격 발사 · 사거리 620 · 빔 폭 +50% · 직선 일소 수렴";
+        return L"스캔 레이저 0.26초 간격 발사 · 사거리 700 · 빔 폭 +50% · 직선 일소 수렴";
     case AugType::PIERCE_RAILSLUG:
         return L"관통 확률 90% 고정 · 공격 +25 (가산) · 탄속 +50% · 멈추지 않는 철갑탄";
     case AugType::CHAKRAM_SINGULARITY:
@@ -151,9 +151,9 @@ inline const wchar_t* AugDescKR(AugType t) {
 
     // ── Debuff (extended) ──
     case AugType::LIFESTEAL_2:
-        return L"흡혈 한도 0.40 → 0.60 · 8킬마다 HP +1 (흡혈마와 연동) · 선행: 흡혈탄 (1회만)";
+        return L"흡혈 한도 0.32 → 0.48 · 10킬마다 HP +1 (흡혈마와 연동) · 선행: 흡혈탄 (1회만)";
     case AugType::CHAIN_2:
-        return L"튕김 2회 → 4회 · 총알 피해 -30% → -18% · 선행: 연쇄 작용 · 연쇄 II 완성";
+        return L"튕김 2회 → 3회 · 총알 피해 -30% → -22% · 선행: 연쇄 작용 · 연쇄 II 완성";
     case AugType::SKILL_DASH_UP:
         return L"[스킬] SHIFT 대시 강화 · 대시 시 유도탄 3~5발 · 이후 3발 ×2 피해 · 기동+화력 연계";
     case AugType::RIFLE_STABILITY:

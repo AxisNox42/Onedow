@@ -65,7 +65,7 @@ struct PlayerStats {
     float critMult     = 2.5f;    // 치명타 데미지 배율
     float lifestealPerKill = 0.0f;// (legacy — GetLifestealPerKill() 사용)
     int   lifestealStacks  = 0;   // 흡혈탄 중첩 (최대 4)
-    bool  lifesteal2       = false; // 흡혈탄 II — 한도 0.60
+    bool  lifesteal2       = false; // 흡혈탄 II — 한도 0.48
     bool  berserk      = false;   // 체력 낮을수록 공격력 ↑ (최대 +60%)
     bool  deathBlast   = false;   // 적 사망 시 주변 폭발
     float deathBlastMult = 1.0f;  // 연쇄 폭발 반경 배율
@@ -151,9 +151,9 @@ struct PlayerStats {
             maxHP            *= 0.65f;
             break;
         case AugType::LIGHT_AMMO:
-            fireInterval     /= 1.20f;   // 연사 +20%
-            bulletSpeed      *= 1.45f;
-            damageMultiplier *= 0.90f;   // 공격력 -10%
+            fireInterval     /= 1.15f;   // 연사 +15%
+            bulletSpeed      *= 1.35f;
+            damageMultiplier *= 0.88f;   // 공격력 -12%
             break;
         case AugType::LIGHT_STEP:
             lightStep      = true;
@@ -170,13 +170,14 @@ struct PlayerStats {
             miniaturize    = true;
             sizeAugTaken   = true;
             maxHP         *= 0.5f;
+            regenPerSec   += 0.1f;
             moveSpeedMult *= 1.20f;
             playerSizeMult *= 0.80f;
             break;
         case AugType::GIGANTIFY:
             gigantify      = true;
             sizeAugTaken   = true;
-            moveSpeedMult *= 0.72f;
+            moveSpeedMult *= 0.68f;
             playerSizeMult *= 1.45f;
             maxHP         *= 2.0f;
             regenPerSec   += 1.2f;
@@ -239,9 +240,9 @@ struct PlayerStats {
             regenPerSec      += 0.25f;
             break;
         case AugType::CB_BASTION:       // 거대화 + MK2 + 방화벽
-            maxHP            *= 1.25f;
-            regenPerSec      += 0.55f;
-            damageReduction  += 0.12f;
+            maxHP            *= 1.20f;
+            regenPerSec      += 0.45f;
+            damageReduction  += 0.10f;
             break;
         case AugType::CB_LIFEBUOY:      // 재생 II + 흡혈마 + 가벼운 발걸음
             regenPerSec      += 0.25f;
@@ -383,16 +384,15 @@ struct PlayerStats {
             break;
         case AugType::LIFESTEAL_2:
             lifesteal2      = true;
-            vampireKillNeed = 8;
             break;
         case AugType::REGEN_2:
             regenPerSec    += 0.45f;
             regenLowHpMult  = 2.0f;
             break;
         case AugType::CHAIN_2:
-            ricochetMax     = 4;
+            ricochetMax     = 3;
             ricochetChance  = 100;
-            ricochetDmgMult = 0.82f;
+            ricochetDmgMult = 0.78f;
             break;
         case AugType::RIFLE_STABILITY:
             bulletSpread    = 0.0f;
@@ -470,11 +470,11 @@ struct PlayerStats {
 
     float GetLifestealCap() const {
         if (vampire)     return 0.60f;
-        if (lifesteal2)  return 0.60f;
-        return 0.40f;
+        if (lifesteal2)  return 0.48f;
+        return 0.32f;
     }
     float GetLifestealPerKill() const {
-        float v = (float)lifestealStacks * 0.10f;
+        float v = (float)lifestealStacks * 0.08f;
         float cap = GetLifestealCap();
         if (v > cap) v = cap;
         return v;

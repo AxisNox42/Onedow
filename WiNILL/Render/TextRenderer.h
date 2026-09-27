@@ -55,7 +55,7 @@ private:
     };
     struct Glyph {
         GLuint tex = 0;
-        float  w = 0.0f, h = 0.0f, xoff = 0.0f, yoff = 0.0f;
+        int    w = 0, h = 0, xoff = 0, yoff = 0;
         float  advance = 0.0f;
     };
     std::vector<FontFace> faces_;
@@ -64,10 +64,6 @@ private:
     float  ascentPx_    = 0.0f;
     float  lineHeightPx_= 0.0f;
     float  minScale_    = 0.0f;
-    // Render glyph bitmaps above their layout size, then linearly sample them
-    // down in the textured quad.  This keeps small UI labels legible even on
-    // GPUs where MSAA does not cover alpha-tested glyph edges.
-    float  bitmapOversample_ = 2.0f;
 
     int    FaceForCodepoint(int cp) const;
     Glyph& GetGlyph(int cp);
@@ -231,14 +227,12 @@ inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
     int adv = 0, lsb = 0;
     stbtt_GetCodepointHMetrics(fn, cp, &adv, &lsb);
     g.advance = adv * s;
-    const float renderS = s * bitmapOversample_;
     int ix0, iy0, ix1, iy1;
-    stbtt_GetCodepointBitmapBox(fn, cp, renderS, renderS, &ix0, &iy0, &ix1, &iy1);
+    stbtt_GetCodepointBitmapBox(fn, cp, s, s, &ix0, &iy0, &ix1, &iy1);
     int w = ix1 - ix0, h = iy1 - iy0;
     if (w > 0 && h > 0) {
         std::vector<unsigned char> bmp((size_t)w * h);
-        stbtt_MakeCodepointBitmap(fn, bmp.data(), w, h, w,
-                                  renderS, renderS, cp);
+        stbtt_MakeCodepointBitmap(fn, bmp.data(), w, h, w, s, s, cp);
         GLuint tex = 0;
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
@@ -248,11 +242,7 @@ inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        g.tex = tex;
-        g.w = (float)w / bitmapOversample_;
-        g.h = (float)h / bitmapOversample_;
-        g.xoff = (float)ix0 / bitmapOversample_;
-        g.yoff = (float)iy0 / bitmapOversample_;
+        g.tex = tex; g.w = w; g.h = h; g.xoff = ix0; g.yoff = iy0;
     }
     return glyphs_[cp] = g;
 }
