@@ -30,6 +30,7 @@ extern TesseractGlitchBoss* g_TessBoss;
 extern LeviathanBoss*       g_LeviathanBoss;
 // ── UI / 메뉴 씬에서 참조 (main.cpp 정의) ──
 extern bool      g_LmbPrev;
+extern int       g_PauseSelectedAug;
 extern GameState g_SettingsReturnTo;
 extern int       g_CurrentWeapon;
 extern int       g_ConversionWeapon;

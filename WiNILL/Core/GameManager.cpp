@@ -17,6 +17,19 @@ static bool DebuffCandidateAllowed(AugType t) {
     return true;
 }
 
+static bool ComboWeaponAllowed(ComboWeaponReq req) {
+    switch (req) {
+    case ComboWeaponReq::RIFLE:
+        return g_CurrentWeapon == (int)StartWeapon::RIFLE;
+    case ComboWeaponReq::STATIC_FIELD:
+        return g_CurrentWeapon == (int)StartWeapon::SMG;
+    case ComboWeaponReq::ANY_START:
+    default:
+        return g_CurrentWeapon >= 0 &&
+               g_CurrentWeapon < (int)StartWeapon::_COUNT;
+    }
+}
+
 static const char* gm_vert =
     "#version 330 core\n"
     "layout (location = 0) in vec2 aPos;\n"
@@ -374,6 +387,7 @@ void GameManager::PickAugChoices(bool sizeTaken, bool allowDebuff) {
             AugType res = COMBO_DEFS[c].result;
             if (AugRemoved(res)) continue;
             if (g_TypeOwned[(int)res]) continue;
+            if (!ComboWeaponAllowed(COMBO_DEFS[c].weaponReq)) continue;
             bool met = true;
             for (int r = 0; r < COMBO_DEFS[c].reqCount; r++)
                 if (!g_TypeOwned[(int)COMBO_DEFS[c].reqs[r]]) { met = false; break; }

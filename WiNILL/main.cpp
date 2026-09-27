@@ -4397,14 +4397,14 @@ int main() {
             // ?�?�??�캔 ?�이?�?(증강) ??0.7초마??조�? 방향 관??�?(군중?�어) ?�?�?
             // Laser sweep uses the shared segment collision path.
             if (g_Stats.laser) {
-                float laserInt = (g_Stats.laserTier >= 3) ? 0.26f   // 수렴: 빠르지만 화면을 잠식하지 않음
+                float laserInt = (g_Stats.laserTier >= 3) ? 0.30f   // 수렴: 빠르지만 화면을 잠식하지 않음
                                : (g_Stats.laserTier >= 2) ? 0.55f : LASER_INT;
                 g_LaserTimer += delta;
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);   // ?�이?�????�� 커서 방향
                     // ?�거리는 II(760)?�서 ???�리지 ?�음. ?�화 ?�렴?�?'?�비'�?강화.
-                    float LASER_RANGE = (g_Stats.laserTier >= 3) ? 700.0f
+                    float LASER_RANGE = (g_Stats.laserTier >= 3) ? 620.0f
                                       : (g_Stats.laserTier >= 2) ? 760.0f : 560.0f;
                     float lex = pCX + cosf(lang) * LASER_RANGE, ley = pCY + sinf(lang) * LASER_RANGE;
                     // ?�화 ?�렴(tier3): �??�비 2�???광폭 관??(?�몹 ?�인 ?�소)
@@ -5576,7 +5576,9 @@ int main() {
         {
             const GameState blurState = g_GameManager.currentState;
             const bool blurGameplayBackdrop = g_BackdropBlurEnabled &&
-                (blurState == GameState::READY ||
+                (blurState == GameState::RUNNING ||
+                 blurState == GameState::DYING ||
+                 blurState == GameState::READY ||
                  blurState == GameState::PAUSED ||
                  blurState == GameState::AUG_SELECT ||
                  blurState == GameState::DEBUFF_SELECT ||
@@ -5695,7 +5697,8 @@ int main() {
             // ?�?�?[7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�?
             //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
             // Desktop blur is a window setting, independent of the game scene.
-            // World/HUD remain sharp during play; only modal UI blurs game pixels.
+            // The world backdrop is blurred whenever the setting is enabled;
+            // the scene/HUD pass below is drawn sharply on top.
             ConfigureWindowBackdropBlur(window, g_BackdropBlurEnabled);
 
             // Scene_* dispatch still includes READY and the in-run menus;

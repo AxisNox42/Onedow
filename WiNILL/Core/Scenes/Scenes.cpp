@@ -2669,9 +2669,9 @@ void Scene_Shop(const SceneCtx& c) {
         // The record readout is a right-center observation block. Keeping its
         // anchor above the lower HUD leaves the lower-right CircleTexture as
         // atmosphere instead of forcing every line of copy into the corner.
-        const float detailX = sw * 0.63f;
+        const float detailX = sw * 0.59f;
         const float detailW = std::max(360.0f * ui,
-                                       std::min(sw * 0.29f,
+                                       std::min(sw * 0.32f,
                                                 sw - detailX - 42.0f * ui));
         // Lift the complete readout slightly so the wallet/status rows keep
         // clear air above the bottom action ribbon.
@@ -4217,9 +4217,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
 
     // Fixed record block inside the chart, matching the original wide-open
     // composition.  It does not move with the orbit or label animation.
-    const float detailX = sw * 0.66f;
+    const float detailX = sw * 0.68f;
     const float detailW = std::max(320.0f * uiS,
-                                   std::min(sw * 0.28f, sw - detailX - 54.0f * uiS));
+                                   std::min(sw * 0.26f, sw - detailX - 54.0f * uiS));
     const float infoY = sh * 0.42f;
     BindMainShader();
     drawRect(detailX, infoY, detailW, 1.1f * uiS,
@@ -4982,16 +4982,18 @@ void Scene_Codex(const SceneCtx& c) {
                         int ia = AugIndexOfType(cd2.reqs[0]);
                         int ib = AugIndexOfType(cd2.reqs[1]);
                         int ic = cd2.reqCount >= 3 ? AugIndexOfType(cd2.reqs[2]) : -1;
-                        wchar_t rc[192];
+                        wchar_t rc[256];
                         if (cd2.reqCount >= 3)
-                            swprintf_s(rc, L"RECIPE: %ls + %ls + %ls",
+                            swprintf_s(rc, L"RECIPE: %ls + %ls + %ls  |  WEAPON: %ls",
                                        ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
                                        ib>=0 ? AugName(ALL_AUGS[ib]) : L"?",
-                                       ic>=0 ? AugName(ALL_AUGS[ic]) : L"?");
+                                       ic>=0 ? AugName(ALL_AUGS[ic]) : L"?",
+                                       ComboWeaponLabel(cd2.weaponReq));
                         else
-                            swprintf_s(rc, L"RECIPE: %ls + %ls",
+                            swprintf_s(rc, L"RECIPE: %ls + %ls  |  WEAPON: %ls",
                                        ia>=0 ? AugName(ALL_AUGS[ia]) : L"?",
-                                       ib>=0 ? AugName(ALL_AUGS[ib]) : L"?");
+                                       ib>=0 ? AugName(ALL_AUGS[ib]) : L"?",
+                                       ComboWeaponLabel(cd2.weaponReq));
                         BindMainShader();
                         drawFitS(rc, infoX + 18.0f*uiS, logBoxY + 150.0f*uiS, infoW - 36.0f*uiS,
                                  0.48f*uiS, 0.34f*uiS,
@@ -6343,8 +6345,8 @@ static void Scene_RunConfigInline(const SceneCtx& c) {
         if (!line.empty()) appendLine(line, kind, tone);
     };
     if (activeCount <= 0) {
-        appendWrapped(PlayText(L"시련 목록에서 시련을 활성화해 런 설정을 구성하세요.",
-                               L"Enable trials from the catalogue to build the run modifier set."),
+        appendWrapped(PlayText(L"시련 목록에서 시련을 활성화해 플레이 설정을 구성하세요.",
+                               L"Enable trials from the catalogue to build the play configuration."),
                       0, 0);
     } else {
         for (int order = 0; order < kTrialCatalogCount; ++order) {
@@ -10393,6 +10395,35 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     return AugTierIndexLess(a, b);
                 });
 
+                // Pause owns one stable catalogue selection. Hovering is a
+                // transient pointer state; keyboard/click selection keeps the
+                // detail panel anchored when the cursor leaves the list.
+                if (st == GameState::PAUSED) {
+                    bool selectedValid = false;
+                    for (int oi = 0; oi < nord; ++oi)
+                        if (ord[oi] == g_PauseSelectedAug) { selectedValid = true; break; }
+                    if (!selectedValid) g_PauseSelectedAug = nord > 0 ? ord[0] : -1;
+                }
+                static bool ownUpPrev = false, ownDownPrev = false;
+                if (st == GameState::PAUSED && window && nord > 0) {
+                    const bool up = glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS ||
+                                    glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+                    const bool down = glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS ||
+                                      glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
+                    int selectedPos = 0;
+                    for (int oi = 0; oi < nord; ++oi)
+                        if (ord[oi] == g_PauseSelectedAug) { selectedPos = oi; break; }
+                    if ((up && !ownUpPrev) || (down && !ownDownPrev)) {
+                        const int dir = up ? -1 : 1;
+                        selectedPos = (selectedPos + dir + nord) % nord;
+                        g_PauseSelectedAug = ord[selectedPos];
+                    }
+                    ownUpPrev = up;
+                    ownDownPrev = down;
+                } else {
+                    ownUpPrev = ownDownPrev = false;
+                }
+
                 const float PX  = 16.0f;
                 const float ROW_H = 24.0f;
                 const float HDR_H = 20.0f;
@@ -10438,6 +10469,7 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 // 리스트 (scissor 클립 + 스크롤)
                 int   hoverAug = -1;
                 float hoverRowY = 0.0f;
+                float selectedRowY = 0.0f;
                 BatchFlush(); glEnable(GL_SCISSOR_TEST);
                 glScissor(0, (GLint)(sh - listBottom), (GLint)(COLW + 10.0f), (GLint)viewH);
                 prevR = (AugRarity)-1;
@@ -10462,12 +10494,22 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     cg = std::min(1.0f, cg * 1.3f + 0.25f);
                     cb = std::min(1.0f, cb * 1.3f + 0.25f);
                     bool rowHover = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
+                    const bool rowSelected = (st == GameState::PAUSED && i == g_PauseSelectedAug);
+                    if (rowSelected) selectedRowY = ry;
                     if (rowHover) {
                         hoverAug = i; hoverRowY = ry;
+                        if (st == GameState::PAUSED && lmb && !g_LmbPrev)
+                            g_PauseSelectedAug = i;
+                    }
+                    if (rowSelected || rowHover) {
                         BindMainShader();
                         drawRect(PX, ry - 2.0f, COLW - PX, ROW_H,
-                                 0.15f, 0.16f, 0.26f, 0.6f);
-                        drawRect(PX, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
+                                 rowSelected ? 0.20f : 0.15f,
+                                 rowSelected ? 0.22f : 0.16f,
+                                 rowSelected ? 0.34f : 0.26f,
+                                 rowSelected ? 0.82f : 0.60f);
+                        drawRect(PX, ry - 2.0f, rowSelected ? 4.0f : 3.0f,
+                                 ROW_H, cr, cg, cb, rowSelected ? 1.0f : 0.86f);
                     }
                     wchar_t line[128];
                     if (counts[i] > 1)
@@ -10553,13 +10595,18 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     }
                 };
 
-                if (hoverAug >= 0) {
-                    const AugDef& sd = ALL_AUGS[hoverAug];
+                const int detailAug = hoverAug >= 0 ? hoverAug
+                    : ((st == GameState::PAUSED && !overWeapon)
+                       ? g_PauseSelectedAug : -1);
+                if (detailAug >= 0 && detailAug < AUG_TOTAL) {
+                    const AugDef& sd = ALL_AUGS[detailAug];
                     float hr, hg, hb;
                     GetRarityColor(sd.rarity, hr, hg, hb);
                     wchar_t hd[128];
                     swprintf_s(hd, L"[%ls] %ls", GetAugBadge(sd), AugName(sd));
-                    drawSidePanel(hoverRowY - 6.0f, hr, hg, hb, hd, AugDesc(sd));
+                    const float panelRowY = hoverAug >= 0 ? hoverRowY
+                        : (selectedRowY > 0.0f ? selectedRowY : listTop + 4.0f);
+                    drawSidePanel(panelRowY - 6.0f, hr, hg, hb, hd, AugDesc(sd));
                 } else if (overWeapon) {
                     drawSidePanel(WEAPON_Y - 4.0f, 0.35f, 0.75f, 1.0f,
                                   CurrentWeaponLabel(), CurrentWeaponDescText());
