@@ -7677,9 +7677,9 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                 }
                 const bool current = j == setting.optCur;
                 const float optionHoverT = optHover[category][row][j];
-                // The selected value must read as state, not just as a tiny
-                // marker. Keep it near-white at full alpha; non-selected
-                // values remain visible but recede until hovered.
+                // The selected value is conveyed by its text treatment. Keep
+                // it near-white at full alpha; non-selected values remain
+                // visible but recede until hovered.
                 const float optionA = current
                     ? 1.0f
                     : (0.32f + 0.44f * optionHoverT);
@@ -7702,12 +7702,6 @@ static void Scene_SettingsInline(const SceneCtx& c) {
                                  optionTextY, optSc,
                                  optionR, optionG, optionB,
                                  optionA * rowA, current ? 0.44f : 0.30f);
-                if (current) {
-                    drawDiamond(ox - 8.0f * uiS, controlY,
-                                (3.8f + 0.8f * optionHoverT) * uiS,
-                                optionR, optionG, optionB,
-                                0.96f * rowA);
-                }
                 ox += cellW + chipGap;
             }
             if (category == 0 && row == 3) {
