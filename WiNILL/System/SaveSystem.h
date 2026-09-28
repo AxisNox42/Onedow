@@ -51,10 +51,15 @@ inline void SaveGame() {
     add("crosshair=%lld\n", g_ShowCrosshair     ? 1 : 0);
     add("combo=%lld\n",     g_ShowCombo         ? 1 : 0);
     add("soundvol=%lld\n",  g_SoundVol);
+    add("bgmenabled=%lld\n", g_BgmEnabled ? 1 : 0);
+    add("sfxenabled=%lld\n", g_SfxEnabled ? 1 : 0);
+    add("audiomono=%lld\n", g_AudioMonoOutput ? 1 : 0);
+    add("audioenabled=%lld\n", g_AudioEngineEnabled ? 1 : 0);
     add("autofire=%lld\n",  g_AutoFire  ? 1 : 0);
     add("autoskill=%lld\n", g_AutoSkill ? 1 : 0);
     add("strongmenudim=%lld\n", g_StrongMenuDim ? 1 : 0);
     add("backdropblur=%lld\n", g_BackdropBlurEnabled ? 1 : 0);
+    add("blurcapturehz=%lld\n", g_BackdropBlurCaptureHz);
     add("debugmode=%lld\n",    g_DebugMode ? 1 : 0);
     add("shaderfx=%lld\n",  g_ShaderFx  ? 1 : 0);
     add("mobstyle=%lld\n",  (int)g_MobVisualStyle);
@@ -155,10 +160,18 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = true;
         else if (!std::strcmp(key, "combo"))       g_ShowCombo         = (val != 0);
         else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
+        else if (!std::strcmp(key, "bgmenabled"))  g_BgmEnabled        = (val != 0);
+        else if (!std::strcmp(key, "sfxenabled"))  g_SfxEnabled        = (val != 0);
+        else if (!std::strcmp(key, "audiomono"))   g_AudioMonoOutput   = (val != 0);
+        else if (!std::strcmp(key, "audioenabled")) g_AudioEngineEnabled = (val != 0);
         else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);
         else if (!std::strcmp(key, "autoskill"))   g_AutoSkill         = (val != 0);
         else if (!std::strcmp(key, "strongmenudim")) g_StrongMenuDim    = (val != 0);
         else if (!std::strcmp(key, "backdropblur")) g_BackdropBlurEnabled = (val != 0);
+        else if (!std::strcmp(key, "blurcapturehz")) {
+            if (val == 1 || val == 20 || val == 60)
+                g_BackdropBlurCaptureHz = (int)val;
+        }
         else if (!std::strcmp(key, "debugmode"))    g_DebugMode = (val != 0);
         else if (!std::strcmp(key, "shaderfx"))    g_ShaderFx          = (val != 0);
         else if (!std::strcmp(key, "mobstyle"))   { int v = (int)val; if (v >= 0 && v <= 1) g_MobVisualStyle = (MobVisualStyle)v; }

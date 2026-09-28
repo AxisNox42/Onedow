@@ -13,13 +13,17 @@ enum class Sfx {
     COUNT
 };
 
-void Init();
+void Init(bool monoOutput = false);
 void Shutdown();
 void PlaySfx(Sfx s);
 void PlayBgmMain();       // bgm_main.mp3 루프
 void StopBgm();
 void SetEnabled(bool on); // 마스터 ON/OFF (OFF 시 BGM 정지)
 bool IsEnabled();
+void SetBgmEnabled(bool on);
+void SetSfxEnabled(bool on);
+bool SetMonoOutput(bool mono);
+bool IsMonoOutput();
 void SetVolume(float v);  // 마스터 볼륨 0.0~1.0
 
 } // namespace Audio

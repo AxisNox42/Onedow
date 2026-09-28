@@ -212,7 +212,8 @@ inline void InitIconGL() {
 }
 
 inline void DrawIconBatch(GLuint tex, const std::vector<IconBatchQuad>& quads,
-                          bool additive = false) {
+                          bool additive = false,
+                          bool flushPendingGeometry = true) {
     if (!tex || !g_IconBatchProg || quads.empty()) return;
 
     static std::vector<float> vertices;
@@ -238,7 +239,8 @@ inline void DrawIconBatch(GLuint tex, const std::vector<IconBatchQuad>& quads,
         vertex(q.x,       q.y + q.h, 0.0f, 1.0f, q);
     }
 
-    BatchFlush();
+    if (flushPendingGeometry || g_GfxPass != GfxPass::Icon)
+        BatchFlush();
     g_GfxPass = GfxPass::Icon;
     glUseProgram(g_IconBatchProg);
     glUniformMatrix4fv(g_IconBatchProjLoc, 1, GL_FALSE, g_MainOrtho);
@@ -252,6 +254,11 @@ inline void DrawIconBatch(GLuint tex, const std::vector<IconBatchQuad>& quads,
         glBufferData(GL_ARRAY_BUFFER, bytes, vertices.data(), GL_STREAM_DRAW);
         g_IconBatchCapacityFloats = needed;
     } else {
+        // Orphan the in-flight store before replacing it so a busy GPU does
+        // not force the CPU to wait on the previous frame's icon batch.
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(g_IconBatchCapacityFloats * sizeof(float)),
+                     nullptr, GL_STREAM_DRAW);
         glBufferSubData(GL_ARRAY_BUFFER, 0, bytes, vertices.data());
     }
     glEnable(GL_BLEND);

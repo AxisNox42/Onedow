@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────
 
 #include <glad/glad.h>
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -54,11 +55,19 @@ private:
         bool ok = false;
     };
     struct Glyph {
-        GLuint tex = 0;
+        int    atlasPage = -1;
         int    w = 0, h = 0, xoff = 0, yoff = 0;
+        float  u0 = 0.0f, v0 = 0.0f, u1 = 0.0f, v1 = 0.0f;
         float  advance = 0.0f;
     };
+    struct GlyphAtlasPage {
+        GLuint tex = 0;
+        int cursorX = 1, cursorY = 1, rowHeight = 0;
+    };
     std::vector<FontFace> faces_;
+    std::vector<GlyphAtlasPage> atlasPages_;
+    std::vector<float> drawVertices_;
+    static constexpr int kGlyphAtlasSize = 1024;
     std::unordered_map<int, Glyph> glyphs_;   // 코드포인트 → 글리프 (영구 캐싱)
     float  emPx_        = 24.0f;
     float  ascentPx_    = 0.0f;
@@ -67,6 +76,8 @@ private:
 
     int    FaceForCodepoint(int cp) const;
     Glyph& GetGlyph(int cp);
+    int    AllocateAtlasRect(int w, int h, int& x, int& y);
+    void   CreateAtlasPage();
     bool   FinishInit(int ptSize, int sw, int sh);
     GLuint Compile(GLenum type, const char* src);
     bool   InitGLPipeline();
@@ -233,23 +244,79 @@ inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
     if (w > 0 && h > 0) {
         std::vector<unsigned char> bmp((size_t)w * h);
         stbtt_MakeCodepointBitmap(fn, bmp.data(), w, h, w, s, s, cp);
-        GLuint tex = 0;
-        glGenTextures(1, &tex);
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, w, h, 0, GL_RED, GL_UNSIGNED_BYTE, bmp.data());
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        g.tex = tex; g.w = w; g.h = h; g.xoff = ix0; g.yoff = iy0;
+        int atlasX = 0, atlasY = 0;
+        const int atlasPage = AllocateAtlasRect(w, h, atlasX, atlasY);
+        if (atlasPage >= 0) {
+            glBindTexture(GL_TEXTURE_2D, atlasPages_[atlasPage].tex);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, atlasX, atlasY, w, h,
+                            GL_RED, GL_UNSIGNED_BYTE, bmp.data());
+            g.atlasPage = atlasPage;
+            g.u0 = (atlasX + 0.5f) / (float)kGlyphAtlasSize;
+            g.v0 = (atlasY + 0.5f) / (float)kGlyphAtlasSize;
+            g.u1 = (atlasX + w - 0.5f) / (float)kGlyphAtlasSize;
+            g.v1 = (atlasY + h - 0.5f) / (float)kGlyphAtlasSize;
+            g.w = w;
+            g.h = h;
+            g.xoff = ix0;
+            g.yoff = iy0;
+        }
     }
     return glyphs_[cp] = g;
 }
 
+inline void TextRenderer::CreateAtlasPage()
+{
+    GlyphAtlasPage page;
+    glGenTextures(1, &page.tex);
+    glBindTexture(GL_TEXTURE_2D, page.tex);
+    std::vector<unsigned char> empty((size_t)kGlyphAtlasSize * kGlyphAtlasSize, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kGlyphAtlasSize, kGlyphAtlasSize, 0,
+                 GL_RED, GL_UNSIGNED_BYTE, empty.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    atlasPages_.push_back(page);
+}
+
+inline int TextRenderer::AllocateAtlasRect(int w, int h, int& x, int& y)
+{
+    if (w <= 0 || h <= 0 || w + 2 > kGlyphAtlasSize || h + 2 > kGlyphAtlasSize)
+        return -1;
+
+    for (;;) {
+        for (int i = 0; i < (int)atlasPages_.size(); ++i) {
+            GlyphAtlasPage& page = atlasPages_[i];
+            int rowX = page.cursorX;
+            int rowY = page.cursorY;
+            int rowHeight = page.rowHeight;
+            if (rowX + w + 2 > kGlyphAtlasSize) {
+                rowX = 0;
+                rowY += rowHeight;
+                rowHeight = 0;
+            }
+            if (rowY + h + 2 > kGlyphAtlasSize) continue;
+
+            x = rowX + 1;
+            y = rowY + 1;
+            page.cursorX = rowX + w + 2;
+            page.cursorY = rowY;
+            page.rowHeight = std::max(rowHeight, h + 2);
+            return i;
+        }
+
+        CreateAtlasPage();
+        if (atlasPages_.empty() || !atlasPages_.back().tex) return -1;
+    }
+}
+
 inline void TextRenderer::Cleanup() {
-    for (auto& p : glyphs_) if (p.second.tex) glDeleteTextures(1, &p.second.tex);
     glyphs_.clear();
+    for (auto& page : atlasPages_)
+        if (page.tex) glDeleteTextures(1, &page.tex);
+    atlasPages_.clear();
+    drawVertices_.clear();
     if (VAO_)  { glDeleteVertexArrays(1, &VAO_); VAO_ = 0; }
     if (VBO_)  { glDeleteBuffers(1, &VBO_);       VBO_ = 0; }
     if (prog_) { glDeleteProgram(prog_);           prog_ = 0; }
@@ -279,12 +346,44 @@ inline float TextRenderer::Height(const wchar_t* /*text*/, float scale)
 inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scale,
                                float r, float g, float b, float a)
 {
+    if (!text || !*text) return;
     scale = EffectiveScale(scale);
-    const bool entering = (g_GfxPass != GfxPass::Text);
-    if (entering)
-        BatchFlush();
+    if (g_GfxPass != GfxPass::Text) BatchFlush();
+    struct GlyphRun { int page; GLsizei first, count; };
+    static std::vector<GlyphRun> runs;
+    runs.clear();
+    drawVertices_.clear();
+
+    float penX = x;
+    const float baseline = y + ascentPx_ * scale;
+    for (const wchar_t* p = text; *p; ++p) {
+        Glyph& glyph = GetGlyph((int)*p);
+        if (glyph.atlasPage >= 0) {
+            if (runs.empty() || runs.back().page != glyph.atlasPage) {
+                runs.push_back({glyph.atlasPage,
+                    (GLsizei)(drawVertices_.size() / 4u), 0});
+            }
+            GlyphRun& run = runs.back();
+            const float gx = penX + glyph.xoff * scale;
+            const float gy = baseline + glyph.yoff * scale;
+            const float gw = glyph.w * scale, gh = glyph.h * scale;
+            const float quad[] = {
+                gx,      gy,      glyph.u0, glyph.v0,
+                gx + gw, gy,      glyph.u1, glyph.v0,
+                gx + gw, gy + gh, glyph.u1, glyph.v1,
+                gx,      gy,      glyph.u0, glyph.v0,
+                gx + gw, gy + gh, glyph.u1, glyph.v1,
+                gx,      gy + gh, glyph.u0, glyph.v1,
+            };
+            drawVertices_.insert(drawVertices_.end(), quad, quad + 24);
+            run.count += 6;
+        }
+        penX += glyph.advance * scale;
+    }
+    if (drawVertices_.empty()) return;
+
     g_GfxPass = GfxPass::Text;
-    float P[16] = {
+    const float P[16] = {
          2.0f / screenW_,  0,               0, 0,
          0,               -2.0f / screenH_, 0, 0,
          0,                0,              -1, 0,
@@ -298,50 +397,26 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(VAO_);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);
-
-    float penX     = x;
-    float baseline = y + ascentPx_ * scale;   // y = 텍스트 상단
-    for (const wchar_t* p = text; *p; ++p) {
-        Glyph& gph = GetGlyph((int)*p);
-        if (gph.tex) {
-            float gx = penX + gph.xoff * scale;
-            float gy = baseline + gph.yoff * scale;
-            float gw = gph.w * scale, gh = gph.h * scale;
-            float v[24] = {
-                gx,    gy,    0, 0,   gx+gw, gy,    1, 0,   gx+gw, gy+gh, 1, 1,
-                gx,    gy,    0, 0,   gx+gw, gy+gh, 1, 1,   gx,    gy+gh, 0, 1,
-            };
-            glBindTexture(GL_TEXTURE_2D, gph.tex);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
-        }
-        penX += gph.advance * scale;
+    const GLsizeiptr bytes = (GLsizeiptr)(drawVertices_.size() * sizeof(float));
+    glBufferData(GL_ARRAY_BUFFER, bytes, drawVertices_.data(), GL_STREAM_DRAW);
+    for (const GlyphRun& run : runs) {
+        glBindTexture(GL_TEXTURE_2D, atlasPages_[run.page].tex);
+        glDrawArrays(GL_TRIANGLES, run.first, run.count);
     }
     glBindVertexArray(0);
     glUseProgram(0);
 }
-
 inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
                                       float scale, float angle,
                                       float r, float g, float b, float a)
 {
+    if (!text || !*text) return;
     scale = EffectiveScale(scale);
     if (g_GfxPass != GfxPass::Text) BatchFlush();
-    g_GfxPass = GfxPass::Text;
-    float P[16] = {
-         2.0f / screenW_,  0,               0, 0,
-         0,               -2.0f / screenH_, 0, 0,
-         0,                0,              -1, 0,
-        -1,                1,               0, 1
-    };
-    glEnable(GL_BLEND);
-    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(prog_);
-    glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
-    glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(VAO_);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO_);
+    struct GlyphRun { int page; GLsizei first, count; };
+    static std::vector<GlyphRun> runs;
+    runs.clear();
+    drawVertices_.clear();
 
     const float ca = std::cos(angle), sa = std::sin(angle);
     const float baseline = ascentPx_ * scale;
@@ -351,30 +426,60 @@ inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
         oy = y + lx * sa + ly * ca;
     };
     for (const wchar_t* p = text; *p; ++p) {
-        Glyph& gph = GetGlyph((int)*p);
-        if (gph.tex) {
-            const float gx = pen + gph.xoff * scale;
-            const float gy = baseline + gph.yoff * scale;
-            const float gw = gph.w * scale, gh = gph.h * scale;
+        Glyph& glyph = GetGlyph((int)*p);
+        if (glyph.atlasPage >= 0) {
+            if (runs.empty() || runs.back().page != glyph.atlasPage) {
+                runs.push_back({glyph.atlasPage,
+                    (GLsizei)(drawVertices_.size() / 4u), 0});
+            }
+            GlyphRun& run = runs.back();
+            const float gx = pen + glyph.xoff * scale;
+            const float gy = baseline + glyph.yoff * scale;
+            const float gw = glyph.w * scale, gh = glyph.h * scale;
             float x0, y0, x1, y1, x2, y2, x3, y3;
             rotatePoint(gx,      gy,      x0, y0);
             rotatePoint(gx + gw, gy,      x1, y1);
             rotatePoint(gx + gw, gy + gh, x2, y2);
             rotatePoint(gx,      gy + gh, x3, y3);
-            float v[24] = {
-                x0,y0,0,0, x1,y1,1,0, x2,y2,1,1,
-                x0,y0,0,0, x2,y2,1,1, x3,y3,0,1,
+            const float quad[] = {
+                x0, y0, glyph.u0, glyph.v0,
+                x1, y1, glyph.u1, glyph.v0,
+                x2, y2, glyph.u1, glyph.v1,
+                x0, y0, glyph.u0, glyph.v0,
+                x2, y2, glyph.u1, glyph.v1,
+                x3, y3, glyph.u0, glyph.v1,
             };
-            glBindTexture(GL_TEXTURE_2D, gph.tex);
-            glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
-            glDrawArrays(GL_TRIANGLES, 0, 6);
+            drawVertices_.insert(drawVertices_.end(), quad, quad + 24);
+            run.count += 6;
         }
-        pen += gph.advance * scale;
+        pen += glyph.advance * scale;
+    }
+    if (drawVertices_.empty()) return;
+
+    g_GfxPass = GfxPass::Text;
+    const float P[16] = {
+         2.0f / screenW_,  0,               0, 0,
+         0,               -2.0f / screenH_, 0, 0,
+         0,                0,              -1, 0,
+        -1,                1,               0, 1
+    };
+    glEnable(GL_BLEND);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(prog_);
+    glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
+    glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(VAO_);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_);
+    const GLsizeiptr bytes = (GLsizeiptr)(drawVertices_.size() * sizeof(float));
+    glBufferData(GL_ARRAY_BUFFER, bytes, drawVertices_.data(), GL_STREAM_DRAW);
+    for (const GlyphRun& run : runs) {
+        glBindTexture(GL_TEXTURE_2D, atlasPages_[run.page].tex);
+        glDrawArrays(GL_TRIANGLES, run.first, run.count);
     }
     glBindVertexArray(0);
     glUseProgram(0);
 }
-
 inline void TextRenderer::Draw(const char* utf8, float x, float y, float scale,
                                float r, float g, float b, float a)
 {

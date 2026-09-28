@@ -1409,9 +1409,9 @@ int main() {
     PlatformChdirToExeDir();
     LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
 #if !defined(_DEBUG)
-    // A legacy save may contain the developer toggle from an older build.
-    // Release builds must never expose its HUD strip or shortcuts.
-    g_DebugMode = false;
+    // DEBUG MODE is intentionally available in Release packages for QA.
+    // Keep balance telemetry opt-in to debug builds so the QA toggle does not
+    // enable release telemetry by itself.
     g_BalanceTestMode = false;
 #endif
 #if defined(__APPLE__)
@@ -1434,7 +1434,11 @@ int main() {
     const GLFWvidmode* mode    = glfwGetVideoMode(monitor);
     screenWidth  = mode->width;
 #ifdef _WIN32
-    screenHeight = mode->height - 1; // DirectFlip ȸ��: ȭ�麸�� 1px �۰�
+    // Keep the window one pixel below the monitor height.  An exact-size,
+    // unoccluded borderless window can enter DirectFlip and bypass DWM,
+    // breaking the transparent backdrop blur. Taskbar visibility is handled
+    // separately through ITaskbarList2::MarkFullscreenWindow.
+    screenHeight = mode->height - 1;
 #else
     screenHeight = mode->height;
 #endif
@@ -1473,10 +1477,12 @@ int main() {
     // line primitives.  Request a modest MSAA surface so the same UI path
     // remains readable on integrated and discrete adapters alike; drivers
     // that cannot provide it simply fall back to the default framebuffer.
-    glfwWindowHint(GLFW_SAMPLES,                4);
+    // The game is a full-screen desktop overlay. 2x MSAA keeps thin UI and
+    // circular VFX clean while avoiding the 4x full-screen sample cost.
+    glfwWindowHint(GLFW_SAMPLES,                2);
 
-    // ??screenHeight 가 ?��? mode->height-1 (?�에??DirectFlip ?�피??
-    //   ?�면 ?�확??같�? ?�기�??�성?�면 DWM ??DirectFlip ?�로 컴포지???�회
+    // Keep one pixel of desktop composition available on Windows so DWM
+    // continues to composite the transparent framebuffer and blur backdrop.
     GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight,
                                           "Onedow", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
@@ -1794,7 +1800,10 @@ int main() {
     float accumulator      = 0.0f;
     const float FIXED_DT = 1.0f / 60.0f;
 
-    Audio::Init();   // ?�운???�스??(Sounds/ ?�더, ?�일 ?�으�?무음)
+    Audio::Init(g_AudioMonoOutput);   // Uses the saved stereo/mono output preference.
+    g_AudioMonoOutput = Audio::IsMonoOutput();
+    Audio::SetBgmEnabled(g_BgmEnabled);
+    Audio::SetSfxEnabled(g_SfxEnabled);
 
     // 최근???????�동조�?·?�도???�환?��?)·?�론·?�탑 공용
     auto findNearestEnemy = [&](float fx, float fy, float& tx, float& ty) -> bool {
@@ -2249,7 +2258,9 @@ int main() {
 
         // ?�?�?BGM ??게임?�레??중엔 메인 루프, 메뉴?�선 ?��? (보스 BGM ?�??�일 ?�기�??�장) ?�?�?
         {
-            Audio::SetEnabled(g_SoundVol > 0);            // 0 = ?�기
+            Audio::SetEnabled(g_AudioEngineEnabled && g_SoundVol > 0);
+            Audio::SetBgmEnabled(g_BgmEnabled);
+            Audio::SetSfxEnabled(g_SfxEnabled);
             Audio::SetVolume(g_SoundVol / 100.0f);        // 마스??볼륨
             GameState cs = g_GameManager.currentState;
             bool bgmOn = (cs == GameState::RUNNING || cs == GameState::PAUSED ||
@@ -5588,7 +5599,7 @@ int main() {
 
             if (blurGameplayBackdrop) {
                 InitBlurSystem(screenWidth, screenHeight);
-                CaptureBackdrop();
+                CaptureBackdrop(BackdropBlurCaptureIntervalSeconds());
                 DrawBlurPanel(0.0f, 0.0f,
                               (float)screenWidth, (float)screenHeight,
                               0.72f, 0.004f, 0.010f, 0.020f);

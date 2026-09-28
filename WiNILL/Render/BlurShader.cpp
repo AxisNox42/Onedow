@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
 
 static int    s_W = 1, s_H = 1;
 static int    s_qW = 1, s_qH = 1;      // half-res dimensions
@@ -16,6 +17,7 @@ static GLuint s_blurProg = 0;
 static GLuint s_blitProg = 0;
 static bool   s_blurReady = false;
 static bool   s_captureValid = false;
+static std::chrono::steady_clock::time_point s_lastCaptureAttempt{};
 
 static GLint s_blurTexLoc  = -1;
 static GLint s_blurDirLoc  = -1;
@@ -187,6 +189,7 @@ void InitBlurSystem(int screenW, int screenH) {
     s_qH = std::max(1, s_H / 2);
     s_blurReady = false;
     s_captureValid = false;
+    s_lastCaptureAttempt = {};
 
     const bool captureOK = MakeFBOTex(s_captureFbo, s_captureTex, s_W, s_H);
     const bool fboAOK = MakeFBOTex(s_fboA, s_texA, s_qW, s_qH);
@@ -227,9 +230,18 @@ void ResizeBlurSystem(int screenW, int screenH) {
     InitBlurSystem(screenW, screenH);
 }
 
-void CaptureBackdrop() {
-    s_captureValid = false;
+void CaptureBackdrop(float minimumIntervalSeconds) {
     if (!s_blurReady) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (minimumIntervalSeconds > 0.0f &&
+        s_lastCaptureAttempt.time_since_epoch().count() != 0 &&
+        now - s_lastCaptureAttempt <
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<float>(minimumIntervalSeconds))) {
+        return;
+    }
+    s_lastCaptureAttempt = now;
+    s_captureValid = false;
     BatchFlush();
 
     // ── GL 상태 저장 (FBO 패스가 메인 렌더 상태를 오염시키지 않도록) ──────
@@ -372,6 +384,11 @@ void CaptureBackdrop() {
     // Keep the rest of the UI on the normal batch shader. The blur pass is
     // deliberately self-contained and does not depend on the active GPU.
     BindMainShader();
+}
+
+void InvalidateBackdropCapture() {
+    s_captureValid = false;
+    s_lastCaptureAttempt = {};
 }
 
 void DrawBlurPanel(float x, float y, float w, float h,

@@ -264,13 +264,9 @@ inline float TrialBossWarningMult() {
 inline bool g_CreativeMode = false;
 inline bool g_DebugMode = false;
 
-// Debug switches stay persisted for compatibility, but are not exposed in
-// a release build's player-facing settings page.
-#if defined(_DEBUG)
+// Keep the debug switch visible for QA builds as well as Release packages.
+// The switch remains opt-in and does not enable debug behavior by itself.
 inline constexpr bool kDebugSettingsVisible = true;
-#else
-inline constexpr bool kDebugSettingsVisible = false;
-#endif
 inline bool g_BalanceTestMode = false;
 // 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
 inline long long g_CreativeStartScore = 0;       // 시작 점수
@@ -283,6 +279,10 @@ inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤
 inline bool g_ShowDamageNumbers = true;
 inline bool g_ShowCombo         = true;   // 콤보 카운터 표시
 inline int  g_SoundVol          = 100;    // 사운드 마스터 볼륨 (0=끄기 ~ 100)
+inline bool g_BgmEnabled        = true;
+inline bool g_SfxEnabled        = true;
+inline bool g_AudioMonoOutput   = false;
+inline bool g_AudioEngineEnabled = true;
 
 // 자동 발사 (C13) — 기본 ON: 마우스로 조준만, 발사는 자동.
 //   "피하면서 쏘는 게 어렵다" 피드백 → 이동(WASD)+조준(마우스)에 집중.
@@ -308,6 +308,12 @@ inline bool g_StrongMenuDim     = false;
 // Keep the range deliberately restrained so the live background remains part
 // of the composition instead of becoming an opaque panel.
 inline bool g_BackdropBlurEnabled = true;
+inline int  g_BackdropBlurCaptureHz = 20;
+inline float BackdropBlurCaptureIntervalSeconds() {
+    const int hz = g_BackdropBlurCaptureHz == 1 ? 1
+                 : g_BackdropBlurCaptureHz == 60 ? 60 : 20;
+    return 1.0f / (float)hz;
+}
 
 // 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게
 enum class MobVisualStyle { CLASSIC, SOFT };
