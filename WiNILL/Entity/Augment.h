@@ -51,7 +51,7 @@ enum class AugType {
     RESERVED_AUG_009, // Reserved legacy slot.
     RESERVED_AUG_011, // Reserved legacy slot.
     // ── 로터류(잡몹) 전용 디버프 (확장) — 끝에 추가해 기존 인덱스/세이브 보존 ──
-    D_MOB_PACK,    // 군집 스폰 (한 번에 여러 마리)
+    RESERVED_AUG_061, // Retired mob-pack debuff slot.
     // Retired generation modifiers. Their numeric slots stay reserved so
     // old augment ownership/save indices remain valid.
     RESERVED_AUG_024,
@@ -517,12 +517,12 @@ static const AugDef ALL_AUGS[] = {
         L"This augment is retired from the current gameplay roster.",
         L"?? ??? ??? ??? ??? ??? ???" },
       L"REMOVED" },
-    { AugType::D_MOB_HP,      AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBHP",
-      { L"일반 적 체력 강화", L"Normal Enemy HP Up", L"通常敵体力強化" },
-      { L"일반 적 체력 +30% · 일반 적 처치 EXP +2",
-        L"All normal enemy HP +30% · normal kill EXP +2",
-        L"通常敵体力+30%・通常敵撃破EXP +2" },
-      L"일반 적 HP +30%  ·  EXP +2" },
+    { AugType::D_MOB_HP,      AugRarity::DEBUFF,    AugUnique::NONE, "D_ROTORHP",
+      { L"로터 체력 강화", L"Rotor HP Up", L"ローター体力強化" },
+      { L"로터 체력 +30% · 로터 처치 EXP +2",
+        L"Rotor HP +30% · rotor kill EXP +2",
+        L"ローター体力+30%・ローター撃破EXP +2" },
+      L"로터 HP +30%  ·  EXP +2" },
     { AugType::D_SLOW_MOVE,   AugRarity::DEBUFF,    AugUnique::NONE, "D_SLOWMV",
       { L"무거운 다리", L"Heavy Legs", L"Heavy Legs" },
       { L"플레이어 이동 속도 -5% - 전체 EXP +3%", L"Player move speed -5% - all EXP +3%", L"Player move speed -5% - all EXP +3%" },
@@ -568,12 +568,10 @@ static const AugDef ALL_AUGS[] = {
       { L"공격력 -12% · 전체 EXP +10%", L"Attack -12% · all EXP +10%", L"攻撃力 -12%・全EXP +10%" },
       L"ATK -12%  ·  전체EXP +10%" },
     // ── 로터류(잡몹) 전용 디버프 (확장, 중첩 가능) ──
-    { AugType::D_MOB_PACK,    AugRarity::DEBUFF,    AugUnique::NONE, "D_MOBPACK",
-      { L"병렬 처리", L"Parallel Spawn", L"並列処理" },
-      { L"로터가 나올 때마다 추가 개체 1마리 등장 · 처치 EXP +6",
-        L"Each Rotor spawn brings 1 extra unit · kill EXP +6",
-        L"ローター出現時に追加1体・撃破EXP +6" },
-      L"동시 +1  ·  EXP +6" },
+    { AugType::RESERVED_AUG_061, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
+      { L"REMOVED", L"REMOVED", L"REMOVED" },
+      { L"퇴역 증강 슬롯", L"Retired augment slot", L"退役した増強スロット" },
+      L"REMOVED" },
     { AugType::RESERVED_AUG_024, AugRarity::DEBUFF, AugUnique::NONE, "REMOVED",
       { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
       { L"?? ?? ?? ?? ? ? ?? ??.",
@@ -636,10 +634,10 @@ static const AugDef ALL_AUGS[] = {
       L"REMOVED" },
     { AugType::CB_WARLORD,     AugRarity::COMBO,    AugUnique::NONE, "CB_WAR",
       { L"전쟁군주", L"Warlord", L"戦争君主" },
-      { L"[조합] 공격력 +15% · 1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택)",
-        L"[Combo] ATK +15% · every 1000 kills: ATK +5%, fire rate +2%, speed +2% (max 7 stacks)",
-        L"[組合] 攻撃+15% · 1000撃破毎に攻撃+5%・連射+2%・弾速+2% (最大7重)" },
-      L"ATK +15% · 1000킬마다 강화 (최대 7)" },
+      { L"[조합] 획득 즉시 공격력 +15% · 1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택)",
+        L"[Combo] On acquisition, ATK +15% · every 1000 kills: ATK +5%, fire rate +2%, bullet speed +2% (max 7 stacks)",
+        L"[組合] 獲得時に攻撃+15% · 1000撃破毎に攻撃+5%・連射+2%・弾速+2% (最大7重)" },
+      L"ATK +15% · 1000킬마다 ATK +5%·연사 +2%·탄속 +2% (최대 7)" },
     { AugType::RESERVED_AUG_013, AugRarity::COMBO, AugUnique::NONE, "REMOVED",
       { L"?? ? ??", L"Removed augment", L"?? ??? ??" },
       { L"?? ?? ?? ?? ? ? ?? ??.",

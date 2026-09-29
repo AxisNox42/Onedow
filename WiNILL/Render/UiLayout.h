@@ -1,10 +1,22 @@
 #pragma once
 #include "Settings.h"
+#include <algorithm>
+
+inline float UiScale(float sw, float sh,
+                     float safeW = 0.94f, float safeH = 0.90f,
+                     float minScale = 0.70f, float maxScale = 1.35f) {
+    return std::max(minScale, std::min(maxScale,
+        std::min(sw * safeW / 1640.0f, sh * safeH / 910.0f)));
+}
 
 // ── 하단 HUD / 작업표시줄 오프셋 ──
 inline float BottomInset() { return g_GameBarH + (float)g_TaskbarH; }
 inline float HudY(float sh, float offsetAboveBars) {
     return sh - offsetAboveBars - BottomInset();
+}
+inline float BottomLeftActionX(float scale) { return 58.0f * scale; }
+inline float BottomLeftActionY(float sh, float height, float scale) {
+    return sh - height - 78.0f * scale - BottomInset();
 }
 
 namespace Hud {

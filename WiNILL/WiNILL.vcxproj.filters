@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Core">
@@ -9,9 +9,6 @@
     </Filter>
     <Filter Include="Entity">
       <UniqueIdentifier>{c3d4e5f6-a7b8-9012-cdef-123456789012}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Entity\Boss">
-      <UniqueIdentifier>{d4e5f6a7-b8c9-0123-def0-234567890123}</UniqueIdentifier>
     </Filter>
     <Filter Include="System">
       <UniqueIdentifier>{e5f6a7b8-c9d0-1234-ef01-345678901234}</UniqueIdentifier>
@@ -31,6 +28,15 @@
     <ClCompile Include="main.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="Entity\PlayerRuntime.cpp">
+      <Filter>Entity</Filter>
+    </ClCompile>
+    <ClCompile Include="Entity\EnemySpawner.cpp">
+      <Filter>Entity</Filter>
+    </ClCompile>
+    <ClCompile Include="Entity\ProjectileSystem.cpp">
+      <Filter>Entity</Filter>
+    </ClCompile>
     <ClCompile Include="Core\GameManager.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -40,7 +46,25 @@
     <ClCompile Include="Core\Scenes\SceneUI.cpp">
       <Filter>Core\Scenes</Filter>
     </ClCompile>
-    <ClCompile Include="Core\Scenes\Scenes.cpp">
+    <ClCompile Include="Core\Scenes\SceneSettings.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\SceneRunConfig.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\SceneStart.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\ScenePause.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\SceneRunEnd.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\SceneAugment.cpp">
+      <Filter>Core\Scenes</Filter>
+    </ClCompile>
+    <ClCompile Include="Core\Scenes\SceneMenus.cpp">
       <Filter>Core\Scenes</Filter>
     </ClCompile>
     <ClCompile Include="Core\Scenes\WindowChrome.cpp">
@@ -50,6 +74,12 @@
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="Render\EntityDraw.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="Render\PlayerWeaponShell.cpp">
+      <Filter>Render</Filter>
+    </ClCompile>
+    <ClCompile Include="Render\GameFonts.cpp">
       <Filter>Render</Filter>
     </ClCompile>
     <ClCompile Include="Render\MainShader.cpp">
@@ -93,6 +123,9 @@
     <ClInclude Include="Core\Scenes\SceneContext.h">
       <Filter>Core\Scenes</Filter>
     </ClInclude>
+    <ClInclude Include="Core\Scenes\SceneInternal.h">
+      <Filter>Core\Scenes</Filter>
+    </ClInclude>
     <ClInclude Include="Core\Scenes\SceneUI.h">
       <Filter>Core\Scenes</Filter>
     </ClInclude>
@@ -106,6 +139,12 @@
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="Render\EntityDraw.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="Render\PlayerWeaponShell.h">
+      <Filter>Render</Filter>
+    </ClInclude>
+    <ClInclude Include="Render\GameFonts.h">
       <Filter>Render</Filter>
     </ClInclude>
     <ClInclude Include="Render\MainShader.h">
@@ -135,6 +174,9 @@
     <ClInclude Include="Entity\ExpSystem.h">
       <Filter>Entity</Filter>
     </ClInclude>
+    <ClInclude Include="Entity\EnemyProgression.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
     <ClInclude Include="Entity\Monster.h">
       <Filter>Entity</Filter>
     </ClInclude>
@@ -144,23 +186,20 @@
     <ClInclude Include="Entity\PlayerStats.h">
       <Filter>Entity</Filter>
     </ClInclude>
+    <ClInclude Include="Entity\PlayerRuntime.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\EnemySpawner.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\ProjectileSystem.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
     <ClInclude Include="Entity\RangedMob.h">
       <Filter>Entity</Filter>
     </ClInclude>
     <ClInclude Include="Entity\Weapons.h">
       <Filter>Entity</Filter>
-    </ClInclude>
-    <ClInclude Include="Entity\Boss\CentipedeBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
-    <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
-    <ClInclude Include="Entity\Boss\TesseractGlitchBoss.h">
-      <Filter>Entity\Boss</Filter>
-    </ClInclude>
-    <ClInclude Include="Core\BossDirector.h">
-      <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="System\Audio.h">
       <Filter>System</Filter>

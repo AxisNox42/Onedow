@@ -10,7 +10,6 @@ void Scene_Settings(const SceneCtx& c);
 void Scene_Ready(const SceneCtx& c);
 void Scene_Paused(const SceneCtx& c);
 void Scene_GameOver(const SceneCtx& c);
-void Scene_Victory(const SceneCtx& c);
 void Scene_AugSelect(const SceneCtx& c);
 void Scene_AugReplace(const SceneCtx& c);
 void Scene_OwnedAugPanel(const SceneCtx& c);

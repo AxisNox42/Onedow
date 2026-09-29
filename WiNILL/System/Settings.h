@@ -52,7 +52,7 @@ inline int LanguageFontChain(Language /*lang*/, const char* out[2]) {
     return 2;
 }
 
-// Difficulty values remain for saved records and boss APIs; new runs always use NORMAL.
+// Difficulty values remain for saved records; new runs always use NORMAL.
 enum class Difficulty { EASY, NORMAL, HARD };
 inline Difficulty g_Difficulty = Difficulty::NORMAL;
 
@@ -61,18 +61,17 @@ struct DifficultyParams {
     float rangedSpawnInitialDelay; // 시작 시 spawn timer 오프셋
     float rangedSpawnInterval;     // 원거리 spawn 주기 (초)
     int   rangedMaxBase;           // 기본 max 마릿수
-    float bossHp;
 };
 inline DifficultyParams GetDifficultyParams(Difficulty d) {
     switch (d) {
     case Difficulty::EASY:
-        return { -5.0f, 5.0f, 2, 3800.0f };
+        return { -5.0f, 5.0f, 2 };
     case Difficulty::NORMAL:
-        return {  0.0f, 5.0f, 5, 8500.0f };
+        return {  0.0f, 5.0f, 5 };
     case Difficulty::HARD:
-        return {  4.9f, 2.5f, 8, 14000.0f };
+        return {  4.9f, 2.5f, 8 };
     }
-    return { 0.0f, 5.0f, 5, 8500.0f };
+    return { 0.0f, 5.0f, 5 };
 }
 
 // ─── 시련 시스템 ─────────────────────────────────────────────────────────────
@@ -83,8 +82,8 @@ struct TrialDef {
 inline const TrialDef TRIAL_DEFS[] = {
     { L"OVERCLOCK",     { L"적 이동속도 +20%",    L"Enemy speed +20%"   } },
     { L"MEMORY_LEAK",   { L"최대 HP -25%",         L"Max HP -25%"        } },
-    { L"FIREWALL",      { L"보스 체력 +25%",       L"Boss HP +25%"       } },
-    { L"CORRUPT_DROP",  { L"플레이 상점 가격 +30%", L"Shop price +30%"    } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
     { L"PROCESS_LIMIT", { L"증강 선택지 2장",      L"Only 2 aug choices" } },
     { L"LOW_BANDWIDTH", { L"스킬 쿨타임 +25%",     L"Skill CD +25%"      } },
     { L"HARDENED",      { L"적 체력 +30%",         L"Enemy HP +30%"      } },
@@ -99,17 +98,22 @@ inline const TrialDef TRIAL_DEFS[] = {
     { L"LATE_OVERRUN",  { L"후반 스폰 램프 강화",            L"Late spawn ramp up" } },
     { L"HARDENED_CORE", { L"후반 몹 체력 램프 강화",         L"Late enemy HP ramp up" } },
     { L"SIGNAL_DRIFT",  { L"후반 원거리 압박 강화",          L"Late ranged pressure up" } },
-    { L"FIREWALL_CORE", { L"보스 체력 크게 증가",            L"Boss HP greatly increased" } },
-    { L"NOISY_ARENA",   { L"보스전 주변 압박 감소폭 완화",   L"Less spawn relief around bosses" } },
-    { L"SIGNAL_LOSS",   { L"보스 경고 시간이 짧아짐",        L"Shorter boss warning time" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
 };
 inline constexpr int TRIAL_DEF_COUNT = 20;
 inline constexpr int TRIAL_RESERVED_ID = 12;
 
-enum class TrialStage { EARLY, MID, LATE, BOSS };
+inline bool TrialDefRetired(int id) {
+    return id < 0 || id >= TRIAL_DEF_COUNT || id == 2 || id == 3
+        || id == TRIAL_RESERVED_ID || id >= 17;
+}
+
+enum class TrialStage { EARLY, MID, LATE };
 
 inline constexpr int TRIAL_SLOT_COUNT = 4;
-inline int  g_TrialPool[TRIAL_SLOT_COUNT]     = { 8, 11, 14, 17 };
+inline int  g_TrialPool[TRIAL_SLOT_COUNT]     = { 8, 11, 14, TRIAL_RESERVED_ID };
 inline bool g_TrialSelected[TRIAL_SLOT_COUNT] = { false, false, false, false };
 inline bool g_TrialPoolReady                  = false;
 
@@ -117,8 +121,6 @@ inline TrialStage TrialStageForDef(int idx) {
     if (idx >= 8  && idx <= 10) return TrialStage::EARLY;
     if (idx == 11 || idx == 13) return TrialStage::MID;
     if (idx >= 14 && idx <= 16) return TrialStage::LATE;
-    if (idx >= 17 && idx <= 19) return TrialStage::BOSS;
-    if (idx == 2) return TrialStage::BOSS;
     if (idx == 6 || idx == 7) return TrialStage::LATE;
     return TrialStage::EARLY;
 }
@@ -129,13 +131,12 @@ inline const wchar_t* TrialStageLabel(TrialStage stage, int langIdx) {
     case TrialStage::EARLY: return ko ? L"초반" : L"EARLY";
     case TrialStage::MID:   return ko ? L"중반" : L"MID";
     case TrialStage::LATE:  return ko ? L"후반" : L"LATE";
-    case TrialStage::BOSS:  return ko ? L"보스" : L"BOSS";
     }
     return ko ? L"시련" : L"TRIAL";
 }
 
 inline float TrialScoreBonusForDef(int idx) {
-    if (idx == TRIAL_RESERVED_ID) return 0.0f;
+    if (TrialDefRetired(idx)) return 0.0f;
     switch (idx) {
     case 8:  return 0.14f;
     case 9:  return 0.16f;
@@ -145,15 +146,12 @@ inline float TrialScoreBonusForDef(int idx) {
     case 14: return 0.22f;
     case 15: return 0.24f;
     case 16: return 0.21f;
-    case 17: return 0.24f;
-    case 18: return 0.22f;
-    case 19: return 0.20f;
     default: return 0.15f;
     }
 }
 
 inline bool TrialActive(int defIdx) {
-    if (defIdx == TRIAL_RESERVED_ID) return false;
+    if (TrialDefRetired(defIdx)) return false;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
         if (g_TrialSelected[i] && g_TrialPool[i] == defIdx)
             return true;
@@ -164,39 +162,24 @@ inline bool TrialActive(int defIdx) {
 inline int TrialCount() {
     int count = 0;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i)
-        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_RESERVED_ID) ++count;
+        if (g_TrialSelected[i] && !TrialDefRetired(g_TrialPool[i])) ++count;
     return count;
 }
 
 inline float TrialScoreMult() {
     float mult = 1.0f;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
-        if (g_TrialSelected[i] && g_TrialPool[i] != TRIAL_RESERVED_ID)
+        if (g_TrialSelected[i] && !TrialDefRetired(g_TrialPool[i]))
             mult += TrialScoreBonusForDef(g_TrialPool[i]);
     }
     return mult;
-}
-
-inline void RerollTrialPool() {
-    static const int stagePools[TRIAL_SLOT_COUNT][3] = {
-        { 8,  9, 10 },
-        { 11, 13,  0 },
-        { 14, 15, 16 },
-        { 17, 18, 19 },
-    };
-    static const int stagePoolCounts[TRIAL_SLOT_COUNT] = { 3, 2, 3, 3 };
-    for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) {
-        g_TrialPool[i] = stagePools[i][rand() % stagePoolCounts[i]];
-        g_TrialSelected[i] = false;
-    }
-    g_TrialPoolReady = true;
 }
 
 inline void ResetTrials() {
     g_TrialPool[0] = 8;
     g_TrialPool[1] = 11;
     g_TrialPool[2] = 14;
-    g_TrialPool[3] = 17;
+    g_TrialPool[3] = TRIAL_RESERVED_ID;
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i)
         g_TrialSelected[i] = false;
     g_TrialPoolReady = false;
@@ -234,7 +217,6 @@ inline float TrialRangedIntervalMult(long long score) {
     if (TrialActive(8))  m *= 0.78f;
     if (TrialActive(13) && score >= 90000) m *= 0.86f;
     if (TrialActive(16) && score >= 280000) m *= 0.82f;
-    if (TrialActive(18)) m *= 0.90f;
     return m;
 }
 
@@ -242,19 +224,7 @@ inline int TrialRangedMaxBonus(long long score) {
     int bonus = 0;
     if (TrialActive(13) && score >= 90000) bonus += 2;
     if (TrialActive(16) && score >= 280000) bonus += 2;
-    if (TrialActive(18)) bonus += 1;
     return bonus;
-}
-
-inline float TrialBossHpMult() {
-    float m = 1.0f;
-    if (TrialActive(17)) m *= 1.35f;
-    if (TrialActive(18)) m *= 1.15f;
-    return m;
-}
-
-inline float TrialBossWarningMult() {
-    return TrialActive(19) ? 0.72f : 1.0f;
 }
 
 // 크리에이티브 모드 (런 설정 화면에서 토글)
@@ -270,8 +240,6 @@ inline constexpr bool kDebugSettingsVisible = true;
 inline bool g_BalanceTestMode = false;
 // 크리에이티브 설정값 (CREATIVE_CONFIG 화면에서 조정)
 inline long long g_CreativeStartScore = 0;       // 시작 점수
-inline int       g_CreativeBossPick   = -1;      // -1=없음. 1·4=크리에이티브 전용, LTS=2·7·8·9
-inline int       g_CreativeStartAugs  = 0;       // 시작 시 무료 증강 픽 횟수
 inline bool      g_CreativeGodmode    = false;   // G 키 무적 토글 (런타임)
 inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤엔 디버프 페이지 스킵
 

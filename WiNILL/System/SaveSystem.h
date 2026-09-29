@@ -82,7 +82,6 @@ inline void SaveGame() {
     for (int i = 0; i < META_COUNT; i++) {
         std::snprintf(ln, sizeof(ln), "meta%d=%d\n", i, g_MetaLv[i]); buf += ln;
     }
-    add("bosskills=%lld\n", g_TotalBossKills);
     for (int i = 0; i < ACH_COUNT; i++) {
         std::snprintf(ln, sizeof(ln), "ach%d=%d\n", i, g_AchUnlocked[i] ? 1 : 0); buf += ln;
     }
@@ -90,8 +89,6 @@ inline void SaveGame() {
         if (g_AugSeen[i]) { std::snprintf(ln, sizeof(ln), "augseen%d=1\n", i); buf += ln; }
     for (int i = 0; i < CM_COUNT; i++)
         if (g_MobSeen[i]) { std::snprintf(ln, sizeof(ln), "mobseen%d=1\n", i); buf += ln; }
-    for (int i = 0; i < 11; i++)
-        if (g_BossSeenPick[i]) { std::snprintf(ln, sizeof(ln), "bossseen%d=1\n", i); buf += ln; }
     for (int i = 1; i < JOB_COUNT; i++)
         if (g_JobBought[i]) { std::snprintf(ln, sizeof(ln), "jobbought%d=1\n", i); buf += ln; }
 
@@ -189,7 +186,7 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "coins"))       g_Coins             = val;
         else if (!std::strcmp(key, "themeowned"))  g_ThemeOwned        = (int)val | 1;
         else if (!std::strcmp(key, "themesel"))    g_ThemeSel          = (int)val;
-        else if (!std::strcmp(key, "bosskills")) g_TotalBossKills = val;
+        else if (!std::strcmp(key, "bosskills")) { (void)val; }
         else if (!std::strncmp(key, "meta", 4)) {
             int mi = atoi(key + 4);
             if (mi >= 0 && mi < META_COUNT) g_MetaLv[mi] = (int)val;
@@ -206,10 +203,7 @@ inline void LoadGame() {
             int mi = atoi(key + 7);
             if (mi >= 0 && mi < CM_COUNT) g_MobSeen[mi] = (val != 0);
         }
-        else if (!std::strncmp(key, "bossseen", 8)) {
-            int bi = atoi(key + 8);
-            if (bi >= 0 && bi < 32) g_BossSeenPick[bi] = (val != 0);
-        }
+        else if (!std::strncmp(key, "bossseen", 8)) { (void)val; }
         else if (!std::strncmp(key, "jobbought", 9)) {
             int ji = atoi(key + 9);
             if (ji >= 1 && ji < JOB_COUNT) g_JobBought[ji] = (val != 0);
@@ -221,7 +215,7 @@ inline void LoadGame() {
 //   설정 화면의 "세이브 초기화" 버튼에서 호출. 즉시 파일에도 반영.
 inline void ResetSaveProgress() {
     for (int i = 0; i < 3; i++) g_BestScore[i] = 0;
-    g_TotalKills = 0; g_TotalGames = 0; g_TotalBossKills = 0;
+    g_TotalKills = 0; g_TotalGames = 0;
     for (int i = 0; i < 2; i++) {
         g_WeaponBestScore[i] = g_WeaponBestKills[i] = g_WeaponTotalKills[i] = g_WeaponRunCount[i] = 0;
     }
@@ -230,7 +224,6 @@ inline void ResetSaveProgress() {
     for (int i = 0; i < ACH_COUNT;  i++) g_AchUnlocked[i] = false;
     for (int i = 0; i < AUG_TOTAL;  i++) g_AugSeen[i] = false;
     for (int i = 0; i < CM_COUNT;   i++) g_MobSeen[i] = false;
-    for (int i = 0; i < 32; i++) g_BossSeenPick[i] = false;
     g_ThemeOwned = 1; g_ThemeSel = 0; ApplyAccentTheme();
     for (int i = 0; i < JOB_COUNT; i++) g_JobBought[i] = false;
     SaveGame();

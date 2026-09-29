@@ -20,16 +20,29 @@ set(WINILL_DIR ${CMAKE_SOURCE_DIR}/WiNILL)
 add_executable(WiNILL
     ${CMAKE_SOURCE_DIR}/glad.c
     ${WINILL_DIR}/main.cpp
+    ${WINILL_DIR}/Entity/PlayerRuntime.cpp
+    ${WINILL_DIR}/Entity/EnemySpawner.cpp
+    ${WINILL_DIR}/Entity/ProjectileSystem.cpp
     ${WINILL_DIR}/Core/GameManager.cpp
     ${WINILL_DIR}/Core/Scenes/SceneBoot.cpp
     ${WINILL_DIR}/Core/Scenes/SceneSkills.cpp
     ${WINILL_DIR}/Core/Scenes/SceneUI.cpp
-    ${WINILL_DIR}/Core/Scenes/Scenes.cpp
+    ${WINILL_DIR}/Core/Scenes/SceneSettings.cpp
+    ${WINILL_DIR}/Core/Scenes/SceneRunConfig.cpp
+    ${WINILL_DIR}/Core/Scenes/SceneStart.cpp
+    ${WINILL_DIR}/Core/Scenes/ScenePause.cpp
+    ${WINILL_DIR}/Core/Scenes/SceneRunEnd.cpp
+    ${WINILL_DIR}/Core/Scenes/SceneAugment.cpp
+    ${WINILL_DIR}/Core/Scenes/SceneMenus.cpp
     ${WINILL_DIR}/Core/Scenes/WindowChrome.cpp
     ${WINILL_DIR}/Render/Camera.cpp
     ${WINILL_DIR}/Render/BlurShader.cpp
     ${WINILL_DIR}/Render/EntityDraw.cpp
+    ${WINILL_DIR}/Render/PlayerWeaponShell.cpp
+    ${WINILL_DIR}/Render/GameFonts.cpp
     ${WINILL_DIR}/Render/MainShader.cpp
+    ${WINILL_DIR}/Render/NebulaGlowShader.cpp
+    ${WINILL_DIR}/Render/PlanetShader.cpp
     ${WINILL_DIR}/Render/stb_impl.cpp
     ${WINILL_DIR}/System/Audio.cpp
     ${WINILL_DIR}/System/DebugToolkit.cpp
@@ -38,13 +51,18 @@ add_executable(WiNILL
     ${WINILL_DIR}/System/WindowFx.cpp
 )
 
+if(WIN32)
+    set_target_properties(WiNILL PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build/windows/x64/Release"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/build/windows/x64/Release")
+endif()
+
 target_include_directories(WiNILL PRIVATE
     ${CMAKE_SOURCE_DIR}/Include
     ${WINILL_DIR}/Core
     ${WINILL_DIR}/Core/Scenes
     ${WINILL_DIR}/Render
     ${WINILL_DIR}/Entity
-    ${WINILL_DIR}/Entity/Boss
     ${WINILL_DIR}/System
 )
 

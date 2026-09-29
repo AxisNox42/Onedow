@@ -18,7 +18,6 @@
 enum class GfxPass : uint8_t { Main, Text, Icon };
 inline GfxPass g_GfxPass = GfxPass::Main;
 
-inline GLint  g_colorLoc = -1;   // (배칭 후 미사용 — 호환 위해 유지)
 inline GLuint g_VBO      = 0;
 inline size_t g_BatchVBOFloats = 65536;
 

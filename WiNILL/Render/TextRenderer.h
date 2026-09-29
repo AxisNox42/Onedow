@@ -33,6 +33,7 @@ public:
 
     float Width(const wchar_t* text, float scale = 1.0f);
     float Height(const wchar_t* text, float scale = 1.0f);
+    float LineHeightPixels() const { return lineHeightPx_; }
     // Warm glyph textures before the first interactive frame.
     void PreloadText(const wchar_t* text);
     void SetMinScale(float scale) { minScale_ = scale; }

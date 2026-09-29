@@ -1,4 +1,5 @@
 ﻿#include "EntityDraw.h"
+#include "../Entity/MonsterManager.h"
 #include "Camera.h"
 #include "DrawPrim.h"
 #include "IconSystem.h"
@@ -315,6 +316,41 @@ void DrawEnemySightRearBatch(const std::vector<EnemySightRearMarker>& markers,
                          0.0f, 0.0f, 0.0f, alpha});
     }
     DrawIconBatch(rearTexture, quads);
+}
+
+void DrawCombatSightFields(const MonsterManager& monsters,
+                           float playerX, float playerY,
+                           float playerSize, bool renderRearFields) {
+    BatchFlush();
+    if (renderRearFields) {
+        static std::vector<EnemySightRearMarker> rearMarkers;
+        rearMarkers.clear();
+        rearMarkers.reserve(1u + monsters.monsters.size() + monsters.rangedMobs.size());
+        rearMarkers.push_back({playerX, playerY, playerSize * 2.45f});
+        for (const auto* monster : monsters.monsters) {
+            if (!monster || !monster->alive || monster->sizeScale <= 0.0f) continue;
+            const float base = (monster->summoned ? 28.0f : 18.0f) * monster->sizeScale;
+            const float rearScale = monster->kind == MobKind::GRAVIS ? 3.35f
+                : (monster->kind == MobKind::QUASAR ? 3.05f : 2.55f);
+            rearMarkers.push_back({monster->worldX, monster->worldY,
+                                   base * rearScale});
+        }
+        for (const auto* ranged : monsters.rangedMobs) {
+            if (!ranged || ranged->deathScale <= 0.0f) continue;
+            const float base = RangedMob::VISUAL_BASE_PX * ranged->deathScale;
+            rearMarkers.push_back({ranged->worldX, ranged->worldY, base * 2.65f});
+        }
+        DrawEnemySightRearBatch(rearMarkers);
+    }
+    BatchFlush();
+
+    BeginEnemySightFrontBatch();
+    for (const auto* monster : monsters.monsters)
+        QueueMonsterSightFront(monster);
+    for (const auto* ranged : monsters.rangedMobs)
+        QueueRangedMobSightFront(ranged);
+    FlushEnemySightFrontBatch();
+    BatchFlush();
 }
 
 void DrawMonsterSightRear(const Monster* m) {

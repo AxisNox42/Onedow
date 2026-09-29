@@ -46,6 +46,34 @@ public:
         rangedMobs.push_back(rm);
     }
 
+    bool FindNearestEnemy(float fromX, float fromY,
+                          float visibleLeft, float visibleTop,
+                          float visibleRight, float visibleBottom,
+                          float& targetX, float& targetY) const {
+        float nearestDistanceSq = 1e18f;
+        bool found = false;
+        auto consider = [&](float x, float y) {
+            const float dx = x - fromX;
+            const float dy = y - fromY;
+            const float distanceSq = dx * dx + dy * dy;
+            if (distanceSq < nearestDistanceSq) {
+                nearestDistanceSq = distanceSq;
+                targetX = x;
+                targetY = y;
+                found = true;
+            }
+        };
+        for (const auto* monster : monsters) {
+            if (monster->alive && monster->worldX >= visibleLeft &&
+                monster->worldX <= visibleRight && monster->worldY >= visibleTop &&
+                monster->worldY <= visibleBottom)
+                consider(monster->worldX, monster->worldY);
+        }
+        for (const auto* ranged : rangedMobs)
+            if (ranged->alive) consider(ranged->worldX, ranged->worldY);
+        return found;
+    }
+
     // Higher-tier enemies keep their position when colliding with lower-tier
     // enemies. The lighter enemy receives the separation displacement instead
     // of making the important target visibly jitter or stall.
@@ -66,6 +94,7 @@ public:
     void UpdateAll(float playerCX, float playerCY, float dt,
                    float& playerHP, std::vector<Bullet>& bullets,
                    float mobSpeedMult = 1.0f, float rmobMoveMult = 1.0f,
+                   float rotorHpMult = 1.0f,
                    float gateWX = -1.0f, float gateWY = -1.0f,
                    float gateWW = -1.0f, float gateWH = -1.0f) {
         for (auto m : monsters)
@@ -124,6 +153,7 @@ public:
                                     m->worldX,
                                     m->worldY,
                                     0.55f);
+                                child->hp *= rotorHpMult;
                                 child->BeginGenesisEgress(cosf(laneAngle), sinf(laneAngle));
                                 born.push_back(child);
                                 m->hivePulseTimer = 0.22f;

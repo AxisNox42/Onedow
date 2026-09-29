@@ -14,6 +14,7 @@ struct SceneCtx {
     std::function<void()> reset;
     std::function<void()> restartRun;
     std::function<void()> abandonRun;
+    bool inputFocusChanged = false;
 };
 
 // 앱 부팅 / 창 열림 애니메이션

@@ -2,7 +2,7 @@
 #include "Settings.h"
 
 // 튜토리얼 — '/' 로 줄바꿈 (증강 설명과 동일 파서)
-inline constexpr int TUTORIAL_PAGE_COUNT = 8;
+inline constexpr int TUTORIAL_PAGE_COUNT = 7;
 
 inline int LangIndexTutorial() {
     int li = (int)g_Language;
@@ -40,11 +40,11 @@ inline const wchar_t* kTutorialWinTitle[LANG_COUNT] = {
 
 inline const wchar_t* kTutorialPageTitle[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
     /* KR */
-    { L"1. 세계관", L"2. 조작", L"3. 증강", L"4. 디버프", L"5. 런 준비", L"6. 보스", L"7. 런 경제", L"8. 메타·팁" },
+    { L"1. 세계관", L"2. 조작", L"3. 증강", L"4. 디버프", L"5. 런 준비", L"6. 런 경제", L"7. 메타·팁" },
     /* EN */
-    { L"1. World", L"2. Controls", L"3. Augments", L"4. Debuffs", L"5. Run setup", L"6. Bosses", L"7. Run economy", L"8. Meta & tips" },
+    { L"1. World", L"2. Controls", L"3. Augments", L"4. Debuffs", L"5. Run setup", L"6. Run economy", L"7. Meta & tips" },
     /* JP */
-    { L"1. 世界観", L"2. 操作", L"3. 強化", L"4. デバフ", L"5. ラン準備", L"6. ボス", L"7. ラン経済", L"8. メタ·コツ" },
+    { L"1. 世界観", L"2. 操作", L"3. 強化", L"4. デバフ", L"5. ラン準備", L"6. ラン経済", L"7. メタ·コツ" },
 };
 
 inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
@@ -54,7 +54,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"별빛과 성운이 비치고, 게임은 항해 가능한 별자리 영역 안에서 펼쳐집니다 / "
         L"당신은 항성 함선 — 관측 영역을 이동하며 침입한 신호(적)를 막아냅니다 / "
         L"영역 밖은 시야 밖입니다. 보이는 별자리 영역 안에서만 전투·피격·이펙트가 일어납니다 / "
-        L"목표: 웨이브를 버티고 보스를 격파한 뒤, 최대한 오래 생존하며 점수·코인을 모으세요",
+        L"목표: 웨이브를 버티며 최대한 오래 생존하고 점수·코인을 모으세요",
 
         L"WASD — 항성 함선 이동 / 마우스 — 조준 방향, 좌클릭 유지 시 연사 / "
         L"SHIFT — 대시(짧은 무적·쿨다운). 위험한 탄막을 뚫을 때 사용 / "
@@ -75,26 +75,20 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"모든 런은 NORMAL 수치로 시작하며, 시련이 추가 도전을 만듭니다",
 
         L"모든 런은 NORMAL로 시작합니다 / "
-        L"이어서 랜덤 3종 중 시작 무기를 선택합니다 / "
-        L"무기마다 사거리, 연사, 특수 탄환 등 스타일이 크게 달라집니다 / "
+        L"런 준비 화면에서 소총과 전기장 중 하나를 선택합니다 / "
+        L"소총은 직접 조준해 연사하고, 전기장은 주변을 지속 공격합니다 / "
         L"선택 화면 설명을 읽고 플레이에 맞는 무기를 고르세요 / "
-        L"크리에이티브 모드에서는 시작 조건과 시작 증강을 직접 설정할 수 있습니다",
-
-        L"보스 VOLLEY, FORK가 각자의 성운 영역에 등장합니다 / "
-        L"보스 영역 안에서만 패턴이 펼쳐지며, 체력바를 깎아 격파합니다 / "
-        L"탄막, 소환, 장판 패턴을 읽고 SHIFT 대시와 필드 위치로 회피하세요 / "
-        L"보스 처치 후 짧은 휴식(인터미션)이 열리고 오른쪽 구역에서 건너뛸 수 있습니다 / "
-        L"보스마다 공략이 다릅니다 - 도감에서 정보를 해금하세요",
+        L"크리에이티브 모드에서는 시작 점수와 런 조건을 설정할 수 있습니다",
 
         L"런 중 획득한 스타더스트는 HUD에 표시되고 런 종료 시 정산됩니다 / "
         L"레벨업 증강 선택으로 빌드를 보완합니다 / "
         L"런이 끝나면 일부 성과가 코인으로 정산되어 메타 상점에 쓰입니다 / "
-        L"메인 메뉴 상점 — 코인으로 영구 스탯·시작 증강 슬롯·테마 등을 강화 / "
+        L"메인 메뉴 상점 — 코인으로 영구 스탯과 테마를 해금 / "
         L"업적 달성 시 코인·해금 보상이 주어집니다",
 
         L"재료 증강 3종을 모으고 Lv10 이상이면 「조합 증강」이 등장합니다 / "
         L"조합은 강력하지만 재료를 차지하므로 계획적으로 모으세요 / "
-        L"메인 메뉴 도감 — 적·증강·보스 정보 검색(위키 스타일) / "
+        L"메인 메뉴 도감 — 적·증강 정보 검색(위키 스타일) / "
         L"설정에서 언어·볼륨·관측 필드 동작을 바꿀 수 있습니다 / "
         L"패배 후에도 코인·도감·업적 진행은 유지됩니다. 반복 플레이로 빌드를 완성하세요",
     },
@@ -104,7 +98,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"The cosmos shows through; combat happens inside navigable constellation zones / "
         L"You are the astral vessel — move through the field and stop invading signals (enemies) / "
         L"Outside the visible constellation zones is out of play: no combat, hits, or effects there / "
-        L"Goal: survive waves, defeat bosses, and farm score·coins as long as you can",
+        L"Goal: survive waves and collect score·coins for as long as you can",
 
         L"WASD — move your astral vessel / Mouse — aim; hold LMB to fire / "
         L"SHIFT — dash with brief i-frames and cooldown / "
@@ -125,26 +119,20 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Every run uses NORMAL values; trials provide the extra challenge",
 
         L"Every run starts at NORMAL / "
-        L"Then choose 1 of 3 random starting weapons / "
-        L"Range, fire rate, and specials differ a lot per weapon / "
+        L"Choose Rifle or Static Field in run setup / "
+        L"Rifle fires aimed shots; Static Field continuously attacks nearby / "
         L"Read the select-screen text and pick what fits your style / "
-        L"Creative mode lets you set start conditions and starting augments",
-
-        L"Bosses VOLLEY and FORK spawn in their own constellation zones / "
-        L"Patterns play inside the boss field; burn the HP bar to win / "
-        L"Dodge with SHIFT and field positioning / "
-        L"After each boss: a short intermission; the right zone skips it / "
-        L"Each boss plays differently - unlock tips in the Codex",
+        L"Creative mode lets you set the starting score and run conditions",
 
         L"Stardust earned mid-run is shown on the HUD and settled at run end / "
         L"Use level-up augment choices to patch your build / "
         L"End of run converts some progress into meta coins / "
-        L"Main menu shop — permanent stats, extra start augments, themes / "
+        L"Main menu shop — permanent stats and display themes / "
         L"Achievements grant coins and unlocks",
 
         L"Collect 3 combo ingredient augments + reach Lv10 → combo augment appears / "
         L"Combos are strong but cost ingredient slots — plan ahead / "
-        L"Main menu Codex — searchable wiki for enemies, augments, bosses / "
+        L"Main menu Codex — searchable wiki for enemies and augments / "
         L"Settings: language, volume, observatory behavior / "
         L"Death keeps coins, codex, and achievements — iterate your build",
     },
@@ -154,7 +142,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"星雲が透けて見え、戦闘は航行可能な星座領域で行われます / "
         L"あなたは星の船 — フィールドを移動し侵入信号(敵)を阻止します / "
         L"星座領域の外は戦闘範囲外 — 攻撃·被弾·演出は領域内のみ / "
-        L"目標: ウェーブを凌ぎボスを倒し、できるだけ長くスコア·コインを稼ぐ",
+        L"目標: ウェーブを凌ぎ、できるだけ長くスコア·コインを集める",
 
         L"WASD — 星の船(プレイヤー)移動 / マウス — 照準、左クリック長押しで連射 / "
         L"SHIFT — 短い無敵付きダッシュ(クールダウンあり) / "
@@ -175,26 +163,20 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"難易度が上がるほどデバフと敵密度が厳しくなります",
 
         L"ラン前: 難易度を選択 / "
-        L"続けてランダム3択から開始武器を選ぶ / "
-        L"武器ごとに射程·連射·特殊弾などスタイルが大きく異なる / "
+        L"ラン準備画面でライフルか静電場を選択 / "
+        L"ライフルは照準連射、静電場は周囲を継続攻撃 / "
         L"選択画面の説明を読み、自分に合う武器を選ぶ / "
         L"クリエイティブモードで開始条件·開始強化を設定可能",
 
-        L"VOLLEY、FORK のボスが星座領域に出現 / "
-        L"領域内でパターンが展開、HPバーを削って撃破 / "
-        L"SHIFTダッシュとフィールド位置で回避 / "
-        L"撃破後は短い休憩とランゴールドショップ / "
-        L"ボスごとに攻略が異なる - 図鑑で情報解禁",
-
-        L"ラン中のゴールドはウェーブ間の「ランショップ」で消費 / "
-        L"強化を直接購入してビルドを補強 / "
-        L"ラン終了後、一部がメタコインに換算 / "
-        L"メニューショップ — 永久ステ·開始強化枠·テーマなど / "
+        L"ラン中に得たスターダストはHUDに表示され、終了時に精算 / "
+        L"レベルアップ時の強化選択でビルドを補強 / "
+        L"ラン終了後、一部の成果がメタコインに換算 / "
+        L"メニューショップ — 永久ステータス・テーマなど / "
         L"実績でコインと解禁報酬",
 
         L"素材強化3種+Lv10以上で「組合強化」出現 / "
         L"強力だが素材枠を使う — 計画的に収集 / "
-        L"メニュー図鑑 — 敵·強化·ボスを検索(ウィキ風) / "
+        L"メニュー図鑑 — 敵·強化を検索(ウィキ風) / "
         L"設定で言語·音量·窓動作を変更 / "
         L"敗北後もコイン·図鑑·実績は保持 — 繰り返しビルドを完成させよう",
     },
@@ -216,8 +198,3 @@ inline const wchar_t* TutorialPageBody(int page) {
     return kTutorialPageBody[LangIndexTutorial()][page];
 }
 inline const wchar_t* TutorialControls() { return kTutorialControls[LangIndexTutorial()]; }
-
-// 하위 호환 (READY 등에서 미사용)
-inline constexpr int TUTORIAL_BLOCK_COUNT = TUTORIAL_PAGE_COUNT;
-inline const wchar_t* TutorialTitle() { return kTutorialPageTitle[LangIndexTutorial()][0]; }
-inline const wchar_t* TutorialBlock(int i) { return TutorialPageBody(i); }

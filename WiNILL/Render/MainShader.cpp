@@ -185,7 +185,6 @@ void InitMainShaderPipeline(int screenW, int screenH) {
 
     g_MainShader  = shader;
     g_MainProjLoc = glGetUniformLocation(shader, "projection");
-    g_colorLoc    = glGetUniformLocation(shader, "color");
     g_MainFxLoc   = glGetUniformLocation(shader, "uFx");
     g_MainResLoc  = glGetUniformLocation(shader, "uRes");
 

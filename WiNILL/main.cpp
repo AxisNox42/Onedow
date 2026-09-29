@@ -1,4 +1,4 @@
-﻿// Windows ?�더�?glad보다 먼�? ??APIENTRY 매크�?중복 ?�의 방�?
+// Windows ?�더�?glad보다 먼�? ??APIENTRY 매크�?중복 ?�의 방�?
 #ifdef _WIN32
   #include <windows.h>
   #include <dwmapi.h>   // DwmIsCompositionEnabled (진단??
@@ -13,7 +13,6 @@
 #endif
 
 #include "Platform.h"
-#include "EmbeddedResource.h"
 #include "CrashHandler.h"
 
 #include <glm/glm.hpp>
@@ -36,14 +35,10 @@
 #include "Monster.h"
 #include "Bullet.h"
 #include "MonsterManager.h"
-#include "ReloadRunnerBoss.h"
-#include "CentipedeBoss.h"
-#include "TesseractGlitchBoss.h"
-#include "EtherSwordBoss.h"
-#include "LeviathanBoss.h"
-#include "BossDirector.h"
+#include "EnemyProgression.h"
+#include "EnemySpawner.h"
+#include "ProjectileSystem.h"
 #include "AugmentSlots.h"
-#include "RunIntermission.h"
 #include "Codex.h"
 #include "CollisionSystem.h"
 #include "Augment.h"
@@ -64,12 +59,16 @@
 #include "BlurShader.h"
 #include "MainShader.h"
 #include "EntityDraw.h"
+#include "PlayerWeaponShell.h"
+#include "GameFonts.h"
+#include "PlayerRuntime.h"
 #include "Scenes.h"
 #include "SceneContext.h"
 #include "SceneSkills.h"
 #include "Input.h"
 #include "DebugToolkit.h"
 #include "UiLayout.h"
+#include "SceneUI.h"
 #include "WindowChrome.h"
 #include "GameplayTelemetry.h"
 
@@ -131,15 +130,7 @@ static const int MAX_DRONES = 4;
 DroneState g_Drones[MAX_DRONES] = {};
 
 //   1초마???�레?�어 ?�치??1개씩 배치, �?5�?지????맵에 ~5�??�시
-// Window sizes for active boss and monster signal frames.
-float RR_WIN_W = 600.0f;
-float POLY_WIN_W = 840.0f;
-float BOTNET_WIN_W = 880.0f;
-float CENTI_WIN_W = 600.0f;
-float TESS_WIN_W = 620.0f;
-float ETHER_WIN_W = 900.0f;
-float TOTEM_WIN_W = 760.0f;
-float UNKNOWN_WIN_W = 500.0f, UNKNOWN_WIN_H = 580.0f;
+// Window sizes for active ranged and signal frames.
 float GENESIS_WIN_W = 300.0f;
 float SWARM_WIN_W = 210.0f;
 float g_RfwW = 500.0f, g_RfwH = 500.0f;
@@ -157,22 +148,6 @@ static const float CHAKRAM_RADIUS = 130.0f;   // 버프: ?��? 공전 (공전
 static const float CHAKRAM_SIZE   = 30.0f;    // 버프: ??칼날
 
 float g_BulletRainTimer = 0.0f;
-float g_BossLifestealDamageBank = 0.0f;
-static constexpr float BOSS_LIFESTEAL_DAMAGE_STEP = 200.0f;
-
-static void ApplyBossLifestealFromDamage(float dealt) {
-    if (dealt <= 0.0f) return;
-    float heal = g_Stats.GetLifestealPerKill();
-    if (g_Stats.vampire || g_Stats.lifesteal2)
-        heal = std::max(heal, 0.12f);
-    if (heal <= 0.0f || g_Stats.maxHP <= 0.0f) return;
-
-    g_BossLifestealDamageBank += dealt;
-    while (g_BossLifestealDamageBank >= BOSS_LIFESTEAL_DAMAGE_STEP) {
-        g_BossLifestealDamageBank -= BOSS_LIFESTEAL_DAMAGE_STEP;
-        g_GameManager.playerHP = std::min(g_Stats.maxHP, g_GameManager.playerHP + heal);
-    }
-}
 
 // LIGHT_STEP ?�격 감�????�전 HP 기록
 float g_PrevHP = 100.0f;
@@ -221,64 +196,6 @@ float g_ShakeTime = 0.0f;
 float g_ShakeMag  = 0.0f;
 
 // 보스 보상 ???��? 버프 ????(?�버???�이지 skip)
-int  g_BossRewardPicksLeft = 0;
-// 보스 ?�폰 ???�반 보스??20만점마다, ?�리모프??50만점 고정(1??
-static constexpr long long FIRST_BOSS_SCORE = 50000;
-long long g_NextBossScore  = FIRST_BOSS_SCORE;
-bool      g_CreativeBossPending = false;
-ReloadRunnerBoss* g_RRBoss  = nullptr;
-EtherSwordBoss*   g_EtherBoss = nullptr;
-LeviathanBoss*    g_LeviathanBoss = nullptr;
-
-static void HitEtherBossDirect(float dmg, float px, float py, bool crit = false) {
-    auto* eb = g_EtherBoss;
-    if (!eb || !eb->alive || eb->BodyInvulnerable()) return;
-
-    dmg *= eb->PlayerDamageToBossMul(px, py);
-    float killFloor = eb->taskKillHp();
-    float dealt = std::min(dmg, std::max(0.0f, eb->hp - killFloor));
-    if (dealt > 0.0f) {
-        eb->hp -= dealt;
-        SpawnDamageNumber(eb->worldX, eb->worldY, dealt, dealt >= 40.0f || crit);
-        ApplyBossLifestealFromDamage(dealt);
-    }
-    if (eb->hp <= killFloor) {
-        eb->hp = killFloor;
-        eb->BeginTaskKill(px, py, g_Bullets);
-    }
-}
-
-static void DisplaceEntitiesInWindow(float rx, float ry, float rw, float rh,
-                                     float dx, float dy) {
-    if (std::fabs(dx) < 0.01f && std::fabs(dy) < 0.01f) return;
-    const float pad = 48.0f;
-    auto overlaps = [&](float x, float y) {
-        return x >= rx - pad && x <= rx + rw + pad &&
-               y >= ry - pad && y <= ry + rh + pad;
-    };
-    for (auto m : g_MonsterManager.monsters) {
-        if (!m->alive) continue;
-        if (overlaps(m->worldX, m->worldY)) {
-            m->worldX += dx;
-            m->worldY += dy;
-        }
-    }
-    for (auto r : g_MonsterManager.rangedMobs) {
-        if (r->deathScale <= 0.0f) continue;
-        if (overlaps(r->worldX, r->worldY)) {
-            r->worldX += dx;
-            r->worldY += dy;
-        }
-    }
-    for (auto& p : g_EnemyParts) {
-        if (!p.active) continue;
-        if (overlaps(p.x, p.y)) { p.x += dx; p.y += dy; }
-    }
-}
-
-
-CentipedeBoss* g_CentiBoss = nullptr;
-TesseractGlitchBoss* g_TessBoss = nullptr;
 // ?�?�?배드 ?�터 ?�망 ?�류�????�시 감속 구역(?�상 ?�역). ?�에 ?�으�??�동?�도 -10% ?�?�?
 //   즉시 ?�기지 ?�고 ZONE_OPEN(0.7�???걸쳐 ?�점 부?�되???�짐(grow factor = age/OPEN).
 struct LaserBeam { float ox, oy, ex, ey, life, maxLife; float width = 1.0f; };
@@ -293,19 +210,7 @@ constexpr float LASER_INT   = 0.85f;  // 발사 주기(�? ???�프: 0.7
 // ?�?�?보스 ?�장 ?�조(증상) ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
 //   보스 ?�폰??"결정 ??2.5�??�조(?�마 증상 + 경고 배너) ???�제 ?�성" ?�로 분리.
 //   ?�조 ?�안 게임?�레?�는 계속(?�레그래??. 만료 ??결정??보스�??�제�??�성.
-float          g_BossWarnTimer = 0.0f;          // >0 ?�면 ?�조 진행 �?(?��? ?�간)
-constexpr float BOSS_WARN_DUR  = 2.5f;
-int            g_BossWarnPick   = -1;           // 0~8 보스 ?�일 ?�덱??(4=?�리)
-const wchar_t* g_BossWarnName   = L"";
-float          g_BossWarnHp      = 0.0f;
-// ?�이�? ?�승?��? 추적 (?�일 진입 ?�출 1???�생??
-bool g_RRWasP2 = false, g_RRWasP3 = false;
-bool g_TessWasP2 = false, g_TessWasP3 = false;
-// ?�이�? 진입 ?�스??("??과�?????PHASE 2")
-float     g_P2ToastTimer = 0.0f;
-glm::vec3 g_P2ToastCol   = glm::vec3(1.0f);
 bool  g_LastRunRecord   = false;  // 직전 ?�이 ?�기록이?�는지 (GAMEOVER ?�시??
-int   g_MetaStartAugs   = 0;      // 메�? ?�금: ?�작 무료 증강 ???�수
 
 float g_WindowSizeCur = 0.0f;
 
@@ -326,18 +231,11 @@ float g_HurtVignette  = 0.0f;     // ?�격 빨간 비네???�여
 float g_HpBarPop      = 0.0f;     // ?�나비식 HP 게이지�????�격 ???�다가 ?�이??�?
 float g_XpBarPop       = 0.0f;     // XP pickup feedback pulse
 
-// ?�?�??�티�??�킬 ?�스?????�??기본) + ?�롯 3�?증강 ?�득, �?차면 교체) ?�?�?
-float g_DashCd        = 0.0f;
-float g_DashInvuln    = 0.0f;
-float g_PostPickGrace = 0.0f;      // C14: 증강 ????짧�? ?�예(무적+발사?�제)�?복�? ?�?
-float g_TimeStopTimer = 0.0f;
-float g_HyperFocusTimer = 0.0f;
-
 void SyncPlayerBoundsSize(SpatialBounds& pw, float delta, bool animate) {
     if (g_Stats.windowSize < 64.0f)
         g_Stats.windowSize = std::max(400.0f * g_Scale, 64.0f);
     float targetWin = g_Stats.windowSize *
-        ((g_HyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
+        ((g_PlayerRuntime.hyperFocusTimer > 0.0f) ? 1.5f : 1.0f);
     if (g_WindowSizeCur < 64.0f) g_WindowSizeCur = g_Stats.windowSize;
     if (animate) {
         float winStep = std::min(1.0f, delta * 5.5f);
@@ -350,7 +248,7 @@ void SyncPlayerBoundsSize(SpatialBounds& pw, float delta, bool animate) {
     float cy = pw.y + pw.height * 0.5f;
     if (cx != cx || cy != cy || pw.width < 64.0f || pw.height < 64.0f ||
         pw.width != pw.width || pw.height != pw.height) {
-        cx = (float)screenWidth  * 0.5f;
+        cx = (float)screenWidth * 0.5f;
         cy = (float)screenHeight * 0.5f;
     }
     pw.width = pw.height = pwSz;
@@ -362,37 +260,13 @@ static void EnsurePlayerBounds(SpatialBounds& pw) {
     SyncPlayerBoundsSize(pw, 1.0f, false);
 }
 
-static constexpr float DASH_CD = 2.9f, DASH_DIST = 300.0f, DASH_INVULN = 0.20f;
-static constexpr float DASH_DUR  = 0.11f;
-static bool  g_DashActive = false;
-static float g_DashT      = 0.0f;
-static float g_DashFromX  = 0.0f, g_DashFromY = 0.0f;
-static float g_DashToX    = 0.0f, g_DashToY   = 0.0f;
-static int   g_DashBoostShotsLeft = 0;
-static constexpr float TIMESTOP_DUR = 1.5f, HYPER_FOCUS_DUR = 5.0f;
-static constexpr float HYPER_FOCUS_DASH_CD = 2.0f;
+#if defined(_DEBUG)
+static constexpr bool kCompileDebugBuild = true;
+#else
+static constexpr bool kCompileDebugBuild = false;
+#endif
 
-static float SkillCooldownMax(SkillType t) {
-    switch (t) {
-    case SkillType::CLOSE_WINDOW: return 16.0f;
-    case SkillType::HYPER_FOCUS:  return 20.0f;
-    case SkillType::TIME_STOP:    return 28.0f;
-    default:                      return 0.0f;
-    }
-}
-static void ResetSkills() {
-    for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
-    g_SkillReplaceIdx = 0; g_DashCd = 0; g_DashInvuln = 0;
-    g_DashActive = false; g_DashT = 0.0f;
-    g_DashBoostShotsLeft = 0;
-    g_PlayerShield = 0.0f; g_PlayerShieldTimer = 0.0f;
-    g_TimeStopTimer = 0; g_HyperFocusTimer = 0;
-    g_BossLifestealDamageBank = 0.0f;
-}
-// 보스 ?�존 ?�안 ?�면 ?�체�?보스 고유?�으�??�점 물들?�는 ?�출
-float     g_BossTintT   = 0.0f;                     // 0..1 (?�존 ???�승, ?�망 ???�강)
-glm::vec3 g_BossTintCol = glm::vec3(0.6f, 0.3f, 1.0f);
-
+// ?�?�??�티�??�킬 ?�스?????�??기본) + ?�롯 3�?증강 ?�득, �?차면 교체) ?�?�?
 // HUD: ?�재 측정 FPS (?�단 ?�측 ?�시)
 int    g_CurrentFPS  = 0;
 double g_FpsLastTime = 0.0;
@@ -402,17 +276,16 @@ int    g_FpsFrames   = 0;
 std::vector<int> g_OwnedAugs;
 
 // ũ������Ƽ�� ���?���� ���� ���� ���� (�ε���). ���� ���� �� �ϰ� ����.
-std::vector<int> g_CreativeStartAugList;
 bool g_CreativeStartPending = false;   // ?�용 ?��?(main 루프가 applyByIdx �?처리)
 std::deque<int> g_AugEffectQueue;
 bool g_AugEffectProcessing = false;
 
 // 증강 ?�택 hover state (-1 = 미선?? 0/1/2 = 카드 ?�덱??
 int  g_HoveredAug    = -1;
-bool g_EnterReleased = true;
 
 // 마우???�릭 edge 감�? (?�전 ?�레??left button ?�태)
 bool g_LmbPrev = false;
+bool g_RmbPrev = false;
 
 // PAUSED ?�태 ??보유 증강 ?�릭 ???�명 ?�시 (-1 = ?�음, 0..AUG_TOTAL-1 = ?�덱??
 int g_PauseSelectedAug = -1;
@@ -427,512 +300,6 @@ int g_CurrentWeapon = -1;
 // �?= ?�환??StartWeapon ?�덱?? -1 = ?�번 ?�운?�는 변??카드 ?�음
 int g_ConversionWeapon = -1;
 
-enum class PlayerShellKind { Rifle, StaticField };
-
-static PlayerShellKind CurrentPlayerShellKind() {
-    return g_CurrentWeapon == (int)StartWeapon::SMG
-        ? PlayerShellKind::StaticField : PlayerShellKind::Rifle;
-}
-
-static void DrawPlayerRotRect(float cx, float cy, float w, float h, float ang,
-                              float r, float g, float b, float a) {
-    float hx = w * 0.5f, hy = h * 0.5f;
-    float c = cosf(ang), s = sinf(ang);
-    float x0 = -hx, y0 = -hy;
-    float x1 =  hx, y1 = -hy;
-    float x2 =  hx, y2 =  hy;
-    float x3 = -hx, y3 =  hy;
-    auto tx = [&](float x, float y) { return cx + x * c - y * s; };
-    auto ty = [&](float x, float y) { return cy + x * s + y * c; };
-    BatchTri(tx(x0,y0), ty(x0,y0), tx(x1,y1), ty(x1,y1), tx(x2,y2), ty(x2,y2), r,g,b,a);
-    BatchTri(tx(x0,y0), ty(x0,y0), tx(x2,y2), ty(x2,y2), tx(x3,y3), ty(x3,y3), r,g,b,a);
-}
-
-static void DrawPlayerLine(float x0, float y0, float x1, float y1, float thick,
-                           float r, float g, float b, float a) {
-    float dx = x1 - x0, dy = y1 - y0;
-    float len = sqrtf(dx * dx + dy * dy);
-    if (len < 0.5f) return;
-    DrawPlayerRotRect((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, len, thick,
-                      atan2f(dy, dx), r, g, b, a);
-}
-
-static void HitLeviathanAtPoint(float dmg, float x, float y, bool crit = false) {
-    auto* lb = g_LeviathanBoss;
-    if (!lb || !lb->alive || !lb->heartHitPoint(x, y)) return;
-    float dealt = lb->applyHeartDamage(dmg);
-    if (dealt <= 0.0f) return;
-    SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt, dealt >= 40.0f || crit);
-    ApplyBossLifestealFromDamage(dealt);
-}
-
-static void HitLeviathanOnLine(float dmg, float x0, float y0,
-                               float x1, float y1, bool crit = false) {
-    auto* lb = g_LeviathanBoss;
-    if (!lb || !lb->alive || !lb->heartHitSegment(x0, y0, x1, y1)) return;
-    float dealt = lb->applyHeartDamage(dmg);
-    if (dealt <= 0.0f) return;
-    SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt, dealt >= 40.0f || crit);
-    ApplyBossLifestealFromDamage(dealt);
-}
-
-static void HitLeviathanInRadius(float dmg, float x, float y, float radius,
-                                 bool crit = false) {
-    auto* lb = g_LeviathanBoss;
-    if (!lb || !lb->alive || !lb->heartHitRadius(x, y, radius)) return;
-    float dealt = lb->applyHeartDamage(dmg);
-    if (dealt <= 0.0f) return;
-    SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt, dealt >= 40.0f || crit);
-    ApplyBossLifestealFromDamage(dealt);
-}
-
-static void LeviathanWakeFeed() {
-    int fed = 0;
-    auto lowTier = [](MobKind k) {
-        return k == MobKind::ROTOR || k == MobKind::SWARM;
-    };
-    auto consume = [&](float x, float y, const glm::vec3& col) {
-        SpawnEnemyExplosion(x, y, col.r, col.g, col.b, true);
-        ++fed;
-    };
-    for (auto* m : g_MonsterManager.monsters) {
-        if (fed >= 6) break;
-        if (!m->alive || m->scored || !lowTier(m->kind)) continue;
-        m->alive = false;
-        m->scored = true;
-        m->exploded = true;
-        m->noBlast = true;
-        consume(m->worldX, m->worldY, m->color);
-    }
-    for (auto* r : g_MonsterManager.rangedMobs) {
-        if (fed >= 6) break;
-        if (!r->alive || r->scored) continue;
-        r->alive = false;
-        r->scored = true;
-        r->exploded = true;
-        consume(r->worldX, r->worldY, r->color);
-    }
-    if (fed > 0) {
-        SpawnShockWave(g_LeviathanBoss ? g_LeviathanBoss->heartCX : 0.0f,
-                       g_LeviathanBoss ? g_LeviathanBoss->heartCY : 0.0f,
-                       260.0f, 0.38f, 0.18f, 0.72f, 0.42f);
-    }
-}
-
-static void DrawPlayerArc(float cx, float cy, float radius,
-                          float startAngle, float sweepAngle, float thick,
-                          float r, float g, float b, float a) {
-    if (radius <= 0.0f || thick <= 0.0f || fabsf(sweepAngle) < 0.001f ||
-        radius != radius || sweepAngle != sweepAngle) return;
-    const float sweepAbs = fabsf(sweepAngle);
-    const int segments = std::max(4, std::min(96,
-        (int)ceilf(sweepAbs * radius / 9.0f)));
-    const float step = sweepAngle / (float)segments;
-    float angle = startAngle;
-    float px = cx + cosf(angle) * radius;
-    float py = cy + sinf(angle) * radius;
-    for (int i = 1; i <= segments; ++i) {
-        angle = startAngle + step * (float)i;
-        float nx = cx + cosf(angle) * radius;
-        float ny = cy + sinf(angle) * radius;
-        DrawPlayerLine(px, py, nx, ny, thick, r, g, b, a);
-        px = nx;
-        py = ny;
-    }
-}
-
-static void DrawPlayerRadialGauge(float cx, float cy, float radius, float fraction,
-                                  float startAngle, float sweepAngle, float thick,
-                                  float r, float g, float b, float alpha,
-                                  int tickCount, float ghostFraction = -1.0f,
-                                  float orbitPhase = -1.0f) {
-    fraction = std::max(0.0f, std::min(1.0f, fraction));
-    if (ghostFraction >= 0.0f)
-        ghostFraction = std::max(fraction, std::min(1.0f, ghostFraction));
-
-    // The unfilled portion is a neutral gray track. It stays visible at all
-    // times so the gauge reads as a complete instrument, not only as an
-    // event flash.
-    DrawPlayerArc(cx, cy, radius, startAngle, sweepAngle,
-                  std::max(0.8f, thick * 0.72f),
-                  0.34f, 0.39f, 0.47f, 0.16f);
-
-    // Instrument ticks turn the progress arc into a compact radial graph.
-    if (tickCount > 0) {
-        for (int i = 0; i < tickCount; ++i) {
-            const float angle = startAngle + sweepAngle * (float)i / (float)tickCount;
-            const bool lit = fraction > ((float)i / (float)tickCount);
-            const float inner = radius - thick * 0.95f;
-            const float outer = radius + thick * 0.95f;
-            DrawPlayerLine(cx + cosf(angle) * inner, cy + sinf(angle) * inner,
-                           cx + cosf(angle) * outer, cy + sinf(angle) * outer,
-                           std::max(0.8f, thick * 0.42f),
-                           lit ? r : 0.34f,
-                           lit ? g : 0.34f,
-                           lit ? b : 0.42f,
-                           lit ? alpha * 0.72f : 0.12f);
-        }
-    }
-
-    // Damage afterimage: the pre-hit HP stays gray behind the live green HP,
-    // then contracts toward the current value as ghostFraction eases down.
-    if (ghostFraction > fraction + 0.0001f) {
-        DrawPlayerArc(cx, cy, radius, startAngle,
-                      sweepAngle * ghostFraction, thick * 1.05f,
-                      0.52f, 0.56f, 0.62f, alpha * 0.78f);
-    }
-
-    if (fraction > 0.001f) {
-        const float progress = sweepAngle * fraction;
-        DrawPlayerArc(cx, cy, radius, startAngle, progress, thick,
-                      r, g, b, alpha);
-        const float endAngle = startAngle + progress;
-        drawDiamond(cx + cosf(endAngle) * radius,
-                    cy + sinf(endAngle) * radius,
-                    std::max(3.5f, thick * 2.7f), r, g, b, alpha * 1.05f);
-    }
-
-    // The track itself rotates slowly; this small constellation scanner keeps
-    // moving along the outer edge so the gauge still feels alive at idle.
-    if (orbitPhase >= 0.0f) {
-        orbitPhase -= floorf(orbitPhase);
-        const float markerAngle = startAngle + sweepAngle * orbitPhase;
-        const float markerRadius = radius + 5.0f;
-        const float mx = cx + cosf(markerAngle) * markerRadius;
-        const float my = cy + sinf(markerAngle) * markerRadius;
-        const float tailSweep = (sweepAngle < 0.0f) ? -0.16f : 0.16f;
-        DrawPlayerArc(cx, cy, markerRadius, markerAngle, tailSweep,
-                      std::max(0.65f, thick * 0.48f), r, g, b, alpha * 0.62f);
-        drawDiamond(mx, my, std::max(2.2f, thick * 1.7f),
-                    r, g, b, alpha * 0.88f);
-    }
-}
-
-static void DrawPlayerHexFrame(float cx, float cy, float rad, float ang,
-                               float r, float g, float b, float a, float thick,
-                               bool nodes) {
-    float vx[6], vy[6];
-    for (int i = 0; i < 6; ++i) {
-        float th = ang + (float)i * 1.04719755f;
-        vx[i] = cx + cosf(th) * rad;
-        vy[i] = cy + sinf(th) * rad;
-    }
-    for (int i = 0; i < 6; ++i) {
-        int n = (i + 1) % 6;
-        DrawPlayerLine(vx[i], vy[i], vx[n], vy[n], thick, r, g, b, a);
-    }
-    if (nodes) {
-        float ns = std::max(4.0f, thick * 3.1f);
-        for (int i = 0; i < 6; ++i)
-            drawDiamond(vx[i], vy[i], ns, r, g, b, a * 1.12f);
-    }
-}
-
-static void DrawPlayerTriangleFrame(float cx, float cy, float rad, float ang,
-                                    float r, float g, float b, float a,
-                                    float thick, bool nodes) {
-    float vx[3], vy[3];
-    for (int i = 0; i < 3; ++i) {
-        float th = ang - 1.5707963f + (float)i * 2.0943951f;
-        vx[i] = cx + cosf(th) * rad;
-        vy[i] = cy + sinf(th) * rad;
-    }
-    for (int i = 0; i < 3; ++i) {
-        int n = (i + 1) % 3;
-        DrawPlayerLine(vx[i], vy[i], vx[n], vy[n], thick, r, g, b, a);
-    }
-    if (nodes) {
-        float ns = std::max(4.0f, thick * 3.0f);
-        for (int i = 0; i < 3; ++i)
-            drawDiamond(vx[i], vy[i], ns, r, g, b, a * 1.08f);
-    }
-}
-
-static void DrawPlayerCrossStarFrame(float cx, float cy, float outerRad, float innerRad,
-                                     float ang, float r, float g, float b, float a,
-                                     float thick, bool cross, bool nodes) {
-    float vx[8], vy[8];
-    for (int i = 0; i < 8; ++i) {
-        float rad = (i & 1) ? innerRad : outerRad;
-        float th = ang - 1.5707963f + (float)i * 0.78539816f;
-        vx[i] = cx + cosf(th) * rad;
-        vy[i] = cy + sinf(th) * rad;
-    }
-
-    for (int i = 0; i < 8; ++i) {
-        int n = (i + 1) & 7;
-        DrawPlayerLine(vx[i], vy[i], vx[n], vy[n], thick, r, g, b, a);
-    }
-
-    if (cross) {
-        for (int i = 0; i < 8; i += 2)
-            DrawPlayerLine(cx, cy, vx[i], vy[i], std::max(0.8f, thick * 0.42f),
-                           r, g, b, a * 0.34f);
-    }
-
-    if (nodes) {
-        float tipSz = std::max(4.0f, thick * 3.0f);
-        for (int i = 0; i < 8; i += 2)
-            drawDiamond(vx[i], vy[i], tipSz, r, g, b, a * 1.16f);
-    }
-}
-
-static void DrawPlayerEllipseFrame(float cx, float cy, float rx, float ry, float ang,
-                                   float r, float g, float b, float a,
-                                   float thick, bool nodes) {
-    const int SEG = 48;
-    float ca = cosf(ang), sa = sinf(ang);
-    auto tx = [&](float lx, float ly) { return cx + lx * ca - ly * sa; };
-    auto ty = [&](float lx, float ly) { return cy + lx * sa + ly * ca; };
-
-    float px = tx(rx, 0.0f);
-    float py = ty(rx, 0.0f);
-    for (int i = 1; i <= SEG; ++i) {
-        float th = (float)i / (float)SEG * 6.2831853f;
-        float nx = tx(cosf(th) * rx, sinf(th) * ry);
-        float ny = ty(cosf(th) * rx, sinf(th) * ry);
-        DrawPlayerLine(px, py, nx, ny, thick, r, g, b, a);
-        px = nx; py = ny;
-    }
-
-    if (nodes) {
-        for (int i = 0; i < 4; ++i) {
-            float th = (float)i * 1.5707963f + ang * 0.35f;
-            float nx = tx(cosf(th) * rx, sinf(th) * ry);
-            float ny = ty(cosf(th) * rx, sinf(th) * ry);
-            drawDiamond(nx, ny, std::max(4.0f, thick * 3.2f), r, g, b, a * 1.15f);
-        }
-    }
-}
-
-static void DrawPlayerZigzagLine(float x0, float y0, float x1, float y1,
-                                 int steps, float amp, float thick,
-                                 float r, float g, float b, float a) {
-    float dx = x1 - x0, dy = y1 - y0;
-    float len = sqrtf(dx * dx + dy * dy);
-    if (len < 1.0f) return;
-    float nx = -dy / len, ny = dx / len;
-    float px = x0, py = y0;
-    for (int i = 1; i <= steps; ++i) {
-        float t = (float)i / (float)steps;
-        float ox = (i == steps) ? 0.0f : (((i & 1) ? 1.0f : -1.0f) * amp);
-        float cx2 = x0 + dx * t + nx * ox;
-        float cy2 = y0 + dy * t + ny * ox;
-        DrawPlayerLine(px, py, cx2, cy2, thick, r, g, b, a);
-        px = cx2; py = cy2;
-    }
-}
-
-// In-game regions remain rectangular for scissor/collision logic, but their
-// visual identity is reduced to a light signal frame instead of a fake window.
-static void DrawInGameSignalFrame(float x, float y, float w, float h,
-                                  float r, float g, float b, float alpha) {
-    if (w < 24.0f || h < 24.0f || w != w || h != h) return;
-    const float corner = std::max(10.0f, std::min(22.0f, std::min(w, h) * 0.12f));
-    drawConstellFrame(x, y, w, h, r, g, b, alpha, corner, 3.0f, alpha * 0.12f, 1.0f);
-}
-
-static void DrawPlayerSightMarker(float cx, float cy, float radius,
-                                  float r, float g, float b, float alpha) {
-    if (radius <= 0.0f || radius != radius) return;
-    if (g_ConstellationCircleTex && g_IconProg) {
-        BatchFlush();
-        const float screenRadius = radius * std::max(0.01f, g_ViewZoom);
-        DrawIcon(g_ConstellationCircleTex, W2SX(cx) - screenRadius,
-                 W2SY(cy) - screenRadius, screenRadius * 2.0f,
-                 screenRadius * 2.0f, r, g, b, alpha);
-    } else {
-        drawCircle(cx, cy, radius, r, g, b, alpha);
-    }
-}
-
-void DrawPlayerWeaponShell(float cx, float cy, float sz, float aimAng) {
-    if (!(aimAng == aimAng)) aimAng = 0.0f;
-
-    const float r = 0.34f, g = 1.0f, b = 1.0f;
-    const float wr = 0.92f, wg = 1.0f, wb = 1.0f;
-    const float ar = 1.0f, ag = 0.62f, ab = 0.16f;
-    float t = (float)glfwGetTime();
-    float kick = (g_MuzzleTimer > 0.0f) ? (g_MuzzleTimer / 0.05f) : 0.0f;
-    float pulse = 0.5f + 0.5f * sinf(t * 4.0f);
-    auto rotX = [&](float lx, float ly, float ang) {
-        return cx + lx * cosf(ang) - ly * sinf(ang);
-    };
-    auto rotY = [&](float lx, float ly, float ang) {
-        return cy + lx * sinf(ang) + ly * cosf(ang);
-    };
-    auto triRot = [&](float ax, float ay, float bx, float by, float cx2, float cy2,
-                      float ang, float rr, float gg, float bb, float aa) {
-        BatchTri(rotX(ax, ay, ang), rotY(ax, ay, ang),
-                 rotX(bx, by, ang), rotY(bx, by, ang),
-                 rotX(cx2, cy2, ang), rotY(cx2, cy2, ang),
-                 rr, gg, bb, aa);
-    };
-    auto triEdge = [&](float ax, float ay, float bx, float by, float cx2, float cy2,
-                       float ang, float thick, float rr, float gg, float bb, float aa) {
-        float x0 = rotX(ax, ay, ang), y0 = rotY(ax, ay, ang);
-        float x1 = rotX(bx, by, ang), y1 = rotY(bx, by, ang);
-        float x2 = rotX(cx2, cy2, ang), y2 = rotY(cx2, cy2, ang);
-        DrawPlayerLine(x0, y0, x1, y1, thick, rr, gg, bb, aa);
-        DrawPlayerLine(x1, y1, x2, y2, thick, rr, gg, bb, aa);
-        DrawPlayerLine(x2, y2, x0, y0, thick, rr, gg, bb, aa);
-    };
-
-    PlayerShellKind kind = CurrentPlayerShellKind();
-    switch (kind) {
-    case PlayerShellKind::StaticField: {
-        struct ZapTarget { float x, y, d2; };
-        ZapTarget targets[4];
-        int targetCount = 0;
-        float fieldRad = std::max(150.0f, sz * 4.3f);
-        float fieldR2 = fieldRad * fieldRad;
-        auto addTarget = [&](float tx, float ty) {
-            float dx = tx - cx, dy = ty - cy;
-            float d2 = dx * dx + dy * dy;
-            if (d2 > fieldR2) return;
-            if (targetCount < 4) {
-                targets[targetCount++] = { tx, ty, d2 };
-            } else {
-                int farIdx = 0;
-                for (int i = 1; i < 4; ++i)
-                    if (targets[i].d2 > targets[farIdx].d2) farIdx = i;
-                if (d2 < targets[farIdx].d2)
-                    targets[farIdx] = { tx, ty, d2 };
-            }
-        };
-        for (auto m : g_MonsterManager.monsters)    if (m->alive)  addTarget(m->worldX,  m->worldY);
-        for (auto rm : g_MonsterManager.rangedMobs) if (rm->alive) addTarget(rm->worldX, rm->worldY);
-
-        float hitPulse = (targetCount > 0) ? (0.55f + 0.45f * sinf(t * 24.0f)) : 0.0f;
-        float bodyPulse = pulse * 0.18f + hitPulse * 0.58f;
-        float triAng = t * 1.90f;
-        float hexAng = 0.5235988f - t * 0.72f;
-
-        DrawPlayerHexFrame(cx, cy, fieldRad,
-                           0.5235988f + t * 0.045f, r, g, b,
-                           0.060f + hitPulse * 0.050f, 1.0f + hitPulse * 0.6f, false);
-        DrawPlayerHexFrame(cx, cy, fieldRad * 0.72f,
-                           0.5235988f - t * 0.030f, r, g, b,
-                           0.035f + hitPulse * 0.040f, 0.8f, false);
-
-        DrawPlayerTriangleFrame(cx, cy, sz * (0.82f + bodyPulse * 0.08f),
-                                triAng, r, g, b, 0.78f + hitPulse * 0.20f,
-                                2.0f + hitPulse * 1.2f, true);
-        DrawPlayerHexFrame(cx, cy, sz * (1.17f + bodyPulse * 0.08f),
-                           hexAng, r, g, b, 0.48f + hitPulse * 0.32f,
-                           1.55f + hitPulse * 1.0f, true);
-        DrawPlayerHexFrame(cx, cy, sz * 1.45f,
-                           hexAng * 0.70f + 0.30f, r, g, b,
-                           0.14f + hitPulse * 0.12f, 1.0f, false);
-
-        drawCircle(cx, cy, sz * (0.34f + bodyPulse * 0.05f), 0.0f, 0.0f, 0.0f, 0.58f);
-        drawCircle(cx, cy, sz * (0.27f + bodyPulse * 0.04f), r, g, b, 0.48f + bodyPulse * 0.28f);
-        drawDiamond(cx, cy, sz * (0.22f + bodyPulse * 0.02f), wr, wg, wb, 0.78f + hitPulse * 0.18f);
-
-        for (int i = 0; i < 6; ++i) {
-            float va = hexAng + (float)i * 1.04719755f;
-            float vx = cx + cosf(va) * sz * 1.17f;
-            float vy = cy + sinf(va) * sz * 1.17f;
-            DrawPlayerLine(cx + cosf(va) * sz * 0.40f, cy + sinf(va) * sz * 0.40f,
-                           vx, vy, 0.9f + hitPulse * 0.8f, r, g, b,
-                           0.16f + hitPulse * 0.18f);
-        }
-
-        for (int i = 0; i < targetCount; ++i) {
-            float srcAng = hexAng + (float)(i % 6) * 1.04719755f;
-            float sx = cx + cosf(srcAng) * sz * 1.18f;
-            float sy = cy + sinf(srcAng) * sz * 1.18f;
-            float flicker = 0.70f + 0.30f * sinf(t * 38.0f + (float)i * 1.7f);
-            DrawPlayerZigzagLine(sx, sy, targets[i].x, targets[i].y,
-                                 5, 5.0f + hitPulse * 4.0f,
-                                 1.25f + hitPulse * 0.9f,
-                                 wr, wg, wb, (0.28f + hitPulse * 0.36f) * flicker);
-            drawDiamond(targets[i].x, targets[i].y, 5.0f + hitPulse * 2.5f,
-                        r, g, b, 0.34f + hitPulse * 0.28f);
-        }
-        break;
-    }
-    case PlayerShellKind::Rifle:
-    default: {
-        float bounce = sinf((1.0f - kick) * 3.1415926f) * 0.035f;
-        float outerScale = std::max(0.66f, 1.0f - kick * 0.24f + bounce);
-        float innerScale = std::max(0.70f, 1.0f - kick * 0.18f + bounce * 0.65f);
-        float outerAng = t * 2.25f;
-        float innerAng = -t * 1.06f + 0.78539816f;
-        float scopeAng = -t * 0.30f;
-
-        auto rx = [&](float lx, float ly) {
-            return cx + lx * cosf(scopeAng) - ly * sinf(scopeAng);
-        };
-        auto ry = [&](float lx, float ly) {
-            return cy + lx * sinf(scopeAng) + ly * cosf(scopeAng);
-        };
-
-        drawCircle(cx, cy, sz * 0.54f, 0.0f, 0.0f, 0.0f, 0.26f);
-        {
-            float orbitR = sz * 1.86f;
-            const int DASHES = 32;
-            for (int i = 0; i < DASHES; ++i) {
-                if ((i & 1) != 0) continue;
-                float a0 = scopeAng + (float)i / (float)DASHES * 6.2831853f;
-                float a1 = scopeAng + ((float)i + 0.42f) / (float)DASHES * 6.2831853f;
-                DrawPlayerLine(cx + cosf(a0) * orbitR, cy + sinf(a0) * orbitR,
-                               cx + cosf(a1) * orbitR, cy + sinf(a1) * orbitR,
-                               0.85f, r, g, b, 0.22f);
-            }
-            for (int i = 0; i < 2; ++i) {
-                float na = scopeAng * 1.55f + (float)i * 3.1415926f;
-                drawDiamond(cx + cosf(na) * orbitR, cy + sinf(na) * orbitR,
-                            sz * 0.095f, wr, wg, wb, 0.52f + kick * 0.18f);
-            }
-
-            float corner = sz * 1.45f;
-            float leg = sz * 0.34f;
-            for (int ix = -1; ix <= 1; ix += 2) {
-                for (int iy = -1; iy <= 1; iy += 2) {
-                    float x0 = (float)ix * corner;
-                    float y0 = (float)iy * corner;
-                    DrawPlayerLine(rx(x0, y0), ry(x0, y0),
-                                   rx(x0 - (float)ix * leg, y0), ry(x0 - (float)ix * leg, y0),
-                                   1.35f + kick * 0.35f, r, g, b, 0.34f + kick * 0.14f);
-                    DrawPlayerLine(rx(x0, y0), ry(x0, y0),
-                                   rx(x0, y0 - (float)iy * leg), ry(x0, y0 - (float)iy * leg),
-                                   1.35f + kick * 0.35f, r, g, b, 0.34f + kick * 0.14f);
-                    drawDiamond(rx(x0, y0), ry(x0, y0),
-                                sz * 0.060f, wr, wg, wb, 0.36f + kick * 0.22f);
-                }
-            }
-        }
-        DrawPlayerCrossStarFrame(cx, cy, sz * 1.24f * outerScale, sz * 0.33f * outerScale,
-                                 outerAng, r, g, b, 0.42f + kick * 0.18f,
-                                 1.35f + kick * 0.45f, true, true);
-        DrawPlayerCrossStarFrame(cx, cy, sz * 0.76f * innerScale, sz * 0.22f * innerScale,
-                                 innerAng, wr, wg, wb, 0.74f + kick * 0.22f,
-                                 2.35f + kick * 1.10f, true, true);
-
-        for (int i = 0; i < 4; ++i) {
-            float oa = outerAng - 1.5707963f + (float)i * 1.5707963f;
-            float ia = innerAng - 1.5707963f + (float)i * 1.5707963f;
-            drawDiamond(cx + cosf(oa) * sz * 1.24f * outerScale,
-                        cy + sinf(oa) * sz * 1.24f * outerScale,
-                        sz * (0.080f + kick * 0.050f), wr, wg, wb,
-                        0.24f + kick * 0.66f);
-            drawDiamond(cx + cosf(ia) * sz * 0.76f * innerScale,
-                        cy + sinf(ia) * sz * 0.76f * innerScale,
-                        sz * (0.070f + kick * 0.045f), r, g, b,
-                        0.38f + kick * 0.52f);
-        }
-
-        float core = sz * (0.30f + kick * 0.025f);
-        drawRect(cx - core * 0.52f, cy - core * 0.52f,
-                 core * 1.04f, core * 1.04f, 0.0f, 0.0f, 0.0f, 0.66f);
-        drawDiamond(cx, cy, core * 0.92f, r, g, b, 0.72f + kick * 0.18f);
-        drawDiamond(cx, cy, core * 0.46f, wr, wg, wb, 0.84f + kick * 0.12f);
-        break;
-    }
-    }
-}
-
 // DYING ?�망 ?�출 ?�태
 float g_DyingTimer    = 0.0f;
 bool  g_DeathBoomDone = false;
@@ -941,8 +308,6 @@ float g_GameOverFade  = 0.0f;    // 게임?�버 메뉴 ?�이?�인 (0??, ?�
 // ?�망 ?�출 = 즉시 ?�??��(?�티?? ????�� ?�파 ??GAMEOVER (�??�네마틱 ?�음, ?�순)
 static const float DYING_DUR      = 0.8f;   // ??�� ?�파가 ?�생?�는 ?�간 (?�이???�까지)
 static const float GAMEOVER_FADE  = 2.5f;   // �޴� 100%���� �ɸ��� �ð�
-static const float VICTORY_FADE   = 2.5f;
-float g_VictoryFade = 0.0f;
 
 struct DeathParticle {
     float x, y, vx, vy;
@@ -1003,12 +368,6 @@ void ApplyAugmentSideEffects(AugType atype, int scrW, int scrH) {
     }
 }
 
-void SyncPlayerBoundsAfterLoadout() {
-    g_WindowSizeCur = g_Stats.windowSize;
-    if (s_PlayerBoundsRef) EnsurePlayerBounds(*s_PlayerBoundsRef);
-    if (g_Stats.chakram) InitChakramsFromStats();
-}
-
 static void RebuildPlayerStatsFromOwned(int scrW, int scrH, bool preserveRuntime = true) {
     int weapon = g_CurrentWeapon;
     std::vector<int> owned = g_OwnedAugs;
@@ -1026,8 +385,6 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH, bool preserveRuntime
     g_Stats.baseFireInterval = g_Stats.fireInterval;
 
     memset(g_TypeOwned, 0, sizeof(g_TypeOwned));
-    if (weapon >= 0 && weapon < (int)StartWeapon::_COUNT)
-        MarkStartWeaponOwnedType((StartWeapon)weapon);
     // takenOnce is a per-run acquisition ledger.  Rebuilding derived stats
     // must not reopen cards that were already selected earlier in this run.
 
@@ -1036,7 +393,7 @@ static void RebuildPlayerStatsFromOwned(int scrW, int scrH, bool preserveRuntime
     for (int c = 0; c < MAX_CHAKRAMS; c++) g_Chakrams[c] = ChakramState{};
     g_LaserBeams.clear();
     g_ApproachOrbs.clear();
-    ResetSkills();
+    ResetPlayerSkills();
 
     for (int idx : owned) {
         if (idx < 0 || idx >= AUG_TOTAL) continue;
@@ -1120,7 +477,7 @@ static void ResetAugmentDerivedRuntime() {
     for (int d = 0; d < MAX_DRONES; d++) g_Drones[d] = DroneState{};
     for (int c = 0; c < MAX_CHAKRAMS; c++) g_Chakrams[c] = ChakramState{};
     g_LaserBeams.clear();
-    ResetSkills();
+    ResetPlayerSkills();
 }
 
 static void FinishCurrentAugmentReward() {
@@ -1133,7 +490,7 @@ static void FinishCurrentAugmentReward() {
     g_GameManager.augmentRewardInDebuff = false;
     if (!g_GameManager.ActivateNextAugmentReward()) {
         g_GameManager.currentState = GameState::RUNNING;
-        g_PostPickGrace = 0.5f;
+        g_PlayerRuntime.postPickGrace = 0.5f;
     }
 }
 
@@ -1157,7 +514,7 @@ static void FinishAugmentEffects() {
     }
 
     g_GameManager.currentState = GameState::RUNNING;
-    g_PostPickGrace = 0.5f;
+    g_PlayerRuntime.postPickGrace = 0.5f;
 }
 
 static void ProcessAugEffectQueue(int scrW, int scrH) {
@@ -1192,8 +549,6 @@ static void ProcessAugEffectQueue(int scrW, int scrH) {
             g_OwnedAugs.clear();
             // Preserve takenOnce: this is a run-wide acquisition ledger.
             memset(g_TypeOwned, 0, sizeof(g_TypeOwned));
-            if (g_CurrentWeapon >= 0 && g_CurrentWeapon < (int)StartWeapon::_COUNT)
-                MarkStartWeaponOwnedType((StartWeapon)g_CurrentWeapon);
             g_GameManager.maxHP = g_Stats.maxHP;
             if (g_GameManager.playerHP > g_Stats.maxHP)
                 g_GameManager.playerHP = g_Stats.maxHP;
@@ -1289,78 +644,7 @@ static void CancelAugReplaceFlow() {
     FinishAugmentEffects();
 }
 
-static void TriggerVictory() {
-    g_InBossIntermission = false;
-    g_IntermissionTimer  = 0.0f;
-    g_GameplayTelemetry.EndRun(g_GameTime,
-                               g_GameManager.playerLevel,
-                               g_GameManager.xp,
-                               g_Stats,
-                               "victory");
-    g_AchSaveNeeded = true;
-    g_LastRunRecord = RecordRunResult((int)g_Difficulty,
-                                      g_GameManager.score,
-                                      g_Stats.killCount,
-                                      (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
-    g_GameManager.currentState = GameState::VICTORY;
-    g_VictoryFade = 0.0f;
-}
 
-static void OnBossKilled(int bossPick) {
-    FinishBossKill(g_MonsterManager, bossPick,
-                   g_GameManager.screenW, g_GameManager.screenH);
-}
-
-static bool BossFightBusy() {
-    return (g_RRBoss && g_RRBoss->alive)
-        || (g_CentiBoss && g_CentiBoss->alive)
-        || (g_TessBoss && g_TessBoss->alive)
-        || (g_EtherBoss && g_EtherBoss->alive)
-        || (g_LeviathanBoss && g_LeviathanBoss->alive)
-        || g_BossWarnTimer > 0.0f;
-}
-
-static void StartBossWarn(int pick, const wchar_t* name, float hp) {
-    if (!kBossEncountersEnabled) return;
-    BossDir::SetActTheme(pick);
-    g_BossWarnPick = pick;
-    g_BossWarnName = name;
-    g_BossWarnHp   = hp;
-    float warnDur = g_CreativeMode ? 0.35f : BOSS_WARN_DUR * TrialBossWarningMult();
-    if (warnDur < 0.25f) warnDur = 0.25f;
-    g_BossWarnTimer = warnDur;
-}
-
-static void QueueCreativeBossPick(int pick, float bossHpC, float polyHpC) {
-    if (!kBossEncountersEnabled) return;
-    (void)polyHpC;
-    switch (pick) {
-    case 2: StartBossWarn(2, L"VOLLEY", bossHpC);        break;
-    case 8: StartBossWarn(8, L"FORK",  bossHpC * 0.7f); break;
-    case 10: StartBossWarn(10, TesseractGlitchBoss::BOSS_NAME, bossHpC * 0.92f); break;
-    case 20: StartBossWarn(20, EtherSwordBoss::BOSS_NAME, bossHpC * 3.2f);      break;
-    case 30: StartBossWarn(30, LeviathanBoss::BOSS_NAME, bossHpC);               break;
-    case 3: StartBossWarn(3, L"SPAM",   bossHpC * 0.9f); break;
-    default: StartBossWarn(2, L"VOLLEY", bossHpC);       break;
-    }
-}
-
-#if defined(_DEBUG)
-static constexpr bool kCompileDebugBuild = true;
-#else
-static constexpr bool kCompileDebugBuild = false;
-#endif
-
-static void DebugSpawnLeviathanNow() {
-    if (!kBossEncountersEnabled ||
-        ((!g_DebugMode && !kCompileDebugBuild) || BossFightBusy())) return;
-    const float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp
-                        * TrialBossHpMult();
-    StartBossWarn(30, LeviathanBoss::BOSS_NAME, bossHpC);
-    // Reuse the normal warning-to-spawn path, but resolve it on the next
-    // frame so the debug key behaves like an instant test summon.
-    g_BossWarnTimer = 0.01f;
-}
 
 static void BeginGameplayTelemetryIfNeeded() {
     if (!g_DebugMode || !g_BalanceTestMode) return;
@@ -1512,12 +796,6 @@ int main() {
     g_Scale = (float)screenHeight / SCALE_REF_H;
     if (g_Scale > 1.0f) g_Scale = 1.0f;
     if (g_Scale < 0.5f) g_Scale = 0.5f;
-    RR_WIN_W *= g_Scale; POLY_WIN_W *= g_Scale; BOTNET_WIN_W *= g_Scale;
-    CENTI_WIN_W *= g_Scale;
-    TESS_WIN_W  *= g_Scale;
-    ETHER_WIN_W *= g_Scale;
-    TOTEM_WIN_W *= g_Scale;
-    UNKNOWN_WIN_W *= g_Scale; UNKNOWN_WIN_H *= g_Scale;
     GENESIS_WIN_W *= g_Scale;
     SWARM_WIN_W    *= g_Scale;
     g_RfwW *= g_Scale; g_RfwH *= g_Scale;
@@ -1532,113 +810,7 @@ int main() {
         glEnable(GL_MULTISAMPLE);
 
     // ��Ʈ: exe ��ġ�� ���� Resource ���?��ΰ�?�޶��� �� �־� ���� �����ϴ� ��θ�?������.
-    {
-        auto fileExists = [](const char* path) -> bool {
-#ifdef _MSC_VER
-            FILE* fp = nullptr;
-            if (fopen_s(&fp, path, "rb") != 0 || !fp) return false;
-#else
-            FILE* fp = std::fopen(path, "rb");
-            if (!fp) return false;
-#endif
-            std::fclose(fp);
-            return true;
-        };
-        auto pickFont = [&](const char* a, const char* b, const char* c,
-                            const char* d = nullptr) -> const char* {
-            if (a && fileExists(a)) return a;
-            if (b && fileExists(b)) return b;
-            if (c && fileExists(c)) return c;
-            if (d && fileExists(d)) return d;
-            return nullptr;
-        };
-
-        // Windows releases use the exact fonts compiled into the executable.
-        // This prevents a stale Resource/Font folder from changing the UI
-        // after a user downloads only WiNILL.exe from GitHub.
-        const char* embeddedFontNames[] = {
-            "FONT_CHAKRA", "FONT_ORBIT", "FONT_JUA", "FONT_KOSUGI"
-        };
-        const unsigned char* memoryFonts[4] = {};
-        int memoryFontSizes[4] = {};
-        int memoryFontCount = 0;
-        for (const char* name : embeddedFontNames) {
-            EmbeddedResourceView view;
-            if (LoadEmbeddedResource(name, view)) {
-                memoryFonts[memoryFontCount] = view.data;
-                memoryFontSizes[memoryFontCount] = view.size;
-                ++memoryFontCount;
-            }
-        }
-
-        bool fontsInitialized = false;
-        if (memoryFontCount > 0) {
-            fontsInitialized =
-                g_TextL.InitFromMemory(memoryFonts, memoryFontSizes,
-                                       memoryFontCount, 36,
-                                       screenWidth, screenHeight) &&
-                g_TextS.InitFromMemory(memoryFonts, memoryFontSizes,
-                                       memoryFontCount, 22,
-                                       screenWidth, screenHeight) &&
-                g_TextXL.InitFromMemory(memoryFonts, memoryFontSizes,
-                                        memoryFontCount, 100,
-                                        screenWidth, screenHeight);
-        }
-
-        if (!fontsInitialized) {
-            const char* chain[6] = {};
-            int nFonts = 0;
-            auto addFont = [&](const char* path) {
-                if (path && nFonts < (int)(sizeof(chain) / sizeof(chain[0])))
-                    chain[nFonts++] = path;
-            };
-
-            addFont(pickFont("Resource/Font/ChakraPetch-Regular.ttf",
-                             "../Resource/Font/ChakraPetch-Regular.ttf",
-                             "../../Resource/Font/ChakraPetch-Regular.ttf"));
-            addFont(pickFont("Resource/Font/Orbit-Regular.ttf",
-                             "../Resource/Font/Orbit-Regular.ttf",
-                             "../../Resource/Font/Orbit-Regular.ttf"));
-            addFont(pickFont("Resource/Font/Jua-Regular.ttf",
-                             "../Resource/Font/Jua-Regular.ttf",
-                             "../../Resource/Font/Jua-Regular.ttf",
-                             "C:/Windows/Fonts/malgun.ttf"));
-            addFont(pickFont("Resource/Font/KosugiMaru-Regular.ttf",
-                             "../Resource/Font/KosugiMaru-Regular.ttf",
-                             "../../Resource/Font/KosugiMaru-Regular.ttf",
-                             "C:/Windows/Fonts/meiryo.ttc"));
-            if (nFonts == 0) {
-                addFont(pickFont("C:/Windows/Fonts/malgun.ttf",
-                                 "C:/Windows/Fonts/arial.ttf",
-                                 "C:/Windows/Fonts/meiryo.ttc"));
-            }
-
-            g_TextL.InitFromFiles(chain, nFonts, 36,
-                                  screenWidth, screenHeight);
-            g_TextS.InitFromFiles(chain, nFonts, 22,
-                                  screenWidth, screenHeight);
-            g_TextXL.InitFromFiles(chain, nFonts, 100,
-                                   screenWidth, screenHeight);
-        }
-        g_TextS.SetMinScale(0.58f);
-
-        // Warm only characters used by the game. The renderer caches glyphs
-        // lazily, so this removes first-use stalls without baking all Hangul.
-        for (int si = 0; si < (int)StrId::_COUNT; ++si) {
-            for (int li = 0; li < LANG_COUNT; ++li) {
-                g_TextL.PreloadText(kStrings[si][li]);
-                g_TextS.PreloadText(kStrings[si][li]);
-            }
-        }
-        for (int ai = 0; ai < AUG_TOTAL; ++ai) {
-            for (int li = 0; li < LANG_COUNT; ++li) {
-                g_TextL.PreloadText(ALL_AUGS[ai].locName[li]);
-                g_TextL.PreloadText(ALL_AUGS[ai].locDesc[li]);
-                g_TextS.PreloadText(ALL_AUGS[ai].locName[li]);
-                g_TextS.PreloadText(ALL_AUGS[ai].locDesc[li]);
-            }
-        }
-    }
+    InitializeGameFonts(screenWidth, screenHeight);
 
     BatchFlush(); glEnable(GL_BLEND);
     // RGB: ?��? ?�파블렌??/ Alpha: ?�레?�버???�파�??�바르게 ?�적
@@ -1783,6 +955,8 @@ int main() {
                 if (g_MonsterManager.monsters.size() <= before) break;
                 Monster* mob = g_MonsterManager.monsters.back();
                 mob->MakeKind((MobKind)mobKind);
+                if (mob->kind == MobKind::ROTOR)
+                    mob->hp *= g_Stats.rotorHpMult;
             }
         },
         [&](int count) {
@@ -1794,8 +968,6 @@ int main() {
     });
 
     float lastFrame        = 0.0f;
-    float spawnTimer       = 0.0f;
-    float rangedSpawnTimer = 0.0f;
     float fireTimer        = g_Stats.fireInterval;  // ready to fire immediately
     float accumulator      = 0.0f;
     const float FIXED_DT = 1.0f / 60.0f;
@@ -1804,37 +976,6 @@ int main() {
     g_AudioMonoOutput = Audio::IsMonoOutput();
     Audio::SetBgmEnabled(g_BgmEnabled);
     Audio::SetSfxEnabled(g_SfxEnabled);
-
-    // 최근???????�동조�?·?�도???�환?��?)·?�론·?�탑 공용
-    auto findNearestEnemy = [&](float fx, float fy, float& tx, float& ty) -> bool {
-        float nd = 1e18f; bool found = false;
-        auto consider = [&](float ex, float ey) {
-            float ddx = ex - fx, ddy = ey - fy;
-            float ds = ddx * ddx + ddy * ddy;
-            if (ds < nd) { nd = ds; tx = ex; ty = ey; found = true; }
-        };
-        auto vis = [&](float ex, float ey) {
-            return ex >= playerWin.x && ex <= playerWin.x + playerWin.width &&
-                   ey >= playerWin.y && ey <= playerWin.y + playerWin.height;
-        };
-        for (auto m : g_MonsterManager.monsters)
-            if (m->alive && vis(m->worldX, m->worldY)) consider(m->worldX, m->worldY);
-        for (auto r : g_MonsterManager.rangedMobs)
-            if (r->alive) consider(r->worldX, r->worldY);
-        if (g_RRBoss && g_RRBoss->alive)         consider(g_RRBoss->worldX, g_RRBoss->worldY);
-        if (g_CentiBoss && g_CentiBoss->alive) {
-            if (g_CentiBoss->vulnerable())
-                consider(g_CentiBoss->worldX, g_CentiBoss->worldY);
-            for (auto& mb : g_CentiBoss->minis) if (mb.alive) consider(mb.x, mb.y);
-        }
-        if (g_TessBoss && g_TessBoss->alive) {
-            consider(g_TessBoss->worldX, g_TessBoss->worldY);
-            for (auto& o : g_TessBoss->orbs) if (o.alive) consider(o.x, o.y);
-        }
-        if (g_LeviathanBoss && g_LeviathanBoss->heartVulnerable())
-            consider(g_LeviathanBoss->heartCX, g_LeviathanBoss->heartCY);
-        return found;
-    };
 
     // ============================================================
     // 메인 루프
@@ -1848,37 +989,34 @@ int main() {
 
         // ?�래??추적 브레?�크????마�?�??�태�??�겨 강종(E23) ??로그�??�치 ?�정
         {
-            const char* bn = g_RRBoss ? "reload" : g_CentiBoss ? "centi" :
-                             g_LeviathanBoss ? "leviathan" : "none";
             char bc[200];
             std::snprintf(bc, sizeof(bc),
-                "st=%d score=%lld lv=%d mobs=%u boss=%s",
+                "st=%d score=%lld lv=%d mobs=%u",
                 (int)g_GameManager.currentState,
                 (long long)g_GameManager.score,
                 g_GameManager.playerLevel,
-                (unsigned)g_MonsterManager.monsters.size(), bn);
+                (unsigned)g_MonsterManager.monsters.size());
             CrashHandler::SetBreadcrumb(bc);
         }
 
         // �??�커?��? ?�으�??�른 ?�으�??�환) ?�동 ?�시?��? ??        //   ?�버?�이???�커???�어??루프가 계속 ?��?�? ??막으�?게임??        //   백그?�운?�에??계속 진행??콤보 3�?창이 ?�러가 리셋?�는 버그 ??.
-        {
-            static bool s_wasFocused = true;
-            bool focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-            if (!focused && s_wasFocused) {
-                InputClearState();
-                g_GameManager.spaceReleased = true;
-                g_GameManager.escReleased = true;
-                if (g_GameManager.currentState == GameState::RUNNING) {
-                    g_GameManager.pauseResumeState = GameState::RUNNING;
-                    g_GameManager.currentState = GameState::PAUSED;
-                }
+        const InputFocusTransition focus = InputUpdateWindowFocus(window);
+        const bool inputFocusChanged = focus.lost || focus.gained;
+        if (inputFocusChanged) {
+            ResetPlayerInputEdges();
+            g_aug1Released = g_aug2Released = g_aug3Released = true;
+        }
+        if (focus.lost) {
+            g_GameManager.spaceReleased = true;
+            g_GameManager.escReleased = true;
+            if (g_GameManager.currentState == GameState::RUNNING) {
+                g_GameManager.pauseResumeState = GameState::RUNNING;
+                g_GameManager.currentState = GameState::PAUSED;
             }
-            if (focused && !s_wasFocused) {
-                InputClearState();
-                g_GameManager.spaceReleased = true;
-                g_GameManager.escReleased = true;
-            }
-            s_wasFocused = focused;
+        }
+        if (focus.gained) {
+            g_GameManager.spaceReleased = true;
+            g_GameManager.escReleased = true;
         }
 
         // FPS 측정 (1�??�위)
@@ -1891,15 +1029,28 @@ int main() {
 
         glfwPollEvents();
         UpdateWindowTaskbarPolicy(window);
+        if (inputFocusChanged) {
+            g_GameManager.spaceReleased =
+                glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE;
+            g_GameManager.escReleased =
+                glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_RELEASE;
+            g_aug1Released = glfwGetKey(window, GLFW_KEY_1) == GLFW_RELEASE;
+            g_aug2Released = glfwGetKey(window, GLFW_KEY_2) == GLFW_RELEASE;
+            g_aug3Released = glfwGetKey(window, GLFW_KEY_3) == GLFW_RELEASE;
+            g_PlayerRuntime.dashInputHeld =
+                keys[GLFW_KEY_LEFT_SHIFT] || keys[GLFW_KEY_RIGHT_SHIFT];
+            g_PlayerRuntime.skillInputHeld[0] = keys[GLFW_KEY_Q];
+            g_PlayerRuntime.skillInputHeld[1] = keys[GLFW_KEY_E];
+            g_PlayerRuntime.skillInputHeld[2] = keys[GLFW_KEY_R];
+        }
 
         // �?부?�럽�?보간 (?�이�? ?�면 ?�장 ??
-        //   ?�투/?�투?�버?�이(RUNNING/DYING/PAUSED/증강·?�버???�택)?�선 �??��? ??        //   ?�시?��? ??줌인?�는 �?부?�연?�럽?�는 ?�드�? �??�제???�작�???        //   '진짜 메뉴'�??�갈 ?�만(보스 처치 ?�엔 polyDeath 가 target=1 �?부?�럽�?복원).
+        //   ?�투/?�투?�버?�이(RUNNING/DYING/PAUSED/증강·?�버???�택)?�선 �??��? ??        //   ?�시?��? ??줌인?�는 �?부?�연?�럽?�는 ?�드�? �??�제???�작�???        // Restore the base view after leaving the active combat states.
         {
             GameState zs = g_GameManager.currentState;
             bool inFight = (zs == GameState::RUNNING || zs == GameState::DYING ||
                             zs == GameState::PAUSED  || zs == GameState::AUG_SELECT ||
-                            zs == GameState::DEBUFF_SELECT ||
-                            (zs == GameState::RUNNING && g_InBossIntermission));
+                            zs == GameState::DEBUFF_SELECT);
             if (!inFight) { g_ViewZoom = g_ViewZoomTarget = 1.0f; }
             else {
                 // ?�수 비�? 줌아?????�장???�서???�어�?(?�한 1.4�?= zoom 0.714).
@@ -1922,6 +1073,11 @@ int main() {
         double mx, my;
         glfwGetCursorPos(window, &mx, &my);
         const bool rawLmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        const bool rawRmb = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+        if (inputFocusChanged) {
+            g_LmbPrev = rawLmb;
+            g_RmbPrev = rawRmb;
+        }
         bool lmb = rawLmb;
         float wmx = ScreenToWorldX((float)mx);
         float wmy = ScreenToWorldY((float)my);
@@ -1945,22 +1101,8 @@ int main() {
         // Keep the OS pointer out of the combat view while the custom
         // crosshair is active. Pause/settings screens use normal input, so
         // the pointer must remain available for their clickable controls.
-        auto UpdateCursorVisibility = [&]() {
-            const GameState cursorState = g_GameManager.currentState;
-            const bool hideCursor = g_ShowCrosshair &&
-                !g_DebugToolkit.IsVisible() &&
-                (cursorState == GameState::RUNNING ||
-                 cursorState == GameState::DYING);
-            static bool cursorModeInitialized = false;
-            static bool cursorHidden = false;
-            if (!cursorModeInitialized || cursorHidden != hideCursor) {
-                glfwSetInputMode(window, GLFW_CURSOR,
-                                 hideCursor ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL);
-                cursorHidden = hideCursor;
-                cursorModeInitialized = true;
-            }
-        };
-        UpdateCursorVisibility();
+        InputUpdateGameplayCursor(window, g_GameManager.currentState,
+                                  g_ShowCrosshair, g_DebugToolkit.IsVisible());
 
         // ??게임 리셋 ?�다 (GAMEOVER ??READY, ?�이???�택 ?? ?�시?�기 버튼 ?�에???�출)
         auto ResetForNewGame = [&]() {
@@ -1970,7 +1112,7 @@ int main() {
                                        g_Stats,
                                        "reset_or_restart");
             g_Stats        = PlayerStats();
-            g_MetaStartAugs = ApplyMeta(g_Stats);    // 메�? ?�구 ?�그?�이???�용
+            ApplyMeta(g_Stats);
             g_Stats.windowSize *= g_Scale;           // ?�레?�어 �????�상??비�? 축소
             g_ApproachOrbs.clear();
             for (int d = 0; d < MAX_DRONES;   d++) g_Drones[d]   = DroneState{};
@@ -1983,7 +1125,6 @@ int main() {
             g_CreativeGodmode  = false;
             g_CreativeFreeGrab = false;
             g_HoveredAug       = -1;
-            g_EnterReleased    = true;
             g_ConversionWeapon = -1;
             g_CurrentWeapon    = -1;
             g_PauseSelectedAug = -1;
@@ -1995,32 +1136,14 @@ int main() {
             g_MuzzleTimer = 0.0f;
             g_StaticFieldPulseTimer = 0.0f;
             g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
-            g_NextBossScore = FIRST_BOSS_SCORE;
-            BossDir::ResetRotation();
-            BossDir::ResetAct();
             ResetTrials();
             g_RunStardust       = 0;
-            g_InBossIntermission = false;
-            g_IntermissionTimer = 0.0f;
-            g_SkipZoneHold      = 0.0f;
-            g_SkipZoneX         = 0.0f;
-            g_SkipZoneY         = 0.0f;
-            g_BossRewardPicksLeft = 0;
-            g_BossWarnTimer = 0.0f; g_BossWarnPick = -1;
-            g_RRWasP2 = g_RRWasP3 = false;
-            g_TessWasP2 = g_TessWasP3 = false;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;
             g_StardustPickups.clear(); g_StardustHudPulse = 0.0f;
             g_XpBarPop = 0.0f;
 
-            if (g_RRBoss)    { delete g_RRBoss;    g_RRBoss    = nullptr; }
-            if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
-            if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
-            if (g_EtherBoss) { delete g_EtherBoss; g_EtherBoss = nullptr; }
-            if (g_LeviathanBoss) { delete g_LeviathanBoss; g_LeviathanBoss = nullptr; }
-            g_BossTintT = 0.0f;
             ResetJuice();
-            ResetSkills();
+            ResetPlayerSkills();
             g_WindowSizeCur = g_Stats.windowSize;
             g_WinPrevHP = -1.0f; g_HpGhost = -1.0f;
             g_PlayerDamagePulse = 0.0f;
@@ -2030,12 +1153,10 @@ int main() {
             g_Difficulty = Difficulty::NORMAL;
             // Keep the first ranged-mob interval active from run start so its
             // silhouette can be inspected without a score-based warm-up.
-            rangedSpawnTimer = 0.0f;
-            spawnTimer        = 0.0f;
+            ResetEnemySpawnState();
             g_DyingTimer      = 0.0f;
             g_DeathBoomDone   = false;
             g_GameOverFade    = 0.0f;
-            g_VictoryFade     = 0.0f;
             g_DeathFlash      = 0.0f;
             for (int i = 0; i < MAX_DEBRIS; i++) g_Debris[i].active = false;
             fireTimer = g_Stats.fireInterval;
@@ -2043,28 +1164,10 @@ int main() {
             playerWin.height = g_Stats.windowSize;
             playerWin.x = (screenWidth  - g_Stats.windowSize) * 0.5f;
             playerWin.y = (screenHeight - g_Stats.windowSize) * 0.5f;
-            // GameManager ?�드??직접 리셋
-            g_GameManager.playerHP    = 100.0f;
-            g_GameManager.maxHP       = 100.0f;
-            g_GameManager.score       = 0;
-            g_GameManager.scoreAccum  = 0.0f;
-            if (g_CreativeMode) {
-                g_GameManager.score      = g_CreativeStartScore;
-                g_GameManager.scoreAccum = (float)g_CreativeStartScore;
-                // ?�작 ?�수보다 ??�?20�?배수부???�반 보스 (?�꺼번에 ?�아�?방�?)
-                g_NextBossScore = ((g_CreativeStartScore / 200000) + 1) * 200000;
-                // ?��? 50�??�상?�서 ?�작?�면 ?�리모프 ?�동?�장 ?�략 (보스?�택?�로 ?�환)
-                // ?�택 보스 즉시 ?�폰 ?�약 (?�수 무�?)
-                g_CreativeBossPending = (g_CreativeBossPick >= 0);
-            }
-            g_GameManager.xp          = 0;
-            g_GameManager.playerLevel = 1;
-            // A new run gets a fresh one-time acquisition ledger.
-            memset(g_GameManager.takenOnce, 0, sizeof(g_GameManager.takenOnce));
-            g_Bullets.clear();
-            g_MonsterManager.Clear();
-            // UpdateStateSystem ??중복 reset ?�피
-            g_GameManager.lastState = GameState::READY;
+            const long long initialScore = g_CreativeMode
+                ? g_CreativeStartScore : 0;
+            g_GameManager.ResetRunProgress(g_MonsterManager, g_Bullets,
+                                           100.0f, initialScore);
         };
 
         // Restart the current run without returning to the PLAY screen.
@@ -2082,7 +1185,7 @@ int main() {
                 savedTrialSelected[i] = g_TrialSelected[i];
             }
 
-            // This clears enemies, projectiles, drops, boss instances,
+            // This clears enemies, projectiles, drops,
             // timers, run currencies, score/XP and the death presentation.
             ResetForNewGame();
 
@@ -2131,8 +1234,7 @@ int main() {
         // settings should use the same report screen as a normal death while
         // preserving the score, build, level, kills, and earned stardust.
         auto AbandonCurrentRun = [&]() {
-            if (g_GameManager.currentState == GameState::GAMEOVER ||
-                g_GameManager.currentState == GameState::VICTORY)
+            if (g_GameManager.currentState == GameState::GAMEOVER)
                 return;
 
             g_GameplayTelemetry.EndRun(g_GameTime,
@@ -2143,10 +1245,6 @@ int main() {
 
             g_MonsterManager.Clear();
             g_Bullets.clear();
-            if (g_RRBoss)    { delete g_RRBoss;    g_RRBoss    = nullptr; }
-            if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
-            if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
-            if (g_EtherBoss) { delete g_EtherBoss; g_EtherBoss = nullptr; }
                     g_LaserBeams.clear();
 
             g_ApproachOrbs.clear();
@@ -2231,8 +1329,6 @@ int main() {
             case GameState::AUG_REPLACE:    scene = "Augment Replace"; break;
             case GameState::DEBUFF_SELECT:  scene = "Modifier Select"; break;
             case GameState::GAMEOVER:       scene = "Game Over"; break;
-            case GameState::VICTORY:        scene = "Victory"; break;
-            case GameState::SHOP:           scene = "Shop"; break;
             case GameState::CODEX:          scene = "Codex"; break;
             case GameState::TUTORIAL:       scene = "Tutorial"; break;
             case GameState::SETTINGS:       scene = "Settings"; break;
@@ -2256,7 +1352,7 @@ int main() {
             glfwSetWindowTitle(window, title.c_str());
         }
 
-        // ?�?�?BGM ??게임?�레??중엔 메인 루프, 메뉴?�선 ?��? (보스 BGM ?�??�일 ?�기�??�장) ?�?�?
+        // Keep the main loop music active during gameplay and stop it in menus.
         {
             Audio::SetEnabled(g_AudioEngineEnabled && g_SoundVol > 0);
             Audio::SetBgmEnabled(g_BgmEnabled);
@@ -2341,8 +1437,6 @@ int main() {
                     };
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName((int)m->kind));
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_SCOPE));
-                    if (g_CentiBoss && g_CentiBoss->alive) consider(g_CentiBoss->worldX, g_CentiBoss->worldY, L"FORK");
-                    if (g_TessBoss && g_TessBoss->alive) consider(g_TessBoss->worldX, g_TessBoss->worldY, TesseractGlitchBoss::BOSS_NAME);
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: signal dispersed", L"Dispersed by %ls", L"%ls dispersed" };
                     const wchar_t* UNK[3] = { L"Unknown error", L"Terminated by unknown error", L"Unknown error" };
@@ -2372,15 +1466,8 @@ int main() {
                     r->alive = false; r->scored = true;
                 }
                 // 모든 ?�·보?�·분?�체·총알·?�탑??즉시 ?�전 ??�� ??UpdateAll(RUNNING ?�용)??                //   맡기�?DYING/GAMEOVER ?�안 ?�거�?�?�??�이 ?��? ?�태�??�으므�??�기???�거.
-                g_MonsterManager.Clear();   // monsters/ranged/boss ?��? delete + clear
+                g_MonsterManager.Clear();   // monsters, ranged mobs, and projectiles are deleted and cleared
                 g_Bullets.clear();
-                if (g_RRBoss)    { delete g_RRBoss;    g_RRBoss    = nullptr; }
-                if (g_CentiBoss) { delete g_CentiBoss; g_CentiBoss = nullptr; }
-                if (g_TessBoss)  { delete g_TessBoss;  g_TessBoss  = nullptr; }
-                if (g_EtherBoss) { delete g_EtherBoss; g_EtherBoss = nullptr; }
-                            g_BossWarnTimer  = 0.0f; g_BossWarnPick = -1;   // ?�망 ???��?�??�조 취소
-                g_RRWasP2 = g_RRWasP3 = false;
-                g_TessWasP2 = g_TessWasP3 = false;
                 g_LaserBeams.clear();   // ?�캔 ?�이?�?�??�리
                    // 배드 ?�터 감속 구역/출혈 ?�리
                 // ?�레?�어 중심 ?�??�� + 충격??+ ?�광 + ?�들�?+ 방사???�편
@@ -2444,10 +1531,6 @@ int main() {
             g_GameOverFade += delta / GAMEOVER_FADE;
             if (g_GameOverFade > 1.0f) g_GameOverFade = 1.0f;
         }
-        if (g_GameManager.currentState == GameState::VICTORY && g_VictoryFade < 1.0f) {
-            g_VictoryFade += delta / VICTORY_FADE;
-            if (g_VictoryFade > 1.0f) g_VictoryFade = 1.0f;
-        }
 
         // ?�망 ??�� ?�여�??�티?�·파?�·충격파·?�파????게임?�버 ?�면??굳어버리지 ?�도�?        //   DYING/GAMEOVER ?�안?�도 계속 갱신???�연?�럽�??�라지�??�다.
         {
@@ -2479,6 +1562,8 @@ int main() {
 
         // --- AUG_SELECT / DEBUFF_SELECT: 1/2/3 focus, SPACE confirm ---
         static bool s_augSpaceReleased = true;
+        if (inputFocusChanged)
+            s_augSpaceReleased = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE;
         {
             const int spaceState = glfwGetKey(window, GLFW_KEY_SPACE);
             if (spaceState == GLFW_RELEASE) s_augSpaceReleased = true;
@@ -2507,7 +1592,7 @@ int main() {
                     FinishAugmentEffects();
                 } else {
                     g_GameManager.currentState = GameState::RUNNING;
-                    g_PostPickGrace = 0.5f;
+                    g_PlayerRuntime.postPickGrace = 0.5f;
                 }
             };
 
@@ -2568,6 +1653,12 @@ int main() {
             static bool s_repEsc   = true;
             static bool s_repSpace = true;
             static bool s_repKeys[9] = { true,true,true,true,true,true,true,true,true };
+            if (inputFocusChanged) {
+                s_repEsc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_RELEASE;
+                s_repSpace = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE;
+                for (int i = 0; i < 9; ++i)
+                    s_repKeys[i] = glfwGetKey(window, GLFW_KEY_1 + i) == GLFW_RELEASE;
+            }
 
             int kEsc   = glfwGetKey(window, GLFW_KEY_ESCAPE);
             int kSpRep = glfwGetKey(window, GLFW_KEY_SPACE);
@@ -2620,6 +1711,7 @@ int main() {
         if (!debugInputCaptured && (g_CreativeMode || g_DebugMode || kCompileDebugBuild)) {
             static bool s_fkeyReleased = true;
             int kF = glfwGetKey(window, GLFW_KEY_F);
+            if (inputFocusChanged) s_fkeyReleased = kF == GLFW_RELEASE;
             if (kF == GLFW_RELEASE) s_fkeyReleased = true;
             if (kF == GLFW_PRESS && s_fkeyReleased &&
                 g_GameManager.currentState == GameState::RUNNING &&
@@ -2648,40 +1740,12 @@ int main() {
             // G ??무적 ON/OFF ?��?
             static bool s_gkeyReleased = true;
             int kG = glfwGetKey(window, GLFW_KEY_G);
+            if (inputFocusChanged) s_gkeyReleased = kG == GLFW_RELEASE;
             if (kG == GLFW_RELEASE) s_gkeyReleased = true;
             if (kG == GLFW_PRESS && s_gkeyReleased &&
                 g_GameManager.currentState == GameState::RUNNING) {
                 g_CreativeGodmode = !g_CreativeGodmode;
                 s_gkeyReleased = false;
-            }
-            // B ? ���� ���� ���?���� (None�̸� VOLLEY.sys)
-            static bool s_bkeyReleased = true;
-            int kB = glfwGetKey(window, GLFW_KEY_B);
-            if (kB == GLFW_RELEASE) s_bkeyReleased = true;
-            if (kB == GLFW_PRESS && s_bkeyReleased && kBossEncountersEnabled && g_CreativeMode &&
-                g_GameManager.currentState == GameState::RUNNING) {
-                if (!BossFightBusy()) {
-                    float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult();
-                    float polyHpC = 30000.0f * TrialBossHpMult();
-                    int pick = g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2;
-                    QueueCreativeBossPick(pick, bossHpC, polyHpC);
-                }
-                s_bkeyReleased = false;
-            }
-
-            // Debug-only shortcut: press 0 to summon the current test boss.
-            // The edge latch prevents a held key from spawning repeatedly.
-            static bool s_0keyReleased = true;
-            int k0 = glfwGetKey(window, GLFW_KEY_0);
-            int k0pad = glfwGetKey(window, GLFW_KEY_KP_0);
-            const bool zeroDown = (k0 == GLFW_PRESS || k0pad == GLFW_PRESS);
-            const bool zeroUp = (k0 == GLFW_RELEASE && k0pad == GLFW_RELEASE);
-            if (zeroUp) s_0keyReleased = true;
-            if (zeroDown && s_0keyReleased &&
-                kBossEncountersEnabled && (g_DebugMode || kCompileDebugBuild) &&
-                g_GameManager.currentState == GameState::RUNNING) {
-                DebugSpawnLeviathanNow();
-                s_0keyReleased = false;
             }
         }
 
@@ -2697,47 +1761,18 @@ int main() {
             if (g_GameManager.ShouldUpdate()) {
                 const bool playerControl = g_GameManager.currentState == GameState::RUNNING;
                 if (!playerControl) {
-                    g_DashActive = false;
+                    g_PlayerRuntime.dashActive = false;
                 }
                 g_PlayerDmgMult = g_Stats.GetDamageTakenMult();
-                // WASD ?�동 ???�각??normalize (vec 모아??길이�??�눔)
+                const float zoomNow = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
                 float mvX = 0.0f, mvY = 0.0f;
-                if (keys[GLFW_KEY_W]) mvY -= 1.0f;
-                if (keys[GLFW_KEY_S]) mvY += 1.0f;
-                if (keys[GLFW_KEY_A]) mvX -= 1.0f;
-                if (keys[GLFW_KEY_D]) mvX += 1.0f;
-                float mlen = sqrtf(mvX*mvX + mvY*mvY);
-                if (playerControl && mlen > 0.001f && !g_DashActive) {
-                    mvX /= mlen; mvY /= mlen;
-                    float moveMult = g_Stats.GetMoveMultiplier(lmb);
-                    // 배드 ?�터 감속 구역 ??부?�되???�진 ?�역(grow factor) ?�이�??�동?�도 -10%
-                    float zoneSlow = 1.0f;
-                    {
-                        const float pcx = playerWin.x + playerWin.width  * 0.5f;
-                        const float pcy = playerWin.y + playerWin.height * 0.5f;
-                        if (g_EtherBoss && g_EtherBoss->alive &&
-                            g_EtherBoss->IsBadSector(pcx, pcy)) {
-                            zoneSlow = 0.50f;
-                        }
-                    }
-                    float curMove  = MOVE_SPEED * moveMult * zoneSlow;
-                    playerWin.x += mvX * curMove * FIXED_DT;
-                    playerWin.y += mvY * curMove * FIXED_DT;
-                    // FORK.worm ?�래??�????�반 ?�동?�?직선??막힘, ?�??무적 �????�과
-                    if (g_CentiBoss && g_CentiBoss->alive && g_DashInvuln <= 0.0f) {
-                        float wpcx = playerWin.x + playerWin.width  * 0.5f;
-                        float wpcy = playerWin.y + playerWin.height * 0.5f;
-                        g_CentiBoss->blockMove(wpcx, wpcy, 18.0f);
-                        playerWin.x = wpcx - playerWin.width  * 0.5f;
-                        playerWin.y = wpcy - playerWin.height * 0.5f;
-                    }
-                    if (g_TessBoss && g_TessBoss->alive && g_DashInvuln <= 0.0f) {
-                        float wpcx = playerWin.x + playerWin.width  * 0.5f;
-                        float wpcy = playerWin.y + playerWin.height * 0.5f;
-                        g_TessBoss->blockMove(wpcx, wpcy, 18.0f);
-                        playerWin.x = wpcx - playerWin.width  * 0.5f;
-                        playerWin.y = wpcy - playerWin.height * 0.5f;
-                    }
+                const float mlen = UpdatePlayerMovement(
+                    playerWin.x, playerWin.y,
+                    keys[GLFW_KEY_W], keys[GLFW_KEY_S],
+                    keys[GLFW_KEY_A], keys[GLFW_KEY_D],
+                    playerControl, MOVE_SPEED * g_Stats.GetMoveMultiplier(lmb),
+                    FIXED_DT, g_PlayerRuntime.dashActive, mvX, mvY);
+                if (playerControl && mlen > 0.001f && !g_PlayerRuntime.dashActive) {
                     // ?�동 ?�상(afterimage) ???�정 간격?�로 ?�레?�어 중심???��? ?�안 ?�상
                     static float s_trailAcc = 0.0f;
                     s_trailAcc += FIXED_DT;
@@ -2749,37 +1784,24 @@ int main() {
                     }
                 }
 
-                // ?�레?�어 캐릭??�?중앙)가 보이???�역 밖으�??��?지 못하�??�램??
-                // 줌아???�리모프 2?�이�??�면 보이???�드가 ?�어지므�??�동 구역??같이 ?�장.
-                // (zoom=1 ?�면 ?�확??[0, screen] ??기존�??�일)
-                float zoomNow = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
-                float halfW = (float)screenWidth  * 0.5f / zoomNow;
-                float halfH = (float)screenHeight * 0.5f / zoomNow;
-                float ccX   = (float)screenWidth  * 0.5f;
-                float ccY   = (float)screenHeight * 0.5f;
-                float pCX = playerWin.x + playerWin.width  * 0.5f;
+                const PlayerViewportBounds viewport = GetPlayerViewportBounds(
+                    (float)screenWidth, (float)screenHeight, zoomNow,
+                    BROWSER_CHROME_H, g_GameBarH + (float)g_TaskbarH);
+                ClampPlayerToViewport(playerWin.x, playerWin.y,
+                                      playerWin.width, playerWin.height,
+                                      viewport);
+                const float ccX = viewport.centerX;
+                const float ccY = viewport.centerY;
+                const float halfW = viewport.halfWidth;
+                const float halfH = viewport.halfHeight;
+                const float topLimit = viewport.top;
+                const float bottomLimit = viewport.bottom;
+                float pCX = playerWin.x + playerWin.width * 0.5f;
                 float pCY = playerWin.y + playerWin.height * 0.5f;
-                if (pCX < ccX - halfW) pCX = ccX - halfW;
-                if (pCX > ccX + halfW) pCX = ccX + halfW;
-                // ���? �÷��̾� �߽��� Ÿ��Ʋ�� �Ʒ��� ��ġ
-                {
-                    float topLimit = ccY + (BROWSER_CHROME_H - ccY) / zoomNow;
-                    if (pCY < topLimit) pCY = topLimit;
-                }
-                // C17: ?�단 ?�업?�시�??�게??가�?�?+ ?�제 OS ?�업?�시�? 침범 방�? ??                //   ?�업?�시줄�? '?�크�? ?�단 고정 ?��??�라, 줌아???�수 ?�장)?�면 ?�드 ?�위�?                //   barTotal/zoom 만큼 차�??? 보이???�역 ?�단(ccY+halfH)?�서 그만???��? ?�계 ??                //   ?�단 ?�장�??��?�� ?�도�?기존??sh-barTotal 고정?�라 ?�단�????�어?�음).
-                float barTotal    = g_GameBarH + (float)g_TaskbarH;
-                float bottomLimit = ccY + halfH - barTotal / zoomNow;
-                if (pCY > bottomLimit) pCY = bottomLimit;
-                playerWin.x = pCX - playerWin.width  * 0.5f;
-                playerWin.y = pCY - playerWin.height * 0.5f;
 
                 // ?�?�??�티�??�킬 ??쿨다??지??갱신 + ?�력(Shift ?�??/ Q·E·R ?�롯) ?�?�?
-                if (g_DashCd > 0.0f)        g_DashCd        -= FIXED_DT;
-                if (g_DashInvuln > 0.0f)    g_DashInvuln    -= FIXED_DT;
-                if (g_PostPickGrace > 0.0f) g_PostPickGrace -= FIXED_DT;  // C14
-                if (g_TimeStopTimer > 0.0f) g_TimeStopTimer -= FIXED_DT;
-                if (g_HyperFocusTimer > 0.0f) g_HyperFocusTimer -= FIXED_DT;
-                for (int i = 0; i < 3; i++) if (g_Skills[i].cd > 0.0f) g_Skills[i].cd -= FIXED_DT;
+                UpdatePlayerRuntimeTimers(FIXED_DT);
+
 
                 // �??�기 ???�레?�어 중심 ??�� (?�백 + ?�해)
                 auto closeWindowBlast = [&](float cx, float cy) {
@@ -2792,27 +1814,6 @@ int main() {
                     };
                     for (auto m  : g_MonsterManager.monsters)   if (m->alive)  hitKB(m->worldX,  m->worldY,  m->hp,  m->alive);
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  hitKB(r->worldX,  r->worldY,  r->hp,  r->alive);
-                    auto hitBossBlast = [&](float ex, float ey, float& hp, bool& al) {
-                        float dx = ex - cx, dy = ey - cy;
-                        if (dx*dx + dy*dy >= r2) return;
-                        float dealt = std::min(dmg, hp);
-                        hp -= dealt;
-                        SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f);
-                        ApplyBossLifestealFromDamage(dealt);
-                        if (hp <= 0.0f) al = false;
-                    };
-                    if (g_RRBoss && g_RRBoss->alive)
-                        hitBossBlast(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
-                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
-                        hitBossBlast(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
-                    if (g_TessBoss && g_TessBoss->alive)
-                        hitBossBlast(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
-                    if (g_EtherBoss && g_EtherBoss->alive) {
-                        float dx = g_EtherBoss->worldX - cx, dy = g_EtherBoss->worldY - cy;
-                        if (dx*dx + dy*dy < r2) HitEtherBossDirect(dmg, cx, cy, false);
-                    }
-                    if (g_LeviathanBoss && g_LeviathanBoss->alive)
-                        HitLeviathanInRadius(dmg, cx, cy, rad, false);
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -2827,54 +1828,37 @@ int main() {
                     switch (s.type) {
                     case SkillType::CLOSE_WINDOW: closeWindowBlast(pCX, pCY); break;
                     case SkillType::HYPER_FOCUS:
-                        g_HyperFocusTimer = HYPER_FOCUS_DUR;
+                        g_PlayerRuntime.hyperFocusTimer = HYPER_FOCUS_DUR;
                         TriggerFlash(0.5f, 0.75f, 1.0f, 0.35f);
                         break;
-                    case SkillType::TIME_STOP:    g_TimeStopTimer  = TIMESTOP_DUR;
+                    case SkillType::TIME_STOP:    g_PlayerRuntime.timeStopTimer  = TIMESTOP_DUR;
                                                   TriggerFlash(0.4f,0.9f,1.0f,0.4f); break;
                     default: break;
                     }
-                    s.cd = SkillCooldownMax(s.type);
+                    s.cd = PlayerSkillCooldownMax(s.type);
                 };
 
                 // �÷��� ���?? ���� �̵� + ª�� ����
-                static bool pDash=false, pQ=false, pE=false, pR=false;
-                if (playerControl && g_DashActive) {
-                    g_DashT += FIXED_DT / DASH_DUR;
-                    if (g_DashT >= 1.0f) {
-                        g_DashT = 1.0f;
-                        g_DashActive = false;
-                    }
-                    float u = g_DashT;
-                    pCX = g_DashFromX + (g_DashToX - g_DashFromX) * u;
-                    pCY = g_DashFromY + (g_DashToY - g_DashFromY) * u;
+                if (playerControl && g_PlayerRuntime.dashActive) {
+                    AdvancePlayerDash(FIXED_DT, pCX, pCY);
                     playerWin.x = pCX - playerWin.width * 0.5f;
                     playerWin.y = pCY - playerWin.height * 0.5f;
-                    g_DashInvuln = DASH_INVULN;
                 }
                 bool cDash = keys[GLFW_KEY_LEFT_SHIFT] || keys[GLFW_KEY_RIGHT_SHIFT];
-                const float dashCdMax = (g_HyperFocusTimer > 0.0f) ? HYPER_FOCUS_DASH_CD : DASH_CD;
-                if (playerControl && cDash && !pDash && g_DashCd <= 0.0f && !g_DashActive) {
+                if (playerControl && cDash && !g_PlayerRuntime.dashInputHeld && g_PlayerRuntime.dashCooldown <= 0.0f && !g_PlayerRuntime.dashActive) {
                     float ddx = mvX, ddy = mvY;
                     if (mlen <= 0.001f) {
                         float ax = wmx - pCX, ay = wmy - pCY;
                         float al = std::sqrt(ax*ax+ay*ay)+1e-3f; ddx = ax/al; ddy = ay/al;
                     }
-                    g_DashFromX = pCX;  g_DashFromY = pCY;
-                    g_DashToX   = pCX + ddx * DASH_DIST;
-                    g_DashToY   = pCY + ddy * DASH_DIST;
-                    if (g_DashToX < ccX-halfW) g_DashToX = ccX-halfW;
-                    if (g_DashToX > ccX+halfW) g_DashToX = ccX+halfW;
-                    { float dtl = ccY + (BROWSER_CHROME_H - ccY) / zoomNow;
-                      if (g_DashToY < dtl) g_DashToY = dtl; }
-                    if (g_DashToY > ccY+halfH) g_DashToY = ccY+halfH;
-                    g_DashActive = true; g_DashT = 0.0f;
-                    g_DashCd = dashCdMax;
-                    g_DashInvuln = DASH_INVULN;
+                    const float topLimit = ccY + (BROWSER_CHROME_H - ccY) / zoomNow;
+                    BeginPlayerDash(pCX, pCY, ddx, ddy,
+                                    ccX - halfW, ccX + halfW,
+                                    topLimit, ccY + halfH);
                     TriggerFlash(0.35f, 0.85f, 1.0f, 0.12f);
-                    SpawnShockWave(g_DashFromX, g_DashFromY, 70.0f, 0.25f, 0.4f, 1.0f, 1.0f);
+                    SpawnShockWave(g_PlayerRuntime.dashFromX, g_PlayerRuntime.dashFromY, 70.0f, 0.25f, 0.4f, 1.0f, 1.0f);
                     if (g_Stats.dashUpgrade) {
-                        g_DashBoostShotsLeft = 3;
+                        g_PlayerRuntime.dashBoostShotsLeft = 3;
                         const int burstN = 3 + rand() % 3;
                         for (int bi = 0; bi < burstN; bi++) {
                             float a = (float)bi / (float)burstN * 2.0f * (float)M_PI
@@ -2893,10 +1877,14 @@ int main() {
                         }
                     }
                 }
-                pDash = cDash;
-                bool cQ = keys[GLFW_KEY_Q]; if (playerControl && cQ && !pQ) useSkill(0); pQ = cQ;
-                bool cE = keys[GLFW_KEY_E]; if (playerControl && cE && !pE) useSkill(1); pE = cE;
-                bool cR = keys[GLFW_KEY_R]; if (playerControl && cR && !pR) useSkill(2); pR = cR;
+                g_PlayerRuntime.dashInputHeld = cDash;
+                const int skillKeys[3] = { GLFW_KEY_Q, GLFW_KEY_E, GLFW_KEY_R };
+                for (int i = 0; i < 3; ++i) {
+                    const bool held = keys[skillKeys[i]];
+                    if (playerControl && held && !g_PlayerRuntime.skillInputHeld[i])
+                        useSkill(i);
+                    g_PlayerRuntime.skillInputHeld[i] = held;
+                }
                 // C16: ?�티�??�킬 ?�동 ?�용 ??쿨다???�난 ?�롯???�동 발동
                 if (playerControl && g_AutoSkill) for (int i = 0; i < 3; i++) useSkill(i);
 
@@ -2908,7 +1896,7 @@ int main() {
                     float gx = gravis->worldX - pCX;
                     float gy = gravis->worldY - pCY;
                     float gd2 = gx * gx + gy * gy;
-                    if (playerControl && !g_DashActive && gd2 > 36.0f && gd2 < fieldR * fieldR) {
+                    if (playerControl && !g_PlayerRuntime.dashActive && gd2 > 36.0f && gd2 < fieldR * fieldR) {
                         const float gd = sqrtf(gd2);
                         const float influence = 1.0f - gd / fieldR;
                         const float pullStep = (24.0f + 58.0f * influence) * influence * FIXED_DT;
@@ -2936,86 +1924,26 @@ int main() {
                 playerWin.x = pCX - playerWin.width * 0.5f;
                 playerWin.y = pCY - playerWin.height * 0.5f;
 
-                // 총알 ?�동 + ?�면 �?비활?�화 (+ ?�도??보정)
-                for (auto& b : g_Bullets) {
-                    // ?�도?? 가??가까운 ?�을 ?�해 ?�진??방향 보정
-                    if (b.homing && !b.isEnemy && b.active) {
-                        float tx = 0.0f, ty = 0.0f;
-                        if (findNearestEnemy(b.x, b.y, tx, ty)) {
-                            // ?�재 방향 ??목표 방향 ?�이�?turn rate 만큼 ?�전
-                            float wx = tx - b.x, wy = ty - b.y;
-                            float wl = sqrtf(wx*wx + wy*wy);
-                            if (wl > 0.001f) {
-                                float wdx = wx / wl, wdy = wy / wl;
-                                // ?�적/?�적?�로 각도 차이 (?��? ?�계)
-                                float curA   = atan2f(b.dirY, b.dirX);
-                                float wantA  = atan2f(wdy, wdx);
-                                float diff   = wantA - curA;
-                                while (diff >  3.14159265f) diff -= 6.2831853f;
-                                while (diff < -3.14159265f) diff += 6.2831853f;
-                                float maxStep = b.homingTurn * FIXED_DT;
-                                if (diff >  maxStep) diff =  maxStep;
-                                if (diff < -maxStep) diff = -maxStep;
-                                float newA = curA + diff;
-                                b.dirX = cosf(newA);
-                                b.dirY = sinf(newA);
-                            }
-                        }
-                    }
-                    //   ?? ?�레?�어 근처(<300px)?�선 ?�도 중단 ??빗나�??�이 공전?��? ?�고
-                    //   그�?�?지?�감(?�전 0.9 rad/s 가 ?�레?�어 주위�??�는 문제 ?�정).
-                    if (b.homing && b.isEnemy && b.active && g_TimeStopTimer <= 0.0f) {
-                        float pCX = playerWin.x + playerWin.width  * 0.5f;
-                        float pCY = playerWin.y + playerWin.height * 0.5f;
-                        float wx = pCX - b.x, wy = pCY - b.y;
-                        float wl = sqrtf(wx*wx + wy*wy);
-                        float homDt = FIXED_DT * ((g_HyperFocusTimer > 0.0f) ? 0.7f : 1.0f);
-                        if (wl > 300.0f) {
-                            float curA  = atan2f(b.dirY, b.dirX);
-                            float wantA = atan2f(wy / wl, wx / wl);
-                            float diff  = wantA - curA;
-                            while (diff >  3.14159265f) diff -= 6.2831853f;
-                            while (diff < -3.14159265f) diff += 6.2831853f;
-                            float maxStep = b.homingTurn * homDt;
-                            if (diff >  maxStep) diff =  maxStep;
-                            if (diff < -maxStep) diff = -maxStep;
-                            float newA = curA + diff;
-                            b.dirX = cosf(newA); b.dirY = sinf(newA);
-                        }
-                    }
-                    // �ð� ����: �� ź�� ����. ������: �� ź 30% ����
-                    float bDt = FIXED_DT;
-                    if (b.isEnemy && g_TimeStopTimer > 0.0f) { /* skip update below */ }
-                    else if (b.isEnemy && g_HyperFocusTimer > 0.0f) bDt *= 0.7f;
-                    if (!(b.isEnemy && g_TimeStopTimer > 0.0f)) b.Update(bDt);
-                    // ?�면 �?비활?�화 ??줌아???�리모프 2?�이�??�면 보이???�역??                    // ?�어지므�?경계??같이 ?�장 (??그러�??�장 구역?�서 ?�이 즉시 ?�라�?
-                    {
-                        float zb = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
-                        float mX = screenWidth  * 0.5f * (1.0f / zb - 1.0f) + 200.0f;
-                        float mY = screenHeight * 0.5f * (1.0f / zb - 1.0f) + 200.0f;
-                        if (b.x < -mX || b.x > screenWidth  + mX ||
-                            b.y < -mY || b.y > screenHeight + mY)
-                            b.active = false;
-                    }
-                }
+                UpdateProjectiles(g_Bullets, g_MonsterManager, playerWin,
+                                  FIXED_DT, g_PlayerRuntime.timeStopTimer,
+                                  g_PlayerRuntime.hyperFocusTimer,
+                                  (float)screenWidth, (float)screenHeight,
+                                  g_ViewZoom);
 
                 // ?�??무적 ???�번 ?�텝 ?�작 HP ?�??(???�해??무효, ?�복?�??��?)
                 float hpAtStep = g_GameManager.playerHP;
                 TickPlayerShield(FIXED_DT);
                 //   ???��? = ?�간?��? ?�킬 OR 증강 ??직후 ~0.05s("?�이 ?�?, 짧게)
-                bool  timeStopped = (g_TimeStopTimer > 0.0f) || (g_PostPickGrace > 0.45f);
+                bool  timeStopped = (g_PlayerRuntime.timeStopTimer > 0.0f) || (g_PlayerRuntime.postPickGrace > 0.45f);
                 float enemyDt = FIXED_DT;
-                if (!timeStopped && g_HyperFocusTimer > 0.0f) enemyDt *= 0.7f;
-                float focusSlow = (g_HyperFocusTimer > 0.0f) ? 0.7f : 1.0f;
+                if (!timeStopped && g_PlayerRuntime.hyperFocusTimer > 0.0f) enemyDt *= 0.7f;
+                float focusSlow = (g_PlayerRuntime.hyperFocusTimer > 0.0f) ? 0.7f : 1.0f;
 
                 // 몬스???�데?�트 (?�버??multiplier ?�용) ???�간 ?��? 중엔 ??멈춤
                 float rmobMoveMult = 1.0f / g_Stats.rmobDelayMult; // <1 ????빠름
                 // Time-based speed ramp. Density is lower now, so enemy pressure should not depend
                 // only on score gained from kills.
-                BossDir::ActRules actSpd = BossDir::GetActRules();
-                float si = g_GameTime / 240.0f;
-                if (si > actSpd.intensityCap) si = actSpd.intensityCap;
-                float mobSpdRamp = (1.0f + si * 0.075f) * actSpd.speedMult;
+                float mobSpdRamp = EnemySpeedRamp(g_GameTime);
                 // Ư���� ? �� AI ���� �����衤�Ұ�, AI �� �÷��̾� �о��
                 if (!timeStopped && g_Stats.chakram && g_Stats.chakramSingularity) {
                     const float pullR2 = 220.0f * 220.0f;
@@ -3049,7 +1977,8 @@ int main() {
                     g_MonsterManager.UpdateAll(pCX, pCY, enemyDt,
                                                g_GameManager.playerHP, g_Bullets,
                                                g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
-                                               rmobMoveMult * mobSpdRamp * focusSlow);
+                                               rmobMoveMult * mobSpdRamp * focusSlow,
+                                               g_Stats.rotorHpMult);
 
                     // Large controller enemies must remain readable on-screen.
                     // Reflect their free-drift heading when the safe viewport is
@@ -3129,97 +2058,7 @@ int main() {
                 }
 
                 // 리로???�너 ?�데?�트 (무기 ?�태머신 + ?�전 질주, ??총알 push)
-                if (!timeStopped && g_RRBoss && g_RRBoss->alive)
-                    g_RRBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets, g_Difficulty);
-
-                if (!timeStopped && g_TessBoss && g_TessBoss->alive)
-                    g_TessBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP,
-                                       g_Bullets, g_Difficulty, g_DashInvuln > 0.0f);
-
-                if (!timeStopped && g_EtherBoss && g_EtherBoss->alive)
-                    g_EtherBoss->Update(pCX, pCY, g_EtherBoss->arenaRadius,
-                                        enemyDt, g_GameManager.playerHP,
-                                        g_Bullets, g_Difficulty, g_Stats.maxHP);
-
-                if (!timeStopped && g_LeviathanBoss && g_LeviathanBoss->alive) {
-                    g_LeviathanBoss->Update(pCX, pCY, enemyDt);
-                    if (g_LeviathanBoss->heartOpenedEvent) {
-                        g_LeviathanBoss->heartOpenedEvent = false;
-                        g_ShakeTime = 0.30f; g_ShakeMag = 12.0f;
-                        TriggerFlash(0.18f, 0.72f, 1.0f, 0.22f);
-                        SpawnShockWave(g_LeviathanBoss->heartCX,
-                                       g_LeviathanBoss->heartCY,
-                                       360.0f, 0.65f, 0.20f, 0.82f, 0.46f);
-                    }
-                    if (g_LeviathanBoss->heartClosedEvent) {
-                        g_LeviathanBoss->heartClosedEvent = false;
-                        SpawnShockWave(g_LeviathanBoss->heartCX,
-                                       g_LeviathanBoss->heartCY,
-                                       290.0f, 0.42f, 0.18f, 0.62f, 0.34f);
-                    }
-                }
-
-
-                // ?�리모프 ?�데?�트 (??변??+ ?�모/?�이?�?차크?? + ?�이�? ?�면 ?�장
-
-
-                // FORK.worm ?�데?�트 (지그재�?배회 + ?�면�??�탈?�재진입 ?�진)
-                if (!timeStopped && g_CentiBoss && g_CentiBoss->alive) {
-                    g_CentiBoss->Update(pCX, pCY, enemyDt, g_GameManager.playerHP, g_Bullets);
-                    if (g_CentiBoss->shakePulse) {          // ?�면 밖으�??�갈 ???�한 진동
-                        g_CentiBoss->shakePulse = false;
-                        g_ShakeTime = 0.35f; g_ShakeMag = 14.0f;
-                    }
-                    // ?�킬 ?�전 진동(가벼운 ?�드�? ?�뽕 X) ????진동 중이�???��?��? ?�음
-                    if (g_CentiBoss->wantShake > 0.0f) {
-                        if (g_ShakeTime <= 0.0f || g_CentiBoss->wantShake > g_ShakeMag) {
-                            g_ShakeTime = 0.22f; g_ShakeMag = g_CentiBoss->wantShake;
-                        }
-                        g_CentiBoss->wantShake = 0.0f;
-                    }
-                    if (g_CentiBoss->moltGlitchPulse) {
-                        g_CentiBoss->moltGlitchPulse = false;
-                        TriggerFlash(1.0f, 1.0f, 1.0f, 0.28f);
-                        TriggerHitStop(0.05f);
-                        g_ShakeTime = 0.18f; g_ShakeMag = 12.0f;
-                    }
-                }
-
-                // ���� ���� ������ ���� (�����?) ���� ���� ���� ���� + ������ ó�� ����
-                auto p2enter = [&](float bx, float by, glm::vec3 col) {
-                    g_ShakeTime = 0.55f; g_ShakeMag = 26.0f;
-                    TriggerFlash(col.r, col.g, col.b, 0.55f);
-                    TriggerHitStop(0.12f);
-                    SpawnShockWave(bx, by, 520.0f, 0.9f, col.r, col.g, col.b);
-                    SpawnShockWave(bx, by, 300.0f, 0.7f, col.r, col.g, col.b);
-                    for (int k = 0; k < 4; k++)
-                        SpawnEnemyExplosion(bx + (rand()%200 - 100), by + (rand()%200 - 100),
-                                            col.r, col.g, col.b, true);
-                    g_P2ToastCol = col; g_P2ToastTimer = 1.8f;
-                };
-                if (g_RRBoss && g_RRBoss->alive) {
-                    if (g_RRBoss->phase2 && !g_RRWasP2) {
-                        g_RRWasP2 = true;
-                        p2enter(g_RRBoss->worldX, g_RRBoss->worldY, glm::vec3(1.0f, 0.55f, 0.2f));
-                    }
-                    if (g_RRBoss->phase3 && !g_RRWasP3) {
-                        g_RRWasP3 = true;
-                        p2enter(g_RRBoss->worldX, g_RRBoss->worldY, glm::vec3(1.0f, 0.22f, 0.08f));
-                    }
-                } else { g_RRWasP2 = false; g_RRWasP3 = false; }
-                if (g_TessBoss && g_TessBoss->alive) {
-                    if (g_TessBoss->phase2 && !g_TessWasP2) {
-                        g_TessWasP2 = true;
-                        p2enter(g_TessBoss->worldX, g_TessBoss->worldY, glm::vec3(0.95f, 0.35f, 1.0f));
-                    }
-                    if (g_TessBoss->phase3 && !g_TessWasP3) {
-                        g_TessWasP3 = true;
-                        p2enter(g_TessBoss->worldX, g_TessBoss->worldY, glm::vec3(1.0f, 0.20f, 0.95f));
-                    }
-                } else { g_TessWasP2 = false; g_TessWasP3 = false; }
-
-                // 충돌 (반환�?= ?�레?�어가 ?�번 ?�레???�격?�는지)
-                bool hit = CollisionSystem::Update(pCX, pCY,
+CollisionSystem::Update(pCX, pCY,
                     g_MonsterManager, g_Bullets,
                     g_GameManager.playerHP,
                     g_GameManager.scoreAccum, g_GameManager.score,
@@ -3233,182 +2072,14 @@ int main() {
                         g_Bullets.erase(g_Bullets.begin() + 2800, g_Bullets.end());
                 }
                 // ?�??무적 / 증강???�예(C14) ???�번 ?�텝?????�해 무효 (?�복?�??��?)
-                if ((g_DashInvuln > 0.0f || g_PostPickGrace > 0.0f) &&
-                    g_GameManager.playerHP < hpAtStep)
-                    g_GameManager.playerHP = hpAtStep;
+                ApplyPlayerDamageProtection(
+                    hpAtStep, g_GameManager.playerHP,
+                    g_PlayerRuntime.dashInvulnerability > 0.0f ||
+                        g_PlayerRuntime.postPickGrace > 0.0f,
+                    g_Stats.lightStep, g_Stats.lightStepHitLock,
+                    g_Stats.lightStepDisableTimer);
 
-                ;
-
-                if (g_LeviathanBoss && g_LeviathanBoss->alive &&
-                    g_LeviathanBoss->heartVulnerable()) {
-                    auto* lb = g_LeviathanBoss;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        if (!lb->heartHitSegment(b.prevX, b.prevY, b.x, b.y)) continue;
-                        float dmg = g_Stats.GetBaseDamage()
-                                 * g_Stats.GetDamageMultiplier() * b.dmgMult;
-                        float dealt = lb->applyHeartDamage(dmg);
-                        if (dealt > 0.0f) {
-                            SpawnDamageNumber(lb->heartCX, lb->heartCY, dealt,
-                                              dealt >= 40.0f);
-                            ApplyBossLifestealFromDamage(dealt);
-                        }
-                    }
-                }
-
-                // 리로???�너 본체 vs ?�레?�어 총알 (?�윕 ?�정)
-                if (g_RRBoss && g_RRBoss->alive) {
-                    auto* rb = g_RRBoss;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        if (SegDist(rb->worldX, rb->worldY,
-                                    b.prevX, b.prevY, b.x, b.y) < ReloadRunnerBoss::BODY * 0.7f) {
-                            float dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier() * b.dmgMult;
-                               float dealt = (dmg < rb->hp) ? dmg : rb->hp;
-                            rb->hp -= dealt;
-                            ApplyBossLifestealFromDamage(dealt);
-                            if (rb->hp <= 0.0f) rb->alive = false;
-                        }
-                    }
-                }
-
-                if (g_TessBoss && g_TessBoss->alive) {
-                    auto* tb = g_TessBoss;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        bool consumed = false;
-                        for (auto& o : tb->orbs) {
-                            if (!o.alive) continue;
-                            if (SegDist(o.x, o.y, b.prevX, b.prevY, b.x, b.y) < TesseractGlitchBoss::ORB_R + 8.0f) {
-                                float dmg = g_Stats.GetBaseDamage()
-                                         * g_Stats.GetDamageMultiplier() * b.dmgMult;
-                                       float dealt = (dmg < o.hp) ? dmg : o.hp;
-                                o.hp -= dealt;
-                                ApplyBossLifestealFromDamage(dealt);
-                                if (o.hp <= 0.0f) {
-                                    o.alive = false;
-                                    tb->pushSpark(o.x, o.y, 0.95f, 0.35f, 1.0f);
-                                    AddKillCombo();
-                                    g_GameManager.scoreAccum += 90.0f;
-                                }
-                                break;
-                            }
-                        }
-                        if (consumed || !b.active) continue;
-                        if (SegDist(tb->worldX, tb->worldY,
-                                    b.prevX, b.prevY, b.x, b.y) < TesseractGlitchBoss::CORE_R * 0.86f) {
-                            float dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier() * b.dmgMult;
-                               float dealt = (dmg < tb->hp) ? dmg : tb->hp;
-                            tb->hp -= dealt;
-                            ApplyBossLifestealFromDamage(dealt);
-                            if (tb->hp <= 0.0f) tb->alive = false;
-                        }
-                    }
-                }
-
-
-
-                // FORK.worm ?�래??�???총알??직선??가로�?르면 �??��??�림.
-                //   ?�반?��? 벽에 막�? ?�멸(관??X). 관?�탄(pierceRemaining>0)?�??�과.
-                if (g_EtherBoss && g_EtherBoss->alive && !g_EtherBoss->BodyInvulnerable()) {
-                    auto* eb = g_EtherBoss;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        float dx = eb->worldX - b.x, dy = eb->worldY - b.y;
-                        if (dx*dx + dy*dy < EtherSwordBoss::HIT_RADIUS * EtherSwordBoss::HIT_RADIUS) {
-                            float dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier() * b.dmgMult;
-                               dmg *= eb->PlayerDamageToBossMul(pCX, pCY);
-                            float killFloor = eb->taskKillHp();
-                            float dealt = std::min(dmg, std::max(0.0f, eb->hp - killFloor));
-                            eb->hp -= dealt;
-                            ApplyBossLifestealFromDamage(dealt);
-                            if (eb->hp <= killFloor) {
-                                eb->hp = killFloor;
-                                b.active = false;
-                                eb->BeginTaskKill(pCX, pCY, g_Bullets);
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (g_TessBoss && g_TessBoss->alive && !g_TessBoss->walls.empty()) {
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        if (g_TessBoss->hitWall(b.prevX, b.prevY, b.x, b.y))
-                            b.active = false;
-                    }
-                }
-                if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->walls.empty()) {
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        if (g_CentiBoss->hitWall(b.prevX, b.prevY, b.x, b.y))
-                            b.active = false;
-                    }
-                }
-
-                // FORK.worm child adds vs ?�레?�어 총알 ????�� ?�격 가?? 경험�?0.
-                if (g_CentiBoss && g_CentiBoss->alive && !g_CentiBoss->minis.empty()) {
-                    for (auto& mb : g_CentiBoss->minis) {
-                        if (!mb.alive) continue;
-                        for (auto& b : g_Bullets) {
-                            if (!b.active || b.isEnemy) continue;
-                            if (SegDist(mb.x, mb.y, b.prevX, b.prevY, b.x, b.y) < CentipedeBoss::MINI_HEAD + 6.0f) {
-                                float dmg = g_Stats.GetBaseDamage()
-                                         * g_Stats.GetDamageMultiplier() * b.dmgMult;
-                                       float dealt = (dmg < mb.hp) ? dmg : mb.hp;
-                                mb.hp -= dealt;
-                                ApplyBossLifestealFromDamage(dealt);
-                                if (mb.hp <= 0.0f) {
-                                    mb.alive = false;
-                                    AddKillCombo();                 // 콤보�? 경험�?0
-                                    g_GameManager.scoreAccum += 80.0f;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // FORK.worm 몸통 ?�드 ???�격 VFX (?��?지??머리 HP ?�? ?�래?�만)
-                if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) {
-                    auto* cb2 = g_CentiBoss;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        for (int si = 1; si <= cb2->activeSeg; si++) {
-                            glm::vec2 sp = cb2->segPos(si);
-                            float sr = cb2->segSize(si) + 6.0f;
-                            if (SegDist(sp.x, sp.y, b.prevX, b.prevY, b.x, b.y) < sr) {
-                                cb2->onSegHit(si, sp.x, sp.y);
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable()) {
-                    auto* cb2 = g_CentiBoss;
-                    for (auto& b : g_Bullets) {
-                        if (!b.active || b.isEnemy) continue;
-                        if (SegDist(cb2->worldX, cb2->worldY,
-                                    b.prevX, b.prevY, b.x, b.y) < CentipedeBoss::HEAD * 1.0f) {
-                            float dmg = g_Stats.GetBaseDamage()
-                                     * g_Stats.GetDamageMultiplier() * b.dmgMult;
-                               dmg *= cb2->dmgTakenMult;   // ?�로?��??? 보통 ?�해 감소
-                            float dealt = (dmg < cb2->hp) ? dmg : cb2->hp;
-                            cb2->hp -= dealt;
-                            ApplyBossLifestealFromDamage(dealt);
-                            if (cb2->hp <= 0.0f) cb2->alive = false;
-                        }
-                    }
-                }
-
-
-                // 처치 보상 ?�산 ??총알/근접???�닌 모든 죽음(?�쇄??��·?�킬·MK2·?�킹 ??�� ??
-                //   ???�기????번씩 EXP/?�수/콤보/?�혈??받는??(scored ?�래그로 중복 방�?).
-                // Kill XP is carried by the spawned stardust and awarded on pickup.
+                // Regular enemy kill rewards.
                 auto creditKill = [&](float scoreBase) {
                     AddKillCombo();
                     g_Stats.RegisterKill();
@@ -3503,133 +2174,7 @@ int main() {
                                      L"popup closed", true);
                     }
                 }
-                // ReloadRunner boss kill reward
-                if (g_RRBoss && !g_RRBoss->alive && !g_RRBoss->exploded) {
-                    auto* rb = g_RRBoss;
-                    SpawnEnemyExplosion(rb->worldX, rb->worldY, 1.0f, 0.6f, 0.2f, true);
-                    SpawnEnemyExplosion(rb->worldX, rb->worldY, 0.3f, 0.9f, 1.0f, true);
-                    SpawnShockWave(rb->worldX, rb->worldY, 360.0f, 0.7f, 1.0f, 0.7f, 0.2f);
-                    g_ShakeTime = 0.5f; g_ShakeMag = 20.0f;
-                    TriggerFlash(1.0f, 0.6f, 0.2f, 0.6f); TriggerHitStop(0.10f);
-                    rb->exploded = true;
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete rb;
-                    g_RRBoss = nullptr;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                    g_Bullets.clear();
-                    OnBossKilled(2);
-                }
-
-
-                // FORK.worm ?�망 ??보상
-                if (g_CentiBoss && !g_CentiBoss->alive && !g_CentiBoss->exploded) {
-                    auto* cb2 = g_CentiBoss;
-                    SpawnEnemyExplosion(cb2->worldX, cb2->worldY, 1.0f, 0.8f, 0.2f, true);
-                    SpawnEnemyExplosion(cb2->worldX, cb2->worldY, 0.7f, 1.0f, 0.3f, true);
-                    SpawnShockWave(cb2->worldX, cb2->worldY, 420.0f, 0.8f, 0.7f, 1.0f, 0.3f);
-                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
-                    TriggerFlash(0.7f, 1.0f, 0.3f, 0.6f); TriggerHitStop(0.11f);
-                    cb2->exploded = true;
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete cb2;
-                    g_CentiBoss = nullptr;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                    g_Bullets.clear();
-                    OnBossKilled(8);
-                }
-
-                if (g_TessBoss && !g_TessBoss->alive && !g_TessBoss->exploded) {
-                    auto* tb = g_TessBoss;
-                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.95f, 0.35f, 1.0f, true);
-                    SpawnEnemyExplosion(tb->worldX, tb->worldY, 0.35f, 1.0f, 0.95f, true);
-                    SpawnShockWave(tb->worldX, tb->worldY, 440.0f, 0.82f, 0.95f, 0.35f, 1.0f);
-                    g_ShakeTime = 0.55f; g_ShakeMag = 24.0f;
-                    TriggerFlash(0.95f, 0.35f, 1.0f, 0.62f); TriggerHitStop(0.11f);
-                    tb->exploded = true;
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete tb;
-                    g_TessBoss = nullptr;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3) TryUnlockAch(ACH_BOSS_3);
-                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                    g_Bullets.clear();
-                    OnBossKilled(10);
-                }
-
-                if (g_EtherBoss && !g_EtherBoss->alive && !g_EtherBoss->exploded) {
-                    auto* eb = g_EtherBoss;
-                    SpawnEnemyExplosion(eb->worldX, eb->worldY, 0.55f, 0.80f, 1.0f, true);
-                    SpawnEnemyExplosion(eb->worldX, eb->worldY, 0.80f, 1.0f, 0.55f, true);
-                    SpawnShockWave(eb->worldX, eb->worldY, 600.0f, 0.55f, 0.80f, 1.0f, 0.3f);
-                    g_ShakeTime = 0.8f; g_ShakeMag = 36.0f;
-                    TriggerFlash(0.55f, 0.80f, 1.0f, 0.65f); TriggerHitStop(0.14f);
-                    eb->exploded = true;
-                    g_GameManager.scoreAccum += 50000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete eb;
-                    g_EtherBoss = nullptr;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3)  TryUnlockAch(ACH_BOSS_3);
-                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                    g_Bullets.clear();
-                    OnBossKilled(20);
-                }
-
-                if (g_LeviathanBoss && !g_LeviathanBoss->alive &&
-                    !g_LeviathanBoss->exploded) {
-                    auto* lb = g_LeviathanBoss;
-                    SpawnEnemyExplosion(lb->heartCX, lb->heartCY,
-                                        1.0f, 0.24f, 0.52f, true);
-                    SpawnEnemyExplosion(lb->heartCX, lb->heartCY,
-                                        0.22f, 0.80f, 1.0f, true);
-                    SpawnShockWave(lb->heartCX, lb->heartCY,
-                                   980.0f, 1.05f, 0.18f, 0.72f, 0.42f);
-                    SpawnShockWave(lb->heartCX, lb->heartCY,
-                                   560.0f, 0.80f, 1.0f, 0.32f, 0.62f);
-                    g_ShakeTime = 0.95f; g_ShakeMag = 40.0f;
-                    TriggerFlash(0.28f, 0.72f, 1.0f, 0.72f);
-                    TriggerHitStop(0.16f);
-                    lb->exploded = true;
-                    g_GameManager.scoreAccum += 20000.0f;
-                    g_GameManager.score = (long long)g_GameManager.scoreAccum;
-                    delete lb;
-                    g_LeviathanBoss = nullptr;
-                    g_TotalBossKills++;
-                    TryUnlockAch(ACH_FIRST_BOSS);
-                    if (g_TotalBossKills >= 3)  TryUnlockAch(ACH_BOSS_3);
-                    if (g_TotalBossKills >= 10) TryUnlockAch(ACH_BOSS_10);
-                    g_Bullets.clear();
-                    OnBossKilled(30);
-                }
-
-
-
-
-                // ?�리모프 ?�망 ???�면 ?�복 + 증강 3�?+ ?�수 50% 추�?
-
-                // ?�폭�??�망 (?�화 ????�� OR 총알 격파)
-                // VFX 체크 ?�료 ??죽�? ?�폭�?메모�??�리
-
-                // ?�몹 근접 ?��?지�?HP 감소?�는지 (???�레??비교)
-                if (g_GameManager.playerHP < g_PrevHP - 0.0001f) hit = true;
-                if (hit && g_Stats.lightStep)
-                    g_Stats.lightStepDisableTimer = g_Stats.lightStepHitLock;
-                g_PrevHP = g_GameManager.playerHP;
-
-                // ?�벨?? xp 가 ?�요?�을 ?�으�??�벨??(?��? xp ?�월) + AUG_SELECT
-                if (g_GameManager.currentState == GameState::RUNNING) {
-                    const bool atMainCap = !BossDir::g_ActEndless && !g_CreativeMode
+                    const bool atMainCap = !g_CreativeMode
                                           && g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
                     if (atMainCap) {
                         g_GameManager.xp = 0;
@@ -3659,11 +2204,9 @@ int main() {
                         g_GameManager.QueueAugmentReward(true, false);
                     }
                     } // !atMainCap
-                }
 
                 // �ð� ���� (�޽ġ����� �߿��� ����)
-                if (!InBossRest())
-                    g_GameManager.AddScore(FIXED_DT * 100.0f);
+                g_GameManager.AddScore(FIXED_DT * 100.0f);
             }
             accumulator -= FIXED_DT;
         }
@@ -3693,7 +2236,6 @@ int main() {
             g_ComboPulse -= delta * 4.0f;
             if (g_ComboPulse < 0.0f) g_ComboPulse = 0.0f;
             if (g_ComboMilestone > 0.0f) g_ComboMilestone -= delta;
-            if (g_P2ToastTimer > 0.0f) g_P2ToastTimer -= delta;
         }
         if (g_FlashIntensity > 0.0f) {
             g_FlashIntensity -= delta * 3.5f;
@@ -3777,14 +2319,7 @@ int main() {
                     g_GameManager.playerHP = g_Stats.maxHP;
             }
             // 배드 ?�터 출혈 ??감속 구역 ?�이�?출혈 ?�?�머 2초로 갱신, 빠져?��????�류
-            {
-                const float pcx = playerWin.x + playerWin.width  * 0.5f;
-                const float pcy = playerWin.y + playerWin.height * 0.5f;
-                if (g_EtherBoss && g_EtherBoss->alive &&
-                    g_EtherBoss->IsBadSector(pcx, pcy)) {
-                    HurtPlayer(g_GameManager.playerHP, 3.5f * delta);
-                }
-            }
+
 
             // ?�감 발견 ???�거�??�폭�?(존재?�면 발견 처리)
             if (!g_MonsterManager.rangedMobs.empty()) MarkMobSeenId(CM_SCOPE);
@@ -3900,319 +2435,10 @@ int main() {
                 g_Stats.lightStepDisableTimer -= delta;
 
 
-            const float p2mult = 1.0f;
-
-            // Debug runs need to reach late enemy silhouettes quickly. Keep
-            // this test-only acceleration isolated from release balance.
-#if defined(_DEBUG)
-            constexpr float kEnemySpawnTimeScale = 4.0f;
-            constexpr float kEnemySpawnIntervalScale = 0.45f;
-#else
-            constexpr float kEnemySpawnTimeScale = 1.0f;
-            constexpr float kEnemySpawnIntervalScale = 1.0f;
-#endif
-
-            // Time-based low-density spawn curve. Early game starts with only a few stronger mobs,
-            // then density opens gradually by elapsed run time instead of score.
-            BossDir::ActRules act = BossDir::GetActRules();
-            float intensity = (float)g_GameManager.score / 100000.0f;
-            if (intensity > act.intensityCap) intensity = act.intensityCap;
-            float elapsedSec = g_GameTime * kEnemySpawnTimeScale;
-            float spawnT = elapsedSec / 300.0f;
-            if (spawnT > 1.0f) spawnT = 1.0f;
-            if (spawnT < 0.0f) spawnT = 0.0f;
-            float lateSpawnT = (elapsedSec - 300.0f) / 300.0f;
-            if (lateSpawnT > 1.0f) lateSpawnT = 1.0f;
-            if (lateSpawnT < 0.0f) lateSpawnT = 0.0f;
-            float capT = elapsedSec / 420.0f;
-            if (capT > 1.0f) capT = 1.0f;
-            if (capT < 0.0f) capT = 0.0f;
-            float rampSpawn = (0.52f + spawnT * 1.75f + lateSpawnT * 0.55f) * act.spawnMult;
-            bool  bossNow = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss ||
-                            g_LeviathanBoss || g_BossWarnTimer > 0.0f;
-            float hpIntensity = (float)g_GameManager.score / 100000.0f;
-            if (hpIntensity > act.hpIntensityCap) hpIntensity = act.hpIntensityCap;
-            float hpT = elapsedSec / 300.0f;
-            if (hpT > 1.0f) hpT = 1.0f;
-            if (hpT < 0.0f) hpT = 0.0f;
-            float hpLateT = (elapsedSec - 300.0f) / 300.0f;
-            if (hpLateT > 1.0f) hpLateT = 1.0f;
-            if (hpLateT < 0.0f) hpLateT = 0.0f;
-            float scoreHpRamp = 1.0f + hpIntensity * 0.15f;
-            // Keep the time ramp and trial multipliers meaningful, but stop
-            // the combined late-game HP from making regular mobs feel spongy.
-            constexpr float kRegularEnemyHpScale = 0.80f;
-            float rampHp = (1.22f + hpT * 1.05f + hpLateT * 0.70f)
-                         * scoreHpRamp * kRegularEnemyHpScale;
-            // ?�폰 ?�역 ??2?�이�?줌아?????�장??보이?? ?�역 모서리에???�폰.
-            float saX = 0.0f, saY = 0.0f;
-            int   saW = screenWidth, saH = screenHeight;
-
-            // Mob spawn: time ramp plus controlled augment pressure.
-            spawnTimer += delta;
-            // Keep the opening readable without making the first minute feel empty.
-            float spawnInterval = 0.55f * g_Stats.mobSpawnMult
-                                / (p2mult * rampSpawn * TrialSpawnRateMult(g_GameManager.score));
-            spawnInterval *= kEnemySpawnIntervalScale;
-            if (bossNow) spawnInterval *= 2.5f;   // 보스?? ?�래???�폰 ?�??감소
-            float effHpMul = TrialEnemyHpMult(g_GameManager.score);
-            // 보스 ?�면?????�성 보스가 ?�으�??�연 ?�몹/?�거�??�폭 ?�폰 ?�전 ?��?
-            //   (보스가 직접 ?�환?�는 adds ??�?보스 ?�래???��??�서�?
-            auto anyBossAlive = [&]() -> bool {
-                if (g_RRBoss && g_RRBoss->alive) return true;
-                if (g_CentiBoss && g_CentiBoss->alive) return true;
-                if (g_TessBoss && g_TessBoss->alive) return true;
-                if (g_EtherBoss && g_EtherBoss->alive) return true;
-                if (g_LeviathanBoss && g_LeviathanBoss->alive) return true;
-                return false;
-            };
-            bool bossDuel = anyBossAlive() || g_BossWarnTimer > 0.0f ||
-                              g_InBossIntermission;
-            if (bossDuel) spawnInterval = 1e9f;
-            if (spawnTimer > spawnInterval) {
-                float capBonusT = elapsedSec / 360.0f;
-                if (capBonusT > 1.0f) capBonusT = 1.0f;
-                if (capBonusT < 0.0f) capBonusT = 0.0f;
-                int scaledCapBonus = (int)((float)g_Stats.mobCapBonus * capBonusT * capBonusT);
-                int effCap = 1 + (int)(4.0f * spawnT + 45.0f * capT * capT + 30.0f * lateSpawnT)
-                           + scaledCapBonus;
-                if (effCap < 1) effCap = 1;
-                if (effCap > 160) effCap = 160;
-                // ??마리 ?�폰 + ?�버??변??(D_MOB_PACK ??군집?�로 ?�러 �?
-                auto spawnOne = [&]() {
-                    size_t mbefore = g_MonsterManager.monsters.size();
-                    g_MonsterManager.SpawnMob(screenWidth, screenHeight,
-                                              effCap,
-                                              g_Stats.monsterHpMult * rampHp * effHpMul, saX, saY, saW, saH);
-                    // ?�버??보유 ???��? 몹을 분열�??�멸체로 (?�수 ?�몹 ????경우�?
-                    if (g_MonsterManager.monsters.size() > mbefore) {
-                        Monster* nm = g_MonsterManager.monsters.back();
-                        if (nm->kind == MobKind::ROTOR) {
-                            int gravisCount = 0;
-                            for (auto* mm2 : g_MonsterManager.monsters)
-                                if (mm2->alive && mm2->kind == MobKind::GRAVIS)
-                                    ++gravisCount;
-                            const bool gravisReady = elapsedSec >= 150.0f;
-                            const int gravisChance = elapsedSec >= 420.0f ? 4 : 2;
-                            // QUASAR (Tier 2.5): a rare long-range lane controller.
-                            // Keep the simultaneous count low so crossing laser
-                            // telegraphs never dominate the arena.
-                            int quasarCount = 0;
-                            for (auto* mm2 : g_MonsterManager.monsters)
-                                if (mm2->alive && mm2->kind == MobKind::QUASAR)
-                                    ++quasarCount;
-                            const bool quasarReady = elapsedSec >= 45.0f;
-                            const int quasarChance = elapsedSec >= 240.0f ? 8 : 5;
-                            if (!bossDuel && gravisReady && gravisCount < 1 &&
-                                (rand() % 100) < gravisChance) {
-                                nm->MakeKind(MobKind::GRAVIS);
-                            }
-                            else if (!bossDuel && quasarReady && quasarCount < 2 &&
-                                (rand() % 100) < quasarChance) {
-                                nm->MakeKind(MobKind::QUASAR);
-                            }
-                            // Hive spawn: available from the first normal spawn.
-                            else if ((rand() % 100) < 12) {
-                                nm->MakeKind(MobKind::GENESIS);
-                                nm->spawnAnchorX = 160.0f + (float)(rand() % (screenWidth  > 360 ? screenWidth  - 320 : 1));
-                                nm->spawnAnchorY = 160.0f + (float)(rand() % (screenHeight > 360 ? screenHeight - 320 : 1));
-                            }
-                            // Swarm: available from the first normal spawn;
-                            // its probability and cap still ramp with run time.
-                            else {
-                                const float swarmT = std::min(1.0f, std::max(0.0f, elapsedSec / 300.0f));
-                                const int swarmChance = 4 + (int)(4.0f * swarmT);
-                                if (!bossDuel && (rand() % 100) < swarmChance) {
-                                    int swarmCount = 0;
-                                    for (auto* mm2 : g_MonsterManager.monsters)
-                                        if (mm2->alive && mm2->kind == MobKind::SWARM) ++swarmCount;
-                                    float capMul = 0.10f + 0.08f * swarmT;
-                                    int swarmCap = (int)((float)effCap * capMul);
-                                    if (swarmCap < 2) swarmCap = 2;
-                                    if (swarmCount < swarmCap) {
-                                        nm->MakeKind(MobKind::SWARM);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
-                float packBonusT = (elapsedSec - 120.0f) / 360.0f;
-                if (packBonusT > 1.0f) packBonusT = 1.0f;
-                if (packBonusT < 0.0f) packBonusT = 0.0f;
-                int packN = 2 + (int)((float)g_Stats.mobPackBonus * packBonusT);
-                if (elapsedSec >= 120.0f) ++packN;
-                if (elapsedSec >= 300.0f) ++packN;
-                if (elapsedSec >= 480.0f) ++packN;
-                if (packN > 6) packN = 6;
-                for (int p = 0; p < packN && (int)g_MonsterManager.monsters.size() < effCap; p++)
-                    spawnOne();
-                spawnTimer = 0.0f;
-            }
-
+            UpdateEnemySpawns(g_MonsterManager, g_Stats,
+                              screenWidth, screenHeight, delta,
+                              g_GameTime, g_GameManager.score);
             g_GameTime += delta;
-
-            // ���� ���� ? �Ϲ�: �� ���?/ ũ������Ƽ��: ���� ���?
-            {
-                bool bossActive = g_RRBoss || g_CentiBoss || g_TessBoss || g_EtherBoss ||
-                                  g_LeviathanBoss || g_BossWarnTimer > 0.0f;
-                // ?�운?? ??보스 ?�덩??차단: 보스�??�아 ?�전???�리?�는 ?�간(?�성?�비?�성),
-                //   ?�음 보스 ?�계값을 ?�재 ?�수+20만으�?리베?�스 ??최소 20만점 ?�식 보장
-                //   (보스??�??�인 ?�수�??�자마자 ??보스 ?�던 ?�순???�거).
-                static bool s_prevBossActive = false;
-                if (s_prevBossActive && !bossActive) {
-                    long long rebase = (long long)g_GameManager.score + 200000;
-                    if (g_NextBossScore < rebase) g_NextBossScore = rebase;
-                }
-                s_prevBossActive = bossActive;
-                float bossHpC = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult();
-                float polyHpC = 30000.0f * TrialBossHpMult();
-
-                // ���� ���� ? pick���̸���HP Ȯ�� �� ª�� ���?ũ������Ƽ�� 0.35s)
-                auto startWarn = [&](int pick, const wchar_t* name, float hp) {
-                    StartBossWarn(pick, name, hp);
-                };
-
-                if (kBossEncountersEnabled && !bossActive) {
-                    if (g_CreativeBossPending) {
-                        g_CreativeBossPending = false;
-                        QueueCreativeBossPick(g_CreativeBossPick >= 0 ? g_CreativeBossPick : 2,
-                                              bossHpC, polyHpC);
-                    }
-                    // ���� ���? ���� ���� ���� (���� ���?
-                    else if (!g_CreativeMode && !BossDir::g_ActEndless
-                             && BossDir::g_ActClears < BossDir::MAIN_ACT_TOTAL
-                             && !g_InBossIntermission
-                             && g_GameManager.score >= g_NextBossScore) {
-                        g_NextBossScore += (long long)BossDir::MAIN_SCORE_STEP;
-                        int pick = BossDir::MAIN_SEQUENCE[BossDir::g_ActClears];
-                        float sc  = 1.0f + (float)BossDir::g_ActClears * 0.9f;
-                        float bossHp = bossHpC * sc * BossDir::HpMul(pick);
-                        startWarn(pick, BossDir::DisplayName(pick), bossHp);
-                    }
-                    // ���� ���? Ŭ���� ���� ? ������ ���� óġ �� ���͹̼� ���� ��
-                    else if (!g_CreativeMode && !BossDir::g_ActEndless
-                             && BossDir::g_ActClears >= BossDir::MAIN_ACT_TOTAL
-                             && !g_InBossIntermission) {
-                        TriggerVictory();
-                    }
-                    else if (g_CreativeMode && g_GameManager.score >= g_NextBossScore) {
-                        g_NextBossScore += 200000;
-                        float sc = 0.36f + (float)g_GameManager.score / 300000.0f;
-                        if (sc > 9.0f) sc = 9.0f;
-                        sc *= (1.0f + (float)g_GameManager.playerLevel * 0.022f);
-                        float bossHp = GetDifficultyParams(Difficulty::NORMAL).bossHp * TrialBossHpMult() * sc;
-                        {
-                            int pick = BossDir::RollScorePick();
-                            startWarn(pick, BossDir::DisplayName(pick),
-                                      bossHp * BossDir::HpMul(pick));
-                        }
-                    }
-                }
-
-                // ?�조 진행 ??만료 ???�제 보스 ?�성 + ?�장 ?�출
-                if (g_BossWarnTimer > 0.0f) {
-                    g_BossWarnTimer -= delta;
-                    if (g_BossWarnTimer <= 0.0f) {
-                        g_BossWarnTimer = 0.0f;
-                        // C15: ?�환 ?�치 ?�덤??????�� 중앙 근처??거기??캠핑/?�건 ?�훼?�던 문제.
-                        //   ?�면 ?�쪽(가?�자�?마진 ?�외) ???�역?�서 무작???�치.
-                        float bMargin = 340.0f * g_Scale;
-                        float bRangeX = std::max(1.0f, (float)screenWidth  - 2.0f * bMargin);
-                        float bRangeY = std::max(1.0f, (float)screenHeight - 2.0f * bMargin);
-                        float bsx = bMargin + (float)(rand() % (int)bRangeX);
-                        float bsy = bMargin + (float)(rand() % (int)bRangeY);
-                        switch (g_BossWarnPick) {
-                        case 2:
-                            g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
-                            break;
-                        case 8:
-                            g_CentiBoss = new CentipedeBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_CentiBoss->worldX = bsx; g_CentiBoss->worldY = bsy;
-                            // ?�?�??�로?��??? ?�재 ?�몹 ?�체 체력???�수(?�한) ???�수 보스???�?�?
-                            //   ?�몹?�?보스�??�수?�어 ?�라지�? 보스???�안 추�? ?�폰 ????
-                            {
-                                float absorb = 0.0f;
-                                for (auto* m  : g_MonsterManager.monsters)   if (m->alive)  absorb += m->hp;
-                                for (auto* r  : g_MonsterManager.rangedMobs)  if (r->alive)  absorb += r->hp;
-                                // ?�한 ?�거 ??진짜 '?�몹 ?�체 체력 + 보스 체력'. ?�반 ?�커 ?�몹
-                                //   horde 가 많을?�록 보스??그만???�단(?�몹보다 빨리 죽는 문제 ?�결).
-                                g_CentiBoss->hp += absorb; g_CentiBoss->maxHp += absorb;
-                                // ?�몹 ?�수 ???�면 ?�리(?�수 ?�??
-                                for (auto* m  : g_MonsterManager.monsters)   delete m;
-                                g_MonsterManager.monsters.clear();
-                                for (auto* r  : g_MonsterManager.rangedMobs)  delete r;
-                                g_MonsterManager.rangedMobs.clear();
-                                g_ShakeTime = 0.4f; g_ShakeMag = 14.0f;   // ?�수 ?�간 진동
-                            }
-                            g_CentiBoss->enterSpawn();   // ?�장 모션 ???�면 밖에??곡선 ?�진?�로 ?�장
-                            break;
-                        case 10:
-                            g_TessBoss = new TesseractGlitchBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_TessBoss->worldX = bsx; g_TessBoss->worldY = bsy;
-                            break;
-                        case 20:
-                            g_EtherBoss = new EtherSwordBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            // EtherSword spawns at screen center (arena center)
-                            g_EtherBoss->worldX = screenWidth  * 0.5f;
-                            g_EtherBoss->worldY = screenHeight * 0.32f;
-                            break;
-                        case 30:
-                            g_LeviathanBoss = new LeviathanBoss(screenWidth, screenHeight,
-                                                                 g_BossWarnHp);
-                            LeviathanWakeFeed();
-                            break;
-                        default:
-                            g_RRBoss = new ReloadRunnerBoss(screenWidth, screenHeight, g_BossWarnHp);
-                            g_RRBoss->worldX = bsx; g_RRBoss->worldY = bsy;
-                            break;
-                        }
-                        if (g_BossWarnPick >= 0)
-                            MarkBossSeenPick(g_BossWarnPick);
-                        // ���� ���� ����
-                        g_ShakeTime = 0.6f; g_ShakeMag = 28.0f;
-                        if (g_BossWarnPick == 30) {
-                            const float lcx = screenWidth * 0.5f;
-                            const float lcy = screenHeight * 0.48f;
-                            SpawnShockWave(lcx, lcy, 960.0f, 1.15f, 0.18f, 0.72f, 0.42f);
-                            SpawnShockWave(lcx, lcy, 560.0f, 0.82f, 0.24f, 0.90f, 0.55f);
-                            TriggerFlash(0.18f, 0.72f, 1.0f, 0.18f);
-                        } else if (!g_CentiBoss) {
-                            SpawnShockWave(bsx, bsy, 500.0f, 0.9f, 1.0f, 0.3f, 0.3f);
-                            SpawnShockWave(bsx, bsy, 320.0f, 0.7f, 1.0f, 0.8f, 0.2f);
-                            for (int k = 0; k < 3; k++) {
-                                SpawnEnemyExplosion(bsx + (rand()%200 - 100),
-                                                    bsy + (rand()%200 - 100),
-                                                    1.0f, 0.3f, 0.3f, true);
-                            }
-                        }
-                    }
-                }
-            }
-
-            DifficultyParams dp = GetDifficultyParams(Difficulty::NORMAL);
-
-            // ?�거�?�??�폰 ???�이?�별 + ?�버??(D_RMOB_MAX, rmobSpawnDelayBonus)
-            rangedSpawnTimer += delta;
-            float rangedInterval = dp.rangedSpawnInterval * TrialRangedIntervalMult(g_GameManager.score)
-                                  - g_Stats.rmobSpawnDelayBonus;
-            if (rangedInterval < 1.0f) rangedInterval = 1.0f;
-            rangedInterval /= (p2mult * rampSpawn);
-            rangedInterval *= kEnemySpawnIntervalScale;
-            rangedInterval *= 2.5f;   // Lens ���� �� ����
-            if (bossNow) rangedInterval *= 2.0f;
-            int rangedMax = (int)((dp.rangedMaxBase + g_Stats.rmobMaxBonus + TrialRangedMaxBonus(g_GameManager.score)) * p2mult
-                                  + intensity * 2.0f);           // ?�수???�시 +2
-            if (rangedMax > 16) rangedMax = 16;   // �?개수 = scissor ?�스 ?????�한 (?�능)
-            if (rangedSpawnTimer > rangedInterval && !bossDuel) {
-                g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
-                    g_Stats.rmobHpMult * rampHp, rangedMax, saX, saY, saW, saH);
-                rangedSpawnTimer = 0.0f;
-            }
-
-            // ?��??�는 죽음: 모든 ?�브 ?�원??추격 + ?�촉 ?��?지
-            // ?�택 1??= 기본 ?�도, 2???�상부??+20%/?�택
             float approachSpeed = 120.0f *
                 (1.0f + 0.20f * (float)(g_Stats.approachStacks > 0 ? g_Stats.approachStacks - 1 : 0));
             for (auto& orb : g_ApproachOrbs) {
@@ -4242,7 +2468,12 @@ int main() {
                     float droneInt = g_Stats.fireInterval * (g_Stats.droneRapid ? 0.6f : 2.0f);
                     if (dr.fireTimer >= droneInt) {
                         float tx = 0.0f, ty = 0.0f;
-                        if (findNearestEnemy(droneX, droneY, tx, ty)) {
+                        if (g_MonsterManager.FindNearestEnemy(
+                                droneX, droneY,
+                                playerWin.x, playerWin.y,
+                                playerWin.x + playerWin.width,
+                                playerWin.y + playerWin.height,
+                                tx, ty)) {
                             Bullet nb(droneX, droneY, tx, ty);
                             nb.speed = g_Stats.bulletSpeed * 0.5f;
                             // Hive keeps four orbiters, but each projectile
@@ -4374,8 +2605,8 @@ int main() {
                     hpFrac = std::max(0.0f, std::min(1.0f, hpFrac));
                     nb.dmgMult *= 1.0f + (1.0f - hpFrac) * 0.6f;
                 }
-                if (g_DashBoostShotsLeft > 0) {
-                    --g_DashBoostShotsLeft;
+                if (g_PlayerRuntime.dashBoostShotsLeft > 0) {
+                    --g_PlayerRuntime.dashBoostShotsLeft;
                     nb.dmgMult *= 2.0f;
                 }
                 g_Bullets.push_back(nb);
@@ -4402,7 +2633,10 @@ int main() {
 
             auto aimTarget = [&](float& tx, float& ty) -> bool {
                 if (lmb) { tx = wmx; ty = wmy; return true; }
-                return findNearestEnemy(pCX, pCY, tx, ty);
+                return g_MonsterManager.FindNearestEnemy(
+                    pCX, pCY, playerWin.x, playerWin.y,
+                    playerWin.x + playerWin.width,
+                    playerWin.y + playerWin.height, tx, ty);
             };
 
             // ?�?�??�캔 ?�이?�?(증강) ??0.7초마??조�? 방향 관??�?(군중?�어) ?�?�?
@@ -4479,30 +2713,12 @@ int main() {
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
                         }
                     }
-                    auto lhitB = [&](float ex, float ey, float& hp, bool& al) {
-                        if (!inLine(ex, ey)) return;
-                        float dealt = (ldmg < hp) ? ldmg : hp; hp -= dealt;
-                        SpawnDamageNumber(ex, ey, dealt, dealt >= 40.0f || lcrit);
-                        ApplyBossLifestealFromDamage(dealt);
-                        if (hp <= 0.0f) al = false;
-                    };
-                    if (g_RRBoss && g_RRBoss->alive)
-                        lhitB(g_RRBoss->worldX, g_RRBoss->worldY, g_RRBoss->hp, g_RRBoss->alive);
-                    if (g_CentiBoss && g_CentiBoss->alive && g_CentiBoss->vulnerable())
-                        lhitB(g_CentiBoss->worldX, g_CentiBoss->worldY, g_CentiBoss->hp, g_CentiBoss->alive);
-                    if (g_TessBoss && g_TessBoss->alive)
-                        lhitB(g_TessBoss->worldX, g_TessBoss->worldY, g_TessBoss->hp, g_TessBoss->alive);
-                    if (g_EtherBoss && g_EtherBoss->alive && inLine(g_EtherBoss->worldX, g_EtherBoss->worldY))
-                        HitEtherBossDirect(ldmg, pCX, pCY, lcrit);
-                    if (g_LeviathanBoss && g_LeviathanBoss->alive &&
-                        g_LeviathanBoss->heartHitSegment(pCX, pCY, lex, ley))
-                        HitLeviathanOnLine(ldmg, pCX, pCY, lex, ley, lcrit);
                     g_LaserBeams.push_back({ pCX, pCY, lex, ley, 0.13f, 0.13f, beamW });
                     TriggerMuzzle(pCX, pCY, lang);
                 }
             }
 
-            bool fireHeld = (g_AutoFire || lmb) && (g_PostPickGrace <= 0.0f);
+            bool fireHeld = (g_AutoFire || lmb) && (g_PlayerRuntime.postPickGrace <= 0.0f);
             if (fireHeld && fireTimer >= effInterval) {
                 float tx, ty;
                 if (aimTarget(tx, ty)) {
@@ -4513,13 +2729,7 @@ int main() {
         }
 
         // GameManager 가 ?�버/변???�태�??????�게 ?�기??(Render ?�서 ?�용)
-        if (g_InBossIntermission &&
-            g_GameManager.currentState == GameState::RUNNING) {
-            g_IntermissionTimer -= delta;
-            float ipCX = playerWin.x + playerWin.width  * 0.5f;
-            float ipCY = playerWin.y + playerWin.height * 0.5f;
-            TickIntermissionZones(ipCX, ipCY, delta);
-        }
+
 
         g_GameManager.hoveredCard = g_HoveredAug;
         const bool debugCaptureOverride = g_DebugToolkit.CaptureInProgress();
@@ -4585,7 +2795,7 @@ int main() {
                               wgs == GameState::PAUSED  || wgs == GameState::READY  ||
                               wgs == GameState::AUG_SELECT || wgs == GameState::DEBUFF_SELECT ||
                               wgs == GameState::AUG_REPLACE ||
-                              (wgs == GameState::RUNNING && g_InBossIntermission) ||
+
                               wgs == GameState::GAMEOVER ||
                               (wgs == GameState::SETTINGS &&
                                g_SettingsReturnTo == GameState::PAUSED));
@@ -4680,25 +2890,6 @@ int main() {
             float sc = r->deathScale;
             addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"LENS", 0.05f,0.07f,0.12f, 0.20f,0.75f,0.88f);
         }
-        // GLITCH.exe: ���� �÷��̾� â���� �Ϲ� drawMob
-        // 보스/분열�?(?�단)
-        if (g_RRBoss && g_RRBoss->alive)
-            addW(g_RRBoss->worldX, g_RRBoss->worldY, RR_WIN_W, RR_WIN_W,
-                 L"VOLLEY", 0.10f,0.07f,0.06f, 1.0f,0.55f,0.20f, WIN_TB,
-                 g_RRBoss->hp / g_RRBoss->maxHp);
-        if (g_CentiBoss && g_CentiBoss->alive)
-            addW(g_CentiBoss->worldX, g_CentiBoss->worldY, CENTI_WIN_W, CENTI_WIN_W,
-                 CentipedeBoss::BOSS_NAME, 0.02f,0.03f,0.04f, 0.22f,0.55f,0.72f, WIN_TB,
-                 g_CentiBoss->hp / g_CentiBoss->maxHp);
-        if (g_TessBoss && g_TessBoss->alive)
-            addW(g_TessBoss->worldX, g_TessBoss->worldY, TESS_WIN_W, TESS_WIN_W,
-                 TesseractGlitchBoss::BOSS_NAME, 0.05f,0.02f,0.08f, 0.95f,0.35f,1.0f, WIN_TB,
-                 g_TessBoss->hp / g_TessBoss->maxHp);
-        if (g_EtherBoss && g_EtherBoss->alive && !g_EtherBoss->taskKillActive)
-            addW(g_EtherBoss->worldX, g_EtherBoss->worldY,
-                 ETHER_WIN_W, ETHER_WIN_W,
-                 EtherSwordBoss::BOSS_NAME, 0.02f,0.04f,0.08f, 0.55f,0.80f,1.0f, WIN_TB,
-                 g_EtherBoss->hp / g_EtherBoss->maxHp);
         // 터렛 신호 프레임. 실제 터렛 영역/스크리저는 그대로 유지한다.
                 // z-order signal layer. Scissor/collision geometry is intentionally
         // kept below; only the heavy visual window treatment is removed.
@@ -4729,46 +2920,21 @@ int main() {
         BatchFlush();
         glDisable(GL_SCISSOR_TEST);
 
-        // Rear sight-field prepass. Collect all black CircleTexture markers and
-        // submit them in one icon draw before entity bodies.
-        if (g_GameManager.currentState != GameState::DYING &&
-            g_GameManager.currentState != GameState::GAMEOVER) {
-            static std::vector<EnemySightRearMarker> rearMarkers;
-            rearMarkers.clear();
-            rearMarkers.reserve(1u + g_MonsterManager.monsters.size()
-                                + g_MonsterManager.rangedMobs.size());
-            const float pCX = playerWin.x + playerWin.width * 0.5f;
-            const float pCY = playerWin.y + playerWin.height * 0.5f;
-            const float playerSize = PLAYER_SIZE * g_Stats.playerSizeMult;
-            rearMarkers.push_back({pCX, pCY, playerSize * 2.45f});
-            for (auto m : g_MonsterManager.monsters) {
-                if (!m || !m->alive || m->sizeScale <= 0.0f) continue;
-                const float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
-                const float rearScale = m->kind == MobKind::GRAVIS ? 3.35f
-                    : (m->kind == MobKind::QUASAR ? 3.05f : 2.55f);
-                rearMarkers.push_back({m->worldX, m->worldY, base * rearScale});
-            }
-            for (auto r : g_MonsterManager.rangedMobs) {
-                if (!r || r->deathScale <= 0.0f) continue;
-                const float base = RangedMob::VISUAL_BASE_PX * r->deathScale;
-                rearMarkers.push_back({r->worldX, r->worldY, base * 2.65f});
-            }
-            DrawEnemySightRearBatch(rearMarkers);
-        }
-        BatchFlush();
-
-        // Colored sight fields share one texture and now use one tinted batch.
-        // Submit them before bodies so the original visual layering is kept.
-        BeginEnemySightFrontBatch();
-        for (auto m : g_MonsterManager.monsters)
-            QueueMonsterSightFront(m);
-        for (auto r : g_MonsterManager.rangedMobs)
-            QueueRangedMobSightFront(r);
-        FlushEnemySightFrontBatch();
-        BatchFlush();
+        // Rear and front sight fields stay before entity bodies to preserve
+        // the existing combat render order.
+        const float sightPlayerX = playerWin.x + playerWin.width * 0.5f;
+        const float sightPlayerY = playerWin.y + playerWin.height * 0.5f;
+        const float sightPlayerSize = PLAYER_SIZE * g_Stats.playerSizeMult;
+        DrawCombatSightFields(
+            g_MonsterManager, sightPlayerX, sightPlayerY, sightPlayerSize,
+            g_GameManager.currentState != GameState::DYING &&
+                g_GameManager.currentState != GameState::GAMEOVER);
 
         for (auto m : g_MonsterManager.monsters) {
             if (m->alive) drawMob(m);
+        }
+        for (auto r : g_MonsterManager.rangedMobs) {
+            drawRangedMob(r);
         }
         for (auto& b : g_Bullets) {
             if (b.active) drawBullet(b);
@@ -4784,378 +2950,25 @@ int main() {
         }
         BatchFlush();
 
+        if (g_GameManager.currentState != GameState::DYING &&
+            g_GameManager.currentState != GameState::GAMEOVER) {
+            const float pCX = playerWin.x + playerWin.width * 0.5f;
+            const float pCY = playerWin.y + playerWin.height * 0.5f;
+            const float playerSize = PLAYER_SIZE * g_Stats.playerSizeMult;
+            BindMainShader();
+            DrawPlayerWeaponShell(pCX, pCY, playerSize,
+                                  atan2f(wmy - pCY, wmx - pCX));
+            BatchFlush();
+        }
+
         // (c) player playfield signal. The rectangular region itself remains
         // available to gameplay/scissor code, but no opaque fake window is drawn.
         BatchFlush(); glDisable(GL_SCISSOR_TEST); glEnable(GL_BLEND);
         EnsurePlayerBounds(playerWin);
 
-        if (g_InBossIntermission) {
-            float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 4.5f);
-            float skipF = g_SkipZoneHold / SKIP_ZONE_HOLD_S;
-            if (skipF > 1.0f) skipF = 1.0f;
-            float skipA = 0.08f + 0.10f * pulse + 0.24f * skipF;
-            drawCircle(g_SkipZoneX, g_SkipZoneY, SKIP_ZONE_RADIUS,
-                       0.45f, 0.75f, 1.0f, skipA);
-            drawNeonBorder(g_SkipZoneX - SKIP_ZONE_RADIUS, g_SkipZoneY - SKIP_ZONE_RADIUS,
-                           SKIP_ZONE_RADIUS * 2.0f, SKIP_ZONE_RADIUS * 2.0f,
-                           0.5f, 0.75f, 1.0f);
-        }
+
 
         // (c2) HP/EXP �????�레?�어 �??�단 ?�쪽??부�?(창과 ?�께 ?�동) ?�?�?
-        if (g_GameManager.currentState == GameState::RUNNING ||
-            g_GameManager.currentState == GameState::PAUSED ||
-            g_InBossIntermission ||
-            g_GameManager.currentState == GameState::AUG_SELECT ||
-            g_GameManager.currentState == GameState::DEBUFF_SELECT ||
-            g_GameManager.currentState == GameState::DYING) {
-            const float pCX = playerWin.x + playerWin.width * 0.5f;
-            const float pCY = playerWin.y + playerWin.height * 0.5f;
-            const float sz = PLAYER_SIZE * g_Stats.playerSizeMult;
-            const float hpRadius = std::max(66.0f, sz * 2.72f);
-            const float xpRadius = hpRadius + 12.0f;
-            // HP occupies the lower half around the player. XP mirrors it
-            // vertically while keeping the same left-to-right reading flow.
-            // The shared slow spin keeps both halves aligned as one radial
-            // instrument while preserving their opposite positions.
-            const float radialSpin = (float)glfwGetTime() * 0.12f;
-            const float hpStartAngle = 3.1415927f + radialSpin;
-            const float hpSweepAngle = -3.1415927f;
-            const float xpStartAngle = 3.1415927f + radialSpin;
-            const float xpSweepAngle =  3.1415927f;
-            // One half-orbit takes about 14 seconds. The data arcs remain fixed;
-            // only their small outer constellation scanner moves.
-            const float orbitPhase = fmodf((float)glfwGetTime() * 0.07f, 1.0f);
-
-            // HP
-            float hpFrac = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
-            if (hpFrac < 0.0f) hpFrac = 0.0f; if (hpFrac > 1.0f) hpFrac = 1.0f;
-            float hpGhostFrac = (g_Stats.maxHP > 0.0f) ? g_HpGhost / g_Stats.maxHP : hpFrac;
-            if (hpGhostFrac < hpFrac) hpGhostFrac = hpFrac;
-            if (hpGhostFrac > 1.0f) hpGhostFrac = 1.0f;
-            const float hpImpact = std::min(1.0f, g_HpBarPop / 0.45f);
-            const bool lowHp = hpFrac <= 0.25f;
-            const float hpR = 0.16f;
-            const float hpG = 1.0f;
-            const float hpPulse = (g_HpBarPop > 0.0f)
-                ? (0.72f + 0.28f * std::min(1.0f, g_HpBarPop / 2.2f)) : 1.0f;
-            // Always-on baseline is quiet; damage and low HP temporarily lift it.
-            const float radialAlpha = 0.16f + hpImpact * 0.52f + (lowHp ? 0.18f : 0.0f);
-            DrawPlayerRadialGauge(pCX, pCY, hpRadius, hpFrac,
-                                  hpStartAngle, hpSweepAngle, 1.15f,
-                                  hpR, hpG, 0.28f, radialAlpha * hpPulse,
-                                  10, hpGhostFrac, orbitPhase);
-            // (HP ?�치??좌상??HUD ???�시 ???�드 ?�션?�서 ?�스?��? 그리�?            //  TextRenderer 가 ?�이??VAO �??�바?�드???�후 ?�티???�더가 깨�?므�?금�?)
-            // XP
-            {
-                const bool atCap = !BossDir::g_ActEndless && !g_CreativeMode
-                                   && g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
-                float xpFrac = 1.0f;
-                if (!atCap) {
-                    long long needX = g_ExpSystem.Required(g_GameManager.playerLevel);
-                    xpFrac = (needX > 0) ? (float)g_GameManager.xp / (float)needX : 0.0f;
-                    if (xpFrac < 0.0f) xpFrac = 0.0f; if (xpFrac > 1.0f) xpFrac = 1.0f;
-                }
-                const float xr = atCap ? 1.0f : 0.32f;
-                const float xg = atCap ? 0.86f : 0.94f;
-                const float xb = atCap ? 0.36f : 1.0f;
-                const float xpImpact = std::min(1.0f, g_XpBarPop / 1.15f);
-                const float xpAlpha = 0.15f + 0.75f * xpImpact;
-                DrawPlayerRadialGauge(pCX, pCY, xpRadius, xpFrac,
-                                      xpStartAngle, xpSweepAngle, 0.9f,
-                                      xr, xg, xb, xpAlpha * (atCap ? 0.72f : 0.82f),
-                                      12, -1.0f, fmodf(orbitPhase + 0.5f, 1.0f));
-            }
-
-            // A temporary shield becomes a thin outer orbit, preserving the
-            // old shield information without bringing back a bar.
-            if (g_PlayerShield > 0.0f && g_Stats.maxHP > 0.0f) {
-                const float shieldFrac = std::max(0.0f,
-                    std::min(1.0f, g_PlayerShield / g_Stats.maxHP));
-                DrawPlayerRadialGauge(pCX, pCY, xpRadius + 9.0f, shieldFrac,
-                                      hpStartAngle, hpSweepAngle, 0.9f,
-                                      0.34f, 0.78f, 1.0f, radialAlpha * 0.72f, 8);
-            }
-        }
-
-        // (c3) ?�캔 ?�이?�?�????�이?�되??�?�� 관??�?(보스 ?�이?�?쿼드 ?�턴)
-        if (!g_LaserBeams.empty()) {
-            BindMainShader();
-            for (auto& lb : g_LaserBeams) {
-                float fr = lb.life / lb.maxLife; if (fr < 0) fr = 0; if (fr > 1) fr = 1;
-                float dx = lb.ex - lb.ox, dy = lb.ey - lb.oy;
-                float dl = sqrtf(dx*dx + dy*dy) + 1e-3f;
-                float pxx = -dy/dl, pyy = dx/dl;
-                for (int pass = 0; pass < 2; pass++) {
-                    float th = ((pass == 0) ? 26.0f * fr + 6.0f : 7.0f * fr + 2.0f) * lb.width;
-                    float cr = (pass == 0) ? 0.3f : 0.8f;
-                    float cg = 1.0f;
-                    float cb = (pass == 0) ? 0.9f : 1.0f;
-                    float ca = (pass == 0) ? 0.35f * fr : 0.95f * fr;
-                    float p1x=lb.ox+pxx*th, p1y=lb.oy+pyy*th;
-                    float p2x=lb.ox-pxx*th, p2y=lb.oy-pyy*th;
-                    float p3x=lb.ex+pxx*th, p3y=lb.ey+pyy*th;
-                    float p4x=lb.ex-pxx*th, p4y=lb.ey-pyy*th;
-                    float v[12]={p1x,p1y,p2x,p2y,p3x,p3y, p2x,p2y,p4x,p4y,p3x,p3y};
-                    BatchVerts(v, 6, cr, cg, cb, ca);
-                }
-            }
-        }
-
-
-        // (d) ?�레?�어 캐릭??+ 증강 ?�펙??+ ?�망 ?�편
-        {
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            // 총�?: 200px ?�내 ?�시 (?��????�안 ??
-            if (g_GameManager.currentState == GameState::DYING) {
-                float fade = (g_DyingTimer > 0) ? g_DyingTimer : 0.0f;
-
-                float t      = 1.0f - fade;
-                float shockR = 60.0f + t * 520.0f;
-                float shockA = (1.0f - t) * 0.55f;
-                drawCircle(g_DeathCX, g_DeathCY, shockR,
-                           1.0f, 0.95f, 0.4f, shockA);
-
-                // 중심 ?�광
-                if (g_DeathFlash > 0.0f) {
-                    float fr = 220.0f * g_DeathFlash;
-                    drawCircle(g_DeathCX, g_DeathCY, fr,
-                               1.0f, 1.0f, 1.0f, g_DeathFlash * 0.9f);
-                    drawCircle(g_DeathCX, g_DeathCY, fr * 1.8f,
-                               1.0f, 0.85f, 0.2f, g_DeathFlash * 0.45f);
-                }
-
-                // ?�망 ?�편
-                for (int i = 0; i < MAX_DEBRIS; i++) {
-                    if (!g_Debris[i].active) continue;
-                    float s  = g_Debris[i].size;
-                    float hs = s * 0.5f;
-                    drawRect(g_Debris[i].x - hs, g_Debris[i].y - hs, s, s,
-                             g_Debris[i].r, g_Debris[i].g, g_Debris[i].b, fade);
-                }
-            } else if (g_GameManager.currentState != GameState::GAMEOVER) {
-                // ?�동 ?�상 ???�레?�어 ??먼�? 그려 ?�래??깔림), ?�명 비�? ?�이??축소
-                for (auto& tr : g_Trail) {
-                    float f = tr.life / tr.maxLife;        // 1??
-                    float s = tr.size * (0.4f + 0.6f * f);
-                    drawRect(tr.x - s*0.5f, tr.y - s*0.5f, s, s, tr.r, tr.g, tr.b, 0.28f * f);
-                }
-                float sz = PLAYER_SIZE * g_Stats.playerSizeMult;
-                float hs = sz * 0.5f;
-                // Keep the player field persistent so it reads as a HUD
-                // identity layer rather than a newly spawned projectile.
-                DrawPlayerSightMarker(pCX, pCY, sz * 2.45f,
-                                      0.28f, 0.92f, 1.0f, 0.12f);
-                DrawPlayerWeaponShell(pCX, pCY, sz, atan2f(wmy - pCY, wmx - pCX));
-
-                // Pickups are combat foreground objects. Draw them after the player field
-                // so sight masks and projectile batches cannot hide their short burst.
-                for (const auto& dust : g_StardustPickups) {
-                    if (!dust.alive) continue;
-                    const float pulse = 0.85f + 0.15f * sinf(dust.age * 8.0f);
-                    if (dust.value >= 10) {
-                        // 대형 (10+): 금빛 다이아몬드
-                        drawCircle(dust.x, dust.y, 22.0f, 0.0f, 0.0f, 0.0f, 0.32f);
-                        drawCircle(dust.x, dust.y, 16.0f, 1.0f, 0.72f, 0.12f, 0.18f);
-                        drawDiamond(dust.x, dust.y, 13.0f * pulse, 1.0f, 0.80f, 0.18f, 1.0f);
-                        drawDiamond(dust.x, dust.y, 6.0f, 1.0f, 1.0f, 0.82f, 1.0f);
-                    } else if (dust.value >= 5) {
-                        // 중형 (5): 청록 십자
-                        drawCircle(dust.x, dust.y, 17.0f, 0.0f, 0.0f, 0.0f, 0.32f);
-                        drawCircle(dust.x, dust.y, 12.0f, 0.30f, 0.80f, 1.0f, 0.16f);
-                        drawDiamond(dust.x, dust.y, 10.0f * pulse, 0.48f, 0.94f, 1.0f, 1.0f);
-                        drawRect(dust.x - 1.5f, dust.y - 11.0f, 3.0f, 22.0f,
-                                 0.82f, 1.0f, 1.0f, 0.75f);
-                    } else {
-                        // 소형 (1): 흰 다이아몬드
-                        drawCircle(dust.x, dust.y, 13.0f, 0.0f, 0.0f, 0.0f, 0.28f);
-                        drawCircle(dust.x, dust.y, 9.0f, 0.70f, 0.90f, 1.0f, 0.14f);
-                        drawDiamond(dust.x, dust.y, 7.5f * pulse, 0.82f, 0.98f, 1.0f, 1.0f);
-                    }
-                }
-                // ?�곽: ?�두???�두�?(?��?
-                // 본체: 밝�? ?�안
-
-                // ?�?�??�나비식 HP 게이지�????�격 ???�레?�어 ?�에 ?�다 ?�이?? ????���??�시 ?�?�?
-                if (g_GameManager.currentState == GameState::RUNNING) {
-                    float hf = (g_Stats.maxHP > 0.0f) ? g_GameManager.playerHP / g_Stats.maxHP : 0.0f;
-                    if (hf < 0.0f) hf = 0.0f; if (hf > 1.0f) hf = 1.0f;
-                    bool low = hf < 0.40f;
-                    float vis = low ? 1.0f
-                              : (g_HpBarPop > 1.6f ? (2.2f - g_HpBarPop) / 0.6f
-                                                   : g_HpBarPop / 1.6f);
-                    if (vis > 1.0f) vis = 1.0f; if (vis < 0.0f) vis = 0.0f;
-                    if (vis > 0.01f) {
-                        // ?�고 ?�레?�어??가깝게 ???�쪽 ?�을 ??가리도�?(가린다???�드�?
-                        // HP is represented by the radial gauge around the player.
-                    }
-                }
-            }
-        }
-
-        // (e) ranged enemies share the global combat pass.
-        for (auto r : g_MonsterManager.rangedMobs) {
-            if (r->deathScale <= 0.0f) continue;
-            drawRangedMob(r);
-        }
-        BatchFlush();
-
-        // (e2.1) turret bodies and gauges also use world-space coordinates.
-                if (g_ShowCrosshair &&
-            (g_GameManager.currentState == GameState::RUNNING ||
-             g_GameManager.currentState == GameState::PAUSED  ||
-             g_GameManager.currentState == GameState::DYING)) {
-            float ax = wmx, ay = wmy;   // �?보정 ??�??�용??ortho ?�서 커서 ?�치???�시
-            // ?�곽 ?�두????+ 중앙 ??�� (�???��???�센???�마 ??
-            float cr = g_AccentR, cg = g_AccentG, cb = g_AccentB;
-            drawCircle(ax, ay, 12.0f, 0.0f, 0.0f, 0.0f, 0.6f);
-            drawCircle(ax, ay, 10.0f, cr, cg, cb, 0.9f);
-            drawCircle(ax, ay, 5.0f, 0.05f, 0.05f, 0.05f, 0.9f);
-            drawRect(ax - 1.5f, ay - 1.5f, 3.0f, 3.0f,
-                     1.0f, 1.0f, 1.0f, 1.0f);
-            // 4방향 짧�? ?�인 (??��)
-            drawRect(ax - 14.0f, ay - 1.0f, 6.0f, 2.0f, cr, cg, cb, 0.95f);
-            drawRect(ax + 8.0f,  ay - 1.0f, 6.0f, 2.0f, cr, cg, cb, 0.95f);
-            drawRect(ax - 1.0f, ay - 14.0f, 2.0f, 6.0f, cr, cg, cb, 0.95f);
-            drawRect(ax - 1.0f, ay + 8.0f,  2.0f, 6.0f, cr, cg, cb, 0.95f);
-        }
-
-        // (g) ?��??�는 죽음 ?�브 ??scissor ?�에?�만 ?�시 ((b)/(e) ?�스???�임)
-
-        // (g2) 충격?????�폭�??�폭 / 보스 ?�폰 ?? ??�� ?�에 ?�시
-        for (auto& sw : g_ShockWaves) {
-            if (!sw.active) continue;
-            float t = 1.0f - sw.life / sw.maxLife;  // 0 ??1
-            float radius = sw.maxRadius * t;
-            float alpha  = (1.0f - t) * 0.55f;
-            drawCircle(sw.x, sw.y, radius, sw.r, sw.g, sw.b, alpha);
-        }
-
-        // (g2b) 검�??�윙 ?�상 ??조�? 방향 부채꼴
-
-        // (g2c) ?��??�파??+ 머즐 ?�래????가??additive) 블렌?�으�?밝게
-        if (!g_Sparks.empty() || g_MuzzleTimer > 0.0f) {
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE);     // additive
-            for (auto& sp : g_Sparks) {
-                float t = sp.life / sp.maxLife;    // 1 ??0
-                drawCircle(sp.x, sp.y, sp.size * (0.5f + 0.5f * t),
-                           sp.r, sp.g, sp.b, t);
-            }
-            if (g_MuzzleTimer > 0.0f) {
-                float mt = g_MuzzleTimer / 0.05f;  // 1 ??0
-                float mx2 = g_MuzzleX + cosf(g_MuzzleAng) * 26.0f;
-                float my2 = g_MuzzleY + sinf(g_MuzzleAng) * 26.0f;
-                drawCircle(mx2, my2, 22.0f * mt + 6.0f, 1.0f, 0.92f, 0.55f, mt * 0.9f);
-                drawCircle(mx2, my2, 11.0f * mt + 3.0f, 1.0f, 1.0f, 0.9f, mt);
-            }
-            // 기본 분리 블렌??복원
-            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-                                GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
-        }
-
-
-                // VOLLEY.sys ???�조 + 기동 ?�력 ?�론
-        if (g_RRBoss && g_RRBoss->alive) {
-            auto* rb = g_RRBoss;
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            float gtRR = (float)glfwGetTime();
-            BindMainShader();
-
-            rb->renderTelegraphs(pCX, pCY, gtRR, true);
-            rb->renderBody(gtRR, pCX, pCY);
-            BatchFlush();
-        }
-
-        if (g_TessBoss && g_TessBoss->alive) {
-            float tt = (float)glfwGetTime();
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            g_TessBoss->renderFx(tt, pCX, pCY);
-            g_TessBoss->renderBody(tt);
-            BatchFlush();
-        }
-
-        if (g_EtherBoss && g_EtherBoss->alive) {
-            float et = (float)glfwGetTime();
-            if (g_EtherBoss->taskKillActive) {
-                BatchFlush();
-                glDisable(GL_SCISSOR_TEST);
-                g_EtherBoss->renderTaskKill(et);
-                BatchFlush();
-            } else {
-                g_EtherBoss->renderBody(et);
-
-                float pct = std::max(0.0f, g_EtherBoss->hp / g_EtherBoss->maxHp);
-                float bW = 440.0f, bH = 13.0f;
-                float bX = screenWidth  * 0.5f - bW * 0.5f;
-                float bY = 16.0f;
-                drawRect(bX-2.0f, bY-2.0f, bW+4.0f, bH+4.0f, 0.0f,0.0f,0.0f, 0.72f);
-                drawRect(bX, bY, bW, bH, 0.04f,0.07f,0.12f, 0.88f);
-                if (pct > 0.0f) drawRect(bX, bY, bW*pct, bH, 0.45f,0.72f,1.0f, 0.88f);
-                drawNeonBorder(bX, bY, bW, bH, 0.45f, 0.70f, 1.0f);
-                BatchFlush();
-            }
-        }
-
-        // (g4f) FORK.worm plasma chain: render body, adds, and FX globally.
-        if (g_CentiBoss && g_CentiBoss->alive) {
-            float ct = (float)glfwGetTime();
-            float centiAimX = playerWin.x + playerWin.width  * 0.5f;
-            float centiAimY = playerWin.y + playerWin.height * 0.5f;
-            g_CentiBoss->renderFx(ct, centiAimX, centiAimY);
-            g_CentiBoss->renderBody(ct);
-            for (auto& mb : g_CentiBoss->minis)
-                if (mb.alive) g_CentiBoss->drawMini(mb);
-            BatchFlush();
-        }
-
-        if (g_LeviathanBoss && g_LeviathanBoss->alive) {
-            const float lt = (float)glfwGetTime();
-            BindMainShader();
-            g_LeviathanBoss->renderTelegraph(lt);
-            g_LeviathanBoss->renderBody(lt);
-            g_LeviathanBoss->renderHeart(lt);
-            BatchFlush();
-        }
-
-        // (h) ?�론 ??1~2�?(?�탑 모드 ???�론 ?�더 비활??
-        if (g_Stats.drone &&
-            g_GameManager.currentState != GameState::GAMEOVER) {
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            for (int d = 0; d < g_Stats.droneCount && d < MAX_DRONES; d++) {
-                float ang = g_Drones[d].angle
-                          + (float)d * 6.2831853f / (float)g_Stats.droneCount;
-                float dx = pCX + cosf(ang) * 80.0f;
-                float dy = pCY + sinf(ang) * 80.0f;
-                drawDiamond(dx, dy, 14.0f, 0.2f, 0.9f, 1.0f, 1.0f);
-            }
-        }
-
-        if (g_GameManager.currentState != GameState::GAMEOVER && g_Stats.chakram) {
-            float pCX = playerWin.x + playerWin.width  * 0.5f;
-            float pCY = playerWin.y + playerWin.height * 0.5f;
-            for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
-                auto& ch = g_Chakrams[c];
-                if (!ch.alive) continue;
-                float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
-                float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
-                // ?�안 ?�날 ?�스?????�파?�웨???��? ??��)?�??�실??구분
-                drawCircle(chx, chy, CHAKRAM_SIZE * 0.62f, 0.3f, 0.9f, 1.0f, 0.28f);   // 글로우
-                drawDiamond(chx, chy, CHAKRAM_SIZE * 1.15f, 0.5f, 1.0f, 1.0f, 0.45f);  // ?�전???�트
-                drawCircle(chx, chy, CHAKRAM_SIZE * 0.5f, 0.2f, 0.85f, 1.0f, 1.0f);
-                drawCircle(chx, chy, CHAKRAM_SIZE * 0.22f, 0.04f, 0.12f, 0.18f, 1.0f);
-                float hpFrac = (ch.maxHp > 0.0f) ? ch.hp / ch.maxHp : 0.0f;
-                if (hpFrac < 0) hpFrac = 0; if (hpFrac > 1) hpFrac = 1;
-                drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28, 3, 0.2f, 0.2f, 0.2f, 0.7f);
-                drawRect(chx - 14, chy - CHAKRAM_SIZE - 6, 28 * hpFrac, 3,
-                         1.0f, 0.7f, 0.0f, 0.95f);
-            }
-        }
-        // ?�론/차크??배치�?지�?즉시 flush
-        BatchFlush();
-
         // ?�?�?(h3) 가�?OS �??�롬 ???�?��?�?+ [X] ?�기 (?�스?�톱 ?�계관) ?�?�?
         //    "??= ?�로?�스, 창을 ?�아 종료?�다" ?�체?? ?�드 좌표(�?반영)�?그림.
         {
@@ -5229,308 +3042,13 @@ int main() {
         glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
         memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
 
-        // (h2) boss tint overlay
-        {
-            bool bossAlive = false;
-            glm::vec3 tc(0.6f, 0.3f, 1.0f);
-            if (g_RRBoss && g_RRBoss->alive) {
-                bossAlive = true; tc = glm::vec3(1.0f, 0.55f, 0.2f); }
-            else if (g_CentiBoss && g_CentiBoss->alive) {
-                bossAlive = true; tc = glm::vec3(0.35f, 0.88f, 0.95f); }
-            else if (g_TessBoss && g_TessBoss->alive) {
-                bossAlive = true; tc = glm::vec3(0.95f, 0.35f, 1.0f); }
-            else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
-                bossAlive = true; tc = glm::vec3(0.20f, 0.78f, 1.0f); }
-            if (bossAlive) {
-                g_BossTintCol = tc;
-                g_BossTintT  += delta * 0.07f;          // ~14초에 최�?
-                if (g_BossTintT > 1.0f) g_BossTintT = 1.0f;
-            } else {
-                g_BossTintT  -= delta * 0.6f;           // 처치 ??빠르�??�복
-                if (g_BossTintT < 0.0f) g_BossTintT = 0.0f;
-            }
-            if (g_BossTintT > 0.001f) {
-                BindMainShader();
-                drawRect(0, 0, (float)screenWidth, (float)screenHeight,
-                         g_BossTintCol.r, g_BossTintCol.g, g_BossTintCol.b,
-                         g_BossTintT * 0.06f);
-            }
-        }
 
 
-        // (h2b) 보스 ?�이??HP �????�면 ?�단 고정. 몸체 �??��? 바는 ?�반 ?�막??        //   묻�? ??보이므�? ?�성 보스??체력???�단???�게 ?�시?�다 (?�름 + %).
-        {
-            const wchar_t* bn = nullptr;
-            float bhf = 0.0f; glm::vec3 bc(1.0f, 1.0f, 1.0f);
-            if (g_RRBoss && g_RRBoss->alive) {
-                bn = L"VOLLEY";  bhf = g_RRBoss->hp / g_RRBoss->maxHp;
-                bc = glm::vec3(1.0f, 0.55f, 0.2f);
-            } else if (g_CentiBoss && g_CentiBoss->alive) {
-                bn = CentipedeBoss::BOSS_NAME;  bhf = g_CentiBoss->hp / g_CentiBoss->maxHp;
-                bc = glm::vec3(0.35f, 0.88f, 0.95f);
-            } else if (g_TessBoss && g_TessBoss->alive) {
-                bn = TesseractGlitchBoss::BOSS_NAME; bhf = g_TessBoss->hp / g_TessBoss->maxHp;
-                bc = glm::vec3(0.95f, 0.35f, 1.0f);
-            } else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
-                bn = LeviathanBoss::BOSS_NAME; bhf = g_LeviathanBoss->hp / g_LeviathanBoss->maxHp;
-                bc = glm::vec3(0.20f, 0.78f, 1.0f);
-            }
-            int bossPick = -1;
-            if (bn) {
-                if      (bn == L"VOLLEY")   bossPick = 2;
-                else if (bn == CentipedeBoss::BOSS_NAME) bossPick = 8;
-                else if (bn == TesseractGlitchBoss::BOSS_NAME) bossPick = 10;
-                else if (bn == LeviathanBoss::BOSS_NAME) bossPick = 30;
-            }
-            GameState st = g_GameManager.currentState;
-            bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
-                           st == GameState::DYING   || st == GameState::AUG_SELECT ||
-                           st == GameState::DEBUFF_SELECT);
-            if (bn && inGame) {
-                if (bhf < 0.0f) bhf = 0.0f; if (bhf > 1.0f) bhf = 1.0f;
-                BindMainShader();
-                float bw = (float)screenWidth * 0.42f; if (bw > 820.0f) bw = 820.0f;
-                float bh = 22.0f;
-                float bx = ((float)screenWidth - bw) * 0.5f;
-                float by = 78.0f;
-                drawRect(bx - 3.0f, by - 3.0f, bw + 6.0f, bh + 6.0f, 0.05f, 0.05f, 0.07f, 0.88f);
-                drawRect(bx, by, bw, bh, 0.18f, 0.16f, 0.20f, 0.92f);
-                float lit = 0.5f + 0.5f * bhf;
-                drawRect(bx, by, bw * bhf, bh, bc.r * lit, bc.g * lit, bc.b * lit, 0.96f);
-                // ?�름 (�???중앙)
-                float ns = 0.85f;
-                float nw = g_TextS.Width(bn, ns);
-                g_TextS.Draw(bn, ((float)screenWidth - nw) * 0.5f, by - 28.0f, ns,
-                             bc.r, bc.g, bc.b, 1.0f);
-                if (bossPick >= 0) {
-                    const wchar_t* tag = BossDir::Tagline(bossPick);
-                    float ts = 0.58f;
-                    float tw = g_TextS.Width(tag, ts);
-                    g_TextS.Draw(tag, ((float)screenWidth - tw) * 0.5f, by - 48.0f, ts,
-                                 0.75f, 0.78f, 0.82f, 0.88f);
-                }
-                if (g_RRBoss && g_RRBoss->alive) {
-                    wchar_t rrBuf[64];
-                    if (g_RRBoss->phase3)
-                        swprintf_s(rrBuf, L"OVERCLOCK \uCA0C %ls",
-                                   g_RRBoss->state == RRState::ASSAULT ? L"ASSAULT" :
-                                   ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
-                    else if (g_RRBoss->phase2)
-                        swprintf_s(rrBuf, L"P2 \uCA0C %ls",
-                                   g_RRBoss->state == RRState::RELOAD_SPRINT ? L"SPRINT" :
-                                   ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
-                    else
-                        swprintf_s(rrBuf, L"%ls",
-                                   ReloadRunnerBoss::weaponTag(g_RRBoss->weapon));
-                    float rs = 0.55f;
-                    float rw = g_TextS.Width(rrBuf, rs);
-                    g_TextS.Draw(rrBuf, bx + bw - rw - 8.0f, by - 48.0f, rs,
-                                 1.0f, 0.55f, 0.2f, 0.85f);
-                } else if (g_TessBoss && g_TessBoss->alive) {
-                    const wchar_t* tb = g_TessBoss->stateTag();
-                    float ts2 = 0.55f;
-                    float tw2 = g_TextS.Width(tb, ts2);
-                    g_TextS.Draw(tb, bx + bw - tw2 - 8.0f, by - 48.0f, ts2,
-                                 0.95f, 0.35f, 1.0f, 0.88f);
-                } else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
-                    const wchar_t* lb = g_LeviathanBoss->stateTag();
-                    float ls = 0.55f;
-                    float lw = g_TextS.Width(lb, ls);
-                    g_TextS.Draw(lb, bx + bw - lw - 8.0f, by - 48.0f, ls,
-                                 0.20f, 0.78f, 1.0f, 0.90f);
-                }
-                                                // % (�??�측 ???�쪽)
-                wchar_t pct[16]; swprintf_s(pct, L"%d%%", (int)(bhf * 100.0f + 0.5f));
-                float ps = 0.7f;
-                float pw = g_TextS.Width(pct, ps);
-                g_TextS.Draw(pct, bx + bw - pw - 8.0f, by + 3.0f, ps, 1.0f, 1.0f, 1.0f, 0.95f);
-            }
-        }
 
 
-        // (h2c) 보스 ?�장 ?�조(증상) ???�폰 2.5�????�마 ?�출 + 경고 배너
-        if (g_BossWarnTimer > 0.0f &&
-            (g_GameManager.currentState == GameState::RUNNING ||
-             g_GameManager.currentState == GameState::PAUSED)) {
-            float warnDur = g_CreativeMode ? 0.35f : BOSS_WARN_DUR * TrialBossWarningMult();
-            if (warnDur < 0.25f) warnDur = 0.25f;
-            float prog = 1.0f - g_BossWarnTimer / warnDur;   // 0��1
-            if (prog < 0.0f) prog = 0.0f; if (prog > 1.0f) prog = 1.0f;
-            float t = (float)glfwGetTime();
-            float blink = 0.5f + 0.5f * sinf(t * 9.0f);
-            glm::vec3 wc = BossDir::WarnColor(g_BossWarnPick);
-            BindMainShader();
-            float sw2 = (float)screenWidth, sh2 = (float)screenHeight;
-            // 공통: 가?�자�?비네??(보스?? progress 비�?�?짙어�?
-            float ea = (0.05f + 0.13f * prog) * (0.6f + 0.4f * blink);
-            float eb = 70.0f;
-            drawRect(0, 0, sw2, eb, wc.r, wc.g, wc.b, ea);
-            drawRect(0, sh2 - eb, sw2, eb, wc.r, wc.g, wc.b, ea);
-            drawRect(0, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
-            drawRect(sw2 - eb, 0, eb, sh2, wc.r, wc.g, wc.b, ea);
 
-            // 보스�?증상 ?�마
-            switch (g_BossWarnPick) {
-            case 1: break;
-            case 2: {
-                float cx = sw2 * 0.5f, cy = sh2 * 0.42f;
-                for (int e = 0; e < 4; e++) {
-                    float ex = (e % 2) ? sw2 - 20.0f : 20.0f;
-                    float ey = (e < 2) ? 20.0f : sh2 - 20.0f;
-                    const int SEG = 8;
-                    for (int s = 0; s < SEG; s++) {
-                        if ((s & 1) == 0) continue;
-                        float u0 = (float)s / (float)SEG, u1 = (float)(s + 1) / (float)SEG;
-                        float x0 = ex + (cx - ex) * u0, y0 = ey + (cy - ey) * u0;
-                        float x1 = ex + (cx - ex) * u1, y1 = ey + (cy - ey) * u1;
-                        drawRect((x0 + x1) * 0.5f - 2, (y0 + y1) * 0.5f - 2, 4, 4,
-                                 1.0f, 0.5f, 0.15f, 0.15f + 0.25f * blink * prog);
-                    }
-                }
-                drawRect(cx - 28.0f, cy - 18.0f, 56.0f, 36.0f, 0.08f, 0.06f, 0.07f, 0.5f);
-                drawNeonBorder(cx - 28.0f, cy - 18.0f, 56.0f, 36.0f, 1.0f, 0.55f, 0.18f);
-                for (int i = 0; i < 4; i++) {
-                    float a = t * 2.0f + (float)i * 1.571f;
-                    drawRect(cx + cosf(a) * 34.0f - 3, cy + sinf(a) * 22.0f - 3,
-                             6, 6, 1.0f, 0.45f, 0.12f, 0.35f + 0.2f * prog);
-                }
-            } break;
-            case 7: {
-                drawRect(0, 0, sw2, sh2, 0.02f, 0.06f, 0.03f, 0.06f + 0.08f * prog);
-                for (int i = 0; i < 8; i++) {
-                    float ly = 40.0f + (float)(i * 47) + fmodf(t * 60.0f, 47.0f);
-                    if (ly > sh2) continue;
-                    float lw = 80.0f + (float)(rand() % (int)(sw2 * 0.5f));
-                    drawRect(30.0f, ly, lw, 3.0f, wc.r, wc.g, wc.b, 0.15f + 0.12f * blink);
-                }
-                drawCircle(sw2 * 0.5f, sh2 * 0.5f, 90.0f + prog * 60.0f,
-                           wc.r, wc.g, wc.b, 0.06f + 0.05f * blink);
-                for (int i = 0; i < 6; i++) {
-                    float a = (float)i * 1.047f + t * 0.4f;
-                    float nx = sw2 * 0.5f + cosf(a) * (120.0f + prog * 80.0f);
-                    float ny = sh2 * 0.5f + sinf(a) * (120.0f + prog * 80.0f);
-                    drawRect(sw2 * 0.5f, sh2 * 0.5f, nx - sw2 * 0.5f, 2.0f,
-                             wc.r, wc.g, wc.b, 0.1f);
-                    drawRect(nx - 8.0f, ny - 6.0f, 16.0f, 12.0f,
-                             0.1f, 0.2f, 0.12f, 0.35f + 0.2f * blink);
-                }
-            } break;
-            case 8: {  // FORK ???�단?�서 기어?�는 분절 몸통
-                float crawl = 40.0f + 90.0f * prog;
-                for (int s = 0; s < 9; s++) {
-                    float sx = sw2 * 0.08f + s * sw2 * 0.105f;
-                    float bob = sinf(t * 6.0f + s * 0.7f) * 6.0f;
-                    drawCircle(sx, sh2 - crawl + bob, 14.0f + (float)(s % 3) * 3.0f,
-                               0.35f, 0.85f, 0.25f, 0.2f + 0.15f * prog);
-                }
-            } break;
-            case 9: {  // ADUN.relay ? ���� �ݳ� ������(���� ��) + ���� ����
-                float cx = sw2 * 0.5f, cy = sh2 * 0.52f;
-                float pulse = 0.5f + 0.5f * sinf(t * 4.0f);
-                float ringR = sw2 * 0.1f + pulse * sw2 * 0.006f;
-                for (int i = 0; i < 24; i++) {
-                    float a = (float)i / 24.0f * 6.283f + t * 0.5f;
-                    float dx = cx + cosf(a) * ringR, dy = cy + sinf(a) * ringR;
-                    drawCircle(dx, dy, 2.4f, wc.r, wc.g, wc.b, 0.35f + 0.25f * prog);
-                }
-                for (int i = 0; i < 10; i++) {
-                    float a = (float)i / 10.0f * 6.283f + t * 0.5f;
-                    float ix = cx + cosf(a) * (ringR + 12.0f), iy = cy + sinf(a) * (ringR + 12.0f);
-                    drawCircle(ix, iy, 3.0f, wc.r, wc.g, wc.b, 0.5f + 0.3f * blink);
-                }
-                for (int i = 0; i < 6; i++) {
-                    float a = t * 1.6f + (float)i * 1.047f;
-                    float rad = sw2 * 0.14f + prog * sw2 * 0.08f;
-                    float ix = cx + cosf(a) * rad, iy = cy + sinf(a) * rad * 0.65f;
-                    drawDiamond(ix, iy, 7.0f + pulse * 2.0f, 1.0f, 0.85f, 1.0f, 0.4f + 0.3f * blink);
-                }
-                drawCircle(cx, cy, 6.0f + pulse * 3.0f, wc.r, wc.g, wc.b, 0.3f + pulse * 0.3f);
-            } break;
-            case 3: {  // SPAM.dll ? ���� �˾��� ȭ�� �����ڸ����� Ƣ����� ����
-                float cx = sw2 * 0.5f, cy = sh2 * 0.5f;
-                for (int i = 0; i < 8; i++) {
-                    float a = (float)i * 0.7853982f + t * 0.3f;
-                    float dist = sw2 * 0.36f * (1.0f - prog * 0.3f);
-                    float px = cx + cosf(a) * dist, py = cy + sinf(a) * dist * 0.6f;
-                    float ww2 = 34.0f, hh2 = 22.0f;
-                    drawRect(px - ww2 * 0.5f, py - hh2 * 0.5f, ww2, hh2,
-                             wc.r * 0.4f, wc.g * 0.4f, wc.b * 0.4f, 0.10f + 0.14f * prog);
-                    drawRect(px - ww2 * 0.5f, py - hh2 * 0.5f, ww2, hh2 * 0.32f,
-                             wc.r, wc.g, wc.b, 0.18f + 0.18f * prog * blink);
-                }
-                drawTriangle(cx, cy, 30.0f + prog * 14.0f, wc.r, wc.g, wc.b, 0.14f + 0.14f * blink);
-                drawCircle(cx, cy + 12.0f, 4.0f, wc.r, wc.g, wc.b, 0.16f + 0.16f * blink);
-            } break;
-            case 30: {
-                const float cx = sw2 * 0.50f, cy = sh2 * 0.46f;
-                const float len = sw2 * 0.78f, wid = sh2 * 0.18f;
-                for (int i = 0; i < 30; ++i) {
-                    const float u0 = (float)i / 30.0f;
-                    const float u1 = (float)(i + 1) / 30.0f;
-                    const float x0 = cx - len * 0.50f + u0 * len;
-                    const float x1 = cx - len * 0.50f + u1 * len;
-                    const float y0 = cy + sinf(t * 1.8f + u0 * 9.0f) * wid * 0.22f;
-                    const float y1 = cy + sinf(t * 1.8f + u1 * 9.0f) * wid * 0.22f;
-                    drawRect((x0 + x1) * 0.5f - 3.0f, (y0 + y1) * 0.5f - 3.0f,
-                             6.0f, 6.0f, wc.r, wc.g, wc.b, 0.35f + 0.28f * prog);
-                    if ((i & 1) == 0)
-                        drawRect((x0 + x1) * 0.5f - 1.0f, cy - wid * 0.48f,
-                                 2.0f, wid * 0.96f, wc.r, wc.g, wc.b,
-                                 0.12f + 0.10f * prog);
-                }
-                drawCircle(cx + len * 0.32f, cy, wid * 0.48f,
-                           wc.r, wc.g, wc.b, 0.12f + 0.10f * blink);
-                drawDiamond(cx + len * 0.34f, cy - wid * 0.06f,
-                            24.0f + 12.0f * blink, 1.0f, 0.35f, 0.55f,
-                            0.48f + 0.22f * prog);
-                for (int i = 0; i < 3; ++i) {
-                    const float rr = 90.0f + i * 42.0f + prog * 30.0f;
-                    drawCircle(cx + len * 0.34f, cy, rr,
-                               wc.r, wc.g, wc.b, 0.035f + 0.025f * blink);
-                }
-            } break;
-            default: break;
-            }
 
-            // 공통 경고 배너 (중앙 ?�단�?
-            float by3 = sh2 * 0.30f;
-            // ?�름 (?�?
-            wchar_t banner[64]; swprintf_s(banner, L"!! %ls !!", g_BossWarnName);
-            float nsc = 1.5f;
-            float nw2 = g_TextL.Width(banner, nsc);
-            g_TextL.Draw(banner, (sw2 - nw2) * 0.5f, by3, nsc,
-                         wc.r, wc.g, wc.b, 0.7f + 0.3f * blink);
-            const wchar_t* SUB[3] = { L"\uC704\uD611 \uD504\uB85C\uC138\uC2A4 \uAC10\uC9C0 - \uC2E4\uD589 \uC911...",
-                                       L"THREAT PROCESS DETECTED - launching...",
-                                       L"\u8105\u5A01\u30D7\u30ED\u30BB\u30B9?\u77E5 - \u8D77\u52D5\u4E2D..." };
-            int li5 = LangIndex();
-            float ssc = 0.7f;
-            float sw3 = g_TextS.Width(SUB[li5], ssc);
-            g_TextS.Draw(SUB[li5], (sw2 - sw3) * 0.5f, by3 + 44.0f, ssc, 1.0f, 1.0f, 1.0f, 0.85f);
-            // 진행 게이지
-            float gw = 320.0f, gh = 8.0f, gx = (sw2 - gw) * 0.5f, gy = by3 + 74.0f;
-            BindMainShader();
-            drawRect(gx - 2, gy - 2, gw + 4, gh + 4, 0.0f, 0.0f, 0.0f, 0.6f);
-            drawRect(gx, gy, gw, gh, 0.15f, 0.15f, 0.18f, 0.9f);
-            drawRect(gx, gy, gw * prog, gh, wc.r, wc.g, wc.b, 0.95f);
-        }
 
-        // (h2d) ?�이�? 진입 ?�스????"??과�?????PHASE 2" (1.8�??�이??
-        if (g_P2ToastTimer > 0.0f &&
-            (g_GameManager.currentState == GameState::RUNNING ||
-             g_GameManager.currentState == GameState::DYING)) {
-            float a = (g_P2ToastTimer > 1.4f) ? (1.8f - g_P2ToastTimer) / 0.4f
-                                              : (g_P2ToastTimer / 1.4f);
-            if (a > 1.0f) a = 1.0f; if (a < 0.0f) a = 0.0f;
-            const wchar_t* P2[3] = { L">> \uACFC\uBD80\uD558 >> PHASE 2", L">> OVERLOAD >> PHASE 2",
-                                      L">> \u904E\u8CA0\u8377 >> PHASE 2" };
-            int li6 = LangIndex();
-            float psc = 1.2f;
-            float pw3 = g_TextL.Width(P2[li6], psc);
-            glm::vec3& pc = g_P2ToastCol;
-            g_TextL.Draw(P2[li6], ((float)screenWidth - pw3) * 0.5f,
-                         (float)screenHeight * 0.22f, psc, pc.r, pc.g, pc.b, a);
-        }
 
         // (h3) ?�면 ?�래?????�벨??보스처치/부???�간 번쩍
         if (g_FlashIntensity > 0.001f) {
@@ -5540,18 +3058,10 @@ int main() {
                      g_FlashColor.r, g_FlashColor.g, g_FlashColor.b, a);
         }
         // FORK.worm ?�피 ???��???RGB 분리 글리치
-        if (g_CentiBoss && g_CentiBoss->glitchOverlay > 0.001f) {
-            BindMainShader();
-            float go = g_CentiBoss->glitchOverlay * 7.0f;
-            if (go > 1.0f) go = 1.0f;
-            float off = 7.0f * go;
-            float sw = (float)screenWidth, sh = (float)screenHeight;
-            drawRect(off, 0.0f, sw, sh, 1.0f, 0.15f, 0.15f, go * 0.07f);
-            drawRect(-off, 0.0f, sw, sh, 0.15f, 0.85f, 1.0f, go * 0.07f);
-        }
+
 
         // (h4) ?�간 ?��? ???�면 가?�자�??�안 비네??(?��? ?�출)
-        if (g_TimeStopTimer > 0.0f) {
+        if (g_PlayerRuntime.timeStopTimer > 0.0f) {
             BindMainShader();
             float a = 0.10f + 0.05f * sinf((float)glfwGetTime() * 10.0f);
             float bw = 18.0f;
@@ -5593,7 +3103,6 @@ int main() {
                  blurState == GameState::DEBUFF_SELECT ||
                  blurState == GameState::AUG_REPLACE ||
                  blurState == GameState::GAMEOVER ||
-                 blurState == GameState::BOSS_INTERMISSION ||
                  (blurState == GameState::SETTINGS &&
                   g_SettingsReturnTo == GameState::PAUSED));
 
@@ -5633,7 +3142,7 @@ int main() {
             // ??�?shop/codex/config) 진입 ???�림 ?�니메이???�작 ??�??�레??진행
             {
                 static GameState s_prevWinSt = GameState::MAIN_MENU;
-                bool isApp = (st == GameState::SHOP || st == GameState::CODEX ||
+                bool isApp = (st == GameState::CODEX ||
                               st == GameState::TUTORIAL || st == GameState::SETTINGS);
                 if (st != s_prevWinSt) {
                     if (isApp) g_AppOpen = 0.0f;   // ??�????�기 0?�서 ?�기
@@ -5658,12 +3167,15 @@ int main() {
                 wchar_t tb[160];
                 swprintf_s(tb, L"%ls  %ls  (+%lld)", LBL[li2],
                            AchName(g_AchToastId), ACH_DEFS[g_AchToastId].coinReward);
-                float bw = g_TextS.Width(tb, 1.0f) + 48.0f;
+                const float toastScale = UiTextScale(g_TextS, UiTextLevel::Description,
+                                                     UiScale(sw, sh));
+                float bw = g_TextS.Width(tb, toastScale) + 48.0f;
                 float bx0 = (sw - bw) * 0.5f, by0 = sh * 0.10f;
                 BindMainShader();
                 drawRect(bx0, by0, bw, 52.0f, 0.12f, 0.10f, 0.02f, 0.85f * a);
                 drawRect(bx0, by0, bw, 4.0f, 1.0f, 0.85f, 0.25f, 0.95f * a);
-                g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, 1.0f, 1.0f, 0.9f, 0.4f, a);
+                g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, toastScale,
+                             1.0f, 0.9f, 0.4f, a);
             }
 
             DrawKillTags(g_TextS, st == GameState::RUNNING || st == GameState::DYING);
@@ -5674,14 +3186,18 @@ int main() {
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
                 int li3 = LangIndex();
                 const wchar_t* CH[3] = {
-                    L"CREATIVE   F: \uC99D\uAC15   G: \uBB34\uC801   B: \uBCF4\uC2A4 \uC2A4\uD3F0",
-                    L"CREATIVE   F: Augment   G: Godmode   B: Spawn boss",
-                    L"CREATIVE   F: ?\u5316   G: \u30B4\u30C3\u30C9   B: \u30DC\u30B9\u53EC\u559A" };
-                g_TextS.Draw(CH[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL), 0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
+                    L"CREATIVE   F: \uC99D\uAC15   G: \uBB34\uC801",
+                    L"CREATIVE   F: Augment   G: Godmode",
+                    L"CREATIVE   F: ?\u5316   G: \u30B4\u30C3\u30C9" };
+                g_TextS.Draw(CH[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL),
+                             UiTextScale(g_TextS, UiTextLevel::Supporting, UiScale(sw, sh)),
+                             0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
                     const wchar_t* GOD[3] = { L"* \uBB34\uC801 ON", L"* GODMODE ON", L"* \u30B4\u30C3\u30C9 ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
-                    g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f, 1.0f, 0.85f, 0.2f, blink);
+                    g_TextL.Draw(GOD[li3], 20.0f, 24.0f,
+                                 UiTextScale(g_TextL, UiTextLevel::Description, UiScale(sw, sh)),
+                                 1.0f, 0.85f, 0.2f, blink);
                 }
             }
             if (g_DebugMode && !g_CreativeMode &&
@@ -5689,16 +3205,18 @@ int main() {
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
                 int li3 = LangIndex();
                 const wchar_t* DBG[3] = {
-                    L"\uB514\uBC84\uADF8   F: \uB808\uBCA8\uC5C5   G: \uBB34\uC801   BOSS: OFFLINE",
-                    L"DEBUG   F: LEVEL UP   G: GODMODE   BOSS: OFFLINE",
-                    L"\u30C7\u30D0\u30C3\u30B0   F: \u30EC\u30D9\u30EB\u30A2\u30C3\u30D7   G: \u7121\u6575   BOSS: OFFLINE"
+                    L"\uB514\uBC84\uADF8   F: \uB808\uBCA8\uC5C5   G: \uBB34\uC801",
+                    L"DEBUG   F: LEVEL UP   G: GODMODE",
+                    L"\u30C7\u30D0\u30C3\u30B0   F: \u30EC\u30D9\u30EB\u30A2\u30C3\u30D7   G: \u7121\u6575"
                 };
                 g_TextS.Draw(DBG[li3], 20.0f, HudY(sh, Hud::CREATIVE_LABEL),
-                             0.8f, 0.7f, 0.85f, 1.0f, 0.85f);
+                             UiTextScale(g_TextS, UiTextLevel::Supporting, UiScale(sw, sh)),
+                             0.7f, 0.85f, 1.0f, 0.85f);
                 if (g_CreativeGodmode) {
                     const wchar_t* GOD[3] = { L"* \uBB34\uC801 ON", L"* GODMODE ON", L"* \u30B4\u30C3\u30C9 ON" };
                     float blink = 0.65f + 0.35f * sinf((float)glfwGetTime() * 5.0f);
-                    g_TextL.Draw(GOD[li3], 20.0f, 24.0f, 0.95f,
+                    g_TextL.Draw(GOD[li3], 20.0f, 24.0f,
+                                 UiTextScale(g_TextL, UiTextLevel::Description, UiScale(sw, sh)),
                                  1.0f, 0.85f, 0.2f, blink);
                 }
             }
@@ -5721,10 +3239,10 @@ int main() {
                 bool sceneLmb = (!g_DebugToolkit.IsInputCaptured() &&
                                  my >= BROWSER_CHROME_H) ? lmb : false;
                 SceneCtx ctx{ sw, sh, mx, my, sceneLmb, delta, window, &fireTimer,
-                              resetFn, restartRunFn, abandonRunFn };
+                              resetFn, restartRunFn, abandonRunFn,
+                              inputFocusChanged };
                 switch (st) {
                 case GameState::MAIN_MENU:         Scene_MainMenu(ctx);         break;
-                case GameState::SHOP:              Scene_Shop(ctx);             break;
                 case GameState::CODEX:             Scene_Codex(ctx);            break;
                 case GameState::TUTORIAL:          Scene_Tutorial(ctx);         break;
                 case GameState::CREATIVE_CONFIG:   Scene_CreativeConfig(ctx);   break;
@@ -5732,7 +3250,6 @@ int main() {
                 case GameState::READY:             Scene_Ready(ctx);            break;
                 case GameState::PAUSED:            Scene_Paused(ctx);           break;
                 case GameState::GAMEOVER:          Scene_GameOver(ctx);         break;
-                case GameState::VICTORY:           Scene_Victory(ctx);          break;
                 case GameState::AUG_SELECT:
                 case GameState::DEBUFF_SELECT:     Scene_AugSelect(ctx);        break;
                 case GameState::AUG_REPLACE:       Scene_AugReplace(ctx);       break;
@@ -5740,18 +3257,19 @@ int main() {
                 }
                 if (st == GameState::PAUSED || st == GameState::AUG_SELECT ||
                     st == GameState::DEBUFF_SELECT || st == GameState::AUG_REPLACE ||
-                    st == GameState::VICTORY)
+                    false)
                     Scene_OwnedAugPanel(ctx);
             }
             // Scene_Paused can switch to SETTINGS during this render pass.
             // Apply the new state immediately instead of waiting one frame.
-            UpdateCursorVisibility();
+            InputUpdateGameplayCursor(window, g_GameManager.currentState,
+                                      g_ShowCrosshair, g_DebugToolkit.IsVisible());
 
             // ?�단 HUD ???�제 게임 진행 ?�태?�서�?(메뉴/?�감/?�점?????�게)
             if (st == GameState::RUNNING || st == GameState::PAUSED ||
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
-                st == GameState::DEBUFF_SELECT ||
-                (st == GameState::RUNNING && g_InBossIntermission)) {
+                st == GameState::DEBUFF_SELECT) {
+                const float hudScale = UiScale(sw, sh);
 #ifdef __APPLE__
                 const float hudTopY = BROWSER_CHROME_H + 8.0f + 30.0f;
 #else
@@ -5762,51 +3280,36 @@ int main() {
                     wchar_t lvBuf2[64];
                     swprintf_s(lvBuf2, L"%ls%d",
                                T(StrId::LV_PREFIX), g_GameManager.playerLevel);
-                    g_TextS.Draw(lvBuf2, 12.0f, hudTopY, 0.85f, 0.7f, 1.0f, 0.7f, 0.9f);
+                    g_TextS.Draw(lvBuf2, 12.0f, hudTopY,
+                                 UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale),
+                                 0.7f, 1.0f, 0.7f, 0.9f);
                 }
                 // ?�단 중앙: Score
                 wchar_t scoreBuf[64];
                 swprintf_s(scoreBuf, L"%ls  %lld", T(StrId::SCORE), g_GameManager.score);
-                float scoreW = g_TextS.Width(scoreBuf, 1.0f);
-                g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, hudTopY, 1.0f,
+                const float scoreScale = UiTextScale(g_TextS, UiTextLevel::Description, hudScale);
+                float scoreW = g_TextS.Width(scoreBuf, scoreScale);
+                g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, hudTopY, scoreScale,
                              1.0f, 1.0f, 1.0f, 0.95f);
 
                 // ?�상?? FPS
                 wchar_t fpsBuf[32];
                 swprintf_s(fpsBuf, L"%ls  %d", T(StrId::FPS), g_CurrentFPS);
-                float fpsW = g_TextS.Width(fpsBuf, 0.85f);
-                g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, 0.85f,
+                const float fpsScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
+                float fpsW = g_TextS.Width(fpsBuf, fpsScale);
+                g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, fpsScale,
                              0.7f, 0.9f, 1.0f, 0.85f);
 
-                if (st == GameState::RUNNING || g_InBossIntermission) {
-                    const wchar_t* floorLbl = BossDir::ActLabel();
-                    g_TextS.Draw(floorLbl, 12.0f, hudTopY + 42.0f, 0.72f,
-                                 0.82f, 0.92f, 1.0f, 0.82f);
+                if (st == GameState::RUNNING) {
                     wchar_t runDustHud[64];
                     const wchar_t* runDustLabel = LangIndex() == 0 ? L"현재 별가루" : L"RUN STARDUST";
                     swprintf_s(runDustHud, L"%ls  %lld", runDustLabel, g_RunStardust);
-                    float gdw = g_TextS.Width(runDustHud, 0.82f);
-                    g_TextS.Draw(runDustHud, sw - gdw - 12.0f, hudTopY + 22.0f, 0.82f,
+                    const float dustScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
+                    float gdw = g_TextS.Width(runDustHud, dustScale);
+                    g_TextS.Draw(runDustHud, sw - gdw - 12.0f, hudTopY + 22.0f, dustScale,
                                  1.0f, 0.86f, 0.32f, 0.9f);
                 }
-                if (g_InBossIntermission) {
-                    int sec = (int)(g_IntermissionTimer + 0.99f);
-                    if (sec < 0) sec = 0;
-                    wchar_t tbuf[48];
-                    swprintf_s(tbuf, L"REST  %d:%02d", sec / 60, sec % 60);
-                    float tw = g_TextL.Width(tbuf, 0.95f);
-                    g_TextL.Draw(tbuf, (sw - tw) * 0.5f, hudTopY + 48.0f, 0.95f,
-                                 1.0f, 0.92f, 0.45f, 0.92f);
-                    const wchar_t* zhint[3] = {
-                        L"\uC911\uC559 \uC778\uD130\uBBF8\uC158 \u00B7 \uC624\uB978\uCABD = \uC2A4\uD0B5",
-                        L"Boss intermission \u00B7 right zone = skip",
-                        L"\u4E2D\u592E\u30A4\u30F3\u30BF\u30FC\u30DF\u30C3\u30B7\u30E7\u30F3 \u00B7 \u53F3=\u30B9\u30AD\u30C3\u30D7" };
-                    int zli = LangIndex();
-                    if (zli < 0 || zli > 2) zli = 0;
-                    float zw = g_TextS.Width(zhint[zli], 0.78f);
-                    g_TextS.Draw(zhint[zli], (sw - zw) * 0.5f, hudTopY + 82.0f, 0.78f,
-                                 0.85f, 0.85f, 0.85f, 0.75f);
-                }
+
 
                 // (HP/EXP ?�각 바는 ?�레?�어 �??�단??부착됨 ????(c2) 참고)
                 // ?�단 조작 ?�내 (?��??�게 ??��) ?????�레?�어가 HP/?�킬 ?�치�??�게
@@ -5817,8 +3320,9 @@ int main() {
                         L"WASD 移動   マウス 射撃   SHIFT ダッシュ   Q/E/R スキル   ESC 一時停止",
                     };
                     const wchar_t* c = kCtrlHint[LangIndex()];
-                    float cw = g_TextS.Width(c, 0.7f);
-                    g_TextS.Draw(c, CenterX(sw, cw), HudY(sh, Hud::COMBO_TEXT), 0.7f,
+                    const float hintScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
+                    float cw = g_TextS.Width(c, hintScale);
+                    g_TextS.Draw(c, CenterX(sw, cw), HudY(sh, Hud::COMBO_TEXT), hintScale,
                                  0.7f, 0.82f, 0.95f, 0.72f);   // 가?�성 ??(?�어????보인?�는 ?�드�?
                 }
                 if (st == GameState::RUNNING && g_GameManager.augReady) {
@@ -5829,13 +3333,14 @@ int main() {
                         L"[ SPACE ]  強化 取得",
                     };
                     const wchar_t* hintTxt = kAugHint[LangIndex()];
-                    float hw = g_TextL.Width(hintTxt, 0.92f);
+                    const float augmentHintScale = UiTextScale(g_TextL, UiTextLevel::Subtitle, hudScale);
+                    float hw = g_TextL.Width(hintTxt, augmentHintScale);
                     float hy = (float)sh * 0.5f - 60.0f;
                     // glow pass
-                    g_TextL.Draw(hintTxt, CenterX(sw, hw) - 1.0f, hy + 1.0f, 0.92f,
+                    g_TextL.Draw(hintTxt, CenterX(sw, hw) - 1.0f, hy + 1.0f, augmentHintScale,
                                  0.3f, 1.0f, 0.5f, ap * 0.18f);
                     // core
-                    g_TextL.Draw(hintTxt, CenterX(sw, hw), hy, 0.92f,
+                    g_TextL.Draw(hintTxt, CenterX(sw, hw), hy, augmentHintScale,
                                  0.45f, 1.0f, 0.62f, ap * 0.95f);
                 }
                 // ?�?�??�체??경고 ??HP 25% ?�하 ??가?�자�?부?�러???�색 ?�스 + ?�스???�?�?
@@ -5868,9 +3373,10 @@ int main() {
                         }
                         const wchar_t* LOW[3] = { L"! \uC704\uD5D8", L"! LOW HP", L"! \u5371?" };
                         int li4 = LangIndex();
-                        float lw = g_TextS.Width(LOW[li4], 0.9f);
+                        const float lowHpScale = UiTextScale(g_TextS, UiTextLevel::Subtitle, hudScale);
+                        float lw = g_TextS.Width(LOW[li4], lowHpScale);
                         g_TextS.Draw(LOW[li4], CenterX(sw, lw), HudY(sh, Hud::LOW_HP_WARN),
-                                     0.9f, 1.0f, 0.4f, 0.4f, 0.55f + 0.45f * pulse);
+                                     lowHpScale, 1.0f, 0.4f, 0.4f, 0.55f + 0.45f * pulse);
                     }
                 }
             }
@@ -5883,14 +3389,17 @@ int main() {
                     float t  = d.life / d.maxLife;                   // 1 ??0
                     float sx = W2SX(d.x), sy = W2SY(d.y);
                     wchar_t nb[16]; swprintf_s(nb, L"%d", d.amount);
-                    float sc = (d.crit ? 1.05f : 0.72f) * g_ViewZoom * (0.7f + 0.3f * t);
+                    float sc = UiTextScale(g_TextS, UiTextLevel::Description,
+                        (d.crit ? 1.05f : 0.72f) * g_ViewZoom
+                        * (0.7f + 0.3f * t) * UiScale(sw, sh));
                     float a  = (t > 0.55f) ? 1.0f : (t / 0.55f);
                     float w  = g_TextS.Width(nb, sc);
                     if (d.crit) {
                         const int critLang = LangIndex();
                         const wchar_t* critLabel = critLang == 0 ? L"치명타"
                             : (critLang == 2 ? L"クリティカル" : L"CRIT");
-                        const float critSc = 0.42f * (0.80f + 0.20f * t);
+                        const float critSc = UiTextScale(g_TextS, UiTextLevel::Supporting,
+                                                         0.80f + 0.20f * t);
                         const float critW = g_TextS.Width(critLabel, critSc);
                         g_TextS.Draw(critLabel, sx - critW * 0.5f,
                                      sy - g_TextS.Height(critLabel, critSc) - 3.0f,
@@ -5907,8 +3416,9 @@ int main() {
                     bool  ms      = (g_ComboMilestone > 0.0f);
                     float msBoost = ms ? (g_ComboMilestone / 0.7f) : 0.0f;
                     wchar_t cb[32]; swprintf_s(cb, L"%d COMBO", g_Combo);
-                    float sc = (1.05f + (g_Combo > 30 ? 0.3f : 0.0f))
-                             * (1.0f + g_ComboPulse * 0.4f + msBoost * 0.55f);
+                    float sc = UiTextScale(g_TextS, UiTextLevel::Subtitle,
+                        (1.0f + g_ComboPulse * 0.4f + msBoost * 0.55f) * UiScale(sw, sh));
+                    sc *= 1.0f + (g_Combo > 30 ? 0.12f : 0.0f);
                     float cr = 1.0f, cg = 1.0f, cbl = 1.0f;
                     if      (g_Combo >= 50) { cg = 0.25f; cbl = 0.2f; }
                     else if (g_Combo >= 25) { cg = 0.55f; cbl = 0.15f; }
@@ -5921,8 +3431,11 @@ int main() {
 
             // ?�?�??�티�??�킬 ?�롯 (좌하?? ?�시�?쿨다?????? ?�?�?
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
-                const float KW = 54.0f, KH = 48.0f, KG = 8.0f;
-                float kx0 = 16.0f, ky0 = HudY(sh, KH + Hud::SKILL_KEYS_Y);
+                const float hudScale = UiScale(sw, sh);
+                const float KW = 64.0f * hudScale, KH = 56.0f * hudScale;
+                const float KG = 8.0f * hudScale;
+                float kx0 = BottomLeftActionX(hudScale);
+                float ky0 = HudY(sh, KH + Hud::SKILL_KEYS_Y * hudScale);
                 auto skillBox = [&](int idx, const wchar_t* key, const wchar_t* tag,
                                     float cd, float r, float g, float b) {
                     float x = kx0 + idx * (KW + KG), y = ky0;
@@ -5936,16 +3449,21 @@ int main() {
                     drawRect(x+KW-cL, y,       cL, ct, r,g,b, ca);  drawRect(x+KW-ct, y,       ct, cL, r,g,b, ca);
                     drawRect(x,       y+KH-ct, cL, ct, r,g,b, ca);  drawRect(x,       y+KH-cL, ct, cL, r,g,b, ca);
                     drawRect(x+KW-cL, y+KH-ct, cL, ct, r,g,b, ca);  drawRect(x+KW-ct, y+KH-cL, ct, cL, r,g,b, ca);
-                    g_TextS.Draw(key, x + 4.0f, y + 7.0f, 0.55f, 1,1,1, ready ? 0.90f : 0.50f);
-                    g_TextS.Draw(tag, x + 4.0f, y + KH - 17.0f, 0.5f, r,g,b, ready ? 1.0f : 0.42f);
+                    const float tagScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
+                    g_TextS.Draw(key, x + 4.0f * hudScale, y + 7.0f * hudScale,
+                                 tagScale, 1,1,1, ready ? 0.90f : 0.50f);
+                    g_TextS.Draw(tag, x + 4.0f * hudScale, y + KH - 17.0f * hudScale,
+                                 tagScale, r,g,b, ready ? 1.0f : 0.42f);
                     if (!ready) {
                         wchar_t bf[8]; swprintf_s(bf, L"%d", (int)(cd + 0.99f));
-                        float tw = g_TextL.Width(bf, 0.85f);
-                        g_TextL.Draw(bf, x + (KW - tw) * 0.5f, y + KH * 0.34f, 0.85f, 1,1,1,0.88f);
+                        const float cooldownScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
+                        float tw = g_TextL.Width(bf, cooldownScale);
+                        g_TextL.Draw(bf, x + (KW - tw) * 0.5f, y + KH * 0.34f,
+                                     cooldownScale, 1,1,1,0.88f);
                     }
                 };
                 skillBox(0, L"SHIFT", g_Stats.dashUpgrade ? L"FLASH" : L"DASH",
-                         g_DashCd, 0.4f, 1.0f, 1.0f);
+                         g_PlayerRuntime.dashCooldown, 0.4f, 1.0f, 1.0f);
                 const wchar_t* keys3[3] = { L"Q", L"E", L"R" };
                 for (int i = 0; i < 3; i++) {
                     if (g_Skills[i].type == SkillType::NONE) continue;
@@ -5963,8 +3481,10 @@ int main() {
             // ?�?�??�티�??�시�?쿨다??UI (좌하?? ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
             // 추후 ?�토그램 PNG 가 ?�어?�면 ?�각??placeholder ?�리???�스�??�시
             if (st == GameState::RUNNING || st == GameState::PAUSED) {
-                const float SLOT_W = 56.0f, SLOT_H = 48.0f, SLOT_GAP = 8.0f;
-                float baseX  = 16.0f;
+                const float hudScale = UiScale(sw, sh);
+                const float SLOT_W = 64.0f * hudScale, SLOT_H = 56.0f * hudScale;
+                const float SLOT_GAP = 8.0f * hudScale;
+                float baseX  = BottomLeftActionX(hudScale);
                 float baseY2 = HudY(sh, SLOT_H + Hud::SLOT_BAR_BASE);   // HP �??�쪽(?�업?�시�???
                 int   slot   = 0;
 
@@ -5983,14 +3503,17 @@ int main() {
                     // 컬러 ?�두�?(?�쪽 ??
                     drawRect(x, y, SLOT_W, 4.0f, r, g, b, 1.0f);
                     // ?�그 (?�문/?�어 ???�토그램 ?�어?�면 ?�거)
-                    g_TextS.Draw(tag, x + 4.0f, y + 6.0f, 0.7f, r, g, b, 1.0f);
+                    const float tagScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
+                    g_TextS.Draw(tag, x + 4.0f * hudScale, y + 6.0f * hudScale,
+                                 tagScale, r, g, b, 1.0f);
                     // ?��? ?�간 (?�수)
                     if (remain > 0.0f) {
                         wchar_t buf[16];
                         swprintf_s(buf, L"%d", (int)(remain + 0.99f));
-                        float tw = g_TextL.Width(buf, 0.9f);
+                        const float cooldownScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
+                        float tw = g_TextL.Width(buf, cooldownScale);
                         g_TextL.Draw(buf, x + (SLOT_W - tw) * 0.5f,
-                                     y + SLOT_H * 0.40f, 0.9f, 1,1,1,0.95f);
+                                     y + SLOT_H * 0.40f, cooldownScale, 1,1,1,0.95f);
                     }
                 };
 
@@ -6011,56 +3534,18 @@ int main() {
                     float x = baseX + slot * (SLOT_W + SLOT_GAP);
                     drawRect(x, baseY2, SLOT_W, SLOT_H, 0.20f, 0.0f, 0.0f, 0.85f);
                     drawRect(x, baseY2, SLOT_W, 4.0f, 1.0f, 0.1f, 0.1f, 1.0f);
-                    g_TextS.Draw(L"DEATH", x + 2.0f, baseY2 + 6.0f, 0.6f,
+                    g_TextS.Draw(L"DEATH", x + 2.0f * hudScale,
+                                 baseY2 + 6.0f * hudScale,
+                                 UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale),
                                  1.0f, 0.4f, 0.4f, 1.0f);
                     wchar_t buf[8];
                     swprintf_s(buf, L"x%d", g_Stats.approachStacks);
-                    float tw = g_TextL.Width(buf, 0.9f);
+                    const float stackScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
+                    float tw = g_TextL.Width(buf, stackScale);
                     g_TextL.Draw(buf, x + (SLOT_W - tw) * 0.5f,
-                                 baseY2 + SLOT_H * 0.40f, 0.9f, 1,1,1,0.95f);
+                                 baseY2 + SLOT_H * 0.40f, stackScale, 1,1,1,0.95f);
                     ++slot;
                 }
-            }
-            // ���� ������ ũ�� (�׻� �ֻ��?����) ����
-            {
-                GameState nextSt = st;
-
-                // Ÿ��Ʋ�� �����?���?
-                float barRatio = 0.0f, bR = 0.35f, bG = 0.72f, bB = 1.0f;
-                bool inGame = (st == GameState::RUNNING || st == GameState::PAUSED ||
-                               st == GameState::DYING   || st == GameState::AUG_SELECT ||
-                               st == GameState::DEBUFF_SELECT);
-                if (kBossEncountersEnabled && inGame) {
-                    float bossHp = -1.0f, bossMaxHp = 1.0f; int bossPick = -1;
-                    if      (g_RRBoss    && g_RRBoss->alive)    { bossHp = g_RRBoss->hp;    bossMaxHp = g_RRBoss->maxHp;    bossPick = 2;  }
-                    else if (g_CentiBoss && g_CentiBoss->alive)  { bossHp = g_CentiBoss->hp;  bossMaxHp = g_CentiBoss->maxHp;  bossPick = 8;  }
-                    else if (g_TessBoss  && g_TessBoss->alive)   { bossHp = g_TessBoss->hp;   bossMaxHp = g_TessBoss->maxHp;   bossPick = 10; }
-                    else if (g_EtherBoss && g_EtherBoss->alive)  { bossHp = g_EtherBoss->hp;  bossMaxHp = g_EtherBoss->maxHp;  bossPick = 20; }
-                    else if (g_LeviathanBoss && g_LeviathanBoss->alive) {
-                        bossHp = g_LeviathanBoss->hp;
-                        bossMaxHp = g_LeviathanBoss->maxHp;
-                        bossPick = 30;
-                    }
-
-                    if (bossPick >= 0 && bossMaxHp > 0.0f) {
-                        barRatio = bossHp / bossMaxHp;
-                        if (barRatio < 0.0f) barRatio = 0.0f;
-                        auto c = BossDir::WarnColor(bossPick);
-                        bR = c.x; bG = c.y; bB = c.z;
-                    } else if (g_NextBossScore > 0) {
-                        long long prev = g_NextBossScore - (long long)BossDir::MAIN_SCORE_STEP;
-                        if (prev < 0LL) prev = 0LL;
-                        barRatio = (float)(g_GameManager.score - prev) / BossDir::MAIN_SCORE_STEP;
-                        if (barRatio < 0.0f) barRatio = 0.0f;
-                        bR = 0.35f; bG = 0.72f; bB = 1.0f;
-                    }
-                }
-
-                const bool chromeLmb = g_DebugToolkit.IsInputCaptured() ? false : lmb;
-                DrawBrowserChrome(sw, sh, st, mx, my, chromeLmb, g_LmbPrev,
-                                  nextSt, barRatio, bR, bG, bB);
-                if (nextSt != st)
-                    g_GameManager.currentState = nextSt;
             }
 
         }
@@ -6073,6 +3558,7 @@ int main() {
         // cleared above when the debug toolkit captures input; storing that
         // cleared value makes a held button look like a new click every frame.
         g_LmbPrev = rawLmb;
+        g_RmbPrev = rawRmb;
 
         // ?�적 ?�금 / ?�감 발견 발생 ???�??(게임 �?즉시 ?�구??
         if (g_AchSaveNeeded || g_CodexDirty) {

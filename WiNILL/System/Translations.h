@@ -223,9 +223,9 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"サンドボックス · F強化(デバフ含) · G無敵 · コイン/記録なし",
     },
     /* CREATIVE_DESC_OFF */ {
-        L"10만점부터 시작 (보스 즉시) + F키 증강",
-        L"Start at 100k (boss now) + F-key augments",
-        L"10万点開始 (ボス即時) + Fキー強化",
+        L"10만점부터 시작 + F키 증강",
+        L"Start at 100k + F-key augments",
+        L"10万点開始 + Fキー強化",
     },
 };
 

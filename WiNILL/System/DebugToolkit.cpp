@@ -298,7 +298,8 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"approachingDeath", L"죽음 접근" },
         { L"approachStacks", L"접근 스택" },
         { L"monsterHpMult", L"몬스터 체력 배율" },
-        { L"mobPackBonus", L"몬스터 무리 보너스" },
+        { L"rotorHpMult", L"로터 체력 배율" },
+        { L"rotorXpBonus", L"로터 처치 경험치 보너스" },
         { L"flatDamageBonus", L"고정 피해 보너스" }
     };
     for (const FieldNamePair& pair : names) {
@@ -326,6 +327,7 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
         ADD_FLOAT(regenLowHpMult); ADD_INT(vampireKillNeed);
         ADD_FLOAT(lightStepHitLock); ADD_FLOAT(playerSizeMult); ADD_FLOAT(xpMult);
         ADD_FLOAT(bulletSpread); ADD_INT(pierceChance); ADD_INT(mobXpBonus);
+        ADD_FLOAT(rotorHpMult); ADD_INT(rotorXpBonus);
 
         // Keep the debug list aligned with the six live monster signals. The
         // close-range values are stored by MobKind, while Scope has its own
@@ -374,7 +376,6 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
 const std::vector<GameState>& DebugToolkit::CaptureStates() {
     static const std::vector<GameState> states = {
         GameState::MAIN_MENU,
-        GameState::SHOP,
         GameState::CODEX,
         GameState::TUTORIAL,
         GameState::CREATIVE_CONFIG,
@@ -384,7 +385,6 @@ const std::vector<GameState>& DebugToolkit::CaptureStates() {
         GameState::PAUSED,
         GameState::DYING,
         GameState::GAMEOVER,
-        GameState::VICTORY,
         GameState::AUG_SELECT,
         GameState::DEBUFF_SELECT,
         GameState::AUG_REPLACE
@@ -414,7 +414,6 @@ const wchar_t* DebugToolkit::MobLabel(int index) {
 const wchar_t* DebugToolkit::SceneLabel(GameState state) {
     switch (state) {
     case GameState::MAIN_MENU:       return L"메인 메뉴";
-    case GameState::SHOP:            return L"상점";
     case GameState::CODEX:           return L"도감";
     case GameState::TUTORIAL:        return L"튜토리얼";
     case GameState::CREATIVE_CONFIG: return L"크리에이티브 설정";
@@ -424,7 +423,6 @@ const wchar_t* DebugToolkit::SceneLabel(GameState state) {
     case GameState::PAUSED:          return L"일시정지";
     case GameState::DYING:           return L"사망 처리";
     case GameState::GAMEOVER:        return L"게임 오버";
-    case GameState::VICTORY:         return L"승리";
     case GameState::AUG_SELECT:      return L"증강 선택";
     case GameState::DEBUFF_SELECT:   return L"디버프 선택";
     case GameState::AUG_REPLACE:     return L"증강 교체";

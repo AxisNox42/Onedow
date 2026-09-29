@@ -58,8 +58,3 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
         break;
     }
 }
-
-inline void MarkStartWeaponOwnedType(StartWeapon w) {
-    if (w == StartWeapon::SMG)
-        g_TypeOwned[(int)AugType::STATIC_FIELD] = true;
-}

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -95,7 +95,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -118,7 +118,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -139,7 +139,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -162,7 +162,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)Entity\Boss;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Core;$(ProjectDir)Core\Scenes;$(ProjectDir)Render;$(ProjectDir)Entity;$(ProjectDir)System;$(ProjectDir)..\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TranslateIncludes>false</TranslateIncludes>
       <PrecompiledHeaderFile />
       <LanguageStandard>stdcpp17</LanguageStandard>
@@ -183,12 +183,23 @@
     <ClCompile Include="Core\Scenes\SceneBoot.cpp" />
     <ClCompile Include="Core\Scenes\SceneSkills.cpp" />
     <ClCompile Include="Core\Scenes\SceneUI.cpp" />
-    <ClCompile Include="Core\Scenes\Scenes.cpp" />
+    <ClCompile Include="Core\Scenes\SceneSettings.cpp" />
+    <ClCompile Include="Core\Scenes\SceneRunConfig.cpp" />
+    <ClCompile Include="Core\Scenes\SceneStart.cpp" />
+    <ClCompile Include="Core\Scenes\ScenePause.cpp" />
+    <ClCompile Include="Core\Scenes\SceneRunEnd.cpp" />
+    <ClCompile Include="Core\Scenes\SceneAugment.cpp" />
+    <ClCompile Include="Core\Scenes\SceneMenus.cpp" />
     <ClCompile Include="Core\Scenes\WindowChrome.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Entity\PlayerRuntime.cpp" />
+    <ClCompile Include="Entity\EnemySpawner.cpp" />
+    <ClCompile Include="Entity\ProjectileSystem.cpp" />
     <ClCompile Include="Render\BlurShader.cpp" />
     <ClCompile Include="Render\Camera.cpp" />
     <ClCompile Include="Render\EntityDraw.cpp" />
+    <ClCompile Include="Render\PlayerWeaponShell.cpp" />
+    <ClCompile Include="Render\GameFonts.cpp" />
     <ClCompile Include="Render\MainShader.cpp" />
     <ClCompile Include="Render\NebulaGlowShader.cpp" />
     <ClCompile Include="Render\PlanetShader.cpp" />
@@ -211,6 +222,7 @@
     <ClInclude Include="Core\Codex.h" />
     <ClInclude Include="Core\GameContext.h" />
     <ClInclude Include="Core\Scenes\SceneContext.h" />
+    <ClInclude Include="Core\Scenes\SceneInternal.h" />
     <ClInclude Include="Core\Scenes\SceneSkills.h" />
     <ClInclude Include="Core\Scenes\SceneUI.h" />
     <ClInclude Include="Core\Scenes\Scenes.h" />
@@ -218,23 +230,23 @@
     <ClInclude Include="Core\GameManager.h" />
     <ClInclude Include="Core\Meta.h" />
     <ClInclude Include="Entity\Augment.h" />
-    <ClInclude Include="Entity\Boss\CentipedeBoss.h" />
-    <ClInclude Include="Entity\Boss\LeviathanBoss.h" />
-    <ClInclude Include="Entity\Boss\ReloadRunnerBoss.h" />
-    <ClInclude Include="Entity\Boss\TesseractGlitchBoss.h" />
-    <ClInclude Include="Core\BossDirector.h" />
     <ClInclude Include="Core\AugmentSlots.h" />
-    <ClInclude Include="Core\RunIntermission.h" />
     <ClInclude Include="Entity\Bullet.h" />
     <ClInclude Include="Entity\CollisionSystem.h" />
     <ClInclude Include="Entity\ExpSystem.h" />
+    <ClInclude Include="Entity\EnemyProgression.h" />
     <ClInclude Include="Entity\Monster.h" />
     <ClInclude Include="Entity\MonsterManager.h" />
     <ClInclude Include="Entity\PlayerStats.h" />
+    <ClInclude Include="Entity\PlayerRuntime.h" />
+    <ClInclude Include="Entity\EnemySpawner.h" />
+    <ClInclude Include="Entity\ProjectileSystem.h" />
     <ClInclude Include="Entity\RangedMob.h" />
     <ClInclude Include="Entity\Weapons.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Render\EntityDraw.h" />
+    <ClInclude Include="Render\PlayerWeaponShell.h" />
+    <ClInclude Include="Render\GameFonts.h" />
     <ClInclude Include="Render\MainShader.h" />
     <ClInclude Include="Render\DrawPrim.h" />
     <ClInclude Include="Render\IconSystem.h" />

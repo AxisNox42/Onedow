@@ -4,6 +4,7 @@
 #include "Monster.h"
 
 class RangedMob;
+class MonsterManager;
 
 void drawBullet(const Bullet& b);
 void drawMob(const Monster* m);
@@ -23,6 +24,9 @@ void BeginEnemySightFrontBatch();
 void QueueMonsterSightFront(const Monster* m);
 void QueueRangedMobSightFront(const RangedMob* r);
 void FlushEnemySightFrontBatch();
+void DrawCombatSightFields(const MonsterManager& monsters,
+                           float playerX, float playerY,
+                           float playerSize, bool renderRearFields);
 void DrawMonsterSightRear(const Monster* m);
 void DrawRangedMobSightRear(const RangedMob* r);
 

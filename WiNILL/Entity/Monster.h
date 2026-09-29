@@ -48,6 +48,7 @@ inline float MobRewardMult(MobKind kind) {
 
 inline float MobXpBonus(MobKind kind, const PlayerStats& stats) {
     float bonus = (float)stats.mobXpBonus;
+    if (kind == MobKind::ROTOR) bonus += (float)stats.rotorXpBonus;
     const int index = (int)kind;
     if (index >= 0 && index < PlayerStats::MOB_KIND_XP_SLOTS)
         bonus += (float)stats.mobKindXpBonus[index];
@@ -116,17 +117,14 @@ public:
                          : glm::vec3(1.0f, 0.27f, 0.0f);
     }
 
-    // The optional legacy parameters are harmless call-site compatibility
-    // for previews and Genesis children; they do not select retired variants.
-    void MakeKind(MobKind requested, int /*unusedGeneration*/ = 0,
-                  float scale = 1.0f) {
+    void MakeKind(MobKind requested) {
         kind = requested;
-        sizeScale = scale;
+        sizeScale = 1.0f;
         if (kind == MobKind::GENESIS) {
             color = glm::vec3(0.2f, 0.75f, 0.55f);
             hp *= 3.5f;
             speed *= 0.35f;
-            sizeScale = scale * 2.2f;
+            sizeScale = 2.2f;
             spawnTimer = 0.0f;
             hivePhase = 0;
             hiveOpenFactor = 0.0f;
@@ -139,12 +137,12 @@ public:
             color = glm::vec3(0.55f, 0.0f, 0.0f);
             hp *= 0.35f;
             speed *= 1.05f;
-            sizeScale = scale;
+            sizeScale = 1.0f;
         } else if (kind == MobKind::GRAVIS) {
             color = glm::vec3(0.58f, 0.42f, 1.0f);
             hp *= 8.0f;
             speed *= 0.24f;
-            sizeScale = scale * 2.65f;
+            sizeScale = 2.65f;
             contactDmg = 6.0f;
             gravisVisualAngle = (float)(rand() % 628) * 0.01f;
             gravisDriftAngle = (float)(rand() % 628) * 0.01f;
@@ -153,7 +151,7 @@ public:
             color = glm::vec3(0.42f, 0.56f, 1.0f);
             hp *= 6.4f;
             speed *= 0.52f;
-            sizeScale = scale * 3.15f;
+            sizeScale = 3.15f;
             contactDmg = 4.0f;
             quasarState = 0;
             quasarTimer = (float)(rand() % 120) * 0.01f;

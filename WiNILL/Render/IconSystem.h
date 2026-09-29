@@ -505,7 +505,6 @@ inline GLuint IconFor(AugType t) {
     case AugType::DRONE_HIVE:    return g_IconTex[(int)AugType::DRONE];
     case AugType::LASER_CONVERGE:return g_IconTex[(int)AugType::LASER];
     // 프로세스류 디버프 확장 — 전용 아이콘 없으면 유사 디버프 아이콘 재사용
-    case AugType::D_MOB_PACK:    return g_IconTex[(int)AugType::D_MOB_SPAWN];
     case AugType::LIFESTEAL_2:    return g_IconTex[(int)AugType::LIFESTEAL];
     case AugType::CHAIN_2:        return g_IconTex[(int)AugType::CHAIN];
     case AugType::CHAKRAM_SINGULARITY: return g_IconTex[(int)AugType::CHAKRAM];

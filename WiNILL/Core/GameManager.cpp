@@ -152,17 +152,25 @@ void GameManager::HandleInput(GLFWwindow* window) {
 
 void GameManager::UpdateStateSystem(MonsterManager& mm, std::vector<Bullet>& bullets) {
     if (lastState == GameState::GAMEOVER && currentState == GameState::READY) {
-        playerHP    = 100.0f;
-        maxHP       = 100.0f;
-        score       = 0;
-        scoreAccum  = 0.0f;
-        xp          = 0;
-        playerLevel = 1;
-        memset(takenOnce, 0, sizeof(takenOnce));
-        bullets.clear();
-        mm.Clear();
+        ResetRunProgress(mm, bullets);
     }
     lastState = currentState;
+}
+
+void GameManager::ResetRunProgress(MonsterManager& mm,
+                                   std::vector<Bullet>& bullets,
+                                   float initialHp,
+                                   long long initialScore) {
+    playerHP = initialHp;
+    maxHP = initialHp;
+    score = initialScore;
+    scoreAccum = static_cast<float>(initialScore);
+    xp = 0;
+    playerLevel = 1;
+    memset(takenOnce, 0, sizeof(takenOnce));
+    bullets.clear();
+    mm.Clear();
+    lastState = GameState::READY;
 }
 
 // 등급별 가중치 — 플레이어 레벨에 비례(진행도 게이팅).
@@ -219,9 +227,6 @@ static int RollOneAug(const bool* takenOnce,
                 if (g_TypeOwned[(int)ALL_AUGS[k].type]) return true;
             }
             return false;
-        };
-        auto playerHasSMG = [&]() -> bool {
-            return g_CurrentWeapon == (int)StartWeapon::SMG;
         };
         auto playerHasRifle = [&]() -> bool {
             return g_CurrentWeapon == (int)StartWeapon::RIFLE;
@@ -366,7 +371,7 @@ void GameManager::PickAugChoices(bool sizeTaken, bool allowDebuff) {
         }
     }
 
-    // 조합 증강 주입 — 재료 3개·L10+·10% 확률 (런 중 획득 재료만 g_TypeOwned)
+    // COMBO rewards require every recipe ingredient to be acquired during the run.
     if (playerLevel >= 10) {
         int eligible[COMBO_COUNT];
         int eligCount = 0;
@@ -545,7 +550,7 @@ void GameManager::Render() {
     //   MAIN_MENU 는 "진짜 바탕화면"을 비추기 위해 어둡게 덮지 않음.
     if (currentState != GameState::RUNNING && currentState != GameState::DYING &&
         currentState != GameState::PAUSED &&
-        currentState != GameState::GAMEOVER && currentState != GameState::VICTORY &&
+        currentState != GameState::GAMEOVER &&
         currentState != GameState::MAIN_MENU &&
         !(currentState == GameState::SETTINGS &&
           g_SettingsReturnTo == GameState::PAUSED)) {

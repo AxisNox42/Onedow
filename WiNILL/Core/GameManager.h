@@ -8,20 +8,13 @@
 #include "Bullet.h"
 #include "Augment.h"
 
-// The permanent main-menu Armory remains available. Boss encounters stay
-// behind their separate inactive flag until they are reactivated.
-inline constexpr bool kBossEncountersEnabled = false;
-inline constexpr bool kMainMenuShopEnabled = true;
-
 enum class GameState {
     MAIN_MENU,         // 시작 메뉴 (시작/설정/종료)
-    CREATIVE_CONFIG,   // 크리에이티브 설정 (시작점수/보스/시작증강)
-    SHOP,              // 메타 상점 (코인 → 영구 업그레이드)
+    CREATIVE_CONFIG,   // 크리에이티브 설정 (시작점수/시작증강)
     CODEX,             // 도감 (적/증강 발견 목록)
     TUTORIAL,          // 플레이 가이드 (페이지형)
     SETTINGS,          // 설정 화면
-    READY, RUNNING, PAUSED, GAMEOVER, VICTORY, AUG_SELECT, AUG_REPLACE, DEBUFF_SELECT, DYING,
-    BOSS_INTERMISSION   // boss intermission
+    READY, RUNNING, PAUSED, GAMEOVER, AUG_SELECT, AUG_REPLACE, DEBUFF_SELECT, DYING
 };
 
 struct AugmentRewardEntry {
@@ -69,6 +62,9 @@ public:
     void Init(int sw, int sh);
     void HandleInput(GLFWwindow* window);
     void UpdateStateSystem(MonsterManager& mm, std::vector<Bullet>& bullets);
+    void ResetRunProgress(MonsterManager& mm, std::vector<Bullet>& bullets,
+                          float initialHp = 100.0f,
+                          long long initialScore = 0);
     void AddScore(float amount);
     // 등급 가중치 + takenOnce + 고유 카테고리 잠금 적용한 3장 픽
     //   allowDebuff=true (크리에이티브 샌드박스) 면 디버프도 카드 풀에 섞임

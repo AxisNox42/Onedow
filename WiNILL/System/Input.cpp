@@ -3,10 +3,15 @@
 #include <GLFW/glfw3.h>
 #include "GameManager.h"
 #include "Codex.h"
-#include "GameContext.h"
 #include <string>
 #include <cwctype>
 #include <cstring>
+
+extern GameManager g_GameManager;
+extern float g_DevToastTimer;
+extern bool g_VolEdit;
+extern wchar_t g_VolBuf[8];
+extern int g_VolLen;
 
 bool  keys[1024] = {};
 float g_ScrollAccum = 0.0f;
@@ -62,4 +67,28 @@ void InputRegisterCallbacks(GLFWwindow* window) {
 void InputClearState() {
     std::memset(keys, 0, sizeof(keys));
     g_ScrollAccum = 0.0f;
+}
+
+InputFocusTransition InputUpdateWindowFocus(GLFWwindow* window) {
+    static bool wasFocused = true;
+    const bool focused = glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+    const InputFocusTransition transition{ !focused && wasFocused,
+                                           focused && !wasFocused };
+    if (transition.lost || transition.gained) InputClearState();
+    wasFocused = focused;
+    return transition;
+}
+
+void InputUpdateGameplayCursor(GLFWwindow* window, GameState state,
+                               bool crosshairEnabled, bool debugVisible) {
+    const bool hideCursor = crosshairEnabled && !debugVisible &&
+        (state == GameState::RUNNING || state == GameState::DYING);
+    static bool cursorModeInitialized = false;
+    static bool cursorHidden = false;
+    if (!cursorModeInitialized || cursorHidden != hideCursor) {
+        glfwSetInputMode(window, GLFW_CURSOR,
+                         hideCursor ? GLFW_CURSOR_HIDDEN : GLFW_CURSOR_NORMAL);
+        cursorHidden = hideCursor;
+        cursorModeInitialized = true;
+    }
 }

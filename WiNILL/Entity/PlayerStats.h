@@ -26,6 +26,8 @@ struct PlayerStats {
     static constexpr int MOB_KIND_XP_SLOTS = 5;
     int   mobXpBonus       = 0;      // Process kill EXP bonus for generic mob debuffs.
     int   mobKindXpBonus[MOB_KIND_XP_SLOTS] = {};
+    float rotorHpMult      = 1.0f;
+    int   rotorXpBonus     = 0;
     int   rangedXpBonus    = 0;      // Ranged mob kill EXP bonus.
     float xpPerSec         = 0.0f;   // 초당 누적 EXP (다가오는 죽음, 잡몹 가속)
     float rmobSpawnDelayBonus = 0.0f;// 원거리 몹 스폰 가속 (초)
@@ -102,8 +104,6 @@ struct PlayerStats {
     // 잡몹 HP 디버프
     float monsterHpMult   = 1.0f;
     // 잡몹 강화 디버프 (확장)
-    // 프로세스류(잡몹) 출현 디버프 (확장, 중첩 가능)
-    int   mobPackBonus    = 0;     // 스폰당 추가 마리 수 (군집)
     // 핵앤슬래쉬 디버프
 
 
@@ -248,7 +248,7 @@ struct PlayerStats {
             regenPerSec      += 0.25f;
             moveSpeedMult    *= 1.12f;
             vampireKillNeed  = 7;
-            lightStepHitLock = 6.0f;
+            lightStepHitLock = 10.0f;
             break;
         case AugType::CB_WARLORD:       // Berserk + chain explosion.
             warlord           = true;
@@ -362,8 +362,8 @@ struct PlayerStats {
             xpMult         *= 1.05f;
             break;
         case AugType::D_MOB_HP:
-            monsterHpMult   *= 1.30f;
-            mobXpBonus      += 2;
+            rotorHpMult     *= 1.30f;
+            rotorXpBonus    += 2;
             break;
         case AugType::D_SLOW_MOVE:
             moveSpeedMult   *= 0.95f;
@@ -376,11 +376,6 @@ struct PlayerStats {
         case AugType::D_WEAKEN:
             damageMultiplier *= 0.88f;
             xpMult           *= 1.10f;
-            break;
-        case AugType::D_MOB_PACK:
-            // The time curve already increases wave size, so one extra body is enough.
-            mobPackBonus    += 1;
-            mobXpBonus      += 6;
             break;
         case AugType::LIFESTEAL_2:
             lifesteal2      = true;

@@ -111,15 +111,13 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::D_BULLET_STUCK:
         return L"연사 속도 -10% · 전체 EXP +5% · 공격 템포가 느려지는 대신 경험치 보상";
     case AugType::D_MOB_HP:
-        return L"일반 적 체력 +30% · 일반 적 처치 EXP +2 · 기본 적 전체가 단단해짐";
+        return L"로터 체력 +30% · 로터 처치 EXP +2";
     case AugType::D_SLOW_MOVE:
         return L"플레이어 이동 속도 -5% · 전체 EXP +3% · 기동성 리스크가 낮은 보상으로 조정";
     case AugType::D_BLEED:
         return L"체력 회복 -1.0/s · 회복이 0이면 감소하지 않고 카드도 등장하지 않음 · 전체 EXP +12%";
     case AugType::D_WEAKEN:
         return L"공격력 -12% · 전체 EXP +10% · 약화·경험치 보상";
-    case AugType::D_MOB_PACK:
-        return L"로터 스폰 시 추가 +1마리 동시 등장 · 로터 처치 EXP +6 · 개체 수 증가·보상↑";
     // ── Special ──
     case AugType::S_CHAOS:
         return L"보유 증강을 모두 잊고 같은 개수만큼 랜덤 재배분 · 약 60% 버프 · 40% 디버프 · 빌드 전면 리셋·도박";
@@ -130,7 +128,7 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::CB_BLOODLORD:
         return L"[조합] 흡혈탄+흡혈탄 II+흡혈마 · 최대 체력 +15 · 재생 +0.25/s · 피의 군주 생존 패키지";
     case AugType::CB_WARLORD:
-        return L"[조합] 광전사+연쇄폭발+연쇄 II · 공격력 +15% · 1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택)";
+        return L"[조합] 광전사+연쇄폭발+연쇄 II · 획득 즉시 공격력 +15% · 1000킬마다 공격력 +5%·연사 +2%·탄속 +2% (최대 7스택)";
     case AugType::CB_BASTION:
         return L"[조합] 거대화+MK2+방화벽 · 최대 HP +20% · 재생 +0.45/s · 받는 피해 -10%p · 철벽 생존";
     case AugType::CB_LIFEBUOY:
