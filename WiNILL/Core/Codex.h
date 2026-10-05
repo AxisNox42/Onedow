@@ -67,25 +67,44 @@ enum CodexMobId {
     CM_COUNT
 };
 inline bool g_MobSeen[CM_COUNT] = { false };
+inline long long g_MobKillCounts[CM_COUNT] = {};
+inline long long g_RunMobKillCounts[CM_COUNT] = {};
 inline bool g_SuppressMobSeen = false;
 inline void MarkMobSeenId(CodexMobId id);
 
+inline CodexMobId CodexMobIdForKind(MobKind k) {
+    switch (k) {
+    case MobKind::ROTOR:   return CM_ROTOR;
+    case MobKind::GENESIS: return CM_GENESIS;
+    case MobKind::SWARM:   return CM_SWARM;
+    case MobKind::GRAVIS:  return CM_GRAVIS;
+    case MobKind::QUASAR:  return CM_QUASAR;
+    default:               return CM_COUNT;
+    }
+}
+
+template <typename Fn>
+inline void ForEachCodexMobEntry(Fn&& fn) {
+    static constexpr CodexMobId kRosterOrder[] = {
+        CM_ROTOR, CM_SCOPE, CM_SWARM, CM_GENESIS, CM_GRAVIS, CM_QUASAR
+    };
+    for (CodexMobId id : kRosterOrder) fn((int)id);
+}
+
 inline void MarkMobSeen(MobKind k) {
     if (g_SuppressMobSeen) return;
-    CodexMobId id = CM_ROTOR;
-    switch (k) {
-    case MobKind::ROTOR:  id = CM_ROTOR;  break;
-    case MobKind::GENESIS: id = CM_GENESIS; break;
-    case MobKind::SWARM:    id = CM_SWARM;    break;
-    case MobKind::GRAVIS:  id = CM_GRAVIS;  break;
-    case MobKind::QUASAR:  id = CM_QUASAR;  break;
-    default: return;
-    }
-    MarkMobSeenId(id);
+    MarkMobSeenId(CodexMobIdForKind(k));
 }
 inline void MarkMobSeenId(CodexMobId id) {
     if (id < 0 || id >= CM_COUNT) return;
     if (!g_MobSeen[id]) { g_MobSeen[id] = true; g_CodexDirty = true; }
+}
+inline void RegisterCodexMobKill(CodexMobId id) {
+    if (g_CreativeMode || id < 0 || id >= CM_COUNT) return;
+    ++g_RunMobKillCounts[id];
+}
+inline void RegisterCodexMobKill(MobKind kind) {
+    RegisterCodexMobKill(CodexMobIdForKind(kind));
 }
 
 inline bool CodexMobSeen(int id) {

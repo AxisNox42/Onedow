@@ -2080,9 +2080,10 @@ CollisionSystem::Update(pCX, pCY,
                     g_Stats.lightStepDisableTimer);
 
                 // Regular enemy kill rewards.
-                auto creditKill = [&](float scoreBase) {
+                auto creditKill = [&](CodexMobId mobId, float scoreBase) {
                     AddKillCombo();
                     g_Stats.RegisterKill();
+                    RegisterCodexMobKill(mobId);
                     g_GameManager.scoreAccum += scoreBase;
                     g_GameManager.score      = (long long)g_GameManager.scoreAccum;
                     if (!g_CreativeMode)
@@ -2114,7 +2115,7 @@ CollisionSystem::Update(pCX, pCY,
                                 * g_Stats.xpMult);
                             SpawnStardust(m->worldX, m->worldY,
                                           StardustRewardFor(m->kind), pCX, pCY, pickupXp);
-                            creditKill(scB);
+                            creditKill(CodexMobIdForKind(m->kind), scB);
                         }
                         if (m->kind == MobKind::SWARM)
                             SpawnNodeDeath(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b);
@@ -2164,7 +2165,7 @@ CollisionSystem::Update(pCX, pCY,
                                 (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
                             SpawnStardust(r->worldX, r->worldY, 3,
                                           pCX, pCY, pickupXp);
-                            creditKill(300.0f);
+                            creditKill(CM_SCOPE, 300.0f);
                         }
                         SpawnEnemyExplosion(r->worldX, r->worldY,
                                             r->color.r, r->color.g, r->color.b,
@@ -2695,7 +2696,8 @@ CollisionSystem::Update(pCX, pCY,
                                 (bx + MobXpBonus(m->kind, g_Stats)) * g_Stats.xpMult);
                             SpawnStardust(m->worldX, m->worldY,
                                           StardustRewardFor(m->kind), pCX, pCY, pickupXp);
-                            g_Stats.RegisterKill(); g_GameManager.scoreAccum += bs;
+                            g_Stats.RegisterKill(); RegisterCodexMobKill(m->kind);
+                            g_GameManager.scoreAccum += bs;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum;
                         }
                     }
@@ -2709,7 +2711,8 @@ CollisionSystem::Update(pCX, pCY,
                                 (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
                             SpawnStardust(rr->worldX, rr->worldY, 3,
                                           pCX, pCY, pickupXp);
-                            g_Stats.RegisterKill(); g_GameManager.scoreAccum += 300.0f;
+                            g_Stats.RegisterKill(); RegisterCodexMobKill(CM_SCOPE);
+                            g_GameManager.scoreAccum += 300.0f;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
                         }
                     }

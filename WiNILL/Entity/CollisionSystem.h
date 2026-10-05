@@ -9,6 +9,7 @@
 #include "Bullet.h"
 #include "PlayerStats.h"
 #include "Juice.h"
+#include "../Core/Codex.h"
 
 static inline float SegDistSq(float px, float py, float ax, float ay,
                               float bx, float by) {
@@ -143,6 +144,7 @@ public:
                                   StardustRewardFor(monster->kind), playerCX,
                                   playerCY, pickupXp);
                     stats.RegisterKill();
+                    RegisterCodexMobKill(monster->kind);
                     scoreAccum += baseScore;
                     score = (long long)scoreAccum;
                     if (stats.vampire || stats.lifesteal2) {
@@ -205,6 +207,7 @@ public:
                     SpawnStardust(ranged->worldX, ranged->worldY, 3,
                                   playerCX, playerCY, pickupXp);
                     stats.RegisterKill();
+                    RegisterCodexMobKill(CM_SCOPE);
                     scoreAccum += 300.0f;
                     score = (long long)scoreAccum;
                     if (stats.vampire || stats.lifesteal2) {

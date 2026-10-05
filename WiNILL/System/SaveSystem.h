@@ -89,6 +89,11 @@ inline void SaveGame() {
         if (g_AugSeen[i]) { std::snprintf(ln, sizeof(ln), "augseen%d=1\n", i); buf += ln; }
     for (int i = 0; i < CM_COUNT; i++)
         if (g_MobSeen[i]) { std::snprintf(ln, sizeof(ln), "mobseen%d=1\n", i); buf += ln; }
+    for (int i = 0; i < CM_COUNT; i++)
+        if (g_MobKillCounts[i] > 0) {
+            std::snprintf(ln, sizeof(ln), "mobkills%d=%lld\n", i, g_MobKillCounts[i]);
+            buf += ln;
+        }
     for (int i = 1; i < JOB_COUNT; i++)
         if (g_JobBought[i]) { std::snprintf(ln, sizeof(ln), "jobbought%d=1\n", i); buf += ln; }
 
@@ -203,6 +208,10 @@ inline void LoadGame() {
             int mi = atoi(key + 7);
             if (mi >= 0 && mi < CM_COUNT) g_MobSeen[mi] = (val != 0);
         }
+        else if (!std::strncmp(key, "mobkills", 8)) {
+            int mi = atoi(key + 8);
+            if (mi >= 0 && mi < CM_COUNT && val >= 0) g_MobKillCounts[mi] = val;
+        }
         else if (!std::strncmp(key, "bossseen", 8)) { (void)val; }
         else if (!std::strncmp(key, "jobbought", 9)) {
             int ji = atoi(key + 9);
@@ -224,6 +233,10 @@ inline void ResetSaveProgress() {
     for (int i = 0; i < ACH_COUNT;  i++) g_AchUnlocked[i] = false;
     for (int i = 0; i < AUG_TOTAL;  i++) g_AugSeen[i] = false;
     for (int i = 0; i < CM_COUNT;   i++) g_MobSeen[i] = false;
+    for (int i = 0; i < CM_COUNT;   i++) {
+        g_MobKillCounts[i] = 0;
+        g_RunMobKillCounts[i] = 0;
+    }
     g_ThemeOwned = 1; g_ThemeSel = 0; ApplyAccentTheme();
     for (int i = 0; i < JOB_COUNT; i++) g_JobBought[i] = false;
     SaveGame();
@@ -242,6 +255,10 @@ inline bool RecordRunResult(int difficultyIdx, long long score, long long kills,
         if (kills > g_WeaponBestKills[weaponIdx])  g_WeaponBestKills[weaponIdx]  = kills;
         g_WeaponTotalKills[weaponIdx] += kills;
         g_WeaponRunCount[weaponIdx]   += 1;
+    }
+    for (int i = 0; i < CM_COUNT; ++i) {
+        g_MobKillCounts[i] += g_RunMobKillCounts[i];
+        g_RunMobKillCounts[i] = 0;
     }
     // 코인 적립 — 점수/1000 + 처치/2 (난이도 보너스: 보통×1.2, 어려움×1.5)
     float diffMul = (difficultyIdx == 2) ? 1.5f : (difficultyIdx == 1) ? 1.2f : 1.0f;
