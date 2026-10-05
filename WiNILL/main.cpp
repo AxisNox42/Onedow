@@ -260,6 +260,47 @@ static void EnsurePlayerBounds(SpatialBounds& pw) {
     SyncPlayerBoundsSize(pw, 1.0f, false);
 }
 
+static void UpdateGravisFields(float& playerX, float& playerY,
+                               bool playerControl, float dt) {
+    constexpr float fieldRadius = 285.0f;
+    const float fieldRadiusSq = fieldRadius * fieldRadius;
+    for (auto* gravis : g_MonsterManager.monsters) {
+        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
+
+        const float gx = gravis->worldX - playerX;
+        const float gy = gravis->worldY - playerY;
+        const float playerDistanceSq = gx * gx + gy * gy;
+        if (playerControl && !g_PlayerRuntime.dashActive &&
+            playerDistanceSq > 36.0f && playerDistanceSq < fieldRadiusSq) {
+            const float distance = sqrtf(playerDistanceSq);
+            const float influence = 1.0f - distance / fieldRadius;
+            const float pull = (24.0f + 58.0f * influence) * influence * dt;
+            playerX += gx / distance * pull;
+            playerY += gy / distance * pull;
+        }
+
+        for (auto& bullet : g_Bullets) {
+            if (!bullet.active) continue;
+            const float bx = gravis->worldX - bullet.x;
+            const float by = gravis->worldY - bullet.y;
+            const float distanceSq = bx * bx + by * by;
+            if (distanceSq <= 64.0f || distanceSq >= fieldRadiusSq) continue;
+
+            const float distance = sqrtf(distanceSq);
+            const float influence = 1.0f - distance / fieldRadius;
+            const float curve = (0.34f + 1.18f * influence) * dt;
+            bullet.dirX += bx / distance * curve;
+            bullet.dirY += by / distance * curve;
+            const float directionLength = sqrtf(bullet.dirX * bullet.dirX + bullet.dirY * bullet.dirY);
+            if (directionLength > 0.0001f) {
+                bullet.dirX /= directionLength;
+                bullet.dirY /= directionLength;
+            }
+        }
+    }
+}
+
+
 #if defined(_DEBUG)
 static constexpr bool kCompileDebugBuild = true;
 #else
@@ -1888,36 +1929,8 @@ int main() {
                 // C16: ?�티�??�킬 ?�동 ?�용 ??쿨다???�난 ?�롯???�동 발동
                 if (playerControl && g_AutoSkill) for (int i = 0; i < 3; i++) useSkill(i);
 
-                // GRAVIS field: one force evaluation per active station. It
-                // bends velocity only, so bullets keep their forward motion.
-                for (auto* gravis : g_MonsterManager.monsters) {
-                    if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
-                    const float fieldR = 285.0f;
-                    float gx = gravis->worldX - pCX;
-                    float gy = gravis->worldY - pCY;
-                    float gd2 = gx * gx + gy * gy;
-                    if (playerControl && !g_PlayerRuntime.dashActive && gd2 > 36.0f && gd2 < fieldR * fieldR) {
-                        const float gd = sqrtf(gd2);
-                        const float influence = 1.0f - gd / fieldR;
-                        const float pullStep = (24.0f + 58.0f * influence) * influence * FIXED_DT;
-                        pCX += gx / gd * pullStep;
-                        pCY += gy / gd * pullStep;
-                    }
-                    for (auto& b : g_Bullets) {
-                        if (!b.active) continue;
-                        float bx = gravis->worldX - b.x;
-                        float by = gravis->worldY - b.y;
-                        float bd2 = bx * bx + by * by;
-                        if (bd2 <= 64.0f || bd2 >= fieldR * fieldR) continue;
-                        const float bd = sqrtf(bd2);
-                        const float influence = 1.0f - bd / fieldR;
-                        const float curve = (0.34f + 1.18f * influence) * FIXED_DT;
-                        b.dirX += bx / bd * curve;
-                        b.dirY += by / bd * curve;
-                        const float dl = sqrtf(b.dirX * b.dirX + b.dirY * b.dirY);
-                        if (dl > 0.0001f) { b.dirX /= dl; b.dirY /= dl; }
-                    }
-                }
+                // Apply each station once per fixed step.
+                UpdateGravisFields(pCX, pCY, playerControl, FIXED_DT);
                 pCX = std::max(ccX - halfW, std::min(ccX + halfW, pCX));
                 pCY = std::max(ccY + (BROWSER_CHROME_H - ccY) / zoomNow,
                                std::min(bottomLimit, pCY));
