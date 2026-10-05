@@ -242,7 +242,13 @@ public:
 
         monsters.erase(
             std::remove_if(monsters.begin(), monsters.end(),
-                [](Monster* m) { if (!m->alive) { delete m; return true; } return false; }),
+                [](Monster* m) {
+                    if (!m->alive && m->scored && m->exploded) {
+                        delete m;
+                        return true;
+                    }
+                    return false;
+                }),
             monsters.end());
 
         for (auto r : rangedMobs)
