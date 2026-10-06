@@ -315,18 +315,20 @@ float MainMenuCommandStartY(float sh, float uiScale) {
     return y;
 }
 
-// The lobby command rail is the canonical home for the main-menu buttons.
-// Scene transition ghosts must use this same anchor; keeping the old centered
-// command Y here makes the previous button stack flash before it exits.
-float MainMenuButtonRailStartY(float sh, float uiScale) {
-    const float kRowH = 70.0f * uiScale;
-    const float kGap = 10.0f * uiScale;
-    constexpr float kRowCount = 5.0f;
-    const float totalH = kRowCount * kRowH + (kRowCount - 1.0f) * kGap;
+// Outgame navigation rails share one lower-left bottom anchor across pages.
+// Scene transition ghosts use the same lobby calculation as the live buttons.
+float OutgameButtonRailStartY(float sh, float uiScale, int rowCount,
+                              float rowH, float rowGap) {
+    const float totalH = rowCount * rowH + std::max(0, rowCount - 1) * rowGap;
     float y = sh - totalH - std::max(52.0f * uiScale, sh * 0.075f);
     const float logoFloor = MainLogoTop(sh) + MainLogoHeight(sh) * 0.82f;
     if (y < logoFloor) y = logoFloor;
     return y;
+}
+
+float MainMenuButtonRailStartY(float sh, float uiScale) {
+    return OutgameButtonRailStartY(sh, uiScale, 5,
+                                   70.0f * uiScale, 10.0f * uiScale);
 }
 
 static void DrawSharedMenuDim(float sw, float sh,
@@ -892,9 +894,9 @@ void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
 }
 
 static float MenuCommandReveal(float timeline, int row,
-                               float start = 0.20f, float stagger = 0.14f,
-                               float duration = 0.32f) {
-    return Smoothstep(LogoClamp01((timeline - start - (float)row * stagger) / duration));
+                               float start = 0.04f, float stagger = 0.04f,
+                               float duration = 0.28f) {
+    return SceneTransitionEase((timeline - start - (float)row * stagger) / duration);
 }
 
 static void DrawMainMenuAstralVeil(float sw, float sh,

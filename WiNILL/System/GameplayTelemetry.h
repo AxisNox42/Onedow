@@ -200,7 +200,7 @@ public:
         const StatsSnapshot b = Capture(before);
         const StatsSnapshot a = Capture(after);
         const char* code = "unknown";
-        const int augmentCount = (int)(sizeof(ALL_AUGS) / sizeof(ALL_AUGS[0]));
+        const int augmentCount = AUG_TOTAL;
         if (augmentIndex >= 0 && augmentIndex < augmentCount && ALL_AUGS[augmentIndex].name)
             code = ALL_AUGS[augmentIndex].name;
 

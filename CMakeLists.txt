@@ -20,6 +20,7 @@ set(WINILL_DIR ${CMAKE_SOURCE_DIR}/WiNILL)
 add_executable(WiNILL
     ${CMAKE_SOURCE_DIR}/glad.c
     ${WINILL_DIR}/main.cpp
+    ${WINILL_DIR}/Entity/AugmentCatalog.cpp
     ${WINILL_DIR}/Entity/PlayerRuntime.cpp
     ${WINILL_DIR}/Entity/EnemySpawner.cpp
     ${WINILL_DIR}/Entity/ProjectileSystem.cpp

@@ -65,6 +65,8 @@ void Scene_MainMenu(const SceneCtx& c) {
         s_MainMenuResumeFromPanel = false;
     }
     const bool exitActive = (s_menuSelect >= 0);
+    const float menuExitDuration = s_menuSelect == 4
+        ? 0.52f : kOutgameTransitionDuration;
     if (exitActive) {
         s_menuExitT += std::min(delta, 0.05f);
         if (s_menuExitT > 0.70f) s_menuExitT = 0.70f;
@@ -136,7 +138,7 @@ void Scene_MainMenu(const SceneCtx& c) {
         rawBtnPh = std::max(0.0f, std::min(rawBtnPh, 1.0f));
         float reveal = Smoothstep(rawBtnPh);
         bool selected = (s_menuSelect == i);
-        float exitP = Smoothstep(std::min(1.0f, s_menuExitT / 0.50f));
+        float exitP = SceneTransitionEase(s_menuExitT / menuExitDuration);
         const bool buttonReady = !booting && !introActive && !introWasActive
                               && !exitActive && g_FadeDir == 0;
         const float priorBx = baseBx + (1.0f - reveal) * 34.0f - 10.0f * kHoverT[i];
@@ -205,7 +207,8 @@ void Scene_MainMenu(const SceneCtx& c) {
         const float lineG = 0.62f + (colG - 0.62f) * paletteMix;
         const float lineB = 1.00f + (colB - 1.00f) * paletteMix;
         const float canvasReveal = Smoothstep(LogoClamp01((s_introT - kTitleDur - 0.18f) / 0.70f)) * uiA;
-        const float collapse = exitActive ? Smoothstep(std::min(1.0f, s_menuExitT / 0.50f)) : 0.0f;
+        const float collapse = exitActive
+            ? SceneTransitionEase(s_menuExitT / menuExitDuration) : 0.0f;
         const float canvasLeft = btnX0 + BW + 40.0f;
         const float canvasRight = std::max(canvasLeft + 280.0f, sw - 30.0f);
         const float availableCanvasW = canvasRight - canvasLeft;

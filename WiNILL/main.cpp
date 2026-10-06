@@ -64,6 +64,7 @@
 #include "PlayerRuntime.h"
 #include "Scenes.h"
 #include "SceneContext.h"
+#include "SceneInternal.h"
 #include "SceneSkills.h"
 #include "Input.h"
 #include "DebugToolkit.h"
@@ -2038,7 +2039,7 @@ int main() {
                             if (dx * dx + dy * dy > radius2) return;
                             const float dealt = std::min(pulseDamage, hp);
                             hp -= dealt;
-                            SpawnDamageNumber(tx, ty, dealt, dealt >= 40.0f);
+                            SpawnDamageNumber(tx, ty, dealt, false);
                             if (hp <= 0.0f) {
                                 hp = 0.0f;
                                 alive = false;
@@ -2700,7 +2701,7 @@ CollisionSystem::Update(pCX, pCY,
                         if (!m->alive || !inLine(m->worldX, m->worldY)) continue;
                         float d = ldmg;
                         float dealt = (d < m->hp) ? d : m->hp; m->hp -= dealt;
-                        SpawnDamageNumber(m->worldX, m->worldY, dealt, dealt >= 40.0f || lcrit);
+                        SpawnDamageNumber(m->worldX, m->worldY, dealt, lcrit);
                         if (m->hp <= 0.0f) {
                             m->alive = false; m->scored = true; AddKillCombo();
                             float bx, bs; MobKillReward(m->kind, bx, bs);
@@ -2717,7 +2718,7 @@ CollisionSystem::Update(pCX, pCY,
                     for (auto rr : g_MonsterManager.rangedMobs) {
                         if (!rr->alive || !inLine(rr->worldX, rr->worldY)) continue;
                         float dealt = (ldmg < rr->hp) ? ldmg : rr->hp; rr->hp -= dealt;
-                        SpawnDamageNumber(rr->worldX, rr->worldY, dealt, dealt >= 40.0f || lcrit);
+                        SpawnDamageNumber(rr->worldX, rr->worldY, dealt, lcrit);
                         if (rr->hp <= 0.0f) {
                             rr->alive = false; rr->scored = true; AddKillCombo();
                             const long long pickupXp = (long long)(
@@ -3050,6 +3051,45 @@ CollisionSystem::Update(pCX, pCY,
             }
         }
 
+        // Keep health and experience visible on the player's moving playfield.
+        {
+            const GameState barState = g_GameManager.currentState;
+            if (barState == GameState::RUNNING || barState == GameState::PAUSED ||
+                barState == GameState::DYING || barState == GameState::AUG_SELECT ||
+                barState == GameState::DEBUFF_SELECT) {
+                const float pad = 12.0f;
+                const float barX = playerWin.x + pad;
+                const float barW = std::max(8.0f, playerWin.width - pad * 2.0f);
+                constexpr float hpH = 10.0f, xpH = 6.0f, gap = 3.0f;
+                const float hpY = playerWin.y + playerWin.height - 16.0f - hpH;
+                const float xpY = hpY - gap - xpH;
+                const float hpFrac = std::clamp(g_GameManager.playerHP /
+                    std::max(1.0f, g_Stats.maxHP), 0.0f, 1.0f);
+                const long long xpNeed = g_ExpSystem.Required(g_GameManager.playerLevel);
+                const float xpFrac = xpNeed > 0
+                    ? std::clamp((float)g_GameManager.xp / (float)xpNeed, 0.0f, 1.0f)
+                    : 0.0f;
+
+                BindMainShader();
+                drawRect(barX - 2.0f, xpY - 2.0f, barW + 4.0f,
+                         hpY + hpH - xpY + 4.0f, 0.0f, 0.0f, 0.0f, 0.72f);
+                drawRect(barX, hpY, barW, hpH, 0.20f, 0.05f, 0.05f, 0.95f);
+                const float hpR = hpFrac > 0.5f ? 0.1f : 1.0f;
+                const float hpG = hpFrac > 0.5f ? 1.0f : hpFrac * 2.0f;
+                const float hpGhostFrac = std::clamp(g_HpGhost /
+                    std::max(1.0f, g_Stats.maxHP), hpFrac, 1.0f);
+                if (hpGhostFrac > hpFrac)
+                    drawRect(barX + barW * hpFrac, hpY,
+                             barW * (hpGhostFrac - hpFrac), hpH,
+                             0.72f, 0.72f, 0.76f, 0.74f);
+                drawRect(barX, hpY, barW * hpFrac, hpH,
+                         hpR, hpG, 0.1f, 0.97f);
+                drawRect(barX, xpY, barW, xpH, 0.06f, 0.10f, 0.07f, 0.95f);
+                drawRect(barX, xpY, barW * xpFrac, xpH,
+                         0.4f, 1.0f, 0.55f, 0.97f);
+            }
+        }
+
 
 
         // ?�?�??�기부??UI/?�버?�이: 줌·흔?�기 무시?�고 ?�면 고정 좌표(base ortho)�??�?�?
@@ -3257,15 +3297,51 @@ CollisionSystem::Update(pCX, pCY,
                 SceneCtx ctx{ sw, sh, mx, my, sceneLmb, delta, window, &fireTimer,
                               resetFn, restartRunFn, abandonRunFn,
                               inputFocusChanged };
+                const SceneTextContext sceneText{ g_TextL, g_TextS };
                 switch (st) {
                 case GameState::MAIN_MENU:         Scene_MainMenu(ctx);         break;
                 case GameState::CODEX:             Scene_Codex(ctx);            break;
-                case GameState::TUTORIAL:          Scene_Tutorial(ctx);         break;
+                case GameState::TUTORIAL: {
+                    const TutorialSceneContext tutorialState{
+                        g_GameManager.currentState,
+                        g_LmbPrev,
+                        g_AppOpen,
+                        sceneText
+                    };
+                    Scene_Tutorial(ctx, tutorialState);
+                    break;
+                }
                 case GameState::CREATIVE_CONFIG:   Scene_CreativeConfig(ctx);   break;
                 case GameState::SETTINGS:          Scene_Settings(ctx);         break;
-                case GameState::READY:             Scene_Ready(ctx);            break;
-                case GameState::PAUSED:            Scene_Paused(ctx);           break;
-                case GameState::GAMEOVER:          Scene_GameOver(ctx);         break;
+                case GameState::READY:             Scene_Ready(ctx, sceneText); break;
+                case GameState::PAUSED: {
+                    const PauseSceneContext pauseState{
+                        g_GameManager.currentState,
+                        g_GameManager.pauseResumeState,
+                        g_SettingsReturnTo,
+                        g_LmbPrev,
+                        sceneText,
+                        ResetSettingsUi
+                    };
+                    Scene_Paused(ctx, pauseState);
+                    break;
+                }
+                case GameState::GAMEOVER: {
+                    const GameOverSceneContext reportState{
+                        g_GameManager.currentState,
+                        g_GameOverFade,
+                        g_LmbPrev,
+                        g_DeathReason,
+                        g_LastRunRecord,
+                        g_GameManager.score,
+                        g_GameManager.playerLevel,
+                        g_Stats.killCount,
+                        g_OwnedAugs,
+                        sceneText
+                    };
+                    Scene_GameOver(ctx, reportState);
+                    break;
+                }
                 case GameState::AUG_SELECT:
                 case GameState::DEBUFF_SELECT:     Scene_AugSelect(ctx);        break;
                 case GameState::AUG_REPLACE:       Scene_AugReplace(ctx);       break;

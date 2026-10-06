@@ -24,6 +24,7 @@ void Scene_Codex(const SceneCtx& c) {
     static float s_scroll[2]   = {};
     static float s_detailFadeT = 0.0f;
     static int   s_prevSel     = -2;
+    static int   s_prevMobDataStage = -1;
 
     DrawMenuBackground(sw, sh, delta, false);
 
@@ -32,10 +33,11 @@ void Scene_Codex(const SceneCtx& c) {
     if (g_CodexEntryT > 1.0f) g_CodexEntryT = 1.0f;
     const float now = (float)glfwGetTime();
 
-    const float wake      = Smoothstep(std::min(1.0f, g_CodexEntryT / 0.50f));
-    const float rightWake = Smoothstep(std::min(1.0f,
-        std::max(0.0f, g_CodexEntryT - 0.10f) / 0.44f));
-    SetSceneTextureReveal(Smoothstep(LogoClamp01(g_CodexEntryT / 0.72f)));
+    const float wake = SceneTransitionEase(g_CodexEntryT / kOutgameTransitionDuration);
+    const float rightWake = SceneTransitionEase(
+        (g_CodexEntryT - 0.06f) / (kOutgameTransitionDuration - 0.06f));
+    SetSceneTextureReveal(SceneTransitionEase(
+        g_CodexEntryT / kOutgameTransitionDuration));
 
     int li = LangIndex(); if (li < 0 || li >= 3) li = 0;
     const int nli = (li == 0) ? 0 : 1;
@@ -90,7 +92,13 @@ void Scene_Codex(const SceneCtx& c) {
         s_catLoaded[s_cat] = true;
 
     int curSel = s_sel[s_cat];
-    if (curSel != s_prevSel) { s_prevSel = curSel; s_detailFadeT = 0.0f; }
+    const int selectedMobStage = s_cat == 0 && curSel >= 0
+        ? CodexMobDataStage(curSel) : -1;
+    if (curSel != s_prevSel || selectedMobStage != s_prevMobDataStage) {
+        s_prevSel = curSel;
+        s_prevMobDataStage = selectedMobStage;
+        s_detailFadeT = 0.0f;
+    }
     s_detailFadeT = UiApproach(s_detailFadeT, 1.0f, delta, 8.0f);
 
     // ── Helper lambdas ────────────────────────────────────────────────────
@@ -328,28 +336,19 @@ void Scene_Codex(const SceneCtx& c) {
     float contentH = 0.0f;
 
     if (s_cat == 0) {
-        struct MobGroup { const wchar_t* name; int ids[9]; int count; float r, g, b; };
-        static const MobGroup MGRPS[] = {
-            { L"ACTIVE SIGNALS",
-              { CM_ROTOR, CM_SCOPE, CM_SWARM, CM_GENESIS, CM_GRAVIS, CM_QUASAR, 0, 0, 0 },
-              6, 0.48f, 0.82f, 1.00f },
-        };
-        for (int gi = 0; gi < 1; ++gi) {
-            const MobGroup& mg = MGRPS[gi];
-            ListItem& lh = s_items[nItems++];
-            lh.isGroup = true; lh.dataIdx = -1; lh.seen = true;
-            lh.label = mg.name; lh.r = mg.r; lh.g = mg.g; lh.b = mg.b;
-            contentH += grpH;
-            for (int j = 0; j < mg.count; ++j) {
-                int id = mg.ids[j];
-                ListItem& litem = s_items[nItems++];
-                litem.isGroup = false; litem.dataIdx = id;
-                litem.seen = CodexMobSeen(id);
-                litem.label = litem.seen ? MobName(id) : L"???";
-                litem.r = mg.r; litem.g = mg.g; litem.b = mg.b;
-                contentH += itemH;
-            }
-        }
+        ListItem& lh = s_items[nItems++];
+        lh.isGroup = true; lh.dataIdx = -1; lh.seen = true;
+        lh.label = L"ACTIVE SIGNALS";
+        lh.r = 0.48f; lh.g = 0.82f; lh.b = 1.00f;
+        contentH += grpH;
+        ForEachCodexMobEntry([&](int id) {
+            ListItem& litem = s_items[nItems++];
+            litem.isGroup = false; litem.dataIdx = id;
+            litem.seen = CodexMobSeen(id);
+            litem.label = CodexMobListLabel(id);
+            litem.r = lh.r; litem.g = lh.g; litem.b = lh.b;
+            contentH += itemH;
+        });
     } else if (s_cat == 1) {
         int sorted[AUG_TOTAL], ns_aug = 0;
         for (int i = 0; i < AUG_TOTAL; ++i)
@@ -540,10 +539,18 @@ void Scene_Codex(const SceneCtx& c) {
                  uiR, uiG, uiB, 0.038f * detailA);
 
         if (s_cat == 0) {
-            // Entity previews use the exact gameplay silhouettes (ROTOR,
-            // GENESIS, SCOPE, SWARM and GRAVIS).
-            const float previewScale = std::max(2.4f, std::min(vizW, vizH) / 72.0f);
-            drawCodexMobPreview(selItem, vizCX, vizCY, previewScale);
+            if (CodexMobDataStage(selItem) == 0) {
+                const wchar_t* stateText = CodexMobSeen(selItem)
+                    ? L"???"
+                    : CodexLocalizedText(L"기록 없음", L"NO RECORD", L"記録なし");
+                drawCenterS(stateText, vizX + 14.0f*uiS, vizCY,
+                            vizW - 28.0f*uiS,
+                            UiTextScale(g_TextS, UiTextLevel::Supporting, uiS),
+                            uiR, uiG, uiB, 0.80f*detailA);
+            } else {
+                const float previewScale = std::max(2.4f, std::min(vizW, vizH) / 72.0f);
+                drawCodexMobPreview(selItem, vizCX, vizCY, previewScale);
+            }
         } else {
         // Rotating constellation node viewer
         {
@@ -625,38 +632,110 @@ void Scene_Codex(const SceneCtx& c) {
         if (s_cat == 0) {
             // ── Entity detail ─────────────────────────────────────────────
             bool seen = CodexMobSeen(selItem);
-            BindMainShader();
-            drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
-            g_TextS.Draw(L"ENTITY", infoX + 18.0f*uiS, titleBoxY + 10.0f*uiS,
-                         UiTextScale(g_TextS, UiTextLevel::Supporting, uiS),
-                         uiR, uiG, uiB, 0.78f*detailA);
-            g_TextL.Draw(MobName(selItem), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,
-                         UiTextScale(g_TextL, UiTextLevel::Title, uiS),
-                         1.0f, 1.0f, 1.0f, 0.96f*detailA);
-            drawRect(infoX + 18.0f*uiS, titleBoxY + titleBoxH - 16.0f*uiS, infoW - 36.0f*uiS, 1.5f*uiS,
-                     uiR, uiG, uiB, 0.28f*detailA);
-            drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
-            drawWrappedS(seen ? MobDesc(selItem) : L"???",
-                         infoX + 18.0f*uiS, descBoxY + 24.0f*uiS,
-                         infoW - 36.0f*uiS, descBoxH - 42.0f*uiS,
-                         UiTextScale(g_TextS, UiTextLevel::Description, uiS),
-                         0.86f, 0.92f, 1.0f, 0.92f*detailA);
-            // ── 시스템 로그 블록 ──
-            if (seen) {
+            const int mobDataStage = CodexMobDataStage(selItem);
+            if (mobDataStage == 0) {
+                if (seen) {
+                    const wchar_t* formTitle = CodexLocalizedText(
+                        L"관측된 형태", L"OBSERVED FORM", L"観測された形状");
+                    const float supportingScale = UiTextScale(
+                        g_TextS, UiTextLevel::Supporting, uiS);
+                    const float descriptionScale = UiTextScale(
+                        g_TextS, UiTextLevel::Description, uiS);
+                    BindMainShader();
+                    drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
+                    g_TextS.Draw(L"ENTITY", infoX + 18.0f*uiS,
+                                 titleBoxY + 10.0f*uiS, supportingScale,
+                                 uiR, uiG, uiB, 0.78f*detailA);
+                    g_TextL.Draw(L"???", infoX + 18.0f*uiS,
+                                 titleBoxY + 34.0f*uiS,
+                                 UiTextScale(g_TextL, UiTextLevel::Title, uiS),
+                                 1.0f, 1.0f, 1.0f, 0.96f*detailA);
+                    drawRect(infoX + 18.0f*uiS,
+                             titleBoxY + titleBoxH - 16.0f*uiS,
+                             infoW - 36.0f*uiS, 1.5f*uiS,
+                             uiR, uiG, uiB, 0.28f*detailA);
+                    drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
+                    g_TextS.Draw(formTitle, infoX + 18.0f*uiS,
+                                 descBoxY + 12.0f*uiS, supportingScale,
+                                 uiR, uiG, uiB, 0.82f*detailA);
+                    drawWrappedS(CodexMobFormDescription(selItem),
+                                 infoX + 18.0f*uiS, descBoxY + 42.0f*uiS,
+                                 infoW - 36.0f*uiS, descBoxH - 60.0f*uiS,
+                                 descriptionScale, 0.86f, 0.92f, 1.0f,
+                                 0.92f*detailA);
+                } else {
+                    const wchar_t* undiscovered = CodexLocalizedText(
+                        L"미발견", L"UNDISCOVERED", L"未発見");
+                    drawCenterS(undiscovered, infoX, titleBoxY + 40.0f*uiS,
+                                infoW, UiTextScale(g_TextS, UiTextLevel::Supporting, uiS),
+                                uiR, uiG, uiB, 0.80f*detailA);
+                }
+            } else {
+                BindMainShader();
+                drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
+                g_TextS.Draw(L"ENTITY", infoX + 18.0f*uiS, titleBoxY + 10.0f*uiS,
+                             UiTextScale(g_TextS, UiTextLevel::Supporting, uiS),
+                             uiR, uiG, uiB, 0.78f*detailA);
+                g_TextL.Draw(MobName(selItem), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,
+                             UiTextScale(g_TextL, UiTextLevel::Title, uiS),
+                             1.0f, 1.0f, 1.0f, 0.96f*detailA);
+                drawRect(infoX + 18.0f*uiS, titleBoxY + titleBoxH - 16.0f*uiS, infoW - 36.0f*uiS, 1.5f*uiS,
+                         uiR, uiG, uiB, 0.28f*detailA);
+                drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
+                drawWrappedS(MobDesc(selItem),
+                             infoX + 18.0f*uiS, descBoxY + 24.0f*uiS,
+                             infoW - 36.0f*uiS, descBoxH - 42.0f*uiS,
+                             UiTextScale(g_TextS, UiTextLevel::Description, uiS),
+                             0.86f, 0.92f, 1.0f, 0.92f*detailA);
+                // ── 시스템 로그 블록 ──
                 drawInfoQuad(infoX, logBoxY, infoW, logBoxH, detailA);
-                const wchar_t* threatLv = MobThreatLabel(selItem);
-                wchar_t pidBuf[16]; swprintf_s(pidBuf, L"0x%02X", (selItem * 17 + 0x40) & 0xFF);
-                struct { const wchar_t* k; const wchar_t* v; } logR[] = {
-                    { L"THREAT_LV  ", threatLv },
-                    { L"PATTERN_ID ", pidBuf   },
-                    { L"STATUS     ", L"CATALOGUED" },
-                };
-                for (int ll = 0; ll < 3; ++ll) {
-                    float ly = logBoxY + 28.0f*uiS + ll * 38.0f * uiS;
-                    const float logScale = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS);
-                    g_TextS.Draw(logR[ll].k, infoX + 18.0f*uiS,              ly, logScale, uiR, uiG, uiB, 0.72f*detailA);
-                    g_TextS.Draw(L": ",       infoX + 150.0f*uiS,            ly, logScale, uiR, uiG, uiB, 0.54f*detailA);
-                    g_TextS.Draw(logR[ll].v,  infoX + 172.0f*uiS,            ly, logScale, 1.0f, 1.0f, 1.0f, 0.88f*detailA);
+                const long long kills = CodexMobKillCount(selItem);
+                const int nextMilestone = mobDataStage == 0 ? 0 : mobDataStage == 1 ? 1 : 2;
+                wchar_t progressBuf[128];
+                if (mobDataStage < 3)
+                    swprintf_s(progressBuf, L"%lld / %lld", kills,
+                               CodexMobKillThreshold(selItem, nextMilestone));
+                else
+                    swprintf_s(progressBuf, L"%lld | DATA COMPLETE", kills);
+                const wchar_t* next = mobDataStage == 0
+                    ? CodexLocalizedText(L"티어와 개요", L"TIER AND OVERVIEW", L"ティアと概要")
+                    : mobDataStage == 1
+                    ? CodexLocalizedText(L"전투 능력치", L"COMBAT STATS", L"戦闘ステータス")
+                    : CodexLocalizedText(L"공격 패턴", L"ATTACK PROFILE", L"攻撃パターン");
+                struct { const wchar_t* k; const wchar_t* v; } logR[8] = {};
+                int rowCount = 0;
+                logR[rowCount++] = { L"KILLS", progressBuf };
+                if (mobDataStage < 3) logR[rowCount++] = { L"NEXT", next };
+                if (mobDataStage >= 1)
+                    logR[rowCount++] = { L"TIER", MobTierLabel(selItem) };
+                wchar_t hpBuf[64];
+                if (mobDataStage >= 2) {
+                    swprintf_s(hpBuf, L"%d (BASE)", CodexMobBaseHp(selItem));
+                    logR[rowCount++] = { L"HP", hpBuf };
+                    logR[rowCount++] = { L"DAMAGE", CodexMobDamageValue(selItem) };
+                    logR[rowCount++] = { L"MOVE SPEED", CodexMobBaseSpeed(selItem) };
+                }
+                if (mobDataStage >= 3)
+                    logR[rowCount++] = { L"ATTACK", CodexMobAttackPattern(selItem) };
+                const float logScale = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS);
+                for (int ll = 0; ll < rowCount; ++ll) {
+                    float ly = logBoxY + 25.0f*uiS + ll * 27.0f * uiS;
+                    g_TextS.Draw(logR[ll].k, infoX + 18.0f*uiS, ly, logScale,
+                                 uiR, uiG, uiB, 0.72f*detailA);
+                    g_TextS.Draw(L":", infoX + 128.0f*uiS, ly, logScale,
+                                 uiR, uiG, uiB, 0.54f*detailA);
+                    drawFitS(logR[ll].v, infoX + 146.0f*uiS, ly,
+                             infoW - 164.0f*uiS, logScale, 0.42f*uiS,
+                             1.0f, 1.0f, 1.0f, 0.88f*detailA);
+                }
+                if (mobDataStage >= 2) {
+                    const wchar_t* note = CodexLocalizedText(
+                        L"기본 수치 · 런 진행도 보정 제외", L"BASE VALUES · RUN SCALING EXCLUDED",
+                        L"基本値 · ラン進行度補正を除く");
+                    const float noteY = logBoxY + 25.0f*uiS + rowCount * 27.0f * uiS;
+                    drawFitS(note, infoX + 18.0f*uiS, noteY,
+                             infoW - 36.0f*uiS, logScale, 0.42f*uiS,
+                             uiR, uiG, uiB, 0.70f*detailA);
                 }
             }
 

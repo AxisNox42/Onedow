@@ -2,7 +2,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "GameManager.h"
-#include "GameContext.h"
+#include "ScenePause.h"
 #include "SceneSkills.h"
 #include "SceneUI.h"
 #include "SceneInternal.h"
@@ -42,7 +42,30 @@
 
 #include "SceneInternal.h"
 
-void Scene_Paused(const SceneCtx& c) {
+namespace {
+enum class PauseAction : int { Resume, OpenSettings, Abandon };
+constexpr int kPauseActionCount = static_cast<int>(PauseAction::Abandon) + 1;
+
+void ApplyPauseAction(PauseAction action, const SceneCtx& scene,
+                      const PauseSceneContext& state) {
+    switch (action) {
+    case PauseAction::Resume:
+        state.currentState = state.resumeState;
+        state.resumeState = GameState::RUNNING;
+        break;
+    case PauseAction::OpenSettings:
+        state.settingsReturnState = GameState::PAUSED;
+        if (state.resetSettingsUi) state.resetSettingsUi(0.0f);
+        state.currentState = GameState::SETTINGS;
+        break;
+    case PauseAction::Abandon:
+        if (scene.abandonRun) scene.abandonRun();
+        break;
+    }
+}
+}
+
+void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
     const bool lmb = c.lmb;
@@ -51,7 +74,7 @@ void Scene_Paused(const SceneCtx& c) {
     (void)c.reset;
 
     static float  s_EntryT    = 0.0f;
-    static float  s_HoverT[3] = {};
+    static float  s_HoverT[kPauseActionCount] = {};
     static int    s_ExitSel   = -1;
     static float  s_ExitT     = 0.0f;
     static double s_LastCall  = 0.0;
@@ -59,7 +82,7 @@ void Scene_Paused(const SceneCtx& c) {
     const double curTime = glfwGetTime();
     if (curTime - s_LastCall > 0.12) {
         s_EntryT = 0.0f;
-        for (int i = 0; i < 3; ++i) s_HoverT[i] = 0.0f;
+        for (int i = 0; i < kPauseActionCount; ++i) s_HoverT[i] = 0.0f;
         s_ExitSel = -1;
         s_ExitT   = 0.0f;
     }
@@ -92,8 +115,7 @@ void Scene_Paused(const SceneCtx& c) {
     const float BW      = std::min(520.0f * uiScale, sw * 0.38f);
     const float BH      = 70.0f * uiScale;
     const float BGAP    = 15.0f * uiScale;
-    const int   NBTN    = 3;
-    const float totalBH = (float)NBTN * BH + (float)(NBTN - 1) * BGAP;
+    const float totalBH = (float)kPauseActionCount * BH + (float)(kPauseActionCount - 1) * BGAP;
     const float btnX0   = std::max(58.0f, sw * 0.075f);
     const float btnY0   = sh * 0.42f;
     const float titleY  = sh * 0.24f;
@@ -113,36 +135,29 @@ void Scene_Paused(const SceneCtx& c) {
     // 타이틀은 로비의 RUN/PLAY 용어와 같은 어휘를 사용한다.
     {
         float titleA = Smoothstep(std::min(s_EntryT / 0.28f, 1.0f)) * entryFade;
-        const int li = std::max(0, std::min(2, LangIndex()));
-        static const wchar_t* kPauseHeader[3] = {
+        const int li = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
+        static const wchar_t* kPauseHeader[LANG_COUNT] = {
             L"플레이 일시정지", L"PLAY PAUSED", L"プレイ一時停止"
         };
-        static const wchar_t* kPauseStatus[3] = {
-            L"플레이 상태 : 일시정지", L"PLAY STATE : PAUSED", L"プレイ状態 : 一時停止"
-        };
         const wchar_t* hdr = kPauseHeader[li];
-        float hdrSc = UiTextScale(g_TextL, UiTextLevel::Title, uiScale);
-        g_TextL.Draw(hdr, btnX0, titleY, hdrSc, 0.50f, 0.82f, 1.0f, 0.92f * titleA);
-        const wchar_t* sub = kPauseStatus[li];
-        const float subSc = UiTextScale(g_TextS, UiTextLevel::Subtitle, uiScale);
-        g_TextS.Draw(sub, btnX0, titleY + g_TextL.Height(hdr, hdrSc) + 2.0f * uiScale, subSc,
-                     0.48f, 0.72f, 0.90f, 0.80f * titleA);
+        float hdrSc = UiTextScale(state.text.title, UiTextLevel::Title, uiScale);
+        state.text.title.Draw(hdr, btnX0, titleY, hdrSc, 0.50f, 0.82f, 1.0f, 0.92f * titleA);
         BindMainShader();
-        drawRect(btnX0, titleY + g_TextL.Height(hdr, hdrSc) + 26.0f,
+        drawRect(btnX0, titleY + state.text.title.Height(hdr, hdrSc) + 14.0f * uiScale,
                  BW * 0.52f, 1.0f, 0.30f, 0.78f, 1.0f, 0.22f * titleA);
     }
 
     // 버튼
-    static const wchar_t* kPauseRoutes[3][3] = {
+    static const wchar_t* kPauseRoutes[LANG_COUNT][kPauseActionCount] = {
         { L"계속하기", L"설정", L"\uD3EC\uAE30\uD558\uAE30" },
         { L"CONTINUE", L"SETTINGS", L"ABANDON" },
         { L"続ける", L"設定", L"\u653E\u68C4\u3059\u308B" },
     };
-    const int pauseLang = std::max(0, std::min(2, LangIndex()));
+    const int pauseLang = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
 
     const float ar = 0.48f, ag = 0.82f, ab = 1.0f;
 
-    for (int i = 0; i < NBTN; ++i) {
+    for (int i = 0; i < kPauseActionCount; ++i) {
         float rawPh = (s_EntryT - 0.18f - (float)i * 0.08f) / 0.32f;
         float reveal = Smoothstep(std::max(0.0f, std::min(rawPh, 1.0f)));
 
@@ -170,7 +185,7 @@ void Scene_Paused(const SceneCtx& c) {
         float bx    = baseBx + slide - 10.0f * t;
         float by    = baseBy + (exitActive && !selected ? exitP * 28.0f : 0.0f);
 
-        const wchar_t* routeVariants[] = {
+        const wchar_t* routeVariants[LANG_COUNT] = {
             kPauseRoutes[0][i], kPauseRoutes[1][i], kPauseRoutes[2][i]
         };
         DrawPanelButton(route, bx, by, BW, BH,
@@ -178,9 +193,9 @@ void Scene_Paused(const SceneCtx& c) {
                         activeT, selected, selectPulse,
                         fnow + (float)i * 0.17f,
                         uiScale, false, PanelButtonSlideSide::Both, false,
-                        routeVariants, 3);
+                        routeVariants, LANG_COUNT);
 
-        if (hov && lmb && !g_LmbPrev && s_ExitSel < 0) {
+        if (hov && lmb && !state.previousLeftMouseDown && s_ExitSel < 0) {
             s_ExitSel = i;
             s_ExitT   = 0.0f;
         }
@@ -190,33 +205,20 @@ void Scene_Paused(const SceneCtx& c) {
         int sel   = s_ExitSel;
         s_ExitSel = -1;
         s_ExitT   = 0.0f;
-        switch (sel) {
-        case 0:
-            g_GameManager.currentState = g_GameManager.pauseResumeState;
-            g_GameManager.pauseResumeState = GameState::RUNNING;
-            break;
-        case 1:
-            g_SettingsReturnTo = GameState::PAUSED;
-            ResetSettingsUi();
-            g_GameManager.currentState = GameState::SETTINGS;
-            break;
-        case 2:
-            if (c.abandonRun) c.abandonRun();
-            break;
-        }
+        ApplyPauseAction(static_cast<PauseAction>(sel), c, state);
         return;
     }
 
     {
         float hintA = Smoothstep(std::min(std::max(0.0f, s_EntryT - 0.50f) / 0.30f, 1.0f)) * entryFade;
-        const int li = std::max(0, std::min(2, LangIndex()));
-        static const wchar_t* kPauseHint[3] = {
+        const int li = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
+        static const wchar_t* kPauseHint[LANG_COUNT] = {
             L"[SPACE / ESC]  계속하기", L"[SPACE / ESC]  RESUME",
             L"[SPACE / ESC]  続ける"
         };
         const wchar_t* hint = kPauseHint[li];
-        const float hintScale = UiTextScale(g_TextS, UiTextLevel::Supporting, uiScale);
-        g_TextS.Draw(hint, btnX0, sh * 0.88f, hintScale,
+        const float hintScale = UiTextScale(state.text.body, UiTextLevel::Supporting, uiScale);
+        state.text.body.Draw(hint, btnX0, sh * 0.88f, hintScale,
                      0.50f, 0.70f, 0.90f, 0.72f * hintA);
     }
 }

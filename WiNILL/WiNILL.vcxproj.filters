@@ -31,6 +31,9 @@
     <ClCompile Include="Entity\PlayerRuntime.cpp">
       <Filter>Entity</Filter>
     </ClCompile>
+    <ClCompile Include="Entity\AugmentCatalog.cpp">
+      <Filter>Entity</Filter>
+    </ClCompile>
     <ClCompile Include="Entity\EnemySpawner.cpp">
       <Filter>Entity</Filter>
     </ClCompile>
@@ -121,6 +124,18 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="Core\Scenes\SceneContext.h">
+      <Filter>Core\Scenes</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Scenes\ScenePause.h">
+      <Filter>Core\Scenes</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Scenes\SceneRunEnd.h">
+      <Filter>Core\Scenes</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Scenes\SceneStart.h">
+      <Filter>Core\Scenes</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Scenes\SceneTextContext.h">
       <Filter>Core\Scenes</Filter>
     </ClInclude>
     <ClInclude Include="Core\Scenes\SceneInternal.h">

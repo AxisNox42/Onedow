@@ -1112,8 +1112,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
         const float orbitLabelH = g_TextS.Height(orbitLabel, orbitLabelScale);
         g_TextS.Draw(orbitLabel,
                      layout.orbitCX - orbitLabelW * 0.5f,
-                     layout.orbitCY - layout.orbitR - orbitLabelH -
-                         12.0f * layout.ui,
+                     layout.orbitCY - orbitLabelH * 0.5f,
                      orbitLabelScale,
                      0.95f, 0.98f, 1.0f,
                      enterE * sceneAlpha * 0.72f);
@@ -1644,7 +1643,9 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
     const std::function<void()>& ResetForNewGame = c.reset;
                 // 같은 인덱스 카운트 (스택)
                 int counts[AUG_TOTAL] = {};
-                for (int idx : g_OwnedAugs) counts[idx]++;
+                for (int idx : g_OwnedAugs)
+                    if (idx >= 0 && idx < AUG_TOTAL && !AugRemoved(ALL_AUGS[idx].type))
+                        counts[idx]++;
                 // 보유 증강을 티어(등급)순으로 정렬
                 int ord[AUG_TOTAL], nord = 0;
                 for (int i = 0; i < AUG_TOTAL; i++) if (counts[i] > 0) ord[nord++] = i;
@@ -1653,14 +1654,24 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 });
 
                 const float PX  = 16.0f;
-                const float ROW_H = 24.0f;
-                const float HDR_H = 20.0f;
-                const float COLW  = 320.0f;          // 리스트 클릭/호버 가로 범위
+                const float COLW = 320.0f;          // 리스트 클릭/호버 가로 범위
                 const wchar_t* TITLE = T(StrId::OWNED_AUGS);
                 const float listUiScale = UiScale(sw, sh);
-                g_TextS.Draw(TITLE, PX, 60.0f,
-                             UiTextScale(g_TextS, UiTextLevel::Subtitle, listUiScale),
-                             1, 1, 1, 0.95f);
+                const float categoryScale = UiTextScale(
+                    g_TextS, UiTextLevel::Supporting, listUiScale);
+                const float augmentScale = UiTextScale(
+                    g_TextS, UiTextLevel::Description, listUiScale);
+                const float categoryH = g_TextS.Height(L"A", categoryScale);
+                const float augmentH = g_TextS.Height(L"A", augmentScale);
+                const float weaponH = categoryH;
+                const float ROW_H = augmentH + 8.0f * listUiScale;
+                const float HDR_H = categoryH + 6.0f * listUiScale;
+                const float titleY = 60.0f;
+                const float titleScale = UiTextScale(
+                    g_TextS, UiTextLevel::Subtitle, listUiScale);
+                const float weaponY = titleY + g_TextS.Height(TITLE, titleScale)
+                                    + 8.0f * listUiScale;
+                g_TextS.Draw(TITLE, PX, titleY, titleScale, 1, 1, 1, 0.95f);
                 // 현재 무기 (항상 표시)
                 {
                     const wchar_t* wPrefix = (g_Language==Language::EN)?L"Weapon:":
@@ -1669,17 +1680,20 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     wchar_t wLine[160];
                     swprintf_s(wLine, L"%ls %ls", wPrefix, CurrentWeaponLabel());
                     float wFactor = listUiScale;
-                    float wSc = UiTextScale(g_TextS, UiTextLevel::Supporting, wFactor);
-                    while (wFactor > 0.55f && g_TextS.Width(wLine, wSc) > COLW - 4.0f) {
+                    float weaponScale = UiTextScale(
+                        g_TextS, UiTextLevel::Supporting, wFactor);
+                    while (wFactor > 0.55f &&
+                           g_TextS.Width(wLine, weaponScale) > COLW - 4.0f) {
                         wFactor -= 0.03f;
-                        wSc = UiTextScale(g_TextS, UiTextLevel::Supporting, wFactor);
+                        weaponScale = UiTextScale(
+                            g_TextS, UiTextLevel::Supporting, wFactor);
                     }
-                    g_TextS.Draw(wLine, PX + 2.0f, 90.0f, wSc,
+                    g_TextS.Draw(wLine, PX + 2.0f, weaponY, weaponScale,
                                  0.55f, 0.85f, 1.0f, 0.92f);
                 }
 
                 // 리스트 뷰 영역 — 하단 스킬/HP HUD 바로 위까지 (넘치면 스크롤)
-                const float listTop    = 110.0f;
+                const float listTop = weaponY + weaponH + 12.0f * listUiScale;
                 float listBottom = sh - 175.0f;               // 스킬 슬롯/HP 패널 위까지
                 if (listBottom < listTop + 4.0f * ROW_H) listBottom = listTop + 4.0f * ROW_H;
                 const float viewH      = listBottom - listTop;
@@ -1715,8 +1729,7 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                         if (ry >= listTop - HDR_H && ry <= listBottom) {
                             wchar_t rh[48];
                             swprintf_s(rh, L"-- %ls --", GetRarityKR(rar));
-                            g_TextS.Draw(rh, PX, ry,
-                                         UiTextScale(g_TextS, UiTextLevel::Supporting, listUiScale),
+                            g_TextS.Draw(rh, PX, ry, categoryScale,
                                          0.55f, 0.75f, 0.95f, 0.88f);
                         }
                         ry += HDR_H;
@@ -1742,8 +1755,7 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                         swprintf_s(line, L"· [%ls] %ls  ×%d", GetAugBadge(def), AugName(def), counts[i]);
                     else
                         swprintf_s(line, L"· [%ls] %ls", GetAugBadge(def), AugName(def));
-                    const float rowSc = UiTextScale(g_TextS, UiTextLevel::Supporting, listUiScale);
-                    g_TextS.Draw(line, PX, ry, rowSc, cr, cg, cb, 0.9f);
+                    g_TextS.Draw(line, PX, ry, augmentScale, cr, cg, cb, 0.9f);
                     ry += ROW_H;
                 }
                 BatchFlush(); glDisable(GL_SCISSOR_TEST);
@@ -1759,9 +1771,9 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                 }
 
                 // 무기 줄 호버 (리스트 y=110 이전 — 증강 행과 분리)
-                const float WEAPON_Y = 90.0f;
                 bool overWeapon = (mx >= 0 && mx <= COLW &&
-                                   my >= WEAPON_Y - 4.0f && my <= WEAPON_Y + 18.0f);
+                                   my >= weaponY - 4.0f &&
+                                   my <= weaponY + weaponH + 4.0f * listUiScale);
 
                 // 우측 상세 패널 — 증강 행: 증강 설명 / 무기 줄: 무기 설명
                 auto wrapDescLines = [&](const wchar_t* src, float dsc, float dWmax,
@@ -1829,7 +1841,7 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     swprintf_s(hd, L"[%ls] %ls", GetAugBadge(sd), AugName(sd));
                     drawSidePanel(hoverRowY - 6.0f, hr, hg, hb, hd, AugDesc(sd));
                 } else if (overWeapon) {
-                    drawSidePanel(WEAPON_Y - 4.0f, 0.35f, 0.75f, 1.0f,
+                    drawSidePanel(weaponY - 4.0f, 0.35f, 0.75f, 1.0f,
                                   CurrentWeaponLabel(), CurrentWeaponDescText());
                 }
 }

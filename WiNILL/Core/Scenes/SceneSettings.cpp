@@ -194,21 +194,23 @@ void Scene_SettingsInline(const SceneCtx& c) {
     if (c.inputFocusChanged) s_volDrag = false;
     const bool backInput = (esc && !prevEsc) || (rmb && !g_RmbPrev);
     prevEsc = esc;
-    const float entryOldOut = Smoothstep(LogoClamp01(entry / 0.35f));
-    const float entryTreeIn = Smoothstep(LogoClamp01((entry - 0.20f) / 0.35f));
+    const float entryOldOut = SceneTransitionEase(entry / kOutgameTransitionDuration);
+    const float entryTreeIn = SceneTransitionEase(
+        (entry - 0.08f) / (kOutgameTransitionDuration - 0.08f));
     if (backInput && !exiting && entry >= 0.55f) {
         if (settingsDirty) confirmBack = true;
         else exiting = true;
     }
-    if (exiting) exitT = std::min(0.42f, exitT + dt);
-    const float outP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
+    if (exiting) exitT = std::min(kOutgameTransitionDuration, exitT + dt);
+    const float outP = exiting
+        ? SceneTransitionEase(exitT / kOutgameTransitionDuration) : 0.0f;
     const float treeA = entryTreeIn * (1.0f - outP);
     const float oldA = exiting ? outP : (1.0f - entryOldOut);
     const bool ready = !exiting && entry >= 0.55f;
     const bool inputReady = ready && !confirmBack;
     SetSceneTextureReveal(exiting
         ? std::max(0.0f, 1.0f - outP)
-        : Smoothstep(LogoClamp01((entry - 0.04f) / 0.74f)));
+        : SceneTransitionEase(entry / kOutgameTransitionDuration));
 
     const float uiS = UiScale(sw, sh);
     auto settingsLevel = [&](TextRenderer& renderer) {
@@ -1524,7 +1526,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
                             0.52f, 0.62f, 0.72f, 0.58f * dA,
                             UiTextLevel::Supporting, 0.56f);
 
-    if (exiting && exitT >= 0.42f) {
+    if (exiting && exitT >= kOutgameTransitionDuration) {
         // Settings are persisted only by SAVE CHANGES or SAVE & BACK.
         if (s_MainMenuSettingsPanel) {
             s_MainMenuSettingsPanel = false;

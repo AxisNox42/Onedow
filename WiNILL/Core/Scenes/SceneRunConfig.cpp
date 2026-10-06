@@ -434,19 +434,21 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     const bool backInput = (esc && !prevEsc) || (rmb && !g_RmbPrev);
     prevEsc = esc;
 
-    const float entryIn = Smoothstep(LogoClamp01((s_RcEntryT - 0.12f) / 0.42f));
-    const float entryHeader = Smoothstep(LogoClamp01((s_RcEntryT - 0.04f) / 0.34f));
+    const float entryIn = SceneTransitionEase(s_RcEntryT / kOutgameTransitionDuration);
+    const float entryHeader = SceneTransitionEase(
+        (s_RcEntryT - 0.04f) / (kOutgameTransitionDuration - 0.04f));
     if (backInput && !exiting && !launchExit && s_RcEntryT >= 0.55f)
         exiting = true;
-    if (exiting) exitT = std::min(0.42f, exitT + dt);
-    const float backP = exiting ? Smoothstep(LogoClamp01(exitT / 0.42f)) : 0.0f;
+    if (exiting) exitT = std::min(kOutgameTransitionDuration, exitT + dt);
+    const float backP = exiting
+        ? SceneTransitionEase(exitT / kOutgameTransitionDuration) : 0.0f;
     const float launchP = Smoothstep(LogoClamp01((launchT - 0.28f) / 0.22f));
     const float contentA = entryIn * (1.0f - backP) * (1.0f - launchP);
     const bool ready = !exiting && !launchExit && s_RcEntryT >= 0.55f;
 
     SetSceneTextureReveal(exiting
         ? std::max(0.0f, 1.0f - backP)
-        : Smoothstep(LogoClamp01((s_RcEntryT - 0.02f) / 0.72f)));
+        : SceneTransitionEase(s_RcEntryT / kOutgameTransitionDuration));
 
     const float uiS = UiScale(sw, sh);
     const float pageL = std::max(42.0f, 72.0f * uiS);
@@ -1470,7 +1472,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         launchExit = false;
         launchT = 0.0f;
     }
-    if (exiting && exitT >= 0.42f) {
+    if (exiting && exitT >= kOutgameTransitionDuration) {
         s_MainMenuRunConfigPanel = false;
         s_MainMenuResumeFromPanel = true;
         ResetRunConfigUi();

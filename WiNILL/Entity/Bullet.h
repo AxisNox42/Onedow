@@ -32,6 +32,7 @@ public:
     // 연쇄 작용(리코셰) — 남은 튕김 횟수 + 튕긴 후 고정 데미지(>0 이면 거리 재계산 안 함)
     int   bouncesLeft = 0;
     float lockedDmg   = 0.0f;
+    bool  lockedCrit  = false;
     // 발사 가속(SAM 미사일 느낌) — launchRamp<1 이면 느리게 출발해 점점 빨라짐.
     //   launchAccel(초당 증가)이 0 이면 비활성(기존 동작). launchRamp 1.0 으로 수렴.
     float launchRamp  = 1.0f;

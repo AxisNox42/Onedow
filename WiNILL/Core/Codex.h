@@ -20,7 +20,130 @@ extern wchar_t g_CodexSearch[64];
 extern int     g_CodexSearchLen;
 inline bool    g_CodexSearchInputEnabled = false;
 
-inline void CodexSearchClear() { g_CodexSearch[0] = 0; g_CodexSearchLen = 0; }
+inline int g_CodexSearchCaret = 0;
+inline int g_CodexSearchAnchor = -1;
+
+inline bool CodexSearchHasSelection() {
+    return g_CodexSearchAnchor >= 0 && g_CodexSearchAnchor != g_CodexSearchCaret;
+}
+inline int CodexSearchSelectionStart() {
+    return CodexSearchHasSelection()
+        ? (g_CodexSearchAnchor < g_CodexSearchCaret ? g_CodexSearchAnchor : g_CodexSearchCaret)
+        : g_CodexSearchCaret;
+}
+inline int CodexSearchSelectionEnd() {
+    return CodexSearchHasSelection()
+        ? (g_CodexSearchAnchor > g_CodexSearchCaret ? g_CodexSearchAnchor : g_CodexSearchCaret)
+        : g_CodexSearchCaret;
+}
+inline int CodexSearchPreviousBoundary(int pos) {
+    if (pos <= 0) return 0;
+    --pos;
+    if (pos > 0 && g_CodexSearch[pos] >= 0xDC00 && g_CodexSearch[pos] <= 0xDFFF &&
+        g_CodexSearch[pos - 1] >= 0xD800 && g_CodexSearch[pos - 1] <= 0xDBFF) --pos;
+    return pos;
+}
+inline int CodexSearchNextBoundary(int pos) {
+    if (pos >= g_CodexSearchLen) return g_CodexSearchLen;
+    ++pos;
+    if (pos < g_CodexSearchLen && g_CodexSearch[pos - 1] >= 0xD800 &&
+        g_CodexSearch[pos - 1] <= 0xDBFF && g_CodexSearch[pos] >= 0xDC00 &&
+        g_CodexSearch[pos] <= 0xDFFF) ++pos;
+    return pos;
+}
+inline void CodexSearchEraseRange(int begin, int end) {
+    if (begin < 0) begin = 0;
+    if (end > g_CodexSearchLen) end = g_CodexSearchLen;
+    if (begin >= end) return;
+    for (int i = end; i <= g_CodexSearchLen; ++i)
+        g_CodexSearch[i - (end - begin)] = g_CodexSearch[i];
+    g_CodexSearchLen -= end - begin;
+    g_CodexSearchCaret = begin;
+    g_CodexSearchAnchor = -1;
+}
+inline void CodexSearchDeleteSelection() {
+    if (CodexSearchHasSelection())
+        CodexSearchEraseRange(CodexSearchSelectionStart(), CodexSearchSelectionEnd());
+}
+inline void CodexSearchClear() {
+    g_CodexSearch[0] = 0;
+    g_CodexSearchLen = 0;
+    g_CodexSearchCaret = 0;
+    g_CodexSearchAnchor = -1;
+}
+inline void CodexSearchMoveCaret(int target, bool extend) {
+    if (extend) {
+        if (g_CodexSearchAnchor < 0) g_CodexSearchAnchor = g_CodexSearchCaret;
+        g_CodexSearchCaret = target;
+        if (g_CodexSearchCaret == g_CodexSearchAnchor) g_CodexSearchAnchor = -1;
+    } else {
+        g_CodexSearchCaret = target;
+        g_CodexSearchAnchor = -1;
+    }
+}
+inline void CodexSearchMoveLeft(bool extend) {
+    if (!extend && CodexSearchHasSelection())
+        CodexSearchMoveCaret(CodexSearchSelectionStart(), false);
+    else CodexSearchMoveCaret(CodexSearchPreviousBoundary(g_CodexSearchCaret), extend);
+}
+inline void CodexSearchMoveRight(bool extend) {
+    if (!extend && CodexSearchHasSelection())
+        CodexSearchMoveCaret(CodexSearchSelectionEnd(), false);
+    else CodexSearchMoveCaret(CodexSearchNextBoundary(g_CodexSearchCaret), extend);
+}
+inline void CodexSearchMoveHome(bool extend) { CodexSearchMoveCaret(0, extend); }
+inline void CodexSearchMoveEnd(bool extend) { CodexSearchMoveCaret(g_CodexSearchLen, extend); }
+inline void CodexSearchSelectAll() {
+    g_CodexSearchAnchor = 0;
+    g_CodexSearchCaret = g_CodexSearchLen;
+    if (g_CodexSearchLen == 0) g_CodexSearchAnchor = -1;
+}
+inline std::wstring CodexSearchSelectedText() {
+    if (!CodexSearchHasSelection()) return L"";
+    return std::wstring(g_CodexSearch + CodexSearchSelectionStart(),
+                        g_CodexSearch + CodexSearchSelectionEnd());
+}
+inline void CodexSearchInsertText(const wchar_t* text) {
+    if (!text) return;
+    CodexSearchDeleteSelection();
+    for (int i = 0; text[i] && g_CodexSearchLen < 63; ++i) {
+        const wchar_t ch = text[i];
+        if (ch < 32 || ch == 127) continue;
+        const int units = (ch >= 0xD800 && ch <= 0xDBFF &&
+                           text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF) ? 2 : 1;
+        if (g_CodexSearchLen + units > 63) break;
+        for (int j = g_CodexSearchLen; j >= g_CodexSearchCaret; --j)
+            g_CodexSearch[j + units] = g_CodexSearch[j];
+        g_CodexSearch[g_CodexSearchCaret++] = ch;
+        ++g_CodexSearchLen;
+        if (units == 2) {
+            g_CodexSearch[g_CodexSearchCaret++] = text[++i];
+            ++g_CodexSearchLen;
+        }
+    }
+    g_CodexSearchAnchor = -1;
+}
+inline void CodexSearchInsertCodepoint(unsigned int cp) {
+    if (cp < 32 || cp == 127 || cp > 0x10FFFF) return;
+    wchar_t chars[3] = {};
+    if (cp <= 0xFFFF) chars[0] = (wchar_t)cp;
+    else {
+        cp -= 0x10000;
+        chars[0] = (wchar_t)(0xD800 + (cp >> 10));
+        chars[1] = (wchar_t)(0xDC00 + (cp & 0x3FF));
+    }
+    CodexSearchInsertText(chars);
+}
+inline void CodexSearchBackspace() {
+    if (CodexSearchHasSelection()) CodexSearchDeleteSelection();
+    else if (g_CodexSearchCaret > 0)
+        CodexSearchEraseRange(CodexSearchPreviousBoundary(g_CodexSearchCaret), g_CodexSearchCaret);
+}
+inline void CodexSearchDeleteForward() {
+    if (CodexSearchHasSelection()) CodexSearchDeleteSelection();
+    else if (g_CodexSearchCaret < g_CodexSearchLen)
+        CodexSearchEraseRange(g_CodexSearchCaret, CodexSearchNextBoundary(g_CodexSearchCaret));
+}
 
 inline bool CodexMatch(const wchar_t* name) {
     if (g_CodexSearchLen == 0) return true;
@@ -41,6 +164,10 @@ inline bool CodexMatchAny(const wchar_t* const* names, int count) {
     return false;
 }
 
+inline bool CodexSearchMatchesAny(const wchar_t* const* names, int count) {
+    return CodexMatchAny(names, count);
+}
+
 // ── 증강 발견 (ALL_AUGS 인덱스 기준) ──
 inline bool g_AugSeen[AUG_TOTAL] = { false };
 inline bool g_CodexDirty   = false;
@@ -56,7 +183,7 @@ inline bool CodexAugSeen(int augIdx) {
     return g_AugSeen[augIdx];
 }
 
-// ── 적 도감 목록 (현재 등장하는 6종) ──
+// ── 새 적은 enum, kRosterOrder, CODEX_MOB_PROFILES에 추가하면 두 UI에 반영된다. ──
 enum CodexMobId {
     CM_ROTOR,
     CM_GENESIS,
@@ -66,6 +193,7 @@ enum CodexMobId {
     CM_QUASAR,
     CM_COUNT
 };
+
 
 struct CodexMobProfile {
     const wchar_t* name[3];
@@ -200,6 +328,41 @@ inline bool CodexMobSeen(int id) {
     return g_MobSeen[id];
 }
 
+inline long long CodexMobKillCount(int id) {
+    if (id < 0 || id >= CM_COUNT) return 0;
+    return g_MobKillCounts[id] + g_RunMobKillCounts[id];
+}
+
+inline long long CodexMobKillThreshold(int id, int milestone) {
+    const int tier = CodexMobTier(id);
+    if (tier < 1 || milestone < 0 || milestone > 2) return 0;
+    static const long long kThresholds[3][3] = {
+        { 1, 500, 2000 },
+        { 1, 50, 400 },
+        { 1, 20, 100 },
+    };
+    return kThresholds[tier - 1][milestone];
+}
+
+// 0=overview locked, 1=overview, 2=combat stats, 3=full profile.
+inline int CodexMobDataStage(int id) {
+    if (id < 0 || id >= CM_COUNT) return 0;
+    const long long kills = CodexMobKillCount(id);
+    if (CodexFullReveal()) return 3;
+    if (kills >= CodexMobKillThreshold(id, 2)) return 3;
+    if (kills >= CodexMobKillThreshold(id, 1)) return 2;
+    if (kills >= CodexMobKillThreshold(id, 0)) return 1;
+    return 0;
+}
+
+inline const wchar_t* CodexLocalizedText(const wchar_t* kr, const wchar_t* en,
+                                         const wchar_t* jp) {
+    int li = (int)g_Language;
+    if (li < 0 || li >= LANG_COUNT) li = 0;
+    const wchar_t* text[3] = { kr, en, jp };
+    return text[li];
+}
+
 inline const wchar_t* const* MobLocalizedNames(int id) {
     const CodexMobProfile* profile = CodexMobProfileFor(id);
     return profile ? profile->name : nullptr;
@@ -209,19 +372,36 @@ inline const wchar_t* MobName(int id) {
     const wchar_t* const* names = MobLocalizedNames(id);
     return names ? names[li] : L"???";
 }
+inline bool CodexMobNameUnlocked(int id) {
+    return CodexMobDataStage(id) >= 1;
+}
+inline const wchar_t* CodexMobListLabel(int id) {
+    if (CodexMobNameUnlocked(id)) return MobName(id);
+    if (!CodexMobSeen(id))
+        return CodexLocalizedText(L"미발견", L"UNDISCOVERED", L"未発見");
+    return L"???";
+}
 inline const wchar_t* MobDesc(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
     if (id < 0 || id >= CM_COUNT) return L"???";
     return CODEX_MOB_PROFILES[id].description[li];
 }
 
-// Threat labels are authored per signal, rather than inferred from the enum
-// order.  Enum order is a save/codex identity detail and does not represent
-// combat strength.
+
 inline const wchar_t* MobThreatLabel(int id) {
     const CodexMobProfile* profile = CodexMobProfileFor(id);
     return profile ? profile->threat : L"UNKNOWN";
 }
+
+inline const wchar_t* MobTierLabel(int id) {
+    switch (CodexMobTier(id)) {
+    case 1: return L"1";
+    case 2: return L"2";
+    case 3: return L"3";
+    default: return L"?";
+    }
+}
+
 inline MobKind CodexMobKind(int id) {
     switch (id) {
     case CM_ROTOR:   return MobKind::ROTOR;

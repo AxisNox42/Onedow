@@ -108,16 +108,19 @@ void Scene_Shop(const SceneCtx& c) {
     bool finishBackAfterRender = false;
     if (s_backExit) {
         s_backOutT += dt;
-        if (s_backOutT >= 0.42f) {
-            s_backOutT = 0.42f;
+        if (s_backOutT >= kOutgameTransitionDuration) {
+            s_backOutT = kOutgameTransitionDuration;
             finishBackAfterRender = true;
         }
     }
 
-    const float entryOldOut = Smoothstep(LogoClamp01(g_ShopEntryT / 0.35f));
-    const float entryTreeIn = Smoothstep(LogoClamp01((g_ShopEntryT - 0.20f) / 0.35f));
-    const float entryDetailIn = Smoothstep(LogoClamp01((g_ShopEntryT - 0.34f) / 0.30f));
-    const float backP = s_backExit ? Smoothstep(LogoClamp01(s_backOutT / 0.42f)) : 0.0f;
+    const float entryOldOut = SceneTransitionEase(g_ShopEntryT / kOutgameTransitionDuration);
+    const float entryTreeIn = SceneTransitionEase(
+        (g_ShopEntryT - 0.08f) / (kOutgameTransitionDuration - 0.08f));
+    const float entryDetailIn = SceneTransitionEase(
+        (g_ShopEntryT - 0.14f) / (kOutgameTransitionDuration - 0.14f));
+    const float backP = s_backExit
+        ? SceneTransitionEase(s_backOutT / kOutgameTransitionDuration) : 0.0f;
     const float oldMenuA = s_backExit ? backP : (1.0f - entryOldOut);
     const float wake = s_backExit ? (1.0f - backP) : entryTreeIn;
     const float rightWake = s_backExit ? (1.0f - backP) : entryDetailIn;
@@ -130,8 +133,6 @@ void Scene_Shop(const SceneCtx& c) {
     const float uiS = UiScale(sw, sh);
     const float mainBW = std::min(560.0f * uiS, std::max(420.0f * uiS, sw * 0.34f));
     const float mainBH = 70.0f * uiS;
-    const float mainGap = 15.0f * uiS;
-    const float mainTotalH = 5.0f * mainBH + 4.0f * mainGap;
     const float mainX = std::max(58.0f * uiS, sw * 0.075f);
     const float mainY = MainMenuCommandStartY(sh, uiS);
 
@@ -139,11 +140,12 @@ void Scene_Shop(const SceneCtx& c) {
     const float rootY = mainY;
     const float rootW = std::min(340.0f * uiS, mainBW * 0.66f);
     const float rootH = mainBH;
-    const float rootGap = mainGap;
-    // SHOP keeps its content layout anchored to the original rootY, but the
-    // category rail itself lives in the lower-left corner.
-    const float shopRailY = sh - mainTotalH - 48.0f * uiS;
-    DrawSharedMenuDim(sw, sh, mainX, shopRailY, mainBW, mainTotalH,
+    const float rootGap = 10.0f * uiS;
+    const float shopRailH = (SHOP_TAB_COUNT + 1) * rootH + SHOP_TAB_COUNT * rootGap;
+    // Keep SHOP's Back row on the same lower-left anchor as the lobby and Codex.
+    const float shopRailY = OutgameButtonRailStartY(
+        sh, uiS, SHOP_TAB_COUNT + 1, rootH, rootGap);
+    DrawSharedMenuDim(sw, sh, mainX, shopRailY, mainBW, shopRailH,
                       std::max(oldMenuA, wake), true);
 
     // SHOP keeps the live background visible, but an optional soft backdrop
@@ -175,7 +177,8 @@ void Scene_Shop(const SceneCtx& c) {
     // visible on the left while the selected tab's nodes remain visible beside
     // it. The first tab is selected by default, but is not a separate screen.
     const float categoryA = 1.0f;
-    const float itemA = Smoothstep(LogoClamp01((g_ShopEntryT - 0.20f) / 0.55f));
+    const float itemA = SceneTransitionEase(
+        (g_ShopEntryT - 0.08f) / (kOutgameTransitionDuration - 0.08f));
     const float detailWake = rightWake * itemA;
     if (detailWake > 0.002f) {
         // Keep ARMORY surface-free like the codex: only the connecting
@@ -298,7 +301,7 @@ void Scene_Shop(const SceneCtx& c) {
         // cannot make the static fields disappear and re-render.
         const float textureReveal = s_backExit
             ? std::max(0.0f, 1.0f - backP)
-            : Smoothstep(LogoClamp01(g_ShopEntryT / 0.78f));
+            : SceneTransitionEase(g_ShopEntryT / kOutgameTransitionDuration);
         SetSceneTextureReveal(textureReveal);
         const float staticFieldA = 1.0f;
         const float staticGeometryA = textureReveal;
@@ -483,7 +486,7 @@ void Scene_Shop(const SceneCtx& c) {
         const float categoryWake = wake * categoryA;
         for (int i = 0; i < SHOP_TAB_COUNT + 1; ++i) {
             const bool isBack = i == SHOP_TAB_COUNT;
-            const float tx = railX - 58.0f * itemA;
+            const float tx = railX;
             const float ty = railY + (float)i * (railH + rootGap);
             const float reveal = s_backExit ? wake : MenuCommandReveal(g_ShopEntryT, i);
             float& hovT = isBack ? s_backHov : s_tabHov[i];
@@ -525,7 +528,7 @@ void Scene_Shop(const SceneCtx& c) {
                                    railW, railH, rr, gg, bb, tabRowA, hovT,
                                    selected, selectPulse,
                                    now + (float)i * 0.17f,
-                                   uiS, true, true, false,
+                                   uiS, true, false, false,
                                    routeVariants, 3);
         }
 

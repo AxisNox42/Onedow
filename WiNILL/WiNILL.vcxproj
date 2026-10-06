@@ -192,6 +192,7 @@
     <ClCompile Include="Core\Scenes\SceneMenus.cpp" />
     <ClCompile Include="Core\Scenes\WindowChrome.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Entity\AugmentCatalog.cpp" />
     <ClCompile Include="Entity\PlayerRuntime.cpp" />
     <ClCompile Include="Entity\EnemySpawner.cpp" />
     <ClCompile Include="Entity\ProjectileSystem.cpp" />
@@ -222,6 +223,10 @@
     <ClInclude Include="Core\Codex.h" />
     <ClInclude Include="Core\GameContext.h" />
     <ClInclude Include="Core\Scenes\SceneContext.h" />
+    <ClInclude Include="Core\Scenes\ScenePause.h" />
+    <ClInclude Include="Core\Scenes\SceneRunEnd.h" />
+    <ClInclude Include="Core\Scenes\SceneStart.h" />
+    <ClInclude Include="Core\Scenes\SceneTextContext.h" />
     <ClInclude Include="Core\Scenes\SceneInternal.h" />
     <ClInclude Include="Core\Scenes\SceneSkills.h" />
     <ClInclude Include="Core\Scenes\SceneUI.h" />

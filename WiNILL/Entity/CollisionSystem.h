@@ -115,7 +115,7 @@ public:
                     hitRadius * hitRadius)
                     continue;
 
-                bool isCrit = false;
+                bool isCrit = bullet.lockedDmg > 0.0f && bullet.lockedCrit;
                 const float baseDamage = bullet.lockedDmg > 0.0f
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
@@ -123,7 +123,7 @@ public:
                 const float dealt = std::min(baseDamage, monster->hp);
                 monster->hp -= dealt;
                 SpawnDamageNumber(monster->worldX, monster->worldY, dealt,
-                                  dealt >= 40.0f || isCrit);
+                                  isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,
                             isCrit ? 1.0f : bullet.color.r,
                             isCrit ? 0.85f : bullet.color.g,
@@ -164,7 +164,10 @@ public:
                 if (!keepAlive && bullet.bouncesLeft > 0 &&
                     (rand() % 100) < stats.ricochetChance &&
                     RicochetTo(bullet, monster->worldX, monster->worldY, manager)) {
-                    if (bullet.lockedDmg <= 0.0f) bullet.lockedDmg = baseDamage;
+                    if (bullet.lockedDmg <= 0.0f) {
+                        bullet.lockedDmg = baseDamage;
+                        bullet.lockedCrit = isCrit;
+                    }
                     --bullet.bouncesLeft;
                     keepAlive = true;
                 }
@@ -185,7 +188,7 @@ public:
                     HIT_RADIUS * HIT_RADIUS)
                     continue;
 
-                bool isCrit = false;
+                bool isCrit = bullet.lockedDmg > 0.0f && bullet.lockedCrit;
                 const float baseDamage = bullet.lockedDmg > 0.0f
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
@@ -193,7 +196,7 @@ public:
                 const float dealt = std::min(baseDamage, ranged->hp);
                 ranged->hp -= dealt;
                 SpawnDamageNumber(ranged->worldX, ranged->worldY, dealt,
-                                  dealt >= 40.0f || isCrit);
+                                  isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,
                             isCrit ? 1.0f : bullet.color.r,
                             isCrit ? 0.85f : bullet.color.g,
@@ -243,7 +246,10 @@ public:
                 if (!keepAlive && bullet.bouncesLeft > 0 &&
                     (rand() % 100) < stats.ricochetChance &&
                     RicochetTo(bullet, ranged->worldX, ranged->worldY, manager)) {
-                    if (bullet.lockedDmg <= 0.0f) bullet.lockedDmg = baseDamage;
+                    if (bullet.lockedDmg <= 0.0f) {
+                        bullet.lockedDmg = baseDamage;
+                        bullet.lockedCrit = isCrit;
+                    }
                     --bullet.bouncesLeft;
                     keepAlive = true;
                 }

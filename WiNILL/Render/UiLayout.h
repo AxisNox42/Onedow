@@ -34,6 +34,12 @@ inline float Smoothstep(float t) {
     return t * t * (3.0f - 2.0f * t);
 }
 
+inline constexpr float kOutgameTransitionDuration = 0.40f;
+inline float SceneTransitionEase(float t) {
+    t = std::max(0.0f, std::min(1.0f, t));
+    return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+}
+
 inline float CenterX(float parentW, float childW) { return (parentW - childW) * 0.5f; }
 
 // 중심 좌표 + 창 크기 → 좌상단 (가짜 창 scissor/draw 공용)
