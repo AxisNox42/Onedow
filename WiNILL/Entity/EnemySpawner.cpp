@@ -34,6 +34,12 @@ static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob
     const bool quasarReady = elapsedSeconds >= 45.0f;
     const int quasarChance = elapsedSeconds >= 240.0f ? 8 : 5;
 
+    int gimbalCount = 0;
+    for (auto* existing : monsters.monsters)
+        if (existing->alive && existing->kind == MobKind::GIMBAL) ++gimbalCount;
+    const bool gimbalReady = elapsedSeconds >= 30.0f;
+    const int gimbalChance = elapsedSeconds >= 150.0f ? 14 : 10;
+
     if (gravisReady && gravisCount < 1 && (rand() % 100) < gravisChance) {
         mob.MakeKind(MobKind::GRAVIS);
     } else if (quasarReady && quasarCount < 2 &&
@@ -45,6 +51,9 @@ static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob
             (float)(rand() % (screenWidth > 360 ? screenWidth - 320 : 1));
         mob.spawnAnchorY = 160.0f +
             (float)(rand() % (screenHeight > 360 ? screenHeight - 320 : 1));
+    } else if (gimbalReady && gimbalCount < 3 &&
+               (rand() % 100) < gimbalChance) {
+        mob.MakeKind(MobKind::GIMBAL);
     } else {
         const float swarmT = std::min(1.0f, std::max(0.0f, elapsedSeconds / 300.0f));
         const int swarmChance = 4 + (int)(4.0f * swarmT);

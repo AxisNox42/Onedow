@@ -329,7 +329,7 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
         ADD_FLOAT(bulletSpread); ADD_INT(pierceChance); ADD_INT(mobXpBonus);
         ADD_FLOAT(rotorHpMult); ADD_INT(rotorXpBonus);
 
-        // Keep the debug list aligned with the six live monster signals. The
+        // Keep the debug list aligned with the live monster signals. The
         // close-range values are stored by MobKind, while Scope has its own
         // ranged XP accumulator.
         const auto addMobXp = [&](const wchar_t* label, MobKind kind) {
@@ -344,6 +344,7 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
         addMobXp(L"제네시스 경험치 보너스", MobKind::GENESIS);
         addMobXp(L"스웜 경험치 보너스", MobKind::SWARM);
         addMobXp(L"퀘이사 경험치 보너스", MobKind::QUASAR);
+        addMobXp(L"Gimbal 경험치 보너스", MobKind::GIMBAL);
 
         ADD_FLOAT(xpPerSec); ADD_FLOAT(rmobSpawnDelayBonus);
         ADD_INT(mobCapBonus); ADD_INT(visionStacks); ADD_INT(totalAugs);
@@ -404,7 +405,7 @@ const wchar_t* DebugToolkit::FieldTypeLabel(FieldType type) {
 
 const wchar_t* DebugToolkit::MobLabel(int index) {
     static const wchar_t* labels[] = {
-        L"로터", L"제네시스", L"스웜", L"그라비스", L"퀘이사", L"스코프"
+        L"로터", L"제네시스", L"스웜", L"그라비스", L"퀘이사", L"스코프", L"Gimbal"
     };
     if (index < 0 || index >= (int)(sizeof(labels) / sizeof(labels[0])))
         return L"알 수 없음";
@@ -767,7 +768,7 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
         const float rowStep = SpawnGridStep(p.h);
         const float buttonW = (p.w - 48.0f) * 0.5f;
         const float gap = 16.0f;
-        for (int index = 0; index < 6; ++index) {
+        for (int index = 0; index < 7; ++index) {
             const int col = index & 1;
             const int row = index / 2;
             const float bx = p.x + 16.0f + col * (buttonW + gap);
@@ -786,6 +787,8 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
                     context_.spawnMob(selectedMob_, spawnCount_);
                 else if (selectedMob_ == 5 && context_.spawnRanged)
                     context_.spawnRanged(spawnCount_);
+                else if (selectedMob_ == 6 && context_.spawnMob)
+                    context_.spawnMob((int)MobKind::GIMBAL, spawnCount_);
                 std::wstring message = L"소환 완료: ";
                 message += MobLabel(selectedMob_);
                 message += L" x";
@@ -967,7 +970,7 @@ void DebugToolkit::RenderSpawnTab(float x, float y, float w, float h,
     const float rowStep = SpawnGridStep(h);
     const float buttonW = (w - 48.0f) * 0.5f;
     const float gap = 16.0f;
-    for (int index = 0; index < 6; ++index) {
+    for (int index = 0; index < 7; ++index) {
         const int col = index & 1;
         const int row = index / 2;
         const float bx = x + 16.0f + col * (buttonW + gap);

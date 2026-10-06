@@ -7,6 +7,7 @@ class RangedMob;
 class MonsterManager;
 
 void drawBullet(const Bullet& b);
+void DrawBulletHalos(const std::vector<Bullet>& bullets);
 void drawMob(const Monster* m, float visualTime = -1.0f);
 void drawRangedMob(const RangedMob* r, float visualTime = -1.0f);
 // Render an Astral Log entity preview with the same silhouette as gameplay.

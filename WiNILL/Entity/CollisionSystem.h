@@ -135,10 +135,8 @@ public:
                     float baseScore = 0.0f;
                     MobKillReward(monster->kind, baseXp, baseScore);
                     const float rewardMult = MobRewardMult(monster->kind);
-                    baseXp *= rewardMult;
                     baseScore *= rewardMult;
-                    const long long pickupXp = (long long)(
-                        (baseXp + MobXpBonus(monster->kind, stats)) * stats.xpMult);
+                    const long long pickupXp = MobExperienceReward(monster->kind, stats);
                     SpawnStardust(monster->worldX, monster->worldY,
                                   StardustRewardFor(monster->kind), playerCX,
                                   playerCY, pickupXp);
@@ -203,8 +201,7 @@ public:
                 if (!ranged->alive) {
                     ranged->scored = true;
                     AddKillCombo();
-                    const long long pickupXp = (long long)(
-                        (25.0f + (float)stats.rangedXpBonus) * stats.xpMult);
+                    const long long pickupXp = RangedMob::ExperienceReward(stats);
                     SpawnStardust(ranged->worldX, ranged->worldY, 3,
                                   playerCX, playerCY, pickupXp);
                     stats.RegisterKill();

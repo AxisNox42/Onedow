@@ -252,6 +252,7 @@ enum CodexMobId {
     CM_SWARM,
     CM_GRAVIS,
     CM_QUASAR,
+    CM_GIMBAL,
     CM_COUNT
 };
 
@@ -299,6 +300,11 @@ inline const CodexMobProfile CODEX_MOB_PROFILES[CM_COUNT] = {
       L"HIGH", 2, 576, L"34 / sec (beam), 4 / sec (contact)", L"62-94 px/s",
       { L"2.5초 빔 공격 (재사용 3.2초)", L"2.5s beam (3.2s cooldown)", L"2.5秒ビーム（再使用3.2秒）" },
       { L"중심 코어를 길쭉한 타원 고리와 양쪽 축의 신호점이 감쌉니다.", L"An elongated elliptical ring and axial nodes surround the central core.", L"細長い楕円リングと軸上の信号点が中心コアを囲んでいます。" } },
+    { { L"Gimbal", L"Gimbal", L"ジンバル" },
+      { L"작은 스코프 형상으로 약 1200px 거리를 유지하며 느린 비유도탄 한 발을 쏘는 밝은 민트색 신호", L"A bright mint mini-Scope that holds about 1200px distance and fires one slow unguided shot", L"約1200pxの距離を保ちながら遅い非誘導弾を一発撃つ明るいミント色の小型スコープ" },
+      L"MODERATE", 2, 149, L"8 / shot, 4 / sec (contact)", L"70-105 px/s",
+      { L"스코프처럼 고속 회전 충전 후 비유도탄 1발 발사", L"Charges with Scope-like accelerating rotation before one unguided shot", L"スコープのような加速回転で充填後、非誘導弾を1発発射" },
+      { L"중앙 렌즈와 회전 고리 하나, 네 개의 관측점으로 된 스코프의 소형 형상입니다.", L"A smaller Scope silhouette with one rotating ring, a central lens, and four observation nodes.", L"中央レンズ、1つの回転リング、4つの観測点を備えた小型スコープ形状です。" } },
 };
 
 inline const CodexMobProfile* CodexMobProfileFor(int id) {
@@ -355,6 +361,7 @@ inline CodexMobId CodexMobIdForKind(MobKind k) {
     case MobKind::SWARM:   return CM_SWARM;
     case MobKind::GRAVIS:  return CM_GRAVIS;
     case MobKind::QUASAR:  return CM_QUASAR;
+    case MobKind::GIMBAL:  return CM_GIMBAL;
     default:               return CM_COUNT;
     }
 }
@@ -362,7 +369,7 @@ inline CodexMobId CodexMobIdForKind(MobKind k) {
 template <typename Fn>
 inline void ForEachCodexMobEntry(Fn&& fn) {
     static constexpr CodexMobId kRosterOrder[] = {
-        CM_ROTOR, CM_SCOPE, CM_SWARM, CM_GENESIS, CM_GRAVIS, CM_QUASAR
+        CM_ROTOR, CM_SCOPE, CM_GIMBAL, CM_SWARM, CM_GENESIS, CM_GRAVIS, CM_QUASAR
     };
     for (CodexMobId id : kRosterOrder) fn((int)id);
 }
@@ -470,6 +477,7 @@ inline MobKind CodexMobKind(int id) {
     case CM_SWARM:   return MobKind::SWARM;
     case CM_GRAVIS:  return MobKind::GRAVIS;
     case CM_QUASAR:  return MobKind::QUASAR;
+    case CM_GIMBAL:  return MobKind::GIMBAL;
     default:         return MobKind::ROTOR;
     }
 }

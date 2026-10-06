@@ -133,64 +133,12 @@ inline void SpawnEnemyExplosion(float ex, float ey,
     }
 }
 
-// ── 처치 연출 — "프로세스 종료" 플로팅 태그 ──
-struct KillTag {
-    float x, y;
-    float life, maxLife;
-    float r, g, b;
-    float scale;
-    wchar_t text[24];
-    bool  active = false;
-};
-inline constexpr int MAX_KILLTAGS = 24;
-inline KillTag g_KillTags[MAX_KILLTAGS] = {};
-inline float g_KillTagCD = 0.0f;
-
-inline void SpawnKillTag(float x, float y, float r, float g, float b,
-                         const wchar_t* word, bool notable) {
-    if (!notable && g_KillTagCD > 0.0f) return;
-    for (int i = 0; i < MAX_KILLTAGS; i++) {
-        if (g_KillTags[i].active) continue;
-        KillTag& t = g_KillTags[i];
-        t.x = x; t.y = y - 14.0f;
-        t.maxLife = t.life = notable ? 0.9f : 0.6f;
-        t.r = r; t.g = g; t.b = b;
-        t.scale = notable ? 0.8f : 0.58f;
-        wcsncpy_s(t.text, word, _TRUNCATE);
-        t.active = true;
-        if (!notable) g_KillTagCD = 0.05f;
-        return;
-    }
-}
-
 inline void UpdateEnemyFx(float delta) {
     UpdateEnemyParticles(delta);
-    g_KillTagCD -= delta; if (g_KillTagCD < 0.0f) g_KillTagCD = 0.0f;
-    for (auto& t : g_KillTags) {
-        if (!t.active) continue;
-        t.life -= delta;
-        if (t.life <= 0.0f) { t.active = false; continue; }
-        t.y -= 42.0f * delta;
-    }
-}
-
-inline void DrawKillTags(TextRenderer& text, bool visible) {
-    if (!visible) return;
-    for (auto& t : g_KillTags) {
-        if (!t.active) continue;
-        float fr = t.life / t.maxLife;
-        float a  = fr < 0.5f ? (fr / 0.5f) : 1.0f;
-        float sx = W2SX(t.x), sy = W2SY(t.y);
-        float tw = text.Width(t.text, t.scale);
-        text.Draw(t.text, sx - tw * 0.5f, sy, t.scale,
-                  t.r, t.g, t.b, a * 0.95f);
-    }
 }
 
 inline void ResetEnemyFx() {
     ResetEnemyParticles();
-    for (int i = 0; i < MAX_KILLTAGS; i++) g_KillTags[i].active = false;
-    g_KillTagCD = 0.0f;
 }
 
 // 새 게임/리셋 시 호출
@@ -218,6 +166,23 @@ struct StardustPickup {
 inline std::vector<StardustPickup> g_StardustPickups;
 inline float g_StardustHudPulse = 0.0f;
 
+inline void DrawStardustPickups() {
+    for (const auto& dust : g_StardustPickups) {
+        if (!dust.alive) continue;
+        const float radius = (dust.value >= 10 ? 7.0f : dust.value >= 5 ? 5.5f : 4.0f)
+                           * (1.0f + 0.12f * sinf(dust.age * 8.0f));
+        auto diamond = [&](float size, float r, float g, float b, float alpha) {
+            BatchTri(dust.x, dust.y - size, dust.x - size, dust.y,
+                     dust.x + size, dust.y, r, g, b, alpha);
+            BatchTri(dust.x - size, dust.y, dust.x, dust.y + size,
+                     dust.x + size, dust.y, r, g, b, alpha);
+        };
+        diamond(radius * 1.8f, 1.0f, 0.72f, 0.16f, 0.18f);
+        diamond(radius, 1.0f, 0.85f, 0.30f, 0.95f);
+        diamond(radius * 0.38f, 1.0f, 1.0f, 0.88f, 1.0f);
+    }
+}
+
 inline void SpawnStardust(float x, float y, int totalValue,
                           float /*playerX*/, float /*playerY*/,
                           long long xpReward = 0) {
@@ -232,7 +197,7 @@ inline void SpawnStardust(float x, float y, int totalValue,
     for (int denomination : { 10, 5, 1 }) {
         while (totalValue >= denomination) {
             totalValue -= denomination;
-            // 0.18s 동안 사방으로 퍼졌다가 즉시 플레이어 추적 시작
+            // Scatter briefly before the pickup update starts homing.
             const float angle = (float)(rand() % 628) * 0.01f;
             const float speed = 120.0f + (float)(rand() % 80);
             g_StardustPickups.push_back({

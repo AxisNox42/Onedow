@@ -84,9 +84,14 @@ public:
         case MobKind::GENESIS:  tier = 4; break;
         case MobKind::GRAVIS:   tier = 3; break;
         case MobKind::QUASAR:   tier = 3; break;
+        case MobKind::GIMBAL:   tier = 2; break;
         default:                tier = 0; break;
         }
         return tier;
+    }
+
+    void UpdateDeathEffects(float delta) {
+        for (auto* mob : monsters) mob->UpdateDeathEffect(delta);
     }
 
     // mobSpeedMult: 잡몹 추가 속도 배율 (디버프)
@@ -99,7 +104,7 @@ public:
                    float gateWW = -1.0f, float gateWH = -1.0f) {
         for (auto m : monsters)
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
-                      gateWX, gateWY, gateWW, gateWH);
+                      gateWX, gateWY, gateWW, gateWH, &bullets);
 
         UpdateGenesisHives(dt, rotorHpMult);
 
@@ -111,7 +116,8 @@ public:
         monsters.erase(
             std::remove_if(monsters.begin(), monsters.end(),
                 [](Monster* m) {
-                    if (!m->alive && m->scored && m->exploded) {
+                    if (!m->alive && m->scored && m->exploded &&
+                        !m->DeathEffectVisible()) {
                         delete m;
                         return true;
                     }

@@ -1,8 +1,100 @@
 // Headless regression: run with scripts/test_mob_death_fx.ps1.
 #include "Monster.h"
 #include "RangedMob.h"
+#include "../WiNILL/Render/Camera.h"
 #include <cassert>
 #include <cstdio>
+
+int screenWidth = 1920;
+int screenHeight = 1080;
+float g_ViewZoom = 1.0f;
+float g_ViewZoomTarget = 1.0f;
+float g_ZoomCX = 0.0f;
+float g_ZoomCY = 0.0f;
+
+static void CheckGimbalAndWorldDiscCoordinates() {
+    assert(Monster::GIMBAL_PREFERRED_DISTANCE == 700.0f);
+
+    Monster gimbal(0.0f, 0.0f);
+    gimbal.MakeKind(MobKind::GIMBAL);
+    const float margin = 34.0f * gimbal.sizeScale;
+
+    g_ZoomCX = 743.0f;
+    g_ZoomCY = 391.0f;
+    const float worldX = 1267.0f, worldY = -183.0f, worldRadius = 29.0f;
+    for (const float zoom : {1.0f, 0.86f, 0.714f}) {
+        g_ViewZoom = zoom;
+        const WorldDiscProjection projection = ProjectWorldDisc(
+            worldX, worldY, worldRadius);
+        assert(std::abs(ScreenToWorldX(projection.screenX) - worldX) < 0.001f);
+        assert(std::abs(ScreenToWorldY(projection.screenY) - worldY) < 0.001f);
+        assert(std::abs(projection.screenRadius - worldRadius * zoom) < 0.001f);
+        assert(std::abs(projection.worldX + projection.worldSize * 0.5f - worldX) < 0.001f);
+        assert(std::abs(projection.worldY + projection.worldSize * 0.5f - worldY) < 0.001f);
+        assert(std::abs(projection.worldSize - worldRadius * 2.0f) < 0.001f);
+
+        const float left = ScreenToWorldX(0.0f), top = ScreenToWorldY(0.0f);
+        const float right = ScreenToWorldX((float)screenWidth);
+        const float bottom = ScreenToWorldY((float)screenHeight);
+        gimbal.worldX = right + 500.0f;
+        gimbal.worldY = bottom + 500.0f;
+        gimbal.ConstrainGimbalToViewport(left, top, right, bottom);
+        const float sx = W2SX(gimbal.worldX), sy = W2SY(gimbal.worldY);
+        assert(sx >= margin * zoom - 0.001f);
+        assert(sx <= screenWidth - margin * zoom + 0.001f);
+        assert(sy >= margin * zoom - 0.001f);
+        assert(sy <= screenHeight - margin * zoom + 0.001f);
+    }
+
+    float playerHp = 100.0f;
+    Monster farGimbal(1000.0f, 0.0f);
+    farGimbal.MakeKind(MobKind::GIMBAL);
+    farGimbal.gimbalAttackTimer = 10.0f;
+    farGimbal.UpdateGimbal(0.0f, 0.0f, 0.1f, 1000.0f, -1000.0f, 0.0f,
+                          playerHp, 1.0f, nullptr, -1.0f, -1.0f, -1.0f, -1.0f);
+    assert(farGimbal.worldX < 1000.0f);
+    Monster closeGimbal(500.0f, 0.0f);
+    closeGimbal.MakeKind(MobKind::GIMBAL);
+    closeGimbal.gimbalAttackTimer = 10.0f;
+    closeGimbal.UpdateGimbal(0.0f, 0.0f, 0.1f, 500.0f, -500.0f, 0.0f,
+                             playerHp, 1.0f, nullptr, -1.0f, -1.0f, -1.0f, -1.0f);
+    assert(closeGimbal.worldX > 500.0f);
+
+    Monster shootingGimbal(700.0f, 0.0f);
+    shootingGimbal.MakeKind(MobKind::GIMBAL);
+    shootingGimbal.gimbalBursting = true;
+    std::vector<Bullet> bullets;
+    shootingGimbal.UpdateGimbal(0.0f, 0.0f, 0.1f, 700.0f, -700.0f, 0.0f,
+                                playerHp, 1.0f, &bullets,
+                                -1.0f, -1.0f, -1.0f, -1.0f);
+    assert(bullets.size() == 1 && bullets[0].isEnemy);
+    assert(!bullets[0].shootableEnemy && bullets[0].sizeScale > 0.0f);
+
+    g_ZoomCX = g_ZoomCY = 0.0f;
+    g_ViewZoom = g_ViewZoomTarget = 1.0f;
+}
+
+static void CheckBulletHaloLayers() {
+    Bullet regular(10.0f, 20.0f, 30.0f, 40.0f);
+    Bullet missile(10.0f, 20.0f, 30.0f, 40.0f);
+    missile.rainMissile = true;
+    Bullet crescent(10.0f, 20.0f, 30.0f, 40.0f);
+    crescent.crescentBlade = true;
+    crescent.traveled = 240.0f;
+
+    for (const Bullet* bullet : {&regular, &missile, &crescent}) {
+        const BulletHaloStyle style = GetBulletHaloStyle(*bullet);
+        assert(style.innerRadius > 0.0f);
+        assert(std::abs(style.outerRadius - style.innerRadius * 2.0f) < 0.001f);
+        assert(style.outerAlpha > 0.0f && style.outerAlpha < style.innerAlpha);
+    }
+    assert(std::abs(GetBulletHaloStyle(regular).innerAlpha - 0.20f) < 0.001f);
+    assert(std::abs(GetBulletHaloStyle(missile).innerAlpha - 0.18f) < 0.001f);
+    assert(std::abs(GetBulletHaloStyle(crescent).innerAlpha - 0.10f) < 0.001f);
+    assert(std::abs(GetBulletHaloStyle(regular).outerAlpha - 0.07f) < 0.001f);
+    assert(std::abs(GetBulletHaloStyle(missile).outerAlpha - 0.063f) < 0.001f);
+    assert(std::abs(GetBulletHaloStyle(crescent).outerAlpha - 0.035f) < 0.001f);
+}
 
 static int ActiveCount() {
     int count = 0;
@@ -35,6 +127,7 @@ static void CheckRoster() {
             Monster mob(100.0f, 200.0f);
             mob.MakeKind(kind);
             mob.quasarState = 3;
+            mob.alive = false;
             mob.SpawnDeathEffect(2.0f, reduced);
             const int count = ActiveCount();
             assert(count > 0 && mob.exploded);
@@ -71,7 +164,8 @@ static void CheckRoster() {
         const int count = ActiveCount();
         assert(count > 0);
         for (const auto& p : g_EnemyParts) if (p.active) {
-            assert(p.radiusLimit / 1.5f < RangedMob::VISUAL_BASE_PX * 1.6f);
+            assert(std::abs(p.radiusLimit - RangedMob::VISUAL_BASE_PX
+                            * 1.35f * 1.7f * 2.0f) < 0.001f);
             assert(p.delay == 0.0f);
         }
         scope.SpawnDeathEffect();
@@ -111,6 +205,7 @@ static void CheckPriorityAndDelay() {
     ResetEnemyParticles();
     Monster stagedMob(10.0f, 20.0f);
     stagedMob.MakeKind(MobKind::GENESIS);
+    stagedMob.alive = false;
     stagedMob.SpawnDeathEffect(0.0f);
     EnemyParticle* delayed = nullptr;
     for (auto& p : g_EnemyParts) if (p.active && p.delay > 0.0f) { delayed = &p; break; }
@@ -125,6 +220,8 @@ static void CheckPriorityAndDelay() {
 
 int main() {
     srand(7);
+    CheckGimbalAndWorldDiscCoordinates();
+    CheckBulletHaloLayers();
     CheckRoster();
     CheckPriorityAndDelay();
     ResetEnemyParticles();
@@ -142,5 +239,5 @@ int main() {
     assert(ActiveCount() > 0 && g_EnemyParts[0].originX == 50.0f);
     UpdateEnemyParticles(0.8f);
     assert(ActiveCount() == 0);
-    std::printf("PASS: original pool/motion, six particle presets, bounds, stages, priority, lifetime, duplicate/deleted mobs. Pool: %zu bytes.\n", sizeof(g_EnemyParts));
+    std::printf("PASS: Gimbal range, zoomed viewport clamp and CircleTexture coordinates; particle pool/presets/bounds/lifetime. Pool: %zu bytes.\n", sizeof(g_EnemyParts));
 }

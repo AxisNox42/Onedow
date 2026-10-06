@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <cmath>
 
@@ -68,3 +69,25 @@ public:
         }
     }
 };
+
+struct BulletHaloStyle {
+    float innerRadius;
+    float innerAlpha;
+    float outerRadius;
+    float outerAlpha;
+};
+
+inline BulletHaloStyle GetBulletHaloStyle(const Bullet& bullet) {
+    const float r = 4.8f * bullet.sizeScale;
+    float innerRadius = r * 3.1f;
+    float innerAlpha = 0.20f;
+    if (bullet.rainMissile) {
+        innerRadius = std::max(innerRadius, 22.0f * bullet.sizeScale);
+        innerAlpha = 0.18f;
+    } else if (bullet.crescentBlade) {
+        const float grow = std::min(3.8f, 1.0f + bullet.traveled / 160.0f);
+        innerRadius = r * 4.0f * grow + 20.0f;
+        innerAlpha = 0.10f;
+    }
+    return { innerRadius, innerAlpha, innerRadius * 2.0f, innerAlpha * 0.35f };
+}

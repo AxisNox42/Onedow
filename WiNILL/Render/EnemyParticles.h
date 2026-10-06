@@ -61,14 +61,19 @@ struct EnemyParticle {
 inline constexpr int MAX_ENEMY_PARTS = 1024;
 inline EnemyParticle g_EnemyParts[MAX_ENEMY_PARTS] = {};
 
+inline float MobDeathParticleRadius(float visualBaseRadius) {
+    return visualBaseRadius * 1.35f * 1.7f;
+}
+
 struct EnemyParticleBurst {
     int count = 10, directions = 0;
     float life = 0.20f, speedMin = 100.0f, speedMax = 250.0f;
     float sizeMin = 3.0f, sizeMax = 6.0f;
     float startRadius = 0.0f, phase = 0.0f, jitter = 0.25f;
     float tangent = 0.0f, delay = 0.0f, colorLift = 0.0f;
-    float rangeScale = 1.5f;
+    float rangeScale = 2.0f;
     bool inward = false;
+    bool randomPlacement = false;
 };
 
 inline void ClampEnemyParticleRange(EnemyParticle& p) {
@@ -118,9 +123,17 @@ inline void SpawnEnemyParticleBurst(float x, float y, glm::vec3 color,
         auto* slot = FindEnemyParticleSlot(range);
         if (!slot) break;
         const int directions = burst.directions > 0 ? burst.directions : count;
-        const float angle = burst.phase + (float)(i % directions) * 6.2831853f / directions
+        const float angle = burst.phase + (burst.randomPlacement
+                          ? (float)(rand() % 10001) / 10000.0f * 6.2831853f
+                          : (float)(i % directions) * 6.2831853f / directions)
                           + ((float)(rand() % 101) / 100.0f - 0.5f) * burst.jitter;
         const float ox = cosf(angle), oy = sinf(angle);
+        const float originAngle = burst.randomPlacement
+            ? (float)(rand() % 10001) / 10000.0f * 6.2831853f : angle;
+        const float startDistance = bodyRadius * burst.startRadius *
+            (burst.randomPlacement ? std::sqrt((float)(rand() % 10001) / 10000.0f) : 1.0f);
+        const float particleLife = life * (burst.randomPlacement
+            ? 0.80f + (float)(rand() % 101) / 100.0f * 0.20f : 1.0f);
         const float speed = burst.speedMin + (burst.speedMax - burst.speedMin)
                           * (float)(rand() % 101) / 100.0f;
         const float size = std::clamp(burst.sizeMin + (burst.sizeMax - burst.sizeMin)
@@ -128,11 +141,11 @@ inline void SpawnEnemyParticleBurst(float x, float y, glm::vec3 color,
         const float radial = burst.inward ? -speed : speed;
         const float lift = std::clamp(burst.colorLift, 0.0f, 0.65f);
         *slot = {
-            x + ox * bodyRadius * burst.startRadius,
-            y + oy * bodyRadius * burst.startRadius,
+            x + cosf(originAngle) * startDistance,
+            y + sinf(originAngle) * startDistance,
             ox * radial - oy * speed * burst.tangent,
             oy * radial + ox * speed * burst.tangent,
-            life, life, size,
+            particleLife, particleLife, size,
             color.r + (1.0f - color.r) * lift,
             color.g + (1.0f - color.g) * lift,
             color.b + (1.0f - color.b) * lift,

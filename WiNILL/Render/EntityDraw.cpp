@@ -92,17 +92,19 @@ bool inWin(float x, float y, float rx, float ry, float rw, float rh, float margi
            y >= ry - margin && y <= ry + rh + margin;
 }
 
+static void DrawDiscWithTexture(float x, float y, float radius,
+                                float r, float g, float b, float alpha,
+                                GLuint texture);
+
 void drawBullet(const Bullet& b) {
-    float r = 6.0f * b.sizeScale;
+    float r = 4.8f * b.sizeScale;
     if (b.rainMissile && g_RainMissileTex) {
-        float z   = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
-        float sx  = W2SX(b.x), sy = W2SY(b.y);
         float ang = std::atan2(b.dirX, -b.dirY);
-        float hw  = 13.0f * z, hh = 17.0f * z;
         drawCircle(b.x - b.dirX * 10.0f, b.y - b.dirY * 10.0f, r * 1.3f,
                    1.0f, 0.6f, 0.2f, 0.5f);
         BatchFlush();
-        DrawIconRot(g_RainMissileTex, sx, sy, hw, hh, ang,
+        // The main projection already applies camera zoom to world geometry.
+        DrawIconRot(g_RainMissileTex, b.x, b.y, 12.0f, 15.5f, ang,
                     b.color.r, b.color.g, b.color.b, 1.0f);
         BindMainShader();
         return;
@@ -182,22 +184,72 @@ static void DrawEnemyWirePolygon(const float* vx, const float* vy, int count,
     }
 }
 
-static void DrawEnemyDiscWithTexture(float x, float y, float radius,
-                                     float r, float g, float b, float alpha,
-                                     GLuint texture) {
+static void DrawDiscWithTexture(float x, float y, float radius,
+                                float r, float g, float b, float alpha,
+                                GLuint texture) {
     if (texture && g_IconProg) {
         // Icon rendering changes the GL pass. Flush the pending geometry so
         // each textured halo remains behind the node that owns it.
         BatchFlush();
-        // DrawIcon uses a top-left origin, while enemy geometry uses a
-        // world-space center. Convert the radius to screen space and center
-        // the quad on the same anchor as the core and line endpoints.
-        const float screenRadius = radius * std::max(0.01f, g_ViewZoom);
-        DrawIcon(texture, W2SX(x) - screenRadius,
-                 W2SY(y) - screenRadius, screenRadius * 2.0f,
-                 screenRadius * 2.0f, r, g, b, alpha);
+        // DrawIcon shares g_MainOrtho with world geometry, so keep this quad
+        // in world space and let the camera apply zoom exactly once.
+        const WorldDiscProjection projection = ProjectWorldDisc(x, y, radius);
+        DrawIcon(texture, projection.worldX, projection.worldY,
+                 projection.worldSize, projection.worldSize,
+                 r, g, b, alpha);
     } else {
         drawCircle(x, y, radius, r, g, b, alpha);
+    }
+}
+
+void DrawBulletHalos(const std::vector<Bullet>& bullets) {
+    const GLuint texture = g_ConstellationCircleTex
+        ? g_ConstellationCircleTex : g_InGameCircleTex;
+    static std::vector<IconBatchQuad> outerQuads;
+    static std::vector<IconBatchQuad> innerQuads;
+    static std::vector<IconBatchQuad> quads;
+    outerQuads.clear();
+    innerQuads.clear();
+    outerQuads.reserve(bullets.size());
+    innerQuads.reserve(bullets.size());
+    quads.clear();
+    quads.reserve(bullets.size() * 2u);
+    for (const auto& bullet : bullets) {
+        if (!bullet.active) continue;
+        const BulletHaloStyle style = GetBulletHaloStyle(bullet);
+        const WorldDiscProjection outer = ProjectWorldDisc(
+            bullet.x, bullet.y, style.outerRadius);
+        if (outer.screenX + outer.screenRadius < 0.0f ||
+            outer.screenX - outer.screenRadius > (float)screenWidth ||
+            outer.screenY + outer.screenRadius < 0.0f ||
+            outer.screenY - outer.screenRadius > (float)screenHeight)
+            continue;
+
+        if (texture && g_IconBatchProg) {
+            const WorldDiscProjection inner = ProjectWorldDisc(
+                bullet.x, bullet.y, style.innerRadius);
+            outerQuads.push_back({outer.worldX, outer.worldY,
+                                  outer.worldSize, outer.worldSize,
+                                  bullet.color.r, bullet.color.g, bullet.color.b,
+                                  style.outerAlpha});
+            innerQuads.push_back({inner.worldX, inner.worldY,
+                                  inner.worldSize, inner.worldSize,
+                                  bullet.color.r, bullet.color.g, bullet.color.b,
+                                  style.innerAlpha});
+        } else {
+            drawCircle(bullet.x, bullet.y, style.outerRadius,
+                       bullet.color.r, bullet.color.g, bullet.color.b,
+                       style.outerAlpha * 0.35f);
+            drawCircle(bullet.x, bullet.y, style.innerRadius,
+                       bullet.color.r, bullet.color.g, bullet.color.b,
+                       style.innerAlpha * 0.35f);
+        }
+    }
+    if (texture && g_IconBatchProg) {
+        quads.clear();
+        quads.insert(quads.end(), outerQuads.begin(), outerQuads.end());
+        quads.insert(quads.end(), innerQuads.begin(), innerQuads.end());
+        DrawIconBatch(texture, quads);
     }
 }
 
@@ -242,6 +294,9 @@ void QueueMonsterSightFront(const Monster* m) {
     } else if (m->kind == MobKind::QUASAR) {
         alpha = 0.18f;
         radiusScale = 3.05f;
+    } else if (m->kind == MobKind::GIMBAL) {
+        alpha = 0.19f;
+        radiusScale = 2.35f;
     }
     QueueEnemySightFront(m->worldX, m->worldY, base * radiusScale,
                          r, g, b, alpha);
@@ -265,18 +320,19 @@ void FlushEnemySightFrontBatch() {
         return;
     }
 
-    const float zoom = std::max(0.01f, g_ViewZoom);
     static std::vector<IconBatchQuad> quads;
     quads.clear();
     quads.reserve(g_EnemySightFrontMarkers.size());
     for (const auto& marker : g_EnemySightFrontMarkers) {
-        const float radius = marker.radius * zoom;
-        const float sx = W2SX(marker.x);
-        const float sy = W2SY(marker.y);
-        if (sx + radius < 0.0f || sx - radius > (float)screenWidth ||
-            sy + radius < 0.0f || sy - radius > (float)screenHeight)
+        const WorldDiscProjection projection = ProjectWorldDisc(
+            marker.x, marker.y, marker.radius);
+        if (projection.screenX + projection.screenRadius < 0.0f ||
+            projection.screenX - projection.screenRadius > (float)screenWidth ||
+            projection.screenY + projection.screenRadius < 0.0f ||
+            projection.screenY - projection.screenRadius > (float)screenHeight)
             continue;
-        quads.push_back({sx - radius, sy - radius, radius * 2.0f, radius * 2.0f,
+        quads.push_back({projection.worldX, projection.worldY,
+                         projection.worldSize, projection.worldSize,
                          marker.r, marker.g, marker.b, marker.alpha});
     }
     // Colored sight fields are light emitters. Additive blending keeps dense
@@ -293,8 +349,8 @@ static void DrawBlackSightRear(float x, float y, float foregroundRadius,
     if (foregroundRadius <= 0.0f || foregroundRadius != foregroundRadius) return;
     const GLuint rearTexture = g_InGameCircleTex ? g_InGameCircleTex
                                                   : g_ConstellationCircleTex;
-    DrawEnemyDiscWithTexture(x, y, foregroundRadius * kSightRearScale,
-                             0.0f, 0.0f, 0.0f, alpha, rearTexture);
+    DrawDiscWithTexture(x, y, foregroundRadius * kSightRearScale,
+                        0.0f, 0.0f, 0.0f, alpha, rearTexture);
 }
 
 void DrawEnemySightRear(float x, float y, float foregroundRadius,
@@ -321,7 +377,6 @@ void DrawEnemySightRearBatch(const std::vector<EnemySightRearMarker>& markers,
         return;
     }
 
-    const float zoom = std::max(0.01f, g_ViewZoom);
     static std::vector<IconBatchQuad> quads;
     quads.clear();
     quads.reserve(markers.size());
@@ -329,17 +384,18 @@ void DrawEnemySightRearBatch(const std::vector<EnemySightRearMarker>& markers,
         if (marker.foregroundRadius <= 0.0f ||
             marker.foregroundRadius != marker.foregroundRadius) continue;
 
-        const float screenRadius = marker.foregroundRadius * kSightRearScale * zoom;
-        const float sx = W2SX(marker.x);
-        const float sy = W2SY(marker.y);
+        const WorldDiscProjection projection = ProjectWorldDisc(
+            marker.x, marker.y, marker.foregroundRadius * kSightRearScale);
         // Off-screen sight fields cannot affect the current frame. Avoid
         // uploading quads for entities still approaching from outside.
-        if (sx + screenRadius < 0.0f || sx - screenRadius > (float)screenWidth ||
-            sy + screenRadius < 0.0f || sy - screenRadius > (float)screenHeight)
+        if (projection.screenX + projection.screenRadius < 0.0f ||
+            projection.screenX - projection.screenRadius > (float)screenWidth ||
+            projection.screenY + projection.screenRadius < 0.0f ||
+            projection.screenY - projection.screenRadius > (float)screenHeight)
             continue;
 
-        quads.push_back({sx - screenRadius, sy - screenRadius,
-                         screenRadius * 2.0f, screenRadius * 2.0f,
+        quads.push_back({projection.worldX, projection.worldY,
+                         projection.worldSize, projection.worldSize,
                          0.0f, 0.0f, 0.0f, alpha});
     }
     DrawIconBatch(rearTexture, quads);
@@ -424,13 +480,14 @@ static void DrawEnemyCore(float x, float y, float size,
 }
 
 static void DrawFilledHexagon(float cx, float cy, float radius,
-                              float r, float g, float b, float alpha) {
+                              float r, float g, float b, float alpha,
+                              float phase = -(float)M_PI * 0.5f) {
     if (radius <= 0.0f || radius != radius) return;
     const float step = 2.0f * (float)M_PI / 6.0f;
-    float px = cx + cosf(-(float)M_PI * 0.5f) * radius;
-    float py = cy + sinf(-(float)M_PI * 0.5f) * radius;
+    float px = cx + cosf(phase) * radius;
+    float py = cy + sinf(phase) * radius;
     for (int i = 1; i <= 6; ++i) {
-        const float angle = -(float)M_PI * 0.5f + step * (float)i;
+        const float angle = phase + step * (float)i;
         const float nx = cx + cosf(angle) * radius;
         const float ny = cy + sinf(angle) * radius;
         BatchTri(cx, cy, px, py, nx, ny, r, g, b, alpha);
@@ -738,10 +795,20 @@ static void DrawEnemyArc(float cx, float cy, float radius,
 }
 
 void drawMob(const Monster* m, float visualTime) {
+    if (!m) return;
+    if (!m->alive) {
+        m->DrawDeathEffect(drawLineQuad, drawCircle,
+            [](float x, float y, float radius, float phase,
+               float r, float g, float b, float alpha) {
+                DrawFilledHexagon(x, y, radius, r, g, b, alpha, phase);
+            });
+        return;
+    }
     MarkMobSeen(m->kind);
     if (m->kind == MobKind::SWARM) MarkMobSeenId(CM_SWARM);
     if (m->kind == MobKind::GRAVIS) MarkMobSeenId(CM_GRAVIS);
     if (m->kind == MobKind::QUASAR) MarkMobSeenId(CM_QUASAR);
+    if (m->kind == MobKind::GIMBAL) MarkMobSeenId(CM_GIMBAL);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     if (visualTime < 0.0f) visualTime = (float)glfwGetTime();
     if (m->kind == MobKind::GENESIS) {
@@ -917,6 +984,49 @@ void drawMob(const Monster* m, float visualTime) {
             : 0.88f + charge * 0.10f;
         DrawGenesisCore(x, y, base * (0.30f + charge * 0.04f),
                         bodyR, bodyG, bodyB, corePulse, false);
+    } else if (m->kind == MobKind::GIMBAL) {
+        // Gimbal uses Scope's circular optic silhouette at a smaller scale.
+        float bodyR = m->color.r, bodyG = m->color.g, bodyB = m->color.b;
+        ApplyMobStyleTint(bodyR, bodyG, bodyB);
+        ApplyMobHitFlash(bodyR, bodyG, bodyB, m->hitFlashTimer);
+        const float x = m->worldX, y = m->worldY;
+        const float phase = m->gimbalVisualAngle +
+                            (float)((size_t)m % 628) * 0.01f;
+        const bool burst = m->gimbalBursting;
+        const float charge = m->gimbalCharging
+            ? std::min(1.0f, m->gimbalChargeAngle /
+                (6.2831853f * Monster::GIMBAL_CHARGE_ROTATIONS))
+            : (burst ? 1.0f : 0.0f);
+        const float instrumentR = base * (1.10f + 0.05f * charge);
+        const float ringAlpha = 0.70f + 0.25f * charge;
+
+        DrawEnemyArc(x, y, instrumentR, phase, 5.45f, 36,
+                     bodyR, bodyG, bodyB, ringAlpha, 1.25f, false);
+
+        EnemyNodeAnchor nodes[4];
+        for (int i = 0; i < 4; ++i) {
+            const float angle = phase + (float)i * 1.5707963f;
+            nodes[i] = { x + cosf(angle) * instrumentR,
+                         y + sinf(angle) * instrumentR,
+                         base * (0.15f + 0.015f * charge),
+                         0.86f + 0.10f * charge +
+                             0.04f * sinf(visualTime * 5.0f + i) };
+        }
+        for (const auto& node : nodes)
+            DrawEnemyNode(node, bodyR, bodyG, bodyB, 0.88f + 0.12f * charge);
+
+        if (burst) {
+            const float pulse = 0.5f + 0.5f *
+                sinf(m->gimbalBurstTimer * 40.0f);
+            drawCircle(x, y, base * (1.5f + 0.25f * pulse),
+                       1.0f, 1.0f, 1.0f, 0.16f * pulse);
+            DrawEnemyCore(x, y, base * (0.38f + 0.08f * pulse),
+                          1.0f, 1.0f, 1.0f, 0.88f + 0.12f * pulse);
+        } else {
+            DrawEnemyCore(x, y, base * (0.33f + charge * 0.05f),
+                          bodyR, bodyG, bodyB,
+                          0.84f + 0.16f * charge, false);
+        }
     } else if (m->kind == MobKind::SWARM) {
         // Swarm: a smaller triangular packet, visually subordinate to Rotor.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
@@ -1042,6 +1152,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         case CM_SWARM:    kind = MobKind::SWARM;    break; // SWARM
         case CM_GRAVIS:  kind = MobKind::GRAVIS;  break;
         case CM_QUASAR:  kind = MobKind::QUASAR;  break; // QUASAR
+        case CM_GIMBAL:  kind = MobKind::GIMBAL;  break;
         default: break;                                // ROTOR
         }
         Monster preview(x, y, 1.0f, 1.0f, false);
@@ -1051,6 +1162,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         preview.hiveOrbitAngle = t * 0.36f;
         preview.gravisVisualAngle = t * 0.18f;
         preview.quasarVisualAngle = t * 0.08f;
+        preview.gimbalVisualAngle = t * 0.24f;
         drawMob(&preview);
     }
     g_SuppressMobSeen = wasSuppressed;

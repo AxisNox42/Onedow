@@ -21,9 +21,9 @@ struct PlayerStats {
     float xpMult           = 1.0f;   // Global experience multiplier.
     float bulletSpread     = 0.0f;   // 발사 시 각도 흔들기 (라디안). 0 = 정확
     int   pierceChance     = 30;     // Pierce chance (%).
-    // The active close-range roster has five MobKind entries. Scope is the
+    // The active close-range roster has six MobKind entries. Scope is the
     // separate ranged mob and uses rangedXpBonus below.
-    static constexpr int MOB_KIND_XP_SLOTS = 5;
+    static constexpr int MOB_KIND_XP_SLOTS = 6;
     int   mobXpBonus       = 0;      // Process kill EXP bonus for generic mob debuffs.
     int   mobKindXpBonus[MOB_KIND_XP_SLOTS] = {};
     float rotorHpMult      = 1.0f;

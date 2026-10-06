@@ -1077,7 +1077,7 @@ int main() {
                 g_Chakrams[i] = ChakramState{};
         },
         [&](int mobKind, int count) {
-            if (mobKind < 0 || mobKind > (int)MobKind::QUASAR) return;
+            if (mobKind < 0 || mobKind > (int)MobKind::GIMBAL) return;
             for (int i = 0; i < count; ++i) {
                 const size_t before = g_MonsterManager.monsters.size();
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight, 160,
@@ -1590,7 +1590,7 @@ int main() {
                 float pCX = g_DeathCX, pCY = g_DeathCY;
                 // 모든 ????��?�키�??�거 (scored/noBlast ?�시 ???�수/?�쇄 ?�산 ????
                 for (auto m : g_MonsterManager.monsters) if (m->alive) {
-                    m->SpawnDeathEffect((float)now);
+                    m->SpawnDeathEffect((float)now, false, false);
                     m->alive = false; m->scored = true; m->noBlast = true;
                 }
                 for (auto r : g_MonsterManager.rangedMobs) if (r->alive) {
@@ -2174,6 +2174,19 @@ CollisionSystem::Update(pCX, pCY,
                     g_GameManager.playerHP,
                     g_GameManager.scoreAccum, g_GameManager.score,
                     g_Stats, g_GameManager.xp);
+                // Apply after crowding, pulls and weapon knockback so these
+                // enemies remain inside the camera's zoom-adjusted viewport.
+                const float genesisLeft = ScreenToWorldX(0.0f);
+                const float genesisTop = ScreenToWorldY(0.0f);
+                const float genesisRight = ScreenToWorldX((float)screenWidth);
+                const float genesisBottom = ScreenToWorldY((float)screenHeight);
+                for (auto* m : g_MonsterManager.monsters)
+                    if (m->alive) {
+                        m->ConstrainGenesisToViewport(genesisLeft, genesisTop,
+                                                      genesisRight, genesisBottom);
+                        m->ConstrainGimbalToViewport(genesisLeft, genesisTop,
+                                                     genesisRight, genesisBottom);
+                    }
                 if (g_Bullets.size() > 2800) {
                     g_Bullets.erase(
                         std::remove_if(g_Bullets.begin(), g_Bullets.end(),
@@ -2220,26 +2233,20 @@ CollisionSystem::Update(pCX, pCY,
                         if (!m->scored) {       // ?�직 보상 ??받�? 죽음 ???�산
                             m->scored = true;
                             float xpB, scB; MobKillReward(m->kind, xpB, scB);
-                            float rwm = MobRewardMult(m->kind); xpB *= rwm; scB *= rwm;
-                            const long long pickupXp = (long long)(
-                                (xpB + MobXpBonus(m->kind, g_Stats))
-                                * g_Stats.xpMult);
+                            float rwm = MobRewardMult(m->kind); scB *= rwm;
+                            const long long pickupXp = MobExperienceReward(m->kind, g_Stats);
                             SpawnStardust(m->worldX, m->worldY,
                                           StardustRewardFor(m->kind), pCX, pCY, pickupXp);
                             creditKill(CodexMobIdForKind(m->kind), scB);
                         }
                         m->SpawnDeathEffect((float)now);
-                        // 처치 ?�출 ???�로?�스 종료 ?�그 (강적?�???�� 강조)
-                        {
-                            static const wchar_t* W[5] =
-                                { L"terminated", L"killed", L"ended", L"exited", L"0x1B" };
-                            SpawnKillTag(m->worldX, m->worldY, 0.85f, 0.95f, 1.0f,
-                                         W[rand() % 5], false);
-                        }
                         // ??��???�리????죽을 ???�져 ?�레?�어?�게 광역 ?�해
                         // ?�쇄 ??��(DEATH_BLAST) ???�망 ?�치?�서 주�? ?�에�?AoE
                         //   ?�프: ?��?지 0.8??.3 + ??���?죽�? 몹�? ?�시 ???�짐(무한?�쇄 차단)
-                        if (g_Stats.deathBlast && !m->noBlast) {
+                        // Genesis deaths emit particles only, including when
+                        // the player's chain-explosion augment is equipped.
+                        if (g_Stats.deathBlast && !m->noBlast &&
+                            m->kind != MobKind::GENESIS) {
                             float blastDmg = g_Stats.GetBaseDamage()
                                            * g_Stats.GetDamageMultiplier() * g_Stats.deathBlastDmgPct;
                             float blastR = 130.0f * g_Stats.deathBlastMult;
@@ -2269,15 +2276,12 @@ CollisionSystem::Update(pCX, pCY,
                     if (!r->alive && !r->exploded) {
                         if (!r->scored) {
                             r->scored = true;
-                            const long long pickupXp = (long long)(
-                                (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                            const long long pickupXp = RangedMob::ExperienceReward(g_Stats);
                             SpawnStardust(r->worldX, r->worldY, 3,
                                           pCX, pCY, pickupXp);
                             creditKill(CM_SCOPE, 300.0f);
                         }
                         r->SpawnDeathEffect();
-                        SpawnKillTag(r->worldX, r->worldY, 1.0f, 0.55f, 0.9f,
-                                     L"popup closed", true);
                     }
                 }
                     const bool atMainCap = !g_CreativeMode
@@ -2432,6 +2436,7 @@ CollisionSystem::Update(pCX, pCY,
             }
 
             UpdateEnemyFx(delta);
+            g_MonsterManager.UpdateDeathEffects(delta);
 
             // 충격???�데?�트
             for (auto& sw : g_ShockWaves) {
@@ -2455,7 +2460,7 @@ CollisionSystem::Update(pCX, pCY,
                 // 수집 판정
                 float dx = pCX - dust.x, dy = pCY - dust.y;
                 float dist = sqrtf(dx * dx + dy * dy);
-                if (dist < 60.0f) {
+                if (dust.age >= 0.12f && dist < 60.0f) {
                     g_GameManager.xp += dust.xpValue;
                     g_GameplayTelemetry.RecordExperience(dust.xpValue);
                     g_Coins += dust.value;
@@ -2781,9 +2786,8 @@ CollisionSystem::Update(pCX, pCY,
                         if (!m->alive) {
                             m->scored = true; AddKillCombo();
                             float bx, bs; MobKillReward(m->kind, bx, bs);
-                            float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
-                            const long long pickupXp = (long long)(
-                                (bx + MobXpBonus(m->kind, g_Stats)) * g_Stats.xpMult);
+                            float rwm = MobRewardMult(m->kind); bs *= rwm;
+                            const long long pickupXp = MobExperienceReward(m->kind, g_Stats);
                             SpawnStardust(m->worldX, m->worldY,
                                           StardustRewardFor(m->kind), pCX, pCY, pickupXp);
                             g_Stats.RegisterKill(); RegisterCodexMobKill(m->kind);
@@ -2798,8 +2802,7 @@ CollisionSystem::Update(pCX, pCY,
                         SpawnDamageNumber(rr->worldX, rr->worldY, dealt, lcrit);
                         if (!rr->alive) {
                             rr->scored = true; AddKillCombo();
-                            const long long pickupXp = (long long)(
-                                (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
+                            const long long pickupXp = RangedMob::ExperienceReward(g_Stats);
                             SpawnStardust(rr->worldX, rr->worldY, 3,
                                           pCX, pCY, pickupXp);
                             g_Stats.RegisterKill(); RegisterCodexMobKill(CM_SCOPE);
@@ -3025,11 +3028,12 @@ CollisionSystem::Update(pCX, pCY,
                 g_GameManager.currentState != GameState::GAMEOVER);
 
         for (auto m : g_MonsterManager.monsters) {
-            if (m->alive) drawMob(m, g_GameTime);
+            if (m->alive || m->DeathEffectVisible()) drawMob(m, g_GameTime);
         }
         for (auto r : g_MonsterManager.rangedMobs) {
             drawRangedMob(r, g_GameTime);
         }
+        DrawBulletHalos(g_Bullets);
         for (auto& b : g_Bullets) {
             if (b.active) drawBullet(b);
         }
@@ -3040,6 +3044,7 @@ CollisionSystem::Update(pCX, pCY,
             float hs = p.size * 0.5f;
             drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
         }
+        DrawStardustPickups();
         for (auto& orb : g_ApproachOrbs) {
             DrawApproachOrb(orb.x, orb.y, g_GameTime);
         }
@@ -3282,8 +3287,6 @@ CollisionSystem::Update(pCX, pCY,
                 g_TextS.Draw(tb, bx0 + 24.0f, by0 + 16.0f, toastScale,
                              1.0f, 0.9f, 0.4f, a);
             }
-
-            DrawKillTags(g_TextS, st == GameState::RUNNING || st == GameState::DYING);
 
             // ?�?�??�리?�이?�브 HUD (게임 �? ??F:증강  G:무적 ?�?�?
             if (g_CreativeMode &&

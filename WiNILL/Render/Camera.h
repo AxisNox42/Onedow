@@ -17,6 +17,21 @@ inline float W2SY(float wy) { return ZCY() + (wy - ZCY()) * g_ViewZoom; }
 inline float ScreenToWorldX(float sx) { return ZCX() + (sx - ZCX()) / g_ViewZoom; }
 inline float ScreenToWorldY(float sy) { return ZCY() + (sy - ZCY()) / g_ViewZoom; }
 
+struct WorldDiscProjection {
+    float worldX, worldY, worldSize;
+    float screenX, screenY, screenRadius;
+};
+
+inline WorldDiscProjection ProjectWorldDisc(float wx, float wy,
+                                            float worldRadius) {
+    const float zoom = g_ViewZoom < 0.01f ? 0.01f : g_ViewZoom;
+    const float radius = worldRadius * zoom;
+    // Textured entity quads use g_MainOrtho, which already applies camera
+    // zoom. Keep their geometry in world space; use screen values for culling.
+    return { wx - worldRadius, wy - worldRadius, worldRadius * 2.0f,
+             W2SX(wx), W2SY(wy), radius };
+}
+
 inline void WorldScissor(float wx, float wy, float ww, float wh) {
     BatchFlush();
     float z  = (g_ViewZoom < 0.01f) ? 0.01f : g_ViewZoom;
