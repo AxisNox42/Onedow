@@ -243,9 +243,6 @@ void Scene_Codex(const SceneCtx& c) {
                  UiTextScale(g_TextL, UiTextLevel::Title, uiS),
                  1.0f, 1.0f, 1.0f, 0.98f * wake);
 
-    drawRect(leftX, panelY + headerH - 2.0f * uiS, panelW, 1.5f * uiS,
-             uiR, uiG, uiB, 0.30f * wake);
-
     // Category tabs: same quiet strip language as RUN CONFIG / ARMORY.
     const float tabGp = 0.0f;
     const float tabW  = (leftW - tabGp * (float)(kCatCount - 1)) / (float)kCatCount;
@@ -491,14 +488,6 @@ void Scene_Codex(const SceneCtx& c) {
     drawRect(rpx + 14.0f*uiS, bodyY + 14.0f*uiS,
              rightW - 28.0f*uiS, bodyH - 28.0f*uiS,
              0.050f, 0.070f, 0.096f, 0.070f * rightWake);
-    float sweepW = rightW * 0.28f;
-    float sweepX = rpx + fmodf(now * 180.0f, rightW + sweepW) - sweepW;
-    drawRect(sweepX, bodyY + 1.0f*uiS, sweepW, 1.5f*uiS,
-             uiR, uiG, uiB, 0.12f*panelE*rightWake);
-    float scanY2 = bodyY + 18.0f*uiS + fmodf(now * 110.0f,
-                   std::max(1.0f, bodyH - 30.0f*uiS));
-    drawRect(rpx + 2.0f*uiS, scanY2, rightW - 4.0f*uiS, 1.0f*uiS,
-             uiR, uiG, uiB, 0.040f*panelE*rightWake);
     if (rightWake > 0.02f) {
         BatchFlush(); SetGlowFx(true);
         drawConstellFrame(rpx, bodyY, rightW, bodyH,
@@ -650,10 +639,6 @@ void Scene_Codex(const SceneCtx& c) {
                                  titleBoxY + 34.0f*uiS,
                                  UiTextScale(g_TextL, UiTextLevel::Title, uiS),
                                  1.0f, 1.0f, 1.0f, 0.96f*detailA);
-                    drawRect(infoX + 18.0f*uiS,
-                             titleBoxY + titleBoxH - 16.0f*uiS,
-                             infoW - 36.0f*uiS, 1.5f*uiS,
-                             uiR, uiG, uiB, 0.28f*detailA);
                     drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
                     g_TextS.Draw(formTitle, infoX + 18.0f*uiS,
                                  descBoxY + 12.0f*uiS, supportingScale,
@@ -679,8 +664,6 @@ void Scene_Codex(const SceneCtx& c) {
                 g_TextL.Draw(MobName(selItem), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,
                              UiTextScale(g_TextL, UiTextLevel::Title, uiS),
                              1.0f, 1.0f, 1.0f, 0.96f*detailA);
-                drawRect(infoX + 18.0f*uiS, titleBoxY + titleBoxH - 16.0f*uiS, infoW - 36.0f*uiS, 1.5f*uiS,
-                         uiR, uiG, uiB, 0.28f*detailA);
                 drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
                 drawWrappedS(MobDesc(selItem),
                              infoX + 18.0f*uiS, descBoxY + 24.0f*uiS,
@@ -753,8 +736,6 @@ void Scene_Codex(const SceneCtx& c) {
                 g_TextL.Draw(AugName(d), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,
                              UiTextScale(g_TextL, UiTextLevel::Title, uiS),
                              1.0f, 1.0f, 1.0f, 0.96f*detailA);
-                drawRect(infoX + 18.0f*uiS, titleBoxY + titleBoxH - 16.0f*uiS, infoW - 36.0f*uiS, 1.5f*uiS,
-                         uiR, uiG, uiB, 0.28f*detailA);
                 drawInfoQuad(infoX, descBoxY, infoW, descBoxH, detailA);
                 drawWrappedS(AugDesc(d), infoX + 18.0f*uiS,
                              descBoxY + 24.0f*uiS, infoW - 36.0f*uiS,
@@ -764,19 +745,11 @@ void Scene_Codex(const SceneCtx& c) {
                 // ── 모듈 데이터 블록 ──
                 {
                     drawInfoQuad(infoX, logBoxY, infoW, logBoxH, detailA);
-                    wchar_t tidBuf[24]; swprintf_s(tidBuf, L"0x%03X", (int)d.type & 0xFFF);
-                    struct { const wchar_t* k; const wchar_t* v; } mlogR[] = {
-                        { L"MODULE_CLASS", GetRarityKR(d.rarity) },
-                        { L"TYPE_ID     ", tidBuf },
-                        { L"ACQUISITION ", L"IN-RUN PICK" },
-                    };
-                    for (int ml = 0; ml < 3; ++ml) {
-                        float mly = logBoxY + 28.0f*uiS + ml * 38.0f*uiS;
-                        const float logScale = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS);
-                        g_TextS.Draw(mlogR[ml].k, infoX + 18.0f*uiS,  mly, logScale, uiR, uiG, uiB, 0.72f*detailA);
-                        g_TextS.Draw(L": ", infoX + 164.0f*uiS,       mly, logScale, uiR, uiG, uiB, 0.54f*detailA);
-                        g_TextS.Draw(mlogR[ml].v, infoX + 188.0f*uiS, mly, logScale, 1.0f, 1.0f, 1.0f, 0.88f*detailA);
-                    }
+                    wchar_t typeBuf[96];
+                    swprintf_s(typeBuf, L"TYPE : %ls", GetRarityKR(d.rarity));
+                    drawFitS(typeBuf, infoX + 18.0f*uiS, logBoxY + 28.0f*uiS,
+                             infoW - 36.0f*uiS, 0.56f*uiS, 0.40f*uiS,
+                             rr, rg, rb, 0.92f*detailA);
                 }
                 if (d.rarity == AugRarity::COMBO) {
                     for (int ci = 0; ci < COMBO_COUNT; ++ci) {
@@ -811,6 +784,15 @@ void Scene_Codex(const SceneCtx& c) {
                 g_TextS.Draw(q[li], infoX + 18.0f*uiS, titleBoxY + 32.0f*uiS,
                              UiTextScale(g_TextS, UiTextLevel::Description, uiS),
                              0.62f, 0.66f, 0.76f, 0.88f*detailA);
+                if (s_cat == 1) {
+                    wchar_t typeBuf[96];
+                    swprintf_s(typeBuf, L"TYPE : %ls",
+                               GetRarityKR(ALL_AUGS[selItem].rarity));
+                    drawFitS(typeBuf, infoX + 18.0f*uiS,
+                             titleBoxY + 64.0f*uiS, infoW - 36.0f*uiS,
+                             0.48f*uiS, 0.38f*uiS,
+                             uiR, uiG, uiB, 0.84f*detailA);
+                }
             }
         }
     }

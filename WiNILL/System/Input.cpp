@@ -1,16 +1,25 @@
 #include "Input.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 #include "GameManager.h"
 #include "Codex.h"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <imm.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <cwctype>
 #include <cstring>
+#include <cmath>
+
+#ifdef _MSC_VER
+#pragma comment(lib, "imm32.lib")
+#endif
 
 extern GameManager g_GameManager;
 extern float g_DevToastTimer;
@@ -23,6 +32,87 @@ float g_ScrollAccum = 0.0f;
 
 wchar_t g_CodexSearch[64] = {0};
 int     g_CodexSearchLen  = 0;
+
+static HWND s_imeHwnd = nullptr;
+static WNDPROC s_glfwWndProc = nullptr;
+static POINT s_imeCompositionPoint = { 16, 16 };
+static POINT s_imeCandidatePoint = { 16, 40 };
+static bool s_imeComposing = false;
+
+static void ApplyCodexImeAnchor(HWND hwnd) {
+    if (!hwnd || !s_imeComposing) return;
+    HIMC context = ImmGetContext(hwnd);
+    if (!context) return;
+    COMPOSITIONFORM composition = {};
+    composition.dwStyle = CFS_POINT;
+    composition.ptCurrentPos = s_imeCompositionPoint;
+    ImmSetCompositionWindow(context, &composition);
+    CANDIDATEFORM candidate = {};
+    candidate.dwIndex = 0;
+    candidate.dwStyle = CFS_CANDIDATEPOS;
+    candidate.ptCurrentPos = s_imeCandidatePoint;
+    ImmSetCandidateWindow(context, &candidate);
+    ImmReleaseContext(hwnd, context);
+}
+
+static void ReadCodexImeComposition(HWND hwnd, LPARAM flags) {
+    if (!g_CodexSearchInputEnabled || (flags & GCS_RESULTSTR)) {
+        CodexSearchClearComposition();
+        return;
+    }
+    if (!(flags & GCS_COMPSTR)) return;
+    HIMC context = ImmGetContext(hwnd);
+    if (!context) return;
+    wchar_t composition[64] = {};
+    const LONG bytes = ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0);
+    const LONG cursorPos = (flags & GCS_CURSORPOS)
+        ? ImmGetCompositionStringW(context, GCS_CURSORPOS, nullptr, 0) : -1;
+    if (bytes > 0) {
+        const LONG capacity = (LONG)(sizeof(composition) - sizeof(wchar_t));
+        const LONG readBytes = ImmGetCompositionStringW(
+            context, GCS_COMPSTR, composition, std::min(bytes, capacity));
+        if (readBytes > 0)
+            composition[std::min<LONG>(readBytes / (LONG)sizeof(wchar_t), 63)] = 0;
+    }
+    ImmReleaseContext(hwnd, context);
+    CodexSearchSetComposition(composition, cursorPos >= 0 ? (int)cursorPos : -1);
+}
+
+static LRESULT CALLBACK InputWindowProc(HWND hwnd, UINT message,
+                                        WPARAM wParam, LPARAM lParam) {
+    if (message == WM_IME_COMPOSITION)
+        ReadCodexImeComposition(hwnd, lParam);
+
+    const LRESULT result = s_glfwWndProc
+        ? CallWindowProcW(s_glfwWndProc, hwnd, message, wParam, lParam)
+        : DefWindowProcW(hwnd, message, wParam, lParam);
+
+    if (message == WM_IME_STARTCOMPOSITION) {
+        s_imeComposing = true;
+        ApplyCodexImeAnchor(hwnd);
+    } else if (message == WM_IME_ENDCOMPOSITION) {
+        s_imeComposing = false;
+        CodexSearchClearComposition();
+    }
+    return result;
+}
+
+void InputSetCodexImeAnchor(float compositionX, float caretX,
+                            float y, float textHeight) {
+    const POINT compositionPoint = {
+        (LONG)std::lround(compositionX), (LONG)std::lround(y)
+    };
+    const POINT candidatePoint = {
+        (LONG)std::lround(caretX), (LONG)std::lround(y + textHeight)
+    };
+    if (compositionPoint.x == s_imeCompositionPoint.x &&
+        compositionPoint.y == s_imeCompositionPoint.y &&
+        candidatePoint.x == s_imeCandidatePoint.x &&
+        candidatePoint.y == s_imeCandidatePoint.y) return;
+    s_imeCompositionPoint = compositionPoint;
+    s_imeCandidatePoint = candidatePoint;
+    ApplyCodexImeAnchor(s_imeHwnd);
+}
 
 static const wchar_t* DEV_CODE = L"develop_mod";
 
@@ -78,6 +168,7 @@ static void InputKeyCallback(GLFWwindow* window, int key, int, int action, int m
         else if (action == GLFW_RELEASE) keys[key] = false;
     }
     if (!g_CodexSearchInputEnabled || (action != GLFW_PRESS && action != GLFW_REPEAT)) return;
+    if (g_CodexSearchCompositionLen > 0) return;
 
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
     const bool shift = (mods & GLFW_MOD_SHIFT) != 0;
@@ -110,6 +201,7 @@ static void InputCharCallback(GLFWwindow*, unsigned int cp) {
         return;
     }
     if (!g_CodexSearchInputEnabled) return;
+    CodexSearchClearComposition();
     CodexSearchInsertCodepoint(cp);
     CodexCheckDevPhrase();
 }
@@ -122,11 +214,33 @@ void InputRegisterCallbacks(GLFWwindow* window) {
     glfwSetKeyCallback(window, InputKeyCallback);
     glfwSetCharCallback(window, InputCharCallback);
     glfwSetScrollCallback(window, InputScrollCallback);
+    InputUnregisterCallbacks(window);
+    s_imeHwnd = glfwGetWin32Window(window);
+    if (s_imeHwnd) {
+        SetLastError(0);
+        const LONG_PTR previous = SetWindowLongPtrW(
+            s_imeHwnd, GWLP_WNDPROC, (LONG_PTR)InputWindowProc);
+        if (previous || GetLastError() == 0)
+            s_glfwWndProc = (WNDPROC)previous;
+        else
+            s_imeHwnd = nullptr;
+    }
+}
+
+void InputUnregisterCallbacks(GLFWwindow*) {
+    if (s_imeHwnd && s_glfwWndProc &&
+        (WNDPROC)GetWindowLongPtrW(s_imeHwnd, GWLP_WNDPROC) == InputWindowProc)
+        SetWindowLongPtrW(s_imeHwnd, GWLP_WNDPROC, (LONG_PTR)s_glfwWndProc);
+    s_imeHwnd = nullptr;
+    s_glfwWndProc = nullptr;
+    s_imeComposing = false;
+    CodexSearchClearComposition();
 }
 
 void InputClearState() {
     std::memset(keys, 0, sizeof(keys));
     g_ScrollAccum = 0.0f;
+    CodexSearchClearComposition();
 }
 
 InputFocusTransition InputUpdateWindowFocus(GLFWwindow* window) {

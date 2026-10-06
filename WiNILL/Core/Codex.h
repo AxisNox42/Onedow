@@ -9,6 +9,7 @@
 #include "Settings.h"  // g_Language, g_CreativeMode
 #include <string>
 #include <cwctype>
+#include <algorithm>
 
 extern bool g_DevUnlocked;   // main.cpp — 도감 develop_mod 해금
 
@@ -19,6 +20,9 @@ inline bool CodexFullReveal() {
 extern wchar_t g_CodexSearch[64];
 extern int     g_CodexSearchLen;
 inline bool    g_CodexSearchInputEnabled = false;
+inline wchar_t g_CodexSearchComposition[64] = {};
+inline int     g_CodexSearchCompositionLen = 0;
+inline int     g_CodexSearchCompositionCaret = 0;
 
 inline int g_CodexSearchCaret = 0;
 inline int g_CodexSearchAnchor = -1;
@@ -35,6 +39,60 @@ inline int CodexSearchSelectionEnd() {
     return CodexSearchHasSelection()
         ? (g_CodexSearchAnchor > g_CodexSearchCaret ? g_CodexSearchAnchor : g_CodexSearchCaret)
         : g_CodexSearchCaret;
+}
+inline void CodexSearchSetComposition(const wchar_t* text, int caret = -1) {
+    g_CodexSearchCompositionLen = 0;
+    g_CodexSearchComposition[0] = 0;
+    g_CodexSearchCompositionCaret = 0;
+    if (!text) return;
+
+    const bool replaceSelection = CodexSearchHasSelection();
+    const int replaceLen = replaceSelection
+        ? CodexSearchSelectionEnd() - CodexSearchSelectionStart() : 0;
+    const int maxLen = std::max(0, 63 - (g_CodexSearchLen - replaceLen));
+    for (int i = 0; text[i] && g_CodexSearchCompositionLen < maxLen; ++i) {
+        const int units = text[i] >= 0xD800 && text[i] <= 0xDBFF &&
+                          text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF ? 2 : 1;
+        if (text[i] < 32 || text[i] == 127) continue;
+        if (g_CodexSearchCompositionLen + units > maxLen) break;
+        g_CodexSearchComposition[g_CodexSearchCompositionLen++] = text[i];
+        if (units == 2)
+            g_CodexSearchComposition[g_CodexSearchCompositionLen++] = text[++i];
+    }
+    g_CodexSearchComposition[g_CodexSearchCompositionLen] = 0;
+    g_CodexSearchCompositionCaret = caret < 0
+        ? g_CodexSearchCompositionLen
+        : std::clamp(caret, 0, g_CodexSearchCompositionLen);
+}
+inline void CodexSearchClearComposition() {
+    g_CodexSearchComposition[0] = 0;
+    g_CodexSearchCompositionLen = 0;
+    g_CodexSearchCompositionCaret = 0;
+}
+inline std::wstring CodexSearchQuery() {
+    if (g_CodexSearchCompositionLen <= 0)
+        return std::wstring(g_CodexSearch, g_CodexSearch + g_CodexSearchLen);
+    const int begin = CodexSearchHasSelection()
+        ? CodexSearchSelectionStart() : g_CodexSearchCaret;
+    const int end = CodexSearchHasSelection()
+        ? CodexSearchSelectionEnd() : g_CodexSearchCaret;
+    std::wstring query;
+    query.reserve((size_t)g_CodexSearchLen + g_CodexSearchCompositionLen);
+    query.append(g_CodexSearch, g_CodexSearch + begin);
+    query.append(g_CodexSearchComposition,
+                 g_CodexSearchComposition + g_CodexSearchCompositionLen);
+    query.append(g_CodexSearch + end, g_CodexSearch + g_CodexSearchLen);
+    return query;
+}
+inline int CodexSearchQueryCaret() {
+    if (g_CodexSearchCompositionLen <= 0) return g_CodexSearchCaret;
+    const int begin = CodexSearchHasSelection()
+        ? CodexSearchSelectionStart() : g_CodexSearchCaret;
+    return begin + g_CodexSearchCompositionCaret;
+}
+inline int CodexSearchCompositionStart() {
+    return CodexSearchHasSelection()
+        ? CodexSearchSelectionStart() : g_CodexSearchCaret;
 }
 inline int CodexSearchPreviousBoundary(int pos) {
     if (pos <= 0) return 0;
@@ -70,6 +128,7 @@ inline void CodexSearchClear() {
     g_CodexSearchLen = 0;
     g_CodexSearchCaret = 0;
     g_CodexSearchAnchor = -1;
+    CodexSearchClearComposition();
 }
 inline void CodexSearchMoveCaret(int target, bool extend) {
     if (extend) {
@@ -105,6 +164,7 @@ inline std::wstring CodexSearchSelectedText() {
 }
 inline void CodexSearchInsertText(const wchar_t* text) {
     if (!text) return;
+    CodexSearchClearComposition();
     CodexSearchDeleteSelection();
     for (int i = 0; text[i] && g_CodexSearchLen < 63; ++i) {
         const wchar_t ch = text[i];
@@ -146,18 +206,19 @@ inline void CodexSearchDeleteForward() {
 }
 
 inline bool CodexMatch(const wchar_t* name) {
-    if (g_CodexSearchLen == 0) return true;
+    const std::wstring query = CodexSearchQuery();
+    if (query.empty()) return true;
     if (!name || !name[0]) return false;
-    std::wstring a(name), b(g_CodexSearch);
+    std::wstring a(name);
     auto lc = [](std::wstring s) {
         for (auto& c : s) if (c < 128) c = (wchar_t)towlower(c);
         return s;
     };
-    return lc(a).find(lc(b)) != std::wstring::npos;
+    return lc(a).find(lc(query)) != std::wstring::npos;
 }
 
 inline bool CodexMatchAny(const wchar_t* const* names, int count) {
-    if (g_CodexSearchLen == 0) return true;
+    if (CodexSearchQuery().empty()) return true;
     if (!names || count <= 0) return false;
     for (int i = 0; i < count; ++i)
         if (CodexMatch(names[i])) return true;

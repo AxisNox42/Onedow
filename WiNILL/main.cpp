@@ -226,11 +226,75 @@ static float ClampPlayerWinSize(float sz) {
     return sz;
 }
 
-float g_WinPrevHP     = -1.0f;    // �?축소??HP 추적
-float g_HpGhost       = -1.0f;    // Delayed gray HP afterimage
-float g_HurtVignette  = 0.0f;     // ?�격 빨간 비네???�여
-float g_HpBarPop      = 0.0f;     // ?�나비식 HP 게이지�????�격 ???�다가 ?�이??�?
-float g_XpBarPop       = 0.0f;     // XP pickup feedback pulse
+float g_WinPrevHP     = -1.0f;    // Previous HP used to detect damage.
+float g_HurtVignette  = 0.0f;     // Remaining hit vignette time.
+float g_HpBarPop      = 0.0f;     // Remaining time to show the circular HP ring.
+
+static void DrawPlayerRadialBars(float cx, float cy, float size,
+                                 float hpFraction, float xpFraction,
+                                 float hpAlpha, float xpAlpha,
+                                 bool xpAtCap) {
+    constexpr int segmentsPerHalf = 36;
+    constexpr float pi = 3.14159265359f;
+    const float hpRadius = std::max(66.0f, size * 2.72f);
+    const float xpRadius = hpRadius + 6.0f;
+    const float halfWidth = std::max(0.98f, size * 0.0385f);
+    hpFraction = std::clamp(hpFraction, 0.0f, 1.0f);
+    xpFraction = std::clamp(xpFraction, 0.0f, 1.0f);
+
+    auto drawSegment = [&](float radius, float start, float end,
+                           float r, float g, float b, float a) {
+        const float inner = radius - halfWidth;
+        const float outer = radius + halfWidth;
+        const float a0 = start;
+        const float a1 = end;
+        const float c0 = cosf(a0), s0 = sinf(a0);
+        const float c1 = cosf(a1), s1 = sinf(a1);
+        const float ox0 = cx + c0 * outer, oy0 = cy + s0 * outer;
+        const float ix0 = cx + c0 * inner, iy0 = cy + s0 * inner;
+        const float ox1 = cx + c1 * outer, oy1 = cy + s1 * outer;
+        const float ix1 = cx + c1 * inner, iy1 = cy + s1 * inner;
+        BatchTri(ox0, oy0, ix0, iy0, ix1, iy1, r, g, b, a);
+        BatchTri(ox0, oy0, ix1, iy1, ox1, oy1, r, g, b, a);
+    };
+
+    auto drawHalf = [&](float radius, float start, float sweep, float fraction,
+                        float r, float g, float b, float alpha) {
+        const float step = sweep / segmentsPerHalf;
+        for (int i = 0; i < segmentsPerHalf; ++i)
+            drawSegment(radius, start + i * step, start + (i + 1) * step,
+                        0.24f, 0.32f, 0.40f, 0.24f);
+
+        const float filled = fraction * segmentsPerHalf;
+        const int fullSegments = (int)filled;
+        for (int i = 0; i < fullSegments; ++i)
+            drawSegment(radius, start + i * step, start + (i + 1) * step,
+                        r, g, b, alpha);
+        if (fullSegments < segmentsPerHalf && filled > fullSegments)
+            drawSegment(radius, start + fullSegments * step,
+                        start + filled * step, r, g, b, alpha);
+    };
+
+    // HP follows the lower semicircle; experience fills the upper one.
+    drawHalf(hpRadius, pi, -pi, hpFraction,
+             1.0f - hpFraction, 0.24f + 0.76f * hpFraction, 0.18f,
+             hpAlpha);
+    drawHalf(xpRadius, pi, pi, xpFraction,
+             xpAtCap ? 1.0f : 0.30f, xpAtCap ? 0.82f : 0.82f,
+             xpAtCap ? 0.30f : 1.0f, xpAlpha);
+}
+
+static void DrawGameplayCrosshair(float x, float y) {
+    const UiColor3 accent = UiCol::ACCENT_CYAN;
+    drawCircle(x, y, 11.0f, 0.0f, 0.0f, 0.0f, 0.72f);
+    drawCircle(x, y, 8.5f, accent.r, accent.g, accent.b, 0.92f);
+    drawCircle(x, y, 6.0f, 0.012f, 0.020f, 0.032f, 0.98f);
+    drawCircle(x, y, 1.8f, 0.96f, 0.99f, 1.0f, 1.0f);
+    drawRect(x - 15.0f, y - 1.0f, 6.0f, 2.0f, accent.r, accent.g, accent.b, 0.96f);
+    drawRect(x + 9.0f, y - 1.0f, 6.0f, 2.0f, accent.r, accent.g, accent.b, 0.96f);
+    drawRect(x - 1.0f, y - 15.0f, 2.0f, 6.0f, accent.r, accent.g, accent.b, 0.96f);
+    drawRect(x - 1.0f, y + 9.0f, 2.0f, 6.0f, accent.r, accent.g, accent.b, 0.96f);
+}
 
 void SyncPlayerBoundsSize(SpatialBounds& pw, float delta, bool animate) {
     if (g_Stats.windowSize < 64.0f)
@@ -1182,12 +1246,11 @@ int main() {
             g_RunStardust       = 0;
             g_LaserBeams.clear(); g_LaserTimer = 0.0f;
             g_StardustPickups.clear(); g_StardustHudPulse = 0.0f;
-            g_XpBarPop = 0.0f;
 
             ResetJuice();
             ResetPlayerSkills();
             g_WindowSizeCur = g_Stats.windowSize;
-            g_WinPrevHP = -1.0f; g_HpGhost = -1.0f;
+            g_WinPrevHP = -1.0f;
             g_PlayerDamagePulse = 0.0f;
             g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // �??�복
@@ -2266,10 +2329,8 @@ CollisionSystem::Update(pCX, pCY,
             }
         }
 
-        // Keep a delayed HP value for the radial afterimage.  Damage snaps
-        // the gray layer to the pre-hit HP; it then eases toward live HP.
-        // Non-combat screens synchronize immediately so upgrades or resets
-        // cannot be mistaken for damage.
+        // Detect damage for the hit feedback. Non-combat screens synchronize
+        // immediately so upgrades or resets cannot be mistaken for damage.
         {
             const GameState hpState = g_GameManager.currentState;
             const bool hpAnimActive = hpState == GameState::RUNNING ||
@@ -2277,11 +2338,9 @@ CollisionSystem::Update(pCX, pCY,
             const float hpNow = std::max(0.0f, g_GameManager.playerHP);
             if (!hpAnimActive) {
                 g_WinPrevHP = hpNow;
-                g_HpGhost = hpNow;
             } else {
                 if (g_WinPrevHP < 0.0f) {
                     g_WinPrevHP = hpNow;
-                    g_HpGhost = hpNow;
                 }
 
                 const float hpBefore = g_WinPrevHP;
@@ -2291,23 +2350,10 @@ CollisionSystem::Update(pCX, pCY,
                     g_PlayerDamagePulse = 0.0f;
                 }
                 if (hpDelta < -0.0001f) {
-                    // Preserve an older afterimage if another hit lands
-                    // before it has finished catching up.
-                    g_HpGhost = std::max(g_HpGhost, hpBefore);
                     g_HurtVignette = 0.5f;
                     g_HpBarPop = 2.2f;
-                } else if (hpDelta > 0.0001f) {
-                    // Healing moves the live gauge immediately; do not leave
-                    // a misleading gray damage segment behind it.
-                    g_HpGhost = hpNow;
                 }
                 g_WinPrevHP = hpNow;
-
-                if (g_HpGhost < 0.0f) g_HpGhost = hpNow;
-                if (g_HpGhost > hpNow) {
-                    const float follow = 1.0f - expf(-7.5f * delta);
-                    g_HpGhost += (hpNow - g_HpGhost) * follow;
-                }
 
                 if (g_HurtVignette > 0.0f) {
                     g_HurtVignette -= delta * 1.6f;
@@ -2374,7 +2420,6 @@ CollisionSystem::Update(pCX, pCY,
 
             // 별가루: 스폰 직후 약간 퍼진 뒤 매 프레임 플레이어 방향으로 재조향 — 무조건 수집.
             g_StardustHudPulse = std::max(0.0f, g_StardustHudPulse - delta * 3.8f);
-            g_XpBarPop = std::max(0.0f, g_XpBarPop - delta * 2.2f);
             for (auto& dust : g_StardustPickups) {
                 if (!dust.alive) continue;
                 dust.age += delta;
@@ -2385,8 +2430,6 @@ CollisionSystem::Update(pCX, pCY,
                 if (dist < 60.0f) {
                     g_GameManager.xp += dust.xpValue;
                     g_GameplayTelemetry.RecordExperience(dust.xpValue);
-                    if (dust.xpValue > 0)
-                        g_XpBarPop = std::max(g_XpBarPop, 1.15f);
                     g_Coins += dust.value;
                     g_RunStardust += dust.value;
                     g_StardustHudPulse = 1.0f;
@@ -2973,6 +3016,23 @@ CollisionSystem::Update(pCX, pCY,
             const float pCY = playerWin.y + playerWin.height * 0.5f;
             const float playerSize = PLAYER_SIZE * g_Stats.playerSizeMult;
             BindMainShader();
+            const GameState healthState = g_GameManager.currentState;
+            if (healthState == GameState::RUNNING || healthState == GameState::PAUSED ||
+                healthState == GameState::AUG_SELECT ||
+                healthState == GameState::DEBUFF_SELECT) {
+                const float hpFraction = std::clamp(g_GameManager.playerHP /
+                    std::max(1.0f, g_Stats.maxHP), 0.0f, 1.0f);
+                const bool xpAtCap = !g_CreativeMode &&
+                    g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
+                const long long xpNeeded = g_ExpSystem.Required(g_GameManager.playerLevel);
+                const float xpFraction = xpAtCap ? 1.0f : (xpNeeded > 0
+                    ? std::clamp((float)g_GameManager.xp / (float)xpNeeded, 0.0f, 1.0f)
+                    : 0.0f);
+                const float hpHit = std::min(1.0f, g_HpBarPop / 0.35f);
+                DrawPlayerRadialBars(pCX, pCY, playerSize, hpFraction, xpFraction,
+                                     0.30f + 0.55f * hpHit,
+                                     xpAtCap ? 0.72f : 0.56f, xpAtCap);
+            }
             DrawPlayerWeaponShell(pCX, pCY, playerSize,
                                   atan2f(wmy - pCY, wmx - pCX));
             BatchFlush();
@@ -3051,50 +3111,7 @@ CollisionSystem::Update(pCX, pCY,
             }
         }
 
-        // Keep health and experience visible on the player's moving playfield.
-        {
-            const GameState barState = g_GameManager.currentState;
-            if (barState == GameState::RUNNING || barState == GameState::PAUSED ||
-                barState == GameState::DYING || barState == GameState::AUG_SELECT ||
-                barState == GameState::DEBUFF_SELECT) {
-                const float pad = 12.0f;
-                const float barX = playerWin.x + pad;
-                const float barW = std::max(8.0f, playerWin.width - pad * 2.0f);
-                constexpr float hpH = 10.0f, xpH = 6.0f, gap = 3.0f;
-                const float hpY = playerWin.y + playerWin.height - 16.0f - hpH;
-                const float xpY = hpY - gap - xpH;
-                const float hpFrac = std::clamp(g_GameManager.playerHP /
-                    std::max(1.0f, g_Stats.maxHP), 0.0f, 1.0f);
-                const long long xpNeed = g_ExpSystem.Required(g_GameManager.playerLevel);
-                const float xpFrac = xpNeed > 0
-                    ? std::clamp((float)g_GameManager.xp / (float)xpNeed, 0.0f, 1.0f)
-                    : 0.0f;
-
-                BindMainShader();
-                drawRect(barX - 2.0f, xpY - 2.0f, barW + 4.0f,
-                         hpY + hpH - xpY + 4.0f, 0.0f, 0.0f, 0.0f, 0.72f);
-                drawRect(barX, hpY, barW, hpH, 0.20f, 0.05f, 0.05f, 0.95f);
-                const float hpR = hpFrac > 0.5f ? 0.1f : 1.0f;
-                const float hpG = hpFrac > 0.5f ? 1.0f : hpFrac * 2.0f;
-                const float hpGhostFrac = std::clamp(g_HpGhost /
-                    std::max(1.0f, g_Stats.maxHP), hpFrac, 1.0f);
-                if (hpGhostFrac > hpFrac)
-                    drawRect(barX + barW * hpFrac, hpY,
-                             barW * (hpGhostFrac - hpFrac), hpH,
-                             0.72f, 0.72f, 0.76f, 0.74f);
-                drawRect(barX, hpY, barW * hpFrac, hpH,
-                         hpR, hpG, 0.1f, 0.97f);
-                drawRect(barX, xpY, barW, xpH, 0.06f, 0.10f, 0.07f, 0.95f);
-                drawRect(barX, xpY, barW * xpFrac, xpH,
-                         0.4f, 1.0f, 0.55f, 0.97f);
-            }
-        }
-
-
-
-        // ?�?�??�기부??UI/?�버?�이: 줌·흔?�기 무시?�고 ?�면 고정 좌표(base ortho)�??�?�?
-        //    (?�리모프 2?�이�?�?0.5 ?�서 쿨다?�칸·메뉴?�·비?�트·?�래?��? 찌그?��???버그 fix)
-        BatchFlush();   // ?�드(�?ortho) ?�형 ?��? 그린 ??base ortho �??�환
+        BatchFlush();   // Restore the base orthographic projection for the HUD.
         glUniformMatrix4fv(g_MainProjLoc, 1, GL_FALSE, g_BaseOrtho);
         memcpy(g_MainOrtho, g_BaseOrtho, sizeof(g_BaseOrtho));
 
@@ -3646,6 +3663,16 @@ CollisionSystem::Update(pCX, pCY,
             g_DebugToolkit.Render((float)screenWidth, (float)screenHeight,
                                   g_GameManager.currentState);
 
+        const GameState crosshairState = g_GameManager.currentState;
+        if (g_ShowCrosshair && !g_DebugToolkit.IsVisible() &&
+            (crosshairState == GameState::RUNNING ||
+             crosshairState == GameState::DYING) &&
+            glfwGetWindowAttrib(window, GLFW_FOCUSED) &&
+            mx >= 0.0 && my >= 0.0 && mx < screenWidth && my < screenHeight) {
+            BindMainShader();
+            DrawGameplayCrosshair((float)mx, (float)my);
+        }
+
         // Keep the physical mouse state for edge detection. `lmb` may be
         // cleared above when the debug toolkit captures input; storing that
         // cleared value makes a held button look like a new click every frame.
@@ -3712,6 +3739,7 @@ CollisionSystem::Update(pCX, pCY,
     Audio::Shutdown();
     PlatformTimerEnd();
     ReleaseWindowTaskbarPolicy(window);
+    InputUnregisterCallbacks(window);
     glfwTerminate();
     return 0;
 }

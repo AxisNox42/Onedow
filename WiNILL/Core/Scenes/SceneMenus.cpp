@@ -33,6 +33,7 @@
 #include "EntityDraw.h"
 #include "Monster.h"
 #include "AugmentSlots.h"
+#include "../../System/Input.h"
 #include "../../Render/Juice.h"
 #include <algorithm>
 #include <vector>

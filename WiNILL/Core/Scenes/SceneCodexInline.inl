@@ -60,7 +60,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         s_dragAccum = 0.0f;
     }
 
-    const std::wstring currentSearch(g_CodexSearch);
+    const std::wstring currentSearch = CodexSearchQuery();
     if (currentSearch != s_prevSearch) {
         s_prevSearch = currentSearch;
         for (int i = 0; i < CAT_COUNT; ++i) {
@@ -302,7 +302,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         bool seen;
         float r, g, b;
     };
-    const bool searchActive = g_CodexSearchLen > 0;
+    const bool searchActive = !currentSearch.empty();
     CItem items[512];
     int itemCount = 0;
     auto addGroup = [&](int category, const wchar_t* label, float r, float g, float b) {
@@ -311,7 +311,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     auto addItem = [&](int category, int key, const wchar_t* label, bool seen,
                        const wchar_t* const* searchNames, int searchNameCount,
                        float r, float g, float b) {
-        if (g_CodexSearchLen > 0 && (!seen ||
+        if (searchActive && (!seen ||
             !CodexSearchMatchesAny(searchNames, searchNameCount))) return;
         if (itemCount < 512)
             items[itemCount++] = { false, category, key, label, seen, r, g, b };
@@ -414,7 +414,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         && my >= searchY && my <= searchY + searchH;
     s_searchHover = UiApproach(s_searchHover, searchHover ? 1.0f : 0.0f, dt, 10.0f);
     const float clearW = 32.0f * uiS;
-    const bool hasSearch = g_CodexSearchLen > 0;
+    const bool hasSearch = searchActive;
     wchar_t searchResultSummary[48] = {};
     if (hasSearch) {
         if (li == 0)
@@ -435,6 +435,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     if (clearHover && searchClick)
         CodexSearchClear();
     g_CodexSearchInputEnabled = s_searchFocused && !s_backExit;
+    if (!g_CodexSearchInputEnabled) CodexSearchClearComposition();
 
     BindMainShader();
     const wchar_t* searchTitle = s_searchFocused
@@ -457,7 +458,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float searchMidY = searchY + searchH * 0.50f;
     std::wstring searchDisplay;
     if (hasSearch)
-        searchDisplay.assign(g_CodexSearch, g_CodexSearch + g_CodexSearchLen);
+        searchDisplay = currentSearch;
     else if (!s_searchFocused)
         searchDisplay = std::wstring(codexText(L"\uC785\uB825\uD558\uC5EC \uAC80\uC0C9", L"TYPE TO FILTER", L"\u5165\u529B\u3057\u3066\u691C\u7D22"));
     const bool searchCaretOn = s_searchFocused && (((int)(now * 2.0f)) & 1) == 0;
@@ -471,10 +472,24 @@ static void Scene_CodexInline(const SceneCtx& c) {
     float searchTextH = g_TextS.Height(searchDisplay.c_str(), searchSc);
     if (searchTextH <= 0.0f) searchTextH = g_TextS.Height(L"Ag", searchSc);
     const float searchTextY = searchMidY - searchTextH * 0.50f;
-    const std::wstring caretPrefix(g_CodexSearch,
-                                  g_CodexSearch + g_CodexSearchCaret);
+    const int searchCaretIndex = std::clamp(
+        CodexSearchQueryCaret(), 0, (int)currentSearch.size());
+    const std::wstring caretPrefix(currentSearch.begin(),
+                                   currentSearch.begin() + searchCaretIndex);
     const float searchCaretX = searchTextX + g_TextS.Width(caretPrefix.c_str(), searchSc);
-    if (CodexSearchHasSelection()) {
+    const int compositionStart = std::clamp(
+        CodexSearchCompositionStart(), 0, (int)currentSearch.size());
+    const int compositionEnd = std::clamp(
+        compositionStart + g_CodexSearchCompositionLen,
+        compositionStart, (int)currentSearch.size());
+    const std::wstring compositionPrefix(currentSearch.begin(),
+                                         currentSearch.begin() + compositionStart);
+    const float compositionX = searchTextX
+        + g_TextS.Width(compositionPrefix.c_str(), searchSc);
+    if (s_searchFocused && c.window)
+        InputSetCodexImeAnchor(compositionX, searchCaretX,
+                               searchTextY, searchTextH);
+    if (CodexSearchHasSelection() && g_CodexSearchCompositionLen == 0) {
         const int selBegin = CodexSearchSelectionStart();
         const int selEnd = CodexSearchSelectionEnd();
         const std::wstring before(g_CodexSearch, g_CodexSearch + selBegin);
@@ -493,7 +508,17 @@ static void Scene_CodexInline(const SceneCtx& c) {
                      hasSearch ? 0.96f : 0.56f,
                      hasSearch ? 1.00f : 0.70f,
                      (hasSearch ? 0.92f : 0.70f) * wake, 0.62f);
-    if (searchCaretOn)
+    if (g_CodexSearchCompositionLen > 0) {
+        const std::wstring compositionText(
+            currentSearch.begin() + compositionStart,
+            currentSearch.begin() + compositionEnd);
+        const float compositionW = g_TextS.Width(compositionText.c_str(), searchSc);
+        if (compositionW > 0.0f)
+            drawRect(compositionX, searchTextY + searchTextH + 1.0f * uiS,
+                     compositionW, std::max(1.0f, 1.2f * uiS),
+                     curRoot.r, curRoot.g, curRoot.b, 0.95f * wake);
+    }
+    if (searchCaretOn && g_CodexSearchCompositionLen == 0)
         drawRect(searchCaretX, searchTextY + searchTextH * 0.08f,
                  std::max(1.0f, 1.4f * uiS), searchTextH * 0.84f,
                  0.80f + 0.20f * curRoot.r,
@@ -1049,16 +1074,6 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float infoY = sh * 0.42f;
     const int mobDataStage = selectedCategory == 0 ? CodexMobDataStage(selKey) : 0;
     BindMainShader();
-    drawRect(detailX, infoY, detailW, 1.1f * uiS,
-             cr, cg, cb, 0.28f * rightWake);
-    drawDiamond(detailX, infoY, 3.0f * uiS,
-                cr, cg, cb, 0.62f * rightWake);
-    if (s_decryptT < 0.96f) {
-        const float scanY = infoY + 10.0f * uiS
-            + (rightY + rightH - infoY - 28.0f * uiS) * Smoothstep(s_decryptT);
-        drawRect(detailX, scanY, detailW, 1.0f * uiS,
-                 cr, cg, cb, 0.22f * rightWake * (1.0f - Smoothstep(s_decryptT)));
-    }
 
     if (selectedCategory == 0 && mobDataStage == 0) {
         if (seen) {
@@ -1099,7 +1114,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         swprintf_s(statBuf, mobDataStage > 0 ? L"TIER : %ls" : L"TIER : LOCKED",
                    mobDataStage > 0 ? MobTierLabel(selKey) : L"");
     else if (selectedCategory == 1)
-        swprintf_s(statBuf, L"CLASS : MODULE_ARCHIVE | STATUS : %ls", seen ? L"ACQUIRED" : L"NO_DATA");
+        swprintf_s(statBuf, L"TYPE : %ls", GetRarityKR(ALL_AUGS[selKey].rarity));
     else
         swprintf_s(statBuf, L"CLASS : APEX_ENTITY | STATUS : %ls", seen ? L"OBSERVED" : L"NO_DATA");
 
@@ -1130,9 +1145,6 @@ static void Scene_CodexInline(const SceneCtx& c) {
         0.76f, 0.84f, 0.94f, 0.86f * rightWake, selKey + 13);
 
     const float metaY = descriptionEndY + 14.0f * uiS;
-    LogoLine(detailX, metaY - 10.0f * uiS,
-             detailX + detailW, metaY - 10.0f * uiS,
-             0.7f * uiS, cr, cg, cb, 0.14f * rightWake);
     drawScanTextS(statBuf, detailX, metaY,
                   idSc, 0.84f, 0.90f, 0.98f,
                   0.88f * rightWake, selKey + 19);
@@ -1190,16 +1202,15 @@ static void Scene_CodexInline(const SceneCtx& c) {
                           0.86f, 0.92f, 1.0f, 0.90f * rightWake, selKey + 32);
         }
     } else if (selectedCategory != 0) {
-        wchar_t recordBuf[128];
-        if (selectedCategory == 1)
-            swprintf_s(recordBuf, L"RECORD TYPE : AUGMENT MODULE | SOURCE : IN-RUN");
-        else
+        if (selectedCategory != 1) {
+            wchar_t recordBuf[128];
             swprintf_s(recordBuf, L"RECORD TYPE : APEX ENCOUNTER | ACCESS : READ ONLY");
-        drawScanTextS(recordBuf, detailX, metaY + 25.0f * uiS,
-                  idSc, 0.62f, 0.70f, 0.82f,
-                  0.70f * rightWake, selKey + 23);
-        g_TextS.Draw(L"[ ARCHIVE_READ_ONLY ]", detailX, metaY + 52.0f * uiS,
-                     idSc, cr, cg, cb, 0.82f * rightWake);
+            drawScanTextS(recordBuf, detailX, metaY + 25.0f * uiS,
+                          idSc, 0.62f, 0.70f, 0.82f,
+                          0.70f * rightWake, selKey + 23);
+            g_TextS.Draw(L"[ ARCHIVE_READ_ONLY ]", detailX, metaY + 52.0f * uiS,
+                         idSc, cr, cg, cb, 0.82f * rightWake);
+        }
     }
     }
 
