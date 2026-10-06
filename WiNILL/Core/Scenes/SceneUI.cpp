@@ -102,11 +102,11 @@ struct SceneTextCommand {
 
 float UiTextScale(TextRenderer& renderer, UiTextLevel level,
                   float responsiveScale) {
-    constexpr float kTextHeights[] = { 40.0f, 36.0f, 20.0f, 18.0f };
-    constexpr float kMinimumHeights[] = { 22.0f, 20.0f, 18.0f, 18.0f };
+    constexpr float kReferenceHeight = 46.0f;
+    constexpr float kTextRatios[] = { 1.0f, 0.82f, 0.56f, 0.42f };
     const int levelIndex = static_cast<int>(level);
-    const float pixels = std::max(kMinimumHeights[levelIndex],
-        kTextHeights[levelIndex] * std::max(0.0f, responsiveScale));
+    const float pixels = kReferenceHeight * kTextRatios[levelIndex]
+                       * std::max(0.0f, responsiveScale);
     const float lineHeight = renderer.LineHeightPixels();
     return lineHeight > 0.0f ? pixels / lineHeight : responsiveScale;
 }

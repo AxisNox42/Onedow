@@ -461,8 +461,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
                            { korean ? L"동기화" : L"VSYNC", L"30", L"60", L"144", L"300",
                              korean ? L"무제한" : L"UNLIM" }, 6, allFpsCur };
     settingsRows[0][1] = { korean ? L"그래픽 품질" : L"GRAPHICS", nullptr, false, false, false, false,
-                           { korean ? L"전체" : L"FULL", korean ? L"감소" : L"REDUCED" },
-                           2, g_VfxDensity == VfxDensity::FULL ? 0 : 1 };
+                           { korean ? L"낮음" : L"LOW", korean ? L"보통" : L"MEDIUM",
+                             korean ? L"높음" : L"HIGH" },
+                           3, g_VfxDensity == VfxDensity::REDUCED ? 0 :
+                              g_VfxDensity == VfxDensity::MEDIUM ? 1 : 2 };
     settingsRows[0][2] = { korean ? L"콤보 HUD" : L"COMBO HUD", nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_ShowCombo ? 0 : 1 };
     settingsRows[0][3] = { korean ? L"배경 블러" : L"BACKDROP BLUR", nullptr, false, false, false, false,
@@ -493,7 +495,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     settingsRows[2][3] = { korean ? L"\uB514\uBC84\uAE45 \uBAA8\uB4DC" : L"DEBUG MODE", nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_DebugMode ? 0 : 1 };
     settingsRows[3][0] = { korean ? L"언어" : L"LANGUAGE", nullptr, false, false, false, false,
-                           { korean ? L"한국어" : L"KOR", korean ? L"영어" : L"ENG", korean ? L"일본어" : L"JPN" },
+                           { L"한국어", L"English", L"日本語" },
                            3, allLangCur };
     settingsRows[3][1] = { korean ? L"데이터 초기화" : L"RESET DATA", nullptr, false, false, true, true };
 
@@ -886,8 +888,9 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 return fps[optionLanguage][optionIndex];
             }
             if (row == 1) {
-                static const wchar_t* graphics[3][2] = {
-                    { L"전체", L"감소" }, { L"FULL", L"REDUCED" }, { L"全体", L"削減" }
+                static const wchar_t* graphics[3][3] = {
+                    { L"낮음", L"보통", L"높음" }, { L"LOW", L"MEDIUM", L"HIGH" },
+                    { L"低", L"中", L"高" }
                 };
                 return graphics[optionLanguage][optionIndex];
             }
@@ -919,12 +922,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
         } else if (category == 2 && row < 4) {
             return kToggleLabels[optionLanguage][optionIndex];
         } else if (category == 3 && row == 0) {
-            static const wchar_t* language[3][3] = {
-                { L"한국어", L"영어", L"일본어" },
-                { L"KOR", L"ENG", L"JPN" },
-                { L"韓国語", L"英語", L"日本語" }
+            static const wchar_t* language[] = {
+                L"한국어", L"English", L"日本語"
             };
-            return language[optionLanguage][optionIndex];
+            return language[optionIndex];
         }
         return nullptr;
     };
@@ -1012,22 +1013,30 @@ void Scene_SettingsInline(const SceneCtx& c) {
 
     float languageOptionScale = commonOptionSc;
     float languageOptionCellW[8] = {};
-    float languageOptionTotalW = 0.0f;
+    float languageOptionMaxW = 0.0f;
     for (int j = 0; j < settingsRows[3][0].optCount; ++j) {
-        const float widest = localizedOptionWidth(
-            3, 0, j, languageOptionScale, settingsRows[3][0].opts[j]);
-        languageOptionCellW[j] = widest + fpsChipPadX * 2.0f;
-        languageOptionTotalW += languageOptionCellW[j];
+        languageOptionMaxW = std::max(languageOptionMaxW,
+            localizedOptionWidth(3, 0, j, languageOptionScale,
+                                 settingsRows[3][0].opts[j]));
     }
+    std::fill(std::begin(languageOptionCellW),
+              std::end(languageOptionCellW),
+              languageOptionMaxW + fpsChipPadX * 2.0f);
+    float languageOptionTotalW = settingsRows[3][0].optCount
+                               * languageOptionCellW[0];
     if (settingsRows[3][0].optCount > 1)
         languageOptionTotalW += fpsChipGap * (settingsRows[3][0].optCount - 1);
     if (languageOptionTotalW > rightControlW && languageOptionTotalW > 1.0f) {
         languageOptionScale *= std::max(0.55f,
                                         rightControlW / languageOptionTotalW);
+        languageOptionMaxW = 0.0f;
         for (int j = 0; j < settingsRows[3][0].optCount; ++j)
-            languageOptionCellW[j] = localizedOptionWidth(
-                3, 0, j, languageOptionScale, settingsRows[3][0].opts[j])
-                + fpsChipPadX * 2.0f;
+            languageOptionMaxW = std::max(languageOptionMaxW,
+                localizedOptionWidth(3, 0, j, languageOptionScale,
+                                     settingsRows[3][0].opts[j]));
+        std::fill(std::begin(languageOptionCellW),
+                  std::end(languageOptionCellW),
+                  languageOptionMaxW + fpsChipPadX * 2.0f);
     }
 
     BatchFlush();
@@ -1292,8 +1301,13 @@ void Scene_SettingsInline(const SceneCtx& c) {
                     g_TextL, optSc, optionTextLevel);
                 const float optionTextY = controlY
                     - g_TextL.Height(setting.opts[j], optionScale) * 0.5f;
+                const float optionTextW = g_TextL.Width(
+                    setting.opts[j], optionScale);
+                const float optionTextX = compactLanguageRow
+                    ? ox + (cellW - optionTextW) * 0.5f
+                    : ox + chipPadX;
                 drawSettingsTextAtLevel(g_TextL, setting.opts[j],
-                                        ox + chipPadX,
+                                        optionTextX,
                                         optionTextY, optSc,
                                         optionR, optionG, optionB,
                                         optionA * rowA,
@@ -1470,7 +1484,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
                  g_FpsCap = fps[option];
                  glfwSwapInterval(g_FpsCap == 0 ? 1 : 0);
              } else if (row == 1) {
-                 g_VfxDensity = (option == 0) ? VfxDensity::FULL : VfxDensity::REDUCED;
+                 g_VfxDensity = option == 0 ? VfxDensity::REDUCED :
+                                option == 1 ? VfxDensity::MEDIUM : VfxDensity::FULL;
             } else if (row == 2) {
                 g_ShowCombo = option == 0;
              } else if (row == 3) {

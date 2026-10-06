@@ -14,4 +14,9 @@ rm -f "$MAC_OUT/Onedow" "$MAC_OUT/README.txt"
 cp "$ROOT/build/WiNILL" "$MAC_OUT/Onedow"
 chmod +x "$MAC_OUT/Onedow"
 
+VERSION="$(sed -n 's/.*ONEDOW_VERSION\[\] = L"\([0-9.]*\)";.*/\1/p' "$ROOT/WiNILL/Core/GameVersion.h")"
+test -n "$VERSION"
+sed "s/^Version: .*/Version: $VERSION/" "$ONEDOW/README.md" > "$ONEDOW/README.md.tmp"
+mv "$ONEDOW/README.md.tmp" "$ONEDOW/README.md"
+
 echo "macOS -> $MAC_OUT/Onedow"

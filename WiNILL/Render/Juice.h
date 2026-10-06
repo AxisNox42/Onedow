@@ -9,6 +9,7 @@
 #include "Audio.h"
 #include "Camera.h"
 #include "TextRenderer.h"
+#include "EnemyParticles.h"
 
 // ─────────────────────────────────────────────────────────────
 // 손맛(juice) 공용 시스템 — 데미지 숫자 / 콤보 / 히트스톱 / 화면 플래시
@@ -29,13 +30,6 @@ inline int JuiceDmgCap() {
     return 90;
 #else
     return 140;
-#endif
-}
-inline int JuiceSparkCap() {
-#if defined(__APPLE__)
-    return (g_VfxDensity == VfxDensity::REDUCED) ? 160 : 220;
-#else
-    return (g_VfxDensity == VfxDensity::REDUCED) ? 350 : 500;
 #endif
 }
 inline int JuiceTrailCap() {
@@ -63,14 +57,6 @@ inline void SpawnDamageNumber(float x, float y, float amount, bool crit) {
     g_DmgNumbers.push_back(d);
 }
 
-// ── 타격 스파크 (명중/피격 불꽃) ──
-struct Spark {
-    float x, y, vx, vy;
-    float life, maxLife, size;
-    float r, g, b;
-};
-inline std::vector<Spark> g_Sparks;
-
 // ── 플레이어 이동 잔상(afterimage) — 이동 시 과거 위치에 옅게 남았다 사라짐 ──
 struct Trail { float x, y, life, maxLife, size, r, g, b; };
 inline std::vector<Trail> g_Trail;
@@ -79,21 +65,6 @@ inline void SpawnTrail(float x, float y, float size, float r, float g, float b) 
     Trail t; t.x = x; t.y = y; t.maxLife = t.life = 0.30f;
     t.size = size; t.r = r; t.g = g; t.b = b;
     g_Trail.push_back(t);
-}
-inline void SpawnSparks(float x, float y, int n,
-                        float r, float g, float b, float speed = 300.0f) {
-    if ((int)g_Sparks.size() > JuiceSparkCap()) return;
-    for (int i = 0; i < n; i++) {
-        float a = (float)(rand() % 628) * 0.01f;
-        float s = speed * (0.35f + (rand() % 100) * 0.01f);
-        Spark sp;
-        sp.x = x; sp.y = y;
-        sp.vx = cosf(a) * s; sp.vy = sinf(a) * s;
-        sp.maxLife = sp.life = 0.16f + (rand() % 80) * 0.001f;
-        sp.size = 2.5f + (float)(rand() % 3);
-        sp.r = r; sp.g = g; sp.b = b;
-        g_Sparks.push_back(sp);
-    }
 }
 
 // ── 히트스톱 (큰 이벤트 때 잠깐 정지) ──
@@ -135,24 +106,16 @@ inline void AddKillCombo() {
 }
 
 // ── 적 사망 폭발 파티클 ──
-struct EnemyParticle {
-    float x, y, vx, vy;
-    float life, maxLife, size;
-    float r, g, b;
-    bool  active = false;
-};
-inline constexpr int MAX_ENEMY_PARTS = 256;
-inline EnemyParticle g_EnemyParts[MAX_ENEMY_PARTS] = {};
-
 inline void SpawnEnemyExplosion(float ex, float ey,
                                 float cr, float cg, float cb, bool big) {
-    SpawnSparks(ex, ey, big ? 8 : 4, 1.0f, 0.95f, 0.7f, big ? 420.0f : 320.0f);
+    SpawnSparks(ex, ey, big ? 8 : 4, 1.0f, 0.95f, 0.7f,
+                big ? 420.0f : 320.0f);
     int count   = big ? 20 : 10;
     float baseS = big ? 200.0f : 100.0f;
     float varS  = big ? 250.0f : 150.0f;
     float lifeT = big ? 0.45f  : 0.30f;
     int placed = 0, j = 0;
-    while (placed < count && j < MAX_ENEMY_PARTS) {
+    while (placed < count && j < EnemyParticleCap()) {
         if (!g_EnemyParts[j].active) {
             float angle = (float)placed / (float)count * 6.2831853f
                         + ((float)(rand() % 100) - 50.0f) * 0.012f;
@@ -167,32 +130,6 @@ inline void SpawnEnemyExplosion(float ex, float ey,
             ++placed;
         }
         ++j;
-    }
-}
-
-// ── Node 사망 연출 — 다이아몬드 4선이 각자 분리되어 페이드아웃 ──
-inline void SpawnNodeDeath(float ex, float ey, float cr, float cg, float cb) {
-    // 4 edges at 45°/135°/225°/315° — each edge sends 3 particles drifting outward
-    for (int i = 0; i < 4; i++) {
-        float edgeAng = (float)i * 1.5708f + 0.7854f;   // midpoint direction of each edge
-        float ox = cosf(edgeAng), oy = sinf(edgeAng);   // outward
-        float px = -oy, py =  ox;                        // perpendicular (along edge)
-        for (int j = -1; j <= 1; j++) {
-            int slot = -1;
-            for (int k = 0; k < MAX_ENEMY_PARTS; k++) {
-                if (!g_EnemyParts[k].active) { slot = k; break; }
-            }
-            if (slot < 0) return;
-            float spread = (float)j * 6.0f;
-            float spd = 55.0f + (float)(rand() % 45);
-            g_EnemyParts[slot] = {
-                ex + ox * 10.0f + px * spread,
-                ey + oy * 10.0f + py * spread,
-                ox * spd + px * (float)j * 12.0f,
-                oy * spd + py * (float)j * 12.0f,
-                0.55f, 0.55f, 2.2f, cr, cg, cb, true
-            };
-        }
     }
 }
 
@@ -227,15 +164,7 @@ inline void SpawnKillTag(float x, float y, float r, float g, float b,
 }
 
 inline void UpdateEnemyFx(float delta) {
-    for (auto& p : g_EnemyParts) {
-        if (!p.active) continue;
-        p.life -= delta;
-        if (p.life <= 0.0f) { p.active = false; continue; }
-        p.x  += p.vx * delta;
-        p.y  += p.vy * delta;
-        p.vx *= (1.0f - 2.5f * delta);
-        p.vy *= (1.0f - 2.5f * delta);
-    }
+    UpdateEnemyParticles(delta);
     g_KillTagCD -= delta; if (g_KillTagCD < 0.0f) g_KillTagCD = 0.0f;
     for (auto& t : g_KillTags) {
         if (!t.active) continue;
@@ -259,7 +188,7 @@ inline void DrawKillTags(TextRenderer& text, bool visible) {
 }
 
 inline void ResetEnemyFx() {
-    for (int i = 0; i < MAX_ENEMY_PARTS; i++) g_EnemyParts[i].active = false;
+    ResetEnemyParticles();
     for (int i = 0; i < MAX_KILLTAGS; i++) g_KillTags[i].active = false;
     g_KillTagCD = 0.0f;
 }

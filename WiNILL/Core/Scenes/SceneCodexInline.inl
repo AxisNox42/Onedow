@@ -518,7 +518,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
                      compositionW, std::max(1.0f, 1.2f * uiS),
                      curRoot.r, curRoot.g, curRoot.b, 0.95f * wake);
     }
-    if (searchCaretOn && g_CodexSearchCompositionLen == 0)
+    if (searchCaretOn)
         drawRect(searchCaretX, searchTextY + searchTextH * 0.08f,
                  std::max(1.0f, 1.4f * uiS), searchTextH * 0.84f,
                  0.80f + 0.20f * curRoot.r,
@@ -801,12 +801,6 @@ static void Scene_CodexInline(const SceneCtx& c) {
                      (ring == 3 ? 0.16f : 0.075f) * wake);
         }
     }
-    // Selection datum: no radial spokes across the chart interior.
-    LogoLine(chartCX - chartR, chartCY, chartCX - chartR * 0.72f, chartCY,
-             1.1f * uiS, curRoot.r, curRoot.g, curRoot.b, 0.42f * wake);
-    drawDiamond(chartCX - chartR, chartCY, 4.0f * uiS,
-                curRoot.r, curRoot.g, curRoot.b, 0.78f * wake);
-
     // Connected observation rail. Entries slide one row at a time along this
     // datum, including the wrapped first↔last transition.
     auto railXAt = [&](float row) {

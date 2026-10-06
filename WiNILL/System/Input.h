@@ -13,6 +13,7 @@ extern float g_ScrollAccum;
 
 void InputRegisterCallbacks(GLFWwindow* window);
 void InputUnregisterCallbacks(GLFWwindow* window);
+void InputUpdateTextInput(GLFWwindow* window);
 void InputSetCodexImeAnchor(float compositionX, float caretX,
                             float y, float textHeight);
 // Clear callback state when the native window loses focus.  GLFW may not

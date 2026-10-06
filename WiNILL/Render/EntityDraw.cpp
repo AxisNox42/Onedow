@@ -15,13 +15,21 @@
 
 extern TextRenderer g_TextS;
 extern float g_RfwW;
-static float g_CodexPreviewFieldScale = 1.0f;
 
 static void ApplyMobStyleTint(float& r, float& g, float& b) {
     if (g_MobVisualStyle != MobVisualStyle::SOFT) return;
     r = r * 0.72f + 0.14f;
     g = g * 0.72f + 0.16f;
     b = b * 0.72f + 0.20f;
+}
+
+static void ApplyMobHitFlash(float& r, float& g, float& b, float timer) {
+    const float t = std::max(0.0f, std::min(1.0f,
+        timer / MOB_HIT_FLASH_TIME));
+    const float flash = t * t * (3.0f - 2.0f * t);
+    r += (1.0f - r) * flash;
+    g += (1.0f - g) * flash;
+    b += (1.0f - b) * flash;
 }
 
 static void drawLineQuad(float x1, float y1, float x2, float y2, float width,
@@ -723,6 +731,7 @@ void drawMob(const Monster* m) {
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         float t = visualTime;
         ApplyMobStyleTint(cr, cg, cb);
+        ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
         const float phase = m->hiveOrbitAngle;
         const float stationBase = base * 1.35f;
         // Match the rotating shell and its two opposite openings. The
@@ -754,18 +763,22 @@ void drawMob(const Monster* m) {
         ApplyMobStyleTint(cr, cg, cb);
         const float x = m->worldX, y = m->worldY;
         const float phase = m->gravisVisualAngle;
-        const float fieldR = 285.0f * g_CodexPreviewFieldScale;
         const float pulse = 0.5f + 0.5f * sinf(visualTime * 2.4f);
 
-        drawCircle(x, y, fieldR, cr, cg, cb, 0.035f + pulse * 0.018f);
-        for (int k = 0; k < 24; ++k) {
-            const float a0 = phase * 0.18f + (float)k * 0.2617994f;
-            const float a1 = a0 + 0.115f;
-            drawLineQuad(x + cosf(a0) * fieldR, y + sinf(a0) * fieldR,
-                         x + cosf(a1) * fieldR, y + sinf(a1) * fieldR,
-                         1.0f, cr, cg, cb, 0.20f);
+        if (!g_SuppressMobSeen) {
+            const float fieldR = 285.0f;
+            drawCircle(x, y, fieldR, cr, cg, cb, 0.035f + pulse * 0.018f);
+            for (int k = 0; k < 24; ++k) {
+                const float a0 = phase * 0.18f + (float)k * 0.2617994f;
+                const float a1 = a0 + 0.115f;
+                drawLineQuad(x + cosf(a0) * fieldR, y + sinf(a0) * fieldR,
+                             x + cosf(a1) * fieldR, y + sinf(a1) * fieldR,
+                             1.0f, cr, cg, cb, 0.20f);
+            }
         }
 
+        float bodyR = cr, bodyG = cg, bodyB = cb;
+        ApplyMobHitFlash(bodyR, bodyG, bodyB, m->hitFlashTimer);
         EnemyNodeAnchor nodes[6];
         const float orbitR = base * 1.12f;
         for (int k = 0; k < 6; ++k) {
@@ -776,13 +789,16 @@ void drawMob(const Monster* m) {
             const float na = phase + (float)next * 1.0471976f;
             drawLineQuad(nodes[k].x, nodes[k].y,
                          x + cosf(na) * orbitR, y + sinf(na) * orbitR,
-                         1.15f, cr, cg, cb, 0.54f);
+                         1.15f, bodyR, bodyG, bodyB, 0.54f);
             drawLineQuad(x, y, nodes[k].x, nodes[k].y,
-                         0.72f, cr, cg, cb, 0.22f);
+                         0.72f, bodyR, bodyG, bodyB, 0.22f);
         }
-        for (const auto& node : nodes) DrawEnemyNode(node, cr, cg, cb, 0.94f);
-        drawCircle(x, y, base * 0.58f, cr, cg, cb, 0.18f + pulse * 0.08f);
-        DrawGenesisCore(x, y, base * 0.34f, cr, cg, cb, 0.96f, false);
+        for (const auto& node : nodes)
+            DrawEnemyNode(node, bodyR, bodyG, bodyB, 0.94f);
+        drawCircle(x, y, base * 0.58f, bodyR, bodyG, bodyB,
+                   0.18f + pulse * 0.08f);
+        DrawGenesisCore(x, y, base * 0.34f,
+                        bodyR, bodyG, bodyB, 0.96f, false);
     } else if (m->kind == MobKind::QUASAR) {
         // Quasar: a compact accretion instrument with a fixed polar firing axis.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
@@ -840,18 +856,23 @@ void drawMob(const Monster* m) {
             }
         }
 
+        float bodyR = cr, bodyG = cg, bodyB = cb;
+        ApplyMobHitFlash(bodyR, bodyG, bodyB, m->hitFlashTimer);
         const float majorR = base * (1.32f + charge * 0.10f);
         const float minorR = base * 0.42f;
         const float discSpin = m->quasarVisualAngle * 0.35f;
         DrawQuasarEllipseArc(x, y, bodyAx, bodyAy, majorR, minorR,
                              0.22f + discSpin, 2.70f, 14,
-                             cr, cg, cb, 0.62f + charge * 0.20f, 1.05f);
+                             bodyR, bodyG, bodyB,
+                             0.62f + charge * 0.20f, 1.05f);
         DrawQuasarEllipseArc(x, y, bodyAx, bodyAy, majorR, minorR,
                              3.36f + discSpin, 2.70f, 14,
-                             cr, cg, cb, 0.62f + charge * 0.20f, 1.05f);
+                             bodyR, bodyG, bodyB,
+                             0.62f + charge * 0.20f, 1.05f);
         DrawQuasarEllipseArc(x, y, bodyAx, bodyAy, majorR * 0.73f, minorR * 0.62f,
                              -discSpin * 0.54f, 5.72f, 20,
-                             cr, cg, cb, 0.24f + charge * 0.14f, 0.72f);
+                             bodyR, bodyG, bodyB,
+                             0.24f + charge * 0.14f, 0.72f);
 
         EnemyNodeAnchor nodes[4] = {
             { x + bodyAx * base * 1.18f, y + bodyAy * base * 1.18f,
@@ -864,23 +885,24 @@ void drawMob(const Monster* m) {
         for (int side = 0; side < 2; ++side) {
             drawLineQuad(nodes[side].x, nodes[side].y,
                          nodes[2].x, nodes[2].y, 0.82f,
-                         cr, cg, cb, 0.42f);
+                         bodyR, bodyG, bodyB, 0.42f);
             drawLineQuad(nodes[side].x, nodes[side].y,
                          nodes[3].x, nodes[3].y, 0.82f,
-                         cr, cg, cb, 0.42f);
+                         bodyR, bodyG, bodyB, 0.42f);
         }
         for (const auto& node : nodes)
-            DrawEnemyNode(node, cr, cg, cb, 0.92f);
+            DrawEnemyNode(node, bodyR, bodyG, bodyB, 0.92f);
 
         const float corePulse = m->quasarState == 3
             ? 0.92f + 0.08f * sinf(m->quasarTimer * 70.0f)
             : 0.88f + charge * 0.10f;
         DrawGenesisCore(x, y, base * (0.30f + charge * 0.04f),
-                        cr, cg, cb, corePulse, false);
+                        bodyR, bodyG, bodyB, corePulse, false);
     } else if (m->kind == MobKind::SWARM) {
         // Swarm: a smaller triangular packet, visually subordinate to Rotor.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         ApplyMobStyleTint(cr, cg, cb);
+        ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
         float x = m->worldX, y = m->worldY;
         float phOff = (float)((size_t)m % 628) * 0.01f;
         float t = (float)glfwGetTime();
@@ -905,6 +927,7 @@ void drawMob(const Monster* m) {
         // Rotor (ROTOR): one square frame with four shared star anchors.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
         ApplyMobStyleTint(cr, cg, cb);
+        ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
         float x = m->worldX, y = m->worldY;
         float phOff = (float)((size_t)m % 628) * 0.01f;
         const float half = base * 0.78f;
@@ -930,7 +953,7 @@ void drawMob(const Monster* m) {
 }
 
 void drawRangedMob(const RangedMob* r) {
-    if (!r || r->deathScale <= 0.0f) return;
+    if (!r || !r->alive || r->deathScale <= 0.0f) return;
 
     const float sc = r->deathScale;
     const float base = RangedMob::VISUAL_BASE_PX * sc;
@@ -941,9 +964,10 @@ void drawRangedMob(const RangedMob* r) {
         ? std::min(r->chargeAngle /
                    (2.0f * 3.14159f * RangedMob::CHARGE_ROTATIONS), 1.0f)
         : (r->lensState == RangedMob::State::BURST ? 1.0f : 0.0f);
-    const float cr = r->color.r;
-    const float cg = r->color.g;
-    const float cb = r->color.b;
+    float cr = r->color.r;
+    float cg = r->color.g;
+    float cb = r->color.b;
+    ApplyMobHitFlash(cr, cg, cb, r->hitFlashTimer);
     const float instrumentR = base * (1.26f + 0.12f * chargeT);
     const float phase = r->rotAngle + phaseOffset;
     const bool burst = r->lensState == RangedMob::State::BURST;
@@ -983,11 +1007,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
     // code.  This keeps the preview silhouette and its animation in lockstep
     // with the live enemy renderer.
     const bool wasSuppressed = g_SuppressMobSeen;
-    const float wasFieldScale = g_CodexPreviewFieldScale;
     g_SuppressMobSeen = true;
-    // Keep Gravis' gameplay field proportional to the animated preview size;
-    // the base 0.22 factor only compresses its very large in-game radius.
-    g_CodexPreviewFieldScale = 0.22f * std::max(0.8f, scale);
     if (codexId == CM_SCOPE) {
         RangedMob preview(x, y, 1920, 1080);
         preview.rotAngle = (float)glfwGetTime() * RangedMob::IDLE_ROT;
@@ -1013,6 +1033,5 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         preview.quasarVisualAngle = t * 0.08f;
         drawMob(&preview);
     }
-    g_CodexPreviewFieldScale = wasFieldScale;
     g_SuppressMobSeen = wasSuppressed;
 }

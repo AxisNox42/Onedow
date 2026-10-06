@@ -32,6 +32,7 @@
 
 #include "FakeWindow.h"
 #include "GameManager.h"
+#include "GameVersion.h"
 #include "Monster.h"
 #include "Bullet.h"
 #include "MonsterManager.h"
@@ -1133,6 +1134,7 @@ int main() {
             g_FpsLastTime = now;
         }
 
+        InputUpdateTextInput(window);
         glfwPollEvents();
         UpdateWindowTaskbarPolicy(window);
         if (inputFocusChanged) {
@@ -1493,16 +1495,16 @@ int main() {
                     if (!m->alive) continue;
                     float dx = m->worldX - pCX, dy = m->worldY - pCY;
                     if (dx*dx + dy*dy < blastRad * blastRad) {
-                        m->hp -= blastDmg;
-                        if (m->hp <= 0) m->alive = false;
+                        ApplyMobDamage(m->hp, m->alive, m->hitFlashTimer,
+                                       blastDmg);
                     }
                 }
                 for (auto rm : g_MonsterManager.rangedMobs) {
                     if (!rm->alive) continue;
                     float dx = rm->worldX - pCX, dy = rm->worldY - pCY;
                     if (dx*dx + dy*dy < blastRad * blastRad) {
-                        rm->hp -= blastDmg;
-                        if (rm->hp <= 0) rm->alive = false;
+                        ApplyMobDamage(rm->hp, rm->alive, rm->hitFlashTimer,
+                                       blastDmg);
                     }
                 }
                 // �ð� ȿ�� ? ���� + �����?+ ȭ�� ����
@@ -1563,11 +1565,11 @@ int main() {
                 float pCX = g_DeathCX, pCY = g_DeathCY;
                 // 모든 ????��?�키�??�거 (scored/noBlast ?�시 ???�수/?�쇄 ?�산 ????
                 for (auto m : g_MonsterManager.monsters) if (m->alive) {
-                    SpawnEnemyExplosion(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b, true);
+                    m->SpawnDeathEffect((float)now);
                     m->alive = false; m->scored = true; m->noBlast = true;
                 }
                 for (auto r : g_MonsterManager.rangedMobs) if (r->alive) {
-                    SpawnEnemyExplosion(r->worldX, r->worldY, r->color.r, r->color.g, r->color.b, true);
+                    r->SpawnDeathEffect();
                     r->alive = false; r->scored = true;
                 }
                 // 모든 ?�·보?�·분?�체·총알·?�탑??즉시 ?�전 ??�� ??UpdateAll(RUNNING ?�용)??                //   맡기�?DYING/GAMEOVER ?�안 ?�거�?�?�??�이 ?��? ?�태�??�으므�??�기???�거.
@@ -1641,13 +1643,7 @@ int main() {
         {
             GameState gvs = g_GameManager.currentState;
             if (gvs == GameState::DYING || gvs == GameState::GAMEOVER) {
-                for (auto& p : g_EnemyParts) {
-                    if (!p.active) continue;
-                    p.life -= delta;
-                    if (p.life <= 0.0f) { p.active = false; continue; }
-                    p.x += p.vx * delta; p.y += p.vy * delta;
-                    p.vx *= (1.0f - 2.5f * delta); p.vy *= (1.0f - 2.5f * delta);
-                }
+                UpdateEnemyParticles(delta);
                 for (auto& sw : g_ShockWaves) { if (!sw.active) continue; sw.life -= delta; if (sw.life <= 0.0f) sw.active = false; }
                                 for (auto& sp : g_Sparks) {
                     sp.x += sp.vx * delta; sp.y += sp.vy * delta;
@@ -1912,13 +1908,25 @@ int main() {
                 auto closeWindowBlast = [&](float cx, float cy) {
                     float dmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier() * 8.0f;
                     float rad = 380.0f, r2 = rad * rad, knock = 130.0f;
-                    auto hitKB = [&](float& ex, float& ey, float& hp, bool& al) {
+                    auto hitKB = [&](float& ex, float& ey, float& hp, bool& al,
+                                     float& hitFlashTimer) {
                         float dx = ex - cx, dy = ey - cy, d2 = dx*dx + dy*dy;
-                        if (d2 < r2) { hp -= dmg; float d = std::sqrt(d2)+1e-3f;
-                            ex += dx/d*knock; ey += dy/d*knock; if (hp <= 0) al = false; }
+                        if (d2 < r2) {
+                            ApplyMobDamage(hp, al, hitFlashTimer, dmg);
+                            float d = std::sqrt(d2)+1e-3f;
+                            ex += dx/d*knock; ey += dy/d*knock;
+                        }
                     };
-                    for (auto m  : g_MonsterManager.monsters)   if (m->alive)  hitKB(m->worldX,  m->worldY,  m->hp,  m->alive);
-                    for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  hitKB(r->worldX,  r->worldY,  r->hp,  r->alive);
+                    for (auto m : g_MonsterManager.monsters) {
+                        if (m->alive)
+                            hitKB(m->worldX, m->worldY, m->hp, m->alive,
+                                  m->hitFlashTimer);
+                    }
+                    for (auto r : g_MonsterManager.rangedMobs) {
+                        if (r->alive)
+                            hitKB(r->worldX, r->worldY, r->hp, r->alive,
+                                  r->hitFlashTimer);
+                    }
                     SpawnShockWave(cx, cy, rad*1.3f, 0.6f, 0.5f, 0.8f, 1.0f);
                     SpawnEnemyExplosion(cx, cy, 0.5f, 0.8f, 1.0f, true);
                     g_ShakeTime = 0.4f; g_ShakeMag = 20.0f;
@@ -2044,8 +2052,9 @@ int main() {
                                     m->worldX += (ddx / d) * 300.0f * FIXED_DT;
                                     m->worldY += (ddy / d) * 300.0f * FIXED_DT;
                                 }
-                                m->hp -= 100.0f * FIXED_DT;
-                                if (m->hp <= 0.0f) m->alive = false;
+                                ApplyMobDamage(m->hp, m->alive,
+                                               m->hitFlashTimer,
+                                               100.0f * FIXED_DT);
                             }
                         }
                     }
@@ -2194,11 +2203,7 @@ CollisionSystem::Update(pCX, pCY,
                                           StardustRewardFor(m->kind), pCX, pCY, pickupXp);
                             creditKill(CodexMobIdForKind(m->kind), scB);
                         }
-                        if (m->kind == MobKind::SWARM)
-                            SpawnNodeDeath(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b);
-                        else
-                            SpawnEnemyExplosion(m->worldX, m->worldY, m->color.r, m->color.g, m->color.b, false);
-                        m->exploded = true;
+                        m->SpawnDeathEffect((float)now);
                         // 처치 ?�출 ???�로?�스 종료 ?�그 (강적?�???�� 강조)
                         {
                             static const wchar_t* W[5] =
@@ -2219,16 +2224,17 @@ CollisionSystem::Update(pCX, pCY,
                                 if (!m2->alive || m2 == m) continue;
                                 float ddx = m2->worldX - bx, ddy = m2->worldY - by;
                                 if (ddx*ddx + ddy*ddy < blastR*blastR) {
-                                    m2->hp -= blastDmg;
-                                    if (m2->hp <= 0.0f) { m2->alive = false; m2->noBlast = true; }
+                                    ApplyMobDamage(m2->hp, m2->alive,
+                                                   m2->hitFlashTimer, blastDmg);
+                                    if (!m2->alive) m2->noBlast = true;
                                 }
                             }
                             for (auto r2 : g_MonsterManager.rangedMobs) {
                                 if (!r2->alive) continue;
                                 float ddx = r2->worldX - bx, ddy = r2->worldY - by;
                                 if (ddx*ddx + ddy*ddy < blastR*blastR) {
-                                    r2->hp -= blastDmg;
-                                    if (r2->hp <= 0.0f) r2->alive = false;
+                                    ApplyMobDamage(r2->hp, r2->alive,
+                                                   r2->hitFlashTimer, blastDmg);
                                 }
                             }
                         }
@@ -2244,10 +2250,7 @@ CollisionSystem::Update(pCX, pCY,
                                           pCX, pCY, pickupXp);
                             creditKill(CM_SCOPE, 300.0f);
                         }
-                        SpawnEnemyExplosion(r->worldX, r->worldY,
-                                            r->color.r, r->color.g, r->color.b,
-                                            /*big=*/true);
-                        r->exploded = true;
+                        r->SpawnDeathEffect();
                         SpawnKillTag(r->worldX, r->worldY, 1.0f, 0.55f, 0.9f,
                                      L"popup closed", true);
                     }
@@ -2563,7 +2566,8 @@ CollisionSystem::Update(pCX, pCY,
                             if (!m->alive) continue;
                             float ddx = m->worldX - chx, ddy = m->worldY - chy;
                             if (ddx*ddx + ddy*ddy < hitR2) {
-                                m->alive = false;
+                                ApplyMobDamage(m->hp, m->alive,
+                                               m->hitFlashTimer, m->hp);
                                 ch.hp -= 2.0f;
                             }
                         }
@@ -2573,7 +2577,11 @@ CollisionSystem::Update(pCX, pCY,
                         for (auto rr : g_MonsterManager.rangedMobs) {
                             if (!rr->alive) continue;
                             float ddx = rr->worldX - chx, ddy = rr->worldY - chy;
-                            if (ddx*ddx + ddy*ddy < hitR2) { rr->hp -= 120.0f; if (rr->hp <= 0) rr->alive = false; ch.hp -= 3.0f; }
+                            if (ddx*ddx + ddy*ddy < hitR2) {
+                                ApplyMobDamage(rr->hp, rr->alive,
+                                               rr->hitFlashTimer, 120.0f);
+                                ch.hp -= 3.0f;
+                            }
                         }
                         // ??총알 막기
                         for (auto& bb : g_Bullets) {
@@ -2742,11 +2750,11 @@ CollisionSystem::Update(pCX, pCY,
                     };
                     for (auto m : g_MonsterManager.monsters) {
                         if (!m->alive || !inLine(m->worldX, m->worldY)) continue;
-                        float d = ldmg;
-                        float dealt = (d < m->hp) ? d : m->hp; m->hp -= dealt;
+                        const float dealt = ApplyMobDamage(m->hp, m->alive,
+                                                           m->hitFlashTimer, ldmg);
                         SpawnDamageNumber(m->worldX, m->worldY, dealt, lcrit);
-                        if (m->hp <= 0.0f) {
-                            m->alive = false; m->scored = true; AddKillCombo();
+                        if (!m->alive) {
+                            m->scored = true; AddKillCombo();
                             float bx, bs; MobKillReward(m->kind, bx, bs);
                             float rwm = MobRewardMult(m->kind); bx *= rwm; bs *= rwm;
                             const long long pickupXp = (long long)(
@@ -2760,10 +2768,11 @@ CollisionSystem::Update(pCX, pCY,
                     }
                     for (auto rr : g_MonsterManager.rangedMobs) {
                         if (!rr->alive || !inLine(rr->worldX, rr->worldY)) continue;
-                        float dealt = (ldmg < rr->hp) ? ldmg : rr->hp; rr->hp -= dealt;
+                        const float dealt = ApplyMobDamage(rr->hp, rr->alive,
+                                                           rr->hitFlashTimer, ldmg);
                         SpawnDamageNumber(rr->worldX, rr->worldY, dealt, lcrit);
-                        if (rr->hp <= 0.0f) {
-                            rr->alive = false; rr->scored = true; AddKillCombo();
+                        if (!rr->alive) {
+                            rr->scored = true; AddKillCombo();
                             const long long pickupXp = (long long)(
                                 (25.0f + (float)g_Stats.rangedXpBonus) * g_Stats.xpMult);
                             SpawnStardust(rr->worldX, rr->worldY, 3,
@@ -2999,8 +3008,9 @@ CollisionSystem::Update(pCX, pCY,
         for (auto& b : g_Bullets) {
             if (b.active) drawBullet(b);
         }
-        for (auto& p : g_EnemyParts) {
-            if (!p.active) continue;
+        for (int i = 0; i < EnemyParticleCap(); ++i) {
+            auto& p = g_EnemyParts[i];
+            if (!p.active || p.delay > 0.0f) continue;
             float a = p.life / p.maxLife;
             float hs = p.size * 0.5f;
             drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
@@ -3657,6 +3667,19 @@ CollisionSystem::Update(pCX, pCY,
                 }
             }
 
+        }
+
+        if (!g_DebugToolkit.SuppressOverlayForCapture()) {
+            BindMainShader();
+            static const std::wstring versionLabel = std::wstring(L"v") + ONEDOW_VERSION;
+            const float versionUiScale = UiScale((float)screenWidth, (float)screenHeight);
+            const float versionScale = UiTextScale(g_TextS, UiTextLevel::Supporting,
+                                                   1.20f * versionUiScale);
+            const float versionPad = 16.0f * versionUiScale;
+            g_TextS.Draw(versionLabel.c_str(),
+                         screenWidth - versionPad - g_TextS.Width(versionLabel.c_str(), versionScale),
+                         screenHeight - versionPad - g_TextS.Height(versionLabel.c_str(), versionScale),
+                         versionScale, 0.48f, 0.64f, 0.76f, 0.80f);
         }
 
         if (!g_DebugToolkit.SuppressOverlayForCapture())

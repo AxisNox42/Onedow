@@ -102,7 +102,7 @@ void Scene_MainMenu(const SceneCtx& c) {
     const float BW = std::min(560.0f * uiScale,
                               std::max(420.0f * uiScale, sw * 0.34f));
     const float BH = 70.0f * uiScale;
-    const float BGAP = 10.0f * uiScale;
+    const float BGAP = 8.0f * uiScale;
     float totalBH = kBtnCount * BH + (kBtnCount - 1) * BGAP;
     float btnX0   = std::max(58.0f * uiScale, sw * 0.075f);
     // The lobby command rail belongs to the lower-left corner, matching the

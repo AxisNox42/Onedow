@@ -967,6 +967,10 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
         if (clicked >= 0) {
             g_HoveredAug = clicked;
             g_GameManager.augmentKeyboardFocus = false;
+            if (g_AugExitT < 0.0f) {
+                g_AugExitT = 0.0f;
+                g_AugExitSlot = clicked;
+            }
         }
     }
 
@@ -1189,7 +1193,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
             wchar_t keyLabel[16];
             swprintf_s(keyLabel, L"[%d]", i + 1);
             const float keyScale = UiTextScale(g_TextS, UiTextLevel::Supporting,
-                                                layout.textUi);
+                                                1.35f * layout.textUi);
             const float keyW = g_TextS.Width(keyLabel, keyScale);
             const float labelGap = 10.0f * layout.ui;
             float nameFactor = layout.textUi;
@@ -1204,14 +1208,9 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
                 nameFactor -= 0.04f;
                 nameScale = UiTextScale(g_TextS, UiTextLevel::Title, nameFactor);
             }
-            const float nameW = MaxLocalizedTextWidth(
-                g_TextS, nameVariants, 3, nameScale);
+            const float nameW = g_TextS.Width(AugName(def), nameScale);
             const float groupW = keyW + labelGap + nameW;
-            const float labelY = focused
-                ? py + (py < layout.orbitCY ? radius + 21.0f * layout.ui
-                                             : -radius - 29.0f * layout.ui)
-                : py + (py < layout.orbitCY ? -radius - 26.0f * layout.ui
-                                             : radius + 14.0f * layout.ui);
+            const float labelY = py + radius + 12.0f * layout.ui;
             const float groupX = px - groupW * 0.5f;
             const float nameY = labelY +
                 (g_TextS.Height(keyLabel, keyScale)
@@ -1282,14 +1281,6 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
             DrawShadowedText(g_TextL, name, layout.panelX, y,
                              nameScale, 0.98f, 0.99f, 1.0f, a, 0.62f);
             y += 62.0f * layout.ui;
-
-            // Keep the measurable effect in its own upper block. This is the
-            // quick, objective answer to "what changes if I take it?".
-            g_TextS.Draw(L"OBJECTIVE CHANGE", layout.panelX, y,
-                         UiTextScale(g_TextS, UiTextLevel::Subtitle,
-                                     layout.textUi),
-                         0.56f, 0.68f, 0.82f, a * 0.78f);
-            y += 38.0f * layout.ui;
 
             const wchar_t* stat = AugStat(def);
             float statFactor = layout.textUi;
@@ -1420,9 +1411,10 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     }
 
     if (!inExit) {
-        const wchar_t* controls = L"1 / 2 / 3  FOCUS     SPACE  CONFIRM";
+        const wchar_t* controls = L"1 / 2 / 3 FOCUS   CLICK / SPACE CONFIRM";
         g_TextS.Draw(controls, layout.panelX, sh * 0.925f,
-                     0.47f * layout.textUi,
+                     UiTextScale(g_TextS, UiTextLevel::Supporting,
+                                 layout.textUi),
                      0.54f, 0.66f, 0.82f, panelBaseA * 0.76f);
         BatchFlush();
     }

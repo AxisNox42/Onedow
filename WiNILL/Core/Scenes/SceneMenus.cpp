@@ -329,7 +329,7 @@ float OutgameButtonRailStartY(float sh, float uiScale, int rowCount,
 
 float MainMenuButtonRailStartY(float sh, float uiScale) {
     return OutgameButtonRailStartY(sh, uiScale, 5,
-                                   70.0f * uiScale, 10.0f * uiScale);
+                                   70.0f * uiScale, 8.0f * uiScale);
 }
 
 static void DrawSharedMenuDim(float sw, float sh,

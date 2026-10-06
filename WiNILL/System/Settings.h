@@ -288,14 +288,20 @@ enum class MobVisualStyle { CLASSIC, SOFT };
 inline MobVisualStyle g_MobVisualStyle = MobVisualStyle::CLASSIC;
 
 // 위성 VFX 밀도 — REDUCED=EMP·덫·패치 간격↑
-enum class VfxDensity { FULL, REDUCED };
+// Keep the old save values: FULL=0, REDUCED=1; append the middle quality.
+enum class VfxDensity { FULL = 0, REDUCED = 1, MEDIUM = 2 };
 #if defined(__APPLE__)
 inline VfxDensity g_VfxDensity = VfxDensity::REDUCED;
 #else
 inline VfxDensity g_VfxDensity = VfxDensity::FULL;
 #endif
 inline float VfxIntervalMult() {
-    return g_VfxDensity == VfxDensity::REDUCED ? 1.45f : 1.0f;
+    return g_VfxDensity == VfxDensity::REDUCED ? 1.45f
+         : g_VfxDensity == VfxDensity::MEDIUM ? 1.20f : 1.0f;
+}
+inline int EnemyParticleCap() {
+    return g_VfxDensity == VfxDensity::REDUCED ? 256
+         : g_VfxDensity == VfxDensity::MEDIUM ? 512 : 1024;
 }
 
 // macOS 1회 성능 프로필 적용 여부 (onedow_save.cfg 의 macopt=1)
@@ -304,9 +310,11 @@ inline bool g_MacOptV1 = false;
 // 원·부채꼴 등 다각형 분할 수 (VFX 밀도·플랫폼 반영)
 inline int GfxCircleSegs() {
 #if defined(__APPLE__)
-    return (g_VfxDensity == VfxDensity::REDUCED) ? 6 : 8;
+    return g_VfxDensity == VfxDensity::REDUCED ? 6
+         : g_VfxDensity == VfxDensity::MEDIUM ? 7 : 8;
 #else
-    return (g_VfxDensity == VfxDensity::REDUCED) ? 10 : 12;
+    return g_VfxDensity == VfxDensity::REDUCED ? 10
+         : g_VfxDensity == VfxDensity::MEDIUM ? 11 : 12;
 #endif
 }
 inline int GfxArcSegs(float mult = 1.5f) {

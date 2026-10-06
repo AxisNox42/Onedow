@@ -319,8 +319,10 @@ void Scene_Shop(const SceneCtx& c) {
         // Let the item explanation lead the hierarchy. Purchase/status copy
         // stays readable but subordinate, while constellation labels use the
         // same larger explanatory scale.
-        const float detailDescriptionSc = 0.96f * ui;
-        const float purchaseInfoSc = 0.82f * ui;
+        const float detailDescriptionSc = UiTextScale(
+            g_TextS, UiTextLevel::Description, ui);
+        const float purchaseInfoSc = UiTextScale(
+            g_TextS, UiTextLevel::Supporting, ui);
         const float purchaseButtonSc = UiTextScale(
             g_TextL, UiTextLevel::Title, ui);
         const bool lmbClick = lmb && !g_LmbPrev;
@@ -988,10 +990,12 @@ void Scene_Shop(const SceneCtx& c) {
                 const float labelR = visualR + (whiteR - visualR) * labelContrast;
                 const float labelG = visualG + (whiteG - visualG) * labelContrast;
                 const float labelB = visualB + (whiteB - visualB) * labelContrast;
+                const float itemLabelScale = UiTextScale(
+                    g_TextS, UiTextLevel::Description, ui)
+                    + 0.10f * focus * ui;
                 drawFit(item.label, drawAx + miniRadius + 25.0f * ui,
                         drawAy - 12.0f * ui,
-                        (isCoreNode ? 0.68f : 0.62f) * ui
-                            + 0.22f * focus * ui,
+                        itemLabelScale,
                         labelW, labelR, labelG, labelB,
                         (0.64f + 0.38f * focus + 0.18f * hover) * itemFade);
                 const float typeR = visualR + (whiteR - visualR) * 0.34f;
@@ -1001,9 +1005,9 @@ void Scene_Shop(const SceneCtx& c) {
                                  isCoreNode ? L"코어"
                                  : (isProfileNode ? L"프로필" : L"페이로드"),
                                  drawAx + miniRadius + 25.0f * ui,
-                                 drawAy + 13.0f * ui,
-                                 (isCoreNode ? 0.42f : 0.38f) * ui
-                                     + 0.06f * focus * ui,
+                                 drawAy + 22.0f * ui,
+                                 UiTextScale(g_TextS, UiTextLevel::Supporting,
+                                             ui * (1.0f + 0.12f * focus)),
                                   typeR, typeG, typeB,
                                   (0.48f + 0.38f * focus + 0.20f * hover)
                                       * designA * itemFade,
@@ -1080,7 +1084,8 @@ void Scene_Shop(const SceneCtx& c) {
         // the bright background, so the right edge is now the only anchor.
         drawRightFit(g_TextS, detailType, detailRight,
                      detailLayout.titleY - 38.0f * ui,
-                     0.44f * ui, detailW, detailR, detailG, detailB,
+                     UiTextScale(g_TextS, UiTextLevel::Supporting, ui),
+                     detailW, detailR, detailG, detailB,
                      0.96f * detailA, 0.72f);
         float titleSc = 1.08f * ui;
         while (titleSc > 0.74f * ui && g_TextL.Width(detailTitle, titleSc) > detailW)

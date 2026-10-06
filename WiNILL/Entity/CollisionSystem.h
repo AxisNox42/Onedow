@@ -120,16 +120,15 @@ public:
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
                       bullet.dmgMult * CritRoll(stats, isCrit);
-                const float dealt = std::min(baseDamage, monster->hp);
-                monster->hp -= dealt;
+                const float dealt = ApplyMobDamage(monster->hp, monster->alive,
+                                                   monster->hitFlashTimer, baseDamage);
                 SpawnDamageNumber(monster->worldX, monster->worldY, dealt,
                                   isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,
                             isCrit ? 1.0f : bullet.color.r,
                             isCrit ? 0.85f : bullet.color.g,
                             isCrit ? 0.3f : bullet.color.b);
-                if (monster->hp <= 0.0f) {
-                    monster->alive = false;
+                if (!monster->alive) {
                     monster->scored = true;
                     AddKillCombo();
                     float baseXp = 0.0f;
@@ -193,16 +192,15 @@ public:
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
                       bullet.dmgMult * CritRoll(stats, isCrit);
-                const float dealt = std::min(baseDamage, ranged->hp);
-                ranged->hp -= dealt;
+                const float dealt = ApplyMobDamage(ranged->hp, ranged->alive,
+                                                   ranged->hitFlashTimer, baseDamage);
                 SpawnDamageNumber(ranged->worldX, ranged->worldY, dealt,
                                   isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,
                             isCrit ? 1.0f : bullet.color.r,
                             isCrit ? 0.85f : bullet.color.g,
                             isCrit ? 0.3f : bullet.color.b);
-                if (ranged->hp <= 0.0f) {
-                    ranged->alive = false;
+                if (!ranged->alive) {
                     ranged->scored = true;
                     AddKillCombo();
                     const long long pickupXp = (long long)(

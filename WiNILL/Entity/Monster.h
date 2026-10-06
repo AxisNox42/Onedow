@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "PlayerStats.h"
+#include "../Render/EnemyParticles.h"
 
 // The playable roster contains only the six live signals: Rotor (ROTOR),
 // Genesis (GENESIS), Swarm (SWARM), Gravis, Quasar, and the separate Scope
@@ -18,6 +19,28 @@ enum class MobKind {
     GRAVIS,
     QUASAR,
 };
+
+inline constexpr float MOB_HIT_FLASH_TIME = 0.12f;
+
+inline float ApplyMobDamage(float& hp, bool& alive, float& hitFlashTimer,
+                            float damage) {
+    if (!alive) return 0.0f;
+    if (hp <= 0.0f) {
+        hp = 0.0f;
+        alive = false;
+        return 0.0f;
+    }
+    if (!(damage > 0.0f)) return 0.0f;
+    const float dealt = std::min(hp, damage);
+    if (dealt <= 0.0f) return 0.0f;
+    hp -= dealt;
+    hitFlashTimer = MOB_HIT_FLASH_TIME;
+    if (hp <= 0.0f) {
+        hp = 0.0f;
+        alive = false;
+    }
+    return dealt;
+}
 
 inline void MobKillReward(MobKind kind, float& xpBase, float& scoreBase) {
     xpBase = 1.0f;
@@ -66,6 +89,7 @@ public:
     bool scored = false;
     bool noBlast = false;
     bool summoned = false;
+    float hitFlashTimer = 0.0f;
     glm::vec3 color = glm::vec3(1.0f, 0.27f, 0.0f);
 
     MobKind kind = MobKind::ROTOR;
@@ -162,6 +186,99 @@ public:
         }
     }
 
+    void SpawnRotorDeathEffect(float base, float visualTime, bool reduced) const {
+        const float radius = base * 1.35f;
+        EnemyParticleBurst burst;
+        burst.count = 20; burst.directions = 4;
+        burst.life = 0.44f; burst.speedMin = radius * 2.8f; burst.speedMax = radius * 4.4f;
+        burst.phase = visualTime * 0.78f + (float)((size_t)this % 628) * 0.01f;
+        burst.startRadius = 0.16f; burst.jitter = 0.45f;
+        burst.tangent = 0.4f; burst.colorLift = 0.10f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        SpawnMobDeathSparks(worldX, worldY, color, radius, 6, reduced);
+    }
+
+    void SpawnSwarmDeathEffect(float base, float visualTime, bool reduced) const {
+        const float radius = base * 1.16f;
+        EnemyParticleBurst burst;
+        burst.count = 16; burst.directions = 3;
+        burst.life = 0.40f; burst.speedMin = radius * 2.8f; burst.speedMax = radius * 4.4f;
+        burst.sizeMin = 2.0f; burst.sizeMax = 4.0f;
+        burst.phase = visualTime * 0.62f + (float)((size_t)this % 628) * 0.01f - 1.5708f;
+        burst.startRadius = 0.12f; burst.jitter = 0.55f; burst.colorLift = 0.08f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        SpawnMobDeathSparks(worldX, worldY, color, radius, 4, reduced);
+    }
+
+    void SpawnGenesisDeathEffect(float base, bool reduced) const {
+        const float radius = base * 1.35f * 1.7f;
+        EnemyParticleBurst burst;
+        burst.rangeScale = 2.0f;
+        burst.count = 12; burst.directions = 6; burst.life = 0.18f;
+        burst.phase = hiveOrbitAngle - 0.5235988f;
+        burst.startRadius = 0.60f; burst.jitter = 0.22f;
+        burst.speedMin = radius * 1.2f; burst.speedMax = radius * 2.0f;
+        burst.colorLift = 0.08f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        burst.count = 32; burst.directions = 0; burst.life = 0.68f; burst.delay = 0.06f;
+        burst.startRadius = 0.16f; burst.tangent = 0.1f;
+        burst.speedMin = radius * 3.5f; burst.speedMax = radius * 5.2f;
+        burst.sizeMin = 3.0f; burst.sizeMax = 14.0f; burst.colorLift = 0.16f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        SpawnMobDeathSparks(worldX, worldY, color, radius, 12, reduced);
+    }
+
+    void SpawnGravisDeathEffect(float base, bool reduced) const {
+        const float radius = base * 1.34f;
+        EnemyParticleBurst burst;
+        burst.rangeScale = 2.0f;
+        burst.count = 12; burst.life = 0.10f; burst.phase = gravisVisualAngle;
+        burst.startRadius = 0.85f; burst.inward = true;
+        burst.speedMin = radius * 8.0f; burst.speedMax = radius * 10.0f;
+        burst.sizeMin = 2.5f; burst.sizeMax = 5.0f; burst.colorLift = 0.08f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        burst.count = 36; burst.life = 0.70f; burst.delay = 0.07f;
+        burst.startRadius = 0.10f; burst.inward = false; burst.tangent = 0.40f;
+        burst.speedMin = radius * 3.4f; burst.speedMax = radius * 4.8f;
+        burst.sizeMin = 3.0f; burst.sizeMax = 13.0f; burst.colorLift = 0.22f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        SpawnMobDeathSparks(worldX, worldY, color, radius, 14, reduced);
+    }
+
+    void SpawnQuasarDeathEffect(float base, bool reduced) const {
+        const float charge = quasarState == 1 ? 0.22f
+            : (quasarState == 2 ? std::min(1.0f, quasarTimer / 0.55f)
+               : (quasarState == 3 ? 1.0f : 0.0f));
+        const float major = base * (1.32f + charge * 0.10f);
+        const float radius = major + base * 0.16f;
+        EnemyParticleBurst burst;
+        burst.rangeScale = 2.0f;
+        burst.count = 12; burst.life = 0.18f; burst.phase = quasarVisualAngle;
+        burst.startRadius = 0.18f; burst.sizeMin = 2.0f; burst.sizeMax = 4.0f;
+        burst.speedMin = radius * 1.5f; burst.speedMax = radius * 3.0f;
+        burst.colorLift = 0.22f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        // Fast, small blue-white specks in the original square-particle renderer.
+        burst.count = 44; burst.life = 0.74f; burst.delay = 0.05f;
+        burst.startRadius = 0.12f; burst.sizeMax = 10.0f; burst.colorLift = 0.50f;
+        burst.speedMin = radius * 3.6f; burst.speedMax = radius * 5.2f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        SpawnMobDeathSparks(worldX, worldY, color, radius, 16, reduced);
+    }
+
+    void SpawnDeathEffect(float visualTime, bool reduced = false) {
+        if (exploded) return;
+        exploded = true;
+        const float base = (summoned ? 28.0f : 18.0f) * sizeScale;
+        switch (kind) {
+        case MobKind::ROTOR: SpawnRotorDeathEffect(base, visualTime, reduced); break;
+        case MobKind::SWARM: SpawnSwarmDeathEffect(base, visualTime, reduced); break;
+        case MobKind::GENESIS: SpawnGenesisDeathEffect(base, reduced); break;
+        case MobKind::GRAVIS: SpawnGravisDeathEffect(base, reduced); break;
+        case MobKind::QUASAR: SpawnQuasarDeathEffect(base, reduced); break;
+        }
+    }
+
     void BeginGenesisEgress(float dirX, float dirY) {
         const float length = std::sqrt(dirX * dirX + dirY * dirY);
         if (length <= 0.0001f) return;
@@ -193,13 +310,14 @@ public:
                 float gateWX = -1.0f, float gateWY = -1.0f,
                 float gateWW = -1.0f, float gateWH = -1.0f) {
         if (!alive) return;
+        hitFlashTimer = std::max(0.0f, hitFlashTimer - deltaTime);
         if (singularityGrace > 0.0f)
             singularityGrace = std::max(0.0f, singularityGrace - deltaTime);
         if (burnTimer > 0.0f) {
-            hp -= burnDps * deltaTime;
+            ApplyMobDamage(hp, alive, hitFlashTimer, burnDps * deltaTime);
             burnTimer -= deltaTime;
             if (burnTimer <= 0.0f) { burnTimer = 0.0f; burnDps = 0.0f; }
-            if (hp <= 0.0f) { hp = 0.0f; alive = false; return; }
+            if (!alive) return;
         }
 
         const float dx = playerCX - worldX;

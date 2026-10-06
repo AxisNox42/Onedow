@@ -256,6 +256,7 @@
     <ClInclude Include="Render\DrawPrim.h" />
     <ClInclude Include="Render\IconSystem.h" />
     <ClInclude Include="Render\Juice.h" />
+    <ClInclude Include="Render\EnemyParticles.h" />
     <ClInclude Include="Render\UiColors.h" />
     <ClInclude Include="Render\UiLayout.h" />
     <ClInclude Include="Render\TextRenderer.h" />

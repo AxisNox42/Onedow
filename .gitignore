@@ -11,7 +11,7 @@
 /bin/*
 !/bin/Onedow/
 /bin/Onedow/*
-!/bin/Onedow/README.txt
+!/bin/Onedow/README.md
 !/bin/Onedow/macOS/
 !/bin/Onedow/macOS/README.txt
 

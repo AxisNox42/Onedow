@@ -177,7 +177,7 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "debugmode"))    g_DebugMode = (val != 0);
         else if (!std::strcmp(key, "shaderfx"))    g_ShaderFx          = (val != 0);
         else if (!std::strcmp(key, "mobstyle"))   { int v = (int)val; if (v >= 0 && v <= 1) g_MobVisualStyle = (MobVisualStyle)v; }
-        else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 1) g_VfxDensity = (VfxDensity)v; }
+        else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 2) g_VfxDensity = (VfxDensity)v; }
         else if (!std::strcmp(key, "macopt"))     g_MacOptV1          = (val != 0);
         else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val;
         else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val;

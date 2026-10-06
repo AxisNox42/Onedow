@@ -121,11 +121,13 @@ public:
 
         for (auto r : rangedMobs)
             r->Update(playerCX, playerCY, dt, bullets, rmobMoveMult);
-        // deathScale 이 0 이하가 돼야 실제 삭제 (사망 애니메이션 완료 후)
+        // Keep an unprocessed death until rewards and death particles exist.
         rangedMobs.erase(
             std::remove_if(rangedMobs.begin(), rangedMobs.end(),
                 [](RangedMob* r) {
-                    if (!r->alive && r->deathScale <= 0.0f) { delete r; return true; }
+                    if (!r->alive && r->scored && r->exploded && r->deathScale <= 0.0f) {
+                        delete r; return true;
+                    }
                     return false;
                 }),
             rangedMobs.end());
@@ -261,8 +263,8 @@ private:
         for (size_t i = 0; i < monsters.size(); ++i) {
             if (!monsters[i]->alive || pushCounts[i] < 4 ||
                 monsters[i]->kind == MobKind::SWARM) continue;
-            monsters[i]->hp -= kCrushDps * dt;
-            if (monsters[i]->hp <= 0.0f) monsters[i]->alive = false;
+            ApplyMobDamage(monsters[i]->hp, monsters[i]->alive,
+                           monsters[i]->hitFlashTimer, kCrushDps * dt);
         }
     }
 };

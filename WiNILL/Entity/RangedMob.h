@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <vector>
 #include "Bullet.h"
+#include "../Render/EnemyParticles.h"
 #include "Settings.h"   // g_ArenaExX/Y (폴리모프 페이즈2 확장 아레나)
 
 class RangedMob {
@@ -18,6 +19,7 @@ public:
     bool  exploded   = false;
     bool  scored     = false;
     float deathScale = 1.0f;
+    float hitFlashTimer = 0.0f;
     glm::vec3 color = glm::vec3(0.15f, 0.85f, 1.0f);   // Lens: icy cyan
 
     float wanderTimer = 0.0f;
@@ -51,6 +53,25 @@ public:
         fireTimer   = (float)(rand() % 200) / 100.0f;  // stagger initial charge
     }
 
+    void SpawnDeathEffect(bool reduced = false) {
+        if (exploded) return;
+        exploded = true;
+        const float base = VISUAL_BASE_PX;
+        deathScale = 0.0f; // Death particles replace the shrinking corpse.
+        const float charge = lensState == State::CHARGING
+            ? std::min(chargeAngle / (2.0f * 3.14159f * CHARGE_ROTATIONS), 1.0f)
+            : (lensState == State::BURST ? 1.0f : 0.0f);
+        const float radius = base * (1.44f + 0.12f * charge);
+        EnemyParticleBurst burst;
+        burst.count = 24; burst.life = 0.50f;
+        burst.phase = rotAngle + (float)((size_t)this % 628) * 0.01f;
+        burst.startRadius = 0.65f; burst.jitter = 0.12f; burst.tangent = -0.30f;
+        burst.speedMin = radius * 1.7f; burst.speedMax = radius * 2.4f;
+        burst.sizeMin = 2.5f; burst.sizeMax = 5.0f; burst.colorLift = 0.18f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+        SpawnMobDeathSparks(worldX, worldY, color, radius, 8, reduced);
+    }
+
     void pickNewTarget() {
         float margin = 80.0f;
         float minX = -g_ArenaExX + margin, maxX = (float)screenW + g_ArenaExX - margin;
@@ -69,6 +90,8 @@ public:
             if (deathScale < 0.0f) deathScale = 0.0f;
             return;
         }
+        hitFlashTimer -= dt;
+        if (hitFlashTimer < 0.0f) hitFlashTimer = 0.0f;
 
         // Wander
         wanderTimer += dt;
