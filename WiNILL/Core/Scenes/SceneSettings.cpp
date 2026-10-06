@@ -71,6 +71,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
     static float optHover[4][6][8] = {};
     static float holdT = 0.0f;
     static int listCursor = 1;
+    static float accordionHoverTop = -1.0f;
+    static bool accordionFocusPending = false;
     // Shared normalized scroll position for the left index and right board.
     // Each pane maps the same 0..1 value to its own row geometry.
     static float settingsScroll = 0.0f;
@@ -113,6 +115,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
         s_volDrag  = false;
         holdT = 0.0f;
         listCursor = 1;
+        accordionHoverTop = -1.0f;
+        accordionFocusPending = false;
         settingsScroll = 0.0f;
         settingsScrollTarget = 0.0f;
         prevListW = false;
@@ -443,8 +447,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     static wchar_t s_volBuf[8];
 
     // \u2500\u2500 Render rows \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    // Keep the setting state for every category; the right panel renders only
-    // the rows belonging to the currently selected category.
+    // Keep every category's controls expanded on the right settings board.
     swprintf_s(s_volBuf, L"%d", g_SoundVol);
     const int allLangCur = g_Language == Language::KR ? 0 :
                            g_Language == Language::EN ? 1 : 2;
@@ -596,7 +599,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
             addRightItem(category, row, categoryRows[category][row]);
     }
 
-    bool focusChanged = false;
+    bool focusChanged = accordionFocusPending;
+    accordionFocusPending = false;
 
     auto isListItem = [&](int index) {
         return index >= 0 && index < listCount && !list[index].header;
@@ -658,6 +662,11 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const bool overList = inputReady && mx >= listX - 24.0f * uiS
                        && mx < listX + listW + 28.0f * uiS
                        && my >= listTop && my < listBottom;
+    // Switching categories moves the headers. Keep the triggering header's
+    // hover area latched until the pointer leaves it to avoid reflow flicker.
+    if (!overList || my < accordionHoverTop
+        || my >= accordionHoverTop + listRowH || g_ScrollAccum != 0.0f)
+        accordionHoverTop = -1.0f;
     const bool categoryInteractionReady = tabSwitchT >= 0.22f;
     const bool overRightList = inputReady && categoryInteractionReady
                             && mx >= rpX - 10.0f * uiS
@@ -683,7 +692,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const int cursorBeforeKeys = listCursor;
     if ((overList || overRightList) && listWKey && !prevListW) stepListCursor(-1);
     if ((overList || overRightList) && listSKey && !prevListS) stepListCursor(1);
-    focusChanged = listCursor != cursorBeforeKeys;
+    focusChanged = focusChanged || listCursor != cursorBeforeKeys;
     prevListW = listWKey;
     prevListS = listSKey;
     auto revealFocus = [&]() {
@@ -750,6 +759,16 @@ void Scene_SettingsInline(const SceneCtx& c) {
         const bool hov = overList && mx >= listX - 10.0f * uiS
                       && mx < listX + listW + 18.0f * uiS
                       && my >= y && my < y + listRowH;
+        if (hov && list[i].header && list[i].category != tab
+            && (accordionHoverTop < 0.0f || (lmb && !g_LmbPrev))) {
+            tab = list[i].category;
+            detailRow = 0;
+            listCursor = -1;
+            accordionHoverTop = y;
+            accordionFocusPending = true;
+            for (auto& h : listHover) h = 0.0f;
+            continue;
+        }
         if (hov && lmb && !g_LmbPrev) {
             int targetIndex = i;
             if (list[i].header) {
@@ -856,7 +875,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     }
 
 
-    // The right settings board is scoped to the category selected on the left.
+    // Left-category navigation never collapses the right settings board.
     int hoverCategory = -1;
     int hoverSettingRow = -1;
     int hoverSettingOpt = -1;
