@@ -44,9 +44,28 @@ static void drawLineQuad(float x1, float y1, float x2, float y2, float width,
     BatchTri(x1 + px, y1 + py, x2 - px, y2 - py, x1 - px, y1 - py, r, g, b, a);
 }
 
-void DrawApproachOrb(float x, float y) {
-    drawRectCol3(x - 18.0f, y - 18.0f, 36.0f, 36.0f, UiCol::APPROACH_ORB_OUTER, 0.30f);
-    drawRectCol3(x - 14.0f, y - 14.0f, 28.0f, 28.0f, UiCol::APPROACH_ORB_INNER, 1.0f);
+void DrawApproachOrb(float x, float y, float visualTime) {
+    const float pulse = 0.5f + 0.5f * sinf(visualTime * 4.0f);
+    const float phase = visualTime * 0.65f;
+    drawCircle(x, y, 22.0f + pulse * 3.0f,
+               0.88f, 0.08f, 0.14f, 0.08f + pulse * 0.05f);
+    drawCircle(x, y, 11.0f, 0.26f, 0.015f, 0.045f, 0.82f);
+    float px[4], py[4];
+    for (int i = 0; i < 4; ++i) {
+        const float angle = phase + (float)i * 1.5707963f;
+        px[i] = x + cosf(angle) * 17.0f;
+        py[i] = y + sinf(angle) * 17.0f;
+    }
+    for (int i = 0; i < 4; ++i) {
+        const int next = (i + 1) % 4;
+        drawLineQuad(px[i], py[i], px[next], py[next],
+                     1.4f, 1.0f, 0.20f, 0.25f, 0.78f);
+        drawLineQuad(x, y, px[i], py[i],
+                     0.9f, 1.0f, 0.28f, 0.32f, 0.50f);
+        drawCircle(px[i], py[i], 2.6f, 1.0f, 0.34f, 0.36f, 0.92f);
+    }
+    drawCircle(x, y, 4.2f + pulse * 1.2f,
+               1.0f, 0.62f, 0.48f, 0.96f);
 }
 
 void DrawAppWindow(float wx, float wy, float w, float h, const wchar_t* title, float tb) {
@@ -718,13 +737,13 @@ static void DrawEnemyArc(float cx, float cy, float radius,
     }
 }
 
-void drawMob(const Monster* m) {
+void drawMob(const Monster* m, float visualTime) {
     MarkMobSeen(m->kind);
     if (m->kind == MobKind::SWARM) MarkMobSeenId(CM_SWARM);
     if (m->kind == MobKind::GRAVIS) MarkMobSeenId(CM_GRAVIS);
     if (m->kind == MobKind::QUASAR) MarkMobSeenId(CM_QUASAR);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
-    const float visualTime = (float)glfwGetTime();
+    if (visualTime < 0.0f) visualTime = (float)glfwGetTime();
     if (m->kind == MobKind::GENESIS) {
         // Genesis: a generation station with two fixed parallel egress lanes.
         float x = m->worldX, y = m->worldY;
@@ -905,7 +924,7 @@ void drawMob(const Monster* m) {
         ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
         float x = m->worldX, y = m->worldY;
         float phOff = (float)((size_t)m % 628) * 0.01f;
-        float t = (float)glfwGetTime();
+        float t = visualTime;
         const float phase = t * 0.62f + phOff - 1.5708f;
         const float radius = base * 0.92f;
         EnemyNodeAnchor nodes[3];
@@ -931,7 +950,7 @@ void drawMob(const Monster* m) {
         float x = m->worldX, y = m->worldY;
         float phOff = (float)((size_t)m % 628) * 0.01f;
         const float half = base * 0.78f;
-        const float angle = (float)glfwGetTime() * 0.78f + phOff;
+        const float angle = visualTime * 0.78f + phOff;
         float vx[4], vy[4];
         EnemyNodeAnchor nodes[4];
         for (int k = 0; k < 4; ++k) {
@@ -946,14 +965,15 @@ void drawMob(const Monster* m) {
         DrawEnemyCore(x, y, base * 0.29f, cr, cg, cb, 0.96f);
     }
     if (m->burnTimer > 0.0f) {
-        float pulse = 0.35f + 0.25f * sinf((float)glfwGetTime() * 14.0f);
+        float pulse = 0.35f + 0.25f * sinf(visualTime * 14.0f);
         drawCircle(m->worldX, m->worldY, base * 1.2f,
                    1.0f, 0.55f, 0.12f, pulse);
     }
 }
 
-void drawRangedMob(const RangedMob* r) {
+void drawRangedMob(const RangedMob* r, float visualTime) {
     if (!r || !r->alive || r->deathScale <= 0.0f) return;
+    if (visualTime < 0.0f) visualTime = (float)glfwGetTime();
 
     const float sc = r->deathScale;
     const float base = RangedMob::VISUAL_BASE_PX * sc;
@@ -985,7 +1005,7 @@ void drawRangedMob(const RangedMob* r) {
         nodes[i] = { x + cosf(a) * instrumentR,
                      y + sinf(a) * instrumentR,
                      base * (0.13f + 0.02f * chargeT),
-                     0.86f + 0.10f * sinf((float)glfwGetTime() * 5.0f + i) };
+                     0.86f + 0.10f * sinf(visualTime * 5.0f + i) };
     }
     for (int i = 0; i < 4; ++i)
         DrawEnemyNode(nodes[i], cr, cg, cb, 0.88f + 0.12f * chargeT);

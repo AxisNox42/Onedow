@@ -296,10 +296,10 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     static const wchar_t* kWeaponNames[2] = { L"RIFLE", L"FIELD" };
     static const wchar_t* kWeaponNamesKR[2] = { L"소총", L"전기장" };
     static const wchar_t* kWeaponSub[2] = {
-        L"PRECISION / SINGLE TARGET", L"AREA CONTROL / SUSTAINED"
+        L"PRECISION · SINGLE TARGET", L"AREA CONTROL · SUSTAINED"
     };
     static const wchar_t* kWeaponSubKR[2] = {
-        L"정밀 / 단일 대상", L"범위 제어 / 지속"
+        L"정밀 · 단일 대상", L"범위 제어 · 지속"
     };
     static const wchar_t* kStatNames[6] = {
         L"DAMAGE", L"FIRE RATE", L"INTERVAL", L"SPEED", L"SPREAD", L"RANGE"
@@ -743,8 +743,8 @@ void Scene_RunConfigInline(const SceneCtx& c) {
                           trialListW * 0.72f, 0.0f, 0.0f, 0.012f,
                           0.38f * contentA);
 
-    const float playTitleScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
-    DrawShadowedText(g_TextL, PlayText(L"플레이", L"PLAY"), pageL, headerY,
+    const float playTitleScale = UiTextScale(g_TextXL, UiTextLevel::Title, uiS);
+    DrawShadowedText(g_TextXL, PlayText(L"플레이", L"PLAY"), pageL, headerY,
                      playTitleScale, 1.0f, 1.0f, 1.0f,
                      0.98f * entryHeader, 0.74f);
     const float escW = g_TextS.Width(L"[ESC]", playMetaScale);
@@ -1126,7 +1126,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
             appendWrapped(std::wstring(trialDetail(id)), 0, -1);
             appendLine(PlayText(L"간단 요약", L"COMPACT READOUT"), 2, 0);
             appendWrapped(std::wstring(trialCompact(id)), 0, -1);
-            appendLine(PlayText(L"보상 / 압박", L"PAYOFF / PRESSURE"), 2, 0);
+            appendLine(PlayText(L"보상 · 압박", L"PAYOFF · PRESSURE"), 2, 0);
             appendWrapped(std::wstring(trialTag(id)), 0, 1);
             appendLine(L"", 3, 0);
         }

@@ -43,22 +43,28 @@
 #include "SceneInternal.h"
 
 namespace {
-enum class PauseAction : int { Resume, OpenSettings, Abandon };
+enum class PauseAction : int { Resume, OpenSettings, ViewAugments, Abandon };
 constexpr int kPauseActionCount = static_cast<int>(PauseAction::Abandon) + 1;
 
 void ApplyPauseAction(PauseAction action, const SceneCtx& scene,
                       const PauseSceneContext& state) {
     switch (action) {
     case PauseAction::Resume:
+        state.showOwnedAugments = false;
         state.currentState = state.resumeState;
         state.resumeState = GameState::RUNNING;
         break;
     case PauseAction::OpenSettings:
+        state.showOwnedAugments = false;
         state.settingsReturnState = GameState::PAUSED;
         if (state.resetSettingsUi) state.resetSettingsUi(0.0f);
         state.currentState = GameState::SETTINGS;
         break;
+    case PauseAction::ViewAugments:
+        state.showOwnedAugments = true;
+        break;
     case PauseAction::Abandon:
+        state.showOwnedAugments = false;
         if (scene.abandonRun) scene.abandonRun();
         break;
     }
@@ -120,6 +126,32 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
     const float btnY0   = sh * 0.42f;
     const float titleY  = sh * 0.24f;
 
+    static bool s_InventoryEscArmed = true;
+    if (state.showOwnedAugments) {
+        const int esc = c.window ? glfwGetKey(c.window, GLFW_KEY_ESCAPE)
+                                 : GLFW_RELEASE;
+        if (esc == GLFW_RELEASE) s_InventoryEscArmed = true;
+        else if (s_InventoryEscArmed) {
+            state.showOwnedAugments = false;
+            s_InventoryEscArmed = false;
+        }
+        const int li = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
+        static const wchar_t* kInventoryBack[LANG_COUNT] = {
+            L"ESC  뒤로", L"ESC  BACK", L"ESC  戻る"
+        };
+        const float backScale = UiTextScale(
+            state.text.body, UiTextLevel::Supporting, uiScale);
+        const wchar_t* back = kInventoryBack[li];
+        state.text.body.Draw(back,
+            sw - 32.0f * uiScale - state.text.body.Width(back, backScale),
+            sh - 42.0f * uiScale, backScale,
+            0.48f, 0.78f, 0.96f, 0.88f * entryFade);
+        return;
+    }
+    s_InventoryEscArmed = false;
+    if (!c.window || glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_RELEASE)
+        s_InventoryEscArmed = true;
+
     // 좌측 앵커 라인 + 다이아몬드 (메인메뉴와 동일)
     {
         const float anchorX = btnX0 - 36.0f;
@@ -149,9 +181,9 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
 
     // 버튼
     static const wchar_t* kPauseRoutes[LANG_COUNT][kPauseActionCount] = {
-        { L"계속하기", L"설정", L"\uD3EC\uAE30\uD558\uAE30" },
-        { L"CONTINUE", L"SETTINGS", L"ABANDON" },
-        { L"続ける", L"設定", L"\u653E\u68C4\u3059\u308B" },
+        { L"계속하기", L"설정", L"보유 증강", L"\uD3EC\uAE30\uD558\uAE30" },
+        { L"CONTINUE", L"SETTINGS", L"AUGMENTS", L"ABANDON" },
+        { L"続ける", L"設定", L"所持強化", L"\u653E\u68C4\u3059\u308B" },
     };
     const int pauseLang = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
 

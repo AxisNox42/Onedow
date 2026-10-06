@@ -563,9 +563,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const wchar_t* archiveLabels[2] = {
         korean ? L"언어" : L"LANGUAGE",
         korean ? L"데이터 초기화" : L"RESET DATA" };
-    // Accordion model: every category keeps a visible header, while only
-    // the selected category expands its controls. This keeps navigation
-    // stable while the right panel changes to the selected category.
+    // The left category index is an accordion; keep every right-side option
+    // visible so changing categories does not collapse the settings board.
     addHeader(0, korean ? L"화면" : L"DISPLAY");
     if (tab == 0) for (int i = 0; i < 5; ++i) addItem(0, i, displayLabels[i]);
     addHeader(1, korean ? L"소리" : L"AUDIO");
@@ -578,15 +577,24 @@ void Scene_SettingsInline(const SceneCtx& c) {
 
     SettingsListEntry rightList[32] = {};
     int rightListCount = 0;
+    auto addRightHeader = [&](int cat, const wchar_t* label) {
+        rightList[rightListCount++] = { cat, -1, true, label };
+    };
     auto addRightItem = [&](int cat, int row, const wchar_t* label) {
         rightList[rightListCount++] = { cat, row, false, label };
     };
-    const wchar_t* const* activeLabels = displayLabels;
-    if (tab == 1) activeLabels = audioLabels;
-    else if (tab == 2) activeLabels = gameplayLabels;
-    else if (tab == 3) activeLabels = archiveLabels;
-    for (int i = 0; i < rowCounts[tab]; ++i)
-        addRightItem(tab, i, activeLabels[i]);
+    const wchar_t* categoryLabels[4] = {
+        korean ? L"화면" : L"DISPLAY",
+        korean ? L"소리" : L"AUDIO",
+        korean ? L"게임플레이" : L"GAMEPLAY",
+        korean ? L"기록" : L"ARCHIVE" };
+    const wchar_t* const* categoryRows[4] = {
+        displayLabels, audioLabels, gameplayLabels, archiveLabels };
+    for (int category = 0; category < 4; ++category) {
+        addRightHeader(category, categoryLabels[category]);
+        for (int row = 0; row < rowCounts[category]; ++row)
+            addRightItem(category, row, categoryRows[category][row]);
+    }
 
     bool focusChanged = false;
 
@@ -1052,10 +1060,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
         if (y < rightListTop - rightRowH || y > rightListBottom) continue;
 
         const SettingsListEntry& entry = rightList[i];
-        // A category may change after the list was assembled earlier this
-        // frame. Hide the old category immediately; the new list arrives on
-        // the next frame and fades into the same panel.
-        if (entry.category != tab) continue;
         float catR = 0.35f, catG = 0.72f, catB = 1.0f;
         categoryColor(entry.category, catR, catG, catB);
         if (entry.header) {
@@ -1328,8 +1332,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     if (!lmb) s_volDrag = false;
     BatchFlush();
     glDisable(GL_SCISSOR_TEST);
-    if (rightMaxScroll > 0.0f && rightListCount > 0
-        && rightList[0].category == tab) {
+    if (rightMaxScroll > 0.0f && rightListCount > 0) {
         const float rightTotalH = rightListCount * rightRowH;
         const float thumbH = std::max(32.0f * uiS,
                                       rightListH * (rightListH / rightTotalH));
@@ -1467,7 +1470,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
 
     // \u2500\u2500 Click handling \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
      // Apply option clicks using the category/row that owns the hovered
-     // control. Only the selected category is rendered on the right panel.
+     // control; the left category index remains independent of this board.
      if (inputReady && lmb && !g_LmbPrev
          && hoverCategory >= 0 && hoverSettingRow >= 0
          && hoverSettingOpt >= 0) {

@@ -848,7 +848,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float reveal = s_itemReveal[slot] * wake;
         if (reveal <= 0.005f) continue;
         const float active = std::max(s_itemHover[slot], distanceFade * 0.38f);
-        const float miniX = ax;
+        const float miniX = ax + ((itm.category == 0 && itm.key == CM_QUASAR && isSel)
+                                  ? 22.0f * uiS : 0.0f);
         // Keep the gameplay silhouette readable, but compact enough that the
         // wider entity row spacing still shows roughly 3-4 records per page.
         const float focusScale = std::max(0.0f, std::min(1.0f, s_itemHover[slot]));

@@ -285,6 +285,28 @@ static void DrawPlayerRadialBars(float cx, float cy, float size,
              xpAtCap ? 0.30f : 1.0f, xpAlpha);
 }
 
+static void DrawEdgeVignette(float width, float intensity,
+                             float r, float g, float b) {
+    if (width <= 0.0f || intensity <= 0.0f) return;
+    constexpr int kBands = 10;
+    const float bandWidth = width / kBands;
+    const float sw = (float)screenWidth, sh = (float)screenHeight;
+    BindMainShader();
+    for (int band = 0; band < kBands; ++band) {
+        const float inset = band * bandWidth;
+        const float alpha = intensity * (1.0f -
+            ((float)band + 0.5f) / kBands);
+        drawRect(0.0f, inset, sw, bandWidth, r, g, b, alpha);
+        drawRect(0.0f, sh - inset - bandWidth,
+                 sw, bandWidth, r, g, b, alpha);
+        const float sideY = inset + bandWidth;
+        const float sideH = std::max(0.0f, sh - 2.0f * sideY);
+        drawRect(inset, sideY, bandWidth, sideH, r, g, b, alpha);
+        drawRect(sw - inset - bandWidth, sideY,
+                 bandWidth, sideH, r, g, b, alpha);
+    }
+}
+
 static void DrawGameplayCrosshair(float x, float y) {
     const UiColor3 accent = UiCol::ACCENT_CYAN;
     drawCircle(x, y, 11.0f, 0.0f, 0.0f, 0.0f, 0.72f);
@@ -396,6 +418,7 @@ bool g_RmbPrev = false;
 
 // PAUSED ?�태 ??보유 증강 ?�릭 ???�명 ?�시 (-1 = ?�음, 0..AUG_TOTAL-1 = ?�덱??
 int g_PauseSelectedAug = -1;
+bool g_ShowPauseInventory = false;
 
 // ?�정 ?�면 진입 ???�전 ?�태 (?�로 가�???복�?)
 GameState g_SettingsReturnTo = GameState::MAIN_MENU;
@@ -1236,6 +1259,7 @@ int main() {
             g_ConversionWeapon = -1;
             g_CurrentWeapon    = -1;
             g_PauseSelectedAug = -1;
+            g_ShowPauseInventory = false;
             g_GameTime         = 0.0f;
             g_GameManager.ClearAugmentRewardQueue();
             g_AugEffectQueue.clear();
@@ -1406,6 +1430,7 @@ int main() {
         if (prevState == GameState::PAUSED &&
             g_GameManager.currentState != GameState::PAUSED) {
             g_PauseSelectedAug = -1;
+            g_ShowPauseInventory = false;
         }
         if (!debugInputCaptured)
             g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
@@ -3000,10 +3025,10 @@ CollisionSystem::Update(pCX, pCY,
                 g_GameManager.currentState != GameState::GAMEOVER);
 
         for (auto m : g_MonsterManager.monsters) {
-            if (m->alive) drawMob(m);
+            if (m->alive) drawMob(m, g_GameTime);
         }
         for (auto r : g_MonsterManager.rangedMobs) {
-            drawRangedMob(r);
+            drawRangedMob(r, g_GameTime);
         }
         for (auto& b : g_Bullets) {
             if (b.active) drawBullet(b);
@@ -3016,7 +3041,7 @@ CollisionSystem::Update(pCX, pCY,
             drawRect(p.x - hs, p.y - hs, p.size, p.size, p.r, p.g, p.b, a);
         }
         for (auto& orb : g_ApproachOrbs) {
-            DrawApproachOrb(orb.x, orb.y);
+            DrawApproachOrb(orb.x, orb.y, g_GameTime);
         }
         BatchFlush();
 
@@ -3027,7 +3052,8 @@ CollisionSystem::Update(pCX, pCY,
             const float playerSize = PLAYER_SIZE * g_Stats.playerSizeMult;
             BindMainShader();
             const GameState healthState = g_GameManager.currentState;
-            if (healthState == GameState::RUNNING || healthState == GameState::PAUSED ||
+            if (healthState == GameState::RUNNING ||
+                (healthState == GameState::PAUSED && !g_ShowPauseInventory) ||
                 healthState == GameState::AUG_SELECT ||
                 healthState == GameState::DEBUFF_SELECT) {
                 const float hpFraction = std::clamp(g_GameManager.playerHP /
@@ -3156,13 +3182,9 @@ CollisionSystem::Update(pCX, pCY,
 
         // (h5) ?�격 ??빨간 가?�자�?비네??(?�격 ?��?
         if (g_HurtVignette > 0.001f) {
-            BindMainShader();
-            float a = g_HurtVignette * 0.55f;
-            float bw = 60.0f * g_HurtVignette + 14.0f;
-            drawRect(0, 0, (float)screenWidth, bw, 0.95f, 0.1f, 0.1f, a);
-            drawRect(0, (float)screenHeight - bw, (float)screenWidth, bw, 0.95f, 0.1f, 0.1f, a);
-            drawRect(0, 0, bw, (float)screenHeight, 0.95f, 0.1f, 0.1f, a);
-            drawRect((float)screenWidth - bw, 0, bw, (float)screenHeight, 0.95f, 0.1f, 0.1f, a);
+            const float t = std::clamp(g_HurtVignette / 0.5f, 0.0f, 1.0f);
+            DrawEdgeVignette(52.0f * t + 8.0f, 0.20f * t,
+                             0.95f, 0.10f, 0.10f);
         }
 
 
@@ -3283,6 +3305,7 @@ CollisionSystem::Update(pCX, pCY,
                                  1.0f, 0.85f, 0.2f, blink);
                 }
             }
+#if defined(_DEBUG)
             if (g_DebugMode && !g_CreativeMode &&
                 (st == GameState::RUNNING || st == GameState::READY ||
                  st == GameState::AUG_SELECT || st == GameState::DEBUFF_SELECT)) {
@@ -3303,6 +3326,7 @@ CollisionSystem::Update(pCX, pCY,
                                  1.0f, 0.85f, 0.2f, blink);
                 }
             }
+#endif
 
             // ?�?�?[7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�?
             //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
@@ -3346,6 +3370,7 @@ CollisionSystem::Update(pCX, pCY,
                         g_GameManager.currentState,
                         g_GameManager.pauseResumeState,
                         g_SettingsReturnTo,
+                        g_ShowPauseInventory,
                         g_LmbPrev,
                         sceneText,
                         ResetSettingsUi
@@ -3374,9 +3399,9 @@ CollisionSystem::Update(pCX, pCY,
                 case GameState::AUG_REPLACE:       Scene_AugReplace(ctx);       break;
                 default: break;
                 }
-                if (st == GameState::PAUSED || st == GameState::AUG_SELECT ||
-                    st == GameState::DEBUFF_SELECT || st == GameState::AUG_REPLACE ||
-                    false)
+                if ((st == GameState::PAUSED && g_ShowPauseInventory) ||
+                    st == GameState::AUG_SELECT ||
+                    st == GameState::DEBUFF_SELECT || st == GameState::AUG_REPLACE)
                     Scene_OwnedAugPanel(ctx);
             }
             // Scene_Paused can switch to SETTINGS during this render pass.
@@ -3389,6 +3414,18 @@ CollisionSystem::Update(pCX, pCY,
                 st == GameState::DYING   || st == GameState::AUG_SELECT ||
                 st == GameState::DEBUFF_SELECT) {
                 const float hudScale = UiScale(sw, sh);
+                if (st == GameState::RUNNING) {
+                    const float hpFrac = g_Stats.maxHP > 0.0f
+                        ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
+                    if (hpFrac > 0.0f && hpFrac < 0.25f) {
+                        const float pulse = 0.5f + 0.5f * sinf(g_GameTime * 6.0f);
+                        const float severity = 1.0f - hpFrac / 0.25f;
+                        const float alpha = (0.12f + 0.22f * pulse)
+                                          * (0.6f + 0.4f * severity);
+                        DrawEdgeVignette(72.0f * hudScale, alpha * 0.85f,
+                                         0.92f, 0.08f, 0.10f);
+                    }
+                }
 #ifdef __APPLE__
                 const float hudTopY = BROWSER_CHROME_H + 8.0f + 30.0f;
 #else
@@ -3463,38 +3500,17 @@ CollisionSystem::Update(pCX, pCY,
                                  0.45f, 1.0f, 0.62f, ap * 0.95f);
                 }
                 // ?�?�??�체??경고 ??HP 25% ?�하 ??가?�자�?부?�러???�색 ?�스 + ?�스???�?�?
-                if (st == GameState::RUNNING || st == GameState::PAUSED) {
+                if (st == GameState::RUNNING) {
                     float hpFrac = (g_Stats.maxHP > 0.0f)
                                  ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
                     if (hpFrac > 0.0f && hpFrac < 0.25f) {
-                        float pulse = 0.5f + 0.5f * sinf((float)glfwGetTime() * 6.0f);
-                        float sev   = 1.0f - hpFrac / 0.25f;
-                        float a     = (0.12f + 0.22f * pulse) * (0.6f + 0.4f * sev);
-                        BindMainShader();
-                        // Build the warning as nested edge bands so the
-                        // center of the arena remains readable.  The old
-                        // solid 64px frame looked like a hard red box and
-                        // became especially harsh at large resolutions.
-                        constexpr int kLowHpBands = 8;
-                        const float maxBand = 78.0f;
-                        for (int band = 0; band < kLowHpBands; ++band) {
-                            const float t = (float)(band + 1) / (float)kLowHpBands;
-                            const float bandW = maxBand * t;
-                            const float bandA = a * (1.0f - t) * 1.55f;
-                            drawRect(0.0f, 0.0f, sw, bandW,
-                                     0.92f, 0.08f, 0.10f, bandA);
-                            drawRect(0.0f, sh - bandW, sw, bandW,
-                                     0.92f, 0.08f, 0.10f, bandA);
-                            drawRect(0.0f, 0.0f, bandW, sh,
-                                     0.92f, 0.08f, 0.10f, bandA);
-                            drawRect(sw - bandW, 0.0f, bandW, sh,
-                                     0.92f, 0.08f, 0.10f, bandA);
-                        }
+                        const float pulse = 0.5f + 0.5f * sinf(g_GameTime * 6.0f);
                         const wchar_t* LOW[3] = { L"! \uC704\uD5D8", L"! LOW HP", L"! \u5371?" };
                         int li4 = LangIndex();
                         const float lowHpScale = UiTextScale(g_TextS, UiTextLevel::Subtitle, hudScale);
                         float lw = g_TextS.Width(LOW[li4], lowHpScale);
-                        g_TextS.Draw(LOW[li4], CenterX(sw, lw), HudY(sh, Hud::LOW_HP_WARN),
+                        g_TextS.Draw(LOW[li4], CenterX(sw, lw),
+                                     HudY(sh, Hud::LOW_HP_WARN * hudScale),
                                      lowHpScale, 1.0f, 0.4f, 0.4f, 0.55f + 0.45f * pulse);
                     }
                 }
@@ -3506,7 +3522,7 @@ CollisionSystem::Update(pCX, pCY,
                 // ?��?지 ?�자 (?�드 ???�크�?변?????�스?? ???�정 ?��?
                 for (auto& d : g_DmgNumbers) {
                     float t  = d.life / d.maxLife;                   // 1 ??0
-                    float sx = W2SX(d.x), sy = W2SY(d.y);
+                    float sx = roundf(W2SX(d.x)), sy = W2SY(d.y);
                     wchar_t nb[16]; swprintf_s(nb, L"%d", d.amount);
                     float sc = UiTextScale(g_TextS, UiTextLevel::Description,
                         (d.crit ? 1.05f : 0.72f) * g_ViewZoom
@@ -3549,7 +3565,8 @@ CollisionSystem::Update(pCX, pCY,
             }
 
             // ?�?�??�티�??�킬 ?�롯 (좌하?? ?�시�?쿨다?????? ?�?�?
-            if (st == GameState::RUNNING || st == GameState::PAUSED) {
+            if (st == GameState::RUNNING ||
+                (st == GameState::PAUSED && !g_ShowPauseInventory)) {
                 const float hudScale = UiScale(sw, sh);
                 const float KW = 64.0f * hudScale, KH = 56.0f * hudScale;
                 const float KG = 8.0f * hudScale;
@@ -3559,19 +3576,24 @@ CollisionSystem::Update(pCX, pCY,
                                     float cd, float r, float g, float b) {
                     float x = kx0 + idx * (KW + KG), y = ky0;
                     bool ready = (cd <= 0.0f);
-                    float bgA = ready ? 0.22f : 0.40f;
-                    drawRect(x, y, KW, KH, 0.02f + r*0.04f, 0.02f + g*0.03f, 0.04f + b*0.04f, bgA);
-                    drawRect(x, y, KW, 3.5f, r, g, b, ready ? 0.90f : 0.36f);
-                    const float cL = 9.0f, ct = 1.2f;
-                    float ca = ready ? 0.58f : 0.24f;
-                    drawRect(x,       y,       cL, ct, r,g,b, ca);  drawRect(x,       y,       ct, cL, r,g,b, ca);
-                    drawRect(x+KW-cL, y,       cL, ct, r,g,b, ca);  drawRect(x+KW-ct, y,       ct, cL, r,g,b, ca);
-                    drawRect(x,       y+KH-ct, cL, ct, r,g,b, ca);  drawRect(x,       y+KH-cL, ct, cL, r,g,b, ca);
-                    drawRect(x+KW-cL, y+KH-ct, cL, ct, r,g,b, ca);  drawRect(x+KW-ct, y+KH-cL, ct, cL, r,g,b, ca);
+                    const float readyA = ready ? 0.92f : 0.46f;
+                    drawRect(x, y, KW, 1.5f * hudScale, r, g, b, readyA);
+                    drawRect(x, y + 1.5f * hudScale,
+                             1.2f * hudScale, KH - 1.5f * hudScale,
+                             r, g, b, ready ? 0.42f : 0.20f);
+                    drawRect(x + KW * 0.5f - 10.0f * hudScale,
+                             y + KH - 1.5f * hudScale,
+                             20.0f * hudScale, 1.5f * hudScale,
+                             r, g, b, ready ? 0.62f : 0.26f);
+                    drawDiamond(x + KW * 0.5f, y + 1.5f * hudScale,
+                                2.5f * hudScale, r, g, b,
+                                ready ? 0.82f : 0.40f);
                     const float tagScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
-                    g_TextS.Draw(key, x + 4.0f * hudScale, y + 7.0f * hudScale,
+                    const float keyW = g_TextS.Width(key, tagScale);
+                    g_TextS.Draw(key, x + (KW - keyW) * 0.5f, y + 7.0f * hudScale,
                                  tagScale, 1,1,1, ready ? 0.90f : 0.50f);
-                    g_TextS.Draw(tag, x + 4.0f * hudScale, y + KH - 17.0f * hudScale,
+                    const float tagW = g_TextS.Width(tag, tagScale);
+                    g_TextS.Draw(tag, x + (KW - tagW) * 0.5f, y + KH - 17.0f * hudScale,
                                  tagScale, r,g,b, ready ? 1.0f : 0.42f);
                     if (!ready) {
                         wchar_t bf[8]; swprintf_s(bf, L"%d", (int)(cd + 0.99f));
@@ -3599,7 +3621,8 @@ CollisionSystem::Update(pCX, pCY,
 
             // ?�?�??�티�??�시�?쿨다??UI (좌하?? ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
             // 추후 ?�토그램 PNG 가 ?�어?�면 ?�각??placeholder ?�리???�스�??�시
-            if (st == GameState::RUNNING || st == GameState::PAUSED) {
+            if (st == GameState::RUNNING ||
+                (st == GameState::PAUSED && !g_ShowPauseInventory)) {
                 const float hudScale = UiScale(sw, sh);
                 const float SLOT_W = 64.0f * hudScale, SLOT_H = 56.0f * hudScale;
                 const float SLOT_GAP = 8.0f * hudScale;

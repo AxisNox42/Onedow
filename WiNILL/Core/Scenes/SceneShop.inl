@@ -592,7 +592,7 @@ void Scene_Shop(const SceneCtx& c) {
         // The record readout is a right-center observation block. Keeping its
         // anchor above the lower HUD leaves the lower-right CircleTexture as
         // atmosphere instead of forcing every line of copy into the corner.
-        const float detailX = sw * 0.63f;
+        const float detailX = sw * 0.59f;
         const float detailW = std::max(360.0f * ui,
                                        std::min(sw * 0.29f,
                                                 sw - detailX - 42.0f * ui));

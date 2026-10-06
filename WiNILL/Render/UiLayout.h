@@ -22,7 +22,7 @@ inline float BottomLeftActionY(float sh, float height, float scale) {
 namespace Hud {
 inline constexpr float CREATIVE_LABEL = 36.0f;
 inline constexpr float COMBO_TEXT     = 106.0f;
-inline constexpr float LOW_HP_WARN    = 94.0f;
+inline constexpr float LOW_HP_WARN    = 190.0f;
 inline constexpr float SKILL_KEYS_Y   = 40.0f + 56.0f + 8.0f;   // HP 바 위 스킬 키
 inline constexpr float SLOT_BAR_BASE  = 40.0f;
 }

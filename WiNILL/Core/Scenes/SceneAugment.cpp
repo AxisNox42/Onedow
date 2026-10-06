@@ -278,24 +278,61 @@ static void DrawTarotCardSurface(const TarotCardPose& p, float r, float g,
 std::vector<std::wstring> TarotWrap(const wchar_t* src, float scale,
                                             float maxWidth) {
     std::vector<std::wstring> lines;
-    std::wstring segment;
     const wchar_t* text = src ? src : L"";
-    auto flush = [&]() {
+    auto wrapSegment = [&](std::wstring segment) {
         while (!segment.empty() && segment.front() == L' ') segment.erase(segment.begin());
-        if (!segment.empty()) lines.push_back(segment);
-        segment.clear();
+        std::wstring line;
+        size_t start = 0;
+        while (start < segment.size()) {
+            const size_t end = segment.find(L' ', start);
+            const std::wstring word = segment.substr(start,
+                end == std::wstring::npos ? std::wstring::npos : end - start);
+            if (word.empty()) {
+                if (end == std::wstring::npos) break;
+                start = end + 1;
+                continue;
+            }
+            const std::wstring candidate = line.empty() ? word : line + L" " + word;
+            if (g_TextS.Width(word.c_str(), scale) > maxWidth) {
+                if (!line.empty()) {
+                    lines.push_back(line);
+                    line.clear();
+                }
+                std::wstring part;
+                for (wchar_t ch : word) {
+                    const std::wstring next = part + ch;
+                    if (!part.empty() &&
+                        g_TextS.Width(next.c_str(), scale) > maxWidth) {
+                        lines.push_back(part);
+                        part.clear();
+                    }
+                    part += ch;
+                }
+                line = std::move(part);
+            } else if (!line.empty() &&
+                       g_TextS.Width(candidate.c_str(), scale) > maxWidth) {
+                lines.push_back(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+            if (end == std::wstring::npos) break;
+            start = end + 1;
+        }
+        if (!line.empty()) lines.push_back(line);
     };
+    std::wstring segment;
     for (const wchar_t* p = text; *p; ++p) {
         const bool spacedSlash = *p == L'/' && p > text && p[1] != L'\0'
                               && p[-1] == L' ' && p[1] == L' ';
-        if (*p == L'\xB7' || spacedSlash) { flush(); continue; }
-        std::wstring test = segment;
-        test.push_back(*p);
-        if (!segment.empty() && g_TextS.Width(test.c_str(), scale) > maxWidth)
-            flush();
+        if (*p == L'\xB7' || spacedSlash) {
+            wrapSegment(std::move(segment));
+            segment.clear();
+            continue;
+        }
         segment.push_back(*p);
     }
-    flush();
+    wrapSegment(std::move(segment));
     return lines;
 }
 
@@ -1192,8 +1229,8 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
         if (!inExit && reveal[i] > 0.42f) {
             wchar_t keyLabel[16];
             swprintf_s(keyLabel, L"[%d]", i + 1);
-            const float keyScale = UiTextScale(g_TextS, UiTextLevel::Supporting,
-                                                1.35f * layout.textUi);
+            const float keyScale = UiTextScale(g_TextS, UiTextLevel::Subtitle,
+                                                1.05f * layout.textUi);
             const float keyW = g_TextS.Width(keyLabel, keyScale);
             const float labelGap = 10.0f * layout.ui;
             float nameFactor = layout.textUi;
@@ -1747,7 +1784,8 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                         swprintf_s(line, L"· [%ls] %ls  ×%d", GetAugBadge(def), AugName(def), counts[i]);
                     else
                         swprintf_s(line, L"· [%ls] %ls", GetAugBadge(def), AugName(def));
-                    g_TextS.Draw(line, PX, ry, augmentScale, cr, cg, cb, 0.9f);
+                    g_TextS.Draw(line, PX + 8.0f * listUiScale, ry,
+                                 augmentScale, cr, cg, cb, 0.9f);
                     ry += ROW_H;
                 }
                 BatchFlush(); glDisable(GL_SCISSOR_TEST);

@@ -397,8 +397,8 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
             float rr, gg, bb;
             GetRarityColor(ALL_AUGS[modules[i]].rarity, rr, gg, bb);
             DrawVisibleConstellLine(px[i], py[i], px[next], py[next],
-                                    1.35f * uiS, rr, gg, bb,
-                                    0.62f * chartA);
+                                    1.8f * uiS, rr, gg, bb,
+                                    0.82f * chartA);
         }
         const int chordPairs[][2] = {
             { 0, 3 }, { 2, 5 }, { 4, 7 }, { 6, 1 }
@@ -411,15 +411,15 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
             float rr, gg, bb;
             GetRarityColor(ALL_AUGS[modules[a]].rarity, rr, gg, bb);
             DrawVisibleConstellLine(px[a], py[a], px[b], py[b],
-                                    0.85f * uiS, rr, gg, bb,
-                                    0.30f * chartA);
+                                    1.2f * uiS, rr, gg, bb,
+                                    0.46f * chartA);
         }
         for (int i = 0; i < visibleModules; ++i) {
             float rr, gg, bb;
             GetRarityColor(ALL_AUGS[modules[i]].rarity, rr, gg, bb);
             const bool focused = i == detailModule;
             DrawVisibleConstellNode(px[i], py[i],
-                                    (focused ? 9.0f : 7.0f) * uiS,
+                                    (focused ? 11.0f : 8.5f) * uiS,
                                     rr, gg, bb, chartA, focused, true);
             if (focused) {
                 DrawSettingsOrbitArc(px[i], py[i], 15.0f * uiS,

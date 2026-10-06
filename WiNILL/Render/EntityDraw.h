@@ -7,8 +7,8 @@ class RangedMob;
 class MonsterManager;
 
 void drawBullet(const Bullet& b);
-void drawMob(const Monster* m);
-void drawRangedMob(const RangedMob* r);
+void drawMob(const Monster* m, float visualTime = -1.0f);
+void drawRangedMob(const RangedMob* r, float visualTime = -1.0f);
 // Render an Astral Log entity preview with the same silhouette as gameplay.
 void drawCodexMobPreview(int codexId, float x, float y, float scale = 3.0f);
 void DrawEnemySightRear(float x, float y, float foregroundRadius,
@@ -37,4 +37,4 @@ bool inWin(float x, float y, float rx, float ry, float rw, float rh,
 inline constexpr float WIN_TB = 22.0f;   // 가짜 창 타이틀바 고정 높이
 void DrawAppWindow(float wx, float wy, float w, float h, const wchar_t* title,
                    float tb = WIN_TB);
-void DrawApproachOrb(float x, float y);
+void DrawApproachOrb(float x, float y, float visualTime);
