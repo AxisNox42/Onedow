@@ -713,7 +713,7 @@ void Scene_Codex(const SceneCtx& c) {
                 }
                 if (mobDataStage >= 2) {
                     const wchar_t* note = CodexLocalizedText(
-                        L"기본 수치 · 런 진행도 보정 제외", L"BASE VALUES · RUN SCALING EXCLUDED",
+                        L"기본 수치 · 플레이 진행도 보정 제외", L"BASE VALUES · RUN SCALING EXCLUDED",
                         L"基本値 · ラン進行度補正を除く");
                     const float noteY = logBoxY + 25.0f*uiS + rowCount * 27.0f * uiS;
                     drawFitS(note, infoX + 18.0f*uiS, noteY,

@@ -101,8 +101,9 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     static const wchar_t* kCoinLabel[LANG_COUNT] = {
         L"\uD68D\uB4DD \uCF54\uC778", L"COINS EARNED", L"\u7372\u5F97\u30B3\u30A4\u30F3"
     };
+    // Wallet total shown under the earned-coin metric.
     static const wchar_t* kTotalLabel[LANG_COUNT] = {
-        L"\uBCF4\uC720 \uBCC4\uC790\uB9AC", L"OWNED CONSTELLATIONS", L"\u6240\u6301\u661F\u5EA7"
+        L"\uBCF4\uC720 \uCF54\uC778", L"COINS OWNED", L"\u6240\u6301\u30B3\u30A4\u30F3"
     };
     static const wchar_t* kBuildLabel[LANG_COUNT] = {
         L"\uBE4C\uB4DC \uBCC4\uC790\uB9AC", L"BUILD CONSTELLATION", L"\u30D3\u30EB\u30C9\u661F\u5EA7"
@@ -179,10 +180,15 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     const float recordScale = UiTextScale(state.text.body, UiTextLevel::Supporting, uiS);
     const float metricValueY = state.text.body.Height(L"A", metricLabelScale)
                              + 8.0f * uiS;
+    // Digits are the tallest glyphs in the value row; measuring "A" let
+    // the coin total below the last row ride up into the earned-coin value.
+    const float metricValueH = state.text.title.Height(L"0123456789",
+                                                       metricValueScale);
     const float metricRowH = std::max(
         std::max(76.0f, std::min(96.0f, sh * 0.102f)),
-        metricValueY + state.text.title.Height(L"A", metricValueScale)
-                     + 14.0f * uiS);
+        metricValueY + metricValueH + 14.0f * uiS);
+    const float totalCoinScale = UiTextScale(state.text.body,
+                                             UiTextLevel::Supporting, uiS);
     const bool hasDeathReason = state.deathReason && state.deathReason[0];
     constexpr const wchar_t* kDeathSeparator = L" : ";
     wchar_t deathLine[512];
@@ -277,10 +283,10 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
                1.0f, 0.86f, 0.30f);
     wchar_t totalCoinBuf[64];
     swprintf_s(totalCoinBuf, L"%ls  %lld", kTotalLabel[li], g_Coins);
-    state.text.body.Draw(totalCoinBuf, leftX + metricGap,
-                 metricY + metricRowH * 3.0f - 12.0f * uiS,
-                 UiTextScale(state.text.body, UiTextLevel::Supporting, uiS),
-                 0.55f, 0.62f, 0.72f, 0.72f * ge);
+    const float totalCoinY = metricY + metricRowH * 2.0f + metricValueY
+                           + metricValueH + 10.0f * uiS;
+    state.text.body.Draw(totalCoinBuf, leftX + metricGap, totalCoinY,
+                 totalCoinScale, 0.55f, 0.62f, 0.72f, 0.72f * ge);
 
     // The owned augment list becomes a compact, rarity-colored constellation.
     const float chartCX = sw * 0.76f;
@@ -496,7 +502,8 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     // Reserve the full metric block, including the total-coin line.  On
     // compact windows the old three-row estimate put the first command on
     // top of that line and produced the QA overlap seen in GAMEOVER.
-    const float statsBottom = metricY + metricRowH * 3.0f + 18.0f;
+    const float statsBottom = std::max(metricY + metricRowH * 3.0f,
+        totalCoinY + state.text.body.Height(totalCoinBuf, totalCoinScale)) + 18.0f;
     const float bY0 = std::max(statsBottom + 30.0f,
                                sh - totalBH - std::max(44.0f, sh * 0.06f));
     const bool showButtons = gof >= 0.999f && !skippedCinematic;

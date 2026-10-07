@@ -34,6 +34,10 @@ public:
     float Width(const wchar_t* text, float scale = 1.0f);
     float Height(const wchar_t* text, float scale = 1.0f);
     float LineHeightPixels() const { return lineHeightPx_; }
+    // Distance from the Draw() y coordinate to the text baseline.
+    float BaselineOffset(float scale) const {
+        return ascentPx_ * EffectiveScale(scale);
+    }
     // Warm glyph textures before the first interactive frame.
     void PreloadText(const wchar_t* text);
     void SetMinScale(float scale) { minScale_ = scale; }

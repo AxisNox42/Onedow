@@ -415,15 +415,17 @@ static void Scene_CodexInline(const SceneCtx& c) {
     s_searchHover = UiApproach(s_searchHover, searchHover ? 1.0f : 0.0f, dt, 10.0f);
     const float clearW = 32.0f * uiS;
     const bool hasSearch = searchActive;
-    wchar_t searchResultSummary[48] = {};
-    if (hasSearch) {
+    auto formatResultSummary = [&](wchar_t* out, size_t count, int value) {
         if (li == 0)
-            swprintf_s(searchResultSummary, L"\uAC80\uC0C9 \uACB0\uACFC %d\uAC74", recordCount);
+            swprintf_s(out, count, L"\uAC80\uC0C9 \uACB0\uACFC %d\uAC74", value);
         else if (li == 2)
-            swprintf_s(searchResultSummary, L"\u691C\u7D22\u7D50\u679C %d\u4EF6", recordCount);
+            swprintf_s(out, count, L"\u691C\u7D22\u7D50\u679C %d\u4EF6", value);
         else
-            swprintf_s(searchResultSummary, L"%d MATCHES", recordCount);
-    }
+            swprintf_s(out, count, L"%d MATCHES", value);
+    };
+    wchar_t searchResultSummary[48] = {};
+    if (hasSearch)
+        formatResultSummary(searchResultSummary, 48, recordCount);
     const bool clearHover = hasSearch && inputReady
         && mx >= utilityX + searchW - clearW && mx <= utilityX + searchW
         && my >= searchY && my <= searchY + searchH;
@@ -543,30 +545,59 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float searchHintSc = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS) * 0.60f;
     const float searchHintW = g_TextS.Width(searchHint, searchHintSc);
     const float searchHintFit = searchHintW > searchW ? searchW / searchHintW : 1.0f;
-    DrawShadowedText(g_TextS, searchHint, utilityX,
-                     searchY + searchH + 4.0f * uiS,
+    const float searchHintY = searchY + searchH + 4.0f * uiS;
+    DrawShadowedText(g_TextS, searchHint, utilityX, searchHintY,
                      searchHintSc * searchHintFit,
                      0.52f, 0.64f, 0.78f, 0.68f * wake, 0.50f);
 
-    const float progressTitleY = searchY + searchH + 24.0f * uiS;
+    // The hint can't shrink below the renderer's minimum scale on small
+    // windows, so start the title below its measured height.
+    const float progressTitleY = std::max(
+        searchY + searchH + 24.0f * uiS,
+        searchHintY + g_TextS.Height(searchHint, searchHintSc * searchHintFit)
+            + 4.0f * uiS);
     const wchar_t* progressTitle = codexText(
         L"\uB3C4\uAC10 \uD574\uAE08 \uBAA9\uB85D", L"UNLOCK PROGRESS", L"\u56F3\u9451\u89E3\u653E\u9032\u6357");
-    const float progressTitleScale = UiTextScale(g_TextS, UiTextLevel::Subtitle, uiS);
-    DrawShadowedText(g_TextS,
-                     progressTitle,
-                     utilityX, progressTitleY, progressTitleScale,
-                     curRoot.r, curRoot.g, curRoot.b, 0.84f * wake, 0.58f);
     const float progressBarX = utilityX;
     const float progressBarW = std::max(48.0f * uiS,
                                         std::min(320.0f * uiS,
                                                  utilityW - 16.0f * uiS));
     const float resultSc = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS);
+    // Reserve room for a two-digit result count whether or not a search is
+    // active, so the title never runs into it (EN "UNLOCK PROGRESS") and
+    // does not change size while typing.
+    wchar_t resultReserve[48] = {};
+    formatResultSummary(resultReserve, 48, 88);
+    const float resultReserveW = g_TextS.Width(resultReserve, resultSc)
+                               + 16.0f * uiS;
+    float progressTitleFactor = uiS;
+    float progressTitleScale = UiTextScale(g_TextS, UiTextLevel::Subtitle,
+                                           progressTitleFactor);
+    while (progressTitleFactor > 0.6f * uiS &&
+           g_TextS.Width(progressTitle, progressTitleScale) + resultReserveW
+               > progressBarW) {
+        progressTitleFactor -= 0.03f * uiS;
+        progressTitleScale = UiTextScale(g_TextS, UiTextLevel::Subtitle,
+                                         progressTitleFactor);
+    }
+    DrawShadowedText(g_TextS,
+                     progressTitle,
+                     utilityX, progressTitleY, progressTitleScale,
+                     curRoot.r, curRoot.g, curRoot.b, 0.84f * wake, 0.58f);
     if (hasSearch) {
         const float resultW = g_TextS.Width(searchResultSummary, resultSc);
-        DrawShadowedText(g_TextS, searchResultSummary,
-                         progressBarX + progressBarW - resultW,
-                         progressTitleY + (g_TextS.Height(progressTitle, progressTitleScale)
-                                          - g_TextS.Height(searchResultSummary, resultSc)) * 0.5f,
+        const bool besideTitle = g_TextS.Width(progressTitle, progressTitleScale)
+                               + resultReserveW <= progressBarW;
+        // On small windows the title is already at the minimum text scale;
+        // the count then moves into the search field, left of the clear X.
+        const float resultX = besideTitle
+            ? progressBarX + progressBarW - resultW
+            : utilityX + searchW - clearW - 8.0f * uiS - resultW;
+        const float resultY = besideTitle
+            ? progressTitleY + (g_TextS.Height(progressTitle, progressTitleScale)
+                                - g_TextS.Height(searchResultSummary, resultSc)) * 0.5f
+            : searchY + (searchH - g_TextS.Height(searchResultSummary, resultSc)) * 0.5f;
+        DrawShadowedText(g_TextS, searchResultSummary, resultX, resultY,
                          resultSc, 0.62f, 0.72f, 0.86f, 0.66f * wake, 0.52f);
     }
     // Give each unlock entry its own two-line block: a large readout first,
@@ -927,13 +958,19 @@ static void Scene_CodexInline(const SceneCtx& c) {
                                 0.62f * rightWake, false);
         const float titleSc = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
         const float hintSc = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS);
+        // Stack the hint under the measured title height; the fixed +62
+        // offset was shorter than a Title-level line and the two overlapped.
+        const float emptyTitleY = emptyY + 30.0f * uiS;
+        const float emptyHintY = emptyTitleY
+                               + g_TextL.Height(emptyTitle, titleSc)
+                               + 10.0f * uiS;
         DrawShadowedText(g_TextL, emptyTitle,
                          emptyCX - g_TextL.Width(emptyTitle, titleSc) * 0.5f,
-                         emptyY + 30.0f * uiS, titleSc,
+                         emptyTitleY, titleSc,
                          0.92f, 0.96f, 1.0f, 0.94f * rightWake, 0.66f);
         DrawShadowedText(g_TextS, emptyHint,
                          emptyCX - g_TextS.Width(emptyHint, hintSc) * 0.5f,
-                         emptyY + 62.0f * uiS, hintSc,
+                         emptyHintY, hintSc,
                          0.64f, 0.76f, 0.88f, 0.78f * rightWake, 0.56f);
         if (finishBackAfterRender) {
             s_backExit = false;
@@ -1185,7 +1222,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
                 dataY += 25.0f * uiS;
             }
             const wchar_t* note = CodexLocalizedText(
-                L"기본 수치 · 런 진행도 보정 제외", L"BASE VALUES · RUN SCALING EXCLUDED",
+                L"기본 수치 · 플레이 진행도 보정 제외", L"BASE VALUES · RUN SCALING EXCLUDED",
                 L"基本値 · ラン進行度補正を除く");
             drawScanTextS(note, detailX, dataY, idSc,
                           0.55f, 0.64f, 0.76f, 0.68f * rightWake, selKey + 31);

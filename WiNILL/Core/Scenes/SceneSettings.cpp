@@ -991,6 +991,15 @@ void Scene_SettingsInline(const SceneCtx& c) {
             }
         }
     }
+    // Every toggle/choice row uses one cell width so ON/OFF, LOW/MEDIUM/HIGH
+    // and the FPS row share the same column rhythm (QA #1, #2).
+    auto equalizeCommonCells = [&]() {
+        const float widest = *std::max_element(std::begin(commonOptionCellW),
+                                               std::end(commonOptionCellW));
+        std::fill(std::begin(commonOptionCellW), std::end(commonOptionCellW),
+                  widest);
+    };
+    equalizeCommonCells();
     float commonOptionTotalW = 0.0f;
     for (int j = 0; j < commonOptionCount; ++j)
         commonOptionTotalW += commonOptionCellW[j];
@@ -1012,30 +1021,30 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 }
             }
         }
+        equalizeCommonCells();
     }
 
+    // FPS values range from "30" to "무제한"; equal cells keep the gaps
+    // between choices even instead of following each label's width.
     float fpsOptionScale = commonOptionSc;
     const float fpsChipPadX = 4.0f * uiS;
     const float fpsChipGap = 16.0f * uiS;
     float fpsOptionCellW[8] = {};
-    float fpsOptionTotalW = 0.0f;
-    for (int j = 0; j < settingsRows[0][0].optCount; ++j) {
-        fpsOptionCellW[j] = localizedOptionWidth(
-                                0, 0, j, fpsOptionScale,
-                                settingsRows[0][0].opts[j])
-                          + fpsChipPadX * 2.0f;
-        fpsOptionTotalW += fpsOptionCellW[j];
-    }
-    if (settingsRows[0][0].optCount > 1)
-        fpsOptionTotalW += fpsChipGap * (settingsRows[0][0].optCount - 1);
+    const int fpsOptionCount = settingsRows[0][0].optCount;
+    auto fitFpsCells = [&]() {
+        float widest = 0.0f;
+        for (int j = 0; j < fpsOptionCount; ++j)
+            widest = std::max(widest, localizedOptionWidth(
+                0, 0, j, fpsOptionScale, settingsRows[0][0].opts[j]));
+        std::fill(std::begin(fpsOptionCellW), std::end(fpsOptionCellW),
+                  widest + fpsChipPadX * 2.0f);
+        return fpsOptionCount * fpsOptionCellW[0]
+             + fpsChipGap * std::max(0, fpsOptionCount - 1);
+    };
+    const float fpsOptionTotalW = fitFpsCells();
     if (fpsOptionTotalW > rightControlW && fpsOptionTotalW > 1.0f) {
         fpsOptionScale *= std::max(0.55f, rightControlW / fpsOptionTotalW);
-        for (int j = 0; j < settingsRows[0][0].optCount; ++j) {
-            fpsOptionCellW[j] = localizedOptionWidth(
-                                    0, 0, j, fpsOptionScale,
-                                    settingsRows[0][0].opts[j])
-                              + fpsChipPadX * 2.0f;
-        }
+        fitFpsCells();
     }
 
     float languageOptionScale = commonOptionSc;
@@ -1201,11 +1210,19 @@ void Scene_SettingsInline(const SceneCtx& c) {
         }
 
         if (setting.isVolume) {
+            // Reserve the measured width of "100" so the readout ends at the
+            // control column's edge instead of running into the scroll rail.
+            const float volumeScale = settingsScale(
+                g_TextL, 1.0f, UiTextLevel::Title);
+            const float volumeValueW = g_TextL.Width(L"100", volumeScale);
+            const float volumeValueGap = 16.0f * uiS;
             const float slX = rightControlX;
-            const float slW = std::max(120.0f * uiS, rightControlW - 62.0f * uiS);
+            const float slW = std::max(120.0f * uiS,
+                rightControlW - volumeValueW - volumeValueGap);
             const float vol01 = g_SoundVol / 100.0f;
             const bool inBar = inputReady
-                && mx >= slX - 8.0f * uiS && mx <= slX + slW + 46.0f * uiS
+                && mx >= slX - 8.0f * uiS
+                && mx <= slX + slW + volumeValueGap + volumeValueW
                 && my >= controlY - 18.0f * uiS && my <= controlY + 18.0f * uiS;
             if (inputReady && lmb && (inBar || s_volDrag)) {
                 s_volDrag = true;
@@ -1224,10 +1241,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
                         1.0f, (0.86f + 0.14f * glow) * rowA);
             wchar_t vbuf[8];
             swprintf_s(vbuf, L"%d", g_SoundVol);
-            const float volumeScale = settingsScale(
-                g_TextL, 1.0f, UiTextLevel::Title);
             drawSettingsTextAtLevel(
-                g_TextL, vbuf, slX + slW + 16.0f * uiS,
+                g_TextL, vbuf,
+                slX + slW + volumeValueGap + volumeValueW
+                    - g_TextL.Width(vbuf, volumeScale),
                 controlY - g_TextL.Height(vbuf, volumeScale) * 0.5f,
                 1.0f, 0.48f, 0.82f, 1.0f,
                 (0.72f + 0.24f * glow) * rowA,
@@ -1280,9 +1297,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
                              resetTextScale, 1.0f, 0.36f, 0.30f,
                              1.0f * rowA, 0.58f);
         } else if (setting.optCount > 0) {
-            // FPS and language share one compact, measured rhythm; other
-            // controls retain the wider common option cells.
-            const float chipPadX = compactAlignedRow ? fpsChipPadX : commonChipPadX;
+            // Option cells are equal width within each row family and the
+            // label is centered, so spacing never depends on label length.
             const float chipGap = compactAlignedRow ? fpsChipGap : commonChipGap;
             float ox = rightControlX;
             for (int j = 0; j < setting.optCount; ++j) {
@@ -1326,9 +1342,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
                     - g_TextL.Height(setting.opts[j], optionScale) * 0.5f;
                 const float optionTextW = g_TextL.Width(
                     setting.opts[j], optionScale);
-                const float optionTextX = compactLanguageRow
-                    ? ox + (cellW - optionTextW) * 0.5f
-                    : ox + chipPadX;
+                const float optionTextX = ox + (cellW - optionTextW) * 0.5f;
                 drawSettingsTextAtLevel(g_TextL, setting.opts[j],
                                         optionTextX,
                                         optionTextY, optSc,

@@ -571,7 +571,9 @@ void Scene_Shop(const SceneCtx& c) {
         // upper-right edge while the visible product rail falls inward as a
         // giant lower semicircle. This makes the constellation the stage
         // instead of a small illustration floating between the UI columns.
-        const float chartCX = sw * 0.30f;
+        // The focused module sits at the bottom of the rail, directly below
+        // chartCX; keep it near screen center like the Codex (QA #13).
+        const float chartCX = sw * 0.45f;
         const float chartCY = sh * 0.10f;
         const float chartR = std::min(sw * 0.52f, sh * 0.70f);
         const float itemR = chartR * 0.94f;
@@ -592,14 +594,16 @@ void Scene_Shop(const SceneCtx& c) {
         // The record readout is a right-center observation block. Keeping its
         // anchor above the lower HUD leaves the lower-right CircleTexture as
         // atmosphere instead of forcing every line of copy into the corner.
-        const float detailX = sw * 0.59f;
-        const float detailW = std::max(360.0f * ui,
-                                       std::min(sw * 0.29f,
+        // Narrowed and lowered so the rail's upper-right labels stay clear
+        // of the title now that the chart sits closer to center.
+        const float detailX = sw * 0.68f;
+        const float detailW = std::max(320.0f * ui,
+                                       std::min(sw * 0.24f,
                                                 sw - detailX - 42.0f * ui));
         // Lift the complete readout slightly so the wallet/status rows keep
         // clear air above the bottom action ribbon.
         const ShopDetailLayout detailLayout = MakeShopDetailLayout(
-            detailX, sh * 0.43f, detailW, sh * 0.91f, ui);
+            detailX, sh * 0.50f, detailW, sh * 0.91f, ui);
         const float detailRight = detailLayout.right;
         const float infoY = detailLayout.titleY;
 

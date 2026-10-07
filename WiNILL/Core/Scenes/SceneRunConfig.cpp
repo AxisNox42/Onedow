@@ -743,8 +743,10 @@ void Scene_RunConfigInline(const SceneCtx& c) {
                           trialListW * 0.72f, 0.0f, 0.0f, 0.012f,
                           0.38f * contentA);
 
-    const float playTitleScale = UiTextScale(g_TextXL, UiTextLevel::Title, uiS);
-    DrawShadowedText(g_TextXL, PlayText(L"플레이", L"PLAY"), pageL, headerY,
+    // XL glyphs are baked at ~133px; shrinking them to title size with
+    // plain bilinear sampling left stair-stepped edges (QA #16).
+    const float playTitleScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
+    DrawShadowedText(g_TextL, PlayText(L"플레이", L"PLAY"), pageL, headerY,
                      playTitleScale, 1.0f, 1.0f, 1.0f,
                      0.98f * entryHeader, 0.74f);
     const float escW = g_TextS.Width(L"[ESC]", playMetaScale);
@@ -967,16 +969,41 @@ void Scene_RunConfigInline(const SceneCtx& c) {
              0.75f * uiS, trialR, trialG, trialB, 0.26f * contentA);
     const wchar_t* detailHint = PlayText(L"드래그 이동 · 휠 스크롤",
                                          L"DRAG · WHEEL SCROLL",
-                                         L"ドラッグ · ホイールでスクロール");
-    float detailHintScale = playMetaScale;
-    const float detailHintW0 = g_TextS.Width(detailHint, detailHintScale);
-    if (detailHintW0 > detailW && detailHintW0 > 0.0f)
-        detailHintScale *= detailW / detailHintW0;
-    const float detailHintW = g_TextS.Width(detailHint, detailHintScale);
-    DrawShadowedText(g_TextS, detailHint,
-                     detailX + detailW - detailHintW,
-                     detailViewTop - 12.0f * uiS, detailHintScale,
-                     0.42f, 0.70f, 0.80f, 0.68f * contentA, 0.40f);
+                                         L"ドラッグ · ホイール");
+    // The hint shares the readout row, right-aligned above the rule. Its old
+    // fixed spot 12px above the scroll view overlapped the first heading.
+    // The renderer clamps tiny scales, so a long hint (JP) may not shrink
+    // enough; it then moves to the status row, and is omitted if neither
+    // row has room rather than overlapping either label.
+    const float detailHintGap = 16.0f * uiS;
+    // Shrink toward the room left of the row's label; < 0 means no fit even
+    // after the renderer's minimum-scale clamp.
+    auto fitHintBeside = [&](float labelW) {
+        const float room = detailW - labelW - detailHintGap;
+        const float fullW = g_TextS.Width(detailHint, playMetaScale);
+        const float scale = fullW > room && fullW > 0.0f
+            ? playMetaScale * std::max(0.0f, room) / fullW : playMetaScale;
+        return g_TextS.Width(detailHint, scale) <= room ? scale : -1.0f;
+    };
+    const float readoutHintScale = fitHintBeside(
+        g_TextS.Width(activeReadout, activeReadoutScale));
+    const float statusHintScale = readoutHintScale > 0.0f ? -1.0f
+        : fitHintBeside(g_TextS.Width(activeStatusText, activeStatusScale));
+    const bool hintOnReadout = readoutHintScale > 0.0f;
+    const bool hintOnStatus = statusHintScale > 0.0f;
+    if (hintOnReadout || hintOnStatus) {
+        const float detailHintScale = hintOnReadout ? readoutHintScale
+                                                    : statusHintScale;
+        const float detailHintW = g_TextS.Width(detailHint, detailHintScale);
+        const float rowBottom = hintOnReadout
+            ? activeRuleY - 4.0f * uiS
+            : detailTop + activeStatusH;
+        DrawShadowedText(g_TextS, detailHint,
+                         detailX + detailW - detailHintW,
+                         rowBottom - g_TextS.Height(detailHint, detailHintScale),
+                         detailHintScale,
+                         0.42f, 0.70f, 0.80f, 0.68f * contentA, 0.40f);
+    }
     // Give the active build an objective, compact readout before the prose
     // descriptions.  These values mirror the multipliers used by the run
     // code; conditional late-game effects are shown as start -> peak rather
@@ -1249,15 +1276,25 @@ void Scene_RunConfigInline(const SceneCtx& c) {
                      playSubtitleScale, trialR, trialG, trialB,
                      1.0f * contentA, 0.56f);
     wchar_t activeLabel[32];
-    swprintf_s(activeLabel, ko ? L"%d / %d 활성" : L"%d / %d ACTIVE",
+    swprintf_s(activeLabel, PlayText(L"%d / %d 활성", L"%d / %d ACTIVE", L"%d / %d 有効"),
                activeCount, TRIAL_SLOT_COUNT);
-    const float activeScale = UiTextScale(g_TextL, UiTextLevel::Description, uiS);
-    const float activeW = g_TextL.Width(activeLabel, activeScale);
-    DrawShadowedText(g_TextL, activeLabel, trialListRight - activeW,
-                     bodyTop + (g_TextS.Height(catalogueTitle, playSubtitleScale)
-                                - g_TextL.Height(activeLabel, activeScale)) * 0.5f,
+    // The counter is part of the header, so it shares the title's font,
+    // size and top line instead of reading as a separate larger label.
+    // Long localized titles keep a clear gap by shrinking only the counter.
+    const float catalogueTitleW = g_TextS.Width(catalogueTitle, playSubtitleScale);
+    const float activeRoomW = trialListRight - trialListX - catalogueTitleW
+                            - 28.0f * uiS;
+    float activeScale = playSubtitleScale;
+    float activeW = g_TextS.Width(activeLabel, activeScale);
+    if (activeW > activeRoomW && activeW > 1.0f) {
+        activeScale *= std::max(0.6f, activeRoomW / activeW);
+        activeW = g_TextS.Width(activeLabel, activeScale);
+    }
+    DrawShadowedText(g_TextS, activeLabel, trialListRight - activeW,
+                     bodyTop + g_TextS.BaselineOffset(playSubtitleScale)
+                             - g_TextS.BaselineOffset(activeScale),
                      activeScale,
-                     trialR, trialG, trialB, 1.0f * contentA, 0.66f);
+                     trialR, trialG, trialB, 1.0f * contentA, 0.56f);
     const float catalogueRuleY = bodyTop
         + g_TextS.Height(catalogueTitle, playSubtitleScale) + 8.0f * uiS;
     LogoLine(trialListX, catalogueRuleY,

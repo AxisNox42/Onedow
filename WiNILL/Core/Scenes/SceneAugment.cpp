@@ -1249,9 +1249,10 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
             const float groupW = keyW + labelGap + nameW;
             const float labelY = py + radius + 12.0f * layout.ui;
             const float groupX = px - groupW * 0.5f;
-            const float nameY = labelY +
-                (g_TextS.Height(keyLabel, keyScale)
-                 - g_TextS.Height(AugName(def), nameScale)) * 0.5f;
+            // Share one baseline: centering two line boxes of different
+            // scale left "[1]" and the name visibly offset (QA #4).
+            const float nameY = labelY + g_TextS.BaselineOffset(keyScale)
+                              - g_TextS.BaselineOffset(nameScale);
             DrawShadowedText(g_TextS, keyLabel,
                 groupX, labelY, keyScale,
                 focused ? 1.0f : 0.88f,
@@ -1771,13 +1772,16 @@ void Scene_OwnedAugPanel(const SceneCtx& c) {
                     cr = std::min(1.0f, cr * 1.3f + 0.25f);
                     cg = std::min(1.0f, cg * 1.3f + 0.25f);
                     cb = std::min(1.0f, cb * 1.3f + 0.25f);
-                    bool rowHover = (overList && my >= ry - 2.0f && my < ry + ROW_H - 4.0f);
+                    // The highlight and its hit band pad the text line equally
+                    // above and below so the bar sits centered on the label.
+                    const float rowTop = ry - (ROW_H - augmentH) * 0.5f;
+                    bool rowHover = (overList && my >= rowTop && my < rowTop + ROW_H);
                     if (rowHover) {
                         hoverAug = i; hoverRowY = ry;
                         BindMainShader();
-                        drawRect(PX, ry - 2.0f, COLW - PX, ROW_H,
+                        drawRect(PX, rowTop, COLW - PX, ROW_H,
                                  0.15f, 0.16f, 0.26f, 0.6f);
-                        drawRect(PX, ry - 2.0f, 3.0f, ROW_H, cr, cg, cb, 1.0f);
+                        drawRect(PX, rowTop, 3.0f, ROW_H, cr, cg, cb, 1.0f);
                     }
                     wchar_t line[128];
                     if (counts[i] > 1)
