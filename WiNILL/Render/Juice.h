@@ -127,6 +127,7 @@ inline void SpawnEnemyExplosion(float ex, float ey,
                 cosf(angle) * spd, sinf(angle) * spd,
                 lifeT, lifeT, sz, cr, cg, cb, true
             };
+            g_EnemyParts[j].shape = RandomEnemyParticleShape();
             ++placed;
         }
         ++j;

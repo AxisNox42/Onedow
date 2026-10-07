@@ -48,6 +48,12 @@ inline void SpawnMobDeathSparks(float x, float y, glm::vec3 color,
 }
 
 // The original explosion particles and pool, shared by Juice and mob recipes.
+enum class EnemyParticleShape { CIRCLE, SQUARE, TRIANGLE };
+
+inline EnemyParticleShape RandomEnemyParticleShape() {
+    return static_cast<EnemyParticleShape>(rand() % 3);
+}
+
 struct EnemyParticle {
     float x, y, vx, vy;
     float life, maxLife, size;
@@ -56,6 +62,7 @@ struct EnemyParticle {
     // Generic explosions leave these zero. Death bursts can wait briefly and
     // stay within the body-based range; the range also ranks crowded effects.
     float delay = 0.0f, originX = 0.0f, originY = 0.0f, radiusLimit = 0.0f;
+    EnemyParticleShape shape = EnemyParticleShape::SQUARE;
 };
 // Allocate once; quality limits the slots used to 256 / 512 / 1024.
 inline constexpr int MAX_ENEMY_PARTS = 1024;
@@ -151,6 +158,7 @@ inline void SpawnEnemyParticleBurst(float x, float y, glm::vec3 color,
             color.b + (1.0f - color.b) * lift,
             true, delay, x, y, range
         };
+        slot->shape = RandomEnemyParticleShape();
         ClampEnemyParticleRange(*slot);
     }
 }

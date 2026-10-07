@@ -50,11 +50,10 @@ inline void MobKillReward(MobKind kind, float& xpBase, float& scoreBase) {
     switch (kind) {
     case MobKind::ROTOR:   xpBase = 2.0f;  scoreBase = 100.0f; break;
     case MobKind::GIMBAL:  xpBase = 4.0f;  scoreBase = 220.0f; break;
-    // Codex tier 1: Rotor/Swarm; tier 2: Gimbal/Genesis/Scope/Quasar; tier 3: Gravis.
-    case MobKind::GENESIS: xpBase = 8.0f;  scoreBase = 300.0f; break;
+    case MobKind::GENESIS: xpBase = 10.0f; scoreBase = 300.0f; break;
     case MobKind::SWARM:   xpBase = 1.0f;  scoreBase = 12.0f;  break;
     case MobKind::GRAVIS:  xpBase = 16.0f; scoreBase = 520.0f; break;
-    case MobKind::QUASAR:  xpBase = 10.0f; scoreBase = 480.0f; break;
+    case MobKind::QUASAR:  xpBase = 12.0f; scoreBase = 480.0f; break;
     default: break;
     }
 }

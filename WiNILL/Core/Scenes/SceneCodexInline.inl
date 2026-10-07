@@ -371,9 +371,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
         }
     }
 
-    int unlockTotal[CAT_COUNT] = { CM_COUNT, 0 };
+    // Count the visible roster, not CM_COUNT: reserved save slots keep enum
+    // indices stable but are never shown, so they must not raise the total.
+    int unlockTotal[CAT_COUNT] = {};
     int unlockSeen[CAT_COUNT] = {};
     ForEachCodexMobEntry([&](int id) {
+        ++unlockTotal[0];
         if (CodexMobNameUnlocked(id)) ++unlockSeen[0];
     });
     for (int i = 0; i < AUG_TOTAL; ++i) {

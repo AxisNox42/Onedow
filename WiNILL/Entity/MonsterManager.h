@@ -2,6 +2,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdlib>
+#include <cmath>
 #include "Monster.h"
 #include "RangedMob.h"
 
@@ -9,6 +10,16 @@ class MonsterManager {
 public:
     std::vector<Monster*>   monsters;
     std::vector<RangedMob*> rangedMobs;
+
+    float ApplyDamage(Monster& target, float damage) {
+        return ApplyMobDamage(target.hp, target.alive,
+                              target.hitFlashTimer, damage);
+    }
+
+    float ApplyDamage(RangedMob& target, float damage) {
+        return ApplyMobDamage(target.hp, target.alive,
+                              target.hitFlashTimer, damage);
+    }
 
     ~MonsterManager() { Clear(); }
 
@@ -102,9 +113,10 @@ public:
                    float rotorHpMult = 1.0f,
                    float gateWX = -1.0f, float gateWY = -1.0f,
                    float gateWW = -1.0f, float gateWH = -1.0f) {
-        for (auto m : monsters)
+        for (auto m : monsters) {
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
                       gateWX, gateWY, gateWW, gateWH, &bullets);
+        }
 
         UpdateGenesisHives(dt, rotorHpMult);
 
@@ -269,8 +281,7 @@ private:
         for (size_t i = 0; i < monsters.size(); ++i) {
             if (!monsters[i]->alive || pushCounts[i] < 4 ||
                 monsters[i]->kind == MobKind::SWARM) continue;
-            ApplyMobDamage(monsters[i]->hp, monsters[i]->alive,
-                           monsters[i]->hitFlashTimer, kCrushDps * dt);
+            ApplyDamage(*monsters[i], kCrushDps * dt);
         }
     }
 };

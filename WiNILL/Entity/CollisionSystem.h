@@ -120,8 +120,7 @@ public:
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
                       bullet.dmgMult * CritRoll(stats, isCrit);
-                const float dealt = ApplyMobDamage(monster->hp, monster->alive,
-                                                   monster->hitFlashTimer, baseDamage);
+                const float dealt = manager.ApplyDamage(*monster, baseDamage);
                 SpawnDamageNumber(monster->worldX, monster->worldY, dealt,
                                   isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,
@@ -190,8 +189,7 @@ public:
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
                       bullet.dmgMult * CritRoll(stats, isCrit);
-                const float dealt = ApplyMobDamage(ranged->hp, ranged->alive,
-                                                   ranged->hitFlashTimer, baseDamage);
+                const float dealt = manager.ApplyDamage(*ranged, baseDamage);
                 SpawnDamageNumber(ranged->worldX, ranged->worldY, dealt,
                                   isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,

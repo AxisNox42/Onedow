@@ -253,6 +253,7 @@ enum CodexMobId {
     CM_GRAVIS,
     CM_QUASAR,
     CM_GIMBAL,
+    CM_RESERVED_7, // Preserve the saved Codex index when removing old entries.
     CM_COUNT
 };
 
@@ -305,6 +306,8 @@ inline const CodexMobProfile CODEX_MOB_PROFILES[CM_COUNT] = {
       L"MODERATE", 2, 149, L"8 / shot, 4 / sec (contact)", L"70-105 px/s",
       { L"스코프처럼 고속 회전 충전 후 비유도탄 1발 발사", L"Charges with Scope-like accelerating rotation before one unguided shot", L"スコープのような加速回転で充填後、非誘導弾を1発発射" },
       { L"중앙 렌즈와 회전 고리 하나, 네 개의 관측점으로 된 스코프의 소형 형상입니다.", L"A smaller Scope silhouette with one rotating ring, a central lens, and four observation nodes.", L"中央レンズ、1つの回転リング、4つの観測点を備えた小型スコープ形状です。" } },
+    { { L"", L"", L"" }, { L"", L"", L"" }, L"UNKNOWN", 0, 0,
+      L"", L"", { L"", L"", L"" }, { L"", L"", L"" } },
 };
 
 inline const CodexMobProfile* CodexMobProfileFor(int id) {
@@ -369,7 +372,8 @@ inline CodexMobId CodexMobIdForKind(MobKind k) {
 template <typename Fn>
 inline void ForEachCodexMobEntry(Fn&& fn) {
     static constexpr CodexMobId kRosterOrder[] = {
-        CM_ROTOR, CM_SCOPE, CM_GIMBAL, CM_SWARM, CM_GENESIS, CM_GRAVIS, CM_QUASAR
+        CM_ROTOR, CM_SCOPE, CM_GIMBAL, CM_SWARM, CM_GENESIS, CM_GRAVIS,
+        CM_QUASAR
     };
     for (CodexMobId id : kRosterOrder) fn((int)id);
 }
