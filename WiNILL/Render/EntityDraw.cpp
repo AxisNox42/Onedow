@@ -100,6 +100,11 @@ void drawBullet(const Bullet& b) {
     float r = 4.8f * b.sizeScale;
     if (b.rainMissile && g_RainMissileTex) {
         float ang = std::atan2(b.dirX, -b.dirY);
+        // Dark keyline disc so the missile icon separates from bright
+        // wallpapers without a plate behind the battlefield.
+        drawCircle(b.x, b.y, 9.0f,
+                   b.color.r * 0.22f, b.color.g * 0.22f, b.color.b * 0.22f,
+                   0.40f * CombatKeylineStrength());
         drawCircle(b.x - b.dirX * 10.0f, b.y - b.dirY * 10.0f, r * 1.3f,
                    1.0f, 0.6f, 0.2f, 0.5f);
         BatchFlush();
@@ -169,6 +174,12 @@ void drawBullet(const Bullet& b) {
         drawCircle(b.x, b.y, r * (1.75f + pulse * 0.20f), 0.34f, 1.0f, 0.82f, 0.14f + pulse * 0.10f);
         drawCircle(b.x, b.y, r * 1.28f, 0.86f, 1.0f, 0.96f, 0.20f);
     }
+    // Thin rim tinted from the bullet's own colour: keeps it readable on
+    // white or busy wallpapers without reading as a grey outline.
+    const float keyline = CombatKeylineStrength();
+    drawCircle(b.x, b.y, r + 1.2f * keyline,
+               b.color.r * 0.22f, b.color.g * 0.22f, b.color.b * 0.22f,
+               0.70f * keyline);
     drawCircle(b.x, b.y, r, b.color.r, b.color.g, b.color.b, 1.0f);
 }
 

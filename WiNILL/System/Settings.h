@@ -279,6 +279,15 @@ inline bool g_StrongMenuDim     = false;
 // Keep the range deliberately restrained so the live background remains part
 // of the composition instead of becoming an opaque panel.
 inline bool g_BackdropBlurEnabled = true;
+
+// Combat elements (bullets, HP/XP rings) sit straight on the desktop.
+// Bright or busy wallpapers wash them out with or without blur, so they
+// always get a dark keyline; a sharp desktop gets the full strength.
+// Smoke A/B checks can zero it (ONEDOW_SMOKE_KEYLINE=0).
+inline float g_CombatKeylineScale = 1.0f;
+inline float CombatKeylineStrength() {
+    return (g_BackdropBlurEnabled ? 0.6f : 1.0f) * g_CombatKeylineScale;
+}
 inline int  g_BackdropBlurCaptureHz = 20;
 inline float BackdropBlurCaptureIntervalSeconds() {
     const int hz = g_BackdropBlurCaptureHz == 1 ? 1

@@ -239,15 +239,22 @@ static void DrawPlayerRadialBars(float cx, float cy, float size,
     constexpr int segmentsPerHalf = 36;
     constexpr float pi = 3.14159265359f;
     const float hpRadius = std::max(66.0f, size * 2.72f);
-    const float xpRadius = hpRadius + 6.0f;
-    const float halfWidth = std::max(0.98f, size * 0.0385f);
+    // Slightly thicker than the original hairline. Only the filled part gets
+    // a thin keyline tinted from its own colour, so a bright wallpaper does
+    // not swallow it while the empty track stays as faint as before (a grey
+    // band around the whole ring read as foreign on a white desktop).
+    const float halfWidth = std::max(1.3f, size * 0.052f);
+    const float keyline = CombatKeylineStrength();
+    const float keyPad = 0.9f * keyline;
+    const float xpRadius = hpRadius + halfWidth * 2.0f + keyPad * 2.0f + 2.0f;
     hpFraction = std::clamp(hpFraction, 0.0f, 1.0f);
     xpFraction = std::clamp(xpFraction, 0.0f, 1.0f);
 
     auto drawSegment = [&](float radius, float start, float end,
-                           float r, float g, float b, float a) {
-        const float inner = radius - halfWidth;
-        const float outer = radius + halfWidth;
+                           float r, float g, float b, float a,
+                           float pad = 0.0f) {
+        const float inner = radius - halfWidth - pad;
+        const float outer = radius + halfWidth + pad;
         const float a0 = start;
         const float a1 = end;
         const float c0 = cosf(a0), s0 = sinf(a0);
@@ -269,6 +276,16 @@ static void DrawPlayerRadialBars(float cx, float cy, float size,
 
         const float filled = fraction * segmentsPerHalf;
         const int fullSegments = (int)filled;
+        if (keyline > 0.0f && filled > 0.0f) {
+            const float kr = r * 0.22f, kg = g * 0.22f, kb = b * 0.22f;
+            const float ka = 0.40f * keyline;
+            for (int i = 0; i < fullSegments; ++i)
+                drawSegment(radius, start + i * step, start + (i + 1) * step,
+                            kr, kg, kb, ka, keyPad);
+            if (fullSegments < segmentsPerHalf && filled > fullSegments)
+                drawSegment(radius, start + fullSegments * step,
+                            start + filled * step, kr, kg, kb, ka, keyPad);
+        }
         for (int i = 0; i < fullSegments; ++i)
             drawSegment(radius, start + i * step, start + (i + 1) * step,
                         r, g, b, alpha);
@@ -309,15 +326,36 @@ static void DrawEdgeVignette(float width, float intensity,
 }
 
 static void DrawGameplayCrosshair(float x, float y) {
+    // A hollow cyan reticle. Each stroke carries only a thin keyline in a
+    // dark shade of the same cyan, so it reads on bright wallpapers without
+    // the black disc that used to sit behind the whole reticle.
     const UiColor3 accent = UiCol::ACCENT_CYAN;
-    drawCircle(x, y, 11.0f, 0.0f, 0.0f, 0.0f, 0.72f);
-    drawCircle(x, y, 8.5f, accent.r, accent.g, accent.b, 0.92f);
-    drawCircle(x, y, 6.0f, 0.012f, 0.020f, 0.032f, 0.98f);
+    const float kr = accent.r * 0.22f, kg = accent.g * 0.22f, kb = accent.b * 0.22f;
+    const float ka = 0.55f * CombatKeylineStrength() + 0.15f;
+    auto ring = [&](float rOuter, float rInner, float r, float g, float b, float a) {
+        constexpr int kSegs = 40;
+        for (int i = 0; i < kSegs; ++i) {
+            const float a0 = 6.2831853f * (float)i / kSegs;
+            const float a1 = 6.2831853f * (float)(i + 1) / kSegs;
+            const float c0 = cosf(a0), s0 = sinf(a0), c1 = cosf(a1), s1 = sinf(a1);
+            BatchTri(x + c0 * rOuter, y + s0 * rOuter, x + c0 * rInner, y + s0 * rInner,
+                     x + c1 * rInner, y + s1 * rInner, r, g, b, a);
+            BatchTri(x + c0 * rOuter, y + s0 * rOuter, x + c1 * rInner, y + s1 * rInner,
+                     x + c1 * rOuter, y + s1 * rOuter, r, g, b, a);
+        }
+    };
+    auto tick = [&](float rx, float ry, float w, float h) {
+        drawRect(rx - 0.8f, ry - 0.8f, w + 1.6f, h + 1.6f, kr, kg, kb, ka);
+        drawRect(rx, ry, w, h, accent.r, accent.g, accent.b, 0.96f);
+    };
+    ring(9.3f, 6.0f, kr, kg, kb, ka);
+    ring(8.5f, 6.8f, accent.r, accent.g, accent.b, 0.92f);
+    drawCircle(x, y, 2.6f, kr, kg, kb, ka);
     drawCircle(x, y, 1.8f, 0.96f, 0.99f, 1.0f, 1.0f);
-    drawRect(x - 15.0f, y - 1.0f, 6.0f, 2.0f, accent.r, accent.g, accent.b, 0.96f);
-    drawRect(x + 9.0f, y - 1.0f, 6.0f, 2.0f, accent.r, accent.g, accent.b, 0.96f);
-    drawRect(x - 1.0f, y - 15.0f, 2.0f, 6.0f, accent.r, accent.g, accent.b, 0.96f);
-    drawRect(x - 1.0f, y + 9.0f, 2.0f, 6.0f, accent.r, accent.g, accent.b, 0.96f);
+    tick(x - 15.0f, y - 1.0f, 6.0f, 2.0f);
+    tick(x + 9.0f, y - 1.0f, 6.0f, 2.0f);
+    tick(x - 1.0f, y - 15.0f, 2.0f, 6.0f);
+    tick(x - 1.0f, y + 9.0f, 2.0f, 6.0f);
 }
 
 void SyncPlayerBoundsSize(SpatialBounds& pw, float delta, bool animate) {
@@ -1489,6 +1527,14 @@ int main() {
                                 break;
                             }
                         }
+                    }
+                    if (step == "AUTOFIRE") {
+                        g_AutoFire = true;
+                    } else if (step.rfind("HP=", 0) == 0) {
+                        // HP=<0..1>: set the player's health fraction.
+                        const float f = std::clamp(
+                            (float)std::atof(step.c_str() + 3), 0.01f, 1.0f);
+                        gm.playerHP = g_Stats.maxHP * f;
                     }
                     if (step.rfind("SEARCH=", 0) == 0) {
                         // SEARCH=<ascii text>: fill the Codex search field
@@ -3157,9 +3203,11 @@ CollisionSystem::Update(pCX, pCY,
                     ? std::clamp((float)g_GameManager.xp / (float)xpNeeded, 0.0f, 1.0f)
                     : 0.0f);
                 const float hpHit = std::min(1.0f, g_HpBarPop / 0.35f);
+                // Resting opacity is high enough to read at all times; a
+                // hit still flashes the HP half to full strength.
                 DrawPlayerRadialBars(pCX, pCY, playerSize, hpFraction, xpFraction,
-                                     0.30f + 0.55f * hpHit,
-                                     xpAtCap ? 0.72f : 0.56f, xpAtCap);
+                                     0.68f + 0.30f * hpHit,
+                                     xpAtCap ? 0.88f : 0.80f, xpAtCap);
             }
             DrawPlayerWeaponShell(pCX, pCY, playerSize,
                                   atan2f(wmy - pCY, wmx - pCX));
@@ -3423,6 +3471,7 @@ CollisionSystem::Update(pCX, pCY,
             // Desktop blur is a window setting, independent of the game scene.
             // World/HUD remain sharp during play; only modal UI blurs game pixels.
             ConfigureWindowBackdropBlur(window, g_BackdropBlurEnabled);
+            UpdateGameTextHalo(screenHeight, g_BackdropBlurEnabled);
 
             // Scene_* dispatch still includes READY and the in-run menus;
             // this flag only controls which state gets the scene composition.

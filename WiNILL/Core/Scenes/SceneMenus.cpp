@@ -400,9 +400,29 @@ static void DrawAstralDataPlate(float x, float y, float w, float h,
     drawDiamond(x + w - cut, y + h, 2.4f, r, g, b, 0.40f * alpha);
 }
 
+// Constellation geometry sits directly on the desktop (no plate behind it).
+// Faint lines and nodes are tuned for a dark or blurred backdrop, so with a
+// sharp desktop they need their own dark keyline, the same idea as the text
+// halo. A blurred desktop only gets a light touch to keep the original look.
+static float ConstellGeometryHalo() {
+    return g_BackdropBlurEnabled ? 0.25f : 1.0f;
+}
+
 void DrawVisibleConstellLine(float x1, float y1, float x2, float y2,
                                     float thick, float r, float g, float b, float a) {
     if (a <= 0.001f) return;
+    // sqrt(a) lifts the keyline of deliberately faint lines more than that of
+    // already strong ones, so a 0.15-alpha edge still separates from white.
+    const float halo = ConstellGeometryHalo();
+    const float liftA = sqrtf(a);
+    const float keyA = std::min(0.85f, a * 0.30f + halo * 0.80f * liftA);
+    // On a sharp desktop the line itself also needs to win against wallpaper
+    // detail: it gets brighter and up to ~60% thicker, faint lines the most.
+    const float fgA = std::min(1.0f, a + halo * 0.60f * liftA * (1.0f - a));
+    thick *= 1.0f + 0.60f * halo;
+    const float keyPad = 1.2f * halo;
+    // Keyline in a dark shade of the line's own colour, not neutral black.
+    const float kr = r * 0.22f, kg = g * 0.22f, kb = b * 0.22f;
     if (g_ConstellationLineTex) {
         const float dx = x2 - x1, dy = y2 - y1;
         const float len = sqrtf(dx * dx + dy * dy);
@@ -410,17 +430,18 @@ void DrawVisibleConstellLine(float x1, float y1, float x2, float y2,
             const float ang = atan2f(dy, dx);
             DrawIconRot(g_ConstellationLineTex,
                         (x1 + x2) * 0.5f, (y1 + y2) * 0.5f,
-                        len * 0.5f, thick * 2.4f, ang,
-                        0.0f, 0.0f, 0.012f, 0.30f * a);
+                        len * 0.5f, thick * 2.4f + keyPad, ang,
+                        kr, kg, kb, keyA);
             DrawIconRot(g_ConstellationLineTex,
                         (x1 + x2) * 0.5f, (y1 + y2) * 0.5f,
                         len * 0.5f, thick * 0.72f, ang,
-                        r, g, b, a);
+                        r, g, b, fgA);
             return;
         }
     }
-    LogoLine(x1, y1, x2, y2, thick * 2.75f, 0.0f, 0.0f, 0.012f, 0.42f * a);
-    LogoLine(x1, y1, x2, y2, thick, r, g, b, a);
+    LogoLine(x1, y1, x2, y2, thick * 2.75f + keyPad, kr, kg, kb,
+             std::max(0.42f * a, keyA));
+    LogoLine(x1, y1, x2, y2, thick, r, g, b, fgA);
 }
 
 void DrawConstellationDisc(float x, float y, float radius,
@@ -550,12 +571,19 @@ void DrawVisibleConstellNode(float x, float y, float size,
                                   r, g, b, 0.58f * a);
         }
     }
-    drawDiamond(x, y, size * 1.20f, r, g, b, 0.74f * a);
-    drawDiamond(x, y, size * 0.42f,
+    const float halo = ConstellGeometryHalo();
+    if (halo > 0.0f)
+        drawDiamond(x, y, size * 1.20f + 2.0f * halo,
+                    r * 0.22f, g * 0.22f, b * 0.22f,
+                    std::min(0.70f, halo * (0.30f + 0.45f * a)));
+    // The node body and spark are lifted the same way as faint lines.
+    const float nodeA = std::min(1.0f, a + halo * 0.45f * sqrtf(a) * (1.0f - a));
+    drawDiamond(x, y, size * 1.20f, r, g, b, 0.74f * nodeA);
+    drawDiamond(x, y, size * (0.42f + 0.18f * halo),
                 whiteSpark ? 0.96f : r,
                 whiteSpark ? 1.0f  : g,
                 whiteSpark ? 1.0f  : b,
-                0.88f * a);
+                0.88f * nodeA);
 }
 
 void DrawArchiveConstellation(float cx, float cy, float radius,

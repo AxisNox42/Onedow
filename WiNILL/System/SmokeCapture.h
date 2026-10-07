@@ -6,9 +6,11 @@
 //   ONEDOW_SMOKE_TAG  = 파일명 접두어      (선택, 기본 smoke)
 //   ONEDOW_SMOKE_SIZE = WxH               (선택, 창 크기 강제)
 //   ONEDOW_SMOKE_BLUR = 0 | 1             (선택, 배경 블러 강제)
-// STEP 형식: NAME[@fx,fy][!][~sec]
+//   ONEDOW_SMOKE_KEYLINE = 0              (선택, 전투 요소 테두리 끄기: 전후 비교용)
+// STEP 형식: NAME[@fx,fy][!|*][~sec]
 //   @fx,fy  마우스 위치(화면 비율 0~1). 없으면 화면 밖으로 치움.
 //   !       유지 시간 절반 시점에 한 번 클릭.
+//   *       단계 내내 왼쪽 버튼을 누른 상태 유지(조준 사격 등).
 //   ~sec    캡처 전 유지 시간(기본 1.6초).
 // 각 단계는 Screenshots/<TAG>_<LANG>_<NN>_<NAME>.png 로 저장되고,
 // 마지막 단계 뒤 창을 닫는다. 세션 동안 SaveGame()은 건너뛴다.
@@ -46,6 +48,7 @@ public:
         bool hasMouse = false;
         float fx = 0.0f, fy = 0.0f;
         bool click = false;
+        bool holdButton = false;
         float hold = 1.6f;
     };
 
@@ -71,6 +74,7 @@ public:
         const std::string blur = SmokeEnv("ONEDOW_SMOKE_BLUR");
         if (blur == "0") g_BackdropBlurEnabled = false;
         else if (blur == "1") g_BackdropBlurEnabled = true;
+        if (SmokeEnv("ONEDOW_SMOKE_KEYLINE") == "0") g_CombatKeylineScale = 0.0f;
         g_SmokeCapture = true;
         g_DebugMode = true;   // 캡처 경로가 디버그 모드에 묶여 있음 (저장 안 됨)
         return true;
@@ -111,7 +115,7 @@ public:
         } else {
             mx = my = -10000.0;
         }
-        lmb = false;
+        lmb = step.holdButton;
         if (step.click && !clicked_ && t >= step.hold * 0.5f) {
             lmb = true;
             clicked_ = true;
@@ -150,6 +154,10 @@ private:
             if (tilde != std::string::npos) {
                 step.hold = (float)std::atof(token.c_str() + tilde + 1);
                 token.resize(tilde);
+            }
+            if (!token.empty() && token.back() == '*') {
+                step.holdButton = true;
+                token.pop_back();
             }
             if (!token.empty() && token.back() == '!') {
                 step.click = true;

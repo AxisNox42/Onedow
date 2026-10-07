@@ -41,6 +41,13 @@ public:
     // Warm glyph textures before the first interactive frame.
     void PreloadText(const wchar_t* text);
     void SetMinScale(float scale) { minScale_ = scale; }
+    // Soft dark halo hugging each glyph so text reads over any wallpaper
+    // without a plate behind it. strength 0 disables; radiusPx is the
+    // on-screen halo width (clamped to the baked glyph padding).
+    void SetHalo(float strength, float radiusPx = 2.0f) {
+        haloStrength_ = strength;
+        haloRadiusPx_ = radiusPx;
+    }
 
     void Draw(const wchar_t* text, float x, float y, float scale,
               float r, float g, float b, float a = 1.0f);
@@ -52,7 +59,13 @@ public:
 private:
     int    screenW_ = 0, screenH_ = 0;
     GLuint prog_ = 0, VAO_ = 0, VBO_ = 0;
-    GLint  uProj_ = -1, uCol_ = -1;
+    GLint  uProj_ = -1, uCol_ = -1, uHalo_ = -1, uHaloR_ = -1;
+    float  haloStrength_ = 0.0f;
+    float  haloRadiusPx_ = 2.0f;
+    // Empty texels baked around every glyph so the halo can fall off
+    // inside the glyph's own atlas cell.
+    static constexpr int kGlyphPad = 4;
+    void   SetHaloUniforms(float scale);
 
     struct FontFace {
         std::vector<unsigned char> data;
@@ -106,11 +119,28 @@ inline bool TextRenderer::InitGLPipeline()
         "in vec2 uv;\n"
         "uniform sampler2D tex;\n"
         "uniform vec4 col;\n"
+        "uniform vec4 halo;\n"      // r = share of text colour kept, a = strength
+        "uniform float haloR;\n"    // halo radius in atlas texels
         "out vec4 fragColor;\n"
         "void main(){\n"
         "  float a = texture(tex,uv).r;\n"
-        "  if (a * col.a < 0.002) discard;\n"
-        "  fragColor = vec4(col.rgb, col.a*a);\n"
+        "  float h = 0.0;\n"
+        "  if (halo.a > 0.0 && haloR > 0.0) {\n"
+        "    vec2 t = haloR / vec2(textureSize(tex,0));\n"
+        "    for (int i = 0; i < 12; ++i) {\n"
+        "      float ang = 6.2831853 * float(i) / 12.0;\n"
+        "      vec2 d = vec2(cos(ang), sin(ang)) * t;\n"
+        "      h = max(h, texture(tex, uv + d).r * 0.55);\n"
+        "      h = max(h, texture(tex, uv + d * 0.5).r);\n"
+        "    }\n"
+        "    h *= halo.a;\n"
+        "  }\n"
+        "  float fa = col.a * a;\n"
+        "  float ha = col.a * h * (1.0 - a);\n"
+        "  float oa = fa + ha;\n"
+        "  if (oa < 0.002) discard;\n"
+        "  vec3 hc = col.rgb * halo.r;\n"
+        "  fragColor = vec4((col.rgb * fa + hc * ha) / oa, oa);\n"
         "}\n";
 
     GLuint v = Compile(GL_VERTEX_SHADER,   VS);
@@ -122,6 +152,8 @@ inline bool TextRenderer::InitGLPipeline()
 
     uProj_ = glGetUniformLocation(prog_, "proj");
     uCol_  = glGetUniformLocation(prog_, "col");
+    uHalo_ = glGetUniformLocation(prog_, "halo");
+    uHaloR_ = glGetUniformLocation(prog_, "haloR");
     glUseProgram(prog_);
     glUniform1i(glGetUniformLocation(prog_, "tex"), 0);
     glUseProgram(0);
@@ -247,8 +279,13 @@ inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
     stbtt_GetCodepointBitmapBox(fn, cp, s, s, &ix0, &iy0, &ix1, &iy1);
     int w = ix1 - ix0, h = iy1 - iy0;
     if (w > 0 && h > 0) {
-        std::vector<unsigned char> bmp((size_t)w * h);
-        stbtt_MakeCodepointBitmap(fn, bmp.data(), w, h, w, s, s, cp);
+        const int P = kGlyphPad;
+        const int pw = w + 2 * P, ph = h + 2 * P;
+        std::vector<unsigned char> bmp((size_t)pw * ph, 0);
+        stbtt_MakeCodepointBitmap(fn, bmp.data() + (size_t)P * pw + P,
+                                  w, h, pw, s, s, cp);
+        w = pw; h = ph;
+        ix0 -= P; iy0 -= P;
         int atlasX = 0, atlasY = 0;
         const int atlasPage = AllocateAtlasRect(w, h, atlasX, atlasY);
         if (atlasPage >= 0) {
@@ -348,6 +385,21 @@ inline float TextRenderer::Height(const wchar_t* /*text*/, float scale)
     return lineHeightPx_ * scale;
 }
 
+inline void TextRenderer::SetHaloUniforms(float scale)
+{
+    // The halo scales with the rendered text size (about 7% of the em) up to
+    // the configured width, so small labels keep open counters instead of
+    // turning into dark blobs. Never sample past the baked glyph padding.
+    const float textPx = emPx_ * scale;
+    const float radiusPx = std::min(haloRadiusPx_, std::max(0.9f, textPx * 0.07f));
+    const float radiusTexels = scale > 0.0f
+        ? std::min((float)kGlyphPad - 0.5f, radiusPx / scale) : 0.0f;
+    // halo.x = how much of the text colour the halo keeps (a dark shade of
+    // the glyph itself rather than a fixed navy outline).
+    glUniform4f(uHalo_, 0.18f, 0.0f, 0.0f, haloStrength_);
+    glUniform1f(uHaloR_, radiusTexels);
+}
+
 inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scale,
                                float r, float g, float b, float a)
 {
@@ -399,6 +451,7 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
     glUseProgram(prog_);
     glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
     glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
+    SetHaloUniforms(scale);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(VAO_);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);
@@ -473,6 +526,7 @@ inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
     glUseProgram(prog_);
     glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
     glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
+    SetHaloUniforms(scale);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(VAO_);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);

@@ -4,6 +4,7 @@
 #include "../System/Translations.h"
 #include "../System/EmbeddedResource.h"
 #include "TextRenderer.h"
+#include <algorithm>
 #include <cstdio>
 #include <cwctype>
 #include <string>
@@ -115,4 +116,14 @@ void InitializeGameFonts(int screenWidth, int screenHeight) {
             g_TextS.PreloadText(ALL_AUGS[ai].locDesc[li]);
         }
     }
+}
+
+void UpdateGameTextHalo(int screenHeight, bool backdropBlurEnabled) {
+    // A blurred desktop already removes competing detail, so the halo only
+    // needs to lift contrast; a sharp desktop needs a fuller outline.
+    const float strength = backdropBlurEnabled ? 0.55f : 0.90f;
+    const float radiusPx = std::max(1.5f, 2.0f * (float)screenHeight / 1600.0f);
+    g_TextL.SetHalo(strength, radiusPx);
+    g_TextS.SetHalo(strength, radiusPx);
+    g_TextXL.SetHalo(strength, radiusPx);
 }
