@@ -50,6 +50,8 @@ public:
 
     void RequestCurrentScreenshot();
     void RequestAllScreenshots();
+    // Captures the next frame as Screenshots/<name>.png (smoke sessions).
+    void RequestNamedScreenshot(const std::wstring& name);
 
     bool CaptureInProgress() const { return captureActive_; }
     GameState CaptureRenderState(GameState restoreState) const;
@@ -82,6 +84,7 @@ private:
     bool captureCurrent_ = false;
     bool captureActive_ = false;
     size_t captureIndex_ = 0;
+    std::wstring captureName_;
     std::wstring lastMessage_;
 
     static const std::vector<Field>& Fields();

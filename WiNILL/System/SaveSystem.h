@@ -40,6 +40,7 @@ inline long long g_WeaponRunCount[2]   = { 0, 0 };  // 플레이 횟수
 inline const char* SaveFilePath() { return "onedow_save.cfg"; }
 
 inline void SaveGame() {
+    if (g_SmokeCapture) return;   // 스모크 세션은 사용자 세이브를 건드리지 않음
     // 1) 평문(key=value) 을 문자열로 빌드
     std::string buf;
     char ln[96];

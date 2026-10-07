@@ -1055,6 +1055,12 @@ void DebugToolkit::RequestCurrentScreenshot() {
     SetMessage(L"스크린샷을 대기열에 추가했습니다");
 }
 
+void DebugToolkit::RequestNamedScreenshot(const std::wstring& name) {
+    if (!g_DebugMode || captureActive_) return;
+    captureCurrent_ = true;
+    captureName_ = name;
+}
+
 void DebugToolkit::RequestAllScreenshots() {
     if (!g_DebugMode || captureActive_) return;
     captureCurrent_ = false;
@@ -1082,7 +1088,9 @@ void DebugToolkit::CaptureFrameAfterRender(int width, int height,
     std::error_code ec;
     std::filesystem::create_directories(directory, ec);
     const std::wstring stamp = Timestamp();
-    std::wstring fileName = stamp + L"_" + SceneLabel(renderedState);
+    std::wstring fileName = captureName_.empty()
+        ? stamp + L"_" + SceneLabel(renderedState) : captureName_;
+    captureName_.clear();
     if (captureActive_) {
         wchar_t index[32] = {};
         std::swprintf(index, sizeof(index) / sizeof(index[0]), L"_%02d",

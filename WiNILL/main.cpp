@@ -69,6 +69,7 @@
 #include "SceneSkills.h"
 #include "Input.h"
 #include "DebugToolkit.h"
+#include "SmokeCapture.h"
 #include "UiLayout.h"
 #include "SceneUI.h"
 #include "WindowChrome.h"
@@ -822,6 +823,7 @@ int main() {
     // ?�행 ?�일 ?�더�??�업 ?�렉?�리 ?�동 (Resource/ ?��?경로 로드 보장)
     PlatformChdirToExeDir();
     LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
+    g_SmokeRun.Init();   // ONEDOW_SMOKE 스모크 캡처 세션 설정
 #if !defined(_DEBUG)
     // DEBUG MODE is intentionally available in Release packages for QA.
     // Keep balance telemetry opt-in to debug builds so the QA toggle does not
@@ -856,6 +858,10 @@ int main() {
 #else
     screenHeight = mode->height;
 #endif
+    if (g_SmokeRun.Active() && g_SmokeRun.Width() > 0 && g_SmokeRun.Height() > 0) {
+        screenWidth  = g_SmokeRun.Width();
+        screenHeight = g_SmokeRun.Height();
+    }
 
 #if defined(__APPLE__)
     {
@@ -1420,6 +1426,87 @@ int main() {
 
             g_GameManager.currentState = GameState::GAMEOVER;
         };
+
+        // Scripted UI smoke capture (ONEDOW_SMOKE). Each step opens a scene
+        // through the same entry points the menus use, then the frame is
+        // captured once the scene has had time to settle.
+        if (g_SmokeRun.Active()) {
+            g_SmokeRun.Frame(window, screenWidth, screenHeight, mx, my, lmb,
+                [&](const std::string& step) {
+                    GameManager& gm = g_GameManager;
+                    if (step == "MENU" || step == "PLAY" || step == "SHOP" ||
+                        step == "CODEX" || step == "SETTINGS") {
+                        const int panel = step == "PLAY" ? 0
+                                        : step == "SHOP" ? 1
+                                        : step == "CODEX" ? 2
+                                        : step == "SETTINGS" ? 3 : -1;
+                        gm.currentState = GameState::MAIN_MENU;
+                        SmokeOpenMenuPanel(panel);
+                    } else if (step == "RUN") {
+                        RestartCurrentRun();
+                    } else if (step == "STARDUST_NEAR") {
+                        // Simulate a contact-range loot drop for the smoke
+                        // capture without depending on combat input timing.
+                        RestartCurrentRun();
+                        const float cx = playerWin.x + playerWin.width * 0.5f;
+                        const float cy = playerWin.y + playerWin.height * 0.5f;
+                        SpawnStardust(cx + 42.0f, cy, 1, cx, cy, 1);
+                    } else if (step == "PAUSED") {
+                        if (gm.currentState != GameState::RUNNING)
+                            RestartCurrentRun();
+                        gm.pauseResumeState = GameState::RUNNING;
+                        gm.currentState = GameState::PAUSED;
+                    } else if (step == "GAMEOVER") {
+                        if (gm.currentState != GameState::RUNNING)
+                            RestartCurrentRun();
+                        AbandonCurrentRun();
+                    } else if (step.rfind("AUGSEL", 0) == 0) {
+                        // AUGSEL or AUGSEL=<AugDef::name>: the named card is
+                        // placed in slot 1 and keyboard-focused so its
+                        // detail panel is visible in the capture.
+                        if (gm.currentState != GameState::RUNNING)
+                            RestartCurrentRun();
+                        gm.QueueAugmentReward(false);
+                        gm.ActivateNextAugmentReward();
+                        const size_t eq = step.find('=');
+                        if (eq != std::string::npos && gm.augChoiceCount > 0) {
+                            const std::string want = step.substr(eq + 1);
+                            for (int i = 0; i < AUG_TOTAL; ++i) {
+                                if (want == ALL_AUGS[i].name) {
+                                    gm.augChoices[0] = i;
+                                    break;
+                                }
+                            }
+                            g_HoveredAug = 0;
+                            gm.augmentKeyboardFocus = true;
+                        }
+                    } else if (step.rfind("GIVE=", 0) == 0) {
+                        // GIVE=<AugDef::name>: grant an augment to the run.
+                        const std::string want = step.substr(5);
+                        for (int i = 0; i < AUG_TOTAL; ++i) {
+                            if (want == ALL_AUGS[i].name) {
+                                ApplySingleAugIdx(i, screenWidth, screenHeight);
+                                break;
+                            }
+                        }
+                    }
+                    if (step.rfind("SEARCH=", 0) == 0) {
+                        // SEARCH=<ascii text>: fill the Codex search field
+                        // as if typed (keyboard input is not scripted).
+                        const std::string q = step.substr(7);
+                        CodexSearchClear();
+                        for (char ch : q) {
+                            if (g_CodexSearchLen >= 63) break;
+                            g_CodexSearch[g_CodexSearchLen++] = (wchar_t)ch;
+                        }
+                        g_CodexSearch[g_CodexSearchLen] = L'\0';
+                        g_CodexSearchCaret = g_CodexSearchLen;
+                    }
+                    // "WAIT" (or any other name) keeps the current scene.
+                });
+            wmx = ScreenToWorldX((float)mx);
+            wmy = ScreenToWorldY((float)my);
+        }
 
         // GAMEOVER?�READY ?�동 감�? (ESC ?�으�?직접 ?�환??경우)
         if (prevState == GameState::GAMEOVER &&

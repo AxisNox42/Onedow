@@ -11,6 +11,9 @@ inline int g_FpsCap = 60;   // 첫 실행 기본 60fps (세이브 있으면 덮�
 // 언어 (한국어 / 영어 / 일본어)
 enum class Language { KR, EN, JP };
 inline Language g_Language = Language::KR;
+
+// ONEDOW_SMOKE 환경변수로 실행한 스모크 캡처 세션. 세이브를 쓰지 않는다.
+inline bool g_SmokeCapture = false;
 inline constexpr int LANG_COUNT = 3;
 
 inline int LangIndex() {

@@ -161,6 +161,20 @@ static void ResetShopUi(float entryStart = 0.0f) {
     s_ShopBackRequested = false;
     s_ShopNeedsOpenInit = true;
 }
+
+void SmokeOpenMenuPanel(int panel) {
+    s_MainMenuArmoryPanel = false;
+    s_MainMenuCodexPanel = false;
+    s_MainMenuSettingsPanel = false;
+    s_MainMenuRunConfigPanel = false;
+    switch (panel) {
+    case 0: ResetRunConfigUi(1.0f); s_MainMenuRunConfigPanel = true; break;
+    case 1: ResetShopUi(1.0f);      s_MainMenuArmoryPanel = true;    break;
+    case 2: ResetCodexUi(1.0f);     s_MainMenuCodexPanel = true;     break;
+    case 3: ResetSettingsUi(1.0f);  s_MainMenuSettingsPanel = true;  break;
+    default: break;
+    }
+}
 // 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 선택적 비네트)
 void DrawMenuBackground(float sw, float sh, float delta, float darkenAmount) {
     float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
