@@ -50,6 +50,14 @@ void ResetSettingsUi(float entryStart) {
 }
 
 
+// Settings copy in all three languages. A plain "korean ? kr : en" let
+// Japanese fall back to English for most labels (QA #36).
+static const wchar_t* SettingsText(const wchar_t* kr, const wchar_t* en,
+                                   const wchar_t* jp) {
+    const int li = LangIndex();
+    return li == 0 ? kr : (li == 2 ? jp : en);
+}
+
 void Scene_SettingsInline(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const float dt = std::min(c.delta, 0.05f);
@@ -77,6 +85,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
     // Each pane maps the same 0..1 value to its own row geometry.
     static float settingsScroll = 0.0f;
     static float settingsScrollTarget = 0.0f;
+    // Seconds left in which wheel scrolling drives the left accordion (#38).
+    static float wheelSyncT = 0.0f;
     static bool prevListW = false;
     static bool prevListS = false;
     static int detailRow = 0;
@@ -266,7 +276,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const float tabR = tab == 0 ? 0.35f : tab == 1 ? 1.00f : tab == 2 ? 0.35f : 0.72f;
     const float tabG = tab == 0 ? 0.72f : tab == 1 ? 0.72f : tab == 2 ? 0.92f : 0.52f;
     const float tabB = tab == 0 ? 1.00f : tab == 1 ? 0.30f : tab == 2 ? 0.55f : 1.00f;
-    const bool korean = LangIndex() == 0;
 
     DrawPersistentSceneSideVignettes(sw, sh, kWideSceneLinearAlpha);
     {
@@ -288,13 +297,13 @@ void Scene_SettingsInline(const SceneCtx& c) {
                            LogoClamp01(oldA + 0.20f * treeA), sw * 0.30f - 160.0f * (1.0f - oldA), 0.82f);
 
     const float settingsTitleY = 42.0f * uiS;
-    drawSettingsTextAtLevel(g_TextL, korean ? L"설정" : L"SETTINGS", mainX, settingsTitleY,
+    drawSettingsTextAtLevel(g_TextL, SettingsText(L"설정", L"SETTINGS", L"設定"), mainX, settingsTitleY,
                             1.0f, 1.0f, 1.0f, 1.0f, 0.94f * treeA,
                             UiTextLevel::Title, 0.72f);
-    drawSettingsTextAtLevel(g_TextS, korean ? L"시스템 보정" : L"SYSTEM CALIBRATION",
+    drawSettingsTextAtLevel(g_TextS, SettingsText(L"시스템 보정", L"SYSTEM CALIBRATION", L"システム調整"),
                             mainX + 4.0f * uiS,
                             settingsTitleY + g_TextL.Height(
-                                korean ? L"설정" : L"SETTINGS",
+                                SettingsText(L"설정", L"SETTINGS", L"設定"),
                                 settingsScale(g_TextL, 1.0f, UiTextLevel::Title)) + 8.0f * uiS,
                             1.0f, 0.35f, 0.76f, 1.0f, 0.72f * treeA,
                             UiTextLevel::Subtitle, 1.0f);
@@ -302,11 +311,11 @@ void Scene_SettingsInline(const SceneCtx& c) {
     // \uC88C\uCE21 ghost \uBC84\uD2BC \u2014 \uCEE8\uD14D\uC2A4\uD2B8\uC5D0 \uB530\uB77C \uBA54\uC778\uBA54\uB274 vs \uC77C\uC2DC\uC815\uC9C0 \uBA54\uB274
     if (s_MainMenuSettingsPanel) {
         const float mainMenuGap = 10.0f * uiS;
-        const wchar_t* menu[5] = { korean ? L"플레이" : L"PLAY",
-                                   korean ? L"상점" : L"SHOP",
-                                   korean ? L"성도 기록" : L"ASTRAL_LOG",
-                                   korean ? L"설정" : L"SETTING",
-                                   korean ? L"종료" : L"EXIT" };
+        const wchar_t* menu[5] = { SettingsText(L"플레이", L"PLAY", L"プレイ"),
+                                   SettingsText(L"상점", L"SHOP", L"ショップ"),
+                                   SettingsText(L"성도 기록", L"ASTRAL_LOG", L"星界記録"),
+                                   SettingsText(L"설정", L"SETTING", L"設定"),
+                                   SettingsText(L"종료", L"EXIT", L"終了") };
         for (int i = 0; i < 5; ++i) {
             const float y = MainMenuButtonRailStartY(sh, uiS) + i * (mainBH + mainMenuGap);
             const bool focus = i == 3;
@@ -321,10 +330,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
                                     UiTextLevel::Title, 0.70f);
         }
     } else if (!inGameSettings) {
-        const wchar_t* menu[4] = { korean ? L"계속하기" : L"CONTINUE",
-                                   korean ? L"설정" : L"CALIBRATION",
-                                   korean ? L"\uD3EC\uAE30\uD558\uAE30" : L"ABANDON RUN",
-                                   korean ? L"종료" : L"TERMINATE" };
+        const wchar_t* menu[4] = { SettingsText(L"계속하기", L"CONTINUE", L"続ける"),
+                                   SettingsText(L"설정", L"CALIBRATION", L"設定"),
+                                   SettingsText(L"\uD3EC\uAE30\uD558\uAE30", L"ABANDON RUN", L"放棄する"),
+                                   SettingsText(L"종료", L"TERMINATE", L"終了") };
         for (int i = 0; i < 4; ++i) {
             const float y = MainMenuButtonRailStartY(sh, uiS) + i * (mainBH + mainGap);
             const bool focus = i == 1;
@@ -341,13 +350,13 @@ void Scene_SettingsInline(const SceneCtx& c) {
     }
 
     // \u2550\u2550\u2550 TAB RAIL (DISPLAY / AUDIO / CONTROL / SYSTEM / BACK) \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-    struct SettingsTab { const wchar_t* en; const wchar_t* kr; };
+    struct SettingsTab { const wchar_t* en; const wchar_t* kr; const wchar_t* jp; };
     static const SettingsTab tabs[5] = {
-        { L"DISPLAY",  L"\uD654\uBA74"       },
-        { L"AUDIO",    L"\uC18C\uB9AC"       },
-        { L"GAMEPLAY", L"\uAC8C\uC784\uD50C\uB808\uC774" },
-        { L"ARCHIVE",  L"\uAE30\uB85D" },
-        { L"BACK",     L"\uB4A4\uB85C"       },
+        { L"DISPLAY",  L"\uD654\uBA74", L"画面"       },
+        { L"AUDIO",    L"\uC18C\uB9AC", L"サウンド"       },
+        { L"GAMEPLAY", L"\uAC8C\uC784\uD50C\uB808\uC774", L"ゲームプレイ" },
+        { L"ARCHIVE",  L"\uAE30\uB85D", L"記録" },
+        { L"BACK",     L"\uB4A4\uB85C", L"戻る"       },
     };
     if (tab >= 4) tab = 0;
 
@@ -375,7 +384,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
     // The open field intentionally has no active-tab bridge line.
 
     // \u2550\u2550\u2550 RIGHT PANEL \u2014 SETTINGS ROWS \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-    const float dA   = treeA * (0.78f + 0.22f * (1.0f - pulse));
+    // While the unsaved-changes dialog is open, the rows fade back so their
+    // labels do not show through behind the dialog copy (QA #45).
+    const float dA   = treeA * (0.78f + 0.22f * (1.0f - pulse))
+                     * (confirmBack ? 0.18f : 1.0f);
     // The settings body owns the full area to the right of the category
     // rail, split into a readable list column and a dedicated readout column.
     const float rpX  = depthX;
@@ -385,9 +397,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
 
     // Keep the context line and category title vertically centered as one
     // measured block between the top of the right tab and its separator.
-    const wchar_t* settingsContext = korean
-        ? L"관측소 보정" : L"OBSERVATORY CALIBRATION";
-    const wchar_t* categoryTitle = korean ? tabs[tab].kr : tabs[tab].en;
+    const wchar_t* settingsContext = SettingsText(L"관측소 보정", L"OBSERVATORY CALIBRATION", L"観測所調整");
+    const wchar_t* categoryTitle = SettingsText(tabs[tab].kr, tabs[tab].en, tabs[tab].jp);
     const float contextScale = settingsScale(
         g_TextS, 1.0f, UiTextLevel::Supporting);
     const float categoryScale = settingsScale(
@@ -460,47 +471,47 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const int toggleLanguage = std::max(0, std::min(2, LangIndex()));
     const wchar_t* const toggleOn = kToggleLabels[toggleLanguage][0];
     const wchar_t* const toggleOff = kToggleLabels[toggleLanguage][1];
-    settingsRows[0][0] = { korean ? L"FPS 제한" : L"FPS CAP", nullptr, false, false, false, false,
-                           { korean ? L"동기화" : L"VSYNC", L"30", L"60", L"144", L"300",
-                             korean ? L"무제한" : L"UNLIM" }, 6, allFpsCur };
-    settingsRows[0][1] = { korean ? L"그래픽 품질" : L"GRAPHICS", nullptr, false, false, false, false,
-                           { korean ? L"낮음" : L"LOW", korean ? L"보통" : L"MEDIUM",
-                             korean ? L"높음" : L"HIGH" },
+    settingsRows[0][0] = { SettingsText(L"FPS 제한", L"FPS CAP", L"FPS上限"), nullptr, false, false, false, false,
+                           { SettingsText(L"동기화", L"VSYNC", L"同期"), L"30", L"60", L"144", L"300",
+                             SettingsText(L"무제한", L"UNLIM", L"無制限") }, 6, allFpsCur };
+    settingsRows[0][1] = { SettingsText(L"그래픽 품질", L"GRAPHICS", L"グラフィック品質"), nullptr, false, false, false, false,
+                           { SettingsText(L"낮음", L"LOW", L"低"), SettingsText(L"보통", L"MEDIUM", L"中"),
+                             SettingsText(L"높음", L"HIGH", L"高") },
                            3, g_VfxDensity == VfxDensity::REDUCED ? 0 :
                               g_VfxDensity == VfxDensity::MEDIUM ? 1 : 2 };
-    settingsRows[0][2] = { korean ? L"콤보 HUD" : L"COMBO HUD", nullptr, false, false, false, false,
+    settingsRows[0][2] = { SettingsText(L"콤보 HUD", L"COMBO HUD", L"コンボHUD"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_ShowCombo ? 0 : 1 };
-    settingsRows[0][3] = { korean ? L"배경 블러" : L"BACKDROP BLUR", nullptr, false, false, false, false,
+    settingsRows[0][3] = { SettingsText(L"배경 블러", L"BACKDROP BLUR", L"背景ブラー"), nullptr, false, false, false, false,
                            { toggleOff, toggleOn },
                            2, g_BackdropBlurEnabled ? 1 : 0 };
-    settingsRows[0][4] = { korean ? L"블러 갱신 주기" : L"BLUR REFRESH RATE", nullptr, false, false, false, false,
+    settingsRows[0][4] = { SettingsText(L"블러 갱신 주기", L"BLUR REFRESH RATE", L"ブラー更新間隔"), nullptr, false, false, false, false,
                            { L"1", L"20", L"60" }, 3,
                            g_BackdropBlurCaptureHz == 1 ? 0 :
                            g_BackdropBlurCaptureHz == 60 ? 2 : 1 };
-    settingsRows[1][0] = { korean ? L"마스터 볼륨" : L"MASTER VOL", s_volBuf, false, true, false, false };
-    settingsRows[1][1] = { korean ? L"BGM 채널" : L"BGM BUS", nullptr, false, false, false, false,
+    settingsRows[1][0] = { SettingsText(L"마스터 볼륨", L"MASTER VOL", L"マスター音量"), s_volBuf, false, true, false, false };
+    settingsRows[1][1] = { SettingsText(L"BGM 채널", L"BGM BUS", L"BGM"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_BgmEnabled ? 0 : 1 };
-    settingsRows[1][2] = { korean ? L"효과음 채널" : L"SFX BUS", nullptr, false, false, false, false,
+    settingsRows[1][2] = { SettingsText(L"효과음 채널", L"SFX BUS", L"効果音"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_SfxEnabled ? 0 : 1 };
-    settingsRows[1][3] = { korean ? L"출력" : L"OUTPUT", nullptr, false, false, false, false,
-                           { korean ? L"스테레오" : L"STEREO",
-                             korean ? L"모노" : L"MONO" },
+    settingsRows[1][3] = { SettingsText(L"출력", L"OUTPUT", L"出力"), nullptr, false, false, false, false,
+                           { SettingsText(L"스테레오", L"STEREO", L"ステレオ"),
+                             SettingsText(L"모노", L"MONO", L"モノ") },
                            2, g_AudioMonoOutput ? 1 : 0 };
-    settingsRows[1][4] = { korean ? L"오디오 엔진" : L"AUDIO ENGINE", nullptr, false, false, false, false,
+    settingsRows[1][4] = { SettingsText(L"오디오 엔진", L"AUDIO ENGINE", L"オーディオエンジン"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2,
                            g_AudioEngineEnabled ? 0 : 1 };
-    settingsRows[2][0] = { korean ? L"자동 발사" : L"AUTO FIRE", nullptr, false, false, false, false,
+    settingsRows[2][0] = { SettingsText(L"자동 발사", L"AUTO FIRE", L"自動射撃"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_AutoFire ? 0 : 1 };
-    settingsRows[2][1] = { korean ? L"자동 스킬" : L"AUTO SKILL", nullptr, false, false, false, false,
+    settingsRows[2][1] = { SettingsText(L"자동 스킬", L"AUTO SKILL", L"自動スキル"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_AutoSkill ? 0 : 1 };
-    settingsRows[2][2] = { korean ? L"조준선" : L"CROSSHAIR", nullptr, false, false, false, false,
+    settingsRows[2][2] = { SettingsText(L"조준선", L"CROSSHAIR", L"照準"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_ShowCrosshair ? 0 : 1 };
-    settingsRows[2][3] = { korean ? L"\uB514\uBC84\uAE45 \uBAA8\uB4DC" : L"DEBUG MODE", nullptr, false, false, false, false,
+    settingsRows[2][3] = { SettingsText(L"\uB514\uBC84\uAE45 \uBAA8\uB4DC", L"DEBUG MODE", L"デバッグモード"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_DebugMode ? 0 : 1 };
-    settingsRows[3][0] = { korean ? L"언어" : L"LANGUAGE", nullptr, false, false, false, false,
+    settingsRows[3][0] = { SettingsText(L"언어", L"LANGUAGE", L"言語"), nullptr, false, false, false, false,
                            { L"한국어", L"English", L"日本語" },
                            3, allLangCur };
-    settingsRows[3][1] = { korean ? L"데이터 초기화" : L"RESET DATA", nullptr, false, false, true, true };
+    settingsRows[3][1] = { SettingsText(L"데이터 초기화", L"RESET DATA", L"データ初期化"), nullptr, false, false, true, true };
 
     auto settingsOptionTextLevel = [&](int category, int row) {
         const SRow& setting = settingsRows[category][row];
@@ -547,35 +558,35 @@ void Scene_SettingsInline(const SceneCtx& c) {
         list[listCount++] = { cat, row, false, label };
     };
     const wchar_t* displayLabels[5] = {
-        korean ? L"FPS 제한" : L"FPS CAP",
-        korean ? L"그래픽 품질" : L"GRAPHICS",
-        korean ? L"콤보 HUD" : L"COMBO HUD",
-        korean ? L"배경 블러" : L"BACKDROP BLUR",
-        korean ? L"블러 갱신 주기" : L"BLUR REFRESH RATE" };
+        SettingsText(L"FPS 제한", L"FPS CAP", L"FPS上限"),
+        SettingsText(L"그래픽 품질", L"GRAPHICS", L"グラフィック品質"),
+        SettingsText(L"콤보 HUD", L"COMBO HUD", L"コンボHUD"),
+        SettingsText(L"배경 블러", L"BACKDROP BLUR", L"背景ブラー"),
+        SettingsText(L"블러 갱신 주기", L"BLUR REFRESH RATE", L"ブラー更新間隔") };
     const wchar_t* audioLabels[5] = {
-        korean ? L"마스터 볼륨" : L"MASTER VOL",
-        korean ? L"BGM 채널" : L"BGM BUS",
-        korean ? L"효과음 채널" : L"SFX BUS",
-        korean ? L"출력" : L"OUTPUT",
-        korean ? L"오디오 엔진" : L"AUDIO ENGINE" };
+        SettingsText(L"마스터 볼륨", L"MASTER VOL", L"マスター音量"),
+        SettingsText(L"BGM 채널", L"BGM BUS", L"BGM"),
+        SettingsText(L"효과음 채널", L"SFX BUS", L"効果音"),
+        SettingsText(L"출력", L"OUTPUT", L"出力"),
+        SettingsText(L"오디오 엔진", L"AUDIO ENGINE", L"オーディオエンジン") };
     const wchar_t* gameplayLabels[4] = {
-        korean ? L"자동 발사" : L"AUTO FIRE",
-        korean ? L"자동 스킬" : L"AUTO SKILL",
-        korean ? L"조준선" : L"CROSSHAIR",
-        korean ? L"\uB514\uBC84\uAE45 \uBAA8\uB4DC" : L"DEBUG MODE" };
+        SettingsText(L"자동 발사", L"AUTO FIRE", L"自動射撃"),
+        SettingsText(L"자동 스킬", L"AUTO SKILL", L"自動スキル"),
+        SettingsText(L"조준선", L"CROSSHAIR", L"照準"),
+        SettingsText(L"\uB514\uBC84\uAE45 \uBAA8\uB4DC", L"DEBUG MODE", L"デバッグモード") };
     const wchar_t* archiveLabels[2] = {
-        korean ? L"언어" : L"LANGUAGE",
-        korean ? L"데이터 초기화" : L"RESET DATA" };
+        SettingsText(L"언어", L"LANGUAGE", L"言語"),
+        SettingsText(L"데이터 초기화", L"RESET DATA", L"データ初期化") };
     // The left category index is an accordion; keep every right-side option
     // visible so changing categories does not collapse the settings board.
-    addHeader(0, korean ? L"화면" : L"DISPLAY");
+    addHeader(0, SettingsText(L"화면", L"DISPLAY", L"画面"));
     if (tab == 0) for (int i = 0; i < 5; ++i) addItem(0, i, displayLabels[i]);
-    addHeader(1, korean ? L"소리" : L"AUDIO");
+    addHeader(1, SettingsText(L"소리", L"AUDIO", L"サウンド"));
     if (tab == 1) for (int i = 0; i < 5; ++i) addItem(1, i, audioLabels[i]);
-    addHeader(2, korean ? L"게임플레이" : L"GAMEPLAY");
+    addHeader(2, SettingsText(L"게임플레이", L"GAMEPLAY", L"ゲームプレイ"));
     if (tab == 2) for (int i = 0; i < (kDebugSettingsVisible ? 4 : 3); ++i)
         addItem(2, i, gameplayLabels[i]);
-    addHeader(3, korean ? L"기록" : L"ARCHIVE");
+    addHeader(3, SettingsText(L"기록", L"ARCHIVE", L"記録"));
     if (tab == 3) for (int i = 0; i < 2; ++i) addItem(3, i, archiveLabels[i]);
 
     SettingsListEntry rightList[32] = {};
@@ -587,10 +598,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
         rightList[rightListCount++] = { cat, row, false, label };
     };
     const wchar_t* categoryLabels[4] = {
-        korean ? L"화면" : L"DISPLAY",
-        korean ? L"소리" : L"AUDIO",
-        korean ? L"게임플레이" : L"GAMEPLAY",
-        korean ? L"기록" : L"ARCHIVE" };
+        SettingsText(L"화면", L"DISPLAY", L"画面"),
+        SettingsText(L"소리", L"AUDIO", L"サウンド"),
+        SettingsText(L"게임플레이", L"GAMEPLAY", L"ゲームプレイ"),
+        SettingsText(L"기록", L"ARCHIVE", L"記録") };
     const wchar_t* const* categoryRows[4] = {
         displayLabels, audioLabels, gameplayLabels, archiveLabels };
     for (int category = 0; category < 4; ++category) {
@@ -682,6 +693,25 @@ void Scene_SettingsInline(const SceneCtx& c) {
         settingsScrollTarget -= g_ScrollAccum * 0.085f;
         settingsScrollTarget = std::max(0.0f, std::min(1.0f, settingsScrollTarget));
         g_ScrollAccum = 0.0f;
+        wheelSyncT = 0.6f;
+    }
+    // While the board scrolls from the wheel, open the left accordion on
+    // the category whose rows sit at the board's focus line, so the index
+    // follows the scroll instead of staying on the old category (QA #38).
+    // A hovered left header still wins.
+    bool scrollSynced = false;
+    wheelSyncT = std::max(0.0f, wheelSyncT - dt);
+    if (wheelSyncT > 0.0f && accordionHoverTop < 0.0f && rightListCount > 0) {
+        const int anchor = std::max(0, std::min(rightListCount - 1,
+            (int)((settingsScroll * rightMaxScroll + rightListH * 0.42f)
+                  / rightRowH)));
+        const int anchorCategory = rightList[anchor].category;
+        if (anchorCategory != tab) {
+            tab = anchorCategory;
+            detailRow = 0;
+            listCursor = -1;
+            scrollSynced = true;
+        }
     }
     const bool listWKey = c.window && glfwGetKey(c.window, GLFW_KEY_W) == GLFW_PRESS;
     const bool listSKey = c.window && glfwGetKey(c.window, GLFW_KEY_S) == GLFW_PRESS;
@@ -717,7 +747,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         settingsScrollTarget = target / rightMaxScroll;
     };
     if (focusChanged) revealFocus();
-    if (isListItem(listCursor)) {
+    if (!scrollSynced && isListItem(listCursor)) {
         const SettingsListEntry& selectedEntry = list[listCursor];
         if (selectedEntry.category != tab || selectedEntry.row != detailRow) {
             activateSettingsCategory(selectedEntry.category,
@@ -1024,57 +1054,46 @@ void Scene_SettingsInline(const SceneCtx& c) {
         equalizeCommonCells();
     }
 
-    // FPS values range from "30" to "무제한"; equal cells keep the gaps
-    // between choices even instead of following each label's width.
+    // FPS and language rows used to size their own cells; they now share
+    // the grid computed below and only keep their per-row storage.
     float fpsOptionScale = commonOptionSc;
-    const float fpsChipPadX = 4.0f * uiS;
-    const float fpsChipGap = 16.0f * uiS;
     float fpsOptionCellW[8] = {};
-    const int fpsOptionCount = settingsRows[0][0].optCount;
-    auto fitFpsCells = [&]() {
-        float widest = 0.0f;
-        for (int j = 0; j < fpsOptionCount; ++j)
-            widest = std::max(widest, localizedOptionWidth(
-                0, 0, j, fpsOptionScale, settingsRows[0][0].opts[j]));
-        std::fill(std::begin(fpsOptionCellW), std::end(fpsOptionCellW),
-                  widest + fpsChipPadX * 2.0f);
-        return fpsOptionCount * fpsOptionCellW[0]
-             + fpsChipGap * std::max(0, fpsOptionCount - 1);
-    };
-    const float fpsOptionTotalW = fitFpsCells();
-    if (fpsOptionTotalW > rightControlW && fpsOptionTotalW > 1.0f) {
-        fpsOptionScale *= std::max(0.55f, rightControlW / fpsOptionTotalW);
-        fitFpsCells();
-    }
-
     float languageOptionScale = commonOptionSc;
     float languageOptionCellW[8] = {};
-    float languageOptionMaxW = 0.0f;
-    for (int j = 0; j < settingsRows[3][0].optCount; ++j) {
-        languageOptionMaxW = std::max(languageOptionMaxW,
-            localizedOptionWidth(3, 0, j, languageOptionScale,
-                                 settingsRows[3][0].opts[j]));
-    }
-    std::fill(std::begin(languageOptionCellW),
-              std::end(languageOptionCellW),
-              languageOptionMaxW + fpsChipPadX * 2.0f);
-    float languageOptionTotalW = settingsRows[3][0].optCount
-                               * languageOptionCellW[0];
-    if (settingsRows[3][0].optCount > 1)
-        languageOptionTotalW += fpsChipGap * (settingsRows[3][0].optCount - 1);
-    if (languageOptionTotalW > rightControlW && languageOptionTotalW > 1.0f) {
-        languageOptionScale *= std::max(0.55f,
-                                        rightControlW / languageOptionTotalW);
-        languageOptionMaxW = 0.0f;
-        for (int j = 0; j < settingsRows[3][0].optCount; ++j)
-            languageOptionMaxW = std::max(languageOptionMaxW,
-                localizedOptionWidth(3, 0, j, languageOptionScale,
-                                     settingsRows[3][0].opts[j]));
-        std::fill(std::begin(languageOptionCellW),
-                  std::end(languageOptionCellW),
-                  languageOptionMaxW + fpsChipPadX * 2.0f);
-    }
 
+    // One control grid for every option row (QA #37): FPS, toggles, quality
+    // and language choices all start at the same x with the same cell width
+    // and gap, sized for the widest label in any language and the six-slot
+    // FPS row, so each column lines up down the whole board.
+    {
+        constexpr int kGridSlots = 6;
+        float gridScale = commonOptionSc;
+        auto measureGrid = [&](float scale) {
+            float widest = 0.0f;
+            for (int category = 0; category < 4; ++category) {
+                for (int row = 0; row < 6; ++row) {
+                    const SRow& setting = settingsRows[category][row];
+                    for (int k = 0; k < setting.optCount; ++k)
+                        widest = std::max(widest, localizedOptionWidth(
+                            category, row, k, scale, setting.opts[k]));
+                }
+            }
+            return widest + commonChipPadX * 2.0f;
+        };
+        float gridCellW = measureGrid(gridScale);
+        const float gridTotalW = kGridSlots * gridCellW
+                               + commonChipGap * (kGridSlots - 1);
+        // Leave clear air before the scroll rail at the column's right edge.
+        const float gridRoomW = std::max(1.0f, rightControlW - 28.0f * uiS);
+        if (gridTotalW > gridRoomW && gridTotalW > 1.0f) {
+            gridScale *= std::max(0.55f, gridRoomW / gridTotalW);
+            gridCellW = measureGrid(gridScale);
+        }
+        commonOptionScale = fpsOptionScale = languageOptionScale = gridScale;
+        std::fill(std::begin(commonOptionCellW), std::end(commonOptionCellW), gridCellW);
+        std::fill(std::begin(fpsOptionCellW), std::end(fpsOptionCellW), gridCellW);
+        std::fill(std::begin(languageOptionCellW), std::end(languageOptionCellW), gridCellW);
+    }
     BatchFlush();
     glEnable(GL_SCISSOR_TEST);
     glScissor((GLint)rpX,
@@ -1278,8 +1297,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 L"삭제 중...", L"ERASING...", L"削除中..."
             };
             const wchar_t* resetLabel = holdT > 0.01f
-                ? (korean ? erasingLabelVariants[0] : erasingLabelVariants[1])
-                : (korean ? resetLabelVariants[0] : resetLabelVariants[1]);
+                ? erasingLabelVariants[std::clamp(LangIndex(), 0, 2)]
+                : resetLabelVariants[std::clamp(LangIndex(), 0, 2)];
             const wchar_t* const* labelVariants = holdT > 0.01f
                 ? erasingLabelVariants : resetLabelVariants;
             float resetTextScale = settingsScale(
@@ -1299,7 +1318,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         } else if (setting.optCount > 0) {
             // Option cells are equal width within each row family and the
             // label is centered, so spacing never depends on label length.
-            const float chipGap = compactAlignedRow ? fpsChipGap : commonChipGap;
+            const float chipGap = commonChipGap;   // shared grid (QA #37)
             float ox = rightControlX;
             for (int j = 0; j < setting.optCount; ++j) {
                 const float cellW = compactFpsRow ? fpsOptionCellW[j]
@@ -1440,20 +1459,27 @@ void Scene_SettingsInline(const SceneCtx& c) {
         drawRect(0.0f, 0.0f, sw, sh, 0.01f, 0.02f, 0.04f, 0.56f * treeA);
         const float dialogTitleScale = settingsScale(
             g_TextL, 1.0f, UiTextLevel::Title);
-        const wchar_t* dialogTitle = L"UNSAVED CHANGES";
+        const wchar_t* dialogTitle = SettingsText(
+            L"저장하지 않은 변경 사항", L"UNSAVED CHANGES", L"未保存の変更");
+        const float dialogTitleY = cy - 92.0f * uiS;
         drawSettingsTextAtLevel(
             g_TextL, dialogTitle,
             cx - g_TextL.Width(dialogTitle, dialogTitleScale) * 0.5f,
-            cy - 66.0f * uiS, 1.0f,
+            dialogTitleY, 1.0f,
             1.0f, 1.0f, 1.0f, 0.98f * treeA,
             UiTextLevel::Title, 0.72f);
-        const wchar_t* dialogPrompt = L"SAVE SETTINGS BEFORE EXIT?";
+        const wchar_t* dialogPrompt = SettingsText(
+            L"나가기 전에 설정을 저장할까요?", L"SAVE SETTINGS BEFORE EXIT?",
+            L"終了する前に設定を保存しますか？");
         const float dialogPromptScale = settingsScale(
             g_TextL, 1.0f, UiTextLevel::Description);
+        // Stack the prompt under the measured title height; the old fixed
+        // offsets were tighter than a Title line and the two overlapped.
         drawSettingsTextAtLevel(
             g_TextL, dialogPrompt,
             cx - g_TextL.Width(dialogPrompt, dialogPromptScale) * 0.5f,
-            cy - 28.0f * uiS, 1.0f,
+            dialogTitleY + g_TextL.Height(dialogTitle, dialogTitleScale) + 10.0f * uiS,
+            1.0f,
             0.60f, 0.72f, 0.86f, 0.82f * treeA,
             UiTextLevel::Description, 0.58f);
         const float dialogY = cy + 26.0f * uiS;
@@ -1468,7 +1494,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         static const wchar_t* saveBackVariants[] = {
             L"저장 후 뒤로", L"SAVE & BACK", L"保存して戻る"
         };
-        static const wchar_t* discardVariants[] = { L"폐기", L"DISCARD", L"破棄" };
+        static const wchar_t* discardVariants[] = { L"저장 안 함", L"DON'T SAVE", L"保存しない" };
         DrawUnifiedMenuCommand(saveBackVariants[settingsLanguage],
                                cx - dialogW - 12.0f * uiS, dialogY,
                                dialogW, dialogH, 0.34f, 0.82f, 1.0f,
@@ -1572,7 +1598,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
      }
 
     drawSettingsTextAtLevel(g_TextS,
-                            korean ? L"ESC / RMB  뒤로" : L"ESC / RMB  BACK",
+                            SettingsText(L"ESC / RMB  뒤로", L"ESC / RMB  BACK", L"ESC / RMB  戻る"),
                             backX, sh - 48.0f * uiS, 1.0f,
                             0.52f, 0.62f, 0.72f, 0.58f * dA,
                             UiTextLevel::Supporting, 0.56f);

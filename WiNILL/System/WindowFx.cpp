@@ -17,6 +17,13 @@ void TransparencyLog(const char* /*fmt*/, ...) {
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#include "Settings.h"
+
+// Message box copy in the player's language (these were Korean-only).
+static const wchar_t* FxText(const wchar_t* kr, const wchar_t* en, const wchar_t* jp) {
+    const int li = LangIndex();
+    return li == 0 ? kr : (li == 2 ? jp : en);
+}
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "ole32.lib")
@@ -210,9 +217,14 @@ static void OpenBlurSettings(HWND hwnd, const wchar_t* uri) {
                                            nullptr, nullptr, SW_SHOWNORMAL);
     if (reinterpret_cast<INT_PTR>(result) <= 32)
         MessageBoxW(hwnd,
-            L"Windows 설정을 열지 못했습니다. 설정에서 투명 효과를 켜고 "
-            L"배터리/에너지 절약 모드를 꺼주세요.",
-            L"ONEDOW 블러 설정", MB_OK | MB_ICONINFORMATION);
+            FxText(L"Windows 설정을 열지 못했습니다. 설정에서 투명 효과를 켜고 "
+                   L"배터리/에너지 절약 모드를 꺼주세요.",
+                   L"Could not open Windows Settings. Turn on transparency effects "
+                   L"and turn off battery/energy saver in Settings.",
+                   L"Windowsの設定を開けませんでした。設定で透明効果をオンにし、"
+                   L"バッテリー節約機能をオフにしてください。"),
+            FxText(L"ONEDOW 블러 설정", L"ONEDOW Blur Settings", L"ONEDOW ブラー設定"),
+            MB_OK | MB_ICONINFORMATION);
 }
 
 // Check environmental changes even after the composition API reported success.
@@ -230,9 +242,14 @@ static bool RefreshBlurEnvironment(HWND hwnd, bool enabled) {
             nextCheck = now + 1.0;
             if (!s_transparency.Restore() && disabling)
                 MessageBoxW(hwnd,
-                    L"Windows 투명 효과를 원래 설정으로 복원하지 못했습니다.\n"
-                    L"Windows 설정의 투명 효과 항목을 확인해주세요.",
-                    L"ONEDOW 블러 설정", MB_OK | MB_ICONWARNING);
+                    FxText(L"Windows 투명 효과를 원래 설정으로 복원하지 못했습니다.\n"
+                           L"Windows 설정의 투명 효과 항목을 확인해주세요.",
+                           L"Could not restore the original Windows transparency setting.\n"
+                           L"Please check Transparency effects in Windows Settings.",
+                           L"Windowsの透明効果を元の設定に戻せませんでした。\n"
+                           L"Windowsの設定で透明効果を確認してください。"),
+                    FxText(L"ONEDOW 블러 설정", L"ONEDOW Blur Settings", L"ONEDOW ブラー設定"),
+                    MB_OK | MB_ICONWARNING);
         }
         return disabling;
     }
@@ -241,9 +258,14 @@ static bool RefreshBlurEnvironment(HWND hwnd, bool enabled) {
 
     if (enabling && !EnableSystemTransparency()) {
         if (MessageBoxW(hwnd,
-            L"Windows 투명 효과를 자동으로 켜지 못했습니다.\n"
-            L"설정에서 투명 효과를 켜주세요.\n\n설정을 여시겠습니까?",
-            L"ONEDOW 블러 설정", MB_YESNO | MB_ICONINFORMATION) == IDYES)
+            FxText(L"Windows 투명 효과를 자동으로 켜지 못했습니다.\n"
+                   L"설정에서 투명 효과를 켜주세요.\n\n설정을 여시겠습니까?",
+                   L"Could not turn on Windows transparency effects automatically.\n"
+                   L"Please turn them on in Settings.\n\nOpen Settings now?",
+                   L"Windowsの透明効果を自動でオンにできませんでした。\n"
+                   L"設定で透明効果をオンにしてください。\n\n設定を開きますか？"),
+            FxText(L"ONEDOW 블러 설정", L"ONEDOW Blur Settings", L"ONEDOW ブラー設定"),
+            MB_YESNO | MB_ICONINFORMATION) == IDYES)
             OpenBlurSettings(hwnd, L"ms-settings:colors");
     }
     SYSTEM_POWER_STATUS power = {};
@@ -257,10 +279,17 @@ static bool RefreshBlurEnvironment(HWND hwnd, bool enabled) {
     // Prompt only on launch/explicit enable, never interrupt gameplay on a timer.
     if (enabling && saver == 1) {
         MessageBoxW(hwnd,
-            L"배터리/에너지 절약 모드가 켜져 있어 배경 블러가 제한됩니다.\n"
-            L"Windows 전원 설정에서 절약 모드를 꺼주세요.\n"
-            L"변경 후 게임으로 돌아오면 블러가 다시 적용됩니다.",
-            L"ONEDOW 블러 안내", MB_OK | MB_ICONINFORMATION);
+            FxText(L"배터리/에너지 절약 모드가 켜져 있어 배경 블러가 제한됩니다.\n"
+                   L"Windows 전원 설정에서 절약 모드를 꺼주세요.\n"
+                   L"변경 후 게임으로 돌아오면 블러가 다시 적용됩니다.",
+                   L"Backdrop blur is limited while battery/energy saver is on.\n"
+                   L"Turn off the saver in Windows power settings.\n"
+                   L"Blur is applied again when you return to the game.",
+                   L"バッテリー節約機能がオンのため、背景ブラーが制限されています。\n"
+                   L"Windowsの電源設定で節約機能をオフにしてください。\n"
+                   L"変更後ゲームに戻るとブラーが再び適用されます。"),
+            FxText(L"ONEDOW 블러 안내", L"ONEDOW Blur Notice", L"ONEDOW ブラー案内"),
+            MB_OK | MB_ICONINFORMATION);
     }
     return changed;
 }

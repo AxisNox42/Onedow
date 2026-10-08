@@ -1,5 +1,12 @@
 // Included by SceneMenus.cpp to keep shared menu state and helpers private.
 
+// Shop detail copy in KR / EN / JP (the purchase strings were Korean-only).
+static const wchar_t* ShopText(const wchar_t* kr, const wchar_t* en,
+                               const wchar_t* jp) {
+    const int li = LangIndex();
+    return li == 0 ? kr : (li == 2 ? jp : en);
+}
+
 void Scene_Shop(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh;
     const double mx = c.mx, my = c.my;
@@ -450,20 +457,25 @@ void Scene_Shop(const SceneCtx& c) {
             // The action label uses one stable high-contrast colour. State
             // colours belong to the ribbon itself; changing them on the text
             // makes the control look disabled or errored at a glance.
+            // Centre the label on the ribbon itself: both slanted sides are
+            // parallel, so the shape's centre is the middle of x..x+w and of
+            // top..bottom. Right-aligning it left short labels such as
+            // "BUY" hugging the slanted end (QA #39 / #43).
             float textSc = purchaseButtonSc;
             float textW = g_TextL.Width(label, textSc);
-            const float textRight = x + w - cut * 0.56f - 18.0f * ui;
-            const float textMaxW = std::max(48.0f * ui,
-                                            textRight - x - 18.0f * ui);
+            const float textMaxW = std::max(48.0f * ui, w - cut * 2.0f - 24.0f * ui);
             if (textW > textMaxW && textW > 0.0f) {
                 textSc *= textMaxW / textW;
                 textW = g_TextL.Width(label, textSc);
             }
+            const float textX = x + (w - textW) * 0.5f;
+            const float textY = (top + bottom) * 0.5f
+                              - g_TextL.Height(label, textSc) * 0.5f;
             const float textR = 0.94f;
             const float textG = 0.98f;
             const float textB = 1.00f;
-            DrawShadowedText(g_TextL, label, textRight - textW,
-                             y - 20.0f * ui, textSc, textR, textG, textB,
+            DrawShadowedText(g_TextL, label, textX,
+                             textY, textSc, textR, textG, textB,
                              0.56f + 0.42f * actionEnabledT, 0.84f);
         };
 
@@ -535,20 +547,20 @@ void Scene_Shop(const SceneCtx& c) {
         }
 
         float detailR = cyanR, detailG = cyanG, detailB = cyanB;
-        const wchar_t* detailTitle = L"모듈 없음";
-        const wchar_t* detailType = L"상점 항목";
+        const wchar_t* detailTitle = ShopText(L"모듈 없음", L"NO MODULE", L"モジュールなし");
+        const wchar_t* detailType = ShopText(L"상점 항목", L"SHOP ITEM", L"ショップ項目");
         bool detailIsMeta = false, detailIsTheme = false, detailIsAug = false;
         int detailId = -1;
         if (s_selKey >= 0) {
             if (s_selKey < KEY_THEME) {
                 detailIsMeta = true; detailId = s_selKey - KEY_META;
-                detailType = L"코어 모듈";
+                detailType = ShopText(L"코어 모듈", L"CORE MODULE", L"コアモジュール");
                 if (detailId >= 0 && detailId < META_COUNT) {
                     detailTitle = MetaName(detailId);
                 }
             } else if (s_selKey < KEY_AUG) {
                 detailIsTheme = true; detailId = s_selKey - KEY_THEME;
-                detailType = L"화면 프로필";
+                detailType = ShopText(L"화면 프로필", L"DISPLAY PROFILE", L"画面プロファイル");
                 if (detailId >= 0 && detailId < ACCENT_COUNT) {
                     detailTitle = AccentName(detailId);
                     detailR = ACCENT_THEMES[detailId].r;
@@ -557,7 +569,7 @@ void Scene_Shop(const SceneCtx& c) {
                 }
             } else {
                 detailIsAug = true; detailId = s_selKey - KEY_AUG;
-                detailType = L"페이로드 모듈";
+                detailType = ShopText(L"페이로드 모듈", L"PAYLOAD MODULE", L"ペイロードモジュール");
                 if (detailId >= 0 && detailId < AUG_TOTAL) {
                     detailTitle = ALL_AUGS[detailId].locName[li];
                     GetRarityColor(ALL_AUGS[detailId].rarity,
@@ -572,10 +584,16 @@ void Scene_Shop(const SceneCtx& c) {
         // giant lower semicircle. This makes the constellation the stage
         // instead of a small illustration floating between the UI columns.
         // The focused module sits at the bottom of the rail, directly below
-        // chartCX; keep it near screen center like the Codex (QA #13).
-        const float chartCX = sw * 0.45f;
-        const float chartCY = sh * 0.10f;
-        const float chartR = std::min(sw * 0.52f, sh * 0.70f);
+        // chartCX, near screen centre like the Codex (QA #13). The chart is
+        // large enough that its left end and outer arcs run slightly off the
+        // left edge, framing the screen instead of floating in it (QA #44).
+        const float chartCX = sw * 0.40f;
+        // Centre above the screen so the side nodes ride high, clear of the
+        // left menu and the right detail block.
+        const float chartCY = -sh * 0.10f;
+        // Size the rail from the overflow we want: its left end always runs
+        // 4% of the width past the left edge, whatever the aspect ratio.
+        const float chartR = (chartCX + sw * 0.04f) / 0.68f;
         const float itemR = chartR * 0.94f;
         const float rowStep = std::min(250.0f * ui, sh * 0.24f);
         // The catalogue follows one clean lower semicircle. The screen-space
@@ -603,7 +621,7 @@ void Scene_Shop(const SceneCtx& c) {
         // Lift the complete readout slightly so the wallet/status rows keep
         // clear air above the bottom action ribbon.
         const ShopDetailLayout detailLayout = MakeShopDetailLayout(
-            detailX, sh * 0.50f, detailW, sh * 0.91f, ui);
+            detailX, sh * 0.55f, detailW, sh * 0.91f, ui);
         const float detailRight = detailLayout.right;
         const float infoY = detailLayout.titleY;
 
@@ -1006,8 +1024,9 @@ void Scene_Shop(const SceneCtx& c) {
                 const float typeG = visualG + (whiteG - visualG) * 0.34f;
                 const float typeB = visualB + (whiteB - visualB) * 0.34f;
                 DrawShadowedText(g_TextS,
-                                 isCoreNode ? L"코어"
-                                 : (isProfileNode ? L"프로필" : L"페이로드"),
+                                 isCoreNode ? ShopText(L"코어", L"CORE", L"コア")
+                                 : (isProfileNode ? ShopText(L"프로필", L"PROFILE", L"プロファイル")
+                                                : ShopText(L"페이로드", L"PAYLOAD", L"ペイロード")),
                                  drawAx + miniRadius + 25.0f * ui,
                                  drawAy + 22.0f * ui,
                                  UiTextScale(g_TextS, UiTextLevel::Supporting,
@@ -1100,11 +1119,11 @@ void Scene_Shop(const SceneCtx& c) {
 
         const float copyY = detailLayout.copyY;
         if (detailIsMeta) {
-            drawRightFit(g_TextS, L"출격 전 적용",
+            drawRightFit(g_TextS, ShopText(L"출격 전 적용", L"APPLIED BEFORE LAUNCH", L"出撃前に適用"),
                          detailRight, copyY, detailDescriptionSc, detailW,
                          0.82f, 0.90f, 0.98f, 0.90f * detailA, 0.88f);
         } else if (detailIsTheme) {
-            drawRightFit(g_TextS, L"아웃게임 색상 적용",
+            drawRightFit(g_TextS, ShopText(L"아웃게임 색상 적용", L"MENU COLOR THEME", L"メニュー配色に適用"),
                          detailRight, copyY, detailDescriptionSc, detailW,
                          detailR, detailG, detailB, 0.88f * detailA, 0.86f);
         } else if (detailIsAug && detailId >= 0 && detailId < AUG_TOTAL) {
@@ -1145,22 +1164,25 @@ void Scene_Shop(const SceneCtx& c) {
                                         0.58f * detailA, false);
             };
             wchar_t balanceBuf[64];
-            swprintf_s(balanceBuf, L"보유 별가루  %lld", g_Coins);
+            swprintf_s(balanceBuf, ShopText(L"보유 별가루  %lld", L"STARDUST  %lld",
+                                          L"所持星屑  %lld"), g_Coins);
             drawRightFit(g_TextS, balanceBuf, detailRight, y + 12.0f * ui,
                          detailInfoSc, detailW, whiteR, whiteG, whiteB,
                          0.78f * detailA, 0.60f);
 
             if (finished) {
-                drawStatusMarker(L"최대 레벨", y - 30.0f * ui);
-                drawRightFit(g_TextS, L"최대 레벨", detailRight,
+                const wchar_t* maxLabel = ShopText(L"최대 레벨", L"MAX LEVEL", L"最大レベル");
+                drawStatusMarker(maxLabel, y - 30.0f * ui);
+                drawRightFit(g_TextS, maxLabel, detailRight,
                              y - 30.0f * ui, detailInfoSc, detailW,
                              detailR, detailG, detailB,
                              0.92f * detailA, 0.64f);
                 return;
             }
             if (owned) {
-                drawStatusMarker(L"구매 완료", y - 30.0f * ui);
-                drawRightFit(g_TextS, L"구매 완료",
+                const wchar_t* ownedLabel = ShopText(L"구매 완료", L"OWNED", L"購入済み");
+                drawStatusMarker(ownedLabel, y - 30.0f * ui);
+                drawRightFit(g_TextS, ownedLabel,
                              detailRight, y - 30.0f * ui, detailInfoSc,
                              detailW, detailR, detailG, detailB,
                              0.92f * detailA, 0.64f);
@@ -1168,14 +1190,17 @@ void Scene_Shop(const SceneCtx& c) {
             }
 
             wchar_t costBuf[64];
-            swprintf_s(costBuf, L"비용  %lld 별가루", cost);
+            swprintf_s(costBuf, ShopText(L"비용  %lld 별가루", L"COST  %lld STARDUST",
+                                       L"費用  %lld 星屑"), cost);
             drawRightFit(g_TextS, costBuf, detailRight, y - 30.0f * ui,
                          detailInfoSc, detailW, goldR, goldG, goldB,
                          0.98f * detailA, 0.64f);
 
             if (canAfford) {
                 wchar_t verdictBuf[64];
-                swprintf_s(verdictBuf, L"구매 후  %lld 별가루",
+                swprintf_s(verdictBuf, ShopText(L"구매 후  %lld 별가루",
+                                                L"AFTER  %lld STARDUST",
+                                                L"購入後  %lld 星屑"),
                            g_Coins - cost);
                 drawRightFit(g_TextS, verdictBuf, detailRight,
                              y + 52.0f * ui, detailInfoSc, detailW,
@@ -1187,7 +1212,8 @@ void Scene_Shop(const SceneCtx& c) {
             const MetaDef& md = META_DEFS[detailId];
             const int curLv = g_MetaLv[detailId];
             const long long cost = MetaNextCost(detailId);
-            wchar_t levelBuf[48]; swprintf_s(levelBuf, L"레벨  %d / %d", curLv, md.maxLv);
+            wchar_t levelBuf[48]; swprintf_s(levelBuf, ShopText(L"레벨  %d / %d", L"LEVEL  %d / %d",
+                                           L"レベル  %d / %d"), curLv, md.maxLv);
             drawRightFit(g_TextS, levelBuf, detailRight, tradeY - 60.0f * ui,
                          detailInfoSc, detailW, whiteR, whiteG, whiteB,
                          0.82f * detailA, 0.60f);
@@ -1202,10 +1228,14 @@ void Scene_Shop(const SceneCtx& c) {
                 g_Coins -= cost; ++g_MetaLv[detailId]; SaveGame();
             }
             wchar_t actionBuf[64];
-            if (curLv >= md.maxLv) swprintf_s(actionBuf, L"최대 레벨");
-            else if (!canBuy) swprintf_s(actionBuf, L"별가루 부족");
-            else if (curLv <= 0) swprintf_s(actionBuf, L"구매");
-            else swprintf_s(actionBuf, L"모듈 강화");
+            if (curLv >= md.maxLv)
+                swprintf_s(actionBuf, L"%ls", ShopText(L"최대 레벨", L"MAX LEVEL", L"最大レベル"));
+            else if (!canBuy)
+                swprintf_s(actionBuf, L"%ls", ShopText(L"별가루 부족", L"NOT ENOUGH", L"星屑不足"));
+            else if (curLv <= 0)
+                swprintf_s(actionBuf, L"%ls", ShopText(L"구매", L"BUY", L"購入"));
+            else
+                swprintf_s(actionBuf, L"%ls", ShopText(L"모듈 강화", L"UPGRADE", L"強化"));
             drawFixedAction(actionX, actionY, actionW, actionBuf,
                             detailR, detailG, detailB,
                             canBuy || curLv >= md.maxLv, actionHover,
@@ -1229,23 +1259,29 @@ void Scene_Shop(const SceneCtx& c) {
                 SaveGame();
             }
             drawFixedAction(actionX, actionY, actionW,
-                            owned ? L"구매 완료"
-                                  : (canBuy ? L"구매" : L"별가루 부족"),
+                            owned ? ShopText(L"구매 완료", L"OWNED", L"購入済み")
+                                  : (canBuy ? ShopText(L"구매", L"BUY", L"購入")
+                                            : ShopText(L"별가루 부족", L"NOT ENOUGH", L"星屑不足")),
                             detailR, detailG, detailB,
                             canBuy, actionHover,
                             owned ? SHOP_ACTION_ACTIVE
                                   : (canBuy ? SHOP_ACTION_READY
                                             : SHOP_ACTION_BLOCKED));
         } else if (detailIsAug) {
-            drawRightFit(g_TextS, L"플레이 중 획득 효과 · 도감 전용",
+            drawRightFit(g_TextS, ShopText(L"플레이 중 획득 효과 · 도감 전용",
+                                           L"IN-RUN EFFECT · CODEX ONLY",
+                                           L"プレイ中の獲得効果・図鑑専用"),
                          detailRight, tradeY - 20.0f * ui,
                          detailDescriptionSc, detailW, whiteR, whiteG, whiteB,
                          0.82f * detailA, 0.60f);
         }
 
-        DrawShadowedText(g_TextS, L"ESC / RMB  뒤로가기",
+        const wchar_t* shopBackHint = ShopText(L"ESC / RMB  뒤로가기",
+                                               L"ESC / RMB  BACK",
+                                               L"ESC / RMB  戻る");
+        DrawShadowedText(g_TextS, shopBackHint,
                          sw - std::max(74.0f, sw * 0.075f) -
-                         g_TextS.Width(L"ESC / RMB  뒤로가기", 0.31f * ui),
+                         g_TextS.Width(shopBackHint, 0.31f * ui),
                          sh - 48.0f * ui, 0.31f * ui,
                          0.52f, 0.68f, 0.82f, 0.60f * designA, 0.58f);
 

@@ -7,6 +7,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <string>
+#include <filesystem>
+#include <system_error>
 #include "Settings.h"
 #include "Meta.h"
 #include "Achievements.h"
@@ -104,14 +106,22 @@ inline void SaveGame() {
 #  pragma warning(push)
 #  pragma warning(disable:4996)
 #endif
-    FILE* f = std::fopen(SaveFilePath(), "wb");
+    // Write a temporary file first and swap it in only after every byte is
+    // on disk, so a crash or power loss mid-write cannot corrupt the save.
+    const std::string tmpPath = std::string(SaveFilePath()) + ".tmp";
+    FILE* f = std::fopen(tmpPath.c_str(), "wb");
 #ifdef _MSC_VER
 #  pragma warning(pop)
 #endif
     if (!f) return;
-    std::fwrite(ODW_MAGIC, 1, 4, f);
-    if (!buf.empty()) std::fwrite(buf.data(), 1, buf.size(), f);
-    std::fclose(f);
+    bool ok = std::fwrite(ODW_MAGIC, 1, 4, f) == 4;
+    if (ok && !buf.empty())
+        ok = std::fwrite(buf.data(), 1, buf.size(), f) == buf.size();
+    ok = (std::fflush(f) == 0) && ok;
+    ok = (std::fclose(f) == 0) && ok;
+    std::error_code ec;
+    if (ok) std::filesystem::rename(tmpPath, SaveFilePath(), ec);
+    if (!ok || ec) std::filesystem::remove(tmpPath, ec);
 }
 
 inline void LoadGame() {
@@ -158,11 +168,15 @@ inline void LoadGame() {
 #endif
         if (matched != 2) continue;
         if      (!std::strcmp(key, "lang"))        { int l = (int)val; if (l >= 0 && l < LANG_COUNT) g_Language = (Language)l; }
-        else if (!std::strcmp(key, "fps"))         g_FpsCap            = (int)val;
+        else if (!std::strcmp(key, "fps")) {
+            // Only the caps the settings screen offers (0 = VSync, -1 = legacy unlimited).
+            if (val == 0 || val == 30 || val == 60 || val == 144 || val == 300 || val == -1)
+                g_FpsCap = (int)val;
+        }
         else if (!std::strcmp(key, "crosshair"))   g_ShowCrosshair     = (val != 0);
         else if (!std::strcmp(key, "dmgnum"))      g_ShowDamageNumbers = true;
         else if (!std::strcmp(key, "combo"))       g_ShowCombo         = (val != 0);
-        else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)val;
+        else if (!std::strcmp(key, "soundvol"))    g_SoundVol          = (int)(val < 0 ? 0 : val > 100 ? 100 : val);
         else if (!std::strcmp(key, "bgmenabled"))  g_BgmEnabled        = (val != 0);
         else if (!std::strcmp(key, "sfxenabled"))  g_SfxEnabled        = (val != 0);
         else if (!std::strcmp(key, "audiomono"))   g_AudioMonoOutput   = (val != 0);
@@ -189,13 +203,15 @@ inline void LoadGame() {
         else if (!std::strncmp(key, "wbkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestKills[i]  = val; }
         else if (!std::strncmp(key, "wtkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponTotalKills[i] = val; }
         else if (!std::strncmp(key, "wruns",   5))  { int i = atoi(key+5); if (i>=0&&i<2) g_WeaponRunCount[i]   = val; }
-        else if (!std::strcmp(key, "coins"))       g_Coins             = val;
+        else if (!std::strcmp(key, "coins"))       g_Coins             = val < 0 ? 0 : val;
         else if (!std::strcmp(key, "themeowned"))  g_ThemeOwned        = (int)val | 1;
         else if (!std::strcmp(key, "themesel"))    g_ThemeSel          = (int)val;
         else if (!std::strcmp(key, "bosskills")) { (void)val; }
         else if (!std::strncmp(key, "meta", 4)) {
             int mi = atoi(key + 4);
-            if (mi >= 0 && mi < META_COUNT) g_MetaLv[mi] = (int)val;
+            if (mi >= 0 && mi < META_COUNT)
+                g_MetaLv[mi] = (int)(val < 0 ? 0 : val > META_DEFS[mi].maxLv
+                                                   ? META_DEFS[mi].maxLv : val);
         }
         else if (!std::strncmp(key, "ach", 3)) {
             int ai = atoi(key + 3);

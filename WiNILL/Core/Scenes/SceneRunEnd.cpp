@@ -74,13 +74,32 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     static int s_focusedModule = -1;
     float gof = std::max(0.0f, std::min(1.0f, state.fade));
     if (gof < 0.05f) s_focusedModule = -1;
+    // Stardust transfer: once the report counters finish (gof 0.72), the
+    // run's stardust flies from GAINED into TOTAL over kTransferDur seconds.
+    constexpr float kCountDoneFade = 0.72f;
+    constexpr float kTransferDelay = 0.20f;
+    constexpr float kTransferDur = 1.20f;
+    constexpr float kTransferEnd = kTransferDelay + kTransferDur;
+    static float s_transferT = 0.0f;
+    if (gof < 0.05f) s_transferT = 0.0f;
     bool skippedCinematic = false;
     if (gof < 0.999f && lmb && !state.previousLeftMouseDown) {
         // A click during the collapse is a skip request, never a menu action.
         state.fade = 1.0f;
         gof = 1.0f;
         skippedCinematic = true;
+        s_transferT = kTransferEnd;
     }
+    if (gof >= kCountDoneFade && s_transferT < kTransferEnd)
+        s_transferT = std::min(kTransferEnd, s_transferT + c.delta);
+    bool transferSkipped = false;
+    if (!skippedCinematic && gof >= 0.999f && s_transferT < kTransferEnd
+        && lmb && !state.previousLeftMouseDown) {
+        // A click during the transfer completes it; it is not a menu click.
+        s_transferT = kTransferEnd;
+        transferSkipped = true;
+    }
+    const bool transferDone = s_transferT >= kTransferEnd;
     const float ge = Smoothstep(gof);
     const float now = (float)glfwGetTime();
     const int li = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
@@ -98,12 +117,12 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     static const wchar_t* kStardustLabel[LANG_COUNT] = {
         L"\uD68D\uB4DD \uBCC4\uAC00\uB8E8", L"STARDUST GAINED", L"\u7372\u5F97\u30B9\u30BF\u30FC\u30C0\u30B9\u30C8"
     };
-    static const wchar_t* kCoinLabel[LANG_COUNT] = {
-        L"\uD68D\uB4DD \uCF54\uC778", L"COINS EARNED", L"\u7372\u5F97\u30B3\u30A4\u30F3"
-    };
-    // Wallet total shown under the earned-coin metric.
-    static const wchar_t* kTotalLabel[LANG_COUNT] = {
-        L"\uBCF4\uC720 \uCF54\uC778", L"COINS OWNED", L"\u6240\u6301\u30B3\u30A4\u30F3"
+    // Wallet total. Coins and stardust are one currency (g_Coins); the run's
+    // stardust is shown flowing into this total instead of a separate
+    // "coins earned" line.
+    static const wchar_t* kTotalStardustLabel[LANG_COUNT] = {
+        L"\uC804\uCCB4 \uBCC4\uAC00\uB8E8", L"TOTAL STARDUST",
+        L"\u7DCF\u30B9\u30BF\u30FC\u30C0\u30B9\u30C8"
     };
     static const wchar_t* kBuildLabel[LANG_COUNT] = {
         L"\uBE4C\uB4DC \uBCC4\uC790\uB9AC", L"BUILD CONSTELLATION", L"\u30D3\u30EB\u30C9\u661F\u5EA7"
@@ -145,10 +164,10 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     for (int language = 0; language < LANG_COUNT; ++language) {
         leftMetricVariants[language * 3] = kStrings[(int)StrId::FINAL_SCORE][language];
         leftMetricVariants[language * 3 + 1] = kStrings[(int)StrId::REACHED_LEVEL][language];
-        leftMetricVariants[language * 3 + 2] = kStardustLabel[language];
+        leftMetricVariants[language * 3 + 2] = kTotalStardustLabel[language];
         rightMetricVariants[language * 3] = kBestLabel[language];
         rightMetricVariants[language * 3 + 1] = kStrings[(int)StrId::KILL_COUNT][language];
-        rightMetricVariants[language * 3 + 2] = kCoinLabel[language];
+        rightMetricVariants[language * 3 + 2] = kStardustLabel[language];
     }
 
     float deathScaleFactor = uiS;
@@ -163,7 +182,7 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     float maxRightMetricLabelW = MaxLocalizedTextWidth(
         state.text.body, rightMetricVariants, LANG_COUNT * 3, metricLabelScale);
     while (metricLabelFactor > 0.55f &&
-           maxLeftMetricLabelW + maxRightMetricLabelW + 32.0f * uiS > leftW) {
+           maxLeftMetricLabelW + maxRightMetricLabelW + 52.0f * uiS > leftW) {
         metricLabelFactor -= 0.04f;
         metricLabelScale = UiTextScale(state.text.body, UiTextLevel::Subtitle,
                                        metricLabelFactor);
@@ -173,7 +192,7 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
             state.text.body, rightMetricVariants, LANG_COUNT * 3, metricLabelScale);
     }
     const float metricGap = std::min(
-        std::max(leftW * 0.44f, maxLeftMetricLabelW + 24.0f * uiS),
+        std::max(leftW * 0.44f, maxLeftMetricLabelW + 44.0f * uiS),
         leftW - maxRightMetricLabelW);
     const float metricValueScale = UiTextScale(
         state.text.title, UiTextLevel::Description, 1.4f * uiS);
@@ -187,8 +206,7 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     const float metricRowH = std::max(
         std::max(76.0f, std::min(96.0f, sh * 0.102f)),
         metricValueY + metricValueH + 14.0f * uiS);
-    const float totalCoinScale = UiTextScale(state.text.body,
-                                             UiTextLevel::Supporting, uiS);
+
     const bool hasDeathReason = state.deathReason && state.deathReason[0];
     constexpr const wchar_t* kDeathSeparator = L" : ";
     wchar_t deathLine[512];
@@ -251,17 +269,46 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     const long long bestValue = g_BestScore[(int)g_Difficulty];
     const long long best = state.lastRunRecord
         ? (long long)(bestValue * countF) : bestValue;
-    const long long stardust = (long long)(g_RunStardust * countF);
-    const long long coins = (long long)(g_LastRunCoins * countF);
+    // g_Coins already includes this run's stardust; the display starts from
+    // the wallet as it was before the run and moves N across.
+    const long long runDust = std::max(0LL, g_RunStardust);
+    const long long walletBefore = std::max(0LL, g_Coins - runDust);
+    // 8-16 particles in proportion to the amount, never more than the amount.
+    const int dustParticles = (int)std::min(runDust,
+        std::clamp(8LL + runDust / 25LL, 8LL, 16LL));
+    // Particle i departs at i/K of the first 70% of the transfer window and
+    // flies for the remaining 30%; it is counted once it lands.
+    constexpr float kFlightShare = 0.30f;
+    const float transferP = std::clamp((s_transferT - kTransferDelay) / kTransferDur,
+                                       0.0f, 1.0f);
+    int arrived = 0;
+    if (dustParticles > 0) {
+        for (int i = 0; i < dustParticles; ++i) {
+            const float depart = (1.0f - kFlightShare) * (float)i / (float)dustParticles;
+            if (transferP >= depart + kFlightShare) ++arrived;
+        }
+    }
+    if (transferDone) arrived = dustParticles;
+    const long long moved = dustParticles > 0
+        ? runDust * arrived / dustParticles : 0;
+    const long long stardust = transferP > 0.0f || transferDone
+        ? runDust - moved : (long long)(runDust * countF);
+    const long long totalDust = walletBefore + moved;
 
     auto drawMetric = [&](const wchar_t* label, long long value,
                           float x, float y,
-                          float rr, float gg, float bb) {
+                          float rr, float gg, float bb, float pop = 0.0f) {
         state.text.body.Draw(label, x, y, metricLabelScale,
                      0.64f, 0.76f, 0.88f, 0.88f * ge);
         wchar_t valueBuf[64];
         swprintf_s(valueBuf, L"%lld", value);
-        state.text.title.Draw(valueBuf, x, y + metricValueY, metricValueScale,
+        // pop briefly enlarges the value around its own centre.
+        const float valueScale = metricValueScale * (1.0f + 0.18f * pop);
+        const float growX = (state.text.title.Width(valueBuf, valueScale)
+                           - state.text.title.Width(valueBuf, metricValueScale)) * 0.5f;
+        const float growY = (state.text.title.Height(valueBuf, valueScale)
+                           - state.text.title.Height(valueBuf, metricValueScale)) * 0.5f;
+        state.text.title.Draw(valueBuf, x - growX, y + metricValueY - growY, valueScale,
                      rr, gg, bb, 0.94f * ge);
     };
 
@@ -275,18 +322,65 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     drawMetric(T(StrId::KILL_COUNT), (long long)state.killCount,
                leftX + metricGap, metricY + metricRowH,
                0.70f, 1.0f, 0.78f);
-    drawMetric(kStardustLabel[li], stardust, leftX,
+    // Row 3: TOTAL on the left, GAINED on the right; the run's stardust
+    // drains straight left into the wallet total.
+    drawMetric(kStardustLabel[li], stardust, leftX + metricGap,
                metricY + metricRowH * 2.0f,
                0.72f, 0.88f, 1.0f);
-    drawMetric(kCoinLabel[li], coins, leftX + metricGap,
+    // TOTAL STARDUST pops for 0.15s as the last particle lands.
+    static float s_popT = 0.0f;
+    static bool s_popped = false;
+    if (gof < 0.05f) { s_popT = 0.0f; s_popped = false; }
+    if (!s_popped && dustParticles > 0 && arrived >= dustParticles && !transferSkipped
+        && !skippedCinematic && transferP >= 1.0f) {
+        s_popT = 0.15f;
+        s_popped = true;
+    }
+    s_popT = std::max(0.0f, s_popT - c.delta);
+    const float pop = sinf(3.14159f * (1.0f - s_popT / 0.15f)) * (s_popT > 0.0f ? 1.0f : 0.0f);
+    drawMetric(kTotalStardustLabel[li], totalDust, leftX,
                metricY + metricRowH * 2.0f,
-               1.0f, 0.86f, 0.30f);
-    wchar_t totalCoinBuf[64];
-    swprintf_s(totalCoinBuf, L"%ls  %lld", kTotalLabel[li], g_Coins);
-    const float totalCoinY = metricY + metricRowH * 2.0f + metricValueY
-                           + metricValueH + 10.0f * uiS;
-    state.text.body.Draw(totalCoinBuf, leftX + metricGap, totalCoinY,
-                 totalCoinScale, 0.55f, 0.62f, 0.72f, 0.72f * ge);
+               1.0f, 0.86f, 0.30f, pop);
+
+    // Stardust seeps from the GAINED value straight into the TOTAL value:
+    // each mote accelerates along the row, stretches into a short streak and
+    // thins out as it sinks into the total, which glows while it absorbs.
+    if (dustParticles > 0 && transferP > 0.0f && !transferDone) {
+        const float rowValueY = metricY + metricRowH * 2.0f + metricValueY
+                              + metricValueH * 0.5f;
+        wchar_t dstBuf[32]; swprintf_s(dstBuf, L"%lld", totalDust);
+        const float fromX = leftX + metricGap;
+        const float toX = leftX + state.text.title.Width(dstBuf, metricValueScale) * 0.55f;
+        BindMainShader();
+        // Faint guide along the path while the transfer runs.
+        const float guideA = 0.22f * sinf(3.14159f * transferP) * ge;
+        LogoLine(toX, rowValueY, fromX, rowValueY, 1.0f * uiS,
+                 1.0f, 0.82f, 0.30f, guideA);
+        for (int i = 0; i < dustParticles; ++i) {
+            const float depart = (1.0f - kFlightShare) * (float)i / (float)dustParticles;
+            const float t = (transferP - depart) / kFlightShare;
+            if (t <= 0.0f || t >= 1.0f) continue;
+            const float e = t * t;                       // accelerates inward
+            const float lane = ((i * 37) % 7 - 3) * 1.2f * uiS * (1.0f - e);
+            const float x = fromX + (toX - fromX) * e;
+            const float y = rowValueY + lane;
+            const float fade = 1.0f - Smoothstep(std::clamp((t - 0.6f) / 0.4f, 0.0f, 1.0f));
+            const float size = (4.2f * (0.35f + 0.65f * fade)) * uiS;
+            const float streak = (10.0f + 34.0f * e) * uiS;
+            LogoLine(x, y, x + streak, y, size * 0.9f,
+                     1.0f, 0.78f, 0.24f, 0.30f * fade * ge);
+            auto diamond = [&](float sz, float r, float g, float b, float a) {
+                BatchTri(x, y - sz, x - sz, y, x + sz, y, r, g, b, a);
+                BatchTri(x - sz, y, x, y + sz, x + sz, y, r, g, b, a);
+            };
+            diamond(size * 1.8f, 1.0f, 0.72f, 0.16f, 0.16f * fade * ge);
+            diamond(size, 1.0f, 0.85f, 0.30f, 0.92f * fade * ge);
+            diamond(size * 0.38f, 1.0f, 1.0f, 0.88f, fade * ge);
+        }
+        // The total glows softly while it is absorbing.
+        drawDiamond(toX, rowValueY, (18.0f + 6.0f * sinf(now * 9.0f)) * uiS,
+                    1.0f, 0.80f, 0.28f, 0.10f * sinf(3.14159f * transferP) * ge);
+    }
 
     // The owned augment list becomes a compact, rarity-colored constellation.
     const float chartCX = sw * 0.76f;
@@ -396,15 +490,25 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
         const int detailModule = hoveredModule >= 0
                                ? hoveredModule : s_focusedModule;
 
+        // The build constellation is the report's main visual, so its
+        // rarity colours are lifted toward white (as in the owned-augment
+        // list) and the edges are drawn bolder than generic background art.
+        auto buildColor = [&](int module, float& r, float& g, float& b) {
+            GetRarityColor(ALL_AUGS[modules[module]].rarity, r, g, b);
+            r = std::min(1.0f, r * 1.2f + 0.22f);
+            g = std::min(1.0f, g * 1.2f + 0.22f);
+            b = std::min(1.0f, b * 1.2f + 0.22f);
+        };
+
         // Avoid a regular polygon: the uneven ring and selective chords make
         // each build read as a different constellation instead of a wheel.
         for (int i = 0; i < visibleModules; ++i) {
             const int next = (i + 1) % visibleModules;
             float rr, gg, bb;
-            GetRarityColor(ALL_AUGS[modules[i]].rarity, rr, gg, bb);
+            buildColor(i, rr, gg, bb);
             DrawVisibleConstellLine(px[i], py[i], px[next], py[next],
-                                    1.8f * uiS, rr, gg, bb,
-                                    0.82f * chartA);
+                                    2.6f * uiS, rr, gg, bb,
+                                    0.95f * chartA);
         }
         const int chordPairs[][2] = {
             { 0, 3 }, { 2, 5 }, { 4, 7 }, { 6, 1 }
@@ -415,18 +519,35 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
             const int a = chordPairs[i][0] % visibleModules;
             const int b = chordPairs[i][1] % visibleModules;
             float rr, gg, bb;
-            GetRarityColor(ALL_AUGS[modules[a]].rarity, rr, gg, bb);
+            buildColor(a, rr, gg, bb);
             DrawVisibleConstellLine(px[a], py[a], px[b], py[b],
-                                    1.2f * uiS, rr, gg, bb,
-                                    0.46f * chartA);
+                                    1.6f * uiS, rr, gg, bb,
+                                    0.62f * chartA);
         }
+        const float labelScale = UiTextScale(state.text.body,
+                                             UiTextLevel::Supporting, uiS);
         for (int i = 0; i < visibleModules; ++i) {
             float rr, gg, bb;
-            GetRarityColor(ALL_AUGS[modules[i]].rarity, rr, gg, bb);
+            buildColor(i, rr, gg, bb);
             const bool focused = i == detailModule;
             DrawVisibleConstellNode(px[i], py[i],
-                                    (focused ? 11.0f : 8.5f) * uiS,
+                                    (focused ? 12.5f : 10.0f) * uiS,
                                     rr, gg, bb, chartA, focused, true);
+            // Name label pushed outward from the chart centre so each star
+            // says which augment it is without needing a hover.
+            if (!focused) {
+                const wchar_t* name = ALL_AUGS[modules[i]].locName[li];
+                const float dx = px[i] - chartCX, dy = py[i] - chartCY;
+                const float len = std::max(1.0f, sqrtf(dx * dx + dy * dy));
+                const float off = 18.0f * uiS;
+                const float lx = px[i] + dx / len * off;
+                const float ly = py[i] + dy / len * off;
+                const float lw = state.text.body.Width(name, labelScale);
+                const float lh = state.text.body.Height(name, labelScale);
+                const float tx = dx >= 0.0f ? lx : lx - lw;
+                state.text.body.Draw(name, tx, ly - lh * 0.5f, labelScale,
+                                     rr, gg, bb, 0.86f * chartA);
+            }
             if (focused) {
                 DrawSettingsOrbitArc(px[i], py[i], 15.0f * uiS,
                                      9.0f * uiS, chartSpin,
@@ -499,14 +620,13 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     const float BGAP = std::max(10.0f, sh * 0.013f);
     const float totalBH = (float)kGameOverActionCount * BH + (float)(kGameOverActionCount - 1) * BGAP;
     const float bX0 = leftX;
-    // Reserve the full metric block, including the total-coin line.  On
-    // compact windows the old three-row estimate put the first command on
-    // top of that line and produced the QA overlap seen in GAMEOVER.
-    const float statsBottom = std::max(metricY + metricRowH * 3.0f,
-        totalCoinY + state.text.body.Height(totalCoinBuf, totalCoinScale)) + 18.0f;
+    // Reserve the full three-row metric block above the commands.
+    const float statsBottom = metricY + metricRowH * 3.0f + 18.0f;
     const float bY0 = std::max(statsBottom + 30.0f,
                                sh - totalBH - std::max(44.0f, sh * 0.06f));
-    const bool showButtons = gof >= 0.999f && !skippedCinematic;
+    // Commands appear once the stardust transfer has finished.
+    const bool showButtons = gof >= 0.999f && !skippedCinematic
+                          && transferDone && !transferSkipped;
 
     if (showButtons) {
         const float ancX = bX0 - 36.0f;

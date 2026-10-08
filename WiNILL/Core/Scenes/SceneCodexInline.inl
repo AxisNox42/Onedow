@@ -411,7 +411,11 @@ static void Scene_CodexInline(const SceneCtx& c) {
                                    std::min(420.0f * uiS,
                                             utilityW - 24.0f * uiS));
     const float utilityY = std::max(76.0f, sh * 0.11f);
-    const float searchY = utilityY + 44.0f * uiS;
+    // Vertical rhythm for the search / unlock column (QA #41): every block is
+    // stacked from the measured height of the one above plus a fixed gap.
+    const float searchLabelH = g_TextS.Height(
+        L"A", UiTextScale(g_TextS, UiTextLevel::Subtitle, uiS));
+    const float searchY = utilityY + searchLabelH + 14.0f * uiS;
     const float searchH = 46.0f * uiS;
     const bool searchHover = inputReady && mx >= utilityX && mx <= utilityX + searchW
         && my >= searchY && my <= searchY + searchH;
@@ -541,24 +545,9 @@ static void Scene_CodexInline(const SceneCtx& c) {
                          clearHover ? 1.0f : 0.82f,
                          (clearHover ? 0.98f : 0.62f) * wake, 0.60f);
     }
-    const wchar_t* searchHint = codexText(
-        L"←/→ 커서 · ↑/↓ 결과 · Ctrl+C/V/X 복사·붙여넣기 · Enter 완료 · Esc 뒤로",
-        L"←/→ CURSOR · ↑/↓ RESULTS · CTRL+C/V/X CLIPBOARD · ENTER DONE · ESC BACK",
-        L"←/→ カーソル · ↑/↓ 結果 · Ctrl+C/V/X · Enter 完了 · Esc 戻る");
-    const float searchHintSc = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS) * 0.60f;
-    const float searchHintW = g_TextS.Width(searchHint, searchHintSc);
-    const float searchHintFit = searchHintW > searchW ? searchW / searchHintW : 1.0f;
-    const float searchHintY = searchY + searchH + 4.0f * uiS;
-    DrawShadowedText(g_TextS, searchHint, utilityX, searchHintY,
-                     searchHintSc * searchHintFit,
-                     0.52f, 0.64f, 0.78f, 0.68f * wake, 0.50f);
-
-    // The hint can't shrink below the renderer's minimum scale on small
-    // windows, so start the title below its measured height.
-    const float progressTitleY = std::max(
-        searchY + searchH + 24.0f * uiS,
-        searchHintY + g_TextS.Height(searchHint, searchHintSc * searchHintFit)
-            + 4.0f * uiS);
+    // The key-hint line under the field was removed (QA #42); the unlock
+    // title now sits a clear gap below the search field.
+    const float progressTitleY = searchY + searchH + 40.0f * uiS;
     const wchar_t* progressTitle = codexText(
         L"\uB3C4\uAC10 \uD574\uAE08 \uBAA9\uB85D", L"UNLOCK PROGRESS", L"\u56F3\u9451\u89E3\u653E\u9032\u6357");
     const float progressBarX = utilityX;
@@ -607,8 +596,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
     // then the archive line directly underneath it.  This keeps the progress
     // data legible without competing with the search field above.
     const float progressRowY = progressTitleY
-        + g_TextS.Height(progressTitle, progressTitleScale) + 10.0f * uiS;
-    const float progressRowStep = 68.0f * uiS;
+        + g_TextS.Height(progressTitle, progressTitleScale) + 22.0f * uiS;
+    const float progressRowStep = 80.0f * uiS;
     for (int i = 0; i < CAT_COUNT; ++i) {
         const float rowY = progressRowY + (float)i * progressRowStep;
         const RootDef& progressRoot = ROOTS[i];
@@ -1106,7 +1095,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
     const float detailX = sw * 0.68f;
     const float detailW = std::max(320.0f * uiS,
                                    std::min(sw * 0.26f, sw - detailX - 54.0f * uiS));
-    const float infoY = sh * 0.42f;
+    // The selected record always sits on the chartCY row and its selection
+    // line runs right toward this block, so the block's title row is centred
+    // on that same line instead of floating at a fixed screen height (#40).
+    const float recordTitleH = g_TextL.Height(
+        L"A", UiTextScale(g_TextL, UiTextLevel::Title, uiS));
+    const float infoY = chartCY - 44.0f * uiS - recordTitleH * 0.5f;
     const int mobDataStage = selectedCategory == 0 ? CodexMobDataStage(selKey) : 0;
     BindMainShader();
 
@@ -1115,14 +1109,14 @@ static void Scene_CodexInline(const SceneCtx& c) {
             const wchar_t* formTitle = CodexLocalizedText(
                 L"관측된 형태", L"OBSERVED FORM", L"観測された形状");
             const float titleScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
-            drawScanTextL(L"???", detailX, infoY + 16.0f * uiS,
+            drawScanTextL(L"???", detailX, infoY + 44.0f * uiS,
                           titleScale, 0.94f, 0.98f, 1.0f,
                           0.96f * rightWake, selKey + 41);
             const float formLabelScale = UiTextScale(
                 g_TextS, UiTextLevel::Supporting, uiS);
-            drawScanTextS(formTitle, detailX, infoY + 66.0f * uiS,
+            drawScanTextS(formTitle, detailX, infoY + 94.0f * uiS,
                           formLabelScale, cr, cg, cb, 0.80f * rightWake, selKey + 42);
-            const float formY = infoY + 98.0f * uiS;
+            const float formY = infoY + 126.0f * uiS;
             const float formScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
             drawScanDescription(CodexMobFormDescription(selKey), detailX, formY,
                                 detailW, formScale, 0.76f, 0.84f, 0.94f,

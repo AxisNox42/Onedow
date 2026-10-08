@@ -156,7 +156,6 @@ void Scene_CreativeConfig(const SceneCtx& c) {
 void Scene_RunConfigInline(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh, dt = std::min(c.delta, 0.05f);
     const double mx = c.mx, my = c.my;
-    const bool ko = LangIndex() == 0;
     auto PlayText = [&](const wchar_t* kr, const wchar_t* en,
                         const wchar_t* jp = nullptr) -> const wchar_t* {
         if (LangIndex() == 0) return kr;
@@ -211,14 +210,16 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         trialNavRepeatT = 0.0f;
     }
 
-    static constexpr int kTrialCatalogCount = TRIAL_DEF_COUNT - 6;
+    // Only trials with an implemented effect are offered; the unimplemented
+    // ones (TrialDefUnimplemented) return here once their effects exist.
+    static constexpr int kTrialCatalogCount = 8;
     static const int kTrialOrder[kTrialCatalogCount] = {
         // EARLY
-        0, 1, 4, 5, 8, 9, 10,
+        8, 9, 10,
         // MID
         11, 13,
         // LATE
-        6, 7, 14, 15, 16,
+        14, 15, 16,
     };
     static const wchar_t* kTrialTags[TRIAL_DEF_COUNT] = {
         L"SPEED UP · SCORE +15%", L"SURVIVAL DOWN · SCORE +15%",
@@ -284,7 +285,40 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         L"후반 원거리 압박이 증가해 한 자리에 머물거나 한 방향만 지키기 어려워집니다.",
         L"", L"", L""
     };
+    static const wchar_t* kTrialTagsJP[TRIAL_DEF_COUNT] = {
+        L"速度上昇 · スコア +15%", L"生存力低下 · スコア +15%",
+        L"",                        L"",
+        L"ビルド制約 · スコア +15%", L"クールダウン増加 · スコア +15%",
+        L"耐久上昇 · スコア +15%", L"圧力上昇 · スコア +15%",
+        L"序盤 · スコア +14%", L"序盤 · スコア +16%",
+        L"開始制約 · スコア +18%", L"中盤 · スコア +18%",
+        L"",                        L"中盤 · スコア +17%",
+        L"終盤 · スコア +22%", L"終盤 · スコア +24%",
+        L"終盤 · スコア +21%", L"",
+        L"",                        L""
+    };
+    static const wchar_t* kTrialDetailJP[TRIAL_DEF_COUNT] = {
+        L"プレイ開始から敵の移動速度が20%上昇します。",
+        L"最大HPが25%減少します。回復では失った上限を戻せません。",
+        L"",
+        L"",
+        L"強化の選択肢が生成されるたびに2枚に制限されます。",
+        L"すべてのスキルのクールダウンが25%増加します。タイミング管理がビルドの一部になります。",
+        L"すべての敵のHPが30%増加し、継続ダメージと優先撃破が重要になります。",
+        L"敵の速度とHPがどちらも20%上昇します。戦場全体が厳しくなります。",
+        L"遠距離敵が通常より早く現れ、ビルドが整う前から圧力をかけます。",
+        L"序盤の通常敵の出現圧力が増え、序盤の資源を整える時間が短くなります。",
+        L"開始時の最大HPが減少します。最初の数部屋が入場の代償になります。",
+        L"中盤の敵の出現速度とHPが8%増加します。",
+        L"",
+        L"中盤の遠距離敵の上限が増え、同時に対処すべき射線が増えます。",
+        L"終盤の出現増加幅が大きくなります。ビルドが安定した後も圧力が上がり続けます。",
+        L"終盤の敵HPの上昇幅が大きくなるため、火力の成長も追いつく必要があります。",
+        L"終盤の遠距離圧力が増え、一か所に留まることや一方向だけを守ることが難しくなります。",
+        L"", L"", L""
+    };
     static const wchar_t* kStageLabels[3] = { L"EARLY", L"MID", L"LATE" };
+    static const wchar_t* kStageLabelsJP[3] = { L"序盤", L"中盤", L"終盤" };
     static const wchar_t* kStageLabelsKR[3] = { L"초반", L"중반", L"후반" };
     static const wchar_t* kTrialNamesKR[TRIAL_DEF_COUNT] = {
         L"오버클럭", L"메모리 누수", L"", L"",
@@ -293,7 +327,25 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         L"", L"프로세스 노이즈", L"후반 초과", L"강화 코어",
         L"신호 변위", L"", L"", L""
     };
+    static const wchar_t* kTrialNamesJP[TRIAL_DEF_COUNT] = {
+        L"オーバークロック", L"メモリリーク", L"", L"",
+        L"プロセス制限", L"低帯域", L"強化", L"急増",
+        L"早期突入", L"パケットストーム", L"コールドブート", L"中盤圧力",
+        L"", L"プロセスノイズ", L"終盤超過", L"強化コア",
+        L"シグナルドリフト", L"", L"", L""
+    };
     static const wchar_t* kWeaponNames[2] = { L"RIFLE", L"FIELD" };
+    static const wchar_t* kWeaponNamesJP[2] = { L"ライフル", L"フィールド" };
+    static const wchar_t* kWeaponSubJP[2] = {
+        L"精密 · 単一目標", L"範囲制御 · 持続"
+    };
+    static const wchar_t* kStatNamesJP[6] = {
+        L"攻撃力", L"連射速度", L"間隔", L"弾速", L"拡散", L"射程"
+    };
+    static const wchar_t* kStatValuesJP[2][6] = {
+        { L"50", L"5.0/s", L"0.20秒", L"1200", L"0.04", L"900" },
+        { L"18", L"連続", L"0.08秒", L"320", L"0.15", L"180" }
+    };
     static const wchar_t* kWeaponNamesKR[2] = { L"소총", L"전기장" };
     static const wchar_t* kWeaponSub[2] = {
         L"PRECISION · SINGLE TARGET", L"AREA CONTROL · SUSTAINED"
@@ -316,31 +368,33 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         { L"18", L"연속", L"0.08초", L"320", L"0.15", L"180" }
     };
     auto trialName = [&](int id) -> const wchar_t* {
-        return ko ? kTrialNamesKR[id] : TRIAL_DEFS[id].id;
+        return PlayText(kTrialNamesKR[id], TRIAL_DEFS[id].id, kTrialNamesJP[id]);
     };
     auto trialCompact = [&](int id) -> const wchar_t* {
-        return TRIAL_DEFS[id].desc[ko ? 0 : 1];
+        return PlayText(TRIAL_DEFS[id].desc[0], TRIAL_DEFS[id].desc[1],
+                        TRIAL_DEFS[id].desc[2]);
     };
     auto trialTag = [&](int id) -> const wchar_t* {
-        return ko ? kTrialTagsKR[id] : kTrialTags[id];
+        return PlayText(kTrialTagsKR[id], kTrialTags[id], kTrialTagsJP[id]);
     };
     auto trialDetail = [&](int id) -> const wchar_t* {
-        return ko ? kTrialDetailKR[id] : kTrialDetail[id];
+        return PlayText(kTrialDetailKR[id], kTrialDetail[id], kTrialDetailJP[id]);
     };
     auto stageLabel = [&](int stage) -> const wchar_t* {
-        return ko ? kStageLabelsKR[stage] : kStageLabels[stage];
+        return PlayText(kStageLabelsKR[stage], kStageLabels[stage], kStageLabelsJP[stage]);
     };
     auto weaponName = [&](int id) -> const wchar_t* {
-        return ko ? kWeaponNamesKR[id] : kWeaponNames[id];
+        return PlayText(kWeaponNamesKR[id], kWeaponNames[id], kWeaponNamesJP[id]);
     };
     auto weaponSub = [&](int id) -> const wchar_t* {
-        return ko ? kWeaponSubKR[id] : kWeaponSub[id];
+        return PlayText(kWeaponSubKR[id], kWeaponSub[id], kWeaponSubJP[id]);
     };
     auto statName = [&](int id) -> const wchar_t* {
-        return ko ? kStatNamesKR[id] : kStatNames[id];
+        return PlayText(kStatNamesKR[id], kStatNames[id], kStatNamesJP[id]);
     };
     auto statValue = [&](int weaponId, int statId) -> const wchar_t* {
-        return ko ? kStatValuesKR[weaponId][statId] : kStatValues[weaponId][statId];
+        return PlayText(kStatValuesKR[weaponId][statId], kStatValues[weaponId][statId],
+                        kStatValuesJP[weaponId][statId]);
     };
 
     auto countEnabled = [&]() {
@@ -746,7 +800,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     // XL glyphs are baked at ~133px; shrinking them to title size with
     // plain bilinear sampling left stair-stepped edges (QA #16).
     const float playTitleScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
-    DrawShadowedText(g_TextL, PlayText(L"플레이", L"PLAY"), pageL, headerY,
+    DrawShadowedText(g_TextL, PlayText(L"플레이", L"PLAY", L"プレイ"), pageL, headerY,
                      playTitleScale, 1.0f, 1.0f, 1.0f,
                      0.98f * entryHeader, 0.74f);
     const float escW = g_TextS.Width(L"[ESC]", playMetaScale);
@@ -795,7 +849,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     const float heroNameY = chartCY - chartR - 58.0f * uiS;
     const float heroNameScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
     const float heroNameW = g_TextL.Width(weaponName(weapon), heroNameScale);
-    const wchar_t* heroSystemLabel = PlayText(L"무기 별자리", L"WEAPON CONSTELLATION");
+    const wchar_t* heroSystemLabel = PlayText(L"무기 별자리", L"WEAPON CONSTELLATION", L"武器星座");
     DrawShadowedText(g_TextS, heroSystemLabel,
                      chartCX - g_TextS.Width(heroSystemLabel, playSubtitleScale) * 0.5f,
                      heroNameY - 42.0f * uiS, playSubtitleScale,
@@ -943,8 +997,8 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     // hovered catalogue row. It reports every enabled trial, while the
     // catalogue remains free to browse without rewriting the explanation.
     const wchar_t* activeStatusText = activeCount > 0
-        ? PlayText(L"활성 시련", L"ACTIVE TRIALS")
-        : PlayText(L"활성 시련 없음", L"NO ACTIVE TRIALS");
+        ? PlayText(L"활성 시련", L"ACTIVE TRIALS", L"有効な試練")
+        : PlayText(L"활성 시련 없음", L"NO ACTIVE TRIALS", L"有効な試練なし");
     float activeStatusScale = playSubtitleScale;
     const float activeStatusW = g_TextS.Width(activeStatusText, activeStatusScale);
     if (activeStatusW > detailW && activeStatusW > 0.0f)
@@ -954,7 +1008,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
                      detailX, detailTop, activeStatusScale,
                      trialR, trialG, trialB, 0.82f * contentA, 0.52f);
     wchar_t activeReadout[32];
-    swprintf_s(activeReadout, ko ? L"%d / %d 활성화" : L"%d / %d ENABLED",
+    swprintf_s(activeReadout, PlayText(L"%d / %d 활성화", L"%d / %d ENABLED", L"%d / %d 有効化"),
                activeCount, TRIAL_SLOT_COUNT);
     const float activeReadoutScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
     DrawShadowedText(g_TextS, activeReadout,
@@ -1058,20 +1112,20 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         wchar_t scoreBuf[48] = {};
         swprintf_s(scoreBuf, L"x%.2f  (%+.1f%%)", scoreMult,
                    (scoreMult - 1.0f) * 100.0f);
-        summaryRows.push_back({ PlayText(L"점수 배율", L"SCORE MULTIPLIER"),
+        summaryRows.push_back({ PlayText(L"점수 배율", L"SCORE MULTIPLIER", L"スコア倍率"),
                                 scoreBuf, true });
     }
 
     float playerHpMult = 1.0f;
     if (selected(10)) playerHpMult *= 0.82f;
-    addPercentMetric(PlayText(L"플레이어 최대 HP", L"PLAYER MAX HP"),
+    addPercentMetric(PlayText(L"플레이어 최대 HP", L"PLAYER MAX HP", L"プレイヤー最大HP"),
                      1.0f, playerHpMult, false);
 
     float enemyHpStart = 1.0f, enemyHpPeak = 1.0f;
     if (selected(11)) enemyHpStart *= 1.08f;
     if (selected(15)) enemyHpPeak *= 1.28f;
     enemyHpPeak *= enemyHpStart;
-    addPercentMetric(PlayText(L"일반 적 체력", L"ENEMY HP"),
+    addPercentMetric(PlayText(L"일반 적 체력", L"ENEMY HP", L"通常敵HP"),
                      enemyHpStart, enemyHpPeak, false);
 
     float spawnStart = 1.0f, spawnPeak = 1.0f;
@@ -1080,7 +1134,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     spawnPeak = spawnStart;
     if (selected(14)) spawnPeak *= 1.24f;
     if (selected(16)) spawnPeak *= 1.12f;
-    addPercentMetric(PlayText(L"일반 스폰 빈도", L"SPAWN FREQUENCY"),
+    addPercentMetric(PlayText(L"일반 스폰 빈도", L"SPAWN FREQUENCY", L"通常敵の出現頻度"),
                      spawnStart, spawnPeak, false);
 
     float rangedStart = 1.0f, rangedPeak = 1.0f;
@@ -1088,20 +1142,20 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     rangedPeak = rangedStart;
     if (selected(13)) rangedPeak *= 0.86f;
     if (selected(16)) rangedPeak *= 0.82f;
-    addPercentMetric(PlayText(L"원거리 스폰 간격", L"RANGED INTERVAL"),
+    addPercentMetric(PlayText(L"원거리 스폰 간격", L"RANGED INTERVAL", L"遠距離敵の出現間隔"),
                      rangedStart, rangedPeak, false);
 
     int rangedMaxStart = 0;
     int rangedMaxPeak = (selected(13) ? 2 : 0)
                       + (selected(16) ? 2 : 0);
     if (rangedMaxStart > 0 || rangedMaxPeak > 0)
-        summaryRows.push_back({ PlayText(L"원거리 최대 수", L"RANGED MAX"),
+        summaryRows.push_back({ PlayText(L"원거리 최대 수", L"RANGED MAX", L"遠距離敵の上限"),
                                 formatCountRange(rangedMaxStart, rangedMaxPeak),
                                 false });
 
     const float summaryTitleScale = playSubtitleScale;
     const float summaryTitleH = g_TextS.Height(
-        PlayText(L"현재 적용 합계", L"ACTIVE EFFECT TOTAL"), summaryTitleScale)
+        PlayText(L"현재 적용 합계", L"ACTIVE EFFECT TOTAL", L"現在の適用合計"), summaryTitleScale)
         + 6.0f * uiS;
     const float summaryValueScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
     const float summaryRowH = g_TextS.Height(L"+100.0%", summaryValueScale)
@@ -1120,40 +1174,57 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         detailLines.push_back({ text, kind, tone });
     };
     auto appendWrapped = [&](const std::wstring& text, int kind, int tone) {
+        // Breaks at spaces, and between Japanese characters (JP copy has no spaces).
+        // Hangul stays word-wrapped; closing punctuation never starts a line.
+        auto isCjk = [](wchar_t c) {
+            return (c > 0x3000 && c <= 0x9FFF) || (c >= 0xFF00 && c <= 0xFFEF);
+        };
+        auto noLineStart = [](wchar_t c) {
+            return wcschr(L"、。，．・：；？！ー」』）】ぁぃぅぇぉっゃゅょァィゥェォッャュョ", c) != nullptr;
+        };
         std::wstring line;
-        std::wstring word;
-        for (size_t i = 0; i <= text.size(); ++i) {
-            const bool end = i == text.size();
-            const wchar_t ch = end ? L' ' : text[i];
-            if (ch != L' ') { word.push_back(ch); continue; }
-            std::wstring candidate = line.empty() ? word : line + L" " + word;
-            if (!line.empty() && g_TextS.Width(candidate.c_str(), playBodyScale) > detailW) {
+        std::wstring unit;
+        bool gap = false;
+        auto place = [&]() {
+            if (unit.empty()) return;
+            std::wstring candidate = line.empty() ? unit : line + (gap ? L" " : L"") + unit;
+            const bool stick = unit.size() == 1 && noLineStart(unit[0]);
+            if (!line.empty() && !stick &&
+                g_TextS.Width(candidate.c_str(), playBodyScale) > detailW) {
                 appendLine(line, kind, tone);
-                line = word;
-            } else if (!word.empty()) {
+                line = unit;
+            } else {
                 line = candidate;
             }
-            word.clear();
+            unit.clear();
+            gap = false;
+        };
+        for (wchar_t ch : text) {
+            if (ch == L' ') { place(); gap = !line.empty(); continue; }
+            if (isCjk(ch)) { place(); unit.push_back(ch); place(); continue; }
+            unit.push_back(ch);
         }
+        place();
         if (!line.empty()) appendLine(line, kind, tone);
     };
     if (activeCount <= 0) {
         appendWrapped(PlayText(L"시련 목록에서 시련을 활성화해 플레이 설정을 구성하세요.",
-                               L"Enable trials from the catalogue to build the play configuration."),
+                               L"Enable trials from the catalogue to build the play configuration.",
+                               L"試練一覧から試練を有効にして、プレイ設定を構成してください。"),
                       0, 0);
     } else {
         for (int order = 0; order < kTrialCatalogCount; ++order) {
             const int id = kTrialOrder[order];
             if (!s_RcTrialEnabled[id]) continue;
             appendLine(std::wstring(trialName(id)), 1, 0);
-            std::wstring stageLine = ko ? L"단계  //  " : L"STAGE  //  ";
+            std::wstring stageLine = PlayText(L"단계  //  ", L"STAGE  //  ", L"段階  //  ");
             stageLine += stageLabel(stageIndex(id));
             appendLine(stageLine, 2, 0);
-            appendLine(PlayText(L"효과", L"EFFECT"), 2, 0);
+            appendLine(PlayText(L"효과", L"EFFECT", L"効果"), 2, 0);
             appendWrapped(std::wstring(trialDetail(id)), 0, -1);
-            appendLine(PlayText(L"간단 요약", L"COMPACT READOUT"), 2, 0);
+            appendLine(PlayText(L"간단 요약", L"COMPACT READOUT", L"簡易まとめ"), 2, 0);
             appendWrapped(std::wstring(trialCompact(id)), 0, -1);
-            appendLine(PlayText(L"보상 · 압박", L"PAYOFF · PRESSURE"), 2, 0);
+            appendLine(PlayText(L"보상 · 압박", L"PAYOFF · PRESSURE", L"報酬 · 圧力"), 2, 0);
             appendWrapped(std::wstring(trialTag(id)), 0, 1);
             appendLine(L"", 3, 0);
         }
@@ -1189,13 +1260,13 @@ void Scene_RunConfigInline(const SceneCtx& c) {
               (GLint)(detailViewBottom - detailViewTop));
     float detailY = detailViewTop - detailScroll;
     DrawShadowedText(g_TextS,
-                     PlayText(L"현재 적용 합계", L"ACTIVE EFFECT TOTAL"),
+                     PlayText(L"현재 적용 합계", L"ACTIVE EFFECT TOTAL", L"現在の適用合計"),
                      detailX, detailY, summaryTitleScale,
                      0.68f, 0.88f, 0.96f, 0.86f * contentA, 0.50f);
     detailY += summaryTitleH;
     if (summaryRows.empty()) {
         DrawShadowedText(g_TextS,
-                         PlayText(L"선택된 시련 없음", L"NO ACTIVE MODIFIERS"),
+                         PlayText(L"선택된 시련 없음", L"NO ACTIVE MODIFIERS", L"選択中の試練なし"),
                          detailX, detailY, summaryValueScale,
                          0.72f, 0.78f, 0.84f, 0.72f * contentA, 0.46f);
         detailY += summaryRowH;
@@ -1431,7 +1502,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
                          0.66f, 0.76f, 0.84f, tagAlpha, 0.42f);
         wchar_t scoreBuf[32] = {};
         const int scorePct = (int)(TrialScoreBonusForDef(id) * 100.0f + 0.5f);
-        swprintf_s(scoreBuf, ko ? L"점수 +%d%%" : L"SCORE +%d%%", scorePct);
+        swprintf_s(scoreBuf, PlayText(L"점수 +%d%%", L"SCORE +%d%%", L"スコア +%d%%"), scorePct);
         const float stageW = g_TextS.Width(stageText.c_str(), trialTagScale);
         DrawShadowedText(g_TextS, scoreBuf,
                          itemX + 20.0f * uiS + stageW + 9.0f * uiS,

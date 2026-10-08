@@ -80,37 +80,44 @@ inline DifficultyParams GetDifficultyParams(Difficulty d) {
 // ─── 시련 시스템 ─────────────────────────────────────────────────────────────
 struct TrialDef {
     const wchar_t* id;
-    const wchar_t* desc[2];   // [0]=KO [1]=EN
+    const wchar_t* desc[3];   // [0]=KO [1]=EN [2]=JP
 };
 inline const TrialDef TRIAL_DEFS[] = {
-    { L"OVERCLOCK",     { L"적 이동속도 +20%",    L"Enemy speed +20%"   } },
-    { L"MEMORY_LEAK",   { L"최대 HP -25%",         L"Max HP -25%"        } },
-    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
-    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
-    { L"PROCESS_LIMIT", { L"증강 선택지 2장",      L"Only 2 aug choices" } },
-    { L"LOW_BANDWIDTH", { L"스킬 쿨타임 +25%",     L"Skill CD +25%"      } },
-    { L"HARDENED",      { L"적 체력 +30%",         L"Enemy HP +30%"      } },
-    { L"SURGE",         { L"적 속도·체력 +20%",    L"Speed & HP +20%"    } },
-    { L"EARLY_RUSH",    { L"초반 원거리몹이 더 빨리 등장", L"Ranged mobs arrive earlier" } },
-    { L"PACKET_STORM",  { L"초반 일반 몹 스폰 압박 증가",   L"Early normal spawn pressure up" } },
-    { L"COLD_BOOT",     { L"시작 최대 체력 감소",            L"Lower starting max HP" } },
-    { L"MID_PRESSURE",   { L"중반 적 압박 +8%",    L"Midgame enemy pressure +8%" } },
+    { L"OVERCLOCK",     { L"적 이동속도 +20%", L"Enemy speed +20%", L"敵の移動速度 +20%" } },
+    { L"MEMORY_LEAK",   { L"최대 HP -25%", L"Max HP -25%", L"最大HP -25%" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"", L"" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"", L"" } },
+    { L"PROCESS_LIMIT", { L"증강 선택지 2장", L"Only 2 aug choices", L"強化の選択肢 2枚" } },
+    { L"LOW_BANDWIDTH", { L"스킬 쿨타임 +25%", L"Skill CD +25%", L"スキルCD +25%" } },
+    { L"HARDENED",      { L"적 체력 +30%", L"Enemy HP +30%", L"敵HP +30%" } },
+    { L"SURGE",         { L"적 속도·체력 +20%", L"Speed & HP +20%", L"敵の速度・HP +20%" } },
+    { L"EARLY_RUSH",    { L"초반 원거리몹이 더 빨리 등장", L"Ranged mobs arrive earlier", L"序盤に遠距離敵が早く出現" } },
+    { L"PACKET_STORM",  { L"초반 일반 몹 스폰 압박 증가", L"Early normal spawn pressure up", L"序盤の通常敵出現が増加" } },
+    { L"COLD_BOOT",     { L"시작 최대 체력 감소", L"Lower starting max HP", L"開始時の最大HP減少" } },
+    { L"MID_PRESSURE",   { L"중반 적 압박 +8%", L"Midgame enemy pressure +8%", L"中盤の敵圧力 +8%" } },
     // Reserved save slot kept at index 12 so older run records remain valid.
-    { L"TRIAL_SLOT_RESERVED", { L"", L"" } },
-    { L"PROCESS_NOISE", { L"중반 원거리몹 상한 증가",        L"Midgame ranged mob cap up" } },
-    { L"LATE_OVERRUN",  { L"후반 스폰 램프 강화",            L"Late spawn ramp up" } },
-    { L"HARDENED_CORE", { L"후반 몹 체력 램프 강화",         L"Late enemy HP ramp up" } },
-    { L"SIGNAL_DRIFT",  { L"후반 원거리 압박 강화",          L"Late ranged pressure up" } },
-    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
-    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
-    { L"TRIAL_SLOT_RETIRED", { L"", L"" } },
+    { L"TRIAL_SLOT_RESERVED", { L"", L"", L"" } },
+    { L"PROCESS_NOISE", { L"중반 원거리몹 상한 증가", L"Midgame ranged mob cap up", L"中盤の遠距離敵上限増加" } },
+    { L"LATE_OVERRUN",  { L"후반 스폰 램프 강화", L"Late spawn ramp up", L"終盤の出現増加を強化" } },
+    { L"HARDENED_CORE", { L"후반 몹 체력 램프 강화", L"Late enemy HP ramp up", L"終盤の敵HP上昇を強化" } },
+    { L"SIGNAL_DRIFT",  { L"후반 원거리 압박 강화", L"Late ranged pressure up", L"終盤の遠距離圧力を強化" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"", L"" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"", L"" } },
+    { L"TRIAL_SLOT_RETIRED", { L"", L"", L"" } },
 };
 inline constexpr int TRIAL_DEF_COUNT = 20;
 inline constexpr int TRIAL_RESERVED_ID = 12;
 
+// OVERCLOCK, MEMORY_LEAK, PROCESS_LIMIT, LOW_BANDWIDTH, HARDENED and SURGE
+// have no gameplay effect implemented yet. Treat them as unavailable so they
+// cannot be selected and never add the default +15% score bonus.
+inline bool TrialDefUnimplemented(int id) {
+    return id == 0 || id == 1 || (id >= 4 && id <= 7);
+}
+
 inline bool TrialDefRetired(int id) {
     return id < 0 || id >= TRIAL_DEF_COUNT || id == 2 || id == 3
-        || id == TRIAL_RESERVED_ID || id >= 17;
+        || id == TRIAL_RESERVED_ID || id >= 17 || TrialDefUnimplemented(id);
 }
 
 enum class TrialStage { EARLY, MID, LATE };
@@ -126,16 +133,6 @@ inline TrialStage TrialStageForDef(int idx) {
     if (idx >= 14 && idx <= 16) return TrialStage::LATE;
     if (idx == 6 || idx == 7) return TrialStage::LATE;
     return TrialStage::EARLY;
-}
-
-inline const wchar_t* TrialStageLabel(TrialStage stage, int langIdx) {
-    bool ko = (langIdx == 0);
-    switch (stage) {
-    case TrialStage::EARLY: return ko ? L"초반" : L"EARLY";
-    case TrialStage::MID:   return ko ? L"중반" : L"MID";
-    case TrialStage::LATE:  return ko ? L"후반" : L"LATE";
-    }
-    return ko ? L"시련" : L"TRIAL";
 }
 
 inline float TrialScoreBonusForDef(int idx) {
@@ -210,10 +207,6 @@ inline float TrialEnemyHpMult(long long score) {
     return m;
 }
 
-inline float TrialRangedInitialDelay(float base) {
-    if (TrialActive(8)) return base + 3.4f;
-    return base;
-}
 
 inline float TrialRangedIntervalMult(long long score) {
     float m = 1.0f;
