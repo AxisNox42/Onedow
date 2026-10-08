@@ -26,8 +26,8 @@ struct DebugToolkitContext {
     bool* balanceTestMode = nullptr;
 
     std::function<void()> syncRuntime;
-    std::function<void(int mobKind, int count)> spawnMob;
-    std::function<void(int count)> spawnRanged;
+    std::function<int(int mobKind, int count)> spawnMob;
+    std::function<int(int count)> spawnRanged;
 };
 
 class DebugToolkit {
@@ -43,6 +43,10 @@ public:
     void Render(float screenW, float screenH, GameState sceneState);
 
     bool IsVisible() const { return visible_; }
+    void SetVisible(bool visible) {
+        visible_ = visible;
+        if (!visible_) ResetTransientInput();
+    }
     bool IsInputCaptured() const { return visible_ || captureActive_; }
     bool SuppressOverlayForCapture() const {
         return captureActive_ || captureCurrent_;

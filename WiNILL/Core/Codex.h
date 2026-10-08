@@ -253,7 +253,10 @@ enum CodexMobId {
     CM_GRAVIS,
     CM_QUASAR,
     CM_GIMBAL,
-    CM_RESERVED_7, // Preserve the saved Codex index when removing old entries.
+    CM_REGULUS, // Reuse the reserved slot to preserve saved Codex indices.
+    CM_RETIRED_08, // Reserved to preserve saved Codex indices after Sagitta removal.
+    CM_ANTARES,
+    CM_MAGNETAR,
     CM_COUNT
 };
 
@@ -301,16 +304,49 @@ inline const CodexMobProfile CODEX_MOB_PROFILES[CM_COUNT] = {
       L"HIGH", 2, 576, L"34 / sec (beam), 4 / sec (contact)", L"62-94 px/s",
       { L"2.5초 빔 공격 (재사용 3.2초)", L"2.5s beam (3.2s cooldown)", L"2.5秒ビーム（再使用3.2秒）" },
       { L"중심 코어를 길쭉한 타원 고리와 양쪽 축의 신호점이 감쌉니다.", L"An elongated elliptical ring and axial nodes surround the central core.", L"細長い楕円リングと軸上の信号点が中心コアを囲んでいます。" } },
-    { { L"Gimbal", L"Gimbal", L"ジンバル" },
+    { { L"짐벌", L"Gimbal", L"ジンバル" },
       { L"작은 스코프 형상으로 약 1200px 거리를 유지하며 느린 비유도탄 한 발을 쏘는 밝은 민트색 신호", L"A bright mint mini-Scope that holds about 1200px distance and fires one slow unguided shot", L"約1200pxの距離を保ちながら遅い非誘導弾を一発撃つ明るいミント色の小型スコープ" },
       L"MODERATE", 2, 149, L"8 / shot, 4 / sec (contact)", L"70-105 px/s",
       { L"스코프처럼 고속 회전 충전 후 비유도탄 1발 발사", L"Charges with Scope-like accelerating rotation before one unguided shot", L"スコープのような加速回転で充填後、非誘導弾を1発発射" },
       { L"중앙 렌즈와 회전 고리 하나, 네 개의 관측점으로 된 스코프의 소형 형상입니다.", L"A smaller Scope silhouette with one rotating ring, a central lens, and four observation nodes.", L"中央レンズ、1つの回転リング、4つの観測点を備えた小型スコープ形状です。" } },
+    { { L"레굴루스", L"REGULUS", L"レグルス" },
+      { L"주변의 높은 티어 신호와 연결해 독립 보호막을 부여하는 후방 지원 코어",
+        L"Rear support core that links to nearby higher-tier signals and grants independent shields",
+        L"周囲の高ティア信号と接続し、独立したシールドを付与する後方支援コア" },
+      L"HIGH", 3, 360, L"None (support)", L"50-76 px/s (retreats)",
+      { L"최대 8개 코어 연결 · 보호막 체력 216", L"Links up to 8 cores · shield HP 216",
+        L"最大8コア接続 · シールドHP 216" },
+      { L"중심 코어를 여섯 갈래 외장 구조가 감싸며, 바깥에는 분절 육각 보호막 한 겹이 펼쳐집니다.",
+        L"A six-part outer chassis surrounds the core, framed by one segmented hex shield.",
+        L"中心コアを6つの外装パーツが囲み、その外側に分節六角シールドを一層展開します。" } },
     { { L"", L"", L"" }, { L"", L"", L"" }, L"UNKNOWN", 0, 0,
-      L"", L"", { L"", L"", L"" }, { L"", L"", L"" } },
+      L"?", L"?", { L"?", L"?", L"?" }, { L"", L"", L"" } },
+    { { L"안타레스", L"ANTARES", L"アンタレス" },
+      { L"쫓아올수록 빨라지지만, 빨라질수록 방향을 못 틀어 플레이어를 지나쳐 버리는 투우형 추적 신호",
+        L"Bull-like hunter that keeps speeding up as it chases, but turns worse the faster it goes and overshoots",
+        L"追うほど加速するが、速くなるほど曲がれずプレイヤーを通り過ぎる闘牛型追跡シグナル" },
+      L"HIGH", 2, 600, L"Up to 12 / ram, 5 / sec (contact)", L"60-700 px/s",
+      { L"가속하며 추적 · 들이받으면 속도만큼 밀쳐내고 잠시 기절 · 지나치면 미끄러진 뒤 휴식",
+        L"Accelerates while chasing · a ram knocks you back by its speed and stuns it · a miss skids, then rests",
+        L"加速しながら追跡 · 衝突すると速度に応じて吹き飛ばし一時気絶 · 外すと滑って休止" },
+      { L"꼭짓점마다 틈이 있는 큰 진홍색 오각 프레임이 빨라질수록 잔상을 남깁니다.",
+        L"A large crimson pentagon frame, split at each vertex, leaves afterimages as it speeds up.",
+        L"頂点ごとに隙間のある大きな深紅の五角フレームが、加速するほど残像を残します。" } },
+    { { L"마그네타", L"MAGNETAR", L"マグネター" },
+      { L"플레이어를 추격하며 전기장으로 탄환을 요격하는 축전형 신호",
+        L"Chasing signal that intercepts player shots with a rechargeable electric field",
+        L"プレイヤーを追跡し、充電式電場で弾を迎撃する信号" },
+      L"HIGH", 3, 450, L"5 / sec (contact)", L"94-140 px/s",
+      { L"탄환 1발 요격마다 1스택 소모 · 최대 8 · 초당 0.3~1.2 회복",
+        L"Spends 1 charge per intercepted shot · max 8 · regenerates 0.3-1.2/s",
+        L"弾1発の迎撃ごとに1消費 · 最大8 · 毎秒0.3～1.2回復" },
+      { L"중심 코어에서 네 개의 굽은 날개가 회전하며 전기장을 만듭니다.",
+        L"Four hooked blades rotate around the core as it projects an electric field.",
+        L"4つのフック状ブレードが中心コアの周囲を回転し、電場を展開します。" } },
 };
 
 inline const CodexMobProfile* CodexMobProfileFor(int id) {
+    if (id == CM_RETIRED_08) return nullptr;
     return id >= 0 && id < CM_COUNT ? &CODEX_MOB_PROFILES[id] : nullptr;
 }
 
@@ -365,6 +401,9 @@ inline CodexMobId CodexMobIdForKind(MobKind k) {
     case MobKind::GRAVIS:  return CM_GRAVIS;
     case MobKind::QUASAR:  return CM_QUASAR;
     case MobKind::GIMBAL:  return CM_GIMBAL;
+    case MobKind::REGULUS: return CM_REGULUS;
+    case MobKind::ANTARES: return CM_ANTARES;
+    case MobKind::MAGNETAR: return CM_MAGNETAR;
     default:               return CM_COUNT;
     }
 }
@@ -372,8 +411,8 @@ inline CodexMobId CodexMobIdForKind(MobKind k) {
 template <typename Fn>
 inline void ForEachCodexMobEntry(Fn&& fn) {
     static constexpr CodexMobId kRosterOrder[] = {
-        CM_ROTOR, CM_SCOPE, CM_GIMBAL, CM_SWARM, CM_GENESIS, CM_GRAVIS,
-        CM_QUASAR
+        CM_ROTOR, CM_ANTARES, CM_SCOPE, CM_REGULUS, CM_GIMBAL, CM_SWARM,
+        CM_GENESIS, CM_GRAVIS, CM_QUASAR, CM_MAGNETAR
     };
     for (CodexMobId id : kRosterOrder) fn((int)id);
 }
@@ -383,10 +422,12 @@ inline void MarkMobSeen(MobKind k) {
     MarkMobSeenId(CodexMobIdForKind(k));
 }
 inline void MarkMobSeenId(CodexMobId id) {
+    if (id == CM_RETIRED_08) return;
     if (id < 0 || id >= CM_COUNT) return;
     if (!g_MobSeen[id]) { g_MobSeen[id] = true; g_CodexDirty = true; }
 }
 inline void RegisterCodexMobKill(CodexMobId id) {
+    if (id == CM_RETIRED_08) return;
     if (g_CreativeMode || id < 0 || id >= CM_COUNT) return;
     ++g_RunMobKillCounts[id];
 }
@@ -395,12 +436,14 @@ inline void RegisterCodexMobKill(MobKind kind) {
 }
 
 inline bool CodexMobSeen(int id) {
+    if (id == CM_RETIRED_08) return false;
     if (CodexFullReveal() && id >= 0 && id < CM_COUNT) return true;
     if (id < 0 || id >= CM_COUNT) return false;
     return g_MobSeen[id];
 }
 
 inline long long CodexMobKillCount(int id) {
+    if (id == CM_RETIRED_08) return 0;
     if (id < 0 || id >= CM_COUNT) return 0;
     return g_MobKillCounts[id] + g_RunMobKillCounts[id];
 }
@@ -418,6 +461,7 @@ inline long long CodexMobKillThreshold(int id, int milestone) {
 
 // 0=overview locked, 1=overview, 2=combat stats, 3=full profile.
 inline int CodexMobDataStage(int id) {
+    if (id == CM_RETIRED_08) return 0;
     if (id < 0 || id >= CM_COUNT) return 0;
     const long long kills = CodexMobKillCount(id);
     if (CodexFullReveal()) return 3;
@@ -456,7 +500,8 @@ inline const wchar_t* CodexMobListLabel(int id) {
 inline const wchar_t* MobDesc(int id) {
     int li = (int)g_Language; if (li < 0 || li >= LANG_COUNT) li = 0;
     if (id < 0 || id >= CM_COUNT) return L"???";
-    return CODEX_MOB_PROFILES[id].description[li];
+    const CodexMobProfile* profile = CodexMobProfileFor(id);
+    return profile ? profile->description[li] : L"";
 }
 
 
@@ -466,6 +511,7 @@ inline const wchar_t* MobThreatLabel(int id) {
 }
 
 inline const wchar_t* MobTierLabel(int id) {
+    if (id == CM_REGULUS) return L"2.5";
     switch (CodexMobTier(id)) {
     case 1: return L"1";
     case 2: return L"2";
@@ -482,6 +528,9 @@ inline MobKind CodexMobKind(int id) {
     case CM_GRAVIS:  return MobKind::GRAVIS;
     case CM_QUASAR:  return MobKind::QUASAR;
     case CM_GIMBAL:  return MobKind::GIMBAL;
+    case CM_REGULUS: return MobKind::REGULUS;
+    case CM_ANTARES: return MobKind::ANTARES;
+    case CM_MAGNETAR: return MobKind::MAGNETAR;
     default:         return MobKind::ROTOR;
     }
 }

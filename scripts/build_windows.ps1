@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Vcx = Join-Path $Root "WiNILL\WiNILL.vcxproj"
 $Out = Join-Path $Root "build\windows\x64\Release\WiNILL.exe"
+$IntDir = Join-Path $Root "build\windows\obj\WiNILL\x64\Release\"
 
 $Msbuild = @(
     "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
@@ -11,7 +12,7 @@ $Msbuild = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $Msbuild) { throw "MSBuild를 찾을 수 없습니다." }
 
-& $Msbuild $Vcx /p:Configuration=Release /p:Platform=x64 /v:minimal
+& $Msbuild $Vcx /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64 "/p:IntDir=$IntDir" /v:minimal
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""

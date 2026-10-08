@@ -14,6 +14,10 @@ public:
     // 유도탄 (탄환 세례 등) — 매 프레임 가장 가까운 적 쪽으로 방향 보정
     bool  homing       = false;
     float homingTurn   = 5.0f;   // 라디안/초
+    float homingTurnStart = 0.0f; // 0이면 homingTurn을 고정값으로 사용
+    float homingTurnRampStart = 0.0f;
+    float homingDuration = 0.0f; // 0이면 기존처럼 수명 제한 없이 유도
+    float homingElapsed  = 0.0f;
     // 개별 데미지 배율 (탄환 세례 등 0.5x)
     float dmgMult      = 1.0f;
     // 적 탄환과 충돌해도 유지되는 관통 잔량

@@ -30,6 +30,8 @@ void UpdateProjectiles(std::vector<Bullet>& bullets,
     const float homingDelta = fixedDelta * (hyperFocusTimer > 0.0f ? 0.7f : 1.0f);
 
     for (auto& bullet : bullets) {
+        const float bulletDelta = bullet.isEnemy && hyperFocusTimer > 0.0f
+            ? fixedDelta * 0.7f : fixedDelta;
         if (bullet.homing && !bullet.isEnemy && bullet.active) {
             float targetX = 0.0f, targetY = 0.0f;
             if (monsters.FindNearestEnemy(
@@ -53,22 +55,37 @@ void UpdateProjectiles(std::vector<Bullet>& bullets,
         }
 
         if (bullet.homing && bullet.isEnemy && bullet.active && timeStopTimer <= 0.0f) {
+            if (bullet.homingDuration > 0.0f) {
+                bullet.homingElapsed += bulletDelta;
+                if (bullet.homingElapsed >= bullet.homingDuration)
+                    bullet.homing = false;
+            }
+        }
+        if (bullet.homing && bullet.isEnemy && bullet.active && timeStopTimer <= 0.0f) {
             const float dx = playerX - bullet.x;
             const float dy = playerY - bullet.y;
             const float length = std::sqrt(dx * dx + dy * dy);
             if (length > 300.0f) {
                 const float currentAngle = std::atan2(bullet.dirY, bullet.dirX);
                 const float targetAngle = std::atan2(dy / length, dx / length);
+                float turnRate = bullet.homingTurn;
+                if (bullet.homingTurnStart > 0.0f &&
+                    bullet.homingTurnRampStart < 1.0f) {
+                    const float rampRange = 1.0f - bullet.homingTurnRampStart;
+                    const float turnProgress = std::max(0.0f, std::min(1.0f,
+                        (bullet.launchRamp - bullet.homingTurnRampStart) /
+                            rampRange));
+                    turnRate = bullet.homingTurnStart +
+                        (bullet.homingTurn - bullet.homingTurnStart) * turnProgress;
+                }
                 const float nextAngle = TurnAngleToward(
-                    currentAngle, targetAngle, bullet.homingTurn * homingDelta);
+                    currentAngle, targetAngle, turnRate * homingDelta);
                 bullet.dirX = std::cos(nextAngle);
                 bullet.dirY = std::sin(nextAngle);
             }
         }
 
         if (!(bullet.isEnemy && timeStopTimer > 0.0f)) {
-            const float bulletDelta = bullet.isEnemy && hyperFocusTimer > 0.0f
-                ? fixedDelta * 0.7f : fixedDelta;
             bullet.Update(bulletDelta);
         }
 

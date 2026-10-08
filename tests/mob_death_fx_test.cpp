@@ -121,7 +121,7 @@ static void CheckBounds() {
 static void CheckRoster() {
     int ordinaryCount = 0;
     for (const auto kind : {MobKind::ROTOR, MobKind::SWARM, MobKind::GENESIS,
-                           MobKind::GRAVIS, MobKind::QUASAR}) {
+                           MobKind::GRAVIS, MobKind::QUASAR, MobKind::ANTARES}) {
         for (bool reduced : {false, true}) {
             ResetEnemyParticles();
             Monster mob(100.0f, 200.0f);
@@ -174,6 +174,144 @@ static void CheckRoster() {
     }
 }
 
+static void CheckAntaresBullfight() {
+    using State = Monster::AntaresState;
+    constexpr float dt = 1.0f / 60.0f;
+    float playerHp = 1000.0f;
+
+    // Chase: speed, stage and spin climb continuously up to the top speed.
+    Monster chaser(3000.0f, 0.0f);
+    chaser.MakeKind(MobKind::ANTARES);
+    assert(std::abs(chaser.hp - Monster::ANTARES_BASE_HP) < 0.01f);
+    assert(chaser.AntaresStage() == 1 && chaser.AntaresGhostCount() == 0);
+    float lastSpeed = 0.0f, lastSpin = 0.0f, elapsed = 0.0f;
+    int lastStage = 1;
+    while (elapsed < 6.0f) {
+        chaser.Update(0.0f, 0.0f, dt, playerHp);
+        elapsed += dt;
+        assert(chaser.antaresState == State::CHASE);
+        assert(chaser.antaresMoveSpeed >= lastSpeed - 0.001f);
+        assert(chaser.antaresSpinSpeed >= lastSpin - 0.001f);
+        assert(chaser.AntaresStage() >= lastStage);
+        if (elapsed < 4.9f) assert(chaser.antaresMoveSpeed < Monster::ANTARES_MAX_SPEED);
+        lastSpeed = chaser.antaresMoveSpeed;
+        lastSpin = chaser.antaresSpinSpeed;
+        lastStage = chaser.AntaresStage();
+    }
+    assert(lastSpeed == Monster::ANTARES_MAX_SPEED && lastStage == 4);
+    assert(chaser.AntaresGhostCount() == Monster::ANTARES_TRAIL_COUNT);
+
+    // Top speed turns slowest: capped at 40°/s.
+    Monster turner(0.0f, 0.0f);
+    turner.MakeKind(MobKind::ANTARES);
+    turner.antaresMoveSpeed = Monster::ANTARES_MAX_SPEED;
+    turner.antaresHeadingX = 1.0f; turner.antaresHeadingY = 0.0f;
+    turner.Update(-500.0f, 10.0f, 0.1f, playerHp);
+    const float turned = std::abs(atan2f(turner.antaresHeadingY, turner.antaresHeadingX));
+    assert(turned <= 0.6981f * 0.1f + 0.001f && turned > 0.0f);
+
+    // Ram: touching the player shoves them away in proportion to speed,
+    // deals speed-scaled damage, and stuns Antares in place.
+    Monster bull(-500.0f, 0.0f);
+    bull.MakeKind(MobKind::ANTARES);
+    bull.antaresMoveSpeed = Monster::ANTARES_MAX_SPEED;
+    bull.antaresHeadingX = 1.0f; bull.antaresHeadingY = 0.0f;
+    const float hpBefore = playerHp;
+    for (int i = 0; i < 240 && bull.antaresState == State::CHASE; ++i)
+        bull.Update(0.0f, 0.0f, dt, playerHp);
+    assert(bull.antaresState == State::STUNNED);
+    assert(bull.antaresMoveSpeed == 0.0f);
+    assert(-bull.worldX >= bull.AntaresRamRange() - 15.0f);   // touched, not overlapped
+    const float rammed = hpBefore - playerHp;
+    assert(rammed >= 11.5f && rammed < 13.0f);
+    assert(bull.antaresKnockX > 350.0f && std::abs(bull.antaresKnockY) < 1.0f);
+    bull.antaresKnockX = bull.antaresKnockY = 0.0f;           // the game loop consumes it
+    const float stunX = bull.worldX;
+    float stunTime = 0.0f;
+    while (bull.antaresState == State::STUNNED) {
+        bull.Update(0.0f, 0.0f, dt, playerHp);
+        stunTime += dt;
+        assert(bull.antaresKnockX == 0.0f);                   // no re-ram while stunned
+    }
+    assert(std::abs(stunTime - Monster::ANTARES_STUN_TIME) < 0.03f);
+    assert(std::abs(bull.worldX - stunX) < 2.0f);
+    assert(bull.antaresState == State::CHASE && bull.AntaresStage() == 1);
+
+    // A slow touch still shoves, just a little.
+    Monster nudge(-50.0f, 0.0f);
+    nudge.MakeKind(MobKind::ANTARES);
+    nudge.Update(0.0f, 0.0f, dt, playerHp);
+    assert(nudge.antaresState == State::STUNNED);
+    assert(nudge.antaresKnockX > 20.0f && nudge.antaresKnockX < 50.0f);
+
+    // Pass: at 500 px/s or more, the player slipping behind it nearby ends
+    // the run with a skid, then a rest, then a fresh stage-1 chase.
+    Monster passer(10.0f, 100.0f);
+    passer.MakeKind(MobKind::ANTARES);
+    passer.antaresMoveSpeed = 600.0f;
+    passer.antaresHeadingX = 1.0f; passer.antaresHeadingY = 0.0f;
+    passer.antaresPrevFacing = 1.0f;
+    passer.Update(0.0f, 0.0f, dt, playerHp);
+    assert(passer.antaresState == State::SKID);
+    int lastGhosts = passer.AntaresGhostCount();
+    float skidSpeed = passer.antaresMoveSpeed;
+    float skidTime = 0.0f;
+    while (passer.antaresState == State::SKID) {
+        passer.Update(0.0f, 0.0f, dt, playerHp);
+        skidTime += dt;
+        assert(passer.antaresMoveSpeed <= skidSpeed + 0.001f);
+        assert(passer.AntaresGhostCount() <= lastGhosts);
+        skidSpeed = passer.antaresMoveSpeed;
+        lastGhosts = passer.AntaresGhostCount();
+    }
+    assert(std::abs(skidTime - 0.45f) < 0.05f);
+    assert(passer.antaresState == State::REST && passer.AntaresGhostCount() == 0);
+    const float restX = passer.worldX;
+    float restTime = 0.0f;
+    while (passer.antaresState == State::REST) {
+        passer.Update(0.0f, 0.0f, dt, playerHp);
+        restTime += dt;
+    }
+    assert(std::abs(restTime - Monster::ANTARES_REST_TIME) < 0.03f);
+    assert(std::abs(passer.worldX - restX) < 2.0f);
+    assert(passer.antaresState == State::CHASE && passer.AntaresStage() == 1);
+    assert(passer.antaresHeadingX < 0.0f);                  // turned back to the player
+
+    // The same slip below 500 px/s does not end the run.
+    Monster runner(10.0f, 100.0f);
+    runner.MakeKind(MobKind::ANTARES);
+    runner.antaresMoveSpeed = 400.0f;
+    runner.antaresHeadingX = 1.0f; runner.antaresHeadingY = 0.0f;
+    runner.antaresPrevFacing = 1.0f;
+    runner.Update(0.0f, 0.0f, dt, playerHp);
+    assert(runner.antaresState == State::CHASE && runner.antaresMoveSpeed > 400.0f);
+
+    // A wide miss that carries it far away at speed also ends the run.
+    Monster flier(800.0f, 0.0f);
+    flier.MakeKind(MobKind::ANTARES);
+    flier.antaresMoveSpeed = Monster::ANTARES_MAX_SPEED;
+    flier.antaresHeadingX = 1.0f; flier.antaresHeadingY = 0.0f;
+    flier.antaresPrevFacing = -1.0f;
+    flier.Update(0.0f, 0.0f, dt, playerHp);
+    assert(flier.antaresState == State::SKID);
+
+    // Stage 1 turns tightly, so slipping behind it does not count as a pass.
+    Monster calf(-60.0f, 0.0f);
+    calf.MakeKind(MobKind::ANTARES);
+    calf.antaresHeadingX = 1.0f; calf.antaresHeadingY = 0.0f;
+    for (int i = 0; i < 30; ++i) calf.Update(-200.0f, 0.0f, dt, playerHp);
+    assert(calf.antaresState == State::CHASE);
+
+    // Far away but still heading at the player is a chase, not a fly-off.
+    Monster drifter(0.0f, 0.0f);
+    drifter.MakeKind(MobKind::ANTARES);
+    drifter.antaresMoveSpeed = Monster::ANTARES_MAX_SPEED;
+    drifter.antaresHeadingX = -1.0f; drifter.antaresHeadingY = 0.0f;
+    drifter.Update(-1000.0f, 50.0f, dt, playerHp);
+    drifter.Update(-1000.0f, 50.0f, dt, playerHp);
+    assert(drifter.antaresState == State::CHASE);
+}
+
 static void CheckPriorityAndDelay() {
     ResetEnemyParticles();
     while (ActiveCount() < EnemyParticleCap() * 4 / 5) {
@@ -224,6 +362,7 @@ int main() {
     CheckBulletHaloLayers();
     CheckRoster();
     CheckPriorityAndDelay();
+    CheckAntaresBullfight();
     ResetEnemyParticles();
     // Original aggregate initializers still get the original drag/motion/fade.
     g_EnemyParts[0] = {1, 2, 100, 50, 0.3f, 0.3f, 4, 1, 0.5f, 0.2f, true};

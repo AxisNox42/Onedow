@@ -21,9 +21,9 @@ struct PlayerStats {
     float xpMult           = 1.0f;   // Global experience multiplier.
     float bulletSpread     = 0.0f;   // 발사 시 각도 흔들기 (라디안). 0 = 정확
     int   pierceChance     = 30;     // Pierce chance (%).
-    // The active close-range roster has seven MobKind entries. Scope is the
+    // The active close-range roster has nine MobKind entries. Scope is the
     // separate ranged mob and uses rangedXpBonus below.
-    static constexpr int MOB_KIND_XP_SLOTS = 7;
+    static constexpr int MOB_KIND_XP_SLOTS = 9;
     int   mobXpBonus       = 0;      // Process kill EXP bonus for generic mob debuffs.
     int   mobKindXpBonus[MOB_KIND_XP_SLOTS] = {};
     float rotorHpMult      = 1.0f;
@@ -248,7 +248,9 @@ struct PlayerStats {
             regenPerSec      += 0.25f;
             moveSpeedMult    *= 1.12f;
             vampireKillNeed  = 7;
-            lightStepHitLock = 10.0f;
+            // The combo shortens Light Step's 10s hit lock to the 6s its
+            // description promises; re-setting 10s made it a no-op.
+            lightStepHitLock = 6.0f;
             break;
         case AugType::CB_WARLORD:       // Berserk + chain explosion.
             warlord           = true;

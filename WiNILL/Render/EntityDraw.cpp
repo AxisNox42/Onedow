@@ -308,6 +308,11 @@ void QueueMonsterSightFront(const Monster* m) {
     } else if (m->kind == MobKind::GIMBAL) {
         alpha = 0.19f;
         radiusScale = 2.35f;
+    } else if (m->kind == MobKind::ANTARES) {
+        alpha = 0.15f + 0.07f * m->AntaresSpeedRatio();
+    } else if (m->kind == MobKind::MAGNETAR) {
+        alpha = m->magnetarInterceptTimer > 0.0f ? 0.25f : 0.16f;
+        radiusScale = 2.20f;
     }
     QueueEnemySightFront(m->worldX, m->worldY, base * radiusScale,
                          r, g, b, alpha);
@@ -805,6 +810,295 @@ static void DrawEnemyArc(float cx, float cy, float radius,
     }
 }
 
+static void DrawRegulusShieldFrame(float x, float y, float base,
+                                   float phase, float ratio, int layers,
+                                   float alpha, float visualTime) {
+    const float shieldR = 0.722f, shieldG = 0.937f, shieldB = 1.0f;
+    ratio = std::clamp(ratio, 0.0f, 1.0f);
+    const float pulse = 0.5f + 0.5f * sinf(visualTime * 3.2f + phase);
+    const float strength = alpha * (0.70f + 0.30f * ratio) *
+                           (0.92f + 0.12f * pulse);
+    for (int layer = 0; layer < layers; ++layer) {
+        const float radius = base * (layers == 1 ? 2.05f + 0.045f * pulse
+            : (layer == 0 ? 1.22f + 0.03f * pulse
+                          : 2.12f + 0.045f * pulse));
+        const float offset = phase + visualTime * (layer ? -0.28f : 0.38f);
+        for (int side = 0; side < 6; ++side) {
+            const float a0 = offset - 1.5707963f + side * 1.0471976f;
+            const float a1 = a0 + 1.0471976f;
+            const float trim = 0.10f;
+            const float sx = x + cosf(a0) * radius * (1.0f - trim)
+                               + cosf(a1) * radius * trim;
+            const float sy = y + sinf(a0) * radius * (1.0f - trim)
+                               + sinf(a1) * radius * trim;
+            const float ex = x + cosf(a0) * radius * trim
+                               + cosf(a1) * radius * (1.0f - trim);
+            const float ey = y + sinf(a0) * radius * trim
+                               + sinf(a1) * radius * (1.0f - trim);
+            drawLineQuad(sx, sy, ex, ey, 8.0f,
+                         shieldR, shieldG, shieldB, strength * 0.20f);
+            drawLineQuad(sx, sy, ex, ey, 2.7f,
+                         shieldR, shieldG, shieldB, strength * 0.88f);
+            const float nx = (sx + ex) * 0.5f;
+            const float ny = (sy + ey) * 0.5f;
+            const float nodePulse = 0.5f + 0.5f *
+                sinf(visualTime * 4.0f + side * 1.0471976f + phase);
+            drawCircle(nx, ny, 4.3f + nodePulse * 1.4f,
+                       shieldR, shieldG, shieldB, strength * 0.22f);
+            drawCircle(nx, ny, 1.7f + nodePulse * 0.6f,
+                       0.92f, 0.99f, 1.0f, strength * 0.92f);
+        }
+    }
+}
+
+void DrawRegulusTethers(const MonsterManager& manager, float visualTime) {
+    for (const auto* source : manager.monsters) {
+        if (!source->alive || source->kind != MobKind::REGULUS) continue;
+        for (const auto& link : source->regulusLinks) {
+            if ((!link.monsterTarget && !link.rangedTarget)) continue;
+            const bool targetAlive = link.monsterTarget
+                ? link.monsterTarget->alive && link.monsterTarget->regulusShield.hp > 0.0f
+                : link.rangedTarget->alive && link.rangedTarget->regulusShield.hp > 0.0f;
+            if (!targetAlive) continue;
+            const float tx = link.monsterTarget ? link.monsterTarget->worldX
+                                                : link.rangedTarget->worldX;
+            const float ty = link.monsterTarget ? link.monsterTarget->worldY
+                                                : link.rangedTarget->worldY;
+            const float dx = tx - source->worldX;
+            const float dy = ty - source->worldY;
+            drawLineQuad(source->worldX, source->worldY, tx, ty,
+                         8.0f, 0.42f, 0.84f, 1.0f, 0.18f);
+            drawLineQuad(source->worldX, source->worldY, tx, ty,
+                         3.4f, 0.722f, 0.937f, 1.0f, 0.42f);
+            drawLineQuad(source->worldX, source->worldY, tx, ty,
+                         1.6f, 0.90f, 0.98f, 1.0f, 0.92f);
+            const float phase = (float)((size_t)source % 101u) * 0.013f;
+            for (int pulse = 0; pulse < 3; ++pulse) {
+                const float progress = fmodf(visualTime * 0.34f + phase +
+                                             pulse / 3.0f, 1.0f);
+                const float x = source->worldX + dx * progress;
+                const float y = source->worldY + dy * progress;
+                const float glow = 0.5f + 0.5f *
+                    sinf(visualTime * 5.0f + pulse * 2.0943951f + phase);
+                drawCircle(x, y, 5.0f + glow * 1.5f,
+                           0.48f, 0.88f, 1.0f, 0.22f + glow * 0.12f);
+                drawCircle(x, y, 1.9f + glow * 0.7f,
+                           0.92f, 0.99f, 1.0f, 0.86f);
+            }
+        }
+    }
+}
+
+// Antares' pentagon frame is split at every vertex. Ghosts reuse this recipe
+// without the core, so the afterimage never blurs the hit-relevant center.
+struct AntaresFrameStyle {
+    float r, g, b, alpha;
+    float pushX = 0.0f, pushY = 0.0f; // segments trail behind while accelerating
+    bool nodes = true;
+};
+
+static void DrawAntaresFrame(float x, float y, float base, float angle,
+                             const AntaresFrameStyle& style) {
+    static constexpr int VERTICES = 5;
+    static constexpr float STEP = 1.25663706f;
+    static constexpr float GAP = 0.14f;
+    const float radius = base * 1.40f;
+    float vx[VERTICES], vy[VERTICES];
+    for (int k = 0; k < VERTICES; ++k) {
+        vx[k] = x + cosf(angle + (float)k * STEP) * radius;
+        vy[k] = y + sinf(angle + (float)k * STEP) * radius;
+    }
+    for (int k = 0; k < VERTICES; ++k) {
+        const int n = (k + 1) % VERTICES;
+        const float ax = vx[k] + (vx[n] - vx[k]) * GAP + style.pushX;
+        const float ay = vy[k] + (vy[n] - vy[k]) * GAP + style.pushY;
+        const float bx = vx[n] + (vx[k] - vx[n]) * GAP + style.pushX;
+        const float by = vy[n] + (vy[k] - vy[n]) * GAP + style.pushY;
+        drawLineQuad(ax, ay, bx, by, 2.6f,
+                     style.r, style.g, style.b, style.alpha * 0.12f);
+        drawLineQuad(ax, ay, bx, by, 1.3f,
+                     style.r, style.g, style.b, style.alpha * 0.85f);
+    }
+    if (!style.nodes) return;
+    for (int k = 0; k < VERTICES; ++k)
+        DrawEnemyNode({vx[k], vy[k], base * 0.16f, 0.90f},
+                      style.r, style.g, style.b, style.alpha);
+}
+
+static void DrawAntares(const Monster* m, float base) {
+    using State = Monster::AntaresState;
+    float cr = m->color.r, cg = m->color.g, cb = m->color.b;
+    ApplyMobStyleTint(cr, cg, cb);
+    const float ghostR = cr, ghostG = cg, ghostB = cb;
+    ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
+    const float x = m->worldX, y = m->worldY;
+    const bool skidding = m->antaresState == State::SKID;
+    const bool topSpeed = m->AntaresStage() == 4 && !skidding;
+
+    float headX = m->antaresHeadingX, headY = m->antaresHeadingY;
+    if (headX == 0.0f && headY == 0.0f) {
+        headX = cosf(m->antaresVisualAngle);
+        headY = sinf(m->antaresVisualAngle);
+    }
+    // Segments lag up to 4px behind as speed builds.
+    const float pushPx = 4.0f * m->AntaresSpeedRatio();
+
+    // Afterimages: older samples fade out; only top-speed ghosts split into
+    // red/cyan channels.
+    static constexpr float GHOST_ALPHA[Monster::ANTARES_TRAIL_COUNT] = {
+        0.34f, 0.27f, 0.21f, 0.16f, 0.12f, 0.08f };
+    const int ghosts = std::min(m->AntaresGhostCount(),
+                                Monster::ANTARES_TRAIL_COUNT);
+    for (int i = ghosts - 1; i >= 0; --i) {
+        const glm::vec3& sample = m->antaresTrail[i];
+        AntaresFrameStyle ghost{ ghostR, ghostG, ghostB, GHOST_ALPHA[i] };
+        ghost.nodes = false;
+        if (topSpeed) {
+            const float ox = -headY * 1.5f, oy = headX * 1.5f;
+            ghost.alpha *= 0.70f;
+            ghost.r = 1.0f; ghost.g = 0.22f; ghost.b = 0.28f;
+            DrawAntaresFrame(sample.x + ox, sample.y + oy, base, sample.z, ghost);
+            ghost.r = 0.20f; ghost.g = 0.92f; ghost.b = 1.0f;
+            DrawAntaresFrame(sample.x - ox, sample.y - oy, base, sample.z, ghost);
+        } else {
+            DrawAntaresFrame(sample.x, sample.y, base, sample.z, ghost);
+        }
+    }
+
+    // A ram stun rattles the frame (not the core) and settles over the stun.
+    float shakeX = 0.0f, shakeY = 0.0f;
+    if (m->antaresState == State::STUNNED) {
+        const float left = 1.0f - std::min(1.0f,
+            m->antaresStateTimer / Monster::ANTARES_STUN_TIME);
+        const float amp = 3.5f * left;
+        shakeX = sinf(m->antaresStateTimer * 71.0f) * amp;
+        shakeY = cosf(m->antaresStateTimer * 53.0f) * amp;
+    }
+    AntaresFrameStyle body{ cr, cg, cb, 0.94f };
+    body.pushX = -headX * pushPx + shakeX;
+    body.pushY = -headY * pushPx + shakeY;
+    DrawAntaresFrame(x, y, base, m->antaresVisualAngle, body);
+
+    // The core dims through the skid and recovers over the rest; a stun
+    // flickers it.
+    float coreAlpha = 0.96f;
+    if (skidding)
+        coreAlpha = 0.96f - 0.38f * std::min(1.0f, m->antaresStateTimer / 0.45f);
+    else if (m->antaresState == State::REST)
+        coreAlpha = 0.58f + 0.38f * std::min(1.0f,
+            m->antaresStateTimer / Monster::ANTARES_REST_TIME);
+    else if (m->antaresState == State::STUNNED)
+        coreAlpha = 0.62f + 0.30f * (0.5f + 0.5f * sinf(m->antaresStateTimer * 40.0f));
+    DrawEnemyCore(x, y, base * 0.26f, cr, cg, cb, coreAlpha, topSpeed);
+}
+
+static void DrawMagnetar(const Monster* m, float base, float visualTime) {
+    const float x = m->worldX, y = m->worldY;
+    float cr = m->color.r, cg = m->color.g, cb = m->color.b;
+    ApplyMobStyleTint(cr, cg, cb);
+    ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
+    const float phase = m->magnetarVisualAngle +
+                        (float)((size_t)m % 628u) * 0.01f;
+    const float pulse = 0.5f + 0.5f * sinf(visualTime * 3.1f);
+    const float zap = std::min(1.0f, m->magnetarInterceptTimer / 0.08f);
+
+    // The field stays local and broken; the whole enclosure only flashes on interception.
+    if (!g_SuppressMobSeen) {
+        const float fieldRadius = Monster::MAGNETAR_FIELD_RADIUS;
+        for (int i = 0; i < 4; ++i) {
+            const float angle = phase + (float)i * 1.5707963f;
+            DrawEnemyArc(x, y, fieldRadius, angle - 0.16f, 0.32f, 5,
+                         cr, cg, cb, 0.045f + pulse * 0.025f + zap * 0.42f,
+                         1.0f + zap * 0.9f, false);
+        }
+    }
+
+    // Four hooked shards turn the silhouette into a pinwheel while keeping clear gaps.
+    for (int i = 0; i < 4; ++i) {
+        const float angle = phase + (float)i * 1.5707963f;
+        const float elbowAngle = angle + 0.14f;
+        const float tipAngle = angle + 0.29f;
+        const float rootR = base * 0.37f;
+        const float elbowR = base * 0.83f;
+        const float tipR = base * 1.48f;
+        const float ax = x + cosf(angle) * rootR;
+        const float ay = y + sinf(angle) * rootR;
+        const float bx = x + cosf(elbowAngle) * elbowR;
+        const float by = y + sinf(elbowAngle) * elbowR;
+        const float txp = x + cosf(tipAngle) * tipR;
+        const float typ = y + sinf(tipAngle) * tipR;
+
+        // Offset each side of the bent centerline to form one continuous hooked blade.
+        const float abLen = sqrtf((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+        const float btLen = sqrtf((txp - bx) * (txp - bx) + (typ - by) * (typ - by));
+        const float n1x = -(by - ay) / abLen, n1y = (bx - ax) / abLen;
+        const float n2x = -(typ - by) / btLen, n2y = (txp - bx) / btLen;
+        const float rootW = base * 0.085f;
+        const float elbowW = base * 0.205f;
+        const float a1x = ax + n1x * rootW, a1y = ay + n1y * rootW;
+        const float b1x = bx + n2x * elbowW, b1y = by + n2y * elbowW;
+        const float b2x = bx - n2x * elbowW, b2y = by - n2y * elbowW;
+        const float a2x = ax - n1x * rootW, a2y = ay - n1y * rootW;
+
+        BatchTri(a1x, a1y, b1x, b1y, txp, typ, cr, cg, cb, 0.38f);
+        BatchTri(a1x, a1y, txp, typ, b2x, b2y, cr, cg, cb, 0.38f);
+        BatchTri(a1x, a1y, b2x, b2y, a2x, a2y, 0.18f, 0.15f, 0.08f, 0.58f);
+        drawLineQuad(a1x, a1y, b1x, b1y, 2.0f, cr, cg, cb, 0.96f);
+        drawLineQuad(b1x, b1y, txp, typ, 2.0f, cr, cg, cb, 0.96f);
+        drawLineQuad(a2x, a2y, b2x, b2y, 1.5f, cr, cg, cb, 0.78f);
+        drawLineQuad(b2x, b2y, txp, typ, 1.2f, 1.0f, 0.98f, 0.78f, 0.78f);
+
+        for (int mark = 0; mark < 2; ++mark) {
+            const int chargeIndex = i * 2 + mark;
+            const float t = mark == 0 ? 0.62f : 0.48f;
+            const float px = mark == 0 ? ax + (bx - ax) * t : bx + (txp - bx) * t;
+            const float py = mark == 0 ? ay + (by - ay) * t : by + (typ - by) * t;
+            const float nx = mark == 0 ? n1x : n2x;
+            const float ny = mark == 0 ? n1y : n2y;
+            const int fullStacks = (int)std::floor(m->magnetarStacks + 0.001f);
+            const float fractional = m->magnetarStacks - (float)fullStacks;
+            const float alpha = chargeIndex < fullStacks ? 0.98f
+                : (chargeIndex == fullStacks ? 0.26f + 0.60f * fractional : 0.20f);
+            drawLineQuad(px - nx * base * 0.075f, py - ny * base * 0.075f,
+                         px + nx * base * 0.075f, py + ny * base * 0.075f,
+                         1.8f, chargeIndex < fullStacks ? 1.0f : cr,
+                         chargeIndex < fullStacks ? 0.99f : cg,
+                         chargeIndex < fullStacks ? 0.86f : cb, alpha);
+        }
+    }
+
+    if (m->magnetarInterceptTimer > 0.0f) {
+        float startX = x, startY = y;
+        float nearest = 1e18f;
+        for (int i = 0; i < 4; ++i) {
+            const float angle = phase + (float)i * 1.5707963f + 0.29f;
+            const float px = x + cosf(angle) * base * 1.48f;
+            const float py = y + sinf(angle) * base * 1.48f;
+            const float dx = px - m->magnetarInterceptX;
+            const float dy = py - m->magnetarInterceptY;
+            const float d2 = dx * dx + dy * dy;
+            if (d2 < nearest) { nearest = d2; startX = px; startY = py; }
+        }
+        const float dx = m->magnetarInterceptX - startX;
+        const float dy = m->magnetarInterceptY - startY;
+        const float len = std::sqrt(dx * dx + dy * dy) + 0.001f;
+        const float px = -dy / len, py = dx / len;
+        float prevX = startX, prevY = startY;
+        for (int i = 1; i <= 5; ++i) {
+            const float t = (float)i / 5.0f;
+            const float side = i == 5 ? 0.0f : ((i & 1) ? 4.5f : -4.5f);
+            const float nextX = startX + dx * t + px * side;
+            const float nextY = startY + dy * t + py * side;
+            drawLineQuad(prevX, prevY, nextX, nextY, 2.0f,
+                         1.0f, 0.99f, 0.82f, zap * 0.96f);
+            prevX = nextX; prevY = nextY;
+        }
+    }
+
+    DrawEnemyCore(x, y, base * (0.30f + zap * 0.05f),
+                  cr, cg, cb, 0.92f + zap * 0.08f);
+}
+
 void drawMob(const Monster* m, float visualTime) {
     if (!m) return;
     if (!m->alive) {
@@ -820,8 +1114,20 @@ void drawMob(const Monster* m, float visualTime) {
     if (m->kind == MobKind::GRAVIS) MarkMobSeenId(CM_GRAVIS);
     if (m->kind == MobKind::QUASAR) MarkMobSeenId(CM_QUASAR);
     if (m->kind == MobKind::GIMBAL) MarkMobSeenId(CM_GIMBAL);
+    if (m->kind == MobKind::REGULUS) MarkMobSeenId(CM_REGULUS);
+    if (m->kind == MobKind::MAGNETAR) MarkMobSeenId(CM_MAGNETAR);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     if (visualTime < 0.0f) visualTime = (float)glfwGetTime();
+    if (m->kind != MobKind::REGULUS && m->regulusShield.hp > 0.0f) {
+        float shieldAlpha = 0.50f;
+        if (m->regulusShield.flashTimer > 0.0f)
+            shieldAlpha += 0.24f * m->regulusShield.flashTimer / MOB_HIT_FLASH_TIME;
+        DrawRegulusShieldFrame(
+            m->worldX, m->worldY, base,
+            visualTime * 0.045f + (float)((size_t)m % 37u) * 0.02f,
+            m->regulusShield.hp / std::max(1.0f, m->regulusShield.maxHp),
+            1, shieldAlpha, visualTime);
+    }
     if (m->kind == MobKind::GENESIS) {
         // Genesis: a generation station with two fixed parallel egress lanes.
         float x = m->worldX, y = m->worldY;
@@ -1038,6 +1344,73 @@ void drawMob(const Monster* m, float visualTime) {
                           bodyR, bodyG, bodyB,
                           0.84f + 0.16f * charge, false);
         }
+    } else if (m->kind == MobKind::REGULUS) {
+        float bodyR = m->color.r, bodyG = m->color.g, bodyB = m->color.b;
+        ApplyMobStyleTint(bodyR, bodyG, bodyB);
+        ApplyMobHitFlash(bodyR, bodyG, bodyB, m->hitFlashTimer);
+        const float x = m->worldX, y = m->worldY;
+        const float phase = m->regulusVisualAngle +
+                            (float)((size_t)m % 628u) * 0.01f;
+        if (m->regulusShield.hp > 0.0f) {
+            float shieldAlpha = 0.64f;
+            if (m->regulusShield.flashTimer > 0.0f)
+                shieldAlpha += 0.25f * m->regulusShield.flashTimer /
+                               MOB_HIT_FLASH_TIME;
+            DrawRegulusShieldFrame(
+                x, y, base, phase,
+                m->regulusShield.hp / std::max(1.0f, m->regulusShield.maxHp),
+                1, shieldAlpha, visualTime);
+        }
+        const float corePulse = 0.5f + 0.5f * sinf(visualTime * 3.6f);
+        const float hullPulse = 0.5f + 0.5f * sinf(visualTime * 2.4f + phase);
+        const float hullInner = base * 0.66f;
+        const float hullOuter = base * 1.08f;
+        const float hullRadius = base * 1.02f;
+        const float sideStep = 1.0471976f;
+
+        // A six-section outer chassis makes the body read as a built support
+        // unit around its core instead of a core with only short spokes.
+        for (int i = 0; i < 6; ++i) {
+            const float angle = phase - 1.5707963f + i * sideStep;
+            const float innerX = x + cosf(angle) * hullInner;
+            const float innerY = y + sinf(angle) * hullInner;
+            const float outerX = x + cosf(angle) * hullOuter;
+            const float outerY = y + sinf(angle) * hullOuter;
+            drawLineQuad(innerX, innerY, outerX, outerY, 3.0f,
+                         bodyR, bodyG, bodyB, 0.72f);
+            drawLineQuad(innerX, innerY, outerX, outerY, 1.0f,
+                         0.92f, 0.99f, 1.0f, 0.72f);
+
+            const float plateStart = angle + 0.15f;
+            DrawEnemyArc(x, y, hullRadius, plateStart, 0.74f, 7,
+                         bodyR, bodyG, bodyB, 0.86f, 3.0f, false);
+            const float nodePulse = 0.78f + 0.18f *
+                sinf(visualTime * 3.2f + i * sideStep);
+            DrawEnemyNode({outerX, outerY, base * (0.15f + 0.015f * hullPulse),
+                           nodePulse}, bodyR, bodyG, bodyB, 0.95f);
+            drawCircle(outerX, outerY, base * 0.055f,
+                       0.94f, 1.0f, 1.0f, 0.74f + 0.18f * hullPulse);
+        }
+
+        drawCircle(x, y, base * (0.62f + 0.05f * corePulse),
+                   0.40f, 0.84f, 1.0f, 0.08f + 0.08f * corePulse);
+        for (int i = 0; i < 6; ++i) {
+            const float angle = phase - 1.5707963f + i * sideStep;
+            const float nx = x + cosf(angle) * base * 0.52f;
+            const float ny = y + sinf(angle) * base * 0.52f;
+            drawLineQuad(x, y, nx, ny, 1.4f,
+                         bodyR, bodyG, bodyB, 0.54f);
+            DrawEnemyNode({nx, ny, base * 0.10f,
+                           0.78f + 0.18f * sinf(visualTime * 3.2f + i)},
+                          bodyR, bodyG, bodyB, 0.90f);
+        }
+        DrawEnemyCore(x, y, base * 0.42f,
+                      bodyR, bodyG, bodyB,
+                      0.92f + 0.08f * sinf(visualTime * 3.0f), false);
+    } else if (m->kind == MobKind::ANTARES) {
+        DrawAntares(m, base);
+    } else if (m->kind == MobKind::MAGNETAR) {
+        DrawMagnetar(m, base, visualTime);
     } else if (m->kind == MobKind::SWARM) {
         // Swarm: a smaller triangular packet, visually subordinate to Rotor.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
@@ -1109,6 +1482,15 @@ void drawRangedMob(const RangedMob* r, float visualTime) {
     float cg = r->color.g;
     float cb = r->color.b;
     ApplyMobHitFlash(cr, cg, cb, r->hitFlashTimer);
+    if (r->regulusShield.hp > 0.0f) {
+        float shieldAlpha = 0.50f;
+        if (r->regulusShield.flashTimer > 0.0f)
+            shieldAlpha += 0.24f * r->regulusShield.flashTimer / MOB_HIT_FLASH_TIME;
+        DrawRegulusShieldFrame(
+            x, y, base, visualTime * 0.045f + phaseOffset,
+            r->regulusShield.hp / std::max(1.0f, r->regulusShield.maxHp),
+            1, shieldAlpha, visualTime);
+    }
     const float instrumentR = base * (1.26f + 0.12f * chargeT);
     const float phase = r->rotAngle + phaseOffset;
     const bool burst = r->lensState == RangedMob::State::BURST;
@@ -1155,7 +1537,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         // RangedMob's gameplay base is 25.6px; normalize it to the Monster
         // base (18px) so the miniature preserves cross-enemy size ratios.
         preview.deathScale = scale / (RangedMob::VISUAL_BASE_PX / 18.0f);
-        drawRangedMob(&preview);              // SCOPE
+        drawRangedMob(&preview);
     } else {
         MobKind kind = MobKind::ROTOR;
         switch (codexId) {
@@ -1164,6 +1546,9 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         case CM_GRAVIS:  kind = MobKind::GRAVIS;  break;
         case CM_QUASAR:  kind = MobKind::QUASAR;  break; // QUASAR
         case CM_GIMBAL:  kind = MobKind::GIMBAL;  break;
+        case CM_REGULUS: kind = MobKind::REGULUS; break;
+        case CM_ANTARES: kind = MobKind::ANTARES; break;
+        case CM_MAGNETAR: kind = MobKind::MAGNETAR; break;
         default: break;                                // ROTOR
         }
         Monster preview(x, y, 1.0f, 1.0f, false);
@@ -1174,6 +1559,8 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         preview.gravisVisualAngle = t * 0.18f;
         preview.quasarVisualAngle = t * 0.08f;
         preview.gimbalVisualAngle = t * 0.24f;
+        preview.regulusVisualAngle = t * 0.10f;
+        preview.antaresVisualAngle = t * 0.5236f;
         drawMob(&preview);
     }
     g_SuppressMobSeen = wasSuppressed;

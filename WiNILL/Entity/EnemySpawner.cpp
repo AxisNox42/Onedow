@@ -18,9 +18,9 @@ static EnemySpawnState g_EnemySpawnState;
 static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob,
                                           float rotorHpMultiplier,
                                           int screenWidth, int screenHeight,
-                                          float elapsedSeconds, int mobCap) {
+                                          float elapsedSeconds, int mobCap,
+                                          long long score) {
     if (mob.kind != MobKind::ROTOR) return;
-    mob.hp *= rotorHpMultiplier;
 
     int gravisCount = 0;
     for (auto* existing : monsters.monsters)
@@ -40,11 +40,35 @@ static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob
     const bool gimbalReady = elapsedSeconds >= 30.0f;
     const int gimbalChance = elapsedSeconds >= 150.0f ? 14 : 10;
 
-    if (gravisReady && gravisCount < 1 && (rand() % 100) < gravisChance) {
+    int regulusCount = 0;
+    for (auto* existing : monsters.monsters)
+        if (existing->alive && existing->kind == MobKind::REGULUS) ++regulusCount;
+    const bool regulusReady = score >= 120000;
+
+    int magnetarCount = 0;
+    for (auto* existing : monsters.monsters)
+        if (existing->alive && existing->kind == MobKind::MAGNETAR) ++magnetarCount;
+    const bool magnetarReady = score >= 250000 && magnetarCount < 1;
+
+    // Antares is a field-capped chaser: one from 40k score, two from 150k.
+    int antaresCount = 0;
+    for (auto* existing : monsters.monsters)
+        if (existing->alive && existing->kind == MobKind::ANTARES) ++antaresCount;
+    const bool antaresReady = score >= 40000;
+    const int antaresCap = score >= 150000 ? 2 : 1;
+
+    if (regulusReady && regulusCount < 1 && (rand() % 100) < 4) {
+        mob.MakeKind(MobKind::REGULUS);
+    } else if (magnetarReady && (rand() % 100) < 4) {
+        mob.MakeKind(MobKind::MAGNETAR);
+    } else if (gravisReady && gravisCount < 1 && (rand() % 100) < gravisChance) {
         mob.MakeKind(MobKind::GRAVIS);
     } else if (quasarReady && quasarCount < 2 &&
                (rand() % 100) < quasarChance) {
         mob.MakeKind(MobKind::QUASAR);
+    } else if (antaresReady && antaresCount < antaresCap &&
+               (rand() % 100) < 6) {
+        mob.MakeKind(MobKind::ANTARES);
     } else if ((rand() % 100) < 12) {
         mob.MakeKind(MobKind::GENESIS);
         mob.spawnAnchorX = 160.0f +
@@ -67,6 +91,9 @@ static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob
             if (swarmCount < swarmCap) mob.MakeKind(MobKind::SWARM);
         }
     }
+    // MakeKind scales the current hp, so apply the rotor-only HP bonus after
+    // the conversion: a rotor turned into another kind must not keep it.
+    if (mob.kind == MobKind::ROTOR) mob.hp *= rotorHpMultiplier;
 }
 void ResetEnemySpawnState() {
     g_EnemySpawnState = {};
@@ -108,7 +135,7 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
             if (monsters.monsters.size() > countBefore) {
                 ApplyRotorSpawnSpecialization(
                     monsters, *monsters.monsters.back(), stats.rotorHpMult,
-                    screenWidth, screenHeight, elapsedSeconds, mobCap);
+                    screenWidth, screenHeight, elapsedSeconds, mobCap, score);
             }
         };
 

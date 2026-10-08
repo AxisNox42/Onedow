@@ -75,7 +75,7 @@ float Clamp01(float v) {
 float SpawnGridStep(float panelHeight) {
     const float available = panelHeight - SPAWN_GRID_Y -
                             SPAWN_ACTION_BOTTOM - 16.0f;
-    return std::max(32.0f, std::min(76.0f, available / 8.0f));
+    return std::max(32.0f, std::min(76.0f, available / 9.0f));
 }
 
 float SpawnButtonHeight(float panelHeight) {
@@ -345,6 +345,9 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
         addMobXp(L"스웜 경험치 보너스", MobKind::SWARM);
         addMobXp(L"퀘이사 경험치 보너스", MobKind::QUASAR);
         addMobXp(L"Gimbal 경험치 보너스", MobKind::GIMBAL);
+        addMobXp(L"Regulus 경험치 보너스", MobKind::REGULUS);
+        addMobXp(L"안타레스 경험치 보너스", MobKind::ANTARES);
+        addMobXp(L"Magnetar 경험치 보너스", MobKind::MAGNETAR);
 
         ADD_FLOAT(xpPerSec); ADD_FLOAT(rmobSpawnDelayBonus);
         ADD_INT(mobCapBonus); ADD_INT(visionStacks); ADD_INT(totalAugs);
@@ -405,7 +408,8 @@ const wchar_t* DebugToolkit::FieldTypeLabel(FieldType type) {
 
 const wchar_t* DebugToolkit::MobLabel(int index) {
     static const wchar_t* labels[] = {
-        L"로터", L"제네시스", L"스웜", L"그라비스", L"퀘이사", L"스코프", L"Gimbal"
+        L"로터", L"제네시스", L"스웜", L"그라비스", L"퀘이사", L"스코프",
+        L"Gimbal", L"Regulus", L"안타레스", L"MAGNETAR"
     };
     if (index < 0 || index >= (int)(sizeof(labels) / sizeof(labels[0])))
         return L"알 수 없음";
@@ -768,7 +772,7 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
         const float rowStep = SpawnGridStep(p.h);
         const float buttonW = (p.w - 48.0f) * 0.5f;
         const float gap = 16.0f;
-        for (int index = 0; index < 7; ++index) {
+        for (int index = 0; index < 10; ++index) {
             const int col = index & 1;
             const int row = index / 2;
             const float bx = p.x + 16.0f + col * (buttonW + gap);
@@ -783,16 +787,66 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
             if (selectedMob_ < 0) {
                 SetMessage(L"먼저 대상을 선택하세요");
             } else {
-                if (selectedMob_ < 5 && context_.spawnMob)
-                    context_.spawnMob(selectedMob_, spawnCount_);
-                else if (selectedMob_ == 5 && context_.spawnRanged)
-                    context_.spawnRanged(spawnCount_);
-                else if (selectedMob_ == 6 && context_.spawnMob)
-                    context_.spawnMob((int)MobKind::GIMBAL, spawnCount_);
+                int spawned = 0;
+                switch (selectedMob_) {
+                case 0:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::ROTOR,
+                                                    spawnCount_);
+                    break;
+                case 1:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::GENESIS,
+                                                    spawnCount_);
+                    break;
+                case 2:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::SWARM,
+                                                    spawnCount_);
+                    break;
+                case 3:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::GRAVIS,
+                                                    spawnCount_);
+                    break;
+                case 4:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::QUASAR,
+                                                    spawnCount_);
+                    break;
+                case 5:
+                    if (context_.spawnRanged)
+                        spawned = context_.spawnRanged(spawnCount_);
+                    break;
+                case 6:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::GIMBAL,
+                                                    spawnCount_);
+                    break;
+                case 7:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::REGULUS,
+                                                    spawnCount_);
+                    break;
+                case 8:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::ANTARES,
+                                                    spawnCount_);
+                    break;
+                case 9:
+                    if (context_.spawnMob)
+                        spawned = context_.spawnMob((int)MobKind::MAGNETAR,
+                                                    spawnCount_);
+                    break;
+                }
+                if (spawned <= 0) {
+                    SetMessage(L"소환 실패: 몬스터 수용 한도에 도달했습니다");
+                    return true;
+                }
                 std::wstring message = L"소환 완료: ";
                 message += MobLabel(selectedMob_);
                 message += L" x";
-                message += FormatInt(spawnCount_);
+                message += FormatInt(spawned);
                 SetMessage(message);
             }
         }
@@ -970,7 +1024,7 @@ void DebugToolkit::RenderSpawnTab(float x, float y, float w, float h,
     const float rowStep = SpawnGridStep(h);
     const float buttonW = (w - 48.0f) * 0.5f;
     const float gap = 16.0f;
-    for (int index = 0; index < 7; ++index) {
+    for (int index = 0; index < 10; ++index) {
         const int col = index & 1;
         const int row = index / 2;
         const float bx = x + 16.0f + col * (buttonW + gap);

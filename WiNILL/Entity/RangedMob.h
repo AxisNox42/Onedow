@@ -5,7 +5,7 @@
 #include <vector>
 #include "Bullet.h"
 #include "PlayerStats.h"
-#include "../Render/EnemyParticles.h"
+#include "EnemyShield.h"
 #include "Settings.h"   // g_ArenaExX/Y (폴리모프 페이즈2 확장 아레나)
 
 class RangedMob {
@@ -17,6 +17,7 @@ public:
     float worldX, worldY;
     float targetX, targetY;
     float hp         = BASE_HP;
+    EnemyShieldState regulusShield;
     bool  alive      = true;
     bool  exploded   = false;
     bool  scored     = false;
@@ -53,6 +54,12 @@ public:
         pickNewTarget();
         wanderTimer = (float)(rand() % 300) / 100.0f;
         fireTimer   = (float)(rand() % 200) / 100.0f;  // stagger initial charge
+    }
+
+    float ApplyDamage(float damage) {
+        return ApplyEnemyDamageWithShield(
+            hp, alive, hitFlashTimer, regulusShield, damage,
+            worldX, worldY, VISUAL_BASE_PX * deathScale);
     }
 
     static long long ExperienceReward(const PlayerStats& stats) {
@@ -99,6 +106,8 @@ public:
         }
         hitFlashTimer -= dt;
         if (hitFlashTimer < 0.0f) hitFlashTimer = 0.0f;
+        regulusShield.flashTimer = std::max(0.0f,
+                                            regulusShield.flashTimer - dt);
 
         // Wander
         wanderTimer += dt;
@@ -128,8 +137,7 @@ public:
             chargeAngle += da;
 
             if (chargeAngle >= CHARGE_ROTATIONS * 2.0f * 3.14159f) {
-                // snap rotAngle to nearest alignment point
-                // two layers merge when 2*rotAngle ≡ 0.7854 (mod π/2)
+                // Scope's two rotating layers merge at this alignment.
                 const float period = 0.7854f;  // π/4
                 float mod = fmodf(rotAngle - 0.3927f, period);
                 if (mod < 0.0f) mod += period;
@@ -143,16 +151,16 @@ public:
 
         } else {  // BURST
             burstTimer += dt;
-            // 3 shots after brief hold, evenly spaced
             for (int i = 0; i < 3; i++) {
                 float t = SHOT_DELAY + (float)i * SHOT_INTERVAL;
                 if (burstShots == i && burstTimer >= t) {
-                    Bullet b(worldX, worldY, playerCX, playerCY);
+                    Bullet b(worldX, worldY,
+                             playerCX, playerCY);
                     b.speed      = 720.0f;
                     b.isEnemy    = true;
                     b.homing     = true;
                     b.homingTurn = 0.28f;
-                    b.color      = glm::vec3(0.15f, 0.85f, 1.0f);
+                    b.color = color;
                     bullets.push_back(b);
                     burstShots++;
                     break;
@@ -160,7 +168,7 @@ public:
             }
             // back to idle after last shot clears
             if (burstShots >= 3 &&
-                burstTimer >= SHOT_DELAY + 2.0f * SHOT_INTERVAL + 0.35f) {
+                burstTimer >= SHOT_DELAY + 2 * SHOT_INTERVAL + 0.35f) {
                 lensState = State::IDLE;
                 fireTimer = 0.0f;
             }

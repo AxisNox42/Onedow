@@ -1121,7 +1121,8 @@ int main() {
                 g_Chakrams[i] = ChakramState{};
         },
         [&](int mobKind, int count) {
-            if (mobKind < 0 || mobKind > (int)MobKind::GIMBAL) return;
+            if (mobKind < 0 || mobKind > (int)MobKind::MAGNETAR) return 0;
+            int spawned = 0;
             for (int i = 0; i < count; ++i) {
                 const size_t before = g_MonsterManager.monsters.size();
                 g_MonsterManager.SpawnMob(screenWidth, screenHeight, 160,
@@ -1131,13 +1132,30 @@ int main() {
                 mob->MakeKind((MobKind)mobKind);
                 if (mob->kind == MobKind::ROTOR)
                     mob->hp *= g_Stats.rotorHpMult;
+                if (mob->kind == MobKind::REGULUS) {
+                    const float playerX = playerWin.x + playerWin.width * 0.5f;
+                    const float playerY = playerWin.y + playerWin.height * 0.5f;
+                    const float angle = (float)i * 2.39996323f;
+                    mob->worldX = playerX + std::cos(angle) * 360.0f;
+                    mob->worldY = playerY + std::sin(angle) * 360.0f;
+                }
+                ++spawned;
             }
+            return spawned;
         },
         [&](int count) {
+            int spawned = 0;
             for (int i = 0; i < count; ++i)
+            {
+                const size_t before = g_MonsterManager.rangedMobs.size();
                 g_MonsterManager.SpawnRangedMob(
                     screenWidth, screenHeight,
-                    std::max(0.01f, g_Stats.rmobHpMult), 160);
+                    std::max(0.01f, g_Stats.rmobHpMult), 160,
+                    0.0f, 0.0f, -1, -1);
+                if (g_MonsterManager.rangedMobs.size() <= before) break;
+                ++spawned;
+            }
+            return spawned;
         }
     });
 
@@ -1482,6 +1500,10 @@ int main() {
                         SmokeOpenMenuPanel(panel);
                     } else if (step == "RUN") {
                         RestartCurrentRun();
+                    } else if (step == "DEBUG") {
+                        if (gm.currentState != GameState::RUNNING)
+                            RestartCurrentRun();
+                        g_DebugToolkit.SetVisible(true);
                     } else if (step == "STARDUST_NEAR") {
                         // Simulate a contact-range loot drop for the smoke
                         // capture without depending on combat input timing.
@@ -1528,8 +1550,43 @@ int main() {
                             }
                         }
                     }
-                    if (step == "AUTOFIRE") {
+                    if (step.rfind("LEVEL=", 0) == 0) {
+                        gm.playerLevel = std::max(1, std::atoi(step.c_str() + 6));
+                    } else if (step.rfind("XP=", 0) == 0) {
+                        // XP=<n>: one large XP gain, levelled by the next tick.
+                        gm.xp += std::atoll(step.c_str() + 3);
+                    } else if (step.rfind("DUST=", 0) == 0) {
+                        // DUST=<n>: stardust picked up this run (wallet too,
+                        // as a real pickup does). Never saved.
+                        const long long n = std::atoll(step.c_str() + 5);
+                        g_RunStardust += n;
+                        g_Coins += n;
+                    } else if (step.rfind("COINS=", 0) == 0) {
+                        // COINS=<n>: wallet for shop states (never saved).
+                        g_Coins = std::atoll(step.c_str() + 6);
+                    } else if (step.rfind("WHEEL=", 0) == 0) {
+                        // WHEEL=<notches>: same sign as the GLFW wheel
+                        // callback (yoffset); negative scrolls down.
+                        g_ScrollAccum += (float)std::atof(step.c_str() + 6);
+                    } else if (step == "AUTOFIRE") {
                         g_AutoFire = true;
+                    } else if (step == "HURT") {
+                        // Same timers a real hit sets (red edge + HP pop).
+                        g_HurtVignette = 0.5f;
+                        g_HpBarPop = 0.35f;
+                    } else if (step.rfind("SPAWN=", 0) == 0) {
+                        // SPAWN=<MobKind index>: one mob 600px right of the
+                        // player, for capturing a specific enemy's visuals.
+                        const int kind = std::atoi(step.c_str() + 6);
+                        const size_t before = g_MonsterManager.monsters.size();
+                        if (kind >= 0 && kind <= (int)MobKind::MAGNETAR)
+                            g_MonsterManager.SpawnMob(screenWidth, screenHeight, 160);
+                        if (g_MonsterManager.monsters.size() > before) {
+                            Monster* mob = g_MonsterManager.monsters.back();
+                            mob->worldX = playerWin.x + playerWin.width * 0.5f + 600.0f;
+                            mob->worldY = playerWin.y + playerWin.height * 0.5f;
+                            mob->MakeKind((MobKind)kind);
+                        }
                     } else if (step.rfind("HP=", 0) == 0) {
                         // HP=<0..1>: set the player's health fraction.
                         const float f = std::clamp(
@@ -1550,6 +1607,11 @@ int main() {
                     }
                     // "WAIT" (or any other name) keeps the current scene.
                 });
+            // Scripted pointer events arrive after the normal input pass.
+            // Route them through the same toolkit hitboxes as physical clicks.
+            if (g_DebugToolkit.IsVisible() && lmb)
+                g_DebugToolkit.BeginInput(nullptr, (float)screenWidth,
+                    (float)screenHeight, mx, my, lmb, false);
             wmx = ScreenToWorldX((float)mx);
             wmy = ScreenToWorldY((float)my);
         }
@@ -1698,7 +1760,7 @@ int main() {
                         float dx = ex-pCX, dy = ey-pCY, d = dx*dx+dy*dy;
                         if (d < best) { best = d; nm = n; }
                     };
-                    for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName((int)m->kind));
+                    for (auto m  : g_MonsterManager.monsters)   if (m->alive)  consider(m->worldX,  m->worldY,  MobName(CodexMobIdForKind(m->kind)));
                     for (auto r  : g_MonsterManager.rangedMobs) if (r->alive)  consider(r->worldX,  r->worldY,  MobName(CM_SCOPE));
                     int li = LangIndex();
                     const wchar_t* FMT[3] = { L"%ls: signal dispersed", L"Dispersed by %ls", L"%ls dispersed" };
@@ -2158,6 +2220,7 @@ int main() {
 
                 // Apply each station once per fixed step.
                 UpdateGravisFields(pCX, pCY, playerControl, FIXED_DT);
+                AdvancePlayerKnockback(FIXED_DT, pCX, pCY);
                 pCX = std::max(ccX - halfW, std::min(ccX + halfW, pCX));
                 pCY = std::max(ccY + (BROWSER_CHROME_H - ccY) / zoomNow,
                                std::min(bottomLimit, pCY));
@@ -2219,6 +2282,16 @@ int main() {
                                                g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
                                                rmobMoveMult * mobSpdRamp * focusSlow,
                                                g_Stats.rotorHpMult);
+
+                    // Antares rams shove the player; dash i-frames ignore the shove.
+                    for (auto* m : g_MonsterManager.monsters) {
+                        if (!m || m->kind != MobKind::ANTARES ||
+                            (m->antaresKnockX == 0.0f && m->antaresKnockY == 0.0f))
+                            continue;
+                        if (g_PlayerRuntime.dashInvulnerability <= 0.0f)
+                            ApplyPlayerKnockback(m->antaresKnockX, m->antaresKnockY);
+                        m->antaresKnockX = m->antaresKnockY = 0.0f;
+                    }
 
                     // Large controller enemies must remain readable on-screen.
                     // Reflect their free-drift heading when the safe viewport is
@@ -2300,16 +2373,18 @@ CollisionSystem::Update(pCX, pCY,
                     g_Stats, g_GameManager.xp);
                 // Apply after crowding, pulls and weapon knockback so these
                 // enemies remain inside the camera's zoom-adjusted viewport.
-                const float genesisLeft = ScreenToWorldX(0.0f);
-                const float genesisTop = ScreenToWorldY(0.0f);
-                const float genesisRight = ScreenToWorldX((float)screenWidth);
-                const float genesisBottom = ScreenToWorldY((float)screenHeight);
+                const float viewportLeft = ScreenToWorldX(0.0f);
+                const float viewportTop = ScreenToWorldY(0.0f);
+                const float viewportRight = ScreenToWorldX((float)screenWidth);
+                const float viewportBottom = ScreenToWorldY((float)screenHeight);
                 for (auto* m : g_MonsterManager.monsters)
                     if (m->alive) {
-                        m->ConstrainGenesisToViewport(genesisLeft, genesisTop,
-                                                      genesisRight, genesisBottom);
-                        m->ConstrainGimbalToViewport(genesisLeft, genesisTop,
-                                                     genesisRight, genesisBottom);
+                        m->ConstrainGenesisToViewport(viewportLeft, viewportTop,
+                                                      viewportRight, viewportBottom);
+                        m->ConstrainGimbalToViewport(viewportLeft, viewportTop,
+                                                     viewportRight, viewportBottom);
+                        m->ConstrainRegulusToViewport(viewportLeft, viewportTop,
+                                                      viewportRight, viewportBottom);
                     }
                 if (g_Bullets.size() > 2800) {
                     g_Bullets.erase(
@@ -2416,8 +2491,10 @@ CollisionSystem::Update(pCX, pCY,
                     // permanently one level behind or discard XP.
                     constexpr int kMaxLevelUpsPerTick = 64;
                     int levelUps = 0;
+                    // atMainCap is only the state before this tick; a large
+                    // XP gain must still stop at the cap on the way up.
                     while (levelUps++ < kMaxLevelUpsPerTick &&
-                           (!atMainCap ||
+                           (g_CreativeMode ||
                             g_GameManager.playerLevel < MAIN_LEVEL_CAP)) {
                         const long long need =
                             g_ExpSystem.Required(g_GameManager.playerLevel);
@@ -2537,7 +2614,9 @@ CollisionSystem::Update(pCX, pCY,
 
 
             // ?�감 발견 ???�거�??�폭�?(존재?�면 발견 처리)
-            if (!g_MonsterManager.rangedMobs.empty()) MarkMobSeenId(CM_SCOPE);
+            for (const auto* ranged : g_MonsterManager.rangedMobs)
+                if (ranged->alive)
+                    MarkMobSeenId(CM_SCOPE);
 
             // ?�적 조건 체크 (???�수/??보유 증강 기�? ??보스 ?�적?�?처치 ?�점?�서 처리)
             {
@@ -2930,7 +3009,8 @@ CollisionSystem::Update(pCX, pCY,
                             const long long pickupXp = RangedMob::ExperienceReward(g_Stats);
                             SpawnStardust(rr->worldX, rr->worldY, 3,
                                           pCX, pCY, pickupXp);
-                            g_Stats.RegisterKill(); RegisterCodexMobKill(CM_SCOPE);
+                            g_Stats.RegisterKill();
+                            RegisterCodexMobKill(CM_SCOPE);
                             g_GameManager.scoreAccum += 300.0f;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum; lOnKill();
                         }
@@ -3110,7 +3190,10 @@ CollisionSystem::Update(pCX, pCY,
         for (auto r : g_MonsterManager.rangedMobs) {
             if (r->deathScale <= 0.0f) continue;
             float sc = r->deathScale;
-            addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc, L"LENS", 0.05f,0.07f,0.12f, 0.20f,0.75f,0.88f);
+            addW(r->worldX, r->worldY, RFW_W*sc, RFW_H*sc,
+                 L"LENS",
+                 0.05f,0.07f,0.12f,
+                 0.20f, 0.75f, 0.88f);
         }
         // 터렛 신호 프레임. 실제 터렛 영역/스크리저는 그대로 유지한다.
                 // z-order signal layer. Scissor/collision geometry is intentionally
@@ -3151,6 +3234,8 @@ CollisionSystem::Update(pCX, pCY,
             g_MonsterManager, sightPlayerX, sightPlayerY, sightPlayerSize,
             g_GameManager.currentState != GameState::DYING &&
                 g_GameManager.currentState != GameState::GAMEOVER);
+
+        DrawRegulusTethers(g_MonsterManager, g_GameTime);
 
         for (auto m : g_MonsterManager.monsters) {
             if (m->alive || m->DeathEffectVisible()) drawMob(m, g_GameTime);
@@ -3612,7 +3697,9 @@ CollisionSystem::Update(pCX, pCY,
 
                 if (st == GameState::RUNNING) {
                     wchar_t runDustHud[64];
-                    const wchar_t* runDustLabel = LangIndex() == 0 ? L"현재 별가루" : L"RUN STARDUST";
+                    const int dustLi = LangIndex();
+                    const wchar_t* runDustLabel = dustLi == 0 ? L"현재 별가루"
+                        : (dustLi == 2 ? L"現在のスターダスト" : L"RUN STARDUST");
                     swprintf_s(runDustHud, L"%ls  %lld", runDustLabel, g_RunStardust);
                     const float dustScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
                     float gdw = g_TextS.Width(runDustHud, dustScale);
@@ -3784,63 +3871,57 @@ CollisionSystem::Update(pCX, pCY,
                 float baseY2 = HudY(sh, SLOT_H + Hud::SLOT_BAR_BASE);   // HP �??�쪽(?�업?�시�???
                 int   slot   = 0;
 
-                auto drawSlot = [&](const wchar_t* tag, float remain,
-                                    float r, float g, float b) {
-                    float x = baseX + slot * (SLOT_W + SLOT_GAP);
-                    float y = baseY2;
-                    // 배경
-                    drawRect(x, y, SLOT_W, SLOT_H, 0.05f, 0.05f, 0.08f, 0.85f);
-                    // 진행??(?�→?�래 채워지지 ?��? 부�?= 쿨�???
-                    if (remain > 0.0f) {
-                        // ?�두???�버?�이 (?��? 비율만큼 ?�에?��???채�?)
-                        // remain ?�규?�는 ?�출 ?�점?�서 처리?�기 ?�려?�니 alpha 0.55 고정
-                        drawRect(x, y, SLOT_W, SLOT_H, 0.0f, 0.0f, 0.0f, 0.55f);
-                    }
-                    // 컬러 ?�두�?(?�쪽 ??
-                    drawRect(x, y, SLOT_W, 4.0f, r, g, b, 1.0f);
-                    // ?�그 (?�문/?�어 ???�토그램 ?�어?�면 ?�거)
+                // Status slots share the open-frame look of the skill keys
+                // (top rule, left rule, bottom tick, diamond) instead of a
+                // filled dark box with a thick colour bar.
+                auto drawSlot = [&](const wchar_t* tag, const wchar_t* value,
+                                    bool ready, float r, float g, float b) {
+                    const float x = baseX + slot * (SLOT_W + SLOT_GAP);
+                    const float y = baseY2;
+                    const float lineA = ready ? 0.92f : 0.46f;
+                    drawRect(x, y, SLOT_W, 1.5f * hudScale, r, g, b, lineA);
+                    drawRect(x, y + 1.5f * hudScale,
+                             1.2f * hudScale, SLOT_H - 1.5f * hudScale,
+                             r, g, b, ready ? 0.42f : 0.20f);
+                    drawRect(x + SLOT_W * 0.5f - 10.0f * hudScale,
+                             y + SLOT_H - 1.5f * hudScale,
+                             20.0f * hudScale, 1.5f * hudScale,
+                             r, g, b, ready ? 0.62f : 0.26f);
+                    drawDiamond(x + SLOT_W * 0.5f, y + 1.5f * hudScale,
+                                2.5f * hudScale, r, g, b, ready ? 0.82f : 0.40f);
                     const float tagScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
-                    g_TextS.Draw(tag, x + 4.0f * hudScale, y + 6.0f * hudScale,
-                                 tagScale, r, g, b, 1.0f);
-                    // ?��? ?�간 (?�수)
-                    if (remain > 0.0f) {
-                        wchar_t buf[16];
-                        swprintf_s(buf, L"%d", (int)(remain + 0.99f));
-                        const float cooldownScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
-                        float tw = g_TextL.Width(buf, cooldownScale);
-                        g_TextL.Draw(buf, x + (SLOT_W - tw) * 0.5f,
-                                     y + SLOT_H * 0.40f, cooldownScale, 1,1,1,0.95f);
+                    const float tagW = g_TextS.Width(tag, tagScale);
+                    g_TextS.Draw(tag, x + (SLOT_W - tagW) * 0.5f, y + 7.0f * hudScale,
+                                 tagScale, r, g, b, ready ? 1.0f : 0.62f);
+                    if (value && value[0]) {
+                        const float valueScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
+                        const float vw = g_TextL.Width(value, valueScale);
+                        g_TextL.Draw(value, x + (SLOT_W - vw) * 0.5f,
+                                     y + SLOT_H * 0.40f, valueScale, 1, 1, 1, 0.95f);
                     }
+                    ++slot;
+                };
+                auto seconds = [](float remain, wchar_t* buf, size_t n) {
+                    if (remain > 0.0f) swprintf_s(buf, n, L"%d", (int)(remain + 0.99f));
+                    else buf[0] = L'\0';
                 };
 
-                // ?�환 ?��? ??쿨다??(20 / 15 / 7.5)
+                // Bullet rain cooldown (20 / 15 / 7.5s).
                 if (g_Stats.bulletRain) {
                     float remain = g_Stats.bulletRainCooldown - g_BulletRainTimer;
                     if (remain < 0) remain = 0;
-                    drawSlot(L"RAIN", remain, 1.0f, 0.5f, 0.2f);
-                    ++slot;
+                    wchar_t buf[16]; seconds(remain, buf, 16);
+                    drawSlot(L"RAIN", buf, remain <= 0.0f, 1.0f, 0.5f, 0.2f);
                 }
                 if (g_Stats.lightStep && g_Stats.lightStepDisableTimer > 0.0f) {
-                    drawSlot(L"LSTP", g_Stats.lightStepDisableTimer,
-                             0.7f, 0.7f, 0.85f);
-                    ++slot;
+                    wchar_t buf[16]; seconds(g_Stats.lightStepDisableTimer, buf, 16);
+                    drawSlot(L"LSTP", buf, false, 0.7f, 0.7f, 0.85f);
                 }
-                // ?��??�는 죽음 ???�성 + stack (?�도 +20%/?�택)
+                // Approaching Death: active orb count (+20% orb speed per stack).
                 if (!g_ApproachOrbs.empty()) {
-                    float x = baseX + slot * (SLOT_W + SLOT_GAP);
-                    drawRect(x, baseY2, SLOT_W, SLOT_H, 0.20f, 0.0f, 0.0f, 0.85f);
-                    drawRect(x, baseY2, SLOT_W, 4.0f, 1.0f, 0.1f, 0.1f, 1.0f);
-                    g_TextS.Draw(L"DEATH", x + 2.0f * hudScale,
-                                 baseY2 + 6.0f * hudScale,
-                                 UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale),
-                                 1.0f, 0.4f, 0.4f, 1.0f);
                     wchar_t buf[8];
                     swprintf_s(buf, L"x%d", g_Stats.approachStacks);
-                    const float stackScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
-                    float tw = g_TextL.Width(buf, stackScale);
-                    g_TextL.Draw(buf, x + (SLOT_W - tw) * 0.5f,
-                                 baseY2 + SLOT_H * 0.40f, stackScale, 1,1,1,0.95f);
-                    ++slot;
+                    drawSlot(L"DEATH", buf, true, 1.0f, 0.36f, 0.38f);
                 }
             }
 

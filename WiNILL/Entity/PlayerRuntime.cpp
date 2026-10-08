@@ -24,6 +24,7 @@ void ResetPlayerSkills() {
     g_PlayerRuntime.dashActive = false;
     g_PlayerRuntime.dashProgress = 0.0f;
     g_PlayerRuntime.dashBoostShotsLeft = 0;
+    g_PlayerRuntime.knockbackVX = g_PlayerRuntime.knockbackVY = 0.0f;
     g_PlayerShield = 0.0f;
     g_PlayerShieldTimer = 0.0f;
     g_PlayerRuntime.timeStopTimer = 0.0f;
@@ -133,4 +134,24 @@ void AdvancePlayerDash(float delta, float& playerX, float& playerY) {
     playerY = g_PlayerRuntime.dashFromY +
         (g_PlayerRuntime.dashToY - g_PlayerRuntime.dashFromY) * progress;
     g_PlayerRuntime.dashInvulnerability = DASH_INVULN;
+}
+
+// Exponential decay: total travel = initial velocity / decay rate, so the
+// requested offset is covered in about a quarter second.
+static constexpr float KNOCKBACK_DECAY = 12.0f;
+
+void ApplyPlayerKnockback(float offsetX, float offsetY) {
+    g_PlayerRuntime.knockbackVX += offsetX * KNOCKBACK_DECAY;
+    g_PlayerRuntime.knockbackVY += offsetY * KNOCKBACK_DECAY;
+}
+
+void AdvancePlayerKnockback(float delta, float& playerX, float& playerY) {
+    playerX += g_PlayerRuntime.knockbackVX * delta;
+    playerY += g_PlayerRuntime.knockbackVY * delta;
+    const float keep = std::exp(-KNOCKBACK_DECAY * delta);
+    g_PlayerRuntime.knockbackVX *= keep;
+    g_PlayerRuntime.knockbackVY *= keep;
+    if (std::abs(g_PlayerRuntime.knockbackVX) < 1.0f &&
+        std::abs(g_PlayerRuntime.knockbackVY) < 1.0f)
+        g_PlayerRuntime.knockbackVX = g_PlayerRuntime.knockbackVY = 0.0f;
 }

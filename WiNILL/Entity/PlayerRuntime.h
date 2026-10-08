@@ -13,6 +13,7 @@ struct PlayerRuntimeState {
     float dashFromX = 0.0f, dashFromY = 0.0f;
     float dashToX = 0.0f, dashToY = 0.0f;
     int dashBoostShotsLeft = 0;
+    float knockbackVX = 0.0f, knockbackVY = 0.0f; // decaying shove from rams
     bool dashInputHeld = false;
     bool skillInputHeld[3] = {};
 };
@@ -56,3 +57,6 @@ void ApplyPlayerDamageProtection(float hpBefore, float& hpAfter,
 void BeginPlayerDash(float playerX, float playerY, float directionX, float directionY,
                      float minX, float maxX, float minY, float maxY);
 void AdvancePlayerDash(float delta, float& playerX, float& playerY);
+// Shove the player by roughly (offsetX, offsetY) over a short ease-out.
+void ApplyPlayerKnockback(float offsetX, float offsetY);
+void AdvancePlayerKnockback(float delta, float& playerX, float& playerY);

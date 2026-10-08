@@ -12,13 +12,15 @@ public:
     std::vector<RangedMob*> rangedMobs;
 
     float ApplyDamage(Monster& target, float damage) {
-        return ApplyMobDamage(target.hp, target.alive,
-                              target.hitFlashTimer, damage);
+        const float dealt = target.ApplyDamage(damage);
+        HandleShieldBreak(target);
+        return dealt;
     }
 
     float ApplyDamage(RangedMob& target, float damage) {
-        return ApplyMobDamage(target.hp, target.alive,
-                              target.hitFlashTimer, damage);
+        const float dealt = target.ApplyDamage(damage);
+        HandleShieldBreak(target);
+        return dealt;
     }
 
     ~MonsterManager() { Clear(); }
@@ -95,7 +97,10 @@ public:
         case MobKind::GENESIS:  tier = 4; break;
         case MobKind::GRAVIS:   tier = 3; break;
         case MobKind::QUASAR:   tier = 3; break;
+        case MobKind::REGULUS:  tier = 3; break;
+        case MobKind::MAGNETAR: tier = 3; break;
         case MobKind::GIMBAL:   tier = 2; break;
+        case MobKind::ANTARES:  tier = 2; break;
         default:                tier = 0; break;
         }
         return tier;
@@ -114,9 +119,15 @@ public:
                    float gateWX = -1.0f, float gateWY = -1.0f,
                    float gateWW = -1.0f, float gateWH = -1.0f) {
         for (auto m : monsters) {
+            if (m->kind == MobKind::MAGNETAR)
+                m->magnetarRegenRate = MagnetarRegenRate(*m);
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
                       gateWX, gateWY, gateWW, gateWH, &bullets);
         }
+
+        for (auto r : rangedMobs)
+            r->Update(playerCX, playerCY, dt, bullets, rmobMoveMult);
+        ProcessPendingShieldBreaks();
 
         UpdateGenesisHives(dt, rotorHpMult);
 
@@ -124,6 +135,8 @@ public:
         //   너무 가까우면 서로 밀어내고, 4명 이상에게 밀리면 압사 데미지
         //   summoned 몹은 더 큰 반경 (소환물 더 큼)
         ResolveMonsterCrowding(dt);
+
+        UpdateRegulusLinks(dt);
 
         monsters.erase(
             std::remove_if(monsters.begin(), monsters.end(),
@@ -137,8 +150,6 @@ public:
                 }),
             monsters.end());
 
-        for (auto r : rangedMobs)
-            r->Update(playerCX, playerCY, dt, bullets, rmobMoveMult);
         // Keep an unprocessed death until rewards and death particles exist.
         rangedMobs.erase(
             std::remove_if(rangedMobs.begin(), rangedMobs.end(),
@@ -160,6 +171,191 @@ public:
     }
 
 private:
+    static float RegulusTargetTier(const Monster& mob) {
+        switch (mob.kind) {
+        case MobKind::GENESIS: return 4.0f;
+        case MobKind::GRAVIS:
+        case MobKind::QUASAR:  return 3.0f;
+        case MobKind::MAGNETAR: return 3.0f;
+        case MobKind::GIMBAL:
+        case MobKind::ANTARES: return 2.0f;
+        case MobKind::ROTOR:
+        case MobKind::SWARM:   return 1.0f;
+        case MobKind::REGULUS: return -1.0f;
+        }
+        return 0.0f;
+    }
+
+    static int CombatTier(MobKind kind) {
+        switch (kind) {
+        case MobKind::GENESIS: return 4;
+        case MobKind::GRAVIS:
+        case MobKind::QUASAR:
+        case MobKind::REGULUS:
+        case MobKind::MAGNETAR: return 3;
+        case MobKind::GIMBAL:
+        case MobKind::ANTARES: return 2;
+        default: return 1;
+        }
+    }
+
+    float MagnetarRegenRate(const Monster& source) const {
+        constexpr float supportRadius = 360.0f;
+        constexpr float supportRadiusSq = supportRadius * supportRadius;
+        int nearby = 0;
+        for (const auto* ally : monsters) {
+            if (!ally || !ally->alive || ally == &source ||
+                CombatTier(ally->kind) < 2) continue;
+            const float dx = ally->worldX - source.worldX;
+            const float dy = ally->worldY - source.worldY;
+            if (dx * dx + dy * dy <= supportRadiusSq) ++nearby;
+        }
+        for (const auto* ranged : rangedMobs) {
+            if (!ranged || !ranged->alive) continue;
+            const float dx = ranged->worldX - source.worldX;
+            const float dy = ranged->worldY - source.worldY;
+            if (dx * dx + dy * dy <= supportRadiusSq) ++nearby;
+        }
+        return std::min(1.2f, 0.3f + nearby * 0.3f);
+    }
+
+    void BreakRegulusLink(Monster& source, RegulusLink& link) {
+        if (!link.monsterTarget && !link.rangedTarget) return;
+        const float targetX = link.monsterTarget ? link.monsterTarget->worldX
+                                                 : link.rangedTarget->worldX;
+        const float targetY = link.monsterTarget ? link.monsterTarget->worldY
+                                                 : link.rangedTarget->worldY;
+        SpawnRegulusLinkBreakParticles(
+            (source.worldX + targetX) * 0.5f,
+            (source.worldY + targetY) * 0.5f, source.color);
+        link.monsterTarget = nullptr;
+        link.rangedTarget = nullptr;
+        link.cooldown = source.alive ? Monster::REGULUS_LINK_COOLDOWN : 0.0f;
+    }
+
+    void BreakRegulusLinksTo(const Monster* target) {
+        for (auto* source : monsters) {
+            if (!source || source->kind != MobKind::REGULUS) continue;
+            for (auto& link : source->regulusLinks)
+                if (link.monsterTarget == target) BreakRegulusLink(*source, link);
+        }
+    }
+
+    void BreakRegulusLinksTo(const RangedMob* target) {
+        for (auto* source : monsters) {
+            if (!source || source->kind != MobKind::REGULUS) continue;
+            for (auto& link : source->regulusLinks)
+                if (link.rangedTarget == target) BreakRegulusLink(*source, link);
+        }
+    }
+
+    void HandleShieldBreak(Monster& target) {
+        if (!target.regulusShield.breakPending) return;
+        target.regulusShield.breakPending = false;
+        if (target.kind != MobKind::REGULUS)
+            BreakRegulusLinksTo(&target);
+    }
+
+    void HandleShieldBreak(RangedMob& target) {
+        if (!target.regulusShield.breakPending) return;
+        target.regulusShield.breakPending = false;
+        BreakRegulusLinksTo(&target);
+    }
+
+    void ProcessPendingShieldBreaks() {
+        for (auto* mob : monsters) HandleShieldBreak(*mob);
+        for (auto* mob : rangedMobs) HandleShieldBreak(*mob);
+    }
+
+    void UpdateRegulusLinks(float dt) {
+        constexpr float rangeSq = Monster::REGULUS_LINK_RANGE *
+                                  Monster::REGULUS_LINK_RANGE;
+        for (auto* source : monsters) {
+            if (source->kind != MobKind::REGULUS) continue;
+            for (auto& link : source->regulusLinks) {
+                link.cooldown = std::max(0.0f, link.cooldown - dt);
+                if (!link.monsterTarget && !link.rangedTarget) continue;
+
+                bool valid = source->alive;
+                float targetX = 0.0f, targetY = 0.0f;
+                if (link.monsterTarget) {
+                    const auto* target = link.monsterTarget;
+                    valid = valid && target->alive &&
+                            target->regulusShield.hp > 0.0f;
+                    targetX = target->worldX; targetY = target->worldY;
+                } else {
+                    const auto* target = link.rangedTarget;
+                    valid = valid && target->alive &&
+                            target->regulusShield.hp > 0.0f;
+                    targetX = target->worldX; targetY = target->worldY;
+                }
+                const float dx = targetX - source->worldX;
+                const float dy = targetY - source->worldY;
+                if (dx * dx + dy * dy > rangeSq) valid = false;
+                if (!valid) BreakRegulusLink(*source, link);
+            }
+        }
+
+        for (auto* source : monsters) {
+            if (!source->alive || source->kind != MobKind::REGULUS) continue;
+            for (auto& link : source->regulusLinks) {
+                if (link.monsterTarget || link.rangedTarget || link.cooldown > 0.0f)
+                    continue;
+
+                float bestTier = -1.0f;
+                float bestDistanceSq = rangeSq;
+                Monster* bestMonster = nullptr;
+                RangedMob* bestRanged = nullptr;
+                const auto consider = [&](float tier, float x, float y,
+                                          Monster* monster, RangedMob* ranged) {
+                    const float dx = x - source->worldX;
+                    const float dy = y - source->worldY;
+                    const float distanceSq = dx * dx + dy * dy;
+                    if (distanceSq > rangeSq) return;
+                    if (tier > bestTier ||
+                        (tier == bestTier && distanceSq < bestDistanceSq)) {
+                        bestTier = tier;
+                        bestDistanceSq = distanceSq;
+                        bestMonster = monster;
+                        bestRanged = ranged;
+                    }
+                };
+
+                for (auto* target : monsters) {
+                    if (!target->alive || target == source ||
+                        target->kind == MobKind::REGULUS ||
+                        target->regulusShield.acquiredOnce) continue;
+                    consider(RegulusTargetTier(*target), target->worldX,
+                             target->worldY, target, nullptr);
+                }
+                for (auto* target : rangedMobs) {
+                    if (!target->alive || target->regulusShield.acquiredOnce)
+                        continue;
+                    consider(2.0f, target->worldX, target->worldY,
+                             nullptr, target);
+                }
+
+                if (!bestMonster && !bestRanged) continue;
+                const float shieldHp = std::max(1.0f, source->regulusBaseHp) * 0.6f;
+                if (bestMonster) {
+                    bestMonster->regulusShield = {};
+                    bestMonster->regulusShield.acquiredOnce = true;
+                    bestMonster->regulusShield.hp = shieldHp;
+                    bestMonster->regulusShield.maxHp = shieldHp;
+                    bestMonster->regulusShield.flashTimer = MOB_HIT_FLASH_TIME;
+                    link.monsterTarget = bestMonster;
+                } else {
+                    bestRanged->regulusShield = {};
+                    bestRanged->regulusShield.acquiredOnce = true;
+                    bestRanged->regulusShield.hp = shieldHp;
+                    bestRanged->regulusShield.maxHp = shieldHp;
+                    bestRanged->regulusShield.flashTimer = MOB_HIT_FLASH_TIME;
+                    link.rangedTarget = bestRanged;
+                }
+            }
+        }
+    }
+
     void UpdateGenesisHives(float dt, float rotorHpMult) {
         static constexpr float ORBIT_DURATION = 5.5f;
         static constexpr float OPEN_SPEED = 0.86f;
