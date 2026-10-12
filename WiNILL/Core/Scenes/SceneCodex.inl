@@ -202,15 +202,14 @@ void Scene_Codex(const SceneCtx& c) {
             const float ry = rad * ((ring == 0) ? 0.66f : (0.23f + 0.10f * (float)ring));
             const float rot = now * (0.07f + 0.018f * (float)ring) + (float)ring * 0.72f;
             const int steps = 72;
-            for (int s = 0; s < steps; ++s) {
-                if (((s + ring) % 5) == 2) continue;
+            for (int s = 0; s < steps; ++s) {   // continuous (no dashes)
                 float p0 = (float)s / (float)steps;
-                float p1 = ((float)s + 0.56f) / (float)steps;
+                float p1 = ((float)s + 1.0f) / (float)steps;
                 float x0, y0, x1, y1;
                 ep(p0 * 6.2831853f, rx, ry, rot, x0, y0);
                 ep(p1 * 6.2831853f, rx, ry, rot, x1, y1);
                 DrawVisibleConstellLine(x0, y0, x1, y1, tLine, r, g, b,
-                                        (ring == 0 ? 0.155f : 0.105f) * a);
+                                        (ring == 0 ? 0.100f : 0.068f) * a);
             }
         }
 

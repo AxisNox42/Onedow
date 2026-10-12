@@ -108,6 +108,8 @@ public:
         if (hitFlashTimer < 0.0f) hitFlashTimer = 0.0f;
         regulusShield.flashTimer = std::max(0.0f,
                                             regulusShield.flashTimer - dt);
+        regulusShield.grantTimer = std::max(0.0f,
+                                            regulusShield.grantTimer - dt);
 
         // Wander
         wanderTimer += dt;

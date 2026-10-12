@@ -11,6 +11,14 @@ public:
     std::vector<Monster*>   monsters;
     std::vector<RangedMob*> rangedMobs;
 
+    // Afterglow of an instant Regulus shield laser: fixed endpoints captured
+    // at the shot, purely visual (the shield is already granted).
+    struct RegulusBeam {
+        float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+        float age = 0.0f;
+    };
+    std::vector<RegulusBeam> regulusBeams;
+
     float ApplyDamage(Monster& target, float damage) {
         const float dealt = target.ApplyDamage(damage);
         HandleShieldBreak(target);
@@ -96,7 +104,7 @@ public:
         switch (m->kind) {
         case MobKind::GENESIS:  tier = 4; break;
         case MobKind::GRAVIS:   tier = 3; break;
-        case MobKind::QUASAR:   tier = 3; break;
+        case MobKind::QUASAR:   tier = 4; break;
         case MobKind::REGULUS:  tier = 3; break;
         case MobKind::MAGNETAR: tier = 3; break;
         case MobKind::GIMBAL:   tier = 2; break;
@@ -129,20 +137,27 @@ public:
             r->Update(playerCX, playerCY, dt, bullets, rmobMoveMult);
         ProcessPendingShieldBreaks();
 
-        UpdateGenesisHives(dt, rotorHpMult);
+        // rotorHpMult is the Rotor-only HP upgrade; Genesis children scale
+        // with the Genesis' own spawn ramp instead.
+        (void)rotorHpMult;
+        UpdateGenesisLaunchers(dt, playerCX, playerCY);
 
         // ── 소프트 콜리전 (잡몹 간) ──
         //   너무 가까우면 서로 밀어내고, 4명 이상에게 밀리면 압사 데미지
         //   summoned 몹은 더 큰 반경 (소환물 더 큼)
         ResolveMonsterCrowding(dt);
 
-        UpdateRegulusLinks(dt);
+        UpdateRegulusShots(dt);
+        UpdateRegulusBeams(dt);
+        // Death animations (Quasar supernova) run on the gameplay clock; a
+        // dead mob stays until its animation ends.
+        UpdateDeathEffects(dt);
 
         monsters.erase(
             std::remove_if(monsters.begin(), monsters.end(),
                 [](Monster* m) {
                     if (!m->alive && m->scored && m->exploded &&
-                        !m->DeathEffectVisible()) {
+                        !m->DeathEffectVisible() && !m->dustPending) {
                         delete m;
                         return true;
                     }
@@ -164,6 +179,7 @@ public:
     }
 
     void Clear() {
+        regulusBeams.clear();
         for (auto m : monsters) delete m;
         monsters.clear();
         for (auto r : rangedMobs) delete r;
@@ -219,47 +235,14 @@ private:
         return std::min(1.2f, 0.3f + nearby * 0.3f);
     }
 
-    void BreakRegulusLink(Monster& source, RegulusLink& link) {
-        if (!link.monsterTarget && !link.rangedTarget) return;
-        const float targetX = link.monsterTarget ? link.monsterTarget->worldX
-                                                 : link.rangedTarget->worldX;
-        const float targetY = link.monsterTarget ? link.monsterTarget->worldY
-                                                 : link.rangedTarget->worldY;
-        SpawnRegulusLinkBreakParticles(
-            (source.worldX + targetX) * 0.5f,
-            (source.worldY + targetY) * 0.5f, source.color);
-        link.monsterTarget = nullptr;
-        link.rangedTarget = nullptr;
-        link.cooldown = source.alive ? Monster::REGULUS_LINK_COOLDOWN : 0.0f;
-    }
-
-    void BreakRegulusLinksTo(const Monster* target) {
-        for (auto* source : monsters) {
-            if (!source || source->kind != MobKind::REGULUS) continue;
-            for (auto& link : source->regulusLinks)
-                if (link.monsterTarget == target) BreakRegulusLink(*source, link);
-        }
-    }
-
-    void BreakRegulusLinksTo(const RangedMob* target) {
-        for (auto* source : monsters) {
-            if (!source || source->kind != MobKind::REGULUS) continue;
-            for (auto& link : source->regulusLinks)
-                if (link.rangedTarget == target) BreakRegulusLink(*source, link);
-        }
-    }
-
+    // Granted shields are independent of their Regulus, so a break only
+    // clears the pending flag (particles are spawned at the hit).
     void HandleShieldBreak(Monster& target) {
-        if (!target.regulusShield.breakPending) return;
         target.regulusShield.breakPending = false;
-        if (target.kind != MobKind::REGULUS)
-            BreakRegulusLinksTo(&target);
     }
 
     void HandleShieldBreak(RangedMob& target) {
-        if (!target.regulusShield.breakPending) return;
         target.regulusShield.breakPending = false;
-        BreakRegulusLinksTo(&target);
     }
 
     void ProcessPendingShieldBreaks() {
@@ -267,159 +250,172 @@ private:
         for (auto* mob : rangedMobs) HandleShieldBreak(*mob);
     }
 
-    void UpdateRegulusLinks(float dt) {
-        constexpr float rangeSq = Monster::REGULUS_LINK_RANGE *
-                                  Monster::REGULUS_LINK_RANGE;
-        for (auto* source : monsters) {
-            if (source->kind != MobKind::REGULUS) continue;
-            for (auto& link : source->regulusLinks) {
-                link.cooldown = std::max(0.0f, link.cooldown - dt);
-                if (!link.monsterTarget && !link.rangedTarget) continue;
+    static bool RegulusEligible(const EnemyShieldState& shield) {
+        return !shield.acquiredOnce && shield.hp <= 0.0f;
+    }
 
-                bool valid = source->alive;
-                float targetX = 0.0f, targetY = 0.0f;
-                if (link.monsterTarget) {
-                    const auto* target = link.monsterTarget;
-                    valid = valid && target->alive &&
-                            target->regulusShield.hp > 0.0f;
-                    targetX = target->worldX; targetY = target->worldY;
-                } else {
-                    const auto* target = link.rangedTarget;
-                    valid = valid && target->alive &&
-                            target->regulusShield.hp > 0.0f;
-                    targetX = target->worldX; targetY = target->worldY;
-                }
-                const float dx = targetX - source->worldX;
-                const float dy = targetY - source->worldY;
-                if (dx * dx + dy * dy > rangeSq) valid = false;
-                if (!valid) BreakRegulusLink(*source, link);
-            }
-        }
-
+    // Every REGULUS_SHOT_INTERVAL a Regulus fires one instant laser at an
+    // ally picked uniformly at random among eligible enemies within
+    // REGULUS_SHOT_RANGE. The shield is granted on the spot.
+    void UpdateRegulusShots(float dt) {
+        constexpr float rangeSq = Monster::REGULUS_SHOT_RANGE *
+                                  Monster::REGULUS_SHOT_RANGE;
+        std::vector<Monster*> monsterPool;
+        std::vector<RangedMob*> rangedPool;
         for (auto* source : monsters) {
             if (!source->alive || source->kind != MobKind::REGULUS) continue;
-            for (auto& link : source->regulusLinks) {
-                if (link.monsterTarget || link.rangedTarget || link.cooldown > 0.0f)
-                    continue;
+            source->regulusShotTimer -= dt;
+            if (source->regulusShotTimer > 0.0f) continue;
 
-                float bestTier = -1.0f;
-                float bestDistanceSq = rangeSq;
-                Monster* bestMonster = nullptr;
-                RangedMob* bestRanged = nullptr;
-                const auto consider = [&](float tier, float x, float y,
-                                          Monster* monster, RangedMob* ranged) {
-                    const float dx = x - source->worldX;
-                    const float dy = y - source->worldY;
-                    const float distanceSq = dx * dx + dy * dy;
-                    if (distanceSq > rangeSq) return;
-                    if (tier > bestTier ||
-                        (tier == bestTier && distanceSq < bestDistanceSq)) {
-                        bestTier = tier;
-                        bestDistanceSq = distanceSq;
-                        bestMonster = monster;
-                        bestRanged = ranged;
-                    }
-                };
+            monsterPool.clear();
+            rangedPool.clear();
+            const auto inRange = [&](float x, float y) {
+                const float dx = x - source->worldX, dy = y - source->worldY;
+                return dx * dx + dy * dy <= rangeSq;
+            };
+            for (auto* target : monsters)
+                if (target->alive && target->kind != MobKind::REGULUS &&
+                    RegulusEligible(target->regulusShield) &&
+                    inRange(target->worldX, target->worldY))
+                    monsterPool.push_back(target);
+            for (auto* target : rangedMobs)
+                if (target->alive && RegulusEligible(target->regulusShield) &&
+                    inRange(target->worldX, target->worldY))
+                    rangedPool.push_back(target);
 
-                for (auto* target : monsters) {
-                    if (!target->alive || target == source ||
-                        target->kind == MobKind::REGULUS ||
-                        target->regulusShield.acquiredOnce) continue;
-                    consider(RegulusTargetTier(*target), target->worldX,
-                             target->worldY, target, nullptr);
-                }
-                for (auto* target : rangedMobs) {
-                    if (!target->alive || target->regulusShield.acquiredOnce)
-                        continue;
-                    consider(2.0f, target->worldX, target->worldY,
-                             nullptr, target);
-                }
-
-                if (!bestMonster && !bestRanged) continue;
-                const float shieldHp = std::max(1.0f, source->regulusBaseHp) * 0.6f;
-                if (bestMonster) {
-                    bestMonster->regulusShield = {};
-                    bestMonster->regulusShield.acquiredOnce = true;
-                    bestMonster->regulusShield.hp = shieldHp;
-                    bestMonster->regulusShield.maxHp = shieldHp;
-                    bestMonster->regulusShield.flashTimer = MOB_HIT_FLASH_TIME;
-                    link.monsterTarget = bestMonster;
-                } else {
-                    bestRanged->regulusShield = {};
-                    bestRanged->regulusShield.acquiredOnce = true;
-                    bestRanged->regulusShield.hp = shieldHp;
-                    bestRanged->regulusShield.maxHp = shieldHp;
-                    bestRanged->regulusShield.flashTimer = MOB_HIT_FLASH_TIME;
-                    link.rangedTarget = bestRanged;
-                }
+            const int total = (int)(monsterPool.size() + rangedPool.size());
+            if (total == 0) {
+                source->regulusShotTimer = 0.2f;   // look again shortly
+                continue;
             }
+            const int pick = rand() % total;
+            EnemyShieldState* shield = nullptr;
+            float tx = 0.0f, ty = 0.0f, bodyRadius = 18.0f;
+            if (pick < (int)monsterPool.size()) {
+                Monster* t = monsterPool[pick];
+                shield = &t->regulusShield;
+                tx = t->worldX; ty = t->worldY;
+                bodyRadius = (t->summoned ? 28.0f : 18.0f) * t->sizeScale;
+            } else {
+                RangedMob* t = rangedPool[pick - monsterPool.size()];
+                shield = &t->regulusShield;
+                tx = t->worldX; ty = t->worldY;
+                bodyRadius = RangedMob::VISUAL_BASE_PX;
+            }
+            const float shieldHp = std::max(1.0f, source->regulusBaseHp) * 0.6f;
+            *shield = {};
+            shield->acquiredOnce = true;
+            shield->hp = shield->maxHp = shieldHp;
+            shield->flashTimer = MOB_HIT_FLASH_TIME;
+            shield->grantTimer = SHIELD_GRANT_TIME;
+            SpawnRegulusShieldGrantParticles(tx, ty, bodyRadius);
+            regulusBeams.push_back({ source->worldX, source->worldY, tx, ty, 0.0f });
+            source->regulusShotTimer = Monster::REGULUS_SHOT_INTERVAL;
         }
     }
 
-    void UpdateGenesisHives(float dt, float rotorHpMult) {
-        static constexpr float ORBIT_DURATION = 5.5f;
-        static constexpr float OPEN_SPEED = 0.86f;
-        static constexpr float SPAWN_INITIAL_DELAY = 0.55f;
-        static constexpr float SPAWN_HOLD = 0.65f;
-        static constexpr float SPAWN_INTERVAL = 0.62f;
-        static constexpr float CLOSE_SPEED = 2.2f;
-        static constexpr int SPAWN_COUNT = 4;
+    void UpdateRegulusBeams(float dt) {
+        for (auto& beam : regulusBeams) beam.age += dt;
+        regulusBeams.erase(std::remove_if(regulusBeams.begin(), regulusBeams.end(),
+            [](const RegulusBeam& b) { return b.age >= Monster::REGULUS_BEAM_TIME; }),
+            regulusBeams.end());
+    }
 
+    // Genesis shell-core cycle (Astral_Enemy_Blueprints_v3 2.3): track the
+    // player while the three shells charge, lock the aim at 3/3, throw all
+    // three Swarms through the muzzle gap, regroup. Thrown Swarms use their
+    // own cap.
+    void UpdateGenesisLaunchers(float dt, float playerCX, float playerCY) {
         std::vector<Monster*> born;
         const int total = (int)monsters.size();
-        for (auto m : monsters) {
+
+        for (auto* m : monsters) {
             if (!m->alive || m->kind != MobKind::GENESIS) continue;
-            m->hiveOrbitAngle += dt * 0.36f;
             m->hivePulseTimer = std::max(0.0f, m->hivePulseTimer - dt);
+            m->genesisRecoil = std::max(0.0f, m->genesisRecoil - dt * 4.0f);
+            m->spawnTimer += dt;
+            const float toX = playerCX - m->worldX, toY = playerCY - m->worldY;
+            const float toAngle = atan2f(toY, toX);
 
             if (m->hivePhase == 0) {
-                m->spawnTimer += dt;
-                if (m->spawnTimer >= ORBIT_DURATION) {
+                float turn = toAngle - m->hiveOrbitAngle;
+                while (turn > 3.14159265f) turn -= 6.28318531f;
+                while (turn < -3.14159265f) turn += 6.28318531f;
+                const float maxTurn = Monster::GENESIS_TURN_RATE * dt;
+                m->hiveOrbitAngle += std::clamp(turn, -maxTurn, maxTurn);
+                m->hiveOpenFactor = 0.0f;
+                // The shell ring makes one full turn per charge, easing in
+                // and out, so the muzzle gap stops on the facing at 3/3.
+                const float fullTurn = 6.2831853f;
+                const float u = std::min(1.0f, m->spawnTimer / Monster::GENESIS_TRACK_TIME);
+                m->genesisShellSpin = m->genesisSpinBase + fullTurn * u * u * (3.0f - 2.0f * u);
+                if (m->GenesisStacks() >= Monster::GENESIS_STACKS) {
+                    m->genesisSpinBase = 0.0f;
+                    m->genesisShellSpin = m->genesisSpinBase;
+                    // Lock the aim now so the aim lines tell the truth.
                     m->hivePhase = 1;
                     m->spawnTimer = 0.0f;
+                    m->hiveSpawnCount = 0;
+                    m->genesisAimAngle = m->hiveOrbitAngle;
+                    // Landing points, rolled once so the aim lines show
+                    // exactly where each Swarm will go: the first on the
+                    // player, the rest uniform over a disc around them.
+                    for (int i = 0; i < 3; ++i) {
+                        const float ur = (float)(rand() % 1001) / 1000.0f;
+                        const float ua = (float)(rand() % 1001) / 1000.0f;
+                        const float r = i == 0 ? 0.0f
+                            : Monster::GENESIS_SCATTER_RADIUS * std::sqrt(ur);
+                        const float a = ua * 6.2831853f;
+                        m->genesisShotX[i] = playerCX + cosf(a) * r;
+                        m->genesisShotY[i] = playerCY + sinf(a) * r;
+                    }
                 }
             } else if (m->hivePhase == 1) {
-                m->hiveOpenFactor += OPEN_SPEED * dt;
-                if (m->hiveOpenFactor >= 1.0f) {
-                    m->hiveOpenFactor = 1.0f;
+                m->hiveOpenFactor = std::min(1.0f, m->spawnTimer / Monster::GENESIS_AIM_TIME);
+                if (m->spawnTimer >= Monster::GENESIS_AIM_TIME) {
                     m->hivePhase = 2;
-                    m->spawnTimer = 0.0f;
-                    m->hiveSpawned = false;
-                    m->hiveSpawnCount = 0;
+                    // First Swarm is fed into the core, then thrown.
+                    m->spawnTimer = Monster::GENESIS_THROW_GAP - Monster::GENESIS_FEED_TIME;
                 }
             } else if (m->hivePhase == 2) {
-                if (!m->hiveSpawned) {
-                    m->spawnTimer += dt;
-                    const float delay = m->hiveSpawnCount == 0
-                        ? SPAWN_INITIAL_DELAY : SPAWN_INTERVAL;
-                    if (m->spawnTimer >= delay) {
-                        m->spawnTimer = 0.0f;
-                        if (m->hiveSpawnCount < SPAWN_COUNT &&
-                            total + (int)born.size() < 130) {
-                            const float laneAngle = m->hiveOrbitAngle +
-                                ((m->hiveSpawnCount & 1) ? 3.1415926f : 0.0f);
-                            Monster* child = new Monster(m->worldX, m->worldY, 0.55f);
-                            child->hp *= rotorHpMult;
-                            child->BeginGenesisEgress(cosf(laneAngle), sinf(laneAngle));
-                            born.push_back(child);
-                            m->hivePulseTimer = 0.22f;
-                        }
-                        ++m->hiveSpawnCount;
-                        if (m->hiveSpawnCount >= SPAWN_COUNT ||
-                            total + (int)born.size() >= 130)
-                            m->hiveSpawned = true;
+                m->hiveOpenFactor = 1.0f;
+                if (m->hiveSpawnCount < Monster::GENESIS_STACKS &&
+                    m->spawnTimer >= Monster::GENESIS_THROW_GAP) {
+                    m->spawnTimer = 0.0f;
+                    int ownAlive = 0;
+                    for (auto* s : monsters)
+                        if (s->alive && s->genesisThrown && s->thrownOwnerId == m->genesisId)
+                            ++ownAlive;
+                    for (auto* s : born)
+                        if (s->thrownOwnerId == m->genesisId) ++ownAlive;
+                    if (ownAlive < Monster::GENESIS_THROWN_CAP &&
+                        total + (int)born.size() < 130) {
+                        const int shot = std::min(m->hiveSpawnCount, 2);
+                        const float hullR = 18.0f * m->sizeScale * 2.05f;
+                        const float mx = m->worldX + cosf(m->genesisAimAngle) * hullR * 0.9f;
+                        const float my = m->worldY + sinf(m->genesisAimAngle) * hullR * 0.9f;
+                        Monster* child = new Monster(mx, my, 1.0f);
+                        child->MakeKind(MobKind::SWARM);
+                        child->hp *= m->genesisChildHpMult;
+                        child->BeginThrownFlight(m->genesisShotX[shot],
+                                                 m->genesisShotY[shot]);
+                        child->thrownOwnerId = m->genesisId;
+                        born.push_back(child);
                     }
-                } else {
-                    m->spawnTimer += dt;
-                    if (m->spawnTimer >= SPAWN_HOLD) {
-                        m->hivePhase = 3;
-                        m->spawnTimer = 0.0f;
-                    }
+                    ++m->hiveSpawnCount;
+                    m->hivePulseTimer = 0.22f;
+                    m->genesisRecoil = 1.0f;
+                }
+                if (m->hiveSpawnCount >= Monster::GENESIS_STACKS &&
+                    m->spawnTimer >= Monster::GENESIS_THROW_END) {
+                    // Shells are empty: regroup, then charge the next volley.
+                    m->hivePhase = 3;
+                    m->spawnTimer = 0.0f;
                 }
             } else {
-                m->hiveOpenFactor -= CLOSE_SPEED * dt;
-                if (m->hiveOpenFactor <= 0.0f) {
-                    m->hiveOpenFactor = 0.0f;
+                m->hiveOpenFactor = std::max(0.0f, 1.0f - m->spawnTimer /
+                                                   Monster::GENESIS_RECOVER_TIME);
+                if (m->spawnTimer >= Monster::GENESIS_RECOVER_TIME) {
                     m->hivePhase = 0;
                     m->spawnTimer = 0.0f;
                     m->hiveSpawnCount = 0;
@@ -435,11 +431,12 @@ private:
         constexpr float kCrushDps = 50.0f;
         std::vector<int> pushCounts(monsters.size(), 0);
         for (size_t i = 0; i < monsters.size(); ++i) {
-            if (!monsters[i]->alive) continue;
+            // Thrown Swarms in flight pass through other enemies.
+            if (!monsters[i]->alive || monsters[i]->thrownPhase == 1) continue;
             const int tierI = CollisionTier(monsters[i]);
             const float radiusI = monsters[i]->summoned ? kSummonedGap : kNormalGap;
             for (size_t j = i + 1; j < monsters.size(); ++j) {
-                if (!monsters[j]->alive) continue;
+                if (!monsters[j]->alive || monsters[j]->thrownPhase == 1) continue;
                 float dx = monsters[j]->worldX - monsters[i]->worldX;
                 float dy = monsters[j]->worldY - monsters[i]->worldY;
                 const float distanceSq = dx * dx + dy * dy;

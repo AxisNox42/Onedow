@@ -892,14 +892,13 @@ void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
         };
 
         const int arcSteps = 42;
-        for (int i = 0; i < arcSteps; ++i) {
-            if ((i % 4) == 1) continue;
+        for (int i = 0; i < arcSteps; ++i) {   // continuous (no dashes)
             float a0 = (float)i / (float)arcSteps * 6.2831853f;
-            float a1 = ((float)i + 0.55f) / (float)arcSteps * 6.2831853f;
+            float a1 = ((float)i + 1.0f) / (float)arcSteps * 6.2831853f;
             float x1, y1, x2, y2;
             orbitPoint(a0, rx0, ry0, rot0, x1, y1);
             orbitPoint(a1, rx0, ry0, rot0, x2, y2);
-            LogoLine(x1, y1, x2, y2, 1.1f, 0.18f, 0.62f, 0.96f, 0.28f * orbitA);
+            LogoLine(x1, y1, x2, y2, 1.1f, 0.18f, 0.62f, 0.96f, 0.17f * orbitA);
         }
 
         const int nodeCount = 7;

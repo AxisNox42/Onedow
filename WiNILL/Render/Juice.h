@@ -186,7 +186,7 @@ inline void DrawStardustPickups() {
 
 inline void SpawnStardust(float x, float y, int totalValue,
                           float /*playerX*/, float /*playerY*/,
-                          long long xpReward = 0) {
+                          long long xpReward = 0, float ringRadius = 0.0f) {
     // XP를 지급해야 하는 처치라면, 기존에 화폐 별가루를 주지 않던 몹도
     // XP를 담은 최소 1개 조각을 반드시 생성한다.
     if (totalValue <= 0) {
@@ -200,9 +200,11 @@ inline void SpawnStardust(float x, float y, int totalValue,
             totalValue -= denomination;
             // Scatter briefly before the pickup update starts homing.
             const float angle = (float)(rand() % 628) * 0.01f;
-            const float speed = 120.0f + (float)(rand() % 80);
+            // ringRadius > 0: born on a ring (e.g. a supernova shock front)
+            // and thrown outward faster, riding the blast.
+            const float speed = (ringRadius > 0.0f ? 220.0f : 120.0f) + (float)(rand() % 80);
             g_StardustPickups.push_back({
-                x, y,
+                x + cosf(angle) * ringRadius, y + sinf(angle) * ringRadius,
                 cosf(angle) * speed, sinf(angle) * speed,
                 0.0f, denomination, 0, true
             });

@@ -28,6 +28,10 @@ struct DebugToolkitContext {
     std::function<void()> syncRuntime;
     std::function<int(int mobKind, int count)> spawnMob;
     std::function<int(int count)> spawnRanged;
+    // Elite-kill hit stop experiment toggle (Stats tab); not saved.
+    bool* eliteKillHitStop = nullptr;
+    // MAGNETAR field ripple (deflect look D2) toggle (Stats tab); not saved.
+    bool* magnetarFieldRipple = nullptr;
 };
 
 class DebugToolkit {

@@ -11,6 +11,29 @@
 #include "Juice.h"
 #include "../Core/Codex.h"
 
+// Kill stardust: spawned now, or held on the mob for a delayed death and
+// released on the blast ring (Quasar supernova, Genesis first wave).
+inline void SpawnKillStardust(Monster& m, int value, float playerCX, float playerCY,
+                              long long xp) {
+    if (m.kind == MobKind::QUASAR || m.kind == MobKind::GENESIS) {
+        m.dustPending = true;
+        m.pendingDustValue = value;
+        m.pendingDustXp = xp;
+        return;
+    }
+    SpawnStardust(m.worldX, m.worldY, value, playerCX, playerCY, xp);
+}
+
+// Releases held kill stardust whose moment has come. Call every frame.
+inline void ReleasePendingStardust(MonsterManager& manager, float playerCX, float playerCY) {
+    for (auto* m : manager.monsters) {
+        if (!m || !m->TakePendingDust()) continue;
+        const float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
+        SpawnStardust(m->worldX, m->worldY, m->pendingDustValue, playerCX, playerCY,
+                      m->pendingDustXp, base * 0.9f);
+    }
+}
+
 static inline float SegDistSq(float px, float py, float ax, float ay,
                               float bx, float by) {
     const float abx = bx - ax;
@@ -127,7 +150,12 @@ public:
                             isCrit ? 1.0f : bullet.color.r,
                             isCrit ? 0.85f : bullet.color.g,
                             isCrit ? 0.3f : bullet.color.b);
-                if (!monster->alive) {
+                if (!monster->alive && monster->genesisThrown) {
+                    // Thrown Genesis Swarms count as kills but pay nothing.
+                    monster->scored = true;
+                    AddKillCombo();
+                    RegisterCodexMobKill(monster->kind);
+                } else if (!monster->alive) {
                     monster->scored = true;
                     AddKillCombo();
                     float baseXp = 0.0f;
@@ -136,9 +164,8 @@ public:
                     const float rewardMult = MobRewardMult(monster->kind);
                     baseScore *= rewardMult;
                     const long long pickupXp = MobExperienceReward(monster->kind, stats);
-                    SpawnStardust(monster->worldX, monster->worldY,
-                                  StardustRewardFor(monster->kind), playerCX,
-                                  playerCY, pickupXp);
+                    SpawnKillStardust(*monster, StardustRewardFor(monster->kind),
+                                      playerCX, playerCY, pickupXp);
                     stats.RegisterKill();
                     RegisterCodexMobKill(monster->kind);
                     scoreAccum += baseScore;

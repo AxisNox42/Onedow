@@ -14,6 +14,14 @@ inline Language g_Language = Language::KR;
 
 // ONEDOW_SMOKE 환경변수로 실행한 스모크 캡처 세션. 세이브를 쓰지 않는다.
 inline bool g_SmokeCapture = false;
+// Smoke-only: augment slot to keyboard-focus once the selector accepts input
+// (the selector resets focus on entry, so AUGSEL queues it here).
+inline int g_SmokeAugFocus = -1;
+// Smoke-only game-time scale (SLOW=x step), for frame-by-frame captures.
+inline float g_SmokeTimeScale = 1.0f;
+// MAGNETAR deflect look D2 (field rim dents and ripples where a shot hit).
+// Runtime toggle in the Debug Toolkit Stats tab; on at launch, not saved.
+inline bool g_MagnetarFieldRipple = true;
 inline constexpr int LANG_COUNT = 3;
 
 inline int LangIndex() {

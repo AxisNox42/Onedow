@@ -812,15 +812,14 @@ void Scene_Shop(const SceneCtx& c) {
             for (int ring = 0; ring < 4; ++ring) {
                 const float rr = chartR * (0.525f + 0.125f * (float)ring);
                 const int ringSegments = 30;
-                for (int j = 0; j < ringSegments; ++j) {
-                    if ((j + ring * 2) % 5 == 3) continue;
+                for (int j = 0; j < ringSegments; ++j) {   // continuous (no dashes)
                     const float a0 = railStartAngle + (float)j * railSweep / (float)ringSegments;
-                    const float a1 = railStartAngle + ((float)j + 0.66f) * railSweep / (float)ringSegments;
+                    const float a1 = railStartAngle + ((float)j + 1.0f) * railSweep / (float)ringSegments;
                     LogoLine(chartCX + cosf(a0) * rr, chartCY + sinf(a0) * rr,
                              chartCX + cosf(a1) * rr, chartCY + sinf(a1) * rr,
                              (ring == 3 ? 1.0f : 0.65f) * ui,
                              fieldR, fieldG, fieldB,
-                             (ring == 3 ? 0.095f : 0.042f) * staticGeometryA);
+                             (ring == 3 ? 0.062f : 0.028f) * staticGeometryA);
                 }
             }
             // Keep one faint, unbroken rail underneath the segmented Codex
@@ -851,17 +850,16 @@ void Scene_Shop(const SceneCtx& c) {
                 const float start = 0.08f + 0.05f * (float)track;
                 const float sweep = 2.96f - 0.10f * (float)track;
                 const int segments = 24;
-                for (int seg = 0; seg < segments; ++seg) {
-                    if ((seg + track * 2) % 5 == 2) continue;
+                for (int seg = 0; seg < segments; ++seg) {   // continuous (no dashes)
                     const float a0 = start + sweep * (float)seg / (float)segments;
-                    const float a1 = start + sweep * ((float)seg + 0.62f) / (float)segments;
+                    const float a1 = start + sweep * ((float)seg + 1.0f) / (float)segments;
                     LogoLine(chartCX + cosf(a0) * rx,
                              chartCY + sinf(a0) * ry,
                              chartCX + cosf(a1) * rx,
                              chartCY + sinf(a1) * ry,
                              (0.52f + 0.12f * (float)track) * ui,
                              fieldR, fieldG, fieldB,
-                             (0.072f - 0.012f * (float)track) * staticGeometryA);
+                             (0.047f - 0.008f * (float)track) * staticGeometryA);
                 }
                 const float anchorA = start + sweep * 0.86f;
                 DrawVisibleConstellNode(chartCX + cosf(anchorA) * rx,

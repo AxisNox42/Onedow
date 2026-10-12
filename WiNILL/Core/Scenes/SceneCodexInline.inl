@@ -810,20 +810,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
                           curRoot.r * 0.10f, curRoot.g * 0.10f, curRoot.b * 0.12f,
                           0.075f * rightWake);
     BindMainShader();
-    for (int ring = 0; ring < 4; ++ring) {
-        const float rr = chartR * (0.56f + 0.145f * (float)ring);
-        const int segments = 72;
-        for (int j = 0; j < segments; ++j) {
-            if ((j + ring * 2) % 6 == 3) continue;
-            const float a0 = (float)j * 6.2831853f / (float)segments;
-            const float a1 = ((float)j + 0.64f) * 6.2831853f / (float)segments;
-            LogoLine(chartCX + cosf(a0) * rr, chartCY + sinf(a0) * rr,
-                     chartCX + cosf(a1) * rr, chartCY + sinf(a1) * rr,
-                     (ring == 3 ? 1.0f : 0.65f) * uiS,
-                     curRoot.r, curRoot.g, curRoot.b,
-                     (ring == 3 ? 0.16f : 0.075f) * wake);
-        }
-    }
+    // (The decorative chart rings on the right were removed per QA; the
+    // contrast discs above are the only right-hand backdrop.)
     // Connected observation rail. Entries slide one row at a time along this
     // datum, including the wrapped first↔last transition.
     auto railXAt = [&](float row) {
@@ -871,8 +859,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float reveal = s_itemReveal[slot] * wake;
         if (reveal <= 0.005f) continue;
         const float active = std::max(s_itemHover[slot], distanceFade * 0.38f);
-        const float miniX = ax + ((itm.category == 0 && itm.key == CM_QUASAR && isSel)
-                                  ? 22.0f * uiS : 0.0f);
+        const bool isQuasar = itm.category == 0 && itm.key == CM_QUASAR;
+        const float miniX = ax + (isQuasar && isSel ? 32.0f * uiS : 0.0f);
         // Keep the gameplay silhouette readable, but compact enough that the
         // wider entity row spacing still shows roughly 3-4 records per page.
         const float focusScale = std::max(0.0f, std::min(1.0f, s_itemHover[slot]));
@@ -883,6 +871,10 @@ static void Scene_CodexInline(const SceneCtx& c) {
         const float signalR = itm.seen ? itm.r : 0.26f;
         const float signalG = itm.seen ? itm.g : 0.32f;
         const float signalB = itm.seen ? itm.b : 0.40f;
+        const float lineLength = (250.0f + 130.0f * s_itemHover[slot]) * uiS;
+        const float lineEndX = isSel
+            ? std::min(ax + lineLength, rightX - 18.0f * uiS)
+            : ax + lineLength;
         // Local black halo around each record keeps the constellation core
         // legible without darkening the entire archive surface.
         DrawConstellationDisc(miniX, ay, miniR * 2.80f,
@@ -894,6 +886,15 @@ static void Scene_CodexInline(const SceneCtx& c) {
                               signalR, signalG, signalB,
                               (itm.seen ? (0.055f + 0.095f * active)
                                         : (0.018f + 0.030f * active)) * reveal);
+        if (isQuasar && isSel) {
+            // Let the selected Quasar's core sit on the observation line;
+            // draw the line first so the bright core stays legible above it.
+            LogoLine(miniX - miniR, ay, lineEndX, ay,
+                     (0.96f + 0.56f * s_itemHover[slot]) * uiS,
+                     signalR, signalG, signalB,
+                     (itm.seen ? 0.12f : 0.06f
+                         + 0.12f * active) * reveal);
+        }
         if (itm.category == 0 && !itm.seen) {
             DrawUnknownConstellation(miniX, ay, miniR * 1.12f,
                                      now * 0.18f, (0.58f + 0.30f * active)
@@ -903,15 +904,12 @@ static void Scene_CodexInline(const SceneCtx& c) {
                                      now * 0.18f, signalR, signalG, signalB,
                                      (0.28f + 0.66f * active) * reveal, uiS);
         }
-        const float lineLength = (250.0f + 130.0f * s_itemHover[slot]) * uiS;
-        const float lineEndX = isSel
-            ? std::min(ax + lineLength, rightX - 18.0f * uiS)
-            : ax + lineLength;
-        LogoLine(miniX + miniR * 0.68f, ay, lineEndX, ay,
-                 (0.96f + 0.56f * s_itemHover[slot]) * uiS,
-                 signalR, signalG, signalB,
-                 (itm.seen ? 0.12f : 0.06f
-                     + 0.12f * active) * reveal);
+        if (!(isQuasar && isSel))
+            LogoLine(miniX + miniR * 0.68f, ay, lineEndX, ay,
+                     (0.96f + 0.56f * s_itemHover[slot]) * uiS,
+                     signalR, signalG, signalB,
+                     (itm.seen ? 0.12f : 0.06f
+                         + 0.12f * active) * reveal);
         DrawVisibleConstellNode(lineEndX, ay, (isSel ? 4.0f : 2.8f) * uiS,
                                 signalR, signalG, signalB,
                                 (itm.seen ? 0.20f : 0.10f

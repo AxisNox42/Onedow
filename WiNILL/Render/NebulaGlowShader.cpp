@@ -123,6 +123,11 @@ void DrawNebulaGlow(float cx, float cy, float radius,
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(v), v);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);   // 표준 블렌드 복원
+    // Restore the standard blend with separate alpha accumulation. A plain
+    // glBlendFunc here also scales the framebuffer alpha by source alpha, so
+    // every translucent draw after the glow punched a see-through hole in the
+    // transparent overlay window (the augment detail panel showed this).
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                        GL_ONE,       GL_ONE_MINUS_SRC_ALPHA);
     BindMainShader();
 }

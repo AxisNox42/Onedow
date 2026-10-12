@@ -29,11 +29,29 @@ struct EnemyShieldState {
     float hp = 0.0f;
     float maxHp = 0.0f;
     float flashTimer = 0.0f;
+    float grantTimer = 0.0f;   // counts down from SHIELD_GRANT_TIME on grant
     bool acquiredOnce = false;
     bool breakPending = false;
 };
 
 inline const glm::vec3 REGULUS_SHIELD_COLOR(0.722f, 0.937f, 1.0f);
+inline constexpr float SHIELD_GRANT_TIME = 0.25f;
+
+// Small ice-blue shard burst where a Regulus shield is granted.
+inline void SpawnRegulusShieldGrantParticles(float x, float y, float bodyRadius) {
+    EnemyParticleBurst burst;
+    burst.count = 14;
+    burst.life = 0.30f;
+    burst.randomPlacement = true;
+    burst.startRadius = 0.9f;
+    burst.speedMin = bodyRadius * 1.2f;
+    burst.speedMax = bodyRadius * 2.2f;
+    burst.sizeMin = 2.0f;
+    burst.sizeMax = 4.5f;
+    burst.colorLift = 0.55f;
+    burst.rangeScale = 1.6f;
+    SpawnEnemyParticleBurst(x, y, REGULUS_SHIELD_COLOR, bodyRadius, burst);
+}
 
 inline void SpawnRegulusShieldBreakParticles(float x, float y, glm::vec3 color,
                                              float bodyRadius, bool reinforced) {

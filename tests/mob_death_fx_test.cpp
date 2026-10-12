@@ -351,7 +351,7 @@ static void CheckPriorityAndDelay() {
     const float x = delayed->x, life = delayed->life;
     UpdateEnemyParticles(0.02f);
     assert(delayed->x == x && delayed->life == life && delayed->delay > 0.0f);
-    UpdateEnemyParticles(0.06f);
+    UpdateEnemyParticles(delayed->delay + 0.01f);   // past its own (wave) delay
     assert(delayed->delay == 0.0f && delayed->life < life);
     CheckBounds();
 }

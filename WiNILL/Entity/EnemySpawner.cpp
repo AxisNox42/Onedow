@@ -28,6 +28,11 @@ static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob
     const bool gravisReady = elapsedSeconds >= 150.0f;
     const int gravisChance = elapsedSeconds >= 420.0f ? 4 : 2;
 
+    int genesisCount = 0;
+    for (auto* existing : monsters.monsters)
+        if (existing->alive && existing->kind == MobKind::GENESIS) ++genesisCount;
+    const bool genesisReady = elapsedSeconds >= 90.0f && genesisCount < 2;
+
     int quasarCount = 0;
     for (auto* existing : monsters.monsters)
         if (existing->alive && existing->kind == MobKind::QUASAR) ++quasarCount;
@@ -69,7 +74,7 @@ static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob
     } else if (antaresReady && antaresCount < antaresCap &&
                (rand() % 100) < 6) {
         mob.MakeKind(MobKind::ANTARES);
-    } else if ((rand() % 100) < 12) {
+    } else if (genesisReady && (rand() % 100) < 12) {
         mob.MakeKind(MobKind::GENESIS);
         mob.spawnAnchorX = 160.0f +
             (float)(rand() % (screenWidth > 360 ? screenWidth - 320 : 1));
@@ -84,7 +89,8 @@ static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob
         if ((rand() % 100) < swarmChance) {
             int swarmCount = 0;
             for (auto* existing : monsters.monsters)
-                if (existing->alive && existing->kind == MobKind::SWARM) ++swarmCount;
+                if (existing->alive && existing->kind == MobKind::SWARM &&
+                    !existing->genesisThrown) ++swarmCount;   // thrown: own cap
             const float capMul = 0.10f + 0.08f * swarmT;
             int swarmCap = (int)((float)mobCap * capMul);
             if (swarmCap < 2) swarmCap = 2;

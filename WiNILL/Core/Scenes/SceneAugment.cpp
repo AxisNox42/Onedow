@@ -898,6 +898,11 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     if (!inExit) enterT = std::min(1.0f, enterT + delta / 1.20f);
     const float enterE = AugSelectionEase(enterT);
     const bool inputReady = enterT >= 0.66f && !inExit;
+    if (g_SmokeCapture && g_SmokeAugFocus >= 0 && inputReady) {
+        g_HoveredAug = g_SmokeAugFocus;
+        g_GameManager.augmentKeyboardFocus = true;
+        g_SmokeAugFocus = -1;
+    }
     const int focus = g_HoveredAug >= 0 && g_HoveredAug < count
         ? g_HoveredAug : -1;
 
@@ -1079,12 +1084,8 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
                    stateR, stateG, stateB,
                    enterE * sceneAlpha * 0.34f,
                    now, false);
-    drawRect(layout.panelX - 30.0f * layout.ui,
-             layout.panelY - 28.0f * layout.ui,
-             layout.panelW + 18.0f * layout.ui,
-             layout.panelH + 38.0f * layout.ui,
-             0.0f, 0.006f, 0.016f,
-             enterE * sceneAlpha * 0.20f);
+    // No hard-edged plate behind the detail panel; the soft radial field
+    // below is the only local contrast (see the no-backdrop-plate rule).
     DrawRadialGradientRect(
         layout.panelX - 80.0f * layout.ui,
         layout.panelY - 20.0f * layout.ui,

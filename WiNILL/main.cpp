@@ -854,6 +854,24 @@ static void SyncGameplayTelemetry() {
     BeginGameplayTelemetryIfNeeded();
 }
 
+// Experiment (Docs/QA/Onedow도파민 시스템 변경 계획.md 3-1): a short hit stop
+// when a Genesis or Quasar dies while running. Runtime toggle only (Debug
+// Toolkit Stats tab), on at launch and never saved; it does not affect any
+// other hit stop. Remove this block, its call and the toolkit binding to
+// revert.
+static bool g_EliteKillHitStop = true;
+// 0.03s alone was not felt; paired with the kill distortion (chromatic split
+// + inward ripple, drawn by drawMob) it is raised to 0.06s.
+static constexpr float ELITE_KILL_HIT_STOP = 0.06f;   // boss: revisit once bosses exist
+
+static void TriggerEliteKillHitStop(Monster& m) {
+    if (!g_EliteKillHitStop) return;
+    if (g_GameManager.currentState != GameState::RUNNING) return;
+    if (m.kind != MobKind::GENESIS && m.kind != MobKind::QUASAR) return;
+    TriggerHitStop(ELITE_KILL_HIT_STOP);   // longest remaining wins; no stacking
+    m.eliteKillFx = true;                  // kill distortion (EntityDraw drawMob)
+}
+
 int main() {
     CrashHandler::Install();   // 강종(E23) 추적 ??처리 ?????�외 ??로그+미니?�프
     srand((unsigned)time(NULL));
@@ -1156,7 +1174,9 @@ int main() {
                 ++spawned;
             }
             return spawned;
-        }
+        },
+        &g_EliteKillHitStop,
+        &g_MagnetarFieldRipple
     });
 
     float lastFrame        = 0.0f;
@@ -1177,6 +1197,7 @@ int main() {
         float now   = (float)glfwGetTime();
         float delta = now - lastFrame;
         if (delta > 0.1f) delta = 0.1f;
+        delta *= g_SmokeTimeScale;   // 1 outside smoke captures
         lastFrame = now;
 
         // ?�래??추적 브레?�크????마�?�??�태�??�겨 강종(E23) ??로그�??�치 ?�정
@@ -1201,7 +1222,9 @@ int main() {
         if (focus.lost) {
             g_GameManager.spaceReleased = true;
             g_GameManager.escReleased = true;
-            if (g_GameManager.currentState == GameState::RUNNING) {
+            // Smoke captures run unattended; a stray focus change must not
+            // pause them mid-sequence.
+            if (g_GameManager.currentState == GameState::RUNNING && !g_SmokeRun.Active()) {
                 g_GameManager.pauseResumeState = GameState::RUNNING;
                 g_GameManager.currentState = GameState::PAUSED;
             }
@@ -1537,8 +1560,7 @@ int main() {
                                     break;
                                 }
                             }
-                            g_HoveredAug = 0;
-                            gm.augmentKeyboardFocus = true;
+                            g_SmokeAugFocus = 0;
                         }
                     } else if (step.rfind("GIVE=", 0) == 0) {
                         // GIVE=<AugDef::name>: grant an augment to the run.
@@ -1574,6 +1596,38 @@ int main() {
                         // Same timers a real hit sets (red edge + HP pop).
                         g_HurtVignette = 0.5f;
                         g_HpBarPop = 0.35f;
+                    } else if (step.rfind("SLOW=", 0) == 0) {
+                        // SLOW=x: scale game time (e.g. 0.2) to capture fast
+                        // animations frame by frame.
+                        g_SmokeTimeScale = std::clamp((float)atof(step.c_str() + 5), 0.02f, 1.0f);
+                    } else if (step == "KILL") {
+                        // KILL: every living enemy dies now through the normal
+                        // death pass (rewards, death animations).
+                        for (auto* mob : g_MonsterManager.monsters)
+                            if (mob->alive) { mob->hp = 0.0f; mob->alive = false; }
+                    } else if (step == "SHIELD") {
+                        // SHIELD: give every living non-Regulus enemy a full
+                        // Regulus shield, to check the shield mark on each kind.
+                        auto grant = [](EnemyShieldState& shield) {
+                            shield = {};
+                            shield.acquiredOnce = true;
+                            shield.hp = shield.maxHp = 200.0f;
+                        };
+                        for (auto* mob : g_MonsterManager.monsters)
+                            if (mob->alive && mob->kind != MobKind::REGULUS)
+                                grant(mob->regulusShield);
+                        for (auto* mob : g_MonsterManager.rangedMobs)
+                            if (mob->alive) grant(mob->regulusShield);
+                    } else if (step == "SPAWN=SCOPE") {
+                        // SPAWN=SCOPE: one ranged Scope 600px right of the player.
+                        const size_t before = g_MonsterManager.rangedMobs.size();
+                        g_MonsterManager.SpawnRangedMob(screenWidth, screenHeight,
+                                                        1.0f, (int)before + 1);
+                        if (g_MonsterManager.rangedMobs.size() > before) {
+                            RangedMob* mob = g_MonsterManager.rangedMobs.back();
+                            mob->worldX = playerWin.x + playerWin.width * 0.5f + 600.0f;
+                            mob->worldY = playerWin.y + playerWin.height * 0.5f;
+                        }
                     } else if (step.rfind("SPAWN=", 0) == 0) {
                         // SPAWN=<MobKind index>: one mob 600px right of the
                         // player, for capturing a specific enemy's visuals.
@@ -2282,6 +2336,8 @@ int main() {
                                                g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
                                                rmobMoveMult * mobSpdRamp * focusSlow,
                                                g_Stats.rotorHpMult);
+                    // Held kill stardust (Quasar supernova) comes out at the blast.
+                    ReleasePendingStardust(g_MonsterManager, pCX, pCY);
 
                     // Antares rams shove the player; dash i-frames ignore the shove.
                     for (auto* m : g_MonsterManager.monsters) {
@@ -2429,16 +2485,19 @@ CollisionSystem::Update(pCX, pCY,
                 //   + 분열�??�망 ???��? ?�식 2마리 (�?2?��?까�?)
                 for (auto m : g_MonsterManager.monsters) {
                     if (!m->alive && !m->exploded) {
-                        if (!m->scored) {       // ?�직 보상 ??받�? 죽음 ???�산
+                        if (!m->scored && m->genesisThrown) {
+                            m->scored = true;   // thrown Genesis Swarm: no reward
+                        } else if (!m->scored) {       // ?�직 보상 ??받�? 죽음 ???�산
                             m->scored = true;
                             float xpB, scB; MobKillReward(m->kind, xpB, scB);
                             float rwm = MobRewardMult(m->kind); scB *= rwm;
                             const long long pickupXp = MobExperienceReward(m->kind, g_Stats);
-                            SpawnStardust(m->worldX, m->worldY,
-                                          StardustRewardFor(m->kind), pCX, pCY, pickupXp);
+                            SpawnKillStardust(*m, StardustRewardFor(m->kind),
+                                              pCX, pCY, pickupXp);
                             creditKill(CodexMobIdForKind(m->kind), scB);
                         }
                         m->SpawnDeathEffect((float)now);
+                        TriggerEliteKillHitStop(*m);
                         // ??��???�리????죽을 ???�져 ?�레?�어?�게 광역 ?�해
                         // ?�쇄 ??��(DEATH_BLAST) ???�망 ?�치?�서 주�? ?�에�?AoE
                         //   ?�프: ?��?지 0.8??.3 + ??���?죽�? 몹�? ?�시 ???�짐(무한?�쇄 차단)
@@ -2993,8 +3052,8 @@ CollisionSystem::Update(pCX, pCY,
                             float bx, bs; MobKillReward(m->kind, bx, bs);
                             float rwm = MobRewardMult(m->kind); bs *= rwm;
                             const long long pickupXp = MobExperienceReward(m->kind, g_Stats);
-                            SpawnStardust(m->worldX, m->worldY,
-                                          StardustRewardFor(m->kind), pCX, pCY, pickupXp);
+                            SpawnKillStardust(*m, StardustRewardFor(m->kind),
+                                              pCX, pCY, pickupXp);
                             g_Stats.RegisterKill(); RegisterCodexMobKill(m->kind);
                             g_GameManager.scoreAccum += bs;
                             g_GameManager.score = (long long)g_GameManager.scoreAccum;
@@ -3183,7 +3242,7 @@ CollisionSystem::Update(pCX, pCY,
         for (auto m : g_MonsterManager.monsters) {
             if (!m->alive || m->kind != MobKind::GENESIS) continue;
             float w = GENESIS_WIN_W * m->sizeScale;
-            addW(m->worldX, m->worldY, w, w, L"HIVE", 0.06f,0.10f,0.09f, 0.20f,0.85f,0.65f);
+            addW(m->worldX, m->worldY, w, w, L"HIVE", 0.10f,0.04f,0.05f, 0.85f,0.20f,0.24f);
         }
         // Swarm app window composite pass.
         // ?�거�?�?(?�환 ?�서)
@@ -3235,7 +3294,7 @@ CollisionSystem::Update(pCX, pCY,
             g_GameManager.currentState != GameState::DYING &&
                 g_GameManager.currentState != GameState::GAMEOVER);
 
-        DrawRegulusTethers(g_MonsterManager, g_GameTime);
+        DrawRegulusBeams(g_MonsterManager, g_GameTime);
 
         for (auto m : g_MonsterManager.monsters) {
             if (m->alive || m->DeathEffectVisible()) drawMob(m, g_GameTime);
