@@ -658,6 +658,26 @@ static void ResetAugmentDerivedRuntime() {
     ResetPlayerSkills();
 }
 
+enum class LevelUpSource {
+    EXPERIENCE,   // XP crossed a threshold in the fixed step
+    MANUAL,       // creative/debug F key
+};
+
+// Records one level gained (playerLevel/xp already advanced) and queues its
+// augment reward. Creative manual grabs skip the paired debuff but may roll
+// debuff cards; every other level-up pairs a buff with a debuff.
+static void GrantLevelUpReward(int oldLevel, XpAmount need, XpAmount oldXp,
+                               LevelUpSource source) {
+    const bool manual = source == LevelUpSource::MANUAL;
+    g_GameplayTelemetry.RecordLevelUp(g_GameTime, oldLevel,
+                                      g_GameManager.playerLevel, need,
+                                      oldXp, g_GameManager.xp, manual);
+    if (manual && g_CreativeMode)
+        g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
+    else
+        g_GameManager.QueueAugmentReward(true, /*allowDebuff=*/false);
+}
+
 // Hits taken while this is true are undone at the end of the fixed step.
 static bool IsPlayerDamageProtected() {
     return g_PlayerRuntime.dashInvulnerability > 0.0f ||
@@ -2193,20 +2213,9 @@ int main() {
                 // ?�드박스: ?�버?�도 카드 ?�???�어??무엇?�든 집을 ???�게
                 const int oldLevel = g_GameManager.playerLevel;
                 const XpAmount oldXp = g_GameManager.xp;
-                 ++g_GameManager.playerLevel;
-                 g_GameManager.xp = 0;
-                g_GameplayTelemetry.RecordLevelUp(g_GameTime,
-                                                  oldLevel,
-                                                  g_GameManager.playerLevel,
-                                                  0,
-                                                  oldXp,
-                                                  g_GameManager.xp,
-                                                  true);
-                if (g_CreativeMode) {
-                    g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
-                } else {
-                    g_GameManager.QueueAugmentReward(true, /*allowDebuff=*/false);
-                }
+                ++g_GameManager.playerLevel;
+                g_GameManager.xp = 0;
+                GrantLevelUpReward(oldLevel, 0, oldXp, LevelUpSource::MANUAL);
                 g_GameManager.ActivateNextAugmentReward();
                 g_CreativeFreeGrab = false;
                 s_fkeyReleased = false;
@@ -2629,15 +2638,8 @@ CollisionSystem::Update(pCX, pCY,
                         const XpAmount oldXp = g_GameManager.xp;
                         if (!g_ExpSystem.ConsumeNextLevel(g_GameManager.xp,
                                                           g_GameManager.playerLevel)) break;
-                        const XpAmount need = oldXp - g_GameManager.xp;
-                        g_GameplayTelemetry.RecordLevelUp(g_GameTime,
-                                                          oldLevel,
-                                                          g_GameManager.playerLevel,
-                                                          need,
-                                                          oldXp,
-                                                          g_GameManager.xp,
-                                                          false);
-                        g_GameManager.QueueAugmentReward(true, false);
+                        GrantLevelUpReward(oldLevel, oldXp - g_GameManager.xp,
+                                           oldXp, LevelUpSource::EXPERIENCE);
                     }
                     } // !atMainCap
 
