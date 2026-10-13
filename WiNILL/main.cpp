@@ -3772,9 +3772,9 @@ CollisionSystem::Update(pCX, pCY,
                 case GameState::AUG_REPLACE:       Scene_AugReplace(ctx);       break;
                 default: break;
                 }
-                if ((st == GameState::PAUSED && g_ShowPauseInventory) ||
-                    st == GameState::AUG_SELECT ||
-                    st == GameState::DEBUFF_SELECT || st == GameState::AUG_REPLACE)
+                // Owned-augment list lives only in the pause inventory; the
+                // augment selection/replace screens stay uncluttered.
+                if (st == GameState::PAUSED && g_ShowPauseInventory)
                     Scene_OwnedAugPanel(ctx);
             }
             // Scene_Paused can switch to SETTINGS during this render pass.
