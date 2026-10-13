@@ -264,6 +264,7 @@
     <ClInclude Include="Render\Juice.h" />
     <ClInclude Include="Render\EnemyParticles.h" />
     <ClInclude Include="Render\UiColors.h" />
+    <ClInclude Include="Render\Easing.h" />
     <ClInclude Include="Render\UiLayout.h" />
     <ClInclude Include="Render\TextRenderer.h" />
     <ClInclude Include="System\Audio.h" />
