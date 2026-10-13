@@ -55,11 +55,6 @@ static float TarotClamp01(float v) {
     return std::max(0.0f, std::min(1.0f, v));
 }
 
-static float TarotEaseOut(float t) {
-    const float inv = 1.0f - TarotClamp01(t);
-    return 1.0f - inv * inv * inv;
-}
-
 static void TarotSegment(float x1, float y1, float x2, float y2, float width,
                          float r, float g, float b, float a) {
     const float dx = x2 - x1;
@@ -492,12 +487,6 @@ static float AugSelectionClamp(float v) {
     return std::max(0.0f, std::min(1.0f, v));
 }
 
-static float AugSelectionEase(float v) {
-    const float t = AugSelectionClamp(v);
-    const float inv = 1.0f - t;
-    return 1.0f - inv * inv * inv;
-}
-
 static float AugSelectionSmooth(float speed, float delta) {
     return 1.0f - expf(-std::max(0.0f, speed) *
                        std::max(0.0f, delta));
@@ -876,7 +865,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     }
 
     if (!inExit) enterT = std::min(1.0f, enterT + delta / 1.20f);
-    const float enterE = AugSelectionEase(enterT);
+    const float enterE = EaseOutCubic(enterT);
     const bool inputReady = enterT >= 0.66f && !inExit;
     if (g_SmokeCapture && g_SmokeAugFocus >= 0 && inputReady) {
         g_HoveredAug = g_SmokeAugFocus;
@@ -902,7 +891,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     panelT += ((focus >= 0 && !inExit ? 1.0f : 0.0f) - panelT) *
               AugSelectionSmooth(10.0f, delta);
 
-    const float decel = AugSelectionEase(
+    const float decel = EaseOutCubic(
         AugSelectionClamp((enterT - 0.12f) / 0.78f));
     const float entrySpeed = 0.90f + (0.065f - 0.90f) * decel;
     // Keep one shared angular velocity for the whole orbit. Hovering ramps
@@ -912,7 +901,7 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     hoverMotionT += (hoverTarget - hoverMotionT) *
                     AugSelectionSmooth(focus >= 0 ? 11.0f : 8.0f, delta);
     const float hoverOrbitSpeed = 0.065f +
-                                  0.075f * AugSelectionEase(hoverMotionT);
+                                  0.075f * EaseOutCubic(hoverMotionT);
     const float targetSpeed = focus >= 0 ? hoverOrbitSpeed : entrySpeed;
     orbitSpeed += (targetSpeed - orbitSpeed) *
                   AugSelectionSmooth(focus >= 0 ? 8.5f : 4.5f, delta);
@@ -947,9 +936,9 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
         const float radiusScale = count == 1 ? 0.72f : 1.0f;
         orbitX[i] = layout.orbitCX + cosf(angle) * layout.orbitR * radiusScale;
         orbitY[i] = layout.orbitCY + sinf(angle) * layout.orbitR * radiusScale;
-        reveal[i] = AugSelectionEase(
+        reveal[i] = EaseOutCubic(
             AugSelectionClamp((enterT - (float)i * 0.07f) / 0.62f));
-        const float grow = AugSelectionEase(focusT[i]);
+        const float grow = EaseOutCubic(focusT[i]);
         // Hover magnifies the constellation exactly where it lives on the
         // orbit. Only confirmation is allowed to pull it into the centre.
         drawX[i] = layout.orbitCX + (orbitX[i] - layout.orbitCX) * reveal[i];
@@ -1007,9 +996,9 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
     const float stateG = isDebuff ? 0.14f : 0.84f;
     const float stateB = isDebuff ? 0.18f : 0.98f;
     const float collapseT = inExit
-        ? AugSelectionEase(AugSelectionClamp(g_AugExitT / 0.55f)) : 0.0f;
+        ? EaseOutCubic(AugSelectionClamp(g_AugExitT / 0.55f)) : 0.0f;
     const float novaT = inExit
-        ? AugSelectionEase(AugSelectionClamp((g_AugExitT - 0.55f) / 0.40f)) : 0.0f;
+        ? EaseOutCubic(AugSelectionClamp((g_AugExitT - 0.55f) / 0.40f)) : 0.0f;
     const float sceneAlpha = inExit
         ? 1.0f - AugSelectionClamp((g_AugExitT - 1.12f) / 0.50f) : 1.0f;
 
@@ -1034,11 +1023,11 @@ static void Scene_AugSelectConstellationPolished(const SceneCtx& c) {
 
         float speedScale = 0.72f;
         if (cycle < kShieldAccel) {
-            activeShieldPulse = AugSelectionEase(cycle / kShieldAccel);
+            activeShieldPulse = EaseOutCubic(cycle / kShieldAccel);
             speedScale = 0.72f + activeShieldPulse * 3.10f;
         } else if (cycle < kShieldAccel + kShieldDecel) {
             const float t = (cycle - kShieldAccel) / kShieldDecel;
-            const float ease = AugSelectionEase(t);
+            const float ease = EaseOutCubic(t);
             activeShieldPulse = 1.0f - ease * 0.78f;
             speedScale = 3.82f - ease * 3.10f;
         } else {
@@ -1495,7 +1484,7 @@ static void Scene_AugReplaceCards(const SceneCtx& c) {
     }
     enterT = std::min(1.0f, enterT + delta / 0.36f);
     const bool exiting = g_RepExitT >= 0.0f;
-    const float exitT = exiting ? TarotEaseOut(TarotClamp01(g_RepExitT / 0.28f)) : 0.0f;
+    const float exitT = exiting ? EaseOutCubic(TarotClamp01(g_RepExitT / 0.28f)) : 0.0f;
     const int n = std::max(0, std::min(32, g_GameManager.replaceChoiceCount));
     const int visible = std::min(n, 9);
     const bool pointerMoved = prevMx < 0.0 ||
@@ -1550,7 +1539,7 @@ static void Scene_AugReplaceCards(const SceneCtx& c) {
         g_RepExitSlot = g_HoveredAug;
     }
 
-    const float enterE = TarotEaseOut(enterT);
+    const float enterE = EaseOutCubic(enterT);
     const float overlay = enterE * (1.0f - exitT);
     BindMainShader();
     drawRect(0, 0, sw, sh, 0.025f, 0.010f, 0.045f, overlay * 0.78f);
@@ -1577,9 +1566,9 @@ static void Scene_AugReplaceCards(const SceneCtx& c) {
         const AugDef& def = ALL_AUGS[idx];
         float r, g, b;
         GetRarityColor(def.rarity, r, g, b);
-        const float stagger = TarotEaseOut(TarotClamp01((enterT - i * 0.05f) / 0.72f));
+        const float stagger = EaseOutCubic(TarotClamp01((enterT - i * 0.05f) / 0.72f));
         TarotCardPose p = PoseFor(i, (1.0f - stagger) * 54.0f);
-        const float hT = TarotEaseOut(hoverT[i]);
+        const float hT = EaseOutCubic(hoverT[i]);
         p.cy -= hT * 14.0f;
         p.w *= 1.0f + hT * 0.045f;
         p.h *= 1.0f + hT * 0.045f;

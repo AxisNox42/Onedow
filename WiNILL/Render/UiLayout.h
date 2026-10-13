@@ -34,6 +34,13 @@ inline float Smoothstep(float t) {
     return t * t * (3.0f - 2.0f * t);
 }
 
+// Cubic ease-out on a clamped [0,1] input: fast start, soft landing.
+inline float EaseOutCubic(float t) {
+    t = std::max(0.0f, std::min(1.0f, t));
+    const float inv = 1.0f - t;
+    return 1.0f - inv * inv * inv;
+}
+
 inline constexpr float kOutgameTransitionDuration = 0.40f;
 inline float SceneTransitionEase(float t) {
     t = std::max(0.0f, std::min(1.0f, t));
