@@ -40,6 +40,7 @@
 #include "EnemySpawner.h"
 #include "ProjectileSystem.h"
 #include "AugmentSlots.h"
+#include "GameplayTime.h"
 #include "Codex.h"
 #include "CollisionSystem.h"
 #include "KillRewards.h"      // main.cpp kill paths (common collection, laser)
@@ -2219,10 +2220,11 @@ int main() {
         // --- ?�트?�톱: ???�벤??직후 ?�깐 ?��??�이???��? (?�더??계속) ---
         if (g_HitStopTimer > 0.0f) g_HitStopTimer -= delta;
 
-        // --- Fixed timestep (DYING = 0.15× ?�로??모션, ?�트?�톱 = ?�전 ?��?) ---
-        float physDelta = (g_GameManager.currentState == GameState::DYING)
-                          ? delta * 0.15f : delta;
-        if (g_HitStopTimer > 0.0f) physDelta = 0.0f;   // ��Ʈ��ž �� ���� ���� �̽���
+        // --- Fixed timestep: speed comes from GameplayTime.h (hit-stop, death slow-mo) ---
+        GameplayTimeInputs timeInputs;
+        timeInputs.hitStop = g_HitStopTimer > 0.0f;
+        timeInputs.dying = g_GameManager.currentState == GameState::DYING;
+        const float physDelta = ComputeGameplayDelta(delta, timeInputs);
         accumulator += physDelta;
         while (accumulator >= FIXED_DT) {
             if (g_GameManager.ShouldUpdate()) {
@@ -2434,7 +2436,10 @@ int main() {
                     ReleasePendingStardust(g_MonsterManager, pCX, pCY);
 
                     // Antares rams shove the player; dash i-frames ignore the shove.
+                    // A run that hits the map edge stuns it there instead.
                     for (auto* m : g_MonsterManager.monsters) {
+                        if (m) m->ConfineAntares(viewport.left, viewport.top,
+                                                 viewport.right, viewport.bottom);
                         if (!m || m->kind != MobKind::ANTARES ||
                             (m->antaresKnockX == 0.0f && m->antaresKnockY == 0.0f))
                             continue;

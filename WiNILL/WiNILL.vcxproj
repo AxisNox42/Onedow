@@ -233,6 +233,7 @@
     <ClInclude Include="Core\Scenes\Scenes.h" />
     <ClInclude Include="Core\Scenes\WindowChrome.h" />
     <ClInclude Include="Core\GameManager.h" />
+    <ClInclude Include="Core\GameplayTime.h" />
     <ClInclude Include="Core\Meta.h" />
     <ClInclude Include="Entity\Augment.h" />
     <ClInclude Include="Core\AugmentSlots.h" />
