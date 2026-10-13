@@ -62,8 +62,8 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"ESC — 일시정지(재개·설정·메뉴) / Space — READY 화면에서 전투 시작, 일시정지 중 재개 / "
         L"마우스를 카드·아이콘 위에 올리면 상세 설명이 표시됩니다",
 
-        L"적 처치 → 경험치(EXP) → 레벨업 순간 시간이 느려집니다 / "
-        L"이어서 증강 카드 3장이 자동으로 열립니다 / "
+        L"적 처치 → 경험치(EXP) → 레벨업 / "
+        L"레벨업하면 증강 카드 3장이 자동으로 열립니다 / "
         L"숫자키 1·2·3으로 후보를 고르고 Space로 확정합니다 / "
         L"증강은 공격·방어·이동·스킬·경제 등 빌드를 결정합니다. 중복·시너지를 고려하세요 / "
         L"일부 증강은 Q/E/R 액티브를 해금하거나 기존 스킬을 강화합니다 / "
@@ -107,8 +107,8 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"ESC — pause menu / Space — start from READY, resume from pause / "
         L"Hover cards and icons for full descriptions",
 
-        L"Kills → XP → on level-up, time slows down / "
-        L"Then 3 augment cards open on their own / "
+        L"Kills → XP → level-up / "
+        L"On level-up, 3 augment cards open on their own / "
         L"Keys 1·2·3 select; Space confirms / "
         L"Augments define your build: damage, defense, mobility, skills, economy / "
         L"Some unlock or upgrade Q/E/R actives / "
@@ -152,8 +152,8 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"ESC — 一時停止 / Space — READYから開始、停止中は再開 / "
         L"カード·アイコンにホバーで詳細表示",
 
-        L"撃破→経験値→レベルアップの瞬間に時間が減速 / "
-        L"続いて強化カード3枚が自動で開きます / "
+        L"撃破→経験値→レベルアップ / "
+        L"レベルアップすると強化カード3枚が自動で開きます / "
         L"1·2·3で選択、Spaceで確定 / "
         L"強化は攻撃·防御·移動·スキル·経済などビルドを決めます / "
         L"一部はQ/E/Rアクティブの解放·強化になります / "

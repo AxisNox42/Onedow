@@ -8,46 +8,39 @@ static bool Near(float a, float b) { return std::fabs(a - b) < 1e-5f; }
 int main() {
     using T = LevelUpTransition;
     T t;
-    assert(!t.Active() && t.TimeScale() == 1.0f && t.Progress() == 0.0f);
+    assert(!t.Active() && t.Progress() == 0.0f);
     assert(!t.Update(1.0f));   // inactive: never fires
 
-    // Starts at full speed and eases down monotonically to the minimum.
+    // Runs for DURATION of real time, progress rising, then fires once.
     t.Begin();
-    assert(t.Active() && Near(t.TimeScale(), 1.0f));
-    float prev = t.TimeScale();
+    assert(t.Active() && t.Progress() == 0.0f);
     const float step = 1.0f / 120.0f;
+    float prev = 0.0f;
     int frames = 0;
     bool fired = false;
     while (!fired && frames < 1000) {
         fired = t.Update(step);
         ++frames;
         if (!fired) {
-            const float s = t.TimeScale();
-            assert(s <= prev + 1e-6f);
-            assert(s >= T::MIN_SCALE - 1e-6f);
-            prev = s;
+            assert(t.Progress() >= prev && t.Progress() <= 1.0f);
+            prev = t.Progress();
         }
     }
     assert(fired);
-    assert(Near(prev, T::MIN_SCALE));   // held at the minimum before firing
-    const float expectedFrames = T::TOTAL_DURATION / step;
-    assert(std::fabs(frames - expectedFrames) <= 1.5f);
-
-    // Fires exactly once and resets to normal speed.
-    assert(!t.Active() && t.TimeScale() == 1.0f);
+    assert(std::fabs(frames - T::DURATION / step) <= 1.5f);
+    assert(!t.Active() && t.Progress() == 0.0f);
     assert(!t.Update(step));
 
-    // Halfway through the slow-down the scale is strictly between the ends.
+    // Halfway point.
     t.Begin();
-    assert(!t.Update(T::SLOW_DURATION * 0.5f));
-    assert(t.TimeScale() < 1.0f && t.TimeScale() > T::MIN_SCALE);
+    assert(!t.Update(T::DURATION * 0.5f));
+    assert(Near(t.Progress(), 0.5f));
 
-    // Zero and negative deltas do not advance; cancel restores full speed.
-    const float before = t.Progress();
+    // Zero and negative deltas do not advance; cancel stops it.
     assert(!t.Update(0.0f) && !t.Update(-1.0f));
-    assert(Near(t.Progress(), before));
+    assert(Near(t.Progress(), 0.5f));
     t.Cancel();
-    assert(!t.Active() && t.TimeScale() == 1.0f);
+    assert(!t.Active() && t.Progress() == 0.0f);
 
     // One huge frame (e.g. a hitch) completes it in a single update.
     t.Begin();
@@ -56,9 +49,9 @@ int main() {
 
     // Begin restarts from the top.
     t.Begin();
-    t.Update(T::SLOW_DURATION);
+    t.Update(T::DURATION * 0.5f);
     t.Begin();
-    assert(Near(t.TimeScale(), 1.0f) && t.Progress() == 0.0f);
+    assert(t.Progress() == 0.0f);
 
     std::puts("level_up_transition_test: OK");
     return 0;

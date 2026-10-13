@@ -123,3 +123,12 @@
 검증: Windows Release 빌드, `test_gameplay_time.ps1`, `test_level_up_transition.ps1`(곡선 단조 감소·최저값 유지·1회 종료·Cancel·0/음수/큰 delta), `test_levelup_auto_augment.ps1`(레벨업 직후 RUNNING+전환 중 → 약 0.65초 뒤 입력 없이 AUG_SELECT, 3레벨 동시 상승 시 보상 3개 대기), `test_experience.ps1`, `test_experience_smoke.ps1`, `test_reg04_run_reset.ps1`, `test_reg02_03_stat_builds.ps1`, `test_reg06_skill_reset.ps1`, `test_kill_lifesteal.ps1`, `test_thrown_swarm_kill.ps1`, `test_quasar_nova.ps1` 통과. 스모크 상태 덤프에 `rewards=`(보상 큐 길이)·`levelup=`(전환 중) 필드를 추가했다. 스모크 캡처로 링 표시와 자동 진입 화면을 확인했다. 전환 중 게임 시계는 약 0.65초 실시간 동안 0.1초만 진행했다.
 
 미검증: 수동 플레이(엘리트 처치 동시 레벨업의 체감, 전환 중 ESC·Alt+Tab, 전환 중 피격 체감, Lv45 상한, 창의적 F키), macOS 빌드.
+
+## 11. 슬로모션 제거 (2026-10-13)
+
+플레이 피드백: 감속이 연출보다 **렉처럼 느껴진다.** §7의 결정 1(감속 수치)을 철회하고 감속 없이 다시 설계했다.
+
+- 레벨업 순간부터 **0.35초 동안 정상 속도로 진행**하며 XP 링 신호를 재생한다. 이 구간은 피격 보호가 유지된다. 이후 선택 화면이 자동으로 열린다. 선택 화면 등장 연출(`enterT`)부터는 기존처럼 게임이 멈춘 채 표시된다.
+- `LevelUpTransition`은 배율 없는 신호 타이머가 됐다(`DURATION`, `Update`, `Progress`). `GameplayTime.h`의 `levelUpScale` 입력과, RUNNING 프레임 블록의 `runDelta` 분리를 되돌렸다. 시간 배율 소유는 R4 상태(히트스톱·사망 슬로모)로 돌아갔다.
+- 튜토리얼 3개 언어에서 "시간이 느려진다" 문구를 제거했다.
+- `test_levelup_auto_augment.ps1`: 신호 구간에서 게임 시계가 정상 속도로 흐르는지 확인한다. `test_experience_smoke.ps1`: 앞 단계의 레벨업이 자동으로 선택 화면을 열어 상한 단계의 XP 처리가 멈추므로, 상한 단계 전에 `RUN`으로 새 런을 시작하도록 고쳤다.
