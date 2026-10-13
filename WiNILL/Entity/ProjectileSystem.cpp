@@ -35,11 +35,7 @@ void UpdateProjectiles(std::vector<Bullet>& bullets,
         if (bullet.homing && !bullet.isEnemy && bullet.active) {
             float targetX = 0.0f, targetY = 0.0f;
             if (monsters.FindNearestEnemy(
-                    bullet.x, bullet.y,
-                    playerBounds.x, playerBounds.y,
-                    playerBounds.x + playerBounds.width,
-                    playerBounds.y + playerBounds.height,
-                    targetX, targetY)) {
+                    bullet.x, bullet.y, targetX, targetY)) {
                 const float dx = targetX - bullet.x;
                 const float dy = targetY - bullet.y;
                 const float length = std::sqrt(dx * dx + dy * dy);

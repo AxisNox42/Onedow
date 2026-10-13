@@ -1,6 +1,6 @@
 // Headless regression for the Quasar beam: the axis is chosen once, at the
 // start of the wind-up, and never follows the player; the beam fires
-// QUASAR_LOCK_TIME after the lock and then turns at a constant slow rate;
+// QUASAR_LOCK_TIME after the lock and then turns slowly toward the player;
 // the damage band is QUASAR_BEAM_RADIUS wide.
 // Run with scripts/test_quasar_beam.ps1.
 #include "Monster.h"
@@ -71,30 +71,56 @@ static void CheckForcedLock() {
     std::printf("lock: fires after %.2fs ok\n", t);
 }
 
-// Firing: a constant slow turn that ignores the player entirely, in a
-// direction rolled per attack; over many attacks both directions occur.
-static void CheckConstantTurnWhileFiring() {
-    int cw = 0, ccw = 0;
-    for (int run = 0; run < 24; ++run) {
+// Firing: a slow turn (at most QUASAR_BEAM_TURN) toward the player, every
+// attack, whichever side the player moves to and whichever end of the beam
+// is nearer; once on the player it holds there instead of jittering.
+static void CheckTurnTowardPlayerWhileFiring() {
+    for (int run = 0; run < 4; ++run) {
+        const float side = run % 2 ? 1.0f : -1.0f;              // player above / below
+        const float end = run < 2 ? 1.0f : -1.0f;               // front / back end
         float hp = 1.0e9f;
         Monster q = MakeQuasar();
         while (q.quasarState != 3) q.Update(600.0f, 0.0f, DT, hp);
-        float prev = AimAngle(q), turnSign = 0.0f;
+        float prev = AimAngle(q);
         float py = 0.0f;
         while (q.quasarState == 3) {
-            py += 400.0f * DT * (run % 2 ? 1.0f : -1.0f);      // player on either side
-            q.Update(600.0f, py, DT, hp);
+            py += 400.0f * DT * side;
+            q.Update(600.0f * end, py * end, DT, hp);
             const float a = AimAngle(q);
             const float step = a - prev;
             assert(std::fabs(std::fabs(step) - Monster::QUASAR_BEAM_TURN * DT) < 1e-4f);
-            if (turnSign == 0.0f) turnSign = step > 0.0f ? 1.0f : -1.0f;
-            assert(step * turnSign > 0.0f);                      // one direction per attack
+            assert(step * side > 0.0f);                          // toward the player
             prev = a;
         }
-        (turnSign > 0.0f ? cw : ccw)++;
     }
-    assert(cw > 0 && ccw > 0);
-    std::printf("constant turn while firing: %d one way, %d the other ok\n", cw, ccw);
+    // Player standing on the axis: the beam stays put.
+    {
+        float hp = 1.0e9f;
+        Monster q = MakeQuasar();
+        while (q.quasarState != 3) q.Update(600.0f, 0.0f, DT, hp);
+        const float held = AimAngle(q);
+        while (q.quasarState == 3) {
+            q.Update(600.0f, 0.0f, DT, hp);
+            assert(fabsf(AimAngle(q) - held) < 1e-5f);
+        }
+    }
+    // Second attack: after the recovery the next fire still turns toward the
+    // player's new side.
+    {
+        float hp = 1.0e9f;
+        Monster q = MakeQuasar();
+        while (q.quasarState != 3) q.Update(600.0f, 0.0f, DT, hp);
+        while (q.quasarState != 0) q.Update(600.0f, 0.0f, DT, hp);
+        while (q.quasarState != 3) q.Update(q.worldX + 600.0f, q.worldY, DT, hp);
+        float prev = AimAngle(q), py = 0.0f;
+        while (q.quasarState == 3) {
+            py -= 400.0f * DT;
+            q.Update(q.worldX + 600.0f, q.worldY + py, DT, hp);
+            assert(AimAngle(q) - prev < 0.0f);
+            prev = AimAngle(q);
+        }
+    }
+    std::printf("turn toward the player while firing: ok\n");
 }
 
 // Damage band: inside the radius hurts at QUASAR_BEAM_DPS, outside does not.
@@ -122,7 +148,7 @@ static void CheckBand() {
 int main() {
     CheckAimChosenOnce();
     CheckForcedLock();
-    CheckConstantTurnWhileFiring();
+    CheckTurnTowardPlayerWhileFiring();
     CheckBand();
     std::printf("quasar beam regression passed\n");
     return 0;

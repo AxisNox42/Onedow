@@ -1,0 +1,23 @@
+{
+  "verified_at": "2026-10-12T22:33:02.623730+09:00",
+  "revision_source_and_support_files_checked": 127,
+  "source_or_support_changes_during_document_revision": [],
+  "source_hashes_checked": 105,
+  "source_files_changed_since_final_baseline": [],
+  "manual_review_groups": 40,
+  "all_review_groups_have_method_done_and_decision_role": true,
+  "planned_regression_specs": 7,
+  "fix_tickets": 3,
+  "behavior_tickets": 2,
+  "api_contract_review_categories": 1,
+  "focus_write_candidate_rows": 72,
+  "focus_globals": 8,
+  "ci_failure_logs_read": 5,
+  "ci_runs_started_or_rerun": false,
+  "local_build_or_game_tests_run": false,
+  "missing_local_links": [],
+  "evidence_script_self_checks_passed": true,
+  "scope": "Document revision, source inspection, remote failed CI log review. No implementation or regression test execution.",
+  "final_support_hashes_checked": 24,
+  "support_files_changed_since_final_baseline": []
+}

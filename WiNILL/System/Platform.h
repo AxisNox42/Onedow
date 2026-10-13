@@ -6,6 +6,27 @@
 // ─────────────────────────────────────────────────────────────
 #include <string>
 #include <cstdio>
+#include <cwchar>
+#include <cstddef>
+
+namespace PortableWideFormat {
+template <typename... Args>
+inline int swprintf_s(wchar_t* dest, size_t count,
+                      const wchar_t* format, Args... args) {
+    if (!dest || !count || !format) return -1;
+    const int written = std::swprintf(dest, count, format, args...);
+    if (written < 0 || static_cast<size_t>(written) >= count) {
+        dest[count - 1] = L'\0';
+        return -1;
+    }
+    return written;
+}
+template <size_t N, typename... Args>
+inline int swprintf_s(wchar_t (&dest)[N],
+                      const wchar_t* format, Args... args) {
+    return swprintf_s(dest, N, format, args...);
+}
+}
 
 #ifdef _WIN32
   #include <windows.h>
@@ -17,7 +38,6 @@
   #include <sys/stat.h>
   #include <thread>
   #include <chrono>
-  #include <cwchar>
   #include <ctime>
   #if defined(__APPLE__)
     #include <mach-o/dyld.h>
@@ -28,9 +48,7 @@
   #ifndef _TRUNCATE
     #define _TRUNCATE static_cast<size_t>(-1)
   #endif
-  #ifndef swprintf_s
-    #define swprintf_s(buf, ...) swprintf((buf), sizeof(buf) / sizeof((buf)[0]), __VA_ARGS__)
-  #endif
+  using PortableWideFormat::swprintf_s;
   template <size_t N>
   inline void wcscpy_s(wchar_t (&dest)[N], const wchar_t* src) {
     wcsncpy(dest, src, N - 1);

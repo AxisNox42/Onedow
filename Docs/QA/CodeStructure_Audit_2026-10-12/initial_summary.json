@@ -1,0 +1,124 @@
+{
+  "source_files": 105,
+  "game_source_files": 98,
+  "test_source_files": 7,
+  "game_lines": 33624,
+  "test_lines": 1385,
+  "include_directives": 754,
+  "owned_include_directives": 457,
+  "unique_owned_include_edges": 452,
+  "lexical_functions": 828,
+  "syntactic_call_sites": 3726,
+  "distinct_g_symbols": 276,
+  "cycles": [],
+  "exact_clone_candidates": 10,
+  "renamed_clone_candidates": 34,
+  "cpp_missing_from_vs": [],
+  "cpp_missing_from_cmake": [],
+  "vs_only_sources": [],
+  "cmake_only_sources": [],
+  "quoted_unresolved": [],
+  "top_dependency_hubs": [
+    [
+      "WiNILL/System/Settings.h",
+      24,
+      68
+    ],
+    [
+      "WiNILL/System/Platform.h",
+      4,
+      51
+    ],
+    [
+      "WiNILL/Entity/AugmentDescKR.h",
+      1,
+      50
+    ],
+    [
+      "WiNILL/Entity/Augment.h",
+      15,
+      49
+    ],
+    [
+      "WiNILL/Entity/PlayerStats.h",
+      19,
+      43
+    ],
+    [
+      "WiNILL/Render/EnemyParticles.h",
+      2,
+      39
+    ],
+    [
+      "WiNILL/Entity/Bullet.h",
+      8,
+      37
+    ],
+    [
+      "WiNILL/Entity/EnemyShield.h",
+      2,
+      37
+    ],
+    [
+      "WiNILL/Entity/Monster.h",
+      15,
+      35
+    ],
+    [
+      "WiNILL/Entity/RangedMob.h",
+      3,
+      30
+    ],
+    [
+      "WiNILL/Render/DrawPrim.h",
+      22,
+      29
+    ],
+    [
+      "WiNILL/Entity/MonsterManager.h",
+      12,
+      28
+    ],
+    [
+      "WiNILL/Core/GameManager.h",
+      15,
+      19
+    ],
+    [
+      "WiNILL/Render/Camera.h",
+      14,
+      16
+    ],
+    [
+      "WiNILL/Render/TextRenderer.h",
+      14,
+      16
+    ],
+    [
+      "WiNILL/Core/Scenes/SceneContext.h",
+      5,
+      13
+    ],
+    [
+      "WiNILL/Core/Scenes/SceneTextContext.h",
+      3,
+      13
+    ],
+    [
+      "WiNILL/Core/Codex.h",
+      12,
+      12
+    ],
+    [
+      "WiNILL/Render/MainShader.h",
+      12,
+      12
+    ],
+    [
+      "WiNILL/Entity/Weapons.h",
+      11,
+      12
+    ]
+  ],
+  "support_files": 24
+}

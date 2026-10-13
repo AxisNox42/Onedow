@@ -238,7 +238,12 @@
     <ClInclude Include="Core\AugmentSlots.h" />
     <ClInclude Include="Entity\Bullet.h" />
     <ClInclude Include="Entity\CollisionSystem.h" />
+    <ClInclude Include="Entity\KillRewards.h" />
+    <ClInclude Include="Entity\RunStats.h" />
+    <ClInclude Include="Core\RunResult.h" />
+    <ClInclude Include="System\SettingsSnapshot.h" />
     <ClInclude Include="Entity\ExpSystem.h" />
+    <ClInclude Include="Entity\Experience.h" />
     <ClInclude Include="Entity\EnemyProgression.h" />
     <ClInclude Include="Entity\Monster.h" />
     <ClInclude Include="Entity\MonsterManager.h" />

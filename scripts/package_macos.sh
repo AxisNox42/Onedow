@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ONEDOW="$ROOT/bin/Onedow"
 MAC_OUT="$ONEDOW/macOS"
 
-"$ROOT/scripts/build_macos.sh"
+bash "$ROOT/scripts/build_macos.sh"
 
 mkdir -p "$ONEDOW/WindowsOS" "$MAC_OUT"
 rm -rf "$ONEDOW/Resource"

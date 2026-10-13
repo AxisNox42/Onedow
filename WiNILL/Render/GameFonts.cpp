@@ -127,3 +127,9 @@ void UpdateGameTextHalo(int screenHeight, bool backdropBlurEnabled) {
     g_TextS.SetHalo(strength, radiusPx);
     g_TextXL.SetHalo(strength, radiusPx);
 }
+
+void ShutdownGameFonts() {
+    g_TextL.Cleanup();
+    g_TextS.Cleanup();
+    g_TextXL.Cleanup();
+}

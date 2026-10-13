@@ -194,18 +194,20 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "mobstyle"))   { int v = (int)val; if (v >= 0 && v <= 1) g_MobVisualStyle = (MobVisualStyle)v; }
         else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 2) g_VfxDensity = (VfxDensity)v; }
         else if (!std::strcmp(key, "macopt"))     g_MacOptV1          = (val != 0);
-        else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val;
-        else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val;
-        else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val;
-        else if (!std::strcmp(key, "kills"))       g_TotalKills        = val;
-        else if (!std::strcmp(key, "games"))       g_TotalGames        = val;
-        else if (!std::strncmp(key, "wbscore", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestScore[i]  = val; }
-        else if (!std::strncmp(key, "wbkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestKills[i]  = val; }
-        else if (!std::strncmp(key, "wtkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponTotalKills[i] = val; }
-        else if (!std::strncmp(key, "wruns",   5))  { int i = atoi(key+5); if (i>=0&&i<2) g_WeaponRunCount[i]   = val; }
+        // Scores, counts and coins are never negative; a damaged value reads as 0.
+        else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val < 0 ? 0 : val;
+        else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val < 0 ? 0 : val;
+        else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val < 0 ? 0 : val;
+        else if (!std::strcmp(key, "kills"))       g_TotalKills        = val < 0 ? 0 : val;
+        else if (!std::strcmp(key, "games"))       g_TotalGames        = val < 0 ? 0 : val;
+        else if (!std::strncmp(key, "wbscore", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestScore[i]  = val < 0 ? 0 : val; }
+        else if (!std::strncmp(key, "wbkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestKills[i]  = val < 0 ? 0 : val; }
+        else if (!std::strncmp(key, "wtkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponTotalKills[i] = val < 0 ? 0 : val; }
+        else if (!std::strncmp(key, "wruns",   5))  { int i = atoi(key+5); if (i>=0&&i<2) g_WeaponRunCount[i]   = val < 0 ? 0 : val; }
         else if (!std::strcmp(key, "coins"))       g_Coins             = val < 0 ? 0 : val;
         else if (!std::strcmp(key, "themeowned"))  g_ThemeOwned        = (int)val | 1;
-        else if (!std::strcmp(key, "themesel"))    g_ThemeSel          = (int)val;
+        // Ownership is checked by ApplyAccentTheme (themeowned may load later).
+        else if (!std::strcmp(key, "themesel"))  { if (val >= 0 && val < ACCENT_COUNT) g_ThemeSel = (int)val; }
         else if (!std::strcmp(key, "bosskills")) { (void)val; }
         else if (!std::strncmp(key, "meta", 4)) {
             int mi = atoi(key + 4);

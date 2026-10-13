@@ -5,6 +5,7 @@
 #include "GameContext.h"
 #include "SceneUI.h"
 #include "SceneInternal.h"
+#include "RunStats.h"
 #include "UiLayout.h"
 #include "WindowChrome.h"
 #include "Settings.h"
@@ -58,13 +59,9 @@ void FinalizeLoadout(const SceneCtx& c, int wIdx) {
     float& fireTimer = *c.fireTimer;
 
     g_Difficulty = Difficulty::NORMAL;
-    g_Stats.baseFireInterval = g_Stats.fireInterval;
-    ApplyWeapon(g_Stats, (StartWeapon)wIdx);
+    ApplyLoadoutStats(g_Stats, wIdx);   // RunStats.h: weapon + trial max HP
     g_CurrentWeapon = wIdx;
     fireTimer = g_Stats.fireInterval;
-    float trialHpMul = TrialPlayerMaxHpMult();
-    if (trialHpMul < 0.999f)
-        g_Stats.maxHP *= trialHpMul;
     g_GameManager.maxHP    = g_Stats.maxHP;
     g_GameManager.playerHP = g_Stats.maxHP;
     g_PrevHP               = g_Stats.maxHP;

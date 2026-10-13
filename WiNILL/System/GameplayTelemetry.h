@@ -115,7 +115,7 @@ public:
         return out;
     }
 
-    void BeginRun(float gameTime, int level, long long xp,
+    void BeginRun(float gameTime, int level, XpAmount xp,
                   const PlayerStats& stats, const char* mode) {
         if (m_active) {
             // A run reset can happen from the menu without a separate end
@@ -156,35 +156,35 @@ public:
         m_file.flush();
     }
 
-    void RecordExperience(long long amount) {
+    void RecordExperience(XpAmount amount) {
         if (!m_active || amount <= 0) return;
-        m_totalExperience += amount;
+        m_totalExperience = XpAdd(m_totalExperience, amount);
     }
 
     void RecordLevelUp(float gameTime, int oldLevel, int newLevel,
-                       long long requiredXp, long long xpBefore,
-                       long long xpAfter, bool manualShortcut = false) {
+                       XpAmount requiredXp, XpAmount xpBefore,
+                       XpAmount xpAfter, bool manualShortcut = false) {
         if (!m_active) return;
         const double levelIntervalSeconds = std::max(
             0.0, (double)gameTime - m_lastLevelUpGameTime);
-        const long long levelIntervalXp =
+        const XpAmount levelIntervalXp =
             m_totalExperience - m_lastLevelUpTotalExperience;
         const double levelIntervalPerMinute = levelIntervalSeconds > 0.001
-            ? (double)levelIntervalXp * 60.0 / levelIntervalSeconds : 0.0;
+            ? XpToDouble(levelIntervalXp) * 60.0 / levelIntervalSeconds : 0.0;
         const double averagePerMinute = gameTime > 0.001f
-            ? (double)m_totalExperience * 60.0 / (double)gameTime : 0.0;
+            ? XpToDouble(m_totalExperience) * 60.0 / (double)gameTime : 0.0;
         m_file << "LEVEL_UP,game_sec=" << std::fixed << std::setprecision(2)
                << gameTime
                << ",level_before=" << oldLevel
                << ",level_after=" << newLevel
-               << ",required_xp=" << requiredXp
-               << ",xp_before=" << xpBefore
-               << ",xp_after=" << xpAfter
+               << ",required_xp=" << FormatXp(requiredXp)
+               << ",xp_before=" << FormatXp(xpBefore)
+               << ",xp_after=" << FormatXp(xpAfter)
                << ",level_interval_sec=" << levelIntervalSeconds
-               << ",level_interval_xp=" << levelIntervalXp
-               << ",level_interval_xp_per_min=" << levelIntervalPerMinute
-               << ",run_total_xp=" << m_totalExperience
-               << ",run_average_xp_per_min=" << std::setprecision(2)
+               << ",level_interval_xp=" << FormatXp(levelIntervalXp)
+               << ",level_interval_xp_per_min=" << std::setprecision(3) << levelIntervalPerMinute
+               << ",run_total_xp=" << FormatXp(m_totalExperience)
+               << ",run_average_xp_per_min=" << std::setprecision(3)
                << averagePerMinute
                << ",source=" << (manualShortcut ? "manual_shortcut" : "experience")
                << "\n";
@@ -248,7 +248,7 @@ public:
         m_file.flush();
     }
 
-    void Update(float gameTime, int level, long long xp, long long requiredXp,
+    void Update(float gameTime, int level, XpAmount xp, XpAmount requiredXp,
                 const PlayerStats& stats) {
         if (!m_active || gameTime + 0.0001f < m_nextSampleGameTime) return;
 
@@ -257,7 +257,7 @@ public:
         while (gameTime + 0.0001f >= m_nextSampleGameTime) {
             const double intervalSeconds = std::max(
                 0.001, (double)gameTime - m_lastSampleGameTime);
-            const long long intervalXp = m_totalExperience - m_lastSampleTotalExperience;
+            const XpAmount intervalXp = m_totalExperience - m_lastSampleTotalExperience;
             WriteSample(gameTime, level, xp, requiredXp, stats,
                         intervalXp, (double)intervalSeconds);
             m_lastSampleGameTime = gameTime;
@@ -267,23 +267,23 @@ public:
         m_file.flush();
     }
 
-    void EndRun(float gameTime, int level, long long xp,
+    void EndRun(float gameTime, int level, XpAmount xp,
                 const PlayerStats& stats, const char* reason) {
         if (!m_active) return;
 
         if (gameTime > m_lastSampleGameTime + 0.01f) {
             const double intervalSeconds = (double)gameTime - m_lastSampleGameTime;
-            const long long intervalXp = m_totalExperience - m_lastSampleTotalExperience;
+            const XpAmount intervalXp = m_totalExperience - m_lastSampleTotalExperience;
             WriteSample(gameTime, level, xp, RequiredForLevel(level), stats,
                         intervalXp, intervalSeconds);
         }
 
         const double averagePerMinute = gameTime > 0.001f
-            ? (double)m_totalExperience * 60.0 / (double)gameTime : 0.0;
+            ? XpToDouble(m_totalExperience) * 60.0 / (double)gameTime : 0.0;
         m_file << "RUN_END,game_sec=" << std::fixed << std::setprecision(2)
-               << gameTime << ",level=" << level << ",current_xp=" << xp
-               << ",total_xp=" << m_totalExperience
-               << ",average_xp_per_min=" << std::setprecision(2) << averagePerMinute
+               << gameTime << ",level=" << level << ",current_xp=" << FormatXp(xp)
+               << ",total_xp=" << FormatXp(m_totalExperience)
+               << ",average_xp_per_min=" << std::setprecision(3) << averagePerMinute
                << ",reason=" << (reason ? reason : "unknown") << "\n";
         m_file << "============================================================\n";
         m_file.flush();
@@ -319,31 +319,31 @@ private:
         return out.str();
     }
 
-    static long long RequiredForLevel(int level) {
+    static XpAmount RequiredForLevel(int level) {
         if (level < 1) return 0;
-        return g_ExpSystem.Required(level);
+        return g_ExpSystem.RequiredAmount(level);
     }
 
-    void WriteSample(float gameTime, int level, long long xp,
-                     long long requiredXp, const PlayerStats& stats,
-                     long long intervalXp, double intervalSeconds) {
+    void WriteSample(float gameTime, int level, XpAmount xp,
+                     XpAmount requiredXp, const PlayerStats& stats,
+                     XpAmount intervalXp, double intervalSeconds) {
         const double progress = requiredXp > 0
             ? std::max(0.0, std::min(100.0,
                 (double)xp * 100.0 / (double)requiredXp)) : 0.0;
         const double xpPerSecond = intervalSeconds > 0.0
-            ? (double)intervalXp / intervalSeconds : 0.0;
+            ? XpToDouble(intervalXp) / intervalSeconds : 0.0;
         const double xpPerMinute = xpPerSecond * 60.0;
 
         const StatsSnapshot s = Capture(stats);
         m_file << "SAMPLE,game_sec=" << std::fixed << std::setprecision(2)
                << gameTime << ",level=" << level
-               << ",current_xp=" << xp
-               << ",required_xp=" << requiredXp
+               << ",current_xp=" << FormatXp(xp)
+               << ",required_xp=" << FormatXp(requiredXp)
                << ",progress_pct=" << std::setprecision(2) << progress
-               << ",interval_xp=" << intervalXp
-               << ",interval_xp_per_sec=" << xpPerSecond
+               << ",interval_xp=" << FormatXp(intervalXp)
+               << ",interval_xp_per_sec=" << std::setprecision(3) << xpPerSecond
                << ",interval_xp_per_min=" << xpPerMinute
-               << ",total_xp=" << m_totalExperience
+               << ",total_xp=" << FormatXp(m_totalExperience)
                << ",max_hp=" << s.maxHP
                << ",damage_multiplier=" << s.damageMultiplier
                << ",effective_damage=" << s.effectiveDamage
@@ -382,8 +382,8 @@ private:
     float m_sampleIntervalSeconds = kDefaultSampleIntervalSeconds;
     float m_nextSampleGameTime = 0.0f;
     double m_lastSampleGameTime = 0.0;
-    long long m_totalExperience = 0;
-    long long m_lastSampleTotalExperience = 0;
+    XpAmount m_totalExperience = 0;
+    XpAmount m_lastSampleTotalExperience = 0;
     double m_lastLevelUpGameTime = 0.0;
-    long long m_lastLevelUpTotalExperience = 0;
+    XpAmount m_lastLevelUpTotalExperience = 0;
 };

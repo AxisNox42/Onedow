@@ -255,6 +255,16 @@ inline bool AugRemoved(AugType t) {
 //   main 의 applyByIdx 가 갱신, ResetForNewGame 이 초기화.
 inline bool g_TypeOwned[AUG_TYPE_SLOTS] = { false };
 
+inline bool ComboRewardEligible(const ComboDef& combo, const bool* takenOnce) {
+    if (AugRemoved(combo.result) || g_TypeOwned[(int)combo.result]) return false;
+    // The ledger survives replacement; catalogue rows can share an AugType.
+    for (int i = 0; takenOnce && i < AUG_TOTAL; ++i)
+        if (ALL_AUGS[i].type == combo.result && takenOnce[i]) return false;
+    for (int i = 0; i < combo.reqCount; ++i)
+        if (!g_TypeOwned[(int)combo.reqs[i]]) return false;
+    return true;
+}
+
 // 한 번만 등장해야 하는 증강/디버프 (스택 불가 플래그형) — 픽 풀에서 takenOnce 로 제외
 inline bool AugOnceOnly(AugType t, AugRarity r) {
     // Identity-slot tiers and debuff cards are unique within a run.

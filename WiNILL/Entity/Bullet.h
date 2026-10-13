@@ -44,6 +44,8 @@ public:
     float launchAccel = 0.0f;
     int pierceBonusPct = 0;  // 집중 조준 등 일회성 관통 보너스
     bool  rainMissile = false;   // 탄환 세례 — 로켓 스프라이트로 렌더
+    // Magnetar whose broken ward face this shot already passed through.
+    const void* wardPassed = nullptr;
     bool  crescentBlade = false; // 초승달 검기 — arc 모양 렌더
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);

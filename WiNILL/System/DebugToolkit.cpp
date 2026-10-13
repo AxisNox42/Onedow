@@ -55,7 +55,6 @@ constexpr float FOOTER_BUTTON_H = 32.0f;
 constexpr float FOOTER_BUTTON_GAP = 12.0f;
 constexpr float BALANCE_BUTTON_W = 190.0f;
 constexpr float HITSTOP_BUTTON_W = 165.0f;
-constexpr float RIPPLE_BUTTON_W = 165.0f;
 
 struct PanelLayout {
     float x;
@@ -772,15 +771,6 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
                 ? L"엘리트 처치 히트스톱 켜짐"
                 : L"엘리트 처치 히트스톱 꺼짐");
         }
-        const float rippleX = hitStopX + HITSTOP_BUTTON_W + FOOTER_BUTTON_GAP;
-        if (click && Hit(rippleX, p.y + p.h - FOOTER_BOTTOM,
-                         RIPPLE_BUTTON_W, FOOTER_BUTTON_H, mx, my) &&
-            context_.magnetarFieldRipple) {
-            *context_.magnetarFieldRipple = !*context_.magnetarFieldRipple;
-            SetMessage(*context_.magnetarFieldRipple
-                ? L"마그네타 필드 출렁임 켜짐"
-                : L"마그네타 필드 출렁임 꺼짐");
-        }
     } else if (click && tab_ == 1) {
         if (Hit(p.x + 16.0f, p.y + SPAWN_COUNT_Y, 44.0f, 32.0f, mx, my))
             spawnCount_ = std::max(1, spawnCount_ - 1);
@@ -1012,12 +1002,6 @@ void DebugToolkit::RenderStatsTab(float x, float y, float w, float h,
                y + h - FOOTER_BOTTOM, HITSTOP_BUTTON_W, FOOTER_BUTTON_H,
                hitStopActive ? L"히트스톱: 켜짐" : L"히트스톱: 꺼짐",
                hitStopActive, context_.eliteKillHitStop != nullptr);
-    const bool rippleActive = context_.magnetarFieldRipple && *context_.magnetarFieldRipple;
-    DrawButton(x + 16.0f + 170.0f + FOOTER_BUTTON_GAP + BALANCE_BUTTON_W + FOOTER_BUTTON_GAP +
-                   HITSTOP_BUTTON_W + FOOTER_BUTTON_GAP,
-               y + h - FOOTER_BOTTOM, RIPPLE_BUTTON_W, FOOTER_BUTTON_H,
-               rippleActive ? L"필드 출렁임: 켜짐" : L"필드 출렁임: 꺼짐",
-               rippleActive, context_.magnetarFieldRipple != nullptr);
     wchar_t page[64] = {};
     std::swprintf(page, sizeof(page) / sizeof(page[0]),
                   L"필드 %d-%d / %d", fieldOffset_ + 1,

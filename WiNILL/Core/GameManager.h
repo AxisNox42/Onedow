@@ -7,6 +7,7 @@
 #include "MonsterManager.h"
 #include "Bullet.h"
 #include "Augment.h"
+#include "Experience.h"
 
 enum class GameState {
     MAIN_MENU,         // 시작 메뉴 (시작/설정/종료)
@@ -33,7 +34,7 @@ public:
     long long score      = 0;
     float     scoreAccum = 0.0f;
 
-    long long xp           = 0;        // 현재 레벨 안에서 누적된 EXP
+    XpAmount  xp           = 0;        // 현재 레벨 안의 EXP (0.001 XP 단위)
     int       playerLevel  = 1;        // 레벨 (시작 1)
     int       augChoices[3] = {-1,-1,-1}; // indices into ALL_AUGS for current pick
     int       augChoiceCount = 0;

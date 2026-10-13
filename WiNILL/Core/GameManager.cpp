@@ -376,13 +376,7 @@ void GameManager::PickAugChoices(bool sizeTaken, bool allowDebuff) {
         int eligible[COMBO_COUNT];
         int eligCount = 0;
         for (int c = 0; c < COMBO_COUNT; c++) {
-            AugType res = COMBO_DEFS[c].result;
-            if (AugRemoved(res)) continue;
-            if (g_TypeOwned[(int)res]) continue;
-            bool met = true;
-            for (int r = 0; r < COMBO_DEFS[c].reqCount; r++)
-                if (!g_TypeOwned[(int)COMBO_DEFS[c].reqs[r]]) { met = false; break; }
-            if (met) eligible[eligCount++] = c;
+            if (ComboRewardEligible(COMBO_DEFS[c], takenOnce)) eligible[eligCount++] = c;
         }
         if (eligCount > 0 && (rand() % 100) < 10) {
             AugType res = COMBO_DEFS[eligible[rand() % eligCount]].result;

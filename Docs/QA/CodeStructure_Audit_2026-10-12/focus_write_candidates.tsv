@@ -1,0 +1,73 @@
+﻿symbol	file	line	lexical_enclosing_function	kind	operator_or_callee	source
+g_Stats	WiNILL/Core/Scenes/SceneRunConfig.cpp	61	FinalizeLoadout	direct_write_or_initializer	=	g_Stats.baseFireInterval = g_Stats.fireInterval;
+g_Stats	WiNILL/Core/Scenes/SceneRunConfig.cpp	62	FinalizeLoadout	known_mutable_reference_argument	ApplyWeapon	ApplyWeapon(g_Stats, (StartWeapon)wIdx);
+g_Stats	WiNILL/Core/Scenes/SceneRunConfig.cpp	67	FinalizeLoadout	direct_write_or_initializer	*=	g_Stats.maxHP *= trialHpMul;
+g_SkillReplaceIdx	WiNILL/Core/Scenes/SceneSkills.cpp	4	global_or_unresolved	direct_write_or_initializer	=	int       g_SkillReplaceIdx = 0;
+g_Skills	WiNILL/Core/Scenes/SceneSkills.cpp	17	EquipSkill	direct_write_or_initializer	=	g_Skills[i] = { t, 0.0f };
+g_Skills	WiNILL/Core/Scenes/SceneSkills.cpp	20	EquipSkill	direct_write_or_initializer	=	g_Skills[g_SkillReplaceIdx] = { t, 0.0f };
+g_SkillReplaceIdx	WiNILL/Core/Scenes/SceneSkills.cpp	21	EquipSkill	direct_write_or_initializer	=	g_SkillReplaceIdx = (g_SkillReplaceIdx + 1) % 3;
+g_Skills	WiNILL/Core/Scenes/SceneSkills.cpp	25	ClearEquippedSkills	direct_write_or_initializer	=	for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
+g_SkillReplaceIdx	WiNILL/Core/Scenes/SceneSkills.cpp	26	ClearEquippedSkills	direct_write_or_initializer	=	g_SkillReplaceIdx = 0;
+g_Skills	WiNILL/Entity/PlayerRuntime.cpp	20	ResetPlayerSkills	direct_write_or_initializer	=	for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
+g_SkillReplaceIdx	WiNILL/Entity/PlayerRuntime.cpp	21	ResetPlayerSkills	direct_write_or_initializer	=	g_SkillReplaceIdx = 0;
+g_Skills	WiNILL/Entity/PlayerRuntime.cpp	46	UpdatePlayerRuntimeTimers	direct_write_or_initializer	-=	if (g_Skills[i].cd > 0.0f) g_Skills[i].cd -= delta;
+g_Stats	WiNILL/main.cpp	363	SyncPlayerBoundsSize	direct_write_or_initializer	=	g_Stats.windowSize = std::max(400.0f * g_Scale, 64.0f);
+g_Stats	WiNILL/main.cpp	549	RebuildPlayerStatsFromOwned	direct_write_or_initializer	=	g_Stats = PlayerStats();
+g_Stats	WiNILL/main.cpp	550	RebuildPlayerStatsFromOwned	known_mutable_reference_argument	ApplyMeta	ApplyMeta(g_Stats);
+g_Stats	WiNILL/main.cpp	551	RebuildPlayerStatsFromOwned	direct_write_or_initializer	*=	g_Stats.windowSize *= g_Scale;
+g_Stats	WiNILL/main.cpp	553	RebuildPlayerStatsFromOwned	known_mutable_reference_argument	ApplyWeapon	ApplyWeapon(g_Stats, (StartWeapon)weapon);
+g_Stats	WiNILL/main.cpp	554	RebuildPlayerStatsFromOwned	direct_write_or_initializer	=	g_Stats.baseFireInterval = g_Stats.fireInterval;
+g_Stats	WiNILL/main.cpp	570	RebuildPlayerStatsFromOwned	known_mutating_member_call	Apply	g_Stats.Apply(atype);
+g_Stats	WiNILL/main.cpp	572	RebuildPlayerStatsFromOwned	known_mutating_member_call	ApplyCommonMultBoost	g_Stats.ApplyCommonMultBoost();
+g_Stats	WiNILL/main.cpp	584	RebuildPlayerStatsFromOwned	direct_write_or_initializer	=	g_Stats.killCount = keepKillCount;
+g_Stats	WiNILL/main.cpp	585	RebuildPlayerStatsFromOwned	direct_write_or_initializer	=	g_Stats.vampireKillStreak = keepVampireKillStreak;
+g_Stats	WiNILL/main.cpp	587	RebuildPlayerStatsFromOwned	known_mutating_member_call	RestoreWarlordStacks	g_Stats.RestoreWarlordStacks(keepWarlordStacks);
+g_Stats	WiNILL/main.cpp	588	RebuildPlayerStatsFromOwned	direct_write_or_initializer	=	g_Stats.mk2Used = keepMk2Used;
+g_Stats	WiNILL/main.cpp	589	RebuildPlayerStatsFromOwned	direct_write_or_initializer	=	g_Stats.lightStepDisableTimer = keepLightStepDisableTimer;
+g_Stats	WiNILL/main.cpp	601	ApplySingleAugIdx	known_mutating_member_call	Apply	g_Stats.Apply(atype);
+g_Stats	WiNILL/main.cpp	603	ApplySingleAugIdx	known_mutating_member_call	ApplyCommonMultBoost	g_Stats.ApplyCommonMultBoost();
+g_Stats	WiNILL/main.cpp	707	ProcessAugEffectQueue	direct_write_or_initializer	=	g_Stats = PlayerStats();
+g_Stats	WiNILL/main.cpp	708	ProcessAugEffectQueue	known_mutable_reference_argument	ApplyMeta	ApplyMeta(g_Stats);
+g_Stats	WiNILL/main.cpp	709	ProcessAugEffectQueue	direct_write_or_initializer	*=	g_Stats.windowSize *= g_Scale;
+g_Stats	WiNILL/main.cpp	711	ProcessAugEffectQueue	known_mutable_reference_argument	ApplyWeapon	ApplyWeapon(g_Stats, (StartWeapon)g_CurrentWeapon);
+g_Stats	WiNILL/main.cpp	712	ProcessAugEffectQueue	direct_write_or_initializer	=	g_Stats.baseFireInterval = g_Stats.fireInterval;
+g_Stats	WiNILL/main.cpp	713	ProcessAugEffectQueue	direct_write_or_initializer	=	g_Stats.killCount = keepKillCount;
+g_Stats	WiNILL/main.cpp	714	ProcessAugEffectQueue	direct_write_or_initializer	=	g_Stats.vampireKillStreak = keepVampireKillStreak;
+g_Stats	WiNILL/main.cpp	715	ProcessAugEffectQueue	direct_write_or_initializer	=	g_Stats.mk2Used = keepMk2Used;
+g_Stats	WiNILL/main.cpp	716	ProcessAugEffectQueue	direct_write_or_initializer	=	g_Stats.lightStepDisableTimer = keepLightStepDisableTimer;
+g_Stats	WiNILL/main.cpp	1120	main	direct_write_or_initializer	=	g_Stats.maxHP = 1.0f;
+g_Stats	WiNILL/main.cpp	1122	main	direct_write_or_initializer	=	g_Stats.windowSize = 64.0f;
+g_Stats	WiNILL/main.cpp	1329	main	direct_write_or_initializer	=	g_Stats        = PlayerStats();
+g_Stats	WiNILL/main.cpp	1330	main	known_mutable_reference_argument	ApplyMeta	ApplyMeta(g_Stats);
+g_Stats	WiNILL/main.cpp	1331	main	direct_write_or_initializer	*=	g_Stats.windowSize *= g_Scale;           // ?�레?�어 �????�상??비�? 축소
+g_Stats	WiNILL/main.cpp	1423	main	direct_write_or_initializer	*=	g_Stats.maxHP *= trialHpMul;
+g_Stats	WiNILL/main.cpp	1760	main	direct_write_or_initializer	=	g_Stats.mk2Used = true;
+g_Stats	WiNILL/main.cpp	2463	main	known_mutating_member_call	RegisterKill	g_Stats.RegisterKill();
+g_Stats	WiNILL/main.cpp	2474	main	direct_write_or_initializer	++	if (++g_Stats.vampireKillStreak >= g_Stats.GetVampireKillNeed()) {
+g_Stats	WiNILL/main.cpp	2475	main	direct_write_or_initializer	=	g_Stats.vampireKillStreak = 0;
+g_ComboTimer	WiNILL/main.cpp	2600	main	direct_write_or_initializer	-=	g_ComboTimer -= delta;
+g_Combo	WiNILL/main.cpp	2601	main	direct_write_or_initializer	=	if (g_ComboTimer <= 0.0f) g_Combo = 0;
+g_ComboPulse	WiNILL/main.cpp	2603	main	direct_write_or_initializer	-=	g_ComboPulse -= delta * 4.0f;
+g_ComboPulse	WiNILL/main.cpp	2604	main	direct_write_or_initializer	=	if (g_ComboPulse < 0.0f) g_ComboPulse = 0.0f;
+g_ComboMilestone	WiNILL/main.cpp	2605	main	direct_write_or_initializer	-=	if (g_ComboMilestone > 0.0f) g_ComboMilestone -= delta;
+g_Stats	WiNILL/main.cpp	2792	main	direct_write_or_initializer	-=	g_Stats.lightStepDisableTimer -= delta;
+g_RainKillAccum	WiNILL/main.cpp	2914	main	direct_write_or_initializer	=	g_RainKillAccum = 0.0f;
+g_Stats	WiNILL/main.cpp	3035	main	direct_write_or_initializer	++	if (++g_Stats.vampireKillStreak >= g_Stats.GetVampireKillNeed()) {
+g_Stats	WiNILL/main.cpp	3036	main	direct_write_or_initializer	=	g_Stats.vampireKillStreak = 0;
+g_Stats	WiNILL/main.cpp	3056	main	known_mutating_member_call	RegisterKill	g_Stats.RegisterKill(); RegisterCodexMobKill(m->kind);
+g_Stats	WiNILL/main.cpp	3070	main	known_mutating_member_call	RegisterKill	g_Stats.RegisterKill();
+g_Combo	WiNILL/Render/Juice.h	85	global_or_unresolved	direct_write_or_initializer	=	inline int   g_Combo      = 0;
+g_ComboTimer	WiNILL/Render/Juice.h	86	global_or_unresolved	direct_write_or_initializer	=	inline float g_ComboTimer = 0.0f;     // 남은 유지 시간
+g_ComboPulse	WiNILL/Render/Juice.h	87	global_or_unresolved	direct_write_or_initializer	=	inline float g_ComboPulse = 0.0f;     // 증가 시 팝 애니메이션 (0..1)
+g_ComboMilestone	WiNILL/Render/Juice.h	88	global_or_unresolved	direct_write_or_initializer	=	inline float g_ComboMilestone = 0.0f; // 마일스톤 달성 강조 연출 잔여(초)
+g_RainKillAccum	WiNILL/Render/Juice.h	95	global_or_unresolved	direct_write_or_initializer	=	inline float g_RainKillAccum = 0.0f;
+g_Combo	WiNILL/Render/Juice.h	97	AddKillCombo	direct_write_or_initializer	++	++g_Combo;
+g_ComboTimer	WiNILL/Render/Juice.h	98	AddKillCombo	direct_write_or_initializer	=	g_ComboTimer = COMBO_WINDOW;
+g_ComboPulse	WiNILL/Render/Juice.h	99	AddKillCombo	direct_write_or_initializer	=	g_ComboPulse = 1.0f;
+g_RainKillAccum	WiNILL/Render/Juice.h	100	AddKillCombo	direct_write_or_initializer	+=	g_RainKillAccum += 1.0f;            // 처치 1건 (무한 세례용)
+g_ComboMilestone	WiNILL/Render/Juice.h	104	AddKillCombo	direct_write_or_initializer	=	g_ComboMilestone = 0.7f;
+g_Combo	WiNILL/Render/Juice.h	150	ResetJuice	direct_write_or_initializer	=	g_Combo = 0; g_ComboTimer = 0.0f; g_ComboPulse = 0.0f;
+g_ComboTimer	WiNILL/Render/Juice.h	150	ResetJuice	direct_write_or_initializer	=	g_Combo = 0; g_ComboTimer = 0.0f; g_ComboPulse = 0.0f;
+g_ComboPulse	WiNILL/Render/Juice.h	150	ResetJuice	direct_write_or_initializer	=	g_Combo = 0; g_ComboTimer = 0.0f; g_ComboPulse = 0.0f;
+g_ComboMilestone	WiNILL/Render/Juice.h	151	ResetJuice	direct_write_or_initializer	=	g_ComboMilestone = 0.0f;
+g_RainKillAccum	WiNILL/Render/Juice.h	152	ResetJuice	direct_write_or_initializer	=	g_RainKillAccum = 0.0f;

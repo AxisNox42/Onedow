@@ -17,7 +17,7 @@ static Monster* KillQuasar(MonsterManager& mm, bool animate) {
     q->scored = true;
     q->dustPending = true;
     q->pendingDustValue = 7;
-    q->pendingDustXp = 123;
+    q->pendingDustXp = XpFromWhole(123);
     q->SpawnDeathEffect(0.0f, true, animate);
     mm.monsters.push_back(q);
     return q;
@@ -37,7 +37,7 @@ static void CheckHeldUntilBlast() {
         if (!mm.monsters.empty() && mm.monsters[0]->TakePendingDust()) {
             ++released;
             releasedAt = t;
-            assert(q->pendingDustValue == 7 && q->pendingDustXp == 123);
+            assert(q->pendingDustValue == 7 && q->pendingDustXp == XpFromWhole(123));
         }
         assert(t < 3.0f);
     }

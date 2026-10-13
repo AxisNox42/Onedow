@@ -1,15 +1,21 @@
 #include "Input.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#ifdef _WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
-#include "GameManager.h"
-#include "Codex.h"
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
 #include <imm.h>
+#else
+#include <codecvt>
+#include <locale>
+#include <stdexcept>
+#endif
+#include "GameManager.h"
+#include "Codex.h"
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -33,13 +39,6 @@ float g_ScrollAccum = 0.0f;
 wchar_t g_CodexSearch[64] = {0};
 int     g_CodexSearchLen  = 0;
 
-static HWND s_imeHwnd = nullptr;
-static WNDPROC s_glfwWndProc = nullptr;
-static HIMC s_imeContext = nullptr;
-static bool s_imeEnabled = false;
-static POINT s_imeCompositionPoint = { 16, 16 };
-static POINT s_imeCandidatePoint = { 16, 40 };
-static bool s_imeComposing = false;
 static void CodexCheckDevPhrase();
 
 static bool CodexTextInputActive() {
@@ -47,6 +46,15 @@ static bool CodexTextInputActive() {
             g_GameManager.currentState == GameState::MAIN_MENU) &&
            g_CodexSearchInputEnabled;
 }
+
+#ifdef _WIN32
+static HWND s_imeHwnd = nullptr;
+static WNDPROC s_glfwWndProc = nullptr;
+static HIMC s_imeContext = nullptr;
+static bool s_imeEnabled = false;
+static POINT s_imeCompositionPoint = { 16, 16 };
+static POINT s_imeCandidatePoint = { 16, 40 };
+static bool s_imeComposing = false;
 
 static void ApplyCodexImeAnchor(HWND hwnd) {
     if (!hwnd || !s_imeComposing) return;
@@ -157,11 +165,16 @@ void InputSetCodexImeAnchor(float compositionX, float caretX,
     s_imeCandidatePoint = candidatePoint;
     ApplyCodexImeAnchor(s_imeHwnd);
 }
+#else
+void InputUpdateTextInput(GLFWwindow*) {}
+void InputSetCodexImeAnchor(float, float, float, float) {}
+#endif
 
 static const wchar_t* DEV_CODE = L"develop_mod";
 
 static std::string CodexWideToUtf8(const std::wstring& text) {
     if (text.empty()) return {};
+#ifdef _WIN32
     const int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(),
                                          nullptr, 0, nullptr, nullptr);
     if (size <= 0) return {};
@@ -169,10 +182,18 @@ static std::string CodexWideToUtf8(const std::wstring& text) {
     WideCharToMultiByte(CP_UTF8, 0, text.data(), (int)text.size(),
                         result.data(), size, nullptr, nullptr);
     return result;
+#else
+    try {
+        return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>>{}.to_bytes(text);
+    } catch (const std::range_error&) {
+        return {};
+    }
+#endif
 }
 
 static std::wstring CodexUtf8ToWide(const char* text) {
     if (!text || !text[0]) return {};
+#ifdef _WIN32
     const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1,
                                          nullptr, 0);
     if (size <= 1) return {};
@@ -180,6 +201,13 @@ static std::wstring CodexUtf8ToWide(const char* text) {
     if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1,
                              converted.data(), size)) return {};
     return std::wstring(converted.data(), (size_t)size - 1);
+#else
+    try {
+        return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>>{}.from_bytes(text);
+    } catch (const std::range_error&) {
+        return {};
+    }
+#endif
 }
 
 static void CodexCheckDevPhrase() {
@@ -214,7 +242,11 @@ static void InputKeyCallback(GLFWwindow* window, int key, int, int action, int m
     if (!CodexTextInputActive() || (action != GLFW_PRESS && action != GLFW_REPEAT)) return;
     if (g_CodexSearchCompositionLen > 0) return;
 
+#ifdef __APPLE__
+    const bool ctrl = (mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER)) != 0;
+#else
     const bool ctrl = (mods & GLFW_MOD_CONTROL) != 0;
+#endif
     const bool shift = (mods & GLFW_MOD_SHIFT) != 0;
     if (ctrl && action == GLFW_PRESS) {
         switch (key) {
@@ -259,6 +291,7 @@ void InputRegisterCallbacks(GLFWwindow* window) {
     glfwSetCharCallback(window, InputCharCallback);
     glfwSetScrollCallback(window, InputScrollCallback);
     InputUnregisterCallbacks(window);
+#ifdef _WIN32
     s_imeHwnd = glfwGetWin32Window(window);
     if (s_imeHwnd) {
         SetLastError(0);
@@ -271,9 +304,11 @@ void InputRegisterCallbacks(GLFWwindow* window) {
         } else
             s_imeHwnd = nullptr;
     }
+#endif
 }
 
 void InputUnregisterCallbacks(GLFWwindow*) {
+#ifdef _WIN32
     if (s_imeHwnd && s_imeContext)
         ImmAssociateContext(s_imeHwnd, s_imeContext);
     if (s_imeHwnd && s_glfwWndProc &&
@@ -284,6 +319,7 @@ void InputUnregisterCallbacks(GLFWwindow*) {
     s_imeContext = nullptr;
     s_imeEnabled = false;
     s_imeComposing = false;
+#endif
     CodexSearchClearComposition();
 }
 

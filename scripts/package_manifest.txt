@@ -1,0 +1,14 @@
+# Onedow 배포 ZIP 포함 목록 — zip_onedow.ps1 / zip_onedow.sh / macOS CI가 함께 쓰는 단일 기준.
+# 경로는 bin/Onedow 기준이고, 끝이 /이면 폴더 전체다. 이 목록 밖의 파일은 ZIP에 들어가지 않는다
+# (세이브 onedow_save.cfg, 크래시 로그·덤프, Screenshots/, 텔레메트리, .pdb/.lib/.exp 등).
+# ZIP 안의 WindowsOS/, macOS/ 폴더는 비어 있어도 항상 만든다.
+#
+# 형식: <required|optional> <경로> [exec]
+#   required  없으면 패키징 실패
+#   optional  있으면 포함
+#   exec      ZIP에 실행 권한(0755)으로 기록
+required README.md
+required Resource/
+optional WindowsOS/Onedow.exe
+optional macOS/Onedow exec
+optional macOS/README.txt

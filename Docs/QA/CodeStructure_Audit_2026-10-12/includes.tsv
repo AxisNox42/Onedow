@@ -1,0 +1,755 @@
+﻿source	line	include_text	resolved_target	kind	syntax
+tests/blur_render_test.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+tests/blur_render_test.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+tests/blur_render_test.cpp	4	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+tests/blur_render_test.cpp	5	BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+tests/blur_render_test.cpp	6	cstdio		external	system
+tests/blur_render_test.cpp	7	cstdlib		external	system
+tests/genesis_launcher_test.cpp	4	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+tests/genesis_launcher_test.cpp	5	cassert		external	system
+tests/genesis_launcher_test.cpp	6	cmath		external	system
+tests/genesis_launcher_test.cpp	7	cstdio		external	system
+tests/magnetar_field_test.cpp	3	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+tests/magnetar_field_test.cpp	4	cassert		external	system
+tests/magnetar_field_test.cpp	5	cmath		external	system
+tests/magnetar_field_test.cpp	6	cstdio		external	system
+tests/mob_death_fx_test.cpp	2	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+tests/mob_death_fx_test.cpp	3	RangedMob.h	WiNILL/Entity/RangedMob.h	owned	quoted
+tests/mob_death_fx_test.cpp	4	../WiNILL/Render/Camera.h	WiNILL/Render/Camera.h	owned	quoted
+tests/mob_death_fx_test.cpp	5	cassert		external	system
+tests/mob_death_fx_test.cpp	6	cstdio		external	system
+tests/quasar_beam_test.cpp	6	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+tests/quasar_beam_test.cpp	7	cassert		external	system
+tests/quasar_beam_test.cpp	8	cmath		external	system
+tests/quasar_beam_test.cpp	9	cstdio		external	system
+tests/quasar_nova_test.cpp	6	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+tests/quasar_nova_test.cpp	7	cassert		external	system
+tests/quasar_nova_test.cpp	8	cmath		external	system
+tests/quasar_nova_test.cpp	9	cstdio		external	system
+tests/regulus_beam_test.cpp	3	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+tests/regulus_beam_test.cpp	4	cassert		external	system
+tests/regulus_beam_test.cpp	5	cmath		external	system
+tests/regulus_beam_test.cpp	6	cstdio		external	system
+tests/regulus_beam_test.cpp	7	set		external	system
+WiNILL/Core/Achievements.h	8	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Achievements.h	9	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/AugmentSlots.h	5	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/AugmentSlots.h	6	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/AugmentSlots.h	7	vector		external	system
+WiNILL/Core/Codex.h	7	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Codex.h	8	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Codex.h	9	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Codex.h	10	string		external	system
+WiNILL/Core/Codex.h	11	cwctype		external	system
+WiNILL/Core/Codex.h	12	algorithm		external	system
+WiNILL/Core/GameContext.h	5	vector		external	system
+WiNILL/Core/GameContext.h	6	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/GameContext.h	7	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/Core/GameContext.h	8	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/Core/GameContext.h	9	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/GameContext.h	10	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/GameContext.h	11	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/GameManager.cpp	1	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/GameManager.cpp	2	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/GameManager.cpp	3	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/GameManager.cpp	4	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/GameManager.cpp	5	GameContext.h	WiNILL/Core/GameContext.h	owned	quoted
+WiNILL/Core/GameManager.cpp	6	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/GameManager.cpp	7	algorithm		external	system
+WiNILL/Core/GameManager.h	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/GameManager.h	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/GameManager.h	4	vector		external	system
+WiNILL/Core/GameManager.h	5	deque		external	system
+WiNILL/Core/GameManager.h	6	cstring		external	system
+WiNILL/Core/GameManager.h	7	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/Core/GameManager.h	8	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/Core/GameManager.h	9	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Meta.h	6	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Meta.h	7	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	1	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/Scenes/SceneAugment.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/SceneAugment.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	5	GameContext.h	WiNILL/Core/GameContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	6	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	7	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	8	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	9	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	10	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	11	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	12	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	13	TutorialText.h	WiNILL/Core/TutorialText.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	14	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	15	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	16	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	17	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	18	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	19	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	20	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	21	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	22	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	23	../../Render/UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	24	../../Render/PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	25	../../Render/NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	26	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	27	../../Render/BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	28	../../System/Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	29	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	30	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	31	../System/SystemInfo.h	WiNILL/System/SystemInfo.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	32	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	33	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	34	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	35	AugmentSlots.h	WiNILL/Core/AugmentSlots.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	36	../../Render/Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Core/Scenes/SceneAugment.cpp	37	algorithm		external	system
+WiNILL/Core/Scenes/SceneAugment.cpp	38	vector		external	system
+WiNILL/Core/Scenes/SceneAugment.cpp	39	string		external	system
+WiNILL/Core/Scenes/SceneAugment.cpp	40	cmath		external	system
+WiNILL/Core/Scenes/SceneAugment.cpp	41	functional		external	system
+WiNILL/Core/Scenes/SceneAugment.cpp	42	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneBoot.cpp	1	SceneContext.h	WiNILL/Core/Scenes/SceneContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneBoot.cpp	2	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneContext.h	2	functional		external	system
+WiNILL/Core/Scenes/SceneContext.h	3	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneInternal.h	2	SceneContext.h	WiNILL/Core/Scenes/SceneContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneInternal.h	4	string		external	system
+WiNILL/Core/Scenes/SceneInternal.h	5	vector		external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	1	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	5	GameContext.h	WiNILL/Core/GameContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	6	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	7	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	8	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	9	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	10	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	11	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	12	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	13	TutorialText.h	WiNILL/Core/TutorialText.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	14	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	15	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	16	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	17	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	18	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	19	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	20	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	21	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	22	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	23	../../Render/UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	24	../../Render/PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	25	../../Render/NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	26	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	27	../../Render/BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	28	../../System/Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	29	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	30	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	31	../System/SystemInfo.h	WiNILL/System/SystemInfo.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	32	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	33	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	34	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	35	AugmentSlots.h	WiNILL/Core/AugmentSlots.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	36	../../System/Input.h	WiNILL/System/Input.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	37	../../Render/Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	38	algorithm		external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	39	vector		external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	40	string		external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	41	cmath		external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	42	functional		external	system
+WiNILL/Core/Scenes/SceneMenus.cpp	1177	SceneMainMenu.inl	WiNILL/Core/Scenes/SceneMainMenu.inl	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	1178	SceneShop.inl	WiNILL/Core/Scenes/SceneShop.inl	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	1180	SceneCodexInline.inl	WiNILL/Core/Scenes/SceneCodexInline.inl	owned	quoted
+WiNILL/Core/Scenes/SceneMenus.cpp	1182	SceneCodex.inl	WiNILL/Core/Scenes/SceneCodex.inl	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	1	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/Scenes/ScenePause.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/ScenePause.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	5	ScenePause.h	WiNILL/Core/Scenes/ScenePause.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	6	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	7	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	8	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	9	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	10	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	11	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	12	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	13	TutorialText.h	WiNILL/Core/TutorialText.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	14	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	15	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	16	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	17	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	18	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	19	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	20	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	21	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	22	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	23	../../Render/UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	24	../../Render/PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	25	../../Render/NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	26	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	27	../../Render/BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	28	../../System/Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	29	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	30	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	31	../System/SystemInfo.h	WiNILL/System/SystemInfo.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	32	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	33	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	34	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	35	AugmentSlots.h	WiNILL/Core/AugmentSlots.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	36	../../Render/Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.cpp	37	algorithm		external	system
+WiNILL/Core/Scenes/ScenePause.cpp	38	vector		external	system
+WiNILL/Core/Scenes/ScenePause.cpp	39	string		external	system
+WiNILL/Core/Scenes/ScenePause.cpp	40	cmath		external	system
+WiNILL/Core/Scenes/ScenePause.cpp	41	functional		external	system
+WiNILL/Core/Scenes/ScenePause.cpp	42	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/ScenePause.h	2	SceneTextContext.h	WiNILL/Core/Scenes/SceneTextContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	1	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/Scenes/SceneRunConfig.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/SceneRunConfig.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	5	GameContext.h	WiNILL/Core/GameContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	6	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	7	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	8	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	9	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	10	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	11	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	12	TutorialText.h	WiNILL/Core/TutorialText.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	13	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	14	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	15	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	16	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	17	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	18	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	19	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	20	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	21	../../Render/UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	22	../../Render/PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	23	../../Render/NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	24	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	25	../../Render/BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	26	../../System/Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	27	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	28	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	29	../System/SystemInfo.h	WiNILL/System/SystemInfo.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	30	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	31	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	32	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	33	../../Render/Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunConfig.cpp	34	algorithm		external	system
+WiNILL/Core/Scenes/SceneRunConfig.cpp	35	vector		external	system
+WiNILL/Core/Scenes/SceneRunConfig.cpp	36	string		external	system
+WiNILL/Core/Scenes/SceneRunConfig.cpp	37	cmath		external	system
+WiNILL/Core/Scenes/SceneRunConfig.cpp	38	functional		external	system
+WiNILL/Core/Scenes/SceneRunConfig.cpp	39	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	1	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/Scenes/SceneRunEnd.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/SceneRunEnd.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	5	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	7	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	8	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	9	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	10	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	11	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	12	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	13	TutorialText.h	WiNILL/Core/TutorialText.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	14	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	15	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	16	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	17	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	18	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	19	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	20	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	21	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	22	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	23	../../Render/UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	24	../../Render/PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	25	../../Render/NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	26	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	27	../../Render/BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	28	../../System/Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	29	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	30	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	31	../System/SystemInfo.h	WiNILL/System/SystemInfo.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	32	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	33	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	34	PlayerWeaponShell.h	WiNILL/Render/PlayerWeaponShell.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	35	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	36	AugmentSlots.h	WiNILL/Core/AugmentSlots.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	37	../../Render/Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.cpp	38	algorithm		external	system
+WiNILL/Core/Scenes/SceneRunEnd.cpp	39	vector		external	system
+WiNILL/Core/Scenes/SceneRunEnd.cpp	40	string		external	system
+WiNILL/Core/Scenes/SceneRunEnd.cpp	41	cmath		external	system
+WiNILL/Core/Scenes/SceneRunEnd.cpp	42	functional		external	system
+WiNILL/Core/Scenes/SceneRunEnd.cpp	43	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneRunEnd.h	2	vector		external	system
+WiNILL/Core/Scenes/SceneRunEnd.h	4	SceneTextContext.h	WiNILL/Core/Scenes/SceneTextContext.h	owned	quoted
+WiNILL/Core/Scenes/Scenes.h	2	SceneContext.h	WiNILL/Core/Scenes/SceneContext.h	owned	quoted
+WiNILL/Core/Scenes/Scenes.h	3	ScenePause.h	WiNILL/Core/Scenes/ScenePause.h	owned	quoted
+WiNILL/Core/Scenes/Scenes.h	4	SceneRunEnd.h	WiNILL/Core/Scenes/SceneRunEnd.h	owned	quoted
+WiNILL/Core/Scenes/Scenes.h	5	SceneStart.h	WiNILL/Core/Scenes/SceneStart.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	1	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/Scenes/SceneSettings.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/SceneSettings.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	5	GameContext.h	WiNILL/Core/GameContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	6	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	7	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	8	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	9	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	10	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	11	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	12	TutorialText.h	WiNILL/Core/TutorialText.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	13	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	14	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	15	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	16	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	17	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	18	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	19	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	20	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	21	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	22	../../Render/UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	23	../../Render/PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	24	../../Render/NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	25	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	26	../../Render/BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	27	../../System/Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	28	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	29	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	30	../System/SystemInfo.h	WiNILL/System/SystemInfo.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	31	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	32	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	33	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	34	AugmentSlots.h	WiNILL/Core/AugmentSlots.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	35	../../Render/Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Core/Scenes/SceneSettings.cpp	36	algorithm		external	system
+WiNILL/Core/Scenes/SceneSettings.cpp	37	vector		external	system
+WiNILL/Core/Scenes/SceneSettings.cpp	38	string		external	system
+WiNILL/Core/Scenes/SceneSettings.cpp	39	cmath		external	system
+WiNILL/Core/Scenes/SceneSettings.cpp	40	functional		external	system
+WiNILL/Core/Scenes/SceneSettings.cpp	41	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneSkills.cpp	1	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Core/Scenes/SceneSkills.h	2	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	1	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Core/Scenes/SceneStart.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/SceneStart.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	5	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	6	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	7	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	8	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	9	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	10	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	11	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	12	TutorialText.h	WiNILL/Core/TutorialText.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	13	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	14	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	15	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	16	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	17	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	18	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	19	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	20	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	21	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	22	../../Render/UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	23	../../Render/PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	24	../../Render/NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	25	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	26	../../Render/BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	27	../../System/Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	28	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	29	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	30	../System/SystemInfo.h	WiNILL/System/SystemInfo.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	31	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	32	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	33	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	34	AugmentSlots.h	WiNILL/Core/AugmentSlots.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	35	../../Render/Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.cpp	36	algorithm		external	system
+WiNILL/Core/Scenes/SceneStart.cpp	37	vector		external	system
+WiNILL/Core/Scenes/SceneStart.cpp	38	string		external	system
+WiNILL/Core/Scenes/SceneStart.cpp	39	cmath		external	system
+WiNILL/Core/Scenes/SceneStart.cpp	40	functional		external	system
+WiNILL/Core/Scenes/SceneStart.cpp	41	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/Core/Scenes/SceneStart.h	2	SceneTextContext.h	WiNILL/Core/Scenes/SceneTextContext.h	owned	quoted
+WiNILL/Core/Scenes/SceneUI.cpp	1	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/Core/Scenes/SceneUI.cpp	2	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/SceneUI.cpp	3	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Core/Scenes/SceneUI.cpp	4	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/Scenes/SceneUI.cpp	5	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Core/Scenes/SceneUI.cpp	6	algorithm		external	system
+WiNILL/Core/Scenes/SceneUI.cpp	7	cmath		external	system
+WiNILL/Core/Scenes/SceneUI.cpp	8	string		external	system
+WiNILL/Core/Scenes/SceneUI.cpp	9	utility		external	system
+WiNILL/Core/Scenes/SceneUI.cpp	10	vector		external	system
+WiNILL/Core/Scenes/WindowChrome.cpp	1	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/Core/Scenes/WindowChrome.cpp	2	SceneContext.h	WiNILL/Core/Scenes/SceneContext.h	owned	quoted
+WiNILL/Core/Scenes/WindowChrome.cpp	3	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Core/Scenes/WindowChrome.cpp	4	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/Core/Scenes/WindowChrome.cpp	5	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/Core/TutorialText.h	2	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Entity/Augment.h	2	cstdlib		external	system
+WiNILL/Entity/Augment.h	3	Platform.h	WiNILL/System/Platform.h	owned	quoted
+WiNILL/Entity/Augment.h	4	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Entity/Augment.h	455	AugmentDescKR.h	WiNILL/Entity/AugmentDescKR.h	owned	quoted
+WiNILL/Entity/AugmentCatalog.cpp	1	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Entity/Bullet.h	2	algorithm		external	system
+WiNILL/Entity/Bullet.h	3	glm/glm.hpp	Include/glm/glm.hpp	external	system
+WiNILL/Entity/Bullet.h	4	cmath		external	system
+WiNILL/Entity/CollisionSystem.h	2	algorithm		external	system
+WiNILL/Entity/CollisionSystem.h	4	cmath		external	system
+WiNILL/Entity/CollisionSystem.h	5	cstdlib		external	system
+WiNILL/Entity/CollisionSystem.h	6	glm/glm.hpp	Include/glm/glm.hpp	external	system
+WiNILL/Entity/CollisionSystem.h	7	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/Entity/CollisionSystem.h	9	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/Entity/CollisionSystem.h	10	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Entity/CollisionSystem.h	11	Juice.h	WiNILL/Render/Juice.h	owned	quoted
+WiNILL/Entity/CollisionSystem.h	12	../Core/Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Entity/EnemyProgression.h	2	algorithm		external	system
+WiNILL/Entity/EnemyShield.h	2	algorithm		external	system
+WiNILL/Entity/EnemyShield.h	4	../Render/EnemyParticles.h	WiNILL/Render/EnemyParticles.h	owned	quoted
+WiNILL/Entity/EnemySpawner.cpp	1	EnemySpawner.h	WiNILL/Entity/EnemySpawner.h	owned	quoted
+WiNILL/Entity/EnemySpawner.cpp	2	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Entity/EnemySpawner.cpp	4	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/Entity/EnemySpawner.cpp	5	EnemyProgression.h	WiNILL/Entity/EnemyProgression.h	owned	quoted
+WiNILL/Entity/EnemySpawner.cpp	6	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Entity/EnemySpawner.cpp	7	../System/Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Entity/EnemySpawner.cpp	8	algorithm		external	system
+WiNILL/Entity/EnemySpawner.cpp	9	cstdlib		external	system
+WiNILL/Entity/ExpSystem.h	2	cmath		external	system
+WiNILL/Entity/Monster.h	2	algorithm		external	system
+WiNILL/Entity/Monster.h	4	array		external	system
+WiNILL/Entity/Monster.h	5	cmath		external	system
+WiNILL/Entity/Monster.h	6	cstdlib		external	system
+WiNILL/Entity/Monster.h	7	vector		external	system
+WiNILL/Entity/Monster.h	8	glm/glm.hpp	Include/glm/glm.hpp	external	system
+WiNILL/Entity/Monster.h	10	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/Entity/Monster.h	12	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Entity/Monster.h	13	EnemyShield.h	WiNILL/Entity/EnemyShield.h	owned	quoted
+WiNILL/Entity/MonsterManager.h	2	vector		external	system
+WiNILL/Entity/MonsterManager.h	3	algorithm		external	system
+WiNILL/Entity/MonsterManager.h	4	cstdlib		external	system
+WiNILL/Entity/MonsterManager.h	5	cmath		external	system
+WiNILL/Entity/MonsterManager.h	6	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Entity/MonsterManager.h	7	RangedMob.h	WiNILL/Entity/RangedMob.h	owned	quoted
+WiNILL/Entity/PlayerRuntime.cpp	1	PlayerRuntime.h	WiNILL/Entity/PlayerRuntime.h	owned	quoted
+WiNILL/Entity/PlayerRuntime.cpp	2	../Core/Scenes/SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/Entity/PlayerRuntime.cpp	4	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Entity/PlayerRuntime.cpp	5	algorithm		external	system
+WiNILL/Entity/PlayerRuntime.cpp	6	cmath		external	system
+WiNILL/Entity/PlayerStats.h	2	algorithm		external	system
+WiNILL/Entity/PlayerStats.h	3	cmath		external	system
+WiNILL/Entity/PlayerStats.h	4	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Entity/ProjectileSystem.cpp	1	ProjectileSystem.h	WiNILL/Entity/ProjectileSystem.h	owned	quoted
+WiNILL/Entity/ProjectileSystem.cpp	2	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/Entity/ProjectileSystem.cpp	4	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/Entity/ProjectileSystem.cpp	5	../System/FakeWindow.h	WiNILL/System/FakeWindow.h	owned	quoted
+WiNILL/Entity/ProjectileSystem.cpp	6	algorithm		external	system
+WiNILL/Entity/ProjectileSystem.cpp	7	cmath		external	system
+WiNILL/Entity/ProjectileSystem.h	2	vector		external	system
+WiNILL/Entity/RangedMob.h	2	glm/glm.hpp	Include/glm/glm.hpp	external	system
+WiNILL/Entity/RangedMob.h	3	cmath		external	system
+WiNILL/Entity/RangedMob.h	4	cstdlib		external	system
+WiNILL/Entity/RangedMob.h	5	vector		external	system
+WiNILL/Entity/RangedMob.h	6	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/Entity/RangedMob.h	7	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/Entity/RangedMob.h	8	EnemyShield.h	WiNILL/Entity/EnemyShield.h	owned	quoted
+WiNILL/Entity/RangedMob.h	9	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Entity/Weapons.h	2	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/main.cpp	3	windows.h		external	system
+WiNILL/main.cpp	4	dwmapi.h		external	system
+WiNILL/main.cpp	5	timeapi.h		external	system
+WiNILL/main.cpp	7	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/main.cpp	9	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/main.cpp	12	GLFW/glfw3native.h	Include/GLFW/glfw3native.h	external	system
+WiNILL/main.cpp	14	Platform.h	WiNILL/System/Platform.h	owned	quoted
+WiNILL/main.cpp	16	CrashHandler.h	WiNILL/System/CrashHandler.h	owned	quoted
+WiNILL/main.cpp	17	glm/glm.hpp	Include/glm/glm.hpp	external	system
+WiNILL/main.cpp	19	iostream		external	system
+WiNILL/main.cpp	20	vector		external	system
+WiNILL/main.cpp	21	deque		external	system
+WiNILL/main.cpp	22	cmath		external	system
+WiNILL/main.cpp	23	cstdlib		external	system
+WiNILL/main.cpp	24	ctime		external	system
+WiNILL/main.cpp	25	cstdarg		external	system
+WiNILL/main.cpp	26	cstdio		external	system
+WiNILL/main.cpp	27	string		external	system
+WiNILL/main.cpp	28	cstring		external	system
+WiNILL/main.cpp	29	cwctype		external	system
+WiNILL/main.cpp	30	algorithm		external	system
+WiNILL/main.cpp	31	functional		external	system
+WiNILL/main.cpp	32	FakeWindow.h	WiNILL/System/FakeWindow.h	owned	quoted
+WiNILL/main.cpp	34	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/main.cpp	35	GameVersion.h	WiNILL/Core/GameVersion.h	owned	quoted
+WiNILL/main.cpp	36	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/main.cpp	37	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/main.cpp	38	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/main.cpp	39	EnemyProgression.h	WiNILL/Entity/EnemyProgression.h	owned	quoted
+WiNILL/main.cpp	40	EnemySpawner.h	WiNILL/Entity/EnemySpawner.h	owned	quoted
+WiNILL/main.cpp	41	ProjectileSystem.h	WiNILL/Entity/ProjectileSystem.h	owned	quoted
+WiNILL/main.cpp	42	AugmentSlots.h	WiNILL/Core/AugmentSlots.h	owned	quoted
+WiNILL/main.cpp	43	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/main.cpp	44	CollisionSystem.h	WiNILL/Entity/CollisionSystem.h	owned	quoted
+WiNILL/main.cpp	45	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/main.cpp	46	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/main.cpp	47	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/main.cpp	48	PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/main.cpp	49	NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/main.cpp	50	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/main.cpp	51	UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/main.cpp	52	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/main.cpp	53	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/main.cpp	54	WindowFx.h	WiNILL/System/WindowFx.h	owned	quoted
+WiNILL/main.cpp	55	Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/main.cpp	56	Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/main.cpp	57	SaveSystem.h	WiNILL/System/SaveSystem.h	owned	quoted
+WiNILL/main.cpp	58	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/main.cpp	59	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/main.cpp	60	BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/main.cpp	61	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/main.cpp	62	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/main.cpp	63	PlayerWeaponShell.h	WiNILL/Render/PlayerWeaponShell.h	owned	quoted
+WiNILL/main.cpp	64	GameFonts.h	WiNILL/Render/GameFonts.h	owned	quoted
+WiNILL/main.cpp	65	PlayerRuntime.h	WiNILL/Entity/PlayerRuntime.h	owned	quoted
+WiNILL/main.cpp	66	Scenes.h	WiNILL/Core/Scenes/Scenes.h	owned	quoted
+WiNILL/main.cpp	67	SceneContext.h	WiNILL/Core/Scenes/SceneContext.h	owned	quoted
+WiNILL/main.cpp	68	SceneInternal.h	WiNILL/Core/Scenes/SceneInternal.h	owned	quoted
+WiNILL/main.cpp	69	SceneSkills.h	WiNILL/Core/Scenes/SceneSkills.h	owned	quoted
+WiNILL/main.cpp	70	Input.h	WiNILL/System/Input.h	owned	quoted
+WiNILL/main.cpp	71	DebugToolkit.h	WiNILL/System/DebugToolkit.h	owned	quoted
+WiNILL/main.cpp	72	SmokeCapture.h	WiNILL/System/SmokeCapture.h	owned	quoted
+WiNILL/main.cpp	73	UiLayout.h	WiNILL/Render/UiLayout.h	owned	quoted
+WiNILL/main.cpp	74	SceneUI.h	WiNILL/Core/Scenes/SceneUI.h	owned	quoted
+WiNILL/main.cpp	75	WindowChrome.h	WiNILL/Core/Scenes/WindowChrome.h	owned	quoted
+WiNILL/main.cpp	76	GameplayTelemetry.h	WiNILL/System/GameplayTelemetry.h	owned	quoted
+WiNILL/Render/BlurShader.cpp	1	BlurShader.h	WiNILL/Render/BlurShader.h	owned	quoted
+WiNILL/Render/BlurShader.cpp	2	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Render/BlurShader.cpp	3	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/BlurShader.cpp	4	cstdio		external	system
+WiNILL/Render/BlurShader.cpp	5	cstring		external	system
+WiNILL/Render/BlurShader.cpp	6	algorithm		external	system
+WiNILL/Render/BlurShader.cpp	7	chrono		external	system
+WiNILL/Render/BlurShader.h	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/Camera.cpp	1	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Render/Camera.h	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/Camera.h	3	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/DrawPrim.h	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/DrawPrim.h	3	cmath		external	system
+WiNILL/Render/DrawPrim.h	4	vector		external	system
+WiNILL/Render/DrawPrim.h	5	cstdint		external	system
+WiNILL/Render/DrawPrim.h	6	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Render/EnemyParticles.h	2	algorithm		external	system
+WiNILL/Render/EnemyParticles.h	3	cmath		external	system
+WiNILL/Render/EnemyParticles.h	4	cstdlib		external	system
+WiNILL/Render/EnemyParticles.h	5	vector		external	system
+WiNILL/Render/EnemyParticles.h	6	glm/glm.hpp	Include/glm/glm.hpp	external	system
+WiNILL/Render/EnemyParticles.h	7	../System/Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	1	EntityDraw.h	WiNILL/Render/EntityDraw.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	2	../Entity/MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	3	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	4	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	5	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	6	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	7	RangedMob.h	WiNILL/Entity/RangedMob.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	8	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	9	UiColors.h	WiNILL/Render/UiColors.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	10	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Render/EntityDraw.cpp	11	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Render/EntityDraw.cpp	12	algorithm		external	system
+WiNILL/Render/EntityDraw.cpp	13	cmath		external	system
+WiNILL/Render/EntityDraw.cpp	14	vector		external	system
+WiNILL/Render/EntityDraw.h	2	vector		external	system
+WiNILL/Render/EntityDraw.h	3	Bullet.h	WiNILL/Entity/Bullet.h	owned	quoted
+WiNILL/Render/EntityDraw.h	4	Monster.h	WiNILL/Entity/Monster.h	owned	quoted
+WiNILL/Render/GameFonts.cpp	1	GameFonts.h	WiNILL/Render/GameFonts.h	owned	quoted
+WiNILL/Render/GameFonts.cpp	2	../Entity/Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Render/GameFonts.cpp	4	../System/Translations.h	WiNILL/System/Translations.h	owned	quoted
+WiNILL/Render/GameFonts.cpp	5	../System/EmbeddedResource.h	WiNILL/System/EmbeddedResource.h	owned	quoted
+WiNILL/Render/GameFonts.cpp	6	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Render/GameFonts.cpp	7	algorithm		external	system
+WiNILL/Render/GameFonts.cpp	8	cstdio		external	system
+WiNILL/Render/GameFonts.cpp	9	cwctype		external	system
+WiNILL/Render/GameFonts.cpp	10	string		external	system
+WiNILL/Render/IconSystem.h	8	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/IconSystem.h	9	cstdio		external	system
+WiNILL/Render/IconSystem.h	10	cstring		external	system
+WiNILL/Render/IconSystem.h	11	vector		external	system
+WiNILL/Render/IconSystem.h	12	stb_image.h	Include/stb_image.h	external	quoted
+WiNILL/Render/IconSystem.h	13	Augment.h	WiNILL/Entity/Augment.h	owned	quoted
+WiNILL/Render/IconSystem.h	14	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/IconSystem.h	22	windows.h		external	system
+WiNILL/Render/Juice.h	2	vector		external	system
+WiNILL/Render/Juice.h	3	cmath		external	system
+WiNILL/Render/Juice.h	4	algorithm		external	system
+WiNILL/Render/Juice.h	5	cstdlib		external	system
+WiNILL/Render/Juice.h	6	cstring		external	system
+WiNILL/Render/Juice.h	7	glm/glm.hpp	Include/glm/glm.hpp	external	system
+WiNILL/Render/Juice.h	8	Platform.h	WiNILL/System/Platform.h	owned	quoted
+WiNILL/Render/Juice.h	9	Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/Render/Juice.h	10	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Render/Juice.h	11	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/Render/Juice.h	12	EnemyParticles.h	WiNILL/Render/EnemyParticles.h	owned	quoted
+WiNILL/Render/MainShader.cpp	1	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Render/MainShader.cpp	2	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/MainShader.cpp	3	EmbeddedResource.h	WiNILL/System/EmbeddedResource.h	owned	quoted
+WiNILL/Render/MainShader.cpp	4	stb_image.h	Include/stb_image.h	external	quoted
+WiNILL/Render/MainShader.cpp	5	cstdio		external	system
+WiNILL/Render/MainShader.cpp	6	cstring		external	system
+WiNILL/Render/MainShader.cpp	8	windows.h		external	system
+WiNILL/Render/MainShader.h	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/NebulaGlowShader.cpp	1	NebulaGlowShader.h	WiNILL/Render/NebulaGlowShader.h	owned	quoted
+WiNILL/Render/NebulaGlowShader.cpp	2	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/NebulaGlowShader.cpp	3	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Render/NebulaGlowShader.cpp	4	cstdio		external	system
+WiNILL/Render/NebulaGlowShader.cpp	6	windows.h		external	system
+WiNILL/Render/NebulaGlowShader.h	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/PlanetShader.cpp	1	PlanetShader.h	WiNILL/Render/PlanetShader.h	owned	quoted
+WiNILL/Render/PlanetShader.cpp	2	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/PlanetShader.cpp	3	MainShader.h	WiNILL/Render/MainShader.h	owned	quoted
+WiNILL/Render/PlanetShader.cpp	4	cstdio		external	system
+WiNILL/Render/PlanetShader.cpp	6	windows.h		external	system
+WiNILL/Render/PlanetShader.h	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/PlayerWeaponShell.cpp	1	PlayerWeaponShell.h	WiNILL/Render/PlayerWeaponShell.h	owned	quoted
+WiNILL/Render/PlayerWeaponShell.cpp	2	../Entity/MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/Render/PlayerWeaponShell.cpp	4	../Entity/Weapons.h	WiNILL/Entity/Weapons.h	owned	quoted
+WiNILL/Render/PlayerWeaponShell.cpp	5	Camera.h	WiNILL/Render/Camera.h	owned	quoted
+WiNILL/Render/PlayerWeaponShell.cpp	6	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/PlayerWeaponShell.cpp	7	IconSystem.h	WiNILL/Render/IconSystem.h	owned	quoted
+WiNILL/Render/PlayerWeaponShell.cpp	8	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/Render/PlayerWeaponShell.cpp	9	algorithm		external	system
+WiNILL/Render/PlayerWeaponShell.cpp	10	cmath		external	system
+WiNILL/Render/stb_impl.cpp	4	stb_truetype.h	Include/stb_truetype.h	external	quoted
+WiNILL/Render/stb_impl.cpp	8	stb_image.h	Include/stb_image.h	external	quoted
+WiNILL/Render/TextRenderer.h	9	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/Render/TextRenderer.h	11	algorithm		external	system
+WiNILL/Render/TextRenderer.h	12	string		external	system
+WiNILL/Render/TextRenderer.h	13	unordered_map		external	system
+WiNILL/Render/TextRenderer.h	14	vector		external	system
+WiNILL/Render/TextRenderer.h	15	cstring		external	system
+WiNILL/Render/TextRenderer.h	16	cstdint		external	system
+WiNILL/Render/TextRenderer.h	17	cstdio		external	system
+WiNILL/Render/TextRenderer.h	18	cmath		external	system
+WiNILL/Render/TextRenderer.h	19	stb_truetype.h	Include/stb_truetype.h	external	quoted
+WiNILL/Render/TextRenderer.h	20	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/UiColors.h	2	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/Render/UiLayout.h	2	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/Render/UiLayout.h	3	algorithm		external	system
+WiNILL/System/Audio.cpp	9	miniaudio.h	WiNILL/System/miniaudio.h	external	quoted
+WiNILL/System/Audio.cpp	10	Audio.h	WiNILL/System/Audio.h	owned	quoted
+WiNILL/System/Audio.cpp	11	EmbeddedResource.h	WiNILL/System/EmbeddedResource.h	owned	quoted
+WiNILL/System/Audio.cpp	12	cstring		external	system
+WiNILL/System/Audio.cpp	13	cstdlib		external	system
+WiNILL/System/Audio.cpp	14	string		external	system
+WiNILL/System/Audio.cpp	15	chrono		external	system
+WiNILL/System/Audio.cpp	17	windows.h		external	system
+WiNILL/System/CrashHandler.h	13	windows.h		external	system
+WiNILL/System/CrashHandler.h	14	dbghelp.h		external	system
+WiNILL/System/CrashHandler.h	15	cstdio		external	system
+WiNILL/System/CrashHandler.h	16	cstring		external	system
+WiNILL/System/CrashHandler.h	17	ctime		external	system
+WiNILL/System/DebugToolkit.cpp	1	DebugToolkit.h	WiNILL/System/DebugToolkit.h	owned	quoted
+WiNILL/System/DebugToolkit.cpp	2	algorithm		external	system
+WiNILL/System/DebugToolkit.cpp	4	array		external	system
+WiNILL/System/DebugToolkit.cpp	5	chrono		external	system
+WiNILL/System/DebugToolkit.cpp	6	cmath		external	system
+WiNILL/System/DebugToolkit.cpp	7	cstddef		external	system
+WiNILL/System/DebugToolkit.cpp	8	cstdint		external	system
+WiNILL/System/DebugToolkit.cpp	9	cwchar		external	system
+WiNILL/System/DebugToolkit.cpp	10	ctime		external	system
+WiNILL/System/DebugToolkit.cpp	11	filesystem		external	system
+WiNILL/System/DebugToolkit.cpp	12	fstream		external	system
+WiNILL/System/DebugToolkit.cpp	13	sstream		external	system
+WiNILL/System/DebugToolkit.cpp	14	string		external	system
+WiNILL/System/DebugToolkit.cpp	15	vector		external	system
+WiNILL/System/DebugToolkit.cpp	16	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/System/DebugToolkit.cpp	18	DrawPrim.h	WiNILL/Render/DrawPrim.h	owned	quoted
+WiNILL/System/DebugToolkit.cpp	20	TextRenderer.h	WiNILL/Render/TextRenderer.h	owned	quoted
+WiNILL/System/DebugToolkit.cpp	21	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/System/DebugToolkit.cpp	22	Input.h	WiNILL/System/Input.h	owned	quoted
+WiNILL/System/DebugToolkit.h	2	functional		external	system
+WiNILL/System/DebugToolkit.h	4	string		external	system
+WiNILL/System/DebugToolkit.h	5	vector		external	system
+WiNILL/System/DebugToolkit.h	6	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/System/DebugToolkit.h	8	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/System/DebugToolkit.h	9	FakeWindow.h	WiNILL/System/FakeWindow.h	owned	quoted
+WiNILL/System/DebugToolkit.h	11	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/System/DebugToolkit.h	12	MonsterManager.h	WiNILL/Entity/MonsterManager.h	owned	quoted
+WiNILL/System/DebugToolkit.h	13	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/System/EmbeddedResource.h	2	cstddef		external	system
+WiNILL/System/EmbeddedResource.h	9	windows.h		external	system
+WiNILL/System/FakeWindow.cpp	1	FakeWindow.h	WiNILL/System/FakeWindow.h	owned	quoted
+WiNILL/System/GameplayTelemetry.h	5	algorithm		external	system
+WiNILL/System/GameplayTelemetry.h	7	cmath		external	system
+WiNILL/System/GameplayTelemetry.h	8	ctime		external	system
+WiNILL/System/GameplayTelemetry.h	9	fstream		external	system
+WiNILL/System/GameplayTelemetry.h	10	iomanip		external	system
+WiNILL/System/GameplayTelemetry.h	11	sstream		external	system
+WiNILL/System/GameplayTelemetry.h	12	string		external	system
+WiNILL/System/GameplayTelemetry.h	13	ExpSystem.h	WiNILL/Entity/ExpSystem.h	owned	quoted
+WiNILL/System/GameplayTelemetry.h	15	Platform.h	WiNILL/System/Platform.h	owned	quoted
+WiNILL/System/GameplayTelemetry.h	16	PlayerStats.h	WiNILL/Entity/PlayerStats.h	owned	quoted
+WiNILL/System/Input.cpp	1	Input.h	WiNILL/System/Input.h	owned	quoted
+WiNILL/System/Input.cpp	2	glad/glad.h	Include/glad/glad.h	external	system
+WiNILL/System/Input.cpp	3	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/System/Input.cpp	5	GLFW/glfw3native.h	Include/GLFW/glfw3native.h	external	system
+WiNILL/System/Input.cpp	6	GameManager.h	WiNILL/Core/GameManager.h	owned	quoted
+WiNILL/System/Input.cpp	7	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/System/Input.cpp	11	windows.h		external	system
+WiNILL/System/Input.cpp	12	imm.h		external	system
+WiNILL/System/Input.cpp	13	string		external	system
+WiNILL/System/Input.cpp	14	vector		external	system
+WiNILL/System/Input.cpp	15	algorithm		external	system
+WiNILL/System/Input.cpp	16	cwctype		external	system
+WiNILL/System/Input.cpp	17	cstring		external	system
+WiNILL/System/Input.cpp	18	cmath		external	system
+WiNILL/System/Platform.h	7	string		external	system
+WiNILL/System/Platform.h	8	cstdio		external	system
+WiNILL/System/Platform.h	11	windows.h		external	system
+WiNILL/System/Platform.h	12	timeapi.h		external	system
+WiNILL/System/Platform.h	13	direct.h		external	system
+WiNILL/System/Platform.h	15	unistd.h		external	system
+WiNILL/System/Platform.h	16	libgen.h		external	system
+WiNILL/System/Platform.h	17	sys/stat.h		external	system
+WiNILL/System/Platform.h	18	thread		external	system
+WiNILL/System/Platform.h	19	chrono		external	system
+WiNILL/System/Platform.h	20	cwchar		external	system
+WiNILL/System/Platform.h	21	ctime		external	system
+WiNILL/System/Platform.h	23	mach-o/dyld.h		external	system
+WiNILL/System/Platform.h	24	cstdint		external	system
+WiNILL/System/SaveSystem.h	6	cstdio		external	system
+WiNILL/System/SaveSystem.h	7	cstring		external	system
+WiNILL/System/SaveSystem.h	8	cstdlib		external	system
+WiNILL/System/SaveSystem.h	9	string		external	system
+WiNILL/System/SaveSystem.h	10	filesystem		external	system
+WiNILL/System/SaveSystem.h	11	system_error		external	system
+WiNILL/System/SaveSystem.h	12	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/System/SaveSystem.h	13	Meta.h	WiNILL/Core/Meta.h	owned	quoted
+WiNILL/System/SaveSystem.h	14	Achievements.h	WiNILL/Core/Achievements.h	owned	quoted
+WiNILL/System/SaveSystem.h	15	Codex.h	WiNILL/Core/Codex.h	owned	quoted
+WiNILL/System/SmokeCapture.h	18	cstdio		external	system
+WiNILL/System/SmokeCapture.h	19	cstdlib		external	system
+WiNILL/System/SmokeCapture.h	20	cstring		external	system
+WiNILL/System/SmokeCapture.h	21	functional		external	system
+WiNILL/System/SmokeCapture.h	22	string		external	system
+WiNILL/System/SmokeCapture.h	23	vector		external	system
+WiNILL/System/SmokeCapture.h	24	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/System/SmokeCapture.h	26	DebugToolkit.h	WiNILL/System/DebugToolkit.h	owned	quoted
+WiNILL/System/SmokeCapture.h	28	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/System/SystemInfo.h	2	string		external	system
+WiNILL/System/SystemInfo.h	7	windows.h		external	system
+WiNILL/System/SystemInfo.h	8	cwchar		external	system
+WiNILL/System/Translations.h	2	Settings.h	WiNILL/System/Settings.h	owned	quoted
+WiNILL/System/WindowFx.cpp	1	WindowFx.h	WiNILL/System/WindowFx.h	owned	quoted
+WiNILL/System/WindowFx.cpp	2	cstdio		external	system
+WiNILL/System/WindowFx.cpp	3	cstdarg		external	system
+WiNILL/System/WindowFx.cpp	13	windows.h		external	system
+WiNILL/System/WindowFx.cpp	14	dwmapi.h		external	system
+WiNILL/System/WindowFx.cpp	15	shobjidl.h		external	system
+WiNILL/System/WindowFx.cpp	16	shellapi.h		external	system
+WiNILL/System/WindowFx.cpp	18	GLFW/glfw3.h	Include/GLFW/glfw3.h	external	system
+WiNILL/System/WindowFx.cpp	19	GLFW/glfw3native.h	Include/GLFW/glfw3native.h	external	system
+WiNILL/System/WindowFx.cpp	20	Settings.h	WiNILL/System/Settings.h	owned	quoted

@@ -14,7 +14,7 @@
 // Kill stardust: spawned now, or held on the mob for a delayed death and
 // released on the blast ring (Quasar supernova, Genesis first wave).
 inline void SpawnKillStardust(Monster& m, int value, float playerCX, float playerCY,
-                              long long xp) {
+                              XpAmount xp) {
     if (m.kind == MobKind::QUASAR || m.kind == MobKind::GENESIS) {
         m.dustPending = true;
         m.pendingDustValue = value;
@@ -22,6 +22,15 @@ inline void SpawnKillStardust(Monster& m, int value, float playerCX, float playe
         return;
     }
     SpawnStardust(m.worldX, m.worldY, value, playerCX, playerCY, xp);
+}
+
+// A thrown Genesis Swarm's kill, on every kill path: the combo and the codex
+// only — no score, XP/stardust, lifesteal, run kill count (warlord), vampire
+// streak, or 무한 세례 kill.
+inline void CreditThrownSwarmKill(Monster& m) {
+    m.scored = true;
+    AddKillCombo(/*countsForRain=*/false);
+    RegisterCodexMobKill(m.kind);
 }
 
 // Releases held kill stardust whose moment has come. Call every frame.
@@ -103,7 +112,7 @@ public:
     static bool Update(float playerCX, float playerCY,
                        MonsterManager& manager, std::vector<Bullet>& bullets,
                        float& playerHP, float& scoreAccum, long long& score,
-                       PlayerStats& stats, long long& /*xp*/) {
+                       PlayerStats& stats) {
         bool playerHit = false;
 
         for (auto& bullet : bullets) {
@@ -151,10 +160,7 @@ public:
                             isCrit ? 0.85f : bullet.color.g,
                             isCrit ? 0.3f : bullet.color.b);
                 if (!monster->alive && monster->genesisThrown) {
-                    // Thrown Genesis Swarms count as kills but pay nothing.
-                    monster->scored = true;
-                    AddKillCombo();
-                    RegisterCodexMobKill(monster->kind);
+                    CreditThrownSwarmKill(*monster);
                 } else if (!monster->alive) {
                     monster->scored = true;
                     AddKillCombo();
@@ -163,23 +169,15 @@ public:
                     MobKillReward(monster->kind, baseXp, baseScore);
                     const float rewardMult = MobRewardMult(monster->kind);
                     baseScore *= rewardMult;
-                    const long long pickupXp = MobExperienceReward(monster->kind, stats);
+                    const XpAmount pickupXp = MobExperienceReward(monster->kind, stats);
                     SpawnKillStardust(*monster, StardustRewardFor(monster->kind),
                                       playerCX, playerCY, pickupXp);
                     stats.RegisterKill();
                     RegisterCodexMobKill(monster->kind);
                     scoreAccum += baseScore;
                     score = (long long)scoreAccum;
-                    if (stats.vampire || stats.lifesteal2) {
-                        ++stats.vampireKillStreak;
-                        if (stats.vampireKillStreak >= stats.GetVampireKillNeed()) {
-                            stats.vampireKillStreak = 0;
-                            playerHP = std::min(stats.maxHP, playerHP + 1.0f);
-                        }
-                    }
-                    if (stats.GetLifestealPerKill() > 0.0f)
-                        playerHP = std::min(stats.maxHP,
-                                            playerHP + stats.GetLifestealPerKill() * rewardMult);
+                    playerHP = stats.ApplyVampireKill(playerHP);
+                    playerHP = stats.ApplyKillLifesteal(playerHP);
                 }
 
                 bool keepAlive = stats.pierce &&
@@ -226,23 +224,15 @@ public:
                 if (!ranged->alive) {
                     ranged->scored = true;
                     AddKillCombo();
-                    const long long pickupXp = RangedMob::ExperienceReward(stats);
+                    const XpAmount pickupXp = RangedMob::ExperienceReward(stats);
                     SpawnStardust(ranged->worldX, ranged->worldY, 3,
                                   playerCX, playerCY, pickupXp);
                     stats.RegisterKill();
                     RegisterCodexMobKill(CM_SCOPE);
                     scoreAccum += 300.0f;
                     score = (long long)scoreAccum;
-                    if (stats.vampire || stats.lifesteal2) {
-                        ++stats.vampireKillStreak;
-                        if (stats.vampireKillStreak >= stats.GetVampireKillNeed()) {
-                            stats.vampireKillStreak = 0;
-                            playerHP = std::min(stats.maxHP, playerHP + 1.0f);
-                        }
-                    }
-                    if (stats.GetLifestealPerKill() > 0.0f)
-                        playerHP = std::min(stats.maxHP,
-                                            playerHP + stats.GetLifestealPerKill());
+                    playerHP = stats.ApplyVampireKill(playerHP);
+                    playerHP = stats.ApplyKillLifesteal(playerHP);
                     if (stats.hackRanged && (rand() % 100) < 20) {
                         constexpr int COUNT = 5;
                         for (int i = 0; i < COUNT; ++i) {

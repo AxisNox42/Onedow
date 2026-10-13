@@ -11,9 +11,54 @@
 #include "Bullet.h"
 #include "PlayerStats.h"
 #include "EnemyShield.h"
+#include "Experience.h"
 
 class RangedMob;
 class Monster;
+
+// Magnetar's ward lattice: a regular icosahedron (12 vertices, 20 faces).
+// Shared by the gameplay (which face a shot meets) and the drawing.
+namespace MagnetarLattice {
+inline constexpr float kPhi = 1.6180340f;
+inline constexpr float kV[12][3] = {
+    {-1, kPhi, 0}, {1, kPhi, 0}, {-1, -kPhi, 0}, {1, -kPhi, 0},
+    {0, -1, kPhi}, {0, 1, kPhi}, {0, -1, -kPhi}, {0, 1, -kPhi},
+    {kPhi, 0, -1}, {kPhi, 0, 1}, {-kPhi, 0, -1}, {-kPhi, 0, 1}};
+inline constexpr int kF[20][3] = {
+    {0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4},
+    {11, 10, 2}, {10, 7, 6}, {7, 1, 8}, {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8},
+    {3, 8, 9}, {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
+
+struct Proj { float x, y, z; };
+
+// Rotates a point by yaw (about the vertical) then pitch (about the
+// horizontal) and projects it orthographically: x, y on screen, z = depth
+// (positive faces the viewer).
+inline Proj Project(float px, float py, float pz, float yaw, float pitch) {
+    const float cy = cosf(yaw), sy = sinf(yaw);
+    const float x1 = px * cy + pz * sy, z1 = -px * sy + pz * cy;
+    const float cp = cosf(pitch), sp = sinf(pitch);
+    return { x1, py * cp - z1 * sp, py * sp + z1 * cp };
+}
+
+// The face a shot meets when it crosses the ward rim at screen angle `ang`:
+// the one whose turned normal points most toward that side of the rim,
+// leaning to the viewer so it is a visible face drawn on that side.
+inline int FaceToward(float ang, float yaw, float pitch) {
+    const float tx = cosf(ang) * 0.857f, ty = sinf(ang) * 0.857f, tz = 0.514f;
+    int best = 0;
+    float bestDot = -1e9f;
+    for (int f = 0; f < 20; ++f) {
+        const float nx = kV[kF[f][0]][0] + kV[kF[f][1]][0] + kV[kF[f][2]][0];
+        const float ny = kV[kF[f][0]][1] + kV[kF[f][1]][1] + kV[kF[f][2]][1];
+        const float nz = kV[kF[f][0]][2] + kV[kF[f][1]][2] + kV[kF[f][2]][2];
+        const Proj n = Project(nx, ny, nz, yaw, pitch);
+        const float d = n.x * tx + n.y * ty + n.z * tz;
+        if (d > bestDot) { bestDot = d; best = f; }
+    }
+    return best;
+}
+}  // namespace MagnetarLattice
 
 // The close-range roster contains six live signals. Scope remains the
 // separate ranged mob; retired mutation variants have no runtime type anymore.
@@ -76,11 +121,11 @@ inline float MobXpBonus(MobKind kind, const PlayerStats& stats) {
     return bonus;
 }
 
-inline long long MobExperienceReward(MobKind kind, const PlayerStats& stats) {
+inline XpAmount MobExperienceReward(MobKind kind, const PlayerStats& stats) {
     float xpBase, scoreBase;
     MobKillReward(kind, xpBase, scoreBase);
     // Currency/score reductions must not turn a tier-1 kill into zero XP.
-    return (long long)((xpBase + MobXpBonus(kind, stats)) * stats.xpMult);
+    return XpFromReward((double)(xpBase + MobXpBonus(kind, stats)) * stats.xpMult);
 }
 
 class Monster {
@@ -108,19 +153,22 @@ public:
     // moment and released on the shock ring.
     static constexpr float QUASAR_NOVA_COLLAPSE = 1.0f;   // collapse ends, hold begins
     static constexpr float QUASAR_NOVA_BLAST = 1.25f;
-    // Wave time after the blast; the Genesis wave series lasts the same.
-    static constexpr float QUASAR_NOVA_WAVE_TIME = 1.70f;
+    // Wave time after the blast; the Genesis wave lasts the same. Kept short
+    // so a tier-4 kill does not leave rings over the arena.
+    static constexpr float QUASAR_NOVA_WAVE_TIME = 0.60f;
     static constexpr float QUASAR_NOVA_TIME = QUASAR_NOVA_BLAST + QUASAR_NOVA_WAVE_TIME;
+    // Quasar shock front's final radius / base (halo is 1.95).
+    static constexpr float QUASAR_NOVA_REACH = 3.64f;
     // Genesis death: the same build-up as the Quasar nova (instability, then
-    // a squeeze), but a longer tail: several blast waves, each weaker. The
-    // kill stardust comes out with the first wave, like the Quasar's.
+    // a squeeze), then a single blast wave. The kill stardust comes out with
+    // the wave, like the Quasar's.
     static constexpr float GENESIS_WAVE_1 = QUASAR_NOVA_BLAST;
     static constexpr float GENESIS_WAVE_GAP = 0.60f;
-    static constexpr int GENESIS_WAVE_COUNT = 2;
+    static constexpr int GENESIS_WAVE_COUNT = 1;
     // Wave life in seconds = GENESIS_WAVE_LIFE_BASE + GENESIS_WAVE_LIFE_PER_REACH * reach.
-    static constexpr float GENESIS_WAVE_LIFE_BASE = 0.45f;
+    static constexpr float GENESIS_WAVE_LIFE_BASE = 0.31f;
     static constexpr float GENESIS_WAVE_LIFE_PER_REACH = 0.06f;
-    static constexpr float GENESIS_WAVE_REACH = 7.05f;    // first wave radius / base (1.5x)
+    static constexpr float GENESIS_WAVE_REACH = 4.76f;    // wave radius / base (plates reach ~2.45)
     static constexpr float GENESIS_WAVE_FALLOFF = 0.75f;  // each next wave's share of the last
     static constexpr float GENESIS_DEATH_TIME = GENESIS_WAVE_1 + QUASAR_NOVA_WAVE_TIME;
     static_assert(GENESIS_WAVE_GAP * (GENESIS_WAVE_COUNT - 1) + GENESIS_WAVE_LIFE_BASE +
@@ -128,9 +176,9 @@ public:
                   "the last Genesis wave must finish inside the shared wave time");
     static constexpr float QUASAR_BEAM_RADIUS = 55.0f;
     static constexpr float QUASAR_BEAM_DPS = 45.0f;
-    // While firing, the beam turns very slowly at a constant rate (rad/s),
-    // clockwise or counter-clockwise at random per attack. It never steers
-    // toward the player.
+    // While firing, the beam turns very slowly (at most this rate, rad/s)
+    // toward the player. The beam runs both ways, so it turns whichever way
+    // brings the nearer end onto the player.
     static constexpr float QUASAR_BEAM_TURN = 0.08f;
     static constexpr float ANTARES_BASE_HP = 600.0f;
     static constexpr int ANTARES_TRAIL_COUNT = 6;
@@ -173,17 +221,15 @@ public:
     static constexpr float THROWN_SWARM_DAMAGE = 10.0f;
     static constexpr float THROWN_SWARM_STUN = ANTARES_STUN_TIME_SEC;
     static constexpr float MAGNETAR_BASE_HP = 450.0f;
-    static constexpr int MAGNETAR_MAX_STACKS = 8;
-    // Full refill: once the last stack is spent the ward is down; after the
-    // recharge time all MAGNETAR_MAX_STACKS return at once. Nearby support
-    // (magnetarRegenRate, 0.3 alone .. 1.2) shortens it down to the minimum.
-    static constexpr float MAGNETAR_RECHARGE_TIME = 6.0f;
-    static constexpr float MAGNETAR_RECHARGE_MIN = 3.0f;
+    // Each of the 20 lattice faces is its own shield: a face stops
+    // MAGNETAR_FACE_HITS shots from its side, then breaks and lets shots
+    // through there until it restores MAGNETAR_FACE_RESTORE seconds later.
+    static constexpr int MAGNETAR_FACES = 20;
+    static constexpr int MAGNETAR_FACE_HITS = 4;
+    static constexpr float MAGNETAR_FACE_RESTORE = 8.0f;
     static constexpr float MAGNETAR_FIELD_RADIUS = 145.0f;
-    // Deflect look (visual only; the shot is still absorbed): rim flash plus
-    // sparks thrown along the mirrored direction, for this long.
-    static constexpr float MAGNETAR_DEFLECT_TIME = 0.20f;
-    static constexpr int MAGNETAR_DEFLECT_SLOTS = 4;
+    // A face that stops a shot flashes white for this long.
+    static constexpr float MAGNETAR_HIT_FLASH = 0.20f;
 
     // Antares is a bull: it keeps accelerating while it chases, turns worse
     // the faster it goes, and drops back to stage 1 once it overshoots.
@@ -209,13 +255,17 @@ public:
     float hitFlashTimer = 0.0f;
     float deathEffectTimer = -1.0f;
     // Elite-kill experiment: set at the kill when the hit stop fires. During
-    // the death's waves (EliteKillFxWeight) the waves warp, and only the
-    // leading wave splits red/cyan, inside the death recipes themselves.
+    // the death's waves (EliteKillFxWeight) the rings warp slightly, inside
+    // the death recipes themselves.
     bool eliteKillFx = false;
     // Kill reward held back for a delayed death (Quasar supernova).
     bool dustPending = false;
     int pendingDustValue = 0;
-    long long pendingDustXp = 0;
+    // Timed death debris (Quasar blast, Genesis waves) already spawned; -1
+    // when none is pending. Reduced matches the kill's particle budget.
+    int deathBurstsSpawned = -1;
+    bool deathBurstsReduced = false;
+    XpAmount pendingDustXp = 0;
     glm::vec3 color = glm::vec3(1.0f, 0.27f, 0.0f);
 
     MobKind kind = MobKind::ROTOR;
@@ -278,7 +328,6 @@ public:
     float quasarAimX = 1.0f;
     float quasarAimY = 0.0f;
     bool quasarAimSet = false;        // aim chosen for this attack (at wind-up start)
-    float quasarBeamTurnSign = 1.0f;  // +1 / -1, rolled per attack with the aim
     float quasarVisualAngle = 0.0f;
     float quasarShellSpin = 0.0f;   // accretion shell spin; speeds up with heat
     float quasarMoveAngle = 0.0f;
@@ -316,18 +365,18 @@ public:
     float antaresKnockY = 0.0f;
     float antaresTrailTimer = 0.0f;
     std::array<glm::vec3, ANTARES_TRAIL_COUNT> antaresTrail{};
-    float magnetarStacks = (float)MAGNETAR_MAX_STACKS;
-    float magnetarRegenRate = 0.3f;   // support level: 0.3 alone, up to 1.2
-    float magnetarRechargeTimer = 0.0f;   // time the ward has been down
+    // Per face: shots it can still stop, seconds since it broke (< 0 while
+    // intact) and seconds since it last restored (drives the snap-back look).
+    std::array<int, MAGNETAR_FACES> magnetarFaceHits{};
+    std::array<float, MAGNETAR_FACES> magnetarFaceBroken{};
+    std::array<float, MAGNETAR_FACES> magnetarFaceRestored{};
     float magnetarVisualAngle = 0.0f;
     float magnetarFacing = 0.0f;       // magnetic axis; the N pole tracks the player
-    float magnetarFieldTimer = 1.0f;   // time since the field (re)appeared
     float magnetarInterceptTimer = 0.0f;
     float magnetarInterceptX = 0.0f;
     float magnetarInterceptY = 0.0f;
-    // Recent deflect flashes: x = rim angle of the hit, y = mirrored outgoing
-    // angle, z = time left (MAGNETAR_DEFLECT_TIME .. 0).
-    std::array<glm::vec3, MAGNETAR_DEFLECT_SLOTS> magnetarDeflects{};
+    // Per face: hit flash time left (MAGNETAR_HIT_FLASH .. 0).
+    std::array<float, MAGNETAR_FACES> magnetarFaceHitFlash{};
 
     // Damage over time and Gravis' temporary collision grace period.
     float burnTimer = 0.0f;
@@ -361,7 +410,7 @@ public:
             genesisChildHpMult = hp / 90.0f;   // progression x trial ramp at spawn
             hp *= 7.0f;
             speed *= 0.35f;
-            sizeScale = 2.3f;   // tier-4 body; orbit frame + plates add the rest
+            sizeScale = 1.7f;   // tier-4 body; orbit frame + plates add the rest
             genesisId = s_NextGenesisId++;
             spawnTimer = 0.0f;
             hivePhase = 0;
@@ -382,7 +431,7 @@ public:
             color = glm::vec3(0.58f, 0.42f, 1.0f);
             hp *= 8.0f;
             speed *= 0.24f;
-            sizeScale = 2.65f;
+            sizeScale = 2.1f;
             contactDmg = 6.0f;
             gravisVisualAngle = (float)(rand() % 628) * 0.01f;
             gravisDriftAngle = (float)(rand() % 628) * 0.01f;
@@ -391,7 +440,7 @@ public:
             color = glm::vec3(0.42f, 0.56f, 1.0f);
             hp *= 6.4f;
             speed *= 0.52f;
-            sizeScale = 4.4f;   // tier 4: body x1.1, outer halo + tilted orbit add the rest
+            sizeScale = 2.4f;   // tier 4: outer halo + tilted orbit add the rest
             contactDmg = 4.0f;
             quasarState = 0;
             quasarTimer = (float)(rand() % 120) * 0.01f;
@@ -418,7 +467,7 @@ public:
             color = glm::vec3(0.722f, 0.937f, 1.0f);
             hp *= REGULUS_BASE_HP / 90.0f;
             speed *= 0.42f;
-            sizeScale = 1.50f;
+            sizeScale = 1.35f;
             contactDmg = 0.0f;
             regulusBaseHp = hp;
             regulusShield = {};
@@ -450,9 +499,9 @@ public:
             speed *= 0.78f;
             sizeScale = 1.8f;
             contactDmg = 5.0f;
-            magnetarStacks = (float)MAGNETAR_MAX_STACKS;
-            magnetarFieldTimer = 1.0f;
-            magnetarRegenRate = 0.3f;
+            magnetarFaceHits.fill(MAGNETAR_FACE_HITS);
+            magnetarFaceBroken.fill(-1.0f);
+            magnetarFaceRestored.fill(99.0f);
             magnetarVisualAngle = (float)(rand() % 628) * 0.01f;
             magnetarInterceptTimer = 0.0f;
         }
@@ -559,22 +608,21 @@ public:
     }
 
     void UpdateDeathEffect(float delta) {
-        if (!alive && DeathEffectVisible())
+        if (!alive && DeathEffectVisible()) {
             deathEffectTimer += std::max(0.0f, delta);
+            SpawnStagedDeathBursts();
+        }
     }
 
     // Elite-kill distortion strength 0..1 over the death animation: it swells
-    // in with the waves and settles before they end (Genesis: from the second
-    // wave through the last; Quasar: from the blast into the remnant). Zero
-    // during the collapse.
+    // in just after the blast and settles before the wave ends; the rings
+    // warp slightly while it is up. Zero during the collapse.
     float EliteKillFxWeight() const {
         if (!eliteKillFx || deathEffectTimer < 0.0f) return 0.0f;
-        float start = QUASAR_NOVA_BLAST + 0.30f;
-        float end = QUASAR_NOVA_BLAST + QUASAR_NOVA_WAVE_TIME - 0.25f;
-        if (kind == MobKind::GENESIS) {
-            start = GENESIS_WAVE_1 + 0.30f;              // same mark as the Quasar
-            end = GENESIS_WAVE_1 + GENESIS_WAVE_GAP * (float)(GENESIS_WAVE_COUNT - 1) + 0.60f;
-        }
+        // GENESIS_WAVE_1 == QUASAR_NOVA_BLAST and both share the wave time,
+        // so one window serves both.
+        const float start = QUASAR_NOVA_BLAST + 0.05f;
+        const float end = QUASAR_NOVA_BLAST + QUASAR_NOVA_WAVE_TIME - 0.10f;
         const float t = deathEffectTimer;
         if (t <= start || t >= end) return 0.0f;
         const float rise = std::clamp((t - start) / 0.15f, 0.0f, 1.0f);
@@ -600,32 +648,36 @@ public:
         return true;
     }
 
-    void SpawnGenesisDeathEffect(float base, bool reduced) const {
+    // Instability: a few hot sparks leak off the shaking core (at the kill).
+    void SpawnGenesisInstabilityBurst(float base, bool reduced) const {
         const float radius = MobDeathParticleRadius(base);
         EnemyParticleBurst burst;
-        // Instability: a few hot sparks leak off the shaking core.
         burst.count = 10; burst.life = QUASAR_NOVA_COLLAPSE; burst.phase = hiveOrbitAngle;
         burst.startRadius = 0.10f; burst.jitter = 0.5f;
         burst.speedMin = radius * 0.35f; burst.speedMax = radius * 0.7f;
         burst.sizeMin = 2.0f; burst.sizeMax = 4.0f; burst.colorLift = 0.55f;
         SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
-        // One burst per blast wave, each weaker than the last.
-        static constexpr int kCount[GENESIS_WAVE_COUNT] = { 44, 28 };
-        for (int k = 0; k < GENESIS_WAVE_COUNT; ++k) {
-            const float f = (float)k / (float)(GENESIS_WAVE_COUNT - 1);   // 0..1
-            burst.count = kCount[k];
-            burst.delay = GENESIS_WAVE_1 + GENESIS_WAVE_GAP * (float)k;
-            burst.life = 0.70f - 0.25f * f; burst.tangent = 0.18f;
-            burst.startRadius = 0.12f; burst.jitter = 0.35f;
-            // Reach follows the waves: 1.5x for the first, then the falloff.
-            const float falloff = powf(GENESIS_WAVE_FALLOFF, (float)k);
-            burst.rangeScale = 3.0f * falloff + 1.0f;
-            burst.speedMin = radius * 6.0f * falloff;
-            burst.speedMax = radius * 8.2f * falloff;
-            burst.sizeMin = 2.0f; burst.sizeMax = 9.0f - 5.0f * f;
-            burst.colorLift = 0.45f - 0.25f * f;
-            SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
-        }
+    }
+
+    // Debris for blast wave k, spawned when that wave goes off; it stays
+    // inside the wave's reach.
+    void SpawnGenesisWaveBurst(float base, int k, bool reduced) const {
+        const float radius = MobDeathParticleRadius(base);
+        static constexpr int kCount[] = { 44, 28 };
+        static_assert(GENESIS_WAVE_COUNT <= 2, "kCount needs a burst per wave");
+        const float f = GENESIS_WAVE_COUNT > 1
+            ? (float)k / (float)(GENESIS_WAVE_COUNT - 1) : 0.0f;        // 0..1
+        const float falloff = powf(GENESIS_WAVE_FALLOFF, (float)k);
+        EnemyParticleBurst burst;
+        burst.count = kCount[k]; burst.phase = hiveOrbitAngle;
+        burst.life = 0.60f - 0.20f * f; burst.tangent = 0.18f;
+        burst.startRadius = 0.12f; burst.jitter = 0.35f;
+        burst.rangeScale = GENESIS_WAVE_REACH * falloff * base / radius;
+        burst.speedMin = radius * 6.0f * falloff;
+        burst.speedMax = radius * 8.2f * falloff;
+        burst.sizeMin = 2.0f; burst.sizeMax = 9.0f - 5.0f * f;
+        burst.colorLift = 0.45f - 0.25f * f;
+        SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
     }
 
     template <typename Line, typename Disc, typename Hexagon>
@@ -660,10 +712,11 @@ public:
 
     // Quasar supernova (QUASAR_NOVA_TIME): collapse to QUASAR_NOVA_COLLAPSE
     // (every layer is drawn into the core, spinning faster, the core
-    // flickers), hold until QUASAR_NOVA_BLAST (one white point), blast (white shock
-    // ring fast, blue ring slower, central flash), remnant to the end (two
-    // unbroken shells whose width and brightness vary round the ring, fading
-    // as they drift out). Lines and small discs only; no dashed segments.
+    // flickers), hold until QUASAR_NOVA_BLAST (one white point), then a short
+    // blast: a brief central flash, one thin white shock front that stops
+    // a short way past the halo (QUASAR_NOVA_REACH), and one uneven remnant shell
+    // behind it. At most two rings at once. Lines and small discs only; no
+    // dashed segments.
     template <typename Line, typename Disc, typename Hexagon>
     void DrawQuasarDeathEffect(Line line, Disc disc, Hexagon /*hexagon*/) const {
         const float base = (summoned ? 28.0f : 18.0f) * sizeScale;
@@ -686,7 +739,7 @@ public:
             float px = 0.0f, py = 0.0f;
             for (int i = 0; i <= n; ++i) {
                 const float s = 6.2831853f * (float)i / (float)n;
-                const float warp = 1.0f + 0.07f * fxWarp *
+                const float warp = 1.0f + 0.025f * fxWarp *
                     (sinf(s * 5.0f + t * 21.0f + seed) + 0.5f * sinf(s * 3.0f - t * 15.0f));
                 const float x = worldX + ox + (ux * cosf(s) * a - uy * sinf(s) * b) * warp;
                 const float y = worldY + oy + (uy * cosf(s) * a + ux * sinf(s) * b) * warp;
@@ -723,65 +776,45 @@ public:
             ellipse(0.0f, base * (0.55f - 0.30f * u), base * (0.55f - 0.30f * u), 24, 1.0f,
                     color + (white - color) * 0.6f, 0.45f + 0.4f * u);
         }
-        // 3-4. Blast and remnant. One wave, but spread over the same wave time
-        // as the Genesis' series (QUASAR_NOVA_WAVE_TIME): a short tight flash,
-        // then the white shock front and the blue ring roll out slowly with
-        // the uneven remnant shells following behind them.
+        // 3. Blast (QUASAR_NOVA_WAVE_TIME): a brief tight flash inside the
+        // body, the thin white front rolling out to QUASAR_NOVA_REACH, and one
+        // uneven remnant shell following it. Two rings at most at any time.
         if (t >= QUASAR_NOVA_BLAST) {
             const float b = t - QUASAR_NOVA_BLAST;
             const float life = QUASAR_NOVA_TIME - QUASAR_NOVA_BLAST;
             const float v = std::clamp(b / life, 0.0f, 1.0f);
-            // Flash: a tight bright ring, the only fast part.
-            const float flash = std::clamp(b / 0.30f, 0.0f, 1.0f);
+            // Flash: gone before the remnant shell rises.
+            const float flash = std::clamp(b / 0.15f, 0.0f, 1.0f);
             if (flash < 1.0f) {
-                const float rf = base * (0.15f + 1.1f * easeOut(flash));
-                ellipse(0.0f, rf, rf, 40, 1.0f + 4.0f * (1.0f - flash), white,
-                        0.95f * (1.0f - flash));
+                const float rf = base * (0.15f + 0.85f * easeOut(flash));
+                ellipse(0.0f, rf, rf, 40, 1.0f + 1.5f * (1.0f - flash), white,
+                        0.90f * (1.0f - flash));
             }
-            // Shock front: rolls out across most of the wave time.
-            const float front = std::clamp(b / (life * 0.80f), 0.0f, 1.0f);
-            const float frontFade = 1.0f - ease((v - 0.55f) / 0.45f);
+            // Shock front.
+            const float front = std::clamp(b / (life * 0.85f), 0.0f, 1.0f);
+            const float frontFade = 1.0f - ease((v - 0.45f) / 0.55f);
             if (frontFade > 0.0f) {
-                const float rw = base * (0.3f + 4.3f * easeOut(front));
-                // Elite-kill distortion: only the front splits red/cyan.
-                if (fxWarp > 0.0f) {
-                    const float amp = (3.0f + base * 0.07f) * fxWarp;
-                    const float jx = amp * cosf(t * 83.0f), jy = amp * sinf(t * 71.0f);
-                    ellipse(0.0f, rw, rw, 64, 2.0f, glm::vec3(1.0f, 0.25f, 0.32f),
-                            0.8f * fxWarp * frontFade, jx, jy);
-                    ellipse(0.0f, rw, rw, 64, 2.0f, glm::vec3(0.25f, 0.92f, 1.0f),
-                            0.8f * fxWarp * frontFade, -jx, -jy);
-                }
-                ellipse(0.0f, rw, rw, 64, 1.2f + 3.0f * (1.0f - front), white,
-                        (1.0f - 0.45f * front) * frontFade);
+                const float rw = base * (0.3f + (QUASAR_NOVA_REACH - 0.3f) * easeOut(front));
+                ellipse(0.0f, rw, rw, 64, 1.0f + 1.0f * (1.0f - front), white,
+                        (0.90f - 0.35f * front) * frontFade);
             }
-            // Blue ring: a step behind the front.
-            const float blue = std::clamp((b - 0.10f) / (life * 0.85f), 0.0f, 1.0f);
-            const float fadeB = 1.0f - ease((v - 0.50f) / 0.45f);
-            if (b > 0.10f && fadeB > 0.0f) {
-                const float rb = base * (0.2f + 3.2f * easeOut(blue));
-                ellipse(0.0f, rb, rb, 56, 2.2f, color + (white - color) * 0.35f, 0.85f * fadeB);
-            }
-            // Remnant shells: continuous, uneven, growing behind the front.
-            const float fade = 1.0f - ease((v - 0.50f) / 0.50f);
-            const float rise = ease((b - 0.15f) / 0.45f);
-            const float grow = easeOut(v);
-            const glm::vec3 shellC[2] = { color + (white - color) * 0.55f, color };
-            const float shellR[2] = { base * (1.2f + 3.4f * grow), base * (1.0f + 2.7f * grow) };
-            for (int sIdx = 0; sIdx < 2 && rise > 0.0f; ++sIdx) {
-                const float ph = seed + 1.7f * (float)sIdx;
+            // Remnant shell: continuous, uneven, a step behind the front.
+            const float fade = 1.0f - ease((v - 0.35f) / 0.65f);
+            const float rise = ease((b - 0.12f) / 0.18f);
+            const float shellR = base * (0.9f + (QUASAR_NOVA_REACH * 0.85f - 0.9f) * easeOut(v));
+            const glm::vec3 shellC = color + (white - color) * 0.35f;
+            if (rise > 0.0f) {
                 static constexpr int kSeg = 72;
                 float px = 0.0f, py = 0.0f;
                 for (int i = 0; i <= kSeg; ++i) {
                     const float a = 6.2831853f * (float)i / (float)kSeg;
-                    const float rr = shellR[sIdx] * (1.0f + 0.04f * sinf(a * 4.0f + ph)
-                        + 0.07f * fxWarp * sinf(a * 5.0f + t * 21.0f + ph));
+                    const float rr = shellR * (1.0f + 0.04f * sinf(a * 4.0f + seed)
+                        + 0.02f * fxWarp * sinf(a * 5.0f + t * 21.0f + seed));
                     const float x = worldX + cosf(a) * rr, y = worldY + sinf(a) * rr;
                     if (i > 0) {
-                        const float f = 0.5f + 0.5f * sinf(a * 3.0f + ph) * sinf(a * 5.0f + ph * 2.0f);
-                        line(px, py, x, y, 1.0f + 2.6f * f,
-                             shellC[sIdx].r, shellC[sIdx].g, shellC[sIdx].b,
-                             (0.35f + 0.60f * f) * fade * rise);
+                        const float f = 0.5f + 0.5f * sinf(a * 3.0f + seed) * sinf(a * 5.0f + seed * 2.0f);
+                        line(px, py, x, y, 0.8f + 1.0f * f, shellC.r, shellC.g, shellC.b,
+                             (0.25f + 0.45f * f) * fade * rise);
                     }
                     px = x; py = y;
                 }
@@ -794,8 +827,9 @@ public:
     // until QUASAR_NOVA_COLLAPSE the core goes unstable (it shakes harder and
     // harder, its triangle twists, its ring warps) while the shells and
     // plates tremble; until GENESIS_WAVE_1 everything is squeezed inward.
-    // Then GENESIS_WAVE_COUNT blast waves go off GENESIS_WAVE_GAP apart, each
-    // weaker than the last; the first wipes the body out. Lines and dots only.
+    // Then GENESIS_WAVE_COUNT blast waves (one by default) go off
+    // GENESIS_WAVE_GAP apart, each weaker than the last, stopping a short
+    // way past the plates; the first wipes the body out. Lines and dots only.
     template <typename Line, typename Disc, typename Hexagon>
     void DrawGenesisDeathEffect(Line line, Disc disc, Hexagon /*hexagon*/) const {
         const float base = (summoned ? 28.0f : 18.0f) * sizeScale;
@@ -813,18 +847,9 @@ public:
         const float ring = hiveOrbitAngle + genesisShellSpin;
         const float fxWarp = EliteKillFxWeight();
 
-        int leadWave = -1;                                       // largest live wave
-        for (int k = 0; k < GENESIS_WAVE_COUNT && leadWave < 0; ++k) {
-            const float reachK = GENESIS_WAVE_REACH * powf(GENESIS_WAVE_FALLOFF, (float)k);
-            const float wk = t - (GENESIS_WAVE_1 + GENESIS_WAVE_GAP * (float)k);
-            if (wk >= 0.0f && wk <= GENESIS_WAVE_LIFE_BASE + GENESIS_WAVE_LIFE_PER_REACH * reachK)
-                leadWave = k;
-        }
-        const float splitAmp = (3.0f + base * 0.07f) * fxWarp;
-        const float splitX = splitAmp * cosf(t * 83.0f), splitY = splitAmp * sinf(t * 71.0f);
         // Blast waves: the first reaches GENESIS_WAVE_REACH (in base units),
         // each later one reaches GENESIS_WAVE_FALLOFF of the one before and is
-        // fainter; bigger waves live a little longer so they still read.
+        // fainter. Each is a thin white front with one red shell behind it.
         for (int k = 0; k < GENESIS_WAVE_COUNT; ++k) {
             const float reach = GENESIS_WAVE_REACH * powf(GENESIS_WAVE_FALLOFF, (float)k);
             const float waveLife = GENESIS_WAVE_LIFE_BASE + GENESIS_WAVE_LIFE_PER_REACH * reach;
@@ -835,21 +860,15 @@ public:
             const float rr = base * (0.5f + (reach - 0.5f) * easeOut(p));
             const glm::vec3 c = k == 0 ? white : (k == 1 ? hot : (k == 2 ? prod : color));
             const float a = (1.0f - p) * (0.55f + 0.45f * strength);
-            const float width = 1.0f + 4.5f * strength * (1.0f - p);
+            const float width = 1.0f + 1.0f * strength * (1.0f - p);
             float px = 0.0f, py = 0.0f;
             for (int i = 0; i <= 56; ++i) {
                 const float ang = 6.2831853f * (float)i / 56.0f;
                 // A slight warp keeps the waves from reading as clean circles.
                 const float wr = rr * (1.0f + 0.05f * (1.0f - p) * sinf(ang * 3.0f + seed + (float)k)
-                    + 0.08f * fxWarp * (sinf(ang * 5.0f + t * 21.0f + (float)k * 1.9f)
+                    + 0.02f * fxWarp * (sinf(ang * 5.0f + t * 21.0f + (float)k * 1.9f)
                                         + 0.5f * sinf(ang * 3.0f - t * 15.0f)));
                 const float qx = x + cosf(ang) * wr, qy = y + sinf(ang) * wr;
-                if (i > 0 && k == leadWave && fxWarp > 0.0f) {   // elite-kill split
-                    line(px + splitX, py + splitY, qx + splitX, qy + splitY, 2.0f,
-                         1.0f, 0.25f, 0.32f, 0.8f * fxWarp * a);
-                    line(px - splitX, py - splitY, qx - splitX, qy - splitY, 2.0f,
-                         0.25f, 0.92f, 1.0f, 0.8f * fxWarp * a);
-                }
                 if (i > 0) line(px, py, qx, qy, width, c.r, c.g, c.b, a);
                 px = qx; py = qy;
             }
@@ -859,7 +878,7 @@ public:
                     const float a0 = 6.2831853f * (float)i / 48.0f;
                     const float a1 = 6.2831853f * (float)(i + 1) / 48.0f;
                     line(x + cosf(a0) * r2, y + sinf(a0) * r2, x + cosf(a1) * r2, y + sinf(a1) * r2,
-                         2.0f, prod.r, prod.g, prod.b, 0.7f * (1.0f - p));
+                         1.2f, prod.r, prod.g, prod.b, 0.5f * (1.0f - p));
                 }
             }
             if (w < 0.08f)
@@ -986,10 +1005,10 @@ public:
         SpawnMobDeathSparks(worldX, worldY, color, radius, 14, reduced);
     }
 
-    void SpawnQuasarDeathEffect(float base, bool reduced) const {
+    // Collapse: matter drawn in from the halo toward the core (at the kill).
+    void SpawnQuasarCollapseBurst(float base, bool reduced) const {
         const float radius = MobDeathParticleRadius(base);
         EnemyParticleBurst burst;
-        // Collapse: matter drawn in from the halo toward the core.
         burst.count = 20; burst.life = QUASAR_NOVA_COLLAPSE * 0.92f;
         burst.phase = quasarVisualAngle;
         burst.startRadius = 0.85f; burst.inward = true; burst.tangent = 0.35f;
@@ -997,18 +1016,46 @@ public:
         burst.speedMin = radius * 0.75f; burst.speedMax = radius * 1.0f;
         burst.colorLift = 0.30f;
         SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
-        // Blast: a fast blue-white shell, then slower heavier debris.
-        burst.inward = false; burst.tangent = 0.0f;
-        burst.count = 56; burst.life = 1.40f; burst.delay = QUASAR_NOVA_BLAST;
+    }
+
+    // Blast (spawned at QUASAR_NOVA_BLAST): a fast blue-white shell, then
+    // slower heavier debris, both kept inside the shock front's reach.
+    void SpawnQuasarBlastBurst(float base, bool reduced) const {
+        const float radius = MobDeathParticleRadius(base);
+        EnemyParticleBurst burst;
+        burst.phase = quasarVisualAngle;
+        burst.rangeScale = QUASAR_NOVA_REACH * base / radius;
+        burst.count = 56; burst.life = QUASAR_NOVA_WAVE_TIME;
         burst.startRadius = 0.06f; burst.sizeMin = 2.0f; burst.sizeMax = 6.0f;
         burst.speedMin = radius * 2.4f; burst.speedMax = radius * 3.4f;
         burst.colorLift = 0.65f;
         SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
-        burst.count = 30; burst.life = 1.60f; burst.delay = QUASAR_NOVA_BLAST + 0.04f;
+        burst.count = 30; burst.life = QUASAR_NOVA_WAVE_TIME + 0.10f; burst.delay = 0.04f;
         burst.tangent = 0.25f; burst.sizeMin = 4.0f; burst.sizeMax = 10.0f;
         burst.speedMin = radius * 1.2f; burst.speedMax = radius * 2.0f;
         burst.colorLift = 0.35f;
         SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
+    }
+
+    // Spawns the timed debris of a body death animation (Quasar blast,
+    // Genesis waves) as deathEffectTimer passes each mark, so the debris
+    // comes out with its ring instead of during the collapse.
+    void SpawnStagedDeathBursts() {
+        if (deathBurstsSpawned < 0) return;
+        const float base = (summoned ? 28.0f : 18.0f) * sizeScale;
+        if (kind == MobKind::QUASAR) {
+            if (deathBurstsSpawned == 0 && deathEffectTimer >= QUASAR_NOVA_BLAST) {
+                SpawnQuasarBlastBurst(base, deathBurstsReduced);
+                deathBurstsSpawned = 1;
+            }
+        } else if (kind == MobKind::GENESIS) {
+            while (deathBurstsSpawned < GENESIS_WAVE_COUNT &&
+                   deathEffectTimer >= GENESIS_WAVE_1 +
+                                       GENESIS_WAVE_GAP * (float)deathBurstsSpawned) {
+                SpawnGenesisWaveBurst(base, deathBurstsSpawned, deathBurstsReduced);
+                ++deathBurstsSpawned;
+            }
+        }
     }
 
     void SpawnDeathEffect(float visualTime, bool reduced = false,
@@ -1022,9 +1069,23 @@ public:
         switch (kind) {
         case MobKind::ROTOR: SpawnRotorDeathEffect(base, visualTime, reduced); break;
         case MobKind::SWARM: SpawnSwarmDeathEffect(base, visualTime, reduced); break;
-        case MobKind::GENESIS: SpawnGenesisDeathEffect(base, reduced); break;
+        case MobKind::GENESIS:
+        case MobKind::QUASAR:
+            if (animateBody) {
+                // The blast debris follows on the body's timer
+                // (SpawnStagedDeathBursts from UpdateDeathEffect).
+                if (kind == MobKind::QUASAR) SpawnQuasarCollapseBurst(base, reduced);
+                else SpawnGenesisInstabilityBurst(base, reduced);
+                deathBurstsSpawned = 0;
+                deathBurstsReduced = reduced;
+            } else if (kind == MobKind::QUASAR) {
+                SpawnQuasarBlastBurst(base, reduced);      // no body: blast at once
+            } else {
+                for (int k = 0; k < GENESIS_WAVE_COUNT; ++k)
+                    SpawnGenesisWaveBurst(base, k, reduced);
+            }
+            break;
         case MobKind::GRAVIS: SpawnGravisDeathEffect(base, reduced); break;
-        case MobKind::QUASAR: SpawnQuasarDeathEffect(base, reduced); break;
         case MobKind::GIMBAL: SpawnGimbalDeathEffect(base, reduced); break;
         case MobKind::REGULUS: SpawnRegulusDeathEffect(base, reduced); break;
         case MobKind::ANTARES: SpawnAntaresDeathEffect(base, reduced); break;
@@ -1094,11 +1155,11 @@ public:
 
     // 0 at rest, rising through search/charge, 1 while firing, then decaying
     // over the 1.4s recovery. Drives the shell spin rate and disc flattening.
-    // Seconds from the ward breaking to the full refill: 6s alone, shorter
-    // with nearby support, never under MAGNETAR_RECHARGE_MIN.
-    float MagnetarRechargeTime() const {
-        const float support = std::max(0.3f, magnetarRegenRate);
-        return std::max(MAGNETAR_RECHARGE_MIN, MAGNETAR_RECHARGE_TIME * 0.3f / support);
+    // Ward lattice orientation, shared by the hit test and the drawing.
+    float MagnetarYaw() const { return magnetarVisualAngle * 0.6f; }
+    float MagnetarPitch() const { return 0.45f + 0.15f * sinf(magnetarVisualAngle * 0.3f); }
+    int MagnetarFaceToward(float ang) const {
+        return MagnetarLattice::FaceToward(ang, MagnetarYaw(), MagnetarPitch());
     }
 
     // Wind-up progress 0..1 over the last QUASAR_PRECHARGE_TIME of the
@@ -1453,8 +1514,8 @@ public:
         hitFlashTimer = std::max(0.0f, hitFlashTimer - deltaTime);
         magnetarInterceptTimer = std::max(0.0f,
                                           magnetarInterceptTimer - deltaTime);
-        for (auto& deflect : magnetarDeflects)
-            deflect.z = std::max(0.0f, deflect.z - deltaTime);
+        for (float& flash : magnetarFaceHitFlash)
+            flash = std::max(0.0f, flash - deltaTime);
         regulusShield.flashTimer = std::max(0.0f,
                                             regulusShield.flashTimer - deltaTime);
         regulusShield.grantTimer = std::max(0.0f,
@@ -1497,26 +1558,24 @@ public:
                 const float maxTurn = 3.0f * deltaTime;
                 magnetarFacing += std::clamp(turn, -maxTurn, maxTurn);
             }
-            // Full refill: nothing returns until the recharge completes.
-            if (magnetarStacks < 1.0f) {
-                magnetarRechargeTimer += deltaTime;
-                if (magnetarRechargeTimer >= MagnetarRechargeTime()) {
-                    magnetarStacks = (float)MAGNETAR_MAX_STACKS;
-                    magnetarRechargeTimer = 0.0f;
+            // Broken faces restore on their own, MAGNETAR_FACE_RESTORE after
+            // they broke.
+            for (int f = 0; f < MAGNETAR_FACES; ++f) {
+                magnetarFaceRestored[f] += deltaTime;
+                if (magnetarFaceBroken[f] < 0.0f) continue;
+                magnetarFaceBroken[f] += deltaTime;
+                if (magnetarFaceBroken[f] >= MAGNETAR_FACE_RESTORE) {
+                    magnetarFaceBroken[f] = -1.0f;
+                    magnetarFaceHits[f] = MAGNETAR_FACE_HITS;
+                    magnetarFaceRestored[f] = 0.0f;
                 }
-            } else {
-                magnetarRechargeTimer = 0.0f;
             }
-            // The field exists only while at least one stack is ready; the
-            // timer restarts so it unfolds again when the first stack returns.
-            if (magnetarStacks >= 1.0f) magnetarFieldTimer += deltaTime;
-            else magnetarFieldTimer = 0.0f;
-            if (bullets && magnetarStacks >= 1.0f) {
+            if (bullets) {
                 const float fieldRadiusSq = MAGNETAR_FIELD_RADIUS *
                                             MAGNETAR_FIELD_RADIUS;
                 for (auto& bullet : *bullets) {
                     if (!bullet.active || bullet.isEnemy ||
-                        magnetarStacks < 1.0f) continue;
+                        bullet.wardPassed == this) continue;
                     const float sx = bullet.x - bullet.prevX;
                     const float sy = bullet.y - bullet.prevY;
                     const float segLenSq = sx * sx + sy * sy;
@@ -1529,26 +1588,24 @@ public:
                     const float bx = nearestX - worldX;
                     const float by = nearestY - worldY;
                     if (bx * bx + by * by > fieldRadiusSq) continue;
-                    bullet.active = false;
-                    magnetarStacks -= 1.0f;
-                    // Hit point on the rim, on the side the shot came from,
-                    // and the shot direction mirrored about the rim normal.
+                    // Hit point on the rim, on the side the shot came from.
                     float ex = bullet.prevX - worldX, ey = bullet.prevY - worldY;
                     if (ex * ex + ey * ey < 1.0f) { ex = bx; ey = by; }
                     const float hitA = atan2f(ey, ex);
-                    const float nx = cosf(hitA), ny = sinf(hitA);
-                    float outA = hitA;
-                    if (segLenSq > 0.001f) {
-                        const float len = sqrtf(segLenSq);
-                        const float dx0 = sx / len, dy0 = sy / len;
-                        const float dn = dx0 * nx + dy0 * ny;
-                        if (dn < 0.0f)                     // moving inward: mirror it
-                            outA = atan2f(dy0 - 2.0f * dn * ny, dx0 - 2.0f * dn * nx);
+                    // Only the face on that side decides: a broken one lets
+                    // the shot through (and it is not checked again).
+                    const int face = MagnetarFaceToward(hitA);
+                    if (magnetarFaceBroken[face] >= 0.0f) {
+                        bullet.wardPassed = this;
+                        continue;
                     }
-                    int slot = 0;                          // reuse the oldest flash
-                    for (int i = 1; i < MAGNETAR_DEFLECT_SLOTS; ++i)
-                        if (magnetarDeflects[i].z < magnetarDeflects[slot].z) slot = i;
-                    magnetarDeflects[slot] = glm::vec3(hitA, outA, MAGNETAR_DEFLECT_TIME);
+                    bullet.active = false;
+                    magnetarFaceHitFlash[face] = MAGNETAR_HIT_FLASH;
+                    if (--magnetarFaceHits[face] <= 0) {
+                        magnetarFaceHits[face] = 0;
+                        magnetarFaceBroken[face] = 0.0f;
+                    }
+                    const float nx = cosf(hitA), ny = sinf(hitA);
                     magnetarInterceptX = worldX + nx * MAGNETAR_FIELD_RADIUS;
                     magnetarInterceptY = worldY + ny * MAGNETAR_FIELD_RADIUS;
                     magnetarInterceptTimer = 0.16f;
@@ -1607,7 +1664,6 @@ public:
                         quasarAimY = dy / distance;
                     }
                     quasarAimSet = true;
-                    quasarBeamTurnSign = (rand() & 1) ? 1.0f : -1.0f;
                 }
                 if (quasarTimer >= COOLDOWN_TIME) {
                     quasarState = 1;
@@ -1621,7 +1677,6 @@ public:
                         quasarAimX = dx / distance;
                         quasarAimY = dy / distance;
                     }
-                    quasarBeamTurnSign = (rand() & 1) ? 1.0f : -1.0f;
                 }
                 quasarAimSet = true;
                 quasarState = 2;
@@ -1632,11 +1687,16 @@ public:
                     quasarTimer = 0.0f;
                 }
             } else if (quasarState == 3) {
-                // Very slow constant turn while firing, in a direction rolled
-                // per attack (either way), independent of where the player is.
-                {
-                    const float next = atan2f(quasarAimY, quasarAimX) +
-                                       QUASAR_BEAM_TURN * quasarBeamTurnSign * deltaTime;
+                // Very slow turn toward the player while firing. The axis
+                // repeats every pi (both ends fire), so the gap is folded into
+                // [-pi/2, pi/2] and the nearer end swings onto the player; the
+                // step is capped so it stops on the player instead of jittering.
+                if (distance > 0.001f) {
+                    const float aim = atan2f(quasarAimY, quasarAimX);
+                    float gap = atan2f(dy, dx) - aim;
+                    gap -= 3.1415927f * floorf(gap / 3.1415927f + 0.5f);
+                    const float maxStep = QUASAR_BEAM_TURN * deltaTime;
+                    const float next = aim + std::clamp(gap, -maxStep, maxStep);
                     quasarAimX = cosf(next);
                     quasarAimY = sinf(next);
                 }

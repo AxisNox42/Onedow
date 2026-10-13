@@ -1180,41 +1180,20 @@ static void DrawAntares(const Monster* m, float base) {
 // Magnetar (lattice ward). The shield IS the body: a slowly turning
 // icosahedron lattice at the real interception radius, back edges faint and
 // front edges gold. Inside, a small crystal seed (octahedron) turns the other
-// way and holds the lattice by four tethers. Stacks are not shown: the
-// lattice is either up or down.
-//   hit       the struck front faces flash white; D1 sparks fly off the rim;
-//             D2 (g_MagnetarFieldRipple) dents the lattice there and the
-//             dent ripples out along it
-//   0 stacks  break: white overload flash, the vertices buckle inward one
-//             after another while the colour flickers gold/orange, a single
-//             ring is released outward; the tethers snap, the seed turns orange
-//   recharge  the orange lattice keeps crumpling: vertices buckle in and
-//             spring back on their own beats and one side bulges while the
-//             other sinks (no even resize); the seed's colour returns
-//             from orange to gold with the recharge (progress = recharge time)
-//   refill    the lattice snaps back to gold in one go
-static constexpr float kIcoPhi = 1.6180340f;
-static const float kIcoV[12][3] = {
-    {-1, kIcoPhi, 0}, {1, kIcoPhi, 0}, {-1, -kIcoPhi, 0}, {1, -kIcoPhi, 0},
-    {0, -1, kIcoPhi}, {0, 1, kIcoPhi}, {0, -1, -kIcoPhi}, {0, 1, -kIcoPhi},
-    {kIcoPhi, 0, -1}, {kIcoPhi, 0, 1}, {-kIcoPhi, 0, -1}, {-kIcoPhi, 0, 1}};
-static const int kIcoF[20][3] = {
-    {0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4},
-    {11, 10, 2}, {10, 7, 6}, {7, 1, 8}, {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8},
-    {3, 8, 9}, {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
-
-struct ProjVert { float x, y, z; };
-
-// Rotates a unit-ish point by yaw (about the vertical) then pitch (about the
-// horizontal) and projects it orthographically: x, y on screen, z = depth.
-static ProjVert ProjectLattice(float px, float py, float pz, float yaw, float pitch) {
-    const float cy = cosf(yaw), sy = sinf(yaw);
-    const float x1 = px * cy + pz * sy, z1 = -px * sy + pz * cy;
-    const float cp = cosf(pitch), sp = sinf(pitch);
-    return { x1, py * cp - z1 * sp, py * sp + z1 * cp };
-}
-
+// way and holds the lattice by four tethers. Each of the 20 faces is its own
+// shield (Monster::MAGNETAR_FACE_HITS shots from its side); only broken faces
+// change, the rest of the lattice stays gold.
+//   hit       the face that stopped the shot flashes white
+//   break     that face's edges flash white, flicker gold/orange and settle
+//             orange; its vertices buckle inward one after another; the seed
+//             flashes
+//   broken    the orange face keeps crumpling: its vertices buckle in and
+//             spring back on their own beats; the seed tints orange with the
+//             share of broken faces; tethers to its vertices are cut
+//   restore   MAGNETAR_FACE_RESTORE later the face snaps back to gold with a
+//             white flash and a small overshoot
 static void DrawMagnetar(const Monster* m, float base, float visualTime) {
+    namespace ML = MagnetarLattice;
     const float x = m->worldX, y = m->worldY;
     float cr = m->color.r, cg = m->color.g, cb = m->color.b;
     ApplyMobStyleTint(cr, cg, cb);
@@ -1222,224 +1201,191 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
     const float liteR = cr + (1.0f - cr) * 0.5f;
     const float liteG = cg + (1.0f - cg) * 0.5f;
     const float liteB = cb + (1.0f - cb) * 0.5f;
-    const float hotR = 1.0f, hotG = 0.58f, hotB = 0.16f;   // ward down: orange
+    const float hotR = 1.0f, hotG = 0.58f, hotB = 0.16f;   // broken face: orange
     const float pulse = 0.5f + 0.5f * sinf(visualTime * 3.1f);
-    const bool down = m->magnetarStacks < 1.0f;
-    const float yaw = m->magnetarVisualAngle * 0.6f;
-    const float pitch = 0.45f + 0.15f * sinf(m->magnetarVisualAngle * 0.3f);
+    const float yaw = m->MagnetarYaw();
+    const float pitch = m->MagnetarPitch();
     // In play the lattice sits on the real interception radius; codex
     // previews (g_SuppressMobSeen) scale it to the body instead.
     const float FR = g_SuppressMobSeen ? base * 2.6f : Monster::MAGNETAR_FIELD_RADIUS;
+    static constexpr float kBreakTime = 0.40f;     // break look, then crumple
+    static constexpr float kRestoreTime = 0.30f;   // snap-back look
+    static constexpr float kPi = 3.1415927f;
 
-    // Lattice scale: snaps back in after a refill (fieldTimer restarts).
-    const float snapT = std::min(1.0f, m->magnetarFieldTimer / 0.30f);
-    const float overshoot = 1.0f + 0.08f * sinf(3.1415927f * snapT) * (1.0f - snapT);
-    float latticeR = FR * (0.72f + 0.28f * snapT) * overshoot;
-    const float snapFlash = down ? 0.0f : 1.0f - snapT;
-    // Ward down: the lattice stays but goes orange and keeps crumpling for the
-    // whole recharge - not an even resize, but parts of it buckling in and
-    // bulging back out on their own beats until the refill.
-    // The break itself (first kBreakTime) plays out first:
-    //   0.00-0.07  overload: the whole lattice flashes white
-    //   0.04-0.38  buckle: vertices fall inward one after another while the
-    //              colour flickers gold/orange like failing power
-    //   0.00-0.50  a single solid ring is released outward and fades
-    static constexpr float kBreakTime = 0.40f;
-    const float brokenT = down ? m->magnetarRechargeTimer : 99.0f;
-    const float breakFlash = std::max(0.0f, 1.0f - brokenT / 0.07f);
+    // Per vertex: age of the newest break among its faces (< 0: none broken)
+    // and of the newest restore.
+    float vBroken[12], vRestored[12];
+    for (int i = 0; i < 12; ++i) { vBroken[i] = -1.0f; vRestored[i] = 99.0f; }
+    int brokenCount = 0;
+    float newestBreak = 99.0f;
+    for (int f = 0; f < Monster::MAGNETAR_FACES; ++f) {
+        const float bt = m->magnetarFaceBroken[f];
+        const float rt = m->magnetarFaceRestored[f];
+        if (bt >= 0.0f) { ++brokenCount; newestBreak = std::min(newestBreak, bt); }
+        for (int k = 0; k < 3; ++k) {
+            const int v = ML::kF[f][k];
+            if (bt >= 0.0f && (vBroken[v] < 0.0f || bt < vBroken[v])) vBroken[v] = bt;
+            vRestored[v] = std::min(vRestored[v], rt);
+        }
+    }
+
+    // Vertex scale: buckle on break, keep crumpling while broken, overshoot
+    // back to full on restore. Intact vertices stay on the ward radius.
+    const float t = visualTime + (float)((size_t)m % 97u) * 0.37f;
     float vScale[12];
-    for (int i = 0; i < 12; ++i) vScale[i] = 1.0f;
-    if (down) {
-        latticeR = FR;
-        const float t = visualTime + (float)((size_t)m % 97u) * 0.37f;
-        // A slowly wandering side of the lattice bulges out while the far side
-        // sinks in.
-        float ax = cosf(t * 0.7f), ay = 0.6f * sinf(t * 0.53f), az = sinf(t * 0.7f);
-        const float an = 1.0f / sqrtf(ax * ax + ay * ay + az * az);
-        ax *= an; ay *= an; az *= an;
-        static const float kN = 1.0f / sqrtf(1.0f + kIcoPhi * kIcoPhi);
-        for (int i = 0; i < 12; ++i) {
-            // Recurring buckle per vertex, same shape as the break: a quick drop
-            // inward with a small overshoot, then a slower spring back.
+    for (int i = 0; i < 12; ++i) {
+        float s = 1.0f;
+        const float bt = vBroken[i];
+        if (bt >= 0.0f) {
+            // Recurring buckle, same shape as the break: a quick drop inward
+            // with a small overshoot, then a slower spring back.
             const float period = 0.9f + 0.7f * fmodf((float)i * 0.381966f + 0.2f, 1.0f);
             const float c = fmodf(t / period + (float)i * 0.618034f, 1.0f);
             float buckle;
             if (c < 0.22f) {
                 const float u = c / 0.22f;
-                buckle = 1.0f - (1.0f - u) * (1.0f - u) * (1.0f - u) + 0.18f * sinf(3.1415927f * u);
+                buckle = 1.0f - (1.0f - u) * (1.0f - u) * (1.0f - u) + 0.18f * sinf(kPi * u);
             } else {
                 const float u = (c - 0.22f) / 0.78f;
                 buckle = 1.0f - u * u * (3.0f - 2.0f * u);
             }
-            const float side = kIcoV[i][0] * kN * ax + kIcoV[i][1] * kN * ay + kIcoV[i][2] * kN * az;
             const float tremble = 0.02f * sinf(t * 31.0f + (float)i * 2.3f);
-            const float live = std::clamp(0.80f + 0.16f * side - 0.30f * buckle + tremble, 0.42f, 1.02f);
-            if (brokenT < kBreakTime) {
-                // Break: each vertex drops to ~half on its own delay.
+            const float live = std::clamp(0.88f - 0.26f * buckle + tremble, 0.58f, 1.02f);
+            if (bt < kBreakTime) {
                 const float delay = 0.04f + 0.16f * fmodf((float)i * 0.618034f, 1.0f);
-                const float u = std::clamp((brokenT - delay) / 0.18f, 0.0f, 1.0f);
+                const float u = std::clamp((bt - delay) / 0.18f, 0.0f, 1.0f);
                 const float e = 1.0f - (1.0f - u) * (1.0f - u) * (1.0f - u);
-                vScale[i] = 1.0f - 0.45f * e - 0.08f * sinf(3.1415927f * u);
-            } else if (brokenT < kBreakTime + 0.35f) {              // ease into the crumple
-                const float k = (brokenT - kBreakTime) / 0.35f;
-                vScale[i] = 0.55f + (live - 0.55f) * k * k;
+                s = 1.0f - 0.36f * e - 0.08f * sinf(kPi * u);
+            } else if (bt < kBreakTime + 0.35f) {                   // ease into the crumple
+                const float k = (bt - kBreakTime) / 0.35f;
+                s = 0.64f + (live - 0.64f) * k * k;
             } else {
-                vScale[i] = live;
+                s = live;
             }
+        } else if (vRestored[i] < kRestoreTime) {
+            // Ease-out-back from a crumpled size to full.
+            const float u = vRestored[i] / kRestoreTime - 1.0f;
+            s = 0.75f + 0.25f * (1.0f + 2.70158f * u * u * u + 1.70158f * u * u);
         }
+        vScale[i] = s;
     }
 
     // Project the lattice (unit vertices scaled so they sit on the circle).
-    static const float kNorm = 1.0f / sqrtf(1.0f + kIcoPhi * kIcoPhi);
-    ProjVert pv[12];
+    static const float kNorm = 1.0f / sqrtf(1.0f + ML::kPhi * ML::kPhi);
+    ML::Proj pv[12];
     float vx[12], vy[12];
     for (int i = 0; i < 12; ++i) {
-        pv[i] = ProjectLattice(kIcoV[i][0] * kNorm, kIcoV[i][1] * kNorm, kIcoV[i][2] * kNorm,
-                               yaw, pitch);
+        pv[i] = ML::Project(ML::kV[i][0] * kNorm, ML::kV[i][1] * kNorm, ML::kV[i][2] * kNorm,
+                            yaw, pitch);
         vx[i] = pv[i].x;
         vy[i] = pv[i].y;
     }
-    // D2: radial dent + ripple per vertex around each recent hit.
-    auto rimOffset = [&](float ang) {
-        float offset = 0.0f;
-        if (!g_MagnetarFieldRipple) return offset;
-        for (const auto& deflect : m->magnetarDeflects) {
-            if (deflect.z <= 0.0f) continue;
-            const float u = 1.0f - deflect.z / Monster::MAGNETAR_DEFLECT_TIME;
-            float da = ang - deflect.x;
-            while (da > 3.14159265f) da -= 6.28318531f;
-            while (da < -3.14159265f) da += 6.28318531f;
-            const float spring = cosf(u * 9.4f) * expf(-u * 3.2f);
-            offset -= 16.0f * spring * expf(-(da * da) / 0.08f);
-            const float run = 0.2f + 1.2f * u;
-            for (int side = -1; side <= 1; side += 2) {
-                const float d = da - (float)side * run;
-                offset += 6.0f * (1.0f - u) * expf(-(d * d) / 0.03f);
-            }
-        }
-        return offset;
-    };
     for (int i = 0; i < 12; ++i) {
         const float r = sqrtf(vx[i] * vx[i] + vy[i] * vy[i]);
         const float ang = atan2f(vy[i], vx[i]);
-        const float rr = r * latticeR * vScale[i] + rimOffset(ang) * r;
+        const float rr = r * FR * vScale[i];
         vx[i] = x + cosf(ang) * rr;
         vy[i] = y + sinf(ang) * rr;
     }
 
-    // Lit faces: front faces facing a recent hit.
+    // Lit faces: the face that just stopped a shot.
     auto faceLit = [&](int f) {
-        float best = 0.0f;
-        const int a = kIcoF[f][0], b = kIcoF[f][1], c = kIcoF[f][2];
-        if (pv[a].z + pv[b].z + pv[c].z <= 0.0f) return 0.0f;
-        const float fx = (vx[a] + vx[b] + vx[c]) / 3.0f - x;
-        const float fy = (vy[a] + vy[b] + vy[c]) / 3.0f - y;
-        if (fx * fx + fy * fy < (latticeR * 0.35f) * (latticeR * 0.35f)) return 0.0f;
-        const float fang = atan2f(fy, fx);
-        for (const auto& deflect : m->magnetarDeflects) {
-            if (deflect.z <= 0.0f) continue;
-            float da = fang - deflect.x;
-            while (da > 3.14159265f) da -= 6.28318531f;
-            while (da < -3.14159265f) da += 6.28318531f;
-            if (fabsf(da) < 0.45f)
-                best = std::max(best, deflect.z / Monster::MAGNETAR_DEFLECT_TIME);
-        }
-        return best;
+        return m->magnetarFaceHitFlash[f] / Monster::MAGNETAR_HIT_FLASH;
     };
 
     {
         // Edges: each of the 30 edges once. An edge is front when either of
-        // its two faces faces the viewer, and lit if either face is lit.
+        // its two faces faces the viewer, lit if either face is lit, broken
+        // (with the newest break age) if either face is broken.
         bool edgeFront[12][12] = {};
         float edgeLit[12][12] = {};
         bool edgeSeen[12][12] = {};
+        float edgeBroken[12][12];
+        float edgeRestored[12][12];
+        for (int a = 0; a < 12; ++a)
+            for (int b = 0; b < 12; ++b) { edgeBroken[a][b] = -1.0f; edgeRestored[a][b] = 99.0f; }
         for (int f = 0; f < 20; ++f) {
-            const int ids[3] = { kIcoF[f][0], kIcoF[f][1], kIcoF[f][2] };
+            const int ids[3] = { ML::kF[f][0], ML::kF[f][1], ML::kF[f][2] };
             const bool front = pv[ids[0]].z + pv[ids[1]].z + pv[ids[2]].z > 0.0f;
-            const float lit = faceLit(f);
+            const float bt = m->magnetarFaceBroken[f];
+            const float lit = bt >= 0.0f ? 0.0f : faceLit(f);
             for (int e = 0; e < 3; ++e) {
                 const int a = std::min(ids[e], ids[(e + 1) % 3]);
                 const int b = std::max(ids[e], ids[(e + 1) % 3]);
                 edgeSeen[a][b] = true;
                 edgeFront[a][b] = edgeFront[a][b] || front;
                 edgeLit[a][b] = std::max(edgeLit[a][b], lit);
+                if (bt >= 0.0f && (edgeBroken[a][b] < 0.0f || bt < edgeBroken[a][b]))
+                    edgeBroken[a][b] = bt;
+                edgeRestored[a][b] = std::min(edgeRestored[a][b], m->magnetarFaceRestored[f]);
             }
         }
         for (int a = 0; a < 12; ++a) {
             for (int b = a + 1; b < 12; ++b) {
                 if (!edgeSeen[a][b]) continue;
-                if (edgeLit[a][b] > 0.0f) {
-                    drawLineQuad(vx[a], vy[a], vx[b], vy[b], 2.4f,
-                                 1.0f, 1.0f, 1.0f, 0.95f * edgeLit[a][b]);
-                } else if (down) {
-                    // Unstable ward: orange, thinner, flickering a little.
+                const float bt = edgeBroken[a][b];
+                if (bt >= 0.0f) {
+                    // Broken face: orange, flickering a little.
                     float er = hotR, eg = hotG, eb = hotB;
                     float flick = 0.85f + 0.15f * sinf(visualTime * 23.0f + (float)(a * 7 + b));
                     float width = edgeFront[a][b] ? 1.4f : 0.8f;
-                    if (brokenT < kBreakTime) {
+                    if (bt < kBreakTime) {
                         // Failing power: gold and orange alternate (per edge
                         // offset), settling into orange; white overload on top.
-                        const float k = brokenT / kBreakTime;
-                        const bool gold = sinf(brokenT * 75.0f + (float)(a * 3 + b)) > (2.0f * k - 1.0f);
+                        const float k = bt / kBreakTime;
+                        const float flash = std::max(0.0f, 1.0f - bt / 0.07f);
+                        const bool gold = sinf(bt * 75.0f + (float)(a * 3 + b)) > (2.0f * k - 1.0f);
                         if (gold) { er = cr; eg = cg; eb = cb; }
-                        er += (1.0f - er) * breakFlash;
-                        eg += (1.0f - eg) * breakFlash;
-                        eb += (1.0f - eb) * breakFlash;
+                        er += (1.0f - er) * flash;
+                        eg += (1.0f - eg) * flash;
+                        eb += (1.0f - eb) * flash;
                         flick = 1.0f + 0.4f * (1.0f - k);
                         width += 1.0f * (1.0f - k);
                     }
                     drawLineQuad(vx[a], vy[a], vx[b], vy[b], width, er, eg, eb,
-                                 std::min(1.0f, (edgeFront[a][b] ? 0.62f : 0.18f) * flick));
-                } else if (edgeFront[a][b]) {
-                    drawLineQuad(vx[a], vy[a], vx[b], vy[b], 1.6f + 0.8f * snapFlash,
-                                 cr + (1.0f - cr) * snapFlash, cg + (1.0f - cg) * snapFlash,
-                                 cb + (1.0f - cb) * snapFlash, 0.80f + 0.20f * snapFlash);
+                                 std::min(1.0f, (edgeFront[a][b] ? 0.75f : 0.25f) * flick));
+                } else if (edgeLit[a][b] > 0.0f) {
+                    drawLineQuad(vx[a], vy[a], vx[b], vy[b], 2.4f,
+                                 1.0f, 1.0f, 1.0f, 0.95f * edgeLit[a][b]);
                 } else {
-                    drawLineQuad(vx[a], vy[a], vx[b], vy[b], 0.9f, cr, cg, cb, 0.22f);
+                    const float snap = std::max(0.0f, 1.0f - edgeRestored[a][b] / kRestoreTime);
+                    if (edgeFront[a][b] || snap > 0.0f) {
+                        drawLineQuad(vx[a], vy[a], vx[b], vy[b], 1.6f + 0.8f * snap,
+                                     cr + (1.0f - cr) * snap, cg + (1.0f - cg) * snap,
+                                     cb + (1.0f - cb) * snap,
+                                     (edgeFront[a][b] ? 0.80f : 0.22f) + 0.20f * snap);
+                    } else {
+                        drawLineQuad(vx[a], vy[a], vx[b], vy[b], 0.9f, cr, cg, cb, 0.22f);
+                    }
                 }
             }
         }
         for (int i = 0; i < 12; ++i)
             if (pv[i].z > 0.15f) {
-                if (down) drawCircle(vx[i], vy[i], 1.8f, 1.0f, 0.80f, 0.55f, 0.55f);
+                if (vBroken[i] >= 0.0f) drawCircle(vx[i], vy[i], 1.8f, 1.0f, 0.80f, 0.55f, 0.55f);
                 else drawCircle(vx[i], vy[i], 2.0f, 1.0f, 0.97f, 0.88f, 0.70f);
             }
     }
 
-    // Break release: one solid ring leaves the ward radius and fades.
-    if (down && brokenT < 0.50f) {
-        const float u = brokenT / 0.50f;
-        const float ringR = FR * (1.0f + 0.35f * (1.0f - (1.0f - u) * (1.0f - u)));
-        const float w = 1.0f - u;
-        DrawEnemyArc(x, y, ringR, 0.0f, 6.2831853f, 72,
-                     hotR + (1.0f - hotR) * w * 0.6f, hotG + (1.0f - hotG) * w * 0.6f,
-                     hotB + (1.0f - hotB) * w * 0.6f, 0.85f * w * w, 1.0f + 2.0f * w);
-    }
-
-    // Recharge progress 0..1 while the ward is down.
-    const float progress = down
-        ? std::clamp(m->magnetarRechargeTimer / std::max(0.01f, m->MagnetarRechargeTime()),
-                     0.0f, 1.0f)
-        : 1.0f;
-    // Crystal seed: octahedron turning against the lattice. While the ward is
-    // down its colour goes orange and returns to gold as the recharge builds.
+    // Crystal seed: octahedron turning against the lattice. It tints orange
+    // with the share of broken faces (fully orange from 5 broken).
     const float seedX = x, seedY = y;
     const float seedR = base * 0.42f;
-    const float back = down ? progress * progress : 1.0f;   // 0 orange .. 1 gold
+    const float back = 1.0f - std::min(1.0f, (float)brokenCount / 5.0f);   // 0 orange .. 1 gold
     static const float kOct[6][3] = { {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1} };
-    ProjVert ov[6];
+    ML::Proj ov[6];
     float sx[6], sy[6];
     for (int i = 0; i < 6; ++i) {
-        ov[i] = ProjectLattice(kOct[i][0], kOct[i][1] * 1.35f, kOct[i][2], -yaw * 1.6f, pitch);
+        ov[i] = ML::Project(kOct[i][0], kOct[i][1] * 1.35f, kOct[i][2], -yaw * 1.6f, pitch);
         sx[i] = seedX + ov[i].x * seedR;
         sy[i] = seedY + ov[i].y * seedR;
     }
     const float sr = hotR + (1.0f - hotR) * back, sg = hotG + (0.97f - hotG) * back,
                 sb = hotB + (0.85f - hotB) * back;
     drawCircle(seedX, seedY, seedR * 1.4f, hotR + (cr - hotR) * back, hotG + (cg - hotG) * back,
-               hotB + (cb - hotB) * back, 0.10f + (down ? 0.15f * pulse : 0.06f));
-    if (down && brokenT < 0.30f) {      // seed overload flash at the break
-        const float w = 1.0f - brokenT / 0.30f;
+               hotB + (cb - hotB) * back, 0.10f + (brokenCount > 0 ? 0.15f * pulse : 0.06f));
+    if (newestBreak < 0.30f) {      // seed flash at a face break
+        const float w = 1.0f - newestBreak / 0.30f;
         drawCircle(seedX, seedY, seedR * (1.4f + 1.2f * (1.0f - w)), 1.0f, 0.85f, 0.6f, 0.45f * w * w);
     }
     static const int kOctE[12][2] = { {0, 2}, {0, 3}, {0, 4}, {0, 5}, {1, 2}, {1, 3},
@@ -1451,9 +1397,9 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
     }
     drawCircle(seedX, seedY, base * 0.07f, 1.0f, 1.0f, 1.0f, 0.95f);
 
-    // Tethers: four seed tips (equator) to the nearest front lattice vertices,
-    // only while the ward is up.
-    if (!down) {
+    // Tethers: four seed tips (equator) to the nearest front lattice vertices
+    // that are not on a broken face.
+    {
         static const int kTips[4] = { 0, 1, 4, 5 };
         bool used[12] = {};
         for (int k = 0; k < 4; ++k) {
@@ -1461,7 +1407,7 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
             int best = -1;
             float bestD = 1e9f;
             for (int i = 0; i < 12; ++i) {
-                if (used[i] || pv[i].z < -0.1f) continue;
+                if (used[i] || pv[i].z < -0.1f || vBroken[i] >= 0.0f) continue;
                 const float dx = vx[i] - sx[tip], dy = vy[i] - sy[tip];
                 const float dd = dx * dx + dy * dy;
                 if (dd < bestD) { bestD = dd; best = i; }
@@ -1470,27 +1416,6 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
             used[best] = true;
             drawLineQuad(sx[tip], sy[tip], vx[best], vy[best], 1.2f, liteR, liteG, liteB, 0.45f);
             drawCircle(vx[best], vy[best], 2.4f, 1.0f, 1.0f, 1.0f, 0.6f);
-        }
-    }
-
-    // D1: where a shot met the ward the rim flashes and three sparks fly off
-    // along the mirrored direction. Visual only; the shot was absorbed.
-    for (const auto& deflect : m->magnetarDeflects) {
-        if (deflect.z <= 0.0f) continue;
-        const float u = 1.0f - deflect.z / Monster::MAGNETAR_DEFLECT_TIME;   // 0 -> 1
-        const float fade = 1.0f - u;
-        const float hx = x + cosf(deflect.x) * FR, hy = y + sinf(deflect.x) * FR;
-        drawCircle(hx, hy, 4.0f + 8.0f * fade, 1.0f, 0.97f, 0.85f, 0.35f * fade);
-        const float go = 1.0f - (1.0f - u) * (1.0f - u);
-        static constexpr float kSpread[3] = { 0.0f, 0.30f, -0.26f };
-        static constexpr float kLen[3] = { 46.0f, 30.0f, 26.0f };
-        for (int s = 0; s < 3; ++s) {
-            const float a = deflect.y + kSpread[s];
-            const float ca = cosf(a), sa = sinf(a);
-            const float sparkIn = kLen[s] * 0.7f * go, sparkOut = kLen[s] * (0.35f + 0.65f * go);
-            drawLineQuad(hx + ca * sparkIn, hy + sa * sparkIn, hx + ca * sparkOut, hy + sa * sparkOut,
-                         2.2f - 0.5f * (float)(s > 0),
-                         1.0f, 0.95f - 0.15f * u, 0.80f - 0.45f * u, 0.95f * fade);
         }
     }
 }

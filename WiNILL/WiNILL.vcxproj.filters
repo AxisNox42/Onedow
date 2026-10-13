@@ -120,6 +120,9 @@
     <ClInclude Include="Core\GameManager.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="Core\RunResult.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="Core\Meta.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -189,7 +192,16 @@
     <ClInclude Include="Entity\CollisionSystem.h">
       <Filter>Entity</Filter>
     </ClInclude>
+    <ClInclude Include="Entity\KillRewards.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\RunStats.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
     <ClInclude Include="Entity\ExpSystem.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\Experience.h">
       <Filter>Entity</Filter>
     </ClInclude>
     <ClInclude Include="Entity\EnemyProgression.h">
@@ -241,6 +253,9 @@
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="System\SaveSystem.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\SettingsSnapshot.h">
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="System\Settings.h">

@@ -67,9 +67,8 @@ public:
         rangedMobs.push_back(rm);
     }
 
+    // Nearest living enemy to (fromX, fromY), anywhere on the field.
     bool FindNearestEnemy(float fromX, float fromY,
-                          float visibleLeft, float visibleTop,
-                          float visibleRight, float visibleBottom,
                           float& targetX, float& targetY) const {
         float nearestDistanceSq = 1e18f;
         bool found = false;
@@ -84,12 +83,8 @@ public:
                 found = true;
             }
         };
-        for (const auto* monster : monsters) {
-            if (monster->alive && monster->worldX >= visibleLeft &&
-                monster->worldX <= visibleRight && monster->worldY >= visibleTop &&
-                monster->worldY <= visibleBottom)
-                consider(monster->worldX, monster->worldY);
-        }
+        for (const auto* monster : monsters)
+            if (monster->alive) consider(monster->worldX, monster->worldY);
         for (const auto* ranged : rangedMobs)
             if (ranged->alive) consider(ranged->worldX, ranged->worldY);
         return found;
@@ -127,8 +122,6 @@ public:
                    float gateWX = -1.0f, float gateWY = -1.0f,
                    float gateWW = -1.0f, float gateWH = -1.0f) {
         for (auto m : monsters) {
-            if (m->kind == MobKind::MAGNETAR)
-                m->magnetarRegenRate = MagnetarRegenRate(*m);
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
                       gateWX, gateWY, gateWW, gateWH, &bullets);
         }
@@ -200,39 +193,6 @@ private:
         case MobKind::REGULUS: return -1.0f;
         }
         return 0.0f;
-    }
-
-    static int CombatTier(MobKind kind) {
-        switch (kind) {
-        case MobKind::GENESIS: return 4;
-        case MobKind::GRAVIS:
-        case MobKind::QUASAR:
-        case MobKind::REGULUS:
-        case MobKind::MAGNETAR: return 3;
-        case MobKind::GIMBAL:
-        case MobKind::ANTARES: return 2;
-        default: return 1;
-        }
-    }
-
-    float MagnetarRegenRate(const Monster& source) const {
-        constexpr float supportRadius = 360.0f;
-        constexpr float supportRadiusSq = supportRadius * supportRadius;
-        int nearby = 0;
-        for (const auto* ally : monsters) {
-            if (!ally || !ally->alive || ally == &source ||
-                CombatTier(ally->kind) < 2) continue;
-            const float dx = ally->worldX - source.worldX;
-            const float dy = ally->worldY - source.worldY;
-            if (dx * dx + dy * dy <= supportRadiusSq) ++nearby;
-        }
-        for (const auto* ranged : rangedMobs) {
-            if (!ranged || !ranged->alive) continue;
-            const float dx = ranged->worldX - source.worldX;
-            const float dy = ranged->worldY - source.worldY;
-            if (dx * dx + dy * dy <= supportRadiusSq) ++nearby;
-        }
-        return std::min(1.2f, 0.3f + nearby * 0.3f);
     }
 
     // Granted shields are independent of their Regulus, so a break only

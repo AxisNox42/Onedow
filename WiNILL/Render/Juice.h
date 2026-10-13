@@ -10,6 +10,7 @@
 #include "Camera.h"
 #include "TextRenderer.h"
 #include "EnemyParticles.h"
+#include "Experience.h"
 
 // ─────────────────────────────────────────────────────────────
 // 손맛(juice) 공용 시스템 — 데미지 숫자 / 콤보 / 히트스톱 / 화면 플래시
@@ -93,11 +94,13 @@ inline bool ComboIsMilestone(int c) {
 }
 // 무한 세례(신화) — 처치 수 누적, main 의 탄환세례 업데이트가 소비해 쿨다운 감소
 inline float g_RainKillAccum = 0.0f;
-inline void AddKillCombo() {
+// countsForRain=false: the combo only, no 무한 세례 kill (thrown Genesis
+// Swarms — CreditThrownSwarmKill).
+inline void AddKillCombo(bool countsForRain = true) {
     ++g_Combo;
     g_ComboTimer = COMBO_WINDOW;
     g_ComboPulse = 1.0f;
-    g_RainKillAccum += 1.0f;            // 처치 1건 (무한 세례용)
+    if (countsForRain) g_RainKillAccum += 1.0f;   // 처치 1건 (무한 세례용)
     Audio::PlaySfx(Audio::Sfx::Kill);   // 적 처치음
     // 콤보 마일스톤(10/25/50/100/…) — 카운터 강조 연출 + 칩 사운드 (전체화면 번쩍 X — 눈뽕 방지)
     if (ComboIsMilestone(g_Combo)) {
@@ -161,7 +164,7 @@ struct StardustPickup {
     float vx, vy;
     float age   = 0.0f;
     int   value = 1;
-    long long xpValue = 0;
+    XpAmount xpValue = 0;
     bool  alive = true;
 };
 inline std::vector<StardustPickup> g_StardustPickups;
@@ -186,7 +189,7 @@ inline void DrawStardustPickups() {
 
 inline void SpawnStardust(float x, float y, int totalValue,
                           float /*playerX*/, float /*playerY*/,
-                          long long xpReward = 0, float ringRadius = 0.0f) {
+                          XpAmount xpReward = 0, float ringRadius = 0.0f) {
     // XP를 지급해야 하는 처치라면, 기존에 화폐 별가루를 주지 않던 몹도
     // XP를 담은 최소 1개 조각을 반드시 생성한다.
     if (totalValue <= 0) {
@@ -213,15 +216,16 @@ inline void SpawnStardust(float x, float y, int totalValue,
 
     // 여러 조각으로 나뉘어도 XP가 조각마다 중복 지급되지 않도록 비례 분배한다.
     if (xpReward <= 0 || pickupBegin >= g_StardustPickups.size()) return;
-    long long remainingXp = xpReward;
+    XpAmount remainingXp = xpReward;
     int remainingValue = totalDustValue;
     const std::size_t pickupEnd = g_StardustPickups.size();
     for (std::size_t i = pickupBegin; i < pickupEnd && remainingXp > 0; ++i) {
         const int pieceValue = g_StardustPickups[i].value;
         const bool isLast = (i + 1 == pickupEnd);
-        long long pieceXp = isLast
+        XpAmount pieceXp = isLast
             ? remainingXp
-            : (remainingXp * (long long)pieceValue + remainingValue / 2)
+            : (remainingXp / remainingValue) * pieceValue +
+              ((remainingXp % remainingValue) * pieceValue + remainingValue / 2)
               / remainingValue;
         if (pieceXp < 0) pieceXp = 0;
         if (pieceXp > remainingXp) pieceXp = remainingXp;

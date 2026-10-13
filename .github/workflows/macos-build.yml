@@ -63,9 +63,16 @@ jobs:
           cp build/WiNILL "$ONEDOW/macOS/Onedow"
           chmod +x "$ONEDOW/macOS/Onedow"
           codesign --force --deep --sign - "$ONEDOW/macOS/Onedow" || true
-          cd bin && zip -r Onedow.zip Onedow
-          ls -lh Onedow.zip
-          unzip -l Onedow.zip | head -20
+          # Same manifest-based staging as the local release scripts.
+          bash scripts/zip_onedow.sh
+          ls -lh bin/Onedow.zip
+          unzip -l bin/Onedow.zip | head -20
+
+      - name: Verify package
+        run: |
+          # Only manifest items, and macOS/Onedow stored executable.
+          python3 scripts/verify_package_zip.py bin/Onedow.zip --require macOS/Onedow
+          zipinfo bin/Onedow.zip Onedow/macOS/Onedow
 
       - name: Upload artifact
         if: github.event_name != 'pull_request'

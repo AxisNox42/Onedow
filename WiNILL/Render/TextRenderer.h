@@ -28,8 +28,15 @@ public:
     bool InitFromMemory(const unsigned char* const* datas, const int* sizes,
                         int nFonts, int ptSize, int screenW, int screenH);
 
+    // Deletes the GL objects; needs the GL context still current. Safe to
+    // call twice. The destructor calls it too, so a global renderer must be
+    // cleaned before glfwTerminate (ShutdownGameFonts) or its destructor
+    // would make GL calls with no context.
     void Cleanup();
     ~TextRenderer() { Cleanup(); }
+    bool HasGlResources() const {
+        return VAO_ || VBO_ || prog_ || !atlasPages_.empty();
+    }
 
     float Width(const wchar_t* text, float scale = 1.0f);
     float Height(const wchar_t* text, float scale = 1.0f);

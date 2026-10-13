@@ -88,7 +88,7 @@ struct PlayerStats {
     long long killCount = 0;     // Total kills in the current run.
 
     // ── 무기/부활 ─────────────────────────────────────
-    float baseFireInterval   = 0.15f; // 무기 선택 전 기본값 (변환 카드 undo 기준)
+    float baseFireInterval   = 0.20f; // 무기 적용 후·증강 적용 전 발사 간격
     bool  mk2SkipDebuff      = false; // MK2 부활 후 DEBUFF_SELECT 영구 스킵
 
     // ── 디버프 ─────────────────────────────────────────
@@ -475,6 +475,22 @@ struct PlayerStats {
         float cap = GetLifestealCap();
         if (v > cap) v = cap;
         return v;
+    }
+    // HP after one kill's lifesteal. Every kill path uses this, and every
+    // mob heals the full GetLifestealPerKill(): reward multipliers such as
+    // the Swarm's 20% scale applies to score only. Capped at maxHP.
+    float ApplyKillLifesteal(float hp) const {
+        const float heal = GetLifestealPerKill();
+        return heal > 0.0f ? std::min(maxHP, hp + heal) : hp;
+    }
+    // HP after one kill's vampire heal (흡혈마 / 흡혈탄 II): every paying kill
+    // advances the streak, and every GetVampireKillNeed()-th heals 1 HP,
+    // capped at maxHP. Every kill path uses this; no-op without either card.
+    float ApplyVampireKill(float hp) {
+        if (!vampire && !lifesteal2) return hp;
+        if (++vampireKillStreak < GetVampireKillNeed()) return hp;
+        vampireKillStreak = 0;
+        return std::min(maxHP, hp + 1.0f);
     }
 
     // 일반 증강 초반 부스트 (첫 일반 증강 1회만)

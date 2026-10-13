@@ -1,0 +1,19 @@
+{
+  "verified_at": "2026-10-12T22:16:41.805538+09:00",
+  "source_hashes_checked": 105,
+  "source_files_changed_since_final_baseline": [],
+  "external_changes_detected_between_initial_and_final_baselines": [
+    "WiNILL/Entity/Monster.h",
+    "WiNILL/main.cpp"
+  ],
+  "external_changes_handling": "Regenerated lexical evidence and file appendix; rechecked affected manual findings and line locations. No game source writes made by this audit.",
+  "support_hashes_checked": 24,
+  "support_files_changed_since_baseline": [],
+  "source_inventory_matches": true,
+  "manual_review_groups": 40,
+  "manual_review_ids_complete": true,
+  "missing_local_links": [],
+  "bad_clone_ranges": [],
+  "build_or_game_tests_run": false,
+  "scope": "static structure and manual rule review; no complete compiler call graph or runtime equivalence claim"
+}

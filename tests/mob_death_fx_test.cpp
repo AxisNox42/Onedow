@@ -129,6 +129,19 @@ static void CheckRoster() {
             mob.quasarState = 3;
             mob.alive = false;
             mob.SpawnDeathEffect(2.0f, reduced);
+            if (kind == MobKind::GENESIS || kind == MobKind::QUASAR) {
+                // Only the build-up debris comes out at the kill; the blast
+                // debris waits for the body's timer to reach the blast.
+                const int atKill = ActiveCount();
+                assert(atKill > 0 && atKill <= 20);
+                while (mob.deathEffectTimer < Monster::QUASAR_NOVA_BLAST - 0.02f) {
+                    mob.UpdateDeathEffect(0.01f);
+                    assert(ActiveCount() == atKill);
+                }
+                for (int i = 0; i < 4; ++i) mob.UpdateDeathEffect(0.01f);
+                assert(mob.deathEffectTimer >= Monster::QUASAR_NOVA_BLAST);
+                assert(ActiveCount() > atKill);
+            }
             const int count = ActiveCount();
             assert(count > 0 && mob.exploded);
             bool delayed = false;
@@ -142,7 +155,8 @@ static void CheckRoster() {
             }
             const bool large = kind == MobKind::GENESIS || kind == MobKind::GRAVIS
                             || kind == MobKind::QUASAR;
-            assert(delayed == large);
+            // Short in-burst delays only: Gravis' blast, the Quasar's debris.
+            assert(delayed == (kind == MobKind::GRAVIS || kind == MobKind::QUASAR));
             if (!reduced) {
                 if (kind == MobKind::ROTOR) ordinaryCount = count;
                 if (large) assert(count > ordinaryCount);
@@ -342,16 +356,17 @@ static void CheckPriorityAndDelay() {
 
     ResetEnemyParticles();
     Monster stagedMob(10.0f, 20.0f);
-    stagedMob.MakeKind(MobKind::GENESIS);
+    stagedMob.MakeKind(MobKind::QUASAR);
     stagedMob.alive = false;
     stagedMob.SpawnDeathEffect(0.0f);
+    stagedMob.UpdateDeathEffect(Monster::QUASAR_NOVA_BLAST);   // blast debris out
     EnemyParticle* delayed = nullptr;
     for (auto& p : g_EnemyParts) if (p.active && p.delay > 0.0f) { delayed = &p; break; }
     assert(delayed);
     const float x = delayed->x, life = delayed->life;
     UpdateEnemyParticles(0.02f);
     assert(delayed->x == x && delayed->life == life && delayed->delay > 0.0f);
-    UpdateEnemyParticles(delayed->delay + 0.01f);   // past its own (wave) delay
+    UpdateEnemyParticles(delayed->delay + 0.01f);   // past its own delay
     assert(delayed->delay == 0.0f && delayed->life < life);
     CheckBounds();
 }

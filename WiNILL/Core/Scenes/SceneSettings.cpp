@@ -18,6 +18,7 @@
 #include "Weapons.h"
 #include "ExpSystem.h"
 #include "SaveSystem.h"
+#include "SettingsSnapshot.h"
 #include "DrawPrim.h"
 #include "../../Render/UiColors.h"
 #include "../../Render/PlanetShader.h"
@@ -90,25 +91,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     static bool prevListW = false;
     static bool prevListS = false;
     static int detailRow = 0;
-    struct SettingsSnapshot {
-        int fps = 60;
-        VfxDensity density = VfxDensity::FULL;
-        bool shaderFx = false;
-        MobVisualStyle mobStyle = MobVisualStyle::CLASSIC;
-        bool combo = true;
-        bool backdropBlur = true;
-        int backdropBlurCaptureHz = 20;
-        int soundVol = 100;
-        bool bgmEnabled = true;
-        bool sfxEnabled = true;
-        bool audioMonoOutput = false;
-        bool audioEngineEnabled = true;
-        bool autoFire = true;
-        bool autoSkill = false;
-        bool crosshair = true;
-        bool debugMode = false;
-        Language language = Language::KR;
-    };
+    // SettingsSnapshot.h: capture / restore / compare (REG-26).
     static SettingsSnapshot savedSettings = {};
     static bool savedSettingsValid = false;
     static bool confirmBack = false;
@@ -132,12 +115,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         prevListW = false;
         prevListS = false;
         detailRow = 0;
-        savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
-                          g_ShowCombo, g_BackdropBlurEnabled, g_BackdropBlurCaptureHz,
-                          g_SoundVol, g_BgmEnabled, g_SfxEnabled,
-                          g_AudioMonoOutput, g_AudioEngineEnabled,
-                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_DebugMode,
-                          g_Language };
+        savedSettings = CaptureSettingsSnapshot();
         savedSettingsValid = true;
         confirmBack = false;
         settingsDirty = false;
@@ -157,49 +135,11 @@ void Scene_SettingsInline(const SceneCtx& c) {
 
     auto restoreSettings = [&]() {
         if (!savedSettingsValid) return;
-        g_FpsCap = savedSettings.fps;
-        g_VfxDensity = savedSettings.density;
-        g_ShaderFx = savedSettings.shaderFx;
-        g_MobVisualStyle = savedSettings.mobStyle;
-        g_ShowCombo = savedSettings.combo;
-        g_BackdropBlurEnabled = savedSettings.backdropBlur;
-        g_BackdropBlurCaptureHz = savedSettings.backdropBlurCaptureHz;
-        g_SoundVol = savedSettings.soundVol;
-        g_BgmEnabled = savedSettings.bgmEnabled;
-        g_SfxEnabled = savedSettings.sfxEnabled;
-        g_AudioMonoOutput = savedSettings.audioMonoOutput;
-        g_AudioEngineEnabled = savedSettings.audioEngineEnabled;
-        Audio::SetBgmEnabled(g_BgmEnabled);
-        Audio::SetSfxEnabled(g_SfxEnabled);
-        Audio::SetEnabled(g_AudioEngineEnabled && g_SoundVol > 0);
-        Audio::SetVolume(g_SoundVol / 100.0f);
-        Audio::SetMonoOutput(g_AudioMonoOutput);
-        g_AudioMonoOutput = Audio::IsMonoOutput();
-        g_AutoFire = savedSettings.autoFire;
-        g_AutoSkill = savedSettings.autoSkill;
-        g_ShowCrosshair = savedSettings.crosshair;
-        g_DebugMode = savedSettings.debugMode;
-        g_Language = savedSettings.language;
+        RestoreSettingsSnapshot(savedSettings);
     };
     auto settingsChanged = [&]() {
         if (!savedSettingsValid) return false;
-        return g_FpsCap != savedSettings.fps
-            || g_VfxDensity != savedSettings.density
-            || g_ShaderFx != savedSettings.shaderFx
-            || g_MobVisualStyle != savedSettings.mobStyle
-            || g_ShowCombo != savedSettings.combo
-            || g_BackdropBlurEnabled != savedSettings.backdropBlur
-            || g_BackdropBlurCaptureHz != savedSettings.backdropBlurCaptureHz
-            || g_SoundVol != savedSettings.soundVol
-            || g_BgmEnabled != savedSettings.bgmEnabled
-            || g_SfxEnabled != savedSettings.sfxEnabled
-            || g_AudioMonoOutput != savedSettings.audioMonoOutput
-            || g_AudioEngineEnabled != savedSettings.audioEngineEnabled
-            || g_AutoFire != savedSettings.autoFire
-            || g_AutoSkill != savedSettings.autoSkill
-            || g_ShowCrosshair != savedSettings.crosshair
-            || g_DebugMode != savedSettings.debugMode
-            || g_Language != savedSettings.language;
+        return SettingsSnapshotChanged(savedSettings);
     };
 
     const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
@@ -1442,12 +1382,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     }
     if (ready && !confirmBack && lmb && !g_LmbPrev && saveHit && settingsDirty) {
         SaveGame();
-        savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
-                          g_ShowCombo, g_BackdropBlurEnabled, g_BackdropBlurCaptureHz,
-                          g_SoundVol, g_BgmEnabled, g_SfxEnabled,
-                          g_AudioMonoOutput, g_AudioEngineEnabled,
-                          g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_DebugMode,
-                          g_Language };
+        savedSettings = CaptureSettingsSnapshot();
         savedSettingsValid = true;
         settingsDirty = false;
         pulse = 1.0f;
@@ -1509,12 +1444,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
                                discardVariants, 3);
         if (lmb && !g_LmbPrev && saveBackHit) {
             SaveGame();
-            savedSettings = { g_FpsCap, g_VfxDensity, g_ShaderFx, g_MobVisualStyle,
-                              g_ShowCombo, g_BackdropBlurEnabled, g_BackdropBlurCaptureHz,
-                              g_SoundVol, g_BgmEnabled, g_SfxEnabled,
-                              g_AudioMonoOutput, g_AudioEngineEnabled,
-                              g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_DebugMode,
-                              g_Language };
+            savedSettings = CaptureSettingsSnapshot();
             settingsDirty = false;
             confirmBack = false;
             exiting = true;

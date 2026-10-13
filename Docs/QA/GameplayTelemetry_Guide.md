@@ -11,6 +11,8 @@
 
 로그는 실행 중인 `WiNILL.exe`와 같은 폴더에 생성된다.
 
+XP 관련 필드는 XP 단위의 소수 셋째 자리까지 기록한다. 내부 0.001 XP 정수 단위를 그대로 출력하지 않는다. 레벨업에 필요한 XP는 정수값이지만 로그에는 같은 서식으로 표시된다.
+
 ```text
 onedow_gameplay_telemetry.txt
 ```
@@ -44,7 +46,7 @@ RUN_END    : 런 종료 정보
 `SAMPLE`은 기본적으로 약 10초마다 한 번씩 출력된다. 경험치 획득 속도를 볼 때 가장 먼저 확인할 기록이다.
 
 ```text
-SAMPLE,game_sec=30.01,level=3,current_xp=240,required_xp=500,progress_pct=48.00,interval_xp=120,interval_xp_per_sec=12.00,interval_xp_per_min=720.00,total_xp=840,max_hp=100.00,damage_multiplier=1.15,effective_damage=23.00,fire_interval_sec=0.42,move_speed_multiplier=1.00,regen_per_sec=0.00,xp_multiplier=1.10,xp_per_sec=0.00,total_augments=2,kill_count=47
+SAMPLE,game_sec=30.01,level=3,current_xp=40.000,required_xp=83.000,progress_pct=48.19,interval_xp=120.500,interval_xp_per_sec=12.050,interval_xp_per_min=723.000,total_xp=840.500,max_hp=100.00,damage_multiplier=1.15,effective_damage=23.00,fire_interval_sec=0.42,move_speed_multiplier=1.00,regen_per_sec=0.00,xp_multiplier=1.10,xp_per_sec=0.00,total_augments=2,kill_count=47
 ```
 
 | 필드 | 의미 |
@@ -91,7 +93,7 @@ interval_xp_per_min = interval_xp_per_sec * 60
 `LEVEL_UP`은 실제 레벨업이 발생할 때마다 한 줄씩 기록된다.
 
 ```text
-LEVEL_UP,game_sec=42.50,level_before=2,level_after=3,required_xp=500,xp_before=490,xp_after=0,level_interval_sec=18.20,level_interval_xp=206,level_interval_xp_per_min=679.12,run_total_xp=706,run_average_xp_per_min=997.18,source=experience
+LEVEL_UP,game_sec=42.50,level_before=2,level_after=3,required_xp=31.000,xp_before=31.250,xp_after=0.250,level_interval_sec=18.20,level_interval_xp=206.125,level_interval_xp_per_min=679.533,run_total_xp=706.125,run_average_xp_per_min=996.882,source=experience
 ```
 
 | 필드 | 의미 |
@@ -164,7 +166,7 @@ RUN_BEGIN,serial=4,timestamp=2026-09-21_22-10-00,build=Release,mode=normal,sampl
 ### `RUN_END`
 
 ```text
-RUN_END,game_sec=180.40,level=8,current_xp=210,total_xp=3560,average_xp_per_min=1185.22,reason=gameover
+RUN_END,game_sec=180.40,level=8,current_xp=210.125,total_xp=3560.125,average_xp_per_min=1184.077,reason=gameover
 ```
 
 `reason`은 런이 끝난 원인을 나타낸다.

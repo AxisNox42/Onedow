@@ -6,6 +6,7 @@
 #include "SceneSkills.h"
 #include "SceneUI.h"
 #include "SceneInternal.h"
+#include "RunStats.h"
 #include "UiLayout.h"
 #include "WindowChrome.h"
 #include "Settings.h"
@@ -424,44 +425,23 @@ struct AugSelectionLayout {
     float panelH = 0.0f;
 };
 
+// Preview stat builds live in RunStats.h (compared with the real builds by
+// the REG-02 test).
 static PlayerStats MakeAugPreviewBaseStats() {
-    PlayerStats base;
-    ApplyMeta(base);
-    base.windowSize *= g_Scale;
-
-    if (g_CurrentWeapon >= 0 &&
-        g_CurrentWeapon < (int)StartWeapon::_COUNT) {
-        ApplyWeapon(base, (StartWeapon)g_CurrentWeapon);
-    }
-    return base;
+    return PreviewBaseStats(g_CurrentWeapon, g_Scale);
 }
 
 static PlayerStats MakeAugPreviewTrialStats() {
-    PlayerStats trial = MakeAugPreviewBaseStats();
-    const float trialHp = TrialPlayerMaxHpMult();
-    if (trialHp < 0.999f)
-        trial.maxHP *= trialHp;
-    return trial;
+    return PreviewTrialStats(g_CurrentWeapon, g_Scale);
 }
 
 static PlayerStats MakeAugPreviewOwnedStats() {
-    PlayerStats owned = MakeAugPreviewTrialStats();
-    for (int idx : g_OwnedAugs) {
-        if (idx < 0 || idx >= AUG_TOTAL) continue;
-        owned.Apply(ALL_AUGS[idx].type);
-        if (ALL_AUGS[idx].rarity == AugRarity::COMMON)
-            owned.ApplyCommonMultBoost();
-    }
-    return owned;
+    return PreviewOwnedStats(g_CurrentWeapon, g_OwnedAugs, g_Scale);
 }
 
 static PlayerStats MakeAugPreviewCandidateStats(const PlayerStats& owned,
                                                 const AugDef& candidate) {
-    PlayerStats preview = owned;
-    preview.Apply(candidate.type);
-    if (candidate.rarity == AugRarity::COMMON)
-        preview.ApplyCommonMultBoost();
-    return preview;
+    return PreviewCandidateStats(owned, candidate);
 }
 
 static float AugPreviewMetricValue(const PlayerStats& stats,

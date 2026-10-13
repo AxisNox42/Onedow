@@ -6,6 +6,7 @@
 #include "Bullet.h"
 #include "PlayerStats.h"
 #include "EnemyShield.h"
+#include "Experience.h"
 #include "Settings.h"   // g_ArenaExX/Y (폴리모프 페이즈2 확장 아레나)
 
 class RangedMob {
@@ -62,8 +63,8 @@ public:
             worldX, worldY, VISUAL_BASE_PX * deathScale);
     }
 
-    static long long ExperienceReward(const PlayerStats& stats) {
-        return (long long)((BASE_XP + (float)stats.rangedXpBonus) * stats.xpMult);
+    static XpAmount ExperienceReward(const PlayerStats& stats) {
+        return XpFromReward((double)(BASE_XP + (float)stats.rangedXpBonus) * stats.xpMult);
     }
 
     void SpawnDeathEffect(bool reduced = false) {
