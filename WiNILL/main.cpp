@@ -313,6 +313,24 @@ static void DrawPlayerRadialBars(float cx, float cy, float size,
              xpAtCap ? 0.30f : 1.0f, xpAlpha);
 }
 
+// Level-up slow-motion: two thin rings in the XP colour expand from the
+// player while LevelUpTransition runs (lines only, no fill or veil).
+static void DrawLevelUpRings(float cx, float cy, float playerSize,
+                             float progress) {
+    if (progress <= 0.0f) return;
+    constexpr float kTwoPi = 6.2831853f;
+    for (int ring = 0; ring < 2; ++ring) {
+        const float delay = ring * 0.18f;
+        const float t = std::clamp((progress - delay) / (1.0f - delay), 0.0f, 1.0f);
+        if (t <= 0.0f) continue;
+        const float radius = playerSize * (1.2f + (ring == 0 ? 5.2f : 3.4f) * EaseOutCubic(t));
+        const float alpha = (ring == 0 ? 0.85f : 0.60f) * (1.0f - t);
+        DrawSettingsOrbitArc(cx, cy, radius, radius, 0.0f, kTwoPi,
+                             0.30f, 0.82f, 1.0f,
+                             ring == 0 ? 2.2f : 1.4f, alpha);
+    }
+}
+
 static void DrawEdgeVignette(float width, float intensity,
                              float r, float g, float b) {
     if (width <= 0.0f || intensity <= 0.0f) return;
@@ -3425,6 +3443,8 @@ CollisionSystem::Update(pCX, pCY,
             }
             DrawPlayerWeaponShell(pCX, pCY, playerSize,
                                   atan2f(wmy - pCY, wmx - pCX));
+            DrawLevelUpRings(pCX, pCY, playerSize,
+                             g_GameManager.levelUpTransition.Progress());
             BatchFlush();
         }
 
