@@ -486,6 +486,8 @@ void GameManager::QueueAugmentReward(bool needsDebuff, bool allowDebuff) {
 }
 
 bool GameManager::ActivateNextAugmentReward() {
+    // Opening a reward (or finding none) ends any level-up slow-motion.
+    levelUpTransition.Cancel();
     if (augmentRewardActive) return true;
 
     while (!augmentRewardQueue.empty()) {
@@ -517,6 +519,7 @@ bool GameManager::ActivateNextAugmentReward() {
 
 void GameManager::ClearAugmentRewardQueue() {
     augmentRewardQueue.clear();
+    levelUpTransition.Cancel();
     augmentRewardActive = false;
     augmentRewardInternalDebuff = false;
     augmentRewardInDebuff = false;

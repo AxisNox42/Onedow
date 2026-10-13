@@ -123,6 +123,9 @@
     <ClInclude Include="Core\GameplayTime.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="Core\LevelUpTransition.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="Core\RunResult.h">
       <Filter>Core</Filter>
     </ClInclude>

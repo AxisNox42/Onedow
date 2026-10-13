@@ -19,6 +19,20 @@ int main() {
     frozen.dying = true;
     assert(ComputeGameplayDelta(0.1f, frozen) == 0.0f);
 
+    // Level-up slow-motion scales normal play, but hit-stop and death win.
+    GameplayTimeInputs levelUp;
+    levelUp.levelUpScale = 0.15f;
+    assert(Near(ComputeGameplayDelta(0.1f, levelUp), 0.015f));
+    levelUp.dying = true;
+    assert(Near(ComputeGameplayDelta(0.1f, levelUp), 0.1f * DYING_TIME_SCALE));
+    levelUp.hitStop = true;
+    assert(ComputeGameplayDelta(0.1f, levelUp) == 0.0f);
+    GameplayTimeInputs outOfRange;
+    outOfRange.levelUpScale = 3.0f;
+    assert(Near(ComputeGameplayDelta(0.1f, outOfRange), 0.1f));
+    outOfRange.levelUpScale = -1.0f;
+    assert(ComputeGameplayDelta(0.1f, outOfRange) == 0.0f);
+
     assert(ComputeGameplayDelta(-0.5f, normal) == 0.0f);
     assert(ComputeGameplayDelta(0.0f, dying) == 0.0f);
 

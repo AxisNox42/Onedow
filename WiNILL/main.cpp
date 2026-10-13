@@ -676,12 +676,30 @@ static void GrantLevelUpReward(int oldLevel, XpAmount need, XpAmount oldXp,
         g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
     else
         g_GameManager.QueueAugmentReward(true, /*allowDebuff=*/false);
+
+    // XP level-ups slow the game down and then open the selection on their
+    // own. Extra levels gained meanwhile only queue; they open back to back
+    // once the first selection finishes.
+    LevelUpTransition& transition = g_GameManager.levelUpTransition;
+    if (!manual && g_GameManager.currentState == GameState::RUNNING &&
+        !g_GameManager.augmentRewardActive && !transition.Active())
+        transition.Begin();
+}
+
+// Inputs for GameplayTime.h from the current run state.
+static GameplayTimeInputs CurrentGameplayTime() {
+    GameplayTimeInputs in;
+    in.hitStop = g_HitStopTimer > 0.0f;
+    in.dying = g_GameManager.currentState == GameState::DYING;
+    in.levelUpScale = g_GameManager.levelUpTransition.TimeScale();
+    return in;
 }
 
 // Hits taken while this is true are undone at the end of the fixed step.
 static bool IsPlayerDamageProtected() {
     return g_PlayerRuntime.dashInvulnerability > 0.0f ||
-           g_PlayerRuntime.postPickGrace > 0.0f;
+           g_PlayerRuntime.postPickGrace > 0.0f ||
+           g_GameManager.levelUpTransition.Active();
 }
 
 // Every augment flow (buff, debuff, chained rewards) returns to combat here.
@@ -1638,7 +1656,7 @@ int main() {
                                 "dashCd=%.2f timeStop=%.2f focus=%.2f timeCd=%.2f shield=%.1f dashHeld=%d skillHeld=%d grace=%.2f "
                                 "bullets=%d monsters=%d ranged=%d stardust=%d shocks=%d debris=%d queue=%d "
                                 "owned=%d typeOwned=%d takenOnce=%d score=%lld xp=%.3f level=%d hp=%.1f "
-                                "kills=%lld weapon=%d time=%.1f\n",
+                                "kills=%lld weapon=%d time=%.1f rewards=%d levelup=%d\n",
                                 label.c_str(), (int)gm.currentState, drones, chakrams,
                                 (int)g_LaserBeams.size(), (int)g_ApproachOrbs.size(), skills,
                                 g_SkillReplaceIdx, g_PlayerRuntime.dashCooldown,
@@ -1651,7 +1669,9 @@ int main() {
                                 (int)g_StardustPickups.size(), shocks, debris,
                                 (int)g_AugEffectQueue.size(), (int)g_OwnedAugs.size(), typeOwned, taken,
                                 gm.score, XpToDouble(gm.xp), gm.playerLevel, gm.playerHP,
-                                g_Stats.killCount, g_CurrentWeapon, g_GameTime);
+                                g_Stats.killCount, g_CurrentWeapon, g_GameTime,
+                                (int)gm.augmentRewardQueue.size(),
+                                (int)gm.levelUpTransition.Active());
                             std::fclose(f);
                         };
                         const size_t eq = step.find('=');
@@ -2235,11 +2255,20 @@ int main() {
         // --- ?�트?�톱: ???�벤??직후 ?�깐 ?��??�이???��? (?�더??계속) ---
         if (g_HitStopTimer > 0.0f) g_HitStopTimer -= delta;
 
-        // --- Fixed timestep: speed comes from GameplayTime.h (hit-stop, death slow-mo) ---
-        GameplayTimeInputs timeInputs;
-        timeInputs.hitStop = g_HitStopTimer > 0.0f;
-        timeInputs.dying = g_GameManager.currentState == GameState::DYING;
-        const float physDelta = ComputeGameplayDelta(delta, timeInputs);
+        // --- Level-up slow-motion: real time; opens the selection when done ---
+        {
+            LevelUpTransition& transition = g_GameManager.levelUpTransition;
+            const GameState st = g_GameManager.currentState;
+            if (st == GameState::RUNNING) {
+                if (transition.Update(delta))
+                    g_GameManager.ActivateNextAugmentReward();  // none left: keep playing
+            } else if (st != GameState::PAUSED) {
+                transition.Cancel();   // death or leaving the run wins
+            }
+        }
+
+        // --- Fixed timestep: speed comes from GameplayTime.h ---
+        const float physDelta = ComputeGameplayDelta(delta, CurrentGameplayTime());
         accumulator += physDelta;
         while (accumulator >= FIXED_DT) {
             if (g_GameManager.ShouldUpdate()) {
@@ -2727,6 +2756,11 @@ CollisionSystem::Update(pCX, pCY,
         }
 
         if (g_GameManager.currentState == GameState::RUNNING) {
+            // Frame-rate gameplay (regen, spawns, firing, orbiters, game clock)
+            // follows the level-up slow-motion. Hit-stop only freezes the fixed step.
+            GameplayTimeInputs frameTime = CurrentGameplayTime();
+            frameTime.hitStop = false;
+            const float runDelta = ComputeGameplayDelta(delta, frameTime);
             float pCX = playerWin.x + playerWin.width  * 0.5f;
             float pCY = playerWin.y + playerWin.height * 0.5f;
             bool  moving = keys[GLFW_KEY_W] || keys[GLFW_KEY_S] ||
@@ -2735,7 +2769,7 @@ CollisionSystem::Update(pCX, pCY,
             // ?�?�??�격 ?��???HP 감소 ??빨간 비네?�만 (?�야 변???�거, �??�기 고정) ?�?�?
             // HP ���?(REGEN_UP, �Ŵ�ȭ, ���?II �� regenPerSec �ջ�)
             if (g_Stats.regenPerSec > 0.0f) {
-                g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * delta;
+                g_GameManager.playerHP += g_Stats.GetRegenRate(g_GameManager.playerHP) * runDelta;
                 if (g_GameManager.playerHP > g_Stats.maxHP)
                     g_GameManager.playerHP = g_Stats.maxHP;
             }
@@ -2765,34 +2799,34 @@ CollisionSystem::Update(pCX, pCY,
                 if (debuffCnt >= 5) TryUnlockAch(ACH_DEBUFF_5);
             }
 
-            UpdateEnemyFx(delta);
-            g_MonsterManager.UpdateDeathEffects(delta);
+            UpdateEnemyFx(runDelta);
+            g_MonsterManager.UpdateDeathEffects(runDelta);
 
             // 충격???�데?�트
             for (auto& sw : g_ShockWaves) {
                 if (!sw.active) continue;
-                sw.life -= delta;
+                sw.life -= runDelta;
                 if (sw.life <= 0.0f) sw.active = false;
             }
 
             // 검�??�윙 ?�상 ?�데?�트
 
-            for (auto& lb : g_LaserBeams) lb.life -= delta;
+            for (auto& lb : g_LaserBeams) lb.life -= runDelta;
             g_LaserBeams.erase(std::remove_if(g_LaserBeams.begin(), g_LaserBeams.end(),
                 [](const LaserBeam& b){ return b.life <= 0.0f; }), g_LaserBeams.end());
 
             // 별가루: 스폰 직후 약간 퍼진 뒤 매 프레임 플레이어 방향으로 재조향 — 무조건 수집.
-            g_StardustHudPulse = std::max(0.0f, g_StardustHudPulse - delta * 3.8f);
+            g_StardustHudPulse = std::max(0.0f, g_StardustHudPulse - runDelta * 3.8f);
             constexpr float STARDUST_SCATTER_SECONDS = 0.40f;
             constexpr float STARDUST_MIN_HOMING_SECONDS = 0.18f;
             constexpr float STARDUST_PICKUP_RADIUS = 24.0f;
             for (auto& dust : g_StardustPickups) {
                 if (!dust.alive) continue;
-                dust.age += delta;
+                dust.age += runDelta;
 
                 // 초기 0.4s: 퍼짐 (초기 vx/vy 방향 유지하되 감속)
                 if (dust.age < STARDUST_SCATTER_SECONDS) {
-                    const float drag = 1.0f - delta * 4.5f;
+                    const float drag = 1.0f - runDelta * 4.5f;
                     dust.vx *= drag;
                     dust.vy *= drag;
                 } else {
@@ -2806,8 +2840,8 @@ CollisionSystem::Update(pCX, pCY,
                     }
                 }
 
-                dust.x += dust.vx * delta;
-                dust.y += dust.vy * delta;
+                dust.x += dust.vx * runDelta;
+                dust.y += dust.vy * runDelta;
 
                 // Don't collect contact-range drops during scatter or on the
                 // first homing frame; let the return flight remain visible.
@@ -2831,36 +2865,36 @@ CollisionSystem::Update(pCX, pCY,
 
             // ?��??�파???�데?�트 (?�동 + 감속 + ?�명)
             for (auto& sp : g_Sparks) {
-                sp.x += sp.vx * delta;
-                sp.y += sp.vy * delta;
-                float drag = std::max(0.0f, 1.0f - 6.0f * delta);
+                sp.x += sp.vx * runDelta;
+                sp.y += sp.vy * runDelta;
+                float drag = std::max(0.0f, 1.0f - 6.0f * runDelta);
                 sp.vx *= drag; sp.vy *= drag;
-                sp.life -= delta;
+                sp.life -= runDelta;
             }
             g_Sparks.erase(std::remove_if(g_Sparks.begin(), g_Sparks.end(),
                 [](const Spark& s){ return s.life <= 0.0f; }), g_Sparks.end());
             // ?�동 ?�상 ?�명 갱신
-            for (auto& tr : g_Trail) tr.life -= delta;
+            for (auto& tr : g_Trail) tr.life -= runDelta;
             g_Trail.erase(std::remove_if(g_Trail.begin(), g_Trail.end(),
                 [](const Trail& t){ return t.life <= 0.0f; }), g_Trail.end());
-            if (g_MuzzleTimer > 0.0f) g_MuzzleTimer -= delta;
+            if (g_MuzzleTimer > 0.0f) g_MuzzleTimer -= runDelta;
 
-            if (g_ShakeTime > 0.0f) g_ShakeTime -= delta;
+            if (g_ShakeTime > 0.0f) g_ShakeTime -= runDelta;
 
             // 초당 EXP ?�적 (?��??�는 죽음 + ?�몹 가??
             if (g_Stats.xpPerSec > 0.0f) {
                 GrantExperience(AccumulateTimedXp(g_XpTimeAccum, g_Stats.xpPerSec,
-                                                  g_Stats.xpMult, delta));
+                                                  g_Stats.xpMult, runDelta));
             }
 
             if (g_Stats.lightStepDisableTimer > 0.0f)
-                g_Stats.lightStepDisableTimer -= delta;
+                g_Stats.lightStepDisableTimer -= runDelta;
 
 
             UpdateEnemySpawns(g_MonsterManager, g_Stats,
-                              screenWidth, screenHeight, delta,
+                              screenWidth, screenHeight, runDelta,
                               g_GameTime, g_GameManager.score);
-            g_GameTime += delta;
+            g_GameTime += runDelta;
             float approachSpeed = 120.0f *
                 (1.0f + 0.20f * (float)(g_Stats.approachStacks > 0 ? g_Stats.approachStacks - 1 : 0));
             for (auto& orb : g_ApproachOrbs) {
@@ -2868,11 +2902,11 @@ CollisionSystem::Update(pCX, pCY,
                 float dy = pCY - orb.y;
                 float d  = sqrtf(dx*dx + dy*dy);
                 if (d > 1.0f) {
-                    orb.x += (dx/d) * approachSpeed * delta;
-                    orb.y += (dy/d) * approachSpeed * delta;
+                    orb.x += (dx/d) * approachSpeed * runDelta;
+                    orb.y += (dy/d) * approachSpeed * runDelta;
                 }
                 if (d < 25.0f) {
-                    g_GameManager.playerHP -= 20.0f * delta;
+                    g_GameManager.playerHP -= 20.0f * runDelta;
                 }
             }
 
@@ -2880,12 +2914,12 @@ CollisionSystem::Update(pCX, pCY,
             if (g_Stats.drone) {
                 for (int d = 0; d < g_Stats.droneCount && d < MAX_DRONES; d++) {
                     auto& dr = g_Drones[d];
-                    dr.angle += 1.5f * delta;
+                    dr.angle += 1.5f * runDelta;
                     // 균등 각도 ?�프??(각자 ?�른 ?�치)
                     float ang = dr.angle + (float)d * 6.2831853f / (float)g_Stats.droneCount;
                     float droneX = pCX + cosf(ang) * 80.0f;
                     float droneY = pCY + sinf(ang) * 80.0f;
-                    dr.fireTimer += delta;
+                    dr.fireTimer += runDelta;
                     // 군집 지???�화) ??발사 간격 2.0× ??0.6× (초고??
                     float droneInt = g_Stats.fireInterval * (g_Stats.droneRapid ? 0.6f : 2.0f);
                     if (dr.fireTimer >= droneInt) {
@@ -2912,7 +2946,7 @@ CollisionSystem::Update(pCX, pCY,
                 for (int c = 0; c < g_Stats.chakramCount && c < MAX_CHAKRAMS; c++) {
                     auto& ch = g_Chakrams[c];
                     if (ch.alive) {
-                        ch.angle += 5.5f * delta;
+                        ch.angle += 5.5f * runDelta;
                         float chx = pCX + cosf(ch.angle) * CHAKRAM_RADIUS;
                         float chy = pCY + sinf(ch.angle) * CHAKRAM_RADIUS;
                         float hitR2 = CHAKRAM_SIZE * CHAKRAM_SIZE;
@@ -2952,7 +2986,7 @@ CollisionSystem::Update(pCX, pCY,
                             ch.respawnTimer = 6.0f;
                         }
                     } else {
-                        ch.respawnTimer -= delta;
+                        ch.respawnTimer -= runDelta;
                         if (ch.respawnTimer <= 0.0f) {
                             ch.alive = true;
                             if (ch.maxHp < 1.0f) ch.maxHp = 150.0f;
@@ -2963,7 +2997,7 @@ CollisionSystem::Update(pCX, pCY,
             }
 
             if (g_Stats.bulletRain) {
-                g_BulletRainTimer += delta;
+                g_BulletRainTimer += runDelta;
                 // ���� ����(��ȭ): óġ���� ��ٿ�?���� 0.2�� ����. �ּ� 3�� ���� ����.
                 if (g_Stats.rainKillReduce && g_RainKillAccum > 0.0f) {
                     float killBoost = g_RainKillAccum * 0.2f;
@@ -3002,7 +3036,7 @@ CollisionSystem::Update(pCX, pCY,
             // ?�탑 모드: ?�레?�어 ?�동 발사 비활??(?�탑???�??발사)
             float effInterval = g_Stats.fireInterval * g_Stats.GetFireIntervalMult();
             float effSpeed    = g_Stats.bulletSpeed + g_Stats.GetBulletSpeedBonus();
-            fireTimer += delta;
+            fireTimer += runDelta;
             auto spawnOne = [&](float tx, float ty) {
                 float ftx = tx, fty = ty;
                 if (g_Stats.bulletSpread > 0.0f) {
@@ -3062,7 +3096,7 @@ CollisionSystem::Update(pCX, pCY,
             if (g_Stats.laser) {
                 float laserInt = (g_Stats.laserTier >= 3) ? 0.26f   // 수렴: 빠르지만 화면을 잠식하지 않음
                                : (g_Stats.laserTier >= 2) ? 0.55f : LASER_INT;
-                g_LaserTimer += delta;
+                g_LaserTimer += runDelta;
                 if (g_LaserTimer >= laserInt) {
                     g_LaserTimer -= laserInt;
                     float lang  = atan2f(wmy - pCY, wmx - pCX);   // ?�이?�????�� 커서 방향

@@ -8,6 +8,7 @@
 #include "Bullet.h"
 #include "Augment.h"
 #include "Experience.h"
+#include "LevelUpTransition.h"
 
 enum class GameState {
     MAIN_MENU,         // 시작 메뉴 (시작/설정/종료)
@@ -49,6 +50,7 @@ public:
     bool      augmentRewardActive = false;
     bool      augmentRewardInternalDebuff = false;
     bool      augmentRewardInDebuff = false;
+    LevelUpTransition levelUpTransition;  // slow-mo before the reward opens
     bool      takenOnce[AUG_TOTAL] = {}; // EPIC/LEGENDARY 한 번만
 
     bool augReady      = false; // 레벨업 후 SPACE 대기 중
