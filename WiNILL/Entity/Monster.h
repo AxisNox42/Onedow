@@ -234,7 +234,8 @@ public:
     // Antares is a bull: it keeps accelerating while it chases, turns worse
     // the faster it goes, and drops back to stage 1 once it overshoots.
     // Ramming the player knocks them away and stuns Antares; a finished run
-    // (skid) ends in a short rest.
+    // (skid) ends in a short rest. Once inside the map, hitting its edge
+    // while running stuns it too, so a missed run never carries it off-map.
     enum class AntaresState { CHASE, SKID, STUNNED, REST };
     static constexpr float ANTARES_STUN_TIME = ANTARES_STUN_TIME_SEC;
     static constexpr float ANTARES_REST_TIME = 0.8f;
@@ -365,6 +366,8 @@ public:
     float antaresKnockY = 0.0f;
     float antaresTrailTimer = 0.0f;
     std::array<glm::vec3, ANTARES_TRAIL_COUNT> antaresTrail{};
+    // Spawns sit off-map; the edge only holds Antares once it has come in.
+    bool antaresInArena = false;
     // Per face: shots it can still stop, seconds since it broke (< 0 while
     // intact) and seconds since it last restored (drives the snap-back look).
     std::array<int, MAGNETAR_FACES> magnetarFaceHits{};
@@ -493,6 +496,7 @@ public:
             antaresKnockX = antaresKnockY = 0.0f;
             antaresTrailTimer = 0.0f;
             antaresTrail.fill(glm::vec3(worldX, worldY, antaresVisualAngle));
+            antaresInArena = false;
         } else if (kind == MobKind::MAGNETAR) {
             color = glm::vec3(1.0f, 0.84f, 0.28f);
             hp *= MAGNETAR_BASE_HP / 90.0f;
@@ -518,6 +522,34 @@ public:
 
     // Frame edge plus the player's body, so a ram lands on touch, not overlap.
     float AntaresRamRange() const { return 26.0f * sizeScale + 18.0f; }
+
+    // Keeps Antares inside the map (world-space edges). Until its frame is
+    // fully inside it is left alone; after that a run that hits an edge is
+    // stopped there and stunned, as if it slammed into a wall. A stage 1
+    // crawl just slides along the edge, so a player hugging the wall does
+    // not stun-lock it.
+    void ConfineAntares(float left, float top, float right, float bottom) {
+        if (!alive || kind != MobKind::ANTARES || thrownPhase != 0) return;
+        const float radius = 26.0f * sizeScale;
+        const float minX = left + radius, maxX = right - radius;
+        const float minY = top + radius, maxY = bottom - radius;
+        if (minX >= maxX || minY >= maxY) return;
+        const bool inside = worldX >= minX && worldX <= maxX &&
+                            worldY >= minY && worldY <= maxY;
+        if (!antaresInArena) {
+            antaresInArena = inside;
+            return;
+        }
+        if (inside) return;
+        worldX = std::clamp(worldX, minX, maxX);
+        worldY = std::clamp(worldY, minY, maxY);
+        if ((antaresState == AntaresState::CHASE ||
+             antaresState == AntaresState::SKID) && AntaresStage() >= 2) {
+            antaresState = AntaresState::STUNNED;
+            antaresStateTimer = 0.0f;
+            antaresMoveSpeed = 0.0f;
+        }
+    }
 
     // 0-1 position between the slowest and the top speed.
     float AntaresSpeedRatio() const {
