@@ -658,6 +658,12 @@ static void ResetAugmentDerivedRuntime() {
     ResetPlayerSkills();
 }
 
+// Hits taken while this is true are undone at the end of the fixed step.
+static bool IsPlayerDamageProtected() {
+    return g_PlayerRuntime.dashInvulnerability > 0.0f ||
+           g_PlayerRuntime.postPickGrace > 0.0f;
+}
+
 // Every augment flow (buff, debuff, chained rewards) returns to combat here.
 static void ReturnToRunningAfterPick() {
     g_GameManager.currentState = GameState::RUNNING;
@@ -2552,8 +2558,7 @@ CollisionSystem::Update(pCX, pCY,
                 // ?�??무적 / 증강???�예(C14) ???�번 ?�텝?????�해 무효 (?�복?�??��?)
                 ApplyPlayerDamageProtection(
                     hpAtStep, g_GameManager.playerHP,
-                    g_PlayerRuntime.dashInvulnerability > 0.0f ||
-                        g_PlayerRuntime.postPickGrace > 0.0f,
+                    IsPlayerDamageProtected(),
                     g_Stats.lightStep, g_Stats.lightStepHitLock,
                     g_Stats.lightStepDisableTimer);
 
