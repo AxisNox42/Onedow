@@ -657,6 +657,12 @@ static void ResetAugmentDerivedRuntime() {
     ResetPlayerSkills();
 }
 
+// Every augment flow (buff, debuff, chained rewards) returns to combat here.
+static void ReturnToRunningAfterPick() {
+    g_GameManager.currentState = GameState::RUNNING;
+    g_PlayerRuntime.postPickGrace = POST_PICK_GRACE;
+}
+
 static void FinishCurrentAugmentReward() {
     if (g_GameManager.augmentRewardActive &&
         !g_GameManager.augmentRewardQueue.empty()) {
@@ -665,10 +671,8 @@ static void FinishCurrentAugmentReward() {
     g_GameManager.augmentRewardActive = false;
     g_GameManager.augmentRewardInternalDebuff = false;
     g_GameManager.augmentRewardInDebuff = false;
-    if (!g_GameManager.ActivateNextAugmentReward()) {
-        g_GameManager.currentState = GameState::RUNNING;
-        g_PlayerRuntime.postPickGrace = 0.5f;
-    }
+    if (!g_GameManager.ActivateNextAugmentReward())
+        ReturnToRunningAfterPick();
 }
 
 static void FinishAugmentEffects() {
@@ -690,8 +694,7 @@ static void FinishAugmentEffects() {
         return;
     }
 
-    g_GameManager.currentState = GameState::RUNNING;
-    g_PlayerRuntime.postPickGrace = 0.5f;
+    ReturnToRunningAfterPick();
 }
 
 static void ProcessAugEffectQueue(int scrW, int scrH) {
@@ -2056,8 +2059,7 @@ int main() {
                 } else if (wasBuff) {
                     FinishAugmentEffects();
                 } else {
-                    g_GameManager.currentState = GameState::RUNNING;
-                    g_PlayerRuntime.postPickGrace = 0.5f;
+                    ReturnToRunningAfterPick();
                 }
             };
 

@@ -33,6 +33,8 @@ inline constexpr float DASH_DUR = 0.11f;
 inline constexpr float TIMESTOP_DUR = 1.5f;
 inline constexpr float HYPER_FOCUS_DUR = 5.0f;
 inline constexpr float HYPER_FOCUS_DASH_CD = 2.0f;
+// Damage protection and fire lock after an augment pick returns to combat.
+inline constexpr float POST_PICK_GRACE = 0.5f;
 
 float PlayerSkillCooldownMax(SkillType type);
 void ResetPlayerSkills();
