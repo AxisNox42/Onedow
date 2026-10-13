@@ -53,7 +53,6 @@ public:
     LevelUpTransition levelUpTransition;  // slow-mo before the reward opens
     bool      takenOnce[AUG_TOTAL] = {}; // EPIC/LEGENDARY 한 번만
 
-    bool augReady      = false; // 레벨업 후 SPACE 대기 중
     bool spaceReleased = true;
     bool escReleased   = true;
 

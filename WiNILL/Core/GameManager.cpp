@@ -118,13 +118,9 @@ void GameManager::HandleInput(GLFWwindow* window) {
         if (currentState == GameState::READY) {
             currentState = GameState::RUNNING;
         } else if (currentState == GameState::RUNNING) {
-            if (augReady) {
-                currentState = GameState::AUG_SELECT;
-                augReady = false;
-            } else {
-                pauseResumeState = GameState::RUNNING;
-                currentState = GameState::PAUSED;
-            }
+            // Augment selection opens by itself after a level-up.
+            pauseResumeState = GameState::RUNNING;
+            currentState = GameState::PAUSED;
         } else if (currentState == GameState::PAUSED) {
             currentState = pauseResumeState;
             pauseResumeState = GameState::RUNNING;
@@ -482,7 +478,6 @@ int GameManager::PickRandomAugIndices(int* outArr, int n,
 
 void GameManager::QueueAugmentReward(bool needsDebuff, bool allowDebuff) {
     augmentRewardQueue.push_back({needsDebuff, allowDebuff});
-    augReady = true;
 }
 
 bool GameManager::ActivateNextAugmentReward() {
@@ -501,7 +496,6 @@ bool GameManager::ActivateNextAugmentReward() {
         augmentRewardActive = true;
         augmentRewardInternalDebuff = false;
         augmentRewardInDebuff = false;
-        augReady = false;
         augmentKeyboardFocus = false;
         ++augmentSelectionSerial;
         currentState = GameState::AUG_SELECT;
@@ -513,7 +507,6 @@ bool GameManager::ActivateNextAugmentReward() {
         return true;
     }
 
-    augReady = false;
     return false;
 }
 
@@ -525,7 +518,6 @@ void GameManager::ClearAugmentRewardQueue() {
     augmentRewardInDebuff = false;
     augChoiceCount = 0;
     for (int i = 0; i < 3; i++) augChoices[i] = -1;
-    augReady = false;
     augmentKeyboardFocus = false;
 }
 

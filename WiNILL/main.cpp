@@ -1834,12 +1834,6 @@ int main() {
         if (!debugInputCaptured)
             g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
         SyncGameplayTelemetry();
-        if (prevState == GameState::RUNNING &&
-            g_GameManager.currentState == GameState::AUG_SELECT &&
-            !g_GameManager.augmentRewardActive) {
-            if (!g_GameManager.ActivateNextAugmentReward())
-                g_GameManager.currentState = GameState::RUNNING;
-        }
 
         // Keep the native window title synchronized with the active scene and
         // the live run counters.  This is intentionally throttled so title
@@ -2228,8 +2222,7 @@ int main() {
             if (inputFocusChanged) s_fkeyReleased = kF == GLFW_RELEASE;
             if (kF == GLFW_RELEASE) s_fkeyReleased = true;
             if (kF == GLFW_PRESS && s_fkeyReleased &&
-                g_GameManager.currentState == GameState::RUNNING &&
-                !g_GameManager.augReady) {
+                g_GameManager.currentState == GameState::RUNNING) {
                 // ?�드박스: ?�버?�도 카드 ?�???�어??무엇?�든 집을 ???�게
                 const int oldLevel = g_GameManager.playerLevel;
                 const XpAmount oldXp = g_GameManager.xp;
@@ -3842,24 +3835,6 @@ CollisionSystem::Update(pCX, pCY,
                     float cw = g_TextS.Width(c, hintScale);
                     g_TextS.Draw(c, CenterX(sw, cw), HudY(sh, Hud::COMBO_TEXT), hintScale,
                                  0.7f, 0.82f, 0.95f, 0.72f);   // 가?�성 ??(?�어????보인?�는 ?�드�?
-                }
-                if (st == GameState::RUNNING && g_GameManager.augReady) {
-                    float ap = 0.55f + 0.45f * sinf((float)glfwGetTime() * 4.5f);
-                    static const wchar_t* kAugHint[3] = {
-                        L"[ SPACE ]  증강 픽업",
-                        L"[ SPACE ]  Pick Augment",
-                        L"[ SPACE ]  強化 取得",
-                    };
-                    const wchar_t* hintTxt = kAugHint[LangIndex()];
-                    const float augmentHintScale = UiTextScale(g_TextL, UiTextLevel::Subtitle, hudScale);
-                    float hw = g_TextL.Width(hintTxt, augmentHintScale);
-                    float hy = (float)sh * 0.5f - 60.0f;
-                    // glow pass
-                    g_TextL.Draw(hintTxt, CenterX(sw, hw) - 1.0f, hy + 1.0f, augmentHintScale,
-                                 0.3f, 1.0f, 0.5f, ap * 0.18f);
-                    // core
-                    g_TextL.Draw(hintTxt, CenterX(sw, hw), hy, augmentHintScale,
-                                 0.45f, 1.0f, 0.62f, ap * 0.95f);
                 }
                 // ?�?�??�체??경고 ??HP 25% ?�하 ??가?�자�?부?�러???�색 ?�스 + ?�스???�?�?
                 if (st == GameState::RUNNING) {
