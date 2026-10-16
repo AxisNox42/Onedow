@@ -33,19 +33,31 @@ Push-Location $root
 try {
     $main = Get-Content 'WiNILL\main.cpp'
     $calls = Select-String -Path 'WiNILL\main.cpp' -Pattern '\bCommitRunResult\('
-    if (@($calls).Count -ne 2) { throw "expected 2 CommitRunResult calls in main.cpp, found $(@($calls).Count)" }
+    if (@($calls).Count -ne 3) { throw "expected 3 CommitRunResult calls in main.cpp, found $(@($calls).Count)" }
     if (Select-String -Path 'WiNILL\main.cpp' -Pattern '\bRecordRunResult\(') { throw 'main.cpp records a run outside CommitRunResult' }
     # Abandon: returns at once when the run already ended.
     $abandon = (Select-String -Path 'WiNILL\main.cpp' -Pattern 'auto AbandonCurrentRun = ').LineNumber
     if ($main[$abandon] -notmatch 'currentState == GameState::GAMEOVER' -or $main[$abandon + 1] -notmatch 'return;') {
         throw 'AbandonCurrentRun no longer starts with the GAMEOVER guard'
     }
+    # Wave completion commits once, then immediately leaves RUNNING. Re-entry
+    # is blocked by waveVictory and by the current-state check.
+    $wave = ($calls | Where-Object { $_.LineNumber -lt $abandon } | Select-Object -First 1).LineNumber
+    $waveStart = (Select-String -Path 'WiNILL\main.cpp' -Pattern '^static void CompleteWaveRun\(').LineNumber
+    $waveEnd = (Select-String -Path 'WiNILL\main.cpp' -Pattern '^static void ProcessWaveTransitions\(').LineNumber
+    if ($wave -le $waveStart -or $wave -ge $waveEnd) { throw 'wave completion commit moved outside CompleteWaveRun' }
+    $waveBody = $main[($waveStart - 1)..($waveEnd - 2)] -join "`n"
+    if ($waveBody -notmatch 'waveVictory \|\|.*currentState != GameState::RUNNING' -or
+        $waveBody -notmatch 'waveVictory = true' -or
+        $waveBody -notmatch 'currentState = GameState::GAMEOVER') {
+        throw 'wave completion lost its run-once guards or GAMEOVER transition'
+    }
     # Game over: committed inside the DYING timer-expiry branch, after the
     # state moved to GAMEOVER (so the branch cannot run again).
-    $gameOver = ($calls | Where-Object { $_.LineNumber -gt $abandon + 60 } | Select-Object -First 1).LineNumber
+    $gameOver = ($calls | Select-Object -Last 1).LineNumber
     $window = $main[($gameOver - 25)..($gameOver - 1)] -join "`n"
     if ($window -notmatch 'g_DyingTimer <= 0\.0f' -or $window -notmatch 'currentState = GameState::GAMEOVER') {
         throw 'game-over commit no longer sits after the DYING -> GAMEOVER transition'
     }
-    Write-Host 'source check: abandon guard + DYING->GAMEOVER transition before each commit'
+    Write-Host 'source check: wave, abandon and DYING paths each have a run-once transition'
 } finally { Pop-Location }

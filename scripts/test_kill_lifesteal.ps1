@@ -18,11 +18,8 @@ try {
     & "$out\kill_lifesteal_test.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Kill lifesteal regression failed' }
 
-    # Check that every kill path heals through ApplyKillLifesteal and nothing
-    # reads the amount on its own: common collection + laser on mobs + laser
-    # on Scopes in KillRewards.h (driven by the REG-01 test), regular mob +
-    # Scope bullet kills in CollisionSystem.h, none left in main.cpp.
-    $expected = @{ 'WiNILL\Entity\KillRewards.h' = 3; 'WiNILL\Entity\CollisionSystem.h' = 2; 'WiNILL\main.cpp' = 0 }
+    # Every path reaches the single ordinary-kill reward owner.
+    $expected = @{ 'WiNILL\Entity\KillRewards.h' = 0; 'WiNILL\Entity\CollisionSystem.h' = 1; 'WiNILL\main.cpp' = 0 }
     foreach ($file in $expected.Keys) {
         $count = (Select-String -Path $file -Pattern 'ApplyKillLifesteal\(' -AllMatches |
                   ForEach-Object { $_.Matches.Count } | Measure-Object -Sum).Sum
@@ -32,5 +29,5 @@ try {
         Where-Object { $_.Name -ne 'PlayerStats.h' -and $_.Name -ne 'DebugToolkit.cpp' } |
         Select-String -Pattern 'GetLifestealPerKill\(|\.lifestealPerKill\b'
     if ($direct) { $direct | Out-String | Write-Host; throw 'kill lifesteal read outside ApplyKillLifesteal' }
-    Write-Host 'source check: all 5 kill paths heal through ApplyKillLifesteal'
+    Write-Host 'source check: all 5 kill paths share one ApplyKillLifesteal'
 } finally { Pop-Location }

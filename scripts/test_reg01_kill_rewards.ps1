@@ -28,10 +28,8 @@ try {
     if ($own) { $own | Out-String | Write-Host; throw 'kill-reward code in main.cpp outside KillRewards.h' }
     Write-Host 'source check: main.cpp kill paths go through KillRewards.h'
 
-    # The vampire N-kill heal lives in PlayerStats::ApplyVampireKill only:
-    # 2 bullet paths (CollisionSystem.h) + 3 in KillRewards.h call it, and no
-    # other code advances or tests the streak.
-    $vampireCalls = @{ 'WiNILL\Entity\CollisionSystem.h' = 2; 'WiNILL\Entity\KillRewards.h' = 3; 'WiNILL\main.cpp' = 0 }
+    # All five entry paths now share one reward application.
+    $vampireCalls = @{ 'WiNILL\Entity\CollisionSystem.h' = 1; 'WiNILL\Entity\KillRewards.h' = 0; 'WiNILL\main.cpp' = 0 }
     foreach ($file in $vampireCalls.Keys) {
         $n = @(Select-String -Path $file -Pattern '\bApplyVampireKill\(').Count
         if ($n -ne $vampireCalls[$file]) { throw "$file has $n ApplyVampireKill calls, expected $($vampireCalls[$file])" }
@@ -40,5 +38,5 @@ try {
         Where-Object { $_.Name -ne 'PlayerStats.h' } |
         Select-String -Pattern 'vampireKillStreak\s*(\+\+|>=|<)|\+\+\s*\w*\.?vampireKillStreak|GetVampireKillNeed\('
     if ($streak) { $streak | Out-String | Write-Host; throw 'vampire streak handled outside PlayerStats::ApplyVampireKill' }
-    Write-Host 'source check: all 5 kill paths heal through ApplyVampireKill'
+    Write-Host 'source check: all 5 kill paths share one ApplyVampireKill'
 } finally { Pop-Location }

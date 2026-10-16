@@ -30,6 +30,9 @@ struct DebugToolkitContext {
     std::function<int(int count)> spawnRanged;
     // Elite-kill hit stop experiment toggle (Stats tab); not saved.
     bool* eliteKillHitStop = nullptr;
+    // PLAY constellation orbit rings toggle (Stats tab); not saved.
+    bool* constellationOrbits = nullptr;
+    std::function<void()> advanceWave;
 };
 
 class DebugToolkit {

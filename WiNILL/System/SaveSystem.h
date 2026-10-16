@@ -58,7 +58,6 @@ inline void SaveGame() {
     add("sfxenabled=%lld\n", g_SfxEnabled ? 1 : 0);
     add("audiomono=%lld\n", g_AudioMonoOutput ? 1 : 0);
     add("audioenabled=%lld\n", g_AudioEngineEnabled ? 1 : 0);
-    add("autofire=%lld\n",  g_AutoFire  ? 1 : 0);
     add("autoskill=%lld\n", g_AutoSkill ? 1 : 0);
     add("strongmenudim=%lld\n", g_StrongMenuDim ? 1 : 0);
     add("backdropblur=%lld\n", g_BackdropBlurEnabled ? 1 : 0);
@@ -181,7 +180,6 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "sfxenabled"))  g_SfxEnabled        = (val != 0);
         else if (!std::strcmp(key, "audiomono"))   g_AudioMonoOutput   = (val != 0);
         else if (!std::strcmp(key, "audioenabled")) g_AudioEngineEnabled = (val != 0);
-        else if (!std::strcmp(key, "autofire"))    g_AutoFire          = (val != 0);
         else if (!std::strcmp(key, "autoskill"))   g_AutoSkill         = (val != 0);
         else if (!std::strcmp(key, "strongmenudim")) g_StrongMenuDim    = (val != 0);
         else if (!std::strcmp(key, "backdropblur")) g_BackdropBlurEnabled = (val != 0);

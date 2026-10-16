@@ -393,7 +393,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         int optCur     = 0;                 // 현재 선택된 인덱스
     };
     SRow settingsRows[4][6] = {};
-    const int rowCounts[4] = { 5, 5, kDebugSettingsVisible ? 4 : 3, 2 };
+    const int rowCounts[4] = { 5, 5, kDebugSettingsVisible ? 3 : 2, 2 };
 
     static wchar_t s_volBuf[8];
 
@@ -440,13 +440,11 @@ void Scene_SettingsInline(const SceneCtx& c) {
     settingsRows[1][4] = { SettingsText(L"오디오 엔진", L"AUDIO ENGINE", L"オーディオエンジン"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2,
                            g_AudioEngineEnabled ? 0 : 1 };
-    settingsRows[2][0] = { SettingsText(L"자동 발사", L"AUTO FIRE", L"自動射撃"), nullptr, false, false, false, false,
-                           { toggleOn, toggleOff }, 2, g_AutoFire ? 0 : 1 };
-    settingsRows[2][1] = { SettingsText(L"자동 스킬", L"AUTO SKILL", L"自動スキル"), nullptr, false, false, false, false,
+    settingsRows[2][0] = { SettingsText(L"자동 스킬", L"AUTO SKILL", L"自動スキル"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_AutoSkill ? 0 : 1 };
-    settingsRows[2][2] = { SettingsText(L"조준선", L"CROSSHAIR", L"照準"), nullptr, false, false, false, false,
+    settingsRows[2][1] = { SettingsText(L"조준선", L"CROSSHAIR", L"照準"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_ShowCrosshair ? 0 : 1 };
-    settingsRows[2][3] = { SettingsText(L"\uB514\uBC84\uAE45 \uBAA8\uB4DC", L"DEBUG MODE", L"デバッグモード"), nullptr, false, false, false, false,
+    settingsRows[2][2] = { SettingsText(L"\uB514\uBC84\uAE45 \uBAA8\uB4DC", L"DEBUG MODE", L"デバッグモード"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_DebugMode ? 0 : 1 };
     settingsRows[3][0] = { SettingsText(L"언어", L"LANGUAGE", L"言語"), nullptr, false, false, false, false,
                            { L"한국어", L"English", L"日本語" },
@@ -476,10 +474,9 @@ void Scene_SettingsInline(const SceneCtx& c) {
             if (row == 3) return g_AudioMonoOutput != savedSettings.audioMonoOutput;
             if (row == 4) return g_AudioEngineEnabled != savedSettings.audioEngineEnabled;
         } else if (category == 2) {
-            if (row == 0) return g_AutoFire != savedSettings.autoFire;
-            if (row == 1) return g_AutoSkill != savedSettings.autoSkill;
-            if (row == 2) return g_ShowCrosshair != savedSettings.crosshair;
-            if (row == 3) return g_DebugMode != savedSettings.debugMode;
+            if (row == 0) return g_AutoSkill != savedSettings.autoSkill;
+            if (row == 1) return g_ShowCrosshair != savedSettings.crosshair;
+            if (row == 2) return g_DebugMode != savedSettings.debugMode;
         } else if (category == 3) {
             return row == 0 && g_Language != savedSettings.language;
         }
@@ -509,8 +506,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         SettingsText(L"효과음 채널", L"SFX BUS", L"効果音"),
         SettingsText(L"출력", L"OUTPUT", L"出力"),
         SettingsText(L"오디오 엔진", L"AUDIO ENGINE", L"オーディオエンジン") };
-    const wchar_t* gameplayLabels[4] = {
-        SettingsText(L"자동 발사", L"AUTO FIRE", L"自動射撃"),
+    const wchar_t* gameplayLabels[3] = {
         SettingsText(L"자동 스킬", L"AUTO SKILL", L"自動スキル"),
         SettingsText(L"조준선", L"CROSSHAIR", L"照準"),
         SettingsText(L"\uB514\uBC84\uAE45 \uBAA8\uB4DC", L"DEBUG MODE", L"デバッグモード") };
@@ -524,7 +520,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     addHeader(1, SettingsText(L"소리", L"AUDIO", L"サウンド"));
     if (tab == 1) for (int i = 0; i < 5; ++i) addItem(1, i, audioLabels[i]);
     addHeader(2, SettingsText(L"게임플레이", L"GAMEPLAY", L"ゲームプレイ"));
-    if (tab == 2) for (int i = 0; i < (kDebugSettingsVisible ? 4 : 3); ++i)
+    if (tab == 2) for (int i = 0; i < (kDebugSettingsVisible ? 3 : 2); ++i)
         addItem(2, i, gameplayLabels[i]);
     addHeader(3, SettingsText(L"기록", L"ARCHIVE", L"記録"));
     if (tab == 3) for (int i = 0; i < 2; ++i) addItem(3, i, archiveLabels[i]);
@@ -916,7 +912,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 };
                 return output[optionLanguage][optionIndex];
             }
-        } else if (category == 2 && row < 4) {
+        } else if (category == 2 && row < 3) {
             return kToggleLabels[optionLanguage][optionIndex];
         } else if (category == 3 && row == 0) {
             static const wchar_t* language[] = {
@@ -1503,10 +1499,9 @@ void Scene_SettingsInline(const SceneCtx& c) {
                  Audio::SetEnabled(g_AudioEngineEnabled && g_SoundVol > 0);
              }
          } else if (category == 2) {
-             if (row == 0) g_AutoFire = option == 0;
-             else if (row == 1) g_AutoSkill = option == 0;
-             else if (row == 2) g_ShowCrosshair = option == 0;
-             else if (row == 3) g_DebugMode = option == 0;
+             if (row == 0) g_AutoSkill = option == 0;
+             else if (row == 1) g_ShowCrosshair = option == 0;
+             else if (row == 2) g_DebugMode = option == 0;
          } else if (category == 3 && row == 0) {
              g_Language = option == 0 ? Language::KR :
                           option == 1 ? Language::EN : Language::JP;

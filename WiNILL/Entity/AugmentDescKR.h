@@ -95,13 +95,13 @@ inline const wchar_t* AugDescKR(AugType t) {
 
     // ── Debuff ──
     case AugType::D_RMOB_MAX:
-        return L"원거리 몹 동시 존재 +1 · 스폰 0.5초 가속 · 원거리 처치 EXP +12 · 원거리 압박↑·보상↑";
+        return L"웨이브 소환 수 +1 · 스폰 0.5초 가속 · 원거리 처치 EXP +12 · 원거리 압박↑·보상↑";
     case AugType::D_RMOB_HP:
         return L"원거리 몹 체력·공격력 +20% · 원거리 처치 EXP +6 · 강한 원거리 적·경험치 보상";
     case AugType::D_RMOB_DELAY:
         return L"원거리 몹 이동 속도 +20% (최대 10중첩) · 원거리 처치 EXP +5 · 빠른 원거리 위협";
     case AugType::D_MOB_SPAWN:
-        return L"로터 생성 빈도 증가 · 동시 한도 +12 · 로터 처치 EXP +1 · 로터 물량 압박";
+        return L"로터 생성 빈도 증가 · 웨이브 소환 수 +12 · 로터 처치 EXP +1 · 로터 물량 압박";
     case AugType::D_APPROACH:
         return L"무적 붉은 오브가 계속 추적 · 초당 EXP +0.5 · 최대 3회까지 중복, 중복 시 오브 속도 +20%";
     case AugType::D_MOB_SPEED:

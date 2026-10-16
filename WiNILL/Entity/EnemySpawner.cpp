@@ -4,6 +4,7 @@
 #include "MonsterManager.h"
 #include "EnemyProgression.h"
 #include "PlayerStats.h"
+#include "../Core/WaveSystem.h"
 #include "../System/Settings.h"
 #include <algorithm>
 #include <cstdlib>
@@ -11,168 +12,162 @@
 struct EnemySpawnState {
     float mobTimer = 0.0f;
     float rangedTimer = 0.0f;
+    int lastEliteWave = 0;
+    int currentWave = 0;
+    int spawnedThisWave = 0;
 };
 
 static EnemySpawnState g_EnemySpawnState;
 
-static void ApplyRotorSpawnSpecialization(MonsterManager& monsters, Monster& mob,
-                                          float rotorHpMultiplier,
-                                          int screenWidth, int screenHeight,
-                                          float elapsedSeconds, int mobCap,
-                                          long long score) {
-    if (mob.kind != MobKind::ROTOR) return;
+static int RegularTierHalfStepsForWave(
+    int wave, const DifficultyParams& difficultyParams) {
+    // 1.5, 2, 2.5, 3, 3.5, 4 unlock on waves 1 through 6.
+    return std::min(2 + wave, difficultyParams.maxRegularTierHalfSteps);
+}
 
-    int gravisCount = 0;
-    for (auto* existing : monsters.monsters)
-        if (existing->alive && existing->kind == MobKind::GRAVIS) ++gravisCount;
-    const bool gravisReady = elapsedSeconds >= 150.0f;
-    const int gravisChance = elapsedSeconds >= 420.0f ? 4 : 2;
+static void SpecializeRegularMob(Monster& mob, int wave,
+                                 const DifficultyParams& difficultyParams,
+                                 float rotorHpMultiplier) {
+    const int tier = RegularTierHalfStepsForWave(wave, difficultyParams);
+    const int roll = rand() % 100;
+    int cutoff = 0;
+    auto tryKind = [&](int chance, MobKind kind) {
+        cutoff += chance;
+        if (roll >= cutoff) return false;
+        mob.MakeKind(kind);
+        return true;
+    };
 
-    int genesisCount = 0;
-    for (auto* existing : monsters.monsters)
-        if (existing->alive && existing->kind == MobKind::GENESIS) ++genesisCount;
-    const bool genesisReady = elapsedSeconds >= 90.0f && genesisCount < 2;
+    // Each later wave adds a type to the pool and gradually raises its odds.
+    if (tryKind(12, MobKind::SWARM)) return;
+    if (tier >= 3 && tryKind(std::min(20, 6 + 2 * (wave - 1)),
+                             MobKind::GIMBAL)) return;
+    if (tier >= 4 && tryKind(std::min(18, 6 + 2 * (wave - 2)),
+                             MobKind::GRAVIS)) return;
+    if (tier >= 6) {
+        const MobKind kind = (rand() & 1) ? MobKind::REGULUS : MobKind::ANTARES;
+        if (tryKind(std::min(14, 4 + 2 * (wave - 4)), kind)) return;
+    }
+    if (tier >= 7 && tryKind(std::min(12, 4 + 2 * (wave - 5)),
+                             MobKind::MAGNETAR)) return;
+    if (tier >= 8) {
+        const MobKind kind = (rand() & 1) ? MobKind::GENESIS : MobKind::QUASAR;
+        if (tryKind(std::min(10, 2 + 2 * (wave - 6)), kind)) return;
+    }
 
-    int quasarCount = 0;
-    for (auto* existing : monsters.monsters)
-        if (existing->alive && existing->kind == MobKind::QUASAR) ++quasarCount;
-    const bool quasarReady = elapsedSeconds >= 45.0f;
-    const int quasarChance = elapsedSeconds >= 240.0f ? 8 : 5;
+    // MakeKind scales HP, so the rotor-only augment applies after conversion.
+    if (mob.kind == MobKind::ROTOR) mob.hp *= rotorHpMultiplier;
+}
 
-    int gimbalCount = 0;
-    for (auto* existing : monsters.monsters)
-        if (existing->alive && existing->kind == MobKind::GIMBAL) ++gimbalCount;
-    const bool gimbalReady = elapsedSeconds >= 30.0f;
-    const int gimbalChance = elapsedSeconds >= 150.0f ? 14 : 10;
+static void SpawnScheduledElite(MonsterManager& monsters, int screenWidth,
+                                int screenHeight, int wave, float waveSeconds,
+                                int waveSpawnCap, float hpMultiplier,
+                                const DifficultyParams& difficultyParams) {
+    if (wave % 5 != 0 || waveSeconds < 90.0f ||
+        g_EnemySpawnState.lastEliteWave == wave ||
+        g_EnemySpawnState.spawnedThisWave >= waveSpawnCap) return;
 
-    int regulusCount = 0;
-    for (auto* existing : monsters.monsters)
-        if (existing->alive && existing->kind == MobKind::REGULUS) ++regulusCount;
-    const bool regulusReady = score >= 120000;
+    MobKind elite;
+    if (difficultyParams.eliteTierHalfSteps <= 6) {
+        elite = (rand() & 1) ? MobKind::REGULUS : MobKind::ANTARES;
+    } else {
+        elite = (rand() & 1) ? MobKind::GENESIS : MobKind::QUASAR;
+    }
 
-    int magnetarCount = 0;
-    for (auto* existing : monsters.monsters)
-        if (existing->alive && existing->kind == MobKind::MAGNETAR) ++magnetarCount;
-    const bool magnetarReady = score >= 250000 && magnetarCount < 1;
-
-    // Antares is a field-capped chaser: one from 40k score, two from 150k.
-    int antaresCount = 0;
-    for (auto* existing : monsters.monsters)
-        if (existing->alive && existing->kind == MobKind::ANTARES) ++antaresCount;
-    const bool antaresReady = score >= 40000;
-    const int antaresCap = score >= 150000 ? 2 : 1;
-
-    if (regulusReady && regulusCount < 1 && (rand() % 100) < 4) {
-        mob.MakeKind(MobKind::REGULUS);
-    } else if (magnetarReady && (rand() % 100) < 4) {
-        mob.MakeKind(MobKind::MAGNETAR);
-    } else if (gravisReady && gravisCount < 1 && (rand() % 100) < gravisChance) {
-        mob.MakeKind(MobKind::GRAVIS);
-    } else if (quasarReady && quasarCount < 2 &&
-               (rand() % 100) < quasarChance) {
-        mob.MakeKind(MobKind::QUASAR);
-    } else if (antaresReady && antaresCount < antaresCap &&
-               (rand() % 100) < 6) {
-        mob.MakeKind(MobKind::ANTARES);
-    } else if (genesisReady && (rand() % 100) < 12) {
-        mob.MakeKind(MobKind::GENESIS);
+    const size_t before = monsters.monsters.size();
+    // Natural spawns share the wave budget, but have no concurrent population cap.
+    monsters.SpawnMob(screenWidth, screenHeight,
+                      (int)before + 1, hpMultiplier);
+    if (monsters.monsters.size() == before) return;
+    Monster& mob = *monsters.monsters.back();
+    mob.MakeKind(elite);
+    if (elite == MobKind::GENESIS) {
         mob.spawnAnchorX = 160.0f +
             (float)(rand() % (screenWidth > 360 ? screenWidth - 320 : 1));
         mob.spawnAnchorY = 160.0f +
             (float)(rand() % (screenHeight > 360 ? screenHeight - 320 : 1));
-    } else if (gimbalReady && gimbalCount < 3 &&
-               (rand() % 100) < gimbalChance) {
-        mob.MakeKind(MobKind::GIMBAL);
-    } else {
-        const float swarmT = std::min(1.0f, std::max(0.0f, elapsedSeconds / 300.0f));
-        const int swarmChance = 4 + (int)(4.0f * swarmT);
-        if ((rand() % 100) < swarmChance) {
-            int swarmCount = 0;
-            for (auto* existing : monsters.monsters)
-                if (existing->alive && existing->kind == MobKind::SWARM &&
-                    !existing->genesisThrown) ++swarmCount;   // thrown: own cap
-            const float capMul = 0.10f + 0.08f * swarmT;
-            int swarmCap = (int)((float)mobCap * capMul);
-            if (swarmCap < 2) swarmCap = 2;
-            if (swarmCount < swarmCap) mob.MakeKind(MobKind::SWARM);
-        }
     }
-    // MakeKind scales the current hp, so apply the rotor-only HP bonus after
-    // the conversion: a rotor turned into another kind must not keep it.
-    if (mob.kind == MobKind::ROTOR) mob.hp *= rotorHpMultiplier;
+    g_EnemySpawnState.lastEliteWave = wave;
+    ++g_EnemySpawnState.spawnedThisWave;
 }
+
 void ResetEnemySpawnState() {
     g_EnemySpawnState = {};
 }
 
 void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
                        int screenWidth, int screenHeight,
-                       float delta, float gameTime, long long score) {
+                       float delta, float gameTime, long long score,
+                       Difficulty difficulty) {
 #if defined(_DEBUG)
-    constexpr float kEnemySpawnTimeScale = 4.0f;
     constexpr float kEnemySpawnIntervalScale = 0.45f;
 #else
-    constexpr float kEnemySpawnTimeScale = 1.0f;
     constexpr float kEnemySpawnIntervalScale = 1.0f;
 #endif
-
-    const float elapsedSeconds = gameTime * kEnemySpawnTimeScale;
+    const int wave = CurrentWaveNumber(gameTime, difficulty);
+    const float waveSeconds = gameTime - (wave - 1) * WAVE_DURATION_SECONDS;
+    const DifficultyParams difficultyParams = GetDifficultyParams(difficulty);
+    if (g_EnemySpawnState.currentWave != wave) {
+        g_EnemySpawnState.currentWave = wave;
+        g_EnemySpawnState.spawnedThisWave = 0;
+        g_EnemySpawnState.mobTimer = 0.0f;
+        g_EnemySpawnState.rangedTimer = 0.0f;
+    }
+    const float minutePressure = waveSeconds < 60.0f ? 1.0f
+        : waveSeconds < 120.0f ? 1.15f : 1.30f;
+    const float spawnPressure = (1.0f + 0.10f * (wave - 1)) * minutePressure;
+    const int baseWaveSpawnCap = static_cast<int>(
+        (100 + 12 * (wave - 1)) * difficultyParams.waveSpawnCapMultiplier + 0.5f);
+    const int waveSpawnCap = std::max(1, baseWaveSpawnCap +
+        stats.mobCapBonus + stats.rmobMaxBonus + TrialRangedMaxBonus(score));
     const EnemyProgression progression = EvaluateEnemyProgression(
-        elapsedSeconds, score, stats.mobCapBonus);
-    const float intensity = progression.scoreIntensity;
-    const float spawnRate = progression.spawnRate;
-    const float hpRamp = progression.hpMultiplier;
-    const int mobCap = progression.mobCap;
-    const int spawnX = 0, spawnY = 0;
-    const int spawnWidth = screenWidth, spawnHeight = screenHeight;
+        gameTime, score, stats.mobCapBonus);
+    const float hpMultiplier = stats.monsterHpMult * difficultyParams.enemyHpMultiplier *
+        progression.hpMultiplier * TrialEnemyHpMult(score);
+
+    SpawnScheduledElite(monsters, screenWidth, screenHeight, wave, waveSeconds,
+                        waveSpawnCap, hpMultiplier, difficultyParams);
 
     g_EnemySpawnState.mobTimer += delta;
-    float spawnInterval = 0.55f * stats.mobSpawnMult /
-        (spawnRate * TrialSpawnRateMult(score));
-    spawnInterval *= kEnemySpawnIntervalScale;
-    const float effectiveHpMultiplier = TrialEnemyHpMult(score);
-    if (g_EnemySpawnState.mobTimer > spawnInterval) {
-        auto spawnOne = [&]() {
-            const size_t countBefore = monsters.monsters.size();
-            monsters.SpawnMob(screenWidth, screenHeight, mobCap,
-                              stats.monsterHpMult * hpRamp * effectiveHpMultiplier,
-                              (float)spawnX, (float)spawnY,
-                              spawnWidth, spawnHeight);
-            if (monsters.monsters.size() > countBefore) {
-                ApplyRotorSpawnSpecialization(
-                    monsters, *monsters.monsters.back(), stats.rotorHpMult,
-                    screenWidth, screenHeight, elapsedSeconds, mobCap, score);
-            }
-        };
-
-        int packCount = 2;
-        if (elapsedSeconds >= 120.0f) ++packCount;
-        if (elapsedSeconds >= 300.0f) ++packCount;
-        if (elapsedSeconds >= 480.0f) ++packCount;
-        if (packCount > 6) packCount = 6;
-        for (int i = 0; i < packCount &&
-             (int)monsters.monsters.size() < mobCap; ++i) {
-            spawnOne();
+    const float spawnInterval = std::max(0.05f,
+        2.4f * stats.mobSpawnMult * kEnemySpawnIntervalScale /
+        (spawnPressure * TrialSpawnRateMult(score) *
+         difficultyParams.spawnRateMultiplier));
+    if (g_EnemySpawnState.spawnedThisWave < waveSpawnCap &&
+        g_EnemySpawnState.mobTimer >= spawnInterval) {
+        const size_t before = monsters.monsters.size();
+        monsters.SpawnMob(screenWidth, screenHeight,
+                          (int)before + 1, hpMultiplier);
+        if (monsters.monsters.size() > before) {
+            SpecializeRegularMob(*monsters.monsters.back(), wave,
+                                 difficultyParams,
+                                 stats.rotorHpMult);
+            ++g_EnemySpawnState.spawnedThisWave;
+            g_EnemySpawnState.mobTimer -= spawnInterval;
         }
-        g_EnemySpawnState.mobTimer = 0.0f;
     }
 
-    const DifficultyParams difficulty = GetDifficultyParams(Difficulty::NORMAL);
-    g_EnemySpawnState.rangedTimer += delta;
-    float rangedInterval = difficulty.rangedSpawnInterval *
-        TrialRangedIntervalMult(score) - stats.rmobSpawnDelayBonus;
-    if (rangedInterval < 1.0f) rangedInterval = 1.0f;
-    rangedInterval /= spawnRate;
-    rangedInterval *= kEnemySpawnIntervalScale;
-    rangedInterval *= 2.5f;
-    int rangedMax = (int)(difficulty.rangedMaxBase + stats.rmobMaxBonus +
-                          TrialRangedMaxBonus(score) + intensity * 2.0f);
-    if (rangedMax > 16) rangedMax = 16;
-    if (g_EnemySpawnState.rangedTimer > rangedInterval) {
-        monsters.SpawnRangedMob(screenWidth, screenHeight,
-                                stats.rmobHpMult * hpRamp, rangedMax,
-                                (float)spawnX, (float)spawnY,
-                                spawnWidth, spawnHeight);
+    // Scope is tier 2.5 and uses its own ranged spawn path.
+    if (RegularTierHalfStepsForWave(wave, difficultyParams) < 5) {
         g_EnemySpawnState.rangedTimer = 0.0f;
+        return;
+    }
+    g_EnemySpawnState.rangedTimer += delta;
+    float rangedInterval = 5.0f * TrialRangedIntervalMult(score) -
+        stats.rmobSpawnDelayBonus;
+    rangedInterval = std::max(1.0f, rangedInterval) /
+        (spawnPressure * difficultyParams.spawnRateMultiplier) *
+        kEnemySpawnIntervalScale * 2.5f;
+    if (g_EnemySpawnState.spawnedThisWave < waveSpawnCap &&
+        g_EnemySpawnState.rangedTimer >= rangedInterval) {
+        const size_t before = monsters.rangedMobs.size();
+        monsters.SpawnRangedMob(screenWidth, screenHeight,
+                                stats.rmobHpMult * difficultyParams.enemyHpMultiplier *
+                                    progression.hpMultiplier,
+                                (int)before + 1);
+        if (monsters.rangedMobs.size() > before) {
+            ++g_EnemySpawnState.spawnedThisWave;
+            g_EnemySpawnState.rangedTimer -= rangedInterval;
+        }
     }
 }

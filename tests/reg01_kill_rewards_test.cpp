@@ -3,13 +3,13 @@
 //
 // Entry points: bullet on a regular mob / on a Scope (CollisionSystem::Update),
 // common death collection (CollectMonsterKill / CollectScopeKill) and laser
-// (CreditLaserMonsterKill / CreditLaserScopeKill) — the last two were main()
-// lambdas, moved unchanged into KillRewards.h so they can be called here.
+// (CreditLaserMonsterKill / CreditLaserScopeKill). All paths use the shared
+// reward owner in CollisionSystem.h.
 //
 // Expected values are literals worked out from the rules (default stats), not
-// recomputed through the reward functions. Rules still open are pinned at
-// their current values and marked OPEN (Creative lifesteal/codex — DEC-02).
-// Laser kills of regular mobs advance the vampire streak (decided 2026-10-13).
+// recomputed through the reward functions. Decided 2026-10-13: laser kills of
+// regular mobs advance the vampire streak; Creative heals on every path and
+// never counts codex kills (DEC-02).
 #include "KillRewards.h"
 #include <cassert>
 #include <cmath>
@@ -65,7 +65,7 @@ struct World {
         stats.pierce = false;
         stats.ricochetChance = 0;
     }
-    KillRewardSink Sink() { return { hp, scoreAccum, score, stats, 0.0f, 0.0f, g_CreativeMode }; }
+    KillRewardSink Sink() { return { hp, scoreAccum, score, stats, 0.0f, 0.0f }; }
 };
 
 static CodexMobId CodexOf(Target t) {
@@ -156,6 +156,7 @@ static Outcome Run(Target t, Means means, World& w) {
         const Snap again = Take(w, t);
         CollectMonsterKill(sink, *m);
         CollectMonsterKill(sink, *m);
+        CreditLaserMonsterKill(sink, *m);
         const Snap d = Diff(again, Take(w, t));
         assert(d.hp == 0.0f && d.score == 0.0f && d.combo == 0 && d.kills == 0 &&
                d.codex == 0 && d.dustValue == 0 && d.rain == 0.0f);
@@ -165,6 +166,7 @@ static Outcome Run(Target t, Means means, World& w) {
         KillRewardSink sink = w.Sink();
         const Snap again = Take(w, t);
         CollectScopeKill(sink, *r);
+        CreditLaserScopeKill(sink, *r);
         const Snap d = Diff(again, Take(w, t));
         assert(d.hp == 0.0f && d.score == 0.0f && d.combo == 0 && d.kills == 0 && d.codex == 0);
     }
@@ -286,17 +288,20 @@ static void CheckWarlord() {
     assert(w.stats.killCount == 999 && w.stats.warlordStacks == 0);
 }
 
-// OPEN (DEC-02): Creative skips lifesteal on the common collection only, and
-// the codex never counts Creative kills. Pinned at the current behavior.
+// DEC-02 (decided 2026-10-13): Creative heals like a real run on every path
+// (lifesteal and the vampire heal), and the codex never counts Creative kills.
 static void CheckCreative() {
-    std::printf("-- creative (DEC-02, current behavior)\n");
+    std::printf("-- creative (DEC-02)\n");
     g_CreativeMode = true;
-    for (Means m : { Means::Bullet, Means::Collect, Means::Laser }) {
-        World w;
-        const Outcome o = Run(Target::Rotor, m, w);
-        Print(Target::Rotor, m, o);
-        assert(o.d.codex == 0 && Near(o.d.score, 100.0f) && o.d.kills == 1);
-        assert(Near(o.d.hp, m == Means::Collect ? 0.0f : HEAL));
+    for (Target t : { Target::Rotor, Target::Scope }) {
+        for (Means m : { Means::Bullet, Means::Collect, Means::Laser }) {
+            World w;
+            const Outcome o = Run(t, m, w);
+            Print(t, m, o);
+            assert(o.d.codex == 0 && o.d.kills == 1 && o.d.vampire == 1);
+            assert(Near(o.d.score, t == Target::Scope ? 300.0f : 100.0f));
+            assert(Near(o.d.hp, HEAL));                       // same heal on every path
+        }
     }
     g_CreativeMode = false;
 }

@@ -108,6 +108,10 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     static const wchar_t* kDeathLabel[LANG_COUNT] = {
         L"\uC0AC\uB9DD\uC6D0\uC778", L"DEATH CAUSE", L"\u6B7B\u56E0"
     };
+    static const wchar_t* kVictoryLabel[LANG_COUNT] = {
+        L"\uC2B9\uB9AC", L"VICTORY", L"\u52DD\u5229"
+    };
+    const wchar_t* outcomeLabel = state.victory ? kVictoryLabel[li] : kDeathLabel[li];
     static const wchar_t* kReportLabel[LANG_COUNT] = {
         L"\uD50C\uB808\uC774 \uB9AC\uD3EC\uD2B8", L"PLAY REPORT", L"\u30D7\u30EC\u30A4 \u30EC\u30DD\u30FC\u30C8"
     };
@@ -211,10 +215,10 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     constexpr const wchar_t* kDeathSeparator = L" : ";
     wchar_t deathLine[512];
     if (hasDeathReason)
-        swprintf_s(deathLine, L"%ls%ls%ls", kDeathLabel[li],
+        swprintf_s(deathLine, L"%ls%ls%ls", outcomeLabel,
                    kDeathSeparator, state.deathReason);
     else
-        swprintf_s(deathLine, L"%ls", kDeathLabel[li]);
+        swprintf_s(deathLine, L"%ls", outcomeLabel);
     while (deathScaleFactor > 0.55f &&
            state.text.body.Width(deathLine, deathScale) > leftW) {
         deathScaleFactor = std::max(0.55f, deathScaleFactor - 0.04f);
@@ -237,18 +241,22 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     const float ruleY = reportBottomY + 8.0f * uiS;
     const float metricY = ruleY + 18.0f * uiS;
 
-    state.text.body.Draw(kDeathLabel[li], leftX, deathY,
+    state.text.body.Draw(outcomeLabel, leftX, deathY,
                  deathScale,
-                 0.72f, 0.76f, 0.86f, 0.82f * ge);
+                 state.victory ? 1.0f : 0.72f,
+                 state.victory ? 0.82f : 0.76f,
+                 state.victory ? 0.34f : 0.86f, 0.90f * ge);
     if (hasDeathReason) {
         const float separatorX = leftX + state.text.body.Width(
-            kDeathLabel[li], deathScale);
+            outcomeLabel, deathScale);
         const float reasonX = separatorX + state.text.body.Width(
             kDeathSeparator, deathScale);
         state.text.body.Draw(kDeathSeparator, separatorX, deathY, deathScale,
                      0.72f, 0.76f, 0.86f, 0.82f * ge);
         state.text.body.Draw(state.deathReason, reasonX, deathY, deathScale,
-                     1.0f, 0.46f, 0.43f, 0.90f * ge);
+                     1.0f,
+                     state.victory ? 0.80f : 0.46f,
+                     state.victory ? 0.28f : 0.43f, 0.90f * ge);
     }
 
     state.text.body.Draw(kReportLabel[li], leftX, reportY,

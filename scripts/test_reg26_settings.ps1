@@ -42,7 +42,7 @@ try {
     $saveKey = @{ g_FpsCap='fps'; g_VfxDensity='vfxdens'; g_ShaderFx='shaderfx'; g_MobVisualStyle='mobstyle'
         g_ShowCombo='combo'; g_BackdropBlurEnabled='backdropblur'; g_BackdropBlurCaptureHz='blurcapturehz'
         g_SoundVol='soundvol'; g_BgmEnabled='bgmenabled'; g_SfxEnabled='sfxenabled'; g_AudioMonoOutput='audiomono'
-        g_AudioEngineEnabled='audioenabled'; g_AutoFire='autofire'; g_AutoSkill='autoskill'
+        g_AudioEngineEnabled='audioenabled'; g_AutoSkill='autoskill'
         g_ShowCrosshair='crosshair'; g_DebugMode='debugmode'; g_Language='lang' }
     $save = Get-Content 'WiNILL\System\SaveSystem.h' -Raw
     foreach ($g in $captured) {

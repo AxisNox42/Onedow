@@ -31,7 +31,7 @@ struct PlayerStats {
     int   rangedXpBonus    = 0;      // Ranged mob kill EXP bonus.
     float xpPerSec         = 0.0f;   // 초당 누적 EXP (다가오는 죽음, 잡몹 가속)
     float rmobSpawnDelayBonus = 0.0f;// 원거리 몹 스폰 가속 (초)
-    int   mobCapBonus      = 0;      // 잡몹 동시 존재 한도 추가
+    int   mobCapBonus      = 0;      // 웨이브별 소환 수 추가
 
     // ── 카운터/락 ───────────────────────────────────────
     int  visionStacks   = 0;          // 최대 5 (총 +350)
@@ -89,10 +89,9 @@ struct PlayerStats {
 
     // ── 무기/부활 ─────────────────────────────────────
     float baseFireInterval   = 0.20f; // 무기 적용 후·증강 적용 전 발사 간격
-    bool  mk2SkipDebuff      = false; // MK2 부활 후 DEBUFF_SELECT 영구 스킵
 
     // ── 디버프 ─────────────────────────────────────────
-    int   rmobMaxBonus  = 0;    // +1 (최대 1)
+    int   rmobMaxBonus  = 0;    // 웨이브별 소환 수 보너스 (+1, 최대 2)
     float rmobHpMult    = 1.0f;
     float rmobDmgMult   = 1.0f;
     float rmobDelayMult = 1.0f;  // <1.0 = 더 빠름

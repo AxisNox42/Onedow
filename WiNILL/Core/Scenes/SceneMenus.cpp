@@ -444,26 +444,50 @@ void DrawVisibleConstellLine(float x1, float y1, float x2, float y2,
     LogoLine(x1, y1, x2, y2, thick, r, g, b, fgA);
 }
 
-void DrawConstellationDisc(float x, float y, float radius,
+// DrawVisibleConstellLine 과 같은 키라인 계산이지만 텍스처 호출 없이 LogoLine(배치 지오메트리)만
+// 쓴다. 한 프레임에 수백 개 선분을 그리는 장면(PLAY 별자리)은 이쪽을 쓴다.
+void DrawConstellLineBatched(float x1, float y1, float x2, float y2,
+                             float thick, float r, float g, float b, float a) {
+    if (a <= 0.001f) return;
+    const float halo = ConstellGeometryHalo();
+    const float liftA = sqrtf(a);
+    const float keyA = std::min(0.85f, a * 0.30f + halo * 0.80f * liftA);
+    const float fgA = std::min(1.0f, a + halo * 0.60f * liftA * (1.0f - a));
+    thick *= 1.0f + 0.60f * halo;
+    const float keyPad = 1.2f * halo;
+    // 텍스처 선과 달리 LogoLine 은 가장자리가 단단한 사각형이라, 같은 값이면 테두리가 훨씬
+    // 두껍고 짙어 보인다. 키라인을 가늘고 연하게, 본선은 약간 가늘게 해 시각적 두께를 맞춘다.
+    LogoLine(x1, y1, x2, y2, thick * 1.7f + keyPad * 0.5f, r * 0.22f, g * 0.22f, b * 0.22f,
+             std::max(0.25f * a, keyA * 0.55f));
+    LogoLine(x1, y1, x2, y2, thick * 0.85f, r, g, b, fgA);
+}
+
+void DrawConstellationDiscEllipse(float x, float y, float rx, float ry,
                                   float r, float g, float b, float a,
                                   bool darkenBlend) {
     a *= g_SceneTextureReveal;
-    if (a <= 0.001f || radius <= 0.1f) return;
+    if (a <= 0.001f || rx <= 0.1f || ry <= 0.1f) return;
     if (g_ConstellationCircleTex) {
         const bool darken = darkenBlend
                          && r <= 0.02f && g <= 0.02f && b <= 0.02f;
         if (darken) {
             DrawIconDarken(g_ConstellationCircleTex,
-                           x - radius, y - radius, radius * 2.0f, radius * 2.0f,
+                           x - rx, y - ry, rx * 2.0f, ry * 2.0f,
                            r, g, b, a);
         } else {
             DrawIcon(g_ConstellationCircleTex,
-                     x - radius, y - radius, radius * 2.0f, radius * 2.0f,
+                     x - rx, y - ry, rx * 2.0f, ry * 2.0f,
                      r, g, b, a);
         }
     } else {
-        drawCircle(x, y, radius, r, g, b, a);
+        drawCircle(x, y, rx, r, g, b, a);
     }
+}
+
+void DrawConstellationDisc(float x, float y, float radius,
+                                  float r, float g, float b, float a,
+                                  bool darkenBlend) {
+    DrawConstellationDiscEllipse(x, y, radius, radius, r, g, b, a, darkenBlend);
 }
 
 static void ShopStaticFieldPalette(int tab, float& r, float& g, float& b) {
@@ -769,65 +793,104 @@ static void DrawUnknownConstellation(float cx, float cy, float radius,
                 0.64f * alpha);
 }
 
-// Fixed ASTRAL_LOG signature constellation. Unlike record previews this shape
-// never changes with selection; only its restrained phase/pulse animates.
+// AESTERIA title mark: thin polygonal letters with small solid star dots and
+// one slim orbit that joins the first A's apex to the last A's lower-right
+// foot. Lines only; the orbit passes behind the letters except at those two
+// joins, which carry the focal stars.
+static void LogoRing(float cx, float cy, float radius, float thick,
+                     float r, float g, float b, float a) {
+    constexpr int kSeg = 14;
+    float px = cx + radius, py = cy;
+    for (int i = 1; i <= kSeg; ++i) {
+        const float t = 6.2831853f * (float)i / (float)kSeg;
+        const float x = cx + cosf(t) * radius;
+        const float y = cy + sinf(t) * radius;
+        LogoLine(px, py, x, y, thick, r, g, b, a);
+        px = x; py = y;
+    }
+}
+
 void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
                                float centerXOverride, float heightMul) {
     if (alpha <= 0.001f) return;
 
     struct Pt { float x, y; };
-    struct Edge { int a, b; };
-    struct Glyph {
-        const Pt* pts;
-        int ptCount;
-        const Edge* edges;
-        int edgeCount;
-        float w;
+    struct Stroke { int first, count; bool curve; };
+    struct Glyph { int firstStroke, strokeCount; float w; };
+
+    // Letter strokes as polylines on a unit cap height (y down).
+    static const Pt kPts[] = {
+        // A
+        {0.00f, 1.00f}, {0.42f, 0.00f}, {0.84f, 1.00f},
+        {0.20f, 0.62f}, {0.64f, 0.62f},
+        // E
+        {0.66f, 0.00f}, {0.00f, 0.00f}, {0.00f, 1.00f}, {0.66f, 1.00f},
+        {0.00f, 0.50f}, {0.54f, 0.50f},
+        // T
+        {0.00f, 0.00f}, {0.72f, 0.00f}, {0.36f, 0.00f}, {0.36f, 1.00f},
+        // R leg (the bowl is curved, built below)
+        {0.40f, 0.50f}, {0.72f, 1.00f},
+        // I
+        {0.00f, 0.00f}, {0.00f, 1.00f},
     };
 
-    static const Pt O_P[] = {
-        {0.16f, 0.00f}, {0.74f, 0.00f}, {0.92f, 0.18f}, {0.92f, 0.82f},
-        {0.74f, 1.00f}, {0.16f, 1.00f}, {0.00f, 0.82f}, {0.00f, 0.18f}
-    };
-    static const Edge O_E[] = {
-        {0,1}, {1,2}, {2,3}, {3,4}, {4,5}, {5,6}, {6,7}, {7,0}
-    };
-    static const Pt N_P[] = {
-        {0.00f, 1.00f}, {0.00f, 0.00f}, {0.82f, 1.00f}, {0.82f, 0.00f}
-    };
-    static const Edge N_E[] = { {0,1}, {1,2}, {2,3} };
-    static const Pt E_P[] = {
-        {0.00f, 0.00f}, {0.00f, 0.50f}, {0.00f, 1.00f},
-        {0.78f, 0.00f}, {0.64f, 0.50f}, {0.78f, 1.00f}
-    };
-    static const Edge E_E[] = { {0,2}, {0,3}, {1,4}, {2,5} };
-    static const Pt D_P[] = {
-        {0.00f, 0.00f}, {0.58f, 0.00f}, {0.88f, 0.26f},
-        {0.88f, 0.74f}, {0.58f, 1.00f}, {0.00f, 1.00f}
-    };
-    static const Edge D_E[] = { {0,1}, {1,2}, {2,3}, {3,4}, {4,5}, {5,0} };
-    static const Pt W_P[] = {
-        {0.00f, 0.00f}, {0.18f, 1.00f}, {0.52f, 0.48f},
-        {0.86f, 1.00f}, {1.08f, 0.00f}
-    };
-    static const Edge W_E[] = { {0,1}, {1,2}, {2,3}, {3,4} };
-    static const Glyph glyphs[] = {
-        { O_P, 8, O_E, 8, 0.92f },
-        { N_P, 4, N_E, 3, 0.82f },
-        { E_P, 6, E_E, 4, 0.78f },
-        { D_P, 6, D_E, 6, 0.88f },
-        { O_P, 8, O_E, 8, 0.92f },
-        { W_P, 5, W_E, 4, 1.08f },
-    };
-
-    const int glyphCount = (int)(sizeof(glyphs) / sizeof(glyphs[0]));
-    const float gap = 0.19f;
-    float unitW = -gap;
-    int totalEdges = 0;
-    for (int i = 0; i < glyphCount; ++i) {
-        unitW += glyphs[i].w + gap;
-        totalEdges += glyphs[i].edgeCount;
+    // Curved strokes, sampled finely enough to read as smooth curves. They
+    // carry star nodes only where the curve starts, ends, turns at a corner
+    // or reaches the middle of a bowl.
+    constexpr int kArc = 39;                       // segments per S bowl
+    constexpr int kRArc = 24;                      // segments in the R bowl
+    constexpr int kSFirst = 0, kSCount = kArc * 2 + 1;
+    constexpr int kRFirst = kSFirst + kSCount, kRCount = kRArc + 4;
+    constexpr int kCurveCount = kRFirst + kRCount;
+    static Pt sCurve[kCurveCount];
+    static bool sCurveNode[kCurveCount];
+    static bool sCurveBuilt = false;
+    if (!sCurveBuilt) {
+        constexpr float kDeg = 0.0174533f;
+        // S: two stacked elliptical bowls meeting at the centre.
+        for (int i = 0; i <= kArc; ++i) {
+            const float a = (-35.0f - 235.0f * (float)i / (float)kArc) * kDeg;
+            sCurve[kSFirst + i] = { 0.33f + 0.33f * cosf(a), 0.25f + 0.25f * sinf(a) };
+        }
+        for (int i = 1; i <= kArc; ++i) {
+            const float a = (-90.0f + 235.0f * (float)i / (float)kArc) * kDeg;
+            sCurve[kSFirst + kArc + i] = { 0.33f + 0.33f * cosf(a), 0.75f + 0.25f * sinf(a) };
+        }
+        sCurveNode[kSFirst] = sCurveNode[kSFirst + kArc] = sCurveNode[kSFirst + kSCount - 1] = true;
+        // R: spine up, then a half-ellipse bowl back to the spine.
+        sCurve[kRFirst + 0] = { 0.00f, 1.00f };
+        sCurve[kRFirst + 1] = { 0.00f, 0.00f };
+        for (int i = 0; i <= kRArc; ++i) {
+            const float a = (-90.0f + 180.0f * (float)i / (float)kRArc) * kDeg;
+            sCurve[kRFirst + 2 + i] = { 0.40f + 0.28f * cosf(a), 0.25f + 0.25f * sinf(a) };
+        }
+        sCurve[kRFirst + kRCount - 1] = { 0.00f, 0.50f };
+        sCurveNode[kRFirst + 0] = sCurveNode[kRFirst + 1] = true;
+        sCurveNode[kRFirst + 2 + kRArc / 2] = true;
+        sCurveNode[kRFirst + kRCount - 1] = true;
+        sCurveBuilt = true;
     }
+
+    static const Stroke kStrokes[] = {
+        {0, 3, false}, {3, 2, false},                  // A
+        {5, 4, false}, {9, 2, false},                  // E
+        {kSFirst, kSCount, true},                      // S
+        {11, 2, false}, {13, 2, false},                // T
+        {kRFirst, kRCount, true}, {15, 2, false},      // R
+        {17, 2, false},                                // I
+    };
+    static const Glyph kA = {0, 2, 0.84f};
+    static const Glyph kE = {2, 2, 0.66f};
+    static const Glyph kS = {4, 1, 0.66f};
+    static const Glyph kT = {5, 2, 0.72f};
+    static const Glyph kR = {7, 2, 0.72f};
+    static const Glyph kI = {9, 1, 0.00f};
+    static const Glyph* const kWord[] = { &kA, &kE, &kS, &kT, &kE, &kR, &kI, &kA };
+    constexpr int kGlyphCount = (int)(sizeof(kWord) / sizeof(kWord[0]));
+    constexpr float kGap = 0.30f;
+
+    float unitW = -kGap;
+    for (int i = 0; i < kGlyphCount; ++i) unitW += kWord[i]->w + kGap;
 
     float logoH = MainLogoHeight(sh) * heightMul;
     float logoW = unitW * logoH;
@@ -836,102 +899,240 @@ void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
         logoW = maxW;
         logoH = logoW / unitW;
     }
-
-    float logoCenterX = (centerXOverride > 0.0f) ? centerXOverride : sw * 0.5f;
+    const float logoCenterX = (centerXOverride > 0.0f) ? centerXOverride : sw * 0.5f;
     float x0 = logoCenterX - logoW * 0.5f;
     if (x0 < 28.0f) x0 = 28.0f;
     if (x0 + logoW > sw - 28.0f) x0 = sw - logoW - 28.0f;
     const float y0 = MainLogoTop(sh);
-    const float cx = x0 + logoW * 0.5f;
-    const float cy = y0 + logoH * 0.52f;
     const float now = (float)glfwGetTime();
-    const float trace = Smoothstep(LogoClamp01(reveal * 1.10f));
-    const float settle = Smoothstep(LogoClamp01((reveal - 0.42f) / 0.58f));
-    const float stroke = std::max(6.0f, logoH * 0.082f);
+
+    // Build the word in screen space.
+    constexpr int kMaxSegs = 128;
+    constexpr int kMaxNodes = 72;
+    struct Seg { float ax, ay, bx, by, len, start; };
+    Seg segs[kMaxSegs];
+    float nodeX[kMaxNodes], nodeY[kMaxNodes], nodeAt[kMaxNodes];
+    int segCount = 0, nodeCount = 0;
+    float totalLen = 0.0f;
+    float cursor = 0.0f;
+    float firstApexX = 0.0f, lastFootX = 0.0f;
+    for (int gi = 0; gi < kGlyphCount; ++gi) {
+        const Glyph& gl = *kWord[gi];
+        const float gx = x0 + cursor * logoH;
+        if (gi == 0) firstApexX = gx + 0.42f * logoH;
+        if (gi == kGlyphCount - 1) lastFootX = gx + 0.84f * logoH;
+        for (int si = 0; si < gl.strokeCount; ++si) {
+            const Stroke& st = kStrokes[gl.firstStroke + si];
+            const Pt* pts = (st.curve ? sCurve : kPts) + st.first;
+            const bool* nodeMask = st.curve ? sCurveNode + st.first : nullptr;
+            const int count = st.count;
+            float prevX = 0.0f, prevY = 0.0f;
+            for (int pi = 0; pi < count; ++pi) {
+                const float x = gx + pts[pi].x * logoH;
+                const float y = y0 + pts[pi].y * logoH;
+                if (pi > 0 && segCount < kMaxSegs) {
+                    Seg& s = segs[segCount++];
+                    s.ax = prevX; s.ay = prevY;
+                    s.bx = x; s.by = y;
+                    s.len = sqrtf((s.bx - s.ax) * (s.bx - s.ax) + (s.by - s.ay) * (s.by - s.ay));
+                    s.start = totalLen;
+                    totalLen += s.len;
+                }
+                // Straight strokes carry a node at every vertex; curved ones
+                // only where their mask marks one.
+                const bool node = !nodeMask || nodeMask[pi];
+                if (node && nodeCount < kMaxNodes) {
+                    nodeX[nodeCount] = x;
+                    nodeY[nodeCount] = y;
+                    nodeAt[nodeCount] = totalLen;   // trace length that reveals it
+                    ++nodeCount;
+                }
+                prevX = x; prevY = y;
+            }
+        }
+        cursor += gl.w + kGap;
+    }
+
+    // Timeline: orbit sweeps in, strokes trace left to right, then the two
+    // focal stars ignite (first A, then last A).
+    const float orbitT = Smoothstep(LogoClamp01(reveal / 0.40f));
+    const float traceT = Smoothstep(LogoClamp01((reveal - 0.14f) / 0.62f));
+    const float igniteP = Smoothstep(LogoClamp01((reveal - 0.74f) / 0.14f));
+    const float igniteQ = Smoothstep(LogoClamp01((reveal - 0.86f) / 0.14f));
+    const float settle = Smoothstep(LogoClamp01((reveal - 0.90f) / 0.10f));
+    const float traceLen = totalLen * traceT;
+
+    const float core = std::max(1.8f, logoH * 0.030f);
+    const float key = core * 2.6f;
+    const float nodeR = std::max(1.6f, logoH * 0.020f);
+    const float nodeW = std::max(0.9f, core * 0.45f);
+    const float focalR = nodeR * 1.45f;
+    const float focalRing = logoH * 0.075f + 0.4f * logoH * 0.01f * sinf(now * 1.6f) * settle;
+    const float pX = firstApexX, pY = y0;
+    const float qX = lastFootX, qY = y0 + logoH;
+
+    // Line colours (cold star blue). Instead of a hard dark keyline, every
+    // stroke sits in a soft deep-blue falloff: wider layers are fainter, so
+    // the edge reads as a gradient while still separating from a bright
+    // desktop.
+    const float lr = 0.32f, lg = 0.72f, lb = 1.00f;
+    const float hr = 0.08f, hg = 0.26f, hb = 0.52f;
+    const float orr = 0.28f, org = 0.56f, orb = 0.84f;
+    constexpr int kHaloSteps = 4;
+    auto haloLine = [&](float x1, float y1, float x2, float y2,
+                        float width, float a) {
+        for (int h = kHaloSteps; h >= 1; --h) {
+            const float k = (float)h / (float)kHaloSteps;    // 1 = outermost
+            LogoLine(x1, y1, x2, y2, width * (1.0f + 2.4f * k),
+                     hr, hg, hb, (0.09f + 0.12f * (1.0f - k)) * a);
+        }
+    };
+
+    auto nodeVisible = [&](int i) { return nodeAt[i] <= traceLen + 0.5f; };
+    auto isFocal = [&](float x, float y) {
+        return (fabsf(x - pX) < 0.5f && fabsf(y - pY) < 0.5f)
+            || (fabsf(x - qX) < 0.5f && fabsf(y - qY) < 0.5f);
+    };
 
     BindMainShader();
 
-    int edgeIndex = 0;
-    float cursor = 0.0f;
-    for (int gi = 0; gi < glyphCount; ++gi) {
-        const Glyph& gl = glyphs[gi];
-        for (int ei = 0; ei < gl.edgeCount; ++ei, ++edgeIndex) {
-            const Pt& pa = gl.pts[gl.edges[ei].a];
-            const Pt& pb = gl.pts[gl.edges[ei].b];
-            float et = Smoothstep(LogoClamp01(trace * (float)totalEdges - (float)edgeIndex));
-            if (et <= 0.001f) continue;
-            float ax = x0 + (cursor + pa.x) * logoH;
-            float ay = y0 + pa.y * logoH;
-            float bx = x0 + (cursor + pb.x) * logoH;
-            float by = y0 + pb.y * logoH;
-            bx = ax + (bx - ax) * et;
-            by = ay + (by - ay) * et;
-
-            LogoLine(ax, ay, bx, by, stroke * 1.55f, 0.03f, 0.06f, 0.10f, 0.82f * alpha);
-            LogoLine(ax, ay, bx, by, stroke * 1.08f, 0.04f, 0.18f, 0.34f, 0.94f * alpha);
-            LogoLine(ax, ay, bx, by, stroke * 0.54f, 0.32f, 0.72f, 1.00f, 0.98f * alpha);
+    // Orbit ellipse through P and Q: centred between them, tilted along the
+    // diagonal (minus a small offset) and reaching a little past the word.
+    const float ocx = (pX + qX) * 0.5f, ocy = (pY + qY) * 0.5f;
+    const float halfD = 0.5f * sqrtf((qX - pX) * (qX - pX) + (qY - pY) * (qY - pY));
+    const float th = atan2f(qY - pY, qX - pX) - 3.0f * 0.0174533f;
+    const float rx = halfD + logoH * 0.714f;
+    const float du = pX - ocx, dv = pY - ocy;
+    const float lu = du * cosf(-th) - dv * sinf(-th);
+    const float lv = du * sinf(-th) + dv * cosf(-th);
+    const float ry = fabsf(lv) / sqrtf(std::max(0.05f, 1.0f - (lu * lu) / (rx * rx)));
+    const float cth = cosf(th), sth = sinf(th);
+    auto orbitPoint = [&](float a, float& ox, float& oy) {
+        const float ex = cosf(a) * rx, ey = sinf(a) * ry;
+        ox = ocx + ex * cth - ey * sth;
+        oy = ocy + ex * sth + ey * cth;
+    };
+    auto distToWord = [&](float x, float y) {
+        float best = 1e9f;
+        for (int i = 0; i < segCount; ++i) {
+            const Seg& s = segs[i];
+            // Only strokes that have started tracing can hide the orbit, so
+            // the orbit never shows gaps for letters that are not drawn yet.
+            if (s.start >= traceLen) continue;
+            const float vx = s.bx - s.ax, vy = s.by - s.ay;
+            const float l2 = vx * vx + vy * vy;
+            float t = l2 > 0.0f ? ((x - s.ax) * vx + (y - s.ay) * vy) / l2 : 0.0f;
+            t = LogoClamp01(t);
+            const float ex = s.ax + vx * t - x, ey = s.ay + vy * t - y;
+            best = std::min(best, ex * ex + ey * ey);
         }
-        cursor += gl.w + gap;
+        return sqrtf(best);
+    };
+
+    // A soft night-sky field shaped like the orbit, fading to nothing well
+    // past it, so the title stays readable over a bright desktop. This is
+    // the one deliberate backdrop exception: it has no edge and only sits
+    // behind the title mark.
+    DrawRadialGradientRotated(ocx, ocy, rx + logoH * 1.15f, ry + logoH * 1.25f, th,
+                              0.024f, 0.047f, 0.11f, 0.85f * alpha * orbitT);
+    BindMainShader();
+
+    const float orbitA = alpha * orbitT;
+    if (orbitA > 0.001f) {
+        constexpr int kOrbitSeg = 160;
+        const int drawn = (int)(kOrbitSeg * orbitT + 0.5f);
+        const float orbitW = std::max(1.0f, core * 0.48f);
+        const float behindGap = key * 0.75f;
+        const float joinR = logoH * 0.21f;
+        float px, py;
+        orbitPoint(3.1415927f, px, py);
+        for (int i = 1; i <= drawn; ++i) {
+            float x, y;
+            orbitPoint(3.1415927f + 6.2831853f * (float)i / (float)kOrbitSeg, x, y);
+            const float mx = (px + x) * 0.5f, my = (py + y) * 0.5f;
+            const float dP = sqrtf((mx - pX) * (mx - pX) + (my - pY) * (my - pY));
+            const float dQ = sqrtf((mx - qX) * (mx - qX) + (my - qY) * (my - qY));
+            const bool nearJoin = dP < joinR || dQ < joinR;
+            const bool insideFocal = dP < focalR + nodeW || dQ < focalR + nodeW;
+            const bool behind = !nearJoin && distToWord(mx, my) < behindGap;
+            if (!insideFocal && !behind) {
+                haloLine(px, py, x, y, orbitW, 0.80f * orbitA);
+                LogoLine(px, py, x, y, orbitW, orr, org, orb, 0.80f * orbitA);
+            }
+            px = x; py = y;
+        }
     }
 
-    // Sparse orbital constellation around the solid logo.
-    const float orbitA = alpha * settle;
-    if (orbitA > 0.001f) {
-        const float rx0 = logoW * 0.60f;
-        const float ry0 = logoH * 0.84f;
-        const float rot0 = now * 0.22f;
-        const float rot1 = -now * 0.15f + 1.35f;
-
-        auto orbitPoint = [&](float ang, float rx, float ry, float rot, float& ox, float& oy) {
-            float ca = cosf(ang), sa = sinf(ang);
-            float cr = cosf(rot), sr = sinf(rot);
-            float lx = ca * rx;
-            float ly = sa * ry;
-            ox = cx + lx * cr - ly * sr;
-            oy = cy + lx * sr + ly * cr;
-        };
-
-        const int arcSteps = 42;
-        for (int i = 0; i < arcSteps; ++i) {   // continuous (no dashes)
-            float a0 = (float)i / (float)arcSteps * 6.2831853f;
-            float a1 = ((float)i + 1.0f) / (float)arcSteps * 6.2831853f;
-            float x1, y1, x2, y2;
-            orbitPoint(a0, rx0, ry0, rot0, x1, y1);
-            orbitPoint(a1, rx0, ry0, rot0, x2, y2);
-            LogoLine(x1, y1, x2, y2, 1.1f, 0.18f, 0.62f, 0.96f, 0.17f * orbitA);
+    // Letter strokes, traced by cumulative length, coloured with a vertical
+    // gradient: near-white at the cap line down to deep star blue at the
+    // baseline.
+    auto gradAt = [&](float y, float& r, float& g, float& b) {
+        const float t = LogoClamp01((y - y0) / logoH);
+        r = 0.86f + (0.20f - 0.86f) * t;
+        g = 0.97f + (0.48f - 0.97f) * t;
+        b = 1.00f;
+    };
+    const float pieceLen = std::max(2.0f, logoH * 0.06f);
+    float acc = 0.0f;
+    for (int si = 0; si < segCount; ++si) {
+        const Seg& s = segs[si];
+        const float f = LogoClamp01((traceLen - acc) / std::max(0.001f, s.len));
+        acc += s.len;
+        if (f <= 0.0f) continue;
+        const float ex = s.ax + (s.bx - s.ax) * f;
+        const float ey = s.ay + (s.by - s.ay) * f;
+        haloLine(s.ax, s.ay, ex, ey, core, alpha);
+        // Short pieces so the vertical gradient reads as continuous.
+        const int pieces = std::max(1, (int)ceilf(s.len * f / pieceLen));
+        float px = s.ax, py = s.ay;
+        for (int k = 1; k <= pieces; ++k) {
+            const float t = (float)k / (float)pieces;
+            const float qx = s.ax + (ex - s.ax) * t, qy = s.ay + (ey - s.ay) * t;
+            float r, g, b;
+            gradAt((py + qy) * 0.5f, r, g, b);
+            LogoLine(px, py, qx, qy, core, r, g, b, 0.98f * alpha);
+            px = qx; py = qy;
         }
+    }
 
-        const int nodeCount = 7;
-        float px[nodeCount], py[nodeCount];
-        for (int i = 0; i < nodeCount; ++i) {
-            float ang = (float)i / (float)nodeCount * 6.2831853f + now * 0.18f;
-            float rx = rx0 * (0.86f + 0.08f * sinf((float)i * 1.7f));
-            float ry = ry0 * (0.88f + 0.07f * cosf((float)i * 1.3f));
-            orbitPoint(ang, rx, ry, rot1, px[i], py[i]);
+    // Small solid star dots at every revealed vertex, each in the same soft
+    // blue falloff as the strokes. The two orbit joins are drawn separately
+    // as focal stars.
+    auto starDot = [&](float x, float y, float radius, float a) {
+        for (int h = kHaloSteps; h >= 1; --h) {
+            const float k = (float)h / (float)kHaloSteps;
+            drawCircle(x, y, radius + nodeW * 2.4f * k,
+                       hr, hg, hb, (0.09f + 0.12f * (1.0f - k)) * a);
         }
-        for (int i = 0; i < nodeCount; ++i) {
-            int j = (i + 2) % nodeCount;
-            if ((i % 2) == 0)
-                LogoLine(px[i], py[i], px[j], py[j], 0.95f, 0.42f, 0.62f, 1.0f, 0.12f * orbitA);
-        }
-        for (int i = 0; i < nodeCount; ++i) {
-            float tw = 0.78f + 0.22f * sinf(now * 2.5f + (float)i * 0.9f);
-            float sz = (i == 0 || i == 3) ? 7.0f : 4.6f;
-            DrawConstellationDisc(px[i], py[i], sz * 1.75f,
-                                  0.0f, 0.018f, 0.050f, 0.30f * orbitA);
-            DrawConstellationDisc(px[i], py[i], sz,
-                                  0.42f, 0.82f, 1.0f,
-                                  (0.58f + 0.18f * tw) * orbitA);
-            DrawConstellationDisc(px[i], py[i], sz * 0.34f,
-                                  1.0f, 1.0f, 1.0f, 0.62f * orbitA);
-        }
+        float r, g, b;
+        gradAt(y, r, g, b);
+        drawCircle(x, y, radius, r + (1.0f - r) * 0.55f, g + (1.0f - g) * 0.55f,
+                   b + (1.0f - b) * 0.55f, a);
+    };
+    for (int ni = 0; ni < nodeCount; ++ni) {
+        if (!nodeVisible(ni) || isFocal(nodeX[ni], nodeY[ni])) continue;
+        starDot(nodeX[ni], nodeY[ni], nodeR, 0.95f * alpha);
+    }
 
-        float lY = y0 + logoH + 18.0f;
-        LogoLine(x0 + logoW * 0.08f, lY, x0 + logoW * 0.43f, lY,
-                 1.4f, 0.38f, 0.82f, 1.0f, 0.28f * orbitA);
-        LogoLine(x0 + logoW * 0.57f, lY, x0 + logoW * 0.92f, lY,
-                 1.4f, 0.38f, 0.82f, 1.0f, 0.28f * orbitA);
-        drawDiamond(cx, lY, 5.5f, 0.72f, 0.48f, 1.0f, 0.54f * orbitA);
+    const float ign[2] = { igniteP, igniteQ };
+    const float fx[2] = { pX, qX }, fy[2] = { pY, qY };
+    for (int i = 0; i < 2; ++i) {
+        const float a = alpha * ign[i];
+        if (a <= 0.001f) continue;
+        starDot(fx[i], fy[i], focalR * (0.4f + 0.6f * ign[i]), a);
+        const float ring = focalRing * ign[i];
+        LogoRing(fx[i], fy[i], ring, nodeW * 0.8f, lr, lg, lb, 0.75f * a);
+    }
+
+    // Idle: two small stars drift along the orbit.
+    const float driftA = alpha * settle;
+    if (driftA > 0.001f) {
+        const float a0 = now * 0.22f;
+        float sx, sy;
+        orbitPoint(3.1415927f + a0, sx, sy);
+        starDot(sx, sy, nodeR * 0.85f, 0.80f * driftA);
+        orbitPoint(a0, sx, sy);
+        starDot(sx, sy, nodeR * 0.70f, 0.50f * driftA);
     }
 }
 

@@ -644,6 +644,47 @@ static void ApplySingleAugIdx(int idx, int scrW, int scrH) {
                                       g_Stats);
 }
 
+static void ApplyWaveDebuff(int scrW, int scrH) {
+    int idx = -1;
+    if (g_GameManager.PickRandomDebuffIndices(&idx, 1) != 1) return;
+    ApplySingleAugIdx(idx, scrW, scrH);
+    g_GameManager.maxHP = g_Stats.maxHP;
+    g_GameManager.lastWaveDebuff = idx;
+    g_GameManager.waveDebuffToast = 4.0f;
+}
+
+static void CompleteWaveRun(int finalWave) {
+    if (g_GameManager.waveVictory || g_GameManager.currentState != GameState::RUNNING)
+        return;
+    g_GameManager.waveVictory = true;
+    g_GameplayTelemetry.EndRun(g_GameTime, g_GameManager.playerLevel,
+                               g_GameManager.xp, g_Stats, "wave_complete");
+    const int li = std::max(0, std::min(2, LangIndex()));
+    const wchar_t* reason[3] = {
+        L"웨이브 생존 완료", L"Waves Survived", L"ウェーブ生存完了"
+    };
+    swprintf_s(g_DeathReason, L"%ls %d", reason[li], finalWave);
+    Audio::StopBgm();
+    g_GameOverFade = 0.0f;
+    g_LastRunRecord = CommitRunResult(
+        g_CreativeMode, static_cast<int>(g_Difficulty), g_GameManager.score,
+        g_Stats.killCount, (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
+    g_GameManager.currentState = GameState::GAMEOVER;
+}
+
+static void ProcessWaveTransitions(int scrW, int scrH) {
+    if (g_GameManager.currentState != GameState::RUNNING) return;
+    const int reachedWave = CurrentWaveNumber(g_GameTime, g_Difficulty);
+    while (g_GameManager.currentWave < reachedWave) {
+        g_GameManager.waveTransitionFrom = g_GameManager.currentWave;
+        ++g_GameManager.currentWave;
+        g_GameManager.waveTransitionTimer = 2.0f;
+        ApplyWaveDebuff(scrW, scrH);
+    }
+    if (WaveRunComplete(g_GameTime, g_Difficulty))
+        CompleteWaveRun(FinalWaveCount(g_Difficulty));
+}
+
 static void BeginAugReplaceFlow(int newIdx) {
     g_GameManager.pendingAugIdx      = newIdx;
     g_GameManager.replaceChoiceCount = 0;
@@ -681,19 +722,16 @@ enum class LevelUpSource {
     MANUAL,       // creative/debug F key
 };
 
-// Records one level gained (playerLevel/xp already advanced) and queues its
-// augment reward. Creative manual grabs skip the paired debuff but may roll
-// debuff cards; every other level-up pairs a buff with a debuff.
+// Records one level gained (playerLevel/xp already advanced) and queues a
+// three-card buff selection. Wave boundaries own automatic debuffs.
 static void GrantLevelUpReward(int oldLevel, XpAmount need, XpAmount oldXp,
                                LevelUpSource source) {
     const bool manual = source == LevelUpSource::MANUAL;
     g_GameplayTelemetry.RecordLevelUp(g_GameTime, oldLevel,
                                       g_GameManager.playerLevel, need,
                                       oldXp, g_GameManager.xp, manual);
-    if (manual && g_CreativeMode)
-        g_GameManager.QueueAugmentReward(false, /*allowDebuff=*/true);
-    else
-        g_GameManager.QueueAugmentReward(true, /*allowDebuff=*/false);
+    // Level-ups grant buffs only; wave boundaries own automatic debuffs.
+    g_GameManager.QueueAugmentReward();
 
     // XP level-ups play a short full-speed signal and then open the
     // selection on their own. Extra levels gained meanwhile only queue;
@@ -727,31 +765,17 @@ static void ReturnToRunningAfterPick() {
 
 static void FinishCurrentAugmentReward() {
     if (g_GameManager.augmentRewardActive &&
-        !g_GameManager.augmentRewardQueue.empty()) {
-        g_GameManager.augmentRewardQueue.pop_front();
+        g_GameManager.pendingAugmentRewards > 0) {
+        --g_GameManager.pendingAugmentRewards;
     }
     g_GameManager.augmentRewardActive = false;
-    g_GameManager.augmentRewardInternalDebuff = false;
-    g_GameManager.augmentRewardInDebuff = false;
     if (!g_GameManager.ActivateNextAugmentReward())
         ReturnToRunningAfterPick();
 }
 
 static void FinishAugmentEffects() {
     if (g_GameManager.augmentRewardActive &&
-        !g_GameManager.augmentRewardQueue.empty()) {
-        const AugmentRewardEntry& entry = g_GameManager.augmentRewardQueue.front();
-        if (entry.needsDebuff && !g_GameManager.augmentRewardInternalDebuff &&
-            !g_Stats.mk2SkipDebuff) {
-            g_GameManager.PickDebuffChoices();
-            if (g_GameManager.augChoiceCount > 0) {
-                g_GameManager.augmentRewardInDebuff = true;
-                ++g_GameManager.augmentSelectionSerial;
-                g_GameManager.currentState = GameState::DEBUFF_SELECT;
-                g_HoveredAug = -1;
-                return;
-            }
-        }
+        g_GameManager.pendingAugmentRewards > 0) {
         FinishCurrentAugmentReward();
         return;
     }
@@ -799,8 +823,6 @@ static void ProcessAugEffectQueue(int scrW, int scrH) {
                 buffs, nBuffs, false, true, false, false);
             const int gotDebuffs = g_GameManager.PickRandomDebuffIndices(
                 debuffs, nDebuffs);
-            if (gotDebuffs > 0)
-                g_GameManager.augmentRewardInternalDebuff = true;
             PushAugEffectsFront(debuffs, gotDebuffs);
             PushAugEffectsFront(buffs, gotBuffs);
             continue;
@@ -813,8 +835,6 @@ static void ProcessAugEffectQueue(int scrW, int scrH) {
                 true, false, false);
             const int gotDebuffs = g_GameManager.PickRandomDebuffIndices(
                 debuffs, 2);
-            if (gotDebuffs > 0)
-                g_GameManager.augmentRewardInternalDebuff = true;
             PushAugEffectsFront(debuffs, gotDebuffs);
             PushAugEffectsFront(buffs, gotBuffs);
             continue;
@@ -1236,7 +1256,13 @@ int main() {
             }
             return spawned;
         },
-        &g_EliteKillHitStop
+        &g_EliteKillHitStop,
+        &g_PlayConstellationOrbits,
+        [&]() {
+            if (g_GameManager.currentState != GameState::RUNNING) return;
+            g_GameTime = g_GameManager.currentWave * WAVE_DURATION_SECONDS;
+            ProcessWaveTransitions(screenWidth, screenHeight);
+        }
     });
 
     float lastFrame        = 0.0f;
@@ -1427,8 +1453,7 @@ int main() {
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // �??�복
             g_ZoomCX = g_ZoomCY = 0.0f;
             g_Difficulty = Difficulty::NORMAL;
-            // Keep the first ranged-mob interval active from run start so its
-            // silhouette can be inspected without a score-based warm-up.
+            // Reset wave spawn timers and scheduled elite state for this run.
             ResetEnemySpawnState();
             g_DyingTimer      = 0.0f;
             g_DeathBoomDone   = false;
@@ -1452,6 +1477,7 @@ int main() {
         auto RestartCurrentRun = [&]() {
             const int savedWeapon = g_CurrentWeapon;
             const bool savedGodmode = g_CreativeGodmode;
+            const Difficulty savedDifficulty = g_Difficulty;
             const std::vector<int> savedOwnedAugs = g_OwnedAugs;
             const bool savedTrialPoolReady = g_TrialPoolReady;
             int savedTrialPool[TRIAL_SLOT_COUNT] = {};
@@ -1467,7 +1493,7 @@ int main() {
 
             // Restore the setup that ResetForNewGame intentionally clears.
             g_CurrentWeapon = savedWeapon;
-            g_Difficulty = Difficulty::NORMAL;
+            g_Difficulty = savedDifficulty;
             g_CreativeGodmode = savedGodmode;
             g_OwnedAugs = savedOwnedAugs;
             g_TrialPoolReady = savedTrialPoolReady;
@@ -1648,7 +1674,7 @@ int main() {
                         };
                         auto dump = [&](const std::string& label) {
                             int drones = 0, chakrams = 0, skills = 0, shocks = 0, debris = 0,
-                                typeOwned = 0, taken = 0;
+                                typeOwned = 0, taken = 0, tier3 = 0, tier4 = 0;
                             for (const auto& d : g_Drones) drones += (d.angle != 0.0f || d.fireTimer != 0.0f);
                             for (const auto& c : g_Chakrams) chakrams += c.alive;
                             float timeCd = 0.0f;
@@ -1660,6 +1686,14 @@ int main() {
                             for (const auto& p : g_Debris) debris += p.active;
                             for (bool t : g_TypeOwned) typeOwned += t;
                             for (bool t : gm.takenOnce) taken += t;
+                            for (const Monster* mob : g_MonsterManager.monsters) {
+                                if (!mob->alive) continue;
+                                tier3 += mob->kind == MobKind::GRAVIS ||
+                                         mob->kind == MobKind::REGULUS ||
+                                         mob->kind == MobKind::MAGNETAR;
+                                tier4 += mob->kind == MobKind::GENESIS ||
+                                         mob->kind == MobKind::QUASAR;
+                            }
                             std::filesystem::create_directories("Screenshots");
                             FILE* f = nullptr;
 #ifdef _MSC_VER
@@ -1673,7 +1707,8 @@ int main() {
                                 "dashCd=%.2f timeStop=%.2f focus=%.2f timeCd=%.2f shield=%.1f dashHeld=%d skillHeld=%d grace=%.2f "
                                 "bullets=%d monsters=%d ranged=%d stardust=%d shocks=%d debris=%d queue=%d "
                                 "owned=%d typeOwned=%d takenOnce=%d score=%lld xp=%.3f level=%d hp=%.1f "
-                                "kills=%lld weapon=%d time=%.1f rewards=%d levelup=%d\n",
+                                "kills=%lld weapon=%d time=%.1f rewards=%d levelup=%d "
+                                "wave=%d lastDebuff=%d waveVictory=%d tier3=%d tier4=%d\n",
                                 label.c_str(), (int)gm.currentState, drones, chakrams,
                                 (int)g_LaserBeams.size(), (int)g_ApproachOrbs.size(), skills,
                                 g_SkillReplaceIdx, g_PlayerRuntime.dashCooldown,
@@ -1687,8 +1722,10 @@ int main() {
                                 (int)g_AugEffectQueue.size(), (int)g_OwnedAugs.size(), typeOwned, taken,
                                 gm.score, XpToDouble(gm.xp), gm.playerLevel, gm.playerHP,
                                 g_Stats.killCount, g_CurrentWeapon, g_GameTime,
-                                (int)gm.augmentRewardQueue.size(),
-                                (int)gm.levelUpTransition.Active());
+                                gm.pendingAugmentRewards,
+                                (int)gm.levelUpTransition.Active(),
+                                gm.currentWave, gm.lastWaveDebuff,
+                                (int)gm.waveVictory, tier3, tier4);
                             std::fclose(f);
                         };
                         const size_t eq = step.find('=');
@@ -1716,7 +1753,7 @@ int main() {
                         // detail panel is visible in the capture.
                         if (gm.currentState != GameState::RUNNING)
                             RestartCurrentRun();
-                        gm.QueueAugmentReward(false);
+                        gm.QueueAugmentReward();
                         gm.ActivateNextAugmentReward();
                         const size_t eq = step.find('=');
                         if (eq != std::string::npos && gm.augChoiceCount > 0) {
@@ -1741,6 +1778,11 @@ int main() {
                     }
                     if (step.rfind("LEVEL=", 0) == 0) {
                         gm.playerLevel = std::max(1, std::atoi(step.c_str() + 6));
+                    } else if (step.rfind("WAVETIME=", 0) == 0) {
+                        // HUD-only smoke fixture: jump to a wave without replaying combat.
+                        g_GameTime = std::clamp(std::strtof(step.c_str() + 9, nullptr),
+                            0.0f, FinalWaveCount(g_Difficulty) * WAVE_DURATION_SECONDS - 1.0f);
+                        gm.currentWave = CurrentWaveNumber(g_GameTime, g_Difficulty);
                     } else if (step.rfind("XP=", 0) == 0) {
                         // XP=<n>: one large XP gain, levelled by the next tick.
                         GrantExperience(XpFromReward(std::atof(step.c_str() + 3)));
@@ -1757,8 +1799,6 @@ int main() {
                         // WHEEL=<notches>: same sign as the GLFW wheel
                         // callback (yoffset); negative scrolls down.
                         g_ScrollAccum += (float)std::atof(step.c_str() + 6);
-                    } else if (step == "AUTOFIRE") {
-                        g_AutoFire = true;
                     } else if (step == "HURT") {
                         // Same timers a real hit sets (red edge + HP pop).
                         g_HurtVignette = 0.5f;
@@ -1842,6 +1882,9 @@ int main() {
             g_GameManager.currentState == GameState::READY) {
             ResetForNewGame();
         }
+        if (prevState == GameState::READY &&
+            g_GameManager.currentState == GameState::RUNNING) {
+        }
         // PAUSED ???�른 ?�태: 증강 ?�명 박스 ?�기
         if (prevState == GameState::PAUSED &&
             g_GameManager.currentState != GameState::PAUSED) {
@@ -1886,7 +1929,6 @@ int main() {
                 title += " | FPS " + std::to_string(g_CurrentFPS);
                 title += " | HP " + std::to_string((int)std::max(0.0f, g_GameManager.playerHP));
                 title += " | XP " + FormatXp(g_GameManager.xp);
-                title += " | Score " + std::to_string(g_GameManager.score);
                 if (g_GameManager.currentState == GameState::AUG_SELECT ||
                     g_GameManager.currentState == GameState::DEBUFF_SELECT)
                     title += " | Choices " + std::to_string(g_GameManager.augChoiceCount);
@@ -2112,9 +2154,7 @@ int main() {
                     return;
                 g_AugEffectProcessing = false;
                 g_GameManager.maxHP = g_Stats.maxHP;
-                if (g_GameManager.augmentRewardInDebuff) {
-                    FinishCurrentAugmentReward();
-                } else if (wasBuff) {
+                if (wasBuff) {
                     FinishAugmentEffects();
                 } else {
                     ReturnToRunningAfterPick();
@@ -2534,12 +2574,9 @@ int main() {
                 if (g_CurrentWeapon == (int)StartWeapon::SMG && playerControl) {
                     g_StaticFieldPulseTimer -= FIXED_DT;
                     if (g_StaticFieldPulseTimer <= 0.0f && !timeStopped) {
-                        constexpr float kPulseInterval = 0.24f;
-                        constexpr float kPulseRadius = 190.0f;
-                        constexpr float kPulseDamage = 0.42f;
-                        const float radius2 = kPulseRadius * kPulseRadius;
+                        const float radius2 = STATIC_FIELD_PULSE_RADIUS * STATIC_FIELD_PULSE_RADIUS;
                         const float pulseDamage = g_Stats.GetBaseDamage()
-                            * g_Stats.GetDamageMultiplier() * kPulseDamage;
+                            * g_Stats.GetDamageMultiplier() * STATIC_FIELD_PULSE_DAMAGE_MULT;
                         auto pulseTarget = [&](float tx, float ty, auto& target) {
                             if (!target.alive) return;
                             const float dx = tx - pCX, dy = ty - pCY;
@@ -2552,7 +2589,7 @@ int main() {
                             pulseTarget(m->worldX, m->worldY, *m);
                         for (auto* r : g_MonsterManager.rangedMobs)
                             pulseTarget(r->worldX, r->worldY, *r);
-                        g_StaticFieldPulseTimer += kPulseInterval;
+                        g_StaticFieldPulseTimer += STATIC_FIELD_PULSE_INTERVAL;
                     }
                 } else {
                     g_StaticFieldPulseTimer = 0.0f;
@@ -2612,8 +2649,7 @@ CollisionSystem::Update(pCX, pCY,
 
                 // Regular enemy kill rewards (KillRewards.h).
                 KillRewardSink killSink{ g_GameManager.playerHP, g_GameManager.scoreAccum,
-                                         g_GameManager.score, g_Stats, pCX, pCY,
-                                         g_CreativeMode };
+                                         g_GameManager.score, g_Stats, pCX, pCY };
 
                 // ?�망 ??�� spawn
                 //   + 분열�??�망 ???��? ?�식 2마리 (�?2?��?까�?)
@@ -2717,6 +2753,14 @@ CollisionSystem::Update(pCX, pCY,
         if (g_FlashIntensity > 0.0f) {
             g_FlashIntensity -= delta * 3.5f;
             if (g_FlashIntensity < 0.0f) g_FlashIntensity = 0.0f;
+        }
+        if (g_GameManager.waveDebuffToast > 0.0f)
+            g_GameManager.waveDebuffToast = std::max(
+                0.0f, g_GameManager.waveDebuffToast - delta);
+        if (g_GameManager.currentState == GameState::RUNNING &&
+            g_GameManager.waveTransitionTimer > 0.0f) {
+            g_GameManager.waveTransitionTimer = std::max(
+                0.0f, g_GameManager.waveTransitionTimer - delta);
         }
 
         {
@@ -2898,8 +2942,9 @@ CollisionSystem::Update(pCX, pCY,
 
             UpdateEnemySpawns(g_MonsterManager, g_Stats,
                               screenWidth, screenHeight, delta,
-                              g_GameTime, g_GameManager.score);
+                              g_GameTime, g_GameManager.score, g_Difficulty);
             g_GameTime += delta;
+            ProcessWaveTransitions(screenWidth, screenHeight);
             float approachSpeed = 120.0f *
                 (1.0f + 0.20f * (float)(g_Stats.approachStacks > 0 ? g_Stats.approachStacks - 1 : 0));
             for (auto& orb : g_ApproachOrbs) {
@@ -3124,8 +3169,7 @@ CollisionSystem::Update(pCX, pCY,
                     float ldmg = g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier()
                                * laserDmgMult * lcm * lbm;
                     KillRewardSink killSink{ g_GameManager.playerHP, g_GameManager.scoreAccum,
-                                             g_GameManager.score, g_Stats, pCX, pCY,
-                                             g_CreativeMode };
+                                             g_GameManager.score, g_Stats, pCX, pCY };
                     auto inLine = [&](float qx, float qy) -> bool {
                         return SegDist(qx, qy, pCX, pCY, lex, ley) < BEAM_HALF;
                     };
@@ -3146,7 +3190,7 @@ CollisionSystem::Update(pCX, pCY,
                 }
             }
 
-            bool fireHeld = (g_AutoFire || lmb) && (g_PlayerRuntime.postPickGrace <= 0.0f);
+            bool fireHeld = lmb && (g_PlayerRuntime.postPickGrace <= 0.0f);
             if (fireHeld && fireTimer >= effInterval) {
                 float tx, ty;
                 if (aimTarget(tx, ty)) {
@@ -3751,6 +3795,7 @@ CollisionSystem::Update(pCX, pCY,
                         g_GameOverFade,
                         g_LmbPrev,
                         g_DeathReason,
+                        g_GameManager.waveVictory,
                         g_LastRunRecord,
                         g_GameManager.score,
                         g_GameManager.playerLevel,
@@ -3807,13 +3852,160 @@ CollisionSystem::Update(pCX, pCY,
                                  UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale),
                                  0.7f, 1.0f, 0.7f, 0.9f);
                 }
-                // ?�단 중앙: Score
-                wchar_t scoreBuf[64];
-                swprintf_s(scoreBuf, L"%ls  %lld", T(StrId::SCORE), g_GameManager.score);
-                const float scoreScale = UiTextScale(g_TextS, UiTextLevel::Description, hudScale);
-                float scoreW = g_TextS.Width(scoreBuf, scoreScale);
-                g_TextS.Draw(scoreBuf, (sw - scoreW) * 0.5f, hudTopY, scoreScale,
-                             1.0f, 1.0f, 1.0f, 0.95f);
+                const int finalWave = FinalWaveCount(g_Difficulty);
+                const int wave = CurrentWaveNumber(g_GameTime, g_Difficulty);
+                const int remain = static_cast<int>(ceilf(
+                    CurrentWaveSecondsRemaining(g_GameTime, g_Difficulty)));
+                constexpr float waveTransitionDuration = 2.0f;
+                const bool animatingWave =
+                    g_GameManager.waveTransitionTimer > 0.0f &&
+                    g_GameManager.waveTransitionFrom == wave - 1;
+                const float transitionElapsed = animatingWave
+                    ? waveTransitionDuration - g_GameManager.waveTransitionTimer
+                    : waveTransitionDuration;
+                auto easeWave = [](float t) {
+                    t = std::max(0.0f, std::min(1.0f, t));
+                    return t * t * (3.0f - 2.0f * t);
+                };
+                const float fillOld = animatingWave
+                    ? easeWave(transitionElapsed / 0.35f) : 1.0f;
+                const float shrinkOld = animatingWave
+                    ? easeWave((transitionElapsed - 0.35f) / 0.25f) : 1.0f;
+                const float slideRow = animatingWave
+                    ? easeWave((transitionElapsed - 0.60f) / 0.90f) : 1.0f;
+                const float growNew = animatingWave
+                    ? easeWave((transitionElapsed - 1.50f) / 0.50f) : 1.0f;
+                const float waveHudScale = hudScale * 0.82f;
+                const float waveCenterX = sw * 0.5f;
+                const float waveDotY = hudTopY + 14.0f * hudScale;
+                const float waveDotGap = 30.0f * hudScale;
+                const float currentDotRadius = 12.0f * hudScale;
+                const float smallDotRadius = 8.0f * hudScale;
+                const float waveShiftX = animatingWave
+                    ? waveDotGap * (1.0f - slideRow) : 0.0f;
+                const float waveInfoX = waveCenterX + waveShiftX;
+                // Transparent ring geometry keeps the arena visible inside each dot.
+                auto drawWaveRing = [](float cx, float cy, float radius,
+                                       float thickness, float alpha) {
+                    constexpr int segments = 32;
+                    const float inner = radius - thickness;
+                    const float step = 2.0f * (float)M_PI / segments;
+                    for (int i = 0; i < segments; ++i) {
+                        const float a0 = i * step, a1 = (i + 1) * step;
+                        const float c0 = cosf(a0), s0 = sinf(a0);
+                        const float c1 = cosf(a1), s1 = sinf(a1);
+                        const float ox0 = cx + c0 * radius, oy0 = cy + s0 * radius;
+                        const float ox1 = cx + c1 * radius, oy1 = cy + s1 * radius;
+                        const float ix0 = cx + c0 * inner, iy0 = cy + s0 * inner;
+                        const float ix1 = cx + c1 * inner, iy1 = cy + s1 * inner;
+                        BatchTri(ox0, oy0, ox1, oy1, ix1, iy1,
+                                 0.82f, 0.90f, 1.0f, alpha);
+                        BatchTri(ox0, oy0, ix1, iy1, ix0, iy0,
+                                 0.82f, 0.90f, 1.0f, alpha);
+                    }
+                };
+                auto drawWaveArc = [](float cx, float cy, float radius,
+                                      float thickness, float progress,
+                                      float alpha) {
+                    constexpr int segments = 32;
+                    const float inner = radius - thickness;
+                    const float end = std::max(0.0f, std::min(1.0f, progress));
+                    const float step = 2.0f * (float)M_PI / segments;
+                    for (int i = 0; i < segments && i < end * segments; ++i) {
+                        const float fraction = std::min(1.0f, end * segments - i);
+                        const float a0 = -0.5f * (float)M_PI + i * step;
+                        const float a1 = a0 + step * fraction;
+                        const float c0 = cosf(a0), s0 = sinf(a0);
+                        const float c1 = cosf(a1), s1 = sinf(a1);
+                        const float ox0 = cx + c0 * radius, oy0 = cy + s0 * radius;
+                        const float ox1 = cx + c1 * radius, oy1 = cy + s1 * radius;
+                        const float ix0 = cx + c0 * inner, iy0 = cy + s0 * inner;
+                        const float ix1 = cx + c1 * inner, iy1 = cy + s1 * inner;
+                        BatchTri(ox0, oy0, ox1, oy1, ix1, iy1,
+                                 0.82f, 0.90f, 1.0f, alpha);
+                        BatchTri(ox0, oy0, ix1, iy1, ix0, iy0,
+                                 0.82f, 0.90f, 1.0f, alpha);
+                    }
+                };
+                for (int dot = 0; dot < 5; ++dot) {
+                    const int dotWave = wave + dot - 2;
+                    const bool inRun = dotWave >= 1 && dotWave <= finalWave;
+                    if (!inRun) continue;
+                    const float dotX = waveCenterX + (dot - 2) * waveDotGap + waveShiftX;
+                    if (animatingWave && dotWave == g_GameManager.waveTransitionFrom) {
+                        const float radius = currentDotRadius +
+                            (smallDotRadius - currentDotRadius) * shrinkOld;
+                        if (transitionElapsed < 0.35f) {
+                            drawWaveRing(dotX, waveDotY, radius,
+                                         2.0f * hudScale, 0.98f);
+                            drawWaveArc(dotX, waveDotY, radius,
+                                        2.0f * hudScale, fillOld, 1.0f);
+                        } else {
+                            drawCircle(dotX, waveDotY, radius,
+                                       0.82f, 0.90f, 1.0f, 0.95f);
+                        }
+                    } else if (dotWave == wave) {
+                        const float radius = smallDotRadius +
+                            (currentDotRadius - smallDotRadius) * growNew;
+                        drawWaveRing(dotX, waveDotY, radius,
+                                     2.0f * hudScale, 0.98f);
+                        if (animatingWave) {
+                            drawWaveArc(dotX, waveDotY, radius,
+                                        2.0f * hudScale, 0.16f * growNew, 1.0f);
+                        }
+                    } else if (inRun && dotWave < wave) {
+                        drawCircle(dotX, waveDotY, smallDotRadius,
+                                   0.68f, 0.80f, 0.94f, 0.95f);
+                    } else {
+                        drawWaveRing(dotX, waveDotY, smallDotRadius,
+                                     1.5f * hudScale, 0.70f);
+                    }
+                }
+                // Flush the shape pass explicitly before returning to text rendering.
+                BatchFlush();
+                if (animatingWave) {
+                    wchar_t waveNumber[8];
+                    swprintf_s(waveNumber, L"%02d", wave);
+                    const float numberScale = UiTextScale(
+                        g_TextS, UiTextLevel::Description, waveHudScale * 1.15f);
+                    const float numberW = g_TextS.Width(waveNumber, numberScale);
+                    const float numberY = waveDotY + currentDotRadius + 10.0f * hudScale;
+                    g_TextS.Draw(waveNumber, waveInfoX - numberW * 0.5f,
+                                 numberY, numberScale,
+                                 0.82f, 0.90f, 1.0f, 1.0f);
+                }
+                wchar_t waveTimeBuf[16];
+                swprintf_s(waveTimeBuf, L"%02d:%02d", remain / 60, remain % 60);
+                const float waveTimeScale = UiTextScale(
+                    g_TextS, UiTextLevel::Supporting, waveHudScale * 0.84f);
+                const float waveTimeW = g_TextS.Width(waveTimeBuf, waveTimeScale);
+                const float waveTimeY = waveDotY + currentDotRadius +
+                    (animatingWave ? 30.0f : 14.0f) * hudScale;
+                g_TextS.Draw(waveTimeBuf, waveInfoX - waveTimeW * 0.5f,
+                             waveTimeY, waveTimeScale,
+                             0.82f, 0.90f, 1.0f, 0.92f);
+
+                if (g_GameManager.waveDebuffToast > 0.0f &&
+                    g_GameManager.lastWaveDebuff >= 0 &&
+                    g_GameManager.lastWaveDebuff < AUG_TOTAL) {
+                    wchar_t toast[256];
+                    const wchar_t* debuffLabel[3] = {
+                        L"디버프", L"DEBUFF", L"デバフ"
+                    };
+                    const int waveLi = std::max(0, std::min(2, LangIndex()));
+                    const wchar_t* waveLabel[3] = { L"웨이브", L"WAVE", L"ウェーブ" };
+                    swprintf_s(toast, L"%ls %d · %ls: %ls",
+                        waveLabel[waveLi], wave, debuffLabel[waveLi],
+                        ALL_AUGS[g_GameManager.lastWaveDebuff].locName[waveLi]);
+                    const float toastScale = UiTextScale(
+                        g_TextS, UiTextLevel::Description, hudScale * 0.86f);
+                    const float toastW = g_TextS.Width(toast, toastScale);
+                    const float alpha = std::min(1.0f,
+                        g_GameManager.waveDebuffToast / 0.5f);
+                    g_TextS.Draw(toast, waveInfoX - toastW * 0.5f,
+                                 waveTimeY + 24.0f * hudScale, toastScale,
+                                 1.0f, 0.36f, 0.32f, alpha);
+                }
 
                 // ?�상?? FPS
                 wchar_t fpsBuf[32];
@@ -3823,17 +4015,6 @@ CollisionSystem::Update(pCX, pCY,
                 g_TextS.Draw(fpsBuf, sw - fpsW - 12.0f, hudTopY, fpsScale,
                              0.7f, 0.9f, 1.0f, 0.85f);
 
-                if (st == GameState::RUNNING) {
-                    wchar_t runDustHud[64];
-                    const int dustLi = LangIndex();
-                    const wchar_t* runDustLabel = dustLi == 0 ? L"현재 별가루"
-                        : (dustLi == 2 ? L"現在のスターダスト" : L"RUN STARDUST");
-                    swprintf_s(runDustHud, L"%ls  %lld", runDustLabel, g_RunStardust);
-                    const float dustScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
-                    float gdw = g_TextS.Width(runDustHud, dustScale);
-                    g_TextS.Draw(runDustHud, sw - gdw - 12.0f, hudTopY + 22.0f, dustScale,
-                                 1.0f, 0.86f, 0.32f, 0.9f);
-                }
 
 
                 // (HP/EXP ?�각 바는 ?�레?�어 �??�단??부착됨 ????(c2) 참고)
@@ -4120,6 +4301,7 @@ CollisionSystem::Update(pCX, pCY,
     glDeleteBuffers(1, &g_VBO);
     glDeleteProgram(g_MainShader);
     ShutdownGameFonts();
+    g_GameManager.ShutdownGlResources();
 #ifdef _WIN32
     if (g_FontMemHandle) {
         RemoveFontMemResourceEx(g_FontMemHandle);

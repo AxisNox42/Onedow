@@ -18,20 +18,15 @@ try {
     & "$out\thrown_swarm_kill_test.exe"
     if ($LASTEXITCODE -ne 0) { throw 'Thrown swarm kill regression failed' }
 
-    # Check that the common collection and the laser (KillRewards.h, driven by
-    # the REG-01 test) credit thrown Swarms through CreditThrownSwarmKill, as
-    # the bullet path in CollisionSystem.h does.
-    $expected = @{ 'WiNILL\Entity\KillRewards.h' = 2; 'WiNILL\Entity\CollisionSystem.h' = 1 }
+    # The three entry paths reach CollectMonsterKill; only it decides the
+    # thrown-Swarm exception. REG-01 exercises each path at runtime.
+    $expected = @{ 'WiNILL\main.cpp' = 1; 'WiNILL\Entity\KillRewards.h' = 1;
+                   'WiNILL\Entity\CollisionSystem.h' = 1 }
     foreach ($file in $expected.Keys) {
-        $count = @(Select-String -Path $file -Pattern '^\s*(?!inline).*\bCreditThrownSwarmKill\(\*?\w').Count
-        if ($count -ne $expected[$file]) { throw "$file has $count CreditThrownSwarmKill calls, expected $($expected[$file])" }
+        $count = @(Select-String -Path $file -Pattern '^\s*(?!inline).*\bCollectMonsterKill\(').Count
+        if ($count -ne $expected[$file]) { throw "$file has $count CollectMonsterKill calls, expected $($expected[$file])" }
     }
-    # Every kill-path test of genesisThrown must lead to the helper.
-    $branches = Select-String -Path 'WiNILL\Entity\KillRewards.h', 'WiNILL\Entity\CollisionSystem.h' -Pattern '(alive|scored) && .*genesisThrown\)'
-    foreach ($b in $branches) {
-        $next = (Get-Content $b.Path)[$b.LineNumber]
-        if ($next -notmatch 'CreditThrownSwarmKill') { throw "genesisThrown kill branch without CreditThrownSwarmKill: $($b.Path):$($b.LineNumber)" }
-    }
-    if ($branches.Count -ne 3) { throw "expected 3 thrown-Swarm kill branches, found $($branches.Count)" }
-    Write-Host "source check: $($branches.Count) thrown-Swarm kill branches credit through CreditThrownSwarmKill"
+    $central = @(Select-String -Path 'WiNILL\Entity\CollisionSystem.h' -Pattern '^\s*CreditThrownSwarmKill\(').Count
+    if ($central -ne 1) { throw "expected one central thrown-Swarm branch, found $central" }
+    Write-Host 'source check: 3 entry paths share one thrown-Swarm branch'
 } finally { Pop-Location }

@@ -41,24 +41,351 @@
 #include "SceneInternal.h"
 
 static int s_RcWeapon = 0;
-static bool s_RcTrialEnabled[TRIAL_DEF_COUNT] = {};
-static bool s_RcTrialStateLoaded = false;
+static int s_RcDifficulty = 1;   // 0=EASY 1=NORMAL 2=HARD, 패널을 다시 열어도 유지
+static bool s_RcStateLoaded = false;
 static float s_RcEntryT = 0.0f;
+
+namespace {
+
+// ── PLAY 패널 배치 상수 (uiS 를 곱해 쓴다) ──
+constexpr float kPlayColumnInset  = 72.0f;   // 직업/난이도 열을 페이지 여백에서 안쪽으로
+constexpr float kPlayColumnGap    = 34.0f;   // 좌우 열과 중앙 열 사이
+constexpr float kPlayEntryTopGap  = 62.0f;   // 본문 상단 → 첫 선택지
+constexpr float kPlayEntryStep    = 108.0f;  // 선택지 간격
+constexpr float kPlayEntryHeight  = 84.0f;   // 선택지 한 줄의 세로선 길이/클릭 높이
+constexpr float kPlayEntryTextX   = 22.0f;   // 세로선 → 글자
+constexpr float kPlayGaugeStep    = 28.0f;   // 난이도 별 게이지 간격
+constexpr float kPlayTextShadow   = 0.92f;   // 밝은 바탕화면 위에서도 읽히도록 글자 그림자를 진하게
+constexpr float kPlayGaugeSize    = 11.0f;   // 난이도 별 게이지 노드 크기
+constexpr float kPlayEntrySelectedScale = 1.12f;   // 선택된 이름의 확대 배율
+constexpr float kPlayHeroRevealSec = 1.0f;   // 별자리 등장 연출 길이(초). 앱 실행 후 처음 한 번만 재생, 클릭하면 건너뜀
+constexpr float kPlayHeroFadeSec   = 0.30f;  // 직업을 바꿀 때 새 별자리가 나타나는 시간(초)
+constexpr float kPlayHeroNodeScale = 1.9f;    // drawDiamond 는 인자의 약 절반으로 그려져 보정
+constexpr int   kPlayWeaponCount  = 2;
+constexpr int   kPlayDifficultyCount = 3;
+
+struct PlayRGB { float r, g, b; };
+constexpr PlayRGB kPlayWeaponColor[kPlayWeaponCount] = {
+    { 0.28f, 0.90f, 1.00f },   // 소총
+    { 1.00f, 0.72f, 0.24f },   // 전기장
+};
+// 난이도 강조색: 쉬움=초록, 보통=하늘, 어려움=붉은 주황.
+constexpr PlayRGB kPlayDifficultyColor[kPlayDifficultyCount] = {
+    { 0.38f, 0.95f, 0.62f }, { 0.48f, 0.82f, 1.00f }, { 1.00f, 0.42f, 0.30f },
+};
+
+// ── PLAY 패널 문구 (KR, EN, JP) ──
+const LStr kTxtPlay        = { { L"플레이", L"PLAY", L"プレイ" } };
+const LStr kTxtClass       = { { L"직업", L"CLASS", L"クラス" } };
+const LStr kTxtDifficulty  = { { L"난이도", L"DIFFICULTY", L"難易度" } };
+const LStr kTxtConstellation = { { L"무기 별자리", L"WEAPON CONSTELLATION", L"武器星座" } };
+const LStr kTxtBest        = { { L"최고 점수", L"BEST", L"ベスト" } };
+const LStr kTxtNoRecord    = { { L"기록 없음", L"NO RECORD", L"記録なし" } };
+const LStr kTxtWeaponName[kPlayWeaponCount] = {
+    { { L"소총", L"RIFLE", L"ライフル" } },
+    { { L"전기장", L"FIELD", L"フィールド" } },
+};
+const LStr kTxtWeaponSub[kPlayWeaponCount] = {
+    { { L"정밀 · 단일 대상", L"PRECISION · SINGLE TARGET", L"精密 · 単一目標" } },
+    { { L"범위 제어 · 지속", L"AREA CONTROL · SUSTAINED", L"範囲制御 · 持続" } },
+};
+const LStr kTxtDifficultyName[kPlayDifficultyCount] = {
+    { { L"쉬움", L"EASY", L"イージー" } },
+    { { L"보통", L"NORMAL", L"ノーマル" } },
+    { { L"어려움", L"HARD", L"ハード" } },
+};
+
+constexpr int kPlayStatCount = 6;
+const LStr kTxtStatName[kPlayWeaponCount][kPlayStatCount] = {
+    { { { L"공격력", L"DAMAGE", L"攻撃力" } },
+      { { L"연사 속도", L"FIRE RATE", L"連射速度" } },
+      { { L"간격", L"INTERVAL", L"間隔" } },
+      { { L"탄속", L"SPEED", L"弾速" } },
+      { { L"퍼짐", L"SPREAD", L"拡散" } },
+      { { L"사거리", L"RANGE", L"射程" } } },
+    { { { L"펄스 피해", L"PULSE DAMAGE", L"パルス威力" } },
+      { { L"초당 펄스", L"PULSES / SEC", L"毎秒パルス" } },
+      { { L"펄스 간격", L"PULSE INTERVAL", L"パルス間隔" } },
+      { { L"전파 속도", L"TRAVEL SPEED", L"伝播速度" } },
+      { { L"공격각", L"COVERAGE", L"攻撃角" } },
+      { { L"반경", L"RADIUS", L"半径" } } },
+};
+const LStr kTxtScreenRange = { { L"화면", L"SCREEN", L"画面" } };
+const LStr kTxtInstant = { { L"즉시", L"INSTANT", L"即時" } };
+// 스탯 막대 길이(0~1). 값이 아니라 무기 간 상대 비교용이다.
+constexpr float kPlayStatBar[kPlayWeaponCount][kPlayStatCount] = {
+    { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
+    { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f },
+};
+
+// 별자리 뒷배경: 검은 딤 원판 한 겹 + 직업색 원판 한 겹. 노드마다 테두리·halo 를 두지 않고
+// 별자리 전체를 이 두 장으로 배경에서 분리한다. 눕힌 별자리에 맞춰 원판도 타원이다.
+void DrawPlayHeroBackdrop(int weapon, float cx, float cy, float R, float alpha) {
+    const PlayRGB c = kPlayWeaponColor[weapon];
+    // 검은 딤: 넓게 깔아 밝은 바탕화면을 눌러 준다.
+    DrawConstellationDiscEllipse(cx, cy, R * 1.75f, R * 1.75f,
+                                 0.0f, 0.0f, 0.012f, 0.72f * alpha);
+    DrawConstellationDiscEllipse(cx, cy, R * 1.25f, R * 1.25f,
+                                 0.0f, 0.0f, 0.012f, 0.72f * alpha);
+    // 직업색: 별자리 바로 뒤에 은은한 색 원판.
+    DrawConstellationDiscEllipse(cx, cy, R * 1.30f, R * 1.30f,
+                                 c.r * 0.30f, c.g * 0.30f, c.b * 0.30f,
+                                 0.34f * alpha, false);
+}
+
+// ── PLAY 중앙 무기 별자리 ──
+// 컨셉 문서의 문법(선만, 빈 원 + 흰 점 노드, 틈이 있는 호, 별자리 줄기)으로 그린 정면 도면.
+// 좌표는 외곽 링 반지름을 124 로 본 단위(u)이고 R 이 그 반지름이다.
+//   소총   : 줄기가 코어에서 위(표적)·아래(꼬리)로 뻗고, 호 3겹이 서로 다른 방향으로 돈다.
+//   전기장 : 코어에서 안쪽 별 3개가 갈라지고, 별 전체가 천천히 돌며 호 3겹이 반대로 돈다.
+//   spin   회전 누적 시간(초). 호출 쪽이 속도를 점점 올려 부드럽게 돌기 시작한다.
+//   reveal 등장 진행도 0..1. 크기 변화 없이 선이 코어에서 바깥으로 그려지고 별이 차례로 켜진다.
+//   clock  연속 시계(초). 탄 이동·호 맥박에 쓴다. 등장 여부와 무관하게 계속 흐른다.
+void DrawPlayHeroConstellation(int weapon, float cx, float cy, float R,
+                               float uiS, float alpha, float spin, float reveal,
+                               float clock) {
+    const PlayRGB c = kPlayWeaponColor[weapon];
+    const PlayRGB w = weapon == 0 ? PlayRGB{ 1.0f, 1.0f, 1.0f }
+                                  : PlayRGB{ 1.0f, 0.96f, 0.87f };
+    const float u = R / 124.0f;
+    constexpr float kPi = 3.14159265f;
+
+    auto stage = [&](float from, float to) {
+        return std::max(0.0f, std::min(1.0f, (reveal - from) / (to - from)));
+    };
+    auto sstep = [](float x) { return x * x * (3.0f - 2.0f * x); };
+    auto S = [&](float from, float to) { return sstep(stage(from, to)); };
+    float ga = 1.0f;                                  // 지금 그리는 묶음의 알파 배율
+    auto group = [&](float a) { ga = a; };
+
+    // u 좌표 선분(prog 만큼만) / 호 / 빈 원 + 흰 점 / 섬광.
+    auto Lp = [&](float x0, float y0, float x1, float y1, float thick, PlayRGB col,
+                  float a, float prog) {
+        if (prog <= 0.001f) return;
+        DrawConstellLineBatched(cx + x0 * u, cy + y0 * u,
+                                cx + (x0 + (x1 - x0) * prog) * u,
+                                cy + (y0 + (y1 - y0) * prog) * u,
+                                thick * uiS, col.r, col.g, col.b, a * alpha * ga);
+    };
+    auto arc = [&](float r, float a0, float a1, float thick, PlayRGB col, float a,
+                   float prog) {
+        const int steps = std::max(2, (int)std::ceil(std::fabs(a1 - a0) / 4.0f));
+        const int n = (int)std::ceil(steps * std::max(0.0f, std::min(1.0f, prog)));
+        for (int i = 0; i < n; ++i) {
+            const float t0 = (a0 + (a1 - a0) * i / steps) * kPi / 180.0f;
+            const float t1 = (a0 + (a1 - a0) * (i + 1) / steps) * kPi / 180.0f;
+            Lp(r * cosf(t0), r * sinf(t0), r * cosf(t1), r * sinf(t1), thick, col, a, 1.0f);
+        }
+    };
+    auto ring = [&](float x, float y, float rpx, float a) {
+        const float px = cx + x * u, py = cy + y * u;
+        for (int i = 0; i < 12; ++i) {
+            const float t0 = 2.0f * kPi * i / 12.0f, t1 = 2.0f * kPi * (i + 1) / 12.0f;
+            DrawConstellLineBatched(px + rpx * uiS * cosf(t0), py + rpx * uiS * sinf(t0),
+                                    px + rpx * uiS * cosf(t1), py + rpx * uiS * sinf(t1),
+                                    1.1f * uiS, c.r, c.g, c.b, a * alpha * ga);
+        }
+    };
+    auto dotW = [&](float x, float y, float rpx, float a) {
+        drawCircle(cx + x * u, cy + y * u, rpx * uiS, 1.0f, 1.0f, 1.0f, a * alpha * ga);
+    };
+    auto star = [&](float x, float y, float rpx, float a) {
+        ring(x, y, rpx, a * 0.9f);
+        dotW(x, y, rpx * 0.4f, a);
+    };
+    auto flash = [&](float x, float y, PlayRGB col, float a) {
+        const float px = cx + x * u, py = cy + y * u;
+        const float dx[4] = { 0, 0, -1, 1 }, dy[4] = { -1, 1, 0, 0 };
+        for (int i = 0; i < 4; ++i)
+            DrawConstellLineBatched(px + dx[i] * 5.0f * uiS, py + dy[i] * 5.0f * uiS,
+                                    px + dx[i] * 12.0f * uiS, py + dy[i] * 12.0f * uiS,
+                                    1.3f * uiS, col.r, col.g, col.b, a * alpha * ga);
+    };
+    auto spark = [&](float x, float y) {
+        drawCircle(cx + x * u, cy + y * u, 1.2f * uiS, c.r, c.g, c.b, 0.5f * alpha * ga);
+    };
+    auto pulse = [&](float period, float phase) {          // 0..1 로 부드럽게 오가는 값
+        return 0.5f + 0.5f * sinf(2.0f * kPi * (clock / period - phase));
+    };
+    auto polar = [&](float r, float deg, float& x, float& y) {
+        x = r * cosf(deg * kPi / 180.0f);
+        y = r * sinf(deg * kPi / 180.0f);
+    };
+
+    // 공통 등장 단계(겹치게): 코어 → 호 3겹 → 줄기/안쪽 별 → 바깥 → 외곽 링.
+    const float eCore = S(0.00f, 0.25f);
+    const float eLay[3] = { S(0.10f, 0.45f), S(0.20f, 0.55f), S(0.30f, 0.65f) };
+    const float eRing = S(0.55f, 0.95f);
+    const float lay[3] = { 0.95f, 0.60f, 0.32f };
+    const float rr[3] = { 42, 72, 102 };
+
+    if (weapon == 0) {
+        // ── 소총 ──
+        const float stalk[6][2] = { { -20, 84 }, { -12, 42 }, { 0, 0 },
+                                    { -8, -44 }, { 11, -74 }, { 6, -114 } };
+        // 줄기: 코어에서 위·아래로 한 마디씩 그려지고, 선이 닿으면 별이 켜진다.
+        const float segFrom[5] = { 0.36f, 0.22f, 0.22f, 0.36f, 0.48f };   // tail-n2, n2-core, core-n4, n4-n5, n5-main
+        const float segTo[5]   = { 0.58f, 0.40f, 0.40f, 0.54f, 0.68f };
+        group(1.0f);
+        for (int i = 0; i < 5; ++i) {
+            const float p = S(segFrom[i], segTo[i]);
+            // 위로 가는 선분은 코어 쪽에서, 아래로 가는 선분은 코어 쪽에서 뻗는다.
+            if (i >= 2) Lp(stalk[i][0], stalk[i][1], stalk[i + 1][0], stalk[i + 1][1], 1.5f, c, 0.9f, p);
+            else        Lp(stalk[i + 1][0], stalk[i + 1][1], stalk[i][0], stalk[i][1], 1.5f, c, 0.9f, p);
+        }
+        // 호 3겹: 좌우 괄호 모양이 서로 다른 방향으로 천천히 돈다.
+        const float half[3] = { 46, 40, 34 };
+        const float rate[3] = { 14.0f, -10.0f, 7.0f };            // 도/초
+        for (int li = 0; li < 3; ++li) {
+            const float rot = spin * rate[li];
+            const float a = lay[li] * (0.8f + 0.2f * pulse(1.6f, li * 0.2f));
+            arc(rr[li], 180 - half[li] + rot, 180 + half[li] + rot, 1.7f, c, a, eLay[li]);
+            arc(rr[li], -half[li] + rot, half[li] + rot, 1.7f, c, a, eLay[li]);
+        }
+        // 외곽: 얇은 링 + 밝은 호 4개(끝에 흰 점). 위쪽 호가 가장 길고 전체가 천천히 돈다.
+        struct Bright { float a0, a1, thick, a; };
+        const Bright bright[4] = { { -142, -38, 2.6f, 0.98f }, { 8, 36, 2.0f, 0.85f },
+                                   { 144, 172, 2.0f, 0.85f }, { 78, 102, 1.8f, 0.70f } };
+        const float outRot = -spin * 5.0f;
+        arc(124, 0, 360, 0.8f, c, 0.18f, eRing);
+        for (const Bright& b : bright) {
+            arc(124, b.a0 + outRot, b.a1 + outRot, b.thick, c, b.a, eRing);
+            if (eRing > 0.98f)
+                for (int e = 0; e < 2; ++e) {
+                    float x, y; polar(124, (e == 0 ? b.a0 : b.a1) + outRot, x, y);
+                    dotW(x, y, 2.2f, b.a);
+                }
+        }
+        // 별(선이 닿은 뒤에 켜짐)
+        const float starA[6] = { S(0.52f, 0.66f), S(0.34f, 0.46f), 0.0f,
+                                 S(0.34f, 0.46f), S(0.48f, 0.60f), S(0.62f, 0.74f) };
+        for (int i : { 0, 1, 3, 4 }) { group(starA[i]); star(stalk[i][0], stalk[i][1], 4.4f, 0.9f); }
+        group(S(0.60f, 0.85f));
+        for (float sx : { -72.0f, 72.0f }) star(sx, 0, 3.6f, 0.85f);
+        const float dust[6][2] = { { 44, -50 }, { -58, 36 }, { -44, -20 },
+                                   { 50, 62 }, { -74, -50 }, { 66, 0 } };
+        for (const auto& d : dust) spark(d[0], d[1]);
+        // 탄: 줄기를 따라 올라가 표적에 닿으면 표적 섬광이 강해진다(등장이 끝난 뒤).
+        float len[5], total = 0.0f;
+        for (int i = 0; i < 5; ++i) {
+            len[i] = hypotf(stalk[i + 1][0] - stalk[i][0], stalk[i + 1][1] - stalk[i][1]);
+            total += len[i];
+        }
+        const float s = fmodf(clock, 1.8f) / 1.8f;
+        auto atDist = [&](float d, float& x, float& y) {   // 꼬리에서 표적 방향으로 거리 d
+            d = std::max(0.0f, std::min(total, d));
+            for (int i = 0; i < 5; ++i) {
+                if (d <= len[i] || i == 4) {
+                    const float t = len[i] > 0.0f ? std::min(1.0f, d / len[i]) : 0.0f;
+                    x = stalk[i][0] + (stalk[i + 1][0] - stalk[i][0]) * t;
+                    y = stalk[i][1] + (stalk[i + 1][1] - stalk[i][1]) * t;
+                    return;
+                }
+                d -= len[i];
+            }
+        };
+        group(S(0.88f, 1.00f));
+        const float trailD[3] = { 0.0f, 0.07f, 0.14f }, trailA[3] = { 1.0f, 0.5f, 0.28f };
+        const float trailS[3] = { 3.0f, 2.2f, 1.7f };
+        for (int k = 0; k < 3; ++k) {
+            const float d = (s - trailD[k]) * total;
+            if (d < 0.0f) continue;
+            float x, y; atDist(d, x, y);
+            drawDiamond(cx + x * u, cy + y * u, trailS[k] * kPlayHeroNodeScale * uiS,
+                        1.0f, 1.0f, 1.0f, trailA[k] * alpha * ga);
+        }
+        // 표적 + 섬광, 코어
+        const float hit = std::max(0.0f, std::min(1.0f, (s - 0.9f) / 0.1f));
+        group(starA[5]);
+        star(stalk[5][0], stalk[5][1], 8.5f, 1.0f);
+        flash(stalk[5][0], stalk[5][1], w, (0.55f + 0.45f * hit) * S(0.85f, 1.0f));
+        group(eCore);
+        ring(0, 0, 16, 1.0f);
+        dotW(0, 0, 5.0f, 1.0f);
+    } else {
+        // ── 전기장 ──
+        const float rot = spin * 3.0f;                       // 별 전체가 천천히 돈다.
+        // 호 3겹: 안쪽일수록 진하고 맥박이 바깥으로 번진다. 겹마다 방향이 다르다.
+        const float off[3] = { 10, 48, 100 };
+        const float rate[3] = { 12.0f, -9.0f, 6.0f };
+        group(1.0f);
+        for (int li = 0; li < 3; ++li) {
+            const float k = 0.55f + 0.45f * powf(pulse(1.3f, li * 0.22f), 2.0f);
+            const float r0 = off[li] + spin * rate[li];
+            for (int a = 0; a < 3; ++a)
+                arc(rr[li], r0 + a * 120.0f, r0 + a * 120.0f + 84.0f, 1.7f, c,
+                    lay[li] * k, eLay[li]);
+        }
+        // 외곽: 얇은 링 + 밝은 호 3개(끝에 흰 점)
+        const float outRot = spin * 6.0f;
+        arc(124, 0, 360, 0.8f, c, 0.18f, eRing);
+        for (int k = 0; k < 3; ++k) {
+            const float a0 = k * 120.0f + 8.0f + outRot, a1 = a0 + 80.0f;
+            arc(124, a0, a1, 2.2f, c, 0.95f, eRing);
+            if (eRing > 0.98f)
+                for (int e = 0; e < 2; ++e) {
+                    float x, y; polar(124, e == 0 ? a0 : a1, x, y);
+                    dotW(x, y, 2.2f, 0.95f);
+                }
+        }
+        // 안쪽 별 3개: 코어에서 가지가 뻗고 닿으면 켜진다.
+        const float innerA[3] = { 112, 232, 352 };
+        float ix[3], iy[3];
+        for (int i = 0; i < 3; ++i) {
+            polar(57, innerA[i] + rot, ix[i], iy[i]);
+            const float p = S(0.22f + 0.04f * i, 0.46f + 0.04f * i);
+            group(1.0f);
+            Lp(0, 0, ix[i], iy[i], 1.0f, c, 0.6f, p);
+            group(S(0.40f + 0.04f * i, 0.54f + 0.04f * i));
+            star(ix[i], iy[i], 5.0f, 0.9f);
+        }
+        // 바깥 별 5개 + 선, 맞은 별 2개는 섬광
+        const float outR[5] = { 106, 100, 104, 98, 104 };
+        const float outA[5] = { -80, -12, 45, 140, 195 };
+        float ox[5], oy[5];
+        for (int i = 0; i < 5; ++i) polar(outR[i], outA[i] + rot, ox[i], oy[i]);
+        group(1.0f);
+        const float pLine = S(0.50f, 0.78f);
+        Lp(ox[0], oy[0], ox[1], oy[1], 1.0f, c, 0.5f, pLine);
+        Lp(ox[1], oy[1], ox[2], oy[2], 1.0f, c, 0.5f, pLine);
+        Lp(ox[3], oy[3], ox[4], oy[4], 1.0f, c, 0.5f, pLine);
+        for (int i = 0; i < 5; ++i) {
+            group(S(0.48f + 0.05f * i, 0.62f + 0.05f * i));
+            star(ox[i], oy[i], i == 1 || i == 3 ? 4.2f : 3.8f, 0.9f);
+        }
+        const float fl = 0.5f + 0.5f * powf(pulse(1.3f, 2 * 0.22f), 2.0f);
+        group(S(0.80f, 1.00f));
+        for (int i : { 1, 3 }) flash(ox[i], oy[i], w, fl);
+        // 코어: 링 + 삼각형
+        group(eCore);
+        ring(0, 0, 16, 1.0f);
+        for (int i = 0; i < 3; ++i) {
+            const float t0 = (-90.0f + 120.0f * i) * kPi / 180.0f;
+            const float t1 = (-90.0f + 120.0f * (i + 1)) * kPi / 180.0f;
+            DrawConstellLineBatched(cx + 9.0f * uiS * cosf(t0), cy + 9.0f * uiS * sinf(t0),
+                                    cx + 9.0f * uiS * cosf(t1), cy + 9.0f * uiS * sinf(t1),
+                                    1.4f * uiS, w.r, w.g, w.b, alpha * eCore);
+        }
+        dotW(0, 1.5f, 2.2f, 1.0f);
+    }
+}
+
+}  // namespace
+
+static bool s_RcHeroRevealDone[kPlayWeaponCount] = {};   // 별자리 등장 연출은 직업마다 앱 실행 후 한 번만
 
 void ResetRunConfigUi(float entryStart) {
     s_RcEntryT = std::max(0.0f, std::min(1.0f, entryStart));
-    g_Difficulty = Difficulty::NORMAL;
     ResetTrials();
     s_RcWeapon = 0;
-    s_RcTrialStateLoaded = false;
-    for (int i = 0; i < TRIAL_DEF_COUNT; ++i) s_RcTrialEnabled[i] = false;
+    s_RcStateLoaded = false;
 }
 
 
 void FinalizeLoadout(const SceneCtx& c, int wIdx) {
     float& fireTimer = *c.fireTimer;
 
-    g_Difficulty = Difficulty::NORMAL;
+    g_Difficulty = static_cast<Difficulty>(std::max(0, std::min(2, s_RcDifficulty)));
     ApplyLoadoutStats(g_Stats, wIdx);   // RunStats.h: weapon + trial max HP
     g_CurrentWeapon = wIdx;
     fireTimer = g_Stats.fireInterval;
@@ -148,17 +475,11 @@ void Scene_CreativeConfig(const SceneCtx& c) {
                 }
 }
 
-// PLAY 패널 — "STAR CHART": 무기 성좌(좌) + 굴레 궤도 띠(중) + 런 요약/LAUNCH(우).
-// 모든 선택지는 별 노드로 표현하고, 글로우는 선택된 별에만 제한한다.
+// PLAY 패널 — 직업(좌) + 무기 성좌(중) + 난이도(우). 박스/판 없이 글자·선·노드만 쓴다.
+// 선택 상태는 밝기와 얇은 세로선, 별 노드로만 구분한다.
 void Scene_RunConfigInline(const SceneCtx& c) {
     const float sw = c.sw, sh = c.sh, dt = std::min(c.delta, 0.05f);
     const double mx = c.mx, my = c.my;
-    auto PlayText = [&](const wchar_t* kr, const wchar_t* en,
-                        const wchar_t* jp = nullptr) -> const wchar_t* {
-        if (LangIndex() == 0) return kr;
-        if (LangIndex() == 2 && jp) return jp;
-        return en;
-    };
     const bool lmb = c.lmb;
     const bool lmbClick = lmb && !g_LmbPrev;
 
@@ -167,311 +488,43 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     static bool launchExit = false;
     static float launchT = 0.0f;
     static bool prevEsc = false;
+    static bool prevKey[4] = {};   // up, down, left, right
     static int weapon = 0;
-    static int trialFocus = 0;
-    static int trialSelectedSlot = 0;
-    static bool trialLayoutPending = true;
-    static float trialDisplaySlot = 0.0f;
-    static float trialTargetSlot = 0.0f;
-    static int trialNavHoldDir = 0;
-    static float trialNavHoldT = 0.0f;
-    static float trialNavRepeatT = 0.0f;
-    static bool trialDragging = false;
-    static bool trialDragMoved = false;
-    static float trialDragLastY = 0.0f;
-    static float trialDragLastX = 0.0f;
-    static int trialPressedId = -1;
-    static float detailScroll = 0.0f;
-    static float detailScrollTarget = 0.0f;
-    static bool detailDragging = false;
-    static bool detailDragMoved = false;
-    static float detailDragLastY = 0.0f;
-    static float trialHover[TRIAL_DEF_COUNT] = {};
-    static float weaponHover[2] = {};
+    static float weaponHover[kPlayWeaponCount] = {};
+    static float diffHover[kPlayDifficultyCount] = {};
     static float backHover = 0.0f;
     static float playHover = 0.0f;
-    static float resetHover = 0.0f;
-    static float statT[6] = { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f };
-    static const float kStatTargets[2][6] = {
-        { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
-        { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f }
-    };
+    static float heroTimer = 0.0f;   // 별자리 등장 경과 시간(앱 실행 후 첫 재생에만 쓴다)
+    static float heroSpin = 0.0f;    // 별자리 회전용 누적 시간. 패널을 다시 열어도 이어서 돈다.
+    static float heroClock = 0.0f;   // 탄 이동·호 맥박용 연속 시계
+    static float heroFade = 1.0f;    // 직업을 바꾼 직후 새 별자리가 나타나는 진행도 0..1
+    static int heroWeapon = -1;
+    static int heroStable = 0;       // 연속으로 정상 속도였던 프레임 수
+    static float statT[kPlayStatCount] = {};
+    static bool statInit = false;
+    if (!statInit) {
+        for (int i = 0; i < kPlayStatCount; ++i) statT[i] = kPlayStatBar[0][i];
+        statInit = true;
+    }
+    auto weaponName = [&](int id) { return T(kTxtWeaponName[id]); };
+    auto weaponSub  = [&](int id) { return T(kTxtWeaponSub[id]); };
+    auto statName   = [&](int id) { return T(kTxtStatName[weapon][id]); };
+    auto diffName   = [&](int id) { return T(kTxtDifficultyName[id]); };
+
     if (c.inputFocusChanged) {
-        trialDragging = false;
-        trialDragMoved = false;
-        trialPressedId = -1;
-        detailDragging = false;
-        detailDragMoved = false;
-        trialNavHoldDir = 0;
-        trialNavHoldT = 0.0f;
-        trialNavRepeatT = 0.0f;
+        for (bool& k : prevKey) k = true;   // 포커스 복귀 직후 키 입력 무시
     }
 
-    // Only trials with an implemented effect are offered; the unimplemented
-    // ones (TrialDefUnimplemented) return here once their effects exist.
-    static constexpr int kTrialCatalogCount = 8;
-    static const int kTrialOrder[kTrialCatalogCount] = {
-        // EARLY
-        8, 9, 10,
-        // MID
-        11, 13,
-        // LATE
-        14, 15, 16,
-    };
-    static const wchar_t* kTrialTags[TRIAL_DEF_COUNT] = {
-        L"SPEED UP · SCORE +15%", L"SURVIVAL DOWN · SCORE +15%",
-        L"",                       L"",
-        L"BUILD DOWN · SCORE +15%",L"COOLING DOWN · SCORE +15%",
-        L"DURABILITY UP · SCORE +15%",L"PRESSURE UP · SCORE +15%",
-        L"EARLY · SCORE +14%",     L"EARLY · SCORE +16%",
-        L"OPENING DOWN · SCORE +18%",L"MID · SCORE +18%",
-        L"",                            L"MID · SCORE +17%",
-        L"LATE · SCORE +22%",       L"LATE · SCORE +24%",
-        L"LATE · SCORE +21%",       L"",
-        L"",                          L""
-    };
-    static const wchar_t* kTrialTagsKR[TRIAL_DEF_COUNT] = {
-        L"속도 증가 · 점수 +15%", L"생존력 감소 · 점수 +15%",
-        L"",                    L"",
-        L"빌드 제약 · 점수 +15%", L"쿨다운 증가 · 점수 +15%",
-        L"내구도 증가 · 점수 +15%", L"압박 증가 · 점수 +15%",
-        L"초반 · 점수 +14%", L"초반 · 점수 +16%",
-        L"시작 제약 · 점수 +18%", L"중반 · 점수 +18%",
-        L"",                    L"중반 · 점수 +17%",
-        L"후반 · 점수 +22%", L"후반 · 점수 +24%",
-        L"후반 · 점수 +21%", L"",
-        L"",                    L""
-    };
-    static const wchar_t* kTrialDetail[TRIAL_DEF_COUNT] = {
-        L"Hostile movement speed is increased by 20 percent from the start of the run.",
-        L"Your maximum HP is reduced by 25 percent. Recovery cannot restore the missing capacity.",
-        L"",
-        L"",
-        L"Augment choices are limited to two cards whenever a selection is generated.",
-        L"All skill cooldowns are increased by 25 percent. Timing becomes part of the build.",
-        L"All enemies gain 30 percent HP, making sustained damage and target priority matter more.",
-        L"Enemy speed and HP both rise by 20 percent. The whole arena becomes less forgiving.",
-        L"Ranged enemies begin appearing earlier than normal, before the build is fully online.",
-        L"The early normal spawn pressure is increased, compressing the opening economy window.",
-        L"Starting maximum HP is reduced. The first few rooms become the cost of entry.",
-        L"Midgame enemy pressure rises by 8 percent through spawn rate and HP.",
-        L"",
-        L"The midgame ranged enemy cap is raised, creating more simultaneous firing lanes.",
-        L"The late-game spawn ramp is strengthened. Pressure keeps climbing after the build stabilizes.",
-        L"Late enemies receive a stronger HP ramp, so damage scaling must keep pace.",
-        L"Late ranged pressure is increased, reducing the value of standing still or holding one lane.",
-        L"", L"", L""
-    };
-    static const wchar_t* kTrialDetailKR[TRIAL_DEF_COUNT] = {
-        L"플레이 시작부터 적의 이동 속도가 20퍼센트 증가합니다.",
-        L"최대 체력이 25퍼센트 감소합니다. 회복으로 잃은 최대치를 되돌릴 수 없습니다.",
-        L"",
-        L"",
-        L"증강 선택이 생성될 때 선택지가 2장으로 제한됩니다.",
-        L"모든 스킬의 쿨다운이 25퍼센트 증가합니다. 빌드에 타이밍 관리가 필요해집니다.",
-        L"모든 적의 체력이 30퍼센트 증가해 지속 피해와 우선 처치가 중요해집니다.",
-        L"적의 속도와 체력이 모두 20퍼센트 증가합니다. 전장이 전반적으로 더 가혹해집니다.",
-        L"원거리 적이 평소보다 일찍 등장해 빌드가 완성되기 전부터 압박을 줍니다.",
-        L"초반 일반 적의 스폰 압력이 증가해 초반 경제를 정비할 시간이 줄어듭니다.",
-        L"시작 최대 체력이 감소합니다. 첫 방들이 입장 비용이 됩니다.",
-        L"중반 적 스폰 속도와 체력이 8% 증가합니다.",
-        L"",
-        L"중반 원거리 적 수 제한이 증가해 동시에 유지해야 할 사선이 많아집니다.",
-        L"후반 스폰 증가 폭이 커집니다. 빌드가 안정된 뒤에도 압박이 계속 상승합니다.",
-        L"후반 적의 체력 증가 폭이 커지므로 피해량 성장도 발맞춰야 합니다.",
-        L"후반 원거리 압박이 증가해 한 자리에 머물거나 한 방향만 지키기 어려워집니다.",
-        L"", L"", L""
-    };
-    static const wchar_t* kTrialTagsJP[TRIAL_DEF_COUNT] = {
-        L"速度上昇 · スコア +15%", L"生存力低下 · スコア +15%",
-        L"",                        L"",
-        L"ビルド制約 · スコア +15%", L"クールダウン増加 · スコア +15%",
-        L"耐久上昇 · スコア +15%", L"圧力上昇 · スコア +15%",
-        L"序盤 · スコア +14%", L"序盤 · スコア +16%",
-        L"開始制約 · スコア +18%", L"中盤 · スコア +18%",
-        L"",                        L"中盤 · スコア +17%",
-        L"終盤 · スコア +22%", L"終盤 · スコア +24%",
-        L"終盤 · スコア +21%", L"",
-        L"",                        L""
-    };
-    static const wchar_t* kTrialDetailJP[TRIAL_DEF_COUNT] = {
-        L"プレイ開始から敵の移動速度が20%上昇します。",
-        L"最大HPが25%減少します。回復では失った上限を戻せません。",
-        L"",
-        L"",
-        L"強化の選択肢が生成されるたびに2枚に制限されます。",
-        L"すべてのスキルのクールダウンが25%増加します。タイミング管理がビルドの一部になります。",
-        L"すべての敵のHPが30%増加し、継続ダメージと優先撃破が重要になります。",
-        L"敵の速度とHPがどちらも20%上昇します。戦場全体が厳しくなります。",
-        L"遠距離敵が通常より早く現れ、ビルドが整う前から圧力をかけます。",
-        L"序盤の通常敵の出現圧力が増え、序盤の資源を整える時間が短くなります。",
-        L"開始時の最大HPが減少します。最初の数部屋が入場の代償になります。",
-        L"中盤の敵の出現速度とHPが8%増加します。",
-        L"",
-        L"中盤の遠距離敵の上限が増え、同時に対処すべき射線が増えます。",
-        L"終盤の出現増加幅が大きくなります。ビルドが安定した後も圧力が上がり続けます。",
-        L"終盤の敵HPの上昇幅が大きくなるため、火力の成長も追いつく必要があります。",
-        L"終盤の遠距離圧力が増え、一か所に留まることや一方向だけを守ることが難しくなります。",
-        L"", L"", L""
-    };
-    static const wchar_t* kStageLabels[3] = { L"EARLY", L"MID", L"LATE" };
-    static const wchar_t* kStageLabelsJP[3] = { L"序盤", L"中盤", L"終盤" };
-    static const wchar_t* kStageLabelsKR[3] = { L"초반", L"중반", L"후반" };
-    static const wchar_t* kTrialNamesKR[TRIAL_DEF_COUNT] = {
-        L"오버클럭", L"메모리 누수", L"", L"",
-        L"프로세스 제한", L"낮은 대역폭", L"강화", L"급증",
-        L"조기 돌입", L"패킷 폭풍", L"콜드 부트", L"중반 압박",
-        L"", L"프로세스 노이즈", L"후반 초과", L"강화 코어",
-        L"신호 변위", L"", L"", L""
-    };
-    static const wchar_t* kTrialNamesJP[TRIAL_DEF_COUNT] = {
-        L"オーバークロック", L"メモリリーク", L"", L"",
-        L"プロセス制限", L"低帯域", L"強化", L"急増",
-        L"早期突入", L"パケットストーム", L"コールドブート", L"中盤圧力",
-        L"", L"プロセスノイズ", L"終盤超過", L"強化コア",
-        L"シグナルドリフト", L"", L"", L""
-    };
-    static const wchar_t* kWeaponNames[2] = { L"RIFLE", L"FIELD" };
-    static const wchar_t* kWeaponNamesJP[2] = { L"ライフル", L"フィールド" };
-    static const wchar_t* kWeaponSubJP[2] = {
-        L"精密 · 単一目標", L"範囲制御 · 持続"
-    };
-    static const wchar_t* kStatNamesJP[6] = {
-        L"攻撃力", L"連射速度", L"間隔", L"弾速", L"拡散", L"射程"
-    };
-    static const wchar_t* kStatValuesJP[2][6] = {
-        { L"50", L"5.0/s", L"0.20秒", L"1200", L"0.04", L"900" },
-        { L"18", L"連続", L"0.08秒", L"320", L"0.15", L"180" }
-    };
-    static const wchar_t* kWeaponNamesKR[2] = { L"소총", L"전기장" };
-    static const wchar_t* kWeaponSub[2] = {
-        L"PRECISION · SINGLE TARGET", L"AREA CONTROL · SUSTAINED"
-    };
-    static const wchar_t* kWeaponSubKR[2] = {
-        L"정밀 · 단일 대상", L"범위 제어 · 지속"
-    };
-    static const wchar_t* kStatNames[6] = {
-        L"DAMAGE", L"FIRE RATE", L"INTERVAL", L"SPEED", L"SPREAD", L"RANGE"
-    };
-    static const wchar_t* kStatNamesKR[6] = {
-        L"공격력", L"연사 속도", L"간격", L"탄속", L"퍼짐", L"사거리"
-    };
-    static const wchar_t* kStatValues[2][6] = {
-        { L"50", L"5.0/s", L"0.20s", L"1200", L"0.04", L"900" },
-        { L"18", L"CONT.", L"0.08s", L"320", L"0.15", L"180" }
-    };
-    static const wchar_t* kStatValuesKR[2][6] = {
-        { L"50", L"5.0/s", L"0.20초", L"1200", L"0.04", L"900" },
-        { L"18", L"연속", L"0.08초", L"320", L"0.15", L"180" }
-    };
-    auto trialName = [&](int id) -> const wchar_t* {
-        return PlayText(kTrialNamesKR[id], TRIAL_DEFS[id].id, kTrialNamesJP[id]);
-    };
-    auto trialCompact = [&](int id) -> const wchar_t* {
-        return PlayText(TRIAL_DEFS[id].desc[0], TRIAL_DEFS[id].desc[1],
-                        TRIAL_DEFS[id].desc[2]);
-    };
-    auto trialTag = [&](int id) -> const wchar_t* {
-        return PlayText(kTrialTagsKR[id], kTrialTags[id], kTrialTagsJP[id]);
-    };
-    auto trialDetail = [&](int id) -> const wchar_t* {
-        return PlayText(kTrialDetailKR[id], kTrialDetail[id], kTrialDetailJP[id]);
-    };
-    auto stageLabel = [&](int stage) -> const wchar_t* {
-        return PlayText(kStageLabelsKR[stage], kStageLabels[stage], kStageLabelsJP[stage]);
-    };
-    auto weaponName = [&](int id) -> const wchar_t* {
-        return PlayText(kWeaponNamesKR[id], kWeaponNames[id], kWeaponNamesJP[id]);
-    };
-    auto weaponSub = [&](int id) -> const wchar_t* {
-        return PlayText(kWeaponSubKR[id], kWeaponSub[id], kWeaponSubJP[id]);
-    };
-    auto statName = [&](int id) -> const wchar_t* {
-        return PlayText(kStatNamesKR[id], kStatNames[id], kStatNamesJP[id]);
-    };
-    auto statValue = [&](int weaponId, int statId) -> const wchar_t* {
-        return PlayText(kStatValuesKR[weaponId][statId], kStatValues[weaponId][statId],
-                        kStatValuesJP[weaponId][statId]);
-    };
-
-    auto countEnabled = [&]() {
-        int count = 0;
-        for (int i = 0; i < TRIAL_DEF_COUNT; ++i)
-            if (!TrialDefRetired(i) && s_RcTrialEnabled[i]) ++count;
-        return count;
-    };
-    auto stageIndex = [&](int defId) {
-        switch (TrialStageForDef(defId)) {
-        case TrialStage::EARLY: return 0;
-        case TrialStage::MID:   return 1;
-        case TrialStage::LATE:  return 2;
-        }
-        return 0;
-    };
-    auto syncTrialsToGame = [&]() {
-        int slot = 0;
-        for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (TrialDefRetired(id) || !s_RcTrialEnabled[id]
-                || slot >= TRIAL_SLOT_COUNT) continue;
-            g_TrialPool[slot] = id;
-            g_TrialSelected[slot] = true;
-            ++slot;
-        }
-        for (; slot < TRIAL_SLOT_COUNT; ++slot)
-            g_TrialSelected[slot] = false;
-        g_TrialPoolReady = true;
-    };
-
-    if (!s_RcTrialStateLoaded && !exiting) {
+    if (!s_RcStateLoaded && !exiting) {
         weapon = std::max(0, std::min(1, s_RcWeapon));
-        trialFocus = 0;
-        trialSelectedSlot = 0;
-        trialLayoutPending = true;
-        trialDisplaySlot = 0.0f;
-        trialTargetSlot = 0.0f;
-        trialNavHoldDir = 0;
-        trialNavHoldT = 0.0f;
-        trialNavRepeatT = 0.0f;
-        trialDragging = false;
-        trialDragMoved = false;
-        trialDragLastY = 0.0f;
-        trialDragLastX = 0.0f;
-        trialPressedId = -1;
-        detailScroll = 0.0f;
-        detailScrollTarget = 0.0f;
-        detailDragging = false;
-        detailDragMoved = false;
-        detailDragLastY = 0.0f;
-        for (int i = 0; i < 2; ++i) weaponHover[i] = 0.0f;
-        for (int i = 0; i < TRIAL_DEF_COUNT; ++i) trialHover[i] = 0.0f;
+        for (float& h : weaponHover) h = 0.0f;
+        for (float& h : diffHover) h = 0.0f;
         backHover = playHover = 0.0f;
-        resetHover = 0.0f;
-        if (!s_RcTrialStateLoaded) {
-            for (int i = 0; i < TRIAL_DEF_COUNT; ++i) s_RcTrialEnabled[i] = false;
-            for (int slot = 0; slot < TRIAL_SLOT_COUNT; ++slot) {
-                const int id = g_TrialPool[slot];
-                if (g_TrialSelected[slot] && id >= 0 && id < TRIAL_DEF_COUNT
-                    && !TrialDefRetired(id))
-                    s_RcTrialEnabled[id] = true;
-            }
-            s_RcTrialStateLoaded = true;
-        }
-        // A retired trial may still exist in an older saved selection.
-        for (int id = 0; id < TRIAL_DEF_COUNT; ++id)
-            if (TrialDefRetired(id)) s_RcTrialEnabled[id] = false;
-        for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (!TrialDefRetired(id) && s_RcTrialEnabled[id]) {
-                trialFocus = id;
-                break;
-            }
-        }
-        for (int i = 0; i < kTrialCatalogCount; ++i) {
-            if (kTrialOrder[i] == trialFocus) {
-                trialSelectedSlot = i;
-                break;
-            }
-        }
-        trialDisplaySlot = trialTargetSlot = (float)trialSelectedSlot;
+        heroTimer = s_RcHeroRevealDone[weapon] ? kPlayHeroRevealSec : 0.0f;
+        heroFade = 1.0f;
+        heroStable = 0;
+        heroWeapon = weapon;
+        s_RcStateLoaded = true;
         launchExit = false;
         launchT = 0.0f;
     }
@@ -507,34 +560,25 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     const float pageW = std::max(420.0f, pageR - pageL);
     const float headerY = std::max(30.0f, 48.0f * uiS);
     const float footerY = sh - std::max(62.0f, 84.0f * uiS);
-    const float footerH = 42.0f * uiS;
     const float bodyTop = headerY + 76.0f * uiS;
     const float bodyBottom = footerY - 26.0f * uiS;
-    const float detailW = std::min(286.0f * uiS, pageW * 0.23f);
-    // PLAY uses a denser information layout than the other menu pages, so
-    // keep its text comfortably above the small renderer's minimum scale and
-    // give each catalogue row a clear title/effect/tag hierarchy.
+    const float sideW = std::min(286.0f * uiS, pageW * 0.23f);
     const float playMetaScale = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS);
     const float playSubtitleScale = UiTextScale(g_TextS, UiTextLevel::Subtitle, uiS);
     const float playBodyScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
-    const float trialTitleScale = UiTextScale(g_TextS, UiTextLevel::Title, uiS);
-    const float trialEffectScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
-    const float trialTagScale = UiTextScale(g_TextS, UiTextLevel::Supporting, uiS);
-    const float trialListShiftLeft = 54.0f * uiS;
-    const float trialListX = pageR - std::max(330.0f * uiS, pageW * 0.245f)
-                           - trialListShiftLeft;
-    const float trialListRight = pageR - 6.0f * uiS - trialListShiftLeft;
-    const float centerL = pageL + detailW + 34.0f * uiS;
-    const float centerR = trialListX - 38.0f * uiS;
+    const float entryTitleScale = UiTextScale(g_TextS, UiTextLevel::Title, uiS);
+    // 좌우 열은 같은 너비로 페이지 양끝에 붙이고, 중앙 열이 화면 중앙이 되게 한다.
+    // 머리글·ESC 는 다른 패널과 같은 페이지 여백에 두고, 선택 열만 안쪽으로 들인다.
+    const float leftX = pageL + kPlayColumnInset * uiS;
+    const float rightR = pageR - kPlayColumnInset * uiS;
+    const float rightX = rightR - sideW;
+    const float centerL = leftX + sideW + kPlayColumnGap * uiS;
+    const float centerR = rightX - kPlayColumnGap * uiS;
     const float centerW = std::max(330.0f * uiS, centerR - centerL);
     const float chartCX = centerL + centerW * 0.50f;
     const float chartCY = bodyTop + (bodyBottom - bodyTop) * 0.44f;
     const float chartR = std::min(244.0f * uiS,
         std::min(centerW * 0.34f, (bodyBottom - bodyTop) * 0.29f));
-    const float trialListW = std::max(230.0f * uiS, trialListRight - trialListX);
-    // Keep all three bottom commands on one shared baseline. The trial reset
-    // uses the catalogue's left X anchor, so it reads as the action belonging
-    // to the list instead of another header control.
     const float routeX = BottomLeftActionX(uiS);
     const float routeW = 286.0f * uiS;
     const float routeH = 64.0f * uiS;
@@ -543,417 +587,197 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     const float playH = 62.0f * uiS;
     const float playX = chartCX - playW * 0.5f;
     const float playY = routeY - 1.0f * uiS;
-    const wchar_t* resetLabel = PlayText(L"시련 초기화", L"TRIAL RESET", L"試練をリセット");
-    const float resetW = std::min(230.0f * uiS, trialListW);
-    const float resetX = trialListRight - resetW;
-    const float resetY = routeY;
     const float now = (float)glfwGetTime();
-    const float weaponR = weapon == 0 ? 0.28f : 1.00f;
-    const float weaponG = weapon == 0 ? 0.90f : 0.72f;
-    const float weaponB = weapon == 0 ? 1.00f : 0.24f;
-    const float trialR = 1.00f, trialG = 0.60f, trialB = 0.22f;
-    const int activeCount = countEnabled();
+    const float weaponR = kPlayWeaponColor[weapon].r;
+    const float weaponG = kPlayWeaponColor[weapon].g;
+    const float weaponB = kPlayWeaponColor[weapon].b;
 
-    for (int i = 0; i < 6; ++i)
-        statT[i] = UiApproach(statT[i], kStatTargets[weapon][i], dt, 8.0f);
+    for (int i = 0; i < kPlayStatCount; ++i)
+        statT[i] = UiApproach(statT[i], kPlayStatBar[weapon][i], dt, 8.0f);
 
-    // The trial catalogue is a finite, top-anchored list. Its scroll position
-    // is the first visible row, while keyboard focus moves independently.
-    const float trialRowStep = 108.0f * uiS;
-    // The visual row is shorter than the row step. Let adjacent rows'
-    // hit regions meet at their centers' midpoint so there is no dead strip
-    // between two trial entries.
-    const float trialRowHitHalf = trialRowStep * 0.50f;
-    const float trialViewTop = bodyTop + 58.0f * uiS;
-    // Stop the catalogue above the shared bottom action rail. This leaves the
-    // third command visibly owned by the list and prevents rows from entering
-    // the BACK / PLAY / TRIAL RESET area.
-    const float trialViewBottom = std::max(trialViewTop,
-                                           resetY - 18.0f * uiS);
-    const float trialViewH = std::max(0.0f, trialViewBottom - trialViewTop);
-    const float trialDiagonal = std::min(72.0f * uiS, trialListW * 0.18f);
-    const float trialRailTopX = trialListX - 4.0f * uiS;
-    const float trialRailLeft = trialRailTopX - 30.0f * uiS;
-    const int trialVisibleRows = std::max(1,
-        (int)floorf(trialViewH / trialRowStep));
-    const float trialMaxScroll = std::max(0.0f,
-        std::min((float)(kTrialCatalogCount - 1),
-                 (float)kTrialCatalogCount - trialViewH / trialRowStep));
-    const float trialFirstRowCenter = trialViewTop + trialRowStep * 0.5f;
-    auto trialRailXAt = [&](float y) {
-        const float t = std::max(0.0f,
-            std::min(1.0f, (y - trialViewTop) / std::max(1.0f, trialViewH)));
-        return trialRailTopX + trialDiagonal * t;
+    // 키보드: 위/아래(W/S)=난이도, 좌/우(A/D)=직업. 누른 순간에만 한 칸 이동.
+    auto keyDown = [&](int a, int b) {
+        return c.window && (glfwGetKey(c.window, a) == GLFW_PRESS ||
+                            glfwGetKey(c.window, b) == GLFW_PRESS);
     };
-    // Clamp the list's first visible row to the catalogue. The prior centered
-    // layout put its first item halfway down the panel and wasted the space above.
-    auto normalizeTrialSlots = [&]() {
-        trialTargetSlot = std::max(0.0f, std::min(trialMaxScroll, trialTargetSlot));
-        trialDisplaySlot = std::max(0.0f, std::min(trialMaxScroll, trialDisplaySlot));
+    const bool keyNow[4] = {
+        keyDown(GLFW_KEY_UP, GLFW_KEY_W), keyDown(GLFW_KEY_DOWN, GLFW_KEY_S),
+        keyDown(GLFW_KEY_LEFT, GLFW_KEY_A), keyDown(GLFW_KEY_RIGHT, GLFW_KEY_D)
     };
-    if (trialLayoutPending) {
-        const float activeStart = activeCount > 0
-            ? std::max(0.0f, (float)trialSelectedSlot - trialVisibleRows * 0.5f)
-            : 0.0f;
-        trialTargetSlot = trialDisplaySlot = activeStart;
-        normalizeTrialSlots();
-        trialLayoutPending = false;
+    if (ready) {
+        if (keyNow[0] && !prevKey[0]) s_RcDifficulty = std::max(0, s_RcDifficulty - 1);
+        if (keyNow[1] && !prevKey[1]) s_RcDifficulty = std::min(2, s_RcDifficulty + 1);
+        if (keyNow[2] && !prevKey[2]) { weapon = 0; s_RcWeapon = weapon; }
+        if (keyNow[3] && !prevKey[3]) { weapon = 1; s_RcWeapon = weapon; }
     }
-    const bool resetHov = ready
-        && mx >= resetX - 22.0f * uiS
-        && mx <= resetX + resetW + 22.0f * uiS
-        && my >= resetY - 8.0f * uiS
-        && my <= resetY + routeH + 10.0f * uiS;
-    resetHover = UpdateMenuCommandHover(resetHover, resetHov, dt);
-    if (resetHov && lmbClick) {
-        for (int id = 0; id < TRIAL_DEF_COUNT; ++id)
-            s_RcTrialEnabled[id] = false;
-        trialFocus = 0;
-        trialSelectedSlot = 0;
-        trialTargetSlot = trialDisplaySlot = 0.0f;
-        detailScroll = 0.0f;
-        detailScrollTarget = 0.0f;
-        detailDragging = false;
-        detailDragMoved = false;
-    }
-    const float detailX = pageL + 8.0f * uiS;
-    const float detailTop = bodyTop + 150.0f * uiS;
-    const float detailViewTop = detailTop + 92.0f * uiS;
-    // Leave a clear dead zone above the shared BACK/PLAY action rail. The
-    // active-trial copy can scroll, but it must never appear underneath the
-    // bottom commands.
-    const float detailViewBottom = std::min(bodyBottom - 34.0f * uiS,
-                                            footerY - 150.0f * uiS);
-    const bool overTrialList = ready && mx >= trialRailLeft - 26.0f * uiS
-        && mx <= trialListRight + 8.0f * uiS && my >= trialViewTop && my <= trialViewBottom;
-    const bool overDetail = ready && mx >= detailX - 16.0f * uiS
-        && mx <= detailX + detailW + 16.0f * uiS
-        && my >= detailViewTop && my <= detailViewBottom;
+    for (int i = 0; i < 4; ++i) prevKey[i] = keyNow[i];
 
-    // The explanation column is a real scroll surface as well as a readable
-    // list.  Keep the press/drag state separate from the trial catalogue so
-    // grabbing the copy never toggles a trial by accident.
-    if (lmbClick && overDetail && !trialDragging) {
-        detailDragging = true;
-        detailDragMoved = false;
-        detailDragLastY = (float)my;
-        detailScrollTarget = detailScroll;
-    }
-    if (!lmb && detailDragging) {
-        detailDragging = false;
-        detailDragMoved = false;
-    }
-    if (detailDragging && lmb) {
-        const float dy = (float)my - detailDragLastY;
-        const float dragThreshold = 3.5f * uiS;
-        if (!detailDragMoved && fabsf(dy) >= dragThreshold)
-            detailDragMoved = true;
-        if (detailDragMoved) {
-            detailScrollTarget -= dy;
-            detailDragLastY = (float)my;
-        }
-    }
-
-    const bool keyUpNow = c.window &&
-        (glfwGetKey(c.window, GLFW_KEY_UP) == GLFW_PRESS ||
-         glfwGetKey(c.window, GLFW_KEY_W) == GLFW_PRESS);
-    const bool keyDownNow = c.window &&
-        (glfwGetKey(c.window, GLFW_KEY_DOWN) == GLFW_PRESS ||
-         glfwGetKey(c.window, GLFW_KEY_S) == GLFW_PRESS);
-    int trialStepRequest = 0;
-    if (!lmb && trialDragging) {
-        // A press/release without a meaningful pointer movement is the
-        // toggle gesture. Dragging the same row never reaches this branch.
-        if (!trialDragMoved && trialPressedId >= 0
-            && trialPressedId < TRIAL_DEF_COUNT) {
-            const bool wasOn = s_RcTrialEnabled[trialPressedId];
-            if (!wasOn && countEnabled() >= TRIAL_SLOT_COUNT) {
-            } else {
-                s_RcTrialEnabled[trialPressedId] = !wasOn;
-                detailScroll = 0.0f;
-                detailScrollTarget = 0.0f;
-            }
-        }
-        trialDragging = false;
-        trialDragMoved = false;
-        trialPressedId = -1;
-    }
-    if (trialDragging && lmb) {
-        const float dx = (float)mx - trialDragLastX;
-        const float dy = (float)my - trialDragLastY;
-        const float dragThreshold = 3.5f * uiS;
-        if (!trialDragMoved && dx * dx + dy * dy
-            >= dragThreshold * dragThreshold)
-            trialDragMoved = true;
-        if (trialDragMoved && fabsf(dy) > 0.0001f) {
-            // Keep the press point until the gesture is confirmed. That way
-            // the few pixels used to cross the threshold are not discarded,
-            // which makes the rail feel responsive instead of sticky.
-            const float dragDelta = -(dy / trialRowStep);
-            // Move the display directly with the pointer and clamp it to the
-            // first/last catalogue entry.
-            trialTargetSlot += dragDelta;
-            trialDisplaySlot += dragDelta;
-            normalizeTrialSlots();
-            trialDragMoved = true;
-            const float pointerRow = trialDisplaySlot
-                + (((float)my - trialFirstRowCenter) / trialRowStep);
-            int nearestSlot = (int)std::round(pointerRow);
-            nearestSlot = std::max(0, std::min(kTrialCatalogCount - 1,
-                                                nearestSlot));
-            if (nearestSlot != trialSelectedSlot) {
-                trialSelectedSlot = nearestSlot;
-                trialFocus = kTrialOrder[trialSelectedSlot];
-            }
-            normalizeTrialSlots();
-        }
-        if (trialDragMoved) {
-            trialDragLastY = (float)my;
-            trialDragLastX = (float)mx;
-        }
-    }
-    const int trialNavDir = keyUpNow == keyDownNow
-        ? 0 : (keyUpNow ? -1 : 1);
-    if (c.inputFocusChanged) {
-        trialNavHoldDir = trialNavDir;
-        trialNavHoldT = 0.0f;
-        trialNavRepeatT = 0.0f;
-    }
-    if (!trialDragging && ready && trialNavDir != 0) {
-        if (trialNavDir != trialNavHoldDir) {
-            trialNavHoldDir = trialNavDir;
-            trialNavHoldT = 0.0f;
-            trialNavRepeatT = 0.0f;
-            trialStepRequest = trialNavDir;
-        } else {
-            trialNavHoldT += dt;
-            if (trialNavHoldT >= 0.25f) {
-                trialNavRepeatT += dt;
-                const float repeatInterval = std::max(0.055f,
-                    0.24f - (trialNavHoldT - 0.25f) * 0.070f);
-                if (trialNavRepeatT >= repeatInterval) {
-                    trialNavRepeatT = 0.0f;
-                    trialStepRequest = trialNavDir;
-                }
-            }
-        }
-    } else {
-        trialNavHoldDir = 0;
-        trialNavHoldT = 0.0f;
-        trialNavRepeatT = 0.0f;
-    }
-    if (g_ScrollAccum != 0.0f) {
-        if (!trialDragging && overTrialList) {
-            trialTargetSlot -= g_ScrollAccum;
-            normalizeTrialSlots();
-        } else if (overDetail) {
-            detailScrollTarget -= g_ScrollAccum * 34.0f * uiS;
-        }
-        g_ScrollAccum = 0.0f;
-    }
-    if (trialStepRequest != 0) {
-        trialSelectedSlot = std::max(0, std::min(kTrialCatalogCount - 1,
-                            trialSelectedSlot + trialStepRequest));
-        trialFocus = kTrialOrder[trialSelectedSlot];
-        if ((float)trialSelectedSlot < trialTargetSlot)
-            trialTargetSlot = (float)trialSelectedSlot;
-        else if ((float)trialSelectedSlot >= trialTargetSlot + trialVisibleRows)
-            trialTargetSlot = (float)trialSelectedSlot - trialVisibleRows + 1.0f;
-        normalizeTrialSlots();
-    }
-    {
-        const float diff = trialTargetSlot - trialDisplaySlot;
-        trialDisplaySlot += diff * std::min(1.0f, dt * 10.0f);
-        if (fabsf(diff) < 0.002f)
-            trialDisplaySlot = trialTargetSlot;
-    }
-    // PLAY shares the same wide, mirrored side fields as Settings. The
-    // transparent scene remains visible through the center while the edges
-    // receive a consistent dark contrast treatment.
     BatchFlush();
     DrawPersistentSceneSideVignettes(sw, sh,
                                      kWideSceneLinearAlpha * contentA);
-    // The radial texture is the hero's light source: a colored outer corona
-    // makes the constellation read as a focal object, while a small dark core
-    // keeps the weapon title and node geometry crisp over bright backdrops.
-    DrawRadialGradient(chartCX, chartCY, chartR * 1.88f,
-                       weaponR * 0.56f, weaponG * 0.56f, weaponB * 0.56f,
-                       0.34f * contentA);
-    DrawRadialGradient(chartCX, chartCY, chartR * 1.08f,
-                       0.0f, 0.0f, 0.008f,
-                       0.26f * contentA);
-    // CircleTexture carries the constellation's depth, while the broad edge
-    // linear fields and hero radial fields provide the page contrast.
-    DrawConstellationDisc(chartCX, chartCY, chartR * 1.74f,
-                          0.0f, 0.0f, 0.012f, 0.28f * contentA);
-    DrawConstellationDisc(chartCX, chartCY, chartR * 1.34f,
-                          weaponR * 0.08f, weaponG * 0.08f, weaponB * 0.10f,
-                          (0.10f + 0.025f * sinf(now * 1.2f)) * contentA, false);
-    DrawConstellationDisc(trialListX + trialListW * 0.62f,
-                          (trialViewTop + trialViewBottom) * 0.52f,
-                          trialListW * 0.72f, 0.0f, 0.0f, 0.012f,
-                          0.38f * contentA);
+    // 별자리 등장 연출은 앱 실행 후 처음 한 번만 재생한다. 이후에는 패널을 열 때 바로 완성
+    // 상태로 시작하고, 직업을 바꾸면 짧게 페이드 인만 한다. 회전은 항상 이어서 돈다.
+    // 패널을 여는 순간의 일회성 프레임 지연이나 일시적인 끊김이 애니메이션 점프로 보이지 않도록
+    // 연출 시간은 한 프레임에 최대 1/30초만 진행하고, 프레임이 안정된 뒤에 시작한다.
+    const float heroDt = std::min(dt, 1.0f / 30.0f);
+    heroStable = c.delta < 0.030f ? heroStable + 1 : 0;
+    heroClock += heroDt;
+    // 직업을 바꾼 프레임: 처음 보는 직업이면 등장 연출을 시작하고, 이미 본 직업이면 페이드 인만 한다.
+    bool heroSwitchedNow = false;
+    if (heroWeapon != weapon) {
+        heroWeapon = weapon;
+        heroSwitchedNow = true;
+        if (s_RcHeroRevealDone[weapon]) {
+            heroFade = 0.0f;
+        } else {
+            heroTimer = 0.0f;
+            heroFade = 1.0f;
+            heroStable = 4;                         // 이미 화면이 안정된 상태이므로 바로 시작
+        }
+    }
+    heroFade = std::min(1.0f, heroFade + heroDt / kPlayHeroFadeSec);
+    if (!s_RcHeroRevealDone[weapon]) {
+        if (entryIn > 0.15f && heroStable >= 4) heroTimer += heroDt;   // 전환이 보이고 프레임이 안정된 뒤 시작
+        // 클릭하면 건너뛴다. 단, 직업을 고르려고 누른 그 클릭은 건너뛰기로 치지 않는다.
+        if (lmbClick && !heroSwitchedNow) heroTimer = kPlayHeroRevealSec;
+        if (heroTimer >= kPlayHeroRevealSec) s_RcHeroRevealDone[weapon] = true;
+    } else {
+        heroTimer = kPlayHeroRevealSec;
+    }
+    const float heroReveal = std::min(1.0f, heroTimer / kPlayHeroRevealSec);
+    // 회전 속도: 등장 중에는 바깥 별이 나온 뒤(40% 지점)부터 서서히 올라가고, 이후에는 일정하다.
+    const float spinSpeed = s_RcHeroRevealDone[weapon] ? 1.0f
+        : Smoothstep(LogoClamp01((heroTimer - 0.40f * kPlayHeroRevealSec) / 0.6f));
+    heroSpin += heroDt * spinSpeed;
+    const float heroAlpha = contentA * Smoothstep(heroFade);
+    // 별자리 크기·위치: 제목 글자(아래 끝)와 스탯(위 끝) 사이의 빈 공간에 맞춘다.
+    const float heroTitleBottom = chartCY - chartR - 58.0f * uiS
+        + g_TextL.Height(weaponName(weapon), UiTextScale(g_TextL, UiTextLevel::Title, uiS));
+    const float heroGapTop = heroTitleBottom + 14.0f * uiS;
+    const float heroGapBottom = chartCY + chartR + 26.0f * uiS - 14.0f * uiS;
+    const float heroCY = (heroGapTop + heroGapBottom) * 0.5f;
+    const float heroR = std::max(40.0f * uiS, std::min(
+        std::min(chartR, (heroGapBottom - heroGapTop) * 0.5f), centerW * 0.5f - 10.0f * uiS));
+    DrawPlayHeroBackdrop(weapon, chartCX, heroCY, heroR,
+                         heroAlpha * Smoothstep(LogoClamp01(heroReveal / 0.20f)));
 
-    // XL glyphs are baked at ~133px; shrinking them to title size with
-    // plain bilinear sampling left stair-stepped edges (QA #16).
     const float playTitleScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
-    DrawShadowedText(g_TextL, PlayText(L"플레이", L"PLAY", L"プレイ"), pageL, headerY,
+    DrawShadowedText(g_TextL, T(kTxtPlay), pageL, headerY,
                      playTitleScale, 1.0f, 1.0f, 1.0f,
-                     0.98f * entryHeader, 0.74f);
+                     0.98f * entryHeader, kPlayTextShadow);
     const float escW = g_TextS.Width(L"[ESC]", playMetaScale);
     DrawShadowedText(g_TextS, L"[ESC]", pageR - escW, headerY + 8.0f * uiS,
                      playMetaScale, 0.68f, 0.78f, 0.88f,
-                     0.72f * entryHeader, 0.54f);
+                     0.72f * entryHeader, kPlayTextShadow);
     LogoLine(pageL, headerY + 58.0f * uiS, pageR, headerY + 58.0f * uiS,
              0.7f * uiS, weaponR, weaponG, weaponB, 0.12f * contentA);
 
-    // Weapon choice is a small editorial tab in the upper-left. This is the
-    // only weapon selection surface; the bottom rail is reserved for BACK.
-    const float tabsY = bodyTop + 12.0f * uiS;
-    const float tabScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
-    float tabX[2] = { detailX, detailX + 170.0f * uiS };
-    for (int i = 0; i < 2; ++i) {
-        const float tabW = 150.0f * uiS;
-        const float textW = g_TextL.Width(weaponName(i), tabScale);
-        const float textH = g_TextL.Height(weaponName(i), tabScale);
-        const float tabFit = std::min(1.0f, std::min(
-            (tabW - 16.0f * uiS) / std::max(1.0f, textW),
-            (46.0f * uiS - 8.0f * uiS) / std::max(1.0f, textH)));
-        const float fittedTabScale = tabScale * std::max(0.0f, tabFit);
-        const float fittedTextW = g_TextL.Width(weaponName(i), fittedTabScale);
-        const float fittedTextH = g_TextL.Height(weaponName(i), fittedTabScale);
-        const bool hov = ready && PanelButtonHit(mx, my, tabX[i], tabsY - 4.0f * uiS,
-                                                  tabW, 46.0f * uiS, 4.0f * uiS);
-        weaponHover[i] = UpdateMenuCommandHover(weaponHover[i], hov, dt);
-        const bool selected = weapon == i;
-        DrawShadowedText(g_TextL, weaponName(i),
-                         tabX[i] + (tabW - fittedTextW) * 0.5f,
-                         tabsY + (46.0f * uiS - fittedTextH) * 0.5f,
-                         fittedTabScale,
-                         selected ? weaponR : 0.58f,
-                         selected ? weaponG : 0.68f,
-                         selected ? weaponB : 0.78f,
-                         (selected ? 0.96f : 0.64f + 0.18f * weaponHover[i]) * contentA,
-                         0.50f);
-        if (hov && lmbClick) { weapon = i; s_RcWeapon = weapon; }
-    }
-    LogoLine(detailX, tabsY + 48.0f * uiS, detailX + detailW,
-             tabsY + 48.0f * uiS, 0.8f * uiS,
-             weaponR, weaponG, weaponB, 0.18f * contentA);
+    // 섹션 머리글: 작은 라벨 + 얇은 선 하나.
+    auto drawSectionLabel = [&](const wchar_t* label, float x, float w) {
+        DrawShadowedText(g_TextS, label, x, bodyTop, playSubtitleScale,
+                         weaponR, weaponG, weaponB, 0.80f * contentA, kPlayTextShadow);
+        const float ruleY = bodyTop + g_TextS.Height(label, playSubtitleScale)
+                          + 8.0f * uiS;
+        LogoLine(x, ruleY, x + w, ruleY, 0.9f * uiS,
+                 weaponR, weaponG, weaponB, 0.36f * contentA);
+    };
+    const float entryTop = bodyTop + kPlayEntryTopGap * uiS;
+    const float entryStep = kPlayEntryStep * uiS;
+    const float entryH = kPlayEntryHeight * uiS;
+    // 두 열 모두 같은 위쪽 기준선에서 시작한다.
+    auto entryY = [&](int slot) { return entryTop + slot * entryStep; };
 
-    // Hero copy is attached to the constellation, keeping the selected
-    // weapon readable before the player reads either side column.
+    // 선택지 한 줄: 세로선 + (선택 시) 노드 + 이름 + 보조 줄. 직업과 난이도가 공유한다.
+    // 클릭되면 true. 이름 줄의 세로 중심을 nameMidY 로 돌려준다.
+    auto drawChoice = [&](float x, float w, float y0, bool sel, float& hover,
+                          PlayRGB col, const wchar_t* name, const wchar_t* sub,
+                          float* nameMidY = nullptr) -> bool {
+        const bool hov = ready && mx >= x - 14.0f * uiS && mx <= x + w
+            && my >= y0 - 8.0f * uiS && my <= y0 + entryH;
+        hover = UpdateMenuCommandHover(hover, hov, dt);
+        // 선택 안 된 행도 밝은 바탕에서 읽히도록 알파 하한을 높게 둔다.
+        const float a = (sel ? 1.0f : 0.80f + 0.20f * hover) * contentA;
+        // 선택: 굵고 긴 세로선 + 큰 노드 + 한 단계 큰 이름. 비선택: 가늘고 짧은 선.
+        const float lineLen = sel ? entryH : entryH * 0.72f;
+        LogoLine(x, y0, x, y0 + lineLen, (sel ? 2.6f : 1.0f) * uiS,
+                 col.r, col.g, col.b,
+                 (sel ? 1.0f : 0.42f + 0.22f * hover) * contentA);
+        if (sel) drawDiamond(x, y0, 12.0f * uiS, col.r, col.g, col.b, 1.0f * contentA);
+        const float textX = x + kPlayEntryTextX * uiS;
+        const float baseScale = std::min(entryTitleScale,
+            entryTitleScale * (w - (kPlayEntryTextX + 4.0f) * uiS) /
+            std::max(1.0f, g_TextS.Width(name, entryTitleScale)));
+        const float selScale = baseScale * kPlayEntrySelectedScale;
+        const float drawScale = sel ? selScale : baseScale;
+        // 배치는 선택 크기를 기준으로 고정해, 선택이 바뀌어도 보조 줄이 움직이지 않게 한다.
+        const float layoutH = g_TextS.Height(name, selScale);
+        const float nameY = y0 + 2.0f * uiS
+                          + (layoutH - g_TextS.Height(name, drawScale)) * 0.5f;
+        DrawShadowedText(g_TextS, name, textX, nameY, drawScale,
+                         sel ? 1.0f : 0.90f, sel ? 1.0f : 0.94f, sel ? 1.0f : 0.98f,
+                         a, kPlayTextShadow);
+        // 보조 줄은 강조색을 흰색 쪽으로 섞어 밝은 바탕에서도 색이 죽지 않게 한다.
+        const float mix = 0.30f;
+        DrawShadowedText(g_TextS, sub, textX, y0 + 2.0f * uiS + layoutH + 10.0f * uiS,
+                         playBodyScale,
+                         col.r + (1.0f - col.r) * mix, col.g + (1.0f - col.g) * mix,
+                         col.b + (1.0f - col.b) * mix, a, kPlayTextShadow);
+        if (nameMidY) *nameMidY = y0 + 2.0f * uiS + layoutH * 0.5f;
+        return hov && lmbClick;
+    };
+
+    // 직업 목록(좌)
+    drawSectionLabel(T(kTxtClass), leftX, sideW);
+    for (int i = 0; i < kPlayWeaponCount; ++i) {
+        if (drawChoice(leftX, sideW, entryY(i), weapon == i,
+                       weaponHover[i], kPlayWeaponColor[i],
+                       weaponName(i), weaponSub(i))) {
+            weapon = i;
+            s_RcWeapon = weapon;
+        }
+    }
+
+    // 난이도 목록(우)
+    drawSectionLabel(T(kTxtDifficulty), rightX, sideW);
+    for (int i = 0; i < kPlayDifficultyCount; ++i) {
+        wchar_t bestBuf[64] = {};
+        if (g_BestScore[i] > 0) {
+            wchar_t grouped[40] = {};
+            FormatGrouped(g_BestScore[i], grouped, 40);
+            swprintf_s(bestBuf, L"%ls %ls", T(kTxtBest), grouped);
+        } else {
+            swprintf_s(bestBuf, L"%ls", T(kTxtNoRecord));
+        }
+        const PlayRGB col = kPlayDifficultyColor[i];
+        const bool sel = s_RcDifficulty == i;
+        float midY = 0.0f;
+        if (drawChoice(rightX, sideW, entryY(i), sel,
+                       diffHover[i], col, diffName(i), bestBuf, &midY))
+            s_RcDifficulty = i;
+        // 이름 줄 오른쪽 끝의 3칸 게이지: 켜진 별 개수가 단계(1~3)다.
+        for (int k = 0; k < kPlayDifficultyCount; ++k)
+            drawDiamond(rightR - 10.0f * uiS
+                            - (kPlayDifficultyCount - 1 - k) * kPlayGaugeStep * uiS,
+                        midY, kPlayGaugeSize * uiS, col.r, col.g, col.b,
+                        (k <= i ? (sel ? 1.0f : 0.72f) : 0.26f) * contentA);
+    }
+
+    // 중앙: 선택 무기 성좌 제목
     const float heroNameY = chartCY - chartR - 58.0f * uiS;
     const float heroNameScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
     const float heroNameW = g_TextL.Width(weaponName(weapon), heroNameScale);
-    const wchar_t* heroSystemLabel = PlayText(L"무기 별자리", L"WEAPON CONSTELLATION", L"武器星座");
+    const wchar_t* heroSystemLabel = T(kTxtConstellation);
     DrawShadowedText(g_TextS, heroSystemLabel,
                      chartCX - g_TextS.Width(heroSystemLabel, playSubtitleScale) * 0.5f,
                      heroNameY - 42.0f * uiS, playSubtitleScale,
-                     weaponR, weaponG, weaponB, 0.78f * contentA, 0.52f);
+                     weaponR, weaponG, weaponB, 0.78f * contentA, kPlayTextShadow);
     DrawShadowedText(g_TextL, weaponName(weapon), chartCX - heroNameW * 0.5f,
                      heroNameY, heroNameScale,
-                     1.0f, 1.0f, 1.0f, 0.96f * contentA, 0.72f);
-    const float subW = g_TextS.Width(weaponSub(weapon), playSubtitleScale);
-    DrawShadowedText(g_TextS, weaponSub(weapon), chartCX - subW * 0.5f,
-                     heroNameY + g_TextL.Height(weaponName(weapon), heroNameScale)
-                                 + 8.0f * uiS, playSubtitleScale,
-                     weaponR, weaponG, weaponB, 0.76f * contentA, 0.50f);
+                     1.0f, 1.0f, 1.0f, 0.96f * contentA, kPlayTextShadow);
 
-    // A shallow perspective network gives the hero a dimensional read. The
-    // nodes are depth-scaled and the ellipses rotate at different speeds, so
-    // RIFLE and FIELD share the language but retain distinct silhouettes.
-    auto drawHeroNetwork = [&]() {
-        constexpr int kNodeCount = 18;
-        float px[kNodeCount] = {}, py[kNodeCount] = {}, depth[kNodeCount] = {};
-        const float spin = now * (weapon == 0 ? 0.045f : -0.032f);
-        const float yScale = weapon == 0 ? 0.70f : 0.52f;
-        for (int i = 0; i < kNodeCount; ++i) {
-            const float a = spin + 6.2831853f * (float)i / (float)kNodeCount;
-            const float wave = sinf(now * 0.34f + i * 1.73f);
-            const float ring = 0.64f + 0.24f * (0.5f + 0.5f * sinf(i * 2.11f + 0.7f));
-            depth[i] = wave;
-            px[i] = chartCX + cosf(a) * chartR * ring;
-            py[i] = chartCY + sinf(a) * chartR * ring * yScale
-                   + wave * chartR * 0.055f;
-        }
-        for (int ring = 0; ring < 3; ++ring) {
-            const float rx = chartR * (0.55f + ring * 0.18f);
-            const float ry = chartR * yScale * (0.36f + ring * 0.16f);
-            const float phase = spin * (ring == 1 ? -0.8f : 0.55f)
-                              + (ring == 2 ? 0.22f : 0.0f);
-            float lastX = chartCX + cosf(phase) * rx;
-            float lastY = chartCY + sinf(phase) * ry;
-            for (int n = 1; n <= 32; ++n) {
-                const float a = phase + 6.2831853f * (float)n / 32.0f;
-                const float x = chartCX + cosf(a) * rx;
-                const float y = chartCY + sinf(a) * ry;
-                if ((n + ring) % (ring == 2 ? 4 : 3) != 0)
-                    DrawVisibleConstellLine(lastX, lastY, x, y,
-                                            (0.52f + ring * 0.10f) * uiS,
-                                            weaponR, weaponG, weaponB,
-                                            (0.08f + ring * 0.025f) * contentA);
-                lastX = x; lastY = y;
-            }
-        }
-        for (int i = 0; i < kNodeCount; ++i) {
-            const int next = (i + 1) % kNodeCount;
-            const int cross = (i + 5 + weapon) % kNodeCount;
-            const float edgeA = (0.15f + 0.12f * (depth[i] + 1.0f) * 0.5f) * contentA;
-            DrawVisibleConstellLine(px[i], py[i], px[next], py[next],
-                                    0.78f * uiS, weaponR, weaponG, weaponB, edgeA);
-            if ((i + weapon) % 2 == 0)
-                DrawVisibleConstellLine(px[i], py[i], px[cross], py[cross],
-                                        0.56f * uiS, weaponR, weaponG, weaponB,
-                                        edgeA * 0.62f);
-            const float nodeSize = (2.3f + 1.7f * (depth[i] + 1.0f) * 0.5f) * uiS;
-            if (depth[i] > 0.12f)
-                DrawConstellationDisc(px[i], py[i], nodeSize * 2.2f,
-                                      weaponR, weaponG, weaponB, 0.08f * contentA);
-            DrawVisibleConstellNode(px[i], py[i], nodeSize,
-                                    weaponR, weaponG, weaponB,
-                                    (0.42f + 0.24f * (depth[i] + 1.0f) * 0.5f) * contentA,
-                                    false, depth[i] > -0.35f);
-        }
-        // FIELD keeps its wider corona. RIFLE uses only the constellation
-        // network; the former targeting spine read as unrelated stray lines.
-        if (weapon != 0) {
-            for (int i = 0; i < 8; ++i) {
-                const float a = now * -0.08f + 6.2831853f * i / 8.0f;
-                DrawVisibleConstellLine(chartCX, chartCY,
-                                        chartCX + cosf(a) * chartR * 0.72f,
-                                        chartCY + sinf(a) * chartR * 0.72f * yScale,
-                                        0.62f * uiS, weaponR, weaponG, weaponB,
-                                        0.18f * contentA);
-            }
-        }
-        for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-            if (TrialDefRetired(id) || !s_RcTrialEnabled[id]) continue;
-            const int node = (id * 7 + weapon * 3) % kNodeCount;
-            DrawVisibleConstellLine(chartCX, chartCY, px[node], py[node],
-                                    1.10f * uiS, trialR, trialG, trialB,
-                                    0.24f * contentA);
-            DrawConstellationDisc(px[node], py[node], 13.0f * uiS,
-                                  trialR, trialG, trialB, 0.10f * contentA);
-            DrawVisibleConstellNode(px[node], py[node], 4.2f * uiS,
-                                    trialR, trialG, trialB, 0.86f * contentA,
-                                    true, true);
-        }
-        const float pulse = 0.5f + 0.5f * sinf(now * (weapon == 0 ? 5.6f : 3.0f));
-        DrawConstellationDisc(chartCX, chartCY, (32.0f + pulse * 8.0f) * uiS,
-                              0.0f, 0.0f, 0.012f, 0.36f * contentA);
-        DrawConstellationDisc(chartCX, chartCY, (17.0f + pulse * 4.0f) * uiS,
-                              weaponR, weaponG, weaponB, 0.18f * contentA, false);
-        drawDiamond(chartCX, chartCY, (9.0f + pulse * 2.0f) * uiS,
-                    weaponR, weaponG, weaponB, 0.86f * contentA);
-        drawDiamond(chartCX, chartCY, 3.8f * uiS,
-                    0.96f, 1.0f, 1.0f, 0.94f * contentA);
-    };
-    drawHeroNetwork();
+    DrawPlayHeroConstellation(weapon, chartCX, heroCY, heroR, uiS, heroAlpha,
+                              heroSpin, heroReveal, heroClock);
 
-    // Compact telemetry stays under the hero as a 3 x 2 readout. The larger
-    // type makes the values scannable without creating a second information
-    // panel beside the weapon hero.
     const float statY = chartCY + chartR + 26.0f * uiS;
     const float statRowStep = 60.0f * uiS;
     const float statColumnGap = 30.0f * uiS;
@@ -961,573 +785,54 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     const float statValueScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
     const float statW = std::max(96.0f * uiS,
         (centerW - statColumnGap * 2.0f) / 3.0f);
-    for (int i = 0; i < 6; ++i) {
+    const PlayerStats previewStats = PreviewBaseStats(
+        static_cast<int>(weapon == 0 ? StartWeapon::RIFLE : StartWeapon::SMG), 1.0f);
+    wchar_t statValues[kPlayStatCount][32] = {};
+    const bool field = weapon == 1;
+    const float damage = previewStats.GetBaseDamage()
+        * previewStats.GetDamageMultiplier()
+        * (field ? STATIC_FIELD_PULSE_DAMAGE_MULT : 1.0f);
+    const float interval = field ? STATIC_FIELD_PULSE_INTERVAL : previewStats.fireInterval;
+    const wchar_t* seconds = LangIndex() == 0 ? L"초" : LangIndex() == 2 ? L"秒" : L"s";
+    swprintf_s(statValues[0], L"%.1f", damage);
+    swprintf_s(statValues[1], L"%.1f/s", 1.0f / interval);
+    swprintf_s(statValues[2], L"%.2f%ls", interval, seconds);
+    if (field) {
+        wcscpy_s(statValues[3], T(kTxtInstant));
+        wcscpy_s(statValues[4], L"360°");
+        swprintf_s(statValues[5], L"%.0f", STATIC_FIELD_PULSE_RADIUS);
+    } else {
+        swprintf_s(statValues[3], L"%.0f", previewStats.bulletSpeed);
+        swprintf_s(statValues[4], L"%.2f", previewStats.bulletSpread);
+        wcscpy_s(statValues[5], T(kTxtScreenRange));
+    }
+    for (int i = 0; i < kPlayStatCount; ++i) {
         const int col = i % 3;
         const int row = i / 3;
         const float x = centerL + col * (statW + statColumnGap);
         const float y = statY + row * statRowStep;
-        const float valueW = g_TextS.Width(statValue(weapon, i), statValueScale);
+        const float valueW = g_TextS.Width(statValues[i], statValueScale);
         const float textInset = 4.0f * uiS;
-        // The track follows the same left/right bounds as the metric text:
-        // label starts at barX and the value ends at barRight.
         const float barX = x + textInset;
         const float barRight = x + statW - textInset;
         DrawShadowedText(g_TextS, statName(i), x + textInset, y,
                          statLabelScale, 0.72f, 0.82f, 0.92f,
-                         0.78f * contentA, 0.46f);
-        DrawShadowedText(g_TextS, statValue(weapon, i),
+                         0.78f * contentA, kPlayTextShadow);
+        DrawShadowedText(g_TextS, statValues[i],
                          x + statW - valueW - textInset, y,
                          statValueScale, 0.92f, 0.96f, 1.0f,
-                         0.90f * contentA, 0.52f);
-        // Give the telemetry a little air: the track is inset and sits below
-        // the labels instead of competing with the enlarged text.
+                         0.90f * contentA, kPlayTextShadow);
         LogoLine(barX, y + 31.0f * uiS, barRight,
                  y + 31.0f * uiS, 0.95f * uiS,
-                 0.34f, 0.44f, 0.56f, 0.22f * contentA);
+                 0.34f, 0.44f, 0.56f, 0.38f * contentA);
         LogoLine(barX, y + 31.0f * uiS,
                  barX + (barRight - barX) * LogoClamp01(statT[i]),
                  y + 31.0f * uiS, 1.75f * uiS,
                  weaponR, weaponG, weaponB, 0.70f * contentA);
     }
-
-    // Left active-trial readout: this is intentionally independent of the
-    // hovered catalogue row. It reports every enabled trial, while the
-    // catalogue remains free to browse without rewriting the explanation.
-    const wchar_t* activeStatusText = activeCount > 0
-        ? PlayText(L"활성 시련", L"ACTIVE TRIALS", L"有効な試練")
-        : PlayText(L"활성 시련 없음", L"NO ACTIVE TRIALS", L"有効な試練なし");
-    float activeStatusScale = playSubtitleScale;
-    const float activeStatusW = g_TextS.Width(activeStatusText, activeStatusScale);
-    if (activeStatusW > detailW && activeStatusW > 0.0f)
-        activeStatusScale *= detailW / activeStatusW;
-    const float activeStatusH = g_TextS.Height(activeStatusText, activeStatusScale);
-    DrawShadowedText(g_TextS, activeStatusText,
-                     detailX, detailTop, activeStatusScale,
-                     trialR, trialG, trialB, 0.82f * contentA, 0.52f);
-    wchar_t activeReadout[32];
-    swprintf_s(activeReadout, PlayText(L"%d / %d 활성화", L"%d / %d ENABLED", L"%d / %d 有効化"),
-               activeCount, TRIAL_SLOT_COUNT);
-    const float activeReadoutScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
-    DrawShadowedText(g_TextS, activeReadout,
-                     detailX,
-                     detailTop + activeStatusH + 7.0f * uiS, activeReadoutScale,
-                     0.64f, 0.74f, 0.84f, 0.72f * contentA, 0.42f);
-    const float activeReadoutH = g_TextS.Height(activeReadout, activeReadoutScale);
-    const float activeRuleY = detailTop + activeStatusH + 7.0f * uiS
-                            + activeReadoutH + 8.0f * uiS;
-    LogoLine(detailX, activeRuleY,
-             detailX + detailW, activeRuleY,
-             0.75f * uiS, trialR, trialG, trialB, 0.26f * contentA);
-    const wchar_t* detailHint = PlayText(L"드래그 이동 · 휠 스크롤",
-                                         L"DRAG · WHEEL SCROLL",
-                                         L"ドラッグ · ホイール");
-    // The hint shares the readout row, right-aligned above the rule. Its old
-    // fixed spot 12px above the scroll view overlapped the first heading.
-    // The renderer clamps tiny scales, so a long hint (JP) may not shrink
-    // enough; it then moves to the status row, and is omitted if neither
-    // row has room rather than overlapping either label.
-    const float detailHintGap = 16.0f * uiS;
-    // Shrink toward the room left of the row's label; < 0 means no fit even
-    // after the renderer's minimum-scale clamp.
-    auto fitHintBeside = [&](float labelW) {
-        const float room = detailW - labelW - detailHintGap;
-        const float fullW = g_TextS.Width(detailHint, playMetaScale);
-        const float scale = fullW > room && fullW > 0.0f
-            ? playMetaScale * std::max(0.0f, room) / fullW : playMetaScale;
-        return g_TextS.Width(detailHint, scale) <= room ? scale : -1.0f;
-    };
-    const float readoutHintScale = fitHintBeside(
-        g_TextS.Width(activeReadout, activeReadoutScale));
-    const float statusHintScale = readoutHintScale > 0.0f ? -1.0f
-        : fitHintBeside(g_TextS.Width(activeStatusText, activeStatusScale));
-    const bool hintOnReadout = readoutHintScale > 0.0f;
-    const bool hintOnStatus = statusHintScale > 0.0f;
-    if (hintOnReadout || hintOnStatus) {
-        const float detailHintScale = hintOnReadout ? readoutHintScale
-                                                    : statusHintScale;
-        const float detailHintW = g_TextS.Width(detailHint, detailHintScale);
-        const float rowBottom = hintOnReadout
-            ? activeRuleY - 4.0f * uiS
-            : detailTop + activeStatusH;
-        DrawShadowedText(g_TextS, detailHint,
-                         detailX + detailW - detailHintW,
-                         rowBottom - g_TextS.Height(detailHint, detailHintScale),
-                         detailHintScale,
-                         0.42f, 0.70f, 0.80f, 0.68f * contentA, 0.40f);
-    }
-    // Give the active build an objective, compact readout before the prose
-    // descriptions.  These values mirror the multipliers used by the run
-    // code; conditional late-game effects are shown as start -> peak rather
-    // than pretending they are active from the first room.
-    struct ActiveSummaryRow {
-        std::wstring label;
-        std::wstring value;
-        bool buff = false;
-    };
-    std::vector<ActiveSummaryRow> summaryRows;
-    const auto selected = [&](int id) {
-        return id >= 0 && id < TRIAL_DEF_COUNT && !TrialDefRetired(id)
-            && s_RcTrialEnabled[id];
-    };
-    auto formatPercent = [](float mult) {
-        wchar_t buf[32] = {};
-        swprintf_s(buf, L"%+.1f%%", (mult - 1.0f) * 100.0f);
-        return std::wstring(buf);
-    };
-    auto formatPercentRange = [&](float startMult, float peakMult) {
-        if (fabsf(startMult - peakMult) < 0.0005f)
-            return formatPercent(startMult);
-        wchar_t buf[64] = {};
-        swprintf_s(buf, L"%+.1f%% → %+.1f%%",
-                   (startMult - 1.0f) * 100.0f,
-                   (peakMult - 1.0f) * 100.0f);
-        return std::wstring(buf);
-    };
-    auto formatCountRange = [&](int startCount, int peakCount) {
-        wchar_t buf[32] = {};
-        if (startCount == peakCount)
-            swprintf_s(buf, L"+%d", startCount);
-        else
-            swprintf_s(buf, L"+%d → +%d", startCount, peakCount);
-        return std::wstring(buf);
-    };
-    auto addPercentMetric = [&](const wchar_t* label, float startMult,
-                                float peakMult, bool buff) {
-        if (fabsf(startMult - 1.0f) < 0.0005f
-            && fabsf(peakMult - 1.0f) < 0.0005f)
-            return;
-        summaryRows.push_back({ label,
-                                formatPercentRange(startMult, peakMult),
-                                buff });
-    };
-
-    float scoreMult = 1.0f;
-    for (int id = 0; id < TRIAL_DEF_COUNT; ++id) {
-        if (selected(id)) scoreMult += TrialScoreBonusForDef(id);
-    }
-    if (activeCount > 0) {
-        wchar_t scoreBuf[48] = {};
-        swprintf_s(scoreBuf, L"x%.2f  (%+.1f%%)", scoreMult,
-                   (scoreMult - 1.0f) * 100.0f);
-        summaryRows.push_back({ PlayText(L"점수 배율", L"SCORE MULTIPLIER", L"スコア倍率"),
-                                scoreBuf, true });
-    }
-
-    float playerHpMult = 1.0f;
-    if (selected(10)) playerHpMult *= 0.82f;
-    addPercentMetric(PlayText(L"플레이어 최대 HP", L"PLAYER MAX HP", L"プレイヤー最大HP"),
-                     1.0f, playerHpMult, false);
-
-    float enemyHpStart = 1.0f, enemyHpPeak = 1.0f;
-    if (selected(11)) enemyHpStart *= 1.08f;
-    if (selected(15)) enemyHpPeak *= 1.28f;
-    enemyHpPeak *= enemyHpStart;
-    addPercentMetric(PlayText(L"일반 적 체력", L"ENEMY HP", L"通常敵HP"),
-                     enemyHpStart, enemyHpPeak, false);
-
-    float spawnStart = 1.0f, spawnPeak = 1.0f;
-    if (selected(9))  spawnStart *= 1.18f;
-    if (selected(11)) spawnStart *= 1.08f;
-    spawnPeak = spawnStart;
-    if (selected(14)) spawnPeak *= 1.24f;
-    if (selected(16)) spawnPeak *= 1.12f;
-    addPercentMetric(PlayText(L"일반 스폰 빈도", L"SPAWN FREQUENCY", L"通常敵の出現頻度"),
-                     spawnStart, spawnPeak, false);
-
-    float rangedStart = 1.0f, rangedPeak = 1.0f;
-    if (selected(8))  rangedStart *= 0.78f;
-    rangedPeak = rangedStart;
-    if (selected(13)) rangedPeak *= 0.86f;
-    if (selected(16)) rangedPeak *= 0.82f;
-    addPercentMetric(PlayText(L"원거리 스폰 간격", L"RANGED INTERVAL", L"遠距離敵の出現間隔"),
-                     rangedStart, rangedPeak, false);
-
-    int rangedMaxStart = 0;
-    int rangedMaxPeak = (selected(13) ? 2 : 0)
-                      + (selected(16) ? 2 : 0);
-    if (rangedMaxStart > 0 || rangedMaxPeak > 0)
-        summaryRows.push_back({ PlayText(L"원거리 최대 수", L"RANGED MAX", L"遠距離敵の上限"),
-                                formatCountRange(rangedMaxStart, rangedMaxPeak),
-                                false });
-
-    const float summaryTitleScale = playSubtitleScale;
-    const float summaryTitleH = g_TextS.Height(
-        PlayText(L"현재 적용 합계", L"ACTIVE EFFECT TOTAL", L"現在の適用合計"), summaryTitleScale)
-        + 6.0f * uiS;
-    const float summaryValueScale = UiTextScale(g_TextS, UiTextLevel::Description, uiS);
-    const float summaryRowH = g_TextS.Height(L"+100.0%", summaryValueScale)
-                            + 10.0f * uiS;
-    const float summaryBottomGap = 15.0f * uiS;
-    const float summaryBlockH = summaryTitleH
-                              + std::max<size_t>(1, summaryRows.size()) * summaryRowH
-                              + summaryBottomGap;
-    struct ActiveDetailLine {
-        std::wstring text;
-        int kind;
-        int tone;
-    };
-    std::vector<ActiveDetailLine> detailLines;
-    auto appendLine = [&](const std::wstring& text, int kind, int tone) {
-        detailLines.push_back({ text, kind, tone });
-    };
-    auto appendWrapped = [&](const std::wstring& text, int kind, int tone) {
-        // Breaks at spaces, and between Japanese characters (JP copy has no spaces).
-        // Hangul stays word-wrapped; closing punctuation never starts a line.
-        auto isCjk = [](wchar_t c) {
-            return (c > 0x3000 && c <= 0x9FFF) || (c >= 0xFF00 && c <= 0xFFEF);
-        };
-        auto noLineStart = [](wchar_t c) {
-            return wcschr(L"、。，．・：；？！ー」』）】ぁぃぅぇぉっゃゅょァィゥェォッャュョ", c) != nullptr;
-        };
-        std::wstring line;
-        std::wstring unit;
-        bool gap = false;
-        auto place = [&]() {
-            if (unit.empty()) return;
-            std::wstring candidate = line.empty() ? unit : line + (gap ? L" " : L"") + unit;
-            const bool stick = unit.size() == 1 && noLineStart(unit[0]);
-            if (!line.empty() && !stick &&
-                g_TextS.Width(candidate.c_str(), playBodyScale) > detailW) {
-                appendLine(line, kind, tone);
-                line = unit;
-            } else {
-                line = candidate;
-            }
-            unit.clear();
-            gap = false;
-        };
-        for (wchar_t ch : text) {
-            if (ch == L' ') { place(); gap = !line.empty(); continue; }
-            if (isCjk(ch)) { place(); unit.push_back(ch); place(); continue; }
-            unit.push_back(ch);
-        }
-        place();
-        if (!line.empty()) appendLine(line, kind, tone);
-    };
-    if (activeCount <= 0) {
-        appendWrapped(PlayText(L"시련 목록에서 시련을 활성화해 플레이 설정을 구성하세요.",
-                               L"Enable trials from the catalogue to build the play configuration.",
-                               L"試練一覧から試練を有効にして、プレイ設定を構成してください。"),
-                      0, 0);
-    } else {
-        for (int order = 0; order < kTrialCatalogCount; ++order) {
-            const int id = kTrialOrder[order];
-            if (!s_RcTrialEnabled[id]) continue;
-            appendLine(std::wstring(trialName(id)), 1, 0);
-            std::wstring stageLine = PlayText(L"단계  //  ", L"STAGE  //  ", L"段階  //  ");
-            stageLine += stageLabel(stageIndex(id));
-            appendLine(stageLine, 2, 0);
-            appendLine(PlayText(L"효과", L"EFFECT", L"効果"), 2, 0);
-            appendWrapped(std::wstring(trialDetail(id)), 0, -1);
-            appendLine(PlayText(L"간단 요약", L"COMPACT READOUT", L"簡易まとめ"), 2, 0);
-            appendWrapped(std::wstring(trialCompact(id)), 0, -1);
-            appendLine(PlayText(L"보상 · 압박", L"PAYOFF · PRESSURE", L"報酬 · 圧力"), 2, 0);
-            appendWrapped(std::wstring(trialTag(id)), 0, 1);
-            appendLine(L"", 3, 0);
-        }
-    }
-    const auto detailScale = [&](const ActiveDetailLine& line) {
-        if (line.kind == 1) return UiTextScale(g_TextS, UiTextLevel::Title, uiS);
-        if (line.kind == 2) return playSubtitleScale;
-        if (line.kind == 3) return 0.0f;
-        return playBodyScale;
-    };
-    const auto detailLineHeight = [&](const ActiveDetailLine& line) {
-        if (line.kind == 3) return 12.0f * uiS;
-        const float textH = g_TextS.Height(line.text.c_str(), detailScale(line));
-        return std::max(22.0f * uiS, textH + 4.0f * uiS);
-    };
-    float detailLinesHeight = 0.0f;
-    for (const ActiveDetailLine& line : detailLines)
-        detailLinesHeight += detailLineHeight(line);
-    const float detailContentH = summaryBlockH + detailLinesHeight;
-    const float detailMaxScroll = std::max(0.0f,
-        detailContentH - (detailViewBottom - detailViewTop) + 6.0f * uiS);
-    detailScrollTarget = std::max(0.0f,
-                                  std::min(detailScrollTarget, detailMaxScroll));
-    const float detailScrollEase = std::min(1.0f, dt * 14.0f);
-    detailScroll += (detailScrollTarget - detailScroll) * detailScrollEase;
-    if (fabsf(detailScrollTarget - detailScroll) < 0.08f)
-        detailScroll = detailScrollTarget;
     BatchFlush();
-    glEnable(GL_SCISSOR_TEST);
-    glScissor((GLint)(detailX - 6.0f * uiS),
-              (GLint)(sh - detailViewBottom),
-              (GLint)(detailW + 18.0f * uiS),
-              (GLint)(detailViewBottom - detailViewTop));
-    float detailY = detailViewTop - detailScroll;
-    DrawShadowedText(g_TextS,
-                     PlayText(L"현재 적용 합계", L"ACTIVE EFFECT TOTAL", L"現在の適用合計"),
-                     detailX, detailY, summaryTitleScale,
-                     0.68f, 0.88f, 0.96f, 0.86f * contentA, 0.50f);
-    detailY += summaryTitleH;
-    if (summaryRows.empty()) {
-        DrawShadowedText(g_TextS,
-                         PlayText(L"선택된 시련 없음", L"NO ACTIVE MODIFIERS", L"選択中の試練なし"),
-                         detailX, detailY, summaryValueScale,
-                         0.72f, 0.78f, 0.84f, 0.72f * contentA, 0.46f);
-        detailY += summaryRowH;
-    } else {
-        for (const ActiveSummaryRow& row : summaryRows) {
-            float valueScale = summaryValueScale;
-            const float maxValueW = detailW * 0.48f;
-            const float fullValueW = g_TextS.Width(row.value.c_str(), valueScale);
-            if (fullValueW > maxValueW && fullValueW > 0.0f)
-                valueScale *= maxValueW / fullValueW;
-            const float valueW = g_TextS.Width(row.value.c_str(), valueScale);
-            const float labelMaxW = std::max(20.0f * uiS,
-                detailW - valueW - 11.0f * uiS);
-            float labelScale = summaryValueScale;
-            const float fullLabelW = g_TextS.Width(row.label.c_str(), labelScale);
-            if (fullLabelW > labelMaxW && fullLabelW > 0.0f)
-                labelScale *= labelMaxW / fullLabelW;
-            DrawShadowedText(g_TextS, row.label.c_str(), detailX, detailY,
-                             labelScale,
-                             0.70f, 0.78f, 0.86f, 0.86f * contentA, 0.44f);
-            DrawShadowedText(g_TextS, row.value.c_str(),
-                             detailX + detailW - valueW, detailY,
-                             valueScale,
-                             row.buff ? 0.20f : 1.0f,
-                             row.buff ? 0.92f : 0.28f,
-                             row.buff ? 1.0f : 0.28f,
-                             0.94f * contentA, 0.50f);
-            const float summaryTextH = g_TextS.Height(row.value.c_str(), valueScale);
-            LogoLine(detailX, detailY + summaryTextH + 4.0f * uiS,
-                     detailX + detailW, detailY + summaryTextH + 4.0f * uiS,
-                     0.45f * uiS, 0.18f, 0.28f, 0.34f,
-                     0.28f * contentA);
-            detailY += summaryRowH;
-        }
-    }
-    detailY += summaryBottomGap;
-    for (size_t i = 0; i < detailLines.size(); ++i) {
-        const ActiveDetailLine& detailLine = detailLines[i];
-        if (detailLine.kind == 3 && detailLine.text.empty()) {
-            detailY += detailLineHeight(detailLine);
-            continue;
-        }
-        const bool title = detailLine.kind == 1;
-        const bool heading = detailLine.kind == 2;
-        const bool buff = detailLine.tone > 0;
-        const bool nerf = detailLine.tone < 0;
-        const float lineScale = detailScale(detailLine);
-        DrawShadowedText(g_TextS, detailLine.text.c_str(), detailX, detailY,
-                         lineScale,
-                         title ? 1.0f : heading ? trialR : buff ? 0.20f : nerf ? 1.0f : 0.80f,
-                         title ? 1.0f : heading ? trialG : buff ? 0.92f : nerf ? 0.28f : 0.87f,
-                         title ? 1.0f : heading ? trialB : buff ? 1.0f : nerf ? 0.28f : 0.94f,
-                         (title ? 0.92f : heading ? 0.72f : 0.86f) * contentA,
-                         title ? 0.64f : heading ? 0.50f : 0.54f);
-        detailY += detailLineHeight(detailLine);
-    }
-    BatchFlush();
-    glDisable(GL_SCISSOR_TEST);
-    if (detailMaxScroll > 0.0f) {
-        const float barX = detailX + detailW + 5.0f * uiS;
-        const float thumbH = std::max(24.0f * uiS,
-            (detailViewBottom - detailViewTop)
-            * ((detailViewBottom - detailViewTop) / detailContentH));
-        const float thumbY = detailViewTop
-            + (detailViewBottom - detailViewTop - thumbH)
-            * (detailScroll / detailMaxScroll);
-        drawRect(barX, detailViewTop, 2.0f * uiS,
-                 detailViewBottom - detailViewTop,
-                 0.10f, 0.16f, 0.20f, 0.38f * contentA);
-        drawRect(barX, thumbY, 2.0f * uiS, thumbH,
-                 trialR, trialG, trialB, 0.66f * contentA);
-    }
 
-    // Right codex list: compact rows communicate the decision; the full
-    // sentence is reserved for the scrollable detail column on the left.
-    const wchar_t* catalogueTitle = PlayText(L"시련 목록", L"TRIAL CATALOGUE", L"試練一覧");
-    DrawShadowedText(g_TextS, catalogueTitle, trialListX, bodyTop,
-                     playSubtitleScale, trialR, trialG, trialB,
-                     1.0f * contentA, 0.56f);
-    wchar_t activeLabel[32];
-    swprintf_s(activeLabel, PlayText(L"%d / %d 활성", L"%d / %d ACTIVE", L"%d / %d 有効"),
-               activeCount, TRIAL_SLOT_COUNT);
-    // The counter is part of the header, so it shares the title's font,
-    // size and top line instead of reading as a separate larger label.
-    // Long localized titles keep a clear gap by shrinking only the counter.
-    const float catalogueTitleW = g_TextS.Width(catalogueTitle, playSubtitleScale);
-    const float activeRoomW = trialListRight - trialListX - catalogueTitleW
-                            - 28.0f * uiS;
-    float activeScale = playSubtitleScale;
-    float activeW = g_TextS.Width(activeLabel, activeScale);
-    if (activeW > activeRoomW && activeW > 1.0f) {
-        activeScale *= std::max(0.6f, activeRoomW / activeW);
-        activeW = g_TextS.Width(activeLabel, activeScale);
-    }
-    DrawShadowedText(g_TextS, activeLabel, trialListRight - activeW,
-                     bodyTop + g_TextS.BaselineOffset(playSubtitleScale)
-                             - g_TextS.BaselineOffset(activeScale),
-                     activeScale,
-                     trialR, trialG, trialB, 1.0f * contentA, 0.56f);
-    const float catalogueRuleY = bodyTop
-        + g_TextS.Height(catalogueTitle, playSubtitleScale) + 8.0f * uiS;
-    LogoLine(trialListX, catalogueRuleY,
-             trialListRight, catalogueRuleY,
-             0.8f * uiS, trialR, trialG, trialB, 0.30f * contentA);
-    // A quiet cyan linear field follows the catalogue's \ rail. The slanted
-    // texture keeps the list's motion language intact without becoming a
-    // heavy card behind the readable rows.
-    BatchFlush();
-    const float trialFieldX = trialListX - 16.0f * uiS;
-    const float trialFieldTop = trialViewTop - 14.0f * uiS;
-    const float trialFieldW = trialListW + 32.0f * uiS;
-    const float trialFieldH = trialViewBottom - trialViewTop + 28.0f * uiS;
-    DrawLinearGradientRibbon(trialFieldX, trialFieldTop,
-                             trialFieldW, trialFieldH,
-                             std::min((trialDiagonal + 18.0f * uiS),
-                                      trialFieldW * 0.18f),
-                             0.06f, 0.48f, 0.62f,
-                             0.075f * contentA, false);
-    // The catalogue is a finite diagonal rail. Rows flow from the top edge
-    // and scroll as a conventional list instead of orbiting the focused row.
-    const float railTopY = trialViewTop + 6.0f * uiS;
-    const float railBottomY = trialViewBottom - 6.0f * uiS;
-    const float railBottomX = trialRailTopX + trialDiagonal;
-    LogoLine(trialRailTopX, railTopY, railBottomX, railBottomY,
-             0.78f * uiS, weaponR, weaponG, weaponB,
-             0.15f * contentA);
-    LogoLine(trialRailTopX + 13.0f * uiS, railTopY,
-             railBottomX + 13.0f * uiS, railBottomY,
-             0.42f * uiS, weaponR, weaponG, weaponB,
-             0.065f * contentA);
-    DrawVisibleConstellNode(trialRailTopX, railTopY, 2.2f * uiS,
-                            weaponR, weaponG, weaponB, 0.46f * contentA,
-                            false, false);
-    DrawVisibleConstellNode(railBottomX, railBottomY, 2.2f * uiS,
-                            weaponR, weaponG, weaponB, 0.46f * contentA,
-                            false, false);
-
-    BatchFlush();
-    glEnable(GL_SCISSOR_TEST);
-    glScissor((GLint)(trialRailLeft - 26.0f * uiS),
-              (GLint)(sh - trialViewBottom),
-              (GLint)(trialListRight - trialRailLeft + 44.0f * uiS),
-              (GLint)trialViewH);
-    for (int slot = 0; slot < kTrialCatalogCount; ++slot) {
-        const float relF = (float)slot - trialDisplaySlot;
-        const int id = kTrialOrder[slot];
-        const float rowCenter = trialFirstRowCenter + relF * trialRowStep;
-        const float rowY = rowCenter - 43.0f * uiS;
-        if (rowCenter + trialRowHitHalf < trialViewTop - 8.0f * uiS
-            || rowCenter - trialRowHitHalf > trialViewBottom + 8.0f * uiS) {
-            trialHover[id] = UpdateMenuCommandHover(trialHover[id], false, dt);
-            continue;
-        }
-        const float rowX = trialRailXAt(rowCenter);
-        const bool on = s_RcTrialEnabled[id];
-        const bool rowHov = ready && overTrialList
-            && mx >= rowX - 34.0f * uiS
-            && mx <= trialListRight + 8.0f * uiS
-            && my >= rowCenter - trialRowHitHalf
-            && my <= rowCenter + trialRowHitHalf;
-        trialHover[id] = UpdateMenuCommandHover(trialHover[id], rowHov, dt);
-        if (rowHov && trialFocus != id) {
-            trialFocus = id;
-            trialSelectedSlot = slot;
-        }
-        const float hover = trialHover[id];
-        // PLAY keeps each trial anchored to the diagonal rail. Hover nudges
-        // the readable row to the right, never across the rail into the hero.
-        // An enabled trial intentionally keeps that same visual hover state
-        // even when the pointer leaves the catalogue, so the active build is
-        // scannable at a glance.
-        const float keyboardFocus = slot == trialSelectedSlot ? 0.36f : 0.0f;
-        const float visualHover = std::max(std::max(hover, keyboardFocus),
-                                           on ? 1.0f : 0.0f);
-        const float itemX = rowX + 22.0f * visualHover;
-        const float rowA = (on ? 0.84f : 0.68f) + 0.16f * visualHover;
-        if (visualHover > 0.02f) {
-            const float hoverA = visualHover;
-            const float hoverR = on ? trialR : weaponR;
-            const float hoverG = on ? trialG : weaponG;
-            const float hoverB = on ? trialB : weaponB;
-            DrawConstellationDisc(itemX - 2.0f * uiS,
-                                  rowY + 39.0f * uiS,
-                                  (13.0f + 8.0f * hoverA) * uiS,
-                                  hoverR, hoverG, hoverB,
-                                  0.07f * hoverA * contentA);
-        }
-        if (visualHover > 0.02f)
-            DrawVisibleConstellLine(rowX, rowCenter,
-                                    itemX + 5.0f * uiS, rowCenter,
-                                    0.58f * uiS,
-                                    on ? trialR : weaponR, on ? trialG : weaponG,
-                                    on ? trialB : weaponB,
-                                    (0.10f + 0.24f * visualHover) * contentA);
-        DrawVisibleConstellNode(itemX + 5.0f * uiS, rowY + 32.0f * uiS,
-                                (on ? 4.2f : 3.0f + visualHover) * uiS,
-                                on ? trialR : weaponR, on ? trialG : weaponG,
-                                on ? trialB : weaponB,
-                                rowA * contentA, on, on);
-        const float textLift = std::min(1.0f, visualHover * 1.25f);
-        const float titleR = on ? 1.0f : 0.94f + 0.06f * textLift;
-        const float titleG = on ? 0.78f : 0.97f + 0.03f * textLift;
-        const float titleB = on ? 0.42f : 1.0f;
-        const float titleMaxW = std::max(2.0f,
-            trialListRight - (itemX + 20.0f * uiS) - 16.0f * uiS);
-        float titleScale = trialTitleScale;
-        while (titleScale > 0.58f * uiS
-               && g_TextS.Width(trialName(id), titleScale) > titleMaxW)
-            titleScale -= 0.025f * uiS;
-        DrawShadowedText(g_TextS, trialName(id),
-                         itemX + 20.0f * uiS, rowY + 1.0f * uiS,
-                         titleScale, titleR, titleG, titleB,
-                         ((on ? 1.0f : 0.94f) + 0.06f * visualHover) * contentA,
-                         0.56f);
-        // The effect line is the challenge/debuff, so keep it red even when
-        // the row is not selected.  The score payoff below is the player
-        // benefit and is always cyan for quick scanning.
-        const float compactR = 1.0f;
-        const float compactG = 0.28f + 0.08f * textLift;
-        const float compactB = 0.28f + 0.08f * textLift;
-        DrawShadowedText(g_TextS, trialCompact(id),
-                         itemX + 20.0f * uiS, rowY + 47.0f * uiS,
-                         trialEffectScale, compactR, compactG, compactB,
-                         ((on ? 1.0f : 0.90f) + 0.10f * visualHover) * contentA,
-                         0.46f);
-        const float tagY = rowY + 74.0f * uiS;
-        const float tagAlpha = ((on ? 1.0f : 0.88f) + 0.12f * visualHover)
-                             * contentA;
-        std::wstring stageText = std::wstring(stageLabel(stageIndex(id)))
-                                + L"  //";
-        DrawShadowedText(g_TextS, stageText.c_str(),
-                         itemX + 20.0f * uiS, tagY, trialTagScale,
-                         0.66f, 0.76f, 0.84f, tagAlpha, 0.42f);
-        wchar_t scoreBuf[32] = {};
-        const int scorePct = (int)(TrialScoreBonusForDef(id) * 100.0f + 0.5f);
-        swprintf_s(scoreBuf, PlayText(L"점수 +%d%%", L"SCORE +%d%%", L"スコア +%d%%"), scorePct);
-        const float stageW = g_TextS.Width(stageText.c_str(), trialTagScale);
-        DrawShadowedText(g_TextS, scoreBuf,
-                         itemX + 20.0f * uiS + stageW + 9.0f * uiS,
-                         tagY, trialTagScale,
-                         0.20f, 0.92f, 1.0f, tagAlpha, 0.46f);
-        LogoLine(itemX, rowY + 100.0f * uiS,
-                 trialListRight, rowY + 100.0f * uiS,
-                 0.55f * uiS, trialR, trialG, trialB,
-                 (on ? 0.20f : 0.10f) * contentA);
-        if (rowHov && lmbClick) {
-            // The whole row is one gesture surface. Release without movement
-            // toggles this trial; movement turns the same press into a drag.
-            trialDragging = true;
-            trialDragMoved = false;
-            trialPressedId = id;
-            trialDragLastY = (float)my;
-            trialDragLastX = (float)mx;
-            trialFocus = id;
-            trialSelectedSlot = slot;
-            detailScroll = 0.0f;
-        }
-    }
-    BatchFlush();
-    glDisable(GL_SCISSOR_TEST);
-
-    // Shared bottom rail: BACK | PLAY | TRIAL RESET. Each command keeps its
-    // own column anchor, while the third command is aligned with the trial
-    // catalogue above it.
+    // 하단: BACK | PLAY
     const float routeHitX = routeX - 22.0f * uiS;
     const float routeHitW = routeW + 44.0f * uiS;
     const bool backHov = ready && mx >= routeHitX && mx <= routeHitX + routeHitW
@@ -1536,33 +841,26 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         && my >= playY - 12.0f * uiS && my <= playY + playH + 10.0f * uiS;
     backHover = UpdateMenuCommandHover(backHover, backHov, dt);
     playHover = UpdateMenuCommandHover(playHover, playHov, dt);
-    static const wchar_t* backVariants[] = { L"뒤로", L"BACK", L"戻る" };
-    static const wchar_t* playVariants[] = { L"플레이", L"PLAY", L"プレイ" };
-    static const wchar_t* resetVariants[] = { L"시련 초기화", L"TRIAL RESET", L"試練をリセット" };
-    DrawUnifiedMenuCommand(PlayText(L"뒤로", L"BACK", L"戻る"),
+    const wchar_t* const* backVariants = kStrings[(int)StrId::BTN_BACK];
+    DrawUnifiedMenuCommand(T(StrId::BTN_BACK),
                            routeX, routeY, routeW, routeH,
                            0.48f, 0.82f, 1.0f, contentA,
                            backHover, false, 0.0f, now,
                            uiS, true, true, true,
-                           backVariants, 3);
-    DrawUnifiedMenuCommand(PlayText(L"플레이", L"PLAY", L"プレイ"),
+                           backVariants, LANG_COUNT);
+    DrawUnifiedMenuCommand(T(kTxtPlay),
                            playX, playY, playW, playH,
                            weaponR, weaponG, weaponB, contentA,
                            playHover, true,
                            0.12f + 0.10f * sinf(now * 2.2f), now + 0.51f,
                            uiS, true, true, true,
-                           playVariants, 3);
-    DrawUnifiedMenuCommand(resetLabel,
-                           resetX, resetY, resetW, routeH,
-                           trialR, trialG, trialB, contentA,
-                           resetHover, false,
-                           0.08f + 0.08f * sinf(now * 1.8f), now + 0.86f,
-                           uiS, true, true, true,
-                           resetVariants, 3);
+                           kTxtPlay.t, LANG_COUNT);
 
     if (backHov && lmbClick && ready) exiting = true;
     if (playHov && lmbClick && ready) {
-        syncTrialsToGame();
+        // 시련 시스템은 UI에서 빠졌으므로 선택 없는 상태로 고정한다.
+        ResetTrials();
+        g_TrialPoolReady = true;
         launchExit = true;
         launchT = 0.0f;
     }

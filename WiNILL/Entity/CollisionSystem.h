@@ -33,6 +33,51 @@ inline void CreditThrownSwarmKill(Monster& m) {
     RegisterCodexMobKill(m.kind);
 }
 
+// The only owner of ordinary kill rewards. Callers decide when a death is
+// eligible; scored prevents the same death being credited by another weapon.
+struct KillRewardSink {
+    float& playerHP;
+    float& scoreAccum;
+    long long& score;
+    PlayerStats& stats;
+    float playerCX, playerCY;
+};
+
+inline void CreditRegularKill(KillRewardSink& s, CodexMobId mobId, float scoreBase) {
+    AddKillCombo();
+    s.stats.RegisterKill();
+    RegisterCodexMobKill(mobId);
+    s.scoreAccum += scoreBase;
+    s.score = (long long)s.scoreAccum;
+    s.playerHP = s.stats.ApplyKillLifesteal(s.playerHP);
+    s.playerHP = s.stats.ApplyVampireKill(s.playerHP);
+}
+
+inline void CollectMonsterKill(KillRewardSink& s, Monster& m) {
+    if (m.scored) return;
+    if (m.genesisThrown) {
+        CreditThrownSwarmKill(m);
+        return;
+    }
+    m.scored = true;
+    float xpBase, scoreBase;
+    MobKillReward(m.kind, xpBase, scoreBase);
+    scoreBase *= MobRewardMult(m.kind);
+    const XpAmount pickupXp = MobExperienceReward(m.kind, s.stats);
+    SpawnKillStardust(m, StardustRewardFor(m.kind),
+                      s.playerCX, s.playerCY, pickupXp);
+    CreditRegularKill(s, CodexMobIdForKind(m.kind), scoreBase);
+}
+
+inline void CollectScopeKill(KillRewardSink& s, RangedMob& r) {
+    if (r.scored) return;
+    r.scored = true;
+    const XpAmount pickupXp = RangedMob::ExperienceReward(s.stats);
+    SpawnStardust(r.worldX, r.worldY, 3,
+                  s.playerCX, s.playerCY, pickupXp);
+    CreditRegularKill(s, CM_SCOPE, 300.0f);
+}
+
 // Releases held kill stardust whose moment has come. Call every frame.
 inline void ReleasePendingStardust(MonsterManager& manager, float playerCX, float playerCY) {
     for (auto* m : manager.monsters) {
@@ -114,6 +159,7 @@ public:
                        float& playerHP, float& scoreAccum, long long& score,
                        PlayerStats& stats) {
         bool playerHit = false;
+        KillRewardSink rewards{playerHP, scoreAccum, score, stats, playerCX, playerCY};
 
         for (auto& bullet : bullets) {
             if (!bullet.active) continue;
@@ -159,26 +205,7 @@ public:
                             isCrit ? 1.0f : bullet.color.r,
                             isCrit ? 0.85f : bullet.color.g,
                             isCrit ? 0.3f : bullet.color.b);
-                if (!monster->alive && monster->genesisThrown) {
-                    CreditThrownSwarmKill(*monster);
-                } else if (!monster->alive) {
-                    monster->scored = true;
-                    AddKillCombo();
-                    float baseXp = 0.0f;
-                    float baseScore = 0.0f;
-                    MobKillReward(monster->kind, baseXp, baseScore);
-                    const float rewardMult = MobRewardMult(monster->kind);
-                    baseScore *= rewardMult;
-                    const XpAmount pickupXp = MobExperienceReward(monster->kind, stats);
-                    SpawnKillStardust(*monster, StardustRewardFor(monster->kind),
-                                      playerCX, playerCY, pickupXp);
-                    stats.RegisterKill();
-                    RegisterCodexMobKill(monster->kind);
-                    scoreAccum += baseScore;
-                    score = (long long)scoreAccum;
-                    playerHP = stats.ApplyVampireKill(playerHP);
-                    playerHP = stats.ApplyKillLifesteal(playerHP);
-                }
+                if (!monster->alive) CollectMonsterKill(rewards, *monster);
 
                 bool keepAlive = stats.pierce &&
                     (rand() % 100) < (stats.pierceChance + bullet.pierceBonusPct);
@@ -222,17 +249,7 @@ public:
                             isCrit ? 0.85f : bullet.color.g,
                             isCrit ? 0.3f : bullet.color.b);
                 if (!ranged->alive) {
-                    ranged->scored = true;
-                    AddKillCombo();
-                    const XpAmount pickupXp = RangedMob::ExperienceReward(stats);
-                    SpawnStardust(ranged->worldX, ranged->worldY, 3,
-                                  playerCX, playerCY, pickupXp);
-                    stats.RegisterKill();
-                    RegisterCodexMobKill(CM_SCOPE);
-                    scoreAccum += 300.0f;
-                    score = (long long)scoreAccum;
-                    playerHP = stats.ApplyVampireKill(playerHP);
-                    playerHP = stats.ApplyKillLifesteal(playerHP);
+                    CollectScopeKill(rewards, *ranged);
                     if (stats.hackRanged && (rand() % 100) < 20) {
                         constexpr int COUNT = 5;
                         for (int i = 0; i < COUNT; ++i) {

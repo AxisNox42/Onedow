@@ -126,6 +126,9 @@
     <ClInclude Include="Core\LevelUpTransition.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="Core\WaveSystem.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="Core\RunResult.h">
       <Filter>Core</Filter>
     </ClInclude>

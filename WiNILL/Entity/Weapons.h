@@ -8,6 +8,12 @@ enum class StartWeapon {
     _COUNT
 };
 
+// Static Field's primary area pulse. The PLAY preview and combat use these
+// same values; the SMG slot is retained for existing saves.
+inline constexpr float STATIC_FIELD_PULSE_INTERVAL = 0.24f;
+inline constexpr float STATIC_FIELD_PULSE_RADIUS = 190.0f;
+inline constexpr float STATIC_FIELD_PULSE_DAMAGE_MULT = 0.42f;
+
 struct WeaponDef {
     const wchar_t* locName[LANG_COUNT];
     const wchar_t* locDesc[LANG_COUNT];

@@ -18,6 +18,10 @@ void DrawRadialGradient(float cx, float cy, float radius,
                         float r, float g, float b, float alpha);
 void DrawRadialGradientRect(float x, float y, float w, float h,
                             float r, float g, float b, float alpha);
+// Same soft radial falloff, stretched over a rotated quad (angle in radians).
+void DrawRadialGradientRotated(float centerX, float centerY,
+                               float halfW, float halfH, float angle,
+                               float r, float g, float b, float alpha);
 void DrawLinearGradient(float x, float y, float w, float h,
                         float r, float g, float b, float alpha,
                         bool mirrorX = false);

@@ -233,13 +233,11 @@ void DrawRadialGradient(float cx, float cy, float radius,
                            r, g, b, alpha);
 }
 
-void DrawRadialGradientRect(float x, float y, float w, float h,
-                            float r, float g, float b, float alpha) {
-    if (alpha <= 0.0f || w <= 0.0f || h <= 0.0f || g_RadGradProg == 0 || g_RadGradTex == 0) return;
+// Draws the radial gradient texture over an arbitrary quad given by its four
+// corners in UV order (0,0) (1,0) (1,1) (0,1).
+static void DrawRadialGradientCorners(const float cx[4], const float cy[4],
+                                      float r, float g, float b, float alpha) {
     BatchFlush();
-
-    float x0 = x, y0 = y;
-    float x1 = x + w, y1 = y + h;
 
     glUseProgram(g_RadGradProg);
     glBindVertexArray(g_MainVAO);
@@ -251,8 +249,8 @@ void DrawRadialGradientRect(float x, float y, float w, float h,
     glUniform1f(g_RadGradAlpLoc, alpha);
 
     float verts[36] = {
-        x0,y0, 0,0, 0,0,  x1,y0, 1,0, 0,0,  x1,y1, 1,1, 0,0,
-        x0,y0, 0,0, 0,0,  x1,y1, 1,1, 0,0,  x0,y1, 0,1, 0,0
+        cx[0],cy[0], 0,0, 0,0,  cx[1],cy[1], 1,0, 0,0,  cx[2],cy[2], 1,1, 0,0,
+        cx[0],cy[0], 0,0, 0,0,  cx[2],cy[2], 1,1, 0,0,  cx[3],cy[3], 0,1, 0,0
     };
     glBindBuffer(GL_ARRAY_BUFFER, g_VBO);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
@@ -260,6 +258,29 @@ void DrawRadialGradientRect(float x, float y, float w, float h,
 
     glBindTexture(GL_TEXTURE_2D, 0);
     BindMainShader();
+}
+
+void DrawRadialGradientRect(float x, float y, float w, float h,
+                            float r, float g, float b, float alpha) {
+    if (alpha <= 0.0f || w <= 0.0f || h <= 0.0f || g_RadGradProg == 0 || g_RadGradTex == 0) return;
+    const float cx[4] = { x, x + w, x + w, x };
+    const float cy[4] = { y, y, y + h, y + h };
+    DrawRadialGradientCorners(cx, cy, r, g, b, alpha);
+}
+
+void DrawRadialGradientRotated(float centerX, float centerY,
+                               float halfW, float halfH, float angle,
+                               float r, float g, float b, float alpha) {
+    if (alpha <= 0.0f || halfW <= 0.0f || halfH <= 0.0f || g_RadGradProg == 0 || g_RadGradTex == 0) return;
+    const float c = cosf(angle), s = sinf(angle);
+    const float lx[4] = { -halfW, halfW, halfW, -halfW };
+    const float ly[4] = { -halfH, -halfH, halfH, halfH };
+    float cx[4], cy[4];
+    for (int i = 0; i < 4; ++i) {
+        cx[i] = centerX + lx[i] * c - ly[i] * s;
+        cy[i] = centerY + lx[i] * s + ly[i] * c;
+    }
+    DrawRadialGradientCorners(cx, cy, r, g, b, alpha);
 }
 
 void DrawLinearGradient(float x, float y, float w, float h,

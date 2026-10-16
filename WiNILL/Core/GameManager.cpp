@@ -30,12 +30,16 @@ static const char* gm_frag =
     "void main() { FragColor = color; }\n";
 
 GameManager::~GameManager() {
-    if (VAO)         glDeleteVertexArrays(1, &VAO);
-    if (VBO)         glDeleteBuffers(1, &VBO);
-    if (EBO)         glDeleteBuffers(1, &EBO);
-    if (overlayVAO)  glDeleteVertexArrays(1, &overlayVAO);
-    if (overlayVBO)  glDeleteBuffers(1, &overlayVBO);
-    if (shaderProgram) glDeleteProgram(shaderProgram);
+    ShutdownGlResources();
+}
+
+void GameManager::ShutdownGlResources() {
+    if (VAO)         { glDeleteVertexArrays(1, &VAO); VAO = 0; }
+    if (VBO)         { glDeleteBuffers(1, &VBO); VBO = 0; }
+    if (EBO)         { glDeleteBuffers(1, &EBO); EBO = 0; }
+    if (overlayVAO)  { glDeleteVertexArrays(1, &overlayVAO); overlayVAO = 0; }
+    if (overlayVBO)  { glDeleteBuffers(1, &overlayVBO); overlayVBO = 0; }
+    if (shaderProgram) { glDeleteProgram(shaderProgram); shaderProgram = 0; }
 }
 
 void GameManager::Init(int sw, int sh) {
@@ -161,6 +165,12 @@ void GameManager::ResetRunProgress(MonsterManager& mm,
     maxHP = initialHp;
     score = initialScore;
     scoreAccum = static_cast<float>(initialScore);
+    currentWave = 1;
+    waveTransitionFrom = 0;
+    waveTransitionTimer = 0.0f;
+    lastWaveDebuff = -1;
+    waveDebuffToast = 0.0f;
+    waveVictory = false;
     xp = 0;
     playerLevel = 1;
     memset(takenOnce, 0, sizeof(takenOnce));
@@ -294,41 +304,8 @@ static int RollOneAug(const bool* takenOnce,
     return -1;
 }
 
-// 디버프 등급 한 장 추첨 (디버프 등급 내에서만 무작위)
-static int RollOneDebuff(const bool* takenOnce = nullptr,
-                         const bool* excluded = nullptr) {
-    int pool[AUG_TOTAL]; int poolSize = 0;
-    for (int i = 0; i < AUG_TOTAL; i++) {
-        if (excluded && excluded[i]) continue;
-        if (ALL_AUGS[i].rarity != AugRarity::DEBUFF) continue;
-        AugType t = ALL_AUGS[i].type;
-        if (AugRemoved(t)) continue;   // Retired debuffs excluded.
-        if (!DebuffCandidateAllowed(t)) continue;
-        // 한 번만 뜨는 디버프(적 출현형)는 이미 보유 시 제외
-        if (AugOnceOnly(t, AugRarity::DEBUFF)) {
-            const int typeIndex = (int)t;
-            bool alreadyTaken = typeIndex >= 0 && typeIndex < AUG_TYPE_SLOTS
-                              && g_TypeOwned[typeIndex];
-            if (takenOnce) alreadyTaken = alreadyTaken || takenOnce[i];
-            if (!alreadyTaken) {
-                for (int j = 0; takenOnce && j < AUG_TOTAL; ++j) {
-                    if (j != i && ALL_AUGS[j].type == t && takenOnce[j]) {
-                        alreadyTaken = true;
-                        break;
-                    }
-                }
-            }
-            if (alreadyTaken) continue;
-        }
-        pool[poolSize++] = i;
-    }
-    if (poolSize == 0) return -1;
-    return pool[rand() % poolSize];
-}
-
-void GameManager::PickAugChoices(bool sizeTaken, bool allowDebuff) {
+void GameManager::PickAugChoices(bool sizeTaken) {
     // 3장 — 같은 카드 안 나오게 중복 방지, SPECIAL 포함
-    //   allowDebuff (크리에이티브 샌드박스) 면 디버프도 카드 풀에 섞임
     bool used[AUG_TOTAL] = {};
     augChoiceCount = 0;
     for (int i = 0; i < 3; i++) augChoices[i] = -1;
@@ -337,8 +314,8 @@ void GameManager::PickAugChoices(bool sizeTaken, bool allowDebuff) {
         int idx = -1;
         for (int attempt = 0; attempt < 50; attempt++) {
             idx = RollOneAug(takenOnce, gotSize,
-                             /*allowSpecial=*/true, playerLevel, allowDebuff,
-                             used);
+                             /*allowSpecial=*/true, playerLevel,
+                             /*allowDebuff=*/false, used);
             if (idx >= 0 && !used[idx]) break;
         }
         if (idx < 0) break;
@@ -356,7 +333,8 @@ void GameManager::PickAugChoices(bool sizeTaken, bool allowDebuff) {
         if (!hasRarePlus) {
             for (int attempt = 0; attempt < 80; attempt++) {
                 int idx = RollOneAug(takenOnce, gotSize,
-                                     true, playerLevel, allowDebuff, used);
+                                     true, playerLevel,
+                                     /*allowDebuff=*/false, used);
                 if (idx < 0) break;
                 if (ALL_AUGS[idx].rarity < AugRarity::RARE) continue;
                 used[idx] = true;
@@ -428,22 +406,6 @@ int GameManager::PickRandomDebuffIndices(int* outArr, int n) {
     return filled;
 }
 
-void GameManager::PickDebuffChoices() {
-    bool used[AUG_TOTAL] = {};
-    augChoiceCount = 0;
-    for (int i = 0; i < 3; i++) augChoices[i] = -1;
-    for (int i = 0; i < 3; i++) {
-        int idx = -1;
-        for (int attempt = 0; attempt < 50; attempt++) {
-            idx = RollOneDebuff(takenOnce, used);
-            if (idx >= 0 && !used[idx]) break;
-        }
-        if (idx < 0) break;
-        used[idx] = true;
-        augChoices[augChoiceCount++] = idx;
-    }
-}
-
 int GameManager::PickRandomAugIndices(int* outArr, int n,
                                       bool sizeTaken,
                                       bool allowUnique, bool allowSpecial,
@@ -476,8 +438,8 @@ int GameManager::PickRandomAugIndices(int* outArr, int n,
     return filled;
 }
 
-void GameManager::QueueAugmentReward(bool needsDebuff, bool allowDebuff) {
-    augmentRewardQueue.push_back({needsDebuff, allowDebuff});
+void GameManager::QueueAugmentReward() {
+    ++pendingAugmentRewards;
 }
 
 bool GameManager::ActivateNextAugmentReward() {
@@ -485,17 +447,14 @@ bool GameManager::ActivateNextAugmentReward() {
     levelUpTransition.Cancel();
     if (augmentRewardActive) return true;
 
-    while (!augmentRewardQueue.empty()) {
-        const AugmentRewardEntry entry = augmentRewardQueue.front();
-        PickAugChoices(g_Stats.sizeAugTaken, entry.allowDebuff);
+    while (pendingAugmentRewards > 0) {
+        PickAugChoices(g_Stats.sizeAugTaken);
         if (augChoiceCount <= 0) {
-            augmentRewardQueue.pop_front();
+            --pendingAugmentRewards;
             continue;
         }
 
         augmentRewardActive = true;
-        augmentRewardInternalDebuff = false;
-        augmentRewardInDebuff = false;
         augmentKeyboardFocus = false;
         ++augmentSelectionSerial;
         currentState = GameState::AUG_SELECT;
@@ -511,11 +470,9 @@ bool GameManager::ActivateNextAugmentReward() {
 }
 
 void GameManager::ClearAugmentRewardQueue() {
-    augmentRewardQueue.clear();
+    pendingAugmentRewards = 0;
     levelUpTransition.Cancel();
     augmentRewardActive = false;
-    augmentRewardInternalDebuff = false;
-    augmentRewardInDebuff = false;
     augChoiceCount = 0;
     for (int i = 0; i < 3; i++) augChoices[i] = -1;
     augmentKeyboardFocus = false;

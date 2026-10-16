@@ -436,3 +436,25 @@ REG-01·02·03·04·05·06·26 모두 회귀 기준 확보. 결정 대기: DEC-0
 
 검증: Release 빌드, 테스트 18종 전부 통과(REG-04는 실행 파일 일시 잠금으로 1회 재실행 — 7경로 통과), 게임 스모크 종료 코드 0.
 남은 결정: DEC-02(Creative 흡혈·도감) — 설명 후 결정 대기.
+
+## 커밋 확인 · macOS CI · DEC-02 반영 (2026-10-13 11시)
+
+### 커밋 상태
+- 이 점검표 작업(FIX-01~03, BEH-01/02, REG-01~06·26, 흡혈마 통합, DEC-01/03, REG-04·26 수정, 작업 기록)은 전부 `b8f6a08 release: prepare Onedow 0.1.18`(10-13 10:28)에 포함. 확인한 35개 파일 모두 추적 중, 커밋 후 수정 없음(REG-26 테마 검증·DEC-01 주석·`ApplyVampireKill`까지 내용 대조).
+- 참고: 점검표의 "변경 ID별 별도 커밋" 원칙과 달리 릴리스 커밋 하나에 묶여 들어감.
+
+### macOS CI (FIX-01 / FIX-03 남은 완료 조건)
+- `b8f6a08` push의 macOS Build 런 38332579992: **성공** — 0.1.15 이후 첫 성공. Configure & build, Verify binary, Package, Verify package 모두 통과.
+- `Verify package`: `PASS: bin/Onedow.zip - 75 files, all within the manifest`, `zipinfo` → `-rwxr-xr-x … unx … Onedow/macOS/Onedow`.
+- FIX-01: macOS 빌드·바이너리 검증 충족 → 완료(잔여: Windows IME 실기 입력, macOS 실기 텍스트 입력은 수동 확인 항목).
+- FIX-03: CI에서 실제 Info-ZIP 내용·실행 권한 확인 → 완료.
+
+### DEC-02 Creative 흡혈·도감 — A안 (사용자 결정)
+- `WiNILL/Entity/KillRewards.h`: 공통 수거(`CreditRegularKill`)의 `if (!s.creative)` 제거 → Creative에서도 5개 처치 경로 모두 흡혈·흡혈마 동일. 도감은 기존대로 Creative 처치 미집계(`RegisterCodexMobKill`).
+- `KillRewardSink::creative`는 이제 쓰이지 않음. 제거하려면 `main.cpp`의 초기화 2곳도 고쳐야 하는데, 레벨업 작업이 `main.cpp`를 수정 중(10:58)이라 보류 — 해당 작업 종료 후 함께 정리.
+- `tests/reg01_kill_rewards_test.cpp`: Creative 기대값을 로터·Scope × 3경로 모두 흡혈 +0.16·흡혈마 +1·도감 0으로 갱신, OPEN 표기 정리.
+- 검증: REG-01 통과, kill_lifesteal·thrown_swarm_kill·REG-02/03·REG-05·REG-26 통과, Release 빌드 통과(레벨업 작업의 미커밋 변경 포함 상태).
+
+### 남은 것
+- `KillRewardSink::creative` 필드 제거(레벨업 작업 후, main.cpp 2줄).
+- 결정 대기 항목 없음. 점검표 4장(D 항목 구조 정리)으로 진행 가능.

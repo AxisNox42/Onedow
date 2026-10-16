@@ -234,3 +234,28 @@ inline const wchar_t* T(StrId id) {
     if (li < 0 || li >= LANG_COUNT) li = 0;
     return kStrings[(int)id][li];
 }
+
+// 한 장면 안에서만 쓰는 라벨용 3개 국어 묶음. 순서: KR, EN, JP.
+// 전역 문자열은 StrId 표에, 장면 전용 문구는 이 구조체로 한 곳에 모은다.
+struct LStr {
+    const wchar_t* t[LANG_COUNT];
+};
+inline const wchar_t* T(const LStr& s) {
+    int li = (int)g_Language;
+    if (li < 0 || li >= LANG_COUNT) li = 0;
+    return s.t[li];
+}
+
+// 1234567 -> "1,234,567". out 은 최소 32 wchar_t.
+inline void FormatGrouped(long long value, wchar_t* out, int outCount) {
+    wchar_t digits[32] = {};
+    swprintf_s(digits, L"%lld", value);
+    const int n = (int)wcslen(digits);
+    int o = 0;
+    for (int d = 0; d < n && o < outCount - 1; ++d) {
+        if (d > 0 && digits[d - 1] != L'-' && (n - d) % 3 == 0 && o < outCount - 2)
+            out[o++] = L',';
+        out[o++] = digits[d];
+    }
+    out[o] = L'\0';
+}

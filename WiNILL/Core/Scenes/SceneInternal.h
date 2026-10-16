@@ -49,6 +49,11 @@ void DrawVisibleConstellLine(float x1, float y1, float x2, float y2,
 void DrawConstellationDisc(float x, float y, float radius,
                            float r, float g, float b, float alpha,
                            bool darkenBlend = true);
+void DrawConstellLineBatched(float x1, float y1, float x2, float y2,
+                             float thick, float r, float g, float b, float alpha);
+void DrawConstellationDiscEllipse(float x, float y, float rx, float ry,
+                                  float r, float g, float b, float alpha,
+                                  bool darkenBlend = true);
 void DrawVisibleConstellNode(float x, float y, float size,
                              float r, float g, float b, float alpha,
                              bool whiteSpark = true,

@@ -73,10 +73,11 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"대신 디버프 구간에서는 EXP·코인 보상이 올라가 리스크=리턴 구조입니다 / "
         L"디버프는 이동·사격·체력·쿨다운 등에 불리한 효과를 줍니다 / "
         L"증강으로 상쇄하거나, 패턴에 맞춰 플레이 스타일을 바꿔 대응하세요 / "
-        L"모든 플레이는 NORMAL 수치로 시작하며, 시련이 추가 도전을 만듭니다",
+        L"난이도에 따라 적 출현량·체력·등장 티어가 달라집니다 / "
+        L"시련은 추가 도전을 더합니다",
 
-        L"모든 플레이는 NORMAL로 시작합니다 / "
-        L"플레이 준비 화면에서 소총과 전기장 중 하나를 선택합니다 / "
+        L"플레이 준비 화면에서 난이도와 무기를 선택합니다 / "
+        L"각 웨이브는 3분이며, 쉬움 10·보통 15·어려움 20웨이브를 생존하세요 / "
         L"소총은 직접 조준해 연사하고, 전기장은 주변을 지속 공격합니다 / "
         L"선택 화면 설명을 읽고 플레이에 맞는 무기를 고르세요 / "
         L"크리에이티브 모드에서는 시작 점수와 플레이 조건을 설정할 수 있습니다",
@@ -118,10 +119,11 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Debuff periods grant more XP and coins (risk vs reward) / "
         L"Debuffs hinder move speed, fire rate, HP, cooldowns, etc. / "
         L"Counter with augments or adapt your playstyle / "
-        L"Every run uses NORMAL values; trials provide the extra challenge",
+        L"Enemy count, health, and tiers change with difficulty / "
+        L"Trials add another challenge",
 
-        L"Every run starts at NORMAL / "
-        L"Choose Rifle or Static Field in run setup / "
+        L"Choose a difficulty and weapon in run setup / "
+        L"Survive 10·15·20 waves on Easy·Normal·Hard; each lasts 3 minutes / "
         L"Rifle fires aimed shots; Static Field continuously attacks nearby / "
         L"Read the select-screen text and pick what fits your style / "
         L"Creative mode lets you set the starting score and run conditions",
@@ -166,6 +168,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"難易度が上がるほどデバフと敵密度が厳しくなります",
 
         L"ラン前: 難易度を選択 / "
+        L"イージー10·ノーマル15·ハード20ウェーブ(各3分) / "
         L"ラン準備画面でライフルか静電場を選択 / "
         L"ライフルは照準連射、静電場は周囲を継続攻撃 / "
         L"選択画面の説明を読み、自分に合う武器を選ぶ / "

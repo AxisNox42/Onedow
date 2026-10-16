@@ -53,8 +53,15 @@ constexpr float CAPTURE_ALL_Y = 190.0f;
 constexpr float FOOTER_BOTTOM = 52.0f;
 constexpr float FOOTER_BUTTON_H = 32.0f;
 constexpr float FOOTER_BUTTON_GAP = 12.0f;
-constexpr float BALANCE_BUTTON_W = 190.0f;
-constexpr float HITSTOP_BUTTON_W = 165.0f;
+// Stats 탭 푸터 버튼 폭. 입력과 그리기가 같은 표로 위치를 계산한다.
+enum FooterButton { FOOTER_SYNC, FOOTER_BALANCE, FOOTER_HITSTOP, FOOTER_NEXT_WAVE,
+                    FOOTER_ORBIT, FOOTER_COUNT };
+constexpr float FOOTER_BUTTON_W[FOOTER_COUNT] = { 140.0f, 130.0f, 140.0f, 140.0f, 128.0f };
+inline float FooterButtonX(float panelX, int index) {
+    float x = panelX + 16.0f;
+    for (int i = 0; i < index; ++i) x += FOOTER_BUTTON_W[i] + FOOTER_BUTTON_GAP;
+    return x;
+}
 
 struct PanelLayout {
     float x;
@@ -244,7 +251,7 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"mobXpBonus", L"전체 몬스터 경험치 보너스" },
         { L"xpPerSec", L"초당 경험치" },
         { L"rmobSpawnDelayBonus", L"원거리 생성 지연 보너스" },
-        { L"mobCapBonus", L"몬스터 최대치 보너스" },
+        { L"mobCapBonus", L"웨이브 소환 수 보너스" },
         { L"visionStacks", L"시야 스택" },
         { L"totalAugs", L"총 증강 수" },
         { L"sizeAugTaken", L"크기 증강 획득" },
@@ -288,8 +295,7 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"chakramSingularity", L"차크람 특이점" },
         { L"killCount", L"처치 수" },
         { L"baseFireInterval", L"기본 발사 간격" },
-        { L"mk2SkipDebuff", L"MK2 디버프 무시" },
-        { L"rmobMaxBonus", L"원거리 최대치 보너스" },
+        { L"rmobMaxBonus", L"웨이브 소환 수 보너스(원거리)" },
         { L"rmobHpMult", L"원거리 체력 배율" },
         { L"rmobDmgMult", L"원거리 피해 배율" },
         { L"rmobDelayMult", L"원거리 지연 배율" },
@@ -364,7 +370,7 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
         ADD_INT(laserTier); ADD_BOOL(bulletRain);
         ADD_FLOAT(bulletRainCooldown); ADD_BOOL(rainKillReduce); ADD_INT(chakramCount);
         ADD_LL(killCount); ADD_FLOAT(baseFireInterval);
-        ADD_BOOL(mk2SkipDebuff); ADD_INT(rmobMaxBonus); ADD_FLOAT(rmobHpMult);
+        ADD_INT(rmobMaxBonus); ADD_FLOAT(rmobHpMult);
         ADD_FLOAT(rmobDmgMult); ADD_FLOAT(rmobDelayMult); ADD_INT(rmobDelayStacks);
 
 #undef ADD_FLOAT
@@ -748,28 +754,41 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
                 }
             }
         }
-        if (click && Hit(p.x + 16.0f, p.y + p.h - FOOTER_BOTTOM,
-                         170.0f, FOOTER_BUTTON_H, mx, my)) {
+        const float footerY = p.y + p.h - FOOTER_BOTTOM;
+        auto footerHit = [&](int index) {
+            return Hit(FooterButtonX(p.x, index), footerY, FOOTER_BUTTON_W[index],
+                       FOOTER_BUTTON_H, mx, my);
+        };
+        if (click && footerHit(FOOTER_SYNC)) {
             if (context_.syncRuntime) context_.syncRuntime();
             SetMessage(L"런타임을 동기화했습니다");
         }
-        const float balanceX = p.x + 16.0f + 170.0f + FOOTER_BUTTON_GAP;
-        if (click && Hit(balanceX, p.y + p.h - FOOTER_BOTTOM,
-                         BALANCE_BUTTON_W, FOOTER_BUTTON_H, mx, my) &&
-            context_.balanceTestMode) {
+        if (click && footerHit(FOOTER_BALANCE) && context_.balanceTestMode) {
             *context_.balanceTestMode = !*context_.balanceTestMode;
             SetMessage(*context_.balanceTestMode
                 ? L"밸런스 테스트 시작 - 로그 기록 켜짐"
                 : L"밸런스 테스트 중지 - 로그 기록 꺼짐");
         }
-        const float hitStopX = balanceX + BALANCE_BUTTON_W + FOOTER_BUTTON_GAP;
-        if (click && Hit(hitStopX, p.y + p.h - FOOTER_BOTTOM,
-                         HITSTOP_BUTTON_W, FOOTER_BUTTON_H, mx, my) &&
-            context_.eliteKillHitStop) {
+        if (click && footerHit(FOOTER_HITSTOP) && context_.eliteKillHitStop) {
             *context_.eliteKillHitStop = !*context_.eliteKillHitStop;
             SetMessage(*context_.eliteKillHitStop
                 ? L"엘리트 처치 히트스톱 켜짐"
                 : L"엘리트 처치 히트스톱 꺼짐");
+        }
+        if (click && footerHit(FOOTER_NEXT_WAVE) &&
+            context_.advanceWave && context_.game &&
+            context_.game->currentState == GameState::RUNNING) {
+            context_.advanceWave();
+            SetMessage(context_.game->waveVictory
+                ? L"마지막 웨이브 완료 - 승리"
+                : L"다음 웨이브로 이동했습니다");
+            if (context_.game->waveVictory) SetVisible(false);
+        }
+        if (click && footerHit(FOOTER_ORBIT) && context_.constellationOrbits) {
+            *context_.constellationOrbits = !*context_.constellationOrbits;
+            SetMessage(*context_.constellationOrbits
+                ? L"무기 별자리 궤도 켜짐"
+                : L"무기 별자리 궤도 꺼짐");
         }
     } else if (click && tab_ == 1) {
         if (Hit(p.x + 16.0f, p.y + SPAWN_COUNT_Y, 44.0f, 32.0f, mx, my))
@@ -938,7 +957,8 @@ void DebugToolkit::RenderStatsTab(float x, float y, float w, float h,
         g_TextS.Draw(status.c_str(), x + 20.0f, y + STATS_STATUS_Y, 0.48f,
                      1.0f, 0.84f, 0.32f, 0.96f);
     } else {
-        g_TextS.Draw(L"수정할 값을 선택하세요", x + 20.0f, y + STATS_STATUS_Y,
+        g_TextS.Draw(lastMessage_.empty() ? L"수정할 값을 선택하세요" : lastMessage_.c_str(),
+                     x + 20.0f, y + STATS_STATUS_Y,
                      0.48f, 0.56f, 0.76f, 0.88f, 0.86f);
     }
     g_TextS.Draw(L"CTRL+A 전체 삭제   BACKSPACE 지우기   ENTER 적용   ESC 취소",
@@ -988,20 +1008,24 @@ void DebugToolkit::RenderStatsTab(float x, float y, float w, float h,
                      selected ? 0.42f : 0.92f, 0.96f);
     }
 
-    DrawButton(x + 16.0f, y + h - FOOTER_BOTTOM, 170.0f,
-               FOOTER_BUTTON_H,
-               L"런타임 동기화", false, true);
+    const float footerY = y + h - FOOTER_BOTTOM;
+    auto drawFooter = [&](int index, const wchar_t* label, bool selected, bool enabled) {
+        DrawButton(FooterButtonX(x, index), footerY, FOOTER_BUTTON_W[index],
+                   FOOTER_BUTTON_H, label, selected, enabled);
+    };
     const bool balanceActive = context_.balanceTestMode &&
                                *context_.balanceTestMode;
-    DrawButton(x + 16.0f + 170.0f + FOOTER_BUTTON_GAP,
-               y + h - FOOTER_BOTTOM, BALANCE_BUTTON_W, FOOTER_BUTTON_H,
-               balanceActive ? L"밸런스: 켜짐" : L"밸런스: 꺼짐",
-               balanceActive, context_.balanceTestMode != nullptr);
     const bool hitStopActive = context_.eliteKillHitStop && *context_.eliteKillHitStop;
-    DrawButton(x + 16.0f + 170.0f + FOOTER_BUTTON_GAP + BALANCE_BUTTON_W + FOOTER_BUTTON_GAP,
-               y + h - FOOTER_BOTTOM, HITSTOP_BUTTON_W, FOOTER_BUTTON_H,
-               hitStopActive ? L"히트스톱: 켜짐" : L"히트스톱: 꺼짐",
+    const bool orbitActive = context_.constellationOrbits && *context_.constellationOrbits;
+    drawFooter(FOOTER_SYNC, L"런타임 동기화", false, true);
+    drawFooter(FOOTER_BALANCE, balanceActive ? L"밸런스: 켜짐" : L"밸런스: 꺼짐",
+               balanceActive, context_.balanceTestMode != nullptr);
+    drawFooter(FOOTER_HITSTOP, hitStopActive ? L"히트스톱: 켜짐" : L"히트스톱: 꺼짐",
                hitStopActive, context_.eliteKillHitStop != nullptr);
+    drawFooter(FOOTER_NEXT_WAVE, L"다음 웨이브", false,
+               context_.advanceWave && context_.game->currentState == GameState::RUNNING);
+    drawFooter(FOOTER_ORBIT, orbitActive ? L"궤도: 켜짐" : L"궤도: 꺼짐",
+               orbitActive, context_.constellationOrbits != nullptr);
     wchar_t page[64] = {};
     std::swprintf(page, sizeof(page) / sizeof(page[0]),
                   L"필드 %d-%d / %d", fieldOffset_ + 1,

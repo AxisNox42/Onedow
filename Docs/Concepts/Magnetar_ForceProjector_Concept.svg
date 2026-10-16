@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 1000" width="1600" height="1000">
+  <title>MAGNETAR — 방호 프로젝터 컨셉</title>
+  <desc>한 개의 독립된 투사 장치가 주변에 원형 방호장을 만드는 마그네타 시안. 활성, 피격, 붕괴, 복구 상태를 보여준다.</desc>
+  <defs>
+    <style>
+      .bg{fill:#080a11}.panel{fill:#0b0d15;stroke:#30313e;stroke-width:1.4}
+      .gold{fill:none;stroke:#e3b83f;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .fine{fill:none;stroke:#9d8136;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+      .field{fill:none;stroke:#c29c34;stroke-width:1.8;opacity:.76}
+      .hit{fill:none;stroke:#a9dff0;stroke-width:2;stroke-linecap:round}
+      .core{fill:#f7e9b0;stroke:#ffe797;stroke-width:2}
+      .red{fill:#f0645a;stroke:#fc9a7d;stroke-width:2}
+      .title{font:600 29px 'Malgun Gothic','Noto Sans CJK KR',sans-serif;fill:#ecebf1}
+      .heading{font:600 20px 'Malgun Gothic','Noto Sans CJK KR',sans-serif;fill:#e9e8ee}
+      .bodytext{font:16px 'Malgun Gothic','Noto Sans CJK KR',sans-serif;fill:#aeb2c2}
+      .small{font:14px 'Malgun Gothic','Noto Sans CJK KR',sans-serif;fill:#8d93a9}
+    </style>
+    <g id="projector">
+      <!-- 한 덩어리의 육각 하우징과 위아래 방호장 투사 캡 -->
+      <path class="gold" d="M-58-41 -26-58 26-58 58-41 70-12 70 12 58 41 26 58 -26 58 -58 41 -70 12 -70-12Z"/>
+      <path class="gold" d="M-38-58 -52-79 -28-93 28-93 52-79 38-58Z"/>
+      <path class="gold" d="M-38 58 -52 79 -28 93 28 93 52 79 38 58Z"/>
+      <path class="fine" d="M-31-75 31-75 M-31 75 31 75"/>
+      <path class="fine" d="M-53-31 -40-42 M53-31 40-42 M-53 31 -40 42 M53 31 40 42"/>
+      <path class="fine" d="M-49-8 -49 8 M49-8 49 8"/>
+      <path class="gold" d="M0-34 29-17 29 17 0 34 -29 17 -29-17Z"/>
+      <path class="fine" d="M0-24 20-12 20 12 0 24 -20 12 -20-12Z"/>
+      <circle class="core" r="8"/>
+    </g>
+  </defs>
+
+  <rect class="bg" width="1600" height="1000"/>
+  <text class="title" x="27" y="44">MAGNETAR · 방호 프로젝터</text>
+  <text class="bodytext" x="28" y="72">작은 본체가 주변 결계를 투사한다. 본체와 결계 사이에 지지선은 없다. 스택은 몸에 표시하지 않는다.</text>
+
+  <rect class="panel" x="20" y="96" width="755" height="600"/>
+  <text class="heading" x="41" y="131">전투 화면 · 필드 활성</text>
+  <text class="small" x="42" y="157">원형 방호장 안의 아군까지 함께 보호하는 구역 수호형</text>
+  <circle class="field" cx="388" cy="394" r="229"/>
+  <use xlink:href="#projector" transform="translate(388 394) scale(.92)"/>
+  <path d="M521 447 532 458 521 469 510 458Z" fill="none" stroke="#9f87d6" stroke-width="2"/>
+  <text class="small" x="539" y="464">범위 안의 아군</text>
+  <path class="hit" d="M744 394H623"/>
+  <path class="hit" d="M636 383Q621 394 636 405 M647 374Q620 394 647 414"/>
+  <circle cx="617" cy="394" r="3.5" fill="#eafaff"/>
+  <text class="small" x="43" y="667">탄은 결계 가장자리에서 정지 · 효과는 충돌 지점에만 발생</text>
+
+  <rect class="panel" x="787" y="96" width="793" height="600"/>
+  <text class="heading" x="810" y="131">본체 확대 · 독립 투사 장치</text>
+  <text class="small" x="811" y="157">바깥 원은 본체의 껍질이 아니라 전투 중에만 나타나는 방호장</text>
+  <use xlink:href="#projector" transform="translate(1135 381) scale(2.08)"/>
+  <path class="fine" d="M1190 187H1455"/>
+  <text class="bodytext" x="1342" y="179">상부 투사 캡</text>
+  <path class="fine" d="M1190 382H1455"/>
+  <text class="bodytext" x="1357" y="373">중심 코어</text>
+  <path class="fine" d="M1190 575H1455"/>
+  <text class="bodytext" x="1342" y="566">하부 투사 캡</text>
+  <text class="small" x="811" y="665">실루엣: 좁은 육각 하우징 + 두 투사 캡 · 고리, 극판, 방사형 팔 없음</text>
+
+  <text class="heading" x="27" y="729">상태 변화</text>
+  <text class="small" x="154" y="729">필드의 켜짐/꺼짐만 전달 · 0 이후 6초(지원 시 3초) 대기 후 한 번에 복구</text>
+
+  <rect class="panel" x="20" y="748" width="377" height="231"/>
+  <text class="bodytext" x="39" y="780">01 · 활성</text>
+  <circle class="field" cx="207" cy="880" r="84"/>
+  <use xlink:href="#projector" transform="translate(207 880) scale(.46)"/>
+
+  <rect class="panel" x="414" y="748" width="377" height="231"/>
+  <text class="bodytext" x="433" y="780">02 · 탄 요격</text>
+  <circle class="field" cx="602" cy="880" r="84"/>
+  <use xlink:href="#projector" transform="translate(602 880) scale(.46)"/>
+  <path class="hit" d="M754 880H690 M699 870Q685 880 699 890"/>
+  <circle cx="686" cy="880" r="3" fill="#eafaff"/>
+
+  <rect class="panel" x="808" y="748" width="377" height="231"/>
+  <text class="bodytext" x="827" y="780">03 · 필드 붕괴</text>
+  <use xlink:href="#projector" transform="translate(996 880) scale(.46)" opacity=".48"/>
+  <circle class="red" cx="996" cy="880" r="7"/>
+  <text class="small" x="827" y="956">경계 소멸 · 코어 적색</text>
+
+  <rect class="panel" x="1202" y="748" width="378" height="231"/>
+  <text class="bodytext" x="1221" y="780">04 · 한 번에 복구</text>
+  <circle cx="1391" cy="880" r="91" fill="none" stroke="#e9c75d" stroke-width="1" opacity=".45"/>
+  <circle class="field" cx="1391" cy="880" r="84"/>
+  <use xlink:href="#projector" transform="translate(1391 880) scale(.46)"/>
+</svg>

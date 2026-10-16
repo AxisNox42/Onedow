@@ -60,26 +60,28 @@ inline int LanguageFontChain(Language /*lang*/, const char* out[2]) {
     return 2;
 }
 
-// Difficulty values remain for saved records; new runs always use NORMAL.
+// PLAY chooses the difficulty; it also remains in saved run records.
 enum class Difficulty { EASY, NORMAL, HARD };
 inline Difficulty g_Difficulty = Difficulty::NORMAL;
 
-// Difficulty-specific gameplay parameters retained for compatibility.
+// Run tuning shared by regular and ranged enemy spawns.
 struct DifficultyParams {
-    float rangedSpawnInitialDelay; // 시작 시 spawn timer 오프셋
-    float rangedSpawnInterval;     // 원거리 spawn 주기 (초)
-    int   rangedMaxBase;           // 기본 max 마릿수
+    float spawnRateMultiplier;
+    float enemyHpMultiplier;
+    float waveSpawnCapMultiplier;
+    int   maxRegularTierHalfSteps;
+    int   eliteTierHalfSteps;
 };
 inline DifficultyParams GetDifficultyParams(Difficulty d) {
     switch (d) {
     case Difficulty::EASY:
-        return { -5.0f, 5.0f, 2 };
+        return { 0.85f, 0.90f, 0.85f, 4, 6 };
     case Difficulty::NORMAL:
-        return {  0.0f, 5.0f, 5 };
+        return { 1.00f, 1.00f, 1.00f, 6, 8 };
     case Difficulty::HARD:
-        return {  4.9f, 2.5f, 8 };
+        return { 1.15f, 1.15f, 1.15f, 8, 8 };
     }
-    return { 0.0f, 5.0f, 5 };
+    return { 1.00f, 1.00f, 1.00f, 6, 8 };
 }
 
 // ─── 시련 시스템 ─────────────────────────────────────────────────────────────
@@ -231,7 +233,6 @@ inline int TrialRangedMaxBonus(long long score) {
 // 크리에이티브 모드 (런 설정 화면에서 토글)
 //   ON: 게임 시작 시 score=100,000 (보스 즉시 등장)
 //       RUNNING 중 F 키로 AUG_SELECT 즉시 열기
-//       DEBUFF_SELECT 항상 스킵
 inline bool g_CreativeMode = false;
 inline bool g_DebugMode = false;
 
@@ -252,11 +253,6 @@ inline bool g_BgmEnabled        = true;
 inline bool g_SfxEnabled        = true;
 inline bool g_AudioMonoOutput   = false;
 inline bool g_AudioEngineEnabled = true;
-
-// 자동 발사 (C13) — 기본 ON: 마우스로 조준만, 발사는 자동.
-//   "피하면서 쏘는 게 어렵다" 피드백 → 이동(WASD)+조준(마우스)에 집중.
-//   OFF 면 기존처럼 좌클릭 홀드로 발사. 설정에서 토글.
-inline bool g_AutoFire          = true;
 
 // 액티브 스킬 자동 사용 (C16) — ON 시 Q/E/R 스킬을 쿨다운 끝날 때마다 자동 발동.
 //   기본 OFF(수동). 설정에서 토글.
@@ -282,6 +278,8 @@ inline bool g_BackdropBlurEnabled = true;
 // Bright or busy wallpapers wash them out with or without blur, so they
 // always get a dark keyline; a sharp desktop gets the full strength.
 // Smoke A/B checks can zero it (ONEDOW_SMOKE_KEYLINE=0).
+// PLAY 패널 무기 별자리의 타원 궤도(끊어 그린 링) 표시. 디버그 툴킷에서 전환, 저장 안 함.
+inline bool g_PlayConstellationOrbits = true;
 inline float g_CombatKeylineScale = 1.0f;
 inline float CombatKeylineStrength() {
     return (g_BackdropBlurEnabled ? 0.6f : 1.0f) * g_CombatKeylineScale;

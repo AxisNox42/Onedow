@@ -11,6 +11,7 @@ struct GameOverSceneContext {
     float& fade;
     bool previousLeftMouseDown;
     const wchar_t* deathReason;
+    bool victory;
     bool lastRunRecord;
     long long score;
     int playerLevel;

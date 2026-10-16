@@ -20,7 +20,6 @@ struct SettingsSnapshot {
     bool sfxEnabled = true;
     bool audioMonoOutput = false;
     bool audioEngineEnabled = true;
-    bool autoFire = true;
     bool autoSkill = false;
     bool crosshair = true;
     bool debugMode = false;
@@ -32,7 +31,7 @@ inline SettingsSnapshot CaptureSettingsSnapshot() {
              g_ShowCombo, g_BackdropBlurEnabled, g_BackdropBlurCaptureHz,
              g_SoundVol, g_BgmEnabled, g_SfxEnabled,
              g_AudioMonoOutput, g_AudioEngineEnabled,
-             g_AutoFire, g_AutoSkill, g_ShowCrosshair, g_DebugMode,
+             g_AutoSkill, g_ShowCrosshair, g_DebugMode,
              g_Language };
 }
 
@@ -56,7 +55,6 @@ inline void RestoreSettingsSnapshot(const SettingsSnapshot& saved) {
     Audio::SetVolume(g_SoundVol / 100.0f);
     Audio::SetMonoOutput(g_AudioMonoOutput);
     g_AudioMonoOutput = Audio::IsMonoOutput();
-    g_AutoFire = saved.autoFire;
     g_AutoSkill = saved.autoSkill;
     g_ShowCrosshair = saved.crosshair;
     g_DebugMode = saved.debugMode;
@@ -76,7 +74,6 @@ inline bool SettingsSnapshotChanged(const SettingsSnapshot& saved) {
         || g_SfxEnabled != saved.sfxEnabled
         || g_AudioMonoOutput != saved.audioMonoOutput
         || g_AudioEngineEnabled != saved.audioEngineEnabled
-        || g_AutoFire != saved.autoFire
         || g_AutoSkill != saved.autoSkill
         || g_ShowCrosshair != saved.crosshair
         || g_DebugMode != saved.debugMode

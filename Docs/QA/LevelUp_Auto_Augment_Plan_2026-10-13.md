@@ -8,7 +8,7 @@
 
 | 단계 | 위치 | 동작 |
 |---|---|---|
-| 레벨 문턱 통과 | `main.cpp` 고정 틱 레벨업 루프 (`ConsumeNextLevel`) | 레벨마다 `RecordLevelUp` 후 `QueueAugmentReward(true, false)` |
+| 레벨 문턱 통과 | `main.cpp` 고정 틱 레벨업 루프 (`ConsumeNextLevel`) | 레벨마다 `RecordLevelUp` 후 버프 보상 큐에 적재 |
 | 대기 표시 | `GameManager::QueueAugmentReward` | 큐 적재 + `augReady = true`. 게임은 계속 진행 |
 | 안내 문구 | `main.cpp` HUD `kAugHint` | `[ SPACE ] 증강 픽업` 3개 언어 |
 | 진입 | `GameManager::HandleInput` | RUNNING에서 Space: `augReady`면 `AUG_SELECT`, 아니면 **일시정지** |
@@ -30,7 +30,7 @@
 
 1. **새 상태 목록을 만들지 않는다.** 전환 상태는 증강 보상 상태의 소유자(`GameManager`의 보상 큐 묶음) 안에 두고, 기존 `ClearAugmentRewardQueue()`가 함께 초기화한다. 재시작·포기·새 런 경로에 초기화 줄을 추가하지 않는다.
 2. **시간 배율 결정은 한 함수.** 스모크 배율, 히트스톱, 사망 슬로모, 레벨업 감속이 각각 `delta`를 고치는 대신 하나의 순수 함수가 게임플레이 delta를 계산한다.
-3. **같은 동작의 진입점은 하나.** 레벨업 기록·보상 적재, 증강 선택 열기, 선택 후 RUNNING 복귀는 각각 하나의 함수만 사용한다. 경로 간 차이(창의적 모드의 디버프 허용, 디버그 경로의 즉시 열기)는 함수 인자/명명된 정책으로 표현한다.
+3. **같은 동작의 진입점은 하나.** 레벨업 기록·보상 적재, 증강 선택 열기, 선택 후 RUNNING 복귀는 각각 하나의 함수만 사용한다. 모든 레벨업 경로는 디버프를 제외한 버프 후보만 사용한다. 디버그 경로의 즉시 열기는 기존 진입점으로 표현한다.
 4. **순수 계산은 렌더러·전역에 의존하지 않는다.** 배율 곡선·전환 진행은 표준 라이브러리만 쓰고 assert 기반 C++ 테스트로 검증한다.
 5. **리팩터링 계획의 다른 묶음 범위는 건드리지 않는다.** 키 반복·release 플래그 정리(DL-04), 3언어 선택식(DL-02), 런 상태 보존 목록(DL-14/EX-01)은 이 작업에서 새 반복을 늘리지 않는 선에서만 다루고, 본격 이관은 해당 묶음에 맡긴다.
 
@@ -38,7 +38,7 @@
 
 | ID | 현재 반복 | 함수화 방향 | 동작 변화 |
 |---|---|---|---|
-| LVU-R1 레벨업 기록·보상 적재 | 고정 틱 레벨업 루프와 창의적 F키가 각자 `RecordLevelUp` + `QueueAugmentReward` 수행 | `GrantLevelUpReward(oldLevel, newLevel, need, oldXp, newXp, LevelUpSource)` 하나로 통일. 출처(일반/수동)에 따라 디버프 허용·needsDebuff 정책을 함수 안에서 결정 | 없음 |
+| LVU-R1 레벨업 기록·보상 적재 | 고정 틱 레벨업 루프와 창의적 F키가 각자 `RecordLevelUp` + `QueueAugmentReward` 수행 | `GrantLevelUpReward` 하나로 통일. 모든 출처에서 버프 선택만 큐에 넣음 | 없음 |
 | LVU-R2 증강 선택 열기 | `ActivateNextAugmentReward()` 직접 호출: 상태 전이 감지, 창의적 F키, 스모크 `AUGSEL`, `FinishCurrentAugmentReward` | `OpenAugmentReward(AugmentOpenMode)` 진입점. `Immediate`(디버그·연속 선택) / `LevelUpTransition`(일반 레벨업). 실패 시 RUNNING 유지까지 함수가 처리 | 구조 단계에서는 `Immediate`만 존재 → 동작 동일 |
 | LVU-R3 선택 후 RUNNING 복귀 | `currentState = RUNNING; postPickGrace = 0.5f`가 `FinishCurrentAugmentReward`, `FinishAugmentEffects`, `applyAug` 3곳에 반복 | `ReturnToRunningAfterPick()` + 보호 시간 명명 상수 | 없음 |
 | LVU-R4 게임플레이 delta 계산 | `delta *= g_SmokeTimeScale`, `DYING ? delta*0.15`, 히트스톱 시 `physDelta = 0`이 루프 곳곳에 분산 | 순수 함수 `ComputeGameplayDelta(realDelta, GameplayTimeInputs)` (새 헤더 `Core/GameplayTime.h`). 우선순위: 히트스톱 0 > 사망 0.15 > 레벨업 배율 > 1.0, 스모크 배율은 실시간에 곱함 | 없음 |
@@ -67,7 +67,7 @@
 | 히트스톱과 동시 발생 | 전환 타이머는 실시간으로 진행. 감속 시간은 최대 히트스톱(0.14초)보다 충분히 길게 둔다. |
 | 재시작·포기·메뉴 | `ClearAugmentRewardQueue()` 한 곳에서 전환 해제. |
 | 레벨 상한 45 | 레벨업이 없으므로 전환도 없다. |
-| 창의적 F키·스모크 `AUGSEL` | `OpenAugmentReward(Immediate)` — 현행 동작 유지. |
+| 창의적 F키·스모크 `AUGSEL` | `OpenAugmentReward(Immediate)` — 버프 카드만 선택. |
 
 ## 7. 결정 필요 (권장값)
 
@@ -132,3 +132,7 @@
 - `LevelUpTransition`은 배율 없는 신호 타이머가 됐다(`DURATION`, `Update`, `Progress`). `GameplayTime.h`의 `levelUpScale` 입력과, RUNNING 프레임 블록의 `runDelta` 분리를 되돌렸다. 시간 배율 소유는 R4 상태(히트스톱·사망 슬로모)로 돌아갔다.
 - 튜토리얼 3개 언어에서 "시간이 느려진다" 문구를 제거했다.
 - `test_levelup_auto_augment.ps1`: 신호 구간에서 게임 시계가 정상 속도로 흐르는지 확인한다. `test_experience_smoke.ps1`: 앞 단계의 레벨업이 자동으로 선택 화면을 열어 상한 단계의 XP 처리가 멈추므로, 상한 단계 전에 `RUN`으로 새 런을 시작하도록 고쳤다.
+
+## 후속 변경 기록 (2026-10-13)
+
+웨이브 리팩터링에 따라 레벨업에서 디버프 단계를 제거했다. `QueueAugmentReward`는 버프 선택만 적재하며, 선택 완료 후 디버프 선택으로 이어지는 경로와 전용 추첨기를 삭제했다. 모든 레벨업 출처에서 디버프 등급을 후보에서 제외한다. 웨이브 경계의 디버프는 별도 웨이브 계획에서 자동 지급한다.
