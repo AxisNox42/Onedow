@@ -16,7 +16,6 @@
 #include "Codex.h"
 #include "DrawPrim.h"
 #include "EnemySpawner.h"
-#include "EntityDraw.h"
 #include "GameManager.h"
 #include "Monster.h"
 #include "SceneUI.h"
@@ -90,6 +89,26 @@ inline void DiamondOutline(float cx, float cy, float r, float thick, Rgb c,
             const float ex = dx / len * w * 0.5f, ey = dy / len * w * 0.5f;
             Segment(px[i] - ex, py[i] - ey, px[i + 1] + ex, py[i + 1] + ey, w, col, alpha);
         }
+    }
+}
+
+// Part of a diamond outline from the top vertex clockwise, covering frac
+// of the perimeter: the time-left gauge on elite and final nodes.
+inline void DiamondProgress(float cx, float cy, float r, float thick,
+                            float frac, Rgb c, float a) {
+    const float px[5] = { cx, cx + r, cx, cx - r, cx };
+    const float py[5] = { cy - r, cy, cy + r, cy, cy - r };
+    float left = std::clamp(frac, 0.0f, 1.0f) * 4.0f;
+    for (int i = 0; i < 4 && left > 0.0f; ++i) {
+        const float t = std::min(1.0f, left);
+        const float dx = px[i + 1] - px[i], dy = py[i + 1] - py[i];
+        const float len = std::sqrt(dx * dx + dy * dy);
+        const float ex = dx / len * thick * 0.5f, ey = dy / len * thick * 0.5f;
+        // Overlap the joints by half the stroke so corners stay sharp.
+        Segment(px[i] - (i ? ex : 0.0f), py[i] - (i ? ey : 0.0f),
+                px[i] + dx * t + (t >= 1.0f ? ex : 0.0f),
+                py[i] + dy * t + (t >= 1.0f ? ey : 0.0f), thick, c, a);
+        left -= 1.0f;
     }
 }
 
@@ -178,21 +197,29 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
         const bool isFinal = w == finalWave;
         const bool isElite = !isFinal && IsEliteWave(w, difficulty);
         if (w == wave) {
-            // Current wave: the arc is the time left, draining clockwise.
-            const Rgb arcCol = lastSeconds ? kDanger : kPast;
-            if (isFinal || isElite) {
-                const Rgb c = isFinal ? kFinal : kElite;
-                DiamondOutline(nx, trackY, 13.0f * hs, 1.9f * hs, c, 1.0f, keyline);
-                if (isFinal) DiamondOutline(nx, trackY, 6.0f * hs, 1.1f * hs, c, 0.9f, 0.0f);
-            }
-            const float r = (isFinal || isElite) ? 7.5f * hs : 10.0f * hs;
-            Ring(nx, trackY, r, 2.0f * hs, kRing, 0.95f, keyline);
-            Arc(nx, trackY, r, 2.2f * hs, -0.5f * kPi, 2.0f * kPi * frac, arcCol, 1.0f);
-            if (gm.waveTransitionTimer > 0.0f) {
-                const float t = 1.0f - gm.waveTransitionTimer / 2.0f;
-                const float pulse = std::clamp(t / 0.6f, 0.0f, 1.0f);
-                Ring(nx, trackY, r + 18.0f * hs * pulse, 1.4f * hs, kPast,
-                     0.9f * (1.0f - pulse), 0.0f);
+            // Current wave: its own outline is the time left, draining
+            // clockwise from the top - a ring on plain waves, the diamond
+            // itself on elite and final waves.
+            const bool special = isFinal || isElite;
+            const Rgb own = isFinal ? kFinal : (isElite ? kElite : kPast);
+            const Rgb gauge = lastSeconds ? kDanger : own;
+            const float r = special ? 13.0f * hs : 10.0f * hs;
+            const float pulse = gm.waveTransitionTimer > 0.0f
+                ? std::clamp((1.0f - gm.waveTransitionTimer / 2.0f) / 0.6f, 0.0f, 1.0f)
+                : 1.0f;
+            if (special) {
+                DiamondOutline(nx, trackY, r, 2.0f * hs, kRing, 0.95f, keyline);
+                DiamondProgress(nx, trackY, r, 2.3f * hs, frac, gauge, 1.0f);
+                if (isFinal) DiamondOutline(nx, trackY, 6.0f * hs, 1.1f * hs, own, 0.9f, 0.0f);
+                if (pulse < 1.0f)
+                    DiamondOutline(nx, trackY, r + 16.0f * hs * pulse, 1.4f * hs, own,
+                                   0.9f * (1.0f - pulse), 0.0f);
+            } else {
+                Ring(nx, trackY, r, 2.0f * hs, kRing, 0.95f, keyline);
+                Arc(nx, trackY, r, 2.2f * hs, -0.5f * kPi, 2.0f * kPi * frac, gauge, 1.0f);
+                if (pulse < 1.0f)
+                    Ring(nx, trackY, r + 18.0f * hs * pulse, 1.4f * hs, kPast,
+                         0.9f * (1.0f - pulse), 0.0f);
             }
         } else if (isFinal) {
             DiamondOutline(nx, trackY, 9.0f * hs, 1.7f * hs, kFinal, 1.0f, keyline);
@@ -236,38 +263,23 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
             const int s = std::max(0, (int)std::ceil(ELITE_SPAWN_WAVE_SECONDS - waveSeconds));
             swprintf_s(tag, L"%ls %ls · %ls %d:%02d", kEliteLabel[li], name, kUntil[li], s / 60, s % 60);
         }
+        // Symbols only: a leader from the elite node to its text, no
+        // enemy figure (the node's diamond already says "elite").
         const float nodeX = x0 + gap * (float)(eliteWave - 1);
-        const float iconR = 9.0f * hs;
         const float textW = g_TextS.Width(tag, tagSc);
-        const float tagW = iconR * 2.0f + 8.0f * hs + textW;
-        const float iconX = std::min(nodeX, x0 + trackW + 40.0f * hs - tagW + iconR);
-        const float nodeBottom = trackY + (eliteWave == wave ? 14.0f : 9.0f) * hs;
-        const float elbowY = tagY - iconR - 4.0f * hs;
+        const float textX = std::min(nodeX + 10.0f * hs,
+                                     x0 + trackW + 40.0f * hs - textW);
+        const float nodeBottom = trackY + (eliteWave == wave ? 15.0f : 9.0f) * hs;
         BindMainShader();
-        Segment(nodeX, nodeBottom, nodeX, elbowY, 1.1f * hs, kElite, 0.75f);
-        if (std::fabs(iconX - nodeX) > 0.5f)
-            Segment(nodeX, elbowY, iconX, elbowY, 1.1f * hs, kElite, 0.75f);
-        const bool known = CodexMobNameUnlocked(codexId);
-        const bool seen = CodexMobSeen(codexId);
-        if (!seen) {
-            DiamondOutline(iconX, tagY, iconR * 0.8f, 1.4f * hs, kElite, 0.9f, keyline);
-            BatchFlush();
+        if (textX > nodeX) {
+            Segment(nodeX, nodeBottom, nodeX, tagY, 1.1f * hs, kElite, 0.75f);
+            Segment(nodeX, tagY, textX - 4.0f * hs, tagY, 1.1f * hs, kElite, 0.75f);
         } else {
-            BatchFlush();
-            // The Astral Log silhouette; a seen-only elite stays faint.
-            const float savedAlpha = g_BatchAlpha;
-            g_BatchAlpha = known ? 1.0f : 0.40f;
-            float previewScale = iconR / 18.0f * 1.6f;
-            // Genesis and Quasar carry wide rings around a small body.
-            if (elite.kind == MobKind::GENESIS) previewScale *= 0.38f;
-            else if (elite.kind == MobKind::QUASAR) previewScale *= 0.75f;
-            drawCodexMobPreview(codexId, iconX, tagY, previewScale);
-            BatchFlush();
-            g_BatchAlpha = savedAlpha;
-            BindMainShader();
+            Segment(nodeX, nodeBottom, nodeX, tagY - 11.0f * hs, 1.1f * hs, kElite, 0.75f);
         }
+        BatchFlush();
         const float textBase = tagY + g_TextS.BaselineOffset(tagSc) * 0.36f;
-        HudText(g_TextS, tag, iconX + iconR + 8.0f * hs, textBase, tagSc, kElite, 1.0f);
+        HudText(g_TextS, tag, textX, textBase, tagSc, kElite, 1.0f);
     }
 
     // ── this wave's debuff, kept until the wave ends ──
