@@ -256,7 +256,6 @@
     <ClInclude Include="Entity\EnemySpawner.h" />
     <ClInclude Include="Entity\ProjectileSystem.h" />
     <ClInclude Include="Entity\GravisField.h" />
-    <ClInclude Include="Entity\GenesisCage.h" />
     <ClInclude Include="Entity\RangedMob.h" />
     <ClInclude Include="Entity\Weapons.h" />
     <ClInclude Include="resource.h" />

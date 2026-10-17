@@ -133,7 +133,7 @@ public:
         // rotorHpMult is the Rotor-only HP upgrade; Genesis children scale
         // with the Genesis' own spawn ramp instead.
         (void)rotorHpMult;
-        UpdateGenesisLaunchers(dt, playerCX, playerCY, playerHP);
+        UpdateGenesisLaunchers(dt, playerCX, playerCY);
 
         // ── 소프트 콜리전 (잡몹 간) ──
         //   너무 가까우면 서로 밀어내고, 4명 이상에게 밀리면 압사 데미지
@@ -284,20 +284,16 @@ private:
     // Genesis shell-core cycle (Astral_Enemy_Blueprints_v3 2.3): track the
     // player while the three shells charge, lock the aim at 3/3, throw all
     // three Swarms through the muzzle gap, regroup. Thrown Swarms use their
-    // own cap. With the cooldown ready and enough of its Swarms chasing, a
-    // regroup ends in the cage (hivePhase 4) instead of the next charge.
-    void UpdateGenesisLaunchers(float dt, float playerCX, float playerCY, float& playerHP) {
+    // own cap.
+    void UpdateGenesisLaunchers(float dt, float playerCX, float playerCY) {
         std::vector<Monster*> born;
         const int total = (int)monsters.size();
-        ReleaseOrphanCageNodes();
 
         for (auto* m : monsters) {
             if (!m->alive || m->kind != MobKind::GENESIS) continue;
             m->hivePulseTimer = std::max(0.0f, m->hivePulseTimer - dt);
             m->genesisRecoil = std::max(0.0f, m->genesisRecoil - dt * 4.0f);
             m->spawnTimer += dt;
-            if (m->hivePhase != 4)
-                m->cageCooldown = std::max(0.0f, m->cageCooldown - dt);
             const float toX = playerCX - m->worldX, toY = playerCY - m->worldY;
             const float toAngle = atan2f(toY, toX);
 
@@ -376,13 +372,10 @@ private:
                     m->hivePhase = 3;
                     m->spawnTimer = 0.0f;
                 }
-            } else if (m->hivePhase == 4) {
-                UpdateGenesisCage(m, playerCX, playerCY, playerHP);
             } else {
                 m->hiveOpenFactor = std::max(0.0f, 1.0f - m->spawnTimer /
                                                    Monster::GENESIS_RECOVER_TIME);
-                if (m->spawnTimer >= Monster::GENESIS_RECOVER_TIME &&
-                    !TryBeginGenesisCage(m, playerCX, playerCY)) {
+                if (m->spawnTimer >= Monster::GENESIS_RECOVER_TIME) {
                     m->hivePhase = 0;
                     m->spawnTimer = 0.0f;
                     m->hiveSpawnCount = 0;
@@ -392,151 +385,6 @@ private:
         for (auto* child : born) monsters.push_back(child);
     }
 
-public:
-    // Alive vertex in `slot` of g's cage, or nullptr.
-    const Monster* GenesisCageNode(const Monster* g, int slot) const {
-        for (const auto* s : monsters)
-            if (s->alive && s->thrownPhase == 3 && s->thrownOwnerId == g->genesisId &&
-                s->cageSlot == slot) return s;
-        return nullptr;
-    }
-
-    // Calls f(ax, ay, bx, by) for every live edge of g's cage: neighbor
-    // slots k and k + 1 with both vertices alive.
-    template <class F>
-    void ForEachGenesisCageEdge(const Monster* g, F f) const {
-        if (!g || g->hivePhase != 4 || g->cageCount < 2) return;
-        const int n = g->cageCount;
-        const int edges = n == 2 ? 1 : n;
-        for (int k = 0; k < edges; ++k) {
-            const Monster* a = GenesisCageNode(g, k);
-            const Monster* b = GenesisCageNode(g, (k + 1) % n);
-            if (a && b) f(a->worldX, a->worldY, b->worldX, b->worldY);
-        }
-    }
-
-private:
-    // Casts the cage if at least MIN_NODES of m's own Swarms are chasing
-    // within RECRUIT_RANGE: the nearest MAX_NODES take slots in angle order
-    // around the player, whose position becomes the fixed center.
-    bool TryBeginGenesisCage(Monster* m, float px, float py) {
-        using namespace GenesisCage;
-        if (m->cageCooldown > 0.0f) return false;
-        std::vector<std::pair<float, Monster*>> nearby;
-        for (auto* s : monsters) {
-            if (!s->alive || !s->genesisThrown || s->thrownOwnerId != m->genesisId ||
-                s->thrownPhase != 0) continue;
-            const float dx = s->worldX - px, dy = s->worldY - py;
-            const float distSq = dx * dx + dy * dy;
-            if (distSq <= RECRUIT_RANGE * RECRUIT_RANGE) nearby.push_back({ distSq, s });
-        }
-        if ((int)nearby.size() < MIN_NODES) return false;
-        std::sort(nearby.begin(), nearby.end(),
-                  [](const auto& a, const auto& b) { return a.first < b.first; });
-        if ((int)nearby.size() > MAX_NODES) nearby.resize(MAX_NODES);
-        for (auto& entry : nearby)
-            entry.first = atan2f(entry.second->worldY - py, entry.second->worldX - px);
-        std::sort(nearby.begin(), nearby.end(),
-                  [](const auto& a, const auto& b) { return a.first < b.first; });
-        for (int k = 0; k < (int)nearby.size(); ++k) {
-            Monster* s = nearby[k].second;
-            s->thrownPhase = 3;
-            s->cageSlot = k;
-            s->cageFromX = s->worldX;
-            s->cageFromY = s->worldY;
-        }
-        m->hivePhase = 4;
-        m->cageStage = 0;
-        m->spawnTimer = 0.0f;
-        m->cageCX = px;
-        m->cageCY = py;
-        m->cageA0 = nearby[0].first;
-        m->cageCount = (int)nearby.size();
-        m->hiveOpenFactor = 0.0f;
-        return true;
-    }
-
-    // Command, deploy, lock; one edge touch hurts once and ends the cage.
-    void UpdateGenesisCage(Monster* m, float px, float py, float& playerHP) {
-        using namespace GenesisCage;
-        int aliveNodes = 0;
-        for (int k = 0; k < m->cageCount; ++k)
-            if (GenesisCageNode(m, k)) ++aliveNodes;
-        if (aliveNodes < 2) { EndGenesisCage(m); return; }
-
-        if (m->cageStage == 0) {
-            // The shell ring makes one eased full turn while the core flares.
-            const float u = std::min(1.0f, m->spawnTimer / COMMAND_TIME);
-            m->genesisShellSpin = m->genesisSpinBase + 6.2831853f * u * u * (3.0f - 2.0f * u);
-            if (m->spawnTimer >= COMMAND_TIME) { m->spawnTimer -= COMMAND_TIME; m->cageStage = 1; }
-        }
-        if (m->cageStage == 1 && m->spawnTimer >= DEPLOY_TIME) {
-            m->spawnTimer -= DEPLOY_TIME;
-            m->cageStage = 2;
-        }
-        if (m->cageStage == 0) return;
-
-        const float blend = DeployBlend(m->spawnTimer);
-        const float radius = m->cageStage == 1 ? RADIUS : LockRadius(m->spawnTimer);
-        for (auto* s : monsters) {
-            if (!s->alive || s->thrownPhase != 3 || s->thrownOwnerId != m->genesisId) continue;
-            const float a = SlotAngle(m->cageA0, s->cageSlot, m->cageCount);
-            const float sx = m->cageCX + cosf(a) * radius, sy = m->cageCY + sinf(a) * radius;
-            if (m->cageStage == 1) {
-                s->worldX = s->cageFromX + (sx - s->cageFromX) * blend;
-                s->worldY = s->cageFromY + (sy - s->cageFromY) * blend;
-            } else {
-                s->worldX = sx;
-                s->worldY = sy;
-            }
-        }
-        if (m->cageStage != 2) return;
-
-        // Vertices held off by the Chakram Singularity (singularityGrace)
-        // cannot hurt, like a thrown Swarm in flight.
-        bool held = false;
-        for (int k = 0; k < m->cageCount; ++k)
-            if (const Monster* s = GenesisCageNode(m, k))
-                if (s->singularityGrace > 0.0f) held = true;
-        bool hit = false;
-        if (!held)
-            ForEachGenesisCageEdge(m, [&](float ax, float ay, float bx, float by) {
-                if (SegmentDistSq(px, py, ax, ay, bx, by) < EDGE_HIT_RADIUS * EDGE_HIT_RADIUS)
-                    hit = true;
-            });
-        if (hit) HurtPlayer(playerHP, EDGE_DAMAGE);
-        if (hit || m->spawnTimer >= LOCK_TIME) EndGenesisCage(m);
-    }
-
-    static void ReleaseCageNode(Monster* s) {
-        s->thrownPhase = 0;
-        s->cageSlot = -1;
-    }
-
-    void EndGenesisCage(Monster* m) {
-        for (auto* s : monsters)
-            if (s->thrownPhase == 3 && s->thrownOwnerId == m->genesisId) ReleaseCageNode(s);
-        m->hivePhase = 0;
-        m->cageStage = 0;
-        m->cageCount = 0;
-        m->spawnTimer = 0.0f;
-        m->hiveSpawnCount = 0;
-        m->cageCooldown = GenesisCage::COOLDOWN;
-    }
-
-    // Vertices whose Genesis died or left the cage go back to chasing.
-    void ReleaseOrphanCageNodes() {
-        for (auto* s : monsters) {
-            if (s->thrownPhase != 3) continue;
-            bool held = false;
-            for (const auto* g : monsters)
-                if (g->alive && g->kind == MobKind::GENESIS && g->hivePhase == 4 &&
-                    g->genesisId == s->thrownOwnerId) { held = true; break; }
-            if (!held) ReleaseCageNode(s);
-        }
-    }
-
-
     void ResolveMonsterCrowding(float dt) {
         constexpr float kNormalGap = 24.0f;
         constexpr float kSummonedGap = 32.0f;
@@ -544,13 +392,11 @@ private:
         std::vector<int> pushCounts(monsters.size(), 0);
         for (size_t i = 0; i < monsters.size(); ++i) {
             // Thrown Swarms in flight pass through other enemies.
-            if (!monsters[i]->alive || monsters[i]->thrownPhase == 1 ||
-                monsters[i]->thrownPhase == 3) continue;
+            if (!monsters[i]->alive || monsters[i]->thrownPhase == 1) continue;
             const int tierI = CollisionTier(monsters[i]);
             const float radiusI = monsters[i]->summoned ? kSummonedGap : kNormalGap;
             for (size_t j = i + 1; j < monsters.size(); ++j) {
-                if (!monsters[j]->alive || monsters[j]->thrownPhase == 1 ||
-                    monsters[j]->thrownPhase == 3) continue;
+                if (!monsters[j]->alive || monsters[j]->thrownPhase == 1) continue;
                 float dx = monsters[j]->worldX - monsters[i]->worldX;
                 float dy = monsters[j]->worldY - monsters[i]->worldY;
                 const float distanceSq = dx * dx + dy * dy;

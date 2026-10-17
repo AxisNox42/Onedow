@@ -12,7 +12,6 @@
 #include "PlayerStats.h"
 #include "EnemyShield.h"
 #include "Experience.h"
-#include "GenesisCage.h"
 
 class RangedMob;
 class Monster;
@@ -315,17 +314,9 @@ public:
     float genesisRecoil = 0.0f;       // 1 at a throw, decays back to 0
     float genesisChildHpMult = 1.0f;  // spawn-time HP ramp, passed to thrown Swarms
     int genesisId = 0;                // owner key for the per-Genesis thrown cap
-    // Genesis cage (hivePhase 4, GenesisCage.h): stage 0 command / 1 deploy /
-    // 2 lock, timed by spawnTimer. The center is fixed where it was cast.
-    int cageStage = 0;
-    float cageCooldown = GenesisCage::COOLDOWN;
-    float cageCX = 0.0f, cageCY = 0.0f;
-    float cageA0 = 0.0f;              // angle of slot 0
-    int cageCount = 0;                // slots, fixed when cast
     inline static int s_NextGenesisId = 1;
 
-    // Thrown Swarm: 1 flight, 2 landing stun, 3 held as a cage vertex, 0
-    // ordinary chase. The Antares
+    // Thrown Swarm: 1 flight, 2 landing stun, 0 ordinary chase. The Antares
     // trail buffer doubles as this Swarm's afterimage history.
     bool genesisThrown = false;       // counts toward its owner's GENESIS_THROWN_CAP
     int thrownOwnerId = 0;            // genesisId of the Genesis that threw it
@@ -337,8 +328,6 @@ public:
     float thrownTargetX = 0.0f, thrownTargetY = 0.0f;
     float thrownHeading = 0.0f;
     float thrownSpin = 0.0f;          // body angle; turns with flight speed
-    int cageSlot = -1;                // vertex slot while thrownPhase is 3
-    float cageFromX = 0.0f, cageFromY = 0.0f;   // where the deploy started
 
     // Quasar state.
     int quasarState = 0;
@@ -434,7 +423,6 @@ public:
             genesisId = s_NextGenesisId++;
             spawnTimer = 0.0f;
             hivePhase = 0;
-            cageCooldown = GenesisCage::COOLDOWN;
             hiveOpenFactor = 0.0f;
             hiveSpawned = false;
             hiveSpawnCount = 0;
@@ -1302,8 +1290,6 @@ public:
 
     // Returns true when the Swarm vanished on the player (no reward).
     bool UpdateThrownSwarm(float deltaTime, float distance, float& playerHP) {
-        // A cage vertex is placed by its Genesis (MonsterManager).
-        if (thrownPhase == 3) return false;
         thrownTimer += deltaTime;
         if (thrownPhase == 1) {
             const float prevU = ThrownFlightFraction(thrownDistance, thrownTimer - deltaTime);

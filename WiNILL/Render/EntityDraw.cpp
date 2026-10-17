@@ -890,19 +890,17 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
                            base * 0.05f, 0.75f}, liteR, liteG, liteB, 0.70f);
     }
 
-    // Core, sliding back from the aim and flashing on each throw. It also
-    // flares full while the cage command goes out.
-    const float coreHeat = phase == 4 && m->cageStage == 0 ? 1.0f : charge;
+    // Core, sliding back from the aim and flashing on each throw.
     const float ccx = x - cosf(aim) * R * 0.08f * recoil;
     const float ccy = y - sinf(aim) * R * 0.08f * recoil;
-    const float hr = cr + (pR - cr) * coreHeat, hg = cg + (pG - cg) * coreHeat,
-                hb = cb + (pB - cb) * coreHeat;
+    const float hr = cr + (pR - cr) * charge, hg = cg + (pG - cg) * charge,
+                hb = cb + (pB - cb) * charge;
     drawCircle(ccx, ccy, R * (0.34f + 0.06f * recoil), pR, pG, pB,
-               0.05f + 0.16f * coreHeat + 0.30f * recoil);
+               0.05f + 0.16f * charge + 0.30f * recoil);
     DrawEnemyArc(ccx, ccy, R * 0.40f, 0.0f, 6.2831853f, 28,
                  liteR + (1.0f - liteR) * recoil, liteG + (1.0f - liteG) * recoil,
                  liteB + (1.0f - liteB) * recoil, 0.90f, (1.5f + 0.8f * recoil) * lw);
-    DrawEnemyArc(ccx, ccy, R * 0.32f, 0.0f, 6.2831853f, 24, hr, hg, hb, 0.40f + 0.30f * coreHeat, 0.85f);
+    DrawEnemyArc(ccx, ccy, R * 0.32f, 0.0f, 6.2831853f, 24, hr, hg, hb, 0.40f + 0.30f * charge, 0.85f);
     float Tx[3], Ty[3], tX[3], tY[3];
     for (int v = 0; v < 3; ++v) {
         const float a = ring + 2.0943951f * (float)v;   // vertices point at the gaps
@@ -914,9 +912,9 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
         drawLineQuad(Tx[v], Ty[v], Tx[n], Ty[n], 1.4f,
                      hr + (1.0f - hr) * 0.3f, hg + (1.0f - hg) * 0.3f, hb + (1.0f - hb) * 0.3f, 0.92f);
         drawLineQuad(tX[v], tY[v], tX[n], tY[n], 1.1f,
-                     0.92f, 0.80f, 0.80f, 0.55f + 0.40f * coreHeat);
+                     0.92f, 0.80f, 0.80f, 0.55f + 0.40f * charge);
     }
-    DrawEnemyNode({Tx[0], Ty[0], base * 0.09f, 0.80f + 0.20f * coreHeat}, 1.0f, 1.0f, 1.0f, 0.92f);
+    DrawEnemyNode({Tx[0], Ty[0], base * 0.09f, 0.80f + 0.20f * charge}, 1.0f, 1.0f, 1.0f, 0.92f);
     drawCircle(ccx, ccy, base * (0.09f + 0.06f * recoil), 1.0f, 1.0f, 1.0f, 0.95f);
 }
 
@@ -1084,33 +1082,6 @@ void DrawRegulusBeams(const MonsterManager& manager, float /*visualTime*/) {
                      0.92f, 0.99f, 1.0f, 0.95f * fade);
         drawCircle(beam.x1, beam.y1, 10.0f * (1.0f + t), kAegisR, kAegisG, kAegisB,
                    0.30f * fade);
-    }
-}
-
-// Genesis cage: thin command lines from the core while the vertices hold,
-// dim thin edges while they deploy, then bright locked edges that shrink.
-// Lines only; no fill inside the polygon.
-void DrawGenesisCages(const MonsterManager& manager, float /*visualTime*/) {
-    const float pR = 1.0f, pG = 0.24f, pB = 0.20f;   // production red
-    for (const auto* g : manager.monsters) {
-        if (!g->alive || g->kind != MobKind::GENESIS || g->hivePhase != 4) continue;
-        if (g->cageStage == 0) {
-            const float fade = 1.0f - std::min(1.0f, g->spawnTimer / GenesisCage::COMMAND_TIME);
-            for (int k = 0; k < g->cageCount; ++k)
-                if (const Monster* s = manager.GenesisCageNode(g, k))
-                    drawLineQuad(g->worldX, g->worldY, s->worldX, s->worldY, 1.0f,
-                                 pR, pG, pB, 0.55f * fade);
-            continue;
-        }
-        const bool locked = g->cageStage == 2;
-        manager.ForEachGenesisCageEdge(g, [&](float ax, float ay, float bx, float by) {
-            if (!locked) {
-                drawLineQuad(ax, ay, bx, by, 1.0f, pR, pG, pB, 0.35f);
-                return;
-            }
-            drawLineQuad(ax, ay, bx, by, 7.0f, pR, pG, pB, 0.18f);
-            drawLineQuad(ax, ay, bx, by, 2.6f, pR, pG, pB, 0.95f);
-        });
     }
 }
 
@@ -2156,7 +2127,7 @@ void drawMob(const Monster* m, float visualTime) {
             DrawThrownBlastZone(m->thrownTargetX, m->thrownTargetY, 1.0f,
                                 std::min(1.0f, m->thrownTimer /
                                                std::max(0.01f, m->thrownDuration)));
-        if (m->thrownPhase == 1 || m->thrownPhase == 2) {
+        if (m->thrownPhase != 0) {
             float ghostR = m->color.r, ghostG = m->color.g, ghostB = m->color.b;
             ApplyMobStyleTint(ghostR, ghostG, ghostB);
             DrawThrownSwarmGhosts(m, base, ghostR, ghostG, ghostB);

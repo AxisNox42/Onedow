@@ -240,9 +240,6 @@
     <ClInclude Include="Entity\GravisField.h">
       <Filter>Entity</Filter>
     </ClInclude>
-    <ClInclude Include="Entity\GenesisCage.h">
-      <Filter>Entity</Filter>
-    </ClInclude>
     <ClInclude Include="Entity\RangedMob.h">
       <Filter>Entity</Filter>
     </ClInclude>
