@@ -95,23 +95,31 @@ inline void DiamondOutline(float cx, float cy, float r, float thick, Rgb c,
     }
 }
 
-// Part of a diamond outline from the top vertex clockwise, covering frac
-// of the perimeter: the time-left gauge on elite and final nodes.
-inline void DiamondProgress(float cx, float cy, float r, float thick,
-                            float frac, Rgb c, float a) {
-    const float px[5] = { cx, cx + r, cx, cx - r, cx };
-    const float py[5] = { cy - r, cy, cy + r, cy, cy - r };
-    float left = std::clamp(frac, 0.0f, 1.0f) * 4.0f;
-    for (int i = 0; i < 4 && left > 0.0f; ++i) {
-        const float t = std::min(1.0f, left);
-        const float dx = px[i + 1] - px[i], dy = py[i + 1] - py[i];
-        const float len = std::sqrt(dx * dx + dy * dy);
-        const float ex = dx / len * thick * 0.5f, ey = dy / len * thick * 0.5f;
-        // Overlap the joints by half the stroke so corners stay sharp.
-        Segment(px[i] - (i ? ex : 0.0f), py[i] - (i ? ey : 0.0f),
-                px[i] + dx * t + (t >= 1.0f ? ex : 0.0f),
-                py[i] + dy * t + (t >= 1.0f ? ey : 0.0f), thick, c, a);
-        left -= 1.0f;
+// Clockwise wedge from 12 o'clock covering frac of the node's interior:
+// the elapsed part of the wave. A circle, or a diamond with its vertices
+// at top/right/bottom/left (|x| + |y| = r).
+inline void SectorFill(float cx, float cy, float r, bool diamond, float frac,
+                       Rgb c, float a) {
+    frac = std::clamp(frac, 0.0f, 1.0f);
+    if (frac <= 0.0f) return;
+    // 16 steps per quadrant land exactly on the diamond's corners.
+    constexpr int kSteps = 64;
+    const float step = 2.0f * kPi / kSteps;
+    const float end = -0.5f * kPi + 2.0f * kPi * frac;
+    auto edge = [&](float t, float& x, float& y) {
+        const float ct = std::cos(t), st = std::sin(t);
+        const float d = diamond ? r / (std::fabs(ct) + std::fabs(st)) : r;
+        x = cx + ct * d; y = cy + st * d;
+    };
+    float px, py;
+    edge(-0.5f * kPi, px, py);
+    for (int i = 1; i <= kSteps; ++i) {
+        const float t = std::min(end, -0.5f * kPi + step * i);
+        float qx, qy;
+        edge(t, qx, qy);
+        BatchTri(cx, cy, px, py, qx, qy, c.r, c.g, c.b, a);
+        if (t >= end) break;
+        px = qx; py = qy;
     }
 }
 
@@ -211,31 +219,34 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
         const bool isFinal = w == finalWave;
         const bool isElite = !isFinal && IsEliteWave(w, difficulty);
         if (w == wave) {
-            // Current wave: its own outline is the time left, draining
-            // clockwise from the top - a ring on plain waves, the diamond
-            // itself on elite and final waves.
+            // Current wave: a steady outline in the node's own colour, and
+            // its interior filling clockwise from 12 o'clock as the wave
+            // runs - a disc on plain waves, the diamond on elite/final ones.
             const bool special = isFinal || isElite;
             const Rgb own = isFinal ? kFinal : (isElite ? kElite : kPast);
-            const Rgb gauge = lastSeconds ? kDanger : own;
             const float r = special ? 13.0f * hs : 10.0f * hs;
+            const float stroke = 2.0f * hs;
             const float pulse = gm.waveTransitionTimer > 0.0f
                 ? std::clamp((1.0f - gm.waveTransitionTimer / 2.0f) / 0.6f, 0.0f, 1.0f)
                 : 1.0f;
-            // The drained part keeps the node's own colour, dimmed, over a
-            // full-strength keyline so the node never fades out late in a wave.
-            constexpr float kDrainedA = 0.35f;
+            constexpr float kFillA = 0.85f;
             if (special) {
-                DiamondOutline(nx, trackY, r, 2.0f * hs + keyline, KeyCol(own), kKeyA, 0.0f);
-                DiamondOutline(nx, trackY, r, 2.0f * hs, own, kDrainedA, 0.0f);
-                DiamondProgress(nx, trackY, r, 2.3f * hs, frac, gauge, 1.0f);
-                if (isFinal) DiamondOutline(nx, trackY, 6.0f * hs, 1.1f * hs, own, 0.9f, 0.0f);
+                DiamondOutline(nx, trackY, r, stroke, own, 1.0f, keyline);
+                // The final wave keeps its double frame; the fill sits inside.
+                float fillR = r - stroke * 1.4f - 1.5f * hs;
+                if (isFinal) {
+                    const float innerR = r - 5.0f * hs;
+                    DiamondOutline(nx, trackY, innerR, 1.1f * hs, own, 0.9f, 0.0f);
+                    fillR = innerR - 1.1f * hs * 1.4f - 1.5f * hs;
+                }
+                SectorFill(nx, trackY, fillR, true, 1.0f - frac, own, kFillA);
                 if (pulse < 1.0f)
                     DiamondOutline(nx, trackY, r + 16.0f * hs * pulse, 1.4f * hs, own,
                                    0.9f * (1.0f - pulse), 0.0f);
             } else {
-                Ring(nx, trackY, r, 2.0f * hs + keyline, KeyCol(own), kKeyA, 0.0f);
-                Ring(nx, trackY, r, 2.0f * hs, own, kDrainedA, 0.0f);
-                Arc(nx, trackY, r, 2.2f * hs, -0.5f * kPi, 2.0f * kPi * frac, gauge, 1.0f);
+                Ring(nx, trackY, r, stroke, own, 1.0f, keyline);
+                SectorFill(nx, trackY, r - stroke * 0.5f - 1.5f * hs, false,
+                           1.0f - frac, own, kFillA);
                 if (pulse < 1.0f)
                     Ring(nx, trackY, r + 18.0f * hs * pulse, 1.4f * hs, kPast,
                          0.9f * (1.0f - pulse), 0.0f);
