@@ -20,6 +20,7 @@ void ResetPlayerSkills() {
     for (int i = 0; i < 3; i++) g_Skills[i] = { SkillType::NONE, 0.0f };
     g_SkillReplaceIdx = 0;
     g_PlayerRuntime.dashCooldown = 0.0f;
+    g_PlayerRuntime.dashCooldownMax = 0.0f;
     g_PlayerRuntime.dashInvulnerability = 0.0f;
     g_PlayerRuntime.dashActive = false;
     g_PlayerRuntime.dashProgress = 0.0f;
@@ -119,6 +120,7 @@ void BeginPlayerDash(float playerX, float playerY,
     g_PlayerRuntime.dashProgress = 0.0f;
     g_PlayerRuntime.dashCooldown = g_PlayerRuntime.hyperFocusTimer > 0.0f
         ? HYPER_FOCUS_DASH_CD : DASH_CD;
+    g_PlayerRuntime.dashCooldownMax = g_PlayerRuntime.dashCooldown;
     g_PlayerRuntime.dashInvulnerability = DASH_INVULN;
 }
 

@@ -4,6 +4,7 @@ enum class SkillType;
 
 struct PlayerRuntimeState {
     float dashCooldown = 0.0f;
+    float dashCooldownMax = 0.0f;   // cooldown the last dash started with (HUD)
     float dashInvulnerability = 0.0f;
     float postPickGrace = 0.0f;
     float timeStopTimer = 0.0f;
