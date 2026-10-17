@@ -1812,6 +1812,39 @@ int main() {
                             mob->worldY = playerWin.y + playerWin.height * 0.5f;
                             mob->MakeKind((MobKind)kind);
                         }
+                    } else if (step.rfind("SKILLHUD=", 0) == 0) {
+                        // SKILLHUD=MIX|EMPTY|PULSE: skill HUD states in one
+                        // frame (cooldowns, effects, passives) on a fresh run.
+                        const std::string preset = step.substr(9);
+                        RestartCurrentRun();
+                        auto give = [&](AugType t) {
+                            for (int i = 0; i < AUG_TOTAL; ++i)
+                                if (ALL_AUGS[i].type == t) {
+                                    ApplySingleAugIdx(i, screenWidth, screenHeight);
+                                    return;
+                                }
+                        };
+                        ClearEquippedSkills();
+                        if (preset == "MIX") {
+                            EquipSkill(SkillType::CLOSE_WINDOW);
+                            EquipSkill(SkillType::HYPER_FOCUS);
+                            EquipSkill(SkillType::TIME_STOP);
+                            g_Skills[0].cd = PlayerSkillCooldownMax(SkillType::CLOSE_WINDOW) * 0.6f;
+                            g_Skills[1].cd = 12.0f;
+                            g_Skills[2].cd = 0.0f;
+                            g_PlayerRuntime.hyperFocusTimer = 3.0f;
+                            g_PlayerRuntime.dashCooldown = DASH_CD;   // ~half left at the ~1.5 s capture
+                            g_PlayerRuntime.dashCooldownMax = DASH_CD;
+                            give(AugType::BULLET_RAIN);
+                            g_BulletRainTimer = g_Stats.bulletRainCooldown * 0.6f;
+                            give(AugType::LIGHT_STEP);
+                            g_Stats.lightStepDisableTimer = 7.0f;
+                            for (int k = 0; k < 3; ++k) give(AugType::D_APPROACH);
+                        } else if (preset == "PULSE") {
+                            EquipSkill(SkillType::TIME_STOP);
+                            g_Skills[0].cd = 0.05f;
+                            g_SmokeTimeScale = 0.2f;
+                        }
                     } else if (step.rfind("HP=", 0) == 0) {
                         // HP=<0..1>: set the player's health fraction.
                         const float f = std::clamp(

@@ -9,6 +9,7 @@
 //   ONEDOW_SMOKE_KEYLINE = 0              (선택, 전투 요소 테두리 끄기: 전후 비교용)
 //   ONEDOW_SMOKE_ORBITS  = 0              (선택, PLAY 무기 별자리 궤도 링 끄기)
 // STEP 형식: NAME[@fx,fy][!|*][~sec]
+//   SKILLHUD=MIX|EMPTY|PULSE : 새 런에서 스킬 HUD 상태 프리셋 (쿨다운·지속·패시브)
 //   @fx,fy  마우스 위치(화면 비율 0~1). 없으면 화면 밖으로 치움.
 //   !       유지 시간 절반 시점에 한 번 클릭.
 //   *       단계 내내 왼쪽 버튼을 누른 상태 유지(조준 사격 등).
