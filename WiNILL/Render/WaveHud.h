@@ -1,8 +1,8 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
 // Wave HUD (top centre): "WAVE 04 / 15" and the time left in the wave,
-// a track with one node per wave (symbols only, no labels) and the debuff
-// this wave applied. Line glyphs only; text keeps the renderer halo so
+// and a track with one node per wave (symbols only, no labels).
+// Line glyphs only; text keeps the renderer halo so
 // it reads on a bright wallpaper without a plate.
 //   ○ plain wave   ◇ elite wave   ◈ final wave
 // A fifth wave counts as elite only when its scheduled enemy is an elite
@@ -12,7 +12,6 @@
 #include <cmath>
 #include <cstdio>
 
-#include "Augment.h"
 #include "DrawPrim.h"
 #include "EnemySpawner.h"
 #include "GameManager.h"
@@ -241,25 +240,4 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
         }
     }
     BatchFlush();
-
-    // ── this wave's debuff, kept until the wave ends ──
-    if (wave >= 2 && gm.lastWaveDebuff >= 0 && gm.lastWaveDebuff < AUG_TOTAL) {
-        static const wchar_t* kDebuff[3] = { L"디버프", L"DEBUFF", L"デバフ" };
-        wchar_t line[160];
-        swprintf_s(line, L"%ls · %ls", kDebuff[li], ALL_AUGS[gm.lastWaveDebuff].locName[li]);
-        const float debuffY = trackY + 30.0f * hs;
-        const float lineSc = UiTextScale(g_TextS, UiTextLevel::Description, hs * 0.62f);
-        const float textW = g_TextS.Width(line, lineSc);
-        const float dash = 10.0f * hs;
-        const float left = cx - (dash + 8.0f * hs + textW) * 0.5f;
-        // Freshly applied debuffs flash for the old toast's four seconds.
-        const float fresh = std::clamp(gm.waveDebuffToast / 4.0f, 0.0f, 1.0f);
-        const float alpha = 0.82f + 0.18f * fresh;
-        BindMainShader();
-        Segment(left, debuffY, left + dash, debuffY, 2.0f * hs + keyline, {0, 0, 0}, kKeyA);
-        Segment(left, debuffY, left + dash, debuffY, 2.0f * hs, kDanger, alpha);
-        BatchFlush();
-        HudText(g_TextS, line, left + dash + 8.0f * hs,
-                 debuffY + g_TextS.BaselineOffset(lineSc) * 0.36f, lineSc, kDanger, alpha);
-    }
 }
