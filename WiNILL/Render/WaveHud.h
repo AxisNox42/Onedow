@@ -30,7 +30,6 @@ struct Rgb { float r, g, b; };
 inline constexpr Rgb kPast   = { 0.47f, 0.87f, 1.00f };
 inline constexpr Rgb kNext   = { 0.66f, 0.70f, 0.80f };
 inline constexpr Rgb kTrack  = { 0.36f, 0.41f, 0.53f };
-inline constexpr Rgb kRing   = { 0.24f, 0.31f, 0.43f };
 inline constexpr Rgb kElite  = { 1.00f, 0.57f, 0.25f };
 inline constexpr Rgb kFinal  = { 1.00f, 0.81f, 0.38f };
 inline constexpr Rgb kDanger = { 1.00f, 0.36f, 0.38f };
@@ -222,15 +221,20 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
             const float pulse = gm.waveTransitionTimer > 0.0f
                 ? std::clamp((1.0f - gm.waveTransitionTimer / 2.0f) / 0.6f, 0.0f, 1.0f)
                 : 1.0f;
+            // The drained part keeps the node's own colour, dimmed, over a
+            // full-strength keyline so the node never fades out late in a wave.
+            constexpr float kDrainedA = 0.35f;
             if (special) {
-                DiamondOutline(nx, trackY, r, 2.0f * hs, kRing, 0.95f, keyline);
+                DiamondOutline(nx, trackY, r, 2.0f * hs + keyline, KeyCol(own), kKeyA, 0.0f);
+                DiamondOutline(nx, trackY, r, 2.0f * hs, own, kDrainedA, 0.0f);
                 DiamondProgress(nx, trackY, r, 2.3f * hs, frac, gauge, 1.0f);
                 if (isFinal) DiamondOutline(nx, trackY, 6.0f * hs, 1.1f * hs, own, 0.9f, 0.0f);
                 if (pulse < 1.0f)
                     DiamondOutline(nx, trackY, r + 16.0f * hs * pulse, 1.4f * hs, own,
                                    0.9f * (1.0f - pulse), 0.0f);
             } else {
-                Ring(nx, trackY, r, 2.0f * hs, kRing, 0.95f, keyline);
+                Ring(nx, trackY, r, 2.0f * hs + keyline, KeyCol(own), kKeyA, 0.0f);
+                Ring(nx, trackY, r, 2.0f * hs, own, kDrainedA, 0.0f);
                 Arc(nx, trackY, r, 2.2f * hs, -0.5f * kPi, 2.0f * kPi * frac, gauge, 1.0f);
                 if (pulse < 1.0f)
                     Ring(nx, trackY, r + 18.0f * hs * pulse, 1.4f * hs, kPast,
