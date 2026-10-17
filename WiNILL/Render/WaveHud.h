@@ -1,7 +1,7 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
 // Wave HUD (top centre): "WAVE 04 / 15" and the time left in the wave,
-// a track with one node per wave, the next elite's tag and the debuff
+// a track with one node per wave (symbols only, no labels) and the debuff
 // this wave applied. Line glyphs only; text keeps the renderer halo so
 // it reads on a bright wallpaper without a plate.
 //   ○ plain wave   ◇ elite wave   ◈ final wave
@@ -13,7 +13,6 @@
 #include <cstdio>
 
 #include "Augment.h"
-#include "Codex.h"
 #include "DrawPrim.h"
 #include "EnemySpawner.h"
 #include "GameManager.h"
@@ -122,13 +121,6 @@ inline bool IsEliteWave(int wave, Difficulty difficulty) {
     return info.scheduled && IsEliteMob(info.kind);
 }
 
-// Name of a scheduled elite as the Astral Log would show it: the name once
-// one has been defeated, ??? when it has only been seen, ? when never met.
-inline const wchar_t* EliteName(int codexId) {
-    if (CodexMobNameUnlocked(codexId)) return MobName(codexId);
-    return CodexMobSeen(codexId) ? L"???" : L"?";
-}
-
 inline void HudText(TextRenderer& font, const wchar_t* text, float x,
                      float baseline, float scale, Rgb c, float a) {
     font.Draw(text, x, baseline - font.BaselineOffset(scale), scale, c.r, c.g, c.b, a);
@@ -144,7 +136,6 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
     const int finalWave = FinalWaveCount(difficulty);
     const int wave = CurrentWaveNumber(gameTime, difficulty);
     const float remain = CurrentWaveSecondsRemaining(gameTime, difficulty);
-    const float waveSeconds = gameTime - (wave - 1) * WAVE_DURATION_SECONDS;
     const bool lastSeconds = remain > 0.0f && remain <= 10.0f;
     const float keyline = 2.0f * hs;
     const float cx = sw * 0.5f;
@@ -185,11 +176,27 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
         ? std::min(26.0f * hs, sw * 0.34f / (float)(finalWave - 1)) : 0.0f;
     const float trackW = gap * (float)(finalWave - 1);
     const float x0 = cx - trackW * 0.5f;
-    const float curX = x0 + gap * (float)(wave - 1);
     const float lineW = 1.5f * hs;
-    Segment(x0, trackY, x0 + trackW, trackY, lineW + keyline, {0, 0, 0}, kKeyA);
-    if (wave > 1) Segment(x0, trackY, curX, trackY, lineW, kPast, 0.85f);
-    if (wave < finalWave) Segment(curX, trackY, x0 + trackW, trackY, lineW * 0.8f, kTrack, 0.80f);
+    // Half-width of each node along the track, so the links stop at the
+    // node's edge instead of running through it.
+    auto nodeHalf = [&](int w) {
+        const bool isFinal = w == finalWave;
+        const bool isElite = !isFinal && IsEliteWave(w, difficulty);
+        if (w == wave) return (isFinal || isElite ? 13.0f : 10.0f) * hs + 1.2f * hs;
+        if (isFinal) return 9.0f * hs + 0.9f * hs;
+        if (isElite) return 7.0f * hs + 0.9f * hs;
+        return (w < wave ? 3.0f : 4.0f) * hs + 0.7f * hs;
+    };
+    const float linkPad = 3.0f * hs;
+    for (int w = 1; w < finalWave; ++w) {
+        const float a = x0 + gap * (float)(w - 1) + nodeHalf(w) + linkPad;
+        const float b = x0 + gap * (float)w - nodeHalf(w + 1) - linkPad;
+        if (b <= a) continue;
+        const bool passed = w + 1 <= wave;
+        Segment(a, trackY, b, trackY, lineW + keyline, {0, 0, 0}, kKeyA);
+        Segment(a, trackY, b, trackY, passed ? lineW : lineW * 0.8f,
+                passed ? kPast : kTrack, passed ? 0.85f : 0.80f);
+    }
 
     const float frac = std::clamp(remain / WAVE_DURATION_SECONDS, 0.0f, 1.0f);
     for (int w = 1; w <= finalWave; ++w) {
@@ -235,59 +242,12 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
     }
     BatchFlush();
 
-    // ── next elite tag ──
-    const float tagY = trackY + 30.0f * hs;
-    const float tagSc = UiTextScale(g_TextS, UiTextLevel::Description, hs * 0.66f);
-    int eliteWave = -1;
-    ScheduledEliteInfo elite;
-    for (int w = std::max(wave, ELITE_WAVE_INTERVAL); w <= finalWave; ++w) {
-        const ScheduledEliteInfo info = GetScheduledElite(w, difficulty);
-        if (!info.scheduled || !IsEliteMob(info.kind)) continue;
-        if (w == wave && info.spawned && !info.alive) continue;   // already defeated
-        eliteWave = w;
-        elite = info;
-        break;
-    }
-    if (eliteWave > 0) {
-        static const wchar_t* kEliteLabel[3] = { L"정예", L"ELITE", L"エリート" };
-        static const wchar_t* kActive[3] = { L"출현", L"ACTIVE", L"出現中" };
-        static const wchar_t* kUntil[3] = { L"등장까지", L"IN", L"出現まで" };
-        const int codexId = (int)CodexMobIdForKind(elite.kind);
-        const wchar_t* name = EliteName(codexId);
-        wchar_t tag[96];
-        if (eliteWave > wave) {
-            swprintf_s(tag, L"%02d · %ls %ls", eliteWave, kEliteLabel[li], name);
-        } else if (elite.alive) {
-            swprintf_s(tag, L"%ls %ls · %ls", kEliteLabel[li], name, kActive[li]);
-        } else {
-            const int s = std::max(0, (int)std::ceil(ELITE_SPAWN_WAVE_SECONDS - waveSeconds));
-            swprintf_s(tag, L"%ls %ls · %ls %d:%02d", kEliteLabel[li], name, kUntil[li], s / 60, s % 60);
-        }
-        // Symbols only: a leader from the elite node to its text, no
-        // enemy figure (the node's diamond already says "elite").
-        const float nodeX = x0 + gap * (float)(eliteWave - 1);
-        const float textW = g_TextS.Width(tag, tagSc);
-        const float textX = std::min(nodeX + 10.0f * hs,
-                                     x0 + trackW + 40.0f * hs - textW);
-        const float nodeBottom = trackY + (eliteWave == wave ? 15.0f : 9.0f) * hs;
-        BindMainShader();
-        if (textX > nodeX) {
-            Segment(nodeX, nodeBottom, nodeX, tagY, 1.1f * hs, kElite, 0.75f);
-            Segment(nodeX, tagY, textX - 4.0f * hs, tagY, 1.1f * hs, kElite, 0.75f);
-        } else {
-            Segment(nodeX, nodeBottom, nodeX, tagY - 11.0f * hs, 1.1f * hs, kElite, 0.75f);
-        }
-        BatchFlush();
-        const float textBase = tagY + g_TextS.BaselineOffset(tagSc) * 0.36f;
-        HudText(g_TextS, tag, textX, textBase, tagSc, kElite, 1.0f);
-    }
-
     // ── this wave's debuff, kept until the wave ends ──
     if (wave >= 2 && gm.lastWaveDebuff >= 0 && gm.lastWaveDebuff < AUG_TOTAL) {
         static const wchar_t* kDebuff[3] = { L"디버프", L"DEBUFF", L"デバフ" };
         wchar_t line[160];
         swprintf_s(line, L"%ls · %ls", kDebuff[li], ALL_AUGS[gm.lastWaveDebuff].locName[li]);
-        const float debuffY = tagY + (eliteWave > 0 ? 26.0f : 0.0f) * hs;
+        const float debuffY = trackY + 30.0f * hs;
         const float lineSc = UiTextScale(g_TextS, UiTextLevel::Description, hs * 0.62f);
         const float textW = g_TextS.Width(line, lineSc);
         const float dash = 10.0f * hs;
