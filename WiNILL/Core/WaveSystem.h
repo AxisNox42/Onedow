@@ -4,6 +4,9 @@
 #include <algorithm>
 
 inline constexpr float WAVE_DURATION_SECONDS = 180.0f;
+// Every fifth wave schedules one elite, which enters this far into the wave.
+inline constexpr int   ELITE_WAVE_INTERVAL = 5;
+inline constexpr float ELITE_SPAWN_WAVE_SECONDS = 90.0f;
 
 // Keep difficulty-specific run length in one place.
 inline int FinalWaveCount(Difficulty difficulty) {

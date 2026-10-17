@@ -65,6 +65,7 @@
 #include "BlurShader.h"
 #include "MainShader.h"
 #include "EntityDraw.h"
+#include "WaveHud.h"
 #include "PlayerWeaponShell.h"
 #include "GameFonts.h"
 #include "PlayerRuntime.h"
@@ -605,6 +606,9 @@ static void ApplySingleAugIdx(int idx, int scrW, int scrH) {
 }
 
 static void ApplyWaveDebuff(int scrW, int scrH) {
+    // The wave HUD lists this wave's debuff until the wave ends, so a wave
+    // that draws none must not keep showing the previous one.
+    g_GameManager.lastWaveDebuff = -1;
     int idx = -1;
     if (g_GameManager.PickRandomDebuffIndices(&idx, 1) != 1) return;
     ApplySingleAugIdx(idx, scrW, scrH);
@@ -1813,6 +1817,22 @@ int main() {
                         const float f = std::clamp(
                             (float)std::atof(step.c_str() + 3), 0.01f, 1.0f);
                         gm.playerHP = g_Stats.maxHP * f;
+                    } else if (step.rfind("DIFF=", 0) == 0) {
+                        // DIFF=EASY|NORMAL|HARD: run difficulty (wave count,
+                        // elite schedule) for wave HUD captures.
+                        const std::string d = step.substr(5);
+                        g_Difficulty = d == "EASY" ? Difficulty::EASY
+                                     : d == "HARD" ? Difficulty::HARD
+                                     : Difficulty::NORMAL;
+                    } else if (step.rfind("CODEXMOB=", 0) == 0) {
+                        // CODEXMOB=UNSEEN|SEEN|KNOWN: Astral Log state of
+                        // every enemy, for the elite name tag. Never saved.
+                        const std::string st = step.substr(9);
+                        for (int id = 0; id < CM_COUNT; ++id) {
+                            g_MobSeen[id] = st != "UNSEEN";
+                            g_MobKillCounts[id] = st == "KNOWN" ? 1 : 0;
+                            g_RunMobKillCounts[id] = 0;
+                        }
                     }
                     if (step.rfind("SEARCH=", 0) == 0) {
                         // SEARCH=<ascii text>: fill the Codex search field
@@ -3816,160 +3836,7 @@ CollisionSystem::Update(pCX, pCY,
                                  UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale),
                                  0.7f, 1.0f, 0.7f, 0.9f);
                 }
-                const int finalWave = FinalWaveCount(g_Difficulty);
-                const int wave = CurrentWaveNumber(g_GameTime, g_Difficulty);
-                const int remain = static_cast<int>(ceilf(
-                    CurrentWaveSecondsRemaining(g_GameTime, g_Difficulty)));
-                constexpr float waveTransitionDuration = 2.0f;
-                const bool animatingWave =
-                    g_GameManager.waveTransitionTimer > 0.0f &&
-                    g_GameManager.waveTransitionFrom == wave - 1;
-                const float transitionElapsed = animatingWave
-                    ? waveTransitionDuration - g_GameManager.waveTransitionTimer
-                    : waveTransitionDuration;
-                auto easeWave = [](float t) {
-                    t = std::max(0.0f, std::min(1.0f, t));
-                    return t * t * (3.0f - 2.0f * t);
-                };
-                const float fillOld = animatingWave
-                    ? easeWave(transitionElapsed / 0.35f) : 1.0f;
-                const float shrinkOld = animatingWave
-                    ? easeWave((transitionElapsed - 0.35f) / 0.25f) : 1.0f;
-                const float slideRow = animatingWave
-                    ? easeWave((transitionElapsed - 0.60f) / 0.90f) : 1.0f;
-                const float growNew = animatingWave
-                    ? easeWave((transitionElapsed - 1.50f) / 0.50f) : 1.0f;
-                const float waveHudScale = hudScale * 0.82f;
-                const float waveCenterX = sw * 0.5f;
-                const float waveDotY = hudTopY + 14.0f * hudScale;
-                const float waveDotGap = 30.0f * hudScale;
-                const float currentDotRadius = 12.0f * hudScale;
-                const float smallDotRadius = 8.0f * hudScale;
-                const float waveShiftX = animatingWave
-                    ? waveDotGap * (1.0f - slideRow) : 0.0f;
-                const float waveInfoX = waveCenterX + waveShiftX;
-                // Transparent ring geometry keeps the arena visible inside each dot.
-                auto drawWaveRing = [](float cx, float cy, float radius,
-                                       float thickness, float alpha) {
-                    constexpr int segments = 32;
-                    const float inner = radius - thickness;
-                    const float step = 2.0f * (float)M_PI / segments;
-                    for (int i = 0; i < segments; ++i) {
-                        const float a0 = i * step, a1 = (i + 1) * step;
-                        const float c0 = cosf(a0), s0 = sinf(a0);
-                        const float c1 = cosf(a1), s1 = sinf(a1);
-                        const float ox0 = cx + c0 * radius, oy0 = cy + s0 * radius;
-                        const float ox1 = cx + c1 * radius, oy1 = cy + s1 * radius;
-                        const float ix0 = cx + c0 * inner, iy0 = cy + s0 * inner;
-                        const float ix1 = cx + c1 * inner, iy1 = cy + s1 * inner;
-                        BatchTri(ox0, oy0, ox1, oy1, ix1, iy1,
-                                 0.82f, 0.90f, 1.0f, alpha);
-                        BatchTri(ox0, oy0, ix1, iy1, ix0, iy0,
-                                 0.82f, 0.90f, 1.0f, alpha);
-                    }
-                };
-                auto drawWaveArc = [](float cx, float cy, float radius,
-                                      float thickness, float progress,
-                                      float alpha) {
-                    constexpr int segments = 32;
-                    const float inner = radius - thickness;
-                    const float end = std::max(0.0f, std::min(1.0f, progress));
-                    const float step = 2.0f * (float)M_PI / segments;
-                    for (int i = 0; i < segments && i < end * segments; ++i) {
-                        const float fraction = std::min(1.0f, end * segments - i);
-                        const float a0 = -0.5f * (float)M_PI + i * step;
-                        const float a1 = a0 + step * fraction;
-                        const float c0 = cosf(a0), s0 = sinf(a0);
-                        const float c1 = cosf(a1), s1 = sinf(a1);
-                        const float ox0 = cx + c0 * radius, oy0 = cy + s0 * radius;
-                        const float ox1 = cx + c1 * radius, oy1 = cy + s1 * radius;
-                        const float ix0 = cx + c0 * inner, iy0 = cy + s0 * inner;
-                        const float ix1 = cx + c1 * inner, iy1 = cy + s1 * inner;
-                        BatchTri(ox0, oy0, ox1, oy1, ix1, iy1,
-                                 0.82f, 0.90f, 1.0f, alpha);
-                        BatchTri(ox0, oy0, ix1, iy1, ix0, iy0,
-                                 0.82f, 0.90f, 1.0f, alpha);
-                    }
-                };
-                for (int dot = 0; dot < 5; ++dot) {
-                    const int dotWave = wave + dot - 2;
-                    const bool inRun = dotWave >= 1 && dotWave <= finalWave;
-                    if (!inRun) continue;
-                    const float dotX = waveCenterX + (dot - 2) * waveDotGap + waveShiftX;
-                    if (animatingWave && dotWave == g_GameManager.waveTransitionFrom) {
-                        const float radius = currentDotRadius +
-                            (smallDotRadius - currentDotRadius) * shrinkOld;
-                        if (transitionElapsed < 0.35f) {
-                            drawWaveRing(dotX, waveDotY, radius,
-                                         2.0f * hudScale, 0.98f);
-                            drawWaveArc(dotX, waveDotY, radius,
-                                        2.0f * hudScale, fillOld, 1.0f);
-                        } else {
-                            drawCircle(dotX, waveDotY, radius,
-                                       0.82f, 0.90f, 1.0f, 0.95f);
-                        }
-                    } else if (dotWave == wave) {
-                        const float radius = smallDotRadius +
-                            (currentDotRadius - smallDotRadius) * growNew;
-                        drawWaveRing(dotX, waveDotY, radius,
-                                     2.0f * hudScale, 0.98f);
-                        if (animatingWave) {
-                            drawWaveArc(dotX, waveDotY, radius,
-                                        2.0f * hudScale, 0.16f * growNew, 1.0f);
-                        }
-                    } else if (inRun && dotWave < wave) {
-                        drawCircle(dotX, waveDotY, smallDotRadius,
-                                   0.68f, 0.80f, 0.94f, 0.95f);
-                    } else {
-                        drawWaveRing(dotX, waveDotY, smallDotRadius,
-                                     1.5f * hudScale, 0.70f);
-                    }
-                }
-                // Flush the shape pass explicitly before returning to text rendering.
-                BatchFlush();
-                if (animatingWave) {
-                    wchar_t waveNumber[8];
-                    swprintf_s(waveNumber, L"%02d", wave);
-                    const float numberScale = UiTextScale(
-                        g_TextS, UiTextLevel::Description, waveHudScale * 1.15f);
-                    const float numberW = g_TextS.Width(waveNumber, numberScale);
-                    const float numberY = waveDotY + currentDotRadius + 10.0f * hudScale;
-                    g_TextS.Draw(waveNumber, waveInfoX - numberW * 0.5f,
-                                 numberY, numberScale,
-                                 0.82f, 0.90f, 1.0f, 1.0f);
-                }
-                wchar_t waveTimeBuf[16];
-                swprintf_s(waveTimeBuf, L"%02d:%02d", remain / 60, remain % 60);
-                const float waveTimeScale = UiTextScale(
-                    g_TextS, UiTextLevel::Supporting, waveHudScale * 0.84f);
-                const float waveTimeW = g_TextS.Width(waveTimeBuf, waveTimeScale);
-                const float waveTimeY = waveDotY + currentDotRadius +
-                    (animatingWave ? 30.0f : 14.0f) * hudScale;
-                g_TextS.Draw(waveTimeBuf, waveInfoX - waveTimeW * 0.5f,
-                             waveTimeY, waveTimeScale,
-                             0.82f, 0.90f, 1.0f, 0.92f);
-
-                if (g_GameManager.waveDebuffToast > 0.0f &&
-                    g_GameManager.lastWaveDebuff >= 0 &&
-                    g_GameManager.lastWaveDebuff < AUG_TOTAL) {
-                    wchar_t toast[256];
-                    const wchar_t* debuffLabel[3] = {
-                        L"디버프", L"DEBUFF", L"デバフ"
-                    };
-                    const int waveLi = std::max(0, std::min(2, LangIndex()));
-                    const wchar_t* waveLabel[3] = { L"웨이브", L"WAVE", L"ウェーブ" };
-                    swprintf_s(toast, L"%ls %d · %ls: %ls",
-                        waveLabel[waveLi], wave, debuffLabel[waveLi],
-                        ALL_AUGS[g_GameManager.lastWaveDebuff].locName[waveLi]);
-                    const float toastScale = UiTextScale(
-                        g_TextS, UiTextLevel::Description, hudScale * 0.86f);
-                    const float toastW = g_TextS.Width(toast, toastScale);
-                    const float alpha = std::min(1.0f,
-                        g_GameManager.waveDebuffToast / 0.5f);
-                    g_TextS.Draw(toast, waveInfoX - toastW * 0.5f,
-                                 waveTimeY + 24.0f * hudScale, toastScale,
-                                 1.0f, 0.36f, 0.32f, alpha);
-                }
+                DrawWaveHud(sw, hudScale, hudTopY, g_GameTime, g_Difficulty, g_GameManager);
 
                 // ?�상?? FPS
                 wchar_t fpsBuf[32];
