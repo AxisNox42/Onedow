@@ -35,7 +35,13 @@ inline constexpr Rgb kElite  = { 1.00f, 0.57f, 0.25f };
 inline constexpr Rgb kFinal  = { 1.00f, 0.81f, 0.38f };
 inline constexpr Rgb kDanger = { 1.00f, 0.36f, 0.38f };
 inline constexpr Rgb kText   = { 0.86f, 0.91f, 1.00f };
-inline constexpr float kKeyA = 0.38f;   // dark keyline under every line glyph
+// Keyline under every line glyph: a dark shade of the glyph's own colour,
+// like the text halo. On a dark wallpaper it sinks into the background; on
+// a bright or saturated one it outlines the bright core, so one of the two
+// always contrasts without a plate behind the track.
+inline constexpr float kKeyA = 0.88f;
+inline constexpr float kKeyShade = 0.18f;
+inline Rgb KeyCol(Rgb c) { return { c.r * kKeyShade, c.g * kKeyShade, c.b * kKeyShade }; }
 inline constexpr float kPi = 3.14159265f;
 
 inline void Segment(float x0, float y0, float x1, float y1, float w,
@@ -68,7 +74,7 @@ inline void Arc(float cx, float cy, float radius, float thick, float a0,
 inline void Ring(float cx, float cy, float radius, float thick, Rgb c, float a,
                  float keyline) {
     if (keyline > 0.0f)
-        Arc(cx, cy, radius, thick + keyline, 0.0f, 2.0f * kPi, {0, 0, 0}, kKeyA * a);
+        Arc(cx, cy, radius, thick + keyline, 0.0f, 2.0f * kPi, KeyCol(c), kKeyA * a);
     Arc(cx, cy, radius, thick, 0.0f, 2.0f * kPi, c, a);
 }
 
@@ -79,7 +85,7 @@ inline void DiamondOutline(float cx, float cy, float r, float thick, Rgb c,
     // Extend each edge by half the stroke so the corners stay sharp.
     for (int pass = keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
         const float w = pass == 0 ? thick + keyline : thick;
-        const Rgb col = pass == 0 ? Rgb{0, 0, 0} : c;
+        const Rgb col = pass == 0 ? KeyCol(c) : c;
         const float alpha = pass == 0 ? kKeyA * a : a;
         for (int i = 0; i < 4; ++i) {
             const float dx = px[i + 1] - px[i], dy = py[i + 1] - py[i];
@@ -111,7 +117,10 @@ inline void DiamondProgress(float cx, float cy, float r, float thick,
 }
 
 inline void Dot(float cx, float cy, float r, Rgb c, float a, float keyline) {
-    if (keyline > 0.0f) drawCircle(cx, cy, r + keyline * 0.5f, 0, 0, 0, kKeyA * a);
+    if (keyline > 0.0f) {
+        const Rgb k = KeyCol(c);
+        drawCircle(cx, cy, r + keyline * 0.5f, k.r, k.g, k.b, kKeyA * a);
+    }
     drawCircle(cx, cy, r, c.r, c.g, c.b, a);
 }
 
@@ -136,7 +145,7 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
     const int wave = CurrentWaveNumber(gameTime, difficulty);
     const float remain = CurrentWaveSecondsRemaining(gameTime, difficulty);
     const bool lastSeconds = remain > 0.0f && remain <= 10.0f;
-    const float keyline = 2.0f * hs;
+    const float keyline = 3.2f * hs;
     const float cx = sw * 0.5f;
 
     // ── header: WAVE 04 / 15   02:10 ──
@@ -192,7 +201,7 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
         const float b = x0 + gap * (float)w - nodeHalf(w + 1) - linkPad;
         if (b <= a) continue;
         const bool passed = w + 1 <= wave;
-        Segment(a, trackY, b, trackY, lineW + keyline, {0, 0, 0}, kKeyA);
+        Segment(a, trackY, b, trackY, lineW + keyline, KeyCol(passed ? kPast : kTrack), kKeyA);
         Segment(a, trackY, b, trackY, passed ? lineW : lineW * 0.8f,
                 passed ? kPast : kTrack, passed ? 0.85f : 0.80f);
     }
