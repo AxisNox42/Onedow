@@ -3370,6 +3370,7 @@ CollisionSystem::Update(pCX, pCY,
                 g_GameManager.currentState != GameState::GAMEOVER);
 
         DrawRegulusBeams(g_MonsterManager, g_GameTime);
+        DrawGenesisCages(g_MonsterManager, g_GameTime);
 
         for (auto m : g_MonsterManager.monsters) {
             if (m->alive || m->DeathEffectVisible()) drawMob(m, g_GameTime);
