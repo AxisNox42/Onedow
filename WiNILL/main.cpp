@@ -34,6 +34,7 @@
 #include "GameManager.h"
 #include "GameVersion.h"
 #include "Monster.h"
+#include "GravisField.h"
 #include "Bullet.h"
 #include "MonsterManager.h"
 #include "EnemyProgression.h"
@@ -414,47 +415,6 @@ void SyncPlayerBoundsSize(SpatialBounds& pw, float delta, bool animate) {
 static void EnsurePlayerBounds(SpatialBounds& pw) {
     SyncPlayerBoundsSize(pw, 1.0f, false);
 }
-
-static void UpdateGravisFields(float& playerX, float& playerY,
-                               bool playerControl, float dt) {
-    constexpr float fieldRadius = 285.0f;
-    const float fieldRadiusSq = fieldRadius * fieldRadius;
-    for (auto* gravis : g_MonsterManager.monsters) {
-        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
-
-        const float gx = gravis->worldX - playerX;
-        const float gy = gravis->worldY - playerY;
-        const float playerDistanceSq = gx * gx + gy * gy;
-        if (playerControl && !g_PlayerRuntime.dashActive &&
-            playerDistanceSq > 36.0f && playerDistanceSq < fieldRadiusSq) {
-            const float distance = sqrtf(playerDistanceSq);
-            const float influence = 1.0f - distance / fieldRadius;
-            const float pull = (24.0f + 58.0f * influence) * influence * dt;
-            playerX += gx / distance * pull;
-            playerY += gy / distance * pull;
-        }
-
-        for (auto& bullet : g_Bullets) {
-            if (!bullet.active) continue;
-            const float bx = gravis->worldX - bullet.x;
-            const float by = gravis->worldY - bullet.y;
-            const float distanceSq = bx * bx + by * by;
-            if (distanceSq <= 64.0f || distanceSq >= fieldRadiusSq) continue;
-
-            const float distance = sqrtf(distanceSq);
-            const float influence = 1.0f - distance / fieldRadius;
-            const float curve = (0.34f + 1.18f * influence) * dt;
-            bullet.dirX += bx / distance * curve;
-            bullet.dirY += by / distance * curve;
-            const float directionLength = sqrtf(bullet.dirX * bullet.dirX + bullet.dirY * bullet.dirY);
-            if (directionLength > 0.0001f) {
-                bullet.dirX /= directionLength;
-                bullet.dirY /= directionLength;
-            }
-        }
-    }
-}
-
 
 #if defined(_DEBUG)
 static constexpr bool kCompileDebugBuild = true;
@@ -2363,7 +2323,8 @@ int main() {
                 float pCY = playerWin.y + playerWin.height * 0.5f;
 
                 // ?�?�??�티�??�킬 ??쿨다??지??갱신 + ?�력(Shift ?�??/ Q·E·R ?�롯) ?�?�?
-                UpdatePlayerRuntimeTimers(FIXED_DT);
+                UpdatePlayerRuntimeTimers(
+                    FIXED_DT, GravisField::DashRecoveryMult(GravisField::g_playerInfluence));
 
 
                 // �??�기 ???�레?�어 중심 ??�� (?�백 + ?�해)
@@ -2463,7 +2424,9 @@ int main() {
                 if (playerControl && g_AutoSkill) for (int i = 0; i < 3; i++) useSkill(i);
 
                 // Apply each station once per fixed step.
-                UpdateGravisFields(pCX, pCY, playerControl, FIXED_DT);
+                GravisField::Apply(g_MonsterManager, g_Bullets, pCX, pCY,
+                                   playerControl, g_PlayerRuntime.dashActive,
+                                   MOVE_SPEED * g_Stats.GetMoveMultiplier(lmb), FIXED_DT);
                 AdvancePlayerKnockback(FIXED_DT, pCX, pCY);
                 pCX = std::max(ccX - halfW, std::min(ccX + halfW, pCX));
                 pCY = std::max(ccY + (BROWSER_CHROME_H - ccY) / zoomNow,
@@ -3084,7 +3047,8 @@ CollisionSystem::Update(pCX, pCY,
 
             // Fire bullets and cache the active damage modifiers.
             // ?�탑 모드: ?�레?�어 ?�동 발사 비활??(?�탑???�??발사)
-            float effInterval = g_Stats.fireInterval * g_Stats.GetFireIntervalMult();
+            float effInterval = g_Stats.fireInterval * g_Stats.GetFireIntervalMult() *
+                                GravisField::FireIntervalMult(GravisField::g_playerInfluence);
             float effSpeed    = g_Stats.bulletSpeed + g_Stats.GetBulletSpeedBonus();
             fireTimer += delta;
             auto spawnOne = [&](float tx, float ty) {

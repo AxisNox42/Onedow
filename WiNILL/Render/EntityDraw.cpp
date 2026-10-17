@@ -1,5 +1,6 @@
 ﻿#include "EntityDraw.h"
 #include "../Entity/MonsterManager.h"
+#include "../Entity/GravisField.h"
 #include "Camera.h"
 #include "DrawPrim.h"
 #include "IconSystem.h"
@@ -586,6 +587,16 @@ static void DrawEnemyArc(float cx, float cy, float radius,
                      cx + cosf(a1) * radius, cy + sinf(a1) * radius,
                      width, r, g, b, alpha);
     }
+}
+
+// Elite frame: two thin solid hexagon outlines counter-rotating around the
+// body. Shared by every IsEliteMob() kind as each one gets its second ability.
+static void DrawEliteFrame(float x, float y, float base, float phase,
+                           float r, float g, float b, float alpha) {
+    DrawEnemyArc(x, y, base * 1.44f, -phase * 0.6f, 6.2831853f, 6,
+                 r, g, b, alpha, 1.0f, false);
+    DrawEnemyArc(x, y, base * 1.30f, phase * 0.9f + 0.5235988f, 6.2831853f, 6,
+                 r, g, b, alpha * 0.7f, 0.8f, false);
 }
 
 // Landing-blast telegraph: a thin red ring at the damage radius over a
@@ -1825,10 +1836,21 @@ void drawMob(const Monster* m, float visualTime) {
         const float pulse = 0.5f + 0.5f * sinf(visualTime * 2.4f);
 
         if (!g_SuppressMobSeen) {
-            const float fieldR = 285.0f;
-            drawCircle(x, y, fieldR, cr, cg, cb, 0.035f + pulse * 0.018f);
+            // Time-dilation field: the boundary plus two counter-rotating
+            // partial arcs. As the player's influence rises the arcs close in
+            // on each other and sharpen, so the slowdown can be read off them.
+            const float fieldR = GravisField::RADIUS;
+            const float infl = GravisField::g_playerInfluence;
+            const float arcAlpha = 0.10f + 0.24f * infl;
+            const float gap = 0.20f * (1.0f - 0.6f * infl);
             DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 72,
-                         cr, cg, cb, 0.10f, 1.0f, false);
+                         cr, cg, cb, 0.10f + 0.06f * infl, 1.0f, false);
+            DrawEnemyArc(x, y, fieldR * 0.92f, visualTime * 0.16f, 3.6f, 36,
+                         cr, cg, cb, arcAlpha, 1.0f, false);
+            DrawEnemyArc(x, y, fieldR * (0.92f - gap), -visualTime * 0.22f + 2.1f, 3.6f, 32,
+                         cr, cg, cb, arcAlpha, 1.0f, false);
+            DrawEnemyArc(x, y, fieldR * (0.92f - 2.0f * gap), visualTime * 0.30f + 4.2f, 3.6f, 28,
+                         cr, cg, cb, arcAlpha * 0.8f, 0.9f, false);
         }
 
         float bodyR = cr, bodyG = cg, bodyB = cb;
@@ -1849,6 +1871,7 @@ void drawMob(const Monster* m, float visualTime) {
         }
         for (const auto& node : nodes)
             DrawEnemyNode(node, bodyR, bodyG, bodyB, 0.94f);
+        DrawEliteFrame(x, y, base, phase, bodyR, bodyG, bodyB, 0.40f);
 
         // A tilted inner orbit precesses against the hexagon. Its satellite
         // dims on the far half so the orbit reads as depth, not a flat ring.
@@ -1874,6 +1897,9 @@ void drawMob(const Monster* m, float visualTime) {
                    0.18f + pulse * 0.08f);
         DrawGenesisCore(x, y, base * 0.34f,
                         bodyR, bodyG, bodyB, 0.96f, false);
+        // Elite inner contour: a thin hexagon outline around the core.
+        DrawEnemyArc(x, y, base * 0.52f, phase * 1.3f, 6.2831853f, 6,
+                     liteR, liteG, liteB, 0.50f, 0.8f, false);
         if (depth >= 0.0f)
             DrawEnemyNode(satellite, 1.0f, 1.0f, 1.0f, 0.95f);
     } else if (m->kind == MobKind::QUASAR) {

@@ -40,6 +40,9 @@
     <ClCompile Include="Entity\ProjectileSystem.cpp">
       <Filter>Entity</Filter>
     </ClCompile>
+    <ClCompile Include="Entity\GravisField.cpp">
+      <Filter>Entity</Filter>
+    </ClCompile>
     <ClCompile Include="Core\GameManager.cpp">
       <Filter>Core</Filter>
     </ClCompile>
@@ -232,6 +235,9 @@
       <Filter>Entity</Filter>
     </ClInclude>
     <ClInclude Include="Entity\ProjectileSystem.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\GravisField.h">
       <Filter>Entity</Filter>
     </ClInclude>
     <ClInclude Include="Entity\RangedMob.h">

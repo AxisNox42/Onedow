@@ -39,7 +39,8 @@ inline constexpr float POST_PICK_GRACE = 0.5f;
 float PlayerSkillCooldownMax(SkillType type);
 void ResetPlayerSkills();
 void ResetPlayerInputEdges();
-void UpdatePlayerRuntimeTimers(float delta);
+// dashRecoveryMult < 1 slows only the dash cooldown (Gravis time dilation).
+void UpdatePlayerRuntimeTimers(float delta, float dashRecoveryMult = 1.0f);
 float UpdatePlayerMovement(float& playerX, float& playerY,
                            bool moveUp, bool moveDown,
                            bool moveLeft, bool moveRight,

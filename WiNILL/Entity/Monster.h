@@ -74,6 +74,12 @@ enum class MobKind {
     MAGNETAR,
 };
 
+// Elite mobs carry a second ability and an elite frame.
+inline constexpr bool IsEliteMob(MobKind kind) {
+    return kind == MobKind::GRAVIS || kind == MobKind::GENESIS ||
+           kind == MobKind::QUASAR;
+}
+
 inline constexpr float ANTARES_STUN_TIME_SEC = 0.6f;
 
 inline void MobKillReward(MobKind kind, float& xpBase, float& scoreBase) {

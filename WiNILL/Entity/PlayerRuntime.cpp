@@ -36,8 +36,8 @@ void ResetPlayerInputEdges() {
     for (bool& held : g_PlayerRuntime.skillInputHeld) held = false;
 }
 
-void UpdatePlayerRuntimeTimers(float delta) {
-    if (g_PlayerRuntime.dashCooldown > 0.0f) g_PlayerRuntime.dashCooldown -= delta;
+void UpdatePlayerRuntimeTimers(float delta, float dashRecoveryMult) {
+    if (g_PlayerRuntime.dashCooldown > 0.0f) g_PlayerRuntime.dashCooldown -= delta * dashRecoveryMult;
     if (g_PlayerRuntime.dashInvulnerability > 0.0f) g_PlayerRuntime.dashInvulnerability -= delta;
     if (g_PlayerRuntime.postPickGrace > 0.0f) g_PlayerRuntime.postPickGrace -= delta;
     if (g_PlayerRuntime.timeStopTimer > 0.0f) g_PlayerRuntime.timeStopTimer -= delta;

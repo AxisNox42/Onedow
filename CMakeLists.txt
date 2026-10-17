@@ -24,6 +24,7 @@ add_executable(WiNILL
     ${WINILL_DIR}/Entity/PlayerRuntime.cpp
     ${WINILL_DIR}/Entity/EnemySpawner.cpp
     ${WINILL_DIR}/Entity/ProjectileSystem.cpp
+    ${WINILL_DIR}/Entity/GravisField.cpp
     ${WINILL_DIR}/Core/GameManager.cpp
     ${WINILL_DIR}/Core/Scenes/SceneBoot.cpp
     ${WINILL_DIR}/Core/Scenes/SceneSkills.cpp

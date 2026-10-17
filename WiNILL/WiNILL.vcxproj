@@ -196,6 +196,7 @@
     <ClCompile Include="Entity\PlayerRuntime.cpp" />
     <ClCompile Include="Entity\EnemySpawner.cpp" />
     <ClCompile Include="Entity\ProjectileSystem.cpp" />
+    <ClCompile Include="Entity\GravisField.cpp" />
     <ClCompile Include="Render\BlurShader.cpp" />
     <ClCompile Include="Render\Camera.cpp" />
     <ClCompile Include="Render\EntityDraw.cpp" />
@@ -254,6 +255,7 @@
     <ClInclude Include="Entity\PlayerRuntime.h" />
     <ClInclude Include="Entity\EnemySpawner.h" />
     <ClInclude Include="Entity\ProjectileSystem.h" />
+    <ClInclude Include="Entity\GravisField.h" />
     <ClInclude Include="Entity\RangedMob.h" />
     <ClInclude Include="Entity\Weapons.h" />
     <ClInclude Include="resource.h" />
