@@ -45,6 +45,8 @@ struct SkillSlotView {
     float effectFrac;    // remaining effect time, 0 = none
     float pulse;         // remaining pulse time, 0 .. kPulseDur
     const wchar_t* key;
+    bool showSeconds;    // cooldown seconds drawn over the icon
+    bool iconBright;     // full-strength icon; dimmed whenever seconds show
 };
 
 struct PassiveView {
@@ -162,6 +164,12 @@ inline SkillHudView BuildSkillHudView(const SkillHudInputs& in, const SkillHudPu
         else if (s.glyph == SkillGlyph::TimeStop)
             s.effectFrac = Frac01(in.timeStopTimer, in.timeStopDur);
         s.pulse = pulse.slot[i + 1];
+    }
+    // Seconds sit on the icon, so the icon dims under them even while an
+    // effect runs (its outer frame already shows the effect).
+    for (SkillSlotView& s : v.slots) {
+        s.showSeconds = !s.empty && s.elapsedFrac < 1.0f && s.cdRemain > 0.0f;
+        s.iconBright = !s.empty && !s.showSeconds;
     }
 
     if (in.rainOwned) {

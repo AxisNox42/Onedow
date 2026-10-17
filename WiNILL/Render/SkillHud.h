@@ -221,8 +221,7 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale, fl
             hud_lines::SquareOutline(cx, cy, half + 14.0f * hs * t, 1.4f * hs, col,
                                      0.9f * (1.0f - t), 0.0f);
         }
-        const bool bright = ready || s.effectFrac > 0.0f;
-        const Pen pen{ col, bright ? 1.0f : 0.30f, 1.8f * hs, 1.8f * hs, keyline, false };
+        const Pen pen{ col, s.iconBright ? 1.0f : 0.30f, 1.8f * hs, 1.8f * hs, keyline, false };
         DrawSkillGlyph(pen, s.glyph, cx, cy, half * 0.55f);
     }
 
@@ -257,7 +256,7 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale, fl
         const bool ready = !s.empty && s.elapsedFrac >= 1.0f;
         g_TextS.Draw(s.key, left + 1.0f * hs, top - 5.0f * hs - keyH, keySc,
                      kKeyText.r, kKeyText.g, kKeyText.b, ready ? 0.95f : 0.55f);
-        if (!s.empty && s.elapsedFrac < 1.0f && s.cdRemain > 0.0f) {
+        if (s.showSeconds) {
             wchar_t buf[8];
             swprintf_s(buf, L"%d", (int)std::ceil(s.cdRemain));
             const float w = g_TextL.Width(buf, secSc);

@@ -53,6 +53,20 @@ static void effect_frac() {
     assert(Near(v.slots[2].effectFrac, 0.5f));
     assert(Near(v.slots[1].effectFrac, 0.0f));
 }
+// Review #1: FOCUS cooling down while its effect runs shows two-digit
+// seconds; the icon must dim so the number reads (the outer frame already
+// says the effect is on).
+static void seconds_dim_icon_during_effect() {
+    auto in = Base();
+    in.equipped[1] = true; in.glyph[1] = SkillGlyph::Focus;
+    in.cd[1] = 11.0f; in.cdMax[1] = 20.0f; in.hyperFocusTimer = 2.0f;
+    in.equipped[2] = true; in.glyph[2] = SkillGlyph::TimeStop;
+    auto v = BuildSkillHudView(in, SkillHudPulse{});
+    assert(v.slots[2].showSeconds && !v.slots[2].iconBright);
+    assert(v.slots[2].effectFrac > 0.0f);
+    assert(!v.slots[3].showSeconds && v.slots[3].iconBright);
+    assert(!v.slots[1].showSeconds && !v.slots[1].iconBright);
+}
 static void flash_glyph() {
     auto in = Base();
     in.dashUpgrade = true;
@@ -126,6 +140,7 @@ int main() {
     cooldown_frac();
     frac_clamped();
     effect_frac();
+    seconds_dim_icon_during_effect();
     flash_glyph();
     passive_order_and_stacks();
     light_step_off();
