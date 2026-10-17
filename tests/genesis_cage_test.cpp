@@ -212,6 +212,27 @@ static void CheckEscapeOutsideNoDamage() {
     mm.Clear();
 }
 
+// Chakram Singularity keeps enemies off the player and gives them
+// singularityGrace; a cage held off that way must not hurt either.
+static void CheckSingularityGraceBlocksEdgeHit() {
+    MonsterManager mm;
+    std::vector<Bullet> bullets;
+    float hp = 100.0f;
+    Monster* g = AddGenesis(mm, 0.0f, 0.0f);
+    AddRing(mm, g, 4);
+    ArmCage(g);
+    Step(mm, PX, PY, hp, bullets, DT);
+    for (float t = 0.0f; t < 4.0f && g->hivePhase == 4; t += DT) {
+        for (auto* m : mm.monsters)
+            if (m->alive && m->thrownPhase == 3) m->singularityGrace = 0.16f;
+        mm.UpdateAll(PX, PY, DT, hp, bullets);
+    }
+    assert(Near(hp, 100.0f));
+    assert(g->hivePhase == 0);
+    std::printf("singularity grace blocks edge hit ok\n");
+    mm.Clear();
+}
+
 static Monster* CagedInSlot(MonsterManager& mm, const Monster* g, int slot) {
     for (auto* m : mm.monsters)
         if (m->alive && m->thrownPhase == 3 && m->thrownOwnerId == g->genesisId &&
@@ -308,6 +329,7 @@ int main() {
     CheckDeployReachesRing();
     CheckLockHitsOnceAndEnds();
     CheckEscapeOutsideNoDamage();
+    CheckSingularityGraceBlocksEdgeHit();
     CheckKilledNodeOpensGap();
     CheckGenesisDeathReleasesNodes();
     CheckTwoGenesisKeepTheirOwnNodes();

@@ -492,11 +492,18 @@ private:
         }
         if (m->cageStage != 2) return;
 
+        // Vertices held off by the Chakram Singularity (singularityGrace)
+        // cannot hurt, like a thrown Swarm in flight.
+        bool held = false;
+        for (int k = 0; k < m->cageCount; ++k)
+            if (const Monster* s = GenesisCageNode(m, k))
+                if (s->singularityGrace > 0.0f) held = true;
         bool hit = false;
-        ForEachGenesisCageEdge(m, [&](float ax, float ay, float bx, float by) {
-            if (SegmentDistSq(px, py, ax, ay, bx, by) < EDGE_HIT_RADIUS * EDGE_HIT_RADIUS)
-                hit = true;
-        });
+        if (!held)
+            ForEachGenesisCageEdge(m, [&](float ax, float ay, float bx, float by) {
+                if (SegmentDistSq(px, py, ax, ay, bx, by) < EDGE_HIT_RADIUS * EDGE_HIT_RADIUS)
+                    hit = true;
+            });
         if (hit) HurtPlayer(playerHP, EDGE_DAMAGE);
         if (hit || m->spawnTimer >= LOCK_TIME) EndGenesisCage(m);
     }

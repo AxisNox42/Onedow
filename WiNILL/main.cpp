@@ -2472,7 +2472,8 @@ int main() {
                             float pd2 = pdx * pdx + pdy * pdy;
                             if (d2 < pullR2) {
                                 m->singularityGrace = 0.14f;
-                                if (d2 > 900.0f && pd2 > safeR2) {
+                                // A cage vertex is placed by its Genesis: grace and damage only.
+                                if (d2 > 900.0f && pd2 > safeR2 && m->thrownPhase != 3) {
                                     float d = std::sqrt(d2) + 1e-3f;
                                     m->worldX += (ddx / d) * 300.0f * FIXED_DT;
                                     m->worldY += (ddy / d) * 300.0f * FIXED_DT;
@@ -2566,6 +2567,10 @@ int main() {
                         float pdx = m->worldX - pCX, pdy = m->worldY - pCY;
                         float pd2 = pdx * pdx + pdy * pdy;
                         if (pd2 >= safeR2) continue;
+                        if (m->thrownPhase == 3) {          // cage vertex: held off, not moved
+                            m->singularityGrace = 0.16f;
+                            continue;
+                        }
                         float pd = std::sqrt(pd2) + 1e-3f;
                         float push = (safeR - pd + 20.0f) * 16.0f;
                         m->worldX += (pdx / pd) * push * FIXED_DT;
