@@ -74,18 +74,16 @@ struct Pen {
     }
 };
 
+// Two chevrons centred on (x, y), no tail. Dash dots only the leading tip;
+// Flash dots both tips and enlarges the leading one.
 inline void GlyphDash(const Pen& p, float x, float y, float r, bool flash) {
-    for (float dx : { -0.45f, 0.15f }) {
-        const float tipX = x + dx * r + 0.25f * r;
-        p.Line(x + dx * r - 0.30f * r, y - 0.55f * r, tipX, y);
-        p.Line(tipX, y, x + dx * r - 0.30f * r, y + 0.55f * r);
-        p.Node(tipX, y);
+    for (float c : { -0.28f, 0.28f }) {
+        const float backX = x + (c - 0.26f) * r, tipX = x + (c + 0.26f) * r;
+        p.Line(backX, y - 0.55f * r, tipX, y);
+        p.Line(tipX, y, backX, y + 0.55f * r);
     }
-    p.Line(x - 0.95f * r, y, x - 0.62f * r, y);
-    if (flash) {
-        p.Line(x + 0.40f * r, y, x + 0.80f * r, y);
-        p.Node(x + 0.92f * r, y, 1.5f);
-    }
+    if (flash) p.Node(x + 0.02f * r, y);
+    p.Node(x + 0.54f * r, y, flash ? 1.6f : 1.0f);
 }
 
 inline void GlyphBurst(const Pen& p, float x, float y, float r) {
@@ -121,10 +119,12 @@ inline void GlyphTimeStop(const Pen& p, float x, float y, float r) {
     p.Node(x - s, y + h); p.Node(x + s, y + h);
 }
 
+// Three slanted arrows; the set is symmetric about (x, y) so the icon sits
+// on the triangle's centroid.
 inline void GlyphRain(const Pen& p, float x, float y, float r) {
-    for (float dx : { -0.45f, 0.05f, 0.55f }) {
-        const float x0 = x + dx * r - 0.25f * r, y0 = y - 0.60f * r;
-        const float x1 = x + dx * r + 0.15f * r, y1 = y + 0.45f * r;
+    for (float dx : { -0.50f, 0.0f, 0.50f }) {
+        const float x0 = x + dx * r - 0.20f * r, y0 = y - 0.52f * r;
+        const float x1 = x + dx * r + 0.20f * r, y1 = y + 0.52f * r;
         p.Line(x0, y0, x1, y1);
         const float ang = std::atan2(y1 - y0, x1 - x0);
         for (float d : { 2.6f, -2.6f })
@@ -232,9 +232,9 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
             hud_lines::TriangleDownOutline(pcx, pcy, tr + 14.0f * hs * t, 1.4f * hs, col,
                                            0.9f * (1.0f - t), 0.0f);
         }
-        // The upper half is the wide part, so the icon sits a little high.
+        // Centred on the centroid, sized to the inscribed circle (r/2).
         const Pen pen{ col, charging ? 0.55f : 1.0f, 1.6f * hs, 1.4f * hs, keyline, false };
-        DrawPassiveGlyph(pen, p, pcx, pcy - 0.12f * tr, tr * 0.5f);
+        DrawPassiveGlyph(pen, p, pcx, pcy, tr * 0.48f);
     }
     BatchFlush();
 
