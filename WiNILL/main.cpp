@@ -699,11 +699,6 @@ static skill_hud::SkillHudInputs GatherSkillHudInputs() {
     in.rainOwned = g_Stats.bulletRain;
     in.rainTimer = g_BulletRainTimer;
     in.rainCooldown = g_Stats.bulletRainCooldown;
-    in.lightStepOwned = g_Stats.lightStep;
-    in.lightStepDisable = g_Stats.lightStepDisableTimer;
-    in.lightStepHitLock = g_Stats.lightStepHitLock;
-    in.deathActive = !g_ApproachOrbs.empty();
-    in.deathStacks = g_Stats.approachStacks;
     return in;
 }
 
@@ -3997,11 +3992,11 @@ CollisionSystem::Update(pCX, pCY,
                 }
             }
 
-            // Skill HUD (bottom left): keys, cooldowns and owned passives.
+            // Skill HUD (bottom centre): key cooldowns and cooldown passives.
             if (st == GameState::RUNNING ||
                 (st == GameState::PAUSED && !g_ShowPauseInventory)) {
                 DrawSkillHud(skill_hud::BuildSkillHudView(GatherSkillHudInputs(), g_SkillHudPulse),
-                             UiScale(sw, sh), sh);
+                             UiScale(sw, sh), sw, sh);
             }
 
         }

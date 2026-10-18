@@ -1,9 +1,10 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
-// Skill HUD (bottom left): four keys (SHIFT/Q/E/R) as square frames with a
-// line icon, and a row of owned passives (RAIN/LSTP/DEATH) as circles above.
-//   square = pressed by the player, circle = runs by itself
-//   cooldown / charge = clockwise wedge filling the frame from 12 o'clock
+// Skill HUD (bottom centre): four keys (SHIFT/Q/E/R) as circles with a
+// line icon, and owned cooldown passives (RAIN) as triangles above them.
+//   circle = pressed by the player, triangle = runs by itself
+//   cooldown / charge = clockwise wedge filling the shape from 12 o'clock,
+//   the same reading as the wave track's current node
 // Icons are line pictograms with constellation dots on their ends and
 // joints. Text is only the key letter and the seconds left on a cooldown.
 // State comes from SkillHudModel.h (BuildSkillHudView).
@@ -35,8 +36,6 @@ inline Rgb ColorRgb(HudColor c) {
     case HudColor::Close:     return { 0.50f, 0.80f, 1.00f };
     case HudColor::Focus:     return { 0.59f, 0.94f, 0.86f };
     case HudColor::Rain:      return { 1.00f, 0.50f, 0.20f };
-    case HudColor::LightStep: return { 0.70f, 0.70f, 0.85f };
-    case HudColor::Death:     return { 1.00f, 0.36f, 0.38f };
     default:                  return { 0.36f, 0.41f, 0.53f };
     }
 }
@@ -134,24 +133,6 @@ inline void GlyphRain(const Pen& p, float x, float y, float r) {
     }
 }
 
-inline void GlyphLightStep(const Pen& p, float x, float y, float r) {
-    const float cx = x + 0.35f * r, cy = y + 0.35f * r;
-    for (int k = 0; k < 3; ++k) {
-        const float rr = r * (0.55f + 0.22f * k);
-        p.Arc(cx, cy, rr, hud_lines::kPi, hud_lines::kPi * 0.5f);
-        p.Node(cx, cy - rr);
-    }
-}
-
-inline void GlyphDeath(const Pen& p, float x, float y, float r, int stacks) {
-    p.Circle(x, y, 0.32f * r);
-    p.Circle(x, y, 0.72f * r, 0.45f, 0.6f);
-    for (int k = 0; k < stacks; ++k) {
-        const float t = -0.5f * hud_lines::kPi + k * 2.0f * hud_lines::kPi / 3.0f;
-        p.Node(x + 0.72f * r * std::cos(t), y + 0.72f * r * std::sin(t), 1.4f);
-    }
-}
-
 inline void DrawSkillGlyph(Pen p, SkillGlyph g, float x, float y, float r) {
     for (int pass = p.keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
         p.keyPass = pass == 0;
@@ -169,9 +150,7 @@ inline void DrawPassiveGlyph(Pen p, const PassiveView& v, float x, float y, floa
     for (int pass = p.keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
         p.keyPass = pass == 0;
         switch (v.glyph) {
-        case PassiveGlyph::Rain:      GlyphRain(p, x, y, r); break;
-        case PassiveGlyph::LightStep: GlyphLightStep(p, x, y, r); break;
-        case PassiveGlyph::Death:     GlyphDeath(p, x, y, r, v.stacks); break;
+        case PassiveGlyph::Rain: GlyphRain(p, x, y, r); break;
         }
     }
 }
@@ -182,86 +161,97 @@ inline float PulseT(float pulse) {
 
 }  // namespace skill_hud
 
-inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale, float sh) {
+inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
+                         float sw, float sh) {
     using namespace skill_hud;
     using hud_lines::FillShape;
     const float hs = hudScale;
     const float keyline = 3.2f * hs * CombatKeylineStrength();
-    const float side = 60.0f * hs, gap = 10.0f * hs, half = side * 0.5f;
-    const float x0 = BottomLeftActionX(hs);
-    const float top = HudY(sh, side + Hud::SKILL_KEYS_Y * hs);
-    const float cy = top + half;
+    const float radius = 30.0f * hs, gap = 10.0f * hs, pitch = 2.0f * radius + gap;
+    const float rowW = 4.0f * 2.0f * radius + 3.0f * gap;
+    const float x0 = sw * 0.5f - rowW * 0.5f;          // left edge of the key row
+    const float top = HudY(sh, 2.0f * radius + Hud::SKILL_KEYS_Y * hs);
+    const float cy = top + radius;
     const float keySc = UiTextScale(g_TextS, UiTextLevel::Supporting, hs);
     const float secSc = UiTextScale(g_TextL, UiTextLevel::Description, hs);
     const float keyH = g_TextS.Height(L"SHIFT", keySc);
+    const float keyTop = top - 5.0f * hs - keyH;
+    auto keyX = [&](int i) { return x0 + radius + i * pitch; };
 
     // ── shapes ──
     BindMainShader();
     for (int i = 0; i < 4; ++i) {
         const SkillSlotView& s = view.slots[i];
-        const float cx = x0 + half + i * (side + gap);
+        const float cx = keyX(i);
         const Rgb col = ColorRgb(s.color);
         if (s.empty) {
-            hud_lines::SquareOutline(cx, cy, half, 1.0f * hs, col, 0.35f, keyline);
-            const Pen plus{ col, 0.55f, 1.2f * hs, 0.0f, 0.0f, false };
-            plus.Line(cx - 7.0f * hs, cy, cx + 7.0f * hs, cy);
-            plus.Line(cx, cy - 7.0f * hs, cx, cy + 7.0f * hs);
+            hud_lines::Ring(cx, cy, radius, 1.0f * hs, col, 0.35f, keyline);
+            for (int pass = keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
+                const Pen plus{ col, 0.55f, 1.2f * hs, 0.0f, keyline, pass == 0 };
+                plus.Line(cx - 7.0f * hs, cy, cx + 7.0f * hs, cy);
+                plus.Line(cx, cy - 7.0f * hs, cx, cy + 7.0f * hs);
+            }
             continue;
         }
         const bool ready = s.elapsedFrac >= 1.0f;
         const float frameW = (ready ? 2.0f : 1.4f) * hs;
-        hud_lines::SquareOutline(cx, cy, half, frameW, col, ready ? 1.0f : 0.55f, keyline);
+        hud_lines::Ring(cx, cy, radius, frameW, col, ready ? 1.0f : 0.55f, keyline);
         if (!ready)
-            hud_lines::SectorFill(cx, cy, half - frameW * 0.5f - 1.5f * hs, FillShape::Square,
+            hud_lines::SectorFill(cx, cy, radius - frameW * 0.5f - 1.5f * hs, FillShape::Circle,
                                   s.elapsedFrac, col, 0.30f);
         if (s.effectFrac > 0.0f)
-            hud_lines::SquareOutline(cx, cy, half + 5.0f * hs, 1.1f * hs, col, s.effectFrac, keyline);
+            hud_lines::Ring(cx, cy, radius + 5.0f * hs, 1.1f * hs, col, s.effectFrac, keyline);
         if (s.pulse > 0.0f) {
             const float t = PulseT(s.pulse);
-            hud_lines::SquareOutline(cx, cy, half + 14.0f * hs * t, 1.4f * hs, col,
-                                     0.9f * (1.0f - t), 0.0f);
+            hud_lines::Ring(cx, cy, radius + 14.0f * hs * t, 1.4f * hs, col,
+                            0.9f * (1.0f - t), 0.0f);
         }
         const Pen pen{ col, s.iconBright ? 1.0f : 0.30f, 1.8f * hs, 1.8f * hs, keyline, false };
-        DrawSkillGlyph(pen, s.glyph, cx, cy, half * 0.55f);
+        DrawSkillGlyph(pen, s.glyph, cx, cy, radius * 0.55f);
     }
 
-    const float pr = 17.0f * hs;
-    const float pcy = top - keyH - 12.0f * hs - pr;
+    // Passive triangles point down, centred above the key row; the bottom
+    // vertex keeps 8·hs clear of the key letters.
+    const float tr = 22.0f * hs;                          // circumradius
+    const float triW = tr * 1.7320508f, triGap = 12.0f * hs;
+    const float passW = view.passiveCount * triW + (view.passiveCount - 1) * triGap;
+    const float pcy = keyTop - 8.0f * hs - tr;
     for (int i = 0; i < view.passiveCount; ++i) {
         const PassiveView& p = view.passives[i];
-        const float pcx = x0 + pr + i * (2.0f * pr + 12.0f * hs);
+        const float pcx = sw * 0.5f - passW * 0.5f + triW * 0.5f + i * (triW + triGap);
         const Rgb col = ColorRgb(p.color);
-        const bool off = p.glyph == PassiveGlyph::LightStep && !p.on;
-        hud_lines::Ring(pcx, pcy, pr, 1.4f * hs, col, off ? 0.55f : 1.0f, keyline);
-        const bool charging = (p.glyph == PassiveGlyph::Rain && p.chargeFrac < 1.0f) || off;
+        const float frameW = 1.4f * hs;
+        hud_lines::TriangleDownOutline(pcx, pcy, tr, frameW, col, 1.0f, keyline);
+        const bool charging = p.chargeFrac < 1.0f;
+        // Shrinking the inradius by d shrinks the circumradius by 2d.
         if (charging)
-            hud_lines::SectorFill(pcx, pcy, pr - 0.7f * hs - 1.5f * hs, FillShape::Circle,
-                                  p.chargeFrac, col, 0.30f);
+            hud_lines::SectorFill(pcx, pcy, tr - 2.0f * (frameW * 0.5f + 1.5f * hs),
+                                  FillShape::TriangleDown, p.chargeFrac, col, 0.30f);
         if (p.pulse > 0.0f) {
             const float t = PulseT(p.pulse);
-            hud_lines::Ring(pcx, pcy, pr + 14.0f * hs * t, 1.4f * hs, col, 0.9f * (1.0f - t), 0.0f);
+            hud_lines::TriangleDownOutline(pcx, pcy, tr + 14.0f * hs * t, 1.4f * hs, col,
+                                           0.9f * (1.0f - t), 0.0f);
         }
-        float alpha = 1.0f, w = 1.8f * hs;
-        if (off) { alpha = 0.35f; w = 1.0f * hs; }
-        else if (p.glyph == PassiveGlyph::Rain && p.chargeFrac < 1.0f) alpha = 0.55f;
-        const Pen pen{ col, alpha, w, 1.6f * hs, keyline, false };
-        DrawPassiveGlyph(pen, p, pcx, pcy, pr * 0.62f);
+        // The upper half is the wide part, so the icon sits a little high.
+        const Pen pen{ col, charging ? 0.55f : 1.0f, 1.6f * hs, 1.4f * hs, keyline, false };
+        DrawPassiveGlyph(pen, p, pcx, pcy - 0.12f * tr, tr * 0.5f);
     }
     BatchFlush();
 
-    // ── text: key letters outside each frame, seconds inside ──
+    // ── text: key letters centred above each circle, seconds inside ──
     for (int i = 0; i < 4; ++i) {
         const SkillSlotView& s = view.slots[i];
-        const float left = x0 + i * (side + gap);
+        const float cx = keyX(i);
         const bool ready = !s.empty && s.elapsedFrac >= 1.0f;
-        g_TextS.Draw(s.key, left + 1.0f * hs, top - 5.0f * hs - keyH, keySc,
+        const float kw = g_TextS.Width(s.key, keySc);
+        g_TextS.Draw(s.key, cx - kw * 0.5f, keyTop, keySc,
                      kKeyText.r, kKeyText.g, kKeyText.b, ready ? 0.95f : 0.55f);
         if (s.showSeconds) {
             wchar_t buf[8];
             swprintf_s(buf, L"%d", (int)std::ceil(s.cdRemain));
             const float w = g_TextL.Width(buf, secSc);
             const float h = g_TextL.Height(buf, secSc);
-            g_TextL.Draw(buf, left + half - w * 0.5f, cy - h * 0.5f, secSc,
+            g_TextL.Draw(buf, cx - w * 0.5f, cy - h * 0.5f, secSc,
                          kKeyText.r, kKeyText.g, kKeyText.b, 0.95f);
         }
     }

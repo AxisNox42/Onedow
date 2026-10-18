@@ -4,7 +4,8 @@
 // shows (cooldown wedge, effect frame, ready pulse). No GL and no game
 // headers, so tests/skill_hud_model_test.cpp can build it alone.
 //   slot 0 = SHIFT (dash), slots 1..3 = Q/E/R (inputs index 0..2)
-//   passives in fixed order RAIN → LSTP → DEATH, only the owned ones
+//   passives: cooldown-type only (RAIN). On/off passives and debuffs
+//   are listed in the owned-augment panel, not here.
 // ─────────────────────────────────────────────────────────────
 #include <algorithm>
 #include <cmath>
@@ -12,8 +13,8 @@
 namespace skill_hud {
 
 enum class SkillGlyph { Dash, Flash, Burst, Focus, TimeStop };
-enum class PassiveGlyph { Rain, LightStep, Death };
-enum class HudColor { Dash, Time, Close, Focus, Rain, LightStep, Death, Empty };
+enum class PassiveGlyph { Rain };
+enum class HudColor { Dash, Time, Close, Focus, Rain, Empty };
 
 inline constexpr float kPulseDur = 0.45f;
 
@@ -30,10 +31,6 @@ struct SkillHudInputs {
     float timeStopTimer, timeStopDur;
     bool  rainOwned;
     float rainTimer, rainCooldown;
-    bool  lightStepOwned;
-    float lightStepDisable, lightStepHitLock;
-    bool  deathActive;
-    int   deathStacks;
 };
 
 struct SkillSlotView {
@@ -53,14 +50,12 @@ struct PassiveView {
     PassiveGlyph glyph;
     HudColor color;
     float chargeFrac;
-    bool on;
-    int stacks;
     float pulse;
 };
 
 struct SkillHudView {
     SkillSlotView slots[4];
-    PassiveView passives[3];
+    PassiveView passives[1];
     int passiveCount;
 };
 
@@ -177,24 +172,7 @@ inline SkillHudView BuildSkillHudView(const SkillHudInputs& in, const SkillHudPu
         p.glyph = PassiveGlyph::Rain;
         p.color = HudColor::Rain;
         p.chargeFrac = Frac01(in.rainTimer, in.rainCooldown);
-        p.on = true;
         p.pulse = pulse.rain;
-    }
-    if (in.lightStepOwned) {
-        PassiveView& p = v.passives[v.passiveCount++];
-        p.glyph = PassiveGlyph::LightStep;
-        p.color = HudColor::LightStep;
-        p.on = in.lightStepDisable <= 0.0f;
-        p.chargeFrac = p.on ? 1.0f
-            : 1.0f - Frac01(in.lightStepDisable, in.lightStepHitLock);
-    }
-    if (in.deathActive) {
-        PassiveView& p = v.passives[v.passiveCount++];
-        p.glyph = PassiveGlyph::Death;
-        p.color = HudColor::Death;
-        p.on = true;
-        p.chargeFrac = 1.0f;
-        p.stacks = std::clamp(in.deathStacks, 1, 3);
     }
     return v;
 }

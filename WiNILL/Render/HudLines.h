@@ -89,18 +89,30 @@ inline void SquareOutline(float cx, float cy, float half, float thick, Rgb c,
     ClosedOutline(px, py, 4, thick, c, a, keyline);
 }
 
-enum class FillShape { Circle, Diamond, Square };
+// Equilateral triangle pointing down, centred on its centroid, with
+// circumradius r (top edge at y - r/2, bottom vertex at y + r).
+inline void TriangleDownOutline(float cx, float cy, float r, float thick, Rgb c,
+                                float a, float keyline) {
+    const float hx = r * 0.8660254f;
+    const float px[3] = { cx - hx, cx + hx, cx };
+    const float py[3] = { cy - r * 0.5f, cy - r * 0.5f, cy + r };
+    ClosedOutline(px, py, 3, thick, c, a, keyline);
+}
+
+enum class FillShape { Circle, Diamond, Square, TriangleDown };
 
 // Clockwise wedge from 12 o'clock covering frac of a node's interior.
 // Circle: radius r. Diamond: vertices at top/right/bottom/left
 // (|x| + |y| = r). Square: half side r (max(|x|, |y|) = r).
+// TriangleDown: circumradius r, as TriangleDownOutline.
 inline void SectorFill(float cx, float cy, float r, FillShape shape, float frac,
                        Rgb c, float a) {
     frac = std::clamp(frac, 0.0f, 1.0f);
     if (frac <= 0.0f) return;
     // 16 steps per quadrant land exactly on the diamond's corners; the
-    // square's corners sit at 45°, which 64 steps also hit.
-    constexpr int kSteps = 64;
+    // square's corners sit at 45°, which 64 steps also hit. The triangle's
+    // corners (90°, -30°, 210°) need 96 steps (3.75°).
+    const int kSteps = shape == FillShape::TriangleDown ? 96 : 64;
     const float step = 2.0f * kPi / kSteps;
     const float end = -0.5f * kPi + 2.0f * kPi * frac;
     auto edge = [&](float t, float& x, float& y) {
@@ -108,6 +120,13 @@ inline void SectorFill(float cx, float cy, float r, FillShape shape, float frac,
         float d = r;
         if (shape == FillShape::Diamond) d = r / (std::fabs(ct) + std::fabs(st));
         else if (shape == FillShape::Square) d = r / std::max(std::fabs(ct), std::fabs(st));
+        else if (shape == FillShape::TriangleDown) {
+            // Edge normals at -90° (top), 30° and 150°; inradius r/2.
+            const float n = std::max({ -st,
+                                       ct * 0.8660254f + st * 0.5f,
+                                       -ct * 0.8660254f + st * 0.5f });
+            d = r * 0.5f / n;
+        }
         x = cx + ct * d; y = cy + st * d;
     };
     float px, py;

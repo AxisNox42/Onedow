@@ -13,7 +13,6 @@ static SkillHudInputs Base() {
     in.hyperFocusDur = 5.0f;
     in.timeStopDur = 1.5f;
     in.rainCooldown = 15.0f;
-    in.lightStepHitLock = 10.0f;
     in.dashCdMax = 2.9f;
     return in;
 }
@@ -72,23 +71,16 @@ static void flash_glyph() {
     in.dashUpgrade = true;
     assert(BuildSkillHudView(in, SkillHudPulse{}).slots[0].glyph == SkillGlyph::Flash);
 }
-static void passive_order_and_stacks() {
+// The HUD shows cooldowns only: RAIN stays, LSTP (on/off) and DEATH (a
+// debuff) live in the owned-augment list instead.
+static void rain_is_the_only_passive() {
     auto in = Base();
-    in.deathActive = true; in.deathStacks = 5;
     in.rainOwned = true; in.rainTimer = 9.0f;
     auto v = BuildSkillHudView(in, SkillHudPulse{});
-    assert(v.passiveCount == 2);
-    assert(v.passives[0].glyph == PassiveGlyph::Rain);
-    assert(Near(v.passives[0].chargeFrac, 0.6f));
-    assert(v.passives[1].glyph == PassiveGlyph::Death);
-    assert(v.passives[1].stacks == 3);
-}
-static void light_step_off() {
-    auto in = Base();
-    in.lightStepOwned = true; in.lightStepDisable = 7.0f;
-    auto v = BuildSkillHudView(in, SkillHudPulse{});
     assert(v.passiveCount == 1);
-    assert(!v.passives[0].on && Near(v.passives[0].chargeFrac, 0.3f));
+    assert(v.passives[0].glyph == PassiveGlyph::Rain);
+    assert(v.passives[0].color == HudColor::Rain);
+    assert(Near(v.passives[0].chargeFrac, 0.6f));
 }
 static void pulse_on_ready_and_pause() {
     auto in = Base();
@@ -142,8 +134,7 @@ int main() {
     effect_frac();
     seconds_dim_icon_during_effect();
     flash_glyph();
-    passive_order_and_stacks();
-    light_step_off();
+    rain_is_the_only_passive();
     pulse_on_ready_and_pause();
     pulse_not_on_swap();
     pulse_rain_fire();
