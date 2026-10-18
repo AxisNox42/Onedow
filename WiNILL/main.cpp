@@ -1771,6 +1771,64 @@ int main() {
                         // SLOW=x: scale game time (e.g. 0.2) to capture fast
                         // animations frame by frame.
                         g_SmokeTimeScale = std::clamp((float)atof(step.c_str() + 5), 0.02f, 1.0f);
+                    } else if (step.rfind("GENESISROTOR=", 0) == 0 || step.rfind("GENESISCYCLE=",0)==0) {
+                        const bool fullCycle=step.rfind("GENESISCYCLE=",0)==0;
+                        if (gm.currentState != GameState::RUNNING) RestartCurrentRun();
+                        g_MonsterManager.Clear();
+                        g_Bullets.clear();
+                        std::srand(1234);
+                        const float px = screenWidth * 0.58f, py = screenHeight * 0.57f;
+                        playerWin.x = px - playerWin.width*0.5f;
+                        playerWin.y = py - playerWin.height*0.5f;
+                        auto* g = new Monster(screenWidth*0.30f,screenHeight*0.35f);
+                        g->MakeKind(MobKind::GENESIS);
+                        g->hp = 1000000.0f; g->speed = 0.0f;
+                        g->genesisNextRotor = !fullCycle;
+                        g->hiveOrbitAngle=atan2f(py-g->worldY,px-g->worldX);
+                        g->spawnTimer = Monster::GENESIS_TRACK_TIME;
+                        g_MonsterManager.monsters.push_back(g);
+                        const glm::vec4 bounds(0,BROWSER_CHROME_H,screenWidth,
+                                               screenHeight-g_GameBarH-g_TaskbarH);
+                        float qaHp = 10000.0f;
+                        g_MonsterManager.UpdateAll(px,py,0.0f,qaHp,g_Bullets,1,1,1,-1,-1,-1,-1,bounds);
+                        const float age = std::clamp(std::strtof(step.c_str()+13,nullptr),0.0f,fullCycle ? 10.0f : 3.8f);
+                        for (float t=0;t<age;) {
+                            const float dt = std::min(1.0f/120.0f,age-t); t += dt;
+                            g_MonsterManager.UpdateAll(px+sinf(t*2.0f)*100.0f,py+sinf(t*1.5f)*80.0f,
+                                                      dt,qaHp,g_Bullets,1,1,1,-1,-1,-1,-1,bounds);
+                        }
+                        playerWin.x+=sinf(age*2.0f)*100.0f;
+                        playerWin.y+=sinf(age*1.5f)*80.0f;
+                        g_SmokeTimeScale = 0.0f;
+                    } else if (step.rfind("QUASARFALL=", 0) == 0 || step.rfind("QUASARBEAM=", 0) == 0) {
+                        // Deterministic motion QA for both charge animations.
+                        if (gm.currentState != GameState::RUNNING) RestartCurrentRun();
+                        g_MonsterManager.Clear();
+                        playerWin.x = screenWidth * 0.61f - playerWin.width * 0.5f;
+                        playerWin.y = screenHeight * 0.64f - playerWin.height * 0.5f;
+                        std::srand(1234); // repeatable motion replay, before random initial angles
+                        auto* q = new Monster(screenWidth * 0.30f, screenHeight * 0.42f);
+                        q->MakeKind(MobKind::QUASAR);
+                        q->hp = 1000000.0f;
+                        q->speed = 0.0f;
+                        if (step.rfind("QUASARFALL=", 0) == 0) q->BeginQuasarFall();
+                        else q->quasarTimer = Monster::QUASAR_COOLDOWN_TIME - Monster::QUASAR_PRECHARGE_TIME;
+                        const float age = std::clamp(std::strtof(step.c_str() + 11, nullptr),
+                                                    0.0f, 6.35f);
+                        float qaHp = 10000.0f;
+                        const glm::vec4 bounds(0, BROWSER_CHROME_H, screenWidth,
+                                               screenHeight - g_GameBarH - g_TaskbarH);
+                        for (float t = 0.0f; t < age; ) {
+                            const float dt = std::min(1.0f / 120.0f, age - t);
+                            t += dt;
+                            q->Update(screenWidth * 0.61f + sinf(t * 1.5f) * 90.0f,
+                                      screenHeight * 0.64f + cosf(t * 1.5f) * 55.0f,
+                                      dt, qaHp, 1.0f, -1, -1, -1, -1, nullptr, bounds);
+                        }
+                        playerWin.x += sinf(age * 1.5f) * 90.0f;
+                        playerWin.y += cosf(age * 1.5f) * 55.0f;
+                        g_MonsterManager.monsters.push_back(q);
+                        g_SmokeTimeScale = 0.02f;
                     } else if (step == "KILL") {
                         // KILL: every living enemy dies now through the normal
                         // death pass (rewards, death animations).
@@ -2508,7 +2566,10 @@ int main() {
                                                g_GameManager.playerHP, g_Bullets,
                                                g_Stats.mobSpeedMult * mobSpdRamp * focusSlow,
                                                rmobMoveMult * mobSpdRamp * focusSlow,
-                                               g_Stats.rotorHpMult);
+                                               g_Stats.rotorHpMult,
+                                               -1.0f, -1.0f, -1.0f, -1.0f,
+                                               glm::vec4(ccX - halfW, topLimit,
+                                                         ccX + halfW, bottomLimit));
                     // Held kill stardust (Quasar supernova) comes out at the blast.
                     ReleasePendingStardust(g_MonsterManager, pCX, pCY);
 

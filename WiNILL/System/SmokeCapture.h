@@ -9,6 +9,9 @@
 //   ONEDOW_SMOKE_KEYLINE = 0              (선택, 전투 요소 테두리 끄기: 전후 비교용)
 //   ONEDOW_SMOKE_ORBITS  = 0              (선택, PLAY 무기 별자리 궤도 링 끄기)
 // STEP 형식: NAME[@fx,fy][!|*][~sec]
+//   QUASARFALL=<초> / QUASARBEAM=<초> : 퀘이사 준비 시작부터 지정 시점 재현
+//   GENESISROTOR=<초> : 제네시스 로터 준비 시작부터 지정 시점 재현 (캡처 시 정지)
+//   GENESISCYCLE=<초> : SWARM 조준부터 로터 대기·준비까지 전체 실제 전환 재현
 //   @fx,fy  마우스 위치(화면 비율 0~1). 없으면 화면 밖으로 치움.
 //   !       유지 시간 절반 시점에 한 번 클릭.
 //   *       단계 내내 왼쪽 버튼을 누른 상태 유지(조준 사격 등).

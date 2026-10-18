@@ -296,6 +296,10 @@ void QueueMonsterSightFront(const Monster* m) {
         const float pulseEase = pulseT * pulseT * (3.0f - 2.0f * pulseT);
         alpha = std::min(0.46f, 0.16f + openLift + 0.34f * pulseEase);
         radiusScale = 3.10f;   // tinted glow behind the whole shell ring
+        if(m->GenesisRotorMode()) alpha=0.06f;
+    } else if(m->genesisThrown && m->kind==MobKind::ROTOR) {
+        alpha=0.04f;
+        radiusScale=2.1f;
     } else if (m->genesisEgress) {
         const float egressT = std::min(m->genesisEgressTimer / 0.20f, 1.0f);
         alpha += 0.22f * (1.0f - egressT);
@@ -602,9 +606,9 @@ static void DrawEliteFrame(float x, float y, float base, float phase,
 // Landing-blast telegraph: a thin red ring at the damage radius over a
 // faint disc. `timer` (0..1) fills an inner disc toward the ring, so a Swarm
 // in flight shows how soon it lands; pass a negative timer to omit it.
-static void DrawThrownBlastZone(float x, float y, float alpha, float timer) {
+static void DrawThrownBlastZone(float x, float y, float alpha, float timer,
+                                float r=Monster::THROWN_SWARM_BLAST_RADIUS) {
     if (alpha <= 0.0f) return;
-    const float r = Monster::THROWN_SWARM_BLAST_RADIUS;
     drawCircle(x, y, r, 1.0f, 0.24f, 0.20f, 0.07f * alpha);
     if (timer >= 0.0f)
         drawCircle(x, y, r * std::min(1.0f, timer), 1.0f, 0.24f, 0.20f,
@@ -634,19 +638,22 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
     const float liteR = cr + (1.0f - cr) * 0.35f;
     const float liteG = cg + (1.0f - cg) * 0.35f;
     const float liteB = cb + (1.0f - cb) * 0.35f;
-    const float x = m->worldX, y = m->worldY;
+    const bool rotorMode=m->GenesisRotorMode();
+    const float pose=m->GenesisRotorPose();
+    const glm::vec2 center=rotorMode ? m->GenesisRotorCenter() : glm::vec2(m->worldX,m->worldY);
+    const float x=center.x,y=center.y;
     const float R = base * 2.05f;
     // Main contours thicken a little with size so the tier-4 body keeps weight.
     const float lw = std::clamp(base / 34.2f, 1.0f, 1.4f);
     const int phase = m->hivePhase;
     const bool aimLocked = phase == 1 || phase == 2;
     const float aim = aimLocked ? m->genesisAimAngle : m->hiveOrbitAngle;
-    float ring = m->hiveOrbitAngle + m->genesisShellSpin;     // gap 0 angle
+    float ring = m->hiveOrbitAngle + (rotorMode ? 0.0f : m->genesisShellSpin);
     if (phase == 1) {                                          // settle wobble
         const float u = m->spawnTimer;
         ring += 0.08f * sinf(u * 26.0f) * expf(-u * 9.0f);
     }
-    const float fill = m->GenesisStackFill();
+    const float fill = rotorMode ? 0.0f : m->GenesisStackFill();
     const float charge = fill / (float)Monster::GENESIS_STACKS;
     const float recoil = m->genesisRecoil * m->genesisRecoil;
     const float clamp01 = phase == 1 ? m->hiveOpenFactor : (phase == 2 ? 1.0f : 0.0f);
@@ -671,14 +678,16 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
     // Shells. kSlot is the charge order (rear shell 1 first); throws go in
     // reverse slot order, so the pair flanking the muzzle leaves first.
     static constexpr int kSlot[3] = { 1, 0, 2 };
-    const float half = 0.9076f;                       // 52 deg
-    const float ro = R, ri = R * 0.74f;
     const float feedU = (phase == 2 && m->hiveSpawnCount < Monster::GENESIS_STACKS)
         ? std::clamp((m->spawnTimer - (Monster::GENESIS_THROW_GAP - Monster::GENESIS_FEED_TIME)) /
                      Monster::GENESIS_FEED_TIME, 0.0f, 1.0f)
         : 0.0f;
     for (int k = 0; k < 3; ++k) {
         const float mid = ring + 1.0471976f + 2.0943951f * (float)k;
+        const bool front=k!=1; // k=1 is the single dedicated rear production cradle
+        const float half=0.9076f-(front ? 0.40f*pose : 0.0f);
+        const float ro=R*(1.0f+(front ? 0.22f*pose : 0.0f));
+        const float ri=R*(0.74f+(front ? 0.16f*pose : 0.0f));
         const int slot = kSlot[k];
         const int shot = Monster::GENESIS_STACKS - 1 - slot;
         float f = std::clamp(fill - (float)slot, 0.0f, 1.0f);
@@ -715,10 +724,19 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
             if (a < 0.18f) push += -0.05f * sinf(3.14159265f * a / 0.18f);
             if (a < 0.25f) sweep = a / 0.25f;
         }
+        if(rotorMode) push=front ? 0.10f*pose-0.08f*m->GenesisRotorKick() :
+                                    0.14f*m->GenesisRotorWindup();
+        if(m->GenesisRotorWaiting()) {
+            const float lastAge=Monster::GENESIS_THROW_END+Monster::GENESIS_RECOVER_TIME+
+                               (Monster::GENESIS_STACKS-1-shot)*Monster::GENESIS_THROW_GAP;
+            push=(0.10f+0.12f*expf(-lastAge*5.0f))*
+                 (1.0f-Monster::GenesisSmooth(m->spawnTimer/0.25f));
+        }
         push *= R;
         const float sx = x + cosf(mid) * push, sy = y + sinf(mid) * push;
 
-        const float lit = std::max(f * f * (3.0f - 2.0f * f), heat);
+        const float lit = rotorMode ? (front ? 0.45f*pose : 0.7f*pose) :
+                                     std::max(f * f * (3.0f - 2.0f * f), heat);
         // Empty shells stay readable over bright windows: they start a third
         // of the way to the lit tone and well above half alpha.
         const float tone = 0.35f + 0.65f * lit;
@@ -749,7 +767,7 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
         {
             const float pm = mid + 0.2443f;               // +14 deg stagger
             const float ph = 0.5585f;                     // 32 deg
-            const float po = R * 1.19f, pi = R * 1.03f;
+            const float po = ro * 1.19f, pi = ro * 1.03f;
             float qx[7], qy[7];
             for (int i = 0; i <= 3; ++i) {
                 const float a = pm - ph * 0.8f + ph * 0.6f * (float)i;
@@ -879,7 +897,7 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
 
     // Orbit frame: thin arcs behind the shells, capped by a star-node pair
     // at every gap.
-    for (int k = 0; k < 3; ++k) {
+    for (int k = 0; k < (rotorMode ? 0 : 3); ++k) {
         const float mid = ring + 1.0471976f + 2.0943951f * (float)k;
         DrawEnemyArc(x, y, R * 1.27f, mid - 0.9425f, 1.885f, 18,
                      cr, cg, cb, 0.40f + 0.14f * charge, 1.0f * lw);
@@ -901,6 +919,19 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
                  liteR + (1.0f - liteR) * recoil, liteG + (1.0f - liteG) * recoil,
                  liteB + (1.0f - liteB) * recoil, 0.90f, (1.5f + 0.8f * recoil) * lw);
     DrawEnemyArc(ccx, ccy, R * 0.32f, 0.0f, 6.2831853f, 24, hr, hg, hb, 0.40f + 0.30f * charge, 0.85f);
+    if(rotorMode) {
+        DrawGenesisCore(x,y,base*0.34f,0.95f,0.36f,0.30f,0.96f,false);
+        const glm::vec2 axis(cosf(ring),sinf(ring)), side(-axis.y,axis.x);
+        // Two short rails flank ONE central exit, no long beam or landing rings.
+        for(float sign:{-1.0f,1.0f}) {
+            const auto a=center+axis*(R*0.35f)+side*(R*0.48f*sign);
+            const auto b=center+axis*(R*1.05f)+side*(R*0.48f*sign);
+            drawLineQuad(a.x,a.y,b.x,b.y,1.2f,0.95f,0.30f,0.24f,0.8f*pose);
+        }
+        // The real forming Rotor is drawn in the entity pass. Do not draw a
+        // separate full-size preview that gets replaced at the rear shell.
+        return;
+    }
     float Tx[3], Ty[3], tX[3], tY[3];
     for (int v = 0; v < 3; ++v) {
         const float a = ring + 2.0943951f * (float)v;   // vertices point at the gaps
@@ -1479,11 +1510,14 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     const float liteG = cg + (1.0f - cg) * 0.55f;
     const float liteB = cb + (1.0f - cb) * 0.55f;
     const float heat = m->QuasarHeat();
+    const float fallOpen = m->QuasarFallOpen();
+    const float fallGather = m->QuasarFallGather();
+    const float fallPulse = m->QuasarFallPulse();
     const float seed = (float)((size_t)m % 97u) * 0.37f;
     const float spin = m->quasarShellSpin;
-    const float ax = m->quasarAimX, ay = m->quasarAimY;
+    const float ax = cosf(m->quasarCoreAngle), ay = sinf(m->quasarCoreAngle);
     const float px = -ay, py = ax;
-    const float orbR = base * 1.0f;
+    const float orbR = base * (1.0f - 0.12f * fallGather + 0.10f * fallOpen);
 
     // Outer layers (tier 4). O3: a tilted orbit round the whole body that
     // precesses against the flange and carries two satellites; while the
@@ -1492,12 +1526,13 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     // three bracketed star nodes turning the other way; the wind-up rings
     // peel off it. Far halves are drawn here, near halves after the flange.
     auto easeO = [](float v) {
-        v = std::clamp(v, 0.0f, 1.0f);
-        return v * v * (3.0f - 2.0f * v);
+        return Monster::QuasarEase(v);
     };
     float orbitAlign = 0.0f;
-    if (m->quasarState == 2)
-        orbitAlign = easeO(m->quasarTimer / (Monster::QUASAR_LOCK_TIME * 0.85f));
+    if (m->quasarState == 0) orbitAlign = 0.55f * easeO(m->QuasarPrecharge());
+    else if (m->quasarState == 1) orbitAlign = 0.55f;
+    else if (m->quasarState == 2)
+        orbitAlign = 0.55f + 0.45f * easeO(m->quasarTimer / (Monster::QUASAR_LOCK_TIME * 0.85f));
     else if (m->quasarState == 3)
         orbitAlign = 1.0f;
     else if (m->quasarState == 4)
@@ -1527,7 +1562,11 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     }
 
     const float pre0 = m->QuasarPrecharge();
-    const float haloR = base * 1.95f;
+    const float beamGather = m->quasarState == 0 ? easeO(pre0) :
+        ((m->quasarState == 1 || m->quasarState == 2) ? 1.0f :
+         (m->quasarState == 3 ? 1.0f - easeO(m->quasarTimer / 0.3f) : 0.0f));
+    const float haloR = base * (1.95f - 0.25f * beamGather - 0.22f * fallGather +
+                                0.65f * fallOpen + 0.04f * fallPulse);
     const float haloGlow = std::max(heat, easeO(pre0 * 1.4f));
     DrawEnemyArc(x, y, haloR, 0.0f, 6.2831853f, 64, cr, cg, cb,
                  0.58f + 0.30f * haloGlow, 1.5f + 0.5f * haloGlow, false);
@@ -1547,16 +1586,16 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     float jetT = 0.0f;
     if (m->quasarState == 2) jetT = charge;
     else if (m->quasarState == 3) jetT = 1.0f;
-    else if (m->quasarState == 4) jetT = std::max(0.0f, 1.0f - m->quasarTimer / 0.4f);
+    else if (m->quasarState == 4) jetT = 1.0f - easeO(m->quasarTimer / 0.4f);
 
     // Equatorial flange: independent of the beam. Its tilt precesses slowly
     // (quasarVisualAngle) while the ring itself spins, shown by four lugs
     // travelling round it. DrawQuasarEllipseArc puts `major` along
     // (-aimY, aimX), so pass the perpendicular to lay it on (fx, fy).
-    const float flA = m->quasarVisualAngle + seed;
+    const float flA = m->QuasarFlangeAngle();
     const float fx = cosf(flA), fy = sinf(flA);
-    const float flMajor = base * 1.55f;
-    const float flMinor = base * 0.40f * (1.0f - 0.30f * heat);
+    const float flMajor = base * (1.55f - 0.18f * fallGather + 0.65f * fallOpen);
+    const float flMinor = base * (0.40f - 0.10f * fallGather + 0.70f * fallOpen) * (1.0f - 0.30f * heat);
     // Back half (behind the orb), dim, drawn first.
     DrawQuasarEllipseArc(x, y, fy, -fx, flMajor, flMinor, 3.1415927f, 3.1415927f, 24,
                          cr, cg, cb, 0.30f + 0.12f * heat, 1.30f);
@@ -1567,15 +1606,15 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
         const float ca = cosf(a), sa = sinf(a);
         lugs[i] = { x + fx * ca * flMajor + fy * sa * flMinor,
                     y + fy * ca * flMajor - fx * sa * flMinor,
-                    base * 0.065f, 0.75f + 0.25f * heat };
+                    base * (0.065f + 0.045f * fallOpen), 0.75f + 0.25f * heat };
         lugFront[i] = sa >= 0.0f;
-        if (!lugFront[i]) DrawEnemyNode(lugs[i], cr, cg, cb, 0.40f);
+        const float visible = m->QuasarPortVisibility(i);
+        if (!lugFront[i]) DrawEnemyNode(lugs[i], cr, cg, cb, 0.40f * visible);
     }
 
     // Charge choreography weights.
     auto ease = [](float v) {
-        v = std::clamp(v, 0.0f, 1.0f);
-        return v * v * (3.0f - 2.0f * v);
+        return Monster::QuasarEase(v);
     };
     const float pre = m->QuasarPrecharge();
     const float lockT = m->quasarState == 2
@@ -1595,53 +1634,68 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     // Gyro bands. Free pose: each turns about its own long axis (signed
     // minor) while the pair precesses. Folded: a smaller ring in the flange
     // plane. Standing: an accelerator ring round the beam axis, one per side.
-    struct BandPose { float cx, cy, th, a, b; };
+    struct BandPose { float cx, cy; glm::vec2 u, v; float depth; };
+    auto pose = [](float cx, float cy, float th, float a, float b) {
+        return BandPose{cx, cy, {cosf(th) * a, sinf(th) * a},
+                        {-sinf(th) * b, cosf(th) * b}, b};
+    };
+    auto mix = [](const BandPose& p, const BandPose& q, float k) {
+        return BandPose{p.cx + (q.cx - p.cx) * k, p.cy + (q.cy - p.cy) * k,
+                        p.u * (1-k) + q.u * k, p.v * (1-k) + q.v * k,
+                        p.depth + (q.depth - p.depth) * k};
+    };
+    auto drawBand = [&](const BandPose& p, bool front, float r, float g, float b,
+                        float alpha, float width) {
+        const float start = front ? 0.0f : 3.1415927f;
+        glm::vec2 previous = glm::vec2(p.cx,p.cy) + p.u * cosf(start) + p.v * sinf(start);
+        for (int k=1;k<=20;++k) {
+            const float a = start + 3.1415927f * k / 20.0f;
+            const auto point = glm::vec2(p.cx,p.cy) + p.u * cosf(a) + p.v * sinf(a);
+            drawLineQuad(previous.x,previous.y,point.x,point.y,width,r,g,b,alpha);
+            previous=point;
+        }
+    };
     BandPose bands[2];
     const float axisA = atan2f(ay, ax);
     for (int i = 0; i < 2; ++i) {
         const float sgn = i ? -1.0f : 1.0f;
-        const float tilt = axisA + (i ? -1.0472f : 0.6109f) + spin * 0.08f;
+        const float tilt = -m->quasarVisualAngle * 0.35f + (i ? -1.0472f : 0.6109f) + spin * 0.08f;
         const float roll = spin * 0.55f + 1.5707963f * (float)i + seed;
-        float mn = sinf(roll);
-        mn = (mn >= 0.0f ? 1.0f : -1.0f) * std::max(0.10f, fabsf(mn));
-        const BandPose freeP = { x, y, tilt + 1.5707963f, orbR * 0.97f, orbR * 0.97f * mn };
-        const BandPose foldP = { x, y, flA, orbR * 0.97f, orbR * 0.97f * (flMinor / flMajor) * sgn };
-        const BandPose standP = { x + ax * orbR * 0.55f * sgn, y + ay * orbR * 0.55f * sgn,
-                                  axisA, orbR * 0.16f, orbR * 0.80f };
-        auto mix = [](const BandPose& p, const BandPose& q, float k) {
-            float d = q.th - p.th;                       // ellipses repeat every pi
-            while (d > 1.5707963f) d -= 3.1415927f;
-            while (d < -1.5707963f) d += 3.1415927f;
-            return BandPose{ p.cx + (q.cx - p.cx) * k, p.cy + (q.cy - p.cy) * k,
-                             p.th + d * k, p.a + (q.a - p.a) * k, p.b + (q.b - p.b) * k };
-        };
-        bands[i] = mix(mix(freeP, foldP, fold), standP, stand);
-        // Back half (behind the core); a standing ring reads whole.
-        DrawEllipseLoop(bands[i].cx, bands[i].cy, bands[i].th, bands[i].a, bands[i].b,
-                        3.1415927f, 3.1415927f, 20, cr, cg, cb,
-                        0.34f + 0.10f * heat + 0.40f * stand, 0.95f + 0.6f * stand);
+        const float mn = sinf(roll); // signed width crosses zero without flipping
+        const auto freeP = pose(x,y,tilt+1.5707963f,orbR*0.97f,orbR*0.97f*mn);
+        const auto foldP = pose(x,y,flA,orbR*0.88f,orbR*0.88f*(flMinor/flMajor)*sgn);
+        const auto openP = pose(x+fx*base*0.15f*sgn,y+fy*base*0.15f*sgn,
+                                flA+sgn*0.8f,orbR*1.50f,orbR*0.85f*sgn);
+        const auto standP = pose(x+ax*orbR*0.55f*sgn,y+ay*orbR*0.55f*sgn,
+                                 axisA,orbR*0.16f,orbR*0.80f);
+        // Blend the ellipse's two basis vectors, not wrapped angles: taking
+        // a different shortest angle midway through a charge caused snapping.
+        bands[i]=mix(mix(mix(freeP,openP,fallOpen),foldP,fold),standP,stand);
+        drawBand(bands[i],false,cr,cg,cb,0.34f+0.10f*heat+0.40f*stand,0.95f+0.6f*stand);
     }
     // Band riders: one star node per band, dim while behind; they fade out
     // as the bands fold.
     EnemyNodeAnchor riders[2];
     bool riderFront[2];
+    float riderOpacity[2];
     const float riderA = 1.0f - fold;
     for (int i = 0; i < 2; ++i) {
         const float a = spin * 0.9f + 3.1415927f * (float)i + seed;
         const BandPose& b = bands[i];
-        const float ux = cosf(b.th), uy = sinf(b.th);
-        riders[i] = { b.cx + ux * cosf(a) * b.a - uy * sinf(a) * b.b,
-                      b.cy + uy * cosf(a) * b.a + ux * sinf(a) * b.b,
-                      base * 0.075f, 0.75f + 0.25f * heat };
-        riderFront[i] = sinf(a) * b.b >= 0.0f;
-        if (!riderFront[i] && riderA > 0.0f) DrawEnemyNode(riders[i], cr, cg, cb, 0.45f * riderA);
+        const auto position=glm::vec2(b.cx,b.cy)+b.u*cosf(a)+b.v*sinf(a);
+        riders[i] = {position.x,position.y,base*0.075f,0.75f+0.25f*heat};
+        const float depth=sinf(a)*b.depth;
+        riderFront[i]=depth>=0;
+        riderOpacity[i]=0.685f+0.235f*std::clamp(depth/(base*0.08f),-1.0f,1.0f);
+        if (!riderFront[i] && riderA > 0.0f)
+            DrawEnemyNode(riders[i],cr,cg,cb,riderOpacity[i]*riderA);
     }
 
     // Wind-up 0.5-1s: rings shrink into the orb, a new one every third of
     // the cycle, fading in as the phase starts.
     if (pre > 0.5f) {
         const float u = (pre - 0.5f) / 0.5f;
-        const float fadeIn = ease(u * 4.0f);
+        const float fadeIn = ease(u * 4.0f) * (1.0f - ease((u - 0.65f) / 0.35f));
         for (int j = 0; j < 3; ++j) {
             float ph = u * 2.0f + (float)j / 3.0f;
             ph -= floorf(ph);
@@ -1675,7 +1729,8 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     // Orb: double contour; the inner contour warms with heat.
     DrawEnemyArc(x, y, orbR, 0.0f, 6.2831853f, 48, cr, cg, cb, 0.86f + 0.12f * heat, 1.9f, false);
     const float innerGlow = m->quasarState == 0 ? ease((pre - 0.5f) / 0.5f)
-                          : (m->quasarState <= 3 ? 1.0f : 0.0f);
+                          : (m->quasarState <= 3 ? 1.0f :
+                             (m->quasarState == 4 ? 1.0f - ease(m->quasarTimer / 0.6f) : 0.0f));
     DrawEnemyArc(x, y, orbR * 0.90f, 0.0f, 6.2831853f, 44,
                  liteR, liteG, liteB, 0.34f + 0.30f * heat + 0.30f * innerGlow,
                  0.95f + 0.4f * innerGlow, false);
@@ -1733,7 +1788,8 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     const float rate = 2.0f + 10.0f * heat;
     const float slotF = (t + seed) * rate;
     const float slot = floorf(slotF);
-    if ((slotF - slot) < 0.08f * rate && QuasarHash(slot + seed) < 0.65f) {
+    if (m->quasarState < Monster::QUASAR_FALL_STATE &&
+        (slotF - slot) < 0.08f * rate && QuasarHash(slot + seed) < 0.65f) {
         const float h2 = QuasarHash(slot * 1.7f + 3.1f);
         const float s = QuasarHash(slot * 2.3f + 7.7f) < 0.5f ? -1.0f : 1.0f;
         const float dev = (h2 - 0.5f) * 0.5f;
@@ -1778,25 +1834,132 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
     // Front halves of the bands, front riders, then the flange front half
     // pass over everything.
     for (int i = 0; i < 2; ++i)
-        DrawEllipseLoop(bands[i].cx, bands[i].cy, bands[i].th, bands[i].a, bands[i].b,
-                        0.0f, 3.1415927f, 20,
-                        liteR + (1.0f - liteR) * stand, liteG + (1.0f - liteG) * stand,
-                        liteB + (1.0f - liteB) * stand,
-                        0.70f + 0.25f * heat, 1.45f + 0.5f * stand);
+        drawBand(bands[i],true,liteR+(1-liteR)*stand,liteG+(1-liteG)*stand,
+                 liteB+(1-liteB)*stand,0.70f+0.25f*heat,1.45f+0.5f*stand);
     for (int i = 0; i < 2; ++i)
         if (riderFront[i] && riderA > 0.0f)
-            DrawEnemyNode(riders[i], cr, cg, cb, 0.92f * riderA);
+            DrawEnemyNode(riders[i],cr,cg,cb,riderOpacity[i]*riderA);
     DrawQuasarEllipseArc(x, y, fy, -fx, flMajor, flMinor, 0.0f, 3.1415927f, 24,
                          cr, cg, cb, 0.82f + 0.15f * heat, 2.2f);
     DrawQuasarEllipseArc(x, y, fy, -fx, flMajor * 0.92f, flMinor * 0.80f, 0.35f, 2.44f, 18,
                          liteR, liteG, liteB, 0.22f + 0.20f * heat, 0.80f);
-    for (int i = 0; i < 4; ++i)
-        if (lugFront[i]) DrawEnemyNode(lugs[i], liteR, liteG, liteB, 0.92f);
+    for (int i = 0; i < 4; ++i) {
+        const float visible = m->QuasarPortVisibility(i);
+        if (lugFront[i]) DrawEnemyNode(lugs[i], liteR, liteG, liteB, 0.92f * visible);
+    }
     // Near half of the tilted outer orbit and its front satellites.
     DrawEllipseLoop(x, y, o3Ang, o3A, o3B, 0.0f, 3.1415927f, 36,
                     liteR, liteG, liteB, 0.55f + 0.35f * o3Heat, 1.5f + 0.6f * o3Heat);
     for (int i = 0; i < 2; ++i)
         if (satFront[i]) DrawEnemyNode(sats[i], liteR, liteG, liteB, 0.95f);
+    if (fallPulse > 0.0f && m->quasarFallFired > 0) {
+        const int last = m->quasarFallFired - 1;
+        const glm::vec2 port = m->quasarFallOrigins[last];
+        DrawEnemyArc(port.x, port.y, base * (0.12f + 0.25f * (1.0f - fallPulse)),
+                     0.0f, 6.2831853f, 16, 1.0f, 1.0f, 1.0f, fallPulse * 0.9f, 1.8f, false);
+    }
+
+}
+
+static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
+    if (!m->QuasarFalling()) return;
+    const float age = m->quasarTimer;
+    const float radius = Monster::QUASAR_FALL_RADIUS;
+    auto diamond = [&](glm::vec2 p, float size, float alpha, float angle = 0.0f) {
+        // A faceted chunk with a white spine, rather than a small round node.
+        const glm::vec2 shape[6] = {{0,-1.5f}, {0.65f,-0.3f}, {0.48f,0.6f},
+                                    {-0.1f,1.4f}, {-0.65f,0.25f}, {-0.35f,-0.5f}};
+        glm::vec2 v[6];
+        for (int k = 0; k < 6; ++k) {
+            const glm::vec2 q = shape[k] * size;
+            v[k] = p + glm::vec2(q.x * cosf(angle) - q.y * sinf(angle),
+                                 q.x * sinf(angle) + q.y * cosf(angle));
+        }
+        for (int k = 0; k < 6; ++k) {
+            const auto a = v[k], b = v[(k + 1) % 6];
+            drawLineQuad(a.x, a.y, b.x, b.y, 2.0f, cr, cg, cb, alpha);
+        }
+        drawLineQuad(v[0].x, v[0].y, v[3].x, v[3].y, 1.8f, 1.0f, 1.0f, 1.0f, alpha);
+        drawLineQuad(v[1].x, v[1].y, v[4].x, v[4].y, 1.0f, cr, cg, cb, alpha);
+        drawCircle(p.x, p.y, size * 0.24f, 1.0f, 1.0f, 1.0f, alpha);
+    };
+    for (int i = 0; i < m->quasarFallFired; ++i) {
+        if (!(m->quasarFallTargetsMask & (1u << i))) continue;
+        const float impactAt = m->QuasarFallImpactTime(i);
+        const float after = age - impactAt;
+        const glm::vec2 target = m->quasarFallTargets[i];
+        if (after < 0.0f) {
+            const float progress = std::clamp((age - m->quasarFallLaunchTimes[i]) / Monster::QUASAR_FALL_WARNING, 0.0f, 1.0f);
+            // Dark under-stroke keeps the unfilled danger disc legible on white windows.
+            DrawEnemyArc(target.x, target.y, radius, 0.0f, 6.2831853f, 64,
+                         0.0f, 0.0f, 0.0f, 0.75f, 5.0f, false);
+            DrawEnemyArc(target.x, target.y, radius, 0.0f, 6.2831853f, 64,
+                         cr, cg, cb, 0.65f, 1.5f, false);
+            if (progress > 0.0f)
+                DrawEnemyArc(target.x, target.y, radius, -1.5707963f,
+                             progress * 6.2831853f, 64,
+                             1.0f, 1.0f, 1.0f, 0.85f, 2.2f, false);
+            for (int k = 0; k < 4; ++k) {
+                const float a = k * 1.5707963f;
+                const glm::vec2 direction(cosf(a), sinf(a));
+                const glm::vec2 side(-direction.y, direction.x);
+                const glm::vec2 tip = target + direction * (radius - 19.0f);
+                const glm::vec2 tail = target + direction * (radius - 7.0f);
+                drawLineQuad(tail.x, tail.y, tip.x, tip.y,
+                             2.0f, cr, cg, cb, 0.80f);
+                for (int s : {-1, 1}) {
+                    const glm::vec2 wing = tip + direction * 6.0f + side * (float)s * 4.0f;
+                    drawLineQuad(wing.x, wing.y, tip.x, tip.y,
+                                 1.8f, 1.0f, 1.0f, 1.0f, 0.65f + 0.30f * progress);
+                }
+            }
+            // A small cross pins the ground point; it cannot look like another falling node.
+            drawLineQuad(target.x - 3.0f, target.y, target.x + 3.0f, target.y,
+                         1.0f, cr, cg, cb, 0.55f);
+            drawLineQuad(target.x, target.y - 3.0f, target.x, target.y + 3.0f,
+                         1.0f, cr, cg, cb, 0.55f);
+        }
+        if (after >= 0.0f) {
+            if (after >= Monster::QUASAR_FALL_IMPACT_FX) continue;
+            if (after < 0.095f)
+                DrawEnemyArc(target.x, target.y, radius, 0.0f, 6.2831853f, 64,
+                             1.0f, 1.0f, 1.0f, 1.0f - after / 0.095f, 3.0f, false);
+            for (int k = 0; k < 6; ++k) {
+                const float a = k * 1.0471976f + 0.4f + i * 0.37f;
+                const float d = 7.0f + 175.0f * after;
+                if (after < 0.10f)
+                    drawLineQuad(target.x + cosf(a) * 5.0f, target.y + sinf(a) * 5.0f,
+                                 target.x + cosf(a + 0.12f) * 43.0f, target.y + sinf(a + 0.12f) * 43.0f,
+                                 1.8f, 1.0f, 1.0f, 1.0f, (1.0f - after / 0.10f) * 0.9f);
+                diamond(target + glm::vec2(cosf(a), sinf(a)) * d,
+                        5.5f * (1.0f - after / Monster::QUASAR_FALL_IMPACT_FX),
+                        1.0f - after / Monster::QUASAR_FALL_IMPACT_FX);
+            }
+            continue;
+        }
+        const glm::vec2 p = m->QuasarFallPosition(i, age);
+        const float flight = age - m->quasarFallLaunchTimes[i];
+        const glm::vec2 previous = m->QuasarFallPosition(i, age - 0.01f);
+        const glm::vec2 velocity = (p - previous) / 0.01f;
+        const float history = std::min(0.12f, 65.0f / std::max(1.0f, glm::length(velocity)));
+        // A sampled curved tail follows the path; one straight line hid all of its turning.
+        for (int k = 0; k < 6; ++k) {
+            const auto head = m->QuasarFallPosition(i, age - history * k / 6.0f);
+            const auto tail = m->QuasarFallPosition(i, age - history * (k + 1) / 6.0f);
+            const float fade = 1.0f - k / 6.0f;
+            drawLineQuad(tail.x, tail.y, head.x, head.y, 4.8f * fade,
+                         cr, cg, cb, 0.65f * fade);
+            drawLineQuad(tail.x, tail.y, head.x, head.y, 1.0f * fade,
+                         1.0f, 1.0f, 1.0f, 0.85f * fade);
+        }
+        const float angle = atan2f(velocity.y, velocity.x) + 1.5707963f + flight * 8.0f;
+        const float size = 10.5f + 2.5f * Monster::QuasarEase(flight / Monster::QUASAR_FALL_WARNING);
+        diamond(p, size, 0.98f, angle);
+        const glm::vec2 side(cosf(angle), sinf(angle));
+        diamond(p - side * 14.0f, 2.8f, 0.65f, angle);
+        diamond(p + side * 12.0f, 2.2f, 0.65f, angle);
+
+    }
 }
 
 void drawMob(const Monster* m, float visualTime) {
@@ -1998,6 +2161,7 @@ void drawMob(const Monster* m, float visualTime) {
         }
 
         DrawQuasarBody(m, base, visualTime, charge, cr, cg, cb);
+        DrawQuasarFall(m, cr, cg, cb);
     } else if (m->kind == MobKind::GIMBAL) {
         // Gimbal (clamp): two facing ( ) brackets hold a diamond lens on a pin
         // axis. The lens flips about that axis (gimbalVisualAngle), faster and
@@ -2175,7 +2339,20 @@ void drawMob(const Monster* m, float visualTime) {
         float x = m->worldX, y = m->worldY;
         float phOff = (float)((size_t)m % 628) * 0.01f;
         const float half = base * 0.78f;
-        const float angle = visualTime * 0.78f + phOff;
+        float angle = visualTime * 0.78f + phOff;
+        if(m->genesisRotorPhase>0) angle=m->thrownSpin;
+        else if(m->genesisThrown && m->thrownDuration>0) {
+            const float chaseAge=std::max(0.0f,m->thrownTimer-0.25f);
+            angle=m->thrownSpin+0.78f*chaseAge*Monster::GenesisSmooth(chaseAge/0.3f);
+        }
+        if(m->genesisRotorPhase==2) {
+            // A short history-based, solid-line tail: no bloom or gradient field.
+            for(int i=0;i<2;++i) {
+                const glm::vec2 a=m->antaresTrail[i*2];
+                const glm::vec2 b=m->antaresTrail[i*2+2];
+                drawLineQuad(a.x,a.y,b.x,b.y,1.6f,cr,cg,cb,0.65f);
+            }
+        }
         float vx[4], vy[4];
         EnemyNodeAnchor nodes[4];
         for (int k = 0; k < 4; ++k) {
@@ -2184,10 +2361,24 @@ void drawMob(const Monster* m, float visualTime) {
             vy[k] = y + sinf(a) * half * 1.4142f;
             nodes[k] = { vx[k], vy[k], base * 0.16f, 0.92f };
         }
-        DrawEnemyWirePolygon(vx, vy, 4, cr, cg, cb, 0.80f, 0.08f, 0.85f);
-        for (int k = 0; k < 4; ++k)
-            DrawEnemyNode(nodes[k], cr, cg, cb, 0.94f);
-        DrawEnemyCore(x, y, base * 0.29f, cr, cg, cb, 0.96f);
+        if(m->genesisThrown) {
+            if(m->genesisRotorPhase==2)
+                DrawThrownBlastZone(m->thrownTargetX,m->thrownTargetY,1.0f,
+                    std::clamp(m->thrownTimer/m->thrownDuration,0.0f,1.0f),Monster::GENESIS_ROTOR_BLAST_RADIUS);
+            if(m->genesisRotorPhase==3 && m->genesisRotorDetonated) {
+                const float u=std::clamp(m->thrownTimer/0.25f,0.0f,1.0f);
+                const float radius=Monster::GENESIS_ROTOR_BLAST_RADIUS;
+                drawCircle(x,y,radius,cr,cg,cb,0.07f*(1.0f-u));
+                DrawEnemyArc(x,y,radius,0,6.2831853f,48,cr,cg,cb,0.9f*(1.0f-u),1.8f,false);
+                DrawEnemyArc(x,y,radius*(0.25f+0.75f*u),0,6.2831853f,48,
+                             1.0f,0.70f,0.30f,1.0f-u,2.0f,false);
+            }
+        }
+        const float build=m->genesisRotorPhase==1 ?
+            std::clamp(m->thrownTimer/Monster::GENESIS_ROTOR_FORM,0.0f,1.0f) : 1.0f;
+        DrawEnemyWirePolygon(vx, vy, 4, cr, cg, cb, 0.80f*build, 0.08f*build, 0.85f);
+        for (int k = 0; k < 4; ++k) DrawEnemyNode(nodes[k], cr, cg, cb, 0.94f*build);
+        DrawEnemyCore(x, y, base * 0.29f, cr, cg, cb, 0.96f*build);
     }
     if (m->burnTimer > 0.0f) {
         float pulse = 0.35f + 0.25f * sinf(visualTime * 14.0f);

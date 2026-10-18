@@ -120,10 +120,16 @@ public:
                    float mobSpeedMult = 1.0f, float rmobMoveMult = 1.0f,
                    float rotorHpMult = 1.0f,
                    float gateWX = -1.0f, float gateWY = -1.0f,
-                   float gateWW = -1.0f, float gateWH = -1.0f) {
+                   float gateWW = -1.0f, float gateWH = -1.0f,
+                   const glm::vec4& attackBounds = glm::vec4(0.0f)) {
         for (auto m : monsters) {
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
-                      gateWX, gateWY, gateWW, gateWH, &bullets);
+                      gateWX, gateWY, gateWW, gateWH, &bullets, attackBounds);
+            if(m->kind==MobKind::GENESIS && !m->alive)
+                for(auto* child:monsters) if(child->thrownOwnerId==m->genesisId && child->genesisRotorPhase==2) {
+                    child->genesisRotorPhase=3; child->thrownTimer=0;
+                    for(auto& p:child->antaresTrail) p=glm::vec3(child->worldX,child->worldY,child->thrownSpin);
+                }
         }
 
         for (auto r : rangedMobs)
@@ -285,15 +291,95 @@ private:
     // player while the three shells charge, lock the aim at 3/3, throw all
     // three Swarms through the muzzle gap, regroup. Thrown Swarms use their
     // own cap.
+    void UpdateGenesisRotorLauncher(Monster& g,float dt,float px,float py,
+                                    std::vector<Monster*>& born) {
+        g.genesisRotorShotAge+=dt;
+        // Current aim follows the player throughout production, including the
+        // release frame. Already released units keep their own fixed heading.
+        float turn=atan2f(py-g.worldY,px-g.worldX)-g.hiveOrbitAngle;
+        while(turn>3.14159265f) turn-=6.2831853f;
+        while(turn<-3.14159265f) turn+=6.2831853f;
+        g.hiveOrbitAngle+=std::clamp(turn,-9.0f*dt,9.0f*dt);
+        const float duration=g.hivePhase==4 ? Monster::GENESIS_ROTOR_PREP :
+                             g.hivePhase==5 ? Monster::GENESIS_ROTOR_GAP : Monster::GENESIS_ROTOR_RECOVER;
+        if(g.hivePhase==6) {
+            if(g.spawnTimer>=duration) {
+                g.hivePhase=0; g.spawnTimer=0; g.hiveSpawnCount=0;
+                g.genesisNextRotor=false;
+            }
+            return;
+        }
+        if(!g.genesisRotorLoaded && g.spawnTimer>=duration-Monster::GENESIS_ROTOR_FORM) {
+            g.genesisRotorLoaded=true; // a shot-down loaded unit is not replaced
+            int own=0,total=(int)born.size();
+            for(auto* m:monsters) if(m->alive) {
+                ++total;
+                if(m->genesisThrown && m->thrownOwnerId==g.genesisId) ++own;
+            }
+            for(auto* m:born) if(m->thrownOwnerId==g.genesisId) ++own;
+            if(own<Monster::GENESIS_THROWN_CAP && total<130) {
+                const auto p=g.GenesisRotorFeedPoint(0);
+                auto* child=new Monster(p.x,p.y);
+                child->MakeKind(MobKind::ROTOR);
+                child->genesisRotorFullScale=g.GenesisRotorOutputScale();
+                child->sizeScale=Monster::GenesisRotorFormScale(child->genesisRotorFullScale,0);
+                child->genesisThrown=true; // reuse summon caps and no-farm rewards
+                child->thrownOwnerId=g.genesisId;
+                child->genesisRotorPhase=1;
+                born.push_back(child);
+            }
+        }
+        const float u=std::clamp((g.spawnTimer-(duration-Monster::GENESIS_ROTOR_FORM))/
+                                 Monster::GENESIS_ROTOR_FORM,0.0f,1.0f);
+        bool launched=false;
+        auto feed=[&](Monster* child) {
+            if(!child->alive || child->thrownOwnerId!=g.genesisId || child->genesisRotorPhase!=1) return;
+            const auto p=g.GenesisRotorFeedPoint(u);
+            child->worldX=p.x; child->worldY=p.y;
+            child->sizeScale=Monster::GenesisRotorFormScale(child->genesisRotorFullScale,u);
+            child->thrownTimer=u*Monster::GENESIS_ROTOR_FORM;
+            child->thrownSpin=g.hiveOrbitAngle;
+            if(g.spawnTimer>=duration) {
+                child->LaunchGenesisRotor(px,py,atan2f(py-g.worldY,px-g.worldX)); launched=true;
+            }
+        };
+        for(auto* child:monsters) feed(child);
+        for(auto* child:born) feed(child);
+        if(g.spawnTimer<duration) return;
+        ++g.hiveSpawnCount;
+        if(launched) {
+            g.genesisRotorShotAge=0;
+            g.genesisRotorRecoilDir=glm::vec2(cosf(g.hiveOrbitAngle),sinf(g.hiveOrbitAngle));
+        }
+        g.genesisRotorLoaded=false;
+        g.spawnTimer=0; // no catch-up burst after a long frame
+        g.hivePhase=g.hiveSpawnCount>=Monster::GENESIS_ROTOR_COUNT ? 6 : 5;
+    }
+
     void UpdateGenesisLaunchers(float dt, float playerCX, float playerCY) {
         std::vector<Monster*> born;
         const int total = (int)monsters.size();
 
         for (auto* m : monsters) {
-            if (!m->alive || m->kind != MobKind::GENESIS) continue;
-            m->hivePulseTimer = std::max(0.0f, m->hivePulseTimer - dt);
-            m->genesisRecoil = std::max(0.0f, m->genesisRecoil - dt * 4.0f);
-            m->spawnTimer += dt;
+            if (m->kind != MobKind::GENESIS) continue;
+            if (!m->alive) {
+                for(auto* child:monsters) if(child->alive && child->thrownOwnerId==m->genesisId && child->genesisRotorPhase>0) {
+                    if(child->genesisRotorPhase==1) {
+                        child->alive=false; child->scored=true; child->noBlast=true;
+                    } else if(child->genesisRotorPhase==2) {
+                        child->genesisRotorPhase=3; child->thrownTimer=0;
+                        for(auto& p:child->antaresTrail) p=glm::vec3(child->worldX,child->worldY,child->thrownSpin);
+                    }
+                }
+                continue;
+            }
+            m->hivePulseTimer=std::max(0.0f,m->hivePulseTimer-dt);
+            m->genesisRecoil=std::max(0.0f,m->genesisRecoil-dt*4.0f);
+            m->spawnTimer+=dt;
+            if(m->hivePhase>=4) {
+                UpdateGenesisRotorLauncher(*m,dt,playerCX,playerCY,born);
+                continue;
+            }
             const float toX = playerCX - m->worldX, toY = playerCY - m->worldY;
             const float toAngle = atan2f(toY, toX);
 
@@ -304,6 +390,16 @@ private:
                 const float maxTurn = Monster::GENESIS_TURN_RATE * dt;
                 m->hiveOrbitAngle += std::clamp(turn, -maxTurn, maxTurn);
                 m->hiveOpenFactor = 0.0f;
+                // The next attack owns its waiting animation. Rotor waiting
+                // must never fill Swarm slots or perform the Swarm shell spin.
+                if(m->genesisNextRotor) {
+                    m->genesisShellSpin=0;
+                    if(m->spawnTimer>=Monster::GENESIS_ROTOR_WAIT) {
+                        m->hivePhase=4; m->spawnTimer=0; m->hiveSpawnCount=0;
+                        m->genesisRotorLoaded=false; m->genesisRotorShotAge=1;
+                    }
+                    continue;
+                }
                 // The shell ring makes one full turn per charge, easing in
                 // and out, so the muzzle gap stops on the facing at 3/3.
                 const float fullTurn = 6.2831853f;
@@ -316,6 +412,7 @@ private:
                     m->hivePhase = 1;
                     m->spawnTimer = 0.0f;
                     m->hiveSpawnCount = 0;
+                    m->genesisNextRotor = true;
                     m->genesisAimAngle = m->hiveOrbitAngle;
                     // Landing points, rolled once so the aim lines show
                     // exactly where each Swarm will go: the first on the
@@ -392,11 +489,11 @@ private:
         std::vector<int> pushCounts(monsters.size(), 0);
         for (size_t i = 0; i < monsters.size(); ++i) {
             // Thrown Swarms in flight pass through other enemies.
-            if (!monsters[i]->alive || monsters[i]->thrownPhase == 1) continue;
+            if (!monsters[i]->alive || monsters[i]->thrownPhase == 1 || monsters[i]->genesisRotorPhase > 0) continue;
             const int tierI = CollisionTier(monsters[i]);
             const float radiusI = monsters[i]->summoned ? kSummonedGap : kNormalGap;
             for (size_t j = i + 1; j < monsters.size(); ++j) {
-                if (!monsters[j]->alive || monsters[j]->thrownPhase == 1) continue;
+                if (!monsters[j]->alive || monsters[j]->thrownPhase == 1 || monsters[j]->genesisRotorPhase > 0) continue;
                 float dx = monsters[j]->worldX - monsters[i]->worldX;
                 float dy = monsters[j]->worldY - monsters[i]->worldY;
                 const float distanceSq = dx * dx + dy * dy;

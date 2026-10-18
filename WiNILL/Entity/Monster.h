@@ -186,6 +186,17 @@ public:
     // toward the player. The beam runs both ways, so it turns whichever way
     // brings the nearer end onto the player.
     static constexpr float QUASAR_BEAM_TURN = 0.08f;
+    static constexpr int QUASAR_FALL_COUNT = 18;
+    static constexpr int QUASAR_FALL_STATE = 5;
+    static constexpr int QUASAR_FALL_RECOVER_STATE = 6;
+    static constexpr float QUASAR_FALL_SPLIT = 1.1f;
+    static constexpr float QUASAR_FALL_WARNING = 1.0f;
+    static constexpr float QUASAR_FALL_GAP = 0.20f;
+    static constexpr float QUASAR_FALL_RADIUS = 64.0f;
+    static constexpr float QUASAR_FALL_DAMAGE = 6.0f;
+    static constexpr float QUASAR_FALL_RECOVER = 0.8f;
+    static constexpr float QUASAR_FALL_IMPACT_FX = 0.22f;
+    static constexpr float QUASAR_FALL_HIT_GRACE = 0.35f;
     static constexpr float ANTARES_BASE_HP = 600.0f;
     static constexpr int ANTARES_TRAIL_COUNT = 6;
     // Genesis shell core: three shells lock in one by one while tracking
@@ -203,6 +214,15 @@ public:
     static constexpr float GENESIS_FEED_TIME = 0.12f;
     static constexpr float GENESIS_THROW_END = 0.10f;
     static constexpr float GENESIS_RECOVER_TIME = 0.2f;
+    static constexpr float GENESIS_ROTOR_WAIT = 0.25f;
+    static constexpr float GENESIS_ROTOR_PREP = 1.0f;
+    static constexpr float GENESIS_ROTOR_GAP = 0.4f;
+    static constexpr float GENESIS_ROTOR_FORM = 0.24f;
+    static constexpr float GENESIS_ROTOR_RECOVER = 0.55f;
+    static constexpr float GENESIS_ROTOR_SPEED = 2200.0f;
+    static constexpr float GENESIS_ROTOR_BLAST_RADIUS = 80.0f;
+    static constexpr float GENESIS_ROTOR_BLAST_DAMAGE = 10.0f;
+    static constexpr int GENESIS_ROTOR_COUNT = 6;
     static constexpr float GENESIS_TURN_RATE = 0.9f;      // rad/s while tracking
     // Thrown Swarm speed by share of the flight distance: fast launch,
     // braking into the landing (0-60% / 60-80% / 80-100%).
@@ -306,6 +326,7 @@ public:
     // Genesis shell core. hiveOrbitAngle is the facing (muzzle direction),
     // hivePhase 0 track+charge / 1 aim / 2 throw / 3 regroup, spawnTimer
     // times the phase and hiveSpawnCount counts throws in this volley.
+    // Phases 4/5/6 use the rear-production Rotor cycle below.
     float genesisShellSpin = 0.0f;    // shell ring offset from the facing
     float genesisSpinBase = 0.0f;     // spin at the last lock (muzzle gap on the facing)
     float genesisAimAngle = 0.0f;
@@ -314,11 +335,20 @@ public:
     float genesisRecoil = 0.0f;       // 1 at a throw, decays back to 0
     float genesisChildHpMult = 1.0f;  // spawn-time HP ramp, passed to thrown Swarms
     int genesisId = 0;                // owner key for the per-Genesis thrown cap
+    // Alternate the existing Swarm volley with rear-produced Rotor launches.
+    // Owner phases: 4 prepare, 5 burst, 6 recover. Child: 1 feed, 2 fly, 3 settle.
+    bool genesisNextRotor = false;
+    bool genesisRotorLoaded = false;
+    int genesisRotorPhase = 0;
+    bool genesisRotorDetonated = false;
+    float genesisRotorFullScale = 1.0f;
+    float genesisRotorShotAge = 1.0f;
+    glm::vec2 genesisRotorRecoilDir{1.0f, 0.0f};
     inline static int s_NextGenesisId = 1;
 
     // Thrown Swarm: 1 flight, 2 landing stun, 0 ordinary chase. The Antares
     // trail buffer doubles as this Swarm's afterimage history.
-    bool genesisThrown = false;       // counts toward its owner's GENESIS_THROWN_CAP
+    bool genesisThrown = false;       // summoned Swarm/Rotor; owner cap and no-farm rewards
     int thrownOwnerId = 0;            // genesisId of the Genesis that threw it
     int thrownPhase = 0;
     float thrownTimer = 0.0f;
@@ -336,16 +366,28 @@ public:
     float quasarAimY = 0.0f;
     bool quasarAimSet = false;        // aim chosen for this attack (at wind-up start)
     float quasarVisualAngle = 0.0f;
+    float quasarSpinSpeed = 2.2f;
+    float quasarCoreAngle = 0.0f;
     float quasarShellSpin = 0.0f;   // accretion shell spin; speeds up with heat
     float quasarMoveAngle = 0.0f;
     float quasarMoveTurn = 0.0f;
     float quasarMoveTimer = 0.0f;
+    bool quasarNextFall = false;
+    int quasarFallFired = 0;
+    float quasarFallNextFire = QUASAR_FALL_SPLIT;
+    float quasarFallHitUntil = 0.0f;
+    unsigned quasarFallTargetsMask = 0;
+    unsigned quasarFallImpacts = 0;
+    std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallOrigins{};
+    std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallTargets{};
+    std::array<float, QUASAR_FALL_COUNT> quasarFallLaunchTimes{};
+    std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallControl1{};
+    std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallControl2{};
 
     // Gravis state.
     float gravisVisualAngle = 0.0f;
     float gravisDriftAngle = 0.0f;
     float gravisDriftTimer = 0.0f;
-
     // Gimbal mirrors Scope's accelerating two-rotation charge for one shot.
     float gimbalAttackTimer = 0.0f;
     float gimbalChargeAngle = 0.0f;
@@ -452,6 +494,13 @@ public:
             sizeScale = 2.4f;   // tier 4: outer halo + tilted orbit add the rest
             contactDmg = 4.0f;
             quasarState = 0;
+            quasarSpinSpeed = 2.2f;
+            quasarCoreAngle = 0.0f;
+            quasarNextFall = false;
+            quasarFallFired = 0;
+            quasarFallNextFire = QUASAR_FALL_SPLIT;
+            quasarFallHitUntil = 0.0f;
+            quasarFallTargetsMask = quasarFallImpacts = 0;
             quasarTimer = (float)(rand() % 120) * 0.01f;
             quasarVisualAngle = (float)(rand() % 628) * 0.01f;
             quasarMoveAngle = (float)(rand() % 628) * 0.01f;
@@ -1203,7 +1252,7 @@ public:
     // Wind-up progress 0..1 over the last QUASAR_PRECHARGE_TIME of the
     // cooldown (state 0); 0 otherwise.
     float QuasarPrecharge() const {
-        if (quasarState != 0) return 0.0f;
+        if (quasarState != 0 || quasarNextFall) return 0.0f;
         const float start = QUASAR_COOLDOWN_TIME - QUASAR_PRECHARGE_TIME;
         return std::clamp((quasarTimer - start) / QUASAR_PRECHARGE_TIME, 0.0f, 1.0f);
     }
@@ -1214,8 +1263,157 @@ public:
         case 1: return 0.15f;
         case 2: return 0.15f + 0.85f * std::min(1.0f, quasarTimer / QUASAR_LOCK_TIME);
         case 3: return 1.0f;
-        case 4: return 1.0f - std::min(1.0f, quasarTimer / 1.4f);
+        case 4: return 1.0f - QuasarEase(quasarTimer / 1.4f);
+        case QUASAR_FALL_STATE: return 0.85f * QuasarEase(quasarTimer / QUASAR_FALL_SPLIT);
+        case QUASAR_FALL_RECOVER_STATE: return 0.85f * QuasarFallOpen();
         default: return 0.0f;
+        }
+    }
+
+    bool QuasarFalling() const {
+        return alive && quasarState == QUASAR_FALL_STATE;
+    }
+
+    static float QuasarEase(float x) {
+        x = std::clamp(x, 0.0f, 1.0f);
+        return x * x * x * (10.0f + x * (-15.0f + x * 6.0f));
+    }
+
+    float QuasarFallOpen() const {
+        if (QuasarFalling()) return QuasarEase((quasarTimer / QUASAR_FALL_SPLIT - 0.28f) / 0.72f);
+        if (quasarState == QUASAR_FALL_RECOVER_STATE)
+            return 1.0f - QuasarEase(quasarTimer / (QUASAR_FALL_RECOVER - QUASAR_FALL_IMPACT_FX));
+        return 0.0f;
+    }
+
+    float QuasarFallGather() const {
+        if (!QuasarFalling()) return 0.0f;
+        const float p = quasarTimer / QUASAR_FALL_SPLIT;
+        return QuasarEase(p / 0.28f) * (1.0f - QuasarEase((p - 0.28f) / 0.5f));
+    }
+
+    float QuasarSpinTarget() const {
+        if (QuasarFalling()) return 2.2f - 1.8f * QuasarFallGather() + 9.3f * QuasarFallOpen();
+        if (quasarState == QUASAR_FALL_RECOVER_STATE) return 2.2f + 9.3f * QuasarFallOpen();
+        if (quasarState == 0) return 2.2f * (1.0f - 0.8f * QuasarEase(QuasarPrecharge() / 0.5f));
+        if (quasarState == 1) return 0.44f;
+        if (quasarState == 2) return 0.44f + 6.16f * QuasarEase(quasarTimer / QUASAR_LOCK_TIME);
+        if (quasarState == 3) return 6.6f;
+        return 2.2f + 4.4f * (1.0f - QuasarEase(quasarTimer / 1.4f));
+    }
+
+    float QuasarFallImpactTime(int i) const {
+        return quasarFallLaunchTimes[i] + QUASAR_FALL_WARNING;
+    }
+
+    float QuasarFallPulse() const {
+        if (!QuasarFalling() || quasarFallFired == 0) return 0.0f;
+        return std::clamp(1.0f - (quasarTimer - quasarFallLaunchTimes[quasarFallFired - 1]) / 0.16f, 0.0f, 1.0f);
+    }
+
+    float QuasarPortVisibility(int port) const {
+        if (!QuasarFalling()) return 1.0f;
+        for (int i = quasarFallFired - 1; i >= 0; --i)
+            if (i % 4 == port)
+                return std::clamp((quasarTimer - quasarFallLaunchTimes[i] - 0.08f) / 0.15f, 0.0f, 1.0f);
+        return 1.0f;
+    }
+
+    float QuasarFlangeAngle() const {
+        return quasarVisualAngle + (float)((size_t)this % 97u) * 0.37f;
+    }
+
+    // The same four flange nodes are used by the body and the falling debris.
+    glm::vec2 QuasarFlangeNode(int i) const {
+        const float base = (summoned ? 28.0f : 18.0f) * sizeScale;
+        const float a = quasarShellSpin * 0.45f + 1.5707963f * i;
+        const float f = QuasarFlangeAngle();
+        const float u = cosf(a) * base * (1.55f - 0.18f * QuasarFallGather() + 0.65f * QuasarFallOpen());
+        const float v = sinf(a) * base * (0.40f - 0.10f * QuasarFallGather() + 0.70f * QuasarFallOpen()) * (1.0f - 0.30f * QuasarHeat());
+        return {worldX + cosf(f) * u + sinf(f) * v,
+                worldY + sinf(f) * u - cosf(f) * v};
+    }
+
+    void BeginQuasarFall() {
+        quasarState = QUASAR_FALL_STATE;
+        quasarTimer = 0.0f;
+        quasarAimSet = false;
+        quasarFallFired = 0;
+        quasarFallNextFire = QUASAR_FALL_SPLIT;
+        quasarFallHitUntil = 0.0f;
+        quasarFallTargetsMask = quasarFallImpacts = 0;
+    }
+
+    // Each shot samples the player's current location once. Most land near
+    // the player; a third scatter farther out to interrupt a single easy path.
+    void LaunchQuasarFall(float playerX, float playerY, const glm::vec4& bounds) {
+        const int i = quasarFallFired++;
+        quasarFallOrigins[i] = QuasarFlangeNode(i % 4);
+        quasarFallLaunchTimes[i] = quasarTimer;
+        const float angle = (float)(rand() % 10000) * 0.0006283185f;
+        const float u = (float)(rand() % 10000) / 10000.0f;
+        const bool wide = rand() % 3 == 0;
+        const float distance = std::sqrt(wide ? 8100.0f + u * 24300.0f : u * 8100.0f);
+        glm::vec2 target = glm::vec2(playerX, playerY) + glm::vec2(cosf(angle), sinf(angle)) * distance;
+        const float r = QUASAR_FALL_RADIUS;
+        if (bounds.z > bounds.x && bounds.w > bounds.y) {
+            if (bounds.z - bounds.x < 2.0f * r || bounds.w - bounds.y < 2.0f * r) return;
+            target.x = std::clamp(target.x, bounds.x + r, bounds.z - r);
+            target.y = std::clamp(target.y, bounds.y + r, bounds.w - r);
+        }
+        quasarFallTargets[i] = target;
+        const glm::vec2 origin = quasarFallOrigins[i];
+        const glm::vec2 d = target - origin;
+        const float distanceToTarget = glm::length(d);
+        const glm::vec2 forward = distanceToTarget > 0.001f ? d / distanceToTarget : glm::vec2(1,0);
+        const glm::vec2 side(-forward.y, forward.x);
+        const float turn = (i & 1) ? -1.0f : 1.0f;
+        const float arc = std::clamp(distanceToTarget * 0.55f, 90.0f, 290.0f);
+        // A single bowed path, with a tangential launch and curved final approach.
+        const glm::vec2 radial = origin - glm::vec2(worldX, worldY);
+        const float radialLength = glm::length(radial);
+        const glm::vec2 tangent = radialLength > 0.001f
+            ? glm::vec2(radial.y, -radial.x) / radialLength : side;
+        quasarFallControl1[i] = origin + tangent * arc + side * (turn * arc * 0.45f);
+        quasarFallControl2[i] = target - forward * (distanceToTarget * 0.18f) + side * (turn * arc);
+        quasarFallTargetsMask |= 1u << i;
+    }
+
+    // Continuous bowed trajectory. Its nose follows the tangent, with a
+    // separate tumble in drawing. Ground telegraphs remain fixed after launch.
+    glm::vec2 QuasarFallPosition(int i, float age) const {
+        const float t = std::clamp((age - quasarFallLaunchTimes[i]) / QUASAR_FALL_WARNING, 0.0f, 1.0f);
+        const float u = 0.25f * t + 0.75f * t * t;
+        const float v = 1.0f - u;
+        return quasarFallOrigins[i] * (v * v * v) + quasarFallControl1[i] * (3 * v * v * u) +
+               quasarFallControl2[i] * (3 * v * u * u) + quasarFallTargets[i] * (u * u * u);
+    }
+
+    void UpdateQuasarFall(float playerX, float playerY, float& playerHP,
+                          const glm::vec4& bounds) {
+        if (quasarFallFired < QUASAR_FALL_COUNT && quasarTimer + 0.00001f >= quasarFallNextFire) {
+            LaunchQuasarFall(playerX, playerY, bounds);
+            // No burst of overdue shots after a hitch: every shot still gets
+            // its own full warning and a minimum firing gap.
+            quasarFallNextFire = quasarTimer + QUASAR_FALL_GAP;
+        }
+        for (int i = 0; i < quasarFallFired; ++i) {
+            const unsigned bit = 1u << i;
+            if (!(quasarFallTargetsMask & bit) || (quasarFallImpacts & bit) ||
+                quasarTimer < QuasarFallImpactTime(i)) continue;
+            quasarFallImpacts |= bit;
+            const glm::vec2 d = glm::vec2(playerX, playerY) - quasarFallTargets[i];
+            if (quasarTimer >= quasarFallHitUntil &&
+                glm::dot(d, d) <= QUASAR_FALL_RADIUS * QUASAR_FALL_RADIUS) {
+                HurtPlayer(playerHP, QUASAR_FALL_DAMAGE);
+                quasarFallHitUntil = quasarTimer + QUASAR_FALL_HIT_GRACE;
+            }
+        }
+        if (quasarFallFired == QUASAR_FALL_COUNT &&
+            quasarTimer >= QuasarFallImpactTime(QUASAR_FALL_COUNT - 1) + QUASAR_FALL_IMPACT_FX) {
+            quasarState = QUASAR_FALL_RECOVER_STATE;
+            quasarTimer = 0.0f;
+            quasarFallTargetsMask = 0;
         }
     }
 
@@ -1223,6 +1421,7 @@ public:
     // k + 1. They charge while tracking, stay full through the aim, empty one
     // per throw and are empty while regrouping.
     float GenesisStackFill() const {
+        if(hivePhase==0 && genesisNextRotor) return 0.0f;
         switch (hivePhase) {
         case 0: return std::clamp(spawnTimer / GENESIS_STACK_TIME, 0.0f, (float)GENESIS_STACKS);
         case 1: return (float)GENESIS_STACKS;
@@ -1267,6 +1466,100 @@ public:
         else if (t <= t2) d = dist * GENESIS_THROW_SPLIT_MID + (t - t1) * GENESIS_THROW_SPEED_MID;
         else d = dist * GENESIS_THROW_SPLIT_LAND + (t - t2) * GENESIS_THROW_SPEED_LAND;
         return std::min(1.0f, d / dist);
+    }
+
+    static float GenesisSmooth(float u) {
+        u = std::clamp(u, 0.0f, 1.0f); return u*u*(3.0f-2.0f*u);
+    }
+    bool GenesisRotorWaiting() const { return hivePhase==0 && genesisNextRotor; }
+    bool GenesisRotorMode() const { return GenesisRotorWaiting() || hivePhase>=4; }
+    float GenesisRotorPose() const {
+        // Finish assembly early, then hold the readable ready pose before feed.
+        if (hivePhase == 4) return GenesisSmooth((spawnTimer / GENESIS_ROTOR_PREP-0.12f)/0.58f);
+        if (hivePhase == 5) return 1.0f;
+        if (hivePhase == 6) return 1.0f-GenesisSmooth(spawnTimer/GENESIS_ROTOR_RECOVER);
+        return 0.0f;
+    }
+    float GenesisRotorKick() const {
+        if (genesisRotorShotAge < 0.03f) return GenesisSmooth(genesisRotorShotAge/0.03f);
+        return 1.0f-GenesisSmooth((genesisRotorShotAge-0.03f)/0.25f);
+    }
+    float GenesisRotorWindup() const {
+        if(hivePhase!=4) return 0.0f;
+        const float u=std::clamp(spawnTimer/(GENESIS_ROTOR_PREP*0.7f),0.0f,1.0f);
+        return sinf(3.14159265f*GenesisSmooth(u));
+    }
+    glm::vec2 GenesisRotorCenter() const {
+        const float r = 18.0f*sizeScale*2.05f;
+        const glm::vec2 aim(cosf(hiveOrbitAngle),sinf(hiveOrbitAngle));
+        return glm::vec2(worldX,worldY)-genesisRotorRecoilDir*(r*0.32f*GenesisRotorKick())-
+               aim*(r*0.10f*GenesisRotorWindup());
+    }
+    glm::vec2 GenesisRotorFeedPoint(float u) const {
+        const float r = 18.0f*sizeScale*2.05f;
+        // One real unit forms inside the body and accelerates toward the exit.
+        return GenesisRotorCenter()+glm::vec2(cosf(hiveOrbitAngle),sinf(hiveOrbitAngle))*
+               (r*(-0.35f+1.70f*u*u));
+    }
+    float GenesisRotorAperture() const {
+        const float r=18.0f*sizeScale*2.05f;
+        const float shellGap=2.0f*r*0.90f*sinf(1.0471976f-(0.9076f-0.40f));
+        return std::min(shellGap,r*0.96f);
+    }
+    float GenesisRotorOutputScale() const {
+        // Include the square's diagonal AND corner nodes, at any rotation.
+        const float envelope=18.0f*(2.0f*0.78f*1.4142136f+0.32f);
+        return std::clamp((GenesisRotorAperture()-12.0f)/envelope,0.10f,1.0f);
+    }
+    static float GenesisRotorFormScale(float full,float u) {
+        return full*(0.15f+0.85f*GenesisSmooth(u));
+    }
+    void LaunchGenesisRotor(float px,float py,float aimAngle) {
+        genesisRotorPhase=2; thrownTimer=0; genesisRotorDetonated=false;
+        thrownStartX=worldX; thrownStartY=worldY;
+        const float dx=px-worldX,dy=py-worldY;
+        // No gameplay range clamp: every shot lands at its release-time target.
+        thrownDistance=std::sqrt(dx*dx+dy*dy);
+        thrownHeading=thrownDistance>0.00001f ? atan2f(dy,dx) : aimAngle;
+        thrownSpin=thrownHeading;
+        thrownTargetX=px; thrownTargetY=py;
+        thrownDuration=std::max(0.00001f,1.2f*thrownDistance/GENESIS_ROTOR_SPEED);
+        for(auto& p:antaresTrail) p=glm::vec3(worldX,worldY,thrownSpin);
+        antaresTrailTimer=0;
+    }
+    void UpdateGenesisRotor(float dt,float px,float py,float& hp) {
+        const glm::vec2 before(worldX,worldY);
+        thrownTimer+=dt;
+        if(genesisRotorPhase==2) {
+            const float fastTime=0.8f*thrownDistance/GENESIS_ROTOR_SPEED;
+            float distance;
+            if(thrownTimer<=fastTime) distance=thrownTimer*GENESIS_ROTOR_SPEED;
+            else {
+                const float u=std::clamp((thrownTimer-fastTime)/(thrownDuration-fastTime),0.0f,1.0f);
+                distance=thrownDistance*(0.8f+0.4f*(u-0.5f*u*u));
+            }
+            worldX=thrownStartX+cosf(thrownHeading)*distance;
+            worldY=thrownStartY+sinf(thrownHeading)*distance;
+            const glm::vec2 step=glm::vec2(worldX,worldY)-before;
+            // Continuous angle; spin slows with actual translation on landing.
+            thrownSpin+=glm::length(step)*0.006f;
+            if(dt>0 && thrownTimer>=thrownDuration) {
+                worldX=thrownTargetX; worldY=thrownTargetY;
+                genesisRotorPhase=3; thrownTimer=0; genesisRotorDetonated=true;
+                // One landing hit, never direct flight damage or repeated pulse damage.
+                const float dx=px-worldX,dy=py-worldY;
+                if(singularityGrace<=0 && dx*dx+dy*dy<GENESIS_ROTOR_BLAST_RADIUS*GENESIS_ROTOR_BLAST_RADIUS)
+                    HurtPlayer(hp,GENESIS_ROTOR_BLAST_DAMAGE);
+            }
+        } else if(thrownTimer>=0.25f) {
+            genesisRotorPhase=0;
+        }
+        antaresTrailTimer+=dt;
+        if(antaresTrailTimer>=0.016f) {
+            antaresTrailTimer=0;
+            for(int i=ANTARES_TRAIL_COUNT-1;i>0;--i) antaresTrail[i]=antaresTrail[i-1];
+            antaresTrail[0]=glm::vec3(worldX,worldY,thrownSpin);
+        }
     }
 
     void BeginThrownFlight(float targetX, float targetY) {
@@ -1547,7 +1840,8 @@ public:
                 float& playerHP, float speedMult = 1.0f,
                 float gateWX = -1.0f, float gateWY = -1.0f,
                 float gateWW = -1.0f, float gateWH = -1.0f,
-                std::vector<Bullet>* bullets = nullptr) {
+                std::vector<Bullet>* bullets = nullptr,
+                const glm::vec4& attackBounds = glm::vec4(0.0f)) {
         if (!alive) return;
         hitFlashTimer = std::max(0.0f, hitFlashTimer - deltaTime);
         magnetarInterceptTimer = std::max(0.0f,
@@ -1578,6 +1872,17 @@ public:
         const float dx = playerCX - worldX;
         const float dy = playerCY - worldY;
         const float distance = std::sqrt(dx * dx + dy * dy) + 1e-4f;
+
+        if(genesisThrown && kind==MobKind::ROTOR && genesisRotorPhase==0 && thrownDuration>0) {
+            thrownTimer+=deltaTime;
+            speedMult*=GenesisSmooth((thrownTimer-0.25f)/0.3f);
+        }
+
+        if (genesisRotorPhase == 1) return; // owner moves ammunition through the cradle
+        if (genesisRotorPhase > 1) {
+            UpdateGenesisRotor(deltaTime, playerCX, playerCY, playerHP);
+            return;
+        }
 
         // A thrown Swarm neither chases nor deals contact damage until its
         // flight and landing stun are over.
@@ -1680,7 +1985,11 @@ public:
 
             quasarTimer += deltaTime;
             quasarVisualAngle += deltaTime * 0.24f;
-            quasarShellSpin += deltaTime * 2.2f * (1.0f + 2.0f * QuasarHeat());
+            quasarSpinSpeed += (QuasarSpinTarget() - quasarSpinSpeed) * (1.0f - expf(-deltaTime * 7.0f));
+            quasarShellSpin += deltaTime * quasarSpinSpeed;
+            float coreTurn = atan2f(quasarAimY, quasarAimX) - quasarCoreAngle;
+            coreTurn = std::remainder(coreTurn, 6.2831853f);
+            quasarCoreAngle += coreTurn * (1.0f - expf(-deltaTime * 10.0f));
             if (quasarState == 0) {
                 quasarMoveTimer -= deltaTime;
                 if (quasarMoveTimer <= 0.0f) {
@@ -1704,8 +2013,11 @@ public:
                     quasarAimSet = true;
                 }
                 if (quasarTimer >= COOLDOWN_TIME) {
-                    quasarState = 1;
-                    quasarTimer = 0.0f;
+                    if (quasarNextFall) BeginQuasarFall();
+                    else {
+                        quasarState = 1;
+                        quasarTimer = 0.0f;
+                    }
                 }
             } else if (quasarState == 1) {
                 // Lock. The aim was chosen at the start of the wind-up; only
@@ -1758,7 +2070,16 @@ public:
                     quasarState = 4;
                     quasarTimer = 0.0f;
                 }
+            } else if (quasarState == QUASAR_FALL_STATE) {
+                UpdateQuasarFall(playerCX, playerCY, playerHP, attackBounds);
+            } else if (quasarState == QUASAR_FALL_RECOVER_STATE) {
+                if (quasarTimer >= QUASAR_FALL_RECOVER - QUASAR_FALL_IMPACT_FX) {
+                    quasarNextFall = false;
+                    quasarState = 0;
+                    quasarTimer = 0.0f;
+                }
             } else if (quasarTimer >= RECOVER_TIME) {
+                quasarNextFall = true;
                 quasarState = 0;
                 quasarTimer = 0.0f;
             }
@@ -1808,6 +2129,7 @@ public:
         }
 
         if (kind == MobKind::GENESIS) {
+            if (hivePhase >= 4) return;
             const float ax = spawnAnchorX - worldX;
             const float ay = spawnAnchorY - worldY;
             const float anchorDistance = std::sqrt(ax * ax + ay * ay);

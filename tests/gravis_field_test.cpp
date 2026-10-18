@@ -104,6 +104,15 @@ static void CheckEliteSet() {
 }
 
 int main() {
+    Monster original(0.0f, 0.0f);
+    original.MakeKind(MobKind::GRAVIS);
+    assert(Near(original.hp, 720.0f));
+    original.ApplyDamage(original.hp);
+    float playerHP = 100.0f;
+    std::vector<Bullet> bullets;
+    original.Update(0, 0, 5.0f, playerHP, 1, -1, -1, -1, -1, &bullets);
+    assert(!original.alive && original.hp == 0 && bullets.empty());
+    std::printf("original Gravis: single death, no revival or ejecta ok\n");
     CheckInfluenceCurve();
     CheckPullStrength();
     CheckPullCapAcrossSeveralGravis();

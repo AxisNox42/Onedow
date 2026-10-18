@@ -36,10 +36,10 @@ static void Print(const char* label, const Snapshot& a, const Snapshot& b) {
 }
 
 // Kills one Swarm with a bullet and returns the before/after snapshots.
-static void BulletKill(bool thrown, Snapshot& before, Snapshot& after) {
+static void BulletKill(bool thrown, Snapshot& before, Snapshot& after, MobKind kind=MobKind::SWARM) {
     MonsterManager manager;
     Monster* mob = new Monster(500.0f, 300.0f, 1.0f);
-    mob->MakeKind(MobKind::SWARM);
+    mob->MakeKind(kind);
     mob->genesisThrown = thrown;
     mob->hp = 0.01f;
     manager.monsters.push_back(mob);
@@ -87,6 +87,12 @@ int main() {
     assert(b.stardust == a.stardust);
     assert(b.rain == a.rain);              // DEC-04: no 무한 세례 kill
 
+    const auto rotorKills=g_RunMobKillCounts[CM_ROTOR];
+    BulletKill(true,a,b,MobKind::ROTOR);
+    assert(b.combo==a.combo+1 && g_RunMobKillCounts[CM_ROTOR]==rotorKills+1);
+    assert(b.score==a.score && b.hp==a.hp && b.killCount==a.killCount);
+    assert(b.vampireStreak==a.vampireStreak && b.stardust==a.stardust && b.rain==a.rain);
+    std::printf("launched Rotor: combo and Rotor codex only, no farm rewards: ok\n");
     std::printf("thrown swarm kill regression passed\n");
     return 0;
 }
