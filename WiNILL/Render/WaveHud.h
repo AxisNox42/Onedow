@@ -13,6 +13,7 @@
 #include <cstdio>
 
 #include "DrawPrim.h"
+#include "HudLines.h"
 #include "EnemySpawner.h"
 #include "GameManager.h"
 #include "Monster.h"
@@ -26,7 +27,8 @@ extern TextRenderer g_TextS;
 
 namespace wave_hud {
 
-struct Rgb { float r, g, b; };
+using namespace hud_lines;
+
 inline constexpr Rgb kPast   = { 0.47f, 0.87f, 1.00f };
 inline constexpr Rgb kNext   = { 0.66f, 0.70f, 0.80f };
 inline constexpr Rgb kTrack  = { 0.36f, 0.41f, 0.53f };
@@ -34,102 +36,6 @@ inline constexpr Rgb kElite  = { 1.00f, 0.57f, 0.25f };
 inline constexpr Rgb kFinal  = { 1.00f, 0.81f, 0.38f };
 inline constexpr Rgb kDanger = { 1.00f, 0.36f, 0.38f };
 inline constexpr Rgb kText   = { 0.86f, 0.91f, 1.00f };
-// Keyline under every line glyph: a dark shade of the glyph's own colour,
-// like the text halo. On a dark wallpaper it sinks into the background; on
-// a bright or saturated one it outlines the bright core, so one of the two
-// always contrasts without a plate behind the track.
-inline constexpr float kKeyA = 0.88f;
-inline constexpr float kKeyShade = 0.18f;
-inline Rgb KeyCol(Rgb c) { return { c.r * kKeyShade, c.g * kKeyShade, c.b * kKeyShade }; }
-inline constexpr float kPi = 3.14159265f;
-
-inline void Segment(float x0, float y0, float x1, float y1, float w,
-                    Rgb c, float a) {
-    const float dx = x1 - x0, dy = y1 - y0;
-    const float len = std::sqrt(dx * dx + dy * dy);
-    if (len < 0.001f) return;
-    const float nx = -dy / len * w * 0.5f, ny = dx / len * w * 0.5f;
-    BatchTri(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, c.r, c.g, c.b, a);
-    BatchTri(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, c.r, c.g, c.b, a);
-}
-
-// Arc from angle a0 sweeping `sweep` radians (screen space, clockwise).
-inline void Arc(float cx, float cy, float radius, float thick, float a0,
-                float sweep, Rgb c, float a) {
-    const int segments = std::max(2, (int)(std::fabs(sweep) / (2.0f * kPi) * 40.0f));
-    const float inner = radius - thick * 0.5f, outer = radius + thick * 0.5f;
-    for (int i = 0; i < segments; ++i) {
-        const float t0 = a0 + sweep * i / segments;
-        const float t1 = a0 + sweep * (i + 1) / segments;
-        const float c0 = std::cos(t0), s0 = std::sin(t0);
-        const float c1 = std::cos(t1), s1 = std::sin(t1);
-        BatchTri(cx + c0 * outer, cy + s0 * outer, cx + c1 * outer, cy + s1 * outer,
-                 cx + c1 * inner, cy + s1 * inner, c.r, c.g, c.b, a);
-        BatchTri(cx + c0 * outer, cy + s0 * outer, cx + c1 * inner, cy + s1 * inner,
-                 cx + c0 * inner, cy + s0 * inner, c.r, c.g, c.b, a);
-    }
-}
-
-inline void Ring(float cx, float cy, float radius, float thick, Rgb c, float a,
-                 float keyline) {
-    if (keyline > 0.0f)
-        Arc(cx, cy, radius, thick + keyline, 0.0f, 2.0f * kPi, KeyCol(c), kKeyA * a);
-    Arc(cx, cy, radius, thick, 0.0f, 2.0f * kPi, c, a);
-}
-
-inline void DiamondOutline(float cx, float cy, float r, float thick, Rgb c,
-                           float a, float keyline) {
-    const float px[5] = { cx, cx + r, cx, cx - r, cx };
-    const float py[5] = { cy - r, cy, cy + r, cy, cy - r };
-    // Extend each edge by half the stroke so the corners stay sharp.
-    for (int pass = keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
-        const float w = pass == 0 ? thick + keyline : thick;
-        const Rgb col = pass == 0 ? KeyCol(c) : c;
-        const float alpha = pass == 0 ? kKeyA * a : a;
-        for (int i = 0; i < 4; ++i) {
-            const float dx = px[i + 1] - px[i], dy = py[i + 1] - py[i];
-            const float len = std::sqrt(dx * dx + dy * dy);
-            const float ex = dx / len * w * 0.5f, ey = dy / len * w * 0.5f;
-            Segment(px[i] - ex, py[i] - ey, px[i + 1] + ex, py[i + 1] + ey, w, col, alpha);
-        }
-    }
-}
-
-// Clockwise wedge from 12 o'clock covering frac of the node's interior:
-// the elapsed part of the wave. A circle, or a diamond with its vertices
-// at top/right/bottom/left (|x| + |y| = r).
-inline void SectorFill(float cx, float cy, float r, bool diamond, float frac,
-                       Rgb c, float a) {
-    frac = std::clamp(frac, 0.0f, 1.0f);
-    if (frac <= 0.0f) return;
-    // 16 steps per quadrant land exactly on the diamond's corners.
-    constexpr int kSteps = 64;
-    const float step = 2.0f * kPi / kSteps;
-    const float end = -0.5f * kPi + 2.0f * kPi * frac;
-    auto edge = [&](float t, float& x, float& y) {
-        const float ct = std::cos(t), st = std::sin(t);
-        const float d = diamond ? r / (std::fabs(ct) + std::fabs(st)) : r;
-        x = cx + ct * d; y = cy + st * d;
-    };
-    float px, py;
-    edge(-0.5f * kPi, px, py);
-    for (int i = 1; i <= kSteps; ++i) {
-        const float t = std::min(end, -0.5f * kPi + step * i);
-        float qx, qy;
-        edge(t, qx, qy);
-        BatchTri(cx, cy, px, py, qx, qy, c.r, c.g, c.b, a);
-        if (t >= end) break;
-        px = qx; py = qy;
-    }
-}
-
-inline void Dot(float cx, float cy, float r, Rgb c, float a, float keyline) {
-    if (keyline > 0.0f) {
-        const Rgb k = KeyCol(c);
-        drawCircle(cx, cy, r + keyline * 0.5f, k.r, k.g, k.b, kKeyA * a);
-    }
-    drawCircle(cx, cy, r, c.r, c.g, c.b, a);
-}
 
 inline bool IsEliteWave(int wave, Difficulty difficulty) {
     const ScheduledEliteInfo info = GetScheduledElite(wave, difficulty);
@@ -239,13 +145,13 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
                     DiamondOutline(nx, trackY, innerR, 1.1f * hs, own, 0.9f, 0.0f);
                     fillR = innerR - 1.1f * hs * 1.4f - 1.5f * hs;
                 }
-                SectorFill(nx, trackY, fillR, true, 1.0f - frac, own, kFillA);
+                SectorFill(nx, trackY, fillR, FillShape::Diamond, 1.0f - frac, own, kFillA);
                 if (pulse < 1.0f)
                     DiamondOutline(nx, trackY, r + 16.0f * hs * pulse, 1.4f * hs, own,
                                    0.9f * (1.0f - pulse), 0.0f);
             } else {
                 Ring(nx, trackY, r, stroke, own, 1.0f, keyline);
-                SectorFill(nx, trackY, r - stroke * 0.5f - 1.5f * hs, false,
+                SectorFill(nx, trackY, r - stroke * 0.5f - 1.5f * hs, FillShape::Circle,
                            1.0f - frac, own, kFillA);
                 if (pulse < 1.0f)
                     Ring(nx, trackY, r + 18.0f * hs * pulse, 1.4f * hs, kPast,

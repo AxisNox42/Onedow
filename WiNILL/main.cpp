@@ -66,6 +66,7 @@
 #include "MainShader.h"
 #include "EntityDraw.h"
 #include "WaveHud.h"
+#include "SkillHud.h"
 #include "PlayerWeaponShell.h"
 #include "GameFonts.h"
 #include "PlayerRuntime.h"
@@ -671,6 +672,34 @@ static void PushAugEffectsFront(const int* effects, int count) {
         if (effects[i] >= 0 && effects[i] < AUG_TOTAL)
             g_AugEffectQueue.push_front(effects[i]);
     }
+}
+
+// Plain values the skill HUD reads each frame (SkillHudModel.h).
+static skill_hud::SkillHudInputs GatherSkillHudInputs() {
+    using skill_hud::SkillGlyph;
+    skill_hud::SkillHudInputs in{};
+    for (int i = 0; i < 3; ++i) {
+        const SkillSlot& s = g_Skills[i];
+        in.equipped[i] = s.type != SkillType::NONE;
+        in.glyph[i] = s.type == SkillType::HYPER_FOCUS ? SkillGlyph::Focus
+                    : s.type == SkillType::TIME_STOP   ? SkillGlyph::TimeStop
+                                                       : SkillGlyph::Burst;
+        in.cd[i] = s.cd;
+        in.cdMax[i] = PlayerSkillCooldownMax(s.type);
+    }
+    in.dashCd = g_PlayerRuntime.dashCooldown;
+    in.dashCdMax = g_PlayerRuntime.dashCooldownMax;
+    in.dashActive = g_PlayerRuntime.dashActive;
+    in.dashProgress = g_PlayerRuntime.dashProgress;
+    in.dashUpgrade = g_Stats.dashUpgrade;
+    in.hyperFocusTimer = g_PlayerRuntime.hyperFocusTimer;
+    in.hyperFocusDur = HYPER_FOCUS_DUR;
+    in.timeStopTimer = g_PlayerRuntime.timeStopTimer;
+    in.timeStopDur = TIMESTOP_DUR;
+    in.rainOwned = g_Stats.bulletRain;
+    in.rainTimer = g_BulletRainTimer;
+    in.rainCooldown = g_Stats.bulletRainCooldown;
+    return in;
 }
 
 static void ResetAugmentDerivedRuntime() {
@@ -1408,6 +1437,7 @@ int main() {
 
             ResetJuice();
             ResetPlayerSkills();
+            g_SkillHudPulse.Reset();
             ResetPlayerInputEdges();
             g_PlayerRuntime.postPickGrace = 0.0f;
             g_WindowSizeCur = g_Stats.windowSize;
@@ -1869,6 +1899,40 @@ int main() {
                             mob->worldX = playerWin.x + playerWin.width * 0.5f + 600.0f;
                             mob->worldY = playerWin.y + playerWin.height * 0.5f;
                             mob->MakeKind((MobKind)kind);
+                        }
+                    } else if (step.rfind("SKILLHUD=", 0) == 0) {
+                        // SKILLHUD=MIX|EMPTY|PULSE: skill HUD states in one
+                        // frame (cooldowns, effects, passives) on a fresh run.
+                        const std::string preset = step.substr(9);
+                        g_OwnedAugs.clear();   // RestartCurrentRun keeps owned cards
+                        RestartCurrentRun();
+                        auto give = [&](AugType t) {
+                            for (int i = 0; i < AUG_TOTAL; ++i)
+                                if (ALL_AUGS[i].type == t) {
+                                    ApplySingleAugIdx(i, screenWidth, screenHeight);
+                                    return;
+                                }
+                        };
+                        ClearEquippedSkills();
+                        if (preset == "MIX") {
+                            EquipSkill(SkillType::CLOSE_WINDOW);
+                            EquipSkill(SkillType::HYPER_FOCUS);
+                            EquipSkill(SkillType::TIME_STOP);
+                            g_Skills[0].cd = PlayerSkillCooldownMax(SkillType::CLOSE_WINDOW) * 0.6f;
+                            g_Skills[1].cd = 12.0f;
+                            g_Skills[2].cd = 0.0f;
+                            g_PlayerRuntime.hyperFocusTimer = 3.0f;
+                            g_PlayerRuntime.dashCooldown = DASH_CD;   // ~half left at the ~1.5 s capture
+                            g_PlayerRuntime.dashCooldownMax = DASH_CD;
+                            give(AugType::BULLET_RAIN);
+                            g_BulletRainTimer = g_Stats.bulletRainCooldown * 0.6f;
+                            give(AugType::LIGHT_STEP);
+                            g_Stats.lightStepDisableTimer = 7.0f;
+                            for (int k = 0; k < 3; ++k) give(AugType::D_APPROACH);
+                        } else if (preset == "PULSE") {
+                            EquipSkill(SkillType::TIME_STOP);
+                            g_Skills[0].cd = 0.05f;
+                            g_SmokeTimeScale = 0.2f;
                         }
                     } else if (step.rfind("HP=", 0) == 0) {
                         // HP=<0..1>: set the player's health fraction.
@@ -2403,6 +2467,7 @@ int main() {
                 // ?�?�??�티�??�킬 ??쿨다??지??갱신 + ?�력(Shift ?�??/ Q·E·R ?�롯) ?�?�?
                 UpdatePlayerRuntimeTimers(
                     FIXED_DT, GravisField::DashRecoveryMult(GravisField::g_playerInfluence));
+                g_SkillHudPulse.Update(GatherSkillHudInputs(), FIXED_DT);
 
 
                 // �??�기 ???�레?�어 중심 ??�� (?�백 + ?�해)
@@ -3988,124 +4053,11 @@ CollisionSystem::Update(pCX, pCY,
                 }
             }
 
-            // ?�?�??�티�??�킬 ?�롯 (좌하?? ?�시�?쿨다?????? ?�?�?
+            // Skill HUD (bottom centre): key cooldowns and cooldown passives.
             if (st == GameState::RUNNING ||
                 (st == GameState::PAUSED && !g_ShowPauseInventory)) {
-                const float hudScale = UiScale(sw, sh);
-                const float KW = 64.0f * hudScale, KH = 56.0f * hudScale;
-                const float KG = 8.0f * hudScale;
-                float kx0 = BottomLeftActionX(hudScale);
-                float ky0 = HudY(sh, KH + Hud::SKILL_KEYS_Y * hudScale);
-                auto skillBox = [&](int idx, const wchar_t* key, const wchar_t* tag,
-                                    float cd, float r, float g, float b) {
-                    float x = kx0 + idx * (KW + KG), y = ky0;
-                    bool ready = (cd <= 0.0f);
-                    const float readyA = ready ? 0.92f : 0.46f;
-                    drawRect(x, y, KW, 1.5f * hudScale, r, g, b, readyA);
-                    drawRect(x, y + 1.5f * hudScale,
-                             1.2f * hudScale, KH - 1.5f * hudScale,
-                             r, g, b, ready ? 0.42f : 0.20f);
-                    drawRect(x + KW * 0.5f - 10.0f * hudScale,
-                             y + KH - 1.5f * hudScale,
-                             20.0f * hudScale, 1.5f * hudScale,
-                             r, g, b, ready ? 0.62f : 0.26f);
-                    drawDiamond(x + KW * 0.5f, y + 1.5f * hudScale,
-                                2.5f * hudScale, r, g, b,
-                                ready ? 0.82f : 0.40f);
-                    const float tagScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
-                    const float keyW = g_TextS.Width(key, tagScale);
-                    g_TextS.Draw(key, x + (KW - keyW) * 0.5f, y + 7.0f * hudScale,
-                                 tagScale, 1,1,1, ready ? 0.90f : 0.50f);
-                    const float tagW = g_TextS.Width(tag, tagScale);
-                    g_TextS.Draw(tag, x + (KW - tagW) * 0.5f, y + KH - 17.0f * hudScale,
-                                 tagScale, r,g,b, ready ? 1.0f : 0.42f);
-                    if (!ready) {
-                        wchar_t bf[8]; swprintf_s(bf, L"%d", (int)(cd + 0.99f));
-                        const float cooldownScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
-                        float tw = g_TextL.Width(bf, cooldownScale);
-                        g_TextL.Draw(bf, x + (KW - tw) * 0.5f, y + KH * 0.34f,
-                                     cooldownScale, 1,1,1,0.88f);
-                    }
-                };
-                skillBox(0, L"SHIFT", g_Stats.dashUpgrade ? L"FLASH" : L"DASH",
-                         g_PlayerRuntime.dashCooldown, 0.4f, 1.0f, 1.0f);
-                const wchar_t* keys3[3] = { L"Q", L"E", L"R" };
-                for (int i = 0; i < 3; i++) {
-                    if (g_Skills[i].type == SkillType::NONE) continue;
-                    const wchar_t* tag = L""; float r = 1, g = 1, b = 1;
-                    switch (g_Skills[i].type) {
-                    case SkillType::CLOSE_WINDOW: tag = L"CLOSE"; r=0.5f; g=0.8f; b=1.0f; break;
-                    case SkillType::HYPER_FOCUS:  tag = L"FOCUS"; r=0.55f; g=0.85f; b=1.0f; break;
-                    case SkillType::TIME_STOP:    tag = L"TIME";  r=0.4f; g=0.9f; b=1.0f; break;
-                    default: break;
-                    }
-                    skillBox(i + 1, keys3[i], tag, g_Skills[i].cd, r, g, b);
-                }
-            }
-
-            // ?�?�??�티�??�시�?쿨다??UI (좌하?? ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
-            // 추후 ?�토그램 PNG 가 ?�어?�면 ?�각??placeholder ?�리???�스�??�시
-            if (st == GameState::RUNNING ||
-                (st == GameState::PAUSED && !g_ShowPauseInventory)) {
-                const float hudScale = UiScale(sw, sh);
-                const float SLOT_W = 64.0f * hudScale, SLOT_H = 56.0f * hudScale;
-                const float SLOT_GAP = 8.0f * hudScale;
-                float baseX  = BottomLeftActionX(hudScale);
-                float baseY2 = HudY(sh, SLOT_H + Hud::SLOT_BAR_BASE);   // HP �??�쪽(?�업?�시�???
-                int   slot   = 0;
-
-                // Status slots share the open-frame look of the skill keys
-                // (top rule, left rule, bottom tick, diamond) instead of a
-                // filled dark box with a thick colour bar.
-                auto drawSlot = [&](const wchar_t* tag, const wchar_t* value,
-                                    bool ready, float r, float g, float b) {
-                    const float x = baseX + slot * (SLOT_W + SLOT_GAP);
-                    const float y = baseY2;
-                    const float lineA = ready ? 0.92f : 0.46f;
-                    drawRect(x, y, SLOT_W, 1.5f * hudScale, r, g, b, lineA);
-                    drawRect(x, y + 1.5f * hudScale,
-                             1.2f * hudScale, SLOT_H - 1.5f * hudScale,
-                             r, g, b, ready ? 0.42f : 0.20f);
-                    drawRect(x + SLOT_W * 0.5f - 10.0f * hudScale,
-                             y + SLOT_H - 1.5f * hudScale,
-                             20.0f * hudScale, 1.5f * hudScale,
-                             r, g, b, ready ? 0.62f : 0.26f);
-                    drawDiamond(x + SLOT_W * 0.5f, y + 1.5f * hudScale,
-                                2.5f * hudScale, r, g, b, ready ? 0.82f : 0.40f);
-                    const float tagScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
-                    const float tagW = g_TextS.Width(tag, tagScale);
-                    g_TextS.Draw(tag, x + (SLOT_W - tagW) * 0.5f, y + 7.0f * hudScale,
-                                 tagScale, r, g, b, ready ? 1.0f : 0.62f);
-                    if (value && value[0]) {
-                        const float valueScale = UiTextScale(g_TextL, UiTextLevel::Description, hudScale);
-                        const float vw = g_TextL.Width(value, valueScale);
-                        g_TextL.Draw(value, x + (SLOT_W - vw) * 0.5f,
-                                     y + SLOT_H * 0.40f, valueScale, 1, 1, 1, 0.95f);
-                    }
-                    ++slot;
-                };
-                auto seconds = [](float remain, wchar_t* buf, size_t n) {
-                    if (remain > 0.0f) swprintf_s(buf, n, L"%d", (int)(remain + 0.99f));
-                    else buf[0] = L'\0';
-                };
-
-                // Bullet rain cooldown (20 / 15 / 7.5s).
-                if (g_Stats.bulletRain) {
-                    float remain = g_Stats.bulletRainCooldown - g_BulletRainTimer;
-                    if (remain < 0) remain = 0;
-                    wchar_t buf[16]; seconds(remain, buf, 16);
-                    drawSlot(L"RAIN", buf, remain <= 0.0f, 1.0f, 0.5f, 0.2f);
-                }
-                if (g_Stats.lightStep && g_Stats.lightStepDisableTimer > 0.0f) {
-                    wchar_t buf[16]; seconds(g_Stats.lightStepDisableTimer, buf, 16);
-                    drawSlot(L"LSTP", buf, false, 0.7f, 0.7f, 0.85f);
-                }
-                // Approaching Death: active orb count (+20% orb speed per stack).
-                if (!g_ApproachOrbs.empty()) {
-                    wchar_t buf[8];
-                    swprintf_s(buf, L"x%d", g_Stats.approachStacks);
-                    drawSlot(L"DEATH", buf, true, 1.0f, 0.36f, 0.38f);
-                }
+                DrawSkillHud(skill_hud::BuildSkillHudView(GatherSkillHudInputs(), g_SkillHudPulse),
+                             UiScale(sw, sh), sw, sh);
             }
 
         }

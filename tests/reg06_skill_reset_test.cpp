@@ -28,6 +28,7 @@ static void FillEverything() {
     r.dashProgress = 0.4f; r.dashBoostShotsLeft = 3;
     r.knockbackVX = 50.0f; r.knockbackVY = -20.0f;
     r.timeStopTimer = 0.8f; r.hyperFocusTimer = 2.0f;
+    r.dashCooldownMax = 2.9f;
     r.postPickGrace = 0.3f;
     r.dashFromX = 1.0f; r.dashFromY = 2.0f; r.dashToX = 3.0f; r.dashToY = 4.0f;
     r.dashInputHeld = true; r.skillInputHeld[0] = r.skillInputHeld[2] = true;
@@ -71,11 +72,23 @@ int main() {
     const PlayerRuntimeState& r = g_PlayerRuntime;
     assert(r.dashCooldown == 0.0f && r.dashInvulnerability == 0.0f && !r.dashActive &&
            r.dashProgress == 0.0f && r.dashBoostShotsLeft == 0 && r.knockbackVX == 0.0f &&
-           r.knockbackVY == 0.0f && r.timeStopTimer == 0.0f && r.hyperFocusTimer == 0.0f);
+           r.knockbackVY == 0.0f && r.timeStopTimer == 0.0f && r.hyperFocusTimer == 0.0f &&
+           r.dashCooldownMax == 0.0f);
     assert(g_PlayerShield == 0.0f && g_PlayerShieldTimer == 0.0f);
     assert(KeptByBothResets());
     std::printf("ResetPlayerSkills: slots + dash/shield/time-stop/hyper-focus cleared; "
                 "grace, dash endpoints, input edges kept\n");
+
+    // Dash cooldown max: the value each dash started with (HUD wedge base).
+    ResetPlayerSkills();
+    g_PlayerRuntime.hyperFocusTimer = 1.0f;
+    BeginPlayerDash(0.0f, 0.0f, 1.0f, 0.0f, -10000.0f, 10000.0f, -10000.0f, 10000.0f);
+    assert(g_PlayerRuntime.dashCooldownMax == HYPER_FOCUS_DASH_CD);
+    g_PlayerRuntime.hyperFocusTimer = 0.0f;
+    BeginPlayerDash(0.0f, 0.0f, 1.0f, 0.0f, -10000.0f, 10000.0f, -10000.0f, 10000.0f);
+    assert(g_PlayerRuntime.dashCooldownMax == DASH_CD);
+    assert(g_PlayerRuntime.dashCooldown == g_PlayerRuntime.dashCooldownMax);
+    std::printf("BeginPlayerDash: dashCooldownMax records the dash's cooldown\n");
 
     // Re-equip: clears first, equips in owned order, skips non-skill cards
     // and duplicates, leaves the runtime alone.
