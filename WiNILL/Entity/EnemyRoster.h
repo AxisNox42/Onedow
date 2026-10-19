@@ -4,13 +4,14 @@
 // difficulty, and its spawn odds from then on. First appearances are
 // spread over the run instead of all landing in waves 1-6, and never on an
 // elite wave (5, 10, 15, 20) so a new enemy and an elite do not share it.
+// Elite kinds (Gravis, Genesis, Quasar) are not on the roster: they only
+// enter as the scheduled elite of an elite wave (EnemySpawner.cpp).
 // Kept free of game headers so tests can include it on its own.
 // ─────────────────────────────────────────────────────────────
 #include <algorithm>
 
 enum class RosterKind {
-    SWARM, ROTOR, GIMBAL, GRAVIS, SCOPE,
-    REGULUS, ANTARES, MAGNETAR, GENESIS, QUASAR,
+    SWARM, ROTOR, GIMBAL, SCOPE, REGULUS, ANTARES, MAGNETAR,
     COUNT
 };
 
@@ -27,13 +28,10 @@ inline constexpr RosterEntry kEnemyRoster[] = {
     { RosterKind::SWARM,    { 1,  1,  1 }, 12, 12 },
     { RosterKind::ROTOR,    { 2,  2,  1 },  0,  0 },
     { RosterKind::GIMBAL,   { 3,  3,  2 },  6, 20 },
-    { RosterKind::GRAVIS,   { 6,  4,  3 },  6, 18 },
     { RosterKind::SCOPE,    { 0,  6,  4 },  0,  0 },
     { RosterKind::REGULUS,  { 0,  8,  6 },  3,  7 },
     { RosterKind::ANTARES,  { 0, 11,  8 },  3,  7 },
     { RosterKind::MAGNETAR, { 0,  0, 11 },  4, 12 },
-    { RosterKind::GENESIS,  { 0,  0, 13 },  2,  5 },
-    { RosterKind::QUASAR,   { 0,  0, 16 },  2,  5 },
 };
 
 inline const RosterEntry& RosterEntryFor(RosterKind kind) {

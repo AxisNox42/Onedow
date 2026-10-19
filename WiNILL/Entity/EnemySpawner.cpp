@@ -28,12 +28,9 @@ static MobKind MobKindFor(RosterKind kind) {
     switch (kind) {
     case RosterKind::SWARM:    return MobKind::SWARM;
     case RosterKind::GIMBAL:   return MobKind::GIMBAL;
-    case RosterKind::GRAVIS:   return MobKind::GRAVIS;
     case RosterKind::REGULUS:  return MobKind::REGULUS;
     case RosterKind::ANTARES:  return MobKind::ANTARES;
     case RosterKind::MAGNETAR: return MobKind::MAGNETAR;
-    case RosterKind::GENESIS:  return MobKind::GENESIS;
-    case RosterKind::QUASAR:   return MobKind::QUASAR;
     default:                   return MobKind::ROTOR;
     }
 }

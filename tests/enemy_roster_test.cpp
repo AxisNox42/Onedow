@@ -63,9 +63,12 @@ int main() {
         }
 
     // HARD-only enemies wait until wave 10+, NORMAL-only ones skip EASY.
+    // Elite kinds (Gravis, Genesis, Quasar) have no roster entry at all:
+    // they only enter as an elite wave's scheduled elite.
     EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 2) >= 10, "magnetar late on HARD");
-    EXPECT(RosterFirstWave(RosterKind::GENESIS, 2) >= 10, "genesis late on HARD");
-    EXPECT(RosterFirstWave(RosterKind::QUASAR, 2) >= 15, "quasar from 15 on HARD");
+    EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 1) == 0, "magnetar not on NORMAL");
+    EXPECT((int)(sizeof(kEnemyRoster) / sizeof(kEnemyRoster[0])) == (int)RosterKind::COUNT,
+           "one roster entry per kind");
     EXPECT(RosterFirstWave(RosterKind::REGULUS, 0) == 0, "regulus not on EASY");
     EXPECT(RosterFirstWave(RosterKind::SCOPE, 0) == 0, "scope not on EASY");
 
