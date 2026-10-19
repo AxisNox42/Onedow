@@ -1,7 +1,10 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
 // Wave HUD (top centre): "WAVE 04 / 15" and the time left in the wave,
-// and a track with one node per wave (symbols only, no labels).
+// and a seven-node window of the wave track - three past waves, the current
+// wave fixed in the centre, three upcoming waves (symbols only, no labels).
+// The window's end nodes are faded to say the track goes on; the run's
+// first and final waves are never faded because nothing lies beyond them.
 // Line glyphs only; text keeps the renderer halo so
 // it reads on a bright wallpaper without a plate.
 //   ○ plain wave   ◇ elite wave   ◈ final wave
@@ -93,10 +96,16 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
     // ── track ──
     BindMainShader();
     const float trackY = baseline + 22.0f * hs;
-    const float gap = finalWave > 1
-        ? std::min(26.0f * hs, sw * 0.34f / (float)(finalWave - 1)) : 0.0f;
-    const float trackW = gap * (float)(finalWave - 1);
-    const float x0 = cx - trackW * 0.5f;
+    constexpr int kWindowSide = 3;
+    const int first = std::max(1, wave - kWindowSide);
+    const int last = std::min(finalWave, wave + kWindowSide);
+    const float gap = 30.0f * hs;
+    auto nodeX = [&](int w) { return cx + gap * (float)(w - wave); };
+    // Window ends fade unless they are the run's real ends.
+    auto fade = [&](int w) {
+        const bool windowEnd = w == wave - kWindowSide || w == wave + kWindowSide;
+        return windowEnd && w != 1 && w != finalWave ? 0.40f : 1.0f;
+    };
     const float lineW = 1.5f * hs;
     // Half-width of each node along the track, so the links stop at the
     // node's edge instead of running through it.
@@ -109,19 +118,21 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
         return (w < wave ? 3.0f : 4.0f) * hs + 0.7f * hs;
     };
     const float linkPad = 3.0f * hs;
-    for (int w = 1; w < finalWave; ++w) {
-        const float a = x0 + gap * (float)(w - 1) + nodeHalf(w) + linkPad;
-        const float b = x0 + gap * (float)w - nodeHalf(w + 1) - linkPad;
+    for (int w = first; w < last; ++w) {
+        const float a = nodeX(w) + nodeHalf(w) + linkPad;
+        const float b = nodeX(w + 1) - nodeHalf(w + 1) - linkPad;
         if (b <= a) continue;
         const bool passed = w + 1 <= wave;
-        Segment(a, trackY, b, trackY, lineW + keyline, KeyCol(passed ? kPast : kTrack), kKeyA);
+        const float f = std::min(fade(w), fade(w + 1));
+        Segment(a, trackY, b, trackY, lineW + keyline, KeyCol(passed ? kPast : kTrack), kKeyA * f);
         Segment(a, trackY, b, trackY, passed ? lineW : lineW * 0.8f,
-                passed ? kPast : kTrack, passed ? 0.85f : 0.80f);
+                passed ? kPast : kTrack, (passed ? 0.85f : 0.80f) * f);
     }
 
     const float frac = std::clamp(remain / WAVE_DURATION_SECONDS, 0.0f, 1.0f);
-    for (int w = 1; w <= finalWave; ++w) {
-        const float nx = x0 + gap * (float)(w - 1);
+    for (int w = first; w <= last; ++w) {
+        const float nx = nodeX(w);
+        const float f = fade(w);
         const bool isFinal = w == finalWave;
         const bool isElite = !isFinal && IsEliteWave(w, difficulty);
         if (w == wave) {
@@ -158,15 +169,15 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
                          0.9f * (1.0f - pulse), 0.0f);
             }
         } else if (isFinal) {
-            DiamondOutline(nx, trackY, 9.0f * hs, 1.7f * hs, kFinal, 1.0f, keyline);
-            DiamondOutline(nx, trackY, 4.5f * hs, 1.1f * hs, kFinal, 0.9f, 0.0f);
+            DiamondOutline(nx, trackY, 9.0f * hs, 1.7f * hs, kFinal, f, keyline);
+            DiamondOutline(nx, trackY, 4.5f * hs, 1.1f * hs, kFinal, 0.9f * f, 0.0f);
         } else if (isElite) {
             DiamondOutline(nx, trackY, 7.0f * hs, 1.7f * hs,
-                           w < wave ? kPast : kElite, w < wave ? 0.85f : 1.0f, keyline);
+                           w < wave ? kPast : kElite, (w < wave ? 0.85f : 1.0f) * f, keyline);
         } else if (w < wave) {
-            Dot(nx, trackY, 3.0f * hs, kPast, 0.95f, keyline);
+            Dot(nx, trackY, 3.0f * hs, kPast, 0.95f * f, keyline);
         } else {
-            Ring(nx, trackY, 4.0f * hs, 1.3f * hs, kNext, 0.85f, keyline);
+            Ring(nx, trackY, 4.0f * hs, 1.3f * hs, kNext, 0.85f * f, keyline);
         }
     }
     BatchFlush();

@@ -55,21 +55,39 @@ inline void Ring(float cx, float cy, float radius, float thick, Rgb c, float a,
     Arc(cx, cy, radius, thick, 0.0f, 2.0f * kPi, c, a);
 }
 
-// Closed polyline through n corners; each edge is extended by half the
-// stroke so the corners stay sharp. Keyline pass first when requested.
+// Closed polyline through n corners with mitred joins: each corner is one
+// shared vertex pair, so no part of the stroke is drawn twice and a faded
+// (alpha < 1) outline shows no darker overlap at the corners. The corners
+// stay sharp. Keyline pass first when requested.
 inline void ClosedOutline(const float* px, const float* py, int n, float thick,
                           Rgb c, float a, float keyline) {
+    constexpr int kMaxCorners = 16;
+    if (n < 3 || n > kMaxCorners) return;
     for (int pass = keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
         const float w = pass == 0 ? thick + keyline : thick;
         const Rgb col = pass == 0 ? KeyCol(c) : c;
         const float alpha = pass == 0 ? kKeyA * a : a;
+        float ox[kMaxCorners], oy[kMaxCorners], ix[kMaxCorners], iy[kMaxCorners];
+        for (int i = 0; i < n; ++i) {
+            const int h = (i + n - 1) % n, j = (i + 1) % n;
+            float d1x = px[i] - px[h], d1y = py[i] - py[h];
+            float d2x = px[j] - px[i], d2y = py[j] - py[i];
+            const float l1 = std::max(0.001f, std::sqrt(d1x * d1x + d1y * d1y));
+            const float l2 = std::max(0.001f, std::sqrt(d2x * d2x + d2y * d2y));
+            d1x /= l1; d1y /= l1; d2x /= l2; d2y /= l2;
+            // Mitre direction bisects the two edge normals.
+            float mx = -d1y - d2y, my = d1x + d2x;
+            const float ml = std::max(0.001f, std::sqrt(mx * mx + my * my));
+            mx /= ml; my /= ml;
+            const float cosHalf = std::max(0.25f, mx * -d1y + my * d1x);
+            const float reach = w * 0.5f / cosHalf;
+            ox[i] = px[i] + mx * reach; oy[i] = py[i] + my * reach;
+            ix[i] = px[i] - mx * reach; iy[i] = py[i] - my * reach;
+        }
         for (int i = 0; i < n; ++i) {
             const int j = (i + 1) % n;
-            const float dx = px[j] - px[i], dy = py[j] - py[i];
-            const float len = std::sqrt(dx * dx + dy * dy);
-            if (len < 0.001f) continue;
-            const float ex = dx / len * w * 0.5f, ey = dy / len * w * 0.5f;
-            Segment(px[i] - ex, py[i] - ey, px[j] + ex, py[j] + ey, w, col, alpha);
+            BatchTri(ox[i], oy[i], ox[j], oy[j], ix[j], iy[j], col.r, col.g, col.b, alpha);
+            BatchTri(ox[i], oy[i], ix[j], iy[j], ix[i], iy[i], col.r, col.g, col.b, alpha);
         }
     }
 }
