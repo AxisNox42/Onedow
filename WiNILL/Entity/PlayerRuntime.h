@@ -15,6 +15,7 @@ struct PlayerRuntimeState {
     float dashToX = 0.0f, dashToY = 0.0f;
     int dashBoostShotsLeft = 0;
     float knockbackVX = 0.0f, knockbackVY = 0.0f; // decaying shove from rams
+    float moveSlowTimer = 0.0f;     // Gravis shove: reduced move speed while > 0
     bool dashInputHeld = false;
     bool skillInputHeld[3] = {};
 };
@@ -27,6 +28,8 @@ struct PlayerViewportBounds {
     float left = 0.0f, right = 0.0f, top = 0.0f, bottom = 0.0f;
 };
 
+// Move-speed multiplier while moveSlowTimer runs (Gravis glide shove).
+inline constexpr float GRAVIS_SLOW_MOVE_MULT = 0.75f;
 inline constexpr float DASH_CD = 2.9f;
 inline constexpr float DASH_DIST = 300.0f;
 inline constexpr float DASH_INVULN = 0.20f;

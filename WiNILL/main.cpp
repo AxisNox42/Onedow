@@ -1830,6 +1830,77 @@ int main() {
                         playerWin.x+=sinf(age*2.0f)*100.0f;
                         playerWin.y+=sinf(age*1.5f)*80.0f;
                         g_SmokeTimeScale = 0.0f;
+                    } else if (step.rfind("GRAVISGLIDE=", 0) == 0 || step.rfind("GRAVISSLING=", 0) == 0 ||
+                               step.rfind("GRAVISTEST=", 0) == 0) {
+                        // GRAVISGLIDE=<sec> / GRAVISSLING=<sec>: replay a Gravis
+                        // elite pattern from its start to the given time and
+                        // freeze for the capture (like QUASARFALL).
+                        // GRAVISTEST=GLIDE|SLING: start the pattern on the live
+                        // game loop (full speed) with the player standing still
+                        // at the destination; pair with GRAVISDUMP=<label>.
+                        if (gm.currentState != GameState::RUNNING) RestartCurrentRun();
+                        g_MonsterManager.Clear();
+                        g_Bullets.clear();
+                        g_PlayerRuntime.knockbackVX = g_PlayerRuntime.knockbackVY = 0.0f;
+                        g_PlayerRuntime.moveSlowTimer = 0.0f;
+                        const bool live = step.rfind("GRAVISTEST=", 0) == 0;
+                        const std::string gArg = step.substr(step.find('=') + 1);
+                        const bool wantGlide = live ? gArg == "GLIDE" : step.rfind("GRAVISGLIDE=", 0) == 0;
+                        const float gpx = screenWidth * 0.61f, gpy = screenHeight * 0.64f;
+                        playerWin.x = gpx - playerWin.width * 0.5f;
+                        playerWin.y = gpy - playerWin.height * 0.5f;
+                        std::srand(1234);
+                        auto* gv = new Monster(screenWidth * 0.30f, screenHeight * 0.42f);
+                        gv->MakeKind(MobKind::GRAVIS);
+                        gv->hp = 1000000.0f;
+                        gv->speed = 0.0f;
+                        // The two machines are independent: park the other one so the
+                        // capture shows only the pattern under test.
+                        if (wantGlide) { gv->BeginGravisGlide(); gv->gravisSlingTimer = -1.0e6f; }
+                        else { gv->BeginGravisSling(); gv->gravisTimer = -1.0e6f; }
+                        const glm::vec4 gBounds(0, BROWSER_CHROME_H, screenWidth,
+                                                screenHeight - g_GameBarH - g_TaskbarH);
+                        if (live) {
+                            gm.playerHP = g_Stats.maxHP;
+                            g_SmokeTimeScale = 1.0f;
+                        } else {
+                            const float age = std::clamp(std::strtof(step.c_str() + 12, nullptr),
+                                                        0.0f, 14.0f);
+                            float qaHp = 10000.0f;
+                            for (float t = 0.0f; t < age; ) {
+                                const float dt = std::min(1.0f / 120.0f, age - t);
+                                t += dt;
+                                gv->Update(gpx, gpy, dt, qaHp, 1.0f, -1, -1, -1, -1, nullptr, gBounds);
+                            }
+                            g_SmokeTimeScale = 0.02f;
+                        }
+                        g_MonsterManager.monsters.push_back(gv);
+                    } else if (step.rfind("GRAVISDUMP=", 0) == 0) {
+                        // Append one state line to Screenshots/gravis_state.txt
+                        // (read by scripts/test_gravis_elite_smoke.ps1).
+                        const Monster* gv = nullptr;
+                        for (const Monster* mob : g_MonsterManager.monsters)
+                            if (mob->alive && mob->kind == MobKind::GRAVIS) { gv = mob; break; }
+                        std::filesystem::create_directories("Screenshots");
+                        FILE* gf = nullptr;
+#ifdef _MSC_VER
+                        if (fopen_s(&gf, "Screenshots/gravis_state.txt", "a") != 0) gf = nullptr;
+#else
+                        gf = std::fopen("Screenshots/gravis_state.txt", "a");
+#endif
+                        if (gf) {
+                            const float gcx = playerWin.x + playerWin.width * 0.5f;
+                            const float gcy = playerWin.y + playerWin.height * 0.5f;
+                            const float gdx = gv ? gcx - gv->worldX : 0.0f;
+                            const float gdy = gv ? gcy - gv->worldY : 0.0f;
+                            std::fprintf(gf,
+                                "%s state=%d sling=%d field=%d hp=%.2f maxhp=%.2f slow=%.2f dist=%.1f influence=%.3f\n",
+                                step.c_str() + 11, gv ? gv->gravisState : -1, gv ? gv->gravisSling : -1,
+                                gv ? (int)gv->GravisFieldActive() : -1, gm.playerHP, g_Stats.maxHP,
+                                g_PlayerRuntime.moveSlowTimer, std::sqrt(gdx * gdx + gdy * gdy),
+                                GravisField::g_playerInfluence);
+                            std::fclose(gf);
+                        }
                     } else if (step.rfind("QUASARFALL=", 0) == 0 || step.rfind("QUASARBEAM=", 0) == 0) {
                         // Deterministic motion QA for both charge animations.
                         if (gm.currentState != GameState::RUNNING) RestartCurrentRun();
@@ -2435,7 +2506,8 @@ int main() {
                     playerWin.x, playerWin.y,
                     keys[GLFW_KEY_W], keys[GLFW_KEY_S],
                     keys[GLFW_KEY_A], keys[GLFW_KEY_D],
-                    playerControl, MOVE_SPEED * g_Stats.GetMoveMultiplier(lmb),
+                    playerControl, MOVE_SPEED * g_Stats.GetMoveMultiplier(lmb) *
+                        (g_PlayerRuntime.moveSlowTimer > 0.0f ? GRAVIS_SLOW_MOVE_MULT : 1.0f),
                     FIXED_DT, g_PlayerRuntime.dashActive, mvX, mvY);
                 if (playerControl && mlen > 0.001f && !g_PlayerRuntime.dashActive) {
                     // ?�동 ?�상(afterimage) ???�정 간격?�로 ?�레?�어 중심???��? ?�안 ?�상
@@ -2637,6 +2709,15 @@ int main() {
                                                          ccX + halfW, bottomLimit));
                     // Held kill stardust (Quasar supernova) comes out at the blast.
                     ReleasePendingStardust(g_MonsterManager, pCX, pCY);
+
+                    // Gravis' arrival burst slows the player; dash i-frames ignore it.
+                    for (auto* m : g_MonsterManager.monsters) {
+                        if (!m || m->kind != MobKind::GRAVIS || m->gravisSlowRequest <= 0.0f) continue;
+                        if (g_PlayerRuntime.dashInvulnerability <= 0.0f)
+                            g_PlayerRuntime.moveSlowTimer = std::max(
+                                g_PlayerRuntime.moveSlowTimer, m->gravisSlowRequest);
+                        m->gravisSlowRequest = 0.0f;
+                    }
 
                     // Antares rams shove the player; dash i-frames ignore the shove.
                     // A run that hits the map edge stuns it there instead.

@@ -13,7 +13,8 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
     // capped against the player's move speed, dilation keeps the strongest.
     FieldAccum field;
     for (const Monster* gravis : monsters.monsters) {
-        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
+        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS ||
+            !gravis->GravisFieldActive()) continue;
         field.Add(gravis->worldX - playerX, gravis->worldY - playerY);
     }
     g_playerInfluence = playerControl ? field.maxInfluence : 0.0f;
@@ -26,7 +27,8 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
     // The field also curves every live bullet toward its Gravis.
     constexpr float fieldRadiusSq = RADIUS * RADIUS;
     for (const Monster* gravis : monsters.monsters) {
-        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
+        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS ||
+            !gravis->GravisFieldActive()) continue;
         for (Bullet& bullet : bullets) {
             if (!bullet.active) continue;
             const float bx = gravis->worldX - bullet.x;

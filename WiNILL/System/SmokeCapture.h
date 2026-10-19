@@ -10,6 +10,8 @@
 //   ONEDOW_SMOKE_ORBITS  = 0              (선택, PLAY 무기 별자리 궤도 링 끄기)
 // STEP 형식: NAME[@fx,fy][!|*][~sec]
 //   QUASARFALL=<초> / QUASARBEAM=<초> : 퀘이사 준비 시작부터 지정 시점 재현
+//   GRAVISGLIDE=<초> / GRAVISSLING=<초> : 그라비스 엘리트 패턴을 시작부터 지정 시점까지 재현 (캡처 시 정지)
+//   GRAVISTEST=GLIDE|SLING : 실제 루프에서 패턴 시작 (플레이어는 도착점에 정지), GRAVISDUMP=<라벨> 로 상태 기록
 //   GENESISROTOR=<초> : 제네시스 로터 준비 시작부터 지정 시점 재현 (캡처 시 정지)
 //   GENESISCYCLE=<초> : SWARM 조준부터 로터 대기·준비까지 전체 실제 전환 재현
 //   SKILLHUD=MIX|EMPTY|PULSE : 새 런에서 스킬 HUD 상태 프리셋 (쿨다운·지속·패시브)

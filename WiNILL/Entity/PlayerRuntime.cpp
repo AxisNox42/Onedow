@@ -26,6 +26,7 @@ void ResetPlayerSkills() {
     g_PlayerRuntime.dashProgress = 0.0f;
     g_PlayerRuntime.dashBoostShotsLeft = 0;
     g_PlayerRuntime.knockbackVX = g_PlayerRuntime.knockbackVY = 0.0f;
+    g_PlayerRuntime.moveSlowTimer = 0.0f;
     g_PlayerShield = 0.0f;
     g_PlayerShieldTimer = 0.0f;
     g_PlayerRuntime.timeStopTimer = 0.0f;
@@ -43,6 +44,7 @@ void UpdatePlayerRuntimeTimers(float delta, float dashRecoveryMult) {
     if (g_PlayerRuntime.postPickGrace > 0.0f) g_PlayerRuntime.postPickGrace -= delta;
     if (g_PlayerRuntime.timeStopTimer > 0.0f) g_PlayerRuntime.timeStopTimer -= delta;
     if (g_PlayerRuntime.hyperFocusTimer > 0.0f) g_PlayerRuntime.hyperFocusTimer -= delta;
+    if (g_PlayerRuntime.moveSlowTimer > 0.0f) g_PlayerRuntime.moveSlowTimer -= delta;
     for (int i = 0; i < 3; i++)
         if (g_Skills[i].cd > 0.0f) g_Skills[i].cd -= delta;
 }

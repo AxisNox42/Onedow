@@ -1861,6 +1861,198 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
 
 }
 
+// Gravis elite telegraphs and effects: sling chevrons, the thrown mass and
+// its return arc, the glide lane and destination circle, the arrival burst.
+// Lines only; every danger shape is a thin solid outline.
+static void DrawGravisElite(const Monster* m, float base, float cr, float cg, float cb) {
+    const int st = m->gravisState;   // body machine: glide
+    const int sl = m->gravisSling;   // sling machine: satellites
+    if (st == Monster::GRAVIS_IDLE && sl == Monster::GRAVIS_IDLE) return;
+    const float x = m->worldX, y = m->worldY;
+    const float lr = cr + (1.0f - cr) * 0.45f;
+    const float lg = cg + (1.0f - cg) * 0.45f;
+    const float lb = cb + (1.0f - cb) * 0.45f;
+    // Dark under-stroke + colored line + white core, readable on any window.
+    auto edge = [&](glm::vec2 a, glm::vec2 b, float alpha, float width) {
+        drawLineQuad(a.x, a.y, b.x, b.y, width + 3.5f, 0.0f, 0.0f, 0.0f, 0.65f * alpha);
+        drawLineQuad(a.x, a.y, b.x, b.y, width, cr, cg, cb, alpha);
+        drawLineQuad(a.x, a.y, b.x, b.y, width * 0.4f, 1.0f, 1.0f, 1.0f, 0.8f * alpha);
+    };
+    auto mass = [&](glm::vec2 p) {
+        DrawEnemyArc(p.x, p.y, 13.0f, 0.0f, 6.2831853f, 28, 0.0f, 0.0f, 0.0f, 0.7f, 5.0f, false);
+        DrawEnemyArc(p.x, p.y, 13.0f, 0.0f, 6.2831853f, 28, lr, lg, lb, 0.95f, 2.2f, false);
+        drawCircle(p.x, p.y, 4.6f, 1.0f, 1.0f, 1.0f, 1.0f);
+    };
+
+    if (sl != Monster::GRAVIS_IDLE) {
+        const float t = m->gravisSlingTimer;
+        if (sl == Monster::GRAVIS_SLING_LOCK) {
+            // Chevrons ahead of the wound-up orbit fix the throw lines.
+            const float grow = std::min(1.0f, t / 0.12f);
+            for (int i = 0; i < Monster::GRAVIS_SLING_COUNT; ++i) {
+                const glm::vec2 d = m->GravisSatDir(i);
+                const glm::vec2 dside(-d.y, d.x);
+                for (int k = 0; k < 3; ++k) {
+                    const glm::vec2 c = glm::vec2(x, y) + d * (base * 1.9f + 24.0f * k);
+                    const glm::vec2 tip = c + d * 8.0f, a = c - d * 6.0f + dside * 11.0f,
+                                    b = c - d * 6.0f - dside * 11.0f;
+                    const float alpha = grow * (1.0f - 0.22f * k);
+                    for (const auto& seg : {std::pair<glm::vec2, glm::vec2>{a, tip}, {b, tip}}) {
+                        drawLineQuad(seg.first.x, seg.first.y, seg.second.x, seg.second.y,
+                                     5.5f, 0.0f, 0.0f, 0.0f, 0.55f * alpha);
+                        drawLineQuad(seg.first.x, seg.first.y, seg.second.x, seg.second.y,
+                                     2.4f, 1.0f, 1.0f, 1.0f, alpha);
+                    }
+                }
+            }
+        }
+        if (sl == Monster::GRAVIS_SLING_OUT) {
+            const float u = std::min(1.0f, t / Monster::GRAVIS_SLING_OUT_TIME);
+            for (int i = 0; i < Monster::GRAVIS_SLING_COUNT; ++i) {
+                for (int k = 0; k < 8; ++k) {
+                    const float u0 = u - 0.04f * k, u1 = u - 0.04f * (k + 1);
+                    if (u1 < 0.0f) break;
+                    const glm::vec2 head = m->GravisSatOut(u0, i), tail = m->GravisSatOut(u1, i);
+                    const float fade = 1.0f - k / 8.0f;
+                    drawLineQuad(tail.x, tail.y, head.x, head.y, 5.0f * fade, cr, cg, cb, 0.65f * fade);
+                    drawLineQuad(tail.x, tail.y, head.x, head.y, 1.1f * fade, 1.0f, 1.0f, 1.0f, 0.85f * fade);
+                }
+                mass(m->gravisSatPos[i]);
+            }
+        }
+        if (sl == Monster::GRAVIS_SLING_HARASS || sl == Monster::GRAVIS_SLING_BACK) {
+            const bool harass = sl == Monster::GRAVIS_SLING_HARASS;
+            for (int i = 0; i < Monster::GRAVIS_SLING_COUNT; ++i) {
+                if (!harass && (m->gravisSatDocked & (1u << i))) continue;
+                const glm::vec2 p = m->gravisSatPos[i];
+                const glm::vec2 v = p - m->gravisSatPrev[i];
+                const bool tele = harass && m->gravisDartState[i] == 1;
+                const float phase = m->gravisDartTimer[i];
+                const bool flying = !harass || m->GravisDartFlying(i);
+                if (tele) {
+                    // The mass hovers, so this arc is the real flight path: it bends
+                    // through the aim point and on to where the dart will stop.
+                    const glm::vec2 tg = m->gravisDartTarget[i];
+                    const Monster::GravisDartPath path = m->GravisDartPlan(i);
+                    const float k = std::clamp(phase / Monster::GRAVIS_DART_TELEGRAPH, 0.0f, 1.0f);
+                    const int segs = 28;
+                    glm::vec2 prev = path.from;
+                    for (int q = 1; q <= segs; ++q) {
+                        const glm::vec2 cur = Monster::GravisDartAt(path, path.length * (float)q / (float)segs);
+                        edge(prev, cur, 0.30f + 0.55f * k, 1.4f);
+                        prev = cur;
+                    }
+                    const glm::vec2 end = prev;
+                    const glm::vec2 d = Monster::GravisDartTangent(path, path.length);
+                    const glm::vec2 sd(-d.y, d.x);
+                    edge(end + sd * 12.0f, end - sd * 12.0f, 0.5f + 0.4f * k, 1.4f);   // far cap
+                    // Chevrons run along the arc toward the end.
+                    for (int c = 0; c < 4; ++c) {
+                        const float u = std::fmod(k * 3.0f + c * 0.25f, 1.0f);
+                        const glm::vec2 qp = Monster::GravisDartAt(path, path.length * u);
+                        const glm::vec2 qd = Monster::GravisDartTangent(path, path.length * u);
+                        const glm::vec2 qs(-qd.y, qd.x);
+                        const glm::vec2 a2 = qp - qd * 7.0f + qs * 7.0f, b2 = qp - qd * 7.0f - qs * 7.0f;
+                        drawLineQuad(a2.x, a2.y, qp.x, qp.y, 1.8f, 1.0f, 1.0f, 1.0f, 0.55f * k);
+                        drawLineQuad(b2.x, b2.y, qp.x, qp.y, 1.8f, 1.0f, 1.0f, 1.0f, 0.55f * k);
+                    }
+                    DrawEnemyArc(tg.x, tg.y, 14.0f, 0.0f, 6.2831853f, 24, lr, lg, lb, 0.8f, 1.4f, false);
+                    DrawEnemyArc(tg.x, tg.y, 14.0f, -1.5707963f, k * 6.2831853f, 24,
+                                 1.0f, 1.0f, 1.0f, 0.9f, 1.8f, false);
+                    // Wind-up: the mass is drawn back from its anchor along a thin string
+                    // while charge arcs close in on it and it flickers brighter.
+                    const glm::vec2 an = m->gravisDartAnchor[i];
+                    drawLineQuad(an.x, an.y, p.x, p.y, 1.2f, lr, lg, lb, 0.35f * k);
+                    for (int c = 0; c < 3; ++c) {
+                        const float rr = (26.0f - 14.0f * k) + 4.0f * c;
+                        DrawEnemyArc(p.x, p.y, rr, m->gravisSlingTimer * 12.0f + c * 2.1f, 1.7f, 12,
+                                     1.0f, 1.0f, 1.0f, (0.25f + 0.55f * k) * (1.0f - 0.2f * c), 1.5f, false);
+                    }
+                    DrawEnemyArc(p.x, p.y, 13.0f + 6.0f * k, 0.0f, 6.2831853f, 28, 1.0f, 1.0f, 1.0f, 0.55f * k, 1.6f, false);
+                }
+                // Trail along the real motion; longer while thrown.
+                const int trail = flying ? 7 : 4;
+                for (int k = 0; k < trail; ++k) {
+                    const float fade = 1.0f - k / (float)trail;
+                    const glm::vec2 a = p - v * (float)k * 2.0f, b = p - v * (float)(k + 1) * 2.0f;
+                    drawLineQuad(b.x, b.y, a.x, a.y, (flying ? 5.0f : 3.0f) * fade, cr, cg, cb, 0.6f * fade);
+                }
+                mass(p);
+            }
+        }
+    }
+
+    if (m->GravisDestinationShown()) {
+        const glm::vec2 aim = m->gravisGlideAim;
+        const glm::vec2 side(-aim.y, aim.x);
+        const glm::vec2 start = m->gravisGlideStart, dest = m->gravisGlideDest;
+        const float rise = st == Monster::GRAVIS_GLIDE_LANE
+            ? std::min(1.0f, m->gravisTimer / 0.15f) : 1.0f;
+        const float burst = st == Monster::GRAVIS_GLIDE_BURST ? m->gravisTimer : -1.0f;
+        const float fadeOut = burst >= 0.0f ? std::max(0.0f, 1.0f - burst / 0.12f) : 1.0f;
+        const float laneAlpha = 0.75f * rise * fadeOut;
+        const float half = Monster::GRAVIS_GLIDE_LANE_HALF;
+        if (laneAlpha > 0.0f) {
+            // Path outline: two rails and the far cap. Solid, nothing filled.
+            edge(start + side * half, dest + side * half, laneAlpha, 1.6f);
+            edge(start - side * half, dest - side * half, laneAlpha, 1.6f);
+            edge(dest + side * half, dest - side * half, laneAlpha, 1.6f);
+        }
+        const float radius = Monster::GRAVIS_BLAST_RADIUS;
+        if (burst < 0.0f) {
+            const float t = st == Monster::GRAVIS_GLIDE_LANE ? m->gravisTimer
+                          : Monster::GRAVIS_GLIDE_LANE_TIME + m->gravisTimer;
+            const float progress = std::clamp(t / (Monster::GRAVIS_GLIDE_LANE_TIME +
+                                                   Monster::GRAVIS_GLIDE_RUN_TIME), 0.0f, 1.0f);
+            DrawEnemyArc(dest.x, dest.y, radius, 0.0f, 6.2831853f, 64, 0.0f, 0.0f, 0.0f, 0.75f * rise, 5.0f, false);
+            DrawEnemyArc(dest.x, dest.y, radius, 0.0f, 6.2831853f, 64, cr, cg, cb, 0.80f * rise, 1.8f, false);
+            // Arcs close toward the center while the burst approaches.
+            for (int k = 0; k < 3; ++k) {
+                const float r = radius * (0.40f + 0.50f * std::fmod(1.0f - progress * 2.0f + k / 3.0f + 3.0f, 1.0f));
+                DrawEnemyArc(dest.x, dest.y, r, k * 2.1f + progress * 5.0f, 2.2f, 24,
+                             lr, lg, lb, 0.40f * rise, 1.2f, false);
+            }
+            DrawEnemyArc(dest.x, dest.y, radius, -1.5707963f, progress * 6.2831853f, 64,
+                         1.0f, 1.0f, 1.0f, 0.85f * rise, 2.4f, false);
+            for (int k = 0; k < 4; ++k) {
+                const float a = k * 1.5707963f + 0.7853982f;
+                const glm::vec2 d(cosf(a), sinf(a));
+                const glm::vec2 tail = dest + d * (radius + 14.0f), tip = dest + d * (radius - 8.0f);
+                drawLineQuad(tail.x, tail.y, tip.x, tip.y, 2.0f, cr, cg, cb, 0.80f * rise);
+                for (int sgn : {-1, 1}) {
+                    const glm::vec2 perp(-d.y, d.x);
+                    const glm::vec2 wing = tip + d * 7.0f + perp * (float)sgn * 5.0f;
+                    drawLineQuad(wing.x, wing.y, tip.x, tip.y, 1.8f, 1.0f, 1.0f, 1.0f, 0.75f * rise);
+                }
+            }
+            drawLineQuad(dest.x - 4.0f, dest.y, dest.x + 4.0f, dest.y, 1.0f, cr, cg, cb, 0.55f * rise);
+            drawLineQuad(dest.x, dest.y - 4.0f, dest.x, dest.y + 4.0f, 1.0f, cr, cg, cb, 0.55f * rise);
+        }
+        if (st == Monster::GRAVIS_GLIDE_RUN) {
+            // Streaks behind the gliding body.
+            for (int k = 0; k < 4; ++k) {
+                const float lag = 26.0f + 22.0f * k;
+                const glm::vec2 a = glm::vec2(x, y) - aim * lag + side * (float)(k - 1.5f) * 9.0f;
+                const glm::vec2 b = a - aim * (30.0f + 8.0f * k);
+                drawLineQuad(b.x, b.y, a.x, a.y, 2.2f, lr, lg, lb, 0.55f - 0.10f * k);
+            }
+        }
+        if (burst >= 0.0f) {
+            const float fr = std::clamp(burst / Monster::GRAVIS_GLIDE_BURST_TIME, 0.0f, 1.0f);
+            // The burst ring and its outward ticks.
+            DrawEnemyArc(dest.x, dest.y, radius * (0.55f + 0.45f * std::min(1.0f, burst / 0.10f)),
+                         0.0f, 6.2831853f, 64, 1.0f, 1.0f, 1.0f, 1.0f - fr, 3.2f, false);
+            for (int k = 0; k < 12; ++k) {
+                const float a = k * 0.5235988f + 0.2f;
+                const glm::vec2 d(cosf(a), sinf(a));
+                const glm::vec2 p0 = dest + d * (radius * 0.35f + 90.0f * fr);
+                const glm::vec2 p1 = dest + d * (radius * 0.70f + 130.0f * fr);
+                drawLineQuad(p0.x, p0.y, p1.x, p1.y, 2.0f, lr, lg, lb, (1.0f - fr) * 0.85f);
+            }
+        }
+    }
+}
+
 static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
     if (!m->QuasarFalling()) return;
     const float age = m->quasarTimer;
@@ -2004,10 +2196,14 @@ void drawMob(const Monster* m, float visualTime) {
             // on each other and sharpen, so the slowdown can be read off them.
             const float fieldR = GravisField::RADIUS;
             const float infl = GravisField::g_playerInfluence;
-            const float arcAlpha = 0.10f + 0.24f * infl;
+            const float fa = m->GravisFieldActive() ? 1.0f : 0.30f;   // dimmed while a pattern runs
+            const float arcAlpha = (0.26f + 0.32f * infl) * fa;
             const float gap = 0.20f * (1.0f - 0.6f * infl);
-            DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 72,
-                         cr, cg, cb, 0.10f + 0.06f * infl, 1.0f, false);
+            // A dark under-stroke keeps the boundary readable on bright windows.
+            DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 96,
+                         0.0f, 0.0f, 0.0f, 0.40f * fa, 3.6f, false);
+            DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 96,
+                         cr, cg, cb, (0.50f + 0.18f * infl) * fa, 1.8f, false);
             DrawEnemyArc(x, y, fieldR * 0.92f, visualTime * 0.16f, 3.6f, 36,
                          cr, cg, cb, arcAlpha, 1.0f, false);
             DrawEnemyArc(x, y, fieldR * (0.92f - gap), -visualTime * 0.22f + 2.1f, 3.6f, 32,
@@ -2018,43 +2214,73 @@ void drawMob(const Monster* m, float visualTime) {
 
         float bodyR = cr, bodyG = cg, bodyB = cb;
         ApplyMobHitFlash(bodyR, bodyG, bodyB, m->hitFlashTimer);
+        // Compression glide: the nodes gather toward the core and the body
+        // flattens along the glide axis.
+        const float comp = m->GravisCompress();
+        const glm::vec2 gaim = m->gravisGlideAim;
+        const glm::vec2 gperp(-gaim.y, gaim.x);
+        auto gshape = [&](float px, float py) {
+            const float rx = px - x, ry = py - y;
+            const float gather = 1.0f - 0.55f * comp;
+            const float along = (rx * gaim.x + ry * gaim.y) * gather * (1.0f + 0.9f * comp);
+            const float across = (rx * gperp.x + ry * gperp.y) * gather * (1.0f - 0.35f * comp);
+            return glm::vec2(x + gaim.x * along + gperp.x * across,
+                             y + gaim.y * along + gperp.y * across);
+        };
         EnemyNodeAnchor nodes[6];
         const float orbitR = base * 1.12f;
         for (int k = 0; k < 6; ++k) {
             const float a = phase + (float)k * 1.0471976f;
-            nodes[k] = { x + cosf(a) * orbitR, y + sinf(a) * orbitR,
+            const glm::vec2 p = gshape(x + cosf(a) * orbitR, y + sinf(a) * orbitR);
+            nodes[k] = { p.x, p.y,
                          base * 0.13f, 0.82f + 0.12f * sinf(visualTime * 3.0f + k) };
             const int next = (k + 1) % 6;
             const float na = phase + (float)next * 1.0471976f;
-            drawLineQuad(nodes[k].x, nodes[k].y,
-                         x + cosf(na) * orbitR, y + sinf(na) * orbitR,
+            const glm::vec2 q = gshape(x + cosf(na) * orbitR, y + sinf(na) * orbitR);
+            drawLineQuad(nodes[k].x, nodes[k].y, q.x, q.y,
                          1.15f, bodyR, bodyG, bodyB, 0.54f);
             drawLineQuad(x, y, nodes[k].x, nodes[k].y,
                          0.72f, bodyR, bodyG, bodyB, 0.12f);
         }
         for (const auto& node : nodes)
             DrawEnemyNode(node, bodyR, bodyG, bodyB, 0.94f);
-        DrawEliteFrame(x, y, base, phase, bodyR, bodyG, bodyB, 0.40f);
+        DrawEliteFrame(x, y, base * (1.0f - 0.45f * comp), phase, bodyR, bodyG, bodyB, 0.40f);
 
         // A tilted inner orbit precesses against the hexagon. Its satellite
         // dims on the far half so the orbit reads as depth, not a flat ring.
-        const float tilt = -phase * 0.42f + 0.49f;
+        const float stretch = m->GravisOrbitStretch();
+        float tilt = -phase * 0.42f + 0.49f;
+        if (stretch > 0.0f) {
+            // The orbit is symmetric over pi: swing it onto the throw axis.
+            float gap = atan2f(m->gravisAim.y, m->gravisAim.x) - tilt;
+            gap = std::remainder(gap, 6.2831853f);
+            gap -= 3.1415927f * floorf(gap / 3.1415927f + 0.5f);
+            tilt += gap * (m->gravisSling == Monster::GRAVIS_SLING_PREP ? 0.5f * stretch : stretch);
+        }
         const float tiltX = cosf(tilt), tiltY = sinf(tilt);
-        const float orbitMajor = base * 0.86f, orbitMinor = base * 0.30f;
+        const float orbitMajor = base * 0.86f * (1.0f + 1.1f * stretch) * (1.0f - 0.6f * comp);
+        const float orbitMinor = base * 0.30f * (1.0f + 0.3f * stretch) * (1.0f - 0.4f * comp);
         const float liteR = bodyR + (1.0f - bodyR) * 0.45f;
         const float liteG = bodyG + (1.0f - bodyG) * 0.45f;
         const float liteB = bodyB + (1.0f - bodyB) * 0.45f;
         DrawQuasarEllipseArc(x, y, tiltX, tiltY, orbitMajor, orbitMinor,
                              0.0f, 6.2831853f, 32,
                              liteR, liteG, liteB, 0.40f, 0.85f);
-        const float sat = visualTime * 1.35f;
-        const float depth = sinf(sat);
-        const float satX = x - tiltY * cosf(sat) * orbitMajor + tiltX * depth * orbitMinor;
-        const float satY = y + tiltX * cosf(sat) * orbitMajor + tiltY * depth * orbitMinor;
-        const EnemyNodeAnchor satellite = {
-            satX, satY, base * 0.085f, 0.70f + 0.30f * (0.5f + 0.5f * depth) };
-        if (depth < 0.0f)
-            DrawEnemyNode(satellite, 1.0f, 1.0f, 1.0f, 0.55f);
+        // While the sling is away the satellites are the thrown masses.
+        const int satCount = m->GravisSlinging() ? Monster::GRAVIS_SLING_COUNT : 1;
+        auto satAt = [&](int k, float& depthOut) {
+            const float a = m->gravisOrbitPhase + (float)k * (6.2831853f / (float)Monster::GRAVIS_SLING_COUNT);
+            const float dp = sinf(a);
+            depthOut = dp;
+            return EnemyNodeAnchor{ x - tiltY * cosf(a) * orbitMajor + tiltX * dp * orbitMinor,
+                                    y + tiltX * cosf(a) * orbitMajor + tiltY * dp * orbitMinor,
+                                    base * 0.085f, 0.70f + 0.30f * (0.5f + 0.5f * dp) };
+        };
+        for (int k = 0; k < satCount && !m->GravisSatAway(k); ++k) {
+            float dp = 0.0f;
+            const EnemyNodeAnchor sn = satAt(k, dp);
+            if (dp < 0.0f) DrawEnemyNode(sn, 1.0f, 1.0f, 1.0f, 0.55f);
+        }
 
         drawCircle(x, y, base * 0.58f, bodyR, bodyG, bodyB,
                    0.18f + pulse * 0.08f);
@@ -2063,8 +2289,12 @@ void drawMob(const Monster* m, float visualTime) {
         // Elite inner contour: a thin hexagon outline around the core.
         DrawEnemyArc(x, y, base * 0.52f, phase * 1.3f, 6.2831853f, 6,
                      liteR, liteG, liteB, 0.50f, 0.8f, false);
-        if (depth >= 0.0f)
-            DrawEnemyNode(satellite, 1.0f, 1.0f, 1.0f, 0.95f);
+        for (int k = 0; k < satCount && !m->GravisSatAway(k); ++k) {
+            float dp = 0.0f;
+            const EnemyNodeAnchor sn = satAt(k, dp);
+            if (dp >= 0.0f) DrawEnemyNode(sn, 1.0f, 1.0f, 1.0f, 0.95f);
+        }
+        DrawGravisElite(m, base, bodyR, bodyG, bodyB);
     } else if (m->kind == MobKind::QUASAR) {
         // Quasar: a compact accretion instrument with a fixed polar firing axis.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
@@ -2486,6 +2716,7 @@ void drawCodexMobPreview(int codexId, float x, float y, float scale) {
         const float t = (float)glfwGetTime();
         preview.hiveOrbitAngle = t * 0.36f;
         preview.gravisVisualAngle = t * 0.18f;
+        preview.gravisOrbitPhase = t * 1.35f;
         preview.quasarVisualAngle = t * 0.24f;
         preview.quasarShellSpin = t * 2.2f;
         preview.gimbalVisualAngle = t * 0.24f;
