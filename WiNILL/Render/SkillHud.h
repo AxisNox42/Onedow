@@ -5,8 +5,8 @@
 //   circle = pressed by the player, triangle = runs by itself
 //   cooldown / charge = clockwise wedge filling the shape from 12 o'clock,
 //   the same reading as the wave track's current node
-// Icons are line pictograms with constellation dots on their ends and
-// joints. Text is only the key letter and the seconds left on a cooldown.
+// Icons are plain line pictograms (no dots). Text is only the key letter
+// and the seconds left on a cooldown.
 // State comes from SkillHudModel.h (BuildSkillHudView).
 // ─────────────────────────────────────────────────────────────
 #include <cmath>
@@ -45,7 +45,7 @@ inline constexpr Rgb kKeyText = { 0.86f, 0.91f, 1.00f };
 // bright stroke of the glyph (no keyline crossing a joint).
 struct Pen {
     Rgb c;
-    float a, w, node, keyline;
+    float a, w, keyline;
     bool keyPass;
 
     Rgb Col() const { return keyPass ? hud_lines::KeyCol(c) : c; }
@@ -60,40 +60,30 @@ struct Pen {
         const float ex = dx / len * Width() * 0.5f, ey = dy / len * Width() * 0.5f;
         hud_lines::Segment(x0 - ex, y0 - ey, x1 + ex, y1 + ey, Width(), Col(), Alpha());
     }
-    void Arc(float cx, float cy, float r, float a0, float sweep) const {
-        hud_lines::Arc(cx, cy, r, Width(), a0, sweep, Col(), Alpha());
-    }
     void Circle(float cx, float cy, float r, float alphaMul = 1.0f, float wMul = 1.0f) const {
         const float wv = keyPass ? w * wMul + keyline : w * wMul;
         hud_lines::Arc(cx, cy, r, wv, 0.0f, 2.0f * hud_lines::kPi, Col(), Alpha() * alphaMul);
     }
-    void Node(float x, float y, float scale = 1.0f) const {
-        const float r = node * scale + (keyPass ? keyline * 0.5f : 0.0f);
-        const Rgb col = Col();
-        drawCircle(x, y, r, col.r, col.g, col.b, Alpha());
-    }
 };
 
-// Two chevrons centred on (x, y), no tail. Dash dots only the leading tip;
-// Flash dots both tips and enlarges the leading one.
+// Chevrons centred on (x, y): two for Dash, three for Flash.
 inline void GlyphDash(const Pen& p, float x, float y, float r, bool flash) {
-    for (float c : { -0.28f, 0.28f }) {
-        const float backX = x + (c - 0.26f) * r, tipX = x + (c + 0.26f) * r;
+    const float pitch = flash ? 0.40f : 0.56f, half = flash ? 0.20f : 0.26f;
+    const int n = flash ? 3 : 2;
+    for (int k = 0; k < n; ++k) {
+        const float c = (k - (n - 1) * 0.5f) * pitch;
+        const float backX = x + (c - half) * r, tipX = x + (c + half) * r;
         p.Line(backX, y - 0.55f * r, tipX, y);
         p.Line(tipX, y, backX, y + 0.55f * r);
     }
-    if (flash) p.Node(x + 0.02f * r, y);
-    p.Node(x + 0.54f * r, y, flash ? 1.6f : 1.0f);
 }
 
 inline void GlyphBurst(const Pen& p, float x, float y, float r) {
     p.Circle(x, y, 0.42f * r);
-    p.Node(x, y);
     for (int k = 0; k < 4; ++k) {
         const float t = hud_lines::kPi * (0.25f + 0.5f * k);
         const float c = std::cos(t), s = std::sin(t);
-        p.Line(x + 0.62f * r * c, y + 0.62f * r * s, x + 0.92f * r * c, y + 0.92f * r * s);
-        p.Node(x + 0.98f * r * c, y + 0.98f * r * s);
+        p.Line(x + 0.62f * r * c, y + 0.62f * r * s, x + 0.98f * r * c, y + 0.98f * r * s);
     }
 }
 
@@ -104,7 +94,6 @@ inline void GlyphFocus(const Pen& p, float x, float y, float r) {
         const float t = hud_lines::kPi * 0.5f * k;
         const float c = std::cos(t), s = std::sin(t);
         p.Line(x + 0.78f * r * c, y + 0.78f * r * s, x + 1.0f * r * c, y + 1.0f * r * s);
-        p.Node(x + 1.0f * r * c, y + 1.0f * r * s);
     }
 }
 
@@ -115,8 +104,6 @@ inline void GlyphTimeStop(const Pen& p, float x, float y, float r) {
     p.Line(x - s * 0.8f, y - h, x + s * 0.8f, y + h);
     p.Line(x + s * 0.8f, y - h, x - s * 0.8f, y + h);
     p.Line(x - s * 0.35f, y + h * 0.62f, x + s * 0.35f, y + h * 0.62f);
-    p.Node(x - s, y - h); p.Node(x + s, y - h);
-    p.Node(x - s, y + h); p.Node(x + s, y + h);
 }
 
 // Three slanted arrows; the set is symmetric about (x, y) so the icon sits
@@ -129,7 +116,6 @@ inline void GlyphRain(const Pen& p, float x, float y, float r) {
         const float ang = std::atan2(y1 - y0, x1 - x0);
         for (float d : { 2.6f, -2.6f })
             p.Line(x1, y1, x1 + 0.24f * r * std::cos(ang + d), y1 + 0.24f * r * std::sin(ang + d));
-        p.Node(x0, y0);
     }
 }
 
@@ -187,7 +173,7 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
         if (s.empty) {
             hud_lines::Ring(cx, cy, radius, 1.0f * hs, col, 0.35f, keyline);
             for (int pass = keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
-                const Pen plus{ col, 0.55f, 1.2f * hs, 0.0f, keyline, pass == 0 };
+                const Pen plus{ col, 0.55f, 1.2f * hs, keyline, pass == 0 };
                 plus.Line(cx - 7.0f * hs, cy, cx + 7.0f * hs, cy);
                 plus.Line(cx, cy - 7.0f * hs, cx, cy + 7.0f * hs);
             }
@@ -206,7 +192,7 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
             hud_lines::Ring(cx, cy, radius + 14.0f * hs * t, 1.4f * hs, col,
                             0.9f * (1.0f - t), 0.0f);
         }
-        const Pen pen{ col, s.iconBright ? 1.0f : 0.30f, 1.8f * hs, 1.8f * hs, keyline, false };
+        const Pen pen{ col, s.iconBright ? 1.0f : 0.30f, 1.8f * hs, keyline, false };
         DrawSkillGlyph(pen, s.glyph, cx, cy, radius * 0.55f);
     }
 
@@ -233,7 +219,7 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
                                            0.9f * (1.0f - t), 0.0f);
         }
         // Centred on the centroid, sized to the inscribed circle (r/2).
-        const Pen pen{ col, charging ? 0.55f : 1.0f, 1.6f * hs, 1.4f * hs, keyline, false };
+        const Pen pen{ col, charging ? 0.55f : 1.0f, 1.6f * hs, keyline, false };
         DrawPassiveGlyph(pen, p, pcx, pcy, tr * 0.48f);
     }
     BatchFlush();
