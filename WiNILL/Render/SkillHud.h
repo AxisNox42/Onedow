@@ -145,6 +145,49 @@ inline float PulseT(float pulse) {
     return pulse > 0.0f ? 1.0f - pulse / kPulseDur : 1.0f;
 }
 
+// Cooldown / charge reads by brightness, not hue (a same-hue pale wedge
+// vanished on busy wallpapers): a faint track, a dark wedge for the elapsed
+// part (shows on bright wallpapers), and a bright progress line with a hand
+// at its leading edge (shows on dark ones).
+inline constexpr float kTrackA = 0.30f;
+inline constexpr float kWedgeA = 0.55f;
+
+inline void DrawCooldownCircle(float cx, float cy, float r, float frac, Rgb col,
+                               float hs, float keyline) {
+    using hud_lines::kPi;
+    const float a0 = -0.5f * kPi, sweep = 2.0f * kPi * frac;
+    const float w = 2.0f * hs;
+    hud_lines::Ring(cx, cy, r, 1.0f * hs, col, kTrackA, keyline);
+    hud_lines::SectorFill(cx, cy, r - 1.5f * hs, hud_lines::FillShape::Circle, frac,
+                          hud_lines::KeyCol(col), kWedgeA);
+    if (keyline > 0.0f)
+        hud_lines::Arc(cx, cy, r, w + keyline, a0, sweep, hud_lines::KeyCol(col),
+                       hud_lines::kKeyA);
+    hud_lines::Arc(cx, cy, r, w, a0, sweep, col, 1.0f);
+    const float t = a0 + sweep;
+    const float hx[2] = { cx + 0.35f * r * std::cos(t), cx + (r - 1.0f * hs) * std::cos(t) };
+    const float hy[2] = { cy + 0.35f * r * std::sin(t), cy + (r - 1.0f * hs) * std::sin(t) };
+    hud_lines::Polyline(hx, hy, 2, 1.4f * hs, col, 0.95f, keyline);
+}
+
+// Same reading on the downward triangle; the fill fans over the perimeter
+// prefix, so wedge, progress line and hand end at the same point.
+inline void DrawChargeTriangle(float cx, float cy, float r, float frac, Rgb col,
+                               float hs, float keyline) {
+    float px[5], py[5], ox[5], oy[5];
+    hud_lines::TriangleDownOutline(cx, cy, r, 1.0f * hs, col, kTrackA, keyline);
+    hud_lines::TriangleDownPath(cx, cy, r - 2.0f * (0.7f * hs + 1.5f * hs), px, py);
+    int m = hud_lines::PathPrefix(px, py, 5, frac, ox, oy);
+    hud_lines::FanFill(cx, cy, ox, oy, m, hud_lines::KeyCol(col), kWedgeA);
+    hud_lines::TriangleDownPath(cx, cy, r, px, py);
+    m = hud_lines::PathPrefix(px, py, 5, frac, ox, oy);
+    hud_lines::Polyline(ox, oy, m, 2.0f * hs, col, 1.0f, keyline);
+    const float ex = ox[m - 1], ey = oy[m - 1];
+    const float hx[2] = { cx + (ex - cx) * 0.45f, ex };
+    const float hy[2] = { cy + (ey - cy) * 0.45f, ey };
+    hud_lines::Polyline(hx, hy, 2, 1.4f * hs, col, 0.95f, keyline);
+}
+
 }  // namespace skill_hud
 
 inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
@@ -180,11 +223,10 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
             continue;
         }
         const bool ready = s.elapsedFrac >= 1.0f;
-        const float frameW = (ready ? 2.0f : 1.4f) * hs;
-        hud_lines::Ring(cx, cy, radius, frameW, col, ready ? 1.0f : 0.55f, keyline);
-        if (!ready)
-            hud_lines::SectorFill(cx, cy, radius - frameW * 0.5f - 1.5f * hs, FillShape::Circle,
-                                  s.elapsedFrac, col, 0.30f);
+        if (ready)
+            hud_lines::Ring(cx, cy, radius, 2.0f * hs, col, 1.0f, keyline);
+        else
+            DrawCooldownCircle(cx, cy, radius, s.elapsedFrac, col, hs, keyline);
         if (s.effectFrac > 0.0f)
             hud_lines::Ring(cx, cy, radius + 5.0f * hs, 1.1f * hs, col, s.effectFrac, keyline);
         if (s.pulse > 0.0f) {
@@ -206,13 +248,11 @@ inline void DrawSkillHud(const skill_hud::SkillHudView& view, float hudScale,
         const PassiveView& p = view.passives[i];
         const float pcx = sw * 0.5f - passW * 0.5f + triW * 0.5f + i * (triW + triGap);
         const Rgb col = ColorRgb(p.color);
-        const float frameW = 1.4f * hs;
-        hud_lines::TriangleDownOutline(pcx, pcy, tr, frameW, col, 1.0f, keyline);
         const bool charging = p.chargeFrac < 1.0f;
-        // Shrinking the inradius by d shrinks the circumradius by 2d.
         if (charging)
-            hud_lines::SectorFill(pcx, pcy, tr - 2.0f * (frameW * 0.5f + 1.5f * hs),
-                                  FillShape::TriangleDown, p.chargeFrac, col, 0.30f);
+            DrawChargeTriangle(pcx, pcy, tr, p.chargeFrac, col, hs, keyline);
+        else
+            hud_lines::TriangleDownOutline(pcx, pcy, tr, 1.4f * hs, col, 1.0f, keyline);
         if (p.pulse > 0.0f) {
             const float t = PulseT(p.pulse);
             hud_lines::TriangleDownOutline(pcx, pcy, tr + 14.0f * hs * t, 1.4f * hs, col,

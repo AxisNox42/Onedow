@@ -149,4 +149,63 @@ inline void Dot(float cx, float cy, float r, Rgb c, float a, float keyline) {
     drawCircle(cx, cy, r, c.r, c.g, c.b, a);
 }
 
+// Prefix of an open polyline (px/py, n points) covering frac of its length.
+// Writes up to n points to ox/oy and returns how many; the last one is the
+// interpolated end point.
+inline int PathPrefix(const float* px, const float* py, int n, float frac,
+                      float* ox, float* oy) {
+    frac = std::clamp(frac, 0.0f, 1.0f);
+    float total = 0.0f;
+    for (int i = 0; i + 1 < n; ++i)
+        total += std::hypot(px[i + 1] - px[i], py[i + 1] - py[i]);
+    float left = total * frac;
+    int m = 0;
+    ox[m] = px[0]; oy[m] = py[0]; ++m;
+    for (int i = 0; i + 1 < n && left > 0.0f; ++i) {
+        const float len = std::hypot(px[i + 1] - px[i], py[i + 1] - py[i]);
+        if (len <= 0.0f) continue;
+        const float t = std::min(1.0f, left / len);
+        ox[m] = px[i] + (px[i + 1] - px[i]) * t;
+        oy[m] = py[i] + (py[i + 1] - py[i]) * t;
+        ++m;
+        left -= len;
+    }
+    return m;
+}
+
+// Open polyline stroke; keyline pass first, joints extended by half the
+// stroke so corners stay sharp.
+inline void Polyline(const float* px, const float* py, int n, float thick, Rgb c,
+                     float a, float keyline) {
+    for (int pass = keyline > 0.0f ? 0 : 1; pass < 2; ++pass) {
+        const float w = pass == 0 ? thick + keyline : thick;
+        const Rgb col = pass == 0 ? KeyCol(c) : c;
+        const float alpha = pass == 0 ? kKeyA * a : a;
+        for (int i = 0; i + 1 < n; ++i) {
+            const float dx = px[i + 1] - px[i], dy = py[i + 1] - py[i];
+            const float len = std::sqrt(dx * dx + dy * dy);
+            if (len < 0.001f) continue;
+            const float ex = dx / len * w * 0.5f, ey = dy / len * w * 0.5f;
+            Segment(px[i] - ex, py[i] - ey, px[i + 1] + ex, py[i + 1] + ey, w, col, alpha);
+        }
+    }
+}
+
+// Fan from (cx, cy) over an open polyline: the wedge a perimeter progress
+// sweeps, so a polygon's fill and its progress stroke always end together.
+inline void FanFill(float cx, float cy, const float* px, const float* py, int n,
+                    Rgb c, float a) {
+    for (int i = 0; i + 1 < n; ++i)
+        BatchTri(cx, cy, px[i], py[i], px[i + 1], py[i + 1], c.r, c.g, c.b, a);
+}
+
+// Clockwise perimeter path of TriangleDownOutline starting at 12 o'clock
+// (the top edge's midpoint) and returning there: 5 points.
+inline void TriangleDownPath(float cx, float cy, float r, float* px, float* py) {
+    const float hx = r * 0.8660254f, top = cy - r * 0.5f;
+    const float xs[5] = { cx, cx + hx, cx, cx - hx, cx };
+    const float ys[5] = { top, top, cy + r, top, top };
+    for (int i = 0; i < 5; ++i) { px[i] = xs[i]; py[i] = ys[i]; }
+}
+
 }  // namespace hud_lines
