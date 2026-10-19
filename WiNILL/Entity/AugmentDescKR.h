@@ -155,7 +155,9 @@ inline const wchar_t* AugDescKR(AugType t) {
     case AugType::SKILL_DASH_UP:
         return L"[스킬] SHIFT 대시 강화 · 대시 시 유도탄 3~5발 · 이후 3발 ×2 피해 · 기동+화력 연계";
     case AugType::RIFLE_STABILITY:
-        return L"[소총] 흩어짐 완전 제거 · 공격력 +8 (가산) · 정조준 원거리 화력";
+        return L"[소총] 공격력 +8 (가산) · 정조준 원거리 화력";
+    case AugType::MINIGUN:
+        return L"[소총] 연사력 +75% · 탄속 +50% · 탄 퍼짐 ±0.15 rad (약 ±8.6도) · 1회만 획득";
     case AugType::HP_UP:
         return L"최대 체력 +15 (중첩 가능) · 생존 여유·흡혈·재생 효율 상승 · 기본 탱킹";
     case AugType::FIREWALL:

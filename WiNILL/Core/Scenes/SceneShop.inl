@@ -212,6 +212,7 @@ void Scene_Shop(const SceneCtx& c) {
 
     auto augWeapCat = [](AugType t) -> int {
         switch (t) {
+        case AugType::MINIGUN:
         case AugType::RIFLE_STABILITY:
             return 0;
         case AugType::STATIC_FIELD:
@@ -1273,15 +1274,6 @@ void Scene_Shop(const SceneCtx& c) {
                          detailDescriptionSc, detailW, whiteR, whiteG, whiteB,
                          0.82f * detailA, 0.60f);
         }
-
-        const wchar_t* shopBackHint = ShopText(L"ESC / RMB  뒤로가기",
-                                               L"ESC / RMB  BACK",
-                                               L"ESC / RMB  戻る");
-        DrawShadowedText(g_TextS, shopBackHint,
-                         sw - std::max(74.0f, sw * 0.075f) -
-                         g_TextS.Width(shopBackHint, 0.31f * ui),
-                         sh - 48.0f * ui, 0.31f * ui,
-                         0.52f, 0.68f, 0.82f, 0.60f * designA, 0.58f);
 
         // All CircleTexture/icon work for the SHOP frame is complete here.
         // Release the final text pass only now so no late glow can cover a

@@ -1522,12 +1522,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
          holdT = std::max(0.0f, holdT - dt * 4.0f);
      }
 
-    drawSettingsTextAtLevel(g_TextS,
-                            SettingsText(L"ESC / RMB  뒤로", L"ESC / RMB  BACK", L"ESC / RMB  戻る"),
-                            backX, sh - 48.0f * uiS, 1.0f,
-                            0.52f, 0.62f, 0.72f, 0.58f * dA,
-                            UiTextLevel::Supporting, 0.56f);
-
     if (exiting && exitT >= kOutgameTransitionDuration) {
         // Settings are persisted only by SAVE CHANGES or SAVE & BACK.
         if (s_MainMenuSettingsPanel) {

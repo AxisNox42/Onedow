@@ -390,8 +390,12 @@ struct PlayerStats {
             ricochetChance  = 100;
             ricochetDmgMult = 0.78f;
             break;
+        case AugType::MINIGUN:
+            fireInterval /= 1.75f;
+            bulletSpeed  *= 1.50f;
+            bulletSpread += 0.15f;
+            break;
         case AugType::RIFLE_STABILITY:
-            bulletSpread    = 0.0f;
             flatDamageBonus += 8.0f;
             break;
         case AugType::CHAKRAM_SINGULARITY:

@@ -67,6 +67,7 @@ static void Print(const char* path, const PlayerStats& s) {
 }
 
 static void CheckShared(const PlayerStats& s, const Expect& e) {
+    assert(Near(s.bulletSpread, 0.0f));
     assert(Near(s.fireInterval, e.fire));
     assert(Near(s.damageMultiplier, e.dmg));
     assert(Near(s.bulletSpeed, e.speed));
@@ -286,7 +287,51 @@ static void CheckExperienceAugments() {
            Near(chaos.xpMult, 1.0f));
 }
 
+static void CheckMinigun() {
+    SetMeta(false); SetTrial10(false);
+    const int minigun = IdxOf(AugType::MINIGUN);
+    const int marksman = IdxOf(AugType::RIFLE_STABILITY);
+    const AugDef& card = ALL_AUGS[minigun];
+    assert(card.rarity == AugRarity::EPIC && !AugRemoved(card.type));
+    assert(AugOnceOnly(card.type, card.rarity) && AugIsWeaponType(card.type));
+    for (int weapon : { RIFLE(), SMG() }) {
+        PlayerStats base = ResetRunStats(1.0f);
+        ApplyLoadoutStats(base, weapon);
+        assert(Near(base.bulletSpread, 0.0f));
+        assert(Near(PreviewBaseStats(weapon, 1.0f).bulletSpread, 0.0f));
+    }
+    for (const std::vector<int>& owned : {
+            std::vector<int>{minigun}, std::vector<int>{minigun, marksman},
+            std::vector<int>{marksman, minigun} }) {
+        PlayerStats run = ResetRunStats(1.0f);
+        ApplyLoadoutStats(run, RIFLE());
+        for (int idx : owned) ApplyAugStats(run, idx);
+        const PlayerStats rebuilt = RebuildStats(RIFLE(), owned, 1.0f, &run);
+        const PlayerStats restarted = RebuildStats(RIFLE(), owned, 1.0f, nullptr);
+        const PlayerStats preview = PreviewOwnedStats(RIFLE(), owned, 1.0f);
+        const PlayerStats* paths[] = { &run, &rebuilt, &restarted, &preview };
+        for (const PlayerStats* stats : paths) {
+            assert(Near(stats->bulletSpeed, 1800.0f));
+            assert(Near(stats->fireInterval, 0.20f / 1.75f));
+            assert(Near(stats->bulletSpread, 0.15f));
+            assert(Near(stats->baseFireInterval, 0.20f));
+        }
+        const PlayerStats removed = RebuildStats(RIFLE(), {}, 1.0f, &run);
+        const PlayerStats chaos = ChaosStats(run, RIFLE(), 1.0f);
+        for (const PlayerStats* stats : { &removed, &chaos }) {
+            assert(Near(stats->bulletSpread, 0.0f));
+            assert(Near(stats->bulletSpeed, 1200.0f));
+            assert(Near(stats->fireInterval, 0.20f));
+        }
+    }
+    const PlayerStats candidate = PreviewCandidateStats(PreviewBaseStats(RIFLE(), 1.0f), card);
+    assert(Near(candidate.bulletSpeed, 1800.0f));
+    assert(Near(candidate.fireInterval, 0.20f / 1.75f));
+    assert(Near(candidate.bulletSpread, 0.15f));
+}
+
 int main() {
+    CheckMinigun();
     CheckPaths();
     CheckCandidate();
     CheckChaosTrial();

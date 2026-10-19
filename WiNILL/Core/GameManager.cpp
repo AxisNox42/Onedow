@@ -290,6 +290,7 @@ static int RollOneAug(const bool* takenOnce,
             // 흡혈탄 스택 상한
             if (t == AugType::LIFESTEAL && g_Stats.lifestealStacks >= 4) continue;
             // 무기/스킬 전용 — 해당 무기 없으면 제외
+            if (t == AugType::MINIGUN && !playerHasRifle()) continue;
             if (t == AugType::RIFLE_STABILITY   && !playerHasRifle()) continue;
             // Retired augment slots are filtered by AugRemoved.
             if (AugRemoved(t)) continue;

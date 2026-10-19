@@ -665,10 +665,6 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     DrawShadowedText(g_TextL, T(kTxtPlay), pageL, headerY,
                      playTitleScale, 1.0f, 1.0f, 1.0f,
                      0.98f * entryHeader, kPlayTextShadow);
-    const float escW = g_TextS.Width(L"[ESC]", playMetaScale);
-    DrawShadowedText(g_TextS, L"[ESC]", pageR - escW, headerY + 8.0f * uiS,
-                     playMetaScale, 0.68f, 0.78f, 0.88f,
-                     0.72f * entryHeader, kPlayTextShadow);
     LogoLine(pageL, headerY + 58.0f * uiS, pageR, headerY + 58.0f * uiS,
              0.7f * uiS, weaponR, weaponG, weaponB, 0.12f * contentA);
 

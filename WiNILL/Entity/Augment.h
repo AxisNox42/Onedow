@@ -18,7 +18,7 @@ enum class AugType {
     MINIATURIZE, GIGANTIFY, PIERCE, TWIN, CHAKRAM,
     BULLET_RAIN_2, CHAKRAM_2,
     DRONE,                 // 희귀 → 에픽
-    RESERVED_AUG_043, HACK_RANGED, RESERVED_AUG_053, // Reserved legacy slot.
+    MINIGUN, HACK_RANGED, RESERVED_AUG_053, // Minigun retains its legacy slot.
     LASER,                 // 스캔 레이저 (주기적 관통 빔 — 군중제어)
     RESERVED_AUG_050, // Reserved legacy slot.
     RESERVED_AUG_042, RESERVED_AUG_002, // Reserved legacy slot.
@@ -186,7 +186,6 @@ inline bool AugRemoved(AugType t) {
     case AugType::RESERVED_AUG_014:
     case AugType::RESERVED_AUG_057:
     case AugType::RESERVED_AUG_053:
-    case AugType::RESERVED_AUG_043:
     case AugType::RESERVED_AUG_044:
     case AugType::RESERVED_AUG_045:
     case AugType::RESERVED_AUG_054:
@@ -315,6 +314,7 @@ inline bool AugIsSkillType(AugType t) {
 
 inline bool AugIsWeaponType(AugType t) {
     switch (t) {
+    case AugType::MINIGUN:
     case AugType::HACK_RANGED:
     case AugType::RIFLE_STABILITY:
         return true;

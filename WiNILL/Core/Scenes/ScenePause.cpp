@@ -241,16 +241,4 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
         return;
     }
 
-    {
-        float hintA = Smoothstep(std::min(std::max(0.0f, s_EntryT - 0.50f) / 0.30f, 1.0f)) * entryFade;
-        const int li = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
-        static const wchar_t* kPauseHint[LANG_COUNT] = {
-            L"[SPACE / ESC]  계속하기", L"[SPACE / ESC]  RESUME",
-            L"[SPACE / ESC]  続ける"
-        };
-        const wchar_t* hint = kPauseHint[li];
-        const float hintScale = UiTextScale(state.text.body, UiTextLevel::Supporting, uiScale);
-        state.text.body.Draw(hint, btnX0, sh * 0.88f, hintScale,
-                     0.50f, 0.70f, 0.90f, 0.72f * hintA);
-    }
 }

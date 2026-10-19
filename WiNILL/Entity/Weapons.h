@@ -55,10 +55,8 @@ inline void ApplyWeapon(PlayerStats& s, StartWeapon w) {
     case StartWeapon::SMG:
         s.fireInterval     *= 0.50f;
         s.damageMultiplier *= 0.50f;
-        s.bulletSpread      = 0.15f;
         break;
     case StartWeapon::RIFLE:
-        s.bulletSpread = 0.04f;
         break;
     case StartWeapon::_COUNT:
         break;

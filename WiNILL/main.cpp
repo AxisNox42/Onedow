@@ -67,6 +67,7 @@
 #include "EntityDraw.h"
 #include "WaveHud.h"
 #include "SkillHud.h"
+#include "VitalsHud.h"
 #include "PlayerWeaponShell.h"
 #include "GameFonts.h"
 #include "PlayerRuntime.h"
@@ -244,77 +245,6 @@ static float ClampPlayerWinSize(float sz) {
 float g_WinPrevHP     = -1.0f;    // Previous HP used to detect damage.
 float g_HurtVignette  = 0.0f;     // Remaining hit vignette time.
 float g_HpBarPop      = 0.0f;     // Remaining time to show the circular HP ring.
-
-static void DrawPlayerRadialBars(float cx, float cy, float size,
-                                 float hpFraction, float xpFraction,
-                                 float hpAlpha, float xpAlpha,
-                                 bool xpAtCap) {
-    constexpr int segmentsPerHalf = 36;
-    constexpr float pi = 3.14159265359f;
-    const float hpRadius = std::max(66.0f, size * 2.72f);
-    // Slightly thicker than the original hairline. Only the filled part gets
-    // a thin keyline tinted from its own colour, so a bright wallpaper does
-    // not swallow it while the empty track stays as faint as before (a grey
-    // band around the whole ring read as foreign on a white desktop).
-    const float halfWidth = std::max(1.3f, size * 0.052f);
-    const float keyline = CombatKeylineStrength();
-    const float keyPad = 0.9f * keyline;
-    const float xpRadius = hpRadius + halfWidth * 2.0f + keyPad * 2.0f + 2.0f;
-    hpFraction = std::clamp(hpFraction, 0.0f, 1.0f);
-    xpFraction = std::clamp(xpFraction, 0.0f, 1.0f);
-
-    auto drawSegment = [&](float radius, float start, float end,
-                           float r, float g, float b, float a,
-                           float pad = 0.0f) {
-        const float inner = radius - halfWidth - pad;
-        const float outer = radius + halfWidth + pad;
-        const float a0 = start;
-        const float a1 = end;
-        const float c0 = cosf(a0), s0 = sinf(a0);
-        const float c1 = cosf(a1), s1 = sinf(a1);
-        const float ox0 = cx + c0 * outer, oy0 = cy + s0 * outer;
-        const float ix0 = cx + c0 * inner, iy0 = cy + s0 * inner;
-        const float ox1 = cx + c1 * outer, oy1 = cy + s1 * outer;
-        const float ix1 = cx + c1 * inner, iy1 = cy + s1 * inner;
-        BatchTri(ox0, oy0, ix0, iy0, ix1, iy1, r, g, b, a);
-        BatchTri(ox0, oy0, ix1, iy1, ox1, oy1, r, g, b, a);
-    };
-
-    auto drawHalf = [&](float radius, float start, float sweep, float fraction,
-                        float r, float g, float b, float alpha) {
-        const float step = sweep / segmentsPerHalf;
-        for (int i = 0; i < segmentsPerHalf; ++i)
-            drawSegment(radius, start + i * step, start + (i + 1) * step,
-                        0.24f, 0.32f, 0.40f, 0.24f);
-
-        const float filled = fraction * segmentsPerHalf;
-        const int fullSegments = (int)filled;
-        if (keyline > 0.0f && filled > 0.0f) {
-            const float kr = r * 0.22f, kg = g * 0.22f, kb = b * 0.22f;
-            const float ka = 0.40f * keyline;
-            for (int i = 0; i < fullSegments; ++i)
-                drawSegment(radius, start + i * step, start + (i + 1) * step,
-                            kr, kg, kb, ka, keyPad);
-            if (fullSegments < segmentsPerHalf && filled > fullSegments)
-                drawSegment(radius, start + fullSegments * step,
-                            start + filled * step, kr, kg, kb, ka, keyPad);
-        }
-        for (int i = 0; i < fullSegments; ++i)
-            drawSegment(radius, start + i * step, start + (i + 1) * step,
-                        r, g, b, alpha);
-        if (fullSegments < segmentsPerHalf && filled > fullSegments)
-            drawSegment(radius, start + fullSegments * step,
-                        start + filled * step, r, g, b, alpha);
-    };
-
-    // HP follows the lower semicircle; experience fills the upper one.
-    drawHalf(hpRadius, pi, -pi, hpFraction,
-             1.0f - hpFraction, 0.24f + 0.76f * hpFraction, 0.18f,
-             hpAlpha);
-    drawHalf(xpRadius, pi, pi, xpFraction,
-             xpAtCap ? 1.0f : 0.30f, xpAtCap ? 0.82f : 0.82f,
-             xpAtCap ? 0.30f : 1.0f, xpAlpha);
-}
 
 // Level-up signal: two thin rings in the XP colour expand from the
 // player while LevelUpTransition runs (lines only, no fill or veil).
@@ -1444,6 +1374,7 @@ int main() {
             g_WinPrevHP = -1.0f;
             g_PlayerDamagePulse = 0.0f;
             g_HurtVignette = 0.0f; g_HpBarPop = 0.0f;
+            g_HpGhost.Reset(1.0f);
             g_ViewZoom = g_ViewZoomTarget = 1.0f;   // �??�복
             g_ZoomCX = g_ZoomCY = 0.0f;
             g_Difficulty = Difficulty::NORMAL;
@@ -2969,9 +2900,12 @@ CollisionSystem::Update(pCX, pCY,
             const bool hpAnimActive = hpState == GameState::RUNNING ||
                                       hpState == GameState::DYING;
             const float hpNow = std::max(0.0f, g_GameManager.playerHP);
+            const float hpNowFrac = std::clamp(hpNow / std::max(1.0f, g_Stats.maxHP), 0.0f, 1.0f);
             if (!hpAnimActive) {
                 g_WinPrevHP = hpNow;
+                g_HpGhost.Reset(hpNowFrac);
             } else {
+                g_HpGhost.Update(hpNowFrac, delta);
                 if (g_WinPrevHP < 0.0f) {
                     g_WinPrevHP = hpNow;
                 }
@@ -3657,18 +3591,14 @@ CollisionSystem::Update(pCX, pCY,
                 healthState == GameState::DEBUFF_SELECT) {
                 const float hpFraction = std::clamp(g_GameManager.playerHP /
                     std::max(1.0f, g_Stats.maxHP), 0.0f, 1.0f);
-                const bool xpAtCap = !g_CreativeMode &&
-                    g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
-                const XpAmount xpNeeded = g_ExpSystem.RequiredAmount(g_GameManager.playerLevel);
-                const float xpFraction = xpAtCap ? 1.0f : (xpNeeded > 0
-                    ? std::clamp((float)g_GameManager.xp / (float)xpNeeded, 0.0f, 1.0f)
-                    : 0.0f);
                 const float hpHit = std::min(1.0f, g_HpBarPop / 0.35f);
-                // Resting opacity is high enough to read at all times; a
-                // hit still flashes the HP half to full strength.
-                DrawPlayerRadialBars(pCX, pCY, playerSize, hpFraction, xpFraction,
-                                     0.68f + 0.30f * hpHit,
-                                     xpAtCap ? 0.88f : 0.80f, xpAtCap);
+                // Full HP rests quietly; any loss keeps the arc readable and
+                // a hit flashes it to full strength.
+                const float hpRest = hpFraction >= 1.0f ? 0.40f : 0.72f;
+                vitals_hud::DrawHpArc(pCX, pCY, playerSize, hpFraction,
+                                      g_HpGhost.frac,
+                                      std::min(1.0f, hpRest + 0.30f * hpHit),
+                                      g_GameTime);
             }
             DrawPlayerWeaponShell(pCX, pCY, playerSize,
                                   atan2f(wmy - pCY, wmx - pCX));
@@ -4034,14 +3964,34 @@ CollisionSystem::Update(pCX, pCY,
 #else
                 const float hudTopY = BROWSER_CHROME_H + 4.0f;
 #endif
-                // 좌상?? Lv. + HP ?�자 (?�각 바는 ?�레?�어 창에 부착됨)
-                {
+                // Level + XP: one line along the bottom edge, stopping short
+                // of the version label in the bottom-right corner.
+                if (st != GameState::DYING &&
+                    !(st == GameState::PAUSED && g_ShowPauseInventory)) {
                     wchar_t lvBuf2[64];
                     swprintf_s(lvBuf2, L"%ls%d",
                                T(StrId::LV_PREFIX), g_GameManager.playerLevel);
-                    g_TextS.Draw(lvBuf2, 12.0f, hudTopY,
-                                 UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale),
-                                 0.7f, 1.0f, 0.7f, 0.9f);
+                    const bool xpAtCap = !g_CreativeMode &&
+                        g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
+                    const float xpFrac = vitals_hud::XpFill(g_GameManager.xp,
+                        g_ExpSystem.RequiredAmount(g_GameManager.playerLevel), xpAtCap);
+                    static const std::wstring xpVersionLabel = std::wstring(L"v") + ONEDOW_VERSION;
+                    const float versionScale = UiTextScale(g_TextS, UiTextLevel::Supporting,
+                                                           1.20f * hudScale);
+                    const float xpRightX = sw - 16.0f * hudScale
+                        - g_TextS.Width(xpVersionLabel.c_str(), versionScale) - 24.0f * hudScale;
+                    vitals_hud::DrawXpEdgeLine(sh, hudScale, xpFrac, xpAtCap, lvBuf2,
+                        g_GameManager.levelUpTransition.Progress(), xpRightX);
+
+                    // HP arc text: LOW HP beside the arc, numbers after a hit.
+                    const float hpFrac = std::clamp(g_GameManager.playerHP /
+                        std::max(1.0f, g_Stats.maxHP), 0.0f, 1.0f);
+                    vitals_hud::DrawHpArcText(playerWin.x + playerWin.width * 0.5f,
+                        playerWin.y + playerWin.height * 0.5f,
+                        PLAYER_SIZE * g_Stats.playerSizeMult, hpFrac,
+                        g_GameManager.playerHP, g_Stats.maxHP,
+                        std::min(1.0f, g_HpBarPop / 0.6f) * 0.9f, hudScale, g_GameTime,
+                        st == GameState::RUNNING || st == GameState::PAUSED);
                 }
                 DrawWaveHud(sw, hudScale, hudTopY, g_GameTime, g_Difficulty, g_GameManager);
 
@@ -4057,33 +4007,6 @@ CollisionSystem::Update(pCX, pCY,
 
                 // (HP/EXP ?�각 바는 ?�레?�어 �??�단??부착됨 ????(c2) 참고)
                 // ?�단 조작 ?�내 (?��??�게 ??��) ?????�레?�어가 HP/?�킬 ?�치�??�게
-                if (st == GameState::RUNNING) {
-                    static const wchar_t* kCtrlHint[3] = {
-                        L"WASD 이동   마우스 사격   SHIFT 대시   Q/E/R 스킬   ESC 일시정지",
-                        L"WASD Move   Mouse Fire   SHIFT Dash   Q/E/R Skills   ESC Pause",
-                        L"WASD 移動   マウス 射撃   SHIFT ダッシュ   Q/E/R スキル   ESC 一時停止",
-                    };
-                    const wchar_t* c = kCtrlHint[LangIndex()];
-                    const float hintScale = UiTextScale(g_TextS, UiTextLevel::Supporting, hudScale);
-                    float cw = g_TextS.Width(c, hintScale);
-                    g_TextS.Draw(c, CenterX(sw, cw), HudY(sh, Hud::COMBO_TEXT), hintScale,
-                                 0.7f, 0.82f, 0.95f, 0.72f);   // 가?�성 ??(?�어????보인?�는 ?�드�?
-                }
-                // ?�?�??�체??경고 ??HP 25% ?�하 ??가?�자�?부?�러???�색 ?�스 + ?�스???�?�?
-                if (st == GameState::RUNNING) {
-                    float hpFrac = (g_Stats.maxHP > 0.0f)
-                                 ? g_GameManager.playerHP / g_Stats.maxHP : 1.0f;
-                    if (hpFrac > 0.0f && hpFrac < 0.25f) {
-                        const float pulse = 0.5f + 0.5f * sinf(g_GameTime * 6.0f);
-                        const wchar_t* LOW[3] = { L"! \uC704\uD5D8", L"! LOW HP", L"! \u5371?" };
-                        int li4 = LangIndex();
-                        const float lowHpScale = UiTextScale(g_TextS, UiTextLevel::Subtitle, hudScale);
-                        float lw = g_TextS.Width(LOW[li4], lowHpScale);
-                        g_TextS.Draw(LOW[li4], CenterX(sw, lw),
-                                     HudY(sh, Hud::LOW_HP_WARN * hudScale),
-                                     lowHpScale, 1.0f, 0.4f, 0.4f, 0.55f + 0.45f * pulse);
-                    }
-                }
             }
 
             // ?�?�??�맛: ?��?지 ?�자 ?�업 + 콤보 카운??(?�제 ?�레??중에�? ?�?�?
