@@ -15,9 +15,9 @@ struct EnemySpawnState {
     int lastEliteWave = 0;
     int currentWave = 0;
     int spawnedThisWave = 0;
-    // One bit per fifth wave picks between the difficulty's two elite
-    // kinds; rolled once per run so the HUD can name the elite early.
-    unsigned eliteRoll = 0;
+    // Index into kEliteKinds for each elite wave (5, 10, 15, ...), rolled
+    // once per run so the HUD can mark the wave before the elite enters.
+    unsigned char elitePick[8] = {};
     const Monster* eliteMob = nullptr;   // the scheduled elite while alive
 };
 
@@ -63,23 +63,26 @@ static void SpecializeRegularMob(Monster& mob, int wave,
     if (mob.kind == MobKind::ROTOR) mob.hp *= rotorHpMultiplier;
 }
 
-static MobKind ScheduledEliteKind(int wave, const DifficultyParams& difficultyParams) {
-    const bool pick = (g_EnemySpawnState.eliteRoll >>
-                       ((wave / ELITE_WAVE_INTERVAL) & 31)) & 1u;
-    if (difficultyParams.eliteTierHalfSteps <= 6)
-        return pick ? MobKind::REGULUS : MobKind::ANTARES;
-    return pick ? MobKind::GENESIS : MobKind::QUASAR;
+// Every elite wave, on every difficulty, brings one of these at random.
+static constexpr MobKind kEliteKinds[] = {
+    MobKind::QUASAR, MobKind::GRAVIS, MobKind::GENESIS
+};
+static constexpr int kEliteKindCount = (int)(sizeof(kEliteKinds) / sizeof(kEliteKinds[0]));
+
+static MobKind ScheduledEliteKind(int wave) {
+    constexpr int slots = (int)sizeof(EnemySpawnState::elitePick);
+    const int slot = std::clamp(wave / ELITE_WAVE_INTERVAL - 1, 0, slots - 1);
+    return kEliteKinds[g_EnemySpawnState.elitePick[slot] % kEliteKindCount];
 }
 
 static void SpawnScheduledElite(MonsterManager& monsters, int screenWidth,
                                 int screenHeight, int wave, float waveSeconds,
-                                int waveSpawnCap, float hpMultiplier,
-                                const DifficultyParams& difficultyParams) {
+                                int waveSpawnCap, float hpMultiplier) {
     if (wave % ELITE_WAVE_INTERVAL != 0 || waveSeconds < ELITE_SPAWN_WAVE_SECONDS ||
         g_EnemySpawnState.lastEliteWave == wave ||
         g_EnemySpawnState.spawnedThisWave >= waveSpawnCap) return;
 
-    const MobKind elite = ScheduledEliteKind(wave, difficultyParams);
+    const MobKind elite = ScheduledEliteKind(wave);
 
     const size_t before = monsters.monsters.size();
     // Natural spawns share the wave budget, but have no concurrent population cap.
@@ -110,14 +113,16 @@ static void TrackScheduledElite(const MonsterManager& monsters) {
 
 void ResetEnemySpawnState() {
     g_EnemySpawnState = {};
-    g_EnemySpawnState.eliteRoll = (unsigned)rand() ^ ((unsigned)rand() << 15);
+    for (unsigned char& pick : g_EnemySpawnState.elitePick)
+        pick = (unsigned char)(rand() % kEliteKindCount);
 }
 
 ScheduledEliteInfo GetScheduledElite(int wave, Difficulty difficulty) {
+    (void)difficulty;   // the elite pool is the same on every difficulty
     ScheduledEliteInfo info;
     if (wave <= 0 || wave % ELITE_WAVE_INTERVAL != 0) return info;
     info.scheduled = true;
-    info.kind = ScheduledEliteKind(wave, GetDifficultyParams(difficulty));
+    info.kind = ScheduledEliteKind(wave);
     info.spawned = g_EnemySpawnState.lastEliteWave == wave;
     info.alive = info.spawned && g_EnemySpawnState.eliteMob != nullptr;
     return info;
@@ -155,7 +160,7 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
 
     TrackScheduledElite(monsters);
     SpawnScheduledElite(monsters, screenWidth, screenHeight, wave, waveSeconds,
-                        waveSpawnCap, hpMultiplier, difficultyParams);
+                        waveSpawnCap, hpMultiplier);
 
     g_EnemySpawnState.mobTimer += delta;
     const float spawnInterval = std::max(0.05f,

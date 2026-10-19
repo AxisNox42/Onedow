@@ -8,8 +8,8 @@
 // Line glyphs only; text keeps the renderer halo so
 // it reads on a bright wallpaper without a plate.
 //   ○ plain wave   ◇ elite wave   ◈ final wave
-// A fifth wave counts as elite only when its scheduled enemy is an elite
-// kind (IsEliteMob); EASY's Regulus/Antares waves stay plain.
+// Every fifth wave is an elite wave (Quasar, Gravis or Genesis, rolled at
+// run start); IsEliteWave still checks the scheduled kind with IsEliteMob.
 // ─────────────────────────────────────────────────────────────
 #include <algorithm>
 #include <cmath>
