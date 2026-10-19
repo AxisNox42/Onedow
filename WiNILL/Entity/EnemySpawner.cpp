@@ -3,6 +3,7 @@
 #include "Monster.h"
 #include "MonsterManager.h"
 #include "EnemyProgression.h"
+#include "EnemyRoster.h"
 #include "PlayerStats.h"
 #include "../Core/WaveSystem.h"
 #include "../System/Settings.h"
@@ -23,44 +24,31 @@ struct EnemySpawnState {
 
 static EnemySpawnState g_EnemySpawnState;
 
-static int RegularTierHalfStepsForWave(
-    int wave, const DifficultyParams& difficultyParams) {
-    // 1.5, 2, 2.5, 3, 3.5, 4 unlock on waves 1 through 6.
-    return std::min(2 + wave, difficultyParams.maxRegularTierHalfSteps);
+static MobKind MobKindFor(RosterKind kind) {
+    switch (kind) {
+    case RosterKind::SWARM:    return MobKind::SWARM;
+    case RosterKind::GIMBAL:   return MobKind::GIMBAL;
+    case RosterKind::GRAVIS:   return MobKind::GRAVIS;
+    case RosterKind::REGULUS:  return MobKind::REGULUS;
+    case RosterKind::ANTARES:  return MobKind::ANTARES;
+    case RosterKind::MAGNETAR: return MobKind::MAGNETAR;
+    case RosterKind::GENESIS:  return MobKind::GENESIS;
+    case RosterKind::QUASAR:   return MobKind::QUASAR;
+    default:                   return MobKind::ROTOR;
+    }
 }
 
-static void SpecializeRegularMob(Monster& mob, int wave,
-                                 const DifficultyParams& difficultyParams,
+// Converts a freshly spawned ROTOR into this wave's pick from the roster
+// (EnemyRoster.h holds each enemy's first wave per difficulty and its odds).
+static void SpecializeRegularMob(Monster& mob, int wave, Difficulty difficulty,
                                  float rotorHpMultiplier) {
-    const int tier = RegularTierHalfStepsForWave(wave, difficultyParams);
-    const int roll = rand() % 100;
-    int cutoff = 0;
-    auto tryKind = [&](int chance, MobKind kind) {
-        cutoff += chance;
-        if (roll >= cutoff) return false;
-        mob.MakeKind(kind);
-        return true;
-    };
-
-    // Each later wave adds a type to the pool and gradually raises its odds.
-    if (tryKind(12, MobKind::SWARM)) return;
-    if (tier >= 3 && tryKind(std::min(20, 6 + 2 * (wave - 1)),
-                             MobKind::GIMBAL)) return;
-    if (tier >= 4 && tryKind(std::min(18, 6 + 2 * (wave - 2)),
-                             MobKind::GRAVIS)) return;
-    if (tier >= 6) {
-        const MobKind kind = (rand() & 1) ? MobKind::REGULUS : MobKind::ANTARES;
-        if (tryKind(std::min(14, 4 + 2 * (wave - 4)), kind)) return;
+    const RosterKind pick = RosterPickRegular(wave, (int)difficulty, rand() % 100);
+    if (pick != RosterKind::ROTOR) {
+        mob.MakeKind(MobKindFor(pick));
+        return;
     }
-    if (tier >= 7 && tryKind(std::min(12, 4 + 2 * (wave - 5)),
-                             MobKind::MAGNETAR)) return;
-    if (tier >= 8) {
-        const MobKind kind = (rand() & 1) ? MobKind::GENESIS : MobKind::QUASAR;
-        if (tryKind(std::min(10, 2 + 2 * (wave - 6)), kind)) return;
-    }
-
     // MakeKind scales HP, so the rotor-only augment applies after conversion.
-    if (mob.kind == MobKind::ROTOR) mob.hp *= rotorHpMultiplier;
+    mob.hp *= rotorHpMultiplier;
 }
 
 // Every elite wave, on every difficulty, brings one of these at random.
@@ -174,15 +162,14 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
                           (int)before + 1, hpMultiplier);
         if (monsters.monsters.size() > before) {
             SpecializeRegularMob(*monsters.monsters.back(), wave,
-                                 difficultyParams,
-                                 stats.rotorHpMult);
+                                 difficulty, stats.rotorHpMult);
             ++g_EnemySpawnState.spawnedThisWave;
             g_EnemySpawnState.mobTimer -= spawnInterval;
         }
     }
 
-    // Scope is tier 2.5 and uses its own ranged spawn path.
-    if (RegularTierHalfStepsForWave(wave, difficultyParams) < 5) {
+    // Scope uses its own ranged spawn path, gated by its roster entry.
+    if (!RosterUnlocked(RosterKind::SCOPE, wave, (int)difficulty)) {
         g_EnemySpawnState.rangedTimer = 0.0f;
         return;
     }

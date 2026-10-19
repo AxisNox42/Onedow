@@ -69,18 +69,17 @@ struct DifficultyParams {
     float spawnRateMultiplier;
     float enemyHpMultiplier;
     float waveSpawnCapMultiplier;
-    int   maxRegularTierHalfSteps;
 };
 inline DifficultyParams GetDifficultyParams(Difficulty d) {
     switch (d) {
     case Difficulty::EASY:
-        return { 0.85f, 0.90f, 0.85f, 4 };
+        return { 0.85f, 0.90f, 0.85f };
     case Difficulty::NORMAL:
-        return { 1.00f, 1.00f, 1.00f, 6 };
+        return { 1.00f, 1.00f, 1.00f };
     case Difficulty::HARD:
-        return { 1.15f, 1.15f, 1.15f, 8 };
+        return { 1.15f, 1.15f, 1.15f };
     }
-    return { 1.00f, 1.00f, 1.00f, 6 };
+    return { 1.00f, 1.00f, 1.00f };
 }
 
 // ─── 시련 시스템 ─────────────────────────────────────────────────────────────
