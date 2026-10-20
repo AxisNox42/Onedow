@@ -84,6 +84,7 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
     static int    s_ExitSel   = -1;
     static float  s_ExitT     = 0.0f;
     static double s_LastCall  = 0.0;
+    static bool   s_ConfirmAbandon = false;
 
     const double curTime = glfwGetTime();
     if (curTime - s_LastCall > 0.12) {
@@ -91,6 +92,7 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
         for (int i = 0; i < kPauseActionCount; ++i) s_HoverT[i] = 0.0f;
         s_ExitSel = -1;
         s_ExitT   = 0.0f;
+        s_ConfirmAbandon = false;
     }
     s_LastCall  = curTime;
     s_EntryT   += delta;
@@ -200,7 +202,7 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
         const float slide = (1.0f - reveal) * 34.0f;
         const float priorBx = baseBx + slide - 10.0f * s_HoverT[i];
         const float priorBy = baseBy + (exitActive && !selected ? exitP * 28.0f : 0.0f);
-        bool hov = UpdatePanelButtonHover(s_HoverT[i], !exitActive,
+        bool hov = UpdatePanelButtonHover(s_HoverT[i], !exitActive && !s_ConfirmAbandon,
                                           mx, my,
                                           priorBx, priorBy, BW, BH,
                                           // Keep adjacent pause rows distinct.  The
@@ -228,8 +230,27 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
                         routeVariants, LANG_COUNT);
 
         if (hov && lmb && !state.previousLeftMouseDown && s_ExitSel < 0) {
-            s_ExitSel = i;
-            s_ExitT   = 0.0f;
+            if (i == static_cast<int>(PauseAction::Abandon)) {
+                s_ConfirmAbandon = true;   // abandoning asks first
+            } else {
+                s_ExitSel = i;
+                s_ExitT   = 0.0f;
+            }
+        }
+    }
+
+    if (s_ConfirmAbandon) {
+        const ConfirmChoice answer = DrawConfirmDialog(
+            true, ConfirmTextAbandon(), sw, sh, mx, my, lmb,
+            state.previousLeftMouseDown, delta);
+        if (answer != ConfirmChoice::None) {
+            s_ConfirmAbandon = false;
+            DrawConfirmDialog(false, ConfirmTextAbandon(), sw, sh, mx, my, lmb,
+                              state.previousLeftMouseDown, delta);
+            if (answer == ConfirmChoice::Yes) {
+                s_ExitSel = static_cast<int>(PauseAction::Abandon);
+                s_ExitT   = 0.0f;
+            }
         }
     }
 

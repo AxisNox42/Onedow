@@ -41,6 +41,7 @@ void Scene_MainMenu(const SceneCtx& c) {
     static float s_introT = 0.0f;
     static int   s_menuSelect = -1;
     static float s_menuExitT  = 0.0f;
+    static bool  s_confirmQuit = false;
     static float kHoverT[5] = {};
     constexpr float kTitleDur  = 0.55f;
     constexpr float kBtnDur    = 0.45f;
@@ -53,6 +54,7 @@ void Scene_MainMenu(const SceneCtx& c) {
         s_introT = 0.0f;
         s_menuSelect = -1;
         s_menuExitT = 0.0f;
+        s_confirmQuit = false;
         for (int i = 0; i < 5; ++i) kHoverT[i] = 0.0f;
         g_MainMenuEntryT = 0.001f;
     } else {
@@ -145,7 +147,7 @@ void Scene_MainMenu(const SceneCtx& c) {
         bool selected = (s_menuSelect == i);
         float exitP = SceneTransitionEase(s_menuExitT / menuExitDuration);
         const bool buttonReady = !booting && !introActive && !introWasActive
-                              && !exitActive && g_FadeDir == 0;
+                              && !exitActive && !s_confirmQuit && g_FadeDir == 0;
         const float priorBx = baseBx + (1.0f - reveal) * 34.0f - 10.0f * kHoverT[i];
         const float priorBy = baseBy + (exitActive && !selected ? exitP * 28.0f : 0.0f);
         bool hov = UpdatePanelButtonHover(kHoverT[i], buttonReady,
@@ -181,8 +183,12 @@ void Scene_MainMenu(const SceneCtx& c) {
                         routeVariants, 3);
 
         if (hov && lmb && !g_LmbPrev) {
-            s_menuSelect = i;
-            s_menuExitT = 0.0f;
+            if (i == 4) {
+                s_confirmQuit = true;   // EXIT asks first
+            } else {
+                s_menuSelect = i;
+                s_menuExitT = 0.0f;
+            }
         }
     }
 
@@ -265,6 +271,20 @@ void Scene_MainMenu(const SceneCtx& c) {
         case 4:
             glfwSetWindowShouldClose(window, GLFW_TRUE);
             break;
+        }
+    }
+
+    if (s_confirmQuit && !booting) {
+        const ConfirmChoice answer = DrawConfirmDialog(
+            true, ConfirmTextQuit(), sw, sh, mx, my, lmb, g_LmbPrev, delta);
+        if (answer == ConfirmChoice::Yes) {
+            s_confirmQuit = false;
+            DrawConfirmDialog(false, ConfirmTextQuit(), sw, sh, mx, my, lmb, g_LmbPrev, delta);
+            s_menuSelect = 4;
+            s_menuExitT = 0.0f;
+        } else if (answer == ConfirmChoice::No) {
+            s_confirmQuit = false;
+            DrawConfirmDialog(false, ConfirmTextQuit(), sw, sh, mx, my, lmb, g_LmbPrev, delta);
         }
     }
 

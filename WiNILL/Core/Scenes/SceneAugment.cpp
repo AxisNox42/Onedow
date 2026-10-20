@@ -393,7 +393,6 @@ enum class AugPreviewMetric {
     BULLET_SPEED,
     MOVE_SPEED,
     MAX_HP,
-    VISION,
     COUNT
 };
 
@@ -453,8 +452,6 @@ static float AugPreviewMetricValue(const PlayerStats& stats,
         return stats.moveSpeedMult * 100.0f;
     case AugPreviewMetric::MAX_HP:
         return stats.maxHP;
-    case AugPreviewMetric::VISION:
-        return stats.windowSize;
     default:
         return 0.0f;
     }
@@ -537,7 +534,6 @@ static bool AugIsWardVisual(AugType type) {
 static bool AugIsMotionVisual(AugType type) {
     switch (type) {
     case AugType::MOVE_UP:
-    case AugType::VISION_UP:
     case AugType::LIGHT_AMMO:
     case AugType::LIGHT_STEP:
     case AugType::MINIATURIZE:
@@ -764,6 +760,20 @@ static void DrawAugSelectionConstellation(const AugDef& def,
     BatchFlush();
 }
 
+// The card constellation of one owned augment, for the run report. Same shape
+// and rarity colours as the selection cards.
+void DrawOwnedAugConstellation(int augIdx, float cx, float cy, float radius,
+                               float alpha, bool focused, float uiScale,
+                               float now, float rotation) {
+    if (augIdx < 0 || augIdx >= AUG_TOTAL) return;
+    const AugDef& def = ALL_AUGS[augIdx];
+    float rr, gg, bb;
+    GetRarityColor(def.rarity, rr, gg, bb);
+    DrawAugSelectionConstellation(def, AugVisualFamilyOf(def), cx, cy, radius,
+                                  rr, gg, bb, rr, gg, bb,
+                                  alpha, 1.0f, rotation, uiScale, focused, now);
+}
+
 static int BuildAugImpactRows(const AugDef& def, AugImpactRow* rows,
                               int maxRows) {
     if (!rows || maxRows <= 0) return 0;
@@ -782,9 +792,9 @@ static int BuildAugImpactRows(const AugDef& def, AugImpactRow* rows,
 
 static const wchar_t* AugMetricLabel(AugPreviewMetric metric) {
     static const wchar_t* labels[3][(int)AugPreviewMetric::COUNT] = {
-        { L"공격", L"연사", L"탄속", L"이동", L"최대 HP", L"시야" },
-        { L"ATTACK", L"FIRE RATE", L"BULLET SPD", L"MOVE", L"MAX HP", L"VISION" },
-        { L"攻撃", L"連射", L"弾速", L"移動", L"最大HP", L"視界" }
+        { L"공격", L"연사", L"탄속", L"이동", L"최대 HP" },
+        { L"ATTACK", L"FIRE RATE", L"BULLET SPD", L"MOVE", L"MAX HP" },
+        { L"攻撃", L"連射", L"弾速", L"移動", L"最大HP" }
     };
     int lang = CurLangIdx();
     if (lang < 0 || lang > 2) lang = 0;

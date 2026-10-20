@@ -60,3 +60,18 @@ bool UpdatePanelButtonHover(float& hover, bool enabled,
                             float dt, float hitPadding = 0.0f);
 
 float CenterTextX(float containerW, TextRenderer& tr, const wchar_t* text, float scale);
+
+// Centered yes/no confirmation shared by every quit / restart / abandon
+// command. The caller owns the `open` flag, must ignore its own clicks while
+// it is set, and acts on the returned choice (it closes the dialog itself).
+enum class ConfirmChoice { None, Yes, No };
+struct ConfirmText {
+    const wchar_t* title[3];   // KR, EN, JP
+    const wchar_t* prompt[3];
+};
+const ConfirmText& ConfirmTextQuit();
+const ConfirmText& ConfirmTextRestart();
+const ConfirmText& ConfirmTextAbandon();
+ConfirmChoice DrawConfirmDialog(bool open, const ConfirmText& text,
+                                float sw, float sh, double mx, double my,
+                                bool lmb, bool lmbPrev, float dt);

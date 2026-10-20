@@ -29,7 +29,7 @@ static int SMG()   { return (int)StartWeapon::SMG; }
 
 static void SetMeta(bool on) {
     for (int& lv : g_MetaLv) lv = 0;
-    if (on) { g_MetaLv[META_HP] = 1; g_MetaLv[META_DMG] = 1; g_MetaLv[META_VISION] = 1; }
+    if (on) { g_MetaLv[META_HP] = 1; g_MetaLv[META_DMG] = 1; }
 }
 static void SetTrial10(bool on) {
     for (int i = 0; i < TRIAL_SLOT_COUNT; ++i) g_TrialSelected[i] = false;
@@ -40,18 +40,18 @@ static void SetTrial10(bool on) {
 
 // ── Expected values from the rules ───────────────────────────────────
 // Defaults: maxHP 100, fireInterval 0.20, damageMultiplier 1, bulletSpeed
-// 1200, windowSize 800. Meta: HP +20, damage x1.06,
-// vision +60. SMG: fire x0.5, damage x0.5. Cards: RATE fire /1.04, HP +15,
-// SPD +30, VISION +70; the first common card boosts damage x1.08 once.
+// 1200, windowSize 800. Meta: HP +20, damage x1.06. SMG: fire x0.5,
+// damage x0.5. Cards: RATE fire /1.04, HP +15, SPD +30, MOVE speed x1.05;
+// the first common card boosts damage x1.08 once. Window size is untouched.
 // Trial 10: max HP x0.82.
 struct Expect { float maxHP, fire, dmg, speed, window; };
 static Expect ExpectedNoTrial(bool smg, bool meta, float scale, bool cards) {
     Expect e{ 100.0f, 0.20f, 1.0f, 1200.0f, 800.0f };
-    if (meta) { e.maxHP += 20.0f; e.dmg *= 1.06f; e.window += 60.0f; }
+    if (meta) { e.maxHP += 20.0f; e.dmg *= 1.06f; }
     e.window *= scale;
     if (smg) { e.fire *= 0.5f; e.dmg *= 0.5f; }
     if (cards) {
-        e.fire /= 1.04f; e.dmg *= 1.08f; e.maxHP += 15.0f; e.speed += 30.0f; e.window += 70.0f;
+        e.fire /= 1.04f; e.dmg *= 1.08f; e.maxHP += 15.0f; e.speed += 30.0f;
     }
     return e;
 }
@@ -76,9 +76,9 @@ static void CheckShared(const PlayerStats& s, const Expect& e) {
 
 // REG-02: every path, same inputs.
 static void CheckPaths() {
-    std::printf("-- REG-02 stat paths (cards: RATE, HP, SPD, VISION)\n");
+    std::printf("-- REG-02 stat paths (cards: RATE, HP, SPD, MOVE)\n");
     std::vector<int> owned = { IdxOf(AugType::RATE_UP), IdxOf(AugType::HP_UP),
-                               IdxOf(AugType::SPD_UP), IdxOf(AugType::VISION_UP) };
+                               IdxOf(AugType::SPD_UP), IdxOf(AugType::MOVE_UP) };
     for (int weapon : { RIFLE(), SMG() }) {
         for (bool meta : { false, true }) {
             for (bool trial : { false, true }) {

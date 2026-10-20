@@ -5,7 +5,7 @@
 
 enum class AugType {
     // ── 일반 (7) ──────────────────────────────
-    DMG_UP, RATE_UP, SPD_UP, MOVE_UP, VISION_UP, REGEN_UP,
+    DMG_UP, RATE_UP, SPD_UP, MOVE_UP, RESERVED_AUG_043, REGEN_UP,
     // ── 희귀 ──
     GLASS_CANNON, LIGHT_AMMO, LIGHT_STEP, RESERVED_AUG_037,
     BULLET_RAIN,
@@ -204,6 +204,7 @@ inline bool AugRemoved(AugType t) {
     case AugType::RESERVED_AUG_003:
     case AugType::RESERVED_AUG_050:
     case AugType::RESERVED_AUG_037:
+    case AugType::RESERVED_AUG_043:
     case AugType::RESERVED_AUG_023:
     case AugType::RESERVED_AUG_059:
     case AugType::RESERVED_AUG_005: // Reserved legacy slot.

@@ -16,6 +16,7 @@
 #endif
 #include "GameManager.h"
 #include "Codex.h"
+#include "DebugToolkit.h"
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -42,9 +43,18 @@ int     g_CodexSearchLen  = 0;
 static void CodexCheckDevPhrase();
 
 static bool CodexTextInputActive() {
-    return (g_GameManager.currentState == GameState::CODEX ||
+    return !g_DebugToolkit.IsVisible() && (g_GameManager.currentState == GameState::CODEX ||
             g_GameManager.currentState == GameState::MAIN_MENU) &&
            g_CodexSearchInputEnabled;
+}
+
+static bool TextInputActive() {
+    return CodexTextInputActive() || g_DebugToolkit.IsAugmentSearchActive();
+}
+
+static void ClearTextComposition() {
+    CodexSearchClearComposition();
+    g_DebugToolkit.SetAugmentSearchComposition(L"");
 }
 
 #ifdef _WIN32
@@ -84,25 +94,29 @@ static std::wstring ReadImeString(HIMC context, DWORD kind) {
 }
 
 static void ReadCodexImeComposition(HWND hwnd, LPARAM flags) {
-    if (!s_imeEnabled || !CodexTextInputActive()) {
-        CodexSearchClearComposition();
+    if (!s_imeEnabled || !TextInputActive()) {
+        ClearTextComposition();
         return;
     }
     HIMC context = ImmGetContext(hwnd);
     if (!context) return;
     if (flags & GCS_RESULTSTR) {
         const std::wstring result = ReadImeString(context, GCS_RESULTSTR);
-        CodexSearchClearComposition();
-        CodexSearchInsertText(result.c_str());
-        CodexCheckDevPhrase();
+        ClearTextComposition();
+        if (g_DebugToolkit.IsAugmentSearchActive()) g_DebugToolkit.InsertAugmentSearchText(result);
+        else {
+            CodexSearchInsertText(result.c_str());
+            CodexCheckDevPhrase();
+        }
     }
     if (flags & (GCS_COMPSTR | GCS_CURSORPOS)) {
         const std::wstring composition = ReadImeString(context, GCS_COMPSTR);
         const LONG cursorPos = ImmGetCompositionStringW(
             context, GCS_CURSORPOS, nullptr, 0);
-        CodexSearchSetComposition(composition.c_str(), (int)cursorPos);
+        if (g_DebugToolkit.IsAugmentSearchActive()) g_DebugToolkit.SetAugmentSearchComposition(composition);
+        else CodexSearchSetComposition(composition.c_str(), (int)cursorPos);
     } else if (!flags) {
-        CodexSearchClearComposition();
+        ClearTextComposition();
     }
     ImmReleaseContext(hwnd, context);
 }
@@ -113,7 +127,7 @@ static LRESULT CALLBACK InputWindowProc(HWND hwnd, UINT message,
     if (message == WM_IME_SETCONTEXT)
         lParam &= ~((LPARAM)ISC_SHOWUICOMPOSITIONWINDOW);
     if (message == WM_IME_STARTCOMPOSITION) {
-        s_imeComposing = s_imeEnabled && CodexTextInputActive();
+        s_imeComposing = s_imeEnabled && TextInputActive();
         ApplyCodexImeAnchor(hwnd);
         return 0;
     }
@@ -123,7 +137,7 @@ static LRESULT CALLBACK InputWindowProc(HWND hwnd, UINT message,
     }
     if (message == WM_IME_ENDCOMPOSITION) {
         s_imeComposing = false;
-        CodexSearchClearComposition();
+        ClearTextComposition();
         return 0;
     }
     return s_glfwWndProc
@@ -132,7 +146,7 @@ static LRESULT CALLBACK InputWindowProc(HWND hwnd, UINT message,
 }
 
 void InputUpdateTextInput(GLFWwindow* window) {
-    const bool enabled = CodexTextInputActive() &&
+    const bool enabled = TextInputActive() &&
                          glfwGetWindowAttrib(window, GLFW_FOCUSED);
     if (!s_imeHwnd || enabled == s_imeEnabled) return;
     s_imeEnabled = enabled;
@@ -144,7 +158,7 @@ void InputUpdateTextInput(GLFWwindow* window) {
             ImmReleaseContext(s_imeHwnd, context);
         }
         s_imeComposing = false;
-        CodexSearchClearComposition();
+        ClearTextComposition();
     }
     ImmAssociateContext(s_imeHwnd, enabled ? s_imeContext : nullptr);
 }
@@ -239,6 +253,17 @@ static void InputKeyCallback(GLFWwindow* window, int key, int, int action, int m
         if      (action == GLFW_PRESS)   keys[key] = true;
         else if (action == GLFW_RELEASE) keys[key] = false;
     }
+    if (g_DebugToolkit.IsAugmentSearchActive()) {
+        if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
+#ifdef _WIN32
+        if (s_imeComposing) return;
+#endif
+        const bool ctrl = (mods & (GLFW_MOD_CONTROL | GLFW_MOD_SUPER)) != 0;
+        if (ctrl && key == GLFW_KEY_V)
+            g_DebugToolkit.InsertAugmentSearchText(CodexUtf8ToWide(glfwGetClipboardString(window)));
+        else g_DebugToolkit.EditAugmentSearch(key, ctrl && key == GLFW_KEY_A);
+        return;
+    }
     if (!CodexTextInputActive() || (action != GLFW_PRESS && action != GLFW_REPEAT)) return;
     if (g_CodexSearchCompositionLen > 0) return;
 
@@ -269,6 +294,10 @@ static void InputKeyCallback(GLFWwindow* window, int key, int, int action, int m
 }
 
 static void InputCharCallback(GLFWwindow*, unsigned int cp) {
+    if (g_DebugToolkit.IsAugmentSearchActive()) {
+        if (cp >= 32 && cp <= 0xFFFF) g_DebugToolkit.InsertAugmentSearchText(std::wstring(1, (wchar_t)cp));
+        return;
+    }
     if (g_VolEdit && g_GameManager.currentState == GameState::SETTINGS) {
         if (cp >= L'0' && cp <= L'9' && g_VolLen < 3) {
             g_VolBuf[g_VolLen++] = (wchar_t)cp;
@@ -326,7 +355,7 @@ void InputUnregisterCallbacks(GLFWwindow*) {
 void InputClearState() {
     std::memset(keys, 0, sizeof(keys));
     g_ScrollAccum = 0.0f;
-    CodexSearchClearComposition();
+    ClearTextComposition();
 }
 
 InputFocusTransition InputUpdateWindowFocus(GLFWwindow* window) {

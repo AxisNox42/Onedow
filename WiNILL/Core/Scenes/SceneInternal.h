@@ -34,6 +34,9 @@ void DrawMenuBackground(float sw, float sh, float delta,
                         float darkenAmount = 1.0f);
 float LogoClamp01(float value);
 void SetSceneTextureReveal(float reveal);
+void DrawOwnedAugConstellation(int augIdx, float cx, float cy, float radius,
+                               float alpha, bool focused, float uiScale,
+                               float now, float rotation);
 void LogoLine(float x1, float y1, float x2, float y2,
               float thick, float r, float g, float b, float alpha);
 void DrawPersistentSceneSideVignettes(float sw, float sh, float alpha);

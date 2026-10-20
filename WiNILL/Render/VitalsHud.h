@@ -31,14 +31,14 @@ namespace vitals_hud {
 
 using hud_lines::Rgb;
 
-inline constexpr Rgb kHpCol     = { 0.62f, 0.96f, 0.84f };
+inline constexpr Rgb kHpCol     = { 0.22f, 0.65f, 1.00f };
 inline constexpr Rgb kDangerCol = { 1.00f, 0.36f, 0.38f };
 inline constexpr Rgb kTrackCol  = { 0.55f, 0.62f, 0.72f };
 inline constexpr Rgb kXpCol     = { 0.30f, 0.82f, 1.00f };
 inline constexpr Rgb kXpCapCol  = { 1.00f, 0.82f, 0.30f };
 
 inline float HpArcRadius(float playerSize) { return std::max(66.0f, playerSize * 2.72f); }
-inline float HpArcThick(float playerSize) { return std::max(2.6f, playerSize * 0.104f); }
+inline float HpArcThick(float playerSize) { return std::max(3.6f, playerSize * 0.144f); }
 
 // World space; call inside the world pass with the player centre.
 // alpha: resting strength (the caller raises it on a hit).
@@ -125,6 +125,20 @@ inline void DrawHpArcText(float cx, float cy, float playerSize, float hpFrac,
     }
 }
 
+// Keep the version compact while sharing the bottom margin and bar gap.
+inline float BottomHudTextScale(float hs) {
+    return UiTextScale(g_TextS, UiTextLevel::Supporting, 1.65f * hs);
+}
+inline float BottomHudVersionScale(float hs) {
+    return UiTextScale(g_TextS, UiTextLevel::Supporting, 1.20f * hs);
+}
+inline float BottomHudPadding(float hs) { return 20.0f * hs; }
+inline float BottomHudGap(float hs) { return 16.0f * hs; }
+inline float BottomHudTextY(float sh, float hs) {
+    return HudY(sh, BottomHudPadding(hs)) -
+        g_TextS.Height(L"Ag0123456789", BottomHudTextScale(hs));
+}
+
 // Screen space. Line along the bottom edge from just after the level label
 // to rightX. levelUp: LevelUpTransition progress (0 = idle) flashes the line.
 inline void DrawXpEdgeLine(float sh, float hudScale, float xpFrac, bool atCap,
@@ -135,12 +149,13 @@ inline void DrawXpEdgeLine(float sh, float hudScale, float xpFrac, bool atCap,
     const float hs = hudScale;
     const float keyline = 3.2f * hs * CombatKeylineStrength();
     const Rgb col = atCap ? kXpCapCol : kXpCol;
-    const float sc = UiTextScale(g_TextS, UiTextLevel::Supporting, hs);
+    const float sc = BottomHudTextScale(hs);
     const float labelW = g_TextS.Width(levelLabel, sc);
     const float labelH = g_TextS.Height(levelLabel, sc);
-    const float y = HudY(sh, 16.0f * hs);
-    const float x0 = 24.0f * hs;
-    const float lx = x0 + labelW + 12.0f * hs;
+    const float textY = BottomHudTextY(sh, hs);
+    const float y = textY + labelH * 0.5f;
+    const float x0 = BottomHudPadding(hs);
+    const float lx = x0 + labelW + BottomHudGap(hs);
     if (rightX <= lx + 40.0f * hs) return;
     const float fx = lx + (rightX - lx) * std::clamp(xpFrac, 0.0f, 1.0f);
     const float flash = levelUp > 0.0f ? 1.0f - levelUp : 0.0f;
@@ -148,9 +163,9 @@ inline void DrawXpEdgeLine(float sh, float hudScale, float xpFrac, bool atCap,
     struct Piece { float x0, x1, w; Rgb c; float a; };
     Piece pieces[3];
     int n = 0;
-    if (fx < rightX) pieces[n++] = { fx, rightX, 1.6f * hs, kTrackCol, 0.30f };
-    if (fx > lx)     pieces[n++] = { lx, fx, 2.4f * hs, col, 0.85f };
-    if (flash > 0.0f) pieces[n++] = { lx, rightX, (2.4f + 1.6f * flash) * hs, col, 0.90f * flash };
+    if (fx < rightX) pieces[n++] = { fx, rightX, 3.0f * hs, kTrackCol, 0.65f };
+    if (fx > lx)     pieces[n++] = { lx, fx, 4.0f * hs, col, 1.0f };
+    if (flash > 0.0f) pieces[n++] = { lx, rightX, (4.0f + 1.6f * flash) * hs, col, 0.90f * flash };
 
     BindMainShader();
     if (keyline > 0.0f)
@@ -160,7 +175,7 @@ inline void DrawXpEdgeLine(float sh, float hudScale, float xpFrac, bool atCap,
     for (int i = 0; i < n; ++i)
         Segment(pieces[i].x0, y, pieces[i].x1, y, pieces[i].w, pieces[i].c, pieces[i].a);
     BatchFlush();
-    g_TextS.Draw(levelLabel, x0, y - labelH * 0.5f, sc, col.r, col.g, col.b,
+    g_TextS.Draw(levelLabel, x0, textY, sc, col.r, col.g, col.b,
                  0.85f + 0.15f * flash);
 }
 

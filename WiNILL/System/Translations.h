@@ -134,9 +134,9 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"Lv.",
     },
     /* REACHED_LEVEL */ {
-        L"도달 레벨",
-        L"Reached Level",
-        L"到達レベル",
+        L"최고 레벨",
+        L"Highest Level",
+        L"最高レベル",
     },
     /* KILL_COUNT */ {
         L"처치 수",

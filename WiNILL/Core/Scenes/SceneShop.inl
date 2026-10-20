@@ -248,7 +248,7 @@ void Scene_Shop(const SceneCtx& c) {
             addGroup(nli == 0 ? L"\xCF54\xC5B4 \xD574\xAE08" : L"CORE UNLOCKS",
                      0.38f, 0.82f, 1.00f);
             for (int i = 0; i < META_COUNT; i++)
-                if (i != META_RESERVED_STARTAUG)
+                if (i != META_RESERVED_STARTAUG && i != META_RESERVED_VISION)
                     addItem(KEY_META + i, MetaName(i), 0.38f, 0.82f, 1.00f);
             addGroup(nli == 0 ? L"\xD654\xBA74 \xD504\xB85C\xD30C\xC77C" : L"DISPLAY PROFILES",
                      1.00f, 0.84f, 0.28f);

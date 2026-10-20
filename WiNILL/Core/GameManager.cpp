@@ -294,8 +294,7 @@ static int RollOneAug(const bool* takenOnce,
             if (t == AugType::RIFLE_STABILITY   && !playerHasRifle()) continue;
             // Retired augment slots are filtered by AugRemoved.
             if (AugRemoved(t)) continue;
-            // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 시야(5중첩)/치명타(75%)
-            if (t == AugType::VISION_UP && g_Stats.visionStacks >= 5) continue;
+            // 최대치 도달 증강은 제외 (선택해도 버려지는 문제) — 치명타(75%)
             if (t == AugType::CRIT      && g_Stats.critChance   >= 75) continue;
             pool[poolSize++] = i;
         }

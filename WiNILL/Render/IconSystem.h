@@ -30,7 +30,6 @@ inline const char* IconNameForAug(AugType t) {
     case AugType::RATE_UP:       return "RATE_UP";
     case AugType::SPD_UP:        return "SPD_UP";
     case AugType::MOVE_UP:       return "MOVE_UP";
-    case AugType::VISION_UP:     return "VISION_UP";
     case AugType::REGEN_UP:      return "REGEN_UP";
     // 희귀
     case AugType::GLASS_CANNON:  return "GLASS_CANNON";

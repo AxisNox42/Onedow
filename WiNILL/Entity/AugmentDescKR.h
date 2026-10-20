@@ -12,8 +12,6 @@ inline const wchar_t* AugDescKR(AugType t) {
         return L"탄환 속도 +30 · 멀리 날아가는 탄의 실효 사거리·관통 체감 향상 · 중첩 가능";
     case AugType::MOVE_UP:
         return L"이동 속도 +5% (백분율 누적) · 회피·진입·후퇴 기동성 상승 · 중첩 가능";
-    case AugType::VISION_UP:
-        return L"시야(플레이어 창 크기) +70 · 최대 5중첩 (합 +350) · 넓은 시야로 적·탄·보상 탐지 유리";
     case AugType::REGEN_UP:
         return L"재생 +0.28/s (중첩 가능) · 약 3.5초마다 체력 1 회복 · 출혈 등 지속 피해를 서서히 상쇄";
 

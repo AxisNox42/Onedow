@@ -2,6 +2,7 @@
 #include "DrawPrim.h"
 #include "TextRenderer.h"
 #include "UiLayout.h"
+#include "Settings.h"
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
@@ -408,4 +409,89 @@ bool UIButton(float x, float y, float w, float h, const wchar_t* label,
                  sc, tr, tg, tb, ta);
 
     return hover && lmbPrev && !lmb;
+}
+
+const ConfirmText& ConfirmTextQuit() {
+    static const ConfirmText t = {
+        { L"게임을 종료할까요?", L"EXIT THE GAME?", L"ゲームを終了しますか？" },
+        { L"종료하면 바탕화면으로 돌아갑니다.", L"YOU WILL RETURN TO THE DESKTOP.",
+          L"デスクトップに戻ります。" } };
+    return t;
+}
+
+const ConfirmText& ConfirmTextRestart() {
+    static const ConfirmText t = {
+        { L"다시 시작할까요?", L"RESTART THE RUN?", L"最初からやり直しますか？" },
+        { L"새 플레이를 처음부터 시작합니다.", L"A NEW RUN STARTS FROM THE BEGINNING.",
+          L"新しいプレイを最初から始めます。" } };
+    return t;
+}
+
+const ConfirmText& ConfirmTextAbandon() {
+    static const ConfirmText t = {
+        { L"플레이를 포기할까요?", L"ABANDON THIS RUN?", L"プレイを放棄しますか？" },
+        { L"지금까지의 진행이 종료됩니다.", L"YOUR CURRENT PROGRESS ENDS HERE.",
+          L"ここまでの進行が終了します。" } };
+    return t;
+}
+
+ConfirmChoice DrawConfirmDialog(bool open, const ConfirmText& text,
+                                float sw, float sh, double mx, double my,
+                                bool lmb, bool lmbPrev, float dt) {
+    static float s_openT = 0.0f;
+    static float s_hover[2] = {};
+    if (!open) {
+        s_openT = 0.0f;
+        s_hover[0] = s_hover[1] = 0.0f;
+        return ConfirmChoice::None;
+    }
+    s_openT += dt;
+    const float fade = std::min(1.0f, s_openT / 0.16f);
+    const float now = (float)glfwGetTime();
+    const int li = std::max(0, std::min(2, LangIndex()));
+    const float uiS = UiScale(sw, sh);
+
+    BindMainShader();
+    drawRect(0.0f, 0.0f, sw, sh, 0.01f, 0.02f, 0.04f, 0.62f * fade);
+
+    const float cx = sw * 0.5f;
+    const float cy = sh * 0.5f;
+    const wchar_t* title = text.title[li];
+    const wchar_t* prompt = text.prompt[li];
+    const float titleScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
+    const float promptScale = UiTextScale(g_TextL, UiTextLevel::Description, uiS);
+    const float titleY = cy - 92.0f * uiS;
+    DrawShadowedText(g_TextL, title,
+                     cx - g_TextL.Width(title, titleScale) * 0.5f, titleY,
+                     titleScale, 1.0f, 1.0f, 1.0f, 0.98f * fade, 0.72f);
+    DrawShadowedText(g_TextL, prompt,
+                     cx - g_TextL.Width(prompt, promptScale) * 0.5f,
+                     titleY + g_TextL.Height(title, titleScale) + 10.0f * uiS,
+                     promptScale, 0.60f, 0.72f, 0.86f, 0.82f * fade, 0.58f);
+
+    static const wchar_t* kYes[3] = { L"네", L"YES", L"はい" };
+    static const wchar_t* kNo[3] = { L"아니오", L"NO", L"いいえ" };
+    const float bw = 210.0f * uiS, bh = 48.0f * uiS, gap = 56.0f * uiS;   // hover bars slide ~21px out of each side
+    const float by = cy + 26.0f * uiS;
+    const float bx[2] = { cx - bw - gap, cx + gap };
+    ConfirmChoice result = ConfirmChoice::None;
+    for (int i = 0; i < 2; ++i) {
+        const bool hov = PanelButtonHit(mx, my, bx[i], by, bw, bh);
+        s_hover[i] = UpdateMenuCommandHover(s_hover[i], hov, dt);
+        const wchar_t* variants[3] = {
+            i == 0 ? kYes[0] : kNo[0], i == 0 ? kYes[1] : kNo[1],
+            i == 0 ? kYes[2] : kNo[2] };
+        // YES is the destructive answer, so it carries the warning hue.
+        const bool yes = i == 0;
+        DrawUnifiedMenuCommand(variants[li], bx[i], by, bw, bh,
+                               yes ? 1.0f : 0.34f, yes ? 0.32f : 0.82f,
+                               yes ? 0.28f : 1.0f,
+                               fade, s_hover[i], false, 0.0f,
+                               now + 0.2f * (float)i, uiS, true, true, true,
+                               variants, 3);
+        // The click that opened the dialog must not answer it.
+        if (hov && lmb && !lmbPrev && s_openT > 0.12f)
+            result = yes ? ConfirmChoice::Yes : ConfirmChoice::No;
+    }
+    return result;
 }

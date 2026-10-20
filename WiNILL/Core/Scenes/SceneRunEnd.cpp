@@ -2,6 +2,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "GameManager.h"
+#include "GameContext.h"
 
 #include "SceneSkills.h"
 #include "SceneUI.h"
@@ -16,6 +17,7 @@
 #include "Codex.h"
 #include "Augment.h"
 #include "PlayerStats.h"
+#include "RunStats.h"
 #include "Weapons.h"
 #include "ExpSystem.h"
 #include "SaveSystem.h"
@@ -35,6 +37,7 @@
 #include "Monster.h"
 #include "AugmentSlots.h"
 #include "../../Render/Juice.h"
+#include "../../Render/WaveHud.h"
 #include <algorithm>
 #include <vector>
 #include <string>
@@ -42,6 +45,8 @@
 #include <functional>
 
 #include "SceneInternal.h"
+
+extern float g_GameTime;   // main.cpp: seconds of the run
 
 namespace {
 enum class GameOverAction : int { Restart, ReturnToMenu, Quit };
@@ -63,6 +68,127 @@ void ApplyGameOverAction(GameOverAction action, GLFWwindow* window,
         break;
     }
 }
+
+// The glyph atlases are baked at fixed sizes (S, L, XL) and only ever scaled
+// at draw time, so text blurs as soon as it is drawn above its baked size.
+// Pick the smallest atlas that can reach the wanted line height without
+// being enlarged.
+struct TextPick {
+    TextRenderer* r;
+    float scale;
+};
+
+TextPick PickText(const SceneTextContext& t, float lineHeightPx) {
+    TextRenderer* order[3] = { &t.body, &t.title, &g_TextXL };
+    for (TextRenderer* r : order) {
+        const float lh = r->LineHeightPixels();
+        if (lh > 0.0f && lineHeightPx <= lh)
+            return { r, lineHeightPx / lh };
+    }
+    const float lh = std::max(1.0f, g_TextXL.LineHeightPixels());
+    return { &g_TextXL, lineHeightPx / lh };
+}
+
+float Snap(float v) { return std::floor(v + 0.5f); }
+
+constexpr int kWrapChars = 160;
+
+// Greedy wrap by measured width. Breaks at spaces when it can and between
+// characters otherwise (Korean and Japanese run long without spaces).
+int WrapLines(TextRenderer& r, float scale, const wchar_t* text, float maxW,
+              wchar_t (*lines)[kWrapChars], int maxLines) {
+    int count = 0;
+    wchar_t cur[kWrapChars] = {};
+    int len = 0, lastSpace = -1;
+    auto emit = [&](int n) {
+        if (count >= maxLines) return;
+        while (n > 0 && cur[n - 1] == L' ') --n;
+        wmemcpy(lines[count], cur, (size_t)n);
+        lines[count][n] = 0;
+        ++count;
+    };
+    for (const wchar_t* p = text; p && *p && count < maxLines; ++p) {
+        if (len >= kWrapChars - 2) { emit(len); len = 0; lastSpace = -1; }
+        if (*p == L' ') lastSpace = len;
+        cur[len++] = *p;
+        cur[len] = 0;
+        if (len > 1 && r.Width(cur, scale) > maxW) {
+            if (lastSpace > 0) {
+                emit(lastSpace);
+                const int rest = len - lastSpace - 1;
+                wmemmove(cur, cur + lastSpace + 1, (size_t)rest);
+                len = rest;
+            } else {
+                emit(len - 1);
+                cur[0] = cur[len - 1];
+                len = 1;
+            }
+            cur[len] = 0;
+            lastSpace = -1;
+            for (int i = 0; i < len; ++i) if (cur[i] == L' ') lastSpace = i;
+        }
+    }
+    if (len > 0 && count < maxLines) emit(len);
+    return count;
+}
+
+// ---- Player stats: weapon and meta, plus augments, plus trial -------------
+// The same stat set the augment cards preview, so the numbers match what was
+// shown while picking (wave debuffs are augments too).
+enum Metric { kAttack, kFireRate, kBulletSpeed, kMove, kMaxHp, kRegen,
+              kCritChance, kCritMult, kDamageCut, kMetricCount };
+
+float MetricValue(const PlayerStats& s, int m) {
+    switch (m) {
+    case kAttack:      return s.GetBaseDamage() * s.damageMultiplier;
+    case kFireRate:    return s.fireInterval > 0.0001f ? 1.0f / s.fireInterval : 0.0f;
+    case kBulletSpeed: return s.bulletSpeed;
+    case kMove:        return s.moveSpeedMult * 100.0f;
+    case kMaxHp:       return s.maxHP;
+    case kRegen:       return s.regenPerSec;
+    case kCritChance:  return (float)s.critChance;
+    case kCritMult:    return s.critMult;
+    case kDamageCut:   return (1.0f - s.GetDamageTakenMult()) * 100.0f;
+    default:           return 0.0f;
+    }
+}
+
+struct StatRow {
+    float total = 0.0f, base = 0.0f, aug = 0.0f, trial = 0.0f;
+};
+
+// total = base (weapon and meta) + augments + trial, so each part can be shown.
+void BuildStatRows(StatRow* rows) {
+    const PlayerStats base = PreviewBaseStats(g_CurrentWeapon, g_Scale);
+    const PlayerStats trial = PreviewTrialStats(g_CurrentWeapon, g_Scale);
+    const PlayerStats owned = PreviewOwnedStats(g_CurrentWeapon, g_OwnedAugs, g_Scale);
+    for (int m = 0; m < kMetricCount; ++m) {
+        const float b = MetricValue(base, m);
+        const float tr = MetricValue(trial, m);
+        const float o = MetricValue(owned, m);
+        rows[m].base = b;
+        rows[m].trial = tr - b;
+        rows[m].aug = o - tr;
+        rows[m].total = o;
+    }
+}
+
+// Parts smaller than this are not worth a "+ x" term.
+float MetricEps(int m) {
+    return (m == kFireRate || m == kRegen || m == kCritMult) ? 0.005f : 0.05f;
+}
+void FormatMetric(wchar_t* out, int m, float v) {
+    switch (m) {
+    case kAttack:     swprintf_s(out, 32, L"%.1f", v); break;
+    case kFireRate:   swprintf_s(out, 32, L"%.2f", v); break;
+    case kRegen:      swprintf_s(out, 32, L"%.2f/s", v); break;
+    case kCritMult:   swprintf_s(out, 32, L"x%.1f", v); break;
+    case kMove:
+    case kCritChance:
+    case kDamageCut:  swprintf_s(out, 32, L"%.0f%%", v); break;
+    default:          swprintf_s(out, 32, L"%.0f", v); break;
+    }
+}
 }
 
 void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
@@ -71,35 +197,14 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     const bool lmb = c.lmb;
     const float delta = c.delta;
     GLFWwindow* window = c.window;
-    static int s_focusedModule = -1;
     float gof = std::max(0.0f, std::min(1.0f, state.fade));
-    if (gof < 0.05f) s_focusedModule = -1;
-    // Stardust transfer: once the report counters finish (gof 0.72), the
-    // run's stardust flies from GAINED into TOTAL over kTransferDur seconds.
-    constexpr float kCountDoneFade = 0.72f;
-    constexpr float kTransferDelay = 0.20f;
-    constexpr float kTransferDur = 1.20f;
-    constexpr float kTransferEnd = kTransferDelay + kTransferDur;
-    static float s_transferT = 0.0f;
-    if (gof < 0.05f) s_transferT = 0.0f;
     bool skippedCinematic = false;
     if (gof < 0.999f && lmb && !state.previousLeftMouseDown) {
         // A click during the collapse is a skip request, never a menu action.
         state.fade = 1.0f;
         gof = 1.0f;
         skippedCinematic = true;
-        s_transferT = kTransferEnd;
     }
-    if (gof >= kCountDoneFade && s_transferT < kTransferEnd)
-        s_transferT = std::min(kTransferEnd, s_transferT + c.delta);
-    bool transferSkipped = false;
-    if (!skippedCinematic && gof >= 0.999f && s_transferT < kTransferEnd
-        && lmb && !state.previousLeftMouseDown) {
-        // A click during the transfer completes it; it is not a menu click.
-        s_transferT = kTransferEnd;
-        transferSkipped = true;
-    }
-    const bool transferDone = s_transferT >= kTransferEnd;
     const float ge = Smoothstep(gof);
     const float now = (float)glfwGetTime();
     const int li = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
@@ -113,44 +218,32 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     };
     const wchar_t* outcomeLabel = state.victory ? kVictoryLabel[li] : kDeathLabel[li];
     static const wchar_t* kReportLabel[LANG_COUNT] = {
-        L"\uD50C\uB808\uC774 \uB9AC\uD3EC\uD2B8", L"PLAY REPORT", L"\u30D7\u30EC\u30A4 \u30EC\u30DD\u30FC\u30C8"
+        L"\uD50C\uB808\uC774 \uD1B5\uACC4", L"PLAY STATS", L"\u30D7\u30EC\u30A4\u7D71\u8A08"
     };
-    static const wchar_t* kBestLabel[LANG_COUNT] = {
-        L"\uCD5C\uACE0 \uAE30\uB85D", L"BEST SCORE", L"\u30D9\u30B9\u30C8\u30B9\u30B3\u30A2"
+    static const wchar_t* kWaveLabel[LANG_COUNT] = {
+        L"\uB3C4\uB2EC \uC6E8\uC774\uBE0C", L"WAVE REACHED", L"\u5230\u9054\u30A6\u30A7\u30FC\u30D6"
+    };
+    static const wchar_t* kLevelLabel[LANG_COUNT] = {
+        L"\uB808\uBCA8", L"LEVEL", L"\u30EC\u30D9\u30EB"
     };
     static const wchar_t* kStardustLabel[LANG_COUNT] = {
         L"\uD68D\uB4DD \uBCC4\uAC00\uB8E8", L"STARDUST GAINED", L"\u7372\u5F97\u30B9\u30BF\u30FC\u30C0\u30B9\u30C8"
     };
-    // Wallet total. Coins and stardust are one currency (g_Coins); the run's
-    // stardust is shown flowing into this total instead of a separate
-    // "coins earned" line.
-    static const wchar_t* kTotalStardustLabel[LANG_COUNT] = {
-        L"\uC804\uCCB4 \uBCC4\uAC00\uB8E8", L"TOTAL STARDUST",
-        L"\u7DCF\u30B9\u30BF\u30FC\u30C0\u30B9\u30C8"
+    static const wchar_t* kBuildStatsLabel[LANG_COUNT] = {
+        L"\uD50C\uB808\uC774\uC5B4 \uB2A5\uB825\uCE58", L"PLAYER STATS", L"\u30D7\u30EC\u30A4\u30E4\u30FC\u80FD\u529B\u5024"
     };
-    static const wchar_t* kBuildLabel[LANG_COUNT] = {
-        L"\uBE4C\uB4DC \uBCC4\uC790\uB9AC", L"BUILD CONSTELLATION", L"\u30D3\u30EB\u30C9\u661F\u5EA7"
-    };
-    static const wchar_t* kModulesLabel[LANG_COUNT] = {
-        L"\uAE30\uB85D\uB41C \uBAA8\uB4C8", L"MODULES RECORDED", L"\u8A18\u9332\u30E2\u30B8\u30E5\u30FC\u30EB"
-    };
-    static const wchar_t* kNoModules[LANG_COUNT] = {
-        L"\uAE30\uB85D\uB41C \uBAA8\uB4C8 \uC5C6\uC74C", L"NO MODULES RECORDED", L"\u8A18\u9332\u30E2\u30B8\u30E5\u30FC\u306A\u3057"
-    };
-    static const wchar_t* kSelectedModule[LANG_COUNT] = {
-        L"\uC120\uD0DD\uB41C \uBCC4\uC790\uB9AC", L"SELECTED CONSTELLATION", L"\u9078\u629E\u3057\u305F\u661F\u5EA7"
-    };
-    static const wchar_t* kNewRecord[LANG_COUNT] = {
-        L"* \uC2E0\uAE30\uB85D *", L"* NEW RECORD *", L"* \u65B0\u8A18\u9332 *"
+    static const wchar_t* kMetricLabel[LANG_COUNT][kMetricCount] = {
+        { L"\uACF5\uACA9\uB825", L"\uC5F0\uC0AC\uB825", L"\uD0C4\uC18D", L"\uC774\uB3D9\uC18D\uB3C4", L"HP", L"\uCCB4\uB825 \uC7AC\uC0DD", L"\uCE58\uBA85\uD0C0 \uD655\uB960", L"\uCE58\uBA85\uD0C0 \uD53C\uD574", L"\uD53C\uD574 \uAC10\uC18C" },
+        { L"ATTACK", L"FIRE RATE", L"BULLET SPEED", L"MOVE SPEED", L"HP", L"HP REGEN", L"CRIT CHANCE", L"CRIT DAMAGE", L"DMG REDUCTION" },
+        { L"\u653B\u6483\u529B", L"\u9023\u5C04\u529B", L"\u5F3E\u901F", L"\u79FB\u52D5\u901F\u5EA6", L"HP", L"HP\u56DE\u5FA9", L"\u30AF\u30EA\u30C6\u30A3\u30AB\u30EB\u7387", L"\u30AF\u30EA\u30C6\u30A3\u30AB\u30EB\u500D\u7387", L"\u88AB\u30C0\u30E1\u30FC\u30B8\u8EFD\u6E1B" }
     };
     static const wchar_t* kRoute[LANG_COUNT][kGameOverActionCount] = {
-        { L"\uC7AC\uC2DC\uC791", L"\uB4A4\uB85C", L"\uC885\uB8CC" },
-        { L"RESTART", L"BACK", L"EXIT" },
-        { L"\u518D\u8D77\u52D5", L"\u623B\u308B", L"\u7D42\u4E86" }
+        { L"\uC7AC\uC2DC\uC791", L"\uBA54\uC778 \uBA54\uB274", L"\uC885\uB8CC" },
+        { L"RESTART", L"MAIN MENU", L"EXIT" },
+        { L"\u3082\u3046\u4E00\u5EA6", L"\u30E1\u30A4\u30F3\u30E1\u30CB\u30E5\u30FC", L"\u7D42\u4E86" }
     };
 
-    // The report owns the full frame, so the build constellation is always
-    // visible even when the page texture reveal was left at a low value.
+    // The report owns the full frame.
     SetSceneTextureReveal(1.0f);
     BindMainShader();
     drawRect(0.0f, 0.0f, sw, sh, 0.012f, 0.026f, 0.060f, 0.52f * ge);
@@ -158,483 +251,521 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     DrawSceneRadialVignette(sw * 0.72f, sh * 0.44f,
                             std::max(sw, sh) * 0.76f, 0.12f * ge);
 
-    const float leftX = std::max(42.0f, sw * 0.085f);
-    const float leftW = std::min(680.0f, std::max(300.0f, sw * 0.49f));
-    const float deathY = std::max(58.0f, sh * 0.14f);
     const float accentR = 0.32f, accentG = 0.82f, accentB = 1.0f;
+    const float margin = std::max(42.0f, sw * 0.085f);
+    const float leftX = margin;
+    const float leftW = std::min(680.0f, std::max(300.0f, sw * 0.40f));
 
-    const wchar_t* leftMetricVariants[LANG_COUNT * 3];
-    const wchar_t* rightMetricVariants[LANG_COUNT * 3];
-    for (int language = 0; language < LANG_COUNT; ++language) {
-        leftMetricVariants[language * 3] = kStrings[(int)StrId::FINAL_SCORE][language];
-        leftMetricVariants[language * 3 + 1] = kStrings[(int)StrId::REACHED_LEVEL][language];
-        leftMetricVariants[language * 3 + 2] = kTotalStardustLabel[language];
-        rightMetricVariants[language * 3] = kBestLabel[language];
-        rightMetricVariants[language * 3 + 1] = kStrings[(int)StrId::KILL_COUNT][language];
-        rightMetricVariants[language * 3 + 2] = kStardustLabel[language];
-    }
+    // ---- Type sizes (line height in px at uiS = 1). Every size is resolved
+    // to the atlas that can draw it without enlarging glyphs. ---------------
+    const TextPick hdr  = PickText(state.text, 46.0f * uiS);
+    const TextPick lab  = PickText(state.text, 26.0f * uiS);
+    const TextPick hero = PickText(state.text, 76.0f * uiS);
+    const TextPick val  = PickText(state.text, 40.0f * uiS);
 
-    float deathScaleFactor = uiS;
-    float deathScale = UiTextScale(state.text.body, UiTextLevel::Subtitle,
-                                   deathScaleFactor);
-    const float reportScale = UiTextScale(state.text.body, UiTextLevel::Subtitle, uiS);
-    float metricLabelFactor = uiS;
-    float metricLabelScale = UiTextScale(state.text.body, UiTextLevel::Subtitle,
-                                         metricLabelFactor);
-    float maxLeftMetricLabelW = MaxLocalizedTextWidth(
-        state.text.body, leftMetricVariants, LANG_COUNT * 3, metricLabelScale);
-    float maxRightMetricLabelW = MaxLocalizedTextWidth(
-        state.text.body, rightMetricVariants, LANG_COUNT * 3, metricLabelScale);
-    while (metricLabelFactor > 0.55f &&
-           maxLeftMetricLabelW + maxRightMetricLabelW + 52.0f * uiS > leftW) {
-        metricLabelFactor -= 0.04f;
-        metricLabelScale = UiTextScale(state.text.body, UiTextLevel::Subtitle,
-                                       metricLabelFactor);
-        maxLeftMetricLabelW = MaxLocalizedTextWidth(
-            state.text.body, leftMetricVariants, LANG_COUNT * 3, metricLabelScale);
-        maxRightMetricLabelW = MaxLocalizedTextWidth(
-            state.text.body, rightMetricVariants, LANG_COUNT * 3, metricLabelScale);
-    }
-    const float metricGap = std::min(
-        std::max(leftW * 0.44f, maxLeftMetricLabelW + 44.0f * uiS),
-        leftW - maxRightMetricLabelW);
-    const float metricValueScale = UiTextScale(
-        state.text.title, UiTextLevel::Description, 1.4f * uiS);
-    const float recordScale = UiTextScale(state.text.body, UiTextLevel::Supporting, uiS);
-    const float metricValueY = state.text.body.Height(L"A", metricLabelScale)
-                             + 8.0f * uiS;
-    // Digits are the tallest glyphs in the value row; measuring "A" let
-    // the coin total below the last row ride up into the earned-coin value.
-    const float metricValueH = state.text.title.Height(L"0123456789",
-                                                       metricValueScale);
-    const float metricRowH = std::max(
-        std::max(76.0f, std::min(96.0f, sh * 0.102f)),
-        metricValueY + metricValueH + 14.0f * uiS);
-
+    // Outcome line: the reason is the small line now, shrunk to fit.
     const bool hasDeathReason = state.deathReason && state.deathReason[0];
-    constexpr const wchar_t* kDeathSeparator = L" : ";
-    wchar_t deathLine[512];
-    if (hasDeathReason)
-        swprintf_s(deathLine, L"%ls%ls%ls", outcomeLabel,
-                   kDeathSeparator, state.deathReason);
-    else
-        swprintf_s(deathLine, L"%ls", outcomeLabel);
-    while (deathScaleFactor > 0.55f &&
-           state.text.body.Width(deathLine, deathScale) > leftW) {
-        deathScaleFactor = std::max(0.55f, deathScaleFactor - 0.04f);
-        deathScale = UiTextScale(state.text.body, UiTextLevel::Subtitle,
-                                 deathScaleFactor);
-    }
-    const float deathH = state.text.body.Height(deathLine, deathScale);
-    const float reportH = state.text.body.Height(kReportLabel[li], reportScale);
-    const float recordH = state.text.body.Height(kNewRecord[li], recordScale);
-    const float reportW = MaxLocalizedTextWidth(state.text.body, kReportLabel,
-                                                LANG_COUNT, reportScale);
-    const float recordW = MaxLocalizedTextWidth(state.text.body, kNewRecord,
-                                                LANG_COUNT, recordScale);
-    const bool recordInline = state.lastRunRecord &&
-        reportW + recordW + 24.0f * uiS <= leftW;
-    const float reportY = deathY + deathH + 14.0f * uiS;
-    const float recordY = reportY + (recordInline ? 0.0f : reportH + 5.0f * uiS);
-    const float reportBottomY = std::max(reportY + reportH,
-        state.lastRunRecord ? recordY + recordH : reportY);
-    const float ruleY = reportBottomY + 8.0f * uiS;
-    const float metricY = ruleY + 18.0f * uiS;
-
-    state.text.body.Draw(outcomeLabel, leftX, deathY,
-                 deathScale,
-                 state.victory ? 1.0f : 0.72f,
-                 state.victory ? 0.82f : 0.76f,
-                 state.victory ? 0.34f : 0.86f, 0.90f * ge);
-    if (hasDeathReason) {
-        const float separatorX = leftX + state.text.body.Width(
-            outcomeLabel, deathScale);
-        const float reasonX = separatorX + state.text.body.Width(
-            kDeathSeparator, deathScale);
-        state.text.body.Draw(kDeathSeparator, separatorX, deathY, deathScale,
-                     0.72f, 0.76f, 0.86f, 0.82f * ge);
-        state.text.body.Draw(state.deathReason, reasonX, deathY, deathScale,
-                     1.0f,
-                     state.victory ? 0.80f : 0.46f,
-                     state.victory ? 0.28f : 0.43f, 0.90f * ge);
+    float reasonPx = 32.0f * uiS;
+    TextPick reasonT = PickText(state.text, reasonPx);
+    while (hasDeathReason && reasonPx > 20.0f * uiS &&
+           reasonT.r->Width(state.deathReason, reasonT.scale) > leftW) {
+        reasonPx -= 2.0f * uiS;
+        reasonT = PickText(state.text, reasonPx);
     }
 
-    state.text.body.Draw(kReportLabel[li], leftX, reportY,
-                 reportScale,
-                 accentR, accentG, accentB, 0.92f * ge);
-    LogoLine(leftX, ruleY, leftX + leftW, ruleY,
-             1.0f, accentR, accentG, accentB, 0.20f * ge);
-    if (state.lastRunRecord) {
-        const float blink = 0.62f + 0.38f * sinf(now * 6.0f);
-        const float recordX = recordInline ? leftX + leftW - recordW : leftX;
-        state.text.body.Draw(kNewRecord[li], recordX, recordY, recordScale,
-                     1.0f, 0.84f, 0.28f, blink * ge);
-    }
+    const float hdrH = hdr.r->Height(kReportLabel[li], hdr.scale);
+    const float labH = lab.r->Height(kDeathLabel[li], lab.scale);
+    const float reasonH = reasonT.r->Height(L"A", reasonT.scale);
+    const float heroH = hero.r->Height(L"0123456789", hero.scale);
+    const float valH = val.r->Height(L"0123456789", val.scale);
 
-    float countF = std::min(1.0f, gof / 0.72f);
-    countF = Smoothstep(countF);
-    const long long score = (long long)(state.score * countF);
-    const long long bestValue = g_BestScore[(int)g_Difficulty];
-    const long long best = state.lastRunRecord
-        ? (long long)(bestValue * countF) : bestValue;
-    // g_Coins already includes this run's stardust; the display starts from
-    // the wallet as it was before the run and moves N across.
-    const long long runDust = std::max(0LL, g_RunStardust);
-    const long long walletBefore = std::max(0LL, g_Coins - runDust);
-    // 8-16 particles in proportion to the amount, never more than the amount.
-    const int dustParticles = (int)std::min(runDust,
-        std::clamp(8LL + runDust / 25LL, 8LL, 16LL));
-    // Particle i departs at i/K of the first 70% of the transfer window and
-    // flies for the remaining 30%; it is counted once it lands.
-    constexpr float kFlightShare = 0.30f;
-    const float transferP = std::clamp((s_transferT - kTransferDelay) / kTransferDur,
-                                       0.0f, 1.0f);
-    int arrived = 0;
-    if (dustParticles > 0) {
-        for (int i = 0; i < dustParticles; ++i) {
-            const float depart = (1.0f - kFlightShare) * (float)i / (float)dustParticles;
-            if (transferP >= depart + kFlightShare) ++arrived;
-        }
-    }
-    if (transferDone) arrived = dustParticles;
-    const long long moved = dustParticles > 0
-        ? runDust * arrived / dustParticles : 0;
-    const long long stardust = transferP > 0.0f || transferDone
-        ? runDust - moved : (long long)(runDust * countF);
-    const long long totalDust = walletBefore + moved;
-
-    auto drawMetric = [&](const wchar_t* label, long long value,
-                          float x, float y,
-                          float rr, float gg, float bb, float pop = 0.0f) {
-        state.text.body.Draw(label, x, y, metricLabelScale,
-                     0.64f, 0.76f, 0.88f, 0.88f * ge);
-        wchar_t valueBuf[64];
-        swprintf_s(valueBuf, L"%lld", value);
-        // pop briefly enlarges the value around its own centre.
-        const float valueScale = metricValueScale * (1.0f + 0.18f * pop);
-        const float growX = (state.text.title.Width(valueBuf, valueScale)
-                           - state.text.title.Width(valueBuf, metricValueScale)) * 0.5f;
-        const float growY = (state.text.title.Height(valueBuf, valueScale)
-                           - state.text.title.Height(valueBuf, metricValueScale)) * 0.5f;
-        state.text.title.Draw(valueBuf, x - growX, y + metricValueY - growY, valueScale,
-                     rr, gg, bb, 0.94f * ge);
-    };
-
-    drawMetric(T(StrId::FINAL_SCORE), score, leftX, metricY,
-               1.0f, 0.94f, 0.58f);
-    drawMetric(kBestLabel[li], best, leftX + metricGap, metricY,
-               1.0f, 0.78f, 0.34f);
-    drawMetric(T(StrId::REACHED_LEVEL), state.playerLevel,
-               leftX, metricY + metricRowH,
-               0.68f, 0.92f, 1.0f);
-    drawMetric(T(StrId::KILL_COUNT), (long long)state.killCount,
-               leftX + metricGap, metricY + metricRowH,
-               0.70f, 1.0f, 0.78f);
-    // Row 3: TOTAL on the left, GAINED on the right; the run's stardust
-    // drains straight left into the wallet total.
-    drawMetric(kStardustLabel[li], stardust, leftX + metricGap,
-               metricY + metricRowH * 2.0f,
-               0.72f, 0.88f, 1.0f);
-    // TOTAL STARDUST pops for 0.15s as the last particle lands.
-    static float s_popT = 0.0f;
-    static bool s_popped = false;
-    if (gof < 0.05f) { s_popT = 0.0f; s_popped = false; }
-    if (!s_popped && dustParticles > 0 && arrived >= dustParticles && !transferSkipped
-        && !skippedCinematic && transferP >= 1.0f) {
-        s_popT = 0.15f;
-        s_popped = true;
-    }
-    s_popT = std::max(0.0f, s_popT - c.delta);
-    const float pop = sinf(3.14159f * (1.0f - s_popT / 0.15f)) * (s_popT > 0.0f ? 1.0f : 0.0f);
-    drawMetric(kTotalStardustLabel[li], totalDust, leftX,
-               metricY + metricRowH * 2.0f,
-               1.0f, 0.86f, 0.30f, pop);
-
-    // Stardust seeps from the GAINED value straight into the TOTAL value:
-    // each mote accelerates along the row, stretches into a short streak and
-    // thins out as it sinks into the total, which glows while it absorbs.
-    if (dustParticles > 0 && transferP > 0.0f && !transferDone) {
-        const float rowValueY = metricY + metricRowH * 2.0f + metricValueY
-                              + metricValueH * 0.5f;
-        wchar_t dstBuf[32]; swprintf_s(dstBuf, L"%lld", totalDust);
-        const float fromX = leftX + metricGap;
-        const float toX = leftX + state.text.title.Width(dstBuf, metricValueScale) * 0.55f;
-        BindMainShader();
-        // Faint guide along the path while the transfer runs.
-        const float guideA = 0.22f * sinf(3.14159f * transferP) * ge;
-        LogoLine(toX, rowValueY, fromX, rowValueY, 1.0f * uiS,
-                 1.0f, 0.82f, 0.30f, guideA);
-        for (int i = 0; i < dustParticles; ++i) {
-            const float depart = (1.0f - kFlightShare) * (float)i / (float)dustParticles;
-            const float t = (transferP - depart) / kFlightShare;
-            if (t <= 0.0f || t >= 1.0f) continue;
-            const float e = t * t;                       // accelerates inward
-            const float lane = ((i * 37) % 7 - 3) * 1.2f * uiS * (1.0f - e);
-            const float x = fromX + (toX - fromX) * e;
-            const float y = rowValueY + lane;
-            const float fade = 1.0f - Smoothstep(std::clamp((t - 0.6f) / 0.4f, 0.0f, 1.0f));
-            const float size = (4.2f * (0.35f + 0.65f * fade)) * uiS;
-            const float streak = (10.0f + 34.0f * e) * uiS;
-            LogoLine(x, y, x + streak, y, size * 0.9f,
-                     1.0f, 0.78f, 0.24f, 0.30f * fade * ge);
-            auto diamond = [&](float sz, float r, float g, float b, float a) {
-                BatchTri(x, y - sz, x - sz, y, x + sz, y, r, g, b, a);
-                BatchTri(x - sz, y, x, y + sz, x + sz, y, r, g, b, a);
-            };
-            diamond(size * 1.8f, 1.0f, 0.72f, 0.16f, 0.16f * fade * ge);
-            diamond(size, 1.0f, 0.85f, 0.30f, 0.92f * fade * ge);
-            diamond(size * 0.38f, 1.0f, 1.0f, 0.88f, fade * ge);
-        }
-        // The total glows softly while it is absorbing.
-        drawDiamond(toX, rowValueY, (18.0f + 6.0f * sinf(now * 9.0f)) * uiS,
-                    1.0f, 0.80f, 0.28f, 0.10f * sinf(3.14159f * transferP) * ge);
-    }
-
-    // The owned augment list becomes a compact, rarity-colored constellation.
-    const float chartCX = sw * 0.76f;
-    const float chartCY = sh * 0.43f;
-    const float chartR = std::max(88.0f, std::min(sw * 0.18f, sh * 0.25f));
-    const float chartA = Smoothstep(std::min(1.0f,
-        std::max(0.0f, (gof - 0.12f) / 0.64f)));
-    const float pi = 3.1415927f;
-    const float chartSpin = now * 0.075f;
-
-    DrawSceneRadialVignette(chartCX, chartCY, chartR * 1.70f,
-                            0.24f * chartA);
-    DrawConstellationDisc(chartCX, chartCY, chartR * 1.18f,
-                          0.0f, 0.0f, 0.012f, 0.32f * chartA);
-    DrawSettingsOrbitArc(chartCX, chartCY, chartR, chartR * 0.68f,
-                         chartSpin - pi * 0.92f, chartSpin + pi * 0.92f,
-                         0.28f, 0.72f, 1.0f, 0.72f * uiS,
-                         0.24f * chartA);
-    DrawSettingsOrbitArc(chartCX, chartCY, chartR * 0.70f, chartR * 0.44f,
-                         -chartSpin + 0.24f, -chartSpin + pi * 1.76f,
-                         0.30f, 0.62f, 0.92f, 0.52f * uiS,
-                         0.14f * chartA);
-
-    // Keep the selected character as the constellation's identity anchor.
-    // Job icons are the same visual designs used on the loadout screen.
-    const int playerJob = IsPlayableJob(g_SelectedJob)
-                        ? g_SelectedJob : JOB_NONE;
-    const GLuint playerIcon = JobIcon(playerJob);
-    const float playerCoreR = chartR * 0.25f;
-    DrawConstellationDisc(chartCX, chartCY, playerCoreR * 1.30f,
-                          0.015f, 0.055f, 0.095f, 0.58f * chartA);
-    DrawSettingsOrbitArc(chartCX, chartCY, playerCoreR * 1.18f,
-                         playerCoreR * 0.82f, chartSpin,
-                         chartSpin + pi * 2.0f,
-                         0.44f, 0.86f, 1.0f, 0.85f * uiS,
-                         0.42f * chartA);
-    if (playerIcon) {
-        BindMainShader();
-        DrawIcon(playerIcon, chartCX - playerCoreR, chartCY - playerCoreR,
-                 playerCoreR * 2.0f, playerCoreR * 2.0f,
-                 1.0f, 1.0f, 1.0f, 0.96f * chartA);
-    } else {
-        BindMainShader();
-        DrawPlayerWeaponShell(chartCX, chartCY,
-                              std::max(12.0f, chartR * 0.075f),
-                              chartSpin + pi * 0.5f);
-    }
-
-    const wchar_t* chartTitle = kBuildLabel[li];
-    state.text.body.Draw(chartTitle,
-                 chartCX - state.text.body.Width(chartTitle,
-                     UiTextScale(state.text.body, UiTextLevel::Subtitle, uiS)) * 0.5f,
-                 chartCY - chartR * 1.34f,
-                 UiTextScale(state.text.body, UiTextLevel::Subtitle, uiS),
-                 accentR, accentG, accentB, 0.94f * chartA);
-
-    std::vector<int> modules;
-    modules.reserve(64);
-    for (int idx : state.ownedAugments) {
-        if (idx >= 0 && idx < AUG_TOTAL && !AugRemoved(ALL_AUGS[idx].type) &&
-            modules.size() < 64)
-            modules.push_back(idx);
-    }
-    const int moduleCount = (int)modules.size();
-    const int visibleModules = std::min(moduleCount, 8);
-    if (s_focusedModule < 0 || s_focusedModule >= visibleModules)
-        s_focusedModule = -1;
-    wchar_t moduleCountBuf[64];
-    swprintf_s(moduleCountBuf, L"%ls  %d", kModulesLabel[li], moduleCount);
-    state.text.body.Draw(moduleCountBuf,
-                 chartCX - state.text.body.Width(moduleCountBuf, 0.42f) * 0.5f,
-                 chartCY + chartR * 1.22f, 0.48f,
-                 0.58f, 0.68f, 0.80f, 0.76f * chartA);
-
-    int hoveredModule = -1;
-    if (visibleModules > 0) {
-        float px[8] = {}, py[8] = {};
-        const float kAngles[8] = {
-            -1.56f, -0.83f, -0.12f, 0.58f,
-             1.42f,  2.18f,  2.88f, 3.72f
-        };
-        const float kRadii[8] = {
-            0.62f, 0.78f, 0.56f, 0.76f,
-            0.66f, 0.82f, 0.55f, 0.74f
-        };
-        for (int i = 0; i < visibleModules; ++i) {
-            const float angle = chartSpin * 0.72f + kAngles[i];
-            const float radius = chartR * kRadii[i];
-            px[i] = chartCX + cosf(angle) * radius;
-            py[i] = chartCY + sinf(angle) * radius * (0.64f + 0.04f * (i & 1));
-        }
-
-        const bool allowConstellationInput = gof >= 0.999f && !skippedCinematic;
-        if (allowConstellationInput) {
-            const float hitR = std::max(15.0f, 13.0f * uiS);
-            for (int i = 0; i < visibleModules; ++i) {
-                const float dx = (float)mx - px[i];
-                const float dy = (float)my - py[i];
-                if (dx * dx + dy * dy <= hitR * hitR) {
-                    hoveredModule = i;
-                    break;
-                }
-            }
-            if (hoveredModule >= 0 && lmb && !state.previousLeftMouseDown)
-                s_focusedModule = hoveredModule;
-        }
-        const int detailModule = hoveredModule >= 0
-                               ? hoveredModule : s_focusedModule;
-
-        // The build constellation is the report's main visual, so its
-        // rarity colours are lifted toward white (as in the owned-augment
-        // list) and the edges are drawn bolder than generic background art.
-        auto buildColor = [&](int module, float& r, float& g, float& b) {
-            GetRarityColor(ALL_AUGS[modules[module]].rarity, r, g, b);
-            r = std::min(1.0f, r * 1.2f + 0.22f);
-            g = std::min(1.0f, g * 1.2f + 0.22f);
-            b = std::min(1.0f, b * 1.2f + 0.22f);
-        };
-
-        // Avoid a regular polygon: the uneven ring and selective chords make
-        // each build read as a different constellation instead of a wheel.
-        for (int i = 0; i < visibleModules; ++i) {
-            const int next = (i + 1) % visibleModules;
-            float rr, gg, bb;
-            buildColor(i, rr, gg, bb);
-            DrawVisibleConstellLine(px[i], py[i], px[next], py[next],
-                                    2.6f * uiS, rr, gg, bb,
-                                    0.95f * chartA);
-        }
-        const int chordPairs[][2] = {
-            { 0, 3 }, { 2, 5 }, { 4, 7 }, { 6, 1 }
-        };
-        const int chordCount = (visibleModules >= 6) ? 4
-                             : (visibleModules >= 4) ? 2 : 0;
-        for (int i = 0; i < chordCount; ++i) {
-            const int a = chordPairs[i][0] % visibleModules;
-            const int b = chordPairs[i][1] % visibleModules;
-            float rr, gg, bb;
-            buildColor(a, rr, gg, bb);
-            DrawVisibleConstellLine(px[a], py[a], px[b], py[b],
-                                    1.6f * uiS, rr, gg, bb,
-                                    0.62f * chartA);
-        }
-        const float labelScale = UiTextScale(state.text.body,
-                                             UiTextLevel::Supporting, uiS);
-        for (int i = 0; i < visibleModules; ++i) {
-            float rr, gg, bb;
-            buildColor(i, rr, gg, bb);
-            const bool focused = i == detailModule;
-            DrawVisibleConstellNode(px[i], py[i],
-                                    (focused ? 12.5f : 10.0f) * uiS,
-                                    rr, gg, bb, chartA, focused, true);
-            // Name label pushed outward from the chart centre so each star
-            // says which augment it is without needing a hover.
-            if (!focused) {
-                const wchar_t* name = ALL_AUGS[modules[i]].locName[li];
-                const float dx = px[i] - chartCX, dy = py[i] - chartCY;
-                const float len = std::max(1.0f, sqrtf(dx * dx + dy * dy));
-                const float off = 18.0f * uiS;
-                const float lx = px[i] + dx / len * off;
-                const float ly = py[i] + dy / len * off;
-                const float lw = state.text.body.Width(name, labelScale);
-                const float lh = state.text.body.Height(name, labelScale);
-                const float tx = dx >= 0.0f ? lx : lx - lw;
-                state.text.body.Draw(name, tx, ly - lh * 0.5f, labelScale,
-                                     rr, gg, bb, 0.86f * chartA);
-            }
-            if (focused) {
-                DrawSettingsOrbitArc(px[i], py[i], 15.0f * uiS,
-                                     9.0f * uiS, chartSpin,
-                                     chartSpin + pi * 2.0f,
-                                     rr, gg, bb, 0.85f * uiS,
-                                     0.72f * chartA);
-            }
-        }
-        const int overflow = moduleCount - visibleModules;
-        if (overflow > 0) {
-            wchar_t moreBuf[48];
-            swprintf_s(moreBuf, L"+%d MORE", overflow);
-            state.text.body.Draw(moreBuf,
-                         chartCX + chartR * 0.48f,
-                         chartCY + chartR * 1.22f, 0.44f,
-                         0.62f, 0.76f, 0.90f, 0.82f * chartA);
-        }
-
-        if (detailModule >= 0 && detailModule < visibleModules) {
-            const AugDef& selected = ALL_AUGS[modules[detailModule]];
-            const wchar_t* moduleName = selected.locName[li];
-            const wchar_t* moduleDesc = selected.locDesc[li];
-            const float detailY = chartCY + chartR * 0.82f;
-            const float detailW = chartR * 1.92f;
-            LogoLine(chartCX - detailW * 0.5f, detailY - 10.0f,
-                     chartCX + detailW * 0.5f, detailY - 10.0f,
-                     0.8f, accentR, accentG, accentB, 0.20f * chartA);
-            const float selectedScale = UiTextScale(state.text.body, UiTextLevel::Supporting, uiS);
-            state.text.body.Draw(kSelectedModule[li],
-                         chartCX - state.text.body.Width(kSelectedModule[li], selectedScale) * 0.5f,
-                         detailY, selectedScale,
-                         accentR, accentG, accentB, 0.88f * chartA);
-            const wchar_t* nameVariants[] = {
-                selected.locName[0], selected.locName[1], selected.locName[2]
-            };
-            float nameFactor = uiS;
-            float nameScale = UiTextScale(state.text.title, UiTextLevel::Description, nameFactor);
-            while (nameFactor > 0.55f &&
-                   MaxLocalizedTextWidth(state.text.title, nameVariants, LANG_COUNT, nameScale) > detailW) {
-                nameFactor -= 0.04f;
-                nameScale = UiTextScale(state.text.title, UiTextLevel::Description, nameFactor);
-            }
-            state.text.title.Draw(moduleName,
-                         chartCX - state.text.title.Width(moduleName, nameScale) * 0.5f,
-                         detailY + 22.0f * uiS, nameScale,
-                         0.92f, 0.98f, 1.0f, 0.94f * chartA);
-            if (moduleDesc && moduleDesc[0]) {
-                const float descScale = UiTextScale(state.text.body, UiTextLevel::Supporting, uiS);
-                const std::vector<std::wstring> descLines = TarotWrap(moduleDesc, descScale, detailW);
-                float descY = detailY + 53.0f * uiS;
-                for (const std::wstring& line : descLines) {
-                    const float lineW = state.text.body.Width(line.c_str(), descScale);
-                    state.text.body.Draw(line.c_str(), chartCX - lineW * 0.5f, descY,
-                                 descScale, 0.62f, 0.74f, 0.84f, 0.78f * chartA);
-                    descY += state.text.body.Height(line.c_str(), descScale) + 2.0f * uiS;
-                }
-            }
-        }
-    } else {
-        const float noModulesScale = UiTextScale(state.text.body, UiTextLevel::Description, uiS);
-        state.text.body.Draw(kNoModules[li],
-                     chartCX - state.text.body.Width(kNoModules[li], noModulesScale) * 0.5f,
-                     chartCY + chartR * 0.78f, noModulesScale,
-                     0.62f, 0.76f, 0.90f, 0.82f * chartA);
-    }
+    // Vertical stack, relative to the top of the block.
+    const float ruleY = hdrH + 8.0f * uiS;
+    const float deathLabY = ruleY + 20.0f * uiS;
+    const float reasonY = deathLabY + labH + 2.0f * uiS;
+    const float heroLabY = reasonY + reasonH + 28.0f * uiS;
+    const float heroY = heroLabY + labH + 4.0f * uiS;
+    const float rule2Y = heroY + heroH + 16.0f * uiS;
+    const float rowLabY = rule2Y + 18.0f * uiS;
+    const float rowValY = rowLabY + labH + 6.0f * uiS;
+    const float statsBottom = rowValY + valH;
 
     static float s_hovGO[kGameOverActionCount] = {};
+    static int   s_confirmGO = -1;   // Restart / Quit awaiting an answer
+    if (gof < 0.999f) s_confirmGO = -1;
     const float BW = std::min(520.0f, std::max(280.0f, sw * 0.38f));
     const float BH = std::max(48.0f, std::min(68.0f, sh * 0.075f));
     const float BGAP = std::max(10.0f, sh * 0.013f);
-    const float totalBH = (float)kGameOverActionCount * BH + (float)(kGameOverActionCount - 1) * BGAP;
+    const float totalBH = (float)kGameOverActionCount * BH
+                        + (float)(kGameOverActionCount - 1) * BGAP;
+    // Header near the top, commands at the bottom left.
+    const float top = Snap(std::max(58.0f, sh * 0.14f));
+    const float buttonsAbsY = std::max(top + statsBottom + 30.0f,
+        sh - totalBH - std::max(44.0f, sh * 0.06f));
+
+    // Header.
+    hdr.r->Draw(kReportLabel[li], Snap(leftX), Snap(top), hdr.scale,
+                accentR, accentG, accentB, 0.92f * ge);
+    LogoLine(leftX, top + ruleY, leftX + leftW, top + ruleY,
+             1.0f, accentR, accentG, accentB, 0.24f * ge);
+
+    // Outcome: small label, then the reason.
+    const wchar_t* reasonText = hasDeathReason ? state.deathReason : outcomeLabel;
+    if (hasDeathReason) {
+        lab.r->Draw(outcomeLabel, Snap(leftX), Snap(top + deathLabY), lab.scale,
+                    0.64f, 0.76f, 0.88f, 0.88f * ge);
+    }
+    reasonT.r->Draw(reasonText, Snap(leftX), Snap(top + reasonY), reasonT.scale,
+                    1.0f,
+                    state.victory ? 0.80f : 0.46f,
+                    state.victory ? 0.28f : 0.43f, 0.92f * ge);
+
+    auto drawLabel = [&](const wchar_t* label, float x, float y, bool rightAlign) {
+        const float w = lab.r->Width(label, lab.scale);
+        lab.r->Draw(label, Snap(rightAlign ? x - w : x), Snap(y), lab.scale,
+                    0.64f, 0.76f, 0.88f, 0.88f * ge);
+    };
+    auto drawValue = [&](const TextPick& p, const wchar_t* text, float x, float y,
+                         bool rightAlign, float rr, float gg, float bb) {
+        const float w = p.r->Width(text, p.scale);
+        p.r->Draw(text, Snap(rightAlign ? x - w : x), Snap(y), p.scale,
+                  rr, gg, bb, 0.94f * ge);
+    };
+
+    // ---- Journey: the wave track, played forward ---------------------------
+    // The same seven-node track as the in-run HUD. Waves 1 to 3 go by at a
+    // steady pace; from wave 3 on the current wave steps up faster and faster
+    // to the wave the run ended on, then bursts and the whole line shakes.
+    const int finalWave = std::max(1, FinalWaveCount(g_Difficulty));
+    const int waveAtDeath = std::clamp(g_GameManager.currentWave, 1, finalWave);
+    static float s_journeyT = 0.0f;
+    static int s_curWave = 0;
+    static float s_changeT = 0.0f;
+    static bool s_burstSounded = false;
+    if (gof < 0.05f) { s_journeyT = 0.0f; s_curWave = 0; s_changeT = 0.0f; s_burstSounded = false; }
+    constexpr float kStepSlow = 0.40f;                   // seconds per wave while steady
+    const float v0 = 1.0f / kStepSlow;                   // waves per second while steady
+    const float steadyTime = ((float)std::min(waveAtDeath, 3) - 1.0f) * kStepSlow;
+    const float fastWaves = (float)std::max(0, waveAtDeath - 3);
+    float fastTime = fastWaves > 0.0f ? 0.6f + 0.07f * fastWaves : 0.0f;
+    float accel = fastWaves > 0.0f
+        ? 2.0f * (fastWaves - v0 * fastTime) / (fastTime * fastTime) : 0.0f;
+    if (accel < 0.0f) { accel = 0.0f; fastTime = fastWaves / v0; }   // too few waves to speed up
+    const float journeyTotal = steadyTime + fastTime;
+    const bool journeyStarted = gof >= 0.40f || skippedCinematic;
+    if (skippedCinematic) {
+        s_journeyT = journeyTotal + 2.0f;
+        s_burstSounded = true;
+    } else if (journeyStarted) {
+        s_journeyT += delta;
+    }
+    // Position along the track, in waves: steady up to wave 3, then it
+    // accelerates (constant acceleration from the steady pace).
+    float wp = 1.0f + std::min(s_journeyT, steadyTime) * v0;
+    if (s_journeyT > steadyTime) {
+        const float s = std::min(s_journeyT - steadyTime, fastTime);
+        wp = 3.0f + v0 * s + 0.5f * accel * s * s;
+    }
+    wp = std::min(wp, (float)waveAtDeath);
+    const int curWave = std::clamp((int)floorf(wp + 0.5f), 1, waveAtDeath);
+    if (curWave != s_curWave) {
+        if (s_curWave != 0 && !skippedCinematic) Audio::PlaySfx(Audio::Sfx::Shoot);
+        s_curWave = curWave;
+        s_changeT = s_journeyT;
+    }
+    const bool arrived = journeyStarted && s_journeyT >= journeyTotal;
+    const float burstT = arrived ? s_journeyT - journeyTotal : -1.0f;
+    if (arrived && !s_burstSounded) {
+        if (!state.victory) Audio::PlaySfx(Audio::Sfx::Kill);
+        s_burstSounded = true;
+    }
+    float shakeX = 0.0f, shakeY = 0.0f;
+    if (burstT >= 0.0f && burstT < 0.9f && !state.victory) {
+        const float k = 1.0f - burstT / 0.9f;
+        const float amp = k * k * 7.0f * uiS;
+        shakeX = sinf(burstT * 71.0f) * amp;
+        shakeY = cosf(burstT * 97.0f) * amp * 0.7f;
+    }
+
+    wchar_t waveBuf[16], finalBuf[24], levelBuf[16], gainBuf[48];
+    swprintf_s(waveBuf, L"%d", curWave);
+    swprintf_s(finalBuf, L"/ %d", finalWave);
+    swprintf_s(levelBuf, L"%d", state.playerLevel);
+    swprintf_s(gainBuf, L"%lld", std::max(0LL, g_RunStardust));
+
+    // Hero: the wave counter, with the final wave beside it.
+    const bool heroHot = arrived && !state.victory;
+    drawLabel(kWaveLabel[li], leftX, top + heroLabY, false);
+    drawValue(hero, waveBuf, leftX + shakeX, top + heroY + shakeY, false,
+              1.0f, heroHot ? 0.58f : 0.88f, heroHot ? 0.50f : 0.34f);
+    const float heroW = hero.r->Width(L"00", hero.scale);
+    const float finalW = val.r->Width(L"/ 00", val.scale);
+    drawValue(val, finalBuf, leftX + heroW + 12.0f * uiS,
+              top + heroY + heroH - valH, false, 0.64f, 0.76f, 0.88f);
+
+    {
+        const float trackX0 = leftX + heroW + 12.0f * uiS + finalW + 36.0f * uiS;
+        const float availW = std::max(60.0f, leftX + leftW - trackX0);
+        const float hsT = std::clamp(availW / 216.0f, 0.5f, uiS * 1.3f);
+        const float tcx = trackX0 + availW * 0.5f + shakeX;
+        const float tcy = top + heroY + heroH * 0.62f + shakeY;
+        const float slide = (float)curWave - wp;
+        // The current node fills clockwise as the track passes through it; on
+        // the last wave it settles at how far into the wave the run got.
+        float fillShare = std::clamp(wp - (float)curWave + 0.5f, 0.0f, 1.0f);
+        if (arrived) {
+            const float share = std::clamp(1.0f - CurrentWaveSecondsRemaining(
+                g_GameTime, g_Difficulty) /
+                WaveDurationSeconds(curWave, g_Difficulty), 0.0f, 1.0f);
+            fillShare = 0.5f + (share - 0.5f) * std::clamp(burstT / 0.4f, 0.0f, 1.0f);
+        }
+        const float pulse = std::clamp((s_journeyT - s_changeT) / 0.30f, 0.0f, 1.0f);
+        DrawWaveTrack(tcx, tcy, hsT, curWave, finalWave, g_Difficulty,
+                                1.0f - fillShare, pulse, slide, ge, true,
+                                arrived && !state.victory);
+        BindMainShader();
+        // One soft ripple where the run ended.
+        if (burstT >= 0.0f && burstT < 0.8f) {
+            const float p = burstT / 0.8f;
+            const float fade = (1.0f - p) * (1.0f - p);
+            const float ringR = (11.0f + 24.0f * (1.0f - (1.0f - p) * (1.0f - p))) * hsT;
+            DrawSettingsOrbitArc(tcx, tcy, ringR, ringR, 0.0f, 6.2832f,
+                                 1.0f, state.victory ? 0.84f : 0.46f,
+                                 state.victory ? 0.30f : 0.40f,
+                                 1.3f * hsT, 0.45f * fade * ge);
+        }    }
+    LogoLine(leftX, top + rule2Y, leftX + leftW, top + rule2Y,
+             1.0f, accentR, accentG, accentB, 0.16f * ge);
+
+    // Level | stardust gained.
+    {
+        const float lvW = std::max(
+            MaxLocalizedTextWidth(*lab.r, kLevelLabel, LANG_COUNT, lab.scale),
+            val.r->Width(L"999", val.scale));
+        const float col1X = leftX + lvW + 56.0f * uiS;
+        drawLabel(kLevelLabel[li], leftX, top + rowLabY, false);
+        drawValue(val, levelBuf, leftX, top + rowValY, false, 0.68f, 0.92f, 1.0f);
+        drawLabel(kStardustLabel[li], col1X, top + rowLabY, false);
+        drawValue(val, gainBuf, col1X, top + rowValY, false, 0.72f, 0.88f, 1.0f);
+    }
+
+    // ---- Right panel: the player, the augment constellations, and stats -----
+    float panelW = std::clamp(sw * 0.30f, 300.0f, 520.0f);
+    float panelX = sw - margin - panelW;
+    const float panelMinX = leftX + leftW + 48.0f * uiS;
+    if (panelX < panelMinX) {
+        panelX = panelMinX;
+        panelW = sw - margin - panelX;
+    }
+    if (panelW >= 240.0f) {
+        static bool s_statsOpen = false;
+        static float s_statsT = 0.0f;
+        static bool s_rowsValid = false;
+        static StatRow s_rows[kMetricCount];
+        static int s_descAug = -1;
+        static float s_descT = 0.0f;
+        static float s_augRot[AUG_TOTAL] = {};
+        static float s_augVel[AUG_TOTAL] = {};
+        static int s_dragAug = -1;
+        static float s_dragAngle = 0.0f;
+        if (gof < 0.05f) {
+            for (int i = 0; i < AUG_TOTAL; ++i) { s_augRot[i] = 0.0f; s_augVel[i] = 0.0f; }
+            s_dragAug = -1;
+            s_statsOpen = false; s_statsT = 0.0f; s_rowsValid = false;
+            s_descAug = -1; s_descT = 0.0f;
+        }
+        if (!s_rowsValid) { BuildStatRows(s_rows); s_rowsValid = true; }
+
+        // Owned augments, grouped and ordered like the in-run list.
+        int counts[AUG_TOTAL] = {};
+        for (int idx : state.ownedAugments)
+            if (idx >= 0 && idx < AUG_TOTAL && !AugRemoved(ALL_AUGS[idx].type))
+                counts[idx]++;
+        int ord[AUG_TOTAL], nord = 0;
+        for (int i = 0; i < AUG_TOTAL; ++i) if (counts[i] > 0) ord[nord++] = i;
+        std::sort(ord, ord + nord, [](int a, int b) { return AugTierIndexLess(a, b); });
+
+        const bool statRowShown[kMetricCount] = {
+            true, true, true, true, true, true, true,
+            s_rows[kCritChance].total >= 0.5f, true };
+        int statRows = 0;
+        for (int m = 0; m < kMetricCount; ++m) if (statRowShown[m]) ++statRows;
+        constexpr int kDescLines = 4;
+
+        // The panel is a vertical stack; when it would run off the bottom the
+        // graphic parts (player, cells, gaps) shrink, text stays at its size.
+        float k = 1.0f;
+        float shellSize = 0, shellR = 0, shellCy = 0, augLabY = 0, augRuleY = 0;
+        float gridY = 0, cell = 0, gridH = 0, toggleY = 0, toggleRuleY = 0;
+        float tableY0 = 0, rowH = 0, descY = 0, descBottom = 0;
+        int cols = 1, shown = 0;
+        for (int pass = 0; pass < 12; ++pass) {
+            shellSize = 25.0f * 2.2f * uiS * k;
+            shellR = shellSize * 1.2f;
+            shellCy = top + shellR;
+            // Below the outer orbit arc, so the label never sits on a ring.
+            augLabY = shellCy + shellR * 1.30f + 10.0f * uiS * k;
+            augRuleY = augLabY + labH + 8.0f * uiS * k;
+            gridY = augRuleY + 10.0f * uiS * k;
+            cell = 64.0f * uiS * k;
+            cols = std::max(1, (int)(panelW / cell));
+            const int maxCells = cols * 3;
+            shown = nord > maxCells ? maxCells - 1 : nord;
+            const int cells = std::max(1, std::min(nord, maxCells));
+            const int gridRows = (cells + cols - 1) / cols;
+            gridH = (float)gridRows * cell;
+            toggleY = gridY + gridH + 12.0f * uiS * k;
+            toggleRuleY = toggleY + labH + 8.0f * uiS * k;
+            tableY0 = toggleRuleY + 12.0f * uiS * k;
+            rowH = labH + 6.0f * uiS * k;
+            descY = tableY0 + (float)statRows * rowH + 14.0f * uiS * k;
+            descBottom = descY + labH * 1.3f + (float)kDescLines * (labH + 3.0f * uiS * k);
+            if (descBottom <= sh - 24.0f || k <= 0.50f) break;
+            k -= 0.04f;
+        }
+
+        // The player's own look, with two slow orbit arcs behind it.
+        const float shellCx = panelX + panelW * 0.5f;
+        BindMainShader();
+        DrawSettingsOrbitArc(shellCx, shellCy, shellR, shellR,
+                             now * 0.35f, now * 0.35f + 3.6f,
+                             accentR, accentG, accentB, 1.4f * uiS, 0.35f * ge);
+        DrawSettingsOrbitArc(shellCx, shellCy, shellR * 1.16f, shellR * 1.16f,
+                             -now * 0.22f + 2.0f, -now * 0.22f + 4.6f,
+                             accentR, accentG, accentB, 1.0f * uiS, 0.22f * ge);
+        DrawPlayerWeaponShell(shellCx, shellCy, shellSize, now * 0.6f, now);
+        BatchFlush();
+
+        // Owned augments as the constellations the cards use.
+        lab.r->Draw(T(StrId::OWNED_AUGS), Snap(panelX), Snap(augLabY), lab.scale,
+                    accentR, accentG, accentB, 0.92f * ge);
+        LogoLine(panelX, augRuleY, panelX + panelW, augRuleY,
+                 1.0f, accentR, accentG, accentB, 0.24f * ge);
+
+        int hoverAug = -1;
+        const bool canHover = gof >= 0.9f && !skippedCinematic;
+        // Constellations keep turning on their own; hovering speeds one up and
+        // dragging turns it by hand, letting go with a little momentum.
+        if (!lmb) s_dragAug = -1;
+        for (int i = 0; i < shown; ++i) {
+            const int idx = ord[i];
+            const float ccx = panelX + ((float)(i % cols) + 0.5f) * cell;
+            const float ccy = gridY + ((float)(i / cols) + 0.5f) * cell;
+            const float dx = (float)mx - ccx, dy = (float)my - ccy;
+            const bool hov = canHover && dx * dx + dy * dy <= cell * cell * 0.20f;
+            if (hov && lmb && !state.previousLeftMouseDown && s_dragAug < 0) {
+                s_dragAug = idx;
+                s_dragAngle = atan2f(dy, dx);
+                s_augVel[idx] = 0.0f;
+            }
+            const bool grabbed = s_dragAug == idx && lmb;
+            if (grabbed) {
+                if (dx * dx + dy * dy > cell * cell * 0.004f) {   // near the centre the angle is noise
+                    const float ang = atan2f(dy, dx);
+                    float d = ang - s_dragAngle;
+                    while (d > 3.14159f) d -= 6.28318f;
+                    while (d < -3.14159f) d += 6.28318f;
+                    s_dragAngle = ang;
+                    s_augRot[idx] += d;
+                    if (delta > 0.0001f) s_augVel[idx] = s_augVel[idx] * 0.6f + (d / delta) * 0.4f;
+                }
+            } else {
+                s_augRot[idx] += s_augVel[idx] * delta;
+                s_augVel[idx] *= expf(-2.5f * delta);
+                s_augRot[idx] += (hov ? 0.9f : 0.35f + 0.05f * (float)(idx % 4)) * delta;
+            }
+            if (hov || grabbed) hoverAug = idx;
+            DrawOwnedAugConstellation(idx, ccx, ccy, cell * 0.30f,
+                                      0.95f * ge, hov || grabbed, uiS * k * 0.55f, now,
+                                      s_augRot[idx]);
+            if (counts[idx] > 1) {
+                wchar_t cb[16];
+                swprintf_s(cb, L"x%d", counts[idx]);
+                // Small, in the cell corner, clear of the shape.
+                const float cw = lab.r->Width(cb, lab.scale * 0.65f);
+                lab.r->Draw(cb, Snap(ccx + cell * 0.5f - cw),
+                            Snap(ccy + cell * 0.5f - labH * 0.65f),
+                            lab.scale * 0.65f, 1.0f, 1.0f, 1.0f, 0.95f * ge);
+            }
+        }        if (nord > shown) {
+            wchar_t more[16];
+            swprintf_s(more, L"+%d", nord - shown);
+            const float ccx = panelX + ((float)(shown % cols) + 0.5f) * cell;
+            const float ccy = gridY + ((float)(shown / cols) + 0.5f) * cell;
+            const float mw = lab.r->Width(more, lab.scale);
+            lab.r->Draw(more, Snap(ccx - mw * 0.5f), Snap(ccy - labH * 0.5f), lab.scale,
+                        0.64f, 0.76f, 0.88f, 0.90f * ge);
+        }
+
+        // Fold-out toggle: a label, a rule and a chevron.
+        const bool toggleHover = canHover &&
+            mx >= panelX && mx <= panelX + panelW &&
+            my >= toggleY - 6.0f * uiS && my <= toggleRuleY + 6.0f * uiS;
+        if (toggleHover && lmb && !state.previousLeftMouseDown)
+            s_statsOpen = !s_statsOpen;
+        const float target = s_statsOpen ? 1.0f : 0.0f;
+        s_statsT += (target - s_statsT) * std::min(1.0f, delta * 10.0f);
+        if (fabsf(target - s_statsT) < 0.002f) s_statsT = target;
+        const float openE = Smoothstep(s_statsT);
+        const float tA = (toggleHover ? 1.0f : 0.82f) * ge;
+        lab.r->Draw(kBuildStatsLabel[li], Snap(panelX), Snap(toggleY), lab.scale,
+                    accentR, accentG, accentB, tA);
+        const float chevX = panelX + panelW - 12.0f * uiS;
+        const float chevY = toggleY + labH * 0.5f;
+        const float arm = 7.0f * uiS;
+        const float dir = 1.0f - 2.0f * openE;   // 1 = pointing down, -1 = up
+        BindMainShader();
+        LogoLine(chevX - arm, chevY - arm * 0.5f * dir, chevX, chevY + arm * 0.5f * dir,
+                 1.5f * uiS, accentR, accentG, accentB, tA);
+        LogoLine(chevX + arm, chevY - arm * 0.5f * dir, chevX, chevY + arm * 0.5f * dir,
+                 1.5f * uiS, accentR, accentG, accentB, tA);
+        LogoLine(panelX, toggleRuleY, panelX + panelW, toggleRuleY,
+                 1.0f, accentR, accentG, accentB, (toggleHover ? 0.40f : 0.24f) * ge);
+
+        // Stat rows: total (white) = base (white) + augments (blue) + trial
+        // (yellow). Every part sits in its own left-aligned column so the
+        // rows line up under each other.
+        if (openE > 0.01f) {
+            const float tableY = tableY0 + (1.0f - openE) * -10.0f * uiS;
+            const float a = openE * ge;
+            const float wr = 0.95f, wg = 0.97f, wb = 1.0f;       // total, base
+            const float br = 0.45f, bg = 0.72f, bb = 1.0f;       // augments
+            const float yr = 1.0f, yg = 0.84f, yb = 0.30f;       // trial
+            const float dr = 0.55f, dg = 0.65f, db = 0.78f;      // operators
+            TextPick rp = lab;
+            // A value in one colour, its % sign included.
+            auto drawValueText = [&](const wchar_t* s, float x, float y,
+                                     float cr, float cg, float cb, float al) {
+                rp.r->Draw(s, Snap(x), Snap(y), rp.scale, cr, cg, cb, al);
+            };            float opW = 0.0f, eqW = 0.0f;
+            float labelColW = 0.0f, totalColW = 0.0f, baseColW = 0.0f;
+            // Parts follow the base one after another with the same gap between
+            // any two, positives first and nerfs last, whatever kind they are.
+            float xPart0 = 0.0f;
+            const float partGap = 12.0f * uiS;
+            float xTotal = 0.0f, xEq = 0.0f, xBase = 0.0f;
+            const float opGap = 5.0f * uiS;
+            auto partUsed = [&](int m, float v) { return fabsf(v) >= MetricEps(m); };
+            // The row's parts in display order; kind 0 = augments, 1 = trial.
+            auto rowParts = [&](const StatRow& row, int m, float* vals, int* kinds) {
+                int n = 0;
+                const float cand[2] = { row.aug, row.trial };
+                for (int nerfPass = 0; nerfPass < 2; ++nerfPass)
+                    for (int kind = 0; kind < 2; ++kind) {
+                        const float v = cand[kind];
+                        if (!partUsed(m, v) || (v < 0.0f) != (nerfPass == 1)) continue;
+                        vals[n] = v;
+                        kinds[n] = kind;
+                        ++n;
+                    }
+                return n;
+            };
+            auto partWidth = [&](int m, float v) {
+                wchar_t pb[32];
+                FormatMetric(pb, m, fabsf(v));
+                return opW + opGap + rp.r->Width(pb, rp.scale);
+            };
+            auto drawPart = [&](int m, float v, float x, float y, float cr, float cg, float cb) {
+                if (!partUsed(m, v)) return;
+                // A nerf (a negative part) has a red value, whichever part it is;
+                // the + and - signs share the operator colour.
+                const bool nerf = v < 0.0f;
+                const wchar_t opText[2] = { nerf ? L'-' : L'+', 0 };
+                if (nerf) { cr = 1.0f; cg = 0.36f; cb = 0.38f; }
+                rp.r->Draw(opText, Snap(x), Snap(y), rp.scale, dr, dg, db, 0.9f * a);
+                wchar_t pb[32];
+                FormatMetric(pb, m, fabsf(v));
+                drawValueText(pb, x + opW + opGap, y, cr, cg, cb, 0.95f * a);
+            };
+            // Shrink the text a little until the widest row fits the panel.
+            float rowFit = 1.0f;
+            for (int pass = 0; pass < 10; ++pass) {
+                rp = PickText(state.text, 26.0f * uiS * rowFit);
+                opW = std::max(rp.r->Width(L"+", rp.scale), rp.r->Width(L"-", rp.scale));
+                eqW = rp.r->Width(L"=", rp.scale);
+                labelColW = totalColW = baseColW = 0.0f;
+                for (int m = 0; m < kMetricCount; ++m) {
+                    if (!statRowShown[m]) continue;
+                    const StatRow& row = s_rows[m];
+                    labelColW = std::max(labelColW, rp.r->Width(kMetricLabel[li][m], rp.scale));
+                    wchar_t fb[32];
+                    FormatMetric(fb, m, row.total);
+                    totalColW = std::max(totalColW, rp.r->Width(fb, rp.scale));
+                    FormatMetric(fb, m, row.base);
+                    baseColW = std::max(baseColW, rp.r->Width(fb, rp.scale));
+                }
+                xTotal = panelX + labelColW + 14.0f * uiS;
+                xEq = xTotal + totalColW + 10.0f * uiS;
+                xBase = xEq + eqW + 8.0f * uiS;
+                xPart0 = xBase + baseColW + 12.0f * uiS;
+                float partsEnd = xBase + baseColW;
+                for (int m = 0; m < kMetricCount; ++m) {
+                    if (!statRowShown[m]) continue;
+                    float pv[2];
+                    int pk[2];
+                    const int pn = rowParts(s_rows[m], m, pv, pk);
+                    float ex = xPart0;
+                    for (int i = 0; i < pn; ++i) ex += partWidth(m, pv[i]) + partGap;
+                    if (pn > 0) partsEnd = std::max(partsEnd, ex - partGap);
+                }
+                if (partsEnd - panelX <= panelW || rowFit <= 0.62f) break;
+                rowFit -= 0.05f;
+            }
+            int shownRows = 0;
+            for (int m = 0; m < kMetricCount; ++m) {
+                if (!statRowShown[m]) continue;
+                const StatRow& row = s_rows[m];
+                const float y = tableY + (float)shownRows * rowH;
+                ++shownRows;
+                rp.r->Draw(kMetricLabel[li][m], Snap(panelX), Snap(y), rp.scale,
+                           0.64f, 0.76f, 0.88f, 0.88f * a);
+                wchar_t fb[32];
+                FormatMetric(fb, m, row.total);
+                drawValueText(fb, xTotal, y, wr, wg, wb, 0.98f * a);
+                rp.r->Draw(L"=", Snap(xEq), Snap(y), rp.scale, dr, dg, db, 0.9f * a);
+                FormatMetric(fb, m, row.base);
+                drawValueText(fb, xBase, y, wr, wg, wb, 0.95f * a);
+                float pv[2];
+                int pk[2];
+                const int pn = rowParts(row, m, pv, pk);
+                float px = xPart0;
+                for (int i = 0; i < pn; ++i) {
+                    if (pk[i] == 0) drawPart(m, pv[i], px, y, br, bg, bb);
+                    else            drawPart(m, pv[i], px, y, yr, yg, yb);
+                    px += partWidth(m, pv[i]) + partGap;
+                }
+            }
+        }
+        // Hovering a constellation explains it right below the stats.
+        const float descYDraw = tableY0 + openE * (float)statRows * rowH + 14.0f * uiS * k;
+        if (hoverAug >= 0) s_descAug = hoverAug;
+        s_descT += ((hoverAug >= 0 ? 1.0f : 0.0f) - s_descT) * std::min(1.0f, delta * 12.0f);
+        if (s_descAug >= 0 && s_descT > 0.01f) {
+            const AugDef& def = ALL_AUGS[s_descAug];
+            float rr, gg, bb;
+            GetRarityColor(def.rarity, rr, gg, bb);
+            const float a = s_descT * ge;
+            LogoLine(panelX, descYDraw - 8.0f * uiS * k, panelX + panelW, descYDraw - 8.0f * uiS * k,
+                     1.0f, rr, gg, bb, 0.45f * a);
+            lab.r->Draw(def.locName[li], Snap(panelX), Snap(descYDraw), lab.scale,
+                        0.45f + 0.55f * rr, 0.45f + 0.55f * gg, 0.45f + 0.55f * bb,
+                        0.98f * a);
+            wchar_t lines[kDescLines][kWrapChars];
+            const int n = WrapLines(*lab.r, lab.scale, def.locDesc[li], panelW,
+                                    lines, kDescLines);
+            float ly = descYDraw + labH * 1.3f;
+            for (int i = 0; i < n; ++i) {
+                lab.r->Draw(lines[i], Snap(panelX), Snap(ly), lab.scale,
+                            0.82f, 0.88f, 0.96f, 0.92f * a);
+                ly += labH + 3.0f * uiS * k;
+            }
+        }
+    }
+
+    // ---- Commands ----------------------------------------------------------
     const float bX0 = leftX;
-    // Reserve the full three-row metric block above the commands.
-    const float statsBottom = metricY + metricRowH * 3.0f + 18.0f;
-    const float bY0 = std::max(statsBottom + 30.0f,
-                               sh - totalBH - std::max(44.0f, sh * 0.06f));
-    // Commands appear once the stardust transfer has finished.
-    const bool showButtons = gof >= 0.999f && !skippedCinematic
-                          && transferDone && !transferSkipped;
+    const float bY0 = Snap(buttonsAbsY);
+    const bool showButtons = gof >= 0.999f && !skippedCinematic;
 
     if (showButtons) {
         const float ancX = bX0 - 36.0f;
@@ -650,7 +781,7 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     }
     for (int i = 0; i < kGameOverActionCount; ++i) {
         const float by = bY0 + (float)i * (BH + BGAP);
-        const bool hov = showButtons &&
+        const bool hov = showButtons && s_confirmGO < 0 &&
             mx >= bX0 - 26.0f && mx <= bX0 + BW + 32.0f &&
             my >= by && my <= by + BH;
         s_hovGO[i] = UpdateMenuCommandHover(s_hovGO[i], hov, delta);
@@ -666,10 +797,26 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
                                uiS, false, true, false,
                                routeVariants, LANG_COUNT);
         if (hov && lmb && !state.previousLeftMouseDown) {
-            ApplyGameOverAction(static_cast<GameOverAction>(i), window, c, state);
+            const GameOverAction action = static_cast<GameOverAction>(i);
+            if (action == GameOverAction::ReturnToMenu)
+                ApplyGameOverAction(action, window, c, state);
+            else
+                s_confirmGO = i;   // restart and exit ask first
+        }
+    }
+
+    if (s_confirmGO >= 0) {
+        const GameOverAction pending = static_cast<GameOverAction>(s_confirmGO);
+        const ConfirmText& prompt = pending == GameOverAction::Quit
+            ? ConfirmTextQuit() : ConfirmTextRestart();
+        const ConfirmChoice answer = DrawConfirmDialog(
+            true, prompt, sw, sh, mx, my, lmb, state.previousLeftMouseDown, delta);
+        if (answer != ConfirmChoice::None) {
+            s_confirmGO = -1;
+            DrawConfirmDialog(false, prompt, sw, sh, mx, my, lmb,
+                              state.previousLeftMouseDown, delta);
+            if (answer == ConfirmChoice::Yes)
+                ApplyGameOverAction(pending, window, c, state);
         }
     }
 }
-
-
-

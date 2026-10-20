@@ -5,7 +5,6 @@
 #include "Camera.h"
 #include "DrawPrim.h"
 #include "IconSystem.h"
-#include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
 
@@ -136,13 +135,13 @@ void DrawInGameSignalFrame(float x, float y, float w, float h,
     drawConstellFrame(x, y, w, h, r, g, b, alpha, corner, 3.0f, alpha * 0.12f, 1.0f);
 }
 
-void DrawPlayerWeaponShell(float cx, float cy, float sz, float aimAng) {
+void DrawPlayerWeaponShell(float cx, float cy, float sz, float aimAng, float visualTime) {
     if (!(aimAng == aimAng)) aimAng = 0.0f;
 
     const float r = 0.34f, g = 1.0f, b = 1.0f;
     const float wr = 0.92f, wg = 1.0f, wb = 1.0f;
     const float ar = 1.0f, ag = 0.62f, ab = 0.16f;
-    float t = (float)glfwGetTime();
+    const float t = visualTime;
     float kick = (g_MuzzleTimer > 0.0f) ? (g_MuzzleTimer / 0.05f) : 0.0f;
     float pulse = 0.5f + 0.5f * sinf(t * 4.0f);
     auto rotX = [&](float lx, float ly, float ang) {

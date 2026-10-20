@@ -34,7 +34,6 @@ struct PlayerStats {
     int   mobCapBonus      = 0;      // 웨이브별 소환 수 추가
 
     // ── 카운터/락 ───────────────────────────────────────
-    int  visionStacks   = 0;          // 최대 5 (총 +350)
     int  totalAugs      = 0;
     bool sizeAugTaken   = false;
 
@@ -126,12 +125,6 @@ struct PlayerStats {
             bulletSpeed += 30.0f;
             break;
         case AugType::MOVE_UP:   moveSpeedMult    *= 1.05f; break;  // +2% → +5%
-        case AugType::VISION_UP:
-            if (visionStacks < 5) {                                 // 4 → 5중첩
-                windowSize += 70.0f;                                // +50 → +70 (최대 +350)
-                ++visionStacks;
-            }
-            break;
         case AugType::REGEN_UP:  regenPerSec += 0.28f; break;
         case AugType::HP_UP:     maxHP += 15.0f; break;
 

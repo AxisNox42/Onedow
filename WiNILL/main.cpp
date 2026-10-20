@@ -800,7 +800,9 @@ static void CompleteAugReplaceFlow(int replaceSlot, int scrW, int scrH) {
 
     if (g_AugEffectProcessing) {
         ProcessAugEffectQueue(scrW, scrH);
-        if (g_GameManager.currentState == GameState::AUG_REPLACE) return;
+        // The scene state still names the completed picker. Only a new
+        // pending card means the queue opened another replacement.
+        if (g_GameManager.pendingAugIdx >= 0) return;
         g_AugEffectProcessing = false;
     }
     FinishAugmentEffects();
@@ -811,12 +813,96 @@ static void CancelAugReplaceFlow() {
     g_GameManager.replaceChoiceCount = 0;
     if (g_AugEffectProcessing) {
         ProcessAugEffectQueue(g_GameManager.screenW, g_GameManager.screenH);
-        if (g_GameManager.currentState == GameState::AUG_REPLACE) return;
+        if (g_GameManager.pendingAugIdx >= 0) return;
         g_AugEffectProcessing = false;
     }
     FinishAugmentEffects();
 }
 
+static bool DebugEditAugment(DebugAugmentAction action, int idx) {
+    const GameState state = g_GameManager.currentState;
+    if (state != GameState::RUNNING && state != GameState::PAUSED &&
+        state != GameState::READY) return false;
+    if (action == DebugAugmentAction::OpenSelection) {
+        g_GameManager.QueueAugmentReward();
+        g_GameManager.ActivateNextAugmentReward();
+        return true;
+    }
+    if (action == DebugAugmentAction::Clear) {
+        g_OwnedAugs.clear();
+        memset(g_GameManager.takenOnce, 0, sizeof(g_GameManager.takenOnce));
+        RebuildPlayerStatsFromOwned(g_GameManager.screenW, g_GameManager.screenH);
+        return true;
+    }
+    if (action == DebugAugmentAction::FillSlots) {
+        for (int i = 0; i < AUG_TOTAL && !IdentitySlotsFull(); ++i) {
+            if (!AugIdxUsesIdentitySlot(i) || AugRemoved(ALL_AUGS[i].type) ||
+                ALL_AUGS[i].type == AugType::RANDOM_AUG ||
+                std::find(g_OwnedAugs.begin(), g_OwnedAugs.end(), i) != g_OwnedAugs.end())
+                continue;
+            ApplySingleAugIdx(i, g_GameManager.screenW, g_GameManager.screenH);
+        }
+        g_GameManager.maxHP = g_Stats.maxHP;
+        return IdentitySlotsFull();
+    }
+    if (idx < 0 || idx >= AUG_TOTAL || AugRemoved(ALL_AUGS[idx].type)) return false;
+    const AugType type = ALL_AUGS[idx].type;
+    const bool instant = type == AugType::RANDOM_AUG || type == AugType::S_CHAOS ||
+                         type == AugType::S_PANDORA;
+    if (action == DebugAugmentAction::Draw) {
+        g_GameManager.QueueAugmentReward();
+        if (!g_GameManager.ActivateNextAugmentReward()) {
+            // A forced debug card remains testable even when no random
+            // candidates are eligible (once-only/prerequisite restrictions).
+            g_GameManager.QueueAugmentReward();
+            g_GameManager.augmentRewardActive = true;
+            g_GameManager.currentState = GameState::AUG_SELECT;
+            ++g_GameManager.augmentSelectionSerial;
+            g_AugExitT = g_RepExitT = -1.0f;
+            g_AugExitSlot = -1;
+            g_RepExitSlot = -3;
+        }
+        // Offer the selected augment in slot 1, retaining the other random
+        // choices and the normal confirmation/animation/replacement path.
+        for (int i = 1; i < g_GameManager.augChoiceCount; ++i)
+            if (g_GameManager.augChoices[i] == idx)
+                std::swap(g_GameManager.augChoices[0], g_GameManager.augChoices[i]);
+        g_GameManager.augChoices[0] = idx;
+        g_GameManager.augChoiceCount = std::max(1, g_GameManager.augChoiceCount);
+        g_HoveredAug = -1;
+        return true;
+    }
+    if (action == DebugAugmentAction::Grant && instant) {
+        g_GameManager.QueueAugmentReward();
+        g_GameManager.augmentRewardActive = true;
+        g_AugEffectQueue.push_back(idx);
+        g_AugEffectProcessing = true;
+        ProcessAugEffectQueue(g_GameManager.screenW, g_GameManager.screenH);
+        if (g_GameManager.pendingAugIdx < 0) {
+            g_AugEffectProcessing = false;
+            g_GameManager.maxHP = g_Stats.maxHP;
+            FinishAugmentEffects();
+        }
+        return true;
+    }
+    auto first = std::find(g_OwnedAugs.begin(), g_OwnedAugs.end(), idx);
+    if (action == DebugAugmentAction::Remove ||
+        (action == DebugAugmentAction::Toggle && first != g_OwnedAugs.end())) {
+        if (action == DebugAugmentAction::Toggle)
+            g_OwnedAugs.erase(std::remove(g_OwnedAugs.begin(), g_OwnedAugs.end(), idx), g_OwnedAugs.end());
+        else if (first != g_OwnedAugs.end()) g_OwnedAugs.erase(first);
+        else return false;
+        // Debug OFF must allow the same once-only card to be tested again.
+        if (std::find(g_OwnedAugs.begin(), g_OwnedAugs.end(), idx) == g_OwnedAugs.end())
+            g_GameManager.takenOnce[idx] = false;
+        RebuildPlayerStatsFromOwned(g_GameManager.screenW, g_GameManager.screenH);
+    } else {
+        if (instant) return false; // One-shot cards use Grant and the effect queue.
+        ApplySingleAugIdx(idx, g_GameManager.screenW, g_GameManager.screenH);
+        g_GameManager.maxHP = g_Stats.maxHP;
+    }
+    return true;
+}
 
 
 static void BeginGameplayTelemetryIfNeeded() {
@@ -910,11 +996,10 @@ int main() {
     const GLFWvidmode* mode    = glfwGetVideoMode(monitor);
     screenWidth  = mode->width;
 #ifdef _WIN32
-    // Keep the window one pixel below the monitor height.  An exact-size,
-    // unoccluded borderless window can enter DirectFlip and bypass DWM,
-    // breaking the transparent backdrop blur. Taskbar visibility is handled
-    // separately through ITaskbarList2::MarkFullscreenWindow.
-    screenHeight = mode->height - 1;
+    // Avoid an exact monitor-size surface without exposing the desktop.
+    // The extra row extends below the monitor instead of leaving a clickable
+    // one-pixel strip at its bottom edge.
+    screenHeight = mode->height + 1;
 #else
     screenHeight = mode->height;
 #endif
@@ -961,8 +1046,7 @@ int main() {
     // circular VFX clean while avoiding the 4x full-screen sample cost.
     glfwWindowHint(GLFW_SAMPLES,                2);
 
-    // Keep one pixel of desktop composition available on Windows so DWM
-    // continues to composite the transparent framebuffer and blur backdrop.
+    // Windows overscans below the monitor to retain a non-exact window size.
     GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight,
                                           "Onedow", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
@@ -1183,9 +1267,12 @@ int main() {
         &g_PlayConstellationOrbits,
         [&]() {
             if (g_GameManager.currentState != GameState::RUNNING) return;
-            g_GameTime = g_GameManager.currentWave * WAVE_DURATION_SECONDS;
+            g_GameTime = WaveStartTimeSeconds(
+                g_GameManager.currentWave + 1, g_Difficulty);
             ProcessWaveTransitions(screenWidth, screenHeight);
-        }
+        },
+        &g_OwnedAugs,
+        DebugEditAugment
     });
 
     float lastFrame        = 0.0f;
@@ -1520,9 +1607,18 @@ int main() {
                     } else if (step == "RUN") {
                         RestartCurrentRun();
                     } else if (step == "DEBUG") {
-                        if (gm.currentState != GameState::RUNNING)
+                        if (gm.currentState != GameState::RUNNING &&
+                            gm.currentState != GameState::READY &&
+                            gm.currentState != GameState::PAUSED &&
+                            gm.currentState != GameState::AUG_SELECT &&
+                            gm.currentState != GameState::DEBUFF_SELECT &&
+                            gm.currentState != GameState::AUG_REPLACE)
                             RestartCurrentRun();
                         g_DebugToolkit.SetVisible(true);
+                    } else if (step.rfind("DEBUGSEARCH=", 0) == 0) {
+                        const std::string query = step.substr(12);
+                        // Smoke uses ASCII IDs; interactive input also accepts Korean IME.
+                        g_DebugToolkit.InsertAugmentSearchText(std::wstring(query.begin(), query.end()));
                     } else if (step.rfind("STARDUST_NEAR", 0) == 0) {
                         // Simulate a contact-range loot drop for the smoke
                         // capture without depending on combat input timing.
@@ -1633,7 +1729,8 @@ int main() {
                                 "bullets=%d monsters=%d ranged=%d stardust=%d shocks=%d debris=%d queue=%d "
                                 "owned=%d typeOwned=%d takenOnce=%d score=%lld xp=%.3f level=%d hp=%.1f "
                                 "kills=%lld weapon=%d time=%.1f rewards=%d levelup=%d "
-                                "wave=%d lastDebuff=%d waveVictory=%d tier3=%d tier4=%d\n",
+                                "wave=%d lastDebuff=%d waveVictory=%d tier3=%d tier4=%d "
+                                "twin=%d damage=%.5f slots=%d pendingAug=%d choice0=%s\n",
                                 label.c_str(), (int)gm.currentState, drones, chakrams,
                                 (int)g_LaserBeams.size(), (int)g_ApproachOrbs.size(), skills,
                                 g_SkillReplaceIdx, g_PlayerRuntime.dashCooldown,
@@ -1650,12 +1747,36 @@ int main() {
                                 gm.pendingAugmentRewards,
                                 (int)gm.levelUpTransition.Active(),
                                 gm.currentWave, gm.lastWaveDebuff,
-                                (int)gm.waveVictory, tier3, tier4);
+                                (int)gm.waveVictory, tier3, tier4,
+                                (int)g_Stats.twin, g_Stats.damageMultiplier,
+                                CountIdentitySlotsUsed(), gm.pendingAugIdx,
+                                gm.augChoiceCount > 0 && gm.augChoices[0] >= 0 && gm.augChoices[0] < AUG_TOTAL
+                                    ? ALL_AUGS[gm.augChoices[0]].name : "NONE");
                             std::fclose(f);
                         };
                         const size_t eq = step.find('=');
                         const std::string arg = eq == std::string::npos ? "" : step.substr(eq + 1);
                         if (step.rfind("REG04DUMP=", 0) == 0) {
+                            dump(arg);
+                        } else if (arg.rfind("PICK_", 0) == 0) {
+                            RestartCurrentRun();
+                            g_OwnedAugs.assign(IdentitySlotMax(), augIdx(AugType::PROB_CHAIN));
+                            RebuildPlayerStatsFromOwned(screenWidth, screenHeight);
+                            gm.QueueAugmentReward();
+                            if (arg == "PICK_REWARD") gm.QueueAugmentReward();
+                            gm.ActivateNextAugmentReward();
+                            g_AugEffectProcessing = true;
+                            g_AugEffectQueue.push_back(augIdx(AugType::TWIN));
+                            ProcessAugEffectQueue(screenWidth, screenHeight);
+                            dump("PICK_OPEN");
+                            if (arg == "PICK_CHAIN")
+                                g_AugEffectQueue.push_back(augIdx(AugType::PIERCE));
+                            if (arg == "PICK_CANCEL") CancelAugReplaceFlow();
+                            else CompleteAugReplaceFlow(0, screenWidth, screenHeight);
+                            if (arg == "PICK_CHAIN") {
+                                dump("PICK_CHAIN_WAIT");
+                                CompleteAugReplaceFlow(0, screenWidth, screenHeight);
+                            }
                             dump(arg);
                         } else if (arg == "READY") {
                             fill();
@@ -1706,7 +1827,7 @@ int main() {
                     } else if (step.rfind("WAVETIME=", 0) == 0) {
                         // HUD-only smoke fixture: jump to a wave without replaying combat.
                         g_GameTime = std::clamp(std::strtof(step.c_str() + 9, nullptr),
-                            0.0f, FinalWaveCount(g_Difficulty) * WAVE_DURATION_SECONDS - 1.0f);
+                            0.0f, TotalWaveDurationSeconds(g_Difficulty) - 1.0f);
                         gm.currentWave = CurrentWaveNumber(g_GameTime, g_Difficulty);
                     } else if (step.rfind("XP=", 0) == 0) {
                         // XP=<n>: one large XP gain, levelled by the next tick.
@@ -1861,6 +1982,14 @@ int main() {
                         playerWin.y += cosf(age * 1.5f) * 55.0f;
                         g_MonsterManager.monsters.push_back(q);
                         g_SmokeTimeScale = 0.02f;
+                    } else if (step == "TRIAL10") {
+                        // TRIAL10: the max HP trial is on, to see trial values in the report.
+                        g_TrialPool[0] = 10;
+                        g_TrialSelected[0] = true;
+                    } else if (step == "DEATH") {
+                        // DEATH: the player dies now through the normal
+                        // HP <= 0 path, so the game-over report is a real one.
+                        gm.playerHP = 0.0f;
                     } else if (step == "KILL") {
                         // KILL: every living enemy dies now through the normal
                         // death pass (rewards, death animations).
@@ -3592,16 +3721,15 @@ CollisionSystem::Update(pCX, pCY,
                 const float hpFraction = std::clamp(g_GameManager.playerHP /
                     std::max(1.0f, g_Stats.maxHP), 0.0f, 1.0f);
                 const float hpHit = std::min(1.0f, g_HpBarPop / 0.35f);
-                // Full HP rests quietly; any loss keeps the arc readable and
-                // a hit flashes it to full strength.
-                const float hpRest = hpFraction >= 1.0f ? 0.40f : 0.72f;
+                // Keep the blue health arc readable even at full HP.
+                const float hpRest = hpFraction >= 1.0f ? 0.85f : 0.92f;
                 vitals_hud::DrawHpArc(pCX, pCY, playerSize, hpFraction,
                                       g_HpGhost.frac,
                                       std::min(1.0f, hpRest + 0.30f * hpHit),
                                       g_GameTime);
             }
             DrawPlayerWeaponShell(pCX, pCY, playerSize,
-                                  atan2f(wmy - pCY, wmx - pCX));
+                                  atan2f(wmy - pCY, wmx - pCX), g_GameTime);
             DrawLevelUpRings(pCX, pCY, playerSize,
                              g_GameManager.levelUpTransition.Progress());
             BatchFlush();
@@ -3897,19 +4025,9 @@ CollisionSystem::Update(pCX, pCY,
                 case GameState::CREATIVE_CONFIG:   Scene_CreativeConfig(ctx);   break;
                 case GameState::SETTINGS:          Scene_Settings(ctx);         break;
                 case GameState::READY:             Scene_Ready(ctx, sceneText); break;
-                case GameState::PAUSED: {
-                    const PauseSceneContext pauseState{
-                        g_GameManager.currentState,
-                        g_GameManager.pauseResumeState,
-                        g_SettingsReturnTo,
-                        g_ShowPauseInventory,
-                        g_LmbPrev,
-                        sceneText,
-                        ResetSettingsUi
-                    };
-                    Scene_Paused(ctx, pauseState);
-                    break;
-                }
+                // Pause is drawn after the HUD and version so its veil dims
+                // the entire gameplay view, not just the world geometry.
+                case GameState::PAUSED: break;
                 case GameState::GAMEOVER: {
                     const GameOverSceneContext reportState{
                         g_GameManager.currentState,
@@ -3932,13 +4050,8 @@ CollisionSystem::Update(pCX, pCY,
                 case GameState::AUG_REPLACE:       Scene_AugReplace(ctx);       break;
                 default: break;
                 }
-                // Owned-augment list lives only in the pause inventory; the
-                // augment selection/replace screens stay uncluttered.
-                if (st == GameState::PAUSED && g_ShowPauseInventory)
-                    Scene_OwnedAugPanel(ctx);
             }
-            // Scene_Paused can switch to SETTINGS during this render pass.
-            // Apply the new state immediately instead of waiting one frame.
+            // Refresh the cursor after scene actions change the state.
             InputUpdateGameplayCursor(window, g_GameManager.currentState,
                                       g_ShowCrosshair, g_DebugToolkit.IsVisible());
 
@@ -3976,10 +4089,9 @@ CollisionSystem::Update(pCX, pCY,
                     const float xpFrac = vitals_hud::XpFill(g_GameManager.xp,
                         g_ExpSystem.RequiredAmount(g_GameManager.playerLevel), xpAtCap);
                     static const std::wstring xpVersionLabel = std::wstring(L"v") + ONEDOW_VERSION;
-                    const float versionScale = UiTextScale(g_TextS, UiTextLevel::Supporting,
-                                                           1.20f * hudScale);
-                    const float xpRightX = sw - 16.0f * hudScale
-                        - g_TextS.Width(xpVersionLabel.c_str(), versionScale) - 24.0f * hudScale;
+                    const float versionScale = vitals_hud::BottomHudVersionScale(hudScale);
+                    const float xpRightX = sw - vitals_hud::BottomHudPadding(hudScale)
+                        - g_TextS.Width(xpVersionLabel.c_str(), versionScale) - vitals_hud::BottomHudGap(hudScale);
                     vitals_hud::DrawXpEdgeLine(sh, hudScale, xpFrac, xpAtCap, lvBuf2,
                         g_GameManager.levelUpTransition.Progress(), xpRightX);
 
@@ -4070,13 +4182,31 @@ CollisionSystem::Update(pCX, pCY,
             BindMainShader();
             static const std::wstring versionLabel = std::wstring(L"v") + ONEDOW_VERSION;
             const float versionUiScale = UiScale((float)screenWidth, (float)screenHeight);
-            const float versionScale = UiTextScale(g_TextS, UiTextLevel::Supporting,
-                                                   1.20f * versionUiScale);
-            const float versionPad = 16.0f * versionUiScale;
+            const float versionScale = vitals_hud::BottomHudVersionScale(versionUiScale);
+            const float versionPad = vitals_hud::BottomHudPadding(versionUiScale);
             g_TextS.Draw(versionLabel.c_str(),
                          screenWidth - versionPad - g_TextS.Width(versionLabel.c_str(), versionScale),
-                         screenHeight - versionPad - g_TextS.Height(versionLabel.c_str(), versionScale),
-                         versionScale, 0.48f, 0.64f, 0.76f, 0.80f);
+                         HudY((float)screenHeight, versionPad) - g_TextS.Height(versionLabel.c_str(), versionScale),
+                         versionScale, 0.62f, 0.76f, 0.88f, 0.92f);
+        }
+
+        if (g_GameManager.currentState == GameState::PAUSED) {
+            const bool sceneLmb = !g_DebugToolkit.IsInputCaptured() &&
+                                  my >= BROWSER_CHROME_H && lmb;
+            const SceneCtx ctx{ (float)screenWidth, (float)screenHeight, mx, my,
+                                sceneLmb, delta, window, &fireTimer,
+                                ResetForNewGame, RestartCurrentRun, AbandonCurrentRun,
+                                inputFocusChanged };
+            const SceneTextContext sceneText{ g_TextL, g_TextS };
+            const PauseSceneContext pauseState{
+                g_GameManager.currentState, g_GameManager.pauseResumeState,
+                g_SettingsReturnTo, g_ShowPauseInventory, g_LmbPrev,
+                sceneText, ResetSettingsUi
+            };
+            Scene_Paused(ctx, pauseState);
+            if (g_ShowPauseInventory) Scene_OwnedAugPanel(ctx);
+            InputUpdateGameplayCursor(window, g_GameManager.currentState,
+                                      g_ShowCrosshair, g_DebugToolkit.IsVisible());
         }
 
         if (!g_DebugToolkit.SuppressOverlayForCapture())

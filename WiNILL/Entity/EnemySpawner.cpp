@@ -16,8 +16,8 @@ struct EnemySpawnState {
     int lastEliteWave = 0;
     int currentWave = 0;
     int spawnedThisWave = 0;
-    // Index into kEliteKinds for each elite wave (5, 10, 15, ...), rolled
-    // once per run so the HUD can mark the wave before the elite enters.
+    // Index into kEliteKinds for each scheduled elite wave, rolled once per
+    // run so the HUD can mark it before the elite enters.
     unsigned char elitePick[8] = {};
     const Monster* eliteMob = nullptr;   // the scheduled elite while alive
 };
@@ -62,8 +62,10 @@ static MobKind ScheduledEliteKind(int wave) {
 
 static void SpawnScheduledElite(MonsterManager& monsters, int screenWidth,
                                 int screenHeight, int wave, float waveSeconds,
+                                Difficulty difficulty,
                                 int waveSpawnCap, float hpMultiplier) {
-    if (wave % ELITE_WAVE_INTERVAL != 0 || waveSeconds < ELITE_SPAWN_WAVE_SECONDS ||
+    if (!IsEliteWaveNumber(wave, difficulty) ||
+        waveSeconds < ELITE_SPAWN_WAVE_SECONDS ||
         g_EnemySpawnState.lastEliteWave == wave ||
         g_EnemySpawnState.spawnedThisWave >= waveSpawnCap) return;
 
@@ -103,9 +105,8 @@ void ResetEnemySpawnState() {
 }
 
 ScheduledEliteInfo GetScheduledElite(int wave, Difficulty difficulty) {
-    (void)difficulty;   // the elite pool is the same on every difficulty
     ScheduledEliteInfo info;
-    if (wave <= 0 || wave % ELITE_WAVE_INTERVAL != 0) return info;
+    if (!IsEliteWaveNumber(wave, difficulty)) return info;
     info.scheduled = true;
     info.kind = ScheduledEliteKind(wave);
     info.spawned = g_EnemySpawnState.lastEliteWave == wave;
@@ -123,7 +124,7 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
     constexpr float kEnemySpawnIntervalScale = 1.0f;
 #endif
     const int wave = CurrentWaveNumber(gameTime, difficulty);
-    const float waveSeconds = gameTime - (wave - 1) * WAVE_DURATION_SECONDS;
+    const float waveSeconds = gameTime - WaveStartTimeSeconds(wave, difficulty);
     const DifficultyParams difficultyParams = GetDifficultyParams(difficulty);
     if (g_EnemySpawnState.currentWave != wave) {
         g_EnemySpawnState.currentWave = wave;
@@ -145,6 +146,7 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
 
     TrackScheduledElite(monsters);
     SpawnScheduledElite(monsters, screenWidth, screenHeight, wave, waveSeconds,
+                        difficulty,
                         waveSpawnCap, hpMultiplier);
 
     g_EnemySpawnState.mobTimer += delta;

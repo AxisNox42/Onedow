@@ -80,14 +80,11 @@ void Scene_SettingsInline(const SceneCtx& c) {
     static float optHover[4][6][8] = {};
     static float holdT = 0.0f;
     static int listCursor = 1;
-    static float accordionHoverTop = -1.0f;
     static bool accordionFocusPending = false;
     // Shared normalized scroll position for the left index and right board.
     // Each pane maps the same 0..1 value to its own row geometry.
     static float settingsScroll = 0.0f;
     static float settingsScrollTarget = 0.0f;
-    // Seconds left in which wheel scrolling drives the left accordion (#38).
-    static float wheelSyncT = 0.0f;
     static bool prevListW = false;
     static bool prevListS = false;
     static int detailRow = 0;
@@ -108,7 +105,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
         s_volDrag  = false;
         holdT = 0.0f;
         listCursor = 1;
-        accordionHoverTop = -1.0f;
         accordionFocusPending = false;
         settingsScroll = 0.0f;
         settingsScrollTarget = 0.0f;
@@ -609,11 +605,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const bool overList = inputReady && mx >= listX - 24.0f * uiS
                        && mx < listX + listW + 28.0f * uiS
                        && my >= listTop && my < listBottom;
-    // Switching categories moves the headers. Keep the triggering header's
-    // hover area latched until the pointer leaves it to avoid reflow flicker.
-    if (!overList || my < accordionHoverTop
-        || my >= accordionHoverTop + listRowH || g_ScrollAccum != 0.0f)
-        accordionHoverTop = -1.0f;
     const bool categoryInteractionReady = tabSwitchT >= 0.22f;
     const bool overRightList = inputReady && categoryInteractionReady
                             && mx >= rpX - 10.0f * uiS
@@ -629,26 +620,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
         settingsScrollTarget -= g_ScrollAccum * 0.085f;
         settingsScrollTarget = std::max(0.0f, std::min(1.0f, settingsScrollTarget));
         g_ScrollAccum = 0.0f;
-        wheelSyncT = 0.6f;
     }
-    // While the board scrolls from the wheel, open the left accordion on
-    // the category whose rows sit at the board's focus line, so the index
-    // follows the scroll instead of staying on the old category (QA #38).
-    // A hovered left header still wins.
-    bool scrollSynced = false;
-    wheelSyncT = std::max(0.0f, wheelSyncT - dt);
-    if (wheelSyncT > 0.0f && accordionHoverTop < 0.0f && rightListCount > 0) {
-        const int anchor = std::max(0, std::min(rightListCount - 1,
-            (int)((settingsScroll * rightMaxScroll + rightListH * 0.42f)
-                  / rightRowH)));
-        const int anchorCategory = rightList[anchor].category;
-        if (anchorCategory != tab) {
-            tab = anchorCategory;
-            detailRow = 0;
-            listCursor = -1;
-            scrollSynced = true;
-        }
-    }
+    // Hover and wheel scrolling never change the selected category.
     const bool listWKey = c.window && glfwGetKey(c.window, GLFW_KEY_W) == GLFW_PRESS;
     const bool listSKey = c.window && glfwGetKey(c.window, GLFW_KEY_S) == GLFW_PRESS;
     if (c.inputFocusChanged) {
@@ -683,7 +656,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         settingsScrollTarget = target / rightMaxScroll;
     };
     if (focusChanged) revealFocus();
-    if (!scrollSynced && isListItem(listCursor)) {
+    if (isListItem(listCursor)) {
         const SettingsListEntry& selectedEntry = list[listCursor];
         if (selectedEntry.category != tab || selectedEntry.row != detailRow) {
             activateSettingsCategory(selectedEntry.category,
@@ -725,16 +698,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
         const bool hov = overList && mx >= listX - 10.0f * uiS
                       && mx < listX + listW + 18.0f * uiS
                       && my >= y && my < y + listRowH;
-        if (hov && list[i].header && list[i].category != tab
-            && (accordionHoverTop < 0.0f || (lmb && !g_LmbPrev))) {
-            tab = list[i].category;
-            detailRow = 0;
-            listCursor = -1;
-            accordionHoverTop = y;
-            accordionFocusPending = true;
-            for (auto& h : listHover) h = 0.0f;
-            continue;
-        }
         if (hov && lmb && !g_LmbPrev) {
             int targetIndex = i;
             if (list[i].header) {
@@ -742,6 +705,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 // frame; the first row becomes the keyboard/detail focus.
                 activateSettingsCategory(list[i].category, 0);
                 listCursor = -1;
+                accordionFocusPending = true;
                 focusChanged = true;
                 continue;
             }

@@ -39,7 +39,6 @@ public:
 
         int totalAugs = 0;
         int pierceChance = 0;
-        int visionStacks = 0;
         int droneCount = 0;
         int chakramCount = 0;
         int laserTier = 0;
@@ -92,7 +91,6 @@ public:
 
         out.totalAugs = stats.totalAugs;
         out.pierceChance = stats.pierceChance;
-        out.visionStacks = stats.visionStacks;
         out.droneCount = stats.droneCount;
         out.chakramCount = stats.chakramCount;
         out.laserTier = stats.laserTier;
@@ -225,7 +223,6 @@ public:
 
         WriteIntDiff("total_augments", b.totalAugs, a.totalAugs);
         WriteIntDiff("pierce_chance_pct", b.pierceChance, a.pierceChance);
-        WriteIntDiff("vision_stacks", b.visionStacks, a.visionStacks);
         WriteIntDiff("drone_count", b.droneCount, a.droneCount);
         WriteIntDiff("chakram_count", b.chakramCount, a.chakramCount);
         WriteIntDiff("laser_tier", b.laserTier, a.laserTier);
