@@ -210,6 +210,7 @@
     <ClCompile Include="System\DebugToolkit.cpp" />
     <ClCompile Include="System\FakeWindow.cpp" />
     <ClCompile Include="System\Input.cpp" />
+    <ClCompile Include="System\OsPane.cpp" />
     <ClCompile Include="System\WindowFx.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -283,6 +284,7 @@
     <ClInclude Include="System\SaveSystem.h" />
     <ClInclude Include="System\Settings.h" />
     <ClInclude Include="System\Translations.h" />
+    <ClInclude Include="System\OsPane.h" />
     <ClInclude Include="System\WindowFx.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -50,6 +50,7 @@ add_executable(WiNILL
     ${WINILL_DIR}/System/DebugToolkit.cpp
     ${WINILL_DIR}/System/FakeWindow.cpp
     ${WINILL_DIR}/System/Input.cpp
+    ${WINILL_DIR}/System/OsPane.cpp
     ${WINILL_DIR}/System/WindowFx.cpp
 )
 

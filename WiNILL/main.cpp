@@ -78,6 +78,7 @@
 #include "Input.h"
 #include "DebugToolkit.h"
 #include "SmokeCapture.h"
+#include "OsPane.h"
 #include "UiLayout.h"
 #include "SceneUI.h"
 #include "WindowChrome.h"
@@ -137,6 +138,65 @@ struct DroneState {
     float angle     = 0.0f;
     float fireTimer = 0.0f;
 };
+// NORMA OS-pane prototype, driven by ONEDOW_SMOKE "PANE=..." steps.
+static bool g_PaneDebug = false;          // outline panes/desktop windows, opaque backdrop
+static bool g_PaneArrangeForce = false;   // smoke stand-in for holding Ctrl while paused
+static int  g_PaneTestId = 0;
+
+static void DrawPaneOutline(const os_pane::Rect& r, hud_lines::Rgb c, float w, float a) {
+    hud_lines::Segment(r.x, r.y, r.x + r.w, r.y, w, c, a);
+    hud_lines::Segment(r.x + r.w, r.y, r.x + r.w, r.y + r.h, w, c, a);
+    hud_lines::Segment(r.x + r.w, r.y + r.h, r.x, r.y + r.h, w, c, a);
+    hud_lines::Segment(r.x, r.y + r.h, r.x, r.y, w, c, a);
+}
+
+// Screen-space debug view: desktop windows grey, pane frame ice, pane client
+// cyan, plus the client's world extent under the current camera zoom.
+static void DrawPaneDebug() {
+    BindMainShader();
+    for (const os_pane::Rect& r : os_pane::DesktopWindows())
+        DrawPaneOutline(r, { 0.54f, 0.56f, 0.66f }, 1.5f, 0.85f);
+    for (const os_pane::Pane& p : os_pane::Panes()) {
+        if (!p.open || p.minimized) continue;
+        DrawPaneOutline(p.frame, { 0.72f, 0.94f, 1.0f }, 2.0f, 0.95f);
+        DrawPaneOutline(p.client, { 0.20f, 0.88f, 0.94f }, 1.2f, 0.90f);
+        const float zoom = g_ViewZoom < 0.01f ? 0.01f : g_ViewZoom;
+        wchar_t label[160];
+        swprintf_s(label, L"pane %d  world %.0f,%.0f %.0fx%.0f  zoom %.3f  moves %d  refused %d",
+                   p.id, ScreenToWorldX(p.client.x), ScreenToWorldY(p.client.y),
+                   p.client.w / zoom, p.client.h / zoom, g_ViewZoom, p.moves, p.refusals);
+        g_TextS.Draw(label, p.frame.x, p.frame.y + p.frame.h + 8.0f, 0.5f,
+                     0.72f, 0.94f, 1.0f, 0.95f);
+    }
+    BatchFlush();
+}
+
+static void DumpPaneState(const char* label, GLFWwindow* window) {
+    std::filesystem::create_directories("Screenshots");
+    FILE* f = nullptr;
+#ifdef _MSC_VER
+    if (fopen_s(&f, "Screenshots/pane_state.txt", "a") != 0) f = nullptr;
+#else
+    f = std::fopen("Screenshots/pane_state.txt", "a");
+#endif
+    if (!f) return;
+    std::fprintf(f, "%s fg=%d focused=%d arrange=%d passthrough=%d state=%d desktop=%zu",
+                 label, os_pane::OverlayIsForeground() ? 1 : 0,
+                 glfwGetWindowAttrib(window, GLFW_FOCUSED),
+                 os_pane::ArrangeMode() ? 1 : 0,
+                 glfwGetWindowAttrib(window, GLFW_MOUSE_PASSTHROUGH),
+                 (int)g_GameManager.currentState, os_pane::DesktopWindows().size());
+    for (const os_pane::Pane& p : os_pane::Panes())
+        std::fprintf(f, " [id=%d open=%d min=%d locked=%d frame=%.0f,%.0f,%.0fx%.0f "
+                        "client=%.0f,%.0f,%.0fx%.0f moves=%d refused=%d]",
+                     p.id, p.open ? 1 : 0, p.minimized ? 1 : 0, p.locked ? 1 : 0,
+                     p.frame.x, p.frame.y, p.frame.w, p.frame.h,
+                     p.client.x, p.client.y, p.client.w, p.client.h,
+                     p.moves, p.refusals);
+    std::fputc('\n', f);
+    std::fclose(f);
+}
+
 static const int MAX_DRONES = 4;
 DroneState g_Drones[MAX_DRONES] = {};
 
@@ -1103,6 +1163,7 @@ int main() {
     InitRainMissileTex();   // ?�환 ?��? 로켓 ?�프?�이???�배�??�거+?�트 가??
 
     EnableWindowTransparency(window);
+    os_pane::Init(window);
 
     // --- �?GL/?��??�트�?종합 진단 (Windows ?�용) ---
 #ifdef _WIN32
@@ -1293,6 +1354,7 @@ int main() {
         float now   = (float)glfwGetTime();
         float delta = now - lastFrame;
         if (delta > 0.1f) delta = 0.1f;
+        const float realDelta = delta;   // panes run on wall time
         delta *= g_SmokeTimeScale;   // 1 outside smoke captures
         lastFrame = now;
 
@@ -1341,6 +1403,33 @@ int main() {
         InputUpdateTextInput(window);
         glfwPollEvents();
         UpdateWindowTaskbarPolicy(window);
+        os_pane::Tick(realDelta);
+        // Hand testing: ONEDOW_PANE_TEST=1 keeps one test pane open during runs.
+        {
+            static const bool paneHandTest = !SmokeEnv("ONEDOW_PANE_TEST").empty();
+            if (paneHandTest && g_GameManager.currentState == GameState::RUNNING) {
+                bool anyOpen = false;
+                for (const os_pane::Pane& p : os_pane::Panes()) anyOpen = anyOpen || p.open;
+                if (!anyOpen)
+                    g_PaneTestId = os_pane::Open(screenWidth * 0.5f + 80.0f,
+                                                 screenHeight * 0.5f - 180.0f, 520.0f, 360.0f);
+            }
+        }
+        // Hand testing: F8 opens another test pane during a run.
+        {
+            static bool f8Down = false;
+            const bool f8 = glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS;
+            const GameState ps = g_GameManager.currentState;
+            if (f8 && !f8Down && (ps == GameState::RUNNING || ps == GameState::PAUSED))
+                g_PaneTestId = os_pane::Open(screenWidth * 0.5f - 260.0f + 60.0f * (g_PaneTestId % 5),
+                                             screenHeight * 0.5f - 180.0f + 40.0f * (g_PaneTestId % 5),
+                                             520.0f, 360.0f);
+            f8Down = f8;
+        }
+        // Holding Ctrl while paused brings real desktop windows above the
+        // game so the player can rearrange them.
+        os_pane::SetArrangeMode(g_PaneArrangeForce ||
+            (g_GameManager.currentState == GameState::PAUSED && os_pane::ArrangeKeyHeld()));
         if (inputFocusChanged) {
             g_GameManager.spaceReleased =
                 glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE;
@@ -1629,6 +1718,64 @@ int main() {
                         const XpAmount smokeXp = equals == std::string::npos
                             ? XpFromWhole(1) : XpFromReward(std::atof(step.c_str() + equals + 1));
                         SpawnStardust(cx + 42.0f, cy, 1, cx, cy, smokeXp);
+                    } else if (step.rfind("PANE=", 0) == 0) {
+                        // NORMA OS-pane prototype:
+                        //   PANE=OPEN|OVERPLAYER|LOCK|UNLOCK|CLOSE|MIN|RESTORE|MOVE|ARRANGE|STEAL|CALM
+                        //   PANE=SHOT=<name>  save the composed screen as pane_<name>.bmp
+                        // Every step appends a line to Screenshots/pane_state.txt.
+                        const std::string action = step.substr(5);
+                        if (action == "OPEN") {
+                            if (gm.currentState != GameState::RUNNING) RestartCurrentRun();
+                            g_PaneDebug = true;
+                            const float pw = 520.0f, ph = 360.0f;
+                            g_PaneTestId = os_pane::Open(screenWidth * 0.5f + 80.0f,
+                                                         screenHeight * 0.5f - ph * 0.5f, pw, ph);
+                        } else if (action == "OVERPLAYER") {
+                            // Title bar straight through the player at screen centre.
+                            if (gm.currentState != GameState::RUNNING) RestartCurrentRun();
+                            g_PaneDebug = true;
+                            g_PaneTestId = os_pane::Open(screenWidth * 0.5f - 260.0f,
+                                                         screenHeight * 0.5f - 14.0f, 520.0f, 360.0f);
+                        } else if (action == "LOCK") {
+                            os_pane::SetLocked(g_PaneTestId, true);
+                        } else if (action == "UNLOCK") {
+                            os_pane::SetLocked(g_PaneTestId, false);
+                        } else if (action == "CLOSE") {
+                            os_pane::DebugRequestClose(g_PaneTestId);
+                        } else if (action == "MIN") {
+                            os_pane::DebugRequestMinimize(g_PaneTestId);
+                        } else if (action == "RESTORE") {
+                            os_pane::DebugRestore(g_PaneTestId);
+                        } else if (action == "MOVE") {
+                            os_pane::DebugMoveBy(g_PaneTestId, -360.0f, 120.0f);
+                        } else if (action == "ARRANGE") {
+                            g_PaneArrangeForce = true;
+                        } else if (action == "STEAL") {
+                            os_pane::DebugActivateProbe();
+                        } else if (action == "CALM") {
+                            g_PaneArrangeForce = false;
+                        } else if (action.rfind("PROBE=", 0) == 0) {
+                            // PANE=PROBE=x,y  who receives a click at that overlay point
+                            float px = 0.0f, py = 0.0f;
+                            sscanf_s(action.c_str() + 6, "%f,%f", &px, &py);
+                            bool overlayHit = false;
+                            const unsigned long pid = os_pane::DebugProcessAt(px, py, &overlayHit);
+                            std::filesystem::create_directories("Screenshots");
+                            FILE* pf = nullptr;
+                            if (fopen_s(&pf, "Screenshots/pane_state.txt", "a") != 0) pf = nullptr;
+                            if (pf) {
+                                std::fprintf(pf, "PROBE %.0f,%.0f pid=%lu overlay=%d exstyle=0x%08lX\n",
+                                             px, py, pid, overlayHit ? 1 : 0,
+                                             os_pane::DebugOverlayExStyle());
+                                std::fclose(pf);
+                            }
+                        } else if (action.rfind("SHOT=", 0) == 0) {
+                            const std::string name = action.substr(5);
+                            const std::wstring path = L"Screenshots/pane_" +
+                                std::wstring(name.begin(), name.end()) + L".bmp";
+                            os_pane::DebugCaptureScreen(path.c_str());
+                        }
+                        DumpPaneState(action.c_str(), window);
                     } else if (step == "PAUSED") {
                         if (gm.currentState != GameState::RUNNING)
                             RestartCurrentRun();
@@ -3472,7 +3619,8 @@ CollisionSystem::Update(pCX, pCY,
         // ============================================================
         // ?�더�?        // ============================================================
         glViewport(0, 0, screenWidth, screenHeight);
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        // The pane prototype hides the desktop so its screen captures stay private.
+        glClearColor(0.0f, 0.0f, 0.0f, g_PaneDebug ? 1.0f : 0.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(g_MainShader);
@@ -3991,7 +4139,9 @@ CollisionSystem::Update(pCX, pCY,
             //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
             // Desktop blur is a window setting, independent of the game scene.
             // World/HUD remain sharp during play; only modal UI blurs game pixels.
-            ConfigureWindowBackdropBlur(window, g_BackdropBlurEnabled);
+            // Panes and the real windows around them must read clearly, so the
+            // desktop blur stays off while any pane is open.
+            ConfigureWindowBackdropBlur(window, g_BackdropBlurEnabled && !os_pane::AnyOpen());
             UpdateGameTextHalo(screenHeight, g_BackdropBlurEnabled);
 
             // Scene_* dispatch still includes READY and the in-run menus;
@@ -4190,6 +4340,8 @@ CollisionSystem::Update(pCX, pCY,
                          versionScale, 0.62f, 0.76f, 0.88f, 0.92f);
         }
 
+        if (g_PaneDebug) DrawPaneDebug();
+
         if (g_GameManager.currentState == GameState::PAUSED) {
             const bool sceneLmb = !g_DebugToolkit.IsInputCaptured() &&
                                   my >= BROWSER_CHROME_H && lmb;
@@ -4288,6 +4440,7 @@ CollisionSystem::Update(pCX, pCY,
 #endif
     Audio::Shutdown();
     PlatformTimerEnd();
+    os_pane::Shutdown();
     ReleaseWindowTaskbarPolicy(window);
     InputUnregisterCallbacks(window);
     glfwTerminate();

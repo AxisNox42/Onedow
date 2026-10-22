@@ -103,6 +103,9 @@
     <ClCompile Include="System\FakeWindow.cpp">
       <Filter>System</Filter>
     </ClCompile>
+    <ClCompile Include="System\OsPane.cpp">
+      <Filter>System</Filter>
+    </ClCompile>
     <ClCompile Include="System\WindowFx.cpp">
       <Filter>System</Filter>
     </ClCompile>
@@ -277,6 +280,9 @@
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="System\Translations.h">
+      <Filter>System</Filter>
+    </ClInclude>
+    <ClInclude Include="System\OsPane.h">
       <Filter>System</Filter>
     </ClInclude>
     <ClInclude Include="System\WindowFx.h">
