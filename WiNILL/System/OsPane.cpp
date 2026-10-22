@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <algorithm>
+#include <cmath>
 #include <string>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
@@ -37,9 +38,11 @@ HWND s_overlayHwnd = nullptr;
 HWND s_ownerHwnd = nullptr;
 std::vector<Pane> s_panes;
 std::vector<HWND> s_handles;               // parallel to s_panes
+
 std::vector<Rect> s_desktop;
 float s_scanTimer = 0.0f;
 bool s_arrange = false;
+bool s_hold = false;
 bool s_sunk = false;          // arrange mode lowered the game below other windows
 bool s_passthrough = false;   // arrange mode fell back to mouse pass-through
 bool s_classReady = false;
@@ -206,6 +209,40 @@ void StackBelowGame(HWND pane) {
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
+bool SameRect(const Rect& a, const Rect& b) {
+    return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
+}
+
+// Moves a pane's in-game rectangle after its window once nothing holds it.
+void UpdateShown(Pane& p, float dt) {
+    if (!p.flying) {
+        if (s_hold || SameRect(p.shown, p.frame)) return;
+        p.flying = true;
+        p.flightTime = 0.0f;
+    }
+    // Afterimages only where the rectangle really travelled, so the slow
+    // creep does not pile them on one spot.
+    const bool travelled = p.trail.empty() ||
+        std::fabs(p.trail.back().frame.x - p.shown.x) +
+        std::fabs(p.trail.back().frame.y - p.shown.y) >= 6.0f;
+    if (travelled) p.trail.push_back({ p.shown, 0.0f });
+    p.flightTime += dt;
+    // Step toward the window's current rectangle (position and size as one
+    // vector), so a window moved again mid-flight is still chased.
+    const float dx = p.frame.x - p.shown.x, dy = p.frame.y - p.shown.y;
+    const float dw = p.frame.w - p.shown.w, dh = p.frame.h - p.shown.h;
+    const float remaining = std::sqrt(dx * dx + dy * dy + dw * dw + dh * dh);
+    const float step = kStartSpeed * std::exp(p.flightTime / kSpeedRamp) * dt;
+    if (step >= remaining) {
+        p.shown = p.frame;
+        p.flying = false;
+        return;
+    }
+    const float k = step / remaining;
+    p.shown = { p.shown.x + dx * k, p.shown.y + dy * k,
+                p.shown.w + dw * k, p.shown.h + dh * k };
+}
+
 bool IsShellWindow(HWND hwnd) {
     wchar_t cls[64] = {};
     GetClassNameW(hwnd, cls, 64);
@@ -331,6 +368,7 @@ int Open(float x, float y, float w, float h) {
     s_panes.push_back(pane);
     s_handles.push_back(hwnd);
     RefreshRects((int)s_panes.size() - 1);
+    s_panes.back().shown = s_panes.back().frame;
     return pane.id;
 }
 
@@ -341,17 +379,35 @@ void Close(int id) {
     DestroyWindow(s_handles[i]);
 }
 
+void CloseAll() {
+    for (const Pane& p : s_panes)
+        if (p.open) Close(p.id);
+}
+
 void SetLocked(int id, bool locked) {
     const int i = IndexOfId(id);
     if (i >= 0) s_panes[i].locked = locked;
 }
 
+void SetHold(bool hold) { s_hold = hold; }
+
 void Tick(float dt) {
+    // Front-to-back order among panes, for overlapping spaces.
+    int rank = 0;
+    for (HWND h = GetTopWindow(nullptr); h; h = GetWindow(h, GW_HWNDNEXT)) {
+        const int i = IndexOfHandle(h);
+        if (i >= 0) s_panes[i].zRank = rank++;
+    }
     for (size_t i = 0; i < s_panes.size(); ++i) {
         Pane& p = s_panes[i];
+        for (Ghost& g : p.trail) g.age += dt;
+        p.trail.erase(std::remove_if(p.trail.begin(), p.trail.end(),
+                                     [](const Ghost& g) { return g.age >= kGhostSeconds; }),
+                      p.trail.end());
         if (!p.open) continue;
         if (!s_arrange && AboveGame(s_handles[i])) StackBelowGame(s_handles[i]);
         RefreshRects((int)i);
+        UpdateShown(p, dt);
         if (p.refusalTimer > 0.0f) {
             p.refusalTimer -= dt;
             if (p.refusalTimer <= 0.0f) {
@@ -511,7 +567,9 @@ void Init(GLFWwindow*) {}
 void Shutdown() {}
 int  Open(float, float, float, float) { return 0; }
 void Close(int) {}
+void CloseAll() {}
 void SetLocked(int, bool) {}
+void SetHold(bool) {}
 void Tick(float) {}
 void SetArrangeMode(bool) {}
 bool ArrangeMode() { return false; }

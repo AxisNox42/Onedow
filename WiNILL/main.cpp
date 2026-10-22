@@ -171,6 +171,62 @@ static void DrawPaneDebug() {
     BatchFlush();
 }
 
+// NORMA's health under the wave track: a dim full-length line, the bright
+// remaining share over it, and a notch where phase 2 begins. Lines only.
+static void DrawNormaBossBar(float sw, float scale, float topY) {
+    const Monster* boss = nullptr;
+    for (const Monster* m : g_MonsterManager.monsters)
+        if (m->kind == MobKind::NORMA && m->alive) { boss = m; break; }
+    if (!boss) return;
+    const float ratio = std::clamp(boss->hp / std::max(1.0f, boss->normaMaxHp), 0.0f, 1.0f);
+    const float w = sw * 0.36f, x0 = (sw - w) * 0.5f;
+    const float y = topY + 92.0f * scale;
+    const hud_lines::Rgb ice{ 0.72f, 0.94f, 1.0f };
+    BindMainShader();
+    hud_lines::Segment(x0, y, x0 + w, y, 2.0f * scale, ice, 0.22f);
+    if (ratio > 0.0f)
+        hud_lines::Segment(x0, y, x0 + w * ratio, y, 3.0f * scale, ice, 0.95f);
+    const float notch = x0 + w * norma::kPhase2Ratio;
+    hud_lines::Segment(notch, y - 6.0f * scale, notch, y + 6.0f * scale, 1.4f * scale, ice, 0.7f);
+    BatchFlush();
+    const wchar_t* name = boss->normaPhase == 2 ? L"NORMA  II" : L"NORMA";
+    const float ts = 0.55f * scale;
+    g_TextS.Draw(name, x0, y - 10.0f * scale - g_TextS.Height(name, ts), ts,
+                 0.72f, 0.94f, 1.0f, 0.95f);
+}
+
+// Ice corner brackets on every open pane, drawn by the game above the pane's
+// own frame. They thin and dim as the pane's durability wears down.
+static float PaneDurabilityLeft(const os_pane::Pane& p);
+static void DrawPaneBrackets() {
+    bool any = false;
+    const hud_lines::Rgb ice{ 0.72f, 0.94f, 1.0f };
+    for (const os_pane::Pane& p : os_pane::Panes()) {
+        if (!p.open || p.minimized) continue;
+        if (!any) { BindMainShader(); any = true; }
+        // Afterimages of the in-game rectangle flying after its window.
+        for (const os_pane::Ghost& g : p.trail) {
+            const float fade = 1.0f - g.age / os_pane::kGhostSeconds;
+            DrawPaneOutline(g.frame, ice, 1.4f, 0.45f * fade * fade);
+        }
+        const float left = PaneDurabilityLeft(p);
+        const float width = 1.2f + 2.2f * left;
+        const float alpha = 0.35f + 0.60f * left;
+        const float arm = std::min(26.0f, std::min(p.shown.w, p.shown.h) * 0.25f);
+        const float xs[2] = { p.shown.x, p.shown.x + p.shown.w };
+        const float ys[2] = { p.shown.y, p.shown.y + p.shown.h };
+        for (int cx = 0; cx < 2; ++cx) {
+            for (int cy = 0; cy < 2; ++cy) {
+                const float x = xs[cx], y = ys[cy];
+                const float sx = cx == 0 ? 1.0f : -1.0f, sy = cy == 0 ? 1.0f : -1.0f;
+                hud_lines::Segment(x, y, x + sx * arm, y, width, ice, alpha);
+                hud_lines::Segment(x, y, x, y + sy * arm, width, ice, alpha);
+            }
+        }
+    }
+    if (any) BatchFlush();
+}
+
 static void DumpPaneState(const char* label, GLFWwindow* window) {
     std::filesystem::create_directories("Screenshots");
     FILE* f = nullptr;
@@ -260,6 +316,69 @@ static void SpawnShockWave(float x, float y, float maxR, float life,
 
 // 검�?근접 ?�윙 ?�상 (조�? 방향 ??
 float g_MuzzleX = 0.0f, g_MuzzleY = 0.0f, g_MuzzleAng = 0.0f, g_MuzzleTimer = 0.0f;
+
+// NORMA window spaces (SpaceRules.h): open panes become world regions each
+// frame, front-most first, and the player's space is resolved from its centre.
+static void RebuildPaneSpaces(const SpatialBounds& player) {
+    std::vector<const os_pane::Pane*> order;
+    for (const os_pane::Pane& p : os_pane::Panes())
+        if (p.open && !p.minimized) order.push_back(&p);
+    std::sort(order.begin(), order.end(),
+              [](const os_pane::Pane* a, const os_pane::Pane* b) { return a->zRank < b->zRank; });
+    space::g_Regions.clear();
+    for (const os_pane::Pane* p : order)
+        space::g_Regions.push_back({ p->id,
+            ScreenToWorldX(p->shown.x), ScreenToWorldY(p->shown.y),
+            ScreenToWorldX(p->shown.x + p->shown.w), ScreenToWorldY(p->shown.y + p->shown.h) });
+    space::g_PlayerSpace = space::SpaceAt(player.x + player.width * 0.5f,
+                                          player.y + player.height * 0.5f);
+}
+
+// Pane durability: every shot a border stops wears that pane down; a worn
+// out pane self-destructs. What the blast does is still undecided, so for
+// now it only closes the pane with a shockwave.
+struct PaneWear { int id = 0; float hits = 0.0f; };
+static std::vector<PaneWear> g_PaneWear;
+
+static PaneWear& WearOf(int id) {
+    for (PaneWear& w : g_PaneWear) if (w.id == id) return w;
+    g_PaneWear.push_back({ id, 0.0f });
+    return g_PaneWear.back();
+}
+
+static float PaneMaxDurability(const os_pane::Pane& p) {
+    const float zoom = g_ViewZoom < 0.01f ? 0.01f : g_ViewZoom;
+    return space::MaxDurability((p.shown.w / zoom) * (p.shown.h / zoom));
+}
+
+// 0..1 durability left, 1 for panes nothing has hit yet.
+static float PaneDurabilityLeft(const os_pane::Pane& p) {
+    for (const PaneWear& w : g_PaneWear)
+        if (w.id == p.id) return std::max(0.0f, 1.0f - w.hits / PaneMaxDurability(p));
+    return 1.0f;
+}
+
+static void ApplyPaneAbsorbs() {
+    for (const space::Absorb& a : space::g_Absorbed) {
+        SpawnSparks(a.x, a.y, 3, 0.76f, 0.70f, 1.0f, 160.0f);
+        if (a.paneId > 0) WearOf(a.paneId).hits += 1.0f;
+    }
+    space::g_Absorbed.clear();
+    for (const os_pane::Pane& p : os_pane::Panes()) {
+        if (!p.open || PaneDurabilityLeft(p) > 0.0f) continue;
+        const float cx = ScreenToWorldX(p.shown.x + p.shown.w * 0.5f);
+        const float cy = ScreenToWorldY(p.shown.y + p.shown.h * 0.5f);
+        SpawnShockWave(cx, cy, std::max(p.shown.w, p.shown.h) * 0.6f / g_ViewZoom, 0.5f,
+                       0.72f, 0.94f, 1.0f);
+        os_pane::Close(p.id);
+    }
+    g_PaneWear.erase(std::remove_if(g_PaneWear.begin(), g_PaneWear.end(),
+        [](const PaneWear& w) {
+            for (const os_pane::Pane& p : os_pane::Panes())
+                if (p.id == w.id && p.open) return false;
+            return true;
+        }), g_PaneWear.end());
+}
 // Static Field's weapon pulse is gameplay state, not just a player-shell
 // visual.  Keeping its timer outside the render path makes the area weapon
 // behave consistently at every frame rate and during fixed-step simulation.
@@ -608,16 +727,16 @@ static void ApplyWaveDebuff(int scrW, int scrH) {
     g_GameManager.waveDebuffToast = 4.0f;
 }
 
-static void CompleteWaveRun(int finalWave) {
+// Ends the run as a win. reason holds the KR/EN/JP line shown with the
+// final wave number.
+static void FinishRunVictory(int finalWave, const wchar_t* const (&reason)[3],
+                             const char* telemetryTag) {
     if (g_GameManager.waveVictory || g_GameManager.currentState != GameState::RUNNING)
         return;
     g_GameManager.waveVictory = true;
     g_GameplayTelemetry.EndRun(g_GameTime, g_GameManager.playerLevel,
-                               g_GameManager.xp, g_Stats, "wave_complete");
+                               g_GameManager.xp, g_Stats, telemetryTag);
     const int li = std::max(0, std::min(2, LangIndex()));
-    const wchar_t* reason[3] = {
-        L"웨이브 생존 완료", L"Waves Survived", L"ウェーブ生存完了"
-    };
     swprintf_s(g_DeathReason, L"%ls %d", reason[li], finalWave);
     Audio::StopBgm();
     g_GameOverFade = 0.0f;
@@ -625,6 +744,21 @@ static void CompleteWaveRun(int finalWave) {
         g_CreativeMode, static_cast<int>(g_Difficulty), g_GameManager.score,
         g_Stats.killCount, (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
     g_GameManager.currentState = GameState::GAMEOVER;
+}
+
+static void CompleteWaveRun(int finalWave) {
+    static const wchar_t* const reason[3] = {
+        L"웨이브 생존 완료", L"Waves Survived", L"ウェーブ生存完了"
+    };
+    FinishRunVictory(finalWave, reason, "wave_complete");
+}
+
+// Felling NORMA, the final wave's boss, wins the run at once.
+static void CompleteBossRun(int finalWave) {
+    static const wchar_t* const reason[3] = {
+        L"NORMA 처치", L"NORMA Defeated", L"NORMA撃破"
+    };
+    FinishRunVictory(finalWave, reason, "boss_defeated");
 }
 
 static void ProcessWaveTransitions(int scrW, int scrH) {
@@ -1403,7 +1537,23 @@ int main() {
         InputUpdateTextInput(window);
         glfwPollEvents();
         UpdateWindowTaskbarPolicy(window);
+        {
+            // Moved windows' in-game rectangles wait for the game to resume.
+            const GameState hs = g_GameManager.currentState;
+            os_pane::SetHold(hs != GameState::RUNNING && hs != GameState::DYING);
+        }
         os_pane::Tick(realDelta);
+        // Panes belong to a run: leaving it (game over, menus, a fresh start)
+        // closes them all.
+        {
+            const GameState ps = g_GameManager.currentState;
+            if (ps == GameState::GAMEOVER || ps == GameState::READY ||
+                ps == GameState::MAIN_MENU || ps == GameState::CREATIVE_CONFIG ||
+                ps == GameState::CODEX || ps == GameState::TUTORIAL)
+                os_pane::CloseAll();
+        }
+        ApplyPaneAbsorbs();
+        RebuildPaneSpaces(playerWin);
         // Hand testing: ONEDOW_PANE_TEST=1 keeps one test pane open during runs.
         {
             static const bool paneHandTest = !SmokeEnv("ONEDOW_PANE_TEST").empty();
@@ -1414,6 +1564,16 @@ int main() {
                     g_PaneTestId = os_pane::Open(screenWidth * 0.5f + 80.0f,
                                                  screenHeight * 0.5f - 180.0f, 520.0f, 360.0f);
             }
+        }
+        // Hand testing: F9 brings NORMA in now during a run.
+        {
+            static bool f9Down = false;
+            const bool f9 = glfwGetKey(window, GLFW_KEY_F9) == GLFW_PRESS;
+            if (f9 && !f9Down && g_GameManager.currentState == GameState::RUNNING)
+                DebugSpawnNorma(g_MonsterManager, screenWidth,
+                                g_Stats.monsterHpMult *
+                                    GetDifficultyParams(g_Difficulty).enemyHpMultiplier);
+            f9Down = f9;
         }
         // Hand testing: F8 opens another test pane during a run.
         {
@@ -2755,7 +2915,7 @@ int main() {
                     float rad = 380.0f, r2 = rad * rad, knock = 130.0f;
                     auto hitKB = [&](float& ex, float& ey, auto applyDamage) {
                         float dx = ex - cx, dy = ey - cy, d2 = dx*dx + dy*dy;
-                        if (d2 < r2) {
+                        if (d2 < r2 && space::Reaches(space::kPlayerSource, ex, ey)) {
                             applyDamage();
                             float d = std::sqrt(d2)+1e-3f;
                             ex += dx/d*knock; ey += dy/d*knock;
@@ -2888,6 +3048,7 @@ int main() {
                         float chy = pCY + sinf(g_Chakrams[c].angle) * CHAKRAM_RADIUS;
                         for (auto m : g_MonsterManager.monsters) {
                             if (!m->alive) continue;
+                            if (!space::Reaches(space::kPlayerSource, m->worldX, m->worldY)) continue;
                             float ddx = chx - m->worldX, ddy = chy - m->worldY;
                             float d2 = ddx * ddx + ddy * ddy;
                             float pdx = m->worldX - pCX, pdy = m->worldY - pCY;
@@ -3345,6 +3506,7 @@ CollisionSystem::Update(pCX, pCY,
                               g_GameTime, g_GameManager.score, g_Difficulty);
             g_GameTime += delta;
             ProcessWaveTransitions(screenWidth, screenHeight);
+            if (NormaDefeated()) CompleteBossRun(FinalWaveCount(g_Difficulty));
             float approachSpeed = 120.0f *
                 (1.0f + 0.20f * (float)(g_Stats.approachStacks > 0 ? g_Stats.approachStacks - 1 : 0));
             for (auto& orb : g_ApproachOrbs) {
@@ -3407,7 +3569,12 @@ CollisionSystem::Update(pCX, pCY,
                             if (!m->alive) continue;
                             float ddx = m->worldX - chx, ddy = m->worldY - chy;
                             if (ddx*ddx + ddy*ddy < hitR2) {
-                                g_MonsterManager.ApplyDamage(*m, m->hp);
+                                // The boss takes steady damage instead of the
+                                // instant kill ordinary mobs get.
+                                g_MonsterManager.ApplyDamage(*m, m->kind == MobKind::NORMA
+                                    ? g_Stats.GetBaseDamage() * g_Stats.GetDamageMultiplier() *
+                                          3.0f * delta
+                                    : m->hp);
                                 ch.hp -= 2.0f;
                             }
                         }
@@ -3809,12 +3976,23 @@ CollisionSystem::Update(pCX, pCY,
 
         DrawRegulusBeams(g_MonsterManager, g_GameTime);
 
+        // Mobs in another window space than the player read dim (lines
+        // stay, only brightness drops), so the player sees who can reach them.
+        const float spaceBaseAlpha = g_BatchAlpha;
+        const auto dimIfElsewhere = [&](float x, float y) {
+            g_BatchAlpha = space::Active() && space::SpaceAt(x, y) != space::g_PlayerSpace
+                ? spaceBaseAlpha * 0.35f : spaceBaseAlpha;
+        };
         for (auto m : g_MonsterManager.monsters) {
-            if (m->alive || m->DeathEffectVisible()) drawMob(m, g_GameTime);
+            if (!(m->alive || m->DeathEffectVisible())) continue;
+            dimIfElsewhere(m->worldX, m->worldY);
+            drawMob(m, g_GameTime);
         }
         for (auto r : g_MonsterManager.rangedMobs) {
+            dimIfElsewhere(r->worldX, r->worldY);
             drawRangedMob(r, g_GameTime);
         }
+        g_BatchAlpha = spaceBaseAlpha;
         DrawBulletHalos(g_Bullets);
         for (auto& b : g_Bullets) {
             if (b.active) drawBullet(b);
@@ -4256,6 +4434,7 @@ CollisionSystem::Update(pCX, pCY,
                         st == GameState::RUNNING || st == GameState::PAUSED);
                 }
                 DrawWaveHud(sw, hudScale, hudTopY, g_GameTime, g_Difficulty, g_GameManager);
+                DrawNormaBossBar(sw, hudScale, hudTopY);
 
                 // ?�상?? FPS
                 wchar_t fpsBuf[32];
@@ -4340,6 +4519,7 @@ CollisionSystem::Update(pCX, pCY,
                          versionScale, 0.62f, 0.76f, 0.88f, 0.92f);
         }
 
+        DrawPaneBrackets();
         if (g_PaneDebug) DrawPaneDebug();
 
         if (g_GameManager.currentState == GameState::PAUSED) {

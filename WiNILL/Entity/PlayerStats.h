@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include "Augment.h"
+#include "SpaceRules.h"
 
 struct PlayerStats {
     // ── 기본 스탯 ───────────────────────────────────────
@@ -529,6 +530,8 @@ inline void TickPlayerShield(float dt) {
 
 inline void HurtPlayer(float& hp, float raw) {
     if (raw <= 0.0f) return;
+    // NORMA window spaces: an attacker in another space cannot reach.
+    if (!space::PlayerExposed()) return;
     float dmg = raw * g_PlayerDmgMult;
     if (g_PlayerShield > 0.0f) {
         if (dmg <= g_PlayerShield) {

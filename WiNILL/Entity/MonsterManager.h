@@ -5,6 +5,7 @@
 #include <cmath>
 #include "Monster.h"
 #include "RangedMob.h"
+#include "SpaceRules.h"
 
 class MonsterManager {
 public:
@@ -19,13 +20,20 @@ public:
     };
     std::vector<RegulusBeam> regulusBeams;
 
-    float ApplyDamage(Monster& target, float damage) {
+    // source: the NORMA window space the hit comes from (SpaceRules.h).
+    // Player weapons default to the player's space; a target in another
+    // space takes nothing.
+    float ApplyDamage(Monster& target, float damage,
+                      int source = space::kPlayerSource) {
+        if (!space::Reaches(source, target.worldX, target.worldY)) return 0.0f;
         const float dealt = target.ApplyDamage(damage);
         HandleShieldBreak(target);
         return dealt;
     }
 
-    float ApplyDamage(RangedMob& target, float damage) {
+    float ApplyDamage(RangedMob& target, float damage,
+                      int source = space::kPlayerSource) {
+        if (!space::Reaches(source, target.worldX, target.worldY)) return 0.0f;
         const float dealt = target.ApplyDamage(damage);
         HandleShieldBreak(target);
         return dealt;
@@ -97,6 +105,7 @@ public:
         if (!m) return 0;
         int tier = 0;
         switch (m->kind) {
+        case MobKind::NORMA:    tier = 5; break;   // nothing pushes the boss
         case MobKind::GENESIS:  tier = 4; break;
         case MobKind::GRAVIS:   tier = 3; break;
         case MobKind::QUASAR:   tier = 4; break;
@@ -123,6 +132,8 @@ public:
                    float gateWW = -1.0f, float gateWH = -1.0f,
                    const glm::vec4& attackBounds = glm::vec4(0.0f)) {
         for (auto m : monsters) {
+            // Whatever this mob does to the player only lands in its own space.
+            space::HurtSourceScope hurtSource(space::SpaceAt(m->worldX, m->worldY));
             m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
                       gateWX, gateWY, gateWW, gateWH, &bullets, attackBounds);
             if(m->kind==MobKind::GENESIS && !m->alive)
@@ -132,8 +143,10 @@ public:
                 }
         }
 
-        for (auto r : rangedMobs)
+        for (auto r : rangedMobs) {
+            space::HurtSourceScope hurtSource(space::SpaceAt(r->worldX, r->worldY));
             r->Update(playerCX, playerCY, dt, bullets, rmobMoveMult);
+        }
         ProcessPendingShieldBreaks();
 
         // rotorHpMult is the Rotor-only HP upgrade; Genesis children scale
@@ -235,12 +248,16 @@ private:
 
             monsterPool.clear();
             rangedPool.clear();
+            // Regulus does not see past a window border, so it never aims
+            // a shield laser into another space.
+            const int sourceSpace = space::SpaceAt(source->worldX, source->worldY);
             const auto inRange = [&](float x, float y) {
                 const float dx = x - source->worldX, dy = y - source->worldY;
-                return dx * dx + dy * dy <= rangeSq;
+                return dx * dx + dy * dy <= rangeSq && space::Reaches(sourceSpace, x, y);
             };
             for (auto* target : monsters)
                 if (target->alive && target->kind != MobKind::REGULUS &&
+                    target->kind != MobKind::NORMA &&
                     RegulusEligible(target->regulusShield) &&
                     inRange(target->worldX, target->worldY))
                     monsterPool.push_back(target);
@@ -531,7 +548,7 @@ private:
         for (size_t i = 0; i < monsters.size(); ++i) {
             if (!monsters[i]->alive || pushCounts[i] < 4 ||
                 monsters[i]->kind == MobKind::SWARM) continue;
-            ApplyDamage(*monsters[i], kCrushDps * dt);
+            ApplyDamage(*monsters[i], kCrushDps * dt, space::kUntracked);
         }
     }
 };

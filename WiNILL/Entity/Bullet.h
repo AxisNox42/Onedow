@@ -47,6 +47,9 @@ public:
     // Magnetar whose broken ward face this shot already passed through.
     const void* wardPassed = nullptr;
     bool  crescentBlade = false; // 초승달 검기 — arc 모양 렌더
+    // NORMA window space the shot was fired in (SpaceRules.h); -1 until its
+    // first update. It dissolves on reaching any other space.
+    int   space = -1;
 
     glm::vec3 color = glm::vec3(1.0f, 1.0f, 0.0f);
 

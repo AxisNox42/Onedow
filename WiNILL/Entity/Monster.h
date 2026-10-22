@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include "NormaBoss.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -73,6 +74,7 @@ enum class MobKind {
     REGULUS,
     ANTARES,
     MAGNETAR,
+    NORMA,      // window boss (NormaBoss.h); keep last so XP slots stay put
 };
 
 // Elite mobs carry a second ability and an elite frame.
@@ -390,6 +392,12 @@ public:
     float contactDmg = 5.0f;
     float singularityGrace = 0.0f;
 
+    // NORMA boss state (NormaBoss.h).
+    float normaMaxHp = 0.0f;
+    int normaPhase = 1;
+    float normaPhaseFlash = 0.0f;   // > 0 right after entering phase 2
+    float normaVisualAngle = 0.0f;
+
     EnemyShieldState regulusShield;
     float regulusBaseHp = 0.0f;
     float regulusShieldRegenTimer = 0.0f;
@@ -593,6 +601,16 @@ public:
     void MakeKind(MobKind requested) {
         kind = requested;
         sizeScale = 1.0f;
+        if (kind == MobKind::NORMA) {
+            color = glm::vec3(0.72f, 0.94f, 1.0f);
+            hp = norma::kBaseHp * (hp / 90.0f);   // keeps the run's HP scaling
+            normaMaxHp = hp;
+            normaPhase = 1;
+            speed = norma::kMoveSpeed;
+            sizeScale = norma::kSizeScale;
+            contactDmg = norma::kContactDps;
+            return;
+        }
         if (kind == MobKind::GENESIS) {
             color = glm::vec3(0.70f, 0.08f, 0.12f);
             genesisChildHpMult = hp / 90.0f;   // progression x trial ramp at spawn
@@ -2263,6 +2281,23 @@ public:
             HurtPlayer(playerHP, dps * deltaTime);
     }
 
+    // NORMA keeps a hover distance from the player and switches to phase 2
+    // once at or below norma::kPhase2Ratio of its max HP. Its patterns come in
+    // a later step.
+    void UpdateNorma(float dx, float dy, float distance, float deltaTime,
+                     float& playerHP, float speedMult) {
+        normaVisualAngle += deltaTime * (normaPhase == 2 ? 0.9f : 0.35f);
+        normaPhaseFlash = std::max(0.0f, normaPhaseFlash - deltaTime);
+        if (normaPhase == 1 && norma::PhaseFor(hp, normaMaxHp) == 2) {
+            normaPhase = 2;
+            normaPhaseFlash = norma::kPhaseFlashSeconds;
+        }
+        const float move = norma::HoverSpeed(distance) * speedMult * deltaTime;
+        worldX += dx / distance * move;
+        worldY += dy / distance * move;
+        TryContact(distance, playerHP, contactDmg, deltaTime);
+    }
+
     void UpdateGimbal(float playerCX, float playerCY, float deltaTime,
                       float distance, float dx, float dy, float& playerHP,
                       float speedMult, std::vector<Bullet>* bullets,
@@ -2491,6 +2526,11 @@ public:
         const float dx = playerCX - worldX;
         const float dy = playerCY - worldY;
         const float distance = std::sqrt(dx * dx + dy * dy) + 1e-4f;
+
+        if (kind == MobKind::NORMA) {
+            UpdateNorma(dx, dy, distance, deltaTime, playerHP, speedMult);
+            return;
+        }
 
         if(genesisThrown && kind==MobKind::ROTOR && genesisRotorPhase==0 && thrownDuration>0) {
             thrownTimer+=deltaTime;

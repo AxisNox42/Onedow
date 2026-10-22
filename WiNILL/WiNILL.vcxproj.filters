@@ -282,6 +282,12 @@
     <ClInclude Include="System\Translations.h">
       <Filter>System</Filter>
     </ClInclude>
+    <ClInclude Include="Entity\SpaceRules.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
+    <ClInclude Include="Entity\NormaBoss.h">
+      <Filter>Entity</Filter>
+    </ClInclude>
     <ClInclude Include="System\OsPane.h">
       <Filter>System</Filter>
     </ClInclude>

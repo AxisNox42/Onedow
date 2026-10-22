@@ -285,6 +285,8 @@
     <ClInclude Include="System\Settings.h" />
     <ClInclude Include="System\Translations.h" />
     <ClInclude Include="System\OsPane.h" />
+    <ClInclude Include="Entity\SpaceRules.h" />
+    <ClInclude Include="Entity\NormaBoss.h" />
     <ClInclude Include="System\WindowFx.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

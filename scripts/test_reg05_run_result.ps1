@@ -40,12 +40,13 @@ try {
     if ($main[$abandon] -notmatch 'currentState == GameState::GAMEOVER' -or $main[$abandon + 1] -notmatch 'return;') {
         throw 'AbandonCurrentRun no longer starts with the GAMEOVER guard'
     }
-    # Wave completion commits once, then immediately leaves RUNNING. Re-entry
-    # is blocked by waveVictory and by the current-state check.
+    # Run victories (all waves survived, or NORMA felled) commit once in
+    # FinishRunVictory, then immediately leave RUNNING. Re-entry is blocked by
+    # waveVictory and by the current-state check.
     $wave = ($calls | Where-Object { $_.LineNumber -lt $abandon } | Select-Object -First 1).LineNumber
-    $waveStart = (Select-String -Path 'WiNILL\main.cpp' -Pattern '^static void CompleteWaveRun\(').LineNumber
+    $waveStart = (Select-String -Path 'WiNILL\main.cpp' -Pattern '^static void FinishRunVictory\(').LineNumber
     $waveEnd = (Select-String -Path 'WiNILL\main.cpp' -Pattern '^static void ProcessWaveTransitions\(').LineNumber
-    if ($wave -le $waveStart -or $wave -ge $waveEnd) { throw 'wave completion commit moved outside CompleteWaveRun' }
+    if ($wave -le $waveStart -or $wave -ge $waveEnd) { throw 'wave completion commit moved outside FinishRunVictory' }
     $waveBody = $main[($waveStart - 1)..($waveEnd - 2)] -join "`n"
     if ($waveBody -notmatch 'waveVictory \|\|.*currentState != GameState::RUNNING' -or
         $waveBody -notmatch 'waveVictory = true' -or

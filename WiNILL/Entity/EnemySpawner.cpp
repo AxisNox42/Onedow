@@ -20,6 +20,8 @@ struct EnemySpawnState {
     // run so the HUD can mark it before the elite enters.
     unsigned char elitePick[8] = {};
     const Monster* eliteMob = nullptr;   // the scheduled elite while alive
+    bool normaSpawned = false;           // the boss entered this run
+    bool normaDefeated = false;
 };
 
 static EnemySpawnState g_EnemySpawnState;
@@ -98,6 +100,38 @@ static void TrackScheduledElite(const MonsterManager& monsters) {
     g_EnemySpawnState.eliteMob = nullptr;
 }
 
+// The boss enters once, at the start of the final wave, from above the
+// middle of the screen. Ordinary spawns keep going around it.
+static void PlaceNormaBoss(MonsterManager& monsters, int screenWidth,
+                           float hpMultiplier) {
+    Monster* boss = new Monster((float)screenWidth * 0.5f, -160.0f, hpMultiplier);
+    boss->MakeKind(MobKind::NORMA);
+    monsters.monsters.push_back(boss);
+    g_EnemySpawnState.normaSpawned = true;
+}
+
+static void SpawnNormaBoss(MonsterManager& monsters, int screenWidth, int wave,
+                           Difficulty difficulty, float hpMultiplier) {
+    if (!IsBossWave(wave, difficulty) || g_EnemySpawnState.normaSpawned) return;
+    PlaceNormaBoss(monsters, screenWidth, hpMultiplier);
+}
+
+void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultiplier) {
+    if (g_EnemySpawnState.normaSpawned && !g_EnemySpawnState.normaDefeated) return;
+    g_EnemySpawnState.normaDefeated = false;
+    PlaceNormaBoss(monsters, screenWidth, hpMultiplier);
+}
+
+// Looked up by kind rather than by pointer: dead mobs are freed elsewhere.
+static void TrackNormaBoss(const MonsterManager& monsters) {
+    if (!g_EnemySpawnState.normaSpawned || g_EnemySpawnState.normaDefeated) return;
+    for (const Monster* mob : monsters.monsters)
+        if (mob->kind == MobKind::NORMA && mob->alive) return;
+    g_EnemySpawnState.normaDefeated = true;
+}
+
+bool NormaDefeated() { return g_EnemySpawnState.normaDefeated; }
+
 void ResetEnemySpawnState() {
     g_EnemySpawnState = {};
     for (unsigned char& pick : g_EnemySpawnState.elitePick)
@@ -145,6 +179,8 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
         progression.hpMultiplier * TrialEnemyHpMult(score);
 
     TrackScheduledElite(monsters);
+    TrackNormaBoss(monsters);
+    SpawnNormaBoss(monsters, screenWidth, wave, difficulty, hpMultiplier);
     SpawnScheduledElite(monsters, screenWidth, screenHeight, wave, waveSeconds,
                         difficulty,
                         waveSpawnCap, hpMultiplier);

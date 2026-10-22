@@ -164,6 +164,8 @@ public:
         for (auto& bullet : bullets) {
             if (!bullet.active) continue;
             if (bullet.isEnemy) {
+                if (space::Active() && bullet.space >= 0 &&
+                    bullet.space != space::g_PlayerSpace) continue;
                 const float hitRadius = 10.0f * stats.playerSizeMult;
                 if (SegDistSq(playerCX, playerCY, bullet.prevX, bullet.prevY,
                               bullet.x, bullet.y) < hitRadius * hitRadius) {
@@ -182,8 +184,10 @@ public:
             const float maxY = std::max(bullet.prevY, bullet.y);
             bool consumed = false;
 
+            const int shotSpace = bullet.space >= 0 ? bullet.space : space::kPlayerSource;
             for (auto* monster : manager.monsters) {
                 if (!monster->alive) continue;
+                if (!space::Reaches(shotSpace, monster->worldX, monster->worldY)) continue;
                 const float hitRadius = 15.0f * monster->sizeScale;
                 if (monster->worldX < minX - hitRadius || monster->worldX > maxX + hitRadius ||
                     monster->worldY < minY - hitRadius || monster->worldY > maxY + hitRadius)
@@ -198,7 +202,7 @@ public:
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
                       bullet.dmgMult * CritRoll(stats, isCrit);
-                const float dealt = manager.ApplyDamage(*monster, baseDamage);
+                const float dealt = manager.ApplyDamage(*monster, baseDamage, shotSpace);
                 SpawnDamageNumber(monster->worldX, monster->worldY, dealt,
                                   isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,
@@ -227,6 +231,7 @@ public:
             if (consumed) continue;
             for (auto* ranged : manager.rangedMobs) {
                 if (!ranged->alive) continue;
+                if (!space::Reaches(shotSpace, ranged->worldX, ranged->worldY)) continue;
                 constexpr float HIT_RADIUS = 20.0f;
                 if (ranged->worldX < minX - HIT_RADIUS || ranged->worldX > maxX + HIT_RADIUS ||
                     ranged->worldY < minY - HIT_RADIUS || ranged->worldY > maxY + HIT_RADIUS)
@@ -241,7 +246,7 @@ public:
                     ? bullet.lockedDmg
                     : stats.GetBaseDamage() * stats.GetDamageMultiplier() *
                       bullet.dmgMult * CritRoll(stats, isCrit);
-                const float dealt = manager.ApplyDamage(*ranged, baseDamage);
+                const float dealt = manager.ApplyDamage(*ranged, baseDamage, shotSpace);
                 SpawnDamageNumber(ranged->worldX, ranged->worldY, dealt,
                                   isCrit);
                 SpawnSparks(bullet.x, bullet.y, isCrit ? 6 : 3,

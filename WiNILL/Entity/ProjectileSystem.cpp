@@ -2,6 +2,7 @@
 
 #include "Bullet.h"
 #include "MonsterManager.h"
+#include "SpaceRules.h"
 #include "../System/FakeWindow.h"
 #include <algorithm>
 #include <cmath>
@@ -81,8 +82,16 @@ void UpdateProjectiles(std::vector<Bullet>& bullets,
             }
         }
 
+        if (bullet.space < 0) bullet.space = space::SpaceAt(bullet.x, bullet.y);
         if (!(bullet.isEnemy && timeStopTimer > 0.0f)) {
             bullet.Update(bulletDelta);
+        }
+        int absorbingPane = 0;
+        if (bullet.active &&
+            space::CrossedBorder(bullet.space, bullet.x, bullet.y, absorbingPane)) {
+            bullet.active = false;
+            space::g_Absorbed.push_back({ absorbingPane, bullet.x, bullet.y });
+            continue;
         }
 
         const float safeZoom = std::max(viewZoom, 0.01f);

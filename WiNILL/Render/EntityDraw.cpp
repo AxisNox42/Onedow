@@ -2154,6 +2154,39 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
     }
 }
 
+// NORMA placeholder body (design pending): a square outline and centre point
+// in ice blue. Phase 2 adds a turning inner square; entering it flashes white.
+static void DrawNormaPlaceholder(const Monster* m, float base, float visualTime) {
+    const float x = m->worldX, y = m->worldY;
+    const float half = base * 1.3f;
+    const float flash = std::clamp(m->normaPhaseFlash / norma::kPhaseFlashSeconds, 0.0f, 1.0f);
+    const float hit = std::clamp(m->hitFlashTimer / MOB_HIT_FLASH_TIME, 0.0f, 1.0f);
+    const float lift = std::max(flash, hit * 0.6f);
+    const float r = m->color.r + (1.0f - m->color.r) * lift;
+    const float g = m->color.g + (1.0f - m->color.g) * lift;
+    const float b = m->color.b;
+    const float pulse = 0.85f + 0.15f * sinf(visualTime * 2.0f);
+    const float w = 2.6f + 2.0f * flash;
+    drawLineQuad(x - half, y - half, x + half, y - half, w, r, g, b, pulse);
+    drawLineQuad(x + half, y - half, x + half, y + half, w, r, g, b, pulse);
+    drawLineQuad(x + half, y + half, x - half, y + half, w, r, g, b, pulse);
+    drawLineQuad(x - half, y + half, x - half, y - half, w, r, g, b, pulse);
+    if (m->normaPhase == 2) {
+        const float inner = half * 0.55f;
+        float px[4], py[4];
+        for (int k = 0; k < 4; ++k) {
+            const float a = m->normaVisualAngle + 0.7853982f + 1.5707963f * (float)k;
+            px[k] = x + cosf(a) * inner * 1.4142f;
+            py[k] = y + sinf(a) * inner * 1.4142f;
+        }
+        for (int k = 0; k < 4; ++k) {
+            const int n = (k + 1) & 3;
+            drawLineQuad(px[k], py[k], px[n], py[n], 1.6f, r, g, b, 0.8f);
+        }
+    }
+    drawCircle(x, y, base * 0.10f, r, g, b, 0.95f);
+}
+
 void drawMob(const Monster* m, float visualTime) {
     if (!m) return;
     if (!m->alive) {
@@ -2180,7 +2213,9 @@ void drawMob(const Monster* m, float visualTime) {
                                  0.0f, 1.0f),
                       visualTime * kAegisSpin, m->regulusShield.grantTimer);
     }
-    if (m->kind == MobKind::GENESIS) {
+    if (m->kind == MobKind::NORMA) {
+        DrawNormaPlaceholder(m, base, visualTime);
+    } else if (m->kind == MobKind::GENESIS) {
         DrawGenesisLauncher(m, base, visualTime);
     } else if (m->kind == MobKind::GRAVIS) {
         // Gravis: heavy planetary controller with a visible gravity boundary.

@@ -2,6 +2,7 @@
 
 #include "Bullet.h"
 #include "MonsterManager.h"
+#include "SpaceRules.h"
 #include <cmath>
 
 namespace GravisField {
@@ -15,6 +16,8 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
     for (const Monster* gravis : monsters.monsters) {
         if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS ||
             !gravis->GravisFieldActive()) continue;
+        // The field stops at window borders like every other effect.
+        if (!space::SameSpace(gravis->worldX, gravis->worldY, playerX, playerY)) continue;
         field.Add(gravis->worldX - playerX, gravis->worldY - playerY);
     }
     g_playerInfluence = playerControl ? field.maxInfluence : 0.0f;
@@ -31,6 +34,7 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
             !gravis->GravisFieldActive()) continue;
         for (Bullet& bullet : bullets) {
             if (!bullet.active) continue;
+            if (!space::SameSpace(gravis->worldX, gravis->worldY, bullet.x, bullet.y)) continue;
             const float bx = gravis->worldX - bullet.x;
             const float by = gravis->worldY - bullet.y;
             const float distanceSq = bx * bx + by * by;

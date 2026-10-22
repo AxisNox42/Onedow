@@ -21,3 +21,8 @@ struct ScheduledEliteInfo {
     bool alive = false;       // still on the field
 };
 ScheduledEliteInfo GetScheduledElite(int wave, Difficulty difficulty);
+
+// NORMA, the boss of the final wave, has entered and then fallen this run.
+bool NormaDefeated();
+// Hand testing: brings NORMA in now, as the boss wave would.
+void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultiplier);

@@ -23,6 +23,19 @@ struct Rect {
     float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
 };
 
+// One afterimage of a pane's in-game rectangle in flight, and how long ago.
+// It fades out over kGhostSeconds.
+constexpr float kGhostSeconds = 0.18f;
+// The in-game rectangle chases a moved window at a speed that starts at
+// kStartSpeed (px/s) and grows e-fold every kSpeedRamp seconds, with no set
+// arrival time: near moves land soon, far ones end in a fast dash.
+constexpr float kStartSpeed = 20.0f;
+constexpr float kSpeedRamp = 0.2f;
+struct Ghost {
+    Rect frame;
+    float age = 0.0f;
+};
+
 struct Pane {
     int  id = 0;
     bool open = false;        // false once closed by the player or the game
@@ -32,6 +45,13 @@ struct Pane {
     Rect client;              // see-through area below the title bar
     int  moves = 0;           // position/size changes seen so far
     int  refusals = 0;        // refused minimize/close requests
+    int  zRank = 0;           // 0 = front-most of the panes
+    // The window itself moves with the player's drag, but its in-game
+    // rectangle (space, brackets) stays put while held, then flies after it.
+    Rect shown;               // in-game rectangle used by combat
+    bool flying = false;
+    float flightTime = 0.0f;  // seconds since the chase started
+    std::vector<Ghost> trail; // afterimages left while flying
     float refusalTimer = 0.0f;// > 0 while the title shows the refusal
 };
 
@@ -41,11 +61,16 @@ void Shutdown();
 // Opens a pane whose outer frame sits at (x, y, w, h) in overlay pixels.
 int  Open(float x, float y, float w, float h);
 void Close(int id);           // game-side close, never refused
+void CloseAll();              // every pane, e.g. when a run ends
 void SetLocked(int id, bool locked);
 
 // Per frame: refresh rectangles, restore titles after a refusal, and rescan
 // real desktop windows at a low rate.
 void Tick(float dt);
+
+// While held (the game is paused) a moved window's in-game rectangle stays
+// where it was; releasing the hold sends it after the window.
+void SetHold(bool hold);
 
 // Pause-time arrangement: the game sinks just above the desktop so real
 // windows show on top and the player can drag them. Turning it off raises
