@@ -1,6 +1,7 @@
 // NORMA boss body rules (WiNILL/Entity/NormaBoss.h).
 #include "NormaBoss.h"
 
+#include <cmath>
 #include <cstdio>
 
 static int g_failures = 0;
@@ -28,9 +29,63 @@ static void KeepsHoverDistance() {
     Check(norma::HoverSpeed(norma::kHoverDistance) == 0.0f, "inside the band: holds");
 }
 
+static void PatternsTakeTurns() {
+    using norma::Pattern;
+    for (int roll = 0; roll < 12; ++roll) {
+        const Pattern first = norma::NextPattern(0, 1, roll);
+        Check(first == Pattern::Hide || first == Pattern::Refuge ||
+              first == Pattern::Throw || first == Pattern::Summon || first == Pattern::Ram,
+              "phase 1 window turn picks Hide, Refuge, Throw, Summon or Ram");
+        const Pattern direct = norma::NextPattern(1, 1, roll);
+        Check(direct == Pattern::Aim || direct == Pattern::Dash,
+              "odd turns are a direct attack (aimed stream or charge)");
+    }
+    bool sawAim = false, sawDash = false;
+    for (int roll = 0; roll < 40; ++roll) {
+        sawAim = sawAim || norma::NextPattern(1, 1, roll) == Pattern::Aim;
+        sawDash = sawDash || norma::NextPattern(1, 1, roll) == Pattern::Dash;
+    }
+    Check(sawAim && sawDash, "direct turns use both the aimed stream and the charge");
+    bool sawClose = false;
+    for (int roll = 0; roll < 12; ++roll)
+        sawClose = sawClose || norma::NextPattern(2, 2, roll) == Pattern::CloseWindow;
+    Check(sawClose, "phase 2 adds CloseWindow to the window turns");
+    bool sawThrow = false, sawSummon = false, sawRam = false;
+    for (int roll = 0; roll < 12; ++roll) {
+        sawThrow = sawThrow || norma::NextPattern(0, 1, roll) == Pattern::Throw;
+        sawSummon = sawSummon || norma::NextPattern(0, 1, roll) == Pattern::Summon;
+        sawRam = sawRam || norma::NextPattern(0, 1, roll) == Pattern::Ram;
+    }
+    Check(sawThrow && sawSummon && sawRam, "window turns include Throw, Summon and Ram");
+    bool closeInPhase1 = false;
+    for (int roll = 0; roll < 12; ++roll)
+        closeInPhase1 = closeInPhase1 || norma::NextPattern(2, 1, roll) == Pattern::CloseWindow;
+    Check(!closeInPhase1, "phase 1 never picks CloseWindow");
+    Check(norma::NextPattern(0, 1, -5) != Pattern::None, "negative rolls still pick a pattern");
+}
+
+static void LeadsMovingTargets() {
+    // Standing still: aim straight at it.
+    Check(std::fabs(norma::LeadAngle(0, 0, 100, 0, 0, 0, 300)) < 1e-4f, "still target: direct aim");
+    // Moving up across the line of fire: the aim leads upward (positive y).
+    const float lead = norma::LeadAngle(0, 0, 300, 0, 0, 200, 400);
+    Check(lead > 0.2f, "crossing target: aim leads it");
+    // The shot really meets it: solve the meeting time along the lead angle.
+    const float vx = std::cos(lead) * 400.0f, vy = std::sin(lead) * 400.0f;
+    const float t = 300.0f / vx;
+    Check(std::fabs(vy * t - 200.0f * t) < 1.0f, "lead shot meets the target");
+    // lead 0 is the current position, lead 2 overshoots the intercept.
+    Check(std::fabs(norma::LeadAngle(0, 0, 300, 0, 0, 200, 400, 0.0f)) < 1e-4f, "lead 0 aims at now");
+    Check(norma::LeadAngle(0, 0, 300, 0, 0, 200, 400, 2.0f) > lead, "lead 2 aims past the intercept");
+    // A target faster than the shot, running away: falls back to direct aim.
+    Check(std::fabs(norma::LeadAngle(0, 0, 100, 0, 500, 0, 100)) < 1e-4f, "no intercept: direct aim");
+}
+
 int main() {
+    LeadsMovingTargets();
     PhaseTwoAtFortyPercent();
     KeepsHoverDistance();
+    PatternsTakeTurns();
     if (g_failures == 0) std::printf("norma boss: all checks passed\n");
     return g_failures == 0 ? 0 : 1;
 }

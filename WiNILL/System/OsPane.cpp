@@ -20,15 +20,21 @@ namespace os_pane {
 namespace {
 
 constexpr wchar_t kClassName[] = L"AsteriaPane";
-// The client is painted in this colour and keyed out, so the overlay shows
-// through and clicks pass to whatever lies below.
-constexpr COLORREF kSeeThrough = RGB(255, 0, 255);
+// Client colours per theme: paper and ink, like a plain text editor.
+constexpr COLORREF kPaperLight = RGB(255, 255, 255), kInkLight = RGB(48, 52, 64);
+constexpr COLORREF kPaperDark = RGB(30, 31, 36), kInkDark = RGB(200, 206, 220);
+constexpr COLORREF kChartLight = RGB(70, 110, 190), kChartDark = RGB(150, 200, 255);
 constexpr float kRefusalSeconds = 1.6f;
 constexpr float kDesktopScanSeconds = 0.5f;
 // Windows smaller than this, or covering nearly the whole game, are not
 // candidates for a combat space.
 constexpr float kMinDesktopW = 200.0f, kMinDesktopH = 120.0f;
 constexpr float kMaxDesktopCover = 0.90f;
+// Windows mostly hidden behind others in front of them (a maximized window,
+// say) are not candidates either: at least this share must be in sight,
+// measured on a kVisibleSamples x kVisibleSamples grid.
+constexpr float kMinVisibleShare = 0.5f;
+constexpr int   kVisibleSamples = 8;
 constexpr DWORD kDarkModeAttribute = 20;   // DWMWA_USE_IMMERSIVE_DARK_MODE
 
 GLFWwindow* s_overlay = nullptr;
@@ -39,7 +45,60 @@ HWND s_ownerHwnd = nullptr;
 std::vector<Pane> s_panes;
 std::vector<HWND> s_handles;               // parallel to s_panes
 
+// What a pane's client shows (parallel to s_panes). Adopted windows paint
+// themselves and keep an empty entry.
+enum class ContentKind { None, Notes, Chart };
+struct Content {
+    ContentKind kind = ContentKind::None;
+    unsigned seed = 0;
+    bool dark = false;
+    std::wstring title;
+    float unstable = 0.0f;
+};
+std::vector<Content> s_content;
+
+// Lines a pane's "note" may show: the sky's own source and logs.
+const wchar_t* const kNoteLines[] = {
+    L"// constellation.cfg - do not edit",
+    L"norma.boundary = WINDOW;",
+    L"if (player.space != this.space) ignore(attack);",
+    L"sky.render(stars, lines_only = true);",
+    L"[warn] 별 좌표 재계산 중...",
+    L"[info] 경계 밖에서 신호가 감지됨",
+    L"while (universe.running) { tick(); }",
+    L"for (s in stars) s.link(nearest(s));",
+    L"// TODO: 창 바깥에는 무엇이 있지?",
+    L"aggro.cross_border      = true;",
+    L"projectile.cross_border = false;",
+    L"pane.durability = 60;",
+    L"[error] 외부 입력: 마우스 드래그",
+    L"일시정지 중에도 창은 움직인다.",
+    L"log 03:14:15  sector NORMA  ok",
+    L"return sky;",
+    L"ASTERIA.exe - waiting for input",
+    L"assert(window.contains(core));",
+    L"[info] 별자리 12개 로드됨",
+    L"// 이 우주는 누가 컴파일했을까",
+    L"seal(pane); count_down(3);",
+    L"0x7F3A  0x0000  0x1E4C  0xFFFF",
+};
+constexpr int kNoteLineCount = (int)(sizeof(kNoteLines) / sizeof(kNoteLines[0]));
+
+unsigned NextRandom(unsigned& state) {
+    state = state * 1664525u + 1013904223u;
+    return state >> 8;
+}
+
+bool UserPrefersDark() {
+    DWORD light = 1, size = sizeof(light);
+    RegGetValueW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light, &size);
+    return light == 0;
+}
+
 std::vector<Rect> s_desktop;
+std::vector<HWND> s_desktopHandles;        // parallel to s_desktop
 float s_scanTimer = 0.0f;
 bool s_arrange = false;
 bool s_hold = false;
@@ -61,6 +120,13 @@ int IndexOfId(int id) {
 }
 
 const wchar_t* BaseTitle() { return L"NORMA"; }
+
+// A pane's own title (its "file name"), or the bare base title.
+std::wstring TitleOf(int i) {
+    if (i >= 0 && i < (int)s_content.size() && !s_content[i].title.empty())
+        return s_content[i].title;
+    return BaseTitle();
+}
 
 const wchar_t* RefusalSuffix() {
     const int li = LangIndex();
@@ -105,7 +171,7 @@ void Refuse(int i) {
     Pane& p = s_panes[i];
     ++p.refusals;
     p.refusalTimer = kRefusalSeconds;
-    const std::wstring title = std::wstring(BaseTitle()) + RefusalSuffix();
+    const std::wstring title = TitleOf(i) + RefusalSuffix();
     SetWindowTextW(s_handles[i], title.c_str());
 }
 
@@ -119,12 +185,110 @@ void ApplyTheme(HWND hwnd) {
     DwmSetWindowAttribute(hwnd, kDarkModeAttribute, &dark, sizeof(dark));
 }
 
-void PaintSeeThrough(HWND hwnd, HDC dc) {
+// Notepad-like text: lines picked from kNoteLines by the pane's seed.
+void PaintNotes(HDC dc, const RECT& r, const Content& c) {
+    HFONT font = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                             FIXED_PITCH | FF_MODERN, L"Consolas");
+    HGDIOBJ old = SelectObject(dc, font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, c.dark ? kInkDark : kInkLight);
+    unsigned state = c.seed;
+    // Instability: its own random stream changes every paint, so the jitter
+    // and corruption flicker while the layout (state) stays put.
+    unsigned noise = c.seed ^ (unsigned)(GetTickCount64() / 33);
+    const float u = c.unstable;
+    if (u > 0.0f) {
+        const COLORREF ink = c.dark ? kInkDark : kInkLight;
+        const COLORREF warn = c.dark ? RGB(214, 160, 255) : RGB(150, 70, 200);
+        const auto mix = [&](int a, int b) { return (int)(a + (b - a) * std::min(1.0f, u)); };
+        SetTextColor(dc, RGB(mix(GetRValue(ink), GetRValue(warn)),
+                             mix(GetGValue(ink), GetGValue(warn)),
+                             mix(GetBValue(ink), GetBValue(warn))));
+    }
+    const int lineHeight = 19;
+    for (int y = r.top + 8; y + lineHeight <= r.bottom - 4; y += lineHeight) {
+        if (NextRandom(state) % 9 == 0) continue;   // a blank line now and then
+        const wchar_t* line = kNoteLines[NextRandom(state) % kNoteLineCount];
+        if (u <= 0.0f) {
+            TextOutW(dc, r.left + 10, y, line, lstrlenW(line));
+            continue;
+        }
+        // Shaken sideways, a few characters broken, now and then doubled.
+        std::wstring text = line;
+        static const wchar_t kBroken[] = L"#?%@&*<>/\\|~";
+        for (wchar_t& ch : text)
+            if ((float)(NextRandom(noise) % 1000) < 180.0f * u)
+                ch = kBroken[NextRandom(noise) % (sizeof(kBroken) / sizeof(wchar_t) - 1)];
+        const int shift = (int)(((float)(NextRandom(noise) % 200) - 100.0f) * 0.12f * u);
+        const int lift = (int)(((float)(NextRandom(noise) % 200) - 100.0f) * 0.03f * u);
+        TextOutW(dc, r.left + 10 + shift, y + lift, text.c_str(), (int)text.size());
+        if ((float)(NextRandom(noise) % 1000) < 120.0f * u)
+            TextOutW(dc, r.left + 10 + shift + 3, y + lift + 2, text.c_str(), (int)text.size());
+    }
+    SelectObject(dc, old);
+    DeleteObject(font);
+}
+
+// Image-viewer star chart: a few stars joined in the order they lie.
+void PaintChart(HDC dc, const RECT& r, const Content& c) {
+    unsigned state = c.seed;
+    const int pad = 26;
+    const int w = (std::max)(1, (int)(r.right - r.left) - pad * 2);
+    const int h = (std::max)(1, (int)(r.bottom - r.top) - pad * 2 - 20);
+    POINT stars[14];
+    const int count = 7 + (int)(NextRandom(state) % 7);
+    for (int k = 0; k < count; ++k)
+        stars[k] = { r.left + pad + (int)(NextRandom(state) % w),
+                     r.top + pad + (int)(NextRandom(state) % h) };
+    if (c.unstable > 0.0f) {
+        unsigned noise = c.seed ^ (unsigned)(GetTickCount64() / 33);
+        const int amp = (std::max)(1, (int)(10.0f * c.unstable));
+        for (int k = 0; k < count; ++k) {
+            stars[k].x += (int)(NextRandom(noise) % (2 * amp + 1)) - amp;
+            stars[k].y += (int)(NextRandom(noise) % (2 * amp + 1)) - amp;
+        }
+    }
+    std::sort(stars, stars + count, [](const POINT& a, const POINT& b) { return a.x < b.x; });
+    const COLORREF ink = c.dark ? kChartDark : kChartLight;
+    HPEN pen = CreatePen(PS_SOLID, 1, ink);
+    HGDIOBJ oldPen = SelectObject(dc, pen);
+    MoveToEx(dc, stars[0].x, stars[0].y, nullptr);
+    for (int k = 1; k < count; ++k) LineTo(dc, stars[k].x, stars[k].y);
+    HBRUSH brush = CreateSolidBrush(ink);
+    HGDIOBJ oldBrush = SelectObject(dc, brush);
+    for (int k = 0; k < count; ++k)
+        Ellipse(dc, stars[k].x - 3, stars[k].y - 3, stars[k].x + 4, stars[k].y + 4);
+    SelectObject(dc, oldBrush);
+    SelectObject(dc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+    HFONT font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                             FIXED_PITCH | FF_MODERN, L"Consolas");
+    HGDIOBJ oldFont = SelectObject(dc, font);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, c.dark ? kInkDark : kInkLight);
+    wchar_t caption[64];
+    swprintf_s(caption, L"%d stars  |  %ux%u", count, (unsigned)(r.right - r.left),
+               (unsigned)(r.bottom - r.top));
+    TextOutW(dc, r.left + 10, r.bottom - 22, caption, lstrlenW(caption));
+    SelectObject(dc, oldFont);
+    DeleteObject(font);
+}
+
+void PaintClient(HWND hwnd, HDC dc) {
     RECT r{};
     GetClientRect(hwnd, &r);
-    HBRUSH brush = CreateSolidBrush(kSeeThrough);
-    FillRect(dc, &r, brush);
-    DeleteObject(brush);
+    const int i = IndexOfHandle(hwnd);
+    const Content* c = (i >= 0 && i < (int)s_content.size()) ? &s_content[i] : nullptr;
+    const bool dark = c ? c->dark : UserPrefersDark();
+    HBRUSH paper = CreateSolidBrush(dark ? kPaperDark : kPaperLight);
+    FillRect(dc, &r, paper);
+    DeleteObject(paper);
+    if (!c) return;
+    if (c->kind == ContentKind::Notes) PaintNotes(dc, r, *c);
+    else if (c->kind == ContentKind::Chart) PaintChart(dc, r, *c);
 }
 
 LRESULT CALLBACK PaneProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -138,12 +302,11 @@ LRESULT CALLBACK PaneProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return hit == HTCLIENT ? HTTRANSPARENT : hit;
     }
     case WM_ERASEBKGND:
-        PaintSeeThrough(hwnd, (HDC)wp);
-        return 1;
+        return 1;   // WM_PAINT covers the whole client
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(hwnd, &ps);
-        PaintSeeThrough(hwnd, dc);
+        PaintClient(hwnd, dc);
         EndPaint(hwnd, &ps);
         return 0;
     }
@@ -251,6 +414,26 @@ bool IsShellWindow(HWND hwnd) {
            lstrcmpW(cls, L"Shell_SecondaryTrayWnd") == 0;
 }
 
+// Frames of the other programs' windows met so far in one scan, front first.
+std::vector<Rect> s_scanFront;
+
+// Share of r not covered by any of the rectangles in front of it.
+float VisibleShare(const Rect& r, const std::vector<Rect>& front) {
+    if (front.empty()) return 1.0f;
+    int seen = 0;
+    for (int j = 0; j < kVisibleSamples; ++j) {
+        for (int i = 0; i < kVisibleSamples; ++i) {
+            const float x = r.x + r.w * ((float)i + 0.5f) / (float)kVisibleSamples;
+            const float y = r.y + r.h * ((float)j + 0.5f) / (float)kVisibleSamples;
+            bool covered = false;
+            for (const Rect& f : front)
+                if (x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h) { covered = true; break; }
+            if (!covered) ++seen;
+        }
+    }
+    return (float)seen / (float)(kVisibleSamples * kVisibleSamples);
+}
+
 // Only rectangles are kept: titles and contents of other programs are never read.
 BOOL CALLBACK CollectDesktopWindow(HWND hwnd, LPARAM) {
     if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) return TRUE;
@@ -264,6 +447,11 @@ BOOL CALLBACK CollectDesktopWindow(HWND hwnd, LPARAM) {
     if (cloaked) return TRUE;
 
     const Rect r = ToOverlay(FrameBounds(hwnd));
+    // Every window seen so far is in front of this one (EnumWindows walks
+    // front to back); it counts as hidden where they cover it.
+    const float share = VisibleShare(r, s_scanFront);
+    s_scanFront.push_back(r);
+    if (share < kMinVisibleShare) return TRUE;
     if (r.w < kMinDesktopW || r.h < kMinDesktopH) return TRUE;
     RECT oc{};
     GetClientRect(s_overlayHwnd, &oc);
@@ -273,6 +461,7 @@ BOOL CALLBACK CollectDesktopWindow(HWND hwnd, LPARAM) {
     if (ix * iy <= 0.0f) return TRUE;
     if (ix * iy >= ow * oh * kMaxDesktopCover) return TRUE;
     s_desktop.push_back(r);   // EnumWindows walks front to back
+    s_desktopHandles.push_back(hwnd);
     return TRUE;
 }
 
@@ -284,6 +473,32 @@ BOOL CALLBACK FindShellView(HWND hwnd, LPARAM out) {
         return FALSE;
     }
     return TRUE;
+}
+
+// The front-most window of another program that covers (nearly) the whole
+// game area: a maximized or full-screen window. Sinking the game below it
+// would hide the game, so arrange mode stops just above it.
+HWND CoveringWindow() {
+    if (!s_overlayHwnd) return nullptr;
+    RECT oc{};
+    GetClientRect(s_overlayHwnd, &oc);
+    const float area = (float)(oc.right - oc.left) * (float)(oc.bottom - oc.top);
+    if (area <= 0.0f) return nullptr;
+    for (HWND h = GetTopWindow(nullptr); h; h = GetWindow(h, GW_HWNDNEXT)) {
+        if (!IsWindowVisible(h) || IsIconic(h) || IsShellWindow(h)) continue;
+        if (GetWindowLongW(h, GWL_EXSTYLE) & (WS_EX_TOOLWINDOW | WS_EX_TOPMOST)) continue;
+        DWORD pid = 0;
+        GetWindowThreadProcessId(h, &pid);
+        if (pid == GetCurrentProcessId()) continue;
+        BOOL cloaked = FALSE;
+        DwmGetWindowAttribute(h, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+        if (cloaked) continue;
+        const Rect r = ToOverlay(FrameBounds(h));
+        const float ix = (std::max)(0.0f, (std::min)(r.x + r.w, (float)oc.right) - (std::max)(r.x, 0.0f));
+        const float iy = (std::max)(0.0f, (std::min)(r.y + r.h, (float)oc.bottom) - (std::max)(r.y, 0.0f));
+        if (ix * iy >= area * 0.95f) return h;
+    }
+    return nullptr;
 }
 
 HWND DesktopShellWindow() {
@@ -312,6 +527,8 @@ void RaiseOverlay() {
 
 void ScanDesktop() {
     s_desktop.clear();
+    s_desktopHandles.clear();
+    s_scanFront.clear();
     if (s_overlayHwnd) EnumWindows(CollectDesktopWindow, 0);
 }
 
@@ -325,11 +542,12 @@ void Init(GLFWwindow* overlay) {
 void Shutdown() {
     SetArrangeMode(false);
     for (size_t i = 0; i < s_handles.size(); ++i)
-        if (s_handles[i]) DestroyWindow(s_handles[i]);
+        if (s_handles[i] && !s_panes[i].adopted) DestroyWindow(s_handles[i]);
     if (s_ownerHwnd) DestroyWindow(s_ownerHwnd);
     s_ownerHwnd = nullptr;
     s_panes.clear();
     s_handles.clear();
+    s_content.clear();
     s_desktop.clear();
 }
 
@@ -342,12 +560,11 @@ int Open(float x, float y, float w, float h) {
     const POINT o = OverlayOrigin();
     const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
                         WS_MINIMIZEBOX | WS_THICKFRAME;
-    const DWORD exStyle = WS_EX_LAYERED | WS_EX_NOACTIVATE;
+    const DWORD exStyle = WS_EX_NOACTIVATE;
     HWND hwnd = CreateWindowExW(exStyle, kClassName, BaseTitle(), style,
                                 o.x + (int)x, o.y + (int)y, (int)w, (int)h,
                                 s_ownerHwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!hwnd) return 0;
-    SetLayeredWindowAttributes(hwnd, kSeeThrough, 0, LWA_COLORKEY);
     ApplyTheme(hwnd);
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 
@@ -367,6 +584,36 @@ int Open(float x, float y, float w, float h) {
     pane.open = true;
     s_panes.push_back(pane);
     s_handles.push_back(hwnd);
+    Content content;
+    content.seed = (unsigned)rand() * 2654435761u + (unsigned)pane.id;
+    content.kind = content.seed % 10 < 7 ? ContentKind::Notes : ContentKind::Chart;
+    content.dark = UserPrefersDark();
+    wchar_t title[64];
+    swprintf_s(title, content.kind == ContentKind::Notes ? L"%ls - note_%02u.txt"
+                                                         : L"%ls - chart_%02u.png",
+               BaseTitle(), (content.seed >> 4) % 100);
+    content.title = title;
+    s_content.push_back(content);
+    SetWindowTextW(hwnd, content.title.c_str());
+    InvalidateRect(hwnd, nullptr, TRUE);
+    RefreshRects((int)s_panes.size() - 1);
+    s_panes.back().shown = s_panes.back().frame;
+    return pane.id;
+}
+
+int Adopt(int desktopIndex) {
+    if (desktopIndex < 0 || desktopIndex >= (int)s_desktopHandles.size()) return 0;
+    HWND hwnd = s_desktopHandles[desktopIndex];
+    if (!IsWindow(hwnd)) return 0;
+    for (size_t i = 0; i < s_handles.size(); ++i)
+        if (s_handles[i] == hwnd && s_panes[i].open) return s_panes[i].id;
+    Pane pane;
+    pane.id = s_nextId++;
+    pane.open = true;
+    pane.adopted = true;
+    s_panes.push_back(pane);
+    s_handles.push_back(hwnd);
+    s_content.push_back({});
     RefreshRects((int)s_panes.size() - 1);
     s_panes.back().shown = s_panes.back().frame;
     return pane.id;
@@ -376,12 +623,60 @@ void Close(int id) {
     const int i = IndexOfId(id);
     if (i < 0) return;
     s_panes[i].locked = false;
+    if (s_panes[i].adopted) {
+        // Not ours to close: just stop treating it as a space.
+        s_panes[i].open = false;
+        s_handles[i] = nullptr;
+        return;
+    }
     DestroyWindow(s_handles[i]);
 }
 
 void CloseAll() {
     for (const Pane& p : s_panes)
         if (p.open) Close(p.id);
+}
+
+void Place(int id, float x, float y) {
+    const int i = IndexOfId(id);
+    if (i < 0) return;
+    Pane& p = s_panes[i];
+    if (p.adopted || p.flying || p.minimized) return;
+    RECT wr{};
+    GetWindowRect(s_handles[i], &wr);
+    const RECT fr = FrameBounds(s_handles[i]);
+    const POINT o = OverlayOrigin();
+    SetWindowPos(s_handles[i], nullptr,
+                 o.x + (int)x - (fr.left - wr.left), o.y + (int)y - (fr.top - wr.top), 0, 0,
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    RefreshRects(i);
+    p.shown = p.frame;
+}
+
+void Resize(int id, float x, float y, float w, float h) {
+    const int i = IndexOfId(id);
+    if (i < 0) return;
+    Pane& p = s_panes[i];
+    if (p.adopted || p.flying || p.minimized) return;
+    RECT wr{};
+    GetWindowRect(s_handles[i], &wr);
+    const RECT fr = FrameBounds(s_handles[i]);
+    const int left = fr.left - wr.left, top = fr.top - wr.top;
+    const int right = wr.right - fr.right, bottom = wr.bottom - fr.bottom;
+    const POINT o = OverlayOrigin();
+    SetWindowPos(s_handles[i], nullptr, o.x + (int)x - left, o.y + (int)y - top,
+                 (int)w + left + right, (int)h + top + bottom, SWP_NOZORDER | SWP_NOACTIVATE);
+    RefreshRects(i);
+    p.shown = p.frame;
+}
+
+void SetUnstable(int id, float level) {
+    const int i = IndexOfId(id);
+    if (i < 0 || i >= (int)s_content.size()) return;
+    Content& c = s_content[i];
+    if (c.unstable == level && level <= 0.0f) return;
+    c.unstable = level;
+    InvalidateRect(s_handles[i], nullptr, FALSE);   // repaint (again) now
 }
 
 void SetLocked(int id, bool locked) {
@@ -405,14 +700,19 @@ void Tick(float dt) {
                                      [](const Ghost& g) { return g.age >= kGhostSeconds; }),
                       p.trail.end());
         if (!p.open) continue;
-        if (!s_arrange && AboveGame(s_handles[i])) StackBelowGame(s_handles[i]);
+        if (p.adopted && !IsWindow(s_handles[i])) {   // the player closed it
+            p.open = false;
+            s_handles[i] = nullptr;
+            continue;
+        }
+        if (!p.adopted && !s_arrange && AboveGame(s_handles[i])) StackBelowGame(s_handles[i]);
         RefreshRects((int)i);
         UpdateShown(p, dt);
         if (p.refusalTimer > 0.0f) {
             p.refusalTimer -= dt;
             if (p.refusalTimer <= 0.0f) {
                 p.refusalTimer = 0.0f;
-                SetWindowTextW(s_handles[i], BaseTitle());
+                SetWindowTextW(s_handles[i], TitleOf((int)i).c_str());
             }
         }
     }
@@ -428,14 +728,21 @@ void SetArrangeMode(bool on) {
     s_arrange = on;
     const UINT keep = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
     if (on) {
-        // Sink the game just above the desktop so real windows sit on top,
-        // fully visible and draggable. The pause screen veils whatever lies
-        // behind the game, so mouse pass-through alone left them unseen.
-        HWND shell = DesktopShellWindow();
-        HWND above = shell ? GetWindow(shell, GW_HWNDPREV) : nullptr;
-        if (above && above != s_overlayHwnd) {
+        // Sink the game as far back as it can go while staying in sight:
+        // just above the front-most window that fills the screen, or else
+        // just above the desktop. Real windows then sit on top, visible and
+        // draggable, and the game (shots included) still shows around them.
+        HWND floor = CoveringWindow();
+        if (!floor) floor = DesktopShellWindow();
+        HWND above = floor ? GetWindow(floor, GW_HWNDPREV) : nullptr;
+        if (above == s_overlayHwnd) {
+            s_sunk = true;   // already right there
+        } else if (above) {
             SetWindowPos(s_overlayHwnd, above, 0, 0, 0, 0, keep);
             s_sunk = true;
+        } else if (floor) {
+            // The covering window is the front-most one: stay on top of it.
+            s_sunk = false;
         } else {
             glfwSetWindowAttrib(s_overlay, GLFW_MOUSE_PASSTHROUGH, GLFW_TRUE);
             s_passthrough = true;
@@ -449,6 +756,16 @@ void SetArrangeMode(bool on) {
 }
 
 bool ArrangeMode() { return s_arrange; }
+
+bool ArrangeTarget(Rect& frame) {
+    if (!s_arrange || !s_overlayHwnd) return false;
+    POINT pt{};
+    GetCursorPos(&pt);
+    HWND root = GetAncestor(WindowFromPoint(pt), GA_ROOT);
+    if (!root || root == s_overlayHwnd || IsShellWindow(root)) return false;
+    frame = ToOverlay(FrameBounds(root));
+    return true;
+}
 
 bool AnyOpen() {
     for (const Pane& p : s_panes)
@@ -566,13 +883,18 @@ namespace { std::vector<Pane> s_none; std::vector<Rect> s_noRects; }
 void Init(GLFWwindow*) {}
 void Shutdown() {}
 int  Open(float, float, float, float) { return 0; }
+int  Adopt(int) { return 0; }
+void Place(int, float, float) {}
+void Resize(int, float, float, float, float) {}
 void Close(int) {}
 void CloseAll() {}
 void SetLocked(int, bool) {}
+void SetUnstable(int, float) {}
 void SetHold(bool) {}
 void Tick(float) {}
 void SetArrangeMode(bool) {}
 bool ArrangeMode() { return false; }
+bool ArrangeTarget(Rect&) { return false; }
 bool AnyOpen() { return false; }
 const std::vector<Pane>& Panes() { return s_none; }
 const std::vector<Rect>& DesktopWindows() { return s_noRects; }

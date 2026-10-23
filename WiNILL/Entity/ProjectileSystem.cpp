@@ -90,7 +90,10 @@ void UpdateProjectiles(std::vector<Bullet>& bullets,
         if (bullet.active &&
             space::CrossedBorder(bullet.space, bullet.x, bullet.y, absorbingPane)) {
             bullet.active = false;
-            space::g_Absorbed.push_back({ absorbingPane, bullet.x, bullet.y });
+            // The player's own shots still stop at the border but never wear
+            // the pane (pane 0: sparks only), so sheltering and shooting out
+            // does not break the shelter.
+            space::g_Absorbed.push_back({ bullet.isEnemy ? absorbingPane : 0, bullet.x, bullet.y });
             continue;
         }
 

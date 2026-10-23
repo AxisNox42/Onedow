@@ -103,8 +103,8 @@ static void SmallerPanesAreSturdier() {
     Check(std::fabs(space::MaxDurability(1000.0f) - space::kBaseDurability * 3.0f) < 0.01f,
           "tiny panes cap at three times");
     Check(std::fabs(space::MaxDurability(space::kReferenceArea * 4.0f) -
-                    space::kBaseDurability * 0.5f) < 0.01f,
-          "huge panes floor at half");
+                    space::kBaseDurability) < 0.01f,
+          "huge panes keep the base");
 }
 
 int main() {

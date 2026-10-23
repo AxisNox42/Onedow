@@ -99,6 +99,29 @@ static void DrawDiscWithTexture(float x, float y, float radius,
 
 void drawBullet(const Bullet& b) {
     float r = 4.8f * b.sizeScale;
+    if (b.normaShot) {
+        // NORMA's shot: a turned square outline with a short tail.
+        const float ang = atan2f(b.dirY, b.dirX) + (float)glfwGetTime() * 6.0f;
+        const float h = r * 1.15f;
+        float px[4], py[4];
+        for (int k = 0; k < 4; ++k) {
+            const float a = ang + 0.7853982f + 1.5707963f * (float)k;
+            px[k] = b.x + cosf(a) * h * 1.4142f;
+            py[k] = b.y + sinf(a) * h * 1.4142f;
+        }
+        const float tail = std::min(26.0f, b.speed * 0.07f);
+        drawLineQuad(b.x - b.dirX * h, b.y - b.dirY * h,
+                     b.x - b.dirX * (h + tail), b.y - b.dirY * (h + tail),
+                     2.0f, b.color.r, b.color.g, b.color.b, 0.35f);
+        for (int k = 0; k < 4; ++k) {
+            const int n = (k + 1) & 3;
+            drawLineQuad(px[k], py[k], px[n], py[n], 3.4f,
+                         b.color.r * 0.22f, b.color.g * 0.22f, b.color.b * 0.22f, 0.6f);
+            drawLineQuad(px[k], py[k], px[n], py[n], 1.8f, b.color.r, b.color.g, b.color.b, 1.0f);
+        }
+        drawCircle(b.x, b.y, r * 0.30f, 1.0f, 1.0f, 1.0f, 0.95f);
+        return;
+    }
     if (b.rainMissile && g_RainMissileTex) {
         float ang = std::atan2(b.dirX, -b.dirY);
         // Dark keyline disc so the missile icon separates from bright
@@ -2156,35 +2179,273 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
 
 // NORMA placeholder body (design pending): a square outline and centre point
 // in ice blue. Phase 2 adds a turning inner square; entering it flashes white.
-static void DrawNormaPlaceholder(const Monster* m, float base, float visualTime) {
+// NORMA's tesseract: a wire cube turning in 3D with a smaller cube inside it
+// (turning the other way), drawn like the mobs: edges split short of each
+// vertex over a faint glow, star nodes on the vertices (dimmer at the back),
+// thin links between the two cubes' matching vertices.
+struct NormaCube {
+    float sx[8], sy[8], depth[8];   // projected points, depth -1 (back) .. 1 (front)
+};
+
+// drill: a turn about the cube's own corner-to-corner diagonal (corners 0
+// and 6). A whole number of thirds of a turn maps the cube onto itself.
+static NormaCube ProjectNormaCube(float x, float y, float radius, float yaw, float pitch, float roll,
+                                  float drill = 0.0f) {
+    static constexpr float kCorner[8][3] = {
+        { -1, -1, -1 }, { 1, -1, -1 }, { 1, 1, -1 }, { -1, 1, -1 },
+        { -1, -1, 1 }, { 1, -1, 1 }, { 1, 1, 1 }, { -1, 1, 1 } };
+    NormaCube c{};
+    const float cy = cosf(yaw), sy = sinf(yaw), cp = cosf(pitch), sp = sinf(pitch);
+    const float cr = cosf(roll), sr = sinf(roll);
+    const float cdr = cosf(drill), sdr = sinf(drill);
+    static constexpr float kAxis = 0.57735027f;   // (1, 1, 1) / sqrt(3)
+    for (int i = 0; i < 8; ++i) {
+        float px = kCorner[i][0], py = kCorner[i][1], pz = kCorner[i][2];
+        if (drill != 0.0f) {
+            // Rodrigues' turn about the diagonal.
+            const float dot = (px + py + pz) * kAxis;
+            const float qx = kAxis * (pz - py), qy = kAxis * (px - pz), qz = kAxis * (py - px);
+            const float k = dot * kAxis * (1.0f - cdr);
+            const float nx = px * cdr + qx * sdr + k, ny = py * cdr + qy * sdr + k, nz = pz * cdr + qz * sdr + k;
+            px = nx; py = ny; pz = nz;
+        }
+        const float x1 = px * cy + pz * sy, z1 = -px * sy + pz * cy;
+        const float y2 = py * cp - z1 * sp, z2 = py * sp + z1 * cp;
+        const float rx = x1 * cr - y2 * sr, ry = x1 * sr + y2 * cr;
+        c.sx[i] = x + rx * radius;
+        c.sy[i] = y + ry * radius;
+        c.depth[i] = z2 / 1.7320508f;
+    }
+    return c;
+}
+
+// Just the outer edges, thin: afterimages and the charge lane.
+static void DrawNormaCubeOutline(const NormaCube& c, float r, float g, float b, float alpha) {
+    static constexpr int kEdge[12][2] = {
+        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 4, 5 }, { 5, 6 },
+        { 6, 7 }, { 7, 4 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } };
+    for (const auto& e : kEdge)
+        drawLineQuad(c.sx[e[0]], c.sy[e[0]], c.sx[e[1]], c.sy[e[1]], 1.1f, r, g, b, alpha);
+}
+
+static void DrawNormaCube(const NormaCube& c, float r, float g, float b,
+                          float alpha, float width, float nodeR) {
+    static constexpr int kEdge[12][2] = {
+        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 4, 5 }, { 5, 6 },
+        { 6, 7 }, { 7, 4 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } };
+    static constexpr float kGap = 0.16f;
+    for (const auto& e : kEdge) {
+        const int i = e[0], j = e[1];
+        const float front = 0.5f + 0.25f * (c.depth[i] + c.depth[j]);   // 0 back .. 1 front
+        const float a = alpha * (0.40f + 0.55f * front);
+        const float ax = c.sx[i] + (c.sx[j] - c.sx[i]) * kGap, ay = c.sy[i] + (c.sy[j] - c.sy[i]) * kGap;
+        const float bx = c.sx[j] + (c.sx[i] - c.sx[j]) * kGap, by = c.sy[j] + (c.sy[i] - c.sy[j]) * kGap;
+        drawLineQuad(ax, ay, bx, by, width + 2.4f, r, g, b, a * 0.14f);
+        drawLineQuad(ax, ay, bx, by, width, r, g, b, a);
+    }
+    for (int i = 0; i < 8; ++i) {
+        const float front = 0.5f + 0.5f * c.depth[i];
+        DrawEnemyNode({ c.sx[i], c.sy[i], nodeR * (0.8f + 0.3f * front), 0.55f + 0.45f * front },
+                      r, g, b, alpha);
+    }
+}
+
+static void DrawNormaBody(const Monster* m, float base, float visualTime) {
     const float x = m->worldX, y = m->worldY;
-    const float half = base * 1.3f;
     const float flash = std::clamp(m->normaPhaseFlash / norma::kPhaseFlashSeconds, 0.0f, 1.0f);
     const float hit = std::clamp(m->hitFlashTimer / MOB_HIT_FLASH_TIME, 0.0f, 1.0f);
-    const float lift = std::max(flash, hit * 0.6f);
-    const float r = m->color.r + (1.0f - m->color.r) * lift;
-    const float g = m->color.g + (1.0f - m->color.g) * lift;
+    const float recoil = std::clamp(m->normaRecoil / norma::kRecoilSeconds, 0.0f, 1.0f);
+    // Charging (telegraph): the square tightens and brightens as it gathers.
+    float charge = 0.0f;
+    if (m->normaStage == norma::Stage::Telegraph) {
+        const float span = m->normaPattern == norma::Pattern::Refuge ? norma::kRefugeTelegraph
+                         : m->normaPattern == norma::Pattern::Hide ? norma::kHideTelegraph
+                         : m->normaPattern == norma::Pattern::Aim ? norma::kAimTelegraph
+                         : m->normaPattern == norma::Pattern::Throw ? norma::kThrowAppear + norma::kThrowFill
+                         : m->normaPattern == norma::Pattern::Summon ? 0.6f
+                         : m->normaPattern == norma::Pattern::Ram ? norma::RamAimFor(m->normaPhase)
+                         : 1.0f;
+        charge = std::clamp(m->normaTimer / span, 0.0f, 1.0f);
+    }
+    const float half = base * 1.3f * (1.0f - 0.14f * charge + 0.10f * recoil);
+    const float lift = std::max({ flash, hit * 0.6f, recoil * 0.5f, charge * 0.35f });
+    const bool p2 = m->normaPhase == 2;
+    const float baseR = p2 ? 0.84f : m->color.r, baseG = p2 ? 0.86f : m->color.g;
+    const float r = baseR + (1.0f - baseR) * lift;
+    const float g = baseG + (1.0f - baseG) * lift;
     const float b = m->color.b;
     const float pulse = 0.85f + 0.15f * sinf(visualTime * 2.0f);
-    const float w = 2.6f + 2.0f * flash;
-    drawLineQuad(x - half, y - half, x + half, y - half, w, r, g, b, pulse);
-    drawLineQuad(x + half, y - half, x + half, y + half, w, r, g, b, pulse);
-    drawLineQuad(x + half, y + half, x - half, y + half, w, r, g, b, pulse);
-    drawLineQuad(x - half, y + half, x - half, y - half, w, r, g, b, pulse);
-    if (m->normaPhase == 2) {
-        const float inner = half * 0.55f;
-        float px[4], py[4];
-        for (int k = 0; k < 4; ++k) {
-            const float a = m->normaVisualAngle + 0.7853982f + 1.5707963f * (float)k;
-            px[k] = x + cosf(a) * inner * 1.4142f;
-            py[k] = y + sinf(a) * inner * 1.4142f;
-        }
-        for (int k = 0; k < 4; ++k) {
-            const int n = (k + 1) & 3;
-            drawLineQuad(px[k], py[k], px[n], py[n], 1.6f, r, g, b, 0.8f);
+
+    // Body: the tesseract. It turns slowly. The aimed stream and the charge
+    // stop it with a corner on their direction (for the stream that star is
+    // the muzzle; for the charge it is the leading point); a charge then
+    // drills it about that corner's diagonal a whole number of thirds of a
+    // turn, so it lands looking the same as it set off.
+    const float va = m->normaVisualAngle;
+    float yaw = va * 1.0f, pitch = 0.55f + 0.25f * sinf(va * 0.7f), roll = 0.0f;
+    const bool dashing = m->normaPattern == norma::Pattern::Dash;
+    float hold = 0.0f;   // 0..1 how far the cube has settled onto its corner
+    if (m->normaPattern == norma::Pattern::Aim || dashing) {
+        if (m->normaStage == norma::Stage::Telegraph)
+            hold = std::min(1.0f, m->normaTimer / 0.25f);
+        else if (m->normaStage == norma::Stage::Act)
+            hold = dashing && m->normaDash == 0 && m->normaDashStep == 0
+                 ? std::min(1.0f, m->normaDashTimer / 0.2f) : 1.0f;
+        else if (m->normaStage == norma::Stage::Recover)
+            hold = std::max(0.0f, 1.0f - m->normaTimer / 0.3f);
+    }
+    const float dashDir = m->normaDashFace;
+    if (hold > 0.0f) {
+        // Corner 6 (1, 1, 1) sits on the outline at yaw 45 deg, pitch
+        // -35.26 deg; roll then turns it onto the direction.
+        const float h = hold * hold * (3.0f - 2.0f * hold);
+        yaw += (0.7853982f - yaw) * h;
+        pitch += (-0.6154797f - pitch) * h;
+        const NormaCube probe = ProjectNormaCube(0.0f, 0.0f, 1.0f, yaw, pitch, 0.0f);
+        const float target = dashing ? dashDir : m->normaAimAngle;
+        float turn = target - atan2f(probe.sy[6], probe.sx[6]);
+        turn = atan2f(sinf(turn), cosf(turn));
+        roll = turn * h;
+    }
+    float drill = 0.0f;
+    float windK = 0.0f;   // 0..1 through a charge's wind-up
+    if (dashing && m->normaStage == norma::Stage::Act) {
+        if (m->normaDashStep == 0) {
+            windK = std::clamp(m->normaDashTimer / norma::DashWindFor(m->normaPhase), 0.0f, 1.0f);
+        } else if (m->normaDashStep == 1) {
+            const float k = std::clamp(m->normaDashTimer / norma::kDashTime, 0.0f, 1.0f);
+            const float ease = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
+            // About one third of a turn per body length travelled.
+            const float thirds = std::max(2.0f, std::round(m->normaDashLength / (base * 2.3f)));
+            drill = thirds * 2.0943951f * ease;
         }
     }
-    drawCircle(x, y, base * 0.10f, r, g, b, 0.95f);
+    // Controlling a pane (the ram): the whole body runs red.
+    float red = 0.0f;
+    if (m->normaPattern == norma::Pattern::Ram) {
+        if (m->normaStage == norma::Stage::Telegraph) red = std::min(1.0f, m->normaTimer / 0.2f);
+        else if (m->normaStage == norma::Stage::Act) red = 1.0f;
+        else if (m->normaStage == norma::Stage::Recover) red = std::max(0.0f, 1.0f - m->normaTimer / 0.3f);
+    }
+    const float br = r + (1.0f - r) * red, bg = g + (0.30f - g) * red, bb = b + (0.26f - b) * red;
+    // Winding up a charge, the inner cube draws in tight.
+    const float outerR = base * 1.15f * (1.0f - 0.10f * charge + 0.08f * recoil);
+    const float innerShare = (p2 ? 0.78f : 0.45f) * (1.0f - 0.40f * windK * windK);
+    const NormaCube outer = ProjectNormaCube(x, y, outerR, yaw, pitch, roll, drill);
+    const NormaCube inner = ProjectNormaCube(x, y, outerR * innerShare,
+                                             -yaw * 1.3f + 0.4f, pitch * 0.6f + (p2 ? va * 1.4f : 0.0f), roll,
+                                             -drill);
+    // Afterimages of a glide or a charge: thin outlines of the cube as it is.
+    if (m->normaGhostLife > 0.0f) {
+        const float life = m->normaGhostLife / 0.25f;
+        for (int i = 0; i < norma::kGhostCount; ++i) {
+            const int idx = (m->normaGhostHead - i + norma::kGhostCount) % norma::kGhostCount;
+            const float gx = m->normaGhostX[idx], gy = m->normaGhostY[idx];
+            if (gx == 0.0f && gy == 0.0f) continue;
+            const float a = life * 0.40f * (1.0f - (float)i / norma::kGhostCount);
+            const NormaCube ghost = ProjectNormaCube(gx, gy, outerR, yaw, pitch, roll,
+                                                     drill * (1.0f - 0.08f * (float)(i + 1)));
+            DrawNormaCubeOutline(ghost, br, bg, bb, a);
+        }
+    }
+    for (int i = 0; i < 8; ++i)
+        drawLineQuad(outer.sx[i], outer.sy[i], inner.sx[i], inner.sy[i], 0.9f, br, bg, bb, 0.28f);
+    DrawNormaCube(inner, br, bg, bb, 0.80f * pulse, 1.0f, base * 0.11f);
+    DrawNormaCube(outer, br, bg, bb, pulse, 1.4f + 1.2f * flash + 0.8f * recoil, base * 0.17f * (1.0f + 0.4f * lift));
+    if (hold > 0.0f)   // the muzzle / leading star (corner 6 stays put while drilling)
+        DrawEnemyNode({ outer.sx[6], outer.sy[6], base * (0.30f + 0.12f * windK), 1.0f },
+                      1.0f, dashing ? 0.55f : 1.0f, dashing ? 0.50f : 1.0f, hold);
+    DrawEnemyCore(x, y, base * 0.34f, br, bg, bb, 0.85f + 0.15f * pulse, false);
+
+    // The panes' corner brackets orbit the body; faster in phase 2. A charge
+    // sweeps them back behind the body (the wind-up gathers them there, the
+    // run drags them, the rest lets them swing back round).
+    float trail = 0.0f;
+    if (dashing && m->normaStage == norma::Stage::Act) {
+        trail = m->normaDashStep == 0 ? windK * windK
+              : m->normaDashStep == 1 ? 1.0f
+              : 1.0f - std::clamp(m->normaDashTimer / norma::kDashRest, 0.0f, 1.0f);
+    }
+    const float orbit = base * 2.6f * (1.0f - 0.35f * trail);
+    const float arm = base * 0.42f;
+    const float spin = va;
+    const float ox = x - m->normaDashDirX * base * 1.6f * trail;
+    const float oy = y - m->normaDashDirY * base * 1.6f * trail;
+    for (int k = 0; k < 4; ++k) {
+        const float a = spin + 0.7853982f + 1.5707963f * (float)k;
+        const float bx = ox + cosf(a) * orbit, by = oy + sinf(a) * orbit;
+        const float ia = a + 3.14159265f;   // arms point back toward the body
+        const float a1 = ia - 0.7853982f, a2 = ia + 0.7853982f;
+        drawLineQuad(bx, by, bx + cosf(a1) * arm, by + sinf(a1) * arm, 1.8f, br, bg, bb, 0.75f);
+        drawLineQuad(bx, by, bx + cosf(a2) * arm, by + sinf(a2) * arm, 1.8f, br, bg, bb, 0.75f);
+    }
+
+    // Gathering lines while charging: short strokes sliding into the body.
+    if (charge > 0.0f) {
+        for (int i = 0; i < 12; ++i) {
+            const float a = 6.2831853f * (float)i / 12.0f + 0.13f * (float)i;
+            const float phase = fmodf(visualTime * 1.8f + (float)i * 0.37f, 1.0f);
+            const float r0 = half * (2.6f - 1.4f * phase), r1 = r0 - half * 0.35f;
+            const float al = charge * (1.0f - phase) * 0.8f;
+            drawLineQuad(x + cosf(a) * r0, y + sinf(a) * r0, x + cosf(a) * r1, y + sinf(a) * r1,
+                         1.4f, 0.92f, 0.99f, 1.0f, al);
+        }
+    }
+
+    // Pattern warnings, thin violet lines (warning colour; danger is ice).
+    const float vr = 0.76f, vg = 0.70f, vb = 1.0f;
+    if (m->normaPattern == norma::Pattern::Dash && m->normaStage == norma::Stage::Act &&
+        m->normaDashStep == 0) {
+        // Once the charge locks, red outlines of the cube march along its
+        // lane, fading toward the far end.
+        const float k = std::clamp(m->normaDashTimer / norma::DashWindFor(m->normaPhase), 0.0f, 1.0f);
+        if (k >= norma::kDashLock) {
+            const float show = (k - norma::kDashLock) / (1.0f - norma::kDashLock);
+            const float march = std::fmod(visualTime * 3.0f, 1.0f);
+            const float ux = m->normaDashDirX, uy = m->normaDashDirY;
+            for (int j = 0; j < 3; ++j) {
+                const float u = ((float)j + march) / 3.0f;   // 0..1 along the lane
+                const float d = half * 1.4f + (m->normaDashLength - half * 1.4f) * u;
+                const float a = (0.2f + 0.6f * show) * (1.0f - u) * (1.0f - u);
+                const NormaCube lane = ProjectNormaCube(x + ux * d, y + uy * d, outerR, yaw, pitch, roll);
+                DrawNormaCubeOutline(lane, 1.0f, 0.30f, 0.26f, a);
+            }
+        }
+    }
+    if (m->normaPattern == norma::Pattern::Aim &&
+        (m->normaStage == norma::Stage::Telegraph || m->normaStage == norma::Stage::Act)) {
+        // A short aim line that tracks the player, with a reticle bracket at
+        // its end; it brightens into the firing barrel.
+        const bool firing = m->normaStage == norma::Stage::Act;
+        const float a = m->normaAimAngle;
+        const float ux = cosf(a), uy = sinf(a);
+        const float r0 = half * 1.2f, r1 = half + norma::kAimLineLength;
+        const float lr = firing ? 0.92f : vr, lg = firing ? 0.99f : vg, lb = 1.0f;
+        drawLineQuad(x + ux * r0, y + uy * r0, x + ux * r1, y + uy * r1,
+                     firing ? 2.4f : 1.4f, lr, lg, lb, firing ? 0.55f : 0.8f);
+        const float ex = x + ux * r1, ey = y + uy * r1;
+        const float px = -uy, py = ux, s2 = 12.0f;
+        drawLineQuad(ex + px * s2, ey + py * s2, ex + px * s2 - ux * s2, ey + py * s2 - uy * s2,
+                     1.6f, lr, lg, lb, 0.85f);
+        drawLineQuad(ex - px * s2, ey - py * s2, ex - px * s2 - ux * s2, ey - py * s2 - uy * s2,
+                     1.6f, lr, lg, lb, 0.85f);
+        drawLineQuad(ex + px * s2, ey + py * s2, ex - px * s2, ey - py * s2, 1.0f, lr, lg, lb, 0.5f);
+    }
+    if (m->normaStage == norma::Stage::Telegraph) {
+        const float t = m->normaTimer;
+        if (m->normaPattern == norma::Pattern::Refuge) {
+            // The coming flood: short rays that brighten. They stop well short
+            // of the screen edge (no screen-wide aim lines, per the art rules).
+            const float k = std::clamp(t / norma::kRefugeTelegraph, 0.0f, 1.0f);
+            const float rayEnd = half + 300.0f;
+            for (int i = 0; i < 24; ++i) {
+                const float a = m->normaSpin + 6.2831853f * (float)i / 24.0f;
+                drawLineQuad(x + cosf(a) * half * 1.2f, y + sinf(a) * half * 1.2f,
+                             x + cosf(a) * rayEnd, y + sinf(a) * rayEnd,
+                             1.0f, vr, vg, vb, 0.18f + 0.30f * k);
+            }
+        }
+    }
 }
 
 void drawMob(const Monster* m, float visualTime) {
@@ -2214,7 +2475,7 @@ void drawMob(const Monster* m, float visualTime) {
                       visualTime * kAegisSpin, m->regulusShield.grantTimer);
     }
     if (m->kind == MobKind::NORMA) {
-        DrawNormaPlaceholder(m, base, visualTime);
+        DrawNormaBody(m, base, visualTime);
     } else if (m->kind == MobKind::GENESIS) {
         DrawGenesisLauncher(m, base, visualTime);
     } else if (m->kind == MobKind::GRAVIS) {
