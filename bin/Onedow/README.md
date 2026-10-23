@@ -1,6 +1,6 @@
-# Onedow
+﻿# Onedow
 
-Version: 0.1.21
+Version: 0.2.0
 
 ## Windows 실행
 
