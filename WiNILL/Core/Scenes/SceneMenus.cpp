@@ -793,7 +793,7 @@ static void DrawUnknownConstellation(float cx, float cy, float radius,
                 0.64f * alpha);
 }
 
-// AESTERIA title mark: thin polygonal letters with small solid star dots and
+// ASTERIA title mark: thin polygonal letters with small solid star dots and
 // one slim orbit that joins the first A's apex to the last A's lower-right
 // foot. Lines only; the orbit passes behind the letters except at those two
 // joins, which carry the focal stars.
@@ -885,7 +885,7 @@ void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
     static const Glyph kT = {5, 2, 0.72f};
     static const Glyph kR = {7, 2, 0.72f};
     static const Glyph kI = {9, 1, 0.00f};
-    static const Glyph* const kWord[] = { &kA, &kE, &kS, &kT, &kE, &kR, &kI, &kA };
+    static const Glyph* const kWord[] = { &kA, &kS, &kT, &kE, &kR, &kI, &kA };
     constexpr int kGlyphCount = (int)(sizeof(kWord) / sizeof(kWord[0]));
     constexpr float kGap = 0.30f;
 
