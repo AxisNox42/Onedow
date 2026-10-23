@@ -174,7 +174,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     static const RootDef ROOTS[CAT_COUNT + 1] = {
         { { L"\uAD00\uCE21\uCCB4", L"ENTITIES", L"\u89B3\u6E2C\u5BFE\u8C61" },
           0.48f, 0.82f, 1.00f },
-        { { L"\uBAA8\uB4C8", L"MODULES", L"\u30E2\u30B8\u30E5\u30FC\u30EB" },
+        { { L"\uC99D\uAC15", L"AUGMENTS", L"\u5F37\u5316" },
           0.62f, 0.52f, 1.00f },
         { { L"\uB4A4\uB85C", L"BACK", L"\u623B\u308B" },
           0.42f, 0.62f, 0.78f },
@@ -1134,7 +1134,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
         if (seen) swprintf_s(idBuf, L"ID : ENTITY_%02d", selKey);
         else      swprintf_s(idBuf, L"ID : ENTITY_??");
     }
-    else if (selectedCategory == 1) swprintf_s(idBuf, L"ID : MODULE_%03d", selKey);
+    else if (selectedCategory == 1) swprintf_s(idBuf, L"ID : AUGMENT_%03d", selKey);
     else swprintf_s(idBuf, L"ID : APEX_%02d", selKey);
     wchar_t statBuf[128];
     if (selectedCategory == 0)
@@ -1179,12 +1179,14 @@ static void Scene_CodexInline(const SceneCtx& c) {
     if (selectedCategory == 0 && seen) {
         const long long kills = CodexMobKillCount(selKey);
         const int nextMilestone = mobDataStage == 0 ? 0 : mobDataStage == 1 ? 1 : 2;
-        wchar_t progressBuf[128];
-        if (mobDataStage < 3)
-            swprintf_s(progressBuf, L"KILLS : %lld / %lld", kills,
-                       CodexMobKillThreshold(selKey, nextMilestone));
-        else
-            swprintf_s(progressBuf, L"KILLS : %lld | DATA COMPLETE", kills);
+        wchar_t progressBuf[128], killsText[32], goalText[32];
+        FormatGrouped(kills, killsText, 32);
+        if (mobDataStage < 3) {
+            FormatGrouped(CodexMobKillThreshold(selKey, nextMilestone), goalText, 32);
+            swprintf_s(progressBuf, L"KILLS : %ls / %ls", killsText, goalText);
+        } else {
+            swprintf_s(progressBuf, L"KILLS : %ls | DATA COMPLETE", killsText);
+        }
         float dataY = metaY + 26.0f * uiS;
         drawScanTextS(progressBuf, detailX, dataY, idSc,
                       0.48f, 0.82f, 1.0f, 0.88f * rightWake, selKey + 25);
@@ -1217,8 +1219,8 @@ static void Scene_CodexInline(const SceneCtx& c) {
                 dataY += 25.0f * uiS;
             }
             const wchar_t* note = CodexLocalizedText(
-                L"기본 수치 · 플레이 진행도 보정 제외", L"BASE VALUES · RUN SCALING EXCLUDED",
-                L"基本値 · ラン進行度補正を除く");
+                L"기본 수치 · 플레이 진행도 보정 제외", L"BASE VALUES · PLAY SCALING EXCLUDED",
+                L"基本値 · プレイ進行度補正を除く");
             drawScanTextS(note, detailX, dataY, idSc,
                           0.55f, 0.64f, 0.76f, 0.68f * rightWake, selKey + 31);
             dataY += 25.0f * uiS;

@@ -70,18 +70,25 @@ static Options Edited() {
     return o;
 }
 
-static void WriteRawSave(const std::string& text) {
+static void WriteBytes(const std::string& path, const std::string& bytes) {
     FILE* f = nullptr;
-    fopen_s(&f, SaveFilePath(), "wb");
+    fopen_s(&f, path.c_str(), "wb");
     assert(f);
-    std::fwrite(text.data(), 1, text.size(), f);
+    std::fwrite(bytes.data(), 1, bytes.size(), f);
     std::fclose(f);
+}
+
+// A save as the game writes it (ODW2: checksum + obfuscation).
+static void WriteRawSave(const std::string& text) {
+    WriteBytes(SaveFilePath(), EncodeSaveText(text));
 }
 
 static void ResetAll() {
     Write(s_defaults);
     ResetSaveProgress();                       // progress back to zero (also saves)
     std::filesystem::remove(SaveFilePath());
+    std::filesystem::remove(SaveBackupPath());
+    std::filesystem::remove(SaveCorruptPath());
 }
 
 static void CheckRoundTrip() {
@@ -172,6 +179,54 @@ static void CheckRanges() {
                 "theme index range-checked on load, ownership on apply\n");
 }
 
+// Hand-edited, tampered or junk files are refused; the previous save (the
+// backup every SaveGame keeps) loads instead and the bad file is set aside.
+// The legacy ODW1 format still loads. Values cannot overflow.
+static void CheckIntegrity() {
+    ResetAll();
+    WriteBytes(SaveFilePath(), "coins=999999\n");            // plain text
+    LoadGame();
+    assert(g_Coins == 0 && std::filesystem::exists(SaveCorruptPath()));
+
+    ResetAll();
+    std::string legacy = "coins=321\n";
+    OdwCrypt(legacy);
+    WriteBytes(SaveFilePath(), std::string(ODW_MAGIC_LEGACY, 4) + legacy);
+    LoadGame();
+    assert(g_Coins == 321);                                  // ODW1 migrates
+
+    ResetAll();
+    g_Coins = 100; SaveGame();                               // becomes the backup
+    g_Coins = 200; SaveGame();
+    assert(std::filesystem::exists(SaveBackupPath()));
+    std::string bytes;
+    {
+        FILE* f = nullptr;
+        fopen_s(&f, SaveFilePath(), "rb");
+        char buf[4096]; size_t n;
+        while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) bytes.append(buf, n);
+        std::fclose(f);
+    }
+    bytes[bytes.size() / 2] ^= 0x01;                         // one flipped bit
+    WriteBytes(SaveFilePath(), bytes);
+    g_Coins = 0;
+    LoadGame();
+    assert(g_Coins == 100);                                  // backup loaded
+    assert(std::filesystem::exists(SaveCorruptPath()) && !std::filesystem::exists(SaveFilePath()));
+
+    ResetAll();
+    WriteRawSave("coins=9223372036854775807\nkills=9223372036854775807\n");
+    LoadGame();
+    assert(g_Coins == SAVE_VALUE_MAX && g_TotalKills == SAVE_VALUE_MAX);
+    AddSaveValue(g_Coins, 500);
+    assert(g_Coins == SAVE_VALUE_MAX);
+    RecordRunResult(1, 9223372036854775807LL, 9223372036854775807LL, 0);
+    assert(g_Coins == SAVE_VALUE_MAX && g_TotalKills == SAVE_VALUE_MAX &&
+           g_BestScore[1] == SAVE_VALUE_MAX);
+    std::printf("integrity: plain/tampered files refused, backup restored, ODW1 migrates, "
+                "values saturate at %lld\n", SAVE_VALUE_MAX);
+}
+
 // Discarding on the settings screen restores the wanted values and the
 // audio device state.
 static void CheckSnapshot() {
@@ -229,6 +284,7 @@ int main() {
     CheckRoundTrip();
     CheckOldSave();
     CheckRanges();
+    CheckIntegrity();
     CheckSnapshot();
     ResetAll();
     std::printf("REG-26 settings regression passed\n");

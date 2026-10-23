@@ -186,7 +186,7 @@ void FormatMetric(wchar_t* out, int m, float v) {
     case kMove:
     case kCritChance:
     case kDamageCut:  swprintf_s(out, 32, L"%.0f%%", v); break;
-    default:          swprintf_s(out, 32, L"%.0f", v); break;
+    default:          FormatGrouped(std::llround(v), out, 32); break;
     }
 }
 }
@@ -391,7 +391,7 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     swprintf_s(waveBuf, L"%d", curWave);
     swprintf_s(finalBuf, L"/ %d", finalWave);
     swprintf_s(levelBuf, L"%d", state.playerLevel);
-    swprintf_s(gainBuf, L"%lld", std::max(0LL, g_RunStardust));
+    FormatGrouped(std::max(0LL, g_RunStardust), gainBuf, 48);
 
     // Hero: the wave counter, with the final wave beside it.
     const bool heroHot = arrived && !state.victory;

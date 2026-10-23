@@ -9,8 +9,9 @@
 #include "Achievements.h"
 
 // Records the run (best score, totals, codex kills, coins — RecordRunResult
-// saves), unlocks the 10-games achievement and saves for it. Creative runs
-// record nothing and earn no coins. Returns the new-record flag
+// saves), unlocks the 10-games achievement and saves for it. Creative and
+// debug plays (callers pass !PlayRecordsProgress()) record nothing and earn
+// no coins. Returns the new-record flag
 // (g_LastRunRecord).
 inline bool CommitRunResult(bool creative, int difficultyIdx, long long score,
                             long long kills, int weaponIdx) {
@@ -24,5 +25,6 @@ inline bool CommitRunResult(bool creative, int difficultyIdx, long long score,
         return record;
     }
     g_LastRunCoins = 0;
+    for (int i = 0; i < CM_COUNT; ++i) g_RunMobKillCounts[i] = 0;
     return false;
 }

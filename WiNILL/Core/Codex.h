@@ -234,7 +234,7 @@ inline bool g_AugSeen[AUG_TOTAL] = { false };
 inline bool g_CodexDirty   = false;
 
 inline void MarkAugSeen(int augIdx) {
-    if (augIdx < 0 || augIdx >= AUG_TOTAL) return;
+    if (augIdx < 0 || augIdx >= AUG_TOTAL || !PlayRecordsProgress()) return;
     if (!g_AugSeen[augIdx]) { g_AugSeen[augIdx] = true; g_CodexDirty = true; }
 }
 
@@ -432,12 +432,12 @@ inline void MarkMobSeen(MobKind k) {
 }
 inline void MarkMobSeenId(CodexMobId id) {
     if (id == CM_RETIRED_08) return;
-    if (id < 0 || id >= CM_COUNT) return;
+    if (id < 0 || id >= CM_COUNT || !PlayRecordsProgress()) return;
     if (!g_MobSeen[id]) { g_MobSeen[id] = true; g_CodexDirty = true; }
 }
 inline void RegisterCodexMobKill(CodexMobId id) {
     if (id == CM_RETIRED_08) return;
-    if (g_CreativeMode || id < 0 || id >= CM_COUNT) return;
+    if (!PlayRecordsProgress() || id < 0 || id >= CM_COUNT) return;
     ++g_RunMobKillCounts[id];
 }
 inline void RegisterCodexMobKill(MobKind kind) {

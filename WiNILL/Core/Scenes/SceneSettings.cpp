@@ -268,7 +268,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     } else if (!inGameSettings) {
         const wchar_t* menu[4] = { SettingsText(L"계속하기", L"CONTINUE", L"続ける"),
                                    SettingsText(L"설정", L"CALIBRATION", L"設定"),
-                                   SettingsText(L"\uD3EC\uAE30\uD558\uAE30", L"ABANDON RUN", L"放棄する"),
+                                   SettingsText(L"\uD3EC\uAE30\uD558\uAE30", L"ABANDON PLAY", L"放棄する"),
                                    SettingsText(L"종료", L"TERMINATE", L"終了") };
         for (int i = 0; i < 4; ++i) {
             const float y = MainMenuButtonRailStartY(sh, uiS) + i * (mainBH + mainGap);
@@ -418,8 +418,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     settingsRows[0][2] = { SettingsText(L"콤보 HUD", L"COMBO HUD", L"コンボHUD"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_ShowCombo ? 0 : 1 };
     settingsRows[0][3] = { SettingsText(L"배경 블러", L"BACKDROP BLUR", L"背景ブラー"), nullptr, false, false, false, false,
-                           { toggleOff, toggleOn },
-                           2, g_BackdropBlurEnabled ? 1 : 0 };
+                           { toggleOn, toggleOff }, 2, g_BackdropBlurEnabled ? 0 : 1 };
     settingsRows[0][4] = { SettingsText(L"블러 갱신 주기", L"BLUR REFRESH RATE", L"ブラー更新間隔"), nullptr, false, false, false, false,
                            { L"1", L"20", L"60" }, 3,
                            g_BackdropBlurCaptureHz == 1 ? 0 :
@@ -851,11 +850,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 };
                 return graphics[optionLanguage][optionIndex];
             }
-            if (row == 2) {
+            if (row == 2 || row == 3) {
                 return kToggleLabels[optionLanguage][optionIndex];
-            }
-            if (row == 3) {
-                return kToggleLabels[optionLanguage][1 - optionIndex];
             }
             if (row == 4) {
                 static const wchar_t* rates[3][3] = {
@@ -1441,7 +1437,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
             } else if (row == 2) {
                 g_ShowCombo = option == 0;
              } else if (row == 3) {
-                g_BackdropBlurEnabled = option != 0;
+                g_BackdropBlurEnabled = option == 0;
                 InvalidateBackdropCapture();
              } else if (row == 4) {
                  static const int captureRates[] = { 1, 20, 60 };

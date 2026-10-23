@@ -17,14 +17,69 @@
 // ── 세이브 난독화(F25) — 평문 편집 방지. 롤링 XOR(키는 exe 내장 상수).
 //   강한 암호는 아니지만 일반 사용자가 메모장으로 점수/코인 조작 못 하게 함.
 //   XOR 은 자기역원이라 같은 함수로 암·복호화. (자기 자신 호출)
+//   키는 마스킹된 바이트로만 exe 에 남는다(문자열 검색으로 바로 보이지 않게).
+namespace save_detail {
+inline constexpr int kKeyLen = 35;
+inline constexpr char kKeyMask = 0x5A;
+struct MaskedKey { char bytes[kKeyLen]; };
+constexpr MaskedKey MaskKey(const char (&plain)[kKeyLen + 1]) {
+    MaskedKey k{};
+    for (int i = 0; i < kKeyLen; ++i) k.bytes[i] = (char)(plain[i] ^ kKeyMask);
+    return k;
+}
+inline constexpr MaskedKey kKey = MaskKey("0n3d0w-d3sktop-d3f3ns3-x0r-k3y-2026");
+
+// CRC-32 (IEEE) of the plain text, salted so a hand-edited file fails.
+inline unsigned int Checksum(const std::string& text) {
+    unsigned int crc = 0xFFFFFFFFu ^ 0x0D3A5E11u;
+    for (unsigned char c : text) {
+        crc ^= c;
+        for (int b = 0; b < 8; ++b) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+}  // namespace save_detail
+
 inline void OdwCrypt(std::string& s) {
-    static const char KEY[] = "0n3d0w-d3sktop-d3f3ns3-x0r-k3y-2026";
-    const int kl = (int)sizeof(KEY) - 1;
+    using namespace save_detail;
     for (size_t i = 0; i < s.size(); i++)
-        s[i] = (char)((unsigned char)s[i] ^ (unsigned char)KEY[i % kl]
+        s[i] = (char)((unsigned char)s[i]
+                      ^ (unsigned char)(kKey.bytes[i % kKeyLen] ^ kKeyMask)
                       ^ (unsigned char)((i * 31u + 7u) & 0xFF));
 }
-inline const char ODW_MAGIC[4] = { 'O','D','W','1' };
+// ODW2 = magic + CRC-32(plain, little endian) + encrypted plain text.
+// ODW1 (no checksum) still loads once and is rewritten as ODW2 on the next
+// save. Plain-text files are no longer accepted.
+inline const char ODW_MAGIC[4]        = { 'O','D','W','2' };
+inline const char ODW_MAGIC_LEGACY[4] = { 'O','D','W','1' };
+
+// Wraps plain key=value text in the on-disk ODW2 format.
+inline std::string EncodeSaveText(std::string text) {
+    const unsigned int crc = save_detail::Checksum(text);
+    OdwCrypt(text);
+    std::string out(ODW_MAGIC, 4);
+    for (int i = 0; i < 4; ++i) out += (char)((crc >> (8 * i)) & 0xFF);
+    return out + text;
+}
+
+// False when the bytes are not a valid save: unknown magic (plain text
+// included) or a checksum mismatch.
+inline bool DecodeSaveText(const std::string& raw, std::string& text) {
+    if (raw.size() >= 8 && std::memcmp(raw.data(), ODW_MAGIC, 4) == 0) {
+        unsigned int crc = 0;
+        for (int i = 0; i < 4; ++i)
+            crc |= (unsigned int)(unsigned char)raw[4 + i] << (8 * i);
+        text = raw.substr(8);
+        OdwCrypt(text);
+        return save_detail::Checksum(text) == crc;
+    }
+    if (raw.size() >= 4 && std::memcmp(raw.data(), ODW_MAGIC_LEGACY, 4) == 0) {
+        text = raw.substr(4);
+        OdwCrypt(text);
+        return true;
+    }
+    return false;
+}
 
 // 영구 데이터 (설정은 Settings.h 전역을 그대로 직렬화)
 inline long long g_BestScore[3] = { 0, 0, 0 };   // 난이도별 최고 점수 (EASY/NORMAL/HARD)
@@ -40,6 +95,8 @@ inline long long g_WeaponTotalKills[2] = { 0, 0 };  // 누적 처치
 inline long long g_WeaponRunCount[2]   = { 0, 0 };  // 플레이 횟수
 
 inline const char* SaveFilePath() { return "onedow_save.cfg"; }
+inline std::string SaveBackupPath() { return std::string(SaveFilePath()) + ".bak"; }
+inline std::string SaveCorruptPath() { return std::string(SaveFilePath()) + ".corrupt"; }
 
 inline void SaveGame() {
     if (g_SmokeCapture) return;   // 스모크 세션은 사용자 세이브를 건드리지 않음
@@ -99,8 +156,8 @@ inline void SaveGame() {
     for (int i = 1; i < JOB_COUNT; i++)
         if (g_JobBought[i]) { std::snprintf(ln, sizeof(ln), "jobbought%d=1\n", i); buf += ln; }
 
-    // 2) 난독화 후 바이너리(매직+암호문)로 기록
-    OdwCrypt(buf);
+    // 2) 체크섬 + 난독화 후 바이너리(매직+CRC+암호문)로 기록
+    buf = EncodeSaveText(std::move(buf));
 #ifdef _MSC_VER
 #  pragma warning(push)
 #  pragma warning(disable:4996)
@@ -113,39 +170,52 @@ inline void SaveGame() {
 #  pragma warning(pop)
 #endif
     if (!f) return;
-    bool ok = std::fwrite(ODW_MAGIC, 1, 4, f) == 4;
-    if (ok && !buf.empty())
-        ok = std::fwrite(buf.data(), 1, buf.size(), f) == buf.size();
+    bool ok = std::fwrite(buf.data(), 1, buf.size(), f) == buf.size();
     ok = (std::fflush(f) == 0) && ok;
     ok = (std::fclose(f) == 0) && ok;
     std::error_code ec;
-    if (ok) std::filesystem::rename(tmpPath, SaveFilePath(), ec);
+    if (ok) {
+        // The previous good save becomes the backup; a crash between the two
+        // renames leaves the backup for LoadGame to fall back on.
+        if (std::filesystem::exists(SaveFilePath(), ec))
+            std::filesystem::rename(SaveFilePath(), SaveBackupPath(), ec);
+        ec.clear();
+        std::filesystem::rename(tmpPath, SaveFilePath(), ec);
+    }
     if (!ok || ec) std::filesystem::remove(tmpPath, ec);
 }
 
-inline void LoadGame() {
+inline bool ReadSaveFile(const std::string& path, std::string& text) {
 #ifdef _MSC_VER
 #  pragma warning(push)
 #  pragma warning(disable:4996)
 #endif
-    FILE* f = std::fopen(SaveFilePath(), "rb");
+    FILE* f = std::fopen(path.c_str(), "rb");
 #ifdef _MSC_VER
 #  pragma warning(pop)
 #endif
-    if (!f) return;
-    // 전체를 읽어 매직 확인 → 난독화면 복호화, 아니면 구버전 평문으로 처리.
+    if (!f) return false;
+    // Real saves are a few KB; anything far larger is not ours.
+    constexpr size_t kMaxSaveBytes = 1u << 20;
     std::string raw;
-    {
-        char tmp[1024]; size_t n;
-        while ((n = std::fread(tmp, 1, sizeof(tmp), f)) > 0) raw.append(tmp, n);
-    }
+    char tmp[1024]; size_t n;
+    while (raw.size() <= kMaxSaveBytes && (n = std::fread(tmp, 1, sizeof(tmp), f)) > 0)
+        raw.append(tmp, n);
     std::fclose(f);
+    return raw.size() <= kMaxSaveBytes && DecodeSaveText(raw, text);
+}
+
+inline void LoadGame() {
+    // 본 파일이 손상(체크섬 불일치·평문·쓰레기)이면 .corrupt 로 치워 두고
+    // 직전 백업을 읽는다. 다음 저장이 손상본으로 백업을 덮어쓰지 않게 하기 위함.
     std::string content;
-    if (raw.size() >= 4 && std::memcmp(raw.data(), ODW_MAGIC, 4) == 0) {
-        content = raw.substr(4);
-        OdwCrypt(content);            // 복호화 (XOR 자기역원)
-    } else {
-        content = raw;                // 구버전 평문 세이브 호환
+    std::error_code ec;
+    if (!ReadSaveFile(SaveFilePath(), content)) {
+        if (std::filesystem::exists(SaveFilePath(), ec)) {
+            std::filesystem::remove(SaveCorruptPath(), ec);
+            std::filesystem::rename(SaveFilePath(), SaveCorruptPath(), ec);
+        }
+        if (!ReadSaveFile(SaveBackupPath(), content)) return;
     }
     // 줄 단위 파싱 (기존 sscanf 로직 그대로)
     size_t pos = 0;
@@ -193,16 +263,16 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "vfxdens"))    { int v = (int)val; if (v >= 0 && v <= 2) g_VfxDensity = (VfxDensity)v; }
         else if (!std::strcmp(key, "macopt"))     g_MacOptV1          = (val != 0);
         // Scores, counts and coins are never negative; a damaged value reads as 0.
-        else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = val < 0 ? 0 : val;
-        else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = val < 0 ? 0 : val;
-        else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = val < 0 ? 0 : val;
-        else if (!std::strcmp(key, "kills"))       g_TotalKills        = val < 0 ? 0 : val;
-        else if (!std::strcmp(key, "games"))       g_TotalGames        = val < 0 ? 0 : val;
-        else if (!std::strncmp(key, "wbscore", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestScore[i]  = val < 0 ? 0 : val; }
-        else if (!std::strncmp(key, "wbkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestKills[i]  = val < 0 ? 0 : val; }
-        else if (!std::strncmp(key, "wtkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponTotalKills[i] = val < 0 ? 0 : val; }
-        else if (!std::strncmp(key, "wruns",   5))  { int i = atoi(key+5); if (i>=0&&i<2) g_WeaponRunCount[i]   = val < 0 ? 0 : val; }
-        else if (!std::strcmp(key, "coins"))       g_Coins             = val < 0 ? 0 : val;
+        else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = ClampSaveValue(val);
+        else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = ClampSaveValue(val);
+        else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = ClampSaveValue(val);
+        else if (!std::strcmp(key, "kills"))       g_TotalKills        = ClampSaveValue(val);
+        else if (!std::strcmp(key, "games"))       g_TotalGames        = ClampSaveValue(val);
+        else if (!std::strncmp(key, "wbscore", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestScore[i]  = ClampSaveValue(val); }
+        else if (!std::strncmp(key, "wbkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestKills[i]  = ClampSaveValue(val); }
+        else if (!std::strncmp(key, "wtkills", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponTotalKills[i] = ClampSaveValue(val); }
+        else if (!std::strncmp(key, "wruns",   5))  { int i = atoi(key+5); if (i>=0&&i<2) g_WeaponRunCount[i]   = ClampSaveValue(val); }
+        else if (!std::strcmp(key, "coins"))       g_Coins             = ClampSaveValue(val);
         else if (!std::strcmp(key, "themeowned"))  g_ThemeOwned        = (int)val | 1;
         // Ownership is checked by ApplyAccentTheme (themeowned may load later).
         else if (!std::strcmp(key, "themesel"))  { if (val >= 0 && val < ACCENT_COUNT) g_ThemeSel = (int)val; }
@@ -227,7 +297,7 @@ inline void LoadGame() {
         }
         else if (!std::strncmp(key, "mobkills", 8)) {
             int mi = atoi(key + 8);
-            if (mi >= 0 && mi < CM_COUNT && val >= 0) g_MobKillCounts[mi] = val;
+            if (mi >= 0 && mi < CM_COUNT) g_MobKillCounts[mi] = ClampSaveValue(val);
         }
         else if (!std::strncmp(key, "bossseen", 8)) { (void)val; }
         else if (!std::strncmp(key, "jobbought", 9)) {
@@ -263,26 +333,28 @@ inline void ResetSaveProgress() {
 // weaponIdx: 0=RIFLE, 1=STATIC FIELD, -1=미지정
 inline bool RecordRunResult(int difficultyIdx, long long score, long long kills, int weaponIdx = -1) {
     if (difficultyIdx < 0 || difficultyIdx > 2) difficultyIdx = 1;
+    score = ClampSaveValue(score);
+    kills = ClampSaveValue(kills);
     bool isRecord = (score > g_BestScore[difficultyIdx]);
     if (isRecord) g_BestScore[difficultyIdx] = score;
-    g_TotalKills += kills;
-    g_TotalGames += 1;
+    AddSaveValue(g_TotalKills, kills);
+    AddSaveValue(g_TotalGames, 1);
     if (weaponIdx >= 0 && weaponIdx < 2) {
         if (score > g_WeaponBestScore[weaponIdx])  g_WeaponBestScore[weaponIdx]  = score;
         if (kills > g_WeaponBestKills[weaponIdx])  g_WeaponBestKills[weaponIdx]  = kills;
-        g_WeaponTotalKills[weaponIdx] += kills;
-        g_WeaponRunCount[weaponIdx]   += 1;
+        AddSaveValue(g_WeaponTotalKills[weaponIdx], kills);
+        AddSaveValue(g_WeaponRunCount[weaponIdx], 1);
     }
     for (int i = 0; i < CM_COUNT; ++i) {
-        g_MobKillCounts[i] += g_RunMobKillCounts[i];
+        AddSaveValue(g_MobKillCounts[i], g_RunMobKillCounts[i]);
         g_RunMobKillCounts[i] = 0;
     }
     // 코인 적립 — 점수/1000 + 처치/2 (난이도 보너스: 보통×1.2, 어려움×1.5)
     float diffMul = (difficultyIdx == 2) ? 1.5f : (difficultyIdx == 1) ? 1.2f : 1.0f;
     long long earned = (long long)((score / 1000 + kills / 2) * diffMul);
-    g_Coins += earned;
+    AddSaveValue(g_Coins, earned);
     g_LastRunCoins = earned;
-    g_RunStardust += earned;
+    AddSaveValue(g_RunStardust, earned);
     SaveGame();
     return isRecord;
 }

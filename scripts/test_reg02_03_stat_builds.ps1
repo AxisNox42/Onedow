@@ -35,8 +35,17 @@ try {
     if ($inline) { $inline | Out-String | Write-Host; throw 'stat build code outside RunStats.h' }
 
     # REG-03 ledger: takenOnce is only ever latched in main.cpp, and only the
-    # new-run reset (GameManager::ResetRunProgress) clears it.
-    $unlatch = Select-String -Path 'WiNILL\main.cpp' -Pattern 'memset\([^)]*takenOnce|takenOnce\[[^\]]+\]\s*=(?!=)(?!\s*true\b)'
+    # new-run reset (GameManager::ResetRunProgress) clears it. The one exception
+    # is the debug toolkit (DebugEditAugment): Clear and turning a card off
+    # reopen it so the same once-only card can be tested again. Debug plays
+    # record nothing, so this cannot leak into a real play.
+    $mainLines = Get-Content 'WiNILL\main.cpp'
+    $unlatch = Select-String -Path 'WiNILL\main.cpp' -Pattern 'memset\([^)]*takenOnce|takenOnce\[[^\]]+\]\s*=(?!=)(?!\s*true\b)' |
+        Where-Object {
+            $owner = ($mainLines[0..($_.LineNumber - 1)] | Select-String -Pattern '^(?:static\s+)?\w[\w:<>&\* ]*\b(\w+)\(' |
+                Select-Object -Last 1).Matches[0].Groups[1].Value
+            $owner -ne 'DebugEditAugment'
+        }
     if ($unlatch) { $unlatch | Out-String | Write-Host; throw 'main.cpp writes takenOnce other than latching it' }
     $gm = Get-Content 'WiNILL\Core\GameManager.cpp'
     $clears = Select-String -Path 'WiNILL\Core\GameManager.cpp' -Pattern 'memset\(takenOnce|takenOnce\[\w+\] = false'

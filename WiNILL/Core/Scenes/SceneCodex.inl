@@ -70,7 +70,7 @@ void Scene_Codex(const SceneCtx& c) {
     struct CatDef { const wchar_t* id; const wchar_t* name[3]; float r, g, b; };
     static const CatDef kCats[] = {
         { L"ENTITIES", { L"관측체", L"ENTITIES", L"観測対象" }, 0.48f, 0.82f, 1.00f },
-        { L"MODULES",  { L"모듈", L"MODULES", L"モジュール" }, 0.62f, 0.52f, 1.00f },
+        { L"AUGMENTS", { L"증강", L"AUGMENTS", L"強化" }, 0.62f, 0.52f, 1.00f },
     };
     const int kCatCount = 2;
     const CatDef& cat = kCats[s_cat];
@@ -673,12 +673,14 @@ void Scene_Codex(const SceneCtx& c) {
                 drawInfoQuad(infoX, logBoxY, infoW, logBoxH, detailA);
                 const long long kills = CodexMobKillCount(selItem);
                 const int nextMilestone = mobDataStage == 0 ? 0 : mobDataStage == 1 ? 1 : 2;
-                wchar_t progressBuf[128];
-                if (mobDataStage < 3)
-                    swprintf_s(progressBuf, L"%lld / %lld", kills,
-                               CodexMobKillThreshold(selItem, nextMilestone));
-                else
-                    swprintf_s(progressBuf, L"%lld | DATA COMPLETE", kills);
+                wchar_t progressBuf[128], killsText[32], goalText[32];
+                FormatGrouped(kills, killsText, 32);
+                if (mobDataStage < 3) {
+                    FormatGrouped(CodexMobKillThreshold(selItem, nextMilestone), goalText, 32);
+                    swprintf_s(progressBuf, L"%ls / %ls", killsText, goalText);
+                } else {
+                    swprintf_s(progressBuf, L"%ls | DATA COMPLETE", killsText);
+                }
                 const wchar_t* next = mobDataStage == 0
                     ? CodexLocalizedText(L"티어와 개요", L"TIER AND OVERVIEW", L"ティアと概要")
                     : mobDataStage == 1
@@ -712,8 +714,8 @@ void Scene_Codex(const SceneCtx& c) {
                 }
                 if (mobDataStage >= 2) {
                     const wchar_t* note = CodexLocalizedText(
-                        L"기본 수치 · 플레이 진행도 보정 제외", L"BASE VALUES · RUN SCALING EXCLUDED",
-                        L"基本値 · ラン進行度補正を除く");
+                        L"기본 수치 · 플레이 진행도 보정 제외", L"BASE VALUES · PLAY SCALING EXCLUDED",
+                        L"基本値 · プレイ進行度補正を除く");
                     const float noteY = logBoxY + 25.0f*uiS + rowCount * 27.0f * uiS;
                     drawFitS(note, infoX + 18.0f*uiS, noteY,
                              infoW - 36.0f*uiS, logScale, 0.42f*uiS,
@@ -729,7 +731,7 @@ void Scene_Codex(const SceneCtx& c) {
                 float rr, rg, rb; GetRarityColor(d.rarity, rr, rg, rb);
                 BindMainShader();
                 drawInfoQuad(infoX, titleBoxY, infoW, titleBoxH, detailA);
-                g_TextS.Draw(L"MODULE", infoX + 18.0f*uiS, titleBoxY + 10.0f*uiS,
+                g_TextS.Draw(L"AUGMENT", infoX + 18.0f*uiS, titleBoxY + 10.0f*uiS,
                              UiTextScale(g_TextS, UiTextLevel::Supporting, uiS),
                              uiR, uiG, uiB, 0.78f*detailA);
                 g_TextL.Draw(AugName(d), infoX + 18.0f*uiS, titleBoxY + 34.0f*uiS,

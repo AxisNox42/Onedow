@@ -562,7 +562,7 @@ static void CompleteWaveRun(int finalWave) {
     Audio::StopBgm();
     g_GameOverFade = 0.0f;
     g_LastRunRecord = CommitRunResult(
-        g_CreativeMode, static_cast<int>(g_Difficulty), g_GameManager.score,
+        !PlayRecordsProgress(), static_cast<int>(g_Difficulty), g_GameManager.score,
         g_Stats.killCount, (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
     g_GameManager.currentState = GameState::GAMEOVER;
 }
@@ -968,6 +968,14 @@ int main() {
 
     // ?�행 ?�일 ?�더�??�업 ?�렉?�리 ?�동 (Resource/ ?��?경로 로드 보장)
     PlatformChdirToExeDir();
+#if defined(_WIN32)
+    // One game at a time: two copies would each save over the other's
+    // progress. Smoke captures never save, so they may run alongside.
+    if (SmokeEnv("ONEDOW_SMOKE").empty()) {
+        CreateMutexW(nullptr, TRUE, L"Local\\ASTERIA_SingleInstance");
+        if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+    }
+#endif
     LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
     g_SmokeRun.Init();   // ONEDOW_SMOKE 스모크 캡처 세션 설정
 #if !defined(_DEBUG)
@@ -1293,6 +1301,14 @@ int main() {
         float now   = (float)glfwGetTime();
         float delta = now - lastFrame;
         if (delta > 0.1f) delta = 0.1f;
+        if (g_DebugMode) {
+            const GameState st = g_GameManager.currentState;
+            if (st == GameState::READY || st == GameState::RUNNING ||
+                st == GameState::PAUSED || st == GameState::AUG_SELECT ||
+                st == GameState::AUG_REPLACE || st == GameState::DEBUFF_SELECT ||
+                st == GameState::DYING)
+                g_PlayDebugTainted = true;
+        }
         delta *= g_SmokeTimeScale;   // 1 outside smoke captures
         lastFrame = now;
 
@@ -1582,7 +1598,7 @@ int main() {
             };
             wcscpy_s(g_DeathReason, abandoned[li]);
 
-            g_LastRunRecord = CommitRunResult(g_CreativeMode, (int)g_Difficulty,
+            g_LastRunRecord = CommitRunResult(!PlayRecordsProgress(), (int)g_Difficulty,
                                               g_GameManager.score, g_Stats.killCount,
                                               (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
 
@@ -1692,6 +1708,10 @@ int main() {
                             g_Stats.killCount = 777;
                             g_CurrentWeapon = (int)StartWeapon::SMG;
                             g_GameTime = 99.0f;
+                            // Match the wave to the filled time; otherwise the next
+                            // frame enters wave 2 and applies a random wave debuff,
+                            // which leaks into the following snapshots.
+                            gm.currentWave = CurrentWaveNumber(g_GameTime, g_Difficulty);
                         };
                         auto dump = [&](const std::string& label) {
                             int drones = 0, chakrams = 0, skills = 0, shocks = 0, debris = 0,
@@ -1836,8 +1856,8 @@ int main() {
                         // DUST=<n>: stardust picked up this run (wallet too,
                         // as a real pickup does). Never saved.
                         const long long n = std::atoll(step.c_str() + 5);
-                        g_RunStardust += n;
-                        g_Coins += n;
+                        AddSaveValue(g_RunStardust, n);
+                        AddSaveValue(g_Coins, n);
                     } else if (step.rfind("COINS=", 0) == 0) {
                         // COINS=<n>: wallet for shop states (never saved).
                         g_Coins = std::atoll(step.c_str() + 6);
@@ -2328,7 +2348,7 @@ int main() {
                 g_GameOverFade = 0.0f;   // 결과 메뉴 ?�이?�인 ?�작 (2.5�?
                 // 기록 ?�?????�이?�별 최고???�적/코인 갱신 (?�기록이�??�시)
                 //   ?�리?�이?�브 모드(?�드박스)??코인·기록 ?�외 (?�밍 방�?)
-                g_LastRunRecord = CommitRunResult(g_CreativeMode, (int)g_Difficulty,
+                g_LastRunRecord = CommitRunResult(!PlayRecordsProgress(), (int)g_Difficulty,
                                                   g_GameManager.score, g_Stats.killCount,
                                                   (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
             }
@@ -3084,7 +3104,7 @@ CollisionSystem::Update(pCX, pCY,
                     MarkMobSeenId(CM_SCOPE);
 
             // ?�적 조건 체크 (???�수/??보유 증강 기�? ??보스 ?�적?�?처치 ?�점?�서 처리)
-            {
+            if (PlayRecordsProgress()) {
                 long long runScore = g_GameManager.score;
                 long long runKills = g_Stats.killCount;
                 if (runScore >= 300000)  TryUnlockAch(ACH_SCORE_300K);
@@ -3153,8 +3173,10 @@ CollisionSystem::Update(pCX, pCY,
                                 STARDUST_MIN_HOMING_SECONDS &&
                     dist < STARDUST_PICKUP_RADIUS) {
                     GrantExperience(dust.xpValue);
-                    g_Coins += dust.value;
-                    g_RunStardust += dust.value;
+                    if (PlayRecordsProgress()) {
+                        AddSaveValue(g_Coins, dust.value);
+                        AddSaveValue(g_RunStardust, dust.value);
+                    }
                     g_StardustHudPulse = 1.0f;
                     SpawnSparks(dust.x, dust.y, dust.value >= 5 ? 6 : 3,
                                 1.0f, 0.85f, 0.30f, 180.0f);
@@ -3931,8 +3953,10 @@ CollisionSystem::Update(pCX, pCY,
                 int li2 = LangIndex();
                 const wchar_t* LBL[3] = { L"\uC5C5\uC801 \uB2EC\uC131!", L"Achievement!", L"\u5B9F\u7E3E\u9054\u6210!" };
                 wchar_t tb[160];
-                swprintf_s(tb, L"%ls  %ls  (+%lld)", LBL[li2],
-                           AchName(g_AchToastId), ACH_DEFS[g_AchToastId].coinReward);
+                wchar_t rewardText[32];
+                FormatGrouped(ACH_DEFS[g_AchToastId].coinReward, rewardText, 32);
+                swprintf_s(tb, L"%ls  %ls  (+%ls)", LBL[li2],
+                           AchName(g_AchToastId), rewardText);
                 const float toastScale = UiTextScale(g_TextS, UiTextLevel::Description,
                                                      UiScale(sw, sh));
                 float bw = g_TextS.Width(tb, toastScale) + 48.0f;
@@ -4128,7 +4152,7 @@ CollisionSystem::Update(pCX, pCY,
                 for (auto& d : g_DmgNumbers) {
                     float t  = d.life / d.maxLife;                   // 1 ??0
                     float sx = roundf(W2SX(d.x)), sy = W2SY(d.y);
-                    wchar_t nb[16]; swprintf_s(nb, L"%d", d.amount);
+                    wchar_t nb[32]; FormatGrouped(d.amount, nb, 32);
                     float sc = UiTextScale(g_TextS, UiTextLevel::Description,
                         (d.crit ? 1.05f : 0.72f) * g_ViewZoom
                         * (0.7f + 0.3f * t) * UiScale(sw, sh));
@@ -4155,7 +4179,8 @@ CollisionSystem::Update(pCX, pCY,
                 if (g_ShowCombo && st == GameState::RUNNING && g_Combo >= 5) {
                     bool  ms      = (g_ComboMilestone > 0.0f);
                     float msBoost = ms ? (g_ComboMilestone / 0.7f) : 0.0f;
-                    wchar_t cb[32]; swprintf_s(cb, L"%d COMBO", g_Combo);
+                    wchar_t cb[48], comboText[32]; FormatGrouped(g_Combo, comboText, 32);
+                    swprintf_s(cb, L"%ls COMBO", comboText);
                     float sc = UiTextScale(g_TextS, UiTextLevel::Subtitle,
                         (1.0f + g_ComboPulse * 0.4f + msBoost * 0.55f) * UiScale(sw, sh));
                     sc *= 1.0f + (g_Combo > 30 ? 0.12f : 0.0f);

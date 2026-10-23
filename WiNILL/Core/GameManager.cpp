@@ -174,6 +174,7 @@ void GameManager::ResetRunProgress(MonsterManager& mm,
     xp = 0;
     playerLevel = 1;
     memset(takenOnce, 0, sizeof(takenOnce));
+    g_PlayDebugTainted = g_DebugMode;
     bullets.clear();
     mm.Clear();
     lastState = GameState::READY;

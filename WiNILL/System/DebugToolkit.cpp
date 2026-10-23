@@ -1219,7 +1219,7 @@ void DebugToolkit::RenderCaptureTab(float x, float y, float w, float h,
         g_TextS.Draw(progress, x + 20.0f, y + 282.0f, 0.54f,
                      1.0f, 0.84f, 0.30f, 0.96f);
     } else {
-        g_TextS.Draw(L"런 상태를 변경하지 않고 각 장면을 렌더링합니다.",
+        g_TextS.Draw(L"플레이 상태를 변경하지 않고 각 장면을 렌더링합니다.",
                      x + 20.0f, y + 282.0f, 0.42f,
                      0.52f, 0.68f, 0.80f, 0.84f);
     }

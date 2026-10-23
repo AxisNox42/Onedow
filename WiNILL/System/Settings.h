@@ -234,6 +234,26 @@ inline int TrialRangedMaxBonus(long long score) {
 inline bool g_CreativeMode = false;
 inline bool g_DebugMode = false;
 
+// Counts and the wallet never exceed this, so additions cannot overflow and
+// every value fits the HUD (999,999,999,999,999).
+inline constexpr long long SAVE_VALUE_MAX = 999999999999999LL;
+inline long long ClampSaveValue(long long v) {
+    return v < 0 ? 0 : v > SAVE_VALUE_MAX ? SAVE_VALUE_MAX : v;
+}
+inline void AddSaveValue(long long& total, long long amount) {
+    total = ClampSaveValue(amount > 0 && total > SAVE_VALUE_MAX - amount
+                               ? SAVE_VALUE_MAX : total + amount);
+}
+
+// A play that had debug mode on at any moment (F level-up, G godmode, the
+// toolkit) records nothing: no best score, stardust, achievements or codex
+// progress. Latched at play start and every in-play frame; cleared only by
+// the next play's reset.
+inline bool g_PlayDebugTainted = false;
+inline bool PlayRecordsProgress() {
+    return !g_CreativeMode && !g_PlayDebugTainted;
+}
+
 // Keep the debug switch visible for QA builds as well as Release packages.
 // The switch remains opt-in and does not enable debug behavior by itself.
 inline constexpr bool kDebugSettingsVisible = true;

@@ -104,7 +104,7 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"デバフを選択してください  (回避不可)",
     },
     /* KEY_HINT_NO_HOVER */ {
-        L"[ 1 ]  ·  [ 2 ]  ·  [ 3 ]   모듈 선택  |  SPACE : 확정",
+        L"[ 1 ]  ·  [ 2 ]  ·  [ 3 ]   증강 선택  |  SPACE : 확정",
         L"1  /  2  /  3  to highlight  ·  Space to confirm",
         L"1  /  2  /  3  でカード選択  ·  Space で確定",
     },

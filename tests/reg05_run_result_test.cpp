@@ -61,13 +61,14 @@ int main() {
     assert(g_Coins == coinsBefore + ACH_DEFS[ACH_GAMES_10].coinReward);      // no second unlock
     std::printf("10th game: achievement once (+%d coins)\n", ACH_DEFS[ACH_GAMES_10].coinReward);
 
-    // Creative: nothing recorded, no coins, the run's codex kills stay put.
+    // Creative / debug: nothing recorded, no coins, and the play's codex kills
+    // are dropped so they cannot leak into the next recorded play.
     const long long games = g_TotalGames, kills = g_TotalKills, coins = g_Coins;
     g_LastRunCoins = 99;
     g_RunMobKillCounts[CM_SWARM] = 3;
     record = CommitRunResult(true, 1, 999999, 500, 1);
     assert(!record && g_TotalGames == games && g_TotalKills == kills && g_Coins == coins);
-    assert(g_LastRunCoins == 0 && g_BestScore[1] == 20000 && g_RunMobKillCounts[CM_SWARM] == 3);
+    assert(g_LastRunCoins == 0 && g_BestScore[1] == 20000 && g_RunMobKillCounts[CM_SWARM] == 0);
     std::printf("creative: nothing recorded\n");
 
     assert(!std::filesystem::exists(SaveFilePath()));

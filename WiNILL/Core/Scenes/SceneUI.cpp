@@ -421,15 +421,15 @@ const ConfirmText& ConfirmTextQuit() {
 
 const ConfirmText& ConfirmTextRestart() {
     static const ConfirmText t = {
-        { L"다시 시작할까요?", L"RESTART THE RUN?", L"最初からやり直しますか？" },
-        { L"새 플레이를 처음부터 시작합니다.", L"A NEW RUN STARTS FROM THE BEGINNING.",
+        { L"다시 시작할까요?", L"RESTART THIS PLAY?", L"最初からやり直しますか？" },
+        { L"새 플레이를 처음부터 시작합니다.", L"A NEW PLAY STARTS FROM THE BEGINNING.",
           L"新しいプレイを最初から始めます。" } };
     return t;
 }
 
 const ConfirmText& ConfirmTextAbandon() {
     static const ConfirmText t = {
-        { L"플레이를 포기할까요?", L"ABANDON THIS RUN?", L"プレイを放棄しますか？" },
+        { L"플레이를 포기할까요?", L"ABANDON THIS PLAY?", L"プレイを放棄しますか？" },
         { L"지금까지의 진행이 종료됩니다.", L"YOUR CURRENT PROGRESS ENDS HERE.",
           L"ここまでの進行が終了します。" } };
     return t;
