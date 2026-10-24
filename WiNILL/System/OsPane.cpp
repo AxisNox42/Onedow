@@ -21,9 +21,8 @@ namespace {
 
 constexpr wchar_t kClassName[] = L"AsteriaPane";
 // Client colours per theme: paper and ink, like a plain text editor.
-constexpr COLORREF kPaperLight = RGB(255, 255, 255), kInkLight = RGB(48, 52, 64);
-constexpr COLORREF kPaperDark = RGB(30, 31, 36), kInkDark = RGB(200, 206, 220);
-constexpr COLORREF kChartLight = RGB(70, 110, 190), kChartDark = RGB(150, 200, 255);
+constexpr COLORREF kPaperLight = RGB(255, 255, 255), kInkLight = RGB(60, 64, 80);
+constexpr COLORREF kPaperDark = RGB(30, 31, 36), kInkDark = RGB(190, 196, 214);
 constexpr float kRefusalSeconds = 1.6f;
 constexpr float kDesktopScanSeconds = 0.5f;
 // Windows smaller than this, or covering nearly the whole game, are not
@@ -102,6 +101,8 @@ std::vector<HWND> s_desktopHandles;        // parallel to s_desktop
 float s_scanTimer = 0.0f;
 bool s_arrange = false;
 bool s_hold = false;
+bool s_away = false;          // the player switched to another program
+bool s_coverCheck = true;     // off for smoke captures (see SetCoverCheck)
 bool s_sunk = false;          // arrange mode lowered the game below other windows
 bool s_passthrough = false;   // arrange mode fell back to mouse pass-through
 bool s_classReady = false;
@@ -230,53 +231,6 @@ void PaintNotes(HDC dc, const RECT& r, const Content& c) {
     DeleteObject(font);
 }
 
-// Image-viewer star chart: a few stars joined in the order they lie.
-void PaintChart(HDC dc, const RECT& r, const Content& c) {
-    unsigned state = c.seed;
-    const int pad = 26;
-    const int w = (std::max)(1, (int)(r.right - r.left) - pad * 2);
-    const int h = (std::max)(1, (int)(r.bottom - r.top) - pad * 2 - 20);
-    POINT stars[14];
-    const int count = 7 + (int)(NextRandom(state) % 7);
-    for (int k = 0; k < count; ++k)
-        stars[k] = { r.left + pad + (int)(NextRandom(state) % w),
-                     r.top + pad + (int)(NextRandom(state) % h) };
-    if (c.unstable > 0.0f) {
-        unsigned noise = c.seed ^ (unsigned)(GetTickCount64() / 33);
-        const int amp = (std::max)(1, (int)(10.0f * c.unstable));
-        for (int k = 0; k < count; ++k) {
-            stars[k].x += (int)(NextRandom(noise) % (2 * amp + 1)) - amp;
-            stars[k].y += (int)(NextRandom(noise) % (2 * amp + 1)) - amp;
-        }
-    }
-    std::sort(stars, stars + count, [](const POINT& a, const POINT& b) { return a.x < b.x; });
-    const COLORREF ink = c.dark ? kChartDark : kChartLight;
-    HPEN pen = CreatePen(PS_SOLID, 1, ink);
-    HGDIOBJ oldPen = SelectObject(dc, pen);
-    MoveToEx(dc, stars[0].x, stars[0].y, nullptr);
-    for (int k = 1; k < count; ++k) LineTo(dc, stars[k].x, stars[k].y);
-    HBRUSH brush = CreateSolidBrush(ink);
-    HGDIOBJ oldBrush = SelectObject(dc, brush);
-    for (int k = 0; k < count; ++k)
-        Ellipse(dc, stars[k].x - 3, stars[k].y - 3, stars[k].x + 4, stars[k].y + 4);
-    SelectObject(dc, oldBrush);
-    SelectObject(dc, oldPen);
-    DeleteObject(brush);
-    DeleteObject(pen);
-    HFONT font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                             FIXED_PITCH | FF_MODERN, L"Consolas");
-    HGDIOBJ oldFont = SelectObject(dc, font);
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, c.dark ? kInkDark : kInkLight);
-    wchar_t caption[64];
-    swprintf_s(caption, L"%d stars  |  %ux%u", count, (unsigned)(r.right - r.left),
-               (unsigned)(r.bottom - r.top));
-    TextOutW(dc, r.left + 10, r.bottom - 22, caption, lstrlenW(caption));
-    SelectObject(dc, oldFont);
-    DeleteObject(font);
-}
-
 void PaintClient(HWND hwnd, HDC dc) {
     RECT r{};
     GetClientRect(hwnd, &r);
@@ -286,9 +240,9 @@ void PaintClient(HWND hwnd, HDC dc) {
     HBRUSH paper = CreateSolidBrush(dark ? kPaperDark : kPaperLight);
     FillRect(dc, &r, paper);
     DeleteObject(paper);
+    // Notepad text; a worn pane's text breaks up and tints as its warning.
     if (!c) return;
-    if (c->kind == ContentKind::Notes) PaintNotes(dc, r, *c);
-    else if (c->kind == ContentKind::Chart) PaintChart(dc, r, *c);
+    PaintNotes(dc, r, *c);
 }
 
 LRESULT CALLBACK PaneProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -686,6 +640,62 @@ void SetLocked(int id, bool locked) {
 
 void SetHold(bool hold) { s_hold = hold; }
 
+// Another program's window that can hide what lies under it: visible, not
+// minimized or cloaked, not the shell. Its frame in overlay pixels.
+bool ForeignCover(HWND h, Rect& frame) {
+    if (!IsWindowVisible(h) || IsIconic(h) || IsShellWindow(h)) return false;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(h, &pid);
+    if (pid == GetCurrentProcessId()) return false;
+    BOOL cloaked = FALSE;
+    DwmGetWindowAttribute(h, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+    if (cloaked) return false;
+    frame = ToOverlay(FrameBounds(h));
+    return frame.w > 1.0f && frame.h > 1.0f;
+}
+
+// The game's own panes back right under the game, keeping their order.
+void RestackPanes() {
+    std::vector<int> order;
+    for (size_t i = 0; i < s_panes.size(); ++i)
+        if (s_panes[i].open && !s_panes[i].adopted && s_handles[i]) order.push_back((int)i);
+    std::sort(order.begin(), order.end(),
+              [](int a, int b) { return s_panes[a].zRank > s_panes[b].zRank; });   // back first
+    for (int i : order) StackBelowGame(s_handles[i]);
+}
+
+// True when another program's window sits between the game and one of its
+// panes (left there by Alt-Tab, a click elsewhere, a new window...).
+bool PaneStackBroken() {
+    bool foreign = false;
+    Rect frame;
+    for (HWND h = GetWindow(s_overlayHwnd, GW_HWNDNEXT); h; h = GetWindow(h, GW_HWNDNEXT)) {
+        const int i = IndexOfHandle(h);
+        if (i >= 0 && !s_panes[i].adopted) {
+            if (foreign) return true;
+        } else if (ForeignCover(h, frame)) {
+            foreign = true;
+        }
+    }
+    return false;
+}
+
+// Marks panes mostly hidden by other programs' windows above them.
+void UpdateCovered() {
+    std::vector<Rect> front;
+    Rect frame;
+    for (HWND h = GetTopWindow(nullptr); h; h = GetWindow(h, GW_HWNDNEXT)) {
+        const int i = IndexOfHandle(h);
+        if (i >= 0) {
+            Pane& p = s_panes[i];
+            p.covered = s_coverCheck && p.open && !p.minimized &&
+                        VisibleShare(p.frame, front) < kMinVisibleShare;
+        } else if (h != s_overlayHwnd && ForeignCover(h, frame)) {
+            front.push_back(frame);
+        }
+    }
+}
+
 void Tick(float dt) {
     // Front-to-back order among panes, for overlapping spaces.
     int rank = 0;
@@ -720,6 +730,32 @@ void Tick(float dt) {
     if (s_scanTimer <= 0.0f) {
         s_scanTimer = kDesktopScanSeconds;
         ScanDesktop();
+        if (!s_away && !s_arrange && s_overlayHwnd) {
+            // Bring back panes something minimized (Win+D, the taskbar),
+            // put them back under the game if another window slipped in,
+            // and note any still hidden.
+            for (size_t i = 0; i < s_panes.size(); ++i)
+                if (s_panes[i].open && !s_panes[i].adopted && s_handles[i] && IsIconic(s_handles[i]))
+                    ShowWindow(s_handles[i], SW_SHOWNOACTIVATE);
+            if (PaneStackBroken()) RestackPanes();
+            UpdateCovered();
+        }
+    }
+}
+
+void SetCoverCheck(bool on) { s_coverCheck = on; }
+
+void SetAway(bool away) {
+    if (away == s_away || !s_overlayHwnd) return;
+    s_away = away;
+    for (size_t i = 0; i < s_panes.size(); ++i) {
+        if (!s_panes[i].open || s_panes[i].adopted || !s_handles[i]) continue;
+        ShowWindow(s_handles[i], away ? SW_HIDE : SW_SHOWNOACTIVATE);
+    }
+    if (!away) {
+        RestackPanes();
+        UpdateCovered();
+        s_scanTimer = kDesktopScanSeconds;
     }
 }
 
@@ -892,6 +928,8 @@ void SetLocked(int, bool) {}
 void SetUnstable(int, float) {}
 void SetHold(bool) {}
 void Tick(float) {}
+void SetAway(bool) {}
+void SetCoverCheck(bool) {}
 void SetArrangeMode(bool) {}
 bool ArrangeMode() { return false; }
 bool ArrangeTarget(Rect&) { return false; }
