@@ -56,23 +56,23 @@ inline const AchDef ACH_DEFS[ACH_COUNT] = {
       { L"", L"", L"" }, 0, -1 },
     /* ACH_SCORE_300K */ {
         { L"고득점", L"High Scorer", L"高得点" },
-        { L"한 판에 30만 점 달성", L"Reach 300k score in one run", L"1ランで30万点達成" },
+        { L"한 판에 30만 점 달성", L"Reach 300k score in one play", L"1プレイで30万点達成" },
         300, -1 },
     /* ACH_SCORE_1M */ {
         { L"백만장자", L"Millionaire", L"ミリオネア" },
-        { L"한 판에 100만 점 달성", L"Reach 1,000,000 in one run", L"1ランで100万点達成" },
+        { L"한 판에 100만 점 달성", L"Reach 1,000,000 in one play", L"1プレイで100万点達成" },
         1000, -1 },
     /* ACH_KILLS_500 */ {
         { L"학살자", L"Slaughterer", L"虐殺者" },
         { L"한 판에 500 처치",
-          L"500 kills in one run",
-          L"1ランで500撃破" },
+          L"500 kills in one play",
+          L"1プレイで500撃破" },
         400, -1 },
     /* ACH_CRIT_SCORE */ {
         { L"급소 강타", L"Vital Strike", L"急所打ち" },
         { L"치명타 보유 + 한 판 20만 점",
-          L"Own Crit + 200k in one run",
-          L"クリ所持 + 1ラン20万点" },
+          L"Own Crit + 200k in one play",
+          L"クリ所持 + 1プレイ20万点" },
         350, -1 },
     /* ACH_DEATHBLAST_KILLS */ {
         { L"연쇄 학살", L"Chain Massacre", L"連鎖虐殺" },
@@ -86,11 +86,11 @@ inline const AchDef ACH_DEFS[ACH_COUNT] = {
         300, -1 },
     /* ACH_GAMES_10 */ {
         { L"단골", L"Regular", L"常連" },
-        { L"누적 10판 플레이", L"Play 10 runs total", L"累計10ランプレイ" },
+        { L"누적 10판 플레이", L"Play 10 runs total", L"累計10プレイ" },
         200, -1 },
     /* ACH_SCORE_500K */ {
         { L"베테랑", L"Veteran", L"ベテラン" },
-        { L"한 판에 50만 점 달성", L"Reach 500k in one run", L"1ランで50万点達成" },
+        { L"한 판에 50만 점 달성", L"Reach 500k in one play", L"1プレイで50万点達成" },
         600, -1 },
     /* Retired achievement save slot. */
     { { L"REMOVED", L"REMOVED", L"REMOVED" },
@@ -180,7 +180,7 @@ inline bool JobUnlocked(int j) {
 inline void TryUnlockAch(int id) {
     if (id < 0 || id >= ACH_COUNT || g_AchUnlocked[id]) return;
     g_AchUnlocked[id] = true;
-    g_Coins          += ACH_DEFS[id].coinReward;
+    AddSaveValue(g_Coins, ACH_DEFS[id].coinReward);
     g_AchToastId      = id;
     g_AchToastTimer   = 4.0f;
     g_AchSaveNeeded   = true;

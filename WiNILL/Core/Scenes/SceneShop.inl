@@ -1163,8 +1163,10 @@ void Scene_Shop(const SceneCtx& c) {
                                         0.58f * detailA, false);
             };
             wchar_t balanceBuf[64];
-            swprintf_s(balanceBuf, ShopText(L"보유 별가루  %lld", L"STARDUST  %lld",
-                                          L"所持星屑  %lld"), g_Coins);
+            wchar_t coinsText[32];
+            FormatGrouped(g_Coins, coinsText, 32);
+            swprintf_s(balanceBuf, ShopText(L"보유 별가루  %ls", L"STARDUST  %ls",
+                                          L"所持星屑  %ls"), coinsText);
             drawRightFit(g_TextS, balanceBuf, detailRight, y + 12.0f * ui,
                          detailInfoSc, detailW, whiteR, whiteG, whiteB,
                          0.78f * detailA, 0.60f);
@@ -1189,18 +1191,22 @@ void Scene_Shop(const SceneCtx& c) {
             }
 
             wchar_t costBuf[64];
-            swprintf_s(costBuf, ShopText(L"비용  %lld 별가루", L"COST  %lld STARDUST",
-                                       L"費用  %lld 星屑"), cost);
+            wchar_t costText[32];
+            FormatGrouped(cost, costText, 32);
+            swprintf_s(costBuf, ShopText(L"비용  %ls 별가루", L"COST  %ls STARDUST",
+                                       L"費用  %ls 星屑"), costText);
             drawRightFit(g_TextS, costBuf, detailRight, y - 30.0f * ui,
                          detailInfoSc, detailW, goldR, goldG, goldB,
                          0.98f * detailA, 0.64f);
 
             if (canAfford) {
                 wchar_t verdictBuf[64];
-                swprintf_s(verdictBuf, ShopText(L"구매 후  %lld 별가루",
-                                                L"AFTER  %lld STARDUST",
-                                                L"購入後  %lld 星屑"),
-                           g_Coins - cost);
+                wchar_t afterText[32];
+                FormatGrouped(g_Coins - cost, afterText, 32);
+                swprintf_s(verdictBuf, ShopText(L"구매 후  %ls 별가루",
+                                                L"AFTER  %ls STARDUST",
+                                                L"購入後  %ls 星屑"),
+                           afterText);
                 drawRightFit(g_TextS, verdictBuf, detailRight,
                              y + 52.0f * ui, detailInfoSc, detailW,
                              detailR, detailG, detailB,
@@ -1268,7 +1274,7 @@ void Scene_Shop(const SceneCtx& c) {
                                             : SHOP_ACTION_BLOCKED));
         } else if (detailIsAug) {
             drawRightFit(g_TextS, ShopText(L"플레이 중 획득 효과 · 도감 전용",
-                                           L"IN-RUN EFFECT · CODEX ONLY",
+                                           L"IN-PLAY EFFECT · CODEX ONLY",
                                            L"プレイ中の獲得効果・図鑑専用"),
                          detailRight, tradeY - 20.0f * ui,
                          detailDescriptionSc, detailW, whiteR, whiteG, whiteB,

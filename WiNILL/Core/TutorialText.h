@@ -42,9 +42,9 @@ inline const wchar_t* kTutorialPageTitle[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
     /* KR */
     { L"1. 세계관", L"2. 조작", L"3. 증강", L"4. 디버프", L"5. 플레이 준비", L"6. 플레이 경제", L"7. 메타·팁" },
     /* EN */
-    { L"1. World", L"2. Controls", L"3. Augments", L"4. Debuffs", L"5. Run setup", L"6. Run economy", L"7. Meta & tips" },
+    { L"1. World", L"2. Controls", L"3. Augments", L"4. Debuffs", L"5. Play setup", L"6. Play economy", L"7. Meta & tips" },
     /* JP */
-    { L"1. 世界観", L"2. 操作", L"3. 強化", L"4. デバフ", L"5. ラン準備", L"6. ラン経済", L"7. メタ·コツ" },
+    { L"1. 世界観", L"2. 操作", L"3. 強化", L"4. デバフ", L"5. プレイ準備", L"6. プレイ経済", L"7. メタ·コツ" },
 };
 
 inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
@@ -122,15 +122,15 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"Enemy count, health, and tiers change with difficulty / "
         L"Trials add another challenge",
 
-        L"Choose a difficulty and weapon in run setup / "
+        L"Choose a difficulty and weapon in play setup / "
         L"Survive 10·15·20 waves on Easy·Normal·Hard; each lasts 3 minutes / "
         L"Rifle fires aimed shots; Static Field continuously attacks nearby / "
         L"Read the select-screen text and pick what fits your style / "
-        L"Creative mode lets you set the starting score and run conditions",
+        L"Creative mode lets you set the starting score and play conditions",
 
-        L"Stardust earned mid-run is shown on the HUD and settled at run end / "
+        L"Stardust earned mid-play is shown on the HUD and settled at play end / "
         L"Use level-up augment choices to patch your build / "
-        L"End of run converts some progress into meta coins / "
+        L"End of play converts some progress into meta coins / "
         L"Main menu shop — permanent stats and display themes / "
         L"Achievements grant coins and unlocks",
 
@@ -167,16 +167,16 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
         L"強化で相殺するかプレイを変えて対応 / "
         L"難易度が上がるほどデバフと敵密度が厳しくなります",
 
-        L"ラン前: 難易度を選択 / "
+        L"プレイ前: 難易度を選択 / "
         L"イージー10·ノーマル15·ハード20ウェーブ(各3分) / "
-        L"ラン準備画面でライフルか静電場を選択 / "
+        L"プレイ準備画面でライフルか静電場を選択 / "
         L"ライフルは照準連射、静電場は周囲を継続攻撃 / "
         L"選択画面の説明を読み、自分に合う武器を選ぶ / "
         L"クリエイティブモードで開始条件·開始強化を設定可能",
 
-        L"ラン中に得たスターダストはHUDに表示され、終了時に精算 / "
+        L"プレイ中に得たスターダストはHUDに表示され、終了時に精算 / "
         L"レベルアップ時の強化選択でビルドを補強 / "
-        L"ラン終了後、一部の成果がメタコインに換算 / "
+        L"プレイ終了後、一部の成果がメタコインに換算 / "
         L"メニューショップ — 永久ステータス・テーマなど / "
         L"実績でコインと解禁報酬",
 

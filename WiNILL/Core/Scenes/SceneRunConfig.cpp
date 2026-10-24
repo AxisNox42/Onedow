@@ -99,13 +99,13 @@ constexpr int kPlayStatCount = 6;
 const LStr kTxtStatName[kPlayWeaponCount][kPlayStatCount] = {
     { { { L"공격력", L"DAMAGE", L"攻撃力" } },
       { { L"연사 속도", L"FIRE RATE", L"連射速度" } },
-      { { L"간격", L"INTERVAL", L"間隔" } },
+      { { L"초당 피해", L"DPS", L"毎秒ダメージ" } },
       { { L"탄속", L"SPEED", L"弾速" } },
       { { L"퍼짐", L"SPREAD", L"拡散" } },
       { { L"사거리", L"RANGE", L"射程" } } },
     { { { L"펄스 피해", L"PULSE DAMAGE", L"パルス威力" } },
       { { L"초당 펄스", L"PULSES / SEC", L"毎秒パルス" } },
-      { { L"펄스 간격", L"PULSE INTERVAL", L"パルス間隔" } },
+      { { L"초당 펄스 피해", L"PULSE DPS", L"毎秒パルス威力" } },
       { { L"전파 속도", L"TRAVEL SPEED", L"伝播速度" } },
       { { L"공격각", L"COVERAGE", L"攻撃角" } },
       { { L"반경", L"RADIUS", L"半径" } } },
@@ -115,7 +115,7 @@ const LStr kTxtInstant = { { L"즉시", L"INSTANT", L"即時" } };
 // 스탯 막대 길이(0~1). 값이 아니라 무기 간 상대 비교용이다.
 constexpr float kPlayStatBar[kPlayWeaponCount][kPlayStatCount] = {
     { 0.50f, 0.78f, 0.78f, 0.72f, 0.68f, 0.72f },
-    { 0.22f, 0.86f, 0.94f, 1.00f, 0.50f, 0.28f },
+    { 0.22f, 0.86f, 0.36f, 1.00f, 0.50f, 0.28f },   // DPS: single pulse target, far below the rifle
 };
 
 // 별자리 뒷배경: 검은 딤 원판 한 겹 + 직업색 원판 한 겹. 노드마다 테두리·halo 를 두지 않고
@@ -789,16 +789,18 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         * previewStats.GetDamageMultiplier()
         * (field ? STATIC_FIELD_PULSE_DAMAGE_MULT : 1.0f);
     const float interval = field ? STATIC_FIELD_PULSE_INTERVAL : previewStats.fireInterval;
-    const wchar_t* seconds = LangIndex() == 0 ? L"초" : LangIndex() == 2 ? L"秒" : L"s";
+    // Every rate reads per second (/s); counts use thousands separators.
     swprintf_s(statValues[0], L"%.1f", damage);
     swprintf_s(statValues[1], L"%.1f/s", 1.0f / interval);
-    swprintf_s(statValues[2], L"%.2f%ls", interval, seconds);
+    swprintf_s(statValues[2], L"%.1f/s", damage / interval);
     if (field) {
         wcscpy_s(statValues[3], T(kTxtInstant));
         wcscpy_s(statValues[4], L"360°");
-        swprintf_s(statValues[5], L"%.0f", STATIC_FIELD_PULSE_RADIUS);
+        FormatGrouped(std::llround(STATIC_FIELD_PULSE_RADIUS), statValues[5], 32);
     } else {
-        swprintf_s(statValues[3], L"%.0f", previewStats.bulletSpeed);
+        wchar_t speedText[24];
+        FormatGrouped(std::llround(previewStats.bulletSpeed), speedText, 24);
+        swprintf_s(statValues[3], L"%ls/s", speedText);
         swprintf_s(statValues[4], L"%.2f", previewStats.bulletSpread);
         wcscpy_s(statValues[5], T(kTxtScreenRange));
     }
