@@ -2,6 +2,8 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "GameManager.h"
+#include "GameContext.h"
+#include "../../Render/WaveHud.h"
 #include "ScenePause.h"
 #include "SceneSkills.h"
 #include "SceneUI.h"
@@ -238,6 +240,12 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
             }
         }
     }
+
+    // Debuff record, to the right of the buttons.
+    DrawWaveDebuffLog(state.text.body, g_GameManager, btnX0 + BW + 90.0f * uiScale,
+                      titleY, sh - 40.0f * uiScale,
+                      UiTextScale(state.text.body, UiTextLevel::Supporting, uiScale) * 1.3f,
+                      0.88f * entryFade);
 
     if (s_ConfirmAbandon) {
         const ConfirmChoice answer = DrawConfirmDialog(

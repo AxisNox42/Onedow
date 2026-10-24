@@ -25,4 +25,7 @@ ScheduledEliteInfo GetScheduledElite(int wave, Difficulty difficulty);
 // NORMA, the boss of the final wave, has entered and then fallen this run.
 bool NormaDefeated();
 // Hand testing: brings NORMA in now, as the boss wave would.
-void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultiplier);
+// hpMultiplier is the stat/difficulty share; the run's HP ramp at the boss
+// wave is added here so a debug boss matches the real one.
+void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultiplier,
+                     Difficulty difficulty);

@@ -116,10 +116,13 @@ static void SpawnNormaBoss(MonsterManager& monsters, int screenWidth, int wave,
     PlaceNormaBoss(monsters, screenWidth, hpMultiplier);
 }
 
-void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultiplier) {
+void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultiplier,
+                     Difficulty difficulty) {
     if (g_EnemySpawnState.normaSpawned && !g_EnemySpawnState.normaDefeated) return;
     g_EnemySpawnState.normaDefeated = false;
-    PlaceNormaBoss(monsters, screenWidth, hpMultiplier);
+    const float bossWaveStart = WaveStartTimeSeconds(FinalWaveCount(difficulty), difficulty);
+    const EnemyProgression ramp = EvaluateEnemyProgression(bossWaveStart, 0, 0);
+    PlaceNormaBoss(monsters, screenWidth, hpMultiplier * ramp.hpMultiplier);
 }
 
 // Looked up by kind rather than by pointer: dead mobs are freed elsewhere.

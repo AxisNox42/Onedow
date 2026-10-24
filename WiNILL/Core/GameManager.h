@@ -32,6 +32,13 @@ public:
     float     waveTransitionTimer = 0.0f;
     int       lastWaveDebuff = -1;
     float     waveDebuffToast = 0.0f;
+    // Debuff rolled ahead for the wave about to start (-1 = not rolled yet).
+    int       nextWaveDebuff = -1;
+    // Debuff each wave brought, by the wave it entered; index + 1, 0 = none.
+    int       waveDebuffLog[64] = {};
+    // Debug console switches (not reset with a run, not saved).
+    bool      showDebuffPreview = true;   // announce the next wave's debuff early
+    bool      showDebuffLog = true;       // per-wave debuff list on pause/result
     bool      waveVictory = false;
     long long score      = 0;
     float     scoreAccum = 0.0f;

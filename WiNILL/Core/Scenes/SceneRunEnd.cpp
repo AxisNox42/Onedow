@@ -449,6 +449,11 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
         drawValue(val, gainBuf, col1X, top + rowValY, false, 0.72f, 0.88f, 1.0f);
     }
 
+    // Debuff record: which wave brought which debuff.
+    DrawWaveDebuffLog(*lab.r, g_GameManager, leftX,
+                      top + statsBottom + 30.0f * uiS, buttonsAbsY - 14.0f * uiS,
+                      lab.scale * 0.9f, 0.88f * ge);
+
     // ---- Right panel: the player, the augment constellations, and stats -----
     float panelW = std::clamp(sw * 0.30f, 300.0f, 520.0f);
     float panelX = sw - margin - panelW;

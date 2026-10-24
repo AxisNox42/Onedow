@@ -120,8 +120,22 @@ int main() {
             r->genesisThrown=true; r->thrownOwnerId=s.g->genesisId; s.mm.monsters.push_back(r);
         }
         for(int i=0;i<300;++i) s.tick();
-        for(auto* m:s.mm.monsters) assert(m->kind!=MobKind::ROTOR);
-        std::puts("shared summon cap with Swarms: ok");
+        int rotors=0;
+        for(auto* m:s.mm.monsters) if(m->kind==MobKind::ROTOR && m->thrownOwnerId==s.g->genesisId) ++rotors;
+        assert(rotors>0 && rotors<=Monster::GENESIS_ROTOR_CAP);   // full Swarm cap does not block Rotors
+        std::puts("Rotor cap is separate from the Swarm cap: ok");
+    }
+    {
+        Scene s;
+        for(int i=0;i<Monster::GENESIS_ROTOR_CAP;++i) {
+            auto* r=new Monster(-3000.0f,20.0f*i); r->MakeKind(MobKind::ROTOR);
+            r->genesisThrown=true; r->thrownOwnerId=s.g->genesisId; r->speed=0; s.mm.monsters.push_back(r);
+        }
+        for(int i=0;i<300;++i) s.tick();
+        int rotors=0;
+        for(auto* m:s.mm.monsters) if(m->alive && m->kind==MobKind::ROTOR && m->thrownOwnerId==s.g->genesisId) ++rotors;
+        assert(rotors<=Monster::GENESIS_ROTOR_CAP);
+        std::puts("Rotor cap holds per Genesis: ok");
     }
     {
         Scene s;

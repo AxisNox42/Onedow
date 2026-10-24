@@ -1387,7 +1387,7 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
         // Edges: each of the 30 edges once. An edge is front when either of
         // its two faces faces the viewer, lit if either face is lit, broken
         // (with the newest break age) if either face is broken.
-        bool edgeFront[12][12] = {};
+        float edgeFront[12][12] = {};   // 0 back .. 1 front, smooth in depth
         float edgeLit[12][12] = {};
         bool edgeSeen[12][12] = {};
         float edgeBroken[12][12];
@@ -1396,14 +1396,16 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
             for (int b = 0; b < 12; ++b) { edgeBroken[a][b] = -1.0f; edgeRestored[a][b] = 99.0f; }
         for (int f = 0; f < 20; ++f) {
             const int ids[3] = { ML::kF[f][0], ML::kF[f][1], ML::kF[f][2] };
-            const bool front = pv[ids[0]].z + pv[ids[1]].z + pv[ids[2]].z > 0.0f;
+            const float zf = (pv[ids[0]].z + pv[ids[1]].z + pv[ids[2]].z) / 3.0f;
+            const float ft = std::clamp((zf + 0.25f) / 0.5f, 0.0f, 1.0f);
+            const float front = ft * ft * (3.0f - 2.0f * ft);
             const float bt = m->magnetarFaceBroken[f];
             const float lit = bt >= 0.0f ? 0.0f : faceLit(f);
             for (int e = 0; e < 3; ++e) {
                 const int a = std::min(ids[e], ids[(e + 1) % 3]);
                 const int b = std::max(ids[e], ids[(e + 1) % 3]);
                 edgeSeen[a][b] = true;
-                edgeFront[a][b] = edgeFront[a][b] || front;
+                edgeFront[a][b] = std::max(edgeFront[a][b], front);
                 edgeLit[a][b] = std::max(edgeLit[a][b], lit);
                 if (bt >= 0.0f && (edgeBroken[a][b] < 0.0f || bt < edgeBroken[a][b]))
                     edgeBroken[a][b] = bt;
@@ -1418,7 +1420,7 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
                     // Broken face: orange, flickering a little.
                     float er = hotR, eg = hotG, eb = hotB;
                     float flick = 0.85f + 0.15f * sinf(visualTime * 23.0f + (float)(a * 7 + b));
-                    float width = edgeFront[a][b] ? 1.4f : 0.8f;
+                    float width = 0.8f + 0.6f * edgeFront[a][b];
                     if (bt < kBreakTime) {
                         // Failing power: gold and orange alternate (per edge
                         // offset), settling into orange; white overload on top.
@@ -1433,27 +1435,25 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
                         width += 1.0f * (1.0f - k);
                     }
                     drawLineQuad(vx[a], vy[a], vx[b], vy[b], width, er, eg, eb,
-                                 std::min(1.0f, (edgeFront[a][b] ? 0.75f : 0.25f) * flick));
+                                 std::min(1.0f, (0.25f + 0.50f * edgeFront[a][b]) * flick));
                 } else if (edgeLit[a][b] > 0.0f) {
                     drawLineQuad(vx[a], vy[a], vx[b], vy[b], 2.4f,
                                  1.0f, 1.0f, 1.0f, 0.95f * edgeLit[a][b]);
                 } else {
                     const float snap = std::max(0.0f, 1.0f - edgeRestored[a][b] / kRestoreTime);
-                    if (edgeFront[a][b] || snap > 0.0f) {
-                        drawLineQuad(vx[a], vy[a], vx[b], vy[b], 1.6f + 0.8f * snap,
-                                     cr + (1.0f - cr) * snap, cg + (1.0f - cg) * snap,
-                                     cb + (1.0f - cb) * snap,
-                                     (edgeFront[a][b] ? 0.80f : 0.22f) + 0.20f * snap);
-                    } else {
-                        drawLineQuad(vx[a], vy[a], vx[b], vy[b], 0.9f, cr, cg, cb, 0.22f);
-                    }
+                    const float ef = edgeFront[a][b];
+                    drawLineQuad(vx[a], vy[a], vx[b], vy[b], 0.9f + 0.7f * ef + 0.8f * snap,
+                                 cr + (1.0f - cr) * snap, cg + (1.0f - cg) * snap,
+                                 cb + (1.0f - cb) * snap,
+                                 0.22f + 0.58f * ef + 0.20f * snap);
                 }
             }
         }
         for (int i = 0; i < 12; ++i)
-            if (pv[i].z > 0.15f) {
-                if (vBroken[i] >= 0.0f) drawCircle(vx[i], vy[i], 1.8f, 1.0f, 0.80f, 0.55f, 0.55f);
-                else drawCircle(vx[i], vy[i], 2.0f, 1.0f, 0.97f, 0.88f, 0.70f);
+            if (pv[i].z > 0.0f) {
+                const float dz = std::min(1.0f, pv[i].z / 0.3f);   // fade in, no pop
+                if (vBroken[i] >= 0.0f) drawCircle(vx[i], vy[i], 1.8f, 1.0f, 0.80f, 0.55f, 0.55f * dz);
+                else drawCircle(vx[i], vy[i], 2.0f, 1.0f, 0.97f, 0.88f, 0.70f * dz);
             }
     }
 
@@ -1472,40 +1472,45 @@ static void DrawMagnetar(const Monster* m, float base, float visualTime) {
     }
     const float sr = hotR + (1.0f - hotR) * back, sg = hotG + (0.97f - hotG) * back,
                 sb = hotB + (0.85f - hotB) * back;
-    drawCircle(seedX, seedY, seedR * 1.4f, hotR + (cr - hotR) * back, hotG + (cg - hotG) * back,
-               hotB + (cb - hotB) * back, 0.10f + (brokenCount > 0 ? 0.15f * pulse : 0.06f));
-    if (newestBreak < 0.30f) {      // seed flash at a face break
-        const float w = 1.0f - newestBreak / 0.30f;
-        drawCircle(seedX, seedY, seedR * (1.4f + 1.2f * (1.0f - w)), 1.0f, 0.85f, 0.6f, 0.45f * w * w);
-    }
+    // Lines only: no filled glow under the seed. A face break flashes the
+    // seed's own edges instead (below).
+    const float seedFlash = newestBreak < 0.30f ? 1.0f - newestBreak / 0.30f : 0.0f;
+    (void)pulse;
     static const int kOctE[12][2] = { {0, 2}, {0, 3}, {0, 4}, {0, 5}, {1, 2}, {1, 3},
                                       {1, 4}, {1, 5}, {2, 4}, {2, 5}, {3, 4}, {3, 5} };
+    // The seed always glows: every edge stays bright, depth only trims it a
+    // little and smoothly, so no edge switches on or off as it turns.
     for (const auto& e : kOctE) {
-        const bool front = ov[e[0]].z + ov[e[1]].z >= 0.0f;
-        drawLineQuad(sx[e[0]], sy[e[0]], sx[e[1]], sy[e[1]], front ? 1.8f : 0.9f,
-                     sr, sg, sb, front ? 0.95f : 0.35f);
+        const float zf = 0.5f * (ov[e[0]].z + ov[e[1]].z);
+        const float ft = std::clamp(0.5f + 0.5f * zf, 0.0f, 1.0f);
+        const float depth = ft * ft * (3.0f - 2.0f * ft);
+        drawLineQuad(sx[e[0]], sy[e[0]], sx[e[1]], sy[e[1]],
+                     (1.4f + 0.4f * depth) + 1.2f * seedFlash,
+                     sr + (1.0f - sr) * seedFlash, sg + (1.0f - sg) * seedFlash,
+                     sb + (1.0f - sb) * seedFlash, 0.85f + 0.15f * depth);
     }
     drawCircle(seedX, seedY, base * 0.07f, 1.0f, 1.0f, 1.0f, 0.95f);
 
-    // Tethers: four seed tips (equator) to the nearest front lattice vertices
-    // that are not on a broken face.
+    // Tethers: four seed tips (equator) each hold one fixed lattice vertex
+    // (two antipodal pairs, so the seed is held from all sides). The pairing
+    // never changes as the lattice turns; only the brightness follows depth,
+    // so nothing pops on and off. A cut tether (broken face on its vertex)
+    // fades out quickly and returns on restore.
     {
         static const int kTips[4] = { 0, 1, 4, 5 };
-        bool used[12] = {};
+        static const int kHold[4] = { 9, 10, 0, 3 };
         for (int k = 0; k < 4; ++k) {
-            const int tip = kTips[k];
-            int best = -1;
-            float bestD = 1e9f;
-            for (int i = 0; i < 12; ++i) {
-                if (used[i] || pv[i].z < -0.1f || vBroken[i] >= 0.0f) continue;
-                const float dx = vx[i] - sx[tip], dy = vy[i] - sy[tip];
-                const float dd = dx * dx + dy * dy;
-                if (dd < bestD) { bestD = dd; best = i; }
-            }
-            if (best < 0) continue;
-            used[best] = true;
-            drawLineQuad(sx[tip], sy[tip], vx[best], vy[best], 1.2f, liteR, liteG, liteB, 0.45f);
-            drawCircle(vx[best], vy[best], 2.4f, 1.0f, 1.0f, 1.0f, 0.6f);
+            const int tip = kTips[k], v = kHold[k];
+            float hold = 1.0f;
+            if (vBroken[v] >= 0.0f) hold = std::max(0.0f, 1.0f - vBroken[v] / 0.15f);
+            else hold = std::min(1.0f, vRestored[v] / kRestoreTime);
+            if (vBroken[v] < 0.0f && vRestored[v] >= 90.0f) hold = 1.0f;
+            if (hold <= 0.01f) continue;
+            const float z01 = std::clamp(0.5f + 0.5f * pv[v].z, 0.0f, 1.0f);
+            const float depth = 0.70f + 0.30f * z01 * z01 * (3.0f - 2.0f * z01);
+            drawLineQuad(sx[tip], sy[tip], vx[v], vy[v], 1.4f, cr, cg, cb,
+                         0.70f * depth * hold);
+            drawCircle(vx[v], vy[v], 2.4f, 1.0f, 1.0f, 1.0f, 0.6f * depth * hold * z01);
         }
     }
 }
@@ -2255,22 +2260,6 @@ static void SquashNormaCube(NormaCube& c, float x, float y, float ux, float uy, 
     }
 }
 
-// The outer edges drawn in one by one: `share` 0..1 of the twelve, the last
-// one partly.
-static void DrawNormaCubeBuilding(const NormaCube& c, float r, float g, float b, float alpha, float share) {
-    static constexpr int kEdge[12][2] = {
-        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 0, 4 }, { 1, 5 },
-        { 2, 6 }, { 3, 7 }, { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 } };
-    const float edges = std::clamp(share, 0.0f, 1.0f) * 12.0f;
-    for (int e = 0; e < 12 && (float)e < edges; ++e) {
-        const float part = std::min(1.0f, edges - (float)e);
-        const int i = kEdge[e][0], j = kEdge[e][1];
-        const float ex = c.sx[i] + (c.sx[j] - c.sx[i]) * part, ey = c.sy[i] + (c.sy[j] - c.sy[i]) * part;
-        drawLineQuad(c.sx[i], c.sy[i], ex, ey, 3.6f, r, g, b, alpha * 0.16f);
-        drawLineQuad(c.sx[i], c.sy[i], ex, ey, 1.6f, r, g, b, alpha);
-    }
-}
-
 // Just the outer edges, thin: afterimages and the charge lane.
 static void DrawNormaCubeOutline(const NormaCube& c, float r, float g, float b, float alpha) {
     static constexpr int kEdge[12][2] = {
@@ -2280,26 +2269,67 @@ static void DrawNormaCubeOutline(const NormaCube& c, float r, float g, float b, 
         drawLineQuad(c.sx[e[0]], c.sy[e[0]], c.sx[e[1]], c.sy[e[1]], 1.1f, r, g, b, alpha);
 }
 
-static void DrawNormaCube(const NormaCube& c, float r, float g, float b,
-                          float alpha, float width, float nodeR) {
+// How a cube's edges are drawn: split short of the stars by `gap`, pushed
+// out from (cx, cy) by `spread` (phase 2's loosened shell), with or without
+// the faint glow under them.
+struct NormaEdgeStyle {
+    float gap = 0.16f;
+    float spread = 0.0f;
+    float cx = 0.0f, cy = 0.0f;
+    bool glow = true;
+};
+
+static void DrawNormaCubeEdges(const NormaCube& c, float r, float g, float b,
+                               float alpha, float width, const NormaEdgeStyle& st) {
     static constexpr int kEdge[12][2] = {
         { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 4, 5 }, { 5, 6 },
         { 6, 7 }, { 7, 4 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } };
-    static constexpr float kGap = 0.16f;
     for (const auto& e : kEdge) {
         const int i = e[0], j = e[1];
         const float front = 0.5f + 0.25f * (c.depth[i] + c.depth[j]);   // 0 back .. 1 front
         const float a = alpha * (0.40f + 0.55f * front);
-        const float ax = c.sx[i] + (c.sx[j] - c.sx[i]) * kGap, ay = c.sy[i] + (c.sy[j] - c.sy[i]) * kGap;
-        const float bx = c.sx[j] + (c.sx[i] - c.sx[j]) * kGap, by = c.sy[j] + (c.sy[i] - c.sy[j]) * kGap;
-        drawLineQuad(ax, ay, bx, by, width + 2.4f, r, g, b, a * 0.14f);
+        float ax = c.sx[i] + (c.sx[j] - c.sx[i]) * st.gap, ay = c.sy[i] + (c.sy[j] - c.sy[i]) * st.gap;
+        float bx = c.sx[j] + (c.sx[i] - c.sx[j]) * st.gap, by = c.sy[j] + (c.sy[i] - c.sy[j]) * st.gap;
+        if (st.spread != 0.0f) {
+            const float mx = (ax + bx) * 0.5f - st.cx, my = (ay + by) * 0.5f - st.cy;
+            const float len = std::max(1.0f, std::sqrt(mx * mx + my * my));
+            ax += mx / len * st.spread; bx += mx / len * st.spread;
+            ay += my / len * st.spread; by += my / len * st.spread;
+        }
+        if (st.glow) drawLineQuad(ax, ay, bx, by, width + 2.4f, r, g, b, a * 0.14f);
         drawLineQuad(ax, ay, bx, by, width, r, g, b, a);
     }
+}
+
+// The cube's stars. `lit` of them shine (norma::kStarOutOrder decides which
+// go dark first); a dark one keeps only its outline and a faint point. The
+// star that just went dark (`outStar`) flares as it fades (`outFlash` 1..0).
+static void DrawNormaCubeStars(const NormaCube& c, float r, float g, float b, float alpha,
+                               float nodeR, int lit = 8, int outStar = -1, float outFlash = 0.0f) {
+    bool dark[8] = {};
+    for (int k = lit; k < norma::kHealthStars; ++k) dark[norma::kStarOutOrder[k]] = true;
     for (int i = 0; i < 8; ++i) {
         const float front = 0.5f + 0.5f * c.depth[i];
-        DrawEnemyNode({ c.sx[i], c.sy[i], nodeR * (0.8f + 0.3f * front), 0.55f + 0.45f * front },
-                      r, g, b, alpha);
+        const float rr = nodeR * (0.8f + 0.3f * front);
+        if (!dark[i]) {
+            DrawEnemyNode({ c.sx[i], c.sy[i], rr, 0.55f + 0.45f * front }, r, g, b, alpha);
+            continue;
+        }
+        DrawEnemyArc(c.sx[i], c.sy[i], rr * 0.72f, 0.0f, 6.2831853f, 16, r, g, b, 0.45f * alpha, 1.1f, false);
+        drawCircle(c.sx[i], c.sy[i], rr * 0.16f, r, g, b, 0.30f * alpha);
+        if (i == outStar && outFlash > 0.0f) {
+            const float t = 1.0f - outFlash;
+            DrawEnemyArc(c.sx[i], c.sy[i], rr * (0.8f + 2.2f * t), 0.0f, 6.2831853f, 24,
+                         1.0f, 1.0f, 1.0f, 0.9f * outFlash, 2.0f, false);
+            drawCircle(c.sx[i], c.sy[i], rr * 0.9f * outFlash, 1.0f, 1.0f, 1.0f, 0.8f * outFlash);
+        }
     }
+}
+
+static void DrawNormaCube(const NormaCube& c, float r, float g, float b,
+                          float alpha, float width, float nodeR) {
+    DrawNormaCubeEdges(c, r, g, b, alpha, width, NormaEdgeStyle{});
+    DrawNormaCubeStars(c, r, g, b, alpha, nodeR);
 }
 
 static void DrawNormaBody(const Monster* m, float base, float visualTime) {
@@ -2390,11 +2420,11 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
     if (m->normaExposed > 0.0f) red = 0.0f;
     const float br = r + (1.0f - r) * red, bg = g + (0.30f - g) * red, bb = b + (0.26f - b) * red;
     // Winding up a charge, the inner cube draws in tight.
-    const float outerR = base * 1.15f * (1.0f - 0.10f * charge + 0.08f * recoil);
+    const float outerR = base * 1.29f * (1.0f - 0.10f * charge + 0.08f * recoil);   // +12% on 1.15
     // Exposed (an opening after a charge or a ram): the inner cube swells out
     // to the outer one, the core flares and the brackets drift wide and dim.
     const float exposed = std::min(1.0f, m->normaExposed / 0.2f);
-    const float innerShare = (p2 ? 0.78f : 0.45f) * (1.0f - 0.35f * spring) * (1.0f - exposed) +
+    const float innerShare = (p2 ? 0.62f : 0.45f) * (1.0f - 0.35f * spring) * (1.0f - exposed) +
                              0.96f * exposed;
     NormaCube outer = ProjectNormaCube(x, y, outerR, yaw, pitch, roll, drill, lead);
     NormaCube inner = ProjectNormaCube(x, y, outerR * innerShare,
@@ -2404,6 +2434,14 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
     if (spring > 0.0f) {
         SquashNormaCube(outer, x, y, m->normaDashDirX, m->normaDashDirY, 0.18f * spring);
         SquashNormaCube(inner, x, y, m->normaDashDirX, m->normaDashDirY, 0.18f * spring);
+    }
+    // Charge form: in the run the body stretches along the lane (a negative
+    // squash), most at mid-run, back to shape as it lands.
+    if (dashing && m->normaStage == norma::Stage::Act && m->normaDashStep == 1) {
+        const float k = std::clamp(m->normaDashTimer / norma::kDashTime, 0.0f, 1.0f);
+        const float stretch = 0.30f * std::sin(3.14159265f * k);
+        SquashNormaCube(outer, x, y, m->normaDashDirX, m->normaDashDirY, -stretch);
+        SquashNormaCube(inner, x, y, m->normaDashDirX, m->normaDashDirY, -stretch);
     }
     // Afterimages of a glide or a charge: thin outlines of the cube as it is.
     if (m->normaGhostLife > 0.0f) {
@@ -2418,38 +2456,57 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
             DrawNormaCubeOutline(ghost, br, bg, bb, a);
         }
     }
+    // Hierarchy: the outer shell carries the silhouette (bold, big stars);
+    // the inner cube and the links stay quiet. In phase 2 the shell comes
+    // apart (edges split wider, pushed out, dimmer) and the inner cube takes
+    // over, bold and bright. The outer stars are the health (one per eighth).
     for (int i = 0; i < 8; ++i)
-        drawLineQuad(outer.sx[i], outer.sy[i], inner.sx[i], inner.sy[i], 0.9f, br, bg, bb, 0.28f);
-    DrawNormaCube(inner, br, bg, bb, 0.80f * pulse, 1.0f, base * 0.11f);
-    DrawNormaCube(outer, br, bg, bb, pulse, 1.4f + 1.2f * flash + 0.8f * recoil, base * 0.17f * (1.0f + 0.4f * lift));
-    if (hold > 0.0f)   // the muzzle / leading star (it stays put while drilling)
-        DrawEnemyNode({ outer.sx[lead], outer.sy[lead], base * (0.30f + 0.12f * windK), 1.0f },
-                      dashing ? 1.0f : br, dashing ? 0.30f : bg, dashing ? 0.26f : bb, hold);
-    const float flare = exposed * (0.5f + 0.5f * sinf(visualTime * 18.0f));
-    DrawEnemyCore(x, y, base * (0.34f + 0.20f * exposed), br, bg, bb, 0.85f + 0.15f * pulse + 0.3f * flare, false);
-
-    // The panes' corner brackets orbit the body; faster in phase 2. A charge
-    // sweeps them back behind the body (the wind-up gathers them there, the
-    // run drags them, the rest lets them swing back round).
-    float trail = 0.0f;
-    if (dashing && m->normaStage == norma::Stage::Act) {
-        trail = m->normaDashStep == 0 ? windK * windK
-              : m->normaDashStep == 1 ? 1.0f
-              : 1.0f - std::clamp(m->normaDashTimer / norma::kDashRest, 0.0f, 1.0f);
+        drawLineQuad(outer.sx[i], outer.sy[i], inner.sx[i], inner.sy[i], 0.7f, br, bg, bb, p2 ? 0.10f : 0.16f);
+    const float punch = 1.2f * flash + 0.8f * recoil;
+    const int lit = m->normaLitStars;
+    const int outStar = lit < norma::kHealthStars ? norma::kStarOutOrder[lit] : -1;
+    const float outFlash = m->normaStarFlash / norma::kStarOutFlash;
+    if (p2) {
+        NormaEdgeStyle shell;
+        shell.gap = 0.30f;
+        shell.spread = base * 0.32f;
+        shell.cx = x;
+        shell.cy = y;
+        DrawNormaCubeEdges(outer, br, bg, bb, 0.55f * pulse, 1.6f + punch, shell);
+        DrawNormaCubeEdges(inner, br, bg, bb, pulse, 2.2f + punch, NormaEdgeStyle{});
+        DrawNormaCubeStars(inner, br, bg, bb, pulse, base * 0.15f);
+        DrawNormaCubeStars(outer, br, bg, bb, pulse, base * 0.20f * (1.0f + 0.4f * lift), lit, outStar, outFlash);
+    } else {
+        NormaEdgeStyle quiet;
+        quiet.glow = false;
+        DrawNormaCubeEdges(inner, br, bg, bb, 0.45f * pulse, 0.9f, quiet);
+        DrawNormaCubeEdges(outer, br, bg, bb, pulse, 2.6f + punch, NormaEdgeStyle{});
+        DrawNormaCubeStars(inner, br, bg, bb, 0.6f * pulse, base * 0.08f);
+        DrawNormaCubeStars(outer, br, bg, bb, pulse, base * 0.22f * (1.0f + 0.4f * lift), lit, outStar, outFlash);
     }
-    const float orbit = base * 2.6f * (1.0f - 0.35f * trail) * (1.0f + 0.25f * exposed);
-    const float arm = base * 0.42f;
-    const float spin = va;
-    const float ox = x - m->normaDashDirX * base * 1.6f * trail;
-    const float oy = y - m->normaDashDirY * base * 1.6f * trail;
-    for (int k = 0; k < 4; ++k) {
-        const float a = spin + 0.7853982f + 1.5707963f * (float)k;
-        const float bx = ox + cosf(a) * orbit, by = oy + sinf(a) * orbit;
-        const float ia = a + 3.14159265f;   // arms point back toward the body
-        const float a1 = ia - 0.7853982f, a2 = ia + 0.7853982f;
-        const float ba = 0.75f * (1.0f - 0.55f * exposed);
-        drawLineQuad(bx, by, bx + cosf(a1) * arm, by + sinf(a1) * arm, 1.8f, br, bg, bb, ba);
-        drawLineQuad(bx, by, bx + cosf(a2) * arm, by + sinf(a2) * arm, 1.8f, br, bg, bb, ba);
+    if (hold > 0.0f && !dashing)   // the aimed stream's muzzle star (it stays put while drilling)
+        DrawEnemyNode({ outer.sx[lead], outer.sy[lead], base * 0.30f, 1.0f }, br, bg, bb, hold);
+    const float flare = exposed * (0.5f + 0.5f * sinf(visualTime * 18.0f));
+    DrawEnemyCore(x, y, base * ((p2 ? 0.48f : 0.40f) + 0.20f * exposed), br, bg, bb,
+                  0.85f + 0.15f * pulse + 0.3f * flare, false);
+
+    // The panes' corner brackets orbit the body only while it handles panes
+    // (hiding in one, summoning through them, ramming with one): they open
+    // out from the body as they appear and fold back in as they go.
+    const float ring = m->normaRingShow;
+    if (ring > 0.01f) {
+        const float orbit = base * 2.9f * (0.6f + 0.4f * ring);
+        const float arm = base * 0.45f;
+        const float spin = va;
+        for (int k = 0; k < 4; ++k) {
+            const float a = spin + 0.7853982f + 1.5707963f * (float)k;
+            const float bx = x + cosf(a) * orbit, by = y + sinf(a) * orbit;
+            const float ia = a + 3.14159265f;   // arms point back toward the body
+            const float a1 = ia - 0.7853982f, a2 = ia + 0.7853982f;
+            const float ba = 0.85f * ring;
+            drawLineQuad(bx, by, bx + cosf(a1) * arm, by + sinf(a1) * arm, 1.8f, br, bg, bb, ba);
+            drawLineQuad(bx, by, bx + cosf(a2) * arm, by + sinf(a2) * arm, 1.8f, br, bg, bb, ba);
+        }
     }
 
     // Gathering lines while charging: short strokes sliding into the body.
@@ -2468,41 +2525,53 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
     // Warnings share the body's colour (the charge lane alone is red).
     const float vr = r, vg = g, vb = b;
     if (m->normaPattern == norma::Pattern::Dash && m->normaStage == norma::Stage::Act &&
-        m->normaDashStep == 0) {
-        // Red chevrons run from the body to the landing spot, where a red
-        // outline of the cube builds edge by edge over the wind-up; once the
-        // lane locks they brighten, and a ring flashes off the leading star.
-        const float k = windShare;
+        m->normaDashStep <= 1) {
+        // The landing spot is a red target ring the size of the charge's
+        // reach, filling clockwise over the wind-up (Gravis' destination
+        // circle); slim red chevrons run along the lane toward it. Once the
+        // lane locks both brighten and the ring gets its inward ticks.
+        // In the run the ring stays (full) until the body arrives, fading as
+        // it closes in; the chevrons are gone.
+        const bool running = m->normaDashStep == 1;
+        const float runK = running ? std::clamp(m->normaDashTimer / norma::kDashTime, 0.0f, 1.0f) : 0.0f;
+        const float k = running ? 1.0f : windShare;
         const float locked = k >= norma::kDashLock ? 1.0f : 0.0f;
         const float ux = m->normaDashDirX, uy = m->normaDashDirY;
         const float px = -uy, py = ux;
         const float tx = m->normaDashToX, ty = m->normaDashToY;
         const float laneLen = std::max(1.0f, (tx - x) * ux + (ty - y) * uy);
-        const float start = outerR * 1.9f;
-        const float strength = (0.35f + 0.45f * locked) * std::min(1.0f, k * 4.0f);
-        const float march = std::fmod(visualTime * 2.4f, 1.0f);
-        const float chev = base * 0.42f;
-        for (int c = 0; c < 4; ++c) {
-            const float u = ((float)c + march) / 4.0f;
-            const float d = start + (laneLen - start - outerR) * u;
-            if (d <= start) continue;
-            const float cx = x + ux * d, cy = y + uy * d;
-            const float a = strength * (0.4f + 0.6f * std::sin(3.14159265f * u));
-            for (float side : { -1.0f, 1.0f }) {
-                const float bx = cx - ux * chev + px * chev * side, by = cy - uy * chev + py * chev * side;
-                drawLineQuad(bx, by, cx, cy, 4.2f, 1.0f, 0.30f, 0.26f, a * 0.16f);
-                drawLineQuad(bx, by, cx, cy, 2.0f, 1.0f, 0.30f, 0.26f, a);
+        const float reach = base * 1.3f + norma::kDashReach;
+        const float appear = std::min(1.0f, k * 4.0f) * (1.0f - runK * runK);
+        const float rr = 1.0f, rg = 0.30f, rb = 0.26f;
+        // the ring: faint whole, bright fill, a small inner ring at the centre
+        DrawEnemyArc(tx, ty, reach, 0.0f, 6.2831853f, 40, rr, rg, rb, (0.25f + 0.25f * locked) * appear, 1.2f, false);
+        DrawEnemyArc(tx, ty, reach, -1.5707963f, 6.2831853f * k, 40, rr, rg, rb, 0.9f * appear, 2.2f, false);
+        DrawEnemyArc(tx, ty, reach * 0.32f, 0.0f, 6.2831853f, 20, rr, rg, rb, (0.35f + 0.45f * locked) * appear, 1.4f, false);
+        if (locked > 0.0f) {
+            for (int t = 0; t < 4; ++t) {
+                const float a = 0.7853982f + 1.5707963f * (float)t;
+                drawLineQuad(tx + cosf(a) * reach * 0.62f, ty + sinf(a) * reach * 0.62f,
+                             tx + cosf(a) * reach * 0.86f, ty + sinf(a) * reach * 0.86f, 1.8f, rr, rg, rb, 0.85f);
             }
         }
-        const NormaCube landing = ProjectNormaCube(tx, ty, outerR, yaw, pitch, roll);
-        DrawNormaCubeBuilding(landing, 1.0f, 0.30f, 0.26f, 0.45f + 0.45f * locked, k);
-        if (locked > 0.0f) {
-            // The lock flash: a ring off the leading star, over a short beat.
-            const float since = (k - norma::kDashLock) * norma::DashWindFor(m->normaPhase, m->normaDash);
-            const float t = std::clamp(since / 0.25f, 0.0f, 1.0f);
-            if (t < 1.0f)
-                DrawEnemyArc(outer.sx[lead], outer.sy[lead], base * (0.4f + 1.4f * t), 0.0f, 6.2831853f, 28,
-                             1.0f, 0.30f, 0.26f, 0.9f * (1.0f - t), 2.4f, false);
+        // the lane: slim chevrons between the body and the ring
+        const float start = outerR * 1.9f, stop = laneLen - reach * 1.15f;
+        if (!running && stop > start) {
+            const float march = std::fmod(visualTime * 2.0f, 1.0f);
+            const float chev = base * 0.30f;
+            const float strength = (0.35f + 0.45f * locked) * appear;
+            for (int c = 0; c < 5; ++c) {
+                const float u = ((float)c + march) / 5.0f;
+                const float d = start + (stop - start) * u;
+                const float cx = x + ux * d, cy = y + uy * d;
+                const float a = strength * std::sin(3.14159265f * u);
+                for (float side : { -1.0f, 1.0f }) {
+                    const float bx = cx - ux * chev * 0.8f + px * chev * side;
+                    const float by = cy - uy * chev * 0.8f + py * chev * side;
+                    drawLineQuad(bx, by, cx, cy, 3.6f, rr, rg, rb, a * 0.16f);
+                    drawLineQuad(bx, by, cx, cy, 1.6f, rr, rg, rb, a);
+                }
+            }
         }
     }
     if (m->normaPattern == norma::Pattern::Aim &&

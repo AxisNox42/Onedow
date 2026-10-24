@@ -28,8 +28,13 @@
 
 namespace norma {
 
-// Hit points before the run's enemy HP scaling (an untested first guess).
-constexpr float kBaseHp = 16000.0f;
+// Hit points before the run's enemy HP scaling. Tuned for a level-20 player
+// (about 19 augments) reaching the boss wave: the real boss then carries
+// about 2.4x this (the run's HP ramp at the final wave), roughly two minutes
+// of landed fire at the damage a level-20 build is expected to deal. The
+// bare level-1 gun (50 dmg every 0.2s, 250/s) needs over two minutes even
+// against the unscaled figure.
+constexpr float kBaseHp = 30000.0f;
 // Phase 2 begins at or below this share of max HP.
 constexpr float kPhase2Ratio = 0.40f;
 // The boss keeps about this far from the player, drifting slowly.
@@ -114,23 +119,35 @@ constexpr float kSummonSeconds = 3.0f;
 // 11 Dash: the body charges the player kDashCount times. Each charge winds
 // up: the body reddens, draws back and squashes, tracking the player until
 // kDashLock of the wind; red chevrons run to the landing spot, where a red
-// cube outline builds edge by edge. At the lock a flash marks the committed
-// lane; the body shivers just before it goes. It then shoots to the landing
-// spot (past where the player was), easing out, and rests a moment.
+// target ring fills over the wind-up and gets inward ticks once the lane
+// locks; the body shivers just before it goes. It then shoots to the
+// landing spot (past where the player was), stretching along the lane, and
+// rests a moment.
 // Touching the player on the way hurts and shoves it (once per charge).
 constexpr int   kDashCount = 3;
 constexpr int   kDashCountPhase2 = 4;
 // The first charge of a turn winds up long (time to read it); the rest
 // follow quickly, as one combo.
-constexpr float kDashWindFirst = 0.9f, kDashWindFirstPhase2 = 0.75f;
-constexpr float kDashWindNext = 0.4f, kDashWindNextPhase2 = 0.35f;
+constexpr float kDashWindFirst = 1.2f, kDashWindFirstPhase2 = 1.0f;
+constexpr float kDashWindNext = 0.7f, kDashWindNextPhase2 = 0.6f;
 constexpr float kDashTremble = 0.15f;       // the body shivers this long before it goes
-constexpr float kDashLock = 0.65f;
+constexpr float kDashLock = 0.55f;       // locks early: the committed lane shows longer
 constexpr float kDashPullBack = 60.0f;      // world px
-constexpr float kDashTime = 0.36f;        // eased in and out (smoothstep)
+constexpr float kDashTime = 0.42f;        // eased in and out (smoothstep)
 constexpr float kDashOvershoot = 180.0f;    // world px past the player
 constexpr float kDashMinLength = 260.0f, kDashMaxLength = 760.0f;
-constexpr float kDashRest = 0.25f;
+constexpr float kDashRest = 0.35f;
+// Between charges the body backs off to at least kDashRunway from the player
+// (at up to kDashBackSpeed), so no charge starts point-blank; the rest runs
+// on up to kDashRestMax while it does.
+constexpr float kDashRunway = 320.0f;       // world px
+constexpr float kDashBackSpeed = 900.0f;    // world px/s
+constexpr float kDashRestMax = 0.9f;
+// A charge that lands throws the player off to the side of the lane (not
+// along it, which pinned players to the screen edge), and the body deals no
+// contact damage for kDashContactGrace after.
+constexpr float kDashSideKnock = 0.85f;     // share of the shove across the lane
+constexpr float kDashContactGrace = 1.0f;
 constexpr float kDashDamage = 18.0f;
 constexpr float kDashKnock = 240.0f;        // world px of shove
 constexpr float kDashReach = 22.0f;         // past the body's half size
@@ -148,6 +165,18 @@ inline void CubeCornerOnScreen(int i, float yaw, float pitch, float& sx, float& 
     sx = x1;
     sy = py * std::cos(pitch) - z1 * std::sin(pitch);
 }
+
+// Health on the body: the outer cube's eight stars, one per eighth of HP.
+// They go dark in this corner order (fixed, so a dark star rides with the
+// turning cube instead of hopping between corners).
+constexpr int kHealthStars = 8;
+inline constexpr int kStarOutOrder[8] = { 1, 3, 4, 6, 0, 5, 2, 7 };
+inline int LitStarsFor(float hp, float maxHp) {
+    if (maxHp <= 0.0f || hp <= 0.0f) return 0;
+    const float share = std::clamp(hp / maxHp, 0.0f, 1.0f);
+    return std::max(1, (int)std::ceil(share * (float)kHealthStars - 1e-4f));
+}
+constexpr float kStarOutFlash = 0.35f;      // a star going dark flares this long
 
 inline float DashWindFor(int phase, int charge) {
     if (charge == 0) return phase >= 2 ? kDashWindFirstPhase2 : kDashWindFirst;
@@ -228,7 +257,7 @@ inline std::vector<Ask> g_Asks;
 //   EnterPane  the boss slipped into its pane
 //   LeavePane  the boss came back out
 //   PhaseShift phase 2 began
-enum class Fx { Volley, Muzzle, Burst, Wave, EnterPane, LeavePane, PhaseShift };
+enum class Fx { Volley, Muzzle, Burst, Wave, EnterPane, LeavePane, PhaseShift, StarOut };
 struct Event {
     Fx fx;
     float x = 0.0f, y = 0.0f, a = 0.0f;

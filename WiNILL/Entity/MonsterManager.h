@@ -331,10 +331,10 @@ private:
             int own=0,total=(int)born.size();
             for(auto* m:monsters) if(m->alive) {
                 ++total;
-                if(m->genesisThrown && m->thrownOwnerId==g.genesisId) ++own;
+                if(m->genesisThrown && m->kind==MobKind::ROTOR && m->thrownOwnerId==g.genesisId) ++own;
             }
-            for(auto* m:born) if(m->thrownOwnerId==g.genesisId) ++own;
-            if(own<Monster::GENESIS_THROWN_CAP && total<130) {
+            for(auto* m:born) if(m->kind==MobKind::ROTOR && m->thrownOwnerId==g.genesisId) ++own;
+            if(own<Monster::GENESIS_ROTOR_CAP && total<130) {
                 const auto p=g.GenesisRotorFeedPoint(0);
                 auto* child=new Monster(p.x,p.y);
                 child->MakeKind(MobKind::ROTOR);
@@ -458,10 +458,11 @@ private:
                     m->spawnTimer = 0.0f;
                     int ownAlive = 0;
                     for (auto* s : monsters)
-                        if (s->alive && s->genesisThrown && s->thrownOwnerId == m->genesisId)
+                        if (s->alive && s->genesisThrown && s->kind != MobKind::ROTOR &&
+                            s->thrownOwnerId == m->genesisId)
                             ++ownAlive;
                     for (auto* s : born)
-                        if (s->thrownOwnerId == m->genesisId) ++ownAlive;
+                        if (s->kind != MobKind::ROTOR && s->thrownOwnerId == m->genesisId) ++ownAlive;
                     if (ownAlive < Monster::GENESIS_THROWN_CAP &&
                         total + (int)born.size() < 130) {
                         const int shot = std::min(m->hiveSpawnCount, 2);
@@ -499,11 +500,10 @@ private:
         for (auto* child : born) monsters.push_back(child);
     }
 
-    void ResolveMonsterCrowding(float dt) {
+    // Position separation only; crowding never damages anyone.
+    void ResolveMonsterCrowding(float /*dt*/) {
         constexpr float kNormalGap = 24.0f;
         constexpr float kSummonedGap = 32.0f;
-        constexpr float kCrushDps = 50.0f;
-        std::vector<int> pushCounts(monsters.size(), 0);
         for (size_t i = 0; i < monsters.size(); ++i) {
             // Thrown Swarms in flight pass through other enemies.
             if (!monsters[i]->alive || monsters[i]->thrownPhase == 1 || monsters[i]->genesisRotorPhase > 0) continue;
@@ -540,15 +540,7 @@ private:
                     monsters[j]->worldX += nx * half;
                     monsters[j]->worldY += ny * half;
                 }
-                ++pushCounts[i];
-                ++pushCounts[j];
             }
-        }
-
-        for (size_t i = 0; i < monsters.size(); ++i) {
-            if (!monsters[i]->alive || pushCounts[i] < 4 ||
-                monsters[i]->kind == MobKind::SWARM) continue;
-            ApplyDamage(*monsters[i], kCrushDps * dt, space::kUntracked);
         }
     }
 };

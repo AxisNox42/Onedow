@@ -69,12 +69,20 @@ constexpr float FOOTER_BUTTON_H = 32.0f;
 constexpr float FOOTER_BUTTON_GAP = 12.0f;
 // Stats 탭 푸터 버튼 폭. 입력과 그리기가 같은 표로 위치를 계산한다.
 enum FooterButton { FOOTER_SYNC, FOOTER_BALANCE, FOOTER_HITSTOP, FOOTER_NEXT_WAVE,
-                    FOOTER_ORBIT, FOOTER_COUNT };
-constexpr float FOOTER_BUTTON_W[FOOTER_COUNT] = { 140.0f, 130.0f, 140.0f, 140.0f, 128.0f };
+                    FOOTER_ORBIT, FOOTER_DEBUFF_PREVIEW, FOOTER_DEBUFF_LOG, FOOTER_COUNT };
+constexpr float FOOTER_BUTTON_W[FOOTER_COUNT] = { 140.0f, 130.0f, 140.0f, 140.0f, 128.0f,
+                                                  170.0f, 170.0f };
+// Buttons from FOOTER_DEBUFF_PREVIEW on sit in a second row above the first.
+constexpr int FOOTER_ROW2_FIRST = FOOTER_DEBUFF_PREVIEW;
+constexpr float FOOTER_ROW2_LIFT = FOOTER_BUTTON_H + 8.0f;
 inline float FooterButtonX(float panelX, int index) {
     float x = panelX + 16.0f;
-    for (int i = 0; i < index; ++i) x += FOOTER_BUTTON_W[i] + FOOTER_BUTTON_GAP;
+    const int first = index >= FOOTER_ROW2_FIRST ? FOOTER_ROW2_FIRST : 0;
+    for (int i = first; i < index; ++i) x += FOOTER_BUTTON_W[i] + FOOTER_BUTTON_GAP;
     return x;
+}
+inline float FooterButtonY(float footerY, int index) {
+    return index >= FOOTER_ROW2_FIRST ? footerY - FOOTER_ROW2_LIFT : footerY;
 }
 
 struct PanelLayout {
@@ -777,7 +785,7 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
     if (g_ScrollAccum != 0.0f) {
         if (tab_ == 0) {
             fieldOffset_ -= (int)std::round(g_ScrollAccum * 2.0f);
-            const int visibleRows = std::max(1, (int)((p.h - 300.0f) / ROW_H));
+            const int visibleRows = std::max(1, (int)((p.h - 340.0f) / ROW_H));
             const int maxOffset = std::max(0,
                                            (int)Fields().size() - visibleRows);
             fieldOffset_ = std::max(0, std::min(maxOffset, fieldOffset_));
@@ -819,7 +827,7 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
             }
         }
         const float rowsY = p.y + STATS_ROWS_Y;
-        const int visibleRows = std::max(1, (int)((p.h - 300.0f) / ROW_H));
+        const int visibleRows = std::max(1, (int)((p.h - 340.0f) / ROW_H));
         for (int row = 0; row < visibleRows; ++row) {
             const int fieldIndex = fieldOffset_ + row;
             if (fieldIndex >= (int)Fields().size()) break;
@@ -840,7 +848,8 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
         }
         const float footerY = p.y + p.h - FOOTER_BOTTOM;
         auto footerHit = [&](int index) {
-            return Hit(FooterButtonX(p.x, index), footerY, FOOTER_BUTTON_W[index],
+            return Hit(FooterButtonX(p.x, index), FooterButtonY(footerY, index),
+                       FOOTER_BUTTON_W[index],
                        FOOTER_BUTTON_H, mx, my);
         };
         if (click && footerHit(FOOTER_SYNC)) {
@@ -867,6 +876,16 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
                 ? L"마지막 웨이브 완료 - 승리"
                 : L"다음 웨이브로 이동했습니다");
             if (context_.game->waveVictory) SetVisible(false);
+        }
+        if (click && footerHit(FOOTER_DEBUFF_PREVIEW) && context_.game) {
+            context_.game->showDebuffPreview = !context_.game->showDebuffPreview;
+            SetMessage(context_.game->showDebuffPreview
+                ? L"디버프 예고 켜짐" : L"디버프 예고 꺼짐");
+        }
+        if (click && footerHit(FOOTER_DEBUFF_LOG) && context_.game) {
+            context_.game->showDebuffLog = !context_.game->showDebuffLog;
+            SetMessage(context_.game->showDebuffLog
+                ? L"디버프 기록 켜짐" : L"디버프 기록 꺼짐");
         }
         if (click && footerHit(FOOTER_ORBIT) && context_.constellationOrbits) {
             *context_.constellationOrbits = !*context_.constellationOrbits;
@@ -1086,7 +1105,7 @@ void DebugToolkit::RenderStatsTab(float x, float y, float w, float h,
                STATS_CLEAR_W, 26.0f, L"지우기", false, editing_);
 
     const float rowsY = y + STATS_ROWS_Y;
-    const int visibleRows = std::max(1, (int)((h - 300.0f) / ROW_H));
+    const int visibleRows = std::max(1, (int)((h - 340.0f) / ROW_H));
     const auto& fields = Fields();
     const int maxOffset = std::max(0, (int)fields.size() - visibleRows);
     fieldOffset_ = std::max(0, std::min(maxOffset, fieldOffset_));
@@ -1128,8 +1147,8 @@ void DebugToolkit::RenderStatsTab(float x, float y, float w, float h,
 
     const float footerY = y + h - FOOTER_BOTTOM;
     auto drawFooter = [&](int index, const wchar_t* label, bool selected, bool enabled) {
-        DrawButton(FooterButtonX(x, index), footerY, FOOTER_BUTTON_W[index],
-                   FOOTER_BUTTON_H, label, selected, enabled);
+        DrawButton(FooterButtonX(x, index), FooterButtonY(footerY, index),
+                   FOOTER_BUTTON_W[index], FOOTER_BUTTON_H, label, selected, enabled);
     };
     const bool balanceActive = context_.balanceTestMode &&
                                *context_.balanceTestMode;
@@ -1144,12 +1163,18 @@ void DebugToolkit::RenderStatsTab(float x, float y, float w, float h,
                context_.advanceWave && context_.game->currentState == GameState::RUNNING);
     drawFooter(FOOTER_ORBIT, orbitActive ? L"궤도: 켜짐" : L"궤도: 꺼짐",
                orbitActive, context_.constellationOrbits != nullptr);
+    const bool previewOn = context_.game && context_.game->showDebuffPreview;
+    const bool logOn = context_.game && context_.game->showDebuffLog;
+    drawFooter(FOOTER_DEBUFF_PREVIEW, previewOn ? L"디버프 예고: 켜짐" : L"디버프 예고: 꺼짐",
+               previewOn, context_.game != nullptr);
+    drawFooter(FOOTER_DEBUFF_LOG, logOn ? L"디버프 기록: 켜짐" : L"디버프 기록: 꺼짐",
+               logOn, context_.game != nullptr);
     wchar_t page[64] = {};
     std::swprintf(page, sizeof(page) / sizeof(page[0]),
                   L"필드 %d-%d / %d", fieldOffset_ + 1,
                   std::min(fieldOffset_ + visibleRows, (int)fields.size()),
                   (int)fields.size());
-    g_TextS.Draw(page, x + 208.0f, y + h - 76.0f, 0.46f,
+    g_TextS.Draw(page, x + w - 190.0f, y + h - 76.0f - FOOTER_ROW2_LIFT, 0.46f,
                  0.52f, 0.68f, 0.78f, 0.78f);
 }
 

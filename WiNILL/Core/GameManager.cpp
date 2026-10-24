@@ -170,6 +170,8 @@ void GameManager::ResetRunProgress(MonsterManager& mm,
     waveTransitionTimer = 0.0f;
     lastWaveDebuff = -1;
     waveDebuffToast = 0.0f;
+    nextWaveDebuff = -1;
+    memset(waveDebuffLog, 0, sizeof(waveDebuffLog));
     waveVictory = false;
     xp = 0;
     playerLevel = 1;

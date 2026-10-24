@@ -228,6 +228,13 @@ static void DrawPaneDebug() {
     BatchFlush();
 }
 
+// NORMA's verdict. When the boss wave's clock runs out with NORMA still
+// standing, a countdown starts; at zero the player is struck dead and the
+// run is lost. Felling NORMA first wins as usual. Seconds left, -1 = idle.
+static float g_NormaJudgment = -1.0f;
+static bool  g_NormaDoom = false;   // the coming death is the verdict
+static constexpr float kNormaJudgmentSeconds = 10.0f;
+
 // NORMA's health under the wave track: a dim full-length line, the bright
 // remaining share over it, and a notch where phase 2 begins. Lines only.
 static void DrawNormaBossBar(float sw, float scale, float topY) {
@@ -250,6 +257,24 @@ static void DrawNormaBossBar(float sw, float scale, float topY) {
     const float ts = 0.55f * scale;
     g_TextS.Draw(name, x0, y - 10.0f * scale - g_TextS.Height(name, ts), ts,
                  0.72f, 0.94f, 1.0f, 0.95f);
+
+    // The verdict countdown: a red line that drains under the health bar.
+    if (g_NormaJudgment >= 0.0f) {
+        const float left = std::clamp(g_NormaJudgment / kNormaJudgmentSeconds, 0.0f, 1.0f);
+        const float pulse = g_NormaJudgment < 3.0f
+            ? 0.65f + 0.35f * sinf(g_NormaJudgment * 14.0f) : 1.0f;
+        const hud_lines::Rgb red{ 1.0f, 0.30f, 0.32f };
+        const float y2 = y + 16.0f * scale;
+        BindMainShader();
+        hud_lines::Segment(x0, y2, x0 + w, y2, 2.0f * scale, red, 0.22f);
+        hud_lines::Segment(x0, y2, x0 + w * left, y2, 3.0f * scale, red, 0.95f * pulse);
+        BatchFlush();
+        static const wchar_t* const FMT[3] = {
+            L"심판까지  %.1f", L"Judgment in  %.1f", L"裁きまで  %.1f" };
+        wchar_t line[64];
+        swprintf_s(line, FMT[std::max(0, std::min(2, LangIndex()))], g_NormaJudgment);
+        g_TextS.Draw(line, x0, y2 + 8.0f * scale, ts, 1.0f, 0.36f, 0.38f, 0.95f * pulse);
+    }
 }
 
 // Ice corner brackets on every open pane, drawn by the game above the pane's
@@ -1082,6 +1107,13 @@ static void PlayNormaEvents() {
             SpawnShockWave(e.x, e.y, 180.0f + 160.0f * e.a, 0.45f, ir, ig, ib);
             SpawnSparks(e.x, e.y, (int)(10.0f + 12.0f * e.a), 0.92f, 0.99f, 1.0f, 380.0f);
             Shake(0.18f + 0.10f * e.a, 6.0f + 6.0f * e.a);
+            break;
+        case norma::Fx::StarOut:
+            // A health star went dark: a short flare and a beat of hit stop.
+            SpawnSparks(e.x, e.y, 16, ir, ig, ib, 420.0f);
+            SpawnShockWave(e.x, e.y, 150.0f, 0.3f, ir, ig, ib);
+            Shake(0.16f, 7.0f);
+            TriggerHitStop(0.05f);
             break;
         case norma::Fx::Wave:
             SpawnShockWave(e.x, e.y, e.a * 1.6f, 1.6f, 0.76f, 0.80f, 1.0f);
@@ -1960,12 +1992,18 @@ static void ApplyWaveDebuff(int scrW, int scrH) {
     // The wave HUD lists this wave's debuff until the wave ends, so a wave
     // that draws none must not keep showing the previous one.
     g_GameManager.lastWaveDebuff = -1;
-    int idx = -1;
-    if (g_GameManager.PickRandomDebuffIndices(&idx, 1) != 1) return;
+    // The preview rolled this wave's debuff ahead of time; use it so what was
+    // announced is what arrives.
+    int idx = g_GameManager.nextWaveDebuff;
+    g_GameManager.nextWaveDebuff = -1;
+    if (idx < 0 && g_GameManager.PickRandomDebuffIndices(&idx, 1) != 1) return;
     ApplySingleAugIdx(idx, scrW, scrH);
     g_GameManager.maxHP = g_Stats.maxHP;
     g_GameManager.lastWaveDebuff = idx;
     g_GameManager.waveDebuffToast = 4.0f;
+    const int enteredWave = g_GameManager.currentWave;
+    if (enteredWave >= 0 && enteredWave < 64)
+        g_GameManager.waveDebuffLog[enteredWave] = idx + 1;
 }
 
 // Ends the run as a win. reason holds the KR/EN/JP line shown with the
@@ -1984,14 +2022,17 @@ static void FinishRunVictory(int finalWave, const wchar_t* const (&reason)[3],
     g_LastRunRecord = CommitRunResult(
         !PlayRecordsProgress(), static_cast<int>(g_Difficulty), g_GameManager.score,
         g_Stats.killCount, (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
+    // The battle is over: the report sits on an empty field, not on a frozen
+    // snapshot of the last wave's mobs, shots and summons.
+    g_MonsterManager.Clear();
+    g_Bullets.clear();
+    g_ApproachOrbs.clear();
+    g_LaserBeams.clear();
+    g_StardustPickups.clear();
+    for (int d = 0; d < MAX_DRONES;   d++) g_Drones[d]   = DroneState{};
+    for (int c = 0; c < MAX_CHAKRAMS; c++) g_Chakrams[c] = ChakramState{};
+    for (int i = 0; i < MAX_SHOCKS; i++) g_ShockWaves[i].active = false;
     g_GameManager.currentState = GameState::GAMEOVER;
-}
-
-static void CompleteWaveRun(int finalWave) {
-    static const wchar_t* const reason[3] = {
-        L"웨이브 생존 완료", L"Waves Survived", L"ウェーブ生存完了"
-    };
-    FinishRunVictory(finalWave, reason, "wave_complete");
 }
 
 // Felling NORMA, the final wave's boss, wins the run at once.
@@ -2000,6 +2041,33 @@ static void CompleteBossRun(int finalWave) {
         L"NORMA 처치", L"NORMA Defeated", L"NORMA撃破"
     };
     FinishRunVictory(finalWave, reason, "boss_defeated");
+}
+
+// Time-out verdict: starts when the boss wave's clock hits zero with NORMA
+// alive, and kills the player (no revive) when the countdown ends.
+static void TickNormaJudgment(float dt) {
+    bool bossAlive = false;
+    for (const Monster* m : g_MonsterManager.monsters)
+        if (m->kind == MobKind::NORMA && m->alive) { bossAlive = true; break; }
+    const bool timeOut = WaveRunComplete(g_GameTime, g_Difficulty);
+    if (!bossAlive || !timeOut || NormaDefeated()) {
+        g_NormaJudgment = -1.0f;
+        g_NormaDoom = false;
+        return;
+    }
+    if (g_NormaJudgment < 0.0f) {
+        g_NormaJudgment = kNormaJudgmentSeconds;
+        g_ShakeTime = 0.5f; g_ShakeMag = 8.0f;
+        return;
+    }
+    g_NormaJudgment -= dt;
+    if (g_NormaJudgment > 0.0f) return;
+    g_NormaJudgment = -1.0f;
+    g_NormaDoom = true;
+    g_Stats.mk2Used = true;                    // the verdict cannot be revived
+    g_GameManager.playerHP = 0.0f;
+    g_ShakeTime = 0.6f; g_ShakeMag = 26.0f;
+    TriggerFlash(1.0f, 0.3f, 0.32f, 0.9f);
 }
 
 static void ProcessWaveTransitions(int scrW, int scrH) {
@@ -2011,8 +2079,17 @@ static void ProcessWaveTransitions(int scrW, int scrH) {
         g_GameManager.waveTransitionTimer = 2.0f;
         ApplyWaveDebuff(scrW, scrH);
     }
-    if (WaveRunComplete(g_GameTime, g_Difficulty))
-        CompleteWaveRun(FinalWaveCount(g_Difficulty));
+    // Roll the next wave's debuff once the current wave is nearly over, so the
+    // HUD can announce it and the boundary applies exactly that one.
+    if (g_GameManager.nextWaveDebuff < 0 &&
+        g_GameManager.currentWave < FinalWaveCount(g_Difficulty) &&
+        CurrentWaveSecondsRemaining(g_GameTime, g_Difficulty) <= wave_hud::kDebuffPreviewSeconds) {
+        int idx = -1;
+        if (g_GameManager.PickRandomDebuffIndices(&idx, 1) == 1)
+            g_GameManager.nextWaveDebuff = idx;
+    }
+    // No timed clear: the run is won only by felling the boss (CompleteBossRun).
+    // When the boss wave's clock runs out the fight simply goes on.
 }
 
 static void BeginAugReplaceFlow(int newIdx) {
@@ -2880,7 +2957,8 @@ int main() {
             if (f9 && !f9Down && g_GameManager.currentState == GameState::RUNNING)
                 DebugSpawnNorma(g_MonsterManager, screenWidth,
                                 g_Stats.monsterHpMult *
-                                    GetDifficultyParams(g_Difficulty).enemyHpMultiplier);
+                                    GetDifficultyParams(g_Difficulty).enemyHpMultiplier,
+                                g_Difficulty);
             f9Down = f9;
         }
         // Hand testing: F8 opens another test pane during a run.
@@ -3701,7 +3779,8 @@ int main() {
                         if (!FindNorma())
                             DebugSpawnNorma(g_MonsterManager, screenWidth,
                                             g_Stats.monsterHpMult *
-                                            GetDifficultyParams(g_Difficulty).enemyHpMultiplier);
+                                            GetDifficultyParams(g_Difficulty).enemyHpMultiplier,
+                                            g_Difficulty);
                         // Clear the stage so the capture shows NORMA alone.
                         for (Monster* m : g_MonsterManager.monsters)
                             if (m->alive && m->kind != MobKind::NORMA) m->alive = false;
@@ -3913,6 +3992,12 @@ int main() {
                     const wchar_t* UNK[3] = { L"Unknown error", L"Terminated by unknown error", L"Unknown error" };
                     if (nm) swprintf_s(g_DeathReason, FMT[li], nm);
                     else    wcscpy_s(g_DeathReason, UNK[li]);
+                    if (g_NormaDoom) {
+                        static const wchar_t* const DOOM[3] = {
+                            L"NORMA의 심판: 시간 초과", L"Judged by NORMA: time ran out",
+                            L"NORMAの裁き: 時間切れ" };
+                        wcscpy_s(g_DeathReason, DOOM[li]);
+                    }
                 }
             }   // close else (MK2 분기 ??
         }       // close outer if (HP <= 0)
@@ -4868,6 +4953,7 @@ CollisionSystem::Update(pCX, pCY,
                               g_GameTime, g_GameManager.score, g_Difficulty);
             g_GameTime += delta;
             ProcessWaveTransitions(screenWidth, screenHeight);
+            TickNormaJudgment(delta);
             if (NormaDefeated()) CompleteBossRun(FinalWaveCount(g_Difficulty));
             float approachSpeed = 120.0f *
                 (1.0f + 0.20f * (float)(g_Stats.approachStacks > 0 ? g_Stats.approachStacks - 1 : 0));

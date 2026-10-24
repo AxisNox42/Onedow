@@ -81,7 +81,22 @@ static void LeadsMovingTargets() {
     Check(std::fabs(norma::LeadAngle(0, 0, 100, 0, 500, 0, 100)) < 1e-4f, "no intercept: direct aim");
 }
 
+static void HealthStarsCountEighths() {
+    Check(norma::LitStarsFor(100.0f, 100.0f) == 8, "full health lights all eight stars");
+    Check(norma::LitStarsFor(87.6f, 100.0f) == 8, "the first eighth keeps all eight");
+    Check(norma::LitStarsFor(87.4f, 100.0f) == 7, "losing an eighth darkens one");
+    Check(norma::LitStarsFor(40.0f, 100.0f) == 4, "phase 2 starts with four lit");
+    Check(norma::LitStarsFor(1.0f, 100.0f) == 1, "the last star stays lit while alive");
+    Check(norma::LitStarsFor(0.0f, 100.0f) == 0, "dead: all dark");
+    bool seen[8] = {};
+    for (int k = 0; k < 8; ++k) seen[norma::kStarOutOrder[k]] = true;
+    bool all = true;
+    for (bool s : seen) all = all && s;
+    Check(all, "the star order covers every corner once");
+}
+
 int main() {
+    HealthStarsCountEighths();
     LeadsMovingTargets();
     PhaseTwoAtFortyPercent();
     KeepsHoverDistance();

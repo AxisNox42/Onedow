@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "Augment.h"
 #include "DrawPrim.h"
 #include "HudLines.h"
 #include "EnemySpawner.h"
@@ -39,6 +40,9 @@ inline constexpr Rgb kElite  = { 1.00f, 0.57f, 0.25f };
 inline constexpr Rgb kFinal  = { 1.00f, 0.81f, 0.38f };
 inline constexpr Rgb kDanger = { 1.00f, 0.36f, 0.38f };
 inline constexpr Rgb kText   = { 0.86f, 0.91f, 1.00f };
+
+// The next wave's debuff is announced this long before the wave ends.
+inline constexpr float kDebuffPreviewSeconds = 10.0f;
 
 inline bool IsEliteWave(int wave, Difficulty difficulty) {
     const ScheduledEliteInfo info = GetScheduledElite(wave, difficulty);
@@ -207,4 +211,53 @@ inline void DrawWaveHud(float sw, float hudScale, float hudTopY, float gameTime,
     DrawWaveTrack(cx, trackY, hs, wave, finalWave, difficulty,
                   std::clamp(remain / WaveDurationSeconds(wave, difficulty),
                              0.0f, 1.0f), pulse);
+
+    // ── this wave's debuff: one line under the track until the wave ends ──
+    const int di = gm.lastWaveDebuff;
+    if (di >= 0 && di < AUG_TOTAL) {
+        wchar_t line[96];
+        swprintf_s(line, L"▼ %ls", AugName(ALL_AUGS[di]));
+        const float sc = UiTextScale(g_TextS, UiTextLevel::Supporting, hs);
+        // The toast phase (first 4s) is full strength, then it settles.
+        const float a = gm.waveDebuffToast > 0.0f ? 1.0f : 0.75f;
+        const float w = g_TextS.Width(line, sc);
+        HudText(g_TextS, line, cx - w * 0.5f, trackY + 30.0f * hs, sc, kDanger, a);
+    }
+
+    // ── preview: the debuff the next wave will bring, in the last seconds ──
+    const int ni = gm.nextWaveDebuff;
+    if (gm.showDebuffPreview && ni >= 0 && ni < AUG_TOTAL && wave < finalWave &&
+        remain <= kDebuffPreviewSeconds) {
+        static const wchar_t* const kNext[3] = { L"다음 웨이브", L"NEXT", L"次のウェーブ" };
+        wchar_t line[128];
+        swprintf_s(line, L"%ls ▷ %ls", kNext[std::clamp(CurLangIdx(), 0, 2)],
+                   AugName(ALL_AUGS[ni]));
+        const float sc = UiTextScale(g_TextS, UiTextLevel::Supporting, hs);
+        // Fades in over the first second and blinks gently in the last three.
+        const float inA = std::clamp((kDebuffPreviewSeconds - remain) / 1.0f, 0.0f, 1.0f);
+        const float blink = remain < 3.0f ? 0.75f + 0.25f * sinf(remain * 12.0f) : 1.0f;
+        const float w = g_TextS.Width(line, sc);
+        HudText(g_TextS, line, cx - w * 0.5f, trackY + 52.0f * hs, sc, kElite, inA * blink);
+    }
+}
+
+// Per-wave debuff record, one line per wave that brought one: "W04  Name".
+// Draws into a column that starts at (x, y) and stops at maxY; returns the
+// number of lines drawn. Used by the pause and result screens.
+inline int DrawWaveDebuffLog(TextRenderer& font, const GameManager& gm,
+                             float x, float y, float maxY, float scale, float alpha) {
+    if (!gm.showDebuffLog) return 0;
+    int drawn = 0;
+    const float lineH = font.Height(L"Ag", scale) * 1.25f;
+    for (int w = 2; w < 64; ++w) {
+        const int v = gm.waveDebuffLog[w] - 1;
+        if (v < 0 || v >= AUG_TOTAL) continue;
+        if (y + lineH > maxY) break;
+        wchar_t line[128];
+        swprintf_s(line, L"W%02d   %ls", w, AugName(ALL_AUGS[v]));
+        font.Draw(line, x, y, scale, 1.0f, 0.62f, 0.50f, alpha);
+        y += lineH;
+        ++drawn;
+    }
+    return drawn;
 }
