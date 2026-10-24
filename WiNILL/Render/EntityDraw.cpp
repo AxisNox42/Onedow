@@ -342,6 +342,29 @@ void QueueMonsterSightFront(const Monster* m) {
     } else if (m->kind == MobKind::MAGNETAR) {
         alpha = m->magnetarInterceptTimer > 0.0f ? 0.25f : 0.16f;
         radiusScale = 2.20f;
+    } else if (m->kind == MobKind::NORMA) {
+        // The boss: a stronger glow out past its bracket ring, in its one
+        // colour. It runs red while the boss controls a pane, and swells
+        // brighter (same colour) while exposed.
+        alpha = 0.19f;
+        radiusScale = 3.00f;
+        if (m->normaPattern == norma::Pattern::Ram && m->normaExposed <= 0.0f &&
+            (m->normaStage == norma::Stage::Telegraph || m->normaStage == norma::Stage::Act)) {
+            r = 1.0f; g = 0.30f; b = 0.26f;
+            alpha = 0.24f;
+        }
+        // A charge reddens it over the wind-up and holds red through the run.
+        if (m->normaPattern == norma::Pattern::Dash && m->normaStage == norma::Stage::Act &&
+            m->normaDashStep < 2) {
+            const float k = m->normaDashStep == 1 ? 1.0f : m->NormaDashWindShare();
+            r += (1.0f - r) * k; g += (0.30f - g) * k; b += (0.26f - b) * k;
+            alpha += 0.05f * k;
+        }
+        if (m->normaExposed > 0.0f) {
+            const float k = std::min(1.0f, m->normaExposed / 0.2f);
+            alpha += 0.12f * k;
+            radiusScale += 0.35f * k;
+        }
     }
     QueueEnemySightFront(m->worldX, m->worldY, base * radiusScale,
                          r, g, b, alpha);
@@ -451,6 +474,8 @@ static float MonsterSightRearScale(MobKind kind) {
     switch (kind) {
     case MobKind::GRAVIS:  return 3.35f;
     case MobKind::QUASAR:  return 3.30f;
+    // NORMA's dark field reaches past its orbiting bracket ring (2.6 base).
+    case MobKind::NORMA:   return 3.20f;
     // Genesis' shells, plates and orbit frame reach 2.6 base; the field must
     // keep its dark core over all of them, not only the core.
     case MobKind::GENESIS: return 3.40f;
@@ -2187,26 +2212,27 @@ struct NormaCube {
     float sx[8], sy[8], depth[8];   // projected points, depth -1 (back) .. 1 (front)
 };
 
-// drill: a turn about the cube's own corner-to-corner diagonal (corners 0
-// and 6). A whole number of thirds of a turn maps the cube onto itself.
+// drill: a turn about the diagonal through corner `axisCorner` and its
+// opposite. A whole number of thirds of a turn maps the cube onto itself.
 static NormaCube ProjectNormaCube(float x, float y, float radius, float yaw, float pitch, float roll,
-                                  float drill = 0.0f) {
-    static constexpr float kCorner[8][3] = {
-        { -1, -1, -1 }, { 1, -1, -1 }, { 1, 1, -1 }, { -1, 1, -1 },
-        { -1, -1, 1 }, { 1, -1, 1 }, { 1, 1, 1 }, { -1, 1, 1 } };
+                                  float drill = 0.0f, int axisCorner = 6) {
+    const auto& kCorner = norma::kCubeCorner;
     NormaCube c{};
     const float cy = cosf(yaw), sy = sinf(yaw), cp = cosf(pitch), sp = sinf(pitch);
     const float cr = cosf(roll), sr = sinf(roll);
     const float cdr = cosf(drill), sdr = sinf(drill);
-    static constexpr float kAxis = 0.57735027f;   // (1, 1, 1) / sqrt(3)
+    static constexpr float kAxis = 0.57735027f;   // 1 / sqrt(3)
+    const float ax = kCorner[axisCorner][0] * kAxis, ay = kCorner[axisCorner][1] * kAxis,
+                az = kCorner[axisCorner][2] * kAxis;
     for (int i = 0; i < 8; ++i) {
         float px = kCorner[i][0], py = kCorner[i][1], pz = kCorner[i][2];
         if (drill != 0.0f) {
             // Rodrigues' turn about the diagonal.
-            const float dot = (px + py + pz) * kAxis;
-            const float qx = kAxis * (pz - py), qy = kAxis * (px - pz), qz = kAxis * (py - px);
-            const float k = dot * kAxis * (1.0f - cdr);
-            const float nx = px * cdr + qx * sdr + k, ny = py * cdr + qy * sdr + k, nz = pz * cdr + qz * sdr + k;
+            const float dot = px * ax + py * ay + pz * az;
+            const float qx = ay * pz - az * py, qy = az * px - ax * pz, qz = ax * py - ay * px;
+            const float k = dot * (1.0f - cdr);
+            const float nx = px * cdr + qx * sdr + ax * k, ny = py * cdr + qy * sdr + ay * k,
+                        nz = pz * cdr + qz * sdr + az * k;
             px = nx; py = ny; pz = nz;
         }
         const float x1 = px * cy + pz * sy, z1 = -px * sy + pz * cy;
@@ -2217,6 +2243,32 @@ static NormaCube ProjectNormaCube(float x, float y, float radius, float yaw, flo
         c.depth[i] = z2 / 1.7320508f;
     }
     return c;
+}
+
+// Presses the projected cube flat along screen direction (ux, uy) by
+// `share` (0 none .. 1 flat), about its centre.
+static void SquashNormaCube(NormaCube& c, float x, float y, float ux, float uy, float share) {
+    for (int i = 0; i < 8; ++i) {
+        const float d = (c.sx[i] - x) * ux + (c.sy[i] - y) * uy;
+        c.sx[i] -= ux * d * share;
+        c.sy[i] -= uy * d * share;
+    }
+}
+
+// The outer edges drawn in one by one: `share` 0..1 of the twelve, the last
+// one partly.
+static void DrawNormaCubeBuilding(const NormaCube& c, float r, float g, float b, float alpha, float share) {
+    static constexpr int kEdge[12][2] = {
+        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, { 0, 4 }, { 1, 5 },
+        { 2, 6 }, { 3, 7 }, { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 } };
+    const float edges = std::clamp(share, 0.0f, 1.0f) * 12.0f;
+    for (int e = 0; e < 12 && (float)e < edges; ++e) {
+        const float part = std::min(1.0f, edges - (float)e);
+        const int i = kEdge[e][0], j = kEdge[e][1];
+        const float ex = c.sx[i] + (c.sx[j] - c.sx[i]) * part, ey = c.sy[i] + (c.sy[j] - c.sy[i]) * part;
+        drawLineQuad(c.sx[i], c.sy[i], ex, ey, 3.6f, r, g, b, alpha * 0.16f);
+        drawLineQuad(c.sx[i], c.sy[i], ex, ey, 1.6f, r, g, b, alpha);
+    }
 }
 
 // Just the outer edges, thin: afterimages and the charge lane.
@@ -2251,7 +2303,12 @@ static void DrawNormaCube(const NormaCube& c, float r, float g, float b,
 }
 
 static void DrawNormaBody(const Monster* m, float base, float visualTime) {
-    const float x = m->worldX, y = m->worldY;
+    // The body shivers in the last moment of a charge's wind-up.
+    const float windShare = m->NormaDashWindShare();
+    const float windLeft = (1.0f - windShare) * norma::DashWindFor(m->normaPhase, m->normaDash);
+    const float shiver = windShare > 0.0f && windLeft < norma::kDashTremble ? 1.2f : 0.0f;
+    const float x = m->worldX + shiver * sinf(visualTime * 97.0f);
+    const float y = m->worldY + shiver * cosf(visualTime * 83.0f);
     const float flash = std::clamp(m->normaPhaseFlash / norma::kPhaseFlashSeconds, 0.0f, 1.0f);
     const float hit = std::clamp(m->hitFlashTimer / MOB_HIT_FLASH_TIME, 0.0f, 1.0f);
     const float recoil = std::clamp(m->normaRecoil / norma::kRecoilSeconds, 0.0f, 1.0f);
@@ -2270,19 +2327,21 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
     const float half = base * 1.3f * (1.0f - 0.14f * charge + 0.10f * recoil);
     const float lift = std::max({ flash, hit * 0.6f, recoil * 0.5f, charge * 0.35f });
     const bool p2 = m->normaPhase == 2;
-    const float baseR = p2 ? 0.84f : m->color.r, baseG = p2 ? 0.86f : m->color.g;
-    const float r = baseR + (1.0f - baseR) * lift;
-    const float g = baseG + (1.0f - baseG) * lift;
+    // One fixed colour through every motion and both phases; only a hit
+    // flashes it (briefly) and pane control turns it red (below).
+    const float r = m->color.r + (1.0f - m->color.r) * hit * 0.6f;
+    const float g = m->color.g + (1.0f - m->color.g) * hit * 0.6f;
     const float b = m->color.b;
     const float pulse = 0.85f + 0.15f * sinf(visualTime * 2.0f);
 
-    // Body: the tesseract. It turns slowly. The aimed stream and the charge
-    // stop it with a corner on their direction (for the stream that star is
-    // the muzzle; for the charge it is the leading point); a charge then
-    // drills it about that corner's diagonal a whole number of thirds of a
-    // turn, so it lands looking the same as it set off.
+    // Body: the tesseract, turned as the boss keeps it (Monster::TurnNormaCube:
+    // the aimed stream and the charge roll the nearest corner onto their
+    // direction, the short way). For the stream that star is the muzzle, for
+    // the charge the leading point; a charge then drills about that corner's
+    // diagonal a whole number of thirds of a turn, so it lands as it set off.
     const float va = m->normaVisualAngle;
-    float yaw = va * 1.0f, pitch = 0.55f + 0.25f * sinf(va * 0.7f), roll = 0.0f;
+    const float yaw = m->normaCubeYaw, pitch = m->normaCubePitch, roll = m->normaCubeRoll;
+    const int lead = m->normaCubeLead;
     const bool dashing = m->normaPattern == norma::Pattern::Dash;
     float hold = 0.0f;   // 0..1 how far the cube has settled onto its corner
     if (m->normaPattern == norma::Pattern::Aim || dashing) {
@@ -2294,47 +2353,58 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
         else if (m->normaStage == norma::Stage::Recover)
             hold = std::max(0.0f, 1.0f - m->normaTimer / 0.3f);
     }
-    const float dashDir = m->normaDashFace;
-    if (hold > 0.0f) {
-        // Corner 6 (1, 1, 1) sits on the outline at yaw 45 deg, pitch
-        // -35.26 deg; roll then turns it onto the direction.
-        const float h = hold * hold * (3.0f - 2.0f * hold);
-        yaw += (0.7853982f - yaw) * h;
-        pitch += (-0.6154797f - pitch) * h;
-        const NormaCube probe = ProjectNormaCube(0.0f, 0.0f, 1.0f, yaw, pitch, 0.0f);
-        const float target = dashing ? dashDir : m->normaAimAngle;
-        float turn = target - atan2f(probe.sy[6], probe.sx[6]);
-        turn = atan2f(sinf(turn), cosf(turn));
-        roll = turn * h;
-    }
     float drill = 0.0f;
+    // Firing the aimed stream, the cube turns slowly about its muzzle corner.
+    if (m->normaPattern == norma::Pattern::Aim && m->normaStage == norma::Stage::Act)
+        drill = m->normaTimer * norma::kAimDrill;
     float windK = 0.0f;   // 0..1 through a charge's wind-up
+    float spring = 0.0f;  // 0..1 how pressed the body is: builds in the wind-up, lets go early in the run
     if (dashing && m->normaStage == norma::Stage::Act) {
         if (m->normaDashStep == 0) {
-            windK = std::clamp(m->normaDashTimer / norma::DashWindFor(m->normaPhase), 0.0f, 1.0f);
+            windK = windShare;
+            spring = windK * windK * (3.0f - 2.0f * windK);
         } else if (m->normaDashStep == 1) {
             const float k = std::clamp(m->normaDashTimer / norma::kDashTime, 0.0f, 1.0f);
-            const float ease = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
-            // About one third of a turn per body length travelled.
-            const float thirds = std::max(2.0f, std::round(m->normaDashLength / (base * 2.3f)));
+            const float ease = k * k * (3.0f - 2.0f * k);   // as the body moves
+            const float release = std::max(0.0f, 1.0f - k / 0.35f);
+            spring = release * release * (3.0f - 2.0f * release);
+            // About a third of a turn per two body lengths travelled.
+            const float thirds = std::max(1.0f, std::round(m->normaDashLength / (base * 4.6f)));
             drill = thirds * 2.0943951f * ease;
         }
     }
-    // Controlling a pane (the ram): the whole body runs red.
+    // Controlling a pane (the ram), or charging: the whole body runs red.
     float red = 0.0f;
+    if (dashing && m->normaStage == norma::Stage::Act) {
+        red = m->normaDashStep == 0 ? windK * windK * (3.0f - 2.0f * windK)
+            : m->normaDashStep == 1 ? 1.0f
+            : 1.0f - std::clamp(m->normaDashTimer / norma::kDashRest, 0.0f, 1.0f);
+    }
     if (m->normaPattern == norma::Pattern::Ram) {
         if (m->normaStage == norma::Stage::Telegraph) red = std::min(1.0f, m->normaTimer / 0.2f);
         else if (m->normaStage == norma::Stage::Act) red = 1.0f;
         else if (m->normaStage == norma::Stage::Recover) red = std::max(0.0f, 1.0f - m->normaTimer / 0.3f);
     }
+    // Once the rammed pane hits, the boss is exposed: the red lets go at
+    // once so the opening reads in its own colour.
+    if (m->normaExposed > 0.0f) red = 0.0f;
     const float br = r + (1.0f - r) * red, bg = g + (0.30f - g) * red, bb = b + (0.26f - b) * red;
     // Winding up a charge, the inner cube draws in tight.
     const float outerR = base * 1.15f * (1.0f - 0.10f * charge + 0.08f * recoil);
-    const float innerShare = (p2 ? 0.78f : 0.45f) * (1.0f - 0.40f * windK * windK);
-    const NormaCube outer = ProjectNormaCube(x, y, outerR, yaw, pitch, roll, drill);
-    const NormaCube inner = ProjectNormaCube(x, y, outerR * innerShare,
-                                             -yaw * 1.3f + 0.4f, pitch * 0.6f + (p2 ? va * 1.4f : 0.0f), roll,
-                                             -drill);
+    // Exposed (an opening after a charge or a ram): the inner cube swells out
+    // to the outer one, the core flares and the brackets drift wide and dim.
+    const float exposed = std::min(1.0f, m->normaExposed / 0.2f);
+    const float innerShare = (p2 ? 0.78f : 0.45f) * (1.0f - 0.35f * spring) * (1.0f - exposed) +
+                             0.96f * exposed;
+    NormaCube outer = ProjectNormaCube(x, y, outerR, yaw, pitch, roll, drill, lead);
+    NormaCube inner = ProjectNormaCube(x, y, outerR * innerShare,
+                                       -yaw * 1.3f + 0.4f, pitch * 0.6f + (p2 ? va * 1.4f : 0.0f), roll,
+                                       -drill, lead);
+    // Winding up, the body presses flat along the charge like a spring.
+    if (spring > 0.0f) {
+        SquashNormaCube(outer, x, y, m->normaDashDirX, m->normaDashDirY, 0.18f * spring);
+        SquashNormaCube(inner, x, y, m->normaDashDirX, m->normaDashDirY, 0.18f * spring);
+    }
     // Afterimages of a glide or a charge: thin outlines of the cube as it is.
     if (m->normaGhostLife > 0.0f) {
         const float life = m->normaGhostLife / 0.25f;
@@ -2344,7 +2414,7 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
             if (gx == 0.0f && gy == 0.0f) continue;
             const float a = life * 0.40f * (1.0f - (float)i / norma::kGhostCount);
             const NormaCube ghost = ProjectNormaCube(gx, gy, outerR, yaw, pitch, roll,
-                                                     drill * (1.0f - 0.08f * (float)(i + 1)));
+                                                     drill * (1.0f - 0.08f * (float)(i + 1)), lead);
             DrawNormaCubeOutline(ghost, br, bg, bb, a);
         }
     }
@@ -2352,10 +2422,11 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
         drawLineQuad(outer.sx[i], outer.sy[i], inner.sx[i], inner.sy[i], 0.9f, br, bg, bb, 0.28f);
     DrawNormaCube(inner, br, bg, bb, 0.80f * pulse, 1.0f, base * 0.11f);
     DrawNormaCube(outer, br, bg, bb, pulse, 1.4f + 1.2f * flash + 0.8f * recoil, base * 0.17f * (1.0f + 0.4f * lift));
-    if (hold > 0.0f)   // the muzzle / leading star (corner 6 stays put while drilling)
-        DrawEnemyNode({ outer.sx[6], outer.sy[6], base * (0.30f + 0.12f * windK), 1.0f },
-                      1.0f, dashing ? 0.55f : 1.0f, dashing ? 0.50f : 1.0f, hold);
-    DrawEnemyCore(x, y, base * 0.34f, br, bg, bb, 0.85f + 0.15f * pulse, false);
+    if (hold > 0.0f)   // the muzzle / leading star (it stays put while drilling)
+        DrawEnemyNode({ outer.sx[lead], outer.sy[lead], base * (0.30f + 0.12f * windK), 1.0f },
+                      dashing ? 1.0f : br, dashing ? 0.30f : bg, dashing ? 0.26f : bb, hold);
+    const float flare = exposed * (0.5f + 0.5f * sinf(visualTime * 18.0f));
+    DrawEnemyCore(x, y, base * (0.34f + 0.20f * exposed), br, bg, bb, 0.85f + 0.15f * pulse + 0.3f * flare, false);
 
     // The panes' corner brackets orbit the body; faster in phase 2. A charge
     // sweeps them back behind the body (the wind-up gathers them there, the
@@ -2366,7 +2437,7 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
               : m->normaDashStep == 1 ? 1.0f
               : 1.0f - std::clamp(m->normaDashTimer / norma::kDashRest, 0.0f, 1.0f);
     }
-    const float orbit = base * 2.6f * (1.0f - 0.35f * trail);
+    const float orbit = base * 2.6f * (1.0f - 0.35f * trail) * (1.0f + 0.25f * exposed);
     const float arm = base * 0.42f;
     const float spin = va;
     const float ox = x - m->normaDashDirX * base * 1.6f * trail;
@@ -2376,8 +2447,9 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
         const float bx = ox + cosf(a) * orbit, by = oy + sinf(a) * orbit;
         const float ia = a + 3.14159265f;   // arms point back toward the body
         const float a1 = ia - 0.7853982f, a2 = ia + 0.7853982f;
-        drawLineQuad(bx, by, bx + cosf(a1) * arm, by + sinf(a1) * arm, 1.8f, br, bg, bb, 0.75f);
-        drawLineQuad(bx, by, bx + cosf(a2) * arm, by + sinf(a2) * arm, 1.8f, br, bg, bb, 0.75f);
+        const float ba = 0.75f * (1.0f - 0.55f * exposed);
+        drawLineQuad(bx, by, bx + cosf(a1) * arm, by + sinf(a1) * arm, 1.8f, br, bg, bb, ba);
+        drawLineQuad(bx, by, bx + cosf(a2) * arm, by + sinf(a2) * arm, 1.8f, br, bg, bb, ba);
     }
 
     // Gathering lines while charging: short strokes sliding into the body.
@@ -2388,28 +2460,49 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
             const float r0 = half * (2.6f - 1.4f * phase), r1 = r0 - half * 0.35f;
             const float al = charge * (1.0f - phase) * 0.8f;
             drawLineQuad(x + cosf(a) * r0, y + sinf(a) * r0, x + cosf(a) * r1, y + sinf(a) * r1,
-                         1.4f, 0.92f, 0.99f, 1.0f, al);
+                         1.4f, r, g, b, al);
         }
     }
 
     // Pattern warnings, thin violet lines (warning colour; danger is ice).
-    const float vr = 0.76f, vg = 0.70f, vb = 1.0f;
+    // Warnings share the body's colour (the charge lane alone is red).
+    const float vr = r, vg = g, vb = b;
     if (m->normaPattern == norma::Pattern::Dash && m->normaStage == norma::Stage::Act &&
         m->normaDashStep == 0) {
-        // Once the charge locks, red outlines of the cube march along its
-        // lane, fading toward the far end.
-        const float k = std::clamp(m->normaDashTimer / norma::DashWindFor(m->normaPhase), 0.0f, 1.0f);
-        if (k >= norma::kDashLock) {
-            const float show = (k - norma::kDashLock) / (1.0f - norma::kDashLock);
-            const float march = std::fmod(visualTime * 3.0f, 1.0f);
-            const float ux = m->normaDashDirX, uy = m->normaDashDirY;
-            for (int j = 0; j < 3; ++j) {
-                const float u = ((float)j + march) / 3.0f;   // 0..1 along the lane
-                const float d = half * 1.4f + (m->normaDashLength - half * 1.4f) * u;
-                const float a = (0.2f + 0.6f * show) * (1.0f - u) * (1.0f - u);
-                const NormaCube lane = ProjectNormaCube(x + ux * d, y + uy * d, outerR, yaw, pitch, roll);
-                DrawNormaCubeOutline(lane, 1.0f, 0.30f, 0.26f, a);
+        // Red chevrons run from the body to the landing spot, where a red
+        // outline of the cube builds edge by edge over the wind-up; once the
+        // lane locks they brighten, and a ring flashes off the leading star.
+        const float k = windShare;
+        const float locked = k >= norma::kDashLock ? 1.0f : 0.0f;
+        const float ux = m->normaDashDirX, uy = m->normaDashDirY;
+        const float px = -uy, py = ux;
+        const float tx = m->normaDashToX, ty = m->normaDashToY;
+        const float laneLen = std::max(1.0f, (tx - x) * ux + (ty - y) * uy);
+        const float start = outerR * 1.9f;
+        const float strength = (0.35f + 0.45f * locked) * std::min(1.0f, k * 4.0f);
+        const float march = std::fmod(visualTime * 2.4f, 1.0f);
+        const float chev = base * 0.42f;
+        for (int c = 0; c < 4; ++c) {
+            const float u = ((float)c + march) / 4.0f;
+            const float d = start + (laneLen - start - outerR) * u;
+            if (d <= start) continue;
+            const float cx = x + ux * d, cy = y + uy * d;
+            const float a = strength * (0.4f + 0.6f * std::sin(3.14159265f * u));
+            for (float side : { -1.0f, 1.0f }) {
+                const float bx = cx - ux * chev + px * chev * side, by = cy - uy * chev + py * chev * side;
+                drawLineQuad(bx, by, cx, cy, 4.2f, 1.0f, 0.30f, 0.26f, a * 0.16f);
+                drawLineQuad(bx, by, cx, cy, 2.0f, 1.0f, 0.30f, 0.26f, a);
             }
+        }
+        const NormaCube landing = ProjectNormaCube(tx, ty, outerR, yaw, pitch, roll);
+        DrawNormaCubeBuilding(landing, 1.0f, 0.30f, 0.26f, 0.45f + 0.45f * locked, k);
+        if (locked > 0.0f) {
+            // The lock flash: a ring off the leading star, over a short beat.
+            const float since = (k - norma::kDashLock) * norma::DashWindFor(m->normaPhase, m->normaDash);
+            const float t = std::clamp(since / 0.25f, 0.0f, 1.0f);
+            if (t < 1.0f)
+                DrawEnemyArc(outer.sx[lead], outer.sy[lead], base * (0.4f + 1.4f * t), 0.0f, 6.2831853f, 28,
+                             1.0f, 0.30f, 0.26f, 0.9f * (1.0f - t), 2.4f, false);
         }
     }
     if (m->normaPattern == norma::Pattern::Aim &&
@@ -2420,7 +2513,7 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
         const float a = m->normaAimAngle;
         const float ux = cosf(a), uy = sinf(a);
         const float r0 = half * 1.2f, r1 = half + norma::kAimLineLength;
-        const float lr = firing ? 0.92f : vr, lg = firing ? 0.99f : vg, lb = 1.0f;
+        const float lr = vr, lg = vg, lb = vb;
         drawLineQuad(x + ux * r0, y + uy * r0, x + ux * r1, y + uy * r1,
                      firing ? 2.4f : 1.4f, lr, lg, lb, firing ? 0.55f : 0.8f);
         const float ex = x + ux * r1, ey = y + uy * r1;

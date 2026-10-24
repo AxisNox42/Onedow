@@ -21,6 +21,7 @@ struct Tally {
     int hideShots = 0, refugeShots = 0, aimShots = 0;
     int aimTurns = 0, dashTurns = 0, windowTurns = 0;
     float dashTravel = 0.0f;   // how far the body moved during charges
+    float exposed = 0.0f;      // seconds the boss stood open after charges
 };
 
 // noPane: answer every pane Ask with "none" (-1), as on a desktop with no
@@ -44,6 +45,7 @@ static Tally Run(float seconds, bool noPane, int phase) {
         if (boss.normaPattern == norma::Pattern::Hide) t.hideShots += fired;
         if (boss.normaPattern == norma::Pattern::Refuge) t.refugeShots += fired;
         if (boss.normaPattern == norma::Pattern::Aim) t.aimShots += fired;
+        if (boss.normaExposed > 0.0f) t.exposed += DT;
         if (boss.normaPattern == norma::Pattern::Dash)
             t.dashTravel += std::sqrt((boss.worldX - bx) * (boss.worldX - bx) +
                                       (boss.worldY - by) * (boss.worldY - by));
@@ -79,6 +81,7 @@ int main() {
                 withPanes.windowTurns, withPanes.hideShots, withPanes.refugeShots);
     Check(withPanes.aimTurns + withPanes.dashTurns >= 3, "a direct attack comes round every other turn");
     Check(withPanes.dashTurns == 0 || withPanes.dashTravel > 500.0f, "the charges really move the body");
+    Check(withPanes.dashTurns == 0 || withPanes.exposed > 1.0f, "the boss stands open after its charges");
     Check(withPanes.aimShots > 0, "the aimed stream fires");
     Check(withPanes.windowTurns >= 3, "window patterns take their turns");
 

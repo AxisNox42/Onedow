@@ -58,6 +58,9 @@ struct Pane {
     float flightTime = 0.0f;  // seconds since the chase started
     std::vector<Ghost> trail; // afterimages left while flying
     float refusalTimer = 0.0f;// > 0 while the title shows the refusal
+    // Mostly hidden behind another program's window (one the game cannot
+    // stack under, e.g. an always-on-top one): it is no space meanwhile.
+    bool covered = false;
 };
 
 void Init(GLFWwindow* overlay);
@@ -89,6 +92,14 @@ void Tick(float dt);
 // While held (the game is paused) a moved window's in-game rectangle stays
 // where it was; releasing the hold sends it after the window.
 void SetHold(bool hold);
+
+// The player switched away from the game (Alt-Tab and the like): the game's
+// own panes hide until it comes back, then show again (un-minimized) right
+// under the game in their order. Real windows claimed as spaces are left be.
+void SetAway(bool away);
+// Smoke captures run behind other windows: their panes must not count as
+// covered (Pane::covered stays false while this is off).
+void SetCoverCheck(bool on);
 
 // Arrangement (Ctrl held, in combat or paused): the game sinks as far back
 // as it can while staying in sight (above any window filling the screen,

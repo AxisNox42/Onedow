@@ -185,9 +185,12 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
                         difficulty,
                         waveSpawnCap, hpMultiplier);
 
+    // While NORMA fights, regular mobs come at half the rate.
+    const float bossStretch =
+        g_EnemySpawnState.normaSpawned && !g_EnemySpawnState.normaDefeated ? 2.0f : 1.0f;
     g_EnemySpawnState.mobTimer += delta;
     const float spawnInterval = std::max(0.05f,
-        2.4f * stats.mobSpawnMult * kEnemySpawnIntervalScale /
+        2.4f * stats.mobSpawnMult * kEnemySpawnIntervalScale * bossStretch /
         (spawnPressure * TrialSpawnRateMult(score) *
          difficultyParams.spawnRateMultiplier));
     if (g_EnemySpawnState.spawnedThisWave < waveSpawnCap &&
@@ -213,7 +216,7 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
         stats.rmobSpawnDelayBonus;
     rangedInterval = std::max(1.0f, rangedInterval) /
         (spawnPressure * difficultyParams.spawnRateMultiplier) *
-        kEnemySpawnIntervalScale * 2.5f;
+        kEnemySpawnIntervalScale * 2.5f * bossStretch;
     if (g_EnemySpawnState.spawnedThisWave < waveSpawnCap &&
         g_EnemySpawnState.rangedTimer >= rangedInterval) {
         const size_t before = monsters.rangedMobs.size();

@@ -29,7 +29,7 @@
 namespace norma {
 
 // Hit points before the run's enemy HP scaling (an untested first guess).
-constexpr float kBaseHp = 9000.0f;
+constexpr float kBaseHp = 16000.0f;
 // Phase 2 begins at or below this share of max HP.
 constexpr float kPhase2Ratio = 0.40f;
 // The boss keeps about this far from the player, drifting slowly.
@@ -49,7 +49,7 @@ constexpr float kShotDamage = 9.0f;
 constexpr float kPhase2ShotSpeed = 1.15f;
 // 1 Hide
 constexpr float kHideTelegraph = 1.2f;      // laser, bracket snap, move in
-constexpr float kHideSeconds = 8.0f;
+constexpr float kHideSeconds = 5.0f;
 constexpr float kHideExit = 0.6f;
 constexpr float kHideInterval = 0.18f;
 constexpr float kHideRingInterval = 1.2f;
@@ -85,6 +85,8 @@ constexpr float kAimTrackTelegraph = 4.0f;  // rad/s while warning
 constexpr float kAimTrackRate = 1.8f;       // rad/s while firing
 constexpr float kAimJitter = 0.04f;         // rad, alternating
 constexpr float kAimLineLength = 360.0f;    // warning line, well short of the edge
+constexpr float kAimMuzzle = 1.8f;          // muzzle star distance, in body units (base)
+constexpr float kAimDrill = 1.6f;           // rad/s the cube turns about the aim while firing
 
 // 8 Throw: the box grows out of the boss's body to its spot (kThrowAppear),
 // opens there, sits while it fills, flies at where the player
@@ -110,17 +112,22 @@ constexpr int   kSummonPhase2 = 6;
 constexpr float kSummonSeconds = 3.0f;
 
 // 11 Dash: the body charges the player kDashCount times. Each charge winds
-// up (the body draws back, tracking the player until kDashLock of the wind,
-// then locked, and red ghost squares march along its lane), then shoots
-// along the lane past where the player was, easing out, and rests a moment.
+// up: the body reddens, draws back and squashes, tracking the player until
+// kDashLock of the wind; red chevrons run to the landing spot, where a red
+// cube outline builds edge by edge. At the lock a flash marks the committed
+// lane; the body shivers just before it goes. It then shoots to the landing
+// spot (past where the player was), easing out, and rests a moment.
 // Touching the player on the way hurts and shoves it (once per charge).
 constexpr int   kDashCount = 3;
 constexpr int   kDashCountPhase2 = 4;
-constexpr float kDashWind = 0.65f;
-constexpr float kDashWindPhase2 = 0.5f;
+// The first charge of a turn winds up long (time to read it); the rest
+// follow quickly, as one combo.
+constexpr float kDashWindFirst = 0.9f, kDashWindFirstPhase2 = 0.75f;
+constexpr float kDashWindNext = 0.4f, kDashWindNextPhase2 = 0.35f;
+constexpr float kDashTremble = 0.15f;       // the body shivers this long before it goes
 constexpr float kDashLock = 0.65f;
-constexpr float kDashPullBack = 26.0f;      // world px
-constexpr float kDashTime = 0.3f;
+constexpr float kDashPullBack = 60.0f;      // world px
+constexpr float kDashTime = 0.36f;        // eased in and out (smoothstep)
 constexpr float kDashOvershoot = 180.0f;    // world px past the player
 constexpr float kDashMinLength = 260.0f, kDashMaxLength = 760.0f;
 constexpr float kDashRest = 0.25f;
@@ -128,7 +135,24 @@ constexpr float kDashDamage = 18.0f;
 constexpr float kDashKnock = 240.0f;        // world px of shove
 constexpr float kDashReach = 22.0f;         // past the body's half size
 inline int DashCountFor(int phase) { return phase >= 2 ? kDashCountPhase2 : kDashCount; }
-inline float DashWindFor(int phase) { return phase >= 2 ? kDashWindPhase2 : kDashWind; }
+// The tesseract's corners, and where corner i lands on screen (unit cube,
+// before roll) at the given yaw and pitch. The boss turns its cube with
+// these; the drawing projects the same way.
+inline constexpr float kCubeCorner[8][3] = {
+    { -1, -1, -1 }, { 1, -1, -1 }, { 1, 1, -1 }, { -1, 1, -1 },
+    { -1, -1, 1 }, { 1, -1, 1 }, { 1, 1, 1 }, { -1, 1, 1 } };
+inline void CubeCornerOnScreen(int i, float yaw, float pitch, float& sx, float& sy) {
+    const float px = kCubeCorner[i][0], py = kCubeCorner[i][1], pz = kCubeCorner[i][2];
+    const float x1 = px * std::cos(yaw) + pz * std::sin(yaw);
+    const float z1 = -px * std::sin(yaw) + pz * std::cos(yaw);
+    sx = x1;
+    sy = py * std::cos(pitch) - z1 * std::sin(pitch);
+}
+
+inline float DashWindFor(int phase, int charge) {
+    if (charge == 0) return phase >= 2 ? kDashWindFirstPhase2 : kDashWindFirst;
+    return phase >= 2 ? kDashWindNextPhase2 : kDashWindNext;
+}
 
 // 10 Ram: the boss takes one of its panes and hurls it across the screen.
 // While the boss controls it the pane's glow turns red. It squeezes down to
@@ -158,20 +182,28 @@ inline float RamAimFor(int phase) { return phase >= 2 ? kRamAimPhase2 : kRamAim;
 // seconds (the first soon after it arrives) while it has fewer than
 // kMaxBossPanes open, and skips the turn when at the cap. They stay until the
 // player closes them or they wear out; patterns use whatever is open.
-constexpr int   kMaxBossPanes = 4;
+constexpr int   kMaxBossPanes = 2;
+constexpr int   kMaxBossPanesPhase2 = 3;
+inline int MaxBossPanesFor(int phase) { return phase >= 2 ? kMaxBossPanesPhase2 : kMaxBossPanes; }
 constexpr float kPaneSpawnFirst = 1.5f;
 constexpr float kPaneSpawnPhase1 = 8.0f;
 constexpr float kPaneSpawnPhase2 = 5.5f;
 
 // Sizes of the panes the boss opens, in screen pixels (random within these).
-constexpr float kRefugeMinW = 560.0f, kRefugeMaxW = 920.0f;
-constexpr float kRefugeMinH = 400.0f, kRefugeMaxH = 640.0f;
-// Boss panes wander while the fight runs: a slow drift that every few
-// seconds turns and speeds up (slow start, faster finish), bouncing off the
-// screen edges.
-constexpr float kPaneCruiseMin = 40.0f, kPaneCruiseMax = 110.0f;   // px/s
-constexpr float kPaneTurnMin = 3.0f, kPaneTurnMax = 6.0f;          // seconds
-constexpr float kPaneRampSeconds = 0.8f;   // speed builds up over this after a turn
+constexpr float kRefugeMinW = 420.0f, kRefugeMaxW = 640.0f;
+constexpr float kRefugeMinH = 300.0f, kRefugeMaxH = 460.0f;
+constexpr float kPaneMaxShareW = 0.35f, kPaneMaxShareH = 0.42f;   // of the screen
+// Boss panes stand still, and every so often hop to a new spot: brackets
+// mark the spot for kPaneHopWarn, then the pane glides there in kPaneHopMove.
+constexpr float kPaneHoldMin = 5.0f, kPaneHoldMax = 7.0f;   // seconds between hops
+constexpr float kPaneHopWarn = 0.6f;
+constexpr float kPaneHopMove = 0.5f;
+
+// Openings to hit the boss: after its charges, and when a rammed pane hits
+// the screen edge, it holds still, exposed, taking extra damage.
+constexpr float kExposeAfterDash = 1.6f;
+constexpr float kExposeAfterRam = 2.0f;
+constexpr float kExposeDamage = 1.5f;
 
 // Laser flash and bracket snap when the boss claims or opens a pane.
 constexpr float kLaserSeconds = 0.25f;
