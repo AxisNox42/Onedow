@@ -25,5 +25,7 @@ void SetSfxEnabled(bool on);
 bool SetMonoOutput(bool mono);
 bool IsMonoOutput();
 void SetVolume(float v);  // 마스터 볼륨 0.0~1.0
+void SetBgmVolume(float v);  // BGM 채널 볼륨 0.0~1.0
+void SetSfxVolume(float v);  // 효과음 채널 볼륨 0.0~1.0
 
 } // namespace Audio

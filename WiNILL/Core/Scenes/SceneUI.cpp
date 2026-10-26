@@ -3,6 +3,7 @@
 #include "TextRenderer.h"
 #include "UiLayout.h"
 #include "Settings.h"
+#include "Translations.h"
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
@@ -358,6 +359,21 @@ bool UpdatePanelButtonHover(float& hover, bool enabled,
     return hovered;
 }
 
+bool DrawBottomLeftBackButton(float& hover, float sw, float sh, float uiScale,
+                              double mx, double my, bool lmb, bool lmbPrev,
+                              float alpha, float now, float dt) {
+    (void)sw;
+    const float w = 286.0f * uiScale, h = 64.0f * uiScale;
+    const float x = BottomLeftActionX(uiScale);
+    const float y = BottomLeftActionY(sh, h, uiScale);
+    const bool hov = UpdatePanelButtonHover(hover, true, mx, my, x, y, w, h, dt, 0.0f);
+    DrawUnifiedMenuCommand(T(StrId::BTN_BACK), x, y, w, h,
+                           0.34f, 0.72f, 1.0f, alpha,
+                           hover, hov, 0.0f, now,
+                           uiScale, true, true, true,
+                           kStrings[(int)StrId::BTN_BACK], LANG_COUNT);
+    return hov && lmb && !lmbPrev;
+}
 
 float CenterTextX(float containerW, TextRenderer& tr, const wchar_t* text, float scale) {
     return CenterX(containerW, tr.Width(text, scale));

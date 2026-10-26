@@ -64,6 +64,7 @@ constexpr float SPAWN_GRID_Y = 190.0f;
 constexpr float SPAWN_ACTION_BOTTOM = 60.0f;
 constexpr float CAPTURE_CURRENT_Y = 140.0f;
 constexpr float CAPTURE_ALL_Y = 190.0f;
+constexpr float TITLE_STYLE_Y = 366.0f;
 constexpr float FOOTER_BOTTOM = 52.0f;
 constexpr float FOOTER_BUTTON_H = 32.0f;
 constexpr float FOOTER_BUTTON_GAP = 12.0f;
@@ -270,8 +271,6 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"xpMult", L"경험치 배율" },
         { L"bulletSpread", L"탄 퍼짐" },
         { L"pierceChance", L"관통 확률" },
-        { L"mobXpBonus", L"전체 몬스터 경험치 보너스" },
-        { L"xpPerSec", L"초당 경험치" },
         { L"rmobSpawnDelayBonus", L"원거리 생성 지연 보너스" },
         { L"mobCapBonus", L"웨이브 소환 수 보너스" },
         { L"totalAugs", L"총 증강 수" },
@@ -327,7 +326,6 @@ const wchar_t* LocalizedFieldName(const wchar_t* raw) {
         { L"approachStacks", L"접근 스택" },
         { L"monsterHpMult", L"몬스터 체력 배율" },
         { L"rotorHpMult", L"로터 체력 배율" },
-        { L"rotorXpBonus", L"로터 처치 경험치 보너스" },
         { L"flatDamageBonus", L"고정 피해 보너스" }
     };
     for (const FieldNamePair& pair : names) {
@@ -354,30 +352,11 @@ const std::vector<DebugToolkit::Field>& DebugToolkit::Fields() {
         ADD_FLOAT(moveSpeedMult); ADD_FLOAT(regenPerSec); ADD_FLOAT(damageReduction);
         ADD_FLOAT(regenLowHpMult); ADD_INT(vampireKillNeed);
         ADD_FLOAT(lightStepHitLock); ADD_FLOAT(playerSizeMult); ADD_FLOAT(xpMult);
-        ADD_FLOAT(bulletSpread); ADD_INT(pierceChance); ADD_INT(mobXpBonus);
-        ADD_FLOAT(rotorHpMult); ADD_INT(rotorXpBonus);
+        ADD_FLOAT(bulletSpread); ADD_INT(pierceChance);
+        ADD_FLOAT(rotorHpMult);
 
-        // Keep the debug list aligned with the live monster signals. The
-        // close-range values are stored by MobKind, while Scope has its own
-        // ranged XP accumulator.
-        const auto addMobXp = [&](const wchar_t* label, MobKind kind) {
-            f.push_back({ label, FieldType::Int,
-                          offsetof(PlayerStats, mobKindXpBonus) +
-                              sizeof(int) * (size_t)static_cast<int>(kind) });
-        };
-        addMobXp(L"로터 경험치 보너스", MobKind::ROTOR);
-        f.push_back({ L"스코프 경험치 보너스", FieldType::Int,
-                      offsetof(PlayerStats, rangedXpBonus) });
-        addMobXp(L"그라비스 경험치 보너스", MobKind::GRAVIS);
-        addMobXp(L"제네시스 경험치 보너스", MobKind::GENESIS);
-        addMobXp(L"스웜 경험치 보너스", MobKind::SWARM);
-        addMobXp(L"퀘이사 경험치 보너스", MobKind::QUASAR);
-        addMobXp(L"Gimbal 경험치 보너스", MobKind::GIMBAL);
-        addMobXp(L"Regulus 경험치 보너스", MobKind::REGULUS);
-        addMobXp(L"안타레스 경험치 보너스", MobKind::ANTARES);
-        addMobXp(L"Magnetar 경험치 보너스", MobKind::MAGNETAR);
 
-        ADD_FLOAT(xpPerSec); ADD_FLOAT(rmobSpawnDelayBonus);
+        ADD_FLOAT(rmobSpawnDelayBonus);
         ADD_INT(mobCapBonus); ADD_INT(totalAugs);
         ADD_BOOL(sizeAugTaken);
         ADD_BOOL(vampire); ADD_INT(vampireKillStreak);
@@ -989,6 +968,18 @@ bool DebugToolkit::BeginInput(GLFWwindow* window, float screenW, float screenH,
         } else if (Hit(p.x + 16.0f, p.y + CAPTURE_ALL_Y,
                        p.w - 32.0f, 42.0f, mx, my)) {
             RequestAllScreenshots();
+        } else {
+            const float bw = (p.w - 32.0f - 2.0f * 8.0f) / 3.0f;
+            for (int s = 0; s < 3; ++s) {
+                if (Hit(p.x + 16.0f + s * (bw + 8.0f), p.y + TITLE_STYLE_Y,
+                        bw, 34.0f, mx, my)) {
+                    g_TitleStyle = s;
+                    static const wchar_t* const kMsg[3] = {
+                        L"타이틀: 별자리 선 로고", L"타이틀: 곡선 필기체 (A)",
+                        L"타이틀: 뾰족 필기체 (B)" };
+                    SetMessage(kMsg[s]);
+                }
+            }
         }
     } else if (tab_ == 3) {
         const float filterW = (p.w - 68.0f) / 10.0f;
@@ -1248,6 +1239,13 @@ void DebugToolkit::RenderCaptureTab(float x, float y, float w, float h,
                      x + 20.0f, y + 282.0f, 0.42f,
                      0.52f, 0.68f, 0.80f, 0.84f);
     }
+    g_TextS.Draw(L"타이틀 로고", x + 20.0f, y + TITLE_STYLE_Y - 30.0f, 0.55f,
+                 0.70f, 0.94f, 1.0f, 0.94f);
+    static const wchar_t* const kStyle[3] = { L"별자리 선", L"곡선 (A)", L"뾰족 (B)" };
+    const float bw = (w - 32.0f - 2.0f * 8.0f) / 3.0f;
+    for (int s = 0; s < 3; ++s)
+        DrawButton(x + 16.0f + s * (bw + 8.0f), y + TITLE_STYLE_Y, bw, 34.0f,
+                   kStyle[s], g_TitleStyle == s, true);
     if (!lastMessage_.empty())
         g_TextS.Draw(lastMessage_.c_str(), x + 20.0f, y + h - 42.0f,
                      0.46f, 0.55f, 0.86f, 0.98f, 0.92f);

@@ -118,10 +118,9 @@ void InitializeGameFonts(int screenWidth, int screenHeight) {
     }
 }
 
-void UpdateGameTextHalo(int screenHeight, bool backdropBlurEnabled) {
-    // A blurred desktop already removes competing detail, so the halo only
-    // needs to lift contrast; a sharp desktop needs a fuller outline.
-    const float strength = backdropBlurEnabled ? 0.55f : 0.90f;
+void UpdateGameTextHalo(int screenHeight) {
+    // The desktop behind the window stays sharp, so text needs a full outline.
+    const float strength = 0.90f;
     const float radiusPx = std::max(1.5f, 2.0f * (float)screenHeight / 1600.0f);
     g_TextL.SetHalo(strength, radiusPx);
     g_TextS.SetHalo(strength, radiusPx);

@@ -26,7 +26,6 @@
 #include "../../Render/PlanetShader.h"
 #include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
-#include "../../Render/BlurShader.h"
 #include "../../System/Audio.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
@@ -231,6 +230,9 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
     };
     static const wchar_t* kBuildStatsLabel[LANG_COUNT] = {
         L"\uD50C\uB808\uC774\uC5B4 \uB2A5\uB825\uCE58", L"PLAYER STATS", L"\u30D7\u30EC\u30A4\u30E4\u30FC\u80FD\u529B\u5024"
+    };
+    static const wchar_t* kDebuffLabel[LANG_COUNT] = {
+        L"디버프", L"DEBUFFS", L"デバフ"
     };
     static const wchar_t* kMetricLabel[LANG_COUNT][kMetricCount] = {
         { L"\uACF5\uACA9\uB825", L"\uC5F0\uC0AC\uB825", L"\uD0C4\uC18D", L"\uC774\uB3D9\uC18D\uB3C4", L"HP", L"\uCCB4\uB825 \uC7AC\uC0DD", L"\uCE58\uBA85\uD0C0 \uD655\uB960", L"\uCE58\uBA85\uD0C0 \uD53C\uD574", L"\uD53C\uD574 \uAC10\uC18C" },
@@ -449,11 +451,6 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
         drawValue(val, gainBuf, col1X, top + rowValY, false, 0.72f, 0.88f, 1.0f);
     }
 
-    // Debuff record: which wave brought which debuff.
-    DrawWaveDebuffLog(*lab.r, g_GameManager, leftX,
-                      top + statsBottom + 30.0f * uiS, buttonsAbsY - 14.0f * uiS,
-                      lab.scale * 0.9f, 0.88f * ge);
-
     // ---- Right panel: the player, the augment constellations, and stats -----
     float panelW = std::clamp(sw * 0.30f, 300.0f, 520.0f);
     float panelX = sw - margin - panelW;
@@ -486,9 +483,16 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
         for (int idx : state.ownedAugments)
             if (idx >= 0 && idx < AUG_TOTAL && !AugRemoved(ALL_AUGS[idx].type))
                 counts[idx]++;
+        // Augments and debuffs are listed apart, each in its own grid.
         int ord[AUG_TOTAL], nord = 0;
-        for (int i = 0; i < AUG_TOTAL; ++i) if (counts[i] > 0) ord[nord++] = i;
+        int dord[AUG_TOTAL], ndord = 0;
+        for (int i = 0; i < AUG_TOTAL; ++i) {
+            if (counts[i] <= 0) continue;
+            if (ALL_AUGS[i].rarity == AugRarity::DEBUFF) dord[ndord++] = i;
+            else                                         ord[nord++] = i;
+        }
         std::sort(ord, ord + nord, [](int a, int b) { return AugTierIndexLess(a, b); });
+        std::sort(dord, dord + ndord, [](int a, int b) { return AugTierIndexLess(a, b); });
 
         const bool statRowShown[kMetricCount] = {
             true, true, true, true, true, true, true,
@@ -503,7 +507,8 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
         float shellSize = 0, shellR = 0, shellCy = 0, augLabY = 0, augRuleY = 0;
         float gridY = 0, cell = 0, gridH = 0, toggleY = 0, toggleRuleY = 0;
         float tableY0 = 0, rowH = 0, descY = 0, descBottom = 0;
-        int cols = 1, shown = 0;
+        int cols = 1, shown = 0, dshown = 0;
+        float debLabY = 0, debRuleY = 0, debGridY = 0;
         for (int pass = 0; pass < 12; ++pass) {
             shellSize = 25.0f * 2.2f * uiS * k;
             shellR = shellSize * 1.2f;
@@ -519,7 +524,17 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
             const int cells = std::max(1, std::min(nord, maxCells));
             const int gridRows = (cells + cols - 1) / cols;
             gridH = (float)gridRows * cell;
-            toggleY = gridY + gridH + 12.0f * uiS * k;
+            float afterY = gridY + gridH;
+            dshown = 0;
+            if (ndord > 0) {
+                const int dMax = cols;   // one row is enough for the debuffs
+                dshown = ndord > dMax ? dMax - 1 : ndord;
+                debLabY = afterY + 10.0f * uiS * k;
+                debRuleY = debLabY + labH + 8.0f * uiS * k;
+                debGridY = debRuleY + 10.0f * uiS * k;
+                afterY = debGridY + cell;
+            }
+            toggleY = afterY + 12.0f * uiS * k;
             toggleRuleY = toggleY + labH + 8.0f * uiS * k;
             tableY0 = toggleRuleY + 12.0f * uiS * k;
             rowH = labH + 6.0f * uiS * k;
@@ -552,8 +567,9 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
         // Constellations keep turning on their own; hovering speeds one up and
         // dragging turns it by hand, letting go with a little momentum.
         if (!lmb) s_dragAug = -1;
+        auto drawGrid = [&](const int* list, int total, int shown, float gridY) {
         for (int i = 0; i < shown; ++i) {
-            const int idx = ord[i];
+            const int idx = list[i];
             const float ccx = panelX + ((float)(i % cols) + 0.5f) * cell;
             const float ccy = gridY + ((float)(i / cols) + 0.5f) * cell;
             const float dx = (float)mx - ccx, dy = (float)my - ccy;
@@ -592,14 +608,24 @@ void Scene_GameOver(const SceneCtx& c, const GameOverSceneContext& state) {
                             Snap(ccy + cell * 0.5f - labH * 0.65f),
                             lab.scale * 0.65f, 1.0f, 1.0f, 1.0f, 0.95f * ge);
             }
-        }        if (nord > shown) {
+        }
+        if (total > shown) {
             wchar_t more[16];
-            swprintf_s(more, L"+%d", nord - shown);
+            swprintf_s(more, L"+%d", total - shown);
             const float ccx = panelX + ((float)(shown % cols) + 0.5f) * cell;
             const float ccy = gridY + ((float)(shown / cols) + 0.5f) * cell;
             const float mw = lab.r->Width(more, lab.scale);
             lab.r->Draw(more, Snap(ccx - mw * 0.5f), Snap(ccy - labH * 0.5f), lab.scale,
                         0.64f, 0.76f, 0.88f, 0.90f * ge);
+        }
+        };
+        drawGrid(ord, nord, shown, gridY);
+        if (ndord > 0) {
+            lab.r->Draw(kDebuffLabel[li], Snap(panelX), Snap(debLabY), lab.scale,
+                        1.0f, 0.46f, 0.42f, 0.92f * ge);
+            LogoLine(panelX, debRuleY, panelX + panelW, debRuleY,
+                     1.0f, 1.0f, 0.46f, 0.42f, 0.24f * ge);
+            drawGrid(dord, ndord, dshown, debGridY);
         }
 
         // Fold-out toggle: a label, a rule and a chevron.

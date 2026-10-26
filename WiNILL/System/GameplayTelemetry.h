@@ -31,7 +31,6 @@ public:
         float regenPerSec = 0.0f;
         float damageReduction = 0.0f;
         float xpMult = 0.0f;
-        float xpPerSec = 0.0f;
         float windowSize = 0.0f;
         float flatDamageBonus = 0.0f;
         float critMult = 0.0f;
@@ -43,8 +42,6 @@ public:
         int chakramCount = 0;
         int laserTier = 0;
         int critChance = 0;
-        int mobXpBonus = 0;
-        int rangedXpBonus = 0;
         long long killCount = 0;
 
         bool vampire = false;
@@ -83,7 +80,6 @@ public:
         out.regenPerSec = stats.regenPerSec;
         out.damageReduction = stats.damageReduction;
         out.xpMult = stats.xpMult;
-        out.xpPerSec = stats.xpPerSec;
         out.windowSize = stats.windowSize;
         out.flatDamageBonus = stats.flatDamageBonus;
         out.critMult = stats.critMult;
@@ -95,8 +91,6 @@ public:
         out.chakramCount = stats.chakramCount;
         out.laserTier = stats.laserTier;
         out.critChance = stats.critChance;
-        out.mobXpBonus = stats.mobXpBonus;
-        out.rangedXpBonus = stats.rangedXpBonus;
         out.killCount = stats.killCount;
 
         out.vampire = stats.vampire;
@@ -215,7 +209,6 @@ public:
         WriteFloatDiff("regen_per_sec", b.regenPerSec, a.regenPerSec);
         WriteFloatDiff("damage_reduction", b.damageReduction, a.damageReduction);
         WriteFloatDiff("xp_multiplier", b.xpMult, a.xpMult);
-        WriteFloatDiff("xp_per_sec", b.xpPerSec, a.xpPerSec);
         WriteFloatDiff("window_size", b.windowSize, a.windowSize);
         WriteFloatDiff("flat_damage_bonus", b.flatDamageBonus, a.flatDamageBonus);
         WriteFloatDiff("crit_multiplier", b.critMult, a.critMult);
@@ -227,8 +220,6 @@ public:
         WriteIntDiff("chakram_count", b.chakramCount, a.chakramCount);
         WriteIntDiff("laser_tier", b.laserTier, a.laserTier);
         WriteIntDiff("crit_chance_pct", b.critChance, a.critChance);
-        WriteIntDiff("mob_xp_bonus", b.mobXpBonus, a.mobXpBonus);
-        WriteIntDiff("ranged_xp_bonus", b.rangedXpBonus, a.rangedXpBonus);
         WriteIntDiff("kill_count", b.killCount, a.killCount);
 
         WriteBoolDiff("vampire", b.vampire, a.vampire);
@@ -348,7 +339,6 @@ private:
                << ",move_speed_multiplier=" << s.moveSpeedMult
                << ",regen_per_sec=" << s.regenPerSec
                << ",xp_multiplier=" << s.xpMult
-               << ",xp_per_sec=" << s.xpPerSec
                << ",total_augments=" << s.totalAugs
                << ",kill_count=" << s.killCount << "\n";
     }

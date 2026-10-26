@@ -270,21 +270,16 @@ static void CheckExperienceAugments() {
     const PlayerStats rebuilt = RebuildStats(RIFLE(), owned, 1.0f, &run);
     const PlayerStats restarted = RebuildStats(RIFLE(), owned, 1.0f, nullptr);
     const PlayerStats preview = PreviewOwnedStats(RIFLE(), owned, 1.0f);
-    const float multiplier = 1.03f * 1.05f * 1.03f * 1.12f * 1.10f;
     const PlayerStats* paths[] = { &run, &rebuilt, &restarted, &preview };
     for (const PlayerStats* stats : paths) {
-        assert(stats->rangedXpBonus == 23);
-        assert(stats->mobXpBonus == 1 && stats->rotorXpBonus == 2);
-        assert(stats->approachStacks == 3 && Near(stats->xpPerSec, 2.0f));
-        assert(Near(stats->xpMult, multiplier));
+        assert(stats->approachStacks == 3);
+        assert(Near(stats->xpMult, 1.0f));
     }
     PlayerStats capped = run;
     capped.Apply(AugType::D_APPROACH);
-    assert(capped.approachStacks == 3 && Near(capped.xpPerSec, 2.0f));
+    assert(capped.approachStacks == 3);
     const PlayerStats chaos = ChaosStats(run, RIFLE(), 1.0f);
-    assert(chaos.rangedXpBonus == 0 && chaos.mobXpBonus == 0 &&
-           chaos.rotorXpBonus == 0 && Near(chaos.xpPerSec, 0.0f) &&
-           Near(chaos.xpMult, 1.0f));
+    assert(Near(chaos.xpMult, 1.0f));
 }
 
 static void CheckMinigun() {

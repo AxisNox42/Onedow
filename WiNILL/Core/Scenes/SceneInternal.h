@@ -31,7 +31,8 @@ int FixedWeaponForSelectedJob();
 
 float UiApproach(float value, float target, float dt, float speed);
 void DrawMenuBackground(float sw, float sh, float delta,
-                        float darkenAmount = 1.0f);
+                        float darkenAmount = 1.0f,
+                        float skyStrength = 0.30f);
 float LogoClamp01(float value);
 void SetSceneTextureReveal(float reveal);
 void DrawOwnedAugConstellation(int augIdx, float cx, float cy, float radius,

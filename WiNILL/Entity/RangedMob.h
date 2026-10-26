@@ -64,7 +64,7 @@ public:
     }
 
     static XpAmount ExperienceReward(const PlayerStats& stats) {
-        return XpFromReward((double)(BASE_XP + (float)stats.rangedXpBonus) * stats.xpMult);
+        return XpFromReward((double)BASE_XP * stats.xpMult);
     }
 
     void SpawnDeathEffect(bool reduced = false) {

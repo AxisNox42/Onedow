@@ -23,12 +23,13 @@
 #include "../../Render/PlanetShader.h"
 #include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
-#include "../../Render/BlurShader.h"
 #include "../../System/Audio.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
 #include "../System/SystemInfo.h"
 #include "Camera.h"
+#include "../../Render/PlayerWeaponShell.h"
+#include "../WaveSystem.h"
 #include "EntityDraw.h"
 #include "Monster.h"
 #include "../../Render/Juice.h"
@@ -50,7 +51,7 @@ namespace {
 // ── PLAY 패널 배치 상수 (uiS 를 곱해 쓴다) ──
 constexpr float kPlayColumnInset  = 72.0f;   // 직업/난이도 열을 페이지 여백에서 안쪽으로
 constexpr float kPlayColumnGap    = 34.0f;   // 좌우 열과 중앙 열 사이
-constexpr float kPlayEntryTopGap  = 62.0f;   // 본문 상단 → 첫 선택지
+constexpr float kPlayEntryTopGap  = 84.0f;   // 본문 상단 → 첫 선택지
 constexpr float kPlayEntryStep    = 108.0f;  // 선택지 간격
 constexpr float kPlayEntryHeight  = 84.0f;   // 선택지 한 줄의 세로선 길이/클릭 높이
 constexpr float kPlayEntryTextX   = 22.0f;   // 세로선 → 글자
@@ -58,10 +59,10 @@ constexpr float kPlayGaugeStep    = 28.0f;   // 난이도 별 게이지 간격
 constexpr float kPlayTextShadow   = 0.92f;   // 밝은 바탕화면 위에서도 읽히도록 글자 그림자를 진하게
 constexpr float kPlayGaugeSize    = 11.0f;   // 난이도 별 게이지 노드 크기
 constexpr float kPlayEntrySelectedScale = 1.12f;   // 선택된 이름의 확대 배율
-constexpr float kPlayHeroRevealSec = 1.0f;   // 별자리 등장 연출 길이(초). 앱 실행 후 처음 한 번만 재생, 클릭하면 건너뜀
-constexpr float kPlayHeroFadeSec   = 0.30f;  // 직업을 바꿀 때 새 별자리가 나타나는 시간(초)
-constexpr float kPlayHeroNodeScale = 1.9f;    // drawDiamond 는 인자의 약 절반으로 그려져 보정
+constexpr float kPlayHeroFadeSec   = 0.30f;  // 직업을 바꿀 때 새 외형이 나타나는 시간(초)
+constexpr float kPlayLabelScale     = 1.20f;   // 직업/난이도 머리글 확대 배율(Title 단계 기준)
 constexpr int   kPlayWeaponCount  = 2;
+constexpr int   kPlaySelectableWeapons = 1;   // 전기장(1)은 코드에 남기되 선택 UI에서만 뺀다
 constexpr int   kPlayDifficultyCount = 3;
 
 struct PlayRGB { float r, g, b; };
@@ -78,7 +79,6 @@ constexpr PlayRGB kPlayDifficultyColor[kPlayDifficultyCount] = {
 const LStr kTxtPlay        = { { L"플레이", L"PLAY", L"プレイ" } };
 const LStr kTxtClass       = { { L"직업", L"CLASS", L"クラス" } };
 const LStr kTxtDifficulty  = { { L"난이도", L"DIFFICULTY", L"難易度" } };
-const LStr kTxtConstellation = { { L"무기 별자리", L"WEAPON CONSTELLATION", L"武器星座" } };
 const LStr kTxtBest        = { { L"최고 점수", L"BEST", L"ベスト" } };
 const LStr kTxtNoRecord    = { { L"기록 없음", L"NO RECORD", L"記録なし" } };
 const LStr kTxtWeaponName[kPlayWeaponCount] = {
@@ -118,261 +118,7 @@ constexpr float kPlayStatBar[kPlayWeaponCount][kPlayStatCount] = {
     { 0.22f, 0.86f, 0.36f, 1.00f, 0.50f, 0.28f },   // DPS: single pulse target, far below the rifle
 };
 
-// 별자리 뒷배경: 검은 딤 원판 한 겹 + 직업색 원판 한 겹. 노드마다 테두리·halo 를 두지 않고
-// 별자리 전체를 이 두 장으로 배경에서 분리한다. 눕힌 별자리에 맞춰 원판도 타원이다.
-void DrawPlayHeroBackdrop(int weapon, float cx, float cy, float R, float alpha) {
-    const PlayRGB c = kPlayWeaponColor[weapon];
-    // 검은 딤: 넓게 깔아 밝은 바탕화면을 눌러 준다.
-    DrawConstellationDiscEllipse(cx, cy, R * 1.75f, R * 1.75f,
-                                 0.0f, 0.0f, 0.012f, 0.72f * alpha);
-    DrawConstellationDiscEllipse(cx, cy, R * 1.25f, R * 1.25f,
-                                 0.0f, 0.0f, 0.012f, 0.72f * alpha);
-    // 직업색: 별자리 바로 뒤에 은은한 색 원판.
-    DrawConstellationDiscEllipse(cx, cy, R * 1.30f, R * 1.30f,
-                                 c.r * 0.30f, c.g * 0.30f, c.b * 0.30f,
-                                 0.34f * alpha, false);
-}
-
-// ── PLAY 중앙 무기 별자리 ──
-// 컨셉 문서의 문법(선만, 빈 원 + 흰 점 노드, 틈이 있는 호, 별자리 줄기)으로 그린 정면 도면.
-// 좌표는 외곽 링 반지름을 124 로 본 단위(u)이고 R 이 그 반지름이다.
-//   소총   : 줄기가 코어에서 위(표적)·아래(꼬리)로 뻗고, 호 3겹이 서로 다른 방향으로 돈다.
-//   전기장 : 코어에서 안쪽 별 3개가 갈라지고, 별 전체가 천천히 돌며 호 3겹이 반대로 돈다.
-//   spin   회전 누적 시간(초). 호출 쪽이 속도를 점점 올려 부드럽게 돌기 시작한다.
-//   reveal 등장 진행도 0..1. 크기 변화 없이 선이 코어에서 바깥으로 그려지고 별이 차례로 켜진다.
-//   clock  연속 시계(초). 탄 이동·호 맥박에 쓴다. 등장 여부와 무관하게 계속 흐른다.
-void DrawPlayHeroConstellation(int weapon, float cx, float cy, float R,
-                               float uiS, float alpha, float spin, float reveal,
-                               float clock) {
-    const PlayRGB c = kPlayWeaponColor[weapon];
-    const PlayRGB w = weapon == 0 ? PlayRGB{ 1.0f, 1.0f, 1.0f }
-                                  : PlayRGB{ 1.0f, 0.96f, 0.87f };
-    const float u = R / 124.0f;
-    constexpr float kPi = 3.14159265f;
-
-    auto stage = [&](float from, float to) {
-        return std::max(0.0f, std::min(1.0f, (reveal - from) / (to - from)));
-    };
-    auto sstep = [](float x) { return x * x * (3.0f - 2.0f * x); };
-    auto S = [&](float from, float to) { return sstep(stage(from, to)); };
-    float ga = 1.0f;                                  // 지금 그리는 묶음의 알파 배율
-    auto group = [&](float a) { ga = a; };
-
-    // u 좌표 선분(prog 만큼만) / 호 / 빈 원 + 흰 점 / 섬광.
-    auto Lp = [&](float x0, float y0, float x1, float y1, float thick, PlayRGB col,
-                  float a, float prog) {
-        if (prog <= 0.001f) return;
-        DrawConstellLineBatched(cx + x0 * u, cy + y0 * u,
-                                cx + (x0 + (x1 - x0) * prog) * u,
-                                cy + (y0 + (y1 - y0) * prog) * u,
-                                thick * uiS, col.r, col.g, col.b, a * alpha * ga);
-    };
-    auto arc = [&](float r, float a0, float a1, float thick, PlayRGB col, float a,
-                   float prog) {
-        const int steps = std::max(2, (int)std::ceil(std::fabs(a1 - a0) / 4.0f));
-        const int n = (int)std::ceil(steps * std::max(0.0f, std::min(1.0f, prog)));
-        for (int i = 0; i < n; ++i) {
-            const float t0 = (a0 + (a1 - a0) * i / steps) * kPi / 180.0f;
-            const float t1 = (a0 + (a1 - a0) * (i + 1) / steps) * kPi / 180.0f;
-            Lp(r * cosf(t0), r * sinf(t0), r * cosf(t1), r * sinf(t1), thick, col, a, 1.0f);
-        }
-    };
-    auto ring = [&](float x, float y, float rpx, float a) {
-        const float px = cx + x * u, py = cy + y * u;
-        for (int i = 0; i < 12; ++i) {
-            const float t0 = 2.0f * kPi * i / 12.0f, t1 = 2.0f * kPi * (i + 1) / 12.0f;
-            DrawConstellLineBatched(px + rpx * uiS * cosf(t0), py + rpx * uiS * sinf(t0),
-                                    px + rpx * uiS * cosf(t1), py + rpx * uiS * sinf(t1),
-                                    1.1f * uiS, c.r, c.g, c.b, a * alpha * ga);
-        }
-    };
-    auto dotW = [&](float x, float y, float rpx, float a) {
-        drawCircle(cx + x * u, cy + y * u, rpx * uiS, 1.0f, 1.0f, 1.0f, a * alpha * ga);
-    };
-    auto star = [&](float x, float y, float rpx, float a) {
-        ring(x, y, rpx, a * 0.9f);
-        dotW(x, y, rpx * 0.4f, a);
-    };
-    auto flash = [&](float x, float y, PlayRGB col, float a) {
-        const float px = cx + x * u, py = cy + y * u;
-        const float dx[4] = { 0, 0, -1, 1 }, dy[4] = { -1, 1, 0, 0 };
-        for (int i = 0; i < 4; ++i)
-            DrawConstellLineBatched(px + dx[i] * 5.0f * uiS, py + dy[i] * 5.0f * uiS,
-                                    px + dx[i] * 12.0f * uiS, py + dy[i] * 12.0f * uiS,
-                                    1.3f * uiS, col.r, col.g, col.b, a * alpha * ga);
-    };
-    auto spark = [&](float x, float y) {
-        drawCircle(cx + x * u, cy + y * u, 1.2f * uiS, c.r, c.g, c.b, 0.5f * alpha * ga);
-    };
-    auto pulse = [&](float period, float phase) {          // 0..1 로 부드럽게 오가는 값
-        return 0.5f + 0.5f * sinf(2.0f * kPi * (clock / period - phase));
-    };
-    auto polar = [&](float r, float deg, float& x, float& y) {
-        x = r * cosf(deg * kPi / 180.0f);
-        y = r * sinf(deg * kPi / 180.0f);
-    };
-
-    // 공통 등장 단계(겹치게): 코어 → 호 3겹 → 줄기/안쪽 별 → 바깥 → 외곽 링.
-    const float eCore = S(0.00f, 0.25f);
-    const float eLay[3] = { S(0.10f, 0.45f), S(0.20f, 0.55f), S(0.30f, 0.65f) };
-    const float eRing = S(0.55f, 0.95f);
-    const float lay[3] = { 0.95f, 0.60f, 0.32f };
-    const float rr[3] = { 42, 72, 102 };
-
-    if (weapon == 0) {
-        // ── 소총 ──
-        const float stalk[6][2] = { { -20, 84 }, { -12, 42 }, { 0, 0 },
-                                    { -8, -44 }, { 11, -74 }, { 6, -114 } };
-        // 줄기: 코어에서 위·아래로 한 마디씩 그려지고, 선이 닿으면 별이 켜진다.
-        const float segFrom[5] = { 0.36f, 0.22f, 0.22f, 0.36f, 0.48f };   // tail-n2, n2-core, core-n4, n4-n5, n5-main
-        const float segTo[5]   = { 0.58f, 0.40f, 0.40f, 0.54f, 0.68f };
-        group(1.0f);
-        for (int i = 0; i < 5; ++i) {
-            const float p = S(segFrom[i], segTo[i]);
-            // 위로 가는 선분은 코어 쪽에서, 아래로 가는 선분은 코어 쪽에서 뻗는다.
-            if (i >= 2) Lp(stalk[i][0], stalk[i][1], stalk[i + 1][0], stalk[i + 1][1], 1.5f, c, 0.9f, p);
-            else        Lp(stalk[i + 1][0], stalk[i + 1][1], stalk[i][0], stalk[i][1], 1.5f, c, 0.9f, p);
-        }
-        // 호 3겹: 좌우 괄호 모양이 서로 다른 방향으로 천천히 돈다.
-        const float half[3] = { 46, 40, 34 };
-        const float rate[3] = { 14.0f, -10.0f, 7.0f };            // 도/초
-        for (int li = 0; li < 3; ++li) {
-            const float rot = spin * rate[li];
-            const float a = lay[li] * (0.8f + 0.2f * pulse(1.6f, li * 0.2f));
-            arc(rr[li], 180 - half[li] + rot, 180 + half[li] + rot, 1.7f, c, a, eLay[li]);
-            arc(rr[li], -half[li] + rot, half[li] + rot, 1.7f, c, a, eLay[li]);
-        }
-        // 외곽: 얇은 링 + 밝은 호 4개(끝에 흰 점). 위쪽 호가 가장 길고 전체가 천천히 돈다.
-        struct Bright { float a0, a1, thick, a; };
-        const Bright bright[4] = { { -142, -38, 2.6f, 0.98f }, { 8, 36, 2.0f, 0.85f },
-                                   { 144, 172, 2.0f, 0.85f }, { 78, 102, 1.8f, 0.70f } };
-        const float outRot = -spin * 5.0f;
-        arc(124, 0, 360, 0.8f, c, 0.18f, eRing);
-        for (const Bright& b : bright) {
-            arc(124, b.a0 + outRot, b.a1 + outRot, b.thick, c, b.a, eRing);
-            if (eRing > 0.98f)
-                for (int e = 0; e < 2; ++e) {
-                    float x, y; polar(124, (e == 0 ? b.a0 : b.a1) + outRot, x, y);
-                    dotW(x, y, 2.2f, b.a);
-                }
-        }
-        // 별(선이 닿은 뒤에 켜짐)
-        const float starA[6] = { S(0.52f, 0.66f), S(0.34f, 0.46f), 0.0f,
-                                 S(0.34f, 0.46f), S(0.48f, 0.60f), S(0.62f, 0.74f) };
-        for (int i : { 0, 1, 3, 4 }) { group(starA[i]); star(stalk[i][0], stalk[i][1], 4.4f, 0.9f); }
-        group(S(0.60f, 0.85f));
-        for (float sx : { -72.0f, 72.0f }) star(sx, 0, 3.6f, 0.85f);
-        const float dust[6][2] = { { 44, -50 }, { -58, 36 }, { -44, -20 },
-                                   { 50, 62 }, { -74, -50 }, { 66, 0 } };
-        for (const auto& d : dust) spark(d[0], d[1]);
-        // 탄: 줄기를 따라 올라가 표적에 닿으면 표적 섬광이 강해진다(등장이 끝난 뒤).
-        float len[5], total = 0.0f;
-        for (int i = 0; i < 5; ++i) {
-            len[i] = hypotf(stalk[i + 1][0] - stalk[i][0], stalk[i + 1][1] - stalk[i][1]);
-            total += len[i];
-        }
-        const float s = fmodf(clock, 1.8f) / 1.8f;
-        auto atDist = [&](float d, float& x, float& y) {   // 꼬리에서 표적 방향으로 거리 d
-            d = std::max(0.0f, std::min(total, d));
-            for (int i = 0; i < 5; ++i) {
-                if (d <= len[i] || i == 4) {
-                    const float t = len[i] > 0.0f ? std::min(1.0f, d / len[i]) : 0.0f;
-                    x = stalk[i][0] + (stalk[i + 1][0] - stalk[i][0]) * t;
-                    y = stalk[i][1] + (stalk[i + 1][1] - stalk[i][1]) * t;
-                    return;
-                }
-                d -= len[i];
-            }
-        };
-        group(S(0.88f, 1.00f));
-        const float trailD[3] = { 0.0f, 0.07f, 0.14f }, trailA[3] = { 1.0f, 0.5f, 0.28f };
-        const float trailS[3] = { 3.0f, 2.2f, 1.7f };
-        for (int k = 0; k < 3; ++k) {
-            const float d = (s - trailD[k]) * total;
-            if (d < 0.0f) continue;
-            float x, y; atDist(d, x, y);
-            drawDiamond(cx + x * u, cy + y * u, trailS[k] * kPlayHeroNodeScale * uiS,
-                        1.0f, 1.0f, 1.0f, trailA[k] * alpha * ga);
-        }
-        // 표적 + 섬광, 코어
-        const float hit = std::max(0.0f, std::min(1.0f, (s - 0.9f) / 0.1f));
-        group(starA[5]);
-        star(stalk[5][0], stalk[5][1], 8.5f, 1.0f);
-        flash(stalk[5][0], stalk[5][1], w, (0.55f + 0.45f * hit) * S(0.85f, 1.0f));
-        group(eCore);
-        ring(0, 0, 16, 1.0f);
-        dotW(0, 0, 5.0f, 1.0f);
-    } else {
-        // ── 전기장 ──
-        const float rot = spin * 3.0f;                       // 별 전체가 천천히 돈다.
-        // 호 3겹: 안쪽일수록 진하고 맥박이 바깥으로 번진다. 겹마다 방향이 다르다.
-        const float off[3] = { 10, 48, 100 };
-        const float rate[3] = { 12.0f, -9.0f, 6.0f };
-        group(1.0f);
-        for (int li = 0; li < 3; ++li) {
-            const float k = 0.55f + 0.45f * powf(pulse(1.3f, li * 0.22f), 2.0f);
-            const float r0 = off[li] + spin * rate[li];
-            for (int a = 0; a < 3; ++a)
-                arc(rr[li], r0 + a * 120.0f, r0 + a * 120.0f + 84.0f, 1.7f, c,
-                    lay[li] * k, eLay[li]);
-        }
-        // 외곽: 얇은 링 + 밝은 호 3개(끝에 흰 점)
-        const float outRot = spin * 6.0f;
-        arc(124, 0, 360, 0.8f, c, 0.18f, eRing);
-        for (int k = 0; k < 3; ++k) {
-            const float a0 = k * 120.0f + 8.0f + outRot, a1 = a0 + 80.0f;
-            arc(124, a0, a1, 2.2f, c, 0.95f, eRing);
-            if (eRing > 0.98f)
-                for (int e = 0; e < 2; ++e) {
-                    float x, y; polar(124, e == 0 ? a0 : a1, x, y);
-                    dotW(x, y, 2.2f, 0.95f);
-                }
-        }
-        // 안쪽 별 3개: 코어에서 가지가 뻗고 닿으면 켜진다.
-        const float innerA[3] = { 112, 232, 352 };
-        float ix[3], iy[3];
-        for (int i = 0; i < 3; ++i) {
-            polar(57, innerA[i] + rot, ix[i], iy[i]);
-            const float p = S(0.22f + 0.04f * i, 0.46f + 0.04f * i);
-            group(1.0f);
-            Lp(0, 0, ix[i], iy[i], 1.0f, c, 0.6f, p);
-            group(S(0.40f + 0.04f * i, 0.54f + 0.04f * i));
-            star(ix[i], iy[i], 5.0f, 0.9f);
-        }
-        // 바깥 별 5개 + 선, 맞은 별 2개는 섬광
-        const float outR[5] = { 106, 100, 104, 98, 104 };
-        const float outA[5] = { -80, -12, 45, 140, 195 };
-        float ox[5], oy[5];
-        for (int i = 0; i < 5; ++i) polar(outR[i], outA[i] + rot, ox[i], oy[i]);
-        group(1.0f);
-        const float pLine = S(0.50f, 0.78f);
-        Lp(ox[0], oy[0], ox[1], oy[1], 1.0f, c, 0.5f, pLine);
-        Lp(ox[1], oy[1], ox[2], oy[2], 1.0f, c, 0.5f, pLine);
-        Lp(ox[3], oy[3], ox[4], oy[4], 1.0f, c, 0.5f, pLine);
-        for (int i = 0; i < 5; ++i) {
-            group(S(0.48f + 0.05f * i, 0.62f + 0.05f * i));
-            star(ox[i], oy[i], i == 1 || i == 3 ? 4.2f : 3.8f, 0.9f);
-        }
-        const float fl = 0.5f + 0.5f * powf(pulse(1.3f, 2 * 0.22f), 2.0f);
-        group(S(0.80f, 1.00f));
-        for (int i : { 1, 3 }) flash(ox[i], oy[i], w, fl);
-        // 코어: 링 + 삼각형
-        group(eCore);
-        ring(0, 0, 16, 1.0f);
-        for (int i = 0; i < 3; ++i) {
-            const float t0 = (-90.0f + 120.0f * i) * kPi / 180.0f;
-            const float t1 = (-90.0f + 120.0f * (i + 1)) * kPi / 180.0f;
-            DrawConstellLineBatched(cx + 9.0f * uiS * cosf(t0), cy + 9.0f * uiS * sinf(t0),
-                                    cx + 9.0f * uiS * cosf(t1), cy + 9.0f * uiS * sinf(t1),
-                                    1.4f * uiS, w.r, w.g, w.b, alpha * eCore);
-        }
-        dotW(0, 1.5f, 2.2f, 1.0f);
-    }
-}
-
 }  // namespace
-
-static bool s_RcHeroRevealDone[kPlayWeaponCount] = {};   // 별자리 등장 연출은 직업마다 앱 실행 후 한 번만
 
 void ResetRunConfigUi(float entryStart) {
     s_RcEntryT = std::max(0.0f, std::min(1.0f, entryStart));
@@ -494,18 +240,27 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     static float diffHover[kPlayDifficultyCount] = {};
     static float backHover = 0.0f;
     static float playHover = 0.0f;
-    static float heroTimer = 0.0f;   // 별자리 등장 경과 시간(앱 실행 후 첫 재생에만 쓴다)
-    static float heroSpin = 0.0f;    // 별자리 회전용 누적 시간. 패널을 다시 열어도 이어서 돈다.
-    static float heroClock = 0.0f;   // 탄 이동·호 맥박용 연속 시계
-    static float heroFade = 1.0f;    // 직업을 바꾼 직후 새 별자리가 나타나는 진행도 0..1
+    static float heroClock = 0.0f;   // 외형 회전용 연속 시계. 패널을 다시 열어도 이어서 돈다.
+    static float heroFade = 1.0f;    // 직업을 바꾼 직후 새 외형이 나타나는 진행도 0..1
     static int heroWeapon = -1;
-    static int heroStable = 0;       // 연속으로 정상 속도였던 프레임 수
     static float statT[kPlayStatCount] = {};
     static bool statInit = false;
     if (!statInit) {
         for (int i = 0; i < kPlayStatCount; ++i) statT[i] = kPlayStatBar[0][i];
         statInit = true;
     }
+    // 이 패널의 모든 글자는 얇은 검은 테두리를 두른다: 8방향으로 어둡게 한 번씩 먼저 그린다.
+    auto DrawShadowedText = [&](TextRenderer& rd, const wchar_t* text, float x, float y,
+                                float scale, float r, float g, float b, float a, float shadow) {
+        const float o = std::max(0.6f, 0.65f * UiScale(c.sw, c.sh));
+        const float d = o * 0.7071f;
+        const float dx[8] = { o, -o, 0, 0, d, -d, d, -d };
+        const float dy[8] = { 0, 0, o, -o, d, d, -d, -d };
+        for (int i = 0; i < 8; ++i)
+            ::DrawShadowedText(rd, text, x + dx[i], y + dy[i], scale,
+                               0.0f, 0.0f, 0.012f, a * 0.85f, 0.0f);
+        ::DrawShadowedText(rd, text, x, y, scale, r, g, b, a, shadow);
+    };
     auto weaponName = [&](int id) { return T(kTxtWeaponName[id]); };
     auto weaponSub  = [&](int id) { return T(kTxtWeaponSub[id]); };
     auto statName   = [&](int id) { return T(kTxtStatName[weapon][id]); };
@@ -516,13 +271,11 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     }
 
     if (!s_RcStateLoaded && !exiting) {
-        weapon = std::max(0, std::min(1, s_RcWeapon));
+        weapon = std::max(0, std::min(kPlaySelectableWeapons - 1, s_RcWeapon));
         for (float& h : weaponHover) h = 0.0f;
         for (float& h : diffHover) h = 0.0f;
         backHover = playHover = 0.0f;
-        heroTimer = s_RcHeroRevealDone[weapon] ? kPlayHeroRevealSec : 0.0f;
         heroFade = 1.0f;
-        heroStable = 0;
         heroWeapon = weapon;
         s_RcStateLoaded = true;
         launchExit = false;
@@ -608,49 +361,24 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         if (keyNow[0] && !prevKey[0]) s_RcDifficulty = std::max(0, s_RcDifficulty - 1);
         if (keyNow[1] && !prevKey[1]) s_RcDifficulty = std::min(2, s_RcDifficulty + 1);
         if (keyNow[2] && !prevKey[2]) { weapon = 0; s_RcWeapon = weapon; }
-        if (keyNow[3] && !prevKey[3]) { weapon = 1; s_RcWeapon = weapon; }
+        if (keyNow[3] && !prevKey[3] && kPlaySelectableWeapons > 1) { weapon = 1; s_RcWeapon = weapon; }
     }
     for (int i = 0; i < 4; ++i) prevKey[i] = keyNow[i];
 
     BatchFlush();
     DrawPersistentSceneSideVignettes(sw, sh,
                                      kWideSceneLinearAlpha * contentA);
-    // 별자리 등장 연출은 앱 실행 후 처음 한 번만 재생한다. 이후에는 패널을 열 때 바로 완성
-    // 상태로 시작하고, 직업을 바꾸면 짧게 페이드 인만 한다. 회전은 항상 이어서 돈다.
-    // 패널을 여는 순간의 일회성 프레임 지연이나 일시적인 끊김이 애니메이션 점프로 보이지 않도록
-    // 연출 시간은 한 프레임에 최대 1/30초만 진행하고, 프레임이 안정된 뒤에 시작한다.
+    // 직업을 바꾸면 새 외형이 짧게 페이드 인한다. 회전 시계는 패널을 다시 열어도 이어서 돈다.
+    // 패널을 여는 순간의 프레임 지연이 애니메이션 점프로 보이지 않게 한 프레임에 최대 1/30초만 진행한다.
     const float heroDt = std::min(dt, 1.0f / 30.0f);
-    heroStable = c.delta < 0.030f ? heroStable + 1 : 0;
     heroClock += heroDt;
-    // 직업을 바꾼 프레임: 처음 보는 직업이면 등장 연출을 시작하고, 이미 본 직업이면 페이드 인만 한다.
-    bool heroSwitchedNow = false;
     if (heroWeapon != weapon) {
         heroWeapon = weapon;
-        heroSwitchedNow = true;
-        if (s_RcHeroRevealDone[weapon]) {
-            heroFade = 0.0f;
-        } else {
-            heroTimer = 0.0f;
-            heroFade = 1.0f;
-            heroStable = 4;                         // 이미 화면이 안정된 상태이므로 바로 시작
-        }
+        heroFade = 0.0f;
     }
     heroFade = std::min(1.0f, heroFade + heroDt / kPlayHeroFadeSec);
-    if (!s_RcHeroRevealDone[weapon]) {
-        if (entryIn > 0.15f && heroStable >= 4) heroTimer += heroDt;   // 전환이 보이고 프레임이 안정된 뒤 시작
-        // 클릭하면 건너뛴다. 단, 직업을 고르려고 누른 그 클릭은 건너뛰기로 치지 않는다.
-        if (lmbClick && !heroSwitchedNow) heroTimer = kPlayHeroRevealSec;
-        if (heroTimer >= kPlayHeroRevealSec) s_RcHeroRevealDone[weapon] = true;
-    } else {
-        heroTimer = kPlayHeroRevealSec;
-    }
-    const float heroReveal = std::min(1.0f, heroTimer / kPlayHeroRevealSec);
-    // 회전 속도: 등장 중에는 바깥 별이 나온 뒤(40% 지점)부터 서서히 올라가고, 이후에는 일정하다.
-    const float spinSpeed = s_RcHeroRevealDone[weapon] ? 1.0f
-        : Smoothstep(LogoClamp01((heroTimer - 0.40f * kPlayHeroRevealSec) / 0.6f));
-    heroSpin += heroDt * spinSpeed;
     const float heroAlpha = contentA * Smoothstep(heroFade);
-    // 별자리 크기·위치: 제목 글자(아래 끝)와 스탯(위 끝) 사이의 빈 공간에 맞춘다.
+    // 외형 크기·위치: 제목 글자(아래 끝)와 스탯(위 끝) 사이의 빈 공간에 맞춘다.
     const float heroTitleBottom = chartCY - chartR - 58.0f * uiS
         + g_TextL.Height(weaponName(weapon), UiTextScale(g_TextL, UiTextLevel::Title, uiS));
     const float heroGapTop = heroTitleBottom + 14.0f * uiS;
@@ -658,8 +386,6 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     const float heroCY = (heroGapTop + heroGapBottom) * 0.5f;
     const float heroR = std::max(40.0f * uiS, std::min(
         std::min(chartR, (heroGapBottom - heroGapTop) * 0.5f), centerW * 0.5f - 10.0f * uiS));
-    DrawPlayHeroBackdrop(weapon, chartCX, heroCY, heroR,
-                         heroAlpha * Smoothstep(LogoClamp01(heroReveal / 0.20f)));
 
     const float playTitleScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
     DrawShadowedText(g_TextL, T(kTxtPlay), pageL, headerY,
@@ -670,10 +396,12 @@ void Scene_RunConfigInline(const SceneCtx& c) {
 
     // 섹션 머리글: 작은 라벨 + 얇은 선 하나.
     auto drawSectionLabel = [&](const wchar_t* label, float x, float w) {
-        DrawShadowedText(g_TextS, label, x, bodyTop, playSubtitleScale,
-                         weaponR, weaponG, weaponB, 0.80f * contentA, kPlayTextShadow);
-        const float ruleY = bodyTop + g_TextS.Height(label, playSubtitleScale)
-                          + 8.0f * uiS;
+        // 큰 글자는 g_TextL(큰 글리프로 구운 아틀라스)로 그려 확대 번짐과 테두리가 생기지 않게 한다.
+        const float labelScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS) * kPlayLabelScale;
+        DrawShadowedText(g_TextL, label, x, bodyTop, labelScale,
+                         weaponR, weaponG, weaponB, 0.92f * contentA, kPlayTextShadow);
+        const float ruleY = bodyTop + g_TextL.Height(label, labelScale)
+                          + 10.0f * uiS;
         LogoLine(x, ruleY, x + w, ruleY, 0.9f * uiS,
                  weaponR, weaponG, weaponB, 0.36f * contentA);
     };
@@ -687,21 +415,23 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     // 클릭되면 true. 이름 줄의 세로 중심을 nameMidY 로 돌려준다.
     auto drawChoice = [&](float x, float w, float y0, bool sel, float& hover,
                           PlayRGB col, const wchar_t* name, const wchar_t* sub,
-                          float* nameMidY = nullptr) -> bool {
+                          float* nameMidY = nullptr, bool brackets = false,
+                          const wchar_t* subBig = nullptr, bool bars = false) -> bool {
         const bool hov = ready && mx >= x - 14.0f * uiS && mx <= x + w
             && my >= y0 - 8.0f * uiS && my <= y0 + entryH;
         hover = UpdateMenuCommandHover(hover, hov, dt);
         // 선택 안 된 행도 밝은 바탕에서 읽히도록 알파 하한을 높게 둔다.
         const float a = (sel ? 1.0f : 0.80f + 0.20f * hover) * contentA;
-        // 선택: 굵고 긴 세로선 + 큰 노드 + 한 단계 큰 이름. 비선택: 가늘고 짧은 선.
-        const float lineLen = sel ? entryH : entryH * 0.72f;
-        LogoLine(x, y0, x, y0 + lineLen, (sel ? 2.6f : 1.0f) * uiS,
-                 col.r, col.g, col.b,
-                 (sel ? 1.0f : 0.42f + 0.22f * hover) * contentA);
-        if (sel) drawDiamond(x, y0, 12.0f * uiS, col.r, col.g, col.b, 1.0f * contentA);
-        const float textX = x + kPlayEntryTextX * uiS;
+
+        // ── 배치: 글자를 먼저 재서 브라켓 박스가 글자를 감싸도록 한다 ──
+        // 브라켓 행은 글자를 박스 안에서 좌우 같은 안쪽 여백으로 앉힌다.
+        const bool boxed = brackets || bars;
+        const float textOff = boxed ? 22.0f : kPlayEntryTextX;
+        const float textRightPad = boxed ? 28.0f : 4.0f;
+        const float textFitW = (w - (textOff + textRightPad) * uiS);
+        const float textX = x + textOff * uiS;
         const float baseScale = std::min(entryTitleScale,
-            entryTitleScale * (w - (kPlayEntryTextX + 4.0f) * uiS) /
+            entryTitleScale * textFitW /
             std::max(1.0f, g_TextS.Width(name, entryTitleScale)));
         const float selScale = baseScale * kPlayEntrySelectedScale;
         const float drawScale = sel ? selScale : baseScale;
@@ -709,25 +439,104 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         const float layoutH = g_TextS.Height(name, selScale);
         const float nameY = y0 + 2.0f * uiS
                           + (layoutH - g_TextS.Height(name, drawScale)) * 0.5f;
-        DrawShadowedText(g_TextS, name, textX, nameY, drawScale,
+        const float subTop = y0 + 2.0f * uiS + layoutH + (boxed ? 4.0f : 10.0f) * uiS;
+        // 보조 줄: 큰 숫자(subBig) + 작은 꼬리(sub), 또는 sub 한 덩어리. 폭을 넘으면 같이 줄인다.
+        const float subScale0 = boxed ? playBodyScale * 0.88f : playBodyScale;
+        const float bigGap = 4.0f * uiS;
+        float subScale = subScale0, bigScale = 0.0f;
+        if (subBig) {
+            const float bigScale0 = subScale0 * 1.45f;
+            const float total = g_TextS.Width(subBig, bigScale0) + bigGap
+                              + g_TextS.Width(sub, subScale0);
+            const float f = total > textFitW ? textFitW / total : 1.0f;
+            bigScale = bigScale0 * f;
+            subScale = subScale0 * f;
+        } else {
+            const float subW = g_TextS.Width(sub, subScale0);
+            if (subW > textFitW) subScale = subScale0 * textFitW / subW;
+        }
+        const float subBottom = subTop + g_TextS.Height(sub, subBig ? bigScale : subScale);
+
+        if (brackets) {
+            // 외곽 브라켓: 네 모서리에 ㄱ자 팔만 둔다. 선택되면 팔이 길고 굵어지고 색이 켜진다.
+            const float bx0 = x - 2.0f * uiS, bx1 = x + w - 2.0f * uiS;
+            const float by0 = y0 - 4.0f * uiS;
+            const float by1 = std::max(y0 + entryH - 8.0f * uiS, subBottom + 6.0f * uiS);
+            const float arm = (sel ? 9.0f : 5.0f + 3.0f * hover) * uiS;
+            const float th = (sel ? 1.6f : 0.9f) * uiS;
+            const float ba = (sel ? 1.0f : 0.34f + 0.30f * hover) * contentA;
+            const float ov = th * 0.5f;   // 모서리 이음새가 비지 않게 팔을 반 굵기만큼 겹친다
+            for (int ix = 0; ix < 2; ++ix) {
+                for (int iy = 0; iy < 2; ++iy) {
+                    const float cx0 = ix ? bx1 : bx0, cy0 = iy ? by1 : by0;
+                    const float sx = ix ? -1.0f : 1.0f, sy = iy ? -1.0f : 1.0f;
+                    LogoLine(cx0 - sx * ov, cy0, cx0 + sx * arm, cy0, th, col.r, col.g, col.b, ba);
+                    LogoLine(cx0, cy0 - sy * ov, cx0, cy0 + sy * arm, th, col.r, col.g, col.b, ba);
+                }
+            }
+        } else if (bars) {
+            // 뒤로 버튼과 같은 문법: 호버할 때만 양옆 세로 슬라이드 바 + 바깥쪽 다이아 + 얇은 스캔선이 켜진다.
+            const float active = hover;
+            const float top = y0 - 4.0f * uiS;
+            const float bot = std::max(y0 + entryH - 8.0f * uiS, subBottom + 6.0f * uiS);
+            if (active > 0.01f) {
+            const float midY = (top + bot) * 0.5f;
+            const float lineH = (30.0f + 56.0f * active) * uiS;
+            const float slide = (10.0f + 14.0f * active) * uiS;
+            const float barA = (0.24f + 0.55f * active) * contentA;
+            const float barW = 2.2f * uiS;
+            drawRect(x - slide, midY - lineH * 0.5f, barW, lineH, col.r, col.g, col.b, barA);
+            drawRect(x + w + slide - barW, midY - lineH * 0.5f, barW, lineH, col.r, col.g, col.b, barA);
+            const float dia = (3.0f + 2.6f * active) * uiS;
+            const float diaA = (0.40f + 0.34f * active) * contentA;
+            drawDiamond(x - slide - 6.0f * uiS, midY, dia, col.r, col.g, col.b, diaA);
+            drawDiamond(x + w + slide + 4.0f * uiS, midY, dia, col.r, col.g, col.b, diaA);
+            const float scanY = top + (bot - top) * (0.34f + 0.32f * fmodf(now * 0.55f, 1.0f));
+            drawRect(x - 4.0f * uiS, scanY, w * (0.58f + 0.24f * active), 1.1f * uiS,
+                     col.r, col.g, col.b, (0.05f + 0.09f * active) * contentA);
+            }
+        } else {
+            // 선택: 굵고 긴 세로선 + 큰 노드 + 한 단계 큰 이름. 비선택: 가늘고 짧은 선.
+            const float lineLen = sel ? entryH : entryH * 0.72f;
+            LogoLine(x, y0, x, y0 + lineLen, (sel ? 2.6f : 1.0f) * uiS,
+                     col.r, col.g, col.b,
+                     (sel ? 1.0f : 0.42f + 0.22f * hover) * contentA);
+            if (sel) drawDiamond(x, y0, 12.0f * uiS, col.r, col.g, col.b, 1.0f * contentA);
+        }
+
+        const float nameX = textX;
+        DrawShadowedText(g_TextS, name, nameX, nameY, drawScale,
                          sel ? 1.0f : 0.90f, sel ? 1.0f : 0.94f, sel ? 1.0f : 0.98f,
                          a, kPlayTextShadow);
         // 보조 줄은 강조색을 흰색 쪽으로 섞어 밝은 바탕에서도 색이 죽지 않게 한다.
         const float mix = 0.30f;
-        DrawShadowedText(g_TextS, sub, textX, y0 + 2.0f * uiS + layoutH + 10.0f * uiS,
-                         playBodyScale,
-                         col.r + (1.0f - col.r) * mix, col.g + (1.0f - col.g) * mix,
-                         col.b + (1.0f - col.b) * mix, a, kPlayTextShadow);
+        const float sr = col.r + (1.0f - col.r) * mix, sg = col.g + (1.0f - col.g) * mix,
+                    sb = col.b + (1.0f - col.b) * mix;
+        if (subBig) {
+            // 큰 숫자와 작은 꼬리의 기준선을 맞춘다.
+            const float bigW = g_TextS.Width(subBig, bigScale);
+            const float baseline = subTop + g_TextS.BaselineOffset(bigScale);
+            DrawShadowedText(g_TextS, subBig, textX, subTop, bigScale,
+                             1.0f, 1.0f, 1.0f, a, kPlayTextShadow);
+            DrawShadowedText(g_TextS, sub, textX + bigW + bigGap,
+                             baseline - g_TextS.BaselineOffset(subScale), subScale,
+                             sr, sg, sb, a, kPlayTextShadow);
+        } else {
+            const float subX = textX;
+            DrawShadowedText(g_TextS, sub, subX, subTop, subScale,
+                             sr, sg, sb, a, kPlayTextShadow);
+        }
         if (nameMidY) *nameMidY = y0 + 2.0f * uiS + layoutH * 0.5f;
         return hov && lmbClick;
     };
 
     // 직업 목록(좌)
     drawSectionLabel(T(kTxtClass), leftX, sideW);
-    for (int i = 0; i < kPlayWeaponCount; ++i) {
+    for (int i = 0; i < kPlaySelectableWeapons; ++i) {
         if (drawChoice(leftX, sideW, entryY(i), weapon == i,
                        weaponHover[i], kPlayWeaponColor[i],
-                       weaponName(i), weaponSub(i))) {
+                       weaponName(i), weaponSub(i),
+                       nullptr, false, nullptr, true)) {
             weapon = i;
             s_RcWeapon = weapon;
         }
@@ -736,19 +545,33 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     // 난이도 목록(우)
     drawSectionLabel(T(kTxtDifficulty), rightX, sideW);
     for (int i = 0; i < kPlayDifficultyCount; ++i) {
-        wchar_t bestBuf[64] = {};
-        if (g_BestScore[i] > 0) {
-            wchar_t grouped[40] = {};
-            FormatGrouped(g_BestScore[i], grouped, 40);
-            swprintf_s(bestBuf, L"%ls %ls", T(kTxtBest), grouped);
+        // 큰 숫자 = 이 난이도에서 내가 도달한 최대 웨이브, 작은 꼬리 = 이 난이도의 마지막 웨이브.
+        // 클리어했다면 15/15 처럼 채우고 가장 빠른 클리어 시간을 덧붙인다.
+        const int finalWave = FinalWaveCount(static_cast<Difficulty>(i));
+        const bool cleared = g_BestClearSec[i] > 0;
+        const int reached = cleared ? finalWave
+            : static_cast<int>(std::min<long long>(g_BestWave[i], finalWave));
+        wchar_t bigBuf[16] = {};
+        wchar_t tailBuf[48] = {};
+        const wchar_t* bigText = nullptr;
+        if (reached > 0) {
+            swprintf_s(bigBuf, L"%d", reached);
+            bigText = bigBuf;
+            // 클리어했으면 가장 빠른 클리어 시간, 아니면 최대 웨이브 기록 중 가장 짧은 시간.
+            const long long sec = cleared ? g_BestClearSec[i] : g_BestWaveSec[i];
+            if (sec > 0) {
+                swprintf_s(tailBuf, L"/%d   %02lld:%02lld", finalWave, sec / 60, sec % 60);
+            } else {
+                swprintf_s(tailBuf, L"/%d", finalWave);
+            }
         } else {
-            swprintf_s(bestBuf, L"%ls", T(kTxtNoRecord));
+            swprintf_s(tailBuf, L"%ls", T(kTxtNoRecord));
         }
         const PlayRGB col = kPlayDifficultyColor[i];
         const bool sel = s_RcDifficulty == i;
         float midY = 0.0f;
         if (drawChoice(rightX, sideW, entryY(i), sel,
-                       diffHover[i], col, diffName(i), bestBuf, &midY))
+                       diffHover[i], col, diffName(i), tailBuf, &midY, true, bigText))
             s_RcDifficulty = i;
         // 이름 줄 오른쪽 끝의 3칸 게이지: 켜진 별 개수가 단계(1~3)다.
         for (int k = 0; k < kPlayDifficultyCount; ++k)
@@ -758,21 +581,17 @@ void Scene_RunConfigInline(const SceneCtx& c) {
                         (k <= i ? (sel ? 1.0f : 0.72f) : 0.26f) * contentA);
     }
 
-    // 중앙: 선택 무기 성좌 제목
+    // 중앙: 선택 직업 이름
     const float heroNameY = chartCY - chartR - 58.0f * uiS;
     const float heroNameScale = UiTextScale(g_TextL, UiTextLevel::Title, uiS);
     const float heroNameW = g_TextL.Width(weaponName(weapon), heroNameScale);
-    const wchar_t* heroSystemLabel = T(kTxtConstellation);
-    DrawShadowedText(g_TextS, heroSystemLabel,
-                     chartCX - g_TextS.Width(heroSystemLabel, playSubtitleScale) * 0.5f,
-                     heroNameY - 42.0f * uiS, playSubtitleScale,
-                     weaponR, weaponG, weaponB, 0.78f * contentA, kPlayTextShadow);
     DrawShadowedText(g_TextL, weaponName(weapon), chartCX - heroNameW * 0.5f,
                      heroNameY, heroNameScale,
                      1.0f, 1.0f, 1.0f, 0.96f * contentA, kPlayTextShadow);
 
-    DrawPlayHeroConstellation(weapon, chartCX, heroCY, heroR, uiS, heroAlpha,
-                              heroSpin, heroReveal, heroClock);
+    // 소총 외곽이 가장 크다(약 1.9 sz). 그 반지름이 heroR 에 들어가게 맞춘다.
+    DrawPlayerShellPreview(weapon, chartCX, heroCY, heroR / 2.0f, heroClock,
+                           weaponR, weaponG, weaponB, heroAlpha);
 
     const float statY = chartCY + chartR + 26.0f * uiS;
     const float statRowStep = 60.0f * uiS;

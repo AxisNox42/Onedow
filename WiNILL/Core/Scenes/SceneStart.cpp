@@ -23,7 +23,6 @@
 #include "../../Render/PlanetShader.h"
 #include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
-#include "../../Render/BlurShader.h"
 #include "../../System/Audio.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"

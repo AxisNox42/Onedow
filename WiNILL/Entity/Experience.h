@@ -43,21 +43,3 @@ inline std::string FormatXp(XpAmount value) {
     return out.str();
 }
 
-// Keep sub-milli XP between frames; return only whole milli-XP to grant.
-inline XpAmount AccumulateTimedXp(double& remainingMilli, double xpPerSecond,
-                                  double multiplier, double seconds) {
-    if (!std::isfinite(xpPerSecond) || !std::isfinite(multiplier) ||
-        !std::isfinite(seconds) || xpPerSecond <= 0.0 ||
-        multiplier <= 0.0 || seconds <= 0.0) return 0;
-    remainingMilli += xpPerSecond * multiplier * seconds * XP_SCALE;
-    if (!std::isfinite(remainingMilli) ||
-        remainingMilli >= static_cast<double>(std::numeric_limits<XpAmount>::max())) {
-        remainingMilli = 0.0;
-        return std::numeric_limits<XpAmount>::max();
-    }
-    // Float stat multipliers (for example 1.03f) can land just below a
-    // mathematical milli-XP boundary after many frames.
-    const XpAmount grant = static_cast<XpAmount>(std::floor(remainingMilli + 1e-3));
-    remainingMilli -= grant;
-    return grant;
-}

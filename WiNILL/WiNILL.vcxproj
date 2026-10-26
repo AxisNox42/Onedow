@@ -197,7 +197,6 @@
     <ClCompile Include="Entity\EnemySpawner.cpp" />
     <ClCompile Include="Entity\ProjectileSystem.cpp" />
     <ClCompile Include="Entity\GravisField.cpp" />
-    <ClCompile Include="Render\BlurShader.cpp" />
     <ClCompile Include="Render\Camera.cpp" />
     <ClCompile Include="Render\EntityDraw.cpp" />
     <ClCompile Include="Render\PlayerWeaponShell.cpp" />

@@ -155,17 +155,6 @@ void Scene_Shop(const SceneCtx& c) {
     DrawSharedMenuDim(sw, sh, mainX, shopRailY, mainBW, shopRailH,
                       std::max(oldMenuA, wake), true);
 
-    // SHOP keeps the live background visible, but an optional soft backdrop
-    // blur removes the high-frequency text/windows that compete with the
-    // constellation labels. Capture only after the persistent dim layer and
-    // before any SHOP UI is drawn, so the UI itself always stays sharp.
-    if (g_BackdropBlurEnabled) {
-        InitBlurSystem((int)sw, (int)sh);
-        CaptureBackdrop(BackdropBlurCaptureIntervalSeconds());
-        DrawBlurPanel(0.0f, 0.0f, sw, sh,
-                      0.16f * std::max(oldMenuA, wake),
-                      0.004f, 0.010f, 0.020f);
-    }
     const InlineThreeColumnLayout columns = BuildInlineThreeColumnLayout(
         sw, sh, uiS, rootX, rootY, rootW, rootH);
     // ARMORY keeps the main-menu command rail, then opens one RUN_CONFIG-sized

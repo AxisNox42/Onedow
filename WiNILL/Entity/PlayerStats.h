@@ -22,15 +22,7 @@ struct PlayerStats {
     float xpMult           = 1.0f;   // Global experience multiplier.
     float bulletSpread     = 0.0f;   // 발사 시 각도 흔들기 (라디안). 0 = 정확
     int   pierceChance     = 30;     // Pierce chance (%).
-    // The active close-range roster has nine MobKind entries. Scope is the
-    // separate ranged mob and uses rangedXpBonus below.
-    static constexpr int MOB_KIND_XP_SLOTS = 9;
-    int   mobXpBonus       = 0;      // Process kill EXP bonus for generic mob debuffs.
-    int   mobKindXpBonus[MOB_KIND_XP_SLOTS] = {};
     float rotorHpMult      = 1.0f;
-    int   rotorXpBonus     = 0;
-    int   rangedXpBonus    = 0;      // Ranged mob kill EXP bonus.
-    float xpPerSec         = 0.0f;   // 초당 누적 EXP (다가오는 죽음, 잡몹 가속)
     float rmobSpawnDelayBonus = 0.0f;// 원거리 몹 스폰 가속 (초)
     int   mobCapBonus      = 0;      // 웨이브별 소환 수 추가
 
@@ -317,60 +309,48 @@ struct PlayerStats {
         case AugType::D_RMOB_MAX:
             if (rmobMaxBonus < 2) ++rmobMaxBonus;
             rmobSpawnDelayBonus += 0.5f;
-            rangedXpBonus       += 12;
             break;
         case AugType::D_RMOB_HP:
             rmobHpMult     *= 1.20f;
             rmobDmgMult    *= 1.20f;
-            rangedXpBonus  += 6;
             break;
         case AugType::D_RMOB_DELAY:
             if (rmobDelayStacks < 10) {
                 rmobDelayMult *= 0.80f;
                 ++rmobDelayStacks;
             }
-            rangedXpBonus  += 5;
             break;
         case AugType::D_MOB_SPAWN:
             // Controlled pressure increase; do not unlock the full cap at once.
             mobSpawnMult   *= 0.84f;
             mobCapBonus    += 12;
-            mobXpBonus     += 1;
             break;
         case AugType::D_APPROACH:
             approachingDeath = true;
             if (approachStacks < 3) {
                 ++approachStacks;
-                xpPerSec   += 0.5f;
             }
             break;
         case AugType::D_MOB_SPEED:
             mobSpeedMult   *= 1.10f;
-            xpPerSec       += 0.5f;
             break;
         case AugType::D_GLASS_HEART:
             maxHP          *= 0.80f;
-            xpMult         *= 1.03f;
             break;
         case AugType::D_BULLET_STUCK:
             fireInterval   /= 0.90f;
-            xpMult         *= 1.05f;
             break;
         case AugType::D_MOB_HP:
             rotorHpMult     *= 1.30f;
-            rotorXpBonus    += 2;
             break;
         case AugType::D_SLOW_MOVE:
             moveSpeedMult   *= 0.95f;
-            xpMult          *= 1.03f;
             break;
         case AugType::D_BLEED:
             regenPerSec      = std::max(0.0f, regenPerSec - 1.0f);
-            xpMult          *= 1.12f;
             break;
         case AugType::D_WEAKEN:
             damageMultiplier *= 0.88f;
-            xpMult           *= 1.10f;
             break;
         case AugType::LIFESTEAL_2:
             lifesteal2      = true;

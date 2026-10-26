@@ -6,7 +6,6 @@ param(
     [string[]]$Langs = @("KR"),
     [string]$Tag = "smoke",
     [string]$Size = "",
-    [string]$Blur = "",
     [int]$TimeoutSec = 120
 )
 $ErrorActionPreference = "Stop"
@@ -23,7 +22,6 @@ foreach ($lang in $Langs) {
     $env:ONEDOW_SMOKE_LANG = $lang
     $env:ONEDOW_SMOKE_TAG = $Tag
     if ($Size) { $env:ONEDOW_SMOKE_SIZE = $Size }
-    if ($Blur) { $env:ONEDOW_SMOKE_BLUR = $Blur }
     try {
         $p = Start-Process -FilePath $Exe -WorkingDirectory $ExeDir -PassThru
         if (-not $p.WaitForExit($TimeoutSec * 1000)) {
@@ -31,7 +29,7 @@ foreach ($lang in $Langs) {
             throw "스모크 실행 시간 초과 ($lang)"
         }
     } finally {
-        Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_LANG, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE, Env:ONEDOW_SMOKE_BLUR -ErrorAction SilentlyContinue
+        Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_LANG, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE -ErrorAction SilentlyContinue
     }
     Get-ChildItem $Shots -Filter "${Tag}_${lang}_*.png" | Move-Item -Destination $Out -Force
 }

@@ -21,38 +21,40 @@ void SetBgmEnabled(bool on) { s_bgm = on; ++s_calls; }
 void SetSfxEnabled(bool on) { s_sfx = on; ++s_calls; }
 void SetEnabled(bool on) { s_enabled = on; ++s_calls; }
 void SetVolume(float v) { s_volume = v; ++s_calls; }
+void SetBgmVolume(float) {}   // channel volumes are not part of the call count
+void SetSfxVolume(float) {}
 bool SetMonoOutput(bool mono) { s_mono = mono && s_monoAvailable; ++s_calls; return s_mono; }
 bool IsMonoOutput() { return s_mono; }
 }
 
 // Every option the save file carries, as one comparable value.
 struct Options {
-    int lang, fps, soundVol, blurHz, mobStyle, vfx;
-    bool crosshair, combo, bgm, sfx, mono, audio, autoSkill, menuDim, blur,
+    int lang, fps, soundVol, mobStyle, vfx;
+    bool crosshair, combo, bgm, sfx, mono, audio, autoSkill, menuDim,
          debug, shaderFx, macOpt;
     bool operator==(const Options& o) const {
-        return lang == o.lang && fps == o.fps && soundVol == o.soundVol && blurHz == o.blurHz &&
+        return lang == o.lang && fps == o.fps && soundVol == o.soundVol &&
                mobStyle == o.mobStyle && vfx == o.vfx && crosshair == o.crosshair &&
                combo == o.combo && bgm == o.bgm && sfx == o.sfx && mono == o.mono &&
                audio == o.audio && autoSkill == o.autoSkill &&
-               menuDim == o.menuDim && blur == o.blur && debug == o.debug &&
+               menuDim == o.menuDim && debug == o.debug &&
                shaderFx == o.shaderFx && macOpt == o.macOpt;
     }
 };
 static Options Read() {
-    return { (int)g_Language, g_FpsCap, g_SoundVol, g_BackdropBlurCaptureHz,
+    return { (int)g_Language, g_FpsCap, g_SoundVol,
              (int)g_MobVisualStyle, (int)g_VfxDensity, g_ShowCrosshair, g_ShowCombo,
              g_BgmEnabled, g_SfxEnabled, g_AudioMonoOutput, g_AudioEngineEnabled,
-             g_AutoSkill, g_StrongMenuDim, g_BackdropBlurEnabled, g_DebugMode, g_ShaderFx,
+             g_AutoSkill, g_StrongMenuDim, g_DebugMode, g_ShaderFx,
              g_MacOptV1 };
 }
 static void Write(const Options& o) {
     g_Language = (Language)o.lang; g_FpsCap = o.fps; g_SoundVol = o.soundVol;
-    g_BackdropBlurCaptureHz = o.blurHz; g_MobVisualStyle = (MobVisualStyle)o.mobStyle;
+    g_MobVisualStyle = (MobVisualStyle)o.mobStyle;
     g_VfxDensity = (VfxDensity)o.vfx; g_ShowCrosshair = o.crosshair; g_ShowCombo = o.combo;
     g_BgmEnabled = o.bgm; g_SfxEnabled = o.sfx; g_AudioMonoOutput = o.mono;
     g_AudioEngineEnabled = o.audio; g_AutoSkill = o.autoSkill;
-    g_StrongMenuDim = o.menuDim; g_BackdropBlurEnabled = o.blur; g_DebugMode = o.debug;
+    g_StrongMenuDim = o.menuDim; g_DebugMode = o.debug;
     g_ShaderFx = o.shaderFx; g_MacOptV1 = o.macOpt;
 }
 
@@ -61,11 +63,11 @@ static Options s_defaults;   // the Settings.h defaults, read at start
 // Every option away from its default (and inside its valid range).
 static Options Edited() {
     Options o = s_defaults;
-    o.lang = s_defaults.lang == 1 ? 2 : 1; o.fps = 144; o.soundVol = 37; o.blurHz = 60;
+    o.lang = s_defaults.lang == 1 ? 2 : 1; o.fps = 144; o.soundVol = 37;
     o.mobStyle = 1 - s_defaults.mobStyle; o.vfx = s_defaults.vfx == 2 ? 0 : 2;
     o.crosshair = !o.crosshair; o.combo = !o.combo; o.bgm = !o.bgm; o.sfx = !o.sfx;
     o.mono = !o.mono; o.audio = !o.audio; o.autoSkill = !o.autoSkill;
-    o.menuDim = !o.menuDim; o.blur = !o.blur; o.debug = !o.debug; o.shaderFx = !o.shaderFx;
+    o.menuDim = !o.menuDim; o.debug = !o.debug; o.shaderFx = !o.shaderFx;
     o.macOpt = !o.macOpt;
     return o;
 }
@@ -143,7 +145,7 @@ static void CheckOldSave() {
 // Out-of-range values: rejected or clamped, never taken as they are.
 static void CheckRanges() {
     ResetAll();
-    WriteRawSave("fps=999\nsoundvol=150\nlang=9\nblurcapturehz=33\nmobstyle=5\nvfxdens=7\n"
+    WriteRawSave("fps=999\nsoundvol=150\nlang=9\nmobstyle=5\nvfxdens=7\n"
                  "meta0=99\ncoins=-5\nmobkills0=-3\nthemesel=42\nbest_easy=-10\nbest_normal=-1\n"
                  "best_hard=-7\nkills=-4\ngames=-2\nwbscore0=-1\nwbkills1=-1\nwtkills0=-9\nwruns1=-3\n");
     LoadGame();
@@ -194,6 +196,41 @@ static void CheckIntegrity() {
     WriteBytes(SaveFilePath(), std::string(ODW_MAGIC_LEGACY, 4) + legacy);
     LoadGame();
     assert(g_Coins == 321);                                  // ODW1 migrates
+
+    ResetAll();
+    std::string v2 = "coins=654\n";
+    const unsigned int crc2 = save_detail::Checksum(v2);
+    OdwCrypt(v2);
+    std::string v2file(ODW_MAGIC_V2, 4);
+    for (int i = 0; i < 4; ++i) v2file += (char)((crc2 >> (8 * i)) & 0xFF);
+    WriteBytes(SaveFilePath(), v2file + v2);
+    LoadGame();
+    assert(g_Coins == 654);                                  // ODW2 migrates
+    SaveGame();
+    {
+        FILE* f = nullptr; char head[4] = {};
+        fopen_s(&f, SaveFilePath(), "rb");
+        assert(f && std::fread(head, 1, 4, f) == 4 && std::memcmp(head, ODW_MAGIC, 4) == 0);
+        std::fclose(f);                                      // rewritten as ODW3
+    }
+
+    // HMAC-SHA256 known answer (RFC 4231 case 2) keeps the primitive honest.
+    {
+        unsigned char mac[32];
+        save_detail::HmacSha256((const unsigned char*)"Jefe", 4,
+                                "what do ya want for nothing?", mac);
+        assert(mac[0] == 0x5b && mac[1] == 0xdc && mac[2] == 0xc1 && mac[31] == 0x43);
+    }
+    {   // same plain text encodes differently each time (fresh nonce)
+        assert(EncodeSaveText("coins=1\n") != EncodeSaveText("coins=1\n"));
+        std::string out;
+        std::string enc = EncodeSaveText("coins=1\n");
+        assert(DecodeSaveText(enc, out) && out == "coins=1\n");
+        enc.back() ^= 1;                                     // tag bit
+        assert(!DecodeSaveText(enc, out));
+        enc.back() ^= 1; enc[5] ^= 1;   // nonce bit
+        assert(!DecodeSaveText(enc, out));
+    }
 
     ResetAll();
     g_Coins = 100; SaveGame();                               // becomes the backup
@@ -247,18 +284,17 @@ static void CheckSnapshot() {
     assert(Audio::s_volume == before.soundVol / 100.0f && Audio::s_mono == before.mono);
 
     // Each edited field alone lights the save button.
-    for (int field = 0; field < 16; ++field) {
+    for (int field = 0; field < 14; ++field) {
         RestoreSettingsSnapshot(snap);
         switch (field) {
         case 0: g_FpsCap = 30; break;               case 1: g_VfxDensity = VfxDensity::MEDIUM; break;
         case 2: g_ShaderFx = !g_ShaderFx; break;    case 3: g_MobVisualStyle = (MobVisualStyle)(1 - (int)g_MobVisualStyle); break;
-        case 4: g_ShowCombo = !g_ShowCombo; break;  case 5: g_BackdropBlurEnabled = !g_BackdropBlurEnabled; break;
-        case 6: g_BackdropBlurCaptureHz = 1; break; case 7: g_SoundVol = 3; break;
-        case 8: g_BgmEnabled = !g_BgmEnabled; break; case 9: g_SfxEnabled = !g_SfxEnabled; break;
-        case 10: g_AudioMonoOutput = !g_AudioMonoOutput; break;
-        case 11: g_AudioEngineEnabled = !g_AudioEngineEnabled; break;
-        case 12: g_AutoSkill = !g_AutoSkill; break; case 13: g_ShowCrosshair = !g_ShowCrosshair; break;
-        case 14: g_DebugMode = !g_DebugMode; break; case 15: g_Language = Language::JP; break;
+        case 4: g_ShowCombo = !g_ShowCombo; break;  case 5: g_SoundVol = 3; break;
+        case 6: g_BgmEnabled = !g_BgmEnabled; break; case 7: g_SfxEnabled = !g_SfxEnabled; break;
+        case 8: g_AudioMonoOutput = !g_AudioMonoOutput; break;
+        case 9: g_AudioEngineEnabled = !g_AudioEngineEnabled; break;
+        case 10: g_AutoSkill = !g_AutoSkill; break; case 11: g_ShowCrosshair = !g_ShowCrosshair; break;
+        case 12: g_DebugMode = !g_DebugMode; break; case 13: g_Language = Language::JP; break;
         }
         if (field == 1 && snap.density == VfxDensity::MEDIUM) g_VfxDensity = VfxDensity::FULL;
         if (field == 15 && snap.language == Language::JP) g_Language = Language::EN;
@@ -279,6 +315,7 @@ static void CheckSnapshot() {
 }
 
 int main() {
+    _putenv_s("ONEDOW_SAVE_DIR", ".");      // keep the test off the real AppData save
     s_defaults = Read();
     g_SmokeCapture = false;                 // real SaveGame, in the temporary folder
     CheckRoundTrip();

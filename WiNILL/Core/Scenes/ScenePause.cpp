@@ -26,7 +26,6 @@
 #include "../../Render/PlanetShader.h"
 #include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
-#include "../../Render/BlurShader.h"
 #include "../../System/Audio.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
@@ -139,17 +138,12 @@ void Scene_Paused(const SceneCtx& c, const PauseSceneContext& state) {
             state.showOwnedAugments = false;
             s_InventoryEscArmed = false;
         }
-        const int li = std::clamp(LangIndex(), 0, LANG_COUNT - 1);
-        static const wchar_t* kInventoryBack[LANG_COUNT] = {
-            L"ESC  뒤로", L"ESC  BACK", L"ESC  戻る"
-        };
-        const float backScale = UiTextScale(
-            state.text.body, UiTextLevel::Supporting, uiScale);
-        const wchar_t* back = kInventoryBack[li];
-        state.text.body.Draw(back,
-            sw - 32.0f * uiScale - state.text.body.Width(back, backScale),
-            sh - 42.0f * uiScale, backScale,
-            0.48f, 0.78f, 0.96f, 0.88f * entryFade);
+        static float s_InventoryBackHover = 0.0f;
+        BindMainShader();
+        if (DrawBottomLeftBackButton(s_InventoryBackHover, sw, sh, uiScale,
+                                     mx, my, lmb, state.previousLeftMouseDown,
+                                     entryFade, fnow, delta))
+            state.showOwnedAugments = false;
         return;
     }
     s_InventoryEscArmed = false;

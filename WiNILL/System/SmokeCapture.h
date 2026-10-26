@@ -5,7 +5,6 @@
 //   ONEDOW_SMOKE_LANG = KR | EN | JP      (선택)
 //   ONEDOW_SMOKE_TAG  = 파일명 접두어      (선택, 기본 smoke)
 //   ONEDOW_SMOKE_SIZE = WxH               (선택, 창 크기 강제)
-//   ONEDOW_SMOKE_BLUR = 0 | 1             (선택, 배경 블러 강제)
 //   ONEDOW_SMOKE_KEYLINE = 0              (선택, 전투 요소 테두리 끄기: 전후 비교용)
 //   ONEDOW_SMOKE_ORBITS  = 0              (선택, PLAY 무기 별자리 궤도 링 끄기)
 // STEP 형식: NAME[@fx,fy][!|*][~sec]
@@ -79,9 +78,6 @@ public:
             width_ = std::atoi(size.c_str());
             height_ = std::atoi(size.c_str() + x + 1);
         }
-        const std::string blur = SmokeEnv("ONEDOW_SMOKE_BLUR");
-        if (blur == "0") g_BackdropBlurEnabled = false;
-        else if (blur == "1") g_BackdropBlurEnabled = true;
         if (SmokeEnv("ONEDOW_SMOKE_KEYLINE") == "0") g_CombatKeylineScale = 0.0f;
         if (SmokeEnv("ONEDOW_SMOKE_ORBITS") == "0") g_PlayConstellationOrbits = false;
         g_SmokeCapture = true;

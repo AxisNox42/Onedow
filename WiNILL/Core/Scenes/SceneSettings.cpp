@@ -24,7 +24,6 @@
 #include "../../Render/PlanetShader.h"
 #include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
-#include "../../Render/BlurShader.h"
 #include "../../System/Audio.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
@@ -74,13 +73,17 @@ void Scene_SettingsInline(const SceneCtx& c) {
     static float pulse = 0.0f;
     static int   pulseRow = -1;
     static float tabSwitchT   = 0.0f;
-    static bool  s_volDrag    = false;
+    static int   s_volDrag    = -1;   // category*8+row of the slider being dragged
     static float listHover[32] = {};
     static float rowHover[4][6]  = {};
     static float optHover[4][6][8] = {};
     static float holdT = 0.0f;
     static int listCursor = 1;
     static bool accordionFocusPending = false;
+    // Category whose header should be scrolled to the top of the board.
+    static int scrollToCategory = -1;
+    // True after a wheel scroll: the selected category tracks the right board.
+    static bool scrollFollowsBoard = false;
     // Shared normalized scroll position for the left index and right board.
     // Each pane maps the same 0..1 value to its own row geometry.
     static float settingsScroll = 0.0f;
@@ -102,12 +105,13 @@ void Scene_SettingsInline(const SceneCtx& c) {
         pulse = 0.0f;
         pulseRow = -1;
         tabSwitchT = 0.0f;
-        s_volDrag  = false;
+        s_volDrag  = -1;
         holdT = 0.0f;
         listCursor = 1;
         accordionFocusPending = false;
         settingsScroll = 0.0f;
         settingsScrollTarget = 0.0f;
+        scrollFollowsBoard = false;
         prevListW = false;
         prevListS = false;
         detailRow = 0;
@@ -141,7 +145,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const bool esc = c.window && glfwGetKey(c.window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
     const bool rmb = c.window && glfwGetMouseButton(c.window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (c.inputFocusChanged) prevEsc = esc;
-    if (c.inputFocusChanged) s_volDrag = false;
+    if (c.inputFocusChanged) s_volDrag = -1;
     const bool backInput = (esc && !prevEsc) || (rmb && !g_RmbPrev);
     prevEsc = esc;
     const float entryOldOut = SceneTransitionEase(entry / kOutgameTransitionDuration);
@@ -303,8 +307,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
         detailRow = std::max(0, nextRow);
         if (!categoryChanged) return;
 
-        settingsScroll = 0.0f;
-        settingsScrollTarget = 0.0f;
+        scrollToCategory = nextCategory;
         pulse = 1.0f;
         pulseRow = -1;
         tabSwitchT = 0.0f;
@@ -331,33 +334,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const float categoryReveal = Smoothstep(
         LogoClamp01(tabSwitchT / 0.22f));
 
-    // Keep the context line and category title vertically centered as one
-    // measured block between the top of the right tab and its separator.
-    const wchar_t* settingsContext = SettingsText(L"관측소 보정", L"OBSERVATORY CALIBRATION", L"観測所調整");
-    const wchar_t* categoryTitle = SettingsText(tabs[tab].kr, tabs[tab].en, tabs[tab].jp);
-    const float contextScale = settingsScale(
-        g_TextS, 1.0f, UiTextLevel::Supporting);
-    const float categoryScale = settingsScale(
-        g_TextL, 1.0f, UiTextLevel::Subtitle);
-    const float contextH = g_TextS.Height(settingsContext, contextScale);
-    const float categoryH = g_TextL.Height(categoryTitle, categoryScale);
-    const float headerGap = 4.0f * uiS;
-    const float headerBlockH = contextH + headerGap + categoryH;
-    const float headerAreaH = 68.0f * uiS;
-    const float headerBlockY = depthY
-        + std::max(0.0f, (headerAreaH - headerBlockH) * 0.5f);
-    drawSettingsTextAtLevel(g_TextS, settingsContext, rpX, headerBlockY,
-                            1.0f, 0.48f, 0.82f, 1.0f, 0.70f * dA,
-                            UiTextLevel::Supporting, 0.66f);
-    drawSettingsTextAtLevel(g_TextL, categoryTitle, rpX,
-                            headerBlockY + contextH + headerGap,
-                            1.0f, tabR, tabG, tabB,
-                            0.90f * dA * categoryReveal,
-                            UiTextLevel::Subtitle, 0.68f);
+    // The board starts right below the top of the panel; each category's own
+    // header row (inside the scrolling list) is the only category title.
+    const float headerAreaH = 20.0f * uiS;
     const float sepY = depthY + headerAreaH;
-    LogoLine(rpX, sepY, rpX + rpW * 0.92f, sepY,
-             0.76f * uiS, tabR, tabG, tabB,
-             0.22f * dA * categoryReveal);
 
     // Row layout constants (5행 탭은 높이 줄임)
     // Use the available vertical field instead of compressing every tab into
@@ -387,9 +367,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
         const wchar_t* opts[8]  = {};       // 선택지 전체 목록 (없으면 optCount=0)
         int optCount   = 0;
         int optCur     = 0;                 // 현재 선택된 인덱스
+        int* volRef    = nullptr;           // isVolume 슬라이더가 편집하는 0~100 값
     };
     SRow settingsRows[4][6] = {};
-    const int rowCounts[4] = { 5, 5, kDebugSettingsVisible ? 3 : 2, 2 };
+    const int rowCounts[4] = { 3, 5, kDebugSettingsVisible ? 3 : 2, 2 };
 
     static wchar_t s_volBuf[8];
 
@@ -417,17 +398,12 @@ void Scene_SettingsInline(const SceneCtx& c) {
                               g_VfxDensity == VfxDensity::MEDIUM ? 1 : 2 };
     settingsRows[0][2] = { SettingsText(L"콤보 HUD", L"COMBO HUD", L"コンボHUD"), nullptr, false, false, false, false,
                            { toggleOn, toggleOff }, 2, g_ShowCombo ? 0 : 1 };
-    settingsRows[0][3] = { SettingsText(L"배경 블러", L"BACKDROP BLUR", L"背景ブラー"), nullptr, false, false, false, false,
-                           { toggleOn, toggleOff }, 2, g_BackdropBlurEnabled ? 0 : 1 };
-    settingsRows[0][4] = { SettingsText(L"블러 갱신 주기", L"BLUR REFRESH RATE", L"ブラー更新間隔"), nullptr, false, false, false, false,
-                           { L"1", L"20", L"60" }, 3,
-                           g_BackdropBlurCaptureHz == 1 ? 0 :
-                           g_BackdropBlurCaptureHz == 60 ? 2 : 1 };
-    settingsRows[1][0] = { SettingsText(L"마스터 볼륨", L"MASTER VOL", L"マスター音量"), s_volBuf, false, true, false, false };
-    settingsRows[1][1] = { SettingsText(L"BGM 채널", L"BGM BUS", L"BGM"), nullptr, false, false, false, false,
-                           { toggleOn, toggleOff }, 2, g_BgmEnabled ? 0 : 1 };
-    settingsRows[1][2] = { SettingsText(L"효과음 채널", L"SFX BUS", L"効果音"), nullptr, false, false, false, false,
-                           { toggleOn, toggleOff }, 2, g_SfxEnabled ? 0 : 1 };
+    settingsRows[1][0] = { SettingsText(L"마스터 볼륨", L"MASTER VOL", L"マスター音量"), s_volBuf, false, true, false, false,
+                           {}, 0, 0, &g_SoundVol };
+    settingsRows[1][1] = { SettingsText(L"BGM 채널", L"BGM BUS", L"BGM"), nullptr, false, true, false, false,
+                           {}, 0, 0, &g_BgmVol };
+    settingsRows[1][2] = { SettingsText(L"효과음 채널", L"SFX BUS", L"効果音"), nullptr, false, true, false, false,
+                           {}, 0, 0, &g_SfxVol };
     settingsRows[1][3] = { SettingsText(L"출력", L"OUTPUT", L"出力"), nullptr, false, false, false, false,
                            { SettingsText(L"스테레오", L"STEREO", L"ステレオ"),
                              SettingsText(L"모노", L"MONO", L"モノ") },
@@ -460,12 +436,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
             if (row == 0) return g_FpsCap != savedSettings.fps;
             if (row == 1) return g_VfxDensity != savedSettings.density;
             if (row == 2) return g_ShowCombo != savedSettings.combo;
-            if (row == 3) return g_BackdropBlurEnabled != savedSettings.backdropBlur;
-            if (row == 4) return g_BackdropBlurCaptureHz != savedSettings.backdropBlurCaptureHz;
         } else if (category == 1) {
             if (row == 0) return g_SoundVol != savedSettings.soundVol;
-            if (row == 1) return g_BgmEnabled != savedSettings.bgmEnabled;
-            if (row == 2) return g_SfxEnabled != savedSettings.sfxEnabled;
+            if (row == 1) return g_BgmVol != savedSettings.bgmVol;
+            if (row == 2) return g_SfxVol != savedSettings.sfxVol;
             if (row == 3) return g_AudioMonoOutput != savedSettings.audioMonoOutput;
             if (row == 4) return g_AudioEngineEnabled != savedSettings.audioEngineEnabled;
         } else if (category == 2) {
@@ -489,12 +463,10 @@ void Scene_SettingsInline(const SceneCtx& c) {
     auto addItem = [&](int cat, int row, const wchar_t* label) {
         list[listCount++] = { cat, row, false, label };
     };
-    const wchar_t* displayLabels[5] = {
+    const wchar_t* displayLabels[3] = {
         SettingsText(L"FPS 제한", L"FPS CAP", L"FPS上限"),
         SettingsText(L"그래픽 품질", L"GRAPHICS", L"グラフィック品質"),
-        SettingsText(L"콤보 HUD", L"COMBO HUD", L"コンボHUD"),
-        SettingsText(L"배경 블러", L"BACKDROP BLUR", L"背景ブラー"),
-        SettingsText(L"블러 갱신 주기", L"BLUR REFRESH RATE", L"ブラー更新間隔") };
+        SettingsText(L"콤보 HUD", L"COMBO HUD", L"コンボHUD") };
     const wchar_t* audioLabels[5] = {
         SettingsText(L"마스터 볼륨", L"MASTER VOL", L"マスター音量"),
         SettingsText(L"BGM 채널", L"BGM BUS", L"BGM"),
@@ -511,7 +483,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     // The left category index is an accordion; keep every right-side option
     // visible so changing categories does not collapse the settings board.
     addHeader(0, SettingsText(L"화면", L"DISPLAY", L"画面"));
-    if (tab == 0) for (int i = 0; i < 5; ++i) addItem(0, i, displayLabels[i]);
+    if (tab == 0) for (int i = 0; i < 3; ++i) addItem(0, i, displayLabels[i]);
     addHeader(1, SettingsText(L"소리", L"AUDIO", L"サウンド"));
     if (tab == 1) for (int i = 0; i < 5; ++i) addItem(1, i, audioLabels[i]);
     addHeader(2, SettingsText(L"게임플레이", L"GAMEPLAY", L"ゲームプレイ"));
@@ -542,6 +514,9 @@ void Scene_SettingsInline(const SceneCtx& c) {
     }
 
     bool focusChanged = accordionFocusPending;
+    // The frame after a category click focuses its first row; that must keep
+    // the category header at the top instead of centering the row.
+    if (accordionFocusPending) scrollToCategory = tab;
     accordionFocusPending = false;
 
     auto isListItem = [&](int index) {
@@ -582,8 +557,14 @@ void Scene_SettingsInline(const SceneCtx& c) {
     const float rightListBottom = sh - 206.0f * uiS;
     const float rightListH = std::max(1.0f, rightListBottom - rightListTop);
     const float rightRowH = 112.0f * uiS;
-    const float rightMaxScroll = std::max(0.0f,
-        (float)rightListCount * rightRowH - rightListH);
+    // Extend the range so even the last category's header can reach the top.
+    int lastHeaderIndex = 0;
+    for (int i = 0; i < rightListCount; ++i)
+        if (rightList[i].header) lastHeaderIndex = i;
+    const float rightContentH = std::max(
+        (float)rightListCount * rightRowH,
+        (float)lastHeaderIndex * rightRowH + rightListH);
+    const float rightMaxScroll = std::max(0.0f, rightContentH - rightListH);
     settingsScrollTarget = std::max(0.0f, std::min(1.0f, settingsScrollTarget));
     // The current scroll value deliberately trails the requested position.
     // This single shared easing drives the left index, right board and both
@@ -619,6 +600,34 @@ void Scene_SettingsInline(const SceneCtx& c) {
         settingsScrollTarget -= g_ScrollAccum * 0.085f;
         settingsScrollTarget = std::max(0.0f, std::min(1.0f, settingsScrollTarget));
         g_ScrollAccum = 0.0f;
+        scrollFollowsBoard = true;
+    }
+    // While the board is wheel-scrolled, the left index follows the category
+    // whose header is at (or has just passed) the top of the right board.
+    // Clicks and W/S focus changes clear the flag via revealFocus, so their
+    // own scroll animation is never overridden.
+    if (scrollFollowsBoard && rightMaxScroll > 0.0f) {
+        // Pick the category covering the largest share of the visible board.
+        const float viewTop = settingsScrollTarget * rightMaxScroll;
+        const float viewBottom = viewTop + rightListH;
+        int followCategory = tab;
+        float bestShare = -1.0f;
+        for (int i = 0; i < rightListCount; ++i) {
+            if (!rightList[i].header) continue;
+            int end = i + 1;
+            while (end < rightListCount && !rightList[end].header) ++end;
+            const float share = std::min(viewBottom, (float)end * rightRowH)
+                              - std::max(viewTop, (float)i * rightRowH);
+            if (share > bestShare) {
+                bestShare = share;
+                followCategory = rightList[i].category;
+            }
+        }
+        if (followCategory != tab) {
+            tab = followCategory;
+            detailRow = 0;
+            listCursor = -1;    // re-resolved to the new category next frame
+        }
     }
     // Hover and wheel scrolling never change the selected category.
     const bool listWKey = c.window && glfwGetKey(c.window, GLFW_KEY_W) == GLFW_PRESS;
@@ -634,9 +643,21 @@ void Scene_SettingsInline(const SceneCtx& c) {
     prevListW = listWKey;
     prevListS = listSKey;
     auto revealFocus = [&]() {
+        scrollFollowsBoard = false;
         if (rightMaxScroll <= 0.0f) {
             settingsScrollTarget = 0.0f;
             return;
+        }
+        if (scrollToCategory >= 0) {
+            for (int i = 0; i < rightListCount; ++i) {
+                if (rightList[i].header
+                    && rightList[i].category == scrollToCategory) {
+                    settingsScrollTarget = std::max(0.0f, std::min(1.0f,
+                        (float)i * rightRowH / rightMaxScroll));
+                    break;
+                }
+            }
+            return;   // cleared at the end of the frame, after every reveal
         }
         int rightFocus = -1;
         if (isListItem(listCursor)) {
@@ -850,16 +871,8 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 };
                 return graphics[optionLanguage][optionIndex];
             }
-            if (row == 2 || row == 3) {
+            if (row == 2) {
                 return kToggleLabels[optionLanguage][optionIndex];
-            }
-            if (row == 4) {
-                static const wchar_t* rates[3][3] = {
-                    { L"1", L"20", L"60" },
-                    { L"1", L"20", L"60" },
-                    { L"1", L"20", L"60" }
-                };
-                return rates[optionLanguage][optionIndex];
             }
         } else if (category == 1) {
             if (row == 1 || row == 2 || row == 4)
@@ -1010,19 +1023,9 @@ void Scene_SettingsInline(const SceneCtx& c) {
                                   && mx >= rightRowX - 12.0f * uiS
                                   && mx < rightRowX + rightRowW
                                   && my >= y && my < y + rightRowH;
-            if (headerHover && lmb && !g_LmbPrev) {
-                for (int k = 0; k < listCount; ++k) {
-                    if (!list[k].header && list[k].category == entry.category) {
-                        listCursor = k;
-                        detailRow = list[k].row;
-                        break;
-                    }
-                }
-                tab = entry.category;
-                focusChanged = true;
-                pulse = 1.0f;
-                tabSwitchT = 0.0f;
-            }
+            // Clicking a board header neither scrolls nor changes the left
+            // accordion; the board only follows wheel scrolling.
+            (void)headerHover;
             const float categoryHeaderScale = settingsScale(
                 g_TextL, 1.0f, UiTextLevel::Subtitle);
             const float categoryHeaderH = g_TextL.Height(
@@ -1053,19 +1056,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
         if (itemHover) {
             hoverCategory = category;
             hoverSettingRow = row;
-            if (lmb && !g_LmbPrev) {
-                tab = category;
-                detailRow = row;
-                listCursor = -1;
-                for (int k = 0; k < listCount; ++k) {
-                    if (!list[k].header && list[k].category == category
-                        && list[k].row == row) {
-                        listCursor = k;
-                        break;
-                    }
-                }
-                focusChanged = true;
-            }
         }
         rowHover[category][row] = UpdateMenuCommandHover(
             rowHover[category][row], itemHover && !setting.readOnly, dt);
@@ -1130,32 +1120,36 @@ void Scene_SettingsInline(const SceneCtx& c) {
             const float volumeScale = settingsScale(
                 g_TextL, 1.0f, UiTextLevel::Title);
             const float volumeValueW = g_TextL.Width(L"100", volumeScale);
-            const float volumeValueGap = 16.0f * uiS;
-            const float slX = rightControlX;
+            // The knob is large, so leave room for its half-width on both ends.
+            const float volumeValueGap = 30.0f * uiS;
+            const float knobR = 17.0f * uiS;
+            int& volValue = *setting.volRef;
+            const float slX = rightControlX + knobR;
             const float slW = std::max(120.0f * uiS,
-                rightControlW - volumeValueW - volumeValueGap);
-            const float vol01 = g_SoundVol / 100.0f;
+                rightControlW - volumeValueW - volumeValueGap - knobR);
+            const float vol01 = volValue / 100.0f;
             const bool inBar = inputReady
-                && mx >= slX - 8.0f * uiS
-                && mx <= slX + slW + volumeValueGap + volumeValueW
-                && my >= controlY - 18.0f * uiS && my <= controlY + 18.0f * uiS;
-            if (inputReady && lmb && (inBar || s_volDrag)) {
-                s_volDrag = true;
+                && mx >= slX - knobR - 4.0f * uiS
+                && mx <= slX + slW + knobR + 4.0f * uiS
+                && my >= controlY - 24.0f * uiS && my <= controlY + 24.0f * uiS;
+            const int dragId = category * 8 + row;
+            if (inputReady && lmb && ((inBar && s_volDrag < 0) || s_volDrag == dragId)) {
+                s_volDrag = dragId;
                 const float t = std::max(0.0f, std::min(1.0f,
                     ((float)mx - slX) / std::max(1.0f, slW)));
-                g_SoundVol = (int)(t * 100.0f + 0.5f);
+                volValue = (int)(t * 100.0f + 0.5f);
             }
-            const float glow = s_volDrag ? 1.0f : focus;
-            drawRect(slX, controlY - 4.0f * uiS, slW, 8.0f * uiS,
+            const float glow = s_volDrag == dragId ? 1.0f : focus;
+            drawRect(slX, controlY - 2.0f * uiS, slW, 4.0f * uiS,
                      0.18f, 0.24f, 0.34f, 0.50f * rowA);
-            drawRect(slX, controlY - 4.0f * uiS, slW * vol01, 8.0f * uiS,
+            drawRect(slX, controlY - 2.0f * uiS, slW * vol01, 4.0f * uiS,
                      0.48f, 0.82f, 1.0f, (0.60f + 0.28f * glow) * rowA);
             drawDiamond(slX + slW * vol01, controlY,
-                        (6.0f + 3.5f * glow) * uiS,
+                        (knobR - 2.0f * uiS) + 3.0f * uiS * glow,
                         0.76f + 0.24f * glow, 0.90f + 0.10f * glow,
                         1.0f, (0.86f + 0.14f * glow) * rowA);
             wchar_t vbuf[8];
-            swprintf_s(vbuf, L"%d", g_SoundVol);
+            swprintf_s(vbuf, L"%d", volValue);
             drawSettingsTextAtLevel(
                 g_TextL, vbuf,
                 slX + slW + volumeValueGap + volumeValueW
@@ -1235,11 +1229,9 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 // The selected value must read as state, not just as a tiny
                 // marker. Keep it near-white at full alpha; non-selected
                 // values remain visible but recede until hovered.
-                const bool blurRateDim = category == 0 && row == 4
-                                      && !g_BackdropBlurEnabled;
                 const float optionA = current
-                    ? (blurRateDim ? 0.62f : 1.0f)
-                    : (blurRateDim ? 0.20f : 0.32f) + 0.44f * optionHoverT;
+                    ? 1.0f
+                    : 0.32f + 0.44f * optionHoverT;
                 const float optionR = current
                     ? catR * 0.42f + 0.58f
                     : catR * (0.68f + 0.18f * optionHoverT);
@@ -1277,11 +1269,11 @@ void Scene_SettingsInline(const SceneCtx& c) {
                 UiTextLevel::Title, 0.58f);
         }
     }
-    if (!lmb) s_volDrag = false;
+    if (!lmb) s_volDrag = -1;
     BatchFlush();
     glDisable(GL_SCISSOR_TEST);
     if (rightMaxScroll > 0.0f && rightListCount > 0) {
-        const float rightTotalH = rightListCount * rightRowH;
+        const float rightTotalH = rightContentH;
         const float thumbH = std::max(32.0f * uiS,
                                       rightListH * (rightListH / rightTotalH));
         const float thumbY = rightListTop
@@ -1294,6 +1286,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     }
 
     if (focusChanged) revealFocus();
+    scrollToCategory = -1;
 
     // Commit controls live below the detail readout. Changes are applied
     // provisionally while browsing, but only this button writes them.
@@ -1424,8 +1417,6 @@ void Scene_SettingsInline(const SceneCtx& c) {
          const int option = hoverSettingOpt;
          pulseRow = row;
          pulse = 1.0f;
-         tab = category;
-         detailRow = row;
          if (category == 0) {
              if (row == 0) {
                  const int fps[] = { 0, 30, 60, 144, 300, -1 };
@@ -1436,22 +1427,9 @@ void Scene_SettingsInline(const SceneCtx& c) {
                                 option == 1 ? VfxDensity::MEDIUM : VfxDensity::FULL;
             } else if (row == 2) {
                 g_ShowCombo = option == 0;
-             } else if (row == 3) {
-                g_BackdropBlurEnabled = option == 0;
-                InvalidateBackdropCapture();
-             } else if (row == 4) {
-                 static const int captureRates[] = { 1, 20, 60 };
-                 g_BackdropBlurCaptureHz = captureRates[option];
-                 InvalidateBackdropCapture();
              }
          } else if (category == 1) {
-             if (row == 1) {
-                 g_BgmEnabled = option == 0;
-                 Audio::SetBgmEnabled(g_BgmEnabled);
-             } else if (row == 2) {
-                 g_SfxEnabled = option == 0;
-                 Audio::SetSfxEnabled(g_SfxEnabled);
-             } else if (row == 3) {
+             if (row == 3) {
                  Audio::SetMonoOutput(option == 1);
                  g_AudioMonoOutput = Audio::IsMonoOutput();
              } else if (row == 4) {

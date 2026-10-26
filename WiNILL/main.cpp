@@ -62,7 +62,6 @@
 #include "SaveSystem.h"
 #include "IconSystem.h"
 #include "Camera.h"
-#include "BlurShader.h"
 #include "MainShader.h"
 #include "EntityDraw.h"
 #include "WaveHud.h"
@@ -448,7 +447,6 @@ float g_BulletRainTimer = 0.0f;
 float g_PrevHP = 100.0f;
 
 // 초당 EXP ?�적??(?�버?????��??�는 죽음, ?�몹 가??
-double g_XpTimeAccum = 0.0; // sub-milli XP carried across frames
 
 static void GrantExperience(XpAmount amount) {
     if (amount <= 0) return;
@@ -2021,7 +2019,8 @@ static void FinishRunVictory(int finalWave, const wchar_t* const (&reason)[3],
     g_GameOverFade = 0.0f;
     g_LastRunRecord = CommitRunResult(
         !PlayRecordsProgress(), static_cast<int>(g_Difficulty), g_GameManager.score,
-        g_Stats.killCount, (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
+        g_Stats.killCount, (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0),
+        g_GameManager.currentWave, true, g_GameTime);
     // The battle is over: the report sits on an empty field, not on a frozen
     // snapshot of the last wave's mobs, shots and summons.
     g_MonsterManager.Clear();
@@ -2490,6 +2489,12 @@ int main() {
 #endif
     LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
     if (g_SmokeRun.Init()) os_pane::SetCoverCheck(false);   // ONEDOW_SMOKE 스모크 캡처 세션 설정
+    if (g_SmokeCapture && SmokeEnv("ONEDOW_SMOKE_RECORDS") == "1") {
+        // Smoke-only PLAY panel records (never saved): easy/hard cleared, normal in progress.
+        g_BestWave[0] = 10; g_BestClearSec[0] = 19 * 60 + 42;
+        g_BestWave[1] = 12; g_BestClearSec[1] = 0;
+        g_BestWave[2] = 20; g_BestClearSec[2] = 41 * 60 + 7;
+    }
 #if !defined(_DEBUG)
     // DEBUG MODE is intentionally available in Release packages for QA.
     // Keep balance telemetry opt-in to debug builds so the QA toggle does not
@@ -2803,8 +2808,10 @@ int main() {
 
     Audio::Init(g_AudioMonoOutput);   // Uses the saved stereo/mono output preference.
     g_AudioMonoOutput = Audio::IsMonoOutput();
-    Audio::SetBgmEnabled(g_BgmEnabled);
-    Audio::SetSfxEnabled(g_SfxEnabled);
+    Audio::SetBgmVolume(g_BgmVol / 100.0f);
+    Audio::SetSfxVolume(g_SfxVol / 100.0f);
+    Audio::SetBgmEnabled(g_BgmEnabled && g_BgmVol > 0);
+    Audio::SetSfxEnabled(g_SfxEnabled && g_SfxVol > 0);
 
     // ============================================================
     // 메인 루프
@@ -3063,7 +3070,6 @@ int main() {
             for (int c = 0; c < MAX_CHAKRAMS; c++) g_Chakrams[c] = ChakramState{};
                                     g_BulletRainTimer = 0.0f;
             g_PrevHP          = g_Stats.maxHP;
-            g_XpTimeAccum     = 0.0f;
             g_OwnedAugs.clear();
             memset(g_TypeOwned, 0, sizeof(g_TypeOwned));
             g_CreativeGodmode  = false;
@@ -3218,7 +3224,8 @@ int main() {
 
             g_LastRunRecord = CommitRunResult(!PlayRecordsProgress(), (int)g_Difficulty,
                                               g_GameManager.score, g_Stats.killCount,
-                                              (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
+                                              (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0),
+                                              g_GameManager.currentWave, false, g_GameTime);
 
             g_GameManager.currentState = GameState::GAMEOVER;
         };
@@ -3907,6 +3914,10 @@ int main() {
         // Keep the main loop music active during gameplay and stop it in menus.
         {
             Audio::SetEnabled(g_AudioEngineEnabled && g_SoundVol > 0);
+            g_BgmEnabled = g_BgmVol > 0;
+            g_SfxEnabled = g_SfxVol > 0;
+            Audio::SetBgmVolume(g_BgmVol / 100.0f);
+            Audio::SetSfxVolume(g_SfxVol / 100.0f);
             Audio::SetBgmEnabled(g_BgmEnabled);
             Audio::SetSfxEnabled(g_SfxEnabled);
             Audio::SetVolume(g_SoundVol / 100.0f);        // 마스??볼륨
@@ -4071,7 +4082,8 @@ int main() {
                 //   ?�리?�이?�브 모드(?�드박스)??코인·기록 ?�외 (?�밍 방�?)
                 g_LastRunRecord = CommitRunResult(!PlayRecordsProgress(), (int)g_Difficulty,
                                                   g_GameManager.score, g_Stats.killCount,
-                                                  (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0));
+                                                  (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0),
+                                                  g_GameManager.currentWave, false, g_GameTime);
             }
         }
 
@@ -4938,12 +4950,6 @@ CollisionSystem::Update(pCX, pCY,
 
             if (g_ShakeTime > 0.0f) g_ShakeTime -= delta;
 
-            // 초당 EXP ?�적 (?��??�는 죽음 + ?�몹 가??
-            if (g_Stats.xpPerSec > 0.0f) {
-                GrantExperience(AccumulateTimedXp(g_XpTimeAccum, g_Stats.xpPerSec,
-                                                  g_Stats.xpMult, delta));
-            }
-
             if (g_Stats.lightStepDisableTimer > 0.0f)
                 g_Stats.lightStepDisableTimer -= delta;
 
@@ -5632,29 +5638,6 @@ CollisionSystem::Update(pCX, pCY,
         // [6] HUD
         g_GameManager.Render();
 
-        // [6.5] In-game modal backdrop blur. Capture after the world and the
-        // GameManager veil, then draw the sharp Scene_* UI on top.
-        {
-            const GameState blurState = g_GameManager.currentState;
-            const bool blurGameplayBackdrop = g_BackdropBlurEnabled &&
-                (blurState == GameState::READY ||
-                 blurState == GameState::PAUSED ||
-                 blurState == GameState::AUG_SELECT ||
-                 blurState == GameState::DEBUFF_SELECT ||
-                 blurState == GameState::AUG_REPLACE ||
-                 blurState == GameState::GAMEOVER ||
-                 (blurState == GameState::SETTINGS &&
-                  g_SettingsReturnTo == GameState::PAUSED));
-
-            if (blurGameplayBackdrop) {
-                InitBlurSystem(screenWidth, screenHeight);
-                CaptureBackdrop(BackdropBlurCaptureIntervalSeconds());
-                DrawBlurPanel(0.0f, 0.0f,
-                              (float)screenWidth, (float)screenHeight,
-                              0.72f, 0.004f, 0.010f, 0.020f);
-            }
-        }
-
         // ?�?�?[7] ?�국???�스??+ 메뉴 ?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?�?
         {
             float sw = (float)screenWidth, sh = (float)screenHeight;
@@ -5765,12 +5748,7 @@ CollisionSystem::Update(pCX, pCY,
 
             // ?�?�?[7b] UI ???�스?�치 ??메뉴/�??�태??Scene_* ?�수�?분리 ?�?�?
             //    RUNNING/DYING(?�수 ?�게?????�이 ?�으??컨텍?�트 구성 ?�체�?건너?�?
-            // Desktop blur is a window setting, independent of the game scene.
-            // World/HUD remain sharp during play; only modal UI blurs game pixels.
-            // Panes and the real windows around them must read clearly, so the
-            // desktop blur stays off while any pane is open.
-            ConfigureWindowBackdropBlur(window, g_BackdropBlurEnabled && !os_pane::AnyOpen());
-            UpdateGameTextHalo(screenHeight, g_BackdropBlurEnabled);
+            UpdateGameTextHalo(screenHeight);
 
             // Scene_* dispatch still includes READY and the in-run menus;
             // this flag only controls which state gets the scene composition.

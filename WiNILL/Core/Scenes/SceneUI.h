@@ -51,6 +51,11 @@ void DrawUnifiedMenuCommand(const wchar_t* label, float x, float y, float w, flo
                             bool centerText = false,
                             const wchar_t* const* labelVariants = nullptr,
                             int labelVariantCount = 0);
+// Shared BACK button at the bottom-left anchor used by every sub-page.
+// Returns true on the frame it is clicked.
+bool DrawBottomLeftBackButton(float& hover, float sw, float sh, float uiScale,
+                              double mx, double my, bool lmb, bool lmbPrev,
+                              float alpha, float now, float dt);
 bool PanelButtonHit(double mx, double my,
                     float x, float y, float w, float h,
                     float hitPadding = 0.0f);

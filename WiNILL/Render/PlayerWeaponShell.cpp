@@ -321,3 +321,87 @@ void DrawPlayerWeaponShell(float cx, float cy, float sz, float aimAng, float vis
     }
     }
 }
+
+static void DrawPlayerRing(float cx, float cy, float rad, float thick,
+                           float r, float g, float b, float a) {
+    const int N = 72;
+    float px = cx + rad, py = cy;
+    for (int i = 1; i <= N; ++i) {
+        float th = (float)i / (float)N * 6.2831853f;
+        float x = cx + cosf(th) * rad, y = cy + sinf(th) * rad;
+        DrawPlayerLine(px, py, x, y, thick, r, g, b, a);
+        px = x; py = y;
+    }
+}
+
+static void DrawPlayerDiamondOutline(float cx, float cy, float rad, float thick,
+                                     float r, float g, float b, float a) {
+    DrawPlayerLine(cx, cy - rad, cx + rad, cy, thick, r, g, b, a);
+    DrawPlayerLine(cx + rad, cy, cx, cy + rad, thick, r, g, b, a);
+    DrawPlayerLine(cx, cy + rad, cx - rad, cy, thick, r, g, b, a);
+    DrawPlayerLine(cx - rad, cy, cx, cy - rad, thick, r, g, b, a);
+}
+
+// Lobby-size version of the in-game shell: same frames and proportions, but
+// lines only (no fills, no dashes), widths scale with size, no combat input.
+void DrawPlayerShellPreview(int kind, float cx, float cy, float sz, float time,
+                            float cr, float cg, float cb, float alpha) {
+    if (!(alpha > 0.0f) || !(sz > 1.0f)) return;
+    const float ls = std::max(1.0f, std::min(2.8f, sz / 28.0f));
+    const float wr = cr + (1.0f - cr) * 0.7f;
+    const float wg = cg + (1.0f - cg) * 0.7f;
+    const float wb = cb + (1.0f - cb) * 0.7f;
+    const float t = time * 0.6f;
+    const float a = alpha;
+
+    if (kind == 0) {
+        const float outerAng = t * 1.10f;
+        const float innerAng = -t * 0.55f + 0.78539816f;
+        const float scopeAng = -t * 0.20f;
+        auto rx = [&](float lx, float ly) { return cx + lx * cosf(scopeAng) - ly * sinf(scopeAng); };
+        auto ry = [&](float lx, float ly) { return cy + lx * sinf(scopeAng) + ly * cosf(scopeAng); };
+
+        DrawPlayerRing(cx, cy, sz * 1.86f, 0.9f * ls, cr, cg, cb, 0.30f * a);
+        for (int i = 0; i < 2; ++i) {
+            float na = scopeAng * 1.55f + (float)i * 3.1415926f;
+            drawDiamond(cx + cosf(na) * sz * 1.86f, cy + sinf(na) * sz * 1.86f,
+                        sz * 0.095f, wr, wg, wb, 0.70f * a);
+        }
+        const float corner = sz * 1.45f, leg = sz * 0.34f;
+        for (int ix = -1; ix <= 1; ix += 2) {
+            for (int iy = -1; iy <= 1; iy += 2) {
+                float x0 = (float)ix * corner, y0 = (float)iy * corner;
+                DrawPlayerLine(rx(x0, y0), ry(x0, y0),
+                               rx(x0 - (float)ix * leg, y0), ry(x0 - (float)ix * leg, y0),
+                               1.35f * ls, cr, cg, cb, 0.45f * a);
+                DrawPlayerLine(rx(x0, y0), ry(x0, y0),
+                               rx(x0, y0 - (float)iy * leg), ry(x0, y0 - (float)iy * leg),
+                               1.35f * ls, cr, cg, cb, 0.45f * a);
+                drawDiamond(rx(x0, y0), ry(x0, y0), sz * 0.060f, wr, wg, wb, 0.55f * a);
+            }
+        }
+        DrawPlayerCrossStarFrame(cx, cy, sz * 1.24f, sz * 0.33f, outerAng,
+                                 cr, cg, cb, 0.62f * a, 1.35f * ls, true, true);
+        DrawPlayerCrossStarFrame(cx, cy, sz * 0.76f, sz * 0.22f, innerAng,
+                                 wr, wg, wb, 0.92f * a, 2.2f * ls, true, true);
+        DrawPlayerDiamondOutline(cx, cy, sz * 0.16f, 1.5f * ls, cr, cg, cb, 0.95f * a);
+        drawDiamond(cx, cy, sz * 0.10f, wr, wg, wb, 0.95f * a);
+    } else {
+        const float hexAng = 0.5235988f - t * 0.50f;
+        const float triAng = t * 1.20f;
+        DrawPlayerHexFrame(cx, cy, sz * 1.90f, 0.5235988f + t * 0.05f,
+                           cr, cg, cb, 0.22f * a, 1.0f * ls, false);
+        DrawPlayerHexFrame(cx, cy, sz * 1.45f, hexAng * 0.70f + 0.30f,
+                           cr, cg, cb, 0.34f * a, 1.0f * ls, false);
+        for (int i = 0; i < 6; ++i) {
+            float va = hexAng + (float)i * 1.04719755f;
+            DrawPlayerLine(cx + cosf(va) * sz * 0.40f, cy + sinf(va) * sz * 0.40f,
+                           cx + cosf(va) * sz * 1.17f, cy + sinf(va) * sz * 1.17f,
+                           0.9f * ls, cr, cg, cb, 0.28f * a);
+        }
+        DrawPlayerHexFrame(cx, cy, sz * 1.17f, hexAng, cr, cg, cb, 0.70f * a, 1.55f * ls, true);
+        DrawPlayerTriangleFrame(cx, cy, sz * 0.82f, triAng, wr, wg, wb, 0.92f * a, 2.0f * ls, true);
+        DrawPlayerTriangleFrame(cx, cy, sz * 0.38f, -triAng, cr, cg, cb, 0.95f * a, 1.5f * ls, false);
+        drawDiamond(cx, cy, sz * 0.12f, wr, wg, wb, 0.95f * a);
+    }
+}

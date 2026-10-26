@@ -72,7 +72,7 @@ private:
     // Empty texels baked around every glyph so the halo can fall off
     // inside the glyph's own atlas cell.
     static constexpr int kGlyphPad = 4;
-    void   SetHaloUniforms(float scale);
+    void   SetHaloUniforms(float scale, float texelScale);
 
     struct FontFace {
         std::vector<unsigned char> data;
@@ -100,7 +100,15 @@ private:
     float  minScale_    = 0.0f;
 
     int    FaceForCodepoint(int cp) const;
-    Glyph& GetGlyph(int cp);
+    // px < 0 (or ~emPx_) = the base bake; otherwise the glyph rasterised at px so large or
+    // small text is drawn ~1:1 instead of stretching the base bitmap (blur/fat halo).
+    Glyph& GetGlyph(int cp, float px = -1.0f);
+    float  ChooseBakePx(float scale) const {
+        const float want = emPx_ * scale;
+        if (!(want > 0.0f) || std::fabs(want - emPx_) < 1.5f) return emPx_;
+        return std::max(8.0f, std::min(300.0f, std::floor(want * 0.5f + 0.5f) * 2.0f));
+    }
+    std::unordered_map<long long, Glyph> sizedGlyphs_;
     int    AllocateAtlasRect(int w, int h, int& x, int& y);
     void   CreateAtlasPage();
     bool   FinishInit(int ptSize, int sw, int sh);
@@ -265,20 +273,30 @@ inline int TextRenderer::FaceForCodepoint(int cp) const
     return -1;
 }
 
-inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
+inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp, float px)
 {
-    auto it = glyphs_.find(cp);
-    if (it != glyphs_.end()) return it->second;
+    const bool sized = px > 0.0f && px != emPx_;
+    const long long sizedKey = ((long long)(int)px << 32) | (unsigned)cp;
+    if (sized) {
+        auto sit = sizedGlyphs_.find(sizedKey);
+        if (sit != sizedGlyphs_.end()) return sit->second;
+    } else {
+        auto it = glyphs_.find(cp);
+        if (it != glyphs_.end()) return it->second;
+    }
+    auto store = [&](const Glyph& v) -> Glyph& {
+        return sized ? (sizedGlyphs_[sizedKey] = v) : (glyphs_[cp] = v);
+    };
 
     Glyph g;
     int fi = FaceForCodepoint(cp);
     if (fi < 0) {
         // 미지원 글자 — ? 대신 공백 폭만 (사용자에게 물음표 노출 방지)
-        if (cp != L' ' && cp > 32) return GetGlyph(L' ');
-        return glyphs_[cp] = g;
+        if (cp != L' ' && cp > 32) return GetGlyph(L' ', px);
+        return store(g);
     }
     const stbtt_fontinfo* fn = &faces_[fi].info;
-    float s = stbtt_ScaleForMappingEmToPixels(fn, emPx_);
+    float s = stbtt_ScaleForMappingEmToPixels(fn, sized ? px : emPx_);
     int adv = 0, lsb = 0;
     stbtt_GetCodepointHMetrics(fn, cp, &adv, &lsb);
     g.advance = adv * s;
@@ -311,7 +329,7 @@ inline TextRenderer::Glyph& TextRenderer::GetGlyph(int cp)
             g.yoff = iy0;
         }
     }
-    return glyphs_[cp] = g;
+    return store(g);
 }
 
 inline void TextRenderer::CreateAtlasPage()
@@ -362,6 +380,7 @@ inline int TextRenderer::AllocateAtlasRect(int w, int h, int& x, int& y)
 
 inline void TextRenderer::Cleanup() {
     glyphs_.clear();
+    sizedGlyphs_.clear();
     for (auto& page : atlasPages_)
         if (page.tex) glDeleteTextures(1, &page.tex);
     atlasPages_.clear();
@@ -392,15 +411,15 @@ inline float TextRenderer::Height(const wchar_t* /*text*/, float scale)
     return lineHeightPx_ * scale;
 }
 
-inline void TextRenderer::SetHaloUniforms(float scale)
+inline void TextRenderer::SetHaloUniforms(float scale, float texelScale)
 {
     // The halo scales with the rendered text size (about 7% of the em) up to
     // the configured width, so small labels keep open counters instead of
     // turning into dark blobs. Never sample past the baked glyph padding.
     const float textPx = emPx_ * scale;
     const float radiusPx = std::min(haloRadiusPx_, std::max(0.9f, textPx * 0.07f));
-    const float radiusTexels = scale > 0.0f
-        ? std::min((float)kGlyphPad - 0.5f, radiusPx / scale) : 0.0f;
+    const float radiusTexels = texelScale > 0.0f
+        ? std::min((float)kGlyphPad - 0.5f, radiusPx / texelScale) : 0.0f;
     // halo.x = how much of the text colour the halo keeps (a dark shade of
     // the glyph itself rather than a fixed navy outline).
     glUniform4f(uHalo_, 0.18f, 0.0f, 0.0f, haloStrength_);
@@ -418,19 +437,21 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
     runs.clear();
     drawVertices_.clear();
 
+    const float bakePx = ChooseBakePx(scale);
+    const float k = emPx_ * scale / bakePx;
     float penX = x;
     const float baseline = y + ascentPx_ * scale;
     for (const wchar_t* p = text; *p; ++p) {
-        Glyph& glyph = GetGlyph((int)*p);
+        Glyph& glyph = GetGlyph((int)*p, bakePx);
         if (glyph.atlasPage >= 0) {
             if (runs.empty() || runs.back().page != glyph.atlasPage) {
                 runs.push_back({glyph.atlasPage,
                     (GLsizei)(drawVertices_.size() / 4u), 0});
             }
             GlyphRun& run = runs.back();
-            const float gx = penX + glyph.xoff * scale;
-            const float gy = baseline + glyph.yoff * scale;
-            const float gw = glyph.w * scale, gh = glyph.h * scale;
+            const float gx = std::floor(penX + glyph.xoff * k + 0.5f);
+            const float gy = std::floor(baseline + glyph.yoff * k + 0.5f);
+            const float gw = glyph.w * k, gh = glyph.h * k;
             const float quad[] = {
                 gx,      gy,      glyph.u0, glyph.v0,
                 gx + gw, gy,      glyph.u1, glyph.v0,
@@ -442,7 +463,7 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
             drawVertices_.insert(drawVertices_.end(), quad, quad + 24);
             run.count += 6;
         }
-        penX += glyph.advance * scale;
+        penX += glyph.advance * k;
     }
     if (drawVertices_.empty()) return;
 
@@ -458,7 +479,7 @@ inline void TextRenderer::Draw(const wchar_t* text, float x, float y, float scal
     glUseProgram(prog_);
     glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
     glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
-    SetHaloUniforms(scale);
+    SetHaloUniforms(scale, k);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(VAO_);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);
@@ -483,6 +504,8 @@ inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
     runs.clear();
     drawVertices_.clear();
 
+    const float bakePx = ChooseBakePx(scale);
+    const float k = emPx_ * scale / bakePx;
     const float ca = std::cos(angle), sa = std::sin(angle);
     const float baseline = ascentPx_ * scale;
     float pen = 0.0f;
@@ -491,16 +514,16 @@ inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
         oy = y + lx * sa + ly * ca;
     };
     for (const wchar_t* p = text; *p; ++p) {
-        Glyph& glyph = GetGlyph((int)*p);
+        Glyph& glyph = GetGlyph((int)*p, bakePx);
         if (glyph.atlasPage >= 0) {
             if (runs.empty() || runs.back().page != glyph.atlasPage) {
                 runs.push_back({glyph.atlasPage,
                     (GLsizei)(drawVertices_.size() / 4u), 0});
             }
             GlyphRun& run = runs.back();
-            const float gx = pen + glyph.xoff * scale;
-            const float gy = baseline + glyph.yoff * scale;
-            const float gw = glyph.w * scale, gh = glyph.h * scale;
+            const float gx = pen + glyph.xoff * k;
+            const float gy = baseline + glyph.yoff * k;
+            const float gw = glyph.w * k, gh = glyph.h * k;
             float x0, y0, x1, y1, x2, y2, x3, y3;
             rotatePoint(gx,      gy,      x0, y0);
             rotatePoint(gx + gw, gy,      x1, y1);
@@ -517,7 +540,7 @@ inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
             drawVertices_.insert(drawVertices_.end(), quad, quad + 24);
             run.count += 6;
         }
-        pen += glyph.advance * scale;
+        pen += glyph.advance * k;
     }
     if (drawVertices_.empty()) return;
 
@@ -533,7 +556,7 @@ inline void TextRenderer::DrawRotated(const wchar_t* text, float x, float y,
     glUseProgram(prog_);
     glUniformMatrix4fv(uProj_, 1, GL_FALSE, P);
     glUniform4f(uCol_, r, g, b, a * g_BatchAlpha);
-    SetHaloUniforms(scale);
+    SetHaloUniforms(scale, k);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(VAO_);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_);

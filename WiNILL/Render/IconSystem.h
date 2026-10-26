@@ -411,12 +411,47 @@ inline GLuint g_ConstellationCircleTex = 0;
 inline GLuint g_InGameCircleTex = 0;
 inline GLuint g_ConfigPanelTex = 0;
 inline GLuint g_LeftGradientTex = 0;
+inline GLuint g_TitleLogoTex[2] = { 0, 0 };   // handwritten (A), jagged (B)
+inline int    g_TitleLogoW[2] = { 0, 0 };
+inline int    g_TitleLogoH[2] = { 0, 0 };
 inline constexpr float kInGameCircleAlphaBoost = 1.7f;
 inline const char* const g_JobIconNames[7] = {
     "", "", "", "", "", "", ""
 };
 
-// 모든 증강/직업 아이콘 로드 — 임베디드 리소스 우선(파일 폴백). 없으면 0 → 미표시.
+// Title logo masks (white on transparent). Embedded resource first, then
+// Resource/Icons/<file>; the size is kept so the logo keeps its aspect.
+inline void LoadTitleLogos() {
+    static const char* const kRes[2]  = { "ICON_TITLE_LOGO_A", "ICON_TITLE_LOGO_B" };
+    static const char* const kFile[2] = { "TitleLogoA", "TitleLogoB" };
+    for (int i = 0; i < 2; ++i) {
+        if (g_TitleLogoTex[i]) continue;
+        unsigned char* d = nullptr;
+        int w = 0, h = 0, n = 0;
+#ifdef _WIN32
+        HMODULE hm = GetModuleHandleW(NULL);
+        if (HRSRC hr = FindResourceA(hm, kRes[i], MAKEINTRESOURCEA(10))) {
+            HGLOBAL hg = LoadResource(hm, hr);
+            const void* p = hg ? LockResource(hg) : nullptr;
+            const DWORD sz = hg ? SizeofResource(hm, hr) : 0;
+            if (p && sz) d = stbi_load_from_memory((const unsigned char*)p, (int)sz, &w, &h, &n, 4);
+        }
+#endif
+        if (!d) {
+            char path[320];
+            std::snprintf(path, sizeof(path), "%s/%s.png", g_IconBaseDir, kFile[i]);
+            d = stbi_load(path, &w, &h, &n, 4);
+        }
+        if (!d) continue;
+        g_TitleLogoTex[i] = IconTexFromRGBA(d, w, h);
+        g_TitleLogoW[i] = w;
+        g_TitleLogoH[i] = h;
+        stbi_image_free(d);
+        IconEnableMipmaps(g_TitleLogoTex[i]);
+    }
+}
+
+// 모든 증강/직업 아이콘 로드 —임베디드 리소스 우선(파일 폴백). 없으면 0 → 미표시.
 inline void LoadIcons() {
     ResolveIconDir();   // 파일 폴백 경로 확정 (리소스 없을 때만 사용)
     for (int i = 0; i < AUG_TOTAL; i++) {
@@ -476,6 +511,8 @@ inline void LoadIcons() {
             if (g_LeftGradientTex) break;
         }
     }
+
+    LoadTitleLogos();
 
     IconEnableMipmaps(g_ConstellationCircleTex);
     IconEnableMipmaps(g_InGameCircleTex);

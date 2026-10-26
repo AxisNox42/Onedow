@@ -24,7 +24,6 @@
 #include "../../Render/PlanetShader.h"
 #include "../../Render/NebulaGlowShader.h"
 #include "MainShader.h"
-#include "../../Render/BlurShader.h"
 #include "../../System/Audio.h"
 #include "TextRenderer.h"
 #include "IconSystem.h"
@@ -66,23 +65,6 @@ float UiApproach(float v, float target, float dt, float speed) {
     return v + (target - v) * k;
 }
 
-struct ConstellationMotionProfile {
-    float rotationSpeed;
-    float radialPull;
-    float edgeAlpha;
-    float nodePulse;
-    float alignmentStrength;
-};
-
-struct ConstellationMotionState {
-    ConstellationMotionProfile current{};
-    ConstellationMotionProfile target{};
-    float phase = 0.0f;
-    bool initialized = false;
-};
-
-static ConstellationMotionState s_MainMenuConstellationMotion;
-
 // One source of truth for labels that remain visible while a page is being
 // entered or exited.  Transition overlays used to carry their own legacy
 // English route IDs, which caused names such as ASTRAL_LOG to flash before the
@@ -98,54 +80,6 @@ const wchar_t* MainMenuRouteLabel(int language, int index) {
     return kRoutes[li][mi];
 }
 
-static ConstellationMotionProfile MainMenuMotionProfile(int menuIndex) {
-    static constexpr ConstellationMotionProfile kIdle =
-        { 1.35f,  0.00f, 0.74f, 0.64f, 0.10f };
-    static constexpr ConstellationMotionProfile kProfiles[5] = {
-        { 1.90f, -0.08f, 0.90f, 1.00f, 0.12f }, // PLAY(STAR CHART): core convergence
-        { 1.72f,  0.10f, 1.00f, 0.92f, 0.08f }, // ARMORY: radial expansion
-        { 0.92f,  0.01f, 0.82f, 0.62f, 0.20f }, // ASTRAL_LOG: stable observation
-        { 1.12f,  0.00f, 0.88f, 0.72f, 0.78f }, // CALIBRATION: orbital alignment
-        { 0.34f, -0.06f, 0.46f, 0.28f, 0.42f }, // SHUTDOWN: motion decay
-    };
-    return (menuIndex >= 0 && menuIndex < 5) ? kProfiles[menuIndex] : kIdle;
-}
-
-static bool MotionProfileSettled(const ConstellationMotionProfile& a,
-                                 const ConstellationMotionProfile& b) {
-    return std::abs(a.rotationSpeed - b.rotationSpeed) < 0.005f
-        && std::abs(a.radialPull - b.radialPull) < 0.005f
-        && std::abs(a.edgeAlpha - b.edgeAlpha) < 0.003f
-        && std::abs(a.nodePulse - b.nodePulse) < 0.003f
-        && std::abs(a.alignmentStrength - b.alignmentStrength) < 0.005f;
-}
-
-static void UpdateMainMenuConstellationMotion(int menuIndex, float dt) {
-    ConstellationMotionState& state = s_MainMenuConstellationMotion;
-    state.target = MainMenuMotionProfile(menuIndex);
-    if (!state.initialized) {
-        state.current = state.target;
-        state.initialized = true;
-    } else {
-        const float clampedDt = std::min(dt, 0.05f);
-        const float follow = 1.0f - expf(-7.5f * clampedDt);
-        auto approach = [follow](float current, float target) {
-            return current + (target - current) * follow;
-        };
-        state.current.rotationSpeed = approach(state.current.rotationSpeed, state.target.rotationSpeed);
-        state.current.radialPull = approach(state.current.radialPull, state.target.radialPull);
-        state.current.edgeAlpha = approach(state.current.edgeAlpha, state.target.edgeAlpha);
-        state.current.nodePulse = approach(state.current.nodePulse, state.target.nodePulse);
-        state.current.alignmentStrength = approach(state.current.alignmentStrength,
-                                                   state.target.alignmentStrength);
-        if (MotionProfileSettled(state.current, state.target))
-            state.current = state.target;
-    }
-
-    constexpr float kTau = 6.28318530717958647692f;
-    state.phase = fmodf(state.phase
-                        + state.current.rotationSpeed * std::min(dt, 0.05f), kTau);
-}
 
 
 
@@ -175,8 +109,10 @@ void SmokeOpenMenuPanel(int panel) {
     default: break;
     }
 }
+static void DrawInfiniteConstellationField(float sw, float sh, float strength);
 // 메인메뉴·난이도선택 공용 앰비언트 배경 (파티클 + 스캔라인 + 선택적 비네트)
-void DrawMenuBackground(float sw, float sh, float delta, float darkenAmount) {
+void DrawMenuBackground(float sw, float sh, float delta, float darkenAmount,
+                        float skyStrength) {
     float dtp = delta; if (dtp > 0.05f) dtp = 0.05f;
     BindMainShader();
     if (darkenAmount < 0.0f) darkenAmount = 0.0f;
@@ -187,31 +123,7 @@ void DrawMenuBackground(float sw, float sh, float delta, float darkenAmount) {
         drawRect(0, 0, sw, sh, 0.04f, 0.06f, 0.14f, 0.16f * darkenAmount);
     }
 
-    struct AP { float x, y, vx, vy, sz, tw; };
-    constexpr int kParticleCount = 30;
-    static AP a_ps[kParticleCount]; static bool ap_init = false;
-    if (!ap_init) { ap_init = true;
-        for (int i = 0; i < kParticleCount; i++) {
-            a_ps[i].x = (float)(rand()%(int)sw); a_ps[i].y = (float)(rand()%(int)sh);
-            float ang = (rand()%628)*0.01f, spd = 5.0f + (rand()%16);
-            a_ps[i].vx = cosf(ang)*spd; a_ps[i].vy = sinf(ang)*spd;
-            a_ps[i].sz = 1.2f + (rand()%26)*0.1f; a_ps[i].tw = (rand()%628)*0.01f;
-        }
-    }
-    // 성운 3색 파티클 (바이올렛 / 마젠타 / 차가운 별빛)
-    static const float kNebR[3] = { 0.42f, 0.92f, 0.72f };
-    static const float kNebG[3] = { 0.28f, 0.22f, 0.82f };
-    static const float kNebB[3] = { 1.00f, 0.78f, 1.00f };
-    const int visibleParticles = (g_VfxDensity == VfxDensity::REDUCED) ? 18 : kParticleCount;
-    for (int i = 0; i < visibleParticles; i++) { AP& p = a_ps[i];
-        p.x += p.vx*dtp; p.y += p.vy*dtp;
-        if (p.x < -8) p.x = sw+8; if (p.x > sw+8) p.x = -8;
-        if (p.y < -8) p.y = sh+8; if (p.y > sh+8) p.y = -8;
-        p.tw += dtp*1.6f;
-        int ci = i % 3;
-        drawCircle(p.x, p.y, p.sz, kNebR[ci], kNebG[ci], kNebB[ci],
-                   PulsedAmbientAlpha(0.050f, 0.025f, p.tw));
-    }
+    DrawInfiniteConstellationField(sw, sh, skyStrength);
     // The post-process CRT shader already supplies scanlines. Keep this
     // decorative pass only when CRT is off so thin menu geometry is not doubled.
     if (!g_ShaderFx) {
@@ -401,11 +313,10 @@ static void DrawAstralDataPlate(float x, float y, float w, float h,
 }
 
 // Constellation geometry sits directly on the desktop (no plate behind it).
-// Faint lines and nodes are tuned for a dark or blurred backdrop, so with a
-// sharp desktop they need their own dark keyline, the same idea as the text
-// halo. A blurred desktop only gets a light touch to keep the original look.
+// Faint lines and nodes are tuned for a dark backdrop, so on a sharp desktop
+// they need their own dark keyline, the same idea as the text halo.
 static float ConstellGeometryHalo() {
-    return g_BackdropBlurEnabled ? 0.25f : 1.0f;
+    return 1.0f;
 }
 
 void DrawVisibleConstellLine(float x1, float y1, float x2, float y2,
@@ -488,6 +399,186 @@ void DrawConstellationDisc(float x, float y, float radius,
                                   float r, float g, float b, float a,
                                   bool darkenBlend) {
     DrawConstellationDiscEllipse(x, y, radius, radius, r, g, b, a, darkenBlend);
+}
+
+// ── Infinite constellation sky ───────────────────────────────────────────
+// The lobby backdrop is a camera drifting over a sky with no edge. The sky is
+// an endless grid of cells; each cell deterministically grows its own small
+// constellation from a hash of its coordinates, so the same patch always looks
+// the same and nothing has to be stored. The camera starts at a random place
+// every launch and meanders slowly, like a survey camera sweeping the sky.
+namespace {
+struct SkyCell {
+    int   n = 0;
+    float x[8], y[8], mag[8], phase[8];
+};
+
+uint32_t SkyHash(int cx, int cy, uint32_t salt) {
+    uint32_t h = (uint32_t)cx * 0x9E3779B1u ^ (uint32_t)cy * 0x85EBCA77u ^ salt * 0xC2B2AE3Du;
+    h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12; h *= 0x297A2D39u; h ^= h >> 15;
+    return h;
+}
+
+float SkyRand(uint32_t& h) {
+    h = h * 1664525u + 1013904223u;
+    return (float)(h >> 8) / 16777216.0f;
+}
+
+SkyCell MakeSkyCell(int cx, int cy, uint32_t salt, int minStars, int maxStars) {
+    SkyCell c;
+    uint32_t h = SkyHash(cx, cy, salt);
+    if (SkyRand(h) < 0.14f) return c;                       // empty patch of sky
+    c.n = minStars + (int)(SkyRand(h) * (float)(maxStars - minStars + 1));
+    if (c.n > 8) c.n = 8;
+    for (int i = 0; i < c.n; ++i) {
+        c.x[i] = 0.14f + 0.72f * SkyRand(h);
+        c.y[i] = 0.14f + 0.72f * SkyRand(h);
+        const float m = SkyRand(h);
+        c.mag[i] = m * m;                                    // few bright, many faint
+        c.phase[i] = SkyRand(h) * 6.2831853f;
+    }
+    return c;
+}
+
+// Minimum spanning chain (Prim) so every star joins its constellation, then a
+// hash-chosen cut and loop so shapes differ from cell to cell.
+int BuildSkyEdges(const SkyCell& c, uint32_t salt, int cx, int cy, int (*edge)[2]) {
+    if (c.n < 2) return 0;
+    bool in[8] = {};
+    int count = 0;
+    in[0] = true;
+    float longest = -1.0f; int longestIdx = -1;
+    for (int step = 1; step < c.n; ++step) {
+        float best = 1e9f; int bi = -1, bj = -1;
+        for (int i = 0; i < c.n; ++i) if (in[i])
+            for (int j = 0; j < c.n; ++j) if (!in[j]) {
+                const float dx = c.x[i] - c.x[j], dy = c.y[i] - c.y[j];
+                const float d = dx * dx + dy * dy;
+                if (d < best) { best = d; bi = i; bj = j; }
+            }
+        in[bj] = true;
+        edge[count][0] = bi; edge[count][1] = bj;
+        if (best > longest) { longest = best; longestIdx = count; }
+        ++count;
+    }
+    uint32_t h = SkyHash(cx, cy, salt ^ 0x51ED270Bu);
+    if (c.n >= 5 && SkyRand(h) < 0.30f && longestIdx >= 0) {   // split in two
+        edge[longestIdx][0] = edge[count - 1][0];
+        edge[longestIdx][1] = edge[count - 1][1];
+        --count;
+    }
+    if (c.n >= 4 && SkyRand(h) < 0.35f) {                      // close a loop
+        float best = 1e9f; int bi = -1, bj = -1;
+        for (int i = 0; i < c.n; ++i)
+            for (int j = i + 1; j < c.n; ++j) {
+                bool linked = false;
+                for (int e = 0; e < count; ++e)
+                    if ((edge[e][0] == i && edge[e][1] == j) || (edge[e][0] == j && edge[e][1] == i)) linked = true;
+                if (linked) continue;
+                const float dx = c.x[i] - c.x[j], dy = c.y[i] - c.y[j];
+                const float d = dx * dx + dy * dy;
+                if (d < best) { best = d; bi = i; bj = j; }
+            }
+        if (bi >= 0 && count < 9) { edge[count][0] = bi; edge[count][1] = bj; ++count; }
+    }
+    return count;
+}
+
+struct SkyCamera {
+    bool  init = false;
+    float x = 0.0f, y = 0.0f, t = 0.0f, heading0 = 0.0f;
+};
+} // namespace
+
+static void DrawInfiniteConstellationField(float sw, float sh, float strengthTarget) {
+    static SkyCamera cam;
+    static double lastTime = -1.0;
+    static float strength = -1.0f;
+    // Real elapsed time, so a page that draws the backdrop a second time in
+    // one frame cannot advance the camera twice.
+    const double timeNow = glfwGetTime();
+    float dt = lastTime < 0.0 ? 0.0f : (float)(timeNow - lastTime);
+    lastTime = timeNow;
+    dt = std::max(0.0f, std::min(dt, 0.05f));
+    strength = strength < 0.0f ? strengthTarget
+             : strength + (strengthTarget - strength) * (1.0f - expf(-6.0f * dt));
+    const float sk = strength;
+    // Only the lobby gets the wallpaper-proof keyline treatment (which lifts
+    // faint lines); other pages fade down to plain, quiet hairlines.
+    const float lobbyW = std::max(0.0f, std::min(1.0f, (sk - 0.30f) / 0.70f));
+    if (!cam.init) {
+        cam.init = true;
+        uint32_t seed = (uint32_t)(glfwGetTime() * 1e6) ^ ((uint32_t)rand() * 40503u);
+        cam.x = SkyRand(seed) * 400000.0f - 200000.0f;
+        cam.y = SkyRand(seed) * 400000.0f - 200000.0f;
+        cam.heading0 = SkyRand(seed) * 6.2831853f;
+    }
+    cam.t += dt;
+    // The heading wanders instead of spinning, so the sweep never looks mechanical.
+    const float heading = cam.heading0 + 0.55f * sinf(cam.t * 0.043f)
+                        + 0.30f * sinf(cam.t * 0.117f + 1.7f);
+    const float speed = 26.0f;
+    cam.x += cosf(heading) * speed * dt;
+    cam.y += sinf(heading) * speed * dt;
+
+    const float uiS = std::max(0.75f, std::min(1.6f, sh / 1080.0f));
+    const bool reduced = (g_VfxDensity == VfxDensity::REDUCED);
+    struct Layer { float parallax, cell, lineA, starA, size, thick; int minS, maxS; uint32_t salt; };
+    const Layer layers[3] = {
+        { 0.28f, 380.0f, 0.16f, 0.45f, 0.80f, 0.60f, 3, 5, 0xA11u },   // far
+        { 0.58f, 470.0f, 0.26f, 0.65f, 1.05f, 0.75f, 3, 6, 0xB22u },   // mid
+        { 1.00f, 600.0f, 0.42f, 0.95f, 1.40f, 0.90f, 4, 7, 0xC33u },   // near
+    };
+    const int layerCount = reduced ? 2 : 3;
+    const float now = (float)glfwGetTime();
+    BindMainShader();
+    for (int li = 0; li < layerCount; ++li) {
+        const Layer& L = layers[li];
+        const float cell = L.cell * uiS;
+        const float ox = cam.x * L.parallax * uiS, oy = cam.y * L.parallax * uiS;
+        const int c0x = (int)floorf(ox / cell), c0y = (int)floorf(oy / cell);
+        const int cols = (int)ceilf(sw / cell) + 2, rows = (int)ceilf(sh / cell) + 2;
+        for (int ry = -1; ry < rows; ++ry)
+        for (int rx = -1; rx < cols; ++rx) {
+            const int cx = c0x + rx, cy = c0y + ry;
+            const SkyCell sc = MakeSkyCell(cx, cy, L.salt, L.minS, L.maxS);
+            if (sc.n == 0) continue;
+            const float baseX = (float)cx * cell - ox, baseY = (float)cy * cell - oy;
+            int edge[10][2];
+            const int ne = BuildSkyEdges(sc, L.salt, cx, cy, edge);
+            // Cool starlight with a faint violet lean per cell, matching the old nebula tint.
+            uint32_t th = SkyHash(cx, cy, L.salt ^ 0x77u);
+            const float tint = SkyRand(th);
+            const float cr = 0.62f + 0.14f * tint, cg = 0.72f + 0.06f * tint, cb = 1.00f;
+            for (int e = 0; e < ne; ++e) {
+                const int a = edge[e][0], b = edge[e][1];
+                const float ax = baseX + sc.x[a] * cell, ay = baseY + sc.y[a] * cell;
+                const float bx = baseX + sc.x[b] * cell, by = baseY + sc.y[b] * cell;
+                LogoLine(ax, ay, bx, by, L.thick * uiS, cr, cg, cb, L.lineA * 0.30f * sk);
+                if (lobbyW > 0.01f)
+                    DrawConstellLineBatched(ax, ay, bx, by, L.thick * uiS, cr, cg, cb,
+                                            L.lineA * lobbyW);
+            }
+            for (int i = 0; i < sc.n; ++i) {
+                const float px = baseX + sc.x[i] * cell, py = baseY + sc.y[i] * cell;
+                if (px < -40.0f || px > sw + 40.0f || py < -40.0f || py > sh + 40.0f) continue;
+                const float tw = 0.86f + 0.14f * sinf(now * (0.8f + sc.mag[i]) + sc.phase[i]);
+                const float r = (0.9f + sc.mag[i] * 2.6f) * L.size * uiS;
+                const float sa = L.starA * sk * tw;
+                // Each star is a gradient: a faint tinted halo that deepens
+                // toward a hot white core. Layers are stacked large to small;
+                // the dark keyline underneath keeps it readable on any wallpaper.
+                drawCircle(px, py, r * 1.9f, 0.01f, 0.02f, 0.06f, 0.42f * sa * lobbyW);
+                const float haloT = 0.35f + 0.65f * sc.mag[i];
+                drawCircle(px, py, r * 4.6f * haloT + r, 0.30f, 0.46f, 1.00f, 0.10f * sa);
+                drawCircle(px, py, r * 3.0f * haloT + r, 0.42f, 0.60f, 1.00f, 0.17f * sa);
+                drawCircle(px, py, r * 1.9f, 0.62f, 0.78f, 1.00f, 0.40f * sa);
+                drawCircle(px, py, r * 1.25f, 0.84f, 0.92f, 1.00f, 0.75f * sa);
+                drawCircle(px, py, r * 0.62f, 1.00f, 1.00f, 1.00f,
+                           (0.55f + 0.45f * sc.mag[i]) * sa);
+            }
+        }
+    }
 }
 
 static void ShopStaticFieldPalette(int tab, float& r, float& g, float& b) {
@@ -810,9 +901,64 @@ static void LogoRing(float cx, float cy, float radius, float thick,
     }
 }
 
+// Handwritten title images (g_TitleStyle 1 / 2). The mask is white on
+// transparent; it is drawn as a soft deep-blue falloff plus a cold-white
+// core, matching the vector mark's look, and fades in with the reveal.
+static bool DrawImageTitle(float sw, float sh, float alpha, float reveal,
+                           float centerXOverride, float heightMul) {
+    const int idx = g_TitleStyle - 1;
+    if (idx < 0 || idx > 1 || !g_TitleLogoTex[idx] ||
+        g_TitleLogoW[idx] <= 0 || g_TitleLogoH[idx] <= 0)
+        return false;
+
+    const float aspect = (float)g_TitleLogoW[idx] / (float)g_TitleLogoH[idx];
+    const float baseH = MainLogoHeight(sh) * heightMul;
+    float h = baseH * 1.15f;
+    float w = h * aspect;
+    const float maxW = sw * 0.66f;
+    if (w > maxW) { w = maxW; h = w / aspect; }
+
+    const float appear = Smoothstep(LogoClamp01(reveal / 0.70f));
+    const float a = alpha * appear;
+    if (a <= 0.001f) return true;
+    const float grow = 0.96f + 0.04f * appear;
+    w *= grow; h *= grow;
+
+    const float cx = (centerXOverride > 0.0f) ? centerXOverride : sw * 0.5f;
+    const float cy = MainLogoTop(sh) + baseH * 0.5f;
+    float x = cx - w * 0.5f;
+    if (x < 28.0f) x = 28.0f;
+    if (x + w > sw - 28.0f) x = sw - w - 28.0f;
+    const float y = cy - h * 0.5f;
+    const GLuint tex = g_TitleLogoTex[idx];
+
+    // Night-sky field so the thin strokes stay readable on a bright desktop.
+    DrawRadialGradientRotated(x + w * 0.5f, cy, w * 0.62f, h * 0.95f, 0.0f,
+                              0.024f, 0.047f, 0.11f, 0.80f * a);
+    BindMainShader();
+
+    const float spread = std::max(1.5f, h * 0.035f);
+    constexpr int kRing = 8;
+    for (int ring = 2; ring >= 1; --ring) {
+        const float rr = spread * (float)ring;
+        for (int i = 0; i < kRing; ++i) {
+            const float ang = 6.2831853f * (float)i / (float)kRing;
+            DrawIcon(tex, x + cosf(ang) * rr, y + sinf(ang) * rr, w, h,
+                     0.08f, 0.26f, 0.52f, (ring == 1 ? 0.16f : 0.07f) * a);
+        }
+    }
+    DrawIcon(tex, x, y, w, h, 0.34f, 0.70f, 1.0f, 0.55f * a);
+    DrawIcon(tex, x, y, w, h, 0.90f, 0.97f, 1.0f, 0.94f * a);
+    BindMainShader();
+    return true;
+}
+
 void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
                                float centerXOverride, float heightMul) {
     if (alpha <= 0.001f) return;
+    if (g_TitleStyle != 0 &&
+        DrawImageTitle(sw, sh, alpha, reveal, centerXOverride, heightMul))
+        return;
 
     struct Pt { float x, y; };
     struct Stroke { int first, count; bool curve; };
@@ -1201,180 +1347,6 @@ static InlineThreeColumnLayout BuildInlineThreeColumnLayout(float sw, float sh, 
     return out;
 }
 
-struct ProjectedOrbitPoint {
-    float x, y, z;
-};
-
-static ProjectedOrbitPoint ProjectOrbitalPoint(float cx, float cy, float radius,
-                                               float angle, float tilt, float roll,
-                                               float phase) {
-    const float a = angle + phase;
-    const float lx = cosf(a) * radius;
-    const float ly = sinf(a) * radius * sinf(tilt);
-    const float lz = sinf(a) * radius * cosf(tilt);
-    const float cr = cosf(roll), sr = sinf(roll);
-    const float rx = lx * cr - ly * sr;
-    const float ry = lx * sr + ly * cr;
-    const float perspective = 1.0f + lz / std::max(1.0f, radius * 5.5f);
-    return { cx + rx * perspective, cy + ry * perspective, lz };
-}
-
-static void DrawMainMenuOrbitalInstrument(float cx, float cy, float radius,
-                                          int focusIndex, const float focusWeights[5],
-                                          float hoverT,
-                                          const ConstellationMotionProfile& motion,
-                                          float motionT, float alpha, float uiS,
-                                          float r, float g, float b) {
-    if (alpha <= 0.001f) return;
-    constexpr float kTau = 6.28318530717958647692f;
-    radius *= 1.0f + motion.radialPull;
-    const int activeOrbit = std::max(0, std::min(focusIndex, 4));
-
-    // A restrained particle shell establishes volume before the brighter
-    // armillary paths are drawn over it.
-    constexpr float kGolden = 2.39996322972865332f;
-    for (int i = 0; i < 84; ++i) {
-        const float v = -1.0f + 2.0f * ((float)i + 0.5f) / 84.0f;
-        const float shell = sqrtf(std::max(0.0f, 1.0f - v * v));
-        const float a = (float)i * kGolden + motionT * (0.035f + (i % 3) * 0.008f);
-        const float jitter = 0.88f + 0.18f * sinf((float)i * 7.31f);
-        const float rr = radius * 1.34f * jitter;
-        const float z = sinf(a) * shell;
-        const float px = cx + cosf(a) * shell * rr + z * radius * 0.10f;
-        const float py = cy + v * rr * 0.88f + z * radius * 0.045f;
-        const float depth = LogoClamp01(0.5f + z * 0.5f);
-        const float dustA = (0.040f + depth * 0.040f)
-                          * motion.edgeAlpha * alpha;
-        DrawConstellationDisc(px, py, (0.65f + depth * 1.10f) * uiS,
-                              r, g, b, dustA);
-    }
-
-    struct MenuOrbit {
-        float scale, tilt, roll, speed, phase;
-    };
-    const MenuOrbit orbits[5] = {
-        {0.92f, 0.24f,  0.08f,  0.34f, 0.20f},
-        {1.05f, 0.50f, -0.72f, -0.27f, 1.35f},
-        {1.17f, 0.78f,  0.84f,  0.22f, 2.45f},
-        {1.28f, 1.02f, -1.08f, -0.18f, 3.65f},
-        {1.39f, 0.64f,  1.42f,  0.15f, 4.80f},
-    };
-
-    for (int o = 0; o < 5; ++o) {
-        const MenuOrbit& od = orbits[o];
-        float activeT = LogoClamp01(focusWeights[o]);
-        if (o == activeOrbit) activeT = std::max(activeT, hoverT);
-        activeT = Smoothstep(activeT);
-        const float rr = radius * od.scale * (1.0f + 0.025f * activeT);
-        const float alignedRoll = -0.90f + (float)o * 0.45f;
-        const float tilt = od.tilt + ((0.62f + (float)(o - 2) * 0.07f) - od.tilt)
-                                     * motion.alignmentStrength;
-        const float roll = od.roll + (alignedRoll - od.roll)
-                                     * motion.alignmentStrength;
-        const float phase = od.phase + motionT * od.speed
-                          * (1.0f + activeT * 0.38f);
-        ProjectedOrbitPoint prev = ProjectOrbitalPoint(cx, cy, rr, 0.0f,
-                                                       tilt, roll, phase);
-        for (int s = 1; s <= 42; ++s) {
-            const float a = kTau * (float)s / 42.0f;
-            const ProjectedOrbitPoint p = ProjectOrbitalPoint(cx, cy, rr, a,
-                                                              tilt, roll, phase);
-            const float depth = LogoClamp01(0.5f + p.z / std::max(1.0f, rr * 2.0f));
-            const float pathA = (0.065f + activeT * 0.42f)
-                              * (0.62f + depth * 0.60f)
-                              * motion.edgeAlpha * alpha;
-            const float midX = (prev.x + p.x) * 0.5f - cx;
-            const float midY = (prev.y + p.y) * 0.5f - cy;
-            const bool behindCore = depth < 0.46f
-                                 && midX * midX + midY * midY < radius * radius * 0.092f;
-            if (!behindCore)
-                DrawVisibleConstellLine(prev.x, prev.y, p.x, p.y,
-                                        (0.56f + activeT * 0.62f) * uiS,
-                                        r, g, b, pathA);
-            prev = p;
-        }
-
-        const float starA = phase + 0.42f + (float)o * 0.61f;
-        const ProjectedOrbitPoint star = ProjectOrbitalPoint(cx, cy, rr, starA,
-                                                             tilt, roll, 0.0f);
-        const float pulseAmount = 0.18f * motion.nodePulse;
-        const float pulse = 1.0f - pulseAmount
-                          + pulseAmount * sinf(motionT * 2.2f + o * 1.4f);
-        if (activeT > 0.04f) {
-            for (int trail = 4; trail >= 1; --trail) {
-                const float trailAngle = starA - od.speed * (float)trail * 0.11f;
-                const ProjectedOrbitPoint tail = ProjectOrbitalPoint(
-                    cx, cy, rr, trailAngle, tilt, roll, 0.0f);
-                const float tailA = activeT * alpha * (0.045f + (4 - trail) * 0.035f);
-                DrawConstellationDisc(tail.x, tail.y,
-                                      (0.9f + (4 - trail) * 0.35f) * uiS,
-                                      r, g, b, tailA);
-            }
-        }
-        const float starSize = (3.0f + activeT * 7.2f) * pulse * uiS;
-        DrawConstellationDisc(star.x, star.y, starSize * 2.05f,
-                               0.0f, 0.0f, 0.014f, (0.13f + activeT * 0.12f) * alpha);
-        DrawConstellationDisc(star.x, star.y, starSize * 1.28f,
-                               r, g, b, (0.12f + activeT * 0.20f)
-                               * motion.edgeAlpha * alpha);
-        DrawConstellationDisc(star.x, star.y, std::max(1.4f, starSize * 0.34f),
-                              0.98f, 1.0f, 1.0f, (0.54f + activeT * 0.42f) * alpha);
-    }
-
-    // The compact inner body gives the five orbital planes a clear anchor.
-    const float coreR = radius * 0.27f;
-    // Three-layer CircleTexture treatment: broad dark contrast, a restrained
-    // field for the surrounding small constellations, and a focused center.
-    DrawConstellationDisc(cx, cy, coreR * 2.45f,
-                          0.0f, 0.0f, 0.014f, 0.34f * alpha);
-    DrawConstellationDisc(cx, cy, coreR * 1.58f,
-                          r, g, b, 0.075f * alpha);
-    DrawConstellationDisc(cx, cy, coreR * 0.88f,
-                          r, g, b, 0.21f * alpha);
-    for (int lat = -3; lat <= 3; ++lat) {
-        const float n = (float)lat / 4.0f;
-        const float y = cy + n * coreR;
-        const float bandR = coreR * sqrtf(std::max(0.0f, 1.0f - n * n));
-        float lastX = 0.0f, lastY = 0.0f;
-        for (int s = 0; s <= 28; ++s) {
-            const float a = kTau * (float)s / 28.0f + motionT * 0.21f;
-            const float z = sinf(a) * bandR;
-            const float x = cx + cosf(a) * bandR;
-            const float py = y + z * 0.16f;
-            if (s > 0) {
-                LogoLine(lastX, lastY, x, py, 1.20f * uiS,
-                         0.0f, 0.0f, 0.014f, 0.18f * alpha);
-                LogoLine(lastX, lastY, x, py, 0.52f * uiS,
-                         r, g, b, (0.16f + 0.11f * (z / coreR + 1.0f)) * alpha);
-            }
-            lastX = x;
-            lastY = py;
-        }
-    }
-    for (int lon = 0; lon < 7; ++lon) {
-        const float roll = (float)lon * kTau / 7.0f + motionT * 0.13f;
-        float lastX = 0.0f, lastY = 0.0f;
-        for (int s = 0; s <= 24; ++s) {
-            const float a = -1.5707963f + 3.1415926f * (float)s / 24.0f;
-            const float ringR = cosf(a) * coreR;
-            const float z = sinf(roll) * ringR;
-            const float x = cx + cosf(roll) * ringR;
-            const float y = cy + sinf(a) * coreR + z * 0.16f;
-            if (s > 0) {
-                LogoLine(lastX, lastY, x, y, 1.10f * uiS,
-                         0.0f, 0.0f, 0.014f, 0.16f * alpha);
-                LogoLine(lastX, lastY, x, y, 0.48f * uiS,
-                         r, g, b, (0.12f + 0.10f * (z / coreR + 1.0f)) * alpha);
-            }
-            lastX = x;
-            lastY = y;
-        }
-    }
-    DrawConstellationDisc(cx, cy, (5.8f + 1.4f * sinf(motionT * 2.6f)) * uiS,
-                          r, g, b, 0.62f * motion.nodePulse * alpha);
-    DrawConstellationDisc(cx, cy, 2.1f * uiS,
-                          1.0f, 1.0f, 1.0f, 0.96f * alpha);
-}
 #include "SceneMainMenu.inl"
 
 #include "SceneShop.inl"

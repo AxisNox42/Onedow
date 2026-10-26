@@ -38,7 +38,6 @@ add_executable(WiNILL
     ${WINILL_DIR}/Core/Scenes/SceneMenus.cpp
     ${WINILL_DIR}/Core/Scenes/WindowChrome.cpp
     ${WINILL_DIR}/Render/Camera.cpp
-    ${WINILL_DIR}/Render/BlurShader.cpp
     ${WINILL_DIR}/Render/EntityDraw.cpp
     ${WINILL_DIR}/Render/PlayerWeaponShell.cpp
     ${WINILL_DIR}/Render/GameFonts.cpp

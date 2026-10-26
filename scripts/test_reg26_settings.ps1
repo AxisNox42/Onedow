@@ -40,7 +40,7 @@ try {
     $missing = $edited | Where-Object { $captured -notcontains $_ }
     if ($missing) { throw "edited on the settings screen but not in the snapshot: $($missing -join ', ')" }
     $saveKey = @{ g_FpsCap='fps'; g_VfxDensity='vfxdens'; g_ShaderFx='shaderfx'; g_MobVisualStyle='mobstyle'
-        g_ShowCombo='combo'; g_BackdropBlurEnabled='backdropblur'; g_BackdropBlurCaptureHz='blurcapturehz'
+        g_ShowCombo='combo';
         g_SoundVol='soundvol'; g_BgmEnabled='bgmenabled'; g_SfxEnabled='sfxenabled'; g_AudioMonoOutput='audiomono'
         g_AudioEngineEnabled='audioenabled'; g_AutoSkill='autoskill'
         g_ShowCrosshair='crosshair'; g_DebugMode='debugmode'; g_Language='lang' }

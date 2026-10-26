@@ -25,6 +25,8 @@ namespace {
     bool g_sfxEnabled = true;
     bool g_monoOutput = false;
     float g_masterVolume = 1.0f;
+    float g_bgmScale = 1.0f;
+    float g_sfxScale = 1.0f;
 
     std::string g_base;
     void ResolveBase() {
@@ -136,7 +138,7 @@ namespace {
                                                MA_SOUND_FLAG_STREAM, nullptr,
                                                &g_bgm) == MA_SUCCESS) {
                 ma_sound_set_looping(&g_bgm, MA_TRUE);
-                ma_sound_set_volume(&g_bgm, vol);
+                ma_sound_set_volume(&g_bgm, vol * g_bgmScale);
                 ma_sound_start(&g_bgm);
                 g_bgmActive = true;
                 std::strncpy(g_bgmPath, path, 63);
@@ -151,7 +153,7 @@ namespace {
         if (ma_sound_init_from_file(&g_engine, full.c_str(), MA_SOUND_FLAG_STREAM,
                                     NULL, NULL, &g_bgm) == MA_SUCCESS) {
             ma_sound_set_looping(&g_bgm, MA_TRUE);
-            ma_sound_set_volume(&g_bgm, vol);
+            ma_sound_set_volume(&g_bgm, vol * g_bgmScale);
             ma_sound_start(&g_bgm);
             g_bgmActive = true;
             std::strncpy(g_bgmPath, path, 63);
@@ -232,6 +234,7 @@ void Audio::PlaySfx(Sfx s) {
         float p = 0.90f + (float)(std::rand() % 21) * 0.01f;   // 0.90~1.10
         ma_sound_set_pitch(&g_sfx[i].snd, p);
     }
+    ma_sound_set_volume(&g_sfx[i].snd, SFX_DEFS[i].vol * g_sfxScale);
     ma_sound_seek_to_pcm_frame(&g_sfx[i].snd, 0);   // 재트리거 = 처음부터
     ma_sound_start(&g_sfx[i].snd);
 }
@@ -304,6 +307,17 @@ bool Audio::SetMonoOutput(bool mono) {
 }
 
 bool Audio::IsMonoOutput() { return g_monoOutput; }
+
+void Audio::SetBgmVolume(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    g_bgmScale = v;
+    if (g_inited && g_bgmActive) ma_sound_set_volume(&g_bgm, 0.50f * v);
+}
+
+void Audio::SetSfxVolume(float v) {
+    if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+    g_sfxScale = v;
+}
 
 void Audio::SetVolume(float v) {
     if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;

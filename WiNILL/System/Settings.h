@@ -233,6 +233,9 @@ inline int TrialRangedMaxBonus(long long score) {
 //       RUNNING 중 F 키로 AUG_SELECT 즉시 열기
 inline bool g_CreativeMode = false;
 inline bool g_DebugMode = false;
+// Title logo: 0 = vector constellation mark, 1 = handwritten "Asteria" (A),
+// 2 = jagged "Asteria" (B). Chosen from the debug toolkit; not saved.
+inline int g_TitleStyle = 1;
 
 // Counts and the wallet never exceed this, so additions cannot overflow and
 // every value fits the HUD (999,999,999,999,999).
@@ -267,7 +270,9 @@ inline bool      g_CreativeFreeGrab   = false;   // F 그랩 중 — 이 픽 뒤
 inline bool g_ShowDamageNumbers = true;
 inline bool g_ShowCombo         = true;   // 콤보 카운터 표시
 inline int  g_SoundVol          = 100;    // 사운드 마스터 볼륨 (0=끄기 ~ 100)
-inline bool g_BgmEnabled        = true;
+inline int  g_BgmVol            = 100;    // BGM 채널 볼륨 (0~100, 0이면 꺼짐)
+inline int  g_SfxVol            = 100;    // 효과음 채널 볼륨 (0~100, 0이면 꺼짐)
+inline bool g_BgmEnabled        = true;   // g_BgmVol > 0 과 동기화 (구버전 저장 호환)
 inline bool g_SfxEnabled        = true;
 inline bool g_AudioMonoOutput   = false;
 inline bool g_AudioEngineEnabled = true;
@@ -287,26 +292,14 @@ inline bool g_ShaderFx          = false;
 // Strong readability overlay for out-of-game menu backgrounds.
 inline bool g_StrongMenuDim     = false;
 
-// Optional soft backdrop blur used by transparent outgame pages.
-// Keep the range deliberately restrained so the live background remains part
-// of the composition instead of becoming an opaque panel.
-inline bool g_BackdropBlurEnabled = true;
-
 // Combat elements (bullets, HP/XP rings) sit straight on the desktop.
-// Bright or busy wallpapers wash them out with or without blur, so they
-// always get a dark keyline; a sharp desktop gets the full strength.
+// Bright or busy wallpapers wash them out, so they always get a dark keyline.
 // Smoke A/B checks can zero it (ONEDOW_SMOKE_KEYLINE=0).
 // PLAY 패널 무기 별자리의 타원 궤도(끊어 그린 링) 표시. 디버그 툴킷에서 전환, 저장 안 함.
 inline bool g_PlayConstellationOrbits = true;
 inline float g_CombatKeylineScale = 1.0f;
 inline float CombatKeylineStrength() {
-    return (g_BackdropBlurEnabled ? 0.6f : 1.0f) * g_CombatKeylineScale;
-}
-inline int  g_BackdropBlurCaptureHz = 20;
-inline float BackdropBlurCaptureIntervalSeconds() {
-    const int hz = g_BackdropBlurCaptureHz == 1 ? 1
-                 : g_BackdropBlurCaptureHz == 60 ? 60 : 20;
-    return 1.0f / (float)hz;
+    return g_CombatKeylineScale;
 }
 
 // 몹 외형 — CLASSIC=현재(강사님 OK), SOFT=채도↓·윤곽 부드럽게

@@ -19,7 +19,11 @@ void Scene_MainMenu(const SceneCtx& c) {
 
     // Inline panels own their local reveal; keep the shared background stable
     // during the handoff so the old fade cannot create a brightness flash.
-    DrawMenuBackground(sw, sh, delta, 1.0f);
+    // The constellation sky is at full strength only on the lobby itself;
+    // inline pages (shop, codex, settings, run setup) keep it as a quiet backdrop.
+    const bool lobbyOnly = !s_MainMenuArmoryPanel && !s_MainMenuCodexPanel &&
+                           !s_MainMenuSettingsPanel && !s_MainMenuRunConfigPanel;
+    DrawMenuBackground(sw, sh, delta, 1.0f, lobbyOnly ? 1.0f : 0.30f);
     if (s_MainMenuArmoryPanel) {
         Scene_Shop(c);
         return;
@@ -190,59 +194,6 @@ void Scene_MainMenu(const SceneCtx& c) {
                 s_menuExitT = 0.0f;
             }
         }
-    }
-
-    {
-        int morphIdx = -1;
-        float bestHover = 0.18f;
-        for (int i = 0; i < kBtnCount; ++i) {
-            if (kHoverT[i] > bestHover) { bestHover = kHoverT[i]; morphIdx = i; }
-        }
-        if (s_menuSelect >= 0) morphIdx = s_menuSelect;
-
-        UpdateMainMenuConstellationMotion(morphIdx, delta);
-        const int focusIdx = morphIdx >= 0 ? morphIdx : 0;
-        const float palette[5][3] = {
-            {0.18f, 0.62f, 0.96f}, {0.08f, 0.70f, 0.82f},
-            {0.70f, 0.62f, 1.00f}, {0.96f, 0.78f, 0.34f},
-            {0.52f, 0.64f, 0.78f}
-        };
-        const int colorIdx = focusIdx % 5;
-        const float colR = palette[colorIdx][0];
-        const float colG = palette[colorIdx][1];
-        const float colB = palette[colorIdx][2];
-        // Preserve the shared cyan family while allowing the focused command
-        // to tint the constellation's active geometry.
-        const float paletteMix = 0.12f + 0.20f * bestHover;
-        const float lineR = 0.18f + (colR - 0.18f) * paletteMix;
-        const float lineG = 0.62f + (colG - 0.62f) * paletteMix;
-        const float lineB = 1.00f + (colB - 1.00f) * paletteMix;
-        const float canvasReveal = Smoothstep(LogoClamp01((s_introT - kTitleDur - 0.18f) / 0.70f)) * uiA;
-        const float collapse = exitActive
-            ? SceneTransitionEase(s_menuExitT / menuExitDuration) : 0.0f;
-        const float canvasLeft = btnX0 + BW + 40.0f;
-        const float canvasRight = std::max(canvasLeft + 280.0f, sw - 30.0f);
-        const float availableCanvasW = canvasRight - canvasLeft;
-        const float cw = std::min(sw * 0.48f, availableCanvasW);
-        const float ch = std::min(sh * 0.66f, cw * 0.78f);
-        const float parallaxX = ((float)mx - sw * 0.5f) * -0.012f;
-        const float parallaxY = ((float)my - sh * 0.5f) * -0.009f;
-        const float cx = canvasLeft + availableCanvasW * 0.5f + parallaxX;
-        const float cy = sh * 0.53f + parallaxY;
-        DrawRadialGradient(cx, cy, cw * 0.54f, 0.0f, 0.0f, 0.012f,
-                          0.52f * canvasReveal * (1.0f - collapse * 0.35f));
-        const float sphereRadius = std::min(cw, ch) * 0.345f
-                                 * (1.0f + 0.045f * bestHover);
-        const float sphereA = (0.72f + 0.20f * bestHover)
-                            * canvasReveal * (1.0f - 0.84f * collapse);
-        DrawMainMenuOrbitalInstrument(cx, cy, sphereRadius, focusIdx,
-                                      kHoverT, bestHover,
-                                      s_MainMenuConstellationMotion.current,
-                                      s_MainMenuConstellationMotion.phase,
-                                      sphereA, 1.0f,
-                                      lineR, lineG, lineB);
-        if (collapse > 0.01f)
-            drawCircle(cx, cy, 18.0f + 52.0f * collapse, lineR, lineG, lineB, 0.080f * collapse * canvasReveal);
     }
 
     const float kExitDelay = (s_menuSelect == 4) ? 0.52f : 0.18f;

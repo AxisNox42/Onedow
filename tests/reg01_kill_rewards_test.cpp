@@ -314,19 +314,15 @@ static void CheckFractionalXp() {
 
         World rotor;
         rotor.stats.xpMult = 1.03f;
-        rotor.stats.mobXpBonus = 1;
-        rotor.stats.rotorXpBonus = 2;
-        assert(Run(Target::Rotor, means, rotor).d.dustXp == 5150);
+        assert(Run(Target::Rotor, means, rotor).d.dustXp == 2060);
 
         World scope;
         scope.stats.xpMult = 1.03f;
-        scope.stats.rangedXpBonus = 12;
-        assert(Run(Target::Scope, means, scope).d.dustXp == 20600);
+        assert(Run(Target::Scope, means, scope).d.dustXp == 8240);
 
         World quasar;
         quasar.stats.xpMult = 1.03f;
-        quasar.stats.mobKindXpBonus[(int)MobKind::QUASAR] = 1;
-        assert(Run(Target::Quasar, means, quasar).pendingXp == 13390);
+        assert(Run(Target::Quasar, means, quasar).pendingXp == 12360);
     }
 
     g_StardustPickups.clear();

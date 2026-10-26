@@ -121,20 +121,11 @@ inline float MobRewardMult(MobKind kind) {
     return kind == MobKind::SWARM ? 0.20f : 1.0f;
 }
 
-inline float MobXpBonus(MobKind kind, const PlayerStats& stats) {
-    float bonus = (float)stats.mobXpBonus;
-    if (kind == MobKind::ROTOR) bonus += (float)stats.rotorXpBonus;
-    const int index = (int)kind;
-    if (index >= 0 && index < PlayerStats::MOB_KIND_XP_SLOTS)
-        bonus += (float)stats.mobKindXpBonus[index];
-    return bonus;
-}
-
 inline XpAmount MobExperienceReward(MobKind kind, const PlayerStats& stats) {
     float xpBase, scoreBase;
     MobKillReward(kind, xpBase, scoreBase);
     // Currency/score reductions must not turn a tier-1 kill into zero XP.
-    return XpFromReward((double)(xpBase + MobXpBonus(kind, stats)) * stats.xpMult);
+    return XpFromReward((double)xpBase * stats.xpMult);
 }
 
 class Monster {

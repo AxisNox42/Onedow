@@ -36,13 +36,6 @@ int main() {
            std::numeric_limits<XpAmount>::max());
     assert(FormatXp(1030) == "1.030");
 
-    for (int frames : {60, 120, 240}) {
-        double remaining = 0.0;
-        XpAmount total = 0;
-        for (int i = 0; i < frames; ++i)
-            total += AccumulateTimedXp(remaining, 0.5, 1.03f, 2.0 / frames);
-        assert(total == 1030);
-    }
     GameplayTelemetry telemetry;
     PlayerStats stats;
     telemetry.BeginRun(0.0f, 1, 0, stats, "xp_test");

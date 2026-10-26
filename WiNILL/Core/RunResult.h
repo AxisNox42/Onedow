@@ -14,9 +14,11 @@
 // no coins. Returns the new-record flag
 // (g_LastRunRecord).
 inline bool CommitRunResult(bool creative, int difficultyIdx, long long score,
-                            long long kills, int weaponIdx) {
+                            long long kills, int weaponIdx,
+                            int wave = 0, bool cleared = false, float clearSeconds = 0.0f) {
     if (!creative) {
-        const bool record = RecordRunResult(difficultyIdx, score, kills, weaponIdx);
+        const bool record = RecordRunResult(difficultyIdx, score, kills, weaponIdx,
+                                              wave, cleared, clearSeconds);
         if (g_TotalGames >= 10) TryUnlockAch(ACH_GAMES_10);
         if (g_AchSaveNeeded) {
             SaveGame();
