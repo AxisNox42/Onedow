@@ -79,7 +79,8 @@ enum class MobKind {
 
 // Elite mobs carry a second ability and an elite frame.
 inline constexpr bool IsEliteMob(MobKind kind) {
-    return kind == MobKind::GRAVIS || kind == MobKind::GENESIS ||
+    return kind == MobKind::REGULUS || kind == MobKind::GENESIS ||
+           kind == MobKind::ANTARES ||
            kind == MobKind::QUASAR;
 }
 
@@ -139,6 +140,18 @@ public:
     static constexpr float REGULUS_SHOT_INTERVAL = 1.0f;
     static constexpr float REGULUS_BEAM_TIME = 0.25f;   // laser afterglow
     static constexpr float REGULUS_SHIELD_REGEN_DELAY = 8.0f;
+    // Regulus elite: the shield (own plates + shield lasers) is always up; on
+    // top of it a cycle of plain drift -> speed surge -> faint cloak. The cloak
+    // only dims the drawing; the body stays solid and spawns are unaffected.
+    static constexpr int REGULUS_PHASE_WALK = 0;
+    static constexpr int REGULUS_PHASE_SURGE = 1;
+    static constexpr int REGULUS_PHASE_CLOAK = 2;
+    static constexpr float REGULUS_WALK_TIME = 3.5f;
+    static constexpr float REGULUS_SURGE_TIME = 1.4f;
+    static constexpr float REGULUS_SURGE_MULT = 2.6f;
+    static constexpr float REGULUS_CLOAK_TIME = 3.5f;
+    static constexpr float REGULUS_CLOAK_FADE = 0.5f;    // fade in / out inside the cloak
+    static constexpr float REGULUS_CLOAK_ALPHA = 0.38f;  // never fully invisible
     // Quasar beam: when the cooldown ends the axis snaps straight onto the
     // player and locks; the beam fires QUASAR_LOCK_TIME later on that fixed
     // angle (no sweep), so the lock window is the dodge window.
@@ -191,95 +204,6 @@ public:
     static constexpr float QUASAR_FALL_RECOVER = 0.8f;
     static constexpr float QUASAR_FALL_IMPACT_FX = 0.22f;
     static constexpr float QUASAR_FALL_HIT_GRACE = 0.35f;
-    // Gravis elite. Two independent machines: the body (idle / compression
-    // glide) and the sling (orbit satellites). While the satellites are out
-    // Gravis keeps doing everything else: it drifts, its field is on and it
-    // glides; only a second sling waits. The body holds still only for the
-    // glide's own wind-up, run and burst, and the field is off then.
-    static constexpr int GRAVIS_IDLE = 0;
-    // Sling machine states (gravisSling).
-    static constexpr int GRAVIS_SLING_PREP = 1;
-    static constexpr int GRAVIS_SLING_LOCK = 2;
-    static constexpr int GRAVIS_SLING_OUT = 3;
-    static constexpr int GRAVIS_SLING_BACK = 4;
-    static constexpr int GRAVIS_SLING_RECOVER = 5;
-    static constexpr int GRAVIS_SLING_HARASS = 11;
-    // Body machine states (gravisState).
-    static constexpr int GRAVIS_GLIDE_COMPRESS = 6;
-    static constexpr int GRAVIS_GLIDE_LANE = 7;
-    static constexpr int GRAVIS_GLIDE_RUN = 8;
-    static constexpr int GRAVIS_GLIDE_BURST = 9;
-    static constexpr int GRAVIS_GLIDE_RECOVER = 10;
-    static constexpr float GRAVIS_COOLDOWN = 1.8f;           // body: idle before a glide
-    static constexpr float GRAVIS_SLING_COOLDOWN = 3.0f;     // sling: idle before a throw
-    static constexpr float GRAVIS_SLING_PREP_TIME = 0.65f;
-    static constexpr float GRAVIS_SLING_LOCK_TIME = 0.40f;
-    static constexpr float GRAVIS_SLING_OUT_TIME = 1.1f;
-    static constexpr float GRAVIS_SLING_RECOVER_TIME = 0.35f;
-    // Harass: after the throw the masses keep their momentum and are drawn
-    // into loose, breathing orbits around the player (a lagging centre, a
-    // spring with inertia - no fixed distance). In turn each one announces
-    // the spot where the player stands, hovers, then is thrown straight
-    // along the announced line and swings back on its own momentum.
-    static constexpr float GRAVIS_HARASS_TIME = 9.2f;
-    static constexpr float GRAVIS_HARASS_R_MID = 185.0f;     // breathing 110..260
-    static constexpr float GRAVIS_HARASS_R_SWING = 75.0f;
-    static constexpr float GRAVIS_HARASS_OMEGA = 1.2f;       // rad/s around the centre
-    static constexpr float GRAVIS_HARASS_CENTER_LAG = 1.4f;  // 1/s: how fast the centre follows
-    static constexpr float GRAVIS_HARASS_KP = 9.0f;          // spring toward the orbit slot
-    static constexpr float GRAVIS_HARASS_KD = 4.2f;
-    static constexpr float GRAVIS_HARASS_MAX_ACC = 900.0f;   // gentle turns, no snapping back
-    static constexpr float GRAVIS_HARASS_MAX_SPEED = 560.0f;
-    static constexpr float GRAVIS_HOVER_DRAG = 10.0f;        // brakes while announcing
-    static constexpr float GRAVIS_DART_START = 0.9f;         // first announcement
-    static constexpr float GRAVIS_DART_STAGGER = 0.7f;       // between the three masses
-    static constexpr int GRAVIS_DART_PER_SAT = 4;            // at most, if it keeps getting chances
-    static constexpr float GRAVIS_DART_TELEGRAPH = 0.60f;
-    static constexpr float GRAVIS_DART_PULLBACK = 64.0f;     // wind-up: drawn back along the line
-    static constexpr float GRAVIS_DART_WINDUP = 0.80f;       // share of the announcement spent drawing back
-    static constexpr float GRAVIS_DART_LAUNCH_SPEED = 260.0f;
-    // A mass may only announce a dart when its own cooldown is over AND the
-    // player is within GRAVIS_DART_RANGE of it; a mass far away just keeps
-    // closing in. The dart then curves: it follows an arc through the
-    // announced point and on past it, so the danger is a curved line, and the
-    // aim leads a moving player a little.
-    static constexpr float GRAVIS_DART_RANGE = 340.0f;       // mass-to-player distance to announce
-    static constexpr float GRAVIS_DART_COOLDOWN = 1.5f;      // after a dart ends
-    static constexpr float GRAVIS_DART_CURVE_RADIUS = 760.0f;
-    static constexpr float GRAVIS_DART_BEYOND = 450.0f;      // distance past the aim point
-    static constexpr float GRAVIS_DART_LEAD = 0.30f;         // s of the player's velocity
-    static constexpr float GRAVIS_DART_LEAD_MAX = 260.0f;    // px
-    static constexpr float GRAVIS_DART_SPEED = 640.0f;
-    static constexpr float GRAVIS_DART_ACCEL = 2400.0f;
-    static constexpr float GRAVIS_DART_DAMAGE = 4.0f;
-    // Return: the masses are drawn to the live body with their momentum, a
-    // wide looping arc rather than a fixed path; they dock on arrival.
-    static constexpr float GRAVIS_BACK_KP = 6.0f;
-    static constexpr float GRAVIS_BACK_KD = 3.4f;
-    static constexpr float GRAVIS_BACK_MAX_ACC = 1100.0f;
-    static constexpr float GRAVIS_BACK_MAX_SPEED = 520.0f;
-    static constexpr float GRAVIS_BACK_DOCK = 30.0f;
-    static constexpr float GRAVIS_BACK_TIMEOUT = 3.0f;
-    static constexpr float GRAVIS_SLING_DAMAGE = 7.0f;
-    static constexpr int GRAVIS_SLING_COUNT = 3;          // masses thrown in a fan
-    static constexpr float GRAVIS_SLING_SPREAD = 0.36f;   // rad between neighbours
-    static constexpr float GRAVIS_SLING_HIT_RADIUS = 26.0f;
-    static constexpr float GRAVIS_SLING_RANGE_MIN = 360.0f;
-    static constexpr float GRAVIS_SLING_RANGE_MAX = 900.0f;
-    static constexpr float GRAVIS_SLING_RANGE_PAD = 120.0f;
-    static constexpr float GRAVIS_SLING_ORIGIN = 62.0f;
-    static constexpr float GRAVIS_GLIDE_COMPRESS_TIME = 0.6f;
-    static constexpr float GRAVIS_GLIDE_LANE_TIME = 0.45f;
-    static constexpr float GRAVIS_GLIDE_RUN_TIME = 0.45f;
-    static constexpr float GRAVIS_GLIDE_BURST_TIME = 0.3f;
-    static constexpr float GRAVIS_GLIDE_RECOVER_TIME = 0.5f;
-    static constexpr float GRAVIS_GLIDE_LEN_MIN = 260.0f;
-    static constexpr float GRAVIS_GLIDE_LEN_MAX = 700.0f;
-    static constexpr float GRAVIS_GLIDE_LANE_HALF = 95.0f;
-    static constexpr float GRAVIS_GLIDE_EDGE_MARGIN = 92.0f;
-    static constexpr float GRAVIS_BLAST_RADIUS = 150.0f;
-    static constexpr float GRAVIS_BLAST_DAMAGE = 8.0f;
-    static constexpr float GRAVIS_SLOW_TIME = 1.5f;
     static constexpr float ANTARES_BASE_HP = 600.0f;
     static constexpr int ANTARES_TRAIL_COUNT = 6;
     // Genesis shell core: three shells lock in one by one while tracking
@@ -347,7 +271,25 @@ public:
     // Ramming the player knocks them away and stuns Antares; a finished run
     // (skid) ends in a short rest. Once inside the map, hitting its edge
     // while running stuns it too, so a missed run never carries it off-map.
-    enum class AntaresState { CHASE, SKID, STUNNED, REST };
+    //
+    // Elite (generation 0): every second run it instead winds up a ricochet
+    // charge (AIM shows the whole bouncing path, CHARGE flies it at fixed
+    // speed and reflects off the map edge). When killed it splits into
+    // smaller Antares (generation 1) that never split again, and any two
+    // Antares that touch bounce off each other and speed up.
+    enum class AntaresState { CHASE, SKID, STUNNED, REST, AIM, CHARGE };
+    static constexpr float ANTARES_ELITE_HP_MULT = 1.5f;
+    static constexpr float ANTARES_AIM_TRACK = 0.70f;     // aim follows the player
+    static constexpr float ANTARES_AIM_LOCK = 0.35f;      // then holds still
+    static constexpr float ANTARES_CHARGE_SPEED = 820.0f;
+    static constexpr float ANTARES_CHARGE_LENGTH = 1900.0f;
+    static constexpr int ANTARES_CHARGE_BOUNCES = 3;
+    static constexpr int ANTARES_SPLIT_COUNT = 2;
+    static constexpr float ANTARES_CHILD_SCALE = 0.72f;
+    static constexpr float ANTARES_CHILD_HP = 0.45f;      // of a fresh Antares
+    static constexpr float ANTARES_BOUNCE_BOOST = 1.20f;
+    static constexpr float ANTARES_BOUNCE_MIN_SPEED = 180.0f;
+    static constexpr float ANTARES_BOUNCE_COOLDOWN = 0.25f;
     static constexpr float ANTARES_STUN_TIME = ANTARES_STUN_TIME_SEC;
     static constexpr float ANTARES_REST_TIME = 0.8f;
     static constexpr float ANTARES_MIN_SPEED = 60.0f;
@@ -457,6 +399,8 @@ public:
     float regulusDriftAngle = 0.0f;
     float regulusDriftTimer = 0.0f;
     float regulusShotTimer = 0.5f;    // time until the next shield laser
+    int regulusPhase = REGULUS_PHASE_WALK;
+    float regulusPhaseTimer = 0.0f;
 
     // Genesis station state.
     float spawnTimer = 0.0f;
@@ -538,53 +482,7 @@ public:
     float gravisVisualAngle = 0.0f;
     float gravisDriftAngle = 0.0f;
     float gravisDriftTimer = 0.0f;
-    int gravisState = GRAVIS_IDLE;      // body machine
-    float gravisTimer = 0.0f;
-    int gravisSling = GRAVIS_IDLE;      // sling machine
-    float gravisSlingTimer = 0.0f;
-    float gravisOrbitPhase = 0.0f;      // satellite angle; speeds up in the sling wind-up
-    glm::vec2 gravisAim{1.0f, 0.0f};          // sling direction
-    glm::vec2 gravisGlideAim{1.0f, 0.0f};     // glide direction
-    float gravisSlingRange = 0.0f;
-    glm::vec2 gravisSatOrigin{0.0f, 0.0f};
-    std::array<glm::vec2, GRAVIS_SLING_COUNT> gravisSatPos{};
-    std::array<glm::vec2, GRAVIS_SLING_COUNT> gravisSatPrev{};
-    std::array<glm::vec2, GRAVIS_SLING_COUNT> gravisSatVel{};
-    unsigned gravisSatHitOut = 0;       // bit per thrown mass
-    unsigned gravisSatHitBack = 0;
-    unsigned gravisSatDocked = 0;       // masses back on the body during the return
-    std::array<glm::vec2, GRAVIS_SLING_COUNT> gravisDartTarget{};
-    // Arc a dart flies: heading theta0 at the start, turning at kappa per
-    // unit of length, for `length`. The launch point is `from`.
-    struct GravisDartPath {
-        glm::vec2 from{0.0f, 0.0f};
-        float theta0 = 0.0f;
-        float kappa = 0.0f;
-        float length = 0.0f;
-    };
-    std::array<GravisDartPath, GRAVIS_SLING_COUNT> gravisDartPath{};
-    std::array<int, GRAVIS_SLING_COUNT> gravisDartState{};          // 0 orbit, 1 announcing, 2 flying
-    std::array<float, GRAVIS_SLING_COUNT> gravisDartTimer{};        // time into the announcement
-    std::array<glm::vec2, GRAVIS_SLING_COUNT> gravisDartAnchor{};   // where the wind-up started
-    std::array<float, GRAVIS_SLING_COUNT> gravisDartReadyAt{};      // sling time the next one may be announced
-    std::array<int, GRAVIS_SLING_COUNT> gravisDartCount{};          // thrown so far
-    std::array<float, GRAVIS_SLING_COUNT> gravisDartSide{};         // +1 / -1: which way it curves
-    std::array<float, GRAVIS_SLING_COUNT> gravisDartProgress{};     // arc length flown
-    std::array<float, GRAVIS_SLING_COUNT> gravisDartSpeedNow{};
-    std::array<bool, GRAVIS_SLING_COUNT> gravisDartHit{};           // this dart already hurt
-    std::array<float, GRAVIS_SLING_COUNT> gravisOrbitA0{};
-    glm::vec2 gravisHarassCenter{0.0f, 0.0f};
-    glm::vec4 gravisBounds{0.0f};            // arena the sling last saw
-    glm::vec2 gravisPlayerPrev{0.0f, 0.0f};
-    glm::vec2 gravisPlayerVel{0.0f, 0.0f};   // smoothed, for leading the dart
-    bool gravisPlayerSeen = false;
-    glm::vec2 gravisBodyVel{0.0f, 0.0f};    // body velocity this step (the return chases it)
-    glm::vec2 gravisGlideStart{0.0f, 0.0f};
-    glm::vec2 gravisGlideDest{0.0f, 0.0f};
-    bool gravisBlasted = false;
-    bool gravisBlastHit = false;
-    // Request for the game loop: slow the player, cleared once applied.
-    float gravisSlowRequest = 0.0f;
+    float gravisOrbitPhase = 0.0f;      // decorative orbiting node
     // Gimbal mirrors Scope's accelerating two-rotation charge for one shot.
     float gimbalAttackTimer = 0.0f;
     float gimbalChargeAngle = 0.0f;
@@ -613,6 +511,16 @@ public:
     std::array<glm::vec3, ANTARES_TRAIL_COUNT> antaresTrail{};
     // Spawns sit off-map; the edge only holds Antares once it has come in.
     bool antaresInArena = false;
+    int antaresGen = 0;               // 0 elite, 1 split child
+    bool antaresSplit = false;        // children already released
+    int antaresRuns = 0;              // finished runs; every second one is a charge
+    int antaresBounces = 0;           // edge reflections of the current charge
+    float antaresChargeLeft = 0.0f;
+    float antaresBounceCd = 0.0f;     // after bouncing off another Antares
+    glm::vec4 antaresBounds{0.0f};    // map rect inset by the body radius
+    // Ricochet path shown while aiming: start, then each reflection point.
+    std::array<glm::vec2, ANTARES_CHARGE_BOUNCES + 2> antaresPath{};
+    int antaresPathCount = 0;
     // Per face: shots it can still stop, seconds since it broke (< 0 while
     // intact) and seconds since it last restored (drives the snap-back look).
     std::array<int, MAGNETAR_FACES> magnetarFaceHits{};
@@ -695,13 +603,7 @@ public:
             gravisVisualAngle = (float)(rand() % 628) * 0.01f;
             gravisDriftAngle = (float)(rand() % 628) * 0.01f;
             gravisDriftTimer = 1.0f + (float)(rand() % 120) * 0.01f;
-            gravisState = GRAVIS_IDLE;
-            gravisTimer = (float)(rand() % 100) * 0.01f;
             gravisOrbitPhase = (float)(rand() % 628) * 0.01f;
-            gravisSling = GRAVIS_IDLE;
-            gravisSlingTimer = (float)(rand() % 100) * 0.01f;
-            gravisBlasted = gravisBlastHit = false;
-            gravisSlowRequest = 0.0f;
         } else if (kind == MobKind::QUASAR) {
             color = glm::vec3(0.42f, 0.56f, 1.0f);
             hp *= 6.4f;
@@ -751,10 +653,19 @@ public:
             regulusDriftAngle = (float)(rand() % 628) * 0.01f;
             regulusDriftTimer = 0.8f + (float)(rand() % 120) * 0.01f;
             regulusShotTimer = 0.5f;
+            regulusPhase = REGULUS_PHASE_WALK;
+            regulusPhaseTimer = (float)(rand() % 100) * 0.01f;
         } else if (kind == MobKind::ANTARES) {
             color = glm::vec3(0.91f, 0.275f, 0.227f);
-            hp *= ANTARES_BASE_HP / 90.0f;
+            hp *= ANTARES_BASE_HP / 90.0f * ANTARES_ELITE_HP_MULT;
             sizeScale = 1.6f;
+            antaresGen = 0;
+            antaresSplit = false;
+            antaresRuns = 0;
+            antaresBounces = 0;
+            antaresChargeLeft = 0.0f;
+            antaresBounceCd = 0.0f;
+            antaresPathCount = 0;
             antaresState = AntaresState::CHASE;
             antaresStateTimer = 0.0f;
             antaresHeadingX = antaresHeadingY = 0.0f;
@@ -821,6 +732,7 @@ public:
         const float minX = left + radius, maxX = right - radius;
         const float minY = top + radius, maxY = bottom - radius;
         if (minX >= maxX || minY >= maxY) return;
+        antaresBounds = glm::vec4(minX, minY, maxX, maxY);
         const bool inside = worldX >= minX && worldX <= maxX &&
                             worldY >= minY && worldY <= maxY;
         if (!antaresInArena) {
@@ -828,8 +740,17 @@ public:
             return;
         }
         if (inside) return;
+        const bool outX = worldX < minX || worldX > maxX;
+        const bool outY = worldY < minY || worldY > maxY;
         worldX = std::clamp(worldX, minX, maxX);
         worldY = std::clamp(worldY, minY, maxY);
+        if (antaresState == AntaresState::CHARGE) {
+            // The charge ricochets off the edge instead of stopping there.
+            if (outX) antaresHeadingX = -antaresHeadingX;
+            if (outY) antaresHeadingY = -antaresHeadingY;
+            ++antaresBounces;
+            return;
+        }
         if ((antaresState == AntaresState::CHASE ||
              antaresState == AntaresState::SKID) && AntaresStage() >= 2) {
             antaresState = AntaresState::STUNNED;
@@ -920,7 +841,7 @@ public:
 
     bool DeathEffectVisible() const {
         if (deathEffectTimer < 0.0f) return false;
-        const float duration = kind == MobKind::GRAVIS ? 0.40f   // long enough for the satellites to burn out
+        const float duration = kind == MobKind::GRAVIS ? 0.40f
                              : kind == MobKind::QUASAR ? QUASAR_NOVA_TIME
                              : kind == MobKind::GENESIS ? GENESIS_DEATH_TIME : 0.0f;
         return deathEffectTimer < duration;
@@ -1027,26 +948,6 @@ public:
              bright.r, bright.g, bright.b, fade * 0.18f);
         hexagon(worldX, worldY, coreRadius * 0.65f, gravisVisualAngle,
                 bright.r, bright.g, bright.b, fade);
-        // Satellites that were out in the field die with it: each is drawn in
-        // toward the core on its own momentum's line and burns out.
-        const float sat = deathEffectTimer / 0.36f;
-        if (sat < 1.0f) {
-            const float e = sat * sat * (3.0f - 2.0f * sat);
-            const float alpha = 1.0f - sat;
-            for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) {
-                if (!GravisSatAway(i)) continue;
-                const glm::vec2 from = gravisSatPos[i];
-                const glm::vec2 p = from + (glm::vec2(worldX, worldY) - from) * e;
-                const float r = 13.0f * (1.0f - 0.7f * sat);
-                line(from.x, from.y, p.x, p.y, 1.4f, bright.r, bright.g, bright.b, 0.45f * alpha);
-                for (int k = 0; k < 12; ++k) {
-                    const float a0 = (float)k * 0.5235988f, a1 = (float)(k + 1) * 0.5235988f;
-                    line(p.x + cosf(a0) * r, p.y + sinf(a0) * r, p.x + cosf(a1) * r, p.y + sinf(a1) * r,
-                         2.0f, bright.r, bright.g, bright.b, 0.9f * alpha);
-                }
-                disc(p.x, p.y, 4.6f * (1.0f - 0.5f * sat), 1.0f, 1.0f, 1.0f, alpha);
-            }
-        }
     }
 
     // Quasar supernova (QUASAR_NOVA_TIME): collapse to QUASAR_NOVA_COLLAPSE
@@ -1342,16 +1243,6 @@ public:
         burst.sizeMin = 3.0f; burst.sizeMax = 13.0f; burst.colorLift = 0.22f;
         SpawnEnemyParticleBurst(worldX, worldY, color, radius, burst, reduced);
         SpawnMobDeathSparks(worldX, worldY, color, radius, 14, reduced);
-        // Each satellite still out in the field bursts where it is.
-        for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) {
-            if (!GravisSatAway(i)) continue;
-            EnemyParticleBurst sparks;
-            sparks.count = 9; sparks.life = 0.34f; sparks.phase = (float)i;
-            sparks.startRadius = 0.10f;
-            sparks.speedMin = radius * 1.6f; sparks.speedMax = radius * 2.8f;
-            sparks.sizeMin = 2.0f; sparks.sizeMax = 5.0f; sparks.colorLift = 0.30f;
-            SpawnEnemyParticleBurst(gravisSatPos[i].x, gravisSatPos[i].y, color, radius * 0.5f, sparks, reduced);
-        }
     }
 
     // Collapse: matter drawn in from the halo toward the core (at the kill).
@@ -1479,6 +1370,28 @@ public:
         const float maxY = std::max(minY, bottom - margin);
         worldX = std::clamp(worldX, minX, maxX);
         worldY = std::clamp(worldY, minY, maxY);
+    }
+
+    float RegulusPhaseDuration() const {
+        switch (regulusPhase) {
+        case REGULUS_PHASE_SURGE: return REGULUS_SURGE_TIME;
+        case REGULUS_PHASE_CLOAK: return REGULUS_CLOAK_TIME;
+        default: return REGULUS_WALK_TIME;
+        }
+    }
+    bool RegulusSurging() const { return regulusPhase == REGULUS_PHASE_SURGE; }
+    // 0..1: how far the surge has built up (and then eased off), for the draw.
+    float RegulusSurgeLevel() const {
+        if (!RegulusSurging()) return 0.0f;
+        const float u = std::clamp(regulusPhaseTimer / REGULUS_SURGE_TIME, 0.0f, 1.0f);
+        return std::min(1.0f, std::min(u / 0.15f, (1.0f - u) / 0.25f));
+    }
+    // Drawing opacity of the body: 1 in the open, REGULUS_CLOAK_ALPHA cloaked.
+    float RegulusCloakAlpha() const {
+        if (kind != MobKind::REGULUS || regulusPhase != REGULUS_PHASE_CLOAK) return 1.0f;
+        const float t = regulusPhaseTimer;
+        const float k = std::min(std::min(t, REGULUS_CLOAK_TIME - t) / REGULUS_CLOAK_FADE, 1.0f);
+        return 1.0f - (1.0f - REGULUS_CLOAK_ALPHA) * std::max(0.0f, k);
     }
 
     void ConstrainRegulusToViewport(float left, float top,
@@ -1679,449 +1592,19 @@ public:
         }
     }
 
-    // ---- Gravis elite ------------------------------------------------------
-    static float GravisEase(float t) {
-        t = std::clamp(t, 0.0f, 1.0f);
-        return t * t * (3.0f - 2.0f * t);
-    }
-    bool GravisSlinging() const { return gravisSling != GRAVIS_IDLE; }
-    bool GravisGliding() const { return gravisState != GRAVIS_IDLE; }
-    // The standing field (pull, fire and dash slow, bullet bend) is off only
-    // while the body winds up, glides and bursts.
-    bool GravisFieldActive() const {
-        return gravisState == GRAVIS_IDLE || gravisState == GRAVIS_GLIDE_RECOVER;
-    }
-    // Gravis goes about its own business (drifts) whenever it is not in the
-    // middle of a glide, whatever its satellites are doing.
-    bool GravisDrifts() const { return GravisFieldActive(); }
-    // A mass is off the orbit while it is thrown, harassing or still returning.
-    bool GravisSatAway(int i) const {
-        return gravisSling == GRAVIS_SLING_OUT || gravisSling == GRAVIS_SLING_HARASS ||
-               (gravisSling == GRAVIS_SLING_BACK && !(gravisSatDocked & (1u << i)));
-    }
-    // Satellite spin multiplier: the sling wind-up accelerates it.
-    float GravisOrbitSpeedMult() const {
-        switch (gravisSling) {
-        case GRAVIS_SLING_PREP: return 1.0f + 5.0f * GravisEase(gravisSlingTimer / GRAVIS_SLING_PREP_TIME);
-        case GRAVIS_SLING_LOCK: return 6.0f;
-        case GRAVIS_SLING_RECOVER: return 1.0f + 5.0f * (1.0f - GravisEase(gravisSlingTimer / GRAVIS_SLING_RECOVER_TIME));
-        default: return 1.0f;
-        }
-    }
-    // 0..1 stretch of the inner orbit while the sling is wound up or away.
-    float GravisOrbitStretch() const {
-        switch (gravisSling) {
-        case GRAVIS_SLING_PREP: return GravisEase(gravisSlingTimer / GRAVIS_SLING_PREP_TIME);
-        case GRAVIS_SLING_LOCK: case GRAVIS_SLING_OUT: case GRAVIS_SLING_BACK:
-        case GRAVIS_SLING_HARASS: return 1.0f;
-        case GRAVIS_SLING_RECOVER: return 1.0f - GravisEase(gravisSlingTimer / GRAVIS_SLING_RECOVER_TIME);
-        default: return 0.0f;
-        }
-    }
-    // 0..1 how far the nodes have gathered into the compressed glide body.
-    float GravisCompress() const {
-        switch (gravisState) {
-        case GRAVIS_GLIDE_COMPRESS: return GravisEase(gravisTimer / GRAVIS_GLIDE_COMPRESS_TIME);
-        case GRAVIS_GLIDE_LANE: case GRAVIS_GLIDE_RUN: return 1.0f;
-        case GRAVIS_GLIDE_BURST: return 1.0f - GravisEase(gravisTimer / 0.15f);
-        default: return 0.0f;
-        }
-    }
-    // Throw direction of mass i: the locked aim fanned out by GRAVIS_SLING_SPREAD.
-    glm::vec2 GravisSatDir(int i) const {
-        const float a = (float)(i - GRAVIS_SLING_COUNT / 2) * GRAVIS_SLING_SPREAD;
-        const float c = cosf(a), s = sinf(a);
-        return {gravisAim.x * c - gravisAim.y * s, gravisAim.x * s + gravisAim.y * c};
-    }
-    glm::vec2 GravisSatOut(float u, int i = GRAVIS_SLING_COUNT / 2) const {
-        u = std::clamp(u, 0.0f, 1.0f);
-        const glm::vec2 dir = GravisSatDir(i);
-        const glm::vec2 origin = glm::vec2(gravisSatOrigin) + (dir - gravisAim) * GRAVIS_SLING_ORIGIN;
-        return origin + dir * (gravisSlingRange * u * (1.15f - 0.15f * u));
-    }
-    // Where the destination circle sits, valid from the lane lock onward.
-    bool GravisDestinationShown() const {
-        return gravisState >= GRAVIS_GLIDE_LANE && gravisState <= GRAVIS_GLIDE_BURST;
-    }
-    // Point at arc length s along a dart path.
-    static glm::vec2 GravisDartAt(const GravisDartPath& p, float s) {
-        const float th = p.theta0 + p.kappa * s;
-        return p.from + glm::vec2((sinf(th) - sinf(p.theta0)) / p.kappa,
-                                  (cosf(p.theta0) - cosf(th)) / p.kappa);
-    }
-    static glm::vec2 GravisDartTangent(const GravisDartPath& p, float s) {
-        const float th = p.theta0 + p.kappa * s;
-        return {cosf(th), sinf(th)};
-    }
-    // The arc a dart from mass i's current position would fly: it passes
-    // through the announced point and carries on beyond it, bending to one
-    // side, and stops short of leaving the arena by more than 60px.
-    GravisDartPath GravisDartPlan(int i) const {
-        GravisDartPath path;
-        path.from = gravisSatPos[i];
-        const glm::vec2 to = gravisDartTarget[i] - path.from;
-        const float len = std::max(1.0f, glm::length(to));
-        path.kappa = gravisDartSide[i] / GRAVIS_DART_CURVE_RADIUS;
-        // For a constant-curvature arc the chord's direction is the average heading.
-        path.theta0 = atan2f(to.y, to.x) - path.kappa * len * 0.5f;
-        float length = len + GRAVIS_DART_BEYOND;
-        const glm::vec4& b = gravisBounds;
-        if (b.z > b.x && b.w > b.y) {
-            for (int k = 0; k < 24 && length > len + 40.0f; ++k) {
-                const glm::vec2 e = GravisDartAt(path, length);
-                if (e.x >= b.x - 60.0f && e.x <= b.z + 60.0f && e.y >= b.y - 60.0f && e.y <= b.w + 60.0f) break;
-                length -= 25.0f;
-            }
-            length = std::max(length, len + 40.0f);
-        }
-        path.length = length;
-        return path;
-    }
-    bool GravisDartFlying(int i) const { return gravisDartState[i] == 2; }
-    // The masses keep the momentum of the throw and are drawn in from there.
-    void EnterGravisHarass(glm::vec2 player) {
-        gravisSling = GRAVIS_SLING_HARASS;
-        gravisSlingTimer = 0.0f;
-        gravisHarassCenter = player;
-        for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) {
-            gravisSatPrev[i] = gravisSatPos[i];
-            gravisSatVel[i] = GravisSatDir(i) * (gravisSlingRange * 0.85f / GRAVIS_SLING_OUT_TIME);
-            gravisOrbitA0[i] = (float)i * (6.2831853f / (float)GRAVIS_SLING_COUNT) + 0.9f;
-            gravisDartState[i] = 0;
-            gravisDartTimer[i] = 0.0f;
-            gravisDartReadyAt[i] = 0.0f;
-            gravisDartCount[i] = 0;
-            gravisDartHit[i] = false;
-        }
-    }
-    void EnterGravisBack() {
-        gravisSling = GRAVIS_SLING_BACK;
-        gravisSlingTimer = 0.0f;
-        gravisSatHitBack = 0;
-        gravisSatDocked = 0;
-        for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) gravisDartState[i] = 0;
-    }
-
-    void BeginGravisSling() {
-        gravisSling = GRAVIS_SLING_PREP;
-        gravisSlingTimer = 0.0f;
-        gravisSatHitOut = gravisSatHitBack = 0;
-    }
-    void BeginGravisGlide() {
-        gravisState = GRAVIS_GLIDE_COMPRESS;
-        gravisTimer = 0.0f;
-        gravisBlasted = gravisBlastHit = false;
-    }
-
-    // Distance along dir from p to the edge of the attack rectangle.
-    static float GravisRayExit(glm::vec2 p, glm::vec2 dir, const glm::vec4& b) {
-        float t = 1.0e9f;
-        if (dir.x > 0.0001f) t = std::min(t, (b.z - p.x) / dir.x);
-        else if (dir.x < -0.0001f) t = std::min(t, (b.x - p.x) / dir.x);
-        if (dir.y > 0.0001f) t = std::min(t, (b.w - p.y) / dir.y);
-        else if (dir.y < -0.0001f) t = std::min(t, (b.y - p.y) / dir.y);
-        return std::max(0.0f, t);
-    }
-
-    // Sling: direction and range are read once, at the lock.
-    void LockGravisSling(float playerX, float playerY, const glm::vec4& bounds) {
-        const glm::vec2 body(worldX, worldY);
-        const glm::vec2 toPlayer = glm::vec2(playerX, playerY) - body;
-        const float dist = glm::length(toPlayer);
-        if (dist > 1.0f) gravisAim = toPlayer / dist;
-        float range = std::clamp(dist + GRAVIS_SLING_RANGE_PAD,
-                                 GRAVIS_SLING_RANGE_MIN, GRAVIS_SLING_RANGE_MAX);
-        if (bounds.z > bounds.x && bounds.w > bounds.y)
-            range = std::max(std::min(range, GravisRayExit(body, gravisAim, bounds)),
-                             std::min(dist + 40.0f, GRAVIS_SLING_RANGE_MAX));
-        gravisSlingRange = range;
-        gravisSatOrigin = body;
-        for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) gravisSatPos[i] = GravisSatOut(0.0f, i);
-        gravisSatHitOut = gravisSatHitBack = 0;
-    }
-
-    // Glide: the destination is the player's position at the lock (length
-    // clamped, kept inside the arena); the path and the circle never move.
-    void LockGravisGlide(float playerX, float playerY, const glm::vec4& bounds) {
-        const glm::vec2 start(worldX, worldY);
-        const glm::vec2 toPlayer = glm::vec2(playerX, playerY) - start;
-        const float dist = glm::length(toPlayer);
-        if (dist > 1.0f) gravisGlideAim = toPlayer / dist;
-        glm::vec2 dest = start + gravisGlideAim * std::clamp(dist, GRAVIS_GLIDE_LEN_MIN,
-                                                             GRAVIS_GLIDE_LEN_MAX);
-        if (bounds.z > bounds.x && bounds.w > bounds.y) {
-            const float m = GRAVIS_GLIDE_EDGE_MARGIN;
-            const float loX = bounds.x + m, hiX = std::max(loX, bounds.z - m);
-            const float loY = bounds.y + m, hiY = std::max(loY, bounds.w - m);
-            dest.x = std::clamp(dest.x, loX, hiX);
-            dest.y = std::clamp(dest.y, loY, hiY);
-            const glm::vec2 path = dest - start;
-            const float length = glm::length(path);
-            if (length > 1.0f) gravisGlideAim = path / length;
-        }
-        gravisGlideStart = start;
-        gravisGlideDest = dest;
-    }
-
-    // Arrival burst: only inside the circle fixed at the lock. Damage and a
-    // slow; no shove, so the player is still inside Gravis' field when the
-    // field comes back (the pull and the slow then work together).
-    void GravisBlast(float playerX, float playerY, float& playerHP) {
-        gravisBlasted = true;
-        const glm::vec2 offset = glm::vec2(playerX, playerY) - gravisGlideDest;
-        if (glm::length(offset) > GRAVIS_BLAST_RADIUS) return;
-        gravisBlastHit = true;
-        HurtPlayer(playerHP, GRAVIS_BLAST_DAMAGE);
-        gravisSlowRequest = GRAVIS_SLOW_TIME;
-    }
-
-    static float GravisSegDistSq(glm::vec2 a, glm::vec2 b, glm::vec2 p) {
-        const glm::vec2 ab = b - a;
-        const float len2 = glm::dot(ab, ab);
-        const float u = len2 > 0.0001f ? std::clamp(glm::dot(p - a, ab) / len2, 0.0f, 1.0f) : 0.0f;
-        const glm::vec2 d = a + ab * u - p;
-        return glm::dot(d, d);
-    }
-    static glm::vec2 GravisClampLength(glm::vec2 v, float maxLength) {
-        const float length = glm::length(v);
-        return length > maxLength && length > 0.0001f ? v * (maxLength / length) : v;
-    }
-
-    // The sling machine: runs on its own clock beside the body.
-    void UpdateGravisSling(float playerX, float playerY, float deltaTime, float& playerHP,
-                           const glm::vec4& bounds) {
-        const glm::vec2 player(playerX, playerY);
-        const glm::vec2 body(worldX, worldY);
-        const float hitSq = GRAVIS_SLING_HIT_RADIUS * GRAVIS_SLING_HIT_RADIUS;
-        gravisSlingTimer += deltaTime;
-        gravisBounds = bounds;
-        if (!gravisPlayerSeen) { gravisPlayerPrev = player; gravisPlayerSeen = true; }
-        if (deltaTime > 0.0f) {
-            const glm::vec2 v = (player - gravisPlayerPrev) / deltaTime;
-            gravisPlayerVel += (v - gravisPlayerVel) * (1.0f - expf(-12.0f * deltaTime));
-        }
-        gravisPlayerPrev = player;
-        switch (gravisSling) {
-        case GRAVIS_IDLE:
-            if (gravisSlingTimer >= GRAVIS_SLING_COOLDOWN) BeginGravisSling();
-            break;
-        case GRAVIS_SLING_PREP:
-            if (gravisSlingTimer >= GRAVIS_SLING_PREP_TIME) {
-                LockGravisSling(playerX, playerY, bounds);
-                gravisSling = GRAVIS_SLING_LOCK;
-                gravisSlingTimer = 0.0f;
-            }
-            break;
-        case GRAVIS_SLING_LOCK:
-            if (gravisSlingTimer >= GRAVIS_SLING_LOCK_TIME) {
-                // The throw leaves from wherever the body is now.
-                gravisSatOrigin = body;
-                for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) gravisSatPos[i] = GravisSatOut(0.0f, i);
-                gravisSling = GRAVIS_SLING_OUT;
-                gravisSlingTimer = 0.0f;
-            }
-            break;
-        case GRAVIS_SLING_OUT: {
-            const float u = std::min(1.0f, gravisSlingTimer / GRAVIS_SLING_OUT_TIME);
-            for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) {
-                const glm::vec2 previous = gravisSatPos[i];
-                gravisSatPrev[i] = previous;
-                gravisSatPos[i] = GravisSatOut(u, i);
-                if (!(gravisSatHitOut & (1u << i)) &&
-                    GravisSegDistSq(previous, gravisSatPos[i], player) <= hitSq) {
-                    gravisSatHitOut |= 1u << i;
-                    HurtPlayer(playerHP, GRAVIS_SLING_DAMAGE);
-                }
-            }
-            if (gravisSlingTimer >= GRAVIS_SLING_OUT_TIME) EnterGravisHarass(player);
-            break;
-        }
-        case GRAVIS_SLING_HARASS: {
-            const float t = gravisSlingTimer;
-            // The orbit centre trails the player, so moving away opens the ring.
-            gravisHarassCenter += (player - gravisHarassCenter) *
-                (1.0f - expf(-GRAVIS_HARASS_CENTER_LAG * deltaTime));
-            for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) {
-                int& state = gravisDartState[i];
-                if (state == 0) {
-                    // Announce only when this mass is off cooldown AND the player is
-                    // close enough; a far mass keeps closing in instead.
-                    const bool ready = t >= GRAVIS_DART_START + GRAVIS_DART_STAGGER * (float)i &&
-                                       t >= gravisDartReadyAt[i] && gravisDartCount[i] < GRAVIS_DART_PER_SAT &&
-                                       t <= GRAVIS_HARASS_TIME - GRAVIS_DART_TELEGRAPH - 1.0f;
-                    if (ready && glm::length(player - gravisSatPos[i]) <= GRAVIS_DART_RANGE) {
-                        // Announce a point a little ahead of a moving player; it never moves.
-                        const glm::vec2 lead = GravisClampLength(gravisPlayerVel * GRAVIS_DART_LEAD,
-                                                                 GRAVIS_DART_LEAD_MAX);
-                        gravisDartTarget[i] = player + lead;
-                        gravisDartSide[i] = ((i + gravisDartCount[i]) & 1) ? -1.0f : 1.0f;
-                        gravisDartTimer[i] = 0.0f;
-                        gravisDartAnchor[i] = gravisSatPos[i];   // the wind-up draws back from here
-                        gravisSatVel[i] = glm::vec2(0.0f);
-                        state = 1;
-                    }
-                } else if (state == 1) {
-                    gravisDartTimer[i] += deltaTime;
-                    if (gravisDartTimer[i] >= GRAVIS_DART_TELEGRAPH) {
-                        // Thrown from where it hovered, so the drawn arc is the real path.
-                        gravisDartPath[i] = GravisDartPlan(i);
-                        gravisDartProgress[i] = 0.0f;
-                        gravisDartSpeedNow[i] = GRAVIS_DART_LAUNCH_SPEED;   // released like a sling
-                        gravisDartHit[i] = false;
-                        state = 2;
-                    }
-                }
-                gravisSatPrev[i] = gravisSatPos[i];
-                if (state == 2) {
-                    // Committed: charge down the announced arc and carry on past the
-                    // aim point to the end of it, no other force.
-                    gravisDartSpeedNow[i] = std::min(GRAVIS_DART_SPEED,
-                                                     gravisDartSpeedNow[i] + GRAVIS_DART_ACCEL * deltaTime);
-                    gravisDartProgress[i] = std::min(gravisDartPath[i].length,
-                        gravisDartProgress[i] + gravisDartSpeedNow[i] * deltaTime);
-                    gravisSatPos[i] = GravisDartAt(gravisDartPath[i], gravisDartProgress[i]);
-                    gravisSatVel[i] = GravisDartTangent(gravisDartPath[i], gravisDartProgress[i]) * gravisDartSpeedNow[i];
-                    if (!gravisDartHit[i] &&
-                        GravisSegDistSq(gravisSatPrev[i], gravisSatPos[i], player) <= hitSq) {
-                        gravisDartHit[i] = true;
-                        HurtPlayer(playerHP, GRAVIS_DART_DAMAGE);
-                    }
-                    if (gravisDartProgress[i] >= gravisDartPath[i].length) {
-                        // The whole announced line is flown: cool down, swing back on momentum.
-                        state = 0;
-                        gravisDartCount[i]++;
-                        gravisDartReadyAt[i] = t + GRAVIS_DART_COOLDOWN;
-                    }
-                } else {
-                    if (state == 1) {
-                        // Wind-up: instead of freezing, the mass is drawn back along the
-                        // very line it will fly (so the telegraph never changes), slowly
-                        // at first and then settling, coiled for the throw.
-                        const glm::vec2 to = gravisDartTarget[i] - gravisDartAnchor[i];
-                        const float len = glm::length(to);
-                        const glm::vec2 dir = len > 1.0f ? to / len : glm::vec2(1.0f, 0.0f);
-                        const float u = GravisEase(gravisDartTimer[i] / (GRAVIS_DART_TELEGRAPH * GRAVIS_DART_WINDUP));
-                        const glm::vec2 wound = gravisDartAnchor[i] - dir * (GRAVIS_DART_PULLBACK * u);
-                        gravisSatVel[i] = deltaTime > 0.0f ? (wound - gravisSatPos[i]) / deltaTime : glm::vec2(0.0f);
-                        gravisSatPos[i] = wound;
-                    } else {
-                        const float a = gravisOrbitA0[i] + GRAVIS_HARASS_OMEGA * t;
-                        const float r = GRAVIS_HARASS_R_MID + GRAVIS_HARASS_R_SWING * sinf(0.8f * t + 2.1f * (float)i);
-                        const glm::vec2 slot = gravisHarassCenter + glm::vec2(cosf(a), sinf(a)) * r;
-                        const glm::vec2 acc = GravisClampLength(
-                            (slot - gravisSatPos[i]) * GRAVIS_HARASS_KP - gravisSatVel[i] * GRAVIS_HARASS_KD,
-                            GRAVIS_HARASS_MAX_ACC);
-                        gravisSatVel[i] = GravisClampLength(gravisSatVel[i] + acc * deltaTime,
-                                                            GRAVIS_HARASS_MAX_SPEED);
-                    }
-                    if (state != 1) gravisSatPos[i] += gravisSatVel[i] * deltaTime;
-                }
-            }
-            if (gravisSlingTimer >= GRAVIS_HARASS_TIME) EnterGravisBack();
-            break;
-        }
-        case GRAVIS_SLING_BACK: {
-            // Drawn to the live body with the momentum they have: a wide
-            // looping return that ends in a dock, not a fixed path.
-            for (int i = 0; i < GRAVIS_SLING_COUNT; ++i) {
-                const unsigned bit = 1u << i;
-                if (gravisSatDocked & bit) continue;
-                const glm::vec2 acc = GravisClampLength(
-                    (body - gravisSatPos[i]) * GRAVIS_BACK_KP - (gravisSatVel[i] - gravisBodyVel) * GRAVIS_BACK_KD,
-                    GRAVIS_BACK_MAX_ACC);
-                gravisSatVel[i] = GravisClampLength(gravisSatVel[i] + acc * deltaTime,
-                                                    GRAVIS_BACK_MAX_SPEED);
-                gravisSatPrev[i] = gravisSatPos[i];
-                gravisSatPos[i] += gravisSatVel[i] * deltaTime;
-                if (!(gravisSatHitBack & bit) &&
-                    GravisSegDistSq(gravisSatPrev[i], gravisSatPos[i], player) <= hitSq) {
-                    gravisSatHitBack |= bit;
-                    HurtPlayer(playerHP, GRAVIS_SLING_DAMAGE);
-                }
-                if (glm::length(body - gravisSatPos[i]) < GRAVIS_BACK_DOCK ||
-                    gravisSlingTimer >= GRAVIS_BACK_TIMEOUT) {
-                    gravisSatDocked |= bit;
-                    gravisSatPos[i] = body;
-                    gravisSatVel[i] = glm::vec2(0.0f);
-                }
-            }
-            if (gravisSatDocked == (1u << GRAVIS_SLING_COUNT) - 1u) {
-                gravisSling = GRAVIS_SLING_RECOVER;
-                gravisSlingTimer = 0.0f;
-            }
-            break;
-        }
-        case GRAVIS_SLING_RECOVER:
-            if (gravisSlingTimer >= GRAVIS_SLING_RECOVER_TIME) {
-                gravisSling = GRAVIS_IDLE;
-                gravisSlingTimer = 0.0f;
-            }
-            break;
-        }
-    }
-
-    void UpdateGravis(float playerX, float playerY, float deltaTime, float& playerHP,
-                      float speedMult, const glm::vec4& bounds) {
+    // ---- Gravis ------------------------------------------------------------
+    // No pattern of its own: the body drifts and the standing field
+    // (GravisField) does the work.
+    void UpdateGravis(float deltaTime, float speedMult) {
         gravisVisualAngle += deltaTime * 0.72f;
-        gravisOrbitPhase += deltaTime * 1.35f * GravisOrbitSpeedMult();
-        gravisTimer += deltaTime;
-        const glm::vec2 bodyBefore(worldX, worldY);
-        if (GravisDrifts()) {
-            gravisDriftTimer -= deltaTime;
-            if (gravisDriftTimer <= 0.0f) {
-                gravisDriftAngle += ((float)(rand() % 101) - 50.0f) * 0.012f;
-                gravisDriftTimer = 1.2f + (float)(rand() % 140) * 0.01f;
-            }
-            worldX += cosf(gravisDriftAngle) * speed * speedMult * deltaTime;
-            worldY += sinf(gravisDriftAngle) * speed * speedMult * deltaTime;
+        gravisOrbitPhase += deltaTime * 1.35f;
+        gravisDriftTimer -= deltaTime;
+        if (gravisDriftTimer <= 0.0f) {
+            gravisDriftAngle += ((float)(rand() % 101) - 50.0f) * 0.012f;
+            gravisDriftTimer = 1.2f + (float)(rand() % 140) * 0.01f;
         }
-        switch (gravisState) {
-        case GRAVIS_IDLE:
-            if (gravisTimer >= GRAVIS_COOLDOWN) BeginGravisGlide();
-            break;
-        case GRAVIS_GLIDE_COMPRESS:
-            if (gravisTimer >= GRAVIS_GLIDE_COMPRESS_TIME) {
-                LockGravisGlide(playerX, playerY, bounds);
-                gravisState = GRAVIS_GLIDE_LANE;
-                gravisTimer = 0.0f;
-            }
-            break;
-        case GRAVIS_GLIDE_LANE:
-            if (gravisTimer >= GRAVIS_GLIDE_LANE_TIME) {
-                gravisState = GRAVIS_GLIDE_RUN;
-                gravisTimer = 0.0f;
-            }
-            break;
-        case GRAVIS_GLIDE_RUN: {
-            const float u = std::min(1.0f, gravisTimer / GRAVIS_GLIDE_RUN_TIME);
-            const glm::vec2 p = gravisGlideStart +
-                (gravisGlideDest - gravisGlideStart) * GravisEase(u);
-            worldX = p.x;
-            worldY = p.y;
-            if (gravisTimer >= GRAVIS_GLIDE_RUN_TIME) {
-                worldX = gravisGlideDest.x;
-                worldY = gravisGlideDest.y;
-                GravisBlast(playerX, playerY, playerHP);
-                gravisState = GRAVIS_GLIDE_BURST;
-                gravisTimer = 0.0f;
-            }
-            break;
-        }
-        case GRAVIS_GLIDE_BURST:
-            if (gravisTimer >= GRAVIS_GLIDE_BURST_TIME) {
-                gravisState = GRAVIS_GLIDE_RECOVER;
-                gravisTimer = 0.0f;
-            }
-            break;
-        case GRAVIS_GLIDE_RECOVER:
-            if (gravisTimer >= GRAVIS_GLIDE_RECOVER_TIME) {
-                gravisState = GRAVIS_IDLE;
-                gravisTimer = 0.0f;
-            }
-            break;
-        }
-        gravisBodyVel = deltaTime > 0.0f ? (glm::vec2(worldX, worldY) - bodyBefore) / deltaTime : glm::vec2(0.0f);
-        UpdateGravisSling(playerX, playerY, deltaTime, playerHP, bounds);
+        worldX += cosf(gravisDriftAngle) * speed * speedMult * deltaTime;
+        worldY += sinf(gravisDriftAngle) * speed * speedMult * deltaTime;
     }
 
     // Shell stacks as a continuous 0..3: shell k is full once this reaches
@@ -2896,6 +2379,46 @@ public:
                    gateWX, gateWY, gateWW, gateWH);
     }
 
+    // The path a charge would fly from here along the current heading: the
+    // start plus one point per edge reflection (at most ANTARES_CHARGE_BOUNCES),
+    // ending ANTARES_CHARGE_LENGTH along the way.
+    void PlanAntaresCharge() {
+        glm::vec2 p(worldX, worldY);
+        glm::vec2 d(antaresHeadingX, antaresHeadingY);
+        const glm::vec4& b = antaresBounds;
+        const bool bounded = b.z > b.x && b.w > b.y;
+        float left = ANTARES_CHARGE_LENGTH;
+        antaresPathCount = 0;
+        antaresPath[antaresPathCount++] = p;
+        for (int seg = 0; seg <= ANTARES_CHARGE_BOUNCES && left > 0.0f; ++seg) {
+            float tx = 1.0e9f, ty = 1.0e9f;
+            if (bounded) {
+                if (d.x > 0.0001f) tx = (b.z - p.x) / d.x;
+                else if (d.x < -0.0001f) tx = (b.x - p.x) / d.x;
+                if (d.y > 0.0001f) ty = (b.w - p.y) / d.y;
+                else if (d.y < -0.0001f) ty = (b.y - p.y) / d.y;
+            }
+            const float t = std::max(0.0f, std::min(tx, ty));
+            const bool hit = t < left && seg < ANTARES_CHARGE_BOUNCES;
+            const float travel = hit ? t : left;
+            p += d * travel;
+            left -= travel;
+            antaresPath[antaresPathCount++] = p;
+            if (!hit) break;
+            if (tx <= ty) d.x = -d.x;
+            if (ty <= tx) d.y = -d.y;
+        }
+    }
+
+    void BeginAntaresCharge(float toX, float toY) {
+        antaresState = AntaresState::AIM;
+        antaresStateTimer = 0.0f;
+        antaresMoveSpeed = 0.0f;
+        antaresHeadingX = toX;
+        antaresHeadingY = toY;
+        PlanAntaresCharge();
+    }
+
     void UpdateAntares(float deltaTime, float distance, float dx, float dy,
                        float& playerHP, float speedMult,
                        float gateWX, float gateWY, float gateWW, float gateWH) {
@@ -2958,6 +2481,41 @@ public:
                     antaresSkidDecel = (antaresMoveSpeed - ANTARES_MIN_SPEED) / SKID_TIME;
                 }
             }
+        } else if (antaresState == AntaresState::AIM) {
+            // Follows the player, then holds the aim; the whole bouncing
+            // path is drawn the entire time.
+            antaresMoveSpeed = 0.0f;
+            if (antaresStateTimer < ANTARES_AIM_TRACK) {
+                antaresHeadingX = toX;
+                antaresHeadingY = toY;
+                PlanAntaresCharge();
+            } else if (antaresStateTimer >= ANTARES_AIM_TRACK + ANTARES_AIM_LOCK) {
+                antaresState = AntaresState::CHARGE;
+                antaresStateTimer = 0.0f;
+                antaresBounces = 0;
+                antaresChargeLeft = ANTARES_CHARGE_LENGTH;
+                antaresMoveSpeed = ANTARES_CHARGE_SPEED;
+            }
+        } else if (antaresState == AntaresState::CHARGE) {
+            // Fixed heading and speed (edge reflection is ConfineAntares'
+            // job). A hit on the player is a ram; the run otherwise ends
+            // when its length is used up.
+            antaresMoveSpeed = ANTARES_CHARGE_SPEED;
+            antaresChargeLeft -= antaresMoveSpeed * speedMult * deltaTime;
+            if (singularityGrace <= 0.0f && distance < AntaresRamRange()) {
+                HurtPlayer(playerHP, IMPACT_DAMAGE * antaresMoveSpeed /
+                                     ANTARES_MAX_SPEED);
+                const float knock = KNOCK_PER_SPEED * antaresMoveSpeed;
+                antaresKnockX += toX * knock;
+                antaresKnockY += toY * knock;
+                antaresState = AntaresState::STUNNED;
+                antaresStateTimer = 0.0f;
+                antaresMoveSpeed = 0.0f;
+            } else if (antaresChargeLeft <= 0.0f) {
+                antaresState = AntaresState::SKID;
+                antaresStateTimer = 0.0f;
+                antaresSkidDecel = (antaresMoveSpeed - ANTARES_MIN_SPEED) / SKID_TIME;
+            }
         } else if (antaresState == AntaresState::SKID) {
             antaresMoveSpeed = std::max(ANTARES_MIN_SPEED,
                                         antaresMoveSpeed - antaresSkidDecel * deltaTime);
@@ -2973,14 +2531,20 @@ public:
                 ? ANTARES_STUN_TIME : ANTARES_REST_TIME;
             antaresMoveSpeed = 0.0f;
             if (antaresStateTimer >= hold) {
-                antaresState = AntaresState::CHASE;
-                antaresStateTimer = 0.0f;
-                antaresMoveSpeed = ANTARES_MIN_SPEED;
-                antaresHeadingX = toX;
-                antaresHeadingY = toY;
+                ++antaresRuns;
+                if (antaresGen == 0 && antaresInArena && (antaresRuns & 1) == 0) {
+                    BeginAntaresCharge(toX, toY);
+                } else {
+                    antaresState = AntaresState::CHASE;
+                    antaresStateTimer = 0.0f;
+                    antaresMoveSpeed = ANTARES_MIN_SPEED;
+                    antaresHeadingX = toX;
+                    antaresHeadingY = toY;
+                }
             }
         }
         antaresPrevFacing = antaresHeadingX * toX + antaresHeadingY * toY;
+        antaresBounceCd = std::max(0.0f, antaresBounceCd - deltaTime);
 
         // Spin tracks speed, so the frame visibly winds up and down with it.
         antaresSpinSpeed = SPIN_SLOW + (SPIN_FAST - SPIN_SLOW) * AntaresSpeedRatio();
@@ -3135,7 +2699,7 @@ public:
         }
 
         if (kind == MobKind::GRAVIS) {
-            UpdateGravis(playerCX, playerCY, deltaTime, playerHP, speedMult, attackBounds);
+            UpdateGravis(deltaTime, speedMult);
             TryContact(std::sqrt((playerCX - worldX) * (playerCX - worldX) +
                                  (playerCY - worldY) * (playerCY - worldY)) + 1e-4f,
                        playerHP, contactDmg, deltaTime);
@@ -3276,7 +2840,13 @@ public:
                 regulusDriftAngle += ((float)(rand() % 201) - 100.0f) * 0.012f;
                 regulusDriftTimer = 0.8f + (float)(rand() % 150) * 0.01f;
             }
-            const float movementSpeed = std::min(speed * speedMult, 90.0f);
+            regulusPhaseTimer += deltaTime;
+            if (regulusPhaseTimer >= RegulusPhaseDuration()) {
+                regulusPhaseTimer = 0.0f;
+                regulusPhase = (regulusPhase + 1) % 3;
+            }
+            const float surge = RegulusSurging() ? REGULUS_SURGE_MULT : 1.0f;
+            const float movementSpeed = std::min(speed * speedMult, 90.0f) * surge;
             worldX += cosf(regulusDriftAngle) * movementSpeed * deltaTime;
             worldY += sinf(regulusDriftAngle) * movementSpeed * deltaTime;
             return;

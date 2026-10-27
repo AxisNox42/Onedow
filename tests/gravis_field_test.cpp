@@ -1,4 +1,4 @@
-// Headless regression for the Gravis elite field: the pull is stronger but
+// Headless regression for the Gravis field: the pull is stronger but
 // capped against the player's move speed, and the time-dilation influence
 // slows fire / dash recovery without stacking across several Gravis.
 // Run with scripts/test_gravis_field.ps1.
@@ -22,7 +22,7 @@ static void CheckInfluenceCurve() {
 static void CheckPullStrength() {
     using namespace GravisField;
     assert(Near(PullSpeed(0.0f), 0.0f));
-    assert(Near(PullSpeed(1.0f), 150.0f));
+    assert(Near(PullSpeed(1.0f), 350.0f));
     assert(PullSpeed(0.5f) > 0.0f && PullSpeed(0.5f) < PullSpeed(1.0f));
     std::printf("pull strength ok (center %.0f px/s)\n", PullSpeed(1.0f));
 }
@@ -34,7 +34,7 @@ static void CheckPullCapAcrossSeveralGravis() {
     // Five Gravis stacked on the player's side, all at point blank.
     for (int i = 0; i < 5; ++i) acc.Add(10.0f, 0.0f);
     const float cap = PullCap(moveSpeed);
-    assert(Near(cap, 220.0f));
+    assert(Near(cap, 320.0f));
     const float rawLen = std::sqrt(acc.pullVX * acc.pullVX + acc.pullVY * acc.pullVY);
     assert(rawLen > cap);
     acc.ClampPull(cap);
@@ -46,7 +46,7 @@ static void CheckPullCapAcrossSeveralGravis() {
 
 static void CheckCapScalesWithMoveSpeed() {
     using namespace GravisField;
-    assert(Near(PullCap(400.0f * 0.68f), 400.0f * 0.68f * 0.55f));
+    assert(Near(PullCap(400.0f * 0.68f), 400.0f * 0.68f * 0.80f));
     assert(PullCap(400.0f * 0.68f) < PullCap(400.0f));
     std::printf("cap follows move speed ok\n");
 }
@@ -75,10 +75,10 @@ static void CheckDilationUsesStrongestOnly() {
 static void CheckDilationValues() {
     using namespace GravisField;
     assert(Near(FireIntervalMult(0.0f), 1.0f));
-    assert(Near(FireIntervalMult(1.0f), 1.35f));
+    assert(Near(FireIntervalMult(1.0f), 1.6f));
     assert(Near(DashRecoveryMult(0.0f), 1.0f));
-    assert(Near(DashRecoveryMult(1.0f), 0.5f));
-    assert(DashRecoveryMult(0.5f) > 0.5f && DashRecoveryMult(0.5f) < 1.0f);
+    assert(Near(DashRecoveryMult(1.0f), 0.25f));
+    assert(DashRecoveryMult(0.5f) > 0.25f && DashRecoveryMult(0.5f) < 1.0f);
     std::printf("dilation values ok\n");
 }
 
@@ -95,7 +95,8 @@ static void CheckOutsideFieldIsNeutral() {
 }
 
 static void CheckEliteSet() {
-    assert(IsEliteMob(MobKind::GRAVIS));
+    assert(!IsEliteMob(MobKind::GRAVIS));
+    assert(IsEliteMob(MobKind::REGULUS));
     assert(IsEliteMob(MobKind::GENESIS));
     assert(IsEliteMob(MobKind::QUASAR));
     assert(!IsEliteMob(MobKind::ROTOR));

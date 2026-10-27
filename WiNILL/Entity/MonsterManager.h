@@ -118,6 +118,86 @@ public:
         return tier;
     }
 
+    // Two Antares that touch trade velocity along the contact normal (equal
+    // masses) and leave faster; the speed stays under ANTARES_MAX_SPEED. A
+    // resting one is knocked into a run.
+    static glm::vec2 AntaresVelocity(const Monster& m) {
+        using S = Monster::AntaresState;
+        const bool moving = m.antaresState == S::CHASE || m.antaresState == S::SKID ||
+                            m.antaresState == S::CHARGE;
+        return moving ? glm::vec2(m.antaresHeadingX, m.antaresHeadingY) * m.antaresMoveSpeed
+                      : glm::vec2(0.0f);
+    }
+    static void SetAntaresVelocity(Monster& m, glm::vec2 v) {
+        using S = Monster::AntaresState;
+        const float len = glm::length(v);
+        if (len < 0.001f) return;
+        m.antaresHeadingX = v.x / len;
+        m.antaresHeadingY = v.y / len;
+        if (m.antaresState == S::CHARGE) return;   // keeps its own speed
+        m.antaresMoveSpeed = std::clamp(len * Monster::ANTARES_BOUNCE_BOOST,
+                                        Monster::ANTARES_BOUNCE_MIN_SPEED,
+                                        Monster::ANTARES_MAX_SPEED);
+        m.antaresState = S::CHASE;
+        m.antaresStateTimer = 0.0f;
+    }
+    void ResolveAntaresCollisions() {
+        for (size_t i = 0; i < monsters.size(); ++i) {
+            Monster* a = monsters[i];
+            if (a->kind != MobKind::ANTARES || !a->alive || a->thrownPhase != 0 ||
+                !a->antaresInArena) continue;
+            for (size_t j = i + 1; j < monsters.size(); ++j) {
+                Monster* b = monsters[j];
+                if (b->kind != MobKind::ANTARES || !b->alive || b->thrownPhase != 0 ||
+                    !b->antaresInArena) continue;
+                if (a->antaresBounceCd > 0.0f || b->antaresBounceCd > 0.0f) continue;
+                const glm::vec2 d(b->worldX - a->worldX, b->worldY - a->worldY);
+                const float reach = 26.0f * (a->sizeScale + b->sizeScale);
+                const float dist = glm::length(d);
+                if (dist >= reach || dist < 0.001f) continue;
+                const glm::vec2 n = d / dist;
+                const glm::vec2 va = AntaresVelocity(*a), vb = AntaresVelocity(*b);
+                const float closing = glm::dot(va - vb, n);
+                if (closing <= 0.0f) continue;   // already moving apart (or both still)
+                SetAntaresVelocity(*a, va - n * closing);
+                SetAntaresVelocity(*b, vb + n * closing);
+                const float push = (reach - dist) * 0.5f;
+                a->worldX -= n.x * push; a->worldY -= n.y * push;
+                b->worldX += n.x * push; b->worldY += n.y * push;
+                a->antaresBounceCd = b->antaresBounceCd = Monster::ANTARES_BOUNCE_COOLDOWN;
+            }
+        }
+    }
+
+    // A killed generation-0 Antares releases smaller ones that fly apart on
+    // its last heading. Silent clears (noBlast) release nothing.
+    void SpawnAntaresSplits() {
+        const size_t count = monsters.size();
+        for (size_t i = 0; i < count; ++i) {
+            Monster* m = monsters[i];
+            if (m->kind != MobKind::ANTARES || m->alive || m->antaresGen != 0 ||
+                m->antaresSplit) continue;
+            m->antaresSplit = true;
+            if (m->noBlast) continue;
+            const float base = atan2f(m->antaresHeadingY, m->antaresHeadingX) + 1.5707963f;
+            for (int k = 0; k < Monster::ANTARES_SPLIT_COUNT; ++k) {
+                const float a = base + (float)k * 6.2831853f / (float)Monster::ANTARES_SPLIT_COUNT;
+                auto* c = new Monster(m->worldX + cosf(a) * 34.0f, m->worldY + sinf(a) * 34.0f);
+                c->MakeKind(MobKind::ANTARES);
+                c->antaresGen = 1;
+                c->sizeScale *= Monster::ANTARES_CHILD_SCALE;
+                c->hp = c->hp / Monster::ANTARES_ELITE_HP_MULT * Monster::ANTARES_CHILD_HP;
+                c->antaresInArena = true;
+                c->antaresHeadingX = cosf(a);
+                c->antaresHeadingY = sinf(a);
+                c->antaresMoveSpeed = 320.0f;
+                c->antaresBounceCd = Monster::ANTARES_BOUNCE_COOLDOWN;
+                c->antaresTrail.fill(glm::vec3(c->worldX, c->worldY, c->antaresVisualAngle));
+                monsters.push_back(c);
+            }
+        }
+    }
+
     void UpdateDeathEffects(float delta) {
         for (auto* mob : monsters) mob->UpdateDeathEffect(delta);
     }
@@ -158,6 +238,8 @@ public:
         //   너무 가까우면 서로 밀어내고, 4명 이상에게 밀리면 압사 데미지
         //   summoned 몹은 더 큰 반경 (소환물 더 큼)
         ResolveMonsterCrowding(dt);
+        ResolveAntaresCollisions();
+        SpawnAntaresSplits();
 
         UpdateRegulusShots(dt);
         UpdateRegulusBeams(dt);

@@ -63,7 +63,11 @@ inline void CollectMonsterKill(KillRewardSink& s, Monster& m) {
     float xpBase, scoreBase;
     MobKillReward(m.kind, xpBase, scoreBase);
     scoreBase *= MobRewardMult(m.kind);
-    const XpAmount pickupXp = MobExperienceReward(m.kind, s.stats);
+    XpAmount pickupXp = MobExperienceReward(m.kind, s.stats);
+    if (m.kind == MobKind::ANTARES && m.antaresGen > 0) {   // split children pay half
+        pickupXp /= 2;
+        scoreBase *= 0.5f;
+    }
     SpawnKillStardust(m, StardustRewardFor(m.kind),
                       s.playerCX, s.playerCY, pickupXp);
     CreditRegularKill(s, CodexMobIdForKind(m.kind), scoreBase);

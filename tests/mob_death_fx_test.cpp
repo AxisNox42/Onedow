@@ -1,4 +1,4 @@
-// Headless regression: run with scripts/test_mob_death_fx.ps1.
+﻿// Headless regression: run with scripts/test_mob_death_fx.ps1.
 #include "Monster.h"
 #include "RangedMob.h"
 #include "../WiNILL/Render/Camera.h"
@@ -196,7 +196,7 @@ static void CheckAntaresBullfight() {
     // Chase: speed, stage and spin climb continuously up to the top speed.
     Monster chaser(3000.0f, 0.0f);
     chaser.MakeKind(MobKind::ANTARES);
-    assert(std::abs(chaser.hp - Monster::ANTARES_BASE_HP) < 0.01f);
+    assert(std::abs(chaser.hp - Monster::ANTARES_BASE_HP * Monster::ANTARES_ELITE_HP_MULT) < 0.01f);
     assert(chaser.AntaresStage() == 1 && chaser.AntaresGhostCount() == 0);
     float lastSpeed = 0.0f, lastSpin = 0.0f, elapsed = 0.0f;
     int lastStage = 1;
@@ -215,7 +215,7 @@ static void CheckAntaresBullfight() {
     assert(lastSpeed == Monster::ANTARES_MAX_SPEED && lastStage == 4);
     assert(chaser.AntaresGhostCount() == Monster::ANTARES_TRAIL_COUNT);
 
-    // Top speed turns slowest: capped at 40°/s.
+    // Top speed turns slowest: capped at 40째/s.
     Monster turner(0.0f, 0.0f);
     turner.MakeKind(MobKind::ANTARES);
     turner.antaresMoveSpeed = Monster::ANTARES_MAX_SPEED;

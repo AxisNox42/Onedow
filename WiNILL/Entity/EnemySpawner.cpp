@@ -33,8 +33,7 @@ static MobKind MobKindFor(RosterKind kind) {
     switch (kind) {
     case RosterKind::SWARM:    return MobKind::SWARM;
     case RosterKind::GIMBAL:   return MobKind::GIMBAL;
-    case RosterKind::REGULUS:  return MobKind::REGULUS;
-    case RosterKind::ANTARES:  return MobKind::ANTARES;
+    case RosterKind::GRAVIS:   return MobKind::GRAVIS;
     case RosterKind::MAGNETAR: return MobKind::MAGNETAR;
     default:                   return MobKind::ROTOR;
     }
@@ -55,7 +54,7 @@ static void SpecializeRegularMob(Monster& mob, int wave, Difficulty difficulty,
 
 // Every elite wave, on every difficulty, brings one of these at random.
 static constexpr MobKind kEliteKinds[] = {
-    MobKind::QUASAR, MobKind::GRAVIS, MobKind::GENESIS
+    MobKind::QUASAR, MobKind::REGULUS, MobKind::GENESIS, MobKind::ANTARES
 };
 static constexpr int kEliteKindCount = (int)(sizeof(kEliteKinds) / sizeof(kEliteKinds[0]));
 
@@ -224,7 +223,8 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
     }
 
     // Scope uses its own ranged spawn path, gated by its roster entry.
-    if (!RosterUnlocked(RosterKind::SCOPE, wave, (int)difficulty)) {
+    const float scopeRate = ScopeRateMult(wave, (int)difficulty);
+    if (!RosterUnlocked(RosterKind::SCOPE, wave, (int)difficulty) || scopeRate <= 0.0f) {
         g_EnemySpawnState.rangedTimer = 0.0f;
         return;
     }
@@ -232,7 +232,7 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
     float rangedInterval = 5.0f * TrialRangedIntervalMult(score) -
         stats.rmobSpawnDelayBonus;
     rangedInterval = std::max(1.0f, rangedInterval) /
-        (spawnPressure * difficultyParams.spawnRateMultiplier) *
+        (spawnPressure * difficultyParams.spawnRateMultiplier * scopeRate) *
         kEnemySpawnIntervalScale * 2.5f * rangedStretch;
     if (g_EnemySpawnState.spawnedThisWave < waveSpawnCap &&
         g_EnemySpawnState.rangedTimer >= rangedInterval) {

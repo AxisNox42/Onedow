@@ -66,21 +66,46 @@ int main() {
         }
 
     // HARD-only enemies wait until wave 10+, NORMAL-only ones skip EASY.
-    // Elite kinds (Gravis, Genesis, Quasar) have no roster entry at all:
+    // Elite kinds (Regulus, Genesis, Quasar) have no roster entry at all:
     // they only enter as an elite wave's scheduled elite.
     EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 2) >= 10, "magnetar late on HARD");
     EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 3) > 0, "magnetar on NIGHTMARE");
     EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 1) == 0, "magnetar not on NORMAL");
     EXPECT((int)(sizeof(kEnemyRoster) / sizeof(kEnemyRoster[0])) == (int)RosterKind::COUNT,
            "one roster entry per kind");
-    EXPECT(RosterFirstWave(RosterKind::REGULUS, 0) == 0, "regulus not on EASY");
+    EXPECT(RosterFirstWave(RosterKind::GRAVIS, 0) == 0, "gravis not on EASY");
     EXPECT(RosterFirstWave(RosterKind::SCOPE, 0) == 0, "scope not on EASY");
 
-    // Odds start low on the first wave, rise 2% per wave and stop at the cap;
-    // the weighted kinds never exceed 100% together.
-    EXPECT(RosterChancePct(RosterKind::GIMBAL, 3, 1) == 6, "gimbal start");
-    EXPECT(RosterChancePct(RosterKind::GIMBAL, 4, 1) == 8, "gimbal +2");
-    EXPECT(RosterChancePct(RosterKind::GIMBAL, 30, 1) == 20, "gimbal cap");
+    // Gimbal and Scope trade places: Gimbal alone and rising (A), then Scope
+    // few while Gimbal falls (B), then Scope heavy with Gimbal low (C).
+    for (int d = 0; d < kD; ++d) {
+        const GimbalScopePhases& ph = kGimbalScope[d];
+        EXPECT(RosterFirstWave(RosterKind::GIMBAL, d) == ph.a[0], "%s gimbal starts with phase A", kDiff[d]);
+        EXPECT(RosterFirstWave(RosterKind::SCOPE, d) == ph.b[0], "%s scope starts with phase B", kDiff[d]);
+        if (ph.b[0] > 0) {
+            EXPECT(ph.b[0] - ph.a[0] >= 3, "%s scope debuts too close to gimbal", kDiff[d]);
+            EXPECT(ph.b[0] == ph.a[1] + 1 && ph.c[0] == ph.b[1] + 1, "%s phases are contiguous", kDiff[d]);
+            EXPECT(ph.c[1] == FinalWave(d), "%s phase C runs to the end", kDiff[d]);
+        }
+        for (int wave = 1; wave <= FinalWave(d); ++wave) {
+            const int g = GimbalChancePct(wave, d);
+            const float sc = ScopeRateMult(wave, d);
+            if (wave < ph.a[0]) EXPECT(g == 0 && sc == 0.0f, "%s wave %d before phases", kDiff[d], wave);
+            if (InPhase(ph.a, wave)) EXPECT(g > 0 && sc == 0.0f, "%s wave %d: gimbal only", kDiff[d], wave);
+            if (InPhase(ph.b, wave)) EXPECT(g > 0 && sc > 0.0f, "%s wave %d: swap", kDiff[d], wave);
+            if (InPhase(ph.c, wave)) EXPECT(g > 0 && g < kGimbalPeakPct && sc >= kScopeLateFromRate,
+                                           "%s wave %d: scope heavy", kDiff[d], wave);
+            EXPECT(g <= kGimbalPeakPct, "%s wave %d gimbal over peak", kDiff[d], wave);
+        }
+        if (ph.b[0] > 0) {
+            EXPECT(GimbalChancePct(ph.b[0], d) < GimbalChancePct(ph.a[1], d) + 1, "%s gimbal falls into B", kDiff[d]);
+            EXPECT(ScopeRateMult(ph.c[0], d) > ScopeRateMult(ph.b[1], d), "%s scope rises into C", kDiff[d]);
+        }
+    }
+    EXPECT(GimbalChancePct(2, 3) == 12 && GimbalChancePct(5, 3) == 27, "nightmare gimbal climbs");
+    EXPECT(ScopeRateMult(11, 3) == kScopeLateFromRate, "nightmare scope heavy starts");
+
+    // The weighted kinds never exceed 100% together.
     for (int d = 0; d < kD; ++d)
         for (int wave = 1; wave <= FinalWave(d); ++wave) {
             int total = 0;

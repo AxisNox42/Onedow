@@ -14,8 +14,7 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
     // capped against the player's move speed, dilation keeps the strongest.
     FieldAccum field;
     for (const Monster* gravis : monsters.monsters) {
-        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS ||
-            !gravis->GravisFieldActive()) continue;
+        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
         // The field stops at window borders like every other effect.
         if (!space::SameSpace(gravis->worldX, gravis->worldY, playerX, playerY)) continue;
         field.Add(gravis->worldX - playerX, gravis->worldY - playerY);
@@ -30,8 +29,7 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
     // The field also curves every live bullet toward its Gravis.
     constexpr float fieldRadiusSq = RADIUS * RADIUS;
     for (const Monster* gravis : monsters.monsters) {
-        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS ||
-            !gravis->GravisFieldActive()) continue;
+        if (!gravis || !gravis->alive || gravis->kind != MobKind::GRAVIS) continue;
         for (Bullet& bullet : bullets) {
             if (!bullet.active) continue;
             if (!space::SameSpace(gravis->worldX, gravis->worldY, bullet.x, bullet.y)) continue;
@@ -42,7 +40,7 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
 
             const float distance = std::sqrt(distanceSq);
             const float influence = 1.0f - distance / RADIUS;
-            const float curve = (0.34f + 1.18f * influence) * dt;
+            const float curve = (0.70f + 2.40f * influence) * dt;
             bullet.dirX += bx / distance * curve;
             bullet.dirY += by / distance * curve;
             const float directionLength =
