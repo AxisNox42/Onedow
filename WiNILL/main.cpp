@@ -194,6 +194,37 @@ static void DrawPaneOutline(const os_pane::Rect& r, hud_lines::Rgb c, float w, f
     PaneSeg(r.x, r.y + r.h, r.x, r.y, w, c, a);
 }
 
+// A lit fuse, drawn as a bright head running round the pane's frame, faster
+// each lap, with a lit trail behind it. At the end the frame locks solid and
+// the pane folds shut.
+static void DrawPaneFuse(const os_pane::Rect& pane, float share) {
+    const hud_lines::Rgb warn{ 0.86f, 0.80f, 1.0f }, white{ 0.92f, 0.99f, 1.0f };
+    DrawPaneOutline(pane, warn, 1.4f, 0.40f);
+    // Point at fraction s (0..1) round the frame, clockwise from the top-left.
+    const float perim = 2.0f * (pane.w + pane.h);
+    auto at = [&](float s, float& x, float& y) {
+        s -= std::floor(s);
+        float d = s * perim;
+        if (d < pane.w) { x = pane.x + d; y = pane.y; return; }
+        d -= pane.w;
+        if (d < pane.h) { x = pane.x + pane.w; y = pane.y + d; return; }
+        d -= pane.h;
+        if (d < pane.w) { x = pane.x + pane.w - d; y = pane.y + pane.h; return; }
+        d -= pane.w;
+        x = pane.x; y = pane.y + pane.h - d;
+    };
+    const float laps = 1.2f * share + 3.2f * share * share;
+    constexpr int kTrail = 34;
+    for (int i = 0; i < kTrail; ++i) {
+        float x0, y0, x1, y1;
+        at(laps - 0.012f * (float)i, x0, y0);
+        at(laps - 0.012f * (float)(i + 1), x1, y1);
+        PaneSeg(x0, y0, x1, y1, i < 3 ? 4.0f : 2.4f, i < 3 ? white : warn,
+                1.0f - (float)i / (float)kTrail);
+    }
+    if (share > 0.92f) DrawPaneOutline(pane, white, 4.0f, 1.0f);
+}
+
 // A gradient made of lines: outlines stepping away from (outward > 0) or into
 // the frame, each fainter than the last.
 static void DrawPaneGlow(const os_pane::Rect& r, hud_lines::Rgb c, float alpha,
@@ -285,13 +316,12 @@ struct NormaFlash;
 static const NormaFlash* FlashFor(int id);
 static float FlashAge(const NormaFlash& f);
 static bool CountdownFor(int id, float& left);
-static void DrawSummonStars(const os_pane::Pane& p);
 static float RamRedFor(int id);
 static void DrawPaneHop(const os_pane::Pane& p);
 static void DrawRamLane(const os_pane::Pane& p);
 static bool ThrowPayloadFor(int id, int& count, float& turn);
 static void DrawThrowAppear();
-static bool FuseFor(int id, float& share, os_pane::Rect& range);
+static bool FuseFor(int id, float& share);
 struct PaneCollapse;
 static void DrawPaneCollapses(float dt);
 static void DrawPaneBrackets() {
@@ -315,7 +345,6 @@ static void DrawPaneBrackets() {
                         box.w * grow, box.h * grow };
             }
         }
-        DrawSummonStars(p);
         int payload = 0;
         float payloadTurn = 0.0f;
         if (ThrowPayloadFor(p.id, payload, payloadTurn)) {
@@ -331,17 +360,7 @@ static void DrawPaneBrackets() {
             }
         }
         float fuseShare = 0.0f;
-        os_pane::Rect blast{};
-        if (FuseFor(p.id, fuseShare, blast)) {
-            // The blast range, firming up as the fuse burns, and the frame
-            // throbbing faster toward the blast.
-            const hud_lines::Rgb warn{ 0.86f, 0.80f, 1.0f };
-            DrawPaneOutline(blast, warn, 1.2f + 1.8f * fuseShare, 0.30f + 0.55f * fuseShare);
-            const float beat = 0.5f + 0.5f * sinf(g_GameTime * (10.0f + 30.0f * fuseShare));
-            DrawPaneOutline(p.shown, { 0.92f, 0.99f, 1.0f }, 1.5f + 2.5f * beat, 0.4f + 0.5f * beat);
-            PaneSeg(blast.x, blast.y - 6.0f,
-                               blast.x + blast.w * (1.0f - fuseShare), blast.y - 6.0f, 3.0f, warn, 0.9f);
-        }
+        if (FuseFor(p.id, fuseShare)) DrawPaneFuse(p.shown, fuseShare);
         float countdown = 0.0f;
         if (CountdownFor(p.id, countdown)) {
             const float share = std::clamp(countdown / norma::kCloseCountdown, 0.0f, 1.0f);
@@ -603,6 +622,7 @@ static void StartPaneDrift(int id) {
 }
 
 static bool PaneRamBusy(int id);
+static void LightPaneFuse(int id);
 static void PickPaneSpot(float w, float h, float psx, float psy, float& x, float& y);
 
 // The boss's panes hold still, then every few seconds hop: the next spot is
@@ -742,48 +762,6 @@ static float RamRedFor(int id) {
     return 1.0f - std::clamp(g_PaneRam.timer / norma::kRamSettle, 0.0f, 1.0f);
 }
 
-// 9 Summon: panes loading mobs.
-// A summon gate "compiles" its mobs as a constellation: one star per mob at
-// the spot it will appear (u, v: shares of the pane, so it rides along with
-// a drifting pane), linked in a loop by a bright head over the load time.
-struct SummonGate {
-    int id = 0;
-    float timer = 0.0f;
-    int count = 0;
-    std::vector<float> u, v;
-};
-static std::vector<SummonGate> g_SummonGates;
-
-
-// Star spots for a gate: spread over the pane below the title bar, kept
-// apart, and ordered around the middle so the loop never crosses itself.
-static void PlanGateStars(SummonGate& gate) {
-    gate.u.clear();
-    gate.v.clear();
-    for (int k = 0; k < gate.count; ++k) {
-        float bu = 0.5f, bv = 0.6f, bestGap = -1.0f;
-        for (int tries = 0; tries < 16; ++tries) {
-            const float cu = RandRange(0.14f, 0.86f), cv = RandRange(0.30f, 0.86f);
-            float gap = 10.0f;
-            for (size_t j = 0; j < gate.u.size(); ++j)
-                gap = std::min(gap, std::hypot(cu - gate.u[j], cv - gate.v[j]));
-            if (gap > bestGap) { bestGap = gap; bu = cu; bv = cv; }
-        }
-        gate.u.push_back(bu);
-        gate.v.push_back(bv);
-    }
-    std::vector<int> order(gate.u.size());
-    for (size_t k = 0; k < order.size(); ++k) order[k] = (int)k;
-    std::sort(order.begin(), order.end(), [&](int a, int b) {
-        return std::atan2(gate.v[a] - 0.58f, gate.u[a] - 0.5f) <
-               std::atan2(gate.v[b] - 0.58f, gate.u[b] - 0.5f);
-    });
-    std::vector<float> u2, v2;
-    for (int k : order) { u2.push_back(gate.u[k]); v2.push_back(gate.v[k]); }
-    gate.u.swap(u2);
-    gate.v.swap(v2);
-}
-
 static void SpawnNormaShot(float x, float y, float angle, float speed) {
     Bullet shot(x, y, x + cosf(angle) * 100.0f, y + sinf(angle) * 100.0f);
     shot.isEnemy = true;
@@ -825,10 +803,7 @@ static void PickPaneSpot(float w, float h, float psx, float psy, float& x, float
     }
 }
 
-// Serves the boss's Asks and keeps its Hide target on its pane.
-// Seconds until the boss opens its next pane (see norma::kPaneSpawn*).
-static float g_NormaPaneSpawnTimer = norma::kPaneSpawnFirst;
-
+// Serves the boss's Asks.
 // A new boss pane of random size at a random spot (see PickPaneSpot).
 static int OpenNormaPane(Monster& boss, float psx, float psy) {
     const float sw = (float)screenWidth, sh = (float)screenHeight;
@@ -853,9 +828,7 @@ static void ServeNormaAsks(const SpatialBounds& player) {
         g_NormaCountdown = {};
         if (g_ThrowBox.id != 0) os_pane::Close(g_ThrowBox.id);
         g_ThrowBox = {};
-        g_SummonGates.clear();
         g_PaneRam = {};
-        g_NormaPaneSpawnTimer = norma::kPaneSpawnFirst;
         return;
     }
     // Forget panes the player closed or that wore out.
@@ -866,44 +839,24 @@ static void ServeNormaAsks(const SpatialBounds& player) {
     const float psy = W2SY(player.y + player.height * 0.5f);
     for (norma::Ask ask : asks) {
         switch (ask) {
-        case norma::Ask::ClaimFarWindow: {
-            // The real window farthest from the player, big enough to fight
-            // in and not covering most of the screen; else one of our own.
-            const std::vector<os_pane::Rect>& desk = os_pane::DesktopWindows();
-            int best = -1;
-            float bestDist = -1.0f;
-            for (int i = 0; i < (int)desk.size(); ++i) {
-                const os_pane::Rect& r = desk[i];
-                if (r.w < 360.0f || r.h < 260.0f || r.w * r.h > sw * sh * 0.6f) continue;
-                const float ddx = r.x + r.w * 0.5f - psx, ddy = r.y + r.h * 0.5f - psy;
-                const float dist = ddx * ddx + ddy * ddy;
-                if (dist > bestDist) { bestDist = dist; best = i; }
+        case norma::Ask::DetonatePanes:
+            // Every pane of the boss's blows on purpose, except one a ram or
+            // a countdown is using.
+            for (const os_pane::Pane* pane : NormaOwnPanes()) {
+                if (PaneRamBusy(pane->id) || pane->id == g_NormaCountdown.id) continue;
+                FlashNormaPane(pane->id, *boss);
+                LightPaneFuse(pane->id);
             }
-            int id = best >= 0 ? os_pane::Adopt(best) : 0;
-            bool fresh = id > 0;
-            if (id == 0) {
-                // No real window: hide in the farthest pane the boss already
-                // opened. It never opens a new pane around itself for this;
-                // with none to use, the boss falls back on a direct attack.
-                const os_pane::Pane* farthest = nullptr;
-                float farDist = -1.0f;
-                for (const os_pane::Pane* pane : NormaOwnPanes()) {
-                    const float ddx = pane->shown.x + pane->shown.w * 0.5f - psx;
-                    const float ddy = pane->shown.y + pane->shown.h * 0.5f - psy;
-                    if (ddx * ddx + ddy * ddy > farDist) { farDist = ddx * ddx + ddy * ddy; farthest = pane; }
-                }
-                if (farthest) id = farthest->id;
-            }
-            if (id > 0) {
-                if (fresh) {
-                    g_NormaPanes.push_back(id);
-                    if (const os_pane::Pane* pane = PaneById(id))
-                        if (!pane->adopted) StartPaneDrift(id);
-                }
+            break;
+        case norma::Ask::ReopenPanes: {
+            // Fresh panes at fresh spots, up to the phase's count.
+            const int want = norma::MaxBossPanesFor(boss->normaPhase);
+            while ((int)NormaOwnPanes().size() < want) {
+                const int before = (int)NormaOwnPanes().size();
+                const int id = OpenNormaPane(*boss, psx, psy);
+                if (id <= 0) break;
                 FlashNormaPane(id, *boss);
-                boss->normaPaneId = id;
-            } else {
-                boss->normaPaneId = -1;
+                if ((int)NormaOwnPanes().size() == before) break;
             }
             break;
         }
@@ -998,16 +951,13 @@ static void ServeNormaAsks(const SpatialBounds& player) {
         }
         case norma::Ask::RamWindow: {
             // The pane farthest from the player gets the longest run at it.
-            // Gates, fusing and minimized panes are left alone.
+            // Fusing and minimized panes are left alone.
             const os_pane::Pane* pick = nullptr;
             float pickDist = -1.0f;
             for (const os_pane::Pane* pane : NormaOwnPanes()) {
                 float fuse = 0.0f;
-                os_pane::Rect blast{};
-                if (pane->minimized || pane->flying || FuseFor(pane->id, fuse, blast)) continue;
-                bool gate = false;
-                for (const SummonGate& g : g_SummonGates) gate = gate || g.id == pane->id;
-                if (gate || pane->id == g_NormaCountdown.id) continue;
+                if (pane->minimized || pane->flying || FuseFor(pane->id, fuse)) continue;
+                if (pane->id == g_NormaCountdown.id) continue;
                 const float ddx = pane->frame.x + pane->frame.w * 0.5f - psx;
                 const float ddy = pane->frame.y + pane->frame.h * 0.5f - psy;
                 if (ddx * ddx + ddy * ddy > pickDist) { pickDist = ddx * ddx + ddy * ddy; pick = pane; }
@@ -1026,51 +976,10 @@ static void ServeNormaAsks(const SpatialBounds& player) {
             boss->normaPaneId = pick->id;
             break;
         }
-        case norma::Ask::OpenGates: {
-            // Gates are the boss's open panes, up to the gate count; it opens
-            // none for this (with none open, only the aimed bursts remain).
-            const int perGate = boss->normaPhase >= 2 ? norma::kSummonPhase2 : norma::kSummonPhase1;
-            std::vector<int> gates;
-            for (const os_pane::Pane* pane : NormaOwnPanes())
-                if ((int)gates.size() < norma::kSummonGates) gates.push_back(pane->id);
-            for (int id : gates) {
-                bool already = false;
-                for (const SummonGate& g : g_SummonGates) already = already || g.id == id;
-                if (already) continue;
-                SummonGate gate;
-                gate.id = id;
-                gate.count = perGate;
-                PlanGateStars(gate);
-                g_SummonGates.push_back(gate);
-                FlashNormaPane(id, *boss);
-            }
-            break;
-        }
-        }
-    }
-    if (boss->normaPattern == norma::Pattern::Hide && boss->normaPaneId > 0) {
-        const os_pane::Pane* pane = PaneById(boss->normaPaneId);
-        if (!pane || pane->minimized) {
-            boss->normaPaneLost = true;
-        } else {
-            boss->normaTargetX = ScreenToWorldX(pane->shown.x + pane->shown.w * 0.5f);
-            boss->normaTargetY = ScreenToWorldY(pane->shown.y + pane->shown.h * 0.5f);
         }
     }
     g_NormaFlashes.erase(std::remove_if(g_NormaFlashes.begin(), g_NormaFlashes.end(),
         [](const NormaFlash& f) { return g_GameTime - f.bornAt > 1.0f; }), g_NormaFlashes.end());
-}
-
-// The boss opens a pane every few seconds while under the cap; at the cap the
-// turn is skipped (the timer still restarts).
-static void TickNormaPaneSpawn(float dt, const SpatialBounds& player) {
-    Monster* boss = FindNorma();
-    if (!boss) return;
-    g_NormaPaneSpawnTimer -= dt;
-    if (g_NormaPaneSpawnTimer > 0.0f) return;
-    g_NormaPaneSpawnTimer = boss->normaPhase >= 2 ? norma::kPaneSpawnPhase2 : norma::kPaneSpawnPhase1;
-    if ((int)NormaOwnPanes().size() >= norma::MaxBossPanesFor(boss->normaPhase)) return;
-    OpenNormaPane(*boss, W2SX(player.x + player.width * 0.5f), W2SY(player.y + player.height * 0.5f));
 }
 
 // A pane folding shut: its rectangle drawn shrinking to the centre.
@@ -1234,32 +1143,6 @@ static void TickThrowBox(float dt) {
     Shake(0.35f, 16.0f);
 }
 
-// 9 Summon: gates load, then mobs step out inside them.
-static void TickSummonGates(float dt) {
-    const float hpMul = g_Stats.monsterHpMult * GetDifficultyParams(g_Difficulty).enemyHpMultiplier;
-    for (SummonGate& gate : g_SummonGates) {
-        const os_pane::Pane* pane = PaneById(gate.id);
-        if (!pane || pane->minimized) { gate.timer = -1.0f; continue; }   // load broken
-        gate.timer += dt;
-        if (gate.timer < norma::kSummonLoad) continue;
-        // Each mob appears on its star.
-        const Monster* boss = FindNorma();
-        for (size_t k = 0; k < gate.u.size(); ++k) {
-            const float mx = ScreenToWorldX(pane->shown.x + pane->shown.w * gate.u[k]);
-            const float my = ScreenToWorldY(pane->shown.y + pane->shown.h * gate.v[k]);
-            Monster* mob = new Monster(mx, my, hpMul);
-            if (boss && boss->normaPhase >= 2 && rand() % 10 < 3) mob->MakeKind(MobKind::GIMBAL);
-            g_MonsterManager.monsters.push_back(mob);
-            SpawnSparks(mx, my, 8, 0.92f, 0.99f, 1.0f, 260.0f);
-            SpawnShockWave(mx, my, 70.0f, 0.3f, 0.72f, 0.94f, 1.0f);
-        }
-        Shake(0.2f, 8.0f);
-        gate.timer = -1.0f;   // done
-    }
-    g_SummonGates.erase(std::remove_if(g_SummonGates.begin(), g_SummonGates.end(),
-        [](const SummonGate& g) { return g.timer < 0.0f; }), g_SummonGates.end());
-}
-
 // Once the ram's aim locks, red ghost brackets of the pane march ahead of
 // it along the flight: where it will pass, as wide as it is.
 static void DrawRamLane(const os_pane::Pane& p) {
@@ -1384,7 +1267,26 @@ static void TickPaneRam(float dt) {
             const float wx = ScreenToWorldX(ex), wy = ScreenToWorldY(ey);
             SpawnShockWave(wx, wy, 220.0f, 0.35f, 1.0f, 0.36f, 0.30f);
             SpawnSparks(wx, wy, 22, 1.0f, 0.45f, 0.38f, 460.0f);
-            Shake(0.35f, 16.0f);
+            if (hitEdge) {
+                // The wall cracks the box open: 2/3 of a thrown box's load
+                // sprays back off the wall.
+                const int ring = (int)std::round(norma::kThrowRing * norma::kRamBurstShare);
+                const int inner = (int)std::round(norma::kThrowInner * norma::kRamBurstShare);
+                const float back = std::atan2(-ram.dirY, -ram.dirX);
+                const float half = norma::kRamBurstFan * 0.5f;
+                for (int i = 0; i < ring; ++i)
+                    SpawnNormaShot(wx, wy, back - half + norma::kRamBurstFan * ((float)i + 0.5f) / ring,
+                                   norma::kThrowRingSpeed);
+                for (int i = 0; i < inner; ++i)
+                    SpawnNormaShot(wx, wy, back - half + norma::kRamBurstFan * ((float)i + 0.5f) / inner,
+                                   norma::kThrowInnerSpeed);
+                SpawnEnemyExplosion(wx, wy, 0.72f, 0.94f, 1.0f, true);
+                SpawnSparks(wx, wy, 30, 0.92f, 0.99f, 1.0f, 460.0f);
+                Shake(0.5f, 24.0f);
+                TriggerHitStop(0.06f);
+            } else {
+                Shake(0.35f, 16.0f);
+            }
             if (Monster* boss = FindNorma()) boss->normaExposed = norma::kExposeAfterRam;
             ram.stage = 2;
             ram.timer = 0.0f;
@@ -1434,50 +1336,6 @@ static const NormaFlash* FlashFor(int id) {
     return nullptr;
 }
 static float FlashAge(const NormaFlash& f) { return g_GameTime - f.bornAt; }
-// The gate's constellation over its pane: stars light up as the head reaches
-// them, the links behind it stay, and the loop closes as the load ends.
-static void DrawSummonStars(const os_pane::Pane& p) {
-    const SummonGate* gate = nullptr;
-    for (const SummonGate& g : g_SummonGates)
-        if (g.id == p.id && g.timer >= 0.0f) gate = &g;
-    if (!gate || gate->u.empty()) return;
-    const hud_lines::Rgb ice{ 0.72f, 0.94f, 1.0f }, white{ 0.92f, 0.99f, 1.0f };
-    const hud_lines::Rgb warn{ 0.86f, 0.80f, 1.0f };
-    const int n = (int)gate->u.size();
-    std::vector<float> xs(n), ys(n);
-    for (int k = 0; k < n; ++k) {
-        xs[k] = p.shown.x + p.shown.w * gate->u[k];
-        ys[k] = p.shown.y + p.shown.h * gate->v[k];
-    }
-    // n links make the loop; the head walks them over the load time.
-    const float walk = std::clamp(gate->timer / norma::kSummonLoad, 0.0f, 1.0f) * (float)n;
-    const int done = std::min(n, (int)walk);
-    const float part = walk - (float)done;
-    for (int k = 0; k < done; ++k) {
-        const int j = (k + 1) % n;
-        PaneSeg(xs[k], ys[k], xs[j], ys[j], 1.6f, warn, 0.75f);
-    }
-    if (done < n) {
-        const int j = (done + 1) % n;
-        const float hx = xs[done] + (xs[j] - xs[done]) * part;
-        const float hy = ys[done] + (ys[j] - ys[done]) * part;
-        PaneSeg(xs[done], ys[done], hx, hy, 2.4f, white, 0.95f);
-        // the bright head: a small cross
-        PaneSeg(hx - 5.0f, hy, hx + 5.0f, hy, 2.0f, white, 0.95f);
-        PaneSeg(hx, hy - 5.0f, hx, hy + 5.0f, 2.0f, white, 0.95f);
-    }
-    for (int k = 0; k < n; ++k) {
-        const bool lit = k <= done;
-        const float r = lit ? 6.0f : 3.0f;
-        const float w = lit ? 1.8f : 1.0f;
-        const float a = lit ? 0.95f : 0.35f;
-        const hud_lines::Rgb c = lit ? ice : warn;
-        PaneSeg(xs[k] - r, ys[k], xs[k], ys[k] - r, w, c, a);
-        PaneSeg(xs[k], ys[k] - r, xs[k] + r, ys[k], w, c, a);
-        PaneSeg(xs[k] + r, ys[k], xs[k], ys[k] + r, w, c, a);
-        PaneSeg(xs[k], ys[k] + r, xs[k] - r, ys[k], w, c, a);
-    }
-}
 static bool ThrowPayloadFor(int id, int& count, float& turn) {
     if (g_ThrowBox.id != id || id == 0) return false;
     const int total = norma::kThrowRing / 2;   // drawn squares stand for the load
@@ -1558,10 +1416,15 @@ static const PaneFuse* FuseOf(int id) {
     return nullptr;
 }
 
-// The blast range around a pane, in screen pixels.
-static os_pane::Rect BlastRange(const os_pane::Pane& p) {
-    const float m = space::kBlastMargin * g_ViewZoom;
-    return { p.shown.x - m, p.shown.y - m, p.shown.w + m * 2.0f, p.shown.h + m * 2.0f };
+// Lights a pane's fuse (once). A lit fuse cannot be put out: closing or
+// minimizing the pane is refused until it blows.
+static void LightPaneFuse(int id) {
+    const os_pane::Pane* p = PaneById(id);
+    if (!p || FuseOf(id)) return;
+    g_PaneFuses.push_back({ id, 0.0f });
+    os_pane::SetLocked(id, true);
+    SpawnSparks(ScreenToWorldX(p->shown.x + p->shown.w * 0.5f),
+                ScreenToWorldY(p->shown.y + p->shown.h * 0.5f), 10, 0.86f, 0.80f, 1.0f, 300.0f);
 }
 
 static void ApplyPaneAbsorbs() {
@@ -1574,14 +1437,7 @@ static void ApplyPaneAbsorbs() {
         if (!p.open) continue;
         const float left = PaneDurabilityLeft(p);
         // Worn out: light the fuse once. Low: the contents start to waver.
-        if (left <= 0.0f && !FuseOf(p.id)) {
-            g_PaneFuses.push_back({ p.id, 0.0f });
-            // A lit fuse cannot be put out: closing or minimizing the pane
-            // is refused ("not responding") until it blows.
-            os_pane::SetLocked(p.id, true);
-            SpawnSparks(ScreenToWorldX(p.shown.x + p.shown.w * 0.5f),
-                        ScreenToWorldY(p.shown.y + p.shown.h * 0.5f), 10, 0.86f, 0.80f, 1.0f, 300.0f);
-        }
+        if (left <= 0.0f) LightPaneFuse(p.id);
         float unsteady = 0.0f;
         if (const PaneFuse* f = FuseOf(p.id))
             unsteady = 0.6f + 0.4f * std::min(1.0f, f->timer / space::kFuseSeconds);
@@ -1597,43 +1453,18 @@ static void ApplyPaneAbsorbs() {
         }), g_PaneWear.end());
 }
 
-// A lit fuse burns for space::kFuseSeconds of play, then the pane explodes:
-// everything in the blast range is hit, whatever space it stands in, and the
-// pane closes. A pane closed in the meantime (in pause) never blows.
+// A lit fuse burns for space::kFuseSeconds of play, then the pane folds shut.
+// It no longer hurts anything or scatters shots (the thrown box does that). A
+// pane closed in the meantime (in pause) just goes.
 static void TickPaneFuses(float dt) {
     for (PaneFuse& fuse : g_PaneFuses) {
         const os_pane::Pane* pane = PaneById(fuse.id);
         if (!pane) { fuse.timer = -1.0f; continue; }
         fuse.timer += dt;
         if (fuse.timer < space::kFuseSeconds) continue;
-        const os_pane::Rect range = BlastRange(*pane);
-        const float x0 = ScreenToWorldX(range.x), y0 = ScreenToWorldY(range.y);
-        const float x1 = ScreenToWorldX(range.x + range.w), y1 = ScreenToWorldY(range.y + range.h);
-        const auto inside = [&](float x, float y) { return x >= x0 && x <= x1 && y >= y0 && y <= y1; };
-        if (inside(g_NormaPlayerX, g_NormaPlayerY)) {
-            space::HurtSourceScope blast(space::kUntracked);
-            HurtPlayer(g_GameManager.playerHP, space::kBlastPlayerDamage);
-        }
-        for (Monster* m : g_MonsterManager.monsters)
-            if (m->alive && m->kind != MobKind::NORMA && inside(m->worldX, m->worldY))
-                g_MonsterManager.ApplyDamage(*m, space::kBlastMobDamage, space::kUntracked);
-        for (RangedMob* r : g_MonsterManager.rangedMobs)
-            if (r->alive && inside(r->worldX, r->worldY))
-                g_MonsterManager.ApplyDamage(*r, space::kBlastMobDamage, space::kUntracked);
-        const float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
-        const float spin = RandRange(0.0f, 6.2831853f);
-        for (int i = 0; i < space::kBlastRing; ++i)
-            SpawnNormaShot(cx, cy, spin + 6.2831853f * (float)i / space::kBlastRing,
-                           space::kBlastRingSpeed);
-        for (int i = 0; i < space::kBlastInner; ++i)
-            SpawnNormaShot(cx, cy, spin + 6.2831853f * ((float)i + 0.5f) / space::kBlastInner,
-                           space::kBlastInnerSpeed);
-        SpawnShockWave(cx, cy, std::max(x1 - x0, y1 - y0) * 0.6f, 0.5f, 0.86f, 0.80f, 1.0f);
-        SpawnShockWave(cx, cy, std::max(x1 - x0, y1 - y0) * 0.35f, 0.35f, 1.0f, 1.0f, 1.0f);
-        SpawnEnemyExplosion(cx, cy, 0.86f, 0.80f, 1.0f, true);
-        SpawnSparks(cx, cy, 36, 0.92f, 0.99f, 1.0f, 520.0f);
-        Shake(0.4f, 20.0f);
-        TriggerHitStop(0.06f);
+        const float cx = ScreenToWorldX(pane->shown.x + pane->shown.w * 0.5f);
+        const float cy = ScreenToWorldY(pane->shown.y + pane->shown.h * 0.5f);
+        SpawnSparks(cx, cy, 18, 0.92f, 0.99f, 1.0f, 320.0f);
         g_PaneCollapses.push_back({ pane->shown, 0.0f });
         os_pane::Close(fuse.id);
         fuse.timer = -1.0f;
@@ -1642,12 +1473,11 @@ static void TickPaneFuses(float dt) {
         [](const PaneFuse& f) { return f.timer < 0.0f; }), g_PaneFuses.end());
 }
 
-static bool FuseFor(int id, float& share, os_pane::Rect& range) {
+static bool FuseFor(int id, float& share) {
     const PaneFuse* fuse = FuseOf(id);
     const os_pane::Pane* pane = PaneById(id);
     if (!fuse || !pane) return false;
     share = std::clamp(fuse->timer / space::kFuseSeconds, 0.0f, 1.0f);
-    range = BlastRange(*pane);
     return true;
 }
 // Static Field's weapon pulse is gameplay state, not just a player-shell
@@ -2934,12 +2764,10 @@ int main() {
             TickNormaCountdown(delta);
             TickPaneFuses(delta);
             TickThrowBox(delta);
-            TickSummonGates(delta);
-            // While a charge winds up the panes hold still and none open, so
-            // the boss is the one thing moving.
+            // While a charge winds up the panes hold still, so the boss is
+            // the one thing moving.
             const Monster* winding = FindNorma();
             const bool hold = winding && winding->NormaDashWindShare() > 0.0f;
-            if (!hold) TickNormaPaneSpawn(delta, playerWin);
             TickPaneRam(delta);
             DriftNormaPanes(hold ? 0.0f : delta, W2SX(playerWin.x + playerWin.width * 0.5f),
                             W2SY(playerWin.y + playerWin.height * 0.5f));
@@ -3585,7 +3413,8 @@ int main() {
                         playerWin.x+=sinf(age*2.0f)*100.0f;
                         playerWin.y+=sinf(age*1.5f)*80.0f;
                         g_SmokeTimeScale = 0.0f;
-                    } else if (step.rfind("QUASARFALL=", 0) == 0 || step.rfind("QUASARBEAM=", 0) == 0) {
+                    } else if (step.rfind("QUASARFALL=", 0) == 0 || step.rfind("QUASARBEAM=", 0) == 0 ||
+                               step.rfind("QUASARERUPT=", 0) == 0) {
                         // Deterministic motion QA for both charge animations.
                         if (gm.currentState != GameState::RUNNING) RestartCurrentRun();
                         g_MonsterManager.Clear();
@@ -3596,9 +3425,15 @@ int main() {
                         q->MakeKind(MobKind::QUASAR);
                         q->hp = 1000000.0f;
                         q->speed = 0.0f;
-                        if (step.rfind("QUASARFALL=", 0) == 0) q->BeginQuasarFall();
+                        // ONEDOW_QREFLECT=<n>: beam wall bounces for this QA quasar.
+                        { const std::string qr = SmokeEnv("ONEDOW_QREFLECT"); if (!qr.empty()) q->quasarReflections = std::atoi(qr.c_str()); }
+                        const bool erupt = step.rfind("QUASARERUPT=", 0) == 0;
+                        q->quasarBounds = glm::vec4(0, BROWSER_CHROME_H, screenWidth,
+                                                    screenHeight - g_GameBarH - g_TaskbarH);
+                        if (erupt) q->BeginQuasarEruption();
+                        else if (step.rfind("QUASARFALL=", 0) == 0) q->BeginQuasarFall();
                         else q->quasarTimer = Monster::QUASAR_COOLDOWN_TIME - Monster::QUASAR_PRECHARGE_TIME;
-                        const float age = std::clamp(std::strtof(step.c_str() + 11, nullptr),
+                        const float age = std::clamp(std::strtof(step.c_str() + (erupt ? 12 : 11), nullptr),
                                                     0.0f, 6.35f);
                         float qaHp = 10000.0f;
                         const glm::vec4 bounds(0, BROWSER_CHROME_H, screenWidth,
@@ -3656,6 +3491,44 @@ int main() {
                             mob->worldX = playerWin.x + playerWin.width * 0.5f + dx;
                             mob->worldY = playerWin.y + playerWin.height * 0.5f;
                         }
+                    } else if (step == "MOBGRID") {
+                        // MOBGRID: lay every live non-Regulus mob out in two rows
+                        // around the player (buff-mark overlap checks).
+                        const float cx = playerWin.x + playerWin.width * 0.5f;
+                        const float cy = playerWin.y + playerWin.height * 0.5f;
+                        int i = 0;
+                        const int total = (int)g_MonsterManager.monsters.size() +
+                                          (int)g_MonsterManager.rangedMobs.size();
+                        const int perRow = (total + 1) / 2;
+                        const auto place = [&](float& x, float& y) {
+                            const int row = i / perRow, col = i % perRow;
+                            x = cx + ((float)col - (perRow - 1) * 0.5f) * 200.0f;
+                            y = cy + (row == 0 ? -150.0f : 150.0f);
+                            ++i;
+                        };
+                        for (Monster* mob : g_MonsterManager.monsters) place(mob->worldX, mob->worldY);
+                        for (RangedMob* mob : g_MonsterManager.rangedMobs) place(mob->worldX, mob->worldY);
+                    } else if (step.rfind("MOBBUFF=", 0) == 0) {
+                        // MOBBUFF=<mask>: 1 shield, 2 speed, 4 stealth on every
+                        // live mob (Scope only takes the shield); 0 clears them.
+                        const int mask = std::atoi(step.c_str() + 8);
+                        for (Monster* mob : g_MonsterManager.monsters) {
+                            if (!mob->alive) continue;
+                            mob->regulusSpeedAge = (mask & 2) ? 5.0f : -1.0f;
+                            mob->regulusStealthAge = (mask & 4) ? 5.0f : -1.0f;
+                            mob->regulusShield = {};
+                            if (mask & 1) {
+                                mob->regulusShield.acquiredOnce = true;
+                                mob->regulusShield.hp = mob->regulusShield.maxHp = 200.0f;
+                            }
+                        }
+                        for (RangedMob* mob : g_MonsterManager.rangedMobs) {
+                            mob->regulusShield = {};
+                            if (mask & 1) {
+                                mob->regulusShield.acquiredOnce = true;
+                                mob->regulusShield.hp = mob->regulusShield.maxHp = 200.0f;
+                            }
+                        }
                     } else if (step == "MOBGRACE") {
                         // MOBGRACE: mobs pass through the (stationary) player instead
                         // of ramming, so a charge can be watched to its end.
@@ -3692,10 +3565,14 @@ int main() {
                                         mob->antaresMoveSpeed, mob->antaresBounces, mob->antaresGen,
                                         (int)IsEliteMob(mob->kind), mob->hp);
                                 else if (mob->kind == MobKind::REGULUS)
-                                    std::fprintf(mf, "%s regulus x=%.1f y=%.1f phase=%d surge=%.2f alpha=%.3f shield=%.1f elite=%d\n",
-                                        label, mob->worldX, mob->worldY, mob->regulusPhase,
-                                        mob->RegulusSurgeLevel(), mob->RegulusCloakAlpha(),
+                                    std::fprintf(mf, "%s regulus x=%.1f y=%.1f shield=%.1f elite=%d\n",
+                                        label, mob->worldX, mob->worldY,
                                         mob->regulusShield.hp, (int)IsEliteMob(mob->kind));
+                                if (mob->RegulusBuffed())
+                                    std::fprintf(mf, "%s buffed kind=%d speedAge=%.2f stealthAge=%.2f shield=%d speedx=%.2f alpha=%.3f\n",
+                                        label, (int)mob->kind, mob->regulusSpeedAge,
+                                        mob->regulusStealthAge, (int)(mob->regulusShield.hp > 0.0f), mob->RegulusSpeedBuff(),
+                                        mob->RegulusCloakAlpha());
                             }
                             std::fclose(mf);
                         }
@@ -3790,7 +3667,6 @@ int main() {
                                 const norma::Pattern p = arg == "AIM" ? norma::Pattern::Aim
                                                        : arg == "DASH" ? norma::Pattern::Dash
                                                        : arg == "RAM" ? norma::Pattern::Ram
-                                                       : arg == "HIDE" ? norma::Pattern::Hide
                                                        : norma::Pattern::None;
                                 if (p != norma::Pattern::None) boss->StartNormaPattern(p);
                             }
@@ -5248,7 +5124,11 @@ CollisionSystem::Update(pCX, pCY,
                 g_ShakeTime = 0.0f; g_ShakeMag = 0.0f;
             }
         }
-        if (g_ShakeTime > 0.0f) {
+        // Shake only decays while the game clock runs, so a paused or
+        // choosing screen must not keep rolling the dice for the held value.
+        const GameState shakeState = g_GameManager.currentState;
+        if (g_ShakeTime > 0.0f &&
+            (shakeState == GameState::RUNNING || shakeState == GameState::DYING)) {
             float intensity = g_ShakeMag * (g_ShakeTime / 0.6f);
             if (intensity > g_ShakeMag) intensity = g_ShakeMag;
             float sx = ((float)(rand() % 200) - 100.0f) / 100.0f * intensity;
@@ -5420,7 +5300,11 @@ CollisionSystem::Update(pCX, pCY,
         for (auto m : g_MonsterManager.monsters) {
             if (!(m->alive || m->DeathEffectVisible())) continue;
             dimIfElsewhere(m->worldX, m->worldY);
+            const float mobAlpha = g_BatchAlpha;
+            g_BatchAlpha *= m->RegulusCloakAlpha();   // Regulus stealth buff
             drawMob(m, g_GameTime);
+            g_BatchAlpha = mobAlpha;
+            if (m->alive) DrawRegulusBuffMarks(m, g_GameTime);
         }
         for (auto r : g_MonsterManager.rangedMobs) {
             dimIfElsewhere(r->worldX, r->worldY);

@@ -4,6 +4,8 @@
 // Run with scripts/test_norma_pattern_sim.ps1.
 #include "Monster.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -18,10 +20,11 @@ static void Check(bool ok, const char* what) {
 }
 
 struct Tally {
-    int hideShots = 0, refugeShots = 0, aimShots = 0;
+    int refugeShots = 0, aimShots = 0;
     int aimTurns = 0, dashTurns = 0, windowTurns = 0;
     float dashTravel = 0.0f;   // how far the body moved during charges
     float exposed = 0.0f;      // seconds the boss stood open after charges
+    float maxAccel = 0.0f;     // sharpest speed change (px/s^2) outside charges
 };
 
 // noPane: answer every pane Ask with "none" (-1), as on a desktop with no
@@ -37,12 +40,12 @@ static Tally Run(float seconds, bool noPane, int phase) {
     Tally t;
     norma::Pattern last = norma::Pattern::None;
     const float playerX = 420.0f, playerY = 0.0f;
+    float prevVX = 0.0f, prevVY = 0.0f;
     for (float time = 0.0f; time < seconds; time += DT) {
         const size_t before = bullets.size();
         const float bx = boss.worldX, by = boss.worldY;
         boss.Update(playerX, playerY, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, &bullets);
         const int fired = (int)(bullets.size() - before);
-        if (boss.normaPattern == norma::Pattern::Hide) t.hideShots += fired;
         if (boss.normaPattern == norma::Pattern::Refuge) t.refugeShots += fired;
         if (boss.normaPattern == norma::Pattern::Aim) t.aimShots += fired;
         if (boss.normaExposed > 0.0f) t.exposed += DT;
@@ -54,16 +57,23 @@ static Tally Run(float seconds, bool noPane, int phase) {
             else if (boss.normaPattern == norma::Pattern::Dash) ++t.dashTurns;
             else ++t.windowTurns;
         }
+        {
+            const float vx = (boss.worldX - bx) / DT, vy = (boss.worldY - by) / DT;
+            const bool freeMove = boss.normaPattern != norma::Pattern::Dash &&
+                              boss.normaExposed <= 0.0f;
+            if (freeMove) t.maxAccel = std::max(t.maxAccel,
+                std::sqrt((vx - prevVX) * (vx - prevVX) + (vy - prevVY) * (vy - prevVY)) / DT);
+            prevVX = vx;
+            prevVY = vy;
+        }
         last = boss.normaPattern;
         for (norma::Ask ask : norma::g_Asks) {
-            if (ask == norma::Ask::ClaimFarWindow || ask == norma::Ask::ClosePlayerWindow ||
+            if (ask == norma::Ask::ClosePlayerWindow ||
                 ask == norma::Ask::RamWindow) {
                 if (noPane) {
                     boss.normaPaneId = -1;
                 } else {
                     boss.normaPaneId = 7;
-                    boss.normaTargetX = -300.0f;
-                    boss.normaTargetY = 0.0f;
                 }
             }
         }
@@ -76,14 +86,16 @@ static Tally Run(float seconds, bool noPane, int phase) {
 
 int main() {
     const Tally withPanes = Run(120.0f, false, 1);
-    std::printf("phase 1 with panes: aim %d (%d shots), dash %d (%.0f px), window turns %d, hide %d, refuge %d\n",
+    std::printf("phase 1 with panes: aim %d (%d shots), dash %d (%.0f px), window turns %d, refuge %d\n",
                 withPanes.aimTurns, withPanes.aimShots, withPanes.dashTurns, withPanes.dashTravel,
-                withPanes.windowTurns, withPanes.hideShots, withPanes.refugeShots);
+                withPanes.windowTurns, withPanes.refugeShots);
     Check(withPanes.aimTurns + withPanes.dashTurns >= 3, "a direct attack comes round every other turn");
     Check(withPanes.dashTurns == 0 || withPanes.dashTravel > 500.0f, "the charges really move the body");
     Check(withPanes.dashTurns == 0 || withPanes.exposed > 1.0f, "the boss stands open after its charges");
     Check(withPanes.aimShots > 0, "the aimed stream fires");
     Check(withPanes.windowTurns >= 3, "window patterns take their turns");
+    std::printf("sharpest speed change outside charges: %.0f px/s^2\n", withPanes.maxAccel);
+    Check(withPanes.maxAccel < 700.0f, "the drift never lurches (bounded acceleration)");
 
     const Tally noPanes = Run(120.0f, true, 1);
     std::printf("phase 1 no panes: aim turns %d (%d shots), dash turns %d, window turns %d\n",

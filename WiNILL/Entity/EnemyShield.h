@@ -38,7 +38,8 @@ inline const glm::vec3 REGULUS_SHIELD_COLOR(0.722f, 0.937f, 1.0f);
 inline constexpr float SHIELD_GRANT_TIME = 0.25f;
 
 // Small ice-blue shard burst where a Regulus shield is granted.
-inline void SpawnRegulusShieldGrantParticles(float x, float y, float bodyRadius) {
+inline void SpawnRegulusShieldGrantParticles(float x, float y, float bodyRadius,
+                                             glm::vec3 color = REGULUS_SHIELD_COLOR) {
     EnemyParticleBurst burst;
     burst.count = 14;
     burst.life = 0.30f;
@@ -50,7 +51,7 @@ inline void SpawnRegulusShieldGrantParticles(float x, float y, float bodyRadius)
     burst.sizeMax = 4.5f;
     burst.colorLift = 0.55f;
     burst.rangeScale = 1.6f;
-    SpawnEnemyParticleBurst(x, y, REGULUS_SHIELD_COLOR, bodyRadius, burst);
+    SpawnEnemyParticleBurst(x, y, color, bodyRadius, burst);
 }
 
 inline void SpawnRegulusShieldBreakParticles(float x, float y, glm::vec3 color,

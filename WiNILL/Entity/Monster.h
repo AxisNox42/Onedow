@@ -137,29 +137,31 @@ public:
     // Regulus fires an instant shield laser at a random eligible ally in
     // range; the shield is granted at once and nothing stays connected.
     static constexpr float REGULUS_SHOT_RANGE = 500.0f;
-    static constexpr float REGULUS_SHOT_INTERVAL = 1.0f;
+    static constexpr float REGULUS_SHOT_INTERVAL = 3.0f;   // one volley
+    static constexpr int REGULUS_VOLLEY_COUNT = 3;         // distinct allies per volley
     static constexpr float REGULUS_BEAM_TIME = 0.25f;   // laser afterglow
     static constexpr float REGULUS_SHIELD_REGEN_DELAY = 8.0f;
-    // Regulus elite: the shield (own plates + shield lasers) is always up; on
-    // top of it a cycle of plain drift -> speed surge -> faint cloak. The cloak
-    // only dims the drawing; the body stays solid and spawns are unaffected.
-    static constexpr int REGULUS_PHASE_WALK = 0;
-    static constexpr int REGULUS_PHASE_SURGE = 1;
-    static constexpr int REGULUS_PHASE_CLOAK = 2;
-    static constexpr float REGULUS_WALK_TIME = 3.5f;
-    static constexpr float REGULUS_SURGE_TIME = 1.4f;
-    static constexpr float REGULUS_SURGE_MULT = 2.6f;
-    static constexpr float REGULUS_CLOAK_TIME = 3.5f;
-    static constexpr float REGULUS_CLOAK_FADE = 0.5f;    // fade in / out inside the cloak
-    static constexpr float REGULUS_CLOAK_ALPHA = 0.38f;  // never fully invisible
+    // Regulus elite is a support mob: it only drifts and fires buff lasers.
+    // Each shot picks random allies that carry no buff yet and gives each one
+    // random buff; buffs are permanent and a mob only ever gets one (a broken
+    // shield does not free it for another). Every buff has its own laser /
+    // marker colour (see RegulusBuffColor).
+    // The cloak only dims the drawing; bodies stay solid.
+    static constexpr int REGULUS_BUFF_SHIELD = 0;
+    static constexpr int REGULUS_BUFF_SPEED = 1;
+    static constexpr int REGULUS_BUFF_STEALTH = 2;
+    static constexpr float REGULUS_SPEED_BUFF_MULT = 1.55f;
+    static constexpr float REGULUS_STEALTH_ALPHA = 0.36f;
+    static constexpr float REGULUS_BUFF_FADE = 0.4f;     // buff fades in
     // Quasar beam: when the cooldown ends the axis snaps straight onto the
     // player and locks; the beam fires QUASAR_LOCK_TIME later on that fixed
     // angle (no sweep), so the lock window is the dodge window.
-    static constexpr float QUASAR_LOCK_TIME = 0.7f;
+    static constexpr float QUASAR_LOCK_TIME = 0.55f;    // elite-wave pass: was 0.7
+    static constexpr float QUASAR_BEAM_TIME = 3.0f;     // was 2.5
     // The last QUASAR_PRECHARGE_TIME of the cooldown is the wind-up: the
     // Quasar stops drifting and its bands fold and draw energy in, before the
     // direction is chosen.
-    static constexpr float QUASAR_COOLDOWN_TIME = 3.2f;
+    static constexpr float QUASAR_COOLDOWN_TIME = 2.7f;   // was 3.2
     static constexpr float QUASAR_PRECHARGE_TIME = 1.0f;
     // Death: a supernova. The body collapses, holds, then blasts at
     // QUASAR_NOVA_BLAST; the kill's stardust (with its XP) is held until that
@@ -192,17 +194,60 @@ public:
     // While firing, the beam turns very slowly (at most this rate, rad/s)
     // toward the player. The beam runs both ways, so it turns whichever way
     // brings the nearer end onto the player.
-    static constexpr float QUASAR_BEAM_TURN = 0.08f;
+    static constexpr float QUASAR_BEAM_TURN = 0.14f;   // was 0.08
+    // Beam reflection: the beam bounces off the arena edge this many times
+    // (none below HARD, 1 on HARD, 2 on NIGHTMARE). d = Difficulty enum value.
+    static constexpr int QuasarReflectionsFor(int d) { return d >= 3 ? 2 : (d == 2 ? 1 : 0); }
+    static constexpr int QUASAR_BEAM_MAX_SEGMENTS = 6;   // 2 ends x (2 bounces + 1)
+    // Starfall: every QUASAR_PREDICT_EVERY-th shot is aimed ahead of the player
+    // along their direction of travel instead of at a random spot near them.
+    // The lead is a vector: direction = normalised velocity, distance =
+    // speed x QUASAR_PREDICT_LEAD_TIME, capped at QUASAR_PREDICT_MAX_LEAD so
+    // the shot lands just in front of the player and never far off their path.
+    static constexpr int QUASAR_PREDICT_EVERY = 3;
+    static constexpr float QUASAR_PREDICT_MAX_SPEED = 900.0f;   // velocity estimate cap
+    static constexpr float QUASAR_PREDICT_MIN_SPEED = 40.0f;    // slower = standing still
+    static constexpr float QUASAR_PREDICT_LEAD_TIME = 0.5f;
+    static constexpr float QUASAR_PREDICT_MAX_LEAD = 140.0f;
     static constexpr int QUASAR_FALL_COUNT = 18;
+    // Eruption: the Quasar lays a field of danger zones over the arena in
+    // concentric rings around itself (a guard ring close in, more rings out to
+    // the arena edge), each ring with two doors. Everything is shown at once,
+    // and QUASAR_ERUPT_BLAST_TIME after the start every zone goes off together.
+    // It is staged so it never springs on the player: the body gathers for
+    // QUASAR_ERUPT_WINDUP with no zones, then the rings unfold one after the
+    // other from the inside out, and each ring stays up at least
+    // QUASAR_ERUPT_MIN_WARNING before the blast. The bands between rings (and
+    // the pocket next to the body) are the safe places.
+    static constexpr int QUASAR_ERUPT_STATE = 7;
+    static constexpr float QUASAR_ERUPT_WINDUP = 0.8f;
+    static constexpr float QUASAR_ERUPT_RING_GAP = 0.30f;      // between one ring and the next
+    static constexpr float QUASAR_ERUPT_RING_GROW = 0.35f;     // a ring unfolding
+    static constexpr float QUASAR_ERUPT_MIN_WARNING = 1.0f;    // every zone is visible this long
+    static constexpr float QUASAR_ERUPT_BLAST_TIME = 2.8f;
+    static constexpr float QUASAR_ERUPT_ZONE_RADIUS = 49.0f;   // was 70 (x0.7)
+    static constexpr float QUASAR_ERUPT_FIRST_RING = 190.0f;
+    static constexpr float QUASAR_ERUPT_RING_STEP = 230.0f;   // lane = step - 2 * zone radius
+    static constexpr float QUASAR_ERUPT_DAMAGE = 18.0f;       // once per eruption
+    static constexpr int QUASAR_ERUPT_MAX_ZONES = 200;
     static constexpr int QUASAR_FALL_STATE = 5;
     static constexpr int QUASAR_FALL_RECOVER_STATE = 6;
     static constexpr float QUASAR_FALL_SPLIT = 1.1f;
-    static constexpr float QUASAR_FALL_WARNING = 1.0f;
-    static constexpr float QUASAR_FALL_GAP = 0.20f;
-    static constexpr float QUASAR_FALL_RADIUS = 64.0f;
-    static constexpr float QUASAR_FALL_DAMAGE = 6.0f;
+    static constexpr float QUASAR_FALL_WARNING = 0.75f;   // the same for every shot, near or far
+    // Time between starfall shots: a random 0.1-0.3 s each, never stretched.
+    static constexpr float QUASAR_FALL_GAP_MIN = 0.10f;
+    static constexpr float QUASAR_FALL_GAP_MAX = 0.30f;
+    // Starfall power grows with the distance between the Quasar and the
+    // landing point: at or below QUASAR_FALL_NEAR_DIST a shot is the base size
+    // and damage, at QUASAR_FALL_FAR_DIST and beyond it is the maximum.
+    static constexpr float QUASAR_FALL_RADIUS = 64.0f;     // base (near) radius
+    static constexpr float QUASAR_FALL_DAMAGE = 6.0f;      // base (near) damage
+    static constexpr float QUASAR_FALL_NEAR_DIST = 100.0f;
+    static constexpr float QUASAR_FALL_FAR_DIST = 1100.0f;   // wide span: sizes grade smoothly in between
+    static constexpr float QUASAR_FALL_MAX_RADIUS_SCALE = 1.7f;
+    static constexpr float QUASAR_FALL_MAX_DAMAGE_SCALE = 2.2f;
     static constexpr float QUASAR_FALL_RECOVER = 0.8f;
-    static constexpr float QUASAR_FALL_IMPACT_FX = 0.22f;
+    static constexpr float QUASAR_FALL_IMPACT_FX = 0.36f;   // impact effect length
     static constexpr float QUASAR_FALL_HIT_GRACE = 0.35f;
     static constexpr float ANTARES_BASE_HP = 600.0f;
     static constexpr int ANTARES_TRAIL_COUNT = 6;
@@ -343,11 +388,7 @@ public:
     // (> 0), or -1 when none could be had; its centre in world space; and
     // whether that pane has since gone (closed or minimized by the player).
     int normaPaneId = 0;
-    float normaTargetX = 0.0f, normaTargetY = 0.0f;
-    bool normaPaneLost = false;
-    float normaHomeX = 0.0f, normaHomeY = 0.0f;   // where Hide returns to
     float normaRecoil = 0.0f;       // > 0 just after a volley
-    float normaBurstTimer = 0.0f;   // Hide: time to the next aimed ring
     int normaWaveIndex = 0;         // Refuge: flood waves fired so far
     float normaAimAngle = 0.0f;     // Aim: where the stream points
     int normaAimShot = 0;
@@ -391,6 +432,7 @@ public:
     float normaDashFace = 0.0f;     // drawn heading: eases after the lane's
     // Shove for the player from a charge, applied and cleared by the game loop.
     float normaKnockX = 0.0f, normaKnockY = 0.0f;
+    float normaVelX = 0.0f, normaVelY = 0.0f;   // eased drift velocity, world px/s
 
     EnemyShieldState regulusShield;
     float regulusBaseHp = 0.0f;
@@ -398,9 +440,12 @@ public:
     float regulusVisualAngle = 0.0f;
     float regulusDriftAngle = 0.0f;
     float regulusDriftTimer = 0.0f;
-    float regulusShotTimer = 0.5f;    // time until the next shield laser
-    int regulusPhase = REGULUS_PHASE_WALK;
-    float regulusPhaseTimer = 0.0f;
+    float regulusShotTimer = 0.5f;    // time until the next buff volley
+    bool regulusHasTarget = true;     // last look found someone to buff (draw only)
+    // Permanent buffs a Regulus laser put on this mob (shield is regulusShield).
+    // Seconds since the buff landed (drives the fade-in); < 0 = not buffed.
+    float regulusSpeedAge = -1.0f;
+    float regulusStealthAge = -1.0f;
 
     // Genesis station state.
     float spawnTimer = 0.0f;
@@ -467,13 +512,26 @@ public:
     float quasarMoveTurn = 0.0f;
     float quasarMoveTimer = 0.0f;
     bool quasarNextFall = false;
+    bool quasarEruptNext = false;           // the next special is the eruption, not the starfall
+    bool quasarEruptBlasted = false;
+    int quasarEruptCount = 0;
+    float quasarEruptRingGap = QUASAR_ERUPT_RING_GAP;
+    std::array<unsigned char, QUASAR_ERUPT_MAX_ZONES> quasarEruptRing{};
+    std::array<glm::vec2, QUASAR_ERUPT_MAX_ZONES> quasarEruptZones{};
     int quasarFallFired = 0;
     float quasarFallNextFire = QUASAR_FALL_SPLIT;
     float quasarFallHitUntil = 0.0f;
     unsigned quasarFallTargetsMask = 0;
     unsigned quasarFallImpacts = 0;
+    unsigned quasarFallPredictedMask = 0;   // shots aimed at the player's predicted spot
+    int quasarReflections = 0;              // beam wall bounces (set at spawn from the difficulty)
+    glm::vec4 quasarBounds{0.0f};           // arena (minX, minY, maxX, maxY) seen last frame
+    glm::vec2 quasarPlayerPrev{0.0f};
+    glm::vec2 quasarPlayerVel{0.0f};
+    bool quasarPlayerSeen = false;
     std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallOrigins{};
     std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallTargets{};
+    std::array<float, QUASAR_FALL_COUNT> quasarFallPower{};   // 0..1 by distance from the Quasar
     std::array<float, QUASAR_FALL_COUNT> quasarFallLaunchTimes{};
     std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallControl1{};
     std::array<glm::vec2, QUASAR_FALL_COUNT> quasarFallControl2{};
@@ -614,10 +672,16 @@ public:
             quasarSpinSpeed = 2.2f;
             quasarCoreAngle = 0.0f;
             quasarNextFall = false;
+            quasarEruptNext = false;
+            quasarEruptBlasted = false;
+            quasarEruptCount = 0;
             quasarFallFired = 0;
             quasarFallNextFire = QUASAR_FALL_SPLIT;
             quasarFallHitUntil = 0.0f;
             quasarFallTargetsMask = quasarFallImpacts = 0;
+            quasarFallPredictedMask = 0;
+            quasarPlayerSeen = false;
+            quasarPlayerVel = glm::vec2(0.0f);
             quasarTimer = (float)(rand() % 120) * 0.01f;
             quasarVisualAngle = (float)(rand() % 628) * 0.01f;
             quasarMoveAngle = (float)(rand() % 628) * 0.01f;
@@ -642,7 +706,7 @@ public:
             color = glm::vec3(0.722f, 0.937f, 1.0f);
             hp *= REGULUS_BASE_HP / 90.0f;
             speed *= 0.42f;
-            sizeScale = 1.35f;
+            sizeScale = 1.9f;   // elite: bigger than the old support body
             contactDmg = 0.0f;
             regulusBaseHp = hp;
             regulusShield = {};
@@ -653,8 +717,6 @@ public:
             regulusDriftAngle = (float)(rand() % 628) * 0.01f;
             regulusDriftTimer = 0.8f + (float)(rand() % 120) * 0.01f;
             regulusShotTimer = 0.5f;
-            regulusPhase = REGULUS_PHASE_WALK;
-            regulusPhaseTimer = (float)(rand() % 100) * 0.01f;
         } else if (kind == MobKind::ANTARES) {
             color = glm::vec3(0.91f, 0.275f, 0.227f);
             hp *= ANTARES_BASE_HP / 90.0f * ANTARES_ELITE_HP_MULT;
@@ -1372,26 +1434,31 @@ public:
         worldY = std::clamp(worldY, minY, maxY);
     }
 
-    float RegulusPhaseDuration() const {
-        switch (regulusPhase) {
-        case REGULUS_PHASE_SURGE: return REGULUS_SURGE_TIME;
-        case REGULUS_PHASE_CLOAK: return REGULUS_CLOAK_TIME;
-        default: return REGULUS_WALK_TIME;
-        }
+    // 0..1 strength of a buff: fades in after it lands, then stays.
+    static float RegulusBuffLevel(float age) {
+        if (age < 0.0f) return 0.0f;
+        return std::clamp(age / REGULUS_BUFF_FADE, 0.0f, 1.0f);
     }
-    bool RegulusSurging() const { return regulusPhase == REGULUS_PHASE_SURGE; }
-    // 0..1: how far the surge has built up (and then eased off), for the draw.
-    float RegulusSurgeLevel() const {
-        if (!RegulusSurging()) return 0.0f;
-        const float u = std::clamp(regulusPhaseTimer / REGULUS_SURGE_TIME, 0.0f, 1.0f);
-        return std::min(1.0f, std::min(u / 0.15f, (1.0f - u) / 0.25f));
+    float RegulusSpeedLevel() const { return RegulusBuffLevel(regulusSpeedAge); }
+    float RegulusStealthLevel() const { return RegulusBuffLevel(regulusStealthAge); }
+    bool RegulusBuffed() const {
+        return regulusShield.acquiredOnce || regulusSpeedAge >= 0.0f || regulusStealthAge >= 0.0f;
     }
-    // Drawing opacity of the body: 1 in the open, REGULUS_CLOAK_ALPHA cloaked.
+    // Speed factor the manager applies on top of the mob's own speed.
+    float RegulusSpeedBuff() const {
+        return 1.0f + (REGULUS_SPEED_BUFF_MULT - 1.0f) * RegulusSpeedLevel();
+    }
+    // Drawing opacity of a cloaked mob.
     float RegulusCloakAlpha() const {
-        if (kind != MobKind::REGULUS || regulusPhase != REGULUS_PHASE_CLOAK) return 1.0f;
-        const float t = regulusPhaseTimer;
-        const float k = std::min(std::min(t, REGULUS_CLOAK_TIME - t) / REGULUS_CLOAK_FADE, 1.0f);
-        return 1.0f - (1.0f - REGULUS_CLOAK_ALPHA) * std::max(0.0f, k);
+        return 1.0f - (1.0f - REGULUS_STEALTH_ALPHA) * RegulusStealthLevel();
+    }
+    // Laser / marker colour of each buff: shield ice-blue, speed amber, stealth violet.
+    static glm::vec3 RegulusBuffColor(int buff) {
+        switch (buff) {
+        case REGULUS_BUFF_SPEED:   return glm::vec3(1.0f, 0.72f, 0.22f);
+        case REGULUS_BUFF_STEALTH: return glm::vec3(0.72f, 0.50f, 1.0f);
+        default:                   return glm::vec3(0.722f, 0.937f, 1.0f);
+        }
     }
 
     void ConstrainRegulusToViewport(float left, float top,
@@ -1400,7 +1467,7 @@ public:
         // Keep the enlarged outer shield ring fully visible and turn its drift
         // back into the arena when it reaches a screen edge.
         const float base = (summoned ? 28.0f : 18.0f) * sizeScale;
-        const float margin = base * 2.12f + 14.0f;
+        const float margin = base * 2.2f + 14.0f;
         const float halfWidth = std::max(0.0f, right - left) * 0.5f;
         const float halfHeight = std::max(0.0f, bottom - top) * 0.5f;
         const float minX = left + std::min(margin, halfWidth);
@@ -1440,13 +1507,15 @@ public:
         case 3: return 1.0f;
         case 4: return 1.0f - QuasarEase(quasarTimer / 1.4f);
         case QUASAR_FALL_STATE: return 0.85f * QuasarEase(quasarTimer / QUASAR_FALL_SPLIT);
+        case QUASAR_ERUPT_STATE: return 0.85f * QuasarEase(quasarTimer / (QUASAR_ERUPT_BLAST_TIME * 0.6f));
         case QUASAR_FALL_RECOVER_STATE: return 0.85f * QuasarFallOpen();
         default: return 0.0f;
         }
     }
 
     bool QuasarFalling() const {
-        return alive && quasarState == QUASAR_FALL_STATE;
+        // The eruption reuses the starfall's body motion (gather, then open).
+        return alive && (quasarState == QUASAR_FALL_STATE || quasarState == QUASAR_ERUPT_STATE);
     }
 
     static float QuasarEase(float x) {
@@ -1454,7 +1523,19 @@ public:
         return x * x * x * (10.0f + x * (-15.0f + x * 6.0f));
     }
 
+    // Eruption body motion: it draws in slowly for most of the run (the
+    // flanges fold and the shell spins down), then flares open at the blast.
+    float QuasarEruptGather() const {
+        const float t = quasarTimer;
+        return QuasarEase(t / 1.3f) *
+               (1.0f - QuasarEase((t - (QUASAR_ERUPT_BLAST_TIME - 0.55f)) / 0.45f));
+    }
+    float QuasarEruptOpen() const {
+        return QuasarEase((quasarTimer - (QUASAR_ERUPT_BLAST_TIME - 0.55f)) / 0.55f);
+    }
+
     float QuasarFallOpen() const {
+        if (quasarState == QUASAR_ERUPT_STATE) return QuasarEruptOpen();
         if (QuasarFalling()) return QuasarEase((quasarTimer / QUASAR_FALL_SPLIT - 0.28f) / 0.72f);
         if (quasarState == QUASAR_FALL_RECOVER_STATE)
             return 1.0f - QuasarEase(quasarTimer / (QUASAR_FALL_RECOVER - QUASAR_FALL_IMPACT_FX));
@@ -1463,6 +1544,7 @@ public:
 
     float QuasarFallGather() const {
         if (!QuasarFalling()) return 0.0f;
+        if (quasarState == QUASAR_ERUPT_STATE) return QuasarEruptGather();
         const float p = quasarTimer / QUASAR_FALL_SPLIT;
         return QuasarEase(p / 0.28f) * (1.0f - QuasarEase((p - 0.28f) / 0.5f));
     }
@@ -1478,7 +1560,7 @@ public:
     }
 
     float QuasarFallImpactTime(int i) const {
-        return quasarFallLaunchTimes[i] + QUASAR_FALL_WARNING;
+        return quasarFallLaunchTimes[i] + QuasarFallWarning(i);
     }
 
     float QuasarFallPulse() const {
@@ -1509,6 +1591,149 @@ public:
                 worldY + sinf(f) * u - cosf(f) * v};
     }
 
+    // The beam runs both ways from the Quasar along the aim axis. Each end
+    // travels `reach`, bouncing off the arena edge up to quasarReflections
+    // times. Returns the segments as (x0, y0, x1, y1); `bounce` (optional)
+    // gets how many bounces precede each segment.
+    int QuasarBeamSegments(float reach, std::array<glm::vec4, QUASAR_BEAM_MAX_SEGMENTS>& out,
+                           std::array<int, QUASAR_BEAM_MAX_SEGMENTS>* bounce = nullptr) const {
+        int n = 0;
+        const bool arena = quasarBounds.z > quasarBounds.x && quasarBounds.w > quasarBounds.y;
+        for (int sgn = -1; sgn <= 1; sgn += 2) {
+            glm::vec2 p(worldX, worldY), d(quasarAimX * (float)sgn, quasarAimY * (float)sgn);
+            float left = reach;
+            for (int b = 0; b <= quasarReflections && left > 0.0f; ++b) {
+                float t = left;
+                bool hitX = false, hitY = false;
+                if (arena && b < quasarReflections) {
+                    float tx = 1.0e9f, ty = 1.0e9f;
+                    if (d.x > 1e-6f) tx = (quasarBounds.z - p.x) / d.x;
+                    else if (d.x < -1e-6f) tx = (quasarBounds.x - p.x) / d.x;
+                    if (d.y > 1e-6f) ty = (quasarBounds.w - p.y) / d.y;
+                    else if (d.y < -1e-6f) ty = (quasarBounds.y - p.y) / d.y;
+                    tx = std::max(tx, 0.0f); ty = std::max(ty, 0.0f);
+                    if (tx < t && tx <= ty) { t = tx; hitX = true; }
+                    else if (ty < t) { t = ty; hitY = true; }
+                }
+                const glm::vec2 q = p + d * t;
+                out[n] = glm::vec4(p.x, p.y, q.x, q.y);
+                if (bounce) (*bounce)[n] = b;
+                ++n;
+                left -= t;
+                if (!hitX && !hitY) break;
+                if (hitX) d.x = -d.x;
+                if (hitY) d.y = -d.y;
+                p = q;
+            }
+        }
+        return n;
+    }
+
+    // Lead vector for an aimed shot: direction of travel x capped distance.
+    glm::vec2 QuasarPredictLead() const {
+        const float speed = glm::length(quasarPlayerVel);
+        if (speed < QUASAR_PREDICT_MIN_SPEED) return glm::vec2(0.0f);
+        const glm::vec2 dir = quasarPlayerVel / speed;
+        return dir * std::min(speed * QUASAR_PREDICT_LEAD_TIME, QUASAR_PREDICT_MAX_LEAD);
+    }
+
+    // Flight / warning time of shot i. One value for every shot: the starfall
+    // never slows down when the player is close to the Quasar.
+    float QuasarFallWarning(int) const { return QUASAR_FALL_WARNING; }
+
+    // Next shot gap: a random 0.1-0.3 s, the same wherever the player stands.
+    static float QuasarFallNextGap() {
+        const float u = (float)(rand() % 10001) / 10000.0f;
+        return QUASAR_FALL_GAP_MIN + (QUASAR_FALL_GAP_MAX - QUASAR_FALL_GAP_MIN) * u;
+    }
+    float QuasarFallRadius(int i) const {
+        return QUASAR_FALL_RADIUS * (1.0f + (QUASAR_FALL_MAX_RADIUS_SCALE - 1.0f) * quasarFallPower[i]);
+    }
+    float QuasarFallDamage(int i) const {
+        return QUASAR_FALL_DAMAGE * (1.0f + (QUASAR_FALL_MAX_DAMAGE_SCALE - 1.0f) * quasarFallPower[i]);
+    }
+
+    // Zones of the eruption: concentric rings centred on the Quasar. Each ring
+    // keeps two doors (one zone left out) so the player can cross between the
+    // safe lanes; the whole pattern is turned by a random angle per cast.
+    void BeginQuasarEruption() {
+        quasarState = QUASAR_ERUPT_STATE;
+        quasarTimer = 0.0f;
+        quasarAimSet = false;
+        quasarEruptBlasted = false;
+        quasarEruptCount = 0;
+        const glm::vec2 c(worldX, worldY);
+        const bool arena = quasarBounds.z > quasarBounds.x && quasarBounds.w > quasarBounds.y;
+        float reachMax = 900.0f;
+        if (arena) {
+            reachMax = 0.0f;
+            for (const glm::vec2 corner : { glm::vec2(quasarBounds.x, quasarBounds.y), glm::vec2(quasarBounds.z, quasarBounds.y),
+                                            glm::vec2(quasarBounds.x, quasarBounds.w), glm::vec2(quasarBounds.z, quasarBounds.w) })
+                reachMax = std::max(reachMax, glm::length(corner - c));
+        }
+        const float Z = QUASAR_ERUPT_ZONE_RADIUS;
+        const float turn = (float)(rand() % 10000) * 0.0006283185f;
+        int rings = 0;
+        for (int k = 0; ; ++k) {
+            const float r = QUASAR_ERUPT_FIRST_RING + QUASAR_ERUPT_RING_STEP * (float)k;
+            if (r - Z > reachMax) break;
+            rings = k + 1;
+            const int n = std::max(6, (int)std::ceil(6.2831853f * r / (2.0f * Z * 1.04f)));
+            const float door = turn + 1.1f * (float)k;
+            for (int i = 0; i < n; ++i) {
+                const float ang = turn * 0.5f + 0.37f * (float)k + 6.2831853f * (float)i / (float)n;
+                bool isDoor = false;
+                for (int d = 0; d < 2; ++d) {
+                    float gap = std::fabs(std::remainder(ang - (door + 3.1415927f * (float)d), 6.2831853f));
+                    if (gap <= 3.1415927f / (float)n * 1.01f) isDoor = true;
+                }
+                if (isDoor) continue;
+                const glm::vec2 p = c + glm::vec2(cosf(ang), sinf(ang)) * r;
+                if (arena && (p.x < quasarBounds.x - Z * 0.5f || p.x > quasarBounds.z + Z * 0.5f ||
+                              p.y < quasarBounds.y - Z * 0.5f || p.y > quasarBounds.w + Z * 0.5f)) continue;
+                if (quasarEruptCount < QUASAR_ERUPT_MAX_ZONES) {
+                    quasarEruptRing[quasarEruptCount] = (unsigned char)k;
+                    quasarEruptZones[quasarEruptCount++] = p;
+                }
+            }
+        }
+        // Many rings (a big arena): tighten the stagger so the last one still
+        // stands for QUASAR_ERUPT_MIN_WARNING.
+        quasarEruptRingGap = QUASAR_ERUPT_RING_GAP;
+        if (rings > 1)
+            quasarEruptRingGap = std::min(QUASAR_ERUPT_RING_GAP,
+                (QUASAR_ERUPT_BLAST_TIME - QUASAR_ERUPT_MIN_WARNING - QUASAR_ERUPT_WINDUP -
+                 QUASAR_ERUPT_RING_GROW) / (float)(rings - 1));
+    }
+
+    // When ring k starts to unfold.
+    float QuasarEruptShowTime(int ring) const {
+        return QUASAR_ERUPT_WINDUP + quasarEruptRingGap * (float)ring;
+    }
+
+    bool QuasarEruptCovers(const glm::vec2& p) const {
+        const float Z2 = QUASAR_ERUPT_ZONE_RADIUS * QUASAR_ERUPT_ZONE_RADIUS;
+        for (int i = 0; i < quasarEruptCount; ++i) {
+            const glm::vec2 d = p - quasarEruptZones[i];
+            if (glm::dot(d, d) <= Z2) return true;
+        }
+        return false;
+    }
+
+    // All zones go off together at QUASAR_ERUPT_BLAST_TIME: one hit however many overlap.
+    void UpdateQuasarEruption(float playerX, float playerY, float& playerHP) {
+        if (!quasarEruptBlasted && quasarTimer >= QUASAR_ERUPT_BLAST_TIME) {
+            quasarEruptBlasted = true;
+            if (QuasarEruptCovers(glm::vec2(playerX, playerY)))
+                HurtPlayer(playerHP, QUASAR_ERUPT_DAMAGE);
+        }
+        if (quasarEruptBlasted && quasarTimer >= QUASAR_ERUPT_BLAST_TIME + QUASAR_FALL_IMPACT_FX) {
+            quasarState = QUASAR_FALL_RECOVER_STATE;
+            quasarTimer = 0.0f;
+            quasarFallTargetsMask = 0;
+        }
+    }
+
     void BeginQuasarFall() {
         quasarState = QUASAR_FALL_STATE;
         quasarTimer = 0.0f;
@@ -1517,6 +1742,7 @@ public:
         quasarFallNextFire = QUASAR_FALL_SPLIT;
         quasarFallHitUntil = 0.0f;
         quasarFallTargetsMask = quasarFallImpacts = 0;
+        quasarFallPredictedMask = 0;
     }
 
     // Each shot samples the player's current location once. Most land near
@@ -1525,11 +1751,19 @@ public:
         const int i = quasarFallFired++;
         quasarFallOrigins[i] = QuasarFlangeNode(i % 4);
         quasarFallLaunchTimes[i] = quasarTimer;
-        const float angle = (float)(rand() % 10000) * 0.0006283185f;
-        const float u = (float)(rand() % 10000) / 10000.0f;
-        const bool wide = rand() % 3 == 0;
-        const float distance = std::sqrt(wide ? 8100.0f + u * 24300.0f : u * 8100.0f);
-        glm::vec2 target = glm::vec2(playerX, playerY) + glm::vec2(cosf(angle), sinf(angle)) * distance;
+        const bool predicted = (i % QUASAR_PREDICT_EVERY) == QUASAR_PREDICT_EVERY - 1;
+        glm::vec2 target;
+        if (predicted) {
+            // Aimed shot: ahead of the player along their direction of travel.
+            target = glm::vec2(playerX, playerY) + QuasarPredictLead();
+            quasarFallPredictedMask |= 1u << i;
+        } else {
+            const float angle = (float)(rand() % 10000) * 0.0006283185f;
+            const float u = (float)(rand() % 10000) / 10000.0f;
+            const bool wide = rand() % 3 == 0;
+            const float distance = std::sqrt(wide ? 8100.0f + u * 24300.0f : u * 8100.0f);
+            target = glm::vec2(playerX, playerY) + glm::vec2(cosf(angle), sinf(angle)) * distance;
+        }
         const float r = QUASAR_FALL_RADIUS;
         if (bounds.z > bounds.x && bounds.w > bounds.y) {
             if (bounds.z - bounds.x < 2.0f * r || bounds.w - bounds.y < 2.0f * r) return;
@@ -1537,6 +1771,10 @@ public:
             target.y = std::clamp(target.y, bounds.y + r, bounds.w - r);
         }
         quasarFallTargets[i] = target;
+        // Farther from the Quasar = wider and harder hitting.
+        quasarFallPower[i] = std::clamp(
+            (glm::length(target - glm::vec2(worldX, worldY)) - QUASAR_FALL_NEAR_DIST) /
+                (QUASAR_FALL_FAR_DIST - QUASAR_FALL_NEAR_DIST), 0.0f, 1.0f);
         const glm::vec2 origin = quasarFallOrigins[i];
         const glm::vec2 d = target - origin;
         const float distanceToTarget = glm::length(d);
@@ -1557,7 +1795,7 @@ public:
     // Continuous bowed trajectory. Its nose follows the tangent, with a
     // separate tumble in drawing. Ground telegraphs remain fixed after launch.
     glm::vec2 QuasarFallPosition(int i, float age) const {
-        const float t = std::clamp((age - quasarFallLaunchTimes[i]) / QUASAR_FALL_WARNING, 0.0f, 1.0f);
+        const float t = std::clamp((age - quasarFallLaunchTimes[i]) / QuasarFallWarning(i), 0.0f, 1.0f);
         const float u = 0.25f * t + 0.75f * t * t;
         const float v = 1.0f - u;
         return quasarFallOrigins[i] * (v * v * v) + quasarFallControl1[i] * (3 * v * v * u) +
@@ -1570,7 +1808,7 @@ public:
             LaunchQuasarFall(playerX, playerY, bounds);
             // No burst of overdue shots after a hitch: every shot still gets
             // its own full warning and a minimum firing gap.
-            quasarFallNextFire = quasarTimer + QUASAR_FALL_GAP;
+            quasarFallNextFire = quasarTimer + QuasarFallNextGap();
         }
         for (int i = 0; i < quasarFallFired; ++i) {
             const unsigned bit = 1u << i;
@@ -1579,8 +1817,8 @@ public:
             quasarFallImpacts |= bit;
             const glm::vec2 d = glm::vec2(playerX, playerY) - quasarFallTargets[i];
             if (quasarTimer >= quasarFallHitUntil &&
-                glm::dot(d, d) <= QUASAR_FALL_RADIUS * QUASAR_FALL_RADIUS) {
-                HurtPlayer(playerHP, QUASAR_FALL_DAMAGE);
+                glm::dot(d, d) <= QuasarFallRadius(i) * QuasarFallRadius(i)) {
+                HurtPlayer(playerHP, QuasarFallDamage(i));
                 quasarFallHitUntil = quasarTimer + QUASAR_FALL_HIT_GRACE;
             }
         }
@@ -1852,8 +2090,6 @@ public:
         }
         {
             const bool panes =
-                (normaPattern == Pattern::Hide && normaStage != Stage::Recover) ||
-                (normaPattern == Pattern::Summon && normaStage != Stage::Recover) ||
                 (normaPattern == Pattern::Ram && normaStage != Stage::Recover && normaExposed <= 0.0f);
             normaRingShow += ((panes ? 1.0f : 0.0f) - normaRingShow) * std::min(1.0f, 6.0f * deltaTime);
         }
@@ -1868,17 +2104,34 @@ public:
         normaContactGrace = std::max(0.0f, normaContactGrace - deltaTime);
         if (normaExposed > 0.0f) {
             // An opening: everything holds while it lasts, and the still body
-            // is safe to stand against (no contact damage).
+            // is safe to stand against (no contact damage). Any drift in
+            // flight eases to a stop instead of freezing in place.
+            const float settle = std::exp(-8.0f * deltaTime);
+            normaVelX *= settle;
+            normaVelY *= settle;
+            worldX += normaVelX * deltaTime;
+            worldY += normaVelY * deltaTime;
             normaExposed = std::max(0.0f, normaExposed - deltaTime);
             normaGhostLife = std::max(0.0f, normaGhostLife - deltaTime);
             return;
         }
         normaTimer += deltaTime;
         normaGhostLife = std::max(0.0f, normaGhostLife - deltaTime);
+        // Whether anything this frame took charge of the body's motion; if
+        // not, its last drift coasts to a stop after the switch below.
+        bool moved = false;
         const auto hover = [&]() {
-            const float move = norma::HoverSpeed(distance) * speedMult * deltaTime;
-            worldX += dx / distance * move;
-            worldY += dy / distance * move;
+            moved = true;
+            const float want = norma::HoverSpeedSmooth(distance) * speedMult;
+            const float wantX = distance > 1.0f ? dx / distance * want : 0.0f;
+            const float wantY = distance > 1.0f ? dy / distance * want : 0.0f;
+            const float step = norma::kHoverAccel * deltaTime;
+            const float ex = wantX - normaVelX, ey = wantY - normaVelY;
+            const float el = std::sqrt(ex * ex + ey * ey);
+            if (el > step) { normaVelX += ex / el * step; normaVelY += ey / el * step; }
+            else { normaVelX = wantX; normaVelY = wantY; }
+            worldX += normaVelX * deltaTime;
+            worldY += normaVelY * deltaTime;
         };
         const auto enter = [&](Stage stage) {
             normaStage = stage;
@@ -1902,6 +2155,11 @@ public:
             const float stepX = (x - worldX) * k, stepY = (y - worldY) * k;
             worldX += stepX;
             worldY += stepY;
+            moved = true;
+            // Hand the glide's speed on, so the hover after it starts from
+            // there rather than from a standstill.
+            normaVelX = std::clamp(stepX / deltaTime, -300.0f, 300.0f);
+            normaVelY = std::clamp(stepY / deltaTime, -300.0f, 300.0f);
             leaveGhosts(stepX, stepY);
         };
 
@@ -1932,25 +2190,18 @@ public:
                     norma::g_Events.push_back({ norma::Fx::Burst, worldX, worldY, 0.5f });
                     enter(Stage::Act);
                 }
-            } else if (normaPattern == Pattern::Hide) {
-                // Laser and bracket snap first, then glide into the pane.
-                if (normaTimer > norma::kLaserSeconds + norma::kSnapSeconds)
-                    glideTo(normaTargetX, normaTargetY, 6.0f);
-                if (normaTimer >= norma::kHideTelegraph) {
-                    norma::g_Events.push_back({ norma::Fx::EnterPane, worldX, worldY, 0.0f });
-                    normaBurstTimer = 1.0f;
-                    enter(Stage::Act);
-                }
             } else if (normaPattern == Pattern::Throw) {
                 // The box grows out of the boss and fills; then it is hurled.
                 if (normaTimer >= norma::kThrowAppear + norma::kThrowFill) {
                     norma::g_Events.push_back({ norma::Fx::Burst, worldX, worldY, 0.7f });
                     enter(Stage::Act);
                 }
-            } else if (normaPattern == Pattern::Summon) {
+            } else if (normaPattern == Pattern::Detonate) {
+                // The panes in use are fusing; the boss waits out the blasts.
                 hover();
-                if (normaTimer >= 0.6f) {
-                    norma::g_Events.push_back({ norma::Fx::Burst, worldX, worldY, 0.5f });
+                if (normaTimer >= norma::kDetonateFuseWait) {
+                    norma::g_Asks.push_back(norma::Ask::ReopenPanes);
+                    norma::g_Events.push_back({ norma::Fx::Burst, worldX, worldY, 0.8f });
                     enter(Stage::Act);
                 }
             } else if (normaPattern == Pattern::Refuge) {
@@ -1986,29 +2237,14 @@ public:
                                                 worldY + sinf(normaAimAngle) * muzzle, normaAimAngle });
                 }
                 if (normaTimer >= norma::kAimSeconds) enter(Stage::Recover);
-            } else if (normaPattern == Pattern::Hide) {
-                glideTo(normaTargetX, normaTargetY, 8.0f);   // follows a moved pane
-                normaSpin += norma::kHideTurnRate * deltaTime;
-                FireNormaStreams(bullets, norma::kHideInterval, norma::kHideShotSpeed, deltaTime);
-                // A full ring every so often: from inside, it breaks on the border.
-                normaBurstTimer -= deltaTime;
-                if (normaBurstTimer <= 0.0f) {
-                    normaBurstTimer = norma::kHideRingInterval;
-                    for (int i = 0; i < norma::kHideRingShots; ++i)
-                        FireNormaShot(bullets, normaSpin * 0.5f + 6.2831853f * (float)i /
-                                      (float)norma::kHideRingShots, norma::kHideShotSpeed * 1.3f);
-                    norma::g_Events.push_back({ norma::Fx::Burst, worldX, worldY, 0.6f });
-                    normaRecoil = norma::kRecoilSeconds * 1.6f;
-                }
-                if (normaPaneLost || normaTimer >= norma::kHideSeconds) enter(Stage::Exit);
             } else if (normaPattern == Pattern::Throw) {
                 // The game loop flies and bursts the box; the boss holds fire.
                 hover();
                 if (normaTimer >= norma::kThrowSeconds) enter(Stage::Recover);
-            } else if (normaPattern == Pattern::Summon) {
-                // The boss holds fire while the gates compile their mobs.
+            } else if (normaPattern == Pattern::Detonate) {
+                // New panes snap open (the game loop); then back to business.
                 hover();
-                if (normaTimer >= norma::kSummonSeconds) enter(Stage::Recover);
+                if (normaTimer >= norma::kDetonateReopen) enter(Stage::Recover);
             } else if (normaPattern == Pattern::Ram) {
                 // The game loop flies the pane; the boss holds fire.
                 hover();
@@ -2042,21 +2278,22 @@ public:
             }
             break;
         case Stage::Exit:
-            if (normaPattern == Pattern::Hide) {
-                if (normaTimer <= deltaTime)
-                    norma::g_Events.push_back({ norma::Fx::LeavePane, worldX, worldY, 0.0f });
-                glideTo(normaHomeX, normaHomeY, 7.0f);
-                if (normaTimer >= norma::kHideExit) {
-                    norma::g_Asks.push_back(norma::Ask::ReleaseWindows);
-                    enter(Stage::Recover);
-                }
-            } else {
-                if (normaTimer >= norma::kRefugeLinger) {
-                    norma::g_Asks.push_back(norma::Ask::ReleaseWindows);
-                    enter(Stage::Recover);
-                }
+            if (normaTimer >= norma::kRefugeLinger) {
+                norma::g_Asks.push_back(norma::Ask::ReleaseWindows);
+                enter(Stage::Recover);
             }
             break;
+        }
+        if (normaPattern == Pattern::Dash && normaStage == Stage::Act) {
+            moved = true;   // the charge places the body itself
+            normaVelX = normaVelY = 0.0f;
+        }
+        if (!moved) {
+            const float coast = std::exp(-norma::kCoastDecay * deltaTime);
+            normaVelX *= coast;
+            normaVelY *= coast;
+            worldX += normaVelX * deltaTime;
+            worldY += normaVelY * deltaTime;
         }
         if (normaContactGrace <= 0.0f) TryContact(distance, playerHP, contactDmg, deltaTime);
     }
@@ -2069,13 +2306,10 @@ public:
         normaTimer = 0.0f;
         normaFireTimer = 0.0f;
         normaPaneId = 0;
-        normaPaneLost = false;
         switch (normaPattern) {
-        case Pattern::Hide:
-            normaHomeX = worldX;
-            normaHomeY = worldY;
-            norma::g_Asks.push_back(norma::Ask::ClaimFarWindow);
-            normaStage = norma::Stage::Wait;
+        case Pattern::Detonate:
+            norma::g_Asks.push_back(norma::Ask::DetonatePanes);
+            normaStage = norma::Stage::Telegraph;
             break;
         case Pattern::Refuge:
             norma::g_Asks.push_back(norma::Ask::OpenRefuges);
@@ -2087,10 +2321,6 @@ public:
             break;
         case Pattern::Throw:
             norma::g_Asks.push_back(norma::Ask::ThrowBox);
-            normaStage = norma::Stage::Telegraph;
-            break;
-        case Pattern::Summon:
-            norma::g_Asks.push_back(norma::Ask::OpenGates);
             normaStage = norma::Stage::Telegraph;
             break;
         case Pattern::Ram:
@@ -2709,13 +2939,22 @@ public:
         if (kind == MobKind::QUASAR) {
             static constexpr float COOLDOWN_TIME = QUASAR_COOLDOWN_TIME;
             static constexpr float LOCK_TIME = QUASAR_LOCK_TIME;
-            static constexpr float BEAM_TIME = 2.50f;
+            static constexpr float BEAM_TIME = QUASAR_BEAM_TIME;
             static constexpr float RECOVER_TIME = 1.4f;
             static constexpr float BEAM_LENGTH = 6000.0f;
             static constexpr float BEAM_RADIUS = QUASAR_BEAM_RADIUS;
             static constexpr float BEAM_DPS = QUASAR_BEAM_DPS;
 
             quasarTimer += deltaTime;
+            quasarBounds = attackBounds;
+            if (quasarPlayerSeen && deltaTime > 1e-5f) {
+                glm::vec2 inst = (glm::vec2(playerCX, playerCY) - quasarPlayerPrev) / deltaTime;
+                const float sp = glm::length(inst);
+                if (sp > QUASAR_PREDICT_MAX_SPEED) inst *= QUASAR_PREDICT_MAX_SPEED / sp;
+                quasarPlayerVel += (inst - quasarPlayerVel) * (1.0f - expf(-deltaTime * 12.0f));
+            }
+            quasarPlayerPrev = glm::vec2(playerCX, playerCY);
+            quasarPlayerSeen = true;
             quasarVisualAngle += deltaTime * 0.24f;
             quasarSpinSpeed += (QuasarSpinTarget() - quasarSpinSpeed) * (1.0f - expf(-deltaTime * 7.0f));
             quasarShellSpin += deltaTime * quasarSpinSpeed;
@@ -2745,7 +2984,7 @@ public:
                     quasarAimSet = true;
                 }
                 if (quasarTimer >= COOLDOWN_TIME) {
-                    if (quasarNextFall) BeginQuasarFall();
+                    if (quasarNextFall) { if (quasarEruptNext) BeginQuasarEruption(); else BeginQuasarFall(); }
                     else {
                         quasarState = 1;
                         quasarTimer = 0.0f;
@@ -2784,19 +3023,21 @@ public:
                 }
                 const float growT = std::min(1.0f, quasarTimer / 0.70f);
                 const float reach = BEAM_LENGTH * growT * growT * growT;
-                const float ax = worldX - quasarAimX * reach;
-                const float ay = worldY - quasarAimY * reach;
-                const float bx = worldX + quasarAimX * reach;
-                const float by = worldY + quasarAimY * reach;
-                const float abx = bx - ax, aby = by - ay;
-                const float length2 = abx * abx + aby * aby;
-                if (length2 > 0.001f) {
+                std::array<glm::vec4, QUASAR_BEAM_MAX_SEGMENTS> seg;
+                const int segCount = QuasarBeamSegments(reach, seg);
+                for (int k = 0; k < segCount; ++k) {
+                    const float ax = seg[k].x, ay = seg[k].y;
+                    const float abx = seg[k].z - ax, aby = seg[k].w - ay;
+                    const float length2 = abx * abx + aby * aby;
+                    if (length2 <= 0.001f) continue;
                     float u = ((playerCX - ax) * abx + (playerCY - ay) * aby) / length2;
                     u = std::max(0.0f, std::min(1.0f, u));
                     const float hx = ax + abx * u - playerCX;
                     const float hy = ay + aby * u - playerCY;
-                    if (hx * hx + hy * hy <= BEAM_RADIUS * BEAM_RADIUS)
-                        HurtPlayer(playerHP, BEAM_DPS * deltaTime);
+                    if (hx * hx + hy * hy <= BEAM_RADIUS * BEAM_RADIUS) {
+                        HurtPlayer(playerHP, BEAM_DPS * deltaTime);   // once per frame
+                        break;
+                    }
                 }
                 if (quasarTimer >= BEAM_TIME) {
                     quasarState = 4;
@@ -2804,9 +3045,12 @@ public:
                 }
             } else if (quasarState == QUASAR_FALL_STATE) {
                 UpdateQuasarFall(playerCX, playerCY, playerHP, attackBounds);
+            } else if (quasarState == QUASAR_ERUPT_STATE) {
+                UpdateQuasarEruption(playerCX, playerCY, playerHP);
             } else if (quasarState == QUASAR_FALL_RECOVER_STATE) {
                 if (quasarTimer >= QUASAR_FALL_RECOVER - QUASAR_FALL_IMPACT_FX) {
                     quasarNextFall = false;
+                    quasarEruptNext = !quasarEruptNext;   // alternate starfall / eruption
                     quasarState = 0;
                     quasarTimer = 0.0f;
                 }
@@ -2840,13 +3084,7 @@ public:
                 regulusDriftAngle += ((float)(rand() % 201) - 100.0f) * 0.012f;
                 regulusDriftTimer = 0.8f + (float)(rand() % 150) * 0.01f;
             }
-            regulusPhaseTimer += deltaTime;
-            if (regulusPhaseTimer >= RegulusPhaseDuration()) {
-                regulusPhaseTimer = 0.0f;
-                regulusPhase = (regulusPhase + 1) % 3;
-            }
-            const float surge = RegulusSurging() ? REGULUS_SURGE_MULT : 1.0f;
-            const float movementSpeed = std::min(speed * speedMult, 90.0f) * surge;
+            const float movementSpeed = std::min(speed * speedMult, 90.0f);
             worldX += cosf(regulusDriftAngle) * movementSpeed * deltaTime;
             worldY += sinf(regulusDriftAngle) * movementSpeed * deltaTime;
             return;

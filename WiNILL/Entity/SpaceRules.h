@@ -88,22 +88,12 @@ inline bool CrossedBorder(int shotSpace, float x, float y, int& absorbingPane) {
 // Pane durability: enemy hits a pane can stop before it self-destructs.
 // Smaller panes are sturdier, up to three times the base; larger ones keep
 // the base.
-constexpr float kBaseDurability = 250.0f;
+constexpr float kBaseDurability = 120.0f;
 constexpr float kReferenceArea = 520.0f * 360.0f;
 
-// A worn-out pane does not burst at once: it warns for kFuseSeconds, showing
-// its blast range (the frame grown by kBlastMargin world px), then explodes,
-// hurting everything in range whatever its space, and closes.
-constexpr float kFuseSeconds = 1.0f;
-constexpr float kBlastMargin = 120.0f;
-constexpr float kBlastPlayerDamage = 20.0f;
-constexpr float kBlastMobDamage = 120.0f;
-// The blast also scatters shots like a thrown box, a little fewer: an outer
-// ring and a slower inner ring on its gaps.
-constexpr int   kBlastRing = 28;
-constexpr int   kBlastInner = 12;
-constexpr float kBlastRingSpeed = 300.0f;
-constexpr float kBlastInnerSpeed = 170.0f;
+// A worn-out pane does not close at once: it burns a fuse for kFuseSeconds
+// (a bright head running round its frame), then folds shut. There is no blast.
+constexpr float kFuseSeconds = 1.4f;
 // Below this share of durability the pane's contents start to waver.
 constexpr float kUnsteadyShare = 0.30f;
 

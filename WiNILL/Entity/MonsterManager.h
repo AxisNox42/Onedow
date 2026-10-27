@@ -17,8 +17,20 @@ public:
     struct RegulusBeam {
         float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
         float age = 0.0f;
+        int buff = 0;   // Monster::REGULUS_BUFF_*: picks the colour
     };
     std::vector<RegulusBeam> regulusBeams;
+
+    static bool RegulusBuffable(const Monster& m) {
+        return m.alive && m.kind != MobKind::REGULUS && m.kind != MobKind::NORMA;
+    }
+
+    void TickRegulusBuffs(float dt) {
+        for (auto* m : monsters) {
+            if (m->regulusSpeedAge >= 0.0f) m->regulusSpeedAge += dt;
+            if (m->regulusStealthAge >= 0.0f) m->regulusStealthAge += dt;
+        }
+    }
 
     // source: the NORMA window space the hit comes from (SpaceRules.h).
     // Player weapons default to the player's space; a target in another
@@ -211,10 +223,11 @@ public:
                    float gateWX = -1.0f, float gateWY = -1.0f,
                    float gateWW = -1.0f, float gateWH = -1.0f,
                    const glm::vec4& attackBounds = glm::vec4(0.0f)) {
+        TickRegulusBuffs(dt);
         for (auto m : monsters) {
             // Whatever this mob does to the player only lands in its own space.
             space::HurtSourceScope hurtSource(space::SpaceAt(m->worldX, m->worldY));
-            m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult,
+            m->Update(playerCX, playerCY, dt, playerHP, mobSpeedMult * m->RegulusSpeedBuff(),
                       gateWX, gateWY, gateWW, gateWH, &bullets, attackBounds);
             if(m->kind==MobKind::GENESIS && !m->alive)
                 for(auto* child:monsters) if(child->thrownOwnerId==m->genesisId && child->genesisRotorPhase==2) {
@@ -315,66 +328,81 @@ private:
         return !shield.acquiredOnce && shield.hp <= 0.0f;
     }
 
-    // Every REGULUS_SHOT_INTERVAL a Regulus fires one instant laser at an
-    // ally picked uniformly at random among eligible enemies within
-    // REGULUS_SHOT_RANGE. The shield is granted on the spot.
+    // A mob gets at most one Regulus buff in its life (shield, speed or
+    // stealth); buffs are permanent, a broken shield does not free it again.
+    static bool RegulusFree(const Monster& m) { return !m.RegulusBuffed(); }
+
+    // Every REGULUS_SHOT_INTERVAL a Regulus fires a volley of instant lasers at
+    // up to REGULUS_VOLLEY_COUNT distinct random allies within
+    // REGULUS_SHOT_RANGE that have never been buffed. Each gets one random,
+    // permanent buff: a shield (until it breaks), a speed boost or a stealth
+    // cloak. The buff lands on the spot; the laser colour tells which one.
     void UpdateRegulusShots(float dt) {
         constexpr float rangeSq = Monster::REGULUS_SHOT_RANGE *
                                   Monster::REGULUS_SHOT_RANGE;
-        std::vector<Monster*> monsterPool;
-        std::vector<RangedMob*> rangedPool;
+        struct Cand { Monster* mob; RangedMob* ranged; };
+        std::vector<Cand> pool;
         for (auto* source : monsters) {
             if (!source->alive || source->kind != MobKind::REGULUS) continue;
             source->regulusShotTimer -= dt;
             if (source->regulusShotTimer > 0.0f) continue;
 
-            monsterPool.clear();
-            rangedPool.clear();
+            pool.clear();
             // Regulus does not see past a window border, so it never aims
-            // a shield laser into another space.
+            // a laser into another space.
             const int sourceSpace = space::SpaceAt(source->worldX, source->worldY);
             const auto inRange = [&](float x, float y) {
                 const float dx = x - source->worldX, dy = y - source->worldY;
                 return dx * dx + dy * dy <= rangeSq && space::Reaches(sourceSpace, x, y);
             };
             for (auto* target : monsters)
-                if (target->alive && target->kind != MobKind::REGULUS &&
-                    target->kind != MobKind::NORMA &&
-                    RegulusEligible(target->regulusShield) &&
+                if (RegulusBuffable(*target) && RegulusFree(*target) &&
                     inRange(target->worldX, target->worldY))
-                    monsterPool.push_back(target);
+                    pool.push_back({ target, nullptr });
+            // Ranged mobs only take shields (their movement is not speed-driven).
             for (auto* target : rangedMobs)
                 if (target->alive && RegulusEligible(target->regulusShield) &&
                     inRange(target->worldX, target->worldY))
-                    rangedPool.push_back(target);
+                    pool.push_back({ nullptr, target });
 
-            const int total = (int)(monsterPool.size() + rangedPool.size());
-            if (total == 0) {
+            source->regulusHasTarget = !pool.empty();
+            if (pool.empty()) {
                 source->regulusShotTimer = 0.2f;   // look again shortly
                 continue;
             }
-            const int pick = rand() % total;
-            EnemyShieldState* shield = nullptr;
-            float tx = 0.0f, ty = 0.0f, bodyRadius = 18.0f;
-            if (pick < (int)monsterPool.size()) {
-                Monster* t = monsterPool[pick];
-                shield = &t->regulusShield;
-                tx = t->worldX; ty = t->worldY;
-                bodyRadius = (t->summoned ? 28.0f : 18.0f) * t->sizeScale;
-            } else {
-                RangedMob* t = rangedPool[pick - monsterPool.size()];
-                shield = &t->regulusShield;
-                tx = t->worldX; ty = t->worldY;
-                bodyRadius = RangedMob::VISUAL_BASE_PX;
+            const int shots = std::min((int)pool.size(), Monster::REGULUS_VOLLEY_COUNT);
+            for (int n = 0; n < shots; ++n) {
+                const int idx = n + rand() % ((int)pool.size() - n);
+                std::swap(pool[n], pool[idx]);
+                const Cand c = pool[n];
+                float tx, ty, bodyRadius;
+                int buff = Monster::REGULUS_BUFF_SHIELD;
+                if (c.mob) {
+                    tx = c.mob->worldX; ty = c.mob->worldY;
+                    bodyRadius = (c.mob->summoned ? 28.0f : 18.0f) * c.mob->sizeScale;
+                    buff = rand() % 3;
+                } else {
+                    tx = c.ranged->worldX; ty = c.ranged->worldY;
+                    bodyRadius = RangedMob::VISUAL_BASE_PX;
+                }
+                if (buff == Monster::REGULUS_BUFF_SHIELD) {
+                    EnemyShieldState* shield = c.mob ? &c.mob->regulusShield
+                                                     : &c.ranged->regulusShield;
+                    const float shieldHp = std::max(1.0f, source->regulusBaseHp) * 0.6f;
+                    *shield = {};
+                    shield->acquiredOnce = true;
+                    shield->hp = shield->maxHp = shieldHp;
+                    shield->flashTimer = MOB_HIT_FLASH_TIME;
+                    shield->grantTimer = SHIELD_GRANT_TIME;
+                } else if (buff == Monster::REGULUS_BUFF_SPEED) {
+                    c.mob->regulusSpeedAge = 0.0f;
+                } else {
+                    c.mob->regulusStealthAge = 0.0f;
+                }
+                SpawnRegulusShieldGrantParticles(tx, ty, bodyRadius,
+                    Monster::RegulusBuffColor(buff));
+                regulusBeams.push_back({ source->worldX, source->worldY, tx, ty, 0.0f, buff });
             }
-            const float shieldHp = std::max(1.0f, source->regulusBaseHp) * 0.6f;
-            *shield = {};
-            shield->acquiredOnce = true;
-            shield->hp = shield->maxHp = shieldHp;
-            shield->flashTimer = MOB_HIT_FLASH_TIME;
-            shield->grantTimer = SHIELD_GRANT_TIME;
-            SpawnRegulusShieldGrantParticles(tx, ty, bodyRadius);
-            regulusBeams.push_back({ source->worldX, source->worldY, tx, ty, 0.0f });
             source->regulusShotTimer = Monster::REGULUS_SHOT_INTERVAL;
         }
     }

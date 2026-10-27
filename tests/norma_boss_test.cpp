@@ -27,15 +27,32 @@ static void KeepsHoverDistance() {
     Check(norma::HoverSpeed(norma::kHoverDistance - norma::kHoverBand - 1.0f) < 0.0f,
           "too close: backs off");
     Check(norma::HoverSpeed(norma::kHoverDistance) == 0.0f, "inside the band: holds");
+    Check(norma::HoverSpeedSmooth(norma::kHoverDistance) == 0.0f, "smooth: inside the band holds");
+    const float edge = norma::kHoverDistance + norma::kHoverBand;
+    Check(norma::HoverSpeedSmooth(edge + 1.0f) > 0.0f && norma::HoverSpeedSmooth(edge + 1.0f) < 1.0f,
+          "smooth: speed starts from nothing just past the band");
+    Check(std::fabs(norma::HoverSpeedSmooth(edge + 1000.0f) - norma::kMoveSpeed) < 1e-3f,
+          "smooth: far away reaches the full speed");
+    Check(norma::HoverSpeedSmooth(norma::kHoverDistance - norma::kHoverBand - 40.0f) < 0.0f,
+          "smooth: too close backs off");
+    float prev = 0.0f;
+    bool even = true;
+    for (float d = edge; d < edge + 200.0f; d += 1.0f) {
+        const float v = norma::HoverSpeedSmooth(d);
+        if (v < prev - 1e-4f || v - prev > 4.0f) even = false;
+        prev = v;
+    }
+    Check(even, "smooth: speed rises evenly, no jumps");
 }
 
 static void PatternsTakeTurns() {
     using norma::Pattern;
     for (int roll = 0; roll < 12; ++roll) {
         const Pattern first = norma::NextPattern(0, 1, roll);
-        Check(first == Pattern::Hide || first == Pattern::Refuge ||
-              first == Pattern::Throw || first == Pattern::Summon || first == Pattern::Ram,
-              "phase 1 window turn picks Hide, Refuge, Throw, Summon or Ram");
+        Check(first == Pattern::Refuge ||
+              first == Pattern::Throw || first == Pattern::Ram ||
+              first == Pattern::Detonate,
+              "phase 1 window turn picks Refuge, Throw, Ram or Detonate");
         const Pattern direct = norma::NextPattern(1, 1, roll);
         Check(direct == Pattern::Aim || direct == Pattern::Dash,
               "odd turns are a direct attack (aimed stream or charge)");
@@ -50,13 +67,16 @@ static void PatternsTakeTurns() {
     for (int roll = 0; roll < 12; ++roll)
         sawClose = sawClose || norma::NextPattern(2, 2, roll) == Pattern::CloseWindow;
     Check(sawClose, "phase 2 adds CloseWindow to the window turns");
-    bool sawThrow = false, sawSummon = false, sawRam = false;
+    bool sawThrow = false, sawRam = false;
     for (int roll = 0; roll < 12; ++roll) {
         sawThrow = sawThrow || norma::NextPattern(0, 1, roll) == Pattern::Throw;
-        sawSummon = sawSummon || norma::NextPattern(0, 1, roll) == Pattern::Summon;
         sawRam = sawRam || norma::NextPattern(0, 1, roll) == Pattern::Ram;
     }
-    Check(sawThrow && sawSummon && sawRam, "window turns include Throw, Summon and Ram");
+    Check(sawThrow && sawRam, "window turns include Throw and Ram");
+    bool sawDetonate = false;
+    for (int roll = 0; roll < 12; ++roll)
+        sawDetonate = sawDetonate || norma::NextPattern(0, 1, roll) == Pattern::Detonate;
+    Check(sawDetonate, "window turns include Detonate");
     bool closeInPhase1 = false;
     for (int roll = 0; roll < 12; ++roll)
         closeInPhase1 = closeInPhase1 || norma::NextPattern(2, 1, roll) == Pattern::CloseWindow;

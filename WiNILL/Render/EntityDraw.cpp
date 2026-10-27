@@ -1079,7 +1079,7 @@ static float AegisMarkExtent(MobKind kind) {
     case MobKind::QUASAR:   return 2.40f;   // tilted outer orbit
     case MobKind::GRAVIS:   return 1.55f;
     case MobKind::ANTARES:  return 1.85f;   // pentagon vertices and afterimages
-    case MobKind::MAGNETAR: return 2.35f;   // pole cells
+    case MobKind::MAGNETAR: return 4.30f;   // wraps the whole polyhedron shell, vertices included
     case MobKind::GIMBAL:   return 1.60f;
     case MobKind::SWARM:    return 1.30f;
     default:                return 1.55f;   // Rotor's rotating square corners
@@ -1149,17 +1149,108 @@ static void DrawRegulusCrest(float x, float y, float base, float phase,
     DrawEnemyCore(x, y, base * 0.30f, r, g, b, 0.90f + 0.10f * pulse, false);
 }
 
+// Elite extension of the Regulus crest: the old body is untouched, layers are
+// added outward. (1) a second ring of four wide, thin plates outside the
+// shield plates, turning against them; (2) three diamond nodes on a ring
+// between crest and plates that light up as the next volley charges. One
+// colour family, solid thin lines only.
+static void DrawRegulusExtension(const Monster* m, float base, float phase,
+                                 float r, float g, float b, float visualTime) {
+    const float x = m->worldX, y = m->worldY;
+    // (1) outer plates, offset 45 degrees from the shield plates.
+    for (int k = 0; k < 4; ++k) {
+        const float a0 = -phase * 0.55f + 0.7853982f + 1.5707963f * (float)k + 0.10f;
+        DrawEnemyArc(x, y, base * 2.02f, a0, 1.5707963f - 0.20f, 14,
+                     r, g, b, 0.36f, 1.1f, false);
+        DrawEnemyArc(x, y, base * 1.93f, a0 + 0.12f, 1.5707963f - 0.44f, 10,
+                     0.92f, 0.99f, 1.0f, 0.22f, 0.8f, false);
+    }
+    // (2) charge nodes: dim at rest, brighter and larger over the last 0.8 s.
+    constexpr float CHARGE_WINDOW = 0.8f;
+    const float charge = m->regulusHasTarget && m->regulusShotTimer < CHARGE_WINDOW
+        ? 1.0f - std::max(0.0f, m->regulusShotTimer) / CHARGE_WINDOW : 0.0f;
+    for (int k = 0; k < 3; ++k) {
+        const float a = visualTime * 0.45f + 2.0943951f * (float)k;
+        const float cx = x + cosf(a) * base * 1.40f, cy = y + sinf(a) * base * 1.40f;
+        const float s = base * (0.10f + 0.07f * charge);
+        const float al = 0.45f + 0.55f * charge;
+        const float dx[4] = { 0.0f, s, 0.0f, -s }, dy[4] = { -s, 0.0f, s, 0.0f };
+        for (int i = 0; i < 4; ++i) {
+            const int n = (i + 1) & 3;
+            drawLineQuad(cx + dx[i], cy + dy[i], cx + dx[n], cy + dy[n],
+                         1.2f + 0.8f * charge, 0.92f, 0.99f, 1.0f, al);
+        }
+    }
+}
+
 // Instant shield laser: a straight line from the Regulus to the target that
 // flashes and fades over REGULUS_BEAM_TIME. No projectile is drawn.
+// Thin solid ring built from line segments (no fills, no dashes).
+static void DrawLineRing(float cx, float cy, float radius, float width,
+                         float r, float g, float b, float alpha) {
+    constexpr int SEG = 72;
+    constexpr float STEP = 6.2831853f / (float)SEG;
+    for (int i = 0; i < SEG; ++i) {
+        const float a0 = (float)i * STEP, a1 = a0 + STEP;
+        drawLineQuad(cx + cosf(a0) * radius, cy + sinf(a0) * radius,
+                     cx + cosf(a1) * radius, cy + sinf(a1) * radius,
+                     width, r, g, b, alpha);
+    }
+}
+
+// Buff markers on a buffed mob, one colour per buff: speed = four amber arcs
+// spinning fast, stealth = one thin violet ring. Drawn at full alpha so the
+// cloaked body stays locatable. (The shield has its own bracket drawing.)
+void DrawRegulusBuffMarks(const Monster* m, float visualTime) {
+    // Marks sit just outside each kind's silhouette (same extent the shield
+    // brackets use), so big mobs get big marks and small ones stay tight.
+    const float ext = (m->summoned ? 28.0f : 18.0f) * m->sizeScale * AegisMarkExtent(m->kind);
+    const float sp = m->RegulusSpeedLevel();
+    if (sp > 0.0f) {
+        const glm::vec3 c = Monster::RegulusBuffColor(Monster::REGULUS_BUFF_SPEED);
+        const float rad = ext * 1.0f, spin = visualTime * 5.0f;
+        for (int k = 0; k < 4; ++k) {
+            const float a0 = spin + (float)k * 1.5707963f;
+            for (int i = 0; i < 6; ++i) {
+                const float u0 = a0 + (float)i * 0.1f, u1 = u0 + 0.1f;
+                drawLineQuad(m->worldX + cosf(u0) * rad, m->worldY + sinf(u0) * rad,
+                             m->worldX + cosf(u1) * rad, m->worldY + sinf(u1) * rad,
+                             1.6f, c.r, c.g, c.b, 0.85f * sp);
+            }
+        }
+    }
+    const float st = m->RegulusStealthLevel();
+    if (st > 0.0f) {
+        const glm::vec3 c = Monster::RegulusBuffColor(Monster::REGULUS_BUFF_STEALTH);
+        // Triangle broken in three places (a gap mid-edge, three corners
+        // remain), solid lines, turning slowly.
+        // Circumradius 1.35 ext, short corner pieces: they stay ~0.95 ext from the centre.
+        const float rad = ext * 1.35f, spin = visualTime * 0.6f;
+        const float alpha = (0.75f + 0.15f * sinf(visualTime * 3.0f)) * st;
+        constexpr float KEEP = 0.22f;   // share of each edge kept at either end
+        for (int k = 0; k < 3; ++k) {
+            const float a0 = spin + (float)k * 2.0943951f - 1.5707963f;
+            const float a1 = a0 + 2.0943951f;
+            const float x0 = m->worldX + cosf(a0) * rad, y0 = m->worldY + sinf(a0) * rad;
+            const float x1 = m->worldX + cosf(a1) * rad, y1 = m->worldY + sinf(a1) * rad;
+            const float dx = x1 - x0, dy = y1 - y0;
+            drawLineQuad(x0, y0, x0 + dx * KEEP, y0 + dy * KEEP, 1.4f, c.r, c.g, c.b, alpha);
+            drawLineQuad(x1 - dx * KEEP, y1 - dy * KEEP, x1, y1, 1.4f, c.r, c.g, c.b, alpha);
+        }
+    }
+}
+
 void DrawRegulusBeams(const MonsterManager& manager, float /*visualTime*/) {
     for (const auto& beam : manager.regulusBeams) {
         const float t = std::clamp(beam.age / Monster::REGULUS_BEAM_TIME, 0.0f, 1.0f);
         const float fade = (1.0f - t) * (1.0f - t);
+        const glm::vec3 bc = Monster::RegulusBuffColor(beam.buff);
+        const glm::vec3 hi = glm::mix(bc, glm::vec3(1.0f), 0.8f);
         drawLineQuad(beam.x0, beam.y0, beam.x1, beam.y1, 7.0f * (1.0f - 0.5f * t),
-                     kAegisR, kAegisG, kAegisB, 0.22f * fade);
+                     bc.r, bc.g, bc.b, 0.22f * fade);
         drawLineQuad(beam.x0, beam.y0, beam.x1, beam.y1, 1.8f,
-                     0.92f, 0.99f, 1.0f, 0.95f * fade);
-        drawCircle(beam.x1, beam.y1, 10.0f * (1.0f + t), kAegisR, kAegisG, kAegisB,
+                     hi.r, hi.g, hi.b, 0.95f * fade);
+        drawCircle(beam.x1, beam.y1, 10.0f * (1.0f + t), bc.r, bc.g, bc.b,
                    0.30f * fade);
     }
 }
@@ -1944,7 +2035,6 @@ static void DrawQuasarBody(const Monster* m, float base, float t,
 static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
     if (!m->QuasarFalling()) return;
     const float age = m->quasarTimer;
-    const float radius = Monster::QUASAR_FALL_RADIUS;
     auto diamond = [&](glm::vec2 p, float size, float alpha, float angle = 0.0f) {
         // A faceted chunk with a white spine, rather than a small round node.
         const glm::vec2 shape[6] = {{0,-1.5f}, {0.65f,-0.3f}, {0.48f,0.6f},
@@ -1968,13 +2058,15 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
         const float impactAt = m->QuasarFallImpactTime(i);
         const float after = age - impactAt;
         const glm::vec2 target = m->quasarFallTargets[i];
+        const float power = m->quasarFallPower[i];            // 0 near the Quasar .. 1 far
+        const float radius = m->QuasarFallRadius(i);
         if (after < 0.0f) {
-            const float progress = std::clamp((age - m->quasarFallLaunchTimes[i]) / Monster::QUASAR_FALL_WARNING, 0.0f, 1.0f);
+            const float progress = std::clamp((age - m->quasarFallLaunchTimes[i]) / m->QuasarFallWarning(i), 0.0f, 1.0f);
             // Dark under-stroke keeps the unfilled danger disc legible on white windows.
             DrawEnemyArc(target.x, target.y, radius, 0.0f, 6.2831853f, 64,
                          0.0f, 0.0f, 0.0f, 0.75f, 5.0f, false);
             DrawEnemyArc(target.x, target.y, radius, 0.0f, 6.2831853f, 64,
-                         cr, cg, cb, 0.65f, 1.5f, false);
+                         cr, cg, cb, 0.65f + 0.25f * power, 1.5f + 1.5f * power, false);
             if (progress > 0.0f)
                 DrawEnemyArc(target.x, target.y, radius, -1.5707963f,
                              progress * 6.2831853f, 64,
@@ -1993,6 +2085,19 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
                                  1.8f, 1.0f, 1.0f, 1.0f, 0.65f + 0.30f * progress);
                 }
             }
+            if (m->quasarFallPredictedMask & (1u << i)) {
+                // Aimed shot: a second, inner ring and four diagonal ticks,
+                // all white, so it reads apart from the scattered ones.
+                DrawEnemyArc(target.x, target.y, radius * 0.62f, 0.0f, 6.2831853f, 48,
+                             1.0f, 1.0f, 1.0f, 0.55f + 0.35f * progress, 1.4f, false);
+                for (int k = 0; k < 4; ++k) {
+                    const float a = 0.7853982f + k * 1.5707963f;
+                    const glm::vec2 dir(cosf(a), sinf(a));
+                    const glm::vec2 p0 = target + dir * (radius * 0.62f + 3.0f);
+                    const glm::vec2 p1 = target + dir * (radius * 0.62f + 11.0f);
+                    drawLineQuad(p0.x, p0.y, p1.x, p1.y, 1.6f, 1.0f, 1.0f, 1.0f, 0.80f);
+                }
+            }
             // A small cross pins the ground point; it cannot look like another falling node.
             drawLineQuad(target.x - 3.0f, target.y, target.x + 3.0f, target.y,
                          1.0f, cr, cg, cb, 0.55f);
@@ -2001,19 +2106,71 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
         }
         if (after >= 0.0f) {
             if (after >= Monster::QUASAR_FALL_IMPACT_FX) continue;
-            if (after < 0.095f)
-                DrawEnemyArc(target.x, target.y, radius, 0.0f, 6.2831853f, 64,
-                             1.0f, 1.0f, 1.0f, 1.0f - after / 0.095f, 3.0f, false);
-            for (int k = 0; k < 6; ++k) {
-                const float a = k * 1.0471976f + 0.4f + i * 0.37f;
-                const float d = 7.0f + 175.0f * after;
-                if (after < 0.10f)
-                    drawLineQuad(target.x + cosf(a) * 5.0f, target.y + sinf(a) * 5.0f,
-                                 target.x + cosf(a + 0.12f) * 43.0f, target.y + sinf(a + 0.12f) * 43.0f,
-                                 1.8f, 1.0f, 1.0f, 1.0f, (1.0f - after / 0.10f) * 0.9f);
-                diamond(target + glm::vec2(cosf(a), sinf(a)) * d,
-                        5.5f * (1.0f - after / Monster::QUASAR_FALL_IMPACT_FX),
-                        1.0f - after / Monster::QUASAR_FALL_IMPACT_FX);
+            // Impact: a hard hit, not a bubble. A white flash line cross, a
+            // thick shockwave ring that snaps out to the damage radius, jagged
+            // fracture lines splitting from the centre, a crater hexagon that
+            // collapses, and heavy shards with streaks. Power (distance from
+            // the Quasar) thickens and lengthens all of it.
+            const float t = after / Monster::QUASAR_FALL_IMPACT_FX;          // 0..1
+            const float out = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);   // ease out
+            const float fade = (1.0f - t) * (1.0f - t);
+            const float heavy = 1.0f + 0.7f * power;
+            // Instant flash: cross lines across the whole zone for the first frames.
+            if (t < 0.22f) {
+                const float f = 1.0f - t / 0.22f;
+                for (int k = 0; k < 4; ++k) {
+                    const float a = k * 0.7853982f + 0.2f;
+                    drawLineQuad(target.x - cosf(a) * radius * 1.05f, target.y - sinf(a) * radius * 1.05f,
+                                 target.x + cosf(a) * radius * 1.05f, target.y + sinf(a) * radius * 1.05f,
+                                 3.5f * heavy * f + 1.0f, 1.0f, 1.0f, 1.0f, 0.85f * f);
+                }
+            }
+            // Shockwave: thick bright ring (with a dark under-stroke) out to the radius.
+            DrawEnemyArc(target.x, target.y, radius * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 64,
+                         0.0f, 0.0f, 0.0f, 0.55f * fade, 7.0f * heavy * (1.0f - 0.6f * t), false);
+            DrawEnemyArc(target.x, target.y, radius * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 64,
+                         1.0f, 1.0f, 1.0f, fade, 4.5f * heavy * (1.0f - 0.7f * t), false);
+            DrawEnemyArc(target.x, target.y, radius * (0.20f + 0.55f * out), 0.0f, 6.2831853f, 48,
+                         cr, cg, cb, 0.85f * fade, 2.2f * heavy, false);
+            // The damage radius stays marked until the effect ends.
+            DrawEnemyArc(target.x, target.y, radius, 0.0f, 6.2831853f, 64,
+                         cr, cg, cb, 0.55f * (1.0f - t), 2.0f, false);
+            // Fracture lines: three-part jagged rays.
+            for (int k = 0; k < 9; ++k) {
+                const float a = k * 0.6981317f + 0.37f * i;
+                const float len = radius * (0.30f + 0.78f * out) * (0.78f + 0.22f * ((k * 7) % 5) / 4.0f);
+                const glm::vec2 d0(cosf(a), sinf(a));
+                const glm::vec2 side(-d0.y, d0.x);
+                const float kink = ((k & 1) ? 1.0f : -1.0f) * radius * 0.07f;
+                glm::vec2 q0 = target + d0 * (radius * 0.10f);
+                const glm::vec2 q1 = target + d0 * (len * 0.45f) + side * kink;
+                const glm::vec2 q2 = target + d0 * (len * 0.75f) - side * kink * 0.6f;
+                const glm::vec2 q3 = target + d0 * len;
+                const float w = (2.6f * heavy) * (1.0f - 0.6f * t);
+                drawLineQuad(q0.x, q0.y, q1.x, q1.y, w, 1.0f, 1.0f, 1.0f, 0.95f * fade);
+                drawLineQuad(q1.x, q1.y, q2.x, q2.y, w * 0.8f, cr, cg, cb, 0.90f * fade);
+                drawLineQuad(q2.x, q2.y, q3.x, q3.y, w * 0.55f, cr, cg, cb, 0.75f * fade);
+            }
+            // Crater: a hexagon collapsing to the centre.
+            {
+                const float cr0 = radius * 0.34f * (1.0f - out * 0.85f);
+                for (int k = 0; k < 6; ++k) {
+                    const float a0 = k * 1.0471976f + 0.3f * i, a1 = a0 + 1.0471976f;
+                    drawLineQuad(target.x + cosf(a0) * cr0, target.y + sinf(a0) * cr0,
+                                 target.x + cosf(a1) * cr0, target.y + sinf(a1) * cr0,
+                                 2.4f * heavy, 1.0f, 1.0f, 1.0f, 0.95f * (1.0f - t * 0.5f));
+                }
+            }
+            // Heavy shards with streaks.
+            for (int k = 0; k < 8; ++k) {
+                const float a = k * 0.7853982f + 0.4f + i * 0.37f;
+                const float d = radius * (0.25f + 1.15f * out);
+                const glm::vec2 dir(cosf(a), sinf(a));
+                const glm::vec2 pos = target + dir * d;
+                const glm::vec2 tail = target + dir * std::max(radius * 0.18f, d - radius * 0.38f);
+                drawLineQuad(tail.x, tail.y, pos.x, pos.y, 3.0f * heavy * (1.0f - t * 0.5f),
+                             cr, cg, cb, 0.80f * fade);
+                diamond(pos, (8.0f + 4.0f * power) * (1.0f - 0.6f * t), 1.0f - t * t, a);
             }
             continue;
         }
@@ -2033,12 +2190,137 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
                          1.0f, 1.0f, 1.0f, 0.85f * fade);
         }
         const float angle = atan2f(velocity.y, velocity.x) + 1.5707963f + flight * 8.0f;
-        const float size = 10.5f + 2.5f * Monster::QuasarEase(flight / Monster::QUASAR_FALL_WARNING);
+        const float size = 10.5f + 2.5f * Monster::QuasarEase(flight / m->QuasarFallWarning(i));
         diamond(p, size, 0.98f, angle);
+        if (m->quasarFallPredictedMask & (1u << i))
+            DrawEnemyArc(p.x, p.y, size * 1.9f, 0.0f, 6.2831853f, 24,
+                         1.0f, 1.0f, 1.0f, 0.65f, 1.3f, false);
         const glm::vec2 side(cosf(angle), sinf(angle));
         diamond(p - side * 14.0f, 2.8f, 0.65f, angle);
         diamond(p + side * 12.0f, 2.2f, 0.65f, angle);
 
+    }
+}
+
+// Eruption, staged so it builds instead of springing: (1) the Quasar draws in
+// and a few soft pulse rings leave it; (2) the rings of zones unfold one after
+// the other from the inside out, each with a ripple travelling out to it;
+// (3) inward energy streaks flow into the Quasar and every zone's countdown arc
+// closes at the same moment; (4) all zones go off together with a compact
+// version of the starfall impact and one big ring leaving the Quasar.
+// Lines only.
+static void DrawQuasarEruption(const Monster* m, float cr, float cg, float cb) {
+    if (!m->alive || m->quasarState != Monster::QUASAR_ERUPT_STATE) return;
+    const float age = m->quasarTimer;
+    const float Z = Monster::QUASAR_ERUPT_ZONE_RADIUS;
+    const float blast = Monster::QUASAR_ERUPT_BLAST_TIME;
+    const float fx = Monster::QUASAR_FALL_IMPACT_FX;
+    const float qx = m->worldX, qy = m->worldY;
+    const auto ease = [](float x) { x = std::clamp(x, 0.0f, 1.0f); return 1.0f - (1.0f - x) * (1.0f - x) * (1.0f - x); };
+
+    if (age < blast) {
+        const float charge = Monster::QuasarEase(age / (blast * 0.9f));     // 0..1 build-up
+        // (1) wind-up: two soft pulse rings leave the body, slow and low.
+        if (age < Monster::QUASAR_ERUPT_WINDUP + 0.4f) {
+            for (int k = 0; k < 2; ++k) {
+                const float u = std::clamp((age - 0.15f * k) / 0.9f, 0.0f, 1.0f);
+                if (u <= 0.0f || u >= 1.0f) continue;
+                DrawEnemyArc(qx, qy, 40.0f + 260.0f * ease(u), 0.0f, 6.2831853f, 64,
+                             cr, cg, cb, 0.45f * (1.0f - u), 2.0f, false);
+            }
+        }
+        // (3) energy streaks flowing into the Quasar from every direction; they
+        // thicken and brighten as the blast nears.
+        for (int k = 0; k < 28; ++k) {
+            const float a = k * 0.2244f + 0.31f * (k % 3);
+            const float ph = std::fmod(age * (0.55f + 0.5f * charge) + k * 0.371f, 1.0f);
+            const float r0 = 560.0f * (1.0f - ph * ph) + 60.0f, r1 = r0 + 26.0f + 40.0f * charge;
+            const glm::vec2 d(cosf(a), sinf(a));
+            drawLineQuad(qx + d.x * r0, qy + d.y * r0, qx + d.x * r1, qy + d.y * r1,
+                         1.1f + 1.4f * charge, cr, cg, cb, (0.20f + 0.55f * charge) * (1.0f - 0.7f * ph));
+        }
+    }
+
+    for (int i = 0; i < m->quasarEruptCount; ++i) {
+        const glm::vec2 c = m->quasarEruptZones[i];
+        const int ring = m->quasarEruptRing[i];
+        const float showAt = m->QuasarEruptShowTime(ring);
+        if (age < blast) {
+            if (age < showAt) continue;
+            const float u = std::clamp((age - showAt) / Monster::QUASAR_ERUPT_RING_GROW, 0.0f, 1.0f);
+            const float grow = ease(u);                                   // unfolding
+            const float prog = std::clamp((age - showAt) / (blast - showAt), 0.0f, 1.0f);
+            const float rad = Z * (0.40f + 0.60f * grow);
+            const float pulse = 0.78f + 0.22f * sinf(age * (12.0f + 16.0f * prog) + i);
+            DrawEnemyArc(c.x, c.y, rad, 0.0f, 6.2831853f, 40, 0.0f, 0.0f, 0.0f, 0.70f * grow, 5.5f, false);
+            DrawEnemyArc(c.x, c.y, rad, 0.0f, 6.2831853f, 40, cr, cg, cb, 0.85f * grow * pulse, 2.4f, false);
+            // The inner ring turns the other way, faster as the blast nears.
+            DrawEnemyArc(c.x, c.y, rad * 0.55f, age * (1.0f + 3.0f * prog), 4.7f, 24,
+                         cr, cg, cb, 0.55f * grow, 1.4f, false);
+            DrawEnemyArc(c.x, c.y, rad, -1.5707963f, prog * 6.2831853f, 40,
+                         1.0f, 1.0f, 1.0f, 0.90f * grow, 2.6f, false);
+            for (int k = 0; k < 4; ++k) {
+                const float a = k * 1.5707963f + 0.7853982f + 0.5f * prog;
+                const glm::vec2 d(cosf(a), sinf(a));
+                const float breathe = Z * (0.62f + 0.10f * sinf(age * 8.0f + k));
+                const glm::vec2 p0 = c + d * (rad - 4.0f), p1 = c + d * (breathe * (rad / Z));
+                drawLineQuad(p0.x, p0.y, p1.x, p1.y, 1.8f, 1.0f, 1.0f, 1.0f, 0.55f * grow);
+            }
+        } else {
+            const float after = age - blast;
+            if (after >= fx) continue;
+            const float t = after / fx;
+            const float out = ease(t);
+            const float fade = (1.0f - t) * (1.0f - t);
+            if (t < 0.22f) {
+                const float f = 1.0f - t / 0.22f;
+                for (int k = 0; k < 2; ++k) {
+                    const float a = k * 1.5707963f + 0.4f;
+                    drawLineQuad(c.x - cosf(a) * Z * 1.05f, c.y - sinf(a) * Z * 1.05f,
+                                 c.x + cosf(a) * Z * 1.05f, c.y + sinf(a) * Z * 1.05f,
+                                 3.0f * f + 1.0f, 1.0f, 1.0f, 1.0f, 0.85f * f);
+                }
+            }
+            DrawEnemyArc(c.x, c.y, Z * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 40,
+                         0.0f, 0.0f, 0.0f, 0.5f * fade, 6.0f * (1.0f - 0.6f * t), false);
+            DrawEnemyArc(c.x, c.y, Z * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 40,
+                         1.0f, 1.0f, 1.0f, fade, 3.8f * (1.0f - 0.7f * t), false);
+            DrawEnemyArc(c.x, c.y, Z, 0.0f, 6.2831853f, 40, cr, cg, cb, 0.55f * (1.0f - t), 2.0f, false);
+            for (int k = 0; k < 6; ++k) {
+                const float a = k * 1.0471976f + 0.37f * i;
+                const float len = Z * (0.30f + 0.70f * out);
+                const glm::vec2 d(cosf(a), sinf(a)), side(-d.y, d.x);
+                const float kink = ((k & 1) ? 1.0f : -1.0f) * Z * 0.07f;
+                const glm::vec2 q0 = c + d * (Z * 0.10f), q1 = c + d * (len * 0.55f) + side * kink, q2 = c + d * len;
+                const float w = 2.4f * (1.0f - 0.6f * t);
+                drawLineQuad(q0.x, q0.y, q1.x, q1.y, w, 1.0f, 1.0f, 1.0f, 0.95f * fade);
+                drawLineQuad(q1.x, q1.y, q2.x, q2.y, w * 0.7f, cr, cg, cb, 0.8f * fade);
+            }
+        }
+    }
+    // (2) ripples: each ring's unfolding is led by a thin ring leaving the Quasar
+    // and arriving at that ring's radius.
+    if (age < blast) {
+        for (int ring = 0; ring < 8; ++ring) {
+            const float showAt = m->QuasarEruptShowTime(ring);
+            const float r = Monster::QUASAR_ERUPT_FIRST_RING + Monster::QUASAR_ERUPT_RING_STEP * (float)ring;
+            const float u = (age - (showAt - 0.25f)) / 0.45f;
+            if (u <= 0.0f || u >= 1.0f) continue;
+            bool exists = false;
+            for (int i = 0; i < m->quasarEruptCount && !exists; ++i) exists = m->quasarEruptRing[i] == ring;
+            if (!exists) continue;
+            DrawEnemyArc(qx, qy, r * ease(u), 0.0f, 6.2831853f, 72,
+                         1.0f, 1.0f, 1.0f, 0.50f * (1.0f - u), 2.0f, false);
+        }
+    }
+    // One big shockwave leaves the Quasar and runs out through the whole field.
+    if (age >= blast && age < blast + fx) {
+        const float t = (age - blast) / fx;
+        const float reach = 1500.0f * ease(t);
+        DrawEnemyArc(qx, qy, reach, 0.0f, 6.2831853f, 96,
+                     0.0f, 0.0f, 0.0f, 0.45f * (1.0f - t), 9.0f, false);
+        DrawEnemyArc(qx, qy, reach, 0.0f, 6.2831853f, 96,
+                     1.0f, 1.0f, 1.0f, 0.90f * (1.0f - t), 4.0f, false);
     }
 }
 
@@ -2181,10 +2463,9 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
     float charge = 0.0f;
     if (m->normaStage == norma::Stage::Telegraph) {
         const float span = m->normaPattern == norma::Pattern::Refuge ? norma::kRefugeTelegraph
-                         : m->normaPattern == norma::Pattern::Hide ? norma::kHideTelegraph
                          : m->normaPattern == norma::Pattern::Aim ? norma::kAimTelegraph
                          : m->normaPattern == norma::Pattern::Throw ? norma::kThrowAppear + norma::kThrowFill
-                         : m->normaPattern == norma::Pattern::Summon ? 0.6f
+                         : m->normaPattern == norma::Pattern::Detonate ? norma::kDetonateFuseWait
                          : m->normaPattern == norma::Pattern::Ram ? norma::RamAimFor(m->normaPhase)
                          : 1.0f;
         charge = std::clamp(m->normaTimer / span, 0.0f, 1.0f);
@@ -2572,8 +2853,9 @@ void drawMob(const Monster* m, float visualTime) {
         auto bandEdges = [&](float x0, float y0, float x1, float y1,
                              float alpha, float width) {
             for (int e = -1; e <= 1; e += 2) {
-                const float ox = -ay * beamR * (float)e;
-                const float oy = ax * beamR * (float)e;
+                const float sl = std::max(1e-3f, std::hypot(x1 - x0, y1 - y0));
+                const float ox = -(y1 - y0) / sl * beamR * (float)e;
+                const float oy = (x1 - x0) / sl * beamR * (float)e;
                 drawLineQuad(x0 + ox, y0 + oy, x1 + ox, y1 + oy, width + 4.0f,
                              0.0f, 0.0f, 0.0f, 0.70f * alpha);
                 drawLineQuad(x0 + ox, y0 + oy, x1 + ox, y1 + oy, width,
@@ -2594,10 +2876,16 @@ void drawMob(const Monster* m, float visualTime) {
             const float reachT = m->quasarState == 3
                 ? growT * growT * growT : 1.0f;
             const float reach = beamLen * reachT;
-            const float x0 = x - ax * reach;
-            const float y0 = y - ay * reach;
-            const float x1 = x + ax * reach;
-            const float y1 = y + ay * reach;
+            // Each end may bounce off the arena edge (HARD 1x, NIGHTMARE 2x);
+            // every bounced leg is drawn a little dimmer than the one before.
+            std::array<glm::vec4, Monster::QUASAR_BEAM_MAX_SEGMENTS> seg;
+            std::array<int, Monster::QUASAR_BEAM_MAX_SEGMENTS> bnc{};
+            const int segCount = m->QuasarBeamSegments(reach, seg, &bnc);
+            const float batchSaved = g_BatchAlpha;
+            for (int sIdx = 0; sIdx < segCount; ++sIdx) {
+            const float x0 = seg[sIdx].x, y0 = seg[sIdx].y;
+            const float x1 = seg[sIdx].z, y1 = seg[sIdx].w;
+            g_BatchAlpha = batchSaved * (1.0f - 0.22f * (float)bnc[sIdx]);
             if (m->quasarState == 3) {
                 // The beam fills the damage band exactly: body (2r), bright
                 // inner column, white core, and the hard band edges.
@@ -2612,7 +2900,7 @@ void drawMob(const Monster* m, float visualTime) {
 
                 // A physical release ring marks the acceleration phase without
                 // using a full-screen or core flash.
-                if (growT > 0.28f && growT < 1.0f) {
+                if (sIdx == 0 && growT > 0.28f && growT < 1.0f) {
                     const float releaseT = (growT - 0.28f) / 0.72f;
                     const float ringR = base * (1.0f + releaseT * 1.9f);
                     DrawEnemyArc(x, y, ringR, 0.0f, 6.28318531f, 32,
@@ -2638,10 +2926,20 @@ void drawMob(const Monster* m, float visualTime) {
                 drawLineQuad(x0, y0, x1, y1, 2.0f, 1.0f, 1.0f, 1.0f, 0.70f * lockPulse);
                 bandEdges(x0, y0, x1, y1, (0.85f + 0.15f * charge) * lockPulse, 3.0f);
             }
+            // Bounce point: a thin ring where this leg meets the next one.
+            if (sIdx + 1 < segCount && bnc[sIdx + 1] == bnc[sIdx] + 1) {
+                DrawEnemyArc(x1, y1, beamR * 0.62f, 0.0f, 6.2831853f, 24,
+                             1.0f, 1.0f, 1.0f, 0.75f, 1.6f, false);
+                DrawEnemyArc(x1, y1, beamR * 0.30f, 0.0f, 6.2831853f, 16,
+                             cr, cg, cb, 0.85f, 1.6f, false);
+            }
+            }
+            g_BatchAlpha = batchSaved;
         }
 
         DrawQuasarBody(m, base, visualTime, charge, cr, cg, cb);
         DrawQuasarFall(m, cr, cg, cb);
+        DrawQuasarEruption(m, cr, cg, cb);
     } else if (m->kind == MobKind::GIMBAL) {
         // Gimbal (clamp): two facing ( ) brackets hold a diamond lens on a pin
         // axis. The lens flips about that axis (gimbalVisualAngle), faster and
@@ -2737,9 +3035,7 @@ void drawMob(const Monster* m, float visualTime) {
         }
     } else if (m->kind == MobKind::REGULUS) {
         // Regulus: shield crest body inside four curved shield plates.
-        // Cloak: the whole body (plates included) is only dimmed, never hidden.
         const float savedBatchAlpha = g_BatchAlpha;
-        g_BatchAlpha *= m->RegulusCloakAlpha();
         float bodyR = m->color.r, bodyG = m->color.g, bodyB = m->color.b;
         ApplyMobStyleTint(bodyR, bodyG, bodyB);
         ApplyMobHitFlash(bodyR, bodyG, bodyB, m->hitFlashTimer);
@@ -2756,20 +3052,7 @@ void drawMob(const Monster* m, float visualTime) {
                                      0.0f, 1.0f));
         drawCircle(x, y, base * 0.85f, 0.40f, 0.84f, 1.0f, 0.06f);
         DrawRegulusCrest(x, y, base, phase, bodyR, bodyG, bodyB, visualTime);
-        DrawEliteFrame(x, y, base, phase, bodyR, bodyG, bodyB, 0.40f);
-        // Speed surge: thin streaks trail behind along the heading.
-        const float surge = m->RegulusSurgeLevel();
-        if (surge > 0.0f) {
-            const glm::vec2 heading(cosf(m->regulusDriftAngle), sinf(m->regulusDriftAngle));
-            const glm::vec2 side(-heading.y, heading.x);
-            for (int k = -2; k <= 2; ++k) {
-                const float off = (float)k * base * 0.32f;
-                const float len = base * (1.4f + 1.6f * surge) * (1.0f - 0.18f * std::abs(k));
-                const glm::vec2 a = glm::vec2(x, y) + side * off - heading * (base * 0.9f);
-                const glm::vec2 b = a - heading * len;
-                drawLineQuad(a.x, a.y, b.x, b.y, 1.3f, 0.78f, 0.95f, 1.0f, 0.55f * surge);
-            }
-        }
+        DrawRegulusExtension(m, base, phase, bodyR, bodyG, bodyB, visualTime);
         g_BatchAlpha = savedBatchAlpha;
     } else if (m->kind == MobKind::ANTARES) {
         DrawAntares(m, base);

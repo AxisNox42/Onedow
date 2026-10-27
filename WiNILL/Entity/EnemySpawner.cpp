@@ -82,6 +82,8 @@ static void SpawnScheduledElite(MonsterManager& monsters, int screenWidth,
     if (monsters.monsters.size() == before) return;
     Monster& mob = *monsters.monsters.back();
     mob.MakeKind(elite);
+    if (elite == MobKind::QUASAR)
+        mob.quasarReflections = Monster::QuasarReflectionsFor((int)difficulty);
     if (elite == MobKind::GENESIS) {
         mob.spawnAnchorX = 160.0f +
             (float)(rand() % (screenWidth > 360 ? screenWidth - 320 : 1));
@@ -196,10 +198,17 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
                         difficulty,
                         waveSpawnCap, hpMultiplier);
 
-    // While NORMA fights, regular mobs come at half the rate. Elite and boss
-    // waves slow them too; the two do not stack, the stronger one applies.
-    // The wave term follows the current wave, so it lifts when the wave ends.
-    const float bossFight = g_EnemySpawnState.normaAlive ? 2.0f : 1.0f;
+    // A boss wave is an all-out duel: nothing else spawns, whether or not
+    // NORMA is still standing, so no mob (or its bullets) crowds the fight.
+    if (g_EnemySpawnState.normaAlive || IsBossWave(wave, difficulty)) {
+        g_EnemySpawnState.mobTimer = 0.0f;
+        g_EnemySpawnState.rangedTimer = 0.0f;
+        return;
+    }
+
+    // Elite waves slow regular mobs; the wave term follows the current wave,
+    // so it lifts when the wave ends.
+    const float bossFight = 1.0f;
     const float bossStretch = std::max(bossFight,
         SpecialWaveSpawnStretch(wave, difficulty, SpawnSource::Regular));
     const float rangedStretch = std::max(bossFight,

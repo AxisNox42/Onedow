@@ -83,9 +83,16 @@ void UpdateProjectiles(std::vector<Bullet>& bullets,
         }
 
         if (bullet.space < 0) bullet.space = space::SpaceAt(bullet.x, bullet.y);
+        const float prevX = bullet.x, prevY = bullet.y;
         if (!(bullet.isEnemy && timeStopTimer > 0.0f)) {
             bullet.Update(bulletDelta);
         }
+        // Only a shot's own flight across a border stops it. A pane that
+        // closed, was released or hopped away under it (a pattern changing)
+        // just hands the shot to whatever space it now stands in.
+        if (bullet.active &&
+            space::SpaceAt(prevX, prevY) == space::SpaceAt(bullet.x, bullet.y))
+            bullet.space = space::SpaceAt(bullet.x, bullet.y);
         int absorbingPane = 0;
         if (bullet.active &&
             space::CrossedBorder(bullet.space, bullet.x, bullet.y, absorbingPane)) {

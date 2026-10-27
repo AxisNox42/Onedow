@@ -40,8 +40,12 @@ int main() {
                 assert(d <= 180.01f);
                 if (d <= 90) ++nearCount; else ++wideCount;
                 locked[seen] = target;
-                if (seen) assert(std::fabs(q.quasarFallLaunchTimes[seen] -
-                    q.quasarFallLaunchTimes[seen - 1] - 0.2f) < DT);
+                if (seen) {
+                    // A random 0.1-0.3 s gap.
+                    const float gap = q.quasarFallLaunchTimes[seen] - q.quasarFallLaunchTimes[seen - 1];
+                    assert(gap >= Monster::QUASAR_FALL_GAP_MIN - DT);
+                    assert(gap <= Monster::QUASAR_FALL_GAP_MAX + DT);
+                }
                 ++seen;
             }
             int pending = 0;
@@ -50,15 +54,15 @@ int main() {
                 if (hit) assert(q.quasarTimer >= q.QuasarFallImpactTime(i) || !q.QuasarFalling());
                 else ++pending;
             }
-            assert(pending <= 6);
+            assert(pending <= 11);   // at the shortest gap (0.1 s) ten shots can be in flight
             if (q.quasarFallImpacts == (1u << 18) - 1) allHit = true;
         }
         assert(seen == 18 && nearCount > 0 && wideCount > 0 && allHit);
-        assert(q.quasarFallLaunchTimes[17] - q.quasarFallLaunchTimes[0] < 3.45f);
+        assert(q.quasarFallLaunchTimes[17] - q.quasarFallLaunchTimes[0] < 17.0f * Monster::QUASAR_FALL_GAP_MAX + 0.1f);
         assert(q.quasarState == Monster::QUASAR_FALL_RECOVER_STATE);
     }
     // Isolate damage policy with known test points: no damage during travel,
-    // 6 per impact, adjacent 0.2s impacts suppressed, later impacts hurt again.
+    // 6 per impact, impacts inside the 0.35s grace suppressed, later impacts hurt again.
     for (const bool outside : {false, true}) {
         auto q = MakeFall();
         q.BeginQuasarFall();
@@ -68,15 +72,26 @@ int main() {
             const float before = hp;
             Tick(q, {600, outside ? 335.0f : 400.0f}, DT, hp);
             // Give all newly emitted shards the same known ground location.
-            for (int i = 0; i < q.quasarFallFired; ++i) q.quasarFallTargets[i] = {600, 400};
+            for (int i = 0; i < q.quasarFallFired; ++i) { q.quasarFallTargets[i] = {600, 400}; q.quasarFallPower[i] = 0.0f; }
             if (q.QuasarFalling() && q.quasarFallFired && q.quasarTimer < q.QuasarFallImpactTime(0)) assert(hp == 100);
             if (hp < before) {
                 assert(before - hp == 6);
                 ++hits;
             }
         }
-        assert(hits == (outside ? 0 : 9));
-        assert(hp == (outside ? 100 : 46));
+        // The shot gaps are random (0.1-0.3 s), so the number of hits is not fixed: it
+        // is what the 0.35 s grace allows over this run's actual impact times.
+        int expected = 0;
+        float graceUntil = -1.0f;
+        for (int i = 0; i < 18; ++i) {
+            const float t = q.QuasarFallImpactTime(i);
+            if (t >= graceUntil) { ++expected; graceUntil = t + Monster::QUASAR_FALL_HIT_GRACE; }
+        }
+        if (outside) assert(hits == 0 && hp == 100);
+        else {
+            assert(std::abs(hits - expected) <= 1 && hits >= 4 && hits <= 14);
+            assert(hp == 100 - 6 * hits);
+        }
         const float after = hp;
         Tick(q, {600,400}, 0.5f, hp);
         assert(hp == after); // no residual damage
@@ -88,11 +103,12 @@ int main() {
         float hp = 100;
         Tick(q, {600,400}, 5, hp);
         assert(q.quasarFallFired == 1 && q.quasarFallImpacts == 0 && hp == 100);
-        assert(q.QuasarFallImpactTime(0) >= q.quasarTimer + 0.999f);
-        Tick(q, {600,400}, 0.1f, hp);
-        assert(q.quasarFallFired == 1 && hp == 100);
-        Tick(q, {600,400}, 0.1f, hp);
+        assert(q.QuasarFallImpactTime(0) >= q.quasarTimer + q.QuasarFallWarning(0) - 0.001f);   // the shot's full warning
+        // The next shot waits its own random 0.1-0.3 s gap (no burst of overdue shots).
+        float waited = 0.0f;
+        while (q.quasarFallFired == 1 && waited < 0.5f) { Tick(q, {600,400}, 0.01f, hp); waited += 0.01f; }
         assert(q.quasarFallFired == 2 && hp == 100);
+        assert(waited >= Monster::QUASAR_FALL_GAP_MIN - 0.011f && waited <= Monster::QUASAR_FALL_GAP_MAX + 0.02f);
     }
     // Every new target remains within the actual map, including offset maps.
     for (const glm::vec4 bounds : {ARENA, glm::vec4(500,500,640,640), glm::vec4(0,0,50,50)}) {
@@ -133,7 +149,7 @@ int main() {
                 maxBend=std::max(maxBend,std::fabs(offset.x*axis.y-offset.y*axis.x)/glm::length(axis));
             }
             assert(maxBend > 10); // it visibly bows away from a straight flight
-            for (const float seam : {0.14f, 0.75f}) {
+            for (const float seam : {0.14f * Monster::QUASAR_FALL_WARNING, 0.75f * Monster::QUASAR_FALL_WARNING}) {   // fractions of the flight
                 constexpr float h=0.0001f;
                 const float t=launch+seam;
                 const auto v0=(q.QuasarFallPosition(i,t)-q.QuasarFallPosition(i,t-h))/h;
