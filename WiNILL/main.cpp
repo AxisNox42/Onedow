@@ -3747,6 +3747,7 @@ int main() {
                                     return;
                                 }
                         };
+                                     : d == "NIGHTMARE" ? Difficulty::NIGHTMARE
                         ClearEquippedSkills();
                         if (preset == "MIX") {
                             EquipSkill(SkillType::CLOSE_WINDOW);
@@ -3813,7 +3814,7 @@ int main() {
                             (float)std::atof(step.c_str() + 3), 0.01f, 1.0f);
                         gm.playerHP = g_Stats.maxHP * f;
                     } else if (step.rfind("DIFF=", 0) == 0) {
-                        // DIFF=EASY|NORMAL|HARD: run difficulty (wave count,
+                        // DIFF=EASY|NORMAL|HARD|NIGHTMARE: run difficulty (wave count,
                         // elite schedule) for wave HUD captures.
                         const std::string d = step.substr(5);
                         g_Difficulty = d == "EASY" ? Difficulty::EASY

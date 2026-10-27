@@ -3,12 +3,15 @@
 // Enemy roster: the wave each regular enemy first appears on, per
 // difficulty, and its spawn odds from then on. First appearances are
 // spread over the run instead of all landing in waves 1-6, and never on an
-// elite wave (5, 10, 15, 20) so a new enemy and an elite do not share it.
+// elite or boss wave (see kWaveSchedules in WaveSystem.h) so a new enemy and
+// an elite do not share it.
 // Elite kinds (Gravis, Genesis, Quasar) are not on the roster: they only
 // enter as the scheduled elite of an elite wave (EnemySpawner.cpp).
 // Kept free of game headers so tests can include it on its own.
 // ─────────────────────────────────────────────────────────────
 #include <algorithm>
+
+inline constexpr int kRosterDifficulties = 4;   // EASY, NORMAL, HARD, NIGHTMARE
 
 enum class RosterKind {
     SWARM, ROTOR, GIMBAL, SCOPE, REGULUS, ANTARES, MAGNETAR,
@@ -17,7 +20,7 @@ enum class RosterKind {
 
 struct RosterEntry {
     RosterKind kind;
-    int firstWave[3];   // EASY, NORMAL, HARD; 0 = never on that difficulty
+    int firstWave[kRosterDifficulties];   // 0 = never on that difficulty
     int startPct;       // spawn odds on its first wave
     int capPct;         // odds stop rising here (+2% per wave)
 };
@@ -25,13 +28,13 @@ struct RosterEntry {
 // ROTOR takes whatever share the others leave once it is in the pool.
 // SCOPE only gates the separate ranged spawn path; it has no regular odds.
 inline constexpr RosterEntry kEnemyRoster[] = {
-    { RosterKind::SWARM,    { 1,  1,  1 }, 12, 12 },
-    { RosterKind::ROTOR,    { 2,  2,  1 },  0,  0 },
-    { RosterKind::GIMBAL,   { 3,  3,  2 },  6, 20 },
-    { RosterKind::SCOPE,    { 0,  6,  4 },  0,  0 },
-    { RosterKind::REGULUS,  { 0,  8,  6 },  3,  7 },
-    { RosterKind::ANTARES,  { 0, 11,  8 },  3,  7 },
-    { RosterKind::MAGNETAR, { 0,  0, 11 },  4, 12 },
+    { RosterKind::SWARM,    { 1,  1,  1,  1 }, 12, 12 },
+    { RosterKind::ROTOR,    { 2,  2,  1,  1 },  0,  0 },
+    { RosterKind::GIMBAL,   { 4,  3,  2,  2 },  6, 20 },
+    { RosterKind::SCOPE,    { 0,  5,  3,  3 },  0,  0 },
+    { RosterKind::REGULUS,  { 0,  7,  5,  4 },  3,  7 },
+    { RosterKind::ANTARES,  { 0,  0,  8,  6 },  3,  7 },
+    { RosterKind::MAGNETAR, { 0,  0, 11,  8 },  4, 12 },
 };
 
 inline const RosterEntry& RosterEntryFor(RosterKind kind) {
@@ -40,9 +43,9 @@ inline const RosterEntry& RosterEntryFor(RosterKind kind) {
     return kEnemyRoster[0];
 }
 
-// difficulty: 0 EASY, 1 NORMAL, 2 HARD.
+// difficulty: 0 EASY, 1 NORMAL, 2 HARD, 3 NIGHTMARE.
 inline int RosterFirstWave(RosterKind kind, int difficulty) {
-    return RosterEntryFor(kind).firstWave[std::clamp(difficulty, 0, 2)];
+    return RosterEntryFor(kind).firstWave[std::clamp(difficulty, 0, kRosterDifficulties - 1)];
 }
 
 inline bool RosterUnlocked(RosterKind kind, int wave, int difficulty) {

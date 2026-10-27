@@ -18,10 +18,13 @@ struct EnemySpawnState {
     int spawnedThisWave = 0;
     // Index into kEliteKinds for each scheduled elite wave, rolled once per
     // run so the HUD can mark it before the elite enters.
-    unsigned char elitePick[8] = {};
+    // Sized for kMaxScheduledElites.
+    unsigned char elitePick[kMaxScheduledElites] = {};
     const Monster* eliteMob = nullptr;   // the scheduled elite while alive
-    bool normaSpawned = false;           // the boss entered this run
-    bool normaDefeated = false;
+    int lastBossWave = 0;                // the boss wave that already got its boss
+    bool normaSpawned = false;           // the final boss entered this run
+    bool normaAlive = false;             // any boss is on the field
+    bool normaDefeated = false;          // the final boss fell: the run is won
 };
 
 static EnemySpawnState g_EnemySpawnState;
@@ -56,9 +59,9 @@ static constexpr MobKind kEliteKinds[] = {
 };
 static constexpr int kEliteKindCount = (int)(sizeof(kEliteKinds) / sizeof(kEliteKinds[0]));
 
-static MobKind ScheduledEliteKind(int wave) {
+static MobKind ScheduledEliteKind(int wave, Difficulty difficulty) {
     constexpr int slots = (int)sizeof(EnemySpawnState::elitePick);
-    const int slot = std::clamp(wave / ELITE_WAVE_INTERVAL - 1, 0, slots - 1);
+    const int slot = std::clamp(EliteOrdinal(wave, difficulty), 0, slots - 1);
     return kEliteKinds[g_EnemySpawnState.elitePick[slot] % kEliteKindCount];
 }
 
@@ -71,7 +74,7 @@ static void SpawnScheduledElite(MonsterManager& monsters, int screenWidth,
         g_EnemySpawnState.lastEliteWave == wave ||
         g_EnemySpawnState.spawnedThisWave >= waveSpawnCap) return;
 
-    const MobKind elite = ScheduledEliteKind(wave);
+    const MobKind elite = ScheduledEliteKind(wave, difficulty);
 
     const size_t before = monsters.monsters.size();
     // Natural spawns share the wave budget, but have no concurrent population cap.
@@ -100,20 +103,24 @@ static void TrackScheduledElite(const MonsterManager& monsters) {
     g_EnemySpawnState.eliteMob = nullptr;
 }
 
-// The boss enters once, at the start of the final wave, from above the
-// middle of the screen. Ordinary spawns keep going around it.
+// A boss enters once per boss wave, at its start, from above the middle of
+// the screen. Ordinary spawns keep going around it. Only the final wave's
+// boss decides the run.
 static void PlaceNormaBoss(MonsterManager& monsters, int screenWidth,
-                           float hpMultiplier) {
+                           float hpMultiplier, bool finalBoss) {
     Monster* boss = new Monster((float)screenWidth * 0.5f, -160.0f, hpMultiplier);
     boss->MakeKind(MobKind::NORMA);
     monsters.monsters.push_back(boss);
-    g_EnemySpawnState.normaSpawned = true;
+    g_EnemySpawnState.normaAlive = true;
+    if (finalBoss) g_EnemySpawnState.normaSpawned = true;
 }
 
 static void SpawnNormaBoss(MonsterManager& monsters, int screenWidth, int wave,
                            Difficulty difficulty, float hpMultiplier) {
-    if (!IsBossWave(wave, difficulty) || g_EnemySpawnState.normaSpawned) return;
-    PlaceNormaBoss(monsters, screenWidth, hpMultiplier);
+    if (!IsBossWave(wave, difficulty) || g_EnemySpawnState.lastBossWave == wave) return;
+    g_EnemySpawnState.lastBossWave = wave;
+    PlaceNormaBoss(monsters, screenWidth, hpMultiplier,
+                   IsFinalBossWave(wave, difficulty));
 }
 
 void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultiplier,
@@ -122,14 +129,16 @@ void DebugSpawnNorma(MonsterManager& monsters, int screenWidth, float hpMultipli
     g_EnemySpawnState.normaDefeated = false;
     const float bossWaveStart = WaveStartTimeSeconds(FinalWaveCount(difficulty), difficulty);
     const EnemyProgression ramp = EvaluateEnemyProgression(bossWaveStart, 0, 0);
-    PlaceNormaBoss(monsters, screenWidth, hpMultiplier * ramp.hpMultiplier);
+    PlaceNormaBoss(monsters, screenWidth, hpMultiplier * ramp.hpMultiplier, true);
 }
 
 // Looked up by kind rather than by pointer: dead mobs are freed elsewhere.
 static void TrackNormaBoss(const MonsterManager& monsters) {
-    if (!g_EnemySpawnState.normaSpawned || g_EnemySpawnState.normaDefeated) return;
+    bool alive = false;
     for (const Monster* mob : monsters.monsters)
-        if (mob->kind == MobKind::NORMA && mob->alive) return;
+        if (mob->kind == MobKind::NORMA && mob->alive) { alive = true; break; }
+    g_EnemySpawnState.normaAlive = alive;
+    if (!g_EnemySpawnState.normaSpawned || g_EnemySpawnState.normaDefeated || alive) return;
     g_EnemySpawnState.normaDefeated = true;
 }
 
@@ -145,7 +154,7 @@ ScheduledEliteInfo GetScheduledElite(int wave, Difficulty difficulty) {
     ScheduledEliteInfo info;
     if (!IsEliteWaveNumber(wave, difficulty)) return info;
     info.scheduled = true;
-    info.kind = ScheduledEliteKind(wave);
+    info.kind = ScheduledEliteKind(wave, difficulty);
     info.spawned = g_EnemySpawnState.lastEliteWave == wave;
     info.alive = info.spawned && g_EnemySpawnState.eliteMob != nullptr;
     return info;
@@ -188,9 +197,14 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
                         difficulty,
                         waveSpawnCap, hpMultiplier);
 
-    // While NORMA fights, regular mobs come at half the rate.
-    const float bossStretch =
-        g_EnemySpawnState.normaSpawned && !g_EnemySpawnState.normaDefeated ? 2.0f : 1.0f;
+    // While NORMA fights, regular mobs come at half the rate. Elite and boss
+    // waves slow them too; the two do not stack, the stronger one applies.
+    // The wave term follows the current wave, so it lifts when the wave ends.
+    const float bossFight = g_EnemySpawnState.normaAlive ? 2.0f : 1.0f;
+    const float bossStretch = std::max(bossFight,
+        SpecialWaveSpawnStretch(wave, difficulty, SpawnSource::Regular));
+    const float rangedStretch = std::max(bossFight,
+        SpecialWaveSpawnStretch(wave, difficulty, SpawnSource::Ranged));
     g_EnemySpawnState.mobTimer += delta;
     const float spawnInterval = std::max(0.05f,
         2.4f * stats.mobSpawnMult * kEnemySpawnIntervalScale * bossStretch /
@@ -219,7 +233,7 @@ void UpdateEnemySpawns(MonsterManager& monsters, const PlayerStats& stats,
         stats.rmobSpawnDelayBonus;
     rangedInterval = std::max(1.0f, rangedInterval) /
         (spawnPressure * difficultyParams.spawnRateMultiplier) *
-        kEnemySpawnIntervalScale * 2.5f * bossStretch;
+        kEnemySpawnIntervalScale * 2.5f * rangedStretch;
     if (g_EnemySpawnState.spawnedThisWave < waveSpawnCap &&
         g_EnemySpawnState.rangedTimer >= rangedInterval) {
         const size_t before = monsters.rangedMobs.size();

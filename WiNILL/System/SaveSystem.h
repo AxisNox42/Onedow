@@ -202,10 +202,10 @@ inline bool DecodeSaveText(const std::string& raw, std::string& text) {
 }
 
 // 영구 데이터 (설정은 Settings.h 전역을 그대로 직렬화)
-inline long long g_BestScore[3] = { 0, 0, 0 };   // 난이도별 최고 점수 (EASY/NORMAL/HARD)
-inline long long g_BestWave[3]     = { 0, 0, 0 };   // 난이도별 도달한 최대 웨이브
-inline long long g_BestWaveSec[3]  = { 0, 0, 0 };   // 최대 웨이브에 도달한 판의 진행 시간(초)
-inline long long g_BestClearSec[3] = { 0, 0, 0 };   // 난이도별 가장 빠른 클리어 시간(초). 0 = 클리어 없음
+inline long long g_BestScore[4] = { 0, 0, 0, 0 }; // 난이도별 최고 점수 (EASY/NORMAL/HARD/NIGHTMARE)
+inline long long g_BestWave[4]     = { 0, 0, 0, 0 };   // 난이도별 도달한 최대 웨이브
+inline long long g_BestWaveSec[4]  = { 0, 0, 0, 0 };   // 최대 웨이브에 도달한 판의 진행 시간(초)
+inline long long g_BestClearSec[4] = { 0, 0, 0, 0 };   // 난이도별 가장 빠른 클리어 시간(초). 0 = 클리어 없음
 inline long long g_TotalKills   = 0;             // 누적 처치 수
 inline long long g_TotalGames   = 0;             // 누적 플레이 횟수
 inline long long g_LastRunCoins = 0;             // 직전 판 획득 코인 (GAMEOVER 표시용)
@@ -451,9 +451,10 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "best_easy"))   g_BestScore[0]      = ClampSaveValue(val);
         else if (!std::strcmp(key, "best_normal")) g_BestScore[1]      = ClampSaveValue(val);
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = ClampSaveValue(val);
-        else if (!std::strncmp(key, "bwave",  5))   { int i = atoi(key+5); if (i>=0&&i<3) g_BestWave[i]     = ClampSaveValue(val); }
-        else if (!std::strncmp(key, "bwsec",  5))   { int i = atoi(key+5); if (i>=0&&i<3) g_BestWaveSec[i]  = ClampSaveValue(val); }
-        else if (!std::strncmp(key, "bclear", 6))   { int i = atoi(key+6); if (i>=0&&i<3) g_BestClearSec[i] = ClampSaveValue(val); }
+        else if (!std::strcmp(key, "best_nightmare")) g_BestScore[3]   = ClampSaveValue(val);
+        else if (!std::strncmp(key, "bwave",  5))   { int i = atoi(key+5); if (i>=0&&i<4) g_BestWave[i]     = ClampSaveValue(val); }
+        else if (!std::strncmp(key, "bwsec",  5))   { int i = atoi(key+5); if (i>=0&&i<4) g_BestWaveSec[i]  = ClampSaveValue(val); }
+        else if (!std::strncmp(key, "bclear", 6))   { int i = atoi(key+6); if (i>=0&&i<4) g_BestClearSec[i] = ClampSaveValue(val); }
         else if (!std::strcmp(key, "kills"))       g_TotalKills        = ClampSaveValue(val);
         else if (!std::strcmp(key, "games"))       g_TotalGames        = ClampSaveValue(val);
         else if (!std::strncmp(key, "wbscore", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestScore[i]  = ClampSaveValue(val); }
@@ -498,7 +499,7 @@ inline void LoadGame() {
 // 세이브 진행도 초기화 — 점수/코인/메타/업적/도감/테마를 전부 리셋(설정/언어는 유지).
 //   설정 화면의 "세이브 초기화" 버튼에서 호출. 즉시 파일에도 반영.
 inline void ResetSaveProgress() {
-    for (int i = 0; i < 3; i++) g_BestScore[i] = g_BestWave[i] = g_BestWaveSec[i] = g_BestClearSec[i] = 0;
+    for (int i = 0; i < 4; i++) g_BestScore[i] = g_BestWave[i] = g_BestWaveSec[i] = g_BestClearSec[i] = 0;
     g_TotalKills = 0; g_TotalGames = 0;
     for (int i = 0; i < 2; i++) {
         g_WeaponBestScore[i] = g_WeaponBestKills[i] = g_WeaponTotalKills[i] = g_WeaponRunCount[i] = 0;
@@ -522,7 +523,7 @@ inline void ResetSaveProgress() {
 // wave: 이번 판에 도달한 웨이브. cleared 면 clearSeconds 가 클리어 시간이다.
 inline bool RecordRunResult(int difficultyIdx, long long score, long long kills, int weaponIdx = -1,
                             int wave = 0, bool cleared = false, float clearSeconds = 0.0f) {
-    if (difficultyIdx < 0 || difficultyIdx > 2) difficultyIdx = 1;
+    if (difficultyIdx < 0 || difficultyIdx > 3) difficultyIdx = 1;
     score = ClampSaveValue(score);
     kills = ClampSaveValue(kills);
     bool isRecord = (score > g_BestScore[difficultyIdx]);
@@ -552,8 +553,9 @@ inline bool RecordRunResult(int difficultyIdx, long long score, long long kills,
         AddSaveValue(g_MobKillCounts[i], g_RunMobKillCounts[i]);
         g_RunMobKillCounts[i] = 0;
     }
-    // 코인 적립 — 점수/1000 + 처치/2 (난이도 보너스: 보통×1.2, 어려움×1.5)
-    float diffMul = (difficultyIdx == 2) ? 1.5f : (difficultyIdx == 1) ? 1.2f : 1.0f;
+    // 코인 적립 — 점수/1000 + 처치/2 (난이도 보너스: 보통×1.2, 어려움×1.5, 악몽×2.0)
+    float diffMul = (difficultyIdx == 3) ? 2.0f : (difficultyIdx == 2) ? 1.5f
+                  : (difficultyIdx == 1) ? 1.2f : 1.0f;
     long long earned = (long long)((score / 1000 + kills / 2) * diffMul);
     AddSaveValue(g_Coins, earned);
     g_LastRunCoins = earned;

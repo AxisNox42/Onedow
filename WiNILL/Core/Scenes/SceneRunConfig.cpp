@@ -42,7 +42,7 @@
 #include "SceneInternal.h"
 
 static int s_RcWeapon = 0;
-static int s_RcDifficulty = 1;   // 0=EASY 1=NORMAL 2=HARD, 패널을 다시 열어도 유지
+static int s_RcDifficulty = 1;   // 0=EASY 1=NORMAL 2=HARD 3=NIGHTMARE, 패널을 다시 열어도 유지
 static bool s_RcStateLoaded = false;
 static float s_RcEntryT = 0.0f;
 
@@ -63,16 +63,17 @@ constexpr float kPlayHeroFadeSec   = 0.30f;  // 직업을 바꿀 때 새 외형�
 constexpr float kPlayLabelScale     = 1.20f;   // 직업/난이도 머리글 확대 배율(Title 단계 기준)
 constexpr int   kPlayWeaponCount  = 2;
 constexpr int   kPlaySelectableWeapons = 1;   // 전기장(1)은 코드에 남기되 선택 UI에서만 뺀다
-constexpr int   kPlayDifficultyCount = 3;
+constexpr int   kPlayDifficultyCount = 4;
 
 struct PlayRGB { float r, g, b; };
 constexpr PlayRGB kPlayWeaponColor[kPlayWeaponCount] = {
     { 0.28f, 0.90f, 1.00f },   // 소총
     { 1.00f, 0.72f, 0.24f },   // 전기장
 };
-// 난이도 강조색: 쉬움=초록, 보통=하늘, 어려움=붉은 주황.
+// 난이도 강조색: 쉬움=초록, 보통=하늘, 어려움=붉은 주황, 나이트메어=보라.
 constexpr PlayRGB kPlayDifficultyColor[kPlayDifficultyCount] = {
     { 0.38f, 0.95f, 0.62f }, { 0.48f, 0.82f, 1.00f }, { 1.00f, 0.42f, 0.30f },
+    { 0.80f, 0.34f, 1.00f },
 };
 
 // ── PLAY 패널 문구 (KR, EN, JP) ──
@@ -93,6 +94,7 @@ const LStr kTxtDifficultyName[kPlayDifficultyCount] = {
     { { L"쉬움", L"EASY", L"イージー" } },
     { { L"보통", L"NORMAL", L"ノーマル" } },
     { { L"어려움", L"HARD", L"ハード" } },
+    { { L"악몽", L"NIGHTMARE", L"ナイトメア" } },
 };
 
 constexpr int kPlayStatCount = 6;
@@ -131,7 +133,7 @@ void ResetRunConfigUi(float entryStart) {
 void FinalizeLoadout(const SceneCtx& c, int wIdx) {
     float& fireTimer = *c.fireTimer;
 
-    g_Difficulty = static_cast<Difficulty>(std::max(0, std::min(2, s_RcDifficulty)));
+    g_Difficulty = static_cast<Difficulty>(std::max(0, std::min(kPlayDifficultyCount - 1, s_RcDifficulty)));
     ApplyLoadoutStats(g_Stats, wIdx);   // RunStats.h: weapon + trial max HP
     g_CurrentWeapon = wIdx;
     fireTimer = g_Stats.fireInterval;
@@ -359,7 +361,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     };
     if (ready) {
         if (keyNow[0] && !prevKey[0]) s_RcDifficulty = std::max(0, s_RcDifficulty - 1);
-        if (keyNow[1] && !prevKey[1]) s_RcDifficulty = std::min(2, s_RcDifficulty + 1);
+        if (keyNow[1] && !prevKey[1]) s_RcDifficulty = std::min(kPlayDifficultyCount - 1, s_RcDifficulty + 1);
         if (keyNow[2] && !prevKey[2]) { weapon = 0; s_RcWeapon = weapon; }
         if (keyNow[3] && !prevKey[3] && kPlaySelectableWeapons > 1) { weapon = 1; s_RcWeapon = weapon; }
     }
@@ -573,7 +575,7 @@ void Scene_RunConfigInline(const SceneCtx& c) {
         if (drawChoice(rightX, sideW, entryY(i), sel,
                        diffHover[i], col, diffName(i), tailBuf, &midY, true, bigText))
             s_RcDifficulty = i;
-        // 이름 줄 오른쪽 끝의 3칸 게이지: 켜진 별 개수가 단계(1~3)다.
+        // 이름 줄 오른쪽 끝의 4칸 게이지: 켜진 별 개수가 단계(1~4)다.
         for (int k = 0; k < kPlayDifficultyCount; ++k)
             drawDiamond(rightR - 10.0f * uiS
                             - (kPlayDifficultyCount - 1 - k) * kPlayGaugeStep * uiS,

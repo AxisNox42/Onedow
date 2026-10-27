@@ -93,7 +93,7 @@ inline void DrawWaveTrack(float cx, float trackY, float hs, int wave, int finalW
     // Half-width of each node along the track, so the links stop at the
     // node's edge instead of running through it.
     auto nodeHalf = [&](int w) {
-        const bool isFinal = w == finalWave;
+        const bool isFinal = IsBossWave(w, difficulty);   // every boss wave, not only the last
         const bool isElite = !isFinal && IsEliteWave(w, difficulty);
         if (w == wave) return (isFinal || isElite ? 13.0f : 10.0f) * hs + 1.2f * hs;
         if (isFinal) return 9.0f * hs + 0.9f * hs;
@@ -118,7 +118,7 @@ inline void DrawWaveTrack(float cx, float trackY, float hs, int wave, int finalW
         const float nx = nodeX(w);
         const float f = fade(w);
         if (f <= 0.001f) continue;
-        const bool isFinal = w == finalWave;
+        const bool isFinal = IsBossWave(w, difficulty);   // every boss wave, not only the last
         const bool isElite = !isFinal && IsEliteWave(w, difficulty);
         if (w == wave) {
             // Current wave: a steady outline in the node's own colour, and

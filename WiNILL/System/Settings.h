@@ -61,7 +61,8 @@ inline int LanguageFontChain(Language /*lang*/, const char* out[2]) {
 }
 
 // PLAY chooses the difficulty; it also remains in saved run records.
-enum class Difficulty { EASY, NORMAL, HARD };
+enum class Difficulty { EASY, NORMAL, HARD, NIGHTMARE };
+inline constexpr int DIFFICULTY_COUNT = 4;
 inline Difficulty g_Difficulty = Difficulty::NORMAL;
 
 // Run tuning shared by regular and ranged enemy spawns.
@@ -78,6 +79,8 @@ inline DifficultyParams GetDifficultyParams(Difficulty d) {
         return { 1.00f, 1.00f, 1.00f };
     case Difficulty::HARD:
         return { 1.15f, 1.15f, 1.15f };
+    case Difficulty::NIGHTMARE:
+        return { 1.30f, 1.30f, 1.30f };
     }
     return { 1.00f, 1.00f, 1.00f };
 }

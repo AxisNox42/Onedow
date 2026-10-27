@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "EnemyRoster.h"
+#include "WaveSystem.h"
 
 static int g_failures = 0;
 #define EXPECT(cond, ...)                                   \
@@ -14,8 +15,9 @@ static int g_failures = 0;
         }                                                   \
     } while (0)
 
-static const int kFinalWave[3] = { 10, 15, 20 };
-static const char* kDiff[3] = { "EASY", "NORMAL", "HARD" };
+static const int kD = kRosterDifficulties;
+static const char* kDiff[4] = { "EASY", "NORMAL", "HARD", "NIGHTMARE" };
+static int FinalWave(int d) { return FinalWaveCount(static_cast<Difficulty>(d)); }
 
 // Kinds a regular spawn can turn into on this wave, over every roll.
 static bool CanSpawn(RosterKind kind, int wave, int difficulty) {
@@ -26,7 +28,7 @@ static bool CanSpawn(RosterKind kind, int wave, int difficulty) {
 
 int main() {
     // Swarm opens every run; Rotor follows from wave 2 (HARD: wave 1 too).
-    for (int d = 0; d < 3; ++d) {
+    for (int d = 0; d < kD; ++d) {
         EXPECT(RosterFirstWave(RosterKind::SWARM, d) == 1, "%s swarm first", kDiff[d]);
         EXPECT(CanSpawn(RosterKind::SWARM, 1, d), "%s swarm on wave 1", kDiff[d]);
     }
@@ -41,9 +43,9 @@ int main() {
     // and kinds with no first wave never spawn on that difficulty.
     for (const RosterEntry& entry : kEnemyRoster) {
         if (entry.kind == RosterKind::SCOPE) continue;   // ranged path
-        for (int d = 0; d < 3; ++d) {
+        for (int d = 0; d < kD; ++d) {
             const int first = entry.firstWave[d];
-            for (int wave = 1; wave <= kFinalWave[d]; ++wave) {
+            for (int wave = 1; wave <= FinalWave(d); ++wave) {
                 const bool can = CanSpawn(entry.kind, wave, d);
                 if (first == 0 || wave < first)
                     EXPECT(!can, "%s kind %d spawns early on wave %d", kDiff[d], (int)entry.kind, wave);
@@ -53,19 +55,21 @@ int main() {
         }
     }
 
-    // No enemy debuts on an elite wave, and every debut is inside the run.
+    // No enemy debuts on an elite or boss wave, and every debut is inside the run.
     for (const RosterEntry& entry : kEnemyRoster)
-        for (int d = 0; d < 3; ++d) {
+        for (int d = 0; d < kD; ++d) {
             const int first = entry.firstWave[d];
-            EXPECT(first == 0 || first % 5 != 0, "%s kind %d debuts on elite wave %d",
+            EXPECT(first == 0 || !IsSpecialWave(first, static_cast<Difficulty>(d)),
+                   "%s kind %d debuts on elite/boss wave %d",
                    kDiff[d], (int)entry.kind, first);
-            EXPECT(first <= kFinalWave[d], "%s kind %d after the run", kDiff[d], (int)entry.kind);
+            EXPECT(first <= FinalWave(d), "%s kind %d after the run", kDiff[d], (int)entry.kind);
         }
 
     // HARD-only enemies wait until wave 10+, NORMAL-only ones skip EASY.
     // Elite kinds (Gravis, Genesis, Quasar) have no roster entry at all:
     // they only enter as an elite wave's scheduled elite.
     EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 2) >= 10, "magnetar late on HARD");
+    EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 3) > 0, "magnetar on NIGHTMARE");
     EXPECT(RosterFirstWave(RosterKind::MAGNETAR, 1) == 0, "magnetar not on NORMAL");
     EXPECT((int)(sizeof(kEnemyRoster) / sizeof(kEnemyRoster[0])) == (int)RosterKind::COUNT,
            "one roster entry per kind");
@@ -74,11 +78,11 @@ int main() {
 
     // Odds start low on the first wave, rise 2% per wave and stop at the cap;
     // the weighted kinds never exceed 100% together.
-    EXPECT(RosterChancePct(RosterKind::GIMBAL, 3, 0) == 6, "gimbal start");
-    EXPECT(RosterChancePct(RosterKind::GIMBAL, 4, 0) == 8, "gimbal +2");
-    EXPECT(RosterChancePct(RosterKind::GIMBAL, 30, 0) == 20, "gimbal cap");
-    for (int d = 0; d < 3; ++d)
-        for (int wave = 1; wave <= kFinalWave[d]; ++wave) {
+    EXPECT(RosterChancePct(RosterKind::GIMBAL, 3, 1) == 6, "gimbal start");
+    EXPECT(RosterChancePct(RosterKind::GIMBAL, 4, 1) == 8, "gimbal +2");
+    EXPECT(RosterChancePct(RosterKind::GIMBAL, 30, 1) == 20, "gimbal cap");
+    for (int d = 0; d < kD; ++d)
+        for (int wave = 1; wave <= FinalWave(d); ++wave) {
             int total = 0;
             for (const RosterEntry& entry : kEnemyRoster)
                 total += RosterChancePct(entry.kind, wave, d);
