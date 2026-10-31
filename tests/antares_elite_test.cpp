@@ -1,4 +1,4 @@
-// Headless regression for the Antares elite: ricochet charge, split on death
+// Headless regression for the Antares elite: wall ricochet, two-stage split on death
 // and the Antares-vs-Antares bounce. Run with scripts/test_antares_elite.ps1.
 #include "MonsterManager.h"
 #include <cassert>
@@ -23,70 +23,49 @@ static void CheckEliteSet() {
     std::printf("elite set ok\n");
 }
 
-static float PathLength(const Monster& m) {
-    float len = 0.0f;
-    for (int i = 0; i + 1 < m.antaresPathCount; ++i)
-        len += glm::length(m.antaresPath[i + 1] - m.antaresPath[i]);
-    return len;
-}
-
-static void CheckChargePath() {
-    Monster m(500.0f, 300.0f);
+// Every rush ricochets: a stage 2+ run that leaves the map reverses the
+// component that left and keeps its speed; a stage 1 crawl only slides.
+static void CheckWallRicochet() {
+    Monster m(960.0f, 300.0f);
     m.MakeKind(MobKind::ANTARES);
-    m.antaresBounds = glm::vec4(50.0f, 50.0f, 950.0f, 550.0f);
-    m.antaresHeadingX = 1.0f; m.antaresHeadingY = 0.0f;
-    m.PlanAntaresCharge();
-    // Right wall after 450px, then back across 900px to the left wall (1350px);
-    // the last 550px end mid-field: start, two edge points, end.
-    assert(m.antaresPathCount == 4);
-    assert(std::fabs(m.antaresPath[2].x - 50.0f) < 0.01f);
-    assert(std::fabs(m.antaresPath[1].x - 950.0f) < 0.01f);
-    assert(std::fabs(PathLength(m) - Monster::ANTARES_CHARGE_LENGTH) < 0.5f);
-    // Diagonal: the corner reflection flips only the component that left.
-    m.antaresHeadingX = 0.6f; m.antaresHeadingY = 0.8f;
-    m.PlanAntaresCharge();
-    assert(m.antaresPathCount >= 3);
-    assert(std::fabs(m.antaresPath[1].y - 550.0f) < 0.01f);
-    assert(m.antaresPath[2].x > m.antaresPath[1].x);   // x kept going, y reversed
-    assert(std::fabs(PathLength(m) - Monster::ANTARES_CHARGE_LENGTH) < 0.5f);
-    // No bounds yet: one straight segment.
-    m.antaresBounds = glm::vec4(0.0f);
-    m.PlanAntaresCharge();
-    assert(m.antaresPathCount == 2);
-    std::printf("charge path ok\n");
+    m.antaresInArena = true;
+    m.antaresState = Monster::AntaresState::CHASE;
+    m.antaresHeadingX = 0.8f; m.antaresHeadingY = 0.6f;
+    m.antaresMoveSpeed = 400.0f;
+    m.ConfineAntares(0.0f, 0.0f, 1000.0f, 600.0f);   // x past 1000 - radius
+    assert(m.antaresHeadingX < 0.0f && m.antaresHeadingY > 0.0f);
+    assert(m.antaresMoveSpeed == 400.0f && m.antaresBounces == 1);
+    assert(m.antaresState == Monster::AntaresState::CHASE);
+    // Left wall flips the other way, a skid ricochets too.
+    m.worldX = 10.0f; m.worldY = 300.0f;
+    m.antaresState = Monster::AntaresState::SKID;
+    m.antaresHeadingX = -0.6f; m.antaresHeadingY = -0.8f;
+    m.ConfineAntares(0.0f, 0.0f, 1000.0f, 600.0f);
+    assert(m.antaresHeadingX > 0.0f && m.antaresHeadingY < 0.0f && m.antaresBounces == 2);
+    // Stage 1 crawl: slides along the edge, no bounce.
+    m.worldX = 10.0f;
+    m.antaresState = Monster::AntaresState::CHASE;
+    m.antaresMoveSpeed = 100.0f; m.antaresHeadingX = -1.0f; m.antaresHeadingY = 0.0f;
+    m.ConfineAntares(0.0f, 0.0f, 1000.0f, 600.0f);
+    assert(m.antaresHeadingX == -1.0f && m.antaresBounces == 2);
+    std::printf("wall ricochet ok\n");
 }
 
-// Chases the parked player (ramming off, so the run is never cut short);
-// every second run must be an aimed ricochet charge.
-static void CheckChargeCycle() {
+// A parked player never gets rammed (ramming off): the rush must stay in the map.
+static void CheckRushStaysInside() {
     MonsterManager mm;
     Monster* a = Add(mm, 800.0f, 450.0f);
     a->antaresInArena = true;
     std::vector<Bullet> bullets;
     float hp = 1.0e9f;
-    bool aimed = false, charged = false;
-    int maxBounces = 0;
     for (float t = 0.0f; t < 60.0f; t += DT) {
-        a->singularityGrace = 1.0e9f;   // the charge passes through instead of ramming
+        a->singularityGrace = 1.0e9f;
         mm.UpdateAll(100.0f, 100.0f, DT, hp, bullets);
         a->ConfineAntares(0.0f, 0.0f, 1000.0f, 600.0f);
-        if (a->antaresState == Monster::AntaresState::AIM) {
-            aimed = true;
-            assert(a->antaresPathCount >= 2);
-            assert(a->antaresMoveSpeed == 0.0f);
-        }
-        if (a->antaresState == Monster::AntaresState::CHARGE) {
-            charged = true;
-            assert(std::fabs(a->antaresMoveSpeed - Monster::ANTARES_CHARGE_SPEED) < 0.01f);
-            maxBounces = std::max(maxBounces, a->antaresBounces);
-            // Always inside the map (reflected, never carried out).
-            assert(a->worldX >= 25.0f && a->worldX <= 975.0f);
-            assert(a->worldY >= 25.0f && a->worldY <= 575.0f);
-        }
+        assert(a->worldX >= 25.0f && a->worldX <= 975.0f);
+        assert(a->worldY >= 25.0f && a->worldY <= 575.0f);
     }
-    assert(aimed && charged);
-    assert(maxBounces >= 1);
-    std::printf("charge cycle ok (max bounces %d)\n", maxBounces);
+    std::printf("rush stays inside ok (bounces %d)\n", a->antaresBounces);
 }
 
 static void CheckSplit() {
@@ -109,13 +88,25 @@ static void CheckSplit() {
         assert(m->antaresMoveSpeed > 0.0f);
     }
     assert(children == Monster::ANTARES_SPLIT_COUNT);
-    // Once only: the parent is not split again, and a child's death releases nothing.
+    // Second split: killing a child releases gen-2 grandchildren, and those release nothing.
+    Monster* child = nullptr;
+    for (Monster* m : mm.monsters) if (m != a) { child = m; break; }
+    const size_t before = mm.monsters.size();
+    child->ApplyDamage(child->hp);
     mm.UpdateAll(5000.0f, 5000.0f, DT, hp, bullets);
-    assert((int)mm.monsters.size() == 1 + Monster::ANTARES_SPLIT_COUNT);
-    for (Monster* m : mm.monsters)
-        if (m != a) { m->ApplyDamage(m->hp); break; }
+    assert(mm.monsters.size() == before + Monster::ANTARES_SPLIT_COUNT);
+    Monster* grand = nullptr;
+    for (Monster* m : mm.monsters) if (m->antaresGen == 2) { grand = m; break; }
+    assert(grand && grand->alive);
+    assert(grand->sizeScale < child->sizeScale);
+    assert(std::fabs(grand->hp - Monster::ANTARES_BASE_HP * Monster::ANTARES_CHILD_HP * Monster::ANTARES_CHILD_HP) < 0.01f);
+    const size_t total = mm.monsters.size();
+    grand->ApplyDamage(grand->hp);
     mm.UpdateAll(5000.0f, 5000.0f, DT, hp, bullets);
-    assert((int)mm.monsters.size() == 1 + Monster::ANTARES_SPLIT_COUNT);
+    assert(mm.monsters.size() == total);   // generation 2 is the last
+    // A dead parent is not split again.
+    mm.UpdateAll(5000.0f, 5000.0f, DT, hp, bullets);
+    assert(mm.monsters.size() == total);
     // A silent clear (noBlast) splits nothing.
     MonsterManager quiet;
     Monster* q = Add(quiet, 300.0f, 300.0f);
@@ -164,8 +155,8 @@ static void CheckAntaresBounce() {
 
 int main() {
     CheckEliteSet();
-    CheckChargePath();
-    CheckChargeCycle();
+    CheckWallRicochet();
+    CheckRushStaysInside();
     CheckSplit();
     CheckAntaresBounce();
     std::printf("antares elite regression passed\n");

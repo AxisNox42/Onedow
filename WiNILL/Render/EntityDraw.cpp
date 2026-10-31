@@ -641,16 +641,6 @@ static void DrawEnemyArc(float cx, float cy, float radius,
     }
 }
 
-// Elite frame: two thin solid hexagon outlines counter-rotating around the
-// body. Shared by every IsEliteMob() kind as each one gets its second ability.
-static void DrawEliteFrame(float x, float y, float base, float phase,
-                           float r, float g, float b, float alpha) {
-    DrawEnemyArc(x, y, base * 1.44f, -phase * 0.6f, 6.2831853f, 6,
-                 r, g, b, alpha, 1.0f, false);
-    DrawEnemyArc(x, y, base * 1.30f, phase * 0.9f + 0.5235988f, 6.2831853f, 6,
-                 r, g, b, alpha * 0.7f, 0.8f, false);
-}
-
 // Landing-blast telegraph: a thin red ring at the damage radius over a
 // faint disc. `timer` (0..1) fills an inner disc toward the ring, so a Swarm
 // in flight shows how soon it lands; pass a negative timer to omit it.
@@ -681,8 +671,9 @@ static void DrawGenesisLauncher(const Monster* m, float base, float t) {
     float cr = m->color.r, cg = m->color.g, cb = m->color.b;
     ApplyMobStyleTint(cr, cg, cb);
     ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
-    const float pR = 1.0f, pG = 0.24f, pB = 0.20f;   // production red
-    const float hR = 1.0f, hG = 0.62f, hB = 0.52f;   // heated edge
+    // Genesis' own colour family (shared with the enemies it controls).
+    const float pR = Monster::GENESIS_PRODUCTION.r, pG = Monster::GENESIS_PRODUCTION.g, pB = Monster::GENESIS_PRODUCTION.b;
+    const float hR = Monster::GENESIS_HEAT.r, hG = Monster::GENESIS_HEAT.g, hB = Monster::GENESIS_HEAT.b;
     const float liteR = cr + (1.0f - cr) * 0.35f;
     const float liteG = cg + (1.0f - cg) * 0.35f;
     const float liteB = cb + (1.0f - cb) * 0.35f;
@@ -1299,26 +1290,7 @@ static void DrawAntares(const Monster* m, float base) {
     ApplyMobHitFlash(cr, cg, cb, m->hitFlashTimer);
     const float x = m->worldX, y = m->worldY;
     const bool skidding = m->antaresState == State::SKID;
-    const bool charging = m->antaresState == State::CHARGE;
-    const bool topSpeed = m->AntaresStage() == 4 && !skidding && !charging;
-
-    // Ricochet charge telegraph: the whole bouncing path as thin solid
-    // amber lines with a small ring where it meets the edge. It tightens
-    // and brightens over the aim, and is thickest once the aim is locked.
-    if (m->antaresState == State::AIM && m->antaresPathCount >= 2) {
-        const float t = m->antaresStateTimer;
-        const bool locked = t >= Monster::ANTARES_AIM_TRACK;
-        const float k = std::clamp(t / (Monster::ANTARES_AIM_TRACK + Monster::ANTARES_AIM_LOCK), 0.0f, 1.0f);
-        const float a = (locked ? 0.75f : 0.30f + 0.25f * k);
-        const float w = locked ? 2.2f : 1.2f;
-        for (int i = 0; i + 1 < m->antaresPathCount; ++i) {
-            const glm::vec2 p0 = m->antaresPath[i], p1 = m->antaresPath[i + 1];
-            drawLineQuad(p0.x, p0.y, p1.x, p1.y, w + 2.0f, 1.0f, 0.62f, 0.12f, a * 0.14f);
-            drawLineQuad(p0.x, p0.y, p1.x, p1.y, w, 1.0f, 0.62f, 0.12f, a * (1.0f - 0.18f * (float)i));
-            if (i + 2 < m->antaresPathCount)
-                DrawEnemyArc(p1.x, p1.y, 10.0f, 0.0f, 6.2831853f, 20, 1.0f, 0.62f, 0.12f, a * 0.8f, 1.2f, false);
-        }
-    }
+    const bool topSpeed = m->AntaresStage() == 4 && !skidding;
 
     float headX = m->antaresHeadingX, headY = m->antaresHeadingY;
     if (headX == 0.0f && headY == 0.0f) {
@@ -1338,12 +1310,7 @@ static void DrawAntares(const Monster* m, float base) {
         const glm::vec3& sample = m->antaresTrail[i];
         AntaresFrameStyle ghost{ ghostR, ghostG, ghostB, GHOST_ALPHA[i] };
         ghost.nodes = false;
-        if (charging) {
-            // A charge leaves long amber afterimages (no red/cyan split).
-            ghost.r = 1.0f; ghost.g = 0.62f; ghost.b = 0.12f;
-            ghost.alpha *= 1.3f;
-            DrawAntaresFrame(sample.x, sample.y, base, sample.z, ghost);
-        } else if (topSpeed) {
+        if (topSpeed) {
             const float ox = -headY * 1.5f, oy = headX * 1.5f;
             ghost.alpha *= 0.70f;
             ghost.r = 1.0f; ghost.g = 0.22f; ghost.b = 0.28f;
@@ -1368,9 +1335,6 @@ static void DrawAntares(const Monster* m, float base) {
     body.pushX = -headX * pushPx + shakeX;
     body.pushY = -headY * pushPx + shakeY;
     DrawAntaresFrame(x, y, base, m->antaresVisualAngle, body);
-    // Only the elite carries the elite frame; split children are plain.
-    if (m->antaresGen == 0)
-        DrawEliteFrame(x, y, base * 1.25f, m->antaresVisualAngle * 0.25f, cr, cg, cb, 0.40f);
 
     // The core dims through the skid and recovers over the rest; a stun
     // flickers it.
@@ -2202,7 +2166,166 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
     }
 }
 
-// Eruption, staged so it builds instead of springing: (1) the Quasar draws in
+// Soft light around the beam (user-approved exception to "lines only"): a strip
+// along the leg whose alpha falls off smoothly with the distance from the axis,
+// built with per-vertex alpha so it spreads like light at any angle instead of
+// stepping like stacked bands. Inside the band it is steady; outside it fades
+// out over `spread` px. `tipFade` > 0 fades the strip out over the last
+// tipFade px of the leg (the growing beam head).
+static void DrawBeamGlow(float x0, float y0, float x1, float y1, float bandR, float spread,
+                         float strength, float tipFade, float cr, float cg, float cb) {
+    const float len = std::hypot(x1 - x0, y1 - y0);
+    if (len < 1.0f || strength <= 0.0f || bandR < 1.0f) return;
+    const glm::vec2 a(x0, y0), dir((x1 - x0) / len, (y1 - y0) / len), nrm(-dir.y, dir.x);
+    const float gr = cr + (1.0f - cr) * 0.35f, gg = cg + (1.0f - cg) * 0.35f, gb = cb + (1.0f - cb) * 0.35f;
+    constexpr int RINGS = 9;                                   // steps across the fade
+    // lateral samples from the far left to the far right, with the alpha at each
+    float off[2 * RINGS + 4], al[2 * RINGS + 4];
+    int m = 0;
+    for (int i = RINGS; i >= 1; --i) {                          // left halo: dark -> band edge
+        const float u = (float)i / (float)RINGS;                // 1 at the far edge, 0 at the band edge
+        off[m] = -(bandR + spread * u);
+        al[m++] = strength * std::pow(1.0f - u, 2.2f);
+    }
+    off[m] = -bandR; al[m++] = strength;
+    off[m] = 0.0f;   al[m++] = strength;
+    off[m] = bandR;  al[m++] = strength;
+    for (int i = 1; i <= RINGS; ++i) {                          // right halo
+        const float u = (float)i / (float)RINGS;
+        off[m] = bandR + spread * u;
+        al[m++] = strength * std::pow(1.0f - u, 2.2f);
+    }
+    // one strip for the body, one for the fading tip
+    const float bodyEnd = tipFade > 0.0f ? std::max(0.0f, len - tipFade) : len;
+    const auto strip = [&](float sA, float sB, float fA, float fB) {
+        if (sB - sA < 0.5f) return;
+        const glm::vec2 pa = a + dir * sA, pb = a + dir * sB;
+        for (int j = 0; j + 1 < m; ++j) {
+            const glm::vec2 a0 = pa + nrm * off[j], a1 = pa + nrm * off[j + 1];
+            const glm::vec2 b0 = pb + nrm * off[j], b1 = pb + nrm * off[j + 1];
+            BatchVtx(a0.x, a0.y, gr, gg, gb, al[j] * fA);
+            BatchVtx(a1.x, a1.y, gr, gg, gb, al[j + 1] * fA);
+            BatchVtx(b0.x, b0.y, gr, gg, gb, al[j] * fB);
+            BatchVtx(a1.x, a1.y, gr, gg, gb, al[j + 1] * fA);
+            BatchVtx(b1.x, b1.y, gr, gg, gb, al[j + 1] * fB);
+            BatchVtx(b0.x, b0.y, gr, gg, gb, al[j] * fB);
+        }
+    };
+    strip(0.0f, bodyEnd, 1.0f, 1.0f);
+    if (tipFade > 0.0f) strip(bodyEnd, len, 1.0f, 0.0f);
+}
+
+// Energy running through the beam: bright streaks that flow from the Quasar out
+// along the leg, and a slower, wider pulse that rolls out every 0.6 s. Both are
+// positioned by the path distance from the Quasar (`startDist` carries them over
+// bounced legs), so they run on through a bounce instead of restarting.
+static void DrawBeamFlow(float x0, float y0, float x1, float y1, float bandR, float startDist,
+                         float t, float intensity, int streaks, int legIndex,
+                         float cr, float cg, float cb) {
+    const float len = std::hypot(x1 - x0, y1 - y0);
+    if (len < 1.0f || intensity <= 0.0f) return;
+    const glm::vec2 a(x0, y0), dir((x1 - x0) / len, (y1 - y0) / len), nrm(-dir.y, dir.x);
+    // Draw the part of the path-distance range [D0, D1] that falls on this leg.
+    const auto seg = [&](float D0, float D1, float lateral, float wColor, float wWhite,
+                         float aColor, float aWhite) {
+        const float s0 = std::max(D0, startDist) - startDist, s1 = std::min(D1, startDist + len) - startDist;
+        if (s1 - s0 < 0.5f) return;
+        const glm::vec2 p0 = a + dir * s0 + nrm * lateral, p1 = a + dir * s1 + nrm * lateral;
+        drawLineQuad(p0.x, p0.y, p1.x, p1.y, wColor, cr, cg, cb, aColor);
+        drawLineQuad(p0.x, p0.y, p1.x, p1.y, wWhite, 1.0f, 1.0f, 1.0f, aWhite);
+    };
+    // Streaks: thin, fast, each on its own fixed lane inside the band, brightest at the head.
+    constexpr float WRAP = 3200.0f, SPEED = 2400.0f;
+    for (int k = 0; k < streaks; ++k) {
+        const float h0 = QuasarHash(k * 3.71f + 0.5f), h1 = QuasarHash(k * 5.13f + 1.5f), h2 = QuasarHash(k * 2.29f + 2.5f);
+        const float lateral = (h0 * 2.0f - 1.0f) * 0.74f * bandR;
+        const float length = 90.0f + 130.0f * h1;
+        const float phase = std::fmod(t * SPEED / WRAP + h2, 1.0f);
+        const float head = phase * WRAP;
+        const float fade = std::clamp(1.0f - 0.55f * phase, 0.0f, 1.0f) * intensity;
+        for (int p = 0; p < 3; ++p) {                           // tail -> head, brightening
+            const float d0 = head - length + length * (float)p / 3.0f, d1 = head - length + length * (float)(p + 1) / 3.0f;
+            const float k3 = 0.20f + 0.40f * (float)p;           // 0.20, 0.60, 1.00 of the head's strength
+            seg(d0, d1, lateral, 2.6f, 1.3f, 0.55f * k3 * fade, 0.90f * k3 * fade);
+        }
+    }
+    // Pulse: a wider bright knot leaves the Quasar every 0.6 s and rolls out.
+    constexpr float PULSE_SPEED = 1800.0f;
+    for (int n = 0; n < 6; ++n) {
+        const float age = t - (0.20f + 0.60f * (float)n);
+        if (age < 0.0f) continue;
+        const float Dw = age * PULSE_SPEED;
+        if (Dw > 5200.0f) continue;
+        const float fade = std::clamp(1.0f - Dw / 4600.0f, 0.0f, 1.0f) * intensity;
+        // Feathered knot: short slices whose strength peaks in the middle, so both
+        // ends taper away instead of ending in a square block.
+        constexpr int SLICES = 9;
+        for (int i = 0; i < SLICES; ++i) {
+            const float u0 = -1.0f + 2.0f * (float)i / SLICES, u1 = -1.0f + 2.0f * (float)(i + 1) / SLICES;
+            const float w = std::pow(1.0f - std::fabs(0.5f * (u0 + u1)), 1.6f);
+            seg(Dw + u0 * 150.0f, Dw + u1 * 150.0f + 1.0f, 0.0f, bandR * 1.1f * (0.4f + 0.6f * w),
+                bandR * 0.50f * (0.3f + 0.7f * w), 0.22f * w * fade, 0.75f * w * fade);
+        }
+    }
+    (void)legIndex;
+}
+
+// The rift: the beam band opening out from the Quasar. A bright seam runs out
+// along the axis (its tip travels 6000 px in QUASAR_BEAM_RIFT_PROP) and the band
+// opens behind the tip, so the lips spread outward from the Quasar like a tear.
+// `t` is the time since the beam fired and `startDist` the path length from the
+// Quasar to this leg's start (bounced legs carry the tear on). Smooth curves
+// only; once fully open the lips are exactly the straight band edges.
+static void DrawBeamRift(float x0, float y0, float x1, float y1, float bandR, float t,
+                         float startDist, float cr, float cg, float cb) {
+    const float len = std::hypot(x1 - x0, y1 - y0);
+    if (len < 1.0f) return;
+    const glm::vec2 a(x0, y0), dir((x1 - x0) / len, (y1 - y0) / len), nrm(-dir.y, dir.x);
+    const float PROP = Monster::QUASAR_BEAM_RIFT_PROP, OPEN = Monster::QUASAR_BEAM_RIFT_OPEN;
+    const float TOTAL = 6000.0f;
+    const float tipD = TOTAL * std::clamp(t / PROP, 0.0f, 1.0f);       // how far the seam has run
+    const auto openAt = [&](float D) {                                  // 0 = seam, 1 = fully open band
+        return Monster::QuasarEase((t - PROP * D / TOTAL) / OPEN);
+    };
+    const float rift = 1.0f - Monster::QuasarEase(t / 0.55f);           // the void inside, clearing
+    const int n = std::min(96, (int)std::ceil(len / 40.0f));
+    const float step = len / (float)n;
+    glm::vec2 pc(0.0f), pl(0.0f), pr(0.0f);
+    float po = 0.0f;
+    for (int i = 0; i <= n; ++i) {
+        const float s = i * step, D = startDist + s;
+        const float o = bandR * openAt(D);
+        const glm::vec2 c = a + dir * s;
+        const glm::vec2 l = c + nrm * o, r = c - nrm * o;
+        if (i > 0) {
+            const float dm = startDist + (i - 0.5f) * step;
+            if (dm <= tipD) {
+                const float om = 0.5f * (o + po);
+                const float seam = 1.0f - openAt(dm);
+                // The void between the lips, and a thin tint of the beam colour.
+                if (om > 0.5f) {
+                    drawLineQuad(pc.x, pc.y, c.x, c.y, 2.0f * om, 0.0f, 0.0f, 0.0f, 0.82f * rift);
+                    drawLineQuad(pc.x, pc.y, c.x, c.y, 2.0f * om, cr, cg, cb, 0.14f);
+                    const float la = std::min(1.0f, om / 8.0f);
+                    drawLineQuad(pl.x, pl.y, l.x, l.y, 4.0f, 0.0f, 0.0f, 0.0f, 0.60f * la);
+                    drawLineQuad(pl.x, pl.y, l.x, l.y, 2.6f, cr, cg, cb, 0.95f * la);
+                    drawLineQuad(pl.x, pl.y, l.x, l.y, 1.2f, 1.0f, 1.0f, 1.0f, 0.95f * la);
+                    drawLineQuad(pr.x, pr.y, r.x, r.y, 4.0f, 0.0f, 0.0f, 0.0f, 0.60f * la);
+                    drawLineQuad(pr.x, pr.y, r.x, r.y, 2.6f, cr, cg, cb, 0.95f * la);
+                    drawLineQuad(pr.x, pr.y, r.x, r.y, 1.2f, 1.0f, 1.0f, 1.0f, 0.95f * la);
+                }
+                // The seam itself: a bright hairline with a soft halo, gone once the band is open.
+                if (seam > 0.02f) {
+                    drawLineQuad(pc.x, pc.y, c.x, c.y, 9.0f * seam + 1.0f, cr, cg, cb, 0.45f * seam);
+                    drawLineQuad(pc.x, pc.y, c.x, c.y, 2.6f, 1.0f, 1.0f, 1.0f, seam);
+                }
+            }
+        }
+        pc = c; pl = l; pr = r; po = o;
+    }
+}
+
+// Eruption (two beats: the rings, then the lane band and the body zone), staged so it builds instead of springing: (1) the Quasar draws in
 // and a few soft pulse rings leave it; (2) the rings of zones unfold one after
 // the other from the inside out, each with a ripple travelling out to it;
 // (3) inward energy streaks flow into the Quasar and every zone's countdown arc
@@ -2210,8 +2333,8 @@ static void DrawQuasarFall(const Monster* m, float cr, float cg, float cb) {
 // version of the starfall impact and one big ring leaving the Quasar.
 // Lines only.
 static void DrawQuasarEruption(const Monster* m, float cr, float cg, float cb) {
-    if (!m->alive || m->quasarState != Monster::QUASAR_ERUPT_STATE) return;
-    const float age = m->quasarTimer;
+    if (!m->alive || !m->quasarEruptActive) return;
+    const float age = m->quasarEruptTimer;
     const float Z = Monster::QUASAR_ERUPT_ZONE_RADIUS;
     const float blast = Monster::QUASAR_ERUPT_BLAST_TIME;
     const float fx = Monster::QUASAR_FALL_IMPACT_FX;
@@ -2234,40 +2357,47 @@ static void DrawQuasarEruption(const Monster* m, float cr, float cg, float cb) {
         for (int k = 0; k < 28; ++k) {
             const float a = k * 0.2244f + 0.31f * (k % 3);
             const float ph = std::fmod(age * (0.55f + 0.5f * charge) + k * 0.371f, 1.0f);
-            const float r0 = 560.0f * (1.0f - ph * ph) + 60.0f, r1 = r0 + 26.0f + 40.0f * charge;
+            const float r0 = 400.0f * (1.0f - ph * ph) + 60.0f, r1 = r0 + 26.0f + 40.0f * charge;
             const glm::vec2 d(cosf(a), sinf(a));
             drawLineQuad(qx + d.x * r0, qy + d.y * r0, qx + d.x * r1, qy + d.y * r1,
-                         1.1f + 1.4f * charge, cr, cg, cb, (0.20f + 0.55f * charge) * (1.0f - 0.7f * ph));
+                         1.1f + 1.4f * charge, cr, cg, cb, 0.65f * (0.20f + 0.55f * charge) * (1.0f - 0.7f * ph));
         }
     }
 
     for (int i = 0; i < m->quasarEruptCount; ++i) {
         const glm::vec2 c = m->quasarEruptZones[i];
-        const int ring = m->quasarEruptRing[i];
-        const float showAt = m->QuasarEruptShowTime(ring);
-        if (age < blast) {
+        const int beat = m->quasarEruptBeat[i];
+        const float Zi = m->QuasarEruptZoneRadius(i);
+        const float blastI = m->QuasarEruptZoneBlast(i);
+        const float showAt = m->QuasarEruptZoneShow(i);
+        if (age < blastI) {
             if (age < showAt) continue;
             const float u = std::clamp((age - showAt) / Monster::QUASAR_ERUPT_RING_GROW, 0.0f, 1.0f);
             const float grow = ease(u);                                   // unfolding
-            const float prog = std::clamp((age - showAt) / (blast - showAt), 0.0f, 1.0f);
-            const float rad = Z * (0.40f + 0.60f * grow);
+            const float prog = std::clamp((age - showAt) / (blastI - showAt), 0.0f, 1.0f);
+            const float rad = Zi * (0.40f + 0.60f * grow);
             const float pulse = 0.78f + 0.22f * sinf(age * (12.0f + 16.0f * prog) + i);
-            DrawEnemyArc(c.x, c.y, rad, 0.0f, 6.2831853f, 40, 0.0f, 0.0f, 0.0f, 0.70f * grow, 5.5f, false);
-            DrawEnemyArc(c.x, c.y, rad, 0.0f, 6.2831853f, 40, cr, cg, cb, 0.85f * grow * pulse, 2.4f, false);
-            // The inner ring turns the other way, faster as the blast nears.
-            DrawEnemyArc(c.x, c.y, rad * 0.55f, age * (1.0f + 3.0f * prog), 4.7f, 24,
-                         cr, cg, cb, 0.55f * grow, 1.4f, false);
+            // Beat 1 waits dim and thin under the first beat, then lights up the
+            // moment it goes off: the old safe ground is the new danger.
+            const float lit = beat == 0 ? 1.0f : ease((age - Monster::QUASAR_ERUPT_BLAST_TIME) / 0.15f);
+            const float armed = beat == 0 ? 1.0f : 0.28f + 0.72f * lit;
+            const float thin = beat == 0 ? 1.0f : 0.55f + 0.45f * lit;
+            DrawEnemyArc(c.x, c.y, rad, 0.0f, 6.2831853f, 40, 0.0f, 0.0f, 0.0f, 0.70f * grow * armed, 5.5f * thin, false);
+            DrawEnemyArc(c.x, c.y, rad, 0.0f, 6.2831853f, 40, cr, cg, cb, 0.85f * grow * pulse * armed, 2.4f * thin, false);
+            // The inner ring turns the other way, faster as the blastI nears.
+            DrawEnemyArc(c.x, c.y, rad * 0.55f, (beat ? -1.0f : 1.0f) * age * (1.0f + 3.0f * prog), 4.7f, 24,
+                         cr, cg, cb, 0.55f * grow * armed, 1.4f, false);
             DrawEnemyArc(c.x, c.y, rad, -1.5707963f, prog * 6.2831853f, 40,
-                         1.0f, 1.0f, 1.0f, 0.90f * grow, 2.6f, false);
+                         1.0f, 1.0f, 1.0f, 0.90f * grow * armed, 2.6f * thin, false);
             for (int k = 0; k < 4; ++k) {
                 const float a = k * 1.5707963f + 0.7853982f + 0.5f * prog;
                 const glm::vec2 d(cosf(a), sinf(a));
-                const float breathe = Z * (0.62f + 0.10f * sinf(age * 8.0f + k));
-                const glm::vec2 p0 = c + d * (rad - 4.0f), p1 = c + d * (breathe * (rad / Z));
-                drawLineQuad(p0.x, p0.y, p1.x, p1.y, 1.8f, 1.0f, 1.0f, 1.0f, 0.55f * grow);
+                const float breathe = Zi * (0.62f + 0.10f * sinf(age * 8.0f + k));
+                const glm::vec2 p0 = c + d * (rad - 4.0f), p1 = c + d * (breathe * (rad / Zi));
+                drawLineQuad(p0.x, p0.y, p1.x, p1.y, 1.8f, 1.0f, 1.0f, 1.0f, 0.55f * grow * armed);
             }
         } else {
-            const float after = age - blast;
+            const float after = age - blastI;
             if (after >= fx) continue;
             const float t = after / fx;
             const float out = ease(t);
@@ -2276,22 +2406,22 @@ static void DrawQuasarEruption(const Monster* m, float cr, float cg, float cb) {
                 const float f = 1.0f - t / 0.22f;
                 for (int k = 0; k < 2; ++k) {
                     const float a = k * 1.5707963f + 0.4f;
-                    drawLineQuad(c.x - cosf(a) * Z * 1.05f, c.y - sinf(a) * Z * 1.05f,
-                                 c.x + cosf(a) * Z * 1.05f, c.y + sinf(a) * Z * 1.05f,
+                    drawLineQuad(c.x - cosf(a) * Zi * 1.05f, c.y - sinf(a) * Zi * 1.05f,
+                                 c.x + cosf(a) * Zi * 1.05f, c.y + sinf(a) * Zi * 1.05f,
                                  3.0f * f + 1.0f, 1.0f, 1.0f, 1.0f, 0.85f * f);
                 }
             }
-            DrawEnemyArc(c.x, c.y, Z * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 40,
+            DrawEnemyArc(c.x, c.y, Zi * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 40,
                          0.0f, 0.0f, 0.0f, 0.5f * fade, 6.0f * (1.0f - 0.6f * t), false);
-            DrawEnemyArc(c.x, c.y, Z * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 40,
+            DrawEnemyArc(c.x, c.y, Zi * (0.35f + 0.65f * out), 0.0f, 6.2831853f, 40,
                          1.0f, 1.0f, 1.0f, fade, 3.8f * (1.0f - 0.7f * t), false);
-            DrawEnemyArc(c.x, c.y, Z, 0.0f, 6.2831853f, 40, cr, cg, cb, 0.55f * (1.0f - t), 2.0f, false);
+            DrawEnemyArc(c.x, c.y, Zi, 0.0f, 6.2831853f, 40, cr, cg, cb, 0.55f * (1.0f - t), 2.0f, false);
             for (int k = 0; k < 6; ++k) {
                 const float a = k * 1.0471976f + 0.37f * i;
-                const float len = Z * (0.30f + 0.70f * out);
+                const float len = Zi * (0.30f + 0.70f * out);
                 const glm::vec2 d(cosf(a), sinf(a)), side(-d.y, d.x);
-                const float kink = ((k & 1) ? 1.0f : -1.0f) * Z * 0.07f;
-                const glm::vec2 q0 = c + d * (Z * 0.10f), q1 = c + d * (len * 0.55f) + side * kink, q2 = c + d * len;
+                const float kink = ((k & 1) ? 1.0f : -1.0f) * Zi * 0.07f;
+                const glm::vec2 q0 = c + d * (Zi * 0.10f), q1 = c + d * (len * 0.55f) + side * kink, q2 = c + d * len;
                 const float w = 2.4f * (1.0f - 0.6f * t);
                 drawLineQuad(q0.x, q0.y, q1.x, q1.y, w, 1.0f, 1.0f, 1.0f, 0.95f * fade);
                 drawLineQuad(q1.x, q1.y, q2.x, q2.y, w * 0.7f, cr, cg, cb, 0.8f * fade);
@@ -2307,7 +2437,7 @@ static void DrawQuasarEruption(const Monster* m, float cr, float cg, float cb) {
             const float u = (age - (showAt - 0.25f)) / 0.45f;
             if (u <= 0.0f || u >= 1.0f) continue;
             bool exists = false;
-            for (int i = 0; i < m->quasarEruptCount && !exists; ++i) exists = m->quasarEruptRing[i] == ring;
+            for (int i = 0; i < m->quasarEruptCount && !exists; ++i) exists = m->quasarEruptBeat[i] == 0 && m->quasarEruptRing[i] == ring;
             if (!exists) continue;
             DrawEnemyArc(qx, qy, r * ease(u), 0.0f, 6.2831853f, 72,
                          1.0f, 1.0f, 1.0f, 0.50f * (1.0f - u), 2.0f, false);
@@ -2316,7 +2446,17 @@ static void DrawQuasarEruption(const Monster* m, float cr, float cg, float cb) {
     // One big shockwave leaves the Quasar and runs out through the whole field.
     if (age >= blast && age < blast + fx) {
         const float t = (age - blast) / fx;
-        const float reach = 1500.0f * ease(t);
+        const float reach = (Monster::QUASAR_ERUPT_MAX_REACH + 90.0f) * ease(t);
+        DrawEnemyArc(qx, qy, reach, 0.0f, 6.2831853f, 96,
+                     0.0f, 0.0f, 0.0f, 0.45f * (1.0f - t), 9.0f, false);
+        DrawEnemyArc(qx, qy, reach, 0.0f, 6.2831853f, 96,
+                     1.0f, 1.0f, 1.0f, 0.90f * (1.0f - t), 4.0f, false);
+    }
+    // Beat 1: a shorter wave, out to the lane band only.
+    const float blast2 = Monster::QUASAR_ERUPT_SECOND_BLAST;
+    if (age >= blast2 && age < blast2 + fx) {
+        const float t = (age - blast2) / fx;
+        const float reach = Monster::QUASAR_ERUPT_MAX_REACH * 0.85f * ease(t);
         DrawEnemyArc(qx, qy, reach, 0.0f, 6.2831853f, 96,
                      0.0f, 0.0f, 0.0f, 0.45f * (1.0f - t), 9.0f, false);
         DrawEnemyArc(qx, qy, reach, 0.0f, 6.2831853f, 96,
@@ -2726,6 +2866,21 @@ static void DrawNormaBody(const Monster* m, float base, float visualTime) {
     }
 }
 
+// The Genesis' Rotor-launcher shot: landing zone while it flies, the burst when it lands.
+static void DrawGenesisLauncherShot(const Monster* m, float x, float y, float cr, float cg, float cb) {
+    if (m->genesisRotorPhase == 2)
+        DrawThrownBlastZone(m->thrownTargetX, m->thrownTargetY, 1.0f,
+            std::clamp(m->thrownTimer / m->thrownDuration, 0.0f, 1.0f), Monster::GENESIS_ROTOR_BLAST_RADIUS);
+    if (m->genesisRotorPhase == 3 && m->genesisRotorDetonated) {
+        const float u = std::clamp(m->thrownTimer / 0.25f, 0.0f, 1.0f);
+        const float radius = Monster::GENESIS_ROTOR_BLAST_RADIUS;
+        drawCircle(x, y, radius, cr, cg, cb, 0.07f * (1.0f - u));
+        DrawEnemyArc(x, y, radius, 0, 6.2831853f, 48, cr, cg, cb, 0.9f * (1.0f - u), 1.8f, false);
+        DrawEnemyArc(x, y, radius * (0.25f + 0.75f * u), 0, 6.2831853f, 48,
+                     1.0f, 0.70f, 0.30f, 1.0f - u, 2.0f, false);
+    }
+}
+
 void drawMob(const Monster* m, float visualTime) {
     if (!m) return;
     if (!m->alive) {
@@ -2745,6 +2900,28 @@ void drawMob(const Monster* m, float visualTime) {
     if (m->kind == MobKind::MAGNETAR) MarkMobSeenId(CM_MAGNETAR);
     float base = (m->summoned ? 28.0f : 18.0f) * m->sizeScale;
     if (visualTime < 0.0f) visualTime = (float)glfwGetTime();
+    if (m->genesisCarryScope) {
+        // A capsule that opens into a Scope: it is a Scope from the moment it is thrown.
+        static RangedMob proxy(0.0f, 0.0f, 1280, 720);
+        if (m->thrownPhase == 1)
+            DrawThrownBlastZone(m->thrownTargetX, m->thrownTargetY, 1.0f,
+                                std::min(1.0f, m->thrownTimer / std::max(0.01f, m->thrownDuration)));
+        if (m->genesisFromLauncher)
+            DrawGenesisLauncherShot(m, m->worldX, m->worldY, m->color.r, m->color.g, m->color.b);
+        proxy.worldX = m->worldX; proxy.worldY = m->worldY;
+        proxy.deathScale = m->sizeScale;
+        proxy.rotAngle = (m->thrownPhase == 1 || m->genesisRotorPhase > 0) ? m->thrownSpin : visualTime * RangedMob::IDLE_ROT;
+        proxy.color = m->color;
+        proxy.hitFlashTimer = m->hitFlashTimer;
+        proxy.lensState = RangedMob::State::IDLE;
+        drawRangedMob(&proxy, visualTime);
+        return;
+    }
+    if (m->genesisFromLauncher && m->kind != MobKind::ROTOR)
+        DrawGenesisLauncherShot(m, m->worldX, m->worldY, m->color.r, m->color.g, m->color.b);
+    if (m->genesisSummoned && m->thrownPhase == 1 && m->kind != MobKind::SWARM)
+        DrawThrownBlastZone(m->thrownTargetX, m->thrownTargetY, 1.0f,
+                            std::min(1.0f, m->thrownTimer / std::max(0.01f, m->thrownDuration)));
     if (m->kind != MobKind::REGULUS && m->regulusShield.hp > 0.0f) {
         DrawAegisMark(m->worldX, m->worldY, base * AegisMarkExtent(m->kind),
                       m->regulusShield.hp / std::max(1.0f, m->regulusShield.maxHp),
@@ -2773,9 +2950,9 @@ void drawMob(const Monster* m, float visualTime) {
             const float arcAlpha = 0.26f + 0.32f * infl;
             const float gap = 0.20f * (1.0f - 0.6f * infl);
             // A dark under-stroke keeps the boundary readable on bright windows.
-            DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 96,
+            DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 160,
                          0.0f, 0.0f, 0.0f, 0.40f, 3.6f, false);
-            DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 96,
+            DrawEnemyArc(x, y, fieldR, 0.0f, 6.2831853f, 160,
                          cr, cg, cb, 0.50f + 0.18f * infl, 1.8f, false);
             DrawEnemyArc(x, y, fieldR * 0.92f, visualTime * 0.16f, 3.6f, 36,
                          cr, cg, cb, arcAlpha, 1.0f, false);
@@ -2836,7 +3013,10 @@ void drawMob(const Monster* m, float visualTime) {
             ? 0.22f
             : (m->quasarState == 2
                 ? std::min(1.0f, m->quasarTimer / Monster::QUASAR_LOCK_TIME)
-                : (m->quasarState == 3 ? 1.0f : 0.0f));
+                : (m->quasarState == 3 ? 1.0f
+                   : (m->quasarState == 4
+                       ? 1.0f - Monster::QuasarEase(m->quasarTimer / 0.55f)   // cools down, no drop
+                       : 0.0f)));
 
         // Damage-band telegraph. Everything drawn here sits exactly on the
         // band the beam will hurt (QUASAR_BEAM_RADIUS either side of the
@@ -2849,13 +3029,14 @@ void drawMob(const Monster* m, float visualTime) {
         // (dark under-stroke, beam-colored line, white core) so it reads on
         // bright, dark and busy windows alike; light alone vanishes on white.
         const float beamR = Monster::QUASAR_BEAM_RADIUS;
+        float bandR = beamR;                 // current band half-width (thins while the beam fades)
         const float pre = m->QuasarPrecharge();
         auto bandEdges = [&](float x0, float y0, float x1, float y1,
                              float alpha, float width) {
             for (int e = -1; e <= 1; e += 2) {
                 const float sl = std::max(1e-3f, std::hypot(x1 - x0, y1 - y0));
-                const float ox = -(y1 - y0) / sl * beamR * (float)e;
-                const float oy = (x1 - x0) / sl * beamR * (float)e;
+                const float ox = -(y1 - y0) / sl * bandR * (float)e;
+                const float oy = (x1 - x0) / sl * bandR * (float)e;
                 drawLineQuad(x0 + ox, y0 + oy, x1 + ox, y1 + oy, width + 4.0f,
                              0.0f, 0.0f, 0.0f, 0.70f * alpha);
                 drawLineQuad(x0 + ox, y0 + oy, x1 + ox, y1 + oy, width,
@@ -2866,13 +3047,13 @@ void drawMob(const Monster* m, float visualTime) {
         };
         // Darkens the whole band so it stands out from bright backgrounds.
         auto bandShade = [&](float x0, float y0, float x1, float y1, float alpha) {
-            drawLineQuad(x0, y0, x1, y1, beamR * 2.0f, 0.0f, 0.0f, 0.0f, alpha);
+            drawLineQuad(x0, y0, x1, y1, bandR * 2.0f, 0.0f, 0.0f, 0.0f, alpha);
         };
         if ((m->quasarState == 0 && pre > 0.0f) ||
             (m->quasarState >= 1 && m->quasarState <= 3)) {
             const float beamLen = 6000.0f;
             const float growT = m->quasarState == 3
-                ? std::min(1.0f, m->quasarTimer / 0.70f) : 1.0f;
+                ? std::min(1.0f, m->quasarTimer / Monster::QUASAR_BEAM_GROW) : 1.0f;
             const float reachT = m->quasarState == 3
                 ? growT * growT * growT : 1.0f;
             const float reach = beamLen * reachT;
@@ -2882,21 +3063,104 @@ void drawMob(const Monster* m, float visualTime) {
             std::array<int, Monster::QUASAR_BEAM_MAX_SEGMENTS> bnc{};
             const int segCount = m->QuasarBeamSegments(reach, seg, &bnc);
             const float batchSaved = g_BatchAlpha;
+            const float ws = m->QuasarBeamWidth();                         // 1 -> 0 over the last 0.45 s
+            const float lockPulse = 0.80f + 0.20f * sinf(visualTime * 18.0f);
+            // Hand-off from the lock to the beam: the full-length lock band stays
+            // and fades out while the beam grows into it, so nothing pops.
+            if (m->quasarState == 3 && growT < 1.0f) {
+                std::array<glm::vec4, Monster::QUASAR_BEAM_MAX_SEGMENTS> full;
+                std::array<int, Monster::QUASAR_BEAM_MAX_SEGMENTS> fullB{};
+                const int fullCount = m->QuasarBeamSegments(beamLen, full, &fullB);
+                const float keep = 1.0f - Monster::QuasarEase(m->quasarTimer / 0.12f);   // the lock band clears fast so the rift reads
+                for (int k = 0; k < fullCount; ++k) {
+                    g_BatchAlpha = batchSaved * keep * (1.0f - 0.22f * (float)fullB[k]);
+                    bandR = beamR;
+                    bandShade(full[k].x, full[k].y, full[k].z, full[k].w, 0.16f);
+                    drawLineQuad(full[k].x, full[k].y, full[k].z, full[k].w, beamR * 2.0f, cr, cg, cb, 0.14f);
+                    drawLineQuad(full[k].x, full[k].y, full[k].z, full[k].w, 1.4f, 1.0f, 1.0f, 1.0f, 0.50f * lockPulse);
+                    if (m->quasarTimer >= Monster::QUASAR_BEAM_RIFT_TIME)
+                        bandEdges(full[k].x, full[k].y, full[k].z, full[k].w, 0.95f * lockPulse, 2.5f);
+                }
+            }
+            // The rift: from the instant the beam fires, a seam runs out from the Quasar
+            // and the band opens behind it (whole length, bounced legs included).
+            if (m->quasarState == 3 && m->quasarTimer < Monster::QUASAR_BEAM_RIFT_TIME) {
+                std::array<glm::vec4, Monster::QUASAR_BEAM_MAX_SEGMENTS> rip;
+                std::array<int, Monster::QUASAR_BEAM_MAX_SEGMENTS> ripB{};
+                const int ripCount = m->QuasarBeamSegments(beamLen, rip, &ripB);
+                const float tt = m->quasarTimer;
+                float carried = 0.0f;
+                for (int k = 0; k < ripCount; ++k) {
+                    if (ripB[k] == 0) carried = 0.0f;                          // a new end starts at the Quasar
+                    g_BatchAlpha = batchSaved * (1.0f - 0.22f * (float)ripB[k]);
+                    DrawBeamRift(rip[k].x, rip[k].y, rip[k].z, rip[k].w, beamR, tt, carried, cr, cg, cb);
+                    carried += std::hypot(rip[k].z - rip[k].x, rip[k].w - rip[k].y);
+                }
+                g_BatchAlpha = batchSaved;
+                // The origin: a ring draws in on the Quasar, then bursts back out.
+                const float implode = 1.0f - Monster::QuasarEase(tt / 0.14f);
+                if (tt < 0.14f)
+                    DrawEnemyArc(x, y, base * (0.45f + 2.9f * implode), 0.0f, 6.2831853f, 40,
+                                 1.0f, 1.0f, 1.0f, 0.45f + 0.55f * (1.0f - implode), 2.4f, false);
+                if (tt >= 0.10f && tt < 0.60f) {
+                    const float u = (tt - 0.10f) / 0.50f;
+                    const float out = 1.0f - (1.0f - u) * (1.0f - u) * (1.0f - u);
+                    DrawEnemyArc(x, y, base * (0.45f + 3.2f * out), 0.0f, 6.2831853f, 48,
+                                 1.0f, 1.0f, 1.0f, 0.95f * (1.0f - u), 3.2f, false);
+                    DrawEnemyArc(x, y, base * (0.45f + 2.2f * out), 0.0f, 6.2831853f, 40,
+                                 cr, cg, cb, 0.60f * (1.0f - u), 1.5f, false);
+                }
+                if (tt < 0.22f)
+                    DrawEnemyArc(x, y, base * 0.34f, 0.0f, 6.2831853f, 24,
+                                 1.0f, 1.0f, 1.0f, 1.0f - tt / 0.22f, 2.0f, false);
+            }
+            // Path distance from the Quasar to the start of each leg (the flow carries on over bounces).
+            std::array<float, Monster::QUASAR_BEAM_MAX_SEGMENTS> legStart{};
+            {
+                float carried = 0.0f;
+                for (int k = 0; k < segCount; ++k) {
+                    if (bnc[k] == 0) carried = 0.0f;
+                    legStart[k] = carried;
+                    carried += std::hypot(seg[k].z - seg[k].x, seg[k].w - seg[k].y);
+                }
+            }
             for (int sIdx = 0; sIdx < segCount; ++sIdx) {
             const float x0 = seg[sIdx].x, y0 = seg[sIdx].y;
             const float x1 = seg[sIdx].z, y1 = seg[sIdx].w;
             g_BatchAlpha = batchSaved * (1.0f - 0.22f * (float)bnc[sIdx]);
+            bandR = beamR;
             if (m->quasarState == 3) {
                 // The beam fills the damage band exactly: body (2r), bright
-                // inner column, white core, and the hard band edges.
-                const float pulse = 0.82f + 0.18f * sinf(m->quasarTimer * 70.0f);
-                const float swell = 0.35f + 0.65f * growT;      // inner layers only
-                bandShade(x0, y0, x1, y1, 0.30f);
-                drawLineQuad(x0, y0, x1, y1, beamR * 2.0f, cr, cg, cb, 0.40f * pulse);
-                drawLineQuad(x0, y0, x1, y1, beamR * 0.9f * swell, cr, cg, cb, 0.62f * pulse);
-                drawLineQuad(x0, y0, x1, y1, beamR * 0.30f * swell,
+                // inner column, white core, and the hard band edges. During the
+                // fade-out the whole thing thins together (ws) and dims a little.
+                bandR = beamR * ws;
+                g_BatchAlpha *= 0.35f + 0.65f * std::sqrt(ws);
+                // Breathing: ~3 times a second, +-12% (no fast flicker), and the beam bursts
+                // 30% brighter at the instant it fires, settling over a quarter second.
+                const float pulse = 0.88f + 0.12f * sinf(m->quasarTimer * 18.85f);
+                const float flash = 1.0f + 0.30f * (1.0f - Monster::QuasarEase(m->quasarTimer / 0.25f));
+                const float tt = m->quasarTimer;                              // seconds since the beam fired
+                const float swell = (0.35f + 0.65f * Monster::QuasarEase(tt / 0.16f)) * ws;   // snaps open
+                // The rift: the band is dark as a hole in the picture at first, then clears.
+                const float rift = 1.0f - Monster::QuasarEase(tt / 0.40f);
+                // Light spreading out of the beam (soft strip, fades with the distance).
+                {
+                    const bool finalLeg = sIdx + 1 >= segCount || bnc[sIdx + 1] != bnc[sIdx] + 1;
+                    DrawBeamGlow(x0, y0, x1, y1, bandR, 72.0f * (0.55f + 0.45f * ws),
+                                 std::min(0.60f, 0.36f * pulse * flash) * (0.35f + 0.65f * ws),
+                                 (finalLeg && growT < 1.0f) ? 260.0f : 0.0f, cr, cg, cb);
+                }
+                bandShade(x0, y0, x1, y1, 0.30f + 0.25f * rift);
+                drawLineQuad(x0, y0, x1, y1, bandR * 2.0f, cr, cg, cb, std::min(1.0f, 0.40f * pulse * flash));
+                drawLineQuad(x0, y0, x1, y1, beamR * 0.9f * swell, cr, cg, cb, std::min(1.0f, 0.62f * pulse * flash));
+                drawLineQuad(x0, y0, x1, y1, beamR * 0.40f * swell,
                              1.0f, 1.0f, 1.0f, 0.95f);
-                bandEdges(x0, y0, x1, y1, 0.95f, 3.0f);
+                // Energy flowing out along the beam (after the rift has opened it).
+                if (tt > 0.10f && ws > 0.05f)
+                    DrawBeamFlow(x0, y0, x1, y1, bandR, legStart[sIdx], tt - 0.10f, ws,
+                                 bnc[sIdx] == 0 ? 10 : 6, sIdx, cr, cg, cb);
+                if (tt >= Monster::QUASAR_BEAM_RIFT_TIME)      // before that the rift's own lips are the edges
+                    bandEdges(x0, y0, x1, y1, 0.95f, 3.0f * (0.5f + 0.5f * ws));
 
                 // A physical release ring marks the acceleration phase without
                 // using a full-screen or core flash.
@@ -2910,21 +3174,50 @@ void drawMob(const Monster* m, float visualTime) {
                                  cr, cg, cb, (1.0f - releaseT) * 0.13f,
                                  1.1f, false);
                 }
+                // Leading edge: a bright head runs ahead of the growing beam so the
+                // front reads as one moving thing (final leg of each end only).
+                const bool lastLeg = sIdx + 1 >= segCount || bnc[sIdx + 1] != bnc[sIdx] + 1;
+                if (lastLeg && growT < 1.0f) {
+                    const float head = 1.0f - Monster::QuasarEase(growT);
+                    DrawEnemyArc(x1, y1, beamR * (0.55f + 0.35f * head), 0.0f, 6.2831853f, 24,
+                                 1.0f, 1.0f, 1.0f, 0.55f * head, 2.0f, false);
+                }
             } else if (m->quasarState == 0) {
                 // Wind-up: the band tracks the player; edges fade in.
                 const float fade = std::min(1.0f, pre * 1.6f);
-                bandShade(x0, y0, x1, y1, 0.10f * fade);
-                drawLineQuad(x0, y0, x1, y1, 1.6f, cr, cg, cb, 0.55f * fade);
-                bandEdges(x0, y0, x1, y1, 0.45f + 0.35f * fade, 2.0f);
+                // The warning is a quiet outline on purpose: the beam has to read as a
+                // different, much stronger thing when it fires.
+                bandShade(x0, y0, x1, y1, 0.08f * fade);
+                drawLineQuad(x0, y0, x1, y1, 1.2f, cr, cg, cb, 0.32f * fade);
+                bandEdges(x0, y0, x1, y1, 0.35f + 0.35f * fade, 1.8f);
             } else {
                 // Lock: frozen band, hard edges, and a fill growing from the
-                // axis out to the edges as the countdown to fire.
-                const float lockPulse = 0.80f + 0.20f * sinf(visualTime * 18.0f);
-                bandShade(x0, y0, x1, y1, 0.22f);
-                drawLineQuad(x0, y0, x1, y1, beamR * 2.0f * charge, cr, cg, cb,
-                             0.18f + 0.22f * charge);
-                drawLineQuad(x0, y0, x1, y1, 2.0f, 1.0f, 1.0f, 1.0f, 0.70f * lockPulse);
-                bandEdges(x0, y0, x1, y1, (0.85f + 0.15f * charge) * lockPulse, 3.0f);
+                // axis out to the edges as the countdown to fire. The look eases
+                // in from the wind-up band over the first 0.18 s instead of jumping.
+                const float blend = m->quasarState == 2
+                    ? Monster::QuasarEase(m->quasarTimer / 0.18f) : 0.0f;
+                const float fill = Monster::QuasarEase(charge);
+                // Quiet on purpose (see the wind-up): a barely-there fill that grows as the
+                // countdown, thin edges, a hairline axis. The beam is far brighter.
+                bandShade(x0, y0, x1, y1, 0.08f + 0.08f * blend);
+                drawLineQuad(x0, y0, x1, y1, beamR * 2.0f * fill, cr, cg, cb,
+                             0.05f + 0.09f * fill);
+                drawLineQuad(x0, y0, x1, y1, 1.4f, 1.0f, 1.0f, 1.0f,
+                             (0.32f + (0.50f * lockPulse - 0.32f) * blend));
+                const float lockEdgeAlpha = 0.55f + ((0.78f + 0.17f * fill) * lockPulse - 0.55f) * blend;
+                bandEdges(x0, y0, x1, y1, lockEdgeAlpha, 1.8f + 0.7f * blend);
+                // Just before the beam fires a short seam starts to show at the Quasar
+                // and a ring draws in on it: the first sign of the tear.
+                const float lead = Monster::QUASAR_BEAM_RIFT_LEAD;
+                const float seamUp = m->quasarState == 2
+                    ? Monster::QuasarEase((m->quasarTimer - (Monster::QUASAR_LOCK_TIME - lead)) / lead) : 0.0f;
+                if (seamUp > 0.0f && bnc[sIdx] == 0) {
+                    const float sl = std::max(1e-3f, std::hypot(x1 - x0, y1 - y0));
+                    const float reachS = std::min(sl, 70.0f + 360.0f * seamUp);
+                    const float ex = x0 + (x1 - x0) / sl * reachS, ey = y0 + (y1 - y0) / sl * reachS;
+                    drawLineQuad(x0, y0, ex, ey, 6.0f * seamUp + 1.0f, cr, cg, cb, 0.35f * seamUp);
+                    drawLineQuad(x0, y0, ex, ey, 1.8f, 1.0f, 1.0f, 1.0f, 0.35f + 0.60f * seamUp);
+                }
             }
             // Bounce point: a thin ring where this leg meets the next one.
             if (sIdx + 1 < segCount && bnc[sIdx + 1] == bnc[sIdx] + 1) {
@@ -3111,7 +3404,8 @@ void drawMob(const Monster* m, float visualTime) {
             DrawEnemyNode(nodes[k], cr, cg, cb, 0.88f);
         const float swarmCoreA = m->thrownPhase == 2
             ? 0.62f + 0.30f * (0.5f + 0.5f * sinf(m->thrownTimer * 40.0f)) : 0.94f;
-        DrawEnemyCore(x, y, base * 0.28f, cr, cg, cb, swarmCoreA, true);
+        // A free Swarm's core is the warning red; one a Genesis controls keeps the controlled colour.
+        DrawEnemyCore(x, y, base * 0.28f, cr, cg, cb, swarmCoreA, m->color != Monster::GENESIS_CONTROLLED_COLOR);
     } else {
         // Rotor (ROTOR): one square frame with four shared star anchors.
         float cr = m->color.r, cg = m->color.g, cb = m->color.b;
@@ -3122,7 +3416,7 @@ void drawMob(const Monster* m, float visualTime) {
         const float half = base * 0.78f;
         float angle = visualTime * 0.78f + phOff;
         if(m->genesisRotorPhase>0) angle=m->thrownSpin;
-        else if(m->genesisThrown && m->thrownDuration>0) {
+        else if(m->genesisThrown && (m->genesisFromLauncher || !m->genesisSummoned) && m->thrownDuration>0) {
             const float chaseAge=std::max(0.0f,m->thrownTimer-0.25f);
             angle=m->thrownSpin+0.78f*chaseAge*Monster::GenesisSmooth(chaseAge/0.3f);
         }

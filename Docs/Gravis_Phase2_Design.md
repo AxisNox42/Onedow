@@ -137,7 +137,7 @@
 
 - Release 실행 파일: `build/windows/x64/Release/WiNILL.exe`
 - 실제 렌더 캡처 71장: 소진 직후부터 7초까지 0.1초 간격. 고정 시뮬레이션 간격 1/120초. GIF는 실제 캡처를 잘라 연결하며 중간 프레임을 합성하지 않는다.
-- 재현: `ONEDOW_SMOKE`에서 `GRAVISREBIRTH=<소진 후 경과 초>~0.02`, `ONEDOW_SMOKE_SIZE=1280x900`, `ONEDOW_SMOKE_TAG=gravis-phase2-final`을 사용한다.
+- 재현: `ASTERIA_SMOKE`에서 `GRAVISREBIRTH=<소진 후 경과 초>~0.02`, `ASTERIA_SMOKE_SIZE=1280x900`, `ASTERIA_SMOKE_TAG=gravis-phase2-final`을 사용한다.
 - 합성 스크립트: `python scripts/preview_gravis_phase2.py build/windows/x64/Release/Screenshots Docs/QA/Gravis_Phase2/final --tag gravis-phase2-final`.
 - 통과: Gravis Phase2 / Gravis Field / Genesis Rotor / Quasar Fall / REG-01 Kill Rewards / Mob Death FX. 기존 `APIENTRY` 재정의 경고는 남아 있다.
 - 검증 범위는 기능 회귀와 고정 장면 렌더다. 실제 전투에서의 난이도·빈도·다수 개체 압박은 플레이 조정이 필요하다.

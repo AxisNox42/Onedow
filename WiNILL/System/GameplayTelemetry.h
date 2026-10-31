@@ -282,8 +282,8 @@ public:
 private:
     static std::string OutputFilePath() {
         const std::string exeDir = PlatformExeDirectory();
-        if (exeDir.empty()) return "onedow_gameplay_telemetry.txt";
-        return exeDir + "/onedow_gameplay_telemetry.txt";
+        if (exeDir.empty()) return "asteria_gameplay_telemetry.txt";
+        return exeDir + "/asteria_gameplay_telemetry.txt";
     }
 
     static const char* BuildName() {

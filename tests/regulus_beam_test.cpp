@@ -28,19 +28,19 @@ static int BuffCount(const Monster* m) {
            (m->regulusStealthAge >= 0.0f ? 1 : 0);
 }
 
-// The laser is instant: the ally inside 500px gets one buff the moment the
+// The laser is instant: the ally inside REGULUS_SHOT_RANGE gets one buff the moment the
 // shot fires, the beam is only a short afterglow (coloured by the buff), and
 // nothing stays linked to the Regulus afterwards.
 static void CheckInstantGrant() {
     MonsterManager mm;
     auto* reg = Add(mm, MobKind::REGULUS, 0.0f, 0.0f);
     reg->regulusDriftTimer = 1.0e6f;
-    auto* inside = Add(mm, MobKind::GRAVIS, 450.0f, 0.0f);
-    auto* outside = Add(mm, MobKind::GRAVIS, 560.0f, 0.0f);
+    auto* inside = Add(mm, MobKind::GRAVIS, Monster::REGULUS_SHOT_RANGE - 50.0f, 0.0f);
+    auto* outside = Add(mm, MobKind::GRAVIS, Monster::REGULUS_SHOT_RANGE + 60.0f, 0.0f);
     Step(mm, 0.51f);
     assert(BuffCount(inside) == 1);                             // no travel time
     assert(mm.regulusBeams.size() == 1);
-    assert(std::fabs(mm.regulusBeams[0].x1 - 450.0f) < 0.01f);
+    assert(std::fabs(mm.regulusBeams[0].x1 - inside->worldX) < 0.01f);
     const int buff = mm.regulusBeams[0].buff;
     assert(buff >= 0 && buff <= 2);
     if (buff == Monster::REGULUS_BUFF_SHIELD) {
@@ -50,7 +50,7 @@ static void CheckInstantGrant() {
     Step(mm, Monster::REGULUS_BEAM_TIME + 0.05f);
     assert(mm.regulusBeams.empty());                            // afterglow gone
     Step(mm, 3.0f);
-    assert(BuffCount(outside) == 0);                            // beyond 500px
+    assert(BuffCount(outside) == 0);                            // beyond the shot range
     reg->alive = false;                                         // buffs are independent
     Step(mm, 0.5f);
     assert(BuffCount(inside) >= 1);

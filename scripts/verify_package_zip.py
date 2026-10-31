@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Checks an Onedow release ZIP against scripts/package_manifest.txt.
+"""Checks an Asteria release ZIP against scripts/package_manifest.txt.
 
-  python3 scripts/verify_package_zip.py bin/Onedow.zip [--require macOS/Onedow]
+  python3 scripts/verify_package_zip.py bin/Asteria.zip [--require macOS/Asteria]
                                         [--no-exec-check] [--list]
 
 Fails when the ZIP holds anything outside the manifest (saves, crash logs,
@@ -14,7 +14,7 @@ import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOP = "Onedow/"
+TOP = "Asteria/"
 
 
 def read_manifest(path):

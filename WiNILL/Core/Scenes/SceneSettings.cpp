@@ -233,7 +233,7 @@ void Scene_SettingsInline(const SceneCtx& c) {
     }
 
     if (s_MainMenuSettingsPanel)
-        DrawMainOnedowLogo(sw, sh, 0.42f * oldA,
+        DrawMainAsteriaLogo(sw, sh, 0.42f * oldA,
                            LogoClamp01(oldA + 0.20f * treeA), sw * 0.30f - 160.0f * (1.0f - oldA), 0.82f);
 
     const float settingsTitleY = 42.0f * uiS;

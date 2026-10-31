@@ -12,15 +12,15 @@ $steps = @('RUN~0.3', 'MOBCLEAR~0.05', 'SPAWN=3~0.05', 'MOBPLACE=150~0.02', 'MOB
 # Regulus with a Gravis (as a buff target) 350 px away, sampled for ~15 s.
 $steps += @('MOBCLEAR~0.05', 'SPAWN=3~0.05', 'SPAWN=3~0.05', 'SPAWN=3~0.05', 'MOBPLACE=150~0.02', 'SPAWN=6~0.05', 'MOBPLACE=-200~0.02', 'MOBDUMP=R0~0.02')
 1..50 | ForEach-Object { $steps += "MOBDUMP=R$_~0.5" }
-$env:ONEDOW_SMOKE = $steps -join ';'
-$env:ONEDOW_SMOKE_TAG = 'mobsmoke'
-$env:ONEDOW_SMOKE_SIZE = '1280x720'
+$env:ASTERIA_SMOKE = $steps -join ';'
+$env:ASTERIA_SMOKE_TAG = 'mobsmoke'
+$env:ASTERIA_SMOKE_SIZE = '1280x720'
 try {
     $p = Start-Process -FilePath $exe -WorkingDirectory $exeDir -PassThru -WindowStyle Hidden
     if (-not $p.WaitForExit(180000)) { $p.Kill(); throw 'mob smoke timed out' }
     if ($p.ExitCode -ne 0) { throw "mob smoke exited with $($p.ExitCode)" }
 } finally {
-    Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE -ErrorAction SilentlyContinue
+    Remove-Item Env:ASTERIA_SMOKE, Env:ASTERIA_SMOKE_TAG, Env:ASTERIA_SMOKE_SIZE -ErrorAction SilentlyContinue
 }
 $lines = Get-Content $stateFile
 function Field($line, $name) { if ($line -match "$name=(-?[\d.]+)") { [double]$Matches[1] } else { $null } }

@@ -342,15 +342,16 @@ static void DrawPlayerDiamondOutline(float cx, float cy, float rad, float thick,
     DrawPlayerLine(cx - rad, cy, cx, cy - rad, thick, r, g, b, a);
 }
 
-// Lobby-size version of the in-game shell: same frames and proportions, but
-// lines only (no fills, no dashes), widths scale with size, no combat input.
-void DrawPlayerShellPreview(int kind, float cx, float cy, float sz, float time,
-                            float cr, float cg, float cb, float alpha) {
+// One pass of the lobby shell. With shadow set every line and node uses the
+// single colour (cr, cg, cb), so the same geometry can be laid down as a shadow.
+static void DrawPlayerShellPreviewPass(int kind, float cx, float cy, float sz, float time,
+                                       float cr, float cg, float cb, float alpha,
+                                       bool shadow) {
     if (!(alpha > 0.0f) || !(sz > 1.0f)) return;
     const float ls = std::max(1.0f, std::min(2.8f, sz / 28.0f));
-    const float wr = cr + (1.0f - cr) * 0.7f;
-    const float wg = cg + (1.0f - cg) * 0.7f;
-    const float wb = cb + (1.0f - cb) * 0.7f;
+    const float wr = shadow ? cr : cr + (1.0f - cr) * 0.7f;
+    const float wg = shadow ? cg : cg + (1.0f - cg) * 0.7f;
+    const float wb = shadow ? cb : cb + (1.0f - cb) * 0.7f;
     const float t = time * 0.6f;
     const float a = alpha;
 
@@ -404,4 +405,26 @@ void DrawPlayerShellPreview(int kind, float cx, float cy, float sz, float time,
         DrawPlayerTriangleFrame(cx, cy, sz * 0.38f, -triAng, cr, cg, cb, 0.95f * a, 1.5f * ls, false);
         drawDiamond(cx, cy, sz * 0.12f, wr, wg, wb, 0.95f * a);
     }
+}
+
+// Lobby-size version of the in-game shell: same frames and proportions, but
+// lines only (no fills, no dashes), widths scale with size, no combat input.
+// A soft dark shadow of the same lines sits behind it (dropped slightly down)
+// so the thin strokes stay readable over a bright desktop.
+void DrawPlayerShellPreview(int kind, float cx, float cy, float sz, float time,
+                            float cr, float cg, float cb, float alpha) {
+    if (!(alpha > 0.0f) || !(sz > 1.0f)) return;
+    const float ls = std::max(1.0f, std::min(2.8f, sz / 28.0f));
+    const float drop = 2.0f * ls;
+    constexpr int kCopies = 8;
+    for (int ring = 2; ring >= 1; --ring) {
+        const float rr = 1.4f * ls * (float)ring;
+        for (int i = 0; i < kCopies; ++i) {
+            const float ang = 6.2831853f * (float)i / (float)kCopies;
+            DrawPlayerShellPreviewPass(kind, cx + cosf(ang) * rr, cy + sinf(ang) * rr + drop,
+                                       sz, time, 0.02f, 0.05f, 0.13f,
+                                       (ring == 1 ? 0.16f : 0.08f) * alpha, true);
+        }
+    }
+    DrawPlayerShellPreviewPass(kind, cx, cy, sz, time, cr, cg, cb, alpha, false);
 }

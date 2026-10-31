@@ -83,13 +83,27 @@ static void CheckTurnTowardPlayerWhileFiring() {
         while (q.quasarState != 3) q.Update(600.0f, 0.0f, DT, hp);
         float prev = AimAngle(q);
         float py = 0.0f;
+        float t3 = 0.0f;                  // time since the beam fired (counted here: the Quasar's own
+                                          // timer is reset on the frame the beam ends)
         while (q.quasarState == 3) {
             py += 400.0f * DT * side;
             q.Update(600.0f * end, py * end, DT, hp);
+            t3 += DT;
             const float a = AimAngle(q);
-            const float step = a - prev;
-            assert(std::fabs(std::fabs(step) - Monster::QUASAR_BEAM_TURN * DT) < 1e-4f);
-            assert(step * side > 0.0f);                          // toward the player
+            const float step = std::remainder(a - prev, 6.2831853f);   // wrapped: the angle may sit at +-pi
+            // The aim is frozen while the beam extends, then the turn eases up to
+            // QUASAR_BEAM_TURN and holds that rate.
+            const float rate = Monster::QUASAR_BEAM_TURN * DT;
+            if (t3 < Monster::QUASAR_BEAM_GROW - 2.0f * DT) {
+                assert(std::fabs(step) < 1e-5f);                 // still extending: no movement at all (float noise only)
+            } else if (t3 > Monster::QUASAR_BEAM_GROW + Monster::QUASAR_BEAM_TURN_EASE + 2.0f * DT &&
+                       t3 < Monster::QUASAR_BEAM_TIME - 2.0f * DT) {
+                assert(std::fabs(std::fabs(step) - rate) < 1e-4f);
+                assert(step * side > 0.0f);                      // toward the player
+            } else {
+                assert(std::fabs(step) <= rate + 1e-6f);         // easing in
+                assert(step * side >= 0.0f);
+            }
             prev = a;
         }
     }
@@ -116,7 +130,7 @@ static void CheckTurnTowardPlayerWhileFiring() {
         while (q.quasarState == 3) {
             py -= 400.0f * DT;
             q.Update(q.worldX + 600.0f, q.worldY + py, DT, hp);
-            assert(AimAngle(q) - prev < 0.0f);
+            assert(AimAngle(q) - prev <= 0.0f);                  // never turns the wrong way
             prev = AimAngle(q);
         }
     }

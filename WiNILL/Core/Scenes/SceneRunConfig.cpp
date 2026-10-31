@@ -548,24 +548,15 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     drawSectionLabel(T(kTxtDifficulty), rightX, sideW);
     for (int i = 0; i < kPlayDifficultyCount; ++i) {
         // 큰 숫자 = 이 난이도에서 내가 도달한 최대 웨이브, 작은 꼬리 = 이 난이도의 마지막 웨이브.
-        // 클리어했다면 15/15 처럼 채우고 가장 빠른 클리어 시간을 덧붙인다.
         const int finalWave = FinalWaveCount(static_cast<Difficulty>(i));
-        const bool cleared = g_BestClearSec[i] > 0;
-        const int reached = cleared ? finalWave
-            : static_cast<int>(std::min<long long>(g_BestWave[i], finalWave));
+        const int reached = static_cast<int>(std::min<long long>(g_BestWave[i], finalWave));
         wchar_t bigBuf[16] = {};
         wchar_t tailBuf[48] = {};
         const wchar_t* bigText = nullptr;
         if (reached > 0) {
             swprintf_s(bigBuf, L"%d", reached);
             bigText = bigBuf;
-            // 클리어했으면 가장 빠른 클리어 시간, 아니면 최대 웨이브 기록 중 가장 짧은 시간.
-            const long long sec = cleared ? g_BestClearSec[i] : g_BestWaveSec[i];
-            if (sec > 0) {
-                swprintf_s(tailBuf, L"/%d   %02lld:%02lld", finalWave, sec / 60, sec % 60);
-            } else {
-                swprintf_s(tailBuf, L"/%d", finalWave);
-            }
+            swprintf_s(tailBuf, L"/%d", finalWave);
         } else {
             swprintf_s(tailBuf, L"%ls", T(kTxtNoRecord));
         }
@@ -590,6 +581,15 @@ void Scene_RunConfigInline(const SceneCtx& c) {
     DrawShadowedText(g_TextL, weaponName(weapon), chartCX - heroNameW * 0.5f,
                      heroNameY, heroNameScale,
                      1.0f, 1.0f, 1.0f, 0.96f * contentA, kPlayTextShadow);
+
+    // 별자리 뒤의 CircleTexture 한 쌍: 어두운 큰 원이 밝은 바탕에서 대비를 주고,
+    // 직업 색을 살짝 띤 작은 원이 중심을 받친다.
+    DrawConstellationDisc(chartCX, heroCY, heroR * 1.45f,
+                          0.0f, 0.0f, 0.0f, 0.88f * heroAlpha);
+    DrawConstellationDisc(chartCX, heroCY, heroR * 0.86f,
+                          weaponR * 0.16f, weaponG * 0.16f, weaponB * 0.16f,
+                          0.40f * heroAlpha, false);
+    BindMainShader();
 
     // 소총 외곽이 가장 크다(약 1.9 sz). 그 반지름이 heroR 에 들어가게 맞춘다.
     DrawPlayerShellPreview(weapon, chartCX, heroCY, heroR / 2.0f, heroClock,

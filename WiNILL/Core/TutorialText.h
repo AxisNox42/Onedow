@@ -50,7 +50,7 @@ inline const wchar_t* kTutorialPageTitle[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
 inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
     /* KR */
     {
-        L"Onedow는 별빛 위에 펼쳐지는 투명한 천문 관측 게임입니다 / "
+        L"Asteria는 별빛 위에 펼쳐지는 투명한 천문 관측 게임입니다 / "
         L"별빛과 성운이 비치고, 게임은 항해 가능한 별자리 영역 안에서 펼쳐집니다 / "
         L"당신은 항성 함선 — 관측 영역을 이동하며 침입한 신호(적)를 막아냅니다 / "
         L"영역 밖은 시야 밖입니다. 보이는 별자리 영역 안에서만 전투·피격·이펙트가 일어납니다 / "
@@ -96,7 +96,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
     },
     /* EN */
     {
-        L"Onedow is a transparent observatory spread across the starfield / "
+        L"Asteria is a transparent observatory spread across the starfield / "
         L"The cosmos shows through; combat happens inside navigable constellation zones / "
         L"You are the astral vessel — move through the field and stop invading signals (enemies) / "
         L"Outside the visible constellation zones is out of play: no combat, hits, or effects there / "
@@ -142,7 +142,7 @@ inline const wchar_t* kTutorialPageBody[LANG_COUNT][TUTORIAL_PAGE_COUNT] = {
     },
     /* JP */
     {
-        L"Onedowは星空に広がる透明な天文観測ゲームです / "
+        L"Asteriaは星空に広がる透明な天文観測ゲームです / "
         L"星雲が透けて見え、戦闘は航行可能な星座領域で行われます / "
         L"あなたは星の船 — フィールドを移動し侵入信号(敵)を阻止します / "
         L"星座領域の外は戦闘範囲外 — 攻撃·被弾·演出は領域内のみ / "

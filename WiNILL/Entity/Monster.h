@@ -14,6 +14,7 @@
 #include "GravisField.h"
 #include "EnemyShield.h"
 #include "Experience.h"
+#include "Settings.h"   // g_Difficulty: a Genesis picks its summon style from it when it is made
 
 class RangedMob;
 class Monster;
@@ -133,10 +134,15 @@ class Monster {
 public:
     static constexpr float GIMBAL_CHARGE_ROTATIONS = 2.0f;
     static constexpr float GIMBAL_PREFERRED_DISTANCE = 700.0f;
-    static constexpr float REGULUS_BASE_HP = 360.0f;
+    // Elite HP (before the run's HP scaling). Exactly one elite appears per
+    // elite wave, so each is a long fight of its own - far tankier than a
+    // regular mob but still under NORMA (norma::kBaseHp = 30000).
+    static constexpr float QUASAR_BASE_HP = 9000.0f;
+    static constexpr float GENESIS_BASE_HP = 10000.0f;
+    static constexpr float REGULUS_BASE_HP = 8000.0f;
     // Regulus fires an instant shield laser at a random eligible ally in
     // range; the shield is granted at once and nothing stays connected.
-    static constexpr float REGULUS_SHOT_RANGE = 500.0f;
+    static constexpr float REGULUS_SHOT_RANGE = 750.0f;
     static constexpr float REGULUS_SHOT_INTERVAL = 3.0f;   // one volley
     static constexpr int REGULUS_VOLLEY_COUNT = 3;         // distinct allies per volley
     static constexpr float REGULUS_BEAM_TIME = 0.25f;   // laser afterglow
@@ -153,11 +159,61 @@ public:
     static constexpr float REGULUS_SPEED_BUFF_MULT = 1.55f;
     static constexpr float REGULUS_STEALTH_ALPHA = 0.36f;
     static constexpr float REGULUS_BUFF_FADE = 0.4f;     // buff fades in
+    // Genesis and the enemies it controls share one colour family (magenta), clearly
+    // apart from the red/orange of free Swarms and Rotors. A controlled enemy uses it
+    // until its Genesis dies; then it falls back to its own colour and plain AI.
+    static inline const glm::vec3 GENESIS_COLOR = glm::vec3(0.74f, 0.10f, 0.52f);        // body
+    static inline const glm::vec3 GENESIS_PRODUCTION = glm::vec3(0.98f, 0.28f, 0.74f);   // shells, glow
+    static inline const glm::vec3 GENESIS_HEAT = glm::vec3(1.0f, 0.72f, 0.92f);          // heated edge
+    static inline const glm::vec3 GENESIS_CONTROLLED_COLOR = glm::vec3(1.0f, 0.34f, 0.78f);
+    // Controlled-enemy AI: it leads the player (aims at where they will be) and
+    // sidesteps incoming player shots, in short bursts so it can still be hit.
+    static constexpr float GENESIS_CTRL_LEAD_MAX = 0.7f;          // furthest it looks ahead, seconds
+    // A pure lead is dumb against a player who jukes back and forth, so the lead is only
+    // trusted while the player keeps one heading: a sharp reversal drops the confidence to
+    // zero and it comes back slowly. While it is low the enemy closes on the CENTRE of the
+    // player's recent movement instead of their current spot, and the lead can never be
+    // more than GENESIS_CTRL_LEAD_FRAC of the distance ahead of the player.
+    static constexpr float GENESIS_CTRL_REVERSAL_COS = 0.2f;      // heading change sharper than this = a reversal
+    static constexpr float GENESIS_CTRL_STEADY_COS = 0.85f;       // heading this close to before = steady
+    static constexpr float GENESIS_CTRL_REVERSAL_GAP = 0.15f;     // reversals closer than this count once
+    static constexpr float GENESIS_CTRL_HEAT_PER_REVERSAL = 1.0f; // "juke heat" each reversal adds
+    static constexpr float GENESIS_CTRL_HEAT_COOL = 0.55f;        // heat lost per second of steady movement
+    static constexpr float GENESIS_CTRL_HEAT_FOR_ZERO = 1.2f;     // this much heat = no trust in the lead at all
+    static constexpr float GENESIS_CTRL_MOVING_SPEED = 80.0f;     // slower than this the player counts as standing
+    static constexpr float GENESIS_CTRL_CENTRE_TAU = 0.5f;        // seconds: memory of the player's movement centre
+    static constexpr float GENESIS_CTRL_CENTRE_BLEND = 0.5f;      // how far toward that centre it leans at zero confidence
+    static constexpr float GENESIS_CTRL_LEAD_FRAC = 0.65f;
+    static constexpr float GENESIS_CTRL_LEAD_MIN_DIST = 70.0f;    // closer than this it just closes in
+    static constexpr float GENESIS_CTRL_VEL_MAX = 900.0f;         // cap on the player speed it believes
+    static constexpr float GENESIS_CTRL_DODGE_LOOKAHEAD = 0.45f;  // reacts to a shot this soon from reaching it
+    static constexpr float GENESIS_CTRL_DODGE_RADIUS = 38.0f;     // a shot passing closer than this is a threat
+    static constexpr float GENESIS_CTRL_DODGE_RANGE = 340.0f;     // only shots this close are noticed
+    static constexpr float GENESIS_CTRL_DODGE_BURST = 0.22f;      // one sidestep lasts this long
+    static constexpr float GENESIS_CTRL_DODGE_COOLDOWN = 1.0f;    // before it can sidestep again
+    static constexpr float GENESIS_CTRL_DODGE_SPEED_MULT = 2.4f;
+    static constexpr float GENESIS_CTRL_DODGE_MIN_SPEED = 240.0f;
     // Quasar beam: when the cooldown ends the axis snaps straight onto the
     // player and locks; the beam fires QUASAR_LOCK_TIME later on that fixed
     // angle (no sweep), so the lock window is the dodge window.
     static constexpr float QUASAR_LOCK_TIME = 0.55f;    // elite-wave pass: was 0.7
     static constexpr float QUASAR_BEAM_TIME = 3.0f;     // was 2.5
+    // The beam does not cut out: over its last QUASAR_BEAM_FADE_OUT seconds it
+    // thins to nothing (what you see is what hurts, so the hit width follows).
+    static constexpr float QUASAR_BEAM_FADE_OUT = 0.45f;
+    static constexpr float QUASAR_BEAM_GROW = 0.70f;    // time for the beam to reach full length
+    // The aim is frozen until the beam has reached full length; only then does the
+    // slow turn toward the player ease in over QUASAR_BEAM_TURN_EASE.
+    static constexpr float QUASAR_BEAM_TURN_EASE = 0.45f;
+    // Fire-onset rift (drawing only): at the instant of firing a seam runs out
+    // from the Quasar along the axis (QUASAR_BEAM_RIFT_PROP to cover 6000 px) and
+    // the band opens behind its tip, so the picture tears open from the Quasar
+    // outward; the whole opening is done by QUASAR_BEAM_RIFT_TIME. The lock's
+    // last QUASAR_BEAM_RIFT_LEAD seconds already show a short seam at the Quasar.
+    static constexpr float QUASAR_BEAM_RIFT_PROP = 0.32f;
+    static constexpr float QUASAR_BEAM_RIFT_OPEN = 0.18f;      // a point of the band opening
+    static constexpr float QUASAR_BEAM_RIFT_TIME = QUASAR_BEAM_RIFT_PROP + QUASAR_BEAM_RIFT_OPEN;
+    static constexpr float QUASAR_BEAM_RIFT_LEAD = 0.25f;
     // The last QUASAR_PRECHARGE_TIME of the cooldown is the wind-up: the
     // Quasar stops drifting and its bands fold and draw energy in, before the
     // direction is chosen.
@@ -219,16 +275,36 @@ public:
     // other from the inside out, and each ring stays up at least
     // QUASAR_ERUPT_MIN_WARNING before the blast. The bands between rings (and
     // the pocket next to the body) are the safe places.
-    static constexpr int QUASAR_ERUPT_STATE = 7;
-    static constexpr float QUASAR_ERUPT_WINDUP = 0.8f;
+    static constexpr float QUASAR_ERUPT_WINDUP = 0.6f;
     static constexpr float QUASAR_ERUPT_RING_GAP = 0.30f;      // between one ring and the next
     static constexpr float QUASAR_ERUPT_RING_GROW = 0.35f;     // a ring unfolding
     static constexpr float QUASAR_ERUPT_MIN_WARNING = 1.0f;    // every zone is visible this long
-    static constexpr float QUASAR_ERUPT_BLAST_TIME = 2.8f;
+    static constexpr float QUASAR_ERUPT_BLAST_TIME = 2.2f;
+    // The eruption is a condition, not part of the rotation, and it is an overlay:
+    // it runs on its own timer (quasarEruptTimer) next to whatever the Quasar is
+    // doing (wind-up, lock, beam, starfall) instead of waiting for it. It goes off
+    // when the player has stayed within QUASAR_ERUPT_TRIGGER_RADIUS of the Quasar for
+    // QUASAR_ERUPT_TRIGGER_TIME (the timer drains at QUASAR_ERUPT_NEAR_DRAIN x
+    // real time while the player is away), and only covers the ground around the
+    // Quasar (rings up to QUASAR_ERUPT_MAX_REACH). After it, QUASAR_ERUPT_COOLDOWN.
+    static constexpr float QUASAR_ERUPT_TRIGGER_RADIUS = 440.0f;
+    static constexpr float QUASAR_ERUPT_TRIGGER_TIME = 1.5f;
+    static constexpr float QUASAR_ERUPT_NEAR_DRAIN = 1.0f;
+    static constexpr float QUASAR_ERUPT_MAX_REACH = 700.0f;
+    static constexpr float QUASAR_ERUPT_COOLDOWN = 5.0f;
     static constexpr float QUASAR_ERUPT_ZONE_RADIUS = 49.0f;   // was 70 (x0.7)
     static constexpr float QUASAR_ERUPT_FIRST_RING = 190.0f;
     static constexpr float QUASAR_ERUPT_RING_STEP = 230.0f;   // lane = step - 2 * zone radius
-    static constexpr float QUASAR_ERUPT_DAMAGE = 18.0f;       // once per eruption
+    static constexpr float QUASAR_ERUPT_DAMAGE = 16.0f;       // per beat (two beats per eruption)
+    // Two beats: beat 0 detonates the rings at QUASAR_ERUPT_BLAST_TIME; beat 1
+    // (the lane between the rings and a zone on the body itself) detonates
+    // QUASAR_ERUPT_BEAT_GAP later, so the safe spot of the first beat is the
+    // danger of the second. Beat 1's zones are up from QUASAR_ERUPT_SECOND_SHOW.
+    static constexpr float QUASAR_ERUPT_BEAT_GAP = 0.5f;
+    static constexpr float QUASAR_ERUPT_SECOND_SHOW = 1.6f;
+    static constexpr float QUASAR_ERUPT_SECOND_BLAST = QUASAR_ERUPT_BLAST_TIME + QUASAR_ERUPT_BEAT_GAP;
+    static constexpr float QUASAR_ERUPT_CENTER_RADIUS = 90.0f;
+    static constexpr unsigned char QUASAR_ERUPT_CENTER_RING = 255;   // ring id of the body zone
     static constexpr int QUASAR_ERUPT_MAX_ZONES = 200;
     static constexpr int QUASAR_FALL_STATE = 5;
     static constexpr int QUASAR_FALL_RECOVER_STATE = 6;
@@ -249,7 +325,7 @@ public:
     static constexpr float QUASAR_FALL_RECOVER = 0.8f;
     static constexpr float QUASAR_FALL_IMPACT_FX = 0.36f;   // impact effect length
     static constexpr float QUASAR_FALL_HIT_GRACE = 0.35f;
-    static constexpr float ANTARES_BASE_HP = 600.0f;
+    static constexpr float ANTARES_BASE_HP = 6000.0f;   // x ANTARES_ELITE_HP_MULT = 9000 (see elite HP note above)
     static constexpr int ANTARES_TRAIL_COUNT = 6;
     // Genesis shell core: three shells lock in one by one while tracking
     // (one stack each); at 3/3 it aims 0.8s and throws all three Swarms, then
@@ -314,31 +390,26 @@ public:
     // Antares is a bull: it keeps accelerating while it chases, turns worse
     // the faster it goes, and drops back to stage 1 once it overshoots.
     // Ramming the player knocks them away and stuns Antares; a finished run
-    // (skid) ends in a short rest. Once inside the map, hitting its edge
-    // while running stuns it too, so a missed run never carries it off-map.
+    // (skid) ends in a short rest. Every rush ricochets off the map edge
+    // (ConfineAntares), so a missed run never carries it off-map.
     //
-    // Elite (generation 0): every second run it instead winds up a ricochet
-    // charge (AIM shows the whole bouncing path, CHARGE flies it at fixed
-    // speed and reflects off the map edge). When killed it splits into
-    // smaller Antares (generation 1) that never split again, and any two
-    // Antares that touch bounce off each other and speed up.
-    enum class AntaresState { CHASE, SKID, STUNNED, REST, AIM, CHARGE };
+    // Elite (generation 0): when killed it splits into smaller Antares
+    // (generation 1), which split once more into the smallest (generation 2,
+    // ANTARES_MAX_GEN); any two Antares that touch bounce off each other and
+    // speed up.
+    enum class AntaresState { CHASE, SKID, STUNNED, REST };
     static constexpr float ANTARES_ELITE_HP_MULT = 1.5f;
-    static constexpr float ANTARES_AIM_TRACK = 0.70f;     // aim follows the player
-    static constexpr float ANTARES_AIM_LOCK = 0.35f;      // then holds still
-    static constexpr float ANTARES_CHARGE_SPEED = 820.0f;
-    static constexpr float ANTARES_CHARGE_LENGTH = 1900.0f;
-    static constexpr int ANTARES_CHARGE_BOUNCES = 3;
     static constexpr int ANTARES_SPLIT_COUNT = 2;
-    static constexpr float ANTARES_CHILD_SCALE = 0.72f;
-    static constexpr float ANTARES_CHILD_HP = 0.45f;      // of a fresh Antares
+    static constexpr int ANTARES_MAX_GEN = 2;
+    static constexpr float ANTARES_CHILD_SCALE = 0.80f;   // per generation
+    static constexpr float ANTARES_CHILD_HP = 0.45f;      // per generation, of a fresh Antares
     static constexpr float ANTARES_BOUNCE_BOOST = 1.20f;
     static constexpr float ANTARES_BOUNCE_MIN_SPEED = 180.0f;
     static constexpr float ANTARES_BOUNCE_COOLDOWN = 0.25f;
     static constexpr float ANTARES_STUN_TIME = ANTARES_STUN_TIME_SEC;
     static constexpr float ANTARES_REST_TIME = 0.8f;
     static constexpr float ANTARES_MIN_SPEED = 60.0f;
-    static constexpr float ANTARES_MAX_SPEED = 700.0f;
+    static constexpr float ANTARES_MAX_SPEED = 900.0f;
     // Only a stage-4 run (500 px/s and up) counts as overshooting the player.
     static constexpr float ANTARES_PASS_SPEED = 500.0f;
 
@@ -489,6 +560,34 @@ public:
     // trail buffer doubles as this Swarm's afterimage history.
     bool genesisThrown = false;       // summoned Swarm/Rotor; owner cap and no-farm rewards
     int thrownOwnerId = 0;            // genesisId of the Genesis that threw it
+    bool genesisControlled = false;   // still driven by its Genesis (smart AI, controlled colour)
+    // Nightmare: this Genesis' thrown units are capsules that open into a random non-elite,
+    // non-boss enemy when they have landed (genesisRandomSummons is set on the Genesis).
+    bool genesisRandomSummons = false;
+    bool genesisSummonCarrier = false;    // a capsule in flight / landing, not yet an enemy
+    bool genesisSummoned = false;         // a real enemy a Genesis summoned (half rewards, own cap slot)
+    float genesisSummonHpMult = 1.0f;     // the Genesis' child HP multiplier, for the enemy it becomes
+    bool genesisCarryScope = false;       // this capsule opens into a Scope (a different class), drawn as one in flight
+    // The Genesis' own body grows with the difficulty: 1.0x / 1.1x / 1.2x / 1.3x.
+    static float GenesisBodySizeScale() { return 1.0f + 0.10f * (float)(int)g_Difficulty; }
+    bool genesisFromLauncher = false;     // made by the Rotor launcher (counts against its cap, any kind)
+    float genesisNaturalScale = 0.0f;     // a random launcher unit's own size, reached when it lands (0 = none)
+    float summonRamp = 1.0f;              // a summoned melee enemy speeds up while it chases, up to SUMMON_RAMP_MAX
+    static constexpr float SUMMON_RAMP_RATE = 0.10f;   // speed multiplier gained per second
+    static constexpr float SUMMON_RAMP_MAX = 1.8f;     // the limit, so it stays dodgeable
+    glm::vec3 freeColor{0.0f};        // its own colour before it was taken over
+    glm::vec2 ctrlPlayerPrev{0.0f};
+    glm::vec2 ctrlPlayerVel{0.0f};
+    bool ctrlPlayerSeen = false;
+    float ctrlConfidence = 1.0f;      // 0..1: how far the player's heading can be trusted (from the heat)
+    float ctrlJukeHeat = 0.0f;        // grows with every sharp reversal, cools while the player holds a heading
+    float ctrlSinceReversal = 9.0f;
+    glm::vec2 ctrlLastHeading{0.0f};  // last direction the player moved in at a real speed
+    bool ctrlHasHeading = false;
+    glm::vec2 ctrlPlayerAvg{0.0f};    // smoothed centre of the player's recent positions
+    glm::vec2 ctrlDodgeDir{0.0f};
+    float ctrlDodgeTimer = 0.0f;      // time left in the current sidestep
+    float ctrlDodgeCooldown = 0.0f;
     int thrownPhase = 0;
     float thrownTimer = 0.0f;
     float thrownDuration = 0.0f;
@@ -512,11 +611,16 @@ public:
     float quasarMoveTurn = 0.0f;
     float quasarMoveTimer = 0.0f;
     bool quasarNextFall = false;
-    bool quasarEruptNext = false;           // the next special is the eruption, not the starfall
-    bool quasarEruptBlasted = false;
+    float quasarNearTimer = 0.0f;           // time the player has stayed close (0..TRIGGER_TIME)
+    float quasarEruptCooldown = 0.0f;       // no eruption before this runs out
+    bool quasarEruptActive = false;         // an eruption is running (alongside any other attack)
+    float quasarEruptTimer = 0.0f;          // seconds since it started
+    bool quasarEruptBlasted = false;        // beat 0 went off
+    bool quasarEruptBlasted2 = false;       // beat 1 went off
     int quasarEruptCount = 0;
     float quasarEruptRingGap = QUASAR_ERUPT_RING_GAP;
     std::array<unsigned char, QUASAR_ERUPT_MAX_ZONES> quasarEruptRing{};
+    std::array<unsigned char, QUASAR_ERUPT_MAX_ZONES> quasarEruptBeat{};
     std::array<glm::vec2, QUASAR_ERUPT_MAX_ZONES> quasarEruptZones{};
     int quasarFallFired = 0;
     float quasarFallNextFire = QUASAR_FALL_SPLIT;
@@ -569,16 +673,11 @@ public:
     std::array<glm::vec3, ANTARES_TRAIL_COUNT> antaresTrail{};
     // Spawns sit off-map; the edge only holds Antares once it has come in.
     bool antaresInArena = false;
-    int antaresGen = 0;               // 0 elite, 1 split child
+    int antaresGen = 0;               // 0 elite, 1 and 2 split descendants
     bool antaresSplit = false;        // children already released
-    int antaresRuns = 0;              // finished runs; every second one is a charge
-    int antaresBounces = 0;           // edge reflections of the current charge
-    float antaresChargeLeft = 0.0f;
+    int antaresBounces = 0;           // edge reflections so far
     float antaresBounceCd = 0.0f;     // after bouncing off another Antares
     glm::vec4 antaresBounds{0.0f};    // map rect inset by the body radius
-    // Ricochet path shown while aiming: start, then each reflection point.
-    std::array<glm::vec2, ANTARES_CHARGE_BOUNCES + 2> antaresPath{};
-    int antaresPathCount = 0;
     // Per face: shots it can still stop, seconds since it broke (< 0 while
     // intact) and seconds since it last restored (drives the snap-back look).
     std::array<int, MAGNETAR_FACES> magnetarFaceHits{};
@@ -631,11 +730,14 @@ public:
             return;
         }
         if (kind == MobKind::GENESIS) {
-            color = glm::vec3(0.70f, 0.08f, 0.12f);
+            color = GENESIS_COLOR;
+            // From NIGHTMARE its Swarm throws summon random regular enemies. Decided here, from
+            // the run's difficulty, so every way of making a Genesis (waves, debug spawn) agrees.
+            genesisRandomSummons = (g_Difficulty == Difficulty::NIGHTMARE);
             genesisChildHpMult = hp / 90.0f;   // progression x trial ramp at spawn
-            hp *= 7.0f;
+            hp *= GENESIS_BASE_HP / 90.0f;
             speed *= 0.35f;
-            sizeScale = 1.7f;   // tier-4 body; orbit frame + plates add the rest
+            sizeScale = 1.7f * GenesisBodySizeScale();   // tier-4 body, bigger on higher difficulties
             genesisId = s_NextGenesisId++;
             spawnTimer = 0.0f;
             hivePhase = 0;
@@ -664,7 +766,7 @@ public:
             gravisOrbitPhase = (float)(rand() % 628) * 0.01f;
         } else if (kind == MobKind::QUASAR) {
             color = glm::vec3(0.42f, 0.56f, 1.0f);
-            hp *= 6.4f;
+            hp *= QUASAR_BASE_HP / 90.0f;
             speed *= 0.52f;
             sizeScale = 2.4f;   // tier 4: outer halo + tilted orbit add the rest
             contactDmg = 4.0f;
@@ -672,8 +774,12 @@ public:
             quasarSpinSpeed = 2.2f;
             quasarCoreAngle = 0.0f;
             quasarNextFall = false;
-            quasarEruptNext = false;
+            quasarNearTimer = 0.0f;
+            quasarEruptCooldown = 0.0f;
+            quasarEruptActive = false;
+            quasarEruptTimer = 0.0f;
             quasarEruptBlasted = false;
+            quasarEruptBlasted2 = false;
             quasarEruptCount = 0;
             quasarFallFired = 0;
             quasarFallNextFire = QUASAR_FALL_SPLIT;
@@ -720,14 +826,11 @@ public:
         } else if (kind == MobKind::ANTARES) {
             color = glm::vec3(0.91f, 0.275f, 0.227f);
             hp *= ANTARES_BASE_HP / 90.0f * ANTARES_ELITE_HP_MULT;
-            sizeScale = 1.6f;
+            sizeScale = 2.4f;   // last split generation (x0.8^2) still reads bigger than a Rotor
             antaresGen = 0;
             antaresSplit = false;
-            antaresRuns = 0;
             antaresBounces = 0;
-            antaresChargeLeft = 0.0f;
             antaresBounceCd = 0.0f;
-            antaresPathCount = 0;
             antaresState = AntaresState::CHASE;
             antaresStateTimer = 0.0f;
             antaresHeadingX = antaresHeadingY = 0.0f;
@@ -766,11 +869,6 @@ public:
     // Frame edge plus the player's body, so a ram lands on touch, not overlap.
     float AntaresRamRange() const { return 26.0f * sizeScale + 18.0f; }
 
-    // Keeps Antares inside the map (world-space edges). Until its frame is
-    // fully inside it is left alone; after that a run that hits an edge is
-    // stopped there and stunned, as if it slammed into a wall. A stage 1
-    // crawl just slides along the edge, so a player hugging the wall does
-    // not stun-lock it.
     // Keeps NORMA's charge landing, and the body between runs, inside the
     // view (the body's reach in from each edge), so a charge never carries
     // it off screen.
@@ -788,6 +886,11 @@ public:
         }
     }
 
+    // Keeps Antares inside the map (world-space edges). Until its frame is
+    // fully inside it is left alone; after that a run (stage 2 and up) that
+    // hits an edge ricochets: the component that left the map reverses and
+    // the speed is kept, so bouncing is part of every rush. A stage 1 crawl
+    // just slides along the edge.
     void ConfineAntares(float left, float top, float right, float bottom) {
         if (!alive || kind != MobKind::ANTARES || thrownPhase != 0) return;
         const float radius = 26.0f * sizeScale;
@@ -806,18 +909,11 @@ public:
         const bool outY = worldY < minY || worldY > maxY;
         worldX = std::clamp(worldX, minX, maxX);
         worldY = std::clamp(worldY, minY, maxY);
-        if (antaresState == AntaresState::CHARGE) {
-            // The charge ricochets off the edge instead of stopping there.
-            if (outX) antaresHeadingX = -antaresHeadingX;
-            if (outY) antaresHeadingY = -antaresHeadingY;
-            ++antaresBounces;
-            return;
-        }
         if ((antaresState == AntaresState::CHASE ||
              antaresState == AntaresState::SKID) && AntaresStage() >= 2) {
-            antaresState = AntaresState::STUNNED;
-            antaresStateTimer = 0.0f;
-            antaresMoveSpeed = 0.0f;
+            if (outX) antaresHeadingX = -std::fabs(antaresHeadingX) * (worldX >= maxX ? 1.0f : -1.0f);
+            if (outY) antaresHeadingY = -std::fabs(antaresHeadingY) * (worldY >= maxY ? 1.0f : -1.0f);
+            ++antaresBounces;
         }
     }
 
@@ -1500,6 +1596,12 @@ public:
     }
 
     float QuasarHeat() const {
+        float h = QuasarStateHeat();
+        if (quasarEruptActive)
+            h = std::max(h, 0.85f * QuasarEase(quasarEruptTimer / (QUASAR_ERUPT_BLAST_TIME * 0.6f)));
+        return h;
+    }
+    float QuasarStateHeat() const {
         switch (quasarState) {
         case 0: return 0.15f * QuasarPrecharge();
         case 1: return 0.15f;
@@ -1507,15 +1609,13 @@ public:
         case 3: return 1.0f;
         case 4: return 1.0f - QuasarEase(quasarTimer / 1.4f);
         case QUASAR_FALL_STATE: return 0.85f * QuasarEase(quasarTimer / QUASAR_FALL_SPLIT);
-        case QUASAR_ERUPT_STATE: return 0.85f * QuasarEase(quasarTimer / (QUASAR_ERUPT_BLAST_TIME * 0.6f));
         case QUASAR_FALL_RECOVER_STATE: return 0.85f * QuasarFallOpen();
         default: return 0.0f;
         }
     }
 
     bool QuasarFalling() const {
-        // The eruption reuses the starfall's body motion (gather, then open).
-        return alive && (quasarState == QUASAR_FALL_STATE || quasarState == QUASAR_ERUPT_STATE);
+        return alive && quasarState == QUASAR_FALL_STATE;
     }
 
     static float QuasarEase(float x) {
@@ -1523,19 +1623,7 @@ public:
         return x * x * x * (10.0f + x * (-15.0f + x * 6.0f));
     }
 
-    // Eruption body motion: it draws in slowly for most of the run (the
-    // flanges fold and the shell spins down), then flares open at the blast.
-    float QuasarEruptGather() const {
-        const float t = quasarTimer;
-        return QuasarEase(t / 1.3f) *
-               (1.0f - QuasarEase((t - (QUASAR_ERUPT_BLAST_TIME - 0.55f)) / 0.45f));
-    }
-    float QuasarEruptOpen() const {
-        return QuasarEase((quasarTimer - (QUASAR_ERUPT_BLAST_TIME - 0.55f)) / 0.55f);
-    }
-
     float QuasarFallOpen() const {
-        if (quasarState == QUASAR_ERUPT_STATE) return QuasarEruptOpen();
         if (QuasarFalling()) return QuasarEase((quasarTimer / QUASAR_FALL_SPLIT - 0.28f) / 0.72f);
         if (quasarState == QUASAR_FALL_RECOVER_STATE)
             return 1.0f - QuasarEase(quasarTimer / (QUASAR_FALL_RECOVER - QUASAR_FALL_IMPACT_FX));
@@ -1544,7 +1632,6 @@ public:
 
     float QuasarFallGather() const {
         if (!QuasarFalling()) return 0.0f;
-        if (quasarState == QUASAR_ERUPT_STATE) return QuasarEruptGather();
         const float p = quasarTimer / QUASAR_FALL_SPLIT;
         return QuasarEase(p / 0.28f) * (1.0f - QuasarEase((p - 0.28f) / 0.5f));
     }
@@ -1629,6 +1716,194 @@ public:
         return n;
     }
 
+    // The Quasar stands still from the start of the wind-up until the attack is
+    // over (lock, beam, starfall, recovery), and while an eruption runs. Nothing
+    // may move it then: not crowding, not the player's pulls and pushes, not the
+    // viewport clamp.
+    bool QuasarHoldsPosition() const {
+        return kind == MobKind::QUASAR && alive &&
+               (quasarState != 0 || QuasarPrecharge() > 0.0f || quasarEruptActive);
+    }
+
+    // Put an enemy under a Genesis' control: smart AI and the controlled colour.
+    void TakeGenesisControl(int ownerId) {
+        thrownOwnerId = ownerId;
+        if (!genesisControlled) freeColor = color;
+        genesisControlled = true;
+        color = GENESIS_CONTROLLED_COLOR;
+    }
+    // The Genesis is gone: the plain chase again. It keeps the controlled colour, so what the
+    // Genesis made stays recognisable after it dies.
+    void ReleaseGenesisControl() {
+        if (!genesisControlled) return;
+        genesisControlled = false;
+        genesisSummonCarrier = false;       // a capsule still in the air lands as a plain Swarm
+        ctrlDodgeTimer = 0.0f;
+        ctrlConfidence = 1.0f;
+        ctrlJukeHeat = 0.0f;
+    }
+
+    // Where to run to meet the player: the point `target` the mob can reach at the
+    // same moment as a player who keeps their velocity (the classic intercept), capped
+    // to GENESIS_CTRL_LEAD_MAX seconds ahead. Falls back to the player's position.
+    static glm::vec2 GenesisInterceptPoint(glm::vec2 mob, glm::vec2 player, glm::vec2 vel, float mobSpeed) {
+        const glm::vec2 r = player - mob;
+        const float dist = glm::length(r);
+        if (mobSpeed < 1.0f || dist < GENESIS_CTRL_LEAD_MIN_DIST) return player;
+        const float a = glm::dot(vel, vel) - mobSpeed * mobSpeed;
+        const float b = 2.0f * glm::dot(r, vel);
+        const float c = glm::dot(r, r);
+        float t = dist / mobSpeed;                              // plain pursuit time as the fallback
+        if (std::fabs(a) < 1e-3f) {
+            if (b < -1e-3f) t = -c / b;
+        } else {
+            const float disc = b * b - 4.0f * a * c;
+            if (disc >= 0.0f) {
+                const float sq = std::sqrt(disc);
+                const float t1 = (-b - sq) / (2.0f * a), t2 = (-b + sq) / (2.0f * a);
+                float best = 1.0e9f;
+                if (t1 > 0.0f) best = std::min(best, t1);
+                if (t2 > 0.0f) best = std::min(best, t2);
+                if (best < 1.0e8f) t = best;
+            }
+        }
+        t = std::clamp(t, 0.0f, GENESIS_CTRL_LEAD_MAX);
+        return player + vel * t;
+    }
+
+    // The most urgent player shot heading for this enemy, or false. A shot counts when it
+    // is close, flying toward the enemy, will reach it within the lookahead, and its path
+    // passes closer than the dodge radius. `away` is the unit sidestep direction (across the
+    // shot's line, to the side the enemy is already on).
+    bool GenesisIncomingShot(const std::vector<Bullet>* bullets, glm::vec2& away) const {
+        if (!bullets) return false;
+        float bestT = GENESIS_CTRL_DODGE_LOOKAHEAD;
+        bool found = false;
+        const float reach2 = GENESIS_CTRL_DODGE_RANGE * GENESIS_CTRL_DODGE_RANGE;
+        const float radius = GENESIS_CTRL_DODGE_RADIUS * std::max(0.8f, sizeScale);
+        for (const Bullet& b : *bullets) {
+            if (!b.active || b.isEnemy) continue;
+            const glm::vec2 rel(worldX - b.x, worldY - b.y);
+            if (glm::dot(rel, rel) > reach2) continue;
+            const glm::vec2 d(b.dirX, b.dirY);
+            const float spd = b.speed * std::max(b.launchRamp, 0.05f);
+            if (spd < 1.0f) continue;
+            const float along = glm::dot(rel, d);
+            if (along <= 0.0f) continue;                          // already past / moving away
+            const float t = along / spd;
+            if (t > bestT) continue;
+            const glm::vec2 nrm(-d.y, d.x);
+            const float side = glm::dot(rel, nrm);
+            if (std::fabs(side) > radius) continue;               // would miss anyway
+            bestT = t; found = true;
+            away = nrm * (side >= 0.0f ? 1.0f : -1.0f);
+        }
+        return found;
+    }
+
+    // Where a controlled enemy runs to, given what it has learned about the player.
+    // Steady mover: the intercept point. Juking player: the centre of their movement.
+    glm::vec2 GenesisAimPoint(glm::vec2 player, float distance, float baseSpeed) const {
+        const glm::vec2 mob(worldX, worldY);
+        glm::vec2 lead = GenesisInterceptPoint(mob, player, ctrlPlayerVel, baseSpeed) - player;
+        lead *= ctrlConfidence;                                         // distrust the lead after a juke
+        const float maxLead = GENESIS_CTRL_LEAD_FRAC * distance;        // never aim far beyond the player
+        const float len = glm::length(lead);
+        if (len > maxLead) lead *= maxLead / std::max(len, 1e-4f);
+        const float lean = GENESIS_CTRL_CENTRE_BLEND * (1.0f - ctrlConfidence);
+        return player + (ctrlPlayerAvg - player) * lean + lead;
+    }
+
+    // Every controlled enemy learns how the player moves, whatever it is doing this frame
+    // (a Gimbal needs it for its aim, the rest for their chase).
+    void GenesisTrackPlayer(float playerCX, float playerCY, float deltaTime) {
+        const glm::vec2 pnow(playerCX, playerCY);
+        if (ctrlPlayerSeen && deltaTime > 1e-5f) {
+            glm::vec2 inst = (pnow - ctrlPlayerPrev) / deltaTime;
+            float sp = glm::length(inst);
+            if (sp > GENESIS_CTRL_VEL_MAX) { inst *= GENESIS_CTRL_VEL_MAX / sp; sp = GENESIS_CTRL_VEL_MAX; }
+            // Reversal = moving again in (nearly) the opposite direction of the last real
+            // heading. The stop in between (a sine-wave juke slows to nothing) does not hide it.
+            if (sp > GENESIS_CTRL_MOVING_SPEED) {
+                const glm::vec2 heading = inst / sp;
+                if (ctrlHasHeading) {
+                    const float c = glm::dot(heading, ctrlLastHeading);
+                    if (c < GENESIS_CTRL_REVERSAL_COS) {                    // a juke
+                        if (ctrlSinceReversal > GENESIS_CTRL_REVERSAL_GAP) ctrlJukeHeat += GENESIS_CTRL_HEAT_PER_REVERSAL;
+                        ctrlSinceReversal = 0.0f;
+                    } else if (c > GENESIS_CTRL_STEADY_COS) {               // one heading: it cools down
+                        ctrlJukeHeat = std::max(0.0f, ctrlJukeHeat - GENESIS_CTRL_HEAT_COOL * deltaTime);
+                    }
+                }
+                ctrlLastHeading = heading;
+                ctrlHasHeading = true;
+            }
+            ctrlSinceReversal += deltaTime;
+            ctrlConfidence = std::clamp(1.0f - ctrlJukeHeat / GENESIS_CTRL_HEAT_FOR_ZERO, 0.0f, 1.0f);
+            ctrlPlayerVel += (inst - ctrlPlayerVel) * (1.0f - expf(-deltaTime * 10.0f));
+            ctrlPlayerAvg += (pnow - ctrlPlayerAvg) * (1.0f - expf(-deltaTime / GENESIS_CTRL_CENTRE_TAU));
+        } else {
+            ctrlPlayerAvg = pnow;
+        }
+        ctrlPlayerPrev = pnow;
+        ctrlPlayerSeen = true;
+    }
+
+    // Where a controlled shooter aims: the player's position led by the time the shot takes
+    // to arrive, trusted as much as the lead is (a juking player gets shot at where they are).
+    glm::vec2 GenesisShotAimPoint(float playerCX, float playerCY, float shotSpeed) const {
+        const glm::vec2 p(playerCX, playerCY);
+        if (shotSpeed < 1.0f) return p;
+        float t = glm::length(p - glm::vec2(worldX, worldY)) / shotSpeed;
+        for (int i = 0; i < 2; ++i)
+            t = glm::length(p + ctrlPlayerVel * t - glm::vec2(worldX, worldY)) / shotSpeed;
+        t = std::clamp(t, 0.0f, 1.0f);
+        return p + ctrlPlayerVel * t;                       // forced: a summoned shooter always leads
+    }
+
+    // Smart chase for a controlled enemy: sidesteps incoming
+    // shots, and otherwise runs to GenesisAimPoint.
+    void GenesisControlledMove(float dx, float dy, float distance, float playerCX, float playerCY,
+                               float deltaTime, float speedMult, const std::vector<Bullet>* bullets) {
+        const glm::vec2 pnow(playerCX, playerCY);
+        ctrlDodgeCooldown = std::max(0.0f, ctrlDodgeCooldown - deltaTime);
+        const float baseSpeed = speed * speedMult;
+        // Sidestep: a short burst across the shot's line.
+        if (ctrlDodgeTimer <= 0.0f && ctrlDodgeCooldown <= 0.0f) {
+            glm::vec2 away;
+            if (GenesisIncomingShot(bullets, away)) {
+                ctrlDodgeDir = away;
+                ctrlDodgeTimer = GENESIS_CTRL_DODGE_BURST;
+            }
+        }
+        if (ctrlDodgeTimer > 0.0f) {
+            const float dodgeSpeed = std::max(GENESIS_CTRL_DODGE_MIN_SPEED, baseSpeed * GENESIS_CTRL_DODGE_SPEED_MULT);
+            worldX += ctrlDodgeDir.x * dodgeSpeed * deltaTime;
+            worldY += ctrlDodgeDir.y * dodgeSpeed * deltaTime;
+            ctrlDodgeTimer -= deltaTime;
+            if (ctrlDodgeTimer <= 0.0f) ctrlDodgeCooldown = GENESIS_CTRL_DODGE_COOLDOWN;
+            return;
+        }
+        if (distance > 5.0f) {
+            glm::vec2 to = GenesisAimPoint(pnow, distance, baseSpeed) - glm::vec2(worldX, worldY);
+            const float len = glm::length(to);
+            if (len > 1e-3f) {
+                to /= len;
+                worldX += to.x * baseSpeed * deltaTime;
+                worldY += to.y * baseSpeed * deltaTime;
+            }
+        }
+        (void)dx; (void)dy;
+    }
+
+    // Width of the firing beam as a share of QUASAR_BEAM_RADIUS: 1 while it
+    // burns, easing to 0 over the last QUASAR_BEAM_FADE_OUT of the fire window.
+    float QuasarBeamWidth() const {
+        if (quasarState != 3) return 1.0f;
+        const float start = QUASAR_BEAM_TIME - QUASAR_BEAM_FADE_OUT;
+        return 1.0f - QuasarEase((quasarTimer - start) / QUASAR_BEAM_FADE_OUT);
+    }
+
     // Lead vector for an aimed shot: direction of travel x capped distance.
     glm::vec2 QuasarPredictLead() const {
         const float speed = glm::length(quasarPlayerVel);
@@ -1657,10 +1932,10 @@ public:
     // keeps two doors (one zone left out) so the player can cross between the
     // safe lanes; the whole pattern is turned by a random angle per cast.
     void BeginQuasarEruption() {
-        quasarState = QUASAR_ERUPT_STATE;
-        quasarTimer = 0.0f;
-        quasarAimSet = false;
+        quasarEruptActive = true;
+        quasarEruptTimer = 0.0f;
         quasarEruptBlasted = false;
+        quasarEruptBlasted2 = false;
         quasarEruptCount = 0;
         const glm::vec2 c(worldX, worldY);
         const bool arena = quasarBounds.z > quasarBounds.x && quasarBounds.w > quasarBounds.y;
@@ -1671,6 +1946,7 @@ public:
                                             glm::vec2(quasarBounds.x, quasarBounds.w), glm::vec2(quasarBounds.z, quasarBounds.w) })
                 reachMax = std::max(reachMax, glm::length(corner - c));
         }
+        reachMax = std::min(reachMax, QUASAR_ERUPT_MAX_REACH);      // only the ground around the Quasar
         const float Z = QUASAR_ERUPT_ZONE_RADIUS;
         const float turn = (float)(rand() % 10000) * 0.0006283185f;
         int rings = 0;
@@ -1693,9 +1969,33 @@ public:
                               p.y < quasarBounds.y - Z * 0.5f || p.y > quasarBounds.w + Z * 0.5f)) continue;
                 if (quasarEruptCount < QUASAR_ERUPT_MAX_ZONES) {
                     quasarEruptRing[quasarEruptCount] = (unsigned char)k;
+                    quasarEruptBeat[quasarEruptCount] = 0;
                     quasarEruptZones[quasarEruptCount++] = p;
                 }
             }
+        }
+        // Beat 1: a continuous band of zones in the lane between rings k and k+1
+        // (the ground that was safe during beat 0) and one zone on the body.
+        for (int k = 0; k + 1 < rings; ++k) {
+            const float r = QUASAR_ERUPT_FIRST_RING + QUASAR_ERUPT_RING_STEP * ((float)k + 0.5f);
+            const int n = std::max(6, (int)std::ceil(6.2831853f * r / (2.0f * Z * 1.04f)));
+            const float spin = turn * 0.5f + 0.37f * (float)k + 3.1415927f / (float)n;
+            for (int i = 0; i < n; ++i) {
+                const float ang = spin + 6.2831853f * (float)i / (float)n;
+                const glm::vec2 p = c + glm::vec2(cosf(ang), sinf(ang)) * r;
+                if (arena && (p.x < quasarBounds.x - Z * 0.5f || p.x > quasarBounds.z + Z * 0.5f ||
+                              p.y < quasarBounds.y - Z * 0.5f || p.y > quasarBounds.w + Z * 0.5f)) continue;
+                if (quasarEruptCount < QUASAR_ERUPT_MAX_ZONES) {
+                    quasarEruptRing[quasarEruptCount] = (unsigned char)k;
+                    quasarEruptBeat[quasarEruptCount] = 1;
+                    quasarEruptZones[quasarEruptCount++] = p;
+                }
+            }
+        }
+        if (quasarEruptCount < QUASAR_ERUPT_MAX_ZONES) {
+            quasarEruptRing[quasarEruptCount] = QUASAR_ERUPT_CENTER_RING;
+            quasarEruptBeat[quasarEruptCount] = 1;
+            quasarEruptZones[quasarEruptCount++] = c;
         }
         // Many rings (a big arena): tighten the stagger so the last one still
         // stands for QUASAR_ERUPT_MIN_WARNING.
@@ -1711,26 +2011,45 @@ public:
         return QUASAR_ERUPT_WINDUP + quasarEruptRingGap * (float)ring;
     }
 
-    bool QuasarEruptCovers(const glm::vec2& p) const {
-        const float Z2 = QUASAR_ERUPT_ZONE_RADIUS * QUASAR_ERUPT_ZONE_RADIUS;
+    // When zone i starts to show / goes off (beat 0: its ring's time and the first
+    // blast; beat 1: QUASAR_ERUPT_SECOND_SHOW and the second blast).
+    float QuasarEruptZoneShow(int i) const {
+        return quasarEruptBeat[i] ? QUASAR_ERUPT_SECOND_SHOW : QuasarEruptShowTime(quasarEruptRing[i]);
+    }
+    float QuasarEruptZoneBlast(int i) const {
+        return quasarEruptBeat[i] ? QUASAR_ERUPT_SECOND_BLAST : QUASAR_ERUPT_BLAST_TIME;
+    }
+    float QuasarEruptZoneRadius(int i) const {
+        return quasarEruptRing[i] == QUASAR_ERUPT_CENTER_RING ? QUASAR_ERUPT_CENTER_RADIUS : QUASAR_ERUPT_ZONE_RADIUS;
+    }
+
+    // beat: 0 or 1 to test one beat only, -1 for either.
+    bool QuasarEruptCovers(const glm::vec2& p, int beat = -1) const {
         for (int i = 0; i < quasarEruptCount; ++i) {
+            if (beat >= 0 && quasarEruptBeat[i] != beat) continue;
+            const float Z = QuasarEruptZoneRadius(i);
             const glm::vec2 d = p - quasarEruptZones[i];
-            if (glm::dot(d, d) <= Z2) return true;
+            if (glm::dot(d, d) <= Z * Z) return true;
         }
         return false;
     }
 
-    // All zones go off together at QUASAR_ERUPT_BLAST_TIME: one hit however many overlap.
+    // Each beat's zones go off together: one hit per beat however many overlap.
     void UpdateQuasarEruption(float playerX, float playerY, float& playerHP) {
-        if (!quasarEruptBlasted && quasarTimer >= QUASAR_ERUPT_BLAST_TIME) {
+        if (!quasarEruptBlasted && quasarEruptTimer >= QUASAR_ERUPT_BLAST_TIME) {
             quasarEruptBlasted = true;
-            if (QuasarEruptCovers(glm::vec2(playerX, playerY)))
+            if (QuasarEruptCovers(glm::vec2(playerX, playerY), 0))
                 HurtPlayer(playerHP, QUASAR_ERUPT_DAMAGE);
         }
-        if (quasarEruptBlasted && quasarTimer >= QUASAR_ERUPT_BLAST_TIME + QUASAR_FALL_IMPACT_FX) {
-            quasarState = QUASAR_FALL_RECOVER_STATE;
-            quasarTimer = 0.0f;
-            quasarFallTargetsMask = 0;
+        if (!quasarEruptBlasted2 && quasarEruptTimer >= QUASAR_ERUPT_SECOND_BLAST) {
+            quasarEruptBlasted2 = true;
+            if (QuasarEruptCovers(glm::vec2(playerX, playerY), 1))
+                HurtPlayer(playerHP, QUASAR_ERUPT_DAMAGE);
+        }
+        if (quasarEruptBlasted2 && quasarEruptTimer >= QUASAR_ERUPT_SECOND_BLAST + QUASAR_FALL_IMPACT_FX) {
+            quasarEruptActive = false;
+            quasarNearTimer = 0.0f;
+            quasarEruptCooldown = QUASAR_ERUPT_COOLDOWN;
         }
     }
 
@@ -1979,8 +2298,14 @@ public:
                 if(singularityGrace<=0 && dx*dx+dy*dy<GENESIS_ROTOR_BLAST_RADIUS*GENESIS_ROTOR_BLAST_RADIUS)
                     HurtPlayer(hp,GENESIS_ROTOR_BLAST_DAMAGE);
             }
-        } else if(thrownTimer>=0.25f) {
-            genesisRotorPhase=0;
+        } else {
+            if(genesisNaturalScale>0.0f)                // a random unit settles into its own size on landing
+                sizeScale=genesisRotorFullScale+(genesisNaturalScale-genesisRotorFullScale)*
+                          GenesisSmooth(thrownTimer/0.25f);
+            if(thrownTimer>=0.25f) {
+                genesisRotorPhase=0;
+                if(genesisNaturalScale>0.0f) sizeScale=genesisNaturalScale;
+            }
         }
         antaresTrailTimer+=dt;
         if(antaresTrailTimer>=0.016f) {
@@ -2571,6 +2896,10 @@ public:
             if (!gimbalFired && gimbalBurstTimer >= SHOT_DELAY) {
                 if (bullets) {
                     Bullet shot(worldX, worldY, playerCX, playerCY);
+                    if (genesisControlled) {                      // a controlled Gimbal aims where you will be
+                        const glm::vec2 aim = GenesisShotAimPoint(playerCX, playerCY, 360.0f);
+                        shot = Bullet(worldX, worldY, aim.x, aim.y);
+                    }
                     shot.isEnemy = true;
                     shot.homing = false;
                     shot.speed = 360.0f;
@@ -2609,50 +2938,10 @@ public:
                    gateWX, gateWY, gateWW, gateWH);
     }
 
-    // The path a charge would fly from here along the current heading: the
-    // start plus one point per edge reflection (at most ANTARES_CHARGE_BOUNCES),
-    // ending ANTARES_CHARGE_LENGTH along the way.
-    void PlanAntaresCharge() {
-        glm::vec2 p(worldX, worldY);
-        glm::vec2 d(antaresHeadingX, antaresHeadingY);
-        const glm::vec4& b = antaresBounds;
-        const bool bounded = b.z > b.x && b.w > b.y;
-        float left = ANTARES_CHARGE_LENGTH;
-        antaresPathCount = 0;
-        antaresPath[antaresPathCount++] = p;
-        for (int seg = 0; seg <= ANTARES_CHARGE_BOUNCES && left > 0.0f; ++seg) {
-            float tx = 1.0e9f, ty = 1.0e9f;
-            if (bounded) {
-                if (d.x > 0.0001f) tx = (b.z - p.x) / d.x;
-                else if (d.x < -0.0001f) tx = (b.x - p.x) / d.x;
-                if (d.y > 0.0001f) ty = (b.w - p.y) / d.y;
-                else if (d.y < -0.0001f) ty = (b.y - p.y) / d.y;
-            }
-            const float t = std::max(0.0f, std::min(tx, ty));
-            const bool hit = t < left && seg < ANTARES_CHARGE_BOUNCES;
-            const float travel = hit ? t : left;
-            p += d * travel;
-            left -= travel;
-            antaresPath[antaresPathCount++] = p;
-            if (!hit) break;
-            if (tx <= ty) d.x = -d.x;
-            if (ty <= tx) d.y = -d.y;
-        }
-    }
-
-    void BeginAntaresCharge(float toX, float toY) {
-        antaresState = AntaresState::AIM;
-        antaresStateTimer = 0.0f;
-        antaresMoveSpeed = 0.0f;
-        antaresHeadingX = toX;
-        antaresHeadingY = toY;
-        PlanAntaresCharge();
-    }
-
     void UpdateAntares(float deltaTime, float distance, float dx, float dy,
                        float& playerHP, float speedMult,
                        float gateWX, float gateWY, float gateWW, float gateWH) {
-        static constexpr float ACCEL = 128.0f;           // 60 -> 700 px/s in 5s
+        static constexpr float ACCEL = 128.0f;           // 60 -> 900 px/s in ~6.6s
         static constexpr float TURN_SLOW = 3.1416f;      // 180 deg/s at stage 1
         static constexpr float TURN_FAST = 0.6981f;      //  40 deg/s at top speed
         static constexpr float SPIN_SLOW = 0.5236f;      //  30 deg/s
@@ -2661,7 +2950,7 @@ public:
         static constexpr float FLYOFF_RANGE = 700.0f;    // a wide miss also ends the run
         static constexpr float SKID_TIME = 0.45f;
         static constexpr float IMPACT_DAMAGE = 12.0f;    // at top speed
-        static constexpr float KNOCK_PER_SPEED = 0.55f;  // 33px at 60, 385px at 700
+        static constexpr float KNOCK_PER_SPEED = 0.55f;  // 33px at 60, 495px at 900
 
         const float toX = dx / distance, toY = dy / distance;
         if (antaresHeadingX == 0.0f && antaresHeadingY == 0.0f) {
@@ -2690,8 +2979,10 @@ public:
             // scale with speed, and the impact stuns Antares instead of
             // letting the two bodies overlap.
             if (singularityGrace <= 0.0f && distance < AntaresRamRange()) {
+                // Each split generation hits softer than the elite.
                 HurtPlayer(playerHP, IMPACT_DAMAGE * antaresMoveSpeed /
-                                     ANTARES_MAX_SPEED);
+                                     ANTARES_MAX_SPEED *
+                                     powf(ANTARES_CHILD_SCALE, (float)antaresGen));
                 const float knock = KNOCK_PER_SPEED * antaresMoveSpeed;
                 antaresKnockX += toX * knock;
                 antaresKnockY += toY * knock;
@@ -2711,41 +3002,6 @@ public:
                     antaresSkidDecel = (antaresMoveSpeed - ANTARES_MIN_SPEED) / SKID_TIME;
                 }
             }
-        } else if (antaresState == AntaresState::AIM) {
-            // Follows the player, then holds the aim; the whole bouncing
-            // path is drawn the entire time.
-            antaresMoveSpeed = 0.0f;
-            if (antaresStateTimer < ANTARES_AIM_TRACK) {
-                antaresHeadingX = toX;
-                antaresHeadingY = toY;
-                PlanAntaresCharge();
-            } else if (antaresStateTimer >= ANTARES_AIM_TRACK + ANTARES_AIM_LOCK) {
-                antaresState = AntaresState::CHARGE;
-                antaresStateTimer = 0.0f;
-                antaresBounces = 0;
-                antaresChargeLeft = ANTARES_CHARGE_LENGTH;
-                antaresMoveSpeed = ANTARES_CHARGE_SPEED;
-            }
-        } else if (antaresState == AntaresState::CHARGE) {
-            // Fixed heading and speed (edge reflection is ConfineAntares'
-            // job). A hit on the player is a ram; the run otherwise ends
-            // when its length is used up.
-            antaresMoveSpeed = ANTARES_CHARGE_SPEED;
-            antaresChargeLeft -= antaresMoveSpeed * speedMult * deltaTime;
-            if (singularityGrace <= 0.0f && distance < AntaresRamRange()) {
-                HurtPlayer(playerHP, IMPACT_DAMAGE * antaresMoveSpeed /
-                                     ANTARES_MAX_SPEED);
-                const float knock = KNOCK_PER_SPEED * antaresMoveSpeed;
-                antaresKnockX += toX * knock;
-                antaresKnockY += toY * knock;
-                antaresState = AntaresState::STUNNED;
-                antaresStateTimer = 0.0f;
-                antaresMoveSpeed = 0.0f;
-            } else if (antaresChargeLeft <= 0.0f) {
-                antaresState = AntaresState::SKID;
-                antaresStateTimer = 0.0f;
-                antaresSkidDecel = (antaresMoveSpeed - ANTARES_MIN_SPEED) / SKID_TIME;
-            }
         } else if (antaresState == AntaresState::SKID) {
             antaresMoveSpeed = std::max(ANTARES_MIN_SPEED,
                                         antaresMoveSpeed - antaresSkidDecel * deltaTime);
@@ -2761,16 +3017,11 @@ public:
                 ? ANTARES_STUN_TIME : ANTARES_REST_TIME;
             antaresMoveSpeed = 0.0f;
             if (antaresStateTimer >= hold) {
-                ++antaresRuns;
-                if (antaresGen == 0 && antaresInArena && (antaresRuns & 1) == 0) {
-                    BeginAntaresCharge(toX, toY);
-                } else {
-                    antaresState = AntaresState::CHASE;
-                    antaresStateTimer = 0.0f;
-                    antaresMoveSpeed = ANTARES_MIN_SPEED;
-                    antaresHeadingX = toX;
-                    antaresHeadingY = toY;
-                }
+                antaresState = AntaresState::CHASE;
+                antaresStateTimer = 0.0f;
+                antaresMoveSpeed = ANTARES_MIN_SPEED;
+                antaresHeadingX = toX;
+                antaresHeadingY = toY;
             }
         }
         antaresPrevFacing = antaresHeadingX * toX + antaresHeadingY * toY;
@@ -2835,12 +3086,20 @@ public:
         const float dy = playerCY - worldY;
         const float distance = std::sqrt(dx * dx + dy * dy) + 1e-4f;
 
+        if (genesisControlled) GenesisTrackPlayer(playerCX, playerCY, deltaTime);
+        if (genesisSummoned && thrownPhase == 0 &&
+            (kind == MobKind::ROTOR || kind == MobKind::SWARM || kind == MobKind::GRAVIS)) {
+            // A summoned melee enemy gets a little faster the longer it chases, up to a limit.
+            summonRamp = std::min(SUMMON_RAMP_MAX, summonRamp + SUMMON_RAMP_RATE * deltaTime);
+            speedMult *= summonRamp;
+        }
+
         if (kind == MobKind::NORMA) {
             UpdateNorma(dx, dy, distance, deltaTime, playerHP, speedMult, bullets);
             return;
         }
 
-        if(genesisThrown && kind==MobKind::ROTOR && genesisRotorPhase==0 && thrownDuration>0) {
+        if(genesisThrown && (genesisFromLauncher || !genesisSummoned) && kind==MobKind::ROTOR && genesisRotorPhase==0 && thrownDuration>0) {
             thrownTimer+=deltaTime;
             speedMult*=GenesisSmooth((thrownTimer-0.25f)/0.3f);
         }
@@ -2947,6 +3206,14 @@ public:
 
             quasarTimer += deltaTime;
             quasarBounds = attackBounds;
+            // The eruption condition: the player staying close for QUASAR_ERUPT_TRIGGER_TIME.
+            quasarEruptCooldown = std::max(0.0f, quasarEruptCooldown - deltaTime);
+            if (!quasarEruptActive) {
+                if (distance <= QUASAR_ERUPT_TRIGGER_RADIUS)
+                    quasarNearTimer = std::min(QUASAR_ERUPT_TRIGGER_TIME, quasarNearTimer + deltaTime);
+                else
+                    quasarNearTimer = std::max(0.0f, quasarNearTimer - QUASAR_ERUPT_NEAR_DRAIN * deltaTime);
+            }
             if (quasarPlayerSeen && deltaTime > 1e-5f) {
                 glm::vec2 inst = (glm::vec2(playerCX, playerCY) - quasarPlayerPrev) / deltaTime;
                 const float sp = glm::length(inst);
@@ -2961,6 +3228,15 @@ public:
             float coreTurn = atan2f(quasarAimY, quasarAimX) - quasarCoreAngle;
             coreTurn = std::remainder(coreTurn, 6.2831853f);
             quasarCoreAngle += coreTurn * (1.0f - expf(-deltaTime * 10.0f));
+            // Camped on: the eruption goes off at once, whatever the Quasar is doing
+            // (wind-up, lock, beam, starfall): it is an overlay with its own timer.
+            if (!quasarEruptActive && quasarEruptCooldown <= 0.0f &&
+                quasarNearTimer >= QUASAR_ERUPT_TRIGGER_TIME)
+                BeginQuasarEruption();
+            if (quasarEruptActive) {
+                quasarEruptTimer += deltaTime;
+                UpdateQuasarEruption(playerCX, playerCY, playerHP);
+            }
             if (quasarState == 0) {
                 quasarMoveTimer -= deltaTime;
                 if (quasarMoveTimer <= 0.0f) {
@@ -2973,9 +3249,11 @@ public:
                 // telegraph) so the band never chases the player.
                 if (QuasarPrecharge() <= 0.0f) {
                     quasarAimSet = false;
-                    quasarMoveAngle += quasarMoveTurn * deltaTime;
-                    worldX += cosf(quasarMoveAngle) * speed * speedMult * deltaTime;
-                    worldY += sinf(quasarMoveAngle) * speed * speedMult * deltaTime;
+                    if (!quasarEruptActive) {       // the zones are centred here: stay put while they run
+                        quasarMoveAngle += quasarMoveTurn * deltaTime;
+                        worldX += cosf(quasarMoveAngle) * speed * speedMult * deltaTime;
+                        worldY += sinf(quasarMoveAngle) * speed * speedMult * deltaTime;
+                    }
                 } else if (!quasarAimSet) {
                     if (distance > 0.001f) {
                         quasarAimX = dx / distance;
@@ -2984,7 +3262,7 @@ public:
                     quasarAimSet = true;
                 }
                 if (quasarTimer >= COOLDOWN_TIME) {
-                    if (quasarNextFall) { if (quasarEruptNext) BeginQuasarEruption(); else BeginQuasarFall(); }
+                    if (quasarNextFall) BeginQuasarFall();
                     else {
                         quasarState = 1;
                         quasarTimer = 0.0f;
@@ -3016,12 +3294,13 @@ public:
                     const float aim = atan2f(quasarAimY, quasarAimX);
                     float gap = atan2f(dy, dx) - aim;
                     gap -= 3.1415927f * floorf(gap / 3.1415927f + 0.5f);
-                    const float maxStep = QUASAR_BEAM_TURN * deltaTime;
+                    const float maxStep = QUASAR_BEAM_TURN * deltaTime *
+                        QuasarEase((quasarTimer - QUASAR_BEAM_GROW) / QUASAR_BEAM_TURN_EASE);   // frozen while it extends
                     const float next = aim + std::clamp(gap, -maxStep, maxStep);
                     quasarAimX = cosf(next);
                     quasarAimY = sinf(next);
                 }
-                const float growT = std::min(1.0f, quasarTimer / 0.70f);
+                const float growT = std::min(1.0f, quasarTimer / QUASAR_BEAM_GROW);
                 const float reach = BEAM_LENGTH * growT * growT * growT;
                 std::array<glm::vec4, QUASAR_BEAM_MAX_SEGMENTS> seg;
                 const int segCount = QuasarBeamSegments(reach, seg);
@@ -3034,7 +3313,8 @@ public:
                     u = std::max(0.0f, std::min(1.0f, u));
                     const float hx = ax + abx * u - playerCX;
                     const float hy = ay + aby * u - playerCY;
-                    if (hx * hx + hy * hy <= BEAM_RADIUS * BEAM_RADIUS) {
+                    const float hitR = BEAM_RADIUS * QuasarBeamWidth();      // thins out with the beam
+                    if (hx * hx + hy * hy <= hitR * hitR) {
                         HurtPlayer(playerHP, BEAM_DPS * deltaTime);   // once per frame
                         break;
                     }
@@ -3045,12 +3325,9 @@ public:
                 }
             } else if (quasarState == QUASAR_FALL_STATE) {
                 UpdateQuasarFall(playerCX, playerCY, playerHP, attackBounds);
-            } else if (quasarState == QUASAR_ERUPT_STATE) {
-                UpdateQuasarEruption(playerCX, playerCY, playerHP);
             } else if (quasarState == QUASAR_FALL_RECOVER_STATE) {
                 if (quasarTimer >= QUASAR_FALL_RECOVER - QUASAR_FALL_IMPACT_FX) {
                     quasarNextFall = false;
-                    quasarEruptNext = !quasarEruptNext;   // alternate starfall / eruption
                     quasarState = 0;
                     quasarTimer = 0.0f;
                 }
@@ -3124,7 +3401,9 @@ public:
             return;
         }
 
-        if (distance > 5.0f) {
+        if (genesisControlled) {
+            GenesisControlledMove(dx, dy, distance, playerCX, playerCY, deltaTime, speedMult, bullets);
+        } else if (distance > 5.0f) {
             worldX += (dx / distance) * speed * speedMult * deltaTime;
             worldY += (dy / distance) * speed * speedMult * deltaTime;
         }

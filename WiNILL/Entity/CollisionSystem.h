@@ -55,7 +55,7 @@ inline void CreditRegularKill(KillRewardSink& s, CodexMobId mobId, float scoreBa
 
 inline void CollectMonsterKill(KillRewardSink& s, Monster& m) {
     if (m.scored) return;
-    if (m.genesisThrown) {
+    if (m.genesisThrown && !m.genesisSummoned) {      // capsules, Swarms and Rotors: no reward
         CreditThrownSwarmKill(m);
         return;
     }
@@ -64,7 +64,11 @@ inline void CollectMonsterKill(KillRewardSink& s, Monster& m) {
     MobKillReward(m.kind, xpBase, scoreBase);
     scoreBase *= MobRewardMult(m.kind);
     XpAmount pickupXp = MobExperienceReward(m.kind, s.stats);
-    if (m.kind == MobKind::ANTARES && m.antaresGen > 0) {   // split children pay half
+    for (int g = 0; m.kind == MobKind::ANTARES && g < m.antaresGen; ++g) {   // each split generation pays half
+        pickupXp /= 2;
+        scoreBase *= 0.5f;
+    }
+    if (m.genesisSummoned) {                          // what a Genesis summons pays half
         pickupXp /= 2;
         scoreBase *= 0.5f;
     }
@@ -76,10 +80,15 @@ inline void CollectMonsterKill(KillRewardSink& s, Monster& m) {
 inline void CollectScopeKill(KillRewardSink& s, RangedMob& r) {
     if (r.scored) return;
     r.scored = true;
-    const XpAmount pickupXp = RangedMob::ExperienceReward(s.stats);
+    XpAmount pickupXp = RangedMob::ExperienceReward(s.stats);
+    float scopeScore = 300.0f;
+    if (r.genesisSummoned) {                          // what a Genesis summons pays half
+        pickupXp /= 2;
+        scopeScore *= 0.5f;
+    }
     SpawnStardust(r.worldX, r.worldY, 3,
                   s.playerCX, s.playerCY, pickupXp);
-    CreditRegularKill(s, CM_SCOPE, 300.0f);
+    CreditRegularKill(s, CM_SCOPE, scopeScore);
 }
 
 // Releases held kill stardust whose moment has come. Call every frame.

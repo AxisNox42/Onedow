@@ -22,7 +22,7 @@ static void CheckInfluenceCurve() {
 static void CheckPullStrength() {
     using namespace GravisField;
     assert(Near(PullSpeed(0.0f), 0.0f));
-    assert(Near(PullSpeed(1.0f), 350.0f));
+    assert(Near(PullSpeed(1.0f), 290.0f));
     assert(PullSpeed(0.5f) > 0.0f && PullSpeed(0.5f) < PullSpeed(1.0f));
     std::printf("pull strength ok (center %.0f px/s)\n", PullSpeed(1.0f));
 }
@@ -75,10 +75,10 @@ static void CheckDilationUsesStrongestOnly() {
 static void CheckDilationValues() {
     using namespace GravisField;
     assert(Near(FireIntervalMult(0.0f), 1.0f));
-    assert(Near(FireIntervalMult(1.0f), 1.6f));
+    assert(Near(FireIntervalMult(1.0f), 1.4f));
     assert(Near(DashRecoveryMult(0.0f), 1.0f));
-    assert(Near(DashRecoveryMult(1.0f), 0.25f));
-    assert(DashRecoveryMult(0.5f) > 0.25f && DashRecoveryMult(0.5f) < 1.0f);
+    assert(Near(DashRecoveryMult(1.0f), 0.50f));
+    assert(DashRecoveryMult(0.5f) > 0.50f && DashRecoveryMult(0.5f) < 1.0f);
     std::printf("dilation values ok\n");
 }
 

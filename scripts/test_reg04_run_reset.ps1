@@ -23,15 +23,15 @@ $steps = 'RUN~0.3;REG04=NEWRUN~0.05;RUN~0.3;REG04=RESTART~0.05;RUN~0.3;REG04=REB
          'RUN~0.3;REG04=REBUILD_NO_TIME~0.05;' +
          'RUN~0.3;REG04=ABANDON~0.3;REG04=READY~0.05;REG04DUMP=READY1~0.05;' +
          'REG04=READY~0.05;REG04DUMP=READY2~0.05'
-$env:ONEDOW_SMOKE = $steps
-$env:ONEDOW_SMOKE_TAG = 'reg04'
-$env:ONEDOW_SMOKE_SIZE = '1280x720'
+$env:ASTERIA_SMOKE = $steps
+$env:ASTERIA_SMOKE_TAG = 'reg04'
+$env:ASTERIA_SMOKE_SIZE = '1280x720'
 try {
     $p = Start-Process -FilePath $exe -WorkingDirectory $exeDir -PassThru
     if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'REG-04 smoke timed out' }
     if ($p.ExitCode -ne 0) { throw "REG-04 smoke exited with $($p.ExitCode)" }
 } finally {
-    Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE -ErrorAction SilentlyContinue
+    Remove-Item Env:ASTERIA_SMOKE, Env:ASTERIA_SMOKE_TAG, Env:ASTERIA_SMOKE_SIZE -ErrorAction SilentlyContinue
     Get-ChildItem (Join-Path $exeDir 'Screenshots') -Filter 'reg04_*.png' -ErrorAction SilentlyContinue | Remove-Item
 }
 if (-not (Test-Path $stateFile)) { throw 'no REG-04 snapshot written' }

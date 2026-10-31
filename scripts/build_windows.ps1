@@ -1,4 +1,6 @@
 # 테스트용 Windows 빌드 → build/windows/x64/Release/WiNILL.exe
+# -Rebuild: 헤더의 구조체 배치를 바꾼 뒤에는 반드시 사용 (증분 빌드가 낡은 .obj 를 남겨 크래시를 만든다)
+param([switch]$Rebuild)
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Vcx = Join-Path $Root "WiNILL\WiNILL.vcxproj"
@@ -12,7 +14,8 @@ $Msbuild = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $Msbuild) { throw "MSBuild를 찾을 수 없습니다." }
 
-& $Msbuild $Vcx /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64 "/p:IntDir=$IntDir" /v:minimal
+$Target = if ($Rebuild) { "/t:Rebuild" } else { "/t:Build" }
+& $Msbuild $Vcx $Target /p:Configuration=Release /p:Platform=x64 /p:PreferredToolArchitecture=x64 "/p:IntDir=$IntDir" /v:minimal
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""

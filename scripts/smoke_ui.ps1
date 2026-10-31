@@ -18,10 +18,10 @@ $Out = Join-Path $Root "build\smoke\$Tag"
 New-Item -ItemType Directory -Force $Out | Out-Null
 
 foreach ($lang in $Langs) {
-    $env:ONEDOW_SMOKE = $Steps
-    $env:ONEDOW_SMOKE_LANG = $lang
-    $env:ONEDOW_SMOKE_TAG = $Tag
-    if ($Size) { $env:ONEDOW_SMOKE_SIZE = $Size }
+    $env:ASTERIA_SMOKE = $Steps
+    $env:ASTERIA_SMOKE_LANG = $lang
+    $env:ASTERIA_SMOKE_TAG = $Tag
+    if ($Size) { $env:ASTERIA_SMOKE_SIZE = $Size }
     try {
         $p = Start-Process -FilePath $Exe -WorkingDirectory $ExeDir -PassThru
         if (-not $p.WaitForExit($TimeoutSec * 1000)) {
@@ -29,7 +29,7 @@ foreach ($lang in $Langs) {
             throw "스모크 실행 시간 초과 ($lang)"
         }
     } finally {
-        Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_LANG, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE -ErrorAction SilentlyContinue
+        Remove-Item Env:ASTERIA_SMOKE, Env:ASTERIA_SMOKE_LANG, Env:ASTERIA_SMOKE_TAG, Env:ASTERIA_SMOKE_SIZE -ErrorAction SilentlyContinue
     }
     Get-ChildItem $Shots -Filter "${Tag}_${lang}_*.png" | Move-Item -Destination $Out -Force
 }

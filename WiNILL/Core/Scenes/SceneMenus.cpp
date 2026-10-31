@@ -953,7 +953,7 @@ static bool DrawImageTitle(float sw, float sh, float alpha, float reveal,
     return true;
 }
 
-void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
+void DrawMainAsteriaLogo(float sw, float sh, float alpha, float reveal,
                                float centerXOverride, float heightMul) {
     if (alpha <= 0.001f) return;
     if (g_TitleStyle != 0 &&

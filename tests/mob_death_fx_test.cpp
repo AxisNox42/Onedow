@@ -194,20 +194,20 @@ static void CheckAntaresBullfight() {
     float playerHp = 1000.0f;
 
     // Chase: speed, stage and spin climb continuously up to the top speed.
-    Monster chaser(3000.0f, 0.0f);
+    Monster chaser(6000.0f, 0.0f);   // far enough not to ram during the ramp
     chaser.MakeKind(MobKind::ANTARES);
     assert(std::abs(chaser.hp - Monster::ANTARES_BASE_HP * Monster::ANTARES_ELITE_HP_MULT) < 0.01f);
     assert(chaser.AntaresStage() == 1 && chaser.AntaresGhostCount() == 0);
     float lastSpeed = 0.0f, lastSpin = 0.0f, elapsed = 0.0f;
     int lastStage = 1;
-    while (elapsed < 6.0f) {
+    while (elapsed < 7.0f) {   // 60 -> 900 px/s at 128 px/s^2 takes ~6.6s
         chaser.Update(0.0f, 0.0f, dt, playerHp);
         elapsed += dt;
         assert(chaser.antaresState == State::CHASE);
         assert(chaser.antaresMoveSpeed >= lastSpeed - 0.001f);
         assert(chaser.antaresSpinSpeed >= lastSpin - 0.001f);
         assert(chaser.AntaresStage() >= lastStage);
-        if (elapsed < 4.9f) assert(chaser.antaresMoveSpeed < Monster::ANTARES_MAX_SPEED);
+        if (elapsed < 6.4f) assert(chaser.antaresMoveSpeed < Monster::ANTARES_MAX_SPEED);
         lastSpeed = chaser.antaresMoveSpeed;
         lastSpin = chaser.antaresSpinSpeed;
         lastStage = chaser.AntaresStage();

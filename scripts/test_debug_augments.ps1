@@ -23,15 +23,15 @@ $steps = @(
     'DRAW@0.4606,0.8833!~0.2', 'REG04DUMP=OFFERED~0.05',
     'DEBUG~0.1', 'ADD@0.9578,0.4306!~0.2', 'REG04DUMP=LOCKED~0.05'
 )
-$env:ONEDOW_SMOKE = $steps -join ';'
-$env:ONEDOW_SMOKE_TAG = 'debug_augments'
-$env:ONEDOW_SMOKE_SIZE = '1280x720'
+$env:ASTERIA_SMOKE = $steps -join ';'
+$env:ASTERIA_SMOKE_TAG = 'debug_augments'
+$env:ASTERIA_SMOKE_SIZE = '1280x720'
 try {
     $p = Start-Process -FilePath $exe -WorkingDirectory $exeDir -PassThru -WindowStyle Hidden
     if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'debug augment smoke timed out' }
     if ($p.ExitCode -ne 0) { throw "debug augment smoke exited with $($p.ExitCode)" }
 } finally {
-    Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE -ErrorAction SilentlyContinue
+    Remove-Item Env:ASTERIA_SMOKE, Env:ASTERIA_SMOKE_TAG, Env:ASTERIA_SMOKE_SIZE -ErrorAction SilentlyContinue
     Get-ChildItem (Join-Path $exeDir 'Screenshots') -Filter 'debug_augments_*.png' -ErrorAction SilentlyContinue | Remove-Item
 }
 $snap = @{}

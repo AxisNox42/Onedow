@@ -11,6 +11,7 @@ class MonsterManager {
 public:
     std::vector<Monster*>   monsters;
     std::vector<RangedMob*> rangedMobs;
+    int spawnScreenW = 1280, spawnScreenH = 720;   // last arena size the spawner used (for summoned Scopes)
 
     // Afterglow of an instant Regulus shield laser: fixed endpoints captured
     // at the shot, purely visual (the shield is already granted).
@@ -68,6 +69,7 @@ public:
 
     void SpawnMob(int screenW, int screenH, int cap = 100, float hpMul = 1.0f,
                   float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
+        spawnScreenW = screenW; spawnScreenH = screenH;
         if ((int)monsters.size() >= cap) return;
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
@@ -79,6 +81,7 @@ public:
     void SpawnRangedMob(int screenW, int screenH,
                         float hpMult = 1.0f, int maxCount = 5,
                         float aX = 0.0f, float aY = 0.0f, int aW = -1, int aH = -1) {
+        spawnScreenW = screenW; spawnScreenH = screenH;
         if ((int)rangedMobs.size() >= maxCount) return;
         if (aW < 0) aW = screenW; if (aH < 0) aH = screenH;
         float sx, sy; EdgePoint(aX, aY, aW, aH, sx, sy);
@@ -115,6 +118,7 @@ public:
     // of making the important target visibly jitter or stall.
     static int CollisionTier(const Monster* m) {
         if (!m) return 0;
+        if (m->QuasarHoldsPosition()) return 99;     // a Quasar in its attack cannot be pushed by anything
         int tier = 0;
         switch (m->kind) {
         case MobKind::NORMA:    tier = 5; break;   // nothing pushes the boss
@@ -135,8 +139,7 @@ public:
     // resting one is knocked into a run.
     static glm::vec2 AntaresVelocity(const Monster& m) {
         using S = Monster::AntaresState;
-        const bool moving = m.antaresState == S::CHASE || m.antaresState == S::SKID ||
-                            m.antaresState == S::CHARGE;
+        const bool moving = m.antaresState == S::CHASE || m.antaresState == S::SKID;
         return moving ? glm::vec2(m.antaresHeadingX, m.antaresHeadingY) * m.antaresMoveSpeed
                       : glm::vec2(0.0f);
     }
@@ -146,7 +149,6 @@ public:
         if (len < 0.001f) return;
         m.antaresHeadingX = v.x / len;
         m.antaresHeadingY = v.y / len;
-        if (m.antaresState == S::CHARGE) return;   // keeps its own speed
         m.antaresMoveSpeed = std::clamp(len * Monster::ANTARES_BOUNCE_BOOST,
                                         Monster::ANTARES_BOUNCE_MIN_SPEED,
                                         Monster::ANTARES_MAX_SPEED);
@@ -181,24 +183,26 @@ public:
         }
     }
 
-    // A killed generation-0 Antares releases smaller ones that fly apart on
-    // its last heading. Silent clears (noBlast) release nothing.
+    // A killed Antares below ANTARES_MAX_GEN releases smaller ones (one
+    // generation down) that fly apart on its last heading. Silent clears
+    // (noBlast) release nothing.
     void SpawnAntaresSplits() {
         const size_t count = monsters.size();
         for (size_t i = 0; i < count; ++i) {
             Monster* m = monsters[i];
-            if (m->kind != MobKind::ANTARES || m->alive || m->antaresGen != 0 ||
-                m->antaresSplit) continue;
+            if (m->kind != MobKind::ANTARES || m->alive || m->antaresSplit) continue;
             m->antaresSplit = true;
-            if (m->noBlast) continue;
+            if (m->noBlast || m->antaresGen >= Monster::ANTARES_MAX_GEN) continue;
+            const int gen = m->antaresGen + 1;
             const float base = atan2f(m->antaresHeadingY, m->antaresHeadingX) + 1.5707963f;
             for (int k = 0; k < Monster::ANTARES_SPLIT_COUNT; ++k) {
                 const float a = base + (float)k * 6.2831853f / (float)Monster::ANTARES_SPLIT_COUNT;
-                auto* c = new Monster(m->worldX + cosf(a) * 34.0f, m->worldY + sinf(a) * 34.0f);
+                const float offset = 34.0f * powf(Monster::ANTARES_CHILD_SCALE, (float)m->antaresGen);
+                auto* c = new Monster(m->worldX + cosf(a) * offset, m->worldY + sinf(a) * offset);
                 c->MakeKind(MobKind::ANTARES);
-                c->antaresGen = 1;
-                c->sizeScale *= Monster::ANTARES_CHILD_SCALE;
-                c->hp = c->hp / Monster::ANTARES_ELITE_HP_MULT * Monster::ANTARES_CHILD_HP;
+                c->antaresGen = gen;
+                c->sizeScale *= powf(Monster::ANTARES_CHILD_SCALE, (float)gen);
+                c->hp = c->hp / Monster::ANTARES_ELITE_HP_MULT * powf(Monster::ANTARES_CHILD_HP, (float)gen);
                 c->antaresInArena = true;
                 c->antaresHeadingX = cosf(a);
                 c->antaresHeadingY = sinf(a);
@@ -441,17 +445,37 @@ private:
             int own=0,total=(int)born.size();
             for(auto* m:monsters) if(m->alive) {
                 ++total;
-                if(m->genesisThrown && m->kind==MobKind::ROTOR && m->thrownOwnerId==g.genesisId) ++own;
+                if(m->genesisFromLauncher && m->thrownOwnerId==g.genesisId) ++own;
             }
-            for(auto* m:born) if(m->kind==MobKind::ROTOR && m->thrownOwnerId==g.genesisId) ++own;
+            for(auto* m:born) if(m->genesisFromLauncher && m->thrownOwnerId==g.genesisId) ++own;
             if(own<Monster::GENESIS_ROTOR_CAP && total<130) {
                 const auto p=g.GenesisRotorFeedPoint(0);
                 auto* child=new Monster(p.x,p.y);
-                child->MakeKind(MobKind::ROTOR);
+                bool scopeCapsule=false;
+                MobKind pick=MobKind::ROTOR;
+                if(g.genesisRandomSummons) {            // Nightmare: the loaded unit is a random enemy
+                    MobKind pool[16];
+                    const int n=GenesisSummonPool(pool);
+                    const int roll=rand()%(n+1);
+                    scopeCapsule=roll==n;
+                    if(!scopeCapsule) pick=pool[roll];
+                }
+                child->MakeKind(pick);
+                child->genesisFromLauncher=true;
+                if(g.genesisRandomSummons) {
+                    child->hp*=g.genesisChildHpMult;
+                    child->genesisNaturalScale=scopeCapsule ? 1.0f : child->sizeScale;
+                    child->genesisSummoned=!scopeCapsule;
+                    if(scopeCapsule) {                  // a Scope loaded in the cradle: bursts into one after landing
+                        child->genesisSummonCarrier=true;
+                        child->genesisCarryScope=true;
+                        child->genesisSummonHpMult=g.genesisChildHpMult;
+                    }
+                }
                 child->genesisRotorFullScale=g.GenesisRotorOutputScale();
                 child->sizeScale=Monster::GenesisRotorFormScale(child->genesisRotorFullScale,0);
                 child->genesisThrown=true; // reuse summon caps and no-farm rewards
-                child->thrownOwnerId=g.genesisId;
+                child->TakeGenesisControl(g.genesisId);
                 child->genesisRotorPhase=1;
                 born.push_back(child);
             }
@@ -483,13 +507,51 @@ private:
         g.hivePhase=g.hiveSpawnCount>=Monster::GENESIS_ROTOR_COUNT ? 6 : 5;
     }
 
+    // Every regular enemy a Genesis can summon: the ground kinds that are not elites or the
+    // boss, and the Scope (a ranged enemy, its own class). Uniform: each is one entry.
+    static int GenesisSummonPool(MobKind* out) {
+        int n = 0;
+        for (int k = 0; k < (int)MobKind::NORMA && n < 15; ++k) {
+            const MobKind kind = (MobKind)k;
+            if (IsEliteMob(kind)) continue;
+            out[n++] = kind;
+        }
+        return n;                                         // the Scope is one more, after these
+    }
+
+    // Ground enemies are thrown as themselves. Only a Scope (its own class) is thrown as a
+    // capsule that, once landed and stunned, bursts silently into a Scope.
+    void OpenGenesisCapsule(Monster& c) {
+        const int owner = c.thrownOwnerId;
+        {
+            auto* r = new RangedMob(c.worldX, c.worldY, spawnScreenW, spawnScreenH);
+            r->hp *= c.genesisSummonHpMult;
+            r->genesisSummoned = true;
+            r->summonOwnerId = owner;
+            r->freeColor = r->color;
+            r->color = Monster::GENESIS_CONTROLLED_COLOR;
+            r->hitFlashTimer = 0.25f;
+            rangedMobs.push_back(r);
+            c.alive = false; c.scored = true; c.noBlast = true;     // the capsule is spent
+        }
+    }
+
     void UpdateGenesisLaunchers(float dt, float playerCX, float playerCY) {
         std::vector<Monster*> born;
         const int total = (int)monsters.size();
+        for (auto* c : monsters)
+            if (c->alive && c->genesisSummonCarrier && c->thrownPhase == 0 && c->genesisRotorPhase == 0 && c->genesisControlled)
+                OpenGenesisCapsule(*c);
 
         for (auto* m : monsters) {
             if (m->kind != MobKind::GENESIS) continue;
             if (!m->alive) {
+                for(auto* child:monsters) if(child->alive && child->thrownOwnerId==m->genesisId)
+                    child->ReleaseGenesisControl();          // the control is cut with its Genesis
+                for(auto* r:rangedMobs) if(r->alive && r->summonOwnerId==m->genesisId) {
+                    // a summoned Scope keeps its controlled colour too
+                    r->summonOwnerId = 0;
+                }
                 for(auto* child:monsters) if(child->alive && child->thrownOwnerId==m->genesisId && child->genesisRotorPhase>0) {
                     if(child->genesisRotorPhase==1) {
                         child->alive=false; child->scored=true; child->noBlast=true;
@@ -568,11 +630,13 @@ private:
                     m->spawnTimer = 0.0f;
                     int ownAlive = 0;
                     for (auto* s : monsters)
-                        if (s->alive && s->genesisThrown && s->kind != MobKind::ROTOR &&
+                        if (s->alive && s->genesisThrown && !s->genesisFromLauncher &&
                             s->thrownOwnerId == m->genesisId)
                             ++ownAlive;
                     for (auto* s : born)
-                        if (s->kind != MobKind::ROTOR && s->thrownOwnerId == m->genesisId) ++ownAlive;
+                        if (!s->genesisFromLauncher && s->thrownOwnerId == m->genesisId) ++ownAlive;
+                    for (auto* r : rangedMobs)
+                        if (r->alive && r->summonOwnerId == m->genesisId) ++ownAlive;
                     if (ownAlive < Monster::GENESIS_THROWN_CAP &&
                         total + (int)born.size() < 130) {
                         const int shot = std::min(m->hiveSpawnCount, 2);
@@ -580,11 +644,26 @@ private:
                         const float mx = m->worldX + cosf(m->genesisAimAngle) * hullR * 0.9f;
                         const float my = m->worldY + sinf(m->genesisAimAngle) * hullR * 0.9f;
                         Monster* child = new Monster(mx, my, 1.0f);
-                        child->MakeKind(MobKind::SWARM);
+                        bool scopeCapsule = false;
+                        if (m->genesisRandomSummons) {              // Nightmare: the unit is a random enemy from the throw on
+                            MobKind pool[16];
+                            const int n = GenesisSummonPool(pool);
+                            const int roll = rand() % (n + 1);
+                            scopeCapsule = roll == n;
+                            child->MakeKind(scopeCapsule ? MobKind::SWARM : pool[roll]);
+                            child->genesisSummoned = !scopeCapsule;
+                        } else {
+                            child->MakeKind(MobKind::SWARM);
+                        }
                         child->hp *= m->genesisChildHpMult;
                         child->BeginThrownFlight(m->genesisShotX[shot],
                                                  m->genesisShotY[shot]);
-                        child->thrownOwnerId = m->genesisId;
+                        child->TakeGenesisControl(m->genesisId);
+                        if (scopeCapsule) {
+                            child->genesisSummonCarrier = true;
+                            child->genesisCarryScope = true;
+                            child->genesisSummonHpMult = m->genesisChildHpMult;
+                        }
                         born.push_back(child);
                     }
                     ++m->hiveSpawnCount;

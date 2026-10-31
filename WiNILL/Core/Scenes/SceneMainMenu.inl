@@ -140,7 +140,7 @@ void Scene_MainMenu(const SceneCtx& c) {
     // their own schedule and the intro still ends after the trace completes.
     constexpr float kLogoTraceDur = 1.40f;
     static_assert(kLogoTraceDur <= kIntroDone, "logo trace must finish within the intro");
-    DrawMainOnedowLogo(sw, sh, titleA, std::min(s_introT / kLogoTraceDur, 1.0f),
+    DrawMainAsteriaLogo(sw, sh, titleA, std::min(s_introT / kLogoTraceDur, 1.0f),
                        sw * 0.30f, 0.82f);
     for (int i = 0; i < kBtnCount; i++) {
         float baseBx = btnX0;

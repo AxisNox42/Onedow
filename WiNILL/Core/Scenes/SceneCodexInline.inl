@@ -190,7 +190,7 @@ static void Scene_CodexInline(const SceneCtx& c) {
     // Main-menu expansion ghost.
     const float oldOut = 1.0f - oldMenuA;
     const float returnLogoA = s_backExit ? (0.42f + 0.58f * backP) : 0.42f;
-    DrawMainOnedowLogo(sw, sh,
+    DrawMainAsteriaLogo(sw, sh,
                        returnLogoA * oldMenuA,
                        LogoClamp01(oldMenuA + 0.22f * wake),
                        sw * 0.30f - 160.0f * oldOut,

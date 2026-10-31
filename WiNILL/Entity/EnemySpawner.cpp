@@ -84,6 +84,9 @@ static void SpawnScheduledElite(MonsterManager& monsters, int screenWidth,
     mob.MakeKind(elite);
     if (elite == MobKind::QUASAR)
         mob.quasarReflections = Monster::QuasarReflectionsFor((int)difficulty);
+    // From NIGHTMARE a Genesis' Swarm throws summon random regular enemies (no elites, no boss).
+    if (elite == MobKind::GENESIS)
+        mob.genesisRandomSummons = (difficulty == Difficulty::NIGHTMARE);
     if (elite == MobKind::GENESIS) {
         mob.spawnAnchorX = 160.0f +
             (float)(rand() % (screenWidth > 360 ? screenWidth - 320 : 1));

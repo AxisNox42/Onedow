@@ -1,7 +1,7 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
 // 저장 시스템 — 설정 + 기록을 사용자 AppData 폴더의 파일(key=value)로 영구 저장.
-//   예전 exe 옆 onedow_save.cfg 는 LoadGame 에서 1회 이전한다.
+//   예전 exe 옆 asteria_save.cfg 는 LoadGame 에서 1회 이전한다.
 // ─────────────────────────────────────────────────────────────
 #include <cstdio>
 #include <cstring>
@@ -204,8 +204,6 @@ inline bool DecodeSaveText(const std::string& raw, std::string& text) {
 // 영구 데이터 (설정은 Settings.h 전역을 그대로 직렬화)
 inline long long g_BestScore[4] = { 0, 0, 0, 0 }; // 난이도별 최고 점수 (EASY/NORMAL/HARD/NIGHTMARE)
 inline long long g_BestWave[4]     = { 0, 0, 0, 0 };   // 난이도별 도달한 최대 웨이브
-inline long long g_BestWaveSec[4]  = { 0, 0, 0, 0 };   // 최대 웨이브에 도달한 판의 진행 시간(초)
-inline long long g_BestClearSec[4] = { 0, 0, 0, 0 };   // 난이도별 가장 빠른 클리어 시간(초). 0 = 클리어 없음
 inline long long g_TotalKills   = 0;             // 누적 처치 수
 inline long long g_TotalGames   = 0;             // 누적 플레이 횟수
 inline long long g_LastRunCoins = 0;             // 직전 판 획득 코인 (GAMEOVER 표시용)
@@ -217,10 +215,10 @@ inline long long g_WeaponBestKills[2]  = { 0, 0 };  // 한 판 최다 처치
 inline long long g_WeaponTotalKills[2] = { 0, 0 };  // 누적 처치
 inline long long g_WeaponRunCount[2]   = { 0, 0 };  // 플레이 횟수
 
-// 세이브 위치: Windows %APPDATA%\Onedow, macOS ~/Library/Application Support/Onedow,
-// 그 외 ~/.local/share/Onedow. ONEDOW_SAVE_DIR 로 덮어쓸 수 있다(테스트용).
+// 세이브 위치: Windows %APPDATA%\Asteria, macOS ~/Library/Application Support/Asteria,
+// 그 외 ~/.local/share/Asteria. ASTERIA_SAVE_DIR 로 덮어쓸 수 있다(테스트용).
 // 폴더를 못 정하면 예전처럼 작업 폴더(exe 옆)에 둔다.
-inline const char* kLegacySaveName = "onedow_save.cfg";
+inline const char* kLegacySaveName = "asteria_save.cfg";
 inline std::string SaveDir() {
     auto env = [](const char* name) -> std::string {
 #ifdef _MSC_VER
@@ -233,18 +231,18 @@ inline std::string SaveDir() {
         return v ? v : "";
 #endif
     };
-    std::string dir = env("ONEDOW_SAVE_DIR");
+    std::string dir = env("ASTERIA_SAVE_DIR");
     if (dir.empty()) {
 #ifdef _WIN32
         dir = env("APPDATA");
-        if (!dir.empty()) dir += "\\Onedow";
+        if (!dir.empty()) dir += "\\Asteria";
 #else
         const std::string home = env("HOME");
         if (!home.empty())
 #  ifdef __APPLE__
-            dir = home + "/Library/Application Support/Onedow";
+            dir = home + "/Library/Application Support/Asteria";
 #  else
-            dir = home + "/.local/share/Onedow";
+            dir = home + "/.local/share/Asteria";
 #  endif
 #endif
     }
@@ -293,10 +291,9 @@ inline void SaveGame() {
     add("best_easy=%lld\n",   g_BestScore[0]);
     add("best_normal=%lld\n", g_BestScore[1]);
     add("best_hard=%lld\n",   g_BestScore[2]);
-    for (int i = 0; i < 3; i++) {
+    add("best_nightmare=%lld\n", g_BestScore[3]);
+    for (int i = 0; i < 4; i++) {
         std::snprintf(ln, sizeof(ln), "bwave%d=%lld\n",  i, g_BestWave[i]);     buf += ln;
-        std::snprintf(ln, sizeof(ln), "bclear%d=%lld\n", i, g_BestClearSec[i]); buf += ln;
-        std::snprintf(ln, sizeof(ln), "bwsec%d=%lld\n",  i, g_BestWaveSec[i]);  buf += ln;
     }
     add("kills=%lld\n",   g_TotalKills);
     add("games=%lld\n",   g_TotalGames);
@@ -381,6 +378,24 @@ inline void LoadGame() {
     // 직전 백업을 읽는다. 다음 저장이 손상본으로 백업을 덮어쓰지 않게 하기 위함.
     std::string content;
     std::error_code ec;
+    // 이름 변경(Onedow → Asteria) 이전의 세이브 폴더/파일이 있으면 1회 복사해 온다.
+    if (std::string(SaveFilePath()) != kLegacySaveName &&
+        !std::filesystem::exists(SaveFilePath(), ec)) {
+        const std::filesystem::path newDir = std::filesystem::path(SaveFilePath()).parent_path();
+        const std::filesystem::path oldDir = newDir.parent_path() / (newDir.filename() == "Asteria" ? "Onedow" : "onedow");
+        const std::filesystem::path oldFile = oldDir / "onedow_save.cfg";
+        if (std::filesystem::exists(oldFile, ec)) {
+            ec.clear();
+            std::filesystem::copy_file(oldFile, SaveFilePath(), ec);
+            if (!ec) {
+                const std::filesystem::path oldBak = oldDir / "onedow_save.cfg.bak";
+                if (std::filesystem::exists(oldBak, ec))
+                    std::filesystem::copy_file(oldBak, SaveBackupPath(),
+                        std::filesystem::copy_options::overwrite_existing, ec);
+            }
+        }
+        ec.clear();
+    }
     // 예전 exe 옆 세이브가 있으면 새 위치로 1회 옮긴다(새 세이브가 없을 때만).
     if (std::string(SaveFilePath()) != kLegacySaveName &&
         !std::filesystem::exists(SaveFilePath(), ec) &&
@@ -453,8 +468,6 @@ inline void LoadGame() {
         else if (!std::strcmp(key, "best_hard"))   g_BestScore[2]      = ClampSaveValue(val);
         else if (!std::strcmp(key, "best_nightmare")) g_BestScore[3]   = ClampSaveValue(val);
         else if (!std::strncmp(key, "bwave",  5))   { int i = atoi(key+5); if (i>=0&&i<4) g_BestWave[i]     = ClampSaveValue(val); }
-        else if (!std::strncmp(key, "bwsec",  5))   { int i = atoi(key+5); if (i>=0&&i<4) g_BestWaveSec[i]  = ClampSaveValue(val); }
-        else if (!std::strncmp(key, "bclear", 6))   { int i = atoi(key+6); if (i>=0&&i<4) g_BestClearSec[i] = ClampSaveValue(val); }
         else if (!std::strcmp(key, "kills"))       g_TotalKills        = ClampSaveValue(val);
         else if (!std::strcmp(key, "games"))       g_TotalGames        = ClampSaveValue(val);
         else if (!std::strncmp(key, "wbscore", 7))  { int i = atoi(key+7); if (i>=0&&i<2) g_WeaponBestScore[i]  = ClampSaveValue(val); }
@@ -499,7 +512,7 @@ inline void LoadGame() {
 // 세이브 진행도 초기화 — 점수/코인/메타/업적/도감/테마를 전부 리셋(설정/언어는 유지).
 //   설정 화면의 "세이브 초기화" 버튼에서 호출. 즉시 파일에도 반영.
 inline void ResetSaveProgress() {
-    for (int i = 0; i < 4; i++) g_BestScore[i] = g_BestWave[i] = g_BestWaveSec[i] = g_BestClearSec[i] = 0;
+    for (int i = 0; i < 4; i++) g_BestScore[i] = g_BestWave[i] = 0;
     g_TotalKills = 0; g_TotalGames = 0;
     for (int i = 0; i < 2; i++) {
         g_WeaponBestScore[i] = g_WeaponBestKills[i] = g_WeaponTotalKills[i] = g_WeaponRunCount[i] = 0;
@@ -520,27 +533,15 @@ inline void ResetSaveProgress() {
 
 // 한 판 종료 시 호출 — 최고점/누적 기록 갱신 후 저장. 신기록이면 true.
 // weaponIdx: 0=RIFLE, 1=STATIC FIELD, -1=미지정
-// wave: 이번 판에 도달한 웨이브. cleared 면 clearSeconds 가 클리어 시간이다.
+// wave: 이번 판에 도달한 웨이브.
 inline bool RecordRunResult(int difficultyIdx, long long score, long long kills, int weaponIdx = -1,
-                            int wave = 0, bool cleared = false, float clearSeconds = 0.0f) {
+                            int wave = 0) {
     if (difficultyIdx < 0 || difficultyIdx > 3) difficultyIdx = 1;
     score = ClampSaveValue(score);
     kills = ClampSaveValue(kills);
     bool isRecord = (score > g_BestScore[difficultyIdx]);
     if (isRecord) g_BestScore[difficultyIdx] = score;
-    const long long runSec = clearSeconds > 0.0f ? ClampSaveValue((long long)(clearSeconds + 0.5f)) : 0;
-    // 최대 웨이브가 같으면 더 짧은 시간을 남긴다(기록된 시간이 없으면 이번 시간).
-    if (wave > g_BestWave[difficultyIdx] ||
-        (wave > 0 && wave == g_BestWave[difficultyIdx] && runSec > 0 &&
-         (g_BestWaveSec[difficultyIdx] == 0 || runSec < g_BestWaveSec[difficultyIdx]))) {
-        g_BestWave[difficultyIdx] = std::min(wave, 99);
-        g_BestWaveSec[difficultyIdx] = runSec;
-    }
-    if (cleared && clearSeconds > 0.0f) {
-        const long long sec = ClampSaveValue((long long)(clearSeconds + 0.5f));
-        if (sec > 0 && (g_BestClearSec[difficultyIdx] == 0 || sec < g_BestClearSec[difficultyIdx]))
-            g_BestClearSec[difficultyIdx] = sec;
-    }
+    if (wave > g_BestWave[difficultyIdx]) g_BestWave[difficultyIdx] = std::min(wave, 99);
     AddSaveValue(g_TotalKills, kills);
     AddSaveValue(g_TotalGames, 1);
     if (weaponIdx >= 0 && weaponIdx < 2) {

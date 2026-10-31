@@ -44,7 +44,7 @@ int main() {
     telemetry.Update(10.0f, 1, 1030, XpFromWhole(6), stats);
     telemetry.RecordLevelUp(10.0f, 1, 2, XpFromWhole(6), XpFromWhole(6) + 125, 125);
     telemetry.EndRun(10.0f, 2, 125, stats, "xp_test");
-    std::ifstream log(PlatformExeDirectory() + "/onedow_gameplay_telemetry.txt");
+    std::ifstream log(PlatformExeDirectory() + "/asteria_gameplay_telemetry.txt");
     const std::string contents((std::istreambuf_iterator<char>(log)), std::istreambuf_iterator<char>());
     assert(contents.find("current_xp=1.030,required_xp=6.000") != std::string::npos);
     assert(contents.find("interval_xp=1.030") != std::string::npos);

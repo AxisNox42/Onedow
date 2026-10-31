@@ -40,7 +40,7 @@ void Apply(const MonsterManager& monsters, std::vector<Bullet>& bullets,
 
             const float distance = std::sqrt(distanceSq);
             const float influence = 1.0f - distance / RADIUS;
-            const float curve = (0.70f + 2.40f * influence) * dt;
+            const float curve = (0.50f + 1.80f * influence) * dt;
             bullet.dirX += bx / distance * curve;
             bullet.dirY += by / distance * curve;
             const float directionLength =

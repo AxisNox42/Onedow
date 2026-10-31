@@ -1,16 +1,16 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
 // 스모크 캡처 — UI QA 검증용 자동 장면 캡처.
-//   ONEDOW_SMOKE      = "STEP;STEP;..."   (필수, 없으면 비활성)
-//   ONEDOW_SMOKE_LANG = KR | EN | JP      (선택)
-//   ONEDOW_SMOKE_TAG  = 파일명 접두어      (선택, 기본 smoke)
-//   ONEDOW_SMOKE_SIZE = WxH               (선택, 창 크기 강제)
-//   ONEDOW_SMOKE_KEYLINE = 0              (선택, 전투 요소 테두리 끄기: 전후 비교용)
-//   ONEDOW_SMOKE_ORBITS  = 0              (선택, PLAY 무기 별자리 궤도 링 끄기)
+//   ASTERIA_SMOKE      = "STEP;STEP;..."   (필수, 없으면 비활성)
+//   ASTERIA_SMOKE_LANG = KR | EN | JP      (선택)
+//   ASTERIA_SMOKE_TAG  = 파일명 접두어      (선택, 기본 smoke)
+//   ASTERIA_SMOKE_SIZE = WxH               (선택, 창 크기 강제)
+//   ASTERIA_SMOKE_KEYLINE = 0              (선택, 전투 요소 테두리 끄기: 전후 비교용)
+//   ASTERIA_SMOKE_ORBITS  = 0              (선택, PLAY 무기 별자리 궤도 링 끄기)
 // STEP 형식: NAME[@fx,fy][!|*][~sec]
-//   QUASARFALL=<초> / QUASARBEAM=<초> : 퀘이사 준비 시작부터 지정 시점 재현 (ONEDOW_QREFLECT=<n> 로 빔 반사 횟수)
+//   QUASARFALL=<초> / QUASARBEAM=<초> : 퀘이사 준비 시작부터 지정 시점 재현 (ASTERIA_QREFLECT=<n> 로 빔 반사 횟수)
 //   MOBGRID / MOBBUFF=<1 보호막,2 가속,4 은신 비트합> : 몹 격자 배치 / 전원에 버프 부여
-//   MOBCLEAR / MOBDUMP=<라벨> : 모든 몹 제거 / 살아있는 그라비스·레굴루스 상태를 Screenshots/mob_state.txt 에 기록
+//   MOBCLEAR / MOBDUMP=<라벨> : 모든 몹 제거 / 살아있는 그라비티·레굴루스 상태를 Screenshots/mob_state.txt 에 기록
 //   GENESISROTOR=<초> : 제네시스 로터 준비 시작부터 지정 시점 재현 (캡처 시 정지)
 //   GENESISCYCLE=<초> : SWARM 조준부터 로터 대기·준비까지 전체 실제 전환 재현
 //   SKILLHUD=MIX|EMPTY|PULSE : 새 런에서 스킬 HUD 상태 프리셋 (쿨다운·지속·패시브)
@@ -61,25 +61,25 @@ public:
 
     // LoadGame() 이후에 호출. 세이브에서 읽은 언어/디버그 설정을 덮어쓴다.
     bool Init() {
-        const std::string spec = SmokeEnv("ONEDOW_SMOKE");
+        const std::string spec = SmokeEnv("ASTERIA_SMOKE");
         if (spec.empty()) return false;
         ParseSteps(spec);
         if (steps_.empty()) return false;
 
-        const std::string lang = SmokeEnv("ONEDOW_SMOKE_LANG");
+        const std::string lang = SmokeEnv("ASTERIA_SMOKE_LANG");
         if (lang == "EN") g_Language = Language::EN;
         else if (lang == "JP") g_Language = Language::JP;
         else if (lang == "KR") g_Language = Language::KR;
-        const std::string tag = SmokeEnv("ONEDOW_SMOKE_TAG");
+        const std::string tag = SmokeEnv("ASTERIA_SMOKE_TAG");
         if (!tag.empty()) tag_ = tag;
-        const std::string size = SmokeEnv("ONEDOW_SMOKE_SIZE");
+        const std::string size = SmokeEnv("ASTERIA_SMOKE_SIZE");
         const size_t x = size.find('x');
         if (x != std::string::npos) {
             width_ = std::atoi(size.c_str());
             height_ = std::atoi(size.c_str() + x + 1);
         }
-        if (SmokeEnv("ONEDOW_SMOKE_KEYLINE") == "0") g_CombatKeylineScale = 0.0f;
-        if (SmokeEnv("ONEDOW_SMOKE_ORBITS") == "0") g_PlayConstellationOrbits = false;
+        if (SmokeEnv("ASTERIA_SMOKE_KEYLINE") == "0") g_CombatKeylineScale = 0.0f;
+        if (SmokeEnv("ASTERIA_SMOKE_ORBITS") == "0") g_PlayConstellationOrbits = false;
         g_SmokeCapture = true;
         g_DebugMode = true;   // 캡처 경로가 디버그 모드에 묶여 있음 (저장 안 됨)
         return true;

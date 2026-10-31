@@ -14,15 +14,15 @@ foreach ($k in $kinds) {
     $steps += @('MOBCLEAR~0.02', "SPAWN=$k~0.02", 'MOBGRACE~0.01', 'MOBGRID~0.02')
     foreach ($m in 0,1,2,4,7) { $steps += @("MOBBUFF=$m~0.01", 'MOBGRID~0.01', "S_${k}_$m~0.1") }
 }
-$env:ONEDOW_SMOKE = $steps -join ';'
-$env:ONEDOW_SMOKE_TAG = 'buffmarks'
-$env:ONEDOW_SMOKE_SIZE = '1280x720'
+$env:ASTERIA_SMOKE = $steps -join ';'
+$env:ASTERIA_SMOKE_TAG = 'buffmarks'
+$env:ASTERIA_SMOKE_SIZE = '1280x720'
 try {
     $p = Start-Process -FilePath $exe -WorkingDirectory $exeDir -PassThru -WindowStyle Hidden
     if (-not $p.WaitForExit(240000)) { $p.Kill(); throw 'buff marks smoke timed out' }
     if ($p.ExitCode -ne 0) { throw "buff marks smoke exited with $($p.ExitCode)" }
 } finally {
-    Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE -ErrorAction SilentlyContinue
+    Remove-Item Env:ASTERIA_SMOKE, Env:ASTERIA_SMOKE_TAG, Env:ASTERIA_SMOKE_SIZE -ErrorAction SilentlyContinue
 }
 $py = @'
 import glob, re, sys

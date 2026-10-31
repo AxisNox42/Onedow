@@ -5,15 +5,15 @@ $exe = Join-Path $exeDir 'WiNILL.exe'
 $stateFile = Join-Path $exeDir 'Screenshots\reg04_state.txt'
 if (-not (Test-Path $exe)) { throw "build first: $exe" }
 Remove-Item -LiteralPath $stateFile -ErrorAction SilentlyContinue
-$env:ONEDOW_SMOKE = 'RUN~0.3;REG04=PICK_REPLACE~0.3;REG04DUMP=RESUMED~0.05;REG04=PICK_CANCEL~0.05;REG04=PICK_CHAIN~0.05;REG04=PICK_REWARD~0.05'
-$env:ONEDOW_SMOKE_TAG = 'augment_replace'
-$env:ONEDOW_SMOKE_SIZE = '1280x720'
+$env:ASTERIA_SMOKE = 'RUN~0.3;REG04=PICK_REPLACE~0.3;REG04DUMP=RESUMED~0.05;REG04=PICK_CANCEL~0.05;REG04=PICK_CHAIN~0.05;REG04=PICK_REWARD~0.05'
+$env:ASTERIA_SMOKE_TAG = 'augment_replace'
+$env:ASTERIA_SMOKE_SIZE = '1280x720'
 try {
     $p = Start-Process -FilePath $exe -WorkingDirectory $exeDir -PassThru -WindowStyle Hidden
     if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'augment replacement smoke timed out' }
     if ($p.ExitCode -ne 0) { throw "augment replacement exited with $($p.ExitCode)" }
 } finally {
-    Remove-Item Env:ONEDOW_SMOKE, Env:ONEDOW_SMOKE_TAG, Env:ONEDOW_SMOKE_SIZE -ErrorAction SilentlyContinue
+    Remove-Item Env:ASTERIA_SMOKE, Env:ASTERIA_SMOKE_TAG, Env:ASTERIA_SMOKE_SIZE -ErrorAction SilentlyContinue
     Get-ChildItem (Join-Path $exeDir 'Screenshots') -Filter 'augment_replace_*.png' -ErrorAction SilentlyContinue | Remove-Item
 }
 $snap = @{}

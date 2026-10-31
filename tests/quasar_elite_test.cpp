@@ -2,7 +2,7 @@
 // arena edge (none below HARD, 1x on HARD, 2x on NIGHTMARE) and every third
 // starfall shot is aimed at the player's predicted position.
 // Run with scripts/test_quasar_elite.ps1.
-#include "Monster.h"
+#include "MonsterManager.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -221,6 +221,7 @@ static const glm::vec4 kBigArena(0.0f, 0.0f, 1280.0f, 720.0f);
 static Monster MakeEruptionQuasar() {
     Monster q = MakeQuasar(640.0f, 360.0f, 1.0f, 0.0f, 0);
     q.quasarBounds = kBigArena;
+    q.quasarTimer = -1000.0f;       // no attack of its own: these tests look at the eruption alone
     q.BeginQuasarEruption();
     return q;
 }
@@ -229,39 +230,62 @@ static void CheckEruptionZones() {
     for (int trial = 0; trial < 20; ++trial) {
         srand(500 + trial);
         Monster q = MakeEruptionQuasar();
-        assert(q.quasarState == Monster::QUASAR_ERUPT_STATE);
-        assert(q.quasarEruptCount >= 20 && q.quasarEruptCount <= Monster::QUASAR_ERUPT_MAX_ZONES);
+        assert(q.quasarEruptActive);
+        int ringZones = 0, laneZones = 0, bodyZones = 0;
+        for (int i = 0; i < q.quasarEruptCount; ++i) {
+            if (q.quasarEruptBeat[i] == 0) ++ringZones;
+            else if (q.quasarEruptRing[i] == Monster::QUASAR_ERUPT_CENTER_RING) ++bodyZones;
+            else ++laneZones;
+        }
+        assert(ringZones >= 12 && ringZones <= 110);  // three rings around the Quasar, not the whole map
+        assert(laneZones >= 10 && bodyZones == 1);    // beat 1: the lane band and one zone on the body
         const glm::vec2 c(640.0f, 360.0f);
         float nearest = 1.0e9f;
         for (int i = 0; i < q.quasarEruptCount; ++i) {
             const glm::vec2 z = q.quasarEruptZones[i];
+            assert(glm::length(z - glm::vec2(640.0f, 360.0f)) <= Monster::QUASAR_ERUPT_MAX_REACH);   // only around the Quasar
             assert(z.x >= kBigArena.x - 40.0f && z.x <= kBigArena.z + 40.0f);          // inside the arena (+ slack)
             assert(z.y >= kBigArena.y - 40.0f && z.y <= kBigArena.w + 40.0f);
-            nearest = std::min(nearest, glm::length(z - c));
+            if (q.quasarEruptBeat[i] == 0) nearest = std::min(nearest, glm::length(z - c));
             assert(q.QuasarEruptCovers(z));                                      // a zone covers its own centre
         }
         assert(Near(nearest, Monster::QUASAR_ERUPT_FIRST_RING, 0.5f));          // the guard ring
         // The pocket beside the body and the lanes between rings are safe all around.
         for (int a = 0; a < 360; a += 3) {
             const glm::vec2 dir(cosf(a * 0.0174533f), sinf(a * 0.0174533f));
-            assert(!q.QuasarEruptCovers(c + dir * 100.0f));
+            assert(!q.QuasarEruptCovers(c + dir * 100.0f, 0));
             for (int k = 0; k < 2; ++k) {
                 const float lane = Monster::QUASAR_ERUPT_FIRST_RING + Monster::QUASAR_ERUPT_RING_STEP * ((float)k + 0.5f);
-                assert(!q.QuasarEruptCovers(c + dir * lane));
+                assert(!q.QuasarEruptCovers(c + dir * lane, 0));
             }
         }
         // Every ring that exists has a door: some angle on it is uncovered.
-        for (int k = 0; k < 3; ++k) {
+        for (int k = 0; k < 2; ++k) {
             const float r = Monster::QUASAR_ERUPT_FIRST_RING + Monster::QUASAR_ERUPT_RING_STEP * (float)k;
             bool anyZone = false, anyDoor = false;
             for (int a = 0; a < 720; ++a) {
                 const glm::vec2 dir(cosf(a * 0.0087266f), sinf(a * 0.0087266f));
-                const bool covered = q.QuasarEruptCovers(c + dir * r);
+                const bool covered = q.QuasarEruptCovers(c + dir * r, 0);
                 anyZone |= covered; anyDoor |= !covered;
             }
             assert(anyDoor);
             (void)anyZone;
         }
+    }
+    // Beat 1 covers the body and every lane zone centre, and leaves the ring ground and the pocket alone.
+    {
+        srand(77);
+        Monster q = MakeEruptionQuasar();
+        const glm::vec2 c(640.0f, 360.0f);
+        assert(q.QuasarEruptCovers(c, 1));
+        assert(q.QuasarEruptCovers(c + glm::vec2(Monster::QUASAR_ERUPT_CENTER_RADIUS - 2.0f, 0.0f), 1));
+        for (int a = 0; a < 360; a += 3) {
+            const glm::vec2 dir(cosf(a * 0.0174533f), sinf(a * 0.0174533f));
+            assert(!q.QuasarEruptCovers(c + dir * Monster::QUASAR_ERUPT_FIRST_RING, 1));   // beat 0's ring ground is safe for beat 1
+            assert(!q.QuasarEruptCovers(c + dir * 120.0f, 1));                            // the pocket stays safe
+        }
+        for (int i = 0; i < q.quasarEruptCount; ++i)
+            if (q.quasarEruptBeat[i] == 1) assert(q.QuasarEruptCovers(q.quasarEruptZones[i], 1));
     }
     std::printf("eruption zones ok\n");
 }
@@ -289,11 +313,43 @@ static void CheckEruptionTiming() {
     assert(Near(100.0f - hpHit, Monster::QUASAR_ERUPT_DAMAGE, 0.01f));    // one hit, not one per zone
     assert(hpSafe == 100.0f);
     // It goes off exactly once, then the Quasar recovers and returns to normal.
-    for (float t = 0.0f; t < 1.0f; t += DT)
+    for (float t = 0.0f; t < 3.0f; t += DT)
         q.Update(hit.x, hit.y, DT, hpHit, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kArena);
     assert(Near(100.0f - hpHit, Monster::QUASAR_ERUPT_DAMAGE, 0.01f));
-    assert(q.quasarState == 0 && !q.quasarNextFall);
+    assert(q.quasarState == 0 && !q.quasarNextFall && !q.quasarEruptActive && q.quasarEruptCooldown > 0.0f);
     std::printf("eruption timing ok\n");
+}
+
+// Two beats: the lane is safe for the first blast and hit by the second; a zone of
+// the first beat is hit once by the first only; the pocket is never hit.
+static void CheckEruptionTwoBeats() {
+    srand(21);
+    Monster base = MakeEruptionQuasar();
+    glm::vec2 lanePos(0.0f), ringPos(0.0f);
+    for (int i = 0; i < base.quasarEruptCount; ++i) {
+        if (base.quasarEruptBeat[i] == 1 && base.quasarEruptRing[i] != Monster::QUASAR_ERUPT_CENTER_RING && lanePos == glm::vec2(0.0f))
+            lanePos = base.quasarEruptZones[i];
+        if (base.quasarEruptBeat[i] == 0 && ringPos == glm::vec2(0.0f)) ringPos = base.quasarEruptZones[i];
+    }
+    assert(!base.QuasarEruptCovers(lanePos, 0) && base.QuasarEruptCovers(lanePos, 1));
+    assert(base.QuasarEruptCovers(ringPos, 0) && !base.QuasarEruptCovers(ringPos, 1));
+    Monster ql = base, qr = base;
+    float hpLane = 100.0f, hpRing = 100.0f;
+    const auto step = [&](float until) {
+        while (ql.quasarEruptTimer < until) {
+            ql.Update(lanePos.x, lanePos.y, DT, hpLane, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kBigArena);
+            qr.Update(ringPos.x, ringPos.y, DT, hpRing, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kBigArena);
+        }
+    };
+    step(Monster::QUASAR_ERUPT_BLAST_TIME + 0.1f);                       // just after the first blast
+    assert(hpLane == 100.0f && Near(100.0f - hpRing, Monster::QUASAR_ERUPT_DAMAGE, 0.01f));
+    step(Monster::QUASAR_ERUPT_SECOND_BLAST - 0.05f);                    // still before the second
+    assert(hpLane == 100.0f);
+    step(Monster::QUASAR_ERUPT_SECOND_BLAST + 0.1f);
+    assert(Near(100.0f - hpLane, Monster::QUASAR_ERUPT_DAMAGE, 0.01f));  // the old safe spot is the new danger
+    assert(Near(100.0f - hpRing, Monster::QUASAR_ERUPT_DAMAGE, 0.01f));  // the ring ground is safe the second time
+    assert(Monster::QUASAR_ERUPT_SECOND_SHOW + 1.0f <= Monster::QUASAR_ERUPT_SECOND_BLAST);   // beat 1 is up for >= 1 s
+    std::printf("eruption two beats ok\n");
 }
 
 // Staging: the wind-up has no zones, rings unfold inside-out, and every zone is
@@ -310,26 +366,28 @@ static void CheckEruptionStaging() {
         float lastShow = -1.0f;
         for (int i = 0; i < q.quasarEruptCount; ++i) {
             const int ring = q.quasarEruptRing[i];
-            const float show = q.QuasarEruptShowTime(ring);
+            const float show = q.QuasarEruptZoneShow(i);
             assert(show >= Monster::QUASAR_ERUPT_WINDUP - 1e-4f);                     // nothing during the wind-up
-            assert(Monster::QUASAR_ERUPT_BLAST_TIME - show >= Monster::QUASAR_ERUPT_MIN_WARNING - 1e-3f);
+            assert(q.QuasarEruptZoneBlast(i) - show >= Monster::QUASAR_ERUPT_MIN_WARNING - 1e-3f);
+            if (q.quasarEruptBeat[i] == 1) continue;                                  // beat 1 is listed after the rings
             assert(ring >= lastRing);                                                 // built from the inside out
             if (ring > lastRing && lastRing >= 0) assert(show > lastShow);            // later rings start later
             lastRing = ring; lastShow = show;
         }
     }
-    // The body motion builds slowly and flares only at the end.
+    // The body heats up as the blast nears.
     Monster b = MakeEruptionQuasar();
-    b.quasarTimer = 0.4f;
-    assert(b.QuasarFallGather() > 0.0f && b.QuasarFallGather() < 0.5f && b.QuasarFallOpen() == 0.0f);
-    b.quasarTimer = 1.5f;
-    assert(b.QuasarFallGather() > 0.9f && b.QuasarFallOpen() == 0.0f);
-    b.quasarTimer = Monster::QUASAR_ERUPT_BLAST_TIME;
-    assert(b.QuasarFallOpen() > 0.99f);
+    b.quasarEruptTimer = 0.2f;
+    const float h0 = b.QuasarHeat();
+    b.quasarEruptTimer = 1.0f;
+    const float h1 = b.QuasarHeat();
+    b.quasarEruptTimer = Monster::QUASAR_ERUPT_BLAST_TIME;
+    assert(h0 < h1 && h1 < b.QuasarHeat() && b.QuasarHeat() > 0.8f);
     std::printf("eruption staging ok\n");
 }
 
-// Beam, starfall, beam, eruption, then around again.
+// The rotation is beam, starfall, beam, starfall ... (the eruption is not in it) and
+// a player who stays away never sees an eruption.
 static void CheckSpecialAlternation() {
     Monster q = MakeQuasar(640.0f, 360.0f, 1.0f, 0.0f, 0);
     q.quasarState = 0;
@@ -340,17 +398,181 @@ static void CheckSpecialAlternation() {
             q.Update(100.0f, 100.0f, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kArena);
         assert(done());
     };
-    std::vector<int> specials;
     for (int cycle = 0; cycle < 4; ++cycle) {
         stepUntil([&] { return q.quasarState == 3; });                    // beam
-        stepUntil([&] { return q.quasarState == Monster::QUASAR_FALL_STATE ||
-                               q.quasarState == Monster::QUASAR_ERUPT_STATE; });
-        specials.push_back(q.quasarState);
+        stepUntil([&] { return q.quasarState == Monster::QUASAR_FALL_STATE; });
+        assert(!q.quasarEruptActive);                                     // a far player never triggers it
         stepUntil([&] { return q.quasarState == 0 && !q.quasarNextFall; });
     }
-    assert(specials[0] == Monster::QUASAR_FALL_STATE && specials[1] == Monster::QUASAR_ERUPT_STATE &&
-           specials[2] == Monster::QUASAR_FALL_STATE && specials[3] == Monster::QUASAR_ERUPT_STATE);
-    std::printf("beam / starfall / beam / eruption alternation ok\n");
+    std::printf("rotation is beam / starfall only ok\n");
+}
+
+// The eruption is conditional: the player has to stay close for the trigger time.
+static void CheckEruptionCondition() {
+    const glm::vec2 c(640.0f, 360.0f);
+    const auto mk = [&]() {
+        Monster q = MakeQuasar(c.x, c.y, 1.0f, 0.0f, 0);
+        q.quasarState = 0; q.quasarAimSet = false; q.quasarBounds = kBigArena;
+        q.quasarNextFall = true;        // a starfall is next: no beam wind-up in the way, so only the condition counts
+        q.quasarTimer = 0.0f;           // (MakeKind starts it at a random 0-1.2 s)
+        return q;
+    };
+    const auto run = [&](Monster& q, glm::vec2 player, float seconds, float& hp) {
+        for (float t = 0.0f; t < seconds; t += DT)
+            q.Update(player.x, player.y, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kBigArena);
+    };
+    const float T = Monster::QUASAR_ERUPT_TRIGGER_TIME;
+    const glm::vec2 closeP(c.x + 300.0f, c.y), awayP(c.x + 800.0f, c.y);
+    float hp = 1.0e9f;
+    // Close for the trigger time -> the eruption starts, and not before.
+    {
+        Monster q = mk();
+        run(q, closeP, T - 0.1f, hp);
+        assert(!q.quasarEruptActive);
+        run(q, closeP, 0.25f, hp);
+        assert(q.quasarEruptActive && q.quasarEruptCount > 0);
+    }
+    // Staying away: never.
+    {
+        Monster q = mk();
+        run(q, awayP, 12.0f, hp);
+        assert(!q.quasarEruptActive && q.quasarNearTimer == 0.0f);
+    }
+    // Leaving drains the timer 1:1, so edge-dancing does not dodge it for free...
+    {
+        Monster q = mk();
+        run(q, closeP, 0.8f, hp);
+        run(q, awayP, 0.2f, hp);
+        assert(Near(q.quasarNearTimer, 0.6f, 0.03f));
+        run(q, closeP, 0.7f, hp);                    // 0.6 + 0.7 = 1.3 s of stay: not yet
+        assert(!q.quasarEruptActive);
+        run(q, closeP, 0.3f, hp);
+        assert(q.quasarEruptActive);
+    }
+    // ...and a long absence resets it completely.
+    {
+        Monster q = mk();
+        run(q, closeP, 1.2f, hp);
+        run(q, awayP, 1.5f, hp);
+        assert(q.quasarNearTimer == 0.0f);
+    }
+    // It is an overlay: with the timer full during a beam or a starfall it goes off at
+    // once, and the attack underneath runs its course untouched.
+    {
+        Monster q = mk();
+        q.quasarState = 3; q.quasarTimer = 0.1f; q.quasarNearTimer = T;
+        q.Update(closeP.x, closeP.y, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kBigArena);
+        assert(q.quasarEruptActive && q.quasarState == 3);                      // both at the same time
+        float t = 0.0f;
+        while (q.quasarState == 3 && t < 6.0f) { q.Update(closeP.x, closeP.y, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kBigArena); t += DT; }
+        assert(q.quasarState == 4 && t > Monster::QUASAR_BEAM_TIME - 0.5f);     // the beam ran its full course
+        assert(q.quasarEruptTimer > Monster::QUASAR_ERUPT_BLAST_TIME - 0.01f);  // the eruption kept its own clock
+    }
+    {
+        Monster q = mk();
+        q.BeginQuasarFall(); q.quasarNearTimer = T;
+        q.Update(closeP.x, closeP.y, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kBigArena);
+        assert(q.quasarEruptActive && q.quasarState == Monster::QUASAR_FALL_STATE);
+        const float fallStart = q.quasarTimer;
+        assert(fallStart < 0.1f);                                               // the starfall did not restart or stop
+    }
+    // The Quasar stays put while an eruption runs, even idle.
+    {
+        Monster q = mk();
+        q.speed = 80.0f;
+        q.quasarNearTimer = T;
+        const glm::vec2 at(q.worldX, q.worldY);
+        run(q, closeP, 2.0f, hp);
+        assert(q.quasarEruptActive || q.quasarEruptCooldown > 0.0f);
+        assert(q.QuasarHoldsPosition() == q.quasarEruptActive);
+        assert(glm::length(glm::vec2(q.worldX, q.worldY) - at) < 1.0f);
+    }
+    // After an eruption there is a cooldown, even for a player who stays.
+    {
+        Monster q = mk();
+        float firstStart = -1.0f, secondStart = -1.0f, t = 0.0f;
+        bool inErupt = false;
+        while (t < 40.0f && secondStart < 0.0f) {
+            q.Update(closeP.x, closeP.y, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kBigArena);
+            const bool now = q.quasarEruptActive;
+            if (now && !inErupt) { if (firstStart < 0.0f) firstStart = t; else secondStart = t; }
+            inErupt = now;
+            t += DT;
+        }
+        assert(firstStart > 0.0f && secondStart > firstStart);
+        assert(secondStart - firstStart >= Monster::QUASAR_ERUPT_SECOND_BLAST + Monster::QUASAR_ERUPT_COOLDOWN);
+    }
+    std::printf("eruption condition ok\n");
+}
+
+// The beam thins out instead of cutting off: full width until the last
+// QUASAR_BEAM_FADE_OUT, then an eased fall to 0, and the hit width follows it.
+static void CheckBeamFadeOut() {
+    Monster q = MakeQuasar(0.0f, 0.0f, 1.0f, 0.0f, 0);
+    q.quasarState = 3;
+    const float start = Monster::QUASAR_BEAM_TIME - Monster::QUASAR_BEAM_FADE_OUT;
+    q.quasarTimer = 0.0f;                    assert(q.QuasarBeamWidth() == 1.0f);
+    q.quasarTimer = start;                   assert(Near(q.QuasarBeamWidth(), 1.0f, 1e-4f));
+    q.quasarTimer = Monster::QUASAR_BEAM_TIME; assert(Near(q.QuasarBeamWidth(), 0.0f, 1e-4f));
+    float prev = 1.0f;
+    for (float t = start; t <= Monster::QUASAR_BEAM_TIME + 1e-4f; t += 0.01f) {   // never rises, never jumps
+        q.quasarTimer = t;
+        const float w = q.QuasarBeamWidth();
+        assert(w <= prev + 1e-5f && prev - w < 0.12f);
+        prev = w;
+    }
+    // A player 45 px off the axis is inside the band (55 px) at full width but
+    // out of the beam once it has thinned below 45/55.
+    for (int late = 0; late <= 1; ++late) {
+        Monster f = MakeQuasar(0.0f, 0.0f, 1.0f, 0.0f, 0);
+        f.quasarState = 3;
+        f.quasarTimer = late ? Monster::QUASAR_BEAM_TIME - 0.06f : 1.0f;
+        float hp = 1000.0f;
+        f.Update(500.0f, 45.0f, DT, hp, 1.0f, -1.0f, -1.0f, -1.0f, -1.0f, nullptr, kArena);
+        if (late) assert(hp == 1000.0f); else assert(hp < 1000.0f);
+    }
+    std::printf("beam fade-out width ok\n");
+}
+
+// A Quasar in its attack (wind-up to recovery) cannot be moved by anything:
+// crowding by an equal-tier enemy pushes the other one, never the Quasar. Before the
+// attack, while it drifts, it still gives way like any other enemy.
+static void CheckHoldsPosition() {
+    for (int phase = 0; phase < 3; ++phase) {
+        MonsterManager mm;
+        auto* q = new Monster(500.0f, 300.0f);
+        q->MakeKind(MobKind::QUASAR);
+        q->speed = 0.0f;
+        q->quasarAimSet = true;
+        if (phase == 0) { q->quasarState = 3; q->quasarTimer = 0.2f; }                 // beam growing
+        if (phase == 1) { q->quasarState = Monster::QUASAR_FALL_STATE; q->quasarTimer = 0.2f; }
+        if (phase == 2) { q->quasarState = 0; q->quasarTimer = 0.0f; q->quasarNextFall = true; }   // drifting
+        auto* g = new Monster(506.0f, 300.0f);                 // an equal-tier Genesis sitting on it
+        g->MakeKind(MobKind::GENESIS);
+        g->speed = 0.0f;
+        mm.monsters.push_back(q);
+        mm.monsters.push_back(g);
+        assert(q->QuasarHoldsPosition() == (phase != 2));
+        const float qx = q->worldX, qy = q->worldY;
+        std::vector<Bullet> bullets;
+        float hp = 1.0e9f;
+        for (int i = 0; i < 40; ++i) {
+            mm.UpdateAll(5000.0f, 5000.0f, DT, hp, bullets);
+            if (phase != 2) assert(q->quasarState != 0 || q->QuasarPrecharge() > 0.0f);   // still holding
+        }
+        if (phase != 2) assert(q->worldX == qx && q->worldY == qy);   // not a pixel
+        else assert(std::fabs(q->worldX - qx) > 0.5f);               // a drifting Quasar is pushed as before
+        mm.Clear();
+    }
+    // The wind-up counts as holding too: it stops drifting and cannot be pushed.
+    Monster w(0.0f, 0.0f);
+    w.MakeKind(MobKind::QUASAR);
+    w.quasarState = 0;
+    w.quasarTimer = Monster::QUASAR_COOLDOWN_TIME - Monster::QUASAR_PRECHARGE_TIME + 0.2f;
+    assert(w.QuasarPrecharge() > 0.0f && w.QuasarHoldsPosition());
+    w.quasarTimer = 0.5f;
+    assert(!w.QuasarHoldsPosition());
+    std::printf("quasar holds position during its attack ok\n");
 }
 
 int main() {
@@ -360,11 +582,15 @@ int main() {
     CheckVelocityEstimate();
     CheckPredictedShots();
     CheckDistancePower();
+    CheckBeamFadeOut();
+    CheckHoldsPosition();
     CheckFallGap();
     CheckEruptionZones();
     CheckEruptionTiming();
+    CheckEruptionTwoBeats();
     CheckEruptionStaging();
     CheckSpecialAlternation();
+    CheckEruptionCondition();
     std::printf("quasar elite regression passed\n");
     return 0;
 }

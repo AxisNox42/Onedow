@@ -303,7 +303,7 @@ static void CheckHpScaling() {
     float hp = 1.0e9f;
     auto* g = new Monster(0.0f, 0.0f, 2.0f);         // spawned under a 2x ramp
     g->MakeKind(MobKind::GENESIS);
-    assert(std::fabs(g->hp - 90.0f * 2.0f * 7.0f) < 0.01f);
+    assert(std::fabs(g->hp - Monster::GENESIS_BASE_HP * 2.0f) < 0.01f);
     mm.monsters.push_back(g);
     while (g->hivePhase != 3)
         mm.UpdateAll(0.0f, 3000.0f, DT, hp, bullets, 1.0f, 1.0f, 5.0f);

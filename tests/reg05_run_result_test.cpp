@@ -24,7 +24,7 @@ static void ResetProfile() {
 }
 
 int main() {
-    _putenv_s("ONEDOW_SAVE_DIR", ".");   // the no-save-file check looks in the temp folder
+    _putenv_s("ASTERIA_SAVE_DIR", ".");   // the no-save-file check looks in the temp folder
     g_SmokeCapture = true;   // SaveGame: no disk writes
     ResetProfile();
 

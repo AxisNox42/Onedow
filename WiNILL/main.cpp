@@ -145,7 +145,7 @@ extern float g_GameTime;
 extern float g_ShakeTime;
 extern float g_ShakeMag;
 
-// NORMA OS-pane prototype, driven by ONEDOW_SMOKE "PANE=..." steps.
+// NORMA OS-pane prototype, driven by ASTERIA_SMOKE "PANE=..." steps.
 static bool g_PaneDebug = false;         // outline panes/desktop windows, opaque backdrop
 static bool g_PaneArrangeForce = false;   // smoke stand-in for holding Ctrl while paused
 static int  g_PaneTestId = 0;
@@ -1270,23 +1270,31 @@ static void TickPaneRam(float dt) {
             if (hitEdge) {
                 // The wall cracks the box open: 2/3 of a thrown box's load
                 // sprays back off the wall.
+                // The box itself bursts (as a thrown one does): a shot born
+                // inside a pane that stays open would die on its border.
+                const float cx = ScreenToWorldX(pane->shown.x + pane->shown.w * 0.5f);
+                const float cy = ScreenToWorldY(pane->shown.y + pane->shown.h * 0.5f);
                 const int ring = (int)std::round(norma::kThrowRing * norma::kRamBurstShare);
                 const int inner = (int)std::round(norma::kThrowInner * norma::kRamBurstShare);
                 const float back = std::atan2(-ram.dirY, -ram.dirX);
                 const float half = norma::kRamBurstFan * 0.5f;
+                CollapsePane(*pane);
+                os_pane::Close(ram.id);
                 for (int i = 0; i < ring; ++i)
-                    SpawnNormaShot(wx, wy, back - half + norma::kRamBurstFan * ((float)i + 0.5f) / ring,
+                    SpawnNormaShot(cx, cy, back - half + norma::kRamBurstFan * ((float)i + 0.5f) / ring,
                                    norma::kThrowRingSpeed);
                 for (int i = 0; i < inner; ++i)
-                    SpawnNormaShot(wx, wy, back - half + norma::kRamBurstFan * ((float)i + 0.5f) / inner,
+                    SpawnNormaShot(cx, cy, back - half + norma::kRamBurstFan * ((float)i + 0.5f) / inner,
                                    norma::kThrowInnerSpeed);
-                SpawnEnemyExplosion(wx, wy, 0.72f, 0.94f, 1.0f, true);
-                SpawnSparks(wx, wy, 30, 0.92f, 0.99f, 1.0f, 460.0f);
+                SpawnEnemyExplosion(cx, cy, 0.72f, 0.94f, 1.0f, true);
+                SpawnSparks(cx, cy, 30, 0.92f, 0.99f, 1.0f, 460.0f);
                 Shake(0.5f, 24.0f);
                 TriggerHitStop(0.06f);
-            } else {
-                Shake(0.35f, 16.0f);
+                if (Monster* boss = FindNorma()) boss->normaExposed = norma::kExposeAfterRam;
+                ram = {};
+                return;
             }
+            Shake(0.35f, 16.0f);
             if (Monster* boss = FindNorma()) boss->normaExposed = norma::kExposeAfterRam;
             ram.stage = 2;
             ram.timer = 0.0f;
@@ -1416,13 +1424,12 @@ static const PaneFuse* FuseOf(int id) {
     return nullptr;
 }
 
-// Lights a pane's fuse (once). A lit fuse cannot be put out: closing or
-// minimizing the pane is refused until it blows.
+// Lights a pane's fuse (once). The player can still close or minimize the
+// pane to defuse it.
 static void LightPaneFuse(int id) {
     const os_pane::Pane* p = PaneById(id);
     if (!p || FuseOf(id)) return;
     g_PaneFuses.push_back({ id, 0.0f });
-    os_pane::SetLocked(id, true);
     SpawnSparks(ScreenToWorldX(p->shown.x + p->shown.w * 0.5f),
                 ScreenToWorldY(p->shown.y + p->shown.h * 0.5f), 10, 0.86f, 0.80f, 1.0f, 300.0f);
 }
@@ -1453,13 +1460,18 @@ static void ApplyPaneAbsorbs() {
         }), g_PaneWear.end());
 }
 
-// A lit fuse burns for space::kFuseSeconds of play, then the pane folds shut.
-// It no longer hurts anything or scatters shots (the thrown box does that). A
-// pane closed in the meantime (in pause) just goes.
+// A lit fuse burns for space::kFuseSeconds of play, then the pane folds shut
+// and scatters its load like a thrown box (no blast of its own). Closing or
+// minimizing the pane while it burns defuses it: no shots.
 static void TickPaneFuses(float dt) {
     for (PaneFuse& fuse : g_PaneFuses) {
         const os_pane::Pane* pane = PaneById(fuse.id);
         if (!pane) { fuse.timer = -1.0f; continue; }
+        if (pane->minimized) {
+            os_pane::Close(fuse.id);
+            fuse.timer = -1.0f;
+            continue;
+        }
         fuse.timer += dt;
         if (fuse.timer < space::kFuseSeconds) continue;
         const float cx = ScreenToWorldX(pane->shown.x + pane->shown.w * 0.5f);
@@ -1468,6 +1480,15 @@ static void TickPaneFuses(float dt) {
         g_PaneCollapses.push_back({ pane->shown, 0.0f });
         os_pane::Close(fuse.id);
         fuse.timer = -1.0f;
+        const int ring = (int)std::round(norma::kThrowRing * norma::kRamBurstShare);
+        const int inner = (int)std::round(norma::kThrowInner * norma::kRamBurstShare);
+        const float spin = RandRange(0.0f, 6.2831853f);
+        for (int i = 0; i < ring; ++i)
+            SpawnNormaShot(cx, cy, spin + 6.2831853f * (float)i / ring, norma::kThrowRingSpeed);
+        for (int i = 0; i < inner; ++i)
+            SpawnNormaShot(cx, cy, spin + 6.2831853f * ((float)i + 0.5f) / inner,
+                           norma::kThrowInnerSpeed);
+        Shake(0.3f, 14.0f);
     }
     g_PaneFuses.erase(std::remove_if(g_PaneFuses.begin(), g_PaneFuses.end(),
         [](const PaneFuse& f) { return f.timer < 0.0f; }), g_PaneFuses.end());
@@ -1850,7 +1871,7 @@ static void FinishRunVictory(int finalWave, const wchar_t* const (&reason)[3],
     g_LastRunRecord = CommitRunResult(
         !PlayRecordsProgress(), static_cast<int>(g_Difficulty), g_GameManager.score,
         g_Stats.killCount, (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0),
-        g_GameManager.currentWave, true, g_GameTime);
+        g_GameManager.currentWave);
     // The battle is over: the report sits on an empty field, not on a frozen
     // snapshot of the last wave's mobs, shots and summons.
     g_MonsterManager.Clear();
@@ -2285,7 +2306,7 @@ static void SyncGameplayTelemetry() {
     BeginGameplayTelemetryIfNeeded();
 }
 
-// Experiment (Docs/QA/Onedow도파민 시스템 변경 계획.md 3-1): a short hit stop
+// Experiment (Docs/QA/Asteria도파민 시스템 변경 계획.md 3-1): a short hit stop
 // when a Genesis or Quasar dies while running. Runtime toggle only (Debug
 // Toolkit Stats tab), on at launch and never saved; it does not affect any
 // other hit stop. Remove this block, its call and the toolkit binding to
@@ -2312,18 +2333,18 @@ int main() {
 #if defined(_WIN32)
     // One game at a time: two copies would each save over the other's
     // progress. Smoke captures never save, so they may run alongside.
-    if (SmokeEnv("ONEDOW_SMOKE").empty()) {
+    if (SmokeEnv("ASTERIA_SMOKE").empty()) {
         CreateMutexW(nullptr, TRUE, L"Local\\ASTERIA_SingleInstance");
         if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
     }
 #endif
     LoadGame();   // �����?����/���?�ҷ����� (������ �⺻�� ����)
-    if (g_SmokeRun.Init()) os_pane::SetCoverCheck(false);   // ONEDOW_SMOKE 스모크 캡처 세션 설정
-    if (g_SmokeCapture && SmokeEnv("ONEDOW_SMOKE_RECORDS") == "1") {
-        // Smoke-only PLAY panel records (never saved): easy/hard cleared, normal in progress.
-        g_BestWave[0] = 10; g_BestClearSec[0] = 19 * 60 + 42;
-        g_BestWave[1] = 12; g_BestClearSec[1] = 0;
-        g_BestWave[2] = 20; g_BestClearSec[2] = 41 * 60 + 7;
+    if (g_SmokeRun.Init()) os_pane::SetCoverCheck(false);   // ASTERIA_SMOKE 스모크 캡처 세션 설정
+    if (g_SmokeCapture && SmokeEnv("ASTERIA_SMOKE_RECORDS") == "1") {
+        // Smoke-only PLAY panel records (never saved).
+        g_BestWave[0] = 10;
+        g_BestWave[1] = 12;
+        g_BestWave[2] = 20;
     }
 #if !defined(_DEBUG)
     // DEBUG MODE is intentionally available in Release packages for QA.
@@ -2403,7 +2424,7 @@ int main() {
 
     // Windows overscans below the monitor to retain a non-exact window size.
     GLFWwindow* window = glfwCreateWindow(screenWidth, screenHeight,
-                                          "Onedow", NULL, NULL);
+                                          "Asteria", NULL, NULL);
     if (!window) { glfwTerminate(); return -1; }
 
 #if defined(__APPLE__)
@@ -2774,9 +2795,9 @@ int main() {
         }
         ApplyPaneAbsorbs();
         RebuildPaneSpaces(playerWin);
-        // Hand testing: ONEDOW_PANE_TEST=1 keeps one test pane open during runs.
+        // Hand testing: ASTERIA_PANE_TEST=1 keeps one test pane open during runs.
         {
-            static const bool paneHandTest = !SmokeEnv("ONEDOW_PANE_TEST").empty();
+            static const bool paneHandTest = !SmokeEnv("ASTERIA_PANE_TEST").empty();
             if (paneHandTest && g_GameManager.currentState == GameState::RUNNING) {
                 bool anyOpen = false;
                 for (const os_pane::Pane& p : os_pane::Panes()) anyOpen = anyOpen || p.open;
@@ -3053,12 +3074,12 @@ int main() {
             g_LastRunRecord = CommitRunResult(!PlayRecordsProgress(), (int)g_Difficulty,
                                               g_GameManager.score, g_Stats.killCount,
                                               (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0),
-                                              g_GameManager.currentWave, false, g_GameTime);
+                                              g_GameManager.currentWave);
 
             g_GameManager.currentState = GameState::GAMEOVER;
         };
 
-        // Scripted UI smoke capture (ONEDOW_SMOKE). Each step opens a scene
+        // Scripted UI smoke capture (ASTERIA_SMOKE). Each step opens a scene
         // through the same entry points the menus use, then the frame is
         // captured once the scene has had time to settle.
         if (g_SmokeRun.Active()) {
@@ -3425,8 +3446,8 @@ int main() {
                         q->MakeKind(MobKind::QUASAR);
                         q->hp = 1000000.0f;
                         q->speed = 0.0f;
-                        // ONEDOW_QREFLECT=<n>: beam wall bounces for this QA quasar.
-                        { const std::string qr = SmokeEnv("ONEDOW_QREFLECT"); if (!qr.empty()) q->quasarReflections = std::atoi(qr.c_str()); }
+                        // ASTERIA_QREFLECT=<n>: beam wall bounces for this QA quasar.
+                        { const std::string qr = SmokeEnv("ASTERIA_QREFLECT"); if (!qr.empty()) q->quasarReflections = std::atoi(qr.c_str()); }
                         const bool erupt = step.rfind("QUASARERUPT=", 0) == 0;
                         q->quasarBounds = glm::vec4(0, BROWSER_CHROME_H, screenWidth,
                                                     screenHeight - g_GameBarH - g_TaskbarH);
@@ -3481,13 +3502,13 @@ int main() {
                         g_MonsterManager.Clear();
                         g_Bullets.clear();
                     } else if (step.rfind("MOBPLACE=", 0) == 0) {
-                        // MOBPLACE=<dx>: put every live Gravis / Regulus dx px
+                        // MOBPLACE=<dx>: put every live Gravis / Regulus / Antares / Quasar dx px
                         // right of the player, on the player's row.
                         const float dx = std::strtof(step.c_str() + 9, nullptr);
                         for (Monster* mob : g_MonsterManager.monsters) {
                             if (!mob->alive) continue;
                             if (mob->kind != MobKind::GRAVIS && mob->kind != MobKind::REGULUS &&
-                                mob->kind != MobKind::ANTARES) continue;
+                                mob->kind != MobKind::ANTARES && mob->kind != MobKind::QUASAR) continue;
                             mob->worldX = playerWin.x + playerWin.width * 0.5f + dx;
                             mob->worldY = playerWin.y + playerWin.height * 0.5f;
                         }
@@ -3529,6 +3550,15 @@ int main() {
                                 mob->regulusShield.hp = mob->regulusShield.maxHp = 200.0f;
                             }
                         }
+                    } else if (step == "GENESISRANDOM") {
+                        // GENESISRANDOM: every live Genesis summons random regular enemies (as on NIGHTMARE).
+                        for (Monster* mob : g_MonsterManager.monsters)
+                            if (mob->alive && mob->kind == MobKind::GENESIS) mob->genesisRandomSummons = true;
+                    } else if (step.rfind("MOBHP=", 0) == 0) {
+                        // MOBHP=<n>: set every live mob's HP, so an elite under test is not
+                        // killed by the player's auto weapons halfway through a pattern.
+                        const float hpValue = std::strtof(step.c_str() + 6, nullptr);
+                        for (Monster* mob : g_MonsterManager.monsters) if (mob->alive) mob->hp = hpValue;
                     } else if (step == "MOBGRACE") {
                         // MOBGRACE: mobs pass through the (stationary) player instead
                         // of ramming, so a charge can be watched to its end.
@@ -3554,6 +3584,11 @@ int main() {
                                 label, playerWin.x + playerWin.width * 0.5f,
                                 playerWin.y + playerWin.height * 0.5f, gm.playerHP,
                                 GravisField::g_playerInfluence, (double)glfwGetTime());
+                            for (const RangedMob* sc : g_MonsterManager.rangedMobs)
+                                if (sc->alive && sc->genesisSummoned)
+                                    std::fprintf(mf, "%s summonedscope x=%.1f y=%.1f rgb=%.2f,%.2f,%.2f owner=%d hp=%.0f\n", label,
+                                        sc->worldX, sc->worldY, sc->color.r, sc->color.g, sc->color.b,
+                                        sc->summonOwnerId, sc->hp);
                             for (const Monster* mob : g_MonsterManager.monsters) {
                                 if (!mob->alive) continue;
                                 if (mob->kind == MobKind::GRAVIS)
@@ -3564,10 +3599,22 @@ int main() {
                                         label, mob->worldX, mob->worldY, (int)mob->antaresState,
                                         mob->antaresMoveSpeed, mob->antaresBounces, mob->antaresGen,
                                         (int)IsEliteMob(mob->kind), mob->hp);
+                                else if (mob->kind == MobKind::QUASAR)
+                                    std::fprintf(mf, "%s quasar x=%.2f y=%.2f state=%d timer=%.2f aim=%.4f near=%.2f cd=%.2f zones=%d\n",
+                                        label, mob->worldX, mob->worldY, mob->quasarState, mob->quasarTimer,
+                                        std::atan2(mob->quasarAimY, mob->quasarAimX), mob->quasarNearTimer,
+                                        mob->quasarEruptCooldown, mob->quasarEruptCount);
                                 else if (mob->kind == MobKind::REGULUS)
                                     std::fprintf(mf, "%s regulus x=%.1f y=%.1f shield=%.1f elite=%d\n",
                                         label, mob->worldX, mob->worldY,
                                         mob->regulusShield.hp, (int)IsEliteMob(mob->kind));
+                                if (mob->genesisControlled)
+                                    std::fprintf(mf, "%s ctrl kind=%d x=%.1f y=%.1f rgb=%.2f,%.2f,%.2f thrownPhase=%d dodge=%.2f cd=%.2f vel=%.0f,%.0f carrier=%d summoned=%d\n",
+                                        label, (int)mob->kind, mob->worldX, mob->worldY,
+                                        mob->color.r, mob->color.g, mob->color.b, mob->thrownPhase,
+                                        mob->ctrlDodgeTimer, mob->ctrlDodgeCooldown,
+                                        mob->ctrlPlayerVel.x, mob->ctrlPlayerVel.y,
+                                        (int)mob->genesisSummonCarrier, (int)mob->genesisSummoned);
                                 if (mob->RegulusBuffed())
                                     std::fprintf(mf, "%s buffed kind=%d speedAge=%.2f stealthAge=%.2f shield=%d speedx=%.2f alpha=%.3f\n",
                                         label, (int)mob->kind, mob->regulusSpeedAge,
@@ -3633,6 +3680,38 @@ int main() {
                             g_Skills[0].cd = 0.05f;
                             g_SmokeTimeScale = 0.2f;
                         }
+                    } else if (step.rfind("NORMADUMP=", 0) == 0) {
+                        // NORMADUMP=<label>: one line of the boss, its shots and
+                        // every pane to Screenshots/norma_state.txt.
+                        std::filesystem::create_directories("Screenshots");
+                        FILE* nf = nullptr;
+#ifdef _MSC_VER
+                        if (fopen_s(&nf, "Screenshots/norma_state.txt", "a") != 0) nf = nullptr;
+#else
+                        nf = std::fopen("Screenshots/norma_state.txt", "a");
+#endif
+                        if (nf) {
+                            const Monster* nb = FindNorma();
+                            int shots = 0;
+                            for (const Bullet& b : g_Bullets) if (b.active && b.normaShot) ++shots;
+                            int open = 0, locked = 0;
+                            for (const os_pane::Pane& p : os_pane::Panes()) {
+                                if (!p.open) continue;
+                                ++open;
+                                if (p.locked) ++locked;
+                            }
+                            std::fprintf(nf, "%s state=%d hp=%.0f boss=%d pattern=%d stage=%d exposed=%.2f shots=%d panes=%d locked=%d fuses=%d box=%d/%d ram=%d/%d\n",
+                                step.c_str() + 10, (int)gm.currentState, gm.playerHP, nb ? 1 : 0, nb ? (int)nb->normaPattern : -1,
+                                nb ? (int)nb->normaStage : -1, nb ? nb->normaExposed : 0.0f, shots,
+                                open, locked, (int)g_PaneFuses.size(), g_ThrowBox.id, g_ThrowBox.stage,
+                                g_PaneRam.id, g_PaneRam.stage);
+                            std::fclose(nf);
+                        }
+                    } else if (step == "NORMACLOSE") {
+                        // NORMACLOSE: the title-bar X on every open pane, as the
+                        // player would press it.
+                        for (const os_pane::Pane& p : os_pane::Panes())
+                            if (p.open) os_pane::DebugRequestClose(p.id);
                     } else if (step.rfind("NORMATEST=", 0) == 0) {
                         // NORMATEST=AIM|DASH|RAM|HIDE|P2: bring NORMA in (to the
                         // player's right) and start that pattern now; P2 drops it
@@ -3658,6 +3737,8 @@ int main() {
                             if (m->alive && m->kind != MobKind::NORMA) m->alive = false;
                         if (g_ThrowBox.id != 0) os_pane::Close(g_ThrowBox.id);
                         g_ThrowBox = {};
+                        gm.maxHP = g_Stats.maxHP = 100000.0f;   // so a test run outlives the bursts
+                        gm.playerHP = gm.maxHP;
                         if (Monster* boss = FindNorma()) {
                             if (arg == "P2") {
                                 boss->hp = boss->normaMaxHp * 0.35f;
@@ -3667,7 +3748,11 @@ int main() {
                                 const norma::Pattern p = arg == "AIM" ? norma::Pattern::Aim
                                                        : arg == "DASH" ? norma::Pattern::Dash
                                                        : arg == "RAM" ? norma::Pattern::Ram
+                                                       : arg == "THROW" ? norma::Pattern::Throw
+                                                       : arg == "DETONATE" ? norma::Pattern::Detonate
+                                                       : arg == "REFUGE" ? norma::Pattern::Refuge
                                                        : norma::Pattern::None;
+                                if (arg == "PANES") norma::g_Asks.push_back(norma::Ask::ReopenPanes);
                                 if (p != norma::Pattern::None) boss->StartNormaPattern(p);
                             }
                         }
@@ -3735,46 +3820,6 @@ int main() {
             g_GameManager.UpdateStateSystem(g_MonsterManager, g_Bullets);
         SyncGameplayTelemetry();
 
-        // Keep the native window title synchronized with the active scene and
-        // the live run counters.  This is intentionally throttled so title
-        // updates do not compete with rendering, while still making the
-        // borderless window useful in task switching and diagnostics.
-        static double lastTitleUpdate = -1.0;
-        const double titleNow = glfwGetTime();
-        if (g_GameManager.currentState != prevState ||
-            lastTitleUpdate < 0.0 || titleNow - lastTitleUpdate >= 0.25) {
-            lastTitleUpdate = titleNow;
-            const char* scene = "Menu";
-            switch (g_GameManager.currentState) {
-            case GameState::READY:          scene = "Ready"; break;
-            case GameState::RUNNING:        scene = "In Game"; break;
-            case GameState::PAUSED:         scene = "Paused"; break;
-            case GameState::DYING:          scene = "Defeated"; break;
-            case GameState::AUG_SELECT:     scene = "Augment Select"; break;
-            case GameState::AUG_REPLACE:    scene = "Augment Replace"; break;
-            case GameState::DEBUFF_SELECT:  scene = "Modifier Select"; break;
-            case GameState::GAMEOVER:       scene = "Game Over"; break;
-            case GameState::CODEX:          scene = "Codex"; break;
-            case GameState::TUTORIAL:       scene = "Tutorial"; break;
-            case GameState::SETTINGS:       scene = "Settings"; break;
-            case GameState::CREATIVE_CONFIG:scene = "Creative Config"; break;
-            default:                         break;
-            }
-            std::string title = std::string("Onedow - ") + scene;
-            if (g_GameManager.currentState == GameState::RUNNING ||
-                g_GameManager.currentState == GameState::DYING ||
-                g_GameManager.currentState == GameState::PAUSED ||
-                g_GameManager.currentState == GameState::AUG_SELECT ||
-                g_GameManager.currentState == GameState::DEBUFF_SELECT) {
-                title += " | FPS " + std::to_string(g_CurrentFPS);
-                title += " | HP " + std::to_string((int)std::max(0.0f, g_GameManager.playerHP));
-                title += " | XP " + FormatXp(g_GameManager.xp);
-                if (g_GameManager.currentState == GameState::AUG_SELECT ||
-                    g_GameManager.currentState == GameState::DEBUFF_SELECT)
-                    title += " | Choices " + std::to_string(g_GameManager.augChoiceCount);
-            }
-            glfwSetWindowTitle(window, title.c_str());
-        }
 
         // Keep the main loop music active during gameplay and stop it in menus.
         {
@@ -3948,7 +3993,7 @@ int main() {
                 g_LastRunRecord = CommitRunResult(!PlayRecordsProgress(), (int)g_Difficulty,
                                                   g_GameManager.score, g_Stats.killCount,
                                                   (g_SelectedJob == JOB_STATIC_FIELD ? 1 : 0),
-                                                  g_GameManager.currentWave, false, g_GameTime);
+                                                  g_GameManager.currentWave);
             }
         }
 
@@ -4359,6 +4404,7 @@ int main() {
                         float chy = pCY + sinf(g_Chakrams[c].angle) * CHAKRAM_RADIUS;
                         for (auto m : g_MonsterManager.monsters) {
                             if (!m->alive) continue;
+                            if (m->QuasarHoldsPosition()) continue;     // an attacking Quasar stays put
                             if (!space::Reaches(space::kPlayerSource, m->worldX, m->worldY)) continue;
                             float ddx = chx - m->worldX, ddy = chy - m->worldY;
                             float d2 = ddx * ddx + ddy * ddy;
@@ -4419,6 +4465,7 @@ int main() {
                     for (auto* m : g_MonsterManager.monsters) {
                         if (!m || !m->alive ||
                             (m->kind != MobKind::GRAVIS && m->kind != MobKind::QUASAR)) continue;
+                        if (m->QuasarHoldsPosition()) continue;         // no clamp slide during its attack
                         const float margin = m->kind == MobKind::GRAVIS ? 92.0f : 76.0f;
                         const float minX = margin;
                         const float maxX = std::max(minX, (float)screenWidth - margin);
@@ -4471,6 +4518,7 @@ int main() {
                     const float safeR2 = safeR * safeR;
                     for (auto m : g_MonsterManager.monsters) {
                         if (!m->alive) continue;
+                        if (m->QuasarHoldsPosition()) continue;         // an attacking Quasar stays put
                         float pdx = m->worldX - pCX, pdy = m->worldY - pCY;
                         float pd2 = pdx * pdx + pdy * pdy;
                         if (pd2 >= safeR2) continue;
@@ -5708,7 +5756,7 @@ CollisionSystem::Update(pCX, pCY,
                         g_GameManager.playerLevel >= MAIN_LEVEL_CAP;
                     const float xpFrac = vitals_hud::XpFill(g_GameManager.xp,
                         g_ExpSystem.RequiredAmount(g_GameManager.playerLevel), xpAtCap);
-                    static const std::wstring xpVersionLabel = std::wstring(L"v") + ONEDOW_VERSION;
+                    static const std::wstring xpVersionLabel = std::wstring(L"v") + ASTERIA_VERSION;
                     const float versionScale = vitals_hud::BottomHudVersionScale(hudScale);
                     const float xpRightX = sw - vitals_hud::BottomHudPadding(hudScale)
                         - g_TextS.Width(xpVersionLabel.c_str(), versionScale) - vitals_hud::BottomHudGap(hudScale);
@@ -5802,7 +5850,7 @@ CollisionSystem::Update(pCX, pCY,
 
         if (!g_DebugToolkit.SuppressOverlayForCapture()) {
             BindMainShader();
-            static const std::wstring versionLabel = std::wstring(L"v") + ONEDOW_VERSION;
+            static const std::wstring versionLabel = std::wstring(L"v") + ASTERIA_VERSION;
             const float versionUiScale = UiScale((float)screenWidth, (float)screenHeight);
             const float versionScale = vitals_hud::BottomHudVersionScale(versionUiScale);
             const float versionPad = vitals_hud::BottomHudPadding(versionUiScale);

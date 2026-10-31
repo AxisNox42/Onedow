@@ -138,7 +138,7 @@
 - `scripts/test_gravis_elite.ps1`: 교대 순서와 단계 시간(괴롭힘 2.15초 포함), 두 기계의 독립(투석 중 활강·표류·중력장)·괴롭힘 9.2초·궤도의 연속성과 거리 변화·느린 중심 추종·다트가 예고한 호를 벗어나지 않고 조준점을 지나 끝까지 돌진·호의 휘어짐·조준의 선행과 한계·쿨타임과 거리 조건(먼 위성은 예고하지 않음)·예고 중 준비 동작(선 위로만 당겨짐)·비행 중에만 피해·사망 시 위성도 함께 사라짐·돌아오는 호의 연속성과 합류, 필드 정지 구간, 투석 방향·사거리 고정, 한 번당 1회 피해와 회귀 곡선, 경계 보정, 활강 도착점 고정과 한계, 길 위 무해, 폭발 피해·슬로우(밀치지 않음)·폭발 뒤 중력장 복귀, 원 밖 안전, 사망 후 무동작.
 - `scripts/test_gravis_elite_smoke.ps1`: 실제 게임 루프(Release 빌드)에서 괴롭힘 중 가만히 선 플레이어가 던지기와 다트에 맞고 중력장이 켜져 있으며 투석이 끝나면 대기로 돌아오고(스모크는 투석 시험 때 본체를 대기 상태로 고정하고, 활강 시험 때 투석을 고정한다), 활강 폭발이 피해와 슬로우를 주고 플레이어를 285px 밖으로 밀어내며, 슬로우가 풀리고 중력장이 돌아오는지 확인한다.
 - 기존 `test_gravis_field` `test_quasar_*` `test_genesis_rotor` `test_mob_death_fx` `test_reg01_kill_rewards` `test_thrown_swarm_kill` `test_kill_lifesteal` 통과.
-- 실제 화면: [투석 단계별](QA/Gravis_Elite/Sling_ContactSheet.png) · [활강 단계별](QA/Gravis_Elite/Glide_ContactSheet.png). 재현은 `ONEDOW_SMOKE="RUN~0.3;GRAVISSLING=3.6~0.15;GRAVISGLIDE=1.6~0.15"`와 `ONEDOW_SMOKE_SIZE=1280x900`이다.
+- 실제 화면: [투석 단계별](QA/Gravis_Elite/Sling_ContactSheet.png) · [활강 단계별](QA/Gravis_Elite/Glide_ContactSheet.png). 재현은 `ASTERIA_SMOKE="RUN~0.3;GRAVISSLING=3.6~0.15;GRAVISGLIDE=1.6~0.15"`와 `ASTERIA_SMOKE_SIZE=1280x900`이다.
 
 ![투석 실제 캡처](QA/Gravis_Elite/Sling_ContactSheet.png)
 

@@ -9,11 +9,11 @@
 
 # LTS package output. Keep only the checked-in package documentation.
 /bin/*
-!/bin/Onedow/
-/bin/Onedow/*
-!/bin/Onedow/README.md
-!/bin/Onedow/macOS/
-!/bin/Onedow/macOS/README.txt
+!/bin/Asteria/
+/bin/Asteria/*
+!/bin/Asteria/README.md
+!/bin/Asteria/macOS/
+!/bin/Asteria/macOS/README.txt
 
 # Compiled and packaged artifacts
 *.exe
@@ -46,7 +46,7 @@ cmake_install.cmake
 # Local save/config/log files
 *.cfg
 *.log
-onedow_gameplay_telemetry.txt
+asteria_gameplay_telemetry.txt
 transparency_debug.txt
 
 # Local AI / agent state

@@ -415,7 +415,7 @@ const wchar_t* DebugToolkit::FieldTypeLabel(FieldType type) {
 
 const wchar_t* DebugToolkit::MobLabel(int index) {
     static const wchar_t* labels[] = {
-        L"로터", L"제네시스", L"스웜", L"그라비스", L"퀘이사", L"스코프",
+        L"로터", L"제네시스", L"스웜", L"그라비티", L"퀘이사", L"스코프",
         L"Gimbal", L"Regulus", L"안타레스", L"MAGNETAR"
     };
     if (index < 0 || index >= (int)(sizeof(labels) / sizeof(labels[0])))

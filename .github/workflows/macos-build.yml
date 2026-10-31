@@ -38,7 +38,7 @@ jobs:
           cmake --build glfw-src/build --config Release
           cmake --install glfw-src/build
 
-      - name: Configure & build Onedow
+      - name: Configure & build Asteria
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -56,28 +56,28 @@ jobs:
 
       - name: Package
         run: |
-          ONEDOW=bin/Onedow
-          mkdir -p "$ONEDOW/WindowsOS" "$ONEDOW/macOS"
-          rm -rf "$ONEDOW/Resource"
-          cp -R WiNILL/Resource "$ONEDOW/Resource"
-          cp build/WiNILL "$ONEDOW/macOS/Onedow"
-          chmod +x "$ONEDOW/macOS/Onedow"
-          codesign --force --deep --sign - "$ONEDOW/macOS/Onedow" || true
+          ASTERIA=bin/Asteria
+          mkdir -p "$ASTERIA/WindowsOS" "$ASTERIA/macOS"
+          rm -rf "$ASTERIA/Resource"
+          cp -R WiNILL/Resource "$ASTERIA/Resource"
+          cp build/WiNILL "$ASTERIA/macOS/Asteria"
+          chmod +x "$ASTERIA/macOS/Asteria"
+          codesign --force --deep --sign - "$ASTERIA/macOS/Asteria" || true
           # Same manifest-based staging as the local release scripts.
-          bash scripts/zip_onedow.sh
-          ls -lh bin/Onedow.zip
-          unzip -l bin/Onedow.zip | head -20
+          bash scripts/zip_asteria.sh
+          ls -lh bin/Asteria.zip
+          unzip -l bin/Asteria.zip | head -20
 
       - name: Verify package
         run: |
-          # Only manifest items, and macOS/Onedow stored executable.
-          python3 scripts/verify_package_zip.py bin/Onedow.zip --require macOS/Onedow
-          zipinfo bin/Onedow.zip Onedow/macOS/Onedow
+          # Only manifest items, and macOS/Asteria stored executable.
+          python3 scripts/verify_package_zip.py bin/Asteria.zip --require macOS/Asteria
+          zipinfo bin/Asteria.zip Asteria/macOS/Asteria
 
       - name: Upload artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: Onedow-macOS
-          path: bin/Onedow.zip
+          name: Asteria-macOS
+          path: bin/Asteria.zip
           if-no-files-found: error

@@ -315,7 +315,7 @@ static void CheckSnapshot() {
 }
 
 int main() {
-    _putenv_s("ONEDOW_SAVE_DIR", ".");      // keep the test off the real AppData save
+    _putenv_s("ASTERIA_SAVE_DIR", ".");      // keep the test off the real AppData save
     s_defaults = Read();
     g_SmokeCapture = false;                 // real SaveGame, in the temporary folder
     CheckRoundTrip();

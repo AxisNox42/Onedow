@@ -1,4 +1,4 @@
-# WiNILL / Onedow — macOS · Linux 빌드
+# WiNILL / Asteria — macOS · Linux 빌드
 # Windows 는 WiNILL/WiNILL.vcxproj (Visual Studio) 사용.
 #
 # macOS:

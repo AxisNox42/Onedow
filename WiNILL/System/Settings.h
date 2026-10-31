@@ -12,7 +12,7 @@ inline int g_FpsCap = 60;   // 첫 실행 기본 60fps (세이브 있으면 덮�
 enum class Language { KR, EN, JP };
 inline Language g_Language = Language::KR;
 
-// ONEDOW_SMOKE 환경변수로 실행한 스모크 캡처 세션. 세이브를 쓰지 않는다.
+// ASTERIA_SMOKE 환경변수로 실행한 스모크 캡처 세션. 세이브를 쓰지 않는다.
 inline bool g_SmokeCapture = false;
 // Smoke-only: augment slot to keyboard-focus once the selector accepts input
 // (the selector resets focus on entry, so AUGSEL queues it here).
@@ -297,7 +297,7 @@ inline bool g_StrongMenuDim     = false;
 
 // Combat elements (bullets, HP/XP rings) sit straight on the desktop.
 // Bright or busy wallpapers wash them out, so they always get a dark keyline.
-// Smoke A/B checks can zero it (ONEDOW_SMOKE_KEYLINE=0).
+// Smoke A/B checks can zero it (ASTERIA_SMOKE_KEYLINE=0).
 // PLAY 패널 무기 별자리의 타원 궤도(끊어 그린 링) 표시. 디버그 툴킷에서 전환, 저장 안 함.
 inline bool g_PlayConstellationOrbits = true;
 inline float g_CombatKeylineScale = 1.0f;
@@ -326,7 +326,7 @@ inline int EnemyParticleCap() {
          : g_VfxDensity == VfxDensity::MEDIUM ? 512 : 1024;
 }
 
-// macOS 1회 성능 프로필 적용 여부 (onedow_save.cfg 의 macopt=1)
+// macOS 1회 성능 프로필 적용 여부 (asteria_save.cfg 의 macopt=1)
 inline bool g_MacOptV1 = false;
 
 // 원·부채꼴 등 다각형 분할 수 (VFX 밀도·플랫폼 반영)

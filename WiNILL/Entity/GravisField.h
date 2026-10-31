@@ -11,13 +11,13 @@ class MonsterManager;
 
 namespace GravisField {
 
-inline constexpr float RADIUS            = 285.0f;
+inline constexpr float RADIUS            = 570.0f;   // 2x the original 285; strength below is softened to match
 inline constexpr float CORE_DEAD_ZONE_SQ = 36.0f;   // no pull right on the core
-inline constexpr float PULL_BASE         = 90.0f;   // px/s at the rim
-inline constexpr float PULL_GAIN         = 260.0f;  // extra px/s toward the core
+inline constexpr float PULL_BASE         = 50.0f;   // px/s at the rim
+inline constexpr float PULL_GAIN         = 240.0f;  // extra px/s toward the core
 inline constexpr float PULL_CAP_RATIO    = 0.80f;   // of the player's move speed
-inline constexpr float FIRE_SLOW         = 0.60f;   // +60% fire interval at the core
-inline constexpr float DASH_RECOVER_SLOW = 0.75f;   // -75% dash cooldown regen
+inline constexpr float FIRE_SLOW         = 0.40f;   // +40% fire interval at the core
+inline constexpr float DASH_RECOVER_SLOW = 0.50f;   // -50% dash cooldown regen
 
 // 0 at the rim (and beyond), 1 on the core.
 inline float Influence(float distSq) {

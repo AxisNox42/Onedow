@@ -23,6 +23,7 @@ struct Scene {
 };
 
 int main() {
+    g_Difficulty = Difficulty::EASY;   // the Genesis body is 1.7x here; higher difficulties scale it up
     {
         Scene s; std::set<Monster*> launched;
         std::vector<float> times,headings;
@@ -38,7 +39,9 @@ int main() {
                 if(m->genesisRotorPhase==2 && launched.insert(m).second) {
                     assert(m->sizeScale==1.0f);
                     Monster regular(0,0); regular.MakeKind(MobKind::ROTOR);
-                    assert(m->hp==regular.hp && m->color==regular.color);
+                    assert(m->hp==regular.hp);                           // same strength as a free Rotor...
+                    assert(m->genesisControlled && m->color==Monster::GENESIS_CONTROLLED_COLOR);   // ...but visibly controlled
+                    assert(m->freeColor==regular.color);             // its own colour is kept for when the control ends
                     assert(std::fabs(m->thrownHeading-atan2f(py-m->thrownStartY,px-m->thrownStartX))<0.0001f);
                     headings.push_back(m->thrownHeading);
                 }
@@ -129,7 +132,7 @@ int main() {
         Scene s;
         for(int i=0;i<Monster::GENESIS_ROTOR_CAP;++i) {
             auto* r=new Monster(-3000.0f,20.0f*i); r->MakeKind(MobKind::ROTOR);
-            r->genesisThrown=true; r->thrownOwnerId=s.g->genesisId; r->speed=0; s.mm.monsters.push_back(r);
+            r->genesisThrown=true; r->genesisFromLauncher=true; r->thrownOwnerId=s.g->genesisId; r->speed=0; s.mm.monsters.push_back(r);
         }
         for(int i=0;i<300;++i) s.tick();
         int rotors=0;

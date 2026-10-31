@@ -149,7 +149,7 @@ inline const wchar_t* kStrings[(int)StrId::_COUNT][LANG_COUNT] = {
         L"最終スコア",
     },
     /* GAME_TITLE */ {
-        L"Onedow", L"Onedow", L"Onedow",
+        L"Asteria", L"Asteria", L"Asteria",
     },
     /* BTN_START */ {
         L"시작", L"Start", L"スタート",

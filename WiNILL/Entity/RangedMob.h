@@ -25,6 +25,16 @@ public:
     float deathScale = 1.0f;
     float hitFlashTimer = 0.0f;
     glm::vec3 color = glm::vec3(0.15f, 0.85f, 1.0f);   // Lens: icy cyan
+    // A Scope a Genesis summoned (Nightmare): controlled colour while its Genesis lives,
+    // half rewards, and a slot in that Genesis' summon cap.
+    bool genesisSummoned = false;
+    int summonOwnerId = 0;            // genesisId of the controlling Genesis, 0 once released
+    glm::vec3 freeColor = glm::vec3(0.15f, 0.85f, 1.0f);
+
+    // Learned player motion, used to lead the shots of a Genesis-summoned Scope.
+    glm::vec2 aimPlayerPrev = glm::vec2(0.0f);
+    glm::vec2 aimPlayerVel = glm::vec2(0.0f);
+    bool aimPlayerSeen = false;
 
     float wanderTimer = 0.0f;
     float rotAngle    = 0.0f;   // Layer 1 accumulated angle
@@ -112,6 +122,16 @@ public:
         regulusShield.grantTimer = std::max(0.0f,
                                             regulusShield.grantTimer - dt);
 
+        if (genesisSummoned) {
+            const glm::vec2 pnow(playerCX, playerCY);
+            if (aimPlayerSeen && dt > 1e-5f) {
+                const glm::vec2 v = (pnow - aimPlayerPrev) / dt;
+                aimPlayerVel += (v - aimPlayerVel) * std::min(1.0f, dt / 0.25f);
+            }
+            aimPlayerPrev = pnow;
+            aimPlayerSeen = true;
+        }
+
         // Wander
         wanderTimer += dt;
         if (wanderTimer >= WANDER_INTERVAL) {
@@ -157,11 +177,18 @@ public:
             for (int i = 0; i < 3; i++) {
                 float t = SHOT_DELAY + (float)i * SHOT_INTERVAL;
                 if (burstShots == i && burstTimer >= t) {
-                    Bullet b(worldX, worldY,
-                             playerCX, playerCY);
+                    float aimX = playerCX, aimY = playerCY;
+                    if (genesisSummoned) {                       // forced lead: aim where the player will be
+                        const glm::vec2 p(playerCX, playerCY);
+                        float t = glm::length(p - glm::vec2(worldX, worldY)) / 720.0f;
+                        t = glm::length(p + aimPlayerVel * t - glm::vec2(worldX, worldY)) / 720.0f;
+                        t = std::min(t, 1.0f);
+                        aimX += aimPlayerVel.x * t; aimY += aimPlayerVel.y * t;
+                    }
+                    Bullet b(worldX, worldY, aimX, aimY);
                     b.speed      = 720.0f;
                     b.isEnemy    = true;
-                    b.homing     = true;
+                    b.homing     = !genesisSummoned;
                     b.homingTurn = 0.28f;
                     b.color = color;
                     bullets.push_back(b);

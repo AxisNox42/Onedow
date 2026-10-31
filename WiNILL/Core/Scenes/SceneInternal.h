@@ -62,6 +62,6 @@ void DrawVisibleConstellNode(float x, float y, float size,
                              float r, float g, float b, float alpha,
                              bool whiteSpark = true,
                              bool drawField = true);
-void DrawMainOnedowLogo(float sw, float sh, float alpha, float reveal,
+void DrawMainAsteriaLogo(float sw, float sh, float alpha, float reveal,
                         float centerXOverride = -1.0f,
                         float heightMul = 1.0f);

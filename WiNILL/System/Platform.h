@@ -1,7 +1,7 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────
 // 플랫폼 추상화 — 타이머 / 슬립 / 작업 디렉터리
-//   배포(LTS): bin/Onedow/{Resource,WindowsOS/Onedow.exe,macOS/Onedow}
+//   배포(LTS): bin/Asteria/{Resource,WindowsOS/Asteria.exe,macOS/Asteria}
 //   테스트:    build/windows/x64/Release/WiNILL.exe
 // ─────────────────────────────────────────────────────────────
 #include <string>
